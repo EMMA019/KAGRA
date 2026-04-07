@@ -765,7 +765,6 @@ def spring_bone(vrm_path: str, vrm_id: int) -> "SpringBone":
 
 
 # ── 遅延インポート（kagra.Scene が定義された後に行う）──────────
-from kagra.mapscene      import MapScene, DebugHUD
 from kagra.scene_io      import serialize_entity, serialize_transform, serialize_component, save_scene
 from kagra.scene_loader  import load_entity, load_scene
 from kagra.scenegraph    import SceneGraph
