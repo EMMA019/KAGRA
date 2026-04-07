@@ -1,0 +1,1226 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KAGRA Map Editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ── CSS Variables ─────────────────────────────────────── */
+:root {
+  --bg0:      #0d0f12;
+  --bg1:      #13161b;
+  --bg2:      #1a1e26;
+  --bg3:      #222733;
+  --border:   #2a3040;
+  --border2:  #3a4560;
+  --accent:   #4af0a0;
+  --accent2:  #2ab870;
+  --accent3:  #f0a04a;
+  --danger:   #f05050;
+  --text0:    #e8edf5;
+  --text1:    #9aa8be;
+  --text2:    #5a6880;
+  --select:   rgba(74,240,160,0.18);
+  --hover:    rgba(74,240,160,0.08);
+  --font-mono: 'Share Tech Mono', monospace;
+  --font-ui:   'Rajdhani', sans-serif;
+  --panel-w:  220px;
+  --toolbar-h: 40px;
+  --statusbar-h: 24px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg0); color: var(--text0); font-family: var(--font-ui); }
+
+/* ── Layout ────────────────────────────────────────────── */
+#app { display: grid; height: 100vh;
+  grid-template:
+    "menubar  menubar  menubar"  32px
+    "toolbar  toolbar  toolbar"  var(--toolbar-h)
+    "left     canvas   right"    1fr
+    "status   status   status"   var(--statusbar-h)
+    / var(--panel-w) 1fr var(--panel-w);
+}
+
+/* ── Menu bar ───────────────────────────────────────────── */
+#menubar {
+  grid-area: menubar;
+  background: var(--bg1);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 12px; gap: 2px;
+  position: relative; z-index: 100;
+}
+.menu-logo {
+  font-family: var(--font-mono);
+  font-size: 13px; color: var(--accent);
+  letter-spacing: 2px; margin-right: 16px;
+  text-shadow: 0 0 12px rgba(74,240,160,0.5);
+}
+.menu-btn {
+  font-family: var(--font-ui); font-weight: 600;
+  font-size: 13px; color: var(--text1);
+  background: none; border: none; cursor: pointer;
+  padding: 4px 10px; border-radius: 3px;
+  transition: background 0.12s, color 0.12s;
+  letter-spacing: 0.5px;
+}
+.menu-btn:hover { background: var(--hover); color: var(--text0); }
+.menu-btn.active { background: var(--bg3); color: var(--accent); }
+
+/* ── Toolbar ────────────────────────────────────────────── */
+#toolbar {
+  grid-area: toolbar;
+  background: var(--bg1);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 10px; gap: 4px;
+}
+.tool-sep { width: 1px; height: 22px; background: var(--border2); margin: 0 4px; }
+.tool-btn {
+  width: 30px; height: 30px;
+  background: none; border: 1px solid transparent;
+  border-radius: 4px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text1); font-size: 15px;
+  transition: all 0.12s; position: relative;
+}
+.tool-btn:hover { background: var(--hover); color: var(--text0); border-color: var(--border2); }
+.tool-btn.active { background: var(--select); color: var(--accent); border-color: var(--accent2); }
+.tool-btn[title]:hover::after {
+  content: attr(title);
+  position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  background: var(--bg3); border: 1px solid var(--border2);
+  color: var(--text0); font-size: 11px; font-family: var(--font-ui);
+  padding: 3px 8px; border-radius: 3px; white-space: nowrap;
+  z-index: 999; pointer-events: none;
+}
+.tool-label {
+  font-size: 12px; color: var(--text2);
+  font-family: var(--font-mono); letter-spacing: 1px;
+  margin: 0 4px;
+}
+.tool-input {
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text0); font-family: var(--font-mono); font-size: 12px;
+  padding: 3px 6px; border-radius: 3px; width: 52px;
+  outline: none;
+}
+.tool-input:focus { border-color: var(--accent2); }
+
+/* ── Left Panel (Layers + Properties) ──────────────────── */
+#left-panel {
+  grid-area: left;
+  background: var(--bg1);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Right Panel (Tileset) ──────────────────────────────── */
+#right-panel {
+  grid-area: right;
+  background: var(--bg1);
+  border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Panel Header ───────────────────────────────────────── */
+.panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+  flex-shrink: 0;
+}
+.panel-title {
+  font-size: 11px; font-weight: 700; letter-spacing: 2px;
+  color: var(--accent); text-transform: uppercase; font-family: var(--font-mono);
+}
+.panel-action {
+  background: none; border: none; cursor: pointer;
+  color: var(--text2); font-size: 14px; padding: 0 2px;
+  transition: color 0.12s;
+}
+.panel-action:hover { color: var(--accent); }
+
+/* ── Layers ─────────────────────────────────────────────── */
+#layers-list { overflow-y: auto; flex: 0 0 auto; max-height: 160px; }
+.layer-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px; cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+  font-size: 13px; font-weight: 500;
+}
+.layer-item:hover { background: var(--hover); }
+.layer-item.active { background: var(--select); }
+.layer-icon { width: 16px; height: 16px; border-radius: 2px; flex-shrink: 0; }
+.layer-name { flex: 1; }
+.layer-vis {
+  background: none; border: none; cursor: pointer;
+  color: var(--text2); font-size: 12px; padding: 2px;
+  transition: color 0.12s;
+}
+.layer-vis:hover { color: var(--accent); }
+.layer-vis.hidden { color: var(--text2); opacity: 0.4; }
+
+/* ── Properties ─────────────────────────────────────────── */
+#props-section { flex: 1; overflow-y: auto; }
+.prop-row {
+  display: flex; align-items: center;
+  padding: 5px 10px; gap: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.prop-label {
+  font-size: 11px; color: var(--text2); width: 60px; flex-shrink: 0;
+  font-family: var(--font-mono);
+}
+.prop-value {
+  font-size: 12px; color: var(--text1); font-family: var(--font-mono);
+  flex: 1;
+}
+.prop-input {
+  flex: 1; background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text0); font-family: var(--font-mono); font-size: 12px;
+  padding: 2px 6px; border-radius: 3px; outline: none;
+}
+.prop-input:focus { border-color: var(--accent2); }
+.prop-select {
+  flex: 1; background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text0); font-family: var(--font-mono); font-size: 12px;
+  padding: 2px 4px; border-radius: 3px; outline: none;
+}
+.prop-select:focus { border-color: var(--accent2); }
+
+/* ── Tile Attributes ─────────────────────────────────────── */
+#attrs-section { padding: 8px 10px; border-top: 1px solid var(--border); }
+.attrs-title { font-size: 10px; letter-spacing: 2px; color: var(--accent); font-family: var(--font-mono); margin-bottom: 6px; }
+.attr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.attr-check {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--text1); cursor: pointer;
+  padding: 3px 5px; border-radius: 3px; transition: background 0.1s;
+}
+.attr-check:hover { background: var(--hover); }
+.attr-check input { accent-color: var(--accent); cursor: pointer; }
+.attr-badge {
+  display: inline-block; width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0;
+}
+
+/* ── Canvas area ─────────────────────────────────────────── */
+#canvas-area {
+  grid-area: canvas;
+  background: var(--bg0);
+  overflow: hidden; position: relative;
+  display: flex; align-items: center; justify-content: center;
+}
+#canvas-area canvas {
+  image-rendering: pixelated;
+  cursor: crosshair;
+}
+/* Zoom indicator */
+#zoom-badge {
+  position: absolute; bottom: 10px; right: 10px;
+  background: var(--bg3); border: 1px solid var(--border2);
+  font-family: var(--font-mono); font-size: 11px; color: var(--accent);
+  padding: 3px 8px; border-radius: 3px;
+  pointer-events: none;
+}
+
+/* ── Tileset Panel ───────────────────────────────────────── */
+#tileset-load-area {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.load-tileset-btn {
+  width: 100%; padding: 7px;
+  background: var(--bg3); border: 1px dashed var(--border2);
+  color: var(--text1); font-family: var(--font-ui); font-weight: 600;
+  font-size: 12px; letter-spacing: 1px;
+  border-radius: 4px; cursor: pointer;
+  transition: all 0.15s; text-align: center;
+}
+.load-tileset-btn:hover { background: var(--hover); border-color: var(--accent2); color: var(--accent); }
+
+.tileset-meta {
+  font-family: var(--font-mono); font-size: 10px; color: var(--text2);
+  margin-top: 5px; line-height: 1.6;
+}
+
+#tileset-scroll {
+  flex: 1; overflow: auto; position: relative;
+}
+#tileset-canvas {
+  display: block; image-rendering: pixelated;
+  cursor: crosshair;
+}
+
+/* Tile size controls */
+.tile-size-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ts-label { font-size: 11px; color: var(--text2); font-family: var(--font-mono); }
+.ts-num {
+  width: 40px; background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text0); font-family: var(--font-mono); font-size: 12px;
+  padding: 2px 5px; border-radius: 3px; outline: none; text-align: center;
+}
+.ts-num:focus { border-color: var(--accent2); }
+.ts-apply {
+  margin-left: auto;
+  background: var(--bg3); border: 1px solid var(--border2);
+  color: var(--accent); font-family: var(--font-mono); font-size: 11px;
+  padding: 3px 8px; border-radius: 3px; cursor: pointer;
+  transition: all 0.12s;
+}
+.ts-apply:hover { background: var(--select); border-color: var(--accent); }
+
+/* ── Status bar ──────────────────────────────────────────── */
+#statusbar {
+  grid-area: status;
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 12px; gap: 20px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text2);
+}
+.status-item { display: flex; align-items: center; gap: 6px; }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+#status-pos { color: var(--accent); }
+
+/* ── Scrollbar styling ───────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg1); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text2); }
+
+/* ── Modal ───────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; backdrop-filter: blur(2px);
+}
+.modal-overlay.hidden { display: none; }
+.modal-box {
+  background: var(--bg2); border: 1px solid var(--border2);
+  border-radius: 6px; padding: 24px;
+  min-width: 340px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+.modal-title {
+  font-size: 14px; font-weight: 700; letter-spacing: 2px;
+  color: var(--accent); text-transform: uppercase;
+  font-family: var(--font-mono); margin-bottom: 18px;
+}
+.modal-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.modal-label { font-size: 12px; color: var(--text1); width: 80px; font-family: var(--font-mono); }
+.modal-input {
+  flex: 1; background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text0); font-family: var(--font-mono); font-size: 13px;
+  padding: 5px 8px; border-radius: 4px; outline: none;
+}
+.modal-input:focus { border-color: var(--accent2); }
+.modal-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+.modal-btn {
+  padding: 7px 18px; border-radius: 4px; cursor: pointer;
+  font-family: var(--font-ui); font-weight: 600; font-size: 13px;
+  letter-spacing: 1px; border: none; transition: all 0.12s;
+}
+.modal-btn.primary { background: var(--accent2); color: var(--bg0); }
+.modal-btn.primary:hover { background: var(--accent); }
+.modal-btn.secondary { background: var(--bg3); color: var(--text1); border: 1px solid var(--border2); }
+.modal-btn.secondary:hover { background: var(--hover); color: var(--text0); }
+
+/* Tile attr colors */
+.attr-solid  { background: #f05050; }
+.attr-water  { background: #50a0f0; }
+.attr-ladder { background: #f0c050; }
+.attr-door   { background: #a050f0; }
+.attr-damage { background: #f07030; }
+
+/* Selection highlight on tileset */
+#tileset-selection {
+  position: absolute; pointer-events: none;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 1px rgba(74,240,160,0.3);
+  background: rgba(74,240,160,0.12);
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── Menu bar ─────────────────────────────────────── -->
+  <div id="menubar">
+    <span class="menu-logo">KAGRA</span>
+    <button class="menu-btn" onclick="showNewMapModal()">FILE</button>
+    <button class="menu-btn" onclick="exportCSV()">EXPORT CSV</button>
+    <button class="menu-btn" onclick="importCSV()">IMPORT CSV</button>
+    <button class="menu-btn" onclick="exportAttrs()">EXPORT ATTRS</button>
+  </div>
+
+  <!-- ── Toolbar ───────────────────────────────────────── -->
+  <div id="toolbar">
+    <button class="tool-btn active" id="tool-pencil"  title="Pencil (P)"  onclick="setTool('pencil')">✏</button>
+    <button class="tool-btn"        id="tool-eraser"  title="Eraser (E)"  onclick="setTool('eraser')">◻</button>
+    <button class="tool-btn"        id="tool-fill"    title="Fill (F)"    onclick="setTool('fill')">◈</button>
+    <button class="tool-btn"        id="tool-picker"  title="Eyedropper (I)" onclick="setTool('picker')">⊕</button>
+    <button class="tool-btn"        id="tool-rect"    title="Rect Fill (R)"  onclick="setTool('rect')">⬜</button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" title="Undo (Ctrl+Z)" onclick="undo()">↩</button>
+    <button class="tool-btn" title="Redo (Ctrl+Y)" onclick="redo()">↪</button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" title="Zoom In (+)"  onclick="setZoom(state.zoom * 1.25)">＋</button>
+    <button class="tool-btn" title="Zoom Out (-)" onclick="setZoom(state.zoom * 0.8)">－</button>
+    <button class="tool-btn" title="Fit to screen" onclick="fitZoom()">⊞</button>
+    <div class="tool-sep"></div>
+    <span class="tool-label">GRID</span>
+    <button class="tool-btn" id="btn-grid" title="Toggle Grid (G)" onclick="toggleGrid()" style="font-size:12px">ON</button>
+    <div class="tool-sep"></div>
+    <span class="tool-label">MAP</span>
+    <input class="tool-input" id="map-cols" type="number" min="1" max="256" value="20" title="Columns">
+    <span class="tool-label">×</span>
+    <input class="tool-input" id="map-rows" type="number" min="1" max="256" value="15" title="Rows">
+    <button class="tool-btn ts-apply" style="width:auto;padding:0 8px;" onclick="resizeMap()" title="Resize map">RESIZE</button>
+  </div>
+
+  <!-- ── Left Panel ────────────────────────────────────── -->
+  <div id="left-panel">
+    <div class="panel-header">
+      <span class="panel-title">Layers</span>
+      <div style="display:flex;gap:4px">
+        <button class="panel-action" title="Add layer" onclick="addLayer()">＋</button>
+        <button class="panel-action" title="Remove layer" onclick="removeLayer()">－</button>
+      </div>
+    </div>
+    <div id="layers-list"></div>
+
+    <div class="panel-header" style="margin-top:0">
+      <span class="panel-title">Properties</span>
+    </div>
+    <div id="props-section">
+      <div class="prop-row">
+        <span class="prop-label">TILE</span>
+        <span class="prop-value" id="prop-tile-id">—</span>
+      </div>
+      <div class="prop-row">
+        <span class="prop-label">POS</span>
+        <span class="prop-value" id="prop-pos">—</span>
+      </div>
+      <div class="prop-row">
+        <span class="prop-label">LAYER</span>
+        <span class="prop-value" id="prop-layer">—</span>
+      </div>
+      <div class="prop-row">
+        <span class="prop-label">MAP SZ</span>
+        <span class="prop-value" id="prop-mapsize">—</span>
+      </div>
+      <div class="prop-row">
+        <span class="prop-label">TILE SZ</span>
+        <span class="prop-value" id="prop-tilesize">—</span>
+      </div>
+    </div>
+
+    <div id="attrs-section">
+      <div class="attrs-title">TILE ATTRIBUTES</div>
+      <div class="attr-grid">
+        <label class="attr-check"><input type="checkbox" id="attr-solid" onchange="setAttr(0x01,this.checked)"><span class="attr-badge attr-solid"></span>SOLID</label>
+        <label class="attr-check"><input type="checkbox" id="attr-water" onchange="setAttr(0x02,this.checked)"><span class="attr-badge attr-water"></span>WATER</label>
+        <label class="attr-check"><input type="checkbox" id="attr-ladder" onchange="setAttr(0x04,this.checked)"><span class="attr-badge attr-ladder"></span>LADDER</label>
+        <label class="attr-check"><input type="checkbox" id="attr-door" onchange="setAttr(0x08,this.checked)"><span class="attr-badge attr-door"></span>DOOR</label>
+        <label class="attr-check"><input type="checkbox" id="attr-damage" onchange="setAttr(0x10,this.checked)"><span class="attr-badge attr-damage"></span>DAMAGE</label>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Canvas area ───────────────────────────────────── -->
+  <div id="canvas-area">
+    <canvas id="map-canvas"></canvas>
+    <div id="zoom-badge">100%</div>
+  </div>
+
+  <!-- ── Right Panel (Tileset) ─────────────────────────── -->
+  <div id="right-panel">
+    <div class="panel-header">
+      <span class="panel-title">Tileset</span>
+    </div>
+    <div id="tileset-load-area">
+      <button class="load-tileset-btn" onclick="document.getElementById('file-tileset').click()">
+        ＋ Load Tileset Image
+      </button>
+      <input type="file" id="file-tileset" accept="image/*" style="display:none" onchange="loadTileset(this)">
+      <div class="tileset-meta" id="tileset-meta">No tileset loaded</div>
+    </div>
+    <div class="tile-size-row">
+      <span class="ts-label">W</span>
+      <input class="ts-num" id="ts-w" type="number" min="1" value="16">
+      <span class="ts-label">H</span>
+      <input class="ts-num" id="ts-h" type="number" min="1" value="16">
+      <span class="ts-label">SP</span>
+      <input class="ts-num" id="ts-sp" type="number" min="0" value="0">
+      <button class="ts-apply" onclick="applyTileSize()">APPLY</button>
+    </div>
+    <div id="tileset-scroll">
+      <canvas id="tileset-canvas"></canvas>
+      <div id="tileset-selection" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- ── Status bar ────────────────────────────────────── -->
+  <div id="statusbar">
+    <div class="status-item"><div class="status-dot"></div><span id="status-tool">PENCIL</span></div>
+    <div class="status-item">POS <span id="status-pos">—</span></div>
+    <div class="status-item">TILE <span id="status-tile">—</span></div>
+    <div class="status-item">LAYER <span id="status-layer">0</span></div>
+    <div class="status-item" style="margin-left:auto">KAGRA Map Editor v1.0</div>
+  </div>
+
+</div>
+
+<!-- ── New Map Modal ──────────────────────────────────── -->
+<div class="modal-overlay hidden" id="modal-new">
+  <div class="modal-box">
+    <div class="modal-title">New Map</div>
+    <div class="modal-row">
+      <span class="modal-label">COLS</span>
+      <input class="modal-input" id="new-cols" type="number" min="1" max="256" value="20">
+    </div>
+    <div class="modal-row">
+      <span class="modal-label">ROWS</span>
+      <input class="modal-input" id="new-rows" type="number" min="1" max="256" value="15">
+    </div>
+    <div class="modal-row">
+      <span class="modal-label">FILL</span>
+      <input class="modal-input" id="new-fill" type="number" min="-1" value="-1">
+    </div>
+    <div class="modal-btns">
+      <button class="modal-btn secondary" onclick="hideModal('modal-new')">CANCEL</button>
+      <button class="modal-btn primary" onclick="createNewMap()">CREATE</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  KAGRA Map Editor — State
+// ═══════════════════════════════════════════════════════════
+
+const ATTR_NAMES  = ['SOLID','WATER','LADDER','DOOR','DAMAGE'];
+const ATTR_FLAGS  = [0x01, 0x02, 0x04, 0x08, 0x10];
+const ATTR_COLORS = ['rgba(240,80,80,0.6)','rgba(80,160,240,0.6)',
+                     'rgba(240,192,80,0.6)','rgba(160,80,240,0.6)',
+                     'rgba(240,112,48,0.6)'];
+
+const state = {
+  // Map data (per layer)
+  cols: 20, rows: 15,
+  tileW: 16, tileH: 16,
+  layers: [
+    { name: 'Ground',   color: '#4af0a0', visible: true, data: null },
+    { name: 'Objects',  color: '#f0a04a', visible: true, data: null },
+    { name: 'Roof',     color: '#a04af0', visible: true, data: null },
+  ],
+  activeLayer: 0,
+
+  // Tileset
+  tilesetImg: null,
+  tsW: 16, tsH: 16, tsSp: 0,
+  tsCols: 0, tsRows: 0,
+  selectedTile: 0,
+
+  // Tile attributes  { tileId: flagBits }
+  tileAttrs: {},
+
+  // View
+  zoom: 2.0,
+  panX: 0, panY: 0,
+  showGrid: true,
+
+  // Tool
+  tool: 'pencil',
+
+  // Interaction
+  isPainting: false,
+  rectStart: null,
+
+  // Undo/Redo
+  undoStack: [],
+  redoStack: [],
+
+  // Hover
+  hoverCol: -1, hoverRow: -1,
+};
+
+// ── Init layer data ────────────────────────────────────────
+function initLayers() {
+  state.layers.forEach(l => {
+    l.data = Array.from({length: state.rows}, () =>
+      new Int16Array(state.cols).fill(-1));
+  });
+}
+
+// ── Canvas refs ───────────────────────────────────────────
+const mapCanvas  = document.getElementById('map-canvas');
+const mapCtx     = mapCanvas.getContext('2d');
+const tsCanvas   = document.getElementById('tileset-canvas');
+const tsCtx      = tsCanvas.getContext('2d');
+const tsSel      = document.getElementById('tileset-selection');
+
+// ═══════════════════════════════════════════════════════════
+//  Tileset
+// ═══════════════════════════════════════════════════════════
+
+function loadTileset(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    state.tilesetImg = img;
+    applyTileSize();
+    document.getElementById('tileset-meta').textContent =
+      `${img.width}×${img.height}px — ${file.name}`;
+  };
+  img.src = URL.createObjectURL(file);
+}
+
+function applyTileSize() {
+  state.tsW  = parseInt(document.getElementById('ts-w').value)  || 16;
+  state.tsH  = parseInt(document.getElementById('ts-h').value)  || 16;
+  state.tsSp = parseInt(document.getElementById('ts-sp').value) || 0;
+  if (!state.tilesetImg) return;
+  state.tsCols = Math.floor((state.tilesetImg.width  + state.tsSp) / (state.tsW + state.tsSp));
+  state.tsRows = Math.floor((state.tilesetImg.height + state.tsSp) / (state.tsH + state.tsSp));
+  renderTileset();
+  updateProps();
+}
+
+const TS_SCALE = 2;
+function renderTileset() {
+  if (!state.tilesetImg) return;
+  const iw = state.tilesetImg.width, ih = state.tilesetImg.height;
+  tsCanvas.width  = iw * TS_SCALE;
+  tsCanvas.height = ih * TS_SCALE;
+  tsCtx.imageSmoothingEnabled = false;
+  tsCtx.clearRect(0, 0, tsCanvas.width, tsCanvas.height);
+  tsCtx.drawImage(state.tilesetImg, 0, 0, iw * TS_SCALE, ih * TS_SCALE);
+
+  // Draw grid
+  tsCtx.strokeStyle = 'rgba(74,240,160,0.35)';
+  tsCtx.lineWidth = 1;
+  const tw = state.tsW * TS_SCALE, th = state.tsH * TS_SCALE;
+  for (let c = 0; c <= state.tsCols; c++) {
+    tsCtx.beginPath();
+    tsCtx.moveTo(c * tw, 0); tsCtx.lineTo(c * tw, ih * TS_SCALE);
+    tsCtx.stroke();
+  }
+  for (let r = 0; r <= state.tsRows; r++) {
+    tsCtx.beginPath();
+    tsCtx.moveTo(0, r * th); tsCtx.lineTo(iw * TS_SCALE, r * th);
+    tsCtx.stroke();
+  }
+
+  // Attr overlays
+  for (let r = 0; r < state.tsRows; r++) {
+    for (let c = 0; c < state.tsCols; c++) {
+      const tid = r * state.tsCols + c;
+      const flags = state.tileAttrs[tid] || 0;
+      if (!flags) continue;
+      const x = c * tw, y = r * th;
+      ATTR_FLAGS.forEach((f, i) => {
+        if (flags & f) {
+          tsCtx.fillStyle = ATTR_COLORS[i];
+          tsCtx.fillRect(x + i * 3, y, 3, 3);
+        }
+      });
+    }
+  }
+
+  // Update selection box
+  updateTsSelection();
+}
+
+function updateTsSelection() {
+  if (!state.tilesetImg) return;
+  const tw = state.tsW * TS_SCALE, th = state.tsH * TS_SCALE;
+  const selC = state.selectedTile % state.tsCols;
+  const selR = Math.floor(state.selectedTile / state.tsCols);
+  const rect = tsCanvas.getBoundingClientRect();
+  const scrollParent = document.getElementById('tileset-scroll');
+  tsSel.style.display = 'block';
+  tsSel.style.left   = (selC * tw) + 'px';
+  tsSel.style.top    = (selR * th) + 'px';
+  tsSel.style.width  = tw + 'px';
+  tsSel.style.height = th + 'px';
+}
+
+// Tileset click
+tsCanvas.addEventListener('mousedown', e => {
+  if (!state.tilesetImg) return;
+  const r = tsCanvas.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  const tw = state.tsW * TS_SCALE, th = state.tsH * TS_SCALE;
+  const c  = Math.floor(x / tw), row = Math.floor(y / th);
+  if (c >= 0 && c < state.tsCols && row >= 0 && row < state.tsRows) {
+    state.selectedTile = row * state.tsCols + c;
+    updateTsSelection();
+    updateStatus();
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+//  Map Rendering
+// ═══════════════════════════════════════════════════════════
+
+function renderMap() {
+  const tw = state.tileW * state.zoom;
+  const th = state.tileH * state.zoom;
+  const W  = state.cols * tw;
+  const H  = state.rows * th;
+
+  mapCanvas.width  = W;
+  mapCanvas.height = H;
+  mapCtx.imageSmoothingEnabled = false;
+
+  // Background checker
+  const cs = Math.max(4, Math.round(8 * state.zoom));
+  for (let y = 0; y < H; y += cs) {
+    for (let x = 0; x < W; x += cs) {
+      const even = (Math.floor(x/cs) + Math.floor(y/cs)) % 2 === 0;
+      mapCtx.fillStyle = even ? '#1a1e26' : '#141820';
+      mapCtx.fillRect(x, y, cs, cs);
+    }
+  }
+
+  // Layers
+  state.layers.forEach((layer, li) => {
+    if (!layer.visible || !layer.data) return;
+    for (let row = 0; row < state.rows; row++) {
+      for (let col = 0; col < state.cols; col++) {
+        const tid = layer.data[row][col];
+        if (tid < 0) continue;
+        const px = col * tw, py = row * th;
+        if (state.tilesetImg) {
+          const tc = tid % state.tsCols;
+          const tr = Math.floor(tid / state.tsCols);
+          const sx = tc * (state.tsW + state.tsSp);
+          const sy = tr * (state.tsH + state.tsSp);
+          mapCtx.drawImage(state.tilesetImg,
+            sx, sy, state.tsW, state.tsH,
+            px, py, tw, th);
+        } else {
+          // Fallback colored rect
+          mapCtx.fillStyle = `hsl(${(tid * 37) % 360},50%,35%)`;
+          mapCtx.fillRect(px + 1, py + 1, tw - 2, th - 2);
+          mapCtx.fillStyle = 'rgba(255,255,255,0.5)';
+          mapCtx.font = `${Math.max(8, tw * 0.4)}px monospace`;
+          mapCtx.textAlign = 'center';
+          mapCtx.fillText(tid, px + tw/2, py + th/2 + 3);
+        }
+
+        // Attribute overlay on active layer
+        if (li === state.activeLayer) {
+          const flags = state.tileAttrs[tid] || 0;
+          if (flags) {
+            ATTR_FLAGS.forEach((f, i) => {
+              if (flags & f) {
+                mapCtx.fillStyle = ATTR_COLORS[i];
+                mapCtx.fillRect(px, py, tw * 0.25, th * 0.25);
+              }
+            });
+          }
+        }
+      }
+    }
+  });
+
+  // Grid
+  if (state.showGrid) {
+    mapCtx.strokeStyle = 'rgba(74,240,160,0.18)';
+    mapCtx.lineWidth = 1;
+    for (let c = 0; c <= state.cols; c++) {
+      mapCtx.beginPath();
+      mapCtx.moveTo(c * tw, 0); mapCtx.lineTo(c * tw, H);
+      mapCtx.stroke();
+    }
+    for (let r = 0; r <= state.rows; r++) {
+      mapCtx.beginPath();
+      mapCtx.moveTo(0, r * th); mapCtx.lineTo(W, r * th);
+      mapCtx.stroke();
+    }
+  }
+
+  // Hover highlight
+  if (state.hoverCol >= 0 && state.hoverRow >= 0) {
+    mapCtx.strokeStyle = 'rgba(74,240,160,0.9)';
+    mapCtx.lineWidth = 2;
+    mapCtx.strokeRect(
+      state.hoverCol * tw + 1, state.hoverRow * th + 1,
+      tw - 2, th - 2
+    );
+  }
+
+  // Rect tool preview
+  if (state.tool === 'rect' && state.rectStart && state.isPainting) {
+    const {col: c0, row: r0} = state.rectStart;
+    const c1 = state.hoverCol, r1 = state.hoverRow;
+    const minC = Math.min(c0,c1), maxC = Math.max(c0,c1);
+    const minR = Math.min(r0,r1), maxR = Math.max(r0,r1);
+    mapCtx.fillStyle = 'rgba(74,240,160,0.15)';
+    mapCtx.fillRect(minC*tw, minR*th, (maxC-minC+1)*tw, (maxR-minR+1)*th);
+    mapCtx.strokeStyle = 'rgba(74,240,160,0.8)';
+    mapCtx.lineWidth = 2;
+    mapCtx.strokeRect(minC*tw+1, minR*th+1, (maxC-minC+1)*tw-2, (maxR-minR+1)*th-2);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Mouse interaction on map canvas
+// ═══════════════════════════════════════════════════════════
+
+function canvasToCell(e) {
+  const r = mapCanvas.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  const tw = state.tileW * state.zoom, th = state.tileH * state.zoom;
+  const col = Math.floor(x / tw), row = Math.floor(y / th);
+  return { col, row, valid: col >= 0 && col < state.cols && row >= 0 && row < state.rows };
+}
+
+function paintCell(col, row) {
+  const layer = state.layers[state.activeLayer];
+  if (!layer) return;
+  const tid = state.tool === 'eraser' ? -1 : state.selectedTile;
+  if (layer.data[row][col] !== tid) {
+    layer.data[row][col] = tid;
+  }
+}
+
+function floodFill(col, row, newTid) {
+  const layer = state.layers[state.activeLayer];
+  if (!layer) return;
+  const oldTid = layer.data[row][col];
+  if (oldTid === newTid) return;
+  const stack = [[col, row]];
+  while (stack.length) {
+    const [c, r] = stack.pop();
+    if (c < 0 || c >= state.cols || r < 0 || r >= state.rows) continue;
+    if (layer.data[r][c] !== oldTid) continue;
+    layer.data[r][c] = newTid;
+    stack.push([c+1,r],[c-1,r],[c,r+1],[c,r-1]);
+  }
+}
+
+function rectFill(c0, r0, c1, r1, tid) {
+  const layer = state.layers[state.activeLayer];
+  if (!layer) return;
+  const minC = Math.min(c0,c1), maxC = Math.max(c0,c1);
+  const minR = Math.min(r0,r1), maxR = Math.max(r0,r1);
+  for (let r = minR; r <= maxR; r++)
+    for (let c = minC; c <= maxC; c++)
+      layer.data[r][c] = tid;
+}
+
+mapCanvas.addEventListener('mousedown', e => {
+  if (e.button !== 0 && e.button !== 2) return;
+  const {col, row, valid} = canvasToCell(e);
+  if (!valid) return;
+
+  if (state.tool === 'picker') {
+    const layer = state.layers[state.activeLayer];
+    const tid = layer?.data[row]?.[col] ?? -1;
+    if (tid >= 0) { state.selectedTile = tid; updateTsSelection(); updateStatus(); }
+    return;
+  }
+
+  pushUndo();
+  state.isPainting = true;
+
+  if (state.tool === 'rect') {
+    state.rectStart = { col, row };
+  } else if (state.tool === 'fill') {
+    const tid = e.button === 2 ? -1 : state.selectedTile;
+    floodFill(col, row, tid);
+    renderMap();
+  } else {
+    if (e.button === 2) {
+      const orig = state.tool;
+      state.tool = 'eraser';
+      paintCell(col, row);
+      state.tool = orig;
+    } else {
+      paintCell(col, row);
+    }
+    renderMap();
+  }
+});
+
+mapCanvas.addEventListener('mousemove', e => {
+  const {col, row, valid} = canvasToCell(e);
+  state.hoverCol = valid ? col : -1;
+  state.hoverRow = valid ? row : -1;
+
+  if (valid) {
+    document.getElementById('status-pos').textContent = `${col},${row}`;
+    document.getElementById('prop-pos').textContent = `col ${col}, row ${row}`;
+    const layer = state.layers[state.activeLayer];
+    const tid = layer?.data[row]?.[col] ?? -1;
+    document.getElementById('prop-tile-id').textContent = tid >= 0 ? `#${tid}` : '—';
+    // Attr checkboxes
+    const flags = state.tileAttrs[tid] || 0;
+    document.getElementById('attr-solid').checked  = !!(flags & 0x01);
+    document.getElementById('attr-water').checked  = !!(flags & 0x02);
+    document.getElementById('attr-ladder').checked = !!(flags & 0x04);
+    document.getElementById('attr-door').checked   = !!(flags & 0x08);
+    document.getElementById('attr-damage').checked = !!(flags & 0x10);
+  }
+
+  if (state.isPainting && valid) {
+    if (state.tool === 'pencil' || state.tool === 'eraser') {
+      paintCell(col, row);
+    }
+  }
+  renderMap();
+});
+
+mapCanvas.addEventListener('mouseup', e => {
+  if (!state.isPainting) return;
+  const {col, row, valid} = canvasToCell(e);
+  if (state.tool === 'rect' && state.rectStart && valid) {
+    const tid = e.button === 2 ? -1 : state.selectedTile;
+    rectFill(state.rectStart.col, state.rectStart.row, col, row, tid);
+    state.rectStart = null;
+  }
+  state.isPainting = false;
+  renderMap();
+});
+
+mapCanvas.addEventListener('mouseleave', () => {
+  state.hoverCol = -1; state.hoverRow = -1;
+  renderMap();
+});
+
+// Right-click: prevent context menu
+mapCanvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// Scroll to zoom
+document.getElementById('canvas-area').addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  setZoom(state.zoom * factor);
+}, { passive: false });
+
+// ═══════════════════════════════════════════════════════════
+//  Tools
+// ═══════════════════════════════════════════════════════════
+
+function setTool(t) {
+  state.tool = t;
+  document.querySelectorAll('.tool-btn[id^="tool-"]').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('tool-' + t);
+  if (btn) btn.classList.add('active');
+  document.getElementById('status-tool').textContent = t.toUpperCase();
+}
+
+function toggleGrid() {
+  state.showGrid = !state.showGrid;
+  document.getElementById('btn-grid').textContent = state.showGrid ? 'ON' : 'OFF';
+  renderMap();
+}
+
+function setZoom(z) {
+  state.zoom = Math.min(16, Math.max(0.25, z));
+  document.getElementById('zoom-badge').textContent = Math.round(state.zoom * 100) + '%';
+  renderMap();
+}
+
+function fitZoom() {
+  const area = document.getElementById('canvas-area');
+  const zx = (area.clientWidth  - 40) / (state.cols * state.tileW);
+  const zy = (area.clientHeight - 40) / (state.rows * state.tileH);
+  setZoom(Math.min(zx, zy));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Layers
+// ═══════════════════════════════════════════════════════════
+
+const LAYER_COLORS = ['#4af0a0','#f0a04a','#a04af0','#4ab0f0','#f04a80'];
+
+function renderLayersList() {
+  const el = document.getElementById('layers-list');
+  el.innerHTML = '';
+  state.layers.forEach((l, i) => {
+    const div = document.createElement('div');
+    div.className = 'layer-item' + (i === state.activeLayer ? ' active' : '');
+    div.innerHTML = `
+      <div class="layer-icon" style="background:${l.color}22;border:1px solid ${l.color}66"></div>
+      <span class="layer-name">${l.name}</span>
+      <button class="layer-vis ${l.visible ? '' : 'hidden'}" onclick="toggleLayerVis(${i},event)">${l.visible ? '◉' : '○'}</button>
+    `;
+    div.addEventListener('click', () => { state.activeLayer = i; renderLayersList(); updateProps(); });
+    el.appendChild(div);
+  });
+  document.getElementById('status-layer').textContent = state.layers[state.activeLayer]?.name || '';
+}
+
+function toggleLayerVis(i, e) {
+  e.stopPropagation();
+  state.layers[i].visible = !state.layers[i].visible;
+  renderLayersList();
+  renderMap();
+}
+
+function addLayer() {
+  const n = state.layers.length;
+  state.layers.push({
+    name: `Layer ${n}`,
+    color: LAYER_COLORS[n % LAYER_COLORS.length],
+    visible: true,
+    data: Array.from({length: state.rows}, () => new Int16Array(state.cols).fill(-1))
+  });
+  state.activeLayer = state.layers.length - 1;
+  renderLayersList();
+}
+
+function removeLayer() {
+  if (state.layers.length <= 1) return;
+  state.layers.splice(state.activeLayer, 1);
+  state.activeLayer = Math.min(state.activeLayer, state.layers.length - 1);
+  renderLayersList();
+  renderMap();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Tile Attributes
+// ═══════════════════════════════════════════════════════════
+
+function setAttr(flag, checked) {
+  const tid = state.selectedTile;
+  if (tid < 0) return;
+  if (checked) {
+    state.tileAttrs[tid] = (state.tileAttrs[tid] || 0) | flag;
+  } else {
+    state.tileAttrs[tid] = (state.tileAttrs[tid] || 0) & ~flag;
+  }
+  renderTileset();
+  renderMap();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Map Operations
+// ═══════════════════════════════════════════════════════════
+
+function resizeMap() {
+  const newCols = parseInt(document.getElementById('map-cols').value) || 20;
+  const newRows = parseInt(document.getElementById('map-rows').value) || 15;
+  pushUndo();
+  state.layers.forEach(l => {
+    const newData = Array.from({length: newRows}, (_, r) =>
+      new Int16Array(newCols).fill(-1).map((_, c) =>
+        (l.data && r < state.rows && c < state.cols) ? l.data[r][c] : -1
+      )
+    );
+    l.data = newData;
+  });
+  state.cols = newCols;
+  state.rows = newRows;
+  updateProps();
+  renderMap();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Undo / Redo
+// ═══════════════════════════════════════════════════════════
+
+function cloneLayers() {
+  return state.layers.map(l => ({
+    ...l,
+    data: l.data ? l.data.map(row => new Int16Array(row)) : null
+  }));
+}
+
+function pushUndo() {
+  state.undoStack.push({
+    layers: cloneLayers(),
+    cols: state.cols, rows: state.rows,
+  });
+  if (state.undoStack.length > 50) state.undoStack.shift();
+  state.redoStack = [];
+}
+
+function undo() {
+  if (!state.undoStack.length) return;
+  state.redoStack.push({ layers: cloneLayers(), cols: state.cols, rows: state.rows });
+  const prev = state.undoStack.pop();
+  state.layers = prev.layers;
+  state.cols = prev.cols; state.rows = prev.rows;
+  renderLayersList();
+  renderMap();
+}
+
+function redo() {
+  if (!state.redoStack.length) return;
+  state.undoStack.push({ layers: cloneLayers(), cols: state.cols, rows: state.rows });
+  const next = state.redoStack.pop();
+  state.layers = next.layers;
+  state.cols = next.cols; state.rows = next.rows;
+  renderLayersList();
+  renderMap();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Export / Import
+// ═══════════════════════════════════════════════════════════
+
+function exportCSV() {
+  // Export each layer as separate CSV file
+  state.layers.forEach((layer, i) => {
+    if (!layer.data) return;
+    const csv = layer.data.map(row => Array.from(row).join(',')).join('\n');
+    const blob = new Blob([`# KAGRA TileMap Layer: ${layer.name}\n${csv}`], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `map_layer_${i}_${layer.name.toLowerCase().replace(/ /g,'_')}.csv`;
+    a.click();
+  });
+}
+
+function importCSV() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.csv,.txt';
+  input.multiple = true;
+  input.onchange = () => {
+    const files = Array.from(input.files).sort((a,b) => a.name.localeCompare(b.name));
+    pushUndo();
+    files.forEach((file, fi) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const lines = e.target.result.split('\n')
+          .map(l => l.trim())
+          .filter(l => l && !l.startsWith('#'));
+        const data = lines.map(l => new Int16Array(l.split(',').map(Number)));
+        const rows = data.length, cols = data[0]?.length || 0;
+        if (fi === 0) { state.rows = rows; state.cols = cols; }
+        while (state.layers.length <= fi) addLayer();
+        state.layers[fi].data = data;
+        state.layers[fi].name = file.name.replace(/\.csv$/,'');
+        document.getElementById('map-cols').value = cols;
+        document.getElementById('map-rows').value = rows;
+        renderLayersList();
+        updateProps();
+        renderMap();
+      };
+      reader.readAsText(file);
+    });
+  };
+  input.click();
+}
+
+function exportAttrs() {
+  // Export as Python dict literal (for direct use in KAGRA)
+  let lines = ['# KAGRA tile_attrs — paste directly into your game script',
+               '# Generated by KAGRA Map Editor', 'TILE_ATTRS = {'];
+  Object.entries(state.tileAttrs).forEach(([tid, flags]) => {
+    if (!flags) return;
+    const names = ATTR_FLAGS.map((f,i) => (flags & f) ? `TILE_${ATTR_NAMES[i]}` : null).filter(Boolean);
+    lines.push(`    ${tid}: ${names.join(' | ')},  # ${flags.toString(16).padStart(2,'0').toUpperCase()}`);
+  });
+  lines.push('}');
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'tile_attrs.py';
+  a.click();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Modal / New Map
+// ═══════════════════════════════════════════════════════════
+
+function showNewMapModal() {
+  document.getElementById('modal-new').classList.remove('hidden');
+}
+function hideModal(id) {
+  document.getElementById(id).classList.add('hidden');
+}
+function createNewMap() {
+  const cols = parseInt(document.getElementById('new-cols').value) || 20;
+  const rows = parseInt(document.getElementById('new-rows').value) || 15;
+  const fill = parseInt(document.getElementById('new-fill').value) ?? -1;
+  state.cols = cols; state.rows = rows;
+  document.getElementById('map-cols').value = cols;
+  document.getElementById('map-rows').value = rows;
+  state.layers.forEach(l => {
+    l.data = Array.from({length: rows}, () => new Int16Array(cols).fill(fill));
+  });
+  state.undoStack = []; state.redoStack = [];
+  hideModal('modal-new');
+  updateProps();
+  renderMap();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Props / Status
+// ═══════════════════════════════════════════════════════════
+
+function updateProps() {
+  document.getElementById('prop-mapsize').textContent = `${state.cols} × ${state.rows}`;
+  document.getElementById('prop-tilesize').textContent = `${state.tileW} × ${state.tileH}`;
+  document.getElementById('prop-layer').textContent = state.layers[state.activeLayer]?.name || '—';
+}
+
+function updateStatus() {
+  document.getElementById('status-tile').textContent =
+    state.tilesetImg ? `#${state.selectedTile}` : '—';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Keyboard shortcuts
+// ═══════════════════════════════════════════════════════════
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  const k = e.key.toLowerCase();
+  if (e.ctrlKey || e.metaKey) {
+    if (k === 'z') { e.preventDefault(); undo(); return; }
+    if (k === 'y') { e.preventDefault(); redo(); return; }
+  }
+  switch(k) {
+    case 'p': setTool('pencil'); break;
+    case 'e': setTool('eraser'); break;
+    case 'f': setTool('fill');   break;
+    case 'i': setTool('picker'); break;
+    case 'r': setTool('rect');   break;
+    case 'g': toggleGrid();      break;
+    case '+': case '=': setZoom(state.zoom * 1.25); break;
+    case '-': setZoom(state.zoom * 0.8); break;
+    case '0': fitZoom(); break;
+    case '[':
+      state.selectedTile = Math.max(0, state.selectedTile - 1);
+      updateTsSelection(); updateStatus(); break;
+    case ']':
+      state.selectedTile = Math.min(state.tsCols * state.tsRows - 1, state.selectedTile + 1);
+      updateTsSelection(); updateStatus(); break;
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+//  Init
+// ═══════════════════════════════════════════════════════════
+
+initLayers();
+renderLayersList();
+updateProps();
+updateStatus();
+renderMap();
+fitZoom();
+</script>
+</body>
+</html>
