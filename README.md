@@ -45,7 +45,7 @@ SPACE (hold) – overhead camera view
 
 ESC – exit
 
-Make sure you have a VRM model at assets/model/player.vrm (you can place any VRM there).
+Make sure you have a VRM model at assets/player.vrm (you can place any VRM there).
 
 🧪 Minimal Code Example
 python
