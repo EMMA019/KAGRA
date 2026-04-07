@@ -1,0 +1,88 @@
+# Rust ビルド成果物
+target/
+Cargo.lock
+*.pdb
+*.dll
+*.so
+*.pyd
+
+# Python キャッシュ
+__pycache__/
+*.pyc
+
+# 仮想環境
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS ゴミ
+.DS_Store
+Thumbs.db
+
+# 大きなアセット（サンプル以外は含めない）
+*.fbx
+*.bvh
+*.vrm
+*.png
+*.jpg
+*.wav
+*.ogg
+*.mp3
+*.ttf
+*.ttc
+
+# マップやタイルセットの大規模フォルダ
+map/
+assets/img/
+assets/rigs/
+assets/maps/
+assets/prefabs/
+assets/scenes/
+assets/data/
+
+# エンジン内部の開発ツール（エンドユーザー不要）
+kagra/editor_app.py
+kagra/hierarchy_panel.py
+kagra/launcher.py
+kagra/panels.py
+kagra/scene_view.py
+kagra/timeline_editor.py
+kagra/asset_browser.py
+kagra/asset_db.py
+kagra/asset_loaders.py
+kagra/asset_manifest.py
+kagra/asset_scan.py
+kagra/asset_types.py
+kagra/bgm_sync.py
+kagra/debug_tools.py
+kagra/effects.py
+kagra/mapgen.py
+kagra/mapscene.py
+kagra/prefab.py
+kagra/scene_io.py
+kagra/scene_loader.py
+kagra/scene_runtime.py
+kagra/scenegraph.py
+kagra/systems.py
+kagra/timeline.py
+kagra/anim_io.py
+kagra/anim_state.py
+kagra/animation.py
+
+# デバッグ・テスト用スクリプト
+examples/debug*.py
+examples/2D*.py
+examples/quiz.py
+examples/vrm_stage.py
+
+# その他
+save_data.json
+scene.json
+keymap.json
+reorganize.ps1
+template/
+*.log
+backup_removed/

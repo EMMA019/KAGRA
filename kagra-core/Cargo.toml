@@ -1,0 +1,28 @@
+[package]
+name = "kagra-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "kagra_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3       = { version = "0.21", features = ["extension-module"] }
+winit      = "0.29"
+wgpu       = "0.19"
+bytemuck   = { version = "1", features = ["derive"] }
+pollster   = "0.3"
+log        = "0.4"
+env_logger = "0.11"
+rodio      = { version = "0.17", features = ["mp3", "wav", "vorbis"] }
+image      = { version = "0.24", default-features = false, features = ["png", "jpeg"] }
+ab_glyph   = "0.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+nalgebra = "0.32"
+ufbx    = "0.9.0"
+
+[profile.release]
+opt-level = 3
+lto = true
