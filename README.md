@@ -1,6 +1,8 @@
 KAGRA Game Engine
 KAGRA is a hybrid game engine combining Python (easy scripting) and Rust (high‑performance rendering, VRM, FBX).
 It comes with two complete sample games and experimental FBX/BVH retargeting.
+<img width="1919" height="1029" alt="image" src="https://github.com/user-attachments/assets/e8c94080-0465-498e-aca9-d80e71165308" />
+<img width="1276" height="744" alt="image" src="https://github.com/user-attachments/assets/4d9f3564-b926-492a-abb8-5000581cc1ed" />
 
 ✨ Features
 VRM avatars – load, animate, SpringBone physics
