@@ -5,7 +5,6 @@ It comes with a complete 3D tilemap maze, VRM avatar support, and **experimental
 
 <img width="1919" height="1029" alt="image" src="https://github.com/user-attachments/assets/c669cddd-9f4c-4d36-9f07-8a965a0a996a" />
 
-*Replace with an actual screenshot of the maze game*
 
 ## ✨ Features
 
