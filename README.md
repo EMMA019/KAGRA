@@ -126,7 +126,7 @@ KAGRA/
 
 │   ├── 3Dmaze.py
 
-│   └── defend_crystal.py
+│   └── 2Daction.py
 
 ├── assets/              # Models, textures, fonts (minimal)
 
