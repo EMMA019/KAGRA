@@ -6,7 +6,7 @@
   SPACE長押し : 上空から迷路確認
   ESC : 終了
 
-assets/model/player.vrm を置くと VRM キャラで表示。
+assets/player.vrm を置くと VRM キャラで表示。
 """
 import math, random, os, struct, zlib, tempfile
 import kagra
@@ -19,7 +19,7 @@ TW = TH = 48
 
 TILE_FLOOR, TILE_WALL, TILE_GOAL, TILE_ITEM = 0, 1, 2, 3
 ATTRS    = {TILE_WALL: TILE_SOLID}
-VRM_PATH  = "assets/model/player.vrm"
+VRM_PATH  = "assets/player.vrm"
 FONT_PATH = "C:/Windows/Fonts/meiryo.ttc"
 
 UNIT   = 2.0   # 1タイル = 2.0 ワールド単位
