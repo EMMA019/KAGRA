@@ -1,46 +1,46 @@
-# KAGRA Game Engine
+# KAGRA – Hybrid Python/Rust Game Engine
 
-**KAGRA** is a hybrid game engine combining **Python** (easy scripting) and **Rust** (high-performance rendering, VRM, FBX). It features a built-in 3D tilemap maze, VRM avatar support, and experimental FBX/BVH retargeting.
+**KAGRA** is a lightweight game engine that combines **Python** (easy scripting) with **Rust** (high‑performance rendering, VRM, FBX).  
+It comes with a complete 3D tilemap maze, VRM avatar support, and **experimental FBX/BVH retargeting**.
 
-![3D Maze Screenshot](https://via.placeholder.com/800x400?text=3D+Maze+Explorer)  
-*Replace with actual screenshot later*
+<img width="1919" height="1029" alt="image" src="https://github.com/user-attachments/assets/c669cddd-9f4c-4d36-9f07-8a965a0a996a" />
+
+*Replace with an actual screenshot of the maze game*
 
 ## ✨ Features
 
-- **VRM avatar** loading, animation, and SpringBone physics
-- **3D tilemap engine** with walls, floors, items, and goal
-- **Top‑down physics** (Rigidbody, BoxCollider) for tile‑based movement
-- **Camera3D** with orbit, zoom, and follow modes
-- **FBX / BVH** animation retargeting (experimental)
-- **Rust‑powered** GPU skinning and rendering (via `wgpu`)
-- **Minimal dependencies** – just Python and Rust toolchain
+- **VRM avatars** – load, animate, and simulate SpringBone physics
+- **3D tilemap engine** – walls, floors, items, goal, dynamic visibility
+- **Top‑down physics** – Rigidbody, BoxCollider, tile‑based collision
+- **Camera3D** – orbit, zoom, follow, overhead mode
+- **FBX / BVH retargeting** – experimental, Mixamo‑ready (world‑space delta method)
+- **Rust core** – GPU skinning, `wgpu` rendering, high performance
+- **Minimal setup** – just Python, Rust, and `maturin`
 
 ## 📦 Requirements
 
-- Python 3.10 or later
-- Rust (latest stable) + Cargo
-- `maturin` (Python‑Rust binding tool)
+- **Python** 3.10 or later
+- **Rust** (latest stable) + Cargo
+- `maturin` – install via `pip install maturin`
 
-Install `maturin`:
-```bash
-pip install maturin
-🚀 Installation
-Clone the repository and build the Rust core:
+## 🚀 Quick Start (Windows CMD)
 
-bash
+```cmd
 git clone https://github.com/EMMA019/KAGRA.git
 cd KAGRA
+python -m venv .venv
+.venv\Scripts\activate.bat
 maturin develop
-This compiles the Rust extension (kagra_core) and installs the Python package in development mode.
+This builds the Rust core and installs the kagra package into the virtual environment.
 
 🎮 Run the 3D Maze Sample
-bash
+cmd
 python examples/3Dmaze.py
-Controls:
+Controls
 
-↑ ↓ – move forward / backward
+↑ / ↓ – move forward/backward
 
-← → – rotate (camera follows)
+← / → – rotate (camera follows)
 
 SPACE (hold) – overhead camera view
 
@@ -48,7 +48,7 @@ ESC – exit
 
 Make sure you have a VRM model at assets/model/player.vrm (you can place any VRM there).
 
-🧪 Basic API Example
+🧪 Minimal Code Example
 python
 import kagra
 from kagra.camera3d import Camera3D
@@ -56,7 +56,7 @@ from kagra.camera3d import Camera3D
 class MyScene(kagra.Scene):
     def on_enter(self):
         self.cam = Camera3D(1280, 720)
-        self.cam.use_orbit(radius=3.0, target=(0,0.9,0))
+        self.cam.use_orbit(radius=3.0, target=(0, 0.9, 0))
         self.avatar = kagra.avatar("assets/model/player.vrm")
         self.avatar.play("idle")
 
@@ -65,7 +65,7 @@ class MyScene(kagra.Scene):
         self.cam.update(kagra._engine)
 
     def draw(self):
-        kagra.cls(30,40,60)
+        kagra.cls(30, 40, 60)
         kagra.draw_vrm(self.avatar.vrm_id)
 
 kagra.init()
@@ -75,26 +75,26 @@ text
 KAGRA/
 ├── kagra/               # Python API layer
 ├── kagra-core/          # Rust core (rendering, VRM, FBX)
-├── examples/            # Sample games (3Dmaze.py, etc.)
+├── examples/            # Sample games (3Dmaze.py, ...)
 ├── assets/              # Models, textures, fonts
 ├── pyproject.toml       # Python build config
 ├── Cargo.toml           # Rust build config
 └── README.md
-⚠️ Notes on FBX / BVH Retargeting
-Mixamo FBX files often have a -90° X‑axis pre‑rotation. The engine attempts to correct this using a world‑space delta method.
+⚠️ Experimental: FBX / BVH Retargeting
+Mixamo FBX files often have a -90° X‑axis pre‑rotation.
+
+The engine corrects this using a world‑space delta method (no external tools required).
 
 For best results, provide a T‑pose FBX as bind pose (e.g. assets/T-Pose.fbx).
 
-Retargeting is experimental – walking animations may still exhibit side‑to‑side sway or floating.
+Retargeting is still experimental – some animations may show side‑to‑side sway or floating.
 
 🤝 Contributing
-Issues and pull requests are welcome. Please follow the existing code style (Python with type hints, Rust with cargo fmt).
+Issues and pull requests are welcome.
+Please follow the existing style: Python with type hints, Rust with cargo fmt.
 
 📄 License
-MIT (or your chosen license – add a LICENSE file)
+MIT – add a LICENSE file if you wish.
 
-KAGRA – named after the Kamioka Gravitational Wave Detector. Because game engines should be solid and precise. 🚀
-
-text
-
-You can replace the placeholder screenshot link later. Also consider adding a `LICENSE` file (e.g., MIT). After saving, stage and commit it:
+KAGRA – named after the Kamioka Gravitational Wave Detector.
+Solid, precise, and built for fun.
