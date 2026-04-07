@@ -117,14 +117,23 @@ Retargeting is still experimental – some animations may show side‑to‑side 
 📂 Project Structure
 text
 KAGRA/
+
 ├── kagra/               # Python API layer
+
 ├── kagra-core/          # Rust core (rendering, VRM, FBX)
+
 ├── examples/            # Sample games
+
 │   ├── 3Dmaze.py
+
 │   └── defend_crystal.py
+
 ├── assets/              # Models, textures, fonts (minimal)
+
 ├── pyproject.toml
+
 ├── Cargo.toml
+
 └── README.md
 🤝 Contributing
 Issues and pull requests are welcome.
