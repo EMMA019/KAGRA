@@ -10,6 +10,7 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = ["extension-module"]
 extension-module = ["pyo3/extension-module"]
+# Wasm / モバイル共有コアは別クレート `kagra-shared` を使う。
 
 [dependencies]
 pyo3       = { version = "0.21" }
@@ -29,6 +30,4 @@ ufbx    = "0.9.0"
 rayon    = "1.10"
 thiserror = "1.0"
 
-[profile.release]
-opt-level = 3
-lto = true
+# release プロファイルはワークスペース root Cargo.toml を参照

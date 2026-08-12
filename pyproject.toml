@@ -12,6 +12,8 @@ license = { text = "MIT" }
 [project.optional-dependencies]
 facetrack = ["mediapipe", "opencv-python"]
 dev = ["pytest>=7.0"]
+mcp = ["mcp>=1.1"]
+agent = ["mcp>=1.1", "pytest>=7.0"]
 
 [tool.maturin]
 manifest-path = "kagra-core/Cargo.toml"

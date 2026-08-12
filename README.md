@@ -79,6 +79,26 @@ python examples/2Daction.py
 
 No external assets required – textures are generated procedurally.
 
+## Agent loop
+
+```cmd
+python -m kagra.verify examples/verify_scenarios/blank_smoke.json
+python tools/gen_api_index.py
+```
+
+MCP (Cursor): `.cursor/mcp.json` → tools `kagra_api_search` / `kagra_verify` / `kagra_render`.
+Contracts: `kagra.contracts.resolve_asset`, touch: `kagra.touch.VirtualPad`.
+
+## Mobile / Wasm
+
+Shared Rust crate **`kagra-shared`** (C ABI + wasm-bindgen).  
+Android Gradle app: `mobile/android/` · iOS SwiftPM: `mobile/ios/` · see `mobile/README.md`.
+
+```bash
+cargo test -p kagra-shared
+./scripts/build_wasm.sh
+```
+
 ## Reference: VRM Orb Rush
 
 ```cmd

@@ -1,0 +1,14 @@
+{
+  "name": "blank_smoke",
+  "inline": {
+    "width": 320,
+    "height": 180,
+    "max_frames": 10,
+    "screenshot_at": 5,
+    "out": "scratch/verify_blank.png",
+    "cls": [28, 34, 48]
+  },
+  "timeout_sec": 60,
+  "expect_files": ["scratch/verify_blank.png"],
+  "min_file_bytes": 200
+}

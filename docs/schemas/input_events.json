@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kagra.dev/schemas/input_events.json",
+  "title": "KAGRA Pointer / Pad Events",
+  "description": "Desktop・モバイル・Wasm で共有する入力イベント契約",
+  "type": "object",
+  "properties": {
+    "pointers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "x", "y", "phase"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 0 },
+          "x": { "type": "number" },
+          "y": { "type": "number" },
+          "phase": {
+            "type": "string",
+            "enum": ["begin", "move", "end", "cancel"]
+          },
+          "pressure": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "pad": {
+      "type": "object",
+      "properties": {
+        "x": { "type": "number", "minimum": -1, "maximum": 1 },
+        "y": { "type": "number", "minimum": -1, "maximum": 1 }
+      }
+    },
+    "buttons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "down"],
+        "properties": {
+          "name": { "type": "string" },
+          "down": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

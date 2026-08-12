@@ -1,0 +1,7 @@
+{
+  "name": "orb_rush_smoke",
+  "script": "scratch/smoke_orb_rush.py",
+  "timeout_sec": 180,
+  "expect_files": ["scratch/orb_rush_smoke.png"],
+  "min_file_bytes": 5000
+}

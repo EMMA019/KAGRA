@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **302**
+エントリ数: **314**
 
 ## Functions
 
@@ -172,9 +172,11 @@
 | `AnimationClip` | `class AnimationClip  (from kagra.skeleton)` (class) |
 | `AnimationTrack` | `class AnimationTrack  (from kagra.skeleton)` (class) |
 | `AnimatorComponent` | `class AnimatorComponent  (from kagra.entity)` (class) |
+| `apply_pad` | `export apply_pad  (from kagra.touch)` (export) |
 | `ArmIK` | `class ArmIK  (from kagra.vrm_ik)` (class) |
 | `asset_debug_info` | `export asset_debug_info  (from kagra.debug_tools)` (export) |
 | `AssetDatabase` | `class AssetDatabase  (from kagra.asset_db)` (class) |
+| `AssetKind` | `class AssetKind  (from kagra.contracts)` (class) |
 | `AssetManifest` | `class AssetManifest  (from kagra.asset_manifest)` (class) |
 | `assets` | `assets` (object) |
 | `Attachment` | `class Attachment  (from kagra.skeleton)` (class) |
@@ -194,6 +196,7 @@
 | `Component` | `class Component  (from kagra.entity)` (class) |
 | `DataObject` | `class DataObject  (from kagra.scriptable)` (class) |
 | `DataRegistry` | `class DataRegistry  (from kagra.scriptable)` (class) |
+| `describe_environment` | `export describe_environment  (from kagra.contracts)` (export) |
 | `DevConsole` | `class DevConsole  (from kagra.console)` (class) |
 | `DialogScript` | `class DialogScript  (from kagra.ui)` (class) |
 | `Easing` | `class Easing  (from kagra.ui)` (class) |
@@ -216,7 +219,9 @@
 | `http_tick` | `export http_tick  (from kagra.http_client)` (export) |
 | `HttpClient` | `class HttpClient  (from kagra.http_client)` (class) |
 | `HttpResponse` | `class HttpResponse  (from kagra.http_client)` (class) |
+| `inject_pointer` | `export inject_pointer  (from kagra.touch)` (export) |
 | `InstanceBatch` | `class InstanceBatch  (from kagra.instances)` (class) |
+| `KagraContractError` | `class KagraContractError  (from kagra.contracts)` (class) |
 | `KEY_DOWN` | `KEY_DOWN` (object) |
 | `KEY_ESCAPE` | `KEY_ESCAPE` (object) |
 | `KEY_LEFT` | `KEY_LEFT` (object) |
@@ -235,6 +240,7 @@
 | `LiveScore` | `class LiveScore  (from kagra.bgm_sync)` (class) |
 | `load_clips_into` | `export load_clips_into  (from kagra.anim_io)` (export) |
 | `load_entity` | `export load_entity  (from kagra.scene_loader)` (export) |
+| `load_scenario` | `export load_scenario  (from kagra.verify)` (export) |
 | `load_scene` | `export load_scene  (from kagra.scene_loader)` (export) |
 | `load_state_machine` | `export load_state_machine  (from kagra.anim_io)` (export) |
 | `load_timeline` | `export load_timeline  (from kagra.anim_io)` (export) |
@@ -250,16 +256,21 @@
 | `Panel` | `class Panel  (from kagra.ui)` (class) |
 | `Physics3D` | `class Physics3D  (from kagra.physics3d)` (class) |
 | `PhysicsSystem` | `class PhysicsSystem  (from kagra.physics)` (class) |
+| `PointerEvent` | `class PointerEvent  (from kagra.touch)` (class) |
+| `PointerPhase` | `class PointerPhase  (from kagra.touch)` (class) |
 | `PoseKeyframe` | `class PoseKeyframe  (from kagra.vrm_anim)` (class) |
 | `Prefab` | `class Prefab  (from kagra.prefab)` (class) |
 | `ProgressBar` | `class ProgressBar  (from kagra.ui)` (class) |
 | `RectRenderer` | `class RectRenderer  (from kagra.entity)` (class) |
 | `register_spawn_rule` | `export register_spawn_rule  (from kagra.scriptable)` (export) |
 | `reset_global_bus` | `export reset_global_bus  (from kagra.event_bus)` (export) |
+| `resolve_asset` | `export resolve_asset  (from kagra.contracts)` (export) |
 | `RhythmJudge` | `class RhythmJudge  (from kagra.bgm_sync)` (class) |
 | `Rigidbody` | `class Rigidbody  (from kagra.physics)` (class) |
 | `RigidBody3D` | `class RigidBody3D  (from kagra.physics3d)` (class) |
 | `RigRenderer` | `class RigRenderer  (from kagra.entity)` (class) |
+| `run_scenario` | `export run_scenario  (from kagra.verify)` (export) |
+| `run_scenario_path` | `export run_scenario_path  (from kagra.verify)` (export) |
 | `save_all` | `export save_all  (from kagra.anim_io)` (export) |
 | `save_clips` | `export save_clips  (from kagra.anim_io)` (export) |
 | `save_scene` | `export save_scene  (from kagra.scene_io)` (export) |
@@ -311,6 +322,7 @@
 | `TwoBoneIK` | `class TwoBoneIK  (from kagra.vrm_ik)` (class) |
 | `UIGroup` | `class UIGroup  (from kagra.ui)` (class) |
 | `VBox` | `class VBox  (from kagra.ui)` (class) |
+| `VirtualPad` | `class VirtualPad  (from kagra.touch)` (class) |
 | `voicevox_speak` | `export voicevox_speak  (from kagra.http_client)` (export) |
 | `VrmAnimator` | `class VrmAnimator  (from kagra.vrm_anim)` (class) |
 | `VrmModel` | `class VrmModel  (from kagra.vrm_loader)` (class) |

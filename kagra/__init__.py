@@ -1417,7 +1417,17 @@ def avatar(vrm_path: str) -> "VrmAvatar":
         print(self.av.clips)
     """
     _check()
+    from pathlib import Path as _Path
     from kagra.vrm_avatar import VrmAvatar
+    p = _Path(vrm_path)
+    if not p.is_file():
+        try:
+            from kagra.contracts import AssetKind, resolve_asset
+            resolved = resolve_asset(AssetKind.VRM, vrm_path)
+            vrm_path = str(resolved)
+        except Exception:
+            # 従来どおり VrmAvatar 側で失敗させる
+            pass
     return VrmAvatar(vrm_path)
 
 def load_fbx(path: str, clip_name: str = None) -> "FbxMotion":
@@ -1555,6 +1565,19 @@ from kagra.hot_reload import HotReloader, make_hot_scene
 # ═══════════════════════════════════════════════════════════════
 
 from kagra.console import DevConsole, get_console
+
+# ═══════════════════════════════════════════════════════════════
+#  Agent contracts / verify / touch（モバイル入口）
+# ═══════════════════════════════════════════════════════════════
+
+from kagra.contracts import (
+    AssetKind,
+    KagraContractError,
+    describe_environment,
+    resolve_asset,
+)
+from kagra.verify import run_scenario, run_scenario_path, load_scenario
+from kagra.touch import VirtualPad, PointerEvent, PointerPhase, apply_pad, inject_pointer
 
 
 # ═══════════════════════════════════════════════════════════════

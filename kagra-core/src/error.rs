@@ -34,9 +34,26 @@ pub enum KaguraError {
     Other(String),
 }
 
+impl KaguraError {
+    /// エージェントが機械的に分岐できる短いコード。
+    pub fn code(&self) -> &'static str {
+        match self {
+            KaguraError::Gpu(_) => "GPU",
+            KaguraError::Io(_) => "IO",
+            KaguraError::VrmParse(_) => "VRM_PARSE",
+            KaguraError::FbxLoad(_) => "FBX_LOAD",
+            KaguraError::Texture(_) => "TEXTURE",
+            KaguraError::BufferOverflow { .. } => "BUFFER_OVERFLOW",
+            KaguraError::MutexPoisoned => "MUTEX_POISONED",
+            KaguraError::RigNotFound(_) => "RIG_NOT_FOUND",
+            KaguraError::Other(_) => "OTHER",
+        }
+    }
+}
+
 impl From<KaguraError> for PyErr {
     fn from(err: KaguraError) -> PyErr {
-        PyRuntimeError::new_err(err.to_string())
+        PyRuntimeError::new_err(format!("[{}] {}", err.code(), err))
     }
 }
 

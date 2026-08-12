@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "kagra": {
+      "command": "python",
+      "args": ["tools/mcp_kagra/server.py"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KAGRA shared Wasm smoke</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #1c2230; color: #e8ecf4; margin: 0; }
+    canvas { display: block; width: 100vw; height: 70vh; background: #10151f; touch-action: none; }
+    #log { padding: 12px; font: 14px/1.4 ui-monospace, monospace; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="log">loading…</div>
+  <script type="module">
+    // wasm-pack 出力を想定: pkg/kagra_shared.js
+    // ビルド: wasm-pack build kagra-shared --target web --features wasm
+    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js";
+
+    const log = (m) => { document.getElementById("log").textContent = m; };
+    await init();
+    const session = new WasmSession();
+    const canvas = document.getElementById("c");
+    const resize = () => {
+      const w = canvas.clientWidth | 0, h = canvas.clientHeight | 0;
+      canvas.width = w; canvas.height = h;
+      session.createSurface(w, h);
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const phase = { begin: 0, move: 1, end: 2, cancel: 3 };
+    canvas.addEventListener("pointerdown", (e) => {
+      session.pushPointer(e.pointerId >>> 0, e.offsetX, e.offsetY, phase.begin, e.pressure || 1);
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      if (e.buttons) session.pushPointer(e.pointerId >>> 0, e.offsetX, e.offsetY, phase.move, e.pressure || 1);
+    });
+    canvas.addEventListener("pointerup", (e) => {
+      session.pushPointer(e.pointerId >>> 0, e.offsetX, e.offsetY, phase.end, 0);
+    });
+
+    const loop = () => {
+      const f = session.requestFrame();
+      log(`kagra-shared ${sharedVersion()}  frame=${f}\n${session.statsJson()}`);
+      requestAnimationFrame(loop);
+    };
+    loop();
+  </script>
+</body>
+</html>
