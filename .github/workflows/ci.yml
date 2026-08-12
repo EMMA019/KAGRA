@@ -1,0 +1,132 @@
+# KAGRA CI
+# ============================================================
+# 1) Rust unit tests (GPU 不要)
+# 2) Python pure unit tests (maturin 不要 / golden 除外)
+# 3) Golden image regression (windows + maturin + GPU)
+# 4) maturin build + import smoke (3 OS × 3 Python)
+
+name: CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cargo test (no extension-module)
+        working-directory: kagra-core
+        run: cargo test --no-default-features
+
+  python-unit:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install pytest
+        run: pip install "pytest>=7.0"
+
+      - name: Run pure Python unit tests
+        run: pytest tests -m "not golden"
+
+  # GPU ヘッドレスのゴールデン画像回帰。Windows は DXGI + 画面外ウィンドウの
+  # 経路が実機検証済みなので、まず windows-latest のみで回す。
+  golden:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install maturin + pytest
+        run: |
+          pip install --upgrade pip
+          pip install maturin "pytest>=7.0"
+
+      - name: Build and install editable
+        run: maturin develop --release
+
+      - name: Run golden image tests
+        run: pytest tests -m golden -v
+
+      - name: Upload diffs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-diffs
+          path: scratch/golden_diffs/
+          if-no-files-found: ignore
+
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.10", "3.11", "3.12"]
+      fail-fast: false
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install build dependencies
+        run: |
+          pip install --upgrade pip
+          pip install maturin
+
+      - name: Build kagra_core with maturin
+        run: maturin build --release --out dist
+
+      - name: Install built wheel
+        shell: bash
+        run: pip install dist/*.whl
+
+      - name: Import test (headless)
+        shell: python
+        run: |
+          import kagra
+          print("kagra imported OK")
+          print("get_engine:", hasattr(kagra, "get_engine"))
+          print("draw_polygon:", hasattr(kagra, "draw_polygon"))
+          print("polygon:", hasattr(kagra, "polygon"))
+          print("font:", hasattr(kagra, "font"))
+          print("circle_outline:", hasattr(kagra, "circle_outline"))
+          print("API check OK")

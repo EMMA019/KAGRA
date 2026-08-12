@@ -133,6 +133,16 @@ class _Joint:
     channels: list[str]
     vrm_name: Optional[str]
 
+def _qinv(q: list) -> list:
+    """単位クォータニオンの逆。"""
+    return [-q[0], -q[1], -q[2], q[3]]
+
+
+def _quat_normalize(q: list) -> list:
+    n = math.sqrt(q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]) or 1.0
+    return [q[0]/n, q[1]/n, q[2]/n, q[3]/n]
+
+
 @dataclass
 class BvhMotion:
     """パース済み BVH モーションデータ。
@@ -142,10 +152,12 @@ class BvhMotion:
         frames:     フラットなチャンネル値リスト per フレーム
         fps:        フレームレート
         duration:   総再生時間（秒）
+        up_axis:    'y' | 'z' — ルート位置の軸変換に使う
     """
     _joints:    list[_Joint]
     frame_time: float
     frames:     list[list[float]]
+    up_axis:    str = "y"
     _cache:     Optional[list] = field(default=None, repr=False)
 
     @property
@@ -156,78 +168,101 @@ class BvhMotion:
     def duration(self) -> float:
         return len(self.frames) * self.frame_time
 
-    def to_clip(self) -> list:
-        """VrmAvatar が受け取れる [(bones_dict, duration, root_pos), ...] に変換する。
+    def _remap_pos(self, x: float, y: float, z: float) -> tuple[float, float, float]:
+        """BVH 位置 → VRM (Y-up)。"""
+        if self.up_axis == "z":
+            # Z-up → Y-up: (x, y, z) → (x, z, -y)
+            return (x, z, -y)
+        return (x, y, z)
 
-        戻り値: [(bones_dict, duration, (rx,ry,rz)), ...]
-        root_pos は BVH のルートボーン位置（VrmAvatar がオフセットとして適用）
+    def _remap_hips_quat(self, q: list) -> list:
+        """Hips 回転の軸合わせ。Y-up はそのまま。"""
+        if self.up_axis != "z":
+            return q
+        # Z-up → Y-up: X 軸 -90° で共役
+        q_rot = [-0.7071067811865475, 0.0, 0.0, 0.7071067811865476]
+        q_rot_inv = [0.7071067811865475, 0.0, 0.0, 0.7071067811865476]
+        return _qmul(_qmul(q_rot, q), q_rot_inv)
+
+    def _frame_abs(self, frame_vals: list[float]) -> tuple[dict, tuple[float, float, float]]:
+        """1 フレーム分の絶対ローカル回転（と Hips 位置）を返す。"""
+        bones: dict = {}
+        hips_pos = (0.0, 0.0, 0.0)
+        offset = 0
+        for joint in self._joints:
+            n = len(joint.channels)
+            vals = frame_vals[offset:offset + n]
+            offset += n
+
+            if joint.name in ("Root", "root") and joint.vrm_name is None:
+                px = py = pz = None
+                for ch, v in zip(joint.channels, vals):
+                    chu = ch.upper()
+                    if "XPOS" in chu: px = v
+                    elif "YPOS" in chu: py = v
+                    elif "ZPOS" in chu: pz = v
+                if None not in (px, py, pz):
+                    hips_pos = self._remap_pos(px, py, pz)
+
+            if joint.vrm_name is None:
+                continue
+
+            pos = {}
+            for ch, v in zip(joint.channels, vals):
+                chu = ch.upper()
+                if "XPOS" in chu: pos["x"] = v
+                elif "YPOS" in chu: pos["y"] = v
+                elif "ZPOS" in chu: pos["z"] = v
+
+            ro, rv = [], []
+            for ch, v in zip(joint.channels, vals):
+                if "ROTATION" in ch.upper():
+                    ro.append(ch[0].upper())
+                    rv.append(v)
+
+            if len(ro) != 3:
+                continue
+
+            q = euler_to_quat(rv, "".join(ro))
+            if joint.vrm_name == "J_Bip_C_Hips":
+                q = self._remap_hips_quat(q)
+                if len(pos) == 3:
+                    hips_pos = self._remap_pos(pos["x"], pos["y"], pos["z"])
+
+            bones[joint.vrm_name] = _quat_normalize(q)
+
+        return bones, hips_pos
+
+    def to_clip(self) -> list:
+        """VrmAvatar 向け [(bones_dict, duration, root_pos), ...] に変換する。
+
+        各ボーン回転は **フレーム0（レスト）に対するデルタ**。
+        `_Animator` が `bind_q * delta` で適用するため、FBX パスと同じ意味になる。
         """
         if self._cache is not None:
             return self._cache
+        if not self.frames:
+            self._cache = []
+            return self._cache
+
+        rest_bones, rest_pos = self._frame_abs(self.frames[0])
+        rest_inv = {n: _qinv(q) for n, q in rest_bones.items()}
 
         clip = []
         for frame_vals in self.frames:
-            bones: dict = {}
-            root_pos = None
-            offset = 0
-            for joint in self._joints:
-                n = len(joint.channels)
-                vals = frame_vals[offset:offset+n]
-                offset += n
+            abs_bones, abs_pos = self._frame_abs(frame_vals)
+            deltas = {}
+            for name, q in abs_bones.items():
+                inv = rest_inv.get(name, [0.0, 0.0, 0.0, 1.0])
+                deltas[name] = _quat_normalize(_qmul(inv, q))
 
-                # Root ボーンの位置を root_pos として保存（set_vrm_offset に使う）
-                # BVH: X=右, Y=前後, Z=上下(Z-up)
-                # VRM: X=右, Y=上下, Z=前後(Y-up)
-                # → vrm_x=bvh_x, vrm_y=bvh_z, vrm_z=-bvh_y
-                if joint.name in ('Root', 'root') and root_pos is None:
-                    px=py=pz=None
-                    for ch, v in zip(joint.channels, vals):
-                        chu = ch.upper()
-                        if 'XPOS' in chu: px = v
-                        elif 'YPOS' in chu: py = v
-                        elif 'ZPOS' in chu: pz = v
-                    if px is not None and py is not None and pz is not None:
-                        # Z-up → Y-up 座標変換
-                        root_pos = (px, pz, -py)
-
-                if joint.vrm_name is None:
-                    continue
-
-                # 位置チャンネルを抽出
-                pos = {}
-                for ch, v in zip(joint.channels, vals):
-                    chu = ch.upper()
-                    if 'XPOS' in chu: pos['x'] = v
-                    elif 'YPOS' in chu: pos['y'] = v
-                    elif 'ZPOS' in chu: pos['z'] = v
-
-                # 回転チャンネルを抽出
-                ro, rv = [], []
-                for ch, v in zip(joint.channels, vals):
-                    if "ROTATION" in ch.upper():
-                        ro.append(ch[0].upper())
-                        rv.append(v)
-
-                if len(ro) == 3:
-                    q = euler_to_quat(rv, "".join(ro))
-                    if len(pos) == 3:
-                        # J_Bip_* 名のBVH（VRoid/Mixamo由来）は Y-up → 変換不要
-                        # 汎用BVH（Z-up）の場合は: (pos['x'], pos['z'], -pos['y'])
-                        if joint.vrm_name.startswith("J_Bip_"):
-                            bones[joint.vrm_name] = (
-                                pos['x'], pos['y'], pos['z'],
-                                q[0], q[1], q[2], q[3]
-                            )
-                        else:
-                            # 汎用BVH: Z-up → Y-up 座標変換
-                            bones[joint.vrm_name] = (
-                                pos['x'], pos['z'], -pos['y'],
-                                q[0], q[1], q[2], q[3]
-                            )
-                    else:
-                        bones[joint.vrm_name] = q
-
-            clip.append((bones, self.frame_time, root_pos or (0.0, 0.0, 0.0)))
+            # ルート位置はフレーム0からの相対（モデルを原点付近に保つ）
+            root_pos = (
+                abs_pos[0] - rest_pos[0],
+                abs_pos[1] - rest_pos[1],
+                abs_pos[2] - rest_pos[2],
+            )
+            clip.append((deltas, self.frame_time, root_pos))
 
         self._cache = clip
         return clip
@@ -288,21 +323,52 @@ def _parse_joint(lines: list[str], idx: int,
     return idx
 
 
-def load_bvh(path: str, extra_map: dict = None) -> BvhMotion:
+def _detect_up_axis(joints: list[_Joint], frames: list[list[float]]) -> str:
+    """Hips の位置チャンネルから up 軸を推定する。
+
+    Y の分散/平均絶対値が Z より大きければ Y-up（Mixamo 等）、
+    そうでなければ Z-up（古典 BVH）とみなす。
+    """
+    hips = next((j for j in joints if j.vrm_name == "J_Bip_C_Hips"), None)
+    if hips is None or not frames:
+        return "y"
+
+    # Hips チャンネルの先頭オフセットを求める
+    offset = 0
+    for j in joints:
+        if j is hips:
+            break
+        offset += len(j.channels)
+
+    ix = iy = iz = None
+    for i, ch in enumerate(hips.channels):
+        chu = ch.upper()
+        if "XPOS" in chu: ix = offset + i
+        elif "YPOS" in chu: iy = offset + i
+        elif "ZPOS" in chu: iz = offset + i
+    if None in (iy, iz):
+        return "y"
+
+    sample = frames[: min(30, len(frames))]
+    ys = [abs(f[iy]) for f in sample if len(f) > max(iy, iz)]
+    zs = [abs(f[iz]) for f in sample if len(f) > max(iy, iz)]
+    if not ys:
+        return "y"
+    mean_y = sum(ys) / len(ys)
+    mean_z = sum(zs) / len(zs)
+    return "y" if mean_y >= mean_z else "z"
+
+
+def load_bvh(path: str, extra_map: dict = None, up_axis: str = "auto") -> BvhMotion:
     """BVH ファイルを読み込む。
 
     Args:
         path:      BVH ファイルのパス
-        extra_map: 追加ボーン名マッピング {"BVH名": "J_Bip_*"} 
+        extra_map: 追加ボーン名マッピング {"BVH名": "J_Bip_*"}
+        up_axis:   'auto' | 'y' | 'z' — 座標軸。auto は Hips 位置から推定
 
     Returns:
         BvhMotion
-
-    Example::
-        motion = kagra.load_bvh("assets/dance.bvh")
-        print(f"{motion.fps:.0f}fps  {motion.duration:.1f}sec")
-        avatar.add_motion("dance", motion)
-        avatar.play("dance", loop=True)
     """
     extra = extra_map or {}
     text  = open(path, encoding="utf-8", errors="replace").read()
@@ -341,11 +407,21 @@ def load_bvh(path: str, extra_map: dict = None) -> BvhMotion:
     unmapped = [j.name for j in joints
                 if j.vrm_name is None and "end" not in j.name.lower()]
 
+    axis = up_axis.lower() if up_axis != "auto" else _detect_up_axis(joints, frames)
+    if axis not in ("y", "z"):
+        axis = "y"
+
     print(f"[BVH] {path}")
     print(f"  joints  : {len(joints)} ({mapped} mapped)")
     print(f"  frames  : {len(frames)}  {1/frame_time:.1f}fps  "
           f"{len(frames)*frame_time:.1f}sec")
+    print(f"  up_axis : {axis}")
     if unmapped:
         print(f"  unmapped: {unmapped}")
 
-    return BvhMotion(_joints=joints, frame_time=frame_time, frames=frames)
+    return BvhMotion(
+        _joints=joints,
+        frame_time=frame_time,
+        frames=frames,
+        up_axis=axis,
+    )

@@ -27,7 +27,7 @@ def _look_at(eye, target, up) -> list:
     uy2 = rz*fx - rx*fz
     uz2 = rx*fy - ry*fx
 
-    # 行優先 View 行列（wgpu 向け）
+    # 行優先 View 行列。列優先への変換はエンジン側 (update_camera_3d) が行う。
     # [  r.x   r.y   r.z  -dot(r,eye)  ]
     # [ u2.x  u2.y  u2.z  -dot(u2,eye) ]
     # [ -f.x  -f.y  -f.z   dot(f,eye)  ]
@@ -57,10 +57,14 @@ class Camera3D:
     """
     3D カメラ。
 
+    update() を一度呼ぶとエンジン組み込みカメラは無効になり、以降このクラスが
+    カメラの権威になる。engine.zoom_camera() 等の組み込み操作とは併用できない
+    （併用した場合はこちらが優先され、警告がログに出る）。
+
     Example::
         cam = Camera3D(1280, 720)
         cam.use_orbit(radius=2.5, target=(0, 0.9, 0))
-        cam.update(kagra._engine)   # update() 内で毎フレーム呼ぶ
+        cam.update(kagra.get_engine())   # update() 内で毎フレーム呼ぶ
     """
 
     def __init__(self, screen_w=1280, screen_h=720,

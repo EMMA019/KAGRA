@@ -1,29 +1,52 @@
-// kagra-core/src/window.rs
+// src/window.rs
 // winit イベントループ + Renderer ブリッジ
-// Phase 2: Window側も DrawCommand を一本化
+// 修正: Surface は RendererV2 が所有するため、window.rs では一切触らない
 
 use pyo3::prelude::*;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use winit::{
-    event::{ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
-    event_loop::EventLoop,
-    keyboard::PhysicalKey,
-    window::WindowBuilder,
+    event::{ElementState, Event, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    keyboard::{Key, KeyCode, PhysicalKey},
+    window::{WindowBuilder, WindowLevel},
 };
 
+/// エージェント検証用: 次フレーム開始前に適用される入力イベント
+#[derive(Clone, Debug)]
+pub enum InjectEvent {
+    KeyDown(u32),
+    KeyUp(u32),
+    MouseMove(f32, f32),
+    MouseDown(u32),
+    MouseUp(u32),
+}
+
 use crate::color::Color;
+use crate::error::lock_recover;
 use crate::input::InputState;
 use crate::renderer::{
-    DrawCommand, RectCommand, Renderer, SkinnedMeshCommand, SpriteCommand, TextCommand,
+    DrawCommand, PolygonCommand, RectCommand, RendererV2, SkinnedMeshCommand, SpriteCommand, TextCommand,
 };
 use crate::rig::{self, Rig};
+use crate::error::KaguraError;
 
 enum WindowDrawCommand {
     Clear(Color),
     Draw(DrawCommand),
+}
+
+#[derive(Clone)]
+pub enum WindowCommand {
+    Drag,
+    Focus,
+    SetPosition(i32, i32),
+    SetClickThrough(bool),
+    SetAlwaysOnTop(bool),
+    SetDecorations(bool),
+    SetTitle(String),
 }
 
 pub struct KagraWindow {
@@ -35,15 +58,38 @@ pub struct KagraWindow {
 
     pub input: Arc<Mutex<InputState>>,
     draw_queue: Arc<Mutex<Vec<WindowDrawCommand>>>,
-    pub renderer: Arc<Mutex<Option<Renderer>>>,
+    pub renderer: Arc<Mutex<Option<RendererV2>>>,
 
     pub rigs: Arc<Mutex<HashMap<u32, Rig>>>,
     pub next_rig_id: Arc<Mutex<u32>>,
     pub texture_cache: Arc<Mutex<HashMap<(u32, String), u32>>>,
+    pub texture_refcount: Arc<Mutex<HashMap<u32, u32>>>,
+
+    pub transparent: bool,
+    pub decorations: bool,
+    pub always_on_top: bool,
+    pub visible: bool,
+    pub window_commands: Arc<Mutex<Vec<WindowCommand>>>,
+
+    /// エージェント検証: 次の update 前に適用
+    pub inject_queue: Arc<Mutex<Vec<InjectEvent>>>,
+    /// 描画完了後に PNG 保存（1フレーム分）
+    pub pending_screenshot: Arc<Mutex<Option<String>>>,
+    pub exit_requested: Arc<AtomicBool>,
+    pub frame_count: Arc<AtomicU64>,
 }
 
 impl KagraWindow {
-    pub fn new(width: u32, height: u32, title: &str, fps: u32) -> Result<Self, String> {
+    pub fn new(
+        width: u32,
+        height: u32,
+        title: &str,
+        fps: u32,
+        transparent: bool,
+        decorations: bool,
+        always_on_top: bool,
+        visible: bool,
+    ) -> Result<Self, String> {
         Ok(KagraWindow {
             width,
             height,
@@ -56,60 +102,104 @@ impl KagraWindow {
             rigs: Arc::new(Mutex::new(HashMap::new())),
             next_rig_id: Arc::new(Mutex::new(1)),
             texture_cache: Arc::new(Mutex::new(HashMap::new())),
+            texture_refcount: Arc::new(Mutex::new(HashMap::new())),
+            transparent,
+            decorations,
+            always_on_top,
+            visible,
+            window_commands: Arc::new(Mutex::new(Vec::new())),
+            inject_queue: Arc::new(Mutex::new(Vec::new())),
+            pending_screenshot: Arc::new(Mutex::new(None)),
+            exit_requested: Arc::new(AtomicBool::new(false)),
+            frame_count: Arc::new(AtomicU64::new(0)),
         })
     }
 
-    pub fn is_key_down(&self, code: u32) -> bool { self.input.lock().unwrap().is_key_down(code) }
-    pub fn is_key_pressed(&self, code: u32) -> bool { self.input.lock().unwrap().is_key_pressed(code) }
-    pub fn is_key_released(&self, code: u32) -> bool { self.input.lock().unwrap().is_key_released(code) }
+    pub fn request_exit(&self) {
+        self.exit_requested.store(true, Ordering::SeqCst);
+    }
 
-    pub fn mouse_pos(&self) -> (f32, f32) { self.input.lock().unwrap().mouse_pos() }
-    pub fn is_mouse_down(&self, btn: u32) -> bool { self.input.lock().unwrap().is_mouse_down(btn) }
-    pub fn is_mouse_pressed(&self, btn: u32) -> bool { self.input.lock().unwrap().is_mouse_pressed(btn) }
-    pub fn is_mouse_released(&self, btn: u32) -> bool { self.input.lock().unwrap().is_mouse_released(btn) }
-    pub fn mouse_wheel(&self) -> (f32, f32) { self.input.lock().unwrap().mouse_wheel() }
+    pub fn request_screenshot(&self, path: &str) {
+        *lock_recover(&self.pending_screenshot) = Some(path.to_string());
+    }
 
+    pub fn queue_inject(&self, event: InjectEvent) {
+        lock_recover(&self.inject_queue).push(event);
+    }
+
+    pub fn frame_count(&self) -> u64 {
+        self.frame_count.load(Ordering::Relaxed)
+    }
+
+    // ========== 入力系メソッド（変更なし）==========
+    pub fn is_key_down(&self, code: u32) -> bool { lock_recover(&self.input).is_key_down(code) }
+    pub fn is_key_pressed(&self, code: u32) -> bool { lock_recover(&self.input).is_key_pressed(code) }
+    pub fn is_key_released(&self, code: u32) -> bool { lock_recover(&self.input).is_key_released(code) }
+
+    pub fn mouse_pos(&self) -> (f32, f32) { lock_recover(&self.input).mouse_pos() }
+    pub fn is_mouse_down(&self, btn: u32) -> bool { lock_recover(&self.input).is_mouse_down(btn) }
+    pub fn is_mouse_pressed(&self, btn: u32) -> bool { lock_recover(&self.input).is_mouse_pressed(btn) }
+    pub fn is_mouse_released(&self, btn: u32) -> bool { lock_recover(&self.input).is_mouse_released(btn) }
+    pub fn mouse_wheel(&self) -> (f32, f32) { lock_recover(&self.input).mouse_wheel() }
+
+    // ========== 描画コマンドキューイング ==========
     pub fn cls(&self, r: u8, g: u8, b: u8) {
-        self.draw_queue
-            .lock()
-            .unwrap()
-            .push(WindowDrawCommand::Clear(Color { r, g, b, a: 255 }));
+        let a = if self.transparent { 0 } else { 255 };
+        lock_recover(&self.draw_queue).push(WindowDrawCommand::Clear(Color { r, g, b, a }));
     }
 
     pub fn rect(&self, x: f32, y: f32, w: f32, h: f32, color: Color) {
-        self.draw_queue.lock().unwrap().push(WindowDrawCommand::Draw(
-            DrawCommand::Rect(RectCommand { x, y, w, h, color }),
-        ));
+        lock_recover(&self.draw_queue).push(WindowDrawCommand::Draw(DrawCommand::Rect(RectCommand { x, y, w, h, color })));
     }
 
-    pub fn draw_mesh(
-        &self, texture_id: u32, verts: Vec<[f32;5]>,
-        shader_id: u32, shader_params: [f32;4],
-    ) {
+    pub fn polygon(&self, verts: Vec<[f32; 2]>, color: Color) {
+        lock_recover(&self.draw_queue).push(WindowDrawCommand::Draw(DrawCommand::Polygon(PolygonCommand { verts, color })));
+    }
+
+    pub fn draw_mesh(&self, texture_id: u32, verts: Vec<[f32;5]>, shader_id: u32, shader_params: [f32;4]) {
         use crate::renderer::{DrawCommand, MeshCommand};
-        self.draw_queue.lock().unwrap().push(
-            WindowDrawCommand::Draw(DrawCommand::Mesh(MeshCommand {
-                texture_id, verts, shader_id, shader_params,
-            }))
-        );
+        lock_recover(&self.draw_queue).push(WindowDrawCommand::Draw(DrawCommand::Mesh(MeshCommand { texture_id, verts, shader_id, shader_params })));
     }
 
     pub fn update_camera_3d(&self, view: [f32; 16], proj: [f32; 16]) {
-        if let Some(r) = self.renderer.lock().unwrap().as_mut() {
+        if let Some(r) = lock_recover(&self.renderer).as_mut() {
             r.update_camera_3d(&view, &proj);
         }
     }
 
+    pub fn set_light_dir(&self, x: f32, y: f32, z: f32) {
+        if let Some(r) = lock_recover(&self.renderer).as_mut() {
+            r.set_light_dir(x, y, z);
+        }
+    }
+
+    pub fn set_shadow_enabled(&self, enabled: bool) {
+        if let Some(r) = lock_recover(&self.renderer).as_mut() {
+            r.set_shadow_enabled(enabled);
+        }
+    }
+
+    pub fn set_toon_params(&self, threshold: f32, softness: f32, shade: f32, lit: f32) {
+        if let Some(r) = lock_recover(&self.renderer).as_mut() {
+            r.set_toon_params(threshold, softness, shade, lit);
+        }
+    }
+
+    pub fn set_fog(&self, start: f32, end: f32, r: u8, g: u8, b: u8, enabled: bool) {
+        if let Some(rend) = lock_recover(&self.renderer).as_mut() {
+            rend.set_fog(start, end, r, g, b, enabled);
+        }
+    }
+
     pub fn queue_skinned_mesh_3d(&self, cmd: crate::renderer::SkinnedMeshCommand) {
-        if let Some(r) = self.renderer.lock().unwrap().as_mut() {
+        if let Some(r) = lock_recover(&self.renderer).as_mut() {
             r.queue_skinned_mesh_3d(cmd);
         }
     }
 
-    pub fn queue_mesh_3d(&self, texture_id: u32,
-                         verts: Vec<[f32; 8]>, indices: Vec<u32>) {
+    pub fn queue_mesh_3d(&self, texture_id: u32, verts: Vec<[f32; 8]>, indices: Vec<u32>) {
         use crate::renderer::Mesh3DCommand;
-        if let Some(r) = self.renderer.lock().unwrap().as_mut() {
+        if let Some(r) = lock_recover(&self.renderer).as_mut() {
             r.queue_mesh_3d(Mesh3DCommand { texture_id, verts, indices });
         }
     }
@@ -123,7 +213,7 @@ impl KagraWindow {
         flip_x: bool, flip_y: bool,
         shader_id: u32, shader_params: [f32;4],
     ) {
-        self.draw_queue.lock().unwrap().push(WindowDrawCommand::Draw(
+        lock_recover(&self.draw_queue).push(WindowDrawCommand::Draw(
             DrawCommand::Sprite(SpriteCommand {
                 texture_id: id, shader_id, shader_params,
                 dx: x, dy: y,
@@ -137,284 +227,371 @@ impl KagraWindow {
     }
 
     #[allow(dead_code)]
-    pub fn draw_texture(
-        &self, id: u32, x: f32, y: f32,
-        w: Option<f32>, h: Option<f32>,
-        sx: f32, sy: f32, sw: Option<f32>, sh: Option<f32>,
-        alpha: f32, rotation_deg: f32,
-        pivot_x: f32, pivot_y: f32,
-        flip_x: bool, flip_y: bool,
-    ) {
-        self.draw_texture_ex(id, x, y, w, h, sx, sy, sw, sh,
-            alpha, rotation_deg, pivot_x, pivot_y, flip_x, flip_y,
-            0, [1.0;4]);
+    pub fn draw_texture(&self, id: u32, x: f32, y: f32, w: Option<f32>, h: Option<f32>, sx: f32, sy: f32, sw: Option<f32>, sh: Option<f32>, alpha: f32, rotation_deg: f32, pivot_x: f32, pivot_y: f32, flip_x: bool, flip_y: bool) {
+        self.draw_texture_ex(id, x, y, w, h, sx, sy, sw, sh, alpha, rotation_deg, pivot_x, pivot_y, flip_x, flip_y, 0, [1.0;4]);
     }
 
-    pub fn draw_text(
-        &self,
-        font_id: u32,
-        text: &str,
-        x: f32,
-        y: f32,
-        size_px: u32,
-        r: u8,
-        g: u8,
-        b: u8,
-        a: u8,
-    ) {
-        self.draw_queue.lock().unwrap().push(WindowDrawCommand::Draw(
-            DrawCommand::Text(TextCommand {
-                font_id,
-                text: text.to_string(),
-                x,
-                y,
-                size_px,
-                color: Color { r, g, b, a },
-            }),
-        ));
+    pub fn draw_text(&self, font_id: u32, text: &str, x: f32, y: f32, size_px: u32, r: u8, g: u8, b: u8, a: u8) {
+        lock_recover(&self.draw_queue).push(WindowDrawCommand::Draw(DrawCommand::Text(TextCommand { font_id, text: text.to_string(), x, y, size_px, color: Color { r, g, b, a } })));
     }
 
     pub fn queue_skinned_mesh(&self, cmd: SkinnedMeshCommand) {
-        self.draw_queue
-            .lock()
-            .unwrap()
-            .push(WindowDrawCommand::Draw(DrawCommand::SkinnedMesh(cmd)));
+        lock_recover(&self.draw_queue).push(WindowDrawCommand::Draw(DrawCommand::SkinnedMesh(cmd)));
     }
 
+    // ========== テクスチャ / フォント ==========
     pub fn load_texture(&self, path: &str) -> Result<u32, String> {
-        match self.renderer.lock().unwrap().as_mut() {
-            Some(r) => r.load_texture(path),
-            None => Err("load_texture: run() 開始前です。update()/draw() 内で呼んでください。".into()),
-        }
+        let id = match lock_recover(&self.renderer).as_mut() {
+            Some(r) => r.load_texture(path)?,
+            None => return Err("load_texture: run() 開始前です。update()/draw() 内で呼んでください。".into()),
+        };
+        let mut rc = lock_recover(&self.texture_refcount);
+        *rc.entry(id).or_insert(0) += 1;
+        Ok(id)
     }
 
     pub fn texture_size(&self, id: u32) -> Option<(u32, u32)> {
-        self.renderer.lock().unwrap().as_ref()?.texture_size(id)
+        lock_recover(&self.renderer).as_ref()?.texture_size(id)
+    }
+
+    pub fn unload_texture(&self, id: u32) -> Result<(), String> {
+        let mut rc = lock_recover(&self.texture_refcount);
+        if let Some(count) = rc.get_mut(&id) {
+            *count -= 1;
+            if *count == 0 {
+                rc.remove(&id);
+                let mut cache = lock_recover(&self.texture_cache);
+                cache.retain(|_, v| *v != id);
+                if let Some(r) = lock_recover(&self.renderer).as_mut() {
+                    r.unload_texture(id)?;
+                }
+            }
+            Ok(())
+        } else {
+            Err(format!("Texture {} not found or already unloaded", id))
+        }
     }
 
     pub fn load_font(&self, path: &str) -> Result<u32, String> {
-        match self.renderer.lock().unwrap().as_mut() {
+        match lock_recover(&self.renderer).as_mut() {
             Some(r) => r.load_font(path),
             None => Err("load_font: run() 開始前です。update()/draw() 内で呼んでください。".into()),
         }
     }
 
     pub fn measure_text(&self, font_id: u32, text: &str, size_px: u32) -> (f32, f32) {
-        match self.renderer.lock().unwrap().as_mut() {
+        match lock_recover(&self.renderer).as_mut() {
             Some(r) => r.measure_text(font_id, text, size_px),
             None => (0.0, 0.0),
         }
     }
 
+    // ========== リグ ==========
     pub fn load_rig(&self, path: &str) -> Result<u32, String> {
-        let mut rig = rig::load_rig(path).map_err(|e| format!("リグ読み込み失敗: {}", e))?;
-
-        {
-            let renderer_guard = self.renderer.lock().unwrap();
-            match renderer_guard.as_ref() {
-                Some(r) => rig::build_gpu_cache(&mut rig, &r.device),
-                None => log::warn!(
-                    "load_rig: Renderer 未初期化。GPU キャッシュなし。update()/draw() 内で呼んでください。"
-                ),
-            }
-        }
-
-        let mut id_guard = self.next_rig_id.lock().unwrap();
+        let rig = {
+            let renderer_guard = lock_recover(&self.renderer);
+            let device = match renderer_guard.as_ref() {
+                Some(r) => &r.device,
+                None => return Err("load_rig: Renderer 未初期化。update()/draw() 内で呼んでください。".into()),
+            };
+            let mut rig = rig::load_rig(path).map_err(|e| format!("リグ読み込み失敗: {}", e))?;
+            rig::build_gpu_cache(&mut rig, device).map_err(|e| format!("GPUキャッシュ構築失敗: {}", e))?;
+            rig
+        };
+        let mut id_guard = lock_recover(&self.next_rig_id);
         let id = *id_guard;
         *id_guard += 1;
         drop(id_guard);
-
-        self.rigs.lock().unwrap().insert(id, rig);
+        lock_recover(&self.rigs).insert(id, rig);
         log::info!("load_rig: id={} path='{}'", id, path);
         Ok(id)
     }
 
     pub fn with_rig<F, T>(&self, id: u32, f: F) -> Option<T>
-    where
-        F: FnOnce(&Rig) -> T,
+    where F: FnOnce(&Rig) -> T,
     {
-        let guard = self.rigs.lock().unwrap();
+        let guard = lock_recover(&self.rigs);
         guard.get(&id).map(f)
     }
 
-    pub fn get_cached_texture(
-        &self,
-        rig_id: u32,
-        part_name: &str,
-        loader: impl FnOnce() -> Result<u32, String>,
-    ) -> Result<u32, String> {
+    pub fn get_cached_texture(&self, rig_id: u32, part_name: &str, loader: impl FnOnce() -> Result<u32, String>) -> Result<u32, String> {
         let key = (rig_id, part_name.to_string());
-        if let Some(&id) = self.texture_cache.lock().unwrap().get(&key) {
+        if let Some(&id) = lock_recover(&self.texture_cache).get(&key) {
             return Ok(id);
         }
         let id = loader()?;
-        self.texture_cache.lock().unwrap().insert(key, id);
+        lock_recover(&self.texture_cache).insert(key, id);
+        let mut rc = lock_recover(&self.texture_refcount);
+        *rc.entry(id).or_insert(0) += 1;
         Ok(id)
     }
 
-    pub fn run(&self, py: Python<'_>, update_fn: PyObject, draw_fn: PyObject) -> PyResult<()> {
-        let event_loop = EventLoop::new()
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    pub fn unload_rig_textures(&self, rig_id: u32) {
+        let keys: Vec<(u32, String)> = {
+            let cache = lock_recover(&self.texture_cache);
+            cache.iter().filter_map(|((id, name), &_tex_id)| if *id == rig_id { Some((*id, name.clone())) } else { None }).collect()
+        };
+        for (_, part_name) in keys {
+            let key = (rig_id, part_name);
+            let _tex_id = { let mut cache = lock_recover(&self.texture_cache); cache.remove(&key) };
+            if let Some(_tex_id) = _tex_id {
+                let _ = self.unload_texture(_tex_id);
+            }
+        }
+    }
+
+    // ========== メインループ ==========
+    pub fn run(
+        &self,
+        py: Python<'_>,
+        update_fn: PyObject,
+        draw_fn: PyObject,
+        max_frames: Option<u64>,
+        fixed_dt: Option<f64>,
+    ) -> PyResult<()> {
+        self.exit_requested.store(false, Ordering::SeqCst);
+        self.frame_count.store(0, Ordering::Relaxed);
+
+        let event_loop = EventLoop::new().map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         let window = WindowBuilder::new()
             .with_title(&self.title)
             .with_inner_size(winit::dpi::LogicalSize::new(self.width, self.height))
+            .with_transparent(self.transparent)
+            .with_decorations(if self.visible { self.decorations } else { false })
+            // Windows では完全非表示だと Redraw / DXGI present が止まることがあるため、
+            // visible=false でも一旦表示し、直後に画面外へ退避する。
+            .with_visible(true)
+            .with_window_level(if self.always_on_top { WindowLevel::AlwaysOnTop } else { WindowLevel::Normal })
             .build(&event_loop)
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
-        {
-            let r = pollster::block_on(Renderer::new(&window, self.width, self.height))
-                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?;
-            *self.renderer.lock().unwrap() = Some(r);
+        let window_arc = Arc::new(window);
+        if !self.visible {
+            window_arc.set_outer_position(winit::dpi::PhysicalPosition::new(-12800, -12800));
         }
+
+        // ★ RendererV2 が Surface を内部で作成する
+        let renderer = pollster::block_on(RendererV2::new(window_arc.clone(), self.width, self.height, self.transparent))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?;
+
+        window_arc.set_ime_allowed(true);
+        window_arc.set_ime_cursor_area(
+            winit::dpi::PhysicalPosition::new(100, 600),
+            winit::dpi::PhysicalSize::new(400, 30),
+        );
+
+        *lock_recover(&self.renderer) = Some(renderer);
 
         let input_ref = Arc::clone(&self.input);
         let queue_ref = Arc::clone(&self.draw_queue);
         let renderer_ref = Arc::clone(&self.renderer);
         let fps_atomic = Arc::clone(&self.current_fps_atomic);
+        let window_cmds_ref = Arc::clone(&self.window_commands);
+        let inject_ref = Arc::clone(&self.inject_queue);
+        let screenshot_ref = Arc::clone(&self.pending_screenshot);
+        let exit_ref = Arc::clone(&self.exit_requested);
+        let frame_count_ref = Arc::clone(&self.frame_count);
 
         let frame_duration = Duration::from_secs_f64(1.0 / self.target_fps as f64);
+        // max_frames 指定時はフレーム待ちをせず全速で回す（エージェント検証向け）
+        let uncapped = max_frames.is_some() || fixed_dt.is_some();
         let mut last_time = Instant::now();
         let mut next_frame_time = Instant::now();
         let mut fps_timer = Instant::now();
         let mut fps_count = 0u32;
+        let mut frames_done: u64 = 0;
 
-        let run_result = Arc::new(Mutex::new(Ok::<(), PyErr>(() )));
+        let run_result = Arc::new(Mutex::new(Ok::<(), PyErr>(())));
         let run_result_inner = Arc::clone(&run_result);
+
+        // 隠れウィンドウでも最初のフレームが必ず回るように即 redraw 要求
+        window_arc.request_redraw();
 
         event_loop
             .run(move |event, elwt| {
-                if run_result_inner.lock().unwrap().is_err() {
+                if lock_recover(&run_result_inner).is_err() || exit_ref.load(Ordering::SeqCst) {
                     elwt.exit();
                     return;
                 }
 
-                match event {
-                    Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                        elwt.exit();
-                    }
+                // 検証モードは待ち無し。通常は次フレーム時刻まで Wait
+                if uncapped {
+                    elwt.set_control_flow(ControlFlow::Poll);
+                } else {
+                    elwt.set_control_flow(ControlFlow::WaitUntil(next_frame_time));
+                }
 
-                    Event::WindowEvent {
-                        event: WindowEvent::KeyboardInput {
-                            event: KeyEvent {
-                                physical_key: PhysicalKey::Code(code),
-                                state,
-                                ..
-                            },
-                            ..
-                        },
-                        ..
-                    } => {
+                let window = &*window_arc;
+
+                match event {
+                    Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => elwt.exit(),
+                    Event::WindowEvent { event: WindowEvent::Ime(ime_event), .. } => {
+                        let mut inp = lock_recover(&input_ref);
+                        match ime_event {
+                            Ime::Preedit(text, cursor) => inp.on_preedit(&text, cursor),
+                            Ime::Commit(text) => inp.on_commit(&text),
+                            Ime::Enabled => {},
+                            Ime::Disabled => { inp.preedit_text.clear(); inp.preedit_cursor = None; },
+                        }
+                    },
+                    Event::WindowEvent { event: WindowEvent::KeyboardInput { event: KeyEvent { physical_key: PhysicalKey::Code(code), logical_key: ref lkey, state, .. }, .. }, .. } => {
                         let c = code as u32;
-                        let mut inp = input_ref.lock().unwrap();
+                        let mut inp = lock_recover(&input_ref);
                         match state {
-                            ElementState::Pressed => inp.on_key_down(c),
+                            ElementState::Pressed => {
+                                inp.on_key_down(c);
+                                match code {
+                                    KeyCode::Backspace => inp.set_backspace_pressed(),
+                                    KeyCode::Enter => inp.set_enter_pressed(),
+                                    KeyCode::Escape => inp.set_escape_pressed(),
+                                    _ => {}
+                                }
+                                if let Key::Character(ref s) = lkey {
+                                    if inp.preedit_text.is_empty() {
+                                        for ch in s.chars() { if ch >= ' ' { inp.on_char(ch); } }
+                                    }
+                                }
+                            }
                             ElementState::Released => inp.on_key_up(c),
                         }
-                    }
-
+                    },
                     Event::WindowEvent { event: WindowEvent::CursorMoved { position, .. }, .. } => {
-                        input_ref
-                            .lock()
-                            .unwrap()
-                            .on_mouse_move(position.x as f32, position.y as f32);
-                    }
-
+                        lock_recover(&input_ref).on_mouse_move(position.x as f32, position.y as f32);
+                    },
+                    Event::WindowEvent { event: WindowEvent::Focused(gained), .. } => {
+                        lock_recover(&input_ref).focused = gained;
+                    },
                     Event::WindowEvent { event: WindowEvent::MouseInput { state, button, .. }, .. } => {
                         let btn = match button {
                             MouseButton::Left => 1,
                             MouseButton::Right => 2,
                             MouseButton::Middle => 3,
-                            MouseButton::Back => 4,
-                            MouseButton::Forward => 5,
-                            MouseButton::Other(n) => n as u32 + 100,
+                            _ => return,
                         };
-                        let mut inp = input_ref.lock().unwrap();
+                        let mut inp = lock_recover(&input_ref);
                         match state {
-                            ElementState::Pressed => inp.on_mouse_down(btn),
+                            ElementState::Pressed => {
+                                inp.on_mouse_down(btn);
+                                let _ = window.focus_window();
+                            }
                             ElementState::Released => inp.on_mouse_up(btn),
                         }
-                    }
-
+                    },
                     Event::WindowEvent { event: WindowEvent::MouseWheel { delta, .. }, .. } => {
                         let (dx, dy) = match delta {
                             MouseScrollDelta::LineDelta(x, y) => (x, y),
                             MouseScrollDelta::PixelDelta(p) => (p.x as f32, p.y as f32),
                         };
-                        input_ref.lock().unwrap().on_mouse_wheel(dx, dy);
-                    }
-
+                        lock_recover(&input_ref).on_mouse_wheel(dx, dy);
+                    },
                     Event::WindowEvent { event: WindowEvent::Resized(size), .. } => {
-                        if let Some(r) = renderer_ref.lock().unwrap().as_mut() {
-                            r.resize(size.width, size.height);
+                        let w = size.width.max(1);
+                        let h = size.height.max(1);
+                        if let Some(r) = lock_recover(&renderer_ref).as_mut() {
+                            r.resize(w, h);
                         }
-                    }
-
+                    },
                     Event::WindowEvent { event: WindowEvent::RedrawRequested, .. } => {
+                        if exit_ref.load(Ordering::SeqCst) {
+                            elwt.exit();
+                            return;
+                        }
+
+                        // ウィンドウコマンド実行
+                        {
+                            let mut cmds = lock_recover(&window_cmds_ref);
+                            for cmd in cmds.drain(..) {
+                                match cmd {
+                                    WindowCommand::Focus => { let _ = window.focus_window(); }
+                                    WindowCommand::Drag => { let _ = window.drag_window(); }
+                                    WindowCommand::SetPosition(x, y) => { window.set_outer_position(winit::dpi::PhysicalPosition::new(x, y)); }
+                                    WindowCommand::SetClickThrough(click_through) => {
+                                        #[cfg(any(target_os = "windows", target_os = "macos"))] { let _ = window.set_cursor_hittest(!click_through); }
+                                        #[cfg(not(any(target_os = "windows", target_os = "macos")))] { if click_through { log::warn!("SetClickThrough not supported"); } }
+                                    }
+                                    WindowCommand::SetAlwaysOnTop(always_on_top) => {
+                                        window.set_window_level(if always_on_top { WindowLevel::AlwaysOnTop } else { WindowLevel::Normal });
+                                    }
+                                    WindowCommand::SetDecorations(decorations) => { window.set_decorations(decorations); }
+                                    WindowCommand::SetTitle(title) => { window.set_title(&title); }
+                                }
+                            }
+                        }
+
+                        // 注入入力を update の直前に適用（pressed エッジがこのフレームで見える）
+                        {
+                            let events: Vec<InjectEvent> = lock_recover(&inject_ref).drain(..).collect();
+                            if !events.is_empty() {
+                                let mut inp = lock_recover(&input_ref);
+                                for ev in events {
+                                    apply_inject(&mut inp, ev);
+                                }
+                            }
+                        }
+
                         let now = Instant::now();
-                        let dt = (now - last_time).as_secs_f64();
+                        let dt = if let Some(fixed) = fixed_dt {
+                            fixed
+                        } else {
+                            (now - last_time).as_secs_f64()
+                        };
                         last_time = now;
 
+                        // Python 更新
                         if let Err(e) = update_fn.call1(py, (dt,)) {
-                            *run_result_inner.lock().unwrap() = Err(e);
+                            *lock_recover(&run_result_inner) = Err(e);
+                            elwt.exit();
                             return;
                         }
-
-                        queue_ref.lock().unwrap().clear();
-
+                        if exit_ref.load(Ordering::SeqCst) {
+                            elwt.exit();
+                            return;
+                        }
                         if let Err(e) = draw_fn.call0(py) {
-                            *run_result_inner.lock().unwrap() = Err(e);
+                            *lock_recover(&run_result_inner) = Err(e);
+                            elwt.exit();
                             return;
                         }
 
-                        let mut rend = renderer_ref.lock().unwrap();
+                        let screenshot_path = lock_recover(&screenshot_ref).take();
+
+                        // コマンドをレンダラーに転送
+                        {
+                            let mut rend = lock_recover(&renderer_ref);
+                            let renderer = match rend.as_mut() {
+                                Some(r) => r,
+                                None => return,
+                            };
+                            for cmd in lock_recover(&queue_ref).drain(..) {
+                                match cmd {
+                                    WindowDrawCommand::Clear(color) => renderer.clear_color = color,
+                                    WindowDrawCommand::Draw(draw_cmd) => renderer.queue_command(draw_cmd),
+                                }
+                            }
+                        }
+
+                        let mut rend = lock_recover(&renderer_ref);
                         let renderer = match rend.as_mut() {
                             Some(r) => r,
                             None => return,
                         };
-
-                        for cmd in queue_ref.lock().unwrap().drain(..) {
-                            match cmd {
-                                WindowDrawCommand::Clear(color) => {
-                                    renderer.clear_color = color;
-                                }
-                                WindowDrawCommand::Draw(DrawCommand::Rect(rc)) => {
-                                    renderer.queue_command(DrawCommand::Rect(rc));
-                                }
-                                WindowDrawCommand::Draw(DrawCommand::Sprite(mut sc)) => {
-                                    if let Some((tw, th)) = renderer.texture_size(sc.texture_id) {
-                                        if sc.sw == 0.0 { sc.sw = tw as f32; }
-                                        if sc.sh == 0.0 { sc.sh = th as f32; }
-                                        if sc.dw == 0.0 { sc.dw = sc.sw; }
-                                        if sc.dh == 0.0 { sc.dh = sc.sh; }
-                                    }
-                                    renderer.queue_command(DrawCommand::Sprite(sc));
-                                }
-                                WindowDrawCommand::Draw(DrawCommand::Text(tc)) => {
-                                    renderer.queue_command(DrawCommand::Text(tc));
-                                }
-                                WindowDrawCommand::Draw(DrawCommand::SkinnedMesh(cmd)) => {
-                                    renderer.queue_command(DrawCommand::SkinnedMesh(cmd));
-                                }
-                                WindowDrawCommand::Draw(DrawCommand::Mesh(cmd)) => {
-                                    renderer.queue_command(DrawCommand::Mesh(cmd));
-                                }
-                            }
-                        }
-
-                        match renderer.render() {
+                        match renderer.render(screenshot_path.as_deref()) {
                             Ok(_) => {}
-                            Err(wgpu::SurfaceError::Lost) => {
+                            Err(KaguraError::Gpu(msg)) => {
+                                log::error!("GPU render error: {}", msg);
                                 let (w, h) = (renderer.width(), renderer.height());
                                 renderer.resize(w, h);
                             }
                             Err(e) => {
-                                *run_result_inner.lock().unwrap() =
-                                    Err(pyo3::exceptions::PyRuntimeError::new_err(e.to_string()));
-                                return;
+                                log::error!("Render error: {}", e);
+                                let (w, h) = (renderer.width(), renderer.height());
+                                renderer.resize(w, h);
                             }
                         }
 
+                        frames_done += 1;
+                        frame_count_ref.store(frames_done, Ordering::Relaxed);
                         fps_count += 1;
                         if fps_timer.elapsed() >= Duration::from_secs(1) {
                             fps_atomic.store(fps_count, Ordering::Relaxed);
@@ -422,16 +599,33 @@ impl KagraWindow {
                             fps_timer = Instant::now();
                         }
                         next_frame_time = now + frame_duration;
+                        lock_recover(&input_ref).begin_frame();
 
-                        input_ref.lock().unwrap().begin_frame();
-                    }
-
-                    Event::AboutToWait => {
-                        if Instant::now() >= next_frame_time {
+                        if let Some(max) = max_frames {
+                            if frames_done >= max {
+                                elwt.exit();
+                                return;
+                            }
+                        }
+                        if exit_ref.load(Ordering::SeqCst) {
+                            elwt.exit();
+                            return;
+                        }
+                        // 隠れウィンドウ + Poll でもフレームが途切れないように明示要求
+                        if uncapped {
                             window.request_redraw();
                         }
-                    }
-
+                    },
+                    Event::AboutToWait => {
+                        if exit_ref.load(Ordering::SeqCst) {
+                            elwt.exit();
+                        } else if uncapped {
+                            // 隠れウィンドウでも必ずフレームが進むよう AboutToWait から駆動
+                            window.request_redraw();
+                        } else if Instant::now() >= next_frame_time {
+                            window.request_redraw();
+                        }
+                    },
                     _ => {}
                 }
             })
@@ -441,5 +635,24 @@ impl KagraWindow {
             .map_err(|_| pyo3::exceptions::PyRuntimeError::new_err("run_result unwrap 失敗"))?
             .into_inner()
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?
+    }
+}
+
+fn apply_inject(inp: &mut InputState, ev: InjectEvent) {
+    match ev {
+        InjectEvent::KeyDown(code) => {
+            inp.on_key_down(code);
+            if code == KeyCode::Backspace as u32 {
+                inp.set_backspace_pressed();
+            } else if code == KeyCode::Enter as u32 {
+                inp.set_enter_pressed();
+            } else if code == KeyCode::Escape as u32 {
+                inp.set_escape_pressed();
+            }
+        }
+        InjectEvent::KeyUp(code) => inp.on_key_up(code),
+        InjectEvent::MouseMove(x, y) => inp.on_mouse_move(x, y),
+        InjectEvent::MouseDown(btn) => inp.on_mouse_down(btn),
+        InjectEvent::MouseUp(btn) => inp.on_mouse_up(btn),
     }
 }

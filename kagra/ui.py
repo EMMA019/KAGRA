@@ -116,9 +116,23 @@ class TweenManager:
 # ------------------------------ UI プリミティブ ---------------------------------
 class Panel:
     def __init__(self, x, y, w, h, r=20, g=20, b=40,
-                 br=100, bg=100, bb=140, border=True, alpha=1.0):
+                 br=100, bg=100, bb=140, border=True, alpha=1.0, color=None):
         self.x = x; self.y = y
         self.w = w; self.h = h
+        
+        # color 引数が指定されたらそれを優先
+        if color is not None:
+            if isinstance(color, (tuple, list)):
+                if len(color) == 3:
+                    r, g, b = color
+                elif len(color) == 4:
+                    r, g, b, a = color
+                    alpha = a / 255.0  # 0-255を0.0-1.0に変換
+                else:
+                    raise ValueError("color must be a tuple of (r,g,b) or (r,g,b,a)")
+            else:
+                raise ValueError("color must be a tuple or list")
+        
         self.r = r; self.g = g; self.b = b
         self.br = br; self.bg = bg; self.bb = bb
         self.border = border
@@ -126,7 +140,9 @@ class Panel:
         self.visible = True
     def draw(self):
         if not self.visible: return
-        _kagra().rect(self.x, self.y, self.w, self.h, self.r, self.g, self.b)
+        # アルファ値を0-255の範囲に変換
+        a_int = int(self.alpha * 255)
+        _kagra().rect(self.x, self.y, self.w, self.h, self.r, self.g, self.b, a_int)
         if self.border:
             t = 2
             _kagra().rect(self.x,           self.y,           self.w, t,    self.br, self.bg, self.bb)
@@ -136,10 +152,18 @@ class Panel:
 
 class Label:
     # 修正: color キーワード引数を受け付ける (r,g,b に変換)
-    def __init__(self, font_id: int, text: str,
+    # 修正: font 引数も受け付ける (font_id のエイリアス)
+    def __init__(self, font_id: int = None, text: str = "",
                  x=0, y=0, size=20,
-                 r=255, g=255, b=255, color=None):
-        self.font_id = font_id
+                 r=255, g=255, b=255, color=None, font=None):
+        # font 引数が指定されたらそれを優先
+        if font is not None:
+            self.font_id = font
+        elif font_id is not None:
+            self.font_id = font_id
+        else:
+            self.font_id = 0  # デフォルトフォント
+        
         self.text = text
         self.x = x; self.y = y
         self.size = size
@@ -158,22 +182,63 @@ class Label:
                            self.r, self.g, self.b)
 
 class Button:
-    def __init__(self, font_id: int, text: str,
-                 x, y, w, h, on_confirm: Callable = None,
+    def __init__(self, font_id: int = None, text: str = "",
+                 x=0, y=0, w=100, h=40, on_confirm: Callable = None,
                  size=20,
                  normal_bg=(30,30,50), hover_bg=(60,80,120),
                  selected_bg=(60,80,120), normal_fg=(200,200,200),
-                 hover_fg=(255,255,255), selected_fg=(255,255,80)):
-        self.font_id = font_id
-        self.text = text
+                 hover_fg=(255,255,255), selected_fg=(255,255,80),
+                 # 互換性のための追加引数
+                 font=None, label=None, color=None, hover_color=None,
+                 on_click=None):
+        # font 引数の処理
+        if font is not None:
+            self.font_id = font
+        elif font_id is not None:
+            self.font_id = font_id
+        else:
+            self.font_id = 0  # デフォルトフォント
+        
+        # text と label 引数の処理
+        if label is not None:
+            self.text = label
+        else:
+            self.text = text
+        
         self.x = x; self.y = y
         self.w = w; self.h = h
-        self.on_confirm = on_confirm
+        
+        # on_confirm と on_click の処理
+        if on_click is not None:
+            self.on_confirm = on_click
+        else:
+            self.on_confirm = on_confirm
+        
         self.size = size
         self.selected = False
         self.hovered = False
         self.visible = True
         self.enabled = True
+        
+        # color と hover_color 引数の処理
+        if color is not None:
+            if isinstance(color, (tuple, list)) and len(color) >= 3:
+                normal_bg = (color[0], color[1], color[2])
+                # テキスト色を自動計算（明るい色）
+                if color[0] + color[1] + color[2] < 400:
+                    normal_fg = (255, 255, 255)  # 明るい背景なら白文字
+                else:
+                    normal_fg = (30, 30, 30)     # 暗い背景なら黒文字
+        
+        if hover_color is not None:
+            if isinstance(hover_color, (tuple, list)) and len(hover_color) >= 3:
+                hover_bg = (hover_color[0], hover_color[1], hover_color[2])
+                # ホバー時の文字色を自動計算
+                if hover_color[0] + hover_color[1] + hover_color[2] < 400:
+                    hover_fg = (255, 255, 255)
+                else:
+                    hover_fg = (30, 30, 30)
+        
         self.normal_bg = normal_bg
         self.hover_bg = hover_bg
         self.selected_bg = selected_bg

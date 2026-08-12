@@ -50,6 +50,9 @@ from kagra.skeleton      import (
 from kagra.event_bus     import EventBus, get_global_bus, reset_global_bus
 from kagra.components    import TopDownMovement, FourDirAnimator, CameraFollower
 from kagra.assets        import AssetManager as _AssetManager
+from kagra.color_utils   import clamp_u8 as _clamp_u8
+from kagra.color_utils   import norm_color as _norm_color
+from kagra.color_utils   import resolve_rgb as _resolve_rgb
 assets = _AssetManager()
 
 
@@ -60,6 +63,23 @@ _camera: Camera | None  = None
 def _check():
     if _engine is None:
         raise RuntimeError("kagra.init() を先に呼んでください")
+
+
+# ═══════════════════════════════════════════════════════════════
+#  公式API: エンジンインスタンスの取得
+# ═══════════════════════════════════════════════════════════════
+
+def get_engine() -> _Engine:
+    """シングルトンのエンジンインスタンスを返す（公式API）。
+
+    kagra.init() の後に呼ぶこと。
+
+    Example::
+        engine = kagra.get_engine()
+        engine.set_vrm_bone_rot(vrm_id, "J_Bip_C_Neck", 0.0, 0.1, 0.0, 0.99)
+    """
+    _check()
+    return _engine
 
 
 # ── キーマップ ────────────────────────────────────────────────
@@ -87,6 +107,12 @@ def _update_keys():
     if hasattr(keys,"ESCAPE"): KEY_ESCAPE = keys.ESCAPE
 
 def _key_code(name: str) -> int:
+    # エンジン側の動的解決を優先（あれば）
+    if _engine is not None:
+        code = _engine.get_key_code(name)
+        if code is not None:
+            return code
+    # 後方互換: keymap.json 由来の keys から探す
     code = getattr(keys, name.upper(), None)
     if code is None:
         available = sorted(k for k in dir(keys) if not k.startswith("_"))
@@ -143,45 +169,109 @@ class _SceneManager:
 scene = _SceneManager()
 
 
-def init(width=1280, height=720, title="KAGRA Game", fps=60):
-    """エンジンを初期化する。プログラムの最初に1回だけ呼ぶ。"""
+def init(width=1280, height=720, title="KAGRA Game", fps=60, transparent=False, decorations=True, always_on_top=False, visible=True):
+    """エンジンを初期化する。プログラムの最初に1回だけ呼ぶ。
+
+    visible=False でエージェント検証向けの隠れウィンドウになる。
+    Windows では DXGI の都合上ウィンドウ自体は作られるが、画面外へ退避する。
+    """
     global _engine
-    _engine = _Engine(width=width, height=height, title=title, fps=fps)
+    _engine = _Engine(
+        width=width,
+        height=height,
+        title=title,
+        fps=fps,
+        transparent=transparent,
+        decorations=decorations,
+        always_on_top=always_on_top,
+        visible=visible,
+    )
     _update_keys()
 
-def run(update=None, draw=None, start_scene: Scene = None):
-    """ゲームループを開始する。"""
+def run(update=None, draw=None, start_scene: Scene = None, max_frames=None, fixed_dt=None):
+    """ゲームループを開始する（Phase 9 フック付き）。
+
+    Args:
+        max_frames: 指定フレーム数だけ描画したら自動終了（エージェント検証向け）
+        fixed_dt: 壁時計ではなく固定の dt（秒）を update に渡す。決定論的再生用。
+                  max_frames / fixed_dt 指定時は FPS 待ちをせず全速で回る。
+    """
     _check()
     if start_scene is not None:
-        scene._stack.clear(); scene._pending.clear()
+        original_scene_update = scene._update
+
+        def _patched_scene_update(dt: float):
+            _phase9_frame_hook(dt)
+            original_scene_update(dt)
+
+        scene._stack.clear()
+        scene._pending.clear()
         scene.change(start_scene)
-        _engine.run(scene._update, scene._draw)
+        _engine.run(_patched_scene_update, scene._draw, max_frames, fixed_dt)
     else:
-        _engine.run(update, draw)
+        patched_update = _make_phase9_update_wrapper(update) if update else None
+        _engine.run(patched_update or update, draw, max_frames, fixed_dt)
+
+
+def quit():
+    """次のフレーム境界でループを終了する。"""
+    _check()
+    _engine.request_exit()
+
+
+def screenshot(path: str):
+    """次に描画されるフレームを PNG として保存する。
+
+    update() / draw() の中から呼ぶ。実際の書き込みは GPU 描画の直後。
+    """
+    _check()
+    _engine.request_screenshot(str(path))
+
+
+def frame_count() -> int:
+    """run() 開始後に完了したフレーム数。"""
+    _check()
+    return int(_engine.frame_count())
+
+
+def inject_key(name: str, down: bool = True):
+    """次フレームの update 直前にキーイベントを注入する（OS 経由なし）。
+
+    Example::
+        if tick_count() == 5:
+            inject_key("1")          # フレーム 6 で pressed("1") が True
+        if tick_count() == 20:
+            inject_key("1", down=False)
+    """
+    _check()
+    code = _key_code(name)
+    if down:
+        _engine.inject_key_down(code)
+    else:
+        _engine.inject_key_up(code)
+
+
+def inject_mouse(x=None, y=None, button=None, down=None):
+    """次フレームの update 直前にマウス状態を注入する。
+
+    Args:
+        x, y: カーソル位置（どちらか一方でも指定可。片方だけならもう片方は無視）
+        button: 1=左, 2=右, 3=中
+        down: True=押す / False=離す（button 必須）
+    """
+    _check()
+    if x is not None and y is not None:
+        _engine.inject_mouse_move(float(x), float(y))
+    if button is not None and down is not None:
+        if down:
+            _engine.inject_mouse_down(int(button))
+        else:
+            _engine.inject_mouse_up(int(button))
 
 
 # ═══════════════════════════════════════════════════════════════
 #  低レベル描画 API（既存コードとの後方互換を維持）
 # ═══════════════════════════════════════════════════════════════
-
-def _clamp_u8(v) -> int:
-    iv = int(v); return max(0, min(255, iv))
-
-def _norm_color(value, default_a=255):
-    if not isinstance(value, (tuple, list)):
-        raise ValueError("color must be (r,g,b) or (r,g,b,a)")
-    r,g,b = value[0],value[1],value[2]
-    a = value[3] if len(value) > 3 else default_a
-    return _clamp_u8(r), _clamp_u8(g), _clamp_u8(b), _clamp_u8(a)
-
-def _resolve_rgb(first, g=None, b=None, a=255):
-    """後方互換: rect(x,y,w,h, 255,128,0) 形式と (r,g,b) タプル両対応。"""
-    if isinstance(first, (tuple, list)):
-        return _norm_color(first, a)
-    if g is None and b is None:
-        v = _clamp_u8(first); return v, v, v, _clamp_u8(a)
-    return _clamp_u8(first), _clamp_u8(g), _clamp_u8(b), _clamp_u8(a)
-
 
 def cls(r=0, g=0, b=0):
     """画面をクリアする。"""
@@ -227,11 +317,39 @@ def measure_text(font_id, text_str, size=24) -> tuple:
     """テキストの描画サイズを返す（低レベル。シンプルAPIは measure() を使う）。"""
     _check(); return _engine.measure_text(font_id, str(text_str), size)
 
+def circle(x: float, y: float, radius: float,
+           r: int = 255, g: int = 255, b: int = 255, a: int = 255,
+           segments: int = 24):
+    """円を描く（スキャンライン rect 方式）。"""
+    import math
+    _check()
+    ri = int(radius)
+    for dy in range(-ri, ri+1):
+        dx = int(math.sqrt(max(0, radius*radius - dy*dy)))
+        if dx <= 0: continue
+        rect(x - dx, y + dy, dx*2, 1, r, g, b, a)
+
+
+def draw_polygon(verts: list, r=255, g=255, b=255, a=255, color=None):
+    """多角形を塗り潰す（低レベル。シンプルAPIは polygon() を使う）。
+
+    Args:
+        verts: 頂点リスト [[x1,y1], [x2,y2], ...]（3点以上）
+        color: (r,g,b) タプル（指定時は r,g,b,a より優先）
+    """
+    _check()
+    if color is not None:
+        rr,gg,bb,aa = _norm_color(color, a)
+    else:
+        rr,gg,bb,aa = _clamp_u8(r), _clamp_u8(g), _clamp_u8(b), _clamp_u8(a)
+    _engine.draw_polygon(verts, rr, gg, bb, aa)
+
 def draw_mesh(texture_id: int, verts: list,
               shader_id: int = 0, shader_params: list = None):
     _check(); _engine.draw_mesh(texture_id, verts, shader_id, shader_params)
 
 def load_shader(path: str) -> int:
+
     _check(); return _engine.load_shader(path)
 
 def load_shader_src(wgsl_src: str) -> int:
@@ -289,6 +407,45 @@ def collide_rect_overlap(ax,ay,aw,ah,bx,by,bw,bh):
 def point_in_rect(px,py,rx,ry,rw,rh):
     _check(); return _engine.point_in_rect(px,py,rx,ry,rw,rh)
 
+def backspace_pressed():
+    """バックスペースキーが押された瞬間だけ True を返す"""
+    return _engine.backspace_pressed()
+
+def enter_pressed():
+    """Enterキーが押された瞬間だけ True を返す"""
+    return _engine.enter_pressed()
+
+def escape_pressed():
+    """Escapeキーが押された瞬間だけ True を返す"""
+    return _engine.escape_pressed()
+
+def focus_window():
+    """ウィンドウにキーボードフォーカスを要求する"""
+    _check(); _engine.focus_window()
+
+def drag_window():
+    """ウィンドウのドラッグ移動を開始する"""
+    _check(); _engine.drag_window()
+
+def set_window_position(x: int, y: int):
+    """ウィンドウの位置を設定する"""
+    _check(); _engine.set_window_position(x, y)
+
+def set_click_through(enabled: bool):
+    """ウィンドウのマウスクリック透過を設定する"""
+    _check(); _engine.set_click_through(enabled)
+
+def set_always_on_top(enabled: bool):
+    """最前面表示のオンオフを設定する"""
+    _check(); _engine.set_always_on_top(enabled)
+
+def set_decorations(enabled: bool):
+    """ウィンドウの枠の有無を設定する"""
+    _check(); _engine.set_decorations(enabled)
+
+def set_window_title(title: str):
+    """ウィンドウタイトルを設定する"""
+    _check(); _engine.set_window_title(title)
 
 # ── オーディオ 低レベル ────────────────────────────────────────
 
@@ -317,7 +474,33 @@ def set_camera(cam: Camera | None):
 def get_camera() -> Camera | None:
     return _camera
 
+_camera3d: Camera3D | None = None
+
+def get_camera3d() -> Camera3D | None:
+    """シングルトンの 3D カメラインスタンスを返す。
+
+    事前に set_camera3d() で設定が必要。
+
+    Example::
+        cam = kagra.get_camera3d()
+        if cam:
+            cam.update(kagra.get_engine())
+    """
+    return _camera3d
+
+def set_camera3d(cam: Camera3D | None):
+    """3D カメラを設定する。
+
+    Example::
+        cam = Camera3D(1280, 720)
+        cam.use_orbit(radius=2.5, target=(0, 0.9, 0))
+        kagra.set_camera3d(cam)
+    """
+    global _camera3d
+    _camera3d = cam
+
 def camera_update(dt: float):
+
     if _camera is not None: _camera.update(dt)
 
 def screen_to_world(sx: float, sy: float) -> tuple:
@@ -360,7 +543,26 @@ def draw_texture_world(tid, wx, wy, w=None, h=None,
 # ── システム情報 ───────────────────────────────────────────────
 
 def get_fps() -> float:         _check(); return _engine.fps
-def get_screen_size() -> tuple: _check(); return (_engine.width, _engine.height)
+def get_screen_size() -> tuple:
+    """現在のウィンドウサイズを返す（リサイズ後も正しい値）。"""
+    _check()
+    return (_engine.screen_width(), _engine.screen_height())
+
+def screen_w() -> int:
+    """画面の幅を返す。"""
+    _check()
+    try:
+        return _engine.screen_width()
+    except AttributeError:
+        return 1280
+
+def screen_h() -> int:
+    """画面の高さを返す。"""
+    _check()
+    try:
+        return _engine.screen_height()
+    except AttributeError:
+        return 720
 
 
 # ── リグ ──────────────────────────────────────────────────────
@@ -403,10 +605,90 @@ def draw_texture_tint(tid, x, y, w=None, h=None,
 # ── 3D ────────────────────────────────────────────────────────
 
 def update_camera_3d(view: list, proj: list):
+    """3D カメラの view / proj を直接指定する（各 16 要素・行優先）。
+
+    一度呼ぶと組み込みカメラ（engine.orbit_camera 等）は無効になる。
+    """
     _check(); _engine.update_camera_3d(view, proj)
+
+def set_light_dir(x: float, y: float, z: float):
+    """3D 平行光の方向を設定する（光源へ向かうベクトル）。
+
+    正規化はエンジン側。デフォルトは (0.3, 1.0, 0.5)。
+    mesh3d / VRM スキニングの両方に効く。
+    """
+    _check(); _engine.set_light_dir(x, y, z)
+
+def set_shadow_enabled(enabled: bool = True):
+    """平行光シャドウマップの有効/無効。"""
+    _check(); _engine.set_shadow_enabled(bool(enabled))
+
+def set_toon_params(threshold: float = 0.5, softness: float = 1.0,
+                    shade: float = 0.55, lit: float = 1.0):
+    """VRM スキニング用のトゥーン階調を設定する。
+
+    Args:
+        threshold: 明暗境界（half-Lambert 0〜1）
+        softness: 0 で硬い2階調。大きいほど柔らかい。
+                  ≥0.999 で従来の連続 half-Lambert（デフォルト）
+        shade: 影側の明るさ
+        lit: 光側の明るさ
+    """
+    _check(); _engine.set_toon_params(threshold, softness, shade, lit)
 
 def draw_mesh_3d(texture_id: int, verts: list, indices: list):
     _check(); _engine.draw_mesh_3d(texture_id, verts, indices)
+
+
+# ── GPU Boids API ────────────────────────────────────────────
+
+def create_boid_system_gpu(count: int, width: float = 1280.0, height: float = 720.0) -> int:
+    """GPU Compute Shader によるボイドシステムを作成する。
+
+    Args:
+        count:  最大ボイド数（バッファは一度だけ確保）
+        width:  シミュレーション幅
+        height: シミュレーション高さ
+
+    Returns:
+        boid_id: update_boids_gpu / draw_boids_gpu で使う ID
+
+    Example::
+        boid_id = kagra.create_boid_system_gpu(1_000_000)
+        kagra.update_boids_gpu(boid_id, dt)
+        kagra.draw_boids_gpu(boid_id)
+    """
+    _check(); return _engine.create_boid_system_gpu(count, width, height)
+
+
+def set_boid_active_count(boid_id: int, count: int):
+    """アクティブなボイド数を変更する（バッファ再確保なし）。"""
+    _check(); _engine.set_boid_active_count(boid_id, count)
+
+
+def update_boids_gpu(boid_id: int, dt: float):
+    """GPU でボイドを1フレーム更新する（CPU 転送ゼロ）。"""
+    _check(); _engine.update_boids_gpu(boid_id, dt)
+
+
+def draw_boids_gpu(boid_id: int):
+    """GPU ボイドを描画する。draw() の中で呼ぶ。"""
+    _check(); _engine.draw_boids_gpu(boid_id)
+
+
+def create_boid_system(count: int, width: float = 1280.0, height: float = 720.0) -> int:
+    """CPU（Rust + rayon）によるボイドシステムを作成する。"""
+    _check(); return _engine.create_boid_system(count, width, height)
+
+
+def update_boids(boid_id: int, dt: float):
+    """CPU でボイドを1フレーム更新する。"""
+    _check(); _engine.update_boids(boid_id, dt)
+
+
+def draw_boids(boid_id: int, batch_id: int, sprite_w: float = 6.0, sprite_h: float = 3.0):
+    """CPU ボイドをバッチに転送して描画する。"""
+    _check(); _engine.draw_boids(boid_id, batch_id, sprite_w, sprite_h)
 
 
 # ── VRM 低レベル ──────────────────────────────────────────────
@@ -448,6 +730,53 @@ def reset_blend_shapes(vrm_id: int):
 def list_blend_shapes(vrm_id: int) -> list[str]:
     """VRM のブレンドシェイプ名一覧を返す。"""
     _check(); return _engine.list_blend_shapes(vrm_id)
+
+def list_human_bones(vrm_id: int) -> list[str]:
+    """VRM humanoid 標準ボーン名の一覧を返す（hips, head, leftUpperArm, …）。"""
+    _check(); return _engine.list_human_bones(vrm_id)
+
+def resolve_vrm_bone(vrm_id: int, name: str) -> int | None:
+    """ボーン名をノード index に解決する。
+
+    実ノード名 / VRM 標準名（head） / VRoid 名（J_Bip_C_Head）のいずれでも可。
+    見つからなければ None。
+    """
+    _check(); return _engine.resolve_vrm_bone(vrm_id, name)
+
+def has_vrm_bone(vrm_id: int, name: str) -> bool:
+    """ボーン名がこの VRM で使えるか。"""
+    _check(); return _engine.has_vrm_bone(vrm_id, name)
+
+def get_vrm_look_at(vrm_id: int) -> dict | None:
+    """VRM LookAt メタデータを dict で返す。未定義なら None。
+
+    Returns:
+        {
+          "type": "bone" | "expression",
+          "offsetFromHeadBone": [x, y, z],
+          "rangeMapHorizontalInner": {"inputMaxValue": f, "outputScale": f},
+          "rangeMapHorizontalOuter": {...},
+          "rangeMapVerticalDown": {...},
+          "rangeMapVerticalUp": {...},
+        }
+    """
+    _check()
+    raw = _engine.get_vrm_look_at(vrm_id)
+    if raw is None:
+        return None
+    (typ, ox, oy, oz,
+     hi_in, hi_out, ho_in, ho_out,
+     vd_in, vd_out, vu_in, vu_out) = raw
+    def _rm(inp, out):
+        return {"inputMaxValue": float(inp), "outputScale": float(out)}
+    return {
+        "type": typ,
+        "offsetFromHeadBone": [float(ox), float(oy), float(oz)],
+        "rangeMapHorizontalInner": _rm(hi_in, hi_out),
+        "rangeMapHorizontalOuter": _rm(ho_in, ho_out),
+        "rangeMapVerticalDown": _rm(vd_in, vd_out),
+        "rangeMapVerticalUp": _rm(vu_in, vu_out),
+    }
 
 def set_fog(start: float = 5., end: float = 20.,
             color: tuple = (110,180,230), *, enabled: bool = True):
@@ -498,17 +827,104 @@ def _c(color, default_a=255):
 
 # ── フォント・テキスト ─────────────────────────────────────────
 
-def font(path: str) -> int:
+import os as _os
+import platform as _platform
+
+def _find_system_font(prefer: str = "meiryo") -> str | None:
+    """システムフォントを自動検出する（クロスプラットフォーム）。"""
+    system = _platform.system()
+    # Windows
+    if system == "Windows":
+        dirs = ["C:/Windows/Fonts"]
+        candidates = [
+            "meiryo.ttc", "meiryob.ttc", "msgothic.ttc",
+            "yugothic.ttf", "msmincho.ttc", "arial.ttf",
+        ]
+    elif system == "Darwin":
+        dirs = ["/System/Library/Fonts", "/Library/Fonts",
+                "/System/Library/Fonts/Supplemental"]
+        candidates = [
+            "ヒラギノ角ゴシック W3.ttc", "HiraginoSans-W3.ttc",
+            "AppleSDGothicNeo.ttc", "Arial.ttf",
+        ]
+    else:
+        dirs = ["/usr/share/fonts", "/usr/local/share/fonts"]
+        candidates = [
+            "NotoSansCJK-Regular.ttc", "NotoSansJP-Regular.otf",
+            "LiberationSans-Regular.ttf", "DroidSansFallback.ttf",
+        ]
+    for d in dirs:
+        if not _os.path.isdir(d):
+            continue
+        for c in candidates:
+            p = _os.path.join(d, c)
+            if _os.path.exists(p):
+                return p
+    # 再帰探索（上記で見つからなかった場合）
+    for d in dirs:
+        if not _os.path.isdir(d):
+            continue
+        for root, _, files in _os.walk(d):
+            for f in files:
+                if f.lower().endswith((".ttf", ".ttc", ".otf")):
+                    low = f.lower()
+                    if any(k in low for k in ["meiryo", "gothic", "noto", "arial", "liberation"]):
+                        return _os.path.join(root, f)
+    return None
+
+
+def font(path: str = None) -> int:
     """フォントを読み込み、デフォルト登録してIDを返す。
 
+    path を省略するとシステムフォントを自動検出する。
+    指定したパスが存在しなければ自動フォールバック。
+
     Example::
+        kagra.font()  # システムフォントを自動選択
         kagra.font("C:/Windows/Fonts/meiryo.ttc")
         kagra.text("スコア", 20, 20, 28)
     """
     global _default_font
-    fid = load_font(path)
+
+    if path is None:
+        found = _find_system_font()
+        if found:
+            path = found
+        else:
+            raise RuntimeError(
+                "システムフォントが見つかりません。"
+                "kagra.font('path/to/font.ttf') で明示的に指定してください。"
+            )
+    elif not _os.path.isabs(path) and not _os.path.splitext(path)[1]:
+        # 拡張子なし → assets.font 経由の名前解決
+        from kagra import assets
+        try:
+            fid = assets.font(path)
+            _default_font = fid
+            return fid
+        except Exception:
+            pass
+
+    # フォント読み込み（失敗時はフォールバック）
+    try:
+        fid = load_font(path)
+    except Exception as e:
+        fallback = _find_system_font()
+        if fallback and fallback != path:
+            try:
+                fid = load_font(fallback)
+            except Exception as e2:
+                raise RuntimeError(
+                    f"フォント読み込み失敗（フォールバックも不可）:\n"
+                    f"  指定: {path} -> {e}\n"
+                    f"  フォールバック: {fallback} -> {e2}"
+                )
+        else:
+            raise RuntimeError(f"フォント読み込み失敗: {path} ({e})")
+
     _default_font = fid
     return fid
+
 
 def set_font(font_id: int):
     """デフォルトフォントを変更する。"""
@@ -586,7 +1002,242 @@ def image_world(tex: int, wx: float, wy: float, w: float, h: float,
         draw_texture(tex, wx, wy, w, h, 0,0,None,None, alpha,0,0.,0.,flip_x,flip_y)
 
 
+# ── 2D 描画基本図形（ライン・ポリゴン・ラウンド矩形）────────────
+# これらの関数は既存の rect() / draw_mesh() を使って実装しているため、
+# Rust コア側に変更を加えずに純 Python で動作する。
+
+import math as _math
+
+
+def line(x1: float, y1: float, x2: float, y2: float,
+         color=(255,255,255), width: float = 1, alpha: int = 255):
+    """線分を描画する（矩形の連続で近似）。
+
+    Example::
+        kagra.line(100, 100, 500, 300, (255,100,100), width=3)
+    """
+    r,g,b,a = _c(color, alpha)
+    dx = x2 - x1
+    dy = y2 - y1
+    length = _math.sqrt(dx*dx + dy*dy)
+    if length < 0.5:
+        return
+    # 線を矩形の連続で表現（水平・垂直の最適化は line_h / line_v で）
+    steps = max(2, int(length / max(width, 1.0)))
+    for i in range(steps):
+        t = i / steps
+        px = x1 + dx * t
+        pw = max(1.0, length / steps + width * 0.3)
+        ph = max(1.0, width)
+        rect(px, py - ph / 2, pw, ph, r, g, b, a)
+
+
+
+def line_h(x: float, y: float, length: float,
+           color=(255,255,255), width: float = 1, alpha: int = 255):
+    """水平線を描画する（line より高速）。
+
+    Example::
+        kagra.line_h(100, 200, 400, (200,200,200), width=2)
+    """
+    r,g,b,a = _c(color, alpha)
+    rect(x, y - width / 2, length, width, r, g, b, a)
+
+
+def line_v(x: float, y: float, length: float,
+           color=(255,255,255), width: float = 1, alpha: int = 255):
+    """垂直線を描画する（line より高速）。
+
+    Example::
+        kagra.line_v(300, 100, 500, (200,200,200), width=2)
+    """
+    r,g,b,a = _c(color, alpha)
+    rect(x - width / 2, y, width, length, r, g, b, a)
+
+
+def polygon(pts: list, color=(255,255,255), alpha: int = 255):
+    """凸多角形を塗り潰す（三角形ファン分割）。
+
+    Args:
+        pts:  頂点リスト [(x1,y1), (x2,y2), ...]（3点以上）
+        color: (r,g,b) タプル
+
+    Example::
+        kagra.polygon([(400,100), (500,300), (300,300)], (100,200,255))
+    """
+    if len(pts) < 3:
+        return
+    r,g,b,a = _c(color, alpha)
+
+    # 三角形ファン: 最初の頂点を固定して扇状に三角形を描く
+    x0, y0 = pts[0]
+    for i in range(1, len(pts) - 1):
+        x1, y1 = pts[i]
+        x2, y2 = pts[i + 1]
+
+        # 三角形のバウンディングボックス
+        min_x = min(x0, x1, x2)
+        max_x = max(x0, x1, x2)
+        min_y = min(y0, y1, y2)
+        max_y = max(y0, y1, y2)
+
+        w = max_x - min_x
+        h = max_y - min_y
+        if w < 0.5 or h < 0.5:
+            continue
+
+        # スキャンライン方式で塗り潰し
+        area2 = abs((x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0))
+        if area2 < 0.001:
+            continue
+
+        for py in range(int(min_y), int(max_y) + 1):
+            # 走査線と辺の交差を求める
+            intersects = []
+            edges = [(x0, y0, x1, y1), (x1, y1, x2, y2), (x2, y2, x0, y0)]
+            for ex1, ey1, ex2, ey2 in edges:
+                if (ey1 <= py < ey2) or (ey2 <= py < ey1):
+                    t = (py - ey1) / (ey2 - ey1)
+                    ix = ex1 + t * (ex2 - ex1)
+                    intersects.append(ix)
+
+            if len(intersects) >= 2:
+                lx = min(intersects)
+                rx = max(intersects)
+                rect(lx, py, rx - lx, 1, r, g, b, a)
+
+
+def polygon_outline(pts: list, color=(255,255,255), width: float = 1, alpha: int = 255):
+    """多角形の輪郭線を描画する。
+
+    Args:
+        pts: 頂点リスト [(x1,y1), (x2,y2), ...]
+        color: (r,g,b) タプル
+        width: 線の太さ
+
+    Example::
+        kagra.polygon_outline([(100,100), (200,100), (200,200)],
+                              (255,0,0), width=2)
+    """
+    n = len(pts)
+    for i in range(n):
+        x1, y1 = pts[i]
+        x2, y2 = pts[(i + 1) % n]
+        line(x1, y1, x2, y2, color, width, alpha)
+
+
+def rounded_rect(x: float, y: float, w: float, h: float,
+                 radius: float = 8, color=(255,255,255), alpha: int = 255):
+    """角丸矩形を塗り潰す。
+
+    Example::
+        kagra.rounded_rect(100, 100, 300, 200, 16, (60,60,80))
+    """
+    r,g,b,a = _c(color, alpha)
+    radius = max(0, min(radius, min(w, h) / 2))
+
+    # 中央の矩形
+    rect(x + radius, y, w - radius * 2, h, r, g, b, a)
+    # 上下の矩形
+    rect(x, y + radius, radius, h - radius * 2, r, g, b, a)
+    rect(x + w - radius, y + radius, radius, h - radius * 2, r, g, b, a)
+
+    # 4つの角（扇形→スキャンライン）
+    def fill_corner(cx, cy, quad):
+        for dy in range(-radius, 0):
+            for dx in range(-radius, 0):
+                if dx*dx + dy*dy <= radius*radius:
+                    if quad == 0:
+                        rect(cx + dx, cy + dy, 1, 1, r, g, b, a)
+                    elif quad == 1:
+                        rect(cx - dx - 1, cy + dy, 1, 1, r, g, b, a)
+                    elif quad == 2:
+                        rect(cx + dx, cy - dy - 1, 1, 1, r, g, b, a)
+                    elif quad == 3:
+                        rect(cx - dx - 1, cy - dy - 1, 1, 1, r, g, b, a)
+
+    fill_corner(x + radius, y + radius, 0)       # 左上
+    fill_corner(x + w - radius, y + radius, 1)    # 右上
+    fill_corner(x + radius, y + h - radius, 2)    # 左下
+    fill_corner(x + w - radius, y + h - radius, 3)  # 右下
+
+
+def rounded_rect_outline(x: float, y: float, w: float, h: float,
+                          radius: float = 8, color=(255,255,255),
+                          width: float = 1, alpha: int = 255):
+    """角丸矩形の輪郭線を描画する。
+
+    Example::
+        kagra.rounded_rect_outline(50, 50, 200, 100, 12, (255,200,100), width=2)
+    """
+    r,g,b,a = _c(color, alpha)
+    radius = max(0, min(radius, min(w, h) / 2))
+
+    # 4辺の直線部分
+    rect(x + radius, y, w - radius * 2, width, r, g, b, a)            # 上
+    rect(x + radius, y + h - width, w - radius * 2, width, r, g, b, a)  # 下
+    rect(x, y + radius, width, h - radius * 2, r, g, b, a)            # 左
+    rect(x + w - width, y + radius, width, h - radius * 2, r, g, b, a)  # 右
+
+    # 4つの角（弧): ピクセル単位でドット打ち
+    def arc_pixel(cx, cy, start_angle, end_angle):
+        for a_deg in range(int(start_angle), int(end_angle), 1):
+            a = _math.radians(a_deg)
+            px = cx + radius * _math.cos(a)
+            py = cy + radius * _math.sin(a)
+            rect(px, py, width, width, r, g, b, a)
+
+    arc_pixel(x + radius, y + radius, 180, 270)     # 左上
+    arc_pixel(x + w - radius, y + radius, 270, 360)  # 右上
+    arc_pixel(x + w - radius, y + h - radius, 0, 90) # 右下
+    arc_pixel(x + radius, y + h - radius, 90, 180)   # 左下
+
+
+def circle_fill(x: float, y: float, radius: float,
+                color=(255,255,255), alpha: int = 255):
+    """塗り潰し円を描画する（スキャンライン）。
+
+    Example::
+        kagra.circle_fill(400, 300, 80, (255,100,100))
+    """
+    r,g,b,a = _c(color, alpha)
+    ri = int(radius)
+    for dy in range(-ri, ri + 1):
+        dx = int(_math.sqrt(max(0, radius*radius - dy*dy)))
+        if dx > 0:
+            rect(x - dx, y + dy, dx * 2, 1, r, g, b, a)
+
+
+def circle_outline(x: float, y: float, radius: float,
+                   color=(255,255,255), width: float = 1, alpha: int = 255):
+    """円の輪郭線を描画する。
+
+    Example::
+        kagra.circle_outline(400, 300, 80, (255,255,255), width=2)
+    """
+    r, g, b, a = _c(color, alpha)
+    # 多角形近似: 半径に応じて頂点数を決める
+    segments = max(12, int(radius * 0.5))
+    pts = []
+    for i in range(segments):
+        ang = 2 * _math.pi * i / segments
+        px = x + radius * _math.cos(ang)
+        py = y + radius * _math.sin(ang)
+        pts.append((px, py))
+    for i in range(segments):
+        x1, y1 = pts[i]
+        x2, y2 = pts[(i + 1) % segments]
+        # 短い線は小さな矩形で
+        mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+        dx, dy = x2 - x1, y2 - y1
+        seg_len = _math.sqrt(dx*dx + dy*dy)
+        if seg_len < 0.5:
+            continue
+        rect(mx - seg_len/2, my - width/2, seg_len, width, r, g, b, a)
+
+
 # ── UI ────────────────────────────────────────────────────────
+
 
 def button(x: float, y: float, w: float, h: float, label: str = "",
            *, bg=(70,70,90), hover=(100,100,150),
@@ -625,6 +1276,55 @@ def key(name: str) -> bool:
     Example::
         if kagra.key("LEFT"): player.x -= speed * dt
     """
+    return key_down(_key_code(name))
+
+def get_typed_chars() -> str:
+    """このフレームで確定入力された文字列を返す。
+
+    日本語 IME で変換確定した文字、ASCII の直接入力、
+    バックスペース（\x08）が含まれる。
+
+    Example::
+        chars = kagra.get_typed_chars()
+        for c in chars:
+            if c == '\x08':
+                text = text[:-1]
+            else:
+                text += c
+    """
+    _check()
+    return _engine.get_typed_chars()
+
+
+def get_preedit_text() -> str:
+    """IME 変換中のテキストを返す（確定前）。
+
+    日本語入力中に変換候補を選んでいる間の「よみがな」。
+    入力欄に下線付きで表示するのに使う。
+
+    Example::
+        preedit = kagra.get_preedit_text()
+        display = committed_text + preedit  # 変換中を末尾に表示
+    """
+    _check()
+    return _engine.get_preedit_text()
+
+
+def set_ime_cursor_pos(x: float, y: float):
+    """IME 候補ウィンドウの表示位置を設定する。
+
+    テキスト入力カーソルの位置（スクリーン座標）を渡す。
+    これにより変換候補が入力位置の近くに表示される。
+
+    Example::
+        # 入力欄の位置に合わせる
+        kagra.set_ime_cursor_pos(input_x, input_y)
+    """
+    _check()
+    _engine.set_ime_cursor_pos(float(x), float(y))
+
+def down(name: str) -> bool:
+    """キーが押し続けられているか。"""
     return key_down(_key_code(name))
 
 def pressed(name: str) -> bool:
@@ -790,6 +1490,7 @@ from kagra.anim_io       import (
 )
 from kagra.physics       import BoxCollider, Rigidbody, PhysicsSystem, TopDownPhysicsSystem
 from kagra.physics3d     import Physics3D, RigidBody3D, AABB
+from kagra.instances     import InstanceBatch
 from kagra.bgm_sync      import BgmSync, BgmCue, RhythmJudge, LiveScore
 from kagra.vrm_loader    import VrmModel
 from kagra.vrm_anim      import VrmAnimator, PoseKeyframe
@@ -804,4 +1505,336 @@ try:
     from kagra.vrm_avatar import VrmAvatar, PRESETS as avatar_presets
 except ImportError:
     pass
+
+# ─────────────────────────────────────────────────────────────
+# Phase 7: VRM 高品質化
+# ─────────────────────────────────────────────────────────────
+
+from kagra.vrm_lookat  import LookAtController
+from kagra.vrm_lipsync import LipSyncController, LipSyncTimeline
+from kagra.vrm_ik      import ArmIK, TwoBoneIK
+from kagra.vrm_emotion import EmotionController
+
+# ─────────────────────────────────────────────────────────────
+# Phase 8: AI キャラクター SDK
+# ─────────────────────────────────────────────────────────────
+
+from kagra.ai_character import AiCharacter, CharState
+
+# ─────────────────────────────────────────────────────────────
+# avatar() 関数のシグネチャ変更不要。
+# kagra.avatar() は引き続き VrmAvatar を返す。
+# Phase 7 機能は VrmAvatar のメソッドとして追加済み。
+#
+# 使い方:
+#   av = kagra.avatar("Emma.vrm")
+#   av.enable_lookat()
+#   av.enable_lipsync()
+#   av.enable_emotion()
+#   av.feel("joy")
+#
+# AI キャラ:
+#   char = kagra.AiCharacter("Emma.vrm", tts="voicevox")
+#   char.chat("こんにちは！")
+# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# Phase 9 追記パッチ
+# 既存の kagra/__init__.py の末尾（ `get_blend_shape_names = ...` の後）に追加する
+# ─────────────────────────────────────────────────────────────
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Phase 9a: ホットリロード
+# ═══════════════════════════════════════════════════════════════
+
+from kagra.hot_reload import HotReloader, make_hot_scene
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Phase 9b: インゲームコンソール
+# ═══════════════════════════════════════════════════════════════
+
+from kagra.console import DevConsole, get_console
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Phase 9d: tick_count / frame_index（DragonRuby 風）
+# ═══════════════════════════════════════════════════════════════
+
+_tick_count: int   = 0
+_fps_target: int   = 60
+_real_dt:    float = 0.0
+
+def _phase9_frame_hook(dt: float):
+    """ゲームループから毎フレーム呼ばれる内部フック。"""
+    global _tick_count, _real_dt
+    _tick_count += 1
+    _real_dt = dt
+    # HTTP コールバックのフラッシュ
+    from kagra.http_client import http_tick as _http_tick
+    _http_tick()
+
+
+def _make_phase9_update_wrapper(original_update):
+    """update 関数に Phase 9 フックを注入するラッパー。"""
+    def wrapped(dt: float):
+        _phase9_frame_hook(dt)
+        original_update(dt)
+    return wrapped
+
+
+def tick_count() -> int:
+    """ゲーム開始からのフレーム数を返す（DragonRuby の args.tick_count に相当）。
+
+    60fps なら 1秒 = 60、5秒 = 300。
+    dt を計算する代わりにフレーム数で時間を表現できる。
+
+    Example::
+        # 120フレーム（2秒）後に何かする
+        if kagra.tick_count() == 120:
+            spawn_enemy()
+
+        # 2秒周期の波
+        phase = (kagra.tick_count() % 120) / 120.0  # 0.0〜1.0
+        y = math.sin(phase * math.pi * 2) * 50
+    """
+    return _tick_count
+
+
+def frame_index(count: int, hold_for: int = 4, repeat: bool = True,
+                offset: int = 0) -> int:
+    """スプライトアニメのフレームインデックスを1行で計算する。
+
+    DragonRuby の tick_count.frame_index() に相当。
+
+    Args:
+        count:    フレーム枚数（例: 4 枚アニメなら 4）
+        hold_for: 1枚を何フレーム表示するか（デフォルト: 4）
+        repeat:   ループするか（False なら最終フレームで止まる）
+        offset:   開始オフセット（フレーム単位）
+
+    Returns:
+        現在のフレームインデックス（0 〜 count-1）
+
+    Example::
+        # 4枚・1枚4フレーム表示のアニメを1行で
+        frame = kagra.frame_index(count=4, hold_for=4)
+        # tileset[frame] を使って描画
+
+        # 8枚・60fpsで0.2秒ずつ表示（= 12フレーム）
+        frame = kagra.frame_index(count=8, hold_for=12)
+
+        # ループしない（死亡アニメ等）
+        frame = kagra.frame_index(count=6, hold_for=5, repeat=False)
+    """
+    tc = _tick_count + offset
+    total = count * hold_for
+    if repeat:
+        tc = tc % total
+    else:
+        tc = min(tc, total - 1)
+    return tc // hold_for
+
+
+def every(frames: int) -> bool:
+    """N フレームに 1 度 True を返す。
+
+    Example::
+        if kagra.every(30):        # 0.5秒に1回（60fps時）
+            spawn_particle()
+        if kagra.every(120):       # 2秒に1回
+            spawn_enemy()
+    """
+    if frames <= 0:
+        return True
+    return _tick_count % frames == 0
+
+
+def after(frames: int, from_tick: int = 0) -> bool:
+    """開始から N フレーム後に True になる（1フレームだけ）。
+
+    Example::
+        start = kagra.tick_count()
+
+        def update(dt):
+            if kagra.after(60, from_tick=start):  # 1秒後に一度だけ
+                show_hint()
+    """
+    return _tick_count == from_tick + frames
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Phase 9e: ジオメトリヘルパー（DragonRuby 風）
+# ═══════════════════════════════════════════════════════════════
+
+def intersect_rect(
+    ax: float, ay: float, aw: float, ah: float,
+    bx: float, by: float, bw: float, bh: float,
+) -> bool:
+    """2つの矩形が重なっているか判定する。
+
+    Args:
+        ax,ay,aw,ah: 矩形 A の x,y,幅,高さ
+        bx,by,bw,bh: 矩形 B の x,y,幅,高さ
+
+    Returns:
+        重なっていれば True
+
+    Example::
+        if kagra.intersect_rect(player.x, player.y, 32, 32,
+                                 coin.x,   coin.y,   16, 16):
+            collect_coin()
+    """
+    return (ax < bx + bw and ax + aw > bx and
+            ay < by + bh and ay + ah > by)
+
+
+def inside_rect(
+    px: float, py: float,
+    rx: float, ry: float, rw: float, rh: float,
+) -> bool:
+    """点が矩形の中にあるか判定する。
+
+    Example::
+        mx, my = kagra.mouse()
+        if kagra.inside_rect(mx, my, btn_x, btn_y, btn_w, btn_h):
+            # ホバー中
+    """
+    return rx <= px <= rx + rw and ry <= py <= ry + rh
+
+
+def inside_circle(
+    px: float, py: float,
+    cx: float, cy: float, radius: float,
+) -> bool:
+    """点が円の中にあるか判定する。
+
+    Example::
+        if kagra.inside_circle(px, py, enemy.x, enemy.y, 64):
+            take_damage()
+    """
+    dx = px - cx
+    dy = py - cy
+    return dx * dx + dy * dy <= radius * radius
+
+
+def intersect_circle_rect(
+    cx: float, cy: float, cr: float,
+    rx: float, ry: float, rw: float, rh: float,
+) -> bool:
+    """円と矩形が重なっているか判定する。
+
+    Example::
+        if kagra.intersect_circle_rect(
+                ball.x, ball.y, ball.radius,
+                wall.x, wall.y, wall.w, wall.h):
+            bounce()
+    """
+    nearest_x = max(rx, min(cx, rx + rw))
+    nearest_y = max(ry, min(cy, ry + rh))
+    dx = cx - nearest_x
+    dy = cy - nearest_y
+    return dx * dx + dy * dy <= cr * cr
+
+
+def distance(x1: float, y1: float, x2: float, y2: float) -> float:
+    """2点間の距離を返す。
+
+    Example::
+        d = kagra.distance(player.x, player.y, enemy.x, enemy.y)
+        if d < 100:
+            attack()
+    """
+    import math
+    return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+
+
+def distance_sq(x1: float, y1: float, x2: float, y2: float) -> float:
+    """2点間の距離の2乗を返す（sqrt なしで高速）。
+
+    Example::
+        # distance() より速い（比較だけなら sqrt 不要）
+        if kagra.distance_sq(px, py, ex, ey) < 100 * 100:
+            attack()
+    """
+    return (x2 - x1) ** 2 + (y2 - y1) ** 2
+
+
+def angle_to(x1: float, y1: float, x2: float, y2: float) -> float:
+    """点1から点2への角度（ラジアン）を返す。
+
+    Example::
+        angle = kagra.angle_to(bullet.x, bullet.y, target.x, target.y)
+        bullet.vx = math.cos(angle) * speed
+        bullet.vy = math.sin(angle) * speed
+    """
+    import math
+    return math.atan2(y2 - y1, x2 - x1)
+
+
+def lerp(a: float, b: float, t: float) -> float:
+    """線形補間。t=0 で a、t=1 で b。
+
+    Example::
+        camera_x = kagra.lerp(camera_x, player.x, 0.1)  # 滑らかな追従
+    """
+    return a + (b - a) * t
+
+
+def clamp(value: float, lo: float, hi: float) -> float:
+    """値を [lo, hi] の範囲にクランプする。
+
+    Example::
+        player.hp = kagra.clamp(player.hp + heal, 0, 100)
+    """
+    return max(lo, min(hi, value))
+
+
+def sign(value: float) -> int:
+    """値の符号を返す（正: 1、負: -1、0: 0）。
+
+    Example::
+        direction = kagra.sign(target_x - player_x)
+    """
+    if value > 0:
+        return 1
+    elif value < 0:
+        return -1
+    return 0
+
+
+def screen_to_world(sx: float, sy: float) -> tuple[float, float]:
+    """スクリーン座標をワールド座標に変換する（アクティブカメラを使用）。
+
+    Example::
+        mx, my = kagra.mouse()
+        wx, wy = kagra.screen_to_world(mx, my)
+        # wx, wy はワールド空間のマウス位置
+    """
+    if _camera:
+        return _camera.to_world(sx, sy)
+    return sx, sy
+
+
+def world_to_screen(wx: float, wy: float) -> tuple[float, float]:
+    """ワールド座標をスクリーン座標に変換する。
+
+    Example::
+        sx, sy = kagra.world_to_screen(enemy.x, enemy.y)
+        kagra.text("!", sx, sy - 20)
+    """
+    if _camera:
+        return _camera.to_screen(wx, wy)
+    return wx, wy
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Phase 9f: HTTP クライアント
+# ═══════════════════════════════════════════════════════════════
+
+from kagra.http_client import (
+    HttpClient, HttpResponse,
+    http_get, http_post, http_tick,
+    openai_chat, voicevox_speak,
+)
 

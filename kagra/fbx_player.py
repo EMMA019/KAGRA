@@ -1,41 +1,43 @@
 # kagra/fbx_player.py
 """
-FBX アニメーションプレイヤー (ロード時ベイク版)
-- FBX読み込み時に「VRMにそのまま流せるローカル回転＆移動」に変換（ベイク）
-- 再生時は計算ゼロ
-- 移動補正: Yのみ脚長比スケール、XZは1.0倍（歩行時の左右過大揺れ防止）
+FBX アニメーションプレイヤー
+ufbx（Rust）経由で FBX を直接読み込み、BvhMotion と同じ形式で返す。
+
+Example::
+    avatar = kagra.avatar("assets/Emma.vrm")
+
+    # FBX を1行でロード
+    avatar.load_motion("dance", "assets/hiphop.fbx")
+    avatar.play("dance", loop=True)
+
+    # または詳細確認
+    motion = kagra.load_fbx("assets/hiphop.fbx")
+    print(f"clips: {motion.clip_names}")
+    print(f"{motion.fps:.0f}fps  {motion.duration:.1f}sec")
+    avatar.add_motion("dance", motion)
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Tuple, List
-import math
-import warnings
-import os
+from typing import Optional
 
-# ============================================================================
-# クォータニオン基本演算
-# ============================================================================
-def _qconj(q: Tuple[float, float, float, float]) -> Tuple[float, float, float, float]:
+
+def _qconj(q):
     return (-q[0], -q[1], -q[2], q[3])
 
-def _qmul(a: Tuple[float, float, float, float],
-         b: Tuple[float, float, float, float]) -> Tuple[float, float, float, float]:
-    ax, ay, az, aw = a
-    bx, by, bz, bw = b
-    return (
-        aw * bx + ax * bw + ay * bz - az * by,
-        aw * by - ax * bz + ay * bw + az * bx,
-        aw * bz + ax * by - ay * bx + az * bw,
-        aw * bw - ax * bx - ay * by - az * bz
-    )
+def _qmul(a, b):
+    ax,ay,az,aw = a; bx,by,bz,bw = b
+    return (aw*bx+ax*bw+ay*bz-az*by,
+            aw*by-ax*bz+ay*bw+az*bx,
+            aw*bz+ax*by-ay*bx+az*bw,
+            aw*bw-ax*bx-ay*by-az*bz)
 
-def _qnorm(q: Tuple[float, float, float, float]) -> Tuple[float, float, float, float]:
-    l = math.sqrt(q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3])
-    if l < 1e-8:
-        return (0.0, 0.0, 0.0, 1.0)
+def _qnorm(q):
+    l = (q[0]**2+q[1]**2+q[2]**2+q[3]**2)**0.5 or 1e-8
     return (q[0]/l, q[1]/l, q[2]/l, q[3]/l)
 
-def _qdamp(q: Tuple[float, float, float, float], factor: float) -> Tuple[float, float, float, float]:
+def _qdamp(q, factor):
+    """クォータニオンの回転角度を factor 倍に抑制する（0.0〜1.0）。"""
+    import math
     w = max(-1.0, min(1.0, q[3]))
     angle = 2.0 * math.acos(w)
     if angle < 1e-6:
@@ -44,79 +46,104 @@ def _qdamp(q: Tuple[float, float, float, float], factor: float) -> Tuple[float, 
     s_old = math.sin(angle / 2.0)
     s_new = math.sin(new_angle / 2.0)
     ratio = s_new / s_old if s_old > 1e-8 else 0.0
-    return (q[0] * ratio, q[1] * ratio, q[2] * ratio, math.cos(new_angle / 2.0))
+    return (q[0]*ratio, q[1]*ratio, q[2]*ratio, math.cos(new_angle / 2.0))
 
-# ============================================================================
-# Mixamo ボーン階層 (ワールド計算用)
-# ============================================================================
-MIXAMO_PARENTS: Dict[str, str] = {
-    'Hips': 'Armature',
-    'Spine': 'Hips', 'Spine1': 'Spine', 'Spine2': 'Spine1',
-    'Neck': 'Spine2', 'Head': 'Neck', 'HeadTop_End': 'Head',
-    'LeftShoulder': 'Spine2', 'LeftArm': 'LeftShoulder', 'LeftForeArm': 'LeftArm', 'LeftHand': 'LeftForeArm',
-    'RightShoulder': 'Spine2', 'RightArm': 'RightShoulder', 'RightForeArm': 'RightArm', 'RightHand': 'RightForeArm',
-    'LeftUpLeg': 'Hips', 'LeftLeg': 'LeftUpLeg', 'LeftFoot': 'LeftLeg', 'LeftToeBase': 'LeftFoot',
-    'RightUpLeg': 'Hips', 'RightLeg': 'RightUpLeg', 'RightFoot': 'RightLeg', 'RightToeBase': 'RightFoot',
-}
-for hand in ('LeftHand', 'RightHand'):
-    for finger in ('Thumb', 'Index', 'Middle', 'Ring', 'Pinky'):
-        for i in range(1, 5):
-            name = f'{hand}{finger}{i}'
-            MIXAMO_PARENTS[name] = hand if i == 1 else f'{hand}{finger}{i-1}'
+# ufbx が target_axes=right_handed_y_up で変換済みなので
+# Armature の -90° X 回転はすでに吸収されている。
+# 追加の軸補正は不要（二重補正になる）。
 
-# ============================================================================
-# Mixamo → VRM ボーン名マッピング
-# ============================================================================
-MIXAMO_TO_VRM: Dict[str, str] = {
-    'Armature': 'Root',
-    'Hips': 'J_Bip_C_Hips',
-    'Spine': 'J_Bip_C_Spine',
-    'Spine1': 'J_Bip_C_Chest',
-    'Spine2': 'J_Bip_C_UpperChest',
-    'Neck': 'J_Bip_C_Neck',
-    'Head': 'J_Bip_C_Head',
-    'LeftShoulder': 'J_Bip_L_Shoulder',
-    'LeftArm': 'J_Bip_L_UpperArm',
-    'LeftForeArm': 'J_Bip_L_LowerArm',
-    'LeftHand': 'J_Bip_L_Hand',
+# ── Mixamo → VRM (J_Bip_*) ボーン名マッピング ──────────────────
+# Mixamo FBX のボーン名を VRM のボーン名に変換する
+# VRoid Studio の J_Bip_* 命名規則に対応
+_BONE_MAP = {
+    # 体幹
+    'Hips':        'J_Bip_C_Hips',
+    'Spine':       'J_Bip_C_Spine',
+    'Spine1':      'J_Bip_C_Chest',
+    'Spine2':      'J_Bip_C_UpperChest',
+    'Neck':        'J_Bip_C_Neck',
+    'Head':        'J_Bip_C_Head',
+    # 左腕
+    'LeftShoulder':  'J_Bip_L_Shoulder',
+    'LeftArm':       'J_Bip_L_UpperArm',
+    'LeftForeArm':   'J_Bip_L_LowerArm',
+    'LeftHand':      'J_Bip_L_Hand',
+    # 右腕
     'RightShoulder': 'J_Bip_R_Shoulder',
-    'RightArm': 'J_Bip_R_UpperArm',
-    'RightForeArm': 'J_Bip_R_LowerArm',
-    'RightHand': 'J_Bip_R_Hand',
-    'LeftUpLeg': 'J_Bip_L_UpperLeg',
-    'LeftLeg': 'J_Bip_L_LowerLeg',
-    'LeftFoot': 'J_Bip_L_Foot',
+    'RightArm':      'J_Bip_R_UpperArm',
+    'RightForeArm':  'J_Bip_R_LowerArm',
+    'RightHand':     'J_Bip_R_Hand',
+    # 左脚
+    'LeftUpLeg':   'J_Bip_L_UpperLeg',
+    'LeftLeg':     'J_Bip_L_LowerLeg',
+    'LeftFoot':    'J_Bip_L_Foot',
     'LeftToeBase': 'J_Bip_L_ToeBase',
-    'RightUpLeg': 'J_Bip_R_UpperLeg',
-    'RightLeg': 'J_Bip_R_LowerLeg',
-    'RightFoot': 'J_Bip_R_Foot',
+    # 右脚
+    'RightUpLeg':   'J_Bip_R_UpperLeg',
+    'RightLeg':     'J_Bip_R_LowerLeg',
+    'RightFoot':    'J_Bip_R_Foot',
     'RightToeBase': 'J_Bip_R_ToeBase',
+    # mixamorig: プレフィックス付き版（Mixamo のキャラ付き FBX）
+    'mixamorig:Hips':        'J_Bip_C_Hips',
+    'mixamorig:Spine':       'J_Bip_C_Spine',
+    'mixamorig:Spine1':      'J_Bip_C_Chest',
+    'mixamorig:Spine2':      'J_Bip_C_UpperChest',
+    'mixamorig:Neck':        'J_Bip_C_Neck',
+    'mixamorig:Head':        'J_Bip_C_Head',
+    'mixamorig:LeftShoulder':  'J_Bip_L_Shoulder',
+    'mixamorig:LeftArm':       'J_Bip_L_UpperArm',
+    'mixamorig:LeftForeArm':   'J_Bip_L_LowerArm',
+    'mixamorig:LeftHand':      'J_Bip_L_Hand',
+    'mixamorig:RightShoulder': 'J_Bip_R_Shoulder',
+    'mixamorig:RightArm':      'J_Bip_R_UpperArm',
+    'mixamorig:RightForeArm':  'J_Bip_R_LowerArm',
+    'mixamorig:RightHand':     'J_Bip_R_Hand',
+    'mixamorig:LeftUpLeg':   'J_Bip_L_UpperLeg',
+    'mixamorig:LeftLeg':     'J_Bip_L_LowerLeg',
+    'mixamorig:LeftFoot':    'J_Bip_L_Foot',
+    'mixamorig:LeftToeBase': 'J_Bip_L_ToeBase',
+    'mixamorig:RightUpLeg':   'J_Bip_R_UpperLeg',
+    'mixamorig:RightLeg':     'J_Bip_R_LowerLeg',
+    'mixamorig:RightFoot':    'J_Bip_R_Foot',
+    'mixamorig:RightToeBase': 'J_Bip_R_ToeBase',
 }
-for m_prefix, v_prefix in (('LeftHand', 'J_Bip_L_'), ('RightHand', 'J_Bip_R_')):
-    for finger in ('Thumb', 'Index', 'Middle', 'Ring', 'Pinky'):
-        for i in range(1, 5):
-            MIXAMO_TO_VRM[f'{m_prefix}{finger}{i}'] = f'{v_prefix}{finger}{i}'
 
-VRM_HIPS_Y_BIND = 0.8532
-DAMP_MAP = {
-    'J_Bip_C_Head': 0.2,
-    'J_Bip_C_Neck': 0.3,
-    'J_Bip_C_UpperChest': 0.6,
-    'J_Bip_C_Chest': 0.7,
+# ── ボーン回転抑制率（1.0=そのまま, 0.0=固定）
+# FBX/VRM のバインドポーズ差異による過剰回転を抑制
+# 完全スキップするボーン
+# 足首・つま先は FBX/VRM 間の軸規約差が大きく、ローカル空間デルタでも
+# 過剰回転が発生するためスキップが必要
+_SKIP_BONES = {
+    'J_Bip_L_Foot',      # 足首：軸規約差が大きい
+    'J_Bip_R_Foot',
+    'J_Bip_L_ToeBase',   # 足先
+    'J_Bip_R_ToeBase',
 }
 
-BakedClip = List[Tuple[Dict[str, Tuple[float, float, float, float]], float, Tuple[float, float, float]]]
+_DAMP_MAP = {
+    # 頭・首は軸ズレの影響を受けやすいのでやや抑制
+    'J_Bip_C_Head':       0.5,
+    'J_Bip_C_Neck':       0.4,
+    # 体幹はダンスの動きを活かすため強めに適用
+    'J_Bip_C_UpperChest': 0.7,
+    'J_Bip_C_Chest':      0.8,
+    'J_Bip_C_Spine':      0.8,
+}
+_HEAD_DAMP = _DAMP_MAP  # 後方互換
+
 
 @dataclass
 class FbxMotion:
-    _raw_clips: list
-    _clip_index: int = 0
-    _baked_cache: Dict[int, BakedClip] = field(default_factory=dict)
-    _bind_frame: Optional[list] = field(default=None)
-    _vrm_bind_rot: Dict[str, Tuple[float, float, float, float]] = field(default_factory=dict)
+    """ufbx で読み込んだ FBX アニメーションデータ。
+
+    BvhMotion と同じ to_clip() インターフェースを持つ。
+    """
+    _raw_clips: list          # Rust から返ってきた生データ
+    _clip_index: int = 0      # 使用するクリップのインデックス
+    _cache: Optional[list] = field(default=None, repr=False)
 
     @property
-    def clip_names(self) -> List[str]:
+    def clip_names(self) -> list[str]:
         return [c[0] for c in self._raw_clips]
 
     @property
@@ -125,158 +152,156 @@ class FbxMotion:
 
     @property
     def fps(self) -> float:
-        return 1.0 / self.frame_time if self.frame_time > 0 else 30.0
+        ft = self.frame_time
+        return 1.0 / ft if ft > 0 else 60.0
+
+    @property
+    def duration(self) -> float:
+        frames = self._raw_clips[self._clip_index][2]
+        return len(frames) * self.frame_time
 
     def use_clip(self, name: str) -> 'FbxMotion':
+        """使用するクリップを名前で選択する。"""
         for i, (clip_name, _, _) in enumerate(self._raw_clips):
             if clip_name == name:
                 self._clip_index = i
+                self._cache = None
                 return self
-        raise ValueError(f"Clip '{name}' not found")
+        raise ValueError(f"Clip '{name}' not found. Available: {self.clip_names}")
 
-    def set_bind_from_fbx(self, bind_fbx_path: str) -> None:
-        import kagra
-        raw = kagra._engine.load_fbx_anim(bind_fbx_path)
-        if not raw:
-            raise RuntimeError(f"T-pose FBX could not be loaded: {bind_fbx_path}")
-        self._bind_frame = raw[0][2][0]
-        print(f"[FBX] Bind pose loaded from: {bind_fbx_path}")
+    def to_clip(self) -> list:
+        """VrmAvatar.add_motion() に渡せる [(bones_dict, duration, root_pos), ...] に変換する。
 
-    def set_vrm_bind_rotations(self, vrm_bind_map: Dict[str, Tuple[float, float, float, float]]) -> None:
-        self._vrm_bind_rot = vrm_bind_map.copy()
+        デルタ回転は Rust 側（fbx_loader.rs）で計算済み。
+        node.local_transform.rotation をバインドポーズとして使用するため精度が高い。
+        """
+        if self._cache is not None:
+            return self._cache
 
-    def _bake_clip(self, clip_index: int) -> BakedClip:
-        if clip_index in self._baked_cache:
-            return self._baked_cache[clip_index]
+        _, frame_time, raw_frames = self._raw_clips[self._clip_index]
+        clip = []
 
-        _, frame_time, raw_frames = self._raw_clips[clip_index]
-        bind_source = self._bind_frame if self._bind_frame else raw_frames[0]
-        if not self._bind_frame:
-            warnings.warn("No T-pose FBX set; using first animation frame as bind pose.", UserWarning)
+        # ── 接地計算 ──────────────────────────────────────────────
+        # max(Armature Y) = 立ち姿勢（最も高い点）
+        # → この時 root_offset = 0（VRM キャラが自然な立ち位置）
+        #
+        # delta_y = arm_y - max_arm_y ≤ 0
+        # → しゃがみ・フレア時にマイナスになり VRM が沈む
+        #
+        # 脚長スケール補正:
+        # FBX 脚高 = max(arm_y) - min(arm_y)（立ちから最低点まで）
+        # VRM 脚高 = VRM Hips Y（bind_trans_y ≈ 0.853m）
+        # scale = VRM脚高 / FBX脚高
 
-        # FBXバインドワールド回転
-        fbx_bind_local = {}
-        for item in bind_source:
-            name, _, _, _, qx, qy, qz, qw, _ = item
-            fbx_bind_local[name] = (qx, qy, qz, qw)
-        fbx_bind_world = {}
-        def calc_fbx_bind_world(node):
-            if node in fbx_bind_world: return fbx_bind_world[node]
-            lr = fbx_bind_local.get(node, (0,0,0,1))
-            if node not in MIXAMO_PARENTS:
-                wr = lr
-            else:
-                wr = _qmul(calc_fbx_bind_world(MIXAMO_PARENTS[node]), lr)
-            fbx_bind_world[node] = wr
-            return wr
-        for node in fbx_bind_local:
-            calc_fbx_bind_world(node)
-
-        # VRMバインドワールド回転
-        vrm_bind_local = {}
-        for mix_name, vrm_name in MIXAMO_TO_VRM.items():
-            vrm_bind_local[mix_name] = self._vrm_bind_rot.get(vrm_name, (0,0,0,1))
-        vrm_bind_world = {}
-        def calc_vrm_bind_world(node):
-            if node in vrm_bind_world: return vrm_bind_world[node]
-            lr = vrm_bind_local.get(node, (0,0,0,1))
-            if node not in MIXAMO_PARENTS:
-                wr = lr
-            else:
-                wr = _qmul(calc_vrm_bind_world(MIXAMO_PARENTS[node]), lr)
-            vrm_bind_world[node] = wr
-            return wr
-        for node in fbx_bind_local:
-            calc_vrm_bind_world(node)
-
-        # 移動補正パラメータ
-        x_bind_arm = y_bind_arm = z_bind_arm = 0.0
-        hips_bind_y = 0.0
-        for item in bind_source:
-            name, tx, ty, tz, _, _, _, _, has_trans = item
-            if name == 'Armature' and has_trans:
-                x_bind_arm, y_bind_arm, z_bind_arm = tx, ty, tz
-            if name == 'Hips' and has_trans:
-                hips_bind_y = ty
-        leg_len_fbx = hips_bind_y - y_bind_arm
-        if leg_len_fbx <= 0:
-            leg_len_fbx = 0.7
-        scale_y = VRM_HIPS_Y_BIND / leg_len_fbx
-        
-        # ★ 千鳥足対策: XZ軸の移動量もY軸（脚の長さ）に合わせて縮小する
-        # ※ もしこれでも左右の揺れが強すぎる（ガニ股すぎる）場合は、 `scale_y * 0.8` などのように
-        # さらにスケールダウンさせると、アニメキャラらしい直線的な歩き方になります。
-        scale_xz = scale_y * 0.2 
-
-        baked = []
-        for frame in raw_frames:
-            fbx_cur_local = {}
-            root_delta = (0.0, 0.0, 0.0)
-            for item in frame:
-                name, tx, ty, tz, qx, qy, qz, qw, has_trans = item
-                fbx_cur_local[name] = (qx, qy, qz, qw)
+        # ── Armature XYZ を全フレーム収集 ─────────────────────────
+        arm_xs, arm_ys, arm_zs = [], [], []
+        for raw_frame in raw_frames:
+            ax = ay = az = None
+            for (name, tx, ty, tz, qx, qy, qz, qw, has_trans) in raw_frame:
                 if name == 'Armature' and has_trans:
-                    dx = (tx - x_bind_arm) * scale_xz
-                    dz = (tz - z_bind_arm) * scale_xz
-                    dy = (ty - y_bind_arm) * scale_y
-                    root_delta = (dx, dy, dz)
+                    ax, ay, az = tx, ty, tz
+                    break
+            arm_xs.append(ax or 0.0)
+            arm_ys.append(ay or 0.0)
+            arm_zs.append(az or 0.0)
 
-            # ワールド回転とデルタ
-            fbx_cur_world = {}
-            delta_world = {}
-            def calc_frame_world(node):
-                if node in fbx_cur_world: return fbx_cur_world[node]
-                lr = fbx_cur_local.get(node, (0,0,0,1))
-                if node not in MIXAMO_PARENTS:
-                    wr = lr
-                else:
-                    wr = _qmul(calc_frame_world(MIXAMO_PARENTS[node]), lr)
-                fbx_cur_world[node] = wr
-                bind_w = fbx_bind_world.get(node, (0,0,0,1))
-                delta_world[node] = _qmul(wr, _qconj(bind_w))
-                return wr
-            for node in fbx_cur_local:
-                calc_frame_world(node)
+        true_ground_y = min(arm_ys) if arm_ys else 0.0
+        first_arm_y   = arm_ys[0]  if arm_ys else 0.0
 
-            # VRMターゲットワールド → ローカル回転
-            target_world = {node: _qmul(delta_world[node], vrm_bind_world.get(node, (0,0,0,1)))
-                            for node in delta_world}
+        # fbx_leg_h = frame[0] から床までの高さ（FBXの「立ち」基準）
+        fbx_leg_h = first_arm_y - true_ground_y
+        if fbx_leg_h < 0.01:
+            fbx_leg_h = 1.0
+
+        # vrm_hips_y = VRM の Hips バインドY（≈ 0.853m）
+        vrm_hips_y = 0.853
+        for (name, tx, ty, tz, qx, qy, qz, qw, has_trans) in raw_frames[0]:
+            if 'Hips' in name and has_trans:
+                vrm_hips_y = ty
+                break
+
+        # scale: プロポーション差を吸収
+        scale = vrm_hips_y / fbx_leg_h
+
+        # XZ の原点（frame[0] 基準）
+        base_arm_x = arm_xs[0]
+        base_arm_z = arm_zs[0]
+
+        print(f"[FBX] ground={true_ground_y:.4f} frame0={first_arm_y:.4f}")
+        print(f"[FBX] fbx_leg={fbx_leg_h:.4f} vrm_hips={vrm_hips_y:.4f} scale={scale:.4f}")
+
+        for fi, raw_frame in enumerate(raw_frames):
             bones = {}
-            for node, tw in target_world.items():
-                if node not in MIXAMO_PARENTS:
-                    local_q = tw
-                else:
-                    parent = MIXAMO_PARENTS[node]
-                    ptw = target_world[parent]
-                    local_q = _qmul(_qconj(ptw), tw)
-                vrm_name = MIXAMO_TO_VRM.get(node, node)
-                if vrm_name in DAMP_MAP:
-                    local_q = _qdamp(local_q, DAMP_MAP[vrm_name])
-                bones[vrm_name] = local_q
-            if 'Armature' in target_world:
-                bones['Root'] = target_world['Armature']
+            arm_x, arm_y, arm_z = arm_xs[fi], arm_ys[fi], arm_zs[fi]
 
-            baked.append((bones, frame_time, root_delta))
+            # Y: (arm_y - ground) をスケール → VRM 脚長に合わせる
+            #    frame[0] 時 scaled_y = fbx_leg_h * scale = vrm_hips_y → offset=0
+            #    最低点時 scaled_y = 0 → offset = -vrm_hips_y → Hips が床
+            scaled_y = (arm_y - true_ground_y) * scale
+            offset_y = scaled_y - vrm_hips_y
 
-        self._baked_cache[clip_index] = baked
-        return baked
+            # XZ: frame[0] からのデルタ（水平移動）
+            offset_x = (arm_x - base_arm_x) * scale
+            offset_z = (arm_z - base_arm_z) * scale
 
-    def to_clip(self) -> BakedClip:
-        return self._bake_clip(self._clip_index)
+            # 足ボーンをスキップしている間は位置オフセットを無効にする
+            # （足が地面から離れてしまうため）
+            root_pos = (0.0, 0.0, 0.0)
+
+            for (name, tx, ty, tz, qx, qy, qz, qw, has_trans) in raw_frame:
+                if name in ('Armature', 'Root', 'root'):
+                    continue
+
+                # ボーン名マッピング（Mixamo → J_Bip_*）
+                vrm_name = _BONE_MAP.get(name, name)
+
+                # 完全スキップ
+                if vrm_name in _SKIP_BONES:
+                    continue
+
+                q_delta = (qx, qy, qz, qw)
+                damp = _DAMP_MAP.get(vrm_name, 1.0)
+                if damp < 1.0:
+                    q_delta = _qdamp(q_delta, damp)
+                bones[vrm_name] = q_delta
+
+            clip.append((bones, frame_time, root_pos))
+
+        self._cache = clip
+        return clip
 
 
-def load_fbx(path: str, clip_name: str = None, bind_fbx_path: str = None) -> FbxMotion:
+def load_fbx(path: str, clip_name: str = None) -> FbxMotion:
+    """FBX ファイルを読み込んで FbxMotion を返す。
+
+    Args:
+        path:      FBX ファイルのパス
+        clip_name: 使用するクリップ名（省略時は最初のクリップ）
+
+    Returns:
+        FbxMotion（BvhMotion と同じインターフェース）
+
+    Example::
+        # シンプル版（推奨）
+        avatar.load_motion("dance", "assets/hiphop.fbx")
+
+        # 詳細確認
+        motion = kagra.load_fbx("assets/hiphop.fbx")
+        print(motion.clip_names)
+        print(f"{motion.fps:.0f}fps  {motion.duration:.1f}sec")
+    """
     import kagra
-    raw = kagra._engine.load_fbx_anim(path)
+    raw = kagra.get_engine().load_fbx_anim(path)
     if not raw:
-        raise RuntimeError(f"No animation found in FBX: {path}")
+        raise RuntimeError(f"FBX にアニメーションが見つかりませんでした: {path}")
+
     motion = FbxMotion(_raw_clips=raw)
+
     if clip_name:
         motion.use_clip(clip_name)
-    if bind_fbx_path and os.path.exists(bind_fbx_path):
-        motion.set_bind_from_fbx(bind_fbx_path)
-    else:
-        warnings.warn(f"Bind FBX not provided: {bind_fbx_path}. Using first animation frame as bind pose.")
-    _ = motion.to_clip()  # ベイク実行
-    print(f"[FBX] Loaded & baked: {path} | Clips: {motion.clip_names} | FPS: {motion.fps:.1f}")
+
+    print(f"[FBX] {path}")
+    print(f"  clips : {motion.clip_names}")
+    print(f"  fps   : {motion.fps:.0f}  duration: {motion.duration:.1f}sec")
+
     return motion

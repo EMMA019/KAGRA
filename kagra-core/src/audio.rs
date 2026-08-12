@@ -1,8 +1,6 @@
-// kagra-core/src/audio.rs
-// rodio 0.17 対応版（安定API）
-// OutputStream::try_default() + Sink::try_new(&handle)
-
+// src/audio.rs
 use std::fs::File;
+use crate::error::lock_recover;
 use std::io::BufReader;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -11,7 +9,6 @@ use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 const MAX_SE_CHANNELS: usize = 32;
 
 pub struct AudioEngine {
-    // dropすると音が止まるため保持
     _stream: OutputStream,
     handle:  OutputStreamHandle,
     bgm_sink: Arc<Mutex<Option<Sink>>>,
@@ -33,10 +30,9 @@ impl AudioEngine {
         Sink::try_new(&self.handle).map_err(|e| e.to_string())
     }
 
-    // ── BGM ────────────────────────────────────────────────────
     pub fn play_bgm(&self, path: &str, loop_: bool, volume: f32) -> Result<(), String> {
         {
-            let mut g = self.bgm_sink.lock().unwrap();
+            let mut g = lock_recover(&self.bgm_sink);
             if let Some(s) = g.take() { s.stop(); }
         }
         let file = File::open(Path::new(path))
@@ -49,57 +45,55 @@ impl AudioEngine {
         if loop_ { sink.append(source.repeat_infinite()); }
         else      { sink.append(source); }
 
-        *self.bgm_sink.lock().unwrap() = Some(sink);
+        *lock_recover(&self.bgm_sink) = Some(sink);
         Ok(())
     }
 
     pub fn stop_bgm(&self, fade: f32) {
         let sink_arc = Arc::clone(&self.bgm_sink);
         if fade <= 0.0 {
-            if let Some(s) = sink_arc.lock().unwrap().take() { s.stop(); }
+            if let Some(s) = lock_recover(&sink_arc).take() { s.stop(); }
             return;
         }
-        // フェードアウト: 別スレッドでボリュームを段階的に下げてから stop
         std::thread::spawn(move || {
             let steps = 20u32;
             let interval = std::time::Duration::from_secs_f32(fade / steps as f32);
             for step in (0..steps).rev() {
                 {
-                    let g = sink_arc.lock().unwrap();
+                    let g = lock_recover(&sink_arc);
                     if let Some(s) = g.as_ref() {
                         s.set_volume(step as f32 / steps as f32);
                     } else {
-                        return; // 既に停止済み
+                        return;
                     }
                 }
                 std::thread::sleep(interval);
             }
-            if let Some(s) = sink_arc.lock().unwrap().take() { s.stop(); }
+            if let Some(s) = lock_recover(&sink_arc).take() { s.stop(); }
         });
     }
 
     pub fn pause_bgm(&self) {
-        if let Some(s) = self.bgm_sink.lock().unwrap().as_ref() { s.pause(); }
+        if let Some(s) = lock_recover(&self.bgm_sink).as_ref() { s.pause(); }
     }
 
     pub fn resume_bgm(&self) {
-        if let Some(s) = self.bgm_sink.lock().unwrap().as_ref() { s.play(); }
+        if let Some(s) = lock_recover(&self.bgm_sink).as_ref() { s.play(); }
     }
 
     pub fn set_bgm_volume(&self, vol: f32) {
-        if let Some(s) = self.bgm_sink.lock().unwrap().as_ref() {
+        if let Some(s) = lock_recover(&self.bgm_sink).as_ref() {
             s.set_volume(vol.clamp(0.0, 1.0));
         }
     }
 
-    // ── SE ─────────────────────────────────────────────────────
     pub fn play_se(&self, path: &str, volume: f32) -> Result<(), String> {
         let file = File::open(Path::new(path))
             .map_err(|e| format!("SEファイルを開けません: {} ({})", path, e))?;
         let source = Decoder::new(BufReader::new(file))
             .map_err(|e| format!("SEデコード失敗: {}", e))?;
 
-        let mut pool = self.se_pool.lock().unwrap();
+        let mut pool = lock_recover(&self.se_pool);
         pool.retain(|s: &Sink| !s.empty());
         if pool.len() >= MAX_SE_CHANNELS {
             pool[0].stop();
@@ -113,7 +107,7 @@ impl AudioEngine {
     }
 
     pub fn stop_all_se(&self) {
-        let mut pool = self.se_pool.lock().unwrap();
+        let mut pool = lock_recover(&self.se_pool);
         for s in pool.iter() { s.stop(); }
         pool.clear();
     }

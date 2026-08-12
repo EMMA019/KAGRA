@@ -85,7 +85,7 @@ class VrmAnimator:
         """
         Args:
             vrm_id: kagra.load_vrm() の戻り値
-            engine: kagra._engine（Rust エンジンインスタンス）
+            engine: kagra.get_engine()（Rust エンジンインスタンス）
         """
         self.vrm_id  = vrm_id
         self.engine  = engine

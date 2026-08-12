@@ -250,14 +250,14 @@ class PythonAnimator:
         if not bones:
             for n,qf in self._from.items():
                 qn=_slerp(qf,_ID,te); self._cur[n]=qn
-                kagra._engine.set_vrm_bone_rot(self.vid,n,*qn)
+                kagra.get_engine().set_vrm_bone_rot(self.vid,n,*qn)
             if self._t>=1.:
-                kagra._engine.reset_vrm_pose(self.vid); self._cur.clear()
+                kagra.get_engine().reset_vrm_pose(self.vid); self._cur.clear()
         else:
             for n,rot in bones.items():
                 qt=_eq(*rot); qf=self._from.get(n,_ID)
                 qn=_slerp(qf,qt,te); self._cur[n]=qn
-                kagra._engine.set_vrm_bone_rot(self.vid,n,*qn)
+                kagra.get_engine().set_vrm_bone_rot(self.vid,n,*qn)
         if self._t>=1.:
             self._fidx+=1
             if self._fidx>=len(self._frames):
@@ -313,7 +313,7 @@ class MazeGame(kagra.Scene):
                 self.vrm_id=kagra.load_vrm(VRM_PATH)
                 self.anim=PythonAnimator(self.vrm_id)
                 q_flip = _eq(0, math.pi, 0)
-                kagra._engine.set_vrm_bone_rot(self.vrm_id,"J_Bip_C_Hips",*q_flip)
+                kagra.get_engine().set_vrm_bone_rot(self.vrm_id,"J_Bip_C_Hips",*q_flip)
                 self.anim._cur["J_Bip_C_Hips"] = q_flip
                 self.anim.play("idle",loop=True)
                 print("VRM ロード成功")
@@ -342,7 +342,7 @@ class MazeGame(kagra.Scene):
         self.ps.angle=0.
         self.items_left=sum(row.count(TILE_ITEM) for row in self.maze_data)
         self.game_clear=False
-        self.cam.update(kagra._engine)
+        self.cam.update(kagra.get_engine())
 
     def pick_item(self,tx,ty):
         self.maze_data[ty][tx]=TILE_FLOOR; self.total+=10; self.items_left-=1
@@ -370,7 +370,7 @@ class MazeGame(kagra.Scene):
             self.cam.orbit_phi,self.cam.orbit_r=0.15,28.
         else:
             self.cam.orbit_phi,self.cam.orbit_r=1.1,7.
-        self.cam.update(kagra._engine)
+        self.cam.update(kagra.get_engine())
 
     def draw(self):
         kagra.cls(110,180,230)

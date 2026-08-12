@@ -1,6 +1,4 @@
-// kagra-core/src/text.rs
-// ab_glyph 0.2 対応版（TTC/TTF両対応）
-
+// src/text.rs
 use std::collections::HashMap;
 use ab_glyph::{Font, ScaleFont, PxScale, point};
 
@@ -15,7 +13,6 @@ pub struct GlyphMetrics {
 }
 
 pub struct TextRenderer {
-    // font_id → (font_data_leak, FontRef)
     fonts:        HashMap<u32, ab_glyph::FontVec>,
     next_font_id: u32,
     glyph_cache:  HashMap<(u32, char, u32), GlyphMetrics>,
@@ -38,7 +35,6 @@ impl TextRenderer {
         }
     }
 
-    /// TTF/TTCファイルをロードしてfont_idを返す
     pub fn load_font(&mut self, path: &str) -> Result<u32, String> {
         let data = std::fs::read(path)
             .map_err(|e| format!("フォント読み込み失敗: {} ({})", path, e))?;
@@ -50,7 +46,6 @@ impl TextRenderer {
         Ok(id)
     }
 
-    /// テキストをグリフコマンド (tex_id, x, y, w, h) のリストに展開
     pub fn layout_text(
         &mut self,
         device:   &wgpu::Device,
@@ -111,7 +106,6 @@ impl TextRenderer {
         self.textures.get(&tex_id)
     }
 
-    // ── グリフをテクスチャに焼く ──────────────────────────────
     fn rasterize(
         &mut self,
         device:  &wgpu::Device,

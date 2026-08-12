@@ -9,7 +9,19 @@ description = "KAGRA - Kernel for Anime/Game Runtime Architecture"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 
+[project.optional-dependencies]
+facetrack = ["mediapipe", "opencv-python"]
+dev = ["pytest>=7.0"]
+
 [tool.maturin]
 manifest-path = "kagra-core/Cargo.toml"
 module-name = "kagra.kagra_core"
-features = ["pyo3/extension-module"]
+features = ["extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
+markers = [
+    "golden: GPU headless screenshot regression (requires built kagra_core)",
+]

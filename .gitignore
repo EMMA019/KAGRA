@@ -22,12 +22,50 @@ venv/
 .DS_Store
 Thumbs.db
 
+# 秘密情報
+.env
+.env.local
+.env.*
+!.env.example
+
+# ローカル作業メモ
+d.txt
+
+# 実行時に自動生成される成果物
+config.json
+keymap.json
+save_data.json
+save_*.json
+assets_manifest.json
+
+# デバッグ出力
+debug_*.json
+*.tif
+*.tiff
+
+# ビルド成果物 / ツールキャッシュ
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# 開発ツールのローカル状態
+.vision-pm/
+scratch/
+
 # 大きなアセット（サンプル以外は含めない）
 *.fbx
 *.bvh
+# 合成フィクスチャは回帰・デモ用に追跡する
+!tests/fixtures/
+!tests/fixtures/**/*.bvh
 *.vrm
 *.png
 *.jpg
+# ゴールデン画像は回帰テストの基準として追跡する
+!tests/goldens/
+!tests/goldens/**/*.png
 *.wav
 *.ogg
 *.mp3
@@ -42,4 +80,3 @@ assets/maps/
 assets/prefabs/
 assets/scenes/
 assets/data/
-

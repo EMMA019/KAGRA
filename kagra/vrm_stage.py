@@ -208,7 +208,7 @@ class StageScene(kagra.Scene):
         if wy: self.cam.zoom(-wy * 0.2)
         if not self._drag:
             self.cam.orbit_by(dt * 0.08, 0)
-        self.cam.update(kagra._engine)
+        self.cam.update(kagra.get_engine())
 
     def draw(self):
         kagra.cls(10, 8, 20)

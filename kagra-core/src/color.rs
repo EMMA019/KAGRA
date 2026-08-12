@@ -1,3 +1,4 @@
+// src/color.rs
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyTuple};
@@ -115,6 +116,32 @@ impl Color {
 impl Default for Color {
     fn default() -> Self {
         Self::rgb_const(255, 255, 255)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn to_f32_normalizes() {
+        let c = Color::new(255, 128, 0, 255);
+        let f = c.to_f32();
+        assert!((f[0] - 1.0).abs() < 1e-6);
+        assert!((f[1] - 128.0 / 255.0).abs() < 1e-6);
+        assert!((f[2] - 0.0).abs() < 1e-6);
+        assert!((f[3] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn default_is_white() {
+        assert_eq!(Color::default(), Color::new(255, 255, 255, 255));
+    }
+
+    #[test]
+    fn from_rgb_tuple_sets_alpha() {
+        let c: Color = (10, 20, 30).into();
+        assert_eq!(c, Color::new(10, 20, 30, 255));
     }
 }
 
