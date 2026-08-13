@@ -1,5 +1,7 @@
+import Foundation
 import KagraShell
 
+// `@main` は main.swift では使えない（トップレベルコード扱いになる）ので別名にする。
 @main
 struct KagraShellCLI {
     static func main() {

@@ -32,6 +32,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      # rodio -> cpal -> alsa-sys は pkg-config で ALSA を探す。
+      # GitHub の ubuntu イメージには開発ヘッダが入っていない。
+      - name: Install ALSA headers
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+
       - name: Cargo test (no extension-module)
         working-directory: kagra-core
         run: cargo test --no-default-features --locked
@@ -120,12 +125,16 @@ jobs:
         with:
           gradle-version: "8.7"
 
+      # ランナーに Android SDK は入っているが sdkmanager は PATH に無い。
+      # この action が cmdline-tools を配置して PATH を通す。
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       # AGP は未インストールの platform / NDK を自動取得しないので明示する。
       - name: Install Android SDK packages
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager --install "platforms;android-35" "build-tools;35.0.0" \
-            "cmake;3.22.1" "ndk;26.1.10909125" > /dev/null
+            "cmake;3.22.1" "ndk;26.1.10909125"
 
       - name: Assemble debug
         working-directory: mobile/android
@@ -158,8 +167,14 @@ jobs:
           pip install --upgrade pip
           pip install maturin "pytest>=7.0"
 
-      - name: Build and install editable
-        run: maturin develop --release
+      # maturin develop は virtualenv の中でしか動かない。CI の Python は
+      # 素の環境なので、ホイールを作って入れる。テストからの見え方は同じ。
+      - name: Build wheel
+        run: maturin build --release --out dist
+
+      - name: Install wheel
+        shell: bash
+        run: pip install dist/*.whl
 
       - name: Run golden image tests
         run: pytest tests -m golden -v
@@ -191,6 +206,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
+      # rodio -> cpal -> alsa-sys は pkg-config で ALSA を探す。
+      - name: Install ALSA headers
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
 
       - name: Install build dependencies
         run: |
