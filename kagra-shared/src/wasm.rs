@@ -65,6 +65,48 @@ impl WasmSession {
     pub fn stats_json(&self) -> String {
         self.inner.stats_json()
     }
+
+    /// canvas を描画先にする。WebGPU / WebGL2 のどちらかが使えれば成功する。
+    ///
+    /// アダプタ取得が非同期なので JS からは `await session.attachCanvas(canvas)`。
+    #[cfg(feature = "render")]
+    #[wasm_bindgen(js_name = attachCanvas)]
+    pub async fn attach_canvas(
+        &mut self,
+        canvas: web_sys::HtmlCanvasElement,
+    ) -> Result<(), JsValue> {
+        let width = canvas.width().max(1);
+        let height = canvas.height().max(1);
+        self.inner.create_surface(width, height);
+        let renderer = crate::render::Renderer::new_for_surface(
+            crate::render::SurfaceSource::Canvas(canvas),
+            width,
+            height,
+        )
+        .await
+        .map_err(|e| JsValue::from_str(&e))?;
+        self.inner.attach_renderer(renderer);
+        Ok(())
+    }
+
+    /// 現在のシーンを 1 枚描く。`requestFrame()` の後に呼ぶ。
+    #[cfg(feature = "render")]
+    pub fn render(&mut self) -> Result<(), JsValue> {
+        self.inner.render().map_err(|e| JsValue::from_str(&e))
+    }
+
+    /// 描画先が接続済みか。
+    #[cfg(feature = "render")]
+    #[wasm_bindgen(js_name = hasRenderer)]
+    pub fn has_renderer(&self) -> bool {
+        self.inner.has_renderer()
+    }
+
+    /// この wasm が描画機能付きでビルドされているか。
+    #[wasm_bindgen(js_name = renderSupported)]
+    pub fn render_supported(&self) -> bool {
+        cfg!(feature = "render")
+    }
 }
 
 #[wasm_bindgen(js_name = sharedVersion)]

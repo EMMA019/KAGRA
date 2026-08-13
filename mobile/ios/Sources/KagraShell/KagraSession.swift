@@ -17,6 +17,35 @@ public final class KagraSession {
         String(cString: kagra_shared_version())
     }
 
+    public var lastError: String {
+        String(cString: kagra_shared_last_error())
+    }
+
+    /// 描画が有効なビルドかどうか。stub リンク時は常に false。
+    public var hasRenderer: Bool {
+        guard let ptr else { return false }
+        return kagra_shared_has_renderer(ptr) == 1
+    }
+
+    /// `UIView` を描画先にする。成功したら以降 `render()` が絵を出す。
+    @discardableResult
+    public func attach(view: UnsafeMutableRawPointer, width: UInt32, height: UInt32) -> Bool {
+        guard let ptr else { return false }
+        return kagra_shared_attach_ios_view(ptr, view, width, height) == 0
+    }
+
+    public func detachSurface() {
+        guard let ptr else { return }
+        _ = kagra_shared_detach_surface(ptr)
+    }
+
+    /// 現在のシーンを 1 枚描く。`requestFrame()` の後に呼ぶ。
+    @discardableResult
+    public func render() -> Bool {
+        guard let ptr else { return false }
+        return kagra_shared_render(ptr) == 0
+    }
+
     public func createSurface(width: UInt32, height: UInt32) {
         guard let ptr else { return }
         _ = kagra_shared_create_surface(ptr, width, height)

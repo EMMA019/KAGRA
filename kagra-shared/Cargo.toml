@@ -2,7 +2,7 @@
 name = "kagra-shared"
 version = "0.1.0"
 edition = "2021"
-description = "KAGRA shared runtime for Wasm / Android / iOS (input + session + C ABI)"
+description = "KAGRA shared runtime for Wasm / Android / iOS (input + session + 2D renderer + C ABI)"
 license = "MIT"
 
 [lib]
@@ -12,14 +12,37 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 [features]
 default = []
 # wasm-bindgen エントリ（wasm32 向け）
-wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:web-sys"]
+wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:web-sys", "dep:wasm-bindgen-futures"]
+# wgpu 2D レンダラ。無効ならセッション／入力のみの純ロジック lib になる。
+render = ["dep:wgpu", "dep:bytemuck", "dep:raw-window-handle", "dep:pollster"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 once_cell = "1.19"
 
+# kagra-core（0.19）とは独立に現行世代を使う。古い wgpu の WebGPU バックエンドは
+# 今のブラウザが外した limit（maxInterStageShaderComponents）を要求して
+# device 作成に失敗するため。
+#
+# dx12 は外す: wgpu-hal 30 が要求する gpu-allocator 0.28 が windows 0.62.2 で
+# コンパイルできない（上流の semver 内破壊）。共有コアの実行先は
+# Android(Vulkan/GLES) / iOS(Metal) / Web で、Windows はテスト用の
+# オフスクリーンのみなので Vulkan で足りる。
+wgpu = { version = "30", optional = true, default-features = false, features = [
+    "std",
+    "parking_lot",
+    "vulkan",
+    "metal",
+    "gles",
+    "wgsl",
+] }
+bytemuck = { version = "1", optional = true, features = ["derive"] }
+raw-window-handle = { version = "0.6", optional = true }
+pollster = { version = "0.3", optional = true }
+
 wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
 js-sys = { version = "0.3", optional = true }
 web-sys = { version = "0.3", optional = true, features = [
     "console",
@@ -30,7 +53,17 @@ web-sys = { version = "0.3", optional = true, features = [
     "Element",
 ] }
 
+# ブラウザでは WebGPU を優先し、無ければ WebGL2 に落ちる。
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wgpu = { version = "30", optional = true, features = ["webgpu", "webgl"] }
+
 [dev-dependencies]
+png = "0.17"
+pollster = "0.3"
+
+[[example]]
+name = "offscreen"
+required-features = ["render"]
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false

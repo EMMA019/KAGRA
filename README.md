@@ -91,11 +91,14 @@ Contracts: `kagra.contracts.resolve_asset`, touch: `kagra.touch.VirtualPad`.
 
 ## Mobile / Wasm
 
-Shared Rust crate **`kagra-shared`** (C ABI + wasm-bindgen).  
+Shared Rust crate **`kagra-shared`** (C ABI + wasm-bindgen) with a built-in wgpu 2D renderer,
+so Android, iOS and the browser run the same drawing code.  
 Android Gradle app: `mobile/android/` · iOS SwiftPM: `mobile/ios/` · see `mobile/README.md`.
 
 ```bash
-cargo test -p kagra-shared
+cargo test -p kagra-shared --features render
+# render one frame without a window or a device:
+cargo run -p kagra-shared --features render --example offscreen
 ./scripts/build_wasm.sh
 ```
 

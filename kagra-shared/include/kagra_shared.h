@@ -34,6 +34,25 @@ int64_t kagra_shared_request_frame(SharedSession *ptr);
 int kagra_shared_stats_json(SharedSession *ptr, char *buf, unsigned buflen);
 int kagra_shared_resolve_alias(unsigned kind, const char *name, char *buf, unsigned buflen);
 
+/* 描画。"render" feature 無しでビルドされた lib では -1 を返し、
+ * kagra_shared_last_error() に理由が入る。 */
+int kagra_shared_attach_android_surface(
+    SharedSession *ptr,
+    void *a_native_window,
+    unsigned width,
+    unsigned height
+);
+int kagra_shared_attach_ios_view(
+    SharedSession *ptr,
+    void *ui_view,
+    unsigned width,
+    unsigned height
+);
+int kagra_shared_attach_offscreen(SharedSession *ptr, unsigned width, unsigned height);
+int kagra_shared_detach_surface(SharedSession *ptr);
+int kagra_shared_has_renderer(SharedSession *ptr);
+int kagra_shared_render(SharedSession *ptr);
+
 #ifdef __cplusplus
 }
 #endif

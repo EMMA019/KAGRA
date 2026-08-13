@@ -10,8 +10,10 @@ static int64_t g_frame = 0;
 static unsigned g_w = 390, g_h = 844;
 static int g_paused = 0;
 
+static const char *g_err = "";
+
 const char *kagra_shared_version(void) { return "0.1.0-stub"; }
-const char *kagra_shared_last_error(void) { return ""; }
+const char *kagra_shared_last_error(void) { return g_err; }
 
 SharedSession *kagra_shared_create(void) {
     return (SharedSession *)(uintptr_t)1;
@@ -48,6 +50,24 @@ int kagra_shared_stats_json(SharedSession *ptr, char *buf, unsigned buflen) {
     memcpy(buf, tmp, n);
     return (int)n;
 }
+/* 描画はスタブでは行えない。UI 側はこの失敗を見てプレースホルダを出す。 */
+static int no_renderer(void) {
+    g_err = "stub build: link libkagra_shared.a for rendering";
+    return -1;
+}
+int kagra_shared_attach_android_surface(SharedSession *ptr, void *w, unsigned width, unsigned height) {
+    (void)ptr; (void)w; (void)width; (void)height; return no_renderer();
+}
+int kagra_shared_attach_ios_view(SharedSession *ptr, void *view, unsigned width, unsigned height) {
+    (void)ptr; (void)view; g_w = width; g_h = height; return no_renderer();
+}
+int kagra_shared_attach_offscreen(SharedSession *ptr, unsigned width, unsigned height) {
+    (void)ptr; g_w = width; g_h = height; return no_renderer();
+}
+int kagra_shared_detach_surface(SharedSession *ptr) { (void)ptr; return 0; }
+int kagra_shared_has_renderer(SharedSession *ptr) { (void)ptr; return 0; }
+int kagra_shared_render(SharedSession *ptr) { (void)ptr; return no_renderer(); }
+
 int kagra_shared_resolve_alias(unsigned kind, const char *name, char *buf, unsigned buflen) {
     (void)kind; (void)name;
     const char *s = "assets/Emma.vrm";

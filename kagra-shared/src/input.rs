@@ -74,6 +74,13 @@ impl VirtualPad {
         self.ly = 0.0;
     }
 
+    /// デッドゾーンを適用したスティック値。
+    pub fn stick(&self) -> (f32, f32) {
+        let dz = self.deadzone;
+        let f = |v: f32| if v.abs() >= dz { v } else { 0.0 };
+        (f(self.lx), f(self.ly))
+    }
+
     pub fn desired_keys(&self) -> Vec<&'static str> {
         let mut keys = Vec::new();
         if self.lx.abs() >= self.deadzone {

@@ -23,6 +23,15 @@ int64_t kagra_shared_request_frame(SharedSession *ptr);
 int kagra_shared_stats_json(SharedSession *ptr, char *buf, unsigned buflen);
 int kagra_shared_resolve_alias(unsigned kind, const char *name, char *buf, unsigned buflen);
 
+/* 描画。stub.c 実装では常に失敗し、本物の libkagra_shared.a をリンクすると
+ * CAMetalLayer 経由で wgpu が描く。 */
+int kagra_shared_attach_android_surface(SharedSession *ptr, void *a_native_window, unsigned width, unsigned height);
+int kagra_shared_attach_ios_view(SharedSession *ptr, void *ui_view, unsigned width, unsigned height);
+int kagra_shared_attach_offscreen(SharedSession *ptr, unsigned width, unsigned height);
+int kagra_shared_detach_surface(SharedSession *ptr);
+int kagra_shared_has_renderer(SharedSession *ptr);
+int kagra_shared_render(SharedSession *ptr);
+
 #ifdef __cplusplus
 }
 #endif

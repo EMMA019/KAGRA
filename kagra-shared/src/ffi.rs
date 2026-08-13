@@ -5,7 +5,7 @@
 //! C/Kotlin/Swift から見た ABI は safe 版と同一。
 
 use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_float, c_int, c_uint};
+use std::os::raw::{c_char, c_float, c_int, c_uint, c_void};
 use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
@@ -219,6 +219,198 @@ pub unsafe extern "C" fn kagra_shared_stats_json(
         return -1;
     };
     write_cstr(&s.stats_json(), buf, buflen)
+}
+
+// ── 描画 ─────────────────────────────────────────────────────
+//
+// `render` feature が無いビルドでもシンボルは残す。シェル側のバイナリを
+// 作り直さずに feature を切り替えられるようにするため、失敗を戻り値で伝える。
+
+#[cfg(not(feature = "render"))]
+fn render_unavailable() -> c_int {
+    set_err("built without the \"render\" feature");
+    -1
+}
+
+/// Android の `ANativeWindow*` を描画先にする。
+///
+/// # Safety
+/// `ptr` は生存中のハンドル。`window` は `kagra_shared_detach_surface` まで
+/// 有効な `ANativeWindow*`。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_attach_android_surface(
+    ptr: *mut SharedSession,
+    window: *mut c_void,
+    width: c_uint,
+    height: c_uint,
+) -> c_int {
+    #[cfg(feature = "render")]
+    {
+        attach(
+            ptr,
+            crate::render::SurfaceSource::AndroidNativeWindow(window),
+            width,
+            height,
+        )
+    }
+    #[cfg(not(feature = "render"))]
+    {
+        let _ = (ptr, window, width, height);
+        render_unavailable()
+    }
+}
+
+/// iOS の `UIView*`（CAMetalLayer を持つ view）を描画先にする。
+///
+/// # Safety
+/// `ptr` は生存中のハンドル。`view` は detach まで有効な `UIView*`。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_attach_ios_view(
+    ptr: *mut SharedSession,
+    view: *mut c_void,
+    width: c_uint,
+    height: c_uint,
+) -> c_int {
+    #[cfg(feature = "render")]
+    {
+        attach(
+            ptr,
+            crate::render::SurfaceSource::UiKitView(view),
+            width,
+            height,
+        )
+    }
+    #[cfg(not(feature = "render"))]
+    {
+        let _ = (ptr, view, width, height);
+        render_unavailable()
+    }
+}
+
+/// 画面を持たない描画先を作る（自己診断用）。
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_attach_offscreen(
+    ptr: *mut SharedSession,
+    width: c_uint,
+    height: c_uint,
+) -> c_int {
+    #[cfg(feature = "render")]
+    {
+        let Some(sess) = session(ptr) else {
+            return -1;
+        };
+        sess.create_surface(width, height);
+        match pollster::block_on(crate::render::Renderer::new_offscreen(width, height)) {
+            Ok(r) => {
+                sess.attach_renderer(r);
+                0
+            }
+            Err(e) => {
+                set_err(e);
+                -1
+            }
+        }
+    }
+    #[cfg(not(feature = "render"))]
+    {
+        let _ = (ptr, width, height);
+        render_unavailable()
+    }
+}
+
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_detach_surface(ptr: *mut SharedSession) -> c_int {
+    #[cfg(feature = "render")]
+    {
+        match session(ptr) {
+            Some(s) => {
+                s.detach_renderer();
+                0
+            }
+            None => -1,
+        }
+    }
+    #[cfg(not(feature = "render"))]
+    {
+        let _ = ptr;
+        render_unavailable()
+    }
+}
+
+/// 描画先が接続済みなら 1。
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_has_renderer(ptr: *mut SharedSession) -> c_int {
+    #[cfg(feature = "render")]
+    {
+        match session(ptr) {
+            Some(s) => s.has_renderer() as c_int,
+            None => -1,
+        }
+    }
+    #[cfg(not(feature = "render"))]
+    {
+        let _ = ptr;
+        0
+    }
+}
+
+/// 現在のシーンを 1 枚描く。`kagra_shared_request_frame` の後に呼ぶ。
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_render(ptr: *mut SharedSession) -> c_int {
+    #[cfg(feature = "render")]
+    {
+        let Some(sess) = session(ptr) else {
+            return -1;
+        };
+        match sess.render() {
+            Ok(()) => 0,
+            Err(e) => {
+                set_err(e);
+                -1
+            }
+        }
+    }
+    #[cfg(not(feature = "render"))]
+    {
+        let _ = ptr;
+        render_unavailable()
+    }
+}
+
+#[cfg(feature = "render")]
+unsafe fn attach(
+    ptr: *mut SharedSession,
+    source: crate::render::SurfaceSource,
+    width: c_uint,
+    height: c_uint,
+) -> c_int {
+    let Some(sess) = session(ptr) else {
+        return -1;
+    };
+    sess.create_surface(width, height);
+    match pollster::block_on(crate::render::Renderer::new_for_surface(
+        source, width, height,
+    )) {
+        Ok(r) => {
+            sess.attach_renderer(r);
+            0
+        }
+        Err(e) => {
+            set_err(e);
+            -1
+        }
+    }
 }
 
 /// alias 候補を `\n` 区切りで buf に書く。

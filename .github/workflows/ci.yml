@@ -77,8 +77,16 @@ jobs:
       - name: Unit tests
         run: cargo test -p kagra-shared
 
-      - name: Build for wasm32
-        run: cargo build -p kagra-shared --target wasm32-unknown-unknown --features wasm --release
+      # GPU の無いランナーではアダプタが取れないので、描画テストは自動的に
+      # スキップされる。ここではコンパイルと純ロジックの検証が目的。
+      - name: Clippy with rendering
+        run: cargo clippy -p kagra-shared --all-targets --features render -- -D warnings
+
+      - name: Unit tests with rendering
+        run: cargo test -p kagra-shared --features render
+
+      - name: Build for wasm32 (render + wasm)
+        run: cargo build -p kagra-shared --target wasm32-unknown-unknown --features wasm,render --release
 
   # iOS シェルは stub.c でリンクするため実機 SDK もランタイムも不要。
   ios-shell:

@@ -1,11 +1,23 @@
 #include <jni.h>
 #include <string>
 #include <android/log.h>
+#include <android/native_window.h>
+#include <android/native_window_jni.h>
 
 #if KAGRA_HAS_SHARED
 #include "kagra_shared.h"
 static SharedSession *g_session = nullptr;
 #endif
+
+// Surface から取り出した ANativeWindow。wgpu のサーフェスより長生きさせる。
+static ANativeWindow *g_window = nullptr;
+
+static void release_window() {
+  if (g_window) {
+    ANativeWindow_release(g_window);
+    g_window = nullptr;
+  }
+}
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "kagra", __VA_ARGS__)
 
@@ -42,10 +54,12 @@ extern "C" JNIEXPORT void JNICALL
 Java_dev_kagra_shell_KagraNative_destroy(JNIEnv *, jobject) {
 #if KAGRA_HAS_SHARED
   if (g_session) {
+    kagra_shared_detach_surface(g_session);
     kagra_shared_destroy(g_session);
     g_session = nullptr;
   }
 #endif
+  release_window();
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -127,5 +141,59 @@ Java_dev_kagra_shell_KagraNative_statsJson(JNIEnv *env, jobject) {
   return env->NewStringUTF(buf);
 #else
   return env->NewStringUTF("{\"stub\":true}");
+#endif
+}
+
+// ── 描画 ────────────────────────────────────────────────────
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_attachSurface(
+    JNIEnv *env, jobject, jobject surface, jint w, jint h) {
+#if KAGRA_HAS_SHARED
+  if (!g_session || !surface) return JNI_FALSE;
+  release_window();
+  g_window = ANativeWindow_fromSurface(env, surface);
+  if (!g_window) {
+    LOGI("ANativeWindow_fromSurface returned null");
+    return JNI_FALSE;
+  }
+  int rc = kagra_shared_attach_android_surface(
+      g_session, (void *)g_window, (unsigned)w, (unsigned)h);
+  if (rc != 0) {
+    LOGI("attach failed: %s", kagra_shared_last_error());
+    release_window();
+    return JNI_FALSE;
+  }
+  return JNI_TRUE;
+#else
+  (void)env; (void)surface; (void)w; (void)h;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_kagra_shell_KagraNative_detachSurface(JNIEnv *, jobject) {
+#if KAGRA_HAS_SHARED
+  if (g_session) kagra_shared_detach_surface(g_session);
+#endif
+  // サーフェスを捨ててから ANativeWindow を解放する順序を守る。
+  release_window();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_hasRenderer(JNIEnv *, jobject) {
+#if KAGRA_HAS_SHARED
+  return g_session && kagra_shared_has_renderer(g_session) == 1;
+#else
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_render(JNIEnv *, jobject) {
+#if KAGRA_HAS_SHARED
+  return g_session && kagra_shared_render(g_session) == 0;
+#else
+  return JNI_FALSE;
 #endif
 }

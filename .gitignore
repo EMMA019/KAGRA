@@ -49,6 +49,8 @@ build/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+# wasm-bindgen / wasm-pack が生成する JS グルーと .wasm
+kagra-shared/www/pkg/
 
 # 開発ツールのローカル状態
 .vision-pm/
