@@ -2,24 +2,69 @@
 
 use crate::audio::AudioLevels;
 use crate::driving::DrivingScene;
+use crate::game::{DemoGame, GamePhase, GAME_ID, GAME_TITLE};
 use crate::input::{KeyEvent, PointerEvent, PointerPhase, VirtualPad};
 use crate::save::{SaveGame, Settings};
 use crate::scene::{DemoScene, DrawList};
+use crate::ui::{PauseMenu, UiAction, UiMode};
 use crate::vehicle::DriveInput;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct FrameStats {
     pub frame: u64,
     pub width: u32,
     pub height: u32,
     pub paused: bool,
     pub pointer_count: u32,
-    /// km/h。運転モードのときだけ意味を持つ。
+    /// km/h（絶対値）。運転モードのときだけ意味を持つ。
     pub speed_kmh: f32,
+    /// 後退中か。
+    pub reversing: bool,
     /// 走行距離（m）。
     pub distance_m: f32,
     pub audio: AudioLevels,
+    /// pickup / dropoff / complete
+    pub mission: String,
+    pub mission_progress: f32,
+    pub ui: UiMode,
+    pub traffic_count: u32,
+    pub game_id: &'static str,
+    pub game_title: &'static str,
+    pub game_phase: GamePhase,
+    pub game_time_s: f32,
+    pub game_score: u32,
+    pub game_best_s: Option<f32>,
+    pub has_cargo: bool,
+    pub objective: String,
+}
+
+impl Default for FrameStats {
+    fn default() -> Self {
+        Self {
+            frame: 0,
+            width: 0,
+            height: 0,
+            paused: false,
+            pointer_count: 0,
+            speed_kmh: 0.0,
+            reversing: false,
+            distance_m: 0.0,
+            audio: AudioLevels::default(),
+            mission: "pickup".into(),
+            mission_progress: 0.0,
+            ui: UiMode::Hud,
+            traffic_count: 0,
+            game_id: GAME_ID,
+            game_title: GAME_TITLE,
+            game_phase: GamePhase::Title,
+            game_time_s: 0.0,
+            game_score: 0,
+            game_best_s: None,
+            has_cargo: false,
+            objective: "title".into(),
+        }
+    }
 }
 
 /// どのシーンを動かすか。既定は運転デモ。
@@ -43,6 +88,7 @@ pub struct SharedSession {
     pub kind: SceneKind,
     pub scene: DemoScene,
     pub driving: DrivingScene,
+    pub game: DemoGame,
     pub settings: Settings,
     pointers: Vec<PointerEvent>,
     pending_keys: Vec<KeyEvent>,
@@ -68,6 +114,12 @@ impl Default for SharedSession {
             kind: SceneKind::default(),
             scene: DemoScene::default(),
             driving: DrivingScene::default(),
+            // 単体テスト／オフスクリーンはすぐ運転できるよう Playing 開始。
+            // Wasm デモは `show_title()` でタイトルに戻す。
+            game: DemoGame {
+                phase: GamePhase::Playing,
+                ..DemoGame::default()
+            },
             settings: Settings::default(),
             pointers: Vec::new(),
             pending_keys: Vec::new(),
@@ -104,7 +156,15 @@ impl SharedSession {
 
     pub fn push_pointer(&mut self, ev: PointerEvent) {
         if matches!(ev.phase, PointerPhase::Begin) {
-            self.pending_taps.push((ev.x, ev.y));
+            match self.game.phase {
+                GamePhase::Title | GamePhase::Complete if self.kind == SceneKind::Driving => {
+                    self.start_game();
+                }
+                _ if self.paused && self.kind == SceneKind::Driving => {
+                    self.handle_pause_tap(ev.x, ev.y);
+                }
+                _ => self.pending_taps.push((ev.x, ev.y)),
+            }
         }
         // 同一 id は最新で置換、begin は追加
         if let Some(slot) = self.pointers.iter_mut().find(|p| p.id == ev.id) {
@@ -113,6 +173,46 @@ impl SharedSession {
             self.pointers.push(ev);
         }
         // end/cancel は次フレームで掃除してもよいが、ここでは保持して poll で返す
+    }
+
+    fn handle_pause_tap(&mut self, x: f32, y: f32) {
+        let menu = PauseMenu::layout(self.width, self.height);
+        match menu.hit(x, y) {
+            Some(UiAction::Resume) => self.resume(),
+            Some(UiAction::Restart) => {
+                self.start_game();
+            }
+            Some(UiAction::ToggleMute) => {
+                self.settings.muted = !self.settings.muted;
+            }
+            None => {}
+        }
+    }
+
+    /// タイトル画面へ。デモの起動時用。
+    pub fn show_title(&mut self) {
+        let best = self.game.best_time_s;
+        self.driving.restart();
+        self.game = DemoGame {
+            phase: GamePhase::Title,
+            best_time_s: best,
+            ..DemoGame::default()
+        };
+        self.paused = false;
+        self.driving.set_input(DriveInput::default());
+    }
+
+    /// 配送ランを最初から開始する。
+    pub fn start_game(&mut self) {
+        let best = self.game.best_time_s;
+        self.driving.restart();
+        self.game = DemoGame {
+            best_time_s: best,
+            ..DemoGame::default()
+        };
+        self.game.start();
+        self.paused = false;
+        self.kind = SceneKind::Driving;
     }
 
     pub fn set_pad(&mut self, x: f32, y: f32) {
@@ -125,6 +225,10 @@ impl SharedSession {
 
     /// 連続値のドライバ入力。仮想ハンドルや傾きセンサを持つシェルはこちらを使う。
     pub fn set_drive(&mut self, steer: f32, throttle: f32, brake: f32) {
+        if !self.game.is_driving() {
+            self.driving.set_input(DriveInput::default());
+            return;
+        }
         let sens = self.settings.steer_sensitivity;
         self.driving.set_input(DriveInput {
             steer: (steer * sens).clamp(-1.0, 1.0),
@@ -179,7 +283,12 @@ impl SharedSession {
             self.frame = self.frame.saturating_add(1);
             let taps = std::mem::take(&mut self.pending_taps);
             match self.kind {
-                SceneKind::Driving => self.driving.update(),
+                SceneKind::Driving => {
+                    if self.game.is_driving() {
+                        self.driving.update();
+                        self.game.tick(&self.driving.mission);
+                    }
+                }
                 SceneKind::Demo2D => {
                     let pad = self.pad.stick();
                     self.scene.update(self.width, self.height, pad, &taps);
@@ -197,8 +306,28 @@ impl SharedSession {
             paused: self.paused,
             pointer_count: self.pointers.len() as u32,
             speed_kmh: self.driving.truck.speed_kmh(),
+            reversing: self.driving.truck.is_reversing(),
             distance_m: self.driving.odometer,
             audio: self.audio_levels(),
+            mission: self.driving.mission.label().into(),
+            mission_progress: self
+                .driving
+                .mission
+                .progress_along_route(self.driving.path_s),
+            ui: if self.paused {
+                UiMode::Pause
+            } else {
+                UiMode::Hud
+            },
+            traffic_count: self.driving.traffic.count() as u32,
+            game_id: GAME_ID,
+            game_title: GAME_TITLE,
+            game_phase: self.game.phase,
+            game_time_s: self.game.time_s,
+            game_score: self.game.score,
+            game_best_s: self.game.best_time_s,
+            has_cargo: self.game.has_cargo,
+            objective: self.game.objective_key(&self.driving.mission).into(),
         }
     }
 
@@ -225,7 +354,7 @@ impl SharedSession {
     pub fn attach_renderer(&mut self, mut renderer: crate::render::Renderer) {
         renderer.resize(self.width, self.height);
         let set = crate::driving::MeshSet::build(self.driving.truck.spec.size);
-        let [ground, road, dash, pole, truck, cab, sky, shadow] = set.as_slice();
+        let [ground, road, dash, pole, truck, cab, sky, shadow, building] = set.as_slice();
         self.mesh_ids = Some(crate::driving::MeshIds {
             ground: renderer.upload_mesh(ground),
             road: renderer.upload_mesh(road),
@@ -235,6 +364,7 @@ impl SharedSession {
             cab: renderer.upload_mesh(cab),
             sky: renderer.upload_mesh(sky),
             shadow: renderer.upload_mesh(shadow),
+            building: renderer.upload_mesh(building),
         });
         self.renderer = Some(renderer);
     }
@@ -357,10 +487,23 @@ mod tests {
         assert!(moving > 5.0);
 
         s.set_pad(0.0, 1.0);
-        for _ in 0..600 {
+        for _ in 0..180 {
             s.request_frame();
         }
-        assert_eq!(s.request_frame().speed_kmh, 0.0, "pad down should brake");
+        // 減速して停車帯に入り、そのままだと後退に入る。
+        assert!(
+            s.driving.truck.speed < 5.0,
+            "pad down should scrub speed, got {}",
+            s.driving.truck.speed
+        );
+        for _ in 0..180 {
+            s.request_frame();
+        }
+        assert!(
+            s.driving.truck.is_reversing() || s.driving.truck.speed.abs() < 0.5,
+            "pad down at rest should reverse or stay stopped, speed={}",
+            s.driving.truck.speed
+        );
     }
 
     #[test]
@@ -381,6 +524,48 @@ mod tests {
         assert!(j.contains("speed_kmh"), "{j}");
         assert!(j.contains("distance_m"), "{j}");
         assert!(j.contains("audio"), "{j}");
+        assert!(j.contains("mission"), "{j}");
+        assert!(j.contains("traffic_count"), "{j}");
+    }
+
+    #[test]
+    fn pause_menu_resume_unpauses() {
+        let mut s = SharedSession::default();
+        s.create_surface(1280, 720);
+        s.pause();
+        let quads = PauseMenu::layout(1280, 720).quads();
+        let resume = quads[0];
+        s.push_pointer(PointerEvent {
+            id: 1,
+            x: resume.x + resume.w * 0.5,
+            y: resume.y + resume.h * 0.5,
+            phase: PointerPhase::Begin,
+            pressure: 1.0,
+        });
+        assert!(!s.paused);
+    }
+
+    #[test]
+    fn pause_menu_restart_resets_odometer() {
+        let mut s = SharedSession::default();
+        s.create_surface(1280, 720);
+        s.set_drive(0.0, 1.0, 0.0);
+        for _ in 0..120 {
+            s.request_frame();
+        }
+        assert!(s.driving.odometer > 1.0);
+        s.pause();
+        let quads = PauseMenu::layout(1280, 720).quads();
+        let restart = quads[1];
+        s.push_pointer(PointerEvent {
+            id: 2,
+            x: restart.x + restart.w * 0.5,
+            y: restart.y + restart.h * 0.5,
+            phase: PointerPhase::Begin,
+            pressure: 1.0,
+        });
+        assert_eq!(s.driving.odometer, 0.0);
+        assert!(!s.paused);
     }
 
     #[test]
@@ -413,5 +598,41 @@ mod tests {
         });
         soft.set_drive(1.0, 0.0, 0.0);
         assert!((soft.driving.input.steer - 0.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn demo_game_title_blocks_driving_until_start() {
+        let mut s = SharedSession::default();
+        s.show_title();
+        s.set_drive(0.0, 1.0, 0.0);
+        for _ in 0..60 {
+            s.request_frame();
+        }
+        assert_eq!(s.driving.odometer, 0.0);
+        assert_eq!(s.game.phase, crate::game::GamePhase::Title);
+
+        s.start_game();
+        s.set_drive(0.0, 1.0, 0.0);
+        for _ in 0..60 {
+            s.request_frame();
+        }
+        assert!(s.driving.odometer > 1.0);
+        assert_eq!(s.game.phase, crate::game::GamePhase::Playing);
+        assert!(s.game.time_s > 0.5);
+    }
+
+    #[test]
+    fn demo_game_completes_when_mission_done() {
+        let mut s = SharedSession::default();
+        s.start_game();
+        s.driving.path_s = s.driving.mission.pickup_s;
+        s.driving.mission.update(s.driving.path_s);
+        s.game.tick(&s.driving.mission);
+        assert!(s.game.has_cargo);
+        s.driving.path_s = s.driving.mission.dropoff_s;
+        s.driving.mission.update(s.driving.path_s);
+        s.game.tick(&s.driving.mission);
+        assert_eq!(s.game.phase, crate::game::GamePhase::Complete);
+        assert!(s.game.score >= 500);
     }
 }

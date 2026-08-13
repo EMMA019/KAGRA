@@ -15,9 +15,10 @@ pub struct WasmSession {
 impl WasmSession {
     #[wasm_bindgen(constructor)]
     pub fn new() -> WasmSession {
-        WasmSession {
-            inner: SharedSession::default(),
-        }
+        let mut inner = SharedSession::default();
+        // ブラウザデモはタイトルから。
+        inner.show_title();
+        WasmSession { inner }
     }
 
     #[wasm_bindgen(js_name = createSurface)]
@@ -116,6 +117,24 @@ impl WasmSession {
     #[wasm_bindgen(js_name = audioJson)]
     pub fn audio_json(&self) -> String {
         serde_json::to_string(&self.inner.audio_levels()).unwrap_or_else(|_| "{}".into())
+    }
+
+    /// タイトル画面へ。
+    #[wasm_bindgen(js_name = showTitle)]
+    pub fn show_title(&mut self) {
+        self.inner.show_title();
+    }
+
+    /// 配送ランを開始／再スタート。
+    #[wasm_bindgen(js_name = startGame)]
+    pub fn start_game(&mut self) {
+        self.inner.start_game();
+    }
+
+    /// ゲーム状態 JSON（phase / time / score / objective）。
+    #[wasm_bindgen(js_name = gameJson)]
+    pub fn game_json(&self) -> String {
+        serde_json::to_string(&self.inner.game).unwrap_or_else(|_| "{}".into())
     }
 
     /// canvas を描画先にする。WebGPU / WebGL2 のどちらかが使えれば成功する。

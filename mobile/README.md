@@ -14,6 +14,8 @@ wgpu の 3D + 2D レンダラを内蔵しているので、Android / iOS / Web �
 | `kagra-shared/src/vehicle.rs` | 車両運動（自転車モデル）と追従カメラ |
 | `kagra-shared/src/driving.rs` | 運転デモ。経路に沿った道と景物、HUD |
 | `kagra-shared/src/save.rs` / `audio.rs` | セーブ JSON・設定・音声レベル（再生はシェル） |
+| `kagra-shared/src/collide.rs` / `traffic.rs` | OBB 衝突・交通 AI |
+| `kagra-shared/src/mission.rs` / `ui.rs` / `world.rs` | 配送・ポーズ UI・路肩建物 |
 | `kagra-shared/src/gltf_load.rs` | 最小 glTF（静的メッシュ）ローダ |
 | `kagra-shared/src/scene.rs` | 2D の描画内容（HUD とタッチデモ） |
 | `kagra-shared/src/render/` | wgpu（`--features render`）。3D パス → 2D HUD パス |
@@ -153,3 +155,36 @@ has_renderer / detach_surface
 - 最小 glTF（POSITION + NORMAL + indices、data URI）を `gltf_load` で読める。見た目差し替え用。
 - セーブは JSON のみ。シェルが localStorage / Documents / filesDir へ書く。
 - 音声はレベルだけ返す。実再生は Web Audio / AudioTrack / AVAudioEngine。
+
+## 衝突・交通・ミッション・UI（S7–S11）
+
+- 衝突は xz 平面の OBB。路外はソフト壁＋減速、ポール／建物／他車は押し出し。
+- 交通 AI は同じ経路の左右レーンを走り、チャンク窓でスポーン／デスポーン（上限 8）。
+- ミッションは配送 1 本（pickup → dropoff）。`stats_json` の `mission` / `mission_progress`。
+- 建物はチャンク index から決定的に路肩へ置く回廊型 OW。都市グラフは持たない。
+- ポーズ中のタップは Resume / Restart / Mute。フォント無しの矩形 UI。
+
+## デモゲーム: Corridor Haul
+
+- `game.rs` がタイトル → 配送 → 完了のループとタイマー／スコアを持つ。
+- Web: [`kagra-shared/www/index.html`](../kagra-shared/www/index.html)。`./scripts/build_wasm.sh` のあと
+  `python -m http.server -d kagra-shared/www 8000`。
+- Wasm API: `showTitle` / `startGame` / `gameJson`。緑ビーコンで積載、橙で配達。
+
+## OSM 道路 Bake（ETS 方向）
+
+QGIS 非必須。OSMnx で道路網を取り、ゲーム用 JSON に焼く。
+
+```bash
+pip install -r tools/requirements-osm.txt
+python tools/osm_bake.py --bbox 35.6565 35.6615 139.6985 139.7045 \
+  --out kagra-shared/assets/maps/shibuya_demo.kagra.json
+```
+
+- フォーマット: [`kagra-shared/assets/maps/demo_city.kagra.json`](../kagra-shared/assets/maps/demo_city.kagra.json)
+  （x=東, z=北, メートル。`include_str!` で共有コアに同梱）
+- ランタイム: [`map.rs`](../kagra-shared/src/map.rs) がロード。ミッションはグラフ最短経路 → 既存 `RoadPath`。
+  描画はプレイヤー周辺エッジのリボン。
+- 既定プレイは Bake 済み [`shibuya_demo.kagra.json`](../kagra-shared/assets/maps/shibuya_demo.kagra.json)。
+  テスト用の小さい [`demo_city.kagra.json`](../kagra-shared/assets/maps/demo_city.kagra.json) も同梱。
+- 衛星テクスチャ（地理院）は第1段スコープ外。

@@ -46,6 +46,10 @@ fn render_2d(frames: u64) -> Option<Vec<u8>> {
 
 fn render_driving(straight: f32, turn: f32, steer: f32) -> Option<Vec<u8>> {
     with_session(W, H, |session| {
+        // ステア符号の検証では交通・建物が道路画素を汚す／弾くので外す。
+        session.driving.traffic = kagra_shared::TrafficSystem::disabled();
+        session.driving.collide_scenery = false;
+        session.driving.show_buildings = false;
         session.set_drive(0.0, 1.0, 0.0);
         for _ in 0..(straight * 60.0) as u64 {
             session.request_frame();

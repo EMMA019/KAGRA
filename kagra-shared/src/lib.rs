@@ -9,16 +9,23 @@
 
 pub mod assets;
 pub mod audio;
+pub mod collide;
 pub mod driving;
 pub mod ffi;
+pub mod game;
 pub mod gltf_load;
 pub mod input;
+pub mod map;
+pub mod mission;
 pub mod road;
 pub mod save;
 pub mod scene;
 pub mod scene3d;
 pub mod session;
+pub mod traffic;
+pub mod ui;
 pub mod vehicle;
+pub mod world;
 
 #[cfg(feature = "render")]
 pub mod render;
@@ -28,14 +35,20 @@ pub mod wasm;
 
 pub use assets::{resolve_alias, AssetKind};
 pub use audio::AudioLevels;
+pub use collide::Obb2;
 pub use driving::{DrivingScene, MeshIds, MeshSet};
+pub use game::{DemoGame, GamePhase, GAME_ID, GAME_TITLE};
 pub use gltf_load::{mesh_from_embedded_gltf, mesh_from_gltf_json};
 pub use input::{KeyEvent, PointerEvent, PointerPhase, VirtualPad};
+pub use map::{MapBuilding, MapEdge, RoadNetwork, DEMO_CITY_JSON, SHIBUYA_DEMO_JSON};
+pub use mission::{Mission, MissionPhase};
 pub use road::{LodLevel, RoadChunk, RoadFrame, RoadPath, RoadStreamer};
 pub use save::{SaveGame, Settings};
 pub use scene::{DemoScene, DrawList, Quad};
 pub use scene3d::{Aabb, Camera, Frustum, Instance, Material, MeshData, MeshId, Scene3D, Vertex3};
 pub use session::{FrameStats, SharedSession};
+pub use traffic::{TrafficCar, TrafficSystem};
+pub use ui::{PauseMenu, UiAction, UiMode};
 pub use vehicle::{ChaseCamera, DriveInput, Truck, TruckSpec};
 
 #[cfg(feature = "render")]

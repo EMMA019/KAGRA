@@ -4,12 +4,14 @@
 //! モバイルならアプリの Documents へ、という分担。
 
 use crate::driving::DrivingScene;
+use crate::game::DemoGame;
+use crate::mission::Mission;
 use crate::session::{SceneKind, SharedSession};
 use crate::vehicle::Truck;
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
-pub const SAVE_VERSION: u32 = 1;
+pub const SAVE_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Settings {
@@ -63,7 +65,7 @@ impl TruckSave {
     pub fn apply(&self, t: &mut Truck) {
         t.pos = Vec3::new(self.x, self.y, self.z);
         t.heading = self.heading;
-        t.speed = self.speed.max(0.0);
+        t.speed = self.speed;
     }
 }
 
@@ -75,6 +77,10 @@ pub struct SaveGame {
     pub path_s: f32,
     pub odometer: f32,
     pub settings: Settings,
+    #[serde(default)]
+    pub mission: Mission,
+    #[serde(default)]
+    pub game: DemoGame,
 }
 
 impl SaveGame {
@@ -86,6 +92,8 @@ impl SaveGame {
             path_s: session.driving.path_s,
             odometer: session.driving.odometer,
             settings: session.settings.clone(),
+            mission: session.driving.mission.clone(),
+            game: session.game.clone(),
         }
     }
 
@@ -108,6 +116,7 @@ impl SaveGame {
     pub fn apply(&self, session: &mut SharedSession) {
         session.kind = self.kind;
         session.settings = self.settings.clone().clamped();
+        session.game = self.game.clone();
         apply_driving(&mut session.driving, self);
     }
 }
@@ -116,6 +125,9 @@ fn apply_driving(driving: &mut DrivingScene, save: &SaveGame) {
     save.truck.apply(&mut driving.truck);
     driving.path_s = save.path_s.clamp(0.0, driving.streamer.path.length());
     driving.odometer = save.odometer.max(0.0);
+    driving.mission = save.mission.clone();
+    // 交通は再スポーン。個体位置はセーブしない。
+    driving.traffic = crate::traffic::TrafficSystem::default();
     // カメラを車体の後ろへスナップし直す。
     driving.camera = crate::vehicle::ChaseCamera::default();
     driving

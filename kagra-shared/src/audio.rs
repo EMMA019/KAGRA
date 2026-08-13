@@ -23,9 +23,14 @@ impl AudioLevels {
         }
         let input = input.clamped();
         let top = truck.spec.max_speed.max(1.0);
-        let speed_n = (truck.speed / top).clamp(0.0, 1.0);
-        // アイドリングを残しつつ、スロットルで持ち上げる。
-        let engine = (0.12 + 0.55 * speed_n + 0.33 * input.throttle).clamp(0.0, 1.0) * master;
+        let speed_n = (truck.speed.abs() / top).clamp(0.0, 1.0);
+        // アイドリングを残しつつ、スロットルで持ち上げる。後退中はブレーキが駆動。
+        let drive = if truck.is_reversing() {
+            input.brake
+        } else {
+            input.throttle
+        };
+        let engine = (0.12 + 0.55 * speed_n + 0.33 * drive).clamp(0.0, 1.0) * master;
         let wind = (speed_n * speed_n).clamp(0.0, 1.0) * master;
         let brake = if truck.speed > 1.0 {
             input.brake * master

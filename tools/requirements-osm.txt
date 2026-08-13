@@ -1,0 +1,5 @@
+# Optional deps for tools/osm_bake.py (ETS-style road bake from OpenStreetMap).
+osmnx>=1.9
+geopandas>=0.14
+shapely>=2.0
+networkx>=3.0

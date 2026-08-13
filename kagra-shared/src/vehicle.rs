@@ -47,6 +47,10 @@ pub struct TruckSpec {
     /// 何も踏まないときの減速（m/s^2）。エンジンブレーキ相当。
     pub rolling: f32,
     pub max_speed: f32,
+    /// 後退の最高速（正の値、m/s）。`allow_reverse` が false なら無視。
+    pub max_reverse: f32,
+    /// 停車付近でブレーキを後退に切り替えるか。交通 AI は false。
+    pub allow_reverse: bool,
     /// 見た目の寸法（幅・高さ・長さ）。描画と境界箱に使う。
     pub size: Vec3,
 }
@@ -62,7 +66,9 @@ impl Default for TruckSpec {
             // accel と釣り合うのが 25m/s ≒ 90km/h になるよう選んだ。
             drag: 0.0072,
             rolling: 1.2,
-            max_speed: 33.0, // ≒120km/h（下り坂などの上限）
+            max_speed: 33.0,  // ≒120km/h（下り坂などの上限）
+            max_reverse: 7.0, // ≒25km/h
+            allow_reverse: true,
             size: Vec3::new(2.5, 3.4, 12.0),
         }
     }
@@ -80,7 +86,7 @@ pub struct Truck {
     pub pos: Vec3,
     /// +Z を 0 とした y 軸まわりの向き（ラジアン、反時計まわりが正）。
     pub heading: f32,
-    /// 前進速度（m/s）。後退は扱わないので常に 0 以上。
+    /// 前後速度（m/s）。正が前進、負が後退。
     pub speed: f32,
     /// いま実際に切れている前輪の角度（ラジアン）。正が右。入力から遅れて追従する。
     pub steer_angle: f32,
@@ -105,7 +111,11 @@ impl Truck {
     }
 
     pub fn speed_kmh(&self) -> f32 {
-        self.speed * 3.6
+        self.speed.abs() * 3.6
+    }
+
+    pub fn is_reversing(&self) -> bool {
+        self.speed < -0.35
     }
 
     /// 描画用の姿勢行列。
@@ -126,21 +136,52 @@ impl Truck {
         };
         self.steer_angle += (target - self.steer_angle).clamp(-max_delta, max_delta);
 
-        // 縦方向。前進のみを扱うので、抵抗は常に減速側に効かせればよく、
-        // 0 で下限を切るだけでブレーキが後退に化けない。
-        let mut accel = input.throttle * s.accel;
-        if self.speed > 1e-4 {
-            accel -= s.drag * self.speed * self.speed;
+        // 縦方向。停車帯ではブレーキを後退に切り替える（アーケード寄りの取り回し）。
+        const BAND: f32 = 0.6;
+        let mut accel = 0.0;
+        let abs_v = self.speed.abs();
+        let drag = s.drag * abs_v * abs_v;
+
+        if self.speed > BAND {
+            accel += input.throttle * s.accel;
             accel -= input.brake * s.brake;
+            accel -= drag;
             if input.throttle < 1e-3 {
                 accel -= s.rolling;
             }
+        } else if self.speed < -BAND {
+            // 後退中: ブレーキが増速（さらに後ろへ）、アクセルで前進側へ戻す。
+            if s.allow_reverse {
+                accel -= input.brake * s.accel * 0.55;
+            }
+            accel += input.throttle * s.brake;
+            if abs_v > 1e-4 {
+                accel += drag; // 負方向の速度を 0 へ寄せる
+                if input.brake < 1e-3 && input.throttle < 1e-3 {
+                    accel += s.rolling;
+                }
+            }
+        } else {
+            // 停車帯
+            if input.throttle > input.brake {
+                accel += input.throttle * s.accel;
+            } else if s.allow_reverse && input.brake > 0.05 {
+                accel -= input.brake * s.accel * 0.55;
+            } else {
+                // どちらも弱いときは 0 へ吸い寄せる。
+                accel -= self.speed * 8.0;
+            }
         }
-        self.speed = (self.speed + accel * dt).clamp(0.0, s.max_speed);
 
-        // 自転車モデル: 進んだぶんだけ向きが変わる。止まっていれば回らない。
-        // 右へ切る（steer_angle > 0）と上から見て時計まわりなので heading は減る。
-        if self.speed > 1e-4 {
+        let min_v = if s.allow_reverse {
+            -s.max_reverse.max(0.0)
+        } else {
+            0.0
+        };
+        self.speed = (self.speed + accel * dt).clamp(min_v, s.max_speed);
+
+        // 自転車モデル。符号付き速度なので後退時は切れ角が逆に効く。
+        if abs_v > 1e-4 || self.speed.abs() > 1e-4 {
             let yaw_rate = -self.speed * self.steer_angle.tan() / s.wheelbase.max(1e-3);
             self.heading = wrap_angle(self.heading + yaw_rate * dt);
         }
@@ -259,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn brake_stops_without_reversing() {
+    fn brake_from_speed_reaches_a_stop_before_reverse() {
         let mut t = Truck::default();
         drive(
             &mut t,
@@ -270,15 +311,63 @@ mod tests {
             5.0,
         );
         assert!(t.speed > 1.0);
+        // 制動中はまず 0 をまたぐまで後退に入らない。
+        let mut saw_near_stop = false;
+        for _ in 0..600 {
+            t.update(
+                DriveInput {
+                    brake: 1.0,
+                    ..Default::default()
+                },
+                DT,
+            );
+            if t.speed > 0.05 {
+                assert!(
+                    t.speed >= 0.0,
+                    "must not reverse while still scrubbing forward speed"
+                );
+            }
+            if t.speed.abs() < 0.05 {
+                saw_near_stop = true;
+                break;
+            }
+        }
+        assert!(saw_near_stop, "should reach a near-stop, speed={}", t.speed);
+    }
+
+    #[test]
+    fn holding_brake_at_stop_engages_reverse() {
+        let mut t = Truck::default();
         drive(
             &mut t,
             DriveInput {
                 brake: 1.0,
                 ..Default::default()
             },
-            10.0,
+            2.0,
         );
-        assert_eq!(t.speed, 0.0, "brake must settle at a stop");
+        assert!(t.speed < -1.0, "expected reverse, got {}", t.speed);
+        assert!(t.pos.z < 0.0, "should move toward -Z when heading is 0");
+    }
+
+    #[test]
+    fn traffic_spec_cannot_reverse() {
+        let mut t = Truck {
+            spec: TruckSpec {
+                allow_reverse: false,
+                ..TruckSpec::default()
+            },
+            ..Truck::default()
+        };
+        drive(
+            &mut t,
+            DriveInput {
+                brake: 1.0,
+                ..Default::default()
+            },
+            3.0,
+        );
+        assert_eq!(t.speed, 0.0);
     }
 
     #[test]
