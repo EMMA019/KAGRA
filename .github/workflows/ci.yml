@@ -34,7 +34,7 @@ jobs:
 
       - name: Cargo test (no extension-module)
         working-directory: kagra-core
-        run: cargo test --no-default-features
+        run: cargo test --no-default-features --locked
 
   python-unit:
     runs-on: ubuntu-latest
@@ -72,21 +72,21 @@ jobs:
         run: cargo fmt -p kagra-shared -- --check
 
       - name: Clippy (deny warnings)
-        run: cargo clippy -p kagra-shared --all-targets -- -D warnings
+        run: cargo clippy -p kagra-shared --all-targets --locked -- -D warnings
 
       - name: Unit tests
-        run: cargo test -p kagra-shared
+        run: cargo test -p kagra-shared --locked
 
       # GPU の無いランナーではアダプタが取れないので、描画テストは自動的に
       # スキップされる。ここではコンパイルと純ロジックの検証が目的。
       - name: Clippy with rendering
-        run: cargo clippy -p kagra-shared --all-targets --features render -- -D warnings
+        run: cargo clippy -p kagra-shared --all-targets --features render --locked -- -D warnings
 
       - name: Unit tests with rendering
-        run: cargo test -p kagra-shared --features render
+        run: cargo test -p kagra-shared --features render --locked
 
       - name: Build for wasm32 (render + wasm)
-        run: cargo build -p kagra-shared --target wasm32-unknown-unknown --features wasm,render --release
+        run: cargo build -p kagra-shared --target wasm32-unknown-unknown --features wasm,render --release --locked
 
   # iOS シェルは stub.c でリンクするため実機 SDK もランタイムも不要。
   ios-shell:

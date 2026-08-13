@@ -29,3 +29,14 @@ Rust errors surface as `[CODE] message` (see `KaguraError::code`).
 `tests/` のテストは `import kagra`（Rust 拡張）に依存させないこと。純ロジックの
 モジュールは `tests/conftest.py` の `load_kagra_submodule()` で読む。索引は AST
 のみから生成するので、拡張の有無で内容が変わらない。
+
+## Cargo.lock は追跡する
+
+依存のパッチ更新だけでビルドが壊れることが実際にあった（wgpu-hal 30 が要求する
+gpu-allocator 0.28 が windows 0.62.2 でコンパイルできなくなった）。ライブラリだけの
+リポジトリなら lock を無視してよいが、ここはアプリとモバイルシェルを含むので lock を
+コミットする。CI の cargo 呼び出しは `--locked` 付きなので、`Cargo.toml` を触ったら
+`Cargo.lock` も一緒にコミットすること。忘れると CI が落ちて気づける。
+
+依存を意図的に更新するときは `cargo update -p <crate>` で範囲を絞り、更新後に
+共有コアの描画テストまで通してから lock をコミットする。
