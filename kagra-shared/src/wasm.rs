@@ -56,6 +56,28 @@ impl WasmSession {
         self.inner.set_pad(x, y);
     }
 
+    /// 連続値のドライバ入力。`steer` は -1..1、`throttle` と `brake` は 0..1。
+    #[wasm_bindgen(js_name = setDrive)]
+    pub fn set_drive(&mut self, steer: f32, throttle: f32, brake: f32) {
+        self.inner.set_drive(steer, throttle, brake);
+    }
+
+    /// 0 = 運転（3D）、1 = タッチデモ（2D）。
+    #[wasm_bindgen(js_name = setScene)]
+    pub fn set_scene(&mut self, kind: u8) {
+        let kind = match kind {
+            1 => crate::session::SceneKind::Demo2D,
+            _ => crate::session::SceneKind::Driving,
+        };
+        self.inner.set_scene_kind(kind);
+    }
+
+    /// 速度（km/h）。HUD をブラウザ側で出すとき用。
+    #[wasm_bindgen(js_name = speedKmh)]
+    pub fn speed_kmh(&self) -> f32 {
+        self.inner.driving.truck.speed_kmh()
+    }
+
     #[wasm_bindgen(js_name = requestFrame)]
     pub fn request_frame(&mut self) -> u32 {
         self.inner.request_frame().frame as u32
@@ -64,6 +86,36 @@ impl WasmSession {
     #[wasm_bindgen(js_name = statsJson)]
     pub fn stats_json(&self) -> String {
         self.inner.stats_json()
+    }
+
+    /// セーブ JSON（pretty）。シェルが localStorage 等へ書き出す。
+    #[wasm_bindgen(js_name = saveJson)]
+    pub fn save_json(&self) -> Result<String, JsValue> {
+        self.inner.save_json().map_err(|e| JsValue::from_str(&e))
+    }
+
+    /// セーブ JSON を読み込んで状態を復元する。
+    #[wasm_bindgen(js_name = loadJson)]
+    pub fn load_json(&mut self, json: &str) -> Result<(), JsValue> {
+        self.inner
+            .load_json(json)
+            .map_err(|e| JsValue::from_str(&e))
+    }
+
+    /// `muted` は真なら無音。
+    #[wasm_bindgen(js_name = setSettings)]
+    pub fn set_settings(&mut self, master_volume: f32, steer_sensitivity: f32, muted: bool) {
+        self.inner.set_settings(crate::save::Settings {
+            master_volume,
+            steer_sensitivity,
+            muted,
+        });
+    }
+
+    /// 音声レベル JSON（engine / wind / brake）。再生はブラウザ側。
+    #[wasm_bindgen(js_name = audioJson)]
+    pub fn audio_json(&self) -> String {
+        serde_json::to_string(&self.inner.audio_levels()).unwrap_or_else(|_| "{}".into())
     }
 
     /// canvas を描画先にする。WebGPU / WebGL2 のどちらかが使えれば成功する。

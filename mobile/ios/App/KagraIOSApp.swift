@@ -17,6 +17,11 @@ final class KagraMetalView: UIView {
 
     var onTouch: ((UInt32, CGPoint, UInt32) -> Void)?
 
+    /// 指ごとの id。`Set<UITouch>` の並び順は保証されないので、`UITouch` の同一性で
+    /// 覚えておかないと、複数の指を追えない（運転操作は両手で使う）。
+    private var touchIds: [ObjectIdentifier: UInt32] = [:]
+    private var nextTouchId: UInt32 = 0
+
     /// レイアウト後のピクセルサイズ。共有コアへ渡す座標系はこれに合わせる。
     var pixelSize: (UInt32, UInt32) {
         let scale = layer.contentsScale
@@ -36,9 +41,21 @@ final class KagraMetalView: UIView {
 
     private func report(_ touches: Set<UITouch>, phase: UInt32) {
         let scale = layer.contentsScale
-        for (i, t) in touches.enumerated() {
+        for t in touches {
+            let key = ObjectIdentifier(t)
+            let id: UInt32
+            if let known = touchIds[key] {
+                id = known
+            } else {
+                id = nextTouchId
+                nextTouchId &+= 1
+                touchIds[key] = id
+            }
             let p = t.location(in: self)
-            onTouch?(UInt32(i), CGPoint(x: p.x * scale, y: p.y * scale), phase)
+            onTouch?(id, CGPoint(x: p.x * scale, y: p.y * scale), phase)
+            if phase == 2 || phase == 3 {
+                touchIds.removeValue(forKey: key)
+            }
         }
     }
 
@@ -162,9 +179,22 @@ final class ShellModel: ObservableObject {
             return
         }
         if frame % 15 == 0 {
-            status = "kagra-shared \(session.version)  frame=\(frame)"
+            status = """
+                kagra-shared \(session.version)  frame=\(frame)
+                \(session.statsJSON())
+
+                左半分＝ハンドル / 右半分＝上でアクセル・下でブレーキ
+                """
         }
     }
+
+    /// 画面の下半分を左右に割り、左＝ハンドル、右＝アクセル／ブレーキ。
+    /// 指ごとに役割を覚えるので、両手で同時に操作できる。
+    private enum Control { case steer, pedal }
+    private var controls: [UInt32: Control] = [:]
+    private var steer: Float = 0
+    private var throttle: Float = 0
+    private var brake: Float = 0
 
     func onTouch(id: UInt32, point: CGPoint, phase: UInt32) {
         guard let session, let view else { return }
@@ -175,16 +205,38 @@ final class ShellModel: ObservableObject {
             phase: phase,
             pressure: phase == 2 || phase == 3 ? 0 : 1
         )
-        // 画面中央を原点にした仮想スティックとして扱う。
+
         let (w, h) = view.pixelSize
-        if phase == 2 || phase == 3 {
-            session.setPad(x: 0, y: 0)
-        } else if w > 0, h > 0 {
-            session.setPad(
-                x: Float(point.x / CGFloat(w) * 2 - 1).clamped(to: -1...1),
-                y: Float(point.y / CGFloat(h) * 2 - 1).clamped(to: -1...1)
-            )
+        guard w > 0, h > 0 else { return }
+        let x = Float(point.x)
+        let y = Float(point.y)
+        let halfWidth = Float(w) / 2
+
+        switch phase {
+        case 0:
+            controls[id] = x < halfWidth ? .steer : .pedal
+        case 2, 3:
+            switch controls.removeValue(forKey: id) {
+            case .steer: steer = 0
+            case .pedal: throttle = 0; brake = 0
+            case nil: break
+            }
+        default:
+            break
         }
+
+        switch controls[id] {
+        case .steer:
+            steer = ((x / halfWidth) * 2 - 1).clamped(to: -1...1)
+        case .pedal:
+            let t = ((y / Float(h)) * 2 - 1).clamped(to: -1...1)
+            throttle = t < 0 ? -t : 0
+            brake = t > 0 ? t : 0
+        case nil:
+            break
+        }
+
+        session.setDrive(steer: steer, throttle: throttle, brake: brake)
     }
 }
 

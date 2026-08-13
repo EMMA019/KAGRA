@@ -2,17 +2,38 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>KAGRA shared core (Wasm)</title>
   <style>
+    :root { color-scheme: dark; }
     body { font-family: system-ui, sans-serif; background: #1c2230; color: #e8ecf4; margin: 0; }
-    canvas { display: block; width: 100vw; height: 70vh; background: #10151f; touch-action: none; }
+    #stage { position: relative; width: 100vw; height: 72vh; }
+    canvas { display: block; width: 100%; height: 100%; background: #10151f; touch-action: none; }
+
+    /* 運転操作。画面の下半分を左右に割り、左＝ハンドル、右＝アクセル／ブレーキ。 */
+    #touch { position: absolute; inset: auto 0 0 0; height: 45%; display: flex; pointer-events: none; }
+    #touch div {
+      flex: 1; margin: 8px; border-radius: 12px; pointer-events: auto;
+      border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.05);
+      display: flex; align-items: center; justify-content: center;
+      font: 600 13px/1 system-ui, sans-serif; color: rgba(255,255,255,.55);
+      user-select: none; -webkit-user-select: none;
+    }
+    #touch div.on { background: rgba(120,200,255,.22); color: #fff; }
+
     #log { padding: 12px; font: 13px/1.5 ui-monospace, monospace; white-space: pre-wrap; }
     .err { color: #ff9d7a; }
+    #hint { opacity: .7; }
   </style>
 </head>
 <body>
-  <canvas id="c"></canvas>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div id="touch">
+      <div id="pad-steer">ハンドル（左右にドラッグ）</div>
+      <div id="pad-pedal">上＝アクセル / 下＝ブレーキ</div>
+    </div>
+  </div>
   <div id="log">loading…</div>
   <script type="module">
     // wasm-pack 出力を想定: pkg/kagra_shared.js
@@ -29,8 +50,18 @@
     const session = new WasmSession();
     const canvas = document.getElementById("c");
 
-    // 手動確認・自動テスト用。コンソールから kagra.setPad(1, 0) で四角が動く。
+    // 手動確認・自動テスト用。コンソールから kagra.setDrive(0.5, 1, 0) で曲がる。
+    // save/load: kagra.saveJson() / kagra.loadJson(json)
     window.kagra = session;
+
+    const SAVE_KEY = "kagra-shared-save";
+    try {
+      const saved = localStorage.getItem(SAVE_KEY);
+      if (saved) session.loadJson(saved);
+    } catch (_) { /* private mode など */ }
+    window.addEventListener("beforeunload", () => {
+      try { localStorage.setItem(SAVE_KEY, session.saveJson()); } catch (_) {}
+    });
 
     // canvas のピクセルサイズと共有コアの座標系を一致させる。
     const dpr = () => Math.min(window.devicePixelRatio || 1, 2);
@@ -55,38 +86,89 @@
       log("this wasm was built without the render feature", true);
     }
 
-    // リサイズは attach 済みサーフェスに反映される（wgpu 側で再構成）。
     window.addEventListener("resize", () => { scale = sizeCanvas(); });
 
-    const PHASE = { begin: 0, move: 1, end: 2, cancel: 3 };
-    const send = (e, phase) => {
-      session.pushPointer(e.pointerId >>> 0, e.offsetX * scale, e.offsetY * scale, phase, e.pressure || 1);
-      if (phase === PHASE.end || phase === PHASE.cancel) {
-        session.setPad(0, 0);
-      } else {
-        // 画面中央を原点にした仮想スティック
-        session.setPad(
-          Math.max(-1, Math.min(1, (e.offsetX / canvas.clientWidth) * 2 - 1)),
-          Math.max(-1, Math.min(1, (e.offsetY / canvas.clientHeight) * 2 - 1)),
-        );
-      }
-    };
-    canvas.addEventListener("pointerdown", (e) => send(e, PHASE.begin));
-    canvas.addEventListener("pointermove", (e) => { if (e.buttons) send(e, PHASE.move); });
-    canvas.addEventListener("pointerup", (e) => send(e, PHASE.end));
-    canvas.addEventListener("pointercancel", (e) => send(e, PHASE.cancel));
-
-    // キーボードでも動かせるようにしておく（デスクトップ確認用）
+    // ---- 運転入力 ----
+    // タッチとキーボードを別々に集め、毎フレーム合成して setDrive に渡す。
+    const touch = { steer: 0, throttle: 0, brake: 0, active: false };
     const held = new Set();
-    const padFromKeys = () => {
-      const x = (held.has("ArrowRight") || held.has("d") ? 1 : 0) - (held.has("ArrowLeft") || held.has("a") ? 1 : 0);
-      const y = (held.has("ArrowDown") || held.has("s") ? 1 : 0) - (held.has("ArrowUp") || held.has("w") ? 1 : 0);
-      session.setPad(x, y);
+
+    const steerEl = document.getElementById("pad-steer");
+    const pedalEl = document.getElementById("pad-pedal");
+
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+    // ハンドル: 領域の中心からの左右のずれをそのまま切れ角にする。
+    const onSteer = (e) => {
+      const r = steerEl.getBoundingClientRect();
+      touch.steer = clamp(((e.clientX - r.left) / r.width) * 2 - 1, -1, 1);
+      touch.active = true;
+      steerEl.classList.add("on");
     };
-    window.addEventListener("keydown", (e) => { held.add(e.key); padFromKeys(); });
-    window.addEventListener("keyup", (e) => { held.delete(e.key); padFromKeys(); });
+    // ペダル: 上半分がアクセル、下半分がブレーキ。中心から離れるほど強い。
+    const onPedal = (e) => {
+      const r = pedalEl.getBoundingClientRect();
+      const t = ((e.clientY - r.top) / r.height) * 2 - 1;
+      touch.throttle = t < 0 ? clamp(-t, 0, 1) : 0;
+      touch.brake = t > 0 ? clamp(t, 0, 1) : 0;
+      pedalEl.classList.add("on");
+    };
+
+    const bindPad = (el, move, release) => {
+      el.addEventListener("pointerdown", (e) => {
+        // 領域の外まで指が出ても追従させる。合成イベントでは失敗しうる。
+        try { el.setPointerCapture(e.pointerId); } catch { /* not an active pointer */ }
+        move(e);
+        // 共有コアにも生のポインタを流す（2D デモ用の経路を殺さない）。
+        session.pushPointer(e.pointerId >>> 0, e.clientX * scale, e.clientY * scale, 0, e.pressure || 1);
+      });
+      el.addEventListener("pointermove", (e) => { if (e.buttons) move(e); });
+      const up = (e) => {
+        release();
+        el.classList.remove("on");
+        session.pushPointer(e.pointerId >>> 0, e.clientX * scale, e.clientY * scale, 2, 0);
+      };
+      el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);
+    };
+
+    bindPad(steerEl, onSteer, () => { touch.steer = 0; });
+    bindPad(pedalEl, onPedal, () => { touch.throttle = 0; touch.brake = 0; });
+
+    window.addEventListener("keydown", (e) => {
+      held.add(e.key);
+      // 矢印でスクロールさせない。
+      if (e.key.startsWith("Arrow") || e.key === " ") e.preventDefault();
+      if (e.key === "s" || e.key === "S") {
+        try {
+          localStorage.setItem(SAVE_KEY, session.saveJson());
+          log("saved to localStorage");
+        } catch (err) {
+          log(`save failed: ${err}`, true);
+        }
+      }
+    });
+    window.addEventListener("keyup", (e) => held.delete(e.key));
+
+    const keyAxis = () => {
+      const l = held.has("ArrowLeft") || held.has("a");
+      const r = held.has("ArrowRight") || held.has("d");
+      const u = held.has("ArrowUp") || held.has("w");
+      const d = held.has("ArrowDown") || held.has("s") || held.has(" ");
+      return { steer: (r ? 1 : 0) - (l ? 1 : 0), throttle: u ? 1 : 0, brake: d ? 1 : 0 };
+    };
+
+    const applyInput = () => {
+      const k = keyAxis();
+      session.setDrive(
+        clamp(k.steer + touch.steer, -1, 1),
+        clamp(k.throttle + touch.throttle, 0, 1),
+        clamp(k.brake + touch.brake, 0, 1),
+      );
+    };
 
     const loop = () => {
+      applyInput();
       const f = session.requestFrame();
       if (rendering) {
         try {
@@ -96,7 +178,15 @@
           log(`render failed: ${e}`, true);
         }
         if (f % 15 === 0) {
-          log(`kagra-shared ${sharedVersion()}  frame=${f}\n${session.statsJson()}\n\nドラッグ / WASD で四角が動きます。`);
+          log(
+            `kagra-shared ${sharedVersion()}  frame=${f}  ${session.speedKmh().toFixed(0)} km/h\n` +
+            `${session.statsJson()}\n` +
+            `audio ${session.audioJson()}\n\n` +
+            `矢印 / WASD、または画面下のパッドで運転できます。S でセーブ。`
+          );
+        }
+        if (f % 120 === 0) {
+          try { localStorage.setItem(SAVE_KEY, session.saveJson()); } catch (_) {}
         }
       }
       requestAnimationFrame(loop);

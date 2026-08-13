@@ -26,8 +26,23 @@ object KagraNative {
     external fun resume(): Boolean
     external fun pushPointer(id: Int, x: Float, y: Float, phase: Int, pressure: Float): Boolean
     external fun setPad(x: Float, y: Float): Boolean
+
+    /** 連続値のドライバ入力。steer は -1..1、throttle と brake は 0..1。 */
+    external fun setDrive(steer: Float, throttle: Float, brake: Float): Boolean
+
     external fun requestFrame(): Long
     external fun statsJson(): String
+
+    /** セーブ JSON。アプリ側が filesDir 等へ書き出す。 */
+    external fun saveJson(): String
+
+    /** セーブ JSON を読み込んで状態を復元する。 */
+    external fun loadJson(json: String): Boolean
+
+    external fun setSettings(masterVolume: Float, steerSensitivity: Float, muted: Boolean): Boolean
+
+    /** 音声レベル JSON（engine / wind / brake）。再生は AudioTrack 側。 */
+    external fun audioJson(): String
 
     /** SurfaceView の Surface を描画先にする。 */
     external fun attachSurface(surface: Surface, width: Int, height: Int): Boolean

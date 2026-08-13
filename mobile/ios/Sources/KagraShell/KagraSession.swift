@@ -69,6 +69,23 @@ public final class KagraSession {
         _ = kagra_shared_set_pad(ptr, x, y)
     }
 
+    /// 連続値のドライバ入力。`steer` は -1..1、`throttle` と `brake` は 0..1。
+    public func setDrive(steer: Float, throttle: Float, brake: Float) {
+        guard let ptr else { return }
+        _ = kagra_shared_set_drive(ptr, steer, throttle, brake)
+    }
+
+    public enum Scene: UInt32 {
+        case driving = 0
+        case demo2D = 1
+    }
+
+    @discardableResult
+    public func setScene(_ scene: Scene) -> Bool {
+        guard let ptr else { return false }
+        return kagra_shared_set_scene(ptr, scene.rawValue) == 0
+    }
+
     @discardableResult
     public func requestFrame() -> Int64 {
         guard let ptr else { return -1 }
@@ -79,6 +96,36 @@ public final class KagraSession {
         guard let ptr else { return "{}" }
         var buf = [CChar](repeating: 0, count: 512)
         _ = kagra_shared_stats_json(ptr, &buf, 512)
+        return String(cString: buf)
+    }
+
+    /// セーブ JSON。アプリ側が Documents 等へ書き出す。
+    public func saveJSON() -> String? {
+        guard let ptr else { return nil }
+        var need = kagra_shared_save_json(ptr, nil, 0)
+        if need <= 0 { return nil }
+        var buf = [CChar](repeating: 0, count: Int(need))
+        need = kagra_shared_save_json(ptr, &buf, UInt32(buf.count))
+        guard need > 0 else { return nil }
+        return String(cString: buf)
+    }
+
+    @discardableResult
+    public func loadJSON(_ json: String) -> Bool {
+        guard let ptr else { return false }
+        return json.withCString { kagra_shared_load_json(ptr, $0) == 0 }
+    }
+
+    public func setSettings(masterVolume: Float, steerSensitivity: Float, muted: Bool) {
+        guard let ptr else { return }
+        _ = kagra_shared_set_settings(ptr, masterVolume, steerSensitivity, muted ? 1 : 0)
+    }
+
+    /// 音声レベル JSON（engine / wind / brake）。再生は AVAudioEngine 側。
+    public func audioJSON() -> String {
+        guard let ptr else { return "{}" }
+        var buf = [CChar](repeating: 0, count: 256)
+        _ = kagra_shared_audio_json(ptr, &buf, 256)
         return String(cString: buf)
     }
 }

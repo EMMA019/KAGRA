@@ -19,6 +19,19 @@ int kagra_shared_pause(SharedSession *ptr);
 int kagra_shared_resume(SharedSession *ptr);
 int kagra_shared_push_pointer(SharedSession *ptr, unsigned id, float x, float y, unsigned phase, float pressure);
 int kagra_shared_set_pad(SharedSession *ptr, float x, float y);
+/* 連続値のドライバ入力。steer は -1..1、throttle と brake は 0..1。 */
+int kagra_shared_set_drive(SharedSession *ptr, float steer, float throttle, float brake);
+/* 0 = 運転（3D）、1 = タッチデモ（2D）。 */
+int kagra_shared_set_scene(SharedSession *ptr, unsigned kind);
+int kagra_shared_save_json(SharedSession *ptr, char *buf, unsigned buflen);
+int kagra_shared_load_json(SharedSession *ptr, const char *json);
+int kagra_shared_set_settings(
+    SharedSession *ptr,
+    float master_volume,
+    float steer_sensitivity,
+    int muted
+);
+int kagra_shared_audio_json(SharedSession *ptr, char *buf, unsigned buflen);
 int64_t kagra_shared_request_frame(SharedSession *ptr);
 int kagra_shared_stats_json(SharedSession *ptr, char *buf, unsigned buflen);
 int kagra_shared_resolve_alias(unsigned kind, const char *name, char *buf, unsigned buflen);

@@ -34,6 +34,13 @@ int kagra_shared_push_pointer(SharedSession *ptr, unsigned id, float x, float y,
 int kagra_shared_set_pad(SharedSession *ptr, float x, float y) {
     (void)ptr; (void)x; (void)y; return 0;
 }
+int kagra_shared_set_drive(SharedSession *ptr, float steer, float throttle, float brake) {
+    (void)ptr; (void)steer; (void)throttle; (void)brake; return 0;
+}
+int kagra_shared_set_scene(SharedSession *ptr, unsigned kind) {
+    (void)ptr;
+    return kind <= 1 ? 0 : -1;
+}
 int64_t kagra_shared_request_frame(SharedSession *ptr) {
     (void)ptr;
     if (!g_paused) g_frame++;
@@ -48,6 +55,30 @@ int kagra_shared_stats_json(SharedSession *ptr, char *buf, unsigned buflen) {
     size_t n = strlen(tmp) + 1;
     if (!buf || buflen < n) return (int)n;
     memcpy(buf, tmp, n);
+    return (int)n;
+}
+int kagra_shared_save_json(SharedSession *ptr, char *buf, unsigned buflen) {
+    (void)ptr;
+    const char *s = "{\"version\":1,\"kind\":\"Driving\",\"truck\":{\"x\":0,\"y\":0,\"z\":0,\"heading\":0,\"speed\":0},\"path_s\":0,\"odometer\":0,\"settings\":{\"master_volume\":0.8,\"steer_sensitivity\":1.0,\"muted\":false}}";
+    size_t n = strlen(s) + 1;
+    if (!buf || buflen < n) return (int)n;
+    memcpy(buf, s, n);
+    return (int)n;
+}
+int kagra_shared_load_json(SharedSession *ptr, const char *json) {
+    (void)ptr; (void)json;
+    return 0;
+}
+int kagra_shared_set_settings(SharedSession *ptr, float master_volume, float steer_sensitivity, int muted) {
+    (void)ptr; (void)master_volume; (void)steer_sensitivity; (void)muted;
+    return 0;
+}
+int kagra_shared_audio_json(SharedSession *ptr, char *buf, unsigned buflen) {
+    (void)ptr;
+    const char *s = "{\"engine\":0.1,\"wind\":0,\"brake\":0}";
+    size_t n = strlen(s) + 1;
+    if (!buf || buflen < n) return (int)n;
+    memcpy(buf, s, n);
     return (int)n;
 }
 /* 描画はスタブでは行えない。UI 側はこの失敗を見てプレースホルダを出す。 */

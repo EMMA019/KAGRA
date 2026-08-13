@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <string>
+#include <vector>
 #include <android/log.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
@@ -122,6 +123,17 @@ Java_dev_kagra_shell_KagraNative_setPad(JNIEnv *, jobject, jfloat x, jfloat y) {
 #endif
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_setDrive(
+    JNIEnv *, jobject, jfloat steer, jfloat throttle, jfloat brake) {
+#if KAGRA_HAS_SHARED
+  return g_session && kagra_shared_set_drive(g_session, steer, throttle, brake) == 0;
+#else
+  (void)steer; (void)throttle; (void)brake;
+  return JNI_FALSE;
+#endif
+}
+
 extern "C" JNIEXPORT jlong JNICALL
 Java_dev_kagra_shell_KagraNative_requestFrame(JNIEnv *, jobject) {
 #if KAGRA_HAS_SHARED
@@ -141,6 +153,59 @@ Java_dev_kagra_shell_KagraNative_statsJson(JNIEnv *env, jobject) {
   return env->NewStringUTF(buf);
 #else
   return env->NewStringUTF("{\"stub\":true}");
+#endif
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_kagra_shell_KagraNative_saveJson(JNIEnv *env, jobject) {
+#if KAGRA_HAS_SHARED
+  if (!g_session) return env->NewStringUTF("{}");
+  int need = kagra_shared_save_json(g_session, nullptr, 0);
+  if (need <= 0) return env->NewStringUTF("{}");
+  std::vector<char> buf((size_t)need);
+  kagra_shared_save_json(g_session, buf.data(), (unsigned)buf.size());
+  return env->NewStringUTF(buf.data());
+#else
+  return env->NewStringUTF("{}");
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_loadJson(JNIEnv *env, jobject, jstring json) {
+#if KAGRA_HAS_SHARED
+  if (!g_session || !json) return JNI_FALSE;
+  const char *c = env->GetStringUTFChars(json, nullptr);
+  if (!c) return JNI_FALSE;
+  int rc = kagra_shared_load_json(g_session, c);
+  env->ReleaseStringUTFChars(json, c);
+  return rc == 0 ? JNI_TRUE : JNI_FALSE;
+#else
+  (void)env; (void)json;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_setSettings(
+    JNIEnv *, jobject, jfloat master, jfloat steer, jboolean muted) {
+#if KAGRA_HAS_SHARED
+  return g_session &&
+         kagra_shared_set_settings(g_session, master, steer, muted ? 1 : 0) == 0;
+#else
+  (void)master; (void)steer; (void)muted;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_kagra_shell_KagraNative_audioJson(JNIEnv *env, jobject) {
+#if KAGRA_HAS_SHARED
+  char buf[256];
+  if (!g_session) return env->NewStringUTF("{}");
+  kagra_shared_audio_json(g_session, buf, sizeof(buf));
+  return env->NewStringUTF(buf);
+#else
+  return env->NewStringUTF("{\"engine\":0,\"wind\":0,\"brake\":0}");
 #endif
 }
 

@@ -918,6 +918,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "glam"
+version = "0.33.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7360bd2cd76e0cd9032d42cf2922155cecea2685b0cfa4630c3246df030bcfd6"
+
+[[package]]
 name = "glob"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1008,7 +1014,7 @@ dependencies = [
  "log",
  "presser",
  "thiserror 2.0.20",
- "windows 0.54.0",
+ "windows 0.62.2",
 ]
 
 [[package]]
@@ -1311,6 +1317,7 @@ name = "kagra-shared"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "glam",
  "js-sys",
  "once_cell",
  "png",

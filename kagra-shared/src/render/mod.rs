@@ -1,22 +1,56 @@
-//! wgpu による 2D 描画（feature = "render"）。
+//! wgpu による描画（feature = "render"）。
 //!
-//! `scene::DrawList` の矩形を 1 パスで描くだけの薄い層。Android / iOS / Web /
-//! オフスクリーンで同じコードを通す。オフスクリーンがあるので GPU のある
-//! デスクトップで絵を確認できる。
+//! 3D パス（`scene3d::Scene3D`）を深度付きで描いてから、2D パス
+//! （`scene::DrawList`）を HUD として上に重ねる。両方とも同じレンダーパスで、
+//! 2D 側は深度テストを常に通して書き込まない。Android / iOS / Web /
+//! オフスクリーンで同じコードを通す。
+//!
+//! WebGL2 でも動く範囲に収めてある。ストレージバッファを使わず、インスタンスは
+//! 頂点バッファで渡し、base instance には頼らない（GLES に無いため）。
 
 mod target;
 
 pub use target::SurfaceSource;
 
 use crate::scene::DrawList;
+use crate::scene3d::{MeshData, MeshId, Scene3D};
 
 const MAX_TEXTURE_SIDE: u32 = 8192;
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     pos: [f32; 2],
     color: [f32; 4],
+}
+
+/// 3D シェーダの `Globals` と同じ並び。
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Globals {
+    view_proj: [[f32; 4]; 4],
+    light: [f32; 4],
+    fog_color: [f32; 4],
+    fog_range: [f32; 4],
+    camera_pos: [f32; 4],
+}
+
+/// インスタンスごとの頂点属性（location 2..7）。
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct InstanceRaw {
+    model: [[f32; 4]; 4],
+    color: [f32; 4],
+    material: f32,
+    _pad: [f32; 3],
+}
+
+#[derive(Debug)]
+struct GpuMesh {
+    vbuf: wgpu::Buffer,
+    ibuf: wgpu::Buffer,
+    index_count: u32,
 }
 
 #[derive(Debug)]
@@ -38,11 +72,22 @@ pub struct Renderer {
     width: u32,
     height: u32,
     target: Target,
+    depth: wgpu::TextureView,
+
     pipeline: wgpu::RenderPipeline,
     screen_buf: wgpu::Buffer,
     screen_bind: wgpu::BindGroup,
     vbuf: wgpu::Buffer,
     vbuf_capacity: usize,
+
+    pipeline3d: wgpu::RenderPipeline,
+    /// 天球用。深度は書いて読まず、裏面カリングもしない。
+    pipeline_sky: wgpu::RenderPipeline,
+    globals_buf: wgpu::Buffer,
+    globals_bind: wgpu::BindGroup,
+    inst_buf: wgpu::Buffer,
+    inst_capacity: usize,
+    meshes: Vec<GpuMesh>,
 }
 
 impl Renderer {
@@ -149,6 +194,15 @@ impl Renderer {
             immediate_size: 0,
         });
 
+        // HUD は 3D の上に無条件で乗せる。深度は読むだけで書かない。
+        let hud_depth = wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Always),
+            stencil: Default::default(),
+            bias: Default::default(),
+        };
+
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("kagra-shared 2d pipeline"),
             layout: Some(&pipeline_layout),
@@ -173,7 +227,7 @@ impl Renderer {
                 })],
             }),
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
+            depth_stencil: Some(hud_depth),
             multisample: wgpu::MultisampleState::default(),
             multiview_mask: None,
             cache: None,
@@ -182,6 +236,140 @@ impl Renderer {
         let vbuf_capacity = 6 * 256;
         let vbuf = create_vertex_buffer(&device, vbuf_capacity);
 
+        // ---- 3D ----
+        let shader3d = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("kagra-shared 3d"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader3d.wgsl").into()),
+        });
+
+        let globals_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("kagra-shared globals"),
+            size: std::mem::size_of::<Globals>() as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let globals_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("kagra-shared globals layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let globals_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("kagra-shared globals bind"),
+            layout: &globals_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: globals_buf.as_entire_binding(),
+            }],
+        });
+
+        let layout3d = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("kagra-shared 3d layout"),
+            bind_group_layouts: &[Some(&globals_layout)],
+            immediate_size: 0,
+        });
+
+        // vertex_attr_array! の一時配列を名前付きに固定しないと、layout の
+        // attributes 参照が文の終わりで死ぬ。
+        let mesh_attrs = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+        let inst_attrs = wgpu::vertex_attr_array![
+            2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4,
+            6 => Float32x4, 7 => Float32
+        ];
+        let vertex_buffers = [
+            Some(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<crate::scene3d::Vertex3>() as wgpu::BufferAddress,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &mesh_attrs,
+            }),
+            Some(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &inst_attrs,
+            }),
+        ];
+
+        let color_target = [Some(wgpu::ColorTargetState {
+            format,
+            blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+            write_mask: wgpu::ColorWrites::ALL,
+        })];
+
+        let pipeline3d = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("kagra-shared 3d pipeline"),
+            layout: Some(&layout3d),
+            vertex: wgpu::VertexState {
+                module: &shader3d,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &vertex_buffers,
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader3d,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &color_target,
+            }),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        let pipeline_sky = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("kagra-shared sky pipeline"),
+            layout: Some(&layout3d),
+            vertex: wgpu::VertexState {
+                module: &shader3d,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &vertex_buffers,
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader3d,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &color_target,
+            }),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        let inst_capacity = 256;
+        let inst_buf = create_instance_buffer(&device, inst_capacity);
+        let depth = create_depth_view(&device, width, height);
+
         let me = Self {
             device,
             queue,
@@ -189,14 +377,52 @@ impl Renderer {
             width,
             height,
             target,
+            depth,
             pipeline,
             screen_buf,
             screen_bind,
             vbuf,
             vbuf_capacity,
+            pipeline3d,
+            pipeline_sky,
+            globals_buf,
+            globals_bind,
+            inst_buf,
+            inst_capacity,
+            meshes: Vec::new(),
         };
         me.upload_screen();
         me
+    }
+
+    /// メッシュを GPU に載せる。`MeshId` は登録順の連番。
+    pub fn upload_mesh(&mut self, mesh: &MeshData) -> MeshId {
+        let vbuf = create_init_buffer(
+            &self.device,
+            "kagra-shared mesh vertices",
+            bytemuck::cast_slice(&mesh.vertices),
+            wgpu::BufferUsages::VERTEX,
+        );
+        let ibuf = create_init_buffer(
+            &self.device,
+            "kagra-shared mesh indices",
+            bytemuck::cast_slice(&mesh.indices),
+            wgpu::BufferUsages::INDEX,
+        );
+        self.meshes.push(GpuMesh {
+            vbuf,
+            ibuf,
+            index_count: mesh.indices.len() as u32,
+        });
+        MeshId(self.meshes.len() as u32 - 1)
+    }
+
+    pub fn mesh_count(&self) -> usize {
+        self.meshes.len()
+    }
+
+    pub fn aspect(&self) -> f32 {
+        self.width as f32 / self.height.max(1) as f32
     }
 
     pub fn width(&self) -> u32 {
@@ -235,19 +461,58 @@ impl Renderer {
                 *texture = create_offscreen_texture(&self.device, self.format, width, height);
             }
         }
+        self.depth = create_depth_view(&self.device, width, height);
         self.upload_screen();
     }
 
-    /// `DrawList` を 1 枚描いて present する。
+    /// HUD だけを描く。3D を持たない呼び出し側のための薄い入口。
     pub fn render(&mut self, list: &DrawList) -> Result<(), String> {
-        let vertices = self.build_vertices(list);
+        self.render_frame(None, list)
+    }
+
+    /// 3D を描いてから HUD を重ね、1 枚として present する。
+    pub fn render_frame(&mut self, world: Option<&Scene3D>, hud: &DrawList) -> Result<(), String> {
+        let vertices = self.build_vertices(hud);
         self.ensure_vertex_capacity(vertices.len());
         if !vertices.is_empty() {
             self.queue
                 .write_buffer(&self.vbuf, 0, bytemuck::cast_slice(&vertices));
         }
 
-        let clear = to_linear(list.clear, self.format);
+        // 3D のインスタンスを 1 本のバッファに連結し、バッチごとの開始位置を覚える。
+        // base instance は GLES に無いので、描画時は毎回 0.. で数え、バッファの
+        // スライス位置でずらす。
+        // (mesh, byte_offset, instance_count, is_sky)
+        let mut draws: Vec<(usize, u64, u32, bool)> = Vec::new();
+        if let Some(scene) = world {
+            let mut raw: Vec<InstanceRaw> = Vec::with_capacity(scene.instance_count());
+            for batch in &scene.batches {
+                let mesh = batch.mesh.0 as usize;
+                if mesh >= self.meshes.len() || batch.instances.is_empty() {
+                    continue;
+                }
+                let offset =
+                    (raw.len() * std::mem::size_of::<InstanceRaw>()) as wgpu::BufferAddress;
+                let is_sky = batch.instances[0].material == crate::scene3d::Material::Sky;
+                for inst in &batch.instances {
+                    raw.push(InstanceRaw {
+                        model: inst.model.to_cols_array_2d(),
+                        color: to_linear(inst.color, self.format),
+                        material: inst.material as u8 as f32,
+                        _pad: [0.0; 3],
+                    });
+                }
+                draws.push((mesh, offset, batch.instances.len() as u32, is_sky));
+            }
+            if !raw.is_empty() {
+                self.ensure_instance_capacity(raw.len());
+                self.queue
+                    .write_buffer(&self.inst_buf, 0, bytemuck::cast_slice(&raw));
+            }
+            self.upload_globals(scene);
+        }
+
+        let clear = to_linear(world.map(|s| s.clear).unwrap_or(hud.clear), self.format);
         let frame = match &self.target {
             Target::Surface { surface, .. } => {
                 use wgpu::CurrentSurfaceTexture as Cst;
@@ -294,11 +559,46 @@ impl Renderer {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+
+            if !draws.is_empty() {
+                pass.set_bind_group(0, &self.globals_bind, &[]);
+                // 空を先に。深度を書かないので、このあと地面が上に乗る。
+                pass.set_pipeline(&self.pipeline_sky);
+                for (mesh, offset, count, is_sky) in &draws {
+                    if !*is_sky {
+                        continue;
+                    }
+                    let m = &self.meshes[*mesh];
+                    pass.set_vertex_buffer(0, m.vbuf.slice(..));
+                    pass.set_vertex_buffer(1, self.inst_buf.slice(*offset..));
+                    pass.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..m.index_count, 0, 0..*count);
+                }
+                pass.set_pipeline(&self.pipeline3d);
+                for (mesh, offset, count, is_sky) in &draws {
+                    if *is_sky {
+                        continue;
+                    }
+                    let m = &self.meshes[*mesh];
+                    pass.set_vertex_buffer(0, m.vbuf.slice(..));
+                    pass.set_vertex_buffer(1, self.inst_buf.slice(*offset..));
+                    pass.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..m.index_count, 0, 0..*count);
+                }
+            }
+
             if !vertices.is_empty() {
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(0, &self.screen_bind, &[]);
@@ -339,6 +639,33 @@ impl Renderer {
         let cap = needed.next_power_of_two();
         self.vbuf = create_vertex_buffer(&self.device, cap);
         self.vbuf_capacity = cap;
+    }
+
+    fn ensure_instance_capacity(&mut self, needed: usize) {
+        if needed <= self.inst_capacity {
+            return;
+        }
+        let cap = needed.next_power_of_two();
+        self.inst_buf = create_instance_buffer(&self.device, cap);
+        self.inst_capacity = cap;
+    }
+
+    fn upload_globals(&self, scene: &Scene3D) {
+        let cam = &scene.camera;
+        let g = Globals {
+            view_proj: cam.view_projection(self.aspect()).to_cols_array_2d(),
+            light: [
+                scene.light_dir.x,
+                scene.light_dir.y,
+                scene.light_dir.z,
+                scene.ambient.clamp(0.0, 1.0),
+            ],
+            fog_color: to_linear(scene.fog_color, self.format),
+            fog_range: [scene.fog_start, scene.fog_end, 0.0, 0.0],
+            camera_pos: [cam.eye.x, cam.eye.y, cam.eye.z, 0.0],
+        };
+        self.queue
+            .write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&g));
     }
 
     /// オフスクリーンの内容を RGBA8 で読み出す。
@@ -478,6 +805,63 @@ fn create_vertex_buffer(device: &wgpu::Device, vertices: usize) -> wgpu::Buffer 
         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     })
+}
+
+fn create_instance_buffer(device: &wgpu::Device, instances: usize) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("kagra-shared instances"),
+        size: (instances.max(1) * std::mem::size_of::<InstanceRaw>()) as wgpu::BufferAddress,
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
+}
+
+fn create_depth_view(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("kagra-shared depth"),
+        size: wgpu::Extent3d {
+            width: width.max(1),
+            height: height.max(1),
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: DEPTH_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    texture.create_view(&Default::default())
+}
+
+/// 中身入りのバッファを作る。`wgpu::util` に頼らずに済ませる。
+fn create_init_buffer(
+    device: &wgpu::Device,
+    label: &str,
+    data: &[u8],
+    usage: wgpu::BufferUsages,
+) -> wgpu::Buffer {
+    // サイズ 0 のバッファは作れないので、空なら最小サイズを空のまま置く。
+    if data.is_empty() {
+        return device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: 4,
+            usage,
+            mapped_at_creation: false,
+        });
+    }
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: data.len() as wgpu::BufferAddress,
+        usage,
+        mapped_at_creation: true,
+    });
+    buffer
+        .get_mapped_range_mut(..)
+        .expect("freshly mapped buffer")
+        .copy_from_slice(data);
+    buffer.unmap();
+    buffer
 }
 
 /// sRGB のターゲットへはリニア値を書く必要がある。シーンの色は sRGB の

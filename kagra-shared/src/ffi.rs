@@ -192,6 +192,46 @@ pub unsafe extern "C" fn kagra_shared_set_pad(
     }
 }
 
+/// 連続値のドライバ入力。`steer` は -1..1、`throttle` と `brake` は 0..1。
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_set_drive(
+    ptr: *mut SharedSession,
+    steer: c_float,
+    throttle: c_float,
+    brake: c_float,
+) -> c_int {
+    match session(ptr) {
+        Some(s) => {
+            s.set_drive(steer, throttle, brake);
+            0
+        }
+        None => -1,
+    }
+}
+
+/// シーンを切り替える。0 = 運転（3D）、1 = タッチデモ（2D）。
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_set_scene(ptr: *mut SharedSession, kind: c_uint) -> c_int {
+    let kind = match kind {
+        0 => crate::session::SceneKind::Driving,
+        1 => crate::session::SceneKind::Demo2D,
+        _ => return -1,
+    };
+    match session(ptr) {
+        Some(s) => {
+            s.set_scene_kind(kind);
+            0
+        }
+        None => -1,
+    }
+}
+
 /// 次フレームへ進み、frame 番号を返す。エラー時 -1。
 ///
 /// # Safety
@@ -219,6 +259,95 @@ pub unsafe extern "C" fn kagra_shared_stats_json(
         return -1;
     };
     write_cstr(&s.stats_json(), buf, buflen)
+}
+
+/// セーブ JSON をバッファに書く。
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。`buf` は NULL か `buflen` バイト以上。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_save_json(
+    ptr: *mut SharedSession,
+    buf: *mut c_char,
+    buflen: c_uint,
+) -> c_int {
+    let Some(s) = session(ptr) else {
+        return -1;
+    };
+    match s.save_json() {
+        Ok(j) => write_cstr(&j, buf, buflen),
+        Err(e) => {
+            set_err(&e);
+            -1
+        }
+    }
+}
+
+/// セーブ JSON を読み込んで状態を復元する。
+///
+/// # Safety
+/// `ptr` は生存中のハンドル。`json` は NUL 終端。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_load_json(
+    ptr: *mut SharedSession,
+    json: *const c_char,
+) -> c_int {
+    let Some(s) = session(ptr) else {
+        return -1;
+    };
+    if json.is_null() {
+        set_err("json is null");
+        return -1;
+    }
+    let text = unsafe { CStr::from_ptr(json) }.to_str().unwrap_or("");
+    match s.load_json(text) {
+        Ok(()) => 0,
+        Err(e) => {
+            set_err(&e);
+            -1
+        }
+    }
+}
+
+/// 設定を書く。`muted` は 0/1。
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_set_settings(
+    ptr: *mut SharedSession,
+    master_volume: c_float,
+    steer_sensitivity: c_float,
+    muted: c_int,
+) -> c_int {
+    match session(ptr) {
+        Some(s) => {
+            s.set_settings(crate::save::Settings {
+                master_volume,
+                steer_sensitivity,
+                muted: muted != 0,
+            });
+            0
+        }
+        None => -1,
+    }
+}
+
+/// 音声レベル JSON（engine/wind/brake）。
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。`buf` は NULL か `buflen` バイト以上。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_audio_json(
+    ptr: *mut SharedSession,
+    buf: *mut c_char,
+    buflen: c_uint,
+) -> c_int {
+    let Some(s) = session(ptr) else {
+        return -1;
+    };
+    let j = serde_json::to_string(&s.audio_levels()).unwrap_or_else(|_| "{}".into());
+    write_cstr(&j, buf, buflen)
 }
 
 // ── 描画 ─────────────────────────────────────────────────────

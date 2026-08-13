@@ -24,4 +24,16 @@ final class KagraShellTests: XCTestCase {
         XCTAssertFalse(s.render())
         XCTAssertFalse(s.lastError.isEmpty, "a failed render must explain itself")
     }
+
+    /// 運転入力とシーン切り替えが C ABI を通ること。stub でも通る形にしてあるので、
+    /// ヘッダとスタブが本体と食い違ったらリンクで落ちる。
+    func testDriveInputCrossesTheABI() throws {
+        let s = try XCTUnwrap(KagraSession())
+        s.createSurface(width: 320, height: 240)
+        s.setDrive(steer: 0.5, throttle: 1.0, brake: 0.0)
+        XCTAssertTrue(s.setScene(.driving))
+        XCTAssertTrue(s.setScene(.demo2D))
+        for _ in 0..<10 { s.requestFrame() }
+        XCTAssertTrue(s.statsJSON().contains("frame"))
+    }
 }

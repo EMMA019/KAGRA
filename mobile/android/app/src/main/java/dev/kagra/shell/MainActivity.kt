@@ -19,10 +19,18 @@ import androidx.appcompat.app.AppCompatActivity
  * 描画は諦めて手順をテキストで出す。
  */
 class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
+    private enum class Control { STEER, PEDAL }
+
     private lateinit var surfaceView: SurfaceView
     private lateinit var status: TextView
     private var rendering = false
     private var frameCallback: Choreographer.FrameCallback? = null
+
+    /** 指 id ごとの役割。両手で同時に操作するために必要。 */
+    private val controls = mutableMapOf<Int, Control>()
+    private var steer = 0f
+    private var throttle = 0f
+    private var brake = 0f
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -100,9 +108,11 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
                     rendering = false
                     status.text = "render failed: ${KagraNative.lastError()}"
                 }
-                if (!rendering || frame % 15 == 0L) {
-                    if (rendering) {
-                        status.text = "kagra-shared ${KagraNative.version()}  frame=$frame"
+                if (rendering && frame % 15 == 0L) {
+                    status.text = buildString {
+                        append("kagra-shared ${KagraNative.version()}  frame=$frame\n")
+                        append(KagraNative.statsJson())
+                        append("\n\n左半分＝ハンドル / 右半分＝上でアクセル・下でブレーキ")
                     }
                 }
                 Choreographer.getInstance().postFrameCallback(this)
@@ -119,30 +129,58 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     // ── 入力 ─────────────────────────────────────────────
 
+    /**
+     * 画面の下半分を左右に割り、左＝ハンドル、右＝アクセル／ブレーキにする。
+     * 指ごとに役割を覚えるので、両手で同時に操作できる。
+     */
     private fun onTouch(width: Int, height: Int, ev: MotionEvent): Boolean {
+        if (width <= 0 || height <= 0) return true
+
+        val idx = ev.actionIndex
         val phase = when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> 0
             MotionEvent.ACTION_MOVE -> 1
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> 2
             else -> 3
         }
-        val idx = ev.actionIndex
         KagraNative.pushPointer(
-            ev.getPointerId(idx),
-            ev.getX(idx),
-            ev.getY(idx),
-            phase,
-            ev.getPressure(idx)
+            ev.getPointerId(idx), ev.getX(idx), ev.getY(idx), phase, ev.getPressure(idx)
         )
-        // 画面中央を原点にした仮想スティック。離したら中立に戻す。
-        if (phase == 2 || phase == 3) {
-            KagraNative.setPad(0f, 0f)
-        } else if (width > 0 && height > 0) {
-            KagraNative.setPad(
-                ((ev.x / width) * 2f - 1f).coerceIn(-1f, 1f),
-                ((ev.y / height) * 2f - 1f).coerceIn(-1f, 1f)
-            )
+
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN ->
+                controls[ev.getPointerId(idx)] =
+                    if (ev.getX(idx) < width / 2f) Control.STEER else Control.PEDAL
+
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP,
+            MotionEvent.ACTION_CANCEL -> {
+                when (controls.remove(ev.getPointerId(idx))) {
+                    Control.STEER -> steer = 0f
+                    Control.PEDAL -> { throttle = 0f; brake = 0f }
+                    null -> Unit
+                }
+            }
         }
+
+        // 押されている指をすべて見て、役割ごとに最新値へ更新する。
+        for (i in 0 until ev.pointerCount) {
+            when (controls[ev.getPointerId(i)]) {
+                Control.STEER -> {
+                    // 左半分の中心からの左右のずれを切れ角にする。
+                    val half = width / 2f
+                    steer = ((ev.getX(i) / half) * 2f - 1f).coerceIn(-1f, 1f)
+                }
+                Control.PEDAL -> {
+                    // 上半分がアクセル、下半分がブレーキ。
+                    val t = ((ev.getY(i) / height) * 2f - 1f).coerceIn(-1f, 1f)
+                    throttle = if (t < 0) -t else 0f
+                    brake = if (t > 0) t else 0f
+                }
+                null -> Unit
+            }
+        }
+
+        KagraNative.setDrive(steer, throttle, brake)
         return true
     }
 

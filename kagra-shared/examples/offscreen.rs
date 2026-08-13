@@ -5,6 +5,8 @@
 //! ```bash
 //! cargo run -p kagra-shared --features render --example offscreen
 //! cargo run -p kagra-shared --features render --example offscreen -- 960 540 out.png
+//! # 2D のタッチデモを見る
+//! cargo run -p kagra-shared --features render --example offscreen -- 640 360 demo.png 2d
 //! ```
 
 use std::fs::File;
@@ -13,33 +15,65 @@ use std::path::PathBuf;
 
 use kagra_shared::input::{PointerEvent, PointerPhase};
 use kagra_shared::render::Renderer;
+use kagra_shared::session::SceneKind;
 use kagra_shared::SharedSession;
 
 fn main() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
-    let width: u32 = args.next().and_then(|s| s.parse().ok()).unwrap_or(640);
-    let height: u32 = args.next().and_then(|s| s.parse().ok()).unwrap_or(360);
+    let width: u32 = args.next().and_then(|s| s.parse().ok()).unwrap_or(960);
+    let height: u32 = args.next().and_then(|s| s.parse().ok()).unwrap_or(540);
     let out = PathBuf::from(
         args.next()
             .unwrap_or_else(|| "scratch/shared_offscreen.png".to_string()),
     );
+    let two_d = args.next().is_some_and(|s| s == "2d");
 
     let mut session = SharedSession::default();
     session.create_surface(width, height);
 
-    // パッドで右下へ動かし、途中でタップして波紋を出す。
-    session.set_pad(0.8, 0.5);
-    for frame in 0..40 {
-        if frame == 10 {
-            session.push_pointer(PointerEvent {
-                id: 0,
-                x: width as f32 * 0.25,
-                y: height as f32 * 0.35,
-                phase: PointerPhase::Begin,
-                pressure: 1.0,
-            });
+    if two_d {
+        session.set_scene_kind(SceneKind::Demo2D);
+        // パッドで右下へ動かし、途中でタップして波紋を出す。
+        session.set_pad(0.8, 0.5);
+        for frame in 0..40 {
+            if frame == 10 {
+                session.push_pointer(PointerEvent {
+                    id: 0,
+                    x: width as f32 * 0.25,
+                    y: height as f32 * 0.35,
+                    phase: PointerPhase::Begin,
+                    pressure: 1.0,
+                });
+            }
+            session.request_frame();
         }
-        session.request_frame();
+    } else {
+        // S 字の途中に置いてから少し走る。曲がった道と LOD の切替が見える位置。
+        let pose = session.driving.streamer.path.sample(320.0);
+        session.driving.truck.pos = pose.pos;
+        session.driving.truck.heading = pose.heading();
+        session.driving.truck.speed = 18.0;
+        session.driving.path_s = pose.distance;
+        session.driving.camera = kagra_shared::ChaseCamera::default();
+        for _ in 0..30 {
+            session
+                .driving
+                .camera
+                .update(&session.driving.truck, 1.0 / 60.0);
+        }
+        session.set_drive(0.25, 0.7, 0.0);
+        for _ in 0..90 {
+            session.request_frame();
+        }
+        let stats = session.request_frame();
+        let on_path = session.driving.streamer.path.sample(session.driving.path_s);
+        println!(
+            "driving at {:.1} km/h on curve (path x={:.1}, z={:.1}, chunks={})",
+            stats.speed_kmh,
+            on_path.pos.x,
+            on_path.pos.z,
+            session.driving.active_chunk_count()
+        );
     }
 
     let renderer = pollster::block_on(Renderer::new_offscreen(width, height))?;
