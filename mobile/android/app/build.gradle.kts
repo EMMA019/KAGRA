@@ -6,6 +6,8 @@ plugins {
 android {
     namespace = "dev.kagra.shell"
     compileSdk = 35
+    // CI と手元で同じ NDK / CMake を使う（AGP 8.5 の既定値に合わせる）
+    ndkVersion = "26.1.10909125"
 
     defaultConfig {
         applicationId = "dev.kagra.shell"

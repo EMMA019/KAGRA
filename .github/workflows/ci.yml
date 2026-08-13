@@ -2,8 +2,10 @@
 # ============================================================
 # 1) Rust unit tests (GPU 不要)
 # 2) Python pure unit tests (maturin 不要 / golden 除外)
-# 3) Golden image regression (windows + maturin + GPU)
-# 4) maturin build + import smoke (3 OS × 3 Python)
+# 3) kagra-shared: fmt + clippy + test + wasm32 ビルド
+# 4) モバイルシェル: iOS SwiftPM / Android debug APK
+# 5) Golden image regression (windows + maturin + GPU)
+# 6) maturin build + import smoke (3 OS × 3 Python)
 
 name: CI
 
@@ -52,6 +54,81 @@ jobs:
 
       - name: Run pure Python unit tests
         run: pytest tests -m "not golden"
+
+  # モバイル / Wasm 共有コア。GPU も Python も不要なので毎 push で回す。
+  shared-lib:
+    name: kagra-shared (fmt / clippy / test / wasm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      - name: Format check
+        run: cargo fmt -p kagra-shared -- --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy -p kagra-shared --all-targets -- -D warnings
+
+      - name: Unit tests
+        run: cargo test -p kagra-shared
+
+      - name: Build for wasm32
+        run: cargo build -p kagra-shared --target wasm32-unknown-unknown --features wasm --release
+
+  # iOS シェルは stub.c でリンクするため実機 SDK もランタイムも不要。
+  ios-shell:
+    name: iOS SwiftPM shell
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift build
+        working-directory: mobile/ios
+        run: swift build
+
+      - name: Swift test
+        working-directory: mobile/ios
+        run: swift test
+
+  # Android は JNI スタブ経路（jniLibs に .so が無い状態）でビルドが通ることを担保。
+  android-shell:
+    name: Android debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      # AGP は未インストールの platform / NDK を自動取得しないので明示する。
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" \
+            "cmake;3.22.1" "ndk;26.1.10909125" > /dev/null
+
+      - name: Assemble debug
+        working-directory: mobile/android
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: kagra-shell-debug-apk
+          path: mobile/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: ignore
 
   # GPU ヘッドレスのゴールデン画像回帰。Windows は DXGI + 画面外ウィンドウの
   # 経路が実機検証済みなので、まず windows-latest のみで回す。

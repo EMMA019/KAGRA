@@ -113,8 +113,20 @@ def test_critical_bindings_present():
     assert not missing, f"必須バインディング欠落: {missing}"
 
 
-def test_set_fog_python_signature_matches_doc():
-    """set_fog の Python 公開 API が存在する。"""
-    import kagra
+def test_set_fog_python_wrapper_exists():
+    """set_fog の Python ラッパが公開され、Rust 側へ転送している。
 
-    assert callable(getattr(kagra, "set_fog", None))
+    拡張のビルドを要求しないよう AST で検査する（pure-python CI で回る）。
+    """
+    src = (KAGRA_PY / "__init__.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    fn = next(
+        (
+            n
+            for n in tree.body
+            if isinstance(n, ast.FunctionDef) and n.name == "set_fog"
+        ),
+        None,
+    )
+    assert fn is not None, "kagra.set_fog が未公開"
+    assert "_engine.set_fog" in ast.unparse(fn), "set_fog が Rust 側へ転送していない"

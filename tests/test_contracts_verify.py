@@ -6,15 +6,25 @@ from pathlib import Path
 
 import pytest
 
-from kagra.contracts import (
-    AssetKind,
-    KagraContractError,
-    candidate_paths,
-    describe_environment,
-    resolve_asset,
-)
-from kagra.touch import PointerEvent, PointerPhase, VirtualPad
-from kagra.verify import Scenario, _load_scenario, load_scenario
+from tests.conftest import load_kagra_submodule
+
+# `import kagra` は Rust 拡張を要求するため、純ロジックのモジュールだけを直接ロードする。
+_contracts = load_kagra_submodule("contracts")
+_touch = load_kagra_submodule("touch")
+_verify = load_kagra_submodule("verify")
+
+AssetKind = _contracts.AssetKind
+KagraContractError = _contracts.KagraContractError
+candidate_paths = _contracts.candidate_paths
+describe_environment = _contracts.describe_environment
+resolve_asset = _contracts.resolve_asset
+
+PointerEvent = _touch.PointerEvent
+PointerPhase = _touch.PointerPhase
+VirtualPad = _touch.VirtualPad
+
+_load_scenario = _verify._load_scenario
+load_scenario = _verify.load_scenario
 
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import sys
 import types
@@ -17,12 +18,19 @@ KAGRA_DIR = ROOT / "kagra"
 
 
 def load_kagra_submodule(name: str):
-    """`kagra.<name>` を __init__.py 経由なしでロードする。"""
+    """`kagra.<name>` を __init__.py 経由なしでロードする。
+
+    Rust 拡張が入っている環境では本物の `kagra` を優先する。スタブを
+    `sys.modules` に残すと、後続テストの `import kagra` を壊すため。
+    """
     pkg = "kagra"
     if pkg not in sys.modules:
-        stub = types.ModuleType(pkg)
-        stub.__path__ = [str(KAGRA_DIR)]
-        sys.modules[pkg] = stub
+        try:
+            importlib.import_module(pkg)
+        except Exception:
+            stub = types.ModuleType(pkg)
+            stub.__path__ = [str(KAGRA_DIR)]
+            sys.modules[pkg] = stub
 
     full = f"kagra.{name}"
     if full in sys.modules and getattr(sys.modules[full], "__file__", None):

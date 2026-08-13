@@ -74,8 +74,12 @@ impl SharedSession {
 
     pub fn poll_pointers(&mut self) -> Vec<PointerEvent> {
         let out = self.pointers.clone();
-        self.pointers
-            .retain(|p| matches!(p.phase, crate::input::PointerPhase::Begin | crate::input::PointerPhase::Move));
+        self.pointers.retain(|p| {
+            matches!(
+                p.phase,
+                crate::input::PointerPhase::Begin | crate::input::PointerPhase::Move
+            )
+        });
         out
     }
 

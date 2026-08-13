@@ -1,6 +1,8 @@
 //! C ABI — Android NDK / iOS / デスクトップ FFI 共通。
 //!
 //! ハンドルは opaque pointer。スレッドセーフではない（UI スレッド専用を想定）。
+//! ハンドルを受け取る関数はすべて `unsafe`：呼び出し側が生存を保証する。
+//! C/Kotlin/Swift から見た ABI は safe 版と同一。
 
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_float, c_int, c_uint};
@@ -21,13 +23,29 @@ fn set_err(msg: impl Into<String>) {
     }
 }
 
-fn session<'a>(ptr: *mut SharedSession) -> Option<&'a mut SharedSession> {
+/// # Safety
+/// `ptr` は `kagra_shared_create` が返した生存中のハンドルか NULL でなければならない。
+unsafe fn session<'a>(ptr: *mut SharedSession) -> Option<&'a mut SharedSession> {
     if ptr.is_null() {
         set_err("null session");
         None
     } else {
-        Some(unsafe { &mut *ptr })
+        Some(&mut *ptr)
     }
+}
+
+/// NUL 終端文字列を呼び出し側バッファへ書く。戻り値は必要バイト数（NUL 含む）。
+///
+/// # Safety
+/// `buf` は NULL か、`buflen` バイト以上の書き込み可能領域を指すこと。
+unsafe fn write_cstr(src: &str, buf: *mut c_char, buflen: c_uint) -> c_int {
+    let need = src.len() + 1;
+    if buf.is_null() || (buflen as usize) < need {
+        return need as c_int;
+    }
+    std::ptr::copy_nonoverlapping(src.as_ptr(), buf as *mut u8, src.len());
+    *buf.add(src.len()) = 0;
+    need as c_int
 }
 
 #[no_mangle]
@@ -54,17 +72,19 @@ pub extern "C" fn kagra_shared_create() -> *mut SharedSession {
     Box::into_raw(Box::new(SharedSession::default()))
 }
 
+/// # Safety
+/// `ptr` は `kagra_shared_create` の戻り値で、まだ破棄されていないこと。
 #[no_mangle]
-pub extern "C" fn kagra_shared_destroy(ptr: *mut SharedSession) {
+pub unsafe extern "C" fn kagra_shared_destroy(ptr: *mut SharedSession) {
     if !ptr.is_null() {
-        unsafe {
-            drop(Box::from_raw(ptr));
-        }
+        drop(Box::from_raw(ptr));
     }
 }
 
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
 #[no_mangle]
-pub extern "C" fn kagra_shared_create_surface(
+pub unsafe extern "C" fn kagra_shared_create_surface(
     ptr: *mut SharedSession,
     width: c_uint,
     height: c_uint,
@@ -78,8 +98,10 @@ pub extern "C" fn kagra_shared_create_surface(
     }
 }
 
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。`root` は NUL 終端文字列か NULL。
 #[no_mangle]
-pub extern "C" fn kagra_shared_set_asset_root(
+pub unsafe extern "C" fn kagra_shared_set_asset_root(
     ptr: *mut SharedSession,
     root: *const c_char,
 ) -> c_int {
@@ -87,7 +109,7 @@ pub extern "C" fn kagra_shared_set_asset_root(
         set_err("null asset_root");
         return -1;
     }
-    let s = unsafe { CStr::from_ptr(root) }.to_string_lossy().into_owned();
+    let s = CStr::from_ptr(root).to_string_lossy().into_owned();
     match session(ptr) {
         Some(sess) => {
             sess.set_asset_root(s);
@@ -97,8 +119,10 @@ pub extern "C" fn kagra_shared_set_asset_root(
     }
 }
 
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
 #[no_mangle]
-pub extern "C" fn kagra_shared_pause(ptr: *mut SharedSession) -> c_int {
+pub unsafe extern "C" fn kagra_shared_pause(ptr: *mut SharedSession) -> c_int {
     match session(ptr) {
         Some(s) => {
             s.pause();
@@ -108,8 +132,10 @@ pub extern "C" fn kagra_shared_pause(ptr: *mut SharedSession) -> c_int {
     }
 }
 
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
 #[no_mangle]
-pub extern "C" fn kagra_shared_resume(ptr: *mut SharedSession) -> c_int {
+pub unsafe extern "C" fn kagra_shared_resume(ptr: *mut SharedSession) -> c_int {
     match session(ptr) {
         Some(s) => {
             s.resume();
@@ -119,8 +145,10 @@ pub extern "C" fn kagra_shared_resume(ptr: *mut SharedSession) -> c_int {
     }
 }
 
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
 #[no_mangle]
-pub extern "C" fn kagra_shared_push_pointer(
+pub unsafe extern "C" fn kagra_shared_push_pointer(
     ptr: *mut SharedSession,
     id: c_uint,
     x: c_float,
@@ -147,8 +175,10 @@ pub extern "C" fn kagra_shared_push_pointer(
     }
 }
 
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
 #[no_mangle]
-pub extern "C" fn kagra_shared_set_pad(
+pub unsafe extern "C" fn kagra_shared_set_pad(
     ptr: *mut SharedSession,
     x: c_float,
     y: c_float,
@@ -163,8 +193,11 @@ pub extern "C" fn kagra_shared_set_pad(
 }
 
 /// 次フレームへ進み、frame 番号を返す。エラー時 -1。
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
 #[no_mangle]
-pub extern "C" fn kagra_shared_request_frame(ptr: *mut SharedSession) -> i64 {
+pub unsafe extern "C" fn kagra_shared_request_frame(ptr: *mut SharedSession) -> i64 {
     match session(ptr) {
         Some(s) => s.request_frame().frame as i64,
         None => -1,
@@ -173,8 +206,11 @@ pub extern "C" fn kagra_shared_request_frame(ptr: *mut SharedSession) -> i64 {
 
 /// stats JSON を呼び出し側バッファに書く。戻り値は必要バイト数（NUL 含む）。
 /// buf が短い場合は書き込まず必要長だけ返す。
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。`buf` は NULL か `buflen` バイト以上の領域。
 #[no_mangle]
-pub extern "C" fn kagra_shared_stats_json(
+pub unsafe extern "C" fn kagra_shared_stats_json(
     ptr: *mut SharedSession,
     buf: *mut c_char,
     buflen: c_uint,
@@ -182,21 +218,15 @@ pub extern "C" fn kagra_shared_stats_json(
     let Some(s) = session(ptr) else {
         return -1;
     };
-    let json = s.stats_json();
-    let need = json.len() + 1;
-    if buf.is_null() || (buflen as usize) < need {
-        return need as c_int;
-    }
-    unsafe {
-        std::ptr::copy_nonoverlapping(json.as_ptr(), buf as *mut u8, json.len());
-        *buf.add(json.len()) = 0;
-    }
-    need as c_int
+    write_cstr(&s.stats_json(), buf, buflen)
 }
 
 /// alias 候補を `\n` 区切りで buf に書く。
+///
+/// # Safety
+/// `name` は NUL 終端文字列か NULL。`buf` は NULL か `buflen` バイト以上の領域。
 #[no_mangle]
-pub extern "C" fn kagra_shared_resolve_alias(
+pub unsafe extern "C" fn kagra_shared_resolve_alias(
     kind: c_uint,
     name: *const c_char,
     buf: *mut c_char,
@@ -207,15 +237,6 @@ pub extern "C" fn kagra_shared_resolve_alias(
         set_err("null name");
         return -1;
     }
-    let n = unsafe { CStr::from_ptr(name) }.to_string_lossy();
-    let joined = resolve_alias(&n).join("\n");
-    let need = joined.len() + 1;
-    if buf.is_null() || (buflen as usize) < need {
-        return need as c_int;
-    }
-    unsafe {
-        std::ptr::copy_nonoverlapping(joined.as_ptr(), buf as *mut u8, joined.len());
-        *buf.add(joined.len()) = 0;
-    }
-    need as c_int
+    let n = CStr::from_ptr(name).to_string_lossy();
+    write_cstr(&resolve_alias(&n).join("\n"), buf, buflen)
 }

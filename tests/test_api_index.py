@@ -10,20 +10,17 @@ SCRIPT = ROOT / "tools" / "gen_api_index.py"
 
 
 def test_api_index_up_to_date():
-    # まず生成（ローカルで docs が無くても通す）。CI では --check のみでも可。
-    gen = subprocess.run(
-        [sys.executable, str(SCRIPT)],
-        cwd=str(ROOT),
-        capture_output=True,
-        text=True,
-    )
-    assert gen.returncode == 0, gen.stderr or gen.stdout
+    """コミット済みの索引が現在の API と一致すること。
 
+    生成せずに検証する。先に生成すると常に一致してドリフトを検出できない。
+    """
     check = subprocess.run(
         [sys.executable, str(SCRIPT), "--check"],
         cwd=str(ROOT),
         capture_output=True,
         text=True,
     )
-    assert check.returncode == 0, check.stderr or check.stdout
-    assert (ROOT / "docs" / "API_INDEX.md").exists()
+    assert check.returncode == 0, (
+        (check.stderr or check.stdout)
+        + "\n索引が古いです。`python tools/gen_api_index.py` を実行してコミットしてください。"
+    )

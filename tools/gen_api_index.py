@@ -6,14 +6,15 @@ Usage:
     python tools/gen_api_index.py --check   # CI: 差分があれば非ゼロ終了
 
 出力: docs/API_INDEX.md
+
+シグネチャは AST のみから作る。Rust 拡張の有無で出力が変わると `--check` が
+機能しなくなるため、実行時 import には依存しない。
 """
 from __future__ import annotations
 
 import argparse
 import ast
-import inspect
 import sys
-import textwrap
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,10 +36,12 @@ def _sig_from_ast(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
             except Exception:
                 ann = ""
         if default is not None:
+            # PEP 8: 注釈付きは ` = `、無注釈は `=`
+            sep = " = " if ann else "="
             try:
-                d = " = " + ast.unparse(default)
+                d = sep + ast.unparse(default)
             except Exception:
-                d = " = ..."
+                d = sep + "..."
             return f"{name}{ann}{d}"
         return f"{name}{ann}"
 
@@ -135,28 +138,6 @@ def _public_from_init() -> list[tuple[str, str, str]]:
     return items
 
 
-def _runtime_enrich(items: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
-    """可能なら inspect でシグネチャを補強。"""
-    sys.path.insert(0, str(ROOT))
-    try:
-        import kagra  # noqa: F401
-    except Exception as e:
-        print(f"[gen_api_index] runtime import skipped: {e}", file=sys.stderr)
-        return items
-
-    out = []
-    for name, sig, kind in items:
-        if kind == "function" and hasattr(kagra, name):
-            obj = getattr(kagra, name)
-            if callable(obj):
-                try:
-                    sig = f"{name}{inspect.signature(obj)}"
-                except (ValueError, TypeError):
-                    pass
-        out.append((name, sig, kind))
-    return out
-
-
 def render_markdown(items: list[tuple[str, str, str]]) -> str:
     lines = [
         "# KAGRA Public API Index",
@@ -199,7 +180,6 @@ def main() -> int:
     args = ap.parse_args()
 
     items = _public_from_init()
-    items = _runtime_enrich(items)
     text = render_markdown(items)
 
     if args.check:

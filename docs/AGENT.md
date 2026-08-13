@@ -12,3 +12,16 @@
 | Mobile scaffold | `mobile/` |
 
 Rust errors surface as `[CODE] message` (see `KaguraError::code`).
+
+## CI に合わせたローカル実行
+
+| 確認したいこと | コマンド |
+|---|---|
+| pure-python テスト（拡張なし相当） | `pytest tests -m "not golden" -p tests.no_extension_plugin` |
+| API 索引のドリフト | `python tools/gen_api_index.py --check` |
+| 共有コア | `cargo fmt -p kagra-shared -- --check` / `cargo clippy -p kagra-shared --all-targets -- -D warnings` / `cargo test -p kagra-shared` |
+| Wasm ビルド | `cargo build -p kagra-shared --target wasm32-unknown-unknown --features wasm` |
+
+`tests/` のテストは `import kagra`（Rust 拡張）に依存させないこと。純ロジックの
+モジュールは `tests/conftest.py` の `load_kagra_submodule()` で読む。索引は AST
+のみから生成するので、拡張の有無で内容が変わらない。
