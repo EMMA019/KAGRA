@@ -55,6 +55,13 @@ pip install kagra
 python -m kagra
 ```
 
+If you run `python -m kagra` from a checkout that contains a `kagra/` folder, Python imports that folder instead of the installed wheel. `No module named kagra.__main__` means you hit an older local package — run from another directory:
+
+```powershell
+cd $env:TEMP
+python -m kagra
+```
+
 | | |
 |---|---|
 | Windows / Linux | `pip install kagra` |
