@@ -14,6 +14,7 @@
 #   kagra.se()            audio.play_se()
 #   kagra.load()          load_texture()
 #   kagra.avatar()        load_vrm() + VrmAnimator + ...
+#   kagra.stage()         load_gltf() / スカイ球
 #
 # ============================================================
 from __future__ import annotations
@@ -650,6 +651,28 @@ def set_toon_params(threshold: float = 0.5, softness: float = 1.0,
 
 def draw_mesh_3d(texture_id: int, verts: list, indices: list):
     _check(); _engine.draw_mesh_3d(texture_id, verts, indices)
+
+
+def load_gltf(path: str) -> int:
+    """glTF / GLB を読み込む。通常は kagra.stage() を使う。
+
+    ``.gltf`` は隣の ``.bin`` と画像 URI を読む。Windows では
+    ``on_ready`` / ``run()`` のあと（Renderer 作成後）に呼ぶ。
+    """
+    _check()
+    return _engine.load_gltf(str(path))
+
+
+def draw_gltf(model_id: int):
+    """読み込んだ glTF を描く。draw() の中で呼ぶ。"""
+    _check()
+    _engine.draw_gltf(int(model_id))
+
+
+def unload_gltf(model_id: int):
+    """glTF を解放する。"""
+    _check()
+    _engine.unload_gltf(int(model_id))
 
 
 # ── GPU Boids API ────────────────────────────────────────────
@@ -1433,6 +1456,21 @@ def load_bvh(path: str, extra_map: dict = None) -> "BvhMotion":
     return _lbvh(path, extra_map=extra_map)
 
 
+def stage(path: str = "stage", *, radius: float = 12.0) -> "Stage":
+    """会場を読み込む。ダンスと同じくファイルを落とすだけ。
+
+    Sketchfab のホール ``.glb`` / ``.gltf``、または空の PNG/JPEG を
+    内側から貼るスカイ球。エンジン内でブルームを組まない。
+
+    Example::
+        hall = kagra.stage("assets/venue.glb")   # on_ready の中
+        hall.draw()                               # draw() の中
+    """
+    _check()
+    from kagra.stage import Stage
+    return Stage.load(path, radius=radius)
+
+
 def load_vrma(path: str, *, sample_fps: float = 30.0) -> "VrmaMotion":
     """VRM Animation (``.vrma``) を読み込んで VrmaMotion を返す。
 
@@ -1502,6 +1540,7 @@ except ImportError:
 # Phase 7: VRM 高品質化
 # ─────────────────────────────────────────────────────────────
 
+from kagra.stage import Stage, backdrop_sphere, classify_stage_file, resolve_stage_path
 from kagra.vrm_lookat  import LookAtController
 from kagra.vrm_lipsync import LipSyncController, LipSyncTimeline
 from kagra.vrm_ik      import ArmIK, TwoBoneIK

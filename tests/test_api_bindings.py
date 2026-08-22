@@ -108,6 +108,9 @@ def test_critical_bindings_present():
         "request_screenshot",
         "inject_key_down",
         "get_vrm_look_at",
+        "load_gltf",
+        "draw_gltf",
+        "unload_gltf",
     ]
     missing = [n for n in required if n not in rust]
     assert not missing, f"必須バインディング欠落: {missing}"
@@ -130,3 +133,17 @@ def test_set_fog_python_wrapper_exists():
     )
     assert fn is not None, "kagra.set_fog が未公開"
     assert "_engine.set_fog" in ast.unparse(fn), "set_fog が Rust 側へ転送していない"
+
+
+def test_gltf_python_wrappers_exist():
+    src = (KAGRA_PY / "__init__.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    names = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+    for name, rust in (
+        ("load_gltf", "_engine.load_gltf"),
+        ("draw_gltf", "_engine.draw_gltf"),
+        ("unload_gltf", "_engine.unload_gltf"),
+        ("stage", "Stage.load"),
+    ):
+        assert name in names, f"kagra.{name} が未公開"
+        assert rust in ast.unparse(names[name]), f"{name} が {rust} を呼んでいない"

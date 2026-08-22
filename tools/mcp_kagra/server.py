@@ -68,7 +68,7 @@ def _resolve(kind: str, name: str) -> str:
                 "error": {
                     "code": "BAD_KIND",
                     "message": f"unknown kind {kind}",
-                    "hint": "use vrm|fbx|bvh|vrma|texture|font|audio|any",
+                    "hint": "use vrm|fbx|bvh|vrma|gltf|texture|font|audio|any",
                 },
             },
             ensure_ascii=False,

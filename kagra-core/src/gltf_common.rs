@@ -267,32 +267,58 @@ pub fn trs_to_mat4(t: [f32;3], r: [f32;4], s: [f32;3]) -> Matrix4<f32> {
     )
 }
 
-// ----- glTF/VRM 共通のテクスチャ抽出（GLB形式）-----
-pub fn extract_texture_data_from_glb(path: &str) -> KaguraResult<Vec<(usize, Vec<u8>, String)>> {
+/// `.glb` または `.gltf`（隣の `.bin` / 画像 URI）を JSON + BIN に開く。
+pub fn load_gltf_document(path: &str) -> KaguraResult<(Value, Vec<u8>)> {
     let data = fs::read(path)?;
-    if &data[0..4] != b"glTF" {
-        return Err(KaguraError::VrmParse("Not a glTF/GLB file".to_string()));
-    }
-    let mut offset = 12usize;
-    let mut json_bytes: Option<&[u8]> = None;
-    let mut bin_data: &[u8] = &[];
-    while offset + 8 <= data.len() {
-        let chunk_len = read_u32_le(&data, offset) as usize;
-        let chunk_type = read_u32_le(&data, offset + 4);
-        let chunk_data = &data[offset + 8 .. (offset + 8 + chunk_len).min(data.len())];
-        match chunk_type {
-            0x4E4F534A => json_bytes = Some(chunk_data), // JSON chunk
-            0x004E4942 => bin_data = chunk_data,         // BIN chunk
-            _ => {}
+    if data.len() >= 4 && &data[0..4] == b"glTF" {
+        let mut offset = 12usize;
+        let mut json_bytes: Option<&[u8]> = None;
+        let mut bin_data: &[u8] = &[];
+        while offset + 8 <= data.len() {
+            let chunk_len = read_u32_le(&data, offset) as usize;
+            let chunk_type = read_u32_le(&data, offset + 4);
+            let chunk_data = &data[offset + 8..((offset + 8 + chunk_len).min(data.len()))];
+            match chunk_type {
+                0x4E4F534A => json_bytes = Some(chunk_data),
+                0x004E4942 => bin_data = chunk_data,
+                _ => {}
+            }
+            offset += 8 + chunk_len;
         }
-        offset += 8 + chunk_len;
+        let json_bytes = json_bytes.ok_or_else(|| KaguraError::VrmParse("JSON chunk not found".to_string()))?;
+        let json_str = std::str::from_utf8(json_bytes)
+            .map_err(|e| KaguraError::VrmParse(format!("UTF-8 error: {}", e)))?
+            .trim_end_matches('\0');
+        let gltf: Value = serde_json::from_str(json_str)
+            .map_err(|e| KaguraError::VrmParse(format!("JSON parse: {}", e)))?;
+        return Ok((gltf, bin_data.to_vec()));
     }
-    let json_bytes = json_bytes.ok_or_else(|| KaguraError::VrmParse("JSON chunk not found".to_string()))?;
-    let json_str = std::str::from_utf8(json_bytes)
-        .map_err(|e| KaguraError::VrmParse(format!("UTF-8 error: {}", e)))?
-        .trim_end_matches('\0');
+
+    let json_str = std::str::from_utf8(&data)
+        .map_err(|e| KaguraError::VrmParse(format!("UTF-8 error: {}", e)))?;
     let gltf: Value = serde_json::from_str(json_str)
         .map_err(|e| KaguraError::VrmParse(format!("JSON parse: {}", e)))?;
+    let base = std::path::Path::new(path)
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let mut bin = Vec::new();
+    if let Some(uri) = gltf
+        .pointer("/buffers/0/uri")
+        .and_then(|u| u.as_str())
+    {
+        if !uri.starts_with("data:") {
+            bin = fs::read(base.join(uri))?;
+        }
+    }
+    Ok((gltf, bin))
+}
+
+/// glTF/VRM のテクスチャ抽出。GLB の bufferView と `.gltf` の外部 URI の両方。
+pub fn extract_texture_data_from_glb(path: &str) -> KaguraResult<Vec<(usize, Vec<u8>, String)>> {
+    let (gltf, bin_data) = load_gltf_document(path)?;
+    let base = std::path::Path::new(path)
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
 
     let empty_vec = vec![];
     let images = gltf["images"].as_array().unwrap_or(&empty_vec);
@@ -302,14 +328,36 @@ pub fn extract_texture_data_from_glb(path: &str) -> KaguraResult<Vec<(usize, Vec
     let mut result = Vec::new();
     for (ti, tex) in textures.iter().enumerate() {
         let src_idx = tex["source"].as_u64().unwrap_or(0) as usize;
-        if src_idx >= images.len() { continue; }
+        if src_idx >= images.len() {
+            continue;
+        }
         let img = &images[src_idx];
-        let bv_idx = match img["bufferView"].as_u64() { Some(v) => v as usize, None => continue };
-        if bv_idx >= bvs.len() { continue; }
+        if let Some(uri) = img.get("uri").and_then(|u| u.as_str()) {
+            if uri.starts_with("data:") {
+                continue;
+            }
+            let bytes = match fs::read(base.join(uri)) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            let mime = img["mimeType"].as_str().unwrap_or("");
+            let ext = gltf_image_ext(mime, &bytes);
+            result.push((ti, bytes, ext));
+            continue;
+        }
+        let bv_idx = match img["bufferView"].as_u64() {
+            Some(v) => v as usize,
+            None => continue,
+        };
+        if bv_idx >= bvs.len() {
+            continue;
+        }
         let bv = &bvs[bv_idx];
         let off = bv["byteOffset"].as_u64().unwrap_or(0) as usize;
         let size = bv["byteLength"].as_u64().unwrap_or(0) as usize;
-        if size < 16 || off + size > bin_data.len() { continue; }
+        if size < 16 || off + size > bin_data.len() {
+            continue;
+        }
         let mime = img["mimeType"].as_str().unwrap_or("");
         let bytes = bin_data[off..off + size].to_vec();
         let ext = gltf_image_ext(mime, &bytes);
@@ -608,5 +656,108 @@ mod tests {
         assert_eq!(gltf_image_ext("", &png), "png");
         assert_eq!(image_format_from_ext("bmp"), Some(image::ImageFormat::Bmp));
         assert_eq!(image_format_from_ext("bin"), None);
+    }
+
+    fn tiny_png() -> Vec<u8> {
+        // 1×1 opaque red PNG
+        vec![
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00,
+            0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08,
+            0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D,
+            0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+        ]
+    }
+
+    fn write_minimal_glb(path: &std::path::Path, json: &str) {
+        let mut json_bytes = json.as_bytes().to_vec();
+        while json_bytes.len() % 4 != 0 {
+            json_bytes.push(b' ');
+        }
+        let total = 12 + 8 + json_bytes.len();
+        let mut out = Vec::with_capacity(total);
+        out.extend_from_slice(b"glTF");
+        out.extend_from_slice(&2u32.to_le_bytes());
+        out.extend_from_slice(&(total as u32).to_le_bytes());
+        out.extend_from_slice(&(json_bytes.len() as u32).to_le_bytes());
+        out.extend_from_slice(&0x4E4F_534A_u32.to_le_bytes());
+        out.extend_from_slice(&json_bytes);
+        fs::write(path, out).unwrap();
+    }
+
+    #[test]
+    fn load_gltf_json_with_external_bin() {
+        let dir = std::env::temp_dir().join(format!("kagra_gltf_json_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let bin = [1u8, 2, 3, 4];
+        fs::write(dir.join("mesh.bin"), bin).unwrap();
+        fs::write(
+            dir.join("hall.gltf"),
+            r#"{"asset":{"version":"2.0"},"buffers":[{"uri":"mesh.bin","byteLength":4}]}"#,
+        )
+        .unwrap();
+
+        let (doc, owned) = load_gltf_document(dir.join("hall.gltf").to_str().unwrap()).unwrap();
+        assert_eq!(owned, bin);
+        assert_eq!(doc["buffers"][0]["uri"], "mesh.bin");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn extract_texture_from_gltf_file_uri() {
+        let dir = std::env::temp_dir().join(format!("kagra_gltf_uri_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let png = tiny_png();
+        fs::write(dir.join("wall.png"), &png).unwrap();
+        fs::write(
+            dir.join("hall.gltf"),
+            r#"{
+              "asset":{"version":"2.0"},
+              "images":[{"uri":"wall.png","mimeType":"image/png"}],
+              "textures":[{"source":0}]
+            }"#,
+        )
+        .unwrap();
+
+        let tex = extract_texture_data_from_glb(dir.join("hall.gltf").to_str().unwrap()).unwrap();
+        assert_eq!(tex.len(), 1);
+        assert_eq!(tex[0].0, 0);
+        assert_eq!(tex[0].2, "png");
+        assert_eq!(&tex[0].1[..8], &png[..8]);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn extract_texture_skips_data_uri() {
+        let dir = std::env::temp_dir().join(format!("kagra_gltf_datauri_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("hall.gltf"),
+            r#"{
+              "asset":{"version":"2.0"},
+              "images":[{"uri":"data:image/png;base64,AAAA"}],
+              "textures":[{"source":0}]
+            }"#,
+        )
+        .unwrap();
+        let tex = extract_texture_data_from_glb(dir.join("hall.gltf").to_str().unwrap()).unwrap();
+        assert!(tex.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_gltf_document_glb_json_chunk() {
+        let dir = std::env::temp_dir().join(format!("kagra_glb_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("hall.glb");
+        write_minimal_glb(&path, r#"{"asset":{"version":"2.0"},"scene":0}"#);
+        let (doc, bin) = load_gltf_document(path.to_str().unwrap()).unwrap();
+        assert_eq!(doc["asset"]["version"], "2.0");
+        assert!(bin.is_empty());
+        let _ = fs::remove_dir_all(&dir);
     }
 }

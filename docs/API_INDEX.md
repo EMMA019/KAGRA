@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **317**
+エントリ数: **325**
 
 ## Functions
 
@@ -31,6 +31,7 @@
 | `drag_window` | `drag_window()` |
 | `draw_boids` | `draw_boids(boid_id: int, batch_id: int, sprite_w: float = 6.0, sprite_h: float = 3.0)` |
 | `draw_boids_gpu` | `draw_boids_gpu(boid_id: int)` |
+| `draw_gltf` | `draw_gltf(model_id: int)` |
 | `draw_mesh` | `draw_mesh(texture_id: int, verts: list, shader_id: int = 0, shader_params: list = None)` |
 | `draw_mesh_3d` | `draw_mesh_3d(texture_id: int, verts: list, indices: list)` |
 | `draw_polygon` | `draw_polygon(verts: list, r=255, g=255, b=255, a=255, color=None)` |
@@ -88,6 +89,7 @@
 | `load_data` | `load_data(key: str, force_reload=False) -> 'DataObject'` |
 | `load_fbx` | `load_fbx(path: str, clip_name: str = None) -> 'FbxMotion'` |
 | `load_font` | `load_font(path: str) -> int` |
+| `load_gltf` | `load_gltf(path: str) -> int` |
 | `load_rig` | `load_rig(path: str) -> int` |
 | `load_shader` | `load_shader(path: str) -> int` |
 | `load_shader_src` | `load_shader_src(wgsl_src: str) -> int` |
@@ -155,10 +157,12 @@
 | `set_window_title` | `set_window_title(title: str)` |
 | `sign` | `sign(value: float) -> int` |
 | `spring_bone` | `spring_bone(vrm_path: str, vrm_id: int) -> 'SpringBone'` |
+| `stage` | `stage(path: str = 'stage', *, radius: float = 12.0) -> 'Stage'` |
 | `stop_bgm` | `stop_bgm(fade: float = 0.0)` |
 | `text` | `text(s, x: float, y: float, size: int = 24, color=(255, 255, 255), font: int = None, alpha: int = 255)` |
 | `texture_size` | `texture_size(tid: int) -> tuple` |
 | `tick_count` | `tick_count() -> int` |
+| `unload_gltf` | `unload_gltf(model_id: int)` |
 | `update_boids` | `update_boids(boid_id: int, dt: float)` |
 | `update_boids_gpu` | `update_boids_gpu(boid_id: int, dt: float)` |
 | `update_camera_3d` | `update_camera_3d(view: list, proj: list)` |
@@ -183,6 +187,7 @@
 | `assets` | `assets` (object) |
 | `Attachment` | `class Attachment  (from kagra.skeleton)` (class) |
 | `audio` | `audio` (object) |
+| `backdrop_sphere` | `export backdrop_sphere  (from kagra.stage)` (export) |
 | `BgmCue` | `class BgmCue  (from kagra.bgm_sync)` (class) |
 | `BgmSync` | `class BgmSync  (from kagra.bgm_sync)` (class) |
 | `Bone` | `class Bone  (from kagra.skeleton)` (class) |
@@ -194,6 +199,7 @@
 | `CameraTrack` | `class CameraTrack  (from kagra.timeline)` (class) |
 | `CharState` | `class CharState  (from kagra.ai_character)` (class) |
 | `ChoiceMenu` | `class ChoiceMenu  (from kagra.ui)` (class) |
+| `classify_stage_file` | `export classify_stage_file  (from kagra.stage)` (export) |
 | `Collider` | `class Collider  (from kagra.entity)` (class) |
 | `Component` | `class Component  (from kagra.entity)` (class) |
 | `DataObject` | `class DataObject  (from kagra.scriptable)` (class) |
@@ -268,6 +274,7 @@
 | `register_spawn_rule` | `export register_spawn_rule  (from kagra.scriptable)` (export) |
 | `reset_global_bus` | `export reset_global_bus  (from kagra.event_bus)` (export) |
 | `resolve_asset` | `export resolve_asset  (from kagra.contracts)` (export) |
+| `resolve_stage_path` | `export resolve_stage_path  (from kagra.stage)` (export) |
 | `RhythmJudge` | `class RhythmJudge  (from kagra.bgm_sync)` (class) |
 | `Rigidbody` | `class Rigidbody  (from kagra.physics)` (class) |
 | `RigidBody3D` | `class RigidBody3D  (from kagra.physics3d)` (class) |
@@ -304,6 +311,7 @@
 | `SpringBone` | `class SpringBone  (from kagra.vrm_spring)` (class) |
 | `Sprite` | `class Sprite  (from kagra.entity)` (class) |
 | `SpriteRenderer` | `class SpriteRenderer  (from kagra.entity)` (class) |
+| `Stage` | `class Stage  (from kagra.stage)` (class) |
 | `TextRenderer` | `class TextRenderer  (from kagra.entity)` (class) |
 | `TILE_DAMAGE` | `class TILE_DAMAGE  (from kagra.tilemap)` (class) |
 | `TILE_DOOR` | `class TILE_DOOR  (from kagra.tilemap)` (class) |
