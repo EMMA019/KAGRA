@@ -65,6 +65,22 @@ def test_bundled_dance_bvh_resolves():
     assert p.suffix.lower() == ".bvh"
 
 
+def test_resolve_demo_headbang_vrma():
+    p = resolve_asset(AssetKind.VRMA, "coolHeadbangWalk", root=ROOT, required=False)
+    if p is None:
+        pytest.skip("assets/coolHeadbangWalk.vrma not present")
+    assert p.is_file()
+    assert p.suffix.lower() == ".vrma"
+
+
+def test_resolve_demo_song_wav():
+    p = resolve_asset(AssetKind.AUDIO, "cute_song_trial", root=ROOT, required=False)
+    if p is None:
+        pytest.skip("assets/cute_song_trial.wav not present")
+    assert p.is_file()
+    assert p.suffix.lower() == ".wav"
+
+
 def test_virtual_pad_wasd():
     pad = VirtualPad(deadzone=0.2)
     pad.set_stick(0.9, 0.0)

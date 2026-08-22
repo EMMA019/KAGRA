@@ -147,6 +147,39 @@ def _qnorm(q):
     return (q[0] / n, q[1] / n, q[2] / n, q[3] / n)
 
 
+def _world_rest_rots(nodes: list, rest_local: dict) -> dict[int, tuple]:
+    """ノード index → T-pose ワールド回転。"""
+    parent: dict[int, int] = {}
+    for i, node in enumerate(nodes):
+        for c in node.get("children") or []:
+            parent[int(c)] = i
+    worlds: dict[int, tuple] = {}
+
+    def world(i: int) -> tuple:
+        if i in worlds:
+            return worlds[i]
+        local = rest_local.get(i, (0.0, 0.0, 0.0, 1.0))
+        p = parent.get(i)
+        worlds[i] = local if p is None else _qnorm(_qmul(world(p), local))
+        return worlds[i]
+
+    for i in range(len(nodes)):
+        world(i)
+    return worlds
+
+
+def dest_delta_from_normalized(normalized, world_rest) -> list:
+    """NormalizedLocalRotation → ``bind * delta`` 用の差分。
+
+    仕様: ``B = L * inv(W) * N * W``。Animator は ``B = L * delta`` なので
+    ``delta = inv(W) * N * W``。VRoid の太ももは W≈180°Z で、共役しないと
+    膝が後ろに曲がる。
+    """
+    w = _qnorm(world_rest)
+    n = _qnorm(normalized)
+    return list(_qnorm(_qmul(_qmul(_qinv(w), n), w)))
+
+
 def _qdot(a, b):
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
 
@@ -394,6 +427,7 @@ class VrmaMotion:
     _rest_pos: dict[int, tuple]
     _tracks: list[_Track]
     _times: list[float]
+    _rest_world: dict[int, tuple] = field(default_factory=dict)
     _cache: Optional[list] = field(default=None, repr=False)
     source: str = ""
 
@@ -423,11 +457,25 @@ class VrmaMotion:
                 if isinstance(v, list) and len(v) >= 3:
                     poss[tr.node] = (float(v[0]), float(v[1]), float(v[2]))
         bones = {}
-        for vrm_name, node in self.bones.items():
+        # 同じノードに J_Bip_* と hips / leftUpperArm の両方が載ると、
+        # Animator が後者を bind=I で上書きしてメッシュが反転・爆ぜる。
+        emitted: set[int] = set()
+        preferred = [(n, i) for n, i in self.bones.items() if n.startswith("J_Bip_")]
+        fallback = [(n, i) for n, i in self.bones.items() if not n.startswith("J_Bip_")]
+        for vrm_name, node in preferred + fallback:
+            if node in emitted:
+                continue
+            emitted.add(node)
             rest = self._rest_rot.get(node, (0.0, 0.0, 0.0, 1.0))
             anim = rots.get(node, rest)
-            # NormalizedLocalRotation: inv(TPose_anim) * Pose_anim
-            bones[vrm_name] = list(_qnorm(_qmul(_qinv(rest), anim)))
+            world = self._rest_world.get(node)
+            if world is None:
+                bones[vrm_name] = list(_qnorm(_qmul(_qinv(rest), anim)))
+            else:
+                # NormalizedLocalRotation = W * inv(L) * A * inv(W)
+                bones[vrm_name] = list(
+                    _qnorm(_qmul(_qmul(_qmul(world, _qinv(rest)), anim), _qinv(world)))
+                )
         hips_node = self.bones.get("J_Bip_C_Hips") or self.bones.get("hips")
         root = (0.0, 0.0, 0.0)
         if hips_node is not None:
@@ -492,8 +540,8 @@ def _node_rest_pos(node: dict) -> tuple:
 
 def load_vrma(path: str | Path, *, sample_fps: float = 30.0) -> VrmaMotion:
     """`.vrma` / glTF / GLB を読み、ヒューマノイド向けクリップにする。"""
-    path = Path(path)
-    gltf, blob = _read_glb_or_gltf(path)
+    src = Path(path)
+    gltf, blob = _read_glb_or_gltf(src)
     ext = _vrma_ext(gltf)
     spec = str(ext.get("specVersion") or "1.0")
 
@@ -547,7 +595,7 @@ def load_vrma(path: str | Path, *, sample_fps: float = 30.0) -> VrmaMotion:
 
     times = _collect_times(tracks, sample_fps=sample_fps)
     mapped = len(bones)
-    print(f"[VRMA] {path}")
+    print(f"[VRMA] {src}")
     print(f"  spec    : {spec}")
     fingers = sum(1 for n in bones if n in FINGER_JBIP)
     print(f"  bones   : {mapped}  fingers:{fingers}")
@@ -564,7 +612,8 @@ def load_vrma(path: str | Path, *, sample_fps: float = 30.0) -> VrmaMotion:
         _rest_pos=rest_pos,
         _tracks=tracks,
         _times=times,
-        source=str(path),
+        _rest_world=_world_rest_rots(nodes, rest_rot),
+        source=str(src),
     )
 
 

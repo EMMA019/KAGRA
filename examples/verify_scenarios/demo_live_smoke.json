@@ -1,0 +1,7 @@
+{
+  "name": "demo_live_smoke",
+  "script": "examples/demo_live_smoke.py",
+  "timeout_sec": 120,
+  "expect_files": ["scratch/demo_live.png"],
+  "min_file_bytes": 3000
+}

@@ -34,9 +34,17 @@ class SmokeScene(kagra.Scene):
         self.cam = kagra.Camera3D(SW, SH, fov_deg=32.0)
         self.cam.use_orbit(radius=2.8, phi=0.15, target=(0.0, 0.9, 0.0))
 
+        from kagra.contracts import AssetKind, resolve_asset
+        from kagra.demo import DEFAULT_DANCE, DEFAULT_SONG
+
         self.av = kagra.avatar(str(vrm))
-        self.av.dance()
-        duration = self.av.sing()
+        dance = resolve_asset(AssetKind.ANY, DEFAULT_DANCE, required=False)
+        if dance:
+            self.av.dance(str(dance))
+        else:
+            self.av.dance()
+        song = resolve_asset(AssetKind.AUDIO, DEFAULT_SONG, required=False)
+        duration = self.av.sing(str(song)) if song else self.av.sing()
         print(f"song: {duration:.1f}s  clips: {self.av.clips}")
 
     def update(self, dt):

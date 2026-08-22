@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tests.conftest import load_kagra_submodule
 
 _contracts = load_kagra_submodule("contracts")
@@ -62,6 +64,18 @@ def test_resolve_expression_name():
     assert vrma.resolve_expression_name("missing", avail) is None
 
 
+def test_dest_delta_conjugates_by_world_rest():
+    import math
+    # +X スイングを 180°Z で共役すると -X になる（太もも前後反転の修正）
+    a = 0.35
+    n = (math.sin(a / 2), 0.0, 0.0, math.cos(a / 2))
+    w180z = (0.0, 0.0, 1.0, 0.0)
+    d = vrma.dest_delta_from_normalized(n, w180z)
+    assert d[0] * n[0] < 0
+    assert abs(d[1]) < 1e-5
+    assert abs(abs(d[0]) - abs(n[0])) < 1e-5
+
+
 def test_quat_to_yaw_pitch():
     import math
     h = 0.4 / 2
@@ -69,6 +83,28 @@ def test_quat_to_yaw_pitch():
     yaw, pitch = vrma.quat_to_yaw_pitch(q)
     assert abs(yaw - 0.4) < 0.02
     assert abs(pitch) < 0.02
+
+
+def test_to_clip_emits_one_name_per_node(tmp_path: Path):
+    path = vrma.write_synthetic_vrma(tmp_path / "wave.vrma", frames=8, duration=0.5)
+    motion = vrma.load_vrma(path, sample_fps=8.0)
+    assert "leftUpperArm" in motion.bones
+    assert "J_Bip_L_UpperArm" in motion.bones
+    names = set(motion.to_clip()[0][0])
+    assert "J_Bip_L_UpperArm" in names
+    assert "leftUpperArm" not in names
+    assert "leftIndexProximal" not in names
+
+
+def test_headbang_clip_prefers_jbip():
+    p = resolve_asset(AssetKind.VRMA, "coolHeadbangWalk", root=ROOT, required=False)
+    if p is None:
+        pytest.skip("assets/coolHeadbangWalk.vrma not present")
+    motion = vrma.load_vrma(p, sample_fps=10.0)
+    names = set(motion.to_clip()[0][0])
+    assert "J_Bip_C_Hips" in names
+    assert "hips" not in names
+    assert all(n.startswith("J_Bip_") for n in names)
 
 
 def test_load_motion_dispatches_vrma(tmp_path: Path):

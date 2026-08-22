@@ -103,6 +103,8 @@ _ALIASES: dict[str, list[str]] = {
         "assets/dance.vrma",
         "assets/anim/dance.vrma",
     ],
+    "coolheadbangwalk": ["assets/coolHeadbangWalk.vrma"],
+    "cute_song_trial": ["assets/cute_song_trial.wav"],
 }
 
 

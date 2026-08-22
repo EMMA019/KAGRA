@@ -309,6 +309,19 @@ class _Animator:
             return True
         return bool(self._bone_filter(name))
 
+    def _bind_quat(self, name: str) -> list:
+        """バインド回転。VRMA の hips / leftUpperArm も J_Bip_* に解決する。"""
+        q = self._bind_rots.get(name)
+        if q:
+            return q
+        from kagra.vrma_player import _HUMANOID_TO_VRM
+        alias = _HUMANOID_TO_VRM.get(name)
+        if alias:
+            q = self._bind_rots.get(alias)
+            if q:
+                return q
+        return _ID
+
     def update(self, dt: float):
         import kagra
         if not self._playing or not self._frames: return
@@ -331,7 +344,7 @@ class _Animator:
             for n, qf in self._from.items():
                 if not self._accept_bone(n):
                     continue
-                bind_q = self._bind_rots.get(n, _ID)
+                bind_q = self._bind_quat(n)
                 qn = _slerp(qf, bind_q, te)
                 target_rots[n] = qn
             if self._t >= 1.0:
@@ -352,7 +365,7 @@ class _Animator:
                 else:
                     qt = _euler_to_quat(*rot)
                 
-                bind_q = self._bind_rots.get(n, _ID)
+                bind_q = self._bind_quat(n)
                 qt = _qmul(bind_q, qt)
                 qf = self._from.get(n, bind_q)
                 target_rots[n] = _slerp(qf, qt, te)
@@ -366,8 +379,8 @@ class _Animator:
             for n in names:
                 if not self._accept_bone(n):
                     continue
-                qa = self._cross_from.get(n, self._bind_rots.get(n, _ID))
-                qb = target_rots.get(n, self._bind_rots.get(n, _ID))
+                qa = self._cross_from.get(n, self._bind_quat(n))
+                qb = target_rots.get(n, self._bind_quat(n))
                 qn = _slerp(qa, qb, w)
                 self.current_rots[n] = qn
                 _send_bone_rot(self.vrm_id, n, qn)
@@ -381,7 +394,7 @@ class _Animator:
 
         if self._t >= 1.0:
             self._t    = 0.0
-            self._from = {n: self.current_rots.get(n, self._bind_rots.get(n, _ID)) for n in (bones or {})}
+            self._from = {n: self.current_rots.get(n, self._bind_quat(n)) for n in (bones or {})}
             self._fidx += 1
             if self._fidx >= len(self._frames):
                 if self._loop:
@@ -425,7 +438,7 @@ class VrmAvatar:
         import kagra
         self.vrm_path = vrm_path
         self.vrm_id   = kagra.load_vrm(vrm_path)
-        self._bind_rots = self._load_bind_rots(vrm_path)
+        self._bind_rots, self._bind_worlds = self._load_bind_pose(vrm_path)
         self._anim    = _Animator(self.vrm_id, self._bind_rots)
         # 上半身レイヤー（クリップ辞書はベースと共有）
         self._upper   = _Animator(self.vrm_id, self._bind_rots, bone_filter=_is_upper_bone)
@@ -484,12 +497,17 @@ class VrmAvatar:
 
     def _load_bind_rots(self, vrm_path: str) -> dict:
         """VRM ファイルからバインドポーズの回転（クォータニオン xyzw）を読み込む。"""
+        locals_, _worlds = self._load_bind_pose(vrm_path)
+        return locals_
+
+    def _load_bind_pose(self, vrm_path: str) -> tuple[dict, dict]:
+        """ノード名 → ローカル / ワールド bind 回転。"""
         import json, struct
         try:
             with open(vrm_path, 'rb') as f:
                 data = f.read()
             if data[:4] != b'glTF':
-                return {}
+                return {}, {}
             offset = 12
             json_bytes = None
             while offset + 8 <= len(data):
@@ -500,18 +518,29 @@ class VrmAvatar:
                     break
                 offset += 8 + chunk_len
             if not json_bytes:
-                return {}
+                return {}, {}
             gltf = json.loads(json_bytes.decode('utf-8').rstrip('\0'))
-            rots = {}
-            for node in gltf.get('nodes', []):
+            from kagra.vrma_player import _world_rest_rots
+            nodes = gltf.get('nodes', [])
+            rest_by_i = {}
+            locals_ = {}
+            for i, node in enumerate(nodes):
+                r = node.get('rotation', [0.0, 0.0, 0.0, 1.0])
+                q = (float(r[0]), float(r[1]), float(r[2]), float(r[3]))
+                rest_by_i[i] = q
                 name = node.get('name', '')
                 if name:
-                    r = node.get('rotation', [0.0, 0.0, 0.0, 1.0])
-                    rots[name] = [float(r[0]), float(r[1]), float(r[2]), float(r[3])]
-            return rots
+                    locals_[name] = list(q)
+            worlds_i = _world_rest_rots(nodes, rest_by_i)
+            worlds = {}
+            for i, node in enumerate(nodes):
+                name = node.get('name', '')
+                if name and i in worlds_i:
+                    worlds[name] = list(worlds_i[i])
+            return locals_, worlds
         except Exception as e:
             log.warning("[VrmAvatar] bind rot 読み込み失敗: %s", e)
-            return {}
+            return {}, {}
 
     def get_bind_rot(self, bone_name: str):
         """指定ボーンのバインドポーズ回転（クォータニオン xyzw）を返す。"""
@@ -802,8 +831,30 @@ class VrmAvatar:
     def add_motion(self, name: str, motion):
         """BvhMotion / FbxMotion / VrmaMotion をクリップとして登録する。"""
         clip = motion.to_clip()
+        from kagra.vrma_player import VrmaMotion
+        if isinstance(motion, VrmaMotion):
+            clip = self._retarget_vrma_clip(clip)
         self._anim.register(name, clip)
         print(f"[VrmAvatar] '{name}': {len(clip)} frames @ {motion.fps:.1f}fps")
+
+    def _retarget_vrma_clip(self, clip: list) -> list:
+        """NormalizedLocalRotation を VRM の rest ワールドに載せる。"""
+        from kagra.vrma_player import dest_delta_from_normalized
+        worlds = getattr(self, "_bind_worlds", None) or {}
+        if not worlds:
+            return clip
+        out = []
+        for frame in clip:
+            bones = frame[0]
+            if not isinstance(bones, dict):
+                out.append(frame)
+                continue
+            retargeted = {}
+            for bone, q in bones.items():
+                w = worlds.get(bone)
+                retargeted[bone] = dest_delta_from_normalized(q, w) if w else list(q)
+            out.append((retargeted,) + tuple(frame[1:]))
+        return out
 
     def load_motion(self, name: str, path: str, extra_map: dict = None):
         """BVH / FBX / VRMA ファイルを読み込んでクリップとして登録する(1行 API)。"""

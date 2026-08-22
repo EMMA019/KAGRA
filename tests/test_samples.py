@@ -81,3 +81,16 @@ def test_demo_parser_offline():
     args = demo.build_parser().parse_args(["--offline", "--width", "320"])
     assert args.offline is True
     assert args.width == 320
+    assert args.dance == demo.DEFAULT_DANCE
+    assert args.song == demo.DEFAULT_SONG
+
+
+def test_demo_parser_song_dance_override():
+    demo = load_kagra_submodule("demo")
+    args = demo.build_parser().parse_args(
+        ["--dance", "coolHeadbangWalk", "--song", "cute_song_trial", "--hidden", "--max-frames", "8"]
+    )
+    assert args.hidden is True
+    assert args.max_frames == 8
+    assert args.dance == "coolHeadbangWalk"
+    assert args.song == "cute_song_trial"
