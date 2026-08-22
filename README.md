@@ -53,7 +53,8 @@ python -m kagra
 
 | | |
 |---|---|
-| Windows / macOS / Linux | `pip install kagra` |
+| Windows / Linux | `pip install kagra` |
+| macOS | from source (`maturin develop`) until wheels are verified |
 | From source (contributors) | `pip install maturin && maturin develop` |
 | Optional face tracking | `pip install "kagra[facetrack]"` |
 

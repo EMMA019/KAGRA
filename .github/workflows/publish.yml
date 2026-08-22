@@ -58,11 +58,13 @@ jobs:
           name: wheels-linux
           path: dist/*
 
+  # macOS wheels are omitted: the maintainer is on Windows and cannot verify
+  # them, and macos-13 sat queued for hours and blocked the v0.1.0 upload.
   wheels:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-13, macos-14]
+        os: [windows-latest]
         python-version: ["3.10", "3.11", "3.12"]
     runs-on: ${{ matrix.os }}
     steps:

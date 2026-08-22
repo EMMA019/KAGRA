@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Publish / CI: drop macOS runners. Wheels are Linux + Windows only until a Mac
+  can verify them (macos-13 also sat queued and blocked `v0.1.0` upload).
 - Publish: Linux wheels now request CPython 3.10–3.12 inside manylinux_2_28
   (v0.1.0 failed with “Couldn't find any python interpreters from 'python3'”).
 
