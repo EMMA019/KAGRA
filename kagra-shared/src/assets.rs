@@ -9,6 +9,7 @@ pub enum AssetKind {
     Texture = 3,
     Font = 4,
     Audio = 5,
+    Vrma = 6,
     Any = 255,
 }
 
@@ -21,6 +22,7 @@ impl AssetKind {
             3 => Self::Texture,
             4 => Self::Font,
             5 => Self::Audio,
+            6 => Self::Vrma,
             _ => Self::Any,
         }
     }
@@ -30,6 +32,7 @@ impl AssetKind {
             Self::Vrm => &[".vrm"],
             Self::Fbx => &[".fbx"],
             Self::Bvh => &[".bvh"],
+            Self::Vrma => &[".vrma"],
             Self::Texture => &[".png", ".jpg", ".jpeg", ".webp"],
             Self::Font => &[".ttf", ".ttc", ".otf"],
             Self::Audio => &[".wav", ".ogg", ".mp3"],
@@ -61,6 +64,8 @@ pub fn resolve_alias(name: &str) -> Vec<&'static str> {
             "tests/fixtures/synthetic_dance.bvh",
             "assets/dance.bvh",
             "assets/anim/dance.bvh",
+            "assets/dance.vrma",
+            "assets/anim/dance.vrma",
         ],
         _ => Vec::new(),
     }

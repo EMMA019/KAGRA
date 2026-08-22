@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `kagra.load_vrma()` / `avatar.load_motion(..., "*.vrma")` / `av.dance("wave.vrma")`
+  — VRM Animation (`VRMC_vrm_animation` 1.0). Humanoid retarget + preset
+  expressions (translation.x). See `examples/vrm_vrma.py`.
 - Publish / CI: drop macOS runners. Wheels are Linux + Windows only until a Mac
   can verify them (macos-13 also sat queued and blocked `v0.1.0` upload).
 - Publish: Linux wheels now request CPython 3.10–3.12 inside manylinux_2_28

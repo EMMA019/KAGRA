@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **315**
+エントリ数: **316**
 
 ## Functions
 
@@ -93,6 +93,7 @@
 | `load_shader_src` | `load_shader_src(wgsl_src: str) -> int` |
 | `load_texture` | `load_texture(path: str) -> int` |
 | `load_vrm` | `load_vrm(path: str) -> int` |
+| `load_vrma` | `load_vrma(path: str, *, sample_fps: float = 30.0) -> 'VrmaMotion'` |
 | `measure` | `measure(s, size: int = 24, font: int = None) -> tuple` |
 | `measure_text` | `measure_text(font_id, text_str, size=24) -> tuple` |
 | `mouse` | `mouse() -> tuple` |
