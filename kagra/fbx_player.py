@@ -131,6 +131,18 @@ _DAMP_MAP = {
 }
 _HEAD_DAMP = _DAMP_MAP  # 後方互換
 
+# Mixamo は cm、VRM は m。Hips の ty を VRM 脚高として使うと scale≈97 になる。
+_DEFAULT_VRM_HIPS_Y = 0.853
+
+
+def root_scale(fbx_leg_h: float, vrm_hips_y: float = _DEFAULT_VRM_HIPS_Y) -> float:
+    """FBX ルート移動 → VRM メートル。Mixamo の Hips ty は渡さない。"""
+    if fbx_leg_h < 0.01:
+        fbx_leg_h = 1.0
+    if not (0.2 <= vrm_hips_y <= 2.5):
+        vrm_hips_y = _DEFAULT_VRM_HIPS_Y
+    return vrm_hips_y / fbx_leg_h
+
 
 @dataclass
 class FbxMotion:
@@ -141,6 +153,7 @@ class FbxMotion:
     _raw_clips: list          # Rust から返ってきた生データ
     _clip_index: int = 0      # 使用するクリップのインデックス
     _cache: Optional[list] = field(default=None, repr=False)
+    vrm_hips_y: float = _DEFAULT_VRM_HIPS_Y
 
     @property
     def clip_names(self) -> list[str]:
@@ -213,15 +226,11 @@ class FbxMotion:
         if fbx_leg_h < 0.01:
             fbx_leg_h = 1.0
 
-        # vrm_hips_y = VRM の Hips バインドY（≈ 0.853m）
-        vrm_hips_y = 0.853
-        for (name, tx, ty, tz, qx, qy, qz, qw, has_trans) in raw_frames[0]:
-            if 'Hips' in name and has_trans:
-                vrm_hips_y = ty
-                break
-
-        # scale: プロポーション差を吸収
-        scale = vrm_hips_y / fbx_leg_h
+        # Mixamo Hips ty（≈97cm）は VRM の bind Y ではない。アバター側の値を使う。
+        vrm_hips_y = self.vrm_hips_y
+        if not (0.2 <= vrm_hips_y <= 2.5):
+            vrm_hips_y = _DEFAULT_VRM_HIPS_Y
+        scale = root_scale(fbx_leg_h, vrm_hips_y)
 
         # XZ の原点（frame[0] 基準）
         base_arm_x = arm_xs[0]

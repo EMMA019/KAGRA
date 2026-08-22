@@ -438,7 +438,7 @@ class VrmAvatar:
         import kagra
         self.vrm_path = vrm_path
         self.vrm_id   = kagra.load_vrm(vrm_path)
-        self._bind_rots, self._bind_worlds = self._load_bind_pose(vrm_path)
+        self._bind_rots, self._bind_worlds, self._bind_trans = self._load_bind_pose(vrm_path)
         self._anim    = _Animator(self.vrm_id, self._bind_rots)
         # 上半身レイヤー（クリップ辞書はベースと共有）
         self._upper   = _Animator(self.vrm_id, self._bind_rots, bone_filter=_is_upper_bone)
@@ -497,17 +497,25 @@ class VrmAvatar:
 
     def _load_bind_rots(self, vrm_path: str) -> dict:
         """VRM ファイルからバインドポーズの回転（クォータニオン xyzw）を読み込む。"""
-        locals_, _worlds = self._load_bind_pose(vrm_path)
+        locals_, _worlds, _trans = self._load_bind_pose(vrm_path)
         return locals_
 
-    def _load_bind_pose(self, vrm_path: str) -> tuple[dict, dict]:
-        """ノード名 → ローカル / ワールド bind 回転。"""
+    def _hips_bind_y(self) -> float:
+        """VRM Hips の bind 高さ（メートル）。Mixamo cm は使わない。"""
+        t = getattr(self, "_bind_trans", None) or {}
+        y = t.get("J_Bip_C_Hips") or t.get("hips")
+        if y is not None and 0.2 <= float(y) <= 2.5:
+            return float(y)
+        return 0.853
+
+    def _load_bind_pose(self, vrm_path: str) -> tuple[dict, dict, dict]:
+        """ノード名 → ローカル / ワールド bind 回転 + ローカル Y 平移。"""
         import json, struct
         try:
             with open(vrm_path, 'rb') as f:
                 data = f.read()
             if data[:4] != b'glTF':
-                return {}, {}
+                return {}, {}, {}
             offset = 12
             json_bytes = None
             while offset + 8 <= len(data):
@@ -518,12 +526,13 @@ class VrmAvatar:
                     break
                 offset += 8 + chunk_len
             if not json_bytes:
-                return {}, {}
+                return {}, {}, {}
             gltf = json.loads(json_bytes.decode('utf-8').rstrip('\0'))
             from kagra.vrma_player import _world_rest_rots
             nodes = gltf.get('nodes', [])
             rest_by_i = {}
             locals_ = {}
+            trans_ = {}
             for i, node in enumerate(nodes):
                 r = node.get('rotation', [0.0, 0.0, 0.0, 1.0])
                 q = (float(r[0]), float(r[1]), float(r[2]), float(r[3]))
@@ -531,16 +540,18 @@ class VrmAvatar:
                 name = node.get('name', '')
                 if name:
                     locals_[name] = list(q)
+                    t = node.get('translation') or [0.0, 0.0, 0.0]
+                    trans_[name] = float(t[1])
             worlds_i = _world_rest_rots(nodes, rest_by_i)
             worlds = {}
             for i, node in enumerate(nodes):
                 name = node.get('name', '')
                 if name and i in worlds_i:
                     worlds[name] = list(worlds_i[i])
-            return locals_, worlds
+            return locals_, worlds, trans_
         except Exception as e:
             log.warning("[VrmAvatar] bind rot 読み込み失敗: %s", e)
-            return {}, {}
+            return {}, {}, {}
 
     def get_bind_rot(self, bone_name: str):
         """指定ボーンのバインドポーズ回転（クォータニオン xyzw）を返す。"""
@@ -830,8 +841,14 @@ class VrmAvatar:
 
     def add_motion(self, name: str, motion):
         """BvhMotion / FbxMotion / VrmaMotion をクリップとして登録する。"""
-        clip = motion.to_clip()
+        from kagra.fbx_player import FbxMotion
         from kagra.vrma_player import VrmaMotion
+        if isinstance(motion, FbxMotion):
+            motion.vrm_hips_y = self._hips_bind_y()
+            motion._cache = None
+        clip = motion.to_clip()
+        # dest 共役は VRMA の NormalizedLocalRotation 専用。
+        # Mixamo / BVH のローカルデルタに掛けると腰・袖が潰れて骨格お化けになる。
         if isinstance(motion, VrmaMotion):
             clip = self._retarget_vrma_clip(clip)
         self._anim.register(name, clip)
@@ -934,13 +951,14 @@ class VrmAvatar:
         if not self._clip_has_fingers(clip):
             self.relax_hands()
 
-    def sing(self, audio: str = None, *, volume: float = 1.0) -> float:
+    def sing(self, audio: str = None, *, volume: float = 1.0, loop: bool = False) -> float:
         """歌う（1行 API）。リップシンクを自動で有効化し、音声を再生する。
 
         Args:
             audio:  WAV パスまたは contracts エイリアス。省略時は内蔵ソングを
                     その場で合成して歌う（外部アセット不要）。
             volume: 再生音量（0.0〜1.0）
+            loop:   True なら曲と口パクを繰り返す（``kagra.bgm``）。
 
         Returns:
             曲の長さ（秒）
@@ -948,12 +966,15 @@ class VrmAvatar:
         Example::
             av.sing()                   # 内蔵ソング
             av.sing("assets/song.wav")  # 自分の曲（波形から口パク解析）
+            av.sing("song.wav", loop=True)
         """
         import kagra
         from kagra.vrm_lipsync import LipSyncTimeline
 
         if self._lipsync is None:
-            self.enable_lipsync()
+            self.enable_lipsync(smoothing=0.22, max_open=0.95)
+        else:
+            self._lipsync.smoothing = min(self._lipsync.smoothing, 0.28)
 
         if audio is None:
             # 内蔵ソング: 音符列から母音タイムラインが正確に出る
@@ -967,9 +988,12 @@ class VrmAvatar:
             timeline = self._lipsync.analyze_wav(path)
             duration = timeline.duration
 
-        self._lipsync.play_timeline(timeline)
+        self._lipsync.play_timeline(timeline, loop=loop)
         try:
-            kagra.se(path, vol=volume)
+            if loop:
+                kagra.bgm(path, loop=True, vol=volume)
+            else:
+                kagra.se(path, vol=volume)
         except Exception as e:
             log.warning("[VrmAvatar] 音声再生失敗（リップシンクは継続）: %s", e)
         return duration

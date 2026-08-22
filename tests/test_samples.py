@@ -94,3 +94,12 @@ def test_demo_parser_song_dance_override():
     assert args.max_frames == 8
     assert args.dance == "coolHeadbangWalk"
     assert args.song == "cute_song_trial"
+
+
+def test_demo_parser_loop_mascot():
+    demo = load_kagra_submodule("demo")
+    args = demo.build_parser().parse_args(["--loop", "--mascot"])
+    assert args.loop is True
+    assert args.mascot is True
+    assert args.width is None
+    assert args.height is None

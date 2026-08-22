@@ -4,12 +4,16 @@
 それを歌う／踊る。無ければ内蔵ソングと同梱ダンスにフォールバックする。
 VRM が無ければサンプルを 1 回だけダウンロードする。
 
+``--loop`` で曲を繰り返す（OBS でこの窓をキャプチャして配信）。
+``--mascot`` で最前面の枠なし窓（デスクトップマスコット）。
+
 Windows ではレンダラが ``run()`` の中でしか起きないので、
 ``avatar()`` / ``font()`` は ``on_ready`` で呼ぶ。
 """
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import sys
 
@@ -70,9 +74,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="WAV name, alias, or path (default: cute_song_trial; 'builtin' = synth)",
     )
     p.add_argument("--offline", action="store_true", help="do not download a sample VRM")
-    p.add_argument("--width", type=int, default=1280)
-    p.add_argument("--height", type=int, default=720)
+    p.add_argument("--width", type=int, default=None, help="window width (default 1280, mascot 360)")
+    p.add_argument("--height", type=int, default=None, help="window height (default 720, mascot 640)")
     p.add_argument("--no-orbit", action="store_true", help="keep the camera still")
+    p.add_argument("--loop", action="store_true", help="loop song + dance (OBS / unattended)")
+    p.add_argument(
+        "--mascot",
+        action="store_true",
+        help="always-on-top borderless window (desktop mascot)",
+    )
     p.add_argument("--hidden", action="store_true", help="hide the window (agent verify)")
     p.add_argument("--max-frames", type=int, default=0, help="quit after N frames (0 = until ESC)")
     p.add_argument("--screenshot", default="", help="write a PNG at mid-run when --max-frames is set")
@@ -100,22 +110,35 @@ def run_live(args: argparse.Namespace) -> int:
         print(e, file=sys.stderr)
         return 2
 
+    width = args.width or (360 if args.mascot else 1280)
+    height = args.height or (640 if args.mascot else 720)
+    mascot = bool(args.mascot)
+    loop = bool(args.loop or mascot)
+
     print(f"[kagra] vrm={vrm}")
     print(f"[kagra] {SAMPLE_LICENSE}")
 
     kagra.init(
         title="KAGRA — VRM Live",
-        width=args.width,
-        height=args.height,
+        width=width,
+        height=height,
         visible=not args.hidden,
+        decorations=not mascot,
+        always_on_top=mascot,
+        transparent=mascot,
     )
-    cam = Camera3D(args.width, args.height, fov_deg=32.0)
+    cam = Camera3D(width, height, fov_deg=32.0)
     # theta=0 → +Z 側。radius を広げて足元〜両手上げまで入るようにする。
-    cam.use_orbit(radius=3.7, theta=0.0, phi=0.16, target=(0.0, 0.82, 0.0))
+    cam.use_orbit(
+        radius=2.4 if mascot else 3.7,
+        theta=0.0,
+        phi=0.10 if mascot else 0.16,
+        target=(0.0, 0.95 if mascot else 0.82, 0.0),
+    )
 
     max_frames = args.max_frames if args.max_frames > 0 else None
     shot_at = max(1, (args.max_frames // 2)) if max_frames else None
-    state: dict = {"av": None, "stage": []}
+    state: dict = {"av": None, "stage": [], "t": 0.0}
 
     def on_ready():
         try:
@@ -123,8 +146,9 @@ def run_live(args: argparse.Namespace) -> int:
         except RuntimeError as e:
             print(f"[kagra] font skipped: {e}", file=sys.stderr)
         kagra.set_light_dir(0.35, 1.0, 0.55)
-        kagra.set_shadow_enabled(True)
-        state["stage"] = _stage_meshes()
+        kagra.set_shadow_enabled(not mascot)
+        if not mascot:
+            state["stage"] = _stage_meshes()
         av = kagra.avatar(str(vrm))
         dance = _resolve_optional(AssetKind.ANY, args.dance)
         if dance:
@@ -133,9 +157,15 @@ def run_live(args: argparse.Namespace) -> int:
         else:
             av.dance()
             print(f"[kagra] dance=bundled (no {args.dance})")
+        av.enable_lookat(eye_height=1.42, smooth_speed=4.0, head_weight=0.22, neck_weight=0.12)
+        av.enable_emotion(blend_speed=1.8)
         song = _resolve_optional(AssetKind.AUDIO, args.song)
-        duration = av.sing(song) if song else av.sing()
+        duration = av.sing(song, loop=loop) if song else av.sing(loop=loop)
         print(f"[kagra] song={'builtin' if song is None else song} {duration:.1f}s — ESC to quit")
+        if loop:
+            print("[kagra] loop on — OBS: Game Capture this window (no YouTube API)")
+        if mascot:
+            print("[kagra] mascot — always on top, look at mouse")
         state["av"] = av
 
     def update(dt: float):
@@ -145,23 +175,47 @@ def run_live(args: argparse.Namespace) -> int:
         av = state["av"]
         if av is None:
             return
-        av.update(dt)
-        if not args.no_orbit:
+        state["t"] += dt
+        t = state["t"]
+        if not args.no_orbit and not mascot:
             cam.orbit_by(dt * 0.25, 0)
+        if av.lookat:
+            if mascot:
+                mx, my = kagra.mouse()
+                av.look_at_screen(mx, my, width, height)
+            else:
+                cam._update_orbit()
+                cx, cy, cz = cam.position
+                av.look_at_3d(
+                    cx + math.sin(t * 0.35) * 0.35,
+                    cy + math.sin(t * 0.22) * 0.12,
+                    cz,
+                )
+        if av.emotion is not None:
+            open_ = av.lipsync.mouth_open if av.lipsync else 0.0
+            av.emotion.blend({
+                "joy": min(0.5, open_ * 0.7),
+                "fun": 0.18 + min(0.35, open_ * 0.25),
+            })
+        av.update(dt)
         cam.update(kagra.get_engine())
         if shot_at is not None and args.screenshot and kagra.tick_count() == shot_at:
             os.makedirs(os.path.dirname(args.screenshot) or ".", exist_ok=True)
             kagra.screenshot(args.screenshot)
 
     def draw():
-        kagra.cls(16, 12, 32)
+        if mascot:
+            kagra.cls(0, 0, 0)
+        else:
+            kagra.cls(16, 12, 32)
         for tex, verts, idx in state["stage"]:
             kagra.draw_mesh_3d(tex, verts, idx)
         av = state["av"]
         if av is not None:
             kagra.draw_vrm(av.vrm_id)
-        kagra.text("KAGRA", 16, 16, 18, (220, 200, 140))
-        kagra.text("ESC", 16, args.height - 32, 14, (140, 140, 160))
+        if not mascot:
+            kagra.text("KAGRA", 16, 16, 18, (220, 200, 140))
+            kagra.text("ESC", 16, height - 32, 14, (140, 140, 160))
 
     kagra.run(update, draw, on_ready=on_ready, max_frames=max_frames, fixed_dt=(1.0 / 60.0 if max_frames else None))
     return 0

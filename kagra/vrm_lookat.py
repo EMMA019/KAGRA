@@ -32,6 +32,17 @@ if TYPE_CHECKING:
 
 # ── 内部ユーティリティ ────────────────────────────────────────
 
+def _qmul(a: list, b: list) -> list:
+    ax, ay, az, aw = a
+    bx, by, bz, bw = b
+    return [
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+        aw * bw - ax * bx - ay * by - az * bz,
+    ]
+
+
 def _euler_to_quat(rx: float, ry: float, rz: float) -> list:
     cx, sx = math.cos(rx / 2), math.sin(rx / 2)
     cy, sy = math.cos(ry / 2), math.sin(ry / 2)
@@ -111,6 +122,8 @@ class LookAtController:
         self.neck_weight  = neck_weight
         self.smooth_speed = smooth_speed
         self.enabled      = True
+        # False なら目だけ。ダンスの頭・首を潰さない。
+        self.apply_bones  = True
 
         # 現在の目標角度
         self._target_yaw:   float = 0.0
@@ -224,6 +237,17 @@ class LookAtController:
         self._target_yaw   = 0.0
         self._target_pitch = 0.0
 
+    def _apply_bone_look(self, name: str, q_look: list):
+        """アニメの現在回転に Look デルタを右から掛ける。"""
+        cur = None
+        anim = getattr(self._avatar, "_anim", None)
+        if anim is not None:
+            cur = anim.current_rots.get(name)
+        if cur is None:
+            binds = getattr(self._avatar, "_bind_rots", None) or {}
+            cur = binds.get(name, _ID_QUAT)
+        self._avatar._send_bone(name, _qmul(list(cur), q_look))
+
     # ── 毎フレーム更新 ────────────────────────────────────────
 
     def update(self, dt: float):
@@ -244,17 +268,15 @@ class LookAtController:
 
         yaw, pitch = self._scale_yaw_pitch(self._cur_yaw, self._cur_pitch)
 
-        # ── 首ボーン ──────────────────────────────────────────
-        neck_yaw   = max(-self.MAX_YAW_NECK,   min(self.MAX_YAW_NECK,   yaw   * self.neck_weight))
-        neck_pitch = max(-self.MAX_PITCH_NECK,  min(self.MAX_PITCH_NECK, pitch * self.neck_weight))
-        q_neck = _euler_to_quat(neck_pitch, neck_yaw, 0.0)
-        self._avatar._send_bone("J_Bip_C_Neck", q_neck)
+        if self.apply_bones:
+            # ダンスの頭を潰さず、現在ポーズに視線を足す
+            neck_yaw   = max(-self.MAX_YAW_NECK,   min(self.MAX_YAW_NECK,   yaw   * self.neck_weight))
+            neck_pitch = max(-self.MAX_PITCH_NECK,  min(self.MAX_PITCH_NECK, pitch * self.neck_weight))
+            self._apply_bone_look("J_Bip_C_Neck", _euler_to_quat(neck_pitch, neck_yaw, 0.0))
 
-        # ── 頭ボーン ──────────────────────────────────────────
-        head_yaw   = max(-self.MAX_YAW_HEAD,   min(self.MAX_YAW_HEAD,   yaw   * self.head_weight))
-        head_pitch = max(-self.MAX_PITCH_HEAD,  min(self.MAX_PITCH_HEAD, pitch * self.head_weight))
-        q_head = _euler_to_quat(head_pitch, head_yaw, 0.0)
-        self._avatar._send_bone("J_Bip_C_Head", q_head)
+            head_yaw   = max(-self.MAX_YAW_HEAD,   min(self.MAX_YAW_HEAD,   yaw   * self.head_weight))
+            head_pitch = max(-self.MAX_PITCH_HEAD,  min(self.MAX_PITCH_HEAD, pitch * self.head_weight))
+            self._apply_bone_look("J_Bip_C_Head", _euler_to_quat(head_pitch, head_yaw, 0.0))
 
         # ── 目ブレンドシェイプ ────────────────────────────────
         # expression タイプ、または Look* シェイプがある場合に適用

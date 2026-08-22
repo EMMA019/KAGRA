@@ -115,6 +115,7 @@ class LipSyncController:
         self._tl_time:  float = 0.0
         self._tl_idx:   int   = 0
         self._tl_playing: bool = False
+        self._tl_loop: bool = False
 
         # リアルタイム振幅モード
         self._rt_amplitude: float = 0.0
@@ -136,7 +137,7 @@ class LipSyncController:
     def analyze_wav(
         self,
         wav_path: str,
-        fps: float = 24.0,
+        fps: float = 48.0,
         silence_threshold: float = 0.02,
     ) -> LipSyncTimeline:
         """WAV ファイルを解析してリップシンクタイムラインを生成する。
@@ -144,7 +145,7 @@ class LipSyncController:
         Args:
             wav_path:           WAV ファイルパス（PCM 16bit / 32bit float）
             fps:                タイムラインのフレームレート
-            silence_threshold:  無音判定閾値（振幅）
+            silence_threshold:  無音判定閾値（振幅）。実データから底上げする。
 
         Returns:
             LipSyncTimeline: play_timeline() に渡せるタイムライン
@@ -157,31 +158,41 @@ class LipSyncController:
         frame_size   = max(1, int(sample_rate / fps))
         total_frames = max(1, len(samples) // frame_size)
         duration     = len(samples) / sample_rate
+        chunks = [
+            samples[i * frame_size: (i + 1) * frame_size]
+            for i in range(total_frames)
+        ]
+        amps = [_rms(c) for c in chunks]
+        ranked = sorted(amps)
+        floor = ranked[max(0, len(ranked) // 8)] if ranked else 0.0
+        thr = max(silence_threshold, floor * 1.6)
         entries      = []
 
-        for i in range(total_frames):
-            t     = i / fps
-            chunk = samples[i * frame_size: (i + 1) * frame_size]
-            amp   = _rms(chunk)
-
-            if amp < silence_threshold:
+        for i, (chunk, amp) in enumerate(zip(chunks, amps)):
+            t = i / fps
+            if amp < thr:
                 entries.append((t, "aa", 0.0))
             else:
-                # 周波数成分から母音を簡易推定
-                vowel  = _estimate_vowel_simple(chunk, sample_rate)
-                weight = min(1.0, amp * 8.0) * self.max_open
+                vowel  = estimate_vowel(chunk, sample_rate)
+                weight = min(1.0, amp * 10.0) * self.max_open
                 entries.append((t, vowel, weight))
 
         print(f"[LipSync] 解析完了: {wav_path} ({duration:.1f}秒, {total_frames}フレーム)")
         return LipSyncTimeline(entries, duration)
 
-    def play_timeline(self, timeline: LipSyncTimeline):
+    def play_timeline(self, timeline: LipSyncTimeline, loop: bool = False):
         """タイムラインを先頭から再生開始する。"""
         self._timeline   = timeline
         self._tl_time    = 0.0
         self._tl_idx     = 0
         self._tl_playing = True
+        self._tl_loop    = bool(loop)
         self._rt_amplitude = 0.0
+
+    @property
+    def mouth_open(self) -> float:
+        """現在の開口量（0〜1）。表情駆動用。"""
+        return max(self._weights.values()) if self._weights else 0.0
 
     def stop(self):
         """リップシンクを停止して口を閉じる。"""
@@ -219,17 +230,20 @@ class LipSyncController:
         if self._tl_playing and self._timeline:
             self._tl_time += dt
             tl = self._timeline
-
-            # 現在時刻のエントリを探す
-            while (self._tl_idx + 1 < len(tl.entries) and
-                   tl.entries[self._tl_idx + 1][0] <= self._tl_time):
-                self._tl_idx += 1
-
-            if self._tl_idx < len(tl.entries):
-                _, vowel, weight = tl.entries[self._tl_idx]
-                target[vowel] = weight
-            else:
-                self._tl_playing = False  # 再生終了
+            if self._tl_loop and tl.duration > 1e-6:
+                if self._tl_time >= tl.duration:
+                    self._tl_time %= tl.duration
+                    self._tl_idx = 0
+            sampled = sample_timeline(tl.entries, self._tl_time)
+            if sampled is None:
+                if self._tl_loop and tl.entries:
+                    sampled = sample_timeline(tl.entries, 0.0) or {}
+                    self._tl_time = 0.0
+                    self._tl_idx = 0
+                else:
+                    self._tl_playing = False
+            if sampled:
+                target.update(sampled)
 
         elif self._rt_amplitude > 0.001:
             target[self._rt_vowel] = self._rt_amplitude * self.max_open
@@ -365,32 +379,101 @@ def _rms(samples: list[float]) -> float:
     return math.sqrt(sum(s * s for s in samples) / len(samples))
 
 
-def _estimate_vowel_simple(samples: list[float], sample_rate: int) -> str:
-    """簡易母音推定（ゼロ交差率 + エネルギー比）。
+def _goertzel(samples: list[float], sample_rate: int, freq: float) -> float:
+    """1 周波数のパワー（Goertzel）。"""
+    n = len(samples)
+    if n < 8 or sample_rate <= 0:
+        return 0.0
+    k = int(0.5 + n * freq / sample_rate)
+    w = 2.0 * math.pi * k / n
+    coeff = 2.0 * math.cos(w)
+    s0 = s1 = s2 = 0.0
+    for x in samples:
+        s0 = x + coeff * s1 - s2
+        s2, s1 = s1, s0
+    return max(0.0, s1 * s1 + s2 * s2 - coeff * s1 * s2)
 
-    正確な推定は FFT / MFCC が必要だが、軽量実装として
-    ゼロ交差率（ZCR）で子音/母音の大まかな分類のみ行う。
-    日常的には "aa" が最も多く使われるためデフォルト。
-    """
+
+# 日本語 5 母音のざっくり F1/F2（Hz）
+_VOWEL_FORMANTS = {
+    "aa": (730.0, 1090.0),
+    "ih": (270.0, 2290.0),
+    "ou": (300.0, 870.0),
+    "ee": (530.0, 1840.0),
+    "oh": (570.0, 840.0),
+}
+
+
+def estimate_vowel(samples: list[float], sample_rate: int) -> str:
+    """帯域エネルギーで母音を推定する（FFT なし）。"""
     if not samples:
         return "aa"
+    scores: dict[str, float] = {}
+    for name, (f1, f2) in _VOWEL_FORMANTS.items():
+        scores[name] = _goertzel(samples, sample_rate, f1) + 0.7 * _goertzel(
+            samples, sample_rate, f2
+        )
+    best = max(scores, key=scores.get)
+    if scores[best] <= 1e-12:
+        return _estimate_vowel_zcr(samples, sample_rate)
+    return best
 
-    # ゼロ交差率
+
+def _estimate_vowel_zcr(samples: list[float], sample_rate: int) -> str:
+    """Goertzel が潰れたときの ZCR フォールバック。"""
     zc = sum(1 for i in range(1, len(samples)) if samples[i - 1] * samples[i] < 0)
     zcr = zc / len(samples) * sample_rate
-
-    # 非常に簡易な分類
     if zcr > 3000:
-        return "ih"   # 高 ZCR → イ系
-    elif zcr > 1500:
-        return "ee"   # 中 ZCR → エ系
-    else:
-        # エネルギー重心で ア/ウ/オ を区別
-        mid = len(samples) // 2
-        e1 = _rms(samples[:mid])
-        e2 = _rms(samples[mid:])
-        if e2 > e1 * 1.2:
-            return "oh"
-        elif e1 > e2 * 1.2:
-            return "ou"
-        return "aa"
+        return "ih"
+    if zcr > 1500:
+        return "ee"
+    mid = len(samples) // 2
+    e1 = _rms(samples[:mid])
+    e2 = _rms(samples[mid:])
+    if e2 > e1 * 1.2:
+        return "oh"
+    if e1 > e2 * 1.2:
+        return "ou"
+    return "aa"
+
+
+def _estimate_vowel_simple(samples: list[float], sample_rate: int) -> str:
+    """後方互換。estimate_vowel に委譲する。"""
+    return estimate_vowel(samples, sample_rate)
+
+
+def sample_timeline(
+    entries: list,
+    t: float,
+) -> Optional[dict[str, float]]:
+    """(time, vowel, weight) 列から時刻 t の母音ウェイトを補間する。
+
+    終端を過ぎたら None。
+    """
+    if not entries:
+        return None
+    if t < entries[0][0] - 1e-6:
+        return {entries[0][1]: 0.0}
+    if t > entries[-1][0] and t > entries[-1][0] + 1.0 / 24.0:
+        # 最後のキーから少しだけ保持してから終了
+        hold = entries[-1][0] + 0.04
+        if t > hold:
+            return None
+        _, vowel, weight = entries[-1]
+        return {vowel: weight}
+
+    i = 0
+    while i + 1 < len(entries) and entries[i + 1][0] <= t:
+        i += 1
+    t0, v0, w0 = entries[i]
+    if i + 1 >= len(entries):
+        return {v0: w0}
+    t1, v1, w1 = entries[i + 1]
+    span = t1 - t0
+    u = 0.0 if span <= 1e-9 else max(0.0, min(1.0, (t - t0) / span))
+    if v0 == v1:
+        return {v0: w0 + (w1 - w0) * u}
+    out = {vowel: 0.0 for vowel in _VOWEL_SHAPES}
+    out[v0] = w0 * (1.0 - u)
+    out[v1] = w1 * u
+    return out
