@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import sys
 from typing import Optional
+from kagra.fonts import find_system_font
 from kagra.tilemap import TileSet
 
 
@@ -107,10 +108,9 @@ class AssetManager:
             if os.path.exists(path):
                 return path
 
-        # フォールバック: Windows Fonts
-        win = f"C:/Windows/Fonts/{name}.ttc"
-        if os.path.exists(win):
-            return win
+        found = find_system_font(name)
+        if found:
+            return found
 
         return base + ".ttf"  # 失敗時のダミー
 

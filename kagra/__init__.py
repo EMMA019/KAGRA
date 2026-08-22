@@ -828,49 +828,7 @@ def _c(color, default_a=255):
 # ── フォント・テキスト ─────────────────────────────────────────
 
 import os as _os
-import platform as _platform
-
-def _find_system_font(prefer: str = "meiryo") -> str | None:
-    """システムフォントを自動検出する（クロスプラットフォーム）。"""
-    system = _platform.system()
-    # Windows
-    if system == "Windows":
-        dirs = ["C:/Windows/Fonts"]
-        candidates = [
-            "meiryo.ttc", "meiryob.ttc", "msgothic.ttc",
-            "yugothic.ttf", "msmincho.ttc", "arial.ttf",
-        ]
-    elif system == "Darwin":
-        dirs = ["/System/Library/Fonts", "/Library/Fonts",
-                "/System/Library/Fonts/Supplemental"]
-        candidates = [
-            "ヒラギノ角ゴシック W3.ttc", "HiraginoSans-W3.ttc",
-            "AppleSDGothicNeo.ttc", "Arial.ttf",
-        ]
-    else:
-        dirs = ["/usr/share/fonts", "/usr/local/share/fonts"]
-        candidates = [
-            "NotoSansCJK-Regular.ttc", "NotoSansJP-Regular.otf",
-            "LiberationSans-Regular.ttf", "DroidSansFallback.ttf",
-        ]
-    for d in dirs:
-        if not _os.path.isdir(d):
-            continue
-        for c in candidates:
-            p = _os.path.join(d, c)
-            if _os.path.exists(p):
-                return p
-    # 再帰探索（上記で見つからなかった場合）
-    for d in dirs:
-        if not _os.path.isdir(d):
-            continue
-        for root, _, files in _os.walk(d):
-            for f in files:
-                if f.lower().endswith((".ttf", ".ttc", ".otf")):
-                    low = f.lower()
-                    if any(k in low for k in ["meiryo", "gothic", "noto", "arial", "liberation"]):
-                        return _os.path.join(root, f)
-    return None
+from kagra.fonts import find_system_font as _find_system_font
 
 
 def font(path: str = None) -> int:
@@ -881,7 +839,7 @@ def font(path: str = None) -> int:
 
     Example::
         kagra.font()  # システムフォントを自動選択
-        kagra.font("C:/Windows/Fonts/meiryo.ttc")
+        kagra.font()  # システムフォントを自動選択
         kagra.text("スコア", 20, 20, 28)
     """
     global _default_font
@@ -1016,20 +974,10 @@ def line(x1: float, y1: float, x2: float, y2: float,
     Example::
         kagra.line(100, 100, 500, 300, (255,100,100), width=3)
     """
+    from kagra.geom2d import line_rects
     r,g,b,a = _c(color, alpha)
-    dx = x2 - x1
-    dy = y2 - y1
-    length = _math.sqrt(dx*dx + dy*dy)
-    if length < 0.5:
-        return
-    # 線を矩形の連続で表現（水平・垂直の最適化は line_h / line_v で）
-    steps = max(2, int(length / max(width, 1.0)))
-    for i in range(steps):
-        t = i / steps
-        px = x1 + dx * t
-        pw = max(1.0, length / steps + width * 0.3)
-        ph = max(1.0, width)
-        rect(px, py - ph / 2, pw, ph, r, g, b, a)
+    for rx, ry, rw, rh in line_rects(x1, y1, x2, y2, width):
+        rect(rx, ry, rw, rh, r, g, b, a)
 
 
 
@@ -1418,16 +1366,17 @@ def avatar(vrm_path: str) -> "VrmAvatar":
     """
     _check()
     from pathlib import Path as _Path
+    from kagra.contracts import KagraContractError
+    from kagra.samples import ensure_vrm
     from kagra.vrm_avatar import VrmAvatar
     p = _Path(vrm_path)
     if not p.is_file():
         try:
-            from kagra.contracts import AssetKind, resolve_asset
-            resolved = resolve_asset(AssetKind.VRM, vrm_path)
-            vrm_path = str(resolved)
-        except Exception:
-            # 従来どおり VrmAvatar 側で失敗させる
-            pass
+            # ローカル assets → キャッシュ済みサンプル。ダウンロードはしない
+            # （明示的な python -m kagra.demo / ensure_vrm(download=True) に任せる）
+            vrm_path = str(ensure_vrm(vrm_path, download=False))
+        except KagraContractError:
+            raise
     return VrmAvatar(vrm_path)
 
 def load_fbx(path: str, clip_name: str = None) -> "FbxMotion":
@@ -1576,6 +1525,7 @@ from kagra.contracts import (
     describe_environment,
     resolve_asset,
 )
+from kagra.samples import ensure_vrm
 from kagra.verify import run_scenario, run_scenario_path, load_scenario
 from kagra.touch import VirtualPad, PointerEvent, PointerPhase, apply_pad, inject_pointer
 

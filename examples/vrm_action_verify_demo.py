@@ -26,7 +26,7 @@ SW, SH = 1280, 720
 
 class VrmActionVerifyScene(kagra.Scene):
     def on_enter(self):
-        kagra.font("C:/Windows/Fonts/meiryo.ttc")
+        kagra.font()
 
         vrm_path = "assets/Emma.vrm"
         if not os.path.exists(vrm_path):

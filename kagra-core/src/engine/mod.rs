@@ -10,7 +10,6 @@
 use pyo3::prelude::*;
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -46,15 +45,7 @@ pub struct Engine {
 }
 
 impl Engine {
-    fn load_or_create_keymap() -> HashMap<String, u32> {
-        let path = "keymap.json";
-        if Path::new(path).exists() {
-            if let Ok(content) = fs::read_to_string(path) {
-                if let Ok(map) = serde_json::from_str(&content) {
-                    return map;
-                }
-            }
-        }
+    fn default_keymap() -> HashMap<String, u32> {
         let mut default = HashMap::new();
         default.insert("Z".to_string(), 29);
         default.insert("X".to_string(), 27);
@@ -75,8 +66,33 @@ impl Engine {
         default.insert("H".to_string(), 11);
         default.insert("T".to_string(), 23);
         default.insert("G".to_string(), 10);
-        let _ = fs::write(path, serde_json::to_string_pretty(&default).unwrap());
         default
+    }
+
+    /// キーマップを読む。無ければ内蔵デフォルト。CWD には書かない
+    /// （`pip install` したライブラリが作業ディレクトリを汚さないため）。
+    ///
+    /// 探索順: `$KAGRA_KEYMAP` → `./keymap.json`（読み取り専用）
+    fn load_keymap() -> HashMap<String, u32> {
+        let mut candidates = Vec::new();
+        if let Ok(p) = std::env::var("KAGRA_KEYMAP") {
+            if !p.is_empty() {
+                candidates.push(std::path::PathBuf::from(p));
+            }
+        }
+        candidates.push(std::path::PathBuf::from("keymap.json"));
+        for path in candidates {
+            if !path.is_file() {
+                continue;
+            }
+            if let Ok(content) = fs::read_to_string(&path) {
+                if let Ok(map) = serde_json::from_str(&content) {
+                    log::info!("keymap loaded from {}", path.display());
+                    return map;
+                }
+            }
+        }
+        Self::default_keymap()
     }
 
     /// テクスチャの参照カウントを減らし、0ならアンロードする（内部ヘルパ）
@@ -118,7 +134,7 @@ impl Engine {
             Err(e) => { log::warn!("AudioEngine 初期化失敗: {}", e); None }
         };
 
-        let keymap = Self::load_or_create_keymap();
+        let keymap = Self::load_keymap();
 
         Ok(Engine {
             window,
@@ -1246,5 +1262,18 @@ impl Engine {
             Some(a) => f(a).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e)),
             None => Ok(()),
         }
+    }
+}
+
+#[cfg(test)]
+mod keymap_tests {
+    use super::Engine;
+
+    #[test]
+    fn default_keymap_has_escape() {
+        let m = Engine::default_keymap();
+        assert_eq!(m.get("ESCAPE"), Some(&41));
+        assert!(m.contains_key("Z"));
+        assert!(m.contains_key("SPACE"));
     }
 }

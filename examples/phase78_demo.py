@@ -38,7 +38,7 @@ class DemoScene(kagra.Scene):
             format="%(levelname)s %(name)s: %(message)s",
         )
 
-        self.font = kagra.assets.font("C:/Windows/Fonts/meiryo.ttc")
+        self.font = kagra.font()
 
         self.char = AiCharacter(
             "assets/Emma.vrm",

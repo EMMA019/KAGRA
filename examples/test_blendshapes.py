@@ -29,7 +29,7 @@ class BlendShapeTestScene(kagra.Scene):
                            target=(0.0, 1.0, 0.0))
 
         # フォント
-        self.font = kagra.assets.font("C:/Windows/Fonts/meiryo.ttc")
+        self.font = kagra.font()
 
     def update(self, dt):
         self.cam.update(kagra.get_engine())

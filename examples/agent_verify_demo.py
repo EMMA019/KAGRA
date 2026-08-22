@@ -24,7 +24,7 @@ OUT_DIR = os.path.join("scratch", "agent_verify")
 class VerifyScene(kagra.Scene):
     def on_enter(self):
         os.makedirs(OUT_DIR, exist_ok=True)
-        kagra.font("C:/Windows/Fonts/meiryo.ttc")
+        kagra.font()
 
         vrm_path = "assets/Emma.vrm"
         if not os.path.exists(vrm_path):
