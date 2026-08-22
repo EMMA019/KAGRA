@@ -24,7 +24,8 @@ try:
     from kagra.kagra_core import Engine as _Engine
 except ImportError as e:
     raise ImportError(
-        f"kagra_core が見つかりません。maturin develop を実行してください。\n{e}"
+        f"kagra_core が見つかりません。"
+        f" pip なら `pip install -U kagra`、ソースなら `maturin develop`。\n{e}"
     )
 
 # ── 外部モジュール再エクスポート ───────────────────────────────
