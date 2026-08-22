@@ -18,6 +18,8 @@
 - sdist: ship `LICENSE` in the tarball. PyPI rejected uploads whose metadata
   lists `License-File: LICENSE` but the file is missing (`v0.1.0` / `v0.1.1`
   wheels still published; only the `.tar.gz` failed).
+- README: `pip install kagra` is the full product. Only webcam face tracking
+  is an extra (`kagra[facetrack]`); Mac still has no wheel.
 
 ## 0.1.1
 
