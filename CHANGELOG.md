@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- sdist: ship `LICENSE` in the tarball. PyPI now rejects uploads whose
+  metadata lists `License-File: LICENSE` but the file is missing
+  (`v0.1.0` / `v0.1.1` wheels still published; only the `.tar.gz` failed).
+
 ## 0.1.1
 
 - Windows first-run: `python -m kagra` loaded the VRM before `run()`, so

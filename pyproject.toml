@@ -8,7 +8,7 @@ version = "0.1.1"
 description = "Python game engine with a Rust/wgpu core — VRM avatars that sing and dance"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 authors = [{ name = "Emma Saka" }]
 keywords = ["game-engine", "vrm", "wgpu", "python"]
 classifiers = [
@@ -41,7 +41,7 @@ agent = ["mcp>=1.1", "pytest>=7.0"]
 manifest-path = "kagra-core/Cargo.toml"
 module-name = "kagra.kagra_core"
 features = ["extension-module"]
-include = ["kagra/data/synthetic_dance.bvh"]
+include = ["kagra/data/synthetic_dance.bvh", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
