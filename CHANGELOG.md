@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Publish: Linux wheels now request CPython 3.10–3.12 inside manylinux_2_28
+  (v0.1.0 failed with “Couldn't find any python interpreters from 'python3'”).
+
 ## 0.1.0
 
 First public-facing cut.

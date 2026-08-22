@@ -25,7 +25,16 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-`Publish` builds sdist + wheels (Ubuntu / Windows / macOS Intel / macOS ARM × Python 3.10–3.12) and uploads them.
+`Publish` builds sdist + wheels (Linux manylinux_2_28 × 3.10–3.12, plus Windows / macOS Intel / macOS ARM × 3.10–3.12) and uploads them.
+
+If a tag already exists and nothing reached PyPI (the `v0.1.0` Linux jobs failed that way), delete the tag and recreate it after this workflow is on `master`:
+
+```bash
+git push origin :refs/tags/v0.1.0
+git tag -d v0.1.0
+git tag -a v0.1.0 origin/master -m "v0.1.0 — first PyPI release"
+git push origin v0.1.0
+```
 
 Dry-run a wheel build without uploading: Actions → Publish → Run workflow → `dry_run` checked. (`workflow_dispatch` never publishes; only `v*` tags do.)
 
