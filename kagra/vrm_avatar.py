@@ -792,14 +792,25 @@ class VrmAvatar:
         self._anim.register(name, frames)
 
     def add_motion(self, name: str, motion):
-        """BvhMotion をクリップとして登録する。"""
+        """BvhMotion / FbxMotion / VrmaMotion をクリップとして登録する。"""
         clip = motion.to_clip()
         self._anim.register(name, clip)
         print(f"[VrmAvatar] '{name}': {len(clip)} frames @ {motion.fps:.1f}fps")
 
     def load_motion(self, name: str, path: str, extra_map: dict = None):
-        """BVH / FBX ファイルを読み込んでクリップとして登録する(1行 API)。"""
-        if path.lower().endswith('.fbx'):
+        """BVH / FBX / VRMA ファイルを読み込んでクリップとして登録する(1行 API)。"""
+        low = path.lower()
+        if low.endswith(".vrma"):
+            from kagra.vrma_player import load_vrma
+            motion = load_vrma(path)
+        elif low.endswith((".glb", ".gltf")):
+            from kagra.vrma_player import is_vrma, load_vrma
+            if not is_vrma(path):
+                raise ValueError(
+                    f"not a VRMA file (missing VRMC_vrm_animation): {path}"
+                )
+            motion = load_vrma(path)
+        elif low.endswith(".fbx"):
             from kagra.fbx_player import load_fbx
             motion = load_fbx(path)
         else:
@@ -813,10 +824,12 @@ class VrmAvatar:
         クリップが未登録なら contracts のエイリアスから自動で読み込む。
         既定の "dance" はパッケージ同梱の synthetic_dance.bvh に
         解決されるため、外部アセットなしで動く（pip インストール後も含む）。
+        `.vrma`（VRM Animation）もそのまま渡せる。
 
         Example::
             av = kagra.avatar("Emma")
             av.dance()                      # 同梱ダンス
+            av.dance("assets/wave.vrma")    # VRM Animation
             av.dance("assets/hiphop.fbx")   # 自分のモーション
         """
         if clip not in self._anim._clips:
@@ -1001,6 +1014,7 @@ class VrmAvatar:
         # 1. アニメーション（ベース → 上半身レイヤーで上書き）
         self._anim.update(dt)
         self._upper.update(dt)
+        self._apply_vrma_expressions()
 
         # 1.5. アクションコントローラー（アタッチされている場合、スプリングボーン前に適用）
         action_ctrl = getattr(self, '_action_controller', None)
@@ -1037,6 +1051,35 @@ class VrmAvatar:
         # 8. まばたき
         if self._blink_enabled:
             self._update_blink(dt)
+
+    def _apply_vrma_expressions(self):
+        """VRMA クリップの 4 要素目（表情ウェイト）をブレンドシェイプへ書く。"""
+        frames = self._anim._frames
+        prev = getattr(self, "_vrma_expr_on", set())
+        exprs = None
+        if self._anim.playing and frames:
+            frame = frames[self._anim._fidx]
+            if len(frame) > 3 and isinstance(frame[3], dict):
+                exprs = frame[3]
+        if not exprs:
+            for name in prev:
+                _set_shape(self.vrm_id, name, 0.0)
+            self._vrma_expr_on = set()
+            return
+        import kagra
+        try:
+            available = set(kagra.list_blend_shapes(self.vrm_id))
+        except Exception:
+            available = set()
+        from kagra.vrma_player import resolve_expression_name
+        on: set[str] = set()
+        for raw, w in exprs.items():
+            name = resolve_expression_name(str(raw), available) or str(raw)
+            if _set_shape(self.vrm_id, name, float(w)):
+                on.add(name)
+        for name in prev - on:
+            _set_shape(self.vrm_id, name, 0.0)
+        self._vrma_expr_on = on
 
     def _is_bvh_clip(self) -> bool:
         if not self._anim.playing or not self._anim._frames:

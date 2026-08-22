@@ -35,7 +35,7 @@ def draw():
 kagra.run(update, draw)
 ```
 
-Use your own model with `kagra.avatar("/path/to/me.vrm")` or `assets/Emma.vrm`. Use your own song with `av.sing("song.wav")`.
+Use your own model with `kagra.avatar("/path/to/me.vrm")` or `assets/Emma.vrm`. Use your own song with `av.sing("song.wav")`. Drop a [VRM Animation](https://vrm.dev/en/vrma/) (`.vrma`) on `av.dance("wave.vrma")` — same clip, any VRM.
 
 ## Install
 
@@ -79,6 +79,7 @@ Everything else in [`docs/API_INDEX.md`](docs/API_INDEX.md) is available but may
 
 ```bash
 python -m kagra                          # sing & dance
+python examples/vrm_vrma.py              # .vrma (or a generated wave)
 python examples/2Daction.py              # no assets needed
 python examples/3Dmaze.py                # drop a .vrm in assets/ to see it
 python examples/vrm_orb_rush.py

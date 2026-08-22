@@ -1415,6 +1415,22 @@ def load_bvh(path: str, extra_map: dict = None) -> "BvhMotion":
     from kagra.bvh_player import load_bvh as _lbvh
     return _lbvh(path, extra_map=extra_map)
 
+
+def load_vrma(path: str, *, sample_fps: float = 30.0) -> "VrmaMotion":
+    """VRM Animation (``.vrma``) を読み込んで VrmaMotion を返す。
+
+    glTF + ``VRMC_vrm_animation``。どの VRM ヒューマノイドにも載せられる。
+    エンジン未初期化でも読める（ファイルパーサ）。
+
+    Example::
+        motion = kagra.load_vrma("assets/wave.vrma")
+        print(f"{motion.fps:.0f}fps  {motion.duration:.1f}sec")
+        avatar.add_motion("wave", motion)
+        avatar.play("wave")
+    """
+    from kagra.vrma_player import load_vrma as _load
+    return _load(path, sample_fps=sample_fps)
+
 def spring_bone(vrm_path: str, vrm_id: int) -> "SpringBone":
     """スプリングボーンシミュレーターを生成する。
     通常は kagra.avatar() が内部で自動生成する。

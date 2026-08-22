@@ -24,6 +24,7 @@ class AssetKind(str, Enum):
     VRM = "vrm"
     FBX = "fbx"
     BVH = "bvh"
+    VRMA = "vrma"
     TEXTURE = "texture"
     FONT = "font"
     AUDIO = "audio"
@@ -74,6 +75,7 @@ _EXTENSIONS: dict[AssetKind, tuple[str, ...]] = {
     AssetKind.VRM: (".vrm",),
     AssetKind.FBX: (".fbx",),
     AssetKind.BVH: (".bvh",),
+    AssetKind.VRMA: (".vrma",),
     AssetKind.TEXTURE: (".png", ".jpg", ".jpeg", ".webp"),
     AssetKind.FONT: (".ttf", ".ttc", ".otf"),
     AssetKind.AUDIO: (".wav", ".ogg", ".mp3"),
@@ -98,6 +100,8 @@ _ALIASES: dict[str, list[str]] = {
         "tests/fixtures/synthetic_dance.bvh",
         "assets/dance.bvh",
         "assets/anim/dance.bvh",
+        "assets/dance.vrma",
+        "assets/anim/dance.vrma",
     ],
 }
 
@@ -138,17 +142,23 @@ def candidate_paths(
 
     # pip インストール後も同梱 BVH が解決できるようにする
     pkg_data = Path(__file__).resolve().parent / "data"
-    if kind in (AssetKind.BVH, AssetKind.ANY):
+    if kind in (AssetKind.BVH, AssetKind.VRMA, AssetKind.ANY):
         stem = Path(name).stem
-        out.append(pkg_data / f"{stem}.bvh")
-        if stem.lower() == "dance":
-            out.append(pkg_data / "synthetic_dance.bvh")
+        if kind in (AssetKind.BVH, AssetKind.ANY):
+            out.append(pkg_data / f"{stem}.bvh")
+            if stem.lower() == "dance":
+                out.append(pkg_data / "synthetic_dance.bvh")
+        if kind in (AssetKind.VRMA, AssetKind.ANY):
+            out.append(pkg_data / f"{stem}.vrma")
 
     key = Path(name).stem.lower()
     for alias in _ALIASES.get(key, []):
         out.append(root / alias)
 
     exts = _exts_for(kind)
+    if kind is AssetKind.ANY:
+        # dance("wave") が wave.vrma / .bvh / .fbx のどれでも当たるようにする
+        exts = (".vrma", ".bvh", ".fbx", ".glb")
     stems = {Path(name).stem, name}
     if not Path(name).suffix:
         stems.add(name)
@@ -245,12 +255,18 @@ def describe_environment(root: Path | None = None) -> dict:
         if fixtures.exists()
         else []
     )
+    vrma = (
+        sorted(str(p.relative_to(root)) for p in fixtures.rglob("*.vrma"))
+        if fixtures.exists()
+        else []
+    )
     return {
         "root": str(root),
         "has_assets_dir": assets.is_dir(),
         "vrm_files": vrms[:20],
         "fbx_files": fbxs[:20],
         "bvh_fixtures": bvh[:20],
+        "vrma_fixtures": vrma[:20],
         "aliases": {k: v for k, v in _ALIASES.items()},
         "api_index": str(root / "docs" / "API_INDEX.md"),
     }

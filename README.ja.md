@@ -35,7 +35,7 @@ def draw():
 kagra.run(update, draw)
 ```
 
-自分のモデルは `kagra.avatar("/path/to/me.vrm")` または `assets/Emma.vrm`。自分の曲は `av.sing("song.wav")`。
+自分のモデルは `kagra.avatar("/path/to/me.vrm")` または `assets/Emma.vrm`。自分の曲は `av.sing("song.wav")`。[VRM Animation](https://vrm.dev/vrma/)（`.vrma`）は `av.dance("wave.vrma")` にそのまま渡せます。どの VRM にも載ります。
 
 ## インストール
 
