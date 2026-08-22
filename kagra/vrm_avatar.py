@@ -479,6 +479,7 @@ class VrmAvatar:
         except Exception as e:
             log.warning("[VrmAvatar] blendshape discovery failed: %s", e)
 
+        self._first_person = False
         print(f"[VrmAvatar] Loaded: {vrm_path}")
 
     def _load_bind_rots(self, vrm_path: str) -> dict:
@@ -960,6 +961,24 @@ class VrmAvatar:
     def blink_enabled(self, v: bool):
         self._blink_enabled = v
 
+    @property
+    def first_person(self) -> bool:
+        """True のとき一人称レイヤー（頭を隠す）。"""
+        return self._first_person
+
+    @first_person.setter
+    def first_person(self, v: bool):
+        self.set_first_person(v)
+
+    def set_first_person(self, enabled: bool = True):
+        """一人称視点。頭 / ThirdPersonOnly メッシュを隠す。"""
+        self._first_person = bool(enabled)
+        try:
+            import kagra
+            kagra.set_vrm_first_person(self.vrm_id, self._first_person)
+        except Exception as e:
+            log.debug("set_first_person failed: %s", e)
+
     # ── サブシステムへの公開アクセサ ──────────────────────────
     # 以前は `avatar._spring` / `avatar._emotion` のようなプライベート属性を
     # デモ側から直接触る必要があったが、すべて読み取り専用プロパティで公開する。
@@ -1027,7 +1046,9 @@ class VrmAvatar:
                 "loaded":  self._spring is not None,
                 "enabled": bool(self._spring and self._spring.enabled),
                 "chains":  len(self._spring.chains) if self._spring else 0,
+                "colliders": len(self._spring.colliders) if self._spring else 0,
             },
+            "first_person": self._first_person,
             "lookat":  self._lookat  is not None,
             "lipsync": self._lipsync is not None,
             "ik":      self._ik      is not None,

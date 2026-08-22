@@ -322,12 +322,7 @@ impl Engine {
             })?;
             let mut rc = lock_py(&self.window.texture_refcount)?;
             for (ti, bytes, ext) in tex_data {
-                let format = match ext.as_str() {
-                    "png" => image::ImageFormat::Png,
-                    "jpg" => image::ImageFormat::Jpeg,
-                    _ => continue,
-                };
-                if let Ok(id) = renderer.load_texture_from_memory(&bytes, format) {
+                if let Ok(id) = renderer.load_gltf_image(&bytes, &ext) {
                     tex_id_map.insert(ti, id);
                     *rc.entry(id).or_insert(0) += 1;
                 }
@@ -434,6 +429,12 @@ impl Engine {
 
     pub fn list_blend_shapes(&self, vrm_id: u32) -> Vec<String> {
         lock_recover(&self.vrm_models).get(&vrm_id).map(|m| m.list_blend_shapes()).unwrap_or_default()
+    }
+
+    pub fn set_vrm_first_person(&self, vrm_id: u32, enabled: bool) {
+        if let Some(model) = lock_recover(&self.vrm_models).get_mut(&vrm_id) {
+            model.set_first_person(enabled);
+        }
     }
 
     /// VRM humanoid 標準ボーン名の一覧（hips, head, leftUpperArm, …）
@@ -607,6 +608,9 @@ impl Engine {
                     num_morph_targets: 0,
                     mtoon_buffer: None,
                     shade_texture_id: None,
+                    matcap_texture_id: None,
+                    normal_texture_id: None,
+                    uv_mask_texture_id: None,
                     outline_width: 0.0,
                     skin_slot: None,
                 };
@@ -795,12 +799,7 @@ impl Engine {
             })?;
             let mut rc = lock_py(&self.window.texture_refcount)?;
             for (ti, bytes, ext) in tex_data {
-                let format = match ext.as_str() {
-                    "png" => image::ImageFormat::Png,
-                    "jpg" => image::ImageFormat::Jpeg,
-                    _ => continue,
-                };
-                if let Ok(id) = renderer.load_texture_from_memory(&bytes, format) {
+                if let Ok(id) = renderer.load_gltf_image(&bytes, &ext) {
                     tex_id_map.insert(ti, id);
                     *rc.entry(id).or_insert(0) += 1;
                 }

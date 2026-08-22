@@ -19,6 +19,9 @@ mod gltf_common;
 mod camera;
 mod vrm_humanoid;
 mod vrm_lookat_meta;
+mod vrm_expression;
+mod vrm_constraint;
+mod vrm_first_person;
 mod mtoon;
 
 mod engine;

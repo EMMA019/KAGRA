@@ -17,6 +17,10 @@ pub struct MtoonGpu {
     pub params: [f32; 4],
     /// rgb = outlineColor, a = outlineLightingMix (unused for now)
     pub outline_color: [f32; 4],
+    /// rgb = matcapFactor, a = hasMatcap (0/1)
+    pub matcap_color: [f32; 4],
+    /// x=scrollX, y=scrollY, z=rotationSpeed, w=hasNormal (0/1)
+    pub uv_anim: [f32; 4],
 }
 
 impl Default for MtoonGpu {
@@ -27,21 +31,36 @@ impl Default for MtoonGpu {
             rim_color: [0.0, 0.0, 0.0, 5.0],
             params: [0.0, 0.0, 0.0, 0.0],
             outline_color: [0.05, 0.05, 0.08, 1.0],
+            matcap_color: [1.0, 1.0, 1.0, 0.0],
+            uv_anim: [0.0, 0.0, 0.0, 0.0],
         }
     }
+}
+
+#[derive(Clone, Default)]
+pub struct MtoonTextures {
+    pub shade: Option<u32>,
+    pub matcap: Option<u32>,
+    pub normal: Option<u32>,
+    pub uv_mask: Option<u32>,
 }
 
 #[derive(Clone)]
 pub struct MtoonMaterial {
     pub gpu: MtoonGpu,
     pub shade_texture_id: Option<u32>,
+    pub matcap_texture_id: Option<u32>,
+    pub normal_texture_id: Option<u32>,
+    pub uv_mask_texture_id: Option<u32>,
     pub buffer: Arc<wgpu::Buffer>,
 }
 
 impl MtoonMaterial {
-    pub fn create(device: &wgpu::Device, gpu: MtoonGpu, shade_texture_id: Option<u32>) -> Self {
+    pub fn create(device: &wgpu::Device, gpu: MtoonGpu, textures: MtoonTextures) -> Self {
         let mut g = gpu;
-        g.params[3] = if shade_texture_id.is_some() { 1.0 } else { 0.0 };
+        g.params[3] = if textures.shade.is_some() { 1.0 } else { 0.0 };
+        g.matcap_color[3] = if textures.matcap.is_some() { 1.0 } else { 0.0 };
+        g.uv_anim[3] = if textures.normal.is_some() { 1.0 } else { 0.0 };
         let buffer = Arc::new(device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("MToon UBO"),
             contents: bytemuck::bytes_of(&g),
@@ -49,13 +68,16 @@ impl MtoonMaterial {
         }));
         Self {
             gpu: g,
-            shade_texture_id,
+            shade_texture_id: textures.shade,
+            matcap_texture_id: textures.matcap,
+            normal_texture_id: textures.normal,
+            uv_mask_texture_id: textures.uv_mask,
             buffer,
         }
     }
 
     pub fn default_mat(device: &wgpu::Device) -> Self {
-        Self::create(device, MtoonGpu::default(), None)
+        Self::create(device, MtoonGpu::default(), MtoonTextures::default())
     }
 }
 
@@ -89,7 +111,7 @@ pub fn parse_mtoon(
     tex_id_map: &HashMap<usize, u32>,
 ) -> MtoonMaterial {
     let mut gpu = MtoonGpu::default();
-    let mut shade_tex: Option<u32> = None;
+    let mut textures = MtoonTextures::default();
 
     // VRM 1.0
     if let Some(mtoon) = mat
@@ -122,7 +144,20 @@ pub fn parse_mtoon(
         gpu.params = [shift, rim_lift, width, 0.0];
 
         if let Some(ti) = tex_index(mtoon, "shadeMultiplyTexture") {
-            shade_tex = tex_id_map.get(&ti).copied();
+            textures.shade = tex_id_map.get(&ti).copied();
+        }
+        if let Some(ti) = tex_index(mtoon, "matcapTexture") {
+            textures.matcap = tex_id_map.get(&ti).copied();
+        }
+        if let Some(mc) = mtoon.get("matcapFactor") {
+            let c = f32_arr3(Some(mc), [1.0, 1.0, 1.0]);
+            gpu.matcap_color = [c[0], c[1], c[2], gpu.matcap_color[3]];
+        }
+        gpu.uv_anim[0] = f32_val(mtoon.get("uvAnimationScrollXSpeedFactor"), 0.0);
+        gpu.uv_anim[1] = f32_val(mtoon.get("uvAnimationScrollYSpeedFactor"), 0.0);
+        gpu.uv_anim[2] = f32_val(mtoon.get("uvAnimationRotationSpeedFactor"), 0.0);
+        if let Some(ti) = tex_index(mtoon, "uvAnimationMaskTexture") {
+            textures.uv_mask = tex_id_map.get(&ti).copied();
         }
     } else if let Some(props) = mat.get("extensions").and_then(|e| e.get("VRM")) {
         // 一部の VRM0 は material 直下ではなく別経路。最低限 base から推定。
@@ -137,7 +172,14 @@ pub fn parse_mtoon(
         gpu.shade_color[2] = shade[2];
     }
 
-    MtoonMaterial::create(device, gpu, shade_tex)
+    if let Some(ti) = mat
+        .pointer("/normalTexture/index")
+        .and_then(|i| i.as_u64())
+    {
+        textures.normal = tex_id_map.get(&(ti as usize)).copied();
+    }
+
+    MtoonMaterial::create(device, gpu, textures)
 }
 
 /// VRM 0.x `extensions.VRM.materialProperties` 配列を material index で引けるようにする。
@@ -241,16 +283,69 @@ pub fn parse_vrm0_material_properties(
             gpu.params[1] = rl as f32;
         }
 
-        let mut shade_tex = out[i].shade_texture_id;
+        let mut textures = MtoonTextures {
+            shade: out[i].shade_texture_id,
+            matcap: out[i].matcap_texture_id,
+            normal: out[i].normal_texture_id,
+            uv_mask: out[i].uv_mask_texture_id,
+        };
         if let Some(ti) = prop
             .pointer("/textureProperties/_ShadeTexture")
             .or_else(|| prop.pointer("/textureProperties/ShadeTexture"))
             .and_then(|x| x.as_u64())
         {
-            shade_tex = tex_id_map.get(&(ti as usize)).copied();
+            textures.shade = tex_id_map.get(&(ti as usize)).copied();
+        }
+        if let Some(ti) = prop
+            .pointer("/textureProperties/_SphereAdd")
+            .or_else(|| prop.pointer("/textureProperties/_MatcapTexture"))
+            .or_else(|| prop.pointer("/textureProperties/SphereAdd"))
+            .and_then(|x| x.as_u64())
+        {
+            textures.matcap = tex_id_map.get(&(ti as usize)).copied();
+        }
+        if let Some(ti) = prop
+            .pointer("/textureProperties/_BumpMap")
+            .or_else(|| prop.pointer("/textureProperties/BumpMap"))
+            .and_then(|x| x.as_u64())
+        {
+            textures.normal = tex_id_map.get(&(ti as usize)).copied();
+        }
+        if let Some(ti) = prop
+            .pointer("/textureProperties/_UvAnimMaskTexture")
+            .or_else(|| prop.pointer("/textureProperties/UvAnimMaskTexture"))
+            .and_then(|x| x.as_u64())
+        {
+            textures.uv_mask = tex_id_map.get(&(ti as usize)).copied();
+        }
+        if let Some(sx) = floats
+            .and_then(|f| f.get("_UvAnimScrollX").or_else(|| f.get("UvAnimScrollX")))
+            .and_then(|x| x.as_f64())
+        {
+            gpu.uv_anim[0] = sx as f32;
+        }
+        if let Some(sy) = floats
+            .and_then(|f| f.get("_UvAnimScrollY").or_else(|| f.get("UvAnimScrollY")))
+            .and_then(|x| x.as_f64())
+        {
+            gpu.uv_anim[1] = sy as f32;
+        }
+        if let Some(sr) = floats
+            .and_then(|f| f.get("_UvAnimRotation").or_else(|| f.get("UvAnimRotation")))
+            .and_then(|x| x.as_f64())
+        {
+            gpu.uv_anim[2] = sr as f32;
+        }
+        if let Some(mc) = vectors
+            .and_then(|v| v.get("_MatcapColor").or_else(|| v.get("MatcapColor")))
+            .and_then(|a| a.as_array())
+        {
+            gpu.matcap_color[0] = mc.first().and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
+            gpu.matcap_color[1] = mc.get(1).and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
+            gpu.matcap_color[2] = mc.get(2).and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
         }
 
-        out[i] = MtoonMaterial::create(device, gpu, shade_tex);
+        out[i] = MtoonMaterial::create(device, gpu, textures);
     }
 
     out
@@ -261,8 +356,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_gpu_size_is_64() {
-        assert_eq!(std::mem::size_of::<MtoonGpu>(), 64);
+    fn default_gpu_size_is_96() {
+        assert_eq!(std::mem::size_of::<MtoonGpu>(), 96);
     }
 
     #[test]

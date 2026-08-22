@@ -743,6 +743,10 @@ def list_blend_shapes(vrm_id: int) -> list[str]:
     """VRM のブレンドシェイプ名一覧を返す。"""
     _check(); return _engine.list_blend_shapes(vrm_id)
 
+def set_vrm_first_person(vrm_id: int, enabled: bool = True):
+    """一人称視点レイヤー。True で頭メッシュ（Auto / ThirdPersonOnly）を隠す。"""
+    _check(); _engine.set_vrm_first_person(vrm_id, bool(enabled))
+
 def list_human_bones(vrm_id: int) -> list[str]:
     """VRM humanoid 標準ボーン名の一覧を返す（hips, head, leftUpperArm, …）。"""
     _check(); return _engine.list_human_bones(vrm_id)

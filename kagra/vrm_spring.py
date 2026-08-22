@@ -123,10 +123,61 @@ class _Joint:
     parent_world_rot: list = field(default_factory=lambda:[0.,0.,0.,1.])
     # bind pose での親 → 子方向（親のローカル空間）
     rest_dir_local: list = field(default_factory=lambda:[0.,1.,0.])
- 
+
+@dataclass
+class _Collider:
+    node_idx: int
+    offset: list           # ノードローカル
+    radius: float
+    tail: Optional[list] = None  # あればカプセル（ローカル終点）
+
 @dataclass
 class _Chain:
     joints: list  # list[_Joint]  ルート→末端
+    collider_ids: list = field(default_factory=list)
+
+
+def _mtransform_point(m, p):
+    x, y, z = p
+    return [
+        m[0] * x + m[4] * y + m[8] * z + m[12],
+        m[1] * x + m[5] * y + m[9] * z + m[13],
+        m[2] * x + m[6] * y + m[10] * z + m[14],
+    ]
+
+
+def _as_vec3(v, default=(0.0, 0.0, 0.0)):
+    if v is None:
+        return list(default)
+    if isinstance(v, dict):
+        return [float(v.get("x", default[0])), float(v.get("y", default[1])), float(v.get("z", default[2]))]
+    if isinstance(v, (list, tuple)) and len(v) >= 3:
+        return [float(v[0]), float(v[1]), float(v[2])]
+    return list(default)
+
+
+def collide_sphere(point, center, radius, fallback_dir=None):
+    """点が球の内側なら表面へ押し出す。外側ならそのまま。"""
+    to = _sub(point, center)
+    dist = _len(to)
+    if dist >= radius:
+        return list(point)
+    if dist < 1e-8:
+        n = _norm(fallback_dir) if fallback_dir is not None else [0.0, 1.0, 0.0]
+        return _add(center, _sc(n, radius))
+    return _add(center, _sc(to, radius / dist))
+
+
+def collide_capsule(point, a, b, radius, fallback_dir=None):
+    """点がカプセルの内側なら表面へ押し出す。"""
+    ab = _sub(b, a)
+    ab_len2 = _dot(ab, ab)
+    if ab_len2 < 1e-12:
+        return collide_sphere(point, a, radius, fallback_dir)
+    t = _dot(_sub(point, a), ab) / ab_len2
+    t = max(0.0, min(1.0, t))
+    closest = _add(a, _sc(ab, t))
+    return collide_sphere(point, closest, radius, fallback_dir)
  
 # ── メインクラス ──────────────────────────────────────────────
  
@@ -142,6 +193,7 @@ class SpringBone:
     def __init__(self, vrm_path: str, vrm_id: int):
         self.vrm_id  = vrm_id
         self.chains: list[_Chain] = []
+        self.colliders: list[_Collider] = []
         self.enabled: bool = True
         self._wind   = [0.,0.,0.]
         self._nodes: list[dict] = []       # gltf ノード (bind pose)
@@ -229,28 +281,71 @@ class SpringBone:
         self._wmats = [_mid()]*len(self._nodes)
  
         vrm0=gltf.get('extensions',{}).get('VRM',{})
-        for g in vrm0.get('secondaryAnimation',{}).get('boneGroups',[]):
-            self._parse_v0(g)
- 
+        sa = vrm0.get('secondaryAnimation', {})
+        v0_groups = []
+        for cg in sa.get('colliderGroups', []):
+            start = len(self.colliders)
+            node = cg.get('node', 0)
+            for col in cg.get('colliders', []):
+                self.colliders.append(_Collider(
+                    node_idx=int(node),
+                    offset=_as_vec3(col.get('offset')),
+                    radius=float(col.get('radius', 0.05)),
+                ))
+            v0_groups.append(list(range(start, len(self.colliders))))
+        for g in sa.get('boneGroups', []):
+            self._parse_v0(g, v0_groups)
+
         sb1=gltf.get('extensions',{}).get('VRMC_springBone',{})
+        v1_groups = []
+        for col in sb1.get('colliders', []):
+            node = int(col.get('node', 0))
+            shape = col.get('shape') or {}
+            if 'capsule' in shape:
+                cap = shape['capsule'] or {}
+                self.colliders.append(_Collider(
+                    node_idx=node,
+                    offset=_as_vec3(cap.get('offset')),
+                    radius=float(cap.get('radius', 0.05)),
+                    tail=_as_vec3(cap.get('tail')),
+                ))
+            else:
+                sph = shape.get('sphere') or {}
+                self.colliders.append(_Collider(
+                    node_idx=node,
+                    offset=_as_vec3(sph.get('offset')),
+                    radius=float(sph.get('radius', 0.05)),
+                ))
+        for cg in sb1.get('colliderGroups', []):
+            ids = [int(i) for i in cg.get('colliders', []) if isinstance(i, (int, float))]
+            v1_groups.append(ids)
         for sp in sb1.get('springs',[]):
-            self._parse_v1(sp)
- 
+            self._parse_v1(sp, v1_groups)
+
         print(f"[SpringBone] {len(self.chains)} chains / "
-              f"{sum(len(c.joints) for c in self.chains)} joints")
+              f"{sum(len(c.joints) for c in self.chains)} joints / "
+              f"{len(self.colliders)} colliders")
  
-    def _parse_v0(self, g: dict):
+    def _parse_v0(self, g: dict, groups: list):
         stiff = g.get('stiffiness',1.0)
         drag  = g.get('dragForce',0.4)
         gp    = g.get('gravityPower',0.)
         gd    = g.get('gravityDir',{'x':0,'y':-1,'z':0})
         grav  = [gd.get('x',0)*gp, gd.get('y',-1)*gp, gd.get('z',0)*gp]
         rad   = g.get('hitRadius',0.02)
+        col_ids = []
+        for gi in g.get('colliderGroups', []):
+            if isinstance(gi, (int, float)) and 0 <= int(gi) < len(groups):
+                col_ids.extend(groups[int(gi)])
+        if not col_ids:
+            col_ids = list(range(len(self.colliders)))
         for ri in g.get('bones',[]):
             ch = self._build_chain(ri,stiff,drag,grav,rad)
-            if ch: self.chains.append(ch)
- 
-    def _parse_v1(self, sp: dict):
+            if ch:
+                ch.collider_ids = list(col_ids)
+                self.chains.append(ch)
+
+    def _parse_v1(self, sp: dict, groups: list):
         joints=[]
         for jd in sp.get('joints',[]):
             ni=jd.get('node',-1)
@@ -265,7 +360,14 @@ class SpringBone:
                 gravity=_sc(grav,gp),
                 radius=jd.get('hitRadius',.02),
             ))
-        if len(joints)>=2: self.chains.append(_Chain(joints=joints))
+        col_ids = []
+        for gi in sp.get('colliderGroups', []):
+            if isinstance(gi, (int, float)) and 0 <= int(gi) < len(groups):
+                col_ids.extend(groups[int(gi)])
+        if not col_ids:
+            col_ids = list(range(len(self.colliders)))
+        if len(joints)>=2:
+            self.chains.append(_Chain(joints=joints, collider_ids=col_ids))
  
     def _build_chain(self, root: int, stiff, drag, grav, rad) -> Optional[_Chain]:
         joints=[]
@@ -369,9 +471,34 @@ class SpringBone:
             dist   = _len(to_new)
             if dist > 1e-6:
                 new_pos = _add(parent_pos, _sc(to_new, j.bone_length / dist))
- 
+
+            new_pos = self._collide(chain, new_pos, j.radius, rest_world_dir)
+            to_new = _sub(new_pos, parent_pos)
+            dist = _len(to_new)
+            if dist > 1e-6:
+                new_pos = _add(parent_pos, _sc(to_new, j.bone_length / dist))
+
             j.prev = list(j.curr)
             j.curr = list(new_pos)
+
+    def _collide(self, chain: _Chain, point, hit_radius: float, fallback_dir):
+        ids = chain.collider_ids if chain.collider_ids else range(len(self.colliders))
+        pos = list(point)
+        for ci in ids:
+            if ci < 0 or ci >= len(self.colliders):
+                continue
+            c = self.colliders[ci]
+            if c.node_idx < 0 or c.node_idx >= len(self._wmats):
+                continue
+            m = self._wmats[c.node_idx]
+            center = _mtransform_point(m, c.offset)
+            rad = c.radius + hit_radius
+            if c.tail is not None:
+                tail = _mtransform_point(m, c.tail)
+                pos = collide_capsule(pos, center, tail, rad, fallback_dir)
+            else:
+                pos = collide_sphere(pos, center, rad, fallback_dir)
+        return pos
  
     def _apply(self, chain: _Chain):
         """シミュレーション結果をボーン回転に変換して kagra に送る。

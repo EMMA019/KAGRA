@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- VRM SpringBone colliders (0.x spheres / 1.0 spheres and capsules). Hair and
+  skirts now push off the body instead of passing through.
+- `VRMC_node_constraint` 1.0: rotation, roll (twist bones), and aim. Applied
+  after pose, before skinning.
+- VRM 1.0 expression `overrideBlink` / `overrideMouth` / `overrideLookAt`
+  (`none` / `block` / `blend`) and `isBinary`. A smiling face can now suppress
+  blinks the way the author specified.
+- First-person layer: `avatar.first_person = True` / `kagra.set_vrm_first_person`.
+  `Auto` meshes drop head-weighted triangles; `ThirdPersonOnly` hides in FP.
+- MToon: matcap, UV scroll/rotate (optional mask), and normal maps.
+- glTF textures: BMP / TGA / GIF / TIFF in addition to PNG / JPEG. Unknown
+  MIME types fall back to magic-byte sniffing.
+
 ## 0.1.2
 
 - Renderer: each skinned draw now gets its own bone-matrix palette. Multi-skin

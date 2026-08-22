@@ -55,6 +55,9 @@ pub struct SkinnedMeshCommand {
     /// VRM MToon。None ならレンダラ既定値を使う。
     pub mtoon_buffer: Option<Arc<wgpu::Buffer>>,
     pub shade_texture_id: Option<u32>,
+    pub matcap_texture_id: Option<u32>,
+    pub normal_texture_id: Option<u32>,
+    pub uv_mask_texture_id: Option<u32>,
     pub outline_width: f32,
     /// ドロー個別のスキンパレットスロット。
     /// None は共有 skinning_uniform_buffer（レガシー 2D パス）を使う。

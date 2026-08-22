@@ -5,6 +5,7 @@
 
 use std::collections::VecDeque;
 use std::sync::Arc;
+use std::time::Instant;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
@@ -69,6 +70,7 @@ pub struct RendererV2 {
     next_texture_id: u32,
     text_renderer: TextRenderer,
     fallback_texture_bind_group: wgpu::BindGroup,
+    fallback_tex_view: wgpu::TextureView,
 
     shader_params_bgl: wgpu::BindGroupLayout,
     shader_params_buffer: wgpu::Buffer,
@@ -100,11 +102,12 @@ pub struct RendererV2 {
     fog_params: [f32; 4],
     /// フォグ色 RGB 0..1 + pad
     fog_color: [f32; 4],
+    shader_clock: Instant,
     mesh_3d_queue: Vec<Mesh3DCommand>,
     skinning_3d_morph_bgl: wgpu::BindGroupLayout,
-    /// (texture_id, shade_tex_id, morph_ptr, blend_weights_ptr)
-    morph_bg_cache: std::collections::HashMap<(u32, u32, usize, usize), Arc<wgpu::BindGroup>>,
-    morph_bg_order: VecDeque<(u32, u32, usize, usize)>,
+    /// (base, shade, matcap, normal, uvmask, morph_ptr, blend_ptr)
+    morph_bg_cache: std::collections::HashMap<(u32, u32, u32, u32, u32, usize, usize), Arc<wgpu::BindGroup>>,
+    morph_bg_order: VecDeque<(u32, u32, u32, u32, u32, usize, usize)>,
 
     /// Directional shadow map (1x depth, not MSAA)
     shadow_tex: wgpu::Texture,
@@ -520,6 +523,36 @@ impl RendererV2 {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 8,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 9,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -834,6 +867,7 @@ impl RendererV2 {
             next_texture_id: 1,
             text_renderer,
             fallback_texture_bind_group,
+            fallback_tex_view: fallback_view,
             shader_params_bgl,
             shader_params_buffer,
             shader_params_bg,
@@ -855,6 +889,7 @@ impl RendererV2 {
             toon_params,
             fog_params,
             fog_color,
+            shader_clock: Instant::now(),
             mesh_3d_queue: Vec::new(),
             skinning_3d_morph_bgl,
             morph_bg_cache: std::collections::HashMap::new(),
@@ -1008,8 +1043,19 @@ impl RendererV2 {
         Ok(id)
     }
 
-    pub fn load_texture_from_memory(&mut self, data: &[u8], format: image::ImageFormat) -> Result<u32, String> {
-        let img = image::load_from_memory_with_format(data, format).map_err(|e| format!("画像デコード失敗: {}", e))?.into_rgba8();
+    pub fn load_gltf_image(&mut self, data: &[u8], ext: &str) -> Result<u32, String> {
+        if let Some(fmt) = crate::gltf_common::image_format_from_ext(ext) {
+            if let Ok(id) = self.load_texture_from_memory(data, fmt) {
+                return Ok(id);
+            }
+        }
+        match image::load_from_memory(data) {
+            Ok(img) => self.upload_rgba8(img.into_rgba8()),
+            Err(e) => Err(format!("画像デコード失敗: {}", e)),
+        }
+    }
+
+    fn upload_rgba8(&mut self, img: image::RgbaImage) -> Result<u32, String> {
         let (width, height) = img.dimensions();
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Memory Texture"),
@@ -1029,7 +1075,7 @@ impl RendererV2 {
         );
         let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Memory Tex BG"),
+            label: Some("Tex BG"),
             layout: &self.texture_bgl,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
@@ -1040,6 +1086,14 @@ impl RendererV2 {
         self.next_texture_id += 1;
         self.textures.insert(id, GpuTexture { texture: tex, bind_group, width, height });
         Ok(id)
+    }
+
+    pub fn load_texture_from_memory(&mut self, data: &[u8], format: image::ImageFormat) -> Result<u32, String> {
+        let img = image::load_from_memory_with_format(data, format)
+            .or_else(|_| image::load_from_memory(data))
+            .map_err(|e| format!("画像デコード失敗: {}", e))?
+            .into_rgba8();
+        self.upload_rgba8(img)
     }
 
     pub fn texture_size(&self, id: u32) -> Option<(u32, u32)> {
@@ -1198,7 +1252,7 @@ impl RendererV2 {
             -(v[0] * v[12] + v[4] * v[13] + v[8] * v[14]),
             -(v[1] * v[12] + v[5] * v[13] + v[9] * v[14]),
             -(v[2] * v[12] + v[6] * v[13] + v[10] * v[14]),
-            0.0,
+            self.shader_clock.elapsed().as_secs_f32(),
         ];
         self.queue.write_buffer(&self.camera_3d_buf, 160, bytemuck::cast_slice(&eye));
     }
@@ -1281,8 +1335,12 @@ impl RendererV2 {
 
     pub fn unload_texture(&mut self, id: u32) -> Result<(), String> {
         if self.textures.remove(&id).is_some() {
-            self.morph_bg_cache.retain(|(tid, shade, _, _), _| *tid != id && *shade != id);
-            self.morph_bg_order.retain(|(tid, shade, _, _)| *tid != id && *shade != id);
+            self.morph_bg_cache.retain(|(tid, shade, matcap, normal, uvmask, _, _), _| {
+                *tid != id && *shade != id && *matcap != id && *normal != id && *uvmask != id
+            });
+            self.morph_bg_order.retain(|(tid, shade, matcap, normal, uvmask, _, _)| {
+                *tid != id && *shade != id && *matcap != id && *normal != id && *uvmask != id
+            });
             log::debug!("Texture {} unloaded", id);
             Ok(())
         } else {
@@ -1823,9 +1881,12 @@ impl RendererV2 {
         let mut morph_bgs: Vec<Option<Arc<wgpu::BindGroup>>> = Vec::with_capacity(cmds.len());
         for cmd in cmds {
             let shade_tex_id = cmd.shade_texture_id.unwrap_or(cmd.texture_id);
+            let matcap_id = cmd.matcap_texture_id.unwrap_or(0);
+            let normal_id = cmd.normal_texture_id.unwrap_or(0);
+            let uvmask_id = cmd.uv_mask_texture_id.unwrap_or(0);
             let morph_ptr = Arc::as_ptr(&cmd.morph_delta_buffer) as *const () as usize;
             let blend_ptr = Arc::as_ptr(&cmd.blend_weights_buffer) as *const () as usize;
-            let key = (cmd.texture_id, shade_tex_id, morph_ptr, blend_ptr);
+            let key = (cmd.texture_id, shade_tex_id, matcap_id, normal_id, uvmask_id, morph_ptr, blend_ptr);
             if let Some(bg) = self.morph_bg_cache.get(&key) {
                 morph_bgs.push(Some(bg.clone()));
                 continue;
@@ -1840,6 +1901,27 @@ impl RendererV2 {
             let shade_tex = self.textures.get(&shade_tex_id).unwrap_or(tex);
             let tex_view = tex.texture.create_view(&wgpu::TextureViewDescriptor::default());
             let shade_view = shade_tex.texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let matcap_view;
+            let matcap_ref = if let Some(t) = cmd.matcap_texture_id.and_then(|id| self.textures.get(&id)) {
+                matcap_view = t.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                &matcap_view
+            } else {
+                &self.fallback_tex_view
+            };
+            let normal_view;
+            let normal_ref = if let Some(t) = cmd.normal_texture_id.and_then(|id| self.textures.get(&id)) {
+                normal_view = t.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                &normal_view
+            } else {
+                &self.fallback_tex_view
+            };
+            let uvmask_view;
+            let uvmask_ref = if let Some(t) = cmd.uv_mask_texture_id.and_then(|id| self.textures.get(&id)) {
+                uvmask_view = t.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                &uvmask_view
+            } else {
+                &self.fallback_tex_view
+            };
             let morph_info: [u32; 4] = [cmd.num_morph_targets, 0, 0, 0];
             let info_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("MorphInfo"),
@@ -1861,6 +1943,9 @@ impl RendererV2 {
                     wgpu::BindGroupEntry { binding: 4, resource: info_buf.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 5, resource: mtoon_resource },
                     wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::TextureView(&shade_view) },
+                    wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::TextureView(matcap_ref) },
+                    wgpu::BindGroupEntry { binding: 8, resource: wgpu::BindingResource::TextureView(normal_ref) },
+                    wgpu::BindGroupEntry { binding: 9, resource: wgpu::BindingResource::TextureView(uvmask_ref) },
                 ],
             });
             let bg = Arc::new(bg);
