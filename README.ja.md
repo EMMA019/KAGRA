@@ -62,7 +62,16 @@ cd $env:TEMP
 python -m kagra
 ```
 
-ホイールは Windows と Linux のみ（Mac は検証できるまでソースビルド）。PyPI にまだ上がっていない場合は clone して `maturin develop`（Rust が必要）。手順は [docs/PUBLISHING.md](docs/PUBLISHING.md)。
+`pip install kagra` が製品そのものです。レンダラ、VRM、歌う、踊る、`.vrma`、リップシンク、視線、IK、表情、SpringBone は全部入ります。Rust は不要です。追加パッケージも不要です。
+
+| | |
+|---|---|
+| Windows / Linux | `pip install kagra` |
+| macOS | ホイール検証できるまでソースビルド（`maturin develop`） |
+| Web カメラ顔トラ | `pip install "kagra[facetrack]"`（MediaPipe + OpenCV が入る） |
+| コントリビュータ | `pip install maturin && maturin develop` |
+
+リリース手順は [docs/PUBLISHING.md](docs/PUBLISHING.md)。
 
 ## 安定コア
 

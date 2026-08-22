@@ -62,14 +62,16 @@ cd $env:TEMP
 python -m kagra
 ```
 
+`pip install kagra` is the full product: renderer, VRM, sing, dance, `.vrma`, lipsync, look-at, IK, expressions, SpringBone. No Rust toolchain. No second package.
+
 | | |
 |---|---|
 | Windows / Linux | `pip install kagra` |
 | macOS | from source (`maturin develop`) until wheels are verified |
-| From source (contributors) | `pip install maturin && maturin develop` |
-| Optional face tracking | `pip install "kagra[facetrack]"` |
+| Webcam face tracking | `pip install "kagra[facetrack]"` (pulls MediaPipe + OpenCV) |
+| Contributors | `pip install maturin && maturin develop` |
 
-Pre-release: if `pip install kagra` is not on PyPI yet, clone and `maturin develop` (needs Rust). See [docs/PUBLISHING.md](docs/PUBLISHING.md).
+See [docs/PUBLISHING.md](docs/PUBLISHING.md) to cut a release.
 
 ## Stable core
 
