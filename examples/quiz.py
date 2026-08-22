@@ -11,7 +11,6 @@ import os
 SW, SH = 800, 600
 kagra.init(width=SW, height=SH, title="性格診断の旅", fps=60)
 
-FONT_PATH = "C:/Windows/Fonts/meiryo.ttc"
 
 # ── 音声パス（任意） ──────────────────────────────────────────
 BGM_TITLE = "assets/audio/title.ogg"
@@ -221,11 +220,10 @@ def load_assets():
         return
 
     _assets["font"] = 0
-    if os.path.exists(FONT_PATH):
-        try:
-            _assets["font"] = kagra.load_font(FONT_PATH)
-        except Exception:
-            _assets["font"] = 0
+    try:
+        _assets["font"] = kagra.font()
+    except Exception:
+        _assets["font"] = 0
 
     for key in ["bg_title", "bg_goddess", "bg_castle", "bg_village", "bg_field", "bg_cave"]:
         path = f"assets/img/{key}.png"

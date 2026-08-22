@@ -32,7 +32,7 @@ from kagra.vrm_avatar import _euler_to_quat, _qmul, _send_bone_rot, _ID
 
 SW, SH = 1280, 720
 VRM_PATH = "assets/Emma.vrm"
-FONT = "C:/Windows/Fonts/meiryo.ttc"
+FONT = None  # kagra.font() がシステムフォントを選ぶ
 
 ARENA_R = 5.0
 PLAYER_SPEED = 3.4
@@ -341,7 +341,7 @@ class OrbRush(kagra.Scene):
             print(f"VRM が見つかりません: {VRM_PATH}")
             raise SystemExit(1)
 
-        kagra.font(FONT)
+        kagra.font()
         kagra.set_toon_params(threshold=0.48, softness=0.08, shade=0.42, lit=1.05)
         kagra.set_light_dir(0.35, 1.0, 0.55)
         kagra.set_fog(start=8.0, end=18.0, color=(28, 34, 48), enabled=True)

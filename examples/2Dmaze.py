@@ -135,7 +135,7 @@ class PlayerScript(kagra.Script):
 
 class MazeGame(kagra.Scene):
     def on_enter(self):
-        kagra.font("C:/Windows/Fonts/meiryo.ttc")  # デフォルトフォント設定
+        kagra.font()  # システムフォント自動検出
 
         self.tileset    = TileSet(make_tile_texture(), TW, TH)
         self.player_tex = make_player_texture()
@@ -237,7 +237,7 @@ class MazeGame(kagra.Scene):
 
 class TitleScene(kagra.Scene):
     def on_enter(self):
-        kagra.font("C:/Windows/Fonts/meiryo.ttc")
+        kagra.font()
         self.t = 0.0
 
     def update(self, dt):

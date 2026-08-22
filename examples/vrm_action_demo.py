@@ -16,7 +16,7 @@ SW, SH = 1280, 720
 
 class ActionDemoScene(kagra.Scene):
     def on_enter(self):
-        kagra.font("C:/Windows/Fonts/meiryo.ttc")
+        kagra.font()
         
         # VRM モデルのロード
         vrm_path = "assets/Emma.vrm"

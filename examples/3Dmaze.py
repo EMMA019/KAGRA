@@ -20,7 +20,6 @@ TW = TH = 48
 TILE_FLOOR, TILE_WALL, TILE_GOAL, TILE_ITEM = 0, 1, 2, 3
 ATTRS    = {TILE_WALL: TILE_SOLID}
 VRM_PATH  = "assets/player.vrm"
-FONT_PATH = "C:/Windows/Fonts/meiryo.ttc"
 
 UNIT   = 2.0   # 1タイル = 2.0 ワールド単位
 WALL_H = 2.5   # 壁の高さ
@@ -296,7 +295,7 @@ class PlayerScript(kagra.Script):
 # ── メインシーン ──────────────────────────────────────────────
 class MazeGame(kagra.Scene):
     def on_enter(self):
-        kagra.font(FONT_PATH)
+        kagra.font()
         self.anim_t=0.; self.level=1; self.total=0
 
         self.cam=Camera3D(SW,SH,fov_deg=55.)
@@ -400,7 +399,7 @@ class MazeGame(kagra.Scene):
 # ── タイトル ──────────────────────────────────────────────────
 class TitleScene(kagra.Scene):
     def on_enter(self):
-        kagra.font(FONT_PATH); self.t=0.
+        kagra.font(); self.t=0.
 
     def update(self,dt):
         self.t+=dt

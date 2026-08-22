@@ -210,7 +210,7 @@ class TowerDefenseGame(kagra.Scene):
         print("Pixel Tower Defense 開始")
         
         # フォント読み込み
-        self.font = kagra.assets.font("C:/Windows/Fonts/meiryo.ttc")
+        self.font = kagra.font()
         
         # ゲーム状態
         self.coins = INITIAL_COINS
@@ -899,7 +899,7 @@ class TitleScene(kagra.Scene):
     """タイトルシーン"""
     
     def on_enter(self):
-        self.font = kagra.assets.font("C:/Windows/Fonts/meiryo.ttc")
+        self.font = kagra.font()
         self.timer = 0.0
     
     def update(self, dt):

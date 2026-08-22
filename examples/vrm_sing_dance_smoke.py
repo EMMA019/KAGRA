@@ -21,11 +21,13 @@ OUT = os.path.join("scratch", "sing_dance_smoke.png")
 
 class SmokeScene(kagra.Scene):
     def on_enter(self):
-        from kagra.contracts import AssetKind, resolve_asset
+        from kagra.contracts import KagraContractError
+        from kagra.samples import ensure_vrm
 
-        vrm = resolve_asset(AssetKind.VRM, "Emma", required=False)
-        if vrm is None:
-            print("VRM not found (assets/Emma.vrm) — abort")
+        try:
+            vrm = ensure_vrm("Emma", download=False)
+        except KagraContractError as e:
+            print(e)
             kagra.quit()
             return
 
