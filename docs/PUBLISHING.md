@@ -25,7 +25,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-`Publish` builds sdist + wheels (Linux manylinux_2_28 × 3.10–3.12, plus Windows / macOS Intel / macOS ARM × 3.10–3.12) and uploads them.
+`Publish` builds sdist + wheels (Linux manylinux_2_28 × 3.10–3.12, plus Windows × 3.10–3.12) and uploads them. macOS wheels are omitted until they can be verified on a Mac.
 
 If a tag already exists and nothing reached PyPI (the `v0.1.0` Linux jobs failed that way), delete the tag and recreate it after this workflow is on `master`:
 

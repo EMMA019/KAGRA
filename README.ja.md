@@ -51,7 +51,7 @@ pip install kagra
 python -m kagra
 ```
 
-PyPI にまだ上がっていない場合は clone して `maturin develop`（Rust が必要）。手順は [docs/PUBLISHING.md](docs/PUBLISHING.md)。
+ホイールは Windows と Linux のみ（Mac は検証できるまでソースビルド）。PyPI にまだ上がっていない場合は clone して `maturin develop`（Rust が必要）。手順は [docs/PUBLISHING.md](docs/PUBLISHING.md)。
 
 ## 安定コア
 
