@@ -451,6 +451,7 @@ impl GltfModel {
                     mtoon_buffer: None,
                     shade_texture_id: None,
                     outline_width: 0.0,
+                    skin_slot: None,
                 },
             ));
         }

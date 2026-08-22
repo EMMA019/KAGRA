@@ -621,6 +621,7 @@ impl VrmModel {
                     blend_weights_buffer: blend_weights_buf,
                     morph_delta_buffer: Arc::clone(&prim.morph_delta_buf),
                     num_morph_targets: prim.num_morph_targets,
+                    skin_slot: None,
                 },
             ));
         }
