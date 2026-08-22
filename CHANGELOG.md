@@ -14,6 +14,15 @@
 - MToon: matcap, UV scroll/rotate (optional mask), and normal maps.
 - glTF textures: BMP / TGA / GIF / TIFF in addition to PNG / JPEG. Unknown
   MIME types fall back to magic-byte sniffing.
+- SpringBone Verlet + colliders run in `kagra-core` after pose (Python keeps
+  parse tests and a fallback). Hair / skirt chains no longer do FK + FFI per
+  joint on the Python side.
+- Lipsync: `timeline_from_audio_query` / `play_audio_query` consume VOICEVOX
+  mora timings instead of throwing the `audio_query` away. WAV Goertzel remains
+  the fallback when there is no query.
+- Live body ingest: `avatar.apply_pose({name: quat})` / `kagra.set_vrm_pose`.
+  Capture stays outside the engine (VR / Kinect / Holistic).
+
 - Drop-in venues: `kagra.stage("venue.glb")` / `kagra.load_gltf` now load
   JSON `.gltf` plus sibling `.bin` / image URIs (not just GLB). A PNG/JPEG
   path becomes an inverted sky sphere. `python -m kagra --stage` /

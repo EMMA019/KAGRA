@@ -770,6 +770,32 @@ def set_vrm_first_person(vrm_id: int, enabled: bool = True):
     """一人称視点レイヤー。True で頭メッシュ（Auto / ThirdPersonOnly）を隠す。"""
     _check(); _engine.set_vrm_first_person(vrm_id, bool(enabled))
 
+def vrm_spring_info(vrm_id: int) -> tuple:
+    """SpringBone の (chains, joints, colliders)。未ロードは (0,0,0)。"""
+    _check(); return _engine.vrm_spring_info(vrm_id)
+
+def step_vrm_spring(vrm_id: int, dt: float):
+    _check(); _engine.step_vrm_spring(vrm_id, float(dt))
+
+def reset_vrm_spring(vrm_id: int):
+    _check(); _engine.reset_vrm_spring(vrm_id)
+
+def set_vrm_spring_wind(vrm_id: int, x: float = 0.0, y: float = 0.0, z: float = 0.0):
+    _check(); _engine.set_vrm_spring_wind(vrm_id, float(x), float(y), float(z))
+
+def set_vrm_spring_enabled(vrm_id: int, enabled: bool = True):
+    _check(); _engine.set_vrm_spring_enabled(vrm_id, bool(enabled))
+
+def set_vrm_pose(vrm_id: int, bones: list):
+    """ライブモーキャプ。``[(name, qx, qy, qz, qw), ...]`` をまとめて書く。"""
+    _check()
+    packed = []
+    for item in bones:
+        if len(item) < 5:
+            continue
+        packed.append((str(item[0]), float(item[1]), float(item[2]), float(item[3]), float(item[4])))
+    _engine.set_vrm_pose(vrm_id, packed)
+
 def list_human_bones(vrm_id: int) -> list[str]:
     """VRM humanoid 標準ボーン名の一覧を返す（hips, head, leftUpperArm, …）。"""
     _check(); return _engine.list_human_bones(vrm_id)
@@ -1542,7 +1568,7 @@ except ImportError:
 
 from kagra.stage import Stage, backdrop_sphere, classify_stage_file, resolve_stage_path
 from kagra.vrm_lookat  import LookAtController
-from kagra.vrm_lipsync import LipSyncController, LipSyncTimeline
+from kagra.vrm_lipsync import LipSyncController, LipSyncTimeline, timeline_from_audio_query
 from kagra.vrm_ik      import ArmIK, TwoBoneIK
 from kagra.vrm_emotion import EmotionController
 

@@ -22,6 +22,7 @@ mod vrm_lookat_meta;
 mod vrm_expression;
 mod vrm_constraint;
 mod vrm_first_person;
+mod vrm_spring;
 mod mtoon;
 
 mod engine;

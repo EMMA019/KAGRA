@@ -306,6 +306,13 @@ class LipSyncController:
         timeline = LipSyncTimeline(entries, duration)
         self.play_timeline(timeline)
 
+    def play_audio_query(self, query: dict, *, loop: bool = False):
+        """VOICEVOX / COEIROINK の audio_query を mora タイミングで再生する。
+
+        ``analyze_wav`` より口が音素に乗る。query は API の JSON dict。
+        """
+        self.play_timeline(timeline_from_audio_query(query, max_open=self.max_open), loop=loop)
+
 
 # ── 内部ユーティリティ ─────────────────────────────────────────
 
@@ -435,6 +442,64 @@ def _estimate_vowel_zcr(samples: list[float], sample_rate: int) -> str:
     if e1 > e2 * 1.2:
         return "ou"
     return "aa"
+
+
+_VOWEL_FROM_PHONE = {
+    "a": "aa",
+    "A": "aa",
+    "i": "ih",
+    "I": "ih",
+    "u": "ou",
+    "U": "ou",
+    "N": "ou",
+    "e": "ee",
+    "E": "ee",
+    "o": "oh",
+    "O": "oh",
+}
+
+
+def timeline_from_audio_query(query: dict, *, max_open: float = 0.9) -> LipSyncTimeline:
+    """VOICEVOX ``audio_query`` の mora 長から (time, vowel, weight) を組む。"""
+    speed = float(query.get("speedScale") or 1.0)
+    if speed <= 1e-6:
+        speed = 1.0
+    pre = float(query.get("prePhonemeLength") or 0.0) / speed
+    post = float(query.get("postPhonemeLength") or 0.0) / speed
+    entries: list[tuple[float, str, float]] = []
+    t = pre
+    if pre > 0:
+        entries.append((0.0, "aa", 0.0))
+    for phrase in query.get("accent_phrases") or []:
+        for mora in phrase.get("moras") or []:
+            cons = float(mora.get("consonant_length") or 0.0) / speed
+            vow_len = float(mora.get("vowel_length") or 0.0) / speed
+            phone = str(mora.get("vowel") or "a").strip()
+            if phone.lower() in ("pau", "cl"):
+                if cons + vow_len > 0:
+                    entries.append((t, "aa", 0.0))
+                t += cons + vow_len
+                continue
+            vowel = _VOWEL_FROM_PHONE.get(phone) or _VOWEL_FROM_PHONE.get(phone[:1], "aa")
+            if cons > 0:
+                entries.append((t, vowel, 0.15 * max_open))
+                t += cons
+            if vow_len > 0:
+                entries.append((t, vowel, max_open))
+                entries.append((t + vow_len * 0.85, vowel, 0.35 * max_open))
+                t += vow_len
+        pause = phrase.get("pause_mora")
+        if isinstance(pause, dict):
+            pl = float(pause.get("vowel_length") or 0.0) / speed
+            if pl > 0:
+                entries.append((t, "aa", 0.0))
+                t += pl
+    t += post
+    if not entries:
+        entries.append((0.0, "aa", 0.0))
+    duration = max(t, entries[-1][0])
+    entries.append((duration, "aa", 0.0))
+    return LipSyncTimeline(entries, duration)
 
 
 def _estimate_vowel_simple(samples: list[float], sample_rate: int) -> str:

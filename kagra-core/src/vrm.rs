@@ -21,6 +21,7 @@ use crate::vrm_first_person::{
     collect_head_nodes, erase_head_triangles, parse_mesh_annotations, MeshAnnotation,
 };
 use crate::mtoon::{parse_mtoon, parse_vrm0_material_properties, MtoonMaterial};
+use crate::vrm_spring::{init_rest, parse_spring_bones, snap_to_world, step as step_springs, SpringBoneState};
 
 pub use crate::vrm_lookat_meta::VrmLookAtMeta;
 
@@ -86,6 +87,7 @@ pub struct VrmModel {
     pub constraints: Vec<NodeConstraint>,
     /// true のとき firstPerson 注釈に従い頭を消す。
     pub first_person: bool,
+    pub spring: SpringBoneState,
 }
 
 
@@ -538,6 +540,12 @@ pub fn load_vrm(
         &bones.iter().map(|b| b.parent).collect::<Vec<_>>(),
     );
 
+    let mut spring = parse_spring_bones(&gltf);
+    if !spring.chains.is_empty() {
+        let bind_mats = bind_world_mats(&bones, &hierarchy_order);
+        init_rest(&mut spring, &bind_mats);
+    }
+
     // blend_weights は削除
     Ok(VrmModel {
         bones,
@@ -555,7 +563,20 @@ pub fn load_vrm(
         look_at,
         constraints,
         first_person: false,
+        spring,
     })
+}
+
+fn bind_world_mats(bones: &[VrmBone], order: &[usize]) -> Vec<Matrix4<f32>> {
+    let mut mats = vec![Matrix4::identity(); bones.len()];
+    for &i in order {
+        let local = trs_to_mat4(bones[i].bind_trans, bones[i].bind_rot, bones[i].bind_scale);
+        mats[i] = match bones[i].parent {
+            Some(pi) if pi < bones.len() => mats[pi] * local,
+            _ => local,
+        };
+    }
+    mats
 }
 
 // ── VrmModel のメソッド ──────────────────────────────────────
@@ -729,6 +750,37 @@ impl VrmModel {
             self.apply_aim_constraints();
             self.fk_world();
         }
+    }
+
+    pub fn step_spring(&mut self, dt: f32) {
+        if !self.spring.enabled || self.spring.chains.is_empty() {
+            return;
+        }
+        self.recompute_world();
+        let mats: Vec<Matrix4<f32>> = self.bones.iter().map(|b| b.world_mat).collect();
+        let parents: Vec<Option<usize>> = self.bones.iter().map(|b| b.parent).collect();
+        let updates = step_springs(&mut self.spring, &mats, &parents, dt);
+        for (idx, rot) in updates {
+            if idx < self.bones.len() {
+                self.bones[idx].local_rot = rot;
+            }
+        }
+        self.dirty = true;
+    }
+
+    pub fn reset_spring(&mut self) {
+        self.recompute_world();
+        let mats: Vec<Matrix4<f32>> = self.bones.iter().map(|b| b.world_mat).collect();
+        snap_to_world(&mut self.spring, &mats);
+        self.spring.initialized = true;
+    }
+
+    pub fn set_spring_wind(&mut self, x: f32, y: f32, z: f32) {
+        self.spring.wind = [x, y, z];
+    }
+
+    pub fn set_spring_enabled(&mut self, enabled: bool) {
+        self.spring.enabled = enabled;
     }
 
     pub fn build_draw_commands(&mut self, device: &Device) -> Vec<(Vec<Matrix4<f32>>, crate::renderer::SkinnedMeshCommand)> {

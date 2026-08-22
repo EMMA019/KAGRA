@@ -1045,6 +1045,24 @@ class VrmAvatar:
     def first_person(self, v: bool):
         self.set_first_person(v)
 
+    def apply_pose(self, rots: dict):
+        """ライブ体入力。humanoid 名 / ノード名 → クォータニオン。
+
+        VR・Kinect・Holistic のキャプチャはこのエンジンに置かない。
+        外部が 60Hz でこの dict を流せば、収録 FBX と同じ口で乗る。
+
+        Example::
+            av.apply_pose({"head": (0, 0.1, 0, 0.99), "hips": (0, 0, 0, 1)})
+        """
+        import kagra
+        packed = []
+        for name, q in (rots or {}).items():
+            if q is None or len(q) < 4:
+                continue
+            packed.append((str(name), float(q[0]), float(q[1]), float(q[2]), float(q[3])))
+        if packed:
+            kagra.set_vrm_pose(self.vrm_id, packed)
+
     def set_first_person(self, enabled: bool = True):
         """一人称視点。頭 / ThirdPersonOnly メッシュを隠す。"""
         self._first_person = bool(enabled)

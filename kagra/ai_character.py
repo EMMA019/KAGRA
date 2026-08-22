@@ -139,6 +139,8 @@ class AiCharacter:
         # 非同期処理
         self._pending_response: Optional[str] = None
         self._pending_wav:      Optional[str] = None
+        self._pending_query:    Optional[dict] = None
+        self._last_audio_query: Optional[dict] = None
         self._thread:           Optional[threading.Thread] = None
         self._lock = threading.Lock()
 
@@ -297,8 +299,10 @@ class AiCharacter:
                 self._start_speaking(self._pending_response)
                 self._pending_response = None
             if self._pending_wav is not None:
+                self._last_audio_query = self._pending_query
                 self._play_wav_with_lipsync(self._pending_wav)
                 self._pending_wav = None
+                self._pending_query = None
 
         # アバター更新（マウスを見る）
         import kagra
@@ -460,10 +464,14 @@ class AiCharacter:
             import urllib.request, urllib.parse, json, tempfile
             base = self._tts_url
 
-            # 1. audio_query
+            # 1. audio_query（mora 長をリップシンクに渡す）
             query_url = f"{base}/audio_query?text={urllib.parse.quote(text)}&speaker={self._voice_id}"
             with urllib.request.urlopen(query_url, timeout=10) as r:
                 query = r.read()
+            try:
+                self._last_audio_query = json.loads(query)
+            except Exception:
+                self._last_audio_query = None
 
             # 2. synthesis
             synth_url = f"{base}/synthesis?speaker={self._voice_id}"
@@ -521,6 +529,7 @@ class AiCharacter:
             self._pending_response = response
             if wav_path:
                 self._pending_wav = wav_path
+                self._pending_query = self._last_audio_query
 
     def _async_speak_worker(self, text: str):
         """別スレッドで TTS を実行する。"""
@@ -529,6 +538,7 @@ class AiCharacter:
             self._pending_response = text
             if wav_path:
                 self._pending_wav = wav_path
+                self._pending_query = self._last_audio_query
 
     def _start_speaking(self, text: str):
         """発話を開始する（メインスレッドから呼ぶ）。"""
@@ -569,8 +579,13 @@ class AiCharacter:
         """WAV 再生 + リップシンク同期（メインスレッドから呼ぶ）。"""
         import kagra
         try:
-            # リップシンク先読み
-            timeline = self._lipsync.analyze_wav(wav_path)
+            from kagra.vrm_lipsync import timeline_from_audio_query
+
+            query = self._last_audio_query
+            if query:
+                timeline = timeline_from_audio_query(query, max_open=self._lipsync.max_open)
+            else:
+                timeline = self._lipsync.analyze_wav(wav_path)
             if len(timeline) > 0:
                 self._lipsync.play_timeline(timeline)
 
