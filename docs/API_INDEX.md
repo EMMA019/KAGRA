@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **314**
+エントリ数: **315**
 
 ## Functions
 
@@ -201,6 +201,7 @@
 | `DialogScript` | `class DialogScript  (from kagra.ui)` (class) |
 | `Easing` | `class Easing  (from kagra.ui)` (class) |
 | `EmotionController` | `class EmotionController  (from kagra.vrm_emotion)` (class) |
+| `ensure_vrm` | `export ensure_vrm  (from kagra.samples)` (export) |
 | `Entity` | `class Entity  (from kagra.entity)` (class) |
 | `EntityAnimTrack` | `class EntityAnimTrack  (from kagra.timeline)` (class) |
 | `EntityScene` | `class EntityScene  (from kagra.entity)` (class) |

@@ -19,6 +19,8 @@ Rust errors surface as `[CODE] message` (see `KaguraError::code`).
 
 | 確認したいこと | コマンド |
 |---|---|
+| 初回体験（サンプル VRM を取得して歌う） | `python -m kagra` / `python -m kagra --offline` |
+| PyPI ホイール | タグ `v*` → `.github/workflows/publish.yml`（[PUBLISHING.md](PUBLISHING.md)） |
 | pure-python テスト（拡張なし相当） | `pytest tests -m "not golden" -p tests.no_extension_plugin` |
 | API 索引のドリフト | `python tools/gen_api_index.py --check` |
 | 共有コア | `cargo fmt -p kagra-shared -- --check` / `cargo clippy -p kagra-shared --all-targets -- -D warnings` / `cargo test -p kagra-shared` |

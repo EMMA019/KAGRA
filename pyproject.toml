@@ -5,9 +5,31 @@ build-backend = "maturin"
 [project]
 name = "kagra"
 version = "0.1.0"
-description = "KAGRA - Kernel for Anime/Game Runtime Architecture"
+description = "Python game engine with a Rust/wgpu core — VRM avatars that sing and dance"
+readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+authors = [{ name = "Emma Saka" }]
+keywords = ["game-engine", "vrm", "wgpu", "python"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+    "Topic :: Games/Entertainment",
+    "Topic :: Multimedia :: Graphics :: 3D Rendering",
+]
+[project.urls]
+Homepage = "https://github.com/EMMA019/KAGRA"
+Repository = "https://github.com/EMMA019/KAGRA"
+Issues = "https://github.com/EMMA019/KAGRA/issues"
+Changelog = "https://github.com/EMMA019/KAGRA/blob/master/CHANGELOG.md"
+
+[project.scripts]
+kagra = "kagra.cli:main"
 
 [project.optional-dependencies]
 facetrack = ["mediapipe", "opencv-python"]
@@ -19,6 +41,7 @@ agent = ["mcp>=1.1", "pytest>=7.0"]
 manifest-path = "kagra-core/Cargo.toml"
 module-name = "kagra.kagra_core"
 features = ["extension-module"]
+include = ["kagra/data/synthetic_dance.bvh"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
