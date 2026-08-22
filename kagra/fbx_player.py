@@ -108,6 +108,25 @@ _BONE_MAP = {
     'mixamorig:RightToeBase': 'J_Bip_R_ToeBase',
 }
 
+# ── 指（Mixamo → VRoid J_Bip）。VRMA と同じく 5 指 × 3 関節 ──
+# Mixamo: LeftHandThumb1..3 / Index / Middle / Ring / Pinky
+# VRoid:  J_Bip_L_Thumb1..3 / Index / Middle / Ring / Little
+_FINGER_PAIRS = [
+    ("Thumb", "Thumb"),
+    ("Index", "Index"),
+    ("Middle", "Middle"),
+    ("Ring", "Ring"),
+    ("Pinky", "Little"),
+]
+for _side_fbx, _side_vrm in (("Left", "L"), ("Right", "R")):
+    for _fbx_finger, _vrm_finger in _FINGER_PAIRS:
+        for _seg in (1, 2, 3):
+            _src = f"{_side_fbx}Hand{_fbx_finger}{_seg}"
+            _dst = f"J_Bip_{_side_vrm}_{_vrm_finger}{_seg}"
+            _BONE_MAP[_src] = _dst
+            _BONE_MAP[f"mixamorig:{_src}"] = _dst
+del _side_fbx, _side_vrm, _fbx_finger, _vrm_finger, _seg, _src, _dst
+
 # ── ボーン回転抑制率（1.0=そのまま, 0.0=固定）
 # FBX/VRM のバインドポーズ差異による過剰回転を抑制
 # 完全スキップするボーン

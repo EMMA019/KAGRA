@@ -19,3 +19,25 @@ def test_root_scale_rejects_mixamo_hips_as_vrm_height():
 
 def test_root_scale_tiny_leg_defaults():
     assert fbx.root_scale(0.0, 0.853) == 0.853
+
+
+def test_bone_map_covers_fingers():
+    # VRMA は指まで対応済み。FBX (Mixamo) も 5 指 × 3 関節 × 両手を持つ。
+    for side_fbx, side_vrm in (("Left", "L"), ("Right", "R")):
+        for fbx_name, vrm_name in (
+            ("Thumb", "Thumb"),
+            ("Index", "Index"),
+            ("Middle", "Middle"),
+            ("Ring", "Ring"),
+            ("Pinky", "Little"),
+        ):
+            for seg in (1, 2, 3):
+                src = f"{side_fbx}Hand{fbx_name}{seg}"
+                dst = f"J_Bip_{side_vrm}_{vrm_name}{seg}"
+                assert fbx._BONE_MAP[src] == dst
+                assert fbx._BONE_MAP[f"mixamorig:{src}"] == dst
+
+
+def test_bone_map_no_finger_regression_on_body():
+    assert fbx._BONE_MAP["Hips"] == "J_Bip_C_Hips"
+    assert fbx._BONE_MAP["mixamorig:LeftHand"] == "J_Bip_L_Hand"
