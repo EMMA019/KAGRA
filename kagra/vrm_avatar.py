@@ -222,6 +222,7 @@ PRESETS: dict[str, list] = {
 _UPPER_BONE_KEYS = (
     "Spine", "Chest", "Neck", "Head",
     "Shoulder", "Arm", "Hand", "Finger",
+    "Thumb", "Index", "Middle", "Ring", "Little",
 )
 
 def _is_upper_bone(name: str) -> bool:
@@ -1028,9 +1029,10 @@ class VrmAvatar:
                 rots.update(self._upper.current_rots)
             self._spring.update(dt, rots)
 
-        # 3. 視線追従
+        # 3. 視線追従（VRMA LookAt があるフレームは目だけ後から上書き）
         if self._lookat:
             self._lookat.update(dt)
+        self._apply_vrma_lookat()
 
         # 4. IK
         if self._ik:
@@ -1048,8 +1050,8 @@ class VrmAvatar:
         if hasattr(self, '_facetrack') and self._facetrack and self._facetrack.enabled:
             self._facetrack.update(dt)
 
-        # 8. まばたき
-        if self._blink_enabled:
+        # 8. まばたき（VRMA が blink を持っている間は任せる）
+        if self._blink_enabled and not getattr(self, "_vrma_has_blink", False):
             self._update_blink(dt)
 
     def _apply_vrma_expressions(self):
@@ -1061,6 +1063,9 @@ class VrmAvatar:
             frame = frames[self._anim._fidx]
             if len(frame) > 3 and isinstance(frame[3], dict):
                 exprs = frame[3]
+        self._vrma_has_blink = bool(
+            exprs and any(str(k).lower().startswith("blink") for k in exprs)
+        )
         if not exprs:
             for name in prev:
                 _set_shape(self.vrm_id, name, 0.0)
@@ -1080,6 +1085,46 @@ class VrmAvatar:
         for name in prev - on:
             _set_shape(self.vrm_id, name, 0.0)
         self._vrma_expr_on = on
+
+    def _apply_vrma_lookat(self):
+        """VRMA ``lookAt`` ノードの yaw/pitch を目ブレンドシェイプへ書く。"""
+        frames = self._anim._frames
+        look = None
+        if self._anim.playing and frames:
+            frame = frames[self._anim._fidx]
+            if len(frame) > 4 and frame[4]:
+                look = frame[4]
+        prev = getattr(self, "_vrma_look_on", set())
+        if not look:
+            for name in prev:
+                _set_shape(self.vrm_id, name, 0.0)
+            self._vrma_look_on = set()
+            return
+        yaw, pitch = float(look[0]), float(look[1])
+        max_yaw = math.radians(20)
+        max_pitch = math.radians(15)
+        weights = {
+            "lookLeft": max(0.0, -yaw / max_yaw),
+            "lookRight": max(0.0, yaw / max_yaw),
+            "lookUp": max(0.0, -pitch / max_pitch),
+            "lookDown": max(0.0, pitch / max_pitch),
+        }
+        import kagra
+        try:
+            available = set(kagra.list_blend_shapes(self.vrm_id))
+        except Exception:
+            available = set()
+        from kagra.vrma_player import resolve_expression_name
+        on: set[str] = set()
+        for raw, w in weights.items():
+            if w < 1e-4:
+                continue
+            name = resolve_expression_name(raw, available) or raw
+            if _set_shape(self.vrm_id, name, min(1.0, w)):
+                on.add(name)
+        for name in prev - on:
+            _set_shape(self.vrm_id, name, 0.0)
+        self._vrma_look_on = on
 
     def _is_bvh_clip(self) -> bool:
         if not self._anim.playing or not self._anim._frames:

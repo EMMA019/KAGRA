@@ -50,7 +50,8 @@ _HUMANOID_TO_VRM: dict[str, str] = {
     "rightLowerLeg": "J_Bip_R_LowerLeg",
     "rightFoot": "J_Bip_R_Foot",
     "rightToes": "J_Bip_R_ToeBase",
-    "leftThumbProximal": "J_Bip_L_Thumb1",
+    # 親指の Proximal は 0.x / 1.0 で意味が違うので load_vrma で振り分ける
+    "leftThumbMetacarpal": "J_Bip_L_Thumb1",
     "leftThumbIntermediate": "J_Bip_L_Thumb2",
     "leftThumbDistal": "J_Bip_L_Thumb3",
     "leftIndexProximal": "J_Bip_L_Index1",
@@ -65,7 +66,7 @@ _HUMANOID_TO_VRM: dict[str, str] = {
     "leftLittleProximal": "J_Bip_L_Little1",
     "leftLittleIntermediate": "J_Bip_L_Little2",
     "leftLittleDistal": "J_Bip_L_Little3",
-    "rightThumbProximal": "J_Bip_R_Thumb1",
+    "rightThumbMetacarpal": "J_Bip_R_Thumb1",
     "rightThumbIntermediate": "J_Bip_R_Thumb2",
     "rightThumbDistal": "J_Bip_R_Thumb3",
     "rightIndexProximal": "J_Bip_R_Index1",
@@ -98,7 +99,16 @@ _EXPR_CANDIDATES: dict[str, tuple[str, ...]] = {
     "relaxed": ("relaxed", "Neutral", "Fcl_ALL_Neutral"),
     "surprised": ("surprised", "Fun", "Fcl_ALL_Fun"),
     "neutral": ("neutral",),
+    "lookUp": ("lookUp", "LookUp", "Fcl_EYE_Direction_Up"),
+    "lookDown": ("lookDown", "LookDown", "Fcl_EYE_Direction_Down"),
+    "lookLeft": ("lookLeft", "LookLeft", "Fcl_EYE_Direction_Left"),
+    "lookRight": ("lookRight", "LookRight", "Fcl_EYE_Direction_Right"),
 }
+
+FINGER_JBIP = tuple(
+    n for n in _HUMANOID_TO_VRM.values()
+    if any(part in n for part in ("Thumb", "Index", "Middle", "Ring", "Little"))
+)
 
 
 def resolve_expression_name(name: str, available: set[str]) -> Optional[str]:
@@ -139,6 +149,15 @@ def _qnorm(q):
 
 def _qdot(a, b):
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
+
+
+def quat_to_yaw_pitch(q) -> tuple[float, float]:
+    """LookAt ノード回転 → (yaw, pitch) rad。仕様の Extrinsic ZXY。"""
+    x, y, z, w = _qnorm(q)
+    sinp = max(-1.0, min(1.0, 2.0 * (w * x - y * z)))
+    pitch = math.asin(sinp)
+    yaw = math.atan2(2.0 * (w * y + x * z), 1.0 - 2.0 * (x * x + y * y))
+    return yaw, pitch
 
 
 def _slerp(a, b, t):
@@ -393,7 +412,7 @@ class VrmaMotion:
     def frame_time(self) -> float:
         return 1.0 / self.fps if self.fps else 1.0 / 30.0
 
-    def _sample_at(self, t: float) -> tuple[dict, tuple, dict]:
+    def _sample_at(self, t: float) -> tuple[dict, tuple, dict, Optional[tuple]]:
         rots: dict[int, tuple] = dict(self._rest_rot)
         poss: dict[int, tuple] = dict(self._rest_pos)
         for tr in self._tracks:
@@ -409,7 +428,7 @@ class VrmaMotion:
             anim = rots.get(node, rest)
             # NormalizedLocalRotation: inv(TPose_anim) * Pose_anim
             bones[vrm_name] = list(_qnorm(_qmul(_qinv(rest), anim)))
-        hips_node = self.bones.get("J_Bip_C_Hips")
+        hips_node = self.bones.get("J_Bip_C_Hips") or self.bones.get("hips")
         root = (0.0, 0.0, 0.0)
         if hips_node is not None:
             rest_p = self._rest_pos.get(hips_node, (0.0, 0.0, 0.0))
@@ -419,7 +438,14 @@ class VrmaMotion:
         for name, node in self.expressions.items():
             p = poss.get(node, self._rest_pos.get(node, (0.0, 0.0, 0.0)))
             exprs[name] = max(0.0, min(1.0, float(p[0])))
-        return bones, root, exprs
+        look = None
+        if self.look_at_node is not None:
+            q = rots.get(
+                self.look_at_node,
+                self._rest_rot.get(self.look_at_node, (0.0, 0.0, 0.0, 1.0)),
+            )
+            look = quat_to_yaw_pitch(q)
+        return bones, root, exprs, look
 
     def to_clip(self) -> list:
         if self._cache is not None:
@@ -433,8 +459,8 @@ class VrmaMotion:
                 dt = max(1e-4, self._times[i + 1] - t)
             else:
                 dt = self.frame_time
-            bones, root, exprs = self._sample_at(t)
-            clip.append((bones, dt, root, exprs))
+            bones, root, exprs, look = self._sample_at(t)
+            clip.append((bones, dt, root, exprs, look))
         self._cache = clip
         return self._cache
 
@@ -473,13 +499,18 @@ def load_vrma(path: str | Path, *, sample_fps: float = 30.0) -> VrmaMotion:
 
     bones: dict[str, int] = {}
     human = ((ext.get("humanoid") or {}).get("humanBones") or {})
+    v1_thumb = any(n.endswith("ThumbMetacarpal") for n in human)
     for hum_name, entry in human.items():
         idx = _node_index(entry)
         if idx is None:
             continue
         vrm = _HUMANOID_TO_VRM.get(hum_name)
+        if hum_name in ("leftThumbProximal", "rightThumbProximal"):
+            side = "L" if hum_name.startswith("left") else "R"
+            vrm = f"J_Bip_{side}_Thumb2" if v1_thumb else f"J_Bip_{side}_Thumb1"
         if vrm:
             bones[vrm] = idx
+        bones[hum_name] = idx  # エンジンが標準名だけ持つモデル向け
 
     expressions: dict[str, int] = {}
     expr_root = ext.get("expressions") or {}
@@ -518,8 +549,10 @@ def load_vrma(path: str | Path, *, sample_fps: float = 30.0) -> VrmaMotion:
     mapped = len(bones)
     print(f"[VRMA] {path}")
     print(f"  spec    : {spec}")
-    print(f"  bones   : {mapped}")
+    fingers = sum(1 for n in bones if n in FINGER_JBIP)
+    print(f"  bones   : {mapped}  fingers:{fingers}")
     print(f"  exprs   : {list(expressions)}")
+    print(f"  lookAt  : {look_at_node}")
     print(f"  frames  : {len(times)}  {sample_fps:.0f}fps  {times[-1]:.2f}sec")
 
     return VrmaMotion(
@@ -541,7 +574,7 @@ def write_synthetic_vrma(
     frames: int = 16,
     duration: float = 1.0,
 ) -> Path:
-    """テスト用の最小 VRMA (GLB) を書く。腕振り + `aa` 口形。"""
+    """テスト用の最小 VRMA (GLB)。腕振り + 指 + LookAt + `aa`。"""
     path = Path(path)
     frames = max(2, int(frames))
     duration = max(1e-3, float(duration))
@@ -551,22 +584,33 @@ def write_synthetic_vrma(
         h = rad * 0.5
         return (0.0, 0.0, math.sin(h), math.cos(h))
 
-    hips_t, left_r, right_r, aa_t = [], [], [], []
+    def yrot(rad: float) -> tuple:
+        h = rad * 0.5
+        return (0.0, math.sin(h), 0.0, math.cos(h))
+
+    hips_t, left_r, right_r, finger_r, look_r, aa_t = [], [], [], [], [], []
     for t in times:
         ph = t / duration * 2.0 * math.pi
         hips_t.extend((0.0, 1.0 + 0.02 * math.sin(ph), 0.0))
         left_r.extend(zrot(0.55 * math.sin(ph)))
         right_r.extend(zrot(-0.55 * math.sin(ph)))
-        w = max(0.0, math.sin(ph))
-        aa_t.extend((w, 0.0, 0.0))
+        finger_r.extend(zrot(0.35 * max(0.0, math.sin(ph))))
+        look_r.extend(yrot(0.35 * math.sin(ph)))
+        aa_t.extend((max(0.0, math.sin(ph)), 0.0, 0.0))
 
-    blob = b"".join((
+    chunks = [
         struct.pack(f"<{len(times)}f", *times),
         struct.pack(f"<{len(hips_t)}f", *hips_t),
         struct.pack(f"<{len(left_r)}f", *left_r),
         struct.pack(f"<{len(right_r)}f", *right_r),
+        struct.pack(f"<{len(finger_r)}f", *finger_r),
+        struct.pack(f"<{len(look_r)}f", *look_r),
         struct.pack(f"<{len(aa_t)}f", *aa_t),
-    ))
+    ]
+    offsets, blob = [], b""
+    for c in chunks:
+        offsets.append(len(blob))
+        blob += c
 
     def acc(offset, count, typ, mn=None, mx=None):
         a = {
@@ -582,10 +626,6 @@ def write_synthetic_vrma(
         return a
 
     n = frames
-    o_time, o_hips = 0, n * 4
-    o_left = o_hips + n * 12
-    o_right = o_left + n * 16
-    o_aa = o_right + n * 16
     gltf = {
         "asset": {"version": "2.0", "generator": "kagra.write_synthetic_vrma"},
         "extensionsUsed": ["VRMC_vrm_animation"],
@@ -598,17 +638,21 @@ def write_synthetic_vrma(
                         "spine": {"node": 1},
                         "leftUpperArm": {"node": 2},
                         "rightUpperArm": {"node": 3},
+                        "leftIndexProximal": {"node": 4},
                     }
                 },
-                "expressions": {"preset": {"aa": {"node": 4}}},
+                "expressions": {"preset": {"aa": {"node": 5}}},
+                "lookAt": {"node": 6, "offsetFromHeadBone": [0.0, 0.06, 0.0]},
             }
         },
         "nodes": [
             {"name": "hips", "translation": [0.0, 1.0, 0.0], "children": [1, 2, 3]},
             {"name": "spine"},
-            {"name": "leftUpperArm"},
+            {"name": "leftUpperArm", "children": [4]},
             {"name": "rightUpperArm"},
+            {"name": "leftIndexProximal"},
             {"name": "aa"},
+            {"name": "lookAt"},
         ],
         "animations": [{
             "name": "synthetic_wave",
@@ -616,21 +660,27 @@ def write_synthetic_vrma(
                 {"sampler": 0, "target": {"node": 0, "path": "translation"}},
                 {"sampler": 1, "target": {"node": 2, "path": "rotation"}},
                 {"sampler": 2, "target": {"node": 3, "path": "rotation"}},
-                {"sampler": 3, "target": {"node": 4, "path": "translation"}},
+                {"sampler": 3, "target": {"node": 4, "path": "rotation"}},
+                {"sampler": 4, "target": {"node": 6, "path": "rotation"}},
+                {"sampler": 5, "target": {"node": 5, "path": "translation"}},
             ],
             "samplers": [
                 {"input": 0, "output": 1, "interpolation": "LINEAR"},
                 {"input": 0, "output": 2, "interpolation": "LINEAR"},
                 {"input": 0, "output": 3, "interpolation": "LINEAR"},
                 {"input": 0, "output": 4, "interpolation": "LINEAR"},
+                {"input": 0, "output": 5, "interpolation": "LINEAR"},
+                {"input": 0, "output": 6, "interpolation": "LINEAR"},
             ],
         }],
         "accessors": [
-            acc(o_time, n, "SCALAR", [times[0]], [times[-1]]),
-            acc(o_hips, n, "VEC3"),
-            acc(o_left, n, "VEC4"),
-            acc(o_right, n, "VEC4"),
-            acc(o_aa, n, "VEC3"),
+            acc(offsets[0], n, "SCALAR", [times[0]], [times[-1]]),
+            acc(offsets[1], n, "VEC3"),
+            acc(offsets[2], n, "VEC4"),
+            acc(offsets[3], n, "VEC4"),
+            acc(offsets[4], n, "VEC4"),
+            acc(offsets[5], n, "VEC4"),
+            acc(offsets[6], n, "VEC3"),
         ],
         "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": len(blob)}],
         "buffers": [{"byteLength": len(blob)}],
