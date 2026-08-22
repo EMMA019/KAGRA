@@ -310,11 +310,93 @@ pub fn extract_texture_data_from_glb(path: &str) -> KaguraResult<Vec<(usize, Vec
         let off = bv["byteOffset"].as_u64().unwrap_or(0) as usize;
         let size = bv["byteLength"].as_u64().unwrap_or(0) as usize;
         if size < 16 || off + size > bin_data.len() { continue; }
-        let mime = img["mimeType"].as_str().unwrap_or("image/png");
-        let ext = if mime.contains("jpeg") { "jpg".to_string() } else { "png".to_string() };
-        result.push((ti, bin_data[off..off+size].to_vec(), ext));
+        let mime = img["mimeType"].as_str().unwrap_or("");
+        let bytes = bin_data[off..off + size].to_vec();
+        let ext = gltf_image_ext(mime, &bytes);
+        result.push((ti, bytes, ext));
     }
     Ok(result)
+}
+
+/// glTF `mimeType` とマジックバイトから、エンジンが扱う拡張子タグを返す。
+/// `png` / `jpg` / `webp` / `bmp` / `tga` / `gif` / `tif` / `bin`
+pub fn gltf_image_ext(mime: &str, bytes: &[u8]) -> String {
+    let m = mime.to_ascii_lowercase();
+    if m.contains("jpeg") || m.contains("jpg") {
+        return "jpg".into();
+    }
+    if m.contains("png") {
+        return "png".into();
+    }
+    if m.contains("webp") {
+        return "webp".into();
+    }
+    if m.contains("bmp") {
+        return "bmp".into();
+    }
+    if m.contains("gif") {
+        return "gif".into();
+    }
+    if m.contains("tiff") || m.contains("tif") {
+        return "tif".into();
+    }
+    if m.contains("tga") || m.contains("x-tga") || m.contains("x-targa") {
+        return "tga".into();
+    }
+    match image_magic_ext(bytes) {
+        Some(ext) => ext.to_string(),
+        None => {
+            if m.is_empty() {
+                "bin".into()
+            } else {
+                "bin".into()
+            }
+        }
+    }
+}
+
+pub fn image_magic_ext(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.len() >= 8 && bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
+        return Some("png");
+    }
+    if bytes.len() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF {
+        return Some("jpg");
+    }
+    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return Some("webp");
+    }
+    if bytes.len() >= 2 && bytes[0] == b'B' && bytes[1] == b'M' {
+        return Some("bmp");
+    }
+    if bytes.len() >= 6 && (bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a")) {
+        return Some("gif");
+    }
+    if bytes.len() >= 4 && (bytes.starts_with(&[0x49, 0x49, 0x2A, 0x00]) || bytes.starts_with(&[0x4D, 0x4D, 0x00, 0x2A]))
+    {
+        return Some("tif");
+    }
+    // TGA はフッタ "TRUEVISION-XFILE." がある場合のみ確実
+    if bytes.len() >= 18 {
+        let footer = &bytes[bytes.len() - 18..];
+        if footer.windows(16).any(|w| w == b"TRUEVISION-XFILE") {
+            return Some("tga");
+        }
+    }
+    None
+}
+
+/// 拡張子タグ → `image::ImageFormat`。未対応なら None（呼び出し側で guess）。
+pub fn image_format_from_ext(ext: &str) -> Option<image::ImageFormat> {
+    Some(match ext {
+        "png" => image::ImageFormat::Png,
+        "jpg" | "jpeg" => image::ImageFormat::Jpeg,
+        "bmp" => image::ImageFormat::Bmp,
+        "tga" => image::ImageFormat::Tga,
+        "gif" => image::ImageFormat::Gif,
+        "tif" | "tiff" => image::ImageFormat::Tiff,
+        "webp" => image::ImageFormat::WebP,
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
@@ -511,5 +593,20 @@ mod tests {
         assert!((m0[(0, 0)] - 1.0).abs() < 1e-5);
         assert!((m0[(1, 1)] - 1.0).abs() < 1e-5);
         assert!((m0[(2, 2)] - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn gltf_image_ext_from_mime_and_magic() {
+        assert_eq!(gltf_image_ext("image/png", &[]), "png");
+        assert_eq!(gltf_image_ext("image/jpeg", &[]), "jpg");
+        assert_eq!(gltf_image_ext("image/webp", &[]), "webp");
+        assert_eq!(gltf_image_ext("image/bmp", &[]), "bmp");
+        assert_eq!(gltf_image_ext("image/gif", &[]), "gif");
+        assert_eq!(gltf_image_ext("image/tiff", &[]), "tif");
+        assert_eq!(gltf_image_ext("image/x-tga", &[]), "tga");
+        let png = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+        assert_eq!(gltf_image_ext("", &png), "png");
+        assert_eq!(image_format_from_ext("bmp"), Some(image::ImageFormat::Bmp));
+        assert_eq!(image_format_from_ext("bin"), None);
     }
 }

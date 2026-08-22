@@ -13,6 +13,13 @@ use crate::error::{KaguraError, KaguraResult};
 use crate::gltf_common::*;
 use crate::vrm_humanoid::{apply_humanoid_aliases, parse_human_bones};
 use crate::vrm_lookat_meta::parse_look_at;
+use crate::vrm_expression::{effective_expression_weights, meta_from_expr_json, ExpressionMeta};
+use crate::vrm_constraint::{
+    apply_roll, apply_rotation, has_aim, parse_node_constraints, ConstraintKind, NodeConstraint,
+};
+use crate::vrm_first_person::{
+    collect_head_nodes, erase_head_triangles, parse_mesh_annotations, MeshAnnotation,
+};
 use crate::mtoon::{parse_mtoon, parse_vrm0_material_properties, MtoonMaterial};
 
 pub use crate::vrm_lookat_meta::VrmLookAtMeta;
@@ -30,6 +37,9 @@ pub struct VrmPrimitive {
     pub node_idx: usize,
     pub cached_weights: Option<([f32; 256], Arc<wgpu::Buffer>)>,
     pub mtoon: MtoonMaterial,
+    pub fp_flag: MeshAnnotation,
+    pub fp_index_buf: Option<Arc<wgpu::Buffer>>,
+    pub fp_num_indices: u32,
 }
 
 pub struct VrmBone {
@@ -68,10 +78,14 @@ pub struct VrmModel {
     pub active_expressions: HashMap<String, f32>,
     pub expression_targets: HashMap<String, Vec<MorphTarget>>,
     pub blend_index: HashMap<String, usize>,
+    pub expression_meta: HashMap<String, ExpressionMeta>,
     /// VRM humanoid 標準名 → ノード index（hips, head, …）
     pub human_bones: HashMap<String, usize>,
     /// VRM LookAt メタ（VRM1 lookAt / VRM0 firstPerson）
     pub look_at: Option<VrmLookAtMeta>,
+    pub constraints: Vec<NodeConstraint>,
+    /// true のとき firstPerson 注釈に従い頭を消す。
+    pub first_person: bool,
 }
 
 
@@ -81,14 +95,17 @@ pub struct VrmModel {
 fn insert_expression(
     expression_targets: &mut HashMap<String, Vec<MorphTarget>>,
     blend_index: &mut HashMap<String, usize>,
+    expression_meta: &mut HashMap<String, ExpressionMeta>,
     name: String,
     targets: Vec<MorphTarget>,
+    meta: ExpressionMeta,
 ) {
     if targets.is_empty() {
         return;
     }
     let first_index = targets.first().map(|t| t.index);
     expression_targets.insert(name.clone(), targets);
+    expression_meta.insert(name.clone(), meta);
     if let Some(idx) = first_index {
         blend_index.insert(name, idx);
     }
@@ -97,9 +114,14 @@ fn insert_expression(
 fn parse_expressions(
     gltf: &serde_json::Value,
     mesh_to_node: &HashMap<usize, usize>,
-) -> (HashMap<String, Vec<MorphTarget>>, HashMap<String, usize>) {
+) -> (
+    HashMap<String, Vec<MorphTarget>>,
+    HashMap<String, usize>,
+    HashMap<String, ExpressionMeta>,
+) {
     let mut expression_targets = HashMap::new();
     let mut blend_index = HashMap::new();
+    let mut expression_meta = HashMap::new();
 
     if let Some(vrmc_vrm) = gltf.get("extensions").and_then(|e| e.get("VRMC_vrm")) {
         if let Some(expressions_obj) = vrmc_vrm.get("expressions").and_then(|e| e.as_object()) {
@@ -128,8 +150,10 @@ fn parse_expressions(
                         insert_expression(
                             &mut expression_targets,
                             &mut blend_index,
+                            &mut expression_meta,
                             expr_name.to_string(),
                             targets,
+                            meta_from_expr_json(expr_name, expr),
                         );
                     }
                 }
@@ -178,11 +202,18 @@ fn parse_expressions(
                     }
                 }
             }
-            insert_expression(&mut expression_targets, &mut blend_index, key, targets);
+            insert_expression(
+                &mut expression_targets,
+                &mut blend_index,
+                &mut expression_meta,
+                key.clone(),
+                targets,
+                meta_from_expr_json(&key, group),
+            );
         }
     }
 
-    (expression_targets, blend_index)
+    (expression_targets, blend_index, expression_meta)
 }
 
 // ── メインロード関数（公開）───────────────────────────────────
@@ -313,10 +344,16 @@ pub fn load_vrm(
     }
 
     // 表情パース
-    let (expression_targets, blend_index) = parse_expressions(&gltf, &mesh_to_node);
+    let (expression_targets, blend_index, expression_meta) = parse_expressions(&gltf, &mesh_to_node);
 
     // LookAt メタ
     let look_at = parse_look_at(&gltf);
+    let constraints = parse_node_constraints(&gltf);
+    let (fp_by_mesh, fp_by_node) = parse_mesh_annotations(&gltf);
+    let head_nodes = collect_head_nodes(
+        &bones.iter().map(|b| b.parent).collect::<Vec<_>>(),
+        &human_bones,
+    );
 
     // ── プリミティブ構築（キャッシュ付き）────────────────────
     let mut primitives = Vec::new();
@@ -429,6 +466,56 @@ pub fn load_vrm(
             };
 
             let prim_node_idx = mesh_to_node.get(&mi).copied().unwrap_or(0);
+            let fp_flag = fp_by_mesh
+                .get(&mi)
+                .copied()
+                .or_else(|| fp_by_node.get(&prim_node_idx).copied())
+                .unwrap_or(MeshAnnotation::Auto);
+
+            let mut fp_index_buf = None;
+            let mut fp_num_indices = 0u32;
+            if fp_flag == MeshAnnotation::Auto {
+                let weight_rows: Vec<[f32; 4]> = (0..n)
+                    .map(|i| {
+                        weights
+                            .get(i)
+                            .map(|v| {
+                                [
+                                    *v.first().unwrap_or(&1.0),
+                                    *v.get(1).unwrap_or(&0.0),
+                                    *v.get(2).unwrap_or(&0.0),
+                                    *v.get(3).unwrap_or(&0.0),
+                                ]
+                            })
+                            .unwrap_or([1.0, 0.0, 0.0, 0.0])
+                    })
+                    .collect();
+                let joint_rows: Vec<[u32; 4]> = (0..n)
+                    .map(|i| joints.get(i).copied().unwrap_or([0; 4]))
+                    .collect();
+                let skin_joints = skins
+                    .get(skin_idx)
+                    .map(|s| s.joint_node_indices.as_slice())
+                    .unwrap_or(&[]);
+                let fp_idx = erase_head_triangles(
+                    &indices,
+                    &joint_rows,
+                    &weight_rows,
+                    skin_joints,
+                    &head_nodes,
+                    0.2,
+                );
+                fp_num_indices = fp_idx.len() as u32;
+                if !fp_idx.is_empty() {
+                    let fp_ib = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("VRM FP IB"),
+                        contents: bytemuck::cast_slice(&fp_idx),
+                        usage: wgpu::BufferUsages::INDEX,
+                    });
+                    fp_index_buf = Some(Arc::new(fp_ib));
+                }
+            }
+
             primitives.push(VrmPrimitive {
                 texture_id: kagra_tex_id,
                 vertex_buf: Arc::new(vb),
@@ -440,6 +527,9 @@ pub fn load_vrm(
                 node_idx: prim_node_idx,
                 cached_weights: None,
                 mtoon,
+                fp_flag,
+                fp_index_buf,
+                fp_num_indices,
             });
         }
     }
@@ -460,8 +550,11 @@ pub fn load_vrm(
         active_expressions: HashMap::new(),
         expression_targets,
         blend_index,
+        expression_meta,
         human_bones,
         look_at,
+        constraints,
+        first_person: false,
     })
 }
 
@@ -494,6 +587,11 @@ impl VrmModel {
 
     pub fn list_blend_shapes(&self) -> Vec<String> {
         self.expression_targets.keys().cloned().collect()
+    }
+
+    pub fn set_first_person(&mut self, enabled: bool) {
+        self.first_person = enabled;
+        self.dirty = true;
     }
 
     /// humanoid 標準名の一覧（hips, head, …）
@@ -539,7 +637,73 @@ impl VrmModel {
         self.dirty = true;
     }
 
-    pub fn recompute_world(&mut self) {
+    fn apply_local_constraints(&mut self) {
+        let n = self.bones.len();
+        for i in 0..self.constraints.len() {
+            let c = self.constraints[i];
+            if c.dest >= n {
+                continue;
+            }
+            match c.kind {
+                ConstraintKind::Rotation { source, weight } if source < n => {
+                    let src_local = self.bones[source].local_rot;
+                    let src_rest = self.bones[source].bind_rot;
+                    let dst_rest = self.bones[c.dest].bind_rot;
+                    self.bones[c.dest].local_rot =
+                        apply_rotation(src_local, src_rest, dst_rest, weight);
+                }
+                ConstraintKind::Roll {
+                    source,
+                    weight,
+                    axis,
+                } if source < n => {
+                    let src_local = self.bones[source].local_rot;
+                    let src_rest = self.bones[source].bind_rot;
+                    let dst_rest = self.bones[c.dest].bind_rot;
+                    self.bones[c.dest].local_rot =
+                        apply_roll(src_local, src_rest, dst_rest, axis, weight);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn apply_aim_constraints(&mut self) {
+        let n = self.bones.len();
+        for c in &self.constraints {
+            let ConstraintKind::Aim {
+                source,
+                weight,
+                aim_axis,
+            } = c.kind
+            else {
+                continue;
+            };
+            if c.dest >= n || source >= n {
+                continue;
+            }
+            let src_pos = {
+                let w = &self.bones[source].world_mat;
+                [w[(0, 3)], w[(1, 3)], w[(2, 3)]]
+            };
+            let dest_pos = {
+                let w = &self.bones[c.dest].world_mat;
+                [w[(0, 3)], w[(1, 3)], w[(2, 3)]]
+            };
+            let dir = [
+                src_pos[0] - dest_pos[0],
+                src_pos[1] - dest_pos[1],
+                src_pos[2] - dest_pos[2],
+            ];
+            let rest = self.bones[c.dest].bind_rot;
+            let from = crate::vrm_constraint::qrotate(rest, aim_axis);
+            let rot = crate::vrm_constraint::q_from_to(from, dir);
+            let target = crate::vrm_constraint::qmul(rot, rest);
+            self.bones[c.dest].local_rot = crate::vrm_constraint::qslerp(rest, target, weight);
+        }
+    }
+
+    fn fk_world(&mut self) {
         let off = Matrix4::new_translation(&nalgebra::Vector3::new(
             self.root_offset[0], self.root_offset[1], self.root_offset[2],
         ));
@@ -558,17 +722,41 @@ impl VrmModel {
         }
     }
 
+    pub fn recompute_world(&mut self) {
+        self.apply_local_constraints();
+        self.fk_world();
+        if has_aim(&self.constraints) {
+            self.apply_aim_constraints();
+            self.fk_world();
+        }
+    }
+
     pub fn build_draw_commands(&mut self, device: &Device) -> Vec<(Vec<Matrix4<f32>>, crate::renderer::SkinnedMeshCommand)> {
         if self.dirty {
             self.recompute_world();
             self.dirty = false;
         }
 
+        let effective = effective_expression_weights(&self.active_expressions, &self.expression_meta);
         let mut result = Vec::new();
         for prim in &mut self.primitives {
+            match (self.first_person, prim.fp_flag) {
+                (true, MeshAnnotation::ThirdPersonOnly) => continue,
+                (false, MeshAnnotation::FirstPersonOnly) => continue,
+                (true, MeshAnnotation::Auto) if prim.fp_num_indices == 0 => continue,
+                _ => {}
+            }
+            let (index_buffer, num_indices) = if self.first_person
+                && prim.fp_flag == MeshAnnotation::Auto
+                && prim.fp_index_buf.is_some()
+            {
+                (prim.fp_index_buf.as_ref().unwrap().clone(), prim.fp_num_indices)
+            } else {
+                (Arc::clone(&prim.index_buf), prim.num_indices)
+            };
+
             let mut current_weights = [0.0f32; 256];
-            for (expr_name, &user_w) in &self.active_expressions {
-                if expr_name.starts_with("__warned_") { continue; }
+            for (expr_name, &user_w) in &effective {
                 if let Some(targets) = self.expression_targets.get(expr_name) {
                     for target in targets {
                         if target.node_idx == prim.node_idx && target.index < 256 {
@@ -613,11 +801,14 @@ impl VrmModel {
                 crate::renderer::SkinnedMeshCommand {
                     texture_id: prim.texture_id,
                     shade_texture_id: prim.mtoon.shade_texture_id,
+                    matcap_texture_id: prim.mtoon.matcap_texture_id,
+                    normal_texture_id: prim.mtoon.normal_texture_id,
+                    uv_mask_texture_id: prim.mtoon.uv_mask_texture_id,
                     mtoon_buffer: Some(Arc::clone(&prim.mtoon.buffer)),
                     outline_width: prim.mtoon.gpu.params[2],
                     vertex_buffer: Arc::clone(&prim.vertex_buf),
-                    index_buffer: Arc::clone(&prim.index_buf),
-                    num_indices: prim.num_indices,
+                    index_buffer,
+                    num_indices,
                     blend_weights_buffer: blend_weights_buf,
                     morph_delta_buffer: Arc::clone(&prim.morph_delta_buf),
                     num_morph_targets: prim.num_morph_targets,

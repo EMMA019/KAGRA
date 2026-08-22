@@ -344,6 +344,9 @@ impl Rig {
             num_morph_targets:    0,
             mtoon_buffer: None,
             shade_texture_id: None,
+            matcap_texture_id: None,
+            normal_texture_id: None,
+            uv_mask_texture_id: None,
             outline_width: 0.0,
             skin_slot: None,
         })

@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **316**
+エントリ数: **317**
 
 ## Functions
 
@@ -149,6 +149,7 @@
 | `set_vrm_bone_euler` | `set_vrm_bone_euler(vrm_id: int, bone: str, rx=0.0, ry=0.0, rz=0.0)` |
 | `set_vrm_bone_scale` | `set_vrm_bone_scale(vrm_id: int, bone: str, sx: float = 1.0, sy: float = 1.0, sz: float = 1.0)` |
 | `set_vrm_bone_trans` | `set_vrm_bone_trans(vrm_id: int, bone: str, tx: float = 0.0, ty: float = 0.0, tz: float = 0.0)` |
+| `set_vrm_first_person` | `set_vrm_first_person(vrm_id: int, enabled: bool = True)` |
 | `set_vrm_offset` | `set_vrm_offset(vrm_id: int, x: float = 0.0, y: float = 0.0, z: float = 0.0)` |
 | `set_window_position` | `set_window_position(x: int, y: int)` |
 | `set_window_title` | `set_window_title(title: str)` |

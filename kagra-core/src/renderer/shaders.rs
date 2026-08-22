@@ -216,6 +216,8 @@ struct Mtoon {
     rim_color: vec4<f32>,
     params: vec4<f32>,
     outline_color: vec4<f32>,
+    matcap_color: vec4<f32>,
+    uv_anim: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> cam: Camera;
 struct SkinUniforms { bone_matrices: array<mat4x4<f32>, 256>, screen_size: vec4<f32> };
@@ -227,6 +229,9 @@ struct SkinUniforms { bone_matrices: array<mat4x4<f32>, 256>, screen_size: vec4<
 @group(2) @binding(4) var<uniform> num_morph_targets: u32;
 @group(2) @binding(5) var<uniform> mtoon: Mtoon;
 @group(2) @binding(6) var t_shade: texture_2d<f32>;
+@group(2) @binding(7) var t_matcap: texture_2d<f32>;
+@group(2) @binding(8) var t_normal: texture_2d<f32>;
+@group(2) @binding(9) var t_uvmask: texture_2d<f32>;
 @group(3) @binding(0) var<uniform> light_vp: mat4x4<f32>;
 @group(3) @binding(1) var shadow_map: texture_depth_2d;
 @group(3) @binding(2) var shadow_sampler: sampler_comparison;
@@ -296,6 +301,37 @@ fn apply_fog(color: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
     return mix(color, cam.fog_color.rgb, t);
 }
 
+fn animated_uv(uv: vec2<f32>) -> vec2<f32> {
+    let speeds = mtoon.uv_anim.xyz;
+    if length(speeds) < 1e-6 {
+        return uv;
+    }
+    let t = cam.eye.w;
+    let mask = textureSample(t_uvmask, s_diffuse, uv).r;
+    let scrolled = uv + speeds.xy * t;
+    let ang = speeds.z * t;
+    let c = cos(ang);
+    let s = sin(ang);
+    let p = scrolled - vec2<f32>(0.5, 0.5);
+    let rotated = vec2<f32>(p.x * c - p.y * s, p.x * s + p.y * c) + vec2<f32>(0.5, 0.5);
+    return mix(uv, rotated, mask);
+}
+
+fn cotangent_frame(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> mat3x3<f32> {
+    let dp1 = dpdx(p);
+    let dp2 = dpdy(p);
+    let duv1 = dpdx(uv);
+    let duv2 = dpdy(uv);
+    let dp2perp = cross(dp2, n);
+    let dp1perp = cross(n, dp1);
+    var t = dp2perp * duv1.x + dp1perp * duv2.x;
+    var b = dp2perp * duv1.y + dp1perp * duv2.y;
+    let invmax = inverseSqrt(max(dot(t, t), dot(b, b)));
+    t = t * invmax;
+    b = b * invmax;
+    return mat3x3<f32>(t, b, n);
+}
+
 @vertex fn vs_main(in: VI) -> VO {
     var pos = in.position;
     apply_morph(in, &pos);
@@ -325,9 +361,14 @@ fn apply_fog(color: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
 }
 
 @fragment fn fs_main(in: VO) -> @location(0) vec4<f32> {
-    var base = textureSample(t_diffuse, s_diffuse, in.uv);
+    let uv = animated_uv(in.uv);
+    var base = textureSample(t_diffuse, s_diffuse, uv);
     if base.a < 0.05 { discard; }
-    let n = normalize(in.world_nrm);
+    var n = normalize(in.world_nrm);
+    if mtoon.uv_anim.w > 0.5 {
+        let nts = textureSample(t_normal, s_diffuse, uv).xyz * 2.0 - 1.0;
+        n = normalize(cotangent_frame(n, in.world_pos, uv) * nts);
+    }
     let light_dir = normalize(cam.light_dir.xyz);
     let half_lambert = dot(n, light_dir) * 0.5 + 0.5;
     let toony = mtoon.shade_color.a;
@@ -345,7 +386,7 @@ fn apply_fog(color: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
     }
     var shade_rgb: vec3<f32>;
     if mtoon.params.w > 0.5 {
-        let shade_tex = textureSample(t_shade, s_diffuse, in.uv);
+        let shade_tex = textureSample(t_shade, s_diffuse, uv);
         shade_rgb = mtoon.shade_color.rgb * shade_tex.rgb;
     } else {
         shade_rgb = mtoon.shade_color.rgb * base.rgb;
@@ -356,6 +397,12 @@ fn apply_fog(color: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
     let rim_lift = mtoon.params.y;
     let rim = pow(max(1.0 - saturate(dot(n, V)), 0.0), max(rim_power, 1e-3)) * rim_lift;
     col = col + rim * mtoon.rim_color.rgb;
+    if mtoon.matcap_color.a > 0.5 {
+        let vn = normalize((cam.view * vec4<f32>(n, 0.0)).xyz);
+        let muv = vn.xy * 0.5 + vec2<f32>(0.5, 0.5);
+        let mc = textureSample(t_matcap, s_diffuse, muv).rgb * mtoon.matcap_color.rgb;
+        col = col + mc;
+    }
     col = col * shadow_factor(in.world_pos);
     col = apply_fog(col, in.world_pos);
     return vec4<f32>(col, base.a);
