@@ -6,6 +6,7 @@ VRM が無ければサンプルを 1 回だけダウンロードする。
 
 ``--loop`` で曲を繰り返す（OBS でこの窓をキャプチャして配信）。
 ``--mascot`` で最前面の枠なし窓（デスクトップマスコット）。
+``--stage venue.glb`` / ``--backdrop sky.png`` で外部会場。無ければチェッカー床。
 
 Windows ではレンダラが ``run()`` の中でしか起きないので、
 ``avatar()`` / ``font()`` は ``on_ready`` で呼ぶ。
@@ -83,6 +84,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="always-on-top borderless window (desktop mascot)",
     )
+    p.add_argument(
+        "--stage",
+        default="stage",
+        help="glTF hall name/alias/path (default: stage → assets/stage.glb). 'none' = checkerboard",
+    )
+    p.add_argument(
+        "--backdrop",
+        default="",
+        help="PNG/JPEG sky sphere (alias or path). Drawn behind the hall",
+    )
     p.add_argument("--hidden", action="store_true", help="hide the window (agent verify)")
     p.add_argument("--max-frames", type=int, default=0, help="quit after N frames (0 = until ESC)")
     p.add_argument("--screenshot", default="", help="write a PNG at mid-run when --max-frames is set")
@@ -138,7 +149,7 @@ def run_live(args: argparse.Namespace) -> int:
 
     max_frames = args.max_frames if args.max_frames > 0 else None
     shot_at = max(1, (args.max_frames // 2)) if max_frames else None
-    state: dict = {"av": None, "stage": [], "t": 0.0}
+    state: dict = {"av": None, "floor": [], "venue": None, "sky": None, "t": 0.0}
 
     def on_ready():
         try:
@@ -148,7 +159,16 @@ def run_live(args: argparse.Namespace) -> int:
         kagra.set_light_dir(0.35, 1.0, 0.55)
         kagra.set_shadow_enabled(not mascot)
         if not mascot:
-            state["stage"] = _stage_meshes()
+            sky = _resolve_optional(AssetKind.TEXTURE, args.backdrop)
+            hall = _resolve_optional(AssetKind.GLTF, args.stage)
+            if sky:
+                state["sky"] = kagra.stage(sky)
+                print(f"[kagra] backdrop={sky}")
+            if hall:
+                state["venue"] = kagra.stage(hall)
+                print(f"[kagra] stage={hall}")
+            else:
+                state["floor"] = _stage_meshes()
         av = kagra.avatar(str(vrm))
         dance = _resolve_optional(AssetKind.ANY, args.dance)
         if dance:
@@ -208,8 +228,13 @@ def run_live(args: argparse.Namespace) -> int:
             kagra.cls(0, 0, 0)
         else:
             kagra.cls(16, 12, 32)
-        for tex, verts, idx in state["stage"]:
-            kagra.draw_mesh_3d(tex, verts, idx)
+        if state["sky"] is not None:
+            state["sky"].draw()
+        if state["venue"] is not None:
+            state["venue"].draw()
+        else:
+            for tex, verts, idx in state["floor"]:
+                kagra.draw_mesh_3d(tex, verts, idx)
         av = state["av"]
         if av is not None:
             kagra.draw_vrm(av.vrm_id)

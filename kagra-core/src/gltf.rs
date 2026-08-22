@@ -3,7 +3,6 @@
 // 修正: reset_pose 実装、バインド姿勢保持
 
 use std::collections::HashMap;
-use std::fs;
 use std::sync::Arc;
 use nalgebra::Matrix4;
 use wgpu::util::DeviceExt;
@@ -75,33 +74,8 @@ pub fn load_gltf(
     device: &Device,
     tex_id_map: &HashMap<usize, u32>,
 ) -> KaguraResult<GltfModel> {
-    let data = fs::read(path)?;
-    if &data[0..4] != b"glTF" {
-        return Err(KaguraError::Other("Not a glTF file".into()));
-    }
-
-    // GLB から JSON と BIN を抽出
-    let mut offset = 12usize;
-    let mut json_bytes: Option<&[u8]> = None;
-    let mut bin_data: &[u8] = &[];
-    while offset + 8 <= data.len() {
-        let chunk_len = read_u32_le(&data, offset) as usize;
-        let chunk_type = read_u32_le(&data, offset + 4);
-        let chunk_data = &data[offset + 8 .. (offset + 8 + chunk_len).min(data.len())];
-        match chunk_type {
-            0x4E4F534A => json_bytes = Some(chunk_data),
-            0x004E4942 => bin_data = chunk_data,
-            _ => {}
-        }
-        offset += 8 + chunk_len;
-    }
-
-    let json_bytes = json_bytes.ok_or_else(|| KaguraError::VrmParse("JSON chunk not found".to_string()))?;
-    let json_str = std::str::from_utf8(json_bytes)
-        .map_err(|e| KaguraError::VrmParse(format!("UTF-8 error: {}", e)))?
-        .trim_end_matches('\0');
-    let gltf: serde_json::Value = serde_json::from_str(json_str)
-        .map_err(|e| KaguraError::VrmParse(format!("JSON parse: {}", e)))?;
+    let (gltf, bin_owned) = load_gltf_document(path)?;
+    let bin_data: &[u8] = &bin_owned;
 
     let empty_vec = vec![];
     let empty_bv = vec![];

@@ -14,6 +14,10 @@
 - MToon: matcap, UV scroll/rotate (optional mask), and normal maps.
 - glTF textures: BMP / TGA / GIF / TIFF in addition to PNG / JPEG. Unknown
   MIME types fall back to magic-byte sniffing.
+- Drop-in venues: `kagra.stage("venue.glb")` / `kagra.load_gltf` now load
+  JSON `.gltf` plus sibling `.bin` / image URIs (not just GLB). A PNG/JPEG
+  path becomes an inverted sky sphere. `python -m kagra --stage` /
+  `--backdrop` use `assets/stage.glb` when present, else the checkerboard.
 
 ## 0.1.2
 

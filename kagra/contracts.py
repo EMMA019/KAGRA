@@ -25,6 +25,7 @@ class AssetKind(str, Enum):
     FBX = "fbx"
     BVH = "bvh"
     VRMA = "vrma"
+    GLTF = "gltf"
     TEXTURE = "texture"
     FONT = "font"
     AUDIO = "audio"
@@ -68,6 +69,9 @@ _SEARCH_ROOTS = (
     "assets/models",
     "assets/anim",
     "assets/motion",
+    "assets/stage",
+    "assets/env",
+    "assets/scenes",
     "tests/fixtures",
 )
 
@@ -76,6 +80,7 @@ _EXTENSIONS: dict[AssetKind, tuple[str, ...]] = {
     AssetKind.FBX: (".fbx",),
     AssetKind.BVH: (".bvh",),
     AssetKind.VRMA: (".vrma",),
+    AssetKind.GLTF: (".glb", ".gltf"),
     AssetKind.TEXTURE: (".png", ".jpg", ".jpeg", ".webp"),
     AssetKind.FONT: (".ttf", ".ttc", ".otf"),
     AssetKind.AUDIO: (".wav", ".ogg", ".mp3"),
@@ -105,6 +110,13 @@ _ALIASES: dict[str, list[str]] = {
     ],
     "coolheadbangwalk": ["assets/coolHeadbangWalk.vrma"],
     "cute_song_trial": ["assets/cute_song_trial.wav"],
+    "stage": [
+        "assets/stage.glb",
+        "assets/stage.gltf",
+        "assets/env/stage.glb",
+        "assets/scenes/stage.glb",
+        "assets/stage/stage.glb",
+    ],
 }
 
 
@@ -160,7 +172,7 @@ def candidate_paths(
     exts = _exts_for(kind)
     if kind is AssetKind.ANY:
         # dance("wave") が wave.vrma / .bvh / .fbx のどれでも当たるようにする
-        exts = (".vrma", ".bvh", ".fbx", ".glb")
+        exts = (".vrma", ".bvh", ".fbx", ".glb", ".gltf")
     stems = {Path(name).stem, name}
     if not Path(name).suffix:
         stems.add(name)
@@ -251,6 +263,14 @@ def describe_environment(root: Path | None = None) -> dict:
     assets = root / "assets"
     vrms = sorted(str(p.relative_to(root)) for p in assets.rglob("*.vrm")) if assets.exists() else []
     fbxs = sorted(str(p.relative_to(root)) for p in assets.rglob("*.fbx")) if assets.exists() else []
+    gltfs = (
+        sorted(
+            str(p.relative_to(root))
+            for p in list(assets.rglob("*.glb")) + list(assets.rglob("*.gltf"))
+        )
+        if assets.exists()
+        else []
+    )
     fixtures = root / "tests" / "fixtures"
     bvh = (
         sorted(str(p.relative_to(root)) for p in fixtures.rglob("*.bvh"))
@@ -267,6 +287,7 @@ def describe_environment(root: Path | None = None) -> dict:
         "has_assets_dir": assets.is_dir(),
         "vrm_files": vrms[:20],
         "fbx_files": fbxs[:20],
+        "gltf_files": gltfs[:20],
         "bvh_fixtures": bvh[:20],
         "vrma_fixtures": vrma[:20],
         "aliases": {k: v for k, v in _ALIASES.items()},
