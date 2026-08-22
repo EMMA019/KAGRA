@@ -463,11 +463,11 @@ class VrmAvatar:
             }
             self._expr_shapes = [s for s in shapes if s in EXPR]
             self._blink_l = next(
-                (s for s in ["blinkLeft", "Blink_L", "Fcl_EYE_Blink_L",
+                (s for s in ["blinkLeft", "Blink_L", "Fcl_EYE_Blink_L", "blink_l",
                              "blink", "Blink", "Fcl_EYE_Blink"]
                  if s in shapes), None)
             self._blink_r = next(
-                (s for s in ["blinkRight", "Blink_R", "Fcl_EYE_Blink_R"]
+                (s for s in ["blinkRight", "Blink_R", "Fcl_EYE_Blink_R", "blink_r"]
                  if s in shapes), self._blink_l)
         except Exception as e:
             log.warning("[VrmAvatar] blendshape discovery failed: %s", e)
@@ -806,6 +806,64 @@ class VrmAvatar:
             from kagra.bvh_player import load_bvh
             motion = load_bvh(path, extra_map=extra_map)
         self.add_motion(name, motion)
+
+    def dance(self, clip: str = "dance", *, fade: float = 0.3):
+        """踊る（1行 API）。
+
+        クリップが未登録なら contracts のエイリアスから自動で読み込む。
+        既定の "dance" は同梱の tests/fixtures/synthetic_dance.bvh に
+        解決されるため、外部アセットなしで動く。
+
+        Example::
+            av = kagra.avatar("Emma")
+            av.dance()                      # 同梱ダンス
+            av.dance("assets/hiphop.fbx")   # 自分のモーション
+        """
+        if clip not in self._anim._clips:
+            from kagra.contracts import AssetKind, resolve_asset
+            path = resolve_asset(AssetKind.ANY, clip)
+            self.load_motion(clip, str(path))
+        self.play(clip, loop=True, fade=fade)
+
+    def sing(self, audio: str = None, *, volume: float = 1.0) -> float:
+        """歌う（1行 API）。リップシンクを自動で有効化し、音声を再生する。
+
+        Args:
+            audio:  WAV パスまたは contracts エイリアス。省略時は内蔵ソングを
+                    その場で合成して歌う（外部アセット不要）。
+            volume: 再生音量（0.0〜1.0）
+
+        Returns:
+            曲の長さ（秒）
+
+        Example::
+            av.sing()                   # 内蔵ソング
+            av.sing("assets/song.wav")  # 自分の曲（波形から口パク解析）
+        """
+        import kagra
+        from kagra.vrm_lipsync import LipSyncTimeline
+
+        if self._lipsync is None:
+            self.enable_lipsync()
+
+        if audio is None:
+            # 内蔵ソング: 音符列から母音タイムラインが正確に出る
+            from kagra.song import generate_song
+            path, entries, duration = generate_song()
+            timeline = LipSyncTimeline(entries, duration)
+        else:
+            from kagra.contracts import AssetKind, resolve_asset
+            resolved = resolve_asset(AssetKind.AUDIO, audio, required=False)
+            path = str(resolved) if resolved else audio
+            timeline = self._lipsync.analyze_wav(path)
+            duration = timeline.duration
+
+        self._lipsync.play_timeline(timeline)
+        try:
+            kagra.se(path, vol=volume)
+        except Exception as e:
+            log.warning("[VrmAvatar] 音声再生失敗（リップシンクは継続）: %s", e)
+        return duration
 
     @property
     def clip(self) -> str:

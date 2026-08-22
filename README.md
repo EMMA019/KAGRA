@@ -110,6 +110,38 @@ python examples/vrm_orb_rush.py
 
 Collect stars, dodge bombs, with sound / particles / difficulty curve. Needs `assets/Emma.vrm`.
 
+## Sing & Dance in a Few Lines
+
+A VRM avatar that sings and dances — no audio or motion assets required.
+The song is synthesized on the fly (pure Python) and the dance comes from a
+bundled BVH fixture. Lipsync is driven by the exact note/vowel timeline.
+
+```python
+import kagra
+from kagra.camera3d import Camera3D
+
+kagra.init(title="KAGRA — VRM Live")
+cam = Camera3D(); cam.use_orbit(radius=2.6, target=(0, 0.9, 0))
+
+av = kagra.avatar("Emma")   # resolves assets/Emma.vrm
+av.dance()                  # bundled dance motion
+av.sing()                   # synthesized song + lipsync
+
+def update(dt):
+    av.update(dt)
+    cam.orbit_by(dt * 0.25, 0)
+    cam.update(kagra.get_engine())
+
+def draw():
+    kagra.cls(16, 12, 32)
+    kagra.draw_vrm(av.vrm_id)
+
+kagra.run(update, draw)
+```
+
+Full example: `python examples/vrm_sing_dance.py` (place any VRM at `assets/Emma.vrm`).
+Use your own song with `av.sing("assets/song.wav")` — the mouth follows the waveform.
+
 ## Minimal Code Example
 
 ```python

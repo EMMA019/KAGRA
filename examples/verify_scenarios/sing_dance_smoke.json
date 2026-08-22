@@ -1,0 +1,7 @@
+{
+  "name": "sing_dance_smoke",
+  "script": "examples/vrm_sing_dance_smoke.py",
+  "timeout_sec": 120,
+  "expect_files": ["scratch/sing_dance_smoke.png"],
+  "min_file_bytes": 3000
+}
