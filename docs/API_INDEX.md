@@ -126,7 +126,7 @@
 | `resolve_vrm_bone` | `resolve_vrm_bone(vrm_id: int, name: str) -> int \| None` |
 | `rounded_rect` | `rounded_rect(x: float, y: float, w: float, h: float, radius: float = 8, color=(255, 255, 255), alpha: int = 255)` |
 | `rounded_rect_outline` | `rounded_rect_outline(x: float, y: float, w: float, h: float, radius: float = 8, color=(255, 255, 255), width: float = 1, alpha: int = 255)` |
-| `run` | `run(update=None, draw=None, start_scene: Scene = None, max_frames=None, fixed_dt=None)` |
+| `run` | `run(update=None, draw=None, start_scene: Scene = None, max_frames=None, fixed_dt=None, on_ready=None)` |
 | `screen_h` | `screen_h() -> int` |
 | `screen_to_world` | `screen_to_world(sx: float, sy: float) -> tuple` |
 | `screen_to_world` | `screen_to_world(sx: float, sy: float) -> tuple[float, float]` |

@@ -20,8 +20,12 @@ from kagra.camera3d import Camera3D
 
 kagra.init()
 cam = Camera3D(); cam.use_orbit(radius=2.6, target=(0, 0.9, 0))
-av = kagra.avatar(str(kagra.ensure_vrm()))
-av.dance(); av.sing()
+av = None
+
+def ready():
+    global av
+    av = kagra.avatar(str(kagra.ensure_vrm()))
+    av.dance(); av.sing()
 
 def update(dt):
     av.update(dt)
@@ -32,7 +36,7 @@ def draw():
     kagra.cls(16, 12, 32)
     kagra.draw_vrm(av.vrm_id)
 
-kagra.run(update, draw)
+kagra.run(update, draw, on_ready=ready)
 ```
 
 自分のモデルは `kagra.avatar("/path/to/me.vrm")` または `assets/Emma.vrm`。自分の曲は `av.sing("song.wav")`。[VRM Animation](https://vrm.dev/vrma/)（`.vrma`）は `av.dance("wave.vrma")` にそのまま渡せます。どの VRM にも載ります。[text-to-vrma](https://github.com/Kirakun0328/text-to-vrma) で作ったファイルも、指・表情・LookAt ごと再生できます。

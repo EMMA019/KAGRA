@@ -316,7 +316,9 @@ impl Engine {
         {
             let mut rg = lock_py(&self.window.renderer)?;
             let renderer = rg.as_mut().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Renderer not initialized".to_string())
+                pyo3::exceptions::PyRuntimeError::new_err(
+                    "load_vrm: run() 開始前です。Scene.on_enter か run(on_ready=...) 内で呼んでください。".to_string(),
+                )
             })?;
             let mut rc = lock_py(&self.window.texture_refcount)?;
             for (ti, bytes, ext) in tex_data {
@@ -335,7 +337,9 @@ impl Engine {
         let model = {
             let mut rg = lock_py(&self.window.renderer)?;
             let renderer = rg.as_mut().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Renderer not initialized".to_string())
+                pyo3::exceptions::PyRuntimeError::new_err(
+                    "load_vrm: run() 開始前です。Scene.on_enter か run(on_ready=...) 内で呼んでください。".to_string(),
+                )
             })?;
             load_vrm(path, &renderer.device, &tex_id_map)
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?

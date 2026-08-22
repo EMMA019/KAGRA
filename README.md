@@ -20,8 +20,12 @@ from kagra.camera3d import Camera3D
 
 kagra.init()
 cam = Camera3D(); cam.use_orbit(radius=2.6, target=(0, 0.9, 0))
-av = kagra.avatar(str(kagra.ensure_vrm()))
-av.dance(); av.sing()
+av = None
+
+def ready():
+    global av
+    av = kagra.avatar(str(kagra.ensure_vrm()))
+    av.dance(); av.sing()
 
 def update(dt):
     av.update(dt)
@@ -32,7 +36,7 @@ def draw():
     kagra.cls(16, 12, 32)
     kagra.draw_vrm(av.vrm_id)
 
-kagra.run(update, draw)
+kagra.run(update, draw, on_ready=ready)
 ```
 
 Use your own model with `kagra.avatar("/path/to/me.vrm")` or `assets/Emma.vrm`. Use your own song with `av.sing("song.wav")`. Drop a [VRM Animation](https://vrm.dev/en/vrma/) (`.vrma`) on `av.dance("wave.vrma")` — same clip, any VRM. Clips from [text-to-vrma](https://github.com/Kirakun0328/text-to-vrma) work as-is (fingers + expressions + LookAt).

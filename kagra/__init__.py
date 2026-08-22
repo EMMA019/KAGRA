@@ -188,15 +188,21 @@ def init(width=1280, height=720, title="KAGRA Game", fps=60, transparent=False, 
     )
     _update_keys()
 
-def run(update=None, draw=None, start_scene: Scene = None, max_frames=None, fixed_dt=None):
+def run(update=None, draw=None, start_scene: Scene = None, max_frames=None, fixed_dt=None,
+        on_ready=None):
     """ゲームループを開始する（Phase 9 フック付き）。
 
     Args:
         max_frames: 指定フレーム数だけ描画したら自動終了（エージェント検証向け）
         fixed_dt: 壁時計ではなく固定の dt（秒）を update に渡す。決定論的再生用。
                   max_frames / fixed_dt 指定時は FPS 待ちをせず全速で回る。
+        on_ready: レンダラ準備後・最初の update 直前に一度だけ呼ぶ。
+                  ``kagra.avatar()`` / ``kagra.font()`` はここで呼ぶ
+                  （Windows では run() の外だと Renderer not initialized）。
     """
     _check()
+    from kagra.ready import wrap_on_ready
+
     if start_scene is not None:
         original_scene_update = scene._update
 
@@ -207,10 +213,15 @@ def run(update=None, draw=None, start_scene: Scene = None, max_frames=None, fixe
         scene._stack.clear()
         scene._pending.clear()
         scene.change(start_scene)
-        _engine.run(_patched_scene_update, scene._draw, max_frames, fixed_dt)
+        _engine.run(
+            wrap_on_ready(_patched_scene_update, on_ready),
+            scene._draw,
+            max_frames,
+            fixed_dt,
+        )
     else:
-        patched_update = _make_phase9_update_wrapper(update) if update else None
-        _engine.run(patched_update or update, draw, max_frames, fixed_dt)
+        patched_update = _make_phase9_update_wrapper(update) if update else update
+        _engine.run(wrap_on_ready(patched_update, on_ready), draw, max_frames, fixed_dt)
 
 
 def quit():
@@ -1348,7 +1359,8 @@ def avatar(vrm_path: str) -> "VrmAvatar":
     アニメーション・スプリングボーン・ブレンドシェイプを1オブジェクトで管理。
 
     Example::
-        # on_enter で一度だけ
+        # Scene.on_enter か run(on_ready=...) の中で一度だけ
+        # （Windows では kagra.run() の外で呼ぶと Renderer not initialized）
         self.av = kagra.avatar("assets/Emma.vrm")
         self.av.load_motion("dance", "assets/dance.bvh")
 
