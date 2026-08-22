@@ -61,6 +61,8 @@ scratch/
 # 合成フィクスチャは回帰・デモ用に追跡する
 !tests/fixtures/
 !tests/fixtures/**/*.bvh
+!kagra/data/
+!kagra/data/**/*.bvh
 *.vrm
 *.png
 *.jpg

@@ -49,6 +49,7 @@ def test_resolve_missing_raises_structured():
     err = ei.value
     assert err.code == "ASSET_NOT_FOUND"
     assert err.hint
+    assert "python -m kagra.demo" in err.hint
     d = err.to_dict()
     assert "candidates" in d
 
@@ -56,6 +57,12 @@ def test_resolve_missing_raises_structured():
 def test_candidate_paths_ordered():
     cands = candidate_paths(AssetKind.VRM, "Emma", root=ROOT)
     assert any("Emma" in str(c) for c in cands)
+
+
+def test_bundled_dance_bvh_resolves():
+    p = resolve_asset(AssetKind.ANY, "dance", root=ROOT)
+    assert p.is_file()
+    assert p.suffix.lower() == ".bvh"
 
 
 def test_virtual_pad_wasd():

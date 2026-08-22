@@ -94,6 +94,7 @@ _ALIASES: dict[str, list[str]] = {
         "assets/anim/walk.fbx",
     ],
     "dance": [
+        "kagra/data/synthetic_dance.bvh",
         "tests/fixtures/synthetic_dance.bvh",
         "assets/dance.bvh",
         "assets/anim/dance.bvh",
@@ -134,6 +135,14 @@ def candidate_paths(
         out.append(raw)
     else:
         out.append(root / name)
+
+    # pip インストール後も同梱 BVH が解決できるようにする
+    pkg_data = Path(__file__).resolve().parent / "data"
+    if kind in (AssetKind.BVH, AssetKind.ANY):
+        stem = Path(name).stem
+        out.append(pkg_data / f"{stem}.bvh")
+        if stem.lower() == "dance":
+            out.append(pkg_data / "synthetic_dance.bvh")
 
     key = Path(name).stem.lower()
     for alias in _ALIASES.get(key, []):
@@ -190,7 +199,12 @@ def resolve_asset(
         message=f"{kind.value} asset not found: {name}",
         hint=(
             f"Place a {kind.value} file under assets/ (or tests/fixtures/), "
-            f"or pass an absolute path. Aliases: {', '.join(sorted(_ALIASES))}"
+            f"or pass an absolute path. Aliases: {', '.join(sorted(_ALIASES))}. "
+            + (
+                "Or run `python -m kagra.demo` to download a sample VRM and play."
+                if kind is AssetKind.VRM
+                else ""
+            )
         ),
         path=name,
         candidates=tried,

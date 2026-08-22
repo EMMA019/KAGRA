@@ -811,8 +811,8 @@ class VrmAvatar:
         """踊る（1行 API）。
 
         クリップが未登録なら contracts のエイリアスから自動で読み込む。
-        既定の "dance" は同梱の tests/fixtures/synthetic_dance.bvh に
-        解決されるため、外部アセットなしで動く。
+        既定の "dance" はパッケージ同梱の synthetic_dance.bvh に
+        解決されるため、外部アセットなしで動く（pip インストール後も含む）。
 
         Example::
             av = kagra.avatar("Emma")
