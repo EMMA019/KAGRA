@@ -395,8 +395,7 @@ impl Engine {
         let mut rg = lock_py(&self.window.renderer)?;
         if let Some(renderer) = rg.as_mut() {
             for (matrices, cmd) in cmds {
-                renderer.update_skin_uniforms(&matrices);
-                renderer.queue_skinned_mesh_3d(cmd);
+                renderer.queue_skinned_mesh_3d_with_palette(cmd, &matrices);
             }
         }
         Ok(())
@@ -456,6 +455,24 @@ impl Engine {
     /// ボーン名がこの VRM で解決できるか。
     pub fn has_vrm_bone(&self, vrm_id: u32, name: &str) -> bool {
         self.resolve_vrm_bone(vrm_id, name).is_some()
+    }
+
+    /// デバッグ: ボーンの現在のローカル回転 (qx,qy,qz,qw) を返す。
+    pub fn debug_bone_local_rot(&self, vrm_id: u32, name: &str) -> Option<(f32, f32, f32, f32)> {
+        let models = lock_recover(&self.vrm_models);
+        let m = models.get(&vrm_id)?;
+        let idx = m.resolve_bone(name)?;
+        let r = m.bones.get(idx)?.local_rot;
+        Some((r[0], r[1], r[2], r[3]))
+    }
+
+    /// デバッグ: ボーンのワールド行列の平行移動部を返す。
+    pub fn debug_bone_world_pos(&self, vrm_id: u32, name: &str) -> Option<(f32, f32, f32)> {
+        let models = lock_recover(&self.vrm_models);
+        let m = models.get(&vrm_id)?;
+        let idx = m.resolve_bone(name)?;
+        let w = m.bones.get(idx)?.world_mat;
+        Some((w[(0, 3)], w[(1, 3)], w[(2, 3)]))
     }
 
     /// VRM LookAt メタを返す。
@@ -591,6 +608,7 @@ impl Engine {
                     mtoon_buffer: None,
                     shade_texture_id: None,
                     outline_width: 0.0,
+                    skin_slot: None,
                 };
                 self.window.queue_skinned_mesh(cmd);
             }
@@ -846,8 +864,7 @@ impl Engine {
 
         let commands = model.build_draw_commands(&renderer.device);
         for (matrices, cmd) in commands {
-            renderer.update_skin_uniforms(&matrices);
-            renderer.queue_skinned_mesh_3d(cmd);
+            renderer.queue_skinned_mesh_3d_with_palette(cmd, &matrices);
         }
         Ok(())
     }

@@ -56,6 +56,9 @@ pub struct SkinnedMeshCommand {
     pub mtoon_buffer: Option<Arc<wgpu::Buffer>>,
     pub shade_texture_id: Option<u32>,
     pub outline_width: f32,
+    /// ドロー個別のスキンパレットスロット。
+    /// None は共有 skinning_uniform_buffer（レガシー 2D パス）を使う。
+    pub skin_slot: Option<usize>,
 }
 
 #[derive(Clone)]

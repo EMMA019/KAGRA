@@ -225,6 +225,12 @@ _UPPER_BONE_KEYS = (
     "Thumb", "Index", "Middle", "Ring", "Little",
 )
 
+# 指ボーン判定（クリップが指を動かすかどうかの検出に使う）
+_FINGER_KEYS = ("Thumb", "Index", "Middle", "Ring", "Little")
+
+def _is_finger_bone(name: str) -> bool:
+    return any(k in name for k in _FINGER_KEYS)
+
 def _is_upper_bone(name: str) -> bool:
     return any(k in name for k in _UPPER_BONE_KEYS)
 
@@ -819,6 +825,40 @@ class VrmAvatar:
             motion = load_bvh(path, extra_map=extra_map)
         self.add_motion(name, motion)
 
+    def relax_hands(self, curl: float = 0.35, thumb: float = 0.25):
+        """指を軽く曲げて自然な手にする。
+
+        BVH など指データを持たないモーションでは指がバインドポーズ
+        （開いた手）のまま固まって見えるので、その対策。
+        クリップが指ボーンを動かし始めれば上書きされる。
+
+        Args:
+            curl:  人差し指〜小指の曲げ量（ラジアン）
+            thumb: 親指の曲げ量（ラジアン）
+        """
+        # VRM は -Z 向き: 左手指は -X、右手指は +X に伸び、手のひらは下。
+        # 手のひら側へ曲げる = 左 +Z / 右 -Z 回転。
+        for side, sign in (("L", 1.0), ("R", -1.0)):
+            for finger in ("Index", "Middle", "Ring", "Little"):
+                for seg, amount in ((1, curl), (2, curl * 1.3), (3, curl * 0.8)):
+                    name = f"J_Bip_{side}_{finger}{seg}"
+                    delta = _euler_to_quat(0.0, 0.0, sign * amount)
+                    bind_q = self._bind_rots.get(name, _ID)
+                    _send_bone_rot(self.vrm_id, name, _qmul(bind_q, delta))
+            for seg in (1, 2, 3):
+                name = f"J_Bip_{side}_Thumb{seg}"
+                delta = _euler_to_quat(0.0, -sign * thumb, 0.0)
+                bind_q = self._bind_rots.get(name, _ID)
+                _send_bone_rot(self.vrm_id, name, _qmul(bind_q, delta))
+
+    def _clip_has_fingers(self, clip: str) -> bool:
+        frames = self._anim._clips.get(clip) or []
+        return any(
+            _is_finger_bone(n)
+            for frame in frames
+            for n in (frame[0] if isinstance(frame[0], dict) else {})
+        )
+
     def dance(self, clip: str = "dance", *, fade: float = 0.3):
         """踊る（1行 API）。
 
@@ -826,6 +866,7 @@ class VrmAvatar:
         既定の "dance" はパッケージ同梱の synthetic_dance.bvh に
         解決されるため、外部アセットなしで動く（pip インストール後も含む）。
         `.vrma`（VRM Animation）もそのまま渡せる。
+        指データを持たないクリップでは relax_hands() で手を自然に曲げる。
 
         Example::
             av = kagra.avatar("Emma")
@@ -838,6 +879,8 @@ class VrmAvatar:
             path = resolve_asset(AssetKind.ANY, clip)
             self.load_motion(clip, str(path))
         self.play(clip, loop=True, fade=fade)
+        if not self._clip_has_fingers(clip):
+            self.relax_hands()
 
     def sing(self, audio: str = None, *, volume: float = 1.0) -> float:
         """歌う（1行 API）。リップシンクを自動で有効化し、音声を再生する。

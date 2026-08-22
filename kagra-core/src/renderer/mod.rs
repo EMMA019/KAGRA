@@ -80,6 +80,10 @@ pub struct RendererV2 {
     skinning_uniform_bgl: wgpu::BindGroupLayout,
     skinning_uniform_buffer: wgpu::Buffer,
     skinning_bind_group: wgpu::BindGroup,
+    /// ドロー個別スキンパレット (buffer, bind_group) のプール
+    skin_palette_pool: Vec<(wgpu::Buffer, wgpu::BindGroup)>,
+    /// このフレームで使用済みのパレット数
+    skin_palette_used: usize,
 
     depth_texture: wgpu::Texture,
     depth_view: wgpu::TextureView,
@@ -839,6 +843,8 @@ impl RendererV2 {
             skinning_uniform_bgl,
             skinning_uniform_buffer,
             skinning_bind_group,
+            skin_palette_pool: Vec::new(),
+            skin_palette_used: 0,
             depth_texture,
             depth_view,
             pipeline_3d,
@@ -1061,6 +1067,68 @@ impl RendererV2 {
     pub fn queue_sprite(&mut self, cmd: SpriteCommand) { self.queue_command(DrawCommand::Sprite(cmd)); }
     pub fn queue_text(&mut self, cmd: TextCommand) { self.queue_command(DrawCommand::Text(cmd)); }
     pub fn queue_skinned_mesh_3d(&mut self, cmd: SkinnedMeshCommand) { self.mesh_3d_skinned_queue.push(cmd); }
+
+    /// スキンパレット付きで 3D スキンメッシュをキューする。
+    ///
+    /// `update_skin_uniforms` は共有バッファ 1 本への `write_buffer` なので、
+    /// 1 フレームに複数スキンを描くと最後の書き込みが全ドローに適用されてしまう
+    /// （腕・指など「最後のパレットに居ないジョイント」がバインドポーズで固まる）。
+    /// ここではドローごとに専用バッファ／バインドグループを割り当てる。
+    pub fn queue_skinned_mesh_3d_with_palette(
+        &mut self,
+        mut cmd: SkinnedMeshCommand,
+        matrices: &[nalgebra::Matrix4<f32>],
+    ) {
+        cmd.skin_slot = Some(self.alloc_skin_palette(matrices));
+        self.mesh_3d_skinned_queue.push(cmd);
+    }
+
+    /// パレットプールの次のスロットに行列を書き込み、スロット番号を返す。
+    /// プールはフレーム間で再利用され、`render()` 完了時に使用数がリセットされる。
+    fn alloc_skin_palette(&mut self, matrices: &[nalgebra::Matrix4<f32>]) -> usize {
+        if self.skin_palette_used == self.skin_palette_pool.len() {
+            let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Skin Palette Buffer"),
+                size: 256 * 64 + 16,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Skin Palette BG"),
+                layout: &self.skinning_uniform_bgl,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }],
+            });
+            self.skin_palette_pool.push((buffer, bind_group));
+        }
+        let slot = self.skin_palette_used;
+        self.skin_palette_used += 1;
+
+        let max = matrices.len().min(256);
+        let data = &mut self.skin_uniform_scratch;
+        data.fill(0.0);
+        for (i, m) in matrices[..max].iter().enumerate() {
+            data[i * 16..(i + 1) * 16].copy_from_slice(m.as_slice());
+        }
+        data[256 * 16] = self.screen_width as f32;
+        data[256 * 16 + 1] = self.screen_height as f32;
+        self.queue.write_buffer(
+            &self.skin_palette_pool[slot].0,
+            0,
+            bytemuck::cast_slice(data.as_slice()),
+        );
+        slot
+    }
+
+    /// コマンドのスロットに対応するバインドグループ（未設定なら共有 BG）。
+    fn skin_bind_group_for(&self, cmd: &SkinnedMeshCommand) -> &wgpu::BindGroup {
+        cmd.skin_slot
+            .and_then(|s| self.skin_palette_pool.get(s))
+            .map(|(_, bg)| bg)
+            .unwrap_or(&self.skinning_bind_group)
+    }
 
     pub fn create_instance_batch(&mut self, texture_id: u32, capacity: u32, sprite_w: f32, sprite_h: f32) -> u32 {
         if self.instance_renderer.is_none() {
@@ -1360,6 +1428,7 @@ impl RendererV2 {
         output.present();
         self.staging_belt.recall();
         self.dynamic_offset = 0;
+        self.skin_palette_used = 0;
 
         Ok(())
     }
@@ -1850,13 +1919,13 @@ impl RendererV2 {
             });
             rp.set_pipeline(&self.skinning_3d_shadow_pipeline);
             rp.set_bind_group(0, &self.camera_3d_bg, &[]);
-            rp.set_bind_group(1, &self.skinning_bind_group, &[]);
             rp.set_bind_group(3, &self.shadow_write_bg, &[]);
             for (i, cmd) in cmds.iter().enumerate() {
                 let morph_bg = match morph_bgs.get(i).and_then(|b| b.as_ref()) {
                     Some(bg) => bg,
                     None => continue,
                 };
+                rp.set_bind_group(1, self.skin_bind_group_for(cmd), &[]);
                 rp.set_bind_group(2, morph_bg, &[]);
                 rp.set_vertex_buffer(0, cmd.vertex_buffer.slice(..));
                 rp.set_index_buffer(cmd.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
@@ -1883,13 +1952,13 @@ impl RendererV2 {
             });
             rp.set_pipeline(&self.skinning_3d_pipeline);
             rp.set_bind_group(0, &self.camera_3d_bg, &[]);
-            rp.set_bind_group(1, &self.skinning_bind_group, &[]);
             rp.set_bind_group(3, &self.shadow_bg, &[]);
             for (i, cmd) in cmds.iter().enumerate() {
                 let morph_bg = match morph_bgs.get(i).and_then(|b| b.as_ref()) {
                     Some(bg) => bg,
                     None => continue,
                 };
+                rp.set_bind_group(1, self.skin_bind_group_for(cmd), &[]);
                 rp.set_bind_group(2, morph_bg, &[]);
                 rp.set_vertex_buffer(0, cmd.vertex_buffer.slice(..));
                 rp.set_index_buffer(cmd.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
@@ -1907,7 +1976,6 @@ impl RendererV2 {
             });
             rp.set_pipeline(&self.skinning_3d_outline_pipeline);
             rp.set_bind_group(0, &self.camera_3d_bg, &[]);
-            rp.set_bind_group(1, &self.skinning_bind_group, &[]);
             rp.set_bind_group(3, &self.shadow_bg, &[]);
             for (i, cmd) in cmds.iter().enumerate() {
                 if cmd.outline_width <= 1e-5 {
@@ -1917,6 +1985,7 @@ impl RendererV2 {
                     Some(bg) => bg,
                     None => continue,
                 };
+                rp.set_bind_group(1, self.skin_bind_group_for(cmd), &[]);
                 rp.set_bind_group(2, morph_bg, &[]);
                 rp.set_vertex_buffer(0, cmd.vertex_buffer.slice(..));
                 rp.set_index_buffer(cmd.index_buffer.slice(..), wgpu::IndexFormat::Uint32);

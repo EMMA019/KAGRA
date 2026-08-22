@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Renderer: each skinned draw now gets its own bone-matrix palette. Multi-skin
+  VRMs (e.g. the Alicia Solid sample, 12 skins) rendered every mesh with the
+  last-uploaded palette, so arms, hands, fingers, and legs stayed frozen in
+  bind pose no matter what the animation sent. Single-skin VRoid exports were
+  unaffected, which is why it went unnoticed.
+- The bundled demo dance is now full-body: alternating arm swings (front and
+  side), wrist flicks, head bob and tilt, hip sway, and small steps in place.
+  Previously only the spine and both forearms moved.
+- `VrmAvatar.relax_hands()` gently curls the fingers. `dance()` applies it
+  automatically when a clip has no finger data, so hands no longer look like
+  splayed bind-pose paddles during BVH dances.
+
 ## 0.1.1
 
 - Windows first-run: `python -m kagra` loaded the VRM before `run()`, so
