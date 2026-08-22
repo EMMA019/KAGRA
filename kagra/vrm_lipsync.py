@@ -43,12 +43,13 @@ if TYPE_CHECKING:
     from kagra.vrm_avatar import VrmAvatar
 
 # 母音ブレンドシェイプ名（VRM 0.x / 1.0 両対応）
+# 末尾の小文字単体は旧モデル（AliciaSolid 等）のフォールバック
 _VOWEL_SHAPES = {
-    "aa": ["aa", "Fcl_MTH_A", "A", "MTH_A"],
-    "ih": ["ih", "Fcl_MTH_I", "I", "MTH_I"],
-    "ou": ["ou", "Fcl_MTH_U", "U", "MTH_U"],
-    "ee": ["ee", "Fcl_MTH_E", "E", "MTH_E"],
-    "oh": ["oh", "Fcl_MTH_O", "O", "MTH_O"],
+    "aa": ["aa", "Fcl_MTH_A", "A", "MTH_A", "a"],
+    "ih": ["ih", "Fcl_MTH_I", "I", "MTH_I", "i"],
+    "ou": ["ou", "Fcl_MTH_U", "U", "MTH_U", "u"],
+    "ee": ["ee", "Fcl_MTH_E", "E", "MTH_E", "e"],
+    "oh": ["oh", "Fcl_MTH_O", "O", "MTH_O", "o"],
 }
 
 # 日本語テキスト → 母音マッピング
