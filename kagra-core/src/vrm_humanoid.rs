@@ -31,7 +31,8 @@ pub const STANDARD_TO_JBIP: &[(&str, &str)] = &[
     ("rightLowerLeg", "J_Bip_R_LowerLeg"),
     ("rightFoot", "J_Bip_R_Foot"),
     ("rightToes", "J_Bip_R_ToeBase"),
-    // 指（よく使うものだけ）
+    // 指。VRM 1.0 親指は Metacarpal/Proximal/Distal、0.x は Proximal/Intermediate/Distal
+    ("leftThumbMetacarpal", "J_Bip_L_Thumb1"),
     ("leftThumbProximal", "J_Bip_L_Thumb1"),
     ("leftThumbIntermediate", "J_Bip_L_Thumb2"),
     ("leftThumbDistal", "J_Bip_L_Thumb3"),
@@ -47,6 +48,7 @@ pub const STANDARD_TO_JBIP: &[(&str, &str)] = &[
     ("leftLittleProximal", "J_Bip_L_Little1"),
     ("leftLittleIntermediate", "J_Bip_L_Little2"),
     ("leftLittleDistal", "J_Bip_L_Little3"),
+    ("rightThumbMetacarpal", "J_Bip_R_Thumb1"),
     ("rightThumbProximal", "J_Bip_R_Thumb1"),
     ("rightThumbIntermediate", "J_Bip_R_Thumb2"),
     ("rightThumbDistal", "J_Bip_R_Thumb3"),
