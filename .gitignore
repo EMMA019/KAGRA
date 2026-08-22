@@ -69,6 +69,10 @@ scratch/
 # ゴールデン画像は回帰テストの基準として追跡する
 !tests/goldens/
 !tests/goldens/**/*.png
+# README のライブデモ映像
+!docs/media/
+!docs/media/**/*.png
+!docs/media/**/*.mp4
 *.wav
 *.ogg
 *.mp3
