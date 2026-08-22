@@ -1,9 +1,11 @@
 # PyPI へホイールを公開する。
 #
-# 起動: git tag v0.1.0 && git push origin v0.1.0
+# 起動: git tag v0.1.1 && git push origin v0.1.1
 # 事前準備: docs/PUBLISHING.md（Trusted Publisher を PyPI に登録）
 #
-# 既存 CI と同じ 3 OS × 3 Python。manylinux コンテナでは ALSA 開発ヘッダが要る。
+# Linux は manylinux コンテナ内でビルドする。ホストの setup-python は
+# コンテナから見えないので、-i 3.10 のようにバージョンを明示する。
+# （v0.1.0 は `python3` 解決に失敗して Linux だけ落ちた）
 
 name: Publish
 
@@ -34,45 +36,52 @@ jobs:
           name: wheels-sdist
           path: dist/*
 
+  wheels-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: x86_64
+          manylinux: "2_28"
+          command: build
+          args: --release --out dist -i 3.10 -i 3.11 -i 3.12
+          before-script-linux: |
+            if command -v dnf >/dev/null; then
+              dnf install -y alsa-lib-devel pkgconfig
+            else
+              yum install -y alsa-lib-devel pkgconfig
+            fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux
+          path: dist/*
+
   wheels:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-13, macos-14]
+        os: [windows-latest, macos-13, macos-14]
         python-version: ["3.10", "3.11", "3.12"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: dtolnay/rust-toolchain@stable
-
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Install ALSA headers (Linux host; manylinux uses before-script)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
-
       - uses: PyO3/maturin-action@v1
         with:
           command: build
-          args: --release --out dist
-          manylinux: auto
-          before-script-linux: |
-            if command -v yum >/dev/null; then
-              yum install -y alsa-lib-devel pkgconfig
-            else
-              apt-get update && apt-get install -y libasound2-dev pkg-config
-            fi
-
+          args: --release --out dist -i python${{ matrix.python-version }}
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.os }}-${{ matrix.python-version }}
           path: dist/*
 
   publish:
-    needs: [sdist, wheels]
+    needs: [sdist, wheels-linux, wheels]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     environment: pypi
