@@ -4,15 +4,7 @@ Python 数行で、VRM が歌って踊る。
 
 [日本語 README](README.ja.md)
 
-<p align="center">
-  <a href="docs/media/kagra-live-demo.mp4">
-    <img src="docs/media/kagra-live-demo.png" width="720" alt="python -m kagra live demo">
-  </a>
-  <br>
-  <a href="docs/media/kagra-live-demo.mp4">Watch the live demo</a> — <code>python -m kagra</code>
-</p>
-
-<img width="1276" height="744" alt="KAGRA scene" src="https://github.com/user-attachments/assets/4d9f3564-b926-492a-abb8-5000581cc1ed" />
+https://github.com/user-attachments/assets/39eaa077-498b-43d0-8a23-96adf043ee77
 
 ```bash
 pip install kagra
