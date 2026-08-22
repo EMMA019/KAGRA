@@ -18,8 +18,7 @@ from kagra.vrma_player import write_synthetic_vrma
 kagra.init(title="KAGRA — VRMA", width=1280, height=720)
 cam = Camera3D()
 cam.use_orbit(radius=2.6, phi=0.1, target=(0, 0.9, 0))
-
-av = kagra.avatar(str(kagra.ensure_vrm()))
+av = None
 
 src = sys.argv[1] if len(sys.argv) > 1 else None
 if src is None:
@@ -27,8 +26,13 @@ if src is None:
     write_synthetic_vrma(src, frames=24, duration=1.2)
     print(f"[example] no .vrma given — wrote {src}")
 
-av.dance(src)
-av.sing()
+
+def ready():
+    global av
+    av = kagra.avatar(str(kagra.ensure_vrm()))
+    av.dance(src)
+    av.sing()
+
 
 def update(dt):
     av.update(dt)
@@ -41,4 +45,4 @@ def draw():
     kagra.draw_vrm(av.vrm_id)
 
 
-kagra.run(update, draw)
+kagra.run(update, draw, on_ready=ready)

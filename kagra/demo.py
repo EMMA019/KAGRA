@@ -2,6 +2,9 @@
 
 外部アセットなしで「VRM が歌って踊る」を 60 秒以内に見せる。
 VRM が無ければサンプルを 1 回だけダウンロードする。
+
+Windows ではレンダラが ``run()`` の中でしか起きないので、
+``avatar()`` / ``font()`` は ``on_ready`` で呼ぶ。
 """
 from __future__ import annotations
 
@@ -38,22 +41,28 @@ def run_live(args: argparse.Namespace) -> int:
     print(f"[kagra] {SAMPLE_LICENSE}")
 
     kagra.init(title="KAGRA — VRM Live", width=args.width, height=args.height)
-    try:
-        kagra.font()
-    except RuntimeError as e:
-        print(f"[kagra] font skipped: {e}", file=sys.stderr)
-
     cam = Camera3D(args.width, args.height)
     cam.use_orbit(radius=2.6, phi=0.1, target=(0.0, 0.9, 0.0))
 
-    av = kagra.avatar(str(vrm))
-    av.dance()
-    duration = av.sing()
-    print(f"[kagra] song {duration:.1f}s — ESC to quit")
+    state: dict = {"av": None}
+
+    def on_ready():
+        try:
+            kagra.font()
+        except RuntimeError as e:
+            print(f"[kagra] font skipped: {e}", file=sys.stderr)
+        av = kagra.avatar(str(vrm))
+        av.dance()
+        duration = av.sing()
+        print(f"[kagra] song {duration:.1f}s — ESC to quit")
+        state["av"] = av
 
     def update(dt: float):
         if kagra.pressed("ESCAPE"):
             kagra.quit()
+            return
+        av = state["av"]
+        if av is None:
             return
         av.update(dt)
         if not args.no_orbit:
@@ -62,11 +71,13 @@ def run_live(args: argparse.Namespace) -> int:
 
     def draw():
         kagra.cls(16, 12, 32)
-        kagra.draw_vrm(av.vrm_id)
+        av = state["av"]
+        if av is not None:
+            kagra.draw_vrm(av.vrm_id)
         kagra.text("KAGRA  python -m kagra", 16, 16, 22, (255, 220, 120))
         kagra.text("ESC quit", 16, args.height - 36, 16, (180, 180, 200))
 
-    kagra.run(update, draw)
+    kagra.run(update, draw, on_ready=on_ready)
     return 0
 
 

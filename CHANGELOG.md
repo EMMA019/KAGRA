@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.1
+
+- Windows first-run: `python -m kagra` loaded the VRM before `run()`, so
+  `Renderer not initialized`. `kagra.run(..., on_ready=)` now fires after the
+  GPU exists; the demo / README / examples load `avatar()` there.
 - `kagra.load_vrma()` / `avatar.load_motion(..., "*.vrma")` / `av.dance("wave.vrma")`
   — VRM Animation (`VRMC_vrm_animation` 1.0). Humanoid retarget (including
   fingers), LookAt yaw/pitch → eye blendshapes, and preset expressions.
