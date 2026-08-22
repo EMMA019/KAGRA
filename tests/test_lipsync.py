@@ -37,6 +37,26 @@ def test_sample_timeline_crossfades():
     assert abs(mid["ih"] - 0.5) < 1e-6
 
 
+def test_timeline_from_audio_query_uses_mora_lengths():
+    q = {
+        "prePhonemeLength": 0.1,
+        "postPhonemeLength": 0.1,
+        "speedScale": 1.0,
+        "accent_phrases": [{
+            "moras": [
+                {"vowel": "a", "vowel_length": 0.2, "consonant": "k", "consonant_length": 0.05},
+                {"vowel": "o", "vowel_length": 0.15, "consonant": None, "consonant_length": 0.0},
+            ],
+            "pause_mora": {"vowel": "pau", "vowel_length": 0.08},
+        }],
+    }
+    tl = ls.timeline_from_audio_query(q, max_open=1.0)
+    vowels = [e[1] for e in tl.entries if e[2] > 0.5]
+    assert "aa" in vowels
+    assert "oh" in vowels
+    assert tl.duration >= 0.1 + 0.05 + 0.2 + 0.15 + 0.08 + 0.1 - 1e-6
+
+
 def test_sample_timeline_past_end_is_none():
     entries = [(0.0, "aa", 0.8)]
     assert ls.sample_timeline(entries, 1.0) is None

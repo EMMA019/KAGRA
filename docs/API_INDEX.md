@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **325**
+エントリ数: **332**
 
 ## Functions
 
@@ -125,6 +125,7 @@
 | `released` | `released(name: str) -> bool` |
 | `reset_blend_shapes` | `reset_blend_shapes(vrm_id: int)` |
 | `reset_vrm_pose` | `reset_vrm_pose(vrm_id: int)` |
+| `reset_vrm_spring` | `reset_vrm_spring(vrm_id: int)` |
 | `resolve_vrm_bone` | `resolve_vrm_bone(vrm_id: int, name: str) -> int \| None` |
 | `rounded_rect` | `rounded_rect(x: float, y: float, w: float, h: float, radius: float = 8, color=(255, 255, 255), alpha: int = 255)` |
 | `rounded_rect_outline` | `rounded_rect_outline(x: float, y: float, w: float, h: float, radius: float = 8, color=(255, 255, 255), width: float = 1, alpha: int = 255)` |
@@ -153,11 +154,15 @@
 | `set_vrm_bone_trans` | `set_vrm_bone_trans(vrm_id: int, bone: str, tx: float = 0.0, ty: float = 0.0, tz: float = 0.0)` |
 | `set_vrm_first_person` | `set_vrm_first_person(vrm_id: int, enabled: bool = True)` |
 | `set_vrm_offset` | `set_vrm_offset(vrm_id: int, x: float = 0.0, y: float = 0.0, z: float = 0.0)` |
+| `set_vrm_pose` | `set_vrm_pose(vrm_id: int, bones: list)` |
+| `set_vrm_spring_enabled` | `set_vrm_spring_enabled(vrm_id: int, enabled: bool = True)` |
+| `set_vrm_spring_wind` | `set_vrm_spring_wind(vrm_id: int, x: float = 0.0, y: float = 0.0, z: float = 0.0)` |
 | `set_window_position` | `set_window_position(x: int, y: int)` |
 | `set_window_title` | `set_window_title(title: str)` |
 | `sign` | `sign(value: float) -> int` |
 | `spring_bone` | `spring_bone(vrm_path: str, vrm_id: int) -> 'SpringBone'` |
 | `stage` | `stage(path: str = 'stage', *, radius: float = 12.0) -> 'Stage'` |
+| `step_vrm_spring` | `step_vrm_spring(vrm_id: int, dt: float)` |
 | `stop_bgm` | `stop_bgm(fade: float = 0.0)` |
 | `text` | `text(s, x: float, y: float, size: int = 24, color=(255, 255, 255), font: int = None, alpha: int = 255)` |
 | `texture_size` | `texture_size(tid: int) -> tuple` |
@@ -166,6 +171,7 @@
 | `update_boids` | `update_boids(boid_id: int, dt: float)` |
 | `update_boids_gpu` | `update_boids_gpu(boid_id: int, dt: float)` |
 | `update_camera_3d` | `update_camera_3d(view: list, proj: list)` |
+| `vrm_spring_info` | `vrm_spring_info(vrm_id: int) -> tuple` |
 | `world_to_screen` | `world_to_screen(wx: float, wy: float) -> tuple` |
 | `world_to_screen` | `world_to_screen(wx: float, wy: float) -> tuple[float, float]` |
 
@@ -321,6 +327,7 @@
 | `TileMap` | `class TileMap  (from kagra.tilemap)` (class) |
 | `TileSet` | `class TileSet  (from kagra.tilemap)` (class) |
 | `Timeline` | `class Timeline  (from kagra.timeline)` (class) |
+| `timeline_from_audio_query` | `export timeline_from_audio_query  (from kagra.vrm_lipsync)` (export) |
 | `TimelinePlayer` | `class TimelinePlayer  (from kagra.timeline)` (class) |
 | `TopDownMovement` | `class TopDownMovement  (from kagra.components)` (class) |
 | `TopDownPhysicsSystem` | `class TopDownPhysicsSystem  (from kagra.physics)` (class) |

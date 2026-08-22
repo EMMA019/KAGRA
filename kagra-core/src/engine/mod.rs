@@ -437,6 +437,51 @@ impl Engine {
         }
     }
 
+    /// SpringBone のチェーン / ジョイント / コライダー数。未ロードなら (0,0,0)。
+    pub fn vrm_spring_info(&self, vrm_id: u32) -> (u32, u32, u32) {
+        lock_recover(&self.vrm_models)
+            .get(&vrm_id)
+            .map(|m| {
+                let (c, j, col) = m.spring.counts();
+                (c as u32, j as u32, col as u32)
+            })
+            .unwrap_or((0, 0, 0))
+    }
+
+    pub fn step_vrm_spring(&self, vrm_id: u32, dt: f32) {
+        if let Some(model) = lock_recover(&self.vrm_models).get_mut(&vrm_id) {
+            model.step_spring(dt);
+        }
+    }
+
+    pub fn reset_vrm_spring(&self, vrm_id: u32) {
+        if let Some(model) = lock_recover(&self.vrm_models).get_mut(&vrm_id) {
+            model.reset_spring();
+        }
+    }
+
+    #[pyo3(signature = (vrm_id, x=0.0, y=0.0, z=0.0))]
+    pub fn set_vrm_spring_wind(&self, vrm_id: u32, x: f32, y: f32, z: f32) {
+        if let Some(model) = lock_recover(&self.vrm_models).get_mut(&vrm_id) {
+            model.set_spring_wind(x, y, z);
+        }
+    }
+
+    pub fn set_vrm_spring_enabled(&self, vrm_id: u32, enabled: bool) {
+        if let Some(model) = lock_recover(&self.vrm_models).get_mut(&vrm_id) {
+            model.set_spring_enabled(enabled);
+        }
+    }
+
+    /// ライブモーキャプ用。`(name, qx, qy, qz, qw)` をまとめて書く。
+    pub fn set_vrm_pose(&self, vrm_id: u32, bones: Vec<(String, f32, f32, f32, f32)>) {
+        if let Some(model) = lock_recover(&self.vrm_models).get_mut(&vrm_id) {
+            for (name, qx, qy, qz, qw) in bones {
+                model.set_bone_rot_quat(&name, qx, qy, qz, qw);
+            }
+        }
+    }
+
     /// VRM humanoid 標準ボーン名の一覧（hips, head, leftUpperArm, …）
     pub fn list_human_bones(&self, vrm_id: u32) -> Vec<String> {
         lock_recover(&self.vrm_models)

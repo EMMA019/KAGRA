@@ -194,26 +194,65 @@ class SpringBone:
         self.vrm_id  = vrm_id
         self.chains: list[_Chain] = []
         self.colliders: list[_Collider] = []
-        self.enabled: bool = True
+        self._enabled: bool = True
         self._wind   = [0.,0.,0.]
+        self._native = False
         self._nodes: list[dict] = []       # gltf ノード (bind pose)
         self._wmats: list[list] = []       # ポーズ適用後のワールド行列
         self._topo:  list[int]  = []
         self._initialized = False          # 初回アニメ更新後まで rest の確定を遅らせる
+        try:
+            import kagra
+            chains, joints, cols = kagra.vrm_spring_info(vrm_id)
+            if chains > 0:
+                self._native = True
+                self.chains = [None] * int(chains)
+                self.colliders = [None] * int(cols)
+                print(f"[SpringBone] rust {chains} chains / {joints} joints / {cols} colliders")
+                return
+        except Exception:
+            pass
         self._parse(vrm_path)
         self._rebuild({})                  # bind pose でまずワールド計算
         self._compute_rest_dirs()          # bind ポーズの親→子方向を保存
         self._init_joints_to_rest()
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    @enabled.setter
+    def enabled(self, value: bool):
+        self._enabled = bool(value)
+        if self._native:
+            try:
+                import kagra
+                kagra.set_vrm_spring_enabled(self.vrm_id, self._enabled)
+            except Exception:
+                pass
  
     # ── 公開 API ──────────────────────────────────────────────
  
     def set_wind(self, strength: float = 0.0, direction: tuple = (1.,0.,0.)):
         self._wind = _sc(_norm(list(direction)), strength)
+        if self._native:
+            try:
+                import kagra
+                kagra.set_vrm_spring_wind(self.vrm_id, *self._wind)
+            except Exception:
+                pass
  
     def reset(self):
         """全ジョイントを現在のポーズ位置にリセット（速度ゼロ）。
         クリップ切替時にこれを呼ぶと揺れ暴走を防げる。
         """
+        if self._native:
+            try:
+                import kagra
+                kagra.reset_vrm_spring(self.vrm_id)
+            except Exception:
+                pass
+            return
         # 現在の _wmats を使ってジョイント位置を強制同期
         for chain in self.chains:
             for j in chain.joints:
@@ -231,6 +270,13 @@ class SpringBone:
         """
         if not self.enabled: return
         if not self.chains:  return
+        if self._native:
+            try:
+                import kagra
+                kagra.step_vrm_spring(self.vrm_id, min(dt, 1.0 / 30.0))
+            except Exception:
+                pass
+            return
         dt = min(dt, 1.0/30.0)   # フレーム落ち時の暴走防止
  
         # ポーズ後のワールド行列を計算
