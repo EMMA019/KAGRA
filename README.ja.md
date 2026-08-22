@@ -55,6 +55,13 @@ pip install kagra
 python -m kagra
 ```
 
+リポジトリのフォルダ（中に `kagra\` がある場所）で `python -m kagra` すると、pip の版ではなくその場のソースが優先されます。`No module named kagra.__main__` と出たら、別のディレクトリから実行してください。
+
+```powershell
+cd $env:TEMP
+python -m kagra
+```
+
 ホイールは Windows と Linux のみ（Mac は検証できるまでソースビルド）。PyPI にまだ上がっていない場合は clone して `maturin develop`（Rust が必要）。手順は [docs/PUBLISHING.md](docs/PUBLISHING.md)。
 
 ## 安定コア
