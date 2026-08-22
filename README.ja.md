@@ -4,7 +4,7 @@ Python 数行で、VRM が歌って踊る。
 
 [English README](README.md)
 
-https://github.com/user-attachments/assets/39eaa077-498b-43d0-8a23-96adf043ee77
+[![python -m kagra](docs/media/kagra-live-demo.png)](docs/media/kagra-live-demo.mp4)
 
 ```bash
 pip install kagra

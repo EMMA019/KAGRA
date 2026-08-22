@@ -17,6 +17,42 @@ DEFAULT_DANCE = "Samba Dancing"
 DEFAULT_SONG = "cute_song_trial"
 
 
+def _stage_meshes():
+    """床＋スポット。紫の虚空に立たせない。"""
+    import math
+    from kagra.vrm_stage import make_png
+
+    def floor_px(x, y):
+        stripe = (x // 16 + y // 16) % 2
+        if stripe == 0:
+            return (36, 28, 52, 255)
+        return (28, 22, 42, 255)
+
+    def spot_px(x, y):
+        d = math.sqrt((x - 32) ** 2 + (y - 32) ** 2) / 32.0
+        a = max(0, int((1.0 - d) * 160))
+        return (255, 230, 180, a)
+
+    floor_tex = make_png(128, 128, floor_px)
+    spot_tex = make_png(64, 64, spot_px)
+    meshes = []
+    for tex, radius, y in ((floor_tex, 2.4, 0.0), (spot_tex, 0.7, 0.012)):
+        segs = 32
+        verts, idx = [], []
+        for i in range(segs):
+            a0 = math.radians(i * 360 / segs)
+            a1 = math.radians((i + 1) * 360 / segs)
+            base = len(verts)
+            verts += [
+                [0.0, y, 0.0, 0.0, 1.0, 0.0, 0.5, 0.5],
+                [math.cos(a0) * radius, y, math.sin(a0) * radius, 0.0, 1.0, 0.0, 0.5 + math.cos(a0) * 0.5, 0.5 + math.sin(a0) * 0.5],
+                [math.cos(a1) * radius, y, math.sin(a1) * radius, 0.0, 1.0, 0.0, 0.5 + math.cos(a1) * 0.5, 0.5 + math.sin(a1) * 0.5],
+            ]
+            idx += [base, base + 1, base + 2]
+        meshes.append((tex, verts, idx))
+    return meshes
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="python -m kagra",
@@ -73,19 +109,22 @@ def run_live(args: argparse.Namespace) -> int:
         height=args.height,
         visible=not args.hidden,
     )
-    cam = Camera3D(args.width, args.height)
-    # theta=0 → +Z 側。このクリップ／モデルはそちらが顔。
-    cam.use_orbit(radius=2.8, theta=0.0, phi=0.12, target=(0.0, 0.9, 0.0))
+    cam = Camera3D(args.width, args.height, fov_deg=32.0)
+    # theta=0 → +Z 側。radius を広げて足元〜両手上げまで入るようにする。
+    cam.use_orbit(radius=3.7, theta=0.0, phi=0.16, target=(0.0, 0.82, 0.0))
 
     max_frames = args.max_frames if args.max_frames > 0 else None
     shot_at = max(1, (args.max_frames // 2)) if max_frames else None
-    state: dict = {"av": None}
+    state: dict = {"av": None, "stage": []}
 
     def on_ready():
         try:
             kagra.font()
         except RuntimeError as e:
             print(f"[kagra] font skipped: {e}", file=sys.stderr)
+        kagra.set_light_dir(0.35, 1.0, 0.55)
+        kagra.set_shadow_enabled(True)
+        state["stage"] = _stage_meshes()
         av = kagra.avatar(str(vrm))
         dance = _resolve_optional(AssetKind.ANY, args.dance)
         if dance:
@@ -116,11 +155,13 @@ def run_live(args: argparse.Namespace) -> int:
 
     def draw():
         kagra.cls(16, 12, 32)
+        for tex, verts, idx in state["stage"]:
+            kagra.draw_mesh_3d(tex, verts, idx)
         av = state["av"]
         if av is not None:
             kagra.draw_vrm(av.vrm_id)
-        kagra.text("KAGRA  python -m kagra", 16, 16, 22, (255, 220, 120))
-        kagra.text("ESC quit", 16, args.height - 36, 16, (180, 180, 200))
+        kagra.text("KAGRA", 16, 16, 18, (220, 200, 140))
+        kagra.text("ESC", 16, args.height - 32, 14, (140, 140, 160))
 
     kagra.run(update, draw, on_ready=on_ready, max_frames=max_frames, fixed_dt=(1.0 / 60.0 if max_frames else None))
     return 0

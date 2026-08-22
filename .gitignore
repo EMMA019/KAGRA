@@ -74,6 +74,7 @@ scratch/
 !docs/media/**/*.png
 !docs/media/**/*.mp4
 *.wav
+!assets/cute_song_trial.wav
 *.ogg
 *.mp3
 *.ttf
