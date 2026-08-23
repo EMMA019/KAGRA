@@ -1045,6 +1045,31 @@ class VrmAvatar:
     def first_person(self, v: bool):
         self.set_first_person(v)
 
+    def pick(self, sx: float, sy: float, camera=None, max_dist: float = 100.0):
+        """スクリーン座標のレイが当たった humanoid ボーン名。
+
+        返す例: ``"head"`` / ``"leftHand"``。外れは None。
+        なでる・叩く認識はエンジンの外。
+
+        ``camera`` を省略すると ``kagra.get_camera3d()``、それも無ければ
+        エンジンの現在カメラ。
+        """
+        import kagra
+        cam = camera if camera is not None else kagra.get_camera3d()
+        if cam is not None and hasattr(cam, "ray_from_screen"):
+            ray = cam.ray_from_screen(float(sx), float(sy))
+        else:
+            ray = kagra.camera_ray_from_screen(float(sx), float(sy))
+        if ray is None:
+            return None
+        origin, direction = ray
+        return kagra.pick_vrm_bone(
+            self.vrm_id,
+            origin[0], origin[1], origin[2],
+            direction[0], direction[1], direction[2],
+            max_dist=float(max_dist),
+        )
+
     def apply_pose(self, rots: dict):
         """ライブ体入力。humanoid 名 / ノード名 → クォータニオン。
 

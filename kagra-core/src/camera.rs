@@ -131,6 +131,44 @@ impl Camera3D {
     pub fn view_matrix(&self) -> Matrix4<f32> { self.view_matrix }
     pub fn proj_matrix(&self) -> Matrix4<f32> { self.proj_matrix }
     pub fn view_proj(&self) -> Matrix4<f32> { self.view_proj }
+
+    /// スクリーン座標（左上原点、ピクセル）からワールド空間レイ。
+    pub fn ray_from_screen(&self, sx: f32, sy: f32, width: f32, height: f32) -> Option<(Vector3<f32>, Vector3<f32>)> {
+        let view: [f32; 16] = self.view_matrix.as_slice().try_into().ok()?;
+        let proj: [f32; 16] = self.proj_matrix.as_slice().try_into().ok()?;
+        unproject_ray(&view, &proj, sx, sy, width, height)
+    }
+}
+
+/// view / proj は列優先 16 要素（wgpu / nalgebra と同じ）。
+pub fn unproject_ray(
+    view_col: &[f32; 16],
+    proj_col: &[f32; 16],
+    sx: f32,
+    sy: f32,
+    width: f32,
+    height: f32,
+) -> Option<(Vector3<f32>, Vector3<f32>)> {
+    let view = Matrix4::from_column_slice(view_col);
+    let proj = Matrix4::from_column_slice(proj_col);
+    let inv = (proj * view).try_inverse()?;
+    let w = width.max(1.0);
+    let h = height.max(1.0);
+    let nx = 2.0 * sx / w - 1.0;
+    let ny = 1.0 - 2.0 * sy / h;
+    let near = inv * nalgebra::Vector4::new(nx, ny, 0.0, 1.0);
+    let far = inv * nalgebra::Vector4::new(nx, ny, 1.0, 1.0);
+    if near.w.abs() < 1e-8 || far.w.abs() < 1e-8 {
+        return None;
+    }
+    let n = Vector3::new(near.x / near.w, near.y / near.w, near.z / near.w);
+    let f = Vector3::new(far.x / far.w, far.y / far.w, far.z / far.w);
+    let dir = f - n;
+    let len = dir.magnitude();
+    if len < 1e-8 {
+        return None;
+    }
+    Some((n, dir / len))
 }
 
 #[cfg(test)]
@@ -209,6 +247,14 @@ mod tests {
         cam.resize(800, 0);
         assert!(cam.aspect.is_finite());
         assert!(cam.aspect > 0.0);
+    }
+
+    #[test]
+    fn screen_center_ray_faces_target() {
+        let cam = Camera3D::new(800, 600);
+        let (origin, dir) = cam.ray_from_screen(400.0, 300.0, 800.0, 600.0).unwrap();
+        let to_target = (cam.target - origin).normalize();
+        assert!(dir.dot(&to_target) > 0.98);
     }
 
     #[test]

@@ -28,6 +28,7 @@ const MESH3D_IB_INITIAL: u64 = 64 * 1024;
 mod types;
 mod shaders;
 mod gpu_helpers;
+mod bloom;
 
 pub use types::{
     DrawCommand, RectCommand, SpriteCommand, TextCommand,
@@ -40,6 +41,7 @@ pub use gpu_helpers::{DEPTH_FORMAT, MSAA_COUNT, msaa_state};
 use types::*;
 use shaders::*;
 use gpu_helpers::*;
+use bloom::BloomPass;
 
 struct GpuTexture {
     texture: wgpu::Texture,
@@ -148,6 +150,7 @@ pub struct RendererV2 {
     /// resolve 後の 1x カラー。swapchain コピー / スクリーンショット用。
     frame_texture: wgpu::Texture,
     frame_view: wgpu::TextureView,
+    bloom: BloomPass,
 
     _window_arc: Arc<Window>,
 }
@@ -847,6 +850,7 @@ impl RendererV2 {
         });
 
         let initial_alpha = if transparent { 0 } else { 255 };
+        let bloom = BloomPass::new(&device, surface_format, width, height);
         Ok(RendererV2 {
             clear_color: Color { r: 0, g: 0, b: 0, a: initial_alpha },
             draw_queue: Vec::new(),
@@ -922,6 +926,7 @@ impl RendererV2 {
             msaa_view,
             frame_texture,
             frame_view,
+            bloom,
             _window_arc: window,
         })
     }
@@ -1003,6 +1008,7 @@ impl RendererV2 {
         let (mt, mv) = make_msaa_texture(&self.device, width, height, self.surface_format);
         self.msaa_texture = mt;
         self.msaa_view = mv;
+        self.bloom.resize(&self.device, width, height, self.surface_format);
     }
 
     pub fn width(&self) -> u32 { self.screen_width }
@@ -1297,6 +1303,10 @@ impl RendererV2 {
     }
 
     /// 3D 距離フォグ。enabled=false で無効（デフォルト）。
+    pub fn set_bloom(&mut self, threshold: f32, intensity: f32) {
+        self.bloom.set_params(threshold, intensity);
+    }
+
     pub fn set_fog(&mut self, start: f32, end: f32, r: u8, g: u8, b: u8, enabled: bool) {
         let start = start.max(0.0);
         let end = end.max(start + 1e-3);
@@ -1449,6 +1459,17 @@ impl RendererV2 {
             drop(_rp);
         }
 
+        let present = if self.bloom.apply(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &self.frame_view,
+        ) {
+            self.bloom.output_texture()
+        } else {
+            &self.frame_texture
+        };
+
         let extent = wgpu::Extent3d {
             width: self.screen_width,
             height: self.screen_height,
@@ -1456,7 +1477,7 @@ impl RendererV2 {
         };
         encoder.copy_texture_to_texture(
             wgpu::ImageCopyTexture {
-                texture: &self.frame_texture,
+                texture: present,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
@@ -1503,9 +1524,14 @@ impl RendererV2 {
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let src = if self.bloom.last_applied() {
+            self.bloom.output_texture()
+        } else {
+            &self.frame_texture
+        };
         encoder.copy_texture_to_buffer(
             wgpu::ImageCopyTexture {
-                texture: &self.frame_texture,
+                texture: src,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,

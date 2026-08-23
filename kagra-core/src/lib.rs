@@ -17,6 +17,7 @@ mod rig;
 mod gltf;
 mod gltf_common;
 mod camera;
+mod pick;
 mod vrm_humanoid;
 mod vrm_lookat_meta;
 mod vrm_expression;

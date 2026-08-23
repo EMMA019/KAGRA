@@ -158,6 +158,9 @@ def run_live(args: argparse.Namespace) -> int:
             print(f"[kagra] font skipped: {e}", file=sys.stderr)
         kagra.set_light_dir(0.35, 1.0, 0.55)
         kagra.set_shadow_enabled(not mascot)
+        # 高輝度だけ抽出。画面全体ぼかしはトゥーン輪郭を濁すので使わない
+        kagra.set_bloom(threshold=0.82, intensity=0.32)
+        kagra.set_camera3d(cam)
         if not mascot:
             sky = _resolve_optional(AssetKind.TEXTURE, args.backdrop)
             hall = _resolve_optional(AssetKind.GLTF, args.stage)
