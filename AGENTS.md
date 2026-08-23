@@ -66,6 +66,7 @@ PNG/WAV/projection:
 - Sphere / cylinder `Prop` collide and hover as those shapes (not boxes)
 - `Prop(..., texture=…)` / `set_parent` — 1-level parent only; child pose is local
 - `Prop("crate.glb")` — static glTF part (not `stage()`). Alias `cube.glb`
+- `axis("left")` / `pad("a")` / `inject_pad` — gamepad. `Walk` reads both sticks
 - `kagra.save_json` / `load_json` — high scores
 - `ActionController` — one-shot poses; `ActionController.names()` lists them
 

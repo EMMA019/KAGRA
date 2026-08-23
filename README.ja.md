@@ -115,7 +115,7 @@ python examples/vrm_dodge_room.py
 嘘をつかないリスト。忘れたのではなく、今は入れない。
 
 - **macOS ホイール** — 検証できる Mac ができるまでソースビルド
-- **ゲームパッド入力** — 今はキーボード / マウス / タッチのみ
+- **OS のゲームパッド実機** — `axis` / `pad` / `inject_pad` はある。USB/XInput ポーリングはまだホイールに無い
 - **YouTube / Twitch の公式取り込み** — `{user,text}` の JSONL を自分で書く（`ChatInbox`）
 - **NDI / RTMP** — 窓キャプチャは今も使える。仮想カメラは extra
 - **無人配信のセーフティ / オートパイロット** — 0.1.3 には無い

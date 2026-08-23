@@ -1931,6 +1931,7 @@ from kagra.contracts import (
 from kagra.samples import ensure_vrm
 from kagra.verify import run_scenario, run_scenario_path, load_scenario
 from kagra.touch import VirtualPad, PointerEvent, PointerPhase, apply_pad, inject_pointer
+from kagra.pad import axis, inject_pad, pad, pad_pressed, pad_released, poll_pad
 
 
 # ═══════════════════════════════════════════════════════════════

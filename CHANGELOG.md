@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Gamepad API: `axis("left"|"right")`, `pad("a")`, `pad_pressed`, `inject_pad`.
+  `Walk` reads the left stick to move and the right stick to look.
+  Tests/smoke use `inject_pad`. OS USB/XInput poll is not in the wheel yet.
+  Prop Garden: Start toggles view, A deletes.
 - glTF as a Prop part: `Prop("crate.glb")` (or alias `cube.glb`). Flattened to
   the static mesh pipeline — not `stage()` / `load_gltf`. Hover and collision
   use the mesh AABB. Bundled unit cube at `kagra/data/unit_cube.glb`.

@@ -10,6 +10,7 @@ from typing import Optional
 from kagra.color_utils import clamp_u8
 from kagra.gamekit import box_mesh, cylinder_mesh, quad_y_mesh, sphere_mesh
 from kagra.gltf_mesh import FlatMesh, flatten_gltf, is_gltf_name, resolve_gltf_path
+from kagra.pad import axis as pad_axis, poll_pad, stick_move
 from kagra.world3d import World3D
 
 COLORS = {
@@ -712,7 +713,7 @@ class Prop:
 
 
 class Walk:
-    """WASD + マウスで視点。既定は三人称 ``Camera3D.follow``。``first_person`` で目線。"""
+    """WASD / 左スティック + マウス / 右スティック。既定は三人称 ``Camera3D.follow``。"""
 
     def __init__(
         self,
@@ -727,6 +728,8 @@ class Walk:
         first_person: bool = False,
         eye_height: float = 1.55,
         pitch: float = 0.0,
+        stick_sens: float = 2.2,
+        stick_deadzone: float = 0.2,
     ):
         self.world = world
         self.cam = cam
@@ -738,6 +741,8 @@ class Walk:
         self.pitch = float(pitch)
         self.first_person = bool(first_person)
         self.eye_height = float(eye_height)
+        self.stick_sens = float(stick_sens)
+        self.stick_deadzone = float(stick_deadzone)
         self._last_mouse: Optional[tuple[float, float]] = None
 
     def step(self, dt: float) -> None:
@@ -747,19 +752,28 @@ class Walk:
     def update(self, dt: float) -> None:
         import kagra
 
+        poll_pad()
         mx, my = kagra.mouse_pos()
         if self._last_mouse is not None:
             self.yaw = look_yaw(self.yaw, mx - self._last_mouse[0], sens=self.mouse_sens)
             if self.first_person:
                 self.pitch = look_pitch(self.pitch, my - self._last_mouse[1], sens=self.mouse_sens)
         self._last_mouse = (float(mx), float(my))
+        rx, ry = pad_axis("right")
+        if math.hypot(rx, ry) >= self.stick_deadzone:
+            dt_look = float(dt)
+            self.yaw -= rx * self.stick_sens * dt_look
+            if self.first_person:
+                self.pitch = look_pitch(self.pitch, ry * self.stick_sens * dt_look, sens=1.0)
 
-        fwd = (1.0 if kagra.key("W") or kagra.key("UP") else 0.0) - (
-            1.0 if kagra.key("S") or kagra.key("DOWN") else 0.0
-        )
-        right = (1.0 if kagra.key("D") or kagra.key("RIGHT") else 0.0) - (
-            1.0 if kagra.key("A") or kagra.key("LEFT") else 0.0
-        )
+        fwd, right = stick_move(*pad_axis("left"), deadzone=self.stick_deadzone)
+        if fwd == 0.0 and right == 0.0:
+            fwd = (1.0 if kagra.key("W") or kagra.key("UP") else 0.0) - (
+                1.0 if kagra.key("S") or kagra.key("DOWN") else 0.0
+            )
+            right = (1.0 if kagra.key("D") or kagra.key("RIGHT") else 0.0) - (
+                1.0 if kagra.key("A") or kagra.key("LEFT") else 0.0
+            )
         vx, vz = walk_wish(fwd, right, self.yaw, self.speed)
         self.world.move_player(vx, vz)
         self.world.update(dt)

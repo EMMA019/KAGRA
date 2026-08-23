@@ -101,7 +101,7 @@ KAGRA's development loop is designed for AI coding agents, not just humans. An a
 Honesty list. These are missing on purpose, not forgotten:
 
 - **macOS wheels** — build from source until a Mac can verify them
-- **Gamepad input** — keyboard / mouse / touch only for now
+- **OS gamepad devices** — `axis` / `pad` / `inject_pad` work; USB/XInput poll is not in the wheel yet
 - **YouTube / Twitch chat APIs** — write `{user,text}` JSONL yourself (`ChatInbox`)
 - **NDI / RTMP** — OBS window capture still works; virtual cam is the extra
 - **Autopilot / unattended safety** — not in 0.1.3

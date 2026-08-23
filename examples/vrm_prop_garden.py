@@ -5,10 +5,10 @@ Prop / Walk / sky / hovered_prop / destroy / World3D / Camera3D.follow / ensure_
 Non-smoke also places ``cube.glb`` (static glTF part, not ``stage()``).
 
 操作:
-  WASD / 矢印 : 歩く
-  マウス       : 視点（一人称は上下も）
-  F           : 一人称 / 三人称
-  E           : ホバー中の Prop を消す（親を消すと子も消える）
+  WASD / 左スティック : 歩く
+  マウス / 右スティック : 視点（一人称は上下も）
+  F / Start           : 一人称 / 三人称
+  E / A               : ホバー中の Prop を消す（親を消すと子も消える）
   ESC         : 終了
 
 スモーク: KAGRA_SMOKE=1 python examples/vrm_prop_garden.py
@@ -93,7 +93,8 @@ class PropGarden(kagra.Scene):
                 kagra.quit()
                 return
 
-        if kagra.pressed("F") and not SMOKE:
+        kagra.poll_pad()
+        if (kagra.pressed("F") or kagra.pad_pressed("start")) and not SMOKE:
             self.walk.first_person = not self.walk.first_person
             self.avatar.first_person = self.walk.first_person
         if self.gold is not None and self.gold.enabled and not SMOKE:
@@ -101,7 +102,7 @@ class PropGarden(kagra.Scene):
         kagra.Prop.update_all(dt)
         self.walk.step(dt)
         self.look = kagra.hovered_prop(self.cam)
-        if kagra.pressed("E") and self.look is not None and not SMOKE:
+        if (kagra.pressed("E") or kagra.pad_pressed("a")) and self.look is not None and not SMOKE:
             gone = self.look
             kagra.destroy(gone)
             if gone is self.gold:

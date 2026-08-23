@@ -54,6 +54,12 @@ class VirtualPad:
         self._lx = max(-1.0, min(1.0, x))
         self._ly = max(-1.0, min(1.0, y))
 
+    def stick(self) -> tuple[float, float]:
+        """デッドゾーン後の ``(x, y)``。上が負。"""
+        lx = self._lx if abs(self._lx) >= self.deadzone else 0.0
+        ly = self._ly if abs(self._ly) >= self.deadzone else 0.0
+        return lx, ly
+
     def clear(self) -> None:
         self._lx = 0.0
         self._ly = 0.0

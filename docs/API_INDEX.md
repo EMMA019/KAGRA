@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **375**
+エントリ数: **381**
 
 棚の**手前**は VRM / 3D ワールド / エージェントゲーム。
 棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。
@@ -71,17 +71,22 @@
 | `ActionController` | `class ActionController  (from kagra.vrm_action)` |
 | `AiCharacter` | `class AiCharacter  (from kagra.ai_character)` |
 | `apply_pad` | `export apply_pad  (from kagra.touch)` |
+| `axis` | `export axis  (from kagra.pad)` |
 | `Camera3D` | `class Camera3D  (from kagra.camera3d)` |
 | `ChatInbox` | `class ChatInbox  (from kagra.stream)` |
 | `describe_environment` | `export describe_environment  (from kagra.contracts)` |
 | `EmotionController` | `class EmotionController  (from kagra.vrm_emotion)` |
 | `ensure_vrm` | `export ensure_vrm  (from kagra.samples)` |
+| `inject_pad` | `export inject_pad  (from kagra.pad)` |
 | `LipSyncController` | `class LipSyncController  (from kagra.vrm_lipsync)` |
 | `load_scenario` | `export load_scenario  (from kagra.verify)` |
 | `LookAtController` | `class LookAtController  (from kagra.vrm_lookat)` |
 | `MicLipsync` | `class MicLipsync  (from kagra.mic)` |
+| `pad` | `export pad  (from kagra.pad)` |
+| `pad_pressed` | `export pad_pressed  (from kagra.pad)` |
 | `Physics3D` | `class Physics3D  (from kagra.physics3d)` |
 | `PointerEvent` | `class PointerEvent  (from kagra.touch)` |
+| `poll_pad` | `export poll_pad  (from kagra.pad)` |
 | `Prop` | `class Prop  (from kagra.play)` |
 | `resolve_asset` | `export resolve_asset  (from kagra.contracts)` |
 | `RigidBody3D` | `class RigidBody3D  (from kagra.physics3d)` |
@@ -322,6 +327,7 @@
 | `MOUSE_MIDDLE` | `MOUSE_MIDDLE` |
 | `MOUSE_RIGHT` | `MOUSE_RIGHT` |
 | `openai_chat` | `export openai_chat  (from kagra.http_client)` |
+| `pad_released` | `export pad_released  (from kagra.pad)` |
 | `Panel` | `class Panel  (from kagra.ui)` |
 | `PhysicsSystem` | `class PhysicsSystem  (from kagra.physics)` |
 | `PointerPhase` | `class PointerPhase  (from kagra.touch)` |
@@ -412,6 +418,7 @@
 - Prop テクスチャ: `texture=kagra.texture_from_fn(...)` または `load`。0 なら `color`。
 - Prop 親子は 1 段（`set_parent` / `parent=`）。孫は不可。子の `x,y,z,yaw` はローカル。
 - glTF 部品: `Prop("crate.glb")`。`stage()` / `load_gltf` は会場。同梱エイリアス `cube.glb`。当たりは AABB。
+- ゲームパッド: `axis("left")` / `pad("a")` / `inject_pad`。`Walk` は左スティック移動・右スティック視点。実機ポーリングは未接続。
 - 色付きメッシュ: `solid_tex` + `sphere_mesh` / `cylinder_mesh` / `box_mesh`。
 - `kagra-shared` / `mobile/` は別の運転デモ。この Python スタックと混ぜない。
 - Rust バインディングの整合は `tests/test_api_bindings.py` も参照。
