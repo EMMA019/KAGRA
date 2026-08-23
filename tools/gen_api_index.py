@@ -138,6 +138,82 @@ def _public_from_init() -> list[tuple[str, str, str]]:
     return items
 
 
+# 北極星（VRM に体 / エージェントが 3D ゲームを作る）。棚の奥は 2D・タイル・ECS。
+FRONT_NAMES = {
+    "AABB",
+    "ActionController",
+    "AiCharacter",
+    "apply_live_look",
+    "apply_pad",
+    "avatar",
+    "billboard_mesh",
+    "box_mesh",
+    "Camera3D",
+    "camera_world_to_screen",
+    "ChatInbox",
+    "cls",
+    "describe_environment",
+    "disk_mesh",
+    "down",
+    "draw_billboard",
+    "draw_mesh_3d",
+    "draw_mesh_id",
+    "draw_vignette",
+    "draw_vrm",
+    "EmotionController",
+    "ensure_vrm",
+    "fill",
+    "font",
+    "get_camera3d",
+    "get_engine",
+    "get_screen_size",
+    "init",
+    "inject_key",
+    "key",
+    "LipSyncController",
+    "load_json",
+    "load_scenario",
+    "load_vrma",
+    "LookAtController",
+    "MicLipsync",
+    "Physics3D",
+    "PointerEvent",
+    "pressed",
+    "quad_y_mesh",
+    "quit",
+    "released",
+    "resolve_asset",
+    "RigidBody3D",
+    "run",
+    "run_scenario",
+    "run_scenario_path",
+    "save_json",
+    "Scene",
+    "screenshot",
+    "se",
+    "set_bloom",
+    "set_camera3d",
+    "set_fog",
+    "set_light_dir",
+    "set_rim",
+    "set_shadow_enabled",
+    "set_toon_params",
+    "stage",
+    "Stage",
+    "StreamHud",
+    "text",
+    "texture_from_fn",
+    "tick_count",
+    "tone",
+    "unload_mesh_3d",
+    "upload_mesh_3d",
+    "VirtualCam",
+    "VirtualPad",
+    "VrmAvatar",
+    "World3D",
+}
+
+
 def render_markdown(items: list[tuple[str, str, str]]) -> str:
     lines = [
         "# KAGRA Public API Index",
@@ -146,31 +222,44 @@ def render_markdown(items: list[tuple[str, str, str]]) -> str:
         "",
         f"エントリ数: **{len(items)}**",
         "",
-        "## Functions",
+        "棚の**手前**は VRM / 3D ワールド / エージェントゲーム。",
+        "棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。",
+        "",
+        "## Front (recommended)",
         "",
         "| Name | Signature |",
         "|---|---|",
     ]
-    funcs = [i for i in items if i[2] == "function"]
-    others = [i for i in items if i[2] != "function"]
-    for name, sig, _ in funcs:
+    front = [i for i in items if i[0] in FRONT_NAMES]
+    shelf = [i for i in items if i[0] not in FRONT_NAMES]
+    for name, sig, _ in front:
         esc = sig.replace("|", "\\|")
         lines.append(f"| `{name}` | `{esc}` |")
 
-    lines += ["", "## Classes / Exports / Objects", "", "| Name | Note |", "|---|---|"]
-    for name, sig, kind in others:
+    lines += [
+        "",
+        "## Shelf (legacy 2D / tilemap / editor / ECS)",
+        "",
+        "| Name | Signature |",
+        "|---|---|",
+    ]
+    for name, sig, _ in shelf:
         esc = sig.replace("|", "\\|")
-        lines.append(f"| `{name}` | `{esc}` ({kind}) |")
+        lines.append(f"| `{name}` | `{esc}` |")
 
     lines += [
         "",
         "## Agent notes",
         "",
         "- 存在しない API を呼ばないこと。ここに無い名前は未公開か内部用です。",
+        "- 3D ゲームは Front から探す。Shelf の tilemap / ECS / 2D `Camera` は推奨しない。",
         "- `world_to_screen(wx, wy)` は **2D**。3D は `Camera3D.world_to_screen(wx, wy, wz)`。",
         "- セーブは `save_json` / `load_json`。`load_data` はアセットレジストリ。",
         "- VRM が checkout に無いときは `ensure_vrm()`。パスを直書きしない。",
         "- ワンショットポーズは `ActionController`（`ActionController.names()`）。",
+        "- 静的メッシュは `upload_mesh_3d` で一度載せ、`draw_mesh_id` で描く。",
+        "- 床と箱: `World3D`（または `Physics3D` + `box_mesh`）。カメラは `Camera3D.follow`。",
+        "- `kagra-shared` / `mobile/` は別の運転デモ。この Python スタックと混ぜない。",
         "- Rust バインディングの整合は `tests/test_api_bindings.py` も参照。",
         "- 再生成: `python tools/gen_api_index.py`",
         "",

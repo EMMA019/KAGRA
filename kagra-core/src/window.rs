@@ -232,6 +232,26 @@ impl KagraWindow {
         }
     }
 
+    pub fn upload_mesh_3d(&self, texture_id: u32, verts: Vec<[f32; 8]>, indices: Vec<u32>) -> u32 {
+        if let Some(r) = lock_recover(&self.renderer).as_mut() {
+            r.upload_mesh_3d(texture_id, verts, indices)
+        } else {
+            0
+        }
+    }
+
+    pub fn queue_retained_mesh_3d(&self, mesh_id: u32) {
+        if let Some(r) = lock_recover(&self.renderer).as_mut() {
+            r.queue_retained_mesh_3d(mesh_id);
+        }
+    }
+
+    pub fn unload_mesh_3d(&self, mesh_id: u32) {
+        if let Some(r) = lock_recover(&self.renderer).as_mut() {
+            r.unload_mesh_3d(mesh_id);
+        }
+    }
+
     pub fn draw_texture_ex(
         &self, id: u32, x: f32, y: f32,
         w: Option<f32>, h: Option<f32>,

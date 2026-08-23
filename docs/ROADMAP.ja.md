@@ -88,6 +88,14 @@ JS における three-vrm のポジションの Python 版。
 - [x] D-3 躓き直し: `ActionController` を公開 + `names()`、索引に
       2D/3D `world_to_screen`・`save_json`・`ensure_vrm` の注記、
       レシピ `docs/recipes/agent-game.md`
+- [x] 棚分け: 推奨 examples を VRM / エージェントゲームに絞り、
+      レガシー 2D は `examples/archive/`。API 索引を Front / Shelf に分割。
+      kagra-shared は別の運転デモと明記（レンダラは統合しない）
+- [x] 最小 3D ワールド面: `upload_mesh_3d` / `draw_mesh_id`、
+      `World3D`（床 + 箱衝突）、`Camera3D.follow`
+- [x] D-4 2本目のエージェント製ゲーム: 「箱部屋を歩いてスイッチを踏む」
+      → `examples/vrm_switch_room.py` +
+      `docs/agent-runs/20260823-switch-room/`
 
 **判定**: 2 週間で「動いた」報告 3 件以上の楔が勝ち。全滅なら機能ではなく
 **切り口の言葉**を変えて 1 回だけ再試行。全滅 × 2 サイクルで Stage 6 へ。

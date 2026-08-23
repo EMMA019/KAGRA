@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Repo shelf-split: recommended examples stay in `examples/`; legacy 2D /
+  tilemap / editor / romance / boids moved to `examples/archive/`. API index
+  now has Front (VRM / 3D / agents) vs Shelf. `kagra-shared` + `mobile/` is
+  documented as a separate driving demo — renderers are not merged.
+- 3D world surface: `upload_mesh_3d` / `draw_mesh_id` (GPU retain),
+  `box_mesh`, `World3D` (floor + static boxes + capsule), `Camera3D.follow`.
+- Agent-built world game (wedge D): `examples/vrm_switch_room.py` from the
+  one-line prompt in `docs/agent-runs/20260823-switch-room/`. Not a
+  disc-collect — walk a boxed room and stand on a switch.
 - Agent surface (wedge D-3): `ActionController` is a public export with
   `names()`. API index notes 2D vs 3D `world_to_screen`, `save_json` vs
   `load_data`, and `ensure_vrm()`. Recipe `docs/recipes/agent-game.md`.

@@ -3,6 +3,8 @@
 > **バージョン**: v3（Phase 6 相当）  
 > **アーキテクチャ**: Rust コア（`kagra_core`）+ Python API  
 > **対象プラットフォーム**: Windows / macOS / Linux（デスクトップ）
+>
+> 2D / タイルマップ系のサンプルは `examples/archive/` に移した。推奨は `examples/` 直下の VRM ゲーム。
 
 ---
 

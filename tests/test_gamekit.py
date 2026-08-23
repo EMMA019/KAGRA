@@ -47,6 +47,15 @@ def test_quad_y_mesh_is_square():
     assert idx[-1] == 3
 
 
+def test_box_mesh_six_faces():
+    verts, idx = kit.box_mesh(0, 0.5, 0, 2.0, 1.0, 2.0)
+    assert len(verts) == 24
+    assert len(idx) == 36
+    ys = [v[1] for v in verts]
+    assert min(ys) == 0.0 and max(ys) == 1.0
+    assert all(len(v) == 8 for v in verts)
+
+
 def test_save_load_roundtrip(tmp_path):
     kit.save_json("hi", {"score": 42}, directory=tmp_path)
     assert kit.load_json("hi", directory=tmp_path) == {"score": 42}

@@ -43,6 +43,13 @@ use shaders::*;
 use gpu_helpers::*;
 use bloom::BloomPass;
 
+struct RetainedMesh3D {
+    texture_id: u32,
+    vb: wgpu::Buffer,
+    ib: wgpu::Buffer,
+    index_count: u32,
+}
+
 struct GpuTexture {
     texture: wgpu::Texture,
     bind_group: wgpu::BindGroup,
@@ -106,6 +113,10 @@ pub struct RendererV2 {
     fog_color: [f32; 4],
     shader_clock: Instant,
     mesh_3d_queue: Vec<Mesh3DCommand>,
+    /// 一度 GPU に載せた静的メッシュ。`draw_mesh_id` で回す。
+    retained_meshes: std::collections::HashMap<u32, RetainedMesh3D>,
+    retained_draw_queue: Vec<u32>,
+    next_retained_mesh_id: u32,
     skinning_3d_morph_bgl: wgpu::BindGroupLayout,
     /// (base, shade, matcap, normal, uvmask, morph_ptr, blend_ptr)
     morph_bg_cache: std::collections::HashMap<(u32, u32, u32, u32, u32, usize, usize), Arc<wgpu::BindGroup>>,
@@ -895,6 +906,9 @@ impl RendererV2 {
             fog_color,
             shader_clock: Instant::now(),
             mesh_3d_queue: Vec::new(),
+            retained_meshes: std::collections::HashMap::new(),
+            retained_draw_queue: Vec::new(),
+            next_retained_mesh_id: 1,
             skinning_3d_morph_bgl,
             morph_bg_cache: std::collections::HashMap::new(),
             morph_bg_order: VecDeque::new(),
@@ -1338,6 +1352,46 @@ impl RendererV2 {
     }
 
     pub fn queue_mesh_3d(&mut self, cmd: Mesh3DCommand) { self.mesh_3d_queue.push(cmd); }
+
+    /// 頂点を GPU に一度だけ載せて ID を返す。0 は失敗。
+    pub fn upload_mesh_3d(&mut self, texture_id: u32, verts: Vec<[f32; 8]>, indices: Vec<u32>) -> u32 {
+        if verts.is_empty() || indices.is_empty() {
+            return 0;
+        }
+        let vb = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Retained Mesh3D VB"),
+            contents: bytemuck::cast_slice(&verts),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let ib = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Retained Mesh3D IB"),
+            contents: bytemuck::cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let id = self.next_retained_mesh_id;
+        self.next_retained_mesh_id = self.next_retained_mesh_id.saturating_add(1);
+        if self.next_retained_mesh_id == 0 {
+            self.next_retained_mesh_id = 1;
+        }
+        self.retained_meshes.insert(id, RetainedMesh3D {
+            texture_id,
+            vb,
+            ib,
+            index_count: indices.len() as u32,
+        });
+        id
+    }
+
+    pub fn queue_retained_mesh_3d(&mut self, mesh_id: u32) {
+        if mesh_id != 0 && self.retained_meshes.contains_key(&mesh_id) {
+            self.retained_draw_queue.push(mesh_id);
+        }
+    }
+
+    pub fn unload_mesh_3d(&mut self, mesh_id: u32) -> bool {
+        self.retained_draw_queue.retain(|&x| x != mesh_id);
+        self.retained_meshes.remove(&mesh_id).is_some()
+    }
 
     pub fn update_skin_uniforms(&mut self, matrices: &[nalgebra::Matrix4<f32>]) {
         let max = matrices.len().min(256);
@@ -1871,7 +1925,7 @@ impl RendererV2 {
     }
 
     fn draw_meshes_3d(&mut self, encoder: &mut wgpu::CommandEncoder, target_view: &wgpu::TextureView, cmds: &[Mesh3DCommand]) {
-        if cmds.is_empty() { return; }
+        let retained_ids = std::mem::take(&mut self.retained_draw_queue);
 
         const VERT_STRIDE: u64 = (8 * std::mem::size_of::<f32>()) as u64; // [f32; 8]
         const INDEX_STRIDE: u64 = std::mem::size_of::<u32>() as u64;
@@ -1885,34 +1939,37 @@ impl RendererV2 {
             total_vb += cmd.verts.len() as u64 * VERT_STRIDE;
             total_ib += cmd.indices.len() as u64 * INDEX_STRIDE;
         }
-        if total_vb == 0 || total_ib == 0 {
-            return;
-        }
-        self.ensure_mesh_3d_capacity(total_vb, total_ib);
 
         // (texture_id, vb_offset, ib_offset, index_count)
         let mut draws: Vec<(u32, u64, u64, u32)> = Vec::with_capacity(cmds.len());
-        let mut vb_off = 0u64;
-        let mut ib_off = 0u64;
-        for cmd in cmds {
-            if cmd.verts.is_empty() || cmd.indices.is_empty() {
-                continue;
+        if total_vb > 0 && total_ib > 0 {
+            self.ensure_mesh_3d_capacity(total_vb, total_ib);
+            let mut vb_off = 0u64;
+            let mut ib_off = 0u64;
+            for cmd in cmds {
+                if cmd.verts.is_empty() || cmd.indices.is_empty() {
+                    continue;
+                }
+                let v_bytes = cmd.verts.len() as u64 * VERT_STRIDE;
+                let i_bytes = cmd.indices.len() as u64 * INDEX_STRIDE;
+                self.queue.write_buffer(
+                    &self.mesh_3d_vb,
+                    vb_off,
+                    bytemuck::cast_slice(&cmd.verts),
+                );
+                self.queue.write_buffer(
+                    &self.mesh_3d_ib,
+                    ib_off,
+                    bytemuck::cast_slice(&cmd.indices),
+                );
+                draws.push((cmd.texture_id, vb_off, ib_off, cmd.indices.len() as u32));
+                vb_off += v_bytes;
+                ib_off += i_bytes;
             }
-            let v_bytes = cmd.verts.len() as u64 * VERT_STRIDE;
-            let i_bytes = cmd.indices.len() as u64 * INDEX_STRIDE;
-            self.queue.write_buffer(
-                &self.mesh_3d_vb,
-                vb_off,
-                bytemuck::cast_slice(&cmd.verts),
-            );
-            self.queue.write_buffer(
-                &self.mesh_3d_ib,
-                ib_off,
-                bytemuck::cast_slice(&cmd.indices),
-            );
-            draws.push((cmd.texture_id, vb_off, ib_off, cmd.indices.len() as u32));
-            vb_off += v_bytes;
-            ib_off += i_bytes;
+        }
+
+        if draws.is_empty() && retained_ids.is_empty() {
+            return;
         }
 
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1931,6 +1988,17 @@ impl RendererV2 {
             rp.set_vertex_buffer(0, self.mesh_3d_vb.slice(v_off..));
             rp.set_index_buffer(self.mesh_3d_ib.slice(i_off..), wgpu::IndexFormat::Uint32);
             rp.draw_indexed(0..index_count, 0, 0..1);
+        }
+        for id in retained_ids {
+            let Some(mesh) = self.retained_meshes.get(&id) else { continue };
+            if mesh.index_count == 0 {
+                continue;
+            }
+            let bg = self.get_texture_bind_group(mesh.texture_id);
+            rp.set_bind_group(1, bg, &[]);
+            rp.set_vertex_buffer(0, mesh.vb.slice(..));
+            rp.set_index_buffer(mesh.ib.slice(..), wgpu::IndexFormat::Uint32);
+            rp.draw_indexed(0..mesh.index_count, 0, 0..1);
         }
     }
 
