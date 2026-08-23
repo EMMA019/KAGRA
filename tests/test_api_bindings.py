@@ -106,6 +106,8 @@ def test_critical_bindings_present():
         "set_toon_params",
         "set_shadow_enabled",
         "request_screenshot",
+        "set_grab_frames",
+        "grab_frame",
         "inject_key_down",
         "get_vrm_look_at",
         "load_gltf",
@@ -147,6 +149,8 @@ def test_gltf_python_wrappers_exist():
         ("draw_gltf", "_engine.draw_gltf"),
         ("unload_gltf", "_engine.unload_gltf"),
         ("stage", "Stage.load"),
+        ("set_grab_frames", "_engine.set_grab_frames"),
+        ("grab_frame", "_engine.grab_frame"),
     ):
         assert name in names, f"kagra.{name} が未公開"
         assert rust in ast.unparse(names[name]), f"{name} が {rust} を呼んでいない"

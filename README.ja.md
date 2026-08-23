@@ -61,14 +61,29 @@ cd $env:TEMP
 python -m kagra
 ```
 
-`pip install kagra` が製品そのものです。レンダラ、VRM、歌う、踊る、`.vrma`、リップシンク、視線、IK、表情、SpringBone は全部入ります。Rust は不要です。追加パッケージも不要です。
+`pip install kagra` が製品そのものです。レンダラ、VRM、歌う、踊る、`.vrma`、リップシンク、視線、IK、表情、SpringBone は全部入ります。Rust は不要です。顔トラ・仮想カメラ・マイクだけ extra。
 
 | | |
 |---|---|
 | Windows / Linux | `pip install kagra` |
 | macOS | ホイール検証できるまでソースビルド（`maturin develop`） |
-| Web カメラ顔トラ | `pip install "kagra[facetrack]"`（MediaPipe + OpenCV が入る） |
+| Web カメラ顔トラ | `pip install "kagra[facetrack]"`（MediaPipe + OpenCV） |
+| 仮想カメラ（OBS） | `pip install "kagra[stream]"` のあと `python -m kagra --loop --stream` |
+| マイク口パク | `pip install "kagra[mic]"` |
 | コントリビュータ | `pip install maturin && maturin develop` |
+
+## まだ無いもの
+
+嘘をつかないリスト。忘れたのではなく、今は入れない。
+
+- **macOS ホイール** — 検証できる Mac ができるまでソースビルド
+- **YouTube / Twitch の公式取り込み** — `{user,text}` の JSONL を自分で書く（`ChatInbox`）
+- **NDI / RTMP** — 窓キャプチャは今も使える。仮想カメラは extra
+- **無人配信のセーフティ / オートパイロット** — 0.1.3 には無い
+- **VOICEVOX / Irodori-TTS** — 同梱しない。VOICEVOX は [docs/recipes/voicevox.md](docs/recipes/voicevox.md)
+- 曲 WAV と `.vrma` はホイールに入れない（約 5MB の売りを守る）。サンプル VRM は初回ダウンロード
+
+配信手順は [docs/recipes/stream.md](docs/recipes/stream.md)。
 
 リリース手順は [docs/PUBLISHING.md](docs/PUBLISHING.md)。
 

@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **335**
+エントリ数: **343**
 
 ## Functions
 
@@ -65,6 +65,7 @@
 | `get_typed_chars` | `get_typed_chars() -> str` |
 | `get_vrm_look_at` | `get_vrm_look_at(vrm_id: int) -> dict \| None` |
 | `go` | `go(next_scene: Scene) -> None` |
+| `grab_frame` | `grab_frame()` |
 | `has_vrm_bone` | `has_vrm_bone(vrm_id: int, name: str) -> bool` |
 | `image` | `image(tex: int, x: float, y: float, w: float = None, h: float = None, *, alpha: float = 1.0, rotation: float = 0.0, flip_x: bool = False, flip_y: bool = False, sx: float = 0.0, sy: float = 0.0, sw: float = None, sh: float = None)` |
 | `image_world` | `image_world(tex: int, wx: float, wy: float, w: float, h: float, *, alpha: float = 1.0, flip_x: bool = False, flip_y: bool = False)` |
@@ -148,6 +149,7 @@
 | `set_decorations` | `set_decorations(enabled: bool)` |
 | `set_fog` | `set_fog(start: float = 5.0, end: float = 20.0, color: tuple = (110, 180, 230), *, enabled: bool = True)` |
 | `set_font` | `set_font(font_id: int)` |
+| `set_grab_frames` | `set_grab_frames(enabled: bool = True)` |
 | `set_ime_cursor_pos` | `set_ime_cursor_pos(x: float, y: float)` |
 | `set_light_dir` | `set_light_dir(x: float, y: float, z: float)` |
 | `set_shadow_enabled` | `set_shadow_enabled(enabled: bool = True)` |
@@ -207,6 +209,8 @@
 | `CameraFollower` | `class CameraFollower  (from kagra.components)` (class) |
 | `CameraTrack` | `class CameraTrack  (from kagra.timeline)` (class) |
 | `CharState` | `class CharState  (from kagra.ai_character)` (class) |
+| `ChatInbox` | `class ChatInbox  (from kagra.stream)` (class) |
+| `ChatMessage` | `class ChatMessage  (from kagra.stream)` (class) |
 | `ChoiceMenu` | `class ChoiceMenu  (from kagra.ui)` (class) |
 | `classify_stage_file` | `export classify_stage_file  (from kagra.stage)` (export) |
 | `Collider` | `class Collider  (from kagra.entity)` (class) |
@@ -267,6 +271,7 @@
 | `MeshAttachment` | `class MeshAttachment  (from kagra.skeleton)` (class) |
 | `MeshVertex` | `class MeshVertex  (from kagra.skeleton)` (class) |
 | `MessageWindow` | `class MessageWindow  (from kagra.ui)` (class) |
+| `MicLipsync` | `class MicLipsync  (from kagra.mic)` (class) |
 | `MOUSE_LEFT` | `MOUSE_LEFT` (object) |
 | `MOUSE_MIDDLE` | `MOUSE_MIDDLE` (object) |
 | `MOUSE_RIGHT` | `MOUSE_RIGHT` (object) |
@@ -321,6 +326,7 @@
 | `Sprite` | `class Sprite  (from kagra.entity)` (class) |
 | `SpriteRenderer` | `class SpriteRenderer  (from kagra.entity)` (class) |
 | `Stage` | `class Stage  (from kagra.stage)` (class) |
+| `StreamHud` | `class StreamHud  (from kagra.stream)` (class) |
 | `TextRenderer` | `class TextRenderer  (from kagra.entity)` (class) |
 | `TILE_DAMAGE` | `class TILE_DAMAGE  (from kagra.tilemap)` (class) |
 | `TILE_DOOR` | `class TILE_DOOR  (from kagra.tilemap)` (class) |
@@ -343,8 +349,10 @@
 | `TwoBoneIK` | `class TwoBoneIK  (from kagra.vrm_ik)` (class) |
 | `UIGroup` | `class UIGroup  (from kagra.ui)` (class) |
 | `VBox` | `class VBox  (from kagra.ui)` (class) |
+| `VirtualCam` | `class VirtualCam  (from kagra.stream)` (class) |
 | `VirtualPad` | `class VirtualPad  (from kagra.touch)` (class) |
 | `voicevox_speak` | `export voicevox_speak  (from kagra.http_client)` (export) |
+| `VoicevoxError` | `class VoicevoxError  (from kagra.voicevox)` (class) |
 | `VrmAnimator` | `class VrmAnimator  (from kagra.vrm_anim)` (class) |
 | `VrmModel` | `class VrmModel  (from kagra.vrm_loader)` (class) |
 | `World` | `class World  (from kagra.entity)` (class) |

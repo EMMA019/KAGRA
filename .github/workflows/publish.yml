@@ -1,6 +1,6 @@
 # PyPI へホイールを公開する。
 #
-# 起動: git tag v0.1.2 && git push origin v0.1.2
+# 起動: git tag v0.1.3 && git push origin v0.1.3
 # 事前準備: docs/PUBLISHING.md（Trusted Publisher を PyPI に登録）
 #
 # Linux は manylinux コンテナ内でビルドする。ホストの setup-python は

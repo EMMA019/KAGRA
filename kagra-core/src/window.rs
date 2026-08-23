@@ -75,6 +75,9 @@ pub struct KagraWindow {
     pub inject_queue: Arc<Mutex<Vec<InjectEvent>>>,
     /// 描画完了後に PNG 保存（1フレーム分）
     pub pending_screenshot: Arc<Mutex<Option<String>>>,
+    /// 毎フレーム GPU readback（仮想カメラ）。720p 推奨。
+    pub grab_frames: Arc<AtomicBool>,
+    pub last_frame: Arc<Mutex<Option<(u32, u32, Vec<u8>)>>>,
     pub exit_requested: Arc<AtomicBool>,
     pub frame_count: Arc<AtomicU64>,
 }
@@ -110,6 +113,8 @@ impl KagraWindow {
             window_commands: Arc::new(Mutex::new(Vec::new())),
             inject_queue: Arc::new(Mutex::new(Vec::new())),
             pending_screenshot: Arc::new(Mutex::new(None)),
+            grab_frames: Arc::new(AtomicBool::new(false)),
+            last_frame: Arc::new(Mutex::new(None)),
             exit_requested: Arc::new(AtomicBool::new(false)),
             frame_count: Arc::new(AtomicU64::new(0)),
         })
@@ -121,6 +126,17 @@ impl KagraWindow {
 
     pub fn request_screenshot(&self, path: &str) {
         *lock_recover(&self.pending_screenshot) = Some(path.to_string());
+    }
+
+    pub fn set_grab_frames(&self, enabled: bool) {
+        self.grab_frames.store(enabled, Ordering::SeqCst);
+        if !enabled {
+            *lock_recover(&self.last_frame) = None;
+        }
+    }
+
+    pub fn grab_frame(&self) -> Option<(u32, u32, Vec<u8>)> {
+        lock_recover(&self.last_frame).take()
     }
 
     pub fn queue_inject(&self, event: InjectEvent) {
@@ -396,6 +412,8 @@ impl KagraWindow {
         let window_cmds_ref = Arc::clone(&self.window_commands);
         let inject_ref = Arc::clone(&self.inject_queue);
         let screenshot_ref = Arc::clone(&self.pending_screenshot);
+        let grab_ref = Arc::clone(&self.grab_frames);
+        let last_frame_ref = Arc::clone(&self.last_frame);
         let exit_ref = Arc::clone(&self.exit_requested);
         let frame_count_ref = Arc::clone(&self.frame_count);
 
@@ -582,8 +600,13 @@ impl KagraWindow {
                             Some(r) => r,
                             None => return,
                         };
-                        match renderer.render(screenshot_path.as_deref()) {
-                            Ok(_) => {}
+                        let grab = grab_ref.load(Ordering::Relaxed);
+                        match renderer.render(screenshot_path.as_deref(), grab) {
+                            Ok(pixels) => {
+                                if let Some(frame) = pixels {
+                                    *lock_recover(&last_frame_ref) = Some(frame);
+                                }
+                            }
                             Err(KaguraError::Gpu(msg)) => {
                                 log::error!("GPU render error: {}", msg);
                                 let (w, h) = (renderer.width(), renderer.height());
