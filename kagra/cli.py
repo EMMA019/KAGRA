@@ -7,6 +7,7 @@ _HELP = """KAGRA — Kernel for Anime/Game Runtime Architecture
 
 Usage:
   python -m kagra              sing & dance demo (downloads a sample VRM once)
+  python -m kagra --loop --stream   HUD + virtual camera (needs kagra[stream])
   python -m kagra demo         same
   python -m kagra verify FILE  run an agent verify scenario
   kagra --help

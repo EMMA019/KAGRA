@@ -1384,8 +1384,13 @@ impl RendererV2 {
     }
 
     // ---------- メイン描画関数 ----------
-    /// `screenshot_path` が Some なら、このフレームの結果を PNG に書き出す。
-    pub fn render(&mut self, screenshot_path: Option<&str>) -> KaguraResult<()> {
+    /// `screenshot_path` が Some なら PNG 保存。`grab` なら RGB を返す。
+    /// 両方とも同じ 1 回の readback を共有する（仮想カメラ用）。
+    pub fn render(
+        &mut self,
+        screenshot_path: Option<&str>,
+        grab: bool,
+    ) -> KaguraResult<Option<(u32, u32, Vec<u8>)>> {
         let output = self.surface.get_current_texture().map_err(|e| KaguraError::Gpu(e.to_string()))?;
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("KAGRA Encoder"),
@@ -1491,8 +1496,9 @@ impl RendererV2 {
             extent,
         );
 
-        let readback = if let Some(path) = screenshot_path {
-            Some((path.to_string(), self.encode_frame_readback(&mut encoder)))
+        let need_pixels = screenshot_path.is_some() || grab;
+        let readback = if need_pixels {
+            Some(self.encode_frame_readback(&mut encoder))
         } else {
             None
         };
@@ -1500,8 +1506,15 @@ impl RendererV2 {
         self.staging_belt.finish();
         self.queue.submit(std::iter::once(encoder.finish()));
 
-        if let Some((path, (buffer, _padded))) = readback {
-            self.finish_frame_readback(buffer, &path)?;
+        let mut grabbed = None;
+        if let Some((buffer, _padded)) = readback {
+            let rgba = self.map_frame_rgba(buffer)?;
+            if let Some(path) = screenshot_path {
+                self.save_screenshot_png(path, &rgba)?;
+            }
+            if grab {
+                grabbed = Some((self.screen_width, self.screen_height, rgba_to_rgb(&rgba)));
+            }
         }
 
         output.present();
@@ -1509,7 +1522,7 @@ impl RendererV2 {
         self.dynamic_offset = 0;
         self.skin_palette_used = 0;
 
-        Ok(())
+        Ok(grabbed)
     }
 
     fn encode_frame_readback(&self, encoder: &mut wgpu::CommandEncoder) -> (wgpu::Buffer, u32) {
@@ -1549,7 +1562,7 @@ impl RendererV2 {
         (buffer, padded)
     }
 
-    fn finish_frame_readback(&self, buffer: wgpu::Buffer, path: &str) -> KaguraResult<()> {
+    fn map_frame_rgba(&self, buffer: wgpu::Buffer) -> KaguraResult<Vec<u8>> {
         let width = self.screen_width;
         let height = self.screen_height;
         let slice = buffer.slice(..);
@@ -1589,13 +1602,18 @@ impl RendererV2 {
         }
         drop(data);
         buffer.unmap();
+        Ok(rgba)
+    }
 
+    fn save_screenshot_png(&self, path: &str, rgba: &[u8]) -> KaguraResult<()> {
+        let width = self.screen_width;
+        let height = self.screen_height;
         if let Some(parent) = std::path::Path::new(path).parent() {
             if !parent.as_os_str().is_empty() {
                 std::fs::create_dir_all(parent)?;
             }
         }
-        image::save_buffer(path, &rgba, width, height, image::ColorType::Rgba8)
+        image::save_buffer(path, rgba, width, height, image::ColorType::Rgba8)
             .map_err(|e| KaguraError::Other(format!("screenshot save failed: {}", e)))?;
         log::info!("screenshot saved: {}", path);
         Ok(())
@@ -2116,6 +2134,24 @@ impl RendererV2 {
         });
         let ir = self.instance_renderer.as_ref().unwrap();
         for &bid in batch_ids { ir.draw_batch(&mut rp, bid); }
+    }
+}
+
+fn rgba_to_rgb(rgba: &[u8]) -> Vec<u8> {
+    let mut rgb = Vec::with_capacity(rgba.len() / 4 * 3);
+    for px in rgba.chunks_exact(4) {
+        rgb.extend_from_slice(&px[..3]);
+    }
+    rgb
+}
+
+#[cfg(test)]
+mod grab_tests {
+    use super::rgba_to_rgb;
+
+    #[test]
+    fn rgba_drops_alpha() {
+        assert_eq!(rgba_to_rgb(&[1, 2, 3, 255, 4, 5, 6, 0]), vec![1, 2, 3, 4, 5, 6]);
     }
 }
 

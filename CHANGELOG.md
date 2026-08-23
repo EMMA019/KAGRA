@@ -2,11 +2,26 @@
 
 ## Unreleased
 
+## 0.1.3
+
+Streaming-V slice. OBS can take a virtual camera; VOICEVOX and chat stay
+outside the wheel. WAV / VRMA still download on first run (keeps the ~5MB
+install).
+
+- Virtual camera extra: `pip install "kagra[stream]"` (`pyvirtualcam`).
+  GPU `set_grab_frames` / `grab_frame()` returns RGB. 720p recommended —
+  readback is every frame. `python -m kagra --loop --stream`.
+- Stream HUD: song title, subtitle, recent chat via existing 2D text
+  (`StreamHud`).
+- Chat inbox: JSONL `{user,text}` (`ChatInbox`). YouTube / Twitch APIs are
+  not in the engine — an external script writes the file.
+- Official VOICEVOX recipe (`docs/recipes/voicevox.md`).
+  `avatar.speak_voicevox("こんにちは")` uses mora lipsync. Engine not bundled.
+- Mic extra: `pip install "kagra[mic]"` (`sounddevice`) → `MicLipsync`.
 - Bloom: give extract / blur / composite their own uniforms. A single
   `write_buffer` was applied only after submit, so every pass used
   `intensity` as the extract threshold and smeared the whole frame
   (ghost trails next to the VRM).
-
 - 3D physics: Y-up capsule, yaw OBB, layer/mask, triggers, `physics.sync_vrm`.
   Character-controller style (no Rapier). GPU-free tests in `tests/test_physics3d.py`.
 - `Camera3D.ray_from_screen` and `avatar.pick(sx, sy)` → humanoid bone name
@@ -14,7 +29,6 @@
 - Threshold bloom: extract only high-luminance pixels (eye highlights, outline,
   MToon rimLift), blur that, add back. Full-screen blur is not used — it muddies
   toon edges. `kagra.set_bloom(threshold=0.85, intensity=0.35)`.
-
 - VRM SpringBone colliders (0.x spheres / 1.0 spheres and capsules). Hair and
   skirts now push off the body instead of passing through.
 - `VRMC_node_constraint` 1.0: rotation, roll (twist bones), and aim. Applied
@@ -35,7 +49,6 @@
   the fallback when there is no query.
 - Live body ingest: `avatar.apply_pose({name: quat})` / `kagra.set_vrm_pose`.
   Capture stays outside the engine (VR / Kinect / Holistic).
-
 - Drop-in venues: `kagra.stage("venue.glb")` / `kagra.load_gltf` now load
   JSON `.gltf` plus sibling `.bin` / image URIs (not just GLB). A PNG/JPEG
   path becomes an inverted sky sphere. `python -m kagra --stage` /

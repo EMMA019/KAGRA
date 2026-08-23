@@ -185,6 +185,16 @@ impl Engine {
         self.window.request_screenshot(path);
     }
 
+    /// GPU から毎フレーム RGB を取り出す（仮想カメラ用）。720p 推奨。
+    pub fn set_grab_frames(&self, enabled: bool) {
+        self.window.set_grab_frames(enabled);
+    }
+
+    /// 直前フレームの (width, height, rgb)。無ければ None。1 回読むと消える。
+    pub fn grab_frame(&self) -> Option<(u32, u32, Vec<u8>)> {
+        self.window.grab_frame()
+    }
+
     /// 完了したフレーム数（run 開始後）
     pub fn frame_count(&self) -> u64 {
         self.window.frame_count()

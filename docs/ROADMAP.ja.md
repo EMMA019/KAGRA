@@ -1,6 +1,6 @@
 # KAGRA ロードマップ — バズるまで、そして全自動 AI VTuber まで
 
-最終更新: 2026-08-22（0.1.2 リリース済み、VRM ギャップ 6 項目実装済み、ライブデモ動画あり）
+最終更新: 2026-08-23（0.1.3 = 配信Vの不足を埋めたカット。タグ後に PyPI）
 
 North Star（北極星）は 2 つ。
 
@@ -21,15 +21,16 @@ North Star（北極星）は 2 つ。
 - モーション: BVH / FBX（Mixamo、指対応済み）/ VRMA（指・表情・LookAt 対応）、上半身レイヤー、クロスフェード、IK
 - 音: WAV リップシンク（フォルマント母音推定・ループ）、内蔵ソング合成、`sing()` / `dance()` 1 行 API
 - AI: `AiCharacter`（LLM 接続、感情推定、リップシンク連動）、顔トラッキング（facetrack extra）
-- README にライブデモ動画、`--loop` / `--mascot`（配信・マスコット用途）
+- 配信: `kagra[stream]` 仮想カメラ、`StreamHud`、`ChatInbox`（JSONL）、VOICEVOX 公式レシピ、`kagra[mic]`
+- README にライブデモ動画、`--loop` / `--stream` / `--mascot`
 
 **足りないもの（このロードマップで埋める）**
 
-- 配信出力（仮想カメラ / NDI / RTMP）— OBS に「映す」手段がウィンドウキャプチャしかない
-- ライブチャット取り込み（YouTube / Twitch）
-- TTS の公式レシピ（エンジン非同梱で、コピペで動く手順）
+- NDI / RTMP 直送（仮想カメラと窓キャプチャは 0.1.3 で足りる）
+- YouTube / Twitch の公式取り込み（JSONL 受け口はある。API キーはコアに入れない）
 - モーション生成の公式レシピ（text-to-vrma 連携）
 - 自律ループ（話題選択 → 発話 → 歌 → 休憩 を人間なしで回す頭脳）
+- 無人配信のセーフティ層
 - macOS wheel（検証手段ができるまで凍結中）
 - ブラウザデモ（kagra-shared、凍結中）
 
@@ -37,15 +38,15 @@ North Star（北極星）は 2 つ。
 
 ## Phase 0 — 0.1.3 を出す（信頼の即金化）
 
-merged 済みの実装をユーザーの手元に届ける。バズの前提は「試した人が最初の 5 分で成功すること」。
+配信 V として足りない所を先に埋めたカット。バズの前提は「試した人が最初の 5 分で成功すること」。
 
-- [ ] `assets/cute_song_trial.wav`（2.9MB）と `.vrma` を wheel に同梱するか決める
-      （「5MB で全部入り」の売り文句を守るなら sdist/wheel から除外し、初回 DL に回す手もある）
-- [ ] バージョン 0.1.3 バンプ + CHANGELOG 整理（コライダー / constraint / override / 一人称 / MToon / テクスチャ / VRMA リターゲット修正 / FBX 指 / リップシンク強化）
-- [ ] タグ → publish ワークフロー（Windows + Linux、sdist）
+- [x] WAV / `.vrma` は wheel に入れない（約 5MB の売りを守る。サンプル VRM は初回 DL）
+- [x] バージョン 0.1.3 バンプ + CHANGELOG（物理 / pick / bloom / SpringBone / VOICEVOX mora / 配信 extra）
+- [x] 仮想カメラ extra・HUD・JSONL チャット・VOICEVOX レシピ・マイク extra
+- [ ] タグ `v0.1.3` → publish ワークフロー（Windows + Linux、sdist）。merge 後
 - [ ] リリースノートに Before / After の GIF（コライダー効果は貫通比較が一番わかる）
 
-**完了条件**: `pip install -U kagra` だけで新機能が全部動く。
+**完了条件**: `pip install -U kagra` で歌って踊れる。配信は `kagra[stream]` を足す。
 
 ## Phase 1 — 「一撃デモ」を磨く（最初のバズ弾）
 
@@ -76,7 +77,8 @@ merged 済みの実装をユーザーの手元に届ける。バズの前提は�
       - 自分の VRM で歌わせる（VRoid Studio → KAGRA）
       - Irodori-TTS で歌声 WAV を作って `av.sing("voice.wav")`
       - text-to-vrma でダンスを作って `av.dance("dance.vrma")`
-      - OBS でウィンドウキャプチャして配信に載せる（現状動く手順）
+      - [x] OBS: 仮想カメラ（`kagra[stream]`）または窓キャプチャ（`docs/recipes/stream.md`）
+      - [x] VOICEVOX 公式レシピ（`docs/recipes/voicevox.md`）。エンジン非同梱
       - `--mascot` でデスクトップマスコット化
 - [ ] GitHub Discussions を開く（Discord はコミュニティが 100 人を超えてから）
 - [ ] issue テンプレ（VRM 名 / OS / GPU / ログの 4 点）
@@ -92,11 +94,12 @@ merged 済みの実装をユーザーの手元に届ける。バズの前提は�
       - 状態機械: 雑談 → 歌 → ダンス → 休憩（アイドルモーション）→ 雑談…
       - 話題は LLM に「前の発言」「時刻」「予定表 JSON」を渡して生成
       - 沈黙が N 秒続いたら自発的に話す / 歌う
-- [ ] **TTS 接続の公式化**: VOICEVOX（無料・ローカル・商用可）を第一候補に
-      `AiCharacter(tts="voicevox")` を実レシピ化。Irodori-TTS は歌用
+- [x] **TTS 接続の公式化**: VOICEVOX（無料・ローカル・商用可）を第一候補に
+      `avatar.speak_voicevox` / `docs/recipes/voicevox.md`。Irodori-TTS は歌用
+      （`AiCharacter(tts="voicevox")` は従来通り。エンジン非同梱）
 - [ ] **歌のレパートリー**: WAV + VRMA + 歌詞タイムラインの「セットリスト」フォルダ規約
       （`setlist/song01/{voice.wav, dance.vrma, meta.json}` を順に回す）
-- [ ] **画面の作り込み**: ステージ・字幕（発話テキスト表示）・曲名オーバーレイを kagra の 2D API で
+- [x] **画面の作り込み**: `StreamHud`（字幕・曲名・直近チャット）。ステージは `kagra.stage`
 - [ ] **モーションの継ぎ目**: 曲間のクロスフェード、待機ループ、`relax_hands` の自動適用を点検
 
 **完了条件**: `python -m kagra.autopilot` で 30 分、人間の操作ゼロで見ていられる。
@@ -110,7 +113,9 @@ merged 済みの実装をユーザーの手元に届ける。バズの前提は�
       2. NDI 出力
       3. ffmpeg パイプで直接 RTMP（YouTube Live へ OBS なし送出）
       まず 1 を extra（`kagra[stream]`）で。3 ができると本当に無人になる
+      **0.1.3 で 1 は extra として入った**（NDI / RTMP はまだ）
 - [ ] **チャット取り込み**: YouTube Live Chat API / Twitch IRC を extra で
+      - JSONL 受け口（`ChatInbox`）は 0.1.3 で入った。API キーはコアに置かない
       - チャット → LLM 応答 → TTS → リップシンク の往復をレイテンシ込みで設計
       - 読み上げるコメントの選別（LLM でフィルタ + NG ワード辞書）
 - [ ] **セーフティ層**: 無人だからこそ必須
@@ -155,7 +160,7 @@ merged 済みの実装をユーザーの手元に届ける。バズの前提は�
 
 ## リスクと決めごと
 
-- **アセット同梱サイズ**: `assets/` の WAV/VRMA が wheel に入ると 5MB を超える。0.1.3 で方針決定
+- **アセット同梱サイズ**: 0.1.3 で決定。WAV / VRMA は wheel に入れない（約 5MB を守る）
 - **モデル規約**: AvatarSample 系は pixiv 規約。デモ・動画は Alicia（クレジット付き）か自作 VRM に限定
 - **無人配信の責任**: セーフティ層（Phase 4）が済むまで無人公開配信はしない。テストは限定公開で
 - **API キー**: autopilot は環境変数のみ。キーをコードやログに出さない

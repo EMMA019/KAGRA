@@ -61,14 +61,29 @@ cd $env:TEMP
 python -m kagra
 ```
 
-`pip install kagra` is the full product: renderer, VRM, sing, dance, `.vrma`, lipsync, look-at, IK, expressions, SpringBone. No Rust toolchain. No second package.
+`pip install kagra` is the full product: renderer, VRM, sing, dance, `.vrma`, lipsync, look-at, IK, expressions, SpringBone. No Rust toolchain. Face tracking, virtual camera, and mic are extras.
 
 | | |
 |---|---|
 | Windows / Linux | `pip install kagra` |
 | macOS | from source (`maturin develop`) until wheels are verified |
-| Webcam face tracking | `pip install "kagra[facetrack]"` (pulls MediaPipe + OpenCV) |
+| Webcam face tracking | `pip install "kagra[facetrack]"` (MediaPipe + OpenCV) |
+| Virtual camera (OBS) | `pip install "kagra[stream]"` then `python -m kagra --loop --stream` |
+| Mic lipsync | `pip install "kagra[mic]"` |
 | Contributors | `pip install maturin && maturin develop` |
+
+## Not yet
+
+Honesty list. These are missing on purpose, not forgotten:
+
+- **macOS wheels** — build from source until a Mac can verify them
+- **YouTube / Twitch chat APIs** — write `{user,text}` JSONL yourself (`ChatInbox`)
+- **NDI / RTMP** — OBS window capture still works; virtual cam is the extra
+- **Autopilot / unattended safety** — not in 0.1.3
+- **VOICEVOX / Irodori-TTS** — not bundled. VOICEVOX recipe: [docs/recipes/voicevox.md](docs/recipes/voicevox.md)
+- Song WAV and `.vrma` stay out of the wheel (~5MB install). First run downloads the sample VRM
+
+See [docs/recipes/stream.md](docs/recipes/stream.md) and [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md).
 
 See [docs/PUBLISHING.md](docs/PUBLISHING.md) to cut a release.
 
@@ -91,7 +106,9 @@ Everything else in [`docs/API_INDEX.md`](docs/API_INDEX.md) is available but may
 
 ```bash
 python -m kagra                          # sing & dance
+python -m kagra --loop --stream          # HUD + virtual cam (needs kagra[stream])
 python examples/vrm_vrma.py              # .vrma (or a generated wave)
+python examples/vrm_stream.py            # OBS / JSONL chat
 python examples/2Daction.py              # no assets needed
 python examples/3Dmaze.py                # drop a .vrm in assets/ to see it
 python examples/vrm_orb_rush.py

@@ -241,6 +241,25 @@ def screenshot(path: str):
     _engine.request_screenshot(str(path))
 
 
+def set_grab_frames(enabled: bool = True):
+    """GPU から毎フレーム RGB を取り出す（仮想カメラ用）。
+
+    720p 推奨。毎フレーム readback するので 1080p は重い。
+    ``kagra[stream]`` の VirtualCam が内部で呼ぶ。
+    """
+    _check()
+    _engine.set_grab_frames(bool(enabled))
+
+
+def grab_frame():
+    """直前フレームの ``(width, height, rgb_bytes)``。無ければ None。
+
+    1 回読むと消える。``update()`` の先頭で取る（描画は 1 フレーム遅れ）。
+    """
+    _check()
+    return _engine.grab_frame()
+
+
 def frame_count() -> int:
     """run() 開始後に完了したフレーム数。"""
     _check()
@@ -1940,4 +1959,7 @@ from kagra.http_client import (
     http_get, http_post, http_tick,
     openai_chat, voicevox_speak,
 )
+from kagra.stream import StreamHud, ChatInbox, ChatMessage, VirtualCam
+from kagra.voicevox import VoicevoxError
+from kagra.mic import MicLipsync
 

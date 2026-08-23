@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "kagra"
-version = "0.1.2"
+version = "0.1.3"
 description = "Python game engine with a Rust/wgpu core — VRM avatars that sing and dance"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -33,6 +33,8 @@ kagra = "kagra.cli:main"
 
 [project.optional-dependencies]
 facetrack = ["mediapipe", "opencv-python"]
+stream = ["pyvirtualcam"]
+mic = ["sounddevice"]
 dev = ["pytest>=7.0"]
 mcp = ["mcp>=1.1"]
 agent = ["mcp>=1.1", "pytest>=7.0"]

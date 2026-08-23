@@ -1304,7 +1304,7 @@ dependencies = [
 
 [[package]]
 name = "kagra-core"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "ab_glyph",
  "bytemuck",

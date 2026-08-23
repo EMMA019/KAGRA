@@ -767,6 +767,25 @@ class VrmAvatar:
         if self._lipsync:
             self._lipsync.play_text(text, duration)
 
+    def speak_voicevox(
+        self,
+        text: str,
+        *,
+        speaker: int = 3,
+        url: str = "http://localhost:50021",
+        play: bool = True,
+    ) -> str:
+        """VOICEVOX で発話して口を動かす。エンジンは同梱しない。
+
+        Example::
+            avatar.speak_voicevox("こんにちは")
+        """
+        from kagra.voicevox import speak
+
+        if self._lipsync is None:
+            self.enable_lipsync()
+        return speak(self, text, speaker=speaker, url=url, play=play)
+
     def reach_right(self, tx: float, ty: float, tz: float, weight: float = 1.0):
         """右手を3D位置へ向ける。enable_ik() が必要。
 

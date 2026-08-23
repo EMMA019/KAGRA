@@ -5,6 +5,7 @@
 VRM が無ければサンプルを 1 回だけダウンロードする。
 
 ``--loop`` で曲を繰り返す（OBS でこの窓をキャプチャして配信）。
+``--stream`` で字幕 HUD + 仮想カメラ（``kagra[stream]``）+ JSONL チャット受け口。
 ``--mascot`` で最前面の枠なし窓（デスクトップマスコット）。
 ``--stage venue.glb`` / ``--backdrop sky.png`` で外部会場。無ければチェッカー床。
 
@@ -97,6 +98,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hidden", action="store_true", help="hide the window (agent verify)")
     p.add_argument("--max-frames", type=int, default=0, help="quit after N frames (0 = until ESC)")
     p.add_argument("--screenshot", default="", help="write a PNG at mid-run when --max-frames is set")
+    p.add_argument(
+        "--stream",
+        action="store_true",
+        help="HUD + optional virtual camera (pip install 'kagra[stream]')",
+    )
+    p.add_argument(
+        "--chat",
+        default="",
+        help="JSONL chat inbox ({user,text} per line). default with --stream: kagra-chat.jsonl",
+    )
     return p
 
 
@@ -149,7 +160,18 @@ def run_live(args: argparse.Namespace) -> int:
 
     max_frames = args.max_frames if args.max_frames > 0 else None
     shot_at = max(1, (args.max_frames // 2)) if max_frames else None
-    state: dict = {"av": None, "floor": [], "venue": None, "sky": None, "t": 0.0}
+    streaming = bool(args.stream)
+    chat_path = args.chat or ("kagra-chat.jsonl" if streaming else "")
+    state: dict = {
+        "av": None,
+        "floor": [],
+        "venue": None,
+        "sky": None,
+        "t": 0.0,
+        "hud": None,
+        "inbox": None,
+        "cam": None,
+    }
 
     def on_ready():
         try:
@@ -189,6 +211,22 @@ def run_live(args: argparse.Namespace) -> int:
             print("[kagra] loop on — OBS: Game Capture this window (no YouTube API)")
         if mascot:
             print("[kagra] mascot — always on top, look at mouse")
+        if streaming:
+            from kagra.stream import ChatInbox, StreamHud, VirtualCam
+
+            song_label = "builtin" if song is None else os.path.basename(str(song))
+            hud = StreamHud(song=f"♪ {song_label}", credit="Alicia Solid © Dwango")
+            hud.subtitle = "KAGRA live"
+            state["hud"] = hud
+            if chat_path:
+                state["inbox"] = ChatInbox(chat_path)
+                print(f"[kagra] chat inbox → {chat_path}  (echo '{{\"user\":\"a\",\"text\":\"hi\"}}' >> …)")
+            try:
+                state["cam"] = VirtualCam(fps=30).start(width, height)
+                print("[kagra] virtual cam on — OBS: Video Capture Device / OBS Virtual Camera")
+            except Exception as e:
+                print(f"[kagra] virtual cam skipped ({e})")
+                print('[kagra]   pip install "kagra[stream]"  then retry --stream')
         state["av"] = av
 
     def update(dt: float):
@@ -198,6 +236,15 @@ def run_live(args: argparse.Namespace) -> int:
         av = state["av"]
         if av is None:
             return
+        cam_out = state.get("cam")
+        if cam_out is not None:
+            cam_out.send()
+        inbox = state.get("inbox")
+        hud = state.get("hud")
+        if inbox is not None and hud is not None:
+            for msg in inbox.poll():
+                hud.push_chat(msg)
+                hud.subtitle = msg.text
         state["t"] += dt
         t = state["t"]
         if not args.no_orbit and not mascot:
@@ -241,7 +288,10 @@ def run_live(args: argparse.Namespace) -> int:
         av = state["av"]
         if av is not None:
             kagra.draw_vrm(av.vrm_id)
-        if not mascot:
+        hud = state.get("hud")
+        if hud is not None:
+            hud.draw(width, height)
+        elif not mascot:
             kagra.text("KAGRA", 16, 16, 18, (220, 200, 140))
             kagra.text("ESC", 16, height - 32, 14, (140, 140, 160))
 
