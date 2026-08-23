@@ -286,3 +286,24 @@ class Camera3D:
         if length < 1e-8:
             return None
         return (nx, ny, nz), (dx / length, dy / length, dz / length)
+
+    def world_to_screen(self, wx: float, wy: float, wz: float):
+        """ワールド座標 → スクリーンピクセル (sx, sy)。左上が原点。
+
+        カメラの後ろ、またはクリップ外なら None。
+        """
+        view = self.view_matrix()
+        proj = self.proj_matrix()
+        vp = _mat4_mul(proj, view)
+        x = vp[0] * wx + vp[1] * wy + vp[2] * wz + vp[3]
+        y = vp[4] * wx + vp[5] * wy + vp[6] * wz + vp[7]
+        z = vp[8] * wx + vp[9] * wy + vp[10] * wz + vp[11]
+        w = vp[12] * wx + vp[13] * wy + vp[14] * wz + vp[15]
+        if abs(w) < 1e-5:
+            return None
+        ndc_x, ndc_y, ndc_z = x / w, y / w, z / w
+        if ndc_z < 0.0 or ndc_z > 1.0:
+            return None
+        sx = (ndc_x * 0.5 + 0.5) * self.screen_w
+        sy = (1.0 - (ndc_y * 0.5 + 0.5)) * self.screen_h
+        return sx, sy

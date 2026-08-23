@@ -94,7 +94,7 @@ KAGRA's development loop is designed for AI coding agents, not just humans. An a
 - **Headless verify** — `python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json` closes the loop in CI or a subprocess
 - **MCP server** — `tools/mcp_kagra/server.py`: `kagra_api_search` / `kagra_env` / `kagra_resolve_asset` / `kagra_verify` / `kagra_render`
 
-`examples/vrm_orb_rush.py` is the reference game for this loop (title → countdown → play → result, procedural SFX, particles, difficulty curve). Agent build sessions are logged under [`docs/agent-runs/`](docs/agent-runs/README.md).
+`examples/vrm_orb_rush.py` is the reference game (public APIs only): `texture_from_fn`, `tone`, `Camera3D.world_to_screen`, `avatar.set_position` / `set_yaw`, `billboard_mesh`, `save_json`. Agent build sessions go under [`docs/agent-runs/`](docs/agent-runs/README.md).
 
 ## Not yet
 

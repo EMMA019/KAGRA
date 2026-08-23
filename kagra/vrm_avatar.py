@@ -497,6 +497,8 @@ class VrmAvatar:
         self._floor_y = 0.0
         self._sole = 0.03
         self._ground_lift = 0.0
+        self._pos = (0.0, 0.0, 0.0)
+        self._yaw = 0.0
         print(f"[VrmAvatar] Loaded: {vrm_path}")
 
     def _load_bind_rots(self, vrm_path: str) -> dict:
@@ -660,13 +662,8 @@ class VrmAvatar:
 
     def disable_grounding(self):
         self._grounding = False
-        if self._ground_lift:
-            try:
-                import kagra
-                kagra.get_engine().set_vrm_offset(self.vrm_id, 0.0, 0.0, 0.0)
-            except Exception:
-                pass
         self._ground_lift = 0.0
+        self._apply_position()
 
     def _apply_grounding(self):
         from kagra.look import grounding_lift
@@ -687,8 +684,50 @@ class VrmAvatar:
             current=self._ground_lift,
             follow=0.4,
         )
-        if self._ground_lift > 1e-4 or ys:
-            kagra.get_engine().set_vrm_offset(self.vrm_id, 0.0, self._ground_lift, 0.0)
+        if self._ground_lift > 1e-4 or ys or self._pos != (0.0, 0.0, 0.0):
+            self._apply_position()
+
+    def set_position(self, x: float, y: float = 0.0, z: float = 0.0):
+        """ワールド位置。接地リフトがあるときは Y に加算する。
+
+        アニメ更新のあとに呼ぶ（接地・ルートモーションより後勝ち）。
+        """
+        self._pos = (float(x), float(y), float(z))
+        self._apply_position()
+
+    def set_yaw(self, radians: float):
+        """Y 軸の向き（ラジアン）。現在のヒップ姿勢に乗せる。
+
+        アニメ / アクション更新のあとに呼ぶ。0 で正面。
+        """
+        self._yaw = float(radians)
+        self._apply_yaw()
+
+    def _apply_position(self):
+        import kagra
+        x, y, z = self._pos
+        lift = self._ground_lift if self._grounding else 0.0
+        try:
+            eng = kagra.get_engine()
+            if eng:
+                eng.set_vrm_offset(self.vrm_id, x, y + lift, z)
+        except Exception:
+            pass
+
+    def _hips_name(self) -> Optional[str]:
+        rots = getattr(self._anim, "current_rots", {}) or {}
+        binds = self._bind_rots or {}
+        for name in ("hips", "J_Bip_C_Hips", "Hips", "Hip"):
+            if name in rots or name in binds:
+                return name
+        return None
+
+    def _apply_yaw(self):
+        name = self._hips_name()
+        if not name:
+            return
+        hips = list(self._anim.current_rots.get(name) or self._bind_rots.get(name) or _ID)
+        _send_bone_rot(self.vrm_id, name, _qmul(_euler_to_quat(0.0, self._yaw, 0.0), hips))
 
     def enable_ik(self, smooth_speed: float = 8.0) -> "ArmIK":
         """腕 IK を有効化して ArmIK を返す。

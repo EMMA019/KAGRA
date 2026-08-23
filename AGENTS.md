@@ -49,10 +49,18 @@ pytest tests -m "not golden"                                       # pure-python
 
 ## Reference game
 
-`examples/vrm_orb_rush.py` is the reference implementation of a complete
-game built on this loop (title → countdown → play → result, procedural
-SFX, particles, difficulty curve) with its own verify scenario
-(`examples/verify_scenarios/orb_rush_smoke.json`).
+`examples/vrm_orb_rush.py` is the reference game for this loop (title →
+countdown → play → result, procedural SFX, particles, difficulty curve)
+and is written against **public APIs only**. Prefer these over hand-rolled
+PNG/WAV/projection:
+
+- `kagra.texture_from_fn` / `kagra.tone` — procedural art and SE
+- `Camera3D.world_to_screen` — world → HUD pixels
+- `avatar.set_position` / `avatar.set_yaw` — move a VRM in the arena
+- `kagra.billboard_mesh` / `disk_mesh` / `quad_y_mesh` — 3D sprites / floor
+- `kagra.save_json` / `load_json` — high scores
+
+Verify: `examples/verify_scenarios/orb_rush_smoke.json`.
 
 ## More context
 

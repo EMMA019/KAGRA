@@ -56,6 +56,27 @@ def test_showcase_moves_from_body_to_face():
     assert cam.fov_deg < 32.0
 
 
+def test_world_to_screen_puts_target_near_center():
+    m = _cam()
+    cam = m.Camera3D(800, 600, fov_deg=45.0)
+    cam.position = (0.0, 1.0, 3.0)
+    cam.target = (0.0, 1.0, 0.0)
+    cam.up = (0.0, 1.0, 0.0)
+    hit = cam.world_to_screen(0.0, 1.0, 0.0)
+    assert hit is not None
+    sx, sy = hit
+    assert abs(sx - 400) < 8
+    assert abs(sy - 300) < 8
+
+
+def test_world_to_screen_behind_camera_is_none():
+    m = _cam()
+    cam = m.Camera3D(800, 600, fov_deg=45.0)
+    cam.position = (0.0, 1.0, 3.0)
+    cam.target = (0.0, 1.0, 0.0)
+    assert cam.world_to_screen(0.0, 1.0, 8.0) is None
+
+
 def test_use_orbit_clears_showcase():
     m = _cam()
     cam = m.Camera3D(800, 600)
