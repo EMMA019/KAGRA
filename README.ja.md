@@ -11,6 +11,14 @@ pip install kagra
 python -m kagra
 ```
 
+Windows の cmd で `'-m' は認識されていません` と出るときは、プロンプトの `>` のあとにさらに `>` を付けて `>python -m kagra` と打っています。リダイレクトになり、`-m` がコマンド扱いになります。次のどれか:
+
+```bat
+py -3 -m kagra
+kagra
+kagra.cmd
+```
+
 これだけです。初回だけサンプル VRM（Alicia Solid）をダウンロードし、その場で合成した歌とリップシンク、同梱のダンスを再生します。ESC で終了。
 
 ```python

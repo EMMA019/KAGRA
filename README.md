@@ -11,6 +11,8 @@ pip install kagra
 python -m kagra
 ```
 
+On Windows cmd, `'-m' is not recognized` means an extra `>` was typed (`>python -m kagra`). cmd redirects to a file named `python` and then tries to run `-m`. Use `py -3 -m kagra`, `kagra`, or `kagra.cmd`.
+
 That's it. The first run downloads a sample VRM (Alicia Solid, once) and plays a synthesized song with lipsync and a bundled dance. ESC to quit.
 
 ```python
