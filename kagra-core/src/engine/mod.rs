@@ -1391,6 +1391,17 @@ impl Engine {
         self.window.set_bloom(threshold, intensity);
     }
 
+    /// ワールド 3D メッシュの視錐台カリング。VRM は対象外。
+    #[pyo3(signature = (enabled))]
+    pub fn set_mesh_cull(&self, enabled: bool) {
+        self.window.set_mesh_cull(enabled);
+    }
+
+    /// 直前フレームの 3D 統計。(draw_calls, triangles, culled)
+    pub fn render_stats(&self) -> (u32, u32, u32) {
+        self.window.render_stats()
+    }
+
     #[pyo3(signature = (texture_id, verts, indices))]
     pub fn draw_mesh_3d(&self, texture_id: u32, verts: Vec<Vec<f32>>, indices: Vec<u32>) {
         let cv: Vec<[f32;8]> = verts.iter().map(|v| {

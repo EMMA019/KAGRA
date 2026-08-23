@@ -42,12 +42,14 @@ use types::*;
 use shaders::*;
 use gpu_helpers::*;
 use bloom::BloomPass;
+use crate::frustum::{Aabb, Frustum, RenderStats};
 
 struct RetainedMesh3D {
     texture_id: u32,
     vb: wgpu::Buffer,
     ib: wgpu::Buffer,
     index_count: u32,
+    aabb: Option<Aabb>,
 }
 
 struct GpuTexture {
@@ -117,6 +119,11 @@ pub struct RendererV2 {
     retained_meshes: std::collections::HashMap<u32, RetainedMesh3D>,
     retained_draw_queue: Vec<u32>,
     next_retained_mesh_id: u32,
+    last_view: [f32; 16],
+    last_proj: [f32; 16],
+    camera_3d_ready: bool,
+    mesh_cull: bool,
+    stats: RenderStats,
     skinning_3d_morph_bgl: wgpu::BindGroupLayout,
     /// (base, shade, matcap, normal, uvmask, morph_ptr, blend_ptr)
     morph_bg_cache: std::collections::HashMap<(u32, u32, u32, u32, u32, usize, usize), Arc<wgpu::BindGroup>>,
@@ -909,6 +916,11 @@ impl RendererV2 {
             retained_meshes: std::collections::HashMap::new(),
             retained_draw_queue: Vec::new(),
             next_retained_mesh_id: 1,
+            last_view: [0.0; 16],
+            last_proj: [0.0; 16],
+            camera_3d_ready: false,
+            mesh_cull: true,
+            stats: RenderStats::default(),
             skinning_3d_morph_bgl,
             morph_bg_cache: std::collections::HashMap::new(),
             morph_bg_order: VecDeque::new(),
@@ -1264,6 +1276,9 @@ impl RendererV2 {
         let mut data = [0f32; 32];
         data[..16].copy_from_slice(view);
         data[16..].copy_from_slice(proj);
+        self.last_view = *view;
+        self.last_proj = *proj;
+        self.camera_3d_ready = true;
         self.queue.write_buffer(&self.camera_3d_buf, 0, bytemuck::cast_slice(&data));
         // view is column-major flat [16]
         // eye = -R^T * t where t=(m03,m13,m23)=(v[12],v[13],v[14])
@@ -1378,8 +1393,17 @@ impl RendererV2 {
             vb,
             ib,
             index_count: indices.len() as u32,
+            aabb: Aabb::from_mesh3d_verts(&verts),
         });
         id
+    }
+
+    pub fn set_mesh_cull(&mut self, enabled: bool) {
+        self.mesh_cull = enabled;
+    }
+
+    pub fn render_stats(&self) -> RenderStats {
+        self.stats
     }
 
     pub fn queue_retained_mesh_3d(&mut self, mesh_id: u32) {
@@ -1458,6 +1482,7 @@ impl RendererV2 {
         screenshot_path: Option<&str>,
         grab: bool,
     ) -> KaguraResult<Option<(u32, u32, Vec<u8>)>> {
+        self.stats = RenderStats::default();
         let output = self.surface.get_current_texture().map_err(|e| KaguraError::Gpu(e.to_string()))?;
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("KAGRA Encoder"),
@@ -1926,30 +1951,40 @@ impl RendererV2 {
 
     fn draw_meshes_3d(&mut self, encoder: &mut wgpu::CommandEncoder, target_view: &wgpu::TextureView, cmds: &[Mesh3DCommand]) {
         let retained_ids = std::mem::take(&mut self.retained_draw_queue);
+        let frustum = if self.mesh_cull && self.camera_3d_ready {
+            Some(Frustum::from_view_proj_col(&self.last_view, &self.last_proj))
+        } else {
+            None
+        };
 
         const VERT_STRIDE: u64 = (8 * std::mem::size_of::<f32>()) as u64; // [f32; 8]
         const INDEX_STRIDE: u64 = std::mem::size_of::<u32>() as u64;
 
+        let mut visible_immediate: Vec<&Mesh3DCommand> = Vec::with_capacity(cmds.len());
         let mut total_vb = 0u64;
         let mut total_ib = 0u64;
         for cmd in cmds {
             if cmd.verts.is_empty() || cmd.indices.is_empty() {
                 continue;
             }
+            if let (Some(fr), Some(aabb)) = (frustum.as_ref(), Aabb::from_mesh3d_verts(&cmd.verts)) {
+                if !fr.contains_aabb(&aabb) {
+                    self.stats.culled += 1;
+                    continue;
+                }
+            }
+            visible_immediate.push(cmd);
             total_vb += cmd.verts.len() as u64 * VERT_STRIDE;
             total_ib += cmd.indices.len() as u64 * INDEX_STRIDE;
         }
 
         // (texture_id, vb_offset, ib_offset, index_count)
-        let mut draws: Vec<(u32, u64, u64, u32)> = Vec::with_capacity(cmds.len());
+        let mut draws: Vec<(u32, u64, u64, u32)> = Vec::with_capacity(visible_immediate.len());
         if total_vb > 0 && total_ib > 0 {
             self.ensure_mesh_3d_capacity(total_vb, total_ib);
             let mut vb_off = 0u64;
             let mut ib_off = 0u64;
-            for cmd in cmds {
-                if cmd.verts.is_empty() || cmd.indices.is_empty() {
-                    continue;
-                }
+            for cmd in visible_immediate {
                 let v_bytes = cmd.verts.len() as u64 * VERT_STRIDE;
                 let i_bytes = cmd.indices.len() as u64 * INDEX_STRIDE;
                 self.queue.write_buffer(
@@ -1968,7 +2003,25 @@ impl RendererV2 {
             }
         }
 
-        if draws.is_empty() && retained_ids.is_empty() {
+        let mut visible_retained: Vec<u32> = Vec::with_capacity(retained_ids.len());
+        for id in retained_ids {
+            let Some(mesh) = self.retained_meshes.get(&id) else { continue };
+            if mesh.index_count == 0 {
+                continue;
+            }
+            if let (Some(fr), Some(aabb)) = (frustum.as_ref(), mesh.aabb.as_ref()) {
+                if !fr.contains_aabb(aabb) {
+                    self.stats.culled += 1;
+                    continue;
+                }
+            }
+            visible_retained.push(id);
+        }
+        visible_retained.sort_by_key(|id| {
+            self.retained_meshes.get(id).map(|m| m.texture_id).unwrap_or(0)
+        });
+
+        if draws.is_empty() && visible_retained.is_empty() {
             return;
         }
 
@@ -1982,24 +2035,30 @@ impl RendererV2 {
         rp.set_pipeline(&self.pipeline_3d);
         rp.set_bind_group(0, &self.camera_3d_bg, &[]);
         rp.set_bind_group(2, &self.shadow_bg, &[]);
+        let mut drawn = 0u32;
+        let mut tris = 0u32;
         for (texture_id, v_off, i_off, index_count) in draws {
             let bg = self.get_texture_bind_group(texture_id);
             rp.set_bind_group(1, bg, &[]);
             rp.set_vertex_buffer(0, self.mesh_3d_vb.slice(v_off..));
             rp.set_index_buffer(self.mesh_3d_ib.slice(i_off..), wgpu::IndexFormat::Uint32);
             rp.draw_indexed(0..index_count, 0, 0..1);
+            drawn += 1;
+            tris += index_count / 3;
         }
-        for id in retained_ids {
+        for id in visible_retained {
             let Some(mesh) = self.retained_meshes.get(&id) else { continue };
-            if mesh.index_count == 0 {
-                continue;
-            }
             let bg = self.get_texture_bind_group(mesh.texture_id);
             rp.set_bind_group(1, bg, &[]);
             rp.set_vertex_buffer(0, mesh.vb.slice(..));
             rp.set_index_buffer(mesh.ib.slice(..), wgpu::IndexFormat::Uint32);
             rp.draw_indexed(0..mesh.index_count, 0, 0..1);
+            drawn += 1;
+            tris += mesh.index_count / 3;
         }
+        drop(rp);
+        self.stats.draw_calls += drawn;
+        self.stats.triangles += tris;
     }
 
     fn build_skinned_morph_bgs(&mut self, cmds: &[SkinnedMeshCommand]) -> Vec<Option<Arc<wgpu::BindGroup>>> {
@@ -2163,6 +2222,8 @@ impl RendererV2 {
             rp.set_pipeline(&self.skinning_3d_pipeline);
             rp.set_bind_group(0, &self.camera_3d_bg, &[]);
             rp.set_bind_group(3, &self.shadow_bg, &[]);
+            let mut drawn = 0u32;
+            let mut tris = 0u32;
             for (i, cmd) in cmds.iter().enumerate() {
                 let morph_bg = match morph_bgs.get(i).and_then(|b| b.as_ref()) {
                     Some(bg) => bg,
@@ -2173,7 +2234,12 @@ impl RendererV2 {
                 rp.set_vertex_buffer(0, cmd.vertex_buffer.slice(..));
                 rp.set_index_buffer(cmd.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..cmd.num_indices, 0, 0..1);
+                drawn += 1;
+                tris += cmd.num_indices / 3;
             }
+            drop(rp);
+            self.stats.draw_calls += drawn;
+            self.stats.triangles += tris;
         }
         let need_outline = cmds.iter().any(|c| c.outline_width > 1e-5);
         if need_outline {
@@ -2187,6 +2253,8 @@ impl RendererV2 {
             rp.set_pipeline(&self.skinning_3d_outline_pipeline);
             rp.set_bind_group(0, &self.camera_3d_bg, &[]);
             rp.set_bind_group(3, &self.shadow_bg, &[]);
+            let mut drawn = 0u32;
+            let mut tris = 0u32;
             for (i, cmd) in cmds.iter().enumerate() {
                 if cmd.outline_width <= 1e-5 {
                     continue;
@@ -2200,7 +2268,12 @@ impl RendererV2 {
                 rp.set_vertex_buffer(0, cmd.vertex_buffer.slice(..));
                 rp.set_index_buffer(cmd.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..cmd.num_indices, 0, 0..1);
+                drawn += 1;
+                tris += cmd.num_indices / 3;
             }
+            drop(rp);
+            self.stats.draw_calls += drawn;
+            self.stats.triangles += tris;
         }
     }
 
