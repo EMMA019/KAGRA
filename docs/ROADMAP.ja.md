@@ -73,6 +73,19 @@ three.js が当たり前にやっていることを一段ずつ足す。
 - [x] P4: 影 2048 + VRM AABB に合わせた ortho + 9-tap PCF。
       半球アンビエント `set_ambient`（HDRI キューブはまだ無い）
 
+## 使える面トラック（Ursina 級の短さ。2D Entity ではない）
+
+エージェントと人間が短いスクリプトで部屋を置いて歩けること。
+ブラウザの three.js を真似るのではなく、デスクトップで `Prop` / `Walk` / `sky`。
+
+- [x] `Prop`（box / sphere / cylinder / plane、色名前、`World3D` 衝突、
+      インスタンス描画）
+- [x] `Walk`（WASD + マウス左右、`Camera3D.follow`）
+- [x] `sky()` / `solid_tex` / `sphere_mesh` / `cylinder_mesh`
+- [x] play-surface デモ: `examples/vrm_prop_garden.py`（エージェント製ではない）
+- [ ] 一人称（目線の高さ）
+- [ ] 動く Prop（キネマティック）
+
 ## Stage 1 — 楔の同時検証（2 週間 × 最大 2 サイクル）
 
 同じフォーマット（15〜30 行のスクリプト + 60 秒動画 + そのコミュニティの言葉で

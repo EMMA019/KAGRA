@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **367**
+エントリ数: **373**
 
 棚の**手前**は VRM / 3D ワールド / エージェントゲーム。
 棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。
@@ -17,6 +17,7 @@
 | `box_mesh` | `box_mesh(cx: float, cy: float, cz: float, w: float, h: float, d: float)` |
 | `camera_world_to_screen` | `camera_world_to_screen(wx: float, wy: float, wz: float)` |
 | `cls` | `cls(r=0, g=0, b=0)` |
+| `cylinder_mesh` | `cylinder_mesh(cx: float = 0.0, cy: float = 0.0, cz: float = 0.0, radius: float = 0.5, height: float = 1.0, segs: int = 16)` |
 | `disk_mesh` | `disk_mesh(cx: float, cy: float, cz: float, radius: float, segs: int = 48)` |
 | `down` | `down(name: str) -> bool` |
 | `draw_billboard` | `draw_billboard(tex: int, x: float, y: float, z: float, size: float, camera=None, *, yaw: float \| None = None)` |
@@ -54,6 +55,9 @@
 | `set_rim` | `set_rim(intensity: float = 0.45)` |
 | `set_shadow_enabled` | `set_shadow_enabled(enabled: bool = True)` |
 | `set_toon_params` | `set_toon_params(threshold: float = 0.5, softness: float = 1.0, shade: float = 0.55, lit: float = 1.0)` |
+| `sky` | `sky(*, radius: float = 18.0, look: bool = True)` |
+| `solid_tex` | `solid_tex(color)` |
+| `sphere_mesh` | `sphere_mesh(cx: float = 0.0, cy: float = 0.0, cz: float = 0.0, radius: float = 0.5, segs: int = 16)` |
 | `stage` | `stage(path: str = 'stage', *, radius: float = 12.0) -> 'Stage'` |
 | `text` | `text(s, x: float, y: float, size: int = 24, color=(255, 255, 255), font: int = None, alpha: int = 255)` |
 | `texture_from_fn` | `texture_from_fn(width: int, height: int, pixel_fn, *, name: str \| None = None) -> int` |
@@ -76,6 +80,7 @@
 | `MicLipsync` | `class MicLipsync  (from kagra.mic)` |
 | `Physics3D` | `class Physics3D  (from kagra.physics3d)` |
 | `PointerEvent` | `class PointerEvent  (from kagra.touch)` |
+| `Prop` | `class Prop  (from kagra.play)` |
 | `resolve_asset` | `export resolve_asset  (from kagra.contracts)` |
 | `RigidBody3D` | `class RigidBody3D  (from kagra.physics3d)` |
 | `run_scenario` | `export run_scenario  (from kagra.verify)` |
@@ -85,6 +90,7 @@
 | `StreamHud` | `class StreamHud  (from kagra.stream)` |
 | `VirtualCam` | `class VirtualCam  (from kagra.stream)` |
 | `VirtualPad` | `class VirtualPad  (from kagra.touch)` |
+| `Walk` | `class Walk  (from kagra.play)` |
 | `World3D` | `class World3D  (from kagra.world3d)` |
 
 ## Shelf (legacy 2D / tilemap / editor / ECS)
@@ -396,6 +402,8 @@
 - ワールド箱は視錐台カリングされる。箱の描画は `draw_mesh_instances`。直前フレームは `render_stats()`。
 - VRM プリミティブはパッド付きボーン AABB でカリング。`doubleSided` のときだけ両面。
 - 床と箱: `World3D`（または `Physics3D` + `box_mesh`）。カメラは `Camera3D.follow`。
+- 短い 3D: `Prop`（box/sphere/cylinder/plane）+ `Walk` + `sky()`。2D の `Entity` ではない。`bake_all` のあと `draw_all`。
+- 色付きメッシュ: `solid_tex` + `sphere_mesh` / `cylinder_mesh` / `box_mesh`。
 - `kagra-shared` / `mobile/` は別の運転デモ。この Python スタックと混ぜない。
 - Rust バインディングの整合は `tests/test_api_bindings.py` も参照。
 - 再生成: `python tools/gen_api_index.py`

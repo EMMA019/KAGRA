@@ -232,3 +232,81 @@ def box_mesh(
             verts.append([cx + dx, cy + dy, cz + dz, nx, ny, nz, u, v])
         idx += [base, base + 1, base + 2, base, base + 2, base + 3]
     return verts, idx
+
+
+def sphere_mesh(
+    cx: float = 0.0,
+    cy: float = 0.0,
+    cz: float = 0.0,
+    radius: float = 0.5,
+    segs: int = 16,
+) -> tuple[list, list]:
+    """UV 球。``verts`` は ``[x,y,z,nx,ny,nz,u,v]``。既定は直径 1。"""
+    segs = max(6, int(segs))
+    rings = max(4, segs // 2)
+    verts: list[list[float]] = []
+    idx: list[int] = []
+    r = float(radius)
+    for i in range(rings + 1):
+        v = i / rings
+        phi = v * math.pi
+        sp, cp = math.sin(phi), math.cos(phi)
+        for j in range(segs + 1):
+            u = j / segs
+            th = u * math.tau
+            st, ct = math.sin(th), math.cos(th)
+            nx, ny, nz = st * sp, cp, ct * sp
+            verts.append([
+                cx + nx * r, cy + ny * r, cz + nz * r,
+                nx, ny, nz, u, 1.0 - v,
+            ])
+    for i in range(rings):
+        for j in range(segs):
+            a = i * (segs + 1) + j
+            b = a + segs + 1
+            idx += [a, b, a + 1, a + 1, b, b + 1]
+    return verts, idx
+
+
+def cylinder_mesh(
+    cx: float = 0.0,
+    cy: float = 0.0,
+    cz: float = 0.0,
+    radius: float = 0.5,
+    height: float = 1.0,
+    segs: int = 16,
+) -> tuple[list, list]:
+    """Y 軸円柱。中心 ``(cx,cy,cz)``。既定は直径 1・高さ 1。"""
+    segs = max(6, int(segs))
+    r = float(radius)
+    hy = float(height) * 0.5
+    verts: list[list[float]] = []
+    idx: list[int] = []
+    for i in range(segs + 1):
+        u = i / segs
+        th = u * math.tau
+        st, ct = math.sin(th), math.cos(th)
+        nx, nz = st, ct
+        verts.append([cx + nx * r, cy - hy, cz + nz * r, nx, 0.0, nz, u, 0.0])
+        verts.append([cx + nx * r, cy + hy, cz + nz * r, nx, 0.0, nz, u, 1.0])
+    for i in range(segs):
+        a = i * 2
+        idx += [a, a + 2, a + 1, a + 1, a + 2, a + 3]
+    top = len(verts)
+    verts.append([cx, cy + hy, cz, 0.0, 1.0, 0.0, 0.5, 0.5])
+    bot = len(verts)
+    verts.append([cx, cy - hy, cz, 0.0, -1.0, 0.0, 0.5, 0.5])
+    for i in range(segs):
+        th0 = i / segs * math.tau
+        th1 = (i + 1) / segs * math.tau
+        x0, z0 = cx + math.sin(th0) * r, cz + math.cos(th0) * r
+        x1, z1 = cx + math.sin(th1) * r, cz + math.cos(th1) * r
+        t0 = len(verts)
+        verts.append([x0, cy + hy, z0, 0.0, 1.0, 0.0, 0.5 + math.sin(th0) * 0.5, 0.5 + math.cos(th0) * 0.5])
+        verts.append([x1, cy + hy, z1, 0.0, 1.0, 0.0, 0.5 + math.sin(th1) * 0.5, 0.5 + math.cos(th1) * 0.5])
+        idx += [top, t0, t0 + 1]
+        b0 = len(verts)
+        verts.append([x0, cy - hy, z0, 0.0, -1.0, 0.0, 0.5 + math.sin(th0) * 0.5, 0.5 + math.cos(th0) * 0.5])
+        verts.append([x1, cy - hy, z1, 0.0, -1.0, 0.0, 0.5 + math.sin(th1) * 0.5, 0.5 + math.cos(th1) * 0.5])
+        idx += [bot, b0 + 1, b0]
+    return verts, idx

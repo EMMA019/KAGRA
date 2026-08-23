@@ -48,3 +48,14 @@ def test_box_xforms_recorded_without_bake():
     assert len(w.box_xforms) == 1
     assert abs(w.box_xforms[0][0] - 2.0) < 1e-6
     assert abs(w.box_xforms[0][1] - 0.5) < 1e-6
+
+
+def test_add_box_draw_false_is_physics_only():
+    m = _world()
+    w = m.World3D()
+    body = w.add_box(1, 0, 1, 1, 1, 1, draw=False)
+    assert w.box_xforms == []
+    assert w._pending == []
+    assert body in w.boxes
+    w.add_box(2, 0, 1, 1, 1, 1, draw=True)
+    assert len(w.box_xforms) == 1
