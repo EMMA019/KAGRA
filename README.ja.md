@@ -53,6 +53,21 @@ kagra.run(update, draw, on_ready=ready)
 
 自分のモデルは `kagra.avatar("/path/to/me.vrm")` または `assets/Emma.vrm`。自分の曲は `av.sing("song.wav")`。[VRM Animation](https://vrm.dev/vrma/)（`.vrma`）は `av.dance("wave.vrma")` にそのまま渡せます。どの VRM にも載ります。[text-to-vrma](https://github.com/Kirakun0328/text-to-vrma) で作ったファイルも、指・表情・LookAt ごと再生できます。会場も同じで、`kagra.stage("venue.glb")`（または `--stage` / PNG の `--backdrop`）に Sketchfab のホールを落とすだけです。
 
+## LLM に体を与える
+
+KAGRA は 3D の体。頭脳は何でも持ち込めます。`AiCharacter.set_llm_func` は「テキスト → テキスト」の関数を受け取ります（OpenAI 互換、Ollama は組み込み）。無人で喋らせるなら、幻覚対策レイヤーを持つローカル BYOK チャット [kairi](https://github.com/EMMA019/kairi) と `kagra.brain.KairiBrain` の組み合わせ:
+
+```python
+from kagra.ai_character import AiCharacter
+from kagra.brain import KairiBrain
+
+char = AiCharacter("me.vrm", tts="voicevox")
+char.set_llm_func(KairiBrain().ask)   # 何を喋ってよいかは kairi
+char.chat("市場どうだった？")          # どう見せるかは KAGRA
+```
+
+レシピ: [docs/recipes/ai-brain.md](docs/recipes/ai-brain.md)。実行デモ: `python examples/vrm_kairi_chat.py`（キーボード入力 + JSONL 視聴者コメント + VOICEVOX）。
+
 ## インストール
 
 **Python 3.10 以降。** ホイールに Rust レンダラが入っているので、Rust のインストールは不要です。

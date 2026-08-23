@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Brain bridge: `kagra.brain.KairiBrain` streams grounded replies from
+  [kairi](https://github.com/EMMA019/kairi) into `AiCharacter.set_llm_func`.
+  Recipe `docs/recipes/ai-brain.md`; demo `examples/vrm_kairi_chat.py`
+  (typed chat + JSONL viewer comments + VOICEVOX). No LLM in the wheel.
+
 - First-run: `python -m kagra --vrm me.vrm --song my.wav` on the README;
   checkout `kagra/` shadow prints `cd %TEMP%` / `maturin develop`.
 - Compare table (install / code / license / AI hook only) vs UniVRM,
