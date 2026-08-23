@@ -1,0 +1,29 @@
+name: It worked / 動いた VRM
+description: Your VRM sang and danced. Name + OS only.
+title: "[worked] "
+labels: ["worked-vrm"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        自分の VRM で `python -m kagra --vrm me.vrm` が通ったら、これだけ残してください。
+        モデル規約で公開できない名前は「自作 / VRoid」でよいです。
+  - type: input
+    id: vrm
+    attributes:
+      label: VRM
+      placeholder: VRoid / Booth 名、または「自作」
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options: [Windows, Linux, macOS]
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes (optional)
+      placeholder: 指が動かない、SpringBone が硬い、など一言

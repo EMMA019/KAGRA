@@ -15,6 +15,9 @@ Usage:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from kagra.launch import warn_checkout_shadow
+
+    warn_checkout_shadow()
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or argv[0] in ("-h", "--help"):
         if argv and argv[0] in ("-h", "--help"):
