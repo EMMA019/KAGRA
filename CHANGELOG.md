@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Windows cmd: `kagra.cmd` and a README note for `'-m' is not recognized`
+  (an extra `>` makes cmd redirect instead of running Python).
 - Live look (Phase 1a): `python -m kagra` no longer opens on a solid purple
   void. Procedural gradient sky, a dark disc + warm spot (no checkerboard),
   vignette, `apply_live_look()` (key light + toon + bloom + fog), and
