@@ -96,7 +96,7 @@ pub struct RendererV2 {
     camera_3d_buf: wgpu::Buffer,
     camera_3d_bg: wgpu::BindGroup,
     camera_3d_bgl: wgpu::BindGroupLayout,
-    /// 平行光の方向（光源へ向かう単位ベクトル）。xyz 使用、w は未使用。
+    /// 平行光の方向（光源へ向かう単位ベクトル）。xyz = 方向、w = グローバルリム強度。
     light_dir: [f32; 4],
     /// VRM トゥーン: [threshold, softness, shade, lit]
     toon_params: [f32; 4],
@@ -1264,14 +1264,27 @@ impl RendererV2 {
     }
 
     /// 平行光の方向を設定する（光源へ向かうベクトル）。正規化はこちらで行う。
+    /// ``w``（グローバルリム強度）は維持する。
     pub fn set_light_dir(&mut self, x: f32, y: f32, z: f32) {
+        let rim = self.light_dir[3];
         self.light_dir = normalize_light_dir(x, y, z);
+        self.light_dir[3] = rim;
         self.queue.write_buffer(
             &self.camera_3d_buf,
             128,
             bytemuck::cast_slice(&self.light_dir),
         );
         self.update_shadow_vp();
+    }
+
+    /// ビュー空間フレネル + 逆光 + 床バウンスのグローバルリム。0 でオフ（既定）。
+    pub fn set_rim(&mut self, intensity: f32) {
+        self.light_dir[3] = intensity.max(0.0);
+        self.queue.write_buffer(
+            &self.camera_3d_buf,
+            128,
+            bytemuck::cast_slice(&self.light_dir),
+        );
     }
 
     pub fn set_shadow_enabled(&mut self, enabled: bool) {

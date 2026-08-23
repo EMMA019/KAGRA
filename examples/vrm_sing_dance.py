@@ -15,22 +15,23 @@ import kagra
 from kagra.camera3d import Camera3D
 
 kagra.init(title="KAGRA — VRM Live", width=1280, height=720)
-cam = Camera3D(); cam.use_orbit(radius=2.6, phi=0.1, target=(0, 0.9, 0))
+cam = Camera3D(1280, 720, fov_deg=32.0)
+cam.use_showcase()
 av = None
 
 def ready():
     global av
+    kagra.apply_live_look()
     av = kagra.avatar(str(kagra.ensure_vrm()))
-    av.dance()
-    av.sing()
+    av.dance(); av.sing()
 
 def update(dt):
     av.update(dt)
-    cam.orbit_by(dt * 0.25, 0)
-    cam.update(kagra.get_engine())
+    cam.update(kagra.get_engine(), dt)
 
 def draw():
-    kagra.cls(16, 12, 32)
+    kagra.cls(8, 6, 18)
     kagra.draw_vrm(av.vrm_id)
+    kagra.draw_vignette()
 
 kagra.run(update, draw, on_ready=ready)

@@ -7,7 +7,7 @@ VRM が無ければサンプルを 1 回だけダウンロードする。
 ``--loop`` で曲を繰り返す（OBS でこの窓をキャプチャして配信）。
 ``--stream`` で字幕 HUD + 仮想カメラ（``kagra[stream]``）+ JSONL チャット受け口。
 ``--mascot`` で最前面の枠なし窓（デスクトップマスコット）。
-``--stage venue.glb`` / ``--backdrop sky.png`` で外部会場。無ければチェッカー床。
+``--stage venue.glb`` / ``--backdrop sky.png`` で外部会場。無ければプロシージャル空 + 円盤。
 
 Windows ではレンダラが ``run()`` の中でしか起きないので、
 ``avatar()`` / ``font()`` は ``on_ready`` で呼ぶ。
@@ -24,39 +24,10 @@ DEFAULT_SONG = "cute_song_trial"
 
 
 def _stage_meshes():
-    """床＋スポット。紫の虚空に立たせない。"""
-    import math
-    from kagra.vrm_stage import make_png
+    """暗い円盤 + 暖色スポット。チェッカーはデバッグに見えるので使わない。"""
+    from kagra.look import make_live_floor
 
-    def floor_px(x, y):
-        stripe = (x // 16 + y // 16) % 2
-        if stripe == 0:
-            return (36, 28, 52, 255)
-        return (28, 22, 42, 255)
-
-    def spot_px(x, y):
-        d = math.sqrt((x - 32) ** 2 + (y - 32) ** 2) / 32.0
-        a = max(0, int((1.0 - d) * 160))
-        return (255, 230, 180, a)
-
-    floor_tex = make_png(128, 128, floor_px)
-    spot_tex = make_png(64, 64, spot_px)
-    meshes = []
-    for tex, radius, y in ((floor_tex, 2.4, 0.0), (spot_tex, 0.7, 0.012)):
-        segs = 32
-        verts, idx = [], []
-        for i in range(segs):
-            a0 = math.radians(i * 360 / segs)
-            a1 = math.radians((i + 1) * 360 / segs)
-            base = len(verts)
-            verts += [
-                [0.0, y, 0.0, 0.0, 1.0, 0.0, 0.5, 0.5],
-                [math.cos(a0) * radius, y, math.sin(a0) * radius, 0.0, 1.0, 0.0, 0.5 + math.cos(a0) * 0.5, 0.5 + math.sin(a0) * 0.5],
-                [math.cos(a1) * radius, y, math.sin(a1) * radius, 0.0, 1.0, 0.0, 0.5 + math.cos(a1) * 0.5, 0.5 + math.sin(a1) * 0.5],
-            ]
-            idx += [base, base + 1, base + 2]
-        meshes.append((tex, verts, idx))
-    return meshes
+    return make_live_floor()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -150,13 +121,12 @@ def run_live(args: argparse.Namespace) -> int:
         transparent=mascot,
     )
     cam = Camera3D(width, height, fov_deg=32.0)
-    # theta=0 → +Z 側。radius を広げて足元〜両手上げまで入るようにする。
-    cam.use_orbit(
-        radius=2.4 if mascot else 3.7,
-        theta=0.0,
-        phi=0.10 if mascot else 0.16,
-        target=(0.0, 0.95 if mascot else 0.82, 0.0),
-    )
+    if mascot:
+        cam.use_orbit(radius=2.4, theta=0.0, phi=0.10, target=(0.0, 0.95, 0.0))
+    elif args.no_orbit:
+        cam.use_orbit(radius=3.35, theta=0.0, phi=0.14, target=(0.0, 0.84, 0.0))
+    else:
+        cam.use_showcase()
 
     max_frames = args.max_frames if args.max_frames > 0 else None
     shot_at = max(1, (args.max_frames // 2)) if max_frames else None
@@ -167,10 +137,12 @@ def run_live(args: argparse.Namespace) -> int:
         "floor": [],
         "venue": None,
         "sky": None,
+        "sky_mesh": None,
         "t": 0.0,
         "hud": None,
         "inbox": None,
         "cam": None,
+        "song_label": "builtin",
     }
 
     def on_ready():
@@ -178,10 +150,9 @@ def run_live(args: argparse.Namespace) -> int:
             kagra.font()
         except RuntimeError as e:
             print(f"[kagra] font skipped: {e}", file=sys.stderr)
-        kagra.set_light_dir(0.35, 1.0, 0.55)
-        kagra.set_shadow_enabled(not mascot)
-        # 高輝度だけ抽出。画面全体ぼかしはトゥーン輪郭を濁すので使わない
-        kagra.set_bloom(threshold=0.82, intensity=0.32)
+        from kagra.look import apply_live_look, load_default_sky
+
+        apply_live_look(mascot=mascot)
         kagra.set_camera3d(cam)
         if not mascot:
             sky = _resolve_optional(AssetKind.TEXTURE, args.backdrop)
@@ -189,6 +160,9 @@ def run_live(args: argparse.Namespace) -> int:
             if sky:
                 state["sky"] = kagra.stage(sky)
                 print(f"[kagra] backdrop={sky}")
+            else:
+                tex, verts, idx = load_default_sky()
+                state["sky_mesh"] = (tex, verts, idx)
             if hall:
                 state["venue"] = kagra.stage(hall)
                 print(f"[kagra] stage={hall}")
@@ -206,18 +180,26 @@ def run_live(args: argparse.Namespace) -> int:
         av.enable_emotion(blend_speed=1.8)
         song = _resolve_optional(AssetKind.AUDIO, args.song)
         duration = av.sing(song, loop=loop) if song else av.sing(loop=loop)
+        song_label = "builtin" if song is None else os.path.basename(str(song))
+        state["song_label"] = song_label
         print(f"[kagra] song={'builtin' if song is None else song} {duration:.1f}s — ESC to quit")
         if loop:
             print("[kagra] loop on — OBS: Game Capture this window (no YouTube API)")
         if mascot:
             print("[kagra] mascot — always on top, look at mouse")
-        if streaming:
-            from kagra.stream import ChatInbox, StreamHud, VirtualCam
+        if not mascot:
+            from kagra.stream import StreamHud
 
-            song_label = "builtin" if song is None else os.path.basename(str(song))
-            hud = StreamHud(song=f"♪ {song_label}", credit="Alicia Solid © Dwango")
-            hud.subtitle = "KAGRA live"
+            hud = StreamHud(
+                song=f"♪ {song_label}",
+                credit="Alicia Solid © Dwango",
+            )
+            if streaming:
+                hud.subtitle = "KAGRA live"
             state["hud"] = hud
+        if streaming:
+            from kagra.stream import ChatInbox, VirtualCam
+
             if chat_path:
                 state["inbox"] = ChatInbox(chat_path)
                 print(f"[kagra] chat inbox → {chat_path}  (echo '{{\"user\":\"a\",\"text\":\"hi\"}}' >> …)")
@@ -247,8 +229,6 @@ def run_live(args: argparse.Namespace) -> int:
                 hud.subtitle = msg.text
         state["t"] += dt
         t = state["t"]
-        if not args.no_orbit and not mascot:
-            cam.orbit_by(dt * 0.25, 0)
         if av.lookat:
             if mascot:
                 mx, my = kagra.mouse()
@@ -268,7 +248,7 @@ def run_live(args: argparse.Namespace) -> int:
                 "fun": 0.18 + min(0.35, open_ * 0.25),
             })
         av.update(dt)
-        cam.update(kagra.get_engine())
+        cam.update(kagra.get_engine(), None if (args.no_orbit or mascot) else dt)
         if shot_at is not None and args.screenshot and kagra.tick_count() == shot_at:
             os.makedirs(os.path.dirname(args.screenshot) or ".", exist_ok=True)
             kagra.screenshot(args.screenshot)
@@ -277,9 +257,12 @@ def run_live(args: argparse.Namespace) -> int:
         if mascot:
             kagra.cls(0, 0, 0)
         else:
-            kagra.cls(16, 12, 32)
+            kagra.cls(8, 6, 18)
         if state["sky"] is not None:
             state["sky"].draw()
+        elif state.get("sky_mesh") is not None:
+            tex, verts, idx = state["sky_mesh"]
+            kagra.draw_mesh_3d(tex, verts, idx)
         if state["venue"] is not None:
             state["venue"].draw()
         else:
@@ -288,11 +271,14 @@ def run_live(args: argparse.Namespace) -> int:
         av = state["av"]
         if av is not None:
             kagra.draw_vrm(av.vrm_id)
+        if not mascot:
+            from kagra.look import draw_vignette
+
+            draw_vignette(width, height, 0.40)
         hud = state.get("hud")
         if hud is not None:
             hud.draw(width, height)
         elif not mascot:
-            kagra.text("KAGRA", 16, 16, 18, (220, 200, 140))
             kagra.text("ESC", 16, height - 32, 14, (140, 140, 160))
 
     kagra.run(update, draw, on_ready=on_ready, max_frames=max_frames, fixed_dt=(1.0 / 60.0 if max_frames else None))

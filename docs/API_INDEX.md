@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **343**
+エントリ数: **346**
 
 ## Functions
 
@@ -10,6 +10,7 @@
 |---|---|
 | `after` | `after(frames: int, from_tick: int = 0) -> bool` |
 | `angle_to` | `angle_to(x1: float, y1: float, x2: float, y2: float) -> float` |
+| `apply_live_look` | `apply_live_look(*, mascot: bool = False)` |
 | `avatar` | `avatar(vrm_path: str) -> 'VrmAvatar'` |
 | `backspace_pressed` | `backspace_pressed()` |
 | `bar` | `bar(x: float, y: float, w: float, h: float, value: float, max_value: float = 100, *, bg=(25, 25, 35), fill=(50, 220, 80))` |
@@ -45,6 +46,7 @@
 | `draw_texture_world` | `draw_texture_world(tid, wx, wy, w=None, h=None, sx=0.0, sy=0.0, sw=None, sh=None, alpha=1.0, rotation_deg=0.0, pivot_x=0.5, pivot_y=0.5, flip_x=False, flip_y=False, shader_id=0, shader_params=None)` |
 | `draw_ui_button` | `draw_ui_button(x, y, w, h, text, bg_r=70, bg_g=70, bg_b=90, hv_r=100, hv_g=100, hv_b=150, txt_r=255, txt_g=255, txt_b=255, font_size=20, bg_color=None, hover_color=None, text_color=None, font_id=1) -> bool` |
 | `draw_ui_progress_bar` | `draw_ui_progress_bar(x, y, w, h, max_val, current_val, bg_r=30, bg_g=30, bg_b=30, fl_r=50, fl_g=255, fl_b=50, bg_color=None, fill_color=None)` |
+| `draw_vignette` | `draw_vignette(sw: int \| None = None, sh: int \| None = None, strength: float = 0.42)` |
 | `draw_vrm` | `draw_vrm(vrm_id: int)` |
 | `emit` | `emit(event, data=None, deferred=False)` |
 | `enter_pressed` | `enter_pressed()` |
@@ -152,6 +154,7 @@
 | `set_grab_frames` | `set_grab_frames(enabled: bool = True)` |
 | `set_ime_cursor_pos` | `set_ime_cursor_pos(x: float, y: float)` |
 | `set_light_dir` | `set_light_dir(x: float, y: float, z: float)` |
+| `set_rim` | `set_rim(intensity: float = 0.45)` |
 | `set_shadow_enabled` | `set_shadow_enabled(enabled: bool = True)` |
 | `set_toon_params` | `set_toon_params(threshold: float = 0.5, softness: float = 1.0, shade: float = 0.55, lit: float = 1.0)` |
 | `set_vrm_bone_euler` | `set_vrm_bone_euler(vrm_id: int, bone: str, rx=0.0, ry=0.0, rz=0.0)` |

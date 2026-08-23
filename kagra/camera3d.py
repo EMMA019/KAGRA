@@ -132,14 +132,87 @@ class Camera3D:
         self.orbit_th  = 0.0    # 水平角（rad）
         self.orbit_phi = 0.2    # 仰角（rad）
         self.orbit_tgt = (0.0, 0.9, 0.0)
+        self._showcase = False
+        self._show: dict = {}
+        self._show_t = 0.0
 
     def use_orbit(self, radius=3.0, theta=0.0, phi=0.2,
                   target=(0.0, 0.9, 0.0)):
         self._orbit    = True
+        self._showcase = False
         self.orbit_r   = radius
         self.orbit_th  = theta
         self.orbit_phi = phi
         self.orbit_tgt = target
+
+    def use_showcase(
+        self,
+        *,
+        body_radius: float = 3.35,
+        face_radius: float = 1.62,
+        body_target_y: float = 0.84,
+        face_target_y: float = 1.30,
+        body_fov: float = 32.0,
+        face_fov: float = 26.0,
+        orbit_speed: float = 0.18,
+        cut_period: float = 6.5,
+        blend_sec: float = 1.35,
+        theta: float = 0.0,
+        phi: float = 0.14,
+    ):
+        """ライブデモ用。低速オービット + 全身⇔顔寄りのカット割り。
+
+        ``update(engine, dt)`` に dt を渡すと進む。``--no-orbit`` では使わない。
+        """
+        self._showcase = True
+        self._orbit = True
+        self._show_t = 0.0
+        self._show = {
+            "body_radius": float(body_radius),
+            "face_radius": float(face_radius),
+            "body_target_y": float(body_target_y),
+            "face_target_y": float(face_target_y),
+            "body_fov": float(body_fov),
+            "face_fov": float(face_fov),
+            "orbit_speed": float(orbit_speed),
+            "cut_period": float(cut_period),
+            "blend_sec": float(blend_sec),
+        }
+        self.orbit_th = float(theta)
+        self.orbit_phi = float(phi)
+        self._apply_showcase(0.0)
+
+    def showcase_tick(self, dt: float) -> float:
+        """カットを進めて blend（0=全身, 1=顔）を返す。"""
+        if not self._showcase:
+            return 0.0
+        self._show_t += max(0.0, float(dt))
+        self.orbit_th += self._show.get("orbit_speed", 0.18) * dt
+        return self._apply_showcase(self._show_t)
+
+    def _apply_showcase(self, t: float) -> float:
+        from kagra.look import showcase_blend, showcase_params
+
+        s = self._show
+        u = showcase_blend(
+            t,
+            period=s.get("cut_period", 6.5),
+            blend=s.get("blend_sec", 1.35),
+        )
+        p = showcase_params(
+            u,
+            body_radius=s.get("body_radius", 3.35),
+            face_radius=s.get("face_radius", 1.62),
+            body_target_y=s.get("body_target_y", 0.84),
+            face_target_y=s.get("face_target_y", 1.30),
+            body_fov=s.get("body_fov", 32.0),
+            face_fov=s.get("face_fov", 26.0),
+        )
+        tx, _, tz = self.orbit_tgt
+        self.orbit_r = p["radius"]
+        self.orbit_tgt = (tx, p["target_y"], tz)
+        self.fov_deg = p["fov"]
+        return u
 
     def orbit_by(self, d_theta: float, d_phi: float):
         self.orbit_th  += d_theta
@@ -159,7 +232,9 @@ class Camera3D:
         self.position = (x, y, z)
         self.target   = self.orbit_tgt
 
-    def update(self, kagra_engine):
+    def update(self, kagra_engine, dt: float | None = None):
+        if dt is not None and self._showcase:
+            self.showcase_tick(dt)
         if self._orbit:
             self._update_orbit()
         view = _look_at(self.position, self.target, self.up)

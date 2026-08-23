@@ -651,6 +651,25 @@ def set_light_dir(x: float, y: float, z: float):
     """
     _check(); _engine.set_light_dir(x, y, z)
 
+def set_rim(intensity: float = 0.45):
+    """グローバルリム（フレネル + 逆光 + 床バウンス）。
+
+    0 でオフ（既定。ゴールデン画像を変えない）。デモは ``apply_live_look``。
+    """
+    _check(); _engine.set_rim(float(intensity))
+
+def apply_live_look(*, mascot: bool = False):
+    """デモ既定の光・トゥーン・ブルーム・リム・フォグ。"""
+    from kagra.look import apply_live_look as _apply
+    _apply(mascot=mascot)
+
+def draw_vignette(sw: int | None = None, sh: int | None = None, strength: float = 0.42):
+    """画面端を落とす。draw() の 3D のあと、HUD の前。"""
+    from kagra.look import draw_vignette as _draw
+    if sw is None or sh is None:
+        sw, sh = get_screen_size()
+    _draw(int(sw), int(sh), strength)
+
 def set_shadow_enabled(enabled: bool = True):
     """平行光シャドウマップの有効/無効。"""
     _check(); _engine.set_shadow_enabled(bool(enabled))

@@ -1360,6 +1360,12 @@ impl Engine {
         self.window.set_light_dir(x, y, z);
     }
 
+    /// グローバルリム（フレネル + 逆光 + 床バウンス）。0 でオフ。
+    #[pyo3(signature = (intensity))]
+    pub fn set_rim(&self, intensity: f32) {
+        self.window.set_rim(intensity);
+    }
+
     /// 平行光シャドウの有効/無効。
     #[pyo3(signature = (enabled))]
     pub fn set_shadow_enabled(&self, enabled: bool) {

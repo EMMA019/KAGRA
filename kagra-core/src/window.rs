@@ -189,6 +189,12 @@ impl KagraWindow {
         }
     }
 
+    pub fn set_rim(&self, intensity: f32) {
+        if let Some(r) = lock_recover(&self.renderer).as_mut() {
+            r.set_rim(intensity);
+        }
+    }
+
     pub fn set_shadow_enabled(&self, enabled: bool) {
         if let Some(r) = lock_recover(&self.renderer).as_mut() {
             r.set_shadow_enabled(enabled);

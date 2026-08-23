@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Live look (Phase 1a): `python -m kagra` no longer opens on a solid purple
+  void. Procedural gradient sky, a dark disc + warm spot (no checkerboard),
+  vignette, `apply_live_look()` (key light + toon + bloom + fog), and
+  `set_rim()` (view fresnel + backlight + floor bounce; 0 keeps goldens).
+- `Camera3D.use_showcase()` — slow orbit with full-body ↔ face cuts.
+  `--no-orbit` still freezes the camera.
+- Default HUD always shows the KAGRA brand + `♪` song title (`StreamHud`).
+- WAV lipsync: less “aa” bias so sung vowels read as A/I/U/E/O. `sing()`
+  smoothing is lighter.
+- `VrmAvatar.dance()` enables foot grounding (lift the root when a foot
+  goes through the floor; no push-down).
+
 ## 0.1.3
 
 Streaming-V slice. OBS can take a virtual camera; VOICEVOX and chat stay

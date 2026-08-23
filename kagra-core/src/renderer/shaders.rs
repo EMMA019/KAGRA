@@ -397,6 +397,17 @@ fn cotangent_frame(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> mat3x3<f32> {
     let rim_lift = mtoon.params.y;
     let rim = pow(max(1.0 - saturate(dot(n, V)), 0.0), max(rim_power, 1e-3)) * rim_lift;
     col = col + rim * mtoon.rim_color.rgb;
+    // light_dir.w = グローバルリム。0 なら従来どおり（ゴールデン互換）。
+    let global_rim = cam.light_dir.w;
+    if global_rim > 0.001 {
+        let fresnel = pow(max(1.0 - saturate(dot(n, V)), 0.0), 3.0);
+        let back = saturate(-dot(n, light_dir));
+        col = col + (fresnel * 0.55 + back * 0.45) * global_rim * vec3<f32>(1.0, 0.90, 0.72);
+        let xz = length(in.world_pos.xz);
+        let up = saturate(dot(n, vec3<f32>(0.0, 1.0, 0.0)));
+        let spot = exp(-xz * xz * 0.55) * up;
+        col = col + spot * global_rim * 0.32 * vec3<f32>(1.0, 0.86, 0.58);
+    }
     if mtoon.matcap_color.a > 0.5 {
         let vn = normalize((cam.view * vec4<f32>(n, 0.0)).xyz);
         let muv = vn.xy * 0.5 + vec2<f32>(0.5, 0.5);

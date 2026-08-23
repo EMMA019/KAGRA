@@ -60,3 +60,15 @@ def test_timeline_from_audio_query_uses_mora_lengths():
 def test_sample_timeline_past_end_is_none():
     entries = [(0.0, "aa", 0.8)]
     assert ls.sample_timeline(entries, 1.0) is None
+
+
+def test_estimate_vowel_two_formant_ih():
+    """F1 低 + F2 高は ih。歌波形が全部 aa に潰れないことの最低ライン。"""
+    sr = 16000
+    n = 512
+    chunk = [
+        0.7 * math.sin(2.0 * math.pi * 270.0 * i / sr)
+        + 1.0 * math.sin(2.0 * math.pi * 2290.0 * i / sr)
+        for i in range(n)
+    ]
+    assert ls.estimate_vowel(chunk, sr) == "ih"
