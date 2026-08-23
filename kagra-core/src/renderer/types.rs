@@ -62,6 +62,10 @@ pub struct SkinnedMeshCommand {
     /// ドロー個別のスキンパレットスロット。
     /// None は共有 skinning_uniform_buffer（レガシー 2D パス）を使う。
     pub skin_slot: Option<usize>,
+    /// パッド付きワールド AABB。None ならカリングしない。
+    pub aabb: Option<crate::frustum::Aabb>,
+    /// glTF `doubleSided` / VRM0 `_CullMode==Off`。
+    pub double_sided: bool,
 }
 
 #[derive(Clone)]
@@ -83,6 +87,16 @@ pub struct Mesh3DCommand {
     pub texture_id: u32,
     pub verts: Vec<[f32; 8]>,
     pub indices: Vec<u32>,
+}
+
+/// ワールド 3D インスタンス。pos + yaw(Y) + scale。32 バイト。
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Instance3D {
+    pub pos: [f32; 3],
+    pub yaw: f32,
+    pub scale: [f32; 3],
+    pub _pad: f32,
 }
 
 #[derive(Clone)]

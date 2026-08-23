@@ -195,9 +195,12 @@ class HeartCatch(kagra.Scene):
         kagra.cls(18, 10, 22)
         fv, fi = kagra.disk_mesh(0.0, 0.0, 0.0, 5.2, 48)
         kagra.draw_mesh_3d(self.tex_floor, fv, fi)
-        for h in self.hearts:
-            y = 0.85 + 0.08 * math.sin(h.phase)
-            kagra.draw_billboard(self.tex_heart, lane_x(h.lane), y, h.z, 0.28, self.cam)
+        hearts = [
+            (lane_x(h.lane), 0.85 + 0.08 * math.sin(h.phase), h.z, 0.28)
+            for h in self.hearts
+        ]
+        if hearts:
+            kagra.draw_billboard_instances(self.tex_heart, hearts, self.cam)
         kagra.draw_vrm(self.avatar.vrm_id)
         kagra.draw_vignette()
         if self.mode == "title":

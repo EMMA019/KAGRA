@@ -242,8 +242,9 @@ class DodgeRoom(kagra.Scene):
     def draw(self):
         kagra.cls(8, 6, 14)
         self.world.draw()
-        for m in self.meteors:
-            kagra.draw_billboard(self.tex_meteor, m.x, max(m.y, 0.05), m.z, 0.5, self.cam)
+        mets = [(m.x, max(m.y, 0.05), m.z, 0.5) for m in self.meteors]
+        if mets:
+            kagra.draw_billboard_instances(self.tex_meteor, mets, self.cam)
         kagra.draw_vrm(self.avatar.vrm_id)
         kagra.draw_vignette()
         if self.mode == "title":

@@ -143,6 +143,7 @@ struct Camera {
     eye: vec4<f32>,
     fog_params: vec4<f32>,
     fog_color: vec4<f32>,
+    ambient: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> cam: Camera;
 @group(1) @binding(0) var t_diffuse: texture_2d<f32>;
@@ -156,6 +157,7 @@ struct VO {
     @location(0) uv: vec2<f32>,
     @location(1) light: f32,
     @location(2) world_pos: vec3<f32>,
+    @location(3) hemi: vec3<f32>,
 }
 fn shadow_factor(world_pos: vec3<f32>) -> f32 {
     let sc = light_vp * vec4<f32>(world_pos, 1.0);
@@ -165,14 +167,15 @@ fn shadow_factor(world_pos: vec3<f32>) -> f32 {
     if uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || depth < 0.0 || depth > 1.0 {
         return 1.0;
     }
-    let texel = 1.0 / 1024.0;
-    let d = depth - 0.002;
+    let texel = 1.0 / 2048.0;
+    let d = depth - 0.0015;
     var s = 0.0;
-    s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(-0.5, -0.5) * texel, d);
-    s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(0.5, -0.5) * texel, d);
-    s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(-0.5, 0.5) * texel, d);
-    s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(0.5, 0.5) * texel, d);
-    return mix(0.55, 1.0, s * 0.25);
+    for (var y = -1; y <= 1; y++) {
+        for (var x = -1; x <= 1; x++) {
+            s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, d);
+        }
+    }
+    return mix(0.50, 1.0, s / 9.0);
 }
 fn apply_fog(color: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
     if cam.fog_params.z < 0.5 { return color; }
@@ -180,22 +183,55 @@ fn apply_fog(color: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
     let t = saturate((dist - cam.fog_params.x) / max(1e-3, cam.fog_params.y - cam.fog_params.x));
     return mix(color, cam.fog_color.rgb, t);
 }
+fn hemi_ambient(n: vec3<f32>) -> vec3<f32> {
+    if cam.ambient.w < 1e-4 { return vec3<f32>(0.0); }
+    let h = 0.45 + 0.55 * saturate(n.y * 0.5 + 0.5);
+    return cam.ambient.rgb * cam.ambient.w * h;
+}
 @vertex fn vs_main(in: VI) -> VO {
     var out: VO;
     let pos4 = vec4<f32>(in.position, 1.0);
     let view_pos = cam.view * pos4;
     out.clip_pos = cam.proj * view_pos;
     out.uv = in.uv;
+    let n = normalize(in.normal);
     let light_dir = normalize(cam.light_dir.xyz);
-    out.light = clamp(dot(normalize(in.normal), light_dir), 0.2, 1.0);
+    out.light = clamp(dot(n, light_dir), 0.2, 1.0);
     out.world_pos = in.position;
+    out.hemi = hemi_ambient(n);
+    return out;
+}
+struct II { @location(3) pos_yaw: vec4<f32>, @location(4) scale: vec4<f32> }
+@vertex fn vs_instanced(in: VI, inst: II) -> VO {
+    var out: VO;
+    let c = cos(inst.pos_yaw.w);
+    let s = sin(inst.pos_yaw.w);
+    let p = in.position * inst.scale.xyz;
+    let world = vec3<f32>(
+        c * p.x + s * p.z + inst.pos_yaw.x,
+        p.y + inst.pos_yaw.y,
+        -s * p.x + c * p.z + inst.pos_yaw.z,
+    );
+    let n = vec3<f32>(
+        c * in.normal.x + s * in.normal.z,
+        in.normal.y,
+        -s * in.normal.x + c * in.normal.z,
+    );
+    let nn = normalize(n);
+    let pos4 = vec4<f32>(world, 1.0);
+    out.clip_pos = cam.proj * (cam.view * pos4);
+    out.uv = in.uv;
+    let light_dir = normalize(cam.light_dir.xyz);
+    out.light = clamp(dot(nn, light_dir), 0.2, 1.0);
+    out.world_pos = world;
+    out.hemi = hemi_ambient(nn);
     return out;
 }
 @fragment fn fs_main(in: VO) -> @location(0) vec4<f32> {
     var c = textureSample(t_diffuse, s_diffuse, in.uv);
     if c.a < 0.01 { discard; }
     let lit = in.light * shadow_factor(in.world_pos);
-    let rgb = apply_fog(c.rgb * lit, in.world_pos);
+    let rgb = apply_fog(c.rgb * lit + in.hemi, in.world_pos);
     return vec4<f32>(rgb, c.a);
 }
 "#;
@@ -210,6 +246,7 @@ struct Camera {
     eye: vec4<f32>,
     fog_params: vec4<f32>,
     fog_color: vec4<f32>,
+    ambient: vec4<f32>,
 };
 struct Mtoon {
     shade_color: vec4<f32>,
@@ -284,14 +321,15 @@ fn shadow_factor(world_pos: vec3<f32>) -> f32 {
     if uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || depth < 0.0 || depth > 1.0 {
         return 1.0;
     }
-    let texel = 1.0 / 1024.0;
-    let d = depth - 0.002;
+    let texel = 1.0 / 2048.0;
+    let d = depth - 0.0015;
     var s = 0.0;
-    s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(-0.5, -0.5) * texel, d);
-    s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(0.5, -0.5) * texel, d);
-    s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(-0.5, 0.5) * texel, d);
-    s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(0.5, 0.5) * texel, d);
-    return mix(0.55, 1.0, s * 0.25);
+    for (var y = -1; y <= 1; y++) {
+        for (var x = -1; x <= 1; x++) {
+            s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, d);
+        }
+    }
+    return mix(0.50, 1.0, s / 9.0);
 }
 
 fn apply_fog(color: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
@@ -415,6 +453,10 @@ fn cotangent_frame(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> mat3x3<f32> {
         col = col + mc;
     }
     col = col * shadow_factor(in.world_pos);
+    if cam.ambient.w > 1e-4 {
+        let hemi = 0.45 + 0.55 * saturate(n.y * 0.5 + 0.5);
+        col = col + cam.ambient.rgb * cam.ambient.w * hemi;
+    }
     col = apply_fog(col, in.world_pos);
     return vec4<f32>(col, base.a);
 }

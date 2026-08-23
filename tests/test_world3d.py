@@ -39,3 +39,12 @@ def test_bake_without_engine_is_empty():
     w.add_box(0, 0, 0, 1, 1, 1)
     assert w.bake(1, 2) == []
     assert w.mesh_ids == []
+
+
+def test_box_xforms_recorded_without_bake():
+    m = _world()
+    w = m.World3D()
+    w.add_box(2, 0, -1, 1.2, 1.0, 1.2)
+    assert len(w.box_xforms) == 1
+    assert abs(w.box_xforms[0][0] - 2.0) < 1e-6
+    assert abs(w.box_xforms[0][1] - 0.5) < 1e-6
