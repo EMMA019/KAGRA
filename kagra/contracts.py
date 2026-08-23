@@ -132,6 +132,110 @@ def project_root(start: Path | None = None) -> Path:
     return ROOT
 
 
+# Mixamo FBX / VRMA を落とす場所。同梱 BVH と tests/fixtures は含めない。
+MOTION_DROP_EXTS = (".fbx", ".vrma")
+_MOTION_DROP_DIRS = ("assets", "assets/anim", "assets/motion")
+
+
+def _as_project_root(path: Path) -> Path:
+    """``.../assets`` なら親を返す（``assets/anim`` も同じ木で探す）。"""
+    return path.parent if path.name.lower() == "assets" else path
+
+
+def motion_search_roots(start: Path | None = None) -> list[Path]:
+    """ドロップイン探索のルート。cwd / クローン / venv 親 / ``KAGRA_ASSETS``。
+
+    ``python -m kagra`` を ``$TEMP`` から回しても、maturin develop や
+    クローン内 ``.venv`` なら ``assets/*.fbx`` が見える。
+    """
+    import sys
+
+    start = (start or Path.cwd()).resolve()
+    raw: list[Path] = []
+    env = os.environ.get("KAGRA_ASSETS", "").strip()
+    if env:
+        raw.append(Path(env).expanduser())
+    raw.append(project_root(start))
+    raw.append(ROOT)
+    raw.append(start)
+    try:
+        raw.append(Path(sys.prefix).resolve().parent)
+    except OSError:
+        pass
+
+    out: list[Path] = []
+    seen: set[str] = set()
+    for p in raw:
+        try:
+            p = _as_project_root(p).resolve()
+        except OSError:
+            continue
+        key = os.path.normcase(str(p))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(p)
+    return out
+
+
+def list_motion_drops(*, root: Path | None = None) -> list[Path]:
+    """ユーザーが落とした Mixamo ``.fbx`` / ``.vrma`` を列挙する。
+
+    ``assets/``・``assets/anim/``・``assets/motion/`` の直下だけ。
+    同梱 ``synthetic_dance.bvh`` と ``tests/fixtures`` は含めない。
+    ``root`` を渡すとその木だけ（テスト用）。省略時は
+    :func:`motion_search_roots` と ``KAGRA_ASSETS`` 直下も見る。
+    """
+    extra_dirs: list[Path] = []
+    if root is not None:
+        roots = [_as_project_root(Path(root))]
+    else:
+        roots = motion_search_roots()
+        env = os.environ.get("KAGRA_ASSETS", "").strip()
+        if env:
+            extra_dirs.append(Path(env).expanduser())
+
+    found: list[Path] = []
+    seen: set[str] = set()
+
+    def _add(p: Path) -> None:
+        if not p.is_file() or p.suffix.lower() not in MOTION_DROP_EXTS:
+            return
+        try:
+            p = p.resolve()
+        except OSError:
+            return
+        key = os.path.normcase(str(p))
+        if key in seen:
+            return
+        seen.add(key)
+        found.append(p)
+
+    for base in roots:
+        for rel in _MOTION_DROP_DIRS:
+            folder = base / rel
+            if not folder.is_dir():
+                continue
+            try:
+                for p in folder.iterdir():
+                    _add(p)
+            except OSError:
+                continue
+    for folder in extra_dirs:
+        try:
+            folder = folder.expanduser()
+            if folder.is_file():
+                _add(folder)
+            elif folder.is_dir():
+                for p in folder.iterdir():
+                    _add(p)
+        except OSError:
+            continue
+
+    found.sort(key=lambda p: p.name.lower())
+    return found
+
+
 def _exts_for(kind: AssetKind) -> tuple[str, ...]:
     return _EXTENSIONS.get(kind, ())
 
@@ -282,6 +386,13 @@ def describe_environment(root: Path | None = None) -> dict:
         if fixtures.exists()
         else []
     )
+    drops = list_motion_drops(root=root)
+    drop_rel = []
+    for p in drops[:40]:
+        try:
+            drop_rel.append(str(p.relative_to(root)))
+        except ValueError:
+            drop_rel.append(str(p))
     return {
         "root": str(root),
         "has_assets_dir": assets.is_dir(),
@@ -290,6 +401,7 @@ def describe_environment(root: Path | None = None) -> dict:
         "gltf_files": gltfs[:20],
         "bvh_fixtures": bvh[:20],
         "vrma_fixtures": vrma[:20],
+        "motion_drops": drop_rel,
         "aliases": {k: v for k, v in _ALIASES.items()},
         "api_index": str(root / "docs" / "API_INDEX.md"),
     }

@@ -1,6 +1,8 @@
 """サンプル VRM 解決（ネットワーク不要）。"""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from tests.conftest import load_kagra_submodule
@@ -103,3 +105,27 @@ def test_demo_parser_loop_mascot():
     assert args.mascot is True
     assert args.width is None
     assert args.height is None
+
+
+def test_demo_auto_dance_helpers():
+    demo = load_kagra_submodule("demo")
+    assert demo.DEFAULT_DANCE == "auto"
+    assert demo._is_auto_dance("auto")
+    assert demo._is_auto_dance("ALL")
+    assert demo._is_auto_dance("*")
+    assert not demo._is_auto_dance("Samba Dancing")
+    used: set[str] = set()
+    a = demo._unique_clip_name(Path("Samba Dancing.fbx"), used)
+    b = demo._unique_clip_name(Path("other/Samba Dancing.fbx"), used)
+    assert a == "Samba Dancing"
+    assert b == "Samba Dancing_2"
+    assert demo._frames_duration([({}, 0.25, (0, 0, 0)), ({}, 0.5)]) == 0.75
+    assert demo._frames_duration([]) == 0.5
+
+
+def test_demo_discover_explicit(tmp_path, monkeypatch):
+    demo = load_kagra_submodule("demo")
+    fbx = tmp_path / "wave.fbx"
+    fbx.write_bytes(b"x")
+    monkeypatch.setattr(demo, "_resolve_optional", lambda kind, name: str(fbx))
+    assert demo._discover_dance_paths("wave") == [fbx]

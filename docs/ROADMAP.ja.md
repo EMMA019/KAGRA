@@ -54,6 +54,7 @@ JS における three-vrm のポジションの Python 版。
       `examples/vrm_kairi_chat.py`（PR #25）
 - [x] 初回体験: own-VRM 1 行、シャドウ警告、`kagra.cmd`、レシピ、
       issue テンプレ（bug / worked）、macOS wheel CI smoke
+- [x] Mixamo `.fbx` / `.vrma` を `assets/` に落とすとデモがプレイリスト再生
 
 **機能は最初のユーザーを取るのに足りている。** ボトルネックは流通と、
 「どの痛みが本物か」がまだ数字で分かっていないこと。

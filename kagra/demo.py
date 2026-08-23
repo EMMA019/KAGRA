@@ -1,7 +1,8 @@
 """同梱ライブデモ。``python -m kagra`` / ``python -m kagra.demo``。
 
-``assets/cute_song_trial.wav`` と ``assets/Samba Dancing.fbx`` があれば
-それを歌う／踊る。無ければ内蔵ソングと同梱ダンスにフォールバックする。
+``assets/`` に Mixamo の ``.fbx`` や ``.vrma`` を落とすと、そのまま再生する。
+複数あればプレイリスト（SPACE / N で次）。``--dance path`` で 1 本に固定。
+無ければ同梱ダンス。曲は ``assets/cute_song_trial.wav``、無ければ内蔵ソング。
 VRM が無ければサンプルを 1 回だけダウンロードする。
 
 ``--loop`` で曲を繰り返す（OBS でこの窓をキャプチャして配信）。
@@ -18,9 +19,11 @@ import argparse
 import math
 import os
 import sys
+from pathlib import Path
 
-DEFAULT_DANCE = "Samba Dancing"
+DEFAULT_DANCE = "auto"
 DEFAULT_SONG = "cute_song_trial"
+_AUTO_DANCE = frozenset({"auto", "all", "*"})
 
 
 def _stage_meshes():
@@ -39,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--dance",
         default=DEFAULT_DANCE,
-        help="VRMA/BVH/FBX name, alias, or path (default: Samba Dancing)",
+        help="auto = every .fbx/.vrma in assets/; or a VRMA/BVH/FBX name/path",
     )
     p.add_argument(
         "--song",
@@ -89,6 +92,125 @@ def _resolve_optional(kind, name: str) -> str | None:
         return None
     found = resolve_asset(kind, name, required=False)
     return str(found) if found else None
+
+
+def _is_auto_dance(name: str) -> bool:
+    return (name or "").strip().lower() in _AUTO_DANCE
+
+
+def _unique_clip_name(path: Path, used: set[str]) -> str:
+    base = path.stem or "motion"
+    name = base
+    n = 2
+    while name in used:
+        name = f"{base}_{n}"
+        n += 1
+    used.add(name)
+    return name
+
+
+def _frames_duration(frames) -> float:
+    """``_anim._clips`` のフレーム列から秒数。最低 0.5s。"""
+    total = 0.0
+    for frame in frames or ():
+        if hasattr(frame, "duration"):
+            try:
+                total += float(frame.duration)
+                continue
+            except (TypeError, ValueError):
+                pass
+        if isinstance(frame, (tuple, list)) and len(frame) >= 2:
+            try:
+                total += float(frame[1])
+            except (TypeError, ValueError):
+                continue
+    return max(0.5, total)
+
+
+def _pressed_any(*names: str) -> bool:
+    import kagra
+
+    for name in names:
+        try:
+            if kagra.pressed(name):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def _discover_dance_paths(name: str) -> list[Path]:
+    from kagra.contracts import AssetKind, list_motion_drops
+
+    if _is_auto_dance(name):
+        return list(list_motion_drops())
+    found = _resolve_optional(AssetKind.ANY, name)
+    return [Path(found)] if found else []
+
+
+def _hud_dance_label(state: dict) -> str:
+    playlist = state.get("playlist") or []
+    if not playlist:
+        return ""
+    i = int(state.get("playlist_i") or 0) % len(playlist)
+    _name, path = playlist[i]
+    label = path.name
+    if len(playlist) > 1:
+        label = f"{i + 1}/{len(playlist)}  {label}"
+    return label
+
+
+def _apply_drop_clip(av, clip: str) -> None:
+    av.play(clip, loop=True, fade=0.3)
+    if not av._clip_has_fingers(clip):
+        av.relax_hands()
+    if not av._grounding:
+        av.enable_grounding()
+
+
+def _play_playlist_index(av, state: dict, index: int) -> None:
+    playlist = state.get("playlist") or []
+    if not playlist:
+        return
+    i = index % len(playlist)
+    name, path = playlist[i]
+    _apply_drop_clip(av, name)
+    state["playlist_i"] = i
+    state["clip_t"] = 0.0
+    state["clip_dur"] = _frames_duration(av._anim._clips.get(name) or [])
+    print(f"[kagra] dance={path} ({i + 1}/{len(playlist)})")
+    hud = state.get("hud")
+    if hud is not None:
+        hud.subtitle = _hud_dance_label(state)
+
+
+def _start_dances(av, dance_name: str, state: dict) -> None:
+    paths = _discover_dance_paths(dance_name)
+    used: set[str] = set()
+    entries: list[tuple[str, Path]] = []
+    for path in paths:
+        name = _unique_clip_name(path, used)
+        try:
+            av.load_motion(name, str(path))
+        except Exception as e:
+            print(f"[kagra] skip {path.name}: {e}", file=sys.stderr)
+            continue
+        entries.append((name, path))
+    if not entries:
+        av.dance()
+        if _is_auto_dance(dance_name):
+            print("[kagra] dance=bundled  (no .fbx / .vrma in assets/)")
+            print("[kagra] drop Mixamo .fbx in assets/  (or assets/anim, assets/motion)")
+        else:
+            print(f"[kagra] dance=bundled (no {dance_name})")
+        return
+    print(f"[kagra] drop-in motions ({len(entries)}):")
+    for i, (_n, path) in enumerate(entries, 1):
+        print(f"  {i}. {path.name}")
+    if _is_auto_dance(dance_name) or len(entries) > 1:
+        print("[kagra] drop more .fbx / .vrma in assets/  (SPACE / N = next)")
+    state["playlist"] = entries
+    _play_playlist_index(av, state, 0)
 
 
 def run_live(args: argparse.Namespace) -> int:
@@ -143,6 +265,10 @@ def run_live(args: argparse.Namespace) -> int:
         "inbox": None,
         "cam": None,
         "song_label": "builtin",
+        "playlist": [],
+        "playlist_i": 0,
+        "clip_t": 0.0,
+        "clip_dur": 0.0,
     }
 
     def on_ready():
@@ -169,13 +295,7 @@ def run_live(args: argparse.Namespace) -> int:
             else:
                 state["floor"] = _stage_meshes()
         av = kagra.avatar(str(vrm))
-        dance = _resolve_optional(AssetKind.ANY, args.dance)
-        if dance:
-            av.dance(dance)
-            print(f"[kagra] dance={dance}")
-        else:
-            av.dance()
-            print(f"[kagra] dance=bundled (no {args.dance})")
+        _start_dances(av, args.dance, state)
         av.enable_lookat(eye_height=1.42, smooth_speed=4.0, head_weight=0.22, neck_weight=0.12)
         av.enable_emotion(blend_speed=1.8)
         song = _resolve_optional(AssetKind.AUDIO, args.song)
@@ -194,7 +314,10 @@ def run_live(args: argparse.Namespace) -> int:
                 song=f"♪ {song_label}",
                 credit="Alicia Solid © Dwango",
             )
-            if streaming:
+            dance_label = _hud_dance_label(state)
+            if dance_label:
+                hud.subtitle = dance_label
+            elif streaming:
                 hud.subtitle = "KAGRA live"
             state["hud"] = hud
         if streaming:
@@ -218,6 +341,14 @@ def run_live(args: argparse.Namespace) -> int:
         av = state["av"]
         if av is None:
             return
+        playlist = state.get("playlist") or []
+        if len(playlist) > 1:
+            if _pressed_any("SPACE", "N"):
+                _play_playlist_index(av, state, int(state.get("playlist_i") or 0) + 1)
+            else:
+                state["clip_t"] = float(state.get("clip_t") or 0.0) + dt
+                if state["clip_t"] >= float(state.get("clip_dur") or 0.5):
+                    _play_playlist_index(av, state, int(state.get("playlist_i") or 0) + 1)
         cam_out = state.get("cam")
         if cam_out is not None:
             cam_out.send()

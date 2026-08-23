@@ -17,6 +17,7 @@ AssetKind = _contracts.AssetKind
 KagraContractError = _contracts.KagraContractError
 candidate_paths = _contracts.candidate_paths
 describe_environment = _contracts.describe_environment
+list_motion_drops = _contracts.list_motion_drops
 resolve_asset = _contracts.resolve_asset
 
 PointerEvent = _touch.PointerEvent
@@ -34,6 +35,8 @@ def test_describe_environment():
     env = describe_environment(ROOT)
     assert env["root"]
     assert "aliases" in env
+    assert "motion_drops" in env
+    assert isinstance(env["motion_drops"], list)
 
 
 def test_resolve_walk_fixture():
@@ -79,6 +82,42 @@ def test_resolve_demo_song_wav():
         pytest.skip("assets/cute_song_trial.wav not present")
     assert p.is_file()
     assert p.suffix.lower() == ".wav"
+
+
+def test_list_motion_drops_tmp(tmp_path):
+    assets = tmp_path / "assets"
+    anim = assets / "anim"
+    motion = assets / "motion"
+    nested = assets / "model"
+    for d in (anim, motion, nested):
+        d.mkdir(parents=True)
+    samba = assets / "Samba Dancing.fbx"
+    wave = anim / "wave.vrma"
+    hip = motion / "Hip Hop.fbx"
+    skip_bvh = assets / "idle.bvh"
+    skip_nested = nested / "character.fbx"
+    skip_txt = assets / "readme.txt"
+    for p in (samba, wave, hip, skip_bvh, skip_nested, skip_txt):
+        p.write_bytes(b"x")
+    drops = list_motion_drops(root=tmp_path)
+    names = {p.name for p in drops}
+    assert names == {"Samba Dancing.fbx", "wave.vrma", "Hip Hop.fbx"}
+    assert all(p.suffix.lower() in (".fbx", ".vrma") for p in drops)
+    assert drops == sorted(drops, key=lambda p: p.name.lower())
+
+
+def test_list_motion_drops_empty(tmp_path):
+    (tmp_path / "assets").mkdir()
+    assert list_motion_drops(root=tmp_path) == []
+
+
+def test_list_motion_drops_env_flat(tmp_path, monkeypatch):
+    fbx = tmp_path / "Wave.fbx"
+    fbx.write_bytes(b"x")
+    monkeypatch.setenv("KAGRA_ASSETS", str(tmp_path))
+    monkeypatch.setattr(_contracts, "motion_search_roots", lambda start=None: [])
+    drops = list_motion_drops()
+    assert drops == [fbx.resolve()]
 
 
 def test_virtual_pad_wasd():

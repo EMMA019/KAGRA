@@ -1806,6 +1806,7 @@ from kagra.contracts import (
     AssetKind,
     KagraContractError,
     describe_environment,
+    list_motion_drops,
     resolve_asset,
 )
 from kagra.samples import ensure_vrm

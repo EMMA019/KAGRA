@@ -51,7 +51,7 @@ def draw():
 kagra.run(update, draw, on_ready=ready)
 ```
 
-Use your own model with `kagra.avatar("/path/to/me.vrm")` or `assets/Emma.vrm`. Use your own song with `av.sing("song.wav")`. Drop a [VRM Animation](https://vrm.dev/en/vrma/) (`.vrma`) on `av.dance("wave.vrma")` — same clip, any VRM. Clips from [text-to-vrma](https://github.com/Kirakun0328/text-to-vrma) work as-is (fingers + expressions + LookAt). Drop a Sketchfab hall the same way: `kagra.stage("venue.glb")` (or `--stage` / a PNG `--backdrop`).
+Use your own model with `kagra.avatar("/path/to/me.vrm")` or `assets/Emma.vrm`. Use your own song with `av.sing("song.wav")`. Drop Mixamo `.fbx` files (or a [VRM Animation](https://vrm.dev/en/vrma/) `.vrma`) in `assets/` — `python -m kagra` plays them. `--dance path` pins one clip. `av.dance("wave.vrma")` is the same one-liner from code. Clips from [text-to-vrma](https://github.com/Kirakun0328/text-to-vrma) work as-is (fingers + expressions + LookAt). Drop a Sketchfab hall the same way: `kagra.stage("venue.glb")` (or `--stage` / a PNG `--backdrop`).
 
 ## Install
 

@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **362**
+エントリ数: **363**
 
 棚の**手前**は VRM / 3D ワールド / エージェントゲーム。
 棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。
@@ -294,6 +294,7 @@
 | `keys` | `keys` |
 | `Label` | `class Label  (from kagra.ui)` |
 | `LipSyncTimeline` | `class LipSyncTimeline  (from kagra.vrm_lipsync)` |
+| `list_motion_drops` | `export list_motion_drops  (from kagra.contracts)` |
 | `list_saved` | `export list_saved  (from kagra.anim_io)` |
 | `LiveScore` | `class LiveScore  (from kagra.bgm_sync)` |
 | `load_clips_into` | `export load_clips_into  (from kagra.anim_io)` |

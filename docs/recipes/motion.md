@@ -2,9 +2,12 @@
 
 English below. 日本語は後半。
 
-KAGRA does not vendor a motion generator. Drop a file on `dance()`.
+KAGRA does not vendor a motion generator. Drop `.fbx` / `.vrma` in `assets/`
+(or `assets/anim`, `assets/motion`). `python -m kagra` plays every file it
+finds. `--dance path` pins one clip. SPACE / N skips.
 
 ```bash
+python -m kagra
 python -m kagra --vrm me.vrm --dance wave.vrma
 ```
 
@@ -23,9 +26,11 @@ av.dance("wave.vrma")
 
 # ダンスクリップ（VRMA / FBX / BVH）
 
-モーション生成はエンジンに入れない。ファイルを `dance()` に渡す。
+モーション生成はエンジンに入れない。`.fbx` / `.vrma` を `assets/` に落とすと
+`python -m kagra` が全部再生する。`--dance path` で 1 本固定。SPACE / N で次。
 
 ```bash
+python -m kagra
 python -m kagra --vrm me.vrm --dance wave.vrma
 ```
 
