@@ -139,6 +139,15 @@ _SKIP_BONES = {
     'J_Bip_R_ToeBase',
 }
 
+# Mixamo 指のローカル軸は VRoid と違う。YMCA のように手が動くクリップで
+# 袖のウェイトが引っ張られて裾が風船化するので、ここでは載せない。
+# （dance() 側の relax_hands が自然な曲げを足す）
+for _side in ("L", "R"):
+    for _finger in ("Thumb", "Index", "Middle", "Ring", "Little"):
+        for _seg in (1, 2, 3):
+            _SKIP_BONES.add(f"J_Bip_{_side}_{_finger}{_seg}")
+del _side, _finger, _seg
+
 _DAMP_MAP = {
     # 頭・首は軸ズレの影響を受けやすいのでやや抑制
     'J_Bip_C_Head':       0.5,
@@ -147,6 +156,13 @@ _DAMP_MAP = {
     'J_Bip_C_UpperChest': 0.7,
     'J_Bip_C_Chest':      0.8,
     'J_Bip_C_Spine':      0.8,
+    # YMCA の両手上げで肩が潰れるのを抑える
+    'J_Bip_L_Shoulder':   0.55,
+    'J_Bip_R_Shoulder':   0.55,
+    'J_Bip_L_Hand':       0.4,
+    'J_Bip_R_Hand':       0.4,
+    'J_Bip_L_UpperArm':   0.85,
+    'J_Bip_R_UpperArm':   0.85,
 }
 _HEAD_DAMP = _DAMP_MAP  # 後方互換
 

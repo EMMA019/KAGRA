@@ -41,3 +41,10 @@ def test_bone_map_covers_fingers():
 def test_bone_map_no_finger_regression_on_body():
     assert fbx._BONE_MAP["Hips"] == "J_Bip_C_Hips"
     assert fbx._BONE_MAP["mixamorig:LeftHand"] == "J_Bip_L_Hand"
+
+
+def test_mixamo_fingers_are_skipped():
+    # 軸が違うのでマップは残すが再生には載せない（YMCA で袖が風船化する）
+    assert "J_Bip_L_Index1" in fbx._SKIP_BONES
+    assert "J_Bip_R_Little3" in fbx._SKIP_BONES
+    assert "J_Bip_L_Hand" not in fbx._SKIP_BONES
