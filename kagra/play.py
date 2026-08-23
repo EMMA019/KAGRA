@@ -36,6 +36,15 @@ def resolve_color(color) -> tuple[int, int, int]:
     return clamp_u8(r), clamp_u8(g), clamp_u8(b)
 
 
+def color_name(rgb) -> str | None:
+    """``resolve_color`` の逆。名前が無ければ None。"""
+    want = resolve_color(rgb)
+    for name, value in COLORS.items():
+        if value == want:
+            return name
+    return None
+
+
 def walk_wish(forward: float, right: float, yaw: float, speed: float = 3.2) -> tuple[float, float]:
     """カメラ ``yaw`` 基準の歩行速度。forward=+1 は視線方向。"""
     mag = math.hypot(forward, right)
@@ -51,6 +60,99 @@ def walk_wish(forward: float, right: float, yaw: float, speed: float = 3.2) -> t
 def look_yaw(yaw: float, dx: float, *, sens: float = 0.004) -> float:
     """マウス X 増分から yaw を更新する。"""
     return float(yaw) - float(dx) * float(sens)
+
+
+def look_pitch(pitch: float, dy: float, *, sens: float = 0.004, lo: float = -1.2, hi: float = 1.2) -> float:
+    """マウス Y 増分から pitch を更新する。上向きが正。``lo`` / ``hi`` でクランプ。"""
+    p = float(pitch) - float(dy) * float(sens)
+    return max(float(lo), min(float(hi), p))
+
+
+def first_person_eye(
+    x: float,
+    y: float,
+    z: float,
+    yaw: float,
+    pitch: float = 0.0,
+    *,
+    eye_height: float = 1.55,
+) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    """カプセル底面 ``(x,y,z)`` から一人称の ``(position, target)``。"""
+    cp = math.cos(float(pitch))
+    fx = math.sin(float(yaw)) * cp
+    fy = math.sin(float(pitch))
+    fz = math.cos(float(yaw)) * cp
+    ex, ey, ez = float(x), float(y) + float(eye_height), float(z)
+    return (ex, ey, ez), (ex + fx, ey + fy, ez + fz)
+
+
+def prop_aabb(prop: "Prop") -> tuple[float, float, float, float, float, float]:
+    """Prop 中心とスケールから AABB ``(min x,y,z, max x,y,z)``。"""
+    hx, hy, hz = abs(prop.sx) * 0.5, abs(prop.sy) * 0.5, abs(prop.sz) * 0.5
+    return (
+        prop.x - hx, prop.y - hy, prop.z - hz,
+        prop.x + hx, prop.y + hy, prop.z + hz,
+    )
+
+
+def ray_aabb(
+    ox: float, oy: float, oz: float,
+    dx: float, dy: float, dz: float,
+    bounds,
+    *,
+    max_dist: float = 80.0,
+) -> Optional[float]:
+    """スラブ法。ヒット距離、外れは None。``bounds`` は min/max 6 要素。"""
+    tmin = 0.0
+    tmax = float(max_dist)
+    xmin, ymin, zmin, xmax, ymax, zmax = bounds
+    for o, d, lo, hi in (
+        (ox, dx, xmin, xmax),
+        (oy, dy, ymin, ymax),
+        (oz, dz, zmin, zmax),
+    ):
+        if abs(d) < 1e-8:
+            if o < lo or o > hi:
+                return None
+            continue
+        inv = 1.0 / d
+        t1 = (lo - o) * inv
+        t2 = (hi - o) * inv
+        if t1 > t2:
+            t1, t2 = t2, t1
+        tmin = max(tmin, t1)
+        tmax = min(tmax, t2)
+        if tmin > tmax:
+            return None
+    return tmin
+
+
+def hovered_prop(
+    ox: float,
+    oy: float,
+    oz: float,
+    dx: float,
+    dy: float,
+    dz: float,
+    props=None,
+    *,
+    max_dist: float = 80.0,
+):
+    """レイに最も近い ``Prop``。``plane`` は床扱いなので除外。"""
+    length = math.sqrt(dx * dx + dy * dy + dz * dz)
+    if length < 1e-8:
+        return None
+    dx, dy, dz = dx / length, dy / length, dz / length
+    best_t = float(max_dist)
+    best = None
+    for p in (Prop._all if props is None else props):
+        if getattr(p, "model", "") == "plane":
+            continue
+        t = ray_aabb(ox, oy, oz, dx, dy, dz, prop_aabb(p), max_dist=best_t)
+        if t is not None and 0.0 <= t < best_t:
+            best_t = t
+            best = p
+    return best
 
 
 def _unit_mesh(model: str):
@@ -234,7 +336,7 @@ class Prop:
 
 
 class Walk:
-    """WASD + マウス左右で視点。``World3D`` のカプセルと ``Camera3D.follow``。"""
+    """WASD + マウスで視点。既定は三人称 ``Camera3D.follow``。``first_person`` で目線。"""
 
     def __init__(
         self,
@@ -246,6 +348,9 @@ class Walk:
         distance: float = 4.6,
         height: float = 2.2,
         yaw: float = 0.0,
+        first_person: bool = False,
+        eye_height: float = 1.55,
+        pitch: float = 0.0,
     ):
         self.world = world
         self.cam = cam
@@ -254,6 +359,9 @@ class Walk:
         self.distance = float(distance)
         self.height = float(height)
         self.yaw = float(yaw)
+        self.pitch = float(pitch)
+        self.first_person = bool(first_person)
+        self.eye_height = float(eye_height)
         self._last_mouse: Optional[tuple[float, float]] = None
 
     def step(self, dt: float) -> None:
@@ -266,6 +374,8 @@ class Walk:
         mx, my = kagra.mouse_pos()
         if self._last_mouse is not None:
             self.yaw = look_yaw(self.yaw, mx - self._last_mouse[0], sens=self.mouse_sens)
+            if self.first_person:
+                self.pitch = look_pitch(self.pitch, my - self._last_mouse[1], sens=self.mouse_sens)
         self._last_mouse = (float(mx), float(my))
 
         fwd = (1.0 if kagra.key("W") or kagra.key("UP") else 0.0) - (
@@ -280,13 +390,19 @@ class Walk:
         p = self.world.player
         if p is None:
             return
-        self.cam.follow(
-            p.x, p.y, p.z,
-            yaw=self.yaw,
-            distance=self.distance,
-            height=self.height,
-            lerp=0.22,
-        )
+        if self.first_person:
+            eye, tgt = first_person_eye(
+                p.x, p.y, p.z, self.yaw, self.pitch, eye_height=self.eye_height,
+            )
+            self.cam.look(*eye, *tgt)
+        else:
+            self.cam.follow(
+                p.x, p.y, p.z,
+                yaw=self.yaw,
+                distance=self.distance,
+                height=self.height,
+                lerp=0.22,
+            )
         eng = kagra.get_engine()
         if eng:
             self.cam.update(eng)

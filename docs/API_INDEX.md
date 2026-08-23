@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **373**
+エントリ数: **374**
 
 棚の**手前**は VRM / 3D ワールド / エージェントゲーム。
 棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。
@@ -32,6 +32,7 @@
 | `get_camera3d` | `get_camera3d() -> Camera3D \| None` |
 | `get_engine` | `get_engine() -> _Engine` |
 | `get_screen_size` | `get_screen_size() -> tuple` |
+| `hovered_prop` | `hovered_prop(cam=None, sx: float \| None = None, sy: float \| None = None, *, max_dist: float = 80.0)` |
 | `init` | `init(width=1280, height=720, title='KAGRA Game', fps=60, transparent=False, decorations=True, always_on_top=False, visible=True)` |
 | `inject_key` | `inject_key(name: str, down: bool = True)` |
 | `key` | `key(name: str) -> bool` |
@@ -403,6 +404,8 @@
 - VRM プリミティブはパッド付きボーン AABB でカリング。`doubleSided` のときだけ両面。
 - 床と箱: `World3D`（または `Physics3D` + `box_mesh`）。カメラは `Camera3D.follow`。
 - 短い 3D: `Prop`（box/sphere/cylinder/plane）+ `Walk` + `sky()`。2D の `Entity` ではない。`bake_all` のあと `draw_all`。
+- 一人称: `Walk(..., first_person=True)`。目線は `eye_height`。`F` で切替えるデモは Prop Garden。
+- ホバー: `hovered_prop(cam)`（マウス）。レイ直打ちは `kagra.play.hovered_prop(ox,oy,oz,dx,dy,dz)`。`plane` は除外。
 - 色付きメッシュ: `solid_tex` + `sphere_mesh` / `cylinder_mesh` / `box_mesh`。
 - `kagra-shared` / `mobile/` は別の運転デモ。この Python スタックと混ぜない。
 - Rust バインディングの整合は `tests/test_api_bindings.py` も参照。

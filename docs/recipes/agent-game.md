@@ -49,6 +49,8 @@ Result: `examples/vrm_dodge_room.py`
 | 3D → HUD | `cam.world_to_screen(x, y, z)` — not the 2D `kagra.world_to_screen` |
 | World | `World3D` (floor + boxes) then `Camera3D.follow` |
 | Short 3D | `Prop` + `Walk` + `sky()` — not 2D `Entity`. See `examples/vrm_prop_garden.py` |
+| First person | `Walk(..., first_person=True)` — eye height. Prop Garden: `F` |
+| Hover | `hovered_prop(cam)` — not the 2D `mouse`. Floor `plane` is skipped |
 | Mesh retain | `upload_mesh_3d` once, `draw_mesh_id` each frame — or `world.bake` / `world.draw` |
 | Art / SE | `kagra.texture_from_fn` / `kagra.tone` / `kagra.draw_billboard` |
 | Score | `kagra.save_json` / `kagra.load_json` |
@@ -85,3 +87,4 @@ KAGRA で、VRM が3レーンを左右に歩いて、奥から飛んでくるハ
 `examples/vrm_dodge_room.py`（ログ: `docs/agent-runs/20260823-dodge-room/`）。
 短い 3D は `Prop` + `Walk` + `sky()`（`examples/vrm_prop_garden.py`。
 これは play-surface デモで、エージェント製ログではない）。
+一人称は `Walk(..., first_person=True)`。ホバーは `hovered_prop(cam)`。

@@ -40,6 +40,38 @@ def test_look_yaw_subtracts_mouse_x():
     assert play.look_yaw(0.0, 10.0, sens=0.01) == pytest.approx(-0.1)
 
 
+def test_look_pitch_clamps():
+    assert play.look_pitch(0.0, -10.0, sens=0.01) == pytest.approx(0.1)
+    assert play.look_pitch(1.19, -10.0, sens=0.01) == pytest.approx(1.2)
+
+
+def test_first_person_eye_looks_along_yaw():
+    pos, tgt = play.first_person_eye(0.0, 0.0, 0.0, 0.0, 0.0, eye_height=1.55)
+    assert pos == pytest.approx((0.0, 1.55, 0.0))
+    assert tgt[2] > pos[2]
+    pos_r, tgt_r = play.first_person_eye(0.0, 0.0, 0.0, math.pi / 2, 0.0, eye_height=1.55)
+    assert tgt_r[0] > pos_r[0]
+    assert abs(tgt_r[2] - pos_r[2]) < 1e-9
+
+
+def test_hovered_prop_picks_nearest_and_skips_plane():
+    play.Prop("plane", x=0, y=0, z=2, scale=20.0, collision=False)
+    near = play.Prop("box", x=0, y=0.5, z=2, scale=1.0, collision=False, color="orange")
+    far = play.Prop("sphere", x=0, y=0.5, z=6, scale=1.0, collision=False, color="gold")
+    hit = play.hovered_prop(0.0, 0.5, 0.0, 0.0, 0.0, 1.0)
+    assert hit is near
+    assert hit is not far
+    play.Prop.clear()
+    play.Prop("plane", x=0, y=0, z=3, scale=14.0, collision=False)
+    assert play.hovered_prop(0.0, 0.5, 0.0, 0.0, 0.0, 1.0) is None
+
+
+def test_color_name_roundtrip():
+    assert play.color_name("gold") == "gold"
+    assert play.color_name((240, 200, 70)) == "gold"
+    assert play.color_name((1, 2, 3)) is None
+
+
 def test_prop_records_center_xform():
     p = play.Prop("box", x=2.0, y=0.5, z=-1.0, scale=(1.2, 1.0, 1.4), color="orange")
     inst = p.instance()
