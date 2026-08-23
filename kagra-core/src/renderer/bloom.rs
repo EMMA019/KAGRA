@@ -22,8 +22,12 @@ pub(super) struct BloomPass {
     blur_pipeline: wgpu::RenderPipeline,
     composite_pipeline: wgpu::RenderPipeline,
     tex_bgl: wgpu::BindGroupLayout,
-    params_buf: wgpu::Buffer,
-    params_bg: wgpu::BindGroup,
+    /// pass ごとに別バッファ。1 本を使い回すと Queue::write_buffer が
+    /// submit 前に全部走り、最後の値（intensity）で抽出してしまう。
+    extract_params: (wgpu::Buffer, wgpu::BindGroup),
+    blur_h_params: (wgpu::Buffer, wgpu::BindGroup),
+    blur_v_params: (wgpu::Buffer, wgpu::BindGroup),
+    composite_params: (wgpu::Buffer, wgpu::BindGroup),
     sampler: wgpu::Sampler,
     half_a: wgpu::Texture,
     half_a_view: wgpu::TextureView,
@@ -115,20 +119,10 @@ impl BloomPass {
             surface_format,
             "Bloom Composite",
         );
-        let params_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Bloom Params"),
-            size: 16,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let params_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Bloom Params BG"),
-            layout: &params_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: params_buf.as_entire_binding(),
-            }],
-        });
+        let extract_params = make_params(device, &params_bgl, "Bloom Extract Params");
+        let blur_h_params = make_params(device, &params_bgl, "Bloom BlurH Params");
+        let blur_v_params = make_params(device, &params_bgl, "Bloom BlurV Params");
+        let composite_params = make_params(device, &params_bgl, "Bloom Composite Params");
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Bloom Sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -149,8 +143,10 @@ impl BloomPass {
             blur_pipeline,
             composite_pipeline,
             tex_bgl,
-            params_buf,
-            params_bg,
+            extract_params,
+            blur_h_params,
+            blur_v_params,
+            composite_params,
             sampler,
             half_a,
             half_a_view,
@@ -220,40 +216,40 @@ impl BloomPass {
         let b_bg = bind_tex(device, &self.tex_bgl, &self.half_b_view, &self.sampler, "Bloom B");
 
         let knee = (self.threshold * 0.12).clamp(0.04, 0.2);
-        write_params(queue, &self.params_buf, [self.threshold, knee, 0.0, 0.0]);
+        write_params(queue, &self.extract_params.0, [self.threshold, knee, 0.0, 0.0]);
         fullscreen(
             encoder,
             &self.extract_pipeline,
             &self.half_a_view,
-            &[&src_bg, &self.params_bg],
+            &[&src_bg, &self.extract_params.1],
             "Bloom Extract",
         );
 
         let inv_w = 1.0 / self.half_w.max(1) as f32;
         let inv_h = 1.0 / self.half_h.max(1) as f32;
-        write_params(queue, &self.params_buf, [inv_w, 0.0, 0.0, 0.0]);
+        write_params(queue, &self.blur_h_params.0, [inv_w, 0.0, 0.0, 0.0]);
         fullscreen(
             encoder,
             &self.blur_pipeline,
             &self.half_b_view,
-            &[&a_bg, &self.params_bg],
+            &[&a_bg, &self.blur_h_params.1],
             "Bloom Blur H",
         );
-        write_params(queue, &self.params_buf, [0.0, inv_h, 0.0, 0.0]);
+        write_params(queue, &self.blur_v_params.0, [0.0, inv_h, 0.0, 0.0]);
         fullscreen(
             encoder,
             &self.blur_pipeline,
             &self.half_a_view,
-            &[&b_bg, &self.params_bg],
+            &[&b_bg, &self.blur_v_params.1],
             "Bloom Blur V",
         );
 
-        write_params(queue, &self.params_buf, [self.intensity, 0.0, 0.0, 0.0]);
+        write_params(queue, &self.composite_params.0, [self.intensity, 0.0, 0.0, 0.0]);
         fullscreen(
             encoder,
             &self.composite_pipeline,
             &self.out_view,
-            &[&src_bg, &self.params_bg, &a_bg],
+            &[&src_bg, &self.composite_params.1, &a_bg],
             "Bloom Composite",
         );
         self.last_applied = true;
@@ -336,6 +332,28 @@ fn bind_tex(
             },
         ],
     })
+}
+
+fn make_params(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    label: &str,
+) -> (wgpu::Buffer, wgpu::BindGroup) {
+    let buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: 16,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some(label),
+        layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: buf.as_entire_binding(),
+        }],
+    });
+    (buf, bg)
 }
 
 fn write_params(queue: &wgpu::Queue, buf: &wgpu::Buffer, v: [f32; 4]) {
