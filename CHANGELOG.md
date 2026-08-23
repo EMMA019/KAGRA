@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Bloom: give extract / blur / composite their own uniforms. A single
+  `write_buffer` was applied only after submit, so every pass used
+  `intensity` as the extract threshold and smeared the whole frame
+  (ghost trails next to the VRM).
+
 - 3D physics: Y-up capsule, yaw OBB, layer/mask, triggers, `physics.sync_vrm`.
   Character-controller style (no Rapier). GPU-free tests in `tests/test_physics3d.py`.
 - `Camera3D.ray_from_screen` and `avatar.pick(sx, sy)` → humanoid bone name
