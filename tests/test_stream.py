@@ -1,8 +1,6 @@
 """配信ヘルパ（ChatInbox / HUD / VOICEVOX パース / マイク RMS）。GPU 不要。"""
 from __future__ import annotations
 
-import json
-
 from tests.conftest import load_kagra_submodule
 
 stream = load_kagra_submodule("stream")
