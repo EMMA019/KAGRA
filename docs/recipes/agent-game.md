@@ -28,6 +28,18 @@ Verify with python -m kagra.verify.
 Result: `examples/vrm_switch_room.py`
 (log: `docs/agent-runs/20260823-switch-room/`).
 
+A third, written by a different agent:
+
+```
+Using KAGRA, make a short 3D game where a VRM stands in a small arena
+and dodges boxes falling from the sky. No catching, no switches —
+survive as long as possible while difficulty ramps up. Public APIs
+only. Verify with python -m kagra.verify.
+```
+
+Result: `examples/vrm_dodge_room.py`
+(log: `docs/agent-runs/20260823-dodge-room/`).
+
 ## APIs agents actually need
 
 | Job | Call |
@@ -47,6 +59,7 @@ Result: `examples/vrm_switch_room.py`
 python -m kagra.verify examples/verify_scenarios/heart_catch_smoke.json
 python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json
 python -m kagra.verify examples/verify_scenarios/switch_room_smoke.json
+python -m kagra.verify examples/verify_scenarios/dodge_room_smoke.json
 ```
 
 Save the prompt, the stumbles, and the verify output under
@@ -66,4 +79,5 @@ KAGRA で、VRM が3レーンを左右に歩いて、奥から飛んでくるハ
 参照実装とログは上と同じ。3D の投影は `Camera3D.world_to_screen`、
 セーブは `save_json`（`load_data` はアセット用）、VRM は `ensure_vrm()`。
 箱のある部屋は `World3D` + `Camera3D.follow`。静的メッシュは
-`upload_mesh_3d` / `draw_mesh_id`。
+`upload_mesh_3d` / `draw_mesh_id`。避けるゲームは
+`examples/vrm_dodge_room.py`（ログ: `docs/agent-runs/20260823-dodge-room/`）。

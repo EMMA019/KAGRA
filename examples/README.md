@@ -7,6 +7,7 @@ python -m kagra                          # sing & dance
 python examples/vrm_orb_rush.py          # reference game (public APIs)
 python examples/vrm_heart_catch.py       # agent-run log in docs/agent-runs/
 python examples/vrm_switch_room.py       # boxed room + camera follow
+python examples/vrm_dodge_room.py        # falling boxes, survive (agent-run log)
 python examples/vrm_vrma.py
 python examples/vrm_stream.py
 python examples/desktop_mascot.py

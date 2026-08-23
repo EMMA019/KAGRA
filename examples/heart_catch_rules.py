@@ -47,3 +47,10 @@ def is_miss(h: Heart) -> bool:
 
 def catch_score(combo: int) -> int:
     return 10 + min(40, max(0, combo) * 2)
+
+
+if __name__ == "__main__":
+    raise SystemExit(
+        "これは判定ロジックだけです。窓は開きません。\n"
+        "  python examples/vrm_heart_catch.py"
+    )

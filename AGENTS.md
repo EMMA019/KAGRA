@@ -64,7 +64,8 @@ PNG/WAV/projection:
 - `ActionController` — one-shot poses; `ActionController.names()` lists them
 
 Verify: `examples/verify_scenarios/orb_rush_smoke.json`,
-`heart_catch_smoke.json`, and `switch_room_smoke.json`.
+`heart_catch_smoke.json`, `switch_room_smoke.json`, and
+`dodge_room_smoke.json`.
 Logged builds live in `docs/agent-runs/`.
 The API index front is VRM / 3D / agents; the shelf is legacy 2D.
 

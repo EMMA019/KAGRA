@@ -91,3 +91,10 @@ def is_hit(px: float, pz: float, m: Meteor, radius: float = HIT_RADIUS) -> bool:
 
 def survival_score(elapsed: float) -> int:
     return int(elapsed * 12)
+
+
+if __name__ == "__main__":
+    raise SystemExit(
+        "これは判定ロジックだけです。窓は開きません。\n"
+        "  python examples/vrm_dodge_room.py"
+    )

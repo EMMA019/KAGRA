@@ -96,6 +96,9 @@ JS における three-vrm のポジションの Python 版。
 - [x] D-4 2本目のエージェント製ゲーム: 「箱部屋を歩いてスイッチを踏む」
       → `examples/vrm_switch_room.py` +
       `docs/agent-runs/20260823-switch-room/`
+- [x] D-5 独立エージェントの 3 本目: 「降ってくる箱を避ける」
+      → `examples/vrm_dodge_room.py` +
+      `docs/agent-runs/20260823-dodge-room/`（Claude。Cursor/Grok ではない）
 
 **判定**: 2 週間で「動いた」報告 3 件以上の楔が勝ち。全滅なら機能ではなく
 **切り口の言葉**を変えて 1 回だけ再試行。全滅 × 2 サイクルで Stage 6 へ。
