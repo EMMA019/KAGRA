@@ -85,11 +85,23 @@ python -m kagra
 | マイク口パク | `pip install "kagra[mic]"` |
 | コントリビュータ | `pip install maturin && maturin develop` |
 
+## AI エージェントにゲームを作らせる
+
+KAGRA の開発ループは人間だけでなく AI コーディングエージェント用に設計されています。エージェントは API を検索し、シーンを書き、**画面を見ずにヘッドレスで検証**できます。
+
+- **[AGENTS.md](AGENTS.md)** — どのエージェントでも使える行動規範（Claude Code / Cursor / Windsurf …）。Cursor は `.cursor/skills/` から同じ規則を自動で拾う
+- **API 索引** — [`docs/API_INDEX.md`](docs/API_INDEX.md) は AST から生成。エージェントは推測ではなく検索する
+- **ヘッドレス検証** — `python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json` で目視なしにループを閉じる
+- **MCP サーバー** — `tools/mcp_kagra/server.py`: `kagra_api_search` / `kagra_env` / `kagra_resolve_asset` / `kagra_verify` / `kagra_render`
+
+`examples/vrm_orb_rush.py` がこのループの参照ゲーム（タイトル → カウントダウン → プレイ → リザルト、手続き SE、パーティクル、難易度カーブ）。エージェントに作らせたセッションは [`docs/agent-runs/`](docs/agent-runs/README.md) に記録します。
+
 ## まだ無いもの
 
 嘘をつかないリスト。忘れたのではなく、今は入れない。
 
 - **macOS ホイール** — 検証できる Mac ができるまでソースビルド
+- **ゲームパッド入力** — 今はキーボード / マウス / タッチのみ
 - **YouTube / Twitch の公式取り込み** — `{user,text}` の JSONL を自分で書く（`ChatInbox`）
 - **NDI / RTMP** — 窓キャプチャは今も使える。仮想カメラは extra
 - **無人配信のセーフティ / オートパイロット** — 0.1.3 には無い

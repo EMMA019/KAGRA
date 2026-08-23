@@ -85,11 +85,23 @@ python -m kagra
 | Mic lipsync | `pip install "kagra[mic]"` |
 | Contributors | `pip install maturin && maturin develop` |
 
+## Let your AI agent build the game
+
+KAGRA's development loop is designed for AI coding agents, not just humans. An agent can search the API, write a scene, and **verify it headlessly** — no human looking at the screen:
+
+- **[AGENTS.md](AGENTS.md)** — rules for any agent (Claude Code, Cursor, Windsurf, ...). Cursor picks up the same rules via `.cursor/skills/`
+- **API index** — [`docs/API_INDEX.md`](docs/API_INDEX.md) is generated from the AST, so agents search instead of guessing signatures
+- **Headless verify** — `python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json` closes the loop in CI or a subprocess
+- **MCP server** — `tools/mcp_kagra/server.py`: `kagra_api_search` / `kagra_env` / `kagra_resolve_asset` / `kagra_verify` / `kagra_render`
+
+`examples/vrm_orb_rush.py` is the reference game for this loop (title → countdown → play → result, procedural SFX, particles, difficulty curve). Agent build sessions are logged under [`docs/agent-runs/`](docs/agent-runs/README.md).
+
 ## Not yet
 
 Honesty list. These are missing on purpose, not forgotten:
 
 - **macOS wheels** — build from source until a Mac can verify them
+- **Gamepad input** — keyboard / mouse / touch only for now
 - **YouTube / Twitch chat APIs** — write `{user,text}` JSONL yourself (`ChatInbox`)
 - **NDI / RTMP** — OBS window capture still works; virtual cam is the extra
 - **Autopilot / unattended safety** — not in 0.1.3

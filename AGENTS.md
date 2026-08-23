@@ -1,0 +1,61 @@
+# AGENTS.md
+
+Instructions for AI coding agents working in this repository
+(Claude Code, Cursor, Windsurf, Codex, aider, ...). Cursor users get the
+same rules automatically via `.cursor/skills/kagra-agent/SKILL.md`.
+
+KAGRA's development loop is designed so that an agent can build and verify
+a game **without a human looking at the screen**.
+
+## Rules
+
+1. **Do not invent APIs.** Search `docs/API_INDEX.md` (or MCP
+   `kagra_api_search`) first. The index is generated from the AST:
+   `python tools/gen_api_index.py --check` must stay clean.
+2. **Resolve assets via contracts.** Use `kagra.contracts.resolve_asset`
+   (or MCP `kagra_resolve_asset`). Aliases: `Emma`, `walk`, `dance`.
+3. **Close the loop.** After any visual change, run a verify scenario or
+   MCP `kagra_render` / `kagra_verify`. Never claim "done" without it.
+4. **One EventLoop per process on Windows.** Always run GPU scenes in a
+   subprocess — that is what `kagra.verify` does for you.
+5. **Keep tests extension-free.** `tests/` must not import the Rust
+   extension directly; load pure-logic modules via
+   `tests/conftest.py::load_kagra_submodule`. Run
+   `pytest tests -m "not golden"`.
+6. **Log build sessions.** When you build a game or scene on request,
+   save the prompt, the key decisions, and the verify results under
+   `docs/agent-runs/` (see `docs/agent-runs/README.md`). The log is a
+   first-class artifact, not an afterthought.
+
+## Commands
+
+```bash
+python tools/gen_api_index.py --check                              # API index drift
+python -m kagra.verify examples/verify_scenarios/blank_smoke.json  # headless smoke
+python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json
+python tools/mcp_kagra/server.py                                   # MCP (stdio)
+pytest tests -m "not golden"                                       # pure-python tests
+```
+
+## MCP tools (`tools/mcp_kagra/server.py`)
+
+| Tool | What it does |
+|---|---|
+| `kagra_api_search` | search public signatures |
+| `kagra_env` | list available VRM / FBX / BVH assets |
+| `kagra_resolve_asset` | kind + name → path |
+| `kagra_verify` | run a scenario JSON headlessly |
+| `kagra_render` | clear-color smoke screenshot |
+
+## Reference game
+
+`examples/vrm_orb_rush.py` is the reference implementation of a complete
+game built on this loop (title → countdown → play → result, procedural
+SFX, particles, difficulty curve) with its own verify scenario
+(`examples/verify_scenarios/orb_rush_smoke.json`).
+
+## More context
+
+- `docs/AGENT.md` — contracts table, CI-parity commands, Cargo.lock policy
+- `docs/API_INDEX.md` — the searchable public API
+- `docs/schemas/input_events.json` — touch / pointer input schema
