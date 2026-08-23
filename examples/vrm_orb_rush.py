@@ -1,7 +1,7 @@
 """
 VRM Orb Rush — Emma で星を集めて爆弾を避ける 45 秒勝負
 
-エージェント向け参照実装（音・粒子・難易度カーブ・タイトル演出つき）。
+エージェント向け参照実装（公開 API のみ。音・粒子・難易度カーブ・タイトル演出つき）。
 
 操作:
   WASD / 矢印 : 移動
@@ -17,18 +17,13 @@ from __future__ import annotations
 import math
 import os
 import random
-import struct
 import sys
-import tempfile
-import wave
-import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import kagra
-from kagra.camera3d import Camera3D, _look_at, _perspective_wgpu
+from kagra.camera3d import Camera3D
 from kagra.vrm_action import ActionController
-from kagra.vrm_avatar import _euler_to_quat, _qmul, _send_bone_rot, _ID
 
 SW, SH = 1280, 720
 VRM_PATH = "assets/Emma.vrm"
@@ -40,31 +35,7 @@ ROUND_SEC = 45.0
 MAX_LIVES = 3
 
 
-# ── 手続きテクスチャ ──────────────────────────────────────────
-
-def _png(w, h, px_fn, tag="t"):
-    rows = b""
-    for y in range(h):
-        row = b"\x00"
-        for x in range(w):
-            row += bytes(px_fn(x, y))
-        rows += row
-    raw = zlib.compress(rows)
-
-    def chunk(t, d):
-        c = zlib.crc32(t + d) & 0xFFFFFFFF
-        return struct.pack(">I", len(d)) + t + d + struct.pack(">I", c)
-
-    path = os.path.join(tempfile.gettempdir(), f"orb_rush_{tag}_{w}.png")
-    with open(path, "wb") as f:
-        f.write(
-            b"\x89PNG\r\n\x1a\n"
-            + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
-            + chunk(b"IDAT", raw)
-            + chunk(b"IEND", b"")
-        )
-    return kagra.load(path)
-
+# ── 手続きテクスチャ / SE（公開 API） ─────────────────────────
 
 def _floor_tex():
     def px(x, y):
@@ -72,77 +43,41 @@ def _floor_tex():
         if c:
             return (72, 88, 110, 255)
         return (58, 72, 92, 255)
-    return _png(64, 64, px, "floor")
+    return kagra.texture_from_fn(64, 64, px, name="orb_floor")
 
 
 def _star_tex():
     def px(x, y):
-        cx, cy = 15.5, 15.5
-        d = math.hypot(x - cx, y - cy) / 15.5
-        a = max(0, int((1.0 - d) * 255))
-        return (255, 230, 90, a)
-    return _png(32, 32, px, "star")
+        d = math.hypot(x - 15.5, y - 15.5) / 15.5
+        return (255, 230, 90, max(0, int((1.0 - d) * 255)))
+    return kagra.texture_from_fn(32, 32, px, name="orb_star")
 
 
 def _bomb_tex():
     def px(x, y):
-        cx, cy = 15.5, 15.5
-        d = math.hypot(x - cx, y - cy) / 15.5
-        a = max(0, int((1.0 - d) * 255))
-        return (255, 70, 90, a)
-    return _png(32, 32, px, "bomb")
+        d = math.hypot(x - 15.5, y - 15.5) / 15.5
+        return (255, 70, 90, max(0, int((1.0 - d) * 255)))
+    return kagra.texture_from_fn(32, 32, px, name="orb_bomb")
 
 
 def _ring_tex():
     def px(x, y):
-        cx, cy = 31.5, 31.5
-        d = math.hypot(x - cx, y - cy) / 31.5
+        d = math.hypot(x - 31.5, y - 31.5) / 31.5
         band = abs(d - 0.92)
-        a = max(0, int((1.0 - band * 18) * 180))
-        return (120, 200, 255, a)
-    return _png(64, 64, px, "ring")
-
-
-# ── 手続き SE（外部アセット不要） ─────────────────────────────
-
-def _wav_path(name: str) -> str:
-    return os.path.join(tempfile.gettempdir(), f"orb_rush_se_{name}.wav")
-
-
-def _write_tone(name: str, freqs, duration=0.12, vol=0.35, decay=True):
-    """単純な合成トーンを WAV に書き、パスを返す。freqs は Hz の列。"""
-    path = _wav_path(name)
-    rate = 22050
-    n = int(rate * duration)
-    frames = bytearray()
-    for i in range(n):
-        t = i / rate
-        env = (1.0 - t / duration) if decay else 1.0
-        env = max(0.0, env) ** 1.4
-        s = 0.0
-        for f in freqs:
-            s += math.sin(2 * math.pi * f * t)
-        s = (s / max(1, len(freqs))) * vol * env
-        sample = max(-1.0, min(1.0, s))
-        frames += struct.pack("<h", int(sample * 32767))
-    with wave.open(path, "w") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(rate)
-        w.writeframes(bytes(frames))
-    return path
+        return (120, 200, 255, max(0, int((1.0 - band * 18) * 180)))
+    return kagra.texture_from_fn(64, 64, px, name="orb_ring")
 
 
 def _make_sfx() -> dict[str, str]:
     return {
-        "collect": _write_tone("collect", (880, 1320), 0.10, 0.32),
-        "combo": _write_tone("combo", (990, 1485, 1980), 0.14, 0.28),
-        "hit": _write_tone("hit", (120, 90), 0.22, 0.45),
-        "start": _write_tone("start", (523, 659, 784), 0.28, 0.30, decay=True),
-        "go": _write_tone("go", (784, 988), 0.18, 0.34),
-        "win": _write_tone("win", (523, 659, 784, 1046), 0.45, 0.28),
-        "lose": _write_tone("lose", (392, 311, 247), 0.50, 0.32),
-        "tick": _write_tone("tick", (660,), 0.08, 0.22),
+        "collect": kagra.tone("collect", (880, 1320), 0.10, 0.32),
+        "combo": kagra.tone("combo", (990, 1485, 1980), 0.14, 0.28),
+        "hit": kagra.tone("hit", (120, 90), 0.22, 0.45),
+        "start": kagra.tone("start", (523, 659, 784), 0.28, 0.30),
+        "go": kagra.tone("go", (784, 988), 0.18, 0.34),
+        "win": kagra.tone("win", (523, 659, 784, 1046), 0.45, 0.28),
+        "lose": kagra.tone("lose", (392, 311, 247), 0.50, 0.32),
+        "tick": kagra.tone("tick", (660,), 0.08, 0.22),
     }
 
 
@@ -154,80 +89,6 @@ def _se(sfx: dict, key: str, volume=1.0):
         kagra.play_se(path, volume=volume)
     except Exception:
         pass  # ヘッドレス / 無音環境でもゲームは継続
-
-
-# ── 簡易メッシュ ──────────────────────────────────────────────
-
-def _quad_y(cx, cy, cz, size):
-    s = size
-    verts = [
-        [cx - s, cy, cz - s, 0, 1, 0, 0, 0],
-        [cx + s, cy, cz - s, 0, 1, 0, 1, 0],
-        [cx + s, cy, cz + s, 0, 1, 0, 1, 1],
-        [cx - s, cy, cz + s, 0, 1, 0, 0, 1],
-    ]
-    return verts, [0, 1, 2, 0, 2, 3]
-
-
-def _disk(cx, cy, cz, radius, segs=48):
-    verts = [[cx, cy, cz, 0, 1, 0, 0.5, 0.5]]
-    idx = []
-    for i in range(segs):
-        a0 = i / segs * math.tau
-        a1 = (i + 1) / segs * math.tau
-        x0, z0 = cx + math.cos(a0) * radius, cz + math.sin(a0) * radius
-        x1, z1 = cx + math.cos(a1) * radius, cz + math.sin(a1) * radius
-        base = len(verts)
-        verts.append([x0, cy, z0, 0, 1, 0, 0.5 + math.cos(a0) * 0.5, 0.5 + math.sin(a0) * 0.5])
-        verts.append([x1, cy, z1, 0, 1, 0, 0.5 + math.cos(a1) * 0.5, 0.5 + math.sin(a1) * 0.5])
-        idx += [0, base, base + 1]
-    return verts, idx
-
-
-def _billboard(x, y, z, size, cam: Camera3D):
-    theta = getattr(cam, "orbit_th", 0.0)
-    rx, rz = math.cos(theta), -math.sin(theta)
-    s = size
-    corners = [
-        (-rx * s, -s, -rz * s, 0, 0),
-        (rx * s, -s, rz * s, 1, 0),
-        (rx * s, s, rz * s, 1, 1),
-        (-rx * s, s, -rz * s, 0, 1),
-    ]
-    nx, ny, nz = math.sin(theta), 0.2, math.cos(theta)
-    nl = math.hypot(nx, ny, nz) or 1.0
-    nx, ny, nz = nx / nl, ny / nl, nz / nl
-    verts = [[x + dx, y + dy, z + dz, nx, ny, nz, u, v] for dx, dy, dz, u, v in corners]
-    return verts, [0, 1, 2, 0, 2, 3]
-
-
-def _mul_mat4(a, b):
-    out = [0.0] * 16
-    for r in range(4):
-        for c in range(4):
-            out[r * 4 + c] = sum(a[r * 4 + k] * b[k * 4 + c] for k in range(4))
-    return out
-
-
-def _project(cam: Camera3D, wx, wy, wz):
-    """ワールド → スクリーン。見えなければ None。"""
-    view = _look_at(cam.position, cam.target, cam.up)
-    proj = _perspective_wgpu(
-        cam.fov_deg, cam.screen_w / max(1, cam.screen_h), cam.near, cam.far
-    )
-    vp = _mul_mat4(proj, view)
-    x = vp[0] * wx + vp[1] * wy + vp[2] * wz + vp[3]
-    y = vp[4] * wx + vp[5] * wy + vp[6] * wz + vp[7]
-    z = vp[8] * wx + vp[9] * wy + vp[10] * wz + vp[11]
-    w = vp[12] * wx + vp[13] * wy + vp[14] * wz + vp[15]
-    if abs(w) < 1e-5:
-        return None
-    ndc_x, ndc_y, ndc_z = x / w, y / w, z / w
-    if ndc_z < 0.0 or ndc_z > 1.0:
-        return None
-    sx = (ndc_x * 0.5 + 0.5) * cam.screen_w
-    sy = (1.0 - (ndc_y * 0.5 + 0.5)) * cam.screen_h
-    return sx, sy
 
 
 def _lerp(a, b, t):
@@ -374,7 +235,8 @@ class OrbRush(kagra.Scene):
         self.mode = "intro"
         self.mode_t = 0.0
         self.t = 0.0
-        self.hi_score = 0
+        saved = kagra.load_json("orb_rush") or {}
+        self.hi_score = int(saved.get("hi_score") or 0)
         self.countdown_n = 3
         self.title_alpha = 0.0
         self._reset_round()
@@ -423,7 +285,7 @@ class OrbRush(kagra.Scene):
         self.msg_t = 1.2
 
     def _fx_at(self, wx, wy, wz, color, text=None, count=12):
-        scr = _project(self.cam, wx, wy, wz)
+        scr = self.cam.world_to_screen(wx, wy, wz)
         if not scr:
             return
         sx, sy = scr
@@ -616,6 +478,7 @@ class OrbRush(kagra.Scene):
             self.mode = "result"
             self.mode_t = 0.0
             self.hi_score = max(self.hi_score, self.score)
+            kagra.save_json("orb_rush", {"hi_score": self.hi_score})
             if self.lives <= 0:
                 self.avatar.feel("angry", intensity=1.0)
                 self.action.play("bow")
@@ -633,15 +496,10 @@ class OrbRush(kagra.Scene):
         self._update_cam(dt)
 
     def _apply_pose(self):
-        eng = kagra.get_engine()
-        if not eng:
-            return
         speed = math.hypot(self.vx, self.vz)
         bob = abs(math.sin(self._walk_phase)) * 0.025 if speed > 0.2 else 0.0
-        eng.set_vrm_offset(self.avatar.vrm_id, self.px, bob, self.pz)
-        hips = self.avatar._anim.current_rots.get("J_Bip_C_Hips", _ID)
-        yaw_q = _euler_to_quat(0.0, self.facing, 0.0)
-        _send_bone_rot(self.avatar.vrm_id, "J_Bip_C_Hips", _qmul(yaw_q, list(hips)))
+        self.avatar.set_position(self.px, bob, self.pz)
+        self.avatar.set_yaw(self.facing)
 
     def _update_cam(self, dt, follow=True):
         if follow:
@@ -664,9 +522,9 @@ class OrbRush(kagra.Scene):
         else:
             kagra.cls(28, 34, 48)
 
-        fv, fi = _disk(0.0, 0.0, 0.0, ARENA_R, 56)
+        fv, fi = kagra.disk_mesh(0.0, 0.0, 0.0, ARENA_R, 56)
         kagra.draw_mesh_3d(self.tex_floor, fv, fi)
-        rv, ri = _quad_y(0.0, 0.02, 0.0, ARENA_R * 1.02)
+        rv, ri = kagra.quad_y_mesh(0.0, 0.02, 0.0, ARENA_R * 1.02)
         kagra.draw_mesh_3d(self.tex_ring, rv, ri)
 
         for orb in self.orbs:
@@ -677,7 +535,7 @@ class OrbRush(kagra.Scene):
             # 爆弾は点滅警告
             if orb.kind == "bomb" and (int(orb.phase * 6) % 2 == 0):
                 size *= 1.08
-            verts, idx = _billboard(orb.x, bob, orb.z, size, self.cam)
+            verts, idx = kagra.billboard_mesh(orb.x, bob, orb.z, size, self.cam)
             tex = self.tex_star if orb.kind == "star" else self.tex_bomb
             kagra.draw_mesh_3d(tex, verts, idx)
 

@@ -94,7 +94,7 @@ KAGRA の開発ループは人間だけでなく AI コーディングエージ�
 - **ヘッドレス検証** — `python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json` で目視なしにループを閉じる
 - **MCP サーバー** — `tools/mcp_kagra/server.py`: `kagra_api_search` / `kagra_env` / `kagra_resolve_asset` / `kagra_verify` / `kagra_render`
 
-`examples/vrm_orb_rush.py` がこのループの参照ゲーム（タイトル → カウントダウン → プレイ → リザルト、手続き SE、パーティクル、難易度カーブ）。エージェントに作らせたセッションは [`docs/agent-runs/`](docs/agent-runs/README.md) に記録します。
+`examples/vrm_orb_rush.py` が参照ゲーム（公開 API のみ）: `texture_from_fn` / `tone` / `Camera3D.world_to_screen` / `avatar.set_position` / `set_yaw` / `billboard_mesh` / `save_json`。エージェントに作らせたセッションは [`docs/agent-runs/`](docs/agent-runs/README.md) に記録します。
 
 ## まだ無いもの
 

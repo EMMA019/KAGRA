@@ -77,6 +77,12 @@ JS における three-vrm のポジションの Python 版。
 - README 先頭に 10 秒 GIF（動画リンクより先に絵を見せる）
 - 楔 D は動画不要でもよい: エージェントに実際に作らせたログとリザルトが
   そのままコンテンツになる（このリポジトリ自体がエージェント開発の実証）
+- [x] D-0 導線: ルート `AGENTS.md`、README エージェント節、`docs/agent-runs/`
+- [x] D-1 参照実装の公開 API 化: Orb Rush から `_` 付き import を削除。
+      `world_to_screen` / `set_position` / `set_yaw` / `texture_from_fn` /
+      `tone` / ビルボード・床メッシュ / `save_json`
+- [ ] D-2 初回実証（ログ込み）: まっさらなエージェントに一行プロンプトで
+      ゲームを作らせ、`docs/agent-runs/` に残す
 
 **判定**: 2 週間で「動いた」報告 3 件以上の楔が勝ち。全滅なら機能ではなく
 **切り口の言葉**を変えて 1 回だけ再試行。全滅 × 2 サイクルで Stage 6 へ。

@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **346**
+エントリ数: **356**
 
 ## Functions
 
@@ -15,9 +15,11 @@
 | `backspace_pressed` | `backspace_pressed()` |
 | `bar` | `bar(x: float, y: float, w: float, h: float, value: float, max_value: float = 100, *, bg=(25, 25, 35), fill=(50, 220, 80))` |
 | `bgm` | `bgm(path: str, loop: bool = True, vol: float = 0.8) -> None` |
+| `billboard_mesh` | `billboard_mesh(x: float, y: float, z: float, size: float, camera=None, *, yaw: float \| None = None)` |
 | `button` | `button(x: float, y: float, w: float, h: float, label: str = '', *, bg=(70, 70, 90), hover=(100, 100, 150), color=(255, 255, 255), size: int = 20, font: int = None) -> bool` |
 | `camera_ray_from_screen` | `camera_ray_from_screen(sx: float, sy: float)` |
 | `camera_update` | `camera_update(dt: float)` |
+| `camera_world_to_screen` | `camera_world_to_screen(wx: float, wy: float, wz: float)` |
 | `circle` | `circle(x: float, y: float, radius: float, r: int = 255, g: int = 255, b: int = 255, a: int = 255, segments: int = 24)` |
 | `circle_fill` | `circle_fill(x: float, y: float, radius: float, color=(255, 255, 255), alpha: int = 255)` |
 | `circle_outline` | `circle_outline(x: float, y: float, radius: float, color=(255, 255, 255), width: float = 1, alpha: int = 255)` |
@@ -27,10 +29,12 @@
 | `collide_rect_overlap` | `collide_rect_overlap(ax, ay, aw, ah, bx, by, bw, bh)` |
 | `create_boid_system` | `create_boid_system(count: int, width: float = 1280.0, height: float = 720.0) -> int` |
 | `create_boid_system_gpu` | `create_boid_system_gpu(count: int, width: float = 1280.0, height: float = 720.0) -> int` |
+| `disk_mesh` | `disk_mesh(cx: float, cy: float, cz: float, radius: float, segs: int = 48)` |
 | `distance` | `distance(x1: float, y1: float, x2: float, y2: float) -> float` |
 | `distance_sq` | `distance_sq(x1: float, y1: float, x2: float, y2: float) -> float` |
 | `down` | `down(name: str) -> bool` |
 | `drag_window` | `drag_window()` |
+| `draw_billboard` | `draw_billboard(tex: int, x: float, y: float, z: float, size: float, camera=None, *, yaw: float \| None = None)` |
 | `draw_boids` | `draw_boids(boid_id: int, batch_id: int, sprite_w: float = 6.0, sprite_h: float = 3.0)` |
 | `draw_boids_gpu` | `draw_boids_gpu(boid_id: int)` |
 | `draw_gltf` | `draw_gltf(model_id: int)` |
@@ -94,6 +98,7 @@
 | `load_fbx` | `load_fbx(path: str, clip_name: str = None) -> 'FbxMotion'` |
 | `load_font` | `load_font(path: str) -> int` |
 | `load_gltf` | `load_gltf(path: str) -> int` |
+| `load_json` | `load_json(name: str, default=None, *, directory: str \| None = None)` |
 | `load_rig` | `load_rig(path: str) -> int` |
 | `load_shader` | `load_shader(path: str) -> int` |
 | `load_shader_src` | `load_shader_src(wgsl_src: str) -> int` |
@@ -124,6 +129,7 @@
 | `preload_data` | `preload_data(subdir='', recursive=True) -> list` |
 | `pressed` | `pressed(name: str) -> bool` |
 | `push` | `push(next_scene: Scene) -> None` |
+| `quad_y_mesh` | `quad_y_mesh(cx: float, cy: float, cz: float, size: float)` |
 | `quit` | `quit()` |
 | `rect` | `rect(x, y, w, h, color=255, g=None, b=None, a=255)` |
 | `rect_world` | `rect_world(wx, wy, w, h, r, g, b, a=255)` |
@@ -135,6 +141,7 @@
 | `rounded_rect` | `rounded_rect(x: float, y: float, w: float, h: float, radius: float = 8, color=(255, 255, 255), alpha: int = 255)` |
 | `rounded_rect_outline` | `rounded_rect_outline(x: float, y: float, w: float, h: float, radius: float = 8, color=(255, 255, 255), width: float = 1, alpha: int = 255)` |
 | `run` | `run(update=None, draw=None, start_scene: Scene = None, max_frames=None, fixed_dt=None, on_ready=None)` |
+| `save_json` | `save_json(name: str, data: dict, *, directory: str \| None = None)` |
 | `screen_h` | `screen_h() -> int` |
 | `screen_to_world` | `screen_to_world(sx: float, sy: float) -> tuple` |
 | `screen_to_world` | `screen_to_world(sx: float, sy: float) -> tuple[float, float]` |
@@ -173,8 +180,11 @@
 | `step_vrm_spring` | `step_vrm_spring(vrm_id: int, dt: float)` |
 | `stop_bgm` | `stop_bgm(fade: float = 0.0)` |
 | `text` | `text(s, x: float, y: float, size: int = 24, color=(255, 255, 255), font: int = None, alpha: int = 255)` |
+| `texture_from_fn` | `texture_from_fn(width: int, height: int, pixel_fn, *, name: str \| None = None) -> int` |
+| `texture_from_pixels` | `texture_from_pixels(width: int, height: int, pixels: bytes, *, name: str \| None = None) -> int` |
 | `texture_size` | `texture_size(tid: int) -> tuple` |
 | `tick_count` | `tick_count() -> int` |
+| `tone` | `tone(name: str, freqs, duration: float = 0.12, volume: float = 0.35, decay: bool = True) -> str` |
 | `unload_gltf` | `unload_gltf(model_id: int)` |
 | `update_boids` | `update_boids(boid_id: int, dt: float)` |
 | `update_boids_gpu` | `update_boids_gpu(boid_id: int, dt: float)` |

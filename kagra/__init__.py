@@ -697,6 +697,14 @@ def camera_ray_from_screen(sx: float, sy: float):
     return (ox, oy, oz), (dx, dy, dz)
 
 
+def camera_world_to_screen(wx: float, wy: float, wz: float):
+    """ワールド → スクリーン。アクティブ ``Camera3D`` が必要。外れは None。"""
+    cam = get_camera3d()
+    if cam is None:
+        return None
+    return cam.world_to_screen(wx, wy, wz)
+
+
 def pick_vrm_bone(vrm_id: int, ox: float, oy: float, oz: float,
                   dx: float, dy: float, dz: float, max_dist: float = 100.0):
     """レイが当たった humanoid ボーン名。なければ None。"""
@@ -722,6 +730,51 @@ def set_toon_params(threshold: float = 0.5, softness: float = 1.0,
 
 def draw_mesh_3d(texture_id: int, verts: list, indices: list):
     _check(); _engine.draw_mesh_3d(texture_id, verts, indices)
+
+
+def texture_from_fn(width: int, height: int, pixel_fn, *, name: str | None = None) -> int:
+    """手続きテクスチャ。``pixel_fn(x, y) -> (r,g,b) or (r,g,b,a)``。
+
+    Example::
+        tex = kagra.texture_from_fn(32, 32, lambda x, y: (255, 200, 40, 255))
+    """
+    from kagra.gamekit import write_png
+    return load(str(write_png(width, height, pixel_fn, name=name)))
+
+
+def texture_from_pixels(width: int, height: int, pixels: bytes, *, name: str | None = None) -> int:
+    """未圧縮 RGBA（上から、1 画素 4 バイト）をテクスチャにする。"""
+    from kagra.look import encode_png_rgba
+    import tempfile
+    from pathlib import Path
+    data = encode_png_rgba(width, height, pixels)
+    path = Path(tempfile.gettempdir()) / f"kagra_{name or 'pix'}_{width}x{height}.png"
+    path.write_bytes(data)
+    return load(str(path))
+
+
+def billboard_mesh(x: float, y: float, z: float, size: float, camera=None, *, yaw: float | None = None):
+    """カメラ向き四角の ``(verts, indices)``。``draw_mesh_3d`` に渡す。"""
+    from kagra.gamekit import billboard_mesh as _fn
+    return _fn(x, y, z, size, camera, yaw=yaw)
+
+
+def disk_mesh(cx: float, cy: float, cz: float, radius: float, segs: int = 48):
+    """Y 上向き円盤の ``(verts, indices)``。床用。"""
+    from kagra.gamekit import disk_mesh as _fn
+    return _fn(cx, cy, cz, radius, segs)
+
+
+def quad_y_mesh(cx: float, cy: float, cz: float, size: float):
+    """Y 上向き正方形（半辺 ``size``）の ``(verts, indices)``。"""
+    from kagra.gamekit import quad_y_mesh as _fn
+    return _fn(cx, cy, cz, size)
+
+
+def draw_billboard(tex: int, x: float, y: float, z: float, size: float, camera=None, *, yaw: float | None = None):
+    """3D 空間にカメラ向きのスプライトを置く。"""
+    verts, idx = billboard_mesh(x, y, z, size, camera, yaw=yaw)
+    draw_mesh_3d(tex, verts, idx)
 
 
 def load_gltf(path: str) -> int:
@@ -1474,6 +1527,38 @@ def se(path: str, vol: float = 1.0) -> None:
         kagra.se("assets/se/coin.wav")
     """
     play_se(path, volume=vol)
+
+
+def tone(
+    name: str,
+    freqs,
+    duration: float = 0.12,
+    volume: float = 0.35,
+    decay: bool = True,
+) -> str:
+    """合成トーンの WAV を書いてパスを返す。``kagra.se(path)`` で鳴らす。
+
+    Example::
+        coin = kagra.tone("coin", (880, 1320), duration=0.1)
+        kagra.se(coin)
+    """
+    from kagra.gamekit import write_tone
+    return str(write_tone(name, freqs, duration=duration, volume=volume, decay=decay))
+
+
+def save_json(name: str, data: dict, *, directory: str | None = None):
+    """小さな dict を JSON で残す（ハイスコア等）。``~/.kagra/saves`` か ``KAGRA_DATA``。
+
+    アセット用の ``load_data`` とは別。こちらはゲーム進行の永続化。
+    """
+    from kagra.gamekit import save_json as _fn
+    return _fn(name, data, directory=directory)
+
+
+def load_json(name: str, default=None, *, directory: str | None = None):
+    """``save_json`` の対。無ければ ``default``。"""
+    from kagra.gamekit import load_json as _fn
+    return _fn(name, default, directory=directory)
 
 
 # ── VRM / 3D シンプル ─────────────────────────────────────────
