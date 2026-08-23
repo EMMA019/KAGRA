@@ -146,6 +146,8 @@ def hovered_prop(
     best_t = float(max_dist)
     best = None
     for p in (Prop._all if props is None else props):
+        if not getattr(p, "enabled", True):
+            continue
         if getattr(p, "model", "") == "plane":
             continue
         t = ray_aabb(ox, oy, oz, dx, dy, dz, prop_aabb(p), max_dist=best_t)
@@ -208,9 +210,20 @@ def sky(*, radius: float = 18.0, look: bool = True):
     kagra.draw_mesh_3d(tex, verts, idx)
 
 
+def destroy(prop) -> None:
+    """``Prop.destroy()`` の別名。既に消えていても落ちない。"""
+    if prop is None:
+        return
+    fn = getattr(prop, "destroy", None)
+    if fn is not None:
+        fn()
+
+
 class Prop:
     """色付きプリミティブ。位置は中心。``World3D`` があれば AABB 衝突。
 
+    ``x`` / ``y`` / ``z`` を動かすと当たりも付いてくる（キネマティック）。
+    ``vx`` などを入れて ``Prop.update_all(dt)``。消すときは ``destroy()``。
     2D の ``kagra.Entity`` とは別。エージェントはこっちを使う。
     """
 
@@ -232,10 +245,15 @@ class Prop:
         self.model = str(model).lower()
         if self.model not in ("box", "sphere", "cylinder", "plane"):
             raise ValueError(f"unknown model {model!r}")
-        self.x = float(x)
-        self.y = float(y)
-        self.z = float(z)
-        self.yaw = float(yaw)
+        self._x = float(x)
+        self._y = float(y)
+        self._z = float(z)
+        self._yaw = float(yaw)
+        self._enabled = True
+        self._destroyed = False
+        self.vx = 0.0
+        self.vy = 0.0
+        self.vz = 0.0
         if isinstance(scale, (int, float)):
             self.sx = self.sy = self.sz = float(scale)
         else:
@@ -247,12 +265,97 @@ class Prop:
         self.mesh_id = 0
         self.body = None
         if world is not None and self.collision and self.model != "plane":
-            bottom = self.y - self.sy * 0.5
+            bottom = self._y - self.sy * 0.5
             self.body = world.add_box(
-                self.x, bottom, self.z, self.sx, self.sy, self.sz,
+                self._x, bottom, self._z, self.sx, self.sy, self.sz,
                 draw=False,
             )
+            self._sync_body()
         Prop._all.append(self)
+
+    @property
+    def x(self) -> float:
+        return self._x
+
+    @x.setter
+    def x(self, v: float) -> None:
+        self._x = float(v)
+        self._sync_body()
+
+    @property
+    def y(self) -> float:
+        return self._y
+
+    @y.setter
+    def y(self, v: float) -> None:
+        self._y = float(v)
+        self._sync_body()
+
+    @property
+    def z(self) -> float:
+        return self._z
+
+    @z.setter
+    def z(self, v: float) -> None:
+        self._z = float(v)
+        self._sync_body()
+
+    @property
+    def yaw(self) -> float:
+        return self._yaw
+
+    @yaw.setter
+    def yaw(self, v: float) -> None:
+        self._yaw = float(v)
+        self._sync_body()
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled and not self._destroyed
+
+    @enabled.setter
+    def enabled(self, v: bool) -> None:
+        self._enabled = bool(v) and not self._destroyed
+        self._sync_body()
+
+    def _sync_body(self) -> None:
+        if self.body is None:
+            return
+        self.body.x = self._x
+        self.body.y = self._y - self.sy * 0.5
+        self.body.z = self._z
+        self.body.yaw = self._yaw
+        self.body.active = self.enabled
+
+    def set_position(self, x: float, y: float, z: float) -> None:
+        """中心を置く。当たりも一緒に動く。"""
+        self._x, self._y, self._z = float(x), float(y), float(z)
+        self._sync_body()
+
+    def move(self, dx: float = 0.0, dy: float = 0.0, dz: float = 0.0) -> None:
+        """相対移動。"""
+        self.set_position(self._x + float(dx), self._y + float(dy), self._z + float(dz))
+
+    def destroy(self) -> None:
+        """描画・ホバー・衝突から外す。二度呼んでも落ちない。"""
+        if self._destroyed:
+            return
+        self._destroyed = True
+        self._enabled = False
+        self._sync_body()
+        try:
+            Prop._all.remove(self)
+        except ValueError:
+            pass
+
+    def update(self, dt: float) -> None:
+        """``vx`` / ``vy`` / ``vz`` を積分する。"""
+        if not self.enabled:
+            return
+        if self.vx == 0.0 and self.vy == 0.0 and self.vz == 0.0:
+            return
+        dt = float(dt)
+        self.set_position(self._x + self.vx * dt, self._y + self.vy * dt, self._z + self.vz * dt)
 
     def instance(self) -> list[float]:
         return [self.x, self.y, self.z, self.sx, self.sy, self.sz, self.yaw]
@@ -305,6 +408,11 @@ class Prop:
         return [p.bake() for p in cls._all]
 
     @classmethod
+    def update_all(cls, dt: float) -> None:
+        for p in list(cls._all):
+            p.update(dt)
+
+    @classmethod
     def draw_all(cls) -> None:
         try:
             import kagra
@@ -313,6 +421,8 @@ class Prop:
         batches: dict[int, list["Prop"]] = {}
         fallback: list[Prop] = []
         for p in cls._all:
+            if not p.enabled:
+                continue
             if not p.mesh_id:
                 p.bake()
             if p.mesh_id:

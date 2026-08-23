@@ -885,6 +885,12 @@ def hovered_prop(cam=None, sx: float | None = None, sy: float | None = None, *, 
     return _pick(ox, oy, oz, dx, dy, dz, max_dist=float(max_dist))
 
 
+def destroy(prop) -> None:
+    """``Prop`` を描画・ホバー・衝突から外す。既に消えていても落ちない。"""
+    from kagra.play import destroy as _fn
+    _fn(prop)
+
+
 def draw_billboard(tex: int, x: float, y: float, z: float, size: float, camera=None, *, yaw: float | None = None):
     """3D 空間にカメラ向きのスプライトを置く。"""
     verts, idx = billboard_mesh(x, y, z, size, camera, yaw=yaw)

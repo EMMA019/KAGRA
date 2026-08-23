@@ -102,7 +102,8 @@ three.js / Ursina が当たり前にやっていることを、楔が詰む順�
 - [x] play-surface デモ: `examples/vrm_prop_garden.py`（エージェント製ではない）
 - [x] 一人称（目線の高さ）。`Walk(..., first_person=True)` / `Camera3D.look`。
       ポインタロックは OS が許す範囲（まだ無い）
-- [ ] 動く Prop（キネマティック）。`destroy` / `enabled`
+- [x] 動く Prop（キネマティック）。`p.x` / `set_position` / `vx` + `Prop.update_all`。
+      `destroy(p)` / `p.enabled`。Prop Garden は金球が上下、`E` でホバーを消す
 - [x] `hovered_prop(cam)` — `Camera3D.ray_from_screen` → 当たった `Prop`。
       `plane` は除外。Prop Garden の F で一人称切替
 - [ ] 球 / 円柱は当たりもその形（今は AABB）
