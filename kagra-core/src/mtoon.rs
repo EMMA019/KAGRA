@@ -53,6 +53,8 @@ pub struct MtoonMaterial {
     pub normal_texture_id: Option<u32>,
     pub uv_mask_texture_id: Option<u32>,
     pub buffer: Arc<wgpu::Buffer>,
+    /// glTF `doubleSided` / VRM0 `_CullMode==0`。未指定は false。
+    pub double_sided: bool,
 }
 
 impl MtoonMaterial {
@@ -73,6 +75,7 @@ impl MtoonMaterial {
             normal_texture_id: textures.normal,
             uv_mask_texture_id: textures.uv_mask,
             buffer,
+            double_sided: false,
         }
     }
 
@@ -179,7 +182,26 @@ pub fn parse_mtoon(
         textures.normal = tex_id_map.get(&(ti as usize)).copied();
     }
 
-    MtoonMaterial::create(device, gpu, textures)
+    let mut mat_out = MtoonMaterial::create(device, gpu, textures);
+    mat_out.double_sided = material_double_sided(mat);
+    mat_out
+}
+
+/// glTF 既定は片面。`doubleSided: true` のときだけ両面。
+pub fn material_double_sided(mat: &serde_json::Value) -> bool {
+    mat.get("doubleSided").and_then(|v| v.as_bool()).unwrap_or(false)
+}
+
+/// VRM 0.x `_CullMode`: 0=Off（両面）、1=Front、2=Back。
+pub fn vrm0_cull_double_sided(prop: &serde_json::Value) -> Option<bool> {
+    let cull = prop
+        .pointer("/floatProperties/_CullMode")
+        .or_else(|| prop.pointer("/floatProperties/CullMode"))
+        .or_else(|| {
+            prop.get("floatProperties")
+                .and_then(|f| f.get("_CullMode"))
+        })?;
+    Some(cull.as_f64()? < 0.5)
 }
 
 /// VRM 0.x `extensions.VRM.materialProperties` 配列を material index で引けるようにする。
@@ -345,7 +367,12 @@ pub fn parse_vrm0_material_properties(
             gpu.matcap_color[2] = mc.get(2).and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
         }
 
+        let mut ds = out[i].double_sided;
+        if let Some(v) = vrm0_cull_double_sided(prop) {
+            ds = v;
+        }
         out[i] = MtoonMaterial::create(device, gpu, textures);
+        out[i].double_sided = ds;
     }
 
     out
@@ -358,6 +385,22 @@ mod tests {
     #[test]
     fn default_gpu_size_is_96() {
         assert_eq!(std::mem::size_of::<MtoonGpu>(), 96);
+    }
+
+    #[test]
+    fn double_sided_defaults_false() {
+        let mat = serde_json::json!({});
+        assert!(!material_double_sided(&mat));
+        let mat = serde_json::json!({"doubleSided": true});
+        assert!(material_double_sided(&mat));
+    }
+
+    #[test]
+    fn vrm0_cull_off_is_double_sided() {
+        let prop = serde_json::json!({"floatProperties": {"_CullMode": 0.0}});
+        assert_eq!(vrm0_cull_double_sided(&prop), Some(true));
+        let back = serde_json::json!({"floatProperties": {"_CullMode": 2.0}});
+        assert_eq!(vrm0_cull_double_sided(&back), Some(false));
     }
 
     #[test]

@@ -37,9 +37,10 @@ JS における three-vrm のポジションの Python 版。
    `docs/API_INDEX.md` / MCP（`kagra_api_search` / `kagra_verify` / `kagra_render`）。
    開発ループ自体を AI エージェント用に設計したエンジンは他に無い
 
-**弱み（正直リスト）**: 影の品質、ポスト処理の薄さ（bloom / vignette まで）、
-複数アバター時の性能未検証、VRM の視錐台カリング未実装、バス係数 1、
-汎用エンジン志向の名残（editor / tilemap / mapgen …）が広く浅い。
+**弱み（正直リスト）**: 影は 1 本の平行光（カスケード無し）、IBL は半球まで
+（HDRI キューブは無い）、ポスト処理の薄さ（bloom / vignette まで）、
+複数アバター時の性能未検証、バス係数 1、汎用エンジン志向の名残
+（editor / tilemap / mapgen …）が広く浅い。
 
 ---
 
@@ -64,12 +65,13 @@ JS における three-vrm のポジションの Python 版。
 three.js が当たり前にやっていることを一段ずつ足す。
 
 - [x] P0: ワールド 3D の視錐台カリング（`draw_mesh_3d` / `draw_mesh_id`）。
-      `kagra.render_stats()` / `set_mesh_cull()`。VRM はまだカリングしない
-      （ボーン AABB 無しだとアニメでポップする）
-- [ ] P1: VRM スキンのパッド付きボーン AABB
-- [ ] P2: 箱 / 隕石の 3D インスタンシング（今の InstanceBatch は 2D 専用）
-- [ ] P3: マテリアルソート / doubleSided のときだけ両面
-- [ ] P4: 影・IBL の品質（弱みリスト）
+      `kagra.render_stats()` / `set_mesh_cull()`
+- [x] P1: VRM スキンのパッド付きボーン AABB（Spring / morph 用にパッド）
+- [x] P2: 箱 / 隕石の 3D インスタンシング（`draw_mesh_instances` /
+      `draw_billboard_instances`。2D の InstanceBatch はそのまま）
+- [x] P3: マテリアルソート / `doubleSided` のときだけ両面
+- [x] P4: 影 2048 + VRM AABB に合わせた ortho + 9-tap PCF。
+      半球アンビエント `set_ambient`（HDRI キューブはまだ無い）
 
 ## Stage 1 — 楔の同時検証（2 週間 × 最大 2 サイクル）
 

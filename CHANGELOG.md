@@ -3,8 +3,17 @@
 ## Unreleased
 
 - 3D mesh frustum culling for `draw_mesh_3d` / `draw_mesh_id` (World3D
-  boxes). VRM is not culled yet (no padded bone AABBs). Last-frame stats
-  via `kagra.render_stats()`; toggle with `set_mesh_cull()`.
+  boxes). Last-frame stats via `kagra.render_stats()`; toggle with
+  `set_mesh_cull()`.
+- VRM primitives cull with padded per-bone AABBs (P1). Spring / morph
+  motion is padded so dance should not pop.
+- 3D instancing: `draw_mesh_instances` / `draw_billboard_instances`.
+  World3D boxes and Dodge / Orb / Heart Catch sprites batch (P2).
+  2D `InstanceBatch` is unchanged.
+- VRM materials sort by texture; `doubleSided` / VRM0 `_CullMode==Off`
+  is the only two-sided path (P3).
+- Shadows: 2048 map, ortho fitted to visible VRM AABBs, 9-tap PCF.
+  Hemisphere ambient via `set_ambient` / `apply_live_look` (P4). Not HDRI.
 - README / samples list Dodge Room (`examples/vrm_dodge_room.py`) as the
   third logged agent-built game (`docs/agent-runs/20260823-dodge-room/`).
   Mixamo `.fbx` is `av.dance("clip.fbx")` / `--dance` (YMCA sleeve blow-up

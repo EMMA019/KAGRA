@@ -33,7 +33,7 @@ mod bloom;
 pub use types::{
     DrawCommand, RectCommand, SpriteCommand, TextCommand,
     SkinnedMeshCommand, MeshCommand, PolygonCommand, Mesh3DCommand,
-    SkinnedVertex,
+    SkinnedVertex, Instance3D,
 };
 #[allow(unused_imports)] // 外部公開用の再エクスポート
 pub use gpu_helpers::{DEPTH_FORMAT, MSAA_COUNT, msaa_state};
@@ -67,6 +67,8 @@ pub struct RendererV2 {
     sprite_pipeline: wgpu::RenderPipeline,
     skinning_pipeline: wgpu::RenderPipeline,
     skinning_3d_pipeline: wgpu::RenderPipeline,
+    /// Back-face cull. `doubleSided` でないプリミティブ用。
+    skinning_3d_pipeline_cull: wgpu::RenderPipeline,
     skinning_3d_outline_pipeline: wgpu::RenderPipeline,
     skinning_3d_shadow_pipeline: wgpu::RenderPipeline,
     default_mtoon_buf: wgpu::Buffer,
@@ -113,6 +115,8 @@ pub struct RendererV2 {
     fog_params: [f32; 4],
     /// フォグ色 RGB 0..1 + pad
     fog_color: [f32; 4],
+    /// 半球 IBL。rgb + 強度。0 ならオフ（ゴールデン互換）。
+    ambient: [f32; 4],
     shader_clock: Instant,
     mesh_3d_queue: Vec<Mesh3DCommand>,
     /// 一度 GPU に載せた静的メッシュ。`draw_mesh_id` で回す。
@@ -124,6 +128,10 @@ pub struct RendererV2 {
     camera_3d_ready: bool,
     mesh_cull: bool,
     stats: RenderStats,
+    pipeline_3d_instanced: wgpu::RenderPipeline,
+    instance_3d_vb: wgpu::Buffer,
+    instance_3d_cap: u64,
+    instance_3d_queue: Vec<(u32, Vec<Instance3D>)>,
     skinning_3d_morph_bgl: wgpu::BindGroupLayout,
     /// (base, shade, matcap, normal, uvmask, morph_ptr, blend_ptr)
     morph_bg_cache: std::collections::HashMap<(u32, u32, u32, u32, u32, usize, usize), Arc<wgpu::BindGroup>>,
@@ -446,10 +454,10 @@ impl RendererV2 {
                 count: None,
             }],
         });
-        // view+proj+light_dir+toon+eye+fog_params+fog_color = 208
+        // view+proj+light_dir+toon+eye+fog_params+fog_color+ambient = 224
         let camera_3d_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Camera3D Buf"),
-            size: 208,
+            size: 224,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -474,6 +482,8 @@ impl RendererV2 {
         queue.write_buffer(&camera_3d_buf, 160, bytemuck::cast_slice(&cam_eye));
         queue.write_buffer(&camera_3d_buf, 176, bytemuck::cast_slice(&fog_params));
         queue.write_buffer(&camera_3d_buf, 192, bytemuck::cast_slice(&fog_color));
+        let ambient = [0.0f32, 0.0, 0.0, 0.0];
+        queue.write_buffer(&camera_3d_buf, 208, bytemuck::cast_slice(&ambient));
 
         let skinning_3d_morph_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Skinning3D Morph BGL"),
@@ -730,6 +740,38 @@ impl RendererV2 {
             multisample: msaa_state(),
             multiview: None,
         });
+        let skinning_3d_pipeline_cull = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Skinning3D Pipeline Cull"),
+            layout: Some(&skinning_3d_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &skinning_3d_shader,
+                entry_point: "vs_main",
+                buffers: &[SkinnedVertex::desc()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &skinning_3d_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: surface_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: Some(wgpu::Face::Back),
+                front_face: wgpu::FrontFace::Ccw,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: msaa_state(),
+            multiview: None,
+        });
         let skinning_3d_outline_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Skinning3D Outline Pipeline"),
             layout: Some(&skinning_3d_pipeline_layout),
@@ -843,6 +885,49 @@ impl RendererV2 {
             multisample: msaa_state(),
             multiview: None,
         });
+        let pipeline_3d_instanced = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Pipeline3D Instanced"),
+            layout: Some(&layout_3d),
+            vertex: wgpu::VertexState {
+                module: &shader_3d,
+                entry_point: "vs_instanced",
+                buffers: &[
+                    wgpu::VertexBufferLayout {
+                        array_stride: 32,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2],
+                    },
+                    wgpu::VertexBufferLayout {
+                        array_stride: 32,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &wgpu::vertex_attr_array![3 => Float32x4, 4 => Float32x4],
+                    },
+                ],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader_3d,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: surface_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: None,
+                front_face: wgpu::FrontFace::Ccw,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: msaa_state(),
+            multiview: None,
+        });
 
         let initial_buffer_size = 64 * 1024 * 1024;
         let dynamic_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -866,6 +951,13 @@ impl RendererV2 {
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        const INSTANCE3D_VB_INITIAL: u64 = 256 * 32;
+        let instance_3d_vb = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Instance3D VB"),
+            size: INSTANCE3D_VB_INITIAL,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         let initial_alpha = if transparent { 0 } else { 255 };
         let bloom = BloomPass::new(&device, surface_format, width, height);
@@ -876,6 +968,7 @@ impl RendererV2 {
             sprite_pipeline,
             skinning_pipeline,
             skinning_3d_pipeline,
+            skinning_3d_pipeline_cull,
             skinning_3d_outline_pipeline,
             skinning_3d_shadow_pipeline,
             default_mtoon_buf,
@@ -911,6 +1004,7 @@ impl RendererV2 {
             toon_params,
             fog_params,
             fog_color,
+            ambient,
             shader_clock: Instant::now(),
             mesh_3d_queue: Vec::new(),
             retained_meshes: std::collections::HashMap::new(),
@@ -921,6 +1015,10 @@ impl RendererV2 {
             camera_3d_ready: false,
             mesh_cull: true,
             stats: RenderStats::default(),
+            pipeline_3d_instanced,
+            instance_3d_vb,
+            instance_3d_cap: INSTANCE3D_VB_INITIAL,
+            instance_3d_queue: Vec::new(),
             skinning_3d_morph_bgl,
             morph_bg_cache: std::collections::HashMap::new(),
             morph_bg_order: VecDeque::new(),
@@ -1325,6 +1423,56 @@ impl RendererV2 {
         self.queue.write_buffer(&self.shadow_vp_buf, 0, bytemuck::cast_slice(&vp));
     }
 
+    fn fit_shadow_to_skinned(&mut self, cmds: &[SkinnedMeshCommand]) {
+        let mut acc: Option<Aabb> = None;
+        for c in cmds {
+            if let Some(a) = c.aabb {
+                acc = Some(match acc {
+                    Some(u) => u.union(a),
+                    None => a,
+                });
+            }
+        }
+        let (center, half) = match acc {
+            Some(a) => {
+                let half = (a.max_extent() * 0.5 * 1.25).clamp(2.0, 14.0);
+                (a.center(), half)
+            }
+            None => ([0.0, 1.0, 0.0], 6.0),
+        };
+        let dist = half + 4.0;
+        let far = dist + half + 4.0;
+        let vp = build_light_view_proj_fit(self.light_dir, center, half, dist, far);
+        self.queue.write_buffer(&self.shadow_vp_buf, 0, bytemuck::cast_slice(&vp));
+    }
+
+    fn cull_and_sort_skinned(&mut self, cmds: &mut Vec<SkinnedMeshCommand>) {
+        let frustum = if self.mesh_cull && self.camera_3d_ready {
+            Some(Frustum::from_view_proj_col(&self.last_view, &self.last_proj))
+        } else {
+            None
+        };
+        if let Some(fr) = frustum.as_ref() {
+            cmds.retain(|c| {
+                if let Some(aabb) = c.aabb.as_ref() {
+                    if !fr.contains_aabb(aabb) {
+                        self.stats.culled += 1;
+                        return false;
+                    }
+                }
+                true
+            });
+        }
+        cmds.sort_by_key(|c| {
+            (
+                if c.double_sided { 1u8 } else { 0 },
+                c.texture_id,
+                c.shade_texture_id.unwrap_or(0),
+                c.matcap_texture_id.unwrap_or(0),
+            )
+        });
+    }
+
     /// VRM トゥーン階調パラメータ。
     /// - threshold: 明暗境界（0〜1、half-Lambert 空間）
     /// - softness: 0=硬い2階調、大きいほど柔らかい。≥0.999 で従来の連続照明
@@ -1347,6 +1495,20 @@ impl RendererV2 {
     /// 3D 距離フォグ。enabled=false で無効（デフォルト）。
     pub fn set_bloom(&mut self, threshold: f32, intensity: f32) {
         self.bloom.set_params(threshold, intensity);
+    }
+
+    pub fn set_ambient(&mut self, r: f32, g: f32, b: f32, strength: f32) {
+        self.ambient = [
+            r.clamp(0.0, 2.0),
+            g.clamp(0.0, 2.0),
+            b.clamp(0.0, 2.0),
+            strength.max(0.0),
+        ];
+        self.queue.write_buffer(
+            &self.camera_3d_buf,
+            208,
+            bytemuck::cast_slice(&self.ambient),
+        );
     }
 
     pub fn set_fog(&mut self, start: f32, end: f32, r: u8, g: u8, b: u8, enabled: bool) {
@@ -1409,6 +1571,12 @@ impl RendererV2 {
     pub fn queue_retained_mesh_3d(&mut self, mesh_id: u32) {
         if mesh_id != 0 && self.retained_meshes.contains_key(&mesh_id) {
             self.retained_draw_queue.push(mesh_id);
+        }
+    }
+
+    pub fn queue_mesh_instances(&mut self, mesh_id: u32, instances: Vec<Instance3D>) {
+        if mesh_id != 0 && !instances.is_empty() && self.retained_meshes.contains_key(&mesh_id) {
+            self.instance_3d_queue.push((mesh_id, instances));
         }
     }
 
@@ -1526,12 +1694,15 @@ impl RendererV2 {
         self.draw_text_glyphs(&mut encoder, &view, &text_cmds)?;
         self.draw_skinned_meshes_2d(&mut encoder, &view, &skinned_cmds);
         let mesh_3d_cmds = std::mem::take(&mut self.mesh_3d_queue);
-        let skinned_3d_cmds = std::mem::take(&mut self.mesh_3d_skinned_queue);
+        let mut skinned_3d_cmds = std::mem::take(&mut self.mesh_3d_skinned_queue);
+        self.cull_and_sort_skinned(&mut skinned_3d_cmds);
         // Shadow pass first so mesh3d / VRM can sample the map
-        self.update_shadow_vp();
+        self.fit_shadow_to_skinned(&skinned_3d_cmds);
         let morph_bgs = self.build_skinned_morph_bgs(&skinned_3d_cmds);
         self.draw_shadow_pass(&mut encoder, &skinned_3d_cmds, &morph_bgs);
         self.draw_meshes_3d(&mut encoder, &view, &mesh_3d_cmds);
+        let instance_3d = std::mem::take(&mut self.instance_3d_queue);
+        self.draw_mesh_instances_3d(&mut encoder, &view, &instance_3d);
         self.draw_skinned_meshes_3d(&mut encoder, &view, &skinned_3d_cmds, &morph_bgs);
         let instance_batches = std::mem::take(&mut self.instance_draw_queue);
         self.draw_instance_batches(&mut encoder, &view, &instance_batches);
@@ -2061,6 +2232,109 @@ impl RendererV2 {
         self.stats.triangles += tris;
     }
 
+    fn ensure_instance_3d_capacity(&mut self, bytes: u64) {
+        if bytes <= self.instance_3d_cap {
+            return;
+        }
+        let mut cap = self.instance_3d_cap.max(256 * 32);
+        while cap < bytes {
+            cap *= 2;
+        }
+        self.instance_3d_vb = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Instance3D VB"),
+            size: cap,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.instance_3d_cap = cap;
+    }
+
+    fn draw_mesh_instances_3d(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        target_view: &wgpu::TextureView,
+        batches: &[(u32, Vec<Instance3D>)],
+    ) {
+        if batches.is_empty() {
+            return;
+        }
+        let frustum = if self.mesh_cull && self.camera_3d_ready {
+            Some(Frustum::from_view_proj_col(&self.last_view, &self.last_proj))
+        } else {
+            None
+        };
+        let mut prepared: Vec<(u32, Vec<Instance3D>)> = Vec::with_capacity(batches.len());
+        let mut total = 0u64;
+        for (mesh_id, insts) in batches {
+            let Some(mesh) = self.retained_meshes.get(mesh_id) else { continue };
+            if mesh.index_count == 0 {
+                continue;
+            }
+            let mut vis = Vec::with_capacity(insts.len());
+            for inst in insts {
+                if let (Some(fr), Some(unit)) = (frustum.as_ref(), mesh.aabb.as_ref()) {
+                    let world = unit.transform_trs(inst.pos, inst.scale, inst.yaw);
+                    if !fr.contains_aabb(&world) {
+                        self.stats.culled += 1;
+                        continue;
+                    }
+                }
+                vis.push(*inst);
+            }
+            if vis.is_empty() {
+                continue;
+            }
+            total += vis.len() as u64 * 32;
+            prepared.push((*mesh_id, vis));
+        }
+        if prepared.is_empty() {
+            return;
+        }
+        self.ensure_instance_3d_capacity(total);
+        let mut off = 0u64;
+        let mut draws: Vec<(u32, u64, u32)> = Vec::new();
+        for (mesh_id, vis) in &prepared {
+            let bytes = vis.len() as u64 * 32;
+            self.queue.write_buffer(&self.instance_3d_vb, off, bytemuck::cast_slice(vis));
+            draws.push((*mesh_id, off, vis.len() as u32));
+            off += bytes;
+        }
+        let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("3D Instance Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target_view,
+                resolve_target: None,
+                ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth_view,
+                depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        rp.set_pipeline(&self.pipeline_3d_instanced);
+        rp.set_bind_group(0, &self.camera_3d_bg, &[]);
+        rp.set_bind_group(2, &self.shadow_bg, &[]);
+        let mut drawn = 0u32;
+        let mut tris = 0u32;
+        for (mesh_id, i_off, count) in draws {
+            let Some(mesh) = self.retained_meshes.get(&mesh_id) else { continue };
+            let bg = self.get_texture_bind_group(mesh.texture_id);
+            rp.set_bind_group(1, bg, &[]);
+            rp.set_vertex_buffer(0, mesh.vb.slice(..));
+            rp.set_vertex_buffer(1, self.instance_3d_vb.slice(i_off..));
+            rp.set_index_buffer(mesh.ib.slice(..), wgpu::IndexFormat::Uint32);
+            rp.draw_indexed(0..mesh.index_count, 0, 0..count);
+            drawn += 1;
+            tris += mesh.index_count / 3 * count;
+        }
+        drop(rp);
+        self.stats.draw_calls += drawn;
+        self.stats.triangles += tris;
+    }
+
     fn build_skinned_morph_bgs(&mut self, cmds: &[SkinnedMeshCommand]) -> Vec<Option<Arc<wgpu::BindGroup>>> {
         let mut morph_bgs: Vec<Option<Arc<wgpu::BindGroup>>> = Vec::with_capacity(cmds.len());
         for cmd in cmds {
@@ -2224,11 +2498,20 @@ impl RendererV2 {
             rp.set_bind_group(3, &self.shadow_bg, &[]);
             let mut drawn = 0u32;
             let mut tris = 0u32;
+            let mut last_ds: Option<bool> = None;
             for (i, cmd) in cmds.iter().enumerate() {
                 let morph_bg = match morph_bgs.get(i).and_then(|b| b.as_ref()) {
                     Some(bg) => bg,
                     None => continue,
                 };
+                if last_ds != Some(cmd.double_sided) {
+                    if cmd.double_sided {
+                        rp.set_pipeline(&self.skinning_3d_pipeline);
+                    } else {
+                        rp.set_pipeline(&self.skinning_3d_pipeline_cull);
+                    }
+                    last_ds = Some(cmd.double_sided);
+                }
                 rp.set_bind_group(1, self.skin_bind_group_for(cmd), &[]);
                 rp.set_bind_group(2, morph_bg, &[]);
                 rp.set_vertex_buffer(0, cmd.vertex_buffer.slice(..));

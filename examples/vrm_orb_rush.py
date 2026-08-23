@@ -535,6 +535,8 @@ class OrbRush(kagra.Scene):
         rv, ri = kagra.quad_y_mesh(0.0, 0.02, 0.0, ARENA_R * 1.02)
         kagra.draw_mesh_3d(self.tex_ring, rv, ri)
 
+        stars = []
+        bombs = []
         for orb in self.orbs:
             if not orb.alive:
                 continue
@@ -543,9 +545,15 @@ class OrbRush(kagra.Scene):
             # 爆弾は点滅警告
             if orb.kind == "bomb" and (int(orb.phase * 6) % 2 == 0):
                 size *= 1.08
-            verts, idx = kagra.billboard_mesh(orb.x, bob, orb.z, size, self.cam)
-            tex = self.tex_star if orb.kind == "star" else self.tex_bomb
-            kagra.draw_mesh_3d(tex, verts, idx)
+            row = (orb.x, bob, orb.z, size)
+            if orb.kind == "star":
+                stars.append(row)
+            else:
+                bombs.append(row)
+        if stars:
+            kagra.draw_billboard_instances(self.tex_star, stars, self.cam)
+        if bombs:
+            kagra.draw_billboard_instances(self.tex_bomb, bombs, self.cam)
 
         kagra.draw_vrm(self.avatar.vrm_id)
 

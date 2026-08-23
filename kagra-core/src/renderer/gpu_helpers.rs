@@ -2,7 +2,7 @@
 use nalgebra;
 
 /// Directional shadow map resolution
-const SHADOW_MAP_SIZE: u32 = 1024;
+pub(super) const SHADOW_MAP_SIZE: u32 = 2048;
 
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 /// オフスクリーン描画の MSAA サンプル数。swapchain は resolve 後の 1x を受け取る。
@@ -56,6 +56,17 @@ pub(super) fn make_shadow_map(device: &wgpu::Device) -> (wgpu::Texture, wgpu::Te
 
 /// light_dir = direction toward the light. Builds ortho light view-proj around target.
 pub(super) fn build_light_view_proj(light_dir: [f32; 4], target: [f32; 3]) -> [f32; 16] {
+    build_light_view_proj_fit(light_dir, target, 6.0, 8.0, 20.0)
+}
+
+/// 影錐を VRM AABB に合わせる。`half` はライト空間の半辺。
+pub(super) fn build_light_view_proj_fit(
+    light_dir: [f32; 4],
+    target: [f32; 3],
+    half: f32,
+    light_dist: f32,
+    far: f32,
+) -> [f32; 16] {
     use nalgebra::{Matrix4, Point3, Vector3};
     let dir = Vector3::new(light_dir[0], light_dir[1], light_dir[2]);
     let dir = if dir.norm_squared() < 1e-12 {
@@ -64,17 +75,15 @@ pub(super) fn build_light_view_proj(light_dir: [f32; 4], target: [f32; 3]) -> [f
         dir.normalize()
     };
     let target = Point3::new(target[0], target[1], target[2]);
-    // light_dir = direction toward the light → place the light along +dir
-    let light_pos = target + dir * 8.0;
+    let light_pos = target + dir * light_dist.max(1.0);
     let up = if dir.y.abs() > 0.99 {
         Vector3::new(0.0, 0.0, 1.0)
     } else {
         Vector3::new(0.0, 1.0, 0.0)
     };
     let view = Matrix4::look_at_rh(&light_pos, &target, &up);
-    let half = 6.0;
-    let proj = Matrix4::new_orthographic(-half, half, -half, half, 0.1, 20.0);
-    // OpenGL Z (-1..1) → WebGPU Z (0..1)
+    let half = half.max(0.5);
+    let proj = Matrix4::new_orthographic(-half, half, -half, half, 0.1, far.max(half + 2.0));
     let wgpu_correction = Matrix4::new(
         1.0, 0.0, 0.0, 0.0,
         0.0, 1.0, 0.0, 0.0,
@@ -195,5 +204,14 @@ mod light_dir_tests {
         assert!(t[1] >= 0.999);
         assert!((t[2] - 0.55).abs() < 1e-6);
         assert!((t[3] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn shadow_fit_default_matches_legacy() {
+        let a = super::build_light_view_proj([0.0, 1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+        let b = super::build_light_view_proj_fit([0.0, 1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 6.0, 8.0, 20.0);
+        for i in 0..16 {
+            assert!((a[i] - b[i]).abs() < 1e-5);
+        }
     }
 }

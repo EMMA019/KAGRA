@@ -68,7 +68,7 @@ def test_game_file_uses_only_public_imports():
         "texture_from_fn",
         "set_position",
         "set_yaw",
-        "draw_billboard",
+        "draw_billboard_instances",
         "save_json",
         "tone",
     ):

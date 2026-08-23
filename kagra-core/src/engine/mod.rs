@@ -678,6 +678,8 @@ impl Engine {
                     uv_mask_texture_id: None,
                     outline_width: 0.0,
                     skin_slot: None,
+                    aabb: None,
+                    double_sided: true,
                 };
                 self.window.queue_skinned_mesh(cmd);
             }
@@ -1384,6 +1386,12 @@ impl Engine {
         self.window.set_fog(start, end, r, g, b, enabled);
     }
 
+    /// 半球アンビエント（簡易 IBL）。strength=0 でオフ。
+    #[pyo3(signature = (r, g, b, strength=0.0))]
+    pub fn set_ambient(&self, r: f32, g: f32, b: f32, strength: f32) {
+        self.window.set_ambient(r, g, b, strength);
+    }
+
     /// 閾値ブルーム。輝度が threshold を超えた画素だけをぼかして加算する。
     /// intensity<=0 でオフ（画面全体ぼかしはしない）。
     #[pyo3(signature = (threshold=0.85, intensity=0.0))]
@@ -1426,6 +1434,41 @@ impl Engine {
     #[pyo3(signature = (mesh_id))]
     pub fn draw_mesh_id(&self, mesh_id: u32) {
         self.window.queue_retained_mesh_3d(mesh_id);
+    }
+
+    /// 保持メッシュをインスタンス描画。各行は x,y,z[,sx,sy,sz[,yaw]]。
+    #[pyo3(signature = (mesh_id, instances))]
+    pub fn draw_mesh_instances(&self, mesh_id: u32, instances: Vec<Vec<f32>>) {
+        use crate::renderer::Instance3D;
+        let packed: Vec<Instance3D> = instances
+            .iter()
+            .filter_map(|row| {
+                if row.len() < 3 {
+                    return None;
+                }
+                let x = row[0];
+                let y = row[1];
+                let z = row[2];
+                let (sx, sy, sz, yaw) = match row.len() {
+                    3 => (1.0, 1.0, 1.0, 0.0),
+                    4 => (row[3], row[3], row[3], 0.0),
+                    6 => (row[3], row[4], row[5], 0.0),
+                    _ => (
+                        row.get(3).copied().unwrap_or(1.0),
+                        row.get(4).copied().unwrap_or(1.0),
+                        row.get(5).copied().unwrap_or(1.0),
+                        row.get(6).copied().unwrap_or(0.0),
+                    ),
+                };
+                Some(Instance3D {
+                    pos: [x, y, z],
+                    yaw,
+                    scale: [sx, sy, sz],
+                    _pad: 0.0,
+                })
+            })
+            .collect();
+        self.window.queue_mesh_instances(mesh_id, packed);
     }
 
     #[pyo3(signature = (mesh_id))]

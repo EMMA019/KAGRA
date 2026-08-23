@@ -31,6 +31,154 @@ impl Aabb {
             max: [self.max[0] + pad, self.max[1] + pad, self.max[2] + pad],
         }
     }
+
+    pub fn from_points(pts: &[[f32; 3]]) -> Option<Self> {
+        if pts.is_empty() {
+            return None;
+        }
+        let mut min = [f32::MAX; 3];
+        let mut max = [f32::MIN; 3];
+        for p in pts {
+            for i in 0..3 {
+                min[i] = min[i].min(p[i]);
+                max[i] = max[i].max(p[i]);
+            }
+        }
+        Some(Self { min, max }.expand(1e-4))
+    }
+
+    pub fn union(self, other: Self) -> Self {
+        Self {
+            min: [
+                self.min[0].min(other.min[0]),
+                self.min[1].min(other.min[1]),
+                self.min[2].min(other.min[2]),
+            ],
+            max: [
+                self.max[0].max(other.max[0]),
+                self.max[1].max(other.max[1]),
+                self.max[2].max(other.max[2]),
+            ],
+        }
+    }
+
+    /// 8 隅を行列で飛ばす（スキン行列 / TRS）。
+    pub fn transform(self, m: &Matrix4<f32>) -> Self {
+        let corners = [
+            [self.min[0], self.min[1], self.min[2]],
+            [self.max[0], self.min[1], self.min[2]],
+            [self.min[0], self.max[1], self.min[2]],
+            [self.max[0], self.max[1], self.min[2]],
+            [self.min[0], self.min[1], self.max[2]],
+            [self.max[0], self.min[1], self.max[2]],
+            [self.min[0], self.max[1], self.max[2]],
+            [self.max[0], self.max[1], self.max[2]],
+        ];
+        let mut pts = [[0.0f32; 3]; 8];
+        for (i, c) in corners.iter().enumerate() {
+            let p = m.transform_point(&nalgebra::Point3::new(c[0], c[1], c[2]));
+            pts[i] = [p.x, p.y, p.z];
+        }
+        Self::from_points(&pts).unwrap_or(self)
+    }
+
+    /// 位置 + 軸スケール + Y 回転（箱インスタンス用）。
+    pub fn transform_trs(self, pos: [f32; 3], scale: [f32; 3], yaw: f32) -> Self {
+        let (s, c) = yaw.sin_cos();
+        let m = Matrix4::new(
+            c * scale[0], 0.0, s * scale[2], pos[0],
+            0.0, scale[1], 0.0, pos[1],
+            -s * scale[0], 0.0, c * scale[2], pos[2],
+            0.0, 0.0, 0.0, 1.0,
+        );
+        self.transform(&m)
+    }
+
+    pub fn padded(self, abs_pad: f32, rel: f32) -> Self {
+        let ext = [
+            (self.max[0] - self.min[0]).max(0.0),
+            (self.max[1] - self.min[1]).max(0.0),
+            (self.max[2] - self.min[2]).max(0.0),
+        ];
+        let mean = (ext[0] + ext[1] + ext[2]) / 3.0;
+        self.expand(abs_pad + rel * mean)
+    }
+
+    pub fn center(self) -> [f32; 3] {
+        [
+            (self.min[0] + self.max[0]) * 0.5,
+            (self.min[1] + self.max[1]) * 0.5,
+            (self.min[2] + self.max[2]) * 0.5,
+        ]
+    }
+
+    pub fn max_extent(self) -> f32 {
+        (self.max[0] - self.min[0])
+            .max(self.max[1] - self.min[1])
+            .max(self.max[2] - self.min[2])
+    }
+}
+
+/// バインド姿勢の頂点を、重み 0.05 以上のジョイントへ振り分ける。
+pub fn bone_bind_aabbs(
+    pos: &[[f32; 3]],
+    joints: &[[u32; 4]],
+    weights: &[[f32; 4]],
+) -> Vec<(u16, Aabb)> {
+    use std::collections::HashMap;
+    let mut acc: HashMap<u16, ( [f32; 3], [f32; 3] )> = HashMap::new();
+    for i in 0..pos.len() {
+        let p = pos[i];
+        let j = joints.get(i).copied().unwrap_or([0; 4]);
+        let w = weights.get(i).copied().unwrap_or([1.0, 0.0, 0.0, 0.0]);
+        let mut any = false;
+        for k in 0..4 {
+            if w[k] > 0.05 {
+                any = true;
+                let key = j[k] as u16;
+                let e = acc.entry(key).or_insert((p, p));
+                for a in 0..3 {
+                    e.0[a] = e.0[a].min(p[a]);
+                    e.1[a] = e.1[a].max(p[a]);
+                }
+            }
+        }
+        if !any {
+            let key = j[0] as u16;
+            let e = acc.entry(key).or_insert((p, p));
+            for a in 0..3 {
+                e.0[a] = e.0[a].min(p[a]);
+                e.1[a] = e.1[a].max(p[a]);
+            }
+        }
+    }
+    let mut out: Vec<(u16, Aabb)> = acc
+        .into_iter()
+        .map(|(k, (min, max))| (k, Aabb { min, max }.expand(1e-4)))
+        .collect();
+    out.sort_by_key(|(k, _)| *k);
+    out
+}
+
+/// スキン行列でボーン AABB を飛ばして和を取る。パッドは Spring / morph 用。
+pub const VRM_CULL_ABS_PAD: f32 = 0.12;
+pub const VRM_CULL_REL_PAD: f32 = 0.20;
+
+pub fn skinned_aabb(
+    bone_aabbs: &[(u16, Aabb)],
+    matrices: &[Matrix4<f32>],
+    extra_pad: f32,
+) -> Option<Aabb> {
+    let mut acc: Option<Aabb> = None;
+    for &(ji, aabb) in bone_aabbs {
+        let m = matrices.get(ji as usize).copied().unwrap_or_else(Matrix4::identity);
+        let w = aabb.transform(&m);
+        acc = Some(match acc {
+            Some(u) => u.union(w),
+            None => w,
+        });
+    }
+    acc.map(|a| a.padded(VRM_CULL_ABS_PAD + extra_pad.max(0.0), VRM_CULL_REL_PAD))
 }
 
 /// 正規化した平面 ax+by+cz+d >= 0 が内側。
@@ -164,5 +312,63 @@ mod tests {
         let aabb = Aabb::from_mesh3d_verts(&verts).unwrap();
         assert!(aabb.min[0] <= -1.0);
         assert!(aabb.max[2] >= 4.0);
+    }
+
+    #[test]
+    fn transform_identity_keeps_box() {
+        let a = Aabb {
+            min: [-1.0, 0.0, -1.0],
+            max: [1.0, 2.0, 1.0],
+        };
+        let t = a.transform(&Matrix4::identity());
+        // from_points が 1e-4 パッドするので、完全一致はしない
+        assert!((t.min[1] - a.min[1]).abs() < 2e-4);
+        assert!((t.max[0] - a.max[0]).abs() < 2e-4);
+    }
+
+    #[test]
+    fn transform_translation_moves_box() {
+        let a = Aabb {
+            min: [-0.2, 0.0, -0.2],
+            max: [0.2, 0.4, 0.2],
+        };
+        let m = Matrix4::new_translation(&nalgebra::Vector3::new(10.0, 0.0, 0.0));
+        let t = a.transform(&m);
+        assert!(t.min[0] > 9.0);
+        assert!(t.max[0] < 11.0);
+    }
+
+    #[test]
+    fn skinned_bones_follow_palette() {
+        let bone = Aabb {
+            min: [-0.1, 0.0, -0.1],
+            max: [0.1, 0.2, 0.1],
+        };
+        let m = Matrix4::new_translation(&nalgebra::Vector3::new(0.0, 0.0, 40.0));
+        let world = skinned_aabb(&[(0, bone)], &[m], 0.0).unwrap();
+        let fr = default_frustum();
+        assert!(!fr.contains_aabb(&world));
+    }
+
+    #[test]
+    fn bone_bind_groups_by_joint() {
+        let pos = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
+        let joints = [[0, 0, 0, 0], [1, 0, 0, 0]];
+        let weights = [[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]];
+        let aabbs = bone_bind_aabbs(&pos, &joints, &weights);
+        assert_eq!(aabbs.len(), 2);
+        assert_eq!(aabbs[0].0, 0);
+        assert_eq!(aabbs[1].0, 1);
+    }
+
+    #[test]
+    fn trs_yaw_moves_unit_box() {
+        let unit = Aabb {
+            min: [-0.5, -0.5, -0.5],
+            max: [0.5, 0.5, 0.5],
+        };
+        let t = unit.transform_trs([3.0, 1.0, 0.0], [2.0, 1.0, 2.0], 0.0);
+        assert!((t.center()[0] - 3.0).abs() < 1e-4);
+        assert!((t.max_extent() - 2.0).abs() < 1e-3);
     }
 }

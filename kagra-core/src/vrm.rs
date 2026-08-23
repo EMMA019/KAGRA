@@ -41,6 +41,10 @@ pub struct VrmPrimitive {
     pub fp_flag: MeshAnnotation,
     pub fp_index_buf: Option<Arc<wgpu::Buffer>>,
     pub fp_num_indices: u32,
+    /// バインド姿勢。キーはスキンパレット添字（JOINTS_0）。
+    pub bone_bind_aabbs: Vec<(u16, crate::frustum::Aabb)>,
+    /// モーフ変位の最大長。カリングパッドに足す。
+    pub morph_pad: f32,
 }
 
 pub struct VrmBone {
@@ -518,6 +522,37 @@ pub fn load_vrm(
                 }
             }
 
+            let joint_rows: Vec<[u32; 4]> = (0..n)
+                .map(|i| joints.get(i).copied().unwrap_or([0; 4]))
+                .collect();
+            let weight_rows: Vec<[f32; 4]> = (0..n)
+                .map(|i| {
+                    weights
+                        .get(i)
+                        .map(|v| {
+                            [
+                                *v.first().unwrap_or(&1.0),
+                                *v.get(1).unwrap_or(&0.0),
+                                *v.get(2).unwrap_or(&0.0),
+                                *v.get(3).unwrap_or(&0.0),
+                            ]
+                        })
+                        .unwrap_or([1.0, 0.0, 0.0, 0.0])
+                })
+                .collect();
+            let bone_bind_aabbs =
+                crate::frustum::bone_bind_aabbs(&pos_xyz, &joint_rows, &weight_rows);
+            let morph_pad = morph_deltas
+                .chunks(3)
+                .map(|d| {
+                    if d.len() < 3 {
+                        0.0
+                    } else {
+                        (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+                    }
+                })
+                .fold(0.0f32, f32::max);
+
             primitives.push(VrmPrimitive {
                 texture_id: kagra_tex_id,
                 vertex_buf: Arc::new(vb),
@@ -532,6 +567,8 @@ pub fn load_vrm(
                 fp_flag,
                 fp_index_buf,
                 fp_num_indices,
+                bone_bind_aabbs,
+                morph_pad,
             });
         }
     }
@@ -848,6 +885,12 @@ impl VrmModel {
                 matrices.push(Matrix4::identity());
             }
 
+            let aabb = crate::frustum::skinned_aabb(
+                &prim.bone_bind_aabbs,
+                &matrices,
+                prim.morph_pad,
+            );
+
             result.push((
                 matrices,
                 crate::renderer::SkinnedMeshCommand {
@@ -865,6 +908,8 @@ impl VrmModel {
                     morph_delta_buffer: Arc::clone(&prim.morph_delta_buf),
                     num_morph_targets: prim.num_morph_targets,
                     skin_slot: None,
+                    aabb,
+                    double_sided: prim.mtoon.double_sided,
                 },
             ));
         }
