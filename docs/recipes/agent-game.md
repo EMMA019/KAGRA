@@ -53,6 +53,7 @@ Result: `examples/vrm_dodge_room.py`
 | Hover | `hovered_prop(cam)` — not the 2D `mouse`. Floor `plane` is skipped |
 | Move / delete | `prop.x = …` or `vx` + `Prop.update_all(dt)`. `destroy(prop)` / `prop.enabled` |
 | Texture / parent | `Prop(..., texture=kagra.texture_from_fn(...))` or `kagra.load`. 1-level `set_parent` / `parent=` (no grandchildren). Child `x,y,z,yaw` are local |
+| glTF part | `Prop("crate.glb")` — not `stage()`. Bundled `cube.glb`. Collision is AABB |
 | Shape hit | `Prop("sphere")` / `cylinder` collide and hover as those shapes, not boxes |
 | Mesh retain | `upload_mesh_3d` once, `draw_mesh_id` each frame — or `world.bake` / `world.draw` |
 | Art / SE | `kagra.texture_from_fn` / `kagra.tone` / `kagra.draw_billboard` |
@@ -95,4 +96,5 @@ KAGRA で、VRM が3レーンを左右に歩いて、奥から飛んでくるハ
 テクスチャは `texture=kagra.texture_from_fn(...)`（または `load`）。
 親子は 1 段（`set_parent` / コンストラクタの `parent=`。孫は不可）。
 子の `x,y,z,yaw` は親からのローカル。
+glTF 部品は `Prop("crate.glb")`（`stage()` は会場。同梱は `cube.glb`）。
 球 / 円柱の当たりとホバーは箱ではない。

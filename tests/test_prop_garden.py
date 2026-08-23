@@ -49,6 +49,7 @@ def test_game_file_uses_only_public_imports():
         "update_all",
         "texture_from_fn",
         "set_parent",
+        "cube.glb",
         "sky",
         "World3D",
         "Camera3D",

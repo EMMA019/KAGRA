@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- glTF as a Prop part: `Prop("crate.glb")` (or alias `cube.glb`). Flattened to
+  the static mesh pipeline — not `stage()` / `load_gltf`. Hover and collision
+  use the mesh AABB. Bundled unit cube at `kagra/data/unit_cube.glb`.
+  Prop Garden places one when not `KAGRA_SMOKE`.
 - `Prop` texture (`texture_from_fn` / `load` id) and 1-level parent
   (`set_parent` / `parent=`). Child `x,y,z,yaw` are local; `world_x` /
   hover / collision use the world pose. Grandchildren raise. Destroying a

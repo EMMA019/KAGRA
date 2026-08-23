@@ -5,6 +5,8 @@ import math
 
 import pytest
 
+from pathlib import Path
+
 from tests.conftest import load_kagra_submodule
 
 play = load_kagra_submodule("play")
@@ -268,3 +270,29 @@ def test_prop_texture_id_bake_without_engine_is_zero():
     assert p.texture == 7
     assert p.bake() == 0
     assert p.mesh_id == 0
+
+
+def test_prop_gltf_unit_cube_matches_box_hit():
+    cube = Path(__file__).resolve().parents[1] / "kagra" / "data" / "unit_cube.glb"
+    p = play.Prop(str(cube), x=0.0, y=0.5, z=2.0, collision=False, color="white")
+    assert p.model == "gltf"
+    assert p._mesh_sx == pytest.approx(1.0)
+    assert play.prop_hit_extents(p) == pytest.approx((1.0, 1.0, 1.0))
+    assert play.hovered_prop(0.0, 0.5, 0.0, 0.0, 0.0, 1.0) is p
+    assert p.bake() == 0
+
+
+def test_prop_gltf_alias_and_collision():
+    w = play.World3D(gravity=0.0)
+    play.Prop("cube.glb", x=1.2, y=0.5, z=0.0, world=w)
+    p = w.add_player(0.0, 0.0, radius=0.28, height=1.6)
+    p.use_gravity = False
+    w.move_player(5.0, 0.0)
+    for _ in range(40):
+        w.update(0.016)
+    assert p.x < 0.95
+
+
+def test_prop_gltf_unknown_raises():
+    with pytest.raises((ValueError, Exception)):
+        play.Prop("definitely_missing_part_xyz.glb", collision=False)

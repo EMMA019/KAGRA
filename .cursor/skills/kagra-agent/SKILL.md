@@ -32,7 +32,8 @@ python tools/mcp_kagra/server.py   # MCP stdio
 - `kagra_render` – clear-color smoke screenshot
 
 Short 3D: `Prop` / `Walk` / `sky()`. Texture via `texture_from_fn` / `load`.
-Parent is 1 level (`set_parent`). Not 2D `Entity`.
+Parent is 1 level (`set_parent`). glTF parts: `Prop("crate.glb")` (not `stage()`).
+Not 2D `Entity`.
 
 ## Touch / mobile
 

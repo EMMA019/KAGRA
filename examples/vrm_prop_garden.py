@@ -2,6 +2,7 @@
 
 Play-surface demo. Not an agent-built log. Public APIs only:
 Prop / Walk / sky / hovered_prop / destroy / World3D / Camera3D.follow / ensure_vrm.
+Non-smoke also places ``cube.glb`` (static glTF part, not ``stage()``).
 
 操作:
   WASD / 矢印 : 歩く
@@ -67,6 +68,7 @@ class PropGarden(kagra.Scene):
                 collision=False,
             )
             gem.set_parent(self.gold, keep_world=False)
+            kagra.Prop("cube.glb", x=-1.4, y=0.5, z=2.6, color="white", world=self.world)
         kagra.Prop.bake_all()
         self.cam = Camera3D(SW, SH, fov_deg=42.0)
         self.cam.follow(START_XZ[0], 0.0, START_XZ[1], lerp=1.0, yaw=0.0)
