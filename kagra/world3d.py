@@ -51,8 +51,9 @@ class World3D:
         d: float,
         *,
         trigger: bool = False,
+        draw: bool = True,
     ) -> RigidBody3D:
-        """静的 AABB。``y`` は底面。"""
+        """静的 AABB。``y`` は底面。``draw=False`` なら物理だけ（``Prop`` 用）。"""
         body = self.physics.add_body(
             float(x), float(y), float(z),
             float(w), float(h), float(d),
@@ -60,7 +61,7 @@ class World3D:
             trigger=trigger,
         )
         self.boxes.append(body)
-        if not trigger:
+        if draw and not trigger:
             self._pending.append(("box", float(x), float(y), float(z), float(w), float(h), float(d)))
             self.box_xforms.append([
                 float(x), float(y) + float(h) * 0.5, float(z),

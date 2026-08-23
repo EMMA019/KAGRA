@@ -136,6 +136,7 @@ python examples/vrm_orb_rush.py          # reference game
 python examples/vrm_heart_catch.py       # 3-lane catch (agent-run log)
 python examples/vrm_switch_room.py       # boxed room, camera follow
 python examples/vrm_dodge_room.py        # falling boxes, survive (agent-run log)
+python examples/vrm_prop_garden.py       # Prop / Walk / sky (play surface)
 python examples/vrm_vrma.py              # .vrma (or a generated wave)
 python examples/vrm_stream.py            # OBS / JSONL chat
 ```

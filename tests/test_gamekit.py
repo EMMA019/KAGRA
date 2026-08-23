@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import wave
 
+import pytest
+
 from tests.conftest import load_kagra_submodule
 
 kit = load_kagra_submodule("gamekit")
@@ -53,6 +55,25 @@ def test_box_mesh_six_faces():
     assert len(idx) == 36
     ys = [v[1] for v in verts]
     assert min(ys) == 0.0 and max(ys) == 1.0
+    assert all(len(v) == 8 for v in verts)
+
+
+def test_sphere_mesh_unit_diameter():
+    verts, idx = kit.sphere_mesh(0, 0, 0, 0.5, segs=8)
+    assert len(verts) == 5 * 9
+    assert len(idx) == 4 * 8 * 6
+    xs = [v[0] for v in verts]
+    assert min(xs) == pytest.approx(-0.5, abs=1e-6)
+    assert max(xs) == pytest.approx(0.5, abs=1e-6)
+    assert all(len(v) == 8 for v in verts)
+
+
+def test_cylinder_mesh_unit_size():
+    verts, idx = kit.cylinder_mesh(0, 0, 0, 0.5, 1.0, segs=8)
+    assert len(idx) == 8 * 6 + 8 * 3 + 8 * 3
+    ys = [v[1] for v in verts]
+    assert min(ys) == pytest.approx(-0.5, abs=1e-6)
+    assert max(ys) == pytest.approx(0.5, abs=1e-6)
     assert all(len(v) == 8 for v in verts)
 
 

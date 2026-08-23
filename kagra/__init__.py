@@ -837,6 +837,32 @@ def box_mesh(cx: float, cy: float, cz: float, w: float, h: float, d: float):
     return _fn(cx, cy, cz, w, h, d)
 
 
+def sphere_mesh(cx: float = 0.0, cy: float = 0.0, cz: float = 0.0,
+                radius: float = 0.5, segs: int = 16):
+    """UV 球の ``(verts, indices)``。既定は直径 1。"""
+    from kagra.gamekit import sphere_mesh as _fn
+    return _fn(cx, cy, cz, radius, segs)
+
+
+def cylinder_mesh(cx: float = 0.0, cy: float = 0.0, cz: float = 0.0,
+                  radius: float = 0.5, height: float = 1.0, segs: int = 16):
+    """Y 軸円柱の ``(verts, indices)``。既定は直径 1・高さ 1。"""
+    from kagra.gamekit import cylinder_mesh as _fn
+    return _fn(cx, cy, cz, radius, height, segs)
+
+
+def solid_tex(color):
+    """1 色テクスチャ。``orange`` または ``(r,g,b)``。"""
+    from kagra.play import solid_tex as _fn
+    return _fn(color)
+
+
+def sky(*, radius: float = 18.0, look: bool = True):
+    """プロシージャル空。初回は ``apply_live_look``。"""
+    from kagra.play import sky as _fn
+    return _fn(radius=radius, look=look)
+
+
 def draw_billboard(tex: int, x: float, y: float, z: float, size: float, camera=None, *, yaw: float | None = None):
     """3D 空間にカメラ向きのスプライトを置く。"""
     verts, idx = billboard_mesh(x, y, z, size, camera, yaw=yaw)
@@ -1795,6 +1821,7 @@ from kagra.anim_io       import (
 from kagra.physics       import BoxCollider, Rigidbody, PhysicsSystem, TopDownPhysicsSystem
 from kagra.physics3d     import Physics3D, RigidBody3D, AABB
 from kagra.world3d       import World3D
+from kagra.play          import Prop, Walk
 from kagra.instances     import InstanceBatch
 from kagra.bgm_sync      import BgmSync, BgmCue, RhythmJudge, LiveScore
 from kagra.vrm_loader    import VrmModel

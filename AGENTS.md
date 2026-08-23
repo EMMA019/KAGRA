@@ -60,12 +60,13 @@ PNG/WAV/projection:
 - `kagra.billboard_mesh` / `disk_mesh` / `quad_y_mesh` / `box_mesh` — 3D sprites / floor / crates
 - `kagra.upload_mesh_3d` / `draw_mesh_id` — retain a mesh, draw by id
 - `World3D` + `Camera3D.follow` — floor / box collision and a chase camera
+- `Prop` / `Walk` / `sky()` — short 3D (not 2D `Entity`). `examples/vrm_prop_garden.py`
 - `kagra.save_json` / `load_json` — high scores
 - `ActionController` — one-shot poses; `ActionController.names()` lists them
 
 Verify: `examples/verify_scenarios/orb_rush_smoke.json`,
-`heart_catch_smoke.json`, `switch_room_smoke.json`, and
-`dodge_room_smoke.json`.
+`heart_catch_smoke.json`, `switch_room_smoke.json`,
+`dodge_room_smoke.json`, and `prop_garden_smoke.json`.
 Logged builds live in `docs/agent-runs/`.
 The API index front is VRM / 3D / agents; the shelf is legacy 2D.
 

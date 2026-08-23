@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Ursina-shaped play surface: `Prop` (box / sphere / cylinder / plane),
+  `Walk` (WASD + mouse look), `sky()`, `solid_tex`, `sphere_mesh`,
+  `cylinder_mesh`. Not the 2D `Entity`. Demo: `examples/vrm_prop_garden.py`
+  (play surface, not an agent-built log).
 - 3D mesh frustum culling for `draw_mesh_3d` / `draw_mesh_id` (World3D
   boxes). Last-frame stats via `kagra.render_stats()`; toggle with
   `set_mesh_cull()`.
