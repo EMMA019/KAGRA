@@ -1,5 +1,9 @@
 # Agent / Platform contracts
 
+エージェント向けの行動規範はリポジトリ直下の [`AGENTS.md`](../AGENTS.md)。
+エージェントに何かを作らせるときのログ規約は
+[`docs/agent-runs/README.md`](agent-runs/README.md)。
+
 | Piece | Path |
 |-------|------|
 | API index | `docs/API_INDEX.md` |
