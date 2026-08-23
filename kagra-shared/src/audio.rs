@@ -60,8 +60,10 @@ mod tests {
 
     #[test]
     fn throttle_and_speed_raise_engine() {
-        let mut t = Truck::default();
-        t.speed = 20.0;
+        let t = Truck {
+            speed: 20.0,
+            ..Truck::default()
+        };
         let a = AudioLevels::from_truck(
             &t,
             DriveInput {
@@ -77,8 +79,10 @@ mod tests {
 
     #[test]
     fn mute_silences_everything() {
-        let mut t = Truck::default();
-        t.speed = 30.0;
+        let t = Truck {
+            speed: 30.0,
+            ..Truck::default()
+        };
         let a = AudioLevels::from_truck(
             &t,
             DriveInput {

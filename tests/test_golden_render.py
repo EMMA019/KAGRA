@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -22,7 +23,27 @@ RENDER = ROOT / "tests" / "render_golden_scene.py"
 OUT_DIR = ROOT / "scratch" / "golden_actual"
 
 
+def _prefer_installed_kagra():
+    """クローン直下の ``kagra/`` は wheel の ``kagra_core`` を隠す。"""
+    root = ROOT.resolve()
+    kept: list[str] = []
+    for p in sys.path:
+        if p in ("", "."):
+            continue
+        try:
+            if Path(p).resolve() == root:
+                continue
+        except OSError:
+            pass
+        kept.append(p)
+    sys.path[:] = kept
+    for name in list(sys.modules):
+        if name == "kagra" or name.startswith("kagra."):
+            del sys.modules[name]
+
+
 def _ensure_kagra():
+    _prefer_installed_kagra()
     pytest.importorskip("kagra")
 
 
@@ -33,10 +54,10 @@ def _render(scene: str, out_name: str) -> Path:
         out.unlink()
 
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+    env.pop("PYTHONPATH", None)
     proc = subprocess.run(
         [sys.executable, str(RENDER), scene, str(out)],
-        cwd=str(ROOT),
+        cwd=tempfile.gettempdir(),
         env=env,
         capture_output=True,
         text=True,
