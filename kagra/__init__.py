@@ -687,6 +687,13 @@ def set_bloom(threshold: float = 0.85, intensity: float = 0.35,
     _engine.set_bloom(float(threshold), inten)
 
 
+def set_ambient(r: float = 0.22, g: float = 0.20, b: float = 0.28,
+                strength: float = 0.28):
+    """半球アンビエント（簡易 IBL）。strength=0 でオフ。"""
+    _check()
+    _engine.set_ambient(float(r), float(g), float(b), float(strength))
+
+
 def set_mesh_cull(enabled: bool = True):
     """ワールド 3D メッシュの視錐台カリング。VRM スキンは対象外。"""
     _check()
@@ -769,6 +776,16 @@ def draw_mesh_id(mesh_id: int):
     _engine.draw_mesh_id(int(mesh_id))
 
 
+def draw_mesh_instances(mesh_id: int, instances: list):
+    """保持メッシュをインスタンス描画する。
+
+    各行は ``[x,y,z]`` / ``[x,y,z,scale]`` / ``[x,y,z,sx,sy,sz]`` /
+    ``[x,y,z,sx,sy,sz,yaw]``。
+    """
+    _check()
+    _engine.draw_mesh_instances(int(mesh_id), instances)
+
+
 def unload_mesh_3d(mesh_id: int):
     """保持メッシュを解放する。"""
     _check()
@@ -824,6 +841,32 @@ def draw_billboard(tex: int, x: float, y: float, z: float, size: float, camera=N
     """3D 空間にカメラ向きのスプライトを置く。"""
     verts, idx = billboard_mesh(x, y, z, size, camera, yaw=yaw)
     draw_mesh_3d(tex, verts, idx)
+
+
+_billboard_unit: dict[int, int] = {}
+
+
+def draw_billboard_instances(tex: int, items, camera=None, *, yaw: float | None = None):
+    """複数ビルボードを 1 ドロー。``items`` は ``(x,y,z,size)``。"""
+    from kagra.gamekit import _yaw_of
+
+    mid = _billboard_unit.get(int(tex))
+    if not mid:
+        verts, idx = billboard_mesh(0.0, 0.0, 0.0, 1.0, yaw=0.0)
+        mid = upload_mesh_3d(int(tex), verts, idx)
+        if mid:
+            _billboard_unit[int(tex)] = mid
+    if not mid:
+        return
+    theta = _yaw_of(camera, yaw)
+    inst = []
+    for it in items:
+        if len(it) < 3:
+            continue
+        s = float(it[3]) if len(it) > 3 else 1.0
+        inst.append([float(it[0]), float(it[1]), float(it[2]), s, s, s, theta])
+    if inst:
+        draw_mesh_instances(mid, inst)
 
 
 def load_gltf(path: str) -> int:

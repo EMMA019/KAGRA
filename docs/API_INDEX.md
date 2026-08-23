@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **364**
+エントリ数: **367**
 
 棚の**手前**は VRM / 3D ワールド / エージェントゲーム。
 棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。
@@ -20,8 +20,10 @@
 | `disk_mesh` | `disk_mesh(cx: float, cy: float, cz: float, radius: float, segs: int = 48)` |
 | `down` | `down(name: str) -> bool` |
 | `draw_billboard` | `draw_billboard(tex: int, x: float, y: float, z: float, size: float, camera=None, *, yaw: float \| None = None)` |
+| `draw_billboard_instances` | `draw_billboard_instances(tex: int, items, camera=None, *, yaw: float \| None = None)` |
 | `draw_mesh_3d` | `draw_mesh_3d(texture_id: int, verts: list, indices: list)` |
 | `draw_mesh_id` | `draw_mesh_id(mesh_id: int)` |
+| `draw_mesh_instances` | `draw_mesh_instances(mesh_id: int, instances: list)` |
 | `draw_vignette` | `draw_vignette(sw: int \| None = None, sh: int \| None = None, strength: float = 0.42)` |
 | `draw_vrm` | `draw_vrm(vrm_id: int)` |
 | `fill` | `fill(x: float, y: float, w: float, h: float, color=(255, 255, 255), alpha: int = 255)` |
@@ -43,6 +45,7 @@
 | `save_json` | `save_json(name: str, data: dict, *, directory: str \| None = None)` |
 | `screenshot` | `screenshot(path: str)` |
 | `se` | `se(path: str, vol: float = 1.0) -> None` |
+| `set_ambient` | `set_ambient(r: float = 0.22, g: float = 0.2, b: float = 0.28, strength: float = 0.28)` |
 | `set_bloom` | `set_bloom(threshold: float = 0.85, intensity: float = 0.35, enabled: bool = True)` |
 | `set_camera3d` | `set_camera3d(cam: Camera3D \| None)` |
 | `set_fog` | `set_fog(start: float = 5.0, end: float = 20.0, color: tuple = (110, 180, 230), *, enabled: bool = True)` |
@@ -390,7 +393,8 @@
 - VRM が checkout に無いときは `ensure_vrm()`。パスを直書きしない。
 - ワンショットポーズは `ActionController`（`ActionController.names()`）。
 - 静的メッシュは `upload_mesh_3d` で一度載せ、`draw_mesh_id` で描く。
-- ワールド箱は視錐台カリングされる。直前フレームは `render_stats()`。VRM はまだカリングしない。
+- ワールド箱は視錐台カリングされる。箱の描画は `draw_mesh_instances`。直前フレームは `render_stats()`。
+- VRM プリミティブはパッド付きボーン AABB でカリング。`doubleSided` のときだけ両面。
 - 床と箱: `World3D`（または `Physics3D` + `box_mesh`）。カメラは `Camera3D.follow`。
 - `kagra-shared` / `mobile/` は別の運転デモ。この Python スタックと混ぜない。
 - Rust バインディングの整合は `tests/test_api_bindings.py` も参照。

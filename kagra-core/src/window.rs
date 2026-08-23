@@ -219,6 +219,12 @@ impl KagraWindow {
         }
     }
 
+    pub fn set_ambient(&self, r: f32, g: f32, b: f32, strength: f32) {
+        if let Some(rend) = lock_recover(&self.renderer).as_mut() {
+            rend.set_ambient(r, g, b, strength);
+        }
+    }
+
     pub fn set_mesh_cull(&self, enabled: bool) {
         if let Some(r) = lock_recover(&self.renderer).as_mut() {
             r.set_mesh_cull(enabled);
@@ -258,6 +264,12 @@ impl KagraWindow {
     pub fn queue_retained_mesh_3d(&self, mesh_id: u32) {
         if let Some(r) = lock_recover(&self.renderer).as_mut() {
             r.queue_retained_mesh_3d(mesh_id);
+        }
+    }
+
+    pub fn queue_mesh_instances(&self, mesh_id: u32, instances: Vec<crate::renderer::Instance3D>) {
+        if let Some(r) = lock_recover(&self.renderer).as_mut() {
+            r.queue_mesh_instances(mesh_id, instances);
         }
     }
 

@@ -34,6 +34,8 @@ class World3D:
         self.player: Optional[RigidBody3D] = None
         self.mesh_ids: list[int] = []
         self._pending: list[tuple] = []
+        self.box_mesh_id: int = 0
+        self.box_xforms: list[list[float]] = []
 
     def add_floor(self, size: float | None = None):
         """Y = ``floor_y`` の正方形床を予約する。半辺は ``size`` または ``half``。"""
@@ -60,6 +62,10 @@ class World3D:
         self.boxes.append(body)
         if not trigger:
             self._pending.append(("box", float(x), float(y), float(z), float(w), float(h), float(d)))
+            self.box_xforms.append([
+                float(x), float(y) + float(h) * 0.5, float(z),
+                float(w), float(h), float(d), 0.0,
+            ])
         return body
 
     def add_player(
@@ -94,18 +100,23 @@ class World3D:
         except Exception:
             return []
         ids: list[int] = []
+        need_box = False
         try:
             for item in self._pending:
                 if item[0] == "floor":
                     size = item[1]
                     verts, idx = quad_y_mesh(0.0, self.floor_y, 0.0, size)
                     mid = upload(int(floor_tex), verts, idx)
+                    if mid:
+                        ids.append(int(mid))
                 else:
-                    _, x, y, z, w, h, d = item
-                    verts, idx = box_mesh(x, y + h * 0.5, z, w, h, d)
-                    mid = upload(int(box_tex), verts, idx)
+                    need_box = True
+            if need_box or self.box_xforms:
+                verts, idx = box_mesh(0.0, 0.0, 0.0, 1.0, 1.0, 1.0)
+                mid = upload(int(box_tex), verts, idx)
                 if mid:
                     ids.append(int(mid))
+                    self.box_mesh_id = int(mid)
         except Exception:
             return ids
         self._pending.clear()
@@ -113,11 +124,14 @@ class World3D:
         return ids
 
     def draw(self):
-        """保持メッシュを描く。"""
+        """保持メッシュを描く。箱はインスタンス。"""
         try:
             import kagra
-            draw = kagra.draw_mesh_id
         except Exception:
             return
         for mid in self.mesh_ids:
-            draw(mid)
+            if mid == self.box_mesh_id:
+                continue
+            kagra.draw_mesh_id(mid)
+        if self.box_mesh_id and self.box_xforms:
+            kagra.draw_mesh_instances(self.box_mesh_id, self.box_xforms)

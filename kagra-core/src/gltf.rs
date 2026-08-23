@@ -429,6 +429,8 @@ impl GltfModel {
                     uv_mask_texture_id: None,
                     outline_width: 0.0,
                     skin_slot: None,
+                    aabb: None,
+                    double_sided: true,
                 },
             ));
         }

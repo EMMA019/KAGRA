@@ -20,6 +20,7 @@ LIVE_TOON = (0.48, 0.18, 0.60, 1.10)
 LIVE_BLOOM = (0.78, 0.38)
 LIVE_RIM = 0.55
 LIVE_FOG = (8.0, 18.0, (14, 10, 28))
+LIVE_AMBIENT = (0.22, 0.20, 0.28, 0.28)
 
 
 def _clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
@@ -210,6 +211,7 @@ def apply_live_look(*, mascot: bool = False) -> None:
     kagra.set_bloom(threshold=LIVE_BLOOM[0], intensity=LIVE_BLOOM[1])
     kagra.set_rim(LIVE_RIM)
     kagra.set_fog(start=LIVE_FOG[0], end=LIVE_FOG[1], color=LIVE_FOG[2], enabled=True)
+    kagra.set_ambient(*LIVE_AMBIENT)
     kagra.set_shadow_enabled(True)
 
 
