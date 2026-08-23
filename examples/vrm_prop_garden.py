@@ -7,7 +7,7 @@ Prop / Walk / sky / hovered_prop / destroy / World3D / Camera3D.follow / ensure_
   WASD / 矢印 : 歩く
   マウス       : 視点（一人称は上下も）
   F           : 一人称 / 三人称
-  E           : ホバー中の Prop を消す
+  E           : ホバー中の Prop を消す（親を消すと子も消える）
   ESC         : 終了
 
 スモーク: KAGRA_SMOKE=1 python examples/vrm_prop_garden.py
@@ -27,6 +27,12 @@ from kagra.camera3d import Camera3D
 
 from prop_garden_rules import GOLD_XZ, PLAYER_SPEED, PROPS, START_XZ, facing_yaw, near_gold
 
+
+def _crate_px(x: int, y: int):
+    """Checker crate for texture_from_fn (pixel coords)."""
+    c = ((int(x) // 8) + (int(y) // 8)) % 2
+    return (210, 130, 55, 255) if c == 0 else (120, 60, 28, 255)
+
 SW, SH = 960, 540
 SMOKE = os.environ.get("KAGRA_SMOKE") == "1"
 SMOKE_FRAMES = int(os.environ.get("KAGRA_SMOKE_FRAMES", "48"))
@@ -44,11 +50,23 @@ class PropGarden(kagra.Scene):
         self.world = kagra.World3D(half=7.0)
         self.world.add_player(*START_XZ)
         kagra.Prop("plane", x=0, y=0, z=0, scale=14.0, color="gray", collision=False)
+        crate_tex = 0
+        if not SMOKE:
+            crate_tex = kagra.texture_from_fn(64, 64, _crate_px, name="prop_crate")
         self.gold = None
         for model, x, y, z, scale, color in PROPS:
-            prop = kagra.Prop(model, x=x, y=y, z=z, scale=scale, color=color, world=self.world)
+            tex = crate_tex if model == "box" and color == "orange" else 0
+            prop = kagra.Prop(
+                model, x=x, y=y, z=z, scale=scale, color=color, world=self.world, texture=tex,
+            )
             if color == "gold":
                 self.gold = prop
+        if not SMOKE and self.gold is not None:
+            gem = kagra.Prop(
+                "box", x=0.0, y=0.58, z=0.0, scale=0.26, color="green",
+                collision=False,
+            )
+            gem.set_parent(self.gold, keep_world=False)
         kagra.Prop.bake_all()
         self.cam = Camera3D(SW, SH, fov_deg=42.0)
         self.cam.follow(START_XZ[0], 0.0, START_XZ[1], lerp=1.0, yaw=0.0)

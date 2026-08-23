@@ -179,3 +179,92 @@ def test_prop_disabled_skipped_by_hover():
     box.enabled = True
     box.destroy()
     assert play.hovered_prop(0.0, 0.5, 0.0, 0.0, 0.0, 1.0) is None
+
+
+def test_prop_constructor_parent_is_local():
+    parent = play.Prop("box", x=1.0, y=0.0, z=0.0, collision=False)
+    child = play.Prop("box", x=2.0, y=0.4, z=0.0, parent=parent, collision=False)
+    assert child.x == pytest.approx(2.0)
+    assert child.world_x == pytest.approx(3.0)
+    assert child.world_y == pytest.approx(0.4)
+    assert child.parent is parent
+
+
+def test_child_world_pose_follows_parent_move_and_yaw():
+    parent = play.Prop("box", x=0.0, y=0.5, z=0.0, collision=False)
+    child = play.Prop("box", x=2.0, y=0.3, z=0.0, collision=False)
+    child.set_parent(parent, keep_world=False)
+    assert child.world_x == pytest.approx(2.0)
+    parent.x = 1.0
+    assert child.world_x == pytest.approx(3.0)
+    parent.yaw = math.pi / 2
+    assert child.world_x == pytest.approx(1.0)
+    assert child.world_z == pytest.approx(-2.0)
+    assert child.world_yaw == pytest.approx(math.pi / 2)
+
+
+def test_set_parent_keep_world_detach():
+    parent = play.Prop("box", x=1.0, y=0.0, z=2.0, collision=False)
+    child = play.Prop("box", x=3.0, y=0.5, z=2.0, collision=False)
+    child.set_parent(parent, keep_world=True)
+    assert child.x == pytest.approx(2.0)
+    assert child.world_x == pytest.approx(3.0)
+    child.set_parent(None, keep_world=True)
+    assert child.parent is None
+    assert child.x == pytest.approx(3.0)
+    assert child.z == pytest.approx(2.0)
+
+
+def test_set_parent_rejects_two_levels():
+    a = play.Prop("box", x=0, y=0.5, z=0, collision=False)
+    b = play.Prop("box", x=1, y=0.5, z=0, collision=False)
+    c = play.Prop("box", x=2, y=0.5, z=0, collision=False)
+    b.set_parent(a)
+    with pytest.raises(ValueError, match="1 level"):
+        c.set_parent(b)
+    with pytest.raises(ValueError, match="cannot become a child"):
+        a.set_parent(c)
+
+
+def test_child_collision_follows_parent():
+    w = play.World3D(gravity=0.0)
+    parent = play.Prop("box", x=4.0, y=0.5, z=0.0, scale=(0.8, 1.0, 1.6), collision=False)
+    child = play.Prop("box", x=1.2, y=0.5, z=0.0, scale=(0.8, 1.0, 1.6), world=w)
+    child.set_parent(parent, keep_world=True)
+    assert child.body.x == pytest.approx(1.2)
+    p = w.add_player(0.0, 0.0, radius=0.28, height=1.6)
+    p.use_gravity = False
+    w.move_player(5.0, 0.0)
+    for _ in range(40):
+        w.update(0.016)
+    assert p.x < 0.95
+    parent.x = 10.0
+    assert child.world_x == pytest.approx(7.2)
+    assert child.body.x == pytest.approx(7.2)
+
+
+def test_destroy_parent_destroys_child():
+    parent = play.Prop("box", x=0, y=0.5, z=2, collision=False)
+    child = play.Prop("box", x=0, y=0.5, z=3, parent=parent, collision=False)
+    play.destroy(parent)
+    assert parent not in play.Prop._all
+    assert child not in play.Prop._all
+    assert child.enabled is False
+    assert play.hovered_prop(0.0, 0.5, 0.0, 0.0, 0.0, 1.0) is None
+
+
+def test_hover_uses_child_world_position():
+    parent = play.Prop("box", x=4.0, y=0.5, z=0.0, scale=0.4, collision=False)
+    child = play.Prop("box", x=0.0, y=0.5, z=3.0, scale=1.0, collision=False, color="green")
+    child.set_parent(parent, keep_world=True)
+    assert play.hovered_prop(0.0, 0.5, 0.0, 0.0, 0.0, 1.0) is child
+    parent.z = 2.0
+    assert child.world_z == pytest.approx(5.0)
+    assert play.hovered_prop(0.0, 0.5, 0.0, 0.0, 0.0, 1.0) is child
+
+
+def test_prop_texture_id_bake_without_engine_is_zero():
+    p = play.Prop("box", color="orange", texture=7, collision=False)
+    assert p.texture == 7
+    assert p.bake() == 0
+    assert p.mesh_id == 0

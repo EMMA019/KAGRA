@@ -47,6 +47,8 @@ def test_game_file_uses_only_public_imports():
         "hovered_prop",
         "destroy",
         "update_all",
+        "texture_from_fn",
+        "set_parent",
         "sky",
         "World3D",
         "Camera3D",

@@ -64,6 +64,7 @@ PNG/WAV/projection:
 - `Walk(first_person=True)` / `hovered_prop(cam)` — eye-height view and mouse pick
 - `destroy(prop)` / `Prop.update_all(dt)` — kinematic move and delete
 - Sphere / cylinder `Prop` collide and hover as those shapes (not boxes)
+- `Prop(..., texture=…)` / `set_parent` — 1-level parent only; child pose is local
 - `kagra.save_json` / `load_json` — high scores
 - `ActionController` — one-shot poses; `ActionController.names()` lists them
 

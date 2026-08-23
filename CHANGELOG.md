@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `Prop` texture (`texture_from_fn` / `load` id) and 1-level parent
+  (`set_parent` / `parent=`). Child `x,y,z,yaw` are local; `world_x` /
+  hover / collision use the world pose. Grandchildren raise. Destroying a
+  parent destroys children. Prop Garden: checker crate + green child on
+  gold (skipped under `KAGRA_SMOKE`).
 - Sphere / cylinder colliders match the mesh: `World3D.add_sphere` /
   `add_cylinder`, capsule vs circle/disk, hover rays skip AABB corners.
 - Kinematic `Prop`: assign `x`/`y`/`z`, `set_position`, `vx` + `Prop.update_all(dt)`.
