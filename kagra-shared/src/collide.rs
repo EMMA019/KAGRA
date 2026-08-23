@@ -160,10 +160,12 @@ mod tests {
 
     #[test]
     fn head_on_collision_kills_speed() {
-        let mut truck = Truck::default();
-        truck.pos = Vec3::new(0.0, 0.0, 0.0);
-        truck.heading = 0.0;
-        truck.speed = 20.0;
+        let mut truck = Truck {
+            pos: Vec3::new(0.0, 0.0, 0.0),
+            heading: 0.0,
+            speed: 20.0,
+            ..Truck::default()
+        };
         let wall = Obb2::from_box(Vec3::new(0.0, 0.0, 5.0), Vec3::new(8.0, 1.0, 2.0), 0.0);
         // 車体は長さ 12m なので前方が壁に食い込む。
         let pen = resolve_truck_vs_obb(&mut truck, &wall);
@@ -173,9 +175,11 @@ mod tests {
 
     #[test]
     fn offroad_slows_and_pushes_back() {
-        let mut truck = Truck::default();
-        truck.pos = Vec3::new(20.0, 0.0, 0.0);
-        truck.speed = 15.0;
+        let mut truck = Truck {
+            pos: Vec3::new(20.0, 0.0, 0.0),
+            speed: 15.0,
+            ..Truck::default()
+        };
         let before = truck.speed;
         let lat = apply_road_bounds(&mut truck, Vec3::ZERO, Vec3::X, 8.0);
         assert!(lat > 8.0);

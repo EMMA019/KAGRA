@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -48,10 +49,10 @@ def test_limb_rotation_changes_render():
             p.unlink()
 
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+    env.pop("PYTHONPATH", None)
     proc = subprocess.run(
         [sys.executable, str(RENDER), str(vrm), str(tpose), str(posed)],
-        cwd=str(ROOT),
+        cwd=tempfile.gettempdir(),
         env=env,
         capture_output=True,
         text=True,

@@ -771,10 +771,12 @@ mod tests {
 
     #[test]
     fn odometer_tracks_distance() {
-        let mut sc = DrivingScene::default();
         // 建物に弾かれると直線距離とオドメータがずれるので衝突だけ切る。
-        sc.collide_scenery = false;
-        sc.traffic = crate::traffic::TrafficSystem::disabled();
+        let mut sc = DrivingScene {
+            collide_scenery: false,
+            traffic: crate::traffic::TrafficSystem::disabled(),
+            ..DrivingScene::default()
+        };
         let start = sc.truck.pos;
         drive(
             &mut sc,

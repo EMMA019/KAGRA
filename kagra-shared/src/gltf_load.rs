@@ -174,7 +174,7 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
         return Err("base64 length not multiple of 4".into());
     }
     let mut out = Vec::with_capacity(cleaned.len() / 4 * 3);
-    for chunk in cleaned.chunks_exact(4) {
+    for chunk in cleaned.as_chunks::<4>().0 {
         let mut n = [0u8; 4];
         for i in 0..4 {
             if chunk[i] == b'=' {
