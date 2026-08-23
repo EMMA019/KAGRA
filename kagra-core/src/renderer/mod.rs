@@ -2035,14 +2035,16 @@ impl RendererV2 {
         rp.set_pipeline(&self.pipeline_3d);
         rp.set_bind_group(0, &self.camera_3d_bg, &[]);
         rp.set_bind_group(2, &self.shadow_bg, &[]);
+        let mut drawn = 0u32;
+        let mut tris = 0u32;
         for (texture_id, v_off, i_off, index_count) in draws {
             let bg = self.get_texture_bind_group(texture_id);
             rp.set_bind_group(1, bg, &[]);
             rp.set_vertex_buffer(0, self.mesh_3d_vb.slice(v_off..));
             rp.set_index_buffer(self.mesh_3d_ib.slice(i_off..), wgpu::IndexFormat::Uint32);
             rp.draw_indexed(0..index_count, 0, 0..1);
-            self.stats.draw_calls += 1;
-            self.stats.triangles += index_count / 3;
+            drawn += 1;
+            tris += index_count / 3;
         }
         for id in visible_retained {
             let Some(mesh) = self.retained_meshes.get(&id) else { continue };
@@ -2051,9 +2053,12 @@ impl RendererV2 {
             rp.set_vertex_buffer(0, mesh.vb.slice(..));
             rp.set_index_buffer(mesh.ib.slice(..), wgpu::IndexFormat::Uint32);
             rp.draw_indexed(0..mesh.index_count, 0, 0..1);
-            self.stats.draw_calls += 1;
-            self.stats.triangles += mesh.index_count / 3;
+            drawn += 1;
+            tris += mesh.index_count / 3;
         }
+        drop(rp);
+        self.stats.draw_calls += drawn;
+        self.stats.triangles += tris;
     }
 
     fn build_skinned_morph_bgs(&mut self, cmds: &[SkinnedMeshCommand]) -> Vec<Option<Arc<wgpu::BindGroup>>> {
@@ -2217,6 +2222,8 @@ impl RendererV2 {
             rp.set_pipeline(&self.skinning_3d_pipeline);
             rp.set_bind_group(0, &self.camera_3d_bg, &[]);
             rp.set_bind_group(3, &self.shadow_bg, &[]);
+            let mut drawn = 0u32;
+            let mut tris = 0u32;
             for (i, cmd) in cmds.iter().enumerate() {
                 let morph_bg = match morph_bgs.get(i).and_then(|b| b.as_ref()) {
                     Some(bg) => bg,
@@ -2227,9 +2234,12 @@ impl RendererV2 {
                 rp.set_vertex_buffer(0, cmd.vertex_buffer.slice(..));
                 rp.set_index_buffer(cmd.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..cmd.num_indices, 0, 0..1);
-                self.stats.draw_calls += 1;
-                self.stats.triangles += cmd.num_indices / 3;
+                drawn += 1;
+                tris += cmd.num_indices / 3;
             }
+            drop(rp);
+            self.stats.draw_calls += drawn;
+            self.stats.triangles += tris;
         }
         let need_outline = cmds.iter().any(|c| c.outline_width > 1e-5);
         if need_outline {
@@ -2243,6 +2253,8 @@ impl RendererV2 {
             rp.set_pipeline(&self.skinning_3d_outline_pipeline);
             rp.set_bind_group(0, &self.camera_3d_bg, &[]);
             rp.set_bind_group(3, &self.shadow_bg, &[]);
+            let mut drawn = 0u32;
+            let mut tris = 0u32;
             for (i, cmd) in cmds.iter().enumerate() {
                 if cmd.outline_width <= 1e-5 {
                     continue;
@@ -2256,9 +2268,12 @@ impl RendererV2 {
                 rp.set_vertex_buffer(0, cmd.vertex_buffer.slice(..));
                 rp.set_index_buffer(cmd.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..cmd.num_indices, 0, 0..1);
-                self.stats.draw_calls += 1;
-                self.stats.triangles += cmd.num_indices / 3;
+                drawn += 1;
+                tris += cmd.num_indices / 3;
             }
+            drop(rp);
+            self.stats.draw_calls += drawn;
+            self.stats.triangles += tris;
         }
     }
 
