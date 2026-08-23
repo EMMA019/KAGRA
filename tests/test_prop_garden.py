@@ -45,6 +45,8 @@ def test_game_file_uses_only_public_imports():
         "Prop",
         "Walk",
         "hovered_prop",
+        "destroy",
+        "update_all",
         "sky",
         "World3D",
         "Camera3D",

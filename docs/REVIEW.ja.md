@@ -58,10 +58,10 @@
 
 | Ursina | KAGRA 今 | 穴 |
 |---|---|---|
-| `Entity(model='cube', color=color.orange, parent=…)` | `Prop("box", color="orange", world=…)` | 親子、テクスチャ、destroy / enabled |
+| `Entity(model='cube', color=color.orange, parent=…)` | `Prop("box", color="orange", world=…)` | 親子、テクスチャ |
 | `FirstPersonController` | `Walk(first_person=True)` + 三人称 follow | ポインタロックはまだ |
 | `mouse.hovered_entity` / `raycast` | `hovered_prop(cam)`（`plane` 除外） | クリック・ボタンはまだ |
-| `destroy(e)` / `e.animate` | 無い | 動く Prop、寿命 |
+| `destroy(e)` / `e.animate` | `destroy(p)` / `p.x` / `vx` | `animate` / Sequence はまだ |
 | `Entity(model='model.glb')` | `stage()` / `load_gltf` は会場用 | Prop として置く glTF |
 | 球コライダ | `Prop` の球も `World3D.add_box`（AABB） | 形と当たりが一致しない |
 

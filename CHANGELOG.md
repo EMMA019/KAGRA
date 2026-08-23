@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Kinematic `Prop`: assign `x`/`y`/`z`, `set_position`, `vx` + `Prop.update_all(dt)`.
+  `destroy(p)` / `p.enabled` drop draw, hover, and collision. Prop Garden: gold
+  bobs; `E` deletes the hovered prop (smoke path unchanged).
 - First-person `Walk(first_person=True)` (`Camera3D.look`, mouse pitch) and
   `hovered_prop(cam)` (skips floor `plane`). Prop Garden: F toggles view.
 - Engine review + roadmap refresh (`docs/REVIEW.ja.md`, `docs/ROADMAP.ja.md`):

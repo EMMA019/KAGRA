@@ -62,6 +62,7 @@ PNG/WAV/projection:
 - `World3D` + `Camera3D.follow` — floor / box collision and a chase camera
 - `Prop` / `Walk` / `sky()` — short 3D (not 2D `Entity`). `examples/vrm_prop_garden.py`
 - `Walk(first_person=True)` / `hovered_prop(cam)` — eye-height view and mouse pick
+- `destroy(prop)` / `Prop.update_all(dt)` — kinematic move and delete
 - `kagra.save_json` / `load_json` — high scores
 - `ActionController` — one-shot poses; `ActionController.names()` lists them
 

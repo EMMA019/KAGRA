@@ -112,3 +112,40 @@ def test_prop_blocks_player_via_world3d():
         w.update(0.016)
     assert p.x < 0.95
     assert w.box_xforms == []
+
+
+def test_prop_set_position_moves_collision():
+    w = play.World3D(gravity=0.0)
+    box = play.Prop("box", x=4.0, y=0.5, z=0.0, scale=(0.8, 1.0, 1.6), world=w)
+    p = w.add_player(0.0, 0.0, radius=0.28, height=1.6)
+    p.use_gravity = False
+    box.set_position(1.2, 0.5, 0.0)
+    assert box.body.x == pytest.approx(1.2)
+    w.move_player(5.0, 0.0)
+    for _ in range(40):
+        w.update(0.016)
+    assert p.x < 0.95
+
+
+def test_prop_velocity_update_and_destroy():
+    w = play.World3D(gravity=0.0)
+    box = play.Prop("box", x=0.0, y=0.5, z=2.0, scale=1.0, world=w)
+    box.vz = 2.0
+    play.Prop.update_all(0.5)
+    assert box.z == pytest.approx(3.0)
+    assert box.body.z == pytest.approx(3.0)
+    play.destroy(box)
+    assert box not in play.Prop._all
+    assert box.enabled is False
+    assert box.body.active is False
+    play.destroy(box)
+
+
+def test_prop_disabled_skipped_by_hover():
+    box = play.Prop("box", x=0, y=0.5, z=2, scale=1.0, collision=False)
+    assert play.hovered_prop(0.0, 0.5, 0.0, 0.0, 0.0, 1.0) is box
+    box.enabled = False
+    assert play.hovered_prop(0.0, 0.5, 0.0, 0.0, 0.0, 1.0) is None
+    box.enabled = True
+    box.destroy()
+    assert play.hovered_prop(0.0, 0.5, 0.0, 0.0, 0.0, 1.0) is None

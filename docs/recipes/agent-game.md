@@ -51,6 +51,7 @@ Result: `examples/vrm_dodge_room.py`
 | Short 3D | `Prop` + `Walk` + `sky()` — not 2D `Entity`. See `examples/vrm_prop_garden.py` |
 | First person | `Walk(..., first_person=True)` — eye height. Prop Garden: `F` |
 | Hover | `hovered_prop(cam)` — not the 2D `mouse`. Floor `plane` is skipped |
+| Move / delete | `prop.x = …` or `vx` + `Prop.update_all(dt)`. `destroy(prop)` / `prop.enabled` |
 | Mesh retain | `upload_mesh_3d` once, `draw_mesh_id` each frame — or `world.bake` / `world.draw` |
 | Art / SE | `kagra.texture_from_fn` / `kagra.tone` / `kagra.draw_billboard` |
 | Score | `kagra.save_json` / `kagra.load_json` |
@@ -88,3 +89,4 @@ KAGRA で、VRM が3レーンを左右に歩いて、奥から飛んでくるハ
 短い 3D は `Prop` + `Walk` + `sky()`（`examples/vrm_prop_garden.py`。
 これは play-surface デモで、エージェント製ログではない）。
 一人称は `Walk(..., first_person=True)`。ホバーは `hovered_prop(cam)`。
+動かすのは `p.x` か `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)`。

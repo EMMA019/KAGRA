@@ -1,18 +1,20 @@
 """VRM Prop Garden — short 3D play surface (Ursina-shaped, not 2D Entity).
 
 Play-surface demo. Not an agent-built log. Public APIs only:
-Prop / Walk / sky / World3D / Camera3D.follow / ensure_vrm.
+Prop / Walk / sky / hovered_prop / destroy / World3D / Camera3D.follow / ensure_vrm.
 
 操作:
   WASD / 矢印 : 歩く
   マウス       : 視点（一人称は上下も）
   F           : 一人称 / 三人称
+  E           : ホバー中の Prop を消す
   ESC         : 終了
 
 スモーク: KAGRA_SMOKE=1 python examples/vrm_prop_garden.py
 """
 from __future__ import annotations
 
+import math
 import os
 import sys
 
@@ -42,8 +44,11 @@ class PropGarden(kagra.Scene):
         self.world = kagra.World3D(half=7.0)
         self.world.add_player(*START_XZ)
         kagra.Prop("plane", x=0, y=0, z=0, scale=14.0, color="gray", collision=False)
+        self.gold = None
         for model, x, y, z, scale, color in PROPS:
-            kagra.Prop(model, x=x, y=y, z=z, scale=scale, color=color, world=self.world)
+            prop = kagra.Prop(model, x=x, y=y, z=z, scale=scale, color=color, world=self.world)
+            if color == "gold":
+                self.gold = prop
         kagra.Prop.bake_all()
         self.cam = Camera3D(SW, SH, fov_deg=42.0)
         self.cam.follow(START_XZ[0], 0.0, START_XZ[1], lerp=1.0, yaw=0.0)
@@ -71,8 +76,17 @@ class PropGarden(kagra.Scene):
         if kagra.pressed("F") and not SMOKE:
             self.walk.first_person = not self.walk.first_person
             self.avatar.first_person = self.walk.first_person
+        if self.gold is not None and self.gold.enabled and not SMOKE:
+            self.gold.y = 0.5 + 0.18 * math.sin(kagra.tick_count() * 0.1)
+        kagra.Prop.update_all(dt)
         self.walk.step(dt)
         self.look = kagra.hovered_prop(self.cam)
+        if kagra.pressed("E") and self.look is not None and not SMOKE:
+            gone = self.look
+            kagra.destroy(gone)
+            if gone is self.gold:
+                self.gold = None
+            self.look = None
         p = self.world.player
         moving = False
         if p is not None:
@@ -108,9 +122,9 @@ class PropGarden(kagra.Scene):
         mode = "first person  F" if self.walk.first_person else "third person  F"
         kagra.text(mode, 18, 72, 16, (160, 170, 190))
         if self.look is not None:
-            kagra.text(self.look.model, 18, 92, 18, self.look.color)
+            kagra.text(self.look.model + "  E", 18, 92, 18, self.look.color)
         hit = self.cam.world_to_screen(GOLD_XZ[0], 1.1, GOLD_XZ[1])
-        if hit and not self.found:
+        if hit and not self.found and self.gold is not None and self.gold.enabled:
             kagra.text("GOLD", hit[0] - 28, hit[1] - 18, 16, (255, 220, 90))
 
 
