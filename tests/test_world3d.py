@@ -25,6 +25,7 @@ def test_player_walks_open_floor():
     w = m.World3D(gravity=0.0)
     p = w.add_player(0.0, 0.0, radius=0.25, height=1.6)
     p.use_gravity = False
+    p.friction = 0.0
     w.move_player(0.0, -3.0)
     for _ in range(20):
         w.update(0.016)
