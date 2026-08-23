@@ -1727,6 +1727,7 @@ from kagra.vrm_lookat  import LookAtController
 from kagra.vrm_lipsync import LipSyncController, LipSyncTimeline, timeline_from_audio_query
 from kagra.vrm_ik      import ArmIK, TwoBoneIK
 from kagra.vrm_emotion import EmotionController
+from kagra.vrm_action import ActionController
 
 # ─────────────────────────────────────────────────────────────
 # Phase 8: AI キャラクター SDK

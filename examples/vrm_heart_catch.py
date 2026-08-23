@@ -80,6 +80,7 @@ class HeartCatch(kagra.Scene):
         self.avatar = kagra.avatar(str(kagra.ensure_vrm()))
         self.avatar.play("idle", loop=True)
         self.avatar.enable_emotion()
+        self.action = kagra.ActionController(self.avatar)
         self.cam = Camera3D(SW, SH, fov_deg=36.0)
         self.cam.use_orbit(radius=6.4, theta=0.0, phi=0.38, target=(0.0, 0.9, 0.0))
         kagra.set_camera3d(self.cam)
@@ -156,6 +157,7 @@ class HeartCatch(kagra.Scene):
                 self.msg = f"+{catch_score(self.combo)}"
                 self.msg_t = 0.6
                 self.avatar.feel("joy", min(1.0, 0.4 + self.combo * 0.1))
+                self.action.play("clap" if self.combo % 3 == 0 else "nod")
                 self._se("ok")
                 continue
             if is_miss(h):
@@ -181,6 +183,7 @@ class HeartCatch(kagra.Scene):
         if getattr(self.avatar, "clip", None) != want:
             self.avatar.play(want, loop=True)
         self.avatar.update(dt)
+        self.action.update(dt)
         self.avatar.set_position(lane_x(self.lane), 0.0, 0.0)
         self.avatar.set_yaw(math.pi)  # カメラ（+Z）を向く
         self.cam.orbit_tgt = (lane_x(self.lane) * 0.35, 0.9, 0.0)

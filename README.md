@@ -108,7 +108,7 @@ Honesty list. These are missing on purpose, not forgotten:
 - **VOICEVOX / Irodori-TTS** — not bundled. VOICEVOX recipe: [docs/recipes/voicevox.md](docs/recipes/voicevox.md)
 - Song WAV and `.vrma` stay out of the wheel (~5MB install). First run downloads the sample VRM
 
-Recipes: [own VRM](docs/recipes/own-vrm.md) · [dance / VRMA](docs/recipes/motion.md) · [VOICEVOX](docs/recipes/voicevox.md) · [OBS / stream](docs/recipes/stream.md) · [mascot](docs/recipes/mascot.md). Roadmap: [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md).
+Recipes: [own VRM](docs/recipes/own-vrm.md) · [dance / VRMA](docs/recipes/motion.md) · [VOICEVOX](docs/recipes/voicevox.md) · [OBS / stream](docs/recipes/stream.md) · [mascot](docs/recipes/mascot.md) · [agent game](docs/recipes/agent-game.md). Roadmap: [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md).
 
 See [docs/PUBLISHING.md](docs/PUBLISHING.md) to cut a release.
 

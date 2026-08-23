@@ -85,6 +85,9 @@ JS における three-vrm のポジションの Python 版。
       「3レーンでハートをキャッチ」→ `examples/vrm_heart_catch.py` +
       `docs/agent-runs/20260823-heart-catch/`。GPU verify はこの環境では
       `kagra_core` 未ビルドのため未実行（シナリオは置いた）
+- [x] D-3 躓き直し: `ActionController` を公開 + `names()`、索引に
+      2D/3D `world_to_screen`・`save_json`・`ensure_vrm` の注記、
+      レシピ `docs/recipes/agent-game.md`
 
 **判定**: 2 週間で「動いた」報告 3 件以上の楔が勝ち。全滅なら機能ではなく
 **切り口の言葉**を変えて 1 回だけ再試行。全滅 × 2 サイクルで Stage 6 へ。
