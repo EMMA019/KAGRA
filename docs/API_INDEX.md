@@ -409,6 +409,8 @@
 - ホバー: `hovered_prop(cam)`（マウス）。レイ直打ちは `kagra.play.hovered_prop(ox,oy,oz,dx,dy,dz)`。`plane` は除外。
 - 動く Prop: `p.x` / `set_position` / `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)` か `p.enabled = False`。
 - 球 / 円柱の当たりとホバーは AABB ではない。`World3D.add_sphere` / `add_cylinder`。
+- Prop テクスチャ: `texture=kagra.texture_from_fn(...)` または `load`。0 なら `color`。
+- Prop 親子は 1 段（`set_parent` / `parent=`）。孫は不可。子の `x,y,z,yaw` はローカル。
 - 色付きメッシュ: `solid_tex` + `sphere_mesh` / `cylinder_mesh` / `box_mesh`。
 - `kagra-shared` / `mobile/` は別の運転デモ。この Python スタックと混ぜない。
 - Rust バインディングの整合は `tests/test_api_bindings.py` も参照。

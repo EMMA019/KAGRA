@@ -886,7 +886,7 @@ def hovered_prop(cam=None, sx: float | None = None, sy: float | None = None, *, 
 
 
 def destroy(prop) -> None:
-    """``Prop`` を描画・ホバー・衝突から外す。既に消えていても落ちない。"""
+    """``Prop`` を描画・ホバー・衝突から外す。子も消す。既に消えていても落ちない。"""
     from kagra.play import destroy as _fn
     _fn(prop)
 

@@ -16,7 +16,7 @@
 |---|---|---|
 | **three-vrm** | デスクトップ Python。Web では戦わない | 体（MToon / Spring / VRMA / 表情 / 一人称）は対抗できる。配布と AI 接続はこちらが厚い |
 | **three.js** | 同じ種類の仕事（ライト・影・IBL・マテリアル・カリング）。ブラウザ対決ではない | カリング / インスタンス / 1 本影 / 半球まで。点光源・HDRI・PBR 汎用メッシュは無い |
-| **Ursina** | 「短い Python で部屋を置いて歩く」 | `Prop` / `Walk` / `sky` が初日。親子・一人称・ホバー・destroy・テクスチャ付き Entity はまだ |
+| **Ursina** | 「短い Python で部屋を置いて歩く」 | `Prop` / `Walk` / `sky` + 一人称・ホバー・destroy・テクスチャ・1 段の親子。glTF 部品とゲームパッドはまだ |
 | **Unity + UniVRM** | インストールと「歌って踊るまで」 | 5MB wheel で勝つ。エディタと量産パイプラインでは負ける（戦わない） |
 | **pygame / pyxel** | 2D エンジン | 棚に下げた。戻さない |
 
@@ -39,7 +39,7 @@
 | 影 | 2048、VRM AABB に合わせた ortho、9-tap PCF。カスケード無し | CSM、ワールド全体、複数ライト |
 | 汎用メッシュ | テクスチャ + トゥーン寄せ。glTF は baseColor 相当 | MeshStandard / 金属・粗さ・法線 |
 | ポスト | bloom / vignette / fog | SSAO、トーンマップ、アウトライン（VRM 以外） |
-| シーングラフ | 2D `Entity` は棚。`Prop` に親子が無い | Object3D の階層 |
+| シーングラフ | 2D `Entity` は棚。`Prop` は 1 段の親子 | Object3D の深い階層 |
 | カメラ | orbit / showcase / follow | 一人称・ポインタロック・直交 3D |
 
 描画性能トラック（視錐台・ボーン AABB・インスタンス・マテリアルソート・影 2048）は「同じ種類の仕事」として正しい。**次はライトと IBL で、カリングの続きではない。**
@@ -58,7 +58,7 @@
 
 | Ursina | KAGRA 今 | 穴 |
 |---|---|---|
-| `Entity(model='cube', color=color.orange, parent=…)` | `Prop("box", color="orange", world=…)` | 親子、テクスチャ |
+| `Entity(model='cube', color=color.orange, parent=…)` | `Prop("box", color="orange", texture=…, parent=…)` | 親子は 1 段。孫は不可 |
 | `FirstPersonController` | `Walk(first_person=True)` + 三人称 follow | ポインタロックはまだ |
 | `mouse.hovered_entity` / `raycast` | `hovered_prop(cam)`（`plane` 除外） | クリック・ボタンはまだ |
 | `destroy(e)` / `e.animate` | `destroy(p)` / `p.x` / `vx` | `animate` / Sequence はまだ |
@@ -96,7 +96,7 @@ kagra-shared + mobile/     ──► 別の運転デモ（道路・トラック�
 | A ローカル LLM に体を | `avatar` + `sing` / `speak` | 頭脳の公式面（Kairi / Ollama）が未実装 |
 | B 無人 3D VTuber | 歌・ダンス・HUD・仮想カメラ | オートパイロット / セーフティ（Stage 3。今はやらない） |
 | C VRoid マスコット | 透明窓・常駐 | 配布物（zip）。エンジン不足ではない |
-| D エージェントがゲームを | 箱部屋 3 本 + Prop Garden | ホバー、一人称、動く Prop、形の当た り。ここが Ursina 比較の本丸 |
+| D エージェントがゲームを | 箱部屋 3 本 + Prop Garden | テクスチャと 1 段親子まで。次は glTF 部品とゲームパッド。ここが Ursina 比較の本丸 |
 
 Stage 1 の「4 楔を数字で選ぶ」は残す。**D の天井を上げるのが能力トラックの第一目的。** A の頭脳は「完了」ではなく次の実装。
 

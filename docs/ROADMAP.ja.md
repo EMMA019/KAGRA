@@ -47,7 +47,7 @@ JS における three-vrm のポジションの Python 版。
 
 **弱み（正直リスト）**: 影は 1 本の平行光（カスケード無し）、IBL は半球まで
 （HDRI キューブは無い）、汎用メッシュは PBR ではない、ポストは bloom / vignette、
-`Prop` に親子・destroy・ホバーが無い、球の当たりは AABB、複数アバターは未計測、
+`Prop` の glTF 部品とゲームパッドはまだ、複数アバターは未計測、
 頭脳の公式面（`KairiBrain` / `docs/recipes/ai-brain.md`）はロードマップだけ完了で
 **リポジトリに無い**、`KAGRA_ENGINE_GUIDE.md` は Phase 6 の履歴。
 
@@ -108,7 +108,9 @@ three.js / Ursina が当たり前にやっていることを、楔が詰む順�
       `plane` は除外。Prop Garden の F で一人称切替
 - [x] 球 / 円柱は当たりもその形。`World3D.add_sphere` / `add_cylinder`。
       ホバーも球・円柱（蓋付き）。非均一スケールの球は外接球
-- [ ] `Prop` にテクスチャ（`texture_from_fn` / `load`）。親子は最小（1 段）
+- [x] `Prop` にテクスチャ（`texture_from_fn` / `load`）。親子は最小（1 段）。
+      `p.texture` / `set_parent`。孫は不可。Prop Garden: オレンジ箱にチェッカー、
+      金球の上に緑の子（`KAGRA_SMOKE` では画素を変えない）
 - [ ] glTF を Prop として置く（`stage()` の会場用ロードとは別。部品）
 - [ ] ゲームパッド（README の「まだ無い」）
 

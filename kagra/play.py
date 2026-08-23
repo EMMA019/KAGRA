@@ -86,13 +86,28 @@ def first_person_eye(
     return (ex, ey, ez), (ex + fx, ey + fy, ez + fz)
 
 
+def _offset_xz(px: float, pz: float, yaw: float, lx: float, lz: float) -> tuple[float, float]:
+    """親の yaw でローカル XZ を回す（``world_verts`` と同じ）。"""
+    c, s = math.cos(yaw), math.sin(yaw)
+    return px + c * lx + s * lz, pz - s * lx + c * lz
+
+
 def prop_aabb(prop: "Prop") -> tuple[float, float, float, float, float, float]:
-    """Prop 中心とスケールから AABB ``(min x,y,z, max x,y,z)``。"""
+    """Prop 中心とスケールから AABB ``(min x,y,z, max x,y,z)``。世界座標。"""
+    wx, wy, wz, _ = prop_world_pose(prop)
     hx, hy, hz = abs(prop.sx) * 0.5, abs(prop.sy) * 0.5, abs(prop.sz) * 0.5
     return (
-        prop.x - hx, prop.y - hy, prop.z - hz,
-        prop.x + hx, prop.y + hy, prop.z + hz,
+        wx - hx, wy - hy, wz - hz,
+        wx + hx, wy + hy, wz + hz,
     )
+
+
+def prop_world_pose(prop: "Prop") -> tuple[float, float, float, float]:
+    """世界の ``(x, y, z, yaw)``。親子が無ければローカルと同じ。"""
+    fn = getattr(prop, "world_pose", None)
+    if fn is not None:
+        return fn()
+    return float(prop.x), float(prop.y), float(prop.z), float(getattr(prop, "yaw", 0.0))
 
 
 def ray_aabb(
@@ -204,16 +219,17 @@ def prop_hit_t(
     max_dist: float = 80.0,
 ) -> Optional[float]:
     """Prop の見た目の形に対するレイ距離。"""
+    wx, wy, wz, _ = prop_world_pose(prop)
     model = getattr(prop, "model", "box")
     if model == "sphere":
         r = 0.5 * max(abs(prop.sx), abs(prop.sy), abs(prop.sz))
-        return ray_sphere(ox, oy, oz, dx, dy, dz, prop.x, prop.y, prop.z, r, max_dist=max_dist)
+        return ray_sphere(ox, oy, oz, dx, dy, dz, wx, wy, wz, r, max_dist=max_dist)
     if model == "cylinder":
         r = 0.5 * max(abs(prop.sx), abs(prop.sz))
         hy = abs(prop.sy) * 0.5
         return ray_cylinder(
             ox, oy, oz, dx, dy, dz,
-            prop.x, prop.z, r, prop.y - hy, prop.y + hy,
+            wx, wz, r, wy - hy, wy + hy,
             max_dist=max_dist,
         )
     return ray_aabb(ox, oy, oz, dx, dy, dz, prop_aabb(prop), max_dist=max_dist)
@@ -312,10 +328,10 @@ def destroy(prop) -> None:
 
 
 class Prop:
-    """色付きプリミティブ。位置は中心。``World3D`` があれば AABB 衝突。
+    """色付きプリミティブ。位置は中心。``World3D`` があれば衝突。
 
-    ``x`` / ``y`` / ``z`` を動かすと当たりも付いてくる（キネマティック）。
-    ``vx`` などを入れて ``Prop.update_all(dt)``。消すときは ``destroy()``。
+    ``texture`` は ``texture_from_fn`` / ``load`` の ID。0 なら ``color``。
+    親子は 1 段（``set_parent``）。子の ``x,y,z,yaw`` は親からのローカル。
     2D の ``kagra.Entity`` とは別。エージェントはこっちを使う。
     """
 
@@ -333,6 +349,8 @@ class Prop:
         collision: bool = True,
         world: Optional[World3D] = None,
         yaw: float = 0.0,
+        texture: int = 0,
+        parent: Optional["Prop"] = None,
     ):
         self.model = str(model).lower()
         if self.model not in ("box", "sphere", "cylinder", "plane"):
@@ -353,13 +371,19 @@ class Prop:
         self.color = resolve_color(color)
         self.collision = bool(collision)
         self.world = world
+        self.texture = int(texture or 0)
         self.tex_id = 0
         self.mesh_id = 0
         self.body = None
+        self._parent: Optional[Prop] = None
+        self._children: list[Prop] = []
         if world is not None and self.collision and self.model != "plane":
             self.body = self._make_body(world)
             self._sync_body()
         Prop._all.append(self)
+        if parent is not None:
+            # constructor x,y,z,yaw are local to that parent
+            self.set_parent(parent, keep_world=False)
 
     def _hit_radius(self) -> float:
         """球は外接球、円柱は XZ 半径。"""
@@ -420,33 +444,97 @@ class Prop:
 
     @property
     def enabled(self) -> bool:
-        return self._enabled and not self._destroyed
+        if self._destroyed or not self._enabled:
+            return False
+        if self._parent is not None and not self._parent.enabled:
+            return False
+        return True
 
     @enabled.setter
     def enabled(self, v: bool) -> None:
         self._enabled = bool(v) and not self._destroyed
         self._sync_body()
 
+    @property
+    def parent(self) -> Optional["Prop"]:
+        return self._parent
+
+    @property
+    def world_x(self) -> float:
+        return self.world_pose()[0]
+
+    @property
+    def world_y(self) -> float:
+        return self.world_pose()[1]
+
+    @property
+    def world_z(self) -> float:
+        return self.world_pose()[2]
+
+    @property
+    def world_yaw(self) -> float:
+        return self.world_pose()[3]
+
+    def world_pose(self) -> tuple[float, float, float, float]:
+        """世界の ``(x, y, z, yaw)``。"""
+        if self._parent is None:
+            return self._x, self._y, self._z, self._yaw
+        px, py, pz, pyaw = self._parent.world_pose()
+        wx, wz = _offset_xz(px, pz, pyaw, self._x, self._z)
+        return wx, py + self._y, wz, pyaw + self._yaw
+
+    def set_parent(self, parent: Optional["Prop"], *, keep_world: bool = True) -> None:
+        """親を 1 段だけ付ける。孫は不可。``keep_world`` なら今の世界位置を保つ。"""
+        if parent is self:
+            raise ValueError("prop cannot parent itself")
+        if parent is not None:
+            if parent._parent is not None:
+                raise ValueError("parent is 1 level only")
+            if parent._destroyed:
+                raise ValueError("parent is destroyed")
+            if self._children:
+                raise ValueError("a parent cannot become a child")
+        if keep_world:
+            wx, wy, wz, wyaw = self.world_pose()
+            if parent is not None:
+                px, py, pz, pyaw = parent.world_pose()
+                c, s = math.cos(-pyaw), math.sin(-pyaw)
+                dx, dz = wx - px, wz - pz
+                self._x = c * dx + s * dz
+                self._z = -s * dx + c * dz
+                self._y = wy - py
+                self._yaw = wyaw - pyaw
+            else:
+                self._x, self._y, self._z, self._yaw = wx, wy, wz, wyaw
+        if self._parent is not None and self in self._parent._children:
+            self._parent._children.remove(self)
+        self._parent = parent
+        if parent is not None and self not in parent._children:
+            parent._children.append(self)
+        self._sync_body()
+
     def _sync_body(self) -> None:
-        if self.body is None:
-            return
-        self.body.x = self._x
-        if self.model == "sphere":
-            r = self._hit_radius()
-            self.body.y = self._y - r
-            self.body.radius = r
-            self.body.h = r * 2.0
-            self.body.w = self.body.d = r * 2.0
-        else:
-            self.body.y = self._y - self.sy * 0.5
-            if self.model == "cylinder":
+        wx, wy, wz, wyaw = self.world_pose()
+        if self.body is not None:
+            self.body.x = wx
+            if self.model == "sphere":
                 r = self._hit_radius()
+                self.body.y = wy - r
                 self.body.radius = r
-                self.body.h = abs(self.sy)
+                self.body.h = r * 2.0
                 self.body.w = self.body.d = r * 2.0
-        self.body.z = self._z
-        self.body.yaw = self._yaw
-        self.body.active = self.enabled
+            else:
+                self.body.y = wy - self.sy * 0.5
+                if self.model == "cylinder":
+                    r = self._hit_radius()
+                    self.body.radius = r
+                    self.body.h = abs(self.sy)
+                    self.body.w = self.body.d = r * 2.0
+            self.body.z = wz
+            self.body.yaw = wyaw
+            self.body.active = self.enabled
+        for ch in list(self._children):
+            ch._sync_body()
 
     def set_position(self, x: float, y: float, z: float) -> None:
         """中心を置く。当たりも一緒に動く。"""
@@ -458,11 +546,16 @@ class Prop:
         self.set_position(self._x + float(dx), self._y + float(dy), self._z + float(dz))
 
     def destroy(self) -> None:
-        """描画・ホバー・衝突から外す。二度呼んでも落ちない。"""
+        """描画・ホバー・衝突から外す。子も消す。二度呼んでも落ちない。"""
         if self._destroyed:
             return
+        for ch in list(self._children):
+            ch.destroy()
         self._destroyed = True
         self._enabled = False
+        if self._parent is not None and self in self._parent._children:
+            self._parent._children.remove(self)
+        self._parent = None
         self._sync_body()
         try:
             Prop._all.remove(self)
@@ -479,20 +572,22 @@ class Prop:
         self.set_position(self._x + self.vx * dt, self._y + self.vy * dt, self._z + self.vz * dt)
 
     def instance(self) -> list[float]:
-        return [self.x, self.y, self.z, self.sx, self.sy, self.sz, self.yaw]
+        wx, wy, wz, wyaw = self.world_pose()
+        return [wx, wy, wz, self.sx, self.sy, self.sz, wyaw]
 
     def world_verts(self, verts) -> list[list[float]]:
         """単位メッシュを位置・スケール・ yaw で変形する（``draw_mesh_instances`` と同じ）。"""
-        c = math.cos(self.yaw)
-        s = math.sin(self.yaw)
+        wx, wy, wz, wyaw = self.world_pose()
+        c = math.cos(wyaw)
+        s = math.sin(wyaw)
         out: list[list[float]] = []
         for v in verts:
             px, py, pz = v[0] * self.sx, v[1] * self.sy, v[2] * self.sz
             nx, ny, nz = v[3], v[4], v[5]
             out.append([
-                c * px + s * pz + self.x,
-                py + self.y,
-                -s * px + c * pz + self.z,
+                c * px + s * pz + wx,
+                py + wy,
+                -s * px + c * pz + wz,
                 c * nx + s * nz,
                 ny,
                 -s * nx + c * nz,
@@ -502,15 +597,15 @@ class Prop:
 
     def _draw_immediate(self) -> None:
         import kagra
-        tex = self.tex_id or solid_tex(self.color)
+        tex = self.tex_id or self.texture or solid_tex(self.color)
         verts, idx = _unit_mesh(self.model)
         kagra.draw_mesh_3d(int(tex), self.world_verts(verts), idx)
 
     def bake(self) -> int:
-        """色テクスチャと単位メッシュを載せる。エンジン未初期化なら 0。"""
+        """テクスチャと単位メッシュを載せる。エンジン未初期化なら 0。"""
         try:
             import kagra
-            self.tex_id = solid_tex(self.color)
+            self.tex_id = int(self.texture) if self.texture else solid_tex(self.color)
             key = (self.model, self.tex_id)
             mid = _unit_cache.get(key)
             if not mid:
