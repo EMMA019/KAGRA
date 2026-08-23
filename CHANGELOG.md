@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 3D mesh frustum culling for `draw_mesh_3d` / `draw_mesh_id` (World3D
+  boxes). VRM is not culled yet (no padded bone AABBs). Last-frame stats
+  via `kagra.render_stats()`; toggle with `set_mesh_cull()`.
 - README / samples list Dodge Room (`examples/vrm_dodge_room.py`) as the
   third logged agent-built game (`docs/agent-runs/20260823-dodge-room/`).
   Mixamo `.fbx` is `av.dance("clip.fbx")` / `--dance` (YMCA sleeve blow-up

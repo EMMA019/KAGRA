@@ -219,6 +219,21 @@ impl KagraWindow {
         }
     }
 
+    pub fn set_mesh_cull(&self, enabled: bool) {
+        if let Some(r) = lock_recover(&self.renderer).as_mut() {
+            r.set_mesh_cull(enabled);
+        }
+    }
+
+    pub fn render_stats(&self) -> (u32, u32, u32) {
+        if let Some(r) = lock_recover(&self.renderer).as_ref() {
+            let s = r.render_stats();
+            (s.draw_calls, s.triangles, s.culled)
+        } else {
+            (0, 0, 0)
+        }
+    }
+
     pub fn queue_skinned_mesh_3d(&self, cmd: crate::renderer::SkinnedMeshCommand) {
         if let Some(r) = lock_recover(&self.renderer).as_mut() {
             r.queue_skinned_mesh_3d(cmd);

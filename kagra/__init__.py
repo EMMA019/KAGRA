@@ -687,6 +687,28 @@ def set_bloom(threshold: float = 0.85, intensity: float = 0.35,
     _engine.set_bloom(float(threshold), inten)
 
 
+def set_mesh_cull(enabled: bool = True):
+    """ワールド 3D メッシュの視錐台カリング。VRM スキンは対象外。"""
+    _check()
+    _engine.set_mesh_cull(bool(enabled))
+
+
+def render_stats() -> dict:
+    """直前フレームの 3D 描画統計。
+
+    ``draw_calls`` / ``triangles`` / ``culled``。ワールド箱と VRM の
+    カラーパス（アウトライン含む）。影パスは含めない。
+    最初のフレームの前は全部 0。
+    """
+    _check()
+    calls, tris, culled = _engine.render_stats()
+    return {
+        "draw_calls": int(calls),
+        "triangles": int(tris),
+        "culled": int(culled),
+    }
+
+
 def camera_ray_from_screen(sx: float, sy: float):
     """スクリーン座標からワールドレイ ((ox,oy,oz), (dx,dy,dz))。"""
     _check()

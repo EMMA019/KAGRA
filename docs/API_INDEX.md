@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **362**
+エントリ数: **364**
 
 棚の**手前**は VRM / 3D ワールド / エージェントゲーム。
 棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。
@@ -38,6 +38,7 @@
 | `quad_y_mesh` | `quad_y_mesh(cx: float, cy: float, cz: float, size: float)` |
 | `quit` | `quit()` |
 | `released` | `released(name: str) -> bool` |
+| `render_stats` | `render_stats() -> dict` |
 | `run` | `run(update=None, draw=None, start_scene: Scene = None, max_frames=None, fixed_dt=None, on_ready=None)` |
 | `save_json` | `save_json(name: str, data: dict, *, directory: str \| None = None)` |
 | `screenshot` | `screenshot(path: str)` |
@@ -46,6 +47,7 @@
 | `set_camera3d` | `set_camera3d(cam: Camera3D \| None)` |
 | `set_fog` | `set_fog(start: float = 5.0, end: float = 20.0, color: tuple = (110, 180, 230), *, enabled: bool = True)` |
 | `set_light_dir` | `set_light_dir(x: float, y: float, z: float)` |
+| `set_mesh_cull` | `set_mesh_cull(enabled: bool = True)` |
 | `set_rim` | `set_rim(intensity: float = 0.45)` |
 | `set_shadow_enabled` | `set_shadow_enabled(enabled: bool = True)` |
 | `set_toon_params` | `set_toon_params(threshold: float = 0.5, softness: float = 1.0, shade: float = 0.55, lit: float = 1.0)` |
@@ -388,6 +390,7 @@
 - VRM が checkout に無いときは `ensure_vrm()`。パスを直書きしない。
 - ワンショットポーズは `ActionController`（`ActionController.names()`）。
 - 静的メッシュは `upload_mesh_3d` で一度載せ、`draw_mesh_id` で描く。
+- ワールド箱は視錐台カリングされる。直前フレームは `render_stats()`。VRM はまだカリングしない。
 - 床と箱: `World3D`（または `Physics3D` + `box_mesh`）。カメラは `Camera3D.follow`。
 - `kagra-shared` / `mobile/` は別の運転デモ。この Python スタックと混ぜない。
 - Rust バインディングの整合は `tests/test_api_bindings.py` も参照。
