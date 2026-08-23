@@ -2,7 +2,11 @@
 
 ## Unreleased
 
-<<<<<<< HEAD
+- Demo drop-in Mixamo: `python -m kagra` plays every `.fbx` / `.vrma` in
+  `assets/` (also `assets/anim`, `assets/motion`). Default `--dance auto`
+  cycles the playlist (SPACE / N = next). `--dance path` still pins one
+  clip. Bundled BVH if none found. `list_motion_drops()` /
+  `KAGRA_ASSETS` for agents and `$TEMP` runs.
 - Repo shelf-split: recommended examples stay in `examples/`; legacy 2D /
   tilemap / editor / romance / boids moved to `examples/archive/`. API index
   now has Front (VRM / 3D / agents) vs Shelf. `kagra-shared` + `mobile/` is
@@ -12,13 +16,6 @@
 - Agent-built world game (wedge D): `examples/vrm_switch_room.py` from the
   one-line prompt in `docs/agent-runs/20260823-switch-room/`. Not a
   disc-collect — walk a boxed room and stand on a switch.
-=======
-- Demo drop-in Mixamo: `python -m kagra` plays every `.fbx` / `.vrma` in
-  `assets/` (also `assets/anim`, `assets/motion`). Default `--dance auto`
-  cycles the playlist (SPACE / N = next). `--dance path` still pins one
-  clip. Bundled BVH if none found. `list_motion_drops()` /
-  `KAGRA_ASSETS` for agents and `$TEMP` runs.
->>>>>>> b3a400d (Demo plays Mixamo FBX dropped in assets/.)
 - Agent surface (wedge D-3): `ActionController` is a public export with
   `names()`. API index notes 2D vs 3D `world_to_screen`, `save_json` vs
   `load_data`, and `ensure_vrm()`. Recipe `docs/recipes/agent-game.md`.
