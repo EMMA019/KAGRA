@@ -119,10 +119,13 @@ python examples/vrm_dodge_room.py
 - **YouTube / Twitch の公式取り込み** — `{user,text}` の JSONL を自分で書く（`ChatInbox`）
 - **NDI / RTMP** — 窓キャプチャは今も使える。仮想カメラは extra
 - **無人配信のセーフティ / オートパイロット** — 0.1.3 には無い
+- **公式の頭脳面** — `AiCharacter` はある。`KairiBrain` / Ollama の 1 行はまだ無い
+- **HDRI / 点光源 / 一人称 Walk** — 今は半球と三人称 `Walk` まで
 - **VOICEVOX / Irodori-TTS** — 同梱しない。VOICEVOX は [docs/recipes/voicevox.md](docs/recipes/voicevox.md)
 - 曲 WAV と `.vrma` はホイールに入れない（約 5MB の売りを守る）。サンプル VRM は初回ダウンロード
 
 レシピ: [自分の VRM](docs/recipes/own-vrm.md) · [ダンス / VRMA](docs/recipes/motion.md) · [VOICEVOX](docs/recipes/voicevox.md) · [OBS / 配信](docs/recipes/stream.md) · [マスコット](docs/recipes/mascot.md) · [エージェントゲーム](docs/recipes/agent-game.md)。
+レビュー: [docs/REVIEW.ja.md](docs/REVIEW.ja.md)。ロードマップ: [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md)。
 
 リリース手順は [docs/PUBLISHING.md](docs/PUBLISHING.md)。
 

@@ -1,19 +1,24 @@
-# KAGRA ロードマップ — 需要の発見から「AI に体を与える標準」まで
+# KAGRA ロードマップ — 体と、その体が歩ける部屋
 
-最終更新: 2026-08-23（0.1.3 は PyPI 済み。絵作り 1a・初回体験・kairi 頭脳接続まで完了。
-次は Stage 1 — 4 本の楔で需要の在り処を数字で確定する）
+最終更新: 2026-08-23（0.1.3 は PyPI 済み。描画 P0–P4 と `Prop` / `Walk` / `sky` は未リリース。
+能力の棚卸しは [REVIEW.ja.md](REVIEW.ja.md)。次は Stage 1 の楔と、D が詰まないための能力トラック）
 
 ## 北極星
 
-**「Python で AI に体を与えるなら KAGRA」という第一想起の座。**
+**「Python で AI に体を与えるなら KAGRA」という第一想起。**
 JS における three-vrm のポジションの Python 版。
+
+エンジンの天井は二つだけ名指しする（Web では戦わない）:
+
+- **体** = three-vrm 級（もう近い）
+- **部屋と書き味** = デスクトップで three.js が当たり前にやっている絵 + Ursina 級の短さ
 
 測るのは自分の投稿への反応（Push）ではなく Pull:
 
 - 投稿していない日に install と「動いた」報告が来るか（オーガニック比率）
 - 外部発のコンテンツ（記事・動画・配信）が毎月出るか
 
-## 3 原則
+## 4 原則
 
 1. **需要は完成品から逆流する。** 誰も「エンジンが欲しい」とは思っていない。
    「デスクトップに自分のアバターがいる」「寝てる間に AI が配信してる」が欲しい。
@@ -22,6 +27,9 @@ JS における three-vrm のポジションの Python 版。
    投稿していない日の流入が需要。
 3. **楔は同時に打ち、勝者を数字で選ぶ。** どの痛みが本物かは事前に分からない。
    同じ労力で 4 本試し、引きのあった楔に全張りする。
+4. **能力は楔が詰むところだけ足す。** Ursina / three.js の全部は作らない。
+   楔 D が箱部屋で頭打ちなら部屋を厚くする。楔 A が「頭脳が無い」なら面を足す。
+   棚の 2D / エディタ / tilemap は戻さない。
 
 ## 何で戦うか（資産の棚卸し）
 
@@ -38,31 +46,37 @@ JS における three-vrm のポジションの Python 版。
    開発ループ自体を AI エージェント用に設計したエンジンは他に無い
 
 **弱み（正直リスト）**: 影は 1 本の平行光（カスケード無し）、IBL は半球まで
-（HDRI キューブは無い）、ポスト処理の薄さ（bloom / vignette まで）、
-複数アバター時の性能未検証、バス係数 1、汎用エンジン志向の名残
-（editor / tilemap / mapgen …）が広く浅い。
+（HDRI キューブは無い）、汎用メッシュは PBR ではない、ポストは bloom / vignette、
+`Prop` に親子・destroy・ホバーが無い、球の当たりは AABB、複数アバターは未計測、
+頭脳の公式面（`KairiBrain` / `docs/recipes/ai-brain.md`）はロードマップだけ完了で
+**リポジトリに無い**、`KAGRA_ENGINE_GUIDE.md` は Phase 6 の履歴。
+
+比較表の全文は [REVIEW.ja.md](REVIEW.ja.md)。
 
 ---
 
-## Stage 0 — 現在地（完了）
+## Stage 0 — 現在地（完了。ただし盛らない）
 
 - [x] 0.1.3 PyPI（Windows / Linux、約 5MB、Rust 不要）
 - [x] VRM 0.x / 1.0 一式・リップシンク（WAV + VOICEVOX mora）・仮想カメラ・
       HUD・JSONL チャット・3D 物理・顔トラ
 - [x] 絵作り（旧 Phase 1a）: 空・リム・showcase カメラ・接地・HUD。
       素の `python -m kagra` がデバッグ画面に見えない
-- [x] 頭脳接続: `kagra.brain.KairiBrain` + `docs/recipes/ai-brain.md` +
-      `examples/vrm_kairi_chat.py`（PR #25）
+- [ ] 頭脳接続: `kagra.brain.KairiBrain` + `docs/recipes/ai-brain.md` — **未着手。**
+      あるのは棚の `AiCharacter`。楔 A の前に面を作る
 - [x] 初回体験: own-VRM 1 行、シャドウ警告、`kagra.cmd`、レシピ、
       issue テンプレ（bug / worked）、macOS wheel CI smoke
 
-**機能は最初のユーザーを取るのに足りている。** ボトルネックは流通と、
-「どの痛みが本物か」がまだ数字で分かっていないこと。
+**VTuber / マスコットの最初のユーザーを取る絵は足りている。**
+**「Ursina 級のゲームエンジン」「three.js 級の 3D」は足りていない。**
+ボトルネックは流通と、楔 D の天井と、頭脳面の欠落。
 
-## 描画性能トラック（three.js と同じ種類の仕事。ブラウザ対決ではない）
+## 能力トラック（楔と並行。ブラウザ対決ではない）
 
 北極星は変えない。Web で three-vrm と戦わない。デスクトップ wgpu で
-three.js が当たり前にやっていることを一段ずつ足す。
+three.js / Ursina が当たり前にやっていることを、楔が詰む順に足す。
+
+### 絵（three.js と同じ種類の仕事）
 
 - [x] P0: ワールド 3D の視錐台カリング（`draw_mesh_3d` / `draw_mesh_id`）。
       `kagra.render_stats()` / `set_mesh_cull()`
@@ -72,19 +86,47 @@ three.js が当たり前にやっていることを一段ずつ足す。
 - [x] P3: マテリアルソート / `doubleSided` のときだけ両面
 - [x] P4: 影 2048 + VRM AABB に合わせた ortho + 9-tap PCF。
       半球アンビエント `set_ambient`（HDRI キューブはまだ無い）
+- [ ] P5: ワールドに効く影（VRM AABB だけに合わせない）。カスケードはまだ入れない
+- [ ] P6: 点光源 1（影は無しでよい）。スポットは後
+- [ ] P7: HDRI キューブ（`set_ambient` の次）。PMREM は後
+- [ ] P8: 汎用 glTF の baseColor + 金属/粗さ（MToon を薄めない）
 
-## 使える面トラック（Ursina 級の短さ。2D Entity ではない）
+### 部屋（Ursina 級の短さ。2D `Entity` ではない）
 
 エージェントと人間が短いスクリプトで部屋を置いて歩けること。
-ブラウザの three.js を真似るのではなく、デスクトップで `Prop` / `Walk` / `sky`。
 
 - [x] `Prop`（box / sphere / cylinder / plane、色名前、`World3D` 衝突、
       インスタンス描画）
 - [x] `Walk`（WASD + マウス左右、`Camera3D.follow`）
 - [x] `sky()` / `solid_tex` / `sphere_mesh` / `cylinder_mesh`
 - [x] play-surface デモ: `examples/vrm_prop_garden.py`（エージェント製ではない）
-- [ ] 一人称（目線の高さ）
-- [ ] 動く Prop（キネマティック）
+- [ ] 一人称（目線の高さ）。ポインタロックは OS が許す範囲
+- [ ] 動く Prop（キネマティック）。`destroy` / `enabled`
+- [ ] `Camera3D` からレイ → 当たった `Prop`（Ursina の `mouse.hovered_entity`）
+- [ ] 球 / 円柱は当たりもその形（今は AABB）
+- [ ] `Prop` にテクスチャ（`texture_from_fn` / `load`）。親子は最小（1 段）
+- [ ] glTF を Prop として置く（`stage()` の会場用ロードとは別。部品）
+- [ ] ゲームパッド（README の「まだ無い」）
+
+### 体（three-vrm の残り。薄い）
+
+体はもう厚い。足すのは「複数」と「レイヤ」だけ。
+
+- [ ] アバター 2 体のフレーム時間を測って README に書く（バス係数 1 のまま）
+- [ ] ダンスの上に手だけ（VRMA + `ActionController` のレイヤ）
+- [ ] 表情プリセットの一覧を `ActionController.names()` と同じ場所に
+
+### 頭脳（楔 A の欠落）
+
+- [ ] `kagra.brain` — Ollama / OpenAI 互換 / kairi を 1 面で切替。コアにモデルを入れない
+- [ ] `docs/recipes/ai-brain.md` + `examples/vrm_kairi_chat.py`（または ollama 相当）
+- [ ] 棚の `AiCharacter` は Front に上げない。新しい面に寄せてから畳む
+
+### ドキュメント
+
+- [x] API 索引を Front / Shelf に分割
+- [ ] `KAGRA_ENGINE_GUIDE.md` を履歴扱い（冒頭で現行を指す）。中身は増やさない
+- [x] 全体レビュー `docs/REVIEW.ja.md`
 
 ## Stage 1 — 楔の同時検証（2 週間 × 最大 2 サイクル）
 
@@ -127,9 +169,13 @@ three.js が当たり前にやっていることを一段ずつ足す。
 - [x] D-5 独立エージェントの 3 本目: 「降ってくる箱を避ける」
       → `examples/vrm_dodge_room.py` +
       `docs/agent-runs/20260823-dodge-room/`（Claude。Cursor/Grok ではない）
+- [ ] D-6 4本目は `Prop` / `Walk` / `sky` だけで書かせる。箱 API 直書きを推奨しない。
+      ホバーか一人称が入ってから投げる（能力トラックの部屋が 2 個以上 [x] になってから）
 
 **判定**: 2 週間で「動いた」報告 3 件以上の楔が勝ち。全滅なら機能ではなく
 **切り口の言葉**を変えて 1 回だけ再試行。全滅 × 2 サイクルで Stage 6 へ。
+
+楔 A を投げる前に頭脳面を 1 本作る。無い状態で「15 行で喋る」は嘘になる。
 
 ## Stage 2 — 勝者をコード不要の完成品に
 
@@ -202,14 +248,17 @@ Rust コアという堀はどの道でもそのまま資産になる。
 ## やらないこと
 
 - 汎用 2D エンジンとして pygame / pyxel の土俵で競わない
+- 2D の `Entity` / tilemap / Tk エディタ / boids を Front に戻さない
 - Live2D 対応(Open-LLM-VTuber の土俵に上がらない)
 - Web レンダラで three-vrm と直接対決しない（ブラウザデモは Stage 5 の裾野施策のみ）
 - torch / 重量級モデルをコア依存に入れない（5MB が最大の武器）
 - text-to-vrma / Irodori-TTS のベンダリング（レシピで繋ぐ）
 - kagra-core と kagra-shared のレンダラ統合
+- Rapier / 地形 / ボクセル（キャラコンで足りるうちは入れない）
 - YouTube / Twitch の API キーをコアやログに置くこと
 - 比較表で競合を貶すこと
 - デモへの高解像度テクスチャ / アセット同梱（絵作りはプロシージャル + ライトで）
+- `KAGRA_ENGINE_GUIDE.md` を現行仕様として増やす（履歴。現行は README と API 索引）
 
 ## 決めごと
 
@@ -219,4 +268,5 @@ Rust コアという堀はどの道でもそのまま資産になる。
 - **無人配信**: Stage 3 のセーフティが済むまで公開しない
 - **API キー**: 環境変数のみ
 - **投稿の締め**: 毎回同じ 2 行（`pip install kagra` / `python -m kagra`）
-- **正直さ**: 「◯◯はまだ無い」リストを README に残す。盛らない
+- **正直さ**: 「◯◯はまだ無い」リストを README に残す。盛らない。
+  無いクラスをロードマップで完了にしない

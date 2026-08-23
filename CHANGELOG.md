@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Engine review + roadmap refresh (`docs/REVIEW.ja.md`, `docs/ROADMAP.ja.md`):
+  three-vrm-class body vs three.js picture vs Ursina play surface. Stage 0
+  no longer claims `KairiBrain` is done. `KAGRA_ENGINE_GUIDE.md` is marked
+  historical.
 - Ursina-shaped play surface: `Prop` (box / sphere / cylinder / plane),
   `Walk` (WASD + mouse look), `sky()`, `solid_tex`, `sphere_mesh`,
   `cylinder_mesh`. Not the 2D `Entity`. Demo: `examples/vrm_prop_garden.py`

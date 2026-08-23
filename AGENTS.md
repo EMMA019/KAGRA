@@ -74,4 +74,6 @@ The API index front is VRM / 3D / agents; the shelf is legacy 2D.
 
 - `docs/AGENT.md` — contracts table, CI-parity commands, Cargo.lock policy
 - `docs/API_INDEX.md` — the searchable public API
+- `docs/REVIEW.ja.md` — engine review vs three.js / three-vrm / Ursina
+- `docs/ROADMAP.ja.md` — demand wedges + capability tracks
 - `docs/schemas/input_events.json` — touch / pointer input schema
