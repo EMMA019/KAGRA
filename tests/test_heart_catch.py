@@ -60,11 +60,11 @@ def test_game_file_uses_only_public_imports():
         "_perspective_wgpu",
         "_send_bone_rot",
         "_euler_to_quat",
-        "ActionController",
     ):
         assert name not in text, name
     for name in (
         "ensure_vrm",
+        "ActionController",
         "texture_from_fn",
         "set_position",
         "set_yaw",

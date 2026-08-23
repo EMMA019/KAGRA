@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Agent surface (wedge D-3): `ActionController` is a public export with
+  `names()`. API index notes 2D vs 3D `world_to_screen`, `save_json` vs
+  `load_data`, and `ensure_vrm()`. Recipe `docs/recipes/agent-game.md`.
 - Agent-built game log (wedge D-2): `examples/vrm_heart_catch.py` from the
   one-line prompt in `docs/agent-runs/20260823-heart-catch/`. Orb Rush
   smoke JSON now points at the real example (`KAGRA_SMOKE=1`).

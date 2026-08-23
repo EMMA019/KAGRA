@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **356**
+エントリ数: **357**
 
 ## Functions
 
@@ -198,6 +198,7 @@
 | Name | Note |
 |---|---|
 | `AABB` | `class AABB  (from kagra.physics3d)` (class) |
+| `ActionController` | `class ActionController  (from kagra.vrm_action)` (class) |
 | `AiCharacter` | `class AiCharacter  (from kagra.ai_character)` (class) |
 | `AnimationClip` | `class AnimationClip  (from kagra.skeleton)` (class) |
 | `AnimationTrack` | `class AnimationTrack  (from kagra.skeleton)` (class) |
@@ -373,5 +374,9 @@
 ## Agent notes
 
 - 存在しない API を呼ばないこと。ここに無い名前は未公開か内部用です。
+- `world_to_screen(wx, wy)` は **2D**。3D は `Camera3D.world_to_screen(wx, wy, wz)`。
+- セーブは `save_json` / `load_json`。`load_data` はアセットレジストリ。
+- VRM が checkout に無いときは `ensure_vrm()`。パスを直書きしない。
+- ワンショットポーズは `ActionController`（`ActionController.names()`）。
 - Rust バインディングの整合は `tests/test_api_bindings.py` も参照。
 - 再生成: `python tools/gen_api_index.py`

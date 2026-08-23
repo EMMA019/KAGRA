@@ -1,0 +1,53 @@
+# Let an agent build a KAGRA game / エージェントにゲームを作らせる
+
+English first. 日本語は後半。
+
+KAGRA's loop is: search the API → write a scene → verify headlessly.
+Rules live in [`AGENTS.md`](../../AGENTS.md). Logged runs live in
+[`docs/agent-runs/`](../agent-runs/README.md).
+
+## One-line prompt
+
+```
+Using KAGRA, make a short game where a VRM walks three lanes
+and catches hearts flying in from the distance. Public APIs only.
+Verify with python -m kagra.verify.
+```
+
+Reference result of that prompt: `examples/vrm_heart_catch.py`
+(log: `docs/agent-runs/20260823-heart-catch/`).
+
+## APIs agents actually need
+
+| Job | Call |
+|---|---|
+| VRM | `kagra.ensure_vrm()` then `kagra.avatar(path)` |
+| Move | `avatar.set_position(x, y, z)` / `avatar.set_yaw(rad)` after `avatar.update(dt)` |
+| 3D → HUD | `cam.world_to_screen(x, y, z)` — not the 2D `kagra.world_to_screen` |
+| Art / SE | `kagra.texture_from_fn` / `kagra.tone` / `kagra.draw_billboard` |
+| Score | `kagra.save_json` / `kagra.load_json` |
+| One-shot pose | `ActionController(avatar)` then `action.play("clap")` — `ActionController.names()` |
+
+## Close the loop
+
+```bash
+python -m kagra.verify examples/verify_scenarios/heart_catch_smoke.json
+python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json
+```
+
+Save the prompt, the stumbles, and the verify output under
+`docs/agent-runs/YYYYMMDD-<slug>/`.
+
+---
+
+# 日本語
+
+一行で渡す:
+
+```
+KAGRA で、VRM が3レーンを左右に歩いて、奥から飛んでくるハートを
+キャッチする短いゲームを作って。公開 API だけ。verify で閉じて。
+```
+
+参照実装とログは上と同じ。3D の投影は `Camera3D.world_to_screen`、
+セーブは `save_json`（`load_data` はアセット用）、VRM は `ensure_vrm()`。

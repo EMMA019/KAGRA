@@ -108,7 +108,7 @@ KAGRA の開発ループは人間だけでなく AI コーディングエージ�
 - **VOICEVOX / Irodori-TTS** — 同梱しない。VOICEVOX は [docs/recipes/voicevox.md](docs/recipes/voicevox.md)
 - 曲 WAV と `.vrma` はホイールに入れない（約 5MB の売りを守る）。サンプル VRM は初回ダウンロード
 
-レシピ: [自分の VRM](docs/recipes/own-vrm.md) · [ダンス / VRMA](docs/recipes/motion.md) · [VOICEVOX](docs/recipes/voicevox.md) · [OBS / 配信](docs/recipes/stream.md) · [マスコット](docs/recipes/mascot.md)。
+レシピ: [自分の VRM](docs/recipes/own-vrm.md) · [ダンス / VRMA](docs/recipes/motion.md) · [VOICEVOX](docs/recipes/voicevox.md) · [OBS / 配信](docs/recipes/stream.md) · [マスコット](docs/recipes/mascot.md) · [エージェントゲーム](docs/recipes/agent-game.md)。
 
 リリース手順は [docs/PUBLISHING.md](docs/PUBLISHING.md)。
 

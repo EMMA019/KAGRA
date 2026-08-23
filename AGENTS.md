@@ -59,6 +59,7 @@ PNG/WAV/projection:
 - `avatar.set_position` / `avatar.set_yaw` — move a VRM in the arena
 - `kagra.billboard_mesh` / `disk_mesh` / `quad_y_mesh` — 3D sprites / floor
 - `kagra.save_json` / `load_json` — high scores
+- `ActionController` — one-shot poses; `ActionController.names()` lists them
 
 Verify: `examples/verify_scenarios/orb_rush_smoke.json` and
 `examples/verify_scenarios/heart_catch_smoke.json`.

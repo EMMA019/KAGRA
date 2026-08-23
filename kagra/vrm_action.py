@@ -220,12 +220,18 @@ class ActionController:
 
     Example::
         action = ActionController(avatar)
+        print(ActionController.names())  # banzai, nod, clap, ...
         action.play("banzai")
 
         def update(dt):
             avatar.update(dt)
             action.update(dt)  # ← avatar.update() の後に呼ぶ
     """
+
+    @staticmethod
+    def names() -> list[str]:
+        """組み込みアクション名。"""
+        return list(_ACTIONS)
 
     def __init__(self, avatar: "VrmAvatar"):
         self._avatar = avatar
