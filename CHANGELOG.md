@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- First-person `Walk(first_person=True)` (`Camera3D.look`, mouse pitch) and
+  `hovered_prop(cam)` (skips floor `plane`). Prop Garden: F toggles view.
 - Engine review + roadmap refresh (`docs/REVIEW.ja.md`, `docs/ROADMAP.ja.md`):
   three-vrm-class body vs three.js picture vs Ursina play surface. Stage 0
   no longer claims `KairiBrain` is done. `KAGRA_ENGINE_GUIDE.md` is marked

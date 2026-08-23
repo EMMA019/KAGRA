@@ -98,6 +98,17 @@ def test_follow_snaps_behind_target():
     assert cam.target[1] == 1.0
 
 
+def test_look_clears_orbit_and_sets_eye():
+    m = _cam()
+    cam = m.Camera3D(800, 600)
+    cam.use_orbit(radius=3.0)
+    cam.look(0.0, 1.55, 0.0, 0.0, 1.55, 1.0)
+    assert cam._orbit is False
+    assert cam._follow is False
+    assert cam.position == (0.0, 1.55, 0.0)
+    assert cam.target == (0.0, 1.55, 1.0)
+
+
 def test_follow_lerps_toward_target():
     m = _cam()
     cam = m.Camera3D(800, 600)

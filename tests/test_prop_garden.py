@@ -44,6 +44,7 @@ def test_game_file_uses_only_public_imports():
         "ensure_vrm",
         "Prop",
         "Walk",
+        "hovered_prop",
         "sky",
         "World3D",
         "Camera3D",

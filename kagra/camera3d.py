@@ -261,6 +261,22 @@ class Camera3D:
             oz + (tz - oz) * t,
         )
 
+    def look(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        tx: float,
+        ty: float,
+        tz: float,
+    ):
+        """位置と注視点を直接置く。orbit / showcase / follow は切る。"""
+        self._orbit = False
+        self._showcase = False
+        self._follow = False
+        self.position = (float(x), float(y), float(z))
+        self.target = (float(tx), float(ty), float(tz))
+
     def orbit_by(self, d_theta: float, d_phi: float):
         self.orbit_th  += d_theta
         self.orbit_phi  = max(-1.4, min(1.4, self.orbit_phi + d_phi))

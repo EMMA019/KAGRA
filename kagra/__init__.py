@@ -863,6 +863,28 @@ def sky(*, radius: float = 18.0, look: bool = True):
     return _fn(radius=radius, look=look)
 
 
+def hovered_prop(cam=None, sx: float | None = None, sy: float | None = None, *, max_dist: float = 80.0):
+    """画面上の点から当たった ``Prop``。``cam`` 省略時は ``get_camera3d()``。
+
+    ``sx`` / ``sy`` を省略するとマウス位置。床の ``plane`` は除外。
+    レイ計算は ``Camera3D.ray_from_screen``。エンジン無しのテストは
+    ``kagra.play.hovered_prop(ox, oy, oz, dx, dy, dz)``。
+    """
+    from kagra.play import hovered_prop as _pick
+
+    if cam is None:
+        cam = get_camera3d()
+    if cam is None:
+        return None
+    if sx is None or sy is None:
+        sx, sy = mouse_pos()
+    ray = cam.ray_from_screen(float(sx), float(sy))
+    if ray is None:
+        return None
+    (ox, oy, oz), (dx, dy, dz) = ray
+    return _pick(ox, oy, oz, dx, dy, dz, max_dist=float(max_dist))
+
+
 def draw_billboard(tex: int, x: float, y: float, z: float, size: float, camera=None, *, yaw: float | None = None):
     """3D 空間にカメラ向きのスプライトを置く。"""
     verts, idx = billboard_mesh(x, y, z, size, camera, yaw=yaw)
@@ -1821,7 +1843,7 @@ from kagra.anim_io       import (
 from kagra.physics       import BoxCollider, Rigidbody, PhysicsSystem, TopDownPhysicsSystem
 from kagra.physics3d     import Physics3D, RigidBody3D, AABB
 from kagra.world3d       import World3D
-from kagra.play          import Prop, Walk
+from kagra.play          import Prop, Walk  # hovered_prop is the wrapper above
 from kagra.instances     import InstanceBatch
 from kagra.bgm_sync      import BgmSync, BgmCue, RhythmJudge, LiveScore
 from kagra.vrm_loader    import VrmModel

@@ -106,7 +106,7 @@ Honesty list. These are missing on purpose, not forgotten:
 - **NDI / RTMP** — OBS window capture still works; virtual cam is the extra
 - **Autopilot / unattended safety** — not in 0.1.3
 - **Official LLM brain hook** — `AiCharacter` exists; `KairiBrain` / Ollama one-liner is not shipped
-- **HDRI / point lights / first-person Walk** — hemisphere + third-person `Walk` only
+- **HDRI / point lights** — hemisphere ambient only. `Walk(first_person=True)` is in.
 - **VOICEVOX / Irodori-TTS** — not bundled. VOICEVOX recipe: [docs/recipes/voicevox.md](docs/recipes/voicevox.md)
 - Song WAV and `.vrma` stay out of the wheel (~5MB install). First run downloads the sample VRM
 

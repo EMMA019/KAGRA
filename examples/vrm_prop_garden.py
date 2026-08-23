@@ -5,7 +5,8 @@ Prop / Walk / sky / World3D / Camera3D.follow / ensure_vrm.
 
 操作:
   WASD / 矢印 : 歩く
-  マウス左右   : 視点
+  マウス       : 視点（一人称は上下も）
+  F           : 一人称 / 三人称
   ESC         : 終了
 
 スモーク: KAGRA_SMOKE=1 python examples/vrm_prop_garden.py
@@ -50,6 +51,7 @@ class PropGarden(kagra.Scene):
         self.walk = kagra.Walk(self.world, self.cam, speed=PLAYER_SPEED)
         self.found = False
         self.hi = int((kagra.load_json("prop_garden") or {}).get("found") or 0)
+        self.look = None
 
     def update(self, dt):
         dt = min(dt, 0.05)
@@ -66,7 +68,11 @@ class PropGarden(kagra.Scene):
                 kagra.quit()
                 return
 
+        if kagra.pressed("F") and not SMOKE:
+            self.walk.first_person = not self.walk.first_person
+            self.avatar.first_person = self.walk.first_person
         self.walk.step(dt)
+        self.look = kagra.hovered_prop(self.cam)
         p = self.world.player
         moving = False
         if p is not None:
@@ -95,10 +101,14 @@ class PropGarden(kagra.Scene):
         kagra.Prop.draw_all()
         kagra.draw_vrm(self.avatar.vrm_id)
         kagra.draw_vignette()
-        kagra.fill(0, 0, 360, 88, (8, 10, 18), 170)
+        kagra.fill(0, 0, 380, 110, (8, 10, 18), 170)
         kagra.text("Prop Garden", 18, 14, 26, (230, 220, 160))
         hint = "gold sphere — found" if self.found else "WASD  walk to the gold sphere"
         kagra.text(hint, 18, 50, 18, (160, 255, 190) if self.found else (190, 200, 220))
+        mode = "first person  F" if self.walk.first_person else "third person  F"
+        kagra.text(mode, 18, 72, 16, (160, 170, 190))
+        if self.look is not None:
+            kagra.text(self.look.model, 18, 92, 18, self.look.color)
         hit = self.cam.world_to_screen(GOLD_XZ[0], 1.1, GOLD_XZ[1])
         if hit and not self.found:
             kagra.text("GOLD", hit[0] - 28, hit[1] - 18, 16, (255, 220, 90))
