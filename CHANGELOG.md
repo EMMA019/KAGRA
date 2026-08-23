@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Agent-built game log (wedge D-2): `examples/vrm_heart_catch.py` from the
+  one-line prompt in `docs/agent-runs/20260823-heart-catch/`. Orb Rush
+  smoke JSON now points at the real example (`KAGRA_SMOKE=1`).
 - Game surface for agents (wedge D-1): `Camera3D.world_to_screen`,
   `VrmAvatar.set_position` / `set_yaw`, `texture_from_fn`, `tone`,
   `billboard_mesh` / `disk_mesh` / `quad_y_mesh`, `save_json` / `load_json`.

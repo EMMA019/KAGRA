@@ -137,6 +137,7 @@ python examples/vrm_stream.py            # OBS / JSONL chat
 python examples/2Daction.py              # no assets needed
 python examples/3Dmaze.py                # drop a .vrm in assets/ to see it
 python examples/vrm_orb_rush.py
+python examples/vrm_heart_catch.py       # 3-lane catch (agent-run log in docs/agent-runs/)
 ```
 
 ## Agent / from source

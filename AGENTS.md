@@ -60,7 +60,9 @@ PNG/WAV/projection:
 - `kagra.billboard_mesh` / `disk_mesh` / `quad_y_mesh` — 3D sprites / floor
 - `kagra.save_json` / `load_json` — high scores
 
-Verify: `examples/verify_scenarios/orb_rush_smoke.json`.
+Verify: `examples/verify_scenarios/orb_rush_smoke.json` and
+`examples/verify_scenarios/heart_catch_smoke.json`.
+A logged build lives in `docs/agent-runs/20260823-heart-catch/`.
 
 ## More context
 

@@ -81,8 +81,10 @@ JS における three-vrm のポジションの Python 版。
 - [x] D-1 参照実装の公開 API 化: Orb Rush から `_` 付き import を削除。
       `world_to_screen` / `set_position` / `set_yaw` / `texture_from_fn` /
       `tone` / ビルボード・床メッシュ / `save_json`
-- [ ] D-2 初回実証（ログ込み）: まっさらなエージェントに一行プロンプトで
-      ゲームを作らせ、`docs/agent-runs/` に残す
+- [x] D-2 初回実証（ログ込み）: 一行プロンプト
+      「3レーンでハートをキャッチ」→ `examples/vrm_heart_catch.py` +
+      `docs/agent-runs/20260823-heart-catch/`。GPU verify はこの環境では
+      `kagra_core` 未ビルドのため未実行（シナリオは置いた）
 
 **判定**: 2 週間で「動いた」報告 3 件以上の楔が勝ち。全滅なら機能ではなく
 **切り口の言葉**を変えて 1 回だけ再試行。全滅 × 2 サイクルで Stage 6 へ。
