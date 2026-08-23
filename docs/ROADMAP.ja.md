@@ -47,7 +47,7 @@ JS における three-vrm のポジションの Python 版。
 
 **弱み（正直リスト）**: 影は 1 本の平行光（カスケード無し）、IBL は半球まで
 （HDRI キューブは無い）、汎用メッシュは PBR ではない、ポストは bloom / vignette、
-ゲームパッドはまだ、複数アバターは未計測、
+複数アバターは未計測、
 頭脳の公式面（`KairiBrain` / `docs/recipes/ai-brain.md`）はロードマップだけ完了で
 **リポジトリに無い**、`KAGRA_ENGINE_GUIDE.md` は Phase 6 の履歴。
 
@@ -114,7 +114,9 @@ three.js / Ursina が当たり前にやっていることを、楔が詰む順�
 - [x] glTF を Prop として置く（`stage()` の会場用ロードとは別。部品）。
       `Prop("crate.glb")`。静的メッシュに畳んでインスタンス描画。当たりは AABB。
       同梱 `cube.glb`。Prop Garden 非スモークで置く
-- [ ] ゲームパッド（README の「まだ無い」）
+- [x] ゲームパッド API。`axis` / `pad` / `inject_pad`。`Walk` は左スティック移動・
+      右スティック視点。テストは inject。USB/XInput ポーリングはまだ。
+      Prop Garden: Start / A
 
 ### 体（three-vrm の残り。薄い）
 

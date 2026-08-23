@@ -49,7 +49,8 @@ Result: `examples/vrm_dodge_room.py`
 | 3D → HUD | `cam.world_to_screen(x, y, z)` — not the 2D `kagra.world_to_screen` |
 | World | `World3D` (floor + boxes) then `Camera3D.follow` |
 | Short 3D | `Prop` + `Walk` + `sky()` — not 2D `Entity`. See `examples/vrm_prop_garden.py` |
-| First person | `Walk(..., first_person=True)` — eye height. Prop Garden: `F` |
+| First person | `Walk(..., first_person=True)` — eye height. Prop Garden: `F` / Start |
+| Gamepad | `axis("left")` / `pad("a")` / `inject_pad`. `Walk` uses both sticks |
 | Hover | `hovered_prop(cam)` — not the 2D `mouse`. Floor `plane` is skipped |
 | Move / delete | `prop.x = …` or `vx` + `Prop.update_all(dt)`. `destroy(prop)` / `prop.enabled` |
 | Texture / parent | `Prop(..., texture=kagra.texture_from_fn(...))` or `kagra.load`. 1-level `set_parent` / `parent=` (no grandchildren). Child `x,y,z,yaw` are local |
@@ -92,6 +93,7 @@ KAGRA で、VRM が3レーンを左右に歩いて、奥から飛んでくるハ
 短い 3D は `Prop` + `Walk` + `sky()`（`examples/vrm_prop_garden.py`。
 これは play-surface デモで、エージェント製ログではない）。
 一人称は `Walk(..., first_person=True)`。ホバーは `hovered_prop(cam)`。
+パッドは `axis("left")` / `pad("a")`。テストは `inject_pad`。
 動かすのは `p.x` か `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)`。
 テクスチャは `texture=kagra.texture_from_fn(...)`（または `load`）。
 親子は 1 段（`set_parent` / コンストラクタの `parent=`。孫は不可）。
