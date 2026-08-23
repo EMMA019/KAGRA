@@ -94,7 +94,7 @@ KAGRA's development loop is designed for AI coding agents, not just humans. An a
 - **Headless verify** — `python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json` closes the loop in CI or a subprocess
 - **MCP server** — `tools/mcp_kagra/server.py`: `kagra_api_search` / `kagra_env` / `kagra_resolve_asset` / `kagra_verify` / `kagra_render`
 
-`examples/vrm_orb_rush.py` is the reference game (public APIs only): `texture_from_fn`, `tone`, `Camera3D.world_to_screen`, `avatar.set_position` / `set_yaw`, `billboard_mesh`, `save_json`. Agent build sessions go under [`docs/agent-runs/`](docs/agent-runs/README.md).
+`examples/vrm_orb_rush.py` is the reference game (public APIs only). The second agent-built game is `examples/vrm_switch_room.py` (floor + boxes, retained meshes, camera follow — log in [`docs/agent-runs/`](docs/agent-runs/README.md)).
 
 ## Not yet
 
@@ -125,20 +125,21 @@ Everything else in [`docs/API_INDEX.md`](docs/API_INDEX.md) is available but may
 - **VRM** — GPU skinning, SpringBone, MToon, look-at, lipsync, IK, expressions
 - **2D / 3D** — tilemaps, ECS, simple physics, orbit camera, fog, shadows
 - **Agent loop** — API index, `kagra.verify`, MCP tools, golden renders
-- **Mobile / Wasm** — experimental `kagra-shared` runtime (see `mobile/README.md`). Python games stay on desktop for now.
+- **Mobile / Wasm** — `kagra-shared` + `mobile/` is a **separate driving demo** (roads, truck, OSM). It is not the Python VRM / game stack. Do not merge the two renderers.
 
 ## Samples
 
 ```bash
 python -m kagra                          # sing & dance
 python -m kagra --loop --stream          # HUD + virtual cam (needs kagra[stream])
+python examples/vrm_orb_rush.py          # reference game
+python examples/vrm_heart_catch.py       # 3-lane catch (agent-run log)
+python examples/vrm_switch_room.py       # boxed room, camera follow
 python examples/vrm_vrma.py              # .vrma (or a generated wave)
 python examples/vrm_stream.py            # OBS / JSONL chat
-python examples/2Daction.py              # no assets needed
-python examples/3Dmaze.py                # drop a .vrm in assets/ to see it
-python examples/vrm_orb_rush.py
-python examples/vrm_heart_catch.py       # 3-lane catch (agent-run log in docs/agent-runs/)
 ```
+
+Legacy 2D / tilemap / editor demos: [`examples/archive/`](examples/archive/).
 
 ## Agent / from source
 

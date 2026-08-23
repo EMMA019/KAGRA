@@ -17,6 +17,17 @@ Verify with python -m kagra.verify.
 Reference result of that prompt: `examples/vrm_heart_catch.py`
 (log: `docs/agent-runs/20260823-heart-catch/`).
 
+A second, world-shaped prompt:
+
+```
+Using KAGRA, make a short 3D game where a VRM walks a room of boxes
+and steps on a floor switch. Camera follows. Public APIs only.
+Verify with python -m kagra.verify.
+```
+
+Result: `examples/vrm_switch_room.py`
+(log: `docs/agent-runs/20260823-switch-room/`).
+
 ## APIs agents actually need
 
 | Job | Call |
@@ -24,6 +35,8 @@ Reference result of that prompt: `examples/vrm_heart_catch.py`
 | VRM | `kagra.ensure_vrm()` then `kagra.avatar(path)` |
 | Move | `avatar.set_position(x, y, z)` / `avatar.set_yaw(rad)` after `avatar.update(dt)` |
 | 3D → HUD | `cam.world_to_screen(x, y, z)` — not the 2D `kagra.world_to_screen` |
+| World | `World3D` (floor + boxes) then `Camera3D.follow` |
+| Mesh retain | `upload_mesh_3d` once, `draw_mesh_id` each frame — or `world.bake` / `world.draw` |
 | Art / SE | `kagra.texture_from_fn` / `kagra.tone` / `kagra.draw_billboard` |
 | Score | `kagra.save_json` / `kagra.load_json` |
 | One-shot pose | `ActionController(avatar)` then `action.play("clap")` — `ActionController.names()` |
@@ -33,6 +46,7 @@ Reference result of that prompt: `examples/vrm_heart_catch.py`
 ```bash
 python -m kagra.verify examples/verify_scenarios/heart_catch_smoke.json
 python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json
+python -m kagra.verify examples/verify_scenarios/switch_room_smoke.json
 ```
 
 Save the prompt, the stumbles, and the verify output under
@@ -51,3 +65,5 @@ KAGRA で、VRM が3レーンを左右に歩いて、奥から飛んでくるハ
 
 参照実装とログは上と同じ。3D の投影は `Camera3D.world_to_screen`、
 セーブは `save_json`（`load_data` はアセット用）、VRM は `ensure_vrm()`。
+箱のある部屋は `World3D` + `Camera3D.follow`。静的メッシュは
+`upload_mesh_3d` / `draw_mesh_id`。

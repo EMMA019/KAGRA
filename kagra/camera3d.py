@@ -135,11 +135,13 @@ class Camera3D:
         self._showcase = False
         self._show: dict = {}
         self._show_t = 0.0
+        self._follow = False
 
     def use_orbit(self, radius=3.0, theta=0.0, phi=0.2,
                   target=(0.0, 0.9, 0.0)):
         self._orbit    = True
         self._showcase = False
+        self._follow   = False
         self.orbit_r   = radius
         self.orbit_th  = theta
         self.orbit_phi = phi
@@ -166,6 +168,7 @@ class Camera3D:
         """
         self._showcase = True
         self._orbit = True
+        self._follow = False
         self._show_t = 0.0
         self._show = {
             "body_radius": float(body_radius),
@@ -213,6 +216,50 @@ class Camera3D:
         self.orbit_tgt = (tx, p["target_y"], tz)
         self.fov_deg = p["fov"]
         return u
+
+    def follow(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        *,
+        distance: float = 4.8,
+        height: float = 2.4,
+        look_y: float = 1.0,
+        lerp: float = 0.18,
+        yaw: float = 0.0,
+    ):
+        """ワールド上の点を追うチェイスカメラ。orbit / showcase は切る。
+
+        ``yaw`` はプレイヤーの向き（``atan2(dx, dz)``）。カメラは後ろ上。
+        ``lerp=1`` で瞬間移動。毎フレーム呼んでから ``update(engine)``。
+        """
+        self._orbit = False
+        self._showcase = False
+        self._follow = True
+        tx = float(x)
+        ty = float(y) + float(look_y)
+        tz = float(z)
+        bx = float(x) - math.sin(float(yaw)) * float(distance)
+        bz = float(z) - math.cos(float(yaw)) * float(distance)
+        by = float(y) + float(height)
+        t = max(0.0, min(1.0, float(lerp)))
+        if t >= 1.0:
+            self.position = (bx, by, bz)
+            self.target = (tx, ty, tz)
+            return
+        px, py, pz = self.position
+        ox, oy, oz = self.target
+        self.position = (
+            px + (bx - px) * t,
+            py + (by - py) * t,
+            pz + (bz - pz) * t,
+        )
+        self.target = (
+            ox + (tx - ox) * t,
+            oy + (ty - oy) * t,
+            oz + (tz - oz) * t,
+        )
 
     def orbit_by(self, d_theta: float, d_phi: float):
         self.orbit_th  += d_theta

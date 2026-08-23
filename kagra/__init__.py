@@ -732,6 +732,27 @@ def draw_mesh_3d(texture_id: int, verts: list, indices: list):
     _check(); _engine.draw_mesh_3d(texture_id, verts, indices)
 
 
+def upload_mesh_3d(texture_id: int, verts: list, indices: list) -> int:
+    """3D メッシュを GPU に一度載せる。毎フレームは ``draw_mesh_id``。
+
+    ``verts`` は ``[x,y,z,nx,ny,nz,u,v]``。0 は失敗。
+    """
+    _check()
+    return int(_engine.upload_mesh_3d(texture_id, verts, indices))
+
+
+def draw_mesh_id(mesh_id: int):
+    """``upload_mesh_3d`` で載せたメッシュを描く。"""
+    _check()
+    _engine.draw_mesh_id(int(mesh_id))
+
+
+def unload_mesh_3d(mesh_id: int):
+    """保持メッシュを解放する。"""
+    _check()
+    _engine.unload_mesh_3d(int(mesh_id))
+
+
 def texture_from_fn(width: int, height: int, pixel_fn, *, name: str | None = None) -> int:
     """手続きテクスチャ。``pixel_fn(x, y) -> (r,g,b) or (r,g,b,a)``。
 
@@ -769,6 +790,12 @@ def quad_y_mesh(cx: float, cy: float, cz: float, size: float):
     """Y 上向き正方形（半辺 ``size``）の ``(verts, indices)``。"""
     from kagra.gamekit import quad_y_mesh as _fn
     return _fn(cx, cy, cz, size)
+
+
+def box_mesh(cx: float, cy: float, cz: float, w: float, h: float, d: float):
+    """軸平行の箱の ``(verts, indices)``。``cy`` は中心。"""
+    from kagra.gamekit import box_mesh as _fn
+    return _fn(cx, cy, cz, w, h, d)
 
 
 def draw_billboard(tex: int, x: float, y: float, z: float, size: float, camera=None, *, yaw: float | None = None):
@@ -1702,6 +1729,7 @@ from kagra.anim_io       import (
 )
 from kagra.physics       import BoxCollider, Rigidbody, PhysicsSystem, TopDownPhysicsSystem
 from kagra.physics3d     import Physics3D, RigidBody3D, AABB
+from kagra.world3d       import World3D
 from kagra.instances     import InstanceBatch
 from kagra.bgm_sync      import BgmSync, BgmCue, RhythmJudge, LiveScore
 from kagra.vrm_loader    import VrmModel

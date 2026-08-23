@@ -186,3 +186,49 @@ def quad_y_mesh(cx: float, cy: float, cz: float, size: float) -> tuple[list, lis
         [cx - s, cy, cz + s, 0.0, 1.0, 0.0, 0.0, 1.0],
     ]
     return verts, [0, 1, 2, 0, 2, 3]
+
+
+def box_mesh(
+    cx: float,
+    cy: float,
+    cz: float,
+    w: float,
+    h: float,
+    d: float,
+) -> tuple[list, list]:
+    """軸平行の箱。``cy`` は中心。``verts`` は ``[x,y,z,nx,ny,nz,u,v]``。"""
+    hx, hy, hz = float(w) * 0.5, float(h) * 0.5, float(d) * 0.5
+    faces = (
+        ((0.0, 1.0, 0.0), (
+            (-hx, hy, -hz, 0.0, 0.0), (hx, hy, -hz, 1.0, 0.0),
+            (hx, hy, hz, 1.0, 1.0), (-hx, hy, hz, 0.0, 1.0),
+        )),
+        ((0.0, -1.0, 0.0), (
+            (-hx, -hy, hz, 0.0, 0.0), (hx, -hy, hz, 1.0, 0.0),
+            (hx, -hy, -hz, 1.0, 1.0), (-hx, -hy, -hz, 0.0, 1.0),
+        )),
+        ((1.0, 0.0, 0.0), (
+            (hx, -hy, -hz, 0.0, 0.0), (hx, -hy, hz, 1.0, 0.0),
+            (hx, hy, hz, 1.0, 1.0), (hx, hy, -hz, 0.0, 1.0),
+        )),
+        ((-1.0, 0.0, 0.0), (
+            (-hx, -hy, hz, 0.0, 0.0), (-hx, -hy, -hz, 1.0, 0.0),
+            (-hx, hy, -hz, 1.0, 1.0), (-hx, hy, hz, 0.0, 1.0),
+        )),
+        ((0.0, 0.0, 1.0), (
+            (-hx, -hy, hz, 0.0, 0.0), (hx, -hy, hz, 1.0, 0.0),
+            (hx, hy, hz, 1.0, 1.0), (-hx, hy, hz, 0.0, 1.0),
+        )),
+        ((0.0, 0.0, -1.0), (
+            (hx, -hy, -hz, 0.0, 0.0), (-hx, -hy, -hz, 1.0, 0.0),
+            (-hx, hy, -hz, 1.0, 1.0), (hx, hy, -hz, 0.0, 1.0),
+        )),
+    )
+    verts: list[list[float]] = []
+    idx: list[int] = []
+    for (nx, ny, nz), corners in faces:
+        base = len(verts)
+        for dx, dy, dz, u, v in corners:
+            verts.append([cx + dx, cy + dy, cz + dz, nx, ny, nz, u, v])
+        idx += [base, base + 1, base + 2, base, base + 2, base + 3]
+    return verts, idx

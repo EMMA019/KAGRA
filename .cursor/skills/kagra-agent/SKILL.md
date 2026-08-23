@@ -34,4 +34,4 @@ python tools/mcp_kagra/server.py   # MCP stdio
 ## Touch / mobile
 
 Use `kagra.touch.VirtualPad` + `PointerEvent` (`docs/schemas/input_events.json`).
-Native shells live under `mobile/` (scaffold only).
+`kagra-shared` + `mobile/` is a separate driving demo, not the Python game stack.

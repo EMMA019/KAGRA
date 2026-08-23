@@ -1400,6 +1400,27 @@ impl Engine {
         }).collect();
         self.window.queue_mesh_3d(texture_id, cv, indices);
     }
+
+    /// 3D メッシュを GPU に一度載せる。毎フレームは ``draw_mesh_id``。
+    #[pyo3(signature = (texture_id, verts, indices))]
+    pub fn upload_mesh_3d(&self, texture_id: u32, verts: Vec<Vec<f32>>, indices: Vec<u32>) -> u32 {
+        let cv: Vec<[f32;8]> = verts.iter().map(|v| {
+            let mut a = [0f32;8];
+            for (i, val) in v.iter().enumerate().take(8) { a[i] = *val; }
+            a
+        }).collect();
+        self.window.upload_mesh_3d(texture_id, cv, indices)
+    }
+
+    #[pyo3(signature = (mesh_id))]
+    pub fn draw_mesh_id(&self, mesh_id: u32) {
+        self.window.queue_retained_mesh_3d(mesh_id);
+    }
+
+    #[pyo3(signature = (mesh_id))]
+    pub fn unload_mesh_3d(&self, mesh_id: u32) {
+        self.window.unload_mesh_3d(mesh_id);
+    }
     #[pyo3(signature = (texture_id, verts, shader_id=0u32, shader_params=None))]
     pub fn draw_mesh(&self, texture_id: u32, verts: Vec<Vec<f32>>, shader_id: u32, shader_params: Option<Vec<f32>>) {
         let params: [f32;4] = if let Some(p) = shader_params {

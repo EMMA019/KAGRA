@@ -85,3 +85,25 @@ def test_use_orbit_clears_showcase():
     assert cam._showcase is False
     cam.showcase_tick(10.0)
     assert cam.orbit_r == 3.0
+
+
+def test_follow_snaps_behind_target():
+    m = _cam()
+    cam = m.Camera3D(800, 600)
+    cam.follow(0.0, 0.0, 0.0, distance=4.0, height=2.0, look_y=1.0, lerp=1.0, yaw=0.0)
+    assert cam._orbit is False
+    assert cam._follow is True
+    assert abs(cam.position[2] - (-4.0)) < 1e-6
+    assert abs(cam.position[1] - 2.0) < 1e-6
+    assert cam.target[1] == 1.0
+
+
+def test_follow_lerps_toward_target():
+    m = _cam()
+    cam = m.Camera3D(800, 600)
+    cam.position = (0.0, 1.0, 3.0)
+    cam.target = (0.0, 1.0, 0.0)
+    before = cam.position
+    cam.follow(2.0, 0.0, -1.0, lerp=0.5, yaw=0.0)
+    assert cam.position != before
+    assert cam.position[0] != 2.0
