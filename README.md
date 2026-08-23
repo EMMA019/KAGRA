@@ -51,7 +51,7 @@ def draw():
 kagra.run(update, draw, on_ready=ready)
 ```
 
-Use your own model with `kagra.avatar("/path/to/me.vrm")` or `assets/Emma.vrm`. Use your own song with `av.sing("song.wav")`. Drop a [VRM Animation](https://vrm.dev/en/vrma/) (`.vrma`) on `av.dance("wave.vrma")` — same clip, any VRM. Clips from [text-to-vrma](https://github.com/Kirakun0328/text-to-vrma) work as-is (fingers + expressions + LookAt). Drop a Sketchfab hall the same way: `kagra.stage("venue.glb")` (or `--stage` / a PNG `--backdrop`).
+Use your own model with `kagra.avatar("/path/to/me.vrm")` or `assets/Emma.vrm`. Use your own song with `av.sing("song.wav")`. Drop Mixamo `.fbx` on `av.dance("ymca.fbx")` or `python -m kagra --dance ymca.fbx`. A [VRM Animation](https://vrm.dev/en/vrma/) (`.vrma`) is the same one-liner — same clip, any VRM. Clips from [text-to-vrma](https://github.com/Kirakun0328/text-to-vrma) work as-is (fingers + expressions + LookAt). Drop a Sketchfab hall the same way: `kagra.stage("venue.glb")` (or `--stage` / a PNG `--backdrop`).
 
 ## Install
 
@@ -94,7 +94,7 @@ KAGRA's development loop is designed for AI coding agents, not just humans. An a
 - **Headless verify** — `python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json` closes the loop in CI or a subprocess
 - **MCP server** — `tools/mcp_kagra/server.py`: `kagra_api_search` / `kagra_env` / `kagra_resolve_asset` / `kagra_verify` / `kagra_render`
 
-`examples/vrm_orb_rush.py` is the reference game (public APIs only). The second agent-built game is `examples/vrm_switch_room.py` (floor + boxes, retained meshes, camera follow — log in [`docs/agent-runs/`](docs/agent-runs/README.md)).
+`examples/vrm_orb_rush.py` is the reference game (public APIs only; no generation log). Logged agent-built games live in [`docs/agent-runs/`](docs/agent-runs/README.md): Heart Catch, Switch Room, and Dodge Room (`examples/vrm_dodge_room.py` — survive falling boxes). Dodge Room was written by a second agent from `AGENTS.md` + a one-line prompt.
 
 ## Not yet
 
@@ -135,6 +135,7 @@ python -m kagra --loop --stream          # HUD + virtual cam (needs kagra[stream
 python examples/vrm_orb_rush.py          # reference game
 python examples/vrm_heart_catch.py       # 3-lane catch (agent-run log)
 python examples/vrm_switch_room.py       # boxed room, camera follow
+python examples/vrm_dodge_room.py        # falling boxes, survive (agent-run log)
 python examples/vrm_vrma.py              # .vrma (or a generated wave)
 python examples/vrm_stream.py            # OBS / JSONL chat
 ```

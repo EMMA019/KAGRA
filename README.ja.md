@@ -51,7 +51,7 @@ def draw():
 kagra.run(update, draw, on_ready=ready)
 ```
 
-自分のモデルは `kagra.avatar("/path/to/me.vrm")` または `assets/Emma.vrm`。自分の曲は `av.sing("song.wav")`。[VRM Animation](https://vrm.dev/vrma/)（`.vrma`）は `av.dance("wave.vrma")` にそのまま渡せます。どの VRM にも載ります。[text-to-vrma](https://github.com/Kirakun0328/text-to-vrma) で作ったファイルも、指・表情・LookAt ごと再生できます。会場も同じで、`kagra.stage("venue.glb")`（または `--stage` / PNG の `--backdrop`）に Sketchfab のホールを落とすだけです。
+自分のモデルは `kagra.avatar("/path/to/me.vrm")` または `assets/Emma.vrm`。自分の曲は `av.sing("song.wav")`。Mixamo の `.fbx` は `av.dance("ymca.fbx")` か `python -m kagra --dance ymca.fbx`。[VRM Animation](https://vrm.dev/vrma/)（`.vrma`）も同じ 1 行。どの VRM にも載ります。[text-to-vrma](https://github.com/Kirakun0328/text-to-vrma) で作ったファイルも、指・表情・LookAt ごと再生できます。会場も同じで、`kagra.stage("venue.glb")`（または `--stage` / PNG の `--backdrop`）に Sketchfab のホールを落とすだけです。
 
 ## インストール
 
@@ -94,7 +94,7 @@ KAGRA の開発ループは人間だけでなく AI コーディングエージ�
 - **ヘッドレス検証** — `python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json` で目視なしにループを閉じる
 - **MCP サーバー** — `tools/mcp_kagra/server.py`: `kagra_api_search` / `kagra_env` / `kagra_resolve_asset` / `kagra_verify` / `kagra_render`
 
-`examples/vrm_orb_rush.py` が参照ゲーム（公開 API のみ）。一行プロンプトから作った実証は `examples/vrm_heart_catch.py` と、箱部屋の `examples/vrm_switch_room.py`（ログ: [`docs/agent-runs/`](docs/agent-runs/README.md)）。
+`examples/vrm_orb_rush.py` が参照ゲーム（公開 API のみ。生成ログは無い）。ログ付きのエージェント製は [`docs/agent-runs/`](docs/agent-runs/README.md) の Heart Catch、Switch Room、Dodge Room（`examples/vrm_dodge_room.py` — 降ってくる箱を避ける）。Dodge Room は別のエージェントが `AGENTS.md` と一行プロンプトから書いた。
 
 `kagra-shared` と `mobile/` は**別製品の運転デモ**（道路・トラック・OSM）であり、Python の VRM / ゲームスタックではない。レンダラは統合しない。
 
@@ -105,6 +105,7 @@ python -m kagra
 python examples/vrm_orb_rush.py
 python examples/vrm_heart_catch.py
 python examples/vrm_switch_room.py
+python examples/vrm_dodge_room.py
 ```
 
 レガシー 2D / タイルマップは [`examples/archive/`](examples/archive/)。

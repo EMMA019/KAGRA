@@ -60,3 +60,10 @@ def facing_yaw(dx: float, dz: float, fallback: float = 0.0) -> float:
     if dx * dx + dz * dz < 1e-8:
         return fallback
     return math.atan2(dx, dz)
+
+
+if __name__ == "__main__":
+    raise SystemExit(
+        "これは判定ロジックだけです。窓は開きません。\n"
+        "  python examples/vrm_switch_room.py"
+    )

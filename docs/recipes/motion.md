@@ -2,9 +2,11 @@
 
 English below. 日本語は後半。
 
-KAGRA does not vendor a motion generator. Drop a file on `dance()`.
+KAGRA does not vendor a motion generator. Drop a Mixamo `.fbx` or a
+`.vrma` on `dance()` / `--dance`.
 
 ```bash
+python -m kagra --vrm me.vrm --dance ymca.fbx
 python -m kagra --vrm me.vrm --dance wave.vrma
 ```
 
@@ -23,9 +25,11 @@ av.dance("wave.vrma")
 
 # ダンスクリップ（VRMA / FBX / BVH）
 
-モーション生成はエンジンに入れない。ファイルを `dance()` に渡す。
+モーション生成はエンジンに入れない。Mixamo の `.fbx` も `.vrma` も
+`dance()` / `--dance` に渡す。
 
 ```bash
+python -m kagra --vrm me.vrm --dance ymca.fbx
 python -m kagra --vrm me.vrm --dance wave.vrma
 ```
 

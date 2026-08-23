@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- README / samples list Dodge Room (`examples/vrm_dodge_room.py`) as the
+  third logged agent-built game (`docs/agent-runs/20260823-dodge-room/`).
+  Mixamo `.fbx` is `av.dance("clip.fbx")` / `--dance` (YMCA sleeve blow-up
+  skipped Mixamo finger axes).
+- `*_rules.py` helpers print the real launcher (`vrm_*.py`) instead of
+  exiting silently when double-clicked.
 - Repo shelf-split: recommended examples stay in `examples/`; legacy 2D /
   tilemap / editor / romance / boids moved to `examples/archive/`. API index
   now has Front (VRM / 3D / agents) vs Shelf. `kagra-shared` + `mobile/` is
