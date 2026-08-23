@@ -39,11 +39,10 @@ class PropGarden(kagra.Scene):
         self.avatar.enable_emotion()
         self.action = kagra.ActionController(self.avatar)
         self.world = kagra.World3D(half=7.0)
-        self.world.add_floor()
         self.world.add_player(*START_XZ)
+        kagra.Prop("plane", x=0, y=0, z=0, scale=14.0, color="gray", collision=False)
         for model, x, y, z, scale, color in PROPS:
             kagra.Prop(model, x=x, y=y, z=z, scale=scale, color=color, world=self.world)
-        self.world.bake(kagra.solid_tex("gray"), kagra.solid_tex("white"))
         kagra.Prop.bake_all()
         self.cam = Camera3D(SW, SH, fov_deg=42.0)
         self.cam.follow(START_XZ[0], 0.0, START_XZ[1], lerp=1.0, yaw=0.0)

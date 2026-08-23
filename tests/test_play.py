@@ -51,6 +51,18 @@ def test_prop_records_center_xform():
     assert play.Prop._all == []
 
 
+def test_prop_world_verts_match_instance_scale():
+    p = play.Prop("box", x=1.0, y=2.0, z=3.0, scale=2.0, collision=False)
+    verts, _ = play._unit_mesh("box")
+    world = p.world_verts(verts)
+    xs = [v[0] for v in world]
+    ys = [v[1] for v in world]
+    assert min(xs) == pytest.approx(0.0)
+    assert max(xs) == pytest.approx(2.0)
+    assert min(ys) == pytest.approx(1.0)
+    assert max(ys) == pytest.approx(3.0)
+
+
 def test_prop_bake_without_engine_is_zero():
     p = play.Prop("sphere", color="gold", collision=False)
     assert p.bake() == 0

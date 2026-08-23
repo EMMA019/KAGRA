@@ -96,7 +96,10 @@ def sky(*, radius: float = 18.0, look: bool = True):
     from kagra.look import apply_live_look, load_default_sky
 
     if look and _sky_cache is None:
-        apply_live_look()
+        try:
+            apply_live_look()
+        except Exception:
+            pass
     if _sky_cache is None:
         _sky_cache = load_default_sky(radius=radius)
     tex, verts, idx = _sky_cache
@@ -152,6 +155,31 @@ class Prop:
     def instance(self) -> list[float]:
         return [self.x, self.y, self.z, self.sx, self.sy, self.sz, self.yaw]
 
+    def world_verts(self, verts) -> list[list[float]]:
+        """単位メッシュを位置・スケール・ yaw で変形する（``draw_mesh_instances`` と同じ）。"""
+        c = math.cos(self.yaw)
+        s = math.sin(self.yaw)
+        out: list[list[float]] = []
+        for v in verts:
+            px, py, pz = v[0] * self.sx, v[1] * self.sy, v[2] * self.sz
+            nx, ny, nz = v[3], v[4], v[5]
+            out.append([
+                c * px + s * pz + self.x,
+                py + self.y,
+                -s * px + c * pz + self.z,
+                c * nx + s * nz,
+                ny,
+                -s * nx + c * nz,
+                v[6], v[7],
+            ])
+        return out
+
+    def _draw_immediate(self) -> None:
+        import kagra
+        tex = self.tex_id or solid_tex(self.color)
+        verts, idx = _unit_mesh(self.model)
+        kagra.draw_mesh_3d(int(tex), self.world_verts(verts), idx)
+
     def bake(self) -> int:
         """色テクスチャと単位メッシュを載せる。エンジン未初期化なら 0。"""
         try:
@@ -180,15 +208,25 @@ class Prop:
             import kagra
         except Exception:
             return
-        batches: dict[int, list[list[float]]] = {}
+        batches: dict[int, list["Prop"]] = {}
+        fallback: list[Prop] = []
         for p in cls._all:
             if not p.mesh_id:
                 p.bake()
-            if not p.mesh_id:
+            if p.mesh_id:
+                batches.setdefault(p.mesh_id, []).append(p)
+            else:
+                fallback.append(p)
+        for mid, props in batches.items():
+            try:
+                kagra.draw_mesh_instances(mid, [p.instance() for p in props])
+            except Exception:
+                fallback.extend(props)
+        for p in fallback:
+            try:
+                p._draw_immediate()
+            except Exception:
                 continue
-            batches.setdefault(p.mesh_id, []).append(p.instance())
-        for mid, inst in batches.items():
-            kagra.draw_mesh_instances(mid, inst)
 
     @classmethod
     def clear(cls) -> None:

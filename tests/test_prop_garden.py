@@ -45,7 +45,6 @@ def test_game_file_uses_only_public_imports():
         "Prop",
         "Walk",
         "sky",
-        "solid_tex",
         "World3D",
         "Camera3D",
         "follow",
