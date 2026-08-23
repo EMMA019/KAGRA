@@ -106,7 +106,7 @@ class RigidBody3D:
         self.on_ground   = False        # 地面に接触中か
         self.active      = True         # False にすると更新スキップ
 
-        # 形状: "aabb" | "capsule" | "obb"
+        # 形状: "aabb" | "capsule" | "obb" | "sphere" | "cylinder"
         # カプセルは常に Y-up。radius 未指定なら min(w, d)*0.5。
         # OBB は Y 軸回り yaw（ラジアン）だけ回る静的向き。
         self.shape = shape
@@ -128,9 +128,10 @@ class RigidBody3D:
     @property
     def aabb(self) -> AABB:
         """現在の AABB を返す（底面左前が原点）。カプセルは外接箱。"""
-        if self.shape == "capsule":
+        if self.shape in ("capsule", "sphere", "cylinder"):
             r = self.radius
-            return AABB(self.x - r, self.y, self.z - r, r * 2.0, self.h, r * 2.0)
+            h = self.radius * 2.0 if self.shape == "sphere" else self.h
+            return AABB(self.x - r, self.y, self.z - r, r * 2.0, h, r * 2.0)
         return AABB(
             self.x - self.w * 0.5,
             self.y,
@@ -139,11 +140,19 @@ class RigidBody3D:
         )
 
     def capsule_segment(self) -> tuple:
-        """Y-up カプセルの軸端点 (ax,ay,az, bx,by,bz)。"""
+        """Y-up カプセルの軸端点 (ax,ay,az, bx,by,bz)。球は中心の点。"""
         r = self.radius
+        if self.shape == "sphere":
+            cy = self.y + r
+            return (self.x, cy, self.z, self.x, cy, self.z)
         half = max(0.0, self.h * 0.5 - r)
         cy = self.y + self.h * 0.5
         return (self.x, cy - half, self.z, self.x, cy + half, self.z)
+
+    def sphere_center(self) -> tuple[float, float, float]:
+        """球の中心。``y`` は底面。"""
+        r = self.radius
+        return (self.x, self.y + r, self.z)
 
     def add_force(self, fx: float, fy: float, fz: float):
         """速度に力を加える（質量1と仮定）。"""
@@ -201,7 +210,7 @@ class Physics3D:
             is_static:  True = 壁や床など動かない物体
             restitution: 反発係数 0.0（跳ねない）〜1.0（完全弾性）
             friction:   摩擦係数
-            shape:      ``"aabb"`` / ``"capsule"`` / ``"obb"``
+            shape:      ``"aabb"`` / ``"capsule"`` / ``"obb"`` / ``"sphere"`` / ``"cylinder"``
             radius:     カプセル半径（省略時は min(w,d)*0.5）
             yaw:        OBB の Y 軸回り（ラジアン）
             layer/mask: ビットマスク。両方の AND が非ゼロなら衝突
@@ -235,6 +244,42 @@ class Physics3D:
             x, y, z, r * 2.0, float(height), r * 2.0,
             is_static=is_static, restitution=restitution, friction=friction,
             shape="capsule", radius=r,
+            layer=layer, mask=mask, trigger=trigger,
+        )
+
+    def add_sphere(self,
+                   x: float, y: float, z: float,
+                   radius: float,
+                   is_static: bool = True,
+                   restitution: float = 0.0,
+                   friction: float = 0.85,
+                   layer: int = 1,
+                   mask: int = 0xFFFFFFFF,
+                   trigger: bool = False) -> RigidBody3D:
+        """球。``y`` は底面。半径 ``radius``。"""
+        r = float(radius)
+        return self.add_body(
+            x, y, z, r * 2.0, r * 2.0, r * 2.0,
+            is_static=is_static, restitution=restitution, friction=friction,
+            shape="sphere", radius=r,
+            layer=layer, mask=mask, trigger=trigger,
+        )
+
+    def add_cylinder(self,
+                     x: float, y: float, z: float,
+                     radius: float, height: float,
+                     is_static: bool = True,
+                     restitution: float = 0.0,
+                     friction: float = 0.85,
+                     layer: int = 1,
+                     mask: int = 0xFFFFFFFF,
+                     trigger: bool = False) -> RigidBody3D:
+        """Y 軸円柱。``y`` は底面。"""
+        r = float(radius)
+        return self.add_body(
+            x, y, z, r * 2.0, float(height), r * 2.0,
+            is_static=is_static, restitution=restitution, friction=friction,
+            shape="cylinder", radius=r,
             layer=layer, mask=mask, trigger=trigger,
         )
 
@@ -458,14 +503,18 @@ class Physics3D:
 
 # ── 衝突ヘルパ ────────────────────────────────────────────────────
 
+def _is_round(shape: str) -> bool:
+    return shape in ("capsule", "sphere")
+
+
 def _collide_pair(a: RigidBody3D, b: RigidBody3D) -> Optional[tuple]:
     """(nx, ny, nz, pen)。法線は a→b。重ならなければ None。"""
     sa, sb = a.shape, b.shape
-    if sa == "capsule" and sb == "capsule":
-        return _capsule_capsule(a, b)
-    if sa == "capsule":
+    if _is_round(sa) and _is_round(sb):
+        return _round_round(a, b)
+    if _is_round(sa):
         return _capsule_solid(a, b)
-    if sb == "capsule":
+    if _is_round(sb):
         hit = _capsule_solid(b, a)
         if hit is None:
             return None
@@ -492,7 +541,9 @@ def _aabb_aabb(a: RigidBody3D, b: RigidBody3D) -> Optional[tuple]:
 
 
 def _capsule_solid(cap: RigidBody3D, solid: RigidBody3D) -> Optional[tuple]:
-    """Y-up カプセル vs AABB / yaw OBB。法線は capsule→solid。"""
+    """Y-up カプセル vs AABB / yaw OBB / 円柱。法線は capsule→solid。"""
+    if solid.shape == "cylinder":
+        return _capsule_cylinder(cap, solid)
     if solid.shape == "obb":
         lx, ly, lz = _world_to_obb_local(
             cap.x, cap.y + cap.h * 0.5, cap.z, solid)
@@ -561,6 +612,99 @@ def _capsule_vs_aabb_centered(cx, cy, cz, radius, height, aabb: AABB) -> Optiona
             return None
         return (0.0, 1.0, 0.0, radius - y_dist)
     return None
+
+
+def _capsule_cylinder(cap: RigidBody3D, cyl: RigidBody3D) -> Optional[tuple]:
+    """Y-up カプセル vs Y 軸円柱（平らな蓋）。法線は capsule→cylinder。"""
+    ra = cap.radius
+    rc = cyl.radius
+    cx, cz = cyl.x, cyl.z
+    y0, y1 = cyl.y, cyl.y + cyl.h
+    cy = cap.y + cap.h * 0.5
+    half = max(0.0, cap.h * 0.5 - ra)
+    sy0, sy1 = cy - half, cy + half
+
+    dx, dz = cx - cap.x, cz - cap.z
+    dist_xz = math.sqrt(dx * dx + dz * dz)
+    need = ra + rc
+    y_overlap = min(sy1, y1) - max(sy0, y0)
+
+    if y_overlap > 0:
+        if dist_xz >= need:
+            return None
+        if dist_xz > 1e-8:
+            return (dx / dist_xz, 0.0, dz / dist_xz, need - dist_xz)
+        return (1.0, 0.0, 0.0, need)
+
+    if sy0 >= y1:
+        y_dist = sy0 - y1
+        if dist_xz <= rc:
+            if y_dist >= ra:
+                return None
+            return (0.0, -1.0, 0.0, ra - y_dist)
+        rx = dist_xz - rc
+        dist = math.sqrt(rx * rx + y_dist * y_dist)
+        if dist >= ra or dist_xz < 1e-8:
+            return None
+        return (dx / dist_xz * (rx / dist), -y_dist / dist, dz / dist_xz * (rx / dist), ra - dist)
+
+    if sy1 <= y0:
+        y_dist = y0 - sy1
+        if dist_xz <= rc:
+            if y_dist >= ra:
+                return None
+            return (0.0, 1.0, 0.0, ra - y_dist)
+        rx = dist_xz - rc
+        dist = math.sqrt(rx * rx + y_dist * y_dist)
+        if dist >= ra or dist_xz < 1e-8:
+            return None
+        return (dx / dist_xz * (rx / dist), y_dist / dist, dz / dist_xz * (rx / dist), ra - dist)
+    return None
+
+
+def _round_round(a: RigidBody3D, b: RigidBody3D) -> Optional[tuple]:
+    """カプセル / 球同士。球はゼロ長線分にしない。"""
+    if a.shape == "sphere" and b.shape == "sphere":
+        return _sphere_sphere(a, b)
+    if a.shape == "sphere":
+        hit = _capsule_sphere(b, a)
+        if hit is None:
+            return None
+        nx, ny, nz, pen = hit
+        return (-nx, -ny, -nz, pen)
+    if b.shape == "sphere":
+        return _capsule_sphere(a, b)
+    return _capsule_capsule(a, b)
+
+
+def _sphere_sphere(a: RigidBody3D, b: RigidBody3D) -> Optional[tuple]:
+    ax, ay, az = a.sphere_center()
+    bx, by, bz = b.sphere_center()
+    dx, dy, dz = bx - ax, by - ay, bz - az
+    dist2 = dx * dx + dy * dy + dz * dz
+    need = a.radius + b.radius
+    if dist2 > 1e-12:
+        dist = math.sqrt(dist2)
+        if dist >= need:
+            return None
+        return (dx / dist, dy / dist, dz / dist, need - dist)
+    return (1.0, 0.0, 0.0, need)
+
+
+def _capsule_sphere(cap: RigidBody3D, sph: RigidBody3D) -> Optional[tuple]:
+    """法線は capsule→sphere。"""
+    sx, sy, sz = sph.sphere_center()
+    ax, ay, az, bx, by, bz = cap.capsule_segment()
+    px, py, pz = _closest_point_segment(sx, sy, sz, ax, ay, az, bx, by, bz)
+    dx, dy, dz = sx - px, sy - py, sz - pz
+    dist2 = dx * dx + dy * dy + dz * dz
+    need = cap.radius + sph.radius
+    if dist2 > 1e-12:
+        dist = math.sqrt(dist2)
+        if dist >= need:
+            return None
+        return (dx / dist, dy / dist, dz / dist, need - dist)
+    return (1.0, 0.0, 0.0, need)
 
 
 def _capsule_capsule(a: RigidBody3D, b: RigidBody3D) -> Optional[tuple]:
@@ -745,6 +889,14 @@ def _segment_aabb_hit(ax, ay, az, bx, by, bz, radius: float,
 
 
 def _ray_body(ox, oy, oz, dx, dy, dz, body: RigidBody3D) -> Optional[float]:
+    if body.shape == "sphere":
+        cx, cy, cz = body.sphere_center()
+        return _ray_sphere(ox, oy, oz, dx, dy, dz, cx, cy, cz, body.radius)
+    if body.shape == "cylinder":
+        return _ray_y_cylinder_capped(
+            ox, oy, oz, dx, dy, dz,
+            body.x, body.z, body.radius, body.y, body.y + body.h,
+        )
     if body.shape == "capsule":
         ax, ay, az, bx, by, bz = body.capsule_segment()
         return _ray_capsule(ox, oy, oz, dx, dy, dz, ax, ay, az, bx, by, bz, body.radius)
@@ -820,6 +972,32 @@ def _ray_y_cylinder(ox, oy, oz, dx, dy, dz, cx, cz, r, y0, y1) -> Optional[float
             if best is None or t < best:
                 best = t
     return best
+
+
+def _ray_disk_y(ox, oy, oz, dx, dy, dz, cx: float, cy: float, cz: float, r: float) -> Optional[float]:
+    if abs(dy) < 1e-8:
+        return None
+    t = (cy - oy) / dy
+    if t < 0:
+        return None
+    px = ox + dx * t - cx
+    pz = oz + dz * t - cz
+    if px * px + pz * pz <= r * r:
+        return t
+    return None
+
+
+def _ray_y_cylinder_capped(ox, oy, oz, dx, dy, dz, cx, cz, r, y0, y1) -> Optional[float]:
+    """有限円柱 + 上下の円盤。"""
+    ts = []
+    t = _ray_y_cylinder(ox, oy, oz, dx, dy, dz, cx, cz, r, y0, y1)
+    if t is not None:
+        ts.append(t)
+    for y in (y0, y1):
+        t = _ray_disk_y(ox, oy, oz, dx, dy, dz, cx, y, cz, r)
+        if t is not None:
+            ts.append(t)
+    return min(ts) if ts else None
 
 
 def _ray_capsule(ox, oy, oz, dx, dy, dz,

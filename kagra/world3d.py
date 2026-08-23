@@ -69,6 +69,43 @@ class World3D:
             ])
         return body
 
+    def add_sphere(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        radius: float,
+        *,
+        trigger: bool = False,
+    ) -> RigidBody3D:
+        """静的な球。``y`` は底面。描画はしない（``Prop`` 用）。"""
+        body = self.physics.add_sphere(
+            float(x), float(y), float(z), float(radius),
+            is_static=True,
+            trigger=trigger,
+        )
+        self.boxes.append(body)
+        return body
+
+    def add_cylinder(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        radius: float,
+        height: float,
+        *,
+        trigger: bool = False,
+    ) -> RigidBody3D:
+        """静的な Y 軸円柱。``y`` は底面。描画はしない（``Prop`` 用）。"""
+        body = self.physics.add_cylinder(
+            float(x), float(y), float(z), float(radius), float(height),
+            is_static=True,
+            trigger=trigger,
+        )
+        self.boxes.append(body)
+        return body
+
     def add_player(
         self,
         x: float = 0.0,

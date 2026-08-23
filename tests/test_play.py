@@ -141,6 +141,36 @@ def test_prop_velocity_update_and_destroy():
     play.destroy(box)
 
 
+def test_prop_sphere_allows_aabb_corner():
+    w = play.World3D(gravity=0.0)
+    play.Prop("sphere", x=0.0, y=0.5, z=0.0, scale=1.0, world=w)
+    p = w.add_player(2.0, 2.0, radius=0.28, height=1.6)
+    p.use_gravity = False
+    p.friction = 0.0
+    w.move_player(-3.0, -3.0)
+    for _ in range(80):
+        w.update(0.016)
+    dist = math.hypot(p.x, p.z)
+    assert dist < 0.92
+    assert dist > 0.70
+    assert play.Prop._all[0].body.shape == "sphere"
+
+
+def test_hover_misses_sphere_aabb_corner():
+    play.Prop("sphere", x=0.0, y=0.5, z=0.0, scale=1.0, collision=False)
+    assert play.hovered_prop(0.45, 2.0, 0.45, 0.0, -1.0, 0.0) is None
+    play.Prop("box", x=0.0, y=0.5, z=0.0, scale=1.0, collision=False)
+    assert play.hovered_prop(0.45, 2.0, 0.45, 0.0, -1.0, 0.0).model == "box"
+
+
+def test_hover_hits_cylinder_cap_not_square_corner():
+    cyl = play.Prop("cylinder", x=0.0, y=1.0, z=0.0, scale=(0.6, 2.0, 0.6), collision=False)
+    assert play.hovered_prop(0.0, 3.0, 0.0, 0.0, -1.0, 0.0) is cyl
+    play.Prop.clear()
+    play.Prop("cylinder", x=0.0, y=1.0, z=0.0, scale=(0.6, 2.0, 0.6), collision=False)
+    assert play.hovered_prop(0.28, 3.0, 0.28, 0.0, -1.0, 0.0) is None
+
+
 def test_prop_disabled_skipped_by_hover():
     box = play.Prop("box", x=0, y=0.5, z=2, scale=1.0, collision=False)
     assert play.hovered_prop(0.0, 0.5, 0.0, 0.0, 0.0, 1.0) is box
