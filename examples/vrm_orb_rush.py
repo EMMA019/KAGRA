@@ -26,7 +26,10 @@ from kagra.camera3d import Camera3D
 from kagra.vrm_action import ActionController
 
 SW, SH = 1280, 720
-VRM_PATH = "assets/Emma.vrm"
+VRM_PATH = os.environ.get("KAGRA_VRM") or "assets/Emma.vrm"
+SMOKE = os.environ.get("KAGRA_SMOKE") == "1"
+SMOKE_FRAMES = int(os.environ.get("KAGRA_SMOKE_FRAMES", "24"))
+SMOKE_SHOT = os.environ.get("KAGRA_SMOKE_OUT", "scratch/orb_rush_smoke.png")
 FONT = None  # kagra.font() がシステムフォントを選ぶ
 
 ARENA_R = 5.0
@@ -198,9 +201,7 @@ class Orb:
 
 class OrbRush(kagra.Scene):
     def on_enter(self):
-        if not os.path.exists(VRM_PATH):
-            print(f"VRM が見つかりません: {VRM_PATH}")
-            raise SystemExit(1)
+        vrm = VRM_PATH if os.path.exists(VRM_PATH) else str(kagra.ensure_vrm())
 
         kagra.font()
         kagra.set_toon_params(threshold=0.48, softness=0.08, shade=0.42, lit=1.05)
@@ -214,7 +215,7 @@ class OrbRush(kagra.Scene):
         self.sfx = _make_sfx()
         self.fx = FX()
 
-        self.avatar = kagra.avatar(VRM_PATH)
+        self.avatar = kagra.avatar(vrm)
         for walk_path in ("assets/walk.fbx", "tests/fixtures/synthetic_walk.bvh"):
             if not os.path.exists(walk_path):
                 continue
@@ -232,7 +233,7 @@ class OrbRush(kagra.Scene):
         self.cam.use_orbit(radius=7.2, theta=0.55, phi=0.42, target=(0.0, 0.85, 0.0))
 
         # intro → title → countdown → play → result
-        self.mode = "intro"
+        self.mode = "play" if SMOKE else "intro"
         self.mode_t = 0.0
         self.t = 0.0
         saved = kagra.load_json("orb_rush") or {}
@@ -320,6 +321,13 @@ class OrbRush(kagra.Scene):
             self.msg_t -= dt
         self.fx.update(dt)
 
+        if SMOKE:
+            n = kagra.tick_count()
+            if n == 10:
+                kagra.screenshot(SMOKE_SHOT)
+            if n >= SMOKE_FRAMES:
+                kagra.quit()
+                return
         if kagra.pressed("ESCAPE"):
             raise SystemExit
 
@@ -634,5 +642,10 @@ class OrbRush(kagra.Scene):
 
 
 if __name__ == "__main__":
-    kagra.init(width=SW, height=SH, title="VRM Orb Rush", fps=60)
-    kagra.run(start_scene=OrbRush())
+    os.makedirs(os.path.dirname(SMOKE_SHOT) or ".", exist_ok=True)
+    kagra.init(width=SW, height=SH, title="VRM Orb Rush", fps=60, visible=not SMOKE)
+    kagra.run(
+        start_scene=OrbRush(),
+        max_frames=SMOKE_FRAMES + 2 if SMOKE else None,
+        fixed_dt=1.0 / 60.0 if SMOKE else None,
+    )

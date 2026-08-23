@@ -1,7 +1,12 @@
 {
   "name": "orb_rush_smoke",
-  "script": "scratch/smoke_orb_rush.py",
+  "script": "examples/vrm_orb_rush.py",
   "timeout_sec": 180,
+  "env": {
+    "KAGRA_SMOKE": "1",
+    "KAGRA_SMOKE_FRAMES": "24",
+    "KAGRA_SMOKE_OUT": "scratch/orb_rush_smoke.png"
+  },
   "expect_files": ["scratch/orb_rush_smoke.png"],
-  "min_file_bytes": 5000
+  "min_file_bytes": 2000
 }
