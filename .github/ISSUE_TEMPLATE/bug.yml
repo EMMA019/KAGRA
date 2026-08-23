@@ -1,0 +1,57 @@
+name: Bug
+description: Something did not work. VRM name / OS / GPU / log.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        動かなかった手順をそのまま。推測よりログ。
+  - type: input
+    id: vrm
+    attributes:
+      label: VRM
+      description: ファイル名または VRoid / Booth 上の名前。Alicia Solid ならその旨。
+      placeholder: me.vrm / Alicia Solid
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - Windows 11
+        - Windows 10
+        - Linux
+        - macOS
+        - other
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU
+      placeholder: RTX 4070 / Intel UHD / Apple M2
+    validations:
+      required: true
+  - type: textarea
+    id: cmd
+    attributes:
+      label: Command
+      description: 打ったコマンド。Windows cmd ならプロンプトごと。
+      placeholder: py -3 -m kagra --vrm me.vrm
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: ターミナルの出力。`kagra_core が見つかりません` も含める。
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: kagra_ver
+    attributes:
+      label: kagra version
+      placeholder: "0.1.3  /  maturin develop @ abc123"

@@ -20,14 +20,15 @@
 from __future__ import annotations
 from typing import Optional
 import sys, types
+from pathlib import Path
 
 try:
     from kagra.kagra_core import Engine as _Engine
 except ImportError as e:
+    from kagra.launch import format_core_import_error
     raise ImportError(
-        f"kagra_core が見つかりません。"
-        f" pip なら `pip install -U kagra`、ソースなら `maturin develop`。\n{e}"
-    )
+        format_core_import_error(e, loaded_from=Path(__file__).resolve().parent)
+    ) from e
 
 # ── 外部モジュール再エクスポート ───────────────────────────────
 from kagra.camera        import Camera

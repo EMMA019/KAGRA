@@ -1,6 +1,6 @@
 # KAGRA ロードマップ — バズるまで、そして全自動 AI VTuber まで
 
-最終更新: 2026-08-23（0.1.3 は PyPI 済み。次は Phase 1 — まず絵作り、それから動画）
+最終更新: 2026-08-23（1a 完了。次は 1b の動画と、Phase 2 の摩擦除去）
 
 North Star（北極星）は 2 つ。
 
@@ -35,7 +35,7 @@ North Star（北極星）は 2 つ。
 
 **まだないもの（全自動に必要な穴）**
 
-- **絵になるデフォルト**（紫単色の虚空・固定気味の引きカメラ・開閉だけの口パク。機能ではなく見た目が今の最大の穴 → Phase 1a）
+- **絵になるデフォルト**（1a でデモ既定を入れた。Before / After GIF と拡散用動画は 1b）
 - NDI / RTMP 直送（仮想カメラと窓キャプチャは 0.1.3 で足りる。OBS 不要は RTMP）
 - YouTube / Twitch の公式チャット取り込み（JSONL 受け口はある。API キーはコアに入れない）
 - 自律ループ（話題選択 → 発話 → 歌 → 休憩）
@@ -95,8 +95,8 @@ North Star（北極星）は 2 つ。
 - [ ] 動画の最後は「`pip install kagra` / `python -m kagra`」の 2 行だけ
 - [ ] X（日本語）→ 同日 Reddit r/Python・r/VirtualYoutubers、HN Show HN
 - [ ] ニコニコ / YouTube（Alicia 使用時はクレジット必須）
-- [ ] README 先頭に 10 秒 GIF（動画リンクより先に絵を見せる）
-- [ ] README 比較表: KAGRA vs Unity+UniVRM vs VSeeFace vs three-vrm
+- [ ] README 先頭に 10 秒 GIF（動画リンクより先に絵を見せる。1b の動画から切る）
+- [x] README 比較表: KAGRA vs Unity+UniVRM vs VSeeFace vs three-vrm
       （行は「インストール」「コード量」「ライセンス」「AI 連携」だけ。盛らない）
 
 **完了条件**: 外部の誰かが動画経由で試して、issue か star が付く。
@@ -114,25 +114,23 @@ North Star（北極星）は 2 つ。
 バズの流入は一度きり。試した瞬間に失敗する経路を先に潰す。
 
 - [ ] **macOS wheel を CI で検証して出す**（Phase 5 から前倒し）。
-      iOS シェルで macos-14 ランナーは既に毎 push 使っている。同じランナーで
-      maturin build + import smoke、可能なら golden（Metal）まで回し、通ったら
-      「Mac 実機待ち」を解除する。HN / Reddit の Python 層は Mac 率が高い —
-      バズった直後に Mac で `pip install kagra` が失敗すると一番おいしい流入を落とす
-- [ ] チェックアウト直下 `kagra/` のシャドウ問題: `python -m kagra` 実行時に
-      検出して警告 + 回避コマンドを表示（README の注意書きを運任せにしない）
-- [ ] 自分の VRM を 1 行で: `python -m kagra --vrm me.vrm --song my.wav` は
-      既に動く。README の最上部とレシピの入口をこれにする
+      CI の build 行列に macos-14 × 3.12 を追加（import smoke）。
+      Publish.yml はまだ macOS を出さない。このジョブが安定してから wheel を載せる
+- [x] チェックアウト直下 `kagra/` のシャドウ問題: `kagra_core` 欠落時に
+      警告 + `cd %TEMP%` / `maturin develop`（`kagra.launch`）
+- [x] 自分の VRM を 1 行で: README 先頭が
+      `python -m kagra --vrm me.vrm --song my.wav`
 - [ ] `examples/` を 20〜30 行のコピペに統一。各例の冒頭に完成 GIF
-- [ ] 公式レシピ `docs/recipes/`（日英併記。拡散先が英語圏なのに手順が日本語だけ、を作らない）:
-      - 自分の VRM（VRoid Studio → KAGRA）
-      - Irodori-TTS → `av.sing("voice.wav")`
-      - text-to-vrma → `av.dance("dance.vrma")`
+- [x] 公式レシピ `docs/recipes/`（日英併記）:
+      - [x] 自分の VRM（`own-vrm.md`）
+      - [x] Irodori-TTS → `av.sing("voice.wav")`（エンジン非同梱。own-vrm に WAV 経路）
+      - [x] text-to-vrma → `av.dance("dance.vrma")`（`motion.md`）
       - [x] OBS / 仮想カメラ（`docs/recipes/stream.md`）
       - [x] VOICEVOX（`docs/recipes/voicevox.md`）
-      - `--mascot`
-- [ ] GitHub Discussions（Discord は 100 人超えてから）
-- [ ] issue テンプレ（VRM 名 / OS / GPU / ログ）
-- [ ] 「動いた VRM 報告スレ」
+      - [x] `--mascot`（`mascot.md`）
+- [ ] GitHub Discussions（Discord は 100 人超えてから。報告は issue テンプレで先に受ける）
+- [x] issue テンプレ（VRM 名 / OS / GPU / ログ）
+- [x] 「動いた VRM 報告」（`worked.yml`）
 
 **完了条件**: 初見が README だけで自分の VRM を歌わせられる。
 Windows / Linux / macOS のどれでも `pip install kagra` が通る。

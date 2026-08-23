@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 動いた VRM を報告する
+    url: https://github.com/EMMA019/KAGRA/issues/new?template=worked.yml
+    about: 自分の VRM で歌って踊れたら、名前と OS だけ残してください

@@ -7,6 +7,13 @@
   Recipe `docs/recipes/ai-brain.md`; demo `examples/vrm_kairi_chat.py`
   (typed chat + JSONL viewer comments + VOICEVOX). No LLM in the wheel.
 
+- First-run: `python -m kagra --vrm me.vrm --song my.wav` on the README;
+  checkout `kagra/` shadow prints `cd %TEMP%` / `maturin develop`.
+- Compare table (install / code / license / AI hook only) vs UniVRM,
+  VSeeFace, three-vrm. Recipes: own VRM, motion, mascot.
+- Issue templates for bugs and “it worked” VRM reports.
+- CI: macos-14 × 3.12 maturin build + import smoke (publish still
+  Windows + Linux until this stays green).
 - Live look (Phase 1a): `python -m kagra` no longer opens on a solid purple
   void. Procedural gradient sky, a dark disc + warm spot (no checkerboard),
   vignette, `apply_live_look()` (key light + toon + bloom + fog), and
