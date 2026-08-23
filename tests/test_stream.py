@@ -52,6 +52,12 @@ def test_stream_hud_caps_chat():
     assert [c.text for c in hud.chat] == ["m2", "m3", "m4"]
 
 
+def test_stream_hud_default_brand():
+    hud = stream.StreamHud(song="♪ demo")
+    assert hud.brand == "KAGRA"
+    assert hud.song.startswith("♪")
+
+
 def test_stream_hud_ingest_sets_subtitle():
     inbox = stream.ChatInbox()
     inbox.push("a", "最新", persist=False)

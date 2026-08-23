@@ -112,11 +112,13 @@ class StreamHud:
         subtitle: str = "",
         song: str = "",
         credit: str = "",
+        brand: str = "KAGRA",
         max_chat: int = 5,
     ):
         self.subtitle = subtitle
         self.song = song
         self.credit = credit
+        self.brand = brand
         self.max_chat = max(1, int(max_chat))
         self.chat: list[ChatMessage] = []
 
@@ -141,14 +143,21 @@ class StreamHud:
         if sw is None or sh is None:
             sw, sh = kagra.get_screen_size()
         pad = 16
+        top = bool(self.brand or self.song or self.credit)
+        if top:
+            kagra.fill(0, 0, sw, 46, (6, 4, 14), alpha=165)
+        x = pad
+        if self.brand:
+            kagra.text(self.brand, x, 8, 20, (236, 210, 130))
+            tw, _ = kagra.measure(self.brand, 20)
+            x += tw + 16
         if self.song:
-            kagra.fill(0, 0, sw, 40, (8, 6, 16), alpha=150)
-            kagra.text(self.song, pad, 8, 18, (230, 210, 150))
+            kagra.text(self.song, x, 12, 16, (230, 210, 150))
         if self.credit:
             tw, _ = kagra.measure(self.credit, 12)
-            kagra.text(self.credit, max(pad, sw - tw - pad), 10, 12, (160, 150, 170))
+            kagra.text(self.credit, max(pad, sw - tw - pad), 12, 12, (160, 150, 170))
         if self.chat:
-            y = 52 if self.song else pad
+            y = 56 if top else pad
             for msg in self.chat:
                 kagra.text(msg.as_line()[:64], pad, y, 14, (200, 200, 210))
                 y += 20

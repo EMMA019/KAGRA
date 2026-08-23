@@ -493,6 +493,10 @@ class VrmAvatar:
             log.warning("[VrmAvatar] blendshape discovery failed: %s", e)
 
         self._first_person = False
+        self._grounding = False
+        self._floor_y = 0.0
+        self._sole = 0.03
+        self._ground_lift = 0.0
         print(f"[VrmAvatar] Loaded: {vrm_path}")
 
     def _load_bind_rots(self, vrm_path: str) -> dict:
@@ -642,6 +646,49 @@ class VrmAvatar:
             max_open  = max_open,
         )
         return self._lipsync
+
+    def enable_grounding(self, floor_y: float = 0.0, sole: float = 0.03):
+        """ダンス中の足の床めり込みを、ルートを持ち上げて軽減する。
+
+        ワールド Y が一番低い足を見て、床 + 靴底より下なら上げる。
+        押し下げはしない。``root_motion`` がオンのときは何もしない。
+        """
+        self._grounding = True
+        self._floor_y = float(floor_y)
+        self._sole = float(sole)
+        return self
+
+    def disable_grounding(self):
+        self._grounding = False
+        if self._ground_lift:
+            try:
+                import kagra
+                kagra.get_engine().set_vrm_offset(self.vrm_id, 0.0, 0.0, 0.0)
+            except Exception:
+                pass
+        self._ground_lift = 0.0
+
+    def _apply_grounding(self):
+        from kagra.look import grounding_lift
+
+        import kagra
+        ys = []
+        for name in (
+            "leftFoot", "rightFoot", "leftToes", "rightToes",
+            "J_Bip_L_Foot", "J_Bip_R_Foot",
+        ):
+            pos = kagra.get_engine().debug_bone_world_pos(self.vrm_id, name)
+            if pos is not None:
+                ys.append(pos[1])
+        self._ground_lift = grounding_lift(
+            ys,
+            floor_y=self._floor_y,
+            sole=self._sole,
+            current=self._ground_lift,
+            follow=0.4,
+        )
+        if self._ground_lift > 1e-4 or ys:
+            kagra.get_engine().set_vrm_offset(self.vrm_id, 0.0, self._ground_lift, 0.0)
 
     def enable_ik(self, smooth_speed: float = 8.0) -> "ArmIK":
         """腕 IK を有効化して ArmIK を返す。
@@ -969,6 +1016,8 @@ class VrmAvatar:
         self.play(clip, loop=True, fade=fade)
         if not self._clip_has_fingers(clip):
             self.relax_hands()
+        if not self._grounding:
+            self.enable_grounding()
 
     def sing(self, audio: str = None, *, volume: float = 1.0, loop: bool = False) -> float:
         """歌う（1行 API）。リップシンクを自動で有効化し、音声を再生する。
@@ -991,9 +1040,9 @@ class VrmAvatar:
         from kagra.vrm_lipsync import LipSyncTimeline
 
         if self._lipsync is None:
-            self.enable_lipsync(smoothing=0.22, max_open=0.95)
+            self.enable_lipsync(smoothing=0.12, max_open=0.95)
         else:
-            self._lipsync.smoothing = min(self._lipsync.smoothing, 0.28)
+            self._lipsync.smoothing = min(self._lipsync.smoothing, 0.16)
 
         if audio is None:
             # 内蔵ソング: 音符列から母音タイムラインが正確に出る
@@ -1238,6 +1287,10 @@ class VrmAvatar:
         # 4. IK
         if self._ik:
             self._ik.update(dt)
+
+        # 4.5 足の接地（アニメ適用後。root_motion とは併用しない）
+        if self._grounding and not self._anim.root_motion:
+            self._apply_grounding()
 
         # 5. リップシンク
         if self._lipsync:

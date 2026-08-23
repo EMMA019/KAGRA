@@ -103,6 +103,7 @@ def test_critical_bindings_present():
         "load_fbx_anim",
         "set_fog",
         "set_light_dir",
+        "set_rim",
         "set_toon_params",
         "set_shadow_enabled",
         "request_screenshot",
@@ -151,6 +152,7 @@ def test_gltf_python_wrappers_exist():
         ("stage", "Stage.load"),
         ("set_grab_frames", "_engine.set_grab_frames"),
         ("grab_frame", "_engine.grab_frame"),
+        ("set_rim", "_engine.set_rim"),
     ):
         assert name in names, f"kagra.{name} が未公開"
         assert rust in ast.unparse(names[name]), f"{name} が {rust} を呼んでいない"

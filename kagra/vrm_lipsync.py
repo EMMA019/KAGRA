@@ -412,17 +412,29 @@ _VOWEL_FORMANTS = {
 
 
 def estimate_vowel(samples: list[float], sample_rate: int) -> str:
-    """帯域エネルギーで母音を推定する（FFT なし）。"""
+    """帯域エネルギーで母音を推定する（FFT なし）。
+
+    F1/F2 に加え F2 近傍をもう 1 本見て、歌波形が全部「aa/oh」に
+    潰れるのを避ける。スコアが近ければ 2 位を採用することもある。
+    """
     if not samples:
         return "aa"
     scores: dict[str, float] = {}
     for name, (f1, f2) in _VOWEL_FORMANTS.items():
-        scores[name] = _goertzel(samples, sample_rate, f1) + 0.7 * _goertzel(
+        # ih/ee は F2 が本体。aa/oh は F1。
+        f2_w = 1.05 if name in ("ih", "ee") else 0.7
+        scores[name] = _goertzel(samples, sample_rate, f1) + f2_w * _goertzel(
             samples, sample_rate, f2
         )
-    best = max(scores, key=scores.get)
+    ranked = sorted(scores, key=scores.get, reverse=True)
+    best = ranked[0]
     if scores[best] <= 1e-12:
         return _estimate_vowel_zcr(samples, sample_rate)
+    # 1 位が aa で 2 位が近いときは 2 位へ（開口「あ」バイアスを弱める）
+    if len(ranked) > 1 and best == "aa":
+        second = ranked[1]
+        if scores[second] > scores[best] * 0.78:
+            return second
     return best
 
 
