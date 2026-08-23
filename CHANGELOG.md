@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Brain bridge: `kagra.brain.KairiBrain` streams grounded replies from
+  [kairi](https://github.com/EMMA019/kairi) into `AiCharacter.set_llm_func`.
+  Recipe `docs/recipes/ai-brain.md`; demo `examples/vrm_kairi_chat.py`
+  (typed chat + JSONL viewer comments + VOICEVOX). No LLM in the wheel.
+
 - Live look (Phase 1a): `python -m kagra` no longer opens on a solid purple
   void. Procedural gradient sky, a dark disc + warm spot (no checkerboard),
   vignette, `apply_live_look()` (key light + toon + bloom + fog), and

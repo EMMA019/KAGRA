@@ -41,6 +41,21 @@ kagra.run(update, draw, on_ready=ready)
 
 Use your own model with `kagra.avatar("/path/to/me.vrm")` or `assets/Emma.vrm`. Use your own song with `av.sing("song.wav")`. Drop a [VRM Animation](https://vrm.dev/en/vrma/) (`.vrma`) on `av.dance("wave.vrma")` — same clip, any VRM. Clips from [text-to-vrma](https://github.com/Kirakun0328/text-to-vrma) work as-is (fingers + expressions + LookAt). Drop a Sketchfab hall the same way: `kagra.stage("venue.glb")` (or `--stage` / a PNG `--backdrop`).
 
+## Give your LLM a body
+
+KAGRA is the 3D body; bring any brain. `AiCharacter.set_llm_func` takes any `text → text` function (OpenAI-compatible, Ollama built-in). For an unattended avatar, pair it with [kairi](https://github.com/EMMA019/kairi) — a local BYOK chat backend with a hard anti-hallucination layer — via `kagra.brain.KairiBrain`:
+
+```python
+from kagra.ai_character import AiCharacter
+from kagra.brain import KairiBrain
+
+char = AiCharacter("me.vrm", tts="voicevox")
+char.set_llm_func(KairiBrain().ask)   # kairi decides what is safe to say
+char.chat("How did markets do?")      # KAGRA decides how it looks and sounds
+```
+
+Recipe: [docs/recipes/ai-brain.md](docs/recipes/ai-brain.md). Runnable demo: `python examples/vrm_kairi_chat.py` (typed chat + JSONL viewer comments + VOICEVOX voice).
+
 ## Install
 
 **Python 3.10+.** Wheels include the Rust renderer — you do **not** need a Rust toolchain.
@@ -109,6 +124,7 @@ Everything else in [`docs/API_INDEX.md`](docs/API_INDEX.md) is available but may
 python -m kagra                          # sing & dance
 python -m kagra --loop --stream          # HUD + virtual cam (needs kagra[stream])
 python examples/vrm_vrma.py              # .vrma (or a generated wave)
+python examples/vrm_kairi_chat.py        # AI chat brain (kairi) + voice
 python examples/vrm_stream.py            # OBS / JSONL chat
 python examples/2Daction.py              # no assets needed
 python examples/3Dmaze.py                # drop a .vrm in assets/ to see it

@@ -141,6 +141,10 @@ Windows / Linux / macOS のどれでも `pip install kagra` が通る。
 
 `AiCharacter` を核に、**起動したら放置で 30 分もつ**。開始・停止はまだ人間。
 
+- [x] 頭脳接続: `kagra.brain.KairiBrain`（[kairi](https://github.com/EMMA019/kairi) の
+      接地済み返答を `AiCharacter.set_llm_func` に）+ `docs/recipes/ai-brain.md`
+      + `examples/vrm_kairi_chat.py`（入力 + JSONL コメント + VOICEVOX）。
+      Phase 4 のセーフティ層の一部（発話前フィルタ）は kairi 側が既に持つ
 - [ ] `kagra/autopilot.py` — 雑談 → 歌 → ダンス → 休憩 → 雑談…
       話題は LLM に「前の発言」「時刻」「予定表 JSON」
       沈黙 N 秒で自発的に話す / 歌う
