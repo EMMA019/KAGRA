@@ -1,10 +1,11 @@
-# KAGRA ゲームエンジン 完全ガイド
+# KAGRA ゲームエンジン 完全ガイド（履歴）
 
-> **バージョン**: v3（Phase 6 相当）  
-> **アーキテクチャ**: Rust コア（`kagra_core`）+ Python API  
-> **対象プラットフォーム**: Windows / macOS / Linux（デスクトップ）
+> **このファイルは現行仕様ではない。** Phase 6 時点のメモ。
+> 今の入口は [README](README.md) / [docs/API_INDEX.md](docs/API_INDEX.md) /
+> [docs/REVIEW.ja.md](docs/REVIEW.ja.md) / [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md)。
+> 中身は増やさない。エージェントはここから API をコピーしないこと。
 >
-> 2D / タイルマップ系のサンプルは `examples/archive/` に移した。推奨は `examples/` 直下の VRM ゲーム。
+> 2D / タイルマップ系のサンプルは `examples/archive/`。推奨は `examples/` 直下の VRM ゲーム。
 
 ---
 
@@ -1266,7 +1267,7 @@ pip install kagra-0.1.0-cp311-cp311-win_amd64.whl
 
 ---
 
-## 28. 今後の改善点・ロードマップ
+## 28. 今後の改善点・ロードマップ（履歴。現行は docs/ROADMAP.ja.md）
 
 ### 🔴 優先度：高
 
