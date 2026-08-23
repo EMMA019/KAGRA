@@ -9,9 +9,21 @@ https://github.com/user-attachments/assets/1a1af44d-d6cc-4ea4-a05d-6f8ad6c193c2
 ```bash
 pip install kagra
 python -m kagra
+python -m kagra --vrm me.vrm --song my.wav
 ```
 
-これだけです。初回だけサンプル VRM（Alicia Solid）をダウンロードし、その場で合成した歌とリップシンク、同梱のダンスを再生します。ESC で終了。
+これだけです。初回だけサンプル VRM（Alicia Solid）をダウンロードし、その場で合成した歌とリップシンク、同梱のダンスを再生します。ESC で終了。自分のモデルは 3 行目 — [レシピ](docs/recipes/own-vrm.md)。
+
+Windows の cmd で `'-m' は認識されていません` と出るときは、プロンプトの `>` のあとにさらに `>` を付けています。`py -3 -m kagra` か `kagra.cmd` を使ってください。
+
+| | KAGRA | Unity + UniVRM | VSeeFace | three-vrm |
+|---|---|---|---|---|
+| インストール | `pip install kagra`（約 5MB、Rust 不要） | Unity + UniVRM パッケージ | アプリを落とす | `npm` + WebGL/WebGPU |
+| 歌って踊るまで | コマンド 2 行、または Python 約 15 行 | シーン + C# + Animator | GUI（コードなし） | JavaScript + アセット |
+| ライセンス | MIT | Unity + UniVRM の各ライセンス | プロプライエタリ | MIT |
+| AI 連携 | Python（TTS / LLM は wheel の外） | エディタプラグイン | 限定的 | JavaScript |
+
+事実だけ。貶さない。UniVRM と three-vrm は VRM 実装のものさし、VSeeFace は実際に開かれるトラッカー。
 
 ```python
 import kagra
@@ -67,7 +79,7 @@ python -m kagra
 | | |
 |---|---|
 | Windows / Linux | `pip install kagra` |
-| macOS | ホイール検証できるまでソースビルド（`maturin develop`） |
+| macOS | ソースビルド（`maturin develop`）。CI で wheel 検証中、公開は通ってから |
 | Web カメラ顔トラ | `pip install "kagra[facetrack]"`（MediaPipe + OpenCV） |
 | 仮想カメラ（OBS） | `pip install "kagra[stream]"` のあと `python -m kagra --loop --stream` |
 | マイク口パク | `pip install "kagra[mic]"` |
@@ -84,7 +96,7 @@ python -m kagra
 - **VOICEVOX / Irodori-TTS** — 同梱しない。VOICEVOX は [docs/recipes/voicevox.md](docs/recipes/voicevox.md)
 - 曲 WAV と `.vrma` はホイールに入れない（約 5MB の売りを守る）。サンプル VRM は初回ダウンロード
 
-配信手順は [docs/recipes/stream.md](docs/recipes/stream.md)。
+レシピ: [自分の VRM](docs/recipes/own-vrm.md) · [ダンス / VRMA](docs/recipes/motion.md) · [VOICEVOX](docs/recipes/voicevox.md) · [OBS / 配信](docs/recipes/stream.md) · [マスコット](docs/recipes/mascot.md)。
 
 リリース手順は [docs/PUBLISHING.md](docs/PUBLISHING.md)。
 

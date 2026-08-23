@@ -9,9 +9,21 @@ https://github.com/user-attachments/assets/1a1af44d-d6cc-4ea4-a05d-6f8ad6c193c2
 ```bash
 pip install kagra
 python -m kagra
+python -m kagra --vrm me.vrm --song my.wav
 ```
 
-That's it. The first run downloads a sample VRM (Alicia Solid, once) and plays a synthesized song with lipsync and a bundled dance. ESC to quit.
+That's it. The first run downloads a sample VRM (Alicia Solid, once) and plays a synthesized song with lipsync and a bundled dance. ESC to quit. Your own model is the third line — [recipe](docs/recipes/own-vrm.md).
+
+On Windows cmd, `'-m' is not recognized` means an extra `>` was typed. Use `py -3 -m kagra` or `kagra.cmd`.
+
+| | KAGRA | Unity + UniVRM | VSeeFace | three-vrm |
+|---|---|---|---|---|
+| Install | `pip install kagra` (~5MB wheel, no Rust) | Unity editor + UniVRM package | download the app | `npm` + a WebGL/WebGPU page |
+| Code to sing & dance | 2 commands, or ~15 lines of Python | scene + C# + Animator | GUI, no code | JavaScript + assets |
+| License | MIT | Unity + UniVRM licenses | proprietary app | MIT |
+| AI hook | Python (TTS / LLM stay outside the wheel) | editor plugins | limited | JavaScript |
+
+Facts only. UniVRM and three-vrm are the VRM implementations we measure against; VSeeFace is the desktop tracker people actually open.
 
 ```python
 import kagra
@@ -55,7 +67,7 @@ pip install kagra
 python -m kagra
 ```
 
-If you run `python -m kagra` from a checkout that contains a `kagra/` folder, Python imports that folder instead of the installed wheel. `No module named kagra.__main__` means you hit an older local package — run from another directory:
+If you run `python -m kagra` from a checkout that contains a `kagra/` folder, Python imports that folder instead of the installed wheel. The command now prints the escape hatch (`cd %TEMP%` / `maturin develop`). `No module named kagra.__main__` is the older local package — run from another directory:
 
 ```powershell
 cd $env:TEMP
@@ -67,7 +79,7 @@ python -m kagra
 | | |
 |---|---|
 | Windows / Linux | `pip install kagra` |
-| macOS | from source (`maturin develop`) until wheels are verified |
+| macOS | from source (`maturin develop`) until CI macos wheels are published |
 | Webcam face tracking | `pip install "kagra[facetrack]"` (MediaPipe + OpenCV) |
 | Virtual camera (OBS) | `pip install "kagra[stream]"` then `python -m kagra --loop --stream` |
 | Mic lipsync | `pip install "kagra[mic]"` |
@@ -84,7 +96,7 @@ Honesty list. These are missing on purpose, not forgotten:
 - **VOICEVOX / Irodori-TTS** — not bundled. VOICEVOX recipe: [docs/recipes/voicevox.md](docs/recipes/voicevox.md)
 - Song WAV and `.vrma` stay out of the wheel (~5MB install). First run downloads the sample VRM
 
-See [docs/recipes/stream.md](docs/recipes/stream.md) and [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md).
+Recipes: [own VRM](docs/recipes/own-vrm.md) · [dance / VRMA](docs/recipes/motion.md) · [VOICEVOX](docs/recipes/voicevox.md) · [OBS / stream](docs/recipes/stream.md) · [mascot](docs/recipes/mascot.md). Roadmap: [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md).
 
 See [docs/PUBLISHING.md](docs/PUBLISHING.md) to cut a release.
 

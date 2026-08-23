@@ -1,3 +1,9 @@
+# OBS / virtual camera (0.1.3)
+
+YouTube / Twitch APIs are not in the engine. Chat is JSONL. Output is a virtual camera or window capture.
+
+日本語の短い手順は下と同じです。
+
 # OBS に載せる（0.1.3）
 
 YouTube / Twitch API はコアに無い。チャットは JSONL。送出は仮想カメラか窓キャプチャ。
