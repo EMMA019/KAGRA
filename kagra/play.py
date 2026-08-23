@@ -9,6 +9,7 @@ from typing import Optional
 
 from kagra.color_utils import clamp_u8
 from kagra.gamekit import box_mesh, cylinder_mesh, quad_y_mesh, sphere_mesh
+from kagra.gltf_mesh import FlatMesh, flatten_gltf, is_gltf_name, resolve_gltf_path
 from kagra.world3d import World3D
 
 COLORS = {
@@ -92,10 +93,19 @@ def _offset_xz(px: float, pz: float, yaw: float, lx: float, lz: float) -> tuple[
     return px + c * lx + s * lz, pz - s * lx + c * lz
 
 
+def prop_hit_extents(prop: "Prop") -> tuple[float, float, float]:
+    """ホバー / 衝突の幅・高さ・奥行き。glTF はメッシュ AABB × スケール。"""
+    mx = float(getattr(prop, "_mesh_sx", 1.0) or 1.0)
+    my = float(getattr(prop, "_mesh_sy", 1.0) or 1.0)
+    mz = float(getattr(prop, "_mesh_sz", 1.0) or 1.0)
+    return abs(float(prop.sx)) * mx, abs(float(prop.sy)) * my, abs(float(prop.sz)) * mz
+
+
 def prop_aabb(prop: "Prop") -> tuple[float, float, float, float, float, float]:
     """Prop 中心とスケールから AABB ``(min x,y,z, max x,y,z)``。世界座標。"""
     wx, wy, wz, _ = prop_world_pose(prop)
-    hx, hy, hz = abs(prop.sx) * 0.5, abs(prop.sy) * 0.5, abs(prop.sz) * 0.5
+    w, h, d = prop_hit_extents(prop)
+    hx, hy, hz = w * 0.5, h * 0.5, d * 0.5
     return (
         wx - hx, wy - hy, wz - hz,
         wx + hx, wy + hy, wz + hz,
@@ -279,7 +289,7 @@ def _unit_mesh(model: str):
 
 
 _solid_cache: dict[tuple[int, int, int], int] = {}
-_unit_cache: dict[tuple[str, int], int] = {}
+_unit_cache: dict[tuple, int] = {}
 _sky_cache = None
 
 
@@ -328,9 +338,10 @@ def destroy(prop) -> None:
 
 
 class Prop:
-    """色付きプリミティブ。位置は中心。``World3D`` があれば衝突。
+    """色付きプリミティブ、または静的 glTF 部品。位置は中心。
 
     ``texture`` は ``texture_from_fn`` / ``load`` の ID。0 なら ``color``。
+    ``model`` が ``.glb`` / ``.gltf`` ならファイルを畳んで置く（``stage()`` ではない）。
     親子は 1 段（``set_parent``）。子の ``x,y,z,yaw`` は親からのローカル。
     2D の ``kagra.Entity`` とは別。エージェントはこっちを使う。
     """
@@ -352,9 +363,23 @@ class Prop:
         texture: int = 0,
         parent: Optional["Prop"] = None,
     ):
-        self.model = str(model).lower()
-        if self.model not in ("box", "sphere", "cylinder", "plane"):
-            raise ValueError(f"unknown model {model!r}")
+        self.gltf_path = None
+        self._gltf_flat: Optional[FlatMesh] = None
+        self._mesh_sx = self._mesh_sy = self._mesh_sz = 1.0
+        raw = str(model)
+        if is_gltf_name(raw):
+            self.model = "gltf"
+            self.gltf_path = resolve_gltf_path(raw)
+            flat = flatten_gltf(self.gltf_path)
+            self._gltf_flat = flat
+            minx, miny, minz, maxx, maxy, maxz = flat.aabb
+            self._mesh_sx = max(maxx - minx, 1e-6)
+            self._mesh_sy = max(maxy - miny, 1e-6)
+            self._mesh_sz = max(maxz - minz, 1e-6)
+        else:
+            self.model = raw.lower()
+            if self.model not in ("box", "sphere", "cylinder", "plane"):
+                raise ValueError(f"unknown model {model!r} (box/sphere/cylinder/plane or .glb/.gltf)")
         self._x = float(x)
         self._y = float(y)
         self._z = float(z)
@@ -400,9 +425,10 @@ class Prop:
             return world.add_cylinder(
                 self._x, self._y - self.sy * 0.5, self._z, r, abs(self.sy),
             )
-        bottom = self._y - self.sy * 0.5
+        w, h, d = prop_hit_extents(self)
+        bottom = self._y - h * 0.5
         return world.add_box(
-            self._x, bottom, self._z, self.sx, self.sy, self.sz,
+            self._x, bottom, self._z, w, h, d,
             draw=False,
         )
 
@@ -524,7 +550,11 @@ class Prop:
                 self.body.h = r * 2.0
                 self.body.w = self.body.d = r * 2.0
             else:
-                self.body.y = wy - self.sy * 0.5
+                w, h, d = prop_hit_extents(self)
+                self.body.y = wy - h * 0.5
+                self.body.w = w
+                self.body.h = h
+                self.body.d = d
                 if self.model == "cylinder":
                     r = self._hit_radius()
                     self.body.radius = r
@@ -595,21 +625,41 @@ class Prop:
             ])
         return out
 
+    def _mesh_data(self):
+        if self.model == "gltf" and self._gltf_flat is not None:
+            return self._gltf_flat.verts, self._gltf_flat.indices
+        return _unit_mesh(self.model)
+
+    def _bake_texture(self) -> int:
+        import kagra
+        if self.texture:
+            return int(self.texture)
+        img = getattr(self._gltf_flat, "image", None) if self._gltf_flat is not None else None
+        if img:
+            import tempfile
+            from pathlib import Path
+
+            suffix = ".jpg" if img[:2] == b"\xff\xd8" else ".png"
+            path = Path(tempfile.gettempdir()) / f"kagra_prop_gltf{suffix}"
+            path.write_bytes(img)
+            return int(kagra.load(str(path)))
+        return solid_tex(self.color)
+
     def _draw_immediate(self) -> None:
         import kagra
         tex = self.tex_id or self.texture or solid_tex(self.color)
-        verts, idx = _unit_mesh(self.model)
+        verts, idx = self._mesh_data()
         kagra.draw_mesh_3d(int(tex), self.world_verts(verts), idx)
 
     def bake(self) -> int:
         """テクスチャと単位メッシュを載せる。エンジン未初期化なら 0。"""
         try:
             import kagra
-            self.tex_id = int(self.texture) if self.texture else solid_tex(self.color)
-            key = (self.model, self.tex_id)
+            self.tex_id = self._bake_texture()
+            key = (self.model, str(self.gltf_path or ""), self.tex_id)
             mid = _unit_cache.get(key)
             if not mid:
-                verts, idx = _unit_mesh(self.model)
+                verts, idx = self._mesh_data()
                 mid = int(kagra.upload_mesh_3d(self.tex_id, verts, idx))
                 if mid:
                     _unit_cache[key] = mid

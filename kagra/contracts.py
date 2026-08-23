@@ -128,6 +128,10 @@ _ALIASES: dict[str, list[str]] = {
         "assets/scenes/stage.glb",
         "assets/stage/stage.glb",
     ],
+    "cube": [
+        "kagra/data/unit_cube.glb",
+        "tests/fixtures/unit_cube.glb",
+    ],
 }
 
 
@@ -167,7 +171,7 @@ def candidate_paths(
 
     # pip インストール後も同梱 BVH が解決できるようにする
     pkg_data = Path(__file__).resolve().parent / "data"
-    if kind in (AssetKind.BVH, AssetKind.VRMA, AssetKind.ANY):
+    if kind in (AssetKind.BVH, AssetKind.VRMA, AssetKind.GLTF, AssetKind.ANY):
         stem = Path(name).stem
         if kind in (AssetKind.BVH, AssetKind.ANY):
             out.append(pkg_data / f"{stem}.bvh")
@@ -175,6 +179,11 @@ def candidate_paths(
                 out.append(pkg_data / "synthetic_dance.bvh")
         if kind in (AssetKind.VRMA, AssetKind.ANY):
             out.append(pkg_data / f"{stem}.vrma")
+        if kind in (AssetKind.GLTF, AssetKind.ANY):
+            out.append(pkg_data / f"{stem}.glb")
+            out.append(pkg_data / f"{stem}.gltf")
+            if stem.lower() == "cube":
+                out.append(pkg_data / "unit_cube.glb")
 
     key = Path(name).stem.lower()
     for alias in _ALIASES.get(key, []):

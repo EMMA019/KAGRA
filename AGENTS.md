@@ -65,6 +65,7 @@ PNG/WAV/projection:
 - `destroy(prop)` / `Prop.update_all(dt)` — kinematic move and delete
 - Sphere / cylinder `Prop` collide and hover as those shapes (not boxes)
 - `Prop(..., texture=…)` / `set_parent` — 1-level parent only; child pose is local
+- `Prop("crate.glb")` — static glTF part (not `stage()`). Alias `cube.glb`
 - `kagra.save_json` / `load_json` — high scores
 - `ActionController` — one-shot poses; `ActionController.names()` lists them
 

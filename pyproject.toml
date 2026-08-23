@@ -43,7 +43,7 @@ agent = ["mcp>=1.1", "pytest>=7.0"]
 manifest-path = "kagra-core/Cargo.toml"
 module-name = "kagra.kagra_core"
 features = ["extension-module"]
-include = ["kagra/data/synthetic_dance.bvh", "LICENSE"]
+include = ["kagra/data/synthetic_dance.bvh", "kagra/data/unit_cube.glb", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
