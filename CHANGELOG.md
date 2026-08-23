@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Sphere / cylinder colliders match the mesh: `World3D.add_sphere` /
+  `add_cylinder`, capsule vs circle/disk, hover rays skip AABB corners.
 - Kinematic `Prop`: assign `x`/`y`/`z`, `set_position`, `vx` + `Prop.update_all(dt)`.
   `destroy(p)` / `p.enabled` drop draw, hover, and collision. Prop Garden: gold
   bobs; `E` deletes the hovered prop (smoke path unchanged).

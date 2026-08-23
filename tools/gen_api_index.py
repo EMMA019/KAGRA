@@ -278,6 +278,7 @@ def render_markdown(items: list[tuple[str, str, str]]) -> str:
         "- 一人称: `Walk(..., first_person=True)`。目線は `eye_height`。`F` で切替えるデモは Prop Garden。",
         "- ホバー: `hovered_prop(cam)`（マウス）。レイ直打ちは `kagra.play.hovered_prop(ox,oy,oz,dx,dy,dz)`。`plane` は除外。",
         "- 動く Prop: `p.x` / `set_position` / `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)` か `p.enabled = False`。",
+        "- 球 / 円柱の当たりとホバーは AABB ではない。`World3D.add_sphere` / `add_cylinder`。",
         "- 色付きメッシュ: `solid_tex` + `sphere_mesh` / `cylinder_mesh` / `box_mesh`。",
         "- `kagra-shared` / `mobile/` は別の運転デモ。この Python スタックと混ぜない。",
         "- Rust バインディングの整合は `tests/test_api_bindings.py` も参照。",

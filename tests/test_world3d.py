@@ -59,3 +59,14 @@ def test_add_box_draw_false_is_physics_only():
     assert body in w.boxes
     w.add_box(2, 0, 1, 1, 1, 1, draw=True)
     assert len(w.box_xforms) == 1
+
+
+def test_add_sphere_and_cylinder_are_physics_only():
+    m = _world()
+    w = m.World3D()
+    ball = w.add_sphere(0, 0, 0, 0.5)
+    cyl = w.add_cylinder(2, 0, 0, 0.4, 1.5)
+    assert ball.shape == "sphere"
+    assert cyl.shape == "cylinder"
+    assert w.box_xforms == []
+    assert w._pending == []

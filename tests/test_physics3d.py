@@ -160,3 +160,59 @@ def test_existing_ground_and_bounce():
         p.update(0.016)
     assert abs(b.y) < 0.05
     assert b.on_ground
+
+
+def test_capsule_squeezes_past_sphere_aabb_corner():
+    m = _phys()
+    p = m.Physics3D(gravity=0)
+    p.set_ground_y(-10.0)
+    player = p.add_capsule(2.0, 0.0, 2.0, radius=0.28, height=1.6)
+    player.use_gravity = False
+    player.friction = 0.0
+    p.add_sphere(0.0, 0.0, 0.0, 0.5)
+    player.vx = player.vz = -3.0
+    for _ in range(80):
+        p.update(0.016)
+    dist = math.hypot(player.x, player.z)
+    assert dist < 0.92
+    assert dist > 0.70
+
+
+def test_capsule_blocked_by_sphere_head_on():
+    m = _phys()
+    p = m.Physics3D(gravity=0)
+    p.set_ground_y(-10.0)
+    player = p.add_capsule(2.0, 0.0, 0.0, radius=0.28, height=1.6)
+    player.use_gravity = False
+    p.add_sphere(0.0, 0.0, 0.0, 0.5)
+    player.vx = -4.0
+    for _ in range(50):
+        p.update(0.016)
+    assert player.x > 0.70
+
+
+def test_capsule_squeezes_past_cylinder_aabb_corner():
+    m = _phys()
+    p = m.Physics3D(gravity=0)
+    p.set_ground_y(-10.0)
+    player = p.add_capsule(2.0, 0.0, 2.0, radius=0.28, height=1.6)
+    player.use_gravity = False
+    player.friction = 0.0
+    p.add_cylinder(0.0, 0.0, 0.0, 0.5, 2.0)
+    player.vx = player.vz = -3.0
+    for _ in range(80):
+        p.update(0.016)
+    dist = math.hypot(player.x, player.z)
+    assert dist < 0.92
+    assert dist > 0.70
+
+
+def test_ray_hits_sphere_and_cylinder_cap():
+    m = _phys()
+    p = m.Physics3D()
+    ball = p.add_sphere(0.0, 0.0, 0.0, 0.5)
+    hit = p.raycast(0.0, 0.5, 3.0, 0.0, 0.0, -1.0)
+    assert hit is not None and hit[0] is ball
+    cyl = p.add_cylinder(4.0, 0.0, 0.0, 0.4, 1.2)
+    cap = p.raycast(4.0, 3.0, 0.0, 0.0, -1.0, 0.0)
+    assert cap is not None and cap[0] is cyl

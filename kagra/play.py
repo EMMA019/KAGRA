@@ -127,6 +127,98 @@ def ray_aabb(
     return tmin
 
 
+def ray_sphere(
+    ox: float, oy: float, oz: float,
+    dx: float, dy: float, dz: float,
+    cx: float, cy: float, cz: float, r: float,
+    *,
+    max_dist: float = 80.0,
+) -> Optional[float]:
+    """単位方向前提。外れは None。"""
+    lx, ly, lz = ox - cx, oy - cy, oz - cz
+    b = lx * dx + ly * dy + lz * dz
+    c = lx * lx + ly * ly + lz * lz - r * r
+    disc = b * b - c
+    if disc < 0:
+        return None
+    s = math.sqrt(disc)
+    for t in (-b - s, -b + s):
+        if 0.0 <= t < max_dist:
+            return t
+    return None
+
+
+def ray_disk_y(
+    ox: float, oy: float, oz: float,
+    dx: float, dy: float, dz: float,
+    cx: float, cy: float, cz: float, r: float,
+    *,
+    max_dist: float = 80.0,
+) -> Optional[float]:
+    if abs(dy) < 1e-8:
+        return None
+    t = (cy - oy) / dy
+    if t < 0.0 or t >= max_dist:
+        return None
+    px = ox + dx * t - cx
+    pz = oz + dz * t - cz
+    if px * px + pz * pz <= r * r:
+        return t
+    return None
+
+
+def ray_cylinder(
+    ox: float, oy: float, oz: float,
+    dx: float, dy: float, dz: float,
+    cx: float, cz: float, r: float, y0: float, y1: float,
+    *,
+    max_dist: float = 80.0,
+) -> Optional[float]:
+    """Y 軸円柱 + 上下の円盤。"""
+    best = None
+    a = dx * dx + dz * dz
+    if a >= 1e-12:
+        fx, fz = ox - cx, oz - cz
+        b = 2.0 * (fx * dx + fz * dz)
+        c = fx * fx + fz * fz - r * r
+        disc = b * b - 4.0 * a * c
+        if disc >= 0:
+            s = math.sqrt(disc)
+            for t in ((-b - s) / (2.0 * a), (-b + s) / (2.0 * a)):
+                if 0.0 <= t < (best if best is not None else max_dist):
+                    y = oy + dy * t
+                    if y0 <= y <= y1:
+                        best = t
+    for y in (y0, y1):
+        t = ray_disk_y(ox, oy, oz, dx, dy, dz, cx, y, cz, r, max_dist=max_dist)
+        if t is not None and (best is None or t < best):
+            best = t
+    return best
+
+
+def prop_hit_t(
+    ox: float, oy: float, oz: float,
+    dx: float, dy: float, dz: float,
+    prop: "Prop",
+    *,
+    max_dist: float = 80.0,
+) -> Optional[float]:
+    """Prop の見た目の形に対するレイ距離。"""
+    model = getattr(prop, "model", "box")
+    if model == "sphere":
+        r = 0.5 * max(abs(prop.sx), abs(prop.sy), abs(prop.sz))
+        return ray_sphere(ox, oy, oz, dx, dy, dz, prop.x, prop.y, prop.z, r, max_dist=max_dist)
+    if model == "cylinder":
+        r = 0.5 * max(abs(prop.sx), abs(prop.sz))
+        hy = abs(prop.sy) * 0.5
+        return ray_cylinder(
+            ox, oy, oz, dx, dy, dz,
+            prop.x, prop.z, r, prop.y - hy, prop.y + hy,
+            max_dist=max_dist,
+        )
+    return ray_aabb(ox, oy, oz, dx, dy, dz, prop_aabb(prop), max_dist=max_dist)
+
+
 def hovered_prop(
     ox: float,
     oy: float,
@@ -150,7 +242,7 @@ def hovered_prop(
             continue
         if getattr(p, "model", "") == "plane":
             continue
-        t = ray_aabb(ox, oy, oz, dx, dy, dz, prop_aabb(p), max_dist=best_t)
+        t = prop_hit_t(ox, oy, oz, dx, dy, dz, p, max_dist=best_t)
         if t is not None and 0.0 <= t < best_t:
             best_t = t
             best = p
@@ -265,13 +357,30 @@ class Prop:
         self.mesh_id = 0
         self.body = None
         if world is not None and self.collision and self.model != "plane":
-            bottom = self._y - self.sy * 0.5
-            self.body = world.add_box(
-                self._x, bottom, self._z, self.sx, self.sy, self.sz,
-                draw=False,
-            )
+            self.body = self._make_body(world)
             self._sync_body()
         Prop._all.append(self)
+
+    def _hit_radius(self) -> float:
+        """球は外接球、円柱は XZ 半径。"""
+        if self.model == "sphere":
+            return 0.5 * max(abs(self.sx), abs(self.sy), abs(self.sz))
+        return 0.5 * max(abs(self.sx), abs(self.sz))
+
+    def _make_body(self, world: World3D):
+        if self.model == "sphere":
+            r = self._hit_radius()
+            return world.add_sphere(self._x, self._y - r, self._z, r)
+        if self.model == "cylinder":
+            r = self._hit_radius()
+            return world.add_cylinder(
+                self._x, self._y - self.sy * 0.5, self._z, r, abs(self.sy),
+            )
+        bottom = self._y - self.sy * 0.5
+        return world.add_box(
+            self._x, bottom, self._z, self.sx, self.sy, self.sz,
+            draw=False,
+        )
 
     @property
     def x(self) -> float:
@@ -322,7 +431,19 @@ class Prop:
         if self.body is None:
             return
         self.body.x = self._x
-        self.body.y = self._y - self.sy * 0.5
+        if self.model == "sphere":
+            r = self._hit_radius()
+            self.body.y = self._y - r
+            self.body.radius = r
+            self.body.h = r * 2.0
+            self.body.w = self.body.d = r * 2.0
+        else:
+            self.body.y = self._y - self.sy * 0.5
+            if self.model == "cylinder":
+                r = self._hit_radius()
+                self.body.radius = r
+                self.body.h = abs(self.sy)
+                self.body.w = self.body.d = r * 2.0
         self.body.z = self._z
         self.body.yaw = self._yaw
         self.body.active = self.enabled

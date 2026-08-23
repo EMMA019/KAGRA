@@ -52,6 +52,7 @@ Result: `examples/vrm_dodge_room.py`
 | First person | `Walk(..., first_person=True)` — eye height. Prop Garden: `F` |
 | Hover | `hovered_prop(cam)` — not the 2D `mouse`. Floor `plane` is skipped |
 | Move / delete | `prop.x = …` or `vx` + `Prop.update_all(dt)`. `destroy(prop)` / `prop.enabled` |
+| Shape hit | `Prop("sphere")` / `cylinder` collide and hover as those shapes, not boxes |
 | Mesh retain | `upload_mesh_3d` once, `draw_mesh_id` each frame — or `world.bake` / `world.draw` |
 | Art / SE | `kagra.texture_from_fn` / `kagra.tone` / `kagra.draw_billboard` |
 | Score | `kagra.save_json` / `kagra.load_json` |
@@ -90,3 +91,4 @@ KAGRA で、VRM が3レーンを左右に歩いて、奥から飛んでくるハ
 これは play-surface デモで、エージェント製ログではない）。
 一人称は `Walk(..., first_person=True)`。ホバーは `hovered_prop(cam)`。
 動かすのは `p.x` か `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)`。
+球 / 円柱の当たりとホバーは箱ではない。
