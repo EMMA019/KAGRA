@@ -1,33 +1,25 @@
 # kagra/physics3d.py
 """
-3D 物理エンジン（Python 実装）
+3D 物理（ゲーム用キャラクターコントローラ。Rapier は使わない）。
 
-2D 物理（physics.py）とは独立した 3D 専用モジュール。
-ECS は使わず、シンプルな手続き型 API で設計。
+2D 物理（physics.py）とは独立。回転積分はせず、Y-up カプセルと
+静的 AABB / yaw OBB の押し出し、レイヤー、トリガー、VRM 同期。
 
 Example::
-    # セットアップ
     physics = kagra.Physics3D(gravity=9.8)
+    player = physics.add_capsule(0, 1.0, 0, radius=0.25, height=1.7)
+    wall = physics.add_obb(3, 0, 0, 0.4, 2.0, 2.0, yaw=0.4, is_static=True)
+    zone = physics.add_body(0, 0, 2, 2, 2, 2, trigger=True, is_static=True)
 
-    # 剛体を追加
-    player = physics.add_body(x=0, y=1, z=0,
-                              w=0.4, h=1.8, d=0.4)  # XYZ の AABB
-    box = physics.add_body(x=2, y=0.5, z=0,
-                           w=1.0, h=1.0, d=1.0,
-                           is_static=True)  # 静的オブジェクト
-
-    # 毎フレーム
-    player.vx = speed_x
-    player.vz = speed_z
-    physics.update(dt)
-
-    # 位置を取得して描画
-    kagra.draw_vrm(vrm_id)   # VRM は別途 set_vrm_offset で同期
-    x, y, z = player.x, player.y, player.z
+    def update(dt):
+        player.vx = speed_x
+        player.vz = speed_z
+        physics.update(dt)
+        physics.sync_vrm(player, avatar)
 """
 from __future__ import annotations
 import math
-from typing import Callable, Optional
+from typing import Callable, Optional, Union
 
 
 # ── AABB 3D ───────────────────────────────────────────────────────
@@ -71,7 +63,7 @@ class AABB:
 # ── RigidBody3D ───────────────────────────────────────────────────
 
 class RigidBody3D:
-    """3D 剛体。AABB 衝突 + 速度積分 + 重力。
+    """3D 剛体。AABB / Y-up カプセル / yaw OBB + 速度積分 + 重力。
 
     Example::
         body = physics.add_body(x=0, y=0, z=0, w=0.5, h=1.8, d=0.5)
@@ -84,8 +76,14 @@ class RigidBody3D:
                  w: float, h: float, d: float,
                  is_static: bool = False,
                  restitution: float = 0.0,
-                 friction: float = 0.8):
-        # 位置（AABB の底面中心）
+                 friction: float = 0.8,
+                 shape: str = "aabb",
+                 radius: Optional[float] = None,
+                 yaw: float = 0.0,
+                 layer: int = 1,
+                 mask: int = 0xFFFFFFFF,
+                 trigger: bool = False):
+        # 位置（AABB / カプセルの底面中心）
         self.x = x
         self.y = y
         self.z = z
@@ -108,6 +106,19 @@ class RigidBody3D:
         self.on_ground   = False        # 地面に接触中か
         self.active      = True         # False にすると更新スキップ
 
+        # 形状: "aabb" | "capsule" | "obb"
+        # カプセルは常に Y-up。radius 未指定なら min(w, d)*0.5。
+        # OBB は Y 軸回り yaw（ラジアン）だけ回る静的向き。
+        self.shape = shape
+        self.radius = float(radius) if radius is not None else min(w, d) * 0.5
+        self.yaw = float(yaw)
+
+        # レイヤー: 衝突は (a.layer & b.mask) かつ (b.layer & a.mask)
+        self.layer = int(layer)
+        self.mask = int(mask)
+        # True = 重なり検出のみ。押し出し・速度反転はしない
+        self.trigger = bool(trigger)
+
         # コールバック
         self.on_collide: Optional[Callable[['RigidBody3D', str], None]] = None
 
@@ -116,13 +127,23 @@ class RigidBody3D:
 
     @property
     def aabb(self) -> AABB:
-        """現在の AABB を返す（底面左前が原点）。"""
+        """現在の AABB を返す（底面左前が原点）。カプセルは外接箱。"""
+        if self.shape == "capsule":
+            r = self.radius
+            return AABB(self.x - r, self.y, self.z - r, r * 2.0, self.h, r * 2.0)
         return AABB(
             self.x - self.w * 0.5,
             self.y,
             self.z - self.d * 0.5,
             self.w, self.h, self.d,
         )
+
+    def capsule_segment(self) -> tuple:
+        """Y-up カプセルの軸端点 (ax,ay,az, bx,by,bz)。"""
+        r = self.radius
+        half = max(0.0, self.h * 0.5 - r)
+        cy = self.y + self.h * 0.5
+        return (self.x, cy - half, self.z, self.x, cy + half, self.z)
 
     def add_force(self, fx: float, fy: float, fz: float):
         """速度に力を加える（質量1と仮定）。"""
@@ -143,16 +164,13 @@ class Physics3D:
     Example::
         physics = kagra.Physics3D(gravity=9.8)
 
-        # 剛体を追加
-        player = physics.add_body(0, 1.0, 0, 0.4, 1.8, 0.4)
+        player = physics.add_capsule(0, 1.0, 0, 0.25, 1.7)
         wall   = physics.add_body(3, 0.5, 0, 1.0, 1.0, 1.0, is_static=True)
 
-        # 地形（高さマップ関数）
-        physics.set_height_fn(lambda x, z: 0.0)  # 平らな地面
+        physics.set_height_fn(lambda x, z: 0.0)
 
-        # 毎フレーム
         physics.update(dt)
-        x, y, z = player.x, player.y, player.z
+        physics.sync_vrm(player, avatar)
     """
 
     def __init__(self, gravity: float = 9.8):
@@ -168,7 +186,13 @@ class Physics3D:
                  w: float, h: float, d: float,
                  is_static: bool = False,
                  restitution: float = 0.0,
-                 friction: float = 0.85) -> RigidBody3D:
+                 friction: float = 0.85,
+                 shape: str = "aabb",
+                 radius: Optional[float] = None,
+                 yaw: float = 0.0,
+                 layer: int = 1,
+                 mask: int = 0xFFFFFFFF,
+                 trigger: bool = False) -> RigidBody3D:
         """剛体を追加して返す。
 
         Args:
@@ -177,18 +201,60 @@ class Physics3D:
             is_static:  True = 壁や床など動かない物体
             restitution: 反発係数 0.0（跳ねない）〜1.0（完全弾性）
             friction:   摩擦係数
-
-        Example::
-            player = physics.add_body(0, 0, 0, 0.4, 1.8, 0.4)
-            floor  = physics.add_body(-10, -0.1, -10,
-                                      20, 0.1, 20, is_static=True)
+            shape:      ``"aabb"`` / ``"capsule"`` / ``"obb"``
+            radius:     カプセル半径（省略時は min(w,d)*0.5）
+            yaw:        OBB の Y 軸回り（ラジアン）
+            layer/mask: ビットマスク。両方の AND が非ゼロなら衝突
+            trigger:    True なら重なり通知のみ（押し出さない）
         """
         body = RigidBody3D(x, y, z, w, h, d,
                            is_static=is_static,
                            restitution=restitution,
-                           friction=friction)
+                           friction=friction,
+                           shape=shape,
+                           radius=radius,
+                           yaw=yaw,
+                           layer=layer,
+                           mask=mask,
+                           trigger=trigger)
         self.bodies.append(body)
         return body
+
+    def add_capsule(self,
+                    x: float, y: float, z: float,
+                    radius: float, height: float,
+                    is_static: bool = False,
+                    restitution: float = 0.0,
+                    friction: float = 0.85,
+                    layer: int = 1,
+                    mask: int = 0xFFFFFFFF,
+                    trigger: bool = False) -> RigidBody3D:
+        """Y-up カプセルを追加する。height は半球を含む全高。"""
+        r = float(radius)
+        return self.add_body(
+            x, y, z, r * 2.0, float(height), r * 2.0,
+            is_static=is_static, restitution=restitution, friction=friction,
+            shape="capsule", radius=r,
+            layer=layer, mask=mask, trigger=trigger,
+        )
+
+    def add_obb(self,
+                x: float, y: float, z: float,
+                w: float, h: float, d: float,
+                yaw: float = 0.0,
+                is_static: bool = True,
+                restitution: float = 0.0,
+                friction: float = 0.85,
+                layer: int = 1,
+                mask: int = 0xFFFFFFFF,
+                trigger: bool = False) -> RigidBody3D:
+        """Y 軸回り yaw の向き付き箱。既定は静的（壁・段差）。"""
+        return self.add_body(
+            x, y, z, w, h, d,
+            is_static=is_static, restitution=restitution, friction=friction,
+            shape="obb", yaw=yaw,
+            layer=layer, mask=mask, trigger=trigger,
+        )
 
     def remove_body(self, body: RigidBody3D):
         """剛体を削除する。"""
@@ -205,14 +271,28 @@ class Physics3D:
 
         Args:
             fn: (x, z) → y を返す関数
-
-        Example::
-            # 波型の地形
-            physics.set_height_fn(
-                lambda x, z: math.sin(x) * 0.5
-            )
         """
         self._height_fn = fn
+
+    def sync_vrm(self, body: RigidBody3D, vrm: Union[int, object]):
+        """body の底面位置を VRM ルートオフセットへ書く。
+
+        ``vrm`` は ``vrm_id`` または ``avatar.vrm_id`` を持つオブジェクト。
+        エンジン未初期化なら何もしない（テスト可）。
+        """
+        vid = getattr(vrm, "vrm_id", vrm)
+        try:
+            vid = int(vid)
+        except (TypeError, ValueError):
+            return
+        try:
+            import kagra
+            eng = getattr(kagra, "_engine", None)
+            if eng is None:
+                return
+            eng.set_vrm_offset(vid, float(body.x), float(body.y), float(body.z))
+        except Exception:
+            return
 
     # ── 毎フレーム更新 ────────────────────────────────────────────
 
@@ -229,9 +309,9 @@ class Physics3D:
             if body.is_static or not body.active:
                 continue
             self._integrate(body, dt)
+            body.on_ground = False
             self._ground_collision(body)
 
-        # AABB vs AABB 衝突解決
         self._solve_collisions()
 
     def _integrate(self, body: RigidBody3D, dt: float):
@@ -243,7 +323,6 @@ class Physics3D:
         body.y += body.vy * dt
         body.z += body.vz * dt
 
-        # 摩擦（地面接触中のみ XZ 方向に適用）
         if body.on_ground:
             damp = max(0.0, 1.0 - body.friction * dt * 10.0)
             body.vx *= damp
@@ -251,7 +330,6 @@ class Physics3D:
 
     def _ground_collision(self, body: RigidBody3D):
         """地面との衝突を解決する。"""
-        # 地形高さ関数があれば使う
         if self._height_fn is not None:
             gy = self._height_fn(body.x, body.z)
         else:
@@ -264,152 +342,498 @@ class Physics3D:
                 if abs(body.vy) < 0.1:
                     body.vy = 0.0
             body.on_ground = True
-        else:
-            body.on_ground = (body.y - gy) < 0.01
+        elif (body.y - gy) < 0.01:
+            body.on_ground = True
+
+    def _solves(self, a: RigidBody3D, b: RigidBody3D) -> bool:
+        if not a.active or not b.active:
+            return False
+        if a.is_static and b.is_static:
+            return False
+        return (a.layer & b.mask) != 0 and (b.layer & a.mask) != 0
 
     def _solve_collisions(self):
-        """AABB vs AABB 衝突を解決する（最小軸押し戻し法）。"""
+        """形状に応じた衝突。トリガーは通知のみ。"""
         n = len(self.bodies)
         for i in range(n):
             a = self.bodies[i]
-            if not a.active: continue
             for j in range(i + 1, n):
                 b = self.bodies[j]
-                if not b.active: continue
-                if a.is_static and b.is_static: continue
-
-                overlap = a.aabb.overlaps(b.aabb)
-                if overlap is None:
+                if not self._solves(a, b):
                     continue
+                hit = _collide_pair(a, b)
+                if hit is None:
+                    continue
+                nx, ny, nz, pen = hit
+                kind = "trigger" if (a.trigger or b.trigger) else "hit"
+                if kind == "hit":
+                    self._resolve_normal(a, b, nx, ny, nz, pen)
+                if a.on_collide:
+                    a.on_collide(b, kind)
+                if b.on_collide:
+                    b.on_collide(a, kind)
 
-                ox, oy, oz = overlap
-                self._resolve(a, b, ox, oy, oz)
-
-    def _resolve(self, a: RigidBody3D, b: RigidBody3D,
-                 ox: float, oy: float, oz: float):
-        """最小重なり軸で押し戻す。"""
-        # 最小重なり軸を求める
-        min_ov = min(ox, oy, oz)
-
-        # 押し戻し方向（a→b の方向）
-        if min_ov == ox:
-            nx = 1.0 if a.x < b.x else -1.0
-            ny = nz = 0.0
-            pen = ox
-        elif min_ov == oy:
-            ny = 1.0 if a.y < b.y else -1.0
-            nx = nz = 0.0
-            pen = oy
-        else:
-            nz = 1.0 if a.z < b.z else -1.0
-            nx = ny = 0.0
-            pen = oz
-
-        # 反発係数（平均）
+    def _resolve_normal(self, a: RigidBody3D, b: RigidBody3D,
+                        nx: float, ny: float, nz: float, pen: float):
+        """法線 (a→b) と侵入量で押し戻す。"""
         rest = (a.restitution + b.restitution) * 0.5
-
         if a.is_static:
-            b.x += nx * pen;  b.y += ny * pen;  b.z += nz * pen
-            # 速度反転
-            dv = (b.vx*nx + b.vy*ny + b.vz*nz)
+            b.x += nx * pen
+            b.y += ny * pen
+            b.z += nz * pen
+            dv = b.vx * nx + b.vy * ny + b.vz * nz
             if dv < 0:
-                b.vx -= (1+rest)*dv*nx
-                b.vy -= (1+rest)*dv*ny
-                b.vz -= (1+rest)*dv*nz
+                b.vx -= (1 + rest) * dv * nx
+                b.vy -= (1 + rest) * dv * ny
+                b.vz -= (1 + rest) * dv * nz
+            # 静的 a から動的 b を +Y へ押したら接地
+            if ny > 0.5:
+                b.on_ground = True
         elif b.is_static:
-            a.x -= nx * pen;  a.y -= ny * pen;  a.z -= nz * pen
-            dv = (a.vx*nx + a.vy*ny + a.vz*nz)
+            a.x -= nx * pen
+            a.y -= ny * pen
+            a.z -= nz * pen
+            dv = a.vx * nx + a.vy * ny + a.vz * nz
             if dv > 0:
-                a.vx -= (1+rest)*dv*nx
-                a.vy -= (1+rest)*dv*ny
-                a.vz -= (1+rest)*dv*nz
+                a.vx -= (1 + rest) * dv * nx
+                a.vy -= (1 + rest) * dv * ny
+                a.vz -= (1 + rest) * dv * nz
+            # 法線は a→b。箱が下なら ny<0 で a を上へ戻す
+            if ny < -0.5:
+                a.on_ground = True
         else:
-            # 両方動く → 半分ずつ押し戻す
-            a.x -= nx*pen*0.5;  a.y -= ny*pen*0.5;  a.z -= nz*pen*0.5
-            b.x += nx*pen*0.5;  b.y += ny*pen*0.5;  b.z += nz*pen*0.5
-            # 相対速度を反転
+            a.x -= nx * pen * 0.5
+            a.y -= ny * pen * 0.5
+            a.z -= nz * pen * 0.5
+            b.x += nx * pen * 0.5
+            b.y += ny * pen * 0.5
+            b.z += nz * pen * 0.5
             dvx = a.vx - b.vx
             dvy = a.vy - b.vy
             dvz = a.vz - b.vz
-            dv  = dvx*nx + dvy*ny + dvz*nz
+            dv = dvx * nx + dvy * ny + dvz * nz
             if dv > 0:
-                imp = (1+rest)*dv*0.5
-                a.vx -= imp*nx;  a.vy -= imp*ny;  a.vz -= imp*nz
-                b.vx += imp*nx;  b.vy += imp*ny;  b.vz += imp*nz
-
-        # コールバック
-        if a.on_collide: a.on_collide(b, 'hit')
-        if b.on_collide: b.on_collide(a, 'hit')
+                imp = (1 + rest) * dv * 0.5
+                a.vx -= imp * nx
+                a.vy -= imp * ny
+                a.vz -= imp * nz
+                b.vx += imp * nx
+                b.vy += imp * ny
+                b.vz += imp * nz
 
     # ── ユーティリティ ────────────────────────────────────────────
 
     def raycast(self, ox: float, oy: float, oz: float,
                 dx: float, dy: float, dz: float,
                 max_dist: float = 100.0) -> Optional[tuple]:
-        """レイキャスト（スラブ法）。
-
-        Args:
-            ox,oy,oz:  レイの始点
-            dx,dy,dz:  レイの方向（正規化不要）
-            max_dist:  最大距離
+        """レイキャスト。AABB / カプセル / OBB。
 
         Returns:
             (body, distance, hit_x, hit_y, hit_z) または None
-
-        Example::
-            result = physics.raycast(
-                cam_x, cam_y, cam_z,
-                look_x, look_y, look_z,
-                max_dist=50.0
-            )
-            if result:
-                body, dist, hx, hy, hz = result
         """
-        # 方向を正規化
-        length = math.sqrt(dx*dx + dy*dy + dz*dz)
+        length = math.sqrt(dx * dx + dy * dy + dz * dz)
         if length < 1e-8:
             return None
-        dx /= length; dy /= length; dz /= length
+        dx /= length
+        dy /= length
+        dz /= length
 
-        best_t   = max_dist
+        best_t = max_dist
         best_body = None
 
         for body in self.bodies:
             if not body.active:
                 continue
-            aabb = body.aabb
-            t = _ray_aabb(ox, oy, oz, dx, dy, dz, aabb)
+            t = _ray_body(ox, oy, oz, dx, dy, dz, body)
             if t is not None and 0 < t < best_t:
-                best_t    = t
+                best_t = t
                 best_body = body
 
         if best_body is None:
             return None
 
-        hx = ox + dx * best_t
-        hy = oy + dy * best_t
-        hz = oz + dz * best_t
-        return (best_body, best_t, hx, hy, hz)
+        return (best_body, best_t,
+                ox + dx * best_t, oy + dy * best_t, oz + dz * best_t)
+
+
+# ── 衝突ヘルパ ────────────────────────────────────────────────────
+
+def _collide_pair(a: RigidBody3D, b: RigidBody3D) -> Optional[tuple]:
+    """(nx, ny, nz, pen)。法線は a→b。重ならなければ None。"""
+    sa, sb = a.shape, b.shape
+    if sa == "capsule" and sb == "capsule":
+        return _capsule_capsule(a, b)
+    if sa == "capsule":
+        return _capsule_solid(a, b)
+    if sb == "capsule":
+        hit = _capsule_solid(b, a)
+        if hit is None:
+            return None
+        nx, ny, nz, pen = hit
+        return (-nx, -ny, -nz, pen)
+    if sa == "obb" or sb == "obb":
+        return _obb_pair(a, b)
+    return _aabb_aabb(a, b)
+
+
+def _aabb_aabb(a: RigidBody3D, b: RigidBody3D) -> Optional[tuple]:
+    overlap = a.aabb.overlaps(b.aabb)
+    if overlap is None:
+        return None
+    ox, oy, oz = overlap
+    if ox <= oy and ox <= oz:
+        nx = 1.0 if a.x < b.x else -1.0
+        return (nx, 0.0, 0.0, ox)
+    if oy <= ox and oy <= oz:
+        ny = 1.0 if a.y < b.y else -1.0
+        return (0.0, ny, 0.0, oy)
+    nz = 1.0 if a.z < b.z else -1.0
+    return (0.0, 0.0, nz, oz)
+
+
+def _capsule_solid(cap: RigidBody3D, solid: RigidBody3D) -> Optional[tuple]:
+    """Y-up カプセル vs AABB / yaw OBB。法線は capsule→solid。"""
+    if solid.shape == "obb":
+        lx, ly, lz = _world_to_obb_local(
+            cap.x, cap.y + cap.h * 0.5, cap.z, solid)
+        hit = _capsule_vs_aabb_centered(lx, ly, lz, cap.radius, cap.h,
+                                        _obb_local_aabb(solid))
+        if hit is None:
+            return None
+        lnx, lny, lnz, pen = hit
+        nx, ny, nz = _obb_local_dir_to_world(lnx, lny, lnz, solid)
+        return (nx, ny, nz, pen)
+    cy = cap.y + cap.h * 0.5
+    return _capsule_vs_aabb_centered(cap.x, cy, cap.z, cap.radius, cap.h, solid.aabb)
+
+
+def _capsule_vs_aabb_centered(cx, cy, cz, radius, height, aabb: AABB) -> Optional[tuple]:
+    """中心 (cx,cy,cz) の Y-up カプセル vs AABB。法線はカプセル→箱。"""
+    half = max(0.0, height * 0.5 - radius)
+    sy0, sy1 = cy - half, cy + half
+    qx = min(max(cx, aabb.x), aabb.max_x)
+    qz = min(max(cz, aabb.z), aabb.max_z)
+    dx, dz = qx - cx, qz - cz
+    dist_xz = math.sqrt(dx * dx + dz * dz)
+
+    y_overlap = min(sy1, aabb.max_y) - max(sy0, aabb.y)
+    if y_overlap > 0:
+        if dist_xz >= radius:
+            return None
+        if dist_xz > 1e-8:
+            return (dx / dist_xz, 0.0, dz / dist_xz, radius - dist_xz)
+        # 軸が箱の中。深い Y 重なり（壁）は XZ 優先。床・天井は Y。
+        xz_faces = (
+            (cx - aabb.x + radius, 1.0, 0.0, 0.0),
+            (aabb.max_x - cx + radius, -1.0, 0.0, 0.0),
+            (cz - aabb.z + radius, 0.0, 0.0, 1.0),
+            (aabb.max_z - cz + radius, 0.0, 0.0, -1.0),
+        )
+        y_faces = (
+            (sy0 - aabb.y, 0.0, 1.0, 0.0),
+            (aabb.max_y - sy1, 0.0, -1.0, 0.0),
+        )
+        if y_overlap > radius * 2.0:
+            pen, nx, ny, nz = min(xz_faces, key=lambda f: f[0])
+        else:
+            pen, nx, ny, nz = min(xz_faces + y_faces, key=lambda f: f[0])
+        return (nx, ny, nz, max(pen, 1e-4))
+
+    if sy0 >= aabb.max_y:
+        y_dist = sy0 - aabb.max_y
+        if dist_xz > 1e-8:
+            dist = math.sqrt(dist_xz * dist_xz + y_dist * y_dist)
+            if dist >= radius:
+                return None
+            return (dx / dist, -y_dist / dist, dz / dist, radius - dist)
+        if y_dist >= radius:
+            return None
+        return (0.0, -1.0, 0.0, radius - y_dist)
+
+    if sy1 <= aabb.y:
+        y_dist = aabb.y - sy1
+        if dist_xz > 1e-8:
+            dist = math.sqrt(dist_xz * dist_xz + y_dist * y_dist)
+            if dist >= radius:
+                return None
+            return (dx / dist, y_dist / dist, dz / dist, radius - dist)
+        if y_dist >= radius:
+            return None
+        return (0.0, 1.0, 0.0, radius - y_dist)
+    return None
+
+
+def _capsule_capsule(a: RigidBody3D, b: RigidBody3D) -> Optional[tuple]:
+    a0 = a.capsule_segment()
+    b0 = b.capsule_segment()
+    p, q = _closest_points_segments(a0, b0)
+    dx, dy, dz = q[0] - p[0], q[1] - p[1], q[2] - p[2]
+    dist2 = dx * dx + dy * dy + dz * dz
+    min_d = a.radius + b.radius
+    if dist2 > 1e-12:
+        dist = math.sqrt(dist2)
+        if dist >= min_d:
+            return None
+        return (dx / dist, dy / dist, dz / dist, min_d - dist)
+    # 軸が重なったら Y で分ける
+    ny = 1.0 if a.y < b.y else -1.0
+    return (0.0, ny, 0.0, min_d)
+
+
+def _obb_pair(a: RigidBody3D, b: RigidBody3D) -> Optional[tuple]:
+    """AABB または yaw OBB 同士。XZ は SAT、Y は区間。"""
+    ay0, ay1 = a.y, a.y + a.h
+    by0, by1 = b.y, b.y + b.h
+    oy = min(ay1, by1) - max(ay0, by0)
+    if oy <= 0:
+        return None
+    hit = _sat_xz(a, b)
+    if hit is None:
+        return None
+    nx, nz, pen_xz = hit
+    if oy <= pen_xz:
+        ny = 1.0 if a.y < b.y else -1.0
+        return (0.0, ny, 0.0, oy)
+    return (nx, 0.0, nz, pen_xz)
+
+
+def _sat_xz(a: RigidBody3D, b: RigidBody3D) -> Optional[tuple]:
+    """XZ 平面の OBB SAT。(nx, nz, pen) は a→b。"""
+    axes = _xz_axes(a.yaw if a.shape == "obb" else 0.0)
+    axes += _xz_axes(b.yaw if b.shape == "obb" else 0.0)
+    best_pen = float("inf")
+    best_n = (1.0, 0.0)
+    for ax, az in axes:
+        al, ah = _project_xz(a, ax, az)
+        bl, bh = _project_xz(b, ax, az)
+        overlap = min(ah, bh) - max(al, bl)
+        if overlap <= 0:
+            return None
+        if overlap < best_pen:
+            best_pen = overlap
+            # a の中心が軸の負側なら法線を反転
+            ac = a.x * ax + a.z * az
+            bc = b.x * ax + b.z * az
+            if ac > bc:
+                best_n = (-ax, -az)
+            else:
+                best_n = (ax, az)
+    return (best_n[0], best_n[1], best_pen)
+
+
+def _xz_axes(yaw: float) -> list:
+    c, s = math.cos(yaw), math.sin(yaw)
+    return [(c, s), (-s, c)]
+
+
+def _project_xz(body: RigidBody3D, ax: float, az: float) -> tuple:
+    hw, hd = body.w * 0.5, body.d * 0.5
+    if body.shape == "obb":
+        c, s = math.cos(body.yaw), math.sin(body.yaw)
+        # ローカル (±hw, ±hd) をワールド XZ へ
+        corners = (
+            (c * hw - s * hd, s * hw + c * hd),
+            (c * hw + s * hd, s * hw - c * hd),
+            (-c * hw - s * hd, -s * hw + c * hd),
+            (-c * hw + s * hd, -s * hw - c * hd),
+        )
+        dots = [body.x * ax + body.z * az + cx * ax + cz * az for cx, cz in corners]
+        return min(dots), max(dots)
+    ext = hw * abs(ax) + hd * abs(az)
+    c = body.x * ax + body.z * az
+    return c - ext, c + ext
+
+
+def _obb_local_aabb(body: RigidBody3D) -> AABB:
+    return AABB(-body.w * 0.5, -body.h * 0.5, -body.d * 0.5,
+                body.w, body.h, body.d)
+
+
+def _world_to_obb_local(x: float, y: float, z: float, body: RigidBody3D) -> tuple:
+    cy = body.y + body.h * 0.5
+    dx, dy, dz = x - body.x, y - cy, z - body.z
+    c, s = math.cos(-body.yaw), math.sin(-body.yaw)
+    return (c * dx - s * dz, dy, s * dx + c * dz)
+
+
+def _obb_local_dir_to_world(nx: float, ny: float, nz: float, body: RigidBody3D) -> tuple:
+    c, s = math.cos(body.yaw), math.sin(body.yaw)
+    return (c * nx + s * nz, ny, -s * nx + c * nz)
+
+
+def _closest_point_aabb(px: float, py: float, pz: float, aabb: AABB) -> tuple:
+    return (
+        min(max(px, aabb.x), aabb.max_x),
+        min(max(py, aabb.y), aabb.max_y),
+        min(max(pz, aabb.z), aabb.max_z),
+    )
+
+
+def _closest_point_segment(px, py, pz, ax, ay, az, bx, by, bz) -> tuple:
+    abx, aby, abz = bx - ax, by - ay, bz - az
+    ab2 = abx * abx + aby * aby + abz * abz
+    if ab2 < 1e-12:
+        return ax, ay, az
+    t = ((px - ax) * abx + (py - ay) * aby + (pz - az) * abz) / ab2
+    t = max(0.0, min(1.0, t))
+    return ax + t * abx, ay + t * aby, az + t * abz
+
+
+def _closest_points_segments(a, b) -> tuple:
+    """2 線分の最近接点 (Pa, Pb)。"""
+    ax, ay, az, bx, by, bz = a
+    cx, cy, cz, dx, dy, dz = b
+    ux, uy, uz = bx - ax, by - ay, bz - az
+    vx, vy, vz = dx - cx, dy - cy, dz - cz
+    wx, wy, wz = ax - cx, ay - cy, az - cz
+    uu = ux * ux + uy * uy + uz * uz
+    vv = vx * vx + vy * vy + vz * vz
+    uv = ux * vx + uy * vy + uz * vz
+    uw = ux * wx + uy * wy + uz * wz
+    vw = vx * wx + vy * wy + vz * wz
+    den = uu * vv - uv * uv
+    if den < 1e-12:
+        s = 0.0
+    else:
+        s = max(0.0, min(1.0, (uv * vw - vv * uw) / den))
+    if vv < 1e-12:
+        t = 0.0
+    else:
+        t = (uv * s + vw) / vv
+        t = max(0.0, min(1.0, t))
+        if uu > 1e-12:
+            s = max(0.0, min(1.0, (uv * t - uw) / uu))
+    return (
+        (ax + ux * s, ay + uy * s, az + uz * s),
+        (cx + vx * t, cy + vy * t, cz + vz * t),
+    )
+
+
+def _segment_aabb_hit(ax, ay, az, bx, by, bz, radius: float,
+                      aabb: AABB) -> Optional[tuple]:
+    """線分+半径 vs AABB。法線は線分側→箱。"""
+    mx, my, mz = (ax + bx) * 0.5, (ay + by) * 0.5, (az + bz) * 0.5
+    qx, qy, qz = _closest_point_aabb(mx, my, mz, aabb)
+    px, py, pz = _closest_point_segment(qx, qy, qz, ax, ay, az, bx, by, bz)
+    qx, qy, qz = _closest_point_aabb(px, py, pz, aabb)
+    px, py, pz = _closest_point_segment(qx, qy, qz, ax, ay, az, bx, by, bz)
+    dx, dy, dz = qx - px, qy - py, qz - pz
+    dist2 = dx * dx + dy * dy + dz * dz
+    if dist2 > 1e-12:
+        dist = math.sqrt(dist2)
+        if dist >= radius:
+            return None
+        return (dx / dist, dy / dist, dz / dist, radius - dist)
+    # 軸が箱の中。最小面で押し出す
+    cx, cy, cz = (ax + bx) * 0.5, (ay + by) * 0.5, (az + bz) * 0.5
+    left = (cx - aabb.x) + radius
+    right = (aabb.max_x - cx) + radius
+    down = (cy - aabb.y) + radius
+    up = (aabb.max_y - cy) + radius
+    back = (cz - aabb.z) + radius
+    fwd = (aabb.max_z - cz) + radius
+    faces = (
+        (left, -1.0, 0.0, 0.0),
+        (right, 1.0, 0.0, 0.0),
+        (down, 0.0, -1.0, 0.0),
+        (up, 0.0, 1.0, 0.0),
+        (back, 0.0, 0.0, -1.0),
+        (fwd, 0.0, 0.0, 1.0),
+    )
+    pen, nx, ny, nz = min(faces, key=lambda f: f[0])
+    return (nx, ny, nz, max(pen, radius * 0.01))
+
+
+def _ray_body(ox, oy, oz, dx, dy, dz, body: RigidBody3D) -> Optional[float]:
+    if body.shape == "capsule":
+        ax, ay, az, bx, by, bz = body.capsule_segment()
+        return _ray_capsule(ox, oy, oz, dx, dy, dz, ax, ay, az, bx, by, bz, body.radius)
+    if body.shape == "obb":
+        lox, loy, loz = _world_to_obb_local(ox, oy, oz, body)
+        # 方向も回す（並進なし）
+        c, s = math.cos(-body.yaw), math.sin(-body.yaw)
+        ldx = c * dx - s * dz
+        ldy = dy
+        ldz = s * dx + c * dz
+        return _ray_aabb(lox, loy, loz, ldx, ldy, ldz, _obb_local_aabb(body))
+    return _ray_aabb(ox, oy, oz, dx, dy, dz, body.aabb)
 
 
 def _ray_aabb(ox, oy, oz, dx, dy, dz, aabb: AABB) -> Optional[float]:
     """スラブ法による Ray vs AABB 交差判定。交差距離 t を返す。"""
-    INF = float('inf')
+    INF = float("inf")
 
     def slab(o, d, lo, hi):
         if abs(d) < 1e-8:
             return (-INF, INF) if lo <= o <= hi else (INF, -INF)
         t0 = (lo - o) / d
         t1 = (hi - o) / d
-        return (min(t0,t1), max(t0,t1))
+        return (min(t0, t1), max(t0, t1))
 
     tx0, tx1 = slab(ox, dx, aabb.x, aabb.max_x)
     ty0, ty1 = slab(oy, dy, aabb.y, aabb.max_y)
     tz0, tz1 = slab(oz, dz, aabb.z, aabb.max_z)
 
     t_enter = max(tx0, ty0, tz0)
-    t_exit  = min(tx1, ty1, tz1)
+    t_exit = min(tx1, ty1, tz1)
 
     if t_enter > t_exit or t_exit < 0:
         return None
     return t_enter if t_enter >= 0 else t_exit
+
+
+def _ray_sphere(ox, oy, oz, dx, dy, dz, cx, cy, cz, r) -> Optional[float]:
+    lx, ly, lz = ox - cx, oy - cy, oz - cz
+    b = lx * dx + ly * dy + lz * dz
+    c = lx * lx + ly * ly + lz * lz - r * r
+    disc = b * b - c
+    if disc < 0:
+        return None
+    s = math.sqrt(disc)
+    t = -b - s
+    if t >= 0:
+        return t
+    t = -b + s
+    return t if t >= 0 else None
+
+
+def _ray_y_cylinder(ox, oy, oz, dx, dy, dz, cx, cz, r, y0, y1) -> Optional[float]:
+    """Y 軸平行の有限円柱。"""
+    fx, fz = ox - cx, oz - cz
+    a = dx * dx + dz * dz
+    if a < 1e-12:
+        return None
+    b = 2.0 * (fx * dx + fz * dz)
+    c = fx * fx + fz * fz - r * r
+    disc = b * b - 4.0 * a * c
+    if disc < 0:
+        return None
+    s = math.sqrt(disc)
+    t0 = (-b - s) / (2.0 * a)
+    t1 = (-b + s) / (2.0 * a)
+    best = None
+    for t in (t0, t1):
+        if t < 0:
+            continue
+        y = oy + dy * t
+        if y0 <= y <= y1:
+            if best is None or t < best:
+                best = t
+    return best
+
+
+def _ray_capsule(ox, oy, oz, dx, dy, dz,
+                 ax, ay, az, bx, by, bz, r) -> Optional[float]:
+    """Y-up 前提のカプセル（軸がほぼ +Y）。一般軸でも球2つは正しい。"""
+    ts = []
+    t = _ray_sphere(ox, oy, oz, dx, dy, dz, ax, ay, az, r)
+    if t is not None:
+        ts.append(t)
+    t = _ray_sphere(ox, oy, oz, dx, dy, dz, bx, by, bz, r)
+    if t is not None:
+        ts.append(t)
+    y0, y1 = (ay, by) if ay <= by else (by, ay)
+    t = _ray_y_cylinder(ox, oy, oz, dx, dy, dz, ax, az, r, y0, y1)
+    if t is not None:
+        ts.append(t)
+    return min(ts) if ts else None

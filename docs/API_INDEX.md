@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **332**
+エントリ数: **335**
 
 ## Functions
 
@@ -15,6 +15,7 @@
 | `bar` | `bar(x: float, y: float, w: float, h: float, value: float, max_value: float = 100, *, bg=(25, 25, 35), fill=(50, 220, 80))` |
 | `bgm` | `bgm(path: str, loop: bool = True, vol: float = 0.8) -> None` |
 | `button` | `button(x: float, y: float, w: float, h: float, label: str = '', *, bg=(70, 70, 90), hover=(100, 100, 150), color=(255, 255, 255), size: int = 20, font: int = None) -> bool` |
+| `camera_ray_from_screen` | `camera_ray_from_screen(sx: float, sy: float)` |
 | `camera_update` | `camera_update(dt: float)` |
 | `circle` | `circle(x: float, y: float, radius: float, r: int = 255, g: int = 255, b: int = 255, a: int = 255, segments: int = 24)` |
 | `circle_fill` | `circle_fill(x: float, y: float, radius: float, color=(255, 255, 255), alpha: int = 255)` |
@@ -110,6 +111,7 @@
 | `off_all` | `off_all(event)` |
 | `on` | `on(event, callback, priority=0, once=False)` |
 | `once` | `once(event, callback, priority=0)` |
+| `pick_vrm_bone` | `pick_vrm_bone(vrm_id: int, ox: float, oy: float, oz: float, dx: float, dy: float, dz: float, max_dist: float = 100.0)` |
 | `play_bgm` | `play_bgm(path: str, loop_=True, volume=0.8)` |
 | `play_se` | `play_se(path: str, volume=1.0)` |
 | `point_in_rect` | `point_in_rect(px, py, rx, ry, rw, rh)` |
@@ -138,6 +140,7 @@
 | `se` | `se(path: str, vol: float = 1.0) -> None` |
 | `set_always_on_top` | `set_always_on_top(enabled: bool)` |
 | `set_blend_shape` | `set_blend_shape(vrm_id: int, name: str, weight: float)` |
+| `set_bloom` | `set_bloom(threshold: float = 0.85, intensity: float = 0.35, enabled: bool = True)` |
 | `set_boid_active_count` | `set_boid_active_count(boid_id: int, count: int)` |
 | `set_camera` | `set_camera(cam: Camera \| None)` |
 | `set_camera3d` | `set_camera3d(cam: Camera3D \| None)` |

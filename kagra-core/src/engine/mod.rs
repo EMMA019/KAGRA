@@ -20,7 +20,8 @@ use crate::color::Color;
 use crate::renderer::SkinnedMeshCommand;
 use crate::vrm::VrmModel;
 use crate::gltf::GltfModel;
-use crate::camera::{row_major_to_column_major, Camera3D};
+use crate::camera::{row_major_to_column_major, unproject_ray, Camera3D};
+use crate::pick::{bone_pick_radius, ray_sphere};
 
 // モジュール
 mod ui;
@@ -42,6 +43,9 @@ pub struct Engine {
     /// Python 側が update_camera_3d() で行列を直接指定したか。
     /// true の間は組み込みカメラで uniform を上書きしない。
     pub(crate) camera_3d_external: Arc<AtomicBool>,
+    /// 最後に GPU へ送った view / proj（列優先）。スクリーンレイ用。
+    pub(crate) last_view_col: Arc<Mutex<[f32; 16]>>,
+    pub(crate) last_proj_col: Arc<Mutex<[f32; 16]>>,
 }
 
 impl Engine {
@@ -150,6 +154,8 @@ impl Engine {
             next_gltf_id: Arc::new(Mutex::new(1u32)),
             camera_3d: Arc::new(Mutex::new(None)),
             camera_3d_external: Arc::new(AtomicBool::new(false)),
+            last_view_col: Arc::new(Mutex::new([0.0; 16])),
+            last_proj_col: Arc::new(Mutex::new([0.0; 16])),
         })
     }
 
@@ -514,8 +520,12 @@ impl Engine {
 
     /// デバッグ: ボーンのワールド行列の平行移動部を返す。
     pub fn debug_bone_world_pos(&self, vrm_id: u32, name: &str) -> Option<(f32, f32, f32)> {
-        let models = lock_recover(&self.vrm_models);
-        let m = models.get(&vrm_id)?;
+        let mut models = lock_recover(&self.vrm_models);
+        let m = models.get_mut(&vrm_id)?;
+        if m.dirty {
+            m.recompute_world();
+            m.dirty = false;
+        }
         let idx = m.resolve_bone(name)?;
         let w = m.bones.get(idx)?.world_mat;
         Some((w[(0, 3)], w[(1, 3)], w[(2, 3)]))
@@ -957,6 +967,8 @@ impl Engine {
         let proj = cam.proj_matrix();
         let view_arr: [f32; 16] = view.as_slice().try_into().unwrap();
         let proj_arr: [f32; 16] = proj.as_slice().try_into().unwrap();
+        *lock_recover(&self.last_view_col) = view_arr;
+        *lock_recover(&self.last_proj_col) = proj_arr;
         let mut rg = lock_recover(&self.window.renderer);
         if let Some(renderer) = rg.as_mut() {
             renderer.update_camera_3d(&view_arr, &proj_arr);
@@ -1252,10 +1264,84 @@ impl Engine {
         let v: [f32;16] = view.try_into().unwrap_or([0.0;16]);
         let p: [f32;16] = proj.try_into().unwrap_or([0.0;16]);
         self.camera_3d_external.store(true, Ordering::Relaxed);
-        self.window.update_camera_3d(
-            row_major_to_column_major(&v),
-            row_major_to_column_major(&p),
-        );
+        let v_col = row_major_to_column_major(&v);
+        let p_col = row_major_to_column_major(&p);
+        *lock_recover(&self.last_view_col) = v_col;
+        *lock_recover(&self.last_proj_col) = p_col;
+        self.window.update_camera_3d(v_col, p_col);
+    }
+
+    /// スクリーン座標（左上、ピクセル）→ ワールドレイ (ox,oy,oz, dx,dy,dz)。
+    #[pyo3(signature = (sx, sy))]
+    pub fn camera_ray_from_screen(&self, sx: f32, sy: f32) -> Option<(f32, f32, f32, f32, f32, f32)> {
+        let w = self.width().max(1) as f32;
+        let h = self.height().max(1) as f32;
+        let view = *lock_recover(&self.last_view_col);
+        let proj = *lock_recover(&self.last_proj_col);
+        if view.iter().all(|v| *v == 0.0) && proj.iter().all(|v| *v == 0.0) {
+            let mut cam_g = lock_recover(&self.camera_3d);
+            if cam_g.is_none() {
+                *cam_g = Some(Camera3D::new(self.width(), self.height()));
+            }
+            if let Some(cam) = cam_g.as_mut() {
+                cam.resize(self.width(), self.height());
+                cam.update_matrices();
+                if let Some((o, d)) = cam.ray_from_screen(sx, sy, w, h) {
+                    return Some((o.x, o.y, o.z, d.x, d.y, d.z));
+                }
+            }
+            return None;
+        }
+        unproject_ray(&view, &proj, sx, sy, w, h).map(|(o, d)| (o.x, o.y, o.z, d.x, d.y, d.z))
+    }
+
+    /// humanoid ボーン球とレイの最近ヒット。ヒットしなければ None。
+    #[pyo3(signature = (vrm_id, ox, oy, oz, dx, dy, dz, max_dist=100.0))]
+    pub fn pick_vrm_bone(
+        &self,
+        vrm_id: u32,
+        ox: f32,
+        oy: f32,
+        oz: f32,
+        dx: f32,
+        dy: f32,
+        dz: f32,
+        max_dist: f32,
+    ) -> Option<String> {
+        use nalgebra::Vector3;
+        let mut dir = Vector3::new(dx, dy, dz);
+        let len = dir.magnitude();
+        if len < 1e-8 {
+            return None;
+        }
+        dir /= len;
+        let origin = Vector3::new(ox, oy, oz);
+        let mut models = lock_recover(&self.vrm_models);
+        let m = models.get_mut(&vrm_id)?;
+        if m.dirty {
+            m.recompute_world();
+            m.dirty = false;
+        }
+        let mut best_t = max_dist;
+        let mut best_name: Option<String> = None;
+        let names: Vec<String> = m.human_bones.keys().cloned().collect();
+        for name in names {
+            let Some(&idx) = m.human_bones.get(&name) else {
+                continue;
+            };
+            let Some(bone) = m.bones.get(idx) else {
+                continue;
+            };
+            let center = Vector3::new(bone.world_mat[(0, 3)], bone.world_mat[(1, 3)], bone.world_mat[(2, 3)]);
+            let r = bone_pick_radius(&name);
+            if let Some(t) = ray_sphere(origin, dir, center, r) {
+                if t > 0.0 && t < best_t {
+                    best_t = t;
+                    best_name = Some(name);
+                }
+            }
+        }
+        best_name
     }
 
     /// 3D 平行光の方向（光源へ向かうベクトル）。正規化はエンジン側で行う。
@@ -1280,6 +1366,13 @@ impl Engine {
     #[pyo3(signature = (start, end, r, g, b, enabled=true))]
     pub fn set_fog(&self, start: f32, end: f32, r: u8, g: u8, b: u8, enabled: bool) {
         self.window.set_fog(start, end, r, g, b, enabled);
+    }
+
+    /// 閾値ブルーム。輝度が threshold を超えた画素だけをぼかして加算する。
+    /// intensity<=0 でオフ（画面全体ぼかしはしない）。
+    #[pyo3(signature = (threshold=0.85, intensity=0.0))]
+    pub fn set_bloom(&self, threshold: f32, intensity: f32) {
+        self.window.set_bloom(threshold, intensity);
     }
 
     #[pyo3(signature = (texture_id, verts, indices))]

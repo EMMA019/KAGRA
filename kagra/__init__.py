@@ -636,6 +636,38 @@ def set_shadow_enabled(enabled: bool = True):
     """平行光シャドウマップの有効/無効。"""
     _check(); _engine.set_shadow_enabled(bool(enabled))
 
+def set_bloom(threshold: float = 0.85, intensity: float = 0.35,
+              enabled: bool = True):
+    """閾値ブルーム。高輝度画素だけを抽出して加算する。
+
+    画面全体をぼかさない。目のハイライト・アウトライン・MToon rimLift
+    付近だけが光る。intensity<=0 または enabled=False でオフ。
+    """
+    _check()
+    inten = float(intensity) if enabled else 0.0
+    _engine.set_bloom(float(threshold), inten)
+
+
+def camera_ray_from_screen(sx: float, sy: float):
+    """スクリーン座標からワールドレイ ((ox,oy,oz), (dx,dy,dz))。"""
+    _check()
+    hit = _engine.camera_ray_from_screen(float(sx), float(sy))
+    if hit is None:
+        return None
+    ox, oy, oz, dx, dy, dz = hit
+    return (ox, oy, oz), (dx, dy, dz)
+
+
+def pick_vrm_bone(vrm_id: int, ox: float, oy: float, oz: float,
+                  dx: float, dy: float, dz: float, max_dist: float = 100.0):
+    """レイが当たった humanoid ボーン名。なければ None。"""
+    _check()
+    return _engine.pick_vrm_bone(
+        int(vrm_id), float(ox), float(oy), float(oz),
+        float(dx), float(dy), float(dz), float(max_dist),
+    )
+
+
 def set_toon_params(threshold: float = 0.5, softness: float = 1.0,
                     shade: float = 0.55, lit: float = 1.0):
     """VRM スキニング用のトゥーン階調を設定する。

@@ -191,6 +191,12 @@ impl KagraWindow {
         }
     }
 
+    pub fn set_bloom(&self, threshold: f32, intensity: f32) {
+        if let Some(r) = lock_recover(&self.renderer).as_mut() {
+            r.set_bloom(threshold, intensity);
+        }
+    }
+
     pub fn queue_skinned_mesh_3d(&self, cmd: crate::renderer::SkinnedMeshCommand) {
         if let Some(r) = lock_recover(&self.renderer).as_mut() {
             r.queue_skinned_mesh_3d(cmd);

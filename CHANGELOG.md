@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- 3D physics: Y-up capsule, yaw OBB, layer/mask, triggers, `physics.sync_vrm`.
+  Character-controller style (no Rapier). GPU-free tests in `tests/test_physics3d.py`.
+- `Camera3D.ray_from_screen` and `avatar.pick(sx, sy)` → humanoid bone name
+  (`head`, `leftHand`, …). Bone world spheres; gesture recognition stays out.
+- Threshold bloom: extract only high-luminance pixels (eye highlights, outline,
+  MToon rimLift), blur that, add back. Full-screen blur is not used — it muddies
+  toon edges. `kagra.set_bloom(threshold=0.85, intensity=0.35)`.
+
 - VRM SpringBone colliders (0.x spheres / 1.0 spheres and capsules). Hair and
   skirts now push off the body instead of passing through.
 - `VRMC_node_constraint` 1.0: rotation, roll (twist bones), and aim. Applied

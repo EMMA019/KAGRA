@@ -433,3 +433,74 @@ fn cotangent_frame(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> mat3x3<f32> {
     return vec4<f32>(mtoon.outline_color.rgb, 1.0);
 }
 "#;
+
+/// 閾値抽出 → 分離ガウス → シャープなフレームへ加算。
+/// 画面全体はぼかさない（トゥーン輪郭を濁さない）。
+pub(super) const BLOOM_SHADER: &str = r#"
+struct VO {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+}
+
+@group(0) @binding(0) var t_src: texture_2d<f32>;
+@group(0) @binding(1) var s_src: sampler;
+@group(1) @binding(0) var<uniform> params: vec4<f32>;
+
+@vertex
+fn vs_main(@builtin(vertex_index) vid: u32) -> VO {
+    // uv (0,0) → clip 左上。テクスチャ原点も左上に合わせる
+    var uv = vec2<f32>(f32((vid << 1u) & 2u), f32(vid & 2u));
+    var out: VO;
+    out.pos = vec4<f32>(uv * vec2<f32>(2.0, -2.0) + vec2<f32>(-1.0, 1.0), 0.0, 1.0);
+    out.uv = uv;
+    return out;
+}
+
+fn luminance(c: vec3<f32>) -> f32 {
+    return dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+}
+
+@fragment
+fn fs_extract(in: VO) -> @location(0) vec4<f32> {
+    let c = textureSample(t_src, s_src, in.uv);
+    let lum = luminance(c.rgb);
+    let threshold = params.x;
+    let knee = max(params.y, 1e-4);
+    let soft = lum - threshold + knee;
+    let soft_c = clamp(soft, 0.0, 2.0 * knee);
+    let soft_t = (soft_c * soft_c) / (4.0 * knee);
+    let contrib = max(lum - threshold, soft_t);
+    let w = contrib / max(lum, 1e-5);
+    return vec4<f32>(c.rgb * w, 1.0);
+}
+
+@fragment
+fn fs_blur(in: VO) -> @location(0) vec4<f32> {
+    let texel = params.xy;
+    let w0 = 0.227027;
+    let w1 = 0.1945946;
+    let w2 = 0.1216216;
+    let w3 = 0.054054;
+    let w4 = 0.016216;
+    var sum = textureSample(t_src, s_src, in.uv).rgb * w0;
+    sum += textureSample(t_src, s_src, in.uv + texel * 1.0).rgb * w1;
+    sum += textureSample(t_src, s_src, in.uv - texel * 1.0).rgb * w1;
+    sum += textureSample(t_src, s_src, in.uv + texel * 2.0).rgb * w2;
+    sum += textureSample(t_src, s_src, in.uv - texel * 2.0).rgb * w2;
+    sum += textureSample(t_src, s_src, in.uv + texel * 3.0).rgb * w3;
+    sum += textureSample(t_src, s_src, in.uv - texel * 3.0).rgb * w3;
+    sum += textureSample(t_src, s_src, in.uv + texel * 4.0).rgb * w4;
+    sum += textureSample(t_src, s_src, in.uv - texel * 4.0).rgb * w4;
+    return vec4<f32>(sum, 1.0);
+}
+
+@group(2) @binding(0) var t_bloom: texture_2d<f32>;
+@group(2) @binding(1) var s_bloom: sampler;
+
+@fragment
+fn fs_composite(in: VO) -> @location(0) vec4<f32> {
+    let sharp = textureSample(t_src, s_src, in.uv);
+    let bloom = textureSample(t_bloom, s_bloom, in.uv);
+    return vec4<f32>(sharp.rgb + bloom.rgb * params.x, sharp.a);
+}
+"#;

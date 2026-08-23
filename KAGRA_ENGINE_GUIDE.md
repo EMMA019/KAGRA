@@ -473,16 +473,25 @@ physics.update(dt, world)
 
 ### 3D 物理（Physics3D）
 
-```python
-from kagra.physics3d import Physics3D, RigidBody3D, AABB
+ゲーム用キャラクターコントローラ。回転積分はしない。
 
-phys3d = Physics3D(gravity=9.8)
-rb3d = phys3d.add_body(RigidBody3D(x=0, y=5, z=0, mass=1.0))
+```python
+from kagra.physics3d import Physics3D
+
+phys = Physics3D(gravity=9.8)
+player = phys.add_capsule(0, 1.0, 0, radius=0.25, height=1.7)
+wall = phys.add_obb(3, 0, 0, 0.4, 2.0, 2.0, yaw=0.4, is_static=True)
+zone = phys.add_body(0, 0, 2, 2, 2, 2, trigger=True, is_static=True)
 
 def update(dt):
-    phys3d.step(dt)
-    # rb3d.x, rb3d.y, rb3d.z で位置を取得
+    player.vx = speed_x
+    player.vz = speed_z
+    phys.update(dt)
+    phys.sync_vrm(player, avatar)  # set_vrm_offset
 ```
+
+ピック: `cam.ray_from_screen(sx, sy)` / `avatar.pick(sx, sy)` → `"head"` など。
+ブルーム: `kagra.set_bloom(threshold=0.85, intensity=0.35)` — 高輝度だけ加算。
 
 ---
 
