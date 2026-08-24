@@ -24,7 +24,7 @@ Stage 1 の楔は、どの完成品が本物の痛みかを数字で選ぶため
 ```
 基礎（P0–P8 + 部屋 v1）     完了。「置いて歩ける」
 Stage 0.5 頭脳面            最優先。楔 A/B の前提。画素と並行
-使える週                     進行中。API は #52。画素 + 法線 + パッド
+使える週                     進行中。API は #52。室内影 / トーンマップはペアワイズ golden
   → 3 見本が 30 秒テストを通る（楔 D のゲート）
 PyPI                         ソースの usable-week を wheel に載せる
 Stage 1 楔の同時投下         頭脳 + 3 見本のあと（C はワンライナー、優先低）
@@ -38,7 +38,7 @@ Rapier / OSM / 4 段 CSM / SSAO などは「このバーでは後回し」。永
 ## 次にやること（この順）
 
 1. **頭脳面（載った）** — `kagra.brain("kairi")` の既定は `https://kairi.onrender.com`。チャットは `KAIRI_API_TOKEN`。コアにモデルを入れない
-2. **絵の残り** — 法線と USB の API は載った。次は室内影の画素確認 → トーンマップの画素。golden / smoke スクショで閉じる
+2. **絵の残り** — 室内影とトーンマップはシェーダ修正 + ペアワイズ golden（CI の `golden` job）。次は IBL 金属と屋外の這い。30 秒テストはまだ
 3. **PyPI** — usable-week API を次の wheel に載せる。ソースだけの状態を長くしない。macOS wheel は CI で取る
 4. **D-6** — 3 見本の 30 秒テストのあと。箱の焼き直しではない。30 秒以上遊べて、スコアか明確なゴールがある
 5. **楔 C** — マスコットは既にある。ワンライナー / 配布物を整える。エンジン不足ではない。優先は下
@@ -97,8 +97,10 @@ API が生えたことは完了ではない。次を満たしたらチェック�
       テクセルスナップ / ポインタロック / `clicked_prop` / `animate` / `Label` /
       `Walk.carry` / coyote / 親子 2 段 / `sound`。スナップテスト修正 #53
 - [ ] 使える週の **見本**: Pretty Room / Overworld / Prop Garden が 30 秒テストを通る。
-      画素は GPU / CI スクショでまだ閉じていない。法線と USB パッドの **API は載った**
-      （cotangent frame / gilrs。画素は未確認。CI は `inject_pad`）
+      画素は GPU / CI スクショでまだ閉じていない。室内影はスポットに掛ける
+      シェーダ修正とペアワイズ golden を入れた（CI `golden` job が閉じる）。
+      法線と USB パッドの **API は載った**（cotangent frame / gilrs。画素は
+      未確認。CI は `inject_pad`）
 - [ ] **Stage 0.5 頭脳面:** 面は `kagra.brain` + レシピ + `examples/vrm_kairi_chat.py`。
       本番の楔 A は `https://kairi.onrender.com`（`KAIRI_API_TOKEN`）か Ollama。モデルは wheel に無い
 - [ ] 次の PyPI: usable-week API を wheel に載せる。macOS wheel は CI
@@ -130,12 +132,12 @@ API が生えたことは完了ではない。次を満たしたらチェック�
 
 **ソースに載った（#52）。画素未確認:**
 
-絵の残りはこの順: **室内影の画素 → トーンマップの画素**（法線と USB の API は載った）。
+絵の残りはこの順: **IBL 金属の画素 → 屋外の這い**（室内影とトーンマップはペアワイズ golden。CI 待ち）。
 
 - [ ] **法線マップ。** API は載った（`Prop(..., normal=)` / `upload_mesh_3d(..., normal_texture_id=)` / glTF `normalTexture`。cotangent frame。画素は GPU 未確認）
-- [ ] **室内の影。** スポットが同じ 2048 マップに透視影。画素で見える
-- [ ] **トーンマップ。** ACES。既定オフ。Pretty Room / Overworld が opt-in。白飛びが止まる
-- [ ] **スペキュラ IBL。** キューブ 4 mip + `textureSampleLevel`。金属がプラスチックに見えない
+- [ ] **室内の影。** スポットが同じ 2048 マップに透視影。影はスポットに掛かる（平行光は埋め）。ペアワイズ `indoor_spot`。CI `golden` 待ち
+- [ ] **トーンマップ。** ACES。既定オフ。Pretty Room / Overworld が opt-in。ペアワイズ `tonemap_on`。CI `golden` 待ち
+- [ ] **スペキュラ IBL。** キューブ 4 mip + `textureSampleLevel`。金属がプラスチックに見えない。ペアワイズ `ibl_metal` を足した。CI 待ち
 - [ ] **屋外の影が這わない。** 2 段のテクセルスナップ（#53 でテスト境界を修正）
 - [ ] **ポインタロック。** 一人称。OS が拒めばフォールバック
 - [ ] **クリック。** `clicked_prop`。消すデモではなく使う / 持つ

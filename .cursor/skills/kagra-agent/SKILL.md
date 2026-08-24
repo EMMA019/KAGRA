@@ -44,8 +44,11 @@ Pointer lock follows first person (OS may refuse). USB pad is gilrs on the
 EventLoop (`inject_pad` still wins for CI).
 
 Current engine bar is the usable week in `docs/ROADMAP.ja.md` (pixels;
-normals / USB pad APIs landed). Final goal is first-recall, not this bar. Brain hook is `kagra.brain("kairi")` — default `https://kairi.onrender.com`,
-token in `KAIRI_API_TOKEN`. Not in the wheel. Next engine work is pixel close. Later engine (Rapier / OSM /
+normals / USB pad APIs landed). Indoor spot shadows the local light, not
+the sun. Pairwise goldens: `indoor_spot` / `tonemap_on` / `ibl_metal` (CI
+`golden` job). IBL metal look and outdoor crawl pixels still open. Final
+goal is first-recall, not this bar. Brain hook is `kagra.brain("kairi")` — default `https://kairi.onrender.com`,
+token in `KAIRI_API_TOKEN`. Not in the wheel. Later engine (Rapier / OSM /
 more CSM) is deferred, not banned. Do not start D-6 as a fourth box room;
 D-6 needs 30s of play and a score or goal. Do not call APIs three.js-class
 until the 30s demo test.

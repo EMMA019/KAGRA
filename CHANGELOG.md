@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Indoor spot shadows the **local light**, not the directional sun
+  (`shadow_u.params.y`). Fill from the sun stays; the lamp umbra reads.
+  Pairwise golden `indoor_spot` / `tonemap_on` / `ibl_metal` (CI `golden`
+  job; no committed PNGs). ACES still default-off. Garden smoke unchanged.
+  Outdoor crawl pixels still open.
 - Generic Mesh3D tangent-space normals: `upload_mesh_3d(..., normal_texture_id=)` /
   `set_mesh_normal` / `Prop(..., normal=)` / glTF `normalTexture`. Vertices stay
   `[x,y,z,nx,ny,nz,u,v]` (cotangent frame, no extra stride). Normal maps load

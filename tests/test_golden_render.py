@@ -85,3 +85,33 @@ def test_golden_mesh3d():
 
     actual = _render("mesh3d", "mesh3d.png")
     compare_png(actual, "mesh3d.png")
+
+
+def test_pairwise_indoor_spot_shadow():
+    """スポットがマップを所有しているとき、影のオン/オフが画素で違う。"""
+    _ensure_kagra()
+    from tests.golden_utils import assert_pngs_differ
+
+    on = _render("indoor_spot", "indoor_spot.png")
+    off = _render("indoor_spot_off", "indoor_spot_off.png")
+    assert_pngs_differ(on, off, min_mean_abs=4.0, name="indoor_spot")
+
+
+def test_pairwise_tonemap_aces():
+    """ACES オン/オフがハイライトを変える（高露出クロム）。"""
+    _ensure_kagra()
+    from tests.golden_utils import assert_pngs_differ
+
+    on = _render("tonemap_on", "tonemap_on.png")
+    off = _render("tonemap_off", "tonemap_off.png")
+    assert_pngs_differ(on, off, min_mean_abs=3.0, name="tonemap_aces")
+
+
+def test_pairwise_ibl_metal():
+    """金属とプラスチックが同じ HDRI で違う（スペキュラ mip）。"""
+    _ensure_kagra()
+    from tests.golden_utils import assert_pngs_differ
+
+    metal = _render("ibl_metal", "ibl_metal.png")
+    plastic = _render("ibl_plastic", "ibl_plastic.png")
+    assert_pngs_differ(metal, plastic, min_mean_abs=3.0, name="ibl_metal")
