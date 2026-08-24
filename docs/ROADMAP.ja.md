@@ -37,7 +37,7 @@ Rapier / OSM / 4 段 CSM / SSAO などは「このバーでは後回し」。永
 
 ## 次にやること（この順）
 
-1. **頭脳面** — `kagra.brain`（Ollama / OpenAI 互換 / kairi を 1 面）+ `docs/recipes/ai-brain.md` + 15 行の見本。コアにモデルを入れない
+1. **頭脳面（載った）** — `kagra.brain("kairi"|"ollama"|"openai")`。kairi は別プロセス。コアにモデルを入れない
 2. **絵の残り** — 法線マップ → 室内影の画素確認 → トーンマップの画素。golden / smoke スクショで閉じる。実機パッドは同じバー
 3. **PyPI** — usable-week API を次の wheel に載せる。ソースだけの状態を長くしない。macOS wheel は CI で取る
 4. **D-6** — 3 見本の 30 秒テストのあと。箱の焼き直しではない。30 秒以上遊べて、スコアか明確なゴールがある
@@ -98,12 +98,12 @@ API が生えたことは完了ではない。次を満たしたらチェック�
       `Walk.carry` / coyote / 親子 2 段 / `sound`。スナップテスト修正 #53
 - [ ] 使える週の **見本**: Pretty Room / Overworld / Prop Garden が 30 秒テストを通る。
       画素は GPU / CI スクショでまだ閉じていない。法線と USB パッドは未着手
-- [ ] **Stage 0.5 頭脳面（最優先）:** `kagra.brain` + `docs/recipes/ai-brain.md`。
-      あるのは棚の `AiCharacter`
+- [ ] **Stage 0.5 頭脳面:** 面は `kagra.brain` + レシピ + `examples/vrm_kairi_chat.py`。
+      本番の楔 A はローカル kairi（または Ollama）が動いていること。モデルは wheel に無い
 - [ ] 次の PyPI: usable-week API を wheel に載せる。macOS wheel は CI
 - [x] 初回体験: own-VRM 1 行、シャドウ警告、`kagra.cmd`、レシピ、issue テンプレ
 
-**VTuber / マスコットの最初のユーザーを取る絵は足りている。楔 A/B は頭脳が無いと打てない。**
+**VTuber / マスコットの最初のユーザーを取る絵は足りている。楔 A/B は kairi（または Ollama）を起動すれば打てる。**
 **ゲームを書く入口は API まで来た。画素がバーを閉じ、D-6 が箱から出る。**
 
 ---
@@ -118,8 +118,8 @@ API が生えたことは完了ではない。次を満たしたらチェック�
 
 画素と並行してよい。D のゲートにはしない。コアに torch / 重量級モデルを入れない。
 
-- [ ] `kagra.brain` — Ollama / OpenAI 互換 / kairi を 1 面で切替
-- [ ] `docs/recipes/ai-brain.md` + 15 行の見本（`examples/vrm_kairi_chat.py` または ollama 相当）
+- [x] `kagra.brain` — Ollama / OpenAI 互換 / kairi を 1 面で切替（HTTP。モデルは入れない）
+- [x] `docs/recipes/ai-brain.md` + `examples/vrm_kairi_chat.py`
 - [ ] 棚の `AiCharacter` は Front に上げない。新しい面に寄せてから畳む
 
 ### 使える週 — 今のバー（three.js の普段 + Ursina で書く週）

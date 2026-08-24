@@ -87,5 +87,5 @@ The API index front is VRM / 3D / agents; the shelf is legacy 2D.
 - `docs/AGENT.md` — contracts table, CI-parity commands, Cargo.lock policy
 - `docs/API_INDEX.md` — the searchable public API
 - `docs/REVIEW.ja.md` — engine review vs three.js / three-vrm / Ursina
-- `docs/ROADMAP.ja.md` — 最終目標は第一想起。次は Stage 0.5 頭脳（A/B）、使える週の画素は D のゲート
+- `docs/ROADMAP.ja.md` — 最終目標は第一想起。頭脳は `kagra.brain`（kairi HTTP）。画素は D のゲート
 - `docs/schemas/input_events.json` — touch / pointer input schema

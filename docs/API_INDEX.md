@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **410**
+エントリ数: **415**
 
 棚の**手前**は VRM / 3D ワールド / エージェントゲーム。
 棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。
@@ -99,6 +99,9 @@
 | `animate` | `export animate  (from kagra.motion)` |
 | `apply_pad` | `export apply_pad  (from kagra.touch)` |
 | `axis` | `export axis  (from kagra.pad)` |
+| `Brain` | `class Brain  (from kagra.brain)` |
+| `brain` | `export brain  (from kagra.brain)` |
+| `BrainError` | `class BrainError  (from kagra.brain)` |
 | `Button` | `class Button  (from kagra.hud)` |
 | `Camera3D` | `class Camera3D  (from kagra.camera3d)` |
 | `ChatInbox` | `class ChatInbox  (from kagra.stream)` |
@@ -106,11 +109,13 @@
 | `EmotionController` | `class EmotionController  (from kagra.vrm_emotion)` |
 | `ensure_vrm` | `export ensure_vrm  (from kagra.samples)` |
 | `inject_pad` | `export inject_pad  (from kagra.pad)` |
+| `KairiBrain` | `class KairiBrain  (from kagra.brain)` |
 | `Label` | `class Label  (from kagra.hud)` |
 | `LipSyncController` | `class LipSyncController  (from kagra.vrm_lipsync)` |
 | `load_scenario` | `export load_scenario  (from kagra.verify)` |
 | `LookAtController` | `class LookAtController  (from kagra.vrm_lookat)` |
 | `MicLipsync` | `class MicLipsync  (from kagra.mic)` |
+| `OpenAIBrain` | `class OpenAIBrain  (from kagra.brain)` |
 | `pad` | `export pad  (from kagra.pad)` |
 | `pad_pressed` | `export pad_pressed  (from kagra.pad)` |
 | `Physics3D` | `class Physics3D  (from kagra.physics3d)` |
@@ -457,5 +462,6 @@
 - 汎用メッシュの金属/粗さ: `upload_mesh_3d(..., metallic=, roughness=)` / `Prop(..., metallic=)` / `set_mesh_pbr`。MToon は触らない。
 - 色付きメッシュ: `solid_tex` + `sphere_mesh` / `cylinder_mesh` / `box_mesh`。
 - `kagra-shared` / `mobile/` は別の運転デモ。この Python スタックと混ぜない。
+- 頭脳: `kagra.brain("kairi"|"ollama"|"openai")` / `KairiBrain`。モデルは wheel に入れない。kairi はローカル HTTP。`AiCharacter.set_llm_func(mind.ask)`。
 - Rust バインディングの整合は `tests/test_api_bindings.py` も参照。
 - 再生成: `python tools/gen_api_index.py`

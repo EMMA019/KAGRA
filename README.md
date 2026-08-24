@@ -105,12 +105,12 @@ Honesty list. These are missing on purpose, not forgotten:
 - **YouTube / Twitch chat APIs** — write `{user,text}` JSONL yourself (`ChatInbox`)
 - **NDI / RTMP** — OBS window capture still works; virtual cam is the extra
 - **Autopilot / unattended safety** — not in 0.1.3
-- **Official LLM brain hook** — `AiCharacter` exists; `KairiBrain` / Ollama one-liner is not shipped
+- **Official LLM brain hook** — `kagra.brain("kairi"|"ollama"|"openai")`. kairi is a local server, not in the wheel. `AiCharacter` is the older shelf wrapper.
 - **Normal maps** — not on `master` yet. HDRI, point/spot, and opt-in ACES are (pixels unverified here). `Walk(first_person=True)` is in.
 - **VOICEVOX / Irodori-TTS** — not bundled. VOICEVOX recipe: [docs/recipes/voicevox.md](docs/recipes/voicevox.md)
 - Song WAV and `.vrma` stay out of the wheel (~5MB install). First run downloads the sample VRM
 
-Recipes: [own VRM](docs/recipes/own-vrm.md) · [dance / VRMA](docs/recipes/motion.md) · [VOICEVOX](docs/recipes/voicevox.md) · [OBS / stream](docs/recipes/stream.md) · [mascot](docs/recipes/mascot.md) · [agent game](docs/recipes/agent-game.md). Review: [docs/REVIEW.ja.md](docs/REVIEW.ja.md). Roadmap: [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md) (final goal: first-recall — “if you give an AI a body in Python, it’s KAGRA”).
+Recipes: [own VRM](docs/recipes/own-vrm.md) · [dance / VRMA](docs/recipes/motion.md) · [VOICEVOX](docs/recipes/voicevox.md) · [OBS / stream](docs/recipes/stream.md) · [mascot](docs/recipes/mascot.md) · [brain / kairi](docs/recipes/ai-brain.md) · [agent game](docs/recipes/agent-game.md). Review: [docs/REVIEW.ja.md](docs/REVIEW.ja.md). Roadmap: [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md) (final goal: first-recall — “if you give an AI a body in Python, it’s KAGRA”).
 
 See [docs/PUBLISHING.md](docs/PUBLISHING.md) to cut a release.
 
@@ -141,6 +141,7 @@ python examples/vrm_dodge_room.py        # falling boxes, survive (agent-run log
 python examples/vrm_prop_garden.py       # Prop / Walk / sky (play surface)
 python examples/vrm_pretty_room.py       # enclosed room / spot / IBL
 python examples/vrm_overworld.py         # tiled island — city JSON, mesh ramp, crates
+python examples/vrm_kairi_chat.py        # VRM talks via local kairi (HTTP, not in the wheel)
 python examples/vrm_vrma.py              # .vrma (or a generated wave)
 python examples/vrm_stream.py            # OBS / JSONL chat
 ```

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Stage 0.5 brain hook: `kagra.brain("kairi"|"ollama"|"openai")` /
+  `KairiBrain.ask`. Talks to local kairi over `/api/chat` SSE (not vendored).
+  Recipe `docs/recipes/ai-brain.md`, demo `examples/vrm_kairi_chat.py`.
+  `AiCharacter.set_llm_func(mind.ask)` still works. No model in the wheel.
 - Roadmap refresh: Stage 0.5 brain (`kagra.brain`) is first for wedges A/B,
   in parallel with usable-week pixels. D-6 stays gated on the 30s demos and
   must be playable 30s+ with a score or goal. Wedge C is a one-liner, lower
