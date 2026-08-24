@@ -38,6 +38,22 @@ def test_walk_wish_yaw_half_pi_is_plus_x():
     assert abs(fz) < 1e-9
 
 
+def test_walk_wish_strafe_is_camera_right():
+    """D / 右スティックは画面右。視線 +Z では Camera3D の right が −X。"""
+    cam_mod = load_kagra_submodule("camera3d")
+    cam = cam_mod.Camera3D(800, 600, fov_deg=52.0)
+    for yaw in (0.0, math.pi / 2, math.pi):
+        fx, fz = play.walk_wish(0.0, 1.0, yaw, speed=1.0)
+        cam.follow(
+            0.0, 0.0, 0.0,
+            distance=6.2, height=2.6, look_y=1.0, lerp=1.0, yaw=yaw,
+        )
+        origin = cam.world_to_screen(0.0, 1.0, 0.0)
+        moved = cam.world_to_screen(fx, 1.0, fz)
+        assert origin is not None and moved is not None
+        assert moved[0] > origin[0]
+
+
 def test_look_yaw_subtracts_mouse_x():
     assert play.look_yaw(0.0, 10.0, sens=0.01) == pytest.approx(-0.1)
 

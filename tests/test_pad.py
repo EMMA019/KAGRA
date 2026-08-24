@@ -47,7 +47,7 @@ def test_stick_move_up_is_forward():
 def test_walk_wish_from_stick():
     fwd, right = pad.stick_move(1.0, 0.0)
     fx, fz = play.walk_wish(fwd, right, 0.0, speed=2.0)
-    assert fx == pytest.approx(2.0)
+    assert fx == pytest.approx(-2.0)
     assert abs(fz) < 1e-9
 
 
