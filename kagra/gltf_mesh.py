@@ -131,7 +131,26 @@ def _node_worlds(nodes: list) -> list[list[float]]:
     return [w if w is not None else _node_local(nodes[i]) for i, w in enumerate(worlds)]
 
 
-def _image_bytes(gltf: dict, blob: bytes, image_idx: int) -> Optional[bytes]:
+def _read_relative_image(uri: str, base: Path | None) -> Optional[bytes]:
+    """Kenney-style ``Textures/colormap.png`` next to the .glb. No remote fetch."""
+    if base is None:
+        return None
+    if not uri or "://" in uri or uri.startswith("/") or "\\" in uri:
+        return None
+    root = base.parent.resolve()
+    cand = (root / uri).resolve()
+    try:
+        cand.relative_to(root)
+    except ValueError:
+        return None
+    if not cand.is_file():
+        return None
+    return cand.read_bytes()
+
+
+def _image_bytes(
+    gltf: dict, blob: bytes, image_idx: int, *, base: Path | None = None,
+) -> Optional[bytes]:
     images = gltf.get("images") or []
     views = gltf.get("bufferViews") or []
     if image_idx < 0 or image_idx >= len(images):
@@ -146,6 +165,10 @@ def _image_bytes(gltf: dict, blob: bytes, image_idx: int) -> Optional[bytes]:
             return base64.b64decode(b64)
         except Exception:
             return None
+    if isinstance(uri, str) and uri:
+        rel = _read_relative_image(uri, base)
+        if rel is not None:
+            return rel
     bv_idx = img.get("bufferView")
     if bv_idx is None or int(bv_idx) >= len(views):
         return None
@@ -157,14 +180,16 @@ def _image_bytes(gltf: dict, blob: bytes, image_idx: int) -> Optional[bytes]:
     return blob[off:off + size]
 
 
-def _first_image(gltf: dict, blob: bytes) -> Optional[bytes]:
+def _first_image(gltf: dict, blob: bytes, *, base: Path | None = None) -> Optional[bytes]:
     images = gltf.get("images") or []
     if not images:
         return None
-    return _image_bytes(gltf, blob, 0)
+    return _image_bytes(gltf, blob, 0, base=base)
 
 
-def _texture_image(gltf: dict, blob: bytes, texture_idx) -> Optional[bytes]:
+def _texture_image(
+    gltf: dict, blob: bytes, texture_idx, *, base: Path | None = None,
+) -> Optional[bytes]:
     textures = gltf.get("textures") or []
     try:
         ti = int(texture_idx)
@@ -175,7 +200,7 @@ def _texture_image(gltf: dict, blob: bytes, texture_idx) -> Optional[bytes]:
     src = textures[ti].get("source")
     if src is None:
         return None
-    return _image_bytes(gltf, blob, int(src))
+    return _image_bytes(gltf, blob, int(src), base=base)
 
 
 def _tex_index(info) -> Optional[int]:
@@ -187,7 +212,9 @@ def _tex_index(info) -> Optional[int]:
         return None
 
 
-def _material_images(gltf: dict, blob: bytes) -> tuple[Optional[bytes], Optional[bytes]]:
+def _material_images(
+    gltf: dict, blob: bytes, *, base: Path | None = None,
+) -> tuple[Optional[bytes], Optional[bytes]]:
     """最初のマテリアルの baseColor / normal 画像。無ければ images[0] をアルベドに。"""
     albedo = None
     normal = None
@@ -205,12 +232,12 @@ def _material_images(gltf: dict, blob: bytes) -> tuple[Optional[bytes], Optional
         pbr = mat.get("pbrMetallicRoughness") or {}
         bi = _tex_index(pbr.get("baseColorTexture"))
         if bi is not None:
-            albedo = _texture_image(gltf, blob, bi)
+            albedo = _texture_image(gltf, blob, bi, base=base)
         ni = _tex_index(mat.get("normalTexture"))
         if ni is not None:
-            normal = _texture_image(gltf, blob, ni)
+            normal = _texture_image(gltf, blob, ni, base=base)
     if albedo is None:
-        albedo = _first_image(gltf, blob)
+        albedo = _first_image(gltf, blob, base=base)
     return albedo, normal
 
 
@@ -312,7 +339,7 @@ def flatten_gltf(path: str | Path, *, center: bool = True) -> FlatMesh:
             aabb[3] - cx, aabb[4] - cy, aabb[5] - cz,
         )
     metallic, roughness, base = _pbr_from_gltf(gltf)
-    albedo, normal = _material_images(gltf, blob)
+    albedo, normal = _material_images(gltf, blob, base=Path(path))
     return FlatMesh(
         verts=verts,
         indices=indices,

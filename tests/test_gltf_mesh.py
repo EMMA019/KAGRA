@@ -217,7 +217,50 @@ def test_flatten_reads_normal_texture(tmp_path: Path):
     assert flat.normal_image == n_raw
 
 
-def test_flatten_rejects_empty(tmp_path: Path):
+def test_flatten_reads_sibling_png_uri(tmp_path: Path):
+    png = _png_1x1(10, 200, 30)
+    (tmp_path / "Textures").mkdir()
+    (tmp_path / "Textures" / "colormap.png").write_bytes(png)
+    path = _write_tri_glb(tmp_path / "tree.glb")
+    # Patch JSON chunk: add images[].uri (Kenney Mini Forest style).
+    raw = path.read_bytes()
+    json_len = struct.unpack_from("<I", raw, 12)[0]
+    gltf = json.loads(raw[20:20 + json_len])
+    gltf["images"] = [{"uri": "Textures/colormap.png"}]
+    json_b = json.dumps(gltf, separators=(",", ":")).encode("utf-8")
+    json_b += b" " * _pad4(len(json_b))
+    blob = raw[20 + json_len + 8:]
+    total = 12 + 8 + len(json_b) + 8 + len(blob)
+    path.write_bytes(
+        struct.pack("<4sII", b"glTF", 2, total)
+        + struct.pack("<II", len(json_b), 0x4E4F534A) + json_b
+        + struct.pack("<II", len(blob), 0x004E4942) + blob
+    )
+    flat = gm.flatten_gltf(path)
+    assert flat.image == png
+
+
+def test_flatten_rejects_parent_png_uri(tmp_path: Path):
+    secret = tmp_path / "secret.png"
+    secret.write_bytes(_png_1x1(1, 2, 3))
+    nested = tmp_path / "models"
+    nested.mkdir()
+    path = _write_tri_glb(nested / "tree.glb")
+    raw = path.read_bytes()
+    json_len = struct.unpack_from("<I", raw, 12)[0]
+    gltf = json.loads(raw[20:20 + json_len])
+    gltf["images"] = [{"uri": "../secret.png"}]
+    json_b = json.dumps(gltf, separators=(",", ":")).encode("utf-8")
+    json_b += b" " * _pad4(len(json_b))
+    blob = raw[20 + json_len + 8:]
+    total = 12 + 8 + len(json_b) + 8 + len(blob)
+    path.write_bytes(
+        struct.pack("<4sII", b"glTF", 2, total)
+        + struct.pack("<II", len(json_b), 0x4E4F534A) + json_b
+        + struct.pack("<II", len(blob), 0x004E4942) + blob
+    )
+    flat = gm.flatten_gltf(path)
+    assert flat.image is None
     bad = tmp_path / "empty.glb"
     json_b = b'{"asset":{"version":"2.0"}}'
     json_b += b" " * _pad4(len(json_b))

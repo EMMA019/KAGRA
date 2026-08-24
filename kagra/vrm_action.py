@@ -57,6 +57,26 @@ def _slerp(a: list[float], b: list[float], t: float) -> list[float]:
 
 _ID_QUAT = [0.0, 0.0, 0.0, 1.0]
 
+
+def _overlay_bone_quat(
+    pose: Dict[str, list[float]],
+    bone: str,
+    saved_idle: Dict[str, list[float]],
+    bind_pose: Dict[str, list[float]],
+) -> list[float]:
+    """Pick a bone quat from an overlay keyframe.
+
+    Empty keyframes (``{}``) mean "return to the pose saved at play()".
+    Do not fall back to live ``current_rots`` — the overlay already wrote
+    the action there, so blending toward it leaves clap/banzai arms stuck.
+    """
+    q = pose.get(bone)
+    if q is not None:
+        return q
+    rest = saved_idle.get(bone) or bind_pose.get(bone)
+    return rest if rest is not None else _ID_QUAT[:]
+
+
 # ── プロシージャル・アクション定義 ──────────────────────────────
 # 形式: "アクション名": [(時間秒, {ボーン名: (rx, ry, rzのオイラー角ラジアン)}), ...]
 #
@@ -283,6 +303,7 @@ class ActionController:
             return
 
         self._ensure_bind_pose()
+        keep_idle = self.playing_action is not None and bool(self._saved_idle_rots)
         self.playing_action = action_name
         self._time = 0.0
 
@@ -298,16 +319,20 @@ class ActionController:
             self._keyframes.append((t, quat_dict))
         self._duration = self._keyframes[-1][0]
 
-        # アクション開始時の idle 姿勢を保存（終了時に復元するため）
-        self._save_idle_poses()
+        # First play() snapshots idle. A follow-up clap→banzai must not
+        # treat the overlay pose as the new rest (folded-forward arms).
+        self._save_idle_poses(keep=keep_idle)
 
-    def _save_idle_poses(self):
+    def _save_idle_poses(self, *, keep: bool = False):
         """アクションが触るボーンの現在の idle 姿勢を保存する。"""
-        self._saved_idle_rots = {}
+        if not keep:
+            self._saved_idle_rots = {}
         all_bones = set()
         for _, pose in self._keyframes:
             all_bones.update(pose.keys())
         for bone in all_bones:
+            if keep and bone in self._saved_idle_rots:
+                continue
             current = self._avatar._anim.current_rots.get(bone)
             if current is not None:
                 self._saved_idle_rots[bone] = current[:]
@@ -357,13 +382,12 @@ class ActionController:
         all_bones = set(pose0.keys()) | set(pose1.keys())
 
         for bone in all_bones:
-            # 現在の idle 姿勢を取得
-            current_idle_pose = self._avatar._anim.current_rots.get(bone)
-            if current_idle_pose is None:
-                current_idle_pose = self._bind_pose.get(bone, _ID_QUAT)
-
-            q0 = pose0.get(bone, current_idle_pose)
-            q1 = pose1.get(bone, current_idle_pose)
+            q0 = _overlay_bone_quat(
+                pose0, bone, self._saved_idle_rots, self._bind_pose,
+            )
+            q1 = _overlay_bone_quat(
+                pose1, bone, self._saved_idle_rots, self._bind_pose,
+            )
             q_blend = _slerp(q0, q1, t_ease)
 
             # エンジンに送信 + current_rots を更新

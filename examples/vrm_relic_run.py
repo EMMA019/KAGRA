@@ -1,10 +1,19 @@
 """VRM Island Relic Run — 30s outdoor relic collect showcase.
 
 エージェント実証用（公開 API のみ）。ログ:
-docs/agent-runs/2026-08-24-island-relic-run.md
+docs/agent-runs/20260824-relic-run-walk-assets/
 
 Sample VRM via ensure_vrm is Alicia Solid (ニコニ立体ちゃん) © Dwango —
 credit the character if you post screenshots.
+
+Art (CC0, not in the pip wheel):
+  Kenney Mini Forest + Nature Kit — https://kenney.nl (CC0)
+  Poly Haven aerial_grass_rock + kloofendal_48d_partly_cloudy_puresky —
+  https://polyhaven.com (CC0). See examples/assets/relic_run/LICENSE.md.
+
+Walk: built-in VrmAvatar idle/walk (T-pose arm drop + opposite-phase swing).
+Mixamo/synthetic BVH walk is NOT loaded — those clips rest in T-pose, so
+bind*delta leaves Emma's arms folded forward like a carry/formal pose.
 
 操作:
   WASD / 左スティック : 歩く
@@ -20,6 +29,7 @@ from __future__ import annotations
 import math
 import os
 import sys
+from pathlib import Path
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_HERE))
@@ -28,23 +38,27 @@ sys.path.insert(0, _HERE)
 import kagra
 from kagra.camera3d import Camera3D
 from kagra.contracts import AssetKind, resolve_asset
-from kagra.land import terrain_rgba
 
 from relic_run_rules import (
     CAM_DISTANCE,
+    GLTF_HALF_Y,
     JUMP,
+    PEDESTAL,
     PLAYER_SPEED,
+    RELIC_GLOW,
+    RELIC_SCALE,
     RELIC_XZ,
+    ROCK_PLACEMENTS,
     ROUND_SEC,
     START_XZ,
-    STONE_XZ,
-    TREE_XZ,
+    TREE_PLACEMENTS,
     WATER_Y,
     can_pick,
     grade_for,
     hero_theta,
     nearest_live,
     round_score,
+    sit_y,
     spawn_relics,
     start_face,
 )
@@ -54,19 +68,48 @@ HALF = 24.0
 SMOKE = os.environ.get("KAGRA_SMOKE") == "1"
 SMOKE_FRAMES = int(os.environ.get("KAGRA_SMOKE_FRAMES", "40"))
 SMOKE_SHOT = os.environ.get("KAGRA_SMOKE_OUT", "scratch/relic_run_smoke.png")
+_ASSETS = Path(_HERE) / "assets" / "relic_run"
+_KENNEY = _ASSETS / "kenney"
+_POLYHAVEN = _ASSETS / "polyhaven"
 
 
-def _terrain_px(x, y):
-    return terrain_rgba(x / 127.0, y / 127.0, half=HALF)
+def _gltf(name: str) -> str:
+    path = (_KENNEY / name).resolve()
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Relic Run glTF missing: {path}. "
+            "CC0 files live under examples/assets/relic_run/kenney/."
+        )
+    return str(path)
+
+
+def _bind_locomotion(avatar) -> None:
+    """Keep engine idle/walk. Mixamo/BVH walk rest is T-pose → folded arms.
+
+    A shipped VRMA next to the example is loaded with no silent except.
+    """
+    vrma = _ASSETS / "walk.vrma"
+        if vrma.is_file():
+            try:
+                avatar.load_motion("walk", str(vrma))
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Relic Run walk.vrma failed to load: {vrma}"
+                ) from exc
+            print(f"[RelicRun] walk ← {vrma}")
+            return
+    print("[RelicRun] walk ← built-in idle/walk (arm swing). Mixamo/BVH skipped.")
 
 
 def _relic_glow_tex():
     def px(x, y):
-        d = math.hypot(x - 15.5, y - 15.5) / 15.5
-        core = max(0.0, 1.0 - d * 1.15)
-        return (255, 220, 90, max(0, int(core * 255)))
+        d = math.hypot(x - 31.5, y - 31.5) / 31.5
+        core = max(0.0, 1.0 - d * 0.95)
+        rim = max(0.0, 1.0 - abs(d - 0.55) * 6.0)
+        a = max(core, rim * 0.65)
+        return (255, 230, 110, max(0, int(a * 255)))
 
-    return kagra.texture_from_fn(32, 32, px, name="relic_glow")
+    return kagra.texture_from_fn(64, 64, px, name="relic_glow")
 
 
 def _make_sfx() -> dict[str, str]:
@@ -92,6 +135,16 @@ def _se(sfx: dict, key: str, volume: float = 1.0):
             pass
 
 
+def _place_gltf(name: str, x: float, z: float, scale: float, yaw: float, world, *, collision: bool = True):
+    half = GLTF_HALF_Y[name]
+    gy = world.ground_y(x, z)
+    return kagra.Prop(
+        _gltf(name),
+        x=x, y=sit_y(gy, half, scale), z=z,
+        scale=scale, yaw=yaw, world=world, collision=collision,
+    )
+
+
 class RelicRun(kagra.Scene):
     def on_enter(self):
         kagra.font()
@@ -101,12 +154,8 @@ class RelicRun(kagra.Scene):
         if vrm_path is None:
             vrm_path = kagra.ensure_vrm()
         self.avatar = kagra.avatar(str(vrm_path))
-        walk = resolve_asset(AssetKind.ANY, "walk", required=False)
-        if walk is not None:
-            try:
-                self.avatar.load_motion("walk", str(walk))
-            except Exception:
-                pass
+        _bind_locomotion(self.avatar)
+        self.avatar.stop_upper()
         self.avatar.play("idle", loop=True)
         self.avatar.enable_emotion()
         self.action = kagra.ActionController(self.avatar)
@@ -118,57 +167,61 @@ class RelicRun(kagra.Scene):
         self.world.set_water_y(WATER_Y)
         self.world.add_player(*START_XZ)
 
-        tex = kagra.texture_from_fn(128, 128, _terrain_px, name="relic_land")
+        grass = _POLYHAVEN / "aerial_grass_rock_diff_1k.jpg"
+        if grass.is_file():
+            tex = kagra.load(str(grass))
+        else:
+            print("[RelicRun] Poly Haven grass missing; procedural terrain fallback")
+
+            def _terrain_px(_x, _y):
+                return (76, 140, 62, 255)
+
+            tex = kagra.texture_from_fn(128, 128, _terrain_px, name="relic_land")
         self.world.bake_terrain(tex)
         wall = kagra.solid_tex((148, 128, 108))
         self.world.bake(tex, wall)
 
-        try:
-            kagra.apply_outdoor_look()
-        except Exception:
-            pass
+        kagra.apply_outdoor_look()
+        sky_png = _POLYHAVEN / "kloofendal_48d_partly_cloudy_puresky_1k.png"
+        self.sky_stage = None
+        if sky_png.is_file():
+            self.sky_stage = kagra.stage(str(sky_png), radius=48.0)
+            kagra.set_hdri(str(sky_png), strength=0.92)
+        kagra.set_fog(start=22.0, end=46.0, color=(150, 175, 195), enabled=True)
+        kagra.set_bloom(threshold=0.78, intensity=0.32)
         if not SMOKE:
-            try:
-                kagra.set_spot_light(
-                    4.0, 10.0, -2.0, -0.25, -1.0, 0.15,
-                    angle=0.9, penumbra=0.35, intensity=1.35, radius=22.0,
-                    r=1.0, g=0.95, b=0.82, slot=0,
-                )
-                kagra.set_point_light(
-                    -2.0, 3.5, 2.0, r=0.55, g=0.75, b=1.0,
-                    intensity=0.55, radius=14.0, slot=1,
-                )
-            except Exception:
-                pass
-
-        self.tree_props = []
-        for tx, tz in TREE_XZ:
-            gy = self.world.ground_y(tx, tz)
-            trunk = kagra.Prop(
-                "cylinder", x=tx, y=gy + 0.7, z=tz,
-                scale=(0.35, 1.4, 0.35), color=(90, 60, 35), world=self.world,
+            kagra.set_spot_light(
+                4.0, 10.0, -2.0, -0.25, -1.0, 0.15,
+                angle=0.9, penumbra=0.35, intensity=1.35, radius=22.0,
+                r=1.0, g=0.95, b=0.82, slot=0,
             )
-            crown = kagra.Prop(
-                "sphere", x=0.0, y=1.05, z=0.0, scale=1.35, color=(48, 130, 55),
-                collision=False,
+            kagra.set_point_light(
+                -2.0, 3.5, 2.0, r=0.55, g=0.75, b=1.0,
+                intensity=0.55, radius=14.0, slot=1,
             )
-            crown.set_parent(trunk, keep_world=False)
-            self.tree_props.append(trunk)
 
-        for sx, sz in STONE_XZ:
-            gy = self.world.ground_y(sx, sz)
-            kagra.Prop(
-                "sphere", x=sx, y=gy + 0.28, z=sz, scale=0.55,
-                color=(150, 145, 140), world=self.world,
+        for name, tx, tz, scale, yaw in TREE_PLACEMENTS:
+            _place_gltf(name, tx, tz, scale, yaw, self.world, collision=name.startswith("tree"))
+        for name, sx, sz, scale, yaw in ROCK_PLACEMENTS:
+            _place_gltf(name, sx, sz, scale, yaw, self.world)
+
+        ped_name, ped_scale, ped_yaw = PEDESTAL
+        self.pedestals = []
+        for rx, rz in RELIC_XZ:
+            self.pedestals.append(
+                _place_gltf(ped_name, rx, rz, ped_scale, ped_yaw, self.world, collision=True)
             )
 
         self.tex_glow = _relic_glow_tex()
         self.relic_props: list = []
+        ped_half = GLTF_HALF_Y[ped_name]
         for rx, rz in RELIC_XZ:
             gy = self.world.ground_y(rx, rz)
+            top = gy + ped_half * ped_scale * 2.0
             prop = kagra.Prop(
-                "sphere", x=rx, y=gy + 0.45, z=rz, scale=0.55,
-                color="gold", world=self.world, collision=False,
+                "sphere", x=rx, y=top + RELIC_SCALE * 0.55, z=rz,
+                scale=RELIC_SCALE, color="gold", world=self.world, collision=False,
+                metallic=0.85, roughness=0.22,
             )
             self.relic_props.append(prop)
 
@@ -198,6 +251,12 @@ class RelicRun(kagra.Scene):
         self.hud = kagra.Label("", 18, 48, 18, (200, 220, 235))
         self._reset_round()
 
+    def _relic_bob_y(self, relic) -> float:
+        ped_name, ped_scale, _yaw = PEDESTAL
+        gy = self.world.ground_y(relic.x, relic.z)
+        top = gy + GLTF_HALF_Y[ped_name] * ped_scale * 2.0
+        return top + RELIC_SCALE * 0.55 + 0.16 * math.sin(relic.phase)
+
     def _reset_round(self):
         self.relics = spawn_relics()
         self.picked = 0
@@ -208,18 +267,13 @@ class RelicRun(kagra.Scene):
         self.grade = "D"
         for prop, relic in zip(self.relic_props, self.relics):
             prop.enabled = True
-            gy = self.world.ground_y(relic.x, relic.z)
-            prop.set_position(relic.x, gy + 0.45, relic.z)
+            prop.set_position(relic.x, self._relic_bob_y(relic), relic.z)
         p = self.world.player
         if p is not None:
-            # respawn near start on land
             gy = self.world.ground_y(*START_XZ)
-            try:
-                p.x, p.z = START_XZ[0], START_XZ[1]
-                p.y = gy
-                p.vx = p.vy = p.vz = 0.0
-            except Exception:
-                pass
+            p.x, p.z = START_XZ[0], START_XZ[1]
+            p.y = gy
+            p.vx = p.vy = p.vz = 0.0
         self.walk.face = start_face()
         self.walk.yaw = hero_theta(self.walk.face)
 
@@ -259,7 +313,6 @@ class RelicRun(kagra.Scene):
             self._pose(dt, move=False)
             return
 
-        # play
         self.time_left -= dt
         kagra.Prop.update_all(dt)
         self.walk.step(dt)
@@ -270,9 +323,7 @@ class RelicRun(kagra.Scene):
                 if not relic.live:
                     continue
                 relic.phase += dt * 3.2
-                bob = 0.45 + 0.12 * math.sin(relic.phase)
-                gy = self.world.ground_y(relic.x, relic.z)
-                prop.y = gy + bob
+                prop.y = self._relic_bob_y(relic)
                 if can_pick(p.x, p.z, relic.x, relic.z):
                     relic.live = False
                     prop.enabled = False
@@ -318,32 +369,25 @@ class RelicRun(kagra.Scene):
         self.avatar.set_yaw(self.walk.face)
 
     def draw(self):
-        kagra.cls(110, 170, 210)
-        kagra.sky(radius=42.0)
-        if not getattr(self, "_outdoor", False):
-            try:
-                kagra.apply_outdoor_look()
-            except Exception:
-                pass
-            self._outdoor = True
+        kagra.cls(150, 175, 195)
+        if self.sky_stage is not None:
+            self.sky_stage.draw()
+        else:
+            kagra.sky(radius=42.0, look=False)
         self.world.draw()
         kagra.water(WATER_Y, half=HALF, world=self.world)
         kagra.Prop.draw_all()
 
-        # Procedural glow billboards over live relics
         glow_items = []
         for relic in self.relics:
             if not relic.live:
                 continue
-            gy = self.world.ground_y(relic.x, relic.z)
-            bob = 0.55 + 0.12 * math.sin(relic.phase)
-            size = 0.42 + 0.06 * math.sin(relic.phase * 1.7)
-            glow_items.append((relic.x, gy + bob, relic.z, size))
+            y = self._relic_bob_y(relic)
+            size = RELIC_GLOW + 0.12 * math.sin(relic.phase * 1.7)
+            glow_items.append((relic.x, y + 0.15, relic.z, size))
+            glow_items.append((relic.x, y + 0.15, relic.z, size * 0.45))
         if glow_items:
-            try:
-                kagra.draw_billboard_instances(self.tex_glow, glow_items, self.cam)
-            except Exception:
-                pass
+            kagra.draw_billboard_instances(self.tex_glow, glow_items, self.cam)
 
         kagra.draw_vrm(self.avatar.vrm_id)
         kagra.draw_vignette()
@@ -389,7 +433,7 @@ class RelicRun(kagra.Scene):
             hs = f"Best  {self.hi}"
             w3, _ = kagra.measure(hs, 18)
             kagra.text(hs, (SW - w3) // 2, SH // 2 + 48, 18, (255, 190, 140))
-        credit = "VRM sample: Alicia Solid © Dwango"
+        credit = "VRM sample: Alicia Solid © Dwango   Art: Kenney + Poly Haven (CC0)"
         wc, _ = kagra.measure(credit, 14)
         kagra.text(credit, (SW - wc) // 2, SH - 36, 14, (160, 175, 190))
 
