@@ -148,6 +148,10 @@ struct Camera {
     point_col: vec4<f32>,
     env: vec4<f32>,
     spot_dir: vec4<f32>,
+    extra_pos: array<vec4<f32>, 3>,
+    extra_col: array<vec4<f32>, 3>,
+    extra_spot: array<vec4<f32>, 3>,
+    extra_inner: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> cam: Camera;
 @group(0) @binding(1) var env_cube: texture_cube<f32>;
@@ -224,27 +228,38 @@ fn env_light(n: vec3<f32>) -> vec3<f32> {
     if cam.env.x < 1e-4 { return vec3<f32>(0.0); }
     return textureSample(env_irr, env_samp, n).rgb * cam.env.x;
 }
-fn spot_cone(world_pos: vec3<f32>) -> f32 {
-    if cam.spot_dir.w < 1e-4 { return 1.0; }
-    let to_l = cam.point_pos.xyz - world_pos;
-    let from_l = normalize(-to_l);
-    let axis = normalize(cam.spot_dir.xyz);
-    let c = dot(from_l, axis);
-    let outer = cam.spot_dir.w;
-    let inner = cam.env.z;
-    if inner - outer < 1e-4 {
-        return select(0.0, 1.0, c >= outer);
-    }
-    return smoothstep(outer, inner, c);
-}
-fn point_diffuse(n: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
-    if cam.point_col.w < 1e-4 { return vec3<f32>(0.0); }
-    let to_l = cam.point_pos.xyz - world_pos;
+fn light_one(n: vec3<f32>, world_pos: vec3<f32>, pos: vec4<f32>, col: vec4<f32>, spot: vec4<f32>, inner: f32) -> vec3<f32> {
+    if col.w < 1e-4 { return vec3<f32>(0.0); }
+    let to_l = pos.xyz - world_pos;
     let dist = length(to_l);
-    let radius = max(cam.point_pos.w, 0.05);
+    let radius = max(pos.w, 0.05);
     let atten = saturate(1.0 - dist / radius);
     let ndotl = saturate(dot(n, normalize(to_l)));
-    return cam.point_col.rgb * cam.point_col.w * ndotl * atten * atten * spot_cone(world_pos);
+    var cone = 1.0;
+    if spot.w > 1e-4 {
+        let from_l = normalize(-to_l);
+        let axis = normalize(spot.xyz);
+        let c = dot(from_l, axis);
+        let outer = spot.w;
+        if inner - outer < 1e-4 {
+            cone = select(0.0, 1.0, c >= outer);
+        } else {
+            cone = smoothstep(outer, inner, c);
+        }
+    }
+    return col.rgb * col.w * ndotl * atten * atten * cone;
+}
+fn key_diffuse(n: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
+    return light_one(n, world_pos, cam.point_pos, cam.point_col, cam.spot_dir, cam.env.z);
+}
+fn fill_diffuse(n: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
+    var s = light_one(n, world_pos, cam.extra_pos[0], cam.extra_col[0], cam.extra_spot[0], cam.extra_inner.x);
+    s = s + light_one(n, world_pos, cam.extra_pos[1], cam.extra_col[1], cam.extra_spot[1], cam.extra_inner.y);
+    s = s + light_one(n, world_pos, cam.extra_pos[2], cam.extra_col[2], cam.extra_spot[2], cam.extra_inner.z);
+    return s;
+}
+fn local_lit(n: vec3<f32>, world_pos: vec3<f32>, loc_sh: f32) -> vec3<f32> {
+    return key_diffuse(n, world_pos) * loc_sh + fill_diffuse(n, world_pos);
 }
 fn ggx_d(ndoth: f32, rough: f32) -> f32 {
     let a = max(rough * rough, 0.002);
@@ -325,7 +340,6 @@ struct II { @location(3) pos_yaw: vec4<f32>, @location(4) scale: vec4<f32> }
     }
     let albedo = c.rgb * mesh_mat.base.rgb;
     let env = env_light(n);
-    let point = point_diffuse(n, in.world_pos);
     var rgb: vec3<f32>;
     if mesh_mat.params.w > 0.5 {
         let metallic = saturate(mesh_mat.params.x);
@@ -348,7 +362,7 @@ struct II { @location(3) pos_yaw: vec4<f32>, @location(4) scale: vec4<f32> }
         let sun = (kd * albedo + spec) * ndotl * sun_sh;
         let spec_env = textureSampleLevel(env_cube, env_samp, reflect(-v, n), rough * 3.0).rgb
             * cam.env.x * (1.0 - rough) * f;
-        rgb = sun + albedo * point * loc_sh + hemi + env * (1.0 - metallic) * 0.65 + spec_env;
+        rgb = sun + albedo * local_lit(n, in.world_pos, loc_sh) + hemi + env * (1.0 - metallic) * 0.65 + spec_env;
     } else {
         var ndotl = in.light;
         if mesh_mat.params.z > 0.5 {
@@ -358,7 +372,7 @@ struct II { @location(3) pos_yaw: vec4<f32>, @location(4) scale: vec4<f32> }
         let sun_sh = select(sh, 1.0, shadow_u.params.y > 0.5);
         let loc_sh = select(1.0, sh, shadow_u.params.y > 0.5);
         let lit = ndotl * sun_sh;
-        rgb = albedo * lit + albedo * point * loc_sh + hemi + env;
+        rgb = albedo * lit + albedo * local_lit(n, in.world_pos, loc_sh) + hemi + env;
     }
     rgb = apply_fog(rgb, in.world_pos);
     rgb = rgb * max(cam.env.y, 0.0);
@@ -406,6 +420,10 @@ struct Camera {
     point_col: vec4<f32>,
     env: vec4<f32>,
     spot_dir: vec4<f32>,
+    extra_pos: array<vec4<f32>, 3>,
+    extra_col: array<vec4<f32>, 3>,
+    extra_spot: array<vec4<f32>, 3>,
+    extra_inner: vec4<f32>,
 };
 struct Mtoon {
     shade_color: vec4<f32>,
@@ -520,6 +538,35 @@ fn apply_fog(color: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
 
 fn aces_tonemap(x: vec3<f32>) -> vec3<f32> {
     return saturate((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14));
+}
+
+fn light_one(n: vec3<f32>, world_pos: vec3<f32>, pos: vec4<f32>, col: vec4<f32>, spot: vec4<f32>, inner: f32) -> vec3<f32> {
+    if col.w < 1e-4 { return vec3<f32>(0.0); }
+    let to_l = pos.xyz - world_pos;
+    let dist = length(to_l);
+    let radius = max(pos.w, 0.05);
+    let atten = saturate(1.0 - dist / radius);
+    let ndotl = saturate(dot(n, normalize(to_l)));
+    var cone = 1.0;
+    if spot.w > 1e-4 {
+        let from_l = normalize(-to_l);
+        let axis = normalize(spot.xyz);
+        let c = dot(from_l, axis);
+        let outer = spot.w;
+        if inner - outer < 1e-4 {
+            cone = select(0.0, 1.0, c >= outer);
+        } else {
+            cone = smoothstep(outer, inner, c);
+        }
+    }
+    return col.rgb * col.w * ndotl * atten * atten * cone;
+}
+fn local_lit(n: vec3<f32>, world_pos: vec3<f32>, loc_sh: f32) -> vec3<f32> {
+    var s = light_one(n, world_pos, cam.point_pos, cam.point_col, cam.spot_dir, cam.env.z) * loc_sh;
+    s = s + light_one(n, world_pos, cam.extra_pos[0], cam.extra_col[0], cam.extra_spot[0], cam.extra_inner.x);
+    s = s + light_one(n, world_pos, cam.extra_pos[1], cam.extra_col[1], cam.extra_spot[1], cam.extra_inner.y);
+    s = s + light_one(n, world_pos, cam.extra_pos[2], cam.extra_col[2], cam.extra_spot[2], cam.extra_inner.z);
+    return s;
 }
 
 fn animated_uv(uv: vec2<f32>) -> vec2<f32> {
@@ -643,27 +690,7 @@ fn cotangent_frame(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> mat3x3<f32> {
         let hemi = 0.45 + 0.55 * saturate(n.y * 0.5 + 0.5);
         col = col + cam.ambient.rgb * cam.ambient.w * hemi;
     }
-    if cam.point_col.w > 1e-4 {
-        let to_l = cam.point_pos.xyz - in.world_pos;
-        let dist = length(to_l);
-        let radius = max(cam.point_pos.w, 0.05);
-        let atten = saturate(1.0 - dist / radius);
-        let ndotl = saturate(dot(n, normalize(to_l)));
-        var cone = 1.0;
-        if cam.spot_dir.w > 1e-4 {
-            let from_l = normalize(-to_l);
-            let axis = normalize(cam.spot_dir.xyz);
-            let c = dot(from_l, axis);
-            let outer = cam.spot_dir.w;
-            let inner = cam.env.z;
-            if inner - outer < 1e-4 {
-                cone = select(0.0, 1.0, c >= outer);
-            } else {
-                cone = smoothstep(outer, inner, c);
-            }
-        }
-        col = col + cam.point_col.rgb * cam.point_col.w * ndotl * atten * atten * base.rgb * cone * loc_sh;
-    }
+    col = col + local_lit(n, in.world_pos, loc_sh) * base.rgb;
     if cam.env.x > 1e-4 {
         col = col + textureSample(env_irr, env_samp, n).rgb * cam.env.x * base.rgb * 0.35;
     }

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Local lights are **4 slots**: `set_point_light(..., slot=0..3)` /
+  `set_spot_light(..., slot=)`. Slot 0 is the key (spot may own the 2048
+  map). 1..3 are fill, no shadow. Pairwise `local_four`. Pretty Room adds
+  two fills when not `KAGRA_SMOKE`. Pixels close on CI.
 - Indoor spot umbra is darker when the map is a lamp (`mix` 0.16, not 0.50)
   and the golden scene uses a side lamp + a floor that does not cast
   (extent skip). Pretty Room lamp is offset so the shadow stretches.

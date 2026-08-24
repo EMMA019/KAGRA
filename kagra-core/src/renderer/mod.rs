@@ -125,7 +125,7 @@ pub struct RendererV2 {
     depth_texture: wgpu::Texture,
     depth_view: wgpu::TextureView,
     pipeline_3d: wgpu::RenderPipeline,
-    /// view+proj+light+toon+eye+fog+fog_color+ambient+point+env+spot = 288
+    /// view+proj+light+toon+eye+fog+fog_color+ambient+point+env+spot+3 extra = 448
     camera_3d_buf: wgpu::Buffer,
     camera_3d_bg: wgpu::BindGroup,
     camera_3d_bgl: wgpu::BindGroupLayout,
@@ -145,10 +145,14 @@ pub struct RendererV2 {
     point_col: [f32; 4],
     /// x = HDRI 強度、y = 露出（既定 1）、z = spot cos_inner、w = ACES（>0.5 でオン）。
     env_params: [f32; 4],
-    /// xyz = スポット方向、w = cos_outer（0 なら点光 / オフ）。
+    /// xyz = スポット方向、w = cos_outer（0 なら点光 / オフ）。スロット 0。
     spot_dir: [f32; 4],
-    /// スポット外角（ラジアン）。0 なら透視影を書かない。
+    /// スポット外角（ラジアン）。0 なら透視影を書かない。スロット 0 だけがマップを所有。
     spot_angle: f32,
+    extra_pos: [[f32; 4]; 3],
+    extra_col: [[f32; 4]; 3],
+    extra_spot: [[f32; 4]; 3],
+    extra_inner: [f32; 4],
     env_tex: wgpu::Texture,
     env_view: wgpu::TextureView,
     env_sampler: wgpu::Sampler,
@@ -550,10 +554,10 @@ impl RendererV2 {
         });
         let (env_tex, env_view, env_sampler) = make_default_env_cube(&device, &queue);
         let (env_irr_tex, env_irr_view, _env_irr_samp) = make_default_env_cube(&device, &queue);
-        // view+proj+light+toon+eye+fog+fog_color+ambient+point_pos+point_col+env+spot = 288
+        // view+proj+light+toon+eye+fog+fog_color+ambient+point_pos+point_col+env+spot + 3 extra
         let camera_3d_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Camera3D Buf"),
-            size: 288,
+            size: CAMERA_3D_SIZE,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -631,12 +635,20 @@ impl RendererV2 {
         queue.write_buffer(&camera_3d_buf, 208, bytemuck::cast_slice(&ambient));
         let point_pos = [0.0f32, 1.0, 0.0, 8.0];
         let point_col = [1.0f32, 0.95, 0.85, 0.0];
+        let extra_pos = [[0.0f32, 1.0, 0.0, 8.0]; 3];
+        let extra_col = [[1.0f32, 0.95, 0.85, 0.0]; 3];
+        let extra_spot = [[0.0f32, -1.0, 0.0, 0.0]; 3];
+        let extra_inner = [0.0f32; 4];
         let env_params = [0.0f32, 1.0, 0.0, 0.0];
         let spot_dir = [0.0f32, -1.0, 0.0, 0.0];
         queue.write_buffer(&camera_3d_buf, 224, bytemuck::cast_slice(&point_pos));
         queue.write_buffer(&camera_3d_buf, 240, bytemuck::cast_slice(&point_col));
         queue.write_buffer(&camera_3d_buf, 256, bytemuck::cast_slice(&env_params));
         queue.write_buffer(&camera_3d_buf, 272, bytemuck::cast_slice(&spot_dir));
+        queue.write_buffer(&camera_3d_buf, CAMERA_EXTRA_POS, bytemuck::cast_slice(&extra_pos));
+        queue.write_buffer(&camera_3d_buf, CAMERA_EXTRA_COL, bytemuck::cast_slice(&extra_col));
+        queue.write_buffer(&camera_3d_buf, CAMERA_EXTRA_SPOT, bytemuck::cast_slice(&extra_spot));
+        queue.write_buffer(&camera_3d_buf, CAMERA_EXTRA_INNER, bytemuck::cast_slice(&extra_inner));
 
         let skinning_3d_morph_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Skinning3D Morph BGL"),
@@ -1288,6 +1300,10 @@ impl RendererV2 {
             env_params,
             spot_dir,
             spot_angle: 0.0,
+            extra_pos,
+            extra_col,
+            extra_spot,
+            extra_inner,
             env_tex,
             env_view,
             env_sampler,
@@ -1907,20 +1923,33 @@ impl RendererV2 {
         b: f32,
         intensity: f32,
         radius: f32,
+        slot: u32,
     ) {
-        self.point_pos = [x, y, z, radius.max(0.05)];
-        self.point_col = [
+        let pos = [x, y, z, radius.max(0.05)];
+        let col = [
             r.clamp(0.0, 4.0),
             g.clamp(0.0, 4.0),
             b.clamp(0.0, 4.0),
             intensity.max(0.0),
         ];
-        self.spot_dir = [0.0, -1.0, 0.0, 0.0];
-        self.spot_angle = 0.0;
-        self.env_params[2] = 0.0;
-        self.queue.write_buffer(&self.camera_3d_buf, 224, bytemuck::cast_slice(&self.point_pos));
-        self.queue.write_buffer(&self.camera_3d_buf, 240, bytemuck::cast_slice(&self.point_col));
-        self.write_env_spot();
+        let slot = slot.min(LOCAL_LIGHT_SLOTS - 1);
+        if slot == 0 {
+            self.point_pos = pos;
+            self.point_col = col;
+            self.spot_dir = [0.0, -1.0, 0.0, 0.0];
+            self.spot_angle = 0.0;
+            self.env_params[2] = 0.0;
+            self.queue.write_buffer(&self.camera_3d_buf, 224, bytemuck::cast_slice(&self.point_pos));
+            self.queue.write_buffer(&self.camera_3d_buf, 240, bytemuck::cast_slice(&self.point_col));
+            self.write_env_spot();
+            return;
+        }
+        let i = (slot - 1) as usize;
+        self.extra_pos[i] = pos;
+        self.extra_col[i] = col;
+        self.extra_spot[i] = [0.0, -1.0, 0.0, 0.0];
+        self.extra_inner[i] = 0.0;
+        self.write_extra_lights();
     }
 
     pub fn set_spot_light(
@@ -1938,25 +1967,62 @@ impl RendererV2 {
         r: f32,
         g: f32,
         b: f32,
+        slot: u32,
     ) {
         let dir = {
             let len = (dx * dx + dy * dy + dz * dz).sqrt().max(1e-8);
             [dx / len, dy / len, dz / len]
         };
         let (cos_outer, cos_inner) = crate::hdri::spot_cone_params(angle, penumbra);
-        self.point_pos = [x, y, z, radius.max(0.05)];
-        self.point_col = [
+        let pos = [x, y, z, radius.max(0.05)];
+        let col = [
             r.clamp(0.0, 4.0),
             g.clamp(0.0, 4.0),
             b.clamp(0.0, 4.0),
             intensity.max(0.0),
         ];
-        self.spot_dir = [dir[0], dir[1], dir[2], cos_outer];
-        self.spot_angle = angle.clamp(0.02, std::f32::consts::PI - 0.02);
-        self.env_params[2] = cos_inner;
-        self.queue.write_buffer(&self.camera_3d_buf, 224, bytemuck::cast_slice(&self.point_pos));
-        self.queue.write_buffer(&self.camera_3d_buf, 240, bytemuck::cast_slice(&self.point_col));
-        self.write_env_spot();
+        let spot = [dir[0], dir[1], dir[2], cos_outer];
+        let slot = slot.min(LOCAL_LIGHT_SLOTS - 1);
+        if slot == 0 {
+            self.point_pos = pos;
+            self.point_col = col;
+            self.spot_dir = spot;
+            self.spot_angle = angle.clamp(0.02, std::f32::consts::PI - 0.02);
+            self.env_params[2] = cos_inner;
+            self.queue.write_buffer(&self.camera_3d_buf, 224, bytemuck::cast_slice(&self.point_pos));
+            self.queue.write_buffer(&self.camera_3d_buf, 240, bytemuck::cast_slice(&self.point_col));
+            self.write_env_spot();
+            return;
+        }
+        let i = (slot - 1) as usize;
+        self.extra_pos[i] = pos;
+        self.extra_col[i] = col;
+        self.extra_spot[i] = spot;
+        self.extra_inner[i] = cos_inner;
+        self.write_extra_lights();
+    }
+
+    fn write_extra_lights(&mut self) {
+        self.queue.write_buffer(
+            &self.camera_3d_buf,
+            CAMERA_EXTRA_POS,
+            bytemuck::cast_slice(&self.extra_pos),
+        );
+        self.queue.write_buffer(
+            &self.camera_3d_buf,
+            CAMERA_EXTRA_COL,
+            bytemuck::cast_slice(&self.extra_col),
+        );
+        self.queue.write_buffer(
+            &self.camera_3d_buf,
+            CAMERA_EXTRA_SPOT,
+            bytemuck::cast_slice(&self.extra_spot),
+        );
+        self.queue.write_buffer(
+            &self.camera_3d_buf,
+            CAMERA_EXTRA_INNER,
+            bytemuck::cast_slice(&self.extra_inner),
+        );
     }
 
     pub fn set_exposure(&mut self, value: f32) {

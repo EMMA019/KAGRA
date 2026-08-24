@@ -238,6 +238,43 @@ class NormalFlat(NormalBump):
     use_normal = False
 
 
+class LocalFour(kagra.Scene):
+    """キー 1 + 色付き埋め 3。スロット 0 だけが影を持てる（このシーンは影オフ）。"""
+
+    extras = True
+
+    def on_enter(self):
+        albedo = kagra.load(solid_png(210, 200, 188))
+        _bind_cam(self, 3.4, 0.85, 0.42, (0.0, 0.5, 0.0), fov=40.0)
+        bv, bi = kagra.box_mesh(0.0, 0.5, 0.0, 1.0, 1.0, 1.0)
+        self.box = kagra.upload_mesh_3d(albedo, bv, bi, metallic=0.0, roughness=0.6)
+        kagra.set_shadow_enabled(False)
+        kagra.set_bloom(enabled=False)
+        kagra.set_tonemap(False)
+        kagra.set_hdri(None, strength=0.0)
+        kagra.set_ambient(0.04, 0.04, 0.05, 0.06)
+        kagra.set_light_dir(0.1, 1.0, 0.05)
+        kagra.set_exposure(1.0)
+        kagra.set_point_light(0.0, 2.2, 0.0, intensity=1.6, radius=8.0, slot=0)
+        if self.extras:
+            kagra.set_point_light(-1.6, 1.1, 0.4, r=1.0, g=0.15, b=0.1, intensity=2.2, radius=5.0, slot=1)
+            kagra.set_point_light(1.6, 1.1, 0.4, r=0.1, g=1.0, b=0.2, intensity=2.2, radius=5.0, slot=2)
+            kagra.set_point_light(0.0, 0.8, -1.6, r=0.15, g=0.35, b=1.0, intensity=2.2, radius=5.0, slot=3)
+
+    def update(self, dt):
+        engine = kagra.get_engine()
+        if engine:
+            self.cam.update(engine)
+
+    def draw(self):
+        kagra.cls(8, 8, 10)
+        kagra.draw_mesh_id(self.box)
+
+
+class LocalOne(LocalFour):
+    extras = False
+
+
 SCENES = {
     "shapes2d": (Shapes2D, 8),
     "mesh3d": (Mesh3D, 10),
@@ -249,6 +286,8 @@ SCENES = {
     "ibl_plastic": (IblPlastic, 12),
     "normal_bump": (NormalBump, 12),
     "normal_flat": (NormalFlat, 12),
+    "local_four": (LocalFour, 12),
+    "local_one": (LocalOne, 12),
 }
 
 

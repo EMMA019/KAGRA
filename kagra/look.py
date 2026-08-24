@@ -23,6 +23,16 @@ LIVE_RIM = 0.55
 LIVE_FOG = (8.0, 18.0, (14, 10, 28))
 LIVE_AMBIENT = (0.22, 0.20, 0.28, 0.28)
 
+LOCAL_LIGHT_SLOTS = 4
+
+
+def check_light_slot(slot: int) -> int:
+    """局所ライトは 4 スロット（0 がキー。1..3 は埋め。影はスロット 0 だけ）。"""
+    s = int(slot)
+    if s < 0 or s >= LOCAL_LIGHT_SLOTS:
+        raise ValueError("local lights are 4 slots (0..3)")
+    return s
+
 
 def _clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return lo if x < lo else hi if x > hi else x

@@ -6,6 +6,8 @@ import zlib
 
 from tests.conftest import load_kagra_submodule
 
+import pytest
+
 look = load_kagra_submodule("look")
 
 
@@ -88,3 +90,13 @@ def test_grounding_lift_does_not_push_down():
 def test_grounding_lift_smooths():
     a = look.grounding_lift([-0.1], current=0.0, follow=0.5, sole=0.0)
     assert 0.0 < a < 0.1
+
+
+def test_light_slot_allows_four_rejects_fifth():
+    assert look.LOCAL_LIGHT_SLOTS == 4
+    assert look.check_light_slot(0) == 0
+    assert look.check_light_slot(3) == 3
+    with pytest.raises(ValueError, match="4 slots"):
+        look.check_light_slot(4)
+    with pytest.raises(ValueError, match="4 slots"):
+        look.check_light_slot(-1)

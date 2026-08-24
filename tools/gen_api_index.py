@@ -329,7 +329,7 @@ def render_markdown(items: list[tuple[str, str, str]]) -> str:
         "- glTF 部品: `Prop(\"crate.glb\")`。`stage()` / `load_gltf` は会場。同梱エイリアス `cube.glb`。当たりは AABB。`mesh_hit=True` で三角形。",
         "- ゲームパッド: `axis(\"left\")` / `pad(\"a\")` / `inject_pad`。`Walk` は左スティック移動・右スティック視点。実機 USB/XInput は EventLoop で gilrs（`inject_pad` が優先。CI は inject）。",
         "- 影は床・箱・Prop も落とす。`set_shadow_cascades(2)` で近／遠の 2 段（既定 1。Prop Garden は変えない）。屋外はテクセルスナップ。OSM ではない街 JSON は `load_city`。三角形当たりは `add_trimesh` / `Prop(..., mesh_hit=True)`。積み木は `add_box(..., is_static=False)`（Rapier はまだ。80% の世界）。",
-        "- 点光源 1: `set_point_light(x,y,z, intensity=…)`。影は無し。スポットは `set_spot_light`（同じスロット。室内の透視影はスポットに掛かる。平行光は埋め）。",
+        "- 点光源 4: `set_point_light(..., slot=0..3)`。0 がキー（影は無し）。1..3 は埋め。スポットは `set_spot_light(..., slot=)`。室内の透視影はスロット 0 のスポットだけ。平行光は埋め。",
         "- HDRI: `set_hdri(\"studio\")` または正距円筒のパス。拡散は小さな irradiance キューブ。スペキュラは mip LOD。露出は `set_exposure`（既定 1）。ACES は `set_tonemap`（既定オフ）。",
         "- 閉じた部屋: `room()` + `apply_room_look`。屋外の島: `apply_outdoor_look` + `set_height_fn` + `water` + `sky()`。坂は接平面、急斜面は滑る。デモは Pretty Room / Overworld。",
         "- 汎用メッシュの金属/粗さ: `upload_mesh_3d(..., metallic=, roughness=)` / `Prop(..., metallic=)` / `set_mesh_pbr`。接空間法線は `normal_texture_id` / `Prop(..., normal=)` / `set_mesh_normal` / glTF `normalTexture`（cotangent frame。ストライドは 32）。MToon は触らない。",

@@ -248,9 +248,10 @@ impl KagraWindow {
         x: f32, y: f32, z: f32,
         r: f32, g: f32, b: f32,
         intensity: f32, radius: f32,
+        slot: u32,
     ) {
         if let Some(rend) = lock_recover(&self.renderer).as_mut() {
-            rend.set_point_light(x, y, z, r, g, b, intensity, radius);
+            rend.set_point_light(x, y, z, r, g, b, intensity, radius, slot);
         }
     }
 
@@ -261,9 +262,10 @@ impl KagraWindow {
         angle: f32, penumbra: f32,
         intensity: f32, radius: f32,
         r: f32, g: f32, b: f32,
+        slot: u32,
     ) {
         if let Some(rend) = lock_recover(&self.renderer).as_mut() {
-            rend.set_spot_light(x, y, z, dx, dy, dz, angle, penumbra, intensity, radius, r, g, b);
+            rend.set_spot_light(x, y, z, dx, dy, dz, angle, penumbra, intensity, radius, r, g, b, slot);
         }
     }
 
