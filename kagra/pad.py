@@ -1,6 +1,7 @@
-"""Gamepad state. GPU 不要。今は ``inject_pad``（テスト / スモーク）。
+"""Gamepad state. GPU 不要。``inject_pad``（テスト / スモーク）が実機より優先。
 
 エンジンに ``poll_pad`` / ``pad_axis`` / ``pad_down`` があれば ``poll_pad()`` が読む。
+実機 USB/XInput はウィンドウの EventLoop が gilrs で読む（Windows はループ 1 本）。
 スティックは [-1, 1]。Y は下が正（``VirtualPad`` / ``Walk`` と同じ。上で前進）。
 """
 from __future__ import annotations

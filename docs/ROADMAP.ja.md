@@ -38,7 +38,7 @@ Rapier / OSM / 4 段 CSM / SSAO などは「このバーでは後回し」。永
 ## 次にやること（この順）
 
 1. **頭脳面（載った）** — `kagra.brain("kairi")` の既定は `https://kairi.onrender.com`。チャットは `KAIRI_API_TOKEN`。コアにモデルを入れない
-2. **絵の残り** — 法線マップ → 室内影の画素確認 → トーンマップの画素。golden / smoke スクショで閉じる。実機パッドは同じバー
+2. **絵の残り** — 法線と USB の API は載った。次は室内影の画素確認 → トーンマップの画素。golden / smoke スクショで閉じる
 3. **PyPI** — usable-week API を次の wheel に載せる。ソースだけの状態を長くしない。macOS wheel は CI で取る
 4. **D-6** — 3 見本の 30 秒テストのあと。箱の焼き直しではない。30 秒以上遊べて、スコアか明確なゴールがある
 5. **楔 C** — マスコットは既にある。ワンライナー / 配布物を整える。エンジン不足ではない。優先は下
@@ -97,7 +97,8 @@ API が生えたことは完了ではない。次を満たしたらチェック�
       テクセルスナップ / ポインタロック / `clicked_prop` / `animate` / `Label` /
       `Walk.carry` / coyote / 親子 2 段 / `sound`。スナップテスト修正 #53
 - [ ] 使える週の **見本**: Pretty Room / Overworld / Prop Garden が 30 秒テストを通る。
-      画素は GPU / CI スクショでまだ閉じていない。法線と USB パッドは未着手
+      画素は GPU / CI スクショでまだ閉じていない。法線と USB パッドの **API は載った**
+      （cotangent frame / gilrs。画素は未確認。CI は `inject_pad`）
 - [ ] **Stage 0.5 頭脳面:** 面は `kagra.brain` + レシピ + `examples/vrm_kairi_chat.py`。
       本番の楔 A は `https://kairi.onrender.com`（`KAIRI_API_TOKEN`）か Ollama。モデルは wheel に無い
 - [ ] 次の PyPI: usable-week API を wheel に載せる。macOS wheel は CI
@@ -129,9 +130,9 @@ API が生えたことは完了ではない。次を満たしたらチェック�
 
 **ソースに載った（#52）。画素未確認:**
 
-絵の残りはこの順: **法線マップ → 室内影の画素 → トーンマップの画素。**
+絵の残りはこの順: **室内影の画素 → トーンマップの画素**（法線と USB の API は載った）。
 
-- [ ] **法線マップ。** `Prop` / `upload_mesh_3d` / glTF `normalTexture`（未着手）
+- [ ] **法線マップ。** API は載った（`Prop(..., normal=)` / `upload_mesh_3d(..., normal_texture_id=)` / glTF `normalTexture`。cotangent frame。画素は GPU 未確認）
 - [ ] **室内の影。** スポットが同じ 2048 マップに透視影。画素で見える
 - [ ] **トーンマップ。** ACES。既定オフ。Pretty Room / Overworld が opt-in。白飛びが止まる
 - [ ] **スペキュラ IBL。** キューブ 4 mip + `textureSampleLevel`。金属がプラスチックに見えない
@@ -144,7 +145,7 @@ API が生えたことは完了ではない。次を満たしたらチェック�
 - [ ] **ジャンプ。** coyote + バッファ
 - [ ] **親子 2 段。** 孫まで
 - [ ] **音の一行。** `sound("coin")`
-- [ ] **パッドの実機。** USB/XInput。`inject_pad` はある（未着手）
+- [ ] **パッドの実機。** USB/XInput は EventLoop で gilrs。`inject_pad` がテスト / スモークで勝つ
 
 ### その先のエンジン（今のバーの外。禁止ではない）
 

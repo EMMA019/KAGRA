@@ -79,6 +79,25 @@ class PropGarden(kagra.Scene):
                 "sphere", x=2.2, y=0.5, z=-1.6, scale=0.9, color="white",
                 metallic=1.0, roughness=0.12, world=self.world,
             )
+
+            def _bump_n(x, y):
+                import math
+                u, v = (int(x) / 32.0, int(y) / 32.0)
+                nx = math.sin(u * 12.0)
+                ny = math.cos(v * 12.0)
+                leng = math.sqrt(nx * nx + ny * ny + 4.0)
+                return (
+                    int((nx / leng * 0.5 + 0.5) * 255),
+                    int((ny / leng * 0.5 + 0.5) * 255),
+                    int((2.0 / leng * 0.5 + 0.5) * 255),
+                    255,
+                )
+
+            bump = kagra.texture_from_fn(32, 32, _bump_n, name="garden_n", srgb=False)
+            kagra.Prop(
+                "box", x=2.2, y=0.35, z=1.4, scale=(0.8, 0.7, 0.8),
+                color=(180, 160, 140), normal=bump, world=self.world,
+            )
             kagra.set_hdri("studio", 0.40)
             kagra.set_point_light(1.4, 2.2, 0.8, intensity=1.1, radius=11.0)
 

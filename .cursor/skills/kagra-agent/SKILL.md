@@ -33,16 +33,18 @@ python tools/mcp_kagra/server.py   # MCP stdio
 
 Short 3D: `Prop` / `Walk` / `sky()` / `room()` / `water()`. Texture via `texture_from_fn` / `load`.
 Parent is 2 levels (`set_parent`, grandchild OK). glTF parts: `Prop("crate.glb")` (not `stage()`).
-Gamepad: `axis` / `pad` / `inject_pad`. Not 2D `Entity`.
+Gamepad: `axis` / `pad` / `inject_pad`. USB/XInput via gilrs on the EventLoop.
+`inject_pad` wins in tests. Not 2D `Entity`.
 Picture: `set_point_light` / `set_spot_light` / `set_hdri("studio")` /
-`set_exposure` / `set_tonemap` / `Prop(..., metallic=)`. Indoor: `apply_room_look`.
+`set_exposure` / `set_tonemap` / `Prop(..., metallic=, normal=)`. Indoor: `apply_room_look`.
 Outdoor: `apply_outdoor_look` / `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` /
 `load_city` / `Walk(..., jump=)`. City JSON is not OSM; physics is not Rapier yet.
 Play: `clicked_prop` / `Walk.carry` / `animate` / `Label` / `sound`.
-Pointer lock follows first person (OS may refuse). USB pad is not in the wheel yet.
+Pointer lock follows first person (OS may refuse). USB pad is gilrs on the
+EventLoop (`inject_pad` still wins for CI).
 
-Current engine bar is the usable week in `docs/ROADMAP.ja.md` (pixels +
-normals / USB pad). Final goal is first-recall, not this bar. Brain hook is `kagra.brain("kairi")` — default `https://kairi.onrender.com`,
+Current engine bar is the usable week in `docs/ROADMAP.ja.md` (pixels;
+normals / USB pad APIs landed). Final goal is first-recall, not this bar. Brain hook is `kagra.brain("kairi")` — default `https://kairi.onrender.com`,
 token in `KAIRI_API_TOKEN`. Not in the wheel. Next engine work is pixel close. Later engine (Rapier / OSM /
 more CSM) is deferred, not banned. Do not start D-6 as a fourth box room;
 D-6 needs 30s of play and a score or goal. Do not call APIs three.js-class

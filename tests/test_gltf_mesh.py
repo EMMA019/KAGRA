@@ -146,6 +146,77 @@ def test_flatten_reads_pbr_factors(tmp_path: Path):
     assert flat.base_color[2] == pytest.approx(0.8)
 
 
+def _png_1x1(r: int, g: int, b: int, a: int = 255) -> bytes:
+    import zlib
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        crc = zlib.crc32(tag + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
+
+    raw = b"\x00" + bytes((r, g, b, a))
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
+
+
+def test_flatten_reads_normal_texture(tmp_path: Path):
+    al_raw = _png_1x1(200, 40, 40)
+    n_raw = _png_1x1(128, 128, 255)
+    al_pad = al_raw + b"\x00" * _pad4(len(al_raw))
+    n_pad = n_raw + b"\x00" * _pad4(len(n_raw))
+    pos = [-0.5, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 1.0, 0.0]
+    pos_b = struct.pack("<9f", *pos)
+    idx_b = struct.pack("<3H", 0, 1, 2) + b"\x00" * _pad4(6)
+    blob = pos_b + idx_b + al_pad + n_pad
+    off_al = len(pos_b) + len(idx_b)
+    off_n = off_al + len(al_pad)
+    gltf = {
+        "asset": {"version": "2.0"},
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": [{"mesh": 0}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1, "material": 0}]}],
+        "materials": [{
+            "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}},
+            "normalTexture": {"index": 1},
+        }],
+        "textures": [{"source": 0}, {"source": 1}],
+        "images": [
+            {"bufferView": 2, "mimeType": "image/png"},
+            {"bufferView": 3, "mimeType": "image/png"},
+        ],
+        "accessors": [
+            {
+                "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3",
+                "min": [-0.5, 0.0, 0.0], "max": [0.5, 1.0, 0.0],
+            },
+            {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"},
+        ],
+        "bufferViews": [
+            {"buffer": 0, "byteOffset": 0, "byteLength": len(pos_b)},
+            {"buffer": 0, "byteOffset": len(pos_b), "byteLength": 6},
+            {"buffer": 0, "byteOffset": off_al, "byteLength": len(al_raw)},
+            {"buffer": 0, "byteOffset": off_n, "byteLength": len(n_raw)},
+        ],
+        "buffers": [{"byteLength": len(blob)}],
+    }
+    json_b = json.dumps(gltf, separators=(",", ":")).encode("utf-8")
+    json_b += b" " * _pad4(len(json_b))
+    total = 12 + 8 + len(json_b) + 8 + len(blob)
+    path = tmp_path / "bump.glb"
+    path.write_bytes(
+        struct.pack("<4sII", b"glTF", 2, total)
+        + struct.pack("<II", len(json_b), 0x4E4F534A) + json_b
+        + struct.pack("<II", len(blob), 0x004E4942) + blob
+    )
+    flat = gm.flatten_gltf(path)
+    assert flat.image == al_raw
+    assert flat.normal_image == n_raw
+
+
 def test_flatten_rejects_empty(tmp_path: Path):
     bad = tmp_path / "empty.glb"
     json_b = b'{"asset":{"version":"2.0"}}'

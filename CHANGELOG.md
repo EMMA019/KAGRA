@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Generic Mesh3D tangent-space normals: `upload_mesh_3d(..., normal_texture_id=)` /
+  `set_mesh_normal` / `Prop(..., normal=)` / glTF `normalTexture`. Vertices stay
+  `[x,y,z,nx,ny,nz,u,v]` (cotangent frame, no extra stride). Normal maps load
+  linear (`texture_from_fn(..., srgb=False)` / `load(..., srgb=False)`). Pretty
+  Room brick wall and Prop Garden bump crate opt in when not `KAGRA_SMOKE`.
+  GPU pixels unverified here.
+- USB/XInput: `poll_pad` reads gilrs from the winit EventLoop (Windows: one
+  loop). Stick Y is down-positive like `Walk` / `VirtualPad`. `inject_pad` still
+  wins for tests/smoke. Linux CI installs `libudev-dev`.
 - Walk strafe matches the camera: `walk_wish` right is screen-right
   (`forward × up`). D / left-stick X no longer move the opposite way in
   Overworld / Prop Garden / Pretty Room. Forward (W) is unchanged.

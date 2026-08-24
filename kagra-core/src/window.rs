@@ -81,6 +81,7 @@ pub struct KagraWindow {
     pub last_frame: Arc<Mutex<Option<(u32, u32, Vec<u8>)>>>,
     pub exit_requested: Arc<AtomicBool>,
     pub frame_count: Arc<AtomicU64>,
+    pub pad: Arc<Mutex<crate::pad::PadHw>>,
 }
 
 impl KagraWindow {
@@ -118,6 +119,7 @@ impl KagraWindow {
             last_frame: Arc::new(Mutex::new(None)),
             exit_requested: Arc::new(AtomicBool::new(false)),
             frame_count: Arc::new(AtomicU64::new(0)),
+            pad: Arc::new(Mutex::new(crate::pad::PadHw::default())),
         })
     }
 
@@ -142,6 +144,14 @@ impl KagraWindow {
 
     pub fn queue_inject(&self, event: InjectEvent) {
         lock_recover(&self.inject_queue).push(event);
+    }
+
+    pub fn pad_axis(&self, stick: u32) -> (f32, f32) {
+        lock_recover(&self.pad).axis(stick)
+    }
+
+    pub fn pad_down(&self, name: &str) -> bool {
+        lock_recover(&self.pad).down(name)
     }
 
     pub fn frame_count(&self) -> u64 {
@@ -285,6 +295,12 @@ impl KagraWindow {
         }
     }
 
+    pub fn set_mesh_normal(&self, mesh_id: u32, texture_id: u32) {
+        if let Some(rend) = lock_recover(&self.renderer).as_mut() {
+            rend.set_mesh_normal(mesh_id, texture_id);
+        }
+    }
+
     pub fn set_mesh_cull(&self, enabled: bool) {
         if let Some(r) = lock_recover(&self.renderer).as_mut() {
             r.set_mesh_cull(enabled);
@@ -328,9 +344,12 @@ impl KagraWindow {
         metallic: f32,
         roughness: f32,
         base_color: [f32; 3],
+        normal_texture_id: u32,
     ) -> u32 {
         if let Some(r) = lock_recover(&self.renderer).as_mut() {
-            r.upload_mesh_3d(texture_id, verts, indices, metallic, roughness, base_color)
+            r.upload_mesh_3d(
+                texture_id, verts, indices, metallic, roughness, base_color, normal_texture_id,
+            )
         } else {
             0
         }
@@ -391,8 +410,12 @@ impl KagraWindow {
 
     // ========== テクスチャ / フォント ==========
     pub fn load_texture(&self, path: &str) -> Result<u32, String> {
+        self.load_texture_ex(path, true)
+    }
+
+    pub fn load_texture_ex(&self, path: &str, srgb: bool) -> Result<u32, String> {
         let id = match lock_recover(&self.renderer).as_mut() {
-            Some(r) => r.load_texture(path)?,
+            Some(r) => r.load_texture_ex(path, srgb)?,
             None => return Err("load_texture: run() 開始前です。update()/draw() 内で呼んでください。".into()),
         };
         let mut rc = lock_recover(&self.texture_refcount);
@@ -544,6 +567,8 @@ impl KagraWindow {
         let last_frame_ref = Arc::clone(&self.last_frame);
         let exit_ref = Arc::clone(&self.exit_requested);
         let frame_count_ref = Arc::clone(&self.frame_count);
+        let pad_ref = Arc::clone(&self.pad);
+        let mut gilrs = gilrs::Gilrs::new().ok();
 
         let frame_duration = Duration::from_secs_f64(1.0 / self.target_fps as f64);
         // max_frames 指定時はフレーム待ちをせず全速で回す（エージェント検証向け）
@@ -683,6 +708,11 @@ impl KagraWindow {
                                     }
                                 }
                             }
+                        }
+
+                        // USB / XInput: same thread as EventLoop (Windows: one loop).
+                        if let Some(g) = gilrs.as_mut() {
+                            crate::pad::pump(g, &mut lock_recover(&pad_ref));
                         }
 
                         // 注入入力を update の直前に適用（pressed エッジがこのフレームで見える）

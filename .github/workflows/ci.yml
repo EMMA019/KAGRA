@@ -35,7 +35,7 @@ jobs:
       # rodio -> cpal -> alsa-sys は pkg-config で ALSA を探す。
       # GitHub の ubuntu イメージには開発ヘッダが入っていない。
       - name: Install ALSA headers
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev pkg-config
 
       - name: Cargo test (no extension-module)
         working-directory: kagra-core
@@ -216,7 +216,7 @@ jobs:
       # rodio -> cpal -> alsa-sys は pkg-config で ALSA を探す。
       - name: Install ALSA headers
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev pkg-config
 
       - name: Install build dependencies
         run: |

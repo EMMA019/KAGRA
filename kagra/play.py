@@ -503,6 +503,7 @@ class Prop:
     """色付きプリミティブ、または静的 glTF 部品。位置は中心。
 
     ``texture`` は ``texture_from_fn`` / ``load`` の ID。0 なら ``color``。
+    ``normal`` は接空間法線テクスチャ ID（``srgb=False``）。glTF は ``normalTexture``。
     ``model`` が ``.glb`` / ``.gltf`` ならファイルを畳んで置く（``stage()`` ではない）。
     ``metallic`` / ``roughness`` は汎用メッシュだけ。省略時は glTF の因子、無ければ 0 / 1。
     親子は 2 段まで（``set_parent``、孫可）。子の ``x,y,z,yaw`` は親からのローカル。
@@ -528,6 +529,7 @@ class Prop:
         metallic: float | None = None,
         roughness: float | None = None,
         mesh_hit: bool = False,
+        normal: int = 0,
     ):
         self.gltf_path = None
         self._gltf_flat: Optional[FlatMesh] = None
@@ -564,6 +566,7 @@ class Prop:
         self.mesh_hit = bool(mesh_hit)
         self.world = world
         self.texture = int(texture or 0)
+        self.normal = int(normal or 0)
         if metallic is None and self._gltf_flat is not None:
             self.metallic = float(self._gltf_flat.metallic)
         else:
@@ -577,6 +580,7 @@ class Prop:
             else (1.0, 1.0, 1.0)
         )
         self.tex_id = 0
+        self.normal_tex_id = 0
         self.mesh_id = 0
         self.body = None
         self._parent: Optional[Prop] = None
@@ -862,6 +866,21 @@ class Prop:
             return int(kagra.load(str(path)))
         return solid_tex(self.color)
 
+    def _bake_normal(self) -> int:
+        import kagra
+        if self.normal:
+            return int(self.normal)
+        img = getattr(self._gltf_flat, "normal_image", None) if self._gltf_flat is not None else None
+        if img:
+            import tempfile
+            from pathlib import Path
+
+            suffix = ".jpg" if img[:2] == b"\xff\xd8" else ".png"
+            path = Path(tempfile.gettempdir()) / f"kagra_prop_gltf_n{suffix}"
+            path.write_bytes(img)
+            return int(kagra.load(str(path), srgb=False))
+        return 0
+
     def _draw_immediate(self) -> None:
         import kagra
         tex = self.tex_id or self.texture or solid_tex(self.color)
@@ -873,8 +892,9 @@ class Prop:
         try:
             import kagra
             self.tex_id = self._bake_texture()
+            self.normal_tex_id = self._bake_normal()
             key = (
-                self.model, str(self.gltf_path or ""), self.tex_id,
+                self.model, str(self.gltf_path or ""), self.tex_id, self.normal_tex_id,
                 round(self.metallic, 4), round(self.roughness, 4),
             )
             mid = _unit_cache.get(key)
@@ -884,6 +904,7 @@ class Prop:
                     self.tex_id, verts, idx,
                     metallic=self.metallic, roughness=self.roughness,
                     base_color=self.base_color,
+                    normal_texture_id=self.normal_tex_id,
                 ))
                 if mid:
                     _unit_cache[key] = mid

@@ -19,6 +19,8 @@ use nalgebra;
 const SKIN_UNIFORM_FLOATS: usize = 256 * 16 + 4;
 /// morph BindGroup キャッシュの上限（超過分は古いものから破棄）
 const MORPH_BG_CACHE_MAX: usize = 128;
+/// Mesh3D (diffuse, normal) bind group キャッシュ
+const MESH3D_TEX_BG_MAX: usize = 64;
 /// Mesh3D 再利用バッファの初期容量
 const MESH3D_VB_INITIAL: u64 = 256 * 1024;
 const MESH3D_IB_INITIAL: u64 = 64 * 1024;
@@ -55,6 +57,8 @@ struct RetainedMesh3D {
     metallic: f32,
     roughness: f32,
     base_color: [f32; 3],
+    /// 0 = none. Sampled in SHADER_3D when params.z is set.
+    normal_texture_id: u32,
 }
 
 /// Immediate Mesh3D uploaded once per frame (shadow + color share the buffers).
@@ -67,6 +71,7 @@ struct ImmediateMeshDraw {
     metallic: f32,
     roughness: f32,
     base_color: [f32; 3],
+    normal_texture_id: u32,
 }
 
 struct GpuTexture {
@@ -153,6 +158,10 @@ pub struct RendererV2 {
     mesh_mat_buf: wgpu::Buffer,
     mesh_mat_bg: wgpu::BindGroup,
     mesh_mat_slots: u32,
+    mesh3d_tex_bgl: wgpu::BindGroupLayout,
+    mesh3d_tex_bgs: std::collections::HashMap<(u32, u32), wgpu::BindGroup>,
+    mesh3d_tex_bg_order: VecDeque<(u32, u32)>,
+    fallback_mesh3d_bg: wgpu::BindGroup,
     shader_clock: Instant,
     mesh_3d_queue: Vec<Mesh3DCommand>,
     /// 一度 GPU に載せた静的メッシュ。`draw_mesh_id` で回す。
@@ -350,6 +359,16 @@ impl RendererV2 {
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&fallback_view) },
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+            ],
+        });
+        let mesh3d_tex_bgl = make_mesh3d_tex_bgl(&device);
+        let fallback_mesh3d_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Fallback Mesh3D Tex BG"),
+            layout: &mesh3d_tex_bgl,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&fallback_view) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&fallback_view) },
             ],
         });
 
@@ -1009,10 +1028,9 @@ impl RendererV2 {
             label: Some("Shader3D"),
             source: wgpu::ShaderSource::Wgsl(SHADER_3D.into()),
         });
-        let tex_bgl_3d = make_texture_bgl(&device);
         let layout_3d = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&camera_3d_bgl, &tex_bgl_3d, &shadow_bgl, &mesh_mat_bgl],
+            bind_group_layouts: &[&camera_3d_bgl, &mesh3d_tex_bgl, &shadow_bgl, &mesh_mat_bgl],
             push_constant_ranges: &[],
         });
         let pipeline_3d = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -1279,6 +1297,10 @@ impl RendererV2 {
             mesh_mat_buf,
             mesh_mat_bg,
             mesh_mat_slots: MESH_MAT_SLOTS,
+            mesh3d_tex_bgl,
+            mesh3d_tex_bgs: std::collections::HashMap::new(),
+            mesh3d_tex_bg_order: VecDeque::new(),
+            fallback_mesh3d_bg,
             shader_clock: Instant::now(),
             mesh_3d_queue: Vec::new(),
             retained_meshes: std::collections::HashMap::new(),
@@ -1424,38 +1446,12 @@ impl RendererV2 {
     pub fn height(&self) -> u32 { self.screen_height }
 
     pub fn load_texture(&mut self, path: &str) -> Result<u32, String> {
+        self.load_texture_ex(path, true)
+    }
+
+    pub fn load_texture_ex(&mut self, path: &str, srgb: bool) -> Result<u32, String> {
         let img = image::open(path).map_err(|e| format!("テクスチャ読み込み失敗: {} ({})", path, e))?.into_rgba8();
-        let (width, height) = img.dimensions();
-        let data = img.into_raw();
-        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some(path),
-            size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        self.queue.write_texture(
-            wgpu::ImageCopyTexture { texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-            &data,
-            wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(4 * width), rows_per_image: Some(height) },
-            wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
-        );
-        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Tex BG"),
-            layout: &self.texture_bgl,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
-            ],
-        });
-        let id = self.next_texture_id;
-        self.next_texture_id += 1;
-        self.textures.insert(id, GpuTexture { texture: tex, bind_group, width, height });
-        Ok(id)
+        self.upload_rgba8_format(img, srgb)
     }
 
     pub fn load_gltf_image(&mut self, data: &[u8], ext: &str) -> Result<u32, String> {
@@ -1471,14 +1467,23 @@ impl RendererV2 {
     }
 
     fn upload_rgba8(&mut self, img: image::RgbaImage) -> Result<u32, String> {
+        self.upload_rgba8_format(img, true)
+    }
+
+    fn upload_rgba8_format(&mut self, img: image::RgbaImage, srgb: bool) -> Result<u32, String> {
         let (width, height) = img.dimensions();
+        let format = if srgb {
+            wgpu::TextureFormat::Rgba8UnormSrgb
+        } else {
+            wgpu::TextureFormat::Rgba8Unorm
+        };
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Memory Texture"),
             size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
@@ -1520,6 +1525,46 @@ impl RendererV2 {
             .map(|t| &t.bind_group)
             .or_else(|| self.text_renderer.get_bind_group(tex_id))
             .unwrap_or(&self.fallback_texture_bind_group)
+    }
+
+    fn mesh3d_tex_bg(&self, diffuse_id: u32, normal_id: u32) -> &wgpu::BindGroup {
+        self.mesh3d_tex_bgs
+            .get(&(diffuse_id, normal_id))
+            .unwrap_or(&self.fallback_mesh3d_bg)
+    }
+
+    fn ensure_mesh3d_tex_bg(&mut self, diffuse_id: u32, normal_id: u32) {
+        let key = (diffuse_id, normal_id);
+        if self.mesh3d_tex_bgs.contains_key(&key) {
+            return;
+        }
+        let Some(diff) = self.textures.get(&diffuse_id) else {
+            return;
+        };
+        let diff_view = diff.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let nrm_view_owned;
+        let nrm_ref = if let Some(t) = self.textures.get(&normal_id) {
+            nrm_view_owned = t.texture.create_view(&wgpu::TextureViewDescriptor::default());
+            &nrm_view_owned
+        } else {
+            &self.fallback_tex_view
+        };
+        let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Mesh3D Tex BG"),
+            layout: &self.mesh3d_tex_bgl,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&diff_view) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(nrm_ref) },
+            ],
+        });
+        if self.mesh3d_tex_bg_order.len() >= MESH3D_TEX_BG_MAX {
+            if let Some(old) = self.mesh3d_tex_bg_order.pop_front() {
+                self.mesh3d_tex_bgs.remove(&old);
+            }
+        }
+        self.mesh3d_tex_bgs.insert(key, bg);
+        self.mesh3d_tex_bg_order.push_back(key);
     }
 
     pub fn load_font(&mut self, path: &str) -> Result<u32, String> {
@@ -2032,11 +2077,12 @@ impl RendererV2 {
         });
     }
 
-    fn pack_mesh_mat(&self, slot: u32, metallic: f32, roughness: f32, base: [f32; 3]) {
+    fn pack_mesh_mat(&self, slot: u32, metallic: f32, roughness: f32, base: [f32; 3], normal_id: u32) {
         let pbr = if crate::hdri::pbr_enabled(metallic, roughness) { 1.0 } else { 0.0 };
+        let has_n = if normal_id != 0 && self.textures.contains_key(&normal_id) { 1.0 } else { 0.0 };
         let data = [
             base[0], base[1], base[2], 1.0,
-            metallic.clamp(0.0, 1.0), roughness.clamp(0.04, 1.0), 0.0, pbr,
+            metallic.clamp(0.0, 1.0), roughness.clamp(0.04, 1.0), has_n, pbr,
         ];
         self.queue.write_buffer(
             &self.mesh_mat_buf,
@@ -2058,6 +2104,12 @@ impl RendererV2 {
             mesh.metallic = metallic.clamp(0.0, 1.0);
             mesh.roughness = roughness.clamp(0.04, 1.0);
             mesh.base_color = [br.clamp(0.0, 2.0), bg.clamp(0.0, 2.0), bb.clamp(0.0, 2.0)];
+        }
+    }
+
+    pub fn set_mesh_normal(&mut self, mesh_id: u32, texture_id: u32) {
+        if let Some(mesh) = self.retained_meshes.get_mut(&mesh_id) {
+            mesh.normal_texture_id = texture_id;
         }
     }
 
@@ -2089,6 +2141,7 @@ impl RendererV2 {
         metallic: f32,
         roughness: f32,
         base_color: [f32; 3],
+        normal_texture_id: u32,
     ) -> u32 {
         if verts.is_empty() || indices.is_empty() {
             return 0;
@@ -2117,6 +2170,7 @@ impl RendererV2 {
             metallic: metallic.clamp(0.0, 1.0),
             roughness: roughness.clamp(0.04, 1.0),
             base_color,
+            normal_texture_id,
         });
         id
     }
@@ -2171,6 +2225,8 @@ impl RendererV2 {
             self.morph_bg_order.retain(|(tid, shade, matcap, normal, uvmask, _, _)| {
                 *tid != id && *shade != id && *matcap != id && *normal != id && *uvmask != id
             });
+            self.mesh3d_tex_bgs.retain(|(diff, nrm), _| *diff != id && *nrm != id);
+            self.mesh3d_tex_bg_order.retain(|(diff, nrm)| *diff != id && *nrm != id);
             log::debug!("Texture {} unloaded", id);
             Ok(())
         } else {
@@ -2719,6 +2775,7 @@ impl RendererV2 {
                 metallic: cmd.metallic,
                 roughness: cmd.roughness,
                 base_color: cmd.base_color,
+                normal_texture_id: 0,
             });
             vb_off += v_bytes;
             ib_off += i_bytes;
@@ -2739,7 +2796,7 @@ impl RendererV2 {
             None
         };
 
-        let mut draws: Vec<(u32, u64, u64, u32, f32, f32, [f32; 3])> = Vec::with_capacity(immediate.len());
+        let mut draws: Vec<(u32, u32, u64, u64, u32, f32, f32, [f32; 3])> = Vec::with_capacity(immediate.len());
         for d in immediate {
             if let (Some(fr), Some(aabb)) = (frustum.as_ref(), d.aabb.as_ref()) {
                 if !fr.contains_aabb(aabb) {
@@ -2747,7 +2804,10 @@ impl RendererV2 {
                     continue;
                 }
             }
-            draws.push((d.texture_id, d.vb_off, d.ib_off, d.index_count, d.metallic, d.roughness, d.base_color));
+            draws.push((
+                d.texture_id, d.normal_texture_id, d.vb_off, d.ib_off, d.index_count,
+                d.metallic, d.roughness, d.base_color,
+            ));
         }
 
         let mut visible_retained: Vec<u32> = Vec::with_capacity(retained_ids.len());
@@ -2772,19 +2832,27 @@ impl RendererV2 {
             return;
         }
 
-        let retained_mats: Vec<(f32, f32, [f32; 3])> = visible_retained.iter().filter_map(|id| {
-            self.retained_meshes.get(id).map(|m| (m.metallic, m.roughness, m.base_color))
+        let retained_mats: Vec<(f32, f32, [f32; 3], u32, u32)> = visible_retained.iter().filter_map(|id| {
+            self.retained_meshes.get(id).map(|m| {
+                (m.metallic, m.roughness, m.base_color, m.texture_id, m.normal_texture_id)
+            })
         }).collect();
         let nmat = (draws.len() + retained_mats.len()) as u32;
         self.ensure_mesh_mat_slots(nmat.max(1));
         let mut slot = 0u32;
         for d in &draws {
-            self.pack_mesh_mat(slot, d.4, d.5, d.6);
+            self.pack_mesh_mat(slot, d.5, d.6, d.7, d.1);
             slot += 1;
         }
         for m in &retained_mats {
-            self.pack_mesh_mat(slot, m.0, m.1, m.2);
+            self.pack_mesh_mat(slot, m.0, m.1, m.2, m.4);
             slot += 1;
+        }
+        for d in &draws {
+            self.ensure_mesh3d_tex_bg(d.0, d.1);
+        }
+        for m in &retained_mats {
+            self.ensure_mesh3d_tex_bg(m.3, m.4);
         }
 
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -2800,8 +2868,8 @@ impl RendererV2 {
         let mut drawn = 0u32;
         let mut tris = 0u32;
         let mut slot = 0u32;
-        for (texture_id, v_off, i_off, index_count, _, _, _) in draws {
-            let bg = self.get_texture_bind_group(texture_id);
+        for (texture_id, normal_id, v_off, i_off, index_count, _, _, _) in draws {
+            let bg = self.mesh3d_tex_bg(texture_id, normal_id);
             rp.set_bind_group(1, bg, &[]);
             rp.set_bind_group(3, &self.mesh_mat_bg, &[slot * 256]);
             rp.set_vertex_buffer(0, self.mesh_3d_vb.slice(v_off..));
@@ -2813,7 +2881,7 @@ impl RendererV2 {
         }
         for id in visible_retained {
             let Some(mesh) = self.retained_meshes.get(&id) else { continue };
-            let bg = self.get_texture_bind_group(mesh.texture_id);
+            let bg = self.mesh3d_tex_bg(mesh.texture_id, mesh.normal_texture_id);
             rp.set_bind_group(1, bg, &[]);
             rp.set_bind_group(3, &self.mesh_mat_bg, &[slot * 256]);
             rp.set_vertex_buffer(0, mesh.vb.slice(..));
@@ -2895,12 +2963,15 @@ impl RendererV2 {
             draws.push((*mesh_id, off, vis.len() as u32));
             off += bytes;
         }
-        let inst_mats: Vec<(f32, f32, [f32; 3])> = draws.iter().filter_map(|(mesh_id, _, _)| {
-            self.retained_meshes.get(mesh_id).map(|m| (m.metallic, m.roughness, m.base_color))
+        let inst_mats: Vec<(f32, f32, [f32; 3], u32, u32)> = draws.iter().filter_map(|(mesh_id, _, _)| {
+            self.retained_meshes.get(mesh_id).map(|m| {
+                (m.metallic, m.roughness, m.base_color, m.texture_id, m.normal_texture_id)
+            })
         }).collect();
         self.ensure_mesh_mat_slots(inst_mats.len().max(1) as u32);
         for (i, m) in inst_mats.iter().enumerate() {
-            self.pack_mesh_mat(i as u32, m.0, m.1, m.2);
+            self.pack_mesh_mat(i as u32, m.0, m.1, m.2, m.4);
+            self.ensure_mesh3d_tex_bg(m.3, m.4);
         }
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("3D Instance Pass"),
@@ -2924,7 +2995,7 @@ impl RendererV2 {
         let mut tris = 0u32;
         for (slot, (mesh_id, i_off, count)) in draws.into_iter().enumerate() {
             let Some(mesh) = self.retained_meshes.get(&mesh_id) else { continue };
-            let bg = self.get_texture_bind_group(mesh.texture_id);
+            let bg = self.mesh3d_tex_bg(mesh.texture_id, mesh.normal_texture_id);
             rp.set_bind_group(1, bg, &[]);
             rp.set_bind_group(3, &self.mesh_mat_bg, &[slot as u32 * 256]);
             rp.set_vertex_buffer(0, mesh.vb.slice(..));

@@ -322,6 +322,13 @@ def test_prop_texture_id_bake_without_engine_is_zero():
     assert p.mesh_id == 0
 
 
+def test_prop_normal_id_is_kept():
+    p = play.Prop("box", color="orange", normal=9, collision=False)
+    assert p.normal == 9
+    assert p.normal_tex_id == 0
+    assert p.bake() == 0
+
+
 def test_prop_metallic_defaults_and_override():
     dull = play.Prop("sphere", color="white", collision=False)
     assert dull.metallic == pytest.approx(0.0)

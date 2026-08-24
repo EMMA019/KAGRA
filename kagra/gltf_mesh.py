@@ -40,6 +40,7 @@ class FlatMesh:
     indices: list[int]
     aabb: tuple[float, float, float, float, float, float]
     image: Optional[bytes] = None
+    normal_image: Optional[bytes] = None
     metallic: float = 0.0
     roughness: float = 1.0
     base_color: tuple[float, float, float] = (1.0, 1.0, 1.0)
@@ -130,12 +131,12 @@ def _node_worlds(nodes: list) -> list[list[float]]:
     return [w if w is not None else _node_local(nodes[i]) for i, w in enumerate(worlds)]
 
 
-def _first_image(gltf: dict, blob: bytes) -> Optional[bytes]:
+def _image_bytes(gltf: dict, blob: bytes, image_idx: int) -> Optional[bytes]:
     images = gltf.get("images") or []
     views = gltf.get("bufferViews") or []
-    if not images:
+    if image_idx < 0 or image_idx >= len(images):
         return None
-    img = images[0]
+    img = images[image_idx]
     uri = img.get("uri")
     if isinstance(uri, str) and uri.startswith("data:"):
         import base64
@@ -154,6 +155,63 @@ def _first_image(gltf: dict, blob: bytes) -> Optional[bytes]:
     if size < 8 or off + size > len(blob):
         return None
     return blob[off:off + size]
+
+
+def _first_image(gltf: dict, blob: bytes) -> Optional[bytes]:
+    images = gltf.get("images") or []
+    if not images:
+        return None
+    return _image_bytes(gltf, blob, 0)
+
+
+def _texture_image(gltf: dict, blob: bytes, texture_idx) -> Optional[bytes]:
+    textures = gltf.get("textures") or []
+    try:
+        ti = int(texture_idx)
+    except (TypeError, ValueError):
+        return None
+    if ti < 0 or ti >= len(textures):
+        return None
+    src = textures[ti].get("source")
+    if src is None:
+        return None
+    return _image_bytes(gltf, blob, int(src))
+
+
+def _tex_index(info) -> Optional[int]:
+    if not isinstance(info, dict) or "index" not in info:
+        return None
+    try:
+        return int(info["index"])
+    except (TypeError, ValueError):
+        return None
+
+
+def _material_images(gltf: dict, blob: bytes) -> tuple[Optional[bytes], Optional[bytes]]:
+    """最初のマテリアルの baseColor / normal 画像。無ければ images[0] をアルベドに。"""
+    albedo = None
+    normal = None
+    materials = gltf.get("materials") or []
+    mat_idx = None
+    for mesh in gltf.get("meshes") or []:
+        for prim in mesh.get("primitives") or []:
+            if "material" in prim:
+                mat_idx = int(prim["material"])
+                break
+        if mat_idx is not None:
+            break
+    if mat_idx is not None and 0 <= mat_idx < len(materials):
+        mat = materials[mat_idx]
+        pbr = mat.get("pbrMetallicRoughness") or {}
+        bi = _tex_index(pbr.get("baseColorTexture"))
+        if bi is not None:
+            albedo = _texture_image(gltf, blob, bi)
+        ni = _tex_index(mat.get("normalTexture"))
+        if ni is not None:
+            normal = _texture_image(gltf, blob, ni)
+    if albedo is None:
+        albedo = _first_image(gltf, blob)
+    return albedo, normal
 
 
 def _pbr_from_gltf(gltf: dict) -> tuple[float, float, tuple[float, float, float]]:
@@ -254,11 +312,13 @@ def flatten_gltf(path: str | Path, *, center: bool = True) -> FlatMesh:
             aabb[3] - cx, aabb[4] - cy, aabb[5] - cz,
         )
     metallic, roughness, base = _pbr_from_gltf(gltf)
+    albedo, normal = _material_images(gltf, blob)
     return FlatMesh(
         verts=verts,
         indices=indices,
         aabb=aabb,
-        image=_first_image(gltf, blob),
+        image=albedo,
+        normal_image=normal,
         metallic=metallic,
         roughness=roughness,
         base_color=base,

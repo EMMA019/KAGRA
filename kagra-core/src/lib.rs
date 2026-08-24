@@ -4,6 +4,7 @@ use pyo3::prelude::*;
 mod error;
 mod color;
 mod input;
+mod pad;
 mod audio;
 mod text;
 mod window;

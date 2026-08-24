@@ -49,9 +49,9 @@ jobs:
           args: --release --out dist -i 3.10 -i 3.11 -i 3.12
           before-script-linux: |
             if command -v dnf >/dev/null; then
-              dnf install -y alsa-lib-devel pkgconfig
+              dnf install -y alsa-lib-devel systemd-devel pkgconfig
             else
-              yum install -y alsa-lib-devel pkgconfig
+              yum install -y alsa-lib-devel systemd-devel pkgconfig
             fi
       - uses: actions/upload-artifact@v4
         with:
