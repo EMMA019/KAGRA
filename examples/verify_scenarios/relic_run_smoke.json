@@ -1,0 +1,12 @@
+{
+  "name": "relic_run_smoke",
+  "script": "examples/vrm_relic_run.py",
+  "timeout_sec": 180,
+  "env": {
+    "KAGRA_SMOKE": "1",
+    "KAGRA_SMOKE_FRAMES": "40",
+    "KAGRA_SMOKE_OUT": "scratch/relic_run_smoke.png"
+  },
+  "expect_files": ["scratch/relic_run_smoke.png"],
+  "min_file_bytes": 2000
+}
