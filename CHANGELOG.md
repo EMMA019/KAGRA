@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Indoor-spot pairwise golden: larger box, more overhead camera, umbra
+  fills enough of 320x180 that CI `mean_abs` is not 0.6 (threshold 2.0).
 - Indoor spot shadows the **local light**, not the directional sun
   (`shadow_u.params.y`). Fill from the sun stays; the lamp umbra reads.
   Pairwise golden `indoor_spot` / `tonemap_on` / `ibl_metal` (CI `golden`
