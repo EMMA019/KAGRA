@@ -81,3 +81,32 @@ def test_height_fn_player_spawns_on_terrain():
     p = w.add_player(0.0, 0.0)
     assert p.y == pytest.approx(1.25)
     assert w.ground_y(1.0, 1.0) == pytest.approx(1.25)
+
+
+def test_stream_tiles_load_and_unload():
+    m = _world()
+    w = m.World3D(half=24.0)
+    w.set_height_fn(lambda _x, _z: 0.0, tile=10.0, stream_radius=12.0)
+    n = w.stream_tiles(0.0, 0.0)
+    assert n >= 1
+    near = set(w.loaded_tiles())
+    assert any(abs(ix) <= 1 and abs(iz) <= 1 for ix, iz in near)
+    w.stream_tiles(30.0, 0.0)
+    far = set(w.loaded_tiles())
+    assert near != far
+    assert (0, 0) not in far
+
+
+def test_chunk_fill_once_per_tile():
+    m = _world()
+    w = m.World3D(half=24.0)
+    hits: list[tuple[int, int]] = []
+    w.set_height_fn(lambda _x, _z: 0.0, tile=10.0, stream_radius=8.0)
+    w.set_chunk_fill(lambda ix, iz: hits.append((ix, iz)))
+    w.stream_tiles(0.0, 0.0)
+    first = list(hits)
+    assert first
+    w.stream_tiles(16.0, 0.0)
+    w.stream_tiles(0.0, 0.0)
+    assert hits[: len(first)] == first
+    assert len(hits) == len(set(hits))

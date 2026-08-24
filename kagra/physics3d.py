@@ -4,6 +4,7 @@
 
 2D 物理（physics.py）とは独立。回転積分はせず、Y-up カプセルと
 静的 AABB / yaw OBB の押し出し、レイヤー、トリガー、VRM 同期。
+高さ関数があるときは接平面に沿って歩き、急斜面では滑る（Y 吸着だけではない）。
 
 Example::
     physics = kagra.Physics3D(gravity=9.8)
@@ -125,6 +126,11 @@ class RigidBody3D:
         # ユーザーデータ（Entity や VRM ID を紐づけるのに使う）
         self.user_data = None
 
+        # 急斜面の滑り（Walk が毎フレーム vx/vz を上書きしても残る）
+        self._slope_vx = 0.0
+        self._slope_vy = 0.0
+        self._slope_vz = 0.0
+
     @property
     def aabb(self) -> AABB:
         """現在の AABB を返す（底面左前が原点）。カプセルは外接箱。"""
@@ -163,6 +169,16 @@ class RigidBody3D:
     def teleport(self, x: float, y: float, z: float):
         """位置を瞬間移動（速度はリセットしない）。"""
         self.x, self.y, self.z = x, y, z
+
+
+def height_normal(fn, x: float, z: float, eps: float = 0.12) -> tuple[float, float, float]:
+    """高さ関数の単位法線 ``(-dh/dx, 1, -dh/dz)``。"""
+    e = max(float(eps), 1e-4)
+    hx = (float(fn(float(x) + e, float(z))) - float(fn(float(x) - e, float(z)))) / (2.0 * e)
+    hz = (float(fn(float(x), float(z) + e)) - float(fn(float(x), float(z) - e))) / (2.0 * e)
+    nx, ny, nz = -hx, 1.0, -hz
+    leng = math.sqrt(nx * nx + ny * ny + nz * nz) or 1.0
+    return (nx / leng, ny / leng, nz / leng)
 
 
 # ── Physics3D ─────────────────────────────────────────────────────
@@ -369,19 +385,64 @@ class Physics3D:
 
         self._solve_collisions()
 
+    def _walkable_ny(self) -> float:
+        """``max_grade`` に対応する法線 Y。これ未満は歩けず滑る。"""
+        g = max(float(self.max_grade), 1e-6)
+        return 1.0 / math.sqrt(1.0 + g * g)
+
     def _integrate(self, body: RigidBody3D, dt: float):
-        """速度積分と重力適用。高さ関数があるときは崖で XZ を止める。"""
+        """速度積分と重力。高さ場では接平面に沿い、急なら滑る。崖は XZ を止める。"""
         wet = self.in_water(body)
-        if body.use_gravity:
-            g = self.gravity * (0.22 if wet else 1.0)
-            body.vy -= g * dt
-            if wet and self._water_y is not None:
-                sub = self._water_y - body.y
-                body.vy += min(max(sub, 0.0), 1.4) * 16.0 * dt
-                drag = max(0.0, 1.0 - 2.2 * dt)
-                body.vx *= drag
-                body.vz *= drag
-                body.vy *= max(0.0, 1.0 - 1.1 * dt)
+        on_slope = (
+            self._height_fn is not None
+            and body.on_ground
+            and not wet
+            and body.vy <= 0.25
+        )
+        steep = False
+        if on_slope:
+            snx, sny, snz = height_normal(self._height_fn, body.x, body.z)
+            steep = sny < self._walkable_ny()
+            if not steep:
+                body._slope_vx = body._slope_vy = body._slope_vz = 0.0
+                wx, wz = body.vx, body.vz
+                wn = wx * snx + wz * snz
+                body.vx = wx - snx * wn
+                body.vy = -sny * wn
+                body.vz = wz - snz * wn
+            else:
+                if body.use_gravity:
+                    gn = -self.gravity * sny
+                    ax = -snx * gn
+                    ay = -self.gravity - sny * gn
+                    az = -snz * gn
+                    body._slope_vx += ax * dt
+                    body._slope_vy += ay * dt
+                    body._slope_vz += az * dt
+                fr = max(0.0, 1.0 - 1.8 * dt)
+                body._slope_vx *= fr
+                body._slope_vy *= fr
+                body._slope_vz *= fr
+                wx, wz = body.vx, body.vz
+                ny = max(sny, 1e-6)
+                gx, gz = -snx / ny, -snz / ny
+                if wx * gx + wz * gz > 0.0:
+                    wx = wz = 0.0
+                body.vx = wx + body._slope_vx
+                body.vy = body._slope_vy
+                body.vz = wz + body._slope_vz
+        else:
+            body._slope_vx = body._slope_vy = body._slope_vz = 0.0
+            if body.use_gravity:
+                g = self.gravity * (0.22 if wet else 1.0)
+                body.vy -= g * dt
+                if wet and self._water_y is not None:
+                    sub = self._water_y - body.y
+                    body.vy += min(max(sub, 0.0), 1.4) * 16.0 * dt
+                    drag = max(0.0, 1.0 - 2.2 * dt)
+                    body.vx *= drag
+                    body.vz *= drag
+                    body.vy *= max(0.0, 1.0 - 1.1 * dt)
 
         nx = body.x + body.vx * dt
         nz = body.z + body.vz * dt
@@ -394,17 +455,19 @@ class Physics3D:
                 nx, nz = body.x, body.z
                 body.vx = 0.0
                 body.vz = 0.0
+                if body.vy > 0.0:
+                    body.vy = 0.0
         body.x = nx
         body.y += body.vy * dt
         body.z = nz
 
-        if body.on_ground and not wet:
+        if body.on_ground and not wet and not steep:
             damp = max(0.0, 1.0 - body.friction * dt * 10.0)
             body.vx *= damp
             body.vz *= damp
 
     def _ground_collision(self, body: RigidBody3D):
-        """地面との衝突を解決する。"""
+        """地面との衝突。高さ場では法線方向だけを消し、接線（滑り）は残す。"""
         if self._height_fn is not None:
             gy = self._height_fn(body.x, body.z)
         else:
@@ -412,7 +475,14 @@ class Physics3D:
 
         if body.y < gy:
             body.y = gy
-            if body.vy < 0:
+            if self._height_fn is not None:
+                nx, ny, nz = height_normal(self._height_fn, body.x, body.z)
+                vn = body.vx * nx + body.vy * ny + body.vz * nz
+                if vn < 0.0:
+                    body.vx -= vn * nx
+                    body.vy -= vn * ny
+                    body.vz -= vn * nz
+            elif body.vy < 0:
                 body.vy = -body.vy * body.restitution
                 if abs(body.vy) < 0.1:
                     body.vy = 0.0

@@ -2,12 +2,16 @@
 
 Collision is GPU-free (``Physics3D``). Mesh retain happens in ``bake()``
 once the renderer exists — tests can skip that and still walk the room.
+
+高さ場は既定でタイル分割する（1 枚だと影 AABB が 24 を超えて空扱いになる）。
+``stream_radius`` を付けると歩きながらタイルを載せる / 外す。
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 
-from kagra.gamekit import box_mesh, quad_y_mesh
+from kagra.gamekit import box_mesh, heightfield_mesh, heightfield_tile, quad_y_mesh
+from kagra.land import tile_keys, tile_origin
 from kagra.physics3d import Physics3D, RigidBody3D
 
 
@@ -40,6 +44,13 @@ class World3D:
         self._height_fn = None
         self._height_cells = 40
         self._water_y: Optional[float] = None
+        self._tile: Optional[float] = None
+        self._stream_radius: Optional[float] = None
+        self._terrain_tex: int = 0
+        self._tile_meshes: dict[tuple[int, int], int] = {}
+        self._loaded_tiles: set[tuple[int, int]] = set()
+        self._filled_chunks: set[tuple[int, int]] = set()
+        self._chunk_fill: Optional[Callable[[int, int], None]] = None
 
     def add_floor(self, size: float | None = None):
         """Y = ``floor_y`` の正方形床を予約する。半辺は ``size`` または ``half``。"""
@@ -110,11 +121,49 @@ class World3D:
         self.boxes.append(body)
         return body
 
-    def set_height_fn(self, fn, *, cells: int = 40) -> None:
-        """地形 ``(x, z) → y``。平面の床より優先。"""
+    def set_height_fn(
+        self,
+        fn,
+        *,
+        cells: int | None = None,
+        tile: float | None = 10.0,
+        stream_radius: float | None = None,
+    ) -> None:
+        """地形 ``(x, z) → y``。平面の床より優先。
+
+        ``tile`` で格子に切る（影の AABB が 24 を超えない）。``None`` で旧来の 1 枚。
+        ``stream_radius`` を付けると ``update`` で近くだけ載せる。省略時は半辺全体。
+        """
         self._height_fn = fn
-        self._height_cells = max(2, int(cells))
+        self._tile = None if tile is None or float(tile) <= 0 else float(tile)
+        self._stream_radius = None if stream_radius is None else float(stream_radius)
+        if cells is None:
+            self._height_cells = 8 if self._tile else 40
+        else:
+            self._height_cells = max(2, int(cells))
         self.physics.set_height_fn(fn)
+
+    def set_chunk_fill(self, fn: Callable[[int, int], None] | None) -> None:
+        """タイルを初めて載せるとき ``fn(ix, iz)``。箱街区など。外しても箱は残る。"""
+        self._chunk_fill = fn
+
+    def loaded_tiles(self) -> frozenset:
+        """今ほしい／載せているタイルキー。GPU が無くても更新される。"""
+        return frozenset(self._loaded_tiles)
+
+    def wanted_tiles(self, x: float, z: float) -> list[tuple[int, int]]:
+        """プレイヤー位置から載せるタイル。"""
+        if self._height_fn is None:
+            return []
+        if self._tile is None:
+            return [(0, 0)]
+        if self._stream_radius is None:
+            radius = self.half * 1.42 + self._tile
+            return tile_keys(0.0, 0.0, tile=self._tile, radius=radius, half=self.half)
+        return tile_keys(
+            float(x), float(z),
+            tile=self._tile, radius=self._stream_radius, half=self.half,
+        )
 
     def set_water_y(self, y: float | None) -> None:
         """水面。``None`` で消す。"""
@@ -173,25 +222,79 @@ class World3D:
         elif p.z < -lim:
             p.z = -lim
             p.vz = 0.0
+        if self._tile is not None and self._stream_radius is not None:
+            self.stream_tiles(p.x, p.z)
+
+    def stream_tiles(self, x: float, z: float) -> int:
+        """近くのタイルを載せ、遠いタイルを外す。エンジン無しでもキーは更新する。"""
+        if self._height_fn is None:
+            return 0
+        want = set(self.wanted_tiles(x, z))
+        for key in list(self._loaded_tiles):
+            if key not in want:
+                self._unload_tile(key)
+                self._loaded_tiles.discard(key)
+        for key in want:
+            if key in self._loaded_tiles:
+                continue
+            self._loaded_tiles.add(key)
+            if self._chunk_fill is not None and key not in self._filled_chunks:
+                self._chunk_fill(key[0], key[1])
+                self._filled_chunks.add(key)
+            self._upload_tile(key)
+        return len(self._loaded_tiles)
+
+    def _unload_tile(self, key: tuple[int, int]) -> None:
+        mid = self._tile_meshes.pop(key, None)
+        if not mid:
+            return
+        try:
+            import kagra
+            kagra.unload_mesh_3d(int(mid))
+        except Exception:
+            pass
+        if mid in self.mesh_ids:
+            self.mesh_ids.remove(mid)
+        if self.terrain_mesh_id == mid:
+            self.terrain_mesh_id = 0
+
+    def _upload_tile(self, key: tuple[int, int]) -> int:
+        if self._height_fn is None or self._terrain_tex <= 0:
+            return 0
+        try:
+            import kagra
+            if self._tile is None:
+                verts, idx = heightfield_mesh(
+                    self._height_fn, self.half, self._height_cells,
+                )
+            else:
+                ox, oz = tile_origin(key[0], key[1], self._tile)
+                verts, idx = heightfield_tile(
+                    self._height_fn, ox, oz, self._tile, self._height_cells,
+                    uv_half=self.half,
+                )
+            mid = kagra.upload_mesh_3d(int(self._terrain_tex), verts, idx)
+        except Exception:
+            return 0
+        if not mid:
+            return 0
+        mid = int(mid)
+        self._tile_meshes[key] = mid
+        self.terrain_mesh_id = mid
+        if mid not in self.mesh_ids:
+            self.mesh_ids.append(mid)
+        return mid
 
     def bake_terrain(self, tex: int) -> int:
         """高さ場メッシュを GPU に載せる。関数未設定またはエンジン無しなら 0。"""
         if self._height_fn is None:
             return 0
-        try:
-            import kagra
-            from kagra.gamekit import heightfield_mesh
-            verts, idx = heightfield_mesh(
-                self._height_fn, self.half, self._height_cells,
-            )
-            mid = kagra.upload_mesh_3d(int(tex), verts, idx)
-        except Exception:
-            return 0
-        if not mid:
-            return 0
-        self.terrain_mesh_id = int(mid)
-        self.mesh_ids.append(int(mid))
-        return int(mid)
+        self._terrain_tex = int(tex)
+        x, z = 0.0, 0.0
+        if self.player is not None:
+            x, z = float(self.player.x), float(self.player.z)
+        self.stream_tiles(x, z)
+        return int(self.terrain_mesh_id)
 
     def bake(self, floor_tex: int, box_tex: int) -> list[int]:
         """予約した床・箱を GPU に一度載せる。エンジン未初期化なら空。"""
@@ -212,7 +315,7 @@ class World3D:
                         ids.append(int(mid))
                 else:
                     need_box = True
-            if need_box or self.box_xforms:
+            if need_box or self.box_xforms or self._chunk_fill is not None:
                 verts, idx = box_mesh(0.0, 0.0, 0.0, 1.0, 1.0, 1.0)
                 mid = upload(int(box_tex), verts, idx)
                 if mid:

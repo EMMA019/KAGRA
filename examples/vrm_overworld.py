@@ -1,10 +1,13 @@
-"""VRM Overworld — heightfield island (sea / grass / mountain).
+"""VRM Overworld — tiled heightfield (slope follow / stream / stairs).
 
 Play-surface. Not an agent-built log. Public APIs:
-World3D.set_height_fn / set_water_y / Walk(jump=) / water / sky / island_height.
+World3D.set_height_fn(tile=, stream_radius=) / set_chunk_fill / overworld_height /
+Walk(jump=) / water / sky / city_boxes.
+
+Not a city file, not Rapier stacking, not CSM.
 
 操作:
-  WASD / 左スティック : 歩く（水中は遅くなる）
+  WASD / 左スティック : 歩く（坂に沿う。急斜面は滑る。水中は遅くなる）
   マウス / 右スティック : 視点
   SPACE / A           : ジャンプ（水中は泳ぐ）
   ESC                 : 終了
@@ -42,11 +45,16 @@ class Overworld(kagra.Scene):
         self.avatar = kagra.avatar(str(kagra.ensure_vrm()))
         self.avatar.play("idle", loop=True)
         self.world = kagra.World3D(half=HALF)
-        self.world.set_height_fn(kagra.island_height, cells=48)
+        self.world.set_height_fn(
+            kagra.overworld_height, cells=8, tile=10.0, stream_radius=28.0,
+        )
         self.world.set_water_y(0.0)
+        self.world.set_chunk_fill(self._fill_chunk)
         self.world.add_player(0.0, 4.0)
         tex = kagra.texture_from_fn(128, 128, _terrain_px, name="overworld_land")
         self.world.bake_terrain(tex)
+        wall = kagra.solid_tex((148, 128, 108))
+        self.world.bake(tex, wall)
         kagra.Prop(
             "sphere", x=3.2, y=self.world.ground_y(3.2, -1.2) + 0.35, z=-1.2,
             scale=0.55, color="gold", world=self.world,
@@ -58,6 +66,10 @@ class Overworld(kagra.Scene):
         kagra.set_camera3d(self.cam)
         self.walk = kagra.Walk(self.world, self.cam, speed=4.2, jump=6.2, distance=6.2, height=2.6)
         self.found = False
+
+    def _fill_chunk(self, ix, iz):
+        for x, y, z, w, h, d in kagra.city_boxes(ix, iz, tile=10.0):
+            self.world.add_box(x, y, z, w, h, d)
 
     def update(self, dt):
         dt = min(dt, 0.05)
@@ -100,7 +112,7 @@ class Overworld(kagra.Scene):
         kagra.draw_vrm(self.avatar.vrm_id)
         kagra.fill(0, 0, 420, 78, (8, 18, 28), 150)
         kagra.text("Overworld", 18, 14, 24, (240, 230, 180))
-        hint = "gold  found" if self.found else "SPACE jump  —  walk to the gold"
+        hint = "gold  found" if self.found else "SPACE jump  —  stairs / ramp / gold"
         kagra.text(hint, 18, 46, 16, (160, 255, 190) if self.found else (200, 220, 230))
 
 

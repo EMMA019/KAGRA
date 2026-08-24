@@ -978,10 +978,87 @@ def island_height(x: float, z: float) -> float:
     return _fn(x, z)
 
 
-def heightfield_mesh(fn, half: float = 16.0, cells: int = 32):
+def overworld_height(x: float, z: float) -> float:
+    """島に広場の階段とゆるい坂を重ねたデモ地形。"""
+    from kagra.land import overworld_height as _fn
+    return _fn(x, z)
+
+
+def height_normal(fn, x: float, z: float, eps: float = 0.12):
+    """高さ関数の単位法線。"""
+    from kagra.physics3d import height_normal as _fn
+    return _fn(fn, x, z, eps)
+
+
+def tile_keys(
+    x: float,
+    z: float,
+    *,
+    tile: float = 10.0,
+    radius: float = 28.0,
+    half: float | None = None,
+):
+    """歩きながら載せるタイルのキー。"""
+    from kagra.land import tile_keys as _fn
+    return _fn(x, z, tile=tile, radius=radius, half=half)
+
+
+def stair_y(
+    x: float,
+    z: float,
+    *,
+    x0: float,
+    x1: float,
+    z0: float,
+    z1: float,
+    y0: float,
+    y1: float,
+    steps: int = 6,
+    axis: str = "z",
+):
+    """高さ場の段。範囲外は None。"""
+    from kagra.land import stair_y as _fn
+    return _fn(
+        x, z, x0=x0, x1=x1, z0=z0, z1=z1, y0=y0, y1=y1, steps=steps, axis=axis,
+    )
+
+
+def city_boxes(ix: int, iz: int, *, tile: float = 10.0, fn=None, water_y: float = 0.0):
+    """タイル 1 枚の箱街区。街ファイルではない。"""
+    from kagra.land import city_boxes as _fn
+    from kagra.land import island_height
+    return _fn(ix, iz, tile=tile, fn=island_height if fn is None else fn, water_y=water_y)
+
+
+def heightfield_mesh(
+    fn,
+    half: float = 16.0,
+    cells: int = 32,
+    *,
+    origin_x: float = 0.0,
+    origin_z: float = 0.0,
+    uv_half: float | None = None,
+):
     """高さ関数の格子メッシュ。"""
     from kagra.gamekit import heightfield_mesh as _fn
-    return _fn(fn, half=half, cells=cells)
+    return _fn(
+        fn, half=half, cells=cells,
+        origin_x=origin_x, origin_z=origin_z, uv_half=uv_half,
+    )
+
+
+def heightfield_tile(
+    fn,
+    origin_x: float,
+    origin_z: float,
+    tile: float = 10.0,
+    cells: int = 8,
+    *,
+    uv_half: float | None = None,
+):
+    """高さ場の 1 タイル。AABB が小さく影に入る。"""
+    from kagra.gamekit import heightfield_tile as _fn
+    return _fn(fn, origin_x, origin_z, tile, cells, uv_half=uv_half)
 
 
 def room(

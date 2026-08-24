@@ -2,10 +2,16 @@
 
 ## Unreleased
 
+- Heightfield slopes + tiles: walk along the tangent (slide on steep
+  grades), not Y-snap only. `height_normal` / `stair_y`. Terrain bakes as
+  tiles (`tile=10`) so AABBs stay under the shadow skip (24) — nearby
+  ground casts; still one ortho, no CSM. `stream_radius` load/unloads
+  tiles while walking. `set_chunk_fill` / `city_boxes` plant box blocks
+  (not a city file). Stairs are heightfield steps. Not Rapier, triangle
+  mesh hit, or stacking. Demo: `examples/vrm_overworld.py`.
 - Heightfield island: `World3D.set_height_fn` / `kagra.island_height` /
-  `water()` / `Walk(..., jump=)`. Sea, grass, and a hill on one sampled
-  mesh. Cliff grade is blocked; water has buoyancy. Not Rapier, voxels,
-  or streaming. Demo: `examples/vrm_overworld.py`.
+  `water()` / `Walk(..., jump=)`. Sea, grass, and a hill. Cliff grade is
+  blocked; water has buoyancy. Demo: `examples/vrm_overworld.py`.
 - Pretty room (picture leftover): `room()` builds an enclosed floor / walls /
   ceiling (`sky()`'s indoor sibling). `apply_room_look` sets a ceiling
   `set_spot_light`, studio HDRI, and `set_exposure` (default 1 = identity).
