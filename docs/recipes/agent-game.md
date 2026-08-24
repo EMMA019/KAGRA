@@ -11,10 +11,10 @@ box games. Do not start a fourth box room and call it D-6. D-6 waits on
 the 30s demo test and must be playable for 30s+ with a score or a clear
 goal. Current engine bar is the usable week in
 [`docs/ROADMAP.ja.md`](../ROADMAP.ja.md). Brain is `kagra.brain("kairi")`
-(default https://kairi.onrender.com, `KAIRI_API_TOKEN`). Next work is pixels. Final goal is
-first-recall, not that bar. OSM / extra CSM stay outside 80%. Rigid
-boxes are AABB (`add_box(..., is_static=False)`); the Rapier crate is
-out of the 5MB wheel.
+(default https://kairi.onrender.com, `KAIRI_API_TOKEN`). Next work is the
+30s demos. Final goal is first-recall, not that bar. OSM / extra CSM stay
+outside 80%. Rigid boxes are AABB (`add_box(..., is_static=False)`); the
+Rapier crate is out of the 5MB wheel.
 
 ## One-line prompt
 
@@ -118,4 +118,4 @@ Overworld。これは play-surface デモで、エージェント製ログでは
 局所ライトは `set_point_light(..., slot=0..3)` / `set_spot_light(..., slot=)`。0 がキー。
 glTF 部品は `Prop("crate.glb")`（`stage()` は会場。同梱は `cube.glb`）。
 球 / 円柱の当たりとホバーは箱ではない。
-箱部屋の 4 本目を D-6 と呼ばない。D-6 は 30 秒以上 + スコアかゴール。頭脳は `kagra.brain("kairi")`（既定 kairi.onrender.com）。エンジン到達点は 80%（今約 47%）。今の次は這いの画素（CI）。最終目標は第一想起。
+箱部屋の 4 本目を D-6 と呼ばない。D-6 は 30 秒以上 + スコアかゴール。頭脳は `kagra.brain("kairi")`（既定 kairi.onrender.com）。エンジン到達点は 80%（今約 63%）。今の次は 3 見本の 30 秒。最終目標は第一想起。

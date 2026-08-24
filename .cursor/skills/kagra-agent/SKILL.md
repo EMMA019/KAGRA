@@ -45,12 +45,12 @@ Play: `clicked_prop` / `Walk.carry` / `animate` / `Label` / `sound`.
 Pointer lock follows first person (OS may refuse). USB pad is gilrs on the
 EventLoop (`inject_pad` still wins for CI).
 
-Engine target is **80%** in `docs/ROADMAP.ja.md` (now ~47%). 100% = Python
+Engine target is **80%** in `docs/ROADMAP.ja.md` (now ~63%). 100% = Python
 replacement of three-vrm + three.js + Ursina for everyday work. Body is
-~80%. Picture 50→85 is the bulk. Indoor spot, normal_bump, and local_four
-pairwise passed CI (#61, #62). Parent is 4 levels. Local lights are `slot=0..3`.
-Rigid boxes are AABB equal (fall / stack / stand). Next: crawl pixels on CI,
-then the 30s demos. OSM / 4-cascade CSM / SSAO stay outside 80%.
+~80%. Picture is ~85% (indoor, crawl, normals, local-four, ACES/metal on CI).
+Parent is 4 levels. Local lights are `slot=0..3`.
+Rigid boxes are AABB equal (fall / stack / stand). Next: the 30s demos.
+OSM / 4-cascade CSM / SSAO stay outside 80%.
 Final goal is first-recall; 80% is not a substitute. Brain hook is
 `kagra.brain("kairi")` — default `https://kairi.onrender.com`, token in
 `KAIRI_API_TOKEN`. Not in the wheel. Do not start D-6 as a fourth box room;

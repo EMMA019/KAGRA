@@ -2,12 +2,10 @@
 
 ## Unreleased
 
-- Outdoor crawl pairwise: first CI was `mean_abs=0.000` because 2-cascade
-  writes reused one light-VP uniform and `Queue::write_buffer` in the layer
-  loop stomped both pending passes (same class of bug as bloom params).
-  Each cascade now has its own VP buffer. Scene also restaged to the indoor
-  orbit + a -X sun. Differ gate is 2.0 (directional umbra is mix 0.50).
-  Pixels still close only on a green Windows `golden` job.
+- Outdoor crawl pairwise (`outdoor_crawl`) passed Windows CI (#65).
+  2-cascade writes use a per-layer light-VP (shared-buffer stomp was
+  mean_abs=0.000). Picture ~85%, engine ~63%. Rigid AABB already on master.
+  30s demos still open. Do not call 80%.
 - Rigid boxes: `add_box(..., is_static=False)` fall, stack, and `Walk`
   stands on them (character vs crate does not sink the crate). Rapier crate
   stays out of the 5MB wheel. World ~55%, engine ~47%. Public face unchanged.
