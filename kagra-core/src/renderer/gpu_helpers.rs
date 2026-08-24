@@ -59,7 +59,7 @@ pub(super) fn build_light_view_proj(light_dir: [f32; 4], target: [f32; 3]) -> [f
     build_light_view_proj_fit(light_dir, target, 6.0, 8.0, 20.0)
 }
 
-/// 影錐を VRM AABB に合わせる。`half` はライト空間の半辺。
+/// 影錐を VRM / ワールド AABB に合わせる。`half` はライト空間の半辺。
 pub(super) fn build_light_view_proj_fit(
     light_dir: [f32; 4],
     target: [f32; 3],

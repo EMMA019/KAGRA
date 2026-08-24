@@ -236,6 +236,28 @@ struct II { @location(3) pos_yaw: vec4<f32>, @location(4) scale: vec4<f32> }
 }
 "#;
 
+/// Depth-only world casters. `light_vp` only — the color `SHADER_3D` group 2
+/// also samples the map, which cannot be bound while writing it.
+pub(super) const SHADER_3D_SHADOW: &str = r#"
+@group(0) @binding(0) var<uniform> light_vp: mat4x4<f32>;
+struct VI { @location(0) position: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) uv: vec2<f32> }
+struct II { @location(3) pos_yaw: vec4<f32>, @location(4) scale: vec4<f32> }
+@vertex fn vs_shadow(in: VI) -> @builtin(position) vec4<f32> {
+    return light_vp * vec4<f32>(in.position, 1.0);
+}
+@vertex fn vs_shadow_instanced(in: VI, inst: II) -> @builtin(position) vec4<f32> {
+    let c = cos(inst.pos_yaw.w);
+    let s = sin(inst.pos_yaw.w);
+    let p = in.position * inst.scale.xyz;
+    let world = vec3<f32>(
+        c * p.x + s * p.z + inst.pos_yaw.x,
+        p.y + inst.pos_yaw.y,
+        -s * p.x + c * p.z + inst.pos_yaw.z,
+    );
+    return light_vp * vec4<f32>(world, 1.0);
+}
+"#;
+
 pub(super) const SHADER_SKINNING_3D_BLEND: &str = r#"
 struct Camera {
     view: mat4x4<f32>,

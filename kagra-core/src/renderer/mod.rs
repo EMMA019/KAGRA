@@ -29,6 +29,7 @@ mod types;
 mod shaders;
 mod gpu_helpers;
 mod bloom;
+mod shadow_fit;
 
 pub use types::{
     DrawCommand, RectCommand, SpriteCommand, TextCommand,
@@ -42,12 +43,22 @@ use types::*;
 use shaders::*;
 use gpu_helpers::*;
 use bloom::BloomPass;
+use shadow_fit::*;
 use crate::frustum::{Aabb, Frustum, RenderStats};
 
 struct RetainedMesh3D {
     texture_id: u32,
     vb: wgpu::Buffer,
     ib: wgpu::Buffer,
+    index_count: u32,
+    aabb: Option<Aabb>,
+}
+
+/// Immediate Mesh3D uploaded once per frame (shadow + color share the buffers).
+struct ImmediateMeshDraw {
+    texture_id: u32,
+    vb_off: u64,
+    ib_off: u64,
     index_count: u32,
     aabb: Option<Aabb>,
 }
@@ -129,9 +140,13 @@ pub struct RendererV2 {
     mesh_cull: bool,
     stats: RenderStats,
     pipeline_3d_instanced: wgpu::RenderPipeline,
+    pipeline_3d_shadow: wgpu::RenderPipeline,
+    pipeline_3d_shadow_instanced: wgpu::RenderPipeline,
     instance_3d_vb: wgpu::Buffer,
     instance_3d_cap: u64,
     instance_3d_queue: Vec<(u32, Vec<Instance3D>)>,
+    instance_3d_shadow_vb: wgpu::Buffer,
+    instance_3d_shadow_cap: u64,
     skinning_3d_morph_bgl: wgpu::BindGroupLayout,
     /// (base, shade, matcap, normal, uvmask, morph_ptr, blend_ptr)
     morph_bg_cache: std::collections::HashMap<(u32, u32, u32, u32, u32, usize, usize), Arc<wgpu::BindGroup>>,
@@ -928,6 +943,94 @@ impl RendererV2 {
             multisample: msaa_state(),
             multiview: None,
         });
+        let shader_3d_shadow = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Shader3D Shadow"),
+            source: wgpu::ShaderSource::Wgsl(SHADER_3D_SHADOW.into()),
+        });
+        let layout_3d_shadow = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Pipeline3D Shadow Layout"),
+            bind_group_layouts: &[&shadow_vp_bgl],
+            push_constant_ranges: &[],
+        });
+        let pipeline_3d_shadow = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Pipeline3D Shadow"),
+            layout: Some(&layout_3d_shadow),
+            vertex: wgpu::VertexState {
+                module: &shader_3d_shadow,
+                entry_point: "vs_shadow",
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: 32,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2],
+                }],
+            },
+            fragment: None,
+            primitive: wgpu::PrimitiveState {
+                cull_mode: None,
+                front_face: wgpu::FrontFace::Ccw,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState {
+                    constant: 2,
+                    slope_scale: 1.5,
+                    clamp: 0.0,
+                },
+            }),
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        });
+        let pipeline_3d_shadow_instanced = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Pipeline3D Shadow Instanced"),
+            layout: Some(&layout_3d_shadow),
+            vertex: wgpu::VertexState {
+                module: &shader_3d_shadow,
+                entry_point: "vs_shadow_instanced",
+                buffers: &[
+                    wgpu::VertexBufferLayout {
+                        array_stride: 32,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2],
+                    },
+                    wgpu::VertexBufferLayout {
+                        array_stride: 32,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &wgpu::vertex_attr_array![3 => Float32x4, 4 => Float32x4],
+                    },
+                ],
+            },
+            fragment: None,
+            primitive: wgpu::PrimitiveState {
+                cull_mode: None,
+                front_face: wgpu::FrontFace::Ccw,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState {
+                    constant: 2,
+                    slope_scale: 1.5,
+                    clamp: 0.0,
+                },
+            }),
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        });
 
         let initial_buffer_size = 64 * 1024 * 1024;
         let dynamic_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -954,6 +1057,12 @@ impl RendererV2 {
         const INSTANCE3D_VB_INITIAL: u64 = 256 * 32;
         let instance_3d_vb = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Instance3D VB"),
+            size: INSTANCE3D_VB_INITIAL,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let instance_3d_shadow_vb = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Instance3D Shadow VB"),
             size: INSTANCE3D_VB_INITIAL,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -1016,9 +1125,13 @@ impl RendererV2 {
             mesh_cull: true,
             stats: RenderStats::default(),
             pipeline_3d_instanced,
+            pipeline_3d_shadow,
+            pipeline_3d_shadow_instanced,
             instance_3d_vb,
             instance_3d_cap: INSTANCE3D_VB_INITIAL,
             instance_3d_queue: Vec::new(),
+            instance_3d_shadow_vb,
+            instance_3d_shadow_cap: INSTANCE3D_VB_INITIAL,
             skinning_3d_morph_bgl,
             morph_bg_cache: std::collections::HashMap::new(),
             morph_bg_order: VecDeque::new(),
@@ -1423,23 +1536,43 @@ impl RendererV2 {
         self.queue.write_buffer(&self.shadow_vp_buf, 0, bytemuck::cast_slice(&vp));
     }
 
-    fn fit_shadow_to_skinned(&mut self, cmds: &[SkinnedMeshCommand]) {
+    fn fit_shadow_bounds(
+        &mut self,
+        skinned: &[SkinnedMeshCommand],
+        immediate: &[ImmediateMeshDraw],
+        instances: &[(u32, Vec<Instance3D>)],
+    ) {
         let mut acc: Option<Aabb> = None;
-        for c in cmds {
+        for c in skinned {
             if let Some(a) = c.aabb {
-                acc = Some(match acc {
-                    Some(u) => u.union(a),
-                    None => a,
-                });
+                acc = fold_shadow_aabb(acc, a);
             }
         }
-        let (center, half) = match acc {
-            Some(a) => {
-                let half = (a.max_extent() * 0.5 * 1.25).clamp(2.0, 14.0);
-                (a.center(), half)
+        for d in immediate {
+            if let Some(a) = d.aabb {
+                acc = fold_shadow_aabb(acc, a);
             }
-            None => ([0.0, 1.0, 0.0], 6.0),
-        };
+        }
+        let retained_ids = self.retained_draw_queue.clone();
+        for id in retained_ids {
+            if let Some(mesh) = self.retained_meshes.get(&id) {
+                if let Some(a) = mesh.aabb {
+                    acc = fold_shadow_aabb(acc, a);
+                }
+            }
+        }
+        for (mesh_id, insts) in instances {
+            let Some(mesh) = self.retained_meshes.get(mesh_id) else { continue };
+            let Some(unit) = mesh.aabb else { continue };
+            if !aabb_is_shadow_volume(&unit) {
+                continue;
+            }
+            for inst in insts {
+                let world = unit.transform_trs(inst.pos, inst.scale, inst.yaw);
+                acc = fold_shadow_aabb(acc, world);
+            }
+        }
+        let (center, half) = shadow_fit_center_half(acc);
         let dist = half + 4.0;
         let far = dist + half + 4.0;
         let vp = build_light_view_proj_fit(self.light_dir, center, half, dist, far);
@@ -1695,13 +1828,15 @@ impl RendererV2 {
         self.draw_skinned_meshes_2d(&mut encoder, &view, &skinned_cmds);
         let mesh_3d_cmds = std::mem::take(&mut self.mesh_3d_queue);
         let mut skinned_3d_cmds = std::mem::take(&mut self.mesh_3d_skinned_queue);
-        self.cull_and_sort_skinned(&mut skinned_3d_cmds);
-        // Shadow pass first so mesh3d / VRM can sample the map
-        self.fit_shadow_to_skinned(&skinned_3d_cmds);
-        let morph_bgs = self.build_skinned_morph_bgs(&skinned_3d_cmds);
-        self.draw_shadow_pass(&mut encoder, &skinned_3d_cmds, &morph_bgs);
-        self.draw_meshes_3d(&mut encoder, &view, &mesh_3d_cmds);
         let instance_3d = std::mem::take(&mut self.instance_3d_queue);
+        self.cull_and_sort_skinned(&mut skinned_3d_cmds);
+        // Upload once so shadow + color share the same Mesh3D buffers
+        let immediate = self.upload_immediate_meshes(&mesh_3d_cmds);
+        // Shadow pass first so mesh3d / VRM can sample the map
+        self.fit_shadow_bounds(&skinned_3d_cmds, &immediate, &instance_3d);
+        let morph_bgs = self.build_skinned_morph_bgs(&skinned_3d_cmds);
+        self.draw_shadow_pass(&mut encoder, &skinned_3d_cmds, &morph_bgs, &immediate, &instance_3d);
+        self.draw_meshes_3d(&mut encoder, &view, &immediate);
         self.draw_mesh_instances_3d(&mut encoder, &view, &instance_3d);
         self.draw_skinned_meshes_3d(&mut encoder, &view, &skinned_3d_cmds, &morph_bgs);
         let instance_batches = std::mem::take(&mut self.instance_draw_queue);
@@ -2120,7 +2255,52 @@ impl RendererV2 {
         }
     }
 
-    fn draw_meshes_3d(&mut self, encoder: &mut wgpu::CommandEncoder, target_view: &wgpu::TextureView, cmds: &[Mesh3DCommand]) {
+    fn upload_immediate_meshes(&mut self, cmds: &[Mesh3DCommand]) -> Vec<ImmediateMeshDraw> {
+        const VERT_STRIDE: u64 = (8 * std::mem::size_of::<f32>()) as u64;
+        const INDEX_STRIDE: u64 = std::mem::size_of::<u32>() as u64;
+        let mut total_vb = 0u64;
+        let mut total_ib = 0u64;
+        for cmd in cmds {
+            if cmd.verts.is_empty() || cmd.indices.is_empty() {
+                continue;
+            }
+            total_vb += cmd.verts.len() as u64 * VERT_STRIDE;
+            total_ib += cmd.indices.len() as u64 * INDEX_STRIDE;
+        }
+        let mut draws = Vec::new();
+        if total_vb == 0 || total_ib == 0 {
+            return draws;
+        }
+        self.ensure_mesh_3d_capacity(total_vb, total_ib);
+        let mut vb_off = 0u64;
+        let mut ib_off = 0u64;
+        for cmd in cmds {
+            if cmd.verts.is_empty() || cmd.indices.is_empty() {
+                continue;
+            }
+            let v_bytes = cmd.verts.len() as u64 * VERT_STRIDE;
+            let i_bytes = cmd.indices.len() as u64 * INDEX_STRIDE;
+            self.queue.write_buffer(&self.mesh_3d_vb, vb_off, bytemuck::cast_slice(&cmd.verts));
+            self.queue.write_buffer(&self.mesh_3d_ib, ib_off, bytemuck::cast_slice(&cmd.indices));
+            draws.push(ImmediateMeshDraw {
+                texture_id: cmd.texture_id,
+                vb_off,
+                ib_off,
+                index_count: cmd.indices.len() as u32,
+                aabb: Aabb::from_mesh3d_verts(&cmd.verts),
+            });
+            vb_off += v_bytes;
+            ib_off += i_bytes;
+        }
+        draws
+    }
+
+    fn draw_meshes_3d(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        target_view: &wgpu::TextureView,
+        immediate: &[ImmediateMeshDraw],
+    ) {
         let retained_ids = std::mem::take(&mut self.retained_draw_queue);
         let frustum = if self.mesh_cull && self.camera_3d_ready {
             Some(Frustum::from_view_proj_col(&self.last_view, &self.last_proj))
@@ -2128,50 +2308,15 @@ impl RendererV2 {
             None
         };
 
-        const VERT_STRIDE: u64 = (8 * std::mem::size_of::<f32>()) as u64; // [f32; 8]
-        const INDEX_STRIDE: u64 = std::mem::size_of::<u32>() as u64;
-
-        let mut visible_immediate: Vec<&Mesh3DCommand> = Vec::with_capacity(cmds.len());
-        let mut total_vb = 0u64;
-        let mut total_ib = 0u64;
-        for cmd in cmds {
-            if cmd.verts.is_empty() || cmd.indices.is_empty() {
-                continue;
-            }
-            if let (Some(fr), Some(aabb)) = (frustum.as_ref(), Aabb::from_mesh3d_verts(&cmd.verts)) {
-                if !fr.contains_aabb(&aabb) {
+        let mut draws: Vec<(u32, u64, u64, u32)> = Vec::with_capacity(immediate.len());
+        for d in immediate {
+            if let (Some(fr), Some(aabb)) = (frustum.as_ref(), d.aabb.as_ref()) {
+                if !fr.contains_aabb(aabb) {
                     self.stats.culled += 1;
                     continue;
                 }
             }
-            visible_immediate.push(cmd);
-            total_vb += cmd.verts.len() as u64 * VERT_STRIDE;
-            total_ib += cmd.indices.len() as u64 * INDEX_STRIDE;
-        }
-
-        // (texture_id, vb_offset, ib_offset, index_count)
-        let mut draws: Vec<(u32, u64, u64, u32)> = Vec::with_capacity(visible_immediate.len());
-        if total_vb > 0 && total_ib > 0 {
-            self.ensure_mesh_3d_capacity(total_vb, total_ib);
-            let mut vb_off = 0u64;
-            let mut ib_off = 0u64;
-            for cmd in visible_immediate {
-                let v_bytes = cmd.verts.len() as u64 * VERT_STRIDE;
-                let i_bytes = cmd.indices.len() as u64 * INDEX_STRIDE;
-                self.queue.write_buffer(
-                    &self.mesh_3d_vb,
-                    vb_off,
-                    bytemuck::cast_slice(&cmd.verts),
-                );
-                self.queue.write_buffer(
-                    &self.mesh_3d_ib,
-                    ib_off,
-                    bytemuck::cast_slice(&cmd.indices),
-                );
-                draws.push((cmd.texture_id, vb_off, ib_off, cmd.indices.len() as u32));
-                vb_off += v_bytes;
-                ib_off += i_bytes;
-            }
+            draws.push((d.texture_id, d.vb_off, d.ib_off, d.index_count));
         }
 
         let mut visible_retained: Vec<u32> = Vec::with_capacity(retained_ids.len());
@@ -2421,13 +2566,96 @@ impl RendererV2 {
         morph_bgs
     }
 
+    fn mesh_casts_shadow(mesh: &RetainedMesh3D) -> bool {
+        match mesh.aabb {
+            Some(a) => aabb_is_shadow_volume(&a),
+            None => true,
+        }
+    }
+
+    fn world_shadow_casters_exist(
+        &self,
+        immediate: &[ImmediateMeshDraw],
+        instances: &[(u32, Vec<Instance3D>)],
+    ) -> bool {
+        if immediate.iter().any(|d| match d.aabb {
+            Some(a) => aabb_is_shadow_volume(&a),
+            None => true,
+        }) {
+            return true;
+        }
+        if self.retained_draw_queue.iter().any(|id| {
+            self.retained_meshes
+                .get(id)
+                .is_some_and(|m| m.index_count > 0 && Self::mesh_casts_shadow(m))
+        }) {
+            return true;
+        }
+        instances.iter().any(|(mesh_id, insts)| {
+            !insts.is_empty()
+                && self
+                    .retained_meshes
+                    .get(mesh_id)
+                    .is_some_and(|m| m.index_count > 0 && Self::mesh_casts_shadow(m))
+        })
+    }
+
+    fn ensure_instance_3d_shadow_capacity(&mut self, bytes: u64) {
+        if bytes <= self.instance_3d_shadow_cap {
+            return;
+        }
+        let mut cap = self.instance_3d_shadow_cap.max(256 * 32);
+        while cap < bytes {
+            cap *= 2;
+        }
+        self.instance_3d_shadow_vb = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Instance3D Shadow VB"),
+            size: cap,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.instance_3d_shadow_cap = cap;
+    }
+
+    fn pack_shadow_instances(
+        &mut self,
+        instances: &[(u32, Vec<Instance3D>)],
+    ) -> Vec<(u32, u64, u32)> {
+        let mut prepared: Vec<(u32, &Vec<Instance3D>)> = Vec::new();
+        let mut total = 0u64;
+        for (mesh_id, insts) in instances {
+            let Some(mesh) = self.retained_meshes.get(mesh_id) else { continue };
+            if mesh.index_count == 0 || insts.is_empty() || !Self::mesh_casts_shadow(mesh) {
+                continue;
+            }
+            total += insts.len() as u64 * 32;
+            prepared.push((*mesh_id, insts));
+        }
+        if prepared.is_empty() {
+            return Vec::new();
+        }
+        self.ensure_instance_3d_shadow_capacity(total);
+        let mut off = 0u64;
+        let mut draws = Vec::new();
+        for (mesh_id, insts) in prepared {
+            let bytes = insts.len() as u64 * 32;
+            self.queue.write_buffer(&self.instance_3d_shadow_vb, off, bytemuck::cast_slice(insts));
+            draws.push((mesh_id, off, insts.len() as u32));
+            off += bytes;
+        }
+        draws
+    }
+
     fn draw_shadow_pass(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         cmds: &[SkinnedMeshCommand],
         morph_bgs: &[Option<Arc<wgpu::BindGroup>>],
+        immediate: &[ImmediateMeshDraw],
+        instances: &[(u32, Vec<Instance3D>)],
     ) {
-        if !self.shadows_enabled || cmds.is_empty() {
+        let world = self.world_shadow_casters_exist(immediate, instances);
+        if !self.shadows_enabled || (cmds.is_empty() && !world) {
             // Still clear so receivers see an empty (fully lit) map
             let _rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Shadow Clear"),
@@ -2445,6 +2673,8 @@ impl RendererV2 {
             });
             return;
         }
+        let inst_draws = self.pack_shadow_instances(instances);
+        let retained_ids = self.retained_draw_queue.clone();
         {
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Shadow Pass"),
@@ -2460,19 +2690,53 @@ impl RendererV2 {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-            rp.set_pipeline(&self.skinning_3d_shadow_pipeline);
-            rp.set_bind_group(0, &self.camera_3d_bg, &[]);
-            rp.set_bind_group(3, &self.shadow_write_bg, &[]);
-            for (i, cmd) in cmds.iter().enumerate() {
-                let morph_bg = match morph_bgs.get(i).and_then(|b| b.as_ref()) {
-                    Some(bg) => bg,
-                    None => continue,
-                };
-                rp.set_bind_group(1, self.skin_bind_group_for(cmd), &[]);
-                rp.set_bind_group(2, morph_bg, &[]);
-                rp.set_vertex_buffer(0, cmd.vertex_buffer.slice(..));
-                rp.set_index_buffer(cmd.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                rp.draw_indexed(0..cmd.num_indices, 0, 0..1);
+            if !cmds.is_empty() {
+                rp.set_pipeline(&self.skinning_3d_shadow_pipeline);
+                rp.set_bind_group(0, &self.camera_3d_bg, &[]);
+                rp.set_bind_group(3, &self.shadow_write_bg, &[]);
+                for (i, cmd) in cmds.iter().enumerate() {
+                    let morph_bg = match morph_bgs.get(i).and_then(|b| b.as_ref()) {
+                        Some(bg) => bg,
+                        None => continue,
+                    };
+                    rp.set_bind_group(1, self.skin_bind_group_for(cmd), &[]);
+                    rp.set_bind_group(2, morph_bg, &[]);
+                    rp.set_vertex_buffer(0, cmd.vertex_buffer.slice(..));
+                    rp.set_index_buffer(cmd.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    rp.draw_indexed(0..cmd.num_indices, 0, 0..1);
+                }
+            }
+            rp.set_pipeline(&self.pipeline_3d_shadow);
+            rp.set_bind_group(0, &self.shadow_write_bg, &[]);
+            for d in immediate {
+                if let Some(aabb) = d.aabb {
+                    if !aabb_is_shadow_volume(&aabb) {
+                        continue;
+                    }
+                }
+                rp.set_vertex_buffer(0, self.mesh_3d_vb.slice(d.vb_off..));
+                rp.set_index_buffer(self.mesh_3d_ib.slice(d.ib_off..), wgpu::IndexFormat::Uint32);
+                rp.draw_indexed(0..d.index_count, 0, 0..1);
+            }
+            for id in retained_ids {
+                let Some(mesh) = self.retained_meshes.get(&id) else { continue };
+                if mesh.index_count == 0 || !Self::mesh_casts_shadow(mesh) {
+                    continue;
+                }
+                rp.set_vertex_buffer(0, mesh.vb.slice(..));
+                rp.set_index_buffer(mesh.ib.slice(..), wgpu::IndexFormat::Uint32);
+                rp.draw_indexed(0..mesh.index_count, 0, 0..1);
+            }
+            if !inst_draws.is_empty() {
+                rp.set_pipeline(&self.pipeline_3d_shadow_instanced);
+                rp.set_bind_group(0, &self.shadow_write_bg, &[]);
+                for (mesh_id, i_off, count) in inst_draws {
+                    let Some(mesh) = self.retained_meshes.get(&mesh_id) else { continue };
+                    rp.set_vertex_buffer(0, mesh.vb.slice(..));
+                    rp.set_vertex_buffer(1, self.instance_3d_shadow_vb.slice(i_off..));
+                    rp.set_index_buffer(mesh.ib.slice(..), wgpu::IndexFormat::Uint32);
+                    rp.draw_indexed(0..mesh.index_count, 0, 0..count);
+                }
             }
         }
     }
