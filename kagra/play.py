@@ -96,7 +96,8 @@ def facing_yaw(dx: float, dz: float, fallback: float = 0.0) -> float:
     """移動ベクトル ``(dx, dz)`` の向き。``atan2(dx, dz)``（``yaw=0`` が +Z）。
 
     停止中（長さがほぼ 0）は ``fallback``。三人称の VRM はカメラ ``yaw`` ではなく
-    こちらを ``set_yaw`` する。後退（カメラへ歩く）は ``π`` で振り返る。
+    こちらを ``set_yaw`` する。後退（カメラへ歩く）は ``±π`` で振り返る
+    （``atan2(0, -speed)`` は ``-π``。``π`` と同じ向き）。
     """
     if dx * dx + dz * dz < 1e-8:
         return float(fallback)

@@ -44,7 +44,7 @@ def test_facing_yaw_turns_around_when_walking_toward_camera():
     assert abs(vx) < 1e-9
     assert vz < 0.0
     face = play.facing_yaw(vx, vz, fallback=0.0)
-    assert face == pytest.approx(math.pi)
+    assert abs(abs(face) - math.pi) < 1e-9
 
 
 def test_facing_yaw_keeps_last_when_still():
@@ -70,7 +70,7 @@ def test_walk_face_follows_wish_not_camera_yaw():
     assert walk.face == pytest.approx(0.0)
     vx, vz = play.walk_wish(-1.0, 0.0, walk.yaw, walk.speed)
     walk.face = play.facing_yaw(vx, vz, walk.face)
-    assert walk.face == pytest.approx(math.pi)
+    assert abs(abs(walk.face) - math.pi) < 1e-9
     assert walk.yaw == pytest.approx(0.0)
 
 

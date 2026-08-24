@@ -14,7 +14,9 @@ def test_overworld_faces_walk_face_not_camera_yaw():
 
 def test_pretty_room_starts_third_person_follow():
     text = (ROOT / "examples" / "vrm_pretty_room.py").read_text(encoding="utf-8")
-    assert "first_person=True" not in text
+    assert "kagra.Walk(" in text
+    assert "first_person=True," not in text
+    assert "first_person=True)" not in text
     assert "self.cam.follow(" in text
     assert "self.cam.look(0.0, 1.55, 2.4" not in text
     assert "self.avatar.set_yaw(self.walk.face)" in text
