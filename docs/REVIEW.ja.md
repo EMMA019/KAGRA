@@ -84,7 +84,7 @@ kagra-shared + mobile/     ──► 別の運転デモ（道路・トラック�
 
 - **レンダラは統合しない。** 共有コアの絵は運転デモ用。VRM スタックに足さない。
 - **公開 API 388。** Front に寄せたのは正しい。エージェントはまだ Shelf の `Entity` / `world_to_screen`（2D）を踏む。Front を厚くする（`Prop` / `room` を増やす）方が、Shelf を消すより先。
-- **物理は Rapier を入れない。** キャラコン（カプセル + 高さ関数 + AABB / yaw OBB）で島は歩ける。メッシュ衝突は後回し。
+- **物理は Rapier を入れない。** キャラコン（カプセル + 高さ関数の接平面 / 滑り + AABB / yaw OBB）で島は歩ける。三角形メッシュ当たりと積み木物理は後回し。
 - **Windows は EventLoop 1 本。** GPU は必ず subprocess（`kagra.verify`）。この制約を壊さない。
 
 ## 楔との関係
@@ -96,7 +96,7 @@ kagra-shared + mobile/     ──► 別の運転デモ（道路・トラック�
 | A ローカル LLM に体を | `avatar` + `sing` / `speak` | 頭脳の公式面（Kairi / Ollama）が未実装 |
 | B 無人 3D VTuber | 歌・ダンス・HUD・仮想カメラ | オートパイロット / セーフティ（Stage 3。今はやらない） |
 | C VRoid マスコット | 透明窓・常駐 | 配布物（zip）。エンジン不足ではない |
-| D エージェントがゲームを | 箱部屋 3 本 + Prop Garden + Pretty Room + Overworld 島 | 閉じた部屋と高さ場の島。次は D-6 か頭脳 |
+| D エージェントがゲームを | 箱部屋 3 本 + Prop Garden + Pretty Room + Overworld 島 | 閉じた部屋と、タイル化した高さ場（坂・階段・箱街区）。次は D-6 か頭脳 |
 
 Stage 1 の「4 楔を数字で選ぶ」は残す。**D の天井を上げるのが能力トラックの第一目的。** A の頭脳は「完了」ではなく次の実装。
 
@@ -106,7 +106,7 @@ Stage 1 の「4 楔を数字で選ぶ」は残す。**D の天井を上げるの
 - Tk エディタを 3D エディタに育てる
 - Web で three-vrm と戦う
 - kagra-core と kagra-shared のレンダラ統合
-- Rapier / ボクセル / チャンクストリーミング（高さ関数の島は別）
+- Rapier / ボクセル / 街ファイルのストリーミング（高さ場タイルは別）
 - torch をコア依存にする
 - `KAGRA_ENGINE_GUIDE.md` を現行仕様として増やす（履歴にする）
 

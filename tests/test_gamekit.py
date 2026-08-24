@@ -87,6 +87,20 @@ def test_heightfield_mesh_flat_is_level():
     assert max(xs) == pytest.approx(2.0)
 
 
+def test_heightfield_tile_aabb_fits_shadow():
+    land = load_kagra_submodule("land")
+    verts, idx = kit.heightfield_tile(land.island_height, 0.0, 0.0, tile=10.0, cells=8)
+    assert len(verts) == 9 * 9
+    assert idx[-1] == 9 * 8 + 8
+    xs = [v[0] for v in verts]
+    ys = [v[1] for v in verts]
+    zs = [v[2] for v in verts]
+    extent = max(max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs))
+    assert extent <= 24.0
+    assert min(xs) == pytest.approx(0.0)
+    assert max(xs) == pytest.approx(10.0)
+
+
 def test_save_load_roundtrip(tmp_path):
     kit.save_json("hi", {"score": 42}, directory=tmp_path)
     assert kit.load_json("hi", directory=tmp_path) == {"score": 42}

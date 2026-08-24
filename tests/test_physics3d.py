@@ -244,6 +244,94 @@ def test_height_fn_cliff_blocks():
     assert player.x < 0.55
 
 
+def test_height_normal_on_ramp():
+    m = _phys()
+    nx, ny, nz = m.height_normal(lambda x, _z: 0.5 * x, 0.0, 0.0)
+    assert nx < -0.3
+    assert ny > 0.8
+    assert abs(nz) < 0.05
+
+
+def test_walkable_ramp_follows_slope():
+    m = _phys()
+    p = m.Physics3D(gravity=20.0)
+    p.set_height_fn(lambda x, _z: 0.4 * x)
+    player = p.add_capsule(1.0, 0.4, 0.0, 0.25, 1.6)
+    player.friction = 0.0
+    for _ in range(20):
+        p.update(0.016)
+    assert player.on_ground
+    player.vx = 3.0
+    p.update(0.016)
+    assert player.vy > 0.2
+    assert player.x > 1.02
+
+
+def test_steep_ramp_slides_down():
+    m = _phys()
+    p = m.Physics3D(gravity=20.0)
+    p.set_height_fn(lambda x, _z: 2.6 * x)
+    player = p.add_capsule(2.0, 5.3, 0.0, 0.25, 1.6)
+    player.friction = 0.0
+    for _ in range(20):
+        p.update(0.016)
+    x0 = player.x
+    for _ in range(50):
+        player.vx = 0.0
+        player.vz = 0.0
+        p.update(0.016)
+    assert player.x < x0 - 0.25
+    assert player.y < 2.6 * x0 - 0.35
+
+
+def test_steep_ramp_blocks_walk_up():
+    m = _phys()
+    p = m.Physics3D(gravity=20.0)
+    p.set_height_fn(lambda x, _z: 2.6 * x)
+    player = p.add_capsule(0.6, 1.6, 0.0, 0.25, 1.6)
+    player.friction = 0.0
+    for _ in range(20):
+        p.update(0.016)
+    for _ in range(40):
+        player.vx = 4.0
+        p.update(0.016)
+    assert player.x < 1.15
+
+
+def test_stairs_are_climbable():
+    land = load_kagra_submodule("land")
+
+    def fn(x, z):
+        s = land.stair_y(x, z, x0=-1, x1=1, z0=0, z1=3.2, y0=0.0, y1=1.8, steps=6)
+        return 0.0 if s is None else s
+
+    m = _phys()
+    p = m.Physics3D(gravity=20.0)
+    p.set_height_fn(fn)
+    player = p.add_capsule(0.0, 0.0, 0.1, 0.25, 1.6)
+    player.friction = 0.0
+    for _ in range(80):
+        player.vx = 0.0
+        player.vz = 3.0
+        p.update(0.016)
+    assert player.z > 2.2
+    assert player.y > 1.2
+
+
+def test_jump_not_killed_by_slope():
+    m = _phys()
+    p = m.Physics3D(gravity=20.0)
+    p.set_height_fn(lambda x, _z: 0.2 * x)
+    player = p.add_capsule(1.0, 0.2, 0.0, 0.25, 1.6)
+    for _ in range(20):
+        p.update(0.016)
+    gy = 0.2 * player.x
+    player.vy = 6.0
+    p.update(0.016)
+    assert player.y > gy + 0.04
+    assert player.vy > 4.5
+
+
 def test_water_buoyancy_lifts():
     m = _phys()
     p = m.Physics3D(gravity=12.0)

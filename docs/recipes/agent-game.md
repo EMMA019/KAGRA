@@ -49,7 +49,7 @@ Result: `examples/vrm_dodge_room.py`
 | 3D → HUD | `cam.world_to_screen(x, y, z)` — not the 2D `kagra.world_to_screen` |
 | World | `World3D` (floor + boxes) then `Camera3D.follow` |
 | Short 3D | `Prop` + `Walk` + `sky()` / `room()` / `water()` |
-| Island | `World3D.set_height_fn(island_height)` + `Walk(..., jump=)` — not streaming |
+| Island | `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` + `Walk(..., jump=)`. Slopes follow/slide. Not a city file |
 | First person | `Walk(..., first_person=True)` — eye height. Prop Garden: `F` / Start |
 | Gamepad | `axis("left")` / `pad("a")` / `inject_pad`. `Walk` uses both sticks |
 | Hover | `hovered_prop(cam)` — not the 2D `mouse`. Floor `plane` is skipped |
@@ -95,7 +95,7 @@ KAGRA で、VRM が3レーンを左右に歩いて、奥から飛んでくるハ
 `examples/vrm_dodge_room.py`（ログ: `docs/agent-runs/20260823-dodge-room/`）。
 短い 3D は `Prop` + `Walk` + `sky()` / `room()` / `water()`（Garden / Pretty Room /
 Overworld。これは play-surface デモで、エージェント製ログではない）。
-島は `World3D.set_height_fn(island_height)` と `Walk(..., jump=)`。
+島は `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` と `Walk(..., jump=)`。坂は沿う／滑る。街区は `city_boxes`。
 一人称は `Walk(..., first_person=True)`。ホバーは `hovered_prop(cam)`。
 パッドは `axis("left")` / `pad("a")`。テストは `inject_pad`。
 動かすのは `p.x` か `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)`。

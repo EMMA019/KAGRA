@@ -192,23 +192,34 @@ def heightfield_mesh(
     fn,
     half: float = 16.0,
     cells: int = 32,
+    *,
+    origin_x: float = 0.0,
+    origin_z: float = 0.0,
+    uv_half: float | None = None,
 ) -> tuple[list, list]:
-    """``(x, z) → y`` の格子メッシュ。``verts`` は ``[x,y,z,nx,ny,nz,u,v]``。"""
+    """``(x, z) → y`` の格子メッシュ。``verts`` は ``[x,y,z,nx,ny,nz,u,v]``。
+
+    中心は ``(origin_x, origin_z)``。UV は ``uv_half``（省略時は ``half``）の
+    ワールド範囲に合わせるので、タイルしても 1 枚の地形テクスチャが使える。
+    """
     cells = max(2, int(cells))
     half = float(half)
+    ox, oz = float(origin_x), float(origin_z)
+    uh = float(uv_half) if uv_half is not None else half
+    uh = max(uh, 1e-6)
     step = (2.0 * half) / float(cells)
     n = cells + 1
     ys = [[0.0] * n for _ in range(n)]
     for j in range(n):
         for i in range(n):
-            x = -half + i * step
-            z = -half + j * step
+            x = ox - half + i * step
+            z = oz - half + j * step
             ys[j][i] = float(fn(x, z))
     verts: list[list[float]] = []
     for j in range(n):
         for i in range(n):
-            x = -half + i * step
-            z = -half + j * step
+            x = ox - half + i * step
+            z = oz - half + j * step
             y = ys[j][i]
             i0 = max(0, i - 1)
             i1 = min(cells, i + 1)
@@ -221,8 +232,8 @@ def heightfield_mesh(
             nz = -(ys[j1][i] - ys[j0][i]) / dz
             ny = 1.0
             leng = math.sqrt(nx * nx + ny * ny + nz * nz) or 1.0
-            u = i / cells
-            v = j / cells
+            u = (x / uh + 1.0) * 0.5
+            v = (z / uh + 1.0) * 0.5
             verts.append([x, y, z, nx / leng, ny / leng, nz / leng, u, v])
     indices: list[int] = []
     for j in range(cells):
@@ -233,6 +244,28 @@ def heightfield_mesh(
             d = c + 1
             indices += [a, c, b, b, c, d]
     return verts, indices
+
+
+def heightfield_tile(
+    fn,
+    origin_x: float,
+    origin_z: float,
+    tile: float = 10.0,
+    cells: int = 8,
+    *,
+    uv_half: float | None = None,
+) -> tuple[list, list]:
+    """南西角 ``(origin_x, origin_z)``、辺 ``tile`` の高さ場タイル。"""
+    t = float(tile)
+    half = t * 0.5
+    return heightfield_mesh(
+        fn,
+        half,
+        cells,
+        origin_x=float(origin_x) + half,
+        origin_z=float(origin_z) + half,
+        uv_half=uv_half,
+    )
 
 
 def box_mesh(

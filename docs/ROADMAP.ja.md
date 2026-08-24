@@ -105,7 +105,10 @@ three.js / Ursina が当たり前にやっていることを、楔が詰む順�
 - [x] `apply_room_look` / `set_exposure` / 室内デモ `examples/vrm_pretty_room.py`
       （Prop Garden のスモーク画素は変えない）
 - [x] 高さ関数の島。`World3D.set_height_fn` / `island_height` / `water()` /
-      `Walk(..., jump=)`。海・草原・山は 1 枚の高さ場。Rapier / ボクセル / ストリーミングはまだ。
+      `Walk(..., jump=)`。海・草原・山。坂は接平面に沿い、急斜面は滑る。
+      地形はタイル（影 AABB < 24）。`stream_radius` で歩きながら載せる。
+      階段は高さ場の段。`city_boxes` は箱街区（街ファイルではない）。
+      Rapier / 三角形メッシュ当たり / 積み木物理 / CSM はまだ。
       デモ: `examples/vrm_overworld.py`
 - [x] play-surface デモ: `examples/vrm_prop_garden.py`（エージェント製ではない）
 - [x] 一人称（目線の高さ）。`Walk(..., first_person=True)` / `Camera3D.look`。
@@ -272,7 +275,7 @@ Rust コアという堀はどの道でもそのまま資産になる。
 - torch / 重量級モデルをコア依存に入れない（5MB が最大の武器）
 - text-to-vrma / Irodori-TTS のベンダリング（レシピで繋ぐ）
 - kagra-core と kagra-shared のレンダラ統合
-- Rapier / ボクセル / チャンクストリーミング（高さ関数の島は可。キャラコンで足りるうちは Rapier を入れない）
+- Rapier / ボクセル / 街ファイルのストリーミング（高さ場タイルの load/unload は可。キャラコンで足りるうちは Rapier を入れない）
 - YouTube / Twitch の API キーをコアやログに置くこと
 - 比較表で競合を貶すこと
 - デモへの高解像度テクスチャ / アセット同梱（絵作りはプロシージャル + ライトで）
