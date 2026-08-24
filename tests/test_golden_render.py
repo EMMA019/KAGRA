@@ -145,5 +145,6 @@ def test_pairwise_outdoor_crawl():
     on = _render("outdoor_crawl", "outdoor_crawl.png")
     off = _render("outdoor_crawl_off", "outdoor_crawl_off.png")
     nudge = _render("outdoor_crawl_nudge", "outdoor_crawl_nudge.png")
-    assert_pngs_differ(on, off, min_mean_abs=4.0, name="outdoor_crawl")
+    # 平行光のウンブラは mix(0.50)。室内スポットの 4.0 より弱い。0.000 は未到達。
+    assert_pngs_differ(on, off, min_mean_abs=2.0, name="outdoor_crawl")
     assert_pngs_similar(on, nudge, max_mean_abs=2.5, name="outdoor_crawl_nudge")

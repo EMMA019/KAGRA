@@ -276,9 +276,10 @@ class LocalOne(LocalFour):
 
 
 # 近段 half=12・マップ 2048 のテクセル。render と shadow_fit のテストで同じ値。
+# CI: 寄りの look() はウンブラの外で mean_abs=0。室内と同じオービット + 横日。
 _OUTDOOR_CRAWL_TEXEL = 24.0 / 2048.0
-_OUTDOOR_CRAWL_EYE = (-1.55, 0.62, 1.05)
-_OUTDOOR_CRAWL_TARGET = (-1.55, 0.02, 0.0)
+_OUTDOOR_CRAWL_ORBIT = (3.8, 1.15, 0.72)  # radius, theta, phi
+_OUTDOOR_CRAWL_TARGET = (1.6, 0.05, 0.0)
 
 
 class OutdoorCrawl(kagra.Scene):
@@ -288,15 +289,14 @@ class OutdoorCrawl(kagra.Scene):
     nudge = 0.0
 
     def on_enter(self):
-        self.tex = kagra.load(solid_png(210, 206, 196))
+        self.tex = kagra.load(solid_png(228, 222, 210))
         dx = _OUTDOOR_CRAWL_TEXEL * 0.2 * self.nudge
-        ex, ey, ez = _OUTDOOR_CRAWL_EYE
         tx, ty, tz = _OUTDOOR_CRAWL_TARGET
-        self.cam = kagra.Camera3D(SW, SH, fov_deg=42.0)
-        self.cam.look(ex + dx, ey, ez + dx, tx + dx, ty, tz + dx)
+        r, th, ph = _OUTDOOR_CRAWL_ORBIT
+        _bind_cam(self, r, th, ph, (tx + dx, ty, tz + dx), fov=42.0)
         # 半辺 13 → 辺 26 > SHADOW_SKIP_EXTENT 24。床は受けだけ。
         self.floor_v, self.floor_i = kagra.quad_y_mesh(0.0, 0.0, 0.0, 13.0)
-        self.box_v, self.box_i = kagra.box_mesh(0.0, 1.15, 0.0, 0.55, 2.3, 0.55)
+        self.box_v, self.box_i = kagra.box_mesh(0.0, 1.3, 0.0, 0.7, 2.6, 0.7)
         # 和 AABB を広げて近段 half=12（テクセル 24/2048）。画角の外。
         self.post_a, self.post_ai = kagra.box_mesh(9.2, 0.5, 9.2, 0.8, 1.0, 0.8)
         self.post_b, self.post_bi = kagra.box_mesh(-9.2, 0.5, -9.2, 0.8, 1.0, 0.8)
@@ -304,10 +304,11 @@ class OutdoorCrawl(kagra.Scene):
         kagra.set_shadow_cascades(2)
         kagra.set_tonemap(False)
         kagra.set_bloom(enabled=False)
-        kagra.set_ambient(0.04, 0.04, 0.05, 0.06)
-        kagra.set_light_dir(0.82, 0.48, 0.12)
+        kagra.set_ambient(0.02, 0.02, 0.03, 0.04)
+        # 光源は -X。ウンブラは箱の +X（オービットの注視点側）。
+        kagra.set_light_dir(-0.88, 0.32, 0.08)
         kagra.set_hdri(None, strength=0.0)
-        kagra.set_exposure(1.0)
+        kagra.set_exposure(1.15)
 
     def update(self, dt):
         engine = kagra.get_engine()

@@ -198,8 +198,8 @@ mod tests {
 
     #[test]
     fn outdoor_crawl_golden_eyes_share_near_snap() {
-        // tests/render_golden_scene.py OutdoorCrawl と同じキャスタと視点。
-        let caster = box_aabb([-0.275, 0.0, -0.275], [0.275, 2.3, 0.275]);
+        // tests/render_golden_scene.py OutdoorCrawl と同じキャスタとオービット視点。
+        let caster = box_aabb([-0.35, 0.0, -0.35], [0.35, 2.6, 0.35]);
         let post_a = box_aabb([8.8, 0.0, 8.8], [9.6, 1.0, 9.6]);
         let post_b = box_aabb([-9.6, 0.0, -9.6], [-8.8, 1.0, -8.8]);
         let floor = box_aabb([-13.0, 0.0, -13.0], [13.0, 0.0, 13.0]);
@@ -209,7 +209,13 @@ mod tests {
         acc = fold_shadow_aabb(acc, post_b);
         acc = fold_shadow_aabb(acc, floor);
         let map = 2048.0;
-        let eye_a = [-1.55, 0.62, 1.05];
+        let (r, th, ph) = (3.8f32, 1.15f32, 0.72f32);
+        let (tx, ty, tz) = (1.6f32, 0.05f32, 0.0f32);
+        let eye_a = [
+            tx + r * ph.cos() * th.sin(),
+            ty + r * ph.sin(),
+            tz + r * ph.cos() * th.cos(),
+        ];
         let a = cascade_center_half(acc, eye_a, 2);
         assert!((a[0].1 - SHADOW_NEAR_HALF).abs() < 1e-4);
         let texel = (2.0 * a[0].1) / map;

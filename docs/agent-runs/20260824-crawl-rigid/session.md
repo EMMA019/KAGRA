@@ -2,8 +2,10 @@
 
 - `origin/master` は #63（画素チェック閉じ）込み。ブランチ `cursor/crawl-rigid-6817`。
 - 這い: カメラが動くと色バッファ全体が動くので、絶対 golden ではなく pairwise。
+  - CI #64: `outdoor_crawl` vs `_off` が **mean_abs=0.000**。寄りの `look()` がウンブラの外
+  - 撮り直し: 室内と同じオービット + 横日（-X）。注視点は箱の +X。differ 閾値 2.0（平行光ウンブラは mix 0.50）
   - オン/オフで影が画素に出る（`outdoor_crawl` vs `_off`）
-  - 同じスナップ格子の 0.2 texel 視点（`look` を平行移動）は似ている
+  - 同じスナップ格子の 0.2 texel 視点（オービット注視点を平行移動）は似ている
   - 床は skip サイズ（受けだけ）。角の柱で近段 half=12
   - `apply_outdoor_look` は呼ばない（Garden スモークのトーンマップを汚さない）
   - CPU: `outdoor_crawl_golden_eyes_share_near_snap`
