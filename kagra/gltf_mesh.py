@@ -40,6 +40,9 @@ class FlatMesh:
     indices: list[int]
     aabb: tuple[float, float, float, float, float, float]
     image: Optional[bytes] = None
+    metallic: float = 0.0
+    roughness: float = 1.0
+    base_color: tuple[float, float, float] = (1.0, 1.0, 1.0)
 
 
 def _mat4_identity() -> list[float]:
@@ -153,6 +156,33 @@ def _first_image(gltf: dict, blob: bytes) -> Optional[bytes]:
     return blob[off:off + size]
 
 
+def _pbr_from_gltf(gltf: dict) -> tuple[float, float, tuple[float, float, float]]:
+    """最初のプリミティブの ``pbrMetallicRoughness``。無ければ Lambert 既定。"""
+    metallic = 0.0
+    roughness = 1.0
+    base = (1.0, 1.0, 1.0)
+    materials = gltf.get("materials") or []
+    mat_idx = None
+    for mesh in gltf.get("meshes") or []:
+        for prim in mesh.get("primitives") or []:
+            if "material" in prim:
+                mat_idx = int(prim["material"])
+                break
+        if mat_idx is not None:
+            break
+    if mat_idx is None or mat_idx < 0 or mat_idx >= len(materials):
+        return metallic, roughness, base
+    pbr = materials[mat_idx].get("pbrMetallicRoughness") or {}
+    if "metallicFactor" in pbr:
+        metallic = float(pbr["metallicFactor"])
+    if "roughnessFactor" in pbr:
+        roughness = float(pbr["roughnessFactor"])
+    bc = pbr.get("baseColorFactor")
+    if isinstance(bc, (list, tuple)) and len(bc) >= 3:
+        base = (float(bc[0]), float(bc[1]), float(bc[2]))
+    return metallic, roughness, base
+
+
 def flatten_gltf(path: str | Path, *, center: bool = True) -> FlatMesh:
     """静的プリミティブを 1 メッシュに畳む。スキンは無視（部品用）。"""
     gltf, blob = _read_glb_or_gltf(path)
@@ -223,7 +253,16 @@ def flatten_gltf(path: str | Path, *, center: bool = True) -> FlatMesh:
             aabb[0] - cx, aabb[1] - cy, aabb[2] - cz,
             aabb[3] - cx, aabb[4] - cy, aabb[5] - cz,
         )
-    return FlatMesh(verts=verts, indices=indices, aabb=aabb, image=_first_image(gltf, blob))
+    metallic, roughness, base = _pbr_from_gltf(gltf)
+    return FlatMesh(
+        verts=verts,
+        indices=indices,
+        aabb=aabb,
+        image=_first_image(gltf, blob),
+        metallic=metallic,
+        roughness=roughness,
+        base_color=base,
+    )
 
 
 def _pad4(n: int) -> int:

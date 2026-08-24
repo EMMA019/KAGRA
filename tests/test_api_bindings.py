@@ -106,6 +106,9 @@ def test_critical_bindings_present():
         "set_rim",
         "set_toon_params",
         "set_shadow_enabled",
+        "set_point_light",
+        "set_hdri",
+        "set_mesh_pbr",
         "request_screenshot",
         "set_grab_frames",
         "grab_frame",
@@ -158,6 +161,9 @@ def test_gltf_python_wrappers_exist():
         ("stage", "Stage.load"),
         ("set_grab_frames", "_engine.set_grab_frames"),
         ("grab_frame", "_engine.grab_frame"),
+        ("set_point_light", "_engine.set_point_light"),
+        ("set_hdri", "_engine.set_hdri"),
+        ("set_mesh_pbr", "_engine.set_mesh_pbr"),
         ("set_rim", "_engine.set_rim"),
     ):
         assert name in names, f"kagra.{name} が未公開"

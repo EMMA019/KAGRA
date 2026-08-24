@@ -34,6 +34,7 @@ python tools/mcp_kagra/server.py   # MCP stdio
 Short 3D: `Prop` / `Walk` / `sky()`. Texture via `texture_from_fn` / `load`.
 Parent is 1 level (`set_parent`). glTF parts: `Prop("crate.glb")` (not `stage()`).
 Gamepad: `axis` / `pad` / `inject_pad`. Not 2D `Entity`.
+Picture: `set_point_light` / `set_hdri("studio")` / `Prop(..., metallic=)`.
 
 ## Touch / mobile
 

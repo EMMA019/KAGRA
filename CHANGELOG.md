@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Picture track P6–P8: `set_point_light` (one point, no shadow),
+  `set_hdri("studio"|path)` (cube, no PMREM), generic mesh metal/roughness
+  via `upload_mesh_3d(..., metallic=, roughness=)` / `set_mesh_pbr` /
+  `Prop(..., metallic=)`. glTF flatten reads `pbrMetallicRoughness`.
+  MToon is unchanged. Defaults keep Lambert (metal 0, rough 1, lights off).
+  Prop Garden non-smoke: chrome sphere + studio HDRI + a point light.
 - World shadows (P5): directional map fits VRM + floor / box / Prop AABBs
   (half clamp 28). Immediate, retained, and instanced Mesh3D write the map.
   Sky-sized meshes are skipped. Still one light, no cascades.

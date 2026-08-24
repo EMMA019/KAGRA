@@ -173,6 +173,131 @@ pub(super) fn make_frame_texture(
     (texture, view)
 }
 
+pub(super) fn make_default_env_cube(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> (wgpu::Texture, wgpu::TextureView, wgpu::Sampler) {
+    upload_env_cube(device, queue, &[[40u8, 42, 48, 255]; 6])
+}
+
+pub(super) fn upload_env_cube(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    faces_1x1: &[[u8; 4]; 6],
+) -> (wgpu::Texture, wgpu::TextureView, wgpu::Sampler) {
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Env Cube"),
+        size: wgpu::Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 6,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    for (i, px) in faces_1x1.iter().enumerate() {
+        let mut row = [0u8; 256];
+        row[0..4].copy_from_slice(px);
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &row,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+        );
+    }
+    let view = tex.create_view(&wgpu::TextureViewDescriptor {
+        label: Some("Env Cube View"),
+        dimension: Some(wgpu::TextureViewDimension::Cube),
+        ..Default::default()
+    });
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("Env Cube Sampler"),
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        ..Default::default()
+    });
+    (tex, view, sampler)
+}
+
+pub(super) fn upload_env_cube_faces(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    face_size: u32,
+    rgba: &[[u8; 4]],
+) -> (wgpu::Texture, wgpu::TextureView, wgpu::Sampler) {
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Env Cube"),
+        size: wgpu::Extent3d {
+            width: face_size,
+            height: face_size,
+            depth_or_array_layers: 6,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let raw_stride = (face_size * 4) as usize;
+    let padded_stride = ((raw_stride + 255) / 256) * 256;
+    for face in 0..6 {
+        let start = face * face_size as usize * face_size as usize;
+        let mut bytes = vec![0u8; padded_stride * face_size as usize];
+        for y in 0..face_size as usize {
+            for x in 0..face_size as usize {
+                let px = rgba[start + y * face_size as usize + x];
+                let o = y * padded_stride + x * 4;
+                bytes[o..o + 4].copy_from_slice(&px);
+            }
+        }
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x: 0, y: 0, z: face as u32 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &bytes,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(padded_stride as u32),
+                rows_per_image: Some(face_size),
+            },
+            wgpu::Extent3d {
+                width: face_size,
+                height: face_size,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+    let view = tex.create_view(&wgpu::TextureViewDescriptor {
+        label: Some("Env Cube View"),
+        dimension: Some(wgpu::TextureViewDimension::Cube),
+        ..Default::default()
+    });
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("Env Cube Sampler"),
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        ..Default::default()
+    });
+    (tex, view, sampler)
+}
+
 pub(super) fn normalize_light_dir(x: f32, y: f32, z: f32) -> [f32; 4] {
     let len = (x * x + y * y + z * z).sqrt();
     if len < 1e-8 {

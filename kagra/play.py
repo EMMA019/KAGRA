@@ -343,6 +343,7 @@ class Prop:
 
     ``texture`` は ``texture_from_fn`` / ``load`` の ID。0 なら ``color``。
     ``model`` が ``.glb`` / ``.gltf`` ならファイルを畳んで置く（``stage()`` ではない）。
+    ``metallic`` / ``roughness`` は汎用メッシュだけ。省略時は glTF の因子、無ければ 0 / 1。
     親子は 1 段（``set_parent``）。子の ``x,y,z,yaw`` は親からのローカル。
     2D の ``kagra.Entity`` とは別。エージェントはこっちを使う。
     """
@@ -363,6 +364,8 @@ class Prop:
         yaw: float = 0.0,
         texture: int = 0,
         parent: Optional["Prop"] = None,
+        metallic: float | None = None,
+        roughness: float | None = None,
     ):
         self.gltf_path = None
         self._gltf_flat: Optional[FlatMesh] = None
@@ -398,6 +401,18 @@ class Prop:
         self.collision = bool(collision)
         self.world = world
         self.texture = int(texture or 0)
+        if metallic is None and self._gltf_flat is not None:
+            self.metallic = float(self._gltf_flat.metallic)
+        else:
+            self.metallic = 0.0 if metallic is None else float(metallic)
+        if roughness is None and self._gltf_flat is not None:
+            self.roughness = float(self._gltf_flat.roughness)
+        else:
+            self.roughness = 1.0 if roughness is None else float(roughness)
+        self.base_color = (
+            tuple(self._gltf_flat.base_color) if self._gltf_flat is not None
+            else (1.0, 1.0, 1.0)
+        )
         self.tex_id = 0
         self.mesh_id = 0
         self.body = None
@@ -657,11 +672,18 @@ class Prop:
         try:
             import kagra
             self.tex_id = self._bake_texture()
-            key = (self.model, str(self.gltf_path or ""), self.tex_id)
+            key = (
+                self.model, str(self.gltf_path or ""), self.tex_id,
+                round(self.metallic, 4), round(self.roughness, 4),
+            )
             mid = _unit_cache.get(key)
             if not mid:
                 verts, idx = self._mesh_data()
-                mid = int(kagra.upload_mesh_3d(self.tex_id, verts, idx))
+                mid = int(kagra.upload_mesh_3d(
+                    self.tex_id, verts, idx,
+                    metallic=self.metallic, roughness=self.roughness,
+                    base_color=self.base_color,
+                ))
                 if mid:
                     _unit_cache[key] = mid
             self.mesh_id = mid or 0

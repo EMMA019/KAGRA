@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **381**
+エントリ数: **384**
 
 棚の**手前**は VRM / 3D ワールド / エージェントゲーム。
 棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。
@@ -52,8 +52,11 @@
 | `set_bloom` | `set_bloom(threshold: float = 0.85, intensity: float = 0.35, enabled: bool = True)` |
 | `set_camera3d` | `set_camera3d(cam: Camera3D \| None)` |
 | `set_fog` | `set_fog(start: float = 5.0, end: float = 20.0, color: tuple = (110, 180, 230), *, enabled: bool = True)` |
+| `set_hdri` | `set_hdri(path: str \| None = 'studio', strength: float = 1.0)` |
 | `set_light_dir` | `set_light_dir(x: float, y: float, z: float)` |
 | `set_mesh_cull` | `set_mesh_cull(enabled: bool = True)` |
+| `set_mesh_pbr` | `set_mesh_pbr(mesh_id: int, metallic: float = 0.0, roughness: float = 1.0, base_color: tuple = (1.0, 1.0, 1.0))` |
+| `set_point_light` | `set_point_light(x: float, y: float, z: float, *, r: float = 1.0, g: float = 0.95, b: float = 0.85, intensity: float = 1.0, radius: float = 8.0)` |
 | `set_rim` | `set_rim(intensity: float = 0.45)` |
 | `set_shadow_enabled` | `set_shadow_enabled(enabled: bool = True)` |
 | `set_toon_params` | `set_toon_params(threshold: float = 0.5, softness: float = 1.0, shade: float = 0.55, lit: float = 1.0)` |
@@ -66,7 +69,7 @@
 | `tick_count` | `tick_count() -> int` |
 | `tone` | `tone(name: str, freqs, duration: float = 0.12, volume: float = 0.35, decay: bool = True) -> str` |
 | `unload_mesh_3d` | `unload_mesh_3d(mesh_id: int)` |
-| `upload_mesh_3d` | `upload_mesh_3d(texture_id: int, verts: list, indices: list) -> int` |
+| `upload_mesh_3d` | `upload_mesh_3d(texture_id: int, verts: list, indices: list, *, metallic: float = 0.0, roughness: float = 1.0, base_color: tuple = (1.0, 1.0, 1.0)) -> int` |
 | `AABB` | `class AABB  (from kagra.physics3d)` |
 | `ActionController` | `class ActionController  (from kagra.vrm_action)` |
 | `AiCharacter` | `class AiCharacter  (from kagra.ai_character)` |
@@ -420,6 +423,9 @@
 - glTF 部品: `Prop("crate.glb")`。`stage()` / `load_gltf` は会場。同梱エイリアス `cube.glb`。当たりは AABB。
 - ゲームパッド: `axis("left")` / `pad("a")` / `inject_pad`。`Walk` は左スティック移動・右スティック視点。実機ポーリングは未接続。
 - 影は床・箱・Prop も落とす（VRM AABB だけに合わせない）。空メッシュは除外。カスケードはまだ。
+- 点光源 1: `set_point_light(x,y,z, intensity=…)`。影は無し。スポットはまだ。
+- HDRI: `set_hdri("studio")` または正距円筒のパス。`set_ambient` の次。PMREM はまだ。
+- 汎用メッシュの金属/粗さ: `upload_mesh_3d(..., metallic=, roughness=)` / `Prop(..., metallic=)` / `set_mesh_pbr`。MToon は触らない。
 - 色付きメッシュ: `solid_tex` + `sphere_mesh` / `cylinder_mesh` / `box_mesh`。
 - `kagra-shared` / `mobile/` は別の運転デモ。この Python スタックと混ぜない。
 - Rust バインディングの整合は `tests/test_api_bindings.py` も参照。

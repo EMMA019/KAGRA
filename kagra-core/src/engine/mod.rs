@@ -1392,6 +1392,37 @@ impl Engine {
         self.window.set_ambient(r, g, b, strength);
     }
 
+    /// 点光源 1（影は無し）。intensity=0 でオフ。
+    #[pyo3(signature = (x, y, z, r=1.0, g=0.95, b=0.85, intensity=1.0, radius=8.0))]
+    pub fn set_point_light(
+        &self,
+        x: f32, y: f32, z: f32,
+        r: f32, g: f32, b: f32,
+        intensity: f32, radius: f32,
+    ) {
+        self.window.set_point_light(x, y, z, r, g, b, intensity, radius);
+    }
+
+    /// HDRI キューブ。``studio`` は内蔵。空 / strength=0 でオフ。
+    #[pyo3(signature = (path, strength=1.0))]
+    pub fn set_hdri(&self, path: String, strength: f32) {
+        self.window.set_hdri(&path, strength);
+    }
+
+    /// 保持メッシュの金属/粗さ。MToon は触らない。
+    #[pyo3(signature = (mesh_id, metallic=0.0, roughness=1.0, base_r=1.0, base_g=1.0, base_b=1.0))]
+    pub fn set_mesh_pbr(
+        &self,
+        mesh_id: u32,
+        metallic: f32,
+        roughness: f32,
+        base_r: f32,
+        base_g: f32,
+        base_b: f32,
+    ) {
+        self.window.set_mesh_pbr(mesh_id, metallic, roughness, base_r, base_g, base_b);
+    }
+
     /// 閾値ブルーム。輝度が threshold を超えた画素だけをぼかして加算する。
     /// intensity<=0 でオフ（画面全体ぼかしはしない）。
     #[pyo3(signature = (threshold=0.85, intensity=0.0))]
@@ -1421,14 +1452,26 @@ impl Engine {
     }
 
     /// 3D メッシュを GPU に一度載せる。毎フレームは ``draw_mesh_id``。
-    #[pyo3(signature = (texture_id, verts, indices))]
-    pub fn upload_mesh_3d(&self, texture_id: u32, verts: Vec<Vec<f32>>, indices: Vec<u32>) -> u32 {
+    #[pyo3(signature = (texture_id, verts, indices, metallic=0.0, roughness=1.0, base_r=1.0, base_g=1.0, base_b=1.0))]
+    pub fn upload_mesh_3d(
+        &self,
+        texture_id: u32,
+        verts: Vec<Vec<f32>>,
+        indices: Vec<u32>,
+        metallic: f32,
+        roughness: f32,
+        base_r: f32,
+        base_g: f32,
+        base_b: f32,
+    ) -> u32 {
         let cv: Vec<[f32;8]> = verts.iter().map(|v| {
             let mut a = [0f32;8];
             for (i, val) in v.iter().enumerate().take(8) { a[i] = *val; }
             a
         }).collect();
-        self.window.upload_mesh_3d(texture_id, cv, indices)
+        self.window.upload_mesh_3d(
+            texture_id, cv, indices, metallic, roughness, [base_r, base_g, base_b],
+        )
     }
 
     #[pyo3(signature = (mesh_id))]

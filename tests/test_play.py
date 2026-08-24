@@ -272,6 +272,15 @@ def test_prop_texture_id_bake_without_engine_is_zero():
     assert p.mesh_id == 0
 
 
+def test_prop_metallic_defaults_and_override():
+    dull = play.Prop("sphere", color="white", collision=False)
+    assert dull.metallic == pytest.approx(0.0)
+    assert dull.roughness == pytest.approx(1.0)
+    chrome = play.Prop("sphere", color="white", collision=False, metallic=1.0, roughness=0.1)
+    assert chrome.metallic == pytest.approx(1.0)
+    assert chrome.roughness == pytest.approx(0.1)
+
+
 def test_prop_gltf_unit_cube_matches_box_hit():
     cube = Path(__file__).resolve().parents[1] / "kagra" / "data" / "unit_cube.glb"
     p = play.Prop(str(cube), x=0.0, y=0.5, z=2.0, collision=False, color="white")
