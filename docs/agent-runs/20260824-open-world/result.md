@@ -27,8 +27,9 @@ pytest tests -m "not golden"            # 338 passed, 9 deselected
 ```
 
 GPU smoke (`python -m kagra.verify examples/verify_scenarios/open_world_smoke.json`)
-was **not run here**: this VM has no `kagra_core` (needs `maturin develop`).
-Headless smoke JSON is in the tree for CI / Emma's GPU box.
+was **not run on the agent VM** (no `kagra_core` / `maturin develop` there).
+Headless smoke JSON is in the tree. **GitHub CI: 17 checks passed** on
+`1b47642` (https://github.com/EMMA019/KAGRA/actions).
 
 PR: https://github.com/EMMA019/KAGRA/pull/73
 
