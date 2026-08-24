@@ -54,4 +54,4 @@ body:
     id: kagra_ver
     attributes:
       label: kagra version
-      placeholder: "0.1.3  /  maturin develop @ abc123"
+      placeholder: "0.1.4  /  maturin develop @ abc123"

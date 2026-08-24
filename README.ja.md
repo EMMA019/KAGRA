@@ -21,7 +21,7 @@ Windows の cmd で `'-m' は認識されていません` と出るときは、�
 | インストール | `pip install kagra`（約 5MB、Rust 不要） | Unity + UniVRM パッケージ | アプリを落とす | `npm` + WebGL/WebGPU |
 | 歌って踊るまで | コマンド 2 行、または Python 約 15 行 | シーン + C# + Animator | GUI（コードなし） | JavaScript + アセット |
 | ライセンス | MIT | Unity + UniVRM の各ライセンス | プロプライエタリ | MIT |
-| AI 連携 | Python（TTS / LLM は wheel の外） | エディタプラグイン | 限定的 | JavaScript |
+| AI 連携 | Python。TTS は wheel の外。`kagra.brain` は 0.1.4（モデルは同梱しない） | エディタプラグイン | 限定的 | JavaScript |
 
 事実だけ。貶さない。UniVRM と three-vrm は VRM 実装のものさし、VSeeFace は実際に開かれるトラッカー。
 
@@ -67,14 +67,14 @@ pip install kagra
 python -m kagra
 ```
 
+`pip install kagra` は **0.1.4** で、それが製品です。レンダラ、VRM、歌う、踊る、`.vrma`、リップシンク、視線、IK、表情、SpringBone に加え、3D の遊び場（`Prop` / `Walk` / `World3D`）、局所ライト、室内・屋外の影、法線マップ、AABB の箱、EventLoop 上の USB/XInput、`kagra.brain` が入ります。Rust は不要です。顔トラ・仮想カメラ・マイクだけ extra。LLM モデルは wheel に入れません。
+
 リポジトリのフォルダ（中に `kagra\` がある場所）で `python -m kagra` すると、pip の版ではなくその場のソースが優先されます。`No module named kagra.__main__` と出たら、別のディレクトリから実行してください。
 
 ```powershell
 cd $env:TEMP
 python -m kagra
 ```
-
-`pip install kagra` が製品そのものです。レンダラ、VRM、歌う、踊る、`.vrma`、リップシンク、視線、IK、表情、SpringBone は全部入ります。Rust は不要です。顔トラ・仮想カメラ・マイクだけ extra。
 
 | | |
 |---|---|
@@ -84,6 +84,20 @@ python -m kagra
 | 仮想カメラ（OBS） | `pip install "kagra[stream]"` のあと `python -m kagra --loop --stream` |
 | マイク口パク | `pip install "kagra[mic]"` |
 | コントリビュータ | `pip install maturin && maturin develop` |
+
+シーン脚本（`examples/vrm_*.py`）は git リポジトリにあります。`pip` が渡すのは `import kagra` です。
+
+## 入っているもの
+
+- **VRM** — GPU スキニング、SpringBone、MToon、視線、リップシンク、IK、表情
+- **3D の遊び場** — `Prop` / `Walk` / `sky` / `room` / `World3D`。局所ライト 4 本（`slot=0..3`）、室内ウンブラ、屋外 2 段シャドウ、接空間法線。AABB の箱は落ちる・積む・`Walk` が乗る。USB/XInput は EventLoop が `gilrs` で読む（テストは `inject_pad`）
+- **頭脳** — `kagra.brain("kairi"|"ollama"|"openai")`。ホスト kairi は `KAIRI_API_TOKEN`。モデルは wheel に入れない
+- **エージェントループ** — API 索引、`kagra.verify`、MCP、golden
+- **Mobile / Wasm** — `kagra-shared` と `mobile/` は**別製品の運転デモ**（道路・トラック・OSM）。Python の VRM / ゲームスタックではない。レンダラは統合しない
+
+タイルマップ・ECS・2D エディタは棚（[`examples/archive/`](examples/archive/)）。3D の見出しではない。
+
+エンジンが今どこまでで、何がまだ開いているか（30 秒見本）は [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md)。three.js 級とはまだ言わない。
 
 ## AI エージェントにゲームを作らせる
 
@@ -96,32 +110,18 @@ KAGRA の開発ループは人間だけでなく AI コーディングエージ�
 
 `examples/vrm_orb_rush.py` が参照ゲーム（公開 API のみ。生成ログは無い）。ログ付きのエージェント製は [`docs/agent-runs/`](docs/agent-runs/README.md) の Heart Catch、Switch Room、Dodge Room（`examples/vrm_dodge_room.py` — 降ってくる箱を避ける）。Dodge Room は別のエージェントが `AGENTS.md` と一行プロンプトから書いた。
 
-`kagra-shared` と `mobile/` は**別製品の運転デモ**（道路・トラック・OSM）であり、Python の VRM / ゲームスタックではない。レンダラは統合しない。
-
-## サンプル
-
-```bash
-python -m kagra
-python examples/vrm_orb_rush.py
-python examples/vrm_heart_catch.py
-python examples/vrm_switch_room.py
-python examples/vrm_dodge_room.py
-```
-
-レガシー 2D / タイルマップは [`examples/archive/`](examples/archive/)。
-
 ## まだ無いもの
 
-嘘をつかないリスト。忘れたのではなく、今は入れない。
+嘘をつかないリスト。忘れたのではなく、今は入れない／まだバーではない。
 
 - **macOS ホイール** — 検証できる Mac ができるまでソースビルド
-- **OS のゲームパッド実機** — `axis` / `pad` / `inject_pad` はある。USB/XInput ポーリングはまだホイールに無い
+- **他人に見せる 30 秒見本** — Pretty Room / Overworld / Prop Garden の API は 0.1.4 に入った。録画がバーになるまではまだ
+- **実機パッドの 30 秒** — USB/XInput のポーリングは wheel にある。CI は `inject_pad`。手元のパッドは主張しない
 - **YouTube / Twitch の公式取り込み** — `{user,text}` の JSONL を自分で書く（`ChatInbox`）
 - **NDI / RTMP** — 窓キャプチャは今も使える。仮想カメラは extra
-- **無人配信のセーフティ / オートパイロット** — 0.1.3 には無い
-- **公式の頭脳面** — `kagra.brain("kairi")` の既定は https://kairi.onrender.com。チャットは `KAIRI_API_TOKEN`。wheel には入れない
-- **法線マップ** — まだ無い。HDRI・点・スポット・ACES opt-in はソース `master` にある（画素未確認）。一人称は `Walk(first_person=True)`
+- **無人配信のセーフティ / オートパイロット** — 入れてない
 - **VOICEVOX / Irodori-TTS** — 同梱しない。VOICEVOX は [docs/recipes/voicevox.md](docs/recipes/voicevox.md)
+- **ポインタロック** — 一人称で要求する。OS が拒否することがある
 - 曲 WAV と `.vrma` はホイールに入れない（約 5MB の売りを守る）。サンプル VRM は初回ダウンロード
 
 レシピ: [自分の VRM](docs/recipes/own-vrm.md) · [ダンス / VRMA](docs/recipes/motion.md) · [VOICEVOX](docs/recipes/voicevox.md) · [OBS / 配信](docs/recipes/stream.md) · [マスコット](docs/recipes/mascot.md) · [頭脳 / kairi](docs/recipes/ai-brain.md) · [エージェントゲーム](docs/recipes/agent-game.md)。
@@ -137,8 +137,44 @@ README と `python -m kagra` が使う名前です。メジャーバージョン
 
 他の API は [`docs/API_INDEX.md`](docs/API_INDEX.md) を見てください。まだ動く可能性があります。
 
+## サンプル
+
+脚本はリポジトリを clone してください。`import kagra` は `pip install kagra` で足ります。
+
+```bash
+python -m kagra                          # 歌って踊る
+python -m kagra --loop --stream          # HUD + 仮想カメラ（kagra[stream]）
+python examples/vrm_orb_rush.py          # 参照ゲーム
+python examples/vrm_heart_catch.py       # 3 レーンキャッチ（エージェントログあり）
+python examples/vrm_switch_room.py       # 箱部屋、カメラ追従
+python examples/vrm_dodge_room.py        # 降ってくる箱を避ける（エージェントログあり）
+python examples/vrm_prop_garden.py       # Prop / Walk / sky
+python examples/vrm_pretty_room.py       # 閉じた部屋 / スポット / IBL
+python examples/vrm_overworld.py         # 島 — 街 JSON、メッシュ坂、箱
+python examples/vrm_kairi_chat.py        # kairi.onrender.com で会話（KAIRI_API_TOKEN）
+python examples/vrm_vrma.py              # .vrma（または生成した波）
+python examples/vrm_stream.py            # OBS / JSONL チャット
+```
+
+レガシー 2D / タイルマップ / エディタは [`examples/archive/`](examples/archive/)。
+
+## エージェント / ソースから
+
+```bash
+git clone https://github.com/EMMA019/KAGRA.git
+cd KAGRA
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install maturin
+maturin develop
+python -m kagra.verify examples/verify_scenarios/blank_smoke.json
+```
+
+MCP（Cursor）: `.cursor/mcp.json` → `kagra_api_search` / `kagra_verify` / `kagra_render`。
+
 ## ライセンス
 
 MIT — [LICENSE](LICENSE)。
 
 デモが取得するサンプル VRM は Alicia Solid（ニコニ立体ちゃん）© Dwango です。[利用規約](https://3d.nicovideo.jp/alicia/rule.html) に従い、スクリーンショットを出すときはクレジットしてください。
+
+KAGRA の名は神岡重力波検出器から。堅く、正確で、遊ぶために作る。

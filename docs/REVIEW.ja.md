@@ -1,6 +1,6 @@
 # KAGRA 全体レビュー — 2026-08-24
 
-0.1.3（PyPI）+ ソース `master`（#52〜#65）。
+0.1.4（PyPI）。#52〜#66 の遊び場・画素・頭脳を載せた。
 最終目標と次の手は [ROADMAP.ja.md](ROADMAP.ja.md)。ここは能力とギャップ。
 
 ## 1 行
@@ -25,7 +25,7 @@
 1. **縦の貫通。** glTF → MToon → SpringBone（コライダー付き）→ node constraint → 表情 override → リップシンク（WAV / VOICEVOX mora）→ TTS レシピ → OBS 仮想カメラが 1 プロセス。競合はだいたいブラウザか Godot に描画を投げている。
 2. **VRM 実装深度。** マルチスキン修正、VRM 0.x / 1.0、VRMA、LookAt、IK、一人称レイヤー、顔トラ extra。README の「表示できます」系との差は本当。
 3. **エージェントループ。** `docs/API_INDEX.md`（AST 生成）/ `kagra.verify` / MCP / `docs/agent-runs/`。Heart Catch・Switch Room・Dodge Room までログ付き。この形のエンジンは他に無い。**ループの価値は、見本が初日を超えてから効く。**
-4. **配布。** `pip install kagra` 約 5MB、Rust 不要。torch をコアに入れない判断は正しい。ソース `master` が PyPI より先なのは今の弱み。
+4. **配布。** `pip install kagra` 0.1.4、約 5MB、Rust 不要。torch をコアに入れない判断は正しい。macOS wheel はまだ。
 5. **棚分け。** Front（VRM / 3D / エージェント）と Shelf（2D ECS / tilemap / エディタ / boids）。`kagra-shared` + `mobile/` は運転デモで、レンダラを混ぜない。
 6. **自制。** 今 63% を 80% と呼ばない。箱部屋 4 本目を D-6 と呼ばない。北極星を機能数にしない。
 
@@ -94,7 +94,7 @@ D-6 は箱の焼き直し禁止 + 30 秒以上 + スコアかゴール。
 ### 流通
 
 スター / フォークはほぼゼロ。Stage 1 の楔が本当に必要。
-今はソース `master` が PyPI 0.1.3 より先。ソースを次の wheel に載せる。
+0.1.4 に遊び場・画素・頭脳を載せた。次は 30 秒見本。macOS wheel はまだ。
 
 ## 構造（触るな / 畳め）
 

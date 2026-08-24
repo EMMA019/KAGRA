@@ -21,7 +21,7 @@ On Windows cmd, `'-m' is not recognized` means an extra `>` was typed. Use `py -
 | Install | `pip install kagra` (~5MB wheel, no Rust) | Unity editor + UniVRM package | download the app | `npm` + a WebGL/WebGPU page |
 | Code to sing & dance | 2 commands, or ~15 lines of Python | scene + C# + Animator | GUI, no code | JavaScript + assets |
 | License | MIT | Unity + UniVRM licenses | proprietary app | MIT |
-| AI hook | Python (TTS / LLM stay outside the wheel) | editor plugins | limited | JavaScript |
+| AI hook | Python. TTS stays outside the wheel. `kagra.brain` is in 0.1.4 (models are not) | editor plugins | limited | JavaScript |
 
 Facts only. UniVRM and three-vrm are the VRM implementations we measure against; VSeeFace is the desktop tracker people actually open.
 
@@ -67,14 +67,14 @@ pip install kagra
 python -m kagra
 ```
 
+`pip install kagra` is **0.1.4** and is the product: renderer, VRM, sing, dance, `.vrma`, lipsync, look-at, IK, expressions, SpringBone, plus the 3D play surface (`Prop` / `Walk` / `World3D`), local lights, indoor/outdoor shadows, normal maps, AABB crates, USB/XInput on the EventLoop, and `kagra.brain`. No Rust. Face tracking, virtual camera, and mic are extras. LLM models are not in the wheel.
+
 If you run `python -m kagra` from a checkout that contains a `kagra/` folder, Python imports that folder instead of the installed wheel. The command now prints the escape hatch (`cd %TEMP%` / `maturin develop`). `No module named kagra.__main__` is the older local package — run from another directory:
 
 ```powershell
 cd $env:TEMP
 python -m kagra
 ```
-
-`pip install kagra` is the full product: renderer, VRM, sing, dance, `.vrma`, lipsync, look-at, IK, expressions, SpringBone. No Rust toolchain. Face tracking, virtual camera, and mic are extras.
 
 | | |
 |---|---|
@@ -84,6 +84,20 @@ python -m kagra
 | Virtual camera (OBS) | `pip install "kagra[stream]"` then `python -m kagra --loop --stream` |
 | Mic lipsync | `pip install "kagra[mic]"` |
 | Contributors | `pip install maturin && maturin develop` |
+
+Scene scripts (`examples/vrm_*.py`) live in the git repo. `pip` gives you `import kagra`.
+
+## What you get
+
+- **VRM** — GPU skinning, SpringBone, MToon, look-at, lipsync, IK, expressions
+- **3D play** — `Prop` / `Walk` / `sky` / `room` / `World3D`. Four local lights (`slot=0..3`), indoor umbra, 2-cascade outdoor shadows, tangent-space normal maps. AABB crates fall, stack, and `Walk` stands on them. USB/XInput is read on the EventLoop (`gilrs`); tests use `inject_pad`
+- **Brain** — `kagra.brain("kairi"|"ollama"|"openai")`. Hosted kairi needs `KAIRI_API_TOKEN`. Models are not in the wheel
+- **Agent loop** — API index, `kagra.verify`, MCP tools, golden renders
+- **Mobile / Wasm** — `kagra-shared` + `mobile/` is a **separate driving demo** (roads, truck, OSM). It is not the Python VRM / game stack. Do not merge the two renderers
+
+Tilemaps, ECS, and the 2D editor are on the shelf ([`examples/archive/`](examples/archive/)). They are not the 3D headline.
+
+Where the engine sits, and what is still open (30-second demos): [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md). Do not call this three.js-class yet.
 
 ## Let your AI agent build the game
 
@@ -98,16 +112,16 @@ KAGRA's development loop is designed for AI coding agents, not just humans. An a
 
 ## Not yet
 
-Honesty list. These are missing on purpose, not forgotten:
+Honesty list. Missing on purpose, or not the bar yet:
 
 - **macOS wheels** — build from source until a Mac can verify them
-- **OS gamepad devices** — `axis` / `pad` / `inject_pad` work; USB/XInput poll is not in the wheel yet
+- **30-second stranger demos** — Pretty Room / Overworld / Prop Garden APIs are in 0.1.4; the recordings are not yet the bar
+- **Real-hardware gamepad 30s** — USB/XInput poll is in the wheel; CI uses `inject_pad`. We do not claim a pad in your hand
 - **YouTube / Twitch chat APIs** — write `{user,text}` JSONL yourself (`ChatInbox`)
 - **NDI / RTMP** — OBS window capture still works; virtual cam is the extra
-- **Autopilot / unattended safety** — not in 0.1.3
-- **Official LLM brain hook** — `kagra.brain("kairi"|"ollama"|"openai")`. kairi is a local server, not in the wheel. `AiCharacter` is the older shelf wrapper.
-- **Normal maps** — not on `master` yet. HDRI, point/spot, and opt-in ACES are (pixels unverified here). `Walk(first_person=True)` is in.
+- **Autopilot / unattended safety** — not shipped
 - **VOICEVOX / Irodori-TTS** — not bundled. VOICEVOX recipe: [docs/recipes/voicevox.md](docs/recipes/voicevox.md)
+- **Pointer lock** — requested for first-person; the OS may refuse
 - Song WAV and `.vrma` stay out of the wheel (~5MB install). First run downloads the sample VRM
 
 Recipes: [own VRM](docs/recipes/own-vrm.md) · [dance / VRMA](docs/recipes/motion.md) · [VOICEVOX](docs/recipes/voicevox.md) · [OBS / stream](docs/recipes/stream.md) · [mascot](docs/recipes/mascot.md) · [brain / kairi](docs/recipes/ai-brain.md) · [agent game](docs/recipes/agent-game.md). Review: [docs/REVIEW.ja.md](docs/REVIEW.ja.md). Roadmap: [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md) (final goal: first-recall — “if you give an AI a body in Python, it’s KAGRA”).
@@ -122,14 +136,9 @@ These names are what the README and `python -m kagra` rely on. We will not break
 
 Everything else in [`docs/API_INDEX.md`](docs/API_INDEX.md) is available but may still move.
 
-## What you get
-
-- **VRM** — GPU skinning, SpringBone, MToon, look-at, lipsync, IK, expressions
-- **2D / 3D** — tilemaps, ECS, simple physics, orbit camera, fog, shadows
-- **Agent loop** — API index, `kagra.verify`, MCP tools, golden renders
-- **Mobile / Wasm** — `kagra-shared` + `mobile/` is a **separate driving demo** (roads, truck, OSM). It is not the Python VRM / game stack. Do not merge the two renderers.
-
 ## Samples
+
+Clone the repo for these scripts. `pip install kagra` is enough for `import kagra`.
 
 ```bash
 python -m kagra                          # sing & dance
