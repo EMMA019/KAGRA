@@ -163,9 +163,11 @@ mod tests {
         let map = 2048.0;
         let texel = 24.0 / map;
         let a = snap_center_xz([4.0, 1.5, -2.0], half, map);
-        let b = snap_center_xz([4.0 + texel * 0.2, 1.5, -2.0], half, map);
+        // 未スナップ点から 0.2 texel は丸め境界を跨ぐ。這わない保証はスナップ後。
+        let b = snap_center_xz([a[0] + texel * 0.2, a[1], a[2] + texel * 0.2], half, map);
         assert_eq!(a, b);
         assert!((a[1] - 1.5).abs() < 1e-6);
         assert!((a[0] / texel - (a[0] / texel).round()).abs() < 1e-4);
+        assert!((a[2] / texel - (a[2] / texel).round()).abs() < 1e-4);
     }
 }
