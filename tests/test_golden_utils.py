@@ -35,3 +35,37 @@ def test_compare_png_identical(tmp_path: Path, monkeypatch):
     compare_png(actual, "box.png")
     monkeypatch.delenv("KAGRA_UPDATE_GOLDENS")
     compare_png(actual, "box.png")
+
+
+def test_png_mean_abs_identical(tmp_path: Path):
+    from tests.golden_utils import png_mean_abs
+
+    rgba = bytes([40, 50, 70, 255] * (4 * 4))
+    a = tmp_path / "a.png"
+    b = tmp_path / "b.png"
+    _write_png_rgba(a, 4, 4, rgba)
+    _write_png_rgba(b, 4, 4, rgba)
+    assert png_mean_abs(a, b) == 0.0
+
+
+def test_assert_pngs_differ_requires_gap(tmp_path: Path, monkeypatch):
+    import tests.golden_utils as gu
+    from tests.golden_utils import assert_pngs_differ
+
+    monkeypatch.setattr(gu, "DIFFS_DIR", tmp_path / "diffs")
+    dark = bytes([10, 10, 10, 255] * (8 * 8))
+    bright = bytes([200, 200, 200, 255] * (8 * 8))
+    a = tmp_path / "dark.png"
+    b = tmp_path / "bright.png"
+    _write_png_rgba(a, 8, 8, dark)
+    _write_png_rgba(b, 8, 8, bright)
+    mean = assert_pngs_differ(a, b, min_mean_abs=20.0, name="gap")
+    assert mean > 100.0
+
+    same = tmp_path / "same.png"
+    _write_png_rgba(same, 8, 8, dark)
+    try:
+        assert_pngs_differ(a, same, min_mean_abs=4.0, name="too_close")
+        raise AssertionError("expected pair too similar")
+    except AssertionError as exc:
+        assert "mean_abs" in str(exc)

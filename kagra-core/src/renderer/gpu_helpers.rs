@@ -127,6 +127,16 @@ pub(super) fn build_light_view_proj_fit(
     out
 }
 
+/// `ShadowU.params`: x = cascade count (1 when the spot owns the map),
+/// y = 1 if the 2048 map is a spot perspective (shadow the local light, not the sun).
+pub(super) fn shadow_u_params(spot_owns_map: bool, cascades: u32) -> [f32; 4] {
+    if spot_owns_map {
+        [1.0, 1.0, 0.0, 0.0]
+    } else {
+        [cascades.max(1) as f32, 0.0, 0.0, 0.0]
+    }
+}
+
 /// スポット用の透視シャドウ。``angle`` は外角（ラジアン）。
 pub(super) fn build_spot_view_proj(pos: [f32; 3], dir: [f32; 3], angle: f32, radius: f32) -> [f32; 16] {
     use nalgebra::{Matrix4, Point3, Vector3};
@@ -464,5 +474,15 @@ mod light_dir_tests {
         let vp = super::build_spot_view_proj([0.0, 3.0, 0.0], [0.0, -1.0, 0.0], 0.85, 14.0);
         assert!(vp.iter().all(|v| v.is_finite()));
         assert!(vp.iter().any(|v| v.abs() > 1e-5));
+    }
+
+    #[test]
+    fn shadow_u_params_marks_spot_owned_map() {
+        let spot = super::shadow_u_params(true, 2);
+        assert!((spot[0] - 1.0).abs() < 1e-6);
+        assert!(spot[1] > 0.5);
+        let sun = super::shadow_u_params(false, 2);
+        assert!((sun[0] - 2.0).abs() < 1e-6);
+        assert!(sun[1] < 0.5);
     }
 }

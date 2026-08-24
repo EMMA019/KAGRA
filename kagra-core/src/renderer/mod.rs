@@ -833,7 +833,7 @@ impl RendererV2 {
         let mut sample0 = [0f32; 36];
         sample0[..16].copy_from_slice(&initial_shadow_vp);
         sample0[16..32].copy_from_slice(&initial_shadow_vp);
-        sample0[32] = 1.0;
+        sample0[32..36].copy_from_slice(&shadow_u_params(false, 1));
         queue.write_buffer(&shadow_sample_buf, 0, bytemuck::cast_slice(&sample0));
         let shadow_write_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Shadow Write BG"),
@@ -1753,6 +1753,10 @@ impl RendererV2 {
         self.shadow_cascades = count.clamp(1, 2);
     }
 
+    fn spot_owns_shadow_map(&self) -> bool {
+        self.spot_dir[3] > 1e-4 && self.spot_angle > 1e-4 && self.point_col[3] > 1e-4
+    }
+
     fn update_shadow_vp(&mut self) {
         let vp = build_light_view_proj(self.light_dir, [0.0, 1.0, 0.0]);
         self.queue.write_buffer(&self.shadow_vp_buf, 0, bytemuck::cast_slice(&vp));
@@ -1795,7 +1799,7 @@ impl RendererV2 {
             }
         }
         let mut sample = [0f32; 36];
-        if self.spot_dir[3] > 1e-4 && self.spot_angle > 1e-4 && self.point_col[3] > 1e-4 {
+        if self.spot_owns_shadow_map() {
             let vp = build_spot_view_proj(
                 [self.point_pos[0], self.point_pos[1], self.point_pos[2]],
                 [self.spot_dir[0], self.spot_dir[1], self.spot_dir[2]],
@@ -1806,7 +1810,7 @@ impl RendererV2 {
             self.shadow_cascade_vp[1] = vp;
             sample[0..16].copy_from_slice(&vp);
             sample[16..32].copy_from_slice(&vp);
-            sample[32] = 1.0;
+            sample[32..36].copy_from_slice(&shadow_u_params(true, 1));
         } else {
             let fits = cascade_center_half(acc, self.last_eye, self.shadow_cascades);
             for (i, (center, half)) in fits.iter().enumerate() {
@@ -1818,7 +1822,7 @@ impl RendererV2 {
                 let o = i * 16;
                 sample[o..o + 16].copy_from_slice(&vp);
             }
-            sample[32] = self.shadow_cascades as f32;
+            sample[32..36].copy_from_slice(&shadow_u_params(false, self.shadow_cascades));
         }
         self.queue.write_buffer(&self.shadow_sample_buf, 0, bytemuck::cast_slice(&sample));
         self.queue.write_buffer(
@@ -3184,7 +3188,11 @@ impl RendererV2 {
         immediate: &[ImmediateMeshDraw],
         instances: &[(u32, Vec<Instance3D>)],
     ) {
-        let layers = self.shadow_cascades.clamp(1, 2) as usize;
+        let layers = if self.spot_owns_shadow_map() {
+            1
+        } else {
+            self.shadow_cascades.clamp(1, 2) as usize
+        };
         let world = self.world_shadow_casters_exist(immediate, instances);
         if !self.shadows_enabled || (cmds.is_empty() && !world) {
             for i in 0..layers {

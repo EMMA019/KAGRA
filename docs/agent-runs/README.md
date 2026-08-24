@@ -34,3 +34,4 @@
 - `20260824-city-mesh-stack-csm/` — 街 JSON・三角形当たり・積み木・2 段影（ゲームではない）
 - `20260824-usable-week/` — 使える週の API（トーンマップ / IBL mip / スポット影 / ロック / click / animate。ゲームではない。GPU 未確認）
 - `20260824-normals-pad/` — 法線マップ API + USB/XInput gilrs（ゲームではない。GPU 未確認）
+- `20260824-pixel-close/` — 室内スポット影をローカル光に掛ける + ACES / IBL ペアワイズ golden（ゲームではない。GPU は CI）

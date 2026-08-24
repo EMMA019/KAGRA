@@ -156,6 +156,8 @@ struct Camera {
 @group(1) @binding(0) var t_diffuse: texture_2d<f32>;
 @group(1) @binding(1) var s_diffuse: sampler;
 @group(1) @binding(2) var t_normal: texture_2d<f32>;
+// params.x = cascade count. params.y = 1 when the map is a spot perspective
+// (multiply the local light, not the directional sun).
 struct ShadowU { vp0: mat4x4<f32>, vp1: mat4x4<f32>, params: vec4<f32> }
 @group(2) @binding(0) var<uniform> shadow_u: ShadowU;
 @group(2) @binding(1) var shadow_map: texture_depth_2d_array;
@@ -338,17 +340,23 @@ struct II { @location(3) pos_yaw: vec4<f32>, @location(4) scale: vec4<f32> }
         let spec = ggx_d(ndoth, rough) * smith_g(ndotv, ndotl, rough) * f
             / max(4.0 * ndotv * ndotl, 1e-4);
         let kd = (vec3<f32>(1.0) - f) * (1.0 - metallic);
-        let sun = (kd * albedo + spec) * ndotl * shadow_factor(in.world_pos);
+        let sh = shadow_factor(in.world_pos);
+        let sun_sh = select(sh, 1.0, shadow_u.params.y > 0.5);
+        let loc_sh = select(1.0, sh, shadow_u.params.y > 0.5);
+        let sun = (kd * albedo + spec) * ndotl * sun_sh;
         let spec_env = textureSampleLevel(env_cube, env_samp, reflect(-v, n), rough * 3.0).rgb
             * cam.env.x * (1.0 - rough) * f;
-        rgb = sun + albedo * point + hemi + env * (1.0 - metallic) * 0.65 + spec_env;
+        rgb = sun + albedo * point * loc_sh + hemi + env * (1.0 - metallic) * 0.65 + spec_env;
     } else {
         var ndotl = in.light;
         if mesh_mat.params.z > 0.5 {
             ndotl = clamp(dot(n, normalize(cam.light_dir.xyz)), 0.2, 1.0);
         }
-        let lit = ndotl * shadow_factor(in.world_pos);
-        rgb = albedo * lit + albedo * point + hemi + env;
+        let sh = shadow_factor(in.world_pos);
+        let sun_sh = select(sh, 1.0, shadow_u.params.y > 0.5);
+        let loc_sh = select(1.0, sh, shadow_u.params.y > 0.5);
+        let lit = ndotl * sun_sh;
+        rgb = albedo * lit + albedo * point * loc_sh + hemi + env;
     }
     rgb = apply_fog(rgb, in.world_pos);
     rgb = rgb * max(cam.env.y, 0.0);
@@ -421,6 +429,7 @@ struct SkinUniforms { bone_matrices: array<mat4x4<f32>, 256>, screen_size: vec4<
 @group(2) @binding(7) var t_matcap: texture_2d<f32>;
 @group(2) @binding(8) var t_normal: texture_2d<f32>;
 @group(2) @binding(9) var t_uvmask: texture_2d<f32>;
+// params.x = cascade count. params.y = 1 when the map is a spot perspective.
 struct ShadowU { vp0: mat4x4<f32>, vp1: mat4x4<f32>, params: vec4<f32> }
 @group(3) @binding(0) var<uniform> shadow_u: ShadowU;
 @group(3) @binding(1) var shadow_map: texture_depth_2d_array;
@@ -622,7 +631,10 @@ fn cotangent_frame(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> mat3x3<f32> {
         let mc = textureSample(t_matcap, s_diffuse, muv).rgb * mtoon.matcap_color.rgb;
         col = col + mc;
     }
-    col = col * shadow_factor(in.world_pos);
+    let sh = shadow_factor(in.world_pos);
+    let sun_sh = select(sh, 1.0, shadow_u.params.y > 0.5);
+    let loc_sh = select(1.0, sh, shadow_u.params.y > 0.5);
+    col = col * sun_sh;
     if cam.ambient.w > 1e-4 {
         let hemi = 0.45 + 0.55 * saturate(n.y * 0.5 + 0.5);
         col = col + cam.ambient.rgb * cam.ambient.w * hemi;
@@ -646,7 +658,7 @@ fn cotangent_frame(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> mat3x3<f32> {
                 cone = smoothstep(outer, inner, c);
             }
         }
-        col = col + cam.point_col.rgb * cam.point_col.w * ndotl * atten * atten * base.rgb * cone;
+        col = col + cam.point_col.rgb * cam.point_col.w * ndotl * atten * atten * base.rgb * cone * loc_sh;
     }
     if cam.env.x > 1e-4 {
         col = col + textureSample(env_irr, env_samp, n).rgb * cam.env.x * base.rgb * 0.35;
