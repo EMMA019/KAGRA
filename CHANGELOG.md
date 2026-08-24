@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix `snap_center_xz` unit test: sub-texel stability is checked from an
+  already-snapped center so 4.0 does not sit on a rounding boundary.
 - Usable-week APIs (not the stranger test yet; GPU unverified here):
   `set_tonemap` (ACES, default off), specular cube mips, spot perspective
   shadow, cascade texel snap. `Walk` pointer lock / coyote / jump buffer /

@@ -162,8 +162,9 @@ mod tests {
         let half = 12.0;
         let map = 2048.0;
         let texel = 24.0 / map;
+        // Snap first, then nudge — a raw 4.0 sits near a rounding boundary.
         let a = snap_center_xz([4.0, 1.5, -2.0], half, map);
-        let b = snap_center_xz([4.0 + texel * 0.2, 1.5, -2.0], half, map);
+        let b = snap_center_xz([a[0] + texel * 0.2, 1.5, a[2] + texel * 0.2], half, map);
         assert_eq!(a, b);
         assert!((a[1] - 1.5).abs() < 1e-6);
         assert!((a[0] / texel - (a[0] / texel).round()).abs() < 1e-4);
