@@ -188,6 +188,53 @@ def quad_y_mesh(cx: float, cy: float, cz: float, size: float) -> tuple[list, lis
     return verts, [0, 1, 2, 0, 2, 3]
 
 
+def heightfield_mesh(
+    fn,
+    half: float = 16.0,
+    cells: int = 32,
+) -> tuple[list, list]:
+    """``(x, z) → y`` の格子メッシュ。``verts`` は ``[x,y,z,nx,ny,nz,u,v]``。"""
+    cells = max(2, int(cells))
+    half = float(half)
+    step = (2.0 * half) / float(cells)
+    n = cells + 1
+    ys = [[0.0] * n for _ in range(n)]
+    for j in range(n):
+        for i in range(n):
+            x = -half + i * step
+            z = -half + j * step
+            ys[j][i] = float(fn(x, z))
+    verts: list[list[float]] = []
+    for j in range(n):
+        for i in range(n):
+            x = -half + i * step
+            z = -half + j * step
+            y = ys[j][i]
+            i0 = max(0, i - 1)
+            i1 = min(cells, i + 1)
+            j0 = max(0, j - 1)
+            j1 = min(cells, j + 1)
+            dx = 2.0 * step if i1 != i0 else step
+            dz = 2.0 * step if j1 != j0 else step
+            # 隣接高さから法線（-dY/dX, 1, -dY/dZ）
+            nx = -(ys[j][i1] - ys[j][i0]) / dx
+            nz = -(ys[j1][i] - ys[j0][i]) / dz
+            ny = 1.0
+            leng = math.sqrt(nx * nx + ny * ny + nz * nz) or 1.0
+            u = i / cells
+            v = j / cells
+            verts.append([x, y, z, nx / leng, ny / leng, nz / leng, u, v])
+    indices: list[int] = []
+    for j in range(cells):
+        for i in range(cells):
+            a = j * n + i
+            b = a + 1
+            c = a + n
+            d = c + 1
+            indices += [a, c, b, b, c, d]
+    return verts, indices
+
+
 def box_mesh(
     cx: float,
     cy: float,

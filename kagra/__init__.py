@@ -928,7 +928,7 @@ def disk_mesh(cx: float, cy: float, cz: float, radius: float, segs: int = 48):
     return _fn(cx, cy, cz, radius, segs)
 
 
-def quad_y_mesh(cx: float, cy: float, cz: float, size: float):
+def quad_y_mesh(cx: float = 0.0, cy: float = 0.0, cz: float = 0.0, size: float = 0.5):
     """Y 上向き正方形（半辺 ``size``）の ``(verts, indices)``。"""
     from kagra.gamekit import quad_y_mesh as _fn
     return _fn(cx, cy, cz, size)
@@ -964,6 +964,24 @@ def sky(*, radius: float = 18.0, look: bool = True):
     """プロシージャル空。初回は ``apply_live_look``。"""
     from kagra.play import sky as _fn
     return _fn(radius=radius, look=look)
+
+
+def water(y: float = 0.0, *, half: float = 24.0, world=None):
+    """水面。``world`` を渡すと物理の水面も同じ高さ。"""
+    from kagra.play import water as _fn
+    return _fn(y, half=half, world=world)
+
+
+def island_height(x: float, z: float) -> float:
+    """デモ用の島。西が海、中央が草原、北東が山。"""
+    from kagra.land import island_height as _fn
+    return _fn(x, z)
+
+
+def heightfield_mesh(fn, half: float = 16.0, cells: int = 32):
+    """高さ関数の格子メッシュ。"""
+    from kagra.gamekit import heightfield_mesh as _fn
+    return _fn(fn, half=half, cells=cells)
 
 
 def room(

@@ -1,0 +1,12 @@
+{
+  "name": "overworld_smoke",
+  "script": "examples/vrm_overworld.py",
+  "timeout_sec": 180,
+  "env": {
+    "KAGRA_SMOKE": "1",
+    "KAGRA_SMOKE_FRAMES": "40",
+    "KAGRA_SMOKE_OUT": "scratch/overworld_smoke.png"
+  },
+  "expect_files": ["scratch/overworld_smoke.png"],
+  "min_file_bytes": 2000
+}

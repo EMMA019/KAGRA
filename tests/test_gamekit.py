@@ -77,6 +77,16 @@ def test_cylinder_mesh_unit_size():
     assert all(len(v) == 8 for v in verts)
 
 
+def test_heightfield_mesh_flat_is_level():
+    verts, idx = kit.heightfield_mesh(lambda _x, _z: 1.5, half=2.0, cells=4)
+    assert len(verts) == 5 * 5
+    assert len(idx) == 4 * 4 * 6
+    assert all(abs(v[1] - 1.5) < 1e-9 for v in verts)
+    xs = [v[0] for v in verts]
+    assert min(xs) == pytest.approx(-2.0)
+    assert max(xs) == pytest.approx(2.0)
+
+
 def test_save_load_roundtrip(tmp_path):
     kit.save_json("hi", {"score": 42}, directory=tmp_path)
     assert kit.load_json("hi", directory=tmp_path) == {"score": 42}

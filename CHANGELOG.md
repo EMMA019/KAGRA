@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Heightfield island: `World3D.set_height_fn` / `kagra.island_height` /
+  `water()` / `Walk(..., jump=)`. Sea, grass, and a hill on one sampled
+  mesh. Cliff grade is blocked; water has buoyancy. Not Rapier, voxels,
+  or streaming. Demo: `examples/vrm_overworld.py`.
 - Pretty room (picture leftover): `room()` builds an enclosed floor / walls /
   ceiling (`sky()`'s indoor sibling). `apply_room_look` sets a ceiling
   `set_spot_light`, studio HDRI, and `set_exposure` (default 1 = identity).

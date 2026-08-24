@@ -12,7 +12,7 @@ from kagra.physics3d import Physics3D, RigidBody3D
 
 
 class World3D:
-    """床と箱のある部屋。カメラ追従は ``Camera3D.follow``。
+    """床と箱のある部屋。高さ関数を付けると島になる。カメラは ``Camera3D.follow``。
 
     Example::
         world = World3D(half=6.0)
@@ -35,7 +35,11 @@ class World3D:
         self.mesh_ids: list[int] = []
         self._pending: list[tuple] = []
         self.box_mesh_id: int = 0
+        self.terrain_mesh_id: int = 0
         self.box_xforms: list[list[float]] = []
+        self._height_fn = None
+        self._height_cells = 40
+        self._water_y: Optional[float] = None
 
     def add_floor(self, size: float | None = None):
         """Y = ``floor_y`` の正方形床を予約する。半辺は ``size`` または ``half``。"""
@@ -106,6 +110,29 @@ class World3D:
         self.boxes.append(body)
         return body
 
+    def set_height_fn(self, fn, *, cells: int = 40) -> None:
+        """地形 ``(x, z) → y``。平面の床より優先。"""
+        self._height_fn = fn
+        self._height_cells = max(2, int(cells))
+        self.physics.set_height_fn(fn)
+
+    def set_water_y(self, y: float | None) -> None:
+        """水面。``None`` で消す。"""
+        self._water_y = None if y is None else float(y)
+        self.physics.set_water_y(self._water_y)
+
+    def in_water(self, body: Optional[RigidBody3D] = None) -> bool:
+        b = body if body is not None else self.player
+        if b is None:
+            return False
+        return self.physics.in_water(b)
+
+    def ground_y(self, x: float, z: float) -> float:
+        """その XZ の地面の高さ。"""
+        if self._height_fn is not None:
+            return float(self._height_fn(float(x), float(z)))
+        return float(self.floor_y)
+
     def add_player(
         self,
         x: float = 0.0,
@@ -114,9 +141,10 @@ class World3D:
         radius: float = 0.28,
         height: float = 1.7,
     ) -> RigidBody3D:
-        """歩くカプセル。底面は床。"""
+        """歩くカプセル。底面は ``ground_y(x, z)``（高さ場があればその上）。"""
+        gy = self.ground_y(x, z)
         self.player = self.physics.add_capsule(
-            float(x), self.floor_y, float(z),
+            float(x), gy, float(z),
             float(radius), float(height),
         )
         return self.player
@@ -129,6 +157,41 @@ class World3D:
 
     def update(self, dt: float):
         self.physics.update(dt)
+        p = self.player
+        if p is None:
+            return
+        lim = self.half - 0.2
+        if p.x > lim:
+            p.x = lim
+            p.vx = 0.0
+        elif p.x < -lim:
+            p.x = -lim
+            p.vx = 0.0
+        if p.z > lim:
+            p.z = lim
+            p.vz = 0.0
+        elif p.z < -lim:
+            p.z = -lim
+            p.vz = 0.0
+
+    def bake_terrain(self, tex: int) -> int:
+        """高さ場メッシュを GPU に載せる。関数未設定またはエンジン無しなら 0。"""
+        if self._height_fn is None:
+            return 0
+        try:
+            import kagra
+            from kagra.gamekit import heightfield_mesh
+            verts, idx = heightfield_mesh(
+                self._height_fn, self.half, self._height_cells,
+            )
+            mid = kagra.upload_mesh_3d(int(tex), verts, idx)
+        except Exception:
+            return 0
+        if not mid:
+            return 0
+        self.terrain_mesh_id = int(mid)
+        self.mesh_ids.append(int(mid))
+        return int(mid)
 
     def bake(self, floor_tex: int, box_tex: int) -> list[int]:
         """予約した床・箱を GPU に一度載せる。エンジン未初期化なら空。"""
