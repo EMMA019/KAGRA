@@ -62,19 +62,27 @@ pub(super) fn make_shadow_map(
         base_array_layer: 0,
         array_layer_count: Some(2),
     });
-    let layer = |i: u32, name: &'static str| {
-        tex.create_view(&wgpu::TextureViewDescriptor {
-            label: Some(name),
-            format: Some(DEPTH_FORMAT),
-            dimension: Some(wgpu::TextureViewDimension::D2),
-            aspect: wgpu::TextureAspect::DepthOnly,
-            base_mip_level: 0,
-            mip_level_count: Some(1),
-            base_array_layer: i,
-            array_layer_count: Some(1),
-        })
-    };
-    (tex, sample, [layer(0, "Shadow Layer 0"), layer(1, "Shadow Layer 1")])
+    let layer0 = tex.create_view(&wgpu::TextureViewDescriptor {
+        label: Some("Shadow Layer 0"),
+        format: Some(DEPTH_FORMAT),
+        dimension: Some(wgpu::TextureViewDimension::D2),
+        aspect: wgpu::TextureAspect::DepthOnly,
+        base_mip_level: 0,
+        mip_level_count: Some(1),
+        base_array_layer: 0,
+        array_layer_count: Some(1),
+    });
+    let layer1 = tex.create_view(&wgpu::TextureViewDescriptor {
+        label: Some("Shadow Layer 1"),
+        format: Some(DEPTH_FORMAT),
+        dimension: Some(wgpu::TextureViewDimension::D2),
+        aspect: wgpu::TextureAspect::DepthOnly,
+        base_mip_level: 0,
+        mip_level_count: Some(1),
+        base_array_layer: 1,
+        array_layer_count: Some(1),
+    });
+    (tex, sample, [layer0, layer1])
 }
 
 /// light_dir = direction toward the light. Builds ortho light view-proj around target.

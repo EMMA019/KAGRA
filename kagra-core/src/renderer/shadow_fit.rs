@@ -52,7 +52,7 @@ pub(super) fn cascade_center_half(
         return [far, far];
     }
     let near_h = SHADOW_NEAR_HALF.min(far.1);
-    ([focus, near_h], far)
+    [(focus, near_h), far]
 }
 
 #[cfg(test)]
