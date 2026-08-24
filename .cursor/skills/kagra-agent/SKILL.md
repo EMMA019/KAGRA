@@ -39,17 +39,18 @@ Picture: `set_point_light` / `set_spot_light` (`slot=0..3`; 0 is the key) /
 `set_hdri("studio")` /
 `set_exposure` / `set_tonemap` / `Prop(..., metallic=, normal=)`. Indoor: `apply_room_look`.
 Outdoor: `apply_outdoor_look` / `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` /
-`load_city` / `Walk(..., jump=)`. City JSON is not OSM; physics is not Rapier yet.
+`load_city` / `Walk(..., jump=)`. City JSON is not OSM. Dynamic boxes
+fall and stack; `Walk` stands on them (`add_box(..., is_static=False)`).
 Play: `clicked_prop` / `Walk.carry` / `animate` / `Label` / `sound`.
 Pointer lock follows first person (OS may refuse). USB pad is gilrs on the
 EventLoop (`inject_pad` still wins for CI).
 
-Engine target is **80%** in `docs/ROADMAP.ja.md` (now ~45%). 100% = Python
+Engine target is **80%** in `docs/ROADMAP.ja.md` (now ~47%). 100% = Python
 replacement of three-vrm + three.js + Ursina for everyday work. Body is
 ~80%. Picture 50→85 is the bulk. Indoor spot, normal_bump, and local_four
 pairwise passed CI (#61, #62). Parent is 4 levels. Local lights are `slot=0..3`.
-Next: crawl pixels, then rigid bodies and the 30s demos. OSM / 4-cascade
-CSM / SSAO stay outside 80%.
+Rigid boxes are AABB equal (fall / stack / stand). Next: crawl pixels on CI,
+then the 30s demos. OSM / 4-cascade CSM / SSAO stay outside 80%.
 Final goal is first-recall; 80% is not a substitute. Brain hook is
 `kagra.brain("kairi")` — default `https://kairi.onrender.com`, token in
 `KAIRI_API_TOKEN`. Not in the wheel. Do not start D-6 as a fourth box room;

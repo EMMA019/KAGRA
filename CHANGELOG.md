@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Outdoor crawl pairwise golden (`outdoor_crawl` on/off + 0.2-texel
+  similar). CPU snap holds for the golden eyes. Pixels close on Windows CI,
+  not here. Picture still ~50% until that job is green.
+- Rigid boxes: `add_box(..., is_static=False)` fall, stack, and `Walk`
+  stands on them (character vs crate does not sink the crate). Rapier crate
+  stays out of the 5MB wheel. World ~55%, engine ~47%. Public face unchanged.
 - Indoor spot (`indoor_spot`) and tangent normals (`normal_bump`) pairwise
   goldens passed Windows CI (#61). Local-four pairwise passed (#62).
   Picture ~50%, engine ~45%. Crawl pixels still open.

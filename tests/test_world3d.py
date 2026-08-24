@@ -126,6 +126,26 @@ def test_load_city_places_on_stream(tmp_path):
     assert any(abs(b.x - 2.0) < 1e-6 for b in w.boxes)
 
 
+def test_player_stands_on_dynamic_stack():
+    """Walk 相当のカプセルが積み木の上に立つ。"""
+    m = _world()
+    w = m.World3D(gravity=22.0)
+    w.add_box(0.0, 0.8, 0.0, 1.0, 0.45, 1.0, is_static=False)
+    for _ in range(140):
+        w.update(0.016)
+    crate = w.boxes[0]
+    top = crate.y + crate.h
+    p = w.add_player(0.0, 0.0, radius=0.26, height=1.6)
+    p.x = crate.x
+    p.z = crate.z
+    p.y = top + 1.3
+    for _ in range(160):
+        w.update(0.016)
+    assert p.on_ground
+    assert p.y == pytest.approx(top, abs=0.14)
+    assert crate.y == pytest.approx(0.0, abs=0.12)
+
+
 def test_dynamic_box_xform_tracks_body():
     m = _world()
     w = m.World3D(gravity=0.0)

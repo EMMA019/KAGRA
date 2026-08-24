@@ -207,3 +207,32 @@ def assert_pngs_differ(
         f"pair too similar; spot shadow / tonemap / metal may not be reaching pixels\n"
         f"diff saved: {diff_path}"
     )
+
+
+def assert_pngs_similar(
+    path_a: Path,
+    path_b: Path,
+    *,
+    max_mean_abs: float,
+    name: str,
+) -> float:
+    """画素が十分に近いことを要求する（這い：同じスナップ格子の 2 視点）。"""
+    mean_abs = png_mean_abs(path_a, path_b)
+    if mean_abs <= max_mean_abs:
+        return mean_abs
+    DIFFS_DIR.mkdir(parents=True, exist_ok=True)
+    aw, ah, a = _read_png_rgba(path_a)
+    _, _, b = _read_png_rgba(path_b)
+    diff_img = bytearray(len(a))
+    for i in range(0, len(a), 4):
+        for c in range(3):
+            d = abs(a[i + c] - b[i + c])
+            diff_img[i + c] = min(255, d * 8) if c == 0 else 0
+        diff_img[i + 3] = 255
+    diff_path = DIFFS_DIR / f"diff_{name}.png"
+    _write_png_rgba(diff_path, aw, ah, bytes(diff_img))
+    raise AssertionError(
+        f"{name}: mean_abs={mean_abs:.3f} (need <= {max_mean_abs})\n"
+        f"pair too different; near-cascade snap may have crawled\n"
+        f"diff saved: {diff_path}"
+    )

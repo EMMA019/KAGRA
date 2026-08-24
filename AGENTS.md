@@ -64,8 +64,9 @@ PNG/WAV/projection:
 - `Prop` / `Walk` / `sky()` / `room()` / `water()` — short 3D.
   Outdoor island: `World3D.set_height_fn(..., tile=, stream_radius=)` /
   `load_city` / `overworld_height` / `Walk(..., jump=)` /
-  `apply_outdoor_look()`. City JSON is not OSM. Physics is not Rapier yet
-  (Rapier is on the 80% world track; OSM is outside 80%).
+  `apply_outdoor_look()`. City JSON is not OSM. Dynamic boxes fall and
+  stack; `Walk` stands on them (`add_box(..., is_static=False)`). Rapier
+  crate stays out of the 5MB wheel. OSM is outside 80%.
 - `Walk(first_person=True)` / `hovered_prop(cam)` / `clicked_prop(cam)` /
   `Walk.carry` — lock on first person, click to use, pick up
 - `animate` / `Label` / `Button` — tween and screen HUD
@@ -89,5 +90,5 @@ The API index front is VRM / 3D / agents; the shelf is legacy 2D.
 - `docs/AGENT.md` — contracts table, CI-parity commands, Cargo.lock policy
 - `docs/API_INDEX.md` — the searchable public API
 - `docs/REVIEW.ja.md` — engine review vs three.js / three-vrm / Ursina
-- `docs/ROADMAP.ja.md` — 最終目標は第一想起。エンジン到達点は 80%（今約 45%）。頭脳は `kagra.brain("kairi")` → kairi.onrender.com。次は這いの画素
+- `docs/ROADMAP.ja.md` — 最終目標は第一想起。エンジン到達点は 80%（今約 47%）。頭脳は `kagra.brain("kairi")` → kairi.onrender.com。次は這いの画素（CI）
 - `docs/schemas/input_events.json` — touch / pointer input schema

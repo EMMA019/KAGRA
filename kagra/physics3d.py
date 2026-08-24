@@ -1,10 +1,12 @@
 # kagra/physics3d.py
 """
-3D 物理（ゲーム用キャラクターコントローラ。Rapier は使わない）。
+3D 物理（キャラコン + AABB 剛体。公開面は ``World3D`` / ``Walk``）。
 
 2D 物理（physics.py）とは独立。回転積分はせず、Y-up カプセルと
 静的 AABB / yaw OBB の押し出し、レイヤー、トリガー、VRM 同期。
-高さ関数があるときは接平面に沿って歩き、急斜面では滑る（Y 吸着だけではない）。
+動く箱は落ちて積もり、カプセルはその上に乗れる（80% の剛体。Rapier クレートは
+5MB wheel のため入れない）。高さ関数があるときは接平面に沿って歩き、
+急斜面では滑る（Y 吸着だけではない）。
 
 Example::
     physics = kagra.Physics3D(gravity=9.8)
@@ -222,7 +224,7 @@ class Physics3D:
         # 1 フレームの上昇がこれ以下なら段差として登る。超えかつ勾配が急なら崖。
         self.step_height = 0.45
         self.max_grade = 1.35
-        # 積み木: 何度か押し合う。小さい速度が続いたら眠る。Rapier ではない。
+        # 積み木: 何度か押し合う。小さい速度が続いたら眠る。
         self.solver_iters = 4
         self.sleep_speed = 0.08
         self.sleep_frames = 12
@@ -565,22 +567,58 @@ class Physics3D:
                 nx, ny, nz, pen = hit
                 kind = "trigger" if (a.trigger or b.trigger) else "hit"
                 if kind == "hit":
-                    if a.sleeping:
-                        a.sleeping = False
-                        a._still = 0
-                    if b.sleeping:
-                        b.sleeping = False
-                        b._still = 0
+                    self._wake_on_hit(a, b)
                     self._resolve_normal(a, b, nx, ny, nz, pen)
                 if a.on_collide:
                     a.on_collide(b, kind)
                 if b.on_collide:
                     b.on_collide(a, kind)
 
+    def _wake_on_hit(self, a: RigidBody3D, b: RigidBody3D) -> None:
+        """積んだ箱同士は起こす。キャラが乗っても寝た箱は起こさない。"""
+        if a.shape == "capsule" or b.shape == "capsule":
+            return
+        if a.sleeping:
+            a.sleeping = False
+            a._still = 0
+        if b.sleeping:
+            b.sleeping = False
+            b._still = 0
+
+    def _resolve_against_solid(
+        self,
+        cap: RigidBody3D,
+        _solid: RigidBody3D,
+        nx: float,
+        ny: float,
+        nz: float,
+        pen: float,
+        rest: float,
+    ) -> None:
+        """法線はカプセル→固体。箱は動かさないので乗れる。"""
+        cap.x -= nx * pen
+        cap.y -= ny * pen
+        cap.z -= nz * pen
+        dv = cap.vx * nx + cap.vy * ny + cap.vz * nz
+        if dv > 0:
+            cap.vx -= (1 + rest) * dv * nx
+            cap.vy -= (1 + rest) * dv * ny
+            cap.vz -= (1 + rest) * dv * nz
+        if ny < -0.5:
+            cap.on_ground = True
+
     def _resolve_normal(self, a: RigidBody3D, b: RigidBody3D,
                         nx: float, ny: float, nz: float, pen: float):
         """法線 (a→b) と侵入量で押し戻す。"""
         rest = (a.restitution + b.restitution) * 0.5
+        char_a = a.shape == "capsule"
+        char_b = b.shape == "capsule"
+        if char_a != char_b:
+            if char_a:
+                self._resolve_against_solid(a, b, nx, ny, nz, pen, rest)
+            else:
+                self._resolve_against_solid(b, a, -nx, -ny, -nz, pen, rest)
+            return
         if a.is_static:
             b.x += nx * pen
             b.y += ny * pen

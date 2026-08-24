@@ -69,3 +69,23 @@ def test_assert_pngs_differ_requires_gap(tmp_path: Path, monkeypatch):
         raise AssertionError("expected pair too similar")
     except AssertionError as exc:
         assert "mean_abs" in str(exc)
+
+
+def test_assert_pngs_similar_bounds(tmp_path: Path, monkeypatch):
+    import tests.golden_utils as gu
+    from tests.golden_utils import assert_pngs_similar
+
+    monkeypatch.setattr(gu, "DIFFS_DIR", tmp_path / "diffs")
+    a_px = bytes([40, 50, 70, 255] * (8 * 8))
+    b_px = bytes([42, 52, 72, 255] * (8 * 8))
+    a = tmp_path / "a.png"
+    b = tmp_path / "b.png"
+    _write_png_rgba(a, 8, 8, a_px)
+    _write_png_rgba(b, 8, 8, b_px)
+    mean = assert_pngs_similar(a, b, max_mean_abs=4.0, name="nudge")
+    assert mean == 2.0
+    try:
+        assert_pngs_similar(a, b, max_mean_abs=1.0, name="too_far")
+        raise AssertionError("expected pair too different")
+    except AssertionError as exc:
+        assert "mean_abs" in str(exc)

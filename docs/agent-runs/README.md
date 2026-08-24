@@ -38,3 +38,4 @@
 - `20260824-roadmap-80/` — エンジン到達点を 80% に（今約 33%。北極星は第一想起のまま）
 - `20260824-indoor-shadow/` — 室内ウンブラを濃くする + 親子 4 段 + 法線ペアワイズ（ゲームではない。CI `indoor_spot` / `normal_bump` 通過）
 - `20260824-local-lights/` — 局所ライト 4 スロット（ゲームではない。CI `local_four` 通過）
+- `20260824-crawl-rigid/` — 屋外這いの pairwise golden + AABB 剛体（乗る）。這いの画素は CI 待ち

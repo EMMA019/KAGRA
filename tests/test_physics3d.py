@@ -382,6 +382,25 @@ def test_ray_hits_trimesh():
     assert 1.5 < hit[1] < 2.2
 
 
+def test_capsule_stands_on_dynamic_box():
+    """積んで寝た箱の上にカプセルが乗る。箱は沈まない。"""
+    m = _phys()
+    p = m.Physics3D(gravity=22.0)
+    p.set_ground_y(0.0)
+    crate = p.add_body(0.0, 1.2, 0.0, 1.2, 0.5, 1.2)
+    for _ in range(160):
+        p.update(0.016)
+    assert crate.y == pytest.approx(0.0, abs=0.12)
+    assert crate.sleeping or abs(crate.vy) < 0.2
+    top = crate.y + crate.h
+    player = p.add_capsule(0.0, top + 1.4, 0.0, radius=0.25, height=1.6)
+    for _ in range(160):
+        p.update(0.016)
+    assert player.on_ground
+    assert player.y == pytest.approx(top, abs=0.12)
+    assert crate.y == pytest.approx(0.0, abs=0.12)
+
+
 def test_boxes_stack_and_sleep():
     m = _phys()
     p = m.Physics3D(gravity=22.0)

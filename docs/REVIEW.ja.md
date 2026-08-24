@@ -6,9 +6,9 @@
 ## 1 行
 
 **最終目標は「Python で AI に体を与えるなら KAGRA」という第一想起。**
-エンジン到達点は **80%**（今 **約 45%**）。100% は Python だけで three-vrm + three.js + Ursina を置き換えて困らないこと。
+エンジン到達点は **80%**（今 **約 47%**）。100% は Python だけで three-vrm + three.js + Ursina を置き換えて困らないこと。
 体は約 80% で足りる。絵は約 50% で本体。室内スポット・法線・局所 4 の画素は CI 通過（#61、#62）。
-ACES と金属差は CI で出た。這いの画素が次。エージェントループは他に無い。頭脳の面は `kagra.brain("kairi")`（既定 https://kairi.onrender.com。モデルは wheel に無い）。出せるゲームが jam の箱ならループだけでは人は来ない。
+ACES と金属差は CI で出た。這いの画素が次（pairwise `outdoor_crawl` は CI 待ち）。エージェントループは他に無い。頭脳の面は `kagra.brain("kairi")`（既定 https://kairi.onrender.com。モデルは wheel に無い）。出せるゲームが jam の箱ならループだけでは人は来ない。
 
 ## 何と比べるか
 
@@ -27,7 +27,7 @@ ACES と金属差は CI で出た。這いの画素が次。エージェント�
 3. **エージェントループ。** `docs/API_INDEX.md`（AST 生成）/ `kagra.verify` / MCP / `docs/agent-runs/`。Heart Catch・Switch Room・Dodge Room までログ付き。この形のエンジンは他に無い。**ループの価値は、見本が初日を超えてから効く。**
 4. **配布。** `pip install kagra` 約 5MB、Rust 不要。torch をコアに入れない判断は正しい。ソース `master` が PyPI より先なのは今の弱み。
 5. **棚分け。** Front（VRM / 3D / エージェント）と Shelf（2D ECS / tilemap / エディタ / boids）。`kagra-shared` + `mobile/` は運転デモで、レンダラを混ぜない。
-6. **自制。** 今 45% を 80% と呼ばない。箱部屋 4 本目を D-6 と呼ばない。北極星を機能数にしない。
+6. **自制。** 今 47% を 80% と呼ばない。箱部屋 4 本目を D-6 と呼ばない。北極星を機能数にしない。
 
 ## 弱い（正直）
 
@@ -77,7 +77,7 @@ Walk の strafe は画面右（#55）。
 | ゲームパッド | `inject_pad` + gilrs | 実機で歩く | 全ベンダ抽象 |
 
 2D の `Entity` / Tk エディタ / tilemap は Front に戻さない。
-剛体（Rapier または同等）は世界 25→55 で 80% に入る。OSM は入らない。
+剛体は AABB で落ちる・積む・乗る（世界 55%。Rapier クレートは 5MB のため入れない）。OSM は入らない。
 
 ### 見本の天井
 
@@ -104,7 +104,7 @@ kagra-shared + mobile/     ──► 別の運転デモ（道路・トラック�
 ```
 
 - **公開 API は Front に寄せる。** Shelf の `Entity` / 2D `world_to_screen` をエージェントに踏ませない。
-- **物理は今キャラコン + 静的三角形 + AABB 積み木 + 持つ。** 剛体は 80% の世界。OSM は外。
+- **物理はキャラコン + 静的三角形 + AABB 剛体（落ちる・積む・乗る）+ 持つ。** OSM は外。Rapier クレートは wheel に入れない。
 - **Windows は EventLoop 1 本。** GPU は必ず subprocess（`kagra.verify`）。
 - **kagra-shared のレンダラは今混ぜない。** 統合は 80% の外。
 
@@ -130,7 +130,7 @@ Web で three-vrm と戦う、torch をコア依存、箱部屋 4 本目を D-6�
 `KAGRA_ENGINE_GUIDE.md` を現行仕様として増やす。
 
 **80% の外（禁止ではない）:** 4 段 CSM / SSAO / ボリュメトリック / OSM / ボクセル /
-カリング P9、kagra-core と kagra-shared のレンダラ統合。Rapier は 80% の世界に入る。
+カリング P9、kagra-core と kagra-shared のレンダラ統合。Rapier クレートは 5MB のため 80% の外（AABB で世界は足りる）。
 
 次の手はロードマップの番号付きリスト。
-**今約 45%。80% の本体は這いの画素と 3 見本。室内影・法線・局所 4 は閉じた。**
+**今約 47%。80% の本体は這いの画素と 3 見本。室内影・法線・局所 4 は閉じた。剛体は AABB。**
