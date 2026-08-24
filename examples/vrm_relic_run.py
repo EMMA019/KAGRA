@@ -7,7 +7,7 @@ Sample VRM via ensure_vrm is Alicia Solid (ニコニ立体ちゃん) © Dwango �
 credit the character if you post screenshots.
 
 Art (CC0, not in the pip wheel):
-  Kenney Mini Forest + Nature Kit — https://kenney.nl (CC0)
+  Kenney Mini Forest + Nature Kit glTF (Prop("tree.glb") etc.) — https://kenney.nl (CC0)
   Poly Haven aerial_grass_rock + kloofendal_48d_partly_cloudy_puresky —
   https://polyhaven.com (CC0). See examples/assets/relic_run/LICENSE.md.
 
