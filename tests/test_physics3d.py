@@ -332,6 +332,70 @@ def test_jump_not_killed_by_slope():
     assert player.vy > 4.5
 
 
+def test_capsule_stands_on_trimesh():
+    m = _phys()
+    p = m.Physics3D(gravity=20.0)
+    p.set_ground_y(-8.0)
+    verts = [
+        [-2.0, 0.7, -2.0],
+        [2.0, 0.7, -2.0],
+        [2.0, 0.7, 2.0],
+        [-2.0, 0.7, 2.0],
+    ]
+    p.add_trimesh(verts, [0, 1, 2, 0, 2, 3])
+    player = p.add_capsule(0.0, 2.2, 0.0, 0.25, 1.6)
+    for _ in range(80):
+        p.update(0.016)
+    assert player.y == pytest.approx(0.7, abs=0.15)
+    assert player.on_ground
+    assert player.y > -1.0
+
+
+def test_capsule_does_not_fall_through_ramp():
+    m = _phys()
+    p = m.Physics3D(gravity=20.0)
+    p.set_ground_y(-8.0)
+    verts = [
+        [0.0, 0.0, -1.5],
+        [4.0, 1.6, -1.5],
+        [4.0, 1.6, 1.5],
+        [0.0, 0.0, 1.5],
+    ]
+    p.add_trimesh(verts, [0, 1, 2, 0, 2, 3])
+    player = p.add_capsule(2.0, 1.1, 0.0, 0.25, 1.6)
+    for _ in range(50):
+        p.update(0.016)
+    assert player.y > -1.0
+    assert player.y > 0.15
+
+
+def test_ray_hits_trimesh():
+    m = _phys()
+    p = m.Physics3D()
+    mesh = p.add_trimesh(
+        [[0, 0, 2], [1, 0, 2], [0, 1, 2]],
+        [0, 1, 2],
+    )
+    hit = p.raycast(0.2, 0.2, 0.0, 0.0, 0.0, 1.0, max_dist=10)
+    assert hit is not None
+    assert hit[0] is mesh
+    assert 1.5 < hit[1] < 2.2
+
+
+def test_boxes_stack_and_sleep():
+    m = _phys()
+    p = m.Physics3D(gravity=22.0)
+    p.set_ground_y(0.0)
+    low = p.add_body(0.0, 0.5, 0.0, 0.8, 0.4, 0.8)
+    high = p.add_body(0.0, 1.2, 0.0, 0.8, 0.4, 0.8)
+    for _ in range(180):
+        p.update(0.016)
+    assert low.y == pytest.approx(0.0, abs=0.1)
+    assert high.y > low.y + 0.25
+    assert high.y < 1.05
+    assert abs(high.vy) < 0.55
+
+
 def test_water_buoyancy_lifts():
     m = _phys()
     p = m.Physics3D(gravity=12.0)

@@ -1374,6 +1374,12 @@ impl Engine {
         self.window.set_shadow_enabled(enabled);
     }
 
+    /// 平行光シャドウの段数。1（既定・室内互換）か 2（屋外カスケード）。
+    #[pyo3(signature = (count=1))]
+    pub fn set_shadow_cascades(&self, count: u32) {
+        self.window.set_shadow_cascades(count);
+    }
+
     /// VRM トゥーン階調。softness≥0.999 で連続照明（デフォルト互換）。
     #[pyo3(signature = (threshold=0.5, softness=1.0, shade=0.55, lit=1.0))]
     pub fn set_toon_params(&self, threshold: f32, softness: f32, shade: f32, lit: f32) {

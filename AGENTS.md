@@ -62,7 +62,8 @@ PNG/WAV/projection:
 - `World3D` + `Camera3D.follow` — floor / box collision and a chase camera
 - `Prop` / `Walk` / `sky()` / `room()` / `water()` — short 3D.
   Outdoor island: `World3D.set_height_fn(..., tile=, stream_radius=)` /
-  `overworld_height` / `Walk(..., jump=)`. Slopes follow; tiles cast shadows.
+  `load_city` / `overworld_height` / `Walk(..., jump=)`.
+  `set_shadow_cascades(2)` outdoors. Not OSM / Rapier.
 - `Walk(first_person=True)` / `hovered_prop(cam)` — eye-height view and mouse pick
 - `destroy(prop)` / `Prop.update_all(dt)` — kinematic move and delete
 - Sphere / cylinder `Prop` collide and hover as those shapes (not boxes)

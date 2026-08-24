@@ -15,7 +15,7 @@
 | ものさし | 戦う場所 | KAGRA の位置 |
 |---|---|---|
 | **three-vrm** | デスクトップ Python。Web では戦わない | 体（MToon / Spring / VRMA / 表情 / 一人称）は対抗できる。配布と AI 接続はこちらが厚い |
-| **three.js** | 同じ種類の仕事（ライト・影・IBL・マテリアル・カリング）。ブラウザ対決ではない | カリング / インスタンス / 1 本影（ワールド含む） / 点またはスポット 1（影無し） / HDRI + irradiance キューブ（フル PMREM 無し） / 汎用金属・粗さ。CSM は無い |
+| **three.js** | 同じ種類の仕事（ライト・影・IBL・マテリアル・カリング）。ブラウザ対決ではない | カリング / インスタンス / 1 本影（2 段カスケード可） / 点またはスポット 1（影無し） / HDRI + irradiance キューブ（フル PMREM 無し） / 汎用金属・粗さ |
 | **Ursina** | 「短い Python で部屋を置いて歩く」 | `Prop` / `Walk` / `sky` / `room` + 一人称・ホバー・destroy・テクスチャ・1 段の親子・glTF 部品・パッド |
 | **Unity + UniVRM** | インストールと「歌って踊るまで」 | 5MB wheel で勝つ。エディタと量産パイプラインでは負ける（戦わない） |
 | **pygame / pyxel** | 2D エンジン | 棚に下げた。戻さない |
@@ -36,7 +36,7 @@
 |---|---|---|
 | ライト | 平行光 1 + 点 **または** スポット 1（影無し）+ 半球 | 複数、影付きスポット |
 | IBL | 半球 + HDRI + 小さな irradiance キューブ。露出は `set_exposure` | フル PMREM / スペキュラ LOD |
-| 影 | 2048、VRM + ワールド AABB に合わせた ortho、床・箱・Prop もキャスター、9-tap PCF。カスケード無し | CSM、複数ライト |
+| 影 | 2048×2 層。既定 1 段。`set_shadow_cascades(2)` で近／遠。9-tap PCF。複数ライトは無し | 多段 CSM、複数ライト |
 | 汎用メッシュ | baseColor + 金属/粗さ（既定は Lambert）。MToon は別 | MeshStandard / 法線 / 複数マテリアル |
 | ポスト | bloom / vignette / fog | SSAO、トーンマップ、アウトライン（VRM 以外） |
 | シーングラフ | 2D `Entity` は棚。`Prop` は 1 段の親子 | Object3D の深い階層 |
@@ -62,7 +62,7 @@
 | `FirstPersonController` | `Walk(first_person=True)` + パッド | ポインタロックはまだ |
 | `mouse.hovered_entity` / `raycast` | `hovered_prop(cam)`（`plane` 除外） | クリック・ボタンはまだ |
 | `destroy(e)` / `e.animate` | `destroy(p)` / `p.x` / `vx` | `animate` / Sequence はまだ |
-| `Entity(model='model.glb')` | `Prop("crate.glb")`（静的に畳む）。`stage()` は会場 | スキン / PBR は載せない。当たりは AABB |
+| `Entity(model='model.glb')` | `Prop("crate.glb")`（静的に畳む）。`stage()` は会場 | スキン / PBR は載せない。当たりは AABB。`mesh_hit=True` で静的三角形 |
 | 球コライダ | `add_sphere` / `add_cylinder`（ホバーも同形） | 非均一球は外接。メッシュコライダは無い |
 
 Ursina を丸コピーしない。**短いスクリプトで「置いて・歩いて・触る」**が到達点。2D の `Entity` / Tk エディタ / tilemap は使わない。
@@ -84,7 +84,7 @@ kagra-shared + mobile/     ──► 別の運転デモ（道路・トラック�
 
 - **レンダラは統合しない。** 共有コアの絵は運転デモ用。VRM スタックに足さない。
 - **公開 API 388。** Front に寄せたのは正しい。エージェントはまだ Shelf の `Entity` / `world_to_screen`（2D）を踏む。Front を厚くする（`Prop` / `room` を増やす）方が、Shelf を消すより先。
-- **物理は Rapier を入れない。** キャラコン（カプセル + 高さ関数の接平面 / 滑り + AABB / yaw OBB）で島は歩ける。三角形メッシュ当たりと積み木物理は後回し。
+- **物理は Rapier を入れない。** キャラコン + 静的三角形 + AABB 積み木（スリープ）。任意スキンメッシュや安定した巨大スタックは後回し。
 - **Windows は EventLoop 1 本。** GPU は必ず subprocess（`kagra.verify`）。この制約を壊さない。
 
 ## 楔との関係
@@ -106,7 +106,7 @@ Stage 1 の「4 楔を数字で選ぶ」は残す。**D の天井を上げるの
 - Tk エディタを 3D エディタに育てる
 - Web で three-vrm と戦う
 - kagra-core と kagra-shared のレンダラ統合
-- Rapier / ボクセル / 街ファイルのストリーミング（高さ場タイルは別）
+- Rapier / ボクセル / OSM（箱の街 JSON は別）
 - torch をコア依存にする
 - `KAGRA_ENGINE_GUIDE.md` を現行仕様として増やす（履歴にする）
 

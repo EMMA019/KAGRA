@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- City JSON, mesh hit, stacking, 2-cascade shadows: `load_city` / `city_chunk`
+  (not OSM), `Physics3D.add_trimesh` / `Prop(..., mesh_hit=True)`,
+  `add_box(..., is_static=False)` with solver iters + sleep (not Rapier),
+  `set_shadow_cascades(2)` (default 1 so Prop Garden stays). Demo:
+  `examples/vrm_overworld.py`.
 - Heightfield slopes + tiles: walk along the tangent (slide on steep
   grades), not Y-snap only. `height_normal` / `stair_y`. Terrain bakes as
   tiles (`tile=10`) so AABBs stay under the shadow skip (24) — nearby

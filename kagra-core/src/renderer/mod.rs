@@ -175,16 +175,23 @@ pub struct RendererV2 {
     morph_bg_cache: std::collections::HashMap<(u32, u32, u32, u32, u32, usize, usize), Arc<wgpu::BindGroup>>,
     morph_bg_order: VecDeque<(u32, u32, u32, u32, u32, usize, usize)>,
 
-    /// Directional shadow map (1x depth, not MSAA)
+    /// Directional shadow map (2-layer depth array; default uses layer 0)
     shadow_tex: wgpu::Texture,
     shadow_view: wgpu::TextureView,
+    shadow_layer_views: [wgpu::TextureView; 2],
     shadow_sampler: wgpu::Sampler,
     shadow_vp_buf: wgpu::Buffer,
+    shadow_sample_buf: wgpu::Buffer,
     shadow_vp_bgl: wgpu::BindGroupLayout,
+    shadow_write_u_bgl: wgpu::BindGroupLayout,
     shadow_bgl: wgpu::BindGroupLayout,
     shadow_write_bg: wgpu::BindGroup,
+    shadow_write_u_bg: wgpu::BindGroup,
     shadow_bg: wgpu::BindGroup,
     shadows_enabled: bool,
+    shadow_cascades: u32,
+    last_eye: [f32; 3],
+    shadow_cascade_vp: [[f32; 16]; 2],
 
     /// 毎フレーム再利用するスキニング用スクラッチ（heap）
     skin_uniform_scratch: Vec<f32>,
@@ -720,7 +727,7 @@ impl RendererV2 {
         });
 
         // --- Directional shadow map ---
-        let (shadow_tex, shadow_view) = make_shadow_map(&device);
+        let (shadow_tex, shadow_view, shadow_layer_views) = make_shadow_map(&device);
         let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Shadow Comparison Sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -762,7 +769,7 @@ impl RendererV2 {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
                         sample_type: wgpu::TextureSampleType::Depth,
                     },
                     count: None,
@@ -775,17 +782,49 @@ impl RendererV2 {
                 },
             ],
         });
+        let shadow_write_u_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Shadow Write U BGL"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
         let shadow_vp_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Shadow VP Buf"),
-            size: 64,
+            size: 256,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let shadow_sample_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Shadow Sample Buf"),
+            size: 256,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let initial_shadow_vp = build_light_view_proj(light_dir, [0.0, 1.0, 0.0]);
         queue.write_buffer(&shadow_vp_buf, 0, bytemuck::cast_slice(&initial_shadow_vp));
+        let mut sample0 = [0f32; 36];
+        sample0[..16].copy_from_slice(&initial_shadow_vp);
+        sample0[16..32].copy_from_slice(&initial_shadow_vp);
+        sample0[32] = 1.0;
+        queue.write_buffer(&shadow_sample_buf, 0, bytemuck::cast_slice(&sample0));
         let shadow_write_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Shadow Write BG"),
             layout: &shadow_vp_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: shadow_vp_buf.as_entire_binding(),
+            }],
+        });
+        let shadow_write_u_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Shadow Write U BG"),
+            layout: &shadow_write_u_bgl,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: shadow_vp_buf.as_entire_binding(),
@@ -797,7 +836,7 @@ impl RendererV2 {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: shadow_vp_buf.as_entire_binding(),
+                    resource: shadow_sample_buf.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -830,7 +869,7 @@ impl RendererV2 {
                 &camera_3d_bgl,
                 &skinning_uniform_bgl,
                 &skinning_3d_morph_bgl,
-                &shadow_vp_bgl,
+                &shadow_write_u_bgl,
             ],
             push_constant_ranges: &[],
         });
@@ -1260,13 +1299,20 @@ impl RendererV2 {
             morph_bg_order: VecDeque::new(),
             shadow_tex,
             shadow_view,
+            shadow_layer_views,
             shadow_sampler,
             shadow_vp_buf,
+            shadow_sample_buf,
             shadow_vp_bgl,
+            shadow_write_u_bgl,
             shadow_bgl,
             shadow_write_bg,
+            shadow_write_u_bg,
             shadow_bg,
             shadows_enabled: true,
+            shadow_cascades: 1,
+            last_eye: [0.0, 1.0, 0.0],
+            shadow_cascade_vp: [initial_shadow_vp, initial_shadow_vp],
             skin_uniform_scratch: vec![0f32; SKIN_UNIFORM_FLOATS],
             mesh_3d_vb,
             mesh_3d_ib,
@@ -1623,6 +1669,7 @@ impl RendererV2 {
             -(v[2] * v[12] + v[6] * v[13] + v[10] * v[14]),
             self.shader_clock.elapsed().as_secs_f32(),
         ];
+        self.last_eye = [eye[0], eye[1], eye[2]];
         self.queue.write_buffer(&self.camera_3d_buf, 160, bytemuck::cast_slice(&eye));
     }
 
@@ -1652,6 +1699,10 @@ impl RendererV2 {
 
     pub fn set_shadow_enabled(&mut self, enabled: bool) {
         self.shadows_enabled = enabled;
+    }
+
+    pub fn set_shadow_cascades(&mut self, count: u32) {
+        self.shadow_cascades = count.clamp(1, 2);
     }
 
     fn update_shadow_vp(&mut self) {
@@ -1695,11 +1746,23 @@ impl RendererV2 {
                 acc = fold_shadow_aabb(acc, world);
             }
         }
-        let (center, half) = shadow_fit_center_half(acc);
-        let dist = half + 4.0;
-        let far = dist + half + 4.0;
-        let vp = build_light_view_proj_fit(self.light_dir, center, half, dist, far);
-        self.queue.write_buffer(&self.shadow_vp_buf, 0, bytemuck::cast_slice(&vp));
+        let fits = cascade_center_half(acc, self.last_eye, self.shadow_cascades);
+        let mut sample = [0f32; 36];
+        for (i, (center, half)) in fits.iter().enumerate() {
+            let dist = half + 4.0;
+            let far = dist + half + 4.0;
+            let vp = build_light_view_proj_fit(self.light_dir, *center, *half, dist, far);
+            self.shadow_cascade_vp[i] = vp;
+            let o = i * 16;
+            sample[o..o + 16].copy_from_slice(&vp);
+        }
+        sample[32] = self.shadow_cascades as f32;
+        self.queue.write_buffer(&self.shadow_sample_buf, 0, bytemuck::cast_slice(&sample));
+        self.queue.write_buffer(
+            &self.shadow_vp_buf,
+            0,
+            bytemuck::cast_slice(&self.shadow_cascade_vp[0]),
+        );
     }
 
     fn cull_and_sort_skinned(&mut self, cmds: &mut Vec<SkinnedMeshCommand>) {
@@ -3019,33 +3082,40 @@ impl RendererV2 {
         immediate: &[ImmediateMeshDraw],
         instances: &[(u32, Vec<Instance3D>)],
     ) {
+        let layers = self.shadow_cascades.clamp(1, 2) as usize;
         let world = self.world_shadow_casters_exist(immediate, instances);
         if !self.shadows_enabled || (cmds.is_empty() && !world) {
-            // Still clear so receivers see an empty (fully lit) map
-            let _rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Shadow Clear"),
-                color_attachments: &[],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.shadow_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
+            for i in 0..layers {
+                let _rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Shadow Clear"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.shadow_layer_views[i],
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
                     }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+            }
             return;
         }
         let inst_draws = self.pack_shadow_instances(instances);
         let retained_ids = self.retained_draw_queue.clone();
-        {
+        for layer in 0..layers {
+            self.queue.write_buffer(
+                &self.shadow_vp_buf,
+                0,
+                bytemuck::cast_slice(&self.shadow_cascade_vp[layer]),
+            );
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Shadow Pass"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.shadow_view,
+                    view: &self.shadow_layer_views[layer],
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
@@ -3058,7 +3128,7 @@ impl RendererV2 {
             if !cmds.is_empty() {
                 rp.set_pipeline(&self.skinning_3d_shadow_pipeline);
                 rp.set_bind_group(0, &self.camera_3d_bg, &[]);
-                rp.set_bind_group(3, &self.shadow_write_bg, &[]);
+                rp.set_bind_group(3, &self.shadow_write_u_bg, &[]);
                 for (i, cmd) in cmds.iter().enumerate() {
                     let morph_bg = match morph_bgs.get(i).and_then(|b| b.as_ref()) {
                         Some(bg) => bg,
@@ -3083,8 +3153,8 @@ impl RendererV2 {
                 rp.set_index_buffer(self.mesh_3d_ib.slice(d.ib_off..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..d.index_count, 0, 0..1);
             }
-            for id in retained_ids {
-                let Some(mesh) = self.retained_meshes.get(&id) else { continue };
+            for id in &retained_ids {
+                let Some(mesh) = self.retained_meshes.get(id) else { continue };
                 if mesh.index_count == 0 || !Self::mesh_casts_shadow(mesh) {
                     continue;
                 }
@@ -3095,12 +3165,12 @@ impl RendererV2 {
             if !inst_draws.is_empty() {
                 rp.set_pipeline(&self.pipeline_3d_shadow_instanced);
                 rp.set_bind_group(0, &self.shadow_write_bg, &[]);
-                for (mesh_id, i_off, count) in inst_draws {
-                    let Some(mesh) = self.retained_meshes.get(&mesh_id) else { continue };
+                for (mesh_id, i_off, count) in &inst_draws {
+                    let Some(mesh) = self.retained_meshes.get(mesh_id) else { continue };
                     rp.set_vertex_buffer(0, mesh.vb.slice(..));
-                    rp.set_vertex_buffer(1, self.instance_3d_shadow_vb.slice(i_off..));
+                    rp.set_vertex_buffer(1, self.instance_3d_shadow_vb.slice(*i_off..));
                     rp.set_index_buffer(mesh.ib.slice(..), wgpu::IndexFormat::Uint32);
-                    rp.draw_indexed(0..mesh.index_count, 0, 0..count);
+                    rp.draw_indexed(0..mesh.index_count, 0, 0..*count);
                 }
             }
         }

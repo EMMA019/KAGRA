@@ -1,10 +1,9 @@
-"""VRM Overworld — tiled heightfield (slope follow / stream / stairs).
+"""VRM Overworld — tiled island + city JSON + mesh ramp + crate stack.
 
 Play-surface. Not an agent-built log. Public APIs:
-World3D.set_height_fn(tile=, stream_radius=) / set_chunk_fill / overworld_height /
-Walk(jump=) / water / sky / city_boxes.
+load_city / add_trimesh / add_box(is_static=False) / set_shadow_cascades(2).
 
-Not a city file, not Rapier stacking, not CSM.
+Not OSM, not Rapier. CSM is 2 cascades (near/far), not a film-grade split.
 
 操作:
   WASD / 左スティック : 歩く（坂に沿う。急斜面は滑る。水中は遅くなる）
@@ -50,11 +49,31 @@ class Overworld(kagra.Scene):
         )
         self.world.set_water_y(0.0)
         self.world.set_chunk_fill(self._fill_chunk)
+        city_path = os.path.join(_HERE, "data", "overworld_city.json")
+        self.city = self.world.load_city(city_path)
         self.world.add_player(0.0, 4.0)
+        gy = self.world.ground_y
+        ramp_v, ramp_i = kagra.ramp_mesh(-1.6, 2.4, 6.2, 8.0, gy(-1.6, 7.1), gy(-1.6, 7.1) + 1.4)
+        self.world.add_trimesh(ramp_v, ramp_i)
+        stack_x, stack_z = 1.6, 2.2
+        base = gy(stack_x, stack_z)
+        for y in (base + 0.55, base + 1.15, base + 1.75):
+            self.world.add_box(stack_x, y, stack_z, 0.55, 0.5, 0.55, is_static=False)
         tex = kagra.texture_from_fn(128, 128, _terrain_px, name="overworld_land")
         self.world.bake_terrain(tex)
         wall = kagra.solid_tex((148, 128, 108))
         self.world.bake(tex, wall)
+        try:
+            rtex = kagra.solid_tex((180, 120, 90))
+            mid = kagra.upload_mesh_3d(rtex, ramp_v, ramp_i)
+            if mid:
+                self.world.mesh_ids.append(int(mid))
+        except Exception:
+            pass
+        try:
+            kagra.set_shadow_cascades(2)
+        except Exception:
+            pass
         kagra.Prop(
             "sphere", x=3.2, y=self.world.ground_y(3.2, -1.2) + 0.35, z=-1.2,
             scale=0.55, color="gold", world=self.world,
@@ -68,6 +87,8 @@ class Overworld(kagra.Scene):
         self.found = False
 
     def _fill_chunk(self, ix, iz):
+        if kagra.city_chunk(self.city, ix, iz):
+            return
         for x, y, z, w, h, d in kagra.city_boxes(ix, iz, tile=10.0):
             self.world.add_box(x, y, z, w, h, d)
 
@@ -112,7 +133,7 @@ class Overworld(kagra.Scene):
         kagra.draw_vrm(self.avatar.vrm_id)
         kagra.fill(0, 0, 420, 78, (8, 18, 28), 150)
         kagra.text("Overworld", 18, 14, 24, (240, 230, 180))
-        hint = "gold  found" if self.found else "SPACE jump  —  stairs / ramp / gold"
+        hint = "gold  found" if self.found else "SPACE  stairs / mesh ramp / crates"
         kagra.text(hint, 18, 46, 16, (160, 255, 190) if self.found else (200, 220, 230))
 
 

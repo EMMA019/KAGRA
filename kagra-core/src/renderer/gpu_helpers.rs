@@ -35,13 +35,15 @@ pub(super) fn make_depth_texture(device: &wgpu::Device, w: u32, h: u32) -> (wgpu
     (tex, view)
 }
 
-pub(super) fn make_shadow_map(device: &wgpu::Device) -> (wgpu::Texture, wgpu::TextureView) {
+pub(super) fn make_shadow_map(
+    device: &wgpu::Device,
+) -> (wgpu::Texture, wgpu::TextureView, [wgpu::TextureView; 2]) {
     let tex = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Shadow Map"),
         size: wgpu::Extent3d {
             width: SHADOW_MAP_SIZE,
             height: SHADOW_MAP_SIZE,
-            depth_or_array_layers: 1,
+            depth_or_array_layers: 2,
         },
         mip_level_count: 1,
         sample_count: 1,
@@ -50,8 +52,29 @@ pub(super) fn make_shadow_map(device: &wgpu::Device) -> (wgpu::Texture, wgpu::Te
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
-    let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-    (tex, view)
+    let sample = tex.create_view(&wgpu::TextureViewDescriptor {
+        label: Some("Shadow Array"),
+        format: Some(DEPTH_FORMAT),
+        dimension: Some(wgpu::TextureViewDimension::D2Array),
+        aspect: wgpu::TextureAspect::DepthOnly,
+        base_mip_level: 0,
+        mip_level_count: Some(1),
+        base_array_layer: 0,
+        array_layer_count: Some(2),
+    });
+    let layer = |i: u32, name: &'static str| {
+        tex.create_view(&wgpu::TextureViewDescriptor {
+            label: Some(name),
+            format: Some(DEPTH_FORMAT),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            aspect: wgpu::TextureAspect::DepthOnly,
+            base_mip_level: 0,
+            mip_level_count: Some(1),
+            base_array_layer: i,
+            array_layer_count: Some(1),
+        })
+    };
+    (tex, sample, [layer(0, "Shadow Layer 0"), layer(1, "Shadow Layer 1")])
 }
 
 /// light_dir = direction toward the light. Builds ortho light view-proj around target.

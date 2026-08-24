@@ -87,6 +87,14 @@ def test_heightfield_mesh_flat_is_level():
     assert max(xs) == pytest.approx(2.0)
 
 
+def test_ramp_mesh_two_tris():
+    verts, idx = kit.ramp_mesh(0.0, 4.0, -1.0, 1.0, 0.0, 1.2)
+    assert len(verts) == 4
+    assert idx == [0, 1, 2, 0, 2, 3]
+    assert verts[1][1] == pytest.approx(1.2)
+    assert verts[0][1] == pytest.approx(0.0)
+
+
 def test_heightfield_tile_aabb_fits_shadow():
     land = load_kagra_submodule("land")
     verts, idx = kit.heightfield_tile(land.island_height, 0.0, 0.0, tile=10.0, cells=8)

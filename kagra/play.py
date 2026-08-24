@@ -517,6 +517,7 @@ class Prop:
         parent: Optional["Prop"] = None,
         metallic: float | None = None,
         roughness: float | None = None,
+        mesh_hit: bool = False,
     ):
         self.gltf_path = None
         self._gltf_flat: Optional[FlatMesh] = None
@@ -550,6 +551,7 @@ class Prop:
             self.sx, self.sy, self.sz = (float(scale[0]), float(scale[1]), float(scale[2]))
         self.color = resolve_color(color)
         self.collision = bool(collision)
+        self.mesh_hit = bool(mesh_hit)
         self.world = world
         self.texture = int(texture or 0)
         if metallic is None and self._gltf_flat is not None:
@@ -583,7 +585,26 @@ class Prop:
             return 0.5 * max(abs(self.sx), abs(self.sy), abs(self.sz))
         return 0.5 * max(abs(self.sx), abs(self.sz))
 
+    def _world_mesh_verts(self) -> tuple[list, list]:
+        """glTF を世界座標の三角形にする。"""
+        flat = self._gltf_flat
+        if flat is None:
+            return [], []
+        x, y, z, yaw = self.world_pose()
+        c, s = math.cos(yaw), math.sin(yaw)
+        out = []
+        for v in flat.verts:
+            px, py, pz = v[0] * self.sx, v[1] * self.sy, v[2] * self.sz
+            wx = c * px + s * pz + x
+            wy = py + y
+            wz = -s * px + c * pz + z
+            out.append((wx, wy, wz))
+        return out, list(flat.indices)
+
     def _make_body(self, world: World3D):
+        if self.mesh_hit and self._gltf_flat is not None:
+            verts, idx = self._world_mesh_verts()
+            return world.add_trimesh(verts, idx)
         if self.model == "sphere":
             r = self._hit_radius()
             return world.add_sphere(self._x, self._y - r, self._z, r)
@@ -709,16 +730,22 @@ class Prop:
     def _sync_body(self) -> None:
         wx, wy, wz, wyaw = self.world_pose()
         if self.body is not None:
-            self.body.x = wx
-            if self.model == "sphere":
+            if self.mesh_hit and self.body.shape == "trimesh":
+                verts, idx = self._world_mesh_verts()
+                self.body.set_trimesh(verts, idx)
+            elif self.model == "sphere":
                 r = self._hit_radius()
+                self.body.x = wx
                 self.body.y = wy - r
+                self.body.z = wz
                 self.body.radius = r
                 self.body.h = r * 2.0
                 self.body.w = self.body.d = r * 2.0
             else:
                 w, h, d = prop_hit_extents(self)
+                self.body.x = wx
                 self.body.y = wy - h * 0.5
+                self.body.z = wz
                 self.body.w = w
                 self.body.h = h
                 self.body.d = d
@@ -727,7 +754,6 @@ class Prop:
                     self.body.radius = r
                     self.body.h = abs(self.sy)
                     self.body.w = self.body.d = r * 2.0
-            self.body.z = wz
             self.body.yaw = wyaw
             self.body.active = self.enabled
         for ch in list(self._children):

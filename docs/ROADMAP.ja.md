@@ -45,7 +45,7 @@ JS における three-vrm のポジションの Python 版。
    `docs/API_INDEX.md` / MCP（`kagra_api_search` / `kagra_verify` / `kagra_render`）。
    開発ループ自体を AI エージェント用に設計したエンジンは他に無い
 
-**弱み（正直リスト）**: 影は 1 本の平行光（カスケード無し）、点光は 1 で影無し、
+**弱み（正直リスト）**: 影は 1 本の平行光（既定 1 段。屋外は `set_shadow_cascades(2)` まで。フィルム級 CSM ではない）、点光は 1 で影無し、
 IBL は HDRI + 小さな irradiance キューブまで（フル PMREM LOD は無し）、汎用 PBR に法線は無い、ポストは bloom / vignette、
 複数アバターは未計測、
 頭脳の公式面（`KairiBrain` / `docs/recipes/ai-brain.md`）はロードマップだけ完了で
@@ -107,8 +107,10 @@ three.js / Ursina が当たり前にやっていることを、楔が詰む順�
 - [x] 高さ関数の島。`World3D.set_height_fn` / `island_height` / `water()` /
       `Walk(..., jump=)`。海・草原・山。坂は接平面に沿い、急斜面は滑る。
       地形はタイル（影 AABB < 24）。`stream_radius` で歩きながら載せる。
-      階段は高さ場の段。`city_boxes` は箱街区（街ファイルではない）。
-      Rapier / 三角形メッシュ当たり / 積み木物理 / CSM はまだ。
+      階段は高さ場の段。街 JSON は `load_city`（OSM ではない）。
+      静的三角形当たりは `add_trimesh` / `Prop(..., mesh_hit=True)`。
+      積み木は `add_box(..., is_static=False)` + スリープ（Rapier ではない）。
+      影は `set_shadow_cascades(2)` で近／遠（既定 1。フィルム級 CSM ではない）。
       デモ: `examples/vrm_overworld.py`
 - [x] play-surface デモ: `examples/vrm_prop_garden.py`（エージェント製ではない）
 - [x] 一人称（目線の高さ）。`Walk(..., first_person=True)` / `Camera3D.look`。
@@ -275,7 +277,7 @@ Rust コアという堀はどの道でもそのまま資産になる。
 - torch / 重量級モデルをコア依存に入れない（5MB が最大の武器）
 - text-to-vrma / Irodori-TTS のベンダリング（レシピで繋ぐ）
 - kagra-core と kagra-shared のレンダラ統合
-- Rapier / ボクセル / 街ファイルのストリーミング（高さ場タイルの load/unload は可。キャラコンで足りるうちは Rapier を入れない）
+- Rapier / ボクセル / OSM 都市ローダ（箱の街 JSON と高さ場タイルは可。キャラコンで足りるうちは Rapier を入れない）
 - YouTube / Twitch の API キーをコアやログに置くこと
 - 比較表で競合を貶すこと
 - デモへの高解像度テクスチャ / アセット同梱（絵作りはプロシージャル + ライトで）

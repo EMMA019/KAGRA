@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **397**
+エントリ数: **401**
 
 棚の**手前**は VRM / 3D ワールド / エージェントゲーム。
 棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。
@@ -18,6 +18,7 @@
 | `box_mesh` | `box_mesh(cx: float, cy: float, cz: float, w: float, h: float, d: float)` |
 | `camera_world_to_screen` | `camera_world_to_screen(wx: float, wy: float, wz: float)` |
 | `city_boxes` | `city_boxes(ix: int, iz: int, *, tile: float = 10.0, fn=None, water_y: float = 0.0)` |
+| `city_chunk` | `city_chunk(city, ix: int, iz: int, *, tile: float \| None = None)` |
 | `cls` | `cls(r=0, g=0, b=0)` |
 | `cylinder_mesh` | `cylinder_mesh(cx: float = 0.0, cy: float = 0.0, cz: float = 0.0, radius: float = 0.5, height: float = 1.0, segs: int = 16)` |
 | `destroy` | `destroy(prop) -> None` |
@@ -43,12 +44,14 @@
 | `inject_key` | `inject_key(name: str, down: bool = True)` |
 | `island_height` | `island_height(x: float, z: float) -> float` |
 | `key` | `key(name: str) -> bool` |
+| `load_city` | `load_city(path)` |
 | `load_json` | `load_json(name: str, default=None, *, directory: str \| None = None)` |
 | `load_vrma` | `load_vrma(path: str, *, sample_fps: float = 30.0) -> 'VrmaMotion'` |
 | `overworld_height` | `overworld_height(x: float, z: float) -> float` |
 | `pressed` | `pressed(name: str) -> bool` |
 | `quad_y_mesh` | `quad_y_mesh(cx: float = 0.0, cy: float = 0.0, cz: float = 0.0, size: float = 0.5)` |
 | `quit` | `quit()` |
+| `ramp_mesh` | `ramp_mesh(x0: float, x1: float, z0: float, z1: float, y0: float, y1: float)` |
 | `released` | `released(name: str) -> bool` |
 | `render_stats` | `render_stats() -> dict` |
 | `room` | `room(half: float = 6.0, height: float = 3.2, *, thick: float = 0.18, world=None, look: bool = True, textured: bool = True)` |
@@ -67,6 +70,7 @@
 | `set_mesh_pbr` | `set_mesh_pbr(mesh_id: int, metallic: float = 0.0, roughness: float = 1.0, base_color: tuple = (1.0, 1.0, 1.0))` |
 | `set_point_light` | `set_point_light(x: float, y: float, z: float, *, r: float = 1.0, g: float = 0.95, b: float = 0.85, intensity: float = 1.0, radius: float = 8.0)` |
 | `set_rim` | `set_rim(intensity: float = 0.45)` |
+| `set_shadow_cascades` | `set_shadow_cascades(count: int = 1)` |
 | `set_shadow_enabled` | `set_shadow_enabled(enabled: bool = True)` |
 | `set_spot_light` | `set_spot_light(x: float, y: float, z: float, dx: float, dy: float, dz: float, *, angle: float = 0.8, penumbra: float = 0.25, intensity: float = 1.0, radius: float = 10.0, r: float = 1.0, g: float = 0.95, b: float = 0.85)` |
 | `set_toon_params` | `set_toon_params(threshold: float = 0.5, softness: float = 1.0, shade: float = 0.55, lit: float = 1.0)` |
@@ -435,7 +439,7 @@
 - Prop 親子は 1 段（`set_parent` / `parent=`）。孫は不可。子の `x,y,z,yaw` はローカル。
 - glTF 部品: `Prop("crate.glb")`。`stage()` / `load_gltf` は会場。同梱エイリアス `cube.glb`。当たりは AABB。
 - ゲームパッド: `axis("left")` / `pad("a")` / `inject_pad`。`Walk` は左スティック移動・右スティック視点。実機ポーリングは未接続。
-- 影は床・箱・Prop も落とす（VRM AABB だけに合わせない）。空メッシュは除外。カスケードはまだ。
+- 影は床・箱・Prop も落とす。`set_shadow_cascades(2)` で近／遠の 2 段（既定 1。Prop Garden は変えない）。OSM ではない街 JSON は `load_city`。三角形当たりは `add_trimesh` / `Prop(..., mesh_hit=True)`。積み木は `add_box(..., is_static=False)`（Rapier ではない）。
 - 点光源 1: `set_point_light(x,y,z, intensity=…)`。影は無し。スポットは `set_spot_light`（同じスロット、影無し）。
 - HDRI: `set_hdri("studio")` または正距円筒のパス。拡散は小さな irradiance キューブ。露出は `set_exposure`（既定 1）。
 - 閉じた部屋: `room()` + `apply_room_look`。屋外の島: `set_height_fn` + `water` + `sky()`。坂は接平面、急斜面は滑る。影はタイル（CSM ではない）。デモは Pretty Room / Overworld。

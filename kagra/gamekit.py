@@ -246,6 +246,29 @@ def heightfield_mesh(
     return verts, indices
 
 
+def ramp_mesh(
+    x0: float,
+    x1: float,
+    z0: float,
+    z1: float,
+    y0: float,
+    y1: float,
+) -> tuple[list, list]:
+    """+X 方向に上がる坂の 2 三角形。``verts`` は ``[x,y,z,nx,ny,nz,u,v]``。"""
+    dx = float(x1) - float(x0)
+    dy = float(y1) - float(y0)
+    nx, ny, nz = -dy, dx, 0.0
+    leng = math.sqrt(nx * nx + ny * ny + nz * nz) or 1.0
+    nx, ny, nz = nx / leng, ny / leng, nz / leng
+    verts = [
+        [float(x0), float(y0), float(z0), nx, ny, nz, 0.0, 0.0],
+        [float(x1), float(y1), float(z0), nx, ny, nz, 1.0, 0.0],
+        [float(x1), float(y1), float(z1), nx, ny, nz, 1.0, 1.0],
+        [float(x0), float(y0), float(z1), nx, ny, nz, 0.0, 1.0],
+    ]
+    return verts, [0, 1, 2, 0, 2, 3]
+
+
 def heightfield_tile(
     fn,
     origin_x: float,

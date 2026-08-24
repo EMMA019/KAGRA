@@ -51,6 +51,8 @@ class World3D:
         self._loaded_tiles: set[tuple[int, int]] = set()
         self._filled_chunks: set[tuple[int, int]] = set()
         self._chunk_fill: Optional[Callable[[int, int], None]] = None
+        self._city = None
+        self._drawn_dynamic: list[tuple[RigidBody3D, int]] = []
 
     def add_floor(self, size: float | None = None):
         """Y = ``floor_y`` の正方形床を予約する。半辺は ``size`` または ``half``。"""
@@ -67,12 +69,13 @@ class World3D:
         *,
         trigger: bool = False,
         draw: bool = True,
+        is_static: bool = True,
     ) -> RigidBody3D:
-        """静的 AABB。``y`` は底面。``draw=False`` なら物理だけ（``Prop`` 用）。"""
+        """AABB。``y`` は底面。``is_static=False`` で積み木。``draw=False`` なら物理だけ。"""
         body = self.physics.add_body(
             float(x), float(y), float(z),
             float(w), float(h), float(d),
-            is_static=True,
+            is_static=bool(is_static),
             trigger=trigger,
         )
         self.boxes.append(body)
@@ -82,6 +85,8 @@ class World3D:
                 float(x), float(y) + float(h) * 0.5, float(z),
                 float(w), float(h), float(d), 0.0,
             ])
+            if not is_static:
+                self._drawn_dynamic.append((body, len(self.box_xforms) - 1))
         return body
 
     def add_sphere(
@@ -142,6 +147,19 @@ class World3D:
         else:
             self._height_cells = max(2, int(cells))
         self.physics.set_height_fn(fn)
+
+    def add_trimesh(self, verts, indices, *, is_static: bool = True) -> RigidBody3D:
+        """静的な三角形当たり。描画は呼び出し側で ``upload_mesh_3d``。"""
+        body = self.physics.add_trimesh(verts, indices, is_static=is_static)
+        self.boxes.append(body)
+        return body
+
+    def load_city(self, path: str) -> dict:
+        """街 JSON を読む。タイル初回ロードで箱を置く。OSM ではない。"""
+        from kagra.city import load_city
+
+        self._city = load_city(path)
+        return self._city
 
     def set_chunk_fill(self, fn: Callable[[int, int], None] | None) -> None:
         """タイルを初めて載せるとき ``fn(ix, iz)``。箱街区など。外しても箱は残る。"""
@@ -206,6 +224,7 @@ class World3D:
 
     def update(self, dt: float):
         self.physics.update(dt)
+        self._sync_dynamic_xforms()
         p = self.player
         if p is None:
             return
@@ -238,11 +257,32 @@ class World3D:
             if key in self._loaded_tiles:
                 continue
             self._loaded_tiles.add(key)
-            if self._chunk_fill is not None and key not in self._filled_chunks:
-                self._chunk_fill(key[0], key[1])
+            if key not in self._filled_chunks:
+                if self._chunk_fill is not None:
+                    self._chunk_fill(key[0], key[1])
+                self._place_city_chunk(key[0], key[1])
                 self._filled_chunks.add(key)
             self._upload_tile(key)
         return len(self._loaded_tiles)
+
+    def _place_city_chunk(self, ix: int, iz: int) -> None:
+        if not self._city:
+            return
+        from kagra.city import city_chunk
+
+        tile = float(self._city.get("tile", self._tile or 10.0))
+        for x, y, z, w, h, d in city_chunk(self._city, ix, iz, tile=tile):
+            gy = self.ground_y(x, z)
+            self.add_box(x, gy if abs(y) < 1e-9 else float(y), z, w, h, d)
+
+    def _sync_dynamic_xforms(self) -> None:
+        for body, i in self._drawn_dynamic:
+            if i < 0 or i >= len(self.box_xforms):
+                continue
+            xf = self.box_xforms[i]
+            xf[0] = float(body.x)
+            xf[1] = float(body.y) + float(body.h) * 0.5
+            xf[2] = float(body.z)
 
     def _unload_tile(self, key: tuple[int, int]) -> None:
         mid = self._tile_meshes.pop(key, None)

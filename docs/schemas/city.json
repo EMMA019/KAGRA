@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kagra.dev/schemas/city.json",
+  "title": "KAGRA city file",
+  "description": "Box blocks for World3D.load_city. Not OSM.",
+  "type": "object",
+  "required": ["version", "boxes"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "tile": { "type": "number", "default": 10 },
+    "name": { "type": "string" },
+    "boxes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["x", "z"],
+        "additionalProperties": false,
+        "properties": {
+          "x": { "type": "number" },
+          "y": { "type": "number", "description": "Bottom. 0 or omit snaps to ground_y when World3D.load_city places the box." },
+          "z": { "type": "number" },
+          "w": { "type": "number", "default": 2 },
+          "h": { "type": "number", "default": 2 },
+          "d": { "type": "number", "default": 2 }
+        }
+      }
+    }
+  }
+}

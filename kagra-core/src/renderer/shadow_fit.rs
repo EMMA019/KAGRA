@@ -1,7 +1,8 @@
 //! 平行光シャドウの ortho 合わせ。GPU 不要。
 //!
 //! P4 は VRM AABB だけ。P5 は床・箱・Prop も和に入れる。
-//! 空のような巨大メッシュは半辺を壊すので除外する。カスケードはまだ無い。
+//! 空のような巨大メッシュは半辺を壊すので除外する。
+//! 2 段カスケードは近（視点）と遠（和）。既定は 1 段。
 
 use crate::frustum::Aabb;
 
@@ -10,6 +11,8 @@ pub(super) const SHADOW_SKIP_EXTENT: f32 = 24.0;
 pub(super) const SHADOW_HALF_MIN: f32 = 2.0;
 /// `World3D(half=7)` の 14×14 床が収まるように P4 の 14 から上げた。
 pub(super) const SHADOW_HALF_MAX: f32 = 28.0;
+/// 近段の ortho 半辺。屋外 2 段のときだけ使う。
+pub(super) const SHADOW_NEAR_HALF: f32 = 12.0;
 const SHADOW_HALF_PAD: f32 = 1.25;
 
 pub(super) fn aabb_is_shadow_volume(aabb: &Aabb) -> bool {
@@ -36,6 +39,20 @@ pub(super) fn shadow_fit_center_half(union: Option<Aabb>) -> ([f32; 3], f32) {
         }
         None => ([0.0, 1.0, 0.0], 6.0),
     }
+}
+
+/// 1 段なら今まで通りの fit を 2 回返す。2 段なら近（視点）と遠（和）。
+pub(super) fn cascade_center_half(
+    union: Option<Aabb>,
+    focus: [f32; 3],
+    cascades: u32,
+) -> [([f32; 3], f32); 2] {
+    let far = shadow_fit_center_half(union);
+    if cascades < 2 {
+        return [far, far];
+    }
+    let near_h = SHADOW_NEAR_HALF.min(far.1);
+    ([focus, near_h], far)
 }
 
 #[cfg(test)]
@@ -105,5 +122,25 @@ mod tests {
         let wide = box_aabb([-30.0, 0.0, -30.0], [30.0, 1.0, 30.0]);
         let (_, half) = shadow_fit_center_half(Some(wide));
         assert!((half - SHADOW_HALF_MAX).abs() < 1e-5);
+    }
+
+    #[test]
+    fn one_cascade_copies_the_union_fit() {
+        let floor = box_aabb([-7.0, -0.02, -7.0], [7.0, 0.02, 7.0]);
+        let acc = fold_shadow_aabb(None, floor);
+        let one = cascade_center_half(acc, [9.0, 1.0, 3.0], 1);
+        let far = shadow_fit_center_half(acc);
+        assert_eq!(one[0], far);
+        assert_eq!(one[1], far);
+    }
+
+    #[test]
+    fn two_cascades_near_follows_focus() {
+        let floor = box_aabb([-7.0, -0.02, -7.0], [7.0, 0.02, 7.0]);
+        let acc = fold_shadow_aabb(None, floor);
+        let two = cascade_center_half(acc, [4.0, 1.5, -2.0], 2);
+        assert!((two[0].0[0] - 4.0).abs() < 1e-5);
+        assert!((two[0].1 - SHADOW_NEAR_HALF.min(two[1].1)).abs() < 1e-5);
+        assert_eq!(two[1], shadow_fit_center_half(acc));
     }
 }
