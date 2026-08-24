@@ -71,12 +71,18 @@ class Sequence:
     def step(self, dt: float) -> bool:
         if self.done:
             return True
-        while self.i < len(self.tweens):
-            if not self.tweens[self.i].step(dt):
+        remain = float(dt)
+        while self.i < len(self.tweens) and remain > 1e-8:
+            tw = self.tweens[self.i]
+            left = max(0.0, tw.duration - tw.t)
+            if not tw.step(remain):
                 return False
+            remain -= left
             self.i += 1
-        self.done = True
-        return True
+        if self.i >= len(self.tweens):
+            self.done = True
+            return True
+        return False
 
 
 _active: list[Tween | Sequence] = []

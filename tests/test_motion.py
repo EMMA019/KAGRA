@@ -27,9 +27,9 @@ def test_sequence_runs_in_order():
         motion.Tween(b, "y", 1.0, duration=0.1),
         motion.Tween(b, "y", 0.0, duration=0.1),
     )
-    motion.tick_animations(0.12)
+    motion.tick_animations(0.1)
     assert b.y == 1.0
-    motion.tick_animations(0.12)
+    motion.tick_animations(0.1)
     assert b.y == 0.0
 
 
