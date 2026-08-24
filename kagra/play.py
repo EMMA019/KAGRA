@@ -66,14 +66,18 @@ def jump_vy(
 
 
 def walk_wish(forward: float, right: float, yaw: float, speed: float = 3.2) -> tuple[float, float]:
-    """カメラ ``yaw`` 基準の歩行速度。forward=+1 は視線方向。"""
+    """カメラ ``yaw`` 基準の歩行速度。
+
+    ``forward=+1`` は視線方向（``yaw=0`` で +Z）。``right=+1`` は画面右。
+    ``Camera3D`` の right は ``forward × up`` なので、視線 +Z のとき画面右は −X。
+    """
     mag = math.hypot(forward, right)
     if mag < 1e-6:
         return 0.0, 0.0
     forward /= mag
     right /= mag
-    fx = math.sin(yaw) * forward + math.cos(yaw) * right
-    fz = math.cos(yaw) * forward - math.sin(yaw) * right
+    fx = math.sin(yaw) * forward - math.cos(yaw) * right
+    fz = math.cos(yaw) * forward + math.sin(yaw) * right
     return fx * speed, fz * speed
 
 

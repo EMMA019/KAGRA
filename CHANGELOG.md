@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Walk strafe matches the camera: `walk_wish` right is screen-right
+  (`forward × up`). D / left-stick X no longer move the opposite way in
+  Overworld / Prop Garden / Pretty Room. Forward (W) is unchanged.
 - Stage 0.5 brain hook: `kagra.brain("kairi"|"ollama"|"openai")` /
   `KairiBrain.ask`. Default kairi is `https://kairi.onrender.com`
   (`KAIRI_API_TOKEN` required for `/api/chat`). Host is pinged ~every 10
