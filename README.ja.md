@@ -106,6 +106,9 @@ python examples/vrm_orb_rush.py
 python examples/vrm_heart_catch.py
 python examples/vrm_switch_room.py
 python examples/vrm_dodge_room.py
+python examples/vrm_prop_garden.py       # Prop / Walk / sky
+python examples/vrm_pretty_room.py       # 閉じた部屋 / スポット / IBL
+python examples/vrm_overworld.py         # タイル島 — 坂・階段・箱街区
 ```
 
 レガシー 2D / タイルマップは [`examples/archive/`](examples/archive/)。
@@ -120,9 +123,11 @@ python examples/vrm_dodge_room.py
 - **NDI / RTMP** — 窓キャプチャは今も使える。仮想カメラは extra
 - **無人配信のセーフティ / オートパイロット** — 0.1.3 には無い
 - **公式の頭脳面** — `AiCharacter` はある。`KairiBrain` / Ollama の 1 行はまだ無い
-- **HDRI / 点光源** — 今は半球まで。一人称は `Walk(first_person=True)`
+- **フル PMREM / 複数ライト / CSM / 法線マップ** — 影は平行光 1 本。点またはスポット 1（影無し）。HDRI + 小さな irradiance キューブまではある（`set_hdri` / `set_point_light` / `set_spot_light`）
+- **ポインタロック / `Prop.animate` / クリック面** — 一人称は `Walk(first_person=True)`。ホバーは `hovered_prop`。マウスは画面端で止まる
 - **VOICEVOX / Irodori-TTS** — 同梱しない。VOICEVOX は [docs/recipes/voicevox.md](docs/recipes/voicevox.md)
 - 曲 WAV と `.vrma` はホイールに入れない（約 5MB の売りを守る）。サンプル VRM は初回ダウンロード
+- play surface（`Prop` / `Walk` / `room` / タイル島）はこのブランチ。PyPI 0.1.3 にはまだ無い
 
 レシピ: [自分の VRM](docs/recipes/own-vrm.md) · [ダンス / VRMA](docs/recipes/motion.md) · [VOICEVOX](docs/recipes/voicevox.md) · [OBS / 配信](docs/recipes/stream.md) · [マスコット](docs/recipes/mascot.md) · [エージェントゲーム](docs/recipes/agent-game.md)。
 レビュー: [docs/REVIEW.ja.md](docs/REVIEW.ja.md)。ロードマップ: [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md)。

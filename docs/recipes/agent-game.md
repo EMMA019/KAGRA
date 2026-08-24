@@ -40,6 +40,17 @@ only. Verify with python -m kagra.verify.
 Result: `examples/vrm_dodge_room.py`
 (log: `docs/agent-runs/20260823-dodge-room/`).
 
+A fourth prompt, **D-6** — play surface only. Do not write `World3D.add_box`
+by hand. Use `Prop` / `Walk` / `sky` (or `room` / `water`):
+
+```
+Using KAGRA, make a short game with Prop, Walk, and sky (or room)
+only: walk, then touch a goal Prop. Public APIs only.
+Do not use the 2D Entity. Verify with python -m kagra.verify.
+```
+
+This one is not written yet. Log it under `docs/agent-runs/` when it is.
+
 ## APIs agents actually need
 
 | Job | Call |
@@ -96,6 +107,7 @@ KAGRA で、VRM が3レーンを左右に歩いて、奥から飛んでくるハ
 短い 3D は `Prop` + `Walk` + `sky()` / `room()` / `water()`（Garden / Pretty Room /
 Overworld。これは play-surface デモで、エージェント製ログではない）。
 島は `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` と `Walk(..., jump=)`。坂は沿う／滑る。街区は `city_boxes`。
+4本目（D-6、未着手）は `Prop` / `Walk` / `sky`（または `room`）だけで、歩いてゴールの Prop を触る。`World3D.add_box` 直書きと 2D `Entity` は使わない。
 一人称は `Walk(..., first_person=True)`。ホバーは `hovered_prop(cam)`。
 パッドは `axis("left")` / `pad("a")`。テストは `inject_pad`。
 動かすのは `p.x` か `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)`。

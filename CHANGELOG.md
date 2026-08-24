@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Engine review + roadmap refresh (`docs/REVIEW.ja.md`, `docs/ROADMAP.ja.md`):
+  play surface reached a tiled island; capability ran ahead of Stage 1
+  wedges. Next is honesty + D-6 (`Prop` / `Walk` only) + `kagra.brain`,
+  not picture P9. README "Not yet" no longer claims HDRI / point lights
+  are missing. PyPI 0.1.3 still does not ship the play surface.
 - Heightfield slopes + tiles: walk along the tangent (slide on steep
   grades), not Y-snap only. `height_normal` / `stair_y`. Terrain bakes as
   tiles (`tile=10`) so AABBs stay under the shadow skip (24) — nearby

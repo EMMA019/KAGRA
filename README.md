@@ -106,9 +106,11 @@ Honesty list. These are missing on purpose, not forgotten:
 - **NDI / RTMP** — OBS window capture still works; virtual cam is the extra
 - **Autopilot / unattended safety** — not in 0.1.3
 - **Official LLM brain hook** — `AiCharacter` exists; `KairiBrain` / Ollama one-liner is not shipped
-- **HDRI / point lights** — hemisphere ambient only. `Walk(first_person=True)` is in.
+- **Full PMREM / several lights / CSM / normal maps** — one directional shadow, one point *or* spot (no light shadow), HDRI + a small irradiance cube. `set_hdri` / `set_point_light` / `set_spot_light` are in
+- **Pointer lock / `Prop.animate` / click-to-use** — `Walk(first_person=True)` and `hovered_prop` are in; the mouse still hits the window edge
 - **VOICEVOX / Irodori-TTS** — not bundled. VOICEVOX recipe: [docs/recipes/voicevox.md](docs/recipes/voicevox.md)
 - Song WAV and `.vrma` stay out of the wheel (~5MB install). First run downloads the sample VRM
+- Play surface (`Prop` / `Walk` / `room` / tiled island) is on this branch. PyPI 0.1.3 does not ship it yet
 
 Recipes: [own VRM](docs/recipes/own-vrm.md) · [dance / VRMA](docs/recipes/motion.md) · [VOICEVOX](docs/recipes/voicevox.md) · [OBS / stream](docs/recipes/stream.md) · [mascot](docs/recipes/mascot.md) · [agent game](docs/recipes/agent-game.md). Review: [docs/REVIEW.ja.md](docs/REVIEW.ja.md). Roadmap: [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md).
 
@@ -125,7 +127,7 @@ Everything else in [`docs/API_INDEX.md`](docs/API_INDEX.md) is available but may
 ## What you get
 
 - **VRM** — GPU skinning, SpringBone, MToon, look-at, lipsync, IK, expressions
-- **2D / 3D** — tilemaps, ECS, simple physics, orbit camera, fog, shadows
+- **3D play** — `Prop` / `Walk` / `sky` / `room` / tiled heightfield island, orbit / follow / first-person, fog, one-light shadows, HDRI
 - **Agent loop** — API index, `kagra.verify`, MCP tools, golden renders
 - **Mobile / Wasm** — `kagra-shared` + `mobile/` is a **separate driving demo** (roads, truck, OSM). It is not the Python VRM / game stack. Do not merge the two renderers.
 
