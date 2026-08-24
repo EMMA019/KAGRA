@@ -182,14 +182,16 @@ fn sample_cascade(world_pos: vec3<f32>, vp: mat4x4<f32>, layer: i32) -> f32 {
         return 1.0;
     }
     let texel = 1.0 / 2048.0;
-    let d = depth - 0.0015;
+    let bias = select(0.0015, 0.0035, shadow_u.params.y > 0.5);
+    let d = depth - bias;
     var s = 0.0;
     for (var y = -1; y <= 1; y++) {
         for (var x = -1; x <= 1; x++) {
             s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, layer, d);
         }
     }
-    return mix(0.50, 1.0, s / 9.0);
+    let dark = select(0.50, 0.16, shadow_u.params.y > 0.5);
+    return mix(dark, 1.0, s / 9.0);
 }
 fn shadow_factor(world_pos: vec3<f32>) -> f32 {
     let n = sample_cascade(world_pos, shadow_u.vp0, 0);
@@ -484,14 +486,16 @@ fn sample_cascade(world_pos: vec3<f32>, vp: mat4x4<f32>, layer: i32) -> f32 {
         return 1.0;
     }
     let texel = 1.0 / 2048.0;
-    let d = depth - 0.0015;
+    let bias = select(0.0015, 0.0035, shadow_u.params.y > 0.5);
+    let d = depth - bias;
     var s = 0.0;
     for (var y = -1; y <= 1; y++) {
         for (var x = -1; x <= 1; x++) {
             s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, layer, d);
         }
     }
-    return mix(0.50, 1.0, s / 9.0);
+    let dark = select(0.50, 0.16, shadow_u.params.y > 0.5);
+    return mix(dark, 1.0, s / 9.0);
 }
 fn shadow_factor(world_pos: vec3<f32>) -> f32 {
     let n = sample_cascade(world_pos, shadow_u.vp0, 0);

@@ -32,7 +32,7 @@ python tools/mcp_kagra/server.py   # MCP stdio
 - `kagra_render` – clear-color smoke screenshot
 
 Short 3D: `Prop` / `Walk` / `sky()` / `room()` / `water()`. Texture via `texture_from_fn` / `load`.
-Parent is 2 levels (`set_parent`, grandchild OK). glTF parts: `Prop("crate.glb")` (not `stage()`).
+Parent is 4 levels (`set_parent`). glTF parts: `Prop("crate.glb")` (not `stage()`).
 Gamepad: `axis` / `pad` / `inject_pad`. USB/XInput via gilrs on the EventLoop.
 `inject_pad` wins in tests. Not 2D `Entity`.
 Picture: `set_point_light` / `set_spot_light` / `set_hdri("studio")` /
@@ -45,10 +45,11 @@ EventLoop (`inject_pad` still wins for CI).
 
 Engine target is **80%** in `docs/ROADMAP.ja.md` (now ~33%). 100% = Python
 replacement of three-vrm + three.js + Ursina for everyday work. Body is
-~80%. Picture 25→85 is the bulk. Next engine work: indoor spot pixels
-(`indoor_spot` CI mean_abs=0.614, need 4.0). ACES / metal pairwise passed.
-Then crawl, normal pixels, multiple local lights, 4-level parent, rigid
-bodies (Rapier or equal). OSM / 4-cascade CSM / SSAO stay outside 80%.
+~80%. Picture 25→85 is the bulk. Indoor spot umbra is darker for lamps;
+golden uses a side light. Pairwise `normal_bump` added. Parent is 4 levels.
+Next: CI must pass `indoor_spot` (was 0.614 / need 4.0), then crawl,
+multiple local lights, rigid bodies. OSM / 4-cascade CSM / SSAO stay
+outside 80%.
 Final goal is first-recall; 80% is not a substitute. Brain hook is
 `kagra.brain("kairi")` — default `https://kairi.onrender.com`, token in
 `KAIRI_API_TOKEN`. Not in the wheel. Do not start D-6 as a fourth box room;

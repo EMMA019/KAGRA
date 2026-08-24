@@ -115,3 +115,13 @@ def test_pairwise_ibl_metal():
     metal = _render("ibl_metal", "ibl_metal.png")
     plastic = _render("ibl_plastic", "ibl_plastic.png")
     assert_pngs_differ(metal, plastic, min_mean_abs=3.0, name="ibl_metal")
+
+
+def test_pairwise_normal_map():
+    """接空間法線の有無がサイドライトで画素差になる。"""
+    _ensure_kagra()
+    from tests.golden_utils import assert_pngs_differ
+
+    bump = _render("normal_bump", "normal_bump.png")
+    flat = _render("normal_flat", "normal_flat.png")
+    assert_pngs_differ(bump, flat, min_mean_abs=3.0, name="normal_bump")

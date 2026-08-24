@@ -70,7 +70,7 @@ PNG/WAV/projection:
 - `animate` / `Label` / `Button` — tween and screen HUD
 - `destroy(prop)` / `Prop.update_all(dt)` — kinematic move and delete
 - Sphere / cylinder `Prop` collide and hover as those shapes (not boxes)
-- `Prop(..., texture=…)` / `set_parent` — 2-level parent (grandchild OK)
+- `Prop(..., texture=…)` / `set_parent` — 4-level parent
 - `Prop("crate.glb")` — static glTF part (not `stage()`). Alias `cube.glb`
 - `axis("left")` / `pad("a")` / `inject_pad` — gamepad. `Walk` reads both sticks
 - `kagra.save_json` / `load_json` — high scores

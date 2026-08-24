@@ -170,4 +170,29 @@ mod tests {
         assert!((a[0] / texel - (a[0] / texel).round()).abs() < 1e-4);
         assert!((a[2] / texel - (a[2] / texel).round()).abs() < 1e-4);
     }
+
+    #[test]
+    fn indoor_golden_floor_is_receive_only() {
+        // quad_y_mesh half=13 → 辺 26。SHADOW_SKIP_EXTENT を超えてキャストしない。
+        let floor = box_aabb([-13.0, 0.0, -13.0], [13.0, 0.0, 13.0]);
+        assert!((floor.max_extent() - 26.0).abs() < 1e-4);
+        assert!(!aabb_is_shadow_volume(&floor));
+        let box_caster = box_aabb([-0.275, 0.0, -0.275], [0.275, 1.9, 0.275]);
+        assert!(aabb_is_shadow_volume(&box_caster));
+        let acc = fold_shadow_aabb(fold_shadow_aabb(None, floor), box_caster);
+        assert_eq!(acc, fold_shadow_aabb(None, box_caster));
+    }
+
+    #[test]
+    fn near_cascade_snap_holds_across_sub_texel_eye() {
+        let floor = box_aabb([-7.0, -0.02, -7.0], [7.0, 0.02, 7.0]);
+        let acc = fold_shadow_aabb(None, floor);
+        let map = 2048.0;
+        let a = cascade_center_half(acc, [4.0, 1.5, -2.0], 2);
+        let texel = (2.0 * a[0].1) / map;
+        let b = cascade_center_half(acc, [4.0 + texel * 0.2, 1.5, -2.0 + texel * 0.2], 2);
+        let sa = snap_center_xz(a[0].0, a[0].1, map);
+        let sb = snap_center_xz(b[0].0, b[0].1, map);
+        assert_eq!(sa, sb);
+    }
 }

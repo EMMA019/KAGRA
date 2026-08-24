@@ -325,7 +325,7 @@ def render_markdown(items: list[tuple[str, str, str]]) -> str:
         "- HUD: `Label` / `Button`（画面空間。2D `kagra.ui` の同名は棚）。音は `sound(\"coin\")`。",
         "- 球 / 円柱の当たりとホバーは AABB ではない。`World3D.add_sphere` / `add_cylinder`。",
         "- Prop テクスチャ: `texture=kagra.texture_from_fn(...)` または `load`。0 なら `color`。",
-        "- Prop 親子は 2 段（孫まで。曾孫は不可）。子の `x,y,z,yaw` はローカル。",
+        "- Prop 親子は 4 段（玄孫まで）。子の `x,y,z,yaw` はローカル。",
         "- glTF 部品: `Prop(\"crate.glb\")`。`stage()` / `load_gltf` は会場。同梱エイリアス `cube.glb`。当たりは AABB。`mesh_hit=True` で三角形。",
         "- ゲームパッド: `axis(\"left\")` / `pad(\"a\")` / `inject_pad`。`Walk` は左スティック移動・右スティック視点。実機 USB/XInput は EventLoop で gilrs（`inject_pad` が優先。CI は inject）。",
         "- 影は床・箱・Prop も落とす。`set_shadow_cascades(2)` で近／遠の 2 段（既定 1。Prop Garden は変えない）。屋外はテクセルスナップ。OSM ではない街 JSON は `load_city`。三角形当たりは `add_trimesh` / `Prop(..., mesh_hit=True)`。積み木は `add_box(..., is_static=False)`（Rapier はまだ。80% の世界）。",

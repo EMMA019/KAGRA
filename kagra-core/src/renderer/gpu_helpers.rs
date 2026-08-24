@@ -485,4 +485,51 @@ mod light_dir_tests {
         assert!((sun[0] - 2.0).abs() < 1e-6);
         assert!(sun[1] < 0.5);
     }
+
+    fn mul_vp(m: &[f32; 16], p: [f32; 3]) -> [f32; 4] {
+        let (x, y, z) = (p[0], p[1], p[2]);
+        [
+            m[0] * x + m[4] * y + m[8] * z + m[12],
+            m[1] * x + m[5] * y + m[9] * z + m[13],
+            m[2] * x + m[6] * y + m[10] * z + m[14],
+            m[3] * x + m[7] * y + m[11] * z + m[15],
+        ]
+    }
+
+    #[test]
+    fn spot_maps_floor_under_lamp_into_ndc() {
+        let vp = super::build_spot_view_proj([0.0, 2.8, 0.0], [0.0, -1.0, 0.0], 0.85, 10.0);
+        let clip = mul_vp(&vp, [0.0, 0.0, 0.0]);
+        assert!(clip[3].abs() > 1e-4, "w={}", clip[3]);
+        let ndc = [clip[0] / clip[3], clip[1] / clip[3], clip[2] / clip[3]];
+        assert!(ndc[0] > -0.15 && ndc[0] < 0.15, "x={}", ndc[0]);
+        assert!(ndc[1] > -0.15 && ndc[1] < 0.15, "y={}", ndc[1]);
+        assert!(ndc[2] > 0.0 && ndc[2] < 1.0, "z={}", ndc[2]);
+        let side = mul_vp(&vp, [1.2, 0.0, 0.0]);
+        let sx = side[0] / side[3];
+        let sy = side[1] / side[3];
+        assert!(sx.abs() < 1.0 && sy.abs() < 1.0, "side ndc {} {}", sx, sy);
+    }
+
+    fn ndc(m: &[f32; 16], p: [f32; 3]) -> [f32; 3] {
+        let c = mul_vp(m, p);
+        [c[0] / c[3], c[1] / c[3], c[2] / c[3]]
+    }
+
+    #[test]
+    fn spot_maps_indoor_golden_side_lamp_into_ndc() {
+        // tests/render_golden_scene.py IndoorSpot
+        let vp = super::build_spot_view_proj(
+            [-2.4, 2.7, 0.15],
+            [0.82, -0.55, 0.0],
+            0.72,
+            12.0,
+        );
+        let box_c = ndc(&vp, [0.0, 0.95, 0.0]);
+        assert!(box_c[0].abs() < 0.85 && box_c[1].abs() < 0.85, "box xy {:?}", box_c);
+        assert!(box_c[2] > 0.0 && box_c[2] < 1.0, "box z={}", box_c[2]);
+        let floor = ndc(&vp, [1.4, 0.0, 0.0]);
+        assert!(floor[0].abs() < 0.95 && floor[1].abs() < 0.95, "floor xy {:?}", floor);
+        assert!(floor[2] > 0.0 && floor[2] < 1.0, "floor z={}", floor[2]);
+    }
 }

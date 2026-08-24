@@ -63,7 +63,7 @@ Result: `examples/vrm_dodge_room.py`
 | Gamepad | `axis("left")` / `pad("a")` / `inject_pad`. `Walk` uses both sticks |
 | Hover | `hovered_prop(cam)` — not the 2D `mouse`. Floor `plane` is skipped |
 | Move / delete | `prop.x = …` or `vx` + `Prop.update_all(dt)`. `destroy(prop)` / `prop.enabled` |
-| Texture / parent | `Prop(..., texture=kagra.texture_from_fn(...))` or `kagra.load`. 2-level `set_parent` / `parent=` (grandchild OK, great-grandchild no). Child `x,y,z,yaw` are local |
+| Texture / parent | `Prop(..., texture=kagra.texture_from_fn(...))` or `kagra.load`. 4-level `set_parent` / `parent=`. Child `x,y,z,yaw` are local |
 | Click / carry | `clicked_prop(cam)` then `walk.carry(prop)` |
 | Animate / HUD / SE | `animate(prop, "y", end)` / `Label` / `Button` / `sound("coin")` |
 | glTF part | `Prop("crate.glb")` — not `stage()`. Bundled `cube.glb`. Collision is AABB |
@@ -111,7 +111,7 @@ Overworld。これは play-surface デモで、エージェント製ログでは
 パッドは `axis("left")` / `pad("a")`。テストは `inject_pad`。
 動かすのは `p.x` か `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)`。
 テクスチャは `texture=kagra.texture_from_fn(...)`（または `load`）。
-親子は 2 段（`set_parent` / コンストラクタの `parent=`。孫まで。曾孫は不可）。
+親子は 4 段（`set_parent` / コンストラクタの `parent=`。玄孫まで）。
 子の `x,y,z,yaw` は親からのローカル。
 glTF 部品は `Prop("crate.glb")`（`stage()` は会場。同梱は `cube.glb`）。
 球 / 円柱の当たりとホバーは箱ではない。
