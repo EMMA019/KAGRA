@@ -6,7 +6,7 @@
 ## 1 行
 
 **最終目標は「Python で AI に体を与えるなら KAGRA」という第一想起。**
-体は three-vrm 級に近い。絵と書き味は usable-week の API まで来た（画素未確認。法線と USB パッドは未着手）。エージェントループは他に無い。頭脳の公式面が無いので楔 A/B は打てない。出せるゲームが jam の箱ならループだけでは人は来ない。
+体は three-vrm 級に近い。絵と書き味は usable-week の API まで来た（画素未確認。法線と USB パッドは未着手）。エージェントループは他に無い。頭脳の公式面は `kagra.brain("kairi")`（既定 https://kairi.onrender.com。モデルは wheel に無い）。出せるゲームが jam の箱ならループだけでは人は来ない。
 
 「three.js の普段 + Ursina で書く週」は **今のバー** であって最終目標ではない。
 Rapier / OSM / 4 段 CSM などはバーの外。禁止ではない。
@@ -15,7 +15,7 @@ Rapier / OSM / 4 段 CSM などはバーの外。禁止ではない。
 
 | ものさし | 戦う場所 | KAGRA の位置 |
 |---|---|---|
-| **three-vrm** | デスクトップ Python。Web では戦わない | 体（MToon / Spring / VRMA / 表情 / 一人称）は対抗できる。配布はこちらが厚い。頭脳の公式面は無い |
+| **three-vrm** | デスクトップ Python。Web では戦わない | 体（MToon / Spring / VRMA / 表情 / 一人称）は対抗できる。配布はこちらが厚い。頭脳は [kairi.onrender.com](https://kairi.onrender.com)（同梱しない） |
 | **three.js** | 同じ種類の仕事（ライト・影・IBL・マテリアル）。ブラウザ対決ではない | **API は普段の仕事に近づいた。画素未確認。** トーンマップ opt-in、スペキュラ mip、スポット透視影、2 段スナップ。法線無し |
 | **Ursina** | 「短い Python でゲームを書く」 | **API は書く週に近づいた。** ロック / クリック / `animate` / `Label` / 持つ / 孫。USB パッド無し。30 秒テストは未実施 |
 | **Unity + UniVRM** | インストールと「歌って踊るまで」 | 5MB wheel で勝つ。エディタと量産では負ける（戦わない） |
@@ -32,11 +32,10 @@ Rapier / OSM / 4 段 CSM などはバーの外。禁止ではない。
 
 ## 弱い（正直）
 
-### 頭脳（楔 A/B が打てない）
+### 頭脳（面はある。サーバーは外）
 
-`kagra.brain` と `docs/recipes/ai-brain.md` は **リポジトリに無い。**
-あるのは棚の `AiCharacter`。北極星の文面に対して、ここが一番空いている。
-**Stage 0.5 として最優先。** D のゲートにはしない。
+`kagra.brain("kairi")` が公式面。本命は [kairi.onrender.com](https://kairi.onrender.com)。`/api/ping` は公開、`/api/chat` は `KAIRI_API_TOKEN`。
+wheel には入れない（VOICEVOX と同じ関係）。Ollama / OpenAI 互換も同じ `ask`。
 
 ### 絵（three.js の普段との差）
 
@@ -113,7 +112,7 @@ kagra-shared + mobile/     ──► 別の運転デモ（道路・トラック�
 
 | 楔 | 今足りる絵 | 詰み | 先にやること |
 |---|---|---|---|
-| A ローカル LLM に体を | `avatar` + `sing` / `speak` | 頭脳の公式面が無い | **`kagra.brain`（Stage 0.5。最優先）** |
+| A ローカル LLM に体を | `avatar` + `kagra.brain("kairi")` | `KAIRI_API_TOKEN` | トークンを入れて 15 行 |
 | B 無人 3D VTuber | 歌・ダンス・HUD・仮想カメラ | 頭脳 + のちオートパイロット | 頭脳のあと。旗艦は Stage 3 |
 | C VRoid マスコット | 透明窓・常駐 | 配布物 / ワンライナー | エンジン不足ではない。優先は下 |
 | D エージェントがゲームを | 箱部屋 3 本 + Garden / Pretty Room / Overworld（API は載った。画素未確認） | 見知らぬ人に見せられない | **3 見本の画素。そのあと D-6** |
@@ -131,4 +130,4 @@ Web で three-vrm と戦う、torch をコア依存、箱部屋 4 本目を D-6�
 ボリュメトリック、カリング P9、kagra-core と kagra-shared のレンダラ統合。
 
 次の手はロードマップの番号付きリスト。
-**1 頭脳 → 2 法線と画素 → 3 PyPI → 4 D-6 → 5 楔 C ワンライナー → 6 Stage 1。**
+**頭脳の面は載った。残りは 2 法線と画素 → 3 PyPI → 4 D-6 → 5 楔 C ワンライナー → 6 Stage 1。**

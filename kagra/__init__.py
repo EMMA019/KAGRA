@@ -2185,6 +2185,7 @@ from kagra.vrm_action import ActionController
 # ─────────────────────────────────────────────────────────────
 
 from kagra.ai_character import AiCharacter, CharState
+from kagra.brain import Brain, BrainError, KairiBrain, OpenAIBrain, brain
 
 # ─────────────────────────────────────────────────────────────
 # avatar() 関数のシグネチャ変更不要。
