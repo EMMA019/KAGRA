@@ -41,10 +41,12 @@ Outdoor: `apply_outdoor_look` / `World3D.set_height_fn(overworld_height, tile=10
 Play: `clicked_prop` / `Walk.carry` / `animate` / `Label` / `sound`.
 Pointer lock follows first person (OS may refuse). USB pad is not in the wheel yet.
 
-Current engine bar is the usable week in `docs/ROADMAP.ja.md` (pixels, then
-normals / USB pad). Final goal is first-recall, not this bar. Later engine
-(Rapier / OSM / more CSM) is deferred, not banned. Do not start D-6 as a
-fourth box room. Do not call APIs three.js-class until the 30s demo test.
+Current engine bar is the usable week in `docs/ROADMAP.ja.md` (pixels +
+normals / USB pad). Final goal is first-recall, not this bar. Next work is
+Stage 0.5 `kagra.brain` (wedges A/B) in parallel with pixel close. Later
+engine (Rapier / OSM / more CSM) is deferred, not banned. Do not start D-6
+as a fourth box room; D-6 needs 30s of play and a score or goal. Do not
+call APIs three.js-class until the 30s demo test.
 
 ## Touch / mobile
 

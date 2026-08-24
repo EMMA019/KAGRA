@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Roadmap refresh: Stage 0.5 brain (`kagra.brain`) is first for wedges A/B,
+  in parallel with usable-week pixels. D-6 stays gated on the 30s demos and
+  must be playable 30s+ with a score or goal. Wedge C is a one-liner, lower
+  priority. Next PyPI should carry usable-week APIs. Star/DL targets are
+  reference at Stage 1. `KAGRA_ENGINE_GUIDE.md` body moved to `docs/archive/`.
 - Roadmap tidy: the north star (first-recall) is the final goal. The usable
   week is the current engine bar, not a ceiling. Rapier / OSM / extra CSM
   are deferred, not banned. Position after #52 / #53: APIs landed, pixels
