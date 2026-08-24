@@ -222,7 +222,7 @@ ROOM_AMBIENT = (0.22, 0.18, 0.14, 0.22)
 ROOM_BLOOM = (0.92, 0.12)
 ROOM_EXPOSURE = 1.05
 ROOM_HDRI_STRENGTH = 0.55
-ROOM_SPOT = (0.0, 3.05, 0.0, 0.0, -1.0, 0.0)
+ROOM_SPOT = (0.85, 3.05, 0.55, -0.28, -1.0, -0.18)
 
 
 def wood_plank_rgba(u: float, v: float) -> tuple[int, int, int, int]:

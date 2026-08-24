@@ -83,25 +83,26 @@ def _bind_cam(scene, radius, theta, phi, target, fov=42.0):
 
 
 class IndoorSpot(kagra.Scene):
-    """天井スポット + 箱。平行光は床をほぼ照らさない（Lambert の 0.2 床だけ）。"""
+    """横からの天井スポット + 箱。床は大きくて影を書かない（受けだけ）。"""
 
     shadows = True
 
     def on_enter(self):
         self.tex = kagra.load(solid_png(220, 208, 188))
-        _bind_cam(self, 4.4, 0.62, 0.78, (0.0, 0.12, 0.0), fov=48.0)
-        self.floor_v, self.floor_i = kagra.quad_y_mesh(0.0, 0.0, 0.0, 2.4)
-        self.box_v, self.box_i = kagra.box_mesh(0.0, 0.7, 0.0, 0.5, 1.4, 0.5)
+        _bind_cam(self, 5.2, 1.05, 0.52, (1.4, 0.08, 0.0), fov=42.0)
+        # 半辺 13 → 辺 26 > SHADOW_SKIP_EXTENT 24。床は受けだけでキャストしない。
+        self.floor_v, self.floor_i = kagra.quad_y_mesh(0.0, 0.0, 0.0, 13.0)
+        self.box_v, self.box_i = kagra.box_mesh(0.0, 0.95, 0.0, 0.55, 1.9, 0.55)
         kagra.set_shadow_enabled(self.shadows)
         kagra.set_tonemap(False)
         kagra.set_bloom(enabled=False)
-        kagra.set_ambient(0.04, 0.04, 0.04, 0.06)
+        kagra.set_ambient(0.03, 0.03, 0.03, 0.05)
         kagra.set_light_dir(0.1, -1.0, 0.05)
         kagra.set_hdri(None, strength=0.0)
         kagra.set_exposure(1.0)
         kagra.set_spot_light(
-            0.0, 2.8, 0.0, 0.0, -1.0, 0.0,
-            angle=0.9, penumbra=0.2, intensity=3.2, radius=10.0,
+            -2.4, 2.7, 0.15, 0.82, -0.55, 0.0,
+            angle=0.72, penumbra=0.12, intensity=4.2, radius=12.0,
             r=1.0, g=0.94, b=0.82,
         )
 
@@ -194,15 +195,60 @@ class IblPlastic(IblMetal):
     roughness = 0.14
 
 
+class NormalBump(kagra.Scene):
+    """接空間法線の有無。サイドライトでバンプが見える。"""
+
+    use_normal = True
+
+    def on_enter(self):
+        albedo = kagra.load(solid_png(190, 150, 120))
+
+        def nrm(x, y):
+            tile = ((x // 8) + (y // 8)) % 2
+            if tile:
+                return (220, 90, 255, 255)
+            return (40, 180, 255, 255)
+
+        ntex = kagra.texture_from_fn(64, 64, nrm, srgb=False, name="golden_bump")
+        _bind_cam(self, 3.0, 0.7, 0.35, (0.0, 0.55, 0.0), fov=40.0)
+        bv, bi = kagra.box_mesh(0.0, 0.55, 0.0, 1.1, 1.1, 1.1)
+        nid = ntex if self.use_normal else 0
+        self.box = kagra.upload_mesh_3d(
+            albedo, bv, bi, metallic=0.0, roughness=0.55, normal_texture_id=nid,
+        )
+        kagra.set_shadow_enabled(False)
+        kagra.set_bloom(enabled=False)
+        kagra.set_tonemap(False)
+        kagra.set_hdri(None, strength=0.0)
+        kagra.set_ambient(0.12, 0.12, 0.14, 0.18)
+        kagra.set_light_dir(0.65, 0.4, 0.35)
+        kagra.set_exposure(1.0)
+
+    def update(self, dt):
+        engine = kagra.get_engine()
+        if engine:
+            self.cam.update(engine)
+
+    def draw(self):
+        kagra.cls(20, 18, 22)
+        kagra.draw_mesh_id(self.box)
+
+
+class NormalFlat(NormalBump):
+    use_normal = False
+
+
 SCENES = {
     "shapes2d": (Shapes2D, 8),
     "mesh3d": (Mesh3D, 10),
-    "indoor_spot": (IndoorSpot, 12),
-    "indoor_spot_off": (IndoorSpotOff, 12),
+    "indoor_spot": (IndoorSpot, 14),
+    "indoor_spot_off": (IndoorSpotOff, 14),
     "tonemap_on": (TonemapScene, 12),
     "tonemap_off": (TonemapOff, 12),
     "ibl_metal": (IblMetal, 12),
     "ibl_plastic": (IblPlastic, 12),
+    "normal_bump": (NormalBump, 12),
+    "normal_flat": (NormalFlat, 12),
 }
 
 

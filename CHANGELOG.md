@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Indoor spot umbra is darker when the map is a lamp (`mix` 0.16, not 0.50)
+  and the golden scene uses a side lamp + a floor that does not cast
+  (extent skip). Pretty Room lamp is offset so the shadow stretches.
+  Pairwise `normal_bump` added. CI `indoor_spot` was 0.614 / need 4.0.
+- Prop parent is **4 levels** (`PARENT_MAX_LEVELS`). Not an infinite graph.
 - Roadmap: engine target is **80%** (now ~33%). 100% means a Python replacement
   of three-vrm + three.js + Ursina for everyday work, not the whole three.js
   repo. Body is already ~80%. Picture 25→85 is the bulk (indoor shadow pixels

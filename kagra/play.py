@@ -499,6 +499,9 @@ def destroy(prop) -> None:
         fn()
 
 
+PARENT_MAX_LEVELS = 4
+
+
 class Prop:
     """色付きプリミティブ、または静的 glTF 部品。位置は中心。
 
@@ -506,7 +509,7 @@ class Prop:
     ``normal`` は接空間法線テクスチャ ID（``srgb=False``）。glTF は ``normalTexture``。
     ``model`` が ``.glb`` / ``.gltf`` ならファイルを畳んで置く（``stage()`` ではない）。
     ``metallic`` / ``roughness`` は汎用メッシュだけ。省略時は glTF の因子、無ければ 0 / 1。
-    親子は 2 段まで（``set_parent``、孫可）。子の ``x,y,z,yaw`` は親からのローカル。
+    親子は 4 段まで（``set_parent``、玄孫可）。子の ``x,y,z,yaw`` は親からのローカル。
     2D の ``kagra.Entity`` とは別。エージェントはこっちを使う。
     """
 
@@ -712,7 +715,7 @@ class Prop:
         return wx, py + self._y, wz, pyaw + self._yaw
 
     def set_parent(self, parent: Optional["Prop"], *, keep_world: bool = True) -> None:
-        """親を最大 2 段（孫まで）。曾孫は不可。``keep_world`` なら今の世界位置を保つ。"""
+        """親を最大 4 段（玄孫まで）。``keep_world`` なら今の世界位置を保つ。"""
         if parent is self:
             raise ValueError("prop cannot parent itself")
         if parent is not None:
@@ -734,8 +737,8 @@ class Prop:
                     return 0
                 return 1 + max(_height(ch) for ch in p._children)
 
-            if _depth(parent) + 1 + _height(self) > 3:
-                raise ValueError("parent is 2 levels only")
+            if _depth(parent) + 1 + _height(self) > PARENT_MAX_LEVELS + 1:
+                raise ValueError(f"parent is {PARENT_MAX_LEVELS} levels only")
         if keep_world:
             wx, wy, wz, wyaw = self.world_pose()
             if parent is not None:

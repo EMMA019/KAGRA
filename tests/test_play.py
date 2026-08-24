@@ -245,17 +245,30 @@ def test_jump_vy_coyote_allows_air():
     assert play.jump_vy(False, False, 6.0, coyote=True) == pytest.approx(6.0)
 
 
-def test_set_parent_allows_grandchild_rejects_great():
-    a = play.Prop("box", x=0, y=0.5, z=0, collision=False)
-    b = play.Prop("box", x=1, y=0.5, z=0, collision=False)
-    c = play.Prop("box", x=2, y=0.5, z=0, collision=False)
-    d = play.Prop("box", x=3, y=0.5, z=0, collision=False)
-    b.set_parent(a, keep_world=False)
-    c.set_parent(b, keep_world=False)
-    assert c.parent is b
-    assert c.world_x == pytest.approx(3.0)
-    with pytest.raises(ValueError, match="2 levels"):
-        d.set_parent(c)
+def test_set_parent_allows_four_levels_rejects_fifth():
+    chain = [
+        play.Prop("box", x=float(i), y=0.5, z=0, collision=False)
+        for i in range(6)
+    ]
+    for i in range(4):
+        chain[i + 1].set_parent(chain[i], keep_world=False)
+    assert play.PARENT_MAX_LEVELS == 4
+    assert chain[4].parent is chain[3]
+    assert chain[4].world_x == pytest.approx(10.0)
+    with pytest.raises(ValueError, match="4 levels"):
+        chain[5].set_parent(chain[4])
+
+
+def test_set_parent_rejects_grafting_subtree_past_four():
+    root = [play.Prop("box", x=float(i), y=0.5, z=0, collision=False) for i in range(4)]
+    for i in range(3):
+        root[i + 1].set_parent(root[i], keep_world=False)
+    extra = [
+        play.Prop("box", x=10.0 + i, y=0.5, z=0, collision=False) for i in range(2)
+    ]
+    extra[1].set_parent(extra[0], keep_world=False)
+    with pytest.raises(ValueError, match="4 levels"):
+        extra[0].set_parent(root[3])
 
 
 def test_walk_carry_holds_and_clears():
