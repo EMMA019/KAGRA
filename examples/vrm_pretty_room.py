@@ -8,13 +8,14 @@ Play-surface counterpart of Prop Garden (outdoor). Indoor look is
   WASD / 左スティック : 歩く
   マウス / 右スティック : 視点（一人称はポインタロック）
   クリック            : Prop を持つ / 置く
-  F / Start           : 一人称 / 三人称
+  F / Start           : 一人称 / 三人称（既定は三人称）
   ESC                 : 終了
 
 スモーク: KAGRA_SMOKE=1 python examples/vrm_pretty_room.py
 """
 from __future__ import annotations
 
+import math
 import os
 import sys
 
@@ -108,10 +109,19 @@ class PrettyRoom(kagra.Scene):
             )
         kagra.Prop.bake_all()
         self.cam = Camera3D(SW, SH, fov_deg=58.0)
-        self.cam.look(0.0, 1.55, 2.4, 0.0, 1.45, -1.0)
+        p = self.world.player
+        # Third-person behind the spawn. first_person=True put the eye at the
+        # capsule (z=2.4, y=1.55) looking slightly down — inside the VRM mesh.
+        yaw = math.pi
+        dist, height, look_y = 3.2, 1.7, 1.15
+        self.cam.follow(
+            p.x, p.y, p.z,
+            lerp=1.0, yaw=yaw, distance=dist, height=height, look_y=look_y,
+        )
         kagra.set_camera3d(self.cam)
         self.walk = kagra.Walk(
-            self.world, self.cam, speed=2.8, first_person=True, yaw=3.14,
+            self.world, self.cam, speed=2.8, yaw=yaw,
+            distance=dist, height=height, look_y=look_y,
         )
         self.title = kagra.Label("Pretty Room", 18, 14, 24, (240, 220, 190))
         self.hint = kagra.Label("click  carry   F  view", 18, 46, 16, (190, 175, 155))
@@ -155,7 +165,7 @@ class PrettyRoom(kagra.Scene):
         if p is None:
             return
         self.avatar.set_position(p.x, p.y, p.z)
-        self.avatar.set_yaw(self.walk.yaw)
+        self.avatar.set_yaw(self.walk.face)
 
     def draw(self):
         kagra.cls(18, 14, 12)

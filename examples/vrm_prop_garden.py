@@ -27,7 +27,7 @@ sys.path.insert(0, _HERE)
 import kagra
 from kagra.camera3d import Camera3D
 
-from prop_garden_rules import GOLD_XZ, PLAYER_SPEED, PROPS, START_XZ, facing_yaw, near_gold
+from prop_garden_rules import GOLD_XZ, PLAYER_SPEED, PROPS, START_XZ, near_gold
 
 
 def _crate_px(x: int, y: int):
@@ -183,7 +183,7 @@ class PropGarden(kagra.Scene):
         self.action.update(dt)
         if p is None:
             return
-        face = facing_yaw(p.vx, p.vz, self.walk.yaw)
+        face = self.walk.face
         self.avatar.set_position(p.x, p.y, p.z)
         self.avatar.set_yaw(face)
 

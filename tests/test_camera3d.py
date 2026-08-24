@@ -109,6 +109,23 @@ def test_look_clears_orbit_and_sets_eye():
     assert cam.target == (0.0, 1.55, 1.0)
 
 
+def test_follow_behind_when_facing_neg_z():
+    """Pretty Room yaw=π: camera sits +Z of the player, not inside the mesh."""
+    import math
+
+    m = _cam()
+    cam = m.Camera3D(960, 540)
+    cam.follow(
+        0.0, 0.0, 2.4,
+        distance=3.2, height=1.7, look_y=1.15, lerp=1.0, yaw=math.pi,
+    )
+    assert abs(cam.position[0]) < 1e-6
+    assert abs(cam.position[1] - 1.7) < 1e-6
+    assert abs(cam.position[2] - 5.6) < 1e-6
+    assert abs(cam.position[2] - 2.4) > 2.5
+    assert cam.target[2] == 2.4
+
+
 def test_follow_lerps_toward_target():
     m = _cam()
     cam = m.Camera3D(800, 600)

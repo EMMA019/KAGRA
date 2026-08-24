@@ -38,6 +38,42 @@ def test_walk_wish_yaw_half_pi_is_plus_x():
     assert abs(fz) < 1e-9
 
 
+def test_facing_yaw_turns_around_when_walking_toward_camera():
+    """S / down is camera-relative back. Face must be π, not camera yaw 0."""
+    vx, vz = play.walk_wish(-1.0, 0.0, 0.0, speed=4.2)
+    assert abs(vx) < 1e-9
+    assert vz < 0.0
+    face = play.facing_yaw(vx, vz, fallback=0.0)
+    assert abs(abs(face) - math.pi) < 1e-9
+
+
+def test_facing_yaw_keeps_last_when_still():
+    assert play.facing_yaw(0.0, 0.0, fallback=1.2) == 1.2
+    assert play.facing_yaw(1.0, 0.0) == pytest.approx(math.pi / 2)
+
+
+def test_pointer_look_delta_zero_is_not_mouse_pos_fallback():
+    """Locked cursor recenters. Absolute pos jump must not pitch the camera down."""
+    dx, dy, last = play.pointer_look_delta((0.0, 0.0), (480.0, 270.0), (0.0, 0.0))
+    assert dx == 0.0 and dy == 0.0
+    assert last is None
+    dx, dy, last = play.pointer_look_delta(None, (480.0, 270.0), (0.0, 0.0))
+    assert dx == pytest.approx(480.0)
+    assert dy == pytest.approx(270.0)
+    assert last == (480.0, 270.0)
+
+
+def test_walk_face_follows_wish_not_camera_yaw():
+    w = play.World3D(gravity=0.0)
+    w.add_player(0.0, 0.0)
+    walk = play.Walk(w, object(), yaw=0.0, speed=2.0)
+    assert walk.face == pytest.approx(0.0)
+    vx, vz = play.walk_wish(-1.0, 0.0, walk.yaw, walk.speed)
+    walk.face = play.facing_yaw(vx, vz, walk.face)
+    assert abs(abs(walk.face) - math.pi) < 1e-9
+    assert walk.yaw == pytest.approx(0.0)
+
+
 def test_walk_wish_strafe_is_camera_right():
     """D / 右スティックは画面右。視線 +Z では Camera3D の right が −X。"""
     cam_mod = load_kagra_submodule("camera3d")

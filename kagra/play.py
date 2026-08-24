@@ -92,6 +92,43 @@ def look_pitch(pitch: float, dy: float, *, sens: float = 0.004, lo: float = -1.2
     return max(float(lo), min(float(hi), p))
 
 
+def facing_yaw(dx: float, dz: float, fallback: float = 0.0) -> float:
+    """移動ベクトル ``(dx, dz)`` の向き。``atan2(dx, dz)``（``yaw=0`` が +Z）。
+
+    停止中（長さがほぼ 0）は ``fallback``。三人称の VRM はカメラ ``yaw`` ではなく
+    こちらを ``set_yaw`` する。後退（カメラへ歩く）は ``±π`` で振り返る
+    （``atan2(0, -speed)`` は ``-π``。``π`` と同じ向き）。
+    """
+    if dx * dx + dz * dz < 1e-8:
+        return float(fallback)
+    return math.atan2(float(dx), float(dz))
+
+
+def pointer_look_delta(
+    engine_delta: tuple[float, float] | None,
+    mouse_pos: tuple[float, float] | None,
+    last_mouse: tuple[float, float] | None,
+) -> tuple[float, float, tuple[float, float] | None]:
+    """視点用の相対マウス。``engine_delta`` があればそれを使う。
+
+    ``(0, 0)`` は「動いていない」であり、``mouse_pos`` 差分へのフォールバックでは
+    ない。ポインタロックでカーソルが中央へ飛ぶと、絶対座標差分は急な下向き
+    pitch になる。``engine_delta is None`` のときだけ ``mouse_pos`` を使う。
+    戻りは ``(dx, dy, new_last_mouse)``。
+    """
+    if engine_delta is not None:
+        return float(engine_delta[0]), float(engine_delta[1]), None
+    if mouse_pos is None:
+        return 0.0, 0.0, last_mouse
+    mx, my = float(mouse_pos[0]), float(mouse_pos[1])
+    if last_mouse is not None:
+        dx = mx - last_mouse[0]
+        dy = my - last_mouse[1]
+    else:
+        dx = dy = 0.0
+    return dx, dy, (mx, my)
+
+
 def first_person_eye(
     x: float,
     y: float,
@@ -965,7 +1002,12 @@ class Prop:
 
 
 class Walk:
-    """WASD / 左スティック + マウス / 右スティック。``jump>0`` なら SPACE / A。"""
+    """WASD / 左スティック + マウス / 右スティック。``jump>0`` なら SPACE / A。
+
+    ``yaw`` は視点（カメラが後ろに付く向き）。``face`` は移動方向で、停止中は
+    直前の向きを保つ。三人称の VRM は ``avatar.set_yaw(walk.face)``。
+    ``walk.yaw`` をそのまま向きにすると、カメラへ歩く（S）ときに振り返らない。
+    """
 
     def __init__(
         self,
@@ -976,6 +1018,7 @@ class Walk:
         mouse_sens: float = 0.004,
         distance: float = 4.6,
         height: float = 2.2,
+        look_y: float = 1.0,
         yaw: float = 0.0,
         first_person: bool = False,
         eye_height: float = 1.55,
@@ -993,7 +1036,9 @@ class Walk:
         self.mouse_sens = float(mouse_sens)
         self.distance = float(distance)
         self.height = float(height)
+        self.look_y = float(look_y)
         self.yaw = float(yaw)
+        self.face = float(yaw)
         self.pitch = float(pitch)
         self.first_person = bool(first_person)
         self.eye_height = float(eye_height)
@@ -1027,19 +1072,23 @@ class Walk:
                 self._locked = want_lock
             except Exception:
                 self._locked = False
-        dx = dy = 0.0
-        try:
-            dx, dy = kagra.mouse_delta()
-        except Exception:
-            dx = dy = 0.0
-        if dx == 0.0 and dy == 0.0:
-            mx, my = kagra.mouse_pos()
-            if self._last_mouse is not None:
-                dx = mx - self._last_mouse[0]
-                dy = my - self._last_mouse[1]
-            self._last_mouse = (float(mx), float(my))
-        else:
             self._last_mouse = None
+        engine_delta = None
+        try:
+            eng = kagra.get_engine()
+            if eng is not None and getattr(eng, "mouse_delta", None) is not None:
+                engine_delta = tuple(kagra.mouse_delta())
+        except Exception:
+            engine_delta = None
+        mouse_pos = None
+        if engine_delta is None:
+            try:
+                mouse_pos = kagra.mouse_pos()
+            except Exception:
+                mouse_pos = None
+        dx, dy, self._last_mouse = pointer_look_delta(
+            engine_delta, mouse_pos, self._last_mouse,
+        )
         if dx or dy:
             self.yaw = look_yaw(self.yaw, dx, sens=self.mouse_sens)
             if self.first_person:
@@ -1063,6 +1112,7 @@ class Walk:
         if self.world.in_water():
             vx *= 0.55
             vz *= 0.55
+        self.face = facing_yaw(vx, vz, self.face)
         self.world.move_player(vx, vz)
         p = self.world.player
         dt = float(dt)
@@ -1092,8 +1142,8 @@ class Walk:
             if getattr(h, "enabled", False) is False or getattr(h, "_destroyed", False):
                 self.held = None
             elif p is not None:
-                fx = math.sin(self.yaw)
-                fz = math.cos(self.yaw)
+                fx = math.sin(self.face)
+                fz = math.cos(self.face)
                 h.set_parent(None, keep_world=False)
                 h.set_position(p.x + fx * 0.85, p.y + 1.15, p.z + fz * 0.85)
         self.world.update(dt)
@@ -1111,6 +1161,7 @@ class Walk:
                 yaw=self.yaw,
                 distance=self.distance,
                 height=self.height,
+                look_y=self.look_y,
                 lerp=0.22,
             )
         eng = kagra.get_engine()
