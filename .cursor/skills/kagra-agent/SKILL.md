@@ -37,13 +37,14 @@ Gamepad: `axis` / `pad` / `inject_pad`. Not 2D `Entity`.
 Picture: `set_point_light` / `set_spot_light` / `set_hdri("studio")` /
 `set_exposure` / `set_tonemap` / `Prop(..., metallic=)`. Indoor: `apply_room_look`.
 Outdoor: `apply_outdoor_look` / `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` /
-`load_city` / `Walk(..., jump=)`. Not OSM / Rapier.
+`load_city` / `Walk(..., jump=)`. City JSON is not OSM; physics is not Rapier yet.
 Play: `clicked_prop` / `Walk.carry` / `animate` / `Label` / `sound`.
-Pointer lock follows first person (OS may refuse). USB pad is not in the wheel.
+Pointer lock follows first person (OS may refuse). USB pad is not in the wheel yet.
 
-Picture and play are the usable-week bar, not three.js-class / Ursina-class until
-a stranger would watch 30s of Pretty Room / Overworld / Prop Garden. Do not start
-D-6 as a fourth box room. Skip normals and gilrs this slice.
+Current engine bar is the usable week in `docs/ROADMAP.ja.md` (pixels, then
+normals / USB pad). Final goal is first-recall, not this bar. Later engine
+(Rapier / OSM / more CSM) is deferred, not banned. Do not start D-6 as a
+fourth box room. Do not call APIs three.js-class until the 30s demo test.
 
 ## Touch / mobile
 

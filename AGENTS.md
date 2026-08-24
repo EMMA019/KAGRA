@@ -86,6 +86,6 @@ The API index front is VRM / 3D / agents; the shelf is legacy 2D.
 
 - `docs/AGENT.md` — contracts table, CI-parity commands, Cargo.lock policy
 - `docs/API_INDEX.md` — the searchable public API
-- `docs/REVIEW.ja.md` — engine review vs three.js / three-vrm / Ursina (day one today)
-- `docs/ROADMAP.ja.md` — next bar is the usable week, not Stage 1 posting or D-6 box-room #4
+- `docs/REVIEW.ja.md` — engine review vs three.js / three-vrm / Ursina
+- `docs/ROADMAP.ja.md` — 最終目標は第一想起。今のバーは使える週（画素 → 法線 / パッド）
 - `docs/schemas/input_events.json` — touch / pointer input schema
