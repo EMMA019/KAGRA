@@ -127,6 +127,38 @@ pub(super) fn build_light_view_proj_fit(
     out
 }
 
+/// スポット用の透視シャドウ。``angle`` は外角（ラジアン）。
+pub(super) fn build_spot_view_proj(pos: [f32; 3], dir: [f32; 3], angle: f32, radius: f32) -> [f32; 16] {
+    use nalgebra::{Matrix4, Point3, Vector3};
+    let origin = Point3::new(pos[0], pos[1], pos[2]);
+    let dir = Vector3::new(dir[0], dir[1], dir[2]);
+    let dir = if dir.norm_squared() < 1e-12 {
+        Vector3::new(0.0, -1.0, 0.0)
+    } else {
+        dir.normalize()
+    };
+    let target = origin + dir * 1.5;
+    let up = if dir.y.abs() > 0.99 {
+        Vector3::new(0.0, 0.0, 1.0)
+    } else {
+        Vector3::new(0.0, 1.0, 0.0)
+    };
+    let view = Matrix4::look_at_rh(&origin, &target, &up);
+    let fov = (angle * 2.0).clamp(0.08, 2.6);
+    let far = radius.max(3.0);
+    let proj = Matrix4::new_perspective(1.0, fov, 0.12, far);
+    let wgpu_correction = Matrix4::new(
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 0.5, 0.5,
+        0.0, 0.0, 0.0, 1.0,
+    );
+    let vp = wgpu_correction * proj * view;
+    let mut out = [0f32; 16];
+    out.copy_from_slice(vp.as_slice());
+    out
+}
+
 pub(super) fn make_msaa_texture(
     device: &wgpu::Device,
     width: u32,
@@ -258,6 +290,7 @@ pub(super) fn upload_env_cube(
         label: Some("Env Cube Sampler"),
         mag_filter: wgpu::FilterMode::Linear,
         min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::FilterMode::Linear,
         ..Default::default()
     });
     (tex, view, sampler)
@@ -269,6 +302,22 @@ pub(super) fn upload_env_cube_faces(
     face_size: u32,
     rgba: &[[u8; 4]],
 ) -> (wgpu::Texture, wgpu::TextureView, wgpu::Sampler) {
+    upload_env_cube_mips(device, queue, face_size, rgba, 1)
+}
+
+pub(super) fn upload_env_cube_mips(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    face_size: u32,
+    rgba: &[[u8; 4]],
+    mips: u32,
+) -> (wgpu::Texture, wgpu::TextureView, wgpu::Sampler) {
+    let chain = if mips > 1 {
+        crate::hdri::cube_mip_chain(rgba, face_size, mips)
+    } else {
+        vec![(face_size, rgba.to_vec())]
+    };
+    let mip_count = chain.len().max(1) as u32;
     let tex = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Env Cube"),
         size: wgpu::Extent3d {
@@ -276,44 +325,47 @@ pub(super) fn upload_env_cube_faces(
             height: face_size,
             depth_or_array_layers: 6,
         },
-        mip_level_count: 1,
+        mip_level_count: mip_count,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba8UnormSrgb,
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    let raw_stride = (face_size * 4) as usize;
-    let padded_stride = ((raw_stride + 255) / 256) * 256;
-    for face in 0..6 {
-        let start = face * face_size as usize * face_size as usize;
-        let mut bytes = vec![0u8; padded_stride * face_size as usize];
-        for y in 0..face_size as usize {
-            for x in 0..face_size as usize {
-                let px = rgba[start + y * face_size as usize + x];
-                let o = y * padded_stride + x * 4;
-                bytes[o..o + 4].copy_from_slice(&px);
+    for (mip, (size, pixels)) in chain.iter().enumerate() {
+        let size = *size;
+        let raw_stride = (size * 4) as usize;
+        let padded_stride = ((raw_stride + 255) / 256) * 256;
+        for face in 0..6 {
+            let start = face * size as usize * size as usize;
+            let mut bytes = vec![0u8; padded_stride * size as usize];
+            for y in 0..size as usize {
+                for x in 0..size as usize {
+                    let px = pixels[start + y * size as usize + x];
+                    let o = y * padded_stride + x * 4;
+                    bytes[o..o + 4].copy_from_slice(&px);
+                }
             }
+            queue.write_texture(
+                wgpu::ImageCopyTexture {
+                    texture: &tex,
+                    mip_level: mip as u32,
+                    origin: wgpu::Origin3d { x: 0, y: 0, z: face as u32 },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &bytes,
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_stride as u32),
+                    rows_per_image: Some(size),
+                },
+                wgpu::Extent3d {
+                    width: size,
+                    height: size,
+                    depth_or_array_layers: 1,
+                },
+            );
         }
-        queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &tex,
-                mip_level: 0,
-                origin: wgpu::Origin3d { x: 0, y: 0, z: face as u32 },
-                aspect: wgpu::TextureAspect::All,
-            },
-            &bytes,
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(padded_stride as u32),
-                rows_per_image: Some(face_size),
-            },
-            wgpu::Extent3d {
-                width: face_size,
-                height: face_size,
-                depth_or_array_layers: 1,
-            },
-        );
     }
     let view = tex.create_view(&wgpu::TextureViewDescriptor {
         label: Some("Env Cube View"),
@@ -324,6 +376,7 @@ pub(super) fn upload_env_cube_faces(
         label: Some("Env Cube Sampler"),
         mag_filter: wgpu::FilterMode::Linear,
         min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::FilterMode::Linear,
         ..Default::default()
     });
     (tex, view, sampler)
@@ -369,5 +422,12 @@ mod light_dir_tests {
         for i in 0..16 {
             assert!((a[i] - b[i]).abs() < 1e-5);
         }
+    }
+
+    #[test]
+    fn spot_view_proj_is_finite() {
+        let vp = super::build_spot_view_proj([0.0, 3.0, 0.0], [0.0, -1.0, 0.0], 0.85, 14.0);
+        assert!(vp.iter().all(|v| v.is_finite()));
+        assert!(vp.iter().any(|v| v.abs() > 1e-5));
     }
 }

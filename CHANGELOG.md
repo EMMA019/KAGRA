@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Usable-week APIs (not the stranger test yet; GPU unverified here):
+  `set_tonemap` (ACES, default off), specular cube mips, spot perspective
+  shadow, cascade texel snap. `Walk` pointer lock / coyote / jump buffer /
+  `carry`. `clicked_prop`, `animate` / `sequence`, `Label` / `Button`,
+  2-level parent, `sound()`. Pretty Room / Overworld / Prop Garden opt in
+  (`apply_room_look` / `apply_outdoor_look`). Garden smoke stays without
+  tonemap. Not normals, not USB/XInput, not Rapier / OSM / 4-cascade CSM.
+- Roadmap: the usable week is the next bar, not Stage 1 posting.
+  P0–P8 and room v1 stay foundation (three.js / Ursina day one). Done means
+  a stranger would watch 30s of Pretty Room, Overworld, and Prop Garden.
+  D-6 waits on that; brain can proceed in parallel for wedge A. Not Rapier,
+  OSM, film CSM, or another box-room game.
 - City JSON, mesh hit, stacking, 2-cascade shadows: `load_city` / `city_chunk`
   (not OSM), `Physics3D.add_trimesh` / `Prop(..., mesh_hit=True)`,
   `add_box(..., is_static=False)` with solver iters + sleep (not Rapier),

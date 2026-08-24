@@ -1,6 +1,7 @@
 """Default live look — procedural sky, vignette, showcase cuts, foot lift.
 
-GPU は ``apply_live_look`` / ``draw_vignette`` / ``load_default_sky`` だけ。
+GPU は ``apply_live_look`` / ``apply_room_look`` / ``apply_outdoor_look`` /
+``draw_vignette`` / ``load_default_sky`` だけ。
 色・カット・接地の計算は純 Python（テストは拡張なしで回る）。
 テクスチャは同梱せず、初回に小さな PNG を tempfile へ書く（wheel ~5MB 死守）。
 """
@@ -276,6 +277,22 @@ def apply_room_look() -> None:
             r=1.0, g=0.92, b=0.78,
         )
         kagra.set_bloom(threshold=ROOM_BLOOM[0], intensity=ROOM_BLOOM[1])
+        kagra.set_tonemap(True)
+    except (TypeError, AttributeError):
+        pass
+
+
+def apply_outdoor_look() -> None:
+    """屋外。2 段影 + トーンマップ。Prop Garden スモークは呼ばない。"""
+    import kagra
+
+    kagra.set_shadow_enabled(True)
+    try:
+        kagra.set_shadow_cascades(2)
+        kagra.set_tonemap(True)
+        kagra.set_exposure(1.08)
+        kagra.set_hdri("studio", strength=0.35)
+        kagra.set_bloom(threshold=0.88, intensity=0.18)
     except (TypeError, AttributeError):
         pass
 

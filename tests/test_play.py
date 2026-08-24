@@ -224,15 +224,42 @@ def test_set_parent_keep_world_detach():
     assert child.z == pytest.approx(2.0)
 
 
-def test_set_parent_rejects_two_levels():
+def test_jump_vy_coyote_allows_air():
+    assert play.jump_vy(False, False, 6.0) is None
+    assert play.jump_vy(False, False, 6.0, coyote=True) == pytest.approx(6.0)
+
+
+def test_set_parent_allows_grandchild_rejects_great():
     a = play.Prop("box", x=0, y=0.5, z=0, collision=False)
     b = play.Prop("box", x=1, y=0.5, z=0, collision=False)
     c = play.Prop("box", x=2, y=0.5, z=0, collision=False)
-    b.set_parent(a)
-    with pytest.raises(ValueError, match="1 level"):
-        c.set_parent(b)
-    with pytest.raises(ValueError, match="cannot become a child"):
-        a.set_parent(c)
+    d = play.Prop("box", x=3, y=0.5, z=0, collision=False)
+    b.set_parent(a, keep_world=False)
+    c.set_parent(b, keep_world=False)
+    assert c.parent is b
+    assert c.world_x == pytest.approx(3.0)
+    with pytest.raises(ValueError, match="2 levels"):
+        d.set_parent(c)
+
+
+def test_walk_carry_holds_and_clears():
+    w = play.World3D(gravity=0.0)
+    box = play.Prop("box", x=1.0, y=0.5, z=1.0, collision=False)
+    walk = play.Walk(w, object())
+    walk.carry(box)
+    assert walk.held is box
+    walk.carry(None)
+    assert walk.held is None
+
+
+def test_walk_lock_cursor_follows_first_person():
+    w = play.World3D(gravity=0.0)
+    third = play.Walk(w, object(), first_person=False)
+    assert third.lock_cursor is None
+    first = play.Walk(w, object(), first_person=True)
+    assert first.lock_cursor is None
+    off = play.Walk(w, object(), first_person=True, lock_cursor=False)
+    assert off.lock_cursor is False
 
 
 def test_child_collision_follows_parent():

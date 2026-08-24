@@ -6,7 +6,8 @@ Play-surface counterpart of Prop Garden (outdoor). Indoor look is
 
 操作:
   WASD / 左スティック : 歩く
-  マウス / 右スティック : 視点
+  マウス / 右スティック : 視点（一人称はポインタロック）
+  クリック            : Prop を持つ / 置く
   F / Start           : 一人称 / 三人称
   ESC                 : 終了
 
@@ -61,6 +62,8 @@ class PrettyRoom(kagra.Scene):
         self.walk = kagra.Walk(
             self.world, self.cam, speed=2.8, first_person=True, yaw=3.14,
         )
+        self.title = kagra.Label("Pretty Room", 18, 14, 24, (240, 220, 190))
+        self.hint = kagra.Label("click  carry   F  view", 18, 46, 16, (190, 175, 155))
 
     def update(self, dt):
         dt = min(dt, 0.05)
@@ -79,6 +82,16 @@ class PrettyRoom(kagra.Scene):
         if (kagra.pressed("F") or kagra.pad_pressed("start")) and not SMOKE:
             self.walk.first_person = not self.walk.first_person
             self.avatar.first_person = self.walk.first_person
+        if not SMOKE:
+            hit = kagra.clicked_prop(self.cam)
+            if hit is not None:
+                if self.walk.held is None:
+                    self.walk.carry(hit)
+                    kagra.sound("ok")
+                else:
+                    self.walk.carry(None)
+                    kagra.sound("ok")
+        kagra.Prop.update_all(dt)
         self.walk.step(dt)
         p = self.world.player
         moving = False
@@ -100,9 +113,10 @@ class PrettyRoom(kagra.Scene):
         kagra.draw_vrm(self.avatar.vrm_id)
         kagra.draw_vignette(strength=0.28)
         kagra.fill(0, 0, 360, 72, (12, 10, 8), 160)
-        kagra.text("Pretty Room", 18, 14, 24, (240, 220, 190))
+        self.title.draw()
         mode = "first person  F" if self.walk.first_person else "third person  F"
-        kagra.text(mode, 18, 46, 16, (190, 175, 155))
+        self.hint.text = ("carrying  click drop  " if self.walk.held is not None else "click  carry   ") + mode
+        self.hint.draw()
 
 
 if __name__ == "__main__":

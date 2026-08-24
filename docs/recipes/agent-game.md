@@ -6,6 +6,10 @@ KAGRA's loop is: search the API → write a scene → verify headlessly.
 Rules live in [`AGENTS.md`](../../AGENTS.md). Logged runs live in
 [`docs/agent-runs/`](../agent-runs/README.md).
 
+Heart Catch / Switch Room / Dodge Room prove the loop. They are day-one
+box games. Do not start a fourth box room and call it D-6. Next bar:
+usable week in [`docs/ROADMAP.ja.md`](../ROADMAP.ja.md).
+
 ## One-line prompt
 
 ```
@@ -49,16 +53,18 @@ Result: `examples/vrm_dodge_room.py`
 | 3D → HUD | `cam.world_to_screen(x, y, z)` — not the 2D `kagra.world_to_screen` |
 | World | `World3D` (floor + boxes) then `Camera3D.follow` |
 | Short 3D | `Prop` + `Walk` + `sky()` / `room()` / `water()` |
-| Island | `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` + `load_city` + `Walk(..., jump=)`. `set_shadow_cascades(2)` outdoors. Not OSM |
-| First person | `Walk(..., first_person=True)` — eye height. Prop Garden: `F` / Start |
+| Island | `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` + `load_city` + `apply_outdoor_look` + `Walk(..., jump=)`. Not OSM |
+| First person | `Walk(..., first_person=True)` — lock + eye height. Prop Garden: `F` / Start |
 | Gamepad | `axis("left")` / `pad("a")` / `inject_pad`. `Walk` uses both sticks |
 | Hover | `hovered_prop(cam)` — not the 2D `mouse`. Floor `plane` is skipped |
 | Move / delete | `prop.x = …` or `vx` + `Prop.update_all(dt)`. `destroy(prop)` / `prop.enabled` |
-| Texture / parent | `Prop(..., texture=kagra.texture_from_fn(...))` or `kagra.load`. 1-level `set_parent` / `parent=` (no grandchildren). Child `x,y,z,yaw` are local |
+| Texture / parent | `Prop(..., texture=kagra.texture_from_fn(...))` or `kagra.load`. 2-level `set_parent` / `parent=` (grandchild OK, great-grandchild no). Child `x,y,z,yaw` are local |
+| Click / carry | `clicked_prop(cam)` then `walk.carry(prop)` |
+| Animate / HUD / SE | `animate(prop, "y", end)` / `Label` / `Button` / `sound("coin")` |
 | glTF part | `Prop("crate.glb")` — not `stage()`. Bundled `cube.glb`. Collision is AABB |
 | Shape hit | `Prop("sphere")` / `cylinder` collide and hover as those shapes, not boxes |
 | Mesh retain | `upload_mesh_3d` once, `draw_mesh_id` each frame — or `world.bake` / `world.draw` |
-| Art / SE | `kagra.texture_from_fn` / `kagra.tone` / `kagra.draw_billboard` |
+| Art / SE | `kagra.texture_from_fn` / `kagra.tone` / `kagra.sound` / `kagra.draw_billboard` |
 | Score | `kagra.save_json` / `kagra.load_json` |
 | One-shot pose | `ActionController(avatar)` then `action.play("clap")` — `ActionController.names()` |
 
@@ -104,3 +110,4 @@ Overworld。これは play-surface デモで、エージェント製ログでは
 子の `x,y,z,yaw` は親からのローカル。
 glTF 部品は `Prop("crate.glb")`（`stage()` は会場。同梱は `cube.glb`）。
 球 / 円柱の当たりとホバーは箱ではない。
+箱部屋の 4 本目を D-6 と呼ばない。次はロードマップの使える週。

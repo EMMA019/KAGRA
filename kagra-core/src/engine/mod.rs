@@ -1164,6 +1164,13 @@ impl Engine {
     pub fn key_pressed(&self, code: u32) -> bool { self.window.is_key_pressed(code) }
     pub fn key_released(&self, code: u32) -> bool { self.window.is_key_released(code) }
     pub fn mouse_pos(&self) -> (f32, f32) { self.window.mouse_pos() }
+
+    pub fn mouse_delta(&self) -> (f32, f32) { self.window.mouse_delta() }
+
+    #[pyo3(signature = (locked=true))]
+    pub fn set_cursor_locked(&self, locked: bool) {
+        self.window.set_cursor_locked(locked);
+    }
     pub fn mouse_down(&self, btn: u32) -> bool { self.window.is_mouse_down(btn) }
     pub fn mouse_pressed(&self, btn: u32) -> bool { self.window.is_mouse_pressed(btn) }
     pub fn mouse_released(&self, btn: u32) -> bool { self.window.is_mouse_released(btn) }
@@ -1409,7 +1416,7 @@ impl Engine {
         self.window.set_point_light(x, y, z, r, g, b, intensity, radius);
     }
 
-    /// スポット 1（影は無し）。点光源スロットを共有。
+    /// スポット 1。室内では同じマップに透視影を書く。点光源スロットを共有。
     #[pyo3(signature = (x, y, z, dx, dy, dz, angle=0.8, penumbra=0.25, intensity=1.0, radius=10.0, r=1.0, g=0.95, b=0.85))]
     pub fn set_spot_light(
         &self,
@@ -1428,6 +1435,12 @@ impl Engine {
     #[pyo3(signature = (value=1.0))]
     pub fn set_exposure(&self, value: f32) {
         self.window.set_exposure(value);
+    }
+
+    /// ACES トーンマップ。既定オフ（ゴールデンを守る）。
+    #[pyo3(signature = (enabled=true))]
+    pub fn set_tonemap(&self, enabled: bool) {
+        self.window.set_tonemap(enabled);
     }
 
     /// HDRI キューブ。``studio`` は内蔵。空 / strength=0 でオフ。

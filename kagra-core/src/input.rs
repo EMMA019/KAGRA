@@ -12,6 +12,8 @@ pub struct InputState {
     mouse_released: HashSet<u32>,
     wheel_x: f32,
     wheel_y: f32,
+    mouse_dx: f32,
+    mouse_dy: f32,
     pub char_buffer: Vec<char>,
     pub preedit_text: String,
     pub preedit_cursor: Option<(usize, usize)>,
@@ -36,6 +38,8 @@ impl InputState {
             mouse_released: HashSet::new(),
             wheel_x: 0.0,
             wheel_y: 0.0,
+            mouse_dx: 0.0,
+            mouse_dy: 0.0,
             char_buffer: Vec::new(),
             preedit_text: String::new(),
             preedit_cursor: None,
@@ -55,6 +59,8 @@ impl InputState {
         self.mouse_released.clear();
         self.wheel_x = 0.0;
         self.wheel_y = 0.0;
+        self.mouse_dx = 0.0;
+        self.mouse_dy = 0.0;
         self.char_buffer.clear();
         self.backspace_pressed = false;
         self.enter_pressed = false;
@@ -117,12 +123,18 @@ impl InputState {
         self.mouse_released.insert(button);
     }
 
+    pub fn on_mouse_delta(&mut self, dx: f32, dy: f32) {
+        self.mouse_dx += dx;
+        self.mouse_dy += dy;
+    }
+
     pub fn on_mouse_wheel(&mut self, dx: f32, dy: f32) {
         self.wheel_x += dx;
         self.wheel_y += dy;
     }
 
     pub fn mouse_pos(&self) -> (f32, f32) { (self.mouse_x, self.mouse_y) }
+    pub fn mouse_delta(&self) -> (f32, f32) { (self.mouse_dx, self.mouse_dy) }
     pub fn is_mouse_down(&self, button: u32) -> bool { self.mouse_held.contains(&button) }
     pub fn is_mouse_pressed(&self, button: u32) -> bool { self.mouse_pressed.contains(&button) }
     pub fn is_mouse_released(&self, button: u32) -> bool { self.mouse_released.contains(&button) }

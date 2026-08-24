@@ -36,8 +36,8 @@ from kagra.camera3d      import Camera3D
 from kagra.tilemap       import TileSet, TileMap
 from kagra.tilemap       import TILE_SOLID, TILE_WATER, TILE_LADDER, TILE_DOOR, TILE_DAMAGE
 from kagra.ui            import (
-    Tween, TweenManager, Easing,
-    Panel, Label, Button,
+    TweenManager, Easing,
+    Panel,
     MessageWindow, EventFlags, DialogScript,
     SaveLoad, ChoiceMenu, TransitionScene,
     ProgressBar, VBox, HBox, ScrollView, UIGroup,
@@ -666,8 +666,14 @@ def apply_live_look(*, mascot: bool = False):
 
 
 def apply_room_look():
-    """閉じた部屋用の光（スポット + HDRI + 露出）。``apply_live_look`` は触らない。"""
+    """閉じた部屋用の光（スポット + HDRI + 露出 + トーンマップ）。"""
     from kagra.look import apply_room_look as _apply
+    _apply()
+
+
+def apply_outdoor_look():
+    """屋外の島用。2 段影 + トーンマップ。``apply_live_look`` は触らない。"""
+    from kagra.look import apply_outdoor_look as _apply
     _apply()
 
 def draw_vignette(sw: int | None = None, sh: int | None = None, strength: float = 0.42):
@@ -742,7 +748,7 @@ def set_spot_light(
     g: float = 0.95,
     b: float = 0.85,
 ):
-    """スポット 1（影は無し）。点光源スロットを共有。``intensity=0`` でオフ。
+    """スポット 1。室内では同じマップに透視影を書く。点光源スロットを共有。
 
     ``(dx,dy,dz)`` は光が向かう方向。``angle`` は外角（ラジアン）。
     """
@@ -762,11 +768,17 @@ def set_exposure(value: float = 1.0):
     _engine.set_exposure(float(value))
 
 
+def set_tonemap(enabled: bool = True):
+    """ACES トーンマップ。既定オフ（ゴールデン / Prop Garden スモークを守る）。"""
+    _check()
+    _engine.set_tonemap(bool(enabled))
+
+
 def set_hdri(path: str | None = "studio", strength: float = 1.0):
     """HDRI キューブ。``path='studio'`` は内蔵グラデ。空 / None / strength=0 でオフ。
 
     正距円筒図（PNG/JPEG）も渡せる。拡散は小さな irradiance キューブ。
-    スペキュラは鋭いキューブ。露出は ``set_exposure``。
+    スペキュラは mip LOD。露出は ``set_exposure``。トーンマップは ``set_tonemap``。
     """
     _check()
     name = "" if path is None else str(path)
@@ -1121,6 +1133,13 @@ def hovered_prop(cam=None, sx: float | None = None, sy: float | None = None, *, 
         return None
     (ox, oy, oz), (dx, dy, dz) = ray
     return _pick(ox, oy, oz, dx, dy, dz, max_dist=float(max_dist))
+
+
+def clicked_prop(cam=None, *, button: int = 1, max_dist: float = 80.0):
+    """このフレーム左クリックで当たった ``Prop``。無ければ None。"""
+    if not mouse_pressed(int(button)):
+        return None
+    return hovered_prop(cam, max_dist=max_dist)
 
 
 def destroy(prop) -> None:
@@ -1873,6 +1892,26 @@ def mouse_click(button_id: int = 1) -> bool:
     return mouse_pressed(button_id)
 
 
+def mouse_delta() -> tuple:
+    """このフレームの相対マウス。ロック時の視点用。エンジン無しなら (0, 0)。"""
+    if _engine is None:
+        return (0.0, 0.0)
+    fn = getattr(_engine, "mouse_delta", None)
+    if fn is None:
+        return (0.0, 0.0)
+    return fn()
+
+
+def set_cursor_locked(locked: bool = True):
+    """ポインタロック。OS が拒めば何もしない。"""
+    if _engine is None:
+        return
+    fn = getattr(_engine, "set_cursor_locked", None)
+    if fn is None:
+        return
+    fn(bool(locked))
+
+
 # ── シーン管理 ────────────────────────────────────────────────
 
 def go(next_scene: Scene) -> None:
@@ -1928,6 +1967,30 @@ def tone(
     """
     from kagra.gamekit import write_tone
     return str(write_tone(name, freqs, duration=duration, volume=volume, decay=decay))
+
+
+_SOUND_CACHE: dict[str, str] = {}
+_SOUND_PRESET = {
+    "coin": (880, 1320),
+    "jump": (392, 523),
+    "hit": (180, 90),
+    "ok": (660, 880),
+}
+
+
+def sound(name: str = "coin", freqs=None, duration: float = 0.1, volume: float = 0.32) -> str:
+    """合成 SE を書いて鳴らす。同じ名前はキャッシュ。エンジン無しでもパスを返す。"""
+    key = str(name)
+    path = _SOUND_CACHE.get(key)
+    if not path:
+        hz = freqs if freqs is not None else _SOUND_PRESET.get(key, (523, 784))
+        path = tone(key, hz, duration=duration, volume=volume)
+        _SOUND_CACHE[key] = path
+    try:
+        se(path, vol=1.0)
+    except Exception:
+        pass
+    return path
 
 
 def save_json(name: str, data: dict, *, directory: str | None = None):
@@ -2088,6 +2151,8 @@ from kagra.physics       import BoxCollider, Rigidbody, PhysicsSystem, TopDownPh
 from kagra.physics3d     import Physics3D, RigidBody3D, AABB
 from kagra.world3d       import World3D
 from kagra.play          import Prop, Walk  # hovered_prop is the wrapper above
+from kagra.motion        import animate, sequence, Tween, Sequence
+from kagra.hud           import Label, Button
 from kagra.instances     import InstanceBatch
 from kagra.bgm_sync      import BgmSync, BgmCue, RhythmJudge, LiveScore
 from kagra.vrm_loader    import VrmModel

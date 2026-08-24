@@ -6,9 +6,10 @@ Non-smoke also places ``cube.glb`` (static glTF part, not ``stage()``).
 
 操作:
   WASD / 左スティック : 歩く
-  マウス / 右スティック : 視点（一人称は上下も）
+  マウス / 右スティック : 視点（一人称は上下も。ロックする）
+  クリック            : ホバー中の Prop を持つ / 置く
   F / Start           : 一人称 / 三人称
-  E / A               : ホバー中の Prop を消す（親を消すと子も消える）
+  E                   : ホバー中の Prop を消す（親を消すと子も消える）
   ESC         : 終了
 
 スモーク: KAGRA_SMOKE=1 python examples/vrm_prop_garden.py
@@ -68,6 +69,11 @@ class PropGarden(kagra.Scene):
                 collision=False,
             )
             gem.set_parent(self.gold, keep_world=False)
+            spark = kagra.Prop(
+                "sphere", x=0.0, y=0.22, z=0.0, scale=0.10, color="white",
+                collision=False,
+            )
+            spark.set_parent(gem, keep_world=False)
             kagra.Prop("cube.glb", x=-1.4, y=0.5, z=2.6, color="white", world=self.world)
             kagra.Prop(
                 "sphere", x=2.2, y=0.5, z=-1.6, scale=0.9, color="white",
@@ -75,6 +81,18 @@ class PropGarden(kagra.Scene):
             )
             kagra.set_hdri("studio", 0.40)
             kagra.set_point_light(1.4, 2.2, 0.8, intensity=1.1, radius=11.0)
+
+            def _bob_down():
+                if self.gold is None or not self.gold.enabled:
+                    return
+                kagra.animate(self.gold, "y", 0.34, duration=0.55, on_done=_bob_up)
+
+            def _bob_up():
+                if self.gold is None or not self.gold.enabled:
+                    return
+                kagra.animate(self.gold, "y", 0.68, duration=0.55, on_done=_bob_down)
+
+            _bob_up()
         kagra.Prop.bake_all()
         self.cam = Camera3D(SW, SH, fov_deg=42.0)
         self.cam.follow(START_XZ[0], 0.0, START_XZ[1], lerp=1.0, yaw=0.0)
@@ -83,6 +101,9 @@ class PropGarden(kagra.Scene):
         self.found = False
         self.hi = int((kagra.load_json("prop_garden") or {}).get("found") or 0)
         self.look = None
+        self.title = kagra.Label("Prop Garden", 18, 14, 26, (230, 220, 160))
+        self.hint = kagra.Label("", 18, 50, 18, (190, 200, 220))
+        self.mode = kagra.Label("", 18, 72, 16, (160, 170, 190))
 
     def update(self, dt):
         dt = min(dt, 0.05)
@@ -103,13 +124,24 @@ class PropGarden(kagra.Scene):
         if (kagra.pressed("F") or kagra.pad_pressed("start")) and not SMOKE:
             self.walk.first_person = not self.walk.first_person
             self.avatar.first_person = self.walk.first_person
-        if self.gold is not None and self.gold.enabled and not SMOKE:
+        if self.gold is not None and self.gold.enabled and SMOKE:
             self.gold.y = 0.5 + 0.18 * math.sin(kagra.tick_count() * 0.1)
         kagra.Prop.update_all(dt)
         self.walk.step(dt)
         self.look = kagra.hovered_prop(self.cam)
-        if (kagra.pressed("E") or kagra.pad_pressed("a")) and self.look is not None and not SMOKE:
+        if not SMOKE:
+            hit = kagra.clicked_prop(self.cam)
+            if hit is not None:
+                if self.walk.held is None:
+                    self.walk.carry(hit)
+                    kagra.sound("ok")
+                else:
+                    self.walk.carry(None)
+                    kagra.sound("ok")
+        if (kagra.pressed("E")) and self.look is not None and not SMOKE:
             gone = self.look
+            if self.walk.held is gone:
+                self.walk.carry(None)
             kagra.destroy(gone)
             if gone is self.gold:
                 self.gold = None
@@ -124,6 +156,7 @@ class PropGarden(kagra.Scene):
                 kagra.save_json("prop_garden", {"found": self.hi})
                 self.avatar.feel("joy", 1.0)
                 self.action.play("clap")
+                kagra.sound("coin")
         want = "walk" if moving else "idle"
         if getattr(self.avatar, "clip", None) != want:
             self.avatar.play(want, loop=True)
@@ -143,13 +176,14 @@ class PropGarden(kagra.Scene):
         kagra.draw_vrm(self.avatar.vrm_id)
         kagra.draw_vignette()
         kagra.fill(0, 0, 380, 110, (8, 10, 18), 170)
-        kagra.text("Prop Garden", 18, 14, 26, (230, 220, 160))
-        hint = "gold sphere — found" if self.found else "WASD  walk to the gold sphere"
-        kagra.text(hint, 18, 50, 18, (160, 255, 190) if self.found else (190, 200, 220))
-        mode = "first person  F" if self.walk.first_person else "third person  F"
-        kagra.text(mode, 18, 72, 16, (160, 170, 190))
+        self.title.draw()
+        self.hint.text = "gold sphere — found" if self.found else "WASD  walk to the gold sphere"
+        self.hint.color = (160, 255, 190) if self.found else (190, 200, 220)
+        self.hint.draw()
+        self.mode.text = "first person  F" if self.walk.first_person else "third person  F"
+        self.mode.draw()
         if self.look is not None:
-            kagra.text(self.look.model + "  E", 18, 92, 18, self.look.color)
+            kagra.text(self.look.model + "  click/E", 18, 92, 18, self.look.color)
         hit = self.cam.world_to_screen(GOLD_XZ[0], 1.1, GOLD_XZ[1])
         if hit and not self.found and self.gold is not None and self.gold.enabled:
             kagra.text("GOLD", hit[0] - 28, hit[1] - 18, 16, (255, 220, 90))

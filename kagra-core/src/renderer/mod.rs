@@ -138,10 +138,12 @@ pub struct RendererV2 {
     point_pos: [f32; 4],
     /// 点光源色 rgb + 強度。0 ならオフ。
     point_col: [f32; 4],
-    /// x = HDRI 強度、y = 露出（既定 1）、z = spot cos_inner。
+    /// x = HDRI 強度、y = 露出（既定 1）、z = spot cos_inner、w = ACES（>0.5 でオン）。
     env_params: [f32; 4],
     /// xyz = スポット方向、w = cos_outer（0 なら点光 / オフ）。
     spot_dir: [f32; 4],
+    /// スポット外角（ラジアン）。0 なら透視影を書かない。
+    spot_angle: f32,
     env_tex: wgpu::Texture,
     env_view: wgpu::TextureView,
     env_sampler: wgpu::Sampler,
@@ -1267,6 +1269,7 @@ impl RendererV2 {
             point_col,
             env_params,
             spot_dir,
+            spot_angle: 0.0,
             env_tex,
             env_view,
             env_sampler,
@@ -1746,17 +1749,32 @@ impl RendererV2 {
                 acc = fold_shadow_aabb(acc, world);
             }
         }
-        let fits = cascade_center_half(acc, self.last_eye, self.shadow_cascades);
         let mut sample = [0f32; 36];
-        for (i, (center, half)) in fits.iter().enumerate() {
-            let dist = half + 4.0;
-            let far = dist + half + 4.0;
-            let vp = build_light_view_proj_fit(self.light_dir, *center, *half, dist, far);
-            self.shadow_cascade_vp[i] = vp;
-            let o = i * 16;
-            sample[o..o + 16].copy_from_slice(&vp);
+        if self.spot_dir[3] > 1e-4 && self.spot_angle > 1e-4 && self.point_col[3] > 1e-4 {
+            let vp = build_spot_view_proj(
+                [self.point_pos[0], self.point_pos[1], self.point_pos[2]],
+                [self.spot_dir[0], self.spot_dir[1], self.spot_dir[2]],
+                self.spot_angle,
+                self.point_pos[3],
+            );
+            self.shadow_cascade_vp[0] = vp;
+            self.shadow_cascade_vp[1] = vp;
+            sample[0..16].copy_from_slice(&vp);
+            sample[16..32].copy_from_slice(&vp);
+            sample[32] = 1.0;
+        } else {
+            let fits = cascade_center_half(acc, self.last_eye, self.shadow_cascades);
+            for (i, (center, half)) in fits.iter().enumerate() {
+                let center = snap_center_xz(*center, *half, SHADOW_MAP_SIZE as f32);
+                let dist = half + 4.0;
+                let far = dist + half + 4.0;
+                let vp = build_light_view_proj_fit(self.light_dir, center, *half, dist, far);
+                self.shadow_cascade_vp[i] = vp;
+                let o = i * 16;
+                sample[o..o + 16].copy_from_slice(&vp);
+            }
+            sample[32] = self.shadow_cascades as f32;
         }
-        sample[32] = self.shadow_cascades as f32;
         self.queue.write_buffer(&self.shadow_sample_buf, 0, bytemuck::cast_slice(&sample));
         self.queue.write_buffer(
             &self.shadow_vp_buf,
@@ -1849,6 +1867,7 @@ impl RendererV2 {
             intensity.max(0.0),
         ];
         self.spot_dir = [0.0, -1.0, 0.0, 0.0];
+        self.spot_angle = 0.0;
         self.env_params[2] = 0.0;
         self.queue.write_buffer(&self.camera_3d_buf, 224, bytemuck::cast_slice(&self.point_pos));
         self.queue.write_buffer(&self.camera_3d_buf, 240, bytemuck::cast_slice(&self.point_col));
@@ -1884,6 +1903,7 @@ impl RendererV2 {
             intensity.max(0.0),
         ];
         self.spot_dir = [dir[0], dir[1], dir[2], cos_outer];
+        self.spot_angle = angle.clamp(0.02, std::f32::consts::PI - 0.02);
         self.env_params[2] = cos_inner;
         self.queue.write_buffer(&self.camera_3d_buf, 224, bytemuck::cast_slice(&self.point_pos));
         self.queue.write_buffer(&self.camera_3d_buf, 240, bytemuck::cast_slice(&self.point_col));
@@ -1892,6 +1912,11 @@ impl RendererV2 {
 
     pub fn set_exposure(&mut self, value: f32) {
         self.env_params[1] = value.max(0.0);
+        self.write_env_spot();
+    }
+
+    pub fn set_tonemap(&mut self, enabled: bool) {
+        self.env_params[3] = if enabled { 1.0 } else { 0.0 };
         self.write_env_spot();
     }
 
@@ -1958,7 +1983,13 @@ impl RendererV2 {
             crate::hdri::IRRADIANCE_FACE_SIZE,
             crate::hdri::IRRADIANCE_SAMPLES,
         );
-        let (tex, view, samp) = upload_env_cube_faces(&self.device, &self.queue, face, &cube);
+        let (tex, view, samp) = upload_env_cube_mips(
+            &self.device,
+            &self.queue,
+            face,
+            &cube,
+            crate::hdri::SPECULAR_MIPS,
+        );
         let (itex, iview, _) = upload_env_cube_faces(
             &self.device,
             &self.queue,

@@ -207,6 +207,9 @@ fn apply_fog(color: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
     let t = saturate((dist - cam.fog_params.x) / max(1e-3, cam.fog_params.y - cam.fog_params.x));
     return mix(color, cam.fog_color.rgb, t);
 }
+fn aces_tonemap(x: vec3<f32>) -> vec3<f32> {
+    return saturate((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14));
+}
 fn hemi_ambient(n: vec3<f32>) -> vec3<f32> {
     if cam.ambient.w < 1e-4 { return vec3<f32>(0.0); }
     let h = 0.45 + 0.55 * saturate(n.y * 0.5 + 0.5);
@@ -315,7 +318,7 @@ struct II { @location(3) pos_yaw: vec4<f32>, @location(4) scale: vec4<f32> }
             / max(4.0 * ndotv * ndotl, 1e-4);
         let kd = (vec3<f32>(1.0) - f) * (1.0 - metallic);
         let sun = (kd * albedo + spec) * ndotl * shadow_factor(in.world_pos);
-        let spec_env = textureSample(env_cube, env_samp, reflect(-v, n)).rgb
+        let spec_env = textureSampleLevel(env_cube, env_samp, reflect(-v, n), rough * 3.0).rgb
             * cam.env.x * (1.0 - rough) * f;
         rgb = sun + albedo * point + in.hemi + env * (1.0 - metallic) * 0.65 + spec_env;
     } else {
@@ -324,6 +327,9 @@ struct II { @location(3) pos_yaw: vec4<f32>, @location(4) scale: vec4<f32> }
     }
     rgb = apply_fog(rgb, in.world_pos);
     rgb = rgb * max(cam.env.y, 0.0);
+    if cam.env.w > 0.5 {
+        rgb = aces_tonemap(rgb);
+    }
     return vec4<f32>(rgb, c.a);
 }
 "#;
@@ -474,6 +480,10 @@ fn apply_fog(color: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
     return mix(color, cam.fog_color.rgb, t);
 }
 
+fn aces_tonemap(x: vec3<f32>) -> vec3<f32> {
+    return saturate((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14));
+}
+
 fn animated_uv(uv: vec2<f32>) -> vec2<f32> {
     let speeds = mtoon.uv_anim.xyz;
     if length(speeds) < 1e-6 {
@@ -618,6 +628,9 @@ fn cotangent_frame(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> mat3x3<f32> {
     }
     col = apply_fog(col, in.world_pos);
     col = col * max(cam.env.y, 0.0);
+    if cam.env.w > 0.5 {
+        col = aces_tonemap(col);
+    }
     return vec4<f32>(col, base.a);
 }
 
