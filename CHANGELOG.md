@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Roadmap: engine target is **80%** (now ~33%). 100% means a Python replacement
+  of three-vrm + three.js + Ursina for everyday work, not the whole three.js
+  repo. Body is already ~80%. Picture 25→85 is the bulk (indoor shadow pixels
+  first: CI `indoor_spot` mean_abs=0.614, need 4.0). Writing 60→80 via 30s
+  demos and 4-level parents. World 25→55 via rigid bodies (Rapier or equal).
+  OSM / 4-cascade CSM / SSAO stay outside 80%. First-recall stays the north
+  star; 80% is not a substitute. Do not call 80% until pixels and demos say so.
 - Indoor spot shadows the **local light**, not the directional sun
   (`shadow_u.params.y`). Fill from the sun stays; the lamp umbra reads.
   Pairwise golden `indoor_spot` / `tonemap_on` / `ibl_metal` (CI `golden`
