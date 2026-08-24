@@ -2,9 +2,12 @@
 
 ## Unreleased
 
-- Outdoor crawl pairwise golden (`outdoor_crawl` on/off + 0.2-texel
-  similar). CPU snap holds for the golden eyes. Pixels close on Windows CI,
-  not here. Picture still ~50% until that job is green.
+- Outdoor crawl pairwise: first CI was `mean_abs=0.000` because 2-cascade
+  writes reused one light-VP uniform and `Queue::write_buffer` in the layer
+  loop stomped both pending passes (same class of bug as bloom params).
+  Each cascade now has its own VP buffer. Scene also restaged to the indoor
+  orbit + a -X sun. Differ gate is 2.0 (directional umbra is mix 0.50).
+  Pixels still close only on a green Windows `golden` job.
 - Rigid boxes: `add_box(..., is_static=False)` fall, stack, and `Walk`
   stands on them (character vs crate does not sink the crate). Rapier crate
   stays out of the 5MB wheel. World ~55%, engine ~47%. Public face unchanged.
