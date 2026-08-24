@@ -10,10 +10,13 @@ sys.path.insert(0, str(_ROOT / "examples"))
 
 from relic_run_rules import (
     CAM_DISTANCE,
+    GLTF_HALF_Y,
     LAND_MIN_Y,
     RELIC_XZ,
+    ROCK_PLACEMENTS,
     START_XZ,
     STONE_XZ,
+    TREE_PLACEMENTS,
     TREE_XZ,
     WATER_Y,
     can_pick,
@@ -21,9 +24,12 @@ from relic_run_rules import (
     hero_theta,
     nearest_live,
     round_score,
+    sit_y,
     spawn_relics,
     start_face,
 )
+
+from tests.conftest import load_kagra_submodule
 
 
 def test_cam_distance_is_showcase_far():
@@ -70,6 +76,56 @@ def test_water_and_land_constants():
     assert WATER_Y == 0.0
     assert LAND_MIN_Y < WATER_Y
     assert TREE_XZ and STONE_XZ
+    assert len(TREE_PLACEMENTS) >= 8
+    assert len(ROCK_PLACEMENTS) >= 5
+
+
+def test_sit_y_puts_centered_mesh_on_ground():
+    assert sit_y(1.0, 0.5, 2.0) == 2.0
+    assert GLTF_HALF_Y["tree.glb"] > 0.5
+    assert GLTF_HALF_Y["tree-high.glb"] > GLTF_HALF_Y["tree.glb"]
+
+
+def test_props_and_relics_are_on_grass():
+    land = load_kagra_submodule("land")
+    spots = list(RELIC_XZ) + [START_XZ]
+    spots += [(x, z) for _n, x, z, _s, _y in TREE_PLACEMENTS]
+    spots += [(x, z) for _n, x, z, _s, _y in ROCK_PLACEMENTS]
+    for x, z in spots:
+        kind = land.biome_at(x, z, water_y=WATER_Y, fn=land.overworld_height)
+        assert kind == "grass", (x, z, kind)
+
+
+def test_cc0_assets_are_vendored():
+    root = _ROOT / "examples" / "assets" / "relic_run"
+    assert (root / "LICENSE.md").is_file()
+    for name in (
+        "kenney/tree.glb",
+        "kenney/tree-high.glb",
+        "kenney/rocks-high.glb",
+        "kenney/rocks-low.glb",
+        "kenney/stones.glb",
+        "kenney/plant.glb",
+        "kenney/rock_largeA.glb",
+        "kenney/rock_tallA.glb",
+        "kenney/stone_smallTopA.glb",
+        "kenney/mushroom_red.glb",
+        "kenney/Textures/colormap.png",
+        "polyhaven/aerial_grass_rock_diff_1k.jpg",
+        "polyhaven/kloofendal_48d_partly_cloudy_puresky_1k.png",
+    ):
+        path = root / name
+        assert path.is_file(), name
+        assert path.stat().st_size > 1000, name
+
+
+def test_kenney_tree_loads_colormap():
+    gm = load_kagra_submodule("gltf_mesh")
+    tree = _ROOT / "examples" / "assets" / "relic_run" / "kenney" / "tree.glb"
+    flat = gm.flatten_gltf(tree)
+    assert flat.image is not None
+    assert flat.image[:8] == b"\x89PNG\r\n\x1a\n"
+    assert flat.aabb[4] - flat.aabb[1] > 1.0
 
 
 def test_game_file_uses_only_public_imports():
@@ -90,6 +146,13 @@ def test_game_file_uses_only_public_imports():
             assert "set_yaw(self.walk.yaw)" not in text
             continue
         assert name not in text, name
+    assert 'resolve_asset(AssetKind.ANY, "walk"' not in text
+    assert "AssetKind.ANY" not in text
+    # Optional VRMA override is allowed; Mixamo/BVH walk via resolve_asset is not.
+    assert "walk.vrma" in text
+    assert "except Exception:\n                pass" not in text
+    # Built-in idle/walk is the default (T-pose arm drop + swing).
+    assert "built-in" in text
     for name in (
         "ensure_vrm",
         "resolve_asset",
@@ -100,6 +163,9 @@ def test_game_file_uses_only_public_imports():
         "apply_outdoor_look",
         "set_spot_light",
         "set_point_light",
+        "set_hdri",
+        "stage",
+        ".glb",
         "overworld_height",
         "World3D",
         "Camera3D",
@@ -113,3 +179,8 @@ def test_game_file_uses_only_public_imports():
         "draw_vignette",
     ):
         assert name in text, name
+
+
+def test_readme_sample_line_stays():
+    readme = (_ROOT / "README.md").read_text(encoding="utf-8")
+    assert "python examples/vrm_relic_run.py" in readme

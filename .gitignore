@@ -66,6 +66,14 @@ scratch/
 *.vrm
 *.png
 *.jpg
+# Relic Run (and future example) CC0 textures / Kenney colormap
+!examples/assets/
+!examples/assets/**/
+!examples/assets/**/*.png
+!examples/assets/**/*.jpg
+!examples/assets/**/*.glb
+!examples/assets/**/*.txt
+!examples/assets/**/*.md
 # ゴールデン画像は回帰テストの基準として追跡する
 !tests/goldens/
 !tests/goldens/**/*.png

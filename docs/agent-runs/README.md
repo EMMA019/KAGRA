@@ -39,3 +39,4 @@
 - `20260824-indoor-shadow/` — 室内ウンブラを濃くする + 親子 4 段 + 法線ペアワイズ（ゲームではない。CI `indoor_spot` / `normal_bump` 通過）
 - `20260824-local-lights/` — 局所ライト 4 スロット（ゲームではない。CI `local_four` 通過）
 - `20260824-crawl-rigid/` — 屋外這いの pairwise golden + AABB 剛体（乗る）。這いは CI #65 通過。剛体は #64
+- `20260824-relic-run-walk-assets/` — Relic Run 前傾腕（Mixamo/BVH T-pose deltas）修正 + Kenney/Poly Haven CC0 で島を 30s 見本に
