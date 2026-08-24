@@ -135,3 +135,15 @@ def test_pairwise_local_four():
     four = _render("local_four", "local_four.png")
     one = _render("local_one", "local_one.png")
     assert_pngs_differ(four, one, min_mean_abs=4.0, name="local_four")
+
+
+def test_pairwise_outdoor_crawl():
+    """屋外 2 段: 影が画素に出る。0.2 texel の視点ずらしはスナップで這わない。"""
+    _ensure_kagra()
+    from tests.golden_utils import assert_pngs_differ, assert_pngs_similar
+
+    on = _render("outdoor_crawl", "outdoor_crawl.png")
+    off = _render("outdoor_crawl_off", "outdoor_crawl_off.png")
+    nudge = _render("outdoor_crawl_nudge", "outdoor_crawl_nudge.png")
+    assert_pngs_differ(on, off, min_mean_abs=4.0, name="outdoor_crawl")
+    assert_pngs_similar(on, nudge, max_mean_abs=2.5, name="outdoor_crawl_nudge")

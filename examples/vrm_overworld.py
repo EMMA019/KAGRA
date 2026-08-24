@@ -3,7 +3,8 @@
 Play-surface. Not an agent-built log. Public APIs:
 load_city / add_trimesh / add_box(is_static=False) / set_shadow_cascades(2).
 
-Not OSM, not Rapier. CSM is 2 cascades (near/far), not a film-grade split.
+Not OSM. Dynamic crates fall and stack; Walk can stand on them.
+CSM is 2 cascades (near/far), not a film-grade split.
 
 操作:
   WASD / 左スティック : 歩く（坂に沿う。急斜面は滑る。水中は遅くなる）

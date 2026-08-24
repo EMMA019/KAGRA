@@ -12,8 +12,9 @@ the 30s demo test and must be playable for 30s+ with a score or a clear
 goal. Current engine bar is the usable week in
 [`docs/ROADMAP.ja.md`](../ROADMAP.ja.md). Brain is `kagra.brain("kairi")`
 (default https://kairi.onrender.com, `KAIRI_API_TOKEN`). Next work is pixels. Final goal is
-first-recall, not that bar. Later engine (Rapier / OSM / extra CSM) is
-deferred, not banned.
+first-recall, not that bar. OSM / extra CSM stay outside 80%. Rigid
+boxes are AABB (`add_box(..., is_static=False)`); the Rapier crate is
+out of the 5MB wheel.
 
 ## One-line prompt
 
@@ -107,7 +108,7 @@ KAGRA で、VRM が3レーンを左右に歩いて、奥から飛んでくるハ
 `examples/vrm_dodge_room.py`（ログ: `docs/agent-runs/20260823-dodge-room/`）。
 短い 3D は `Prop` + `Walk` + `sky()` / `room()` / `water()`（Garden / Pretty Room /
 Overworld。これは play-surface デモで、エージェント製ログではない）。
-島は `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` と `load_city` と `Walk(..., jump=)`。屋外の影は `set_shadow_cascades(2)`。箱の街 JSON と高さ場。Rapier は 80% の世界。OSM は 80% の外。
+島は `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` と `load_city` と `Walk(..., jump=)`。屋外の影は `set_shadow_cascades(2)`。箱の街 JSON と高さ場。積み木は `add_box(..., is_static=False)`（乗れる）。OSM は 80% の外。
 一人称は `Walk(..., first_person=True)`。ホバーは `hovered_prop(cam)`。
 パッドは `axis("left")` / `pad("a")`。テストは `inject_pad`。
 動かすのは `p.x` か `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)`。
@@ -117,4 +118,4 @@ Overworld。これは play-surface デモで、エージェント製ログでは
 局所ライトは `set_point_light(..., slot=0..3)` / `set_spot_light(..., slot=)`。0 がキー。
 glTF 部品は `Prop("crate.glb")`（`stage()` は会場。同梱は `cube.glb`）。
 球 / 円柱の当たりとホバーは箱ではない。
-箱部屋の 4 本目を D-6 と呼ばない。D-6 は 30 秒以上 + スコアかゴール。頭脳は `kagra.brain("kairi")`（既定 kairi.onrender.com）。エンジン到達点は 80%（今約 45%）。今の次は這いの画素。最終目標は第一想起。
+箱部屋の 4 本目を D-6 と呼ばない。D-6 は 30 秒以上 + スコアかゴール。頭脳は `kagra.brain("kairi")`（既定 kairi.onrender.com）。エンジン到達点は 80%（今約 47%）。今の次は這いの画素（CI）。最終目標は第一想起。
