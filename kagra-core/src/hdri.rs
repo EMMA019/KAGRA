@@ -135,6 +135,56 @@ fn cosine_hemisphere(n: [f32; 3], index: u32, samples: u32) -> [f32; 3] {
 
 pub const IRRADIANCE_FACE_SIZE: u32 = 8;
 pub const IRRADIANCE_SAMPLES: u32 = 16;
+pub const SPECULAR_MIPS: u32 = 4;
+
+
+pub fn downsample_cube_rgba(rgba: &[[u8; 4]], face_size: u32) -> Vec<[u8; 4]> {
+    let face_size = face_size.max(2);
+    let half = face_size / 2;
+    let mut out = Vec::with_capacity((half * half * 6) as usize);
+    let fsz = face_size as usize;
+    let hs = half as usize;
+    for face in 0..6 {
+        let base = face * fsz * fsz;
+        for y in 0..hs {
+            for x in 0..hs {
+                let mut acc = [0u32; 3];
+                for oy in 0..2 {
+                    for ox in 0..2 {
+                        let px = rgba[base + (y * 2 + oy) * fsz + (x * 2 + ox)];
+                        acc[0] += px[0] as u32;
+                        acc[1] += px[1] as u32;
+                        acc[2] += px[2] as u32;
+                    }
+                }
+                out.push([
+                    (acc[0] / 4) as u8,
+                    (acc[1] / 4) as u8,
+                    (acc[2] / 4) as u8,
+                    255,
+                ]);
+            }
+        }
+    }
+    out
+}
+
+
+pub fn cube_mip_chain(rgba: &[[u8; 4]], face_size: u32, mips: u32) -> Vec<(u32, Vec<[u8; 4]>)> {
+    let mut size = face_size.max(1);
+    let mut cur = rgba.to_vec();
+    let mut out = vec![(size, cur.clone())];
+    let n = mips.max(1).min(8);
+    for _ in 1..n {
+        if size < 2 {
+            break;
+        }
+        cur = downsample_cube_rgba(&cur, size);
+        size /= 2;
+        out.push((size, cur.clone()));
+    }
+    out
+}
 
 pub fn irradiance_cube_rgba(
     pix: &[u8],
@@ -250,5 +300,16 @@ mod tests {
         let (outer, inner) = spot_cone_params(0.6, 0.2);
         let t = spot_cone_factor([1.0, 0.0, 0.0], [0.0, -1.0, 0.0], outer, inner);
         assert_eq!(t, 0.0);
+    }
+
+    #[test]
+    fn cube_mips_halve() {
+        let pix = vec![[10u8, 20, 30, 255]; 8 * 8 * 6];
+        let chain = cube_mip_chain(&pix, 8, 3);
+        assert_eq!(chain.len(), 3);
+        assert_eq!(chain[0].0, 8);
+        assert_eq!(chain[1].0, 4);
+        assert_eq!(chain[2].0, 2);
+        assert_eq!(chain[1].1.len(), 4 * 4 * 6);
     }
 }

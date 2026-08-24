@@ -47,14 +47,20 @@ def color_name(rgb) -> str | None:
     return None
 
 
-def jump_vy(on_ground: bool, in_water: bool, jump: float) -> float | None:
-    """ジャンプ／泳ぎの鉛直速度。しないなら None。"""
+def jump_vy(
+    on_ground: bool,
+    in_water: bool,
+    jump: float,
+    *,
+    coyote: bool = False,
+) -> float | None:
+    """ジャンプ／泳ぎの鉛直速度。しないなら None。``coyote`` は接地猶予。"""
     jump = float(jump)
     if jump <= 0.0:
         return None
     if in_water:
         return jump * 0.42
-    if on_ground:
+    if on_ground or coyote:
         return jump
     return None
 
@@ -495,7 +501,7 @@ class Prop:
     ``texture`` は ``texture_from_fn`` / ``load`` の ID。0 なら ``color``。
     ``model`` が ``.glb`` / ``.gltf`` ならファイルを畳んで置く（``stage()`` ではない）。
     ``metallic`` / ``roughness`` は汎用メッシュだけ。省略時は glTF の因子、無ければ 0 / 1。
-    親子は 1 段（``set_parent``）。子の ``x,y,z,yaw`` は親からのローカル。
+    親子は 2 段まで（``set_parent``、孫可）。子の ``x,y,z,yaw`` は親からのローカル。
     2D の ``kagra.Entity`` とは別。エージェントはこっちを使う。
     """
 
@@ -698,16 +704,30 @@ class Prop:
         return wx, py + self._y, wz, pyaw + self._yaw
 
     def set_parent(self, parent: Optional["Prop"], *, keep_world: bool = True) -> None:
-        """親を 1 段だけ付ける。孫は不可。``keep_world`` なら今の世界位置を保つ。"""
+        """親を最大 2 段（孫まで）。曾孫は不可。``keep_world`` なら今の世界位置を保つ。"""
         if parent is self:
             raise ValueError("prop cannot parent itself")
         if parent is not None:
-            if parent._parent is not None:
-                raise ValueError("parent is 1 level only")
             if parent._destroyed:
                 raise ValueError("parent is destroyed")
-            if self._children:
-                raise ValueError("a parent cannot become a child")
+
+            def _depth(p: "Prop") -> int:
+                n = 0
+                cur: Optional[Prop] = p
+                while cur is not None:
+                    n += 1
+                    cur = cur._parent
+                    if n > 8:
+                        break
+                return n
+
+            def _height(p: "Prop") -> int:
+                if not p._children:
+                    return 0
+                return 1 + max(_height(ch) for ch in p._children)
+
+            if _depth(parent) + 1 + _height(self) > 3:
+                raise ValueError("parent is 2 levels only")
         if keep_world:
             wx, wy, wz, wyaw = self.world_pose()
             if parent is not None:
@@ -875,6 +895,11 @@ class Prop:
 
     @classmethod
     def update_all(cls, dt: float) -> None:
+        try:
+            from kagra.motion import tick_animations
+            tick_animations(dt)
+        except Exception:
+            pass
         for p in list(cls._all):
             p.update(dt)
 
@@ -930,6 +955,9 @@ class Walk:
         stick_sens: float = 2.2,
         stick_deadzone: float = 0.2,
         jump: float = 0.0,
+        coyote: float = 0.12,
+        jump_buffer: float = 0.12,
+        lock_cursor: bool | None = None,
     ):
         self.world = world
         self.cam = cam
@@ -944,6 +972,13 @@ class Walk:
         self.stick_sens = float(stick_sens)
         self.stick_deadzone = float(stick_deadzone)
         self.jump = float(jump)
+        self.coyote = float(coyote)
+        self.jump_buffer = float(jump_buffer)
+        self.lock_cursor = lock_cursor
+        self.held = None
+        self._coyote_left = 0.0
+        self._buffer_left = 0.0
+        self._locked = False
         self._last_mouse: Optional[tuple[float, float]] = None
 
     def step(self, dt: float) -> None:
@@ -954,12 +989,33 @@ class Walk:
         import kagra
 
         poll_pad()
-        mx, my = kagra.mouse_pos()
-        if self._last_mouse is not None:
-            self.yaw = look_yaw(self.yaw, mx - self._last_mouse[0], sens=self.mouse_sens)
+        if self.lock_cursor is None:
+            want_lock = bool(self.first_person)
+        else:
+            want_lock = bool(self.lock_cursor) and bool(self.first_person)
+        if want_lock != self._locked:
+            try:
+                kagra.set_cursor_locked(want_lock)
+                self._locked = want_lock
+            except Exception:
+                self._locked = False
+        dx = dy = 0.0
+        try:
+            dx, dy = kagra.mouse_delta()
+        except Exception:
+            dx = dy = 0.0
+        if dx == 0.0 and dy == 0.0:
+            mx, my = kagra.mouse_pos()
+            if self._last_mouse is not None:
+                dx = mx - self._last_mouse[0]
+                dy = my - self._last_mouse[1]
+            self._last_mouse = (float(mx), float(my))
+        else:
+            self._last_mouse = None
+        if dx or dy:
+            self.yaw = look_yaw(self.yaw, dx, sens=self.mouse_sens)
             if self.first_person:
-                self.pitch = look_pitch(self.pitch, my - self._last_mouse[1], sens=self.mouse_sens)
-        self._last_mouse = (float(mx), float(my))
+                self.pitch = look_pitch(self.pitch, dy, sens=self.mouse_sens)
         rx, ry = pad_axis("right")
         if math.hypot(rx, ry) >= self.stick_deadzone:
             dt_look = float(dt)
@@ -981,12 +1037,37 @@ class Walk:
             vz *= 0.55
         self.world.move_player(vx, vz)
         p = self.world.player
+        dt = float(dt)
         if p is not None and self.jump > 0.0:
-            want = kagra.pressed("SPACE") or kagra.pad_pressed("a")
-            if want:
-                vy = jump_vy(bool(p.on_ground), self.world.in_water(p), self.jump)
+            grounded = bool(p.on_ground)
+            if grounded:
+                self._coyote_left = self.coyote
+            else:
+                self._coyote_left = max(0.0, self._coyote_left - dt)
+            if kagra.pressed("SPACE") or kagra.pad_pressed("a"):
+                self._buffer_left = self.jump_buffer
+            else:
+                self._buffer_left = max(0.0, self._buffer_left - dt)
+            if self._buffer_left > 0.0:
+                vy = jump_vy(
+                    grounded,
+                    self.world.in_water(p),
+                    self.jump,
+                    coyote=self._coyote_left > 0.0,
+                )
                 if vy is not None:
                     p.vy = float(vy)
+                    self._buffer_left = 0.0
+                    self._coyote_left = 0.0
+        if self.held is not None:
+            h = self.held
+            if getattr(h, "enabled", False) is False or getattr(h, "_destroyed", False):
+                self.held = None
+            elif p is not None:
+                fx = math.sin(self.yaw)
+                fz = math.cos(self.yaw)
+                h.set_parent(None, keep_world=False)
+                h.set_position(p.x + fx * 0.85, p.y + 1.15, p.z + fz * 0.85)
         self.world.update(dt)
         p = self.world.player
         if p is None:
@@ -1007,3 +1088,16 @@ class Walk:
         eng = kagra.get_engine()
         if eng:
             self.cam.update(eng)
+
+    def carry(self, prop=None) -> None:
+        """``prop`` を持つ。``None`` で下ろす。クリック拾いは呼び出し側。"""
+        if prop is None:
+            self.held = None
+            return
+        if getattr(prop, "_destroyed", False) or not getattr(prop, "enabled", True):
+            return
+        try:
+            prop.set_parent(None, keep_world=True)
+        except Exception:
+            pass
+        self.held = prop

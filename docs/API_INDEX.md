@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **401**
+エントリ数: **410**
 
 棚の**手前**は VRM / 3D ワールド / エージェントゲーム。
 棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。
@@ -12,6 +12,7 @@
 | Name | Signature |
 |---|---|
 | `apply_live_look` | `apply_live_look(*, mascot: bool = False)` |
+| `apply_outdoor_look` | `apply_outdoor_look()` |
 | `apply_room_look` | `apply_room_look()` |
 | `avatar` | `avatar(vrm_path: str) -> 'VrmAvatar'` |
 | `billboard_mesh` | `billboard_mesh(x: float, y: float, z: float, size: float, camera=None, *, yaw: float \| None = None)` |
@@ -19,6 +20,7 @@
 | `camera_world_to_screen` | `camera_world_to_screen(wx: float, wy: float, wz: float)` |
 | `city_boxes` | `city_boxes(ix: int, iz: int, *, tile: float = 10.0, fn=None, water_y: float = 0.0)` |
 | `city_chunk` | `city_chunk(city, ix: int, iz: int, *, tile: float \| None = None)` |
+| `clicked_prop` | `clicked_prop(cam=None, *, button: int = 1, max_dist: float = 80.0)` |
 | `cls` | `cls(r=0, g=0, b=0)` |
 | `cylinder_mesh` | `cylinder_mesh(cx: float = 0.0, cy: float = 0.0, cz: float = 0.0, radius: float = 0.5, height: float = 1.0, segs: int = 16)` |
 | `destroy` | `destroy(prop) -> None` |
@@ -47,6 +49,7 @@
 | `load_city` | `load_city(path)` |
 | `load_json` | `load_json(name: str, default=None, *, directory: str \| None = None)` |
 | `load_vrma` | `load_vrma(path: str, *, sample_fps: float = 30.0) -> 'VrmaMotion'` |
+| `mouse_delta` | `mouse_delta() -> tuple` |
 | `overworld_height` | `overworld_height(x: float, z: float) -> float` |
 | `pressed` | `pressed(name: str) -> bool` |
 | `quad_y_mesh` | `quad_y_mesh(cx: float = 0.0, cy: float = 0.0, cz: float = 0.0, size: float = 0.5)` |
@@ -62,6 +65,7 @@
 | `set_ambient` | `set_ambient(r: float = 0.22, g: float = 0.2, b: float = 0.28, strength: float = 0.28)` |
 | `set_bloom` | `set_bloom(threshold: float = 0.85, intensity: float = 0.35, enabled: bool = True)` |
 | `set_camera3d` | `set_camera3d(cam: Camera3D \| None)` |
+| `set_cursor_locked` | `set_cursor_locked(locked: bool = True)` |
 | `set_exposure` | `set_exposure(value: float = 1.0)` |
 | `set_fog` | `set_fog(start: float = 5.0, end: float = 20.0, color: tuple = (110, 180, 230), *, enabled: bool = True)` |
 | `set_hdri` | `set_hdri(path: str \| None = 'studio', strength: float = 1.0)` |
@@ -73,9 +77,11 @@
 | `set_shadow_cascades` | `set_shadow_cascades(count: int = 1)` |
 | `set_shadow_enabled` | `set_shadow_enabled(enabled: bool = True)` |
 | `set_spot_light` | `set_spot_light(x: float, y: float, z: float, dx: float, dy: float, dz: float, *, angle: float = 0.8, penumbra: float = 0.25, intensity: float = 1.0, radius: float = 10.0, r: float = 1.0, g: float = 0.95, b: float = 0.85)` |
+| `set_tonemap` | `set_tonemap(enabled: bool = True)` |
 | `set_toon_params` | `set_toon_params(threshold: float = 0.5, softness: float = 1.0, shade: float = 0.55, lit: float = 1.0)` |
 | `sky` | `sky(*, radius: float = 18.0, look: bool = True)` |
 | `solid_tex` | `solid_tex(color)` |
+| `sound` | `sound(name: str = 'coin', freqs=None, duration: float = 0.1, volume: float = 0.32) -> str` |
 | `sphere_mesh` | `sphere_mesh(cx: float = 0.0, cy: float = 0.0, cz: float = 0.0, radius: float = 0.5, segs: int = 16)` |
 | `stage` | `stage(path: str = 'stage', *, radius: float = 12.0) -> 'Stage'` |
 | `stair_y` | `stair_y(x: float, z: float, *, x0: float, x1: float, z0: float, z1: float, y0: float, y1: float, steps: int = 6, axis: str = 'z')` |
@@ -90,14 +96,17 @@
 | `AABB` | `class AABB  (from kagra.physics3d)` |
 | `ActionController` | `class ActionController  (from kagra.vrm_action)` |
 | `AiCharacter` | `class AiCharacter  (from kagra.ai_character)` |
+| `animate` | `export animate  (from kagra.motion)` |
 | `apply_pad` | `export apply_pad  (from kagra.touch)` |
 | `axis` | `export axis  (from kagra.pad)` |
+| `Button` | `class Button  (from kagra.hud)` |
 | `Camera3D` | `class Camera3D  (from kagra.camera3d)` |
 | `ChatInbox` | `class ChatInbox  (from kagra.stream)` |
 | `describe_environment` | `export describe_environment  (from kagra.contracts)` |
 | `EmotionController` | `class EmotionController  (from kagra.vrm_emotion)` |
 | `ensure_vrm` | `export ensure_vrm  (from kagra.samples)` |
 | `inject_pad` | `export inject_pad  (from kagra.pad)` |
+| `Label` | `class Label  (from kagra.hud)` |
 | `LipSyncController` | `class LipSyncController  (from kagra.vrm_lipsync)` |
 | `load_scenario` | `export load_scenario  (from kagra.verify)` |
 | `LookAtController` | `class LookAtController  (from kagra.vrm_lookat)` |
@@ -113,8 +122,11 @@
 | `run_scenario` | `export run_scenario  (from kagra.verify)` |
 | `run_scenario_path` | `export run_scenario_path  (from kagra.verify)` |
 | `Scene` | `class Scene` |
+| `sequence` | `export sequence  (from kagra.motion)` |
+| `Sequence` | `class Sequence  (from kagra.motion)` |
 | `Stage` | `class Stage  (from kagra.stage)` |
 | `StreamHud` | `class StreamHud  (from kagra.stream)` |
+| `Tween` | `class Tween  (from kagra.motion)` |
 | `VirtualCam` | `class VirtualCam  (from kagra.stream)` |
 | `VirtualPad` | `class VirtualPad  (from kagra.touch)` |
 | `Walk` | `class Walk  (from kagra.play)` |
@@ -283,7 +295,6 @@
 | `BgmSync` | `class BgmSync  (from kagra.bgm_sync)` |
 | `Bone` | `class Bone  (from kagra.skeleton)` |
 | `BoxCollider` | `class BoxCollider  (from kagra.physics)` |
-| `Button` | `class Button  (from kagra.ui)` |
 | `Camera` | `class Camera  (from kagra.camera)` |
 | `CameraFollower` | `class CameraFollower  (from kagra.components)` |
 | `CameraTrack` | `class CameraTrack  (from kagra.timeline)` |
@@ -330,7 +341,6 @@
 | `KEY_Z` | `KEY_Z` |
 | `Keyframe` | `class Keyframe  (from kagra.skeleton)` |
 | `keys` | `keys` |
-| `Label` | `class Label  (from kagra.ui)` |
 | `LipSyncTimeline` | `class LipSyncTimeline  (from kagra.vrm_lipsync)` |
 | `list_saved` | `export list_saved  (from kagra.anim_io)` |
 | `LiveScore` | `class LiveScore  (from kagra.bgm_sync)` |
@@ -407,7 +417,6 @@
 | `Transform` | `class Transform  (from kagra.entity)` |
 | `Transform2D` | `class Transform2D  (from kagra.skeleton)` |
 | `TransitionScene` | `class TransitionScene  (from kagra.ui)` |
-| `Tween` | `class Tween  (from kagra.ui)` |
 | `TweenManager` | `class TweenManager  (from kagra.ui)` |
 | `TwoBoneIK` | `class TwoBoneIK  (from kagra.vrm_ik)` |
 | `UIGroup` | `class UIGroup  (from kagra.ui)` |
@@ -431,18 +440,20 @@
 - VRM プリミティブはパッド付きボーン AABB でカリング。`doubleSided` のときだけ両面。
 - 床と箱: `World3D`（または `Physics3D` + `box_mesh`）。カメラは `Camera3D.follow`。
 - 短い 3D: `Prop` + `Walk` + `sky()` / `room()` / `water()`。地形は `World3D.set_height_fn` + `island_height` / `overworld_height`。タイル化は `tile=` / `stream_radius=`。`Walk(..., jump=)`。
-- 一人称: `Walk(..., first_person=True)`。目線は `eye_height`。`F` で切替えるデモは Prop Garden。
-- ホバー: `hovered_prop(cam)`（マウス）。レイ直打ちは `kagra.play.hovered_prop(ox,oy,oz,dx,dy,dz)`。`plane` は除外。
-- 動く Prop: `p.x` / `set_position` / `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)` か `p.enabled = False`。
+- 一人称: `Walk(..., first_person=True)`。目線は `eye_height`。ポインタロックは一人称のとき（OS が拒めばフォールバック）。`F` で切替えるデモは Prop Garden。
+- ホバー / クリック: `hovered_prop(cam)`。`clicked_prop(cam)` は押下。レイ直打ちは `kagra.play.hovered_prop(ox,oy,oz,dx,dy,dz)`。`plane` は除外。
+- 動く Prop: `p.x` / `set_position` / `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)` か `p.enabled = False`。持つのは `Walk.carry(prop)`。
+- `animate(obj, "y", end)` / `sequence` / `Tween`。`Prop.update_all` が回す。
+- HUD: `Label` / `Button`（画面空間。2D `kagra.ui` の同名は棚）。音は `sound("coin")`。
 - 球 / 円柱の当たりとホバーは AABB ではない。`World3D.add_sphere` / `add_cylinder`。
 - Prop テクスチャ: `texture=kagra.texture_from_fn(...)` または `load`。0 なら `color`。
-- Prop 親子は 1 段（`set_parent` / `parent=`）。孫は不可。子の `x,y,z,yaw` はローカル。
-- glTF 部品: `Prop("crate.glb")`。`stage()` / `load_gltf` は会場。同梱エイリアス `cube.glb`。当たりは AABB。
-- ゲームパッド: `axis("left")` / `pad("a")` / `inject_pad`。`Walk` は左スティック移動・右スティック視点。実機ポーリングは未接続。
-- 影は床・箱・Prop も落とす。`set_shadow_cascades(2)` で近／遠の 2 段（既定 1。Prop Garden は変えない）。OSM ではない街 JSON は `load_city`。三角形当たりは `add_trimesh` / `Prop(..., mesh_hit=True)`。積み木は `add_box(..., is_static=False)`（Rapier ではない）。
-- 点光源 1: `set_point_light(x,y,z, intensity=…)`。影は無し。スポットは `set_spot_light`（同じスロット、影無し）。
-- HDRI: `set_hdri("studio")` または正距円筒のパス。拡散は小さな irradiance キューブ。露出は `set_exposure`（既定 1）。
-- 閉じた部屋: `room()` + `apply_room_look`。屋外の島: `set_height_fn` + `water` + `sky()`。坂は接平面、急斜面は滑る。影はタイル（CSM ではない）。デモは Pretty Room / Overworld。
+- Prop 親子は 2 段（孫まで。曾孫は不可）。子の `x,y,z,yaw` はローカル。
+- glTF 部品: `Prop("crate.glb")`。`stage()` / `load_gltf` は会場。同梱エイリアス `cube.glb`。当たりは AABB。`mesh_hit=True` で三角形。
+- ゲームパッド: `axis("left")` / `pad("a")` / `inject_pad`。`Walk` は左スティック移動・右スティック視点。実機 USB/XInput は未接続。
+- 影は床・箱・Prop も落とす。`set_shadow_cascades(2)` で近／遠の 2 段（既定 1。Prop Garden は変えない）。屋外はテクセルスナップ。OSM ではない街 JSON は `load_city`。三角形当たりは `add_trimesh` / `Prop(..., mesh_hit=True)`。積み木は `add_box(..., is_static=False)`（Rapier ではない）。
+- 点光源 1: `set_point_light(x,y,z, intensity=…)`。影は無し。スポットは `set_spot_light`（同じスロット、室内は透視影）。
+- HDRI: `set_hdri("studio")` または正距円筒のパス。拡散は小さな irradiance キューブ。スペキュラは mip LOD。露出は `set_exposure`（既定 1）。ACES は `set_tonemap`（既定オフ）。
+- 閉じた部屋: `room()` + `apply_room_look`。屋外の島: `apply_outdoor_look` + `set_height_fn` + `water` + `sky()`。坂は接平面、急斜面は滑る。デモは Pretty Room / Overworld。
 - 汎用メッシュの金属/粗さ: `upload_mesh_3d(..., metallic=, roughness=)` / `Prop(..., metallic=)` / `set_mesh_pbr`。MToon は触らない。
 - 色付きメッシュ: `solid_tex` + `sphere_mesh` / `cylinder_mesh` / `box_mesh`。
 - `kagra-shared` / `mobile/` は別の運転デモ。この Python スタックと混ぜない。

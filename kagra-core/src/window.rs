@@ -8,10 +8,10 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use winit::{
-    event::{ElementState, Event, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
+    event::{DeviceEvent, ElementState, Event, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     keyboard::{Key, KeyCode, PhysicalKey},
-    window::{WindowBuilder, WindowLevel},
+    window::{CursorGrabMode, WindowBuilder, WindowLevel},
 };
 
 /// エージェント検証用: 次フレーム開始前に適用される入力イベント
@@ -47,6 +47,7 @@ pub enum WindowCommand {
     SetAlwaysOnTop(bool),
     SetDecorations(bool),
     SetTitle(String),
+    SetCursorLocked(bool),
 }
 
 pub struct KagraWindow {
@@ -153,6 +154,7 @@ impl KagraWindow {
     pub fn is_key_released(&self, code: u32) -> bool { lock_recover(&self.input).is_key_released(code) }
 
     pub fn mouse_pos(&self) -> (f32, f32) { lock_recover(&self.input).mouse_pos() }
+    pub fn mouse_delta(&self) -> (f32, f32) { lock_recover(&self.input).mouse_delta() }
     pub fn is_mouse_down(&self, btn: u32) -> bool { lock_recover(&self.input).is_mouse_down(btn) }
     pub fn is_mouse_pressed(&self, btn: u32) -> bool { lock_recover(&self.input).is_mouse_pressed(btn) }
     pub fn is_mouse_released(&self, btn: u32) -> bool { lock_recover(&self.input).is_mouse_released(btn) }
@@ -255,9 +257,19 @@ impl KagraWindow {
         }
     }
 
+    pub fn set_cursor_locked(&self, locked: bool) {
+        lock_recover(&self.window_commands).push(WindowCommand::SetCursorLocked(locked));
+    }
+
     pub fn set_exposure(&self, value: f32) {
         if let Some(rend) = lock_recover(&self.renderer).as_mut() {
             rend.set_exposure(value);
+        }
+    }
+
+    pub fn set_tonemap(&self, enabled: bool) {
+        if let Some(rend) = lock_recover(&self.renderer).as_mut() {
+            rend.set_tonemap(enabled);
         }
     }
 
@@ -599,6 +611,9 @@ impl KagraWindow {
                     Event::WindowEvent { event: WindowEvent::CursorMoved { position, .. }, .. } => {
                         lock_recover(&input_ref).on_mouse_move(position.x as f32, position.y as f32);
                     },
+                    Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } => {
+                        lock_recover(&input_ref).on_mouse_delta(delta.0 as f32, delta.1 as f32);
+                    },
                     Event::WindowEvent { event: WindowEvent::Focused(gained), .. } => {
                         lock_recover(&input_ref).focused = gained;
                     },
@@ -655,6 +670,17 @@ impl KagraWindow {
                                     }
                                     WindowCommand::SetDecorations(decorations) => { window.set_decorations(decorations); }
                                     WindowCommand::SetTitle(title) => { window.set_title(&title); }
+                                    WindowCommand::SetCursorLocked(locked) => {
+                                        window.set_cursor_visible(!locked);
+                                        let mode = if locked {
+                                            CursorGrabMode::Locked
+                                        } else {
+                                            CursorGrabMode::None
+                                        };
+                                        if window.set_cursor_grab(mode).is_err() && locked {
+                                            let _ = window.set_cursor_grab(CursorGrabMode::Confined);
+                                        }
+                                    }
                                 }
                             }
                         }

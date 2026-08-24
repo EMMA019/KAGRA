@@ -32,16 +32,18 @@ python tools/mcp_kagra/server.py   # MCP stdio
 - `kagra_render` – clear-color smoke screenshot
 
 Short 3D: `Prop` / `Walk` / `sky()` / `room()` / `water()`. Texture via `texture_from_fn` / `load`.
-Parent is 1 level (`set_parent`). glTF parts: `Prop("crate.glb")` (not `stage()`).
+Parent is 2 levels (`set_parent`, grandchild OK). glTF parts: `Prop("crate.glb")` (not `stage()`).
 Gamepad: `axis` / `pad` / `inject_pad`. Not 2D `Entity`.
 Picture: `set_point_light` / `set_spot_light` / `set_hdri("studio")` /
-`set_exposure` / `Prop(..., metallic=)`. Indoor: `apply_room_look`.
-Outdoor island: `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` /
-`load_city` / `Walk(..., jump=)`. `set_shadow_cascades(2)` outdoors. Not OSM / Rapier.
+`set_exposure` / `set_tonemap` / `Prop(..., metallic=)`. Indoor: `apply_room_look`.
+Outdoor: `apply_outdoor_look` / `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` /
+`load_city` / `Walk(..., jump=)`. Not OSM / Rapier.
+Play: `clicked_prop` / `Walk.carry` / `animate` / `Label` / `sound`.
+Pointer lock follows first person (OS may refuse). USB pad is not in the wheel.
 
-Picture and play are still **day one**. Do not call them three.js-class or Ursina-class.
-Next bar is `docs/ROADMAP.ja.md` 使える週 (tone map, specular IBL, normals, indoor
-shadows, pointer lock, click, `animate`). Do not start D-6 as a fourth box room.
+Picture and play are the usable-week bar, not three.js-class / Ursina-class until
+a stranger would watch 30s of Pretty Room / Overworld / Prop Garden. Do not start
+D-6 as a fourth box room. Skip normals and gilrs this slice.
 
 ## Touch / mobile
 

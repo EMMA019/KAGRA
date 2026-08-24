@@ -55,6 +55,19 @@ pub(super) fn cascade_center_half(
     [(focus, near_h), far]
 }
 
+/// ワールド XZ をテクセルにスナップして、2 段影が這うのを抑える。
+pub(super) fn snap_center_xz(center: [f32; 3], half: f32, map_size: f32) -> [f32; 3] {
+    let texel = (2.0 * half.max(0.5)) / map_size.max(1.0);
+    if texel < 1e-8 {
+        return center;
+    }
+    [
+        (center[0] / texel).round() * texel,
+        center[1],
+        (center[2] / texel).round() * texel,
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,5 +155,17 @@ mod tests {
         assert!((two[0].0[0] - 4.0).abs() < 1e-5);
         assert!((two[0].1 - SHADOW_NEAR_HALF.min(two[1].1)).abs() < 1e-5);
         assert_eq!(two[1], shadow_fit_center_half(acc));
+    }
+
+    #[test]
+    fn snap_xz_quantizes_and_ignores_sub_texel() {
+        let half = 12.0;
+        let map = 2048.0;
+        let texel = 24.0 / map;
+        let a = snap_center_xz([4.0, 1.5, -2.0], half, map);
+        let b = snap_center_xz([4.0 + texel * 0.2, 1.5, -2.0], half, map);
+        assert_eq!(a, b);
+        assert!((a[1] - 1.5).abs() < 1e-6);
+        assert!((a[0] / texel - (a[0] / texel).round()).abs() < 1e-4);
     }
 }

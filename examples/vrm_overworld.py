@@ -8,7 +8,8 @@ Not OSM, not Rapier. CSM is 2 cascades (near/far), not a film-grade split.
 操作:
   WASD / 左スティック : 歩く（坂に沿う。急斜面は滑る。水中は遅くなる）
   マウス / 右スティック : 視点
-  SPACE / A           : ジャンプ（水中は泳ぐ）
+  SPACE / A           : ジャンプ（coyote + バッファ。水中は泳ぐ）
+  クリック            : 金の球を持つ / 置く
   ESC                 : 終了
 
 スモーク: KAGRA_SMOKE=1 python examples/vrm_overworld.py
@@ -71,7 +72,7 @@ class Overworld(kagra.Scene):
         except Exception:
             pass
         try:
-            kagra.set_shadow_cascades(2)
+            kagra.apply_outdoor_look()
         except Exception:
             pass
         kagra.Prop(
@@ -85,6 +86,8 @@ class Overworld(kagra.Scene):
         kagra.set_camera3d(self.cam)
         self.walk = kagra.Walk(self.world, self.cam, speed=4.2, jump=6.2, distance=6.2, height=2.6)
         self.found = False
+        self.title = kagra.Label("Overworld", 18, 14, 24, (240, 230, 180))
+        self.hint = kagra.Label("", 18, 46, 16, (200, 220, 230))
 
     def _fill_chunk(self, ix, iz):
         if kagra.city_chunk(self.city, ix, iz):
@@ -108,12 +111,23 @@ class Overworld(kagra.Scene):
             if n >= SMOKE_FRAMES:
                 kagra.quit()
                 return
+        if not SMOKE:
+            hit = kagra.clicked_prop(self.cam)
+            if hit is not None:
+                if self.walk.held is None:
+                    self.walk.carry(hit)
+                    kagra.sound("ok")
+                else:
+                    self.walk.carry(None)
+        kagra.Prop.update_all(dt)
         self.walk.step(dt)
         p = self.world.player
         moving = False
         if p is not None:
             moving = p.vx * p.vx + p.vz * p.vz > 0.04 or abs(p.vy) > 0.4
             if math.hypot(p.x - 3.2, p.z + 1.2) < 1.1:
+                if not self.found:
+                    kagra.sound("coin")
                 self.found = True
         want = "walk" if moving else "idle"
         if getattr(self.avatar, "clip", None) != want:
@@ -127,14 +141,21 @@ class Overworld(kagra.Scene):
     def draw(self):
         kagra.cls(110, 170, 210)
         kagra.sky(radius=42.0)
+        if not getattr(self, "_outdoor", False):
+            try:
+                kagra.apply_outdoor_look()
+            except Exception:
+                pass
+            self._outdoor = True
         self.world.draw()
         kagra.water(0.0, half=HALF, world=self.world)
         kagra.Prop.draw_all()
         kagra.draw_vrm(self.avatar.vrm_id)
         kagra.fill(0, 0, 420, 78, (8, 18, 28), 150)
-        kagra.text("Overworld", 18, 14, 24, (240, 230, 180))
-        hint = "gold  found" if self.found else "SPACE  stairs / mesh ramp / crates"
-        kagra.text(hint, 18, 46, 16, (160, 255, 190) if self.found else (200, 220, 230))
+        self.title.draw()
+        self.hint.text = "gold  found" if self.found else "SPACE  stairs / mesh ramp / crates"
+        self.hint.color = (160, 255, 190) if self.found else (200, 220, 230)
+        self.hint.draw()
 
 
 if __name__ == "__main__":
