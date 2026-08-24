@@ -228,11 +228,14 @@ class Camera3D:
         look_y: float = 1.0,
         lerp: float = 0.18,
         yaw: float = 0.0,
+        bounds_half: float | None = None,
     ):
         """ワールド上の点を追うチェイスカメラ。orbit / showcase は切る。
 
         ``yaw`` はプレイヤーの向き（``atan2(dx, dz)``）。カメラは後ろ上。
         ``lerp=1`` で瞬間移動。毎フレーム呼んでから ``update(engine)``。
+        ``bounds_half`` があれば目の XZ を箱部屋の内側にクランプする
+        （既定 distance が壁の外に出る Switch / Dodge 用）。
         """
         self._orbit = False
         self._showcase = False
@@ -243,6 +246,10 @@ class Camera3D:
         bx = float(x) - math.sin(float(yaw)) * float(distance)
         bz = float(z) - math.cos(float(yaw)) * float(distance)
         by = float(y) + float(height)
+        if bounds_half is not None:
+            lim = max(0.05, float(bounds_half) - 0.15)
+            bx = max(-lim, min(lim, bx))
+            bz = max(-lim, min(lim, bz))
         t = max(0.0, min(1.0, float(lerp)))
         if t >= 1.0:
             self.position = (bx, by, bz)
