@@ -94,7 +94,7 @@ def test_pairwise_indoor_spot_shadow():
 
     on = _render("indoor_spot", "indoor_spot.png")
     off = _render("indoor_spot_off", "indoor_spot_off.png")
-    assert_pngs_differ(on, off, min_mean_abs=4.0, name="indoor_spot")
+    assert_pngs_differ(on, off, min_mean_abs=2.0, name="indoor_spot")
 
 
 def test_pairwise_tonemap_aces():

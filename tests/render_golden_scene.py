@@ -83,25 +83,29 @@ def _bind_cam(scene, radius, theta, phi, target, fov=42.0):
 
 
 class IndoorSpot(kagra.Scene):
-    """天井スポット + 箱。平行光は床をほぼ照らさない（Lambert の 0.2 床だけ）。"""
+    """天井スポット + 箱。平行光は床をほぼ照らさない（Lambert の 0.2 床だけ）。
+
+    カメラは床の影が見える真上寄り。箱を大きくして umbra が 320x180 の
+    平均誤差に乗る。閾値 4 は細い柱だと CI で 0.6 程度にしかならない。
+    """
 
     shadows = True
 
     def on_enter(self):
         self.tex = kagra.load(solid_png(220, 208, 188))
-        _bind_cam(self, 4.4, 0.62, 0.78, (0.0, 0.12, 0.0), fov=48.0)
-        self.floor_v, self.floor_i = kagra.quad_y_mesh(0.0, 0.0, 0.0, 2.4)
-        self.box_v, self.box_i = kagra.box_mesh(0.0, 0.7, 0.0, 0.5, 1.4, 0.5)
+        _bind_cam(self, 3.0, 0.12, 1.12, (0.0, 0.02, 0.0), fov=52.0)
+        self.floor_v, self.floor_i = kagra.quad_y_mesh(0.0, 0.0, 0.0, 1.7)
+        self.box_v, self.box_i = kagra.box_mesh(0.0, 0.55, 0.0, 1.15, 1.1, 1.15)
         kagra.set_shadow_enabled(self.shadows)
         kagra.set_tonemap(False)
         kagra.set_bloom(enabled=False)
-        kagra.set_ambient(0.04, 0.04, 0.04, 0.06)
+        kagra.set_ambient(0.02, 0.02, 0.02, 0.04)
         kagra.set_light_dir(0.1, -1.0, 0.05)
         kagra.set_hdri(None, strength=0.0)
         kagra.set_exposure(1.0)
         kagra.set_spot_light(
-            0.0, 2.8, 0.0, 0.0, -1.0, 0.0,
-            angle=0.9, penumbra=0.2, intensity=3.2, radius=10.0,
+            0.0, 2.6, 0.0, 0.0, -1.0, 0.0,
+            angle=0.85, penumbra=0.12, intensity=4.0, radius=10.0,
             r=1.0, g=0.94, b=0.82,
         )
 
