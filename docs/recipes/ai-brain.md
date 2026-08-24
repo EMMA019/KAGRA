@@ -30,7 +30,8 @@ reply = mind.ask("こんにちは。自己紹介して。")
 av.lipsync_text(reply, duration=min(8.0, 0.06 * max(8, len(reply))))
 ```
 
-Render Free can sleep. The first `ask` may take up to ~a minute.
+Render Free is kept awake with a ~10 minute ping. If that miss fires,
+the first `ask` can still wait on a cold start.
 
 Local override (no token if kairi is in dev mode):
 
@@ -73,6 +74,4 @@ No torch in the KAGRA core. Keys stay in the environment.
 推奨は **[kairi](https://github.com/EMMA019/kairi)**。本命は Render の
 **https://kairi.onrender.com**（既定）。KAGRA は `POST /api/chat` の SSE を読むだけ。
 チャットには `KAIRI_API_TOKEN` が要る。`/api/ping` はトークン無しで生きている。
-
-手元で動かすときだけ `KAIRI_URL=http://127.0.0.1:8000`。
-Free プランは寝ていることがある。最初の `ask` は待つ。
+ホストは約 10 分おきに起こしている。手元は `KAIRI_URL=http://127.0.0.1:8000`。

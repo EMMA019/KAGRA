@@ -112,7 +112,7 @@ kagra-shared + mobile/     ──► 別の運転デモ（道路・トラック�
 
 | 楔 | 今足りる絵 | 詰み | 先にやること |
 |---|---|---|---|
-| A ローカル LLM に体を | `avatar` + `kagra.brain("kairi")` | Render のトークン / コールドスタート | `KAIRI_API_TOKEN` を入れて 15 行 |
+| A ローカル LLM に体を | `avatar` + `kagra.brain("kairi")` | `KAIRI_API_TOKEN` | トークンを入れて 15 行 |
 | B 無人 3D VTuber | 歌・ダンス・HUD・仮想カメラ | 頭脳 + のちオートパイロット | 頭脳のあと。旗艦は Stage 3 |
 | C VRoid マスコット | 透明窓・常駐 | 配布物 / ワンライナー | エンジン不足ではない。優先は下 |
 | D エージェントがゲームを | 箱部屋 3 本 + Garden / Pretty Room / Overworld（API は載った。画素未確認） | 見知らぬ人に見せられない | **3 見本の画素。そのあと D-6** |

@@ -4,7 +4,8 @@
 
 - Stage 0.5 brain hook: `kagra.brain("kairi"|"ollama"|"openai")` /
   `KairiBrain.ask`. Default kairi is `https://kairi.onrender.com`
-  (`KAIRI_API_TOKEN` required for `/api/chat`). Local override `KAIRI_URL`.
+  (`KAIRI_API_TOKEN` required for `/api/chat`). Host is pinged ~every 10
+  minutes so it stays up. Local override `KAIRI_URL`.
 - Roadmap refresh: Stage 0.5 brain (`kagra.brain`) is first for wedges A/B,
   in parallel with usable-week pixels. D-6 stays gated on the 30s demos and
   must be playable 30s+ with a score or goal. Wedge C is a one-liner, lower

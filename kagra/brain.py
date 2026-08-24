@@ -104,7 +104,7 @@ class KairiBrain(Brain):
 
     FastAPI / SQLite / グラウンディングは kairi 側。ここは ``/api/chat`` の SSE を読むだけ。
     既定 ``https://kairi.onrender.com``。チャットは ``KAIRI_API_TOKEN`` が要る。
-    手元は ``KAIRI_URL=http://127.0.0.1:8000``。Free プランは初回が冷える。
+    手元は ``KAIRI_URL=http://127.0.0.1:8000``。ホストは約 10 分おきに起こしている。
     """
 
     def __init__(
