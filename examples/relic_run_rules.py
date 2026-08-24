@@ -39,8 +39,8 @@ TREE_PLACEMENTS = (
     ("tree.glb", 4.8, 3.5, 1.75, 0.25),
     ("plant.glb", 2.0, -0.8, 2.80, 0.90),
     ("plant.glb", -0.8, 2.6, 2.40, -0.20),
-    ("mushroom_red.glb", 1.8, -2.2, 3.20, 0.0),
-    ("mushroom_red.glb", -0.4, 3.2, 2.80, 0.6),
+    ("plant.glb", 1.8, -2.2, 2.60, 0.40),
+    ("plant.glb", -0.4, 3.2, 2.50, 1.10),
 )
 
 ROCK_PLACEMENTS = (

@@ -43,7 +43,9 @@ Solid (`kagra.ensure_vrm`), credited separately (Dwango) in
 Nature Kit GLBs use vertex `baseColorFactor` (no external PNG). KAGRA’s
 `flatten_gltf` currently applies the **first** material’s factor to the
 whole mesh, so mixed-material kits look like a single tint — still
-readable rocks/mushrooms/pedestals.
+readable rocks/pedestals. Relic Run therefore plants Mini Forest
+`plant.glb` (colormap) instead of `mushroom_red.glb` (white first
+material). `mushroom_red.glb` stays in the tree for credit / reuse.
 
 ## Poly Haven — aerial_grass_rock
 
