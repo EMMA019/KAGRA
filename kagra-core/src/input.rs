@@ -1,5 +1,6 @@
 // src/input.rs
 use std::collections::HashSet;
+use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
 
 pub struct InputState {
     held:     HashSet<u32>,
@@ -98,6 +99,27 @@ impl InputState {
         self.released.insert(code);
     }
 
+    /// OS auto-repeat must not re-press a key after release (sticky walk).
+    pub fn apply_key(&mut self, code: u32, down: bool, repeat: bool) {
+        if down {
+            if !repeat {
+                self.on_key_down(code);
+            }
+        } else {
+            self.on_key_up(code);
+        }
+    }
+
+    /// Focus loss / IME: key-up often never arrives, so treat every key as released.
+    pub fn release_all(&mut self) {
+        for code in self.held.drain() {
+            self.released.insert(code);
+        }
+        for btn in self.mouse_held.drain() {
+            self.mouse_released.insert(btn);
+        }
+    }
+
     pub fn set_backspace_pressed(&mut self) { self.backspace_pressed = true; }
     pub fn set_enter_pressed(&mut self) { self.enter_pressed = true; }
     pub fn set_escape_pressed(&mut self) { self.escape_pressed = true; }
@@ -140,4 +162,136 @@ impl InputState {
     pub fn is_mouse_released(&self, button: u32) -> bool { self.mouse_released.contains(&button) }
     pub fn mouse_wheel(&self) -> (f32, f32) { (self.wheel_x, self.wheel_y) }
     pub fn wheel_y(&self) -> f32 { self.wheel_y }
+}
+
+/// Physical code, or logical arrow/letter when the OS reports ``Unidentified``.
+pub fn resolve_keycode(physical: PhysicalKey, logical: &Key) -> Option<KeyCode> {
+    if let PhysicalKey::Code(code) = physical {
+        return Some(code);
+    }
+    match logical {
+        Key::Named(named) => named_to_keycode(*named),
+        Key::Character(s) => character_to_keycode(s.as_str()),
+        _ => None,
+    }
+}
+
+fn named_to_keycode(named: NamedKey) -> Option<KeyCode> {
+    Some(match named {
+        NamedKey::ArrowDown => KeyCode::ArrowDown,
+        NamedKey::ArrowUp => KeyCode::ArrowUp,
+        NamedKey::ArrowLeft => KeyCode::ArrowLeft,
+        NamedKey::ArrowRight => KeyCode::ArrowRight,
+        NamedKey::Space => KeyCode::Space,
+        NamedKey::Enter => KeyCode::Enter,
+        NamedKey::Escape => KeyCode::Escape,
+        NamedKey::Backspace => KeyCode::Backspace,
+        NamedKey::Tab => KeyCode::Tab,
+        _ => return None,
+    })
+}
+
+fn character_to_keycode(s: &str) -> Option<KeyCode> {
+    let mut chars = s.chars();
+    let ch = chars.next()?;
+    if chars.next().is_some() {
+        return None;
+    }
+    Some(match ch.to_ascii_uppercase() {
+        'A' => KeyCode::KeyA,
+        'B' => KeyCode::KeyB,
+        'C' => KeyCode::KeyC,
+        'D' => KeyCode::KeyD,
+        'E' => KeyCode::KeyE,
+        'F' => KeyCode::KeyF,
+        'G' => KeyCode::KeyG,
+        'H' => KeyCode::KeyH,
+        'I' => KeyCode::KeyI,
+        'J' => KeyCode::KeyJ,
+        'K' => KeyCode::KeyK,
+        'L' => KeyCode::KeyL,
+        'M' => KeyCode::KeyM,
+        'N' => KeyCode::KeyN,
+        'O' => KeyCode::KeyO,
+        'P' => KeyCode::KeyP,
+        'Q' => KeyCode::KeyQ,
+        'R' => KeyCode::KeyR,
+        'S' => KeyCode::KeyS,
+        'T' => KeyCode::KeyT,
+        'U' => KeyCode::KeyU,
+        'V' => KeyCode::KeyV,
+        'W' => KeyCode::KeyW,
+        'X' => KeyCode::KeyX,
+        'Y' => KeyCode::KeyY,
+        'Z' => KeyCode::KeyZ,
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use winit::keyboard::NativeKeyCode;
+
+    const DOWN: u32 = KeyCode::ArrowDown as u32;
+
+    #[test]
+    fn key_up_clears_held() {
+        let mut inp = InputState::new();
+        inp.on_key_down(DOWN);
+        assert!(inp.is_key_down(DOWN));
+        inp.on_key_up(DOWN);
+        assert!(!inp.is_key_down(DOWN));
+        assert!(inp.is_key_released(DOWN));
+    }
+
+    #[test]
+    fn late_repeat_after_up_does_not_rehold() {
+        let mut inp = InputState::new();
+        inp.apply_key(DOWN, true, false);
+        inp.apply_key(DOWN, false, false);
+        inp.apply_key(DOWN, true, true);
+        assert!(!inp.is_key_down(DOWN), "repeat after key-up must not stick");
+        assert!(!inp.is_key_pressed(DOWN));
+    }
+
+    #[test]
+    fn repeat_while_held_keeps_held_without_repress() {
+        let mut inp = InputState::new();
+        inp.apply_key(DOWN, true, false);
+        inp.begin_frame();
+        inp.apply_key(DOWN, true, true);
+        assert!(inp.is_key_down(DOWN));
+        assert!(!inp.is_key_pressed(DOWN));
+    }
+
+    #[test]
+    fn release_all_clears_held_keys() {
+        let mut inp = InputState::new();
+        inp.on_key_down(DOWN);
+        inp.on_mouse_down(1);
+        inp.release_all();
+        assert!(!inp.is_key_down(DOWN));
+        assert!(inp.is_key_released(DOWN));
+        assert!(!inp.is_mouse_down(1));
+        assert!(inp.is_mouse_released(1));
+    }
+
+    #[test]
+    fn unidentified_physical_uses_logical_arrow_down() {
+        let code = resolve_keycode(
+            PhysicalKey::Unidentified(NativeKeyCode::Unidentified),
+            &Key::Named(NamedKey::ArrowDown),
+        );
+        assert_eq!(code, Some(KeyCode::ArrowDown));
+    }
+
+    #[test]
+    fn unidentified_physical_uses_logical_letter() {
+        let code = resolve_keycode(
+            PhysicalKey::Unidentified(NativeKeyCode::Unidentified),
+            &Key::Character("s".into()),
+        );
+        assert_eq!(code, Some(KeyCode::KeyS));
+    }
 }

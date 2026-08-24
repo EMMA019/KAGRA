@@ -42,6 +42,8 @@ def test_stick_move_up_is_forward():
     assert fwd == pytest.approx(1.0)
     assert right == pytest.approx(0.0)
     assert pad.stick_move(0.05, 0.05) == (0.0, 0.0)
+    assert pad.stick_move(0.0, 0.0) == (0.0, 0.0)
+    assert pad.stick_move(float("nan"), 0.5) == (0.0, 0.0)
 
 
 def test_walk_wish_from_stick():

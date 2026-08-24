@@ -81,6 +81,43 @@ def walk_wish(forward: float, right: float, yaw: float, speed: float = 3.2) -> t
     return fx * speed, fz * speed
 
 
+def walk_key_axes(down) -> tuple[float, float]:
+    """WASD + arrows → ``(forward, right)``. ``down(name) -> bool``（``kagra.key``）。
+
+    両方離したら ``(0, 0)``。S と ↓ は同じ後退（片方が残っていれば歩き続ける）。
+    """
+    fwd = (1.0 if down("W") or down("UP") else 0.0) - (
+        1.0 if down("S") or down("DOWN") else 0.0
+    )
+    right = (1.0 if down("D") or down("RIGHT") else 0.0) - (
+        1.0 if down("A") or down("LEFT") else 0.0
+    )
+    return fwd, right
+
+
+def walk_axes(
+    pad_lx: float,
+    pad_ly: float,
+    key_forward: float = 0.0,
+    key_right: float = 0.0,
+    *,
+    deadzone: float = 0.2,
+) -> tuple[float, float]:
+    """左スティック + キーボード → ``(forward, right)``。
+
+    デッドゾーン内（0 軸を含む）のスティックは離した扱い。キーボードとパッドは
+    足すので、残り軸がキーを無視して歩き続けない。どちらも休みなら ``(0, 0)``。
+    """
+    pf, pr = stick_move(pad_lx, pad_ly, deadzone=deadzone)
+    fwd = float(pf) + float(key_forward)
+    right = float(pr) + float(key_right)
+    if abs(fwd) < 1e-9:
+        fwd = 0.0
+    if abs(right) < 1e-9:
+        right = 0.0
+    return fwd, right
+
+
 def look_yaw(yaw: float, dx: float, *, sens: float = 0.004) -> float:
     """マウス X 増分から yaw を更新する。"""
     return float(yaw) - float(dx) * float(sens)
@@ -1100,14 +1137,12 @@ class Walk:
             if self.first_person:
                 self.pitch = look_pitch(self.pitch, ry * self.stick_sens * dt_look, sens=1.0)
 
-        fwd, right = stick_move(*pad_axis("left"), deadzone=self.stick_deadzone)
-        if fwd == 0.0 and right == 0.0:
-            fwd = (1.0 if kagra.key("W") or kagra.key("UP") else 0.0) - (
-                1.0 if kagra.key("S") or kagra.key("DOWN") else 0.0
-            )
-            right = (1.0 if kagra.key("D") or kagra.key("RIGHT") else 0.0) - (
-                1.0 if kagra.key("A") or kagra.key("LEFT") else 0.0
-            )
+        try:
+            key_fwd, key_right = walk_key_axes(kagra.key)
+        except Exception:
+            key_fwd, key_right = 0.0, 0.0
+        lx, ly = pad_axis("left")
+        fwd, right = walk_axes(lx, ly, key_fwd, key_right, deadzone=self.stick_deadzone)
         vx, vz = walk_wish(fwd, right, self.yaw, self.speed)
         if self.world.in_water():
             vx *= 0.55
