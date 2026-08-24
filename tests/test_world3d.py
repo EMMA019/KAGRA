@@ -97,6 +97,20 @@ def test_stream_tiles_load_and_unload():
     assert (0, 0) not in far
 
 
+def test_load_city_y_zero_snaps_to_ground(tmp_path):
+    path = tmp_path / "c0.json"
+    path.write_text(
+        '{"version":1,"tile":10,"boxes":[{"x":2.0,"z":1.0,"w":1,"h":2,"d":1}]}',
+        encoding="utf-8",
+    )
+    m = _world()
+    w = m.World3D(half=24.0)
+    w.set_height_fn(lambda _x, _z: 1.5, tile=10.0, stream_radius=16.0)
+    w.load_city(str(path))
+    w.stream_tiles(0.0, 0.0)
+    assert any(abs(b.y - 1.5) < 1e-6 for b in w.boxes)
+
+
 def test_load_city_places_on_stream(tmp_path):
     city = load_kagra_submodule("city")
     path = tmp_path / "c.json"

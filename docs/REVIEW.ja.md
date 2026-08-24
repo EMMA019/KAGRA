@@ -62,7 +62,7 @@
 | `FirstPersonController` | `Walk(first_person=True)` + パッド | ポインタロックはまだ |
 | `mouse.hovered_entity` / `raycast` | `hovered_prop(cam)`（`plane` 除外） | クリック・ボタンはまだ |
 | `destroy(e)` / `e.animate` | `destroy(p)` / `p.x` / `vx` | `animate` / Sequence はまだ |
-| `Entity(model='model.glb')` | `Prop("crate.glb")`（静的に畳む）。`stage()` は会場 | スキン / PBR は載せない。当たりは AABB |
+| `Entity(model='model.glb')` | `Prop("crate.glb")`（静的に畳む）。`stage()` は会場 | スキン / PBR は載せない。当たりは AABB。`mesh_hit=True` で静的三角形 |
 | 球コライダ | `add_sphere` / `add_cylinder`（ホバーも同形） | 非均一球は外接。メッシュコライダは無い |
 
 Ursina を丸コピーしない。**短いスクリプトで「置いて・歩いて・触る」**が到達点。2D の `Entity` / Tk エディタ / tilemap は使わない。

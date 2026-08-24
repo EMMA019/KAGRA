@@ -45,7 +45,7 @@ JS における three-vrm のポジションの Python 版。
    `docs/API_INDEX.md` / MCP（`kagra_api_search` / `kagra_verify` / `kagra_render`）。
    開発ループ自体を AI エージェント用に設計したエンジンは他に無い
 
-**弱み（正直リスト）**: 影は 1 本の平行光（カスケード無し）、点光は 1 で影無し、
+**弱み（正直リスト）**: 影は 1 本の平行光（既定 1 段。屋外は `set_shadow_cascades(2)` まで。フィルム級 CSM ではない）、点光は 1 で影無し、
 IBL は HDRI + 小さな irradiance キューブまで（フル PMREM LOD は無し）、汎用 PBR に法線は無い、ポストは bloom / vignette、
 複数アバターは未計測、
 頭脳の公式面（`KairiBrain` / `docs/recipes/ai-brain.md`）はロードマップだけ完了で

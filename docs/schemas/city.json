@@ -18,7 +18,7 @@
         "additionalProperties": false,
         "properties": {
           "x": { "type": "number" },
-          "y": { "type": "number", "description": "Bottom. Omit to use 0 or snap in the loader." },
+          "y": { "type": "number", "description": "Bottom. 0 or omit snaps to ground_y when World3D.load_city places the box." },
           "z": { "type": "number" },
           "w": { "type": "number", "default": 2 },
           "h": { "type": "number", "default": 2 },
