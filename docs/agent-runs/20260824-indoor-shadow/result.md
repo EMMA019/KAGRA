@@ -5,5 +5,5 @@
 - Goldens: `indoor_spot` restaged; pairwise `normal_bump` added.
 - Rust: side-lamp NDC matches the golden; floor skip; near-cascade snap holds on 0.2 texel eye move.
 - Tests: `pytest tests -m "not golden"` — **288 passed**, 7 deselected.
-- Verify: GPU wheel missing. Close is the Windows CI `golden` job.
-- Do not call indoor pixels closed until that job is green.
+- Verify: Windows CI `golden` **passed** (6 golden tests, including `indoor_spot` and `normal_bump`). Indoor and normal pixels are closed.
+

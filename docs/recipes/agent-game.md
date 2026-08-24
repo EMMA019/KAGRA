@@ -117,4 +117,4 @@ Overworld。これは play-surface デモで、エージェント製ログでは
 局所ライトは `set_point_light(..., slot=0..3)` / `set_spot_light(..., slot=)`。0 がキー。
 glTF 部品は `Prop("crate.glb")`（`stage()` は会場。同梱は `cube.glb`）。
 球 / 円柱の当たりとホバーは箱ではない。
-箱部屋の 4 本目を D-6 と呼ばない。D-6 は 30 秒以上 + スコアかゴール。頭脳は `kagra.brain("kairi")`（既定 kairi.onrender.com）。エンジン到達点は 80%（今約 33%）。今の次は室内スポット影の画素。最終目標は第一想起。
+箱部屋の 4 本目を D-6 と呼ばない。D-6 は 30 秒以上 + スコアかゴール。頭脳は `kagra.brain("kairi")`（既定 kairi.onrender.com）。エンジン到達点は 80%（今約 40%）。今の次は這いと局所 4 の画素。最終目標は第一想起。
