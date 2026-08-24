@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use winit::{
     event::{DeviceEvent, ElementState, Event, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    keyboard::{Key, KeyCode, PhysicalKey},
+    keyboard::{Key, KeyCode},
     window::{CursorGrabMode, WindowBuilder, WindowLevel},
 };
 
@@ -26,7 +26,7 @@ pub enum InjectEvent {
 
 use crate::color::Color;
 use crate::error::lock_recover;
-use crate::input::InputState;
+use crate::input::{self, InputState};
 use crate::renderer::{
     DrawCommand, PolygonCommand, RectCommand, RendererV2, SkinnedMeshCommand, SpriteCommand, TextCommand,
 };
@@ -614,25 +614,28 @@ impl KagraWindow {
                             Ime::Disabled => { inp.preedit_text.clear(); inp.preedit_cursor = None; },
                         }
                     },
-                    Event::WindowEvent { event: WindowEvent::KeyboardInput { event: KeyEvent { physical_key: PhysicalKey::Code(code), logical_key: ref lkey, state, .. }, .. }, .. } => {
-                        let c = code as u32;
-                        let mut inp = lock_recover(&input_ref);
-                        match state {
-                            ElementState::Pressed => {
-                                inp.on_key_down(c);
-                                match code {
-                                    KeyCode::Backspace => inp.set_backspace_pressed(),
-                                    KeyCode::Enter => inp.set_enter_pressed(),
-                                    KeyCode::Escape => inp.set_escape_pressed(),
-                                    _ => {}
-                                }
-                                if let Key::Character(ref s) = lkey {
-                                    if inp.preedit_text.is_empty() {
-                                        for ch in s.chars() { if ch >= ' ' { inp.on_char(ch); } }
+                    Event::WindowEvent { event: WindowEvent::KeyboardInput { event: key_ev, .. }, .. } => {
+                        let KeyEvent { physical_key, logical_key: ref lkey, state, repeat, .. } = key_ev;
+                        if let Some(code) = input::resolve_keycode(physical_key, lkey) {
+                            let c = code as u32;
+                            let mut inp = lock_recover(&input_ref);
+                            match state {
+                                ElementState::Pressed => {
+                                    inp.apply_key(c, true, repeat);
+                                    match code {
+                                        KeyCode::Backspace => inp.set_backspace_pressed(),
+                                        KeyCode::Enter => inp.set_enter_pressed(),
+                                        KeyCode::Escape => inp.set_escape_pressed(),
+                                        _ => {}
+                                    }
+                                    if let Key::Character(ref s) = lkey {
+                                        if inp.preedit_text.is_empty() {
+                                            for ch in s.chars() { if ch >= ' ' { inp.on_char(ch); } }
+                                        }
                                     }
                                 }
+                                ElementState::Released => inp.apply_key(c, false, repeat),
                             }
-                            ElementState::Released => inp.on_key_up(c),
                         }
                     },
                     Event::WindowEvent { event: WindowEvent::CursorMoved { position, .. }, .. } => {
@@ -642,7 +645,11 @@ impl KagraWindow {
                         lock_recover(&input_ref).on_mouse_delta(delta.0 as f32, delta.1 as f32);
                     },
                     Event::WindowEvent { event: WindowEvent::Focused(gained), .. } => {
-                        lock_recover(&input_ref).focused = gained;
+                        let mut inp = lock_recover(&input_ref);
+                        inp.focused = gained;
+                        if !gained {
+                            inp.release_all();
+                        }
                     },
                     Event::WindowEvent { event: WindowEvent::MouseInput { state, button, .. }, .. } => {
                         let btn = match button {

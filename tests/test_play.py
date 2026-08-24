@@ -90,6 +90,57 @@ def test_walk_wish_strafe_is_camera_right():
         assert moved[0] > origin[0]
 
 
+def test_walk_key_axes_down_release_is_zero():
+    """Hold ↓ then release → wish is idle. Dual S+↓ still walks until both are up."""
+    held: set[str] = {"DOWN"}
+
+    def down(name: str) -> bool:
+        return name in held
+
+    assert play.walk_key_axes(down) == (-1.0, 0.0)
+    held.clear()
+    assert play.walk_key_axes(down) == (0.0, 0.0)
+    held.update({"S", "DOWN"})
+    assert play.walk_key_axes(down) == (-1.0, 0.0)
+    held.discard("DOWN")
+    assert play.walk_key_axes(down) == (-1.0, 0.0)
+    held.clear()
+    assert play.walk_key_axes(down) == (0.0, 0.0)
+
+
+def test_walk_axes_zero_pad_and_keys_clears_wish():
+    """0-axis pad + no keys → (0, 0). Leftover inside deadzone cannot keep walking."""
+    assert play.walk_axes(0.0, 0.0, 0.0, 0.0) == (0.0, 0.0)
+    assert play.walk_axes(0.05, 0.05, 0.0, 0.0) == (0.0, 0.0)
+    fwd, right = play.walk_axes(0.0, 0.04, -1.0, 0.0)
+    assert fwd == pytest.approx(-1.0)
+    assert right == 0.0
+    fwd, right = play.walk_axes(0.0, 0.04, 0.0, 0.0)
+    assert fwd == 0.0 and right == 0.0
+
+
+def test_walk_axes_leftover_stick_does_not_mute_keyboard():
+    """Live stick used to skip WASD; leftover then kept walking after ↓ release."""
+    fwd, right = play.walk_axes(0.0, 0.5, -1.0, 0.0)
+    assert fwd == pytest.approx(-1.5)
+    assert right == 0.0
+
+
+def test_walk_release_clears_player_velocity():
+    w = play.World3D(gravity=0.0)
+    p = w.add_player(0.0, 0.0)
+    p.use_gravity = False
+    fwd, right = play.walk_axes(0.0, 0.0, -1.0, 0.0)
+    vx, vz = play.walk_wish(fwd, right, 0.0, speed=3.2)
+    w.move_player(vx, vz)
+    assert vz < 0.0
+    fwd, right = play.walk_axes(0.0, 0.0, 0.0, 0.0)
+    vx, vz = play.walk_wish(fwd, right, 0.0, speed=3.2)
+    w.move_player(vx, vz)
+    assert vx == 0.0 and vz == 0.0
+    assert p.vx == 0.0 and p.vz == 0.0
+
+
 def test_look_yaw_subtracts_mouse_x():
     assert play.look_yaw(0.0, 10.0, sens=0.01) == pytest.approx(-0.1)
 

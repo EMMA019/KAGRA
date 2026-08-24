@@ -186,9 +186,13 @@ def pad_released(name: str) -> bool:
 
 
 def stick_move(lx: float, ly: float, *, deadzone: float = 0.2) -> tuple[float, float]:
-    """左スティック → ``(forward, right)``。上が前進。"""
+    """左スティック → ``(forward, right)``。上が前進。0 軸 / デッドゾーンは離した扱い。"""
     import math
 
-    if math.hypot(float(lx), float(ly)) < float(deadzone):
+    lx = float(lx)
+    ly = float(ly)
+    if not math.isfinite(lx) or not math.isfinite(ly):
         return 0.0, 0.0
-    return -float(ly), float(lx)
+    if math.hypot(lx, ly) < float(deadzone):
+        return 0.0, 0.0
+    return -ly, lx
