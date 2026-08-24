@@ -249,7 +249,9 @@ mod tests {
     fn late_repeat_after_up_does_not_rehold() {
         let mut inp = InputState::new();
         inp.apply_key(DOWN, true, false);
+        inp.begin_frame();
         inp.apply_key(DOWN, false, false);
+        inp.begin_frame();
         inp.apply_key(DOWN, true, true);
         assert!(!inp.is_key_down(DOWN), "repeat after key-up must not stick");
         assert!(!inp.is_key_pressed(DOWN));
