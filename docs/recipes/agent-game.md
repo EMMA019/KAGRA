@@ -6,6 +6,10 @@ KAGRA's loop is: search the API → write a scene → verify headlessly.
 Rules live in [`AGENTS.md`](../../AGENTS.md). Logged runs live in
 [`docs/agent-runs/`](../agent-runs/README.md).
 
+Heart Catch / Switch Room / Dodge Room prove the loop. They are day-one
+box games. Do not start a fourth box room and call it D-6. Next bar:
+usable week in [`docs/ROADMAP.ja.md`](../ROADMAP.ja.md).
+
 ## One-line prompt
 
 ```
@@ -104,3 +108,4 @@ Overworld。これは play-surface デモで、エージェント製ログでは
 子の `x,y,z,yaw` は親からのローカル。
 glTF 部品は `Prop("crate.glb")`（`stage()` は会場。同梱は `cube.glb`）。
 球 / 円柱の当たりとホバーは箱ではない。
+箱部屋の 4 本目を D-6 と呼ばない。次はロードマップの使える週。

@@ -39,6 +39,10 @@ Picture: `set_point_light` / `set_spot_light` / `set_hdri("studio")` /
 Outdoor island: `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` /
 `load_city` / `Walk(..., jump=)`. `set_shadow_cascades(2)` outdoors. Not OSM / Rapier.
 
+Picture and play are still **day one**. Do not call them three.js-class or Ursina-class.
+Next bar is `docs/ROADMAP.ja.md` 使える週 (tone map, specular IBL, normals, indoor
+shadows, pointer lock, click, `animate`). Do not start D-6 as a fourth box room.
+
 ## Touch / mobile
 
 Use `kagra.touch.VirtualPad` + `PointerEvent` (`docs/schemas/input_events.json`).
