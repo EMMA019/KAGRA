@@ -6,7 +6,7 @@
   Not USB/XInput.
 - Demos: Pretty Room / Overworld / Prop Garden. Garden `KAGRA_SMOKE` pixels stay
   without tonemap.
-- Tests: `pytest tests -m "not golden"` (run in this session).
+- Tests: `pytest tests -m "not golden"` — **272 passed**, 3 deselected
 - Verify: GPU wheel missing on this VM. Scenarios already exist
   (`pretty_room_smoke.json`, `overworld_smoke.json`, `prop_garden_smoke.json`).
 - Checkboxes in `docs/ROADMAP.ja.md` stay open until a stranger would watch 30s.
