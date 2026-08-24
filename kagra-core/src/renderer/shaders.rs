@@ -625,6 +625,7 @@ fn cotangent_frame(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> mat3x3<f32> {
     apply_morph(in, &pos);
     let m = skin_matrix(in);
     let world_pos = m * vec4<f32>(pos, 1.0);
+    // Write pass binds a per-layer 256-byte buffer; vp0 is that layer's matrix.
     return shadow_u.vp0 * world_pos;
 }
 

@@ -224,5 +224,13 @@ mod tests {
         let sa = snap_center_xz(a[0].0, a[0].1, map);
         let sb = snap_center_xz(b[0].0, b[0].1, map);
         assert_eq!(sa, sb);
+        // 近と遠の中心は違う。1 枚の uniform をループで書くと両レイヤが遠になる。
+        let far = snap_center_xz(a[1].0, a[1].1, map);
+        assert!(
+            (sa[0] - far[0]).abs() > 0.5 || (sa[2] - far[2]).abs() > 0.5,
+            "near {:?} far {:?}",
+            sa,
+            far
+        );
     }
 }

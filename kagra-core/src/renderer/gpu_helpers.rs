@@ -92,6 +92,51 @@ pub(super) fn make_shadow_map(
     (tex, sample, [layer0, layer1])
 }
 
+/// One light-VP uniform per cascade layer. Reusing a single buffer and
+/// calling `Queue::write_buffer` inside the layer loop overwrites every
+/// pending pass (same class of bug as bloom params): both layers get the
+/// last VP, near-cascade sampling misses, and outdoor on/off goldens match.
+pub(super) struct ShadowWriteLayer {
+    pub buf: wgpu::Buffer,
+    pub write_bg: wgpu::BindGroup,
+    pub write_u_bg: wgpu::BindGroup,
+}
+
+pub(super) fn make_shadow_write_layers(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    vp_bgl: &wgpu::BindGroupLayout,
+    write_u_bgl: &wgpu::BindGroupLayout,
+    initial_vp: &[f32; 16],
+) -> [ShadowWriteLayer; 2] {
+    core::array::from_fn(|i| {
+        let buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(if i == 0 { "Shadow VP Buf 0" } else { "Shadow VP Buf 1" }),
+            size: 256,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&buf, 0, bytemuck::cast_slice(initial_vp));
+        let write_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(if i == 0 { "Shadow Write BG 0" } else { "Shadow Write BG 1" }),
+            layout: vp_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buf.as_entire_binding(),
+            }],
+        });
+        let write_u_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(if i == 0 { "Shadow Write U BG 0" } else { "Shadow Write U BG 1" }),
+            layout: write_u_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buf.as_entire_binding(),
+            }],
+        });
+        ShadowWriteLayer { buf, write_bg, write_u_bg }
+    })
+}
+
 /// light_dir = direction toward the light. Builds ortho light view-proj around target.
 pub(super) fn build_light_view_proj(light_dir: [f32; 4], target: [f32; 3]) -> [f32; 16] {
     build_light_view_proj_fit(light_dir, target, 6.0, 8.0, 20.0)
