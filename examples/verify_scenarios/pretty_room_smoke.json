@@ -1,0 +1,12 @@
+{
+  "name": "pretty_room_smoke",
+  "script": "examples/vrm_pretty_room.py",
+  "timeout_sec": 180,
+  "env": {
+    "KAGRA_SMOKE": "1",
+    "KAGRA_SMOKE_FRAMES": "36",
+    "KAGRA_SMOKE_OUT": "scratch/pretty_room_smoke.png"
+  },
+  "expect_files": ["scratch/pretty_room_smoke.png"],
+  "min_file_bytes": 2000
+}

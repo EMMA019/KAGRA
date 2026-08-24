@@ -329,6 +329,122 @@ def sky(*, radius: float = 18.0, look: bool = True):
     kagra.draw_mesh_3d(tex, verts, idx)
 
 
+def room_layout(half: float = 6.0, height: float = 3.2, thick: float = 0.18) -> list[dict]:
+    """床・天井・4 壁の配置。GPU 不要。"""
+    half = float(half)
+    height = float(height)
+    thick = max(0.04, float(thick))
+    if half < 0.5:
+        raise ValueError("room half must be >= 0.5")
+    if height < 0.8:
+        raise ValueError("room height must be >= 0.8")
+    span = half * 2.0
+    mid_y = height * 0.5
+    return [
+        {
+            "kind": "floor", "model": "plane",
+            "x": 0.0, "y": 0.0, "z": 0.0,
+            "sx": span, "sy": 1.0, "sz": span,
+            "collision": False, "color": (118, 78, 48),
+        },
+        {
+            "kind": "ceiling", "model": "box",
+            "x": 0.0, "y": height, "z": 0.0,
+            "sx": span, "sy": thick, "sz": span,
+            "collision": False, "color": (232, 224, 212),
+        },
+        {
+            "kind": "wall", "model": "box",
+            "x": 0.0, "y": mid_y, "z": -half,
+            "sx": span, "sy": height, "sz": thick,
+            "collision": True, "color": (214, 204, 190),
+        },
+        {
+            "kind": "wall", "model": "box",
+            "x": 0.0, "y": mid_y, "z": half,
+            "sx": span, "sy": height, "sz": thick,
+            "collision": True, "color": (214, 204, 190),
+        },
+        {
+            "kind": "wall", "model": "box",
+            "x": -half, "y": mid_y, "z": 0.0,
+            "sx": thick, "sy": height, "sz": span,
+            "collision": True, "color": (214, 204, 190),
+        },
+        {
+            "kind": "wall", "model": "box",
+            "x": half, "y": mid_y, "z": 0.0,
+            "sx": thick, "sy": height, "sz": span,
+            "collision": True, "color": (214, 204, 190),
+        },
+    ]
+
+
+def point_in_room(
+    x: float,
+    y: float,
+    z: float,
+    half: float = 6.0,
+    height: float = 3.2,
+    thick: float = 0.18,
+) -> bool:
+    """壁の内側（厚みの半分を除く）に点が入るか。"""
+    inner = float(half) - max(0.04, float(thick)) * 0.5
+    return (
+        abs(float(x)) < inner
+        and abs(float(z)) < inner
+        and 0.0 < float(y) < float(height) - max(0.04, float(thick)) * 0.5
+    )
+
+
+def room(
+    half: float = 6.0,
+    height: float = 3.2,
+    *,
+    thick: float = 0.18,
+    world: Optional[World3D] = None,
+    look: bool = True,
+    textured: bool = True,
+) -> list[Prop]:
+    """閉じた部屋を置く。初回だけ ``apply_room_look``。``sky()`` の室内版。"""
+    if look:
+        try:
+            from kagra.look import apply_room_look
+            apply_room_look()
+        except Exception:
+            pass
+    floor_tex = wall_tex = ceil_tex = 0
+    if textured:
+        try:
+            from kagra.look import room_ceiling_texture, room_floor_texture, room_wall_texture
+            floor_tex = room_floor_texture()
+            wall_tex = room_wall_texture()
+            ceil_tex = room_ceiling_texture()
+        except Exception:
+            floor_tex = wall_tex = ceil_tex = 0
+    props: list[Prop] = []
+    for spec in room_layout(half, height, thick):
+        kind = spec["kind"]
+        if kind == "floor":
+            tex = floor_tex
+        elif kind == "ceiling":
+            tex = ceil_tex
+        else:
+            tex = wall_tex
+        props.append(
+            Prop(
+                spec["model"],
+                x=spec["x"], y=spec["y"], z=spec["z"],
+                scale=(spec["sx"], spec["sy"], spec["sz"]),
+                color=spec["color"],
+                collision=spec["collision"],
+                world=world,
+                texture=tex,
+            )
+        )
+    return props
+
+
 def destroy(prop) -> None:
     """``Prop.destroy()`` の別名。既に消えていても落ちない。"""
     if prop is None:

@@ -147,10 +147,12 @@ struct Camera {
     point_pos: vec4<f32>,
     point_col: vec4<f32>,
     env: vec4<f32>,
+    spot_dir: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> cam: Camera;
 @group(0) @binding(1) var env_cube: texture_cube<f32>;
 @group(0) @binding(2) var env_samp: sampler;
+@group(0) @binding(3) var env_irr: texture_cube<f32>;
 @group(1) @binding(0) var t_diffuse: texture_2d<f32>;
 @group(1) @binding(1) var s_diffuse: sampler;
 @group(2) @binding(0) var<uniform> light_vp: mat4x4<f32>;
@@ -198,7 +200,20 @@ fn hemi_ambient(n: vec3<f32>) -> vec3<f32> {
 }
 fn env_light(n: vec3<f32>) -> vec3<f32> {
     if cam.env.x < 1e-4 { return vec3<f32>(0.0); }
-    return textureSample(env_cube, env_samp, n).rgb * cam.env.x;
+    return textureSample(env_irr, env_samp, n).rgb * cam.env.x;
+}
+fn spot_cone(world_pos: vec3<f32>) -> f32 {
+    if cam.spot_dir.w < 1e-4 { return 1.0; }
+    let to_l = cam.point_pos.xyz - world_pos;
+    let from_l = normalize(-to_l);
+    let axis = normalize(cam.spot_dir.xyz);
+    let c = dot(from_l, axis);
+    let outer = cam.spot_dir.w;
+    let inner = cam.env.z;
+    if inner - outer < 1e-4 {
+        return select(0.0, 1.0, c >= outer);
+    }
+    return smoothstep(outer, inner, c);
 }
 fn point_diffuse(n: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
     if cam.point_col.w < 1e-4 { return vec3<f32>(0.0); }
@@ -207,7 +222,7 @@ fn point_diffuse(n: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
     let radius = max(cam.point_pos.w, 0.05);
     let atten = saturate(1.0 - dist / radius);
     let ndotl = saturate(dot(n, normalize(to_l)));
-    return cam.point_col.rgb * cam.point_col.w * ndotl * atten * atten;
+    return cam.point_col.rgb * cam.point_col.w * ndotl * atten * atten * spot_cone(world_pos);
 }
 fn ggx_d(ndoth: f32, rough: f32) -> f32 {
     let a = max(rough * rough, 0.002);
@@ -294,6 +309,7 @@ struct II { @location(3) pos_yaw: vec4<f32>, @location(4) scale: vec4<f32> }
         rgb = albedo * lit + albedo * point + in.hemi + env;
     }
     rgb = apply_fog(rgb, in.world_pos);
+    rgb = rgb * max(cam.env.y, 0.0);
     return vec4<f32>(rgb, c.a);
 }
 "#;
@@ -334,6 +350,7 @@ struct Camera {
     point_pos: vec4<f32>,
     point_col: vec4<f32>,
     env: vec4<f32>,
+    spot_dir: vec4<f32>,
 };
 struct Mtoon {
     shade_color: vec4<f32>,
@@ -346,6 +363,7 @@ struct Mtoon {
 @group(0) @binding(0) var<uniform> cam: Camera;
 @group(0) @binding(1) var env_cube: texture_cube<f32>;
 @group(0) @binding(2) var env_samp: sampler;
+@group(0) @binding(3) var env_irr: texture_cube<f32>;
 struct SkinUniforms { bone_matrices: array<mat4x4<f32>, 256>, screen_size: vec4<f32> };
 @group(1) @binding(0) var<uniform> skin: SkinUniforms;
 @group(2) @binding(0) var t_diffuse: texture_2d<f32>;
@@ -552,12 +570,26 @@ fn cotangent_frame(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> mat3x3<f32> {
         let radius = max(cam.point_pos.w, 0.05);
         let atten = saturate(1.0 - dist / radius);
         let ndotl = saturate(dot(n, normalize(to_l)));
-        col = col + cam.point_col.rgb * cam.point_col.w * ndotl * atten * atten * base.rgb;
+        var cone = 1.0;
+        if cam.spot_dir.w > 1e-4 {
+            let from_l = normalize(-to_l);
+            let axis = normalize(cam.spot_dir.xyz);
+            let c = dot(from_l, axis);
+            let outer = cam.spot_dir.w;
+            let inner = cam.env.z;
+            if inner - outer < 1e-4 {
+                cone = select(0.0, 1.0, c >= outer);
+            } else {
+                cone = smoothstep(outer, inner, c);
+            }
+        }
+        col = col + cam.point_col.rgb * cam.point_col.w * ndotl * atten * atten * base.rgb * cone;
     }
     if cam.env.x > 1e-4 {
-        col = col + textureSample(env_cube, env_samp, n).rgb * cam.env.x * base.rgb * 0.35;
+        col = col + textureSample(env_irr, env_samp, n).rgb * cam.env.x * base.rgb * 0.35;
     }
     col = apply_fog(col, in.world_pos);
+    col = col * max(cam.env.y, 0.0);
     return vec4<f32>(col, base.a);
 }
 

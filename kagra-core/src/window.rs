@@ -236,6 +236,25 @@ impl KagraWindow {
         }
     }
 
+    pub fn set_spot_light(
+        &self,
+        x: f32, y: f32, z: f32,
+        dx: f32, dy: f32, dz: f32,
+        angle: f32, penumbra: f32,
+        intensity: f32, radius: f32,
+        r: f32, g: f32, b: f32,
+    ) {
+        if let Some(rend) = lock_recover(&self.renderer).as_mut() {
+            rend.set_spot_light(x, y, z, dx, dy, dz, angle, penumbra, intensity, radius, r, g, b);
+        }
+    }
+
+    pub fn set_exposure(&self, value: f32) {
+        if let Some(rend) = lock_recover(&self.renderer).as_mut() {
+            rend.set_exposure(value);
+        }
+    }
+
     pub fn set_hdri(&self, path: &str, strength: f32) {
         if let Some(rend) = lock_recover(&self.renderer).as_mut() {
             rend.set_hdri(path, strength);

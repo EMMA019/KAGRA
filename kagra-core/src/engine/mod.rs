@@ -1392,7 +1392,7 @@ impl Engine {
         self.window.set_ambient(r, g, b, strength);
     }
 
-    /// 点光源 1（影は無し）。intensity=0 でオフ。
+    /// 点光源 1（影は無し）。intensity=0 でオフ。スポットを消して点に戻す。
     #[pyo3(signature = (x, y, z, r=1.0, g=0.95, b=0.85, intensity=1.0, radius=8.0))]
     pub fn set_point_light(
         &self,
@@ -1401,6 +1401,27 @@ impl Engine {
         intensity: f32, radius: f32,
     ) {
         self.window.set_point_light(x, y, z, r, g, b, intensity, radius);
+    }
+
+    /// スポット 1（影は無し）。点光源スロットを共有。
+    #[pyo3(signature = (x, y, z, dx, dy, dz, angle=0.8, penumbra=0.25, intensity=1.0, radius=10.0, r=1.0, g=0.95, b=0.85))]
+    pub fn set_spot_light(
+        &self,
+        x: f32, y: f32, z: f32,
+        dx: f32, dy: f32, dz: f32,
+        angle: f32, penumbra: f32,
+        intensity: f32, radius: f32,
+        r: f32, g: f32, b: f32,
+    ) {
+        self.window.set_spot_light(
+            x, y, z, dx, dy, dz, angle, penumbra, intensity, radius, r, g, b,
+        );
+    }
+
+    /// カラーの掛け算。1.0 は何もしない。
+    #[pyo3(signature = (value=1.0))]
+    pub fn set_exposure(&self, value: f32) {
+        self.window.set_exposure(value);
     }
 
     /// HDRI キューブ。``studio`` は内蔵。空 / strength=0 でオフ。

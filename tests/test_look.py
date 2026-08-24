@@ -9,6 +9,20 @@ from tests.conftest import load_kagra_submodule
 look = load_kagra_submodule("look")
 
 
+def test_wood_plank_groove_is_darker():
+    mid = look.wood_plank_rgba(0.07, 0.4)
+    groove = look.wood_plank_rgba(0.005, 0.4)
+    assert sum(mid[:3]) > sum(groove[:3])
+
+
+def test_plaster_ceiling_is_lighter_than_wainscot():
+    wall = look.plaster_rgba(0.5, 0.6, ceiling=False)
+    dado = look.plaster_rgba(0.5, 0.05, ceiling=False)
+    ceil = look.plaster_rgba(0.5, 0.5, ceiling=True)
+    assert sum(ceil[:3]) > sum(wall[:3])
+    assert sum(wall[:3]) > sum(dado[:3])
+
+
 def test_sky_zenith_is_darker_than_horizon():
     zenith = look.sky_rgba(0.5, 1.0)
     horizon = look.sky_rgba(0.5, 0.5)

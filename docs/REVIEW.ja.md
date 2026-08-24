@@ -1,12 +1,12 @@
 # KAGRA 全体レビュー — 2026-08-23
 
-0.1.3（PyPI）+ 未リリースの描画性能 P0–P8 + `Prop` / `Walk` / `sky` を読んだ時点の棚卸し。
+0.1.3（PyPI）+ 未リリースの描画性能 P0–P8 + `Prop` / `Walk` / `sky` / `room` を読んだ時点の棚卸し。
 対象は「three.js / three.vrm 級の 3D」と「Ursina 級のゲーム面」。
 数値目標や投稿計画は [ROADMAP.ja.md](ROADMAP.ja.md)。ここは能力の話だけ。
 
 ## 1 行
 
-**VRM の体は three-vrm 級に近い。3D の絵は three.js の簡易フォワード（点 1 + HDRI キューブ、PMREM / CSM 無し）。ゲームの書き味は Ursina の最初の週。エージェント開発ループは他に無い。**
+**VRM の体は three-vrm 級に近い。3D の絵は three.js の簡易フォワード（点/スポット 1 + HDRI + irradiance キューブ、フル PMREM / CSM 無し）。ゲームの書き味は Ursina の最初の週 + 閉じた部屋。エージェント開発ループは他に無い。**
 
 「Python で AI に体を与える」北極星は正しい。エンジンとして Ursina / three.js を名指しするなら、能力トラックを需要トラックと並べて走らせないと、楔 D（エージェントがゲームを書く）が箱部屋で頭打ちになる。
 
@@ -15,8 +15,8 @@
 | ものさし | 戦う場所 | KAGRA の位置 |
 |---|---|---|
 | **three-vrm** | デスクトップ Python。Web では戦わない | 体（MToon / Spring / VRMA / 表情 / 一人称）は対抗できる。配布と AI 接続はこちらが厚い |
-| **three.js** | 同じ種類の仕事（ライト・影・IBL・マテリアル・カリング）。ブラウザ対決ではない | カリング / インスタンス / 1 本影（ワールド含む） / 点光 1（影無し） / HDRI キューブ（PMREM 無し） / 汎用金属・粗さ。スポット・CSM は無い |
-| **Ursina** | 「短い Python で部屋を置いて歩く」 | `Prop` / `Walk` / `sky` + 一人称・ホバー・destroy・テクスチャ・1 段の親子・glTF 部品・パッド |
+| **three.js** | 同じ種類の仕事（ライト・影・IBL・マテリアル・カリング）。ブラウザ対決ではない | カリング / インスタンス / 1 本影（ワールド含む） / 点またはスポット 1（影無し） / HDRI + irradiance キューブ（フル PMREM 無し） / 汎用金属・粗さ。CSM は無い |
+| **Ursina** | 「短い Python で部屋を置いて歩く」 | `Prop` / `Walk` / `sky` / `room` + 一人称・ホバー・destroy・テクスチャ・1 段の親子・glTF 部品・パッド |
 | **Unity + UniVRM** | インストールと「歌って踊るまで」 | 5MB wheel で勝つ。エディタと量産パイプラインでは負ける（戦わない） |
 | **pygame / pyxel** | 2D エンジン | 棚に下げた。戻さない |
 
@@ -34,15 +34,15 @@
 
 | 項目 | 今 | three.js が当たり前にやっていること |
 |---|---|---|
-| ライト | 平行光 1 + 点 1（影無し）+ 半球 | スポット / 複数、影付き |
-| IBL | 半球 + HDRI キューブ（法線サンプル） | PMREM / スペキュラ LOD |
+| ライト | 平行光 1 + 点 **または** スポット 1（影無し）+ 半球 | 複数、影付きスポット |
+| IBL | 半球 + HDRI + 小さな irradiance キューブ。露出は `set_exposure` | フル PMREM / スペキュラ LOD |
 | 影 | 2048、VRM + ワールド AABB に合わせた ortho、床・箱・Prop もキャスター、9-tap PCF。カスケード無し | CSM、複数ライト |
 | 汎用メッシュ | baseColor + 金属/粗さ（既定は Lambert）。MToon は別 | MeshStandard / 法線 / 複数マテリアル |
 | ポスト | bloom / vignette / fog | SSAO、トーンマップ、アウトライン（VRM 以外） |
 | シーングラフ | 2D `Entity` は棚。`Prop` は 1 段の親子 | Object3D の深い階層 |
 | カメラ | orbit / showcase / follow | 一人称・ポインタロック・直交 3D |
 
-描画性能トラック（視錐台・ボーン AABB・インスタンス・マテリアルソート・影 + 点光 + HDRI + 汎用 PBR）は「同じ種類の仕事」として正しい。**次はスポット / PMREM / 法線マップで、カリングの続きではない。**
+描画性能トラック（視錐台・ボーン AABB・インスタンス・マテリアルソート・影 + 点/スポット + HDRI + irradiance + 汎用 PBR）は「同じ種類の仕事」として正しい。**次はフル PMREM LOD / 法線マップ / 複数ライトで、カリングの続きではない。**
 
 ### 体（three-vrm との差）
 
@@ -83,7 +83,7 @@ kagra-shared + mobile/     ──► 別の運転デモ（道路・トラック�
 ```
 
 - **レンダラは統合しない。** 共有コアの絵は運転デモ用。VRM スタックに足さない。
-- **公開 API 367。** Front に寄せたのは正しい。エージェントはまだ Shelf の `Entity` / `world_to_screen`（2D）を踏む。Front を厚くする（`Prop` を増やす）方が、Shelf を消すより先。
+- **公開 API 388。** Front に寄せたのは正しい。エージェントはまだ Shelf の `Entity` / `world_to_screen`（2D）を踏む。Front を厚くする（`Prop` / `room` を増やす）方が、Shelf を消すより先。
 - **物理は Rapier を入れない。** キャラコン（カプセル + AABB / yaw OBB）でゲームは書ける。メッシュ衝突は後回し。
 - **Windows は EventLoop 1 本。** GPU は必ず subprocess（`kagra.verify`）。この制約を壊さない。
 
@@ -96,7 +96,7 @@ kagra-shared + mobile/     ──► 別の運転デモ（道路・トラック�
 | A ローカル LLM に体を | `avatar` + `sing` / `speak` | 頭脳の公式面（Kairi / Ollama）が未実装 |
 | B 無人 3D VTuber | 歌・ダンス・HUD・仮想カメラ | オートパイロット / セーフティ（Stage 3。今はやらない） |
 | C VRoid マスコット | 透明窓・常駐 | 配布物（zip）。エンジン不足ではない |
-| D エージェントがゲームを | 箱部屋 3 本 + Prop Garden | 部屋 + 絵 P0–P8。次は D-6（Prop/Walk/sky だけで 4 本目）か頭脳 |
+| D エージェントがゲームを | 箱部屋 3 本 + Prop Garden + Pretty Room | 閉じた部屋 + 絵 P0–P8。次は D-6（Prop/Walk/room だけで 4 本目）か頭脳 |
 
 Stage 1 の「4 楔を数字で選ぶ」は残す。**D の天井を上げるのが能力トラックの第一目的。** A の頭脳は「完了」ではなく次の実装。
 

@@ -60,7 +60,7 @@ PNG/WAV/projection:
 - `kagra.billboard_mesh` / `disk_mesh` / `quad_y_mesh` / `box_mesh` — 3D sprites / floor / crates
 - `kagra.upload_mesh_3d` / `draw_mesh_id` — retain a mesh, draw by id
 - `World3D` + `Camera3D.follow` — floor / box collision and a chase camera
-- `Prop` / `Walk` / `sky()` — short 3D (not 2D `Entity`). `examples/vrm_prop_garden.py`
+- `Prop` / `Walk` / `sky()` / `room()` — short 3D (not 2D `Entity`). Garden / Pretty Room
 - `Walk(first_person=True)` / `hovered_prop(cam)` — eye-height view and mouse pick
 - `destroy(prop)` / `Prop.update_all(dt)` — kinematic move and delete
 - Sphere / cylinder `Prop` collide and hover as those shapes (not boxes)
@@ -72,7 +72,8 @@ PNG/WAV/projection:
 
 Verify: `examples/verify_scenarios/orb_rush_smoke.json`,
 `heart_catch_smoke.json`, `switch_room_smoke.json`,
-`dodge_room_smoke.json`, and `prop_garden_smoke.json`.
+`dodge_room_smoke.json`, `prop_garden_smoke.json`,
+and `pretty_room_smoke.json`.
 Logged builds live in `docs/agent-runs/`.
 The API index front is VRM / 3D / agents; the shelf is legacy 2D.
 
