@@ -120,7 +120,7 @@ pub struct RendererV2 {
     depth_texture: wgpu::Texture,
     depth_view: wgpu::TextureView,
     pipeline_3d: wgpu::RenderPipeline,
-    /// view(64) + proj(64) + light_dir(16) + toon(16) + eye(16) + fog_params(16) + fog_color(16) = 208 bytes
+    /// view+proj+light+toon+eye+fog+fog_color+ambient+point+env+spot = 288
     camera_3d_buf: wgpu::Buffer,
     camera_3d_bg: wgpu::BindGroup,
     camera_3d_bgl: wgpu::BindGroupLayout,
@@ -138,11 +138,15 @@ pub struct RendererV2 {
     point_pos: [f32; 4],
     /// 点光源色 rgb + 強度。0 ならオフ。
     point_col: [f32; 4],
-    /// x = HDRI 強度。
+    /// x = HDRI 強度、y = 露出（既定 1）、z = spot cos_inner。
     env_params: [f32; 4],
+    /// xyz = スポット方向、w = cos_outer（0 なら点光 / オフ）。
+    spot_dir: [f32; 4],
     env_tex: wgpu::Texture,
     env_view: wgpu::TextureView,
     env_sampler: wgpu::Sampler,
+    env_irr_tex: wgpu::Texture,
+    env_irr_view: wgpu::TextureView,
     mesh_mat_bgl: wgpu::BindGroupLayout,
     mesh_mat_buf: wgpu::Buffer,
     mesh_mat_bg: wgpu::BindGroup,
@@ -504,13 +508,24 @@ impl RendererV2 {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
             ],
         });
         let (env_tex, env_view, env_sampler) = make_default_env_cube(&device, &queue);
-        // view+proj+light+toon+eye+fog+fog_color+ambient+point_pos+point_col+env = 272
+        let (env_irr_tex, env_irr_view, _env_irr_samp) = make_default_env_cube(&device, &queue);
+        // view+proj+light+toon+eye+fog+fog_color+ambient+point_pos+point_col+env+spot = 288
         let camera_3d_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Camera3D Buf"),
-            size: 272,
+            size: 288,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -529,6 +544,10 @@ impl RendererV2 {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&env_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&env_irr_view),
                 },
             ],
         });
@@ -584,10 +603,12 @@ impl RendererV2 {
         queue.write_buffer(&camera_3d_buf, 208, bytemuck::cast_slice(&ambient));
         let point_pos = [0.0f32, 1.0, 0.0, 8.0];
         let point_col = [1.0f32, 0.95, 0.85, 0.0];
-        let env_params = [0.0f32, 0.0, 0.0, 0.0];
+        let env_params = [0.0f32, 1.0, 0.0, 0.0];
+        let spot_dir = [0.0f32, -1.0, 0.0, 0.0];
         queue.write_buffer(&camera_3d_buf, 224, bytemuck::cast_slice(&point_pos));
         queue.write_buffer(&camera_3d_buf, 240, bytemuck::cast_slice(&point_col));
         queue.write_buffer(&camera_3d_buf, 256, bytemuck::cast_slice(&env_params));
+        queue.write_buffer(&camera_3d_buf, 272, bytemuck::cast_slice(&spot_dir));
 
         let skinning_3d_morph_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Skinning3D Morph BGL"),
@@ -1206,9 +1227,12 @@ impl RendererV2 {
             point_pos,
             point_col,
             env_params,
+            spot_dir,
             env_tex,
             env_view,
             env_sampler,
+            env_irr_tex,
+            env_irr_view,
             mesh_mat_bgl,
             mesh_mat_buf,
             mesh_mat_bg,
@@ -1761,8 +1785,56 @@ impl RendererV2 {
             b.clamp(0.0, 4.0),
             intensity.max(0.0),
         ];
+        self.spot_dir = [0.0, -1.0, 0.0, 0.0];
+        self.env_params[2] = 0.0;
         self.queue.write_buffer(&self.camera_3d_buf, 224, bytemuck::cast_slice(&self.point_pos));
         self.queue.write_buffer(&self.camera_3d_buf, 240, bytemuck::cast_slice(&self.point_col));
+        self.write_env_spot();
+    }
+
+    pub fn set_spot_light(
+        &mut self,
+        x: f32,
+        y: f32,
+        z: f32,
+        dx: f32,
+        dy: f32,
+        dz: f32,
+        angle: f32,
+        penumbra: f32,
+        intensity: f32,
+        radius: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    ) {
+        let dir = {
+            let len = (dx * dx + dy * dy + dz * dz).sqrt().max(1e-8);
+            [dx / len, dy / len, dz / len]
+        };
+        let (cos_outer, cos_inner) = crate::hdri::spot_cone_params(angle, penumbra);
+        self.point_pos = [x, y, z, radius.max(0.05)];
+        self.point_col = [
+            r.clamp(0.0, 4.0),
+            g.clamp(0.0, 4.0),
+            b.clamp(0.0, 4.0),
+            intensity.max(0.0),
+        ];
+        self.spot_dir = [dir[0], dir[1], dir[2], cos_outer];
+        self.env_params[2] = cos_inner;
+        self.queue.write_buffer(&self.camera_3d_buf, 224, bytemuck::cast_slice(&self.point_pos));
+        self.queue.write_buffer(&self.camera_3d_buf, 240, bytemuck::cast_slice(&self.point_col));
+        self.write_env_spot();
+    }
+
+    pub fn set_exposure(&mut self, value: f32) {
+        self.env_params[1] = value.max(0.0);
+        self.write_env_spot();
+    }
+
+    fn write_env_spot(&self) {
+        self.queue.write_buffer(&self.camera_3d_buf, 256, bytemuck::cast_slice(&self.env_params));
+        self.queue.write_buffer(&self.camera_3d_buf, 272, bytemuck::cast_slice(&self.spot_dir));
     }
 
     fn rebuild_camera_bg(&mut self) {
@@ -1782,6 +1854,10 @@ impl RendererV2 {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&self.env_sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&self.env_irr_view),
+                },
             ],
         });
     }
@@ -1790,8 +1866,8 @@ impl RendererV2 {
         let strength = strength.max(0.0);
         let key = path.trim();
         if key.is_empty() || strength < 1e-5 {
-            self.env_params = [0.0, 0.0, 0.0, 0.0];
-            self.queue.write_buffer(&self.camera_3d_buf, 256, bytemuck::cast_slice(&self.env_params));
+            self.env_params[0] = 0.0;
+            self.write_env_spot();
             return;
         }
         let (pix, w, h) = if key.eq_ignore_ascii_case("studio") {
@@ -1804,25 +1880,36 @@ impl RendererV2 {
                     (rgba.into_raw(), iw, ih)
                 }
                 Err(_) => {
-                    self.env_params = [0.0, 0.0, 0.0, 0.0];
-                    self.queue.write_buffer(
-                        &self.camera_3d_buf,
-                        256,
-                        bytemuck::cast_slice(&self.env_params),
-                    );
+                    self.env_params[0] = 0.0;
+                    self.write_env_spot();
                     return;
                 }
             }
         };
         let face = 32u32;
         let cube = crate::hdri::equirect_to_cube_rgba(&pix, w, h, face);
+        let irr = crate::hdri::irradiance_cube_rgba(
+            &pix,
+            w,
+            h,
+            crate::hdri::IRRADIANCE_FACE_SIZE,
+            crate::hdri::IRRADIANCE_SAMPLES,
+        );
         let (tex, view, samp) = upload_env_cube_faces(&self.device, &self.queue, face, &cube);
+        let (itex, iview, _) = upload_env_cube_faces(
+            &self.device,
+            &self.queue,
+            crate::hdri::IRRADIANCE_FACE_SIZE,
+            &irr,
+        );
         self.env_tex = tex;
         self.env_view = view;
         self.env_sampler = samp;
+        self.env_irr_tex = itex;
+        self.env_irr_view = iview;
         self.rebuild_camera_bg();
-        self.env_params = [strength, 0.0, 0.0, 0.0];
-        self.queue.write_buffer(&self.camera_3d_buf, 256, bytemuck::cast_slice(&self.env_params));
+        self.env_params[0] = strength;
+        self.write_env_spot();
     }
 
     fn ensure_mesh_mat_slots(&mut self, n: u32) {

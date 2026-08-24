@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Pretty room (picture leftover): `room()` builds an enclosed floor / walls /
+  ceiling (`sky()`'s indoor sibling). `apply_room_look` sets a ceiling
+  `set_spot_light`, studio HDRI, and `set_exposure` (default 1 = identity).
+  Diffuse IBL uses a small irradiance cube (PMREM-lite); spec still samples
+  the sharp cube. Point and spot share one local-light slot; neither casts
+  a shadow. Demo: `examples/vrm_pretty_room.py`. Prop Garden smoke pixels
+  are unchanged.
 - Picture track P6–P8: `set_point_light` (one point, no shadow),
   `set_hdri("studio"|path)` (cube, no PMREM), generic mesh metal/roughness
   via `upload_mesh_3d(..., metallic=, roughness=)` / `set_mesh_pbr` /

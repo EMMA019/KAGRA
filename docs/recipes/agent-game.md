@@ -48,7 +48,7 @@ Result: `examples/vrm_dodge_room.py`
 | Move | `avatar.set_position(x, y, z)` / `avatar.set_yaw(rad)` after `avatar.update(dt)` |
 | 3D → HUD | `cam.world_to_screen(x, y, z)` — not the 2D `kagra.world_to_screen` |
 | World | `World3D` (floor + boxes) then `Camera3D.follow` |
-| Short 3D | `Prop` + `Walk` + `sky()` — not 2D `Entity`. See `examples/vrm_prop_garden.py` |
+| Short 3D | `Prop` + `Walk` + `sky()` / `room()` — not 2D `Entity`. Garden / Pretty Room |
 | First person | `Walk(..., first_person=True)` — eye height. Prop Garden: `F` / Start |
 | Gamepad | `axis("left")` / `pad("a")` / `inject_pad`. `Walk` uses both sticks |
 | Hover | `hovered_prop(cam)` — not the 2D `mouse`. Floor `plane` is skipped |
@@ -69,6 +69,7 @@ python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json
 python -m kagra.verify examples/verify_scenarios/switch_room_smoke.json
 python -m kagra.verify examples/verify_scenarios/dodge_room_smoke.json
 python -m kagra.verify examples/verify_scenarios/prop_garden_smoke.json
+python -m kagra.verify examples/verify_scenarios/pretty_room_smoke.json
 ```
 
 Save the prompt, the stumbles, and the verify output under
@@ -90,7 +91,7 @@ KAGRA で、VRM が3レーンを左右に歩いて、奥から飛んでくるハ
 箱のある部屋は `World3D` + `Camera3D.follow`。静的メッシュは
 `upload_mesh_3d` / `draw_mesh_id`。避けるゲームは
 `examples/vrm_dodge_room.py`（ログ: `docs/agent-runs/20260823-dodge-room/`）。
-短い 3D は `Prop` + `Walk` + `sky()`（`examples/vrm_prop_garden.py`。
+短い 3D は `Prop` + `Walk` + `sky()` / `room()`（Garden / Pretty Room。
 これは play-surface デモで、エージェント製ログではない）。
 一人称は `Walk(..., first_person=True)`。ホバーは `hovered_prop(cam)`。
 パッドは `axis("left")` / `pad("a")`。テストは `inject_pad`。

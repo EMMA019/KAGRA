@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **384**
+エントリ数: **388**
 
 棚の**手前**は VRM / 3D ワールド / エージェントゲーム。
 棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。
@@ -12,6 +12,7 @@
 | Name | Signature |
 |---|---|
 | `apply_live_look` | `apply_live_look(*, mascot: bool = False)` |
+| `apply_room_look` | `apply_room_look()` |
 | `avatar` | `avatar(vrm_path: str) -> 'VrmAvatar'` |
 | `billboard_mesh` | `billboard_mesh(x: float, y: float, z: float, size: float, camera=None, *, yaw: float \| None = None)` |
 | `box_mesh` | `box_mesh(cx: float, cy: float, cz: float, w: float, h: float, d: float)` |
@@ -44,6 +45,7 @@
 | `quit` | `quit()` |
 | `released` | `released(name: str) -> bool` |
 | `render_stats` | `render_stats() -> dict` |
+| `room` | `room(half: float = 6.0, height: float = 3.2, *, thick: float = 0.18, world=None, look: bool = True, textured: bool = True)` |
 | `run` | `run(update=None, draw=None, start_scene: Scene = None, max_frames=None, fixed_dt=None, on_ready=None)` |
 | `save_json` | `save_json(name: str, data: dict, *, directory: str \| None = None)` |
 | `screenshot` | `screenshot(path: str)` |
@@ -51,6 +53,7 @@
 | `set_ambient` | `set_ambient(r: float = 0.22, g: float = 0.2, b: float = 0.28, strength: float = 0.28)` |
 | `set_bloom` | `set_bloom(threshold: float = 0.85, intensity: float = 0.35, enabled: bool = True)` |
 | `set_camera3d` | `set_camera3d(cam: Camera3D \| None)` |
+| `set_exposure` | `set_exposure(value: float = 1.0)` |
 | `set_fog` | `set_fog(start: float = 5.0, end: float = 20.0, color: tuple = (110, 180, 230), *, enabled: bool = True)` |
 | `set_hdri` | `set_hdri(path: str \| None = 'studio', strength: float = 1.0)` |
 | `set_light_dir` | `set_light_dir(x: float, y: float, z: float)` |
@@ -59,6 +62,7 @@
 | `set_point_light` | `set_point_light(x: float, y: float, z: float, *, r: float = 1.0, g: float = 0.95, b: float = 0.85, intensity: float = 1.0, radius: float = 8.0)` |
 | `set_rim` | `set_rim(intensity: float = 0.45)` |
 | `set_shadow_enabled` | `set_shadow_enabled(enabled: bool = True)` |
+| `set_spot_light` | `set_spot_light(x: float, y: float, z: float, dx: float, dy: float, dz: float, *, angle: float = 0.8, penumbra: float = 0.25, intensity: float = 1.0, radius: float = 10.0, r: float = 1.0, g: float = 0.95, b: float = 0.85)` |
 | `set_toon_params` | `set_toon_params(threshold: float = 0.5, softness: float = 1.0, shade: float = 0.55, lit: float = 1.0)` |
 | `sky` | `sky(*, radius: float = 18.0, look: bool = True)` |
 | `solid_tex` | `solid_tex(color)` |
@@ -413,7 +417,7 @@
 - ワールド箱は視錐台カリングされる。箱の描画は `draw_mesh_instances`。直前フレームは `render_stats()`。
 - VRM プリミティブはパッド付きボーン AABB でカリング。`doubleSided` のときだけ両面。
 - 床と箱: `World3D`（または `Physics3D` + `box_mesh`）。カメラは `Camera3D.follow`。
-- 短い 3D: `Prop`（box/sphere/cylinder/plane）+ `Walk` + `sky()`。2D の `Entity` ではない。`bake_all` のあと `draw_all`。
+- 短い 3D: `Prop`（box/sphere/cylinder/plane）+ `Walk` + `sky()` / `room()`。2D の `Entity` ではない。`bake_all` のあと `draw_all`。
 - 一人称: `Walk(..., first_person=True)`。目線は `eye_height`。`F` で切替えるデモは Prop Garden。
 - ホバー: `hovered_prop(cam)`（マウス）。レイ直打ちは `kagra.play.hovered_prop(ox,oy,oz,dx,dy,dz)`。`plane` は除外。
 - 動く Prop: `p.x` / `set_position` / `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)` か `p.enabled = False`。
@@ -423,8 +427,9 @@
 - glTF 部品: `Prop("crate.glb")`。`stage()` / `load_gltf` は会場。同梱エイリアス `cube.glb`。当たりは AABB。
 - ゲームパッド: `axis("left")` / `pad("a")` / `inject_pad`。`Walk` は左スティック移動・右スティック視点。実機ポーリングは未接続。
 - 影は床・箱・Prop も落とす（VRM AABB だけに合わせない）。空メッシュは除外。カスケードはまだ。
-- 点光源 1: `set_point_light(x,y,z, intensity=…)`。影は無し。スポットはまだ。
-- HDRI: `set_hdri("studio")` または正距円筒のパス。`set_ambient` の次。PMREM はまだ。
+- 点光源 1: `set_point_light(x,y,z, intensity=…)`。影は無し。スポットは `set_spot_light`（同じスロット、影無し）。
+- HDRI: `set_hdri("studio")` または正距円筒のパス。拡散は小さな irradiance キューブ。露出は `set_exposure`（既定 1）。
+- 閉じた部屋: `room()` + `apply_room_look`。屋外は `sky()` + `apply_live_look`。デモは `examples/vrm_pretty_room.py`。
 - 汎用メッシュの金属/粗さ: `upload_mesh_3d(..., metallic=, roughness=)` / `Prop(..., metallic=)` / `set_mesh_pbr`。MToon は触らない。
 - 色付きメッシュ: `solid_tex` + `sphere_mesh` / `cylinder_mesh` / `box_mesh`。
 - `kagra-shared` / `mobile/` は別の運転デモ。この Python スタックと混ぜない。

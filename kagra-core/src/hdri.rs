@@ -1,4 +1,4 @@
-//! Equirect → cube. GPU 不要な変換。PMREM はまだ無い。
+//! Equirect → cube. GPU 不要な変換。拡散は小さな irradiance キューブ。
 
 const PI: f32 = std::f32::consts::PI;
 
@@ -79,6 +79,129 @@ pub fn pbr_enabled(metallic: f32, roughness: f32) -> bool {
     metallic > 0.001 || roughness < 0.999
 }
 
+fn norm3(x: f32, y: f32, z: f32) -> [f32; 3] {
+    let len = (x * x + y * y + z * z).sqrt().max(1e-8);
+    [x / len, y / len, z / len]
+}
+
+fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn onb(n: [f32; 3]) -> ([f32; 3], [f32; 3], [f32; 3]) {
+    let t = if n[1].abs() < 0.999 {
+        let c = cross([0.0, 1.0, 0.0], n);
+        norm3(c[0], c[1], c[2])
+    } else {
+        let c = cross([1.0, 0.0, 0.0], n);
+        norm3(c[0], c[1], c[2])
+    };
+    (t, cross(n, t), n)
+}
+
+fn radical_inverse_vdc(mut bits: u32) -> f32 {
+    let mut inv = 0.0f32;
+    let mut base = 0.5f32;
+    while bits > 0 {
+        if bits & 1 == 1 {
+            inv += base;
+        }
+        bits >>= 1;
+        base *= 0.5;
+    }
+    inv
+}
+
+fn cosine_hemisphere(n: [f32; 3], index: u32, samples: u32) -> [f32; 3] {
+    let samples = samples.max(1);
+    let u = (index as f32 + 0.5) / samples as f32;
+    let v = radical_inverse_vdc(index);
+    let r = u.max(0.0).sqrt();
+    let phi = 2.0 * PI * v;
+    let lx = r * phi.cos();
+    let ly = r * phi.sin();
+    let lz = (1.0 - u).max(0.0).sqrt();
+    let (t, b, nn) = onb(norm3(n[0], n[1], n[2]));
+    [
+        t[0] * lx + b[0] * ly + nn[0] * lz,
+        t[1] * lx + b[1] * ly + nn[1] * lz,
+        t[2] * lx + b[2] * ly + nn[2] * lz,
+    ]
+}
+
+pub const IRRADIANCE_FACE_SIZE: u32 = 8;
+pub const IRRADIANCE_SAMPLES: u32 = 16;
+
+pub fn irradiance_cube_rgba(
+    pix: &[u8],
+    w: u32,
+    h: u32,
+    face_size: u32,
+    samples: u32,
+) -> Vec<[u8; 4]> {
+    let face_size = face_size.max(1);
+    let samples = samples.max(1);
+    let mut out = Vec::with_capacity((face_size * face_size * 6) as usize);
+    for face in 0..6 {
+        for y in 0..face_size {
+            for x in 0..face_size {
+                let u = 2.0 * (x as f32 + 0.5) / face_size as f32 - 1.0;
+                let v = 2.0 * (y as f32 + 0.5) / face_size as f32 - 1.0;
+                let d = face_dir(face, u, v);
+                let n = norm3(d[0], d[1], d[2]);
+                let mut acc = [0.0f32; 3];
+                for s in 0..samples {
+                    let dir = cosine_hemisphere(n, s, samples);
+                    let (eu, ev) = dir_to_equirect_uv(dir[0], dir[1], dir[2]);
+                    let rgba = sample_rgba(pix, w, h, eu, ev);
+                    acc[0] += rgba[0] as f32;
+                    acc[1] += rgba[1] as f32;
+                    acc[2] += rgba[2] as f32;
+                }
+                let inv = 1.0 / samples as f32;
+                out.push([
+                    (acc[0] * inv).clamp(0.0, 255.0) as u8,
+                    (acc[1] * inv).clamp(0.0, 255.0) as u8,
+                    (acc[2] * inv).clamp(0.0, 255.0) as u8,
+                    255,
+                ]);
+            }
+        }
+    }
+    out
+}
+
+pub fn spot_cone_params(angle: f32, penumbra: f32) -> (f32, f32) {
+    let angle = angle.clamp(0.02, PI - 0.02);
+    let penumbra = penumbra.clamp(0.0, 0.99);
+    let inner_angle = angle * (1.0 - penumbra);
+    let cos_outer = angle.cos();
+    let mut cos_inner = inner_angle.cos();
+    if cos_inner <= cos_outer {
+        cos_inner = (cos_outer + 1e-4).min(1.0);
+    }
+    (cos_outer, cos_inner)
+}
+
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    if (edge1 - edge0).abs() < 1e-8 {
+        return if x >= edge0 { 1.0 } else { 0.0 };
+    }
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+pub fn spot_cone_factor(from_light: [f32; 3], axis: [f32; 3], cos_outer: f32, cos_inner: f32) -> f32 {
+    let a = norm3(from_light[0], from_light[1], from_light[2]);
+    let b = norm3(axis[0], axis[1], axis[2]);
+    let c = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    smoothstep(cos_outer, cos_inner, c)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,5 +224,31 @@ mod tests {
     fn pbr_flag_defaults_off() {
         assert!(!pbr_enabled(0.0, 1.0));
         assert!(pbr_enabled(0.8, 1.0));
+    }
+
+    #[test]
+    fn irradiance_constant_is_flat() {
+        let pix = vec![80u8, 100, 120, 255].repeat(8 * 4);
+        let cube = irradiance_cube_rgba(&pix, 8, 4, 2, 8);
+        assert_eq!(cube.len(), 2 * 2 * 6);
+        for px in &cube {
+            assert!((px[0] as i32 - 80).abs() < 4);
+            assert!((px[1] as i32 - 100).abs() < 4);
+            assert!((px[2] as i32 - 120).abs() < 4);
+        }
+    }
+
+    #[test]
+    fn spot_on_axis_is_one() {
+        let (outer, inner) = spot_cone_params(0.9, 0.3);
+        let t = spot_cone_factor([0.0, -1.0, 0.0], [0.0, -1.0, 0.0], outer, inner);
+        assert!((t - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn spot_sideways_is_zero() {
+        let (outer, inner) = spot_cone_params(0.6, 0.2);
+        let t = spot_cone_factor([1.0, 0.0, 0.0], [0.0, -1.0, 0.0], outer, inner);
+        assert_eq!(t, 0.0);
     }
 }

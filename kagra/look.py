@@ -215,6 +215,99 @@ def apply_live_look(*, mascot: bool = False) -> None:
     kagra.set_shadow_enabled(True)
 
 
+# 室内。apply_live_look は変えない（ゴールデン / 屋外デモ）。
+ROOM_LIGHT_DIR = (-0.35, 0.82, 0.45)
+ROOM_AMBIENT = (0.22, 0.18, 0.14, 0.22)
+ROOM_BLOOM = (0.92, 0.12)
+ROOM_EXPOSURE = 1.05
+ROOM_HDRI_STRENGTH = 0.55
+ROOM_SPOT = (0.0, 3.05, 0.0, 0.0, -1.0, 0.0)
+
+
+def wood_plank_rgba(u: float, v: float) -> tuple[int, int, int, int]:
+    """床の木目。u 方向が板。"""
+    plank = math.floor(u * 7.0)
+    local = (u * 7.0) - plank
+    groove = 0.72 if local < 0.045 or local > 0.955 else 1.0
+    grain = 0.90 + 0.10 * math.sin((v + plank * 0.13) * 38.0)
+    grain *= 0.96 + 0.04 * math.sin(u * 90.0 + v * 12.0)
+    tone = groove * grain
+    r = int(_clamp(118 * tone, 0, 255))
+    g = int(_clamp(78 * tone, 0, 255))
+    b = int(_clamp(48 * tone, 0, 255))
+    return r, g, b, 255
+
+
+def plaster_rgba(u: float, v: float, *, ceiling: bool = False) -> tuple[int, int, int, int]:
+    """壁 / 天井の漆喰。"""
+    n = 0.94 + 0.06 * math.sin(u * 51.0) * math.sin(v * 37.0)
+    if ceiling:
+        base = (232, 224, 212)
+    else:
+        base = (214, 204, 190)
+        # ごく薄い腰壁
+        if v < 0.18:
+            base = (168, 140, 112)
+            n *= 0.97
+    return (
+        int(_clamp(base[0] * n, 0, 255)),
+        int(_clamp(base[1] * n, 0, 255)),
+        int(_clamp(base[2] * n, 0, 255)),
+        255,
+    )
+
+
+def apply_room_look() -> None:
+    """閉じた部屋用の光。``apply_live_look`` は触らない。"""
+    import kagra
+
+    kagra.set_light_dir(*ROOM_LIGHT_DIR)
+    kagra.set_ambient(*ROOM_AMBIENT)
+    kagra.set_shadow_enabled(True)
+    kagra.set_rim(0.12)
+    kagra.set_fog(start=20.0, end=40.0, color=(20, 16, 12), enabled=False)
+    try:
+        kagra.set_hdri("studio", strength=ROOM_HDRI_STRENGTH)
+        kagra.set_exposure(ROOM_EXPOSURE)
+        x, y, z, dx, dy, dz = ROOM_SPOT
+        kagra.set_spot_light(
+            x, y, z, dx, dy, dz,
+            angle=0.85, penumbra=0.35, intensity=2.4, radius=14.0,
+            r=1.0, g=0.92, b=0.78,
+        )
+        kagra.set_bloom(threshold=ROOM_BLOOM[0], intensity=ROOM_BLOOM[1])
+    except (TypeError, AttributeError):
+        pass
+
+
+def room_floor_texture() -> int:
+    """木の床。``texture_from_fn``。"""
+    import kagra
+
+    def px(x, y):
+        return wood_plank_rgba(x / 127.0, y / 127.0)
+
+    return int(kagra.texture_from_fn(128, 128, px, name="room_floor"))
+
+
+def room_wall_texture() -> int:
+    import kagra
+
+    def px(x, y):
+        return plaster_rgba(x / 127.0, 1.0 - y / 127.0, ceiling=False)
+
+    return int(kagra.texture_from_fn(128, 128, px, name="room_wall"))
+
+
+def room_ceiling_texture() -> int:
+    import kagra
+
+    def px(x, y):
+        return plaster_rgba(x / 127.0, y / 127.0, ceiling=True)
+
+    return int(kagra.texture_from_fn(64, 64, px, name="room_ceiling"))
+
+
 def load_default_sky(*, radius: float = 18.0):
     """プロシージャル空を読み、``(tex_id, verts, indices)`` を返す。"""
     import kagra

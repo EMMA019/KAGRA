@@ -664,6 +664,12 @@ def apply_live_look(*, mascot: bool = False):
     from kagra.look import apply_live_look as _apply
     _apply(mascot=mascot)
 
+
+def apply_room_look():
+    """閉じた部屋用の光（スポット + HDRI + 露出）。``apply_live_look`` は触らない。"""
+    from kagra.look import apply_room_look as _apply
+    _apply()
+
 def draw_vignette(sw: int | None = None, sh: int | None = None, strength: float = 0.42):
     """画面端を落とす。draw() の 3D のあと、HUD の前。"""
     from kagra.look import draw_vignette as _draw
@@ -705,7 +711,7 @@ def set_point_light(
     intensity: float = 1.0,
     radius: float = 8.0,
 ):
-    """点光源 1（影は無し）。``intensity=0`` でオフ。スポットはまだ。"""
+    """点光源 1（影は無し）。``intensity=0`` でオフ。スポットを消して点に戻す。"""
     _check()
     _engine.set_point_light(
         float(x), float(y), float(z),
@@ -714,10 +720,47 @@ def set_point_light(
     )
 
 
+def set_spot_light(
+    x: float,
+    y: float,
+    z: float,
+    dx: float,
+    dy: float,
+    dz: float,
+    *,
+    angle: float = 0.8,
+    penumbra: float = 0.25,
+    intensity: float = 1.0,
+    radius: float = 10.0,
+    r: float = 1.0,
+    g: float = 0.95,
+    b: float = 0.85,
+):
+    """スポット 1（影は無し）。点光源スロットを共有。``intensity=0`` でオフ。
+
+    ``(dx,dy,dz)`` は光が向かう方向。``angle`` は外角（ラジアン）。
+    """
+    _check()
+    _engine.set_spot_light(
+        float(x), float(y), float(z),
+        float(dx), float(dy), float(dz),
+        float(angle), float(penumbra),
+        float(intensity), float(radius),
+        float(r), float(g), float(b),
+    )
+
+
+def set_exposure(value: float = 1.0):
+    """カラーの掛け算。``1.0`` は何もしない（既定）。"""
+    _check()
+    _engine.set_exposure(float(value))
+
+
 def set_hdri(path: str | None = "studio", strength: float = 1.0):
     """HDRI キューブ。``path='studio'`` は内蔵グラデ。空 / None / strength=0 でオフ。
 
-    正距円筒図（PNG/JPEG）も渡せる。PMREM はまだ無い（法線で直接サンプル）。
+    正距円筒図（PNG/JPEG）も渡せる。拡散は小さな irradiance キューブ。
+    スペキュラは鋭いキューブ。露出は ``set_exposure``。
     """
     _check()
     name = "" if path is None else str(path)
@@ -921,6 +964,22 @@ def sky(*, radius: float = 18.0, look: bool = True):
     """プロシージャル空。初回は ``apply_live_look``。"""
     from kagra.play import sky as _fn
     return _fn(radius=radius, look=look)
+
+
+def room(
+    half: float = 6.0,
+    height: float = 3.2,
+    *,
+    thick: float = 0.18,
+    world=None,
+    look: bool = True,
+    textured: bool = True,
+):
+    """閉じた部屋（床・壁・天井）。初回は ``apply_room_look``。``sky()`` の室内版。"""
+    from kagra.play import room as _fn
+    return _fn(
+        half, height, thick=thick, world=world, look=look, textured=textured,
+    )
 
 
 def hovered_prop(cam=None, sx: float | None = None, sy: float | None = None, *, max_dist: float = 80.0):

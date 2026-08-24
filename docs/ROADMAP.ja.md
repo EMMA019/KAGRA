@@ -1,6 +1,6 @@
 # KAGRA ロードマップ — 体と、その体が歩ける部屋
 
-最終更新: 2026-08-24（0.1.3 は PyPI 済み。描画 P0–P8 と `Prop` / `Walk` / `sky` は未リリース。
+最終更新: 2026-08-24（0.1.3 は PyPI 済み。描画 P0–P8 と `Prop` / `Walk` / `sky` / `room` は未リリース。
 能力の棚卸しは [REVIEW.ja.md](REVIEW.ja.md)。次は Stage 1 の楔と、D が詰まないための能力トラック）
 
 ## 北極星
@@ -46,7 +46,7 @@ JS における three-vrm のポジションの Python 版。
    開発ループ自体を AI エージェント用に設計したエンジンは他に無い
 
 **弱み（正直リスト）**: 影は 1 本の平行光（カスケード無し）、点光は 1 で影無し、
-IBL は HDRI キューブまで（PMREM 無し）、汎用 PBR に法線は無い、ポストは bloom / vignette、
+IBL は HDRI + 小さな irradiance キューブまで（フル PMREM LOD は無し）、汎用 PBR に法線は無い、ポストは bloom / vignette、
 複数アバターは未計測、
 頭脳の公式面（`KairiBrain` / `docs/recipes/ai-brain.md`）はロードマップだけ完了で
 **リポジトリに無い**、`KAGRA_ENGINE_GUIDE.md` は Phase 6 の履歴。
@@ -88,8 +88,8 @@ three.js / Ursina が当たり前にやっていることを、楔が詰む順�
       半球アンビエント `set_ambient`（HDRI キューブはまだ無い）
 - [x] P5: ワールドに効く影（床・箱・Prop もキャスター。ortho は VRM AABB だけに合わせない）。
       空メッシュは除外。カスケードはまだ入れない
-- [x] P6: 点光源 1（影は無し）。`set_point_light`。スポットは後
-- [x] P7: HDRI キューブ。`set_hdri("studio")` または正距円筒。PMREM は後
+- [x] P6: 点光源 1（影は無し）。`set_point_light`。スポットは `set_spot_light`（同じスロット、影無し）
+- [x] P7: HDRI キューブ。`set_hdri("studio")` または正距円筒。拡散は小さな irradiance キューブ（PMREM-lite）。フル LOD は後
 - [x] P8: 汎用 glTF の baseColor + 金属/粗さ。`upload_mesh_3d` / `Prop(..., metallic=)` /
       `set_mesh_pbr`。MToon は薄めない
 
@@ -101,6 +101,9 @@ three.js / Ursina が当たり前にやっていることを、楔が詰む順�
       インスタンス描画）
 - [x] `Walk`（WASD + マウス左右、`Camera3D.follow`）
 - [x] `sky()` / `solid_tex` / `sphere_mesh` / `cylinder_mesh`
+- [x] `room()` — 閉じた床・壁・天井。`sky()` の室内版。壁は `World3D` 衝突
+- [x] `apply_room_look` / `set_exposure` / 室内デモ `examples/vrm_pretty_room.py`
+      （Prop Garden のスモーク画素は変えない）
 - [x] play-surface デモ: `examples/vrm_prop_garden.py`（エージェント製ではない）
 - [x] 一人称（目線の高さ）。`Walk(..., first_person=True)` / `Camera3D.look`。
       ポインタロックは OS が許す範囲（まだ無い）
