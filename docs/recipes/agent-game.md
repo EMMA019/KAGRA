@@ -7,8 +7,10 @@ Rules live in [`AGENTS.md`](../../AGENTS.md). Logged runs live in
 [`docs/agent-runs/`](../agent-runs/README.md).
 
 Heart Catch / Switch Room / Dodge Room prove the loop. They are day-one
-box games. Do not start a fourth box room and call it D-6. Next bar:
-usable week in [`docs/ROADMAP.ja.md`](../ROADMAP.ja.md).
+box games. Do not start a fourth box room and call it D-6. Current engine
+bar is the usable week (pixels, then normals / USB pad) in
+[`docs/ROADMAP.ja.md`](../ROADMAP.ja.md). Final goal is first-recall, not
+that bar. Later engine (Rapier / OSM / extra CSM) is deferred, not banned.
 
 ## One-line prompt
 
@@ -53,7 +55,7 @@ Result: `examples/vrm_dodge_room.py`
 | 3D → HUD | `cam.world_to_screen(x, y, z)` — not the 2D `kagra.world_to_screen` |
 | World | `World3D` (floor + boxes) then `Camera3D.follow` |
 | Short 3D | `Prop` + `Walk` + `sky()` / `room()` / `water()` |
-| Island | `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` + `load_city` + `apply_outdoor_look` + `Walk(..., jump=)`. Not OSM |
+| Island | `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` + `load_city` + `apply_outdoor_look` + `Walk(..., jump=)`. Box city JSON, not OSM yet |
 | First person | `Walk(..., first_person=True)` — lock + eye height. Prop Garden: `F` / Start |
 | Gamepad | `axis("left")` / `pad("a")` / `inject_pad`. `Walk` uses both sticks |
 | Hover | `hovered_prop(cam)` — not the 2D `mouse`. Floor `plane` is skipped |
@@ -101,13 +103,13 @@ KAGRA で、VRM が3レーンを左右に歩いて、奥から飛んでくるハ
 `examples/vrm_dodge_room.py`（ログ: `docs/agent-runs/20260823-dodge-room/`）。
 短い 3D は `Prop` + `Walk` + `sky()` / `room()` / `water()`（Garden / Pretty Room /
 Overworld。これは play-surface デモで、エージェント製ログではない）。
-島は `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` と `load_city` と `Walk(..., jump=)`。屋外の影は `set_shadow_cascades(2)`。OSM / Rapier ではない。
+島は `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` と `load_city` と `Walk(..., jump=)`。屋外の影は `set_shadow_cascades(2)`。箱の街 JSON と高さ場。Rapier / OSM は後回し。
 一人称は `Walk(..., first_person=True)`。ホバーは `hovered_prop(cam)`。
 パッドは `axis("left")` / `pad("a")`。テストは `inject_pad`。
 動かすのは `p.x` か `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)`。
 テクスチャは `texture=kagra.texture_from_fn(...)`（または `load`）。
-親子は 1 段（`set_parent` / コンストラクタの `parent=`。孫は不可）。
+親子は 2 段（`set_parent` / コンストラクタの `parent=`。孫まで。曾孫は不可）。
 子の `x,y,z,yaw` は親からのローカル。
 glTF 部品は `Prop("crate.glb")`（`stage()` は会場。同梱は `cube.glb`）。
 球 / 円柱の当たりとホバーは箱ではない。
-箱部屋の 4 本目を D-6 と呼ばない。次はロードマップの使える週。
+箱部屋の 4 本目を D-6 と呼ばない。今のバーは使える週の画素（そのあと法線 / パッド）。最終目標は第一想起。
