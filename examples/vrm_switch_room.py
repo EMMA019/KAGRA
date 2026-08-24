@@ -26,6 +26,7 @@ import kagra
 from kagra.camera3d import Camera3D
 
 from switch_room_rules import (
+    ARENA_HALF,
     BOXES,
     HOLD_SEC,
     PLAYER_SPEED,
@@ -37,6 +38,14 @@ from switch_room_rules import (
     walls,
     wish_velocity,
 )
+
+# Dodge Room と同じ：カメラ yaw は固定。facing で回すと一歩目のあと
+# WASD が画面基準で入れ替わる。既定 distance=4.8 はスポーン z=3.4 で
+# +Z 壁（half=5.6）の外に出るので短め + bounds_half。
+CAM_YAW = math.pi
+CAM_DIST = 3.2
+CAM_HEIGHT = 1.9
+CAM_LOOK_Y = 1.0
 
 SW, SH = 960, 540
 SMOKE = os.environ.get("KAGRA_SMOKE") == "1"
@@ -104,7 +113,12 @@ class SwitchRoom(kagra.Scene):
         verts, idx = kagra.quad_y_mesh(SWITCH_XZ[0], 0.04, SWITCH_XZ[1], SWITCH_HALF)
         self.pad_mesh = kagra.upload_mesh_3d(self.tex_pad, verts, idx)
         self.cam = Camera3D(SW, SH, fov_deg=42.0)
-        self.cam.follow(START_XZ[0], 0.0, START_XZ[1], lerp=1.0, yaw=math.pi)
+        self.cam.follow(
+            START_XZ[0], 0.0, START_XZ[1],
+            lerp=1.0, yaw=CAM_YAW, distance=CAM_DIST,
+            height=CAM_HEIGHT, look_y=CAM_LOOK_Y,
+            bounds_half=ARENA_HALF,
+        )
         kagra.set_camera3d(self.cam)
         self.mode = "play" if SMOKE else "title"
         self.facing = math.pi
@@ -197,7 +211,12 @@ class SwitchRoom(kagra.Scene):
         self.facing = facing_yaw(vx, vz, self.facing)
         self.avatar.set_position(p.x, p.y, p.z)
         self.avatar.set_yaw(self.facing)
-        self.cam.follow(p.x, p.y, p.z, yaw=self.facing)
+        self.cam.follow(
+            p.x, p.y, p.z,
+            yaw=CAM_YAW, distance=CAM_DIST,
+            height=CAM_HEIGHT, look_y=CAM_LOOK_Y,
+            lerp=0.22, bounds_half=ARENA_HALF,
+        )
         eng = kagra.get_engine()
         if eng:
             self.cam.update(eng)
