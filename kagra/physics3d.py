@@ -185,8 +185,12 @@ class Physics3D:
     def __init__(self, gravity: float = 9.8):
         self.gravity  = gravity     # m/s² (正の値 → 下向き)
         self.bodies:  list[RigidBody3D] = []
-        self._height_fn: Optional[Callable[[float,float], float]] = None
-        self._ground_y  = 0.0      # デフォルト地面の高さ
+        self._height_fn: Optional[Callable[[float, float], float]] = None
+        self._ground_y = 0.0
+        self._water_y: Optional[float] = None
+        # 1 フレームの上昇がこれ以下なら段差として登る。超えかつ勾配が急なら崖。
+        self.step_height = 0.45
+        self.max_grade = 1.35
 
     # ── セットアップ ──────────────────────────────────────────────
 
@@ -311,13 +315,19 @@ class Physics3D:
         self._ground_y = y
         self._height_fn = None
 
-    def set_height_fn(self, fn: Callable[[float, float], float]):
-        """地形高さ関数を設定する。
-
-        Args:
-            fn: (x, z) → y を返す関数
-        """
+    def set_height_fn(self, fn: Callable[[float, float], float] | None):
+        """地形高さ ``(x, z) → y``。``None`` で平面に戻す。"""
         self._height_fn = fn
+
+    def set_water_y(self, y: float | None):
+        """水面の高さ。``None`` で水無し。"""
+        self._water_y = None if y is None else float(y)
+
+    def in_water(self, body: RigidBody3D) -> bool:
+        """底面が水面より少し下なら水中。"""
+        if self._water_y is None:
+            return False
+        return float(body.y) < self._water_y - 0.12
 
     def sync_vrm(self, body: RigidBody3D, vrm: Union[int, object]):
         """body の底面位置を VRM ルートオフセットへ書く。
@@ -360,15 +370,35 @@ class Physics3D:
         self._solve_collisions()
 
     def _integrate(self, body: RigidBody3D, dt: float):
-        """速度積分と重力適用。"""
+        """速度積分と重力適用。高さ関数があるときは崖で XZ を止める。"""
+        wet = self.in_water(body)
         if body.use_gravity:
-            body.vy -= self.gravity * dt
+            g = self.gravity * (0.22 if wet else 1.0)
+            body.vy -= g * dt
+            if wet and self._water_y is not None:
+                sub = self._water_y - body.y
+                body.vy += min(max(sub, 0.0), 1.4) * 16.0 * dt
+                drag = max(0.0, 1.0 - 2.2 * dt)
+                body.vx *= drag
+                body.vz *= drag
+                body.vy *= max(0.0, 1.0 - 1.1 * dt)
 
-        body.x += body.vx * dt
+        nx = body.x + body.vx * dt
+        nz = body.z + body.vz * dt
+        if self._height_fn is not None:
+            old_h = float(self._height_fn(body.x, body.z))
+            new_h = float(self._height_fn(nx, nz))
+            rise = new_h - old_h
+            run = math.hypot(nx - body.x, nz - body.z)
+            if rise > self.step_height and run > 1e-6 and (rise / run) > self.max_grade:
+                nx, nz = body.x, body.z
+                body.vx = 0.0
+                body.vz = 0.0
+        body.x = nx
         body.y += body.vy * dt
-        body.z += body.vz * dt
+        body.z = nz
 
-        if body.on_ground:
+        if body.on_ground and not wet:
             damp = max(0.0, 1.0 - body.friction * dt * 10.0)
             body.vx *= damp
             body.vz *= damp

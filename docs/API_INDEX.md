@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **388**
+エントリ数: **391**
 
 棚の**手前**は VRM / 3D ワールド / エージェントゲーム。
 棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。
@@ -34,14 +34,16 @@
 | `get_camera3d` | `get_camera3d() -> Camera3D \| None` |
 | `get_engine` | `get_engine() -> _Engine` |
 | `get_screen_size` | `get_screen_size() -> tuple` |
+| `heightfield_mesh` | `heightfield_mesh(fn, half: float = 16.0, cells: int = 32)` |
 | `hovered_prop` | `hovered_prop(cam=None, sx: float \| None = None, sy: float \| None = None, *, max_dist: float = 80.0)` |
 | `init` | `init(width=1280, height=720, title='KAGRA Game', fps=60, transparent=False, decorations=True, always_on_top=False, visible=True)` |
 | `inject_key` | `inject_key(name: str, down: bool = True)` |
+| `island_height` | `island_height(x: float, z: float) -> float` |
 | `key` | `key(name: str) -> bool` |
 | `load_json` | `load_json(name: str, default=None, *, directory: str \| None = None)` |
 | `load_vrma` | `load_vrma(path: str, *, sample_fps: float = 30.0) -> 'VrmaMotion'` |
 | `pressed` | `pressed(name: str) -> bool` |
-| `quad_y_mesh` | `quad_y_mesh(cx: float, cy: float, cz: float, size: float)` |
+| `quad_y_mesh` | `quad_y_mesh(cx: float = 0.0, cy: float = 0.0, cz: float = 0.0, size: float = 0.5)` |
 | `quit` | `quit()` |
 | `released` | `released(name: str) -> bool` |
 | `render_stats` | `render_stats() -> dict` |
@@ -74,6 +76,7 @@
 | `tone` | `tone(name: str, freqs, duration: float = 0.12, volume: float = 0.35, decay: bool = True) -> str` |
 | `unload_mesh_3d` | `unload_mesh_3d(mesh_id: int)` |
 | `upload_mesh_3d` | `upload_mesh_3d(texture_id: int, verts: list, indices: list, *, metallic: float = 0.0, roughness: float = 1.0, base_color: tuple = (1.0, 1.0, 1.0)) -> int` |
+| `water` | `water(y: float = 0.0, *, half: float = 24.0, world=None)` |
 | `AABB` | `class AABB  (from kagra.physics3d)` |
 | `ActionController` | `class ActionController  (from kagra.vrm_action)` |
 | `AiCharacter` | `class AiCharacter  (from kagra.ai_character)` |
@@ -417,7 +420,7 @@
 - ワールド箱は視錐台カリングされる。箱の描画は `draw_mesh_instances`。直前フレームは `render_stats()`。
 - VRM プリミティブはパッド付きボーン AABB でカリング。`doubleSided` のときだけ両面。
 - 床と箱: `World3D`（または `Physics3D` + `box_mesh`）。カメラは `Camera3D.follow`。
-- 短い 3D: `Prop`（box/sphere/cylinder/plane）+ `Walk` + `sky()` / `room()`。2D の `Entity` ではない。`bake_all` のあと `draw_all`。
+- 短い 3D: `Prop` + `Walk` + `sky()` / `room()` / `water()`。地形は `World3D.set_height_fn` + `island_height`。`Walk(..., jump=)`。
 - 一人称: `Walk(..., first_person=True)`。目線は `eye_height`。`F` で切替えるデモは Prop Garden。
 - ホバー: `hovered_prop(cam)`（マウス）。レイ直打ちは `kagra.play.hovered_prop(ox,oy,oz,dx,dy,dz)`。`plane` は除外。
 - 動く Prop: `p.x` / `set_position` / `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)` か `p.enabled = False`。
@@ -429,7 +432,7 @@
 - 影は床・箱・Prop も落とす（VRM AABB だけに合わせない）。空メッシュは除外。カスケードはまだ。
 - 点光源 1: `set_point_light(x,y,z, intensity=…)`。影は無し。スポットは `set_spot_light`（同じスロット、影無し）。
 - HDRI: `set_hdri("studio")` または正距円筒のパス。拡散は小さな irradiance キューブ。露出は `set_exposure`（既定 1）。
-- 閉じた部屋: `room()` + `apply_room_look`。屋外は `sky()` + `apply_live_look`。デモは `examples/vrm_pretty_room.py`。
+- 閉じた部屋: `room()` + `apply_room_look`。屋外の島: `set_height_fn` + `water` + `sky()`。デモは Pretty Room / Overworld。
 - 汎用メッシュの金属/粗さ: `upload_mesh_3d(..., metallic=, roughness=)` / `Prop(..., metallic=)` / `set_mesh_pbr`。MToon は触らない。
 - 色付きメッシュ: `solid_tex` + `sphere_mesh` / `cylinder_mesh` / `box_mesh`。
 - `kagra-shared` / `mobile/` は別の運転デモ。この Python スタックと混ぜない。

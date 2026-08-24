@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import math
 
+import pytest
+
 from tests.conftest import load_kagra_submodule
 
 
@@ -216,3 +218,39 @@ def test_ray_hits_sphere_and_cylinder_cap():
     cyl = p.add_cylinder(4.0, 0.0, 0.0, 0.4, 1.2)
     cap = p.raycast(4.0, 3.0, 0.0, 0.0, -1.0, 0.0)
     assert cap is not None and cap[0] is cyl
+
+
+def test_height_fn_lands():
+    m = _phys()
+    p = m.Physics3D(gravity=20.0)
+    p.set_height_fn(lambda _x, _z: 2.0)
+    player = p.add_capsule(0, 5.0, 0, 0.25, 1.6)
+    for _ in range(80):
+        p.update(0.016)
+    assert player.y == pytest.approx(2.0, abs=0.05)
+    assert player.on_ground
+
+
+def test_height_fn_cliff_blocks():
+    m = _phys()
+    p = m.Physics3D(gravity=0.0)
+    p.set_height_fn(lambda x, _z: 5.0 if x > 0.4 else 0.0)
+    player = p.add_capsule(0.0, 0.0, 0.0, 0.25, 1.6)
+    player.use_gravity = False
+    player.friction = 0.0
+    player.vx = 4.0
+    for _ in range(40):
+        p.update(0.016)
+    assert player.x < 0.55
+
+
+def test_water_buoyancy_lifts():
+    m = _phys()
+    p = m.Physics3D(gravity=12.0)
+    p.set_ground_y(-8.0)
+    p.set_water_y(1.0)
+    player = p.add_capsule(0.0, -1.5, 0.0, 0.25, 1.6)
+    for _ in range(90):
+        p.update(0.016)
+    assert player.y > -0.4
+    assert player.y < 3.0

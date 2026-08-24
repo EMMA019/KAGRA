@@ -1,6 +1,6 @@
 # KAGRA ロードマップ — 体と、その体が歩ける部屋
 
-最終更新: 2026-08-24（0.1.3 は PyPI 済み。描画 P0–P8 と `Prop` / `Walk` / `sky` / `room` は未リリース。
+最終更新: 2026-08-24（0.1.3 は PyPI 済み。描画 P0–P8 と `Prop` / `Walk` / `sky` / `room` / 高さ場の島は未リリース。
 能力の棚卸しは [REVIEW.ja.md](REVIEW.ja.md)。次は Stage 1 の楔と、D が詰まないための能力トラック）
 
 ## 北極星
@@ -104,6 +104,9 @@ three.js / Ursina が当たり前にやっていることを、楔が詰む順�
 - [x] `room()` — 閉じた床・壁・天井。`sky()` の室内版。壁は `World3D` 衝突
 - [x] `apply_room_look` / `set_exposure` / 室内デモ `examples/vrm_pretty_room.py`
       （Prop Garden のスモーク画素は変えない）
+- [x] 高さ関数の島。`World3D.set_height_fn` / `island_height` / `water()` /
+      `Walk(..., jump=)`。海・草原・山は 1 枚の高さ場。Rapier / ボクセル / ストリーミングはまだ。
+      デモ: `examples/vrm_overworld.py`
 - [x] play-surface デモ: `examples/vrm_prop_garden.py`（エージェント製ではない）
 - [x] 一人称（目線の高さ）。`Walk(..., first_person=True)` / `Camera3D.look`。
       ポインタロックは OS が許す範囲（まだ無い）
@@ -269,7 +272,7 @@ Rust コアという堀はどの道でもそのまま資産になる。
 - torch / 重量級モデルをコア依存に入れない（5MB が最大の武器）
 - text-to-vrma / Irodori-TTS のベンダリング（レシピで繋ぐ）
 - kagra-core と kagra-shared のレンダラ統合
-- Rapier / 地形 / ボクセル（キャラコンで足りるうちは入れない）
+- Rapier / ボクセル / チャンクストリーミング（高さ関数の島は可。キャラコンで足りるうちは Rapier を入れない）
 - YouTube / Twitch の API キーをコアやログに置くこと
 - 比較表で競合を貶すこと
 - デモへの高解像度テクスチャ / アセット同梱（絵作りはプロシージャル + ライトで）

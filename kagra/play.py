@@ -47,6 +47,18 @@ def color_name(rgb) -> str | None:
     return None
 
 
+def jump_vy(on_ground: bool, in_water: bool, jump: float) -> float | None:
+    """ジャンプ／泳ぎの鉛直速度。しないなら None。"""
+    jump = float(jump)
+    if jump <= 0.0:
+        return None
+    if in_water:
+        return jump * 0.42
+    if on_ground:
+        return jump
+    return None
+
+
 def walk_wish(forward: float, right: float, yaw: float, speed: float = 3.2) -> tuple[float, float]:
     """カメラ ``yaw`` 基準の歩行速度。forward=+1 は視線方向。"""
     mag = math.hypot(forward, right)
@@ -327,6 +339,29 @@ def sky(*, radius: float = 18.0, look: bool = True):
         _sky_cache = load_default_sky(radius=radius)
     tex, verts, idx = _sky_cache
     kagra.draw_mesh_3d(tex, verts, idx)
+
+
+_water_cache = None
+
+
+def water(y: float = 0.0, *, half: float = 24.0, world: Optional[World3D] = None):
+    """水面を描く。``world`` があれば物理の水面も同じ高さにする。"""
+    global _water_cache
+    import kagra
+    from kagra.gamekit import quad_y_mesh
+
+    if world is not None:
+        world.set_water_y(float(y))
+    key = (round(float(y), 3), round(float(half), 3))
+    if _water_cache is None or _water_cache[0] != key:
+        def px(_x, _y):
+            return (36, 110, 140, 200)
+
+        tex = kagra.texture_from_fn(8, 8, px, name="water_plane")
+        verts, idx = quad_y_mesh(0.0, float(y) + 0.04, 0.0, float(half) + 0.4)
+        _water_cache = (key, int(tex), verts, idx)
+    _tex, verts, idx = _water_cache[1], _water_cache[2], _water_cache[3]
+    kagra.draw_mesh_3d(_tex, verts, idx)
 
 
 def room_layout(half: float = 6.0, height: float = 3.2, thick: float = 0.18) -> list[dict]:
@@ -851,7 +886,7 @@ class Prop:
 
 
 class Walk:
-    """WASD / 左スティック + マウス / 右スティック。既定は三人称 ``Camera3D.follow``。"""
+    """WASD / 左スティック + マウス / 右スティック。``jump>0`` なら SPACE / A。"""
 
     def __init__(
         self,
@@ -868,6 +903,7 @@ class Walk:
         pitch: float = 0.0,
         stick_sens: float = 2.2,
         stick_deadzone: float = 0.2,
+        jump: float = 0.0,
     ):
         self.world = world
         self.cam = cam
@@ -881,6 +917,7 @@ class Walk:
         self.eye_height = float(eye_height)
         self.stick_sens = float(stick_sens)
         self.stick_deadzone = float(stick_deadzone)
+        self.jump = float(jump)
         self._last_mouse: Optional[tuple[float, float]] = None
 
     def step(self, dt: float) -> None:
@@ -913,7 +950,17 @@ class Walk:
                 1.0 if kagra.key("A") or kagra.key("LEFT") else 0.0
             )
         vx, vz = walk_wish(fwd, right, self.yaw, self.speed)
+        if self.world.in_water():
+            vx *= 0.55
+            vz *= 0.55
         self.world.move_player(vx, vz)
+        p = self.world.player
+        if p is not None and self.jump > 0.0:
+            want = kagra.pressed("SPACE") or kagra.pad_pressed("a")
+            if want:
+                vy = jump_vy(bool(p.on_ground), self.world.in_water(p), self.jump)
+                if vy is not None:
+                    p.vy = float(vy)
         self.world.update(dt)
         p = self.world.player
         if p is None:

@@ -47,6 +47,13 @@ def test_look_pitch_clamps():
     assert play.look_pitch(1.19, -10.0, sens=0.01) == pytest.approx(1.2)
 
 
+def test_jump_vy_ground_water_and_air():
+    assert play.jump_vy(True, False, 5.0) == pytest.approx(5.0)
+    assert play.jump_vy(False, True, 5.0) == pytest.approx(2.1)
+    assert play.jump_vy(False, False, 5.0) is None
+    assert play.jump_vy(True, False, 0.0) is None
+
+
 def test_first_person_eye_looks_along_yaw():
     pos, tgt = play.first_person_eye(0.0, 0.0, 0.0, 0.0, 0.0, eye_height=1.55)
     assert pos == pytest.approx((0.0, 1.55, 0.0))

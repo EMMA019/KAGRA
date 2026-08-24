@@ -1,6 +1,8 @@
 """World3D — 床と箱の衝突。GPU 不要。"""
 from __future__ import annotations
 
+import pytest
+
 from tests.conftest import load_kagra_submodule
 
 
@@ -70,3 +72,12 @@ def test_add_sphere_and_cylinder_are_physics_only():
     assert cyl.shape == "cylinder"
     assert w.box_xforms == []
     assert w._pending == []
+
+
+def test_height_fn_player_spawns_on_terrain():
+    m = _world()
+    w = m.World3D()
+    w.set_height_fn(lambda _x, _z: 1.25)
+    p = w.add_player(0.0, 0.0)
+    assert p.y == pytest.approx(1.25)
+    assert w.ground_y(1.0, 1.0) == pytest.approx(1.25)
