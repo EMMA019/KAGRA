@@ -2,7 +2,7 @@
 
 最終更新: 2026-08-24（見直し: エンジン到達点を **80%** にする。
 100% は「Python だけで three-vrm + three.js + Ursina を置き換えて困らない」。
-今は約 63%。PyPI は 0.1.3。棚卸しは [REVIEW.ja.md](REVIEW.ja.md)）。
+今は約 63%。PyPI は 0.1.4。棚卸しは [REVIEW.ja.md](REVIEW.ja.md)）。
 
 ## 最終目標（北極星）
 
@@ -48,7 +48,7 @@ API があることを 80% と呼ばない。画素と見本で上げる。
 Stage 0.5 頭脳面            載った。楔 A/B の前提
 エンジン 80%                今 約 63%。本体は 3 見本の 30 秒
   直近: Pretty Room / Overworld / Prop Garden
-PyPI                         ソースが先。wheel を遅れさせない
+PyPI                         0.1.4。遊び場・画素・頭脳を載せた。macOS はまだ
 Stage 1 楔の同時投下         頭脳は打てる。D は 3 見本 + D-6 のあと
 Stage 2〜5                   勝ち楔を完成品・旗艦・供給・複利へ
 80% の外                     映画のポスト、OSM、XR。禁止ではない
@@ -60,7 +60,7 @@ Stage 2〜5                   勝ち楔を完成品・旗艦・供給・複利�
 ## 次にやること（この順）
 
 1. **3 見本の 30 秒** — Pretty Room / Overworld / Prop Garden。楔 D のゲート
-2. **PyPI** — ソースを wheel に載せる。macOS は CI
+2. **macOS wheel** — CI が緑のまま公開。Windows / Linux は 0.1.4
 3. **D-6** — 箱の焼き直しではない。30 秒以上 + スコアかゴール。3 見本のあと
 4. **楔 C ワンライナー → Stage 1** — A/B はトークンがあれば今でも面はある
 
@@ -110,7 +110,8 @@ API が生えたことは完了ではない。次を満たしたらチェック�
 
 ## Stage 0 — 現在地
 
-- [x] 0.1.3 PyPI（Windows / Linux、約 5MB、Rust 不要）— **ソース `master` の方が先**
+- [x] 0.1.3 PyPI（Windows / Linux、約 5MB、Rust 不要）
+- [x] 0.1.4 PyPI — 3D 遊び場・画素・頭脳を wheel に載せた。macOS はまだ
 - [x] VRM 0.x / 1.0 一式・リップシンク・仮想カメラ・3D 物理・顔トラ
 - [x] VTuber 面の絵作り: 空・リム・showcase・接地。`python -m kagra` がデバッグ画面に見えない
 - [x] 基礎（P0–P8 + 部屋 v1）: カリング / インスタンス / ワールド影 / 点・スポット /
@@ -124,7 +125,7 @@ API が生えたことは完了ではない。次を満たしたらチェック�
       CI 通過（#61、#62、#65）。30 秒見本は未
 - [x] Stage 0.5 頭脳の **面:** `kagra.brain` + レシピ + `examples/vrm_kairi_chat.py`。
       本番の楔 A は `https://kairi.onrender.com`（`KAIRI_API_TOKEN`）か Ollama。モデルは wheel に無い
-- [ ] 次の PyPI: ソースの API を wheel に載せる。macOS wheel は CI
+- [ ] macOS wheel: CI が緑のまま公開。Windows / Linux は 0.1.4
 - [x] 初回体験: own-VRM 1 行、シャドウ警告、`kagra.cmd`、レシピ、issue テンプレ
 
 **VTuber / マスコットの最初のユーザーを取る絵は足りている。楔 A/B は kairi（または Ollama）を起動すれば打てる。**

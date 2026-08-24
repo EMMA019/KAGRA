@@ -2,190 +2,45 @@
 
 ## Unreleased
 
-- Outdoor crawl pairwise (`outdoor_crawl`) passed Windows CI (#65).
-  2-cascade writes use a per-layer light-VP (shared-buffer stomp was
-  mean_abs=0.000). Picture ~85%, engine ~63%. Rigid AABB already on master.
-  30s demos still open. Do not call 80%.
-- Rigid boxes: `add_box(..., is_static=False)` fall, stack, and `Walk`
-  stands on them (character vs crate does not sink the crate). Rapier crate
-  stays out of the 5MB wheel. World ~55%, engine ~47%. Public face unchanged.
-- Indoor spot (`indoor_spot`) and tangent normals (`normal_bump`) pairwise
-  goldens passed Windows CI (#61). Local-four pairwise passed (#62).
-  Picture ~50%, engine ~45%. Crawl pixels still open.
-- Local lights are **4 slots**: `set_point_light(..., slot=0..3)` /
-  `set_spot_light(..., slot=)`. Slot 0 is the key (spot may own the 2048
-  map). 1..3 are fill, no shadow. Pairwise `local_four`. Pretty Room adds
-  two fills when not `KAGRA_SMOKE`. Pixels close on CI.
-- Indoor spot umbra is darker when the map is a lamp (`mix` 0.16, not 0.50)
-  and the golden scene uses a side lamp + a floor that does not cast
-  (extent skip). Pretty Room lamp is offset so the shadow stretches.
-  Pairwise `normal_bump` added. CI `indoor_spot` was 0.614 / need 4.0.
-- Prop parent is **4 levels** (`PARENT_MAX_LEVELS`). Not an infinite graph.
-- Roadmap: engine target is **80%** (now ~33%). 100% means a Python replacement
-  of three-vrm + three.js + Ursina for everyday work, not the whole three.js
-  repo. Body is already ~80%. Picture 25→85 is the bulk (indoor shadow pixels
-  first: CI `indoor_spot` mean_abs=0.614, need 4.0). Writing 60→80 via 30s
-  demos and 4-level parents. World 25→55 via rigid bodies (Rapier or equal).
-  OSM / 4-cascade CSM / SSAO stay outside 80%. First-recall stays the north
-  star; 80% is not a substitute. Do not call 80% until pixels and demos say so.
-- Indoor spot shadows the **local light**, not the directional sun
-  (`shadow_u.params.y`). Fill from the sun stays; the lamp umbra reads.
-  Pairwise golden `indoor_spot` / `tonemap_on` / `ibl_metal` (CI `golden`
-  job; no committed PNGs). ACES still default-off. Garden smoke unchanged.
-  Outdoor crawl pixels still open.
-- Generic Mesh3D tangent-space normals: `upload_mesh_3d(..., normal_texture_id=)` /
-  `set_mesh_normal` / `Prop(..., normal=)` / glTF `normalTexture`. Vertices stay
-  `[x,y,z,nx,ny,nz,u,v]` (cotangent frame, no extra stride). Normal maps load
-  linear (`texture_from_fn(..., srgb=False)` / `load(..., srgb=False)`). Pretty
-  Room brick wall and Prop Garden bump crate opt in when not `KAGRA_SMOKE`.
-  GPU pixels unverified here.
-- USB/XInput: `poll_pad` reads gilrs from the winit EventLoop (Windows: one
-  loop). Stick Y is down-positive like `Walk` / `VirtualPad`. `inject_pad` still
-  wins for tests/smoke. Linux CI installs `libudev-dev`.
-- Walk strafe matches the camera: `walk_wish` right is screen-right
-  (`forward × up`). D / left-stick X no longer move the opposite way in
-  Overworld / Prop Garden / Pretty Room. Forward (W) is unchanged.
-- Stage 0.5 brain hook: `kagra.brain("kairi"|"ollama"|"openai")` /
-  `KairiBrain.ask`. Default kairi is `https://kairi.onrender.com`
-  (`KAIRI_API_TOKEN` required for `/api/chat`). Host is pinged ~every 10
-  minutes so it stays up. Local override `KAIRI_URL`.
-- Roadmap refresh: Stage 0.5 brain (`kagra.brain`) is first for wedges A/B,
-  in parallel with usable-week pixels. D-6 stays gated on the 30s demos and
-  must be playable 30s+ with a score or goal. Wedge C is a one-liner, lower
-  priority. Next PyPI should carry usable-week APIs. Star/DL targets are
-  reference at Stage 1. `KAGRA_ENGINE_GUIDE.md` body moved to `docs/archive/`.
-- Roadmap tidy: the north star (first-recall) is the final goal. The usable
-  week is the current engine bar, not a ceiling. Rapier / OSM / extra CSM
-  are deferred, not banned. Position after #52 / #53: APIs landed, pixels
-  and normals / USB pad still open.
-- Usable-week APIs (not the stranger test yet; GPU unverified here):
-  `set_tonemap` (ACES, default off), specular cube mips, spot perspective
-  shadow, cascade texel snap. `Walk` pointer lock / coyote / jump buffer /
-  `carry`. `clicked_prop`, `animate` / `sequence`, `Label` / `Button`,
-  2-level parent, `sound()`. Pretty Room / Overworld / Prop Garden opt in
-  (`apply_room_look` / `apply_outdoor_look`). Garden smoke stays without
-  tonemap. Not normals, not USB/XInput. Rapier / OSM / 4-cascade CSM were
-  not this slice (deferred, not banned).
-- Roadmap: the usable week is the current engine bar, not Stage 1 posting
-  and not the product ceiling. P0–P8 and room v1 stay foundation. Done
-  means a stranger would watch 30s of Pretty Room, Overworld, and Prop
-  Garden. D-6 waits on that; brain can proceed in parallel for wedge A.
-  Later engine (Rapier / OSM / extra CSM) stays deferred, not banned.
-- City JSON, mesh hit, stacking, 2-cascade shadows: `load_city` / `city_chunk`
-  (not OSM), `Physics3D.add_trimesh` / `Prop(..., mesh_hit=True)`,
-  `add_box(..., is_static=False)` with solver iters + sleep (not Rapier),
-  `set_shadow_cascades(2)` (default 1 so Prop Garden stays). Demo:
-  `examples/vrm_overworld.py`.
-- Heightfield slopes + tiles: walk along the tangent (slide on steep
-  grades), not Y-snap only. `height_normal` / `stair_y`. Terrain bakes as
-  tiles (`tile=10`) so AABBs stay under the shadow skip (24) — nearby
-  ground casts; still one ortho, no CSM. `stream_radius` load/unloads
-  tiles while walking. `set_chunk_fill` / `city_boxes` plant box blocks
-  (not a city file). Stairs are heightfield steps. Not Rapier, triangle
-  mesh hit, or stacking. Demo: `examples/vrm_overworld.py`.
-- Heightfield island: `World3D.set_height_fn` / `kagra.island_height` /
-  `water()` / `Walk(..., jump=)`. Sea, grass, and a hill. Cliff grade is
-  blocked; water has buoyancy. Demo: `examples/vrm_overworld.py`.
-- Pretty room (picture leftover): `room()` builds an enclosed floor / walls /
-  ceiling (`sky()`'s indoor sibling). `apply_room_look` sets a ceiling
-  `set_spot_light`, studio HDRI, and `set_exposure` (default 1 = identity).
-  Diffuse IBL uses a small irradiance cube (PMREM-lite); spec still samples
-  the sharp cube. Point and spot share one local-light slot; neither casts
-  a shadow. Demo: `examples/vrm_pretty_room.py`. Prop Garden smoke pixels
-  are unchanged.
-- Picture track P6–P8: `set_point_light` (one point, no shadow),
-  `set_hdri("studio"|path)` (cube, no PMREM), generic mesh metal/roughness
-  via `upload_mesh_3d(..., metallic=, roughness=)` / `set_mesh_pbr` /
-  `Prop(..., metallic=)`. glTF flatten reads `pbrMetallicRoughness`.
-  MToon is unchanged. Defaults keep Lambert (metal 0, rough 1, lights off).
-  Prop Garden non-smoke: chrome sphere + studio HDRI + a point light.
-- World shadows (P5): directional map fits VRM + floor / box / Prop AABBs
-  (half clamp 28). Immediate, retained, and instanced Mesh3D write the map.
-  Sky-sized meshes are skipped. Still one light, no cascades.
-- Gamepad API: `axis("left"|"right")`, `pad("a")`, `pad_pressed`, `inject_pad`.
-  `Walk` reads the left stick to move and the right stick to look.
-  Tests/smoke use `inject_pad`. OS USB/XInput poll is not in the wheel yet.
-  Prop Garden: Start toggles view, A deletes.
-- glTF as a Prop part: `Prop("crate.glb")` (or alias `cube.glb`). Flattened to
-  the static mesh pipeline — not `stage()` / `load_gltf`. Hover and collision
-  use the mesh AABB. Bundled unit cube at `kagra/data/unit_cube.glb`.
-  Prop Garden places one when not `KAGRA_SMOKE`.
-- `Prop` texture (`texture_from_fn` / `load` id) and 1-level parent
-  (`set_parent` / `parent=`). Child `x,y,z,yaw` are local; `world_x` /
-  hover / collision use the world pose. Grandchildren raise. Destroying a
-  parent destroys children. Prop Garden: checker crate + green child on
-  gold (skipped under `KAGRA_SMOKE`).
-- Sphere / cylinder colliders match the mesh: `World3D.add_sphere` /
-  `add_cylinder`, capsule vs circle/disk, hover rays skip AABB corners.
-- Kinematic `Prop`: assign `x`/`y`/`z`, `set_position`, `vx` + `Prop.update_all(dt)`.
-  `destroy(p)` / `p.enabled` drop draw, hover, and collision. Prop Garden: gold
-  bobs; `E` deletes the hovered prop (smoke path unchanged).
-- First-person `Walk(first_person=True)` (`Camera3D.look`, mouse pitch) and
-  `hovered_prop(cam)` (skips floor `plane`). Prop Garden: F toggles view.
-- Engine review + roadmap refresh (`docs/REVIEW.ja.md`, `docs/ROADMAP.ja.md`):
-  three-vrm-class body vs three.js picture vs Ursina play surface. Stage 0
-  no longer claims `KairiBrain` is done. `KAGRA_ENGINE_GUIDE.md` is marked
-  historical.
-- Ursina-shaped play surface: `Prop` (box / sphere / cylinder / plane),
-  `Walk` (WASD + mouse look), `sky()`, `solid_tex`, `sphere_mesh`,
-  `cylinder_mesh`. Not the 2D `Entity`. Demo: `examples/vrm_prop_garden.py`
-  (play surface, not an agent-built log).
-- 3D mesh frustum culling for `draw_mesh_3d` / `draw_mesh_id` (World3D
-  boxes). Last-frame stats via `kagra.render_stats()`; toggle with
-  `set_mesh_cull()`.
-- VRM primitives cull with padded per-bone AABBs (P1). Spring / morph
-  motion is padded so dance should not pop.
-- 3D instancing: `draw_mesh_instances` / `draw_billboard_instances`.
-  World3D boxes and Dodge / Orb / Heart Catch sprites batch (P2).
-  2D `InstanceBatch` is unchanged.
-- VRM materials sort by texture; `doubleSided` / VRM0 `_CullMode==Off`
-  is the only two-sided path (P3).
-- Shadows: 2048 map, ortho fitted to visible VRM AABBs (P4), then world
-  casters (P5). Hemisphere ambient via `set_ambient` / `apply_live_look`.
-  Not HDRI / cascades.
-- README / samples list Dodge Room (`examples/vrm_dodge_room.py`) as the
-  third logged agent-built game (`docs/agent-runs/20260823-dodge-room/`).
-  Mixamo `.fbx` is `av.dance("clip.fbx")` / `--dance` (YMCA sleeve blow-up
-  skipped Mixamo finger axes).
-- `*_rules.py` helpers print the real launcher (`vrm_*.py`) instead of
-  exiting silently when double-clicked.
-- Repo shelf-split: recommended examples stay in `examples/`; legacy 2D /
-  tilemap / editor / romance / boids moved to `examples/archive/`. API index
-  now has Front (VRM / 3D / agents) vs Shelf. `kagra-shared` + `mobile/` is
-  documented as a separate driving demo — renderers are not merged.
-- 3D world surface: `upload_mesh_3d` / `draw_mesh_id` (GPU retain),
-  `box_mesh`, `World3D` (floor + static boxes + capsule), `Camera3D.follow`.
-- Agent-built world game (wedge D): `examples/vrm_switch_room.py` from the
-  one-line prompt in `docs/agent-runs/20260823-switch-room/`. Not a
-  disc-collect — walk a boxed room and stand on a switch.
-- Agent surface (wedge D-3): `ActionController` is a public export with
-  `names()`. API index notes 2D vs 3D `world_to_screen`, `save_json` vs
-  `load_data`, and `ensure_vrm()`. Recipe `docs/recipes/agent-game.md`.
-- Agent-built game log (wedge D-2): `examples/vrm_heart_catch.py` from the
-  one-line prompt in `docs/agent-runs/20260823-heart-catch/`. Orb Rush
-  smoke JSON now points at the real example (`KAGRA_SMOKE=1`).
-- Game surface for agents (wedge D-1): `Camera3D.world_to_screen`,
-  `VrmAvatar.set_position` / `set_yaw`, `texture_from_fn`, `tone`,
-  `billboard_mesh` / `disk_mesh` / `quad_y_mesh`, `save_json` / `load_json`.
-  `examples/vrm_orb_rush.py` now uses only public APIs (no `_` imports).
-- First-run: `python -m kagra --vrm me.vrm --song my.wav` on the README;
-  checkout `kagra/` shadow prints `cd %TEMP%` / `maturin develop`.
-- Compare table (install / code / license / AI hook only) vs UniVRM,
-  VSeeFace, three-vrm. Recipes: own VRM, motion, mascot.
-- Issue templates for bugs and “it worked” VRM reports.
-- CI: macos-14 × 3.12 maturin build + import smoke (publish still
-  Windows + Linux until this stays green).
-- Live look (Phase 1a): `python -m kagra` no longer opens on a solid purple
-  void. Procedural gradient sky, a dark disc + warm spot (no checkerboard),
-  vignette, `apply_live_look()` (key light + toon + bloom + fog), and
-  `set_rim()` (view fresnel + backlight + floor bounce; 0 keeps goldens).
-- `Camera3D.use_showcase()` — slow orbit with full-body ↔ face cuts.
-  `--no-orbit` still freezes the camera.
-- Default HUD always shows the KAGRA brand + `♪` song title (`StreamHud`).
-- WAV lipsync: less “aa” bias so sung vowels read as A/I/U/E/O. `sing()`
-  smoothing is lighter.
-- `VrmAvatar.dance()` enables foot grounding (lift the root when a foot
-  goes through the floor; no push-down).
+## 0.1.4
+
+Playable 3D, picture pixels, and `kagra.brain` on the wheel. Windows / Linux,
+~5MB, no Rust. Rapier crate stays out. 30-second stranger demos are not this
+release. Do not call 80% or three.js-class.
+
+### 3D play
+
+- `Prop` / `Walk` / `sky` / `room` / `World3D`. First-person, hover, carry,
+  kinematic move, `destroy`, sphere/cylinder hit, 4-level parent, glTF parts
+  (`Prop("crate.glb")`).
+- Heightfield island, city JSON (not OSM), triangle mesh hit, tiled terrain.
+- AABB rigid boxes: `add_box(..., is_static=False)` fall, stack, and `Walk`
+  stands on them. Character vs crate does not sink the crate.
+- Gamepad: `axis` / `pad` / `inject_pad`. USB/XInput via gilrs on the
+  EventLoop (Windows: one loop). Real-hardware 30s not claimed.
+- Agent games: Heart Catch, Switch Room, Dodge Room (logged). Orb Rush is
+  the reference (no generation log).
+
+### Picture
+
+- Four local lights (`slot=0..3`; slot 0 is the key / shadow). Indoor spot
+  umbra, 2-cascade outdoor shadows (per-layer light-VP), tangent-space
+  normals, HDRI / irradiance, generic metal/roughness, opt-in ACES.
+- Pairwise goldens on Windows CI: `indoor_spot`, `normal_bump`, `local_four`,
+  `outdoor_crawl`, `tonemap_on`, `ibl_metal`.
+- World mesh casters, VRM cull, 3D instancing, material sort.
+
+### Brain
+
+- `kagra.brain("kairi"|"ollama"|"openai")`. Default kairi is
+  `https://kairi.onrender.com` (`KAIRI_API_TOKEN`). Models stay out of the
+  wheel.
+
+### Docs / install
+
+- README / README.ja: `pip install kagra` is 0.1.4. Not yet is the remaining
+  holes (macOS wheels, 30s demos, chat APIs, NDI/RTMP, autopilot, bundled
+  TTS, pointer lock). Tilemaps / ECS stay on the shelf.
 
 ## 0.1.3
 
