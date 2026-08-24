@@ -35,7 +35,8 @@ Short 3D: `Prop` / `Walk` / `sky()` / `room()` / `water()`. Texture via `texture
 Parent is 4 levels (`set_parent`). glTF parts: `Prop("crate.glb")` (not `stage()`).
 Gamepad: `axis` / `pad` / `inject_pad`. USB/XInput via gilrs on the EventLoop.
 `inject_pad` wins in tests. Not 2D `Entity`.
-Picture: `set_point_light` / `set_spot_light` / `set_hdri("studio")` /
+Picture: `set_point_light` / `set_spot_light` (`slot=0..3`; 0 is the key) /
+`set_hdri("studio")` /
 `set_exposure` / `set_tonemap` / `Prop(..., metallic=, normal=)`. Indoor: `apply_room_look`.
 Outdoor: `apply_outdoor_look` / `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` /
 `load_city` / `Walk(..., jump=)`. City JSON is not OSM; physics is not Rapier yet.
@@ -47,8 +48,8 @@ Engine target is **80%** in `docs/ROADMAP.ja.md` (now ~33%). 100% = Python
 replacement of three-vrm + three.js + Ursina for everyday work. Body is
 ~80%. Picture 25→85 is the bulk. Indoor spot umbra is darker for lamps;
 golden uses a side light. Pairwise `normal_bump` added. Parent is 4 levels.
-Next: CI must pass `indoor_spot` (was 0.614 / need 4.0), then crawl,
-multiple local lights, rigid bodies. OSM / 4-cascade CSM / SSAO stay
+Next: CI must pass `indoor_spot` (was 0.614 / need 4.0) and `local_four`.
+Then crawl pixels, rigid bodies. OSM / 4-cascade CSM / SSAO stay
 outside 80%.
 Final goal is first-recall; 80% is not a substitute. Brain hook is
 `kagra.brain("kairi")` — default `https://kairi.onrender.com`, token in

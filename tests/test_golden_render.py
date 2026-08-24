@@ -125,3 +125,13 @@ def test_pairwise_normal_map():
     bump = _render("normal_bump", "normal_bump.png")
     flat = _render("normal_flat", "normal_flat.png")
     assert_pngs_differ(bump, flat, min_mean_abs=3.0, name="normal_bump")
+
+
+def test_pairwise_local_four():
+    """スロット 1..3 の埋めがキーだけの絵と画素で違う。"""
+    _ensure_kagra()
+    from tests.golden_utils import assert_pngs_differ
+
+    four = _render("local_four", "local_four.png")
+    one = _render("local_one", "local_one.png")
+    assert_pngs_differ(four, one, min_mean_abs=4.0, name="local_four")

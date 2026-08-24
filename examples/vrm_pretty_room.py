@@ -100,6 +100,12 @@ class PrettyRoom(kagra.Scene):
                 "box", x=-2.4, y=0.7, z=-1.6, scale=(1.2, 1.4, 0.28),
                 texture=alb, normal=nrm, world=self.world,
             )
+            kagra.set_point_light(
+                -2.1, 1.7, 1.6, r=1.0, g=0.55, b=0.32, intensity=0.55, radius=7.0, slot=1,
+            )
+            kagra.set_point_light(
+                2.0, 1.5, -1.4, r=0.4, g=0.6, b=1.0, intensity=0.4, radius=7.0, slot=2,
+            )
         kagra.Prop.bake_all()
         self.cam = Camera3D(SW, SH, fov_deg=58.0)
         self.cam.look(0.0, 1.55, 2.4, 0.0, 1.45, -1.0)

@@ -725,13 +725,21 @@ def set_point_light(
     b: float = 0.85,
     intensity: float = 1.0,
     radius: float = 8.0,
+    slot: int = 0,
 ):
-    """点光源 1（影は無し）。``intensity=0`` でオフ。スポットを消して点に戻す。"""
+    """点光源。``slot`` 0 がキー（影は無し）。1..3 は埋め。``intensity=0`` でオフ。
+
+    スロット 0 に点を置くと、そのスロットのスポットを消す。他スロットは触らない。
+    """
+    from kagra.look import check_light_slot
+
+    slot = check_light_slot(slot)
     _check()
     _engine.set_point_light(
         float(x), float(y), float(z),
         float(r), float(g), float(b),
         float(intensity), float(radius),
+        int(slot),
     )
 
 
@@ -750,11 +758,16 @@ def set_spot_light(
     r: float = 1.0,
     g: float = 0.95,
     b: float = 0.85,
+    slot: int = 0,
 ):
-    """スポット 1。室内では同じ 2048 マップに透視影を書く（影はスポットに掛かる）。点光源スロットを共有。
+    """スポット。``slot`` 0 がキー（室内の透視影）。1..3 は埋め（影なし）。
 
     ``(dx,dy,dz)`` は光が向かう方向。``angle`` は外角（ラジアン）。
+    同じスロットの点光と共有。
     """
+    from kagra.look import check_light_slot
+
+    slot = check_light_slot(slot)
     _check()
     _engine.set_spot_light(
         float(x), float(y), float(z),
@@ -762,6 +775,7 @@ def set_spot_light(
         float(angle), float(penumbra),
         float(intensity), float(radius),
         float(r), float(g), float(b),
+        int(slot),
     )
 
 

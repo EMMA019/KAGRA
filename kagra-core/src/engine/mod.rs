@@ -1406,19 +1406,20 @@ impl Engine {
         self.window.set_ambient(r, g, b, strength);
     }
 
-    /// 点光源 1（影は無し）。intensity=0 でオフ。スポットを消して点に戻す。
-    #[pyo3(signature = (x, y, z, r=1.0, g=0.95, b=0.85, intensity=1.0, radius=8.0))]
+    /// 点光源。slot 0 がキー（影は無し）。1..3 は埋め。intensity=0 でオフ。
+    #[pyo3(signature = (x, y, z, r=1.0, g=0.95, b=0.85, intensity=1.0, radius=8.0, slot=0))]
     pub fn set_point_light(
         &self,
         x: f32, y: f32, z: f32,
         r: f32, g: f32, b: f32,
         intensity: f32, radius: f32,
+        slot: u32,
     ) {
-        self.window.set_point_light(x, y, z, r, g, b, intensity, radius);
+        self.window.set_point_light(x, y, z, r, g, b, intensity, radius, slot);
     }
 
-    /// スポット 1。室内では同じマップに透視影を書く。点光源スロットを共有。
-    #[pyo3(signature = (x, y, z, dx, dy, dz, angle=0.8, penumbra=0.25, intensity=1.0, radius=10.0, r=1.0, g=0.95, b=0.85))]
+    /// スポット。slot 0 がキー（室内の透視影）。1..3 は埋め（影なし）。点光源スロットを共有。
+    #[pyo3(signature = (x, y, z, dx, dy, dz, angle=0.8, penumbra=0.25, intensity=1.0, radius=10.0, r=1.0, g=0.95, b=0.85, slot=0))]
     pub fn set_spot_light(
         &self,
         x: f32, y: f32, z: f32,
@@ -1426,9 +1427,10 @@ impl Engine {
         angle: f32, penumbra: f32,
         intensity: f32, radius: f32,
         r: f32, g: f32, b: f32,
+        slot: u32,
     ) {
         self.window.set_spot_light(
-            x, y, z, dx, dy, dz, angle, penumbra, intensity, radius, r, g, b,
+            x, y, z, dx, dy, dz, angle, penumbra, intensity, radius, r, g, b, slot,
         );
     }
 

@@ -3,6 +3,13 @@ use nalgebra;
 
 /// Directional shadow map resolution
 pub(super) const SHADOW_MAP_SIZE: u32 = 2048;
+/// Camera3D uniform: 288 legacy + 3 extra local lights (pos/col/spot) + inner cone.
+pub(super) const CAMERA_3D_SIZE: u64 = 448;
+pub(super) const LOCAL_LIGHT_SLOTS: u32 = 4;
+pub(super) const CAMERA_EXTRA_POS: u64 = 288;
+pub(super) const CAMERA_EXTRA_COL: u64 = 336;
+pub(super) const CAMERA_EXTRA_SPOT: u64 = 384;
+pub(super) const CAMERA_EXTRA_INNER: u64 = 432;
 
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 /// オフスクリーン描画の MSAA サンプル数。swapchain は resolve 後の 1x を受け取る。
@@ -531,5 +538,13 @@ mod light_dir_tests {
         let floor = ndc(&vp, [1.4, 0.0, 0.0]);
         assert!(floor[0].abs() < 0.95 && floor[1].abs() < 0.95, "floor xy {:?}", floor);
         assert!(floor[2] > 0.0 && floor[2] < 1.0, "floor z={}", floor[2]);
+    }
+
+    #[test]
+    fn camera_uniform_fits_four_local_lights() {
+        assert_eq!(super::CAMERA_3D_SIZE, 448);
+        assert_eq!(super::CAMERA_EXTRA_INNER + 16, super::CAMERA_3D_SIZE);
+        assert_eq!(super::LOCAL_LIGHT_SLOTS, 4);
+        assert_eq!(super::CAMERA_EXTRA_POS, 288);
     }
 }
