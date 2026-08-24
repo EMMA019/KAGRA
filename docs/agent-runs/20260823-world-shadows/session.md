@@ -13,6 +13,8 @@
 
 ## Verify
 
-`cargo test -p kagra-core --no-default-features --locked`（`shadow_fit` + 既存 `shadow_fit_default_matches_legacy`）。
-`pytest tests -m "not golden"`。`python3 tools/gen_api_index.py --check`。
-GPU シナリオは未実行（wheel / `kagra_core` 未ビルド）。
+- `pytest tests -m "not golden"`: 通過。
+- `python3 tools/gen_api_index.py --check`: 通過。
+- `cargo test -p kagra-core --no-default-features --locked`: この VM の Cargo 1.83 は
+  lock の `indexmap 2.14.0`（edition2024）をパースできない。CI は `@stable`。
+  `shadow_fit` テストはファイルに書いた。GPU シナリオは未実行。
