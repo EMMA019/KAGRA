@@ -36,9 +36,20 @@ Offscreen (GPU host):
 cargo run -p kagra-shared --features render --example offscreen -- 960 540 scratch/crest_isle.png isle
 ```
 
-## Verify (fill after cargo / pytest)
+## Verify (this session)
 
 ```bash
-cargo test -p kagra-shared
-pytest tests -m "not golden"
+cargo test -p kagra-shared                          # 109 passed
+cargo clippy -p kagra-shared --all-targets -- -D warnings
+cargo build -p kagra-shared --release --target wasm32-unknown-unknown --features wasm,render
+python3 -m pytest tests -m "not golden"             # 338 passed, 9 deselected
 ```
+
+`cargo test -p kagra-shared --features render` also 110 + 8 offscreen: this VM has no wgpu adapter, so GPU tests skip. Offscreen PNG was **not** written (`No suitable graphics adapter`).
+
+PR: https://github.com/EMMA019/KAGRA/pull/74
+base: `cursor/open-world-collectathon-5395`
+
+## Notes
+
+Not Nintendo IP. Mobile player is **not** Alicia / not VRM. Kenney CC0 stay under `examples/assets/open_world/` (desktop). No Rapier / OSM / renderer merge.

@@ -8,9 +8,7 @@
 use crate::game::GamePhase;
 use crate::input::{PointerEvent, PointerPhase};
 use crate::scene::{DrawList, Quad, FIXED_DT};
-use crate::scene3d::{
-    primitives, Aabb, Camera, Material, MeshData, MeshId, Scene3D, SceneBuilder,
-};
+use crate::scene3d::{primitives, Aabb, Camera, Material, MeshData, MeshId, Scene3D, SceneBuilder};
 use crate::ui::PauseMenu;
 use glam::{Mat4, Quat, Vec3};
 use serde::{Deserialize, Serialize};
@@ -342,7 +340,12 @@ impl CollectathonScene {
         let look = Vec3::new(self.walker.x, self.walker.y + CAM_LOOK_Y, self.walker.z);
         let (s, c) = self.cam_yaw.sin_cos();
         // yaw=0 は +Z。カメラは後ろ（-Z）から見る。
-        let eye = look + Vec3::new(-s * CAM_DISTANCE, CAM_HEIGHT - CAM_LOOK_Y, -c * CAM_DISTANCE);
+        let eye = look
+            + Vec3::new(
+                -s * CAM_DISTANCE,
+                CAM_HEIGHT - CAM_LOOK_Y,
+                -c * CAM_DISTANCE,
+            );
         Camera {
             eye,
             target: look,
@@ -507,21 +510,9 @@ impl TouchLayout {
         let scale = (w.min(h) / 720.0).clamp(0.5, 2.0);
         let well = 168.0 * scale;
         let pad = 18.0 * scale;
-        let stick = Quad::new(
-            pad,
-            h - pad - well,
-            well,
-            well,
-            [18, 22, 16, 90],
-        );
+        let stick = Quad::new(pad, h - pad - well, well, well, [18, 22, 16, 90]);
         let btn = 92.0 * scale;
-        let jump = Quad::new(
-            w - pad - btn,
-            h - pad - btn,
-            btn,
-            btn,
-            [18, 22, 16, 120],
-        );
+        let jump = Quad::new(w - pad - btn, h - pad - btn, btn, btn, [18, 22, 16, 120]);
         Self {
             stick_well: stick,
             jump,
@@ -550,6 +541,7 @@ pub fn smoothstep(t: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn stair_y(
     x: f32,
     z: f32,
@@ -669,14 +661,11 @@ pub fn spawn_coins() -> Vec<Pickup> {
 }
 
 pub fn nearest_live(px: f32, pz: f32, items: &[Pickup]) -> Option<&Pickup> {
-    items
-        .iter()
-        .filter(|it| it.live)
-        .min_by(|a, b| {
-            let da = (px - a.x).hypot(pz - a.z);
-            let db = (px - b.x).hypot(pz - b.z);
-            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-        })
+    items.iter().filter(|it| it.live).min_by(|a, b| {
+        let da = (px - a.x).hypot(pz - a.z);
+        let db = (px - b.x).hypot(pz - b.z);
+        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+    })
 }
 
 pub fn round_score(stars: u32, coins: u32, time_s: f32) -> u32 {
@@ -768,10 +757,13 @@ fn heightfield_mesh(half: f32, cells: u32) -> MeshData {
             let x = -half + ix as f32 * step;
             let z = -half + iz as f32 * step;
             let y = open_world_height(x, z);
-            let dx = (open_world_height(x + step, z) - open_world_height(x - step, z)) / (2.0 * step);
-            let dz = (open_world_height(x, z + step) - open_world_height(x, z - step)) / (2.0 * step);
+            let dx =
+                (open_world_height(x + step, z) - open_world_height(x - step, z)) / (2.0 * step);
+            let dz =
+                (open_world_height(x, z + step) - open_world_height(x, z - step)) / (2.0 * step);
             let n = Vec3::new(-dx, 1.0, -dz).normalize_or(Vec3::Y);
-            mesh.vertices.push(crate::scene3d::Vertex3::new(Vec3::new(x, y, z), n));
+            mesh.vertices
+                .push(crate::scene3d::Vertex3::new(Vec3::new(x, y, z), n));
         }
     }
     let stride = cells + 1;
@@ -826,13 +818,7 @@ fn emit_player(b: &mut SceneBuilder, ids: &MeshIds, w: &Walker) {
     );
 }
 
-fn emit_pickups(
-    b: &mut SceneBuilder,
-    ids: &MeshIds,
-    stars: &[Pickup],
-    coins: &[Pickup],
-    t: f32,
-) {
+fn emit_pickups(b: &mut SceneBuilder, ids: &MeshIds, stars: &[Pickup], coins: &[Pickup], t: f32) {
     for (i, p) in stars.iter().enumerate() {
         if !p.live {
             continue;
@@ -896,9 +882,18 @@ fn tree(b: &mut SceneBuilder, ids: &MeshIds, x: f32, z: f32, scale: f32, pine: b
         q,
         Vec3::new(x, g + trunk_h * 0.55, z),
     );
-    b.push(ids.cone, fol, if pine { [46, 102, 58, 255] } else { [62, 132, 52, 255] });
+    b.push(
+        ids.cone,
+        fol,
+        if pine {
+            [46, 102, 58, 255]
+        } else {
+            [62, 132, 52, 255]
+        },
+    );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn rock(b: &mut SceneBuilder, ids: &MeshIds, x: f32, z: f32, sx: f32, sy: f32, sz: f32, yaw: f32) {
     let g = open_world_height(x, z);
     let m = Mat4::from_scale_rotation_translation(
@@ -1025,7 +1020,10 @@ mod tests {
         assert_eq!(biome_at(START_XZ.0, START_XZ.1), Biome::Grass);
         assert_eq!(biome_at(-22.0, 10.0), Biome::Sea);
         assert_eq!(biome_at(PEAK_XZ.0, PEAK_XZ.1), Biome::Mountain);
-        assert!(open_world_height(PEAK_XZ.0, PEAK_XZ.1) > open_world_height(START_XZ.0, START_XZ.1) + 6.0);
+        assert!(
+            open_world_height(PEAK_XZ.0, PEAK_XZ.1)
+                > open_world_height(START_XZ.0, START_XZ.1) + 6.0
+        );
     }
 
     #[test]
@@ -1136,7 +1134,7 @@ mod tests {
             &[PointerEvent {
                 id: 1,
                 x: 90.0,
-                y: 520.0,
+                y: 460.0,
                 phase: PointerPhase::Move,
                 pressure: 1.0,
             }],

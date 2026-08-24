@@ -497,8 +497,10 @@ pub mod primitives {
         for i in 0..segments {
             let a = i as f32 / segments as f32 * std::f32::consts::TAU;
             let (s, c) = a.sin_cos();
-            mesh.vertices
-                .push(Vertex3::new(Vec3::new(c * radius, 0.0, s * radius), Vec3::NEG_Y));
+            mesh.vertices.push(Vertex3::new(
+                Vec3::new(c * radius, 0.0, s * radius),
+                Vec3::NEG_Y,
+            ));
         }
         for i in 0..segments {
             let a = base_center + 1 + i;
@@ -548,7 +550,8 @@ pub mod primitives {
         }
         // 上面・底面
         let top_c = mesh.vertices.len() as u32;
-        mesh.vertices.push(Vertex3::new(Vec3::new(0.0, height, 0.0), Vec3::Y));
+        mesh.vertices
+            .push(Vertex3::new(Vec3::new(0.0, height, 0.0), Vec3::Y));
         let bot_c = mesh.vertices.len() as u32;
         mesh.vertices.push(Vertex3::new(Vec3::ZERO, Vec3::NEG_Y));
         for i in 0..segments {

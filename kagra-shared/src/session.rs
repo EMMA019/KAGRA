@@ -1,7 +1,9 @@
 //! 共有セッション状態（ネイティブシェルが毎フレーム駆動）。
 
 use crate::audio::AudioLevels;
-use crate::collectathon::{CollectathonScene, WalkInput, GAME_ID as ISLE_ID, GAME_TITLE as ISLE_TITLE};
+use crate::collectathon::{
+    CollectathonScene, WalkInput, GAME_ID as ISLE_ID, GAME_TITLE as ISLE_TITLE,
+};
 use crate::driving::DrivingScene;
 use crate::game::{DemoGame, GamePhase, GAME_ID, GAME_TITLE};
 use crate::input::{KeyEvent, PointerEvent, PointerPhase, VirtualPad};
@@ -355,7 +357,8 @@ impl SharedSession {
                 }
                 SceneKind::Collectathon => {
                     if self.isle.game.is_playing() {
-                        self.isle.apply_pointers(self.width, self.height, &self.pointers);
+                        self.isle
+                            .apply_pointers(self.width, self.height, &self.pointers);
                         self.isle.update();
                     }
                     let _ = taps;
@@ -390,7 +393,11 @@ impl SharedSession {
             },
             audio: self.audio_levels(),
             mission: if isle {
-                format!("{}/{}", self.isle.game.stars, crate::collectathon::STAR_NEED)
+                format!(
+                    "{}/{}",
+                    self.isle.game.stars,
+                    crate::collectathon::STAR_NEED
+                )
             } else {
                 self.driving.mission.label().into()
             },
@@ -511,7 +518,11 @@ impl SharedSession {
         let Some(r) = self.renderer.as_mut() else {
             return Err("no renderer attached".into());
         };
-        let world = match (self.kind, self.mesh_ids.as_ref(), self.isle_mesh_ids.as_ref()) {
+        let world = match (
+            self.kind,
+            self.mesh_ids.as_ref(),
+            self.isle_mesh_ids.as_ref(),
+        ) {
             (SceneKind::Driving, Some(ids), _) => Some(self.driving.build_scene(ids, r.aspect())),
             (SceneKind::Collectathon, _, Some(ids)) => Some(self.isle.build_scene(ids, r.aspect())),
             _ => None,
