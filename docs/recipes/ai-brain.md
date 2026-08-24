@@ -5,15 +5,19 @@ English below. 日本語は後半。
 KAGRA does not ship a model. The official hook is `kagra.brain(...)`:
 text in, text out. Plug it into lipsync, or into shelf `AiCharacter.set_llm_func`.
 
-The recommended brain for this repo is **[kairi](https://github.com/EMMA019/kairi)**
-(local BYOK chat with a grounding layer). KAGRA talks to it over HTTP.
+The recommended brain is **[kairi](https://github.com/EMMA019/kairi)**
+(BYOK chat with a grounding layer). The live instance is
+**https://kairi.onrender.com** — that is the default. KAGRA talks HTTP only.
 Do not vendor FastAPI / SQLite / keys into the wheel.
 
-## kairi (recommended)
+## kairi (Render is the default)
 
-1. Start kairi (`docker compose up` or `uvicorn` on `http://127.0.0.1:8000`)
-2. Optional: `KAIRI_API_TOKEN` if you set one. `KAIRI_DEMO=1` is a fixture, not a real LLM
-3. Python:
+Hosted `/api/ping` is public. `/api/chat` returns **401** without a token.
+
+```bash
+export KAIRI_API_TOKEN=…          # required for kairi.onrender.com
+python examples/vrm_kairi_chat.py
+```
 
 ```python
 import kagra
@@ -21,10 +25,20 @@ import kagra
 kagra.init()
 av = kagra.avatar(str(kagra.ensure_vrm()))
 av.enable_lipsync()
-mind = kagra.brain("kairi")          # or kagra.KairiBrain()
+mind = kagra.brain("kairi")          # https://kairi.onrender.com
 reply = mind.ask("こんにちは。自己紹介して。")
 av.lipsync_text(reply, duration=min(8.0, 0.06 * max(8, len(reply))))
 ```
+
+Render Free can sleep. The first `ask` may take up to ~a minute.
+
+Local override (no token if kairi is in dev mode):
+
+```bash
+export KAIRI_URL=http://127.0.0.1:8000
+```
+
+`KAIRI_DEMO=1` on a local server is a fixture, not a real LLM.
 
 Shelf path (same `ask`):
 
@@ -36,9 +50,9 @@ char.set_llm_func(kagra.KairiBrain().ask)
 char.chat("今日の気分は？")
 ```
 
-Env: `KAIRI_URL` (default `http://127.0.0.1:8000`), `KAIRI_API_TOKEN`, `KAIRI_SESSION`.
+Env: `KAIRI_URL` (default `https://kairi.onrender.com`), `KAIRI_API_TOKEN`, `KAIRI_SESSION`.
 
-Demo: `python examples/vrm_kairi_chat.py` (needs kairi). `KAGRA_SMOKE=1` skips HTTP.
+Smoke: `KAGRA_SMOKE=1 python examples/vrm_kairi_chat.py` skips HTTP.
 
 ## Ollama / OpenAI-compatible
 
@@ -56,12 +70,9 @@ No torch in the KAGRA core. Keys stay in the environment.
 
 モデルは wheel に入れない。公式面は `kagra.brain`（`ask(text) -> str`）。
 
-推奨は自作の **[kairi](https://github.com/EMMA019/kairi)**。グラウンディング付きのローカル BYOK サーバー。KAGRA は `POST /api/chat` の SSE を読むだけ。
+推奨は **[kairi](https://github.com/EMMA019/kairi)**。本命は Render の
+**https://kairi.onrender.com**（既定）。KAGRA は `POST /api/chat` の SSE を読むだけ。
+チャットには `KAIRI_API_TOKEN` が要る。`/api/ping` はトークン無しで生きている。
 
-```python
-mind = kagra.brain("kairi")
-reply = mind.ask("こんにちは。自己紹介して。")
-```
-
-Ollama は `kagra.brain("ollama")`。OpenAI 互換は `kagra.brain("openai")`。
-`AiCharacter` は棚。新しい面に `set_llm_func(mind.ask)` で繋ぐ。
+手元で動かすときだけ `KAIRI_URL=http://127.0.0.1:8000`。
+Free プランは寝ていることがある。最初の `ask` は待つ。

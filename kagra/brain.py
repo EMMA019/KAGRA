@@ -17,6 +17,9 @@ class BrainError(RuntimeError):
     """頭脳サーバー / API が答えを返せなかった。"""
 
 
+KAIRI_DEFAULT_URL = "https://kairi.onrender.com"
+
+
 def parse_kairi_sse(body: str) -> str:
     """kairi ``POST /api/chat`` の SSE から本文を取り出す。
 
@@ -67,7 +70,10 @@ def _http_post(url: str, payload: dict[str, Any], headers: dict[str, str], timeo
             return resp.read()
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", errors="replace")[:400]
-        raise BrainError(f"HTTP {e.code} from {url}: {detail}") from e
+        hint = ""
+        if e.code == 401:
+            hint = " Set KAIRI_API_TOKEN — hosted kairi requires it."
+        raise BrainError(f"HTTP {e.code} from {url}: {detail}{hint}") from e
     except urllib.error.URLError as e:
         raise BrainError(f"could not reach {url}: {e.reason}") from e
 
@@ -94,10 +100,11 @@ class Brain:
 
 
 class KairiBrain(Brain):
-    """ローカル kairi サーバー（https://github.com/EMMA019/kairi）。
+    """kairi（https://github.com/EMMA019/kairi）。本命は Render。
 
     FastAPI / SQLite / グラウンディングは kairi 側。ここは ``/api/chat`` の SSE を読むだけ。
-    既定 ``http://127.0.0.1:8000``。トークンは ``KAIRI_API_TOKEN``（未設定なら開発モードで通る）。
+    既定 ``https://kairi.onrender.com``。チャットは ``KAIRI_API_TOKEN`` が要る。
+    手元は ``KAIRI_URL=http://127.0.0.1:8000``。Free プランは初回が冷える。
     """
 
     def __init__(
@@ -111,7 +118,7 @@ class KairiBrain(Brain):
         post: Callable[..., bytes] | None = None,
         get: Callable[..., bytes] | None = None,
     ):
-        self.url = (url or os.environ.get("KAIRI_URL") or "http://127.0.0.1:8000").rstrip("/")
+        self.url = (url or os.environ.get("KAIRI_URL") or KAIRI_DEFAULT_URL).rstrip("/")
         self.token = token if token is not None else os.environ.get("KAIRI_API_TOKEN", "")
         self.session_id = session_id or os.environ.get("KAIRI_SESSION") or f"kagra-{uuid4().hex[:8]}"
         self.mode = str(mode)
@@ -128,8 +135,9 @@ class KairiBrain(Brain):
         return h
 
     def ping(self) -> bool:
+        wait = 45.0 if "onrender.com" in self.url else min(self.timeout, 8.0)
         try:
-            raw = self._get(f"{self.url}/api/ping", self._headers(), min(self.timeout, 5.0))
+            raw = self._get(f"{self.url}/api/ping", self._headers(), wait)
             data = json.loads(raw.decode("utf-8", errors="replace"))
             return bool(data.get("alive") or data.get("status") == "ok")
         except Exception:

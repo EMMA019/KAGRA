@@ -334,7 +334,7 @@ def render_markdown(items: list[tuple[str, str, str]]) -> str:
         "- 汎用メッシュの金属/粗さ: `upload_mesh_3d(..., metallic=, roughness=)` / `Prop(..., metallic=)` / `set_mesh_pbr`。MToon は触らない。",
         "- 色付きメッシュ: `solid_tex` + `sphere_mesh` / `cylinder_mesh` / `box_mesh`。",
         "- `kagra-shared` / `mobile/` は別の運転デモ。この Python スタックと混ぜない。",
-        "- 頭脳: `kagra.brain(\"kairi\"|\"ollama\"|\"openai\")` / `KairiBrain`。モデルは wheel に入れない。kairi はローカル HTTP。`AiCharacter.set_llm_func(mind.ask)`。",
+        "- 頭脳: `kagra.brain(\"kairi\"|\"ollama\"|\"openai\")` / `KairiBrain`。既定は `https://kairi.onrender.com`（チャットは `KAIRI_API_TOKEN`）。モデルは wheel に入れない。`AiCharacter.set_llm_func(mind.ask)`。",
         "- Rust バインディングの整合は `tests/test_api_bindings.py` も参照。",
         "- 再生成: `python tools/gen_api_index.py`",
         "",

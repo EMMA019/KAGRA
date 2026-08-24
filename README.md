@@ -141,7 +141,7 @@ python examples/vrm_dodge_room.py        # falling boxes, survive (agent-run log
 python examples/vrm_prop_garden.py       # Prop / Walk / sky (play surface)
 python examples/vrm_pretty_room.py       # enclosed room / spot / IBL
 python examples/vrm_overworld.py         # tiled island — city JSON, mesh ramp, crates
-python examples/vrm_kairi_chat.py        # VRM talks via local kairi (HTTP, not in the wheel)
+python examples/vrm_kairi_chat.py        # VRM talks via kairi.onrender.com (needs KAIRI_API_TOKEN)
 python examples/vrm_vrma.py              # .vrma (or a generated wave)
 python examples/vrm_stream.py            # OBS / JSONL chat
 ```

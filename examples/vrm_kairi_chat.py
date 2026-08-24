@@ -1,8 +1,9 @@
-"""VRM chats through kairi (or a smoke stub).
+"""VRM chats through hosted kairi (Render).
 
-Live: start https://github.com/EMMA019/kairi on :8000, then:
+  export KAIRI_API_TOKEN=…   # required for https://kairi.onrender.com
   python examples/vrm_kairi_chat.py
 
+Local: KAIRI_URL=http://127.0.0.1:8000
 Smoke (no HTTP): KAGRA_SMOKE=1 python examples/vrm_kairi_chat.py
 """
 from __future__ import annotations
@@ -39,6 +40,11 @@ class KairiChat(kagra.Scene):
             self._say("smoke: kairi is HTTP, not in the wheel")
         else:
             self.mind = kagra.brain("kairi")
+            if "onrender.com" in self.mind.url and not (self.mind.token or "").strip():
+                self.line.text = "set KAIRI_API_TOKEN  (kairi.onrender.com)"
+            else:
+                host = self.mind.url.replace("https://", "").replace("http://", "")
+                self.line.text = f"ENTER  {host}"
 
     def _say(self, text: str):
         self.line.text = text[:80]

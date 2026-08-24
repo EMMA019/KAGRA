@@ -33,6 +33,12 @@ def test_parse_kairi_sse_error_raises():
         brain.parse_kairi_sse('data: {"type": "error", "message": "nope"}\n\n')
 
 
+def test_kairi_default_url_is_render(monkeypatch):
+    monkeypatch.delenv("KAIRI_URL", raising=False)
+    b = brain.KairiBrain(post=lambda *a: b"", get=lambda *a: b"{}")
+    assert b.url == brain.KAIRI_DEFAULT_URL
+
+
 def test_kairi_brain_ask_posts_chat():
     seen = {}
 

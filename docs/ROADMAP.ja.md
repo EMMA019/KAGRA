@@ -37,7 +37,7 @@ Rapier / OSM / 4 段 CSM / SSAO などは「このバーでは後回し」。永
 
 ## 次にやること（この順）
 
-1. **頭脳面（載った）** — `kagra.brain("kairi"|"ollama"|"openai")`。kairi は別プロセス。コアにモデルを入れない
+1. **頭脳面（載った）** — `kagra.brain("kairi")` の既定は `https://kairi.onrender.com`。チャットは `KAIRI_API_TOKEN`。コアにモデルを入れない
 2. **絵の残り** — 法線マップ → 室内影の画素確認 → トーンマップの画素。golden / smoke スクショで閉じる。実機パッドは同じバー
 3. **PyPI** — usable-week API を次の wheel に載せる。ソースだけの状態を長くしない。macOS wheel は CI で取る
 4. **D-6** — 3 見本の 30 秒テストのあと。箱の焼き直しではない。30 秒以上遊べて、スコアか明確なゴールがある
@@ -99,7 +99,7 @@ API が生えたことは完了ではない。次を満たしたらチェック�
 - [ ] 使える週の **見本**: Pretty Room / Overworld / Prop Garden が 30 秒テストを通る。
       画素は GPU / CI スクショでまだ閉じていない。法線と USB パッドは未着手
 - [ ] **Stage 0.5 頭脳面:** 面は `kagra.brain` + レシピ + `examples/vrm_kairi_chat.py`。
-      本番の楔 A はローカル kairi（または Ollama）が動いていること。モデルは wheel に無い
+      本番の楔 A は `https://kairi.onrender.com`（`KAIRI_API_TOKEN`）か Ollama。モデルは wheel に無い
 - [ ] 次の PyPI: usable-week API を wheel に載せる。macOS wheel は CI
 - [x] 初回体験: own-VRM 1 行、シャドウ警告、`kagra.cmd`、レシピ、issue テンプレ
 

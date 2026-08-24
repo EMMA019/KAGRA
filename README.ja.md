@@ -119,7 +119,7 @@ python examples/vrm_dodge_room.py
 - **YouTube / Twitch の公式取り込み** — `{user,text}` の JSONL を自分で書く（`ChatInbox`）
 - **NDI / RTMP** — 窓キャプチャは今も使える。仮想カメラは extra
 - **無人配信のセーフティ / オートパイロット** — 0.1.3 には無い
-- **公式の頭脳面** — `kagra.brain("kairi"|"ollama"|"openai")`。kairi はローカルサーバーで wheel には入れない。`AiCharacter` は棚の古い包み
+- **公式の頭脳面** — `kagra.brain("kairi")` の既定は https://kairi.onrender.com。チャットは `KAIRI_API_TOKEN`。wheel には入れない
 - **法線マップ** — まだ無い。HDRI・点・スポット・ACES opt-in はソース `master` にある（画素未確認）。一人称は `Walk(first_person=True)`
 - **VOICEVOX / Irodori-TTS** — 同梱しない。VOICEVOX は [docs/recipes/voicevox.md](docs/recipes/voicevox.md)
 - 曲 WAV と `.vrma` はホイールに入れない（約 5MB の売りを守る）。サンプル VRM は初回ダウンロード
