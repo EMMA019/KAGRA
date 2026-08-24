@@ -315,9 +315,12 @@ def rect(x, y, w, h, color=255, g=None, b=None, a=255):
     _check(); r,g2,b2,a2 = _resolve_rgb(color,g,b,a)
     _engine.rect(x,y,w,h,r,g2,b2,a2)
 
-def load_texture(path: str) -> int:
-    """テクスチャを読み込んでIDを返す（低レベル。シンプルAPIは load() を使う）。"""
-    _check(); return _engine.load_texture(path)
+def load_texture(path: str, *, srgb: bool = True) -> int:
+    """テクスチャを読み込んでIDを返す（低レベル。シンプルAPIは load() を使う）。
+
+    ``srgb=False`` は法線マップなど線形データ。既定は sRGB。
+    """
+    _check(); return _engine.load_texture(path, bool(srgb))
 
 def texture_size(tid: int) -> tuple:
     _check(); return _engine.texture_size(tid)
@@ -800,6 +803,12 @@ def set_mesh_pbr(
     )
 
 
+def set_mesh_normal(mesh_id: int, texture_id: int = 0):
+    """保持メッシュの接空間法線。``0`` で外す。頂点は ``[x,y,z,nx,ny,nz,u,v]`` のまま。"""
+    _check()
+    _engine.set_mesh_normal(int(mesh_id), int(texture_id))
+
+
 def set_mesh_cull(enabled: bool = True):
     """ワールド 3D メッシュの視錐台カリング。VRM スキンは対象外。"""
     _check()
@@ -875,12 +884,15 @@ def upload_mesh_3d(
     metallic: float = 0.0,
     roughness: float = 1.0,
     base_color: tuple = (1.0, 1.0, 1.0),
+    normal_texture_id: int = 0,
 ) -> int:
     """3D メッシュを GPU に一度載せる。毎フレームは ``draw_mesh_id``。
 
     ``verts`` は ``[x,y,z,nx,ny,nz,u,v]``。0 は失敗。
     ``metallic`` / ``roughness`` は汎用メッシュだけ（MToon は薄めない）。
     既定 0 / 1 は旧 Lambert。
+    ``normal_texture_id`` は接空間法線（``texture_from_fn(..., srgb=False)``）。
+    TBN はフラグメントの cotangent frame。頂点ストライドは変えない。
     """
     _check()
     br, bg, bb = base_color[0], base_color[1], base_color[2]
@@ -888,6 +900,7 @@ def upload_mesh_3d(
         texture_id, verts, indices,
         float(metallic), float(roughness),
         float(br), float(bg), float(bb),
+        int(normal_texture_id or 0),
     ))
 
 
@@ -913,17 +926,19 @@ def unload_mesh_3d(mesh_id: int):
     _engine.unload_mesh_3d(int(mesh_id))
 
 
-def texture_from_fn(width: int, height: int, pixel_fn, *, name: str | None = None) -> int:
+def texture_from_fn(width: int, height: int, pixel_fn, *, name: str | None = None, srgb: bool = True) -> int:
     """手続きテクスチャ。``pixel_fn(x, y) -> (r,g,b) or (r,g,b,a)``。
+
+    法線マップは ``srgb=False``。
 
     Example::
         tex = kagra.texture_from_fn(32, 32, lambda x, y: (255, 200, 40, 255))
     """
     from kagra.gamekit import write_png
-    return load(str(write_png(width, height, pixel_fn, name=name)))
+    return load(str(write_png(width, height, pixel_fn, name=name)), srgb=srgb)
 
 
-def texture_from_pixels(width: int, height: int, pixels: bytes, *, name: str | None = None) -> int:
+def texture_from_pixels(width: int, height: int, pixels: bytes, *, name: str | None = None, srgb: bool = True) -> int:
     """未圧縮 RGBA（上から、1 画素 4 バイト）をテクスチャにする。"""
     from kagra.look import encode_png_rgba
     import tempfile
@@ -931,7 +946,7 @@ def texture_from_pixels(width: int, height: int, pixels: bytes, *, name: str | N
     data = encode_png_rgba(width, height, pixels)
     path = Path(tempfile.gettempdir()) / f"kagra_{name or 'pix'}_{width}x{height}.png"
     path.write_bytes(data)
-    return load(str(path))
+    return load(str(path), srgb=srgb)
 
 
 def billboard_mesh(x: float, y: float, z: float, size: float, camera=None, *, yaw: float | None = None):
@@ -1517,13 +1532,15 @@ def fill(x: float, y: float, w: float, h: float,
     r,g,b,a = _c(color, alpha)
     rect(x, y, w, h, r, g, b, a)
 
-def load(path: str) -> int:
+def load(path: str, *, srgb: bool = True) -> int:
     """テクスチャを読み込んでIDを返す。
+
+    法線マップは ``srgb=False``。
 
     Example::
         player_tex = kagra.load("assets/player.png")
     """
-    return load_texture(path)
+    return load_texture(path, srgb=srgb)
 
 def image(tex: int, x: float, y: float, w: float = None, h: float = None,
           *, alpha: float = 1., rotation: float = 0.,

@@ -33,3 +33,4 @@
 - `20260824-slope-stream/` — 坂の沿い／滑り、タイル影、歩きながら読み込み（ゲームではない）
 - `20260824-city-mesh-stack-csm/` — 街 JSON・三角形当たり・積み木・2 段影（ゲームではない）
 - `20260824-usable-week/` — 使える週の API（トーンマップ / IBL mip / スポット影 / ロック / click / animate。ゲームではない。GPU 未確認）
+- `20260824-normals-pad/` — 法線マップ API + USB/XInput gilrs（ゲームではない。GPU 未確認）

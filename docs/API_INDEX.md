@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **415**
+エントリ数: **416**
 
 棚の**手前**は VRM / 3D ワールド / エージェントゲーム。
 棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。
@@ -71,6 +71,7 @@
 | `set_hdri` | `set_hdri(path: str \| None = 'studio', strength: float = 1.0)` |
 | `set_light_dir` | `set_light_dir(x: float, y: float, z: float)` |
 | `set_mesh_cull` | `set_mesh_cull(enabled: bool = True)` |
+| `set_mesh_normal` | `set_mesh_normal(mesh_id: int, texture_id: int = 0)` |
 | `set_mesh_pbr` | `set_mesh_pbr(mesh_id: int, metallic: float = 0.0, roughness: float = 1.0, base_color: tuple = (1.0, 1.0, 1.0))` |
 | `set_point_light` | `set_point_light(x: float, y: float, z: float, *, r: float = 1.0, g: float = 0.95, b: float = 0.85, intensity: float = 1.0, radius: float = 8.0)` |
 | `set_rim` | `set_rim(intensity: float = 0.45)` |
@@ -86,12 +87,12 @@
 | `stage` | `stage(path: str = 'stage', *, radius: float = 12.0) -> 'Stage'` |
 | `stair_y` | `stair_y(x: float, z: float, *, x0: float, x1: float, z0: float, z1: float, y0: float, y1: float, steps: int = 6, axis: str = 'z')` |
 | `text` | `text(s, x: float, y: float, size: int = 24, color=(255, 255, 255), font: int = None, alpha: int = 255)` |
-| `texture_from_fn` | `texture_from_fn(width: int, height: int, pixel_fn, *, name: str \| None = None) -> int` |
+| `texture_from_fn` | `texture_from_fn(width: int, height: int, pixel_fn, *, name: str \| None = None, srgb: bool = True) -> int` |
 | `tick_count` | `tick_count() -> int` |
 | `tile_keys` | `tile_keys(x: float, z: float, *, tile: float = 10.0, radius: float = 28.0, half: float \| None = None)` |
 | `tone` | `tone(name: str, freqs, duration: float = 0.12, volume: float = 0.35, decay: bool = True) -> str` |
 | `unload_mesh_3d` | `unload_mesh_3d(mesh_id: int)` |
-| `upload_mesh_3d` | `upload_mesh_3d(texture_id: int, verts: list, indices: list, *, metallic: float = 0.0, roughness: float = 1.0, base_color: tuple = (1.0, 1.0, 1.0)) -> int` |
+| `upload_mesh_3d` | `upload_mesh_3d(texture_id: int, verts: list, indices: list, *, metallic: float = 0.0, roughness: float = 1.0, base_color: tuple = (1.0, 1.0, 1.0), normal_texture_id: int = 0) -> int` |
 | `water` | `water(y: float = 0.0, *, half: float = 24.0, world=None)` |
 | `AABB` | `class AABB  (from kagra.physics3d)` |
 | `ActionController` | `class ActionController  (from kagra.vrm_action)` |
@@ -206,7 +207,7 @@
 | `line_v` | `line_v(x: float, y: float, length: float, color=(255, 255, 255), width: float = 1, alpha: int = 255)` |
 | `list_blend_shapes` | `list_blend_shapes(vrm_id: int) -> list[str]` |
 | `list_human_bones` | `list_human_bones(vrm_id: int) -> list[str]` |
-| `load` | `load(path: str) -> int` |
+| `load` | `load(path: str, *, srgb: bool = True) -> int` |
 | `load_bvh` | `load_bvh(path: str, extra_map: dict = None) -> 'BvhMotion'` |
 | `load_data` | `load_data(key: str, force_reload=False) -> 'DataObject'` |
 | `load_fbx` | `load_fbx(path: str, clip_name: str = None) -> 'FbxMotion'` |
@@ -215,7 +216,7 @@
 | `load_rig` | `load_rig(path: str) -> int` |
 | `load_shader` | `load_shader(path: str) -> int` |
 | `load_shader_src` | `load_shader_src(wgsl_src: str) -> int` |
-| `load_texture` | `load_texture(path: str) -> int` |
+| `load_texture` | `load_texture(path: str, *, srgb: bool = True) -> int` |
 | `load_vrm` | `load_vrm(path: str) -> int` |
 | `measure` | `measure(s, size: int = 24, font: int = None) -> tuple` |
 | `measure_text` | `measure_text(font_id, text_str, size=24) -> tuple` |
@@ -275,7 +276,7 @@
 | `spring_bone` | `spring_bone(vrm_path: str, vrm_id: int) -> 'SpringBone'` |
 | `step_vrm_spring` | `step_vrm_spring(vrm_id: int, dt: float)` |
 | `stop_bgm` | `stop_bgm(fade: float = 0.0)` |
-| `texture_from_pixels` | `texture_from_pixels(width: int, height: int, pixels: bytes, *, name: str \| None = None) -> int` |
+| `texture_from_pixels` | `texture_from_pixels(width: int, height: int, pixels: bytes, *, name: str \| None = None, srgb: bool = True) -> int` |
 | `texture_size` | `texture_size(tid: int) -> tuple` |
 | `unload_gltf` | `unload_gltf(model_id: int)` |
 | `update_boids` | `update_boids(boid_id: int, dt: float)` |
@@ -454,12 +455,12 @@
 - Prop テクスチャ: `texture=kagra.texture_from_fn(...)` または `load`。0 なら `color`。
 - Prop 親子は 2 段（孫まで。曾孫は不可）。子の `x,y,z,yaw` はローカル。
 - glTF 部品: `Prop("crate.glb")`。`stage()` / `load_gltf` は会場。同梱エイリアス `cube.glb`。当たりは AABB。`mesh_hit=True` で三角形。
-- ゲームパッド: `axis("left")` / `pad("a")` / `inject_pad`。`Walk` は左スティック移動・右スティック視点。実機 USB/XInput は未接続。
+- ゲームパッド: `axis("left")` / `pad("a")` / `inject_pad`。`Walk` は左スティック移動・右スティック視点。実機 USB/XInput は EventLoop で gilrs（`inject_pad` が優先。CI は inject）。
 - 影は床・箱・Prop も落とす。`set_shadow_cascades(2)` で近／遠の 2 段（既定 1。Prop Garden は変えない）。屋外はテクセルスナップ。OSM ではない街 JSON は `load_city`。三角形当たりは `add_trimesh` / `Prop(..., mesh_hit=True)`。積み木は `add_box(..., is_static=False)`（Rapier ではない）。
 - 点光源 1: `set_point_light(x,y,z, intensity=…)`。影は無し。スポットは `set_spot_light`（同じスロット、室内は透視影）。
 - HDRI: `set_hdri("studio")` または正距円筒のパス。拡散は小さな irradiance キューブ。スペキュラは mip LOD。露出は `set_exposure`（既定 1）。ACES は `set_tonemap`（既定オフ）。
 - 閉じた部屋: `room()` + `apply_room_look`。屋外の島: `apply_outdoor_look` + `set_height_fn` + `water` + `sky()`。坂は接平面、急斜面は滑る。デモは Pretty Room / Overworld。
-- 汎用メッシュの金属/粗さ: `upload_mesh_3d(..., metallic=, roughness=)` / `Prop(..., metallic=)` / `set_mesh_pbr`。MToon は触らない。
+- 汎用メッシュの金属/粗さ: `upload_mesh_3d(..., metallic=, roughness=)` / `Prop(..., metallic=)` / `set_mesh_pbr`。接空間法線は `normal_texture_id` / `Prop(..., normal=)` / `set_mesh_normal` / glTF `normalTexture`（cotangent frame。ストライドは 32）。MToon は触らない。
 - 色付きメッシュ: `solid_tex` + `sphere_mesh` / `cylinder_mesh` / `box_mesh`。
 - `kagra-shared` / `mobile/` は別の運転デモ。この Python スタックと混ぜない。
 - 頭脳: `kagra.brain("kairi"|"ollama"|"openai")` / `KairiBrain`。既定は `https://kairi.onrender.com`（チャットは `KAIRI_API_TOKEN`）。モデルは wheel に入れない。`AiCharacter.set_llm_func(mind.ask)`。

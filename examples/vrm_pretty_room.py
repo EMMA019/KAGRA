@@ -30,6 +30,44 @@ SMOKE_FRAMES = int(os.environ.get("KAGRA_SMOKE_FRAMES", "36"))
 SMOKE_SHOT = os.environ.get("KAGRA_SMOKE_OUT", "scratch/pretty_room_smoke.png")
 
 
+def _brick_albedo(x: int, y: int):
+    u, v = x / 64.0, y / 64.0
+    row = int(v * 8)
+    ox = 0.5 if row % 2 else 0.0
+    fx = (u * 8 + ox) % 1.0
+    fy = (v * 8) % 1.0
+    if fx < 0.12 or fy < 0.12:
+        return (90, 78, 70, 255)
+    return (168, 92, 64, 255)
+
+
+def _brick_normal(x: int, y: int):
+    import math
+
+    u, v = x / 64.0, y / 64.0
+    row = int(v * 8)
+    ox = 0.5 if row % 2 else 0.0
+    fx = (u * 8 + ox) % 1.0
+    fy = (v * 8) % 1.0
+    nx = ny = 0.0
+    if fx < 0.12:
+        nx = -1.0
+    elif fx > 0.88:
+        nx = 1.0
+    if fy < 0.12:
+        ny = -1.0
+    elif fy > 0.88:
+        ny = 1.0
+    leng = math.sqrt(nx * nx + ny * ny + 1.0)
+    nx, ny, nz = nx / leng, ny / leng, 1.0 / leng
+    return (
+        int((nx * 0.5 + 0.5) * 255),
+        int((ny * 0.5 + 0.5) * 255),
+        int((nz * 0.5 + 0.5) * 255),
+        255,
+    )
+
+
 class PrettyRoom(kagra.Scene):
     def on_enter(self):
         kagra.font()
@@ -55,6 +93,13 @@ class PrettyRoom(kagra.Scene):
             "cylinder", x=2.1, y=0.55, z=-0.4, scale=(0.55, 1.1, 0.55),
             color=(210, 200, 188), world=self.world,
         )
+        if not SMOKE:
+            nrm = kagra.texture_from_fn(64, 64, _brick_normal, name="brick_n", srgb=False)
+            alb = kagra.texture_from_fn(64, 64, _brick_albedo, name="brick")
+            kagra.Prop(
+                "box", x=-2.4, y=0.7, z=-1.6, scale=(1.2, 1.4, 0.28),
+                texture=alb, normal=nrm, world=self.world,
+            )
         kagra.Prop.bake_all()
         self.cam = Camera3D(SW, SH, fov_deg=58.0)
         self.cam.look(0.0, 1.55, 2.4, 0.0, 1.45, -1.0)

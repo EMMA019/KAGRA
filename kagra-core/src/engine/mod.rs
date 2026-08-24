@@ -1224,8 +1224,9 @@ impl Engine {
         let cv: Vec<[f32;2]> = verts.iter().map(|v| [v[0], v[1]]).collect();
         self.window.polygon(cv, Color { r, g, b, a });
     }
-    pub fn load_texture(&self, path: &str) -> PyResult<u32> {
-        self.window.load_texture(path).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))
+    #[pyo3(signature = (path, srgb=true))]
+    pub fn load_texture(&self, path: &str, srgb: bool) -> PyResult<u32> {
+        self.window.load_texture_ex(path, srgb).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))
     }
     pub fn texture_size(&self, id: u32) -> Option<(u32, u32)> { self.window.texture_size(id) }
 
@@ -1463,6 +1464,12 @@ impl Engine {
         self.window.set_mesh_pbr(mesh_id, metallic, roughness, base_r, base_g, base_b);
     }
 
+    /// 保持メッシュの接空間法線。``texture_id=0`` で外す。頂点ストライドは変えない。
+    #[pyo3(signature = (mesh_id, texture_id=0))]
+    pub fn set_mesh_normal(&self, mesh_id: u32, texture_id: u32) {
+        self.window.set_mesh_normal(mesh_id, texture_id);
+    }
+
     /// 閾値ブルーム。輝度が threshold を超えた画素だけをぼかして加算する。
     /// intensity<=0 でオフ（画面全体ぼかしはしない）。
     #[pyo3(signature = (threshold=0.85, intensity=0.0))]
@@ -1492,7 +1499,7 @@ impl Engine {
     }
 
     /// 3D メッシュを GPU に一度載せる。毎フレームは ``draw_mesh_id``。
-    #[pyo3(signature = (texture_id, verts, indices, metallic=0.0, roughness=1.0, base_r=1.0, base_g=1.0, base_b=1.0))]
+    #[pyo3(signature = (texture_id, verts, indices, metallic=0.0, roughness=1.0, base_r=1.0, base_g=1.0, base_b=1.0, normal_texture_id=0))]
     pub fn upload_mesh_3d(
         &self,
         texture_id: u32,
@@ -1503,6 +1510,7 @@ impl Engine {
         base_r: f32,
         base_g: f32,
         base_b: f32,
+        normal_texture_id: u32,
     ) -> u32 {
         let cv: Vec<[f32;8]> = verts.iter().map(|v| {
             let mut a = [0f32;8];
@@ -1511,6 +1519,7 @@ impl Engine {
         }).collect();
         self.window.upload_mesh_3d(
             texture_id, cv, indices, metallic, roughness, [base_r, base_g, base_b],
+            normal_texture_id,
         )
     }
 
@@ -1557,6 +1566,16 @@ impl Engine {
     #[pyo3(signature = (mesh_id))]
     pub fn unload_mesh_3d(&self, mesh_id: u32) {
         self.window.unload_mesh_3d(mesh_id);
+    }
+
+    pub fn poll_pad(&self) {}
+
+    pub fn pad_axis(&self, stick: u32) -> (f32, f32) {
+        self.window.pad_axis(stick)
+    }
+
+    pub fn pad_down(&self, name: &str) -> bool {
+        self.window.pad_down(name)
     }
     #[pyo3(signature = (texture_id, verts, shader_id=0u32, shader_params=None))]
     pub fn draw_mesh(&self, texture_id: u32, verts: Vec<Vec<f32>>, shader_id: u32, shader_params: Option<Vec<f32>>) {

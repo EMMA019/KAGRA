@@ -155,6 +155,7 @@ struct Camera {
 @group(0) @binding(3) var env_irr: texture_cube<f32>;
 @group(1) @binding(0) var t_diffuse: texture_2d<f32>;
 @group(1) @binding(1) var s_diffuse: sampler;
+@group(1) @binding(2) var t_normal: texture_2d<f32>;
 struct ShadowU { vp0: mat4x4<f32>, vp1: mat4x4<f32>, params: vec4<f32> }
 @group(2) @binding(0) var<uniform> shadow_u: ShadowU;
 @group(2) @binding(1) var shadow_map: texture_depth_2d_array;
@@ -253,6 +254,20 @@ fn smith_g(ndotv: f32, ndotl: f32, rough: f32) -> f32 {
     let gl = ndotl / max(ndotl * (1.0 - k) + k, 1e-5);
     return gv * gl;
 }
+fn cotangent_frame(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> mat3x3<f32> {
+    let dp1 = dpdx(p);
+    let dp2 = dpdy(p);
+    let duv1 = dpdx(uv);
+    let duv2 = dpdy(uv);
+    let dp2perp = cross(dp2, n);
+    let dp1perp = cross(n, dp1);
+    var t = dp2perp * duv1.x + dp1perp * duv2.x;
+    var b = dp2perp * duv1.y + dp1perp * duv2.y;
+    let invmax = inverseSqrt(max(dot(t, t), dot(b, b)));
+    t = t * invmax;
+    b = b * invmax;
+    return mat3x3<f32>(t, b, n);
+}
 @vertex fn vs_main(in: VI) -> VO {
     var out: VO;
     let pos4 = vec4<f32>(in.position, 1.0);
@@ -297,7 +312,13 @@ struct II { @location(3) pos_yaw: vec4<f32>, @location(4) scale: vec4<f32> }
 @fragment fn fs_main(in: VO) -> @location(0) vec4<f32> {
     var c = textureSample(t_diffuse, s_diffuse, in.uv);
     if c.a < 0.01 { discard; }
-    let n = normalize(in.world_n);
+    var n = normalize(in.world_n);
+    var hemi = in.hemi;
+    if mesh_mat.params.z > 0.5 {
+        let nts = textureSample(t_normal, s_diffuse, in.uv).xyz * 2.0 - 1.0;
+        n = normalize(cotangent_frame(n, in.world_pos, in.uv) * nts);
+        hemi = hemi_ambient(n);
+    }
     let albedo = c.rgb * mesh_mat.base.rgb;
     let env = env_light(n);
     let point = point_diffuse(n, in.world_pos);
@@ -320,10 +341,14 @@ struct II { @location(3) pos_yaw: vec4<f32>, @location(4) scale: vec4<f32> }
         let sun = (kd * albedo + spec) * ndotl * shadow_factor(in.world_pos);
         let spec_env = textureSampleLevel(env_cube, env_samp, reflect(-v, n), rough * 3.0).rgb
             * cam.env.x * (1.0 - rough) * f;
-        rgb = sun + albedo * point + in.hemi + env * (1.0 - metallic) * 0.65 + spec_env;
+        rgb = sun + albedo * point + hemi + env * (1.0 - metallic) * 0.65 + spec_env;
     } else {
-        let lit = in.light * shadow_factor(in.world_pos);
-        rgb = albedo * lit + albedo * point + in.hemi + env;
+        var ndotl = in.light;
+        if mesh_mat.params.z > 0.5 {
+            ndotl = clamp(dot(n, normalize(cam.light_dir.xyz)), 0.2, 1.0);
+        }
+        let lit = ndotl * shadow_factor(in.world_pos);
+        rgb = albedo * lit + albedo * point + hemi + env;
     }
     rgb = apply_fog(rgb, in.world_pos);
     rgb = rgb * max(cam.env.y, 0.0);

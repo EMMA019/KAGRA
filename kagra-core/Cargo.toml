@@ -29,5 +29,7 @@ nalgebra = "0.32"
 ufbx    = "0.9.0"
 rayon    = "1.10"
 thiserror = "1.0"
+# 0.10 stays on edition 2021 / MSRV 1.65. Poll on the winit EventLoop thread (Windows: one loop).
+gilrs = "0.10.10"
 
 # release プロファイルはワークスペース root Cargo.toml を参照

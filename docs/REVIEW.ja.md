@@ -6,7 +6,7 @@
 ## 1 行
 
 **最終目標は「Python で AI に体を与えるなら KAGRA」という第一想起。**
-体は three-vrm 級に近い。絵と書き味は usable-week の API まで来た（画素未確認。法線と USB パッドは未着手）。エージェントループは他に無い。頭脳の公式面は `kagra.brain("kairi")`（既定 https://kairi.onrender.com。モデルは wheel に無い）。出せるゲームが jam の箱ならループだけでは人は来ない。
+体は three-vrm 級に近い。絵と書き味は usable-week の API まで来た（画素未確認。法線と USB パッドの API は載った）。エージェントループは他に無い。頭脳の公式面は `kagra.brain("kairi")`（既定 https://kairi.onrender.com。モデルは wheel に無い）。出せるゲームが jam の箱ならループだけでは人は来ない。
 
 「three.js の普段 + Ursina で書く週」は **今のバー** であって最終目標ではない。
 Rapier / OSM / 4 段 CSM などはバーの外。禁止ではない。
@@ -16,8 +16,8 @@ Rapier / OSM / 4 段 CSM などはバーの外。禁止ではない。
 | ものさし | 戦う場所 | KAGRA の位置 |
 |---|---|---|
 | **three-vrm** | デスクトップ Python。Web では戦わない | 体（MToon / Spring / VRMA / 表情 / 一人称）は対抗できる。配布はこちらが厚い。頭脳は [kairi.onrender.com](https://kairi.onrender.com)（同梱しない） |
-| **three.js** | 同じ種類の仕事（ライト・影・IBL・マテリアル）。ブラウザ対決ではない | **API は普段の仕事に近づいた。画素未確認。** トーンマップ opt-in、スペキュラ mip、スポット透視影、2 段スナップ。法線無し |
-| **Ursina** | 「短い Python でゲームを書く」 | **API は書く週に近づいた。** ロック / クリック / `animate` / `Label` / 持つ / 孫。USB パッド無し。30 秒テストは未実施 |
+| **three.js** | 同じ種類の仕事（ライト・影・IBL・マテリアル）。ブラウザ対決ではない | **API は普段の仕事に近づいた。画素未確認。** トーンマップ opt-in、スペキュラ mip、スポット透視影、2 段スナップ。法線 API は cotangent frame |
+| **Ursina** | 「短い Python でゲームを書く」 | **API は書く週に近づいた。** ロック / クリック / `animate` / `Label` / 持つ / 孫 / USB パッド（gilrs）。30 秒テストは未実施 |
 | **Unity + UniVRM** | インストールと「歌って踊るまで」 | 5MB wheel で勝つ。エディタと量産では負ける（戦わない） |
 | **pygame / pyxel** | 2D エンジン | 棚に下げた。戻さない |
 
@@ -44,12 +44,12 @@ wheel には入れない（VOICEVOX と同じ関係）。Ollama / OpenAI 互換�
 | ライト | 平行光 1 + 点またはスポット 1 + 半球。スポットは透視影 | 室内のスポット影が画素で見える | 多数のディレクショナル |
 | IBL | HDRI + irradiance + 4 mip スペキュラ | 金属がプラスチックに見えない | 映画のフル LOD |
 | 影 | 2048×2 層。既定 1。スナップあり。這いの画素未確認 | 2 段が這わない。室内にも影 | 4 段 CSM、SSAO |
-| 汎用メッシュ | baseColor + 金属/粗さ。法線無し | `normalTexture` | ディスプレースメント |
+| 汎用メッシュ | baseColor + 金属/粗さ + 法線 API（画素未確認） | `normalTexture` が画素で見える | ディスプレースメント |
 | ポスト | bloom / vignette / fog / ACES opt-in | 真っ白・泥が止まる | アウトライン（VRM 以外） |
 | シーングラフ | `Prop` 孫まで | 孫で足りる | 深い Object3D |
 | カメラ | follow / 一人称 + ロック API | FPS として使える | 直交 3D エディタ |
 
-絵の残りはこの順: **法線マップ → 室内影の画素 → トーンマップの画素。**
+絵の残りはこの順: **室内影の画素 → トーンマップの画素**（法線と USB の API は載った）。
 golden / smoke スクショで閉じる。**ばらして「API があるから級」と呼ばない。**
 
 ### 体（three-vrm との差）
@@ -74,7 +74,7 @@ Walk の strafe が画面左右と逆なら #55（カメラ right = `forward × 
 | `Button` / `Text` | `Label` / `Button` | エージェントが `fill`+`text` を書かない | Dear ImGui |
 | `Audio` | `sound("coin")` | 一行 | DAW |
 | `Entity(model='*.glb')` | 静的に畳む。`mesh_hit` | 法線まで | スキン Prop |
-| ゲームパッド | `inject_pad` | USB/XInput | 全ベンダ抽象 |
+| ゲームパッド | `inject_pad` + gilrs USB/XInput | 画素ではない。実機で歩く | 全ベンダ抽象 |
 
 2D の `Entity` / Tk エディタ / tilemap は Front に戻さない。Rapier は今無い（後回し）。
 
@@ -130,4 +130,4 @@ Web で three-vrm と戦う、torch をコア依存、箱部屋 4 本目を D-6�
 ボリュメトリック、カリング P9、kagra-core と kagra-shared のレンダラ統合。
 
 次の手はロードマップの番号付きリスト。
-**頭脳の面は載った。残りは 2 法線と画素 → 3 PyPI → 4 D-6 → 5 楔 C ワンライナー → 6 Stage 1。**
+**頭脳の面は載った。法線と USB の API も載った。残りは画素 → 3 PyPI → 4 D-6 → 5 楔 C ワンライナー → 6 Stage 1。**

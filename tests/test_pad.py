@@ -60,3 +60,13 @@ def test_virtual_pad_stick_deadzone():
 def test_normalize_aliases():
     assert pad.normalize_button("CROSS") == "a"
     assert pad.normalize_button("nope") == ""
+
+
+def test_apply_hardware_fills_axes_until_inject():
+    pad._STATE.apply_hardware(0.4, -0.8, 0.1, 0.2, ["a", "start"])
+    assert pad.axis("left") == pytest.approx((0.4, -0.8))
+    assert pad.axis("right") == pytest.approx((0.1, 0.2))
+    assert pad.pad("a") and pad.pad("start")
+    pad.inject_pad(lx=1.0)
+    pad._STATE.apply_hardware(0.0, 0.0, 0.0, 0.0, [])
+    assert pad.axis("left")[0] == pytest.approx(1.0)
