@@ -106,7 +106,7 @@ KAGRA で、VRM が3レーンを左右に歩いて、奥から飛んでくるハ
 `examples/vrm_dodge_room.py`（ログ: `docs/agent-runs/20260823-dodge-room/`）。
 短い 3D は `Prop` + `Walk` + `sky()` / `room()` / `water()`（Garden / Pretty Room /
 Overworld。これは play-surface デモで、エージェント製ログではない）。
-島は `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` と `load_city` と `Walk(..., jump=)`。屋外の影は `set_shadow_cascades(2)`。箱の街 JSON と高さ場。Rapier / OSM は後回し。
+島は `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` と `load_city` と `Walk(..., jump=)`。屋外の影は `set_shadow_cascades(2)`。箱の街 JSON と高さ場。Rapier は 80% の世界。OSM は 80% の外。
 一人称は `Walk(..., first_person=True)`。ホバーは `hovered_prop(cam)`。
 パッドは `axis("left")` / `pad("a")`。テストは `inject_pad`。
 動かすのは `p.x` か `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)`。
@@ -115,4 +115,4 @@ Overworld。これは play-surface デモで、エージェント製ログでは
 子の `x,y,z,yaw` は親からのローカル。
 glTF 部品は `Prop("crate.glb")`（`stage()` は会場。同梱は `cube.glb`）。
 球 / 円柱の当たりとホバーは箱ではない。
-箱部屋の 4 本目を D-6 と呼ばない。D-6 は 30 秒以上 + スコアかゴール。頭脳は `kagra.brain("kairi")`（既定 kairi.onrender.com）。今の次は IBL 金属と屋外の這い。最終目標は第一想起。
+箱部屋の 4 本目を D-6 と呼ばない。D-6 は 30 秒以上 + スコアかゴール。頭脳は `kagra.brain("kairi")`（既定 kairi.onrender.com）。エンジン到達点は 80%（今約 33%）。今の次は室内スポット影の画素。最終目標は第一想起。
