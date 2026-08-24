@@ -22,12 +22,15 @@ are score. Title overlay sits on the opening vista.
 ## Verify (this session)
 
 ```bash
-python tools/gen_api_index.py --check
-pytest tests -m "not golden" -q
+python tools/gen_api_index.py --check   # OK (418 entries)
+pytest tests -m "not golden"            # 338 passed, 9 deselected
 ```
 
 GPU smoke (`python -m kagra.verify examples/verify_scenarios/open_world_smoke.json`)
-is recorded after the pytest pass.
+was **not run here**: this VM has no `kagra_core` (needs `maturin develop`).
+Headless smoke JSON is in the tree for CI / Emma's GPU box.
+
+PR: https://github.com/EMMA019/KAGRA/pull/73
 
 ## Notes
 
