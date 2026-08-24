@@ -30,5 +30,8 @@ Gameplay unchanged: 5 relics, 30s, `Walk.face`, third person.
 
 - `pytest tests -m "not golden"`: **pass** (this VM)
 - `python tools/gen_api_index.py --check`: OK (416 entries)
-- `python -m kagra.verify examples/verify_scenarios/relic_run_smoke.json`: **not run** — `kagra_core` GPU wheel is not installed on this VM
+- GitHub CI on `96443c4` (PR #72): **all 17 checks passed**, including
+  `python-unit` 3.10/3.11/3.12, `rust-test`, `kagra-shared`, maturin
+  builds, iOS/Android shells, and `golden`
+- `python -m kagra.verify examples/verify_scenarios/relic_run_smoke.json`: **not run** on this VM (`kagra_core` missing); golden job on CI is the GPU stand-in
 - README sample line `python examples/vrm_relic_run.py` stays
