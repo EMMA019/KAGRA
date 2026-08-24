@@ -5,5 +5,5 @@
 - 積み木: 動的 AABB + スリープ。Rapier ではない。
 - 影: `set_shadow_cascades(2)`。既定 1。この VM では GPU 未ビルド。
 - Demo: `examples/vrm_overworld.py`
-- Tests: `pytest tests -m "not golden"` — **264 passed**, 3 deselected
+- Tests: `pytest tests -m "not golden"` — **265 passed**, 3 deselected
 - Verify: `overworld_smoke.json`（この VM では GPU 未ビルド）
