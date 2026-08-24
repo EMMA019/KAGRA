@@ -135,3 +135,18 @@ def test_follow_lerps_toward_target():
     cam.follow(2.0, 0.0, -1.0, lerp=0.5, yaw=0.0)
     assert cam.position != before
     assert cam.position[0] != 2.0
+
+
+def test_follow_bounds_half_keeps_eye_inside_room():
+    """Switch Room spawn: default distance would put the eye past half=5.6."""
+    import math
+
+    m = _cam()
+    cam = m.Camera3D(960, 540)
+    cam.follow(
+        0.0, 0.0, 3.4,
+        distance=4.8, height=1.9, look_y=1.0, lerp=1.0, yaw=math.pi,
+        bounds_half=5.6,
+    )
+    assert abs(cam.position[2]) <= 5.6 - 0.14
+    assert cam.position[2] > 3.4
