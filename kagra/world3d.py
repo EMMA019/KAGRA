@@ -8,6 +8,7 @@ once the renderer exists — tests can skip that and still walk the room.
 """
 from __future__ import annotations
 
+import math
 from typing import Callable, Optional
 
 from kagra.gamekit import box_mesh, heightfield_mesh, heightfield_tile, quad_y_mesh
@@ -46,8 +47,11 @@ class World3D:
         self._water_y: Optional[float] = None
         self._tile: Optional[float] = None
         self._stream_radius: Optional[float] = None
+        self._lod_radius: Optional[float] = None
+        self._lod_cells: Optional[int] = None
         self._terrain_tex: int = 0
         self._tile_meshes: dict[tuple[int, int], int] = {}
+        self._tile_lod: dict[tuple[int, int], int] = {}
         self._loaded_tiles: set[tuple[int, int]] = set()
         self._filled_chunks: set[tuple[int, int]] = set()
         self._chunk_fill: Optional[Callable[[int, int], None]] = None
@@ -133,20 +137,40 @@ class World3D:
         cells: int | None = None,
         tile: float | None = 10.0,
         stream_radius: float | None = None,
+        lod_radius: float | None = None,
+        lod_cells: int | None = None,
     ) -> None:
         """地形 ``(x, z) → y``。平面の床より優先。
 
         ``tile`` で格子に切る（影の AABB が 24 を超えない）。``None`` で旧来の 1 枚。
         ``stream_radius`` を付けると ``update`` で近くだけ載せる。省略時は半辺全体。
+        ``lod_radius`` / ``lod_cells`` で遠いタイルを粗い格子にする（大きい野外）。
         """
         self._height_fn = fn
         self._tile = None if tile is None or float(tile) <= 0 else float(tile)
         self._stream_radius = None if stream_radius is None else float(stream_radius)
+        self._lod_radius = None if lod_radius is None else float(lod_radius)
+        self._lod_cells = None if lod_cells is None else max(2, int(lod_cells))
         if cells is None:
             self._height_cells = 8 if self._tile else 40
         else:
             self._height_cells = max(2, int(cells))
         self.physics.set_height_fn(fn)
+
+    def _cells_for(self, key: tuple[int, int], x: float, z: float) -> int:
+        """プレイヤーからの距離で LOD 格子を選ぶ。"""
+        if (
+            self._tile is None
+            or self._lod_radius is None
+            or self._lod_cells is None
+        ):
+            return self._height_cells
+        ox, oz = tile_origin(key[0], key[1], self._tile)
+        cx = ox + self._tile * 0.5
+        cz = oz + self._tile * 0.5
+        if math.hypot(cx - float(x), cz - float(z)) > self._lod_radius:
+            return int(self._lod_cells)
+        return self._height_cells
 
     def add_trimesh(self, verts, indices, *, is_static: bool = True) -> RigidBody3D:
         """静的な三角形当たり。描画は呼び出し側で ``upload_mesh_3d``。"""
@@ -253,6 +277,10 @@ class World3D:
             if key not in want:
                 self._unload_tile(key)
                 self._loaded_tiles.discard(key)
+                continue
+            if self._tile_lod.get(key) != self._cells_for(key, x, z):
+                self._unload_tile(key)
+                self._loaded_tiles.discard(key)
         for key in want:
             if key in self._loaded_tiles:
                 continue
@@ -262,7 +290,7 @@ class World3D:
                     self._chunk_fill(key[0], key[1])
                 self._place_city_chunk(key[0], key[1])
                 self._filled_chunks.add(key)
-            self._upload_tile(key)
+            self._upload_tile(key, viewer_x=x, viewer_z=z)
         return len(self._loaded_tiles)
 
     def _place_city_chunk(self, ix: int, iz: int) -> None:
@@ -285,6 +313,7 @@ class World3D:
             xf[2] = float(body.z)
 
     def _unload_tile(self, key: tuple[int, int]) -> None:
+        self._tile_lod.pop(key, None)
         mid = self._tile_meshes.pop(key, None)
         if not mid:
             return
@@ -298,19 +327,23 @@ class World3D:
         if self.terrain_mesh_id == mid:
             self.terrain_mesh_id = 0
 
-    def _upload_tile(self, key: tuple[int, int]) -> int:
+    def _upload_tile(
+        self, key: tuple[int, int], *, viewer_x: float = 0.0, viewer_z: float = 0.0,
+    ) -> int:
+        cells = self._cells_for(key, viewer_x, viewer_z)
+        self._tile_lod[key] = cells
         if self._height_fn is None or self._terrain_tex <= 0:
             return 0
         try:
             import kagra
             if self._tile is None:
                 verts, idx = heightfield_mesh(
-                    self._height_fn, self.half, self._height_cells,
+                    self._height_fn, self.half, cells,
                 )
             else:
                 ox, oz = tile_origin(key[0], key[1], self._tile)
                 verts, idx = heightfield_tile(
-                    self._height_fn, ox, oz, self._tile, self._height_cells,
+                    self._height_fn, ox, oz, self._tile, cells,
                     uv_half=self.half,
                 )
             mid = kagra.upload_mesh_3d(int(self._terrain_tex), verts, idx)

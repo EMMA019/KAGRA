@@ -157,6 +157,26 @@ def test_dynamic_box_xform_tracks_body():
     assert w.box_xforms[0][0] == pytest.approx(b.x)
 
 
+def test_lod_cells_far_tiles_are_coarser():
+    m = _world()
+    w = m.World3D(half=80.0)
+    w.set_height_fn(
+        lambda _x, _z: 0.0,
+        tile=16.0, stream_radius=64.0, cells=8,
+        lod_radius=20.0, lod_cells=3,
+    )
+    w.stream_tiles(0.0, 0.0)
+    assert w._tile_lod[(0, 0)] == 8
+    far = [k for k, cells in w._tile_lod.items() if cells == 3]
+    assert far
+    near = [k for k, cells in w._tile_lod.items() if cells == 8]
+    assert (0, 0) in near
+    w.stream_tiles(48.0, 0.0)
+    # origin is now far / unloaded
+    if (0, 0) in w._tile_lod:
+        assert w._tile_lod[(0, 0)] == 3
+
+
 def test_chunk_fill_once_per_tile():
     m = _world()
     w = m.World3D(half=24.0)

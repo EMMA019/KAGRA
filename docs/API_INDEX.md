@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **416**
+エントリ数: **418**
 
 棚の**手前**は VRM / 3D ワールド / エージェントゲーム。
 棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。
@@ -18,6 +18,7 @@
 | `billboard_mesh` | `billboard_mesh(x: float, y: float, z: float, size: float, camera=None, *, yaw: float \| None = None)` |
 | `box_mesh` | `box_mesh(cx: float, cy: float, cz: float, w: float, h: float, d: float)` |
 | `camera_world_to_screen` | `camera_world_to_screen(wx: float, wy: float, wz: float)` |
+| `can_pick` | `can_pick(px: float, pz: float, x: float, z: float, *, reach: float = 1.2) -> bool` |
 | `city_boxes` | `city_boxes(ix: int, iz: int, *, tile: float = 10.0, fn=None, water_y: float = 0.0)` |
 | `city_chunk` | `city_chunk(city, ix: int, iz: int, *, tile: float \| None = None)` |
 | `clicked_prop` | `clicked_prop(cam=None, *, button: int = 1, max_dist: float = 80.0)` |
@@ -50,6 +51,7 @@
 | `load_json` | `load_json(name: str, default=None, *, directory: str \| None = None)` |
 | `load_vrma` | `load_vrma(path: str, *, sample_fps: float = 30.0) -> 'VrmaMotion'` |
 | `mouse_delta` | `mouse_delta() -> tuple` |
+| `open_world_height` | `open_world_height(x: float, z: float) -> float` |
 | `overworld_height` | `overworld_height(x: float, z: float) -> float` |
 | `pressed` | `pressed(name: str) -> bool` |
 | `quad_y_mesh` | `quad_y_mesh(cx: float = 0.0, cy: float = 0.0, cz: float = 0.0, size: float = 0.5)` |
@@ -445,7 +447,7 @@
 - ワールド箱は視錐台カリングされる。箱の描画は `draw_mesh_instances`。直前フレームは `render_stats()`。
 - VRM プリミティブはパッド付きボーン AABB でカリング。`doubleSided` のときだけ両面。
 - 床と箱: `World3D`（または `Physics3D` + `box_mesh`）。カメラは `Camera3D.follow`。
-- 短い 3D: `Prop` + `Walk` + `sky()` / `room()` / `water()`。地形は `World3D.set_height_fn` + `island_height` / `overworld_height`。タイル化は `tile=` / `stream_radius=`。`Walk(..., jump=)`。
+- 短い 3D: `Prop` + `Walk` + `sky()` / `room()` / `water()`。地形は `World3D.set_height_fn` + `island_height` / `overworld_height` / `open_world_height`。タイル化は `tile=` / `stream_radius=`。遠いタイルは `lod_radius=` / `lod_cells=`。拾いは `can_pick`。`Walk(..., jump=)`。
 - 一人称: `Walk(..., first_person=True)`。目線は `eye_height`。ポインタロックは一人称のとき（OS が拒めばフォールバック）。`F` で切替えるデモは Prop Garden。
 - ホバー / クリック: `hovered_prop(cam)`。`clicked_prop(cam)` は押下。レイ直打ちは `kagra.play.hovered_prop(ox,oy,oz,dx,dy,dz)`。`plane` は除外。
 - 動く Prop: `p.x` / `set_position` / `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)` か `p.enabled = False`。持つのは `Walk.carry(prop)`。

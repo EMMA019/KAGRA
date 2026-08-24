@@ -387,6 +387,7 @@ def _unit_mesh(model: str):
 
 _solid_cache: dict[tuple[int, int, int], int] = {}
 _unit_cache: dict[tuple, int] = {}
+_gltf_flat_cache: dict[str, FlatMesh] = {}
 _sky_cache = None
 
 
@@ -615,7 +616,11 @@ class Prop:
         if is_gltf_name(raw):
             self.model = "gltf"
             self.gltf_path = resolve_gltf_path(raw)
-            flat = flatten_gltf(self.gltf_path)
+            key = str(self.gltf_path)
+            flat = _gltf_flat_cache.get(key)
+            if flat is None:
+                flat = flatten_gltf(self.gltf_path)
+                _gltf_flat_cache[key] = flat
             self._gltf_flat = flat
             minx, miny, minz, maxx, maxy, maxz = flat.aabb
             self._mesh_sx = max(maxx - minx, 1e-6)

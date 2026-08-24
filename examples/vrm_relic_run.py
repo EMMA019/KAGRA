@@ -89,15 +89,15 @@ def _bind_locomotion(avatar) -> None:
     A shipped VRMA next to the example is loaded with no silent except.
     """
     vrma = _ASSETS / "walk.vrma"
-        if vrma.is_file():
-            try:
-                avatar.load_motion("walk", str(vrma))
-            except Exception as exc:
-                raise RuntimeError(
-                    f"Relic Run walk.vrma failed to load: {vrma}"
-                ) from exc
-            print(f"[RelicRun] walk ← {vrma}")
-            return
+    if vrma.is_file():
+        try:
+            avatar.load_motion("walk", str(vrma))
+        except Exception as exc:
+            raise RuntimeError(
+                f"Relic Run walk.vrma failed to load: {vrma}"
+            ) from exc
+        print(f"[RelicRun] walk ← {vrma}")
+        return
     print("[RelicRun] walk ← built-in idle/walk (arm swing). Mixamo/BVH skipped.")
 
 
@@ -201,7 +201,8 @@ class RelicRun(kagra.Scene):
             )
 
         for name, tx, tz, scale, yaw in TREE_PLACEMENTS:
-            _place_gltf(name, tx, tz, scale, yaw, self.world, collision=name.startswith("tree"))
+            hit = name.startswith(("tree", "fence", "tent", "flag"))
+            _place_gltf(name, tx, tz, scale, yaw, self.world, collision=hit)
         for name, sx, sz, scale, yaw in ROCK_PLACEMENTS:
             _place_gltf(name, sx, sz, scale, yaw, self.world)
 

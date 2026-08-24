@@ -76,8 +76,12 @@ def test_water_and_land_constants():
     assert WATER_Y == 0.0
     assert LAND_MIN_Y < WATER_Y
     assert TREE_XZ and STONE_XZ
-    assert len(TREE_PLACEMENTS) >= 8
+    assert len(TREE_PLACEMENTS) >= 20
     assert len(ROCK_PLACEMENTS) >= 5
+    names = {n for n, *_ in TREE_PLACEMENTS}
+    assert "fence.glb" in names
+    assert "flag.glb" in names
+    assert "patch-grass.glb" in names
 
 
 def test_sit_y_puts_centered_mesh_on_ground():
@@ -109,7 +113,10 @@ def test_cc0_assets_are_vendored():
         "kenney/rock_largeA.glb",
         "kenney/rock_tallA.glb",
         "kenney/stone_smallTopA.glb",
-        "kenney/mushroom_red.glb",
+        "kenney/tent.glb",
+        "kenney/fence.glb",
+        "kenney/flag.glb",
+        "kenney/patch-grass.glb",
         "kenney/Textures/colormap.png",
         "polyhaven/aerial_grass_rock_diff_1k.jpg",
         "polyhaven/kloofendal_48d_partly_cloudy_puresky_1k.png",
