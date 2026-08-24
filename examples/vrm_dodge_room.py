@@ -114,7 +114,12 @@ class DodgeRoom(kagra.Scene):
         # Heart Catch と同じ：カメラは常に +Z 側。WASD はワールド固定
         # （W=-Z で画面奥、A=-X で左）。facing でカメラを回すと
         # 一歩目のあと上下左右が入れ替わって見える。
-        self.cam.follow(0.0, 0.0, 1.5, lerp=1.0, yaw=math.pi)
+        # 既定 distance=4.8 は ARENA_HALF=4.2 の外。短め + bounds_half。
+        self.cam.follow(
+            0.0, 0.0, 1.5, lerp=1.0, yaw=math.pi,
+            distance=3.0, height=2.0, look_y=1.0,
+            bounds_half=ARENA_HALF,
+        )
         kagra.set_camera3d(self.cam)
         self.mode = "play" if SMOKE else "title"
         self.facing = math.pi
@@ -234,7 +239,11 @@ class DodgeRoom(kagra.Scene):
         self.facing = facing_yaw(vx, vz, self.facing)
         self.avatar.set_position(p.x, p.y, p.z)
         self.avatar.set_yaw(self.facing)
-        self.cam.follow(p.x, p.y, p.z, yaw=math.pi, lerp=0.22)
+        self.cam.follow(
+            p.x, p.y, p.z, yaw=math.pi, lerp=0.22,
+            distance=3.0, height=2.0, look_y=1.0,
+            bounds_half=ARENA_HALF,
+        )
         eng = kagra.get_engine()
         if eng:
             self.cam.update(eng)
