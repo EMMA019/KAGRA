@@ -5,12 +5,12 @@ build-backend = "maturin"
 [project]
 name = "kagra"
 version = "0.1.4"
-description = "Python game engine with a Rust/wgpu core — VRM avatars that sing and dance"
+description = "Python game engine for giving an AI a body — VRM, 3D play, headless agent loop"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [{ name = "Emma Saka" }]
-keywords = ["game-engine", "vrm", "wgpu", "python"]
+keywords = ["game-engine", "vrm", "wgpu", "python", "ai-agent"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: MIT License",

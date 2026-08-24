@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- README / README.ja lead with the agent loop and short 3D play. Sing/dance
+  is the two-command smoke test, not the product. PyPI description matches.
+
 ## 0.1.4
 
 Playable 3D, picture pixels, and `kagra.brain` on the wheel. Windows / Linux,

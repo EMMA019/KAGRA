@@ -1,6 +1,8 @@
 # KAGRA
 
-Python 数行で、VRM が歌って踊る。
+A Python game engine for giving an AI a body.
+
+Cursor / Claude search the API, write a scene, and **verify it without looking at the screen**. The body is a VRM. It walks, carries, talks. Singing and dancing is the two-command smoke test — not the product.
 
 [日本語 README](README.ja.md)
 
@@ -9,49 +11,102 @@ https://github.com/user-attachments/assets/1a1af44d-d6cc-4ea4-a05d-6f8ad6c193c2
 ```bash
 pip install kagra
 python -m kagra
-python -m kagra --vrm me.vrm --song my.wav
 ```
 
-That's it. The first run downloads a sample VRM (Alicia Solid, once) and plays a synthesized song with lipsync and a bundled dance. ESC to quit. Your own model is the third line — [recipe](docs/recipes/own-vrm.md).
+`pip install kagra` is **0.1.4**. `python -m kagra` proves the GPU and the VRM (sample Alicia Solid, once). ESC to quit. Your own model: `python -m kagra --vrm me.vrm --song my.wav` — [recipe](docs/recipes/own-vrm.md).
 
 On Windows cmd, `'-m' is not recognized` means an extra `>` was typed. Use `py -3 -m kagra` or `kagra.cmd`.
 
-| | KAGRA | Unity + UniVRM | VSeeFace | three-vrm |
-|---|---|---|---|---|
-| Install | `pip install kagra` (~5MB wheel, no Rust) | Unity editor + UniVRM package | download the app | `npm` + a WebGL/WebGPU page |
-| Code to sing & dance | 2 commands, or ~15 lines of Python | scene + C# + Animator | GUI, no code | JavaScript + assets |
-| License | MIT | Unity + UniVRM licenses | proprietary app | MIT |
-| AI hook | Python. TTS stays outside the wheel. `kagra.brain` is in 0.1.4 (models are not) | editor plugins | limited | JavaScript |
+## Let an agent build the game
 
-Facts only. UniVRM and three-vrm are the VRM implementations we measure against; VSeeFace is the desktop tracker people actually open.
+This loop is the point. An agent (or a human) searches signatures, writes a scene, and closes it headlessly:
+
+1. **[AGENTS.md](AGENTS.md)** — rules for Claude Code, Cursor, Windsurf, … Cursor loads the same rules from `.cursor/skills/`
+2. **API index** — [`docs/API_INDEX.md`](docs/API_INDEX.md) is generated from the AST. Search; do not invent names
+3. **Headless verify** — `python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json`
+4. **MCP** — `tools/mcp_kagra/server.py`: `kagra_api_search` / `kagra_env` / `kagra_resolve_asset` / `kagra_verify` / `kagra_render`
+
+Paste this:
+
+```
+Using KAGRA, make a short 3D game where a VRM walks a room of boxes
+and steps on a floor switch. Camera follows. Public APIs only.
+Verify with python -m kagra.verify.
+```
+
+Logged results live in [`docs/agent-runs/`](docs/agent-runs/README.md): Heart Catch, Switch Room, Dodge Room. Dodge Room was written by a **second** agent from `AGENTS.md` + one line. `examples/vrm_orb_rush.py` is the reference game (public APIs only; no generation log). Do not call a fourth box room D-6 — that waits on a 30-second playable demo with a score or a goal.
+
+Recipe: [docs/recipes/agent-game.md](docs/recipes/agent-game.md).
+
+## Write a short 3D game
+
+`Prop` / `Walk` / `room` / `World3D`. WASD (or the left stick) to walk. Clone the repo for the full scripts; `pip` is enough for `import kagra`.
 
 ```python
 import kagra
 from kagra.camera3d import Camera3D
 
+class Game(kagra.Scene):
+    def on_enter(self):
+        self.world = kagra.World3D(half=6.0)
+        self.world.add_player(0, 3)
+        kagra.room(world=self.world)
+        kagra.Prop("box", x=2, y=0.5, z=0, color="orange", world=self.world)
+        kagra.Prop.bake_all()
+        self.cam = Camera3D()
+        kagra.set_camera3d(self.cam)
+        self.walk = kagra.Walk(self.world, self.cam)
+        self.av = kagra.avatar(str(kagra.ensure_vrm()))
+
+    def update(self, dt):
+        self.walk.update(dt)
+        p = self.world.player
+        self.av.set_position(p.x, p.y, p.z)
+        self.av.set_yaw(self.walk.yaw)
+        self.av.update(dt)
+
+    def draw(self):
+        kagra.cls(12, 10, 18)
+        self.world.draw()
+        kagra.Prop.draw_all()
+        kagra.draw_vrm(self.av.vrm_id)
+
 kagra.init()
-cam = Camera3D(); cam.use_showcase()
-av = None
-
-def ready():
-    global av
-    kagra.apply_live_look()
-    av = kagra.avatar(str(kagra.ensure_vrm()))
-    av.dance(); av.sing()
-
-def update(dt):
-    av.update(dt)
-    cam.update(kagra.get_engine(), dt)
-
-def draw():
-    kagra.cls(8, 6, 18)
-    kagra.draw_vrm(av.vrm_id)
-    kagra.draw_vignette()
-
-kagra.run(update, draw, on_ready=ready)
+kagra.run(start_scene=Game())
 ```
 
-Use your own model with `kagra.avatar("/path/to/me.vrm")` or `assets/Emma.vrm`. Use your own song with `av.sing("song.wav")`. Drop Mixamo `.fbx` on `av.dance("ymca.fbx")` or `python -m kagra --dance ymca.fbx`. A [VRM Animation](https://vrm.dev/en/vrma/) (`.vrma`) is the same one-liner — same clip, any VRM. Clips from [text-to-vrma](https://github.com/Kirakun0328/text-to-vrma) work as-is (fingers + expressions + LookAt). Drop a Sketchfab hall the same way: `kagra.stage("venue.glb")` (or `--stage` / a PNG `--backdrop`).
+## Give it a brain
+
+Models stay out of the wheel. HTTP is in 0.1.4.
+
+```python
+mind = kagra.brain("kairi")          # https://kairi.onrender.com — needs KAIRI_API_TOKEN
+# mind = kagra.brain("ollama")
+reply = mind.ask("こんにちは。一文で自己紹介して。")
+```
+
+Demo: `python examples/vrm_kairi_chat.py`. Recipe: [docs/recipes/ai-brain.md](docs/recipes/ai-brain.md).
+
+## The body still sings
+
+The two-command demo is a VRM that sings and dances (lipsync, SpringBone, Mixamo `.fbx`, [`.vrma`](https://vrm.dev/en/vrma/)). That is how you know the install worked — not what the engine is for.
+
+```python
+av = kagra.avatar(str(kagra.ensure_vrm()))
+av.dance(); av.sing()
+```
+
+Own clip: `av.dance("ymca.fbx")` or `av.dance("wave.vrma")`. Venue: `kagra.stage("venue.glb")`. Recipes: [own VRM](docs/recipes/own-vrm.md) · [motion](docs/recipes/motion.md).
+
+| | KAGRA | Ursina | Unity + UniVRM | three-vrm |
+|---|---|---|---|---|
+| Install | `pip install kagra` (Windows / Linux wheel, no Rust) | `pip` + Panda3D | Unity editor + package | `npm` + a WebGL/WebGPU page |
+| Body | VRM in the wheel | generic models | UniVRM | JavaScript + assets |
+| Short 3D | `Prop` / `Walk` / `room` | `Entity` | scene + C# | JavaScript |
+| Agent loop | API index + `kagra.verify` + MCP | none | none | none |
+| License | MIT | MIT | Unity + UniVRM licenses | MIT |
+
+Facts only. Ursina is the writing we measure 3D play against; UniVRM and three-vrm are the VRM implementations; we do not fight Unity’s editor.
 
 ## Install
 
@@ -67,9 +122,9 @@ pip install kagra
 python -m kagra
 ```
 
-`pip install kagra` is **0.1.4** and is the product: renderer, VRM, sing, dance, `.vrma`, lipsync, look-at, IK, expressions, SpringBone, plus the 3D play surface (`Prop` / `Walk` / `World3D`), local lights, indoor/outdoor shadows, normal maps, AABB crates, USB/XInput on the EventLoop, and `kagra.brain`. No Rust. Face tracking, virtual camera, and mic are extras. LLM models are not in the wheel.
+That wheel is the product: VRM, 3D play (`Prop` / `Walk` / `World3D`), local lights, indoor/outdoor shadows, normal maps, AABB crates, USB/XInput on the EventLoop, `kagra.brain`, and the agent loop. Face tracking, virtual camera, and mic are extras. LLM models are not in the wheel.
 
-If you run `python -m kagra` from a checkout that contains a `kagra/` folder, Python imports that folder instead of the installed wheel. The command now prints the escape hatch (`cd %TEMP%` / `maturin develop`). `No module named kagra.__main__` is the older local package — run from another directory:
+If you run `python -m kagra` from a checkout that contains a `kagra/` folder, Python imports that folder instead of the installed wheel. Escape hatch: `cd %TEMP%` / `maturin develop`. `No module named kagra.__main__` is the older local package — run from another directory:
 
 ```powershell
 cd $env:TEMP
@@ -83,32 +138,19 @@ python -m kagra
 | Webcam face tracking | `pip install "kagra[facetrack]"` (MediaPipe + OpenCV) |
 | Virtual camera (OBS) | `pip install "kagra[stream]"` then `python -m kagra --loop --stream` |
 | Mic lipsync | `pip install "kagra[mic]"` |
-| Contributors | `pip install maturin && maturin develop` |
-
-Scene scripts (`examples/vrm_*.py`) live in the git repo. `pip` gives you `import kagra`.
+| Contributors / agents | `pip install maturin && maturin develop` |
 
 ## What you get
 
-- **VRM** — GPU skinning, SpringBone, MToon, look-at, lipsync, IK, expressions
-- **3D play** — `Prop` / `Walk` / `sky` / `room` / `World3D`. Four local lights (`slot=0..3`), indoor umbra, 2-cascade outdoor shadows, tangent-space normal maps. AABB crates fall, stack, and `Walk` stands on them. USB/XInput is read on the EventLoop (`gilrs`); tests use `inject_pad`
+- **Agent loop** — API index, `kagra.verify`, MCP, golden renders, logged runs
+- **3D play** — `Prop` / `Walk` / `sky` / `room` / `World3D`. Four local lights (`slot=0..3`), indoor umbra, 2-cascade outdoor shadows, tangent-space normals. AABB crates fall, stack, and `Walk` stands on them. USB/XInput on the EventLoop (`gilrs`); tests use `inject_pad`
+- **VRM body** — GPU skinning, SpringBone, MToon, look-at, lipsync, IK, expressions
 - **Brain** — `kagra.brain("kairi"|"ollama"|"openai")`. Hosted kairi needs `KAIRI_API_TOKEN`. Models are not in the wheel
-- **Agent loop** — API index, `kagra.verify`, MCP tools, golden renders
 - **Mobile / Wasm** — `kagra-shared` + `mobile/` is a **separate driving demo** (roads, truck, OSM). It is not the Python VRM / game stack. Do not merge the two renderers
 
-Tilemaps, ECS, and the 2D editor are on the shelf ([`examples/archive/`](examples/archive/)). They are not the 3D headline.
+Tilemaps, ECS, and the 2D editor are on the shelf ([`examples/archive/`](examples/archive/)). They are not the headline.
 
-Where the engine sits, and what is still open (30-second demos): [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md). Do not call this three.js-class yet.
-
-## Let your AI agent build the game
-
-KAGRA's development loop is designed for AI coding agents, not just humans. An agent can search the API, write a scene, and **verify it headlessly** — no human looking at the screen:
-
-- **[AGENTS.md](AGENTS.md)** — rules for any agent (Claude Code, Cursor, Windsurf, ...). Cursor picks up the same rules via `.cursor/skills/`
-- **API index** — [`docs/API_INDEX.md`](docs/API_INDEX.md) is generated from the AST, so agents search instead of guessing signatures
-- **Headless verify** — `python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json` closes the loop in CI or a subprocess
-- **MCP server** — `tools/mcp_kagra/server.py`: `kagra_api_search` / `kagra_env` / `kagra_resolve_asset` / `kagra_verify` / `kagra_render`
-
-`examples/vrm_orb_rush.py` is the reference game (public APIs only; no generation log). Logged agent-built games live in [`docs/agent-runs/`](docs/agent-runs/README.md): Heart Catch, Switch Room, and Dodge Room (`examples/vrm_dodge_room.py` — survive falling boxes). Dodge Room was written by a second agent from `AGENTS.md` + a one-line prompt.
+Where the engine sits (30-second demos still open): [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md). Do not call this three.js-class yet. First-recall stays “if you give an AI a body in Python, it’s KAGRA”.
 
 ## Not yet
 
@@ -122,9 +164,9 @@ Honesty list. Missing on purpose, or not the bar yet:
 - **Autopilot / unattended safety** — not shipped
 - **VOICEVOX / Irodori-TTS** — not bundled. VOICEVOX recipe: [docs/recipes/voicevox.md](docs/recipes/voicevox.md)
 - **Pointer lock** — requested for first-person; the OS may refuse
-- Song WAV and `.vrma` stay out of the wheel (~5MB install). First run downloads the sample VRM
+- Song WAV and `.vrma` stay out of the wheel. First run downloads the sample VRM
 
-Recipes: [own VRM](docs/recipes/own-vrm.md) · [dance / VRMA](docs/recipes/motion.md) · [VOICEVOX](docs/recipes/voicevox.md) · [OBS / stream](docs/recipes/stream.md) · [mascot](docs/recipes/mascot.md) · [brain / kairi](docs/recipes/ai-brain.md) · [agent game](docs/recipes/agent-game.md). Review: [docs/REVIEW.ja.md](docs/REVIEW.ja.md). Roadmap: [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md) (final goal: first-recall — “if you give an AI a body in Python, it’s KAGRA”).
+Recipes: [agent game](docs/recipes/agent-game.md) · [brain / kairi](docs/recipes/ai-brain.md) · [own VRM](docs/recipes/own-vrm.md) · [dance / VRMA](docs/recipes/motion.md) · [VOICEVOX](docs/recipes/voicevox.md) · [OBS / stream](docs/recipes/stream.md) · [mascot](docs/recipes/mascot.md). Review: [docs/REVIEW.ja.md](docs/REVIEW.ja.md). Roadmap: [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md).
 
 See [docs/PUBLISHING.md](docs/PUBLISHING.md) to cut a release.
 
@@ -134,30 +176,29 @@ These names are what the README and `python -m kagra` rely on. We will not break
 
 `init` · `run` · `quit` · `Scene` · `avatar` · `ensure_vrm` · `draw_vrm` · `cls` · `font` · `text` · `fill` · `key` · `pressed` · `Camera3D`
 
-Everything else in [`docs/API_INDEX.md`](docs/API_INDEX.md) is available but may still move.
+Everything else in [`docs/API_INDEX.md`](docs/API_INDEX.md) is available but may still move. Agents should prefer Front names there (`Prop`, `Walk`, `World3D`, `brain`).
 
 ## Samples
 
 Clone the repo for these scripts. `pip install kagra` is enough for `import kagra`.
 
 ```bash
-python -m kagra                          # sing & dance
-python -m kagra --loop --stream          # HUD + virtual cam (needs kagra[stream])
+python -m kagra.verify examples/verify_scenarios/blank_smoke.json
 python examples/vrm_orb_rush.py          # reference game
 python examples/vrm_heart_catch.py       # 3-lane catch (agent-run log)
-python examples/vrm_switch_room.py       # boxed room, camera follow
+python examples/vrm_switch_room.py       # boxed room, camera follow (agent-run log)
 python examples/vrm_dodge_room.py        # falling boxes, survive (agent-run log)
-python examples/vrm_prop_garden.py       # Prop / Walk / sky (play surface)
+python examples/vrm_prop_garden.py       # Prop / Walk / sky
 python examples/vrm_pretty_room.py       # enclosed room / spot / IBL
-python examples/vrm_overworld.py         # tiled island — city JSON, mesh ramp, crates
-python examples/vrm_kairi_chat.py        # VRM talks via kairi.onrender.com (needs KAIRI_API_TOKEN)
-python examples/vrm_vrma.py              # .vrma (or a generated wave)
-python examples/vrm_stream.py            # OBS / JSONL chat
+python examples/vrm_overworld.py         # tiled island
+python examples/vrm_kairi_chat.py        # brain via kairi.onrender.com (KAIRI_API_TOKEN)
+python -m kagra                          # sing & dance smoke
+python -m kagra --loop --stream          # HUD + virtual cam (needs kagra[stream])
 ```
 
 Legacy 2D / tilemap / editor demos: [`examples/archive/`](examples/archive/).
 
-## Agent / from source
+## From source
 
 ```bash
 git clone https://github.com/EMMA019/KAGRA.git
