@@ -212,7 +212,7 @@ pub unsafe extern "C" fn kagra_shared_set_drive(
     }
 }
 
-/// シーンを切り替える。0 = 運転（3D）、1 = タッチデモ（2D）。
+/// シーンを切り替える。0 = 運転（3D）、1 = タッチデモ（2D）、2 = Crest Isle。
 ///
 /// # Safety
 /// `ptr` は生存中のハンドルか NULL。
@@ -221,11 +221,50 @@ pub unsafe extern "C" fn kagra_shared_set_scene(ptr: *mut SharedSession, kind: c
     let kind = match kind {
         0 => crate::session::SceneKind::Driving,
         1 => crate::session::SceneKind::Demo2D,
+        2 => crate::session::SceneKind::Collectathon,
         _ => return -1,
     };
     match session(ptr) {
         Some(s) => {
             s.set_scene_kind(kind);
+            if kind == crate::session::SceneKind::Collectathon {
+                s.boot_collectathon();
+            }
+            0
+        }
+        None => -1,
+    }
+}
+
+/// Crest Isle の歩き。`lx`/`lz` は -1..1。`jump` は 0/1。
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_set_walk(
+    ptr: *mut SharedSession,
+    lx: c_float,
+    lz: c_float,
+    jump: c_int,
+) -> c_int {
+    match session(ptr) {
+        Some(s) => {
+            s.set_walk(lx, lz, jump != 0);
+            0
+        }
+        None => -1,
+    }
+}
+
+/// Crest Isle のジャンプ。`held` は 0/1。
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_set_jump(ptr: *mut SharedSession, held: c_int) -> c_int {
+    match session(ptr) {
+        Some(s) => {
+            s.set_jump(held != 0);
             0
         }
         None => -1,

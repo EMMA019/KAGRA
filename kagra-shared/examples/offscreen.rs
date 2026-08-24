@@ -7,6 +7,7 @@
 //! cargo run -p kagra-shared --features render --example offscreen -- 960 540 out.png
 //! # 2D のタッチデモを見る
 //! cargo run -p kagra-shared --features render --example offscreen -- 640 360 demo.png 2d
+//! cargo run -p kagra-shared --features render --example offscreen -- 960 540 isle.png isle
 //! ```
 
 use std::fs::File;
@@ -26,12 +27,30 @@ fn main() -> Result<(), String> {
         args.next()
             .unwrap_or_else(|| "scratch/shared_offscreen.png".to_string()),
     );
-    let two_d = args.next().is_some_and(|s| s == "2d");
+    let mode = args.next().unwrap_or_default();
+    let two_d = mode == "2d";
+    let isle = mode == "isle";
 
     let mut session = SharedSession::default();
     session.create_surface(width, height);
 
-    if two_d {
+    if isle {
+        session.boot_collectathon();
+        session.start_game();
+        session.set_walk(0.15, 0.85, false);
+        for _ in 0..90 {
+            session.request_frame();
+        }
+        let stats = session.request_frame();
+        println!(
+            "crest isle at ({:.1},{:.1},{:.1}) stars={} coins={}",
+            session.isle.walker.x,
+            session.isle.walker.y,
+            session.isle.walker.z,
+            stats.stars,
+            stats.coins
+        );
+    } else if two_d {
         session.set_scene_kind(SceneKind::Demo2D);
         // パッドで右下へ動かし、途中でタップして波紋を出す。
         session.set_pad(0.8, 0.5);

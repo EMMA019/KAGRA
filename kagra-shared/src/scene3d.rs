@@ -484,6 +484,96 @@ pub mod primitives {
         }
         mesh
     }
+
+    /// 底が xz の円、頂点が +Y の円錐。高さ `height`、底半径 `radius`。原点は底面中心。
+    pub fn cone_mesh(radius: f32, height: f32, segments: u32) -> MeshData {
+        let segments = segments.max(6);
+        let mut mesh = MeshData::default();
+        let apex = Vec3::new(0.0, height, 0.0);
+        let nrm_up = Vec3::Y;
+        // 底面（下向き）
+        let base_center = mesh.vertices.len() as u32;
+        mesh.vertices.push(Vertex3::new(Vec3::ZERO, Vec3::NEG_Y));
+        for i in 0..segments {
+            let a = i as f32 / segments as f32 * std::f32::consts::TAU;
+            let (s, c) = a.sin_cos();
+            mesh.vertices
+                .push(Vertex3::new(Vec3::new(c * radius, 0.0, s * radius), Vec3::NEG_Y));
+        }
+        for i in 0..segments {
+            let a = base_center + 1 + i;
+            let b = base_center + 1 + (i + 1) % segments;
+            mesh.indices.extend_from_slice(&[base_center, b, a]);
+        }
+        // 側面
+        for i in 0..segments {
+            let a0 = i as f32 / segments as f32 * std::f32::consts::TAU;
+            let a1 = (i + 1) as f32 / segments as f32 * std::f32::consts::TAU;
+            let (s0, c0) = a0.sin_cos();
+            let (s1, c1) = a1.sin_cos();
+            let p0 = Vec3::new(c0 * radius, 0.0, s0 * radius);
+            let p1 = Vec3::new(c1 * radius, 0.0, s1 * radius);
+            let n = (p0 + p1 + apex).normalize_or(nrm_up);
+            let base = mesh.vertices.len() as u32;
+            mesh.vertices.push(Vertex3::new(p0, n));
+            mesh.vertices.push(Vertex3::new(p1, n));
+            mesh.vertices.push(Vertex3::new(apex, n));
+            mesh.indices.extend_from_slice(&[base, base + 1, base + 2]);
+        }
+        mesh
+    }
+
+    /// Y 軸の円柱。原点は底面中心、高さ `height`、半径 `radius`。
+    pub fn cylinder_mesh(radius: f32, height: f32, segments: u32) -> MeshData {
+        let segments = segments.max(6);
+        let mut mesh = MeshData::default();
+        // 側面
+        for i in 0..segments {
+            let a0 = i as f32 / segments as f32 * std::f32::consts::TAU;
+            let a1 = (i + 1) as f32 / segments as f32 * std::f32::consts::TAU;
+            let (s0, c0) = a0.sin_cos();
+            let (s1, c1) = a1.sin_cos();
+            let b0 = Vec3::new(c0 * radius, 0.0, s0 * radius);
+            let b1 = Vec3::new(c1 * radius, 0.0, s1 * radius);
+            let t0 = Vec3::new(c0 * radius, height, s0 * radius);
+            let t1 = Vec3::new(c1 * radius, height, s1 * radius);
+            let n = Vec3::new(c0 + c1, 0.0, s0 + s1).normalize_or(Vec3::X);
+            let base = mesh.vertices.len() as u32;
+            mesh.vertices.push(Vertex3::new(b0, n));
+            mesh.vertices.push(Vertex3::new(b1, n));
+            mesh.vertices.push(Vertex3::new(t1, n));
+            mesh.vertices.push(Vertex3::new(t0, n));
+            mesh.indices
+                .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        }
+        // 上面・底面
+        let top_c = mesh.vertices.len() as u32;
+        mesh.vertices.push(Vertex3::new(Vec3::new(0.0, height, 0.0), Vec3::Y));
+        let bot_c = mesh.vertices.len() as u32;
+        mesh.vertices.push(Vertex3::new(Vec3::ZERO, Vec3::NEG_Y));
+        for i in 0..segments {
+            let a = i as f32 / segments as f32 * std::f32::consts::TAU;
+            let (s, c) = a.sin_cos();
+            mesh.vertices.push(Vertex3::new(
+                Vec3::new(c * radius, height, s * radius),
+                Vec3::Y,
+            ));
+            mesh.vertices.push(Vertex3::new(
+                Vec3::new(c * radius, 0.0, s * radius),
+                Vec3::NEG_Y,
+            ));
+        }
+        for i in 0..segments {
+            let t0 = top_c + 2 + i * 2;
+            let t1 = top_c + 2 + ((i + 1) % segments) * 2;
+            let b0 = top_c + 3 + i * 2;
+            let b1 = top_c + 3 + ((i + 1) % segments) * 2;
+            let _ = bot_c;
+            mesh.indices.extend_from_slice(&[top_c, t0, t1]);
+            mesh.indices.extend_from_slice(&[bot_c, b1, b0]);
+        }
+        mesh
+    }
 }
 
 #[cfg(test)]

@@ -78,6 +78,18 @@ public final class KagraSession {
     public enum Scene: UInt32 {
         case driving = 0
         case demo2D = 1
+        case collectathon = 2
+    }
+
+    /// Crest Isle の歩き。`lx`/`lz` は -1..1。
+    public func setWalk(lx: Float, lz: Float, jump: Bool) {
+        guard let ptr else { return }
+        _ = kagra_shared_set_walk(ptr, lx, lz, jump ? 1 : 0)
+    }
+
+    public func setJump(_ held: Bool) {
+        guard let ptr else { return }
+        _ = kagra_shared_set_jump(ptr, held ? 1 : 0)
     }
 
     @discardableResult

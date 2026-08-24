@@ -33,6 +33,9 @@ final class KagraShellTests: XCTestCase {
         s.setDrive(steer: 0.5, throttle: 1.0, brake: 0.0)
         XCTAssertTrue(s.setScene(.driving))
         XCTAssertTrue(s.setScene(.demo2D))
+        XCTAssertTrue(s.setScene(.collectathon))
+        s.setWalk(lx: 0, lz: 1, jump: false)
+        s.setJump(true)
         for _ in 0..<10 { s.requestFrame() }
         XCTAssertTrue(s.statsJSON().contains("frame"))
     }

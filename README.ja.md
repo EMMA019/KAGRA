@@ -93,7 +93,7 @@ python -m kagra
 - **3D の遊び場** — `Prop` / `Walk` / `sky` / `room` / `World3D`。局所ライト 4 本（`slot=0..3`）、室内ウンブラ、屋外 2 段シャドウ、接空間法線。AABB の箱は落ちる・積む・`Walk` が乗る。USB/XInput は EventLoop が `gilrs` で読む（テストは `inject_pad`）
 - **頭脳** — `kagra.brain("kairi"|"ollama"|"openai")`。ホスト kairi は `KAIRI_API_TOKEN`。モデルは wheel に入れない
 - **エージェントループ** — API 索引、`kagra.verify`、MCP、golden
-- **Mobile / Wasm** — `kagra-shared` と `mobile/` は**別製品の運転デモ**（道路・トラック・OSM）。Python の VRM / ゲームスタックではない。レンダラは統合しない
+- **Mobile / Wasm** — `kagra-shared` と `mobile/` は **Python `kagra-core` とは別レンダラ**。運転デモ（Corridor Haul）に加え、Crest Isle の収集スライス（Kenney 風カプセル。**VRM ではない**）を Android debug APK / wasm で遊べる。レンダラは統合しない
 
 タイルマップ・ECS・2D エディタは棚（[`examples/archive/`](examples/archive/)）。3D の見出しではない。
 
@@ -149,7 +149,11 @@ python examples/vrm_heart_catch.py       # 3 レーンキャッチ（エージ�
 python examples/vrm_switch_room.py       # 箱部屋、カメラ追従
 python examples/vrm_dodge_room.py        # 降ってくる箱を避ける（エージェントログあり）
 python examples/vrm_relic_run.py          # 島の遺跡集め 30 秒（エージェントログあり）
-python examples/vrm_open_world.py         # Crest Isle — 広い草原・海・山の収集
+python examples/vrm_open_world.py         # Crest Isle — 広い草原・海・山の収集（デスクトップ VRM）
+# Crest Isle モバイル（kagra-shared。VRM ではない。Kenney 風カプセル）
+./scripts/build_wasm.sh && python -m http.server -d kagra-shared/www 8000
+# → http://localhost:8000/crest.html
+./scripts/build_android_native.sh && cd mobile/android && gradle :app:assembleDebug
 python examples/vrm_prop_garden.py       # Prop / Walk / sky
 python examples/vrm_pretty_room.py       # 閉じた部屋 / スポット / IBL
 python examples/vrm_overworld.py         # 島 — 街 JSON、メッシュ坂、箱

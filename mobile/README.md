@@ -2,7 +2,8 @@
 
 共有コアは **`kagra-shared`**（C ABI + wasm-bindgen）。Python `kagra-core` とは別クレート。
 wgpu の 3D + 2D レンダラを内蔵しているので、Android / iOS / Web で**同じコードが同じ絵を描く**。
-既定のシーンは運転デモで、トラックで道を走る。
+既定のシーンは **Crest Isle**（草原・海・山の収集。Kenney 風カプセル。**VRM ではない**）。
+運転デモ（Corridor Haul）は `set_scene(0)` / `kagra-shared/www/index.html` に残してある。
 
 ## 構成
 
@@ -53,8 +54,10 @@ python -m http.server -d kagra-shared/www 8000
 # → http://localhost:8000
 ```
 
-WebGPU が無いブラウザでも WebGL2 バックエンドで動く。矢印 / WASD、または画面下の
-パッド（左＝ハンドル、右＝アクセルとブレーキ）で運転できる。
+WebGPU が無いブラウザでも WebGL2 バックエンドで動く。
+
+- Crest Isle: `http://localhost:8000/crest.html` — 左スティックで歩き、右でジャンプ
+- Corridor Haul: `http://localhost:8000` — 矢印 / WASD、または画面下のパッド
 
 `wasm-pack` は使わない。0.13 系は cargo へ `--out-dir` を渡すが、cargo 側が
 これを `--artifact-dir` に改名して nightly 限定にしたため、stable では通らない。
@@ -110,7 +113,8 @@ create_surface(w,h)
 set_asset_root(path)
 push_pointer / set_pad
 set_drive(steer, throttle, brake)   # steer は -1..1、他は 0..1
-set_scene(kind)                     # 0 = 運転(3D)、1 = タッチデモ(2D)
+set_walk(lx, lz, jump)              # Crest Isle。lx/lz は -1..1
+set_scene(kind)                     # 0 = 運転(3D)、1 = タッチデモ(2D)、2 = Crest Isle
 request_frame → stats_json
 save_json / load_json               # セーブ（ファイル I/O はシェル）
 set_settings(vol, steer_sens, muted)
@@ -163,6 +167,17 @@ has_renderer / detach_surface
 - ミッションは配送 1 本（pickup → dropoff）。`stats_json` の `mission` / `mission_progress`。
 - 建物はチャンク index から決定的に路肩へ置く回廊型 OW。都市グラフは持たない。
 - ポーズ中のタップは Resume / Restart / Mute。フォント無しの矩形 UI。
+
+## デモゲーム: Crest Isle（モバイル収集）
+
+- Python の `examples/vrm_open_world.py` と**同じ幻想**（草原・海・山、紋章 6/8、コイン、ジャンプ）。
+- **VRM ではない。** プレイヤーは Kenney 風のカプセル。Kenney GLB は pip ホイールに入れない。
+- Web: [`kagra-shared/www/crest.html`](../kagra-shared/www/crest.html)。`./scripts/build_wasm.sh` のあと
+  `python -m http.server -d kagra-shared/www 8000` → `http://localhost:8000/crest.html`。
+- Android: `./scripts/build_android_native.sh` のあと `cd mobile/android && gradle :app:assembleDebug`。
+  起動は Crest Isle。左＝歩き、右下＝ジャンプ。
+- iOS: `setScene(.collectathon)`。実機描画は `libkagra_shared.a`（`--features render`）をリンク。
+- `set_scene(2)` / `set_walk` / `stats_json` の `stars` / `coins` / `star_need`。
 
 ## デモゲーム: Corridor Haul
 
