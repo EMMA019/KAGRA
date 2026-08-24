@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fix kagra-core compile after 2-cascade shadows: `cascade_center_half`
+  returns `[(focus, near), far]`; create shadow-array layer views before
+  moving the texture.
 - City JSON, mesh hit, stacking, 2-cascade shadows: `load_city` / `city_chunk`
   (not OSM), `Physics3D.add_trimesh` / `Prop(..., mesh_hit=True)`,
   `add_box(..., is_static=False)` with solver iters + sleep (not Rapier),
