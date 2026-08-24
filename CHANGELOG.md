@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Indoor spot (`indoor_spot`) and tangent normals (`normal_bump`) pairwise
+  goldens passed Windows CI (#61). Local-four pairwise passed (#62).
+  Picture ~50%, engine ~45%. Crawl pixels still open.
 - Local lights are **4 slots**: `set_point_light(..., slot=0..3)` /
   `set_spot_light(..., slot=)`. Slot 0 is the key (spot may own the 2048
   map). 1..3 are fill, no shadow. Pairwise `local_four`. Pretty Room adds
