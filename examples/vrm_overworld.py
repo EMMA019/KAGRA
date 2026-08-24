@@ -137,7 +137,7 @@ class Overworld(kagra.Scene):
         if p is None:
             return
         self.avatar.set_position(p.x, p.y, p.z)
-        self.avatar.set_yaw(self.walk.yaw)
+        self.avatar.set_yaw(self.walk.face)
 
     def draw(self):
         kagra.cls(110, 170, 210)
