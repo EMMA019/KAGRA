@@ -288,6 +288,7 @@ def render_markdown(items: list[tuple[str, str, str]]) -> str:
         "- Prop 親子は 1 段（`set_parent` / `parent=`）。孫は不可。子の `x,y,z,yaw` はローカル。",
         "- glTF 部品: `Prop(\"crate.glb\")`。`stage()` / `load_gltf` は会場。同梱エイリアス `cube.glb`。当たりは AABB。",
         "- ゲームパッド: `axis(\"left\")` / `pad(\"a\")` / `inject_pad`。`Walk` は左スティック移動・右スティック視点。実機ポーリングは未接続。",
+        "- 影は床・箱・Prop も落とす（VRM AABB だけに合わせない）。空メッシュは除外。カスケードはまだ。",
         "- 色付きメッシュ: `solid_tex` + `sphere_mesh` / `cylinder_mesh` / `box_mesh`。",
         "- `kagra-shared` / `mobile/` は別の運転デモ。この Python スタックと混ぜない。",
         "- Rust バインディングの整合は `tests/test_api_bindings.py` も参照。",

@@ -1,6 +1,6 @@
 # KAGRA ロードマップ — 体と、その体が歩ける部屋
 
-最終更新: 2026-08-23（0.1.3 は PyPI 済み。描画 P0–P4 と `Prop` / `Walk` / `sky` は未リリース。
+最終更新: 2026-08-23（0.1.3 は PyPI 済み。描画 P0–P5 と `Prop` / `Walk` / `sky` は未リリース。
 能力の棚卸しは [REVIEW.ja.md](REVIEW.ja.md)。次は Stage 1 の楔と、D が詰まないための能力トラック）
 
 ## 北極星
@@ -86,7 +86,8 @@ three.js / Ursina が当たり前にやっていることを、楔が詰む順�
 - [x] P3: マテリアルソート / `doubleSided` のときだけ両面
 - [x] P4: 影 2048 + VRM AABB に合わせた ortho + 9-tap PCF。
       半球アンビエント `set_ambient`（HDRI キューブはまだ無い）
-- [ ] P5: ワールドに効く影（VRM AABB だけに合わせない）。カスケードはまだ入れない
+- [x] P5: ワールドに効く影（床・箱・Prop もキャスター。ortho は VRM AABB だけに合わせない）。
+      空メッシュは除外。カスケードはまだ入れない
 - [ ] P6: 点光源 1（影は無しでよい）。スポットは後
 - [ ] P7: HDRI キューブ（`set_ambient` の次）。PMREM は後
 - [ ] P8: 汎用 glTF の baseColor + 金属/粗さ（MToon を薄めない）

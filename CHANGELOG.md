@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- World shadows (P5): directional map fits VRM + floor / box / Prop AABBs
+  (half clamp 28). Immediate, retained, and instanced Mesh3D write the map.
+  Sky-sized meshes are skipped. Still one light, no cascades.
 - Gamepad API: `axis("left"|"right")`, `pad("a")`, `pad_pressed`, `inject_pad`.
   `Walk` reads the left stick to move and the right stick to look.
   Tests/smoke use `inject_pad`. OS USB/XInput poll is not in the wheel yet.
@@ -40,8 +43,9 @@
   2D `InstanceBatch` is unchanged.
 - VRM materials sort by texture; `doubleSided` / VRM0 `_CullMode==Off`
   is the only two-sided path (P3).
-- Shadows: 2048 map, ortho fitted to visible VRM AABBs, 9-tap PCF.
-  Hemisphere ambient via `set_ambient` / `apply_live_look` (P4). Not HDRI.
+- Shadows: 2048 map, ortho fitted to visible VRM AABBs (P4), then world
+  casters (P5). Hemisphere ambient via `set_ambient` / `apply_live_look`.
+  Not HDRI / cascades.
 - README / samples list Dodge Room (`examples/vrm_dodge_room.py`) as the
   third logged agent-built game (`docs/agent-runs/20260823-dodge-room/`).
   Mixamo `.fbx` is `av.dance("clip.fbx")` / `--dance` (YMCA sleeve blow-up
