@@ -195,13 +195,11 @@ pub struct RendererV2 {
     shadow_view: wgpu::TextureView,
     shadow_layer_views: [wgpu::TextureView; 2],
     shadow_sampler: wgpu::Sampler,
-    shadow_vp_buf: wgpu::Buffer,
+    shadow_write_layers: [ShadowWriteLayer; 2],
     shadow_sample_buf: wgpu::Buffer,
     shadow_vp_bgl: wgpu::BindGroupLayout,
     shadow_write_u_bgl: wgpu::BindGroupLayout,
     shadow_bgl: wgpu::BindGroupLayout,
-    shadow_write_bg: wgpu::BindGroup,
-    shadow_write_u_bg: wgpu::BindGroup,
     shadow_bg: wgpu::BindGroup,
     shadows_enabled: bool,
     shadow_cascades: u32,
@@ -828,12 +826,6 @@ impl RendererV2 {
                 count: None,
             }],
         });
-        let shadow_vp_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Shadow VP Buf"),
-            size: 256,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
         let shadow_sample_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Shadow Sample Buf"),
             size: 256,
@@ -841,28 +833,14 @@ impl RendererV2 {
             mapped_at_creation: false,
         });
         let initial_shadow_vp = build_light_view_proj(light_dir, [0.0, 1.0, 0.0]);
-        queue.write_buffer(&shadow_vp_buf, 0, bytemuck::cast_slice(&initial_shadow_vp));
+        let shadow_write_layers = make_shadow_write_layers(
+            &device, &queue, &shadow_vp_bgl, &shadow_write_u_bgl, &initial_shadow_vp,
+        );
         let mut sample0 = [0f32; 36];
         sample0[..16].copy_from_slice(&initial_shadow_vp);
         sample0[16..32].copy_from_slice(&initial_shadow_vp);
         sample0[32..36].copy_from_slice(&shadow_u_params(false, 1));
         queue.write_buffer(&shadow_sample_buf, 0, bytemuck::cast_slice(&sample0));
-        let shadow_write_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Shadow Write BG"),
-            layout: &shadow_vp_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: shadow_vp_buf.as_entire_binding(),
-            }],
-        });
-        let shadow_write_u_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Shadow Write U BG"),
-            layout: &shadow_write_u_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: shadow_vp_buf.as_entire_binding(),
-            }],
-        });
         let shadow_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Shadow Sample BG"),
             layout: &shadow_bgl,
@@ -1342,13 +1320,11 @@ impl RendererV2 {
             shadow_view,
             shadow_layer_views,
             shadow_sampler,
-            shadow_vp_buf,
+            shadow_write_layers,
             shadow_sample_buf,
             shadow_vp_bgl,
             shadow_write_u_bgl,
             shadow_bgl,
-            shadow_write_bg,
-            shadow_write_u_bg,
             shadow_bg,
             shadows_enabled: true,
             shadow_cascades: 1,
@@ -1775,7 +1751,20 @@ impl RendererV2 {
 
     fn update_shadow_vp(&mut self) {
         let vp = build_light_view_proj(self.light_dir, [0.0, 1.0, 0.0]);
-        self.queue.write_buffer(&self.shadow_vp_buf, 0, bytemuck::cast_slice(&vp));
+        self.shadow_cascade_vp = [vp, vp];
+        self.write_cascade_write_vps();
+    }
+
+    /// Write each cascade VP into its own uniform. Must not run between
+    /// recording layer passes — `Queue::write_buffer` would stomp pending uses.
+    fn write_cascade_write_vps(&mut self) {
+        for (i, layer) in self.shadow_write_layers.iter().enumerate() {
+            self.queue.write_buffer(
+                &layer.buf,
+                0,
+                bytemuck::cast_slice(&self.shadow_cascade_vp[i]),
+            );
+        }
     }
 
     fn fit_shadow_bounds(
@@ -1841,11 +1830,7 @@ impl RendererV2 {
             sample[32..36].copy_from_slice(&shadow_u_params(false, self.shadow_cascades));
         }
         self.queue.write_buffer(&self.shadow_sample_buf, 0, bytemuck::cast_slice(&sample));
-        self.queue.write_buffer(
-            &self.shadow_vp_buf,
-            0,
-            bytemuck::cast_slice(&self.shadow_cascade_vp[0]),
-        );
+        self.write_cascade_write_vps();
     }
 
     fn cull_and_sort_skinned(&mut self, cmds: &mut Vec<SkinnedMeshCommand>) {
@@ -3282,11 +3267,7 @@ impl RendererV2 {
         let inst_draws = self.pack_shadow_instances(instances);
         let retained_ids = self.retained_draw_queue.clone();
         for layer in 0..layers {
-            self.queue.write_buffer(
-                &self.shadow_vp_buf,
-                0,
-                bytemuck::cast_slice(&self.shadow_cascade_vp[layer]),
-            );
+            let write = &self.shadow_write_layers[layer];
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Shadow Pass"),
                 color_attachments: &[],
@@ -3304,7 +3285,7 @@ impl RendererV2 {
             if !cmds.is_empty() {
                 rp.set_pipeline(&self.skinning_3d_shadow_pipeline);
                 rp.set_bind_group(0, &self.camera_3d_bg, &[]);
-                rp.set_bind_group(3, &self.shadow_write_u_bg, &[]);
+                rp.set_bind_group(3, &write.write_u_bg, &[]);
                 for (i, cmd) in cmds.iter().enumerate() {
                     let morph_bg = match morph_bgs.get(i).and_then(|b| b.as_ref()) {
                         Some(bg) => bg,
@@ -3318,7 +3299,7 @@ impl RendererV2 {
                 }
             }
             rp.set_pipeline(&self.pipeline_3d_shadow);
-            rp.set_bind_group(0, &self.shadow_write_bg, &[]);
+            rp.set_bind_group(0, &write.write_bg, &[]);
             for d in immediate {
                 if let Some(aabb) = d.aabb {
                     if !aabb_is_shadow_volume(&aabb) {
@@ -3340,7 +3321,7 @@ impl RendererV2 {
             }
             if !inst_draws.is_empty() {
                 rp.set_pipeline(&self.pipeline_3d_shadow_instanced);
-                rp.set_bind_group(0, &self.shadow_write_bg, &[]);
+                rp.set_bind_group(0, &write.write_bg, &[]);
                 for (mesh_id, i_off, count) in &inst_draws {
                     let Some(mesh) = self.retained_meshes.get(mesh_id) else { continue };
                     rp.set_vertex_buffer(0, mesh.vb.slice(..));

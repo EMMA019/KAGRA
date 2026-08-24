@@ -2,9 +2,14 @@
 
 ## Unreleased
 
+- 2-cascade shadow writes use a **separate light-VP uniform per layer**.
+  Reusing one buffer and `Queue::write_buffer` in the layer loop stomped
+  both pending passes (same class of bug as bloom params), so near-cascade
+  sampling missed and pairwise `outdoor_crawl` was mean_abs=0.000 vs off.
+  CPU snap still holds. Pixels close on Windows CI, not here.
 - Outdoor crawl pairwise golden (`outdoor_crawl` on/off + 0.2-texel
-  similar). CPU snap holds for the golden eyes. Pixels close on Windows CI,
-  not here. Picture still ~50% until that job is green.
+  similar). CPU snap holds for the golden eyes. Picture still ~50% until
+  that job is green.
 - Rigid boxes: `add_box(..., is_static=False)` fall, stack, and `Walk`
   stands on them (character vs crate does not sink the crate). Rapier crate
   stays out of the 5MB wheel. World ~55%, engine ~47%. Public face unchanged.

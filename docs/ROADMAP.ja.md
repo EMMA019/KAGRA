@@ -60,7 +60,7 @@ Stage 2〜5                   勝ち楔を完成品・旗艦・供給・複利�
 
 ## 次にやること（この順）
 
-1. **屋外の這いの画素** — 2 段スナップ + pairwise golden。閉じるのは Windows CI
+1. **屋外の這いの画素** — 2 段スナップ + pairwise golden。CI mean_abs=0.000 は 2 段書き込みの VP 共有。層ごとに分けた。閉じるのは Windows CI
 2. **3 見本の 30 秒** — Pretty Room / Overworld / Prop Garden。楔 D のゲート
 3. **PyPI** — ソースを wheel に載せる。macOS は CI
 4. **D-6** — 箱の焼き直しではない。30 秒以上 + スコアかゴール。3 見本のあと
@@ -123,7 +123,7 @@ API が生えたことは完了ではない。次を満たしたらチェック�
       `Walk.carry` / coyote / 親子 2 段（のち 4 段） / `sound` / 法線 API / gilrs。スナップテスト #53。
       strafe #55
 - [ ] 使える週の **画素**: ACES / 金属差 / 室内スポット / 法線 / 局所 4 は CI 通過（#61、#62）。
-      這いは pairwise `outdoor_crawl` を置いた（未 CI）。30 秒見本は未
+      這いは pairwise `outdoor_crawl` を置いた。CI は mean_abs=0.000（2 段書き込みの VP 共有）。層ごとに分けた。再 CI。30 秒見本は未
 - [x] Stage 0.5 頭脳の **面:** `kagra.brain` + レシピ + `examples/vrm_kairi_chat.py`。
       本番の楔 A は `https://kairi.onrender.com`（`KAIRI_API_TOKEN`）か Ollama。モデルは wheel に無い
 - [ ] 次の PyPI: ソースの API を wheel に載せる。macOS wheel は CI
@@ -156,7 +156,7 @@ API が生えたことは完了ではない。次を満たしたらチェック�
       横ランプ + 濃いウンブラ。CI `indoor_spot` 通過（#61。前回 0.614）
 - [x] **トーンマップ。** ACES。既定オフ。ペアワイズ `tonemap_on` は CI 通過
 - [x] **スペキュラ IBL の差。** ペアワイズ `ibl_metal` は CI 通過。映画の LOD ではない
-- [ ] **屋外の影が這わない。** 2 段スナップ（#53）。pairwise `outdoor_crawl`（オン/オフ差 + 0.2 texel 類似）。画素は CI 待ち
+- [ ] **屋外の影が這わない。** 2 段スナップ（#53）。pairwise `outdoor_crawl`（オン/オフ差 + 0.2 texel 類似）。CI は mean_abs=0.000（2 段書き込みが同じ VP を共有して近段が外れた）。層ごとに uniform を分けた。画素は再 CI
 - [x] **法線マップの画素。** cotangent frame。ペアワイズ `normal_bump` は CI 通過（#61）
 - [x] **局所ライト複数。** `slot=0..3`。キーは影。埋めは影なし。ペアワイズ `local_four` は CI 通過（#62）
 - [x] **親子 4 段。** 玄孫まで。無限 Object3D ではない

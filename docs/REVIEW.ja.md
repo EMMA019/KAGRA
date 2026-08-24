@@ -8,7 +8,7 @@
 **最終目標は「Python で AI に体を与えるなら KAGRA」という第一想起。**
 エンジン到達点は **80%**（今 **約 47%**）。100% は Python だけで three-vrm + three.js + Ursina を置き換えて困らないこと。
 体は約 80% で足りる。絵は約 50% で本体。室内スポット・法線・局所 4 の画素は CI 通過（#61、#62）。
-ACES と金属差は CI で出た。這いの画素が次（pairwise `outdoor_crawl` は CI 待ち）。エージェントループは他に無い。頭脳の面は `kagra.brain("kairi")`（既定 https://kairi.onrender.com。モデルは wheel に無い）。出せるゲームが jam の箱ならループだけでは人は来ない。
+ACES と金属差は CI で出た。這いの画素が次（pairwise `outdoor_crawl` は CI で mean_abs=0.000。2 段の書き込みが同じ VP を共有していた）。エージェントループは他に無い。頭脳の面は `kagra.brain("kairi")`（既定 https://kairi.onrender.com。モデルは wheel に無い）。出せるゲームが jam の箱ならループだけでは人は来ない。
 
 ## 何と比べるか
 

@@ -33,8 +33,8 @@ pub(super) fn fold_shadow_aabb(acc: Option<Aabb>, aabb: Aabb) -> Option<Aabb> {
 pub(super) fn shadow_fit_center_half(union: Option<Aabb>) -> ([f32; 3], f32) {
     match union {
         Some(a) => {
-            let half = (a.max_extent() * 0.5 * SHADOW_HALF_PAD)
-                .clamp(SHADOW_HALF_MIN, SHADOW_HALF_MAX);
+            let half =
+                (a.max_extent() * 0.5 * SHADOW_HALF_PAD).clamp(SHADOW_HALF_MIN, SHADOW_HALF_MAX);
             (a.center(), half)
         }
         None => ([0.0, 1.0, 0.0], 6.0),
@@ -218,5 +218,15 @@ mod tests {
         let sa = snap_center_xz(a[0].0, a[0].1, map);
         let sb = snap_center_xz(b[0].0, b[0].1, map);
         assert_eq!(sa, sb);
+        // Near and far centers differ. Writing both layers with the far VP
+        // (one shared uniform + Queue::write_buffer in the layer loop) makes
+        // near-cascade sampling miss, so outdoor on/off goldens match.
+        let far = snap_center_xz(a[1].0, a[1].1, map);
+        assert!(
+            (sa[0] - far[0]).abs() > 0.5 || (sa[2] - far[2]).abs() > 0.5,
+            "near {:?} far {:?}",
+            sa,
+            far
+        );
     }
 }
