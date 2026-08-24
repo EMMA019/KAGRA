@@ -52,6 +52,9 @@ struct RetainedMesh3D {
     ib: wgpu::Buffer,
     index_count: u32,
     aabb: Option<Aabb>,
+    metallic: f32,
+    roughness: f32,
+    base_color: [f32; 3],
 }
 
 /// Immediate Mesh3D uploaded once per frame (shadow + color share the buffers).
@@ -61,6 +64,9 @@ struct ImmediateMeshDraw {
     ib_off: u64,
     index_count: u32,
     aabb: Option<Aabb>,
+    metallic: f32,
+    roughness: f32,
+    base_color: [f32; 3],
 }
 
 struct GpuTexture {
@@ -128,6 +134,19 @@ pub struct RendererV2 {
     fog_color: [f32; 4],
     /// 半球 IBL。rgb + 強度。0 ならオフ（ゴールデン互換）。
     ambient: [f32; 4],
+    /// 点光源。xyz + 半径。
+    point_pos: [f32; 4],
+    /// 点光源色 rgb + 強度。0 ならオフ。
+    point_col: [f32; 4],
+    /// x = HDRI 強度。
+    env_params: [f32; 4],
+    env_tex: wgpu::Texture,
+    env_view: wgpu::TextureView,
+    env_sampler: wgpu::Sampler,
+    mesh_mat_bgl: wgpu::BindGroupLayout,
+    mesh_mat_buf: wgpu::Buffer,
+    mesh_mat_bg: wgpu::BindGroup,
+    mesh_mat_slots: u32,
     shader_clock: Instant,
     mesh_3d_queue: Vec<Mesh3DCommand>,
     /// 一度 GPU に載せた静的メッシュ。`draw_mesh_id` で回す。
@@ -458,30 +477,94 @@ impl RendererV2 {
 
         let camera_3d_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Camera3D BGL"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
         });
-        // view+proj+light_dir+toon+eye+fog_params+fog_color+ambient = 224
+        let (env_tex, env_view, env_sampler) = make_default_env_cube(&device, &queue);
+        // view+proj+light+toon+eye+fog+fog_color+ambient+point_pos+point_col+env = 272
         let camera_3d_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Camera3D Buf"),
-            size: 224,
+            size: 272,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let camera_3d_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Camera3D BG"),
             layout: &camera_3d_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_3d_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&env_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&env_sampler),
+                },
+            ],
+        });
+        let mesh_mat_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("MeshMat BGL"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: true,
+                    min_binding_size: std::num::NonZeroU64::new(32),
+                },
+                count: None,
+            }],
+        });
+        const MESH_MAT_SLOTS: u32 = 16;
+        const MESH_MAT_STRIDE: u64 = 256;
+        let mesh_mat_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("MeshMat Buf"),
+            size: MESH_MAT_STRIDE * MESH_MAT_SLOTS as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mesh_mat_init = [1.0f32, 1.0, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0];
+        queue.write_buffer(&mesh_mat_buf, 0, bytemuck::cast_slice(&mesh_mat_init));
+        let mesh_mat_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("MeshMat BG"),
+            layout: &mesh_mat_bgl,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: camera_3d_buf.as_entire_binding(),
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &mesh_mat_buf,
+                    offset: 0,
+                    size: std::num::NonZeroU64::new(32),
+                }),
             }],
         });
         // 従来ハードコード値と同じデフォルト（見た目回帰を避ける）
@@ -499,6 +582,12 @@ impl RendererV2 {
         queue.write_buffer(&camera_3d_buf, 192, bytemuck::cast_slice(&fog_color));
         let ambient = [0.0f32, 0.0, 0.0, 0.0];
         queue.write_buffer(&camera_3d_buf, 208, bytemuck::cast_slice(&ambient));
+        let point_pos = [0.0f32, 1.0, 0.0, 8.0];
+        let point_col = [1.0f32, 0.95, 0.85, 0.0];
+        let env_params = [0.0f32, 0.0, 0.0, 0.0];
+        queue.write_buffer(&camera_3d_buf, 224, bytemuck::cast_slice(&point_pos));
+        queue.write_buffer(&camera_3d_buf, 240, bytemuck::cast_slice(&point_col));
+        queue.write_buffer(&camera_3d_buf, 256, bytemuck::cast_slice(&env_params));
 
         let skinning_3d_morph_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Skinning3D Morph BGL"),
@@ -861,7 +950,7 @@ impl RendererV2 {
         let tex_bgl_3d = make_texture_bgl(&device);
         let layout_3d = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&camera_3d_bgl, &tex_bgl_3d, &shadow_bgl],
+            bind_group_layouts: &[&camera_3d_bgl, &tex_bgl_3d, &shadow_bgl, &mesh_mat_bgl],
             push_constant_ranges: &[],
         });
         let pipeline_3d = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -1114,6 +1203,16 @@ impl RendererV2 {
             fog_params,
             fog_color,
             ambient,
+            point_pos,
+            point_col,
+            env_params,
+            env_tex,
+            env_view,
+            env_sampler,
+            mesh_mat_bgl,
+            mesh_mat_buf,
+            mesh_mat_bg,
+            mesh_mat_slots: MESH_MAT_SLOTS,
             shader_clock: Instant::now(),
             mesh_3d_queue: Vec::new(),
             retained_meshes: std::collections::HashMap::new(),
@@ -1644,6 +1743,143 @@ impl RendererV2 {
         );
     }
 
+    pub fn set_point_light(
+        &mut self,
+        x: f32,
+        y: f32,
+        z: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+        intensity: f32,
+        radius: f32,
+    ) {
+        self.point_pos = [x, y, z, radius.max(0.05)];
+        self.point_col = [
+            r.clamp(0.0, 4.0),
+            g.clamp(0.0, 4.0),
+            b.clamp(0.0, 4.0),
+            intensity.max(0.0),
+        ];
+        self.queue.write_buffer(&self.camera_3d_buf, 224, bytemuck::cast_slice(&self.point_pos));
+        self.queue.write_buffer(&self.camera_3d_buf, 240, bytemuck::cast_slice(&self.point_col));
+    }
+
+    fn rebuild_camera_bg(&mut self) {
+        self.camera_3d_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Camera3D BG"),
+            layout: &self.camera_3d_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.camera_3d_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&self.env_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.env_sampler),
+                },
+            ],
+        });
+    }
+
+    pub fn set_hdri(&mut self, path: &str, strength: f32) {
+        let strength = strength.max(0.0);
+        let key = path.trim();
+        if key.is_empty() || strength < 1e-5 {
+            self.env_params = [0.0, 0.0, 0.0, 0.0];
+            self.queue.write_buffer(&self.camera_3d_buf, 256, bytemuck::cast_slice(&self.env_params));
+            return;
+        }
+        let (pix, w, h) = if key.eq_ignore_ascii_case("studio") {
+            crate::hdri::studio_equirect_rgba(128, 64)
+        } else {
+            match image::open(key) {
+                Ok(img) => {
+                    let rgba = img.to_rgba8();
+                    let (iw, ih) = rgba.dimensions();
+                    (rgba.into_raw(), iw, ih)
+                }
+                Err(_) => {
+                    self.env_params = [0.0, 0.0, 0.0, 0.0];
+                    self.queue.write_buffer(
+                        &self.camera_3d_buf,
+                        256,
+                        bytemuck::cast_slice(&self.env_params),
+                    );
+                    return;
+                }
+            }
+        };
+        let face = 32u32;
+        let cube = crate::hdri::equirect_to_cube_rgba(&pix, w, h, face);
+        let (tex, view, samp) = upload_env_cube_faces(&self.device, &self.queue, face, &cube);
+        self.env_tex = tex;
+        self.env_view = view;
+        self.env_sampler = samp;
+        self.rebuild_camera_bg();
+        self.env_params = [strength, 0.0, 0.0, 0.0];
+        self.queue.write_buffer(&self.camera_3d_buf, 256, bytemuck::cast_slice(&self.env_params));
+    }
+
+    fn ensure_mesh_mat_slots(&mut self, n: u32) {
+        if n <= self.mesh_mat_slots {
+            return;
+        }
+        let slots = n.next_power_of_two().max(16);
+        self.mesh_mat_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("MeshMat Buf"),
+            size: 256 * slots as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.mesh_mat_slots = slots;
+        self.mesh_mat_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("MeshMat BG"),
+            layout: &self.mesh_mat_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &self.mesh_mat_buf,
+                    offset: 0,
+                    size: std::num::NonZeroU64::new(32),
+                }),
+            }],
+        });
+    }
+
+    fn pack_mesh_mat(&self, slot: u32, metallic: f32, roughness: f32, base: [f32; 3]) {
+        let pbr = if crate::hdri::pbr_enabled(metallic, roughness) { 1.0 } else { 0.0 };
+        let data = [
+            base[0], base[1], base[2], 1.0,
+            metallic.clamp(0.0, 1.0), roughness.clamp(0.04, 1.0), 0.0, pbr,
+        ];
+        self.queue.write_buffer(
+            &self.mesh_mat_buf,
+            slot as u64 * 256,
+            bytemuck::cast_slice(&data),
+        );
+    }
+
+    pub fn set_mesh_pbr(
+        &mut self,
+        mesh_id: u32,
+        metallic: f32,
+        roughness: f32,
+        br: f32,
+        bg: f32,
+        bb: f32,
+    ) {
+        if let Some(mesh) = self.retained_meshes.get_mut(&mesh_id) {
+            mesh.metallic = metallic.clamp(0.0, 1.0);
+            mesh.roughness = roughness.clamp(0.04, 1.0);
+            mesh.base_color = [br.clamp(0.0, 2.0), bg.clamp(0.0, 2.0), bb.clamp(0.0, 2.0)];
+        }
+    }
+
     pub fn set_fog(&mut self, start: f32, end: f32, r: u8, g: u8, b: u8, enabled: bool) {
         let start = start.max(0.0);
         let end = end.max(start + 1e-3);
@@ -1664,7 +1900,15 @@ impl RendererV2 {
     pub fn queue_mesh_3d(&mut self, cmd: Mesh3DCommand) { self.mesh_3d_queue.push(cmd); }
 
     /// 頂点を GPU に一度だけ載せて ID を返す。0 は失敗。
-    pub fn upload_mesh_3d(&mut self, texture_id: u32, verts: Vec<[f32; 8]>, indices: Vec<u32>) -> u32 {
+    pub fn upload_mesh_3d(
+        &mut self,
+        texture_id: u32,
+        verts: Vec<[f32; 8]>,
+        indices: Vec<u32>,
+        metallic: f32,
+        roughness: f32,
+        base_color: [f32; 3],
+    ) -> u32 {
         if verts.is_empty() || indices.is_empty() {
             return 0;
         }
@@ -1689,6 +1933,9 @@ impl RendererV2 {
             ib,
             index_count: indices.len() as u32,
             aabb: Aabb::from_mesh3d_verts(&verts),
+            metallic: metallic.clamp(0.0, 1.0),
+            roughness: roughness.clamp(0.04, 1.0),
+            base_color,
         });
         id
     }
@@ -2288,6 +2535,9 @@ impl RendererV2 {
                 ib_off,
                 index_count: cmd.indices.len() as u32,
                 aabb: Aabb::from_mesh3d_verts(&cmd.verts),
+                metallic: cmd.metallic,
+                roughness: cmd.roughness,
+                base_color: cmd.base_color,
             });
             vb_off += v_bytes;
             ib_off += i_bytes;
@@ -2308,7 +2558,7 @@ impl RendererV2 {
             None
         };
 
-        let mut draws: Vec<(u32, u64, u64, u32)> = Vec::with_capacity(immediate.len());
+        let mut draws: Vec<(u32, u64, u64, u32, f32, f32, [f32; 3])> = Vec::with_capacity(immediate.len());
         for d in immediate {
             if let (Some(fr), Some(aabb)) = (frustum.as_ref(), d.aabb.as_ref()) {
                 if !fr.contains_aabb(aabb) {
@@ -2316,7 +2566,7 @@ impl RendererV2 {
                     continue;
                 }
             }
-            draws.push((d.texture_id, d.vb_off, d.ib_off, d.index_count));
+            draws.push((d.texture_id, d.vb_off, d.ib_off, d.index_count, d.metallic, d.roughness, d.base_color));
         }
 
         let mut visible_retained: Vec<u32> = Vec::with_capacity(retained_ids.len());
@@ -2341,6 +2591,21 @@ impl RendererV2 {
             return;
         }
 
+        let retained_mats: Vec<(f32, f32, [f32; 3])> = visible_retained.iter().filter_map(|id| {
+            self.retained_meshes.get(id).map(|m| (m.metallic, m.roughness, m.base_color))
+        }).collect();
+        let nmat = (draws.len() + retained_mats.len()) as u32;
+        self.ensure_mesh_mat_slots(nmat.max(1));
+        let mut slot = 0u32;
+        for d in &draws {
+            self.pack_mesh_mat(slot, d.4, d.5, d.6);
+            slot += 1;
+        }
+        for m in &retained_mats {
+            self.pack_mesh_mat(slot, m.0, m.1, m.2);
+            slot += 1;
+        }
+
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("3D Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: target_view, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store } })],
@@ -2353,24 +2618,29 @@ impl RendererV2 {
         rp.set_bind_group(2, &self.shadow_bg, &[]);
         let mut drawn = 0u32;
         let mut tris = 0u32;
-        for (texture_id, v_off, i_off, index_count) in draws {
+        let mut slot = 0u32;
+        for (texture_id, v_off, i_off, index_count, _, _, _) in draws {
             let bg = self.get_texture_bind_group(texture_id);
             rp.set_bind_group(1, bg, &[]);
+            rp.set_bind_group(3, &self.mesh_mat_bg, &[slot * 256]);
             rp.set_vertex_buffer(0, self.mesh_3d_vb.slice(v_off..));
             rp.set_index_buffer(self.mesh_3d_ib.slice(i_off..), wgpu::IndexFormat::Uint32);
             rp.draw_indexed(0..index_count, 0, 0..1);
             drawn += 1;
             tris += index_count / 3;
+            slot += 1;
         }
         for id in visible_retained {
             let Some(mesh) = self.retained_meshes.get(&id) else { continue };
             let bg = self.get_texture_bind_group(mesh.texture_id);
             rp.set_bind_group(1, bg, &[]);
+            rp.set_bind_group(3, &self.mesh_mat_bg, &[slot * 256]);
             rp.set_vertex_buffer(0, mesh.vb.slice(..));
             rp.set_index_buffer(mesh.ib.slice(..), wgpu::IndexFormat::Uint32);
             rp.draw_indexed(0..mesh.index_count, 0, 0..1);
             drawn += 1;
             tris += mesh.index_count / 3;
+            slot += 1;
         }
         drop(rp);
         self.stats.draw_calls += drawn;
@@ -2444,6 +2714,13 @@ impl RendererV2 {
             draws.push((*mesh_id, off, vis.len() as u32));
             off += bytes;
         }
+        let inst_mats: Vec<(f32, f32, [f32; 3])> = draws.iter().filter_map(|(mesh_id, _, _)| {
+            self.retained_meshes.get(mesh_id).map(|m| (m.metallic, m.roughness, m.base_color))
+        }).collect();
+        self.ensure_mesh_mat_slots(inst_mats.len().max(1) as u32);
+        for (i, m) in inst_mats.iter().enumerate() {
+            self.pack_mesh_mat(i as u32, m.0, m.1, m.2);
+        }
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("3D Instance Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -2464,10 +2741,11 @@ impl RendererV2 {
         rp.set_bind_group(2, &self.shadow_bg, &[]);
         let mut drawn = 0u32;
         let mut tris = 0u32;
-        for (mesh_id, i_off, count) in draws {
+        for (slot, (mesh_id, i_off, count)) in draws.into_iter().enumerate() {
             let Some(mesh) = self.retained_meshes.get(&mesh_id) else { continue };
             let bg = self.get_texture_bind_group(mesh.texture_id);
             rp.set_bind_group(1, bg, &[]);
+            rp.set_bind_group(3, &self.mesh_mat_bg, &[slot as u32 * 256]);
             rp.set_vertex_buffer(0, mesh.vb.slice(..));
             rp.set_vertex_buffer(1, self.instance_3d_vb.slice(i_off..));
             rp.set_index_buffer(mesh.ib.slice(..), wgpu::IndexFormat::Uint32);

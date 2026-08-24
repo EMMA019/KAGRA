@@ -1,6 +1,6 @@
 # KAGRA ロードマップ — 体と、その体が歩ける部屋
 
-最終更新: 2026-08-23（0.1.3 は PyPI 済み。描画 P0–P5 と `Prop` / `Walk` / `sky` は未リリース。
+最終更新: 2026-08-24（0.1.3 は PyPI 済み。描画 P0–P8 と `Prop` / `Walk` / `sky` は未リリース。
 能力の棚卸しは [REVIEW.ja.md](REVIEW.ja.md)。次は Stage 1 の楔と、D が詰まないための能力トラック）
 
 ## 北極星
@@ -45,8 +45,8 @@ JS における three-vrm のポジションの Python 版。
    `docs/API_INDEX.md` / MCP（`kagra_api_search` / `kagra_verify` / `kagra_render`）。
    開発ループ自体を AI エージェント用に設計したエンジンは他に無い
 
-**弱み（正直リスト）**: 影は 1 本の平行光（カスケード無し）、IBL は半球まで
-（HDRI キューブは無い）、汎用メッシュは PBR ではない、ポストは bloom / vignette、
+**弱み（正直リスト）**: 影は 1 本の平行光（カスケード無し）、点光は 1 で影無し、
+IBL は HDRI キューブまで（PMREM 無し）、汎用 PBR に法線は無い、ポストは bloom / vignette、
 複数アバターは未計測、
 頭脳の公式面（`KairiBrain` / `docs/recipes/ai-brain.md`）はロードマップだけ完了で
 **リポジトリに無い**、`KAGRA_ENGINE_GUIDE.md` は Phase 6 の履歴。
@@ -88,9 +88,10 @@ three.js / Ursina が当たり前にやっていることを、楔が詰む順�
       半球アンビエント `set_ambient`（HDRI キューブはまだ無い）
 - [x] P5: ワールドに効く影（床・箱・Prop もキャスター。ortho は VRM AABB だけに合わせない）。
       空メッシュは除外。カスケードはまだ入れない
-- [ ] P6: 点光源 1（影は無しでよい）。スポットは後
-- [ ] P7: HDRI キューブ（`set_ambient` の次）。PMREM は後
-- [ ] P8: 汎用 glTF の baseColor + 金属/粗さ（MToon を薄めない）
+- [x] P6: 点光源 1（影は無し）。`set_point_light`。スポットは後
+- [x] P7: HDRI キューブ。`set_hdri("studio")` または正距円筒。PMREM は後
+- [x] P8: 汎用 glTF の baseColor + 金属/粗さ。`upload_mesh_3d` / `Prop(..., metallic=)` /
+      `set_mesh_pbr`。MToon は薄めない
 
 ### 部屋（Ursina 級の短さ。2D `Entity` ではない）
 

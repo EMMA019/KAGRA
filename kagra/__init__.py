@@ -694,6 +694,51 @@ def set_ambient(r: float = 0.22, g: float = 0.20, b: float = 0.28,
     _engine.set_ambient(float(r), float(g), float(b), float(strength))
 
 
+def set_point_light(
+    x: float,
+    y: float,
+    z: float,
+    *,
+    r: float = 1.0,
+    g: float = 0.95,
+    b: float = 0.85,
+    intensity: float = 1.0,
+    radius: float = 8.0,
+):
+    """点光源 1（影は無し）。``intensity=0`` でオフ。スポットはまだ。"""
+    _check()
+    _engine.set_point_light(
+        float(x), float(y), float(z),
+        float(r), float(g), float(b),
+        float(intensity), float(radius),
+    )
+
+
+def set_hdri(path: str | None = "studio", strength: float = 1.0):
+    """HDRI キューブ。``path='studio'`` は内蔵グラデ。空 / None / strength=0 でオフ。
+
+    正距円筒図（PNG/JPEG）も渡せる。PMREM はまだ無い（法線で直接サンプル）。
+    """
+    _check()
+    name = "" if path is None else str(path)
+    _engine.set_hdri(name, float(strength))
+
+
+def set_mesh_pbr(
+    mesh_id: int,
+    metallic: float = 0.0,
+    roughness: float = 1.0,
+    base_color: tuple = (1.0, 1.0, 1.0),
+):
+    """保持メッシュの金属/粗さ。VRM / MToon は触らない。"""
+    _check()
+    br, bg, bb = base_color[0], base_color[1], base_color[2]
+    _engine.set_mesh_pbr(
+        int(mesh_id), float(metallic), float(roughness),
+        float(br), float(bg), float(bb),
+    )
+
+
 def set_mesh_cull(enabled: bool = True):
     """ワールド 3D メッシュの視錐台カリング。VRM スキンは対象外。"""
     _check()
@@ -761,13 +806,28 @@ def draw_mesh_3d(texture_id: int, verts: list, indices: list):
     _check(); _engine.draw_mesh_3d(texture_id, verts, indices)
 
 
-def upload_mesh_3d(texture_id: int, verts: list, indices: list) -> int:
+def upload_mesh_3d(
+    texture_id: int,
+    verts: list,
+    indices: list,
+    *,
+    metallic: float = 0.0,
+    roughness: float = 1.0,
+    base_color: tuple = (1.0, 1.0, 1.0),
+) -> int:
     """3D メッシュを GPU に一度載せる。毎フレームは ``draw_mesh_id``。
 
     ``verts`` は ``[x,y,z,nx,ny,nz,u,v]``。0 は失敗。
+    ``metallic`` / ``roughness`` は汎用メッシュだけ（MToon は薄めない）。
+    既定 0 / 1 は旧 Lambert。
     """
     _check()
-    return int(_engine.upload_mesh_3d(texture_id, verts, indices))
+    br, bg, bb = base_color[0], base_color[1], base_color[2]
+    return int(_engine.upload_mesh_3d(
+        texture_id, verts, indices,
+        float(metallic), float(roughness),
+        float(br), float(bg), float(bb),
+    ))
 
 
 def draw_mesh_id(mesh_id: int):

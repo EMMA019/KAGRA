@@ -87,6 +87,9 @@ pub struct Mesh3DCommand {
     pub texture_id: u32,
     pub verts: Vec<[f32; 8]>,
     pub indices: Vec<u32>,
+    pub metallic: f32,
+    pub roughness: f32,
+    pub base_color: [f32; 3],
 }
 
 /// ワールド 3D インスタンス。pos + yaw(Y) + scale。32 バイト。

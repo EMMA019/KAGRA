@@ -69,6 +69,12 @@ class PropGarden(kagra.Scene):
             )
             gem.set_parent(self.gold, keep_world=False)
             kagra.Prop("cube.glb", x=-1.4, y=0.5, z=2.6, color="white", world=self.world)
+            kagra.Prop(
+                "sphere", x=2.2, y=0.5, z=-1.6, scale=0.9, color="white",
+                metallic=1.0, roughness=0.12, world=self.world,
+            )
+            kagra.set_hdri("studio", 0.40)
+            kagra.set_point_light(1.4, 2.2, 0.8, intensity=1.1, radius=11.0)
         kagra.Prop.bake_all()
         self.cam = Camera3D(SW, SH, fov_deg=42.0)
         self.cam.follow(START_XZ[0], 0.0, START_XZ[1], lerp=1.0, yaw=0.0)

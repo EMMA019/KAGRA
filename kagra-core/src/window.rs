@@ -225,6 +225,29 @@ impl KagraWindow {
         }
     }
 
+    pub fn set_point_light(
+        &self,
+        x: f32, y: f32, z: f32,
+        r: f32, g: f32, b: f32,
+        intensity: f32, radius: f32,
+    ) {
+        if let Some(rend) = lock_recover(&self.renderer).as_mut() {
+            rend.set_point_light(x, y, z, r, g, b, intensity, radius);
+        }
+    }
+
+    pub fn set_hdri(&self, path: &str, strength: f32) {
+        if let Some(rend) = lock_recover(&self.renderer).as_mut() {
+            rend.set_hdri(path, strength);
+        }
+    }
+
+    pub fn set_mesh_pbr(&self, mesh_id: u32, metallic: f32, roughness: f32, br: f32, bg: f32, bb: f32) {
+        if let Some(rend) = lock_recover(&self.renderer).as_mut() {
+            rend.set_mesh_pbr(mesh_id, metallic, roughness, br, bg, bb);
+        }
+    }
+
     pub fn set_mesh_cull(&self, enabled: bool) {
         if let Some(r) = lock_recover(&self.renderer).as_mut() {
             r.set_mesh_cull(enabled);
@@ -249,13 +272,28 @@ impl KagraWindow {
     pub fn queue_mesh_3d(&self, texture_id: u32, verts: Vec<[f32; 8]>, indices: Vec<u32>) {
         use crate::renderer::Mesh3DCommand;
         if let Some(r) = lock_recover(&self.renderer).as_mut() {
-            r.queue_mesh_3d(Mesh3DCommand { texture_id, verts, indices });
+            r.queue_mesh_3d(Mesh3DCommand {
+                texture_id,
+                verts,
+                indices,
+                metallic: 0.0,
+                roughness: 1.0,
+                base_color: [1.0, 1.0, 1.0],
+            });
         }
     }
 
-    pub fn upload_mesh_3d(&self, texture_id: u32, verts: Vec<[f32; 8]>, indices: Vec<u32>) -> u32 {
+    pub fn upload_mesh_3d(
+        &self,
+        texture_id: u32,
+        verts: Vec<[f32; 8]>,
+        indices: Vec<u32>,
+        metallic: f32,
+        roughness: f32,
+        base_color: [f32; 3],
+    ) -> u32 {
         if let Some(r) = lock_recover(&self.renderer).as_mut() {
-            r.upload_mesh_3d(texture_id, verts, indices)
+            r.upload_mesh_3d(texture_id, verts, indices, metallic, roughness, base_color)
         } else {
             0
         }

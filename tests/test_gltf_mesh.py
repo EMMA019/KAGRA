@@ -97,6 +97,55 @@ def test_resolve_cube_alias():
     assert contracts.resolve_asset(contracts.AssetKind.GLTF, "cube").name == "unit_cube.glb"
 
 
+def test_flatten_reads_pbr_factors(tmp_path: Path):
+    path = _write_tri_glb(tmp_path / "metal.glb")
+    # rewrite with a material (reuse writer by patching JSON is heavy; append via flatten input)
+    gltf = {
+        "asset": {"version": "2.0"},
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": [{"mesh": 0}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1, "material": 0}]}],
+        "materials": [{
+            "pbrMetallicRoughness": {
+                "baseColorFactor": [0.2, 0.4, 0.8, 1.0],
+                "metallicFactor": 0.7,
+                "roughnessFactor": 0.25,
+            },
+        }],
+        "accessors": [
+            {
+                "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3",
+                "min": [-0.5, 0.0, 0.0], "max": [0.5, 1.0, 0.0],
+            },
+            {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"},
+        ],
+        "bufferViews": [
+            {"buffer": 0, "byteOffset": 0, "byteLength": 36},
+            {"buffer": 0, "byteOffset": 36, "byteLength": 6},
+        ],
+        "buffers": [{"byteLength": 44}],
+    }
+    pos = [-0.5, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 1.0, 0.0]
+    idx = [0, 1, 2]
+    pos_b = struct.pack("<9f", *pos)
+    idx_b = struct.pack("<3H", *idx) + b"\x00" * _pad4(6)
+    blob = pos_b + idx_b
+    json_b = json.dumps(gltf, separators=(",", ":")).encode("utf-8")
+    json_b += b" " * _pad4(len(json_b))
+    total = 12 + 8 + len(json_b) + 8 + len(blob)
+    path.write_bytes(
+        struct.pack("<4sII", b"glTF", 2, total)
+        + struct.pack("<II", len(json_b), 0x4E4F534A) + json_b
+        + struct.pack("<II", len(blob), 0x004E4942) + blob
+    )
+    flat = gm.flatten_gltf(path)
+    assert flat.metallic == pytest.approx(0.7)
+    assert flat.roughness == pytest.approx(0.25)
+    assert flat.base_color[0] == pytest.approx(0.2)
+    assert flat.base_color[2] == pytest.approx(0.8)
+
+
 def test_flatten_rejects_empty(tmp_path: Path):
     bad = tmp_path / "empty.glb"
     json_b = b'{"asset":{"version":"2.0"}}'

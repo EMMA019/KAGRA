@@ -144,13 +144,20 @@ struct Camera {
     fog_params: vec4<f32>,
     fog_color: vec4<f32>,
     ambient: vec4<f32>,
+    point_pos: vec4<f32>,
+    point_col: vec4<f32>,
+    env: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> cam: Camera;
+@group(0) @binding(1) var env_cube: texture_cube<f32>;
+@group(0) @binding(2) var env_samp: sampler;
 @group(1) @binding(0) var t_diffuse: texture_2d<f32>;
 @group(1) @binding(1) var s_diffuse: sampler;
 @group(2) @binding(0) var<uniform> light_vp: mat4x4<f32>;
 @group(2) @binding(1) var shadow_map: texture_depth_2d;
 @group(2) @binding(2) var shadow_sampler: sampler_comparison;
+struct MeshMat { base: vec4<f32>, params: vec4<f32> }
+@group(3) @binding(0) var<uniform> mesh_mat: MeshMat;
 struct VI { @location(0) position: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) uv: vec2<f32> }
 struct VO {
     @builtin(position) clip_pos: vec4<f32>,
@@ -158,6 +165,7 @@ struct VO {
     @location(1) light: f32,
     @location(2) world_pos: vec3<f32>,
     @location(3) hemi: vec3<f32>,
+    @location(4) world_n: vec3<f32>,
 }
 fn shadow_factor(world_pos: vec3<f32>) -> f32 {
     let sc = light_vp * vec4<f32>(world_pos, 1.0);
@@ -188,6 +196,31 @@ fn hemi_ambient(n: vec3<f32>) -> vec3<f32> {
     let h = 0.45 + 0.55 * saturate(n.y * 0.5 + 0.5);
     return cam.ambient.rgb * cam.ambient.w * h;
 }
+fn env_light(n: vec3<f32>) -> vec3<f32> {
+    if cam.env.x < 1e-4 { return vec3<f32>(0.0); }
+    return textureSample(env_cube, env_samp, n).rgb * cam.env.x;
+}
+fn point_diffuse(n: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
+    if cam.point_col.w < 1e-4 { return vec3<f32>(0.0); }
+    let to_l = cam.point_pos.xyz - world_pos;
+    let dist = length(to_l);
+    let radius = max(cam.point_pos.w, 0.05);
+    let atten = saturate(1.0 - dist / radius);
+    let ndotl = saturate(dot(n, normalize(to_l)));
+    return cam.point_col.rgb * cam.point_col.w * ndotl * atten * atten;
+}
+fn ggx_d(ndoth: f32, rough: f32) -> f32 {
+    let a = max(rough * rough, 0.002);
+    let a2 = a * a;
+    let d = ndoth * ndoth * (a2 - 1.0) + 1.0;
+    return a2 / max(3.14159265 * d * d, 1e-6);
+}
+fn smith_g(ndotv: f32, ndotl: f32, rough: f32) -> f32 {
+    let k = max(rough * rough, 0.002) * 0.5;
+    let gv = ndotv / max(ndotv * (1.0 - k) + k, 1e-5);
+    let gl = ndotl / max(ndotl * (1.0 - k) + k, 1e-5);
+    return gv * gl;
+}
 @vertex fn vs_main(in: VI) -> VO {
     var out: VO;
     let pos4 = vec4<f32>(in.position, 1.0);
@@ -199,6 +232,7 @@ fn hemi_ambient(n: vec3<f32>) -> vec3<f32> {
     out.light = clamp(dot(n, light_dir), 0.2, 1.0);
     out.world_pos = in.position;
     out.hemi = hemi_ambient(n);
+    out.world_n = n;
     return out;
 }
 struct II { @location(3) pos_yaw: vec4<f32>, @location(4) scale: vec4<f32> }
@@ -225,13 +259,41 @@ struct II { @location(3) pos_yaw: vec4<f32>, @location(4) scale: vec4<f32> }
     out.light = clamp(dot(nn, light_dir), 0.2, 1.0);
     out.world_pos = world;
     out.hemi = hemi_ambient(nn);
+    out.world_n = nn;
     return out;
 }
 @fragment fn fs_main(in: VO) -> @location(0) vec4<f32> {
     var c = textureSample(t_diffuse, s_diffuse, in.uv);
     if c.a < 0.01 { discard; }
-    let lit = in.light * shadow_factor(in.world_pos);
-    let rgb = apply_fog(c.rgb * lit + in.hemi, in.world_pos);
+    let n = normalize(in.world_n);
+    let albedo = c.rgb * mesh_mat.base.rgb;
+    let env = env_light(n);
+    let point = point_diffuse(n, in.world_pos);
+    var rgb: vec3<f32>;
+    if mesh_mat.params.w > 0.5 {
+        let metallic = saturate(mesh_mat.params.x);
+        let rough = clamp(mesh_mat.params.y, 0.04, 1.0);
+        let v = normalize(cam.eye.xyz - in.world_pos);
+        let ldir = normalize(cam.light_dir.xyz);
+        let h = normalize(v + ldir);
+        let ndotl = saturate(dot(n, ldir));
+        let ndotv = saturate(dot(n, v));
+        let ndoth = saturate(dot(n, h));
+        let vdoth = saturate(dot(v, h));
+        let f0 = mix(vec3<f32>(0.04), albedo, metallic);
+        let f = f0 + (1.0 - f0) * pow(1.0 - vdoth, 5.0);
+        let spec = ggx_d(ndoth, rough) * smith_g(ndotv, ndotl, rough) * f
+            / max(4.0 * ndotv * ndotl, 1e-4);
+        let kd = (vec3<f32>(1.0) - f) * (1.0 - metallic);
+        let sun = (kd * albedo + spec) * ndotl * shadow_factor(in.world_pos);
+        let spec_env = textureSample(env_cube, env_samp, reflect(-v, n)).rgb
+            * cam.env.x * (1.0 - rough) * f;
+        rgb = sun + albedo * point + in.hemi + env * (1.0 - metallic) * 0.65 + spec_env;
+    } else {
+        let lit = in.light * shadow_factor(in.world_pos);
+        rgb = albedo * lit + albedo * point + in.hemi + env;
+    }
+    rgb = apply_fog(rgb, in.world_pos);
     return vec4<f32>(rgb, c.a);
 }
 "#;
@@ -269,6 +331,9 @@ struct Camera {
     fog_params: vec4<f32>,
     fog_color: vec4<f32>,
     ambient: vec4<f32>,
+    point_pos: vec4<f32>,
+    point_col: vec4<f32>,
+    env: vec4<f32>,
 };
 struct Mtoon {
     shade_color: vec4<f32>,
@@ -279,6 +344,8 @@ struct Mtoon {
     uv_anim: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> cam: Camera;
+@group(0) @binding(1) var env_cube: texture_cube<f32>;
+@group(0) @binding(2) var env_samp: sampler;
 struct SkinUniforms { bone_matrices: array<mat4x4<f32>, 256>, screen_size: vec4<f32> };
 @group(1) @binding(0) var<uniform> skin: SkinUniforms;
 @group(2) @binding(0) var t_diffuse: texture_2d<f32>;
@@ -478,6 +545,17 @@ fn cotangent_frame(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> mat3x3<f32> {
     if cam.ambient.w > 1e-4 {
         let hemi = 0.45 + 0.55 * saturate(n.y * 0.5 + 0.5);
         col = col + cam.ambient.rgb * cam.ambient.w * hemi;
+    }
+    if cam.point_col.w > 1e-4 {
+        let to_l = cam.point_pos.xyz - in.world_pos;
+        let dist = length(to_l);
+        let radius = max(cam.point_pos.w, 0.05);
+        let atten = saturate(1.0 - dist / radius);
+        let ndotl = saturate(dot(n, normalize(to_l)));
+        col = col + cam.point_col.rgb * cam.point_col.w * ndotl * atten * atten * base.rgb;
+    }
+    if cam.env.x > 1e-4 {
+        col = col + textureSample(env_cube, env_samp, n).rgb * cam.env.x * base.rgb * 0.35;
     }
     col = apply_fog(col, in.world_pos);
     return vec4<f32>(col, base.a);

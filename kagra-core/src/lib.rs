@@ -18,6 +18,7 @@ mod gltf;
 mod gltf_common;
 mod camera;
 mod frustum;
+mod hdri;
 mod pick;
 mod vrm_humanoid;
 mod vrm_lookat_meta;
