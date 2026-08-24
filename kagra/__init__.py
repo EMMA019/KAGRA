@@ -681,6 +681,12 @@ def set_shadow_enabled(enabled: bool = True):
     """平行光シャドウマップの有効/無効。"""
     _check(); _engine.set_shadow_enabled(bool(enabled))
 
+
+def set_shadow_cascades(count: int = 1):
+    """平行光シャドウの段数。1（既定）か 2。Prop Garden は 1 のまま。"""
+    _check()
+    _engine.set_shadow_cascades(max(1, min(2, int(count))))
+
 def set_bloom(threshold: float = 0.85, intensity: float = 0.35,
               enabled: bool = True):
     """閾値ブルーム。高輝度画素だけを抽出して加算する。
@@ -1021,6 +1027,24 @@ def stair_y(
     return _fn(
         x, z, x0=x0, x1=x1, z0=z0, z1=z1, y0=y0, y1=y1, steps=steps, axis=axis,
     )
+
+
+def load_city(path):
+    """街 JSON。OSM ではない。"""
+    from kagra.city import load_city as _fn
+    return _fn(path)
+
+
+def city_chunk(city, ix: int, iz: int, *, tile: float | None = None):
+    """街ファイルの 1 タイル分の箱。"""
+    from kagra.city import city_chunk as _fn
+    return _fn(city, ix, iz, tile=tile)
+
+
+def ramp_mesh(x0: float, x1: float, z0: float, z1: float, y0: float, y1: float):
+    """+X に上がる坂メッシュ。"""
+    from kagra.gamekit import ramp_mesh as _fn
+    return _fn(x0, x1, z0, z1, y0, y1)
 
 
 def city_boxes(ix: int, iz: int, *, tile: float = 10.0, fn=None, water_y: float = 0.0):

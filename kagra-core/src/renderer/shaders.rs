@@ -155,8 +155,9 @@ struct Camera {
 @group(0) @binding(3) var env_irr: texture_cube<f32>;
 @group(1) @binding(0) var t_diffuse: texture_2d<f32>;
 @group(1) @binding(1) var s_diffuse: sampler;
-@group(2) @binding(0) var<uniform> light_vp: mat4x4<f32>;
-@group(2) @binding(1) var shadow_map: texture_depth_2d;
+struct ShadowU { vp0: mat4x4<f32>, vp1: mat4x4<f32>, params: vec4<f32> }
+@group(2) @binding(0) var<uniform> shadow_u: ShadowU;
+@group(2) @binding(1) var shadow_map: texture_depth_2d_array;
 @group(2) @binding(2) var shadow_sampler: sampler_comparison;
 struct MeshMat { base: vec4<f32>, params: vec4<f32> }
 @group(3) @binding(0) var<uniform> mesh_mat: MeshMat;
@@ -169,8 +170,8 @@ struct VO {
     @location(3) hemi: vec3<f32>,
     @location(4) world_n: vec3<f32>,
 }
-fn shadow_factor(world_pos: vec3<f32>) -> f32 {
-    let sc = light_vp * vec4<f32>(world_pos, 1.0);
+fn sample_cascade(world_pos: vec3<f32>, vp: mat4x4<f32>, layer: i32) -> f32 {
+    let sc = vp * vec4<f32>(world_pos, 1.0);
     let ndc = sc.xyz / sc.w;
     let uv = vec2<f32>(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
     let depth = ndc.z;
@@ -182,10 +183,23 @@ fn shadow_factor(world_pos: vec3<f32>) -> f32 {
     var s = 0.0;
     for (var y = -1; y <= 1; y++) {
         for (var x = -1; x <= 1; x++) {
-            s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, d);
+            s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, layer, d);
         }
     }
     return mix(0.50, 1.0, s / 9.0);
+}
+fn shadow_factor(world_pos: vec3<f32>) -> f32 {
+    let n = sample_cascade(world_pos, shadow_u.vp0, 0);
+    if shadow_u.params.x < 1.5 {
+        return n;
+    }
+    let sc = shadow_u.vp0 * vec4<f32>(world_pos, 1.0);
+    let ndc = sc.xyz / sc.w;
+    let uv = vec2<f32>(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
+    if uv.x >= 0.02 && uv.x <= 0.98 && uv.y >= 0.02 && uv.y <= 0.98 && ndc.z >= 0.0 && ndc.z <= 1.0 {
+        return n;
+    }
+    return sample_cascade(world_pos, shadow_u.vp1, 1);
 }
 fn apply_fog(color: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
     if cam.fog_params.z < 0.5 { return color; }
@@ -376,8 +390,9 @@ struct SkinUniforms { bone_matrices: array<mat4x4<f32>, 256>, screen_size: vec4<
 @group(2) @binding(7) var t_matcap: texture_2d<f32>;
 @group(2) @binding(8) var t_normal: texture_2d<f32>;
 @group(2) @binding(9) var t_uvmask: texture_2d<f32>;
-@group(3) @binding(0) var<uniform> light_vp: mat4x4<f32>;
-@group(3) @binding(1) var shadow_map: texture_depth_2d;
+struct ShadowU { vp0: mat4x4<f32>, vp1: mat4x4<f32>, params: vec4<f32> }
+@group(3) @binding(0) var<uniform> shadow_u: ShadowU;
+@group(3) @binding(1) var shadow_map: texture_depth_2d_array;
 @group(3) @binding(2) var shadow_sampler: sampler_comparison;
 struct VI { @location(0) position: vec3<f32>, @location(1) uv: vec2<f32>,
             @location(2) joints: vec4<u32>, @location(3) weights: vec4<f32>,
@@ -420,8 +435,8 @@ fn skin_matrix(in: VI) -> mat4x4<f32> {
     return m;
 }
 
-fn shadow_factor(world_pos: vec3<f32>) -> f32 {
-    let sc = light_vp * vec4<f32>(world_pos, 1.0);
+fn sample_cascade(world_pos: vec3<f32>, vp: mat4x4<f32>, layer: i32) -> f32 {
+    let sc = vp * vec4<f32>(world_pos, 1.0);
     let ndc = sc.xyz / sc.w;
     let uv = vec2<f32>(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
     let depth = ndc.z;
@@ -433,10 +448,23 @@ fn shadow_factor(world_pos: vec3<f32>) -> f32 {
     var s = 0.0;
     for (var y = -1; y <= 1; y++) {
         for (var x = -1; x <= 1; x++) {
-            s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, d);
+            s += textureSampleCompare(shadow_map, shadow_sampler, uv + vec2<f32>(f32(x), f32(y)) * texel, layer, d);
         }
     }
     return mix(0.50, 1.0, s / 9.0);
+}
+fn shadow_factor(world_pos: vec3<f32>) -> f32 {
+    let n = sample_cascade(world_pos, shadow_u.vp0, 0);
+    if shadow_u.params.x < 1.5 {
+        return n;
+    }
+    let sc = shadow_u.vp0 * vec4<f32>(world_pos, 1.0);
+    let ndc = sc.xyz / sc.w;
+    let uv = vec2<f32>(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
+    if uv.x >= 0.02 && uv.x <= 0.98 && uv.y >= 0.02 && uv.y <= 0.98 && ndc.z >= 0.0 && ndc.z <= 1.0 {
+        return n;
+    }
+    return sample_cascade(world_pos, shadow_u.vp1, 1);
 }
 
 fn apply_fog(color: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
@@ -502,7 +530,7 @@ fn cotangent_frame(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> mat3x3<f32> {
     apply_morph(in, &pos);
     let m = skin_matrix(in);
     let world_pos = m * vec4<f32>(pos, 1.0);
-    return light_vp * world_pos;
+    return shadow_u.vp0 * world_pos;
 }
 
 @fragment fn fs_main(in: VO) -> @location(0) vec4<f32> {

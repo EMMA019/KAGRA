@@ -37,7 +37,7 @@ Gamepad: `axis` / `pad` / `inject_pad`. Not 2D `Entity`.
 Picture: `set_point_light` / `set_spot_light` / `set_hdri("studio")` /
 `set_exposure` / `Prop(..., metallic=)`. Indoor: `apply_room_look`.
 Outdoor island: `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` /
-`Walk(..., jump=)`. Slopes follow/slide. Tiles cast shadows. Not a city file.
+`load_city` / `Walk(..., jump=)`. `set_shadow_cascades(2)` outdoors. Not OSM / Rapier.
 
 ## Touch / mobile
 

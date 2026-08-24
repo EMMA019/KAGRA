@@ -107,7 +107,7 @@ class RigidBody3D:
         self.on_ground   = False        # 地面に接触中か
         self.active      = True         # False にすると更新スキップ
 
-        # 形状: "aabb" | "capsule" | "obb" | "sphere" | "cylinder"
+        # 形状: "aabb" | "capsule" | "obb" | "sphere" | "cylinder" | "trimesh"
         # カプセルは常に Y-up。radius 未指定なら min(w, d)*0.5。
         # OBB は Y 軸回り yaw（ラジアン）だけ回る静的向き。
         self.shape = shape
@@ -130,6 +130,11 @@ class RigidBody3D:
         self._slope_vx = 0.0
         self._slope_vy = 0.0
         self._slope_vz = 0.0
+
+        # 静的三角形。積み木のスリープ。
+        self.tris: list[tuple] = []
+        self.sleeping = False
+        self._still = 0
 
     @property
     def aabb(self) -> AABB:
@@ -170,6 +175,16 @@ class RigidBody3D:
         """位置を瞬間移動（速度はリセットしない）。"""
         self.x, self.y, self.z = x, y, z
 
+    def set_trimesh(self, verts, indices) -> None:
+        """三角形を差し替える（Prop が動いたとき）。"""
+        tris, aabb = _build_trimesh(verts, indices)
+        self.tris = tris
+        self.shape = "trimesh"
+        self.x = aabb[0] + aabb[3] * 0.5
+        self.y = aabb[1]
+        self.z = aabb[2] + aabb[5] * 0.5
+        self.w, self.h, self.d = aabb[3], aabb[4], aabb[5]
+
 
 def height_normal(fn, x: float, z: float, eps: float = 0.12) -> tuple[float, float, float]:
     """高さ関数の単位法線 ``(-dh/dx, 1, -dh/dz)``。"""
@@ -207,6 +222,10 @@ class Physics3D:
         # 1 フレームの上昇がこれ以下なら段差として登る。超えかつ勾配が急なら崖。
         self.step_height = 0.45
         self.max_grade = 1.35
+        # 積み木: 何度か押し合う。小さい速度が続いたら眠る。Rapier ではない。
+        self.solver_iters = 4
+        self.sleep_speed = 0.08
+        self.sleep_frames = 12
 
     # ── セットアップ ──────────────────────────────────────────────
 
@@ -303,6 +322,36 @@ class Physics3D:
             layer=layer, mask=mask, trigger=trigger,
         )
 
+    def add_trimesh(
+        self,
+        verts,
+        indices,
+        *,
+        is_static: bool = True,
+        restitution: float = 0.0,
+        friction: float = 0.85,
+        layer: int = 1,
+        mask: int = 0xFFFFFFFF,
+        trigger: bool = False,
+    ) -> RigidBody3D:
+        """静的な三角形メッシュ。``verts`` は ``[x,y,z]`` または 8 要素。"""
+        tris, aabb = _build_trimesh(verts, indices)
+        body = self.add_body(
+            aabb[0] + aabb[3] * 0.5,
+            aabb[1],
+            aabb[2] + aabb[5] * 0.5,
+            aabb[3], aabb[4], aabb[5],
+            is_static=is_static, restitution=restitution, friction=friction,
+            shape="trimesh",
+            layer=layer, mask=mask, trigger=trigger,
+        )
+        body.tris = tris
+        body.x = aabb[0] + aabb[3] * 0.5
+        body.y = aabb[1]
+        body.z = aabb[2] + aabb[5] * 0.5
+        body.w, body.h, body.d = aabb[3], aabb[4], aabb[5]
+        return body
+
     def add_obb(self,
                 x: float, y: float, z: float,
                 w: float, h: float, d: float,
@@ -379,11 +428,15 @@ class Physics3D:
         for body in self.bodies:
             if body.is_static or not body.active:
                 continue
+            if body.sleeping:
+                continue
             self._integrate(body, dt)
             body.on_ground = False
             self._ground_collision(body)
 
-        self._solve_collisions()
+        for _ in range(max(1, int(self.solver_iters))):
+            self._solve_collisions()
+        self._sleep_bodies()
 
     def _walkable_ny(self) -> float:
         """``max_grade`` に対応する法線 Y。これ未満は歩けず滑る。"""
@@ -512,6 +565,12 @@ class Physics3D:
                 nx, ny, nz, pen = hit
                 kind = "trigger" if (a.trigger or b.trigger) else "hit"
                 if kind == "hit":
+                    if a.sleeping:
+                        a.sleeping = False
+                        a._still = 0
+                    if b.sleeping:
+                        b.sleeping = False
+                        b._still = 0
                     self._resolve_normal(a, b, nx, ny, nz, pen)
                 if a.on_collide:
                     a.on_collide(b, kind)
@@ -566,6 +625,26 @@ class Physics3D:
                 b.vy += imp * ny
                 b.vz += imp * nz
 
+    def _sleep_bodies(self):
+        lim = float(self.sleep_speed)
+        need = max(1, int(self.sleep_frames))
+        for body in self.bodies:
+            if body.is_static or not body.active or body.trigger:
+                continue
+            if body.shape == "capsule":
+                body.sleeping = False
+                body._still = 0
+                continue
+            speed = math.sqrt(body.vx * body.vx + body.vy * body.vy + body.vz * body.vz)
+            if body.on_ground and speed < lim:
+                body._still += 1
+                if body._still >= need:
+                    body.sleeping = True
+                    body.vx = body.vy = body.vz = 0.0
+            else:
+                body._still = 0
+                body.sleeping = False
+
     # ── ユーティリティ ────────────────────────────────────────────
 
     def raycast(self, ox: float, oy: float, oz: float,
@@ -610,6 +689,8 @@ def _is_round(shape: str) -> bool:
 def _collide_pair(a: RigidBody3D, b: RigidBody3D) -> Optional[tuple]:
     """(nx, ny, nz, pen)。法線は a→b。重ならなければ None。"""
     sa, sb = a.shape, b.shape
+    if sa == "trimesh" or sb == "trimesh":
+        return _trimesh_pair(a, b)
     if _is_round(sa) and _is_round(sb):
         return _round_round(a, b)
     if _is_round(sa):
@@ -989,6 +1070,8 @@ def _segment_aabb_hit(ax, ay, az, bx, by, bz, radius: float,
 
 
 def _ray_body(ox, oy, oz, dx, dy, dz, body: RigidBody3D) -> Optional[float]:
+    if body.shape == "trimesh":
+        return _ray_trimesh(ox, oy, oz, dx, dy, dz, body.tris)
     if body.shape == "sphere":
         cx, cy, cz = body.sphere_center()
         return _ray_sphere(ox, oy, oz, dx, dy, dz, cx, cy, cz, body.radius)
@@ -1115,3 +1198,191 @@ def _ray_capsule(ox, oy, oz, dx, dy, dz,
     if t is not None:
         ts.append(t)
     return min(ts) if ts else None
+
+
+def _build_trimesh(verts, indices) -> tuple[list, tuple]:
+    """三角形リストと (minx, miny, minz, w, h, d)。"""
+    pts = []
+    for v in verts:
+        pts.append((float(v[0]), float(v[1]), float(v[2])))
+    if not pts:
+        return [], (0.0, 0.0, 0.0, 0.1, 0.1, 0.1)
+    idx = [int(i) for i in indices]
+    tris = []
+    for i in range(0, len(idx) - 2, 3):
+        a, b, c = idx[i], idx[i + 1], idx[i + 2]
+        if max(a, b, c) >= len(pts):
+            continue
+        tris.append((pts[a], pts[b], pts[c]))
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    zs = [p[2] for p in pts]
+    minx, miny, minz = min(xs), min(ys), min(zs)
+    pad = 0.08
+    w = max(max(xs) - minx, pad)
+    h = max(max(ys) - miny, pad)
+    d = max(max(zs) - minz, pad)
+    return tris, (minx - pad, miny - pad, minz - pad, w + 2.0 * pad, h + 2.0 * pad, d + 2.0 * pad)
+
+
+def _tri_normal(a, b, c) -> tuple[float, float, float]:
+    ux, uy, uz = b[0] - a[0], b[1] - a[1], b[2] - a[2]
+    vx, vy, vz = c[0] - a[0], c[1] - a[1], c[2] - a[2]
+    nx = uy * vz - uz * vy
+    ny = uz * vx - ux * vz
+    nz = ux * vy - uy * vx
+    leng = math.sqrt(nx * nx + ny * ny + nz * nz) or 1.0
+    return (nx / leng, ny / leng, nz / leng)
+
+
+def _closest_point_triangle(px, py, pz, a, b, c) -> tuple[float, float, float]:
+    """点から三角形への最近接点（Ericson）。"""
+    ax, ay, az = a
+    abx, aby, abz = b[0] - ax, b[1] - ay, b[2] - az
+    acx, acy, acz = c[0] - ax, c[1] - ay, c[2] - az
+    apx, apy, apz = px - ax, py - ay, pz - az
+    d1 = abx * apx + aby * apy + abz * apz
+    d2 = acx * apx + acy * apy + acz * apz
+    if d1 <= 0.0 and d2 <= 0.0:
+        return a
+    bpx, bpy, bpz = px - b[0], py - b[1], pz - b[2]
+    d3 = abx * bpx + aby * bpy + abz * bpz
+    d4 = acx * bpx + acy * bpy + acz * bpz
+    if d3 >= 0.0 and d4 <= d3:
+        return b
+    vc = d1 * d4 - d3 * d2
+    if vc <= 0.0 and d1 >= 0.0 and d3 <= 0.0:
+        v = d1 / (d1 - d3) if abs(d1 - d3) > 1e-12 else 0.0
+        return (ax + abx * v, ay + aby * v, az + abz * v)
+    cpx, cpy, cpz = px - c[0], py - c[1], pz - c[2]
+    d5 = abx * cpx + aby * cpy + abz * cpz
+    d6 = acx * cpx + acy * cpy + acz * cpz
+    if d6 >= 0.0 and d5 <= d6:
+        return c
+    vb = d5 * d2 - d1 * d6
+    if vb <= 0.0 and d2 >= 0.0 and d6 <= 0.0:
+        w = d2 / (d2 - d6) if abs(d2 - d6) > 1e-12 else 0.0
+        return (ax + acx * w, ay + acy * w, az + acz * w)
+    va = d3 * d6 - d5 * d4
+    if va <= 0.0 and (d4 - d3) >= 0.0 and (d5 - d6) >= 0.0:
+        den = (d4 - d3) + (d5 - d6)
+        w = (d4 - d3) / den if abs(den) > 1e-12 else 0.0
+        return (
+            b[0] + (c[0] - b[0]) * w,
+            b[1] + (c[1] - b[1]) * w,
+            b[2] + (c[2] - b[2]) * w,
+        )
+    den = va + vb + vc
+    v = vb / den if abs(den) > 1e-12 else 0.0
+    w = vc / den if abs(den) > 1e-12 else 0.0
+    return (ax + abx * v + acx * w, ay + aby * v + acy * w, az + abz * v + acz * w)
+
+
+def _hit_from_points(px, py, pz, qx, qy, qz, radius, a, b, c) -> Optional[tuple]:
+    """線分上の点 P と三角形上の点 Q。法線は P→Q（other→mesh）。"""
+    dx, dy, dz = qx - px, qy - py, qz - pz
+    dist2 = dx * dx + dy * dy + dz * dz
+    if dist2 > 1e-12:
+        dist = math.sqrt(dist2)
+        if dist >= radius:
+            return None
+        return (dx / dist, dy / dist, dz / dist, radius - dist)
+    nx, ny, nz = _tri_normal(a, b, c)
+    return (nx, ny, nz, radius)
+
+
+def _sphere_tris(cx, cy, cz, radius, tris) -> Optional[tuple]:
+    best = None
+    for a, b, c in tris:
+        qx, qy, qz = _closest_point_triangle(cx, cy, cz, a, b, c)
+        hit = _hit_from_points(cx, cy, cz, qx, qy, qz, radius, a, b, c)
+        if hit is not None and (best is None or hit[3] > best[3]):
+            best = hit
+    return best
+
+
+def _segment_tris(ax, ay, az, bx, by, bz, radius, tris) -> Optional[tuple]:
+    best = None
+    for a, b, c in tris:
+        mx, my, mz = (ax + bx) * 0.5, (ay + by) * 0.5, (az + bz) * 0.5
+        qx, qy, qz = _closest_point_triangle(mx, my, mz, a, b, c)
+        px, py, pz = _closest_point_segment(qx, qy, qz, ax, ay, az, bx, by, bz)
+        qx, qy, qz = _closest_point_triangle(px, py, pz, a, b, c)
+        px, py, pz = _closest_point_segment(qx, qy, qz, ax, ay, az, bx, by, bz)
+        hit = _hit_from_points(px, py, pz, qx, qy, qz, radius, a, b, c)
+        if hit is not None and (best is None or hit[3] > best[3]):
+            best = hit
+    return best
+
+
+def _round_trimesh(other: RigidBody3D, mesh: RigidBody3D) -> Optional[tuple]:
+    """法線は other→mesh。"""
+    if other.shape == "sphere":
+        cx, cy, cz = other.sphere_center()
+        return _sphere_tris(cx, cy, cz, other.radius, mesh.tris)
+    if other.shape in ("capsule", "cylinder"):
+        if other.shape == "cylinder":
+            ax, ay, az = other.x, other.y, other.z
+            bx, by, bz = other.x, other.y + other.h, other.z
+            r = other.radius
+        else:
+            ax, ay, az, bx, by, bz = other.capsule_segment()
+            r = other.radius
+        return _segment_tris(ax, ay, az, bx, by, bz, r, mesh.tris)
+    r = min(other.w, other.d) * 0.5
+    return _segment_tris(
+        other.x, other.y + r, other.z,
+        other.x, other.y + max(r, other.h - r), other.z,
+        r, mesh.tris,
+    )
+
+
+def _trimesh_pair(a: RigidBody3D, b: RigidBody3D) -> Optional[tuple]:
+    if a.shape == "trimesh" and b.shape == "trimesh":
+        return None
+    mesh, other = (a, b) if a.shape == "trimesh" else (b, a)
+    if not mesh.aabb.overlaps(other.aabb):
+        return None
+    hit = _round_trimesh(other, mesh)
+    if hit is None:
+        return None
+    nx, ny, nz, pen = hit
+    if a.shape == "trimesh":
+        return (-nx, -ny, -nz, pen)
+    return (nx, ny, nz, pen)
+
+
+def _ray_triangle(ox, oy, oz, dx, dy, dz, a, b, c) -> Optional[float]:
+    """Möller–Trumbore。"""
+    eps = 1e-8
+    e1x, e1y, e1z = b[0] - a[0], b[1] - a[1], b[2] - a[2]
+    e2x, e2y, e2z = c[0] - a[0], c[1] - a[1], c[2] - a[2]
+    px = dy * e2z - dz * e2y
+    py = dz * e2x - dx * e2z
+    pz = dx * e2y - dy * e2x
+    det = e1x * px + e1y * py + e1z * pz
+    if abs(det) < eps:
+        return None
+    inv = 1.0 / det
+    tx, ty, tz = ox - a[0], oy - a[1], oz - a[2]
+    u = (tx * px + ty * py + tz * pz) * inv
+    if u < 0.0 or u > 1.0:
+        return None
+    qx = ty * e1z - tz * e1y
+    qy = tz * e1x - tx * e1z
+    qz = tx * e1y - ty * e1x
+    v = (dx * qx + dy * qy + dz * qz) * inv
+    if v < 0.0 or u + v > 1.0:
+        return None
+    t = (e2x * qx + e2y * qy + e2z * qz) * inv
+    return t if t >= 0.0 else None
+
+
+def _ray_trimesh(ox, oy, oz, dx, dy, dz, tris) -> Optional[float]:
+    best = None
+    for a, b, c in tris:
+        t = _ray_triangle(ox, oy, oz, dx, dy, dz, a, b, c)
+        if t is not None and (best is None or t < best):
+            best = t
+    return best
+

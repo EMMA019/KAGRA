@@ -201,6 +201,12 @@ impl KagraWindow {
         }
     }
 
+    pub fn set_shadow_cascades(&self, count: u32) {
+        if let Some(r) = lock_recover(&self.renderer).as_mut() {
+            r.set_shadow_cascades(count);
+        }
+    }
+
     pub fn set_toon_params(&self, threshold: f32, softness: f32, shade: f32, lit: f32) {
         if let Some(r) = lock_recover(&self.renderer).as_mut() {
             r.set_toon_params(threshold, softness, shade, lit);

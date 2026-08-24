@@ -97,6 +97,32 @@ def test_stream_tiles_load_and_unload():
     assert (0, 0) not in far
 
 
+def test_load_city_places_on_stream(tmp_path):
+    city = load_kagra_submodule("city")
+    path = tmp_path / "c.json"
+    path.write_text(
+        '{"version":1,"tile":10,"boxes":[{"x":2.0,"y":0.4,"z":1.0,"w":1,"h":2,"d":1}]}',
+        encoding="utf-8",
+    )
+    m = _world()
+    w = m.World3D(half=24.0)
+    w.set_height_fn(lambda _x, _z: 0.4, tile=10.0, stream_radius=16.0)
+    w.load_city(str(path))
+    w.stream_tiles(0.0, 0.0)
+    assert any(abs(b.x - 2.0) < 1e-6 for b in w.boxes)
+
+
+def test_dynamic_box_xform_tracks_body():
+    m = _world()
+    w = m.World3D(gravity=0.0)
+    b = w.add_box(0.0, 1.0, 0.0, 0.6, 0.6, 0.6, is_static=False)
+    b.use_gravity = False
+    b.vx = 2.0
+    b.friction = 0.0
+    w.update(0.05)
+    assert w.box_xforms[0][0] == pytest.approx(b.x)
+
+
 def test_chunk_fill_once_per_tile():
     m = _world()
     w = m.World3D(half=24.0)
