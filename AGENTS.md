@@ -80,6 +80,9 @@ PNG/WAV/projection:
 - `kagra.debug_trace(foot_y=…, height_fn=…)` — slope-float detector (`|foot-terrain|` while grounded). Default threshold 0.05. `debug_trace_summary()` → `frames 32-48 floated 0.15`. `World3D.update` feeds it when a tracer is active. Slope sit uses a tight foot AABB, not Rapier.
 - `Camera3D.follow(..., world=)` — pull the chase camera in so it does not go through walls
 - `ActionController` — one-shot poses; `ActionController.names()` lists them
+- `avatar.set_locomotion(speed)` — idle/walk/run speed blend (no clip snap).
+  `play_upper` keeps spine/arms independent; ActionController overlays do not
+  fight the walk arm swing
 
 Verify: `examples/verify_scenarios/orb_rush_smoke.json`,
 `heart_catch_smoke.json`, `switch_room_smoke.json`,

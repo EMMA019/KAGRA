@@ -42,6 +42,8 @@ Outdoor: `apply_outdoor_look` / `World3D.set_height_fn(overworld_height, tile=10
 `load_city` / `Walk(..., jump=)`. City JSON is not OSM. Dynamic boxes
 fall and stack; `Walk` stands on them (`add_box(..., is_static=False)`).
 Play: `clicked_prop` / `Walk.carry` / `animate` / `Label` / `sound`.
+`avatar.set_locomotion(speed)` blends idle/walk/run (built-in `run` clip).
+`play_upper` / `ActionController` overlay spine/arms without fighting the legs.
 Agent eyes: `kagra.annotate` (click → JSONL) / `kagra.debug_trace` (foot vs terrain, threshold 0.05).
 Slope sit is a tight foot AABB + snap-to-plane; still no Rapier. Not a Tk/Inspector.
 Pointer lock follows first person (OS may refuse). USB pad is gilrs on the

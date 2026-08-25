@@ -235,6 +235,142 @@ def _is_upper_bone(name: str) -> bool:
     return any(k in name for k in _UPPER_BONE_KEYS)
 
 
+def locomotion_weights(
+    speed: float,
+    walk_speed: float = 2.4,
+    run_speed: float = 5.0,
+    *,
+    has_run: bool = True,
+) -> tuple[float, float, float]:
+    """Planar speed (m/s) → ``(idle, walk, run)`` weights that sum to 1.
+
+    Continuous — no threshold snap. ``has_run=False`` keeps the run weight
+    at 0 and parks leftover speed on walk (do not invent a clip).
+    """
+    s = max(0.0, float(speed))
+    w_spd = max(1e-6, float(walk_speed))
+    r_spd = max(w_spd + 1e-6, float(run_speed))
+    if s <= 1e-6:
+        return 1.0, 0.0, 0.0
+    if not has_run:
+        t = min(1.0, s / w_spd)
+        return 1.0 - t, t, 0.0
+    if s < w_spd:
+        t = s / w_spd
+        return 1.0 - t, t, 0.0
+    if s < r_spd:
+        t = (s - w_spd) / (r_spd - w_spd)
+        return 0.0, 1.0 - t, t
+    return 0.0, 0.0, 1.0
+
+
+def clip_cycle_hz(frames, fallback: float = 1.0) -> float:
+    """Looping clip frequency from keyframe durations."""
+    if not frames:
+        return float(fallback)
+    total = sum(max(1e-6, float(f[1])) for f in frames)
+    if total <= 1e-6:
+        return float(fallback)
+    return 1.0 / total
+
+
+def sample_clip_pair(frames, phase: float) -> tuple[dict, dict, float]:
+    """Looping clip → (keyframe A, keyframe B, local t in [0, 1])."""
+    if not frames:
+        return {}, {}, 0.0
+    total = sum(max(1e-6, float(f[1])) for f in frames)
+    t = (float(phase) % 1.0) * total
+    acc = 0.0
+    n = len(frames)
+    for i, frame in enumerate(frames):
+        dur = max(1e-6, float(frame[1]))
+        if t <= acc + dur or i == n - 1:
+            local = max(0.0, min(1.0, (t - acc) / dur))
+            a = frame[0] if isinstance(frame[0], dict) else {}
+            b = frames[(i + 1) % n][0]
+            if not isinstance(b, dict):
+                b = {}
+            return a, b, local
+        acc += dur
+    a = frames[0][0] if isinstance(frames[0][0], dict) else {}
+    return a, a, 0.0
+
+
+def pose_to_bind_quats(raw_pose: dict, bind_rots: dict | None = None) -> dict:
+    """Clip local euler/quat → bind-space xyzw."""
+    bind = bind_rots or {}
+    out = {}
+    for name, rot in (raw_pose or {}).items():
+        if rot is None:
+            continue
+        bind_q = bind.get(name) or _ID
+        if len(rot) == 7:
+            qt = _quat_normalize(list(rot[3:7]))
+        elif len(rot) == 4:
+            qt = _quat_normalize(list(rot))
+        else:
+            qt = _euler_to_quat(*rot[:3])
+        out[name] = _qmul(bind_q, qt)
+    return out
+
+
+def sample_clip_bind_pose(frames, phase: float, bind_rots: dict | None = None) -> dict:
+    """Bind-space pose at a looping phase in [0, 1)."""
+    a, b, t = sample_clip_pair(frames, phase)
+    bind = bind_rots or {}
+    qa = pose_to_bind_quats(a, bind)
+    qb = pose_to_bind_quats(b, bind)
+    names = set(qa) | set(qb)
+    out = {}
+    for n in names:
+        qa_n = qa.get(n) or bind.get(n) or list(_ID)
+        qb_n = qb.get(n) or bind.get(n) or list(_ID)
+        out[n] = _slerp(qa_n, qb_n, t)
+    return out
+
+
+def blend_weighted_quats(items: list[tuple[list, float]]) -> list:
+    """Sequential slerp of ``(quat, weight)`` pairs. Weights need not be 1."""
+    acc_q = None
+    acc_w = 0.0
+    for q, w in items:
+        if w <= 1e-8 or q is None:
+            continue
+        if acc_q is None:
+            acc_q = list(q)
+            acc_w = w
+        else:
+            acc_q = _slerp(acc_q, q, w / (acc_w + w))
+            acc_w += w
+    return acc_q if acc_q is not None else list(_ID)
+
+
+def blend_locomotion_pose(
+    *,
+    idle: dict,
+    walk: dict,
+    run: dict,
+    weights: tuple[float, float, float],
+    bind_rots: dict | None = None,
+) -> dict:
+    """Slerp idle/walk/run bind-space poses. Missing bones fall back to bind."""
+    bind = bind_rots or {}
+    iw, ww, rw = weights
+    names = set(idle) | set(walk) | set(run)
+    out = {}
+    for n in names:
+        parts = []
+        if iw > 1e-8:
+            parts.append((idle.get(n) or bind.get(n) or list(_ID), iw))
+        if ww > 1e-8:
+            parts.append((walk.get(n) or bind.get(n) or list(_ID), ww))
+        if rw > 1e-8:
+            parts.append((run.get(n) or bind.get(n) or list(_ID), rw))
+        if parts:
+            out[n] = blend_weighted_quats(parts)
+    return out
+
+
 # ── アニメーター（内部クラス）────────────────────────────────
 
 class _Animator:
@@ -406,6 +542,97 @@ class _Animator:
                         self._on_finish()
 
 
+class _LocomotionMixer:
+    """Idle / walk / run speed blend. Evaluates into ``anim.current_rots``.
+
+    Overlay-owned bones stay in ``current_rots`` (so gait keeps moving) but
+    are not sent to the engine — ``play_upper`` / ActionController write those.
+    """
+
+    def __init__(self, anim: _Animator):
+        self._anim = anim
+        self.enabled = False
+        self.speed = 0.0
+        self._smoothed = 0.0
+        self.walk_speed = 2.4
+        self.run_speed = 5.0
+        self.smooth = 0.18
+        self.phase = 0.0
+        self.weights = (1.0, 0.0, 0.0)
+        self.clip_name = "idle"
+
+    def reset(self):
+        self.enabled = False
+        self.speed = 0.0
+        self._smoothed = 0.0
+        self.phase = 0.0
+        self.weights = (1.0, 0.0, 0.0)
+        self.clip_name = "idle"
+
+    def update(self, dt: float, skip_send=()):
+        if not self.enabled:
+            return
+        dt = max(0.0, float(dt))
+        tau = max(1e-3, float(self.smooth))
+        k = 1.0 - math.exp(-dt / tau) if dt > 0.0 else 1.0
+        self._smoothed += (float(self.speed) - self._smoothed) * k
+
+        clips = self._anim._clips
+        has_run = bool(clips.get("run"))
+        self.weights = locomotion_weights(
+            self._smoothed,
+            self.walk_speed,
+            self.run_speed,
+            has_run=has_run,
+        )
+        iw, ww, rw = self.weights
+        if rw >= ww and rw >= iw and rw > 1e-6:
+            self.clip_name = "run"
+        elif ww >= iw and ww > 1e-6:
+            self.clip_name = "walk"
+        else:
+            self.clip_name = "idle"
+        self._anim._clip = self.clip_name
+        self._anim._playing = True
+
+        walk_frames = clips.get("walk") or []
+        run_frames = clips.get("run") or []
+        idle_frames = clips.get("idle") or []
+        walk_hz = clip_cycle_hz(walk_frames, 1.2)
+        run_hz = clip_cycle_hz(run_frames, 2.4)
+        gait = ww + rw
+        if gait > 1e-6:
+            if rw > 1e-8 and has_run:
+                rate = (ww * walk_hz + rw * run_hz) / gait
+            else:
+                rate = walk_hz * min(
+                    2.5,
+                    max(0.35, self._smoothed / max(self.walk_speed, 1e-6)),
+                )
+            self.phase = (self.phase + dt * rate) % 1.0
+
+        bind = self._anim._bind_rots or {}
+        idle_pose = sample_clip_bind_pose(idle_frames, 0.0, bind)
+        walk_pose = sample_clip_bind_pose(walk_frames, self.phase, bind)
+        run_pose = sample_clip_bind_pose(run_frames, self.phase, bind) if has_run else {}
+        blended = blend_locomotion_pose(
+            idle=idle_pose,
+            walk=walk_pose,
+            run=run_pose,
+            weights=self.weights,
+            bind_rots=bind,
+        )
+        skip = set(skip_send or ())
+        for n, q in blended.items():
+            self._anim.current_rots[n] = q
+            if n in skip:
+                continue
+            try:
+                _send_bone_rot(self._anim.vrm_id, n, q)
+            except Exception:
+                pass
+
+
 # ══════════════════════════════════════════════════════════════
 #  VrmAvatar (Phase 7+)
 # ══════════════════════════════════════════════════════════════
@@ -444,6 +671,7 @@ class VrmAvatar:
         self._upper   = _Animator(self.vrm_id, self._bind_rots, bone_filter=_is_upper_bone)
         self._upper._clips = self._anim._clips
         self._upper.root_motion = False
+        self._loco = _LocomotionMixer(self._anim)
         self._spring  = None
 
         # Phase 7 サブシステム（enable_*() で初期化）
@@ -907,6 +1135,7 @@ class VrmAvatar:
             on_finish: 非ループ完了時コールバック
             fade:      前クリップからのクロスフェード秒（0 で即切替）
         """
+        self._loco.enabled = False
         prev_clip = self._anim._clip
         self._anim.play(clip, loop=loop, on_finish=on_finish, fade=fade)
         if prev_clip != clip:
@@ -939,6 +1168,48 @@ class VrmAvatar:
         self._upper._clip = ""
         self._upper._cross_dur = 0.0
         self._upper._cross_from = {}
+
+    def set_locomotion(
+        self,
+        speed: float,
+        *,
+        walk_speed: float = 2.4,
+        run_speed: float = 5.0,
+        smooth: float = 0.18,
+    ):
+        """Drive idle/walk/run by planar speed (m/s). No clip snap.
+
+        ``speed=0`` eases to idle. Around ``walk_speed`` the walk clip owns
+        the pose. At ``run_speed`` and above the built-in ``run`` clip is
+        used if registered (do not invent Mixamo). Playback rate scales
+        with the blend. Call this each frame instead of ``play("idle")`` /
+        ``play("walk")``. ``play()`` of another clip disables the mixer.
+
+        Upper-body ``play_upper`` / ``ActionController`` keep their own
+        bones; legs keep walking.
+        """
+        self._loco.walk_speed = float(walk_speed)
+        self._loco.run_speed = float(run_speed)
+        self._loco.smooth = float(smooth)
+        self._loco.speed = max(0.0, float(speed))
+        self._loco.enabled = True
+
+    def _overlay_owned_bones(self) -> set:
+        """Bones currently claimed by the upper layer or ActionController."""
+        owned: set = set()
+        if self._upper.playing and self._upper._frames:
+            for frame in self._upper._frames:
+                bones = frame[0] if frame else {}
+                if isinstance(bones, dict):
+                    owned.update(bones)
+        action = getattr(self, "_action_controller", None)
+        if action is not None and getattr(action, "playing_action", None):
+            owned.update(getattr(action, "_saved_idle_rots", {}) or {})
+            for _, pose in getattr(action, "_keyframes", []) or []:
+                if isinstance(pose, dict):
+                    owned.update(pose)
+            owned.update(getattr(action, "_overlay_rots", {}) or {})
+        return owned
 
     def add_clip(self, name: str, frames: list):
         """カスタムクリップを登録する(低レベル API)。"""
@@ -1107,6 +1378,8 @@ class VrmAvatar:
 
     @property
     def clip(self) -> str:
+        if self._loco.enabled:
+            return self._loco.clip_name
         return self._anim.clip
 
     @property
@@ -1249,6 +1522,7 @@ class VrmAvatar:
         self.stop_upper()
         self._upper.current_rots.clear()
         self._upper._from = {}
+        self._loco.reset()
         if self._spring:
             self._spring.reset()
 
@@ -1278,6 +1552,12 @@ class VrmAvatar:
             "lipsync": self._lipsync is not None,
             "ik":      self._ik      is not None,
             "emotion": None,
+            "locomotion": {
+                "enabled": bool(self._loco.enabled),
+                "speed": self._loco._smoothed,
+                "clip": self._loco.clip_name,
+                "weights": self._loco.weights,
+            },
         }
         if self._emotion:
             info["emotion"] = self._emotion.diagnostics() \
@@ -1302,7 +1582,13 @@ class VrmAvatar:
         self._frame_count = getattr(self, '_frame_count', 0) + 1
 
         # 1. アニメーション（ベース → 上半身レイヤーで上書き）
-        self._anim.update(dt)
+        #    Overlay-owned bones stay in locomotion current_rots (gait keeps
+        #    moving) but are not sent — upper / ActionController write them.
+        skip = self._overlay_owned_bones()
+        if self._loco.enabled:
+            self._loco.update(dt, skip_send=skip)
+        else:
+            self._anim.update(dt)
         self._upper.update(dt)
         self._apply_vrma_expressions()
 
@@ -1316,6 +1602,9 @@ class VrmAvatar:
             rots = dict(self._anim.current_rots)
             if self._upper.playing:
                 rots.update(self._upper.current_rots)
+            overlay = getattr(action_ctrl, "_overlay_rots", None) if action_ctrl else None
+            if overlay:
+                rots.update(overlay)
             self._spring.update(dt, rots)
 
         # 3. 視線追従（VRMA LookAt があるフレームは目だけ後から上書き）

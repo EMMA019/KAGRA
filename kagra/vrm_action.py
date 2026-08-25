@@ -63,16 +63,23 @@ def _overlay_bone_quat(
     bone: str,
     saved_idle: Dict[str, list[float]],
     bind_pose: Dict[str, list[float]],
+    live_loco: Dict[str, list[float]] | None = None,
 ) -> list[float]:
     """Pick a bone quat from an overlay keyframe.
 
-    Empty keyframes (``{}``) mean "return to the pose saved at play()".
-    Do not fall back to live ``current_rots`` — the overlay already wrote
+    Empty keyframes (``{}``) mean "release the overlay":
+    1. live locomotion pose if the mixer/base clip still owns the bone
+    2. the pose saved at play() (idle snapshot)
+    3. bind
+
+    Do not fall back to a live overlay dict — the overlay already wrote
     the action there, so blending toward it leaves clap/banzai arms stuck.
     """
     q = pose.get(bone)
     if q is not None:
         return q
+    if live_loco and bone in live_loco:
+        return live_loco[bone]
     rest = saved_idle.get(bone) or bind_pose.get(bone)
     return rest if rest is not None else _ID_QUAT[:]
 
@@ -265,6 +272,8 @@ class ActionController:
 
         # アクション開始時に保存した idle 姿勢（終了時に復元する）
         self._saved_idle_rots: Dict[str, list[float]] = {}
+        # Overlay pose written to the engine without mutating locomotion current_rots.
+        self._overlay_rots: Dict[str, list[float]] = {}
 
         # バインドポーズのキャッシュ（初回アクション時に構築）
         self._bind_pose: Dict[str, list[float]] = {}
@@ -364,7 +373,14 @@ class ActionController:
 
         if self._time >= self._duration:
             self.playing_action = None
+            loco = getattr(self._avatar, "_loco", None)
+            if loco is not None and loco.enabled:
+                # Mixer already holds the live walk pose in current_rots.
+                self._overlay_rots = {}
+                self._saved_idle_rots = {}
+                return
             self._restore_idle_poses()
+            self._overlay_rots = {}
             return
 
         # 現在のキーフレーム区間を探す
@@ -380,16 +396,19 @@ class ActionController:
         t_ease = progress * progress * (3 - 2 * progress)
 
         all_bones = set(pose0.keys()) | set(pose1.keys())
+        live_loco = dict(self._avatar._anim.current_rots)
+        upper = getattr(self._avatar, "_upper", None)
+        if upper is not None and upper.playing:
+            live_loco.update(upper.current_rots)
 
         for bone in all_bones:
             q0 = _overlay_bone_quat(
-                pose0, bone, self._saved_idle_rots, self._bind_pose,
+                pose0, bone, self._saved_idle_rots, self._bind_pose, live_loco,
             )
             q1 = _overlay_bone_quat(
-                pose1, bone, self._saved_idle_rots, self._bind_pose,
+                pose1, bone, self._saved_idle_rots, self._bind_pose, live_loco,
             )
             q_blend = _slerp(q0, q1, t_ease)
 
-            # エンジンに送信 + current_rots を更新
             kagra.get_engine().set_vrm_bone_rot(self.vrm_id, bone, *q_blend)
-            self._avatar._anim.current_rots[bone] = q_blend
+            self._overlay_rots[bone] = q_blend
