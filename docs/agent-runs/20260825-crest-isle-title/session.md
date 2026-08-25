@@ -26,3 +26,4 @@ Public `fill` defaults `alpha=255`. 118 is a see-through navy wash. The chase ca
 
 - Snapshot git was behind #82/#83. Fetched `origin/master` before branching.
 - Did not treat "title text missing" as a Label bug: `self.title` is play HUD; the banner `kagra.text` was there, just lost on the glitched composite.
+- First GitHub `python-unit` 3.11 failed on `"118" not in title_arm` vs the `alpha-118` comment. Follow-up SHA `d9c7d94`: 17 checks passed.

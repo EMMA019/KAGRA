@@ -324,7 +324,7 @@ def render_markdown(items: list[tuple[str, str, str]]) -> str:
         "- `world_to_screen(wx, wy)` は **2D**。3D は `Camera3D.world_to_screen(wx, wy, wz)`。",
         "- セーブは `save_json` / `load_json`。`load_data` はアセットレジストリ。",
         "- VRM が checkout に無いときは `ensure_vrm()`。パスを直書きしない。",
-        "- ワンショットポーズは `ActionController`（`ActionController.names()`）。",
+        "- ワンショットポーズは `ActionController`（`ActionController.names()`）。歩きは `avatar.set_locomotion(speed)`（idle/walk/run を速度ブレンド）。上半身は `play_upper`。`play(\"walk\")` はクリップ切替。",
         "- 静的メッシュは `upload_mesh_3d` で一度載せ、`draw_mesh_id` で描く。",
         "- ワールド箱は視錐台カリングされる。箱の描画は `draw_mesh_instances`。直前フレームは `render_stats()`。",
         "- VRM プリミティブはパッド付きボーン AABB でカリング。`doubleSided` のときだけ両面。MToon は裏面法線を反転（頭の中からのリム白飛び / 髪越しの顔を防ぐ）。",

@@ -34,3 +34,20 @@ def test_empty_keyframe_uses_saved_idle_not_live_overlay():
     # Missing saved idle falls back to bind.
     got = action._overlay_bone_quat({}, "J_Bip_L_UpperArm", {}, bind)
     assert got == bind["J_Bip_L_UpperArm"]
+
+
+def test_empty_keyframe_prefers_live_locomotion_over_saved_idle():
+    """Walk keeps moving during clap; empty {} releases to live legs/arms."""
+    idle = [0.0, 0.0, 0.0, 1.0]
+    walk = [0.2, 0.0, 0.0, 0.98]
+    saved = {"J_Bip_L_UpperArm": idle}
+    bind = {"J_Bip_L_UpperArm": [0.0, 0.0, 0.5, 0.8]}
+    live = {"J_Bip_L_UpperArm": walk}
+    got = action._overlay_bone_quat({}, "J_Bip_L_UpperArm", saved, bind, live)
+    assert got is walk
+    # Overlay pose still wins when the keyframe names the bone.
+    clap = [0.1, 0.2, 0.3, 0.9]
+    got = action._overlay_bone_quat(
+        {"J_Bip_L_UpperArm": clap}, "J_Bip_L_UpperArm", saved, bind, live,
+    )
+    assert got is clap

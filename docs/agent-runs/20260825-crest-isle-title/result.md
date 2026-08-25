@@ -17,6 +17,10 @@ Title was not a missing string. `draw` composited the live island, then `fill(..
 - GitHub `python-unit` 3.11 failed on the first SHA: `"118" not in title_arm` matched the `alpha-118` comment. Test now checks the `_banner` call for `overlay_alpha=255` / not `overlay_alpha=118`.
 - GPU `open_world_smoke` not run here (Rust extension missing). SMOKE still starts in `play`, so it would not screenshot the title anyway.
 
+**GitHub CI: 17 checks passed** on `d9c7d94` (`cursor/crest-isle-title-screen-d128`), including `python-unit` 3.10/3.11/3.12 and golden.
+
+PR: https://github.com/EMMA019/KAGRA/pull/84
+
 ## Files
 
 - `examples/vrm_open_world.py`

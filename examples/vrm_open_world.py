@@ -11,7 +11,9 @@ credit the character if you post screenshots.
 
 Art (CC0, not in the pip wheel): examples/assets/open_world/LICENSE.md
 
-Walk: built-in VrmAvatar idle/walk. Mixamo/BVH walk is NOT loaded.
+Walk: built-in VrmAvatar idle/walk/run via ``set_locomotion`` (speed blend).
+Mixamo/BVH walk is NOT loaded. Upper-body clap/banzai stay on
+ActionController and do not fight the walk arm swing.
 Spatial audio: looping sea to the west + pickup SE at the crest/coin.
 
 操作:
@@ -451,12 +453,14 @@ class CrestIsle(kagra.Scene):
 
     def _pose(self, dt, *, move: bool):
         p = self.world.player
-        moving = False
+        speed = 0.0
         if move and p is not None:
-            moving = p.vx * p.vx + p.vz * p.vz > 0.04 or abs(getattr(p, "vy", 0.0)) > 0.4
-        want = "walk" if moving else "idle"
-        if getattr(self.avatar, "clip", None) != want:
-            self.avatar.play(want, loop=True)
+            speed = math.hypot(p.vx, p.vz)
+        self.avatar.set_locomotion(
+            speed,
+            walk_speed=2.2,
+            run_speed=float(getattr(self.walk, "speed", PLAYER_SPEED)),
+        )
         self.avatar.update(dt)
         self.action.update(dt)
         if p is None:
