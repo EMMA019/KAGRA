@@ -34,4 +34,4 @@ Crest Isle `_pose` calls `set_locomotion(hypot(vx,vz), walk_speed=2.2, run_speed
 
 - `play_upper("idle")` only names arm bones. Skipping *all* upper bones would freeze walk spine at bind; skipping **owned** bones lets walk keep counter-rotate on the spine while clap owns the arms.
 - Loading `vrm_avatar` in tests cannot construct `VrmAvatar` (needs `load_vrm`). Mixer + helpers are tested on `_Animator(0)` with send wrapped in `try`.
-- `python` is not on PATH here; `python3`. No `kagra_core` wheel, so GPU `open_world_smoke` was not run.
+- `python` is not on PATH here; `python3`. No `kagra_core` wheel, so GPU `open_world_smoke` was not run here. GitHub CI on PR #87 later went green (17 checks, including `golden` and Windows wheels).

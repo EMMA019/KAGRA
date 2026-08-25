@@ -17,7 +17,8 @@ Crest Isle snapped idle↔walk on `vx²+vz² > 0.04` via `avatar.play`. `_Animat
 - `python3 tools/gen_api_index.py --check` → OK (422 entries; agent note for `set_locomotion`)
 - `python3 -m pytest tests -m "not golden"` → **416 passed**, 10 deselected
 - Focused: `tests/test_vrm_locomotion.py` (weights continuous, idle→walk legs, overlay mask, speed ease, upper/action bone union)
-- GPU `open_world_smoke` / desktop Crest Isle **not** run here (no `kagra_core` wheel / no wgpu adapter). CI / Emma's Windows is the GPU stand-in.
+- GPU `open_world_smoke` / desktop Crest Isle **not** run here (no `kagra_core` wheel / no wgpu adapter)
+- GitHub CI on `c75006c` (PR #87): **17 checks green** — `python-unit` 3.10/3.11/3.12, `build` Ubuntu/Windows/macOS, `rust-test`, `golden`, `kagra-shared`, Android APK, iOS SwiftPM. Cursor Bugbot neutral.
 
 ## Try
 
