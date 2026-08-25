@@ -37,3 +37,4 @@ Fixture: `tests/fixtures/synthetic_mixamo_hang.json` (~1.3KB). No Emma.vrm, no M
 - Dest-only conjugate is still banned for Mixamo; tests assert `add_motion` uses `src_worlds`.
 - `import kagra.retarget` for the fixture writer pulls `__init__.py` / missing `kagra_core`. Tests use `load_kagra_submodule`.
 - `resolve_mixamo_locomotion` docstring mentions `synthetic_walk.bvh` as the thing it never loads; a first test banned the string entirely.
+- GitHub CI on PR #90: 17 checks green (wheels compile the new bind-worlds tuple).

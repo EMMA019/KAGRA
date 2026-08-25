@@ -17,7 +17,7 @@ python3 tools/gen_api_index.py --check          # OK (427 entries)
 python3 -m pytest tests -m "not golden"         # pass (this environment, no kagra_core wheel)
 ```
 
-GPU `open_world_smoke` / Emma.vrm not run here (no extension). CI wheels compile the `load_fbx_anim` 4-tuple.
+GPU `open_world_smoke` / Emma.vrm not run here (no extension). GitHub CI on PR #90: **17 checks green** (including wheels that compile the `load_fbx_anim` 4-tuple).
 
 ## How Emma tries it
 
