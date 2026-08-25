@@ -51,3 +51,4 @@
 - `20260825-sleeve-stiffness/` — Crest Isle 袖/布の剛性（SpringBone Verlet を UniVRM に合わせ、Alicia に袖ヘルパー。ゲームではない）
 - `20260825-crest-isle-loco-blend/` — Crest Isle 歩き速度ブレンド + 上半身レイヤ（idle/walk/run。Mixamo は入れない）
 - `20260825-crest-isle-spatial-audio/` — Crest Isle 立体音（listener + 海ループ + 拾い SE。HRTF ではない）
+- `20260825-multi-avatar/` — 複数 VRM の GPU 共有 + FPS 見本（Crest Isle は 1 人のまま）

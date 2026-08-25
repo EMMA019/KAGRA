@@ -84,11 +84,15 @@ PNG/WAV/projection:
 - `avatar.set_locomotion(speed)` — idle/walk/run speed blend (no clip snap).
   `play_upper` keeps spine/arms independent; ActionController overlays do not
   fight the walk arm swing
+- `kagra.avatar(path)` twice shares GPU mesh/texture/MToon. Measure with
+  `vrm_gpu_stats()`. Extra bodies: `examples/vrm_multi_avatar.py`
+  (Crest Isle stays one player)
 
 Verify: `examples/verify_scenarios/orb_rush_smoke.json`,
 `heart_catch_smoke.json`, `switch_room_smoke.json`,
 `dodge_room_smoke.json`, `prop_garden_smoke.json`,
-and `pretty_room_smoke.json`, `overworld_smoke.json`.
+and `pretty_room_smoke.json`, `overworld_smoke.json`,
+`multi_avatar_smoke.json`.
 Logged builds live in `docs/agent-runs/`.
 The API index front is VRM / 3D / agents; the shelf is legacy 2D.
 

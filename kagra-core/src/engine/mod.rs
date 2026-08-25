@@ -4,11 +4,13 @@
 // 1. window.renderer  ->  window.texture_refcount
 // 2. vrm_models  ->  window.renderer
 // 3. camera_3d  ->  window.renderer
+// 4. vrm_share is after renderer is released (cache miss) or without renderer (hit).
+//    unload: drop vrm_models, then vrm_share, then renderer (texture rc).
 // 逆順ロックはデッドロックを引き起こす可能性がある
 // ============================================================================
 
 use pyo3::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -18,7 +20,7 @@ use crate::error::{lock_py, lock_recover};
 use crate::audio::AudioEngine;
 use crate::color::Color;
 use crate::renderer::SkinnedMeshCommand;
-use crate::vrm::VrmModel;
+use crate::vrm::{share_key, VrmGpuShare, VrmModel};
 use crate::gltf::GltfModel;
 use crate::camera::{row_major_to_column_major, unproject_ray, Camera3D};
 use crate::pick::{bone_pick_radius, ray_sphere};
@@ -33,6 +35,9 @@ pub struct Engine {
     pub(crate) keymap: Arc<Mutex<HashMap<String, u32>>>,
     pub(crate) vrm_models: Arc<Mutex<HashMap<u32, VrmModel>>>,
     pub(crate) next_vrm_id: Arc<Mutex<u32>>,
+    /// Same-path VRM GPU templates (VB/IB/morph/MToon/textures).
+    pub(crate) vrm_share: Arc<Mutex<HashMap<String, VrmGpuShare>>>,
+    pub(crate) vrm_share_by_id: Arc<Mutex<HashMap<u32, String>>>,
     pub(crate) boid_systems: Arc<Mutex<HashMap<u32, crate::boids::BoidSystem>>>,
     pub(crate) next_boid_id: Arc<Mutex<u32>>,
     pub(crate) boid_gpu_systems: Arc<Mutex<HashMap<u32, Arc<Mutex<crate::boids_gpu::BoidSystemGpu>>>>>,
@@ -99,6 +104,13 @@ impl Engine {
         Self::default_keymap()
     }
 
+    fn alloc_vrm_id(&self) -> PyResult<u32> {
+        let mut next = lock_py(&self.next_vrm_id)?;
+        let id = *next;
+        *next += 1;
+        Ok(id)
+    }
+
     /// テクスチャの参照カウントを減らし、0ならアンロードする（内部ヘルパ）
     fn decrement_texture_refcount(&self, texture_id: u32) {
         let mut rc = lock_recover(&self.window.texture_refcount);
@@ -146,6 +158,8 @@ impl Engine {
             keymap: Arc::new(Mutex::new(keymap)),
             vrm_models: Arc::new(Mutex::new(HashMap::new())),
             next_vrm_id: Arc::new(Mutex::new(1u32)),
+            vrm_share: Arc::new(Mutex::new(HashMap::new())),
+            vrm_share_by_id: Arc::new(Mutex::new(HashMap::new())),
             boid_systems: Arc::new(Mutex::new(HashMap::new())),
             next_boid_id: Arc::new(Mutex::new(1u32)),
             boid_gpu_systems: Arc::new(Mutex::new(HashMap::new())),
@@ -321,14 +335,28 @@ impl Engine {
 
     // ========== VRM  ==========
     pub fn load_vrm(&self, path: &str) -> PyResult<u32> {
+        let key = share_key(path);
+        {
+            let mut share = lock_py(&self.vrm_share)?;
+            if let Some(entry) = share.get_mut(&key) {
+                let model = entry.template.instantiate();
+                entry.live = entry.live.saturating_add(1);
+                drop(share);
+                let id = self.alloc_vrm_id()?;
+                lock_py(&self.vrm_share_by_id)?.insert(id, key);
+                lock_py(&self.vrm_models)?.insert(id, model);
+                return Ok(id);
+            }
+        }
+
         use crate::gltf_common::extract_texture_data_from_glb;
         use crate::vrm::load_vrm;
-        use std::collections::HashMap;
 
         let tex_data = extract_texture_data_from_glb(path)
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
 
         let mut tex_id_map = HashMap::new();
+        let mut uploaded: Vec<u32> = Vec::new();
         {
             let mut rg = lock_py(&self.window.renderer)?;
             let renderer = rg.as_mut().ok_or_else(|| {
@@ -340,6 +368,7 @@ impl Engine {
             for (ti, bytes, ext) in tex_data {
                 if let Ok(id) = renderer.load_gltf_image(&bytes, &ext) {
                     tex_id_map.insert(ti, id);
+                    uploaded.push(id);
                     *rc.entry(id).or_insert(0) += 1;
                 }
             }
@@ -356,12 +385,17 @@ impl Engine {
                 .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?
         };
 
-        let id = {
-            let mut next = lock_py(&self.next_vrm_id)?;
-            let id = *next;
-            *next += 1;
-            id
-        };
+        let id = self.alloc_vrm_id()?;
+        let template = model.instantiate();
+        lock_py(&self.vrm_share)?.insert(
+            key.clone(),
+            VrmGpuShare {
+                template,
+                tex_ids: uploaded,
+                live: 1,
+            },
+        );
+        lock_py(&self.vrm_share_by_id)?.insert(id, key);
         lock_py(&self.vrm_models)?.insert(id, model);
         Ok(id)
     }
@@ -372,8 +406,35 @@ impl Engine {
             let mut models = lock_py(&self.vrm_models)?;
             models.remove(&vrm_id)
         };
-        if let Some(model) = model {
-            let mut tex_ids = std::collections::HashSet::new();
+        if model.is_none() {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!("VRM model {} not found", vrm_id)));
+        }
+        let key = lock_py(&self.vrm_share_by_id)?.remove(&vrm_id);
+        if let Some(key) = key {
+            let mut share = lock_py(&self.vrm_share)?;
+            let drop_tex = if let Some(entry) = share.get_mut(&key) {
+                entry.live = entry.live.saturating_sub(1);
+                if entry.live == 0 {
+                    Some(std::mem::take(&mut entry.tex_ids))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if drop_tex.is_some() {
+                share.remove(&key);
+            }
+            drop(share);
+            if let Some(tex_ids) = drop_tex {
+                for tid in tex_ids {
+                    if tid != 0 {
+                        self.decrement_texture_refcount(tid);
+                    }
+                }
+            }
+        } else if let Some(model) = model {
+            let mut tex_ids = HashSet::new();
             for prim in &model.primitives {
                 if prim.texture_id != 0 {
                     tex_ids.insert(prim.texture_id);
@@ -382,11 +443,54 @@ impl Engine {
             for tid in tex_ids {
                 self.decrement_texture_refcount(tid);
             }
-            log::info!("Unloaded VRM model id={}", vrm_id);
-            Ok(())
-        } else {
-            Err(pyo3::exceptions::PyValueError::new_err(format!("VRM model {} not found", vrm_id)))
         }
+        log::info!("Unloaded VRM model id={}", vrm_id);
+        Ok(())
+    }
+
+    /// Live VRM GPU share stats.
+    /// (live, unique_paths, shared_instances, primitives, vertex_buffers, textures)
+    pub fn vrm_gpu_stats(&self) -> PyResult<(u32, u32, u32, u32, u32, u32)> {
+        let models = lock_py(&self.vrm_models)?;
+        let share = lock_py(&self.vrm_share)?;
+        let live = models.len() as u32;
+        let unique_paths = share.len() as u32;
+        let shared_instances = share
+            .values()
+            .map(|e| e.live.saturating_sub(1))
+            .sum::<u32>();
+        let mut primitives = 0u32;
+        let mut vbufs = HashSet::new();
+        let mut tex = HashSet::new();
+        for m in models.values() {
+            primitives += m.primitives.len() as u32;
+            for p in &m.primitives {
+                vbufs.insert(std::sync::Arc::as_ptr(&p.vertex_buf) as usize);
+                if p.texture_id != 0 {
+                    tex.insert(p.texture_id);
+                }
+                if let Some(id) = p.mtoon.shade_texture_id {
+                    tex.insert(id);
+                }
+                if let Some(id) = p.mtoon.matcap_texture_id {
+                    tex.insert(id);
+                }
+                if let Some(id) = p.mtoon.normal_texture_id {
+                    tex.insert(id);
+                }
+                if let Some(id) = p.mtoon.uv_mask_texture_id {
+                    tex.insert(id);
+                }
+            }
+        }
+        Ok((
+            live,
+            unique_paths,
+            shared_instances,
+            primitives,
+            vbufs.len() as u32,
+            tex.len() as u32,
+        ))
     }
 
     pub fn draw_vrm(&self, vrm_id: u32) -> PyResult<()> {

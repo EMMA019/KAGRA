@@ -78,6 +78,7 @@ Result: `examples/vrm_dodge_room.py`
 | Score | `kagra.save_json` / `kagra.load_json` |
 | One-shot pose | `ActionController(avatar)` then `action.play("clap")` — `ActionController.names()` |
 | Locomotion blend | `avatar.set_locomotion(speed)` idle/walk/run. `play_upper("idle")` for spine/arms while legs walk |
+| N VRM | same-path `kagra.avatar(path)` shares GPU. `vrm_gpu_stats()`. Example: `vrm_multi_avatar.py` |
 
 ## Close the loop
 
@@ -89,6 +90,7 @@ python -m kagra.verify examples/verify_scenarios/dodge_room_smoke.json
 python -m kagra.verify examples/verify_scenarios/prop_garden_smoke.json
 python -m kagra.verify examples/verify_scenarios/pretty_room_smoke.json
 python -m kagra.verify examples/verify_scenarios/overworld_smoke.json
+python -m kagra.verify examples/verify_scenarios/multi_avatar_smoke.json
 ```
 
 Save the prompt, the stumbles, and the verify output under

@@ -193,7 +193,7 @@ Tk / Inspector / 4 段 CSM / SSAO / ボリュメトリック / WebXR / なでる
 
 深追いしない。空きでよい。
 
-- [ ] アバター 2 体のフレーム時間を README に書く（バス係数 1 のまま）
+- [x] アバター複数体: 同じパスは GPU メッシュ共有。`vrm_gpu_stats()` + `examples/vrm_multi_avatar.py`（Crest Isle は 1 人）
 - [ ] ダンスの上に手だけ（VRMA + `ActionController` のレイヤ）
 - [ ] 表情プリセットの一覧を `ActionController.names()` と同じ場所に
 

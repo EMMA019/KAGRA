@@ -52,6 +52,7 @@ pub struct VrmPrimitive {
     pub morph_pad: f32,
 }
 
+#[derive(Clone)]
 pub struct VrmBone {
     pub parent: Option<usize>,
     pub local_rot: [f32; 4],
@@ -63,6 +64,7 @@ pub struct VrmBone {
     pub world_mat: Matrix4<f32>,
 }
 
+#[derive(Clone)]
 pub struct VrmSkin {
     pub joint_node_indices: Vec<usize>,
     pub inv_bind_matrices: Vec<Matrix4<f32>>,
@@ -97,6 +99,21 @@ pub struct VrmModel {
     /// true のとき firstPerson 注釈に従い頭を消す。
     pub first_person: bool,
     pub spring: SpringBoneState,
+}
+
+/// Canonical path so `load_vrm("A.vrm")` and `./A.vrm` share one GPU copy.
+pub fn share_key(path: &str) -> String {
+    std::fs::canonicalize(path)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| path.replace('\\', "/"))
+}
+
+/// Bind-pose GPU template. Live avatars Arc-share VB/IB/morph/MToon;
+/// bones, springs, expressions, and morph-weight UBOs stay per instance.
+pub struct VrmGpuShare {
+    pub template: VrmModel,
+    pub tex_ids: Vec<u32>,
+    pub live: u32,
 }
 
 
@@ -794,6 +811,57 @@ fn ensure_sleeve_cloth(
 // ── VrmModel のメソッド ──────────────────────────────────────
 
 impl VrmModel {
+    /// Clone a bind-pose instance that Arc-shares mesh/texture/MToon GPU objects.
+    /// Morph weight caches start empty so expressions cannot leak across clones.
+    pub fn instantiate(&self) -> Self {
+        let primitives = self
+            .primitives
+            .iter()
+            .map(|p| VrmPrimitive {
+                texture_id: p.texture_id,
+                vertex_buf: Arc::clone(&p.vertex_buf),
+                index_buf: Arc::clone(&p.index_buf),
+                num_indices: p.num_indices,
+                skin_idx: p.skin_idx,
+                morph_delta_buf: Arc::clone(&p.morph_delta_buf),
+                num_morph_targets: p.num_morph_targets,
+                node_idx: p.node_idx,
+                cached_weights: None,
+                mtoon: p.mtoon.clone(),
+                fp_flag: p.fp_flag,
+                fp_index_buf: p.fp_index_buf.clone(),
+                fp_num_indices: p.fp_num_indices,
+                bone_bind_aabbs: p.bone_bind_aabbs.clone(),
+                morph_pad: p.morph_pad,
+            })
+            .collect();
+        let mut bones = self.bones.clone();
+        for b in &mut bones {
+            b.local_rot = b.bind_rot;
+            b.local_trans = b.bind_trans;
+            b.local_scale = b.bind_scale;
+            b.world_mat = Matrix4::identity();
+        }
+        Self {
+            bones,
+            bone_index: self.bone_index.clone(),
+            hierarchy_order: self.hierarchy_order.clone(),
+            skins: self.skins.clone(),
+            primitives,
+            dirty: true,
+            root_offset: [0.0; 3],
+            active_expressions: HashMap::new(),
+            expression_targets: self.expression_targets.clone(),
+            blend_index: self.blend_index.clone(),
+            expression_meta: self.expression_meta.clone(),
+            human_bones: self.human_bones.clone(),
+            look_at: self.look_at.clone(),
+            constraints: self.constraints.clone(),
+            first_person: false,
+            spring: self.spring.clone(),
+        }
+    }
+
     pub fn set_blend_shape(&mut self, name: &str, weight: f32) {
         let w = weight.clamp(0.0, 1.0);
         if self.expression_targets.contains_key(name) {
@@ -1089,5 +1157,26 @@ impl VrmModel {
             ));
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::share_key;
+
+    #[test]
+    fn share_key_falls_back_when_missing() {
+        let p = "/no/such/kagra/vrm/file.vrm";
+        assert_eq!(share_key(p), p.replace('\\', "/"));
+    }
+
+    #[test]
+    fn share_key_canonicalizes_existing_path() {
+        let tmp = std::env::temp_dir().join("kagra_vrm_share_key.txt");
+        std::fs::write(&tmp, b"x").expect("write tmp");
+        let key = share_key(tmp.to_str().unwrap());
+        let canon = std::fs::canonicalize(&tmp).unwrap();
+        let _ = std::fs::remove_file(&tmp);
+        assert_eq!(key, canon.to_string_lossy());
     }
 }

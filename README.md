@@ -89,7 +89,7 @@ Scene scripts (`examples/vrm_*.py`) live in the git repo. `pip` gives you `impor
 
 ## What you get
 
-- **VRM** — GPU skinning, SpringBone, MToon, look-at, lipsync, IK, expressions
+- **VRM** — GPU skinning, SpringBone, MToon, look-at, lipsync, IK, expressions. Same-path `kagra.avatar()` clones share mesh/texture/MToon (`vrm_gpu_stats()`)
 - **3D play** — `Prop` / `Walk` / `sky` / `room` / `World3D`. Four local lights (`slot=0..3`), indoor umbra, 2-cascade outdoor shadows, tangent-space normal maps. AABB crates fall, stack, and `Walk` stands on them. USB/XInput is read on the EventLoop (`gilrs`); tests use `inject_pad`
 - **Brain** — `kagra.brain("kairi"|"ollama"|"openai")`. Hosted kairi needs `KAIRI_API_TOKEN`. Models are not in the wheel
 - **Agent loop** — API index, `kagra.verify`, MCP tools, golden renders
@@ -150,6 +150,7 @@ python examples/vrm_switch_room.py       # boxed room, camera follow
 python examples/vrm_dodge_room.py        # falling boxes, survive (agent-run log)
 python examples/vrm_relic_run.py          # island relic collect 30s (agent-run log)
 python examples/vrm_open_world.py         # Crest Isle — wide grass/sea/mountains (desktop VRM)
+python examples/vrm_multi_avatar.py       # N VRM clones; GPU share + FPS HUD (`KAGRA_AVATARS=8`)
 # Crest Isle mobile (kagra-shared; not VRM — Kenney-style capsule)
 ./scripts/build_wasm.sh && python -m http.server -d kagra-shared/www 8000
 # → http://localhost:8000/crest.html
@@ -161,6 +162,8 @@ python examples/vrm_kairi_chat.py        # VRM talks via kairi.onrender.com (nee
 python examples/vrm_vrma.py              # .vrma (or a generated wave)
 python examples/vrm_stream.py            # OBS / JSONL chat
 ```
+
+Several VRM in one scene: `python examples/vrm_multi_avatar.py` (or `KAGRA_AVATARS=8`). Same-path clones share mesh/texture/MToon; `kagra.vrm_gpu_stats()` is the headless metric (`vertex_buffers * live == primitives`). Crest Isle stays one player. Desktop FPS is the HUD; CI/cloud boxes without a GPU adapter record the share invariant instead of a frame-time number.
 
 Legacy 2D / tilemap / editor demos: [`examples/archive/`](examples/archive/).
 

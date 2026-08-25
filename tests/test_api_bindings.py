@@ -127,6 +127,7 @@ def test_critical_bindings_present():
         "vrm_spring_info",
         "step_vrm_spring",
         "set_vrm_pose",
+        "vrm_gpu_stats",
     ]
     missing = [n for n in required if n not in rust]
     assert not missing, f"必須バインディング欠落: {missing}"
