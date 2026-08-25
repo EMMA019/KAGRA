@@ -192,6 +192,19 @@ def test_chunk_fill_once_per_tile():
     assert len(hits) == len(set(hits))
 
 
+def test_stream_tiles_budget_caps_new_tiles():
+    m = _world()
+    w = m.World3D(half=48.0)
+    w.set_height_fn(lambda _x, _z: 0.0, tile=10.0, stream_radius=12.0)
+    w.stream_tiles(0.0, 0.0)
+    first = set(w.loaded_tiles())
+    assert first
+    w.stream_tiles(30.0, 0.0, max_new=1)
+    far = set(w.loaded_tiles())
+    added = far - first
+    assert len(added) <= 1
+
+
 def test_bake_terrain_invokes_chunk_fill():
     """bake_terrain streams at once — fill callbacks must be ready first.
 

@@ -1,6 +1,6 @@
 # Session — Crest Isle white world + delayed stop after long hold
 
-Master at start: local snapshot was `88d074c` (#79). Fetched `origin/master` = `c70875a` (#80 sticky-walk already merged). Branched from that.
+Master at start: local snapshot was `88d074c` (#79). Fetched `origin/master` = `c70875a` (#80 sticky-walk already merged). First PR (#81) landed IBL/fog/sun/Python intern. Follow-up clip analysis re-prioritized untextured 1×1 white over IBL wash.
 
 ## Hypotheses (kept / discarded)
 
@@ -12,23 +12,24 @@ Master at start: local snapshot was `88d074c` (#79). Fetched `origin/master` = `
 | Terrain `_upload_tile` skipped (`_terrain_tex<=0`) | **Discarded.** Missing mesh ≠ white plane. A plane is drawing. |
 | `cam.toon` from PR #76 (`lit>1`) | **Discarded.** `apply_outdoor_look` does not call `set_toon_params`; default softness=1.0 keeps Lambert. |
 | Kenney `Textures/colormap.png` missing from git | **Discarded.** File is vendored; `flatten_gltf(tree.glb)` already returned the PNG in tests. |
-| Grass JPEG failed to load → white default | **Unlikely primary.** A loaded mid-green albedo plus additive IBL still blows to white. |
-| Additive Lambert IBL (`env` not `env*albedo`) at puresky 0.95 | **Kept.** VRM path is `env * albedo * 0.35`. Lambert added raw irradiance. Mid-green grass / muted colormap → white; saturated Nature Kit vertex colors keep hue. |
-| Crest Isle `set_light_dir(-0.32, -1.0, 0.22)` | **Kept.** API is vector *toward the sun*. −Y puts ground at Lambert floor 0.2; IBL becomes the key light. Relic Run never set this. |
-| Sky sphere past `fog_end` | **Kept.** Radius 140, fog end 102, `cls(150,175,195)` → featureless pale grey. Relic Run has the same pattern (r=48, fog_end=46). |
-| Shared `kagra_prop_gltf.png` + per-instance `kagra.load` | **Kept as hitch.** Every Kenney Prop rewrote one tempfile and uploaded a new texture id, so the unit-mesh cache never hit. Colormap still loaded, but start hitch matches “loading feels a bit bad.” |
-| `#80` `rehold_block` only this frame + next | **Kept.** Long auto-repeat then WM_KEYUP can deliver leftover `repeat=false` KEYDOWN more than 1–2 frames later. Taps stay on the short window. Wish-idle snap in `Walk` is already correct once `held` clears. |
+| Grass JPEG missing on disk | **Discarded.** File is 666655 bytes JFIF. Missing-file fallback is procedural green `(76,140,62)`, not white. |
+| Additive Lambert IBL at puresky 0.95 | **Amplifier, not the clip.** Nature Kit vertex colors and bronze coins stayed distinct; the meadow/trees read as untextured 1×1 white, not bloom. IBL/`env*albedo`/sun/`fog` still shipped in #81. |
+| Crest Isle `set_light_dir(-0.32, -1.0, 0.22)` | **Amplifier.** API is vector *toward the sun*. Fixed in #81. |
+| Sky sphere past `fog_end` | **Amplifier for the grey sky.** Radius 140, fog end 102. Backdrop fog skip shipped in #81. |
+| Mesh3D bind-group FIFO 64 | **Primary white ground/trees.** `MESH3D_TEX_BG_MAX=64`; `ensure_mesh3d_tex_bg` `pop_front` when full. Cache miss → Fallback White 1×1 `[255,255,255,255]`. Crest Isle `VISTA_PROPS >= 120`. Grass uploaded first in `bake_terrain`, then 120+ Props. Same-pass `ensure` recreates grass then evicts it before draw. Nature Kit vertex colors * a live white `solid_tex` still show hue. |
+| Shared `kagra_prop_gltf.png` + no path intern | **Amplifier / hitch.** Every Kenney Prop rewrote one tempfile and `load_texture_ex` minted a new GPU id, so FIFO 64 filled with unique colormap ids. Python hash intern shipped in #81; this pass adds engine path intern (not the rig `(id, part)` map). |
+| `#80` `rehold_block` only this frame + next | **Kept.** Long auto-repeat then WM_KEYUP can deliver leftover `repeat=false` KEYDOWN more than 1–2 frames later, worse if a hitch stalled `begin_frame`. Taps stay on the short window. Wish-idle snap in `Walk` is already correct once `held` clears. |
 
-## Fixes
+## Fixes (this pass, after #81)
 
-- `SHADER_3D` Lambert: `env * albedo * 0.35` (match VRM). Pretty Room indoor Lambert is a bit darker fill, not blown. Pairwise goldens that disable HDRI are untouched.
-- Crest Isle / Relic Run puresky IBL `0.32` (same band as `apply_outdoor_look` studio). Crest Isle sun `+Y`.
-- `Stage.draw` / `sky()`: snapshot last `set_fog`, draw backdrop with fog off, restore. No new public API.
-- Prop bake: hash-keyed tempfile + GPU tex cache so 200 Kenney trees share one colormap upload.
-- glTF sidecar URI: allow Windows `Textures\colormap.png`; still reject `..`.
-- Input: after `begin_frame` count ≥ 8 while held, key-up arms `rehold_left=16`. Taps keep #80’s 1–2 frame `rehold_block`. `inject_key` / IME scan pairing unchanged.
+- Mesh3D BG cache: LRU touch on hit, max 256, drop only dead keys (live grass/colormap must not become Fallback White).
+- `load_texture_ex` path intern (`path_texture_cache`). Rig `texture_cache` unchanged.
+- `World3D.update`: at most 1 new stream tile per frame after the first ring (`bake_terrain` still fills the ring).
+- Input: leftover non-repeat KEYDOWN after a long hold (or any auto-repeat while held) refreshes a 15-frame quiet window. 30 leftover frames stay idle; 15 silent frames then a real press holds. `saw_repeat` arms quiet even when a hitch starved `begin_frame` counts. Taps keep #80’s 1–2 frame `rehold_block`. `inject_key` / IME scan pairing unchanged.
 
 ## Stumbles
 
 - Snapshot git was behind #80. Fetched `origin/master` before branching.
+- First pass treated IBL as the white-world cause. Clip + FIFO 64 measurement discarded that as primary; IBL/fog/sun stay as extras already on master.
 - Did not treat “trees are white” as colormap-missing once Nature Kit still showed vertex color and `flatten_gltf` already found the PNG.
+- PR #81 merged while this pass was still in flight; follow-up work is a new PR to master.

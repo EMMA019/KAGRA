@@ -237,4 +237,17 @@ def test_chunk_props_ready_before_first_stream():
     fill_i = src.index("self.world.set_chunk_fill")
     bake_i = src.index("self.world.bake_terrain")
     assert init_i < fill_i < bake_i
+
+
+def test_mesh3d_tex_bg_cache_fits_crest_isle_vista():
+    """FIFO 64 evicted grass into Fallback White after 120+ Kenney Props."""
+    src = (_ROOT / "kagra-core" / "src" / "renderer" / "gpu_helpers.rs").read_text(
+        encoding="utf-8",
+    )
+    assert "MESH3D_TEX_BG_MAX: usize = 256" in src
+    assert "fn lru_evict_dead" in src
+    assert "Live textures must not become Fallback White" in src
+    win = (_ROOT / "kagra-core" / "src" / "window.rs").read_text(encoding="utf-8")
+    assert "path_texture_cache" in win
+    assert "HashMap<(u32, String), u32>" in win
     assert src.count("self._chunk_props = 0") == 1

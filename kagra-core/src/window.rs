@@ -65,6 +65,8 @@ pub struct KagraWindow {
     pub rigs: Arc<Mutex<HashMap<u32, Rig>>>,
     pub next_rig_id: Arc<Mutex<u32>>,
     pub texture_cache: Arc<Mutex<HashMap<(u32, String), u32>>>,
+    /// Path intern for `load_texture_ex`. Not the rig `(id, part)` map.
+    pub path_texture_cache: Arc<Mutex<HashMap<(String, bool), u32>>>,
     pub texture_refcount: Arc<Mutex<HashMap<u32, u32>>>,
 
     pub transparent: bool,
@@ -108,6 +110,7 @@ impl KagraWindow {
             rigs: Arc::new(Mutex::new(HashMap::new())),
             next_rig_id: Arc::new(Mutex::new(1)),
             texture_cache: Arc::new(Mutex::new(HashMap::new())),
+            path_texture_cache: Arc::new(Mutex::new(HashMap::new())),
             texture_refcount: Arc::new(Mutex::new(HashMap::new())),
             transparent,
             decorations,
@@ -417,10 +420,22 @@ impl KagraWindow {
     }
 
     pub fn load_texture_ex(&self, path: &str, srgb: bool) -> Result<u32, String> {
+        let intern_key = (path.to_string(), srgb);
+        {
+            let cache = lock_recover(&self.path_texture_cache);
+            if let Some(&id) = cache.get(&intern_key) {
+                if self.texture_size(id).is_some() {
+                    let mut rc = lock_recover(&self.texture_refcount);
+                    *rc.entry(id).or_insert(0) += 1;
+                    return Ok(id);
+                }
+            }
+        }
         let id = match lock_recover(&self.renderer).as_mut() {
             Some(r) => r.load_texture_ex(path, srgb)?,
             None => return Err("load_texture: run() 開始前です。update()/draw() 内で呼んでください。".into()),
         };
+        lock_recover(&self.path_texture_cache).insert(intern_key, id);
         let mut rc = lock_recover(&self.texture_refcount);
         *rc.entry(id).or_insert(0) += 1;
         Ok(id)
@@ -438,6 +453,7 @@ impl KagraWindow {
                 rc.remove(&id);
                 let mut cache = lock_recover(&self.texture_cache);
                 cache.retain(|_, v| *v != id);
+                lock_recover(&self.path_texture_cache).retain(|_, v| *v != id);
                 if let Some(r) = lock_recover(&self.renderer).as_mut() {
                     r.unload_texture(id)?;
                 }

@@ -19,8 +19,6 @@ use nalgebra;
 const SKIN_UNIFORM_FLOATS: usize = 256 * 16 + 4;
 /// morph BindGroup キャッシュの上限（超過分は古いものから破棄）
 const MORPH_BG_CACHE_MAX: usize = 128;
-/// Mesh3D (diffuse, normal) bind group キャッシュ
-const MESH3D_TEX_BG_MAX: usize = 64;
 /// Mesh3D 再利用バッファの初期容量
 const MESH3D_VB_INITIAL: u64 = 256 * 1024;
 const MESH3D_IB_INITIAL: u64 = 64 * 1024;
@@ -1528,6 +1526,7 @@ impl RendererV2 {
     fn ensure_mesh3d_tex_bg(&mut self, diffuse_id: u32, normal_id: u32) {
         let key = (diffuse_id, normal_id);
         if self.mesh3d_tex_bgs.contains_key(&key) {
+            gpu_helpers::lru_touch(&mut self.mesh3d_tex_bg_order, key);
             return;
         }
         let Some(diff) = self.textures.get(&diffuse_id) else {
@@ -1550,10 +1549,13 @@ impl RendererV2 {
                 wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(nrm_ref) },
             ],
         });
-        if self.mesh3d_tex_bg_order.len() >= MESH3D_TEX_BG_MAX {
-            if let Some(old) = self.mesh3d_tex_bg_order.pop_front() {
-                self.mesh3d_tex_bgs.remove(&old);
-            }
+        let live = &self.textures;
+        for old in gpu_helpers::lru_evict_dead(
+            &mut self.mesh3d_tex_bg_order,
+            |k| live.contains_key(&k.0),
+            gpu_helpers::MESH3D_TEX_BG_MAX,
+        ) {
+            self.mesh3d_tex_bgs.remove(&old);
         }
         self.mesh3d_tex_bgs.insert(key, bg);
         self.mesh3d_tex_bg_order.push_back(key);

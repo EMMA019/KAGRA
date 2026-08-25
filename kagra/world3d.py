@@ -57,6 +57,7 @@ class World3D:
         self._chunk_fill: Optional[Callable[[int, int], None]] = None
         self._city = None
         self._drawn_dynamic: list[tuple[RigidBody3D, int]] = []
+        self._stream_warm = False
 
     def add_floor(self, size: float | None = None):
         """Y = ``floor_y`` の正方形床を予約する。半辺は ``size`` または ``half``。"""
@@ -266,7 +267,9 @@ class World3D:
             p.z = -lim
             p.vz = 0.0
         if self._tile is not None and self._stream_radius is not None:
-            self.stream_tiles(p.x, p.z)
+            max_new = 1 if self._stream_warm else None
+            self.stream_tiles(p.x, p.z, max_new=max_new)
+            self._stream_warm = True
         self._trace_player()
 
     def _trace_player(self) -> None:
@@ -295,8 +298,12 @@ class World3D:
             path=_ACTIVE.path,
         )
 
-    def stream_tiles(self, x: float, z: float) -> int:
-        """近くのタイルを載せ、遠いタイルを外す。エンジン無しでもキーは更新する。"""
+    def stream_tiles(self, x: float, z: float, *, max_new: int | None = None) -> int:
+        """近くのタイルを載せ、遠いタイルを外す。エンジン無しでもキーは更新する。
+
+        ``max_new`` は新規タイル数の上限。``None`` は無制限（最初のリング /
+        テスト）。歩き中は ``update`` が 1 枚/フレームに絞る。
+        """
         if self._height_fn is None:
             return 0
         want = set(self.wanted_tiles(x, z))
@@ -308,9 +315,12 @@ class World3D:
             if self._tile_lod.get(key) != self._cells_for(key, x, z):
                 self._unload_tile(key)
                 self._loaded_tiles.discard(key)
+        added = 0
         for key in want:
             if key in self._loaded_tiles:
                 continue
+            if max_new is not None and added >= max_new:
+                break
             self._loaded_tiles.add(key)
             if key not in self._filled_chunks:
                 if self._chunk_fill is not None:
@@ -318,6 +328,7 @@ class World3D:
                 self._place_city_chunk(key[0], key[1])
                 self._filled_chunks.add(key)
             self._upload_tile(key, viewer_x=x, viewer_z=z)
+            added += 1
         return len(self._loaded_tiles)
 
     def _place_city_chunk(self, ix: int, iz: int) -> None:
@@ -394,6 +405,7 @@ class World3D:
         if self.player is not None:
             x, z = float(self.player.x), float(self.player.z)
         self.stream_tiles(x, z)
+        self._stream_warm = True
         return int(self.terrain_mesh_id)
 
     def bake(self, floor_tex: int, box_tex: int) -> list[int]:

@@ -5,10 +5,9 @@ use winit::keyboard::{Key, KeyCode, NamedKey, NativeKeyCode, PhysicalKey};
 /// Auto-repeat typically starts after ~250ms. Holds longer than this many
 /// `begin_frame`s get a longer post-up block (Issue B, Crest Isle).
 const LONG_HOLD_FRAMES: u32 = 8;
-/// Ignore non-repeat re-downs this many frames after a long-hold key-up.
-/// Win32 leftover KEYDOWN after auto-repeat can arrive well after the
-/// 1–2 frame window from #80, especially if a load hitch stalled begin_frame.
-const LONG_REHOLD_FRAMES: u8 = 16;
+/// After a long hold, ignore leftover non-repeat KEYDOWN until this many
+/// quiet `begin_frame`s with no down. A leftover down refreshes the window.
+const REHOLD_QUIET_FRAMES: u8 = 15;
 
 pub struct InputState {
     held: HashSet<u32>,
@@ -17,10 +16,12 @@ pub struct InputState {
     /// Codes that went up last frame. Windows WM_KEYUP then a queued KEYDOWN has
     /// KF_REPEAT clear (`repeat=false`), so #71's repeat filter misses it.
     rehold_block: HashSet<u32>,
-    /// Extra frames to ignore leftover KEYDOWN after a long hold.
-    rehold_left: HashMap<u32, u8>,
+    /// Quiet frames remaining after a long-hold key-up. Leftover KEYDOWN refreshes.
+    rehold_quiet: HashMap<u32, u8>,
     /// `begin_frame`s seen while the key was held.
     hold_frames: HashMap<u32, u32>,
+    /// Auto-repeat seen while held. A hitch can starve `begin_frame` counts.
+    saw_repeat: HashSet<u32>,
     /// Physical token → KeyCode while down. IME `Process` / JIS Unidentified
     /// release still clears the same walk key.
     native_held: HashMap<u64, KeyCode>,
@@ -51,8 +52,9 @@ impl InputState {
             pressed: HashSet::new(),
             released: HashSet::new(),
             rehold_block: HashSet::new(),
-            rehold_left: HashMap::new(),
+            rehold_quiet: HashMap::new(),
             hold_frames: HashMap::new(),
+            saw_repeat: HashSet::new(),
             native_held: HashMap::new(),
             mouse_x: 0.0,
             mouse_y: 0.0,
@@ -79,7 +81,7 @@ impl InputState {
         for code in self.held.iter() {
             *self.hold_frames.entry(*code).or_insert(0) += 1;
         }
-        self.rehold_left.retain(|_, n| {
+        self.rehold_quiet.retain(|_, n| {
             *n = n.saturating_sub(1);
             *n > 0
         });
@@ -127,8 +129,9 @@ impl InputState {
 
     fn arm_rehold(&mut self, code: u32) {
         let held = self.hold_frames.remove(&code).unwrap_or(0);
-        if held >= LONG_HOLD_FRAMES {
-            self.rehold_left.insert(code, LONG_REHOLD_FRAMES);
+        let repeated = self.saw_repeat.remove(&code);
+        if held >= LONG_HOLD_FRAMES || repeated {
+            self.rehold_quiet.insert(code, REHOLD_QUIET_FRAMES);
         }
     }
 
@@ -143,14 +146,23 @@ impl InputState {
     /// Windows: after WM_KEYUP, a late WM_KEYDOWN has bit 30 clear so winit
     /// reports `repeat=false`. Ignore that re-down for the rest of this frame
     /// and the next (`rehold_block`). After a long hold, also ignore leftover
-    /// non-repeat KEYDOWN for `LONG_REHOLD_FRAMES` (`rehold_left`).
+    /// non-repeat KEYDOWN until `REHOLD_QUIET_FRAMES` quiet frames (`rehold_quiet`).
     pub fn apply_key(&mut self, code: u32, down: bool, repeat: bool) {
         if down {
-            if repeat
-                || self.released.contains(&code)
-                || self.rehold_block.contains(&code)
-                || self.rehold_left.contains_key(&code)
-            {
+            if repeat {
+                if self.held.contains(&code) {
+                    self.saw_repeat.insert(code);
+                }
+                return;
+            }
+            if self.released.contains(&code) || self.rehold_block.contains(&code) {
+                if self.rehold_quiet.contains_key(&code) {
+                    self.rehold_quiet.insert(code, REHOLD_QUIET_FRAMES);
+                }
+                return;
+            }
+            if self.rehold_quiet.contains_key(&code) {
+                self.rehold_quiet.insert(code, REHOLD_QUIET_FRAMES);
                 return;
             }
             self.on_key_down(code);
@@ -470,32 +482,89 @@ mod tests {
     }
 
     #[test]
-    fn long_hold_keyup_blocks_multiframe_nonrepeat_burst() {
-        // After auto-repeat, Win32 can deliver leftover KEYDOWN (repeat=false)
-        // several frames after WM_KEYUP — longer than rehold_block's 1–2 frames.
+    fn long_hold_leftover_down_for_30_frames_then_quiet_then_real_press() {
+        // Hitch-stalled leftover: down → many auto-repeat → up → 30 frames of
+        // leftover `repeat=false` KEYDOWN must not re-hold. Each leftover
+        // refreshes a 15-frame quiet window. After 15 silent frames a real
+        // re-press must hold.
         let mut inp = InputState::new();
         inp.apply_key(DOWN, true, false);
-        for _ in 0..LONG_HOLD_FRAMES {
+        for _ in 0..80 {
             inp.begin_frame();
             inp.apply_key(DOWN, true, true);
         }
+        inp.begin_frame();
         inp.apply_key(DOWN, false, false);
-        for _ in 0..12 {
+        assert!(!inp.is_key_down(DOWN));
+        for i in 0..30 {
             inp.begin_frame();
             inp.apply_key(DOWN, true, false);
             assert!(
                 !inp.is_key_down(DOWN),
-                "post-up leftover KEYDOWN burst after a long hold must not stick"
+                "leftover KEYDOWN frame {i} after long hold must not re-hold"
             );
         }
-        for _ in 0..(LONG_REHOLD_FRAMES as usize) {
+        for _ in 0..REHOLD_QUIET_FRAMES {
             inp.begin_frame();
         }
         inp.apply_key(DOWN, true, false);
         assert!(
             inp.is_key_down(DOWN),
-            "a real re-press after the long-hold block must work"
+            "a real re-press after 15 quiet frames must work"
         );
+    }
+
+    #[test]
+    fn leftover_down_during_quiet_refreshes_window() {
+        let mut inp = InputState::new();
+        inp.apply_key(DOWN, true, false);
+        for _ in 0..20 {
+            inp.begin_frame();
+            inp.apply_key(DOWN, true, true);
+        }
+        inp.begin_frame();
+        inp.apply_key(DOWN, false, false);
+        inp.begin_frame();
+        inp.apply_key(DOWN, true, false);
+        assert!(!inp.is_key_down(DOWN));
+        for _ in 0..(REHOLD_QUIET_FRAMES as usize - 2) {
+            inp.begin_frame();
+        }
+        inp.apply_key(DOWN, true, false);
+        assert!(
+            !inp.is_key_down(DOWN),
+            "leftover KEYDOWN must refresh the quiet window, not re-hold"
+        );
+        for _ in 0..REHOLD_QUIET_FRAMES {
+            inp.begin_frame();
+        }
+        inp.apply_key(DOWN, true, false);
+        assert!(inp.is_key_down(DOWN));
+    }
+
+    #[test]
+    fn hitch_repeat_without_many_begin_frames_still_blocks() {
+        // Load hitch can starve begin_frame while auto-repeat still queues.
+        let mut inp = InputState::new();
+        inp.apply_key(DOWN, true, false);
+        inp.begin_frame();
+        for _ in 0..40 {
+            inp.apply_key(DOWN, true, true);
+        }
+        inp.apply_key(DOWN, false, false);
+        for i in 0..30 {
+            inp.begin_frame();
+            inp.apply_key(DOWN, true, false);
+            assert!(
+                !inp.is_key_down(DOWN),
+                "saw_repeat must arm quiet even with few begin_frames (i={i})"
+            );
+        }
+        for _ in 0..REHOLD_QUIET_FRAMES {
+            inp.begin_frame();
+        }
+        inp.apply_key(DOWN, true, false);
+        assert!(inp.is_key_down(DOWN));
     }
 
     #[test]
