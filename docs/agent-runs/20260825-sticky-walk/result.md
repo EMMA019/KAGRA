@@ -26,3 +26,6 @@ cargo test -p kagra-core --no-default-features --locked input
 ```
 
 GPU smoke not re-run (no visual change; input/physics only).
+**GitHub CI: 17 checks passed** on `9882ad0`.
+
+PR: https://github.com/EMMA019/KAGRA/pull/80
