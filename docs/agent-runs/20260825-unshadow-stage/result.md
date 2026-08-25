@@ -16,7 +16,9 @@ python3 -m pytest tests -m "not golden"  # 366 passed, 10 deselected
 python3 -m pytest tests -m "not golden" -p tests.no_extension_plugin  # 366 passed, 10 deselected
 ```
 
-GPU smoke (`python -m kagra.verify examples/verify_scenarios/open_world_smoke.json`) was **not run** (no `kagra_core` on this VM).
+GPU smoke (`python -m kagra.verify examples/verify_scenarios/open_world_smoke.json`) was **not run** (no `kagra_core` on this VM). **GitHub CI: 17 checks passed** on `3ddda60` (https://github.com/EMMA019/KAGRA/actions).
+
+PR: https://github.com/EMMA019/KAGRA/pull/78
 
 ## Notes
 

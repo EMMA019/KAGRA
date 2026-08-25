@@ -52,3 +52,5 @@ Package type `_KagraPackage` refuses to let a submodule overwrite an existing no
 ## Stumbles
 
 - `import kagra.stage as m` uses `getattr(kagra, "stage")`, so `m` is the **function** after the fix. `from kagra.stage import Stage` and `importlib.import_module("kagra.stage")` still yield the module. Tests use those, not `import kagra.stage as m`.
+
+GitHub CI on `3ddda60`: 17 checks passed.
