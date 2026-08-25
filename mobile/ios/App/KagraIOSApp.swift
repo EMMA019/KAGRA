@@ -133,6 +133,7 @@ final class ShellModel: ObservableObject {
         self.view = view
         if session == nil {
             session = KagraSession()
+            _ = session?.setScene(.collectathon)
         }
         let (w, h) = view.pixelSize
         guard w > 0, h > 0 else { return }
@@ -183,18 +184,17 @@ final class ShellModel: ObservableObject {
                 kagra-shared \(session.version)  frame=\(frame)
                 \(session.statsJSON())
 
-                左半分＝ハンドル / 右半分＝上でアクセル・下でブレーキ
+                Crest Isle — 左＝歩き / 右下＝ジャンプ（VRM ではない）
                 """
         }
     }
 
-    /// 画面の下半分を左右に割り、左＝ハンドル、右＝アクセル／ブレーキ。
-    /// 指ごとに役割を覚えるので、両手で同時に操作できる。
-    private enum Control { case steer, pedal }
+    /// 左＝仮想スティック、右下＝ジャンプ。両手同時。
+    private enum Control { case stick, jump }
     private var controls: [UInt32: Control] = [:]
-    private var steer: Float = 0
-    private var throttle: Float = 0
-    private var brake: Float = 0
+    private var stickX: Float = 0
+    private var stickZ: Float = 0
+    private var jump = false
 
     func onTouch(id: UInt32, point: CGPoint, phase: UInt32) {
         guard let session, let view else { return }
@@ -210,33 +210,30 @@ final class ShellModel: ObservableObject {
         guard w > 0, h > 0 else { return }
         let x = Float(point.x)
         let y = Float(point.y)
-        let halfWidth = Float(w) / 2
+        let jumpLeft = Float(w) * 0.62
+        let jumpTop = Float(h) * 0.62
 
         switch phase {
         case 0:
-            controls[id] = x < halfWidth ? .steer : .pedal
+            controls[id] = (x >= jumpLeft && y >= jumpTop) ? .jump : .stick
         case 2, 3:
             switch controls.removeValue(forKey: id) {
-            case .steer: steer = 0
-            case .pedal: throttle = 0; brake = 0
+            case .stick: stickX = 0; stickZ = 0
+            case .jump: jump = false
             case nil: break
             }
         default:
             break
         }
 
-        switch controls[id] {
-        case .steer:
-            steer = ((x / halfWidth) * 2 - 1).clamped(to: -1...1)
-        case .pedal:
-            let t = ((y / Float(h)) * 2 - 1).clamped(to: -1...1)
-            throttle = t < 0 ? -t : 0
-            brake = t > 0 ? t : 0
-        case nil:
-            break
+        jump = controls.values.contains(.jump)
+        if case .stick = controls[id] {
+            let well = min(Float(w), Float(h)) * 0.22
+            stickX = ((x - well) / well).clamped(to: -1...1)
+            stickZ = (-(y - (Float(h) - well)) / well).clamped(to: -1...1)
         }
 
-        session.setDrive(steer: steer, throttle: throttle, brake: brake)
+        session.setWalk(lx: stickX, lz: stickZ, jump: jump)
     }
 }
 

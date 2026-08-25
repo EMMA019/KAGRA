@@ -39,7 +39,13 @@ int kagra_shared_set_drive(SharedSession *ptr, float steer, float throttle, floa
 }
 int kagra_shared_set_scene(SharedSession *ptr, unsigned kind) {
     (void)ptr;
-    return kind <= 1 ? 0 : -1;
+    return kind <= 2 ? 0 : -1;
+}
+int kagra_shared_set_walk(SharedSession *ptr, float lx, float lz, int jump) {
+    (void)ptr; (void)lx; (void)lz; (void)jump; return 0;
+}
+int kagra_shared_set_jump(SharedSession *ptr, int held) {
+    (void)ptr; (void)held; return 0;
 }
 int64_t kagra_shared_request_frame(SharedSession *ptr) {
     (void)ptr;

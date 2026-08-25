@@ -1,6 +1,9 @@
 //! 共有セッション状態（ネイティブシェルが毎フレーム駆動）。
 
 use crate::audio::AudioLevels;
+use crate::collectathon::{
+    CollectathonScene, WalkInput, GAME_ID as ISLE_ID, GAME_TITLE as ISLE_TITLE,
+};
 use crate::driving::DrivingScene;
 use crate::game::{DemoGame, GamePhase, GAME_ID, GAME_TITLE};
 use crate::input::{KeyEvent, PointerEvent, PointerPhase, VirtualPad};
@@ -37,6 +40,9 @@ pub struct FrameStats {
     pub game_best_s: Option<f32>,
     pub has_cargo: bool,
     pub objective: String,
+    pub stars: u32,
+    pub coins: u32,
+    pub star_need: u32,
 }
 
 impl Default for FrameStats {
@@ -63,6 +69,9 @@ impl Default for FrameStats {
             game_best_s: None,
             has_cargo: false,
             objective: "title".into(),
+            stars: 0,
+            coins: 0,
+            star_need: 0,
         }
     }
 }
@@ -75,6 +84,8 @@ pub enum SceneKind {
     Driving,
     /// 2D のタッチデモ。描画経路の最小確認用に残してある。
     Demo2D,
+    /// Crest Isle 収集（Kenney 風カプセル。VRM ではない）。
+    Collectathon,
 }
 
 #[derive(Debug)]
@@ -88,6 +99,7 @@ pub struct SharedSession {
     pub kind: SceneKind,
     pub scene: DemoScene,
     pub driving: DrivingScene,
+    pub isle: CollectathonScene,
     pub game: DemoGame,
     pub settings: Settings,
     pointers: Vec<PointerEvent>,
@@ -100,6 +112,8 @@ pub struct SharedSession {
     /// 運転シーンのメッシュを載せたときのハンドル。
     #[cfg(feature = "render")]
     mesh_ids: Option<crate::driving::MeshIds>,
+    #[cfg(feature = "render")]
+    isle_mesh_ids: Option<crate::collectathon::MeshIds>,
 }
 
 impl Default for SharedSession {
@@ -114,6 +128,7 @@ impl Default for SharedSession {
             kind: SceneKind::default(),
             scene: DemoScene::default(),
             driving: DrivingScene::default(),
+            isle: CollectathonScene::default(),
             // 単体テスト／オフスクリーンはすぐ運転できるよう Playing 開始。
             // Wasm デモは `show_title()` でタイトルに戻す。
             game: DemoGame {
@@ -128,6 +143,8 @@ impl Default for SharedSession {
             renderer: None,
             #[cfg(feature = "render")]
             mesh_ids: None,
+            #[cfg(feature = "render")]
+            isle_mesh_ids: None,
         }
     }
 }
@@ -156,11 +173,15 @@ impl SharedSession {
 
     pub fn push_pointer(&mut self, ev: PointerEvent) {
         if matches!(ev.phase, PointerPhase::Begin) {
-            match self.game.phase {
-                GamePhase::Title | GamePhase::Complete if self.kind == SceneKind::Driving => {
+            let isle_phase = self.isle.game.phase;
+            match (self.kind, self.game.phase, isle_phase) {
+                (SceneKind::Driving, GamePhase::Title | GamePhase::Complete, _)
+                | (SceneKind::Collectathon, _, GamePhase::Title | GamePhase::Complete) => {
                     self.start_game();
                 }
-                _ if self.paused && self.kind == SceneKind::Driving => {
+                _ if self.paused
+                    && matches!(self.kind, SceneKind::Driving | SceneKind::Collectathon) =>
+                {
                     self.handle_pause_tap(ev.x, ev.y);
                 }
                 _ => self.pending_taps.push((ev.x, ev.y)),
@@ -191,6 +212,11 @@ impl SharedSession {
 
     /// タイトル画面へ。デモの起動時用。
     pub fn show_title(&mut self) {
+        if self.kind == SceneKind::Collectathon {
+            self.isle.show_title();
+            self.paused = false;
+            return;
+        }
         let best = self.game.best_time_s;
         self.driving.restart();
         self.game = DemoGame {
@@ -202,8 +228,13 @@ impl SharedSession {
         self.driving.set_input(DriveInput::default());
     }
 
-    /// 配送ランを最初から開始する。
+    /// 配送ラン、または Crest Isle を最初から開始する。
     pub fn start_game(&mut self) {
+        if self.kind == SceneKind::Collectathon {
+            self.isle.start();
+            self.paused = false;
+            return;
+        }
         let best = self.game.best_time_s;
         self.driving.restart();
         self.game = DemoGame {
@@ -215,12 +246,47 @@ impl SharedSession {
         self.kind = SceneKind::Driving;
     }
 
+    /// Crest Isle を選んでタイトルへ。Android / Wasm の既定起動用。
+    pub fn boot_collectathon(&mut self) {
+        self.kind = SceneKind::Collectathon;
+        self.isle.show_title();
+        self.paused = false;
+    }
+
     pub fn set_pad(&mut self, x: f32, y: f32) {
         self.pad.set_stick(x, y);
         self.pending_keys.extend(self.pad.drain_key_events());
+        if self.kind == SceneKind::Collectathon {
+            // 画面座標 +y 下。上（負の y）が島の奥（+Z を向いたカメラの前）。
+            let jump = self.isle.input.jump;
+            self.isle.set_input(WalkInput {
+                lx: x,
+                lz: -y,
+                jump,
+            });
+            return;
+        }
         // 運転シーンでは左右がハンドル、上下がアクセルとブレーキ。仮想パッド
         // しか持たないシェルでも運転できるようにしておく。
         self.set_drive(x, (-y).max(0.0), y.max(0.0));
+    }
+
+    /// Crest Isle の歩き。`lx`/`lz` は -1..1、`jump` は今フレーム跳ぶか。
+    pub fn set_walk(&mut self, lx: f32, lz: f32, jump: bool) {
+        if self.kind != SceneKind::Collectathon {
+            return;
+        }
+        if !self.isle.game.is_playing() {
+            self.isle.set_input(WalkInput::default());
+            return;
+        }
+        self.isle.set_input(WalkInput { lx, lz, jump }.clamped());
+    }
+
+    pub fn set_jump(&mut self, jump: bool) {
+        if self.kind == SceneKind::Collectathon {
+            self.isle.input.jump = jump;
+        }
     }
 
     /// 連続値のドライバ入力。仮想ハンドルや傾きセンサを持つシェルはこちらを使う。
@@ -289,6 +355,14 @@ impl SharedSession {
                         self.game.tick(&self.driving.mission);
                     }
                 }
+                SceneKind::Collectathon => {
+                    if self.isle.game.is_playing() {
+                        self.isle
+                            .apply_pointers(self.width, self.height, &self.pointers);
+                        self.isle.update();
+                    }
+                    let _ = taps;
+                }
                 SceneKind::Demo2D => {
                     let pad = self.pad.stick();
                     self.scene.update(self.width, self.height, pad, &taps);
@@ -299,35 +373,82 @@ impl SharedSession {
     }
 
     fn stats(&self) -> FrameStats {
+        let isle = self.kind == SceneKind::Collectathon;
         FrameStats {
             frame: self.frame,
             width: self.width,
             height: self.height,
             paused: self.paused,
             pointer_count: self.pointers.len() as u32,
-            speed_kmh: self.driving.truck.speed_kmh(),
+            speed_kmh: if isle {
+                0.0
+            } else {
+                self.driving.truck.speed_kmh()
+            },
             reversing: self.driving.truck.is_reversing(),
-            distance_m: self.driving.odometer,
+            distance_m: if isle {
+                (self.isle.walker.z - crate::collectathon::START_XZ.1).abs()
+            } else {
+                self.driving.odometer
+            },
             audio: self.audio_levels(),
-            mission: self.driving.mission.label().into(),
-            mission_progress: self
-                .driving
-                .mission
-                .progress_along_route(self.driving.path_s),
+            mission: if isle {
+                format!(
+                    "{}/{}",
+                    self.isle.game.stars,
+                    crate::collectathon::STAR_NEED
+                )
+            } else {
+                self.driving.mission.label().into()
+            },
+            mission_progress: if isle {
+                self.isle.game.stars as f32 / crate::collectathon::STAR_NEED as f32
+            } else {
+                self.driving
+                    .mission
+                    .progress_along_route(self.driving.path_s)
+            },
             ui: if self.paused {
                 UiMode::Pause
             } else {
                 UiMode::Hud
             },
             traffic_count: self.driving.traffic.count() as u32,
-            game_id: GAME_ID,
-            game_title: GAME_TITLE,
-            game_phase: self.game.phase,
-            game_time_s: self.game.time_s,
-            game_score: self.game.score,
-            game_best_s: self.game.best_time_s,
+            game_id: if isle { ISLE_ID } else { GAME_ID },
+            game_title: if isle { ISLE_TITLE } else { GAME_TITLE },
+            game_phase: if isle {
+                self.isle.game.phase
+            } else {
+                self.game.phase
+            },
+            game_time_s: if isle {
+                self.isle.game.time_s
+            } else {
+                self.game.time_s
+            },
+            game_score: if isle {
+                self.isle.game.score
+            } else {
+                self.game.score
+            },
+            game_best_s: if isle {
+                self.isle.game.best_score.map(|s| s as f32)
+            } else {
+                self.game.best_time_s
+            },
             has_cargo: self.game.has_cargo,
-            objective: self.game.objective_key(&self.driving.mission).into(),
+            objective: if isle {
+                self.isle.game.objective_key().into()
+            } else {
+                self.game.objective_key(&self.driving.mission).into()
+            },
+            stars: if isle { self.isle.game.stars } else { 0 },
+            coins: if isle { self.isle.game.coins } else { 0 },
+            star_need: if isle {
+                crate::collectathon::STAR_NEED
+            } else {
+                0
+            },
         }
     }
 
@@ -336,6 +457,7 @@ impl SharedSession {
     pub fn draw_list(&self) -> DrawList {
         match self.kind {
             SceneKind::Driving => self.driving.build_hud(self.width, self.height, self.paused),
+            SceneKind::Collectathon => self.isle.build_hud(self.width, self.height, self.paused),
             SceneKind::Demo2D => self
                 .scene
                 .draw(self.width, self.height, self.frame, self.paused),
@@ -366,12 +488,24 @@ impl SharedSession {
             shadow: renderer.upload_mesh(shadow),
             building: renderer.upload_mesh(building),
         });
+        let isle = crate::collectathon::MeshSet::build();
+        let [terrain, water, isky, ishadow, boxy, cone, cylinder] = isle.as_slice();
+        self.isle_mesh_ids = Some(crate::collectathon::MeshIds {
+            terrain: renderer.upload_mesh(terrain),
+            water: renderer.upload_mesh(water),
+            sky: renderer.upload_mesh(isky),
+            shadow: renderer.upload_mesh(ishadow),
+            boxy: renderer.upload_mesh(boxy),
+            cone: renderer.upload_mesh(cone),
+            cylinder: renderer.upload_mesh(cylinder),
+        });
         self.renderer = Some(renderer);
     }
 
     pub fn detach_renderer(&mut self) {
         self.renderer = None;
         self.mesh_ids = None;
+        self.isle_mesh_ids = None;
     }
 
     pub fn has_renderer(&self) -> bool {
@@ -384,8 +518,13 @@ impl SharedSession {
         let Some(r) = self.renderer.as_mut() else {
             return Err("no renderer attached".into());
         };
-        let world = match (self.kind, self.mesh_ids.as_ref()) {
-            (SceneKind::Driving, Some(ids)) => Some(self.driving.build_scene(ids, r.aspect())),
+        let world = match (
+            self.kind,
+            self.mesh_ids.as_ref(),
+            self.isle_mesh_ids.as_ref(),
+        ) {
+            (SceneKind::Driving, Some(ids), _) => Some(self.driving.build_scene(ids, r.aspect())),
+            (SceneKind::Collectathon, _, Some(ids)) => Some(self.isle.build_scene(ids, r.aspect())),
             _ => None,
         };
         r.render_frame(world.as_ref(), &hud)
@@ -634,5 +773,36 @@ mod tests {
         s.game.tick(&s.driving.mission);
         assert_eq!(s.game.phase, crate::game::GamePhase::Complete);
         assert!(s.game.score >= 500);
+    }
+
+    #[test]
+    fn collectathon_pad_walks_and_stats_name_the_isle() {
+        let mut s = SharedSession::default();
+        s.boot_collectathon();
+        assert_eq!(s.kind, SceneKind::Collectathon);
+        s.start_game();
+        s.set_pad(0.0, -1.0);
+        let z0 = s.isle.walker.z;
+        for _ in 0..60 {
+            s.request_frame();
+        }
+        assert!(s.isle.walker.z > z0 + 2.0);
+        let j = s.stats_json();
+        assert!(j.contains("crest_isle"), "{j}");
+        assert!(j.contains("stars"), "{j}");
+        assert_eq!(s.request_frame().star_need, crate::collectathon::STAR_NEED);
+    }
+
+    #[test]
+    fn collectathon_title_blocks_until_start() {
+        let mut s = SharedSession::default();
+        s.boot_collectathon();
+        s.set_walk(0.0, 1.0, false);
+        let z0 = s.isle.walker.z;
+        for _ in 0..30 {
+            s.request_frame();
+        }
+        assert_eq!(s.isle.walker.z, z0);
+        assert_eq!(s.isle.game.phase, crate::game::GamePhase::Title);
     }
 }

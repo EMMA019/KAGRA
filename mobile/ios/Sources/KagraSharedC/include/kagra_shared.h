@@ -21,8 +21,10 @@ int kagra_shared_push_pointer(SharedSession *ptr, unsigned id, float x, float y,
 int kagra_shared_set_pad(SharedSession *ptr, float x, float y);
 /* 連続値のドライバ入力。steer は -1..1、throttle と brake は 0..1。 */
 int kagra_shared_set_drive(SharedSession *ptr, float steer, float throttle, float brake);
-/* 0 = 運転（3D）、1 = タッチデモ（2D）。 */
+/* 0 = 運転（3D）、1 = タッチデモ（2D）、2 = Crest Isle（歩き）。 */
 int kagra_shared_set_scene(SharedSession *ptr, unsigned kind);
+int kagra_shared_set_walk(SharedSession *ptr, float lx, float lz, int jump);
+int kagra_shared_set_jump(SharedSession *ptr, int held);
 int kagra_shared_save_json(SharedSession *ptr, char *buf, unsigned buflen);
 int kagra_shared_load_json(SharedSession *ptr, const char *json);
 int kagra_shared_set_settings(

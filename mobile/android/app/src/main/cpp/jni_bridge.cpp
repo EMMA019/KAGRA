@@ -134,6 +134,37 @@ Java_dev_kagra_shell_KagraNative_setDrive(
 #endif
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_setScene(JNIEnv *, jobject, jint kind) {
+#if KAGRA_HAS_SHARED
+  return g_session && kagra_shared_set_scene(g_session, (unsigned)kind) == 0;
+#else
+  (void)kind;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_setWalk(
+    JNIEnv *, jobject, jfloat lx, jfloat lz, jboolean jump) {
+#if KAGRA_HAS_SHARED
+  return g_session && kagra_shared_set_walk(g_session, lx, lz, jump ? 1 : 0) == 0;
+#else
+  (void)lx; (void)lz; (void)jump;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_setJump(JNIEnv *, jobject, jboolean held) {
+#if KAGRA_HAS_SHARED
+  return g_session && kagra_shared_set_jump(g_session, held ? 1 : 0) == 0;
+#else
+  (void)held;
+  return JNI_FALSE;
+#endif
+}
+
 extern "C" JNIEXPORT jlong JNICALL
 Java_dev_kagra_shell_KagraNative_requestFrame(JNIEnv *, jobject) {
 #if KAGRA_HAS_SHARED
