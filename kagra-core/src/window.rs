@@ -338,6 +338,7 @@ impl KagraWindow {
                 metallic: 0.0,
                 roughness: 1.0,
                 base_color: [1.0, 1.0, 1.0],
+                skip_fog: false,
             });
         }
     }

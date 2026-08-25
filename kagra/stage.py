@@ -159,6 +159,8 @@ class Stage:
         if self.kind == "backdrop" and self.tex_id is not None:
             # SHADER_3D applies distance fog. A puresky sphere past fog_end
             # becomes the fog color (Crest Isle: r=140, fog_end=102 → grey).
+            # draw_mesh_3d queues; restoring fog before flush used to fog the
+            # sky anyway. The renderer snapshots fog-off onto that command.
             from kagra.look import current_fog
 
             fog = current_fog()

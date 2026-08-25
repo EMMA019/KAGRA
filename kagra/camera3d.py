@@ -100,6 +100,36 @@ def _perspective_wgpu(fov_deg: float, aspect: float,
     ]
 
 
+def clamp_eye(
+    origin: tuple[float, float, float],
+    dest: tuple[float, float, float],
+    *,
+    min_distance: float | None = None,
+    max_distance: float | None = None,
+) -> tuple[float, float, float]:
+    """Keep ``dest`` on the origin→dest ray, inside ``[min, max]`` distance.
+
+    Wall-clip can pull the chase cam into a VRM skull; hitch/lerp can leave it
+    hundreds of metres back. GPU-free.
+    """
+    ox, oy, oz = origin
+    dx = dest[0] - ox
+    dy = dest[1] - oy
+    dz = dest[2] - oz
+    dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+    if dist < 1e-6:
+        return dest
+    lo = 0.0 if min_distance is None else max(0.0, float(min_distance))
+    hi = dist if max_distance is None else max(lo, float(max_distance))
+    if dist < lo:
+        s = lo / dist
+    elif dist > hi:
+        s = hi / dist
+    else:
+        return dest
+    return ox + dx * s, oy + dy * s, oz + dz * s
+
+
 def clip_eye(
     origin: tuple[float, float, float],
     dest: tuple[float, float, float],
@@ -107,10 +137,13 @@ def clip_eye(
     *,
     margin: float = 0.18,
     ignore=None,
+    min_hit: float = 0.0,
 ) -> tuple[float, float, float]:
     """Pull ``dest`` toward ``origin`` if a static World3D collider is in between.
 
     Skips triggers, dynamic boxes, and ``world.player`` (or ``ignore``).
+    Hits closer than ``min_hit`` are ignored (Kenney tree AABB overlapping the
+    avatar used to slam the chase cam into the VRM skull).
     No hit → ``dest`` unchanged. GPU-free.
     """
     phys = getattr(world, "physics", None)
@@ -136,6 +169,8 @@ def clip_eye(
     if hit is None:
         return dest
     t = float(hit[1])
+    if t < max(0.0, float(min_hit)):
+        return dest
     pull = max(0.05, t - max(0.0, float(margin)))
     if pull >= dist:
         return dest
@@ -179,6 +214,8 @@ class Camera3D:
         self._show: dict = {}
         self._show_t = 0.0
         self._follow = False
+        self._follow_min = 1.85
+        self._follow_max = None
 
     def use_orbit(self, radius=3.0, theta=0.0, phi=0.2,
                   target=(0.0, 0.9, 0.0)):
@@ -274,6 +311,8 @@ class Camera3D:
         bounds_half: float | None = None,
         world=None,
         clip_margin: float = 0.18,
+        min_distance: float | None = None,
+        max_distance: float | None = None,
     ):
         """ワールド上の点を追うチェイスカメラ。orbit / showcase は切る。
 
@@ -283,6 +322,8 @@ class Camera3D:
         （既定 distance が壁の外に出る Switch / Dodge 用）。
         ``world`` があればプレイヤー→カメラの線分を静的箱 / 三角形に当て、
         壁を突き抜けないよう距離を縮める（角のクリップ）。
+        ``min_distance`` / ``max_distance`` は壁クリップや lerp のあと目と
+        注視点の距離をクランプする（VRM 頭の中 /  Tiny speck 防止）。
         """
         self._orbit = False
         self._showcase = False
@@ -290,9 +331,15 @@ class Camera3D:
         tx = float(x)
         ty = float(y) + float(look_y)
         tz = float(z)
-        bx = float(x) - math.sin(float(yaw)) * float(distance)
-        bz = float(z) - math.cos(float(yaw)) * float(distance)
+        dist = float(distance)
+        min_d = 1.85 if min_distance is None else float(min_distance)
+        bx = float(x) - math.sin(float(yaw)) * dist
+        bz = float(z) - math.cos(float(yaw)) * dist
         by = float(y) + float(height)
+        authored = math.sqrt((bx - tx) ** 2 + (by - ty) ** 2 + (bz - tz) ** 2)
+        max_d = authored if max_distance is None else float(max_distance)
+        self._follow_min = min_d
+        self._follow_max = max_d
         if bounds_half is not None:
             lim = max(0.05, float(bounds_half) - 0.15)
             bx = max(-lim, min(lim, bx))
@@ -301,7 +348,12 @@ class Camera3D:
             bx, by, bz = clip_eye(
                 (tx, ty, tz), (bx, by, bz), world,
                 margin=float(clip_margin),
+                min_hit=min_d,
             )
+        bx, by, bz = clamp_eye(
+            (tx, ty, tz), (bx, by, bz),
+            min_distance=min_d, max_distance=max_d,
+        )
         t = max(0.0, min(1.0, float(lerp)))
         if t >= 1.0:
             self.position = (bx, by, bz)
@@ -319,6 +371,13 @@ class Camera3D:
             oy + (ty - oy) * t,
             oz + (tz - oz) * t,
         )
+        # Lerp from a stale/far eye (hitch) must not stay a tiny speck, and
+        # lerp toward a clipped dest must not sit inside the VRM head.
+        cx, cy, cz = clamp_eye(
+            self.target, self.position,
+            min_distance=min_d, max_distance=max_d,
+        )
+        self.position = (cx, cy, cz)
 
     def look(
         self,
@@ -341,6 +400,8 @@ class Camera3D:
         self.orbit_phi  = max(-1.4, min(1.4, self.orbit_phi + d_phi))
 
     def zoom(self, delta: float):
+        if self._follow:
+            return
         self.orbit_r = max(0.3, self.orbit_r + delta)
 
     def _update_orbit(self):
@@ -359,6 +420,12 @@ class Camera3D:
             self.showcase_tick(dt)
         if self._orbit:
             self._update_orbit()
+        if self._follow and self._follow_max is not None:
+            cx, cy, cz = clamp_eye(
+                self.target, self.position,
+                min_distance=self._follow_min, max_distance=self._follow_max,
+            )
+            self.position = (cx, cy, cz)
         view = _look_at(self.position, self.target, self.up)
         proj = _perspective_wgpu(
             self.fov_deg,

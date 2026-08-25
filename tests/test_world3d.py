@@ -205,6 +205,15 @@ def test_stream_tiles_budget_caps_new_tiles():
     assert len(added) <= 1
 
 
+def test_terrain_base_defaults_white_for_relic_run():
+    """Crest Isle tints meadow via world.terrain_base; Relic Run keeps JPEG albedo."""
+    m = _world()
+    w = m.World3D(half=24.0)
+    assert w.terrain_base == (1.0, 1.0, 1.0)
+    w.terrain_base = (0.55, 1.55, 0.70)
+    assert w.terrain_base[1] > w.terrain_base[0]
+
+
 def test_bake_terrain_invokes_chunk_fill():
     """bake_terrain streams at once — fill callbacks must be ready first.
 

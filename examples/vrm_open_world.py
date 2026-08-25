@@ -41,12 +41,15 @@ from open_world_rules import (
     CAM_DISTANCE,
     CAM_HEIGHT,
     CAM_LOOK_Y,
+    CAM_MAX_DISTANCE,
+    CAM_MIN_DISTANCE,
     CELLS,
     COIN_GLOW,
     COIN_SCALE,
     COIN_XZ,
     FOV_DEG,
     GLTF_HALF_Y,
+    GRASS_TINT,
     HALF,
     JUMP,
     LOD_CELLS,
@@ -198,6 +201,8 @@ class CrestIsle(kagra.Scene):
                 return (76, 140, 62, 255)
 
             tex = kagra.texture_from_fn(128, 128, _terrain_px, name="crest_land")
+        # Shared JPEG is brown soil+rock. Tint mesh_mat.base here only (Relic Run keeps 1,1,1).
+        self.world.terrain_base = GRASS_TINT
         self.world.bake_terrain(tex)
         wall = kagra.solid_tex((148, 128, 108))
         self.world.bake(tex, wall)
@@ -256,12 +261,16 @@ class CrestIsle(kagra.Scene):
             p.x, p.y, p.z,
             lerp=1.0, yaw=yaw0,
             distance=CAM_DISTANCE, height=CAM_HEIGHT, look_y=CAM_LOOK_Y,
+            min_distance=CAM_MIN_DISTANCE,
+            max_distance=CAM_MAX_DISTANCE,
         )
         kagra.set_camera3d(self.cam)
         self.walk = kagra.Walk(
             self.world, self.cam,
             speed=PLAYER_SPEED, jump=JUMP, yaw=yaw0,
             distance=CAM_DISTANCE, height=CAM_HEIGHT, look_y=CAM_LOOK_Y,
+            min_distance=CAM_MIN_DISTANCE,
+            max_distance=CAM_MAX_DISTANCE,
         )
         self.walk.face = face0
 

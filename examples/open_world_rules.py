@@ -26,6 +26,17 @@ CAM_LOOK_Y = 1.25
 PLAYER_SPEED = 5.6
 JUMP = 7.2
 FOV_DEG = 54.0
+# Chase cam must stay in this band. Wall-clip / hitch lerp must not
+# explode to a tiny speck or slam into the VRM skull. Max is the authored
+# 3D eye distance (hypot of CAM_DISTANCE and height-look_y), not the
+# horizontal CAM_DISTANCE alone.
+CAM_MIN_DISTANCE = 6.0
+CAM_MAX_DISTANCE = math.hypot(CAM_DISTANCE, CAM_HEIGHT - CAM_LOOK_Y)
+
+# aerial_grass_rock_diff_1k.jpg mean is brown dirt (R=0.45, G=0.38, B=0.14).
+# Crest Isle only: multiply mesh_mat.base so Lambert reads as 草原.
+GRASS_TINT = (0.55, 1.55, 0.70)
+AERIAL_GRASS_ALBEDO = (0.446, 0.381, 0.143)
 
 PICK_REACH = 1.25
 STAR_NEED = 6

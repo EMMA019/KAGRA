@@ -117,6 +117,34 @@ def test_outdoor_look_does_not_blow_grass_albedo():
         assert min(blown) > 0.95, blown
 
 
+def test_tinted_aerial_grass_stays_green_dominant():
+    """Poly Haven aerial_grass_rock mean is brown (R>G). Crest tint must not blow white."""
+    import sys
+    from pathlib import Path
+
+    examples = Path(__file__).resolve().parents[1] / "examples"
+    if str(examples) not in sys.path:
+        sys.path.insert(0, str(examples))
+    from open_world_rules import AERIAL_GRASS_ALBEDO, GRASS_TINT
+
+    tinted = tuple(a * t for a, t in zip(AERIAL_GRASS_ALBEDO, GRASS_TINT))
+    lit = look.lambert_rgb(tinted)
+    assert lit[1] > lit[0] and lit[1] > lit[2], lit
+    assert max(lit) < 0.9, lit
+    raw = look.lambert_rgb(AERIAL_GRASS_ALBEDO)
+    assert raw[0] > raw[1], raw
+
+
+def test_pale_skin_mtoon_ibl_does_not_flatten_to_white():
+    """#81 IBL is albedo*0.35. Front-facing pale skin stays peach, not a mask."""
+    skin = (0.96, 0.82, 0.78)
+    front = look.mtoon_fill_rgb(skin, lit=1.0, ndotv=1.0, rim=0.0)
+    assert front[1] < front[0] and front[2] < front[0], front
+    # Inside-skull N·V<=0 + rim is the white-mask path clamp_eye must prevent.
+    inside = look.mtoon_fill_rgb(skin, lit=1.0, ndotv=0.0, rim=0.55)
+    assert inside[0] > front[0] + 0.3, (front, inside)
+
+
 def test_record_fog_roundtrip():
     look.record_fog(48.0, 102.0, (150, 175, 195), True)
     fog = look.current_fog()

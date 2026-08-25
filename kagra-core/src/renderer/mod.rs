@@ -70,6 +70,7 @@ struct ImmediateMeshDraw {
     roughness: f32,
     base_color: [f32; 3],
     normal_texture_id: u32,
+    skip_fog: bool,
 }
 
 struct GpuTexture {
@@ -2134,11 +2135,19 @@ impl RendererV2 {
         });
     }
 
-    fn pack_mesh_mat(&self, slot: u32, metallic: f32, roughness: f32, base: [f32; 3], normal_id: u32) {
+    fn pack_mesh_mat(
+        &self,
+        slot: u32,
+        metallic: f32,
+        roughness: f32,
+        base: [f32; 3],
+        normal_id: u32,
+        skip_fog: bool,
+    ) {
         let pbr = if crate::hdri::pbr_enabled(metallic, roughness) { 1.0 } else { 0.0 };
         let has_n = if normal_id != 0 && self.textures.contains_key(&normal_id) { 1.0 } else { 0.0 };
         let data = [
-            base[0], base[1], base[2], 1.0,
+            base[0], base[1], base[2], if skip_fog { 0.0 } else { 1.0 },
             metallic.clamp(0.0, 1.0), roughness.clamp(0.04, 1.0), has_n, pbr,
         ];
         self.queue.write_buffer(
@@ -2187,7 +2196,12 @@ impl RendererV2 {
         );
     }
 
-    pub fn queue_mesh_3d(&mut self, cmd: Mesh3DCommand) { self.mesh_3d_queue.push(cmd); }
+    pub fn queue_mesh_3d(&mut self, mut cmd: Mesh3DCommand) {
+        // Stage.draw / sky() disable fog, queue, then restore. The uniform
+        // restore wins before flush, so snapshot fog-off onto the command.
+        cmd.skip_fog = self.fog_params[2] < 0.5;
+        self.mesh_3d_queue.push(cmd);
+    }
 
     /// 頂点を GPU に一度だけ載せて ID を返す。0 は失敗。
     pub fn upload_mesh_3d(
@@ -2833,6 +2847,7 @@ impl RendererV2 {
                 roughness: cmd.roughness,
                 base_color: cmd.base_color,
                 normal_texture_id: 0,
+                skip_fog: cmd.skip_fog,
             });
             vb_off += v_bytes;
             ib_off += i_bytes;
@@ -2853,17 +2868,20 @@ impl RendererV2 {
             None
         };
 
-        let mut draws: Vec<(u32, u32, u64, u64, u32, f32, f32, [f32; 3])> = Vec::with_capacity(immediate.len());
+        let mut draws: Vec<(u32, u32, u64, u64, u32, f32, f32, [f32; 3], bool)> =
+            Vec::with_capacity(immediate.len());
         for d in immediate {
-            if let (Some(fr), Some(aabb)) = (frustum.as_ref(), d.aabb.as_ref()) {
-                if !fr.contains_aabb(aabb) {
-                    self.stats.culled += 1;
-                    continue;
+            if !d.skip_fog {
+                if let (Some(fr), Some(aabb)) = (frustum.as_ref(), d.aabb.as_ref()) {
+                    if !fr.contains_aabb(aabb) {
+                        self.stats.culled += 1;
+                        continue;
+                    }
                 }
             }
             draws.push((
                 d.texture_id, d.normal_texture_id, d.vb_off, d.ib_off, d.index_count,
-                d.metallic, d.roughness, d.base_color,
+                d.metallic, d.roughness, d.base_color, d.skip_fog,
             ));
         }
 
@@ -2898,11 +2916,11 @@ impl RendererV2 {
         self.ensure_mesh_mat_slots(nmat.max(1));
         let mut slot = 0u32;
         for d in &draws {
-            self.pack_mesh_mat(slot, d.5, d.6, d.7, d.1);
+            self.pack_mesh_mat(slot, d.5, d.6, d.7, d.1, d.8);
             slot += 1;
         }
         for m in &retained_mats {
-            self.pack_mesh_mat(slot, m.0, m.1, m.2, m.4);
+            self.pack_mesh_mat(slot, m.0, m.1, m.2, m.4, false);
             slot += 1;
         }
         for d in &draws {
@@ -2925,7 +2943,7 @@ impl RendererV2 {
         let mut drawn = 0u32;
         let mut tris = 0u32;
         let mut slot = 0u32;
-        for (texture_id, normal_id, v_off, i_off, index_count, _, _, _) in draws {
+        for (texture_id, normal_id, v_off, i_off, index_count, _, _, _, _) in draws {
             let bg = self.mesh3d_tex_bg(texture_id, normal_id);
             rp.set_bind_group(1, bg, &[]);
             rp.set_bind_group(3, &self.mesh_mat_bg, &[slot * 256]);
@@ -3027,7 +3045,7 @@ impl RendererV2 {
         }).collect();
         self.ensure_mesh_mat_slots(inst_mats.len().max(1) as u32);
         for (i, m) in inst_mats.iter().enumerate() {
-            self.pack_mesh_mat(i as u32, m.0, m.1, m.2, m.4);
+            self.pack_mesh_mat(i as u32, m.0, m.1, m.2, m.4, false);
             self.ensure_mesh3d_tex_bg(m.3, m.4);
         }
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

@@ -90,6 +90,9 @@ pub struct Mesh3DCommand {
     pub metallic: f32,
     pub roughness: f32,
     pub base_color: [f32; 3],
+    /// Queued while `set_fog(enabled=False)`. Restore-before-flush used to
+    /// fog puresky to grey; snapshot here instead.
+    pub skip_fog: bool,
 }
 
 /// ワールド 3D インスタンス。pos + yaw(Y) + scale。32 バイト。

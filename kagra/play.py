@@ -690,6 +690,8 @@ class Prop:
         self.tex_id = 0
         self.normal_tex_id = 0
         self.mesh_id = 0
+        # GPU upload is bake() / bake_all / draw_all. Never draw_mesh_3d here —
+        # Crest Isle constructs 120+ vista Props then bake_all once.
         self.id = Prop._next_id
         Prop._next_id += 1
         self.body = None
@@ -1105,6 +1107,8 @@ class Walk:
         coyote: float = 0.12,
         jump_buffer: float = 0.12,
         lock_cursor: bool | None = None,
+        min_distance: float | None = None,
+        max_distance: float | None = None,
     ):
         self.world = world
         self.cam = cam
@@ -1113,6 +1117,10 @@ class Walk:
         self.distance = float(distance)
         self.height = float(height)
         self.look_y = float(look_y)
+        self._chase_distance = float(distance)
+        self._chase_height = float(height)
+        self.min_distance = 1.85 if min_distance is None else float(min_distance)
+        self.max_distance = None if max_distance is None else float(max_distance)
         self.yaw = float(yaw)
         self.face = float(yaw)
         self.pitch = float(pitch)
@@ -1166,6 +1174,9 @@ class Walk:
             engine_delta, mouse_pos, self._last_mouse,
         )
         if dx or dy:
+            # Hitch frames can deliver a huge mouse delta; don't spin/zoom the chase cam.
+            dx = max(-80.0, min(80.0, dx))
+            dy = max(-80.0, min(80.0, dy))
             self.yaw = look_yaw(self.yaw, dx, sens=self.mouse_sens)
             if self.first_person:
                 self.pitch = look_pitch(self.pitch, dy, sens=self.mouse_sens)
@@ -1243,11 +1254,13 @@ class Walk:
             self.cam.follow(
                 p.x, p.y, p.z,
                 yaw=self.yaw,
-                distance=self.distance,
-                height=self.height,
+                distance=self._chase_distance,
+                height=self._chase_height,
                 look_y=self.look_y,
                 lerp=0.22,
                 world=self.world,
+                min_distance=self.min_distance,
+                max_distance=self.max_distance,
             )
         eng = kagra.get_engine()
         if eng:

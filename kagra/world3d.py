@@ -58,6 +58,7 @@ class World3D:
         self._city = None
         self._drawn_dynamic: list[tuple[RigidBody3D, int]] = []
         self._stream_warm = False
+        self.terrain_base: tuple[float, float, float] = (1.0, 1.0, 1.0)
 
     def add_floor(self, size: float | None = None):
         """Y = ``floor_y`` の正方形床を予約する。半辺は ``size`` または ``half``。"""
@@ -384,7 +385,10 @@ class World3D:
                     self._height_fn, ox, oz, self._tile, cells,
                     uv_half=self.half,
                 )
-            mid = kagra.upload_mesh_3d(int(self._terrain_tex), verts, idx)
+            mid = kagra.upload_mesh_3d(
+                int(self._terrain_tex), verts, idx,
+                base_color=tuple(self.terrain_base),
+            )
         except Exception:
             return 0
         if not mid:

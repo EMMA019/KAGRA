@@ -7,7 +7,9 @@ use winit::keyboard::{Key, KeyCode, NamedKey, NativeKeyCode, PhysicalKey};
 const LONG_HOLD_FRAMES: u32 = 8;
 /// After a long hold, ignore leftover non-repeat KEYDOWN until this many
 /// quiet `begin_frame`s with no down. A leftover down refreshes the window.
-const REHOLD_QUIET_FRAMES: u8 = 15;
+/// 15 frames (~250ms) ate Emma's fast re-tap; 3 frames (~50ms) still blocks
+/// same/next-frame leftovers while a real press after ~3 quiet frames walks.
+const REHOLD_QUIET_FRAMES: u8 = 3;
 
 pub struct InputState {
     held: HashSet<u32>,
@@ -485,7 +487,7 @@ mod tests {
     fn long_hold_leftover_down_for_30_frames_then_quiet_then_real_press() {
         // Hitch-stalled leftover: down → many auto-repeat → up → 30 frames of
         // leftover `repeat=false` KEYDOWN must not re-hold. Each leftover
-        // refreshes a 15-frame quiet window. After 15 silent frames a real
+        // refreshes a 3-frame quiet window. After 3 silent frames a real
         // re-press must hold.
         let mut inp = InputState::new();
         inp.apply_key(DOWN, true, false);
@@ -510,7 +512,27 @@ mod tests {
         inp.apply_key(DOWN, true, false);
         assert!(
             inp.is_key_down(DOWN),
-            "a real re-press after 15 quiet frames must work"
+            "a real re-press after 3 quiet frames must work"
+        );
+    }
+
+    #[test]
+    fn long_hold_three_quiet_frames_then_repress_holds() {
+        // Emma: long hold → release → same key after ~3 quiet frames must walk.
+        let mut inp = InputState::new();
+        inp.apply_key(DOWN, true, false);
+        for _ in 0..LONG_HOLD_FRAMES {
+            inp.begin_frame();
+            inp.apply_key(DOWN, true, true);
+        }
+        inp.apply_key(DOWN, false, false);
+        for _ in 0..3 {
+            inp.begin_frame();
+        }
+        inp.apply_key(DOWN, true, false);
+        assert!(
+            inp.is_key_down(DOWN),
+            "a real re-press after 3 quiet frames must hold"
         );
     }
 
