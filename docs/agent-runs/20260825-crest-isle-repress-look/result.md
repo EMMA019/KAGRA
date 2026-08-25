@@ -24,8 +24,13 @@ rustup run stable cargo test -p kagra-core --no-default-features --locked input
 
 rustup run stable cargo test -p kagra-core --no-default-features --locked mesh3d_
 4 passed (#82 LRU helpers unchanged)
+```
 
-GPU `kagra.verify` was not run here (`kagra_core` not built). CI **golden** failed on the first skip_fog snapshot (fog-off default unlit every Mesh3D). Flag is now opt-in on `sky()` / `Stage.draw` only.
+GPU `kagra.verify` was not run here (`kagra_core` not built). First skip_fog snapshot unlit every Mesh3D (fog-off is the default); flag is now opt-in on `sky()` / `Stage.draw`.
+
+**GitHub CI: 17 checks passed** on `0c169a7` (`cursor/crest-isle-repress-look-cf00`), including golden.
+
+PR: https://github.com/EMMA019/KAGRA/pull/83
 
 Did not revert #81 IBL `albedo*0.35`, sun `+Y`, or the sticky-walk leftover KEYDOWN filter. No Rapier. Did not duplicate #82 Mesh3D LRU / path intern / stream `max_new=1`.
 
