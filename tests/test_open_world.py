@@ -263,9 +263,11 @@ def test_title_draw_skips_live_world():
     ):
         assert needle not in title_arm, needle
         assert draw.index(needle) > title_ret, needle
-    assert "overlay_alpha=255" in title_arm
-    assert "overlay_alpha=118" not in title_arm
-    assert ", 118)" not in title_arm
+    # Do not search bare "118": the title comment mentions alpha-118.
+    call_i = title_arm.index("self._banner(")
+    banner_call = title_arm[call_i:]
+    assert "overlay_alpha=255" in banner_call
+    assert "overlay_alpha=118" not in banner_call
     banner = src[src.index("    def _banner") :]
     assert "overlay_alpha: int = 118" in banner
     assert "Alicia Solid" in banner
