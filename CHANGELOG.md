@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Crest Isle: init `_chunk_props` before `bake_terrain` so the first tile stream does not AttributeError.
 - Agent eyes: `kagra.annotate` (click → JSONL) and `kagra.debug_trace` (foot vs terrain). Not a visual editor.
 - `Camera3D.follow(..., world=)` pulls the chase camera in so it does not go through walls.
 - Prop / terrain Lambert uses the same `cam.toon` stepped lighting as VRM when `set_toon_params` softness < 0.999.

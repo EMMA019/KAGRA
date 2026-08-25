@@ -213,3 +213,13 @@ def test_readme_sample_line():
     assert "python examples/vrm_open_world.py" in readme
     ja = (_ROOT / "README.ja.md").read_text(encoding="utf-8")
     assert "python examples/vrm_open_world.py" in ja
+
+
+def test_chunk_props_ready_before_first_stream():
+    """``_fill_chunk`` runs during bake_terrain; the counter must exist first."""
+    src = (_ROOT / "examples" / "vrm_open_world.py").read_text(encoding="utf-8")
+    init_i = src.index("self._chunk_props = 0")
+    fill_i = src.index("self.world.set_chunk_fill")
+    bake_i = src.index("self.world.bake_terrain")
+    assert init_i < fill_i < bake_i
+    assert src.count("self._chunk_props = 0") == 1
