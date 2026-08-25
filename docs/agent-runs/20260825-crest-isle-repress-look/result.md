@@ -14,11 +14,20 @@ Rebased onto PR #82 (`cursor/crest-isle-tex-bg-561b` @ `0283583`). Cache LRU, pa
 
 ```
 python3 tools/gen_api_index.py --check
+OK /workspace/docs/API_INDEX.md (422 entries)
+
 python3 -m pytest tests -m "not golden" -q
+399 passed, 10 deselected
+
 rustup run stable cargo test -p kagra-core --no-default-features --locked input
+17 passed (input unit tests)
+
+rustup run stable cargo test -p kagra-core --no-default-features --locked mesh3d_
+4 passed (#82 LRU helpers unchanged)
+
 python3 -m kagra.verify examples/verify_scenarios/open_world_smoke.json
-  not run: kagra_core extension is not built in this agent VM
-  (`ModuleNotFoundError: kagra.kagra_core`). GPU pixels: CI / Emma's Windows.
+not run: kagra_core extension is not built in this agent VM
+(`ModuleNotFoundError: kagra.kagra_core`). GPU pixels: CI / Emma's Windows.
 ```
 
 Did not revert #81 IBL `albedo*0.35`, sun `+Y`, or the sticky-walk leftover KEYDOWN filter. No Rapier. Did not duplicate #82 Mesh3D LRU / path intern / stream `max_new=1`.
