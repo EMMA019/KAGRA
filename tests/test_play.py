@@ -212,6 +212,9 @@ def test_prop_sequential_id():
     b = play.Prop("sphere", collision=False)
     assert a.id >= 1
     assert b.id == a.id + 1
+
+
+def test_prop_bake_without_engine_is_zero():
     p = play.Prop("sphere", color="gold", collision=False)
     assert p.bake() == 0
     assert p.mesh_id == 0
