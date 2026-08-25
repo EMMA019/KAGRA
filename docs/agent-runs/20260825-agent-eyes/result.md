@@ -18,6 +18,7 @@ pytest tests -m "not golden" -p tests.no_extension_plugin
 ```
 
 This checkout: **359 passed, 10 deselected** (`not golden`).
+**GitHub CI: 17 checks passed** on `f17c9fd` (https://github.com/EMMA019/KAGRA/actions), including `python-unit`, `rust-test`, `kagra-shared`, maturin builds, iOS/Android shells, and `golden` (`prop_toon` pairwise).
 
 Focused:
 
@@ -39,3 +40,5 @@ python -m kagra.verify examples/verify_scenarios/dodge_room_smoke.json
 ```
 
 Out of scope (kept out): Tk editor, 4-cascade CSM, SSAO, volumetrics, WebXR, headpat, Rapier, cloth, blend trees.
+
+PR: https://github.com/EMMA019/KAGRA/pull/76 (mergeable on master @ 1b6685f / Crest Isle mobile #75).
