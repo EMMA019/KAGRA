@@ -66,6 +66,8 @@ Result: `examples/vrm_dodge_room.py`
 | Move / delete | `prop.x = …` or `vx` + `Prop.update_all(dt)`. `destroy(prop)` / `prop.enabled` |
 | Texture / parent | `Prop(..., texture=kagra.texture_from_fn(...))` or `kagra.load`. 4-level `set_parent` / `parent=`. Child `x,y,z,yaw` are local |
 | Click / carry | `clicked_prop(cam)` then `walk.carry(prop)` |
+| Agent eyes | `kagra.annotate(sx, sy)` click → JSONL. `kagra.debug_trace(foot_y=, height_fn=)` slope float. Not an editor |
+| Chase cam | `Camera3D.follow(..., world=)` pulls in before walls |
 | Animate / HUD / SE | `animate(prop, "y", end)` / `Label` / `Button` / `sound("coin")` |
 | glTF part | `Prop("crate.glb")` — not `stage()`. Bundled `cube.glb`. Collision is AABB |
 | Lights | `set_point_light` / `set_spot_light` (`slot=0..3`). Slot 0 is the key (spot shadow) |

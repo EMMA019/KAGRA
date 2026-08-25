@@ -128,6 +128,7 @@ Stage 1 の「打てる楔を数字で選ぶ」は残す。D を箱部屋で投�
 **決めごと:** pygame / 2D ECS を Front に戻す、Tk を 3D エディタに育てる、
 Web で three-vrm と戦う、torch をコア依存、箱部屋 4 本目を D-6、
 `KAGRA_ENGINE_GUIDE.md` を現行仕様として増やす。
+**エージェントの目 = `annotate` + `debug_trace`。ビジュアルエディタではない。**
 
 **80% の外（禁止ではない）:** 4 段 CSM / SSAO / ボリュメトリック / OSM / ボクセル /
 カリング P9、kagra-core と kagra-shared のレンダラ統合。Rapier クレートは 5MB のため 80% の外（AABB で世界は足りる）。

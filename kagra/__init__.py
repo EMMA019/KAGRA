@@ -875,7 +875,7 @@ def pick_vrm_bone(vrm_id: int, ox: float, oy: float, oz: float,
 
 def set_toon_params(threshold: float = 0.5, softness: float = 1.0,
                     shade: float = 0.55, lit: float = 1.0):
-    """VRM スキニング用のトゥーン階調を設定する。
+    """VRM と Prop/地形 Lambert のトゥーン階調。
 
     Args:
         threshold: 明暗境界（half-Lambert 0〜1）
@@ -883,6 +883,8 @@ def set_toon_params(threshold: float = 0.5, softness: float = 1.0,
                   ≥0.999 で従来の連続 half-Lambert（デフォルト）
         shade: 影側の明るさ
         lit: 光側の明るさ
+
+    Prop / 地形の ``fs_main`` は VRM と同じ ``cam.toon`` 経路。金属 PBR は触らない。
     """
     _check(); _engine.set_toon_params(threshold, softness, shade, lit)
 
@@ -1189,6 +1191,94 @@ def clicked_prop(cam=None, *, button: int = 1, max_dist: float = 80.0):
     if not mouse_pressed(int(button)):
         return None
     return hovered_prop(cam, max_dist=max_dist)
+
+
+def annotate(
+    sx: float | None = None,
+    sy: float | None = None,
+    *,
+    cam=None,
+    avatar=None,
+    world=None,
+    screenshot: str | None = None,
+    note: str | None = None,
+    path: str | None = None,
+    capture: bool = False,
+    persist: bool = True,
+):
+    """Preview click → JSON note (screen, world, bone, Prop id). Agent eyes, not an editor.
+
+    This is how 「ここもう少し」 becomes numbers. Appends JSONL under ``scratch/``.
+    ``sx`` / ``sy`` omitted → mouse. ``capture=True`` requests a PNG next frame.
+    Extends pick / ``hovered_prop``; does not replace them.
+    """
+    from kagra.annotate import annotate as _fn
+
+    if sx is None or sy is None:
+        mx, my = mouse_pos()
+        sx = float(mx if sx is None else sx)
+        sy = float(my if sy is None else sy)
+    if cam is None:
+        cam = get_camera3d()
+    shot = screenshot
+    if capture:
+        if not shot:
+            shot = f"scratch/annotate_{int(tick_count())}.png"
+        _check()
+        _engine.request_screenshot(str(shot))
+    frame = None
+    try:
+        frame = tick_count()
+    except Exception:
+        frame = None
+    return _fn(
+        float(sx), float(sy),
+        cam=cam, avatar=avatar, world=world,
+        screenshot=shot, note=note, path=path,
+        frame=frame, persist=persist,
+    )
+
+
+def debug_trace(
+    *,
+    foot_y: float,
+    x: float = 0.0,
+    z: float = 0.0,
+    ground_y: float | None = None,
+    height_fn=None,
+    world=None,
+    vx: float | None = None,
+    vz: float | None = None,
+    on_ground: bool | None = None,
+    camera_distance: float | None = None,
+    threshold: float = 0.05,
+    frame: int | None = None,
+    path: str | None = None,
+    persist: bool = True,
+    reset: bool = False,
+):
+    """Slope-float detector. Emits JSONL only when |foot − terrain| > threshold.
+
+    Call every frame. Quiet when grounded and stuck to the height field.
+    ``kagra.debug_trace_summary()`` → ``frames 32-48 floated 0.15``.
+    GPU-free; pass a fake ``height_fn`` in tests. Not Rapier.
+    """
+    from kagra.trace import debug_trace as _fn
+
+    return _fn(
+        foot_y=foot_y, x=x, z=z, ground_y=ground_y,
+        height_fn=height_fn, world=world, vx=vx, vz=vz,
+        on_ground=on_ground, camera_distance=camera_distance,
+        threshold=threshold, frame=frame, path=path,
+        persist=persist, reset=reset,
+    )
+
+
+def debug_trace_summary() -> str:
+    """Compact float runs from the default ``debug_trace`` tracer."""
+    from kagra.trace import debug_trace_summary as _fn
+
+    return _fn()
 
 
 def destroy(prop) -> None:
@@ -2202,6 +2292,7 @@ from kagra.physics       import BoxCollider, Rigidbody, PhysicsSystem, TopDownPh
 from kagra.physics3d     import Physics3D, RigidBody3D, AABB
 from kagra.world3d       import World3D
 from kagra.play          import Prop, Walk  # hovered_prop is the wrapper above
+from kagra.trace         import DebugTrace
 from kagra.motion        import animate, sequence, Tween, Sequence
 from kagra.hud           import Label, Button
 from kagra.instances     import InstanceBatch

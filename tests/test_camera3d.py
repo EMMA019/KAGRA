@@ -150,3 +150,65 @@ def test_follow_bounds_half_keeps_eye_inside_room():
     )
     assert abs(cam.position[2]) <= 5.6 - 0.14
     assert cam.position[2] > 3.4
+
+
+def test_follow_clips_eye_in_front_of_wall():
+    """Player → camera segment vs a static box pulls the eye in."""
+    from tests.conftest import load_kagra_submodule as load
+
+    w3 = load("world3d")
+    world = w3.World3D(half=6.0)
+    world.add_box(0.0, 0.0, -2.0, 8.0, 4.0, 0.4)
+    world.add_player(0.0, 0.0)
+    m = _cam()
+    cam = m.Camera3D(800, 600)
+    cam.follow(0.0, 0.0, 0.0, distance=4.8, height=2.4, look_y=1.0, lerp=1.0, yaw=0.0)
+    raw_z = cam.position[2]
+    cam.follow(
+        0.0, 0.0, 0.0,
+        distance=4.8, height=2.4, look_y=1.0, lerp=1.0, yaw=0.0, world=world,
+    )
+    assert raw_z < -4.0
+    assert cam.position[2] > raw_z
+    assert cam.position[2] > -2.0
+
+
+def test_follow_boxed_room_corner_stays_inside():
+    """Switch-style walls: default distance would sit past the +Z wall."""
+    import sys
+    from pathlib import Path
+
+    from tests.conftest import load_kagra_submodule as load
+
+    examples = Path(__file__).resolve().parents[1] / "examples"
+    if str(examples) not in sys.path:
+        sys.path.insert(0, str(examples))
+    from switch_room_rules import ARENA_HALF, START_XZ, walls
+
+    w3 = load("world3d")
+    world = w3.World3D(half=6.0)
+    for spec in walls():
+        world.add_box(*spec)
+    world.add_player(*START_XZ)
+    m = _cam()
+    cam = m.Camera3D(960, 540)
+    import math
+
+    cam.follow(
+        START_XZ[0], 0.0, START_XZ[1],
+        distance=4.8, height=1.9, look_y=1.0, lerp=1.0, yaw=math.pi,
+        world=world,
+    )
+    assert abs(cam.position[0]) < ARENA_HALF
+    assert abs(cam.position[2]) < ARENA_HALF
+    assert cam.position[2] > START_XZ[1]
+    # closer than the unclipped 3.4+4.8=8.2
+    assert cam.position[2] < START_XZ[1] + 4.0
+
+
+def test_clip_eye_no_hit_keeps_dest():
+    m = _cam()
+    w3 = load_kagra_submodule("world3d")
+    world = w3.World3D(half=6.0)
+    dest = m.clip_eye((0.0, 1.0, 0.0), (0.0, 2.4, -4.8), world)
+    assert dest == (0.0, 2.4, -4.8)

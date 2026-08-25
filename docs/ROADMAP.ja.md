@@ -1,6 +1,6 @@
 # KAGRA ロードマップ — 体と、その体が歩ける部屋
 
-最終更新: 2026-08-24（見直し: エンジン到達点を **80%** にする。
+最終更新: 2026-08-25（見直し: エンジン到達点を **80%** にする。
 100% は「Python だけで three-vrm + three.js + Ursina を置き換えて困らない」。
 今は約 63%。PyPI は 0.1.4。棚卸しは [REVIEW.ja.md](REVIEW.ja.md)）。
 
@@ -185,6 +185,9 @@ API は usable-week で載った。チェックは見本と実機。
 
 80% を閉じる前に、ここから勝手に始めない。指示があれば足す。
 
+**エージェントの目は `annotate` + `debug_trace`。ビジュアルエディタではない。**
+Tk / Inspector / 4 段 CSM / SSAO / ボリュメトリック / WebXR / なでる headpat は今やらない。
+
 ### 体（three-vrm。既に約 80%）
 
 深追いしない。空きでよい。
@@ -198,6 +201,7 @@ API は usable-week で載った。チェックは見本と実機。
 - [x] API 索引を Front / Shelf に分割
 - [x] `KAGRA_ENGINE_GUIDE.md` を `docs/archive/` に移し、ルートはスタブだけ
 - [x] 全体レビュー `docs/REVIEW.ja.md`
+- [x] エージェントの目: `annotate` + `debug_trace`（ビジュアルエディタではない）
 
 ---
 

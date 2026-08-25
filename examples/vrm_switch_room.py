@@ -117,7 +117,7 @@ class SwitchRoom(kagra.Scene):
             START_XZ[0], 0.0, START_XZ[1],
             lerp=1.0, yaw=CAM_YAW, distance=CAM_DIST,
             height=CAM_HEIGHT, look_y=CAM_LOOK_Y,
-            bounds_half=ARENA_HALF,
+            bounds_half=ARENA_HALF, world=self.world,
         )
         kagra.set_camera3d(self.cam)
         self.mode = "play" if SMOKE else "title"
@@ -215,7 +215,7 @@ class SwitchRoom(kagra.Scene):
             p.x, p.y, p.z,
             yaw=CAM_YAW, distance=CAM_DIST,
             height=CAM_HEIGHT, look_y=CAM_LOOK_Y,
-            lerp=0.22, bounds_half=ARENA_HALF,
+            lerp=0.22, bounds_half=ARENA_HALF, world=self.world,
         )
         eng = kagra.get_engine()
         if eng:

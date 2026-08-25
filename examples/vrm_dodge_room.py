@@ -118,7 +118,7 @@ class DodgeRoom(kagra.Scene):
         self.cam.follow(
             0.0, 0.0, 1.5, lerp=1.0, yaw=math.pi,
             distance=3.0, height=2.0, look_y=1.0,
-            bounds_half=ARENA_HALF,
+            bounds_half=ARENA_HALF, world=self.world,
         )
         kagra.set_camera3d(self.cam)
         self.mode = "play" if SMOKE else "title"
@@ -242,7 +242,7 @@ class DodgeRoom(kagra.Scene):
         self.cam.follow(
             p.x, p.y, p.z, yaw=math.pi, lerp=0.22,
             distance=3.0, height=2.0, look_y=1.0,
-            bounds_half=ARENA_HALF,
+            bounds_half=ARENA_HALF, world=self.world,
         )
         eng = kagra.get_engine()
         if eng:

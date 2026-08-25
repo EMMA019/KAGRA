@@ -589,6 +589,7 @@ class Prop:
     """
 
     _all: list["Prop"] = []
+    _next_id: int = 1
 
     def __init__(
         self,
@@ -664,6 +665,8 @@ class Prop:
         self.tex_id = 0
         self.normal_tex_id = 0
         self.mesh_id = 0
+        self.id = Prop._next_id
+        Prop._next_id += 1
         self.body = None
         self._parent: Optional[Prop] = None
         self._children: list[Prop] = []
@@ -1203,6 +1206,7 @@ class Walk:
                 height=self.height,
                 look_y=self.look_y,
                 lerp=0.22,
+                world=self.world,
             )
         eng = kagra.get_engine()
         if eng:
