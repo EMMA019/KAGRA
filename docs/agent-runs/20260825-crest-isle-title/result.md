@@ -12,7 +12,9 @@ Title was not a missing string. `draw` composited the live island, then `fill(..
 
 ## Verify
 
-(pending — pytest / API index / open_world_smoke)
+- `python3 tools/gen_api_index.py --check` → OK (422 entries)
+- `python3 -m pytest tests -m "not golden"` → **400 passed**, 10 deselected in 2.99s (this VM has no `kagra_core` wheel; same job as CI `python-unit`)
+- GPU `open_world_smoke` not run here (Rust extension missing). SMOKE still starts in `play`, so it would not screenshot the title anyway.
 
 ## Files
 

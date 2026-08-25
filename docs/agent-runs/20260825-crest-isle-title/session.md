@@ -20,7 +20,7 @@ Public `fill` defaults `alpha=255`. 118 is a see-through navy wash. The chase ca
 - Title arm returns **before** sky / world / water / props / VRM. Solid `cls(6, 12, 20)` + `_banner(..., overlay_alpha=255)`. No puresky on title: Emma's shot already had a split/blocky sky, so a sky-only backdrop was not worth the risk.
 - Result keeps drawing the island and the old alpha-118 overlay (allowed).
 - Play HUD, meadow `GRASS_TINT`, chase-cam clamp, IBL, rehold: untouched.
-- GPU-free source test `test_title_draw_skips_live_world` in `tests/test_open_world.py` (same style as the other Crest Isle source asserts). SMOKE verify still covers play only.
+- GPU-free source test `test_title_draw_skips_live_world` in `tests/test_open_world.py` (same style as the other Crest Isle source asserts). First assert used `"118" not in title_arm` and failed because the comment said "alpha-118"; tightened to `overlay_alpha=255` / not `overlay_alpha=118`. SMOKE verify still covers play only.
 
 ## Stumbles
 

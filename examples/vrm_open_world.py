@@ -427,7 +427,7 @@ class CrestIsle(kagra.Scene):
     def draw(self):
         if self.mode == "title":
             # Live island stays off the title. Half-streamed / UV-split terrain
-            # used to show through alpha-118 fill (Emma's pre-SPACE shot).
+            # used to show through a translucent fill (Emma's pre-SPACE shot).
             kagra.cls(6, 12, 20)
             self._banner(
                 "Crest Isle",
