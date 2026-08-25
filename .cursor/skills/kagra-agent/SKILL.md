@@ -45,6 +45,7 @@ Play: `clicked_prop` / `Walk.carry` / `animate` / `Label` / `sound`.
 3D SE: `set_listener` / `play_se(..., x=, y=, z=)` / `play_loop` (distance + stereo pan).
 `avatar.set_locomotion(speed)` blends idle/walk/run (built-in `run` clip).
 `play_upper` / `ActionController` overlay spine/arms without fighting the legs.
+Same-path `kagra.avatar()` shares GPU mesh/texture/MToon (`vrm_gpu_stats()`).
 Agent eyes: `kagra.annotate` (click → JSONL) / `kagra.debug_trace` (foot vs terrain, threshold 0.05).
 Slope sit is a tight foot AABB + snap-to-plane; still no Rapier. Not a Tk/Inspector.
 Pointer lock follows first person (OS may refuse). USB pad is gilrs on the

@@ -89,7 +89,7 @@ python -m kagra
 
 ## 入っているもの
 
-- **VRM** — GPU スキニング、SpringBone、MToon、視線、リップシンク、IK、表情
+- **VRM** — GPU スキニング、SpringBone、MToon、視線、リップシンク、IK、表情。同じパスの `kagra.avatar()` はメッシュ / テクスチャ / MToon を共有（`vrm_gpu_stats()`）
 - **3D の遊び場** — `Prop` / `Walk` / `sky` / `room` / `World3D`。局所ライト 4 本（`slot=0..3`）、室内ウンブラ、屋外 2 段シャドウ、接空間法線。AABB の箱は落ちる・積む・`Walk` が乗る。USB/XInput は EventLoop が `gilrs` で読む（テストは `inject_pad`）
 - **頭脳** — `kagra.brain("kairi"|"ollama"|"openai")`。ホスト kairi は `KAIRI_API_TOKEN`。モデルは wheel に入れない
 - **エージェントループ** — API 索引、`kagra.verify`、MCP、golden
@@ -151,6 +151,7 @@ python examples/vrm_switch_room.py       # 箱部屋、カメラ追従
 python examples/vrm_dodge_room.py        # 降ってくる箱を避ける（エージェントログあり）
 python examples/vrm_relic_run.py          # 島の遺跡集め 30 秒（エージェントログあり）
 python examples/vrm_open_world.py         # Crest Isle — 広い草原・海・山の収集（デスクトップ VRM）
+python examples/vrm_multi_avatar.py       # 複数 VRM。GPU 共有 + FPS（`KAGRA_AVATARS=8`）
 # Crest Isle モバイル（kagra-shared。VRM ではない。Kenney 風カプセル）
 ./scripts/build_wasm.sh && python -m http.server -d kagra-shared/www 8000
 # → http://localhost:8000/crest.html
@@ -162,6 +163,8 @@ python examples/vrm_kairi_chat.py        # kairi.onrender.com で会話（KAIRI_
 python examples/vrm_vrma.py              # .vrma（または生成した波）
 python examples/vrm_stream.py            # OBS / JSONL チャット
 ```
+
+複数 VRM: `python examples/vrm_multi_avatar.py`（`KAGRA_AVATARS=8`）。同じパスはメッシュ / テクスチャ / MToon を共有。ヘッドレスは `kagra.vrm_gpu_stats()`（`vertex_buffers * live == primitives`）。Crest Isle は 1 人のまま。デスクトップ FPS は HUD。GPU の無い CI/クラウドは共有不変条件を記録する。
 
 レガシー 2D / タイルマップ / エディタは [`examples/archive/`](examples/archive/)。
 

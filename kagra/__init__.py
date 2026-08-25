@@ -1501,12 +1501,39 @@ def draw_boids(boid_id: int, batch_id: int, sprite_w: float = 6.0, sprite_h: flo
 # ── VRM 低レベル ──────────────────────────────────────────────
 
 def load_vrm(path: str) -> int:
-    """VRM ファイルを読み込む。通常は kagra.avatar() を使う。"""
+    """VRM ファイルを読み込む。通常は kagra.avatar() を使う。
+
+    同じパスの 2 体目以降はメッシュ / テクスチャ / MToon を共有する。
+    ジョイントパレット・表情・SpringBone はインスタンスごと。
+    """
     _check(); return _engine.load_vrm(path)
 
 def draw_vrm(vrm_id: int):
     """VRM を GPU スキニングで描画する。draw() の中で呼ぶ。"""
     _check(); _engine.draw_vrm(vrm_id)
+
+def vrm_gpu_stats() -> dict:
+    """Live VRM GPU share stats.
+
+    Same-path ``avatar()`` / ``load_vrm()`` clones must keep
+    ``vertex_buffers * live == primitives`` (shared mesh) and
+    ``shared_instances == live - unique_paths``.
+
+    Keys: ``live``, ``unique_paths``, ``shared_instances``,
+    ``primitives``, ``vertex_buffers``, ``textures``.
+    """
+    _check()
+    live, unique_paths, shared_instances, primitives, vertex_buffers, textures = (
+        _engine.vrm_gpu_stats()
+    )
+    return {
+        "live": int(live),
+        "unique_paths": int(unique_paths),
+        "shared_instances": int(shared_instances),
+        "primitives": int(primitives),
+        "vertex_buffers": int(vertex_buffers),
+        "textures": int(textures),
+    }
 
 def set_vrm_bone_euler(vrm_id: int, bone: str, rx=0., ry=0., rz=0.):
     _check(); _engine.set_vrm_bone_euler(vrm_id, bone, rx, ry, rz)
@@ -2270,6 +2297,10 @@ def avatar(vrm_path: str) -> "VrmAvatar":
         # （Windows では kagra.run() の外で呼ぶと Renderer not initialized）
         self.av = kagra.avatar("assets/Emma.vrm")
         self.av.load_motion("dance", "assets/dance.bvh")
+
+        # 同じパスの 2 体目は GPU メッシュ / テクスチャを共有する
+        self.npc = kagra.avatar("assets/Emma.vrm")
+        self.npc.set_position(1.6, 0.0, 0.2)
 
         # 毎フレーム
         self.av.play("walk")

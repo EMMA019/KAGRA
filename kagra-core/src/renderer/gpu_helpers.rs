@@ -16,6 +16,9 @@ pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 pub const MSAA_COUNT: u32 = 4;
 /// Mesh3D (diffuse, normal) bind groups. FIFO 64 evicted Crest Isle grass
 /// (uploaded first) after 120+ Kenney Props → Fallback White 1×1.
+/// VRM skinned draws do **not** use this cache (they bind `textures` +
+/// per-draw skin palettes). Same-path VRM clones share VB/IB/MToon via
+/// `VrmModel::instantiate`; a second Alicia does not multiply Mesh3D LRU.
 pub(super) const MESH3D_TEX_BG_MAX: usize = 256;
 
 pub(super) fn lru_touch<T: PartialEq>(order: &mut std::collections::VecDeque<T>, key: T) {

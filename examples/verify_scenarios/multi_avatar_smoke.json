@@ -1,0 +1,17 @@
+{
+  "name": "multi_avatar_smoke",
+  "script": "examples/vrm_multi_avatar.py",
+  "timeout_sec": 180,
+  "env": {
+    "KAGRA_SMOKE": "1",
+    "KAGRA_SMOKE_FRAMES": "36",
+    "KAGRA_AVATARS": "4",
+    "KAGRA_SMOKE_OUT": "scratch/multi_avatar_smoke.png",
+    "KAGRA_SMOKE_STATS": "scratch/multi_avatar_stats.json"
+  },
+  "expect_files": [
+    "scratch/multi_avatar_smoke.png",
+    "scratch/multi_avatar_stats.json"
+  ],
+  "min_file_bytes": 200
+}
