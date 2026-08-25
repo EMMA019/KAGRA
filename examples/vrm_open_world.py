@@ -14,6 +14,7 @@ Art (CC0, not in the pip wheel): examples/assets/open_world/LICENSE.md
 Walk: built-in VrmAvatar idle/walk/run via ``set_locomotion`` (speed blend).
 Mixamo/BVH walk is NOT loaded. Upper-body clap/banzai stay on
 ActionController and do not fight the walk arm swing.
+Spatial audio: looping sea to the west + pickup SE at the crest/coin.
 
 操作:
   WASD / 左スティック : 歩く
@@ -136,6 +137,10 @@ def _glow_tex():
     return kagra.texture_from_fn(64, 64, px, name="crest_glow")
 
 
+# West water. Spawn looks +Z; sea is screen-left (-X). Looping drone lives here.
+SEA_LOOP_XZ = (-28.0, 8.0)
+
+
 def _make_sfx() -> dict[str, str]:
     return {
         "coin": kagra.tone("crest_coin", (988, 1318), 0.09, 0.28),
@@ -143,15 +148,24 @@ def _make_sfx() -> dict[str, str]:
         "start": kagra.tone("crest_start", (523, 659, 784), 0.26, 0.28),
         "win": kagra.tone("crest_win", (523, 659, 784, 1046), 0.42, 0.26),
         "tick": kagra.tone("crest_tick", (660,), 0.07, 0.18),
+        "sea": kagra.tone(
+            "crest_sea", (98, 131, 165), duration=1.8, volume=0.22, decay=False,
+        ),
     }
 
 
-def _se(sfx: dict, key: str, volume: float = 1.0):
+def _se(sfx: dict, key: str, volume: float = 1.0, *, pos=None):
     path = sfx.get(key)
     if not path:
         return
     try:
-        kagra.play_se(path, volume=volume)
+        if pos is not None:
+            kagra.play_se(
+                path, volume=volume, x=pos[0], y=pos[1], z=pos[2],
+                ref_distance=2.0, max_distance=28.0,
+            )
+        else:
+            kagra.play_se(path, volume=volume)
     except Exception:
         kagra.sound("coin" if key in ("coin", "star") else "ok")
 
@@ -277,6 +291,16 @@ class CrestIsle(kagra.Scene):
         self.walk.face = face0
 
         self.sfx = _make_sfx()
+        self.sea_loop = 0
+        sea = self.sfx.get("sea")
+        if sea:
+            try:
+                self.sea_loop = kagra.play_loop(
+                    sea, SEA_LOOP_XZ[0], WATER_Y, SEA_LOOP_XZ[1],
+                    volume=0.48, ref_distance=14.0, max_distance=80.0,
+                )
+            except Exception:
+                self.sea_loop = 0
         self.mode = "play" if SMOKE else "title"
         self.t = 0.0
         self.hi = int((kagra.load_json("crest_isle") or {}).get("hi") or 0)
@@ -335,6 +359,11 @@ class CrestIsle(kagra.Scene):
         if self.msg_t > 0:
             self.msg_t -= dt
         if kagra.pressed("ESCAPE"):
+            if self.sea_loop:
+                try:
+                    kagra.stop_loop(self.sea_loop)
+                except Exception:
+                    self.sea_loop = 0
             kagra.quit()
             return
         if SMOKE:
@@ -355,6 +384,7 @@ class CrestIsle(kagra.Scene):
                 self.mode = "play"
                 self._reset_round()
             self._pose(dt, move=False)
+            self._sync_listener()
             return
 
         if self.mode == "result":
@@ -363,6 +393,7 @@ class CrestIsle(kagra.Scene):
                 self.mode = "play"
                 self._reset_round()
             self._pose(dt, move=False)
+            self._sync_listener()
             return
 
         self.time_s += dt
@@ -385,7 +416,7 @@ class CrestIsle(kagra.Scene):
                     self.msg_t = 1.1
                     self.avatar.feel("joy", min(1.0, 0.4 + self.star_got * 0.1))
                     self.action.play("banzai" if peak else "clap")
-                    _se(self.sfx, "star")
+                    _se(self.sfx, "star", pos=(star.x, self._star_y(star, i), star.z))
             for coin, prop in zip(self.coins, self.coin_props):
                 if not coin.live:
                     continue
@@ -396,7 +427,7 @@ class CrestIsle(kagra.Scene):
                     coin.live = False
                     prop.enabled = False
                     self.coin_got += 1
-                    _se(self.sfx, "coin", volume=0.7)
+                    _se(self.sfx, "coin", volume=0.7, pos=(coin.x, self._coin_y(coin), coin.z))
 
         if won(self.star_got):
             self.score = round_score(self.star_got, self.coin_got, self.time_s)
@@ -409,6 +440,16 @@ class CrestIsle(kagra.Scene):
             _se(self.sfx, "win")
 
         self._pose(dt, move=True)
+        self._sync_listener()
+
+    def _sync_listener(self):
+        cam = self.cam
+        px, py, pz = cam.position
+        tx, ty, tz = cam.target
+        try:
+            kagra.set_listener(px, py, pz, tx - px, ty - py, tz - pz, *cam.up)
+        except Exception:
+            return
 
     def _pose(self, dt, *, move: bool):
         p = self.world.player

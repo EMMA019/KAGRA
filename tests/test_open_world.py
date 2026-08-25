@@ -226,6 +226,9 @@ def test_game_file_uses_only_public_imports():
         "Label",
         "draw_vignette",
         "draw_billboard_instances",
+        "set_listener",
+        "play_loop",
+        "play_se",
     ):
         assert name in text, name
 
@@ -335,6 +338,27 @@ def test_crest_sky_snapshots_fog_off_and_mtoon_flips_backfaces():
     inp = (_ROOT / "kagra-core" / "src" / "input.rs").read_text(encoding="utf-8")
     assert "REHOLD_QUIET_FRAMES: u8 = 3" in inp
     assert "REHOLD_QUIET_FRAMES: u8 = 15" not in inp
+
+
+def test_crest_isle_uses_spatial_sea_and_pickup():
+    """Looping west sea + pickup SE at the collectible. Title/win stay 2D."""
+    src = (_ROOT / "examples" / "vrm_open_world.py").read_text(encoding="utf-8")
+    assert "SEA_LOOP_XZ" in src
+    assert "(-28.0, 8.0)" in src
+    assert "kagra.play_loop(" in src
+    assert "kagra.set_listener(" in src
+    assert "def _sync_listener" in src
+    pose = src[src.index("    def _pose") :]
+    nxt = pose.find("\n    def ", 10)
+    pose = pose[:nxt] if nxt != -1 else pose
+    assert "set_listener" not in pose
+    se = src[src.index("def _se(") : src.index("def _place_gltf")]
+    assert "pos is not None" in se
+    assert 'kagra.play_se(path, volume=volume)' in se
+    assert "_se(self.sfx, \"start\")" in src
+    assert "_se(self.sfx, \"win\")" in src
+    assert 'pos=(star.x' in src
+    assert 'pos=(coin.x' in src
 
 
 def test_crest_isle_poses_with_speed_blend_not_clip_snap():

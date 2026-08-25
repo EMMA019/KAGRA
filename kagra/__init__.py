@@ -518,12 +518,92 @@ class _Audio:
     def resume_bgm(self):                            _check(); _engine.resume_bgm()
     def set_bgm_volume(self, v):                     _check(); _engine.set_bgm_volume(v)
     def play_se(self, path, vol=1.0):                _check(); _engine.play_se(path, vol)
+    def play_se_at(self, path, x, y, z, vol=1.0, ref_distance=4.0, max_distance=48.0):
+        _check()
+        _engine.play_se_at(path, x, y, z, vol, ref_distance, max_distance)
+    def set_listener(self, x, y, z, fx=0.0, fy=0.0, fz=1.0, ux=0.0, uy=1.0, uz=0.0):
+        _check()
+        _engine.set_listener(x, y, z, fx, fy, fz, ux, uy, uz)
+    def play_loop_at(self, path, x, y, z, vol=0.4, ref_distance=12.0, max_distance=72.0):
+        _check()
+        return int(_engine.play_loop_at(path, x, y, z, vol, ref_distance, max_distance) or 0)
+    def stop_loop(self, source_id=None):             _check(); _engine.stop_loop(source_id)
     def stop_all_se(self):                           _check(); _engine.stop_all_se()
 
 audio = _Audio()
 
 def play_bgm(path: str, loop_=True, volume=0.8): audio.play_bgm(path, loop_, volume)
-def play_se(path: str, volume=1.0):              audio.play_se(path, volume)
+def play_se(
+    path: str,
+    volume: float = 1.0,
+    *,
+    x: float | None = None,
+    y: float = 0.0,
+    z: float = 0.0,
+    ref_distance: float = 4.0,
+    max_distance: float = 48.0,
+) -> None:
+    """効果音。``x`` が無ければ 2D/UI。あればリスナー相対の距離減衰 + ステレオパン。"""
+    if x is None:
+        audio.play_se(path, volume)
+        return
+    audio.play_se_at(path, float(x), float(y), float(z), volume, ref_distance, max_distance)
+
+def set_listener(
+    x: float,
+    y: float,
+    z: float,
+    fx: float = 0.0,
+    fy: float = 0.0,
+    fz: float = 1.0,
+    ux: float = 0.0,
+    uy: float = 1.0,
+    uz: float = 0.0,
+) -> None:
+    """カメラ / プレイヤーの耳。``play_se(..., x=)`` / ``play_loop`` の基準。"""
+    audio.set_listener(x, y, z, fx, fy, fz, ux, uy, uz)
+
+def play_loop(
+    path: str,
+    x: float,
+    y: float,
+    z: float,
+    *,
+    volume: float = 0.4,
+    ref_distance: float = 12.0,
+    max_distance: float = 72.0,
+) -> int:
+    """ワールドループ音。``set_listener`` のたびに減衰とパンを更新する。id を返す。"""
+    return audio.play_loop_at(path, x, y, z, volume, ref_distance, max_distance)
+
+def stop_loop(source_id: int | None = None) -> None:
+    """``play_loop`` を止める。``None`` ですべて。"""
+    audio.stop_loop(source_id)
+
+def spatial_mix(
+    lx: float,
+    ly: float,
+    lz: float,
+    fx: float,
+    fy: float,
+    fz: float,
+    sx: float,
+    sy: float,
+    sz: float,
+    *,
+    ref_distance: float = 4.0,
+    max_distance: float = 48.0,
+    ux: float = 0.0,
+    uy: float = 1.0,
+    uz: float = 0.0,
+) -> tuple[float, float, float, float]:
+    """``(gain, pan, left, right)``。GPU 不要。エンジンと同じ式。"""
+    from kagra.spatial import spatial_mix as _fn
+    return _fn(
+        lx, ly, lz, fx, fy, fz, sx, sy, sz,
+        ref_distance=ref_distance, max_distance=max_distance, ux=ux, uy=uy, uz=uz,
+    )
+
 def stop_bgm(fade: float = 0.0):                 audio.stop_bgm(fade)
 
 

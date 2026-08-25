@@ -55,6 +55,7 @@ and is written against **public APIs only**. Prefer these over hand-rolled
 PNG/WAV/projection:
 
 - `kagra.texture_from_fn` / `kagra.tone` / `kagra.sound` — procedural art and SE
+- `kagra.set_listener` / `play_se(..., x=, y=, z=)` / `play_loop` — 3D SE (distance + stereo pan). `sound()` stays 2D
 - `set_point_light` / `set_spot_light` — 4 slots (`slot=0..3`). Slot 0 is the key
 - `Camera3D.world_to_screen` — world → HUD pixels
 - `avatar.set_position` / `avatar.set_yaw` — move a VRM in the arena
