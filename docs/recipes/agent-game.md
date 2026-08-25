@@ -76,6 +76,7 @@ Result: `examples/vrm_dodge_room.py`
 | Art / SE | `kagra.texture_from_fn` / `kagra.tone` / `kagra.sound` / `kagra.draw_billboard` |
 | Score | `kagra.save_json` / `kagra.load_json` |
 | One-shot pose | `ActionController(avatar)` then `action.play("clap")` — `ActionController.names()` |
+| Locomotion blend | `avatar.set_locomotion(speed)` idle/walk/run. `play_upper("idle")` for spine/arms while legs walk |
 
 ## Close the loop
 

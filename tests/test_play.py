@@ -32,6 +32,15 @@ def test_walk_wish_yaw_zero_is_plus_z():
     assert abs(fz - 2.0) < 1e-9
 
 
+def test_walk_wish_preserves_analog_magnitude():
+    """Half stick is half speed. Diagonal keys still clamp to ``speed``."""
+    fx, fz = play.walk_wish(0.5, 0.0, 0.0, speed=4.0)
+    assert abs(fx) < 1e-9
+    assert abs(fz - 2.0) < 1e-9
+    dx, dz = play.walk_wish(1.0, 1.0, 0.0, speed=3.0)
+    assert abs(math.hypot(dx, dz) - 3.0) < 1e-9
+
+
 def test_walk_wish_yaw_half_pi_is_plus_x():
     fx, fz = play.walk_wish(1.0, 0.0, math.pi / 2, speed=3.0)
     assert abs(fx - 3.0) < 1e-9

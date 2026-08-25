@@ -77,11 +77,13 @@ def walk_wish(forward: float, right: float, yaw: float, speed: float = 3.2) -> t
     mag = math.hypot(forward, right)
     if mag < 1e-6:
         return 0.0, 0.0
+    # Keep analog magnitude (stick < 1) but clamp so diagonal keys are not faster.
+    scale = min(1.0, mag) * speed
     forward /= mag
     right /= mag
     fx = math.sin(yaw) * forward - math.cos(yaw) * right
     fz = math.cos(yaw) * forward + math.sin(yaw) * right
-    return fx * speed, fz * speed
+    return fx * scale, fz * scale
 
 
 def walk_key_axes(down) -> tuple[float, float]:

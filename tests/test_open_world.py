@@ -222,6 +222,7 @@ def test_game_file_uses_only_public_imports():
         "tone",
         "save_json",
         "ActionController",
+        "set_locomotion",
         "Label",
         "draw_vignette",
         "draw_billboard_instances",
@@ -334,3 +335,17 @@ def test_crest_sky_snapshots_fog_off_and_mtoon_flips_backfaces():
     inp = (_ROOT / "kagra-core" / "src" / "input.rs").read_text(encoding="utf-8")
     assert "REHOLD_QUIET_FRAMES: u8 = 3" in inp
     assert "REHOLD_QUIET_FRAMES: u8 = 15" not in inp
+
+
+def test_crest_isle_poses_with_speed_blend_not_clip_snap():
+    """Locomotion is set_locomotion(speed), not idle↔walk on a velocity threshold."""
+    src = (_ROOT / "examples" / "vrm_open_world.py").read_text(encoding="utf-8")
+    pose = src[src.index("    def _pose") :]
+    nxt = pose.find("\n    def ", 10)
+    pose = pose[:nxt] if nxt != -1 else pose
+    assert "set_locomotion" in pose
+    assert 'want = "walk" if moving else "idle"' not in pose
+    assert "self.avatar.play(want" not in pose
+    assert "walk_speed=2.2" in pose
+    assert "run_speed=" in pose
+    assert "hypot(p.vx, p.vz)" in pose
