@@ -14,6 +14,38 @@ pub(super) const CAMERA_EXTRA_INNER: u64 = 432;
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 /// オフスクリーン描画の MSAA サンプル数。swapchain は resolve 後の 1x を受け取る。
 pub const MSAA_COUNT: u32 = 4;
+/// Mesh3D (diffuse, normal) bind groups. FIFO 64 evicted Crest Isle grass
+/// (uploaded first) after 120+ Kenney Props → Fallback White 1×1.
+pub(super) const MESH3D_TEX_BG_MAX: usize = 256;
+
+pub(super) fn lru_touch<T: PartialEq>(order: &mut std::collections::VecDeque<T>, key: T) {
+    if let Some(i) = order.iter().position(|k| *k == key) {
+        order.remove(i);
+    }
+    order.push_back(key);
+}
+
+/// Drop only dead keys. Live textures must not become Fallback White,
+/// even if that means the cache grows past `max` (Crest Isle grass).
+pub(super) fn lru_evict_dead<T: Copy>(
+    order: &mut std::collections::VecDeque<T>,
+    mut is_live: impl FnMut(T) -> bool,
+    max: usize,
+) -> Vec<T> {
+    if order.len() < max {
+        return Vec::new();
+    }
+    let mut dropped = Vec::new();
+    order.retain(|k| {
+        if is_live(*k) {
+            true
+        } else {
+            dropped.push(*k);
+            false
+        }
+    });
+    dropped
+}
 
 pub fn msaa_state() -> wgpu::MultisampleState {
     wgpu::MultisampleState {
@@ -536,6 +568,40 @@ mod light_dir_tests {
         let sun = super::shadow_u_params(false, 2);
         assert!((sun[0] - 2.0).abs() < 1e-6);
         assert!(sun[1] < 0.5);
+    }
+
+    #[test]
+    fn mesh3d_lru_touch_moves_to_back() {
+        let mut order = std::collections::VecDeque::from([1u32, 2, 3]);
+        super::lru_touch(&mut order, 1);
+        assert_eq!(order, std::collections::VecDeque::from([2, 3, 1]));
+    }
+
+    #[test]
+    fn mesh3d_cache_does_not_drop_live_keys() {
+        // Crest Isle: 120+ live Kenney ids must not evict grass into Fallback White.
+        let mut order = std::collections::VecDeque::from((0u32..64).collect::<Vec<_>>());
+        let dropped = super::lru_evict_dead(&mut order, |_| true, 64);
+        assert!(dropped.is_empty());
+        assert_eq!(order.len(), 64);
+        order.push_back(64);
+        let dropped = super::lru_evict_dead(&mut order, |_| true, 64);
+        assert!(dropped.is_empty(), "live grass/colormap must stay bound");
+        assert_eq!(order.len(), 65);
+    }
+
+    #[test]
+    fn mesh3d_cache_drops_dead_keys() {
+        let mut order = std::collections::VecDeque::from([1u32, 2, 3]);
+        let dropped = super::lru_evict_dead(&mut order, |k| k != 1, 3);
+        assert_eq!(dropped, vec![1]);
+        assert_eq!(order, std::collections::VecDeque::from([2, 3]));
+    }
+
+    #[test]
+    fn mesh3d_tex_bg_max_fits_crest_isle_vista() {
+        assert!(super::MESH3D_TEX_BG_MAX >= 120);
+        assert!(super::MESH3D_TEX_BG_MAX >= 256);
     }
 
     fn mul_vp(m: &[f32; 16], p: [f32; 3]) -> [f32; 4] {

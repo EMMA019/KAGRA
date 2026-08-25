@@ -90,6 +90,9 @@ pub struct Mesh3DCommand {
     pub metallic: f32,
     pub roughness: f32,
     pub base_color: [f32; 3],
+    /// Sky/backdrop only (`draw_mesh_3d(..., skip_fog=True)`). Not inferred
+    /// from fog-off — default fog_params.z is 0 and that unlit every Mesh3D.
+    pub skip_fog: bool,
 }
 
 /// ワールド 3D インスタンス。pos + yaw(Y) + scale。32 バイト。

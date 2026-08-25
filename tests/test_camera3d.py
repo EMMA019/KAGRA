@@ -212,3 +212,84 @@ def test_clip_eye_no_hit_keeps_dest():
     world = w3.World3D(half=6.0)
     dest = m.clip_eye((0.0, 1.0, 0.0), (0.0, 2.4, -4.8), world)
     assert dest == (0.0, 2.4, -4.8)
+
+
+def test_clamp_eye_rejects_skull_and_tiny_speck():
+    m = _cam()
+    origin = (0.0, 1.25, 0.0)
+    inside = m.clamp_eye(origin, (0.0, 1.3, -0.2), min_distance=6.0, max_distance=12.2)
+    d_in = ((inside[0] - origin[0]) ** 2 + (inside[1] - origin[1]) ** 2 + (inside[2] - origin[2]) ** 2) ** 0.5
+    assert abs(d_in - 6.0) < 1e-4
+    far = m.clamp_eye(origin, (0.0, 20.0, 80.0), min_distance=6.0, max_distance=12.2)
+    d_far = ((far[0] - origin[0]) ** 2 + (far[1] - origin[1]) ** 2 + (far[2] - origin[2]) ** 2) ** 0.5
+    assert abs(d_far - 12.2) < 1e-4
+
+
+def test_follow_lerp_from_far_stays_in_chase_band():
+    """Hitch left the eye hundreds of metres back (tiny speck)."""
+    m = _cam()
+    cam = m.Camera3D(960, 540)
+    cam.position = (0.0, 80.0, -200.0)
+    cam.target = (0.0, 1.0, 0.0)
+    cam.follow(
+        0.0, 0.0, 0.0,
+        distance=12.2, height=4.4, look_y=1.25, lerp=0.22, yaw=0.0,
+        min_distance=6.0, max_distance=12.2,
+    )
+    ox, oy, oz = cam.target
+    px, py, pz = cam.position
+    dist = ((px - ox) ** 2 + (py - oy) ** 2 + (pz - oz) ** 2) ** 0.5
+    assert 6.0 - 1e-4 <= dist <= 12.2 + 1e-4
+
+
+def test_clip_eye_ignores_collider_inside_min_hit():
+    """A tree AABB overlapping the avatar must not slam the cam into the skull."""
+    w3 = load_kagra_submodule("world3d")
+    world = w3.World3D(half=12.0)
+    world.add_box(0.0, 0.0, -0.4, 1.2, 2.4, 1.2)
+    world.add_player(0.0, 0.0)
+    m = _cam()
+    dest = (0.0, 4.4, -12.2)
+    kept = m.clip_eye((0.0, 1.25, 0.0), dest, world, min_hit=6.0)
+    assert kept == dest
+
+
+def test_follow_inside_head_stays_outside_vrm_skull():
+    """Wall-clip dest 5cm from look-at must not leave the eye in the hair."""
+    m = _cam()
+    cam = m.Camera3D(960, 540)
+    cam.position = (0.0, 1.3, -0.15)
+    cam.target = (0.0, 1.25, 0.0)
+    cam.follow(
+        0.0, 0.0, 0.0,
+        distance=12.2, height=4.4, look_y=1.25, lerp=1.0, yaw=0.0,
+        min_distance=6.0, max_distance=12.6,
+    )
+    ox, oy, oz = cam.target
+    px, py, pz = cam.position
+    dist = ((px - ox) ** 2 + (py - oy) ** 2 + (pz - oz) ** 2) ** 0.5
+    assert dist >= 6.0 - 1e-4
+    assert pz < oz  # still behind the look-at
+
+
+def test_follow_zoom_does_not_explode_distance():
+    """Mouse-wheel orbit zoom must not push a chase cam into fog-white."""
+    m = _cam()
+    cam = m.Camera3D(960, 540)
+    cam.follow(
+        0.0, 0.0, 0.0,
+        distance=12.2, height=4.4, look_y=1.25, lerp=1.0, yaw=0.0,
+        min_distance=6.0, max_distance=12.6,
+    )
+    before = cam.position
+    cam.zoom(80.0)
+    assert cam.position == before
+    cam.position = (0.0, 80.0, -200.0)
+    class _Eng:
+        def update_camera_3d(self, *_a, **_k):
+            return None
+    cam.update(_Eng())
+    ox, oy, oz = cam.target
+    px, py, pz = cam.position
+    dist = ((px - ox) ** 2 + (py - oy) ** 2 + (pz - oz) ** 2) ** 0.5
+    assert 6.0 - 1e-4 <= dist <= 12.6 + 1e-4

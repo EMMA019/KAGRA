@@ -281,6 +281,13 @@ def test_prop_bake_without_engine_is_zero():
     assert play.Prop.bake_all() == [0]
 
 
+def test_prop_init_does_not_upload_mesh():
+    """Crest Isle constructs vista Props then bake_all. __init__ must not draw."""
+    p = play.Prop("box", collision=False)
+    assert p.mesh_id == 0
+    assert p.tex_id == 0
+
+
 def test_prop_blocks_player_via_world3d():
     w = play.World3D(gravity=0.0)
     play.Prop("box", x=1.2, y=0.5, z=0.0, scale=(0.8, 1.0, 1.6), world=w)
@@ -557,3 +564,21 @@ def test_prop_gltf_alias_and_collision():
 def test_prop_gltf_unknown_raises():
     with pytest.raises((ValueError, Exception)):
         play.Prop("definitely_missing_part_xyz.glb", collision=False)
+
+
+def test_walk_chase_distance_frozen_against_mutation():
+    """Mouse-wheel / hitch must not rewrite the authored chase arm."""
+    w = play.World3D(gravity=0.0)
+    w.add_player(0.0, 0.0)
+    cam = load_kagra_submodule("camera3d").Camera3D(960, 540)
+    walk = play.Walk(
+        w, cam,
+        distance=12.2, height=4.4, look_y=1.25,
+        min_distance=6.0, max_distance=12.6,
+    )
+    walk.distance = 0.05
+    walk.height = 80.0
+    assert walk._chase_distance == pytest.approx(12.2)
+    assert walk._chase_height == pytest.approx(4.4)
+    assert walk.min_distance == pytest.approx(6.0)
+    assert walk.max_distance == pytest.approx(12.6)

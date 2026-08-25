@@ -339,6 +339,11 @@ struct II { @location(3) pos_yaw: vec4<f32>, @location(4) scale: vec4<f32> }
         hemi = hemi_ambient(n);
     }
     let albedo = c.rgb * mesh_mat.base.rgb;
+    // base.w < 0.5: sky/backdrop queued with fog off. Do not Lambert-light an
+    // inverted sphere or mix fog/ACES — that turned kloofendal puresky grey-white.
+    if mesh_mat.base.w < 0.5 {
+        return vec4<f32>(saturate(albedo), c.a);
+    }
     let env = env_light(n);
     var rgb: vec3<f32>;
     if mesh_mat.params.w > 0.5 {
@@ -644,7 +649,7 @@ fn cotangent_frame(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> mat3x3<f32> {
     return shadow_u.vp0 * world_pos;
 }
 
-@fragment fn fs_main(in: VO) -> @location(0) vec4<f32> {
+@fragment fn fs_main(in: VO, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     let uv = animated_uv(in.uv);
     var base = textureSample(t_diffuse, s_diffuse, uv);
     if base.a < 0.05 { discard; }
@@ -652,6 +657,12 @@ fn cotangent_frame(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> mat3x3<f32> {
     if mtoon.uv_anim.w > 0.5 {
         let nts = textureSample(t_normal, s_diffuse, uv).xyz * 2.0 - 1.0;
         n = normalize(cotangent_frame(n, in.world_pos, uv) * nts);
+    }
+    // Double-sided hair/face: unflipped backfaces light as if the camera is
+    // inside the skull (N·V < 0 → full fresnel rim → flat white mask, and
+    // face features show through pink hair). Front-facing pixels unchanged.
+    if !front {
+        n = -n;
     }
     let light_dir = normalize(cam.light_dir.xyz);
     let half_lambert = dot(n, light_dir) * 0.5 + 0.5;

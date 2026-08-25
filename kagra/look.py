@@ -299,6 +299,8 @@ OUTDOOR_EXPOSURE = 1.08
 OUTDOOR_LIGHT_DIR = (-0.32, 1.0, 0.22)
 # Match SHADER_3D Lambert / VRM irradiance term.
 LAMBERT_ENV_ALBEDO = 0.35
+# Alicia Solid face albedo is pale. Front-facing MToon + IBL*0.35 must not
+# blow to a white mask. Camera-inside full-rim is a separate view path.
 
 _FOG_STATE = {
     "start": 5.0,
@@ -347,6 +349,43 @@ def lambert_rgb(
         (ar * sun + env[0]) * exposure,
         (ag * sun + env[1]) * exposure,
         (ab * sun + env[2]) * exposure,
+    )
+
+
+def mtoon_fill_rgb(
+    albedo: tuple[float, float, float],
+    *,
+    lit: float = 1.0,
+    shade: tuple[float, float, float] = (0.90, 0.85, 0.85),
+    env_rgb: tuple[float, float, float] = (0.82, 0.86, 0.92),
+    env_strength: float = OUTDOOR_HDRI_STRENGTH,
+    exposure: float = OUTDOOR_EXPOSURE,
+    ndotv: float = 1.0,
+    rim: float = 0.0,
+) -> tuple[float, float, float]:
+    """CPU stand-in for front-facing MToon + IBL (albedo * 0.35).
+
+    ``ndotv=1`` is a face looking at the chase cam. ``ndotv<=0`` is the
+    inside-skull path (full fresnel) that clamp_eye must prevent.
+    """
+    ar, ag, ab = albedo
+    sr, sg, sb = shade
+    t = max(0.0, min(1.0, float(lit)))
+    col = (
+        sr * ar * (1.0 - t) + ar * t,
+        sg * ag * (1.0 - t) + ag * t,
+        sb * ab * (1.0 - t) + ab * t,
+    )
+    scale = float(env_strength) * LAMBERT_ENV_ALBEDO
+    er, eg, eb = env_rgb
+    env = (er * scale * ar, eg * scale * ag, eb * scale * ab)
+    fresnel = (1.0 - max(0.0, min(1.0, float(ndotv)))) ** 3
+    rim_add = fresnel * float(rim)
+    e = float(exposure)
+    return (
+        (col[0] + env[0] + rim_add) * e,
+        (col[1] + env[1] + rim_add * 0.90) * e,
+        (col[2] + env[2] + rim_add * 0.72) * e,
     )
 
 

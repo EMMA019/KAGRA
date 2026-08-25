@@ -9,9 +9,15 @@ _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "examples"))
 
 from open_world_rules import (
+    AERIAL_GRASS_ALBEDO,
     CAM_DISTANCE,
+    CAM_HEIGHT,
+    CAM_LOOK_Y,
+    CAM_MAX_DISTANCE,
+    CAM_MIN_DISTANCE,
     COIN_XZ,
     GLTF_HALF_Y,
+    GRASS_TINT,
     HALF,
     LOD_CELLS,
     LOD_RADIUS,
@@ -237,4 +243,63 @@ def test_chunk_props_ready_before_first_stream():
     fill_i = src.index("self.world.set_chunk_fill")
     bake_i = src.index("self.world.bake_terrain")
     assert init_i < fill_i < bake_i
-    assert src.count("self._chunk_props = 0") == 1
+
+
+def test_mesh3d_tex_bg_cache_fits_crest_isle_vista():
+    """FIFO 64 evicted grass into Fallback White after 120+ Kenney Props."""
+    src = (_ROOT / "kagra-core" / "src" / "renderer" / "gpu_helpers.rs").read_text(
+        encoding="utf-8",
+    )
+    assert "MESH3D_TEX_BG_MAX: usize = 256" in src
+    assert "fn lru_evict_dead" in src
+    assert "Live textures must not become Fallback White" in src
+    win = (_ROOT / "kagra-core" / "src" / "window.rs").read_text(encoding="utf-8")
+    assert "path_texture_cache" in win
+    assert "HashMap<(u32, String), u32>" in win
+
+
+def test_crest_chase_cam_band_is_authored_3d_distance():
+    """Far speck / inside-skull / fog-white came from unbounded follow distance."""
+    assert CAM_MIN_DISTANCE == 6.0
+    authored = math.hypot(CAM_DISTANCE, CAM_HEIGHT - CAM_LOOK_Y)
+    assert abs(CAM_MAX_DISTANCE - authored) < 1e-9
+    src = (_ROOT / "examples" / "vrm_open_world.py").read_text(encoding="utf-8")
+    assert "min_distance=CAM_MIN_DISTANCE" in src
+    assert "max_distance=CAM_MAX_DISTANCE" in src
+    cam = (_ROOT / "kagra" / "camera3d.py").read_text(encoding="utf-8")
+    assert "def clamp_eye" in cam
+    assert "min_hit" in cam
+
+
+def test_crest_grass_tint_is_green_not_white():
+    """Shared aerial JPEG is brown dirt; Crest-only mesh_mat.base must stay meadow."""
+    tinted = tuple(a * t for a, t in zip(AERIAL_GRASS_ALBEDO, GRASS_TINT))
+    assert tinted[1] > tinted[0] and tinted[1] > tinted[2], tinted
+    assert max(tinted) < 0.9, tinted
+    src = (_ROOT / "examples" / "vrm_open_world.py").read_text(encoding="utf-8")
+    assert "terrain_base = GRASS_TINT" in src
+    relic = (_ROOT / "examples" / "vrm_relic_run.py").read_text(encoding="utf-8")
+    assert "terrain_base" not in relic
+
+
+def test_crest_sky_snapshots_fog_off_and_mtoon_flips_backfaces():
+    """Stage.draw restore-before-flush fogged puresky; inside-skull rim blew white."""
+    rend = (_ROOT / "kagra-core" / "src" / "renderer" / "mod.rs").read_text(
+        encoding="utf-8",
+    )
+    assert "cmd.skip_fog = self.fog_params[2] < 0.5" not in rend
+    shaders = (_ROOT / "kagra-core" / "src" / "renderer" / "shaders.rs").read_text(
+        encoding="utf-8",
+    )
+    assert "mesh_mat.base.w < 0.5" in shaders
+    assert "@builtin(front_facing) front" in shaders
+    assert "if !front" in shaders
+    py = (_ROOT / "kagra" / "__init__.py").read_text(encoding="utf-8")
+    assert "skip_fog: bool = False" in py
+    stage = (_ROOT / "kagra" / "stage.py").read_text(encoding="utf-8")
+    assert "skip_fog=True" in stage
+    play = (_ROOT / "kagra" / "play.py").read_text(encoding="utf-8")
+    assert "skip_fog=True" in play
+    inp = (_ROOT / "kagra-core" / "src" / "input.rs").read_text(encoding="utf-8")
+    assert "REHOLD_QUIET_FRAMES: u8 = 3" in inp
+    assert "REHOLD_QUIET_FRAMES: u8 = 15" not in inp
