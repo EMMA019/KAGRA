@@ -186,7 +186,7 @@ class RelicRun(kagra.Scene):
         self.sky_stage = None
         if sky_png.is_file():
             self.sky_stage = kagra.stage(str(sky_png), radius=48.0)
-            kagra.set_hdri(str(sky_png), strength=0.92)
+            kagra.set_hdri(str(sky_png), strength=0.32)
         kagra.set_fog(start=22.0, end=46.0, color=(150, 175, 195), enabled=True)
         kagra.set_bloom(threshold=0.78, intensity=0.32)
         if not SMOKE:

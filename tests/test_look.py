@@ -100,3 +100,28 @@ def test_light_slot_allows_four_rejects_fifth():
         look.check_light_slot(4)
     with pytest.raises(ValueError, match="4 slots"):
         look.check_light_slot(-1)
+
+
+def test_outdoor_look_does_not_blow_grass_albedo():
+    """Additive puresky IBL (env.x=0.95) blew mid-green; albedo*0.35 does not."""
+    grass = (0.30, 0.48, 0.22)
+    colormap = (0.42, 0.55, 0.28)
+    assert look.OUTDOOR_HDRI_STRENGTH <= 0.40
+    assert look.OUTDOOR_LIGHT_DIR[1] > 0.0
+    for albedo in (grass, colormap):
+        ok = look.lambert_rgb(albedo)
+        assert max(ok) < 0.85, ok
+        blown = look.lambert_rgb(
+            albedo, env_strength=0.95, env_times_albedo=False,
+        )
+        assert min(blown) > 0.95, blown
+
+
+def test_record_fog_roundtrip():
+    look.record_fog(48.0, 102.0, (150, 175, 195), True)
+    fog = look.current_fog()
+    assert fog["start"] == 48.0
+    assert fog["end"] == 102.0
+    assert fog["color"] == (150, 175, 195)
+    assert fog["enabled"] is True
+    look.record_fog(5.0, 20.0, (110, 180, 230), False)

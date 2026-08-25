@@ -385,7 +385,9 @@ struct II { @location(3) pos_yaw: vec4<f32>, @location(4) scale: vec4<f32> }
         let sun_sh = select(sh, 1.0, shadow_u.params.y > 0.5);
         let loc_sh = select(1.0, sh, shadow_u.params.y > 0.5);
         let lit = ndotl * sun_sh;
-        rgb = albedo * lit + albedo * local_lit(n, in.world_pos, loc_sh) + hemi + env;
+        // Diffuse IBL must scale by albedo (same 0.35 as VRM). Additive env * strength
+        // blew mid-green grass / Kenney colormap to white while vertex colors survived.
+        rgb = albedo * lit + albedo * local_lit(n, in.world_pos, loc_sh) + hemi + env * albedo * 0.35;
     }
     rgb = apply_fog(rgb, in.world_pos);
     rgb = rgb * max(cam.env.y, 0.0);

@@ -135,6 +135,12 @@ def test_kenney_tree_loads_colormap():
     assert flat.aabb[4] - flat.aabb[1] > 1.0
 
 
+def test_relic_run_ibl_is_not_blown():
+    src = (_ROOT / "examples" / "vrm_relic_run.py").read_text(encoding="utf-8")
+    assert "strength=0.92" not in src
+    assert "strength=0.32" in src
+
+
 def test_game_file_uses_only_public_imports():
     src = _ROOT / "examples" / "vrm_relic_run.py"
     text = src.read_text(encoding="utf-8")

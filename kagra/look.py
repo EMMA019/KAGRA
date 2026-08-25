@@ -292,6 +292,64 @@ def apply_room_look() -> None:
         pass
 
 
+# Outdoor IBL is fill, not the key. SHADER_3D Lambert multiplies env by albedo * 0.35
+# (same as VRM). puresky at 0.95 as additive env blew Crest Isle / Relic Run grass.
+OUTDOOR_HDRI_STRENGTH = 0.32
+OUTDOOR_EXPOSURE = 1.08
+OUTDOOR_LIGHT_DIR = (-0.32, 1.0, 0.22)
+# Match SHADER_3D Lambert / VRM irradiance term.
+LAMBERT_ENV_ALBEDO = 0.35
+
+_FOG_STATE = {
+    "start": 5.0,
+    "end": 20.0,
+    "color": (110, 180, 230),
+    "enabled": False,
+}
+
+
+def record_fog(start: float, end: float, color, enabled: bool) -> None:
+    """Last ``set_fog`` args. Backdrop draw turns fog off without a getter."""
+    rgb = tuple(int(c) for c in color[:3])
+    _FOG_STATE["start"] = float(start)
+    _FOG_STATE["end"] = float(end)
+    _FOG_STATE["color"] = rgb
+    _FOG_STATE["enabled"] = bool(enabled)
+
+
+def current_fog() -> dict:
+    return {
+        "start": float(_FOG_STATE["start"]),
+        "end": float(_FOG_STATE["end"]),
+        "color": tuple(_FOG_STATE["color"]),
+        "enabled": bool(_FOG_STATE["enabled"]),
+    }
+
+
+def lambert_rgb(
+    albedo: tuple[float, float, float],
+    *,
+    sun: float = 1.0,
+    env_rgb: tuple[float, float, float] = (0.82, 0.86, 0.92),
+    env_strength: float = OUTDOOR_HDRI_STRENGTH,
+    exposure: float = OUTDOOR_EXPOSURE,
+    env_times_albedo: bool = True,
+) -> tuple[float, float, float]:
+    """CPU stand-in for SHADER_3D Lambert (sun + IBL, no local lights / ACES)."""
+    ar, ag, ab = albedo
+    er, eg, eb = env_rgb
+    if env_times_albedo:
+        scale = env_strength * LAMBERT_ENV_ALBEDO
+        env = (er * scale * ar, eg * scale * ag, eb * scale * ab)
+    else:
+        env = (er * env_strength, eg * env_strength, eb * env_strength)
+    return (
+        (ar * sun + env[0]) * exposure,
+        (ag * sun + env[1]) * exposure,
+        (ab * sun + env[2]) * exposure,
+    )
+
+
 def apply_outdoor_look() -> None:
     """屋外。2 段影 + トーンマップ。Prop Garden スモークは呼ばない。"""
     import kagra
@@ -300,8 +358,8 @@ def apply_outdoor_look() -> None:
     try:
         kagra.set_shadow_cascades(2)
         kagra.set_tonemap(True)
-        kagra.set_exposure(1.08)
-        kagra.set_hdri("studio", strength=0.35)
+        kagra.set_exposure(OUTDOOR_EXPOSURE)
+        kagra.set_hdri("studio", strength=OUTDOOR_HDRI_STRENGTH)
         kagra.set_bloom(threshold=0.88, intensity=0.18)
     except (TypeError, AttributeError):
         pass

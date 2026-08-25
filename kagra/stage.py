@@ -157,7 +157,20 @@ class Stage:
             kagra.draw_gltf(self.model_id)
             return
         if self.kind == "backdrop" and self.tex_id is not None:
+            # SHADER_3D applies distance fog. A puresky sphere past fog_end
+            # becomes the fog color (Crest Isle: r=140, fog_end=102 → grey).
+            from kagra.look import current_fog
+
+            fog = current_fog()
+            if fog["enabled"]:
+                kagra.set_fog(
+                    fog["start"], fog["end"], fog["color"], enabled=False,
+                )
             kagra.draw_mesh_3d(self.tex_id, self.verts, self.indices)
+            if fog["enabled"]:
+                kagra.set_fog(
+                    fog["start"], fog["end"], fog["color"], enabled=True,
+                )
 
     def unload(self) -> None:
         if self.model_id is None:
