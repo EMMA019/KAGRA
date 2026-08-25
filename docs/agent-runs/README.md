@@ -41,7 +41,7 @@
 - `20260824-crawl-rigid/` — 屋外這いの pairwise golden + AABB 剛体（乗る）。這いは CI #65 通過。剛体は #64
 - `20260824-relic-run-walk-assets/` — Relic Run 前傾腕（Mixamo/BVH T-pose deltas）修正 + Kenney/Poly Haven CC0 で島を 30s 見本に
 - `20260824-open-world/` — Crest Isle（広い草原・海・山の収集。Kenney 密度 + LOD 地形）
-- `20260825-unshadow-stage/` — `kagra.stage` が submodule に隠れて Crest Isle が TypeError だったのを直す
-
 - `20260824-crest-isle-mobile/` — Crest Isle を kagra-shared / wasm / Android で遊ぶ（カプセル。VRM ではない）
 - `20260825-agent-eyes/` — annotate + debug_trace + follow 壁クリップ + Prop/地形 toon（エディタではない）
+- `20260825-unshadow-stage/` — `kagra.stage` が submodule に隠れて Crest Isle が TypeError だったのを直す
+- `20260825-slope-ground/` — 斜面接地（足 AABB を絞る + 接平面。`debug_trace` で測る。Rapier は入れない）

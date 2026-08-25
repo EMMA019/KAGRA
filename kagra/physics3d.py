@@ -6,7 +6,8 @@
 静的 AABB / yaw OBB の押し出し、レイヤー、トリガー、VRM 同期。
 動く箱は落ちて積もり、カプセルはその上に乗れる（80% の剛体。Rapier クレートは
 5MB wheel のため入れない）。高さ関数があるときは接平面に沿って歩き、
-急斜面では滑る（Y 吸着だけではない）。
+急斜面では滑る（Y 吸着だけではない）。斜面接地はカプセル壁半径ではなく
+小さい足 AABB をサンプリングし、接平面に載せる（太い箱の max-Y では浮く）。
 
 Example::
     physics = kagra.Physics3D(gravity=9.8)
@@ -198,6 +199,81 @@ def height_normal(fn, x: float, z: float, eps: float = 0.12) -> tuple[float, flo
     return (nx / leng, ny / leng, nz / leng)
 
 
+# Walk のカプセルは壁用に半径 ~0.28。接地だけ足を絞る。
+# 太い AABB の max-Y は坂で grade*radius 浮く（0.4 勾配 × 0.28 ≈ 0.11）。
+FOOT_RADIUS = 0.08
+# |foot_y − height_fn(x,z)| while on_ground. Same number as ``kagra.trace.DEFAULT_THRESHOLD``.
+GROUNDED_FLOAT = 0.05
+GROUND_SKIN = 0.02
+
+
+def foot_offsets(radius: float) -> tuple[tuple[float, float], ...]:
+    """Center + 4 axis samples. Empty radius → center only."""
+    r = max(0.0, float(radius))
+    if r <= 1e-8:
+        return ((0.0, 0.0),)
+    return (
+        (0.0, 0.0),
+        (r, 0.0), (-r, 0.0), (0.0, r), (0.0, -r),
+    )
+
+
+def height_support(
+    fn: Callable[[float, float], float],
+    x: float,
+    z: float,
+    *,
+    foot_radius: float = FOOT_RADIUS,
+    snap_to_plane: bool = True,
+    step_height: float = 0.45,
+    max_grade: float = 1.35,
+) -> tuple[float, tuple[float, float, float]]:
+    """Y the capsule AABB bottom should sit at. Not Rapier.
+
+    Extra samples on a **small** foot ring (not the wall capsule). Samples that
+    rise like a cliff (``step_height`` / ``max_grade``) are ignored so a wall
+    beside the foot does not launch the body. ``snap_to_plane`` sits on the
+    *center* tangent plane plus a small sphere extra, so a slope does not lift
+    the body by ``grade * radius`` (fat AABB). A walkable sample above that
+    plane is a bump, not a slope, and can raise the sit. ``snap_to_plane=False``
+    returns the max sample Y — the float ``debug_trace`` is meant to catch.
+    """
+    x, z = float(x), float(z)
+    h_center = float(fn(x, z))
+    r = max(0.0, float(foot_radius))
+    best_h = h_center
+    bx, bz = x, z
+    step = max(float(step_height), 0.0)
+    grade = max(float(max_grade), 1e-6)
+    for dx, dz in foot_offsets(r)[1:]:
+        h = float(fn(x + dx, z + dz))
+        rise = h - h_center
+        run = math.hypot(dx, dz)
+        if rise > step:
+            continue
+        if run > 1e-8 and (rise / run) > grade:
+            continue
+        if h > best_h:
+            best_h = h
+            bx, bz = x + dx, z + dz
+    nx, ny, nz = height_normal(fn, x, z)
+    if not snap_to_plane:
+        return best_h, (nx, ny, nz)
+    walkable_ny = 1.0 / math.sqrt(1.0 + grade * grade)
+    if ny < walkable_ny:
+        # 段・壁: 接平面が立っているのでサンプル Y と中央の高い方。
+        return max(best_h, h_center), (nx, ny, nz)
+    ny_safe = max(ny, 1e-6)
+    extra = max(0.0, r * (1.0 / ny_safe - 1.0))
+    support = h_center + extra
+    dx, dz = bx - x, bz - z
+    plane_at_best = h_center - (nx * dx + nz * dz) / ny_safe
+    if best_h > plane_at_best + 1e-4:
+        # 接平面では説明できない凸（小石）。坂の max-Y 浮きではない。
+        support = max(support, best_h)
+    return max(support, h_center), (nx, ny, nz)
+
+
 # ── Physics3D ─────────────────────────────────────────────────────
 
 class Physics3D:
@@ -224,6 +300,9 @@ class Physics3D:
         # 1 フレームの上昇がこれ以下なら段差として登る。超えかつ勾配が急なら崖。
         self.step_height = 0.45
         self.max_grade = 1.35
+        # 斜面接地: 壁用カプセルより小さい足。太い AABB の max-Y は測って捨てた。
+        self.foot_radius = FOOT_RADIUS
+        self.snap_to_plane = True
         # 積み木: 何度か押し合う。小さい速度が続いたら眠る。
         self.solver_iters = 4
         self.sleep_speed = 0.08
@@ -521,17 +600,34 @@ class Physics3D:
             body.vx *= damp
             body.vz *= damp
 
+    def _support_y(self, body: RigidBody3D) -> tuple[float, tuple[float, float, float]]:
+        """Heightfield Y for this body. Capsules use the tight foot; boxes stay center."""
+        fn = self._height_fn
+        assert fn is not None
+        if body.shape == "capsule":
+            r = min(float(self.foot_radius), float(body.radius))
+            return height_support(
+                fn, body.x, body.z,
+                foot_radius=r,
+                snap_to_plane=bool(self.snap_to_plane),
+                step_height=self.step_height,
+                max_grade=self.max_grade,
+            )
+        n = height_normal(fn, body.x, body.z)
+        return float(fn(body.x, body.z)), n
+
     def _ground_collision(self, body: RigidBody3D):
         """地面との衝突。高さ場では法線方向だけを消し、接線（滑り）は残す。"""
+        nrm = None
         if self._height_fn is not None:
-            gy = self._height_fn(body.x, body.z)
+            gy, nrm = self._support_y(body)
         else:
             gy = self._ground_y
 
         if body.y < gy:
             body.y = gy
-            if self._height_fn is not None:
-                nx, ny, nz = height_normal(self._height_fn, body.x, body.z)
+            if nrm is not None:
+                nx, ny, nz = nrm
                 vn = body.vx * nx + body.vy * ny + body.vz * nz
                 if vn < 0.0:
                     body.vx -= vn * nx
@@ -542,7 +638,7 @@ class Physics3D:
                 if abs(body.vy) < 0.1:
                     body.vy = 0.0
             body.on_ground = True
-        elif (body.y - gy) < 0.01:
+        elif (body.y - gy) < GROUND_SKIN:
             body.on_ground = True
 
     def _solves(self, a: RigidBody3D, b: RigidBody3D) -> bool:

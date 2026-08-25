@@ -213,3 +213,35 @@ def test_bake_terrain_invokes_chunk_fill():
     w.set_chunk_fill(host.fill)
     w.bake_terrain(1)
     assert host._chunk_props >= 1
+
+
+def test_world_update_feeds_debug_trace_on_slope():
+    """Crest Isle / Relic Run / Overworld all call World3D.update."""
+    tr = load_kagra_submodule("trace")
+    m = _world()
+    tr._ACTIVE = None
+    world = m.World3D(gravity=20.0, half=24.0)
+    world.set_height_fn(lambda x, _z: 0.4 * x)
+    p = world.add_player(1.0, 0.0, radius=0.28, height=1.7)
+    p.friction = 0.0
+    tracer = tr.DebugTrace(
+        height_fn=lambda x, _z: 0.4 * x, persist=False, threshold=0.05,
+    )
+    tr._ACTIVE = tracer
+    try:
+        for _ in range(80):
+            world.move_player(3.0, 0.0)
+            world.update(0.016)
+        assert tracer.summary() == "ok"
+        world.physics.foot_radius = 0.28
+        world.physics.snap_to_plane = False
+        tracer2 = tr.DebugTrace(
+            height_fn=lambda x, _z: 0.4 * x, persist=False, threshold=0.05,
+        )
+        tr._ACTIVE = tracer2
+        for _ in range(80):
+            world.move_player(3.0, 0.0)
+            world.update(0.016)
+        assert "floated" in tracer2.summary()
+    finally:
+        tr._ACTIVE = None

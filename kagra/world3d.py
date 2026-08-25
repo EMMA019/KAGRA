@@ -267,6 +267,33 @@ class World3D:
             p.vz = 0.0
         if self._tile is not None and self._stream_radius is not None:
             self.stream_tiles(p.x, p.z)
+        self._trace_player()
+
+    def _trace_player(self) -> None:
+        """Feed ``debug_trace`` when an agent has started a tracer. GPU-free.
+
+        Quiet unless ``kagra.trace._ACTIVE`` is set (or someone called
+        ``kagra.debug_trace(..., reset=True)``). Crest Isle / Relic Run /
+        Overworld all go through ``World3D.update``.
+        """
+        p = self.player
+        if p is None:
+            return
+        try:
+            from kagra.trace import _ACTIVE, debug_trace
+        except Exception:
+            return
+        if _ACTIVE is None:
+            return
+        debug_trace(
+            foot_y=p.y, x=p.x, z=p.z,
+            world=self,
+            vx=p.vx, vz=p.vz,
+            on_ground=p.on_ground,
+            persist=_ACTIVE.persist,
+            threshold=_ACTIVE.threshold,
+            path=_ACTIVE.path,
+        )
 
     def stream_tiles(self, x: float, z: float) -> int:
         """近くのタイルを載せ、遠いタイルを外す。エンジン無しでもキーは更新する。"""

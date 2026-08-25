@@ -467,7 +467,7 @@
 - 影は床・箱・Prop も落とす。`set_shadow_cascades(2)` で近／遠の 2 段（既定 1。Prop Garden は変えない）。屋外はテクセルスナップ。OSM ではない街 JSON は `load_city`。三角形当たりは `add_trimesh` / `Prop(..., mesh_hit=True)`。積み木は `add_box(..., is_static=False)`（落ちて積もり、Walk が乗る。Rapier クレートは wheel に入れない）。
 - 点光源 4: `set_point_light(..., slot=0..3)`。0 がキー（影は無し）。1..3 は埋め。スポットは `set_spot_light(..., slot=)`。室内の透視影はスロット 0 のスポットだけ。平行光は埋め。
 - HDRI: `set_hdri("studio")` または正距円筒のパス。拡散は小さな irradiance キューブ。スペキュラは mip LOD。露出は `set_exposure`（既定 1）。ACES は `set_tonemap`（既定オフ）。
-- 閉じた部屋: `room()` + `apply_room_look`。屋外の島: `apply_outdoor_look` + `set_height_fn` + `water` + `sky()`。坂は接平面、急斜面は滑る。デモは Pretty Room / Overworld。
+- 坂は接平面、急斜面は滑る。接地は小さい足 AABB + 接平面（太いカプセル AABB の max-Y は浮く。`debug_trace` で測る。Rapier は入れない）。デモは Pretty Room / Overworld。
 - 汎用メッシュの金属/粗さ: `upload_mesh_3d(..., metallic=, roughness=)` / `Prop(..., metallic=)` / `set_mesh_pbr`。接空間法線は `normal_texture_id` / `Prop(..., normal=)` / `set_mesh_normal` / glTF `normalTexture`（cotangent frame。ストライドは 32）。MToon は触らない。
 - 色付きメッシュ: `solid_tex` + `sphere_mesh` / `cylinder_mesh` / `box_mesh`。
 - `kagra-shared` / `mobile/` は別の運転デモ。この Python スタックと混ぜない。
