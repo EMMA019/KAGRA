@@ -32,7 +32,7 @@
 | `down` | `down(name: str) -> bool` |
 | `draw_billboard` | `draw_billboard(tex: int, x: float, y: float, z: float, size: float, camera=None, *, yaw: float \| None = None)` |
 | `draw_billboard_instances` | `draw_billboard_instances(tex: int, items, camera=None, *, yaw: float \| None = None)` |
-| `draw_mesh_3d` | `draw_mesh_3d(texture_id: int, verts: list, indices: list)` |
+| `draw_mesh_3d` | `draw_mesh_3d(texture_id: int, verts: list, indices: list, *, skip_fog: bool = False)` |
 | `draw_mesh_id` | `draw_mesh_id(mesh_id: int)` |
 | `draw_mesh_instances` | `draw_mesh_instances(mesh_id: int, instances: list)` |
 | `draw_vignette` | `draw_vignette(sw: int \| None = None, sh: int \| None = None, strength: float = 0.42)` |

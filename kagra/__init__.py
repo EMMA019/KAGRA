@@ -913,8 +913,9 @@ def set_toon_params(threshold: float = 0.5, softness: float = 1.0,
     """
     _check(); _engine.set_toon_params(threshold, softness, shade, lit)
 
-def draw_mesh_3d(texture_id: int, verts: list, indices: list):
-    _check(); _engine.draw_mesh_3d(texture_id, verts, indices)
+def draw_mesh_3d(texture_id: int, verts: list, indices: list, *, skip_fog: bool = False):
+    """Immediate Mesh3D. ``skip_fog=True`` is for sky/backdrop (unlit, no distance fog)."""
+    _check(); _engine.draw_mesh_3d(texture_id, verts, indices, skip_fog)
 
 
 def upload_mesh_3d(

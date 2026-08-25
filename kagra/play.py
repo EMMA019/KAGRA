@@ -446,7 +446,7 @@ def sky(*, radius: float = 18.0, look: bool = True):
     fog = current_fog()
     if fog["enabled"]:
         kagra.set_fog(fog["start"], fog["end"], fog["color"], enabled=False)
-    kagra.draw_mesh_3d(tex, verts, idx)
+    kagra.draw_mesh_3d(tex, verts, idx, skip_fog=True)
     if fog["enabled"]:
         kagra.set_fog(fog["start"], fog["end"], fog["color"], enabled=True)
 

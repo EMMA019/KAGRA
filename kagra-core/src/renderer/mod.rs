@@ -2196,10 +2196,10 @@ impl RendererV2 {
         );
     }
 
-    pub fn queue_mesh_3d(&mut self, mut cmd: Mesh3DCommand) {
-        // Stage.draw / sky() disable fog, queue, then restore. The uniform
-        // restore wins before flush, so snapshot fog-off onto the command.
-        cmd.skip_fog = self.fog_params[2] < 0.5;
+    pub fn queue_mesh_3d(&mut self, cmd: Mesh3DCommand) {
+        // Do not infer skip_fog from fog_params.z. Fog is off by default
+        // (goldens, indoor rooms); that used to mark every Mesh3D unlit so
+        // shadows compared equal on/off. sky() / Stage.draw pass the flag.
         self.mesh_3d_queue.push(cmd);
     }
 

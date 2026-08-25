@@ -328,7 +328,13 @@ impl KagraWindow {
         }
     }
 
-    pub fn queue_mesh_3d(&self, texture_id: u32, verts: Vec<[f32; 8]>, indices: Vec<u32>) {
+    pub fn queue_mesh_3d(
+        &self,
+        texture_id: u32,
+        verts: Vec<[f32; 8]>,
+        indices: Vec<u32>,
+        skip_fog: bool,
+    ) {
         use crate::renderer::Mesh3DCommand;
         if let Some(r) = lock_recover(&self.renderer).as_mut() {
             r.queue_mesh_3d(Mesh3DCommand {
@@ -338,7 +344,7 @@ impl KagraWindow {
                 metallic: 0.0,
                 roughness: 1.0,
                 base_color: [1.0, 1.0, 1.0],
-                skip_fog: false,
+                skip_fog,
             });
         }
     }

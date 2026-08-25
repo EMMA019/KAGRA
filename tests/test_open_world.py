@@ -287,13 +287,19 @@ def test_crest_sky_snapshots_fog_off_and_mtoon_flips_backfaces():
     rend = (_ROOT / "kagra-core" / "src" / "renderer" / "mod.rs").read_text(
         encoding="utf-8",
     )
-    assert "cmd.skip_fog = self.fog_params[2] < 0.5" in rend
+    assert "cmd.skip_fog = self.fog_params[2] < 0.5" not in rend
     shaders = (_ROOT / "kagra-core" / "src" / "renderer" / "shaders.rs").read_text(
         encoding="utf-8",
     )
     assert "mesh_mat.base.w < 0.5" in shaders
     assert "@builtin(front_facing) front" in shaders
     assert "if !front" in shaders
+    py = (_ROOT / "kagra" / "__init__.py").read_text(encoding="utf-8")
+    assert "skip_fog: bool = False" in py
+    stage = (_ROOT / "kagra" / "stage.py").read_text(encoding="utf-8")
+    assert "skip_fog=True" in stage
+    play = (_ROOT / "kagra" / "play.py").read_text(encoding="utf-8")
+    assert "skip_fog=True" in play
     inp = (_ROOT / "kagra-core" / "src" / "input.rs").read_text(encoding="utf-8")
     assert "REHOLD_QUIET_FRAMES: u8 = 3" in inp
     assert "REHOLD_QUIET_FRAMES: u8 = 15" not in inp

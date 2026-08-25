@@ -160,7 +160,8 @@ class Stage:
             # SHADER_3D applies distance fog. A puresky sphere past fog_end
             # becomes the fog color (Crest Isle: r=140, fog_end=102 → grey).
             # draw_mesh_3d queues; restoring fog before flush used to fog the
-            # sky anyway. The renderer snapshots fog-off onto that command.
+            # sky anyway. Pass skip_fog on the command — do not infer it from
+            # fog-off (that unlit every Mesh3D in goldens / indoor rooms).
             from kagra.look import current_fog
 
             fog = current_fog()
@@ -168,7 +169,9 @@ class Stage:
                 kagra.set_fog(
                     fog["start"], fog["end"], fog["color"], enabled=False,
                 )
-            kagra.draw_mesh_3d(self.tex_id, self.verts, self.indices)
+            kagra.draw_mesh_3d(
+                self.tex_id, self.verts, self.indices, skip_fog=True,
+            )
             if fog["enabled"]:
                 kagra.set_fog(
                     fog["start"], fog["end"], fog["color"], enabled=True,
