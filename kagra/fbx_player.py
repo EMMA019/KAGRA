@@ -179,6 +179,26 @@ def root_scale(fbx_leg_h: float, vrm_hips_y: float = _DEFAULT_VRM_HIPS_Y) -> flo
     return vrm_hips_y / fbx_leg_h
 
 
+def _map_bind_worlds(raw) -> dict:
+    """Mixamo node names → VRM worlds. Empty → canonical T-pose roll."""
+    from kagra.retarget import mixamo_tpose_worlds
+    out = {}
+    for item in raw or ():
+        if len(item) < 5:
+            continue
+        name, qx, qy, qz, qw = item[0], item[1], item[2], item[3], item[4]
+        vrm = _BONE_MAP.get(name, name)
+        if vrm in _SKIP_BONES:
+            continue
+        out[vrm] = (float(qx), float(qy), float(qz), float(qw))
+    if not out:
+        return mixamo_tpose_worlds()
+    # Fill gaps (some Mixamo files omit a node from bind dump).
+    for k, v in mixamo_tpose_worlds().items():
+        out.setdefault(k, v)
+    return out
+
+
 @dataclass
 class FbxMotion:
     """ufbx で読み込んだ FBX アニメーションデータ。
@@ -189,6 +209,8 @@ class FbxMotion:
     _clip_index: int = 0      # 使用するクリップのインデックス
     _cache: Optional[list] = field(default=None, repr=False)
     vrm_hips_y: float = _DEFAULT_VRM_HIPS_Y
+    src_worlds: dict = field(default_factory=dict)
+    apply_damp: bool = True
 
     @property
     def clip_names(self) -> list[str]:
@@ -226,7 +248,11 @@ class FbxMotion:
         if self._cache is not None:
             return self._cache
 
-        _, frame_time, raw_frames = self._raw_clips[self._clip_index]
+        raw = self._raw_clips[self._clip_index]
+        frame_time, raw_frames = raw[1], raw[2]
+        if not self.src_worlds:
+            bind_raw = raw[3] if len(raw) > 3 else ()
+            self.src_worlds = _map_bind_worlds(bind_raw)
         clip = []
 
         # ── 接地計算 ──────────────────────────────────────────────
@@ -304,9 +330,10 @@ class FbxMotion:
                     continue
 
                 q_delta = (qx, qy, qz, qw)
-                damp = _DAMP_MAP.get(vrm_name, 1.0)
-                if damp < 1.0:
-                    q_delta = _qdamp(q_delta, damp)
+                if self.apply_damp:
+                    damp = _DAMP_MAP.get(vrm_name, 1.0)
+                    if damp < 1.0:
+                        q_delta = _qdamp(q_delta, damp)
                 bones[vrm_name] = q_delta
 
             clip.append((bones, frame_time, root_pos))
@@ -340,6 +367,9 @@ def load_fbx(path: str, clip_name: str = None) -> FbxMotion:
         raise RuntimeError(f"FBX にアニメーションが見つかりませんでした: {path}")
 
     motion = FbxMotion(_raw_clips=raw)
+    first = raw[0] if raw else None
+    if first is not None and len(first) > 3:
+        motion.src_worlds = _map_bind_worlds(first[3])
 
     if clip_name:
         motion.use_clip(clip_name)

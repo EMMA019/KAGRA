@@ -11,9 +11,10 @@ credit the character if you post screenshots.
 
 Art (CC0, not in the pip wheel): examples/assets/open_world/LICENSE.md
 
-Walk: built-in VrmAvatar idle/walk/run via ``set_locomotion`` (speed blend).
-Mixamo/BVH walk is NOT loaded. Upper-body clap/banzai stay on
-ActionController and do not fight the walk arm swing.
+Walk: ``avatar.set_locomotion`` (idle/walk/run speed blend). Local Mixamo
+Idle/Walk/Run FBX is loaded when present (rest+roll retarget onto VRoid).
+Otherwise built-in clips. The ``walk`` alias (synthetic_walk.bvh) is not used.
+Upper-body clap/banzai stay on ActionController and do not fight walk arms.
 Spatial audio: looping sea to the west + pickup SE at the crest/coin.
 
 操作:
@@ -112,7 +113,10 @@ def _poly(name: str) -> Path | None:
 
 
 def _bind_locomotion(avatar) -> None:
-    """Keep engine idle/walk. Mixamo/BVH walk rest is T-pose → folded arms."""
+    """Optional VRMA, else local Mixamo Idle/Walk/Run, else built-in clips.
+
+    Never resolves the ``walk`` alias (synthetic_walk.bvh overwrote built-in).
+    """
     vrma = _ASSETS / "walk.vrma"
     if vrma.is_file():
         try:
@@ -123,7 +127,11 @@ def _bind_locomotion(avatar) -> None:
             ) from exc
         print(f"[CrestIsle] walk ← {vrma}")
         return
-    print("[CrestIsle] walk ← built-in idle/walk (arm swing). Mixamo/BVH skipped.")
+    loaded = avatar.bind_locomotion()
+    if loaded:
+        print(f"[CrestIsle] locomotion ← Mixamo {loaded}")
+        return
+    print("[CrestIsle] walk ← built-in idle/walk/run (arm swing). Mixamo FBX not found.")
 
 
 def _glow_tex():

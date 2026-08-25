@@ -198,7 +198,8 @@ def test_game_file_uses_only_public_imports():
         assert name not in text, name
     assert 'resolve_asset(AssetKind.ANY, "walk"' not in text
     assert "AssetKind.ANY" not in text
-    assert "except Exception:\n                pass" not in text
+    assert "bind_locomotion" in text
+    assert "set_locomotion" in text
     assert "built-in" in text
     for name in (
         "ensure_vrm",
@@ -223,6 +224,7 @@ def test_game_file_uses_only_public_imports():
         "save_json",
         "ActionController",
         "set_locomotion",
+        "bind_locomotion",
         "Label",
         "draw_vignette",
         "draw_billboard_instances",

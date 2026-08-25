@@ -1,0 +1,85 @@
+{
+  "format": "kagra.synthetic_mixamo_clip/v1",
+  "comment": "Mixamo T-pose Y-along-bone. Frame 1 hangs 90deg around local X (world Z). Raw bind*delta on rolled VRoid T-pose folds +Z.",
+  "src_worlds": {
+    "J_Bip_L_UpperArm": [
+      0.5,
+      0.5,
+      0.5,
+      -0.5
+    ],
+    "J_Bip_L_LowerArm": [
+      0.5,
+      0.5,
+      0.5,
+      -0.5
+    ],
+    "J_Bip_R_UpperArm": [
+      0.5,
+      -0.5,
+      0.5,
+      0.5
+    ],
+    "J_Bip_R_LowerArm": [
+      0.5,
+      -0.5,
+      0.5,
+      0.5
+    ]
+  },
+  "frame_time": 0.033333,
+  "frames": [
+    {
+      "J_Bip_L_UpperArm": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "J_Bip_R_UpperArm": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "J_Bip_L_LowerArm": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "J_Bip_R_LowerArm": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "J_Bip_L_UpperArm": [
+        0.7071067811865475,
+        0.0,
+        0.0,
+        0.7071067811865476
+      ],
+      "J_Bip_R_UpperArm": [
+        -0.7071067811865475,
+        0.0,
+        0.0,
+        0.7071067811865476
+      ],
+      "J_Bip_L_LowerArm": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "J_Bip_R_LowerArm": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    }
+  ]
+}
