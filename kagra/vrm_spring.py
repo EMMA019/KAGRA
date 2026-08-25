@@ -109,7 +109,7 @@ def _mrot(m):
 @dataclass
 class _Joint:
     node_idx:    int
-    stiffness:   float       # バネ硬さ (0.0〜1.0)
+    stiffness:   float       # VRM はだいたい 0〜4。UniVRM は stiffness * dt²
     drag:        float       # 空気抵抗 (0.0〜1.0)
     gravity:     list        # 重力ベクトル [x,y,z]
     radius:      float       # コライダー半径
@@ -123,6 +123,7 @@ class _Joint:
     parent_world_rot: list = field(default_factory=lambda:[0.,0.,0.,1.])
     # bind pose での親 → 子方向（親のローカル空間）
     rest_dir_local: list = field(default_factory=lambda:[0.,1.,0.])
+    virtual_tail: bool = False
 
 @dataclass
 class _Collider:
@@ -154,6 +155,53 @@ def _as_vec3(v, default=(0.0, 0.0, 0.0)):
     if isinstance(v, (list, tuple)) and len(v) >= 3:
         return [float(v[0]), float(v[1]), float(v[2])]
     return list(default)
+
+
+VIRTUAL_TAIL_LEN = 0.07
+SLEEVE_TRANSFER = 0.82
+
+
+def is_sleeve_bone_name(name: str) -> bool:
+    lower = name.lower()
+    return "sleeve" in lower or "sode" in lower or "袖" in name or "ソデ" in name
+
+
+def sleeve_follow(radius: float) -> float:
+    a, b = 0.022, 0.038
+    t = max(0.0, min(1.0, (radius - a) / (b - a)))
+    return t * t * (3.0 - 2.0 * t)
+
+
+def transfer_sleeve_weights(joints, weights, arm_palette, helper_palette, follow):
+    """arm_palette のウェイトのうち follow を helper へ移す。"""
+    if follow <= 1e-5:
+        return list(joints), list(weights)
+    j = list(joints)
+    w = list(weights)
+    arm_w = sum(w[i] for i in range(4) if j[i] == arm_palette)
+    move_w = arm_w * max(0.0, min(1.0, follow))
+    if move_w <= 1e-6:
+        return j, w
+    if arm_w > 1e-8:
+        keep = 1.0 - move_w / arm_w
+        for i in range(4):
+            if j[i] == arm_palette:
+                w[i] *= keep
+    if helper_palette in j:
+        w[j.index(helper_palette)] += move_w
+    elif any(x <= 1e-6 for x in w):
+        i = next(i for i in range(4) if w[i] <= 1e-6)
+        j[i] = helper_palette
+        w[i] = move_w
+    else:
+        best = min((i for i in range(4) if j[i] != arm_palette), key=lambda i: w[i], default=0)
+        if j[best] != arm_palette:
+            j[best] = helper_palette
+            w[best] = move_w
+    s = sum(w)
+    if s > 1e-8:
+        w = [x / s for x in w]
+    return j, w
 
 
 def collide_sphere(point, center, radius, fallback_dir=None):
@@ -255,8 +303,14 @@ class SpringBone:
             return
         # 現在の _wmats を使ってジョイント位置を強制同期
         for chain in self.chains:
-            for j in chain.joints:
-                pos = _mpos(self._wmats[j.node_idx])
+            for i, j in enumerate(chain.joints):
+                if j.virtual_tail or j.node_idx < 0:
+                    pj = chain.joints[i - 1]
+                    parent_q = _mrot(self._wmats[pj.node_idx])
+                    pos = _add(_mpos(self._wmats[pj.node_idx]),
+                               _sc(_norm(_qrotate(parent_q, j.rest_dir_local)), j.bone_length))
+                else:
+                    pos = _mpos(self._wmats[j.node_idx])
                 j.curr = list(pos)
                 j.prev = list(pos)     # 速度ゼロ
                 j.target = list(pos)
@@ -422,6 +476,11 @@ class SpringBone:
             ch=self._nodes[idx]['children']
             if ch: _walk(ch[0])
         if root<len(self._nodes): _walk(root)
+        if len(joints) == 1:
+            joints.append(_Joint(
+                node_idx=-1, stiffness=stiff, drag=drag, gravity=grav, radius=rad,
+                bone_length=VIRTUAL_TAIL_LEN, rest_dir_local=[0., 1., 0.], virtual_tail=True,
+            ))
         return _Chain(joints=joints) if len(joints)>=2 else None
  
     # ── FK ────────────────────────────────────────────────────
@@ -456,12 +515,16 @@ class SpringBone:
             for i in range(len(chain.joints) - 1):
                 j  = chain.joints[i]
                 jn = chain.joints[i+1]
+                if jn.virtual_tail or jn.node_idx < 0:
+                    if jn.bone_length < 0.001:
+                        jn.bone_length = VIRTUAL_TAIL_LEN
+                    continue
                 # bind pose でのワールド位置
                 p_parent = _mpos(self._wmats[j.node_idx])
                 p_child  = _mpos(self._wmats[jn.node_idx])
                 world_dir = _sub(p_child, p_parent)
                 bone_len = _len(world_dir)
-                jn.bone_length = bone_len if bone_len > 0.001 else 0.07
+                jn.bone_length = bone_len if bone_len > 0.001 else VIRTUAL_TAIL_LEN
  
                 # 親のワールド回転を除去してローカル方向に変換
                 parent_q = _mrot(self._wmats[j.node_idx])
@@ -471,8 +534,14 @@ class SpringBone:
     def _init_joints_to_rest(self):
         """bind ポーズ位置にジョイントを初期化する。"""
         for chain in self.chains:
-            for j in chain.joints:
-                pos = _mpos(self._wmats[j.node_idx])
+            for i, j in enumerate(chain.joints):
+                if j.virtual_tail or j.node_idx < 0:
+                    pj = chain.joints[i - 1]
+                    parent_q = _mrot(self._wmats[pj.node_idx])
+                    pos = _add(_mpos(self._wmats[pj.node_idx]),
+                               _sc(_norm(_qrotate(parent_q, j.rest_dir_local)), j.bone_length))
+                else:
+                    pos = _mpos(self._wmats[j.node_idx])
                 j.curr = list(pos)
                 j.prev = list(pos)
                 j.target = list(pos)
@@ -499,15 +568,11 @@ class SpringBone:
             rest_world_dir = _qrotate(parent_q, j.rest_dir_local)
             j.target = _add(parent_pos, _sc(_norm(rest_world_dir), j.bone_length))
  
-            # ── Verlet: 慣性 + バネ（目標へ引き戻す） + 重力 + 風 ──
+            # ── Verlet: 慣性 + rest 軸へ stiffness*dt²（UniVRM） + 重力 + 風 ──
             vel_damped = _sc(_sub(j.curr, j.prev), 1.0 - j.drag)
- 
-            # バネ力: 目標位置方向に stiffness だけ近づける
-            toward_target = _sub(j.target, j.curr)
-            spring_force  = _sc(toward_target, j.stiffness)
- 
+            spring_force  = _sc(_norm(rest_world_dir), j.stiffness * dt * dt)
             external = _add(_sc(j.gravity, dt*dt),
-                            _sc(self._wind, dt*dt*0.5))
+                            _sc(self._wind, dt*dt))
  
             new_pos = _add(_add(j.curr, vel_damped),
                            _add(spring_force, external))
@@ -555,6 +620,8 @@ class SpringBone:
         for i in range(len(chain.joints) - 1):
             j  = chain.joints[i]
             jn = chain.joints[i+1]
+            if j.virtual_tail or j.node_idx < 0:
+                continue
  
             # 目標方向とシミュレーション方向（ワールド）
             target_dir_world = _norm(_sub(jn.target, j.curr))

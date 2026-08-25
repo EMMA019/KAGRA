@@ -21,7 +21,12 @@ use crate::vrm_first_person::{
     collect_head_nodes, erase_head_triangles, parse_mesh_annotations, MeshAnnotation,
 };
 use crate::mtoon::{parse_mtoon, parse_vrm0_material_properties, MtoonMaterial};
-use crate::vrm_spring::{init_rest, parse_spring_bones, snap_to_world, step as step_springs, SpringBoneState};
+use crate::vrm_spring::{
+    has_sleeve_coverage, init_rest, parse_spring_bones, push_simple_chain, radius_to_axis,
+    snap_to_world, step as step_springs, sleeve_follow, transfer_sleeve_weights,
+    unbound_sleeve_nodes, used_spring_nodes, SpringBoneState, SLEEVE_DRAG, SLEEVE_GRAVITY,
+    SLEEVE_HIT_RADIUS, SLEEVE_STIFFNESS, SLEEVE_TRANSFER, VIRTUAL_TAIL_LEN,
+};
 
 pub use crate::vrm_lookat_meta::VrmLookAtMeta;
 
@@ -361,6 +366,15 @@ pub fn load_vrm(
         &human_bones,
     );
 
+    let mut spring = parse_spring_bones(&gltf);
+    let sleeve_remaps = ensure_sleeve_cloth(
+        &mut bones,
+        &mut bone_index,
+        &mut skins,
+        &human_bones,
+        &mut spring,
+    );
+
     // ── プリミティブ構築（キャッシュ付き）────────────────────
     let mut primitives = Vec::new();
     for (mi, mesh) in meshes.iter().enumerate() {
@@ -411,12 +425,20 @@ pub fn load_vrm(
                 .collect();
             let normals = resolve_normals(normal_rows.as_ref(), &pos_xyz, &indices);
 
-            // JOINTS_0 は skin.joints への添字であり、行列パレットも同じ添字で
-            // 構築するため（build_draw_commands 参照）ここでの再マップは不要。
+            // JOINTS_0 は skin.joints への添字。袖ヘルパーがあるスキンだけ外側ウェイトを移す。
             let vertices: Vec<SkinnedVertex> = (0..n).map(|i| {
                 let u = uvs.get(i).map(|v| [v[0], v[1]]).unwrap_or([0.0;2]);
-                let j = joints.get(i).copied().unwrap_or([0;4]);
-                let w = weights.get(i).map(|v| [v[0], v[1], v[2], v[3]]).unwrap_or([1.0,0.0,0.0,0.0]);
+                let mut j = joints.get(i).copied().unwrap_or([0;4]);
+                let mut w = weights.get(i).map(|v| [v[0], v[1], v[2], v[3]]).unwrap_or([1.0,0.0,0.0,0.0]);
+                for remap in sleeve_remaps.iter().filter(|r| r.skin_idx == skin_idx) {
+                    let rad = radius_to_axis(pos_xyz[i], remap.origin, remap.axis);
+                    let follow = sleeve_follow(rad) * SLEEVE_TRANSFER;
+                    let (nj, nw) = transfer_sleeve_weights(
+                        j, w, remap.arm_palette, remap.helper_palette, follow,
+                    );
+                    j = nj;
+                    w = nw;
+                }
                 SkinnedVertex {
                     position: pos_xyz[i],
                     uv: u,
@@ -522,24 +544,8 @@ pub fn load_vrm(
                 }
             }
 
-            let joint_rows: Vec<[u32; 4]> = (0..n)
-                .map(|i| joints.get(i).copied().unwrap_or([0; 4]))
-                .collect();
-            let weight_rows: Vec<[f32; 4]> = (0..n)
-                .map(|i| {
-                    weights
-                        .get(i)
-                        .map(|v| {
-                            [
-                                *v.first().unwrap_or(&1.0),
-                                *v.get(1).unwrap_or(&0.0),
-                                *v.get(2).unwrap_or(&0.0),
-                                *v.get(3).unwrap_or(&0.0),
-                            ]
-                        })
-                        .unwrap_or([1.0, 0.0, 0.0, 0.0])
-                })
-                .collect();
+            let joint_rows: Vec<[u32; 4]> = vertices.iter().map(|v| v.joints).collect();
+            let weight_rows: Vec<[f32; 4]> = vertices.iter().map(|v| v.weights).collect();
             let bone_bind_aabbs =
                 crate::frustum::bone_bind_aabbs(&pos_xyz, &joint_rows, &weight_rows);
             let morph_pad = morph_deltas
@@ -576,8 +582,6 @@ pub fn load_vrm(
     let hierarchy_order = build_hierarchy_order(
         &bones.iter().map(|b| b.parent).collect::<Vec<_>>(),
     );
-
-    let mut spring = parse_spring_bones(&gltf);
     if !spring.chains.is_empty() {
         let bind_mats = bind_world_mats(&bones, &hierarchy_order);
         init_rest(&mut spring, &bind_mats);
@@ -614,6 +618,177 @@ fn bind_world_mats(bones: &[VrmBone], order: &[usize]) -> Vec<Matrix4<f32>> {
         };
     }
     mats
+}
+
+struct SleeveRemap {
+    skin_idx: usize,
+    arm_palette: u32,
+    helper_palette: u32,
+    origin: [f32; 3],
+    axis: [f32; 3],
+}
+
+const ARM_LINKS: [(&str, &str, &str); 4] = [
+    ("leftUpperArm", "leftLowerArm", "_kagraSleeveLU"),
+    ("leftLowerArm", "leftHand", "_kagraSleeveLL"),
+    ("rightUpperArm", "rightLowerArm", "_kagraSleeveRU"),
+    ("rightLowerArm", "rightHand", "_kagraSleeveRL"),
+];
+
+fn bone_names_vec(len: usize, bone_index: &HashMap<String, usize>) -> Vec<String> {
+    let mut names = vec![String::new(); len];
+    for (n, &i) in bone_index {
+        if i < names.len() && names[i].is_empty() {
+            names[i] = n.clone();
+        }
+    }
+    names
+}
+
+fn mat_world_pos(m: &Matrix4<f32>) -> [f32; 3] {
+    [m[(0, 3)], m[(1, 3)], m[(2, 3)]]
+}
+
+fn vsub3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn vlen3(v: [f32; 3]) -> f32 {
+    (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
+}
+
+/// 袖ボーンが無い VRM（Alicia のセーラー等）にヘルパーを足し、外側の筒ウェイトを移す。
+fn ensure_sleeve_cloth(
+    bones: &mut Vec<VrmBone>,
+    bone_index: &mut HashMap<String, usize>,
+    skins: &mut [VrmSkin],
+    human_bones: &HashMap<String, usize>,
+    spring: &mut SpringBoneState,
+) -> Vec<SleeveRemap> {
+    let names = bone_names_vec(bones.len(), bone_index);
+    let arm_nodes: Vec<usize> = [
+        "leftUpperArm",
+        "leftLowerArm",
+        "rightUpperArm",
+        "rightLowerArm",
+    ]
+    .iter()
+    .filter_map(|k| human_bones.get(*k).copied())
+    .collect();
+
+    let used = used_spring_nodes(spring);
+    for node in unbound_sleeve_nodes(&names, &used) {
+        push_simple_chain(
+            spring,
+            node,
+            None,
+            SLEEVE_STIFFNESS,
+            SLEEVE_DRAG,
+            SLEEVE_GRAVITY,
+            SLEEVE_HIT_RADIUS,
+            [0.0, 1.0, 0.0],
+            VIRTUAL_TAIL_LEN,
+        );
+    }
+
+    let names = bone_names_vec(bones.len(), bone_index);
+    let parents: Vec<Option<usize>> = bones.iter().map(|b| b.parent).collect();
+    if has_sleeve_coverage(spring, &names, &arm_nodes, &parents) || arm_nodes.is_empty() {
+        return Vec::new();
+    }
+
+    let order = build_hierarchy_order(&parents);
+    let bind = bind_world_mats(bones, &order);
+    let mut remaps = Vec::new();
+
+    for &(arm_key, next_key, helper_name) in &ARM_LINKS {
+        let Some(&arm) = human_bones.get(arm_key) else { continue };
+        let Some(&nxt) = human_bones.get(next_key) else { continue };
+        if arm >= bones.len() || nxt >= bones.len() || bone_index.contains_key(helper_name) {
+            continue;
+        }
+        let origin = mat_world_pos(&bind[arm]);
+        let next_p = mat_world_pos(&bind[nxt]);
+        let delta = vsub3(next_p, origin);
+        let arm_len = vlen3(delta);
+        if arm_len < 0.02 {
+            continue;
+        }
+        let axis_w = [delta[0] / arm_len, delta[1] / arm_len, delta[2] / arm_len];
+        let lt = bones[nxt].bind_trans;
+        let llen = vlen3(lt).max(1e-8);
+        let axis_local = [lt[0] / llen, lt[1] / llen, lt[2] / llen];
+        let helper_trans = [
+            axis_local[0] * arm_len * 0.45,
+            axis_local[1] * arm_len * 0.45,
+            axis_local[2] * arm_len * 0.45,
+        ];
+
+        let helper_idx = bones.len();
+        bones.push(VrmBone {
+            parent: Some(arm),
+            local_rot: [0.0, 0.0, 0.0, 1.0],
+            bind_rot: [0.0, 0.0, 0.0, 1.0],
+            local_trans: helper_trans,
+            bind_trans: helper_trans,
+            local_scale: [1.0, 1.0, 1.0],
+            bind_scale: [1.0, 1.0, 1.0],
+            world_mat: Matrix4::identity(),
+        });
+        bone_index.insert(helper_name.to_string(), helper_idx);
+
+        push_simple_chain(
+            spring,
+            helper_idx,
+            None,
+            SLEEVE_STIFFNESS,
+            SLEEVE_DRAG,
+            SLEEVE_GRAVITY,
+            SLEEVE_HIT_RADIUS,
+            axis_local,
+            (arm_len * 0.40).max(0.05),
+        );
+
+        for (si, skin) in skins.iter_mut().enumerate() {
+            if skin.joint_node_indices.len() >= 256 {
+                continue;
+            }
+            let Some(arm_pal) = skin
+                .joint_node_indices
+                .iter()
+                .position(|&n| n == arm)
+            else {
+                continue;
+            };
+            if skin.joint_node_indices.iter().any(|&n| n == helper_idx) {
+                continue;
+            }
+            let helper_pal = skin.joint_node_indices.len() as u32;
+            skin.joint_node_indices.push(helper_idx);
+            remaps.push(SleeveRemap {
+                skin_idx: si,
+                arm_palette: arm_pal as u32,
+                helper_palette: helper_pal,
+                origin,
+                axis: axis_w,
+            });
+        }
+    }
+
+    let parents: Vec<Option<usize>> = bones.iter().map(|b| b.parent).collect();
+    let order = build_hierarchy_order(&parents);
+    let bind = bind_world_mats(bones, &order);
+    for skin in skins.iter_mut() {
+        while skin.inv_bind_matrices.len() < skin.joint_node_indices.len() {
+            let node = skin.joint_node_indices[skin.inv_bind_matrices.len()];
+            let inv = bind
+                .get(node)
+                .and_then(|m| m.try_inverse())
+                .unwrap_or_else(Matrix4::identity);
+            skin.inv_bind_matrices.push(inv);
+        }
+    }
+    remaps
 }
 
 // ── VrmModel のメソッド ──────────────────────────────────────

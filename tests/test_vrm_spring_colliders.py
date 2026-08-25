@@ -1,10 +1,14 @@
-"""SpringBone コライダーの押し出しと VRM 0/1 パース。"""
-from kagra.vrm_spring import (
-    SpringBone,
-    _as_vec3,
-    collide_capsule,
-    collide_sphere,
-)
+"""SpringBone コライダーの押し出しと VRM 0/1 パース。袖の剛性パス。"""
+from tests.conftest import load_kagra_submodule
+
+vs = load_kagra_submodule("vrm_spring")
+SpringBone = vs.SpringBone
+_as_vec3 = vs._as_vec3
+collide_capsule = vs.collide_capsule
+collide_sphere = vs.collide_sphere
+_Collider = vs._Collider
+_Joint = vs._Joint
+_Chain = vs._Chain
 
 
 def test_collide_sphere_outside_unchanged():
@@ -96,7 +100,6 @@ def test_parse_v0_and_v1_colliders():
         start = len(sb.colliders)
         node = cg.get("node", 0)
         for col in cg.get("colliders", []):
-            from kagra.vrm_spring import _Collider
             sb.colliders.append(_Collider(
                 node_idx=int(node),
                 offset=_as_vec3(col.get("offset")),
@@ -111,7 +114,6 @@ def test_parse_v0_and_v1_colliders():
 
     sb1 = gltf["extensions"]["VRMC_springBone"]
     v1_groups = []
-    from kagra.vrm_spring import _Collider
     for col in sb1["colliders"]:
         cap = col["shape"]["capsule"]
         sb.colliders.append(_Collider(
@@ -127,3 +129,72 @@ def test_parse_v0_and_v1_colliders():
         sb._parse_v1(sp, v1_groups)
     assert len(sb.chains) == before + 1
     assert sb.colliders[-1].tail is not None
+
+
+def test_parse_v0_leaf_gets_virtual_tail():
+    sb = object.__new__(SpringBone)
+    sb.chains = []
+    sb.colliders = []
+    sb._nodes = [
+        {"name": "head", "t": [0, 0, 0], "r": [0, 0, 0, 1], "s": [1, 1, 1], "children": [1], "parent": None},
+        {"name": "ribbon_L", "t": [0, 0.2, 0], "r": [0, 0, 0, 1], "s": [1, 1, 1], "children": [], "parent": 0},
+    ]
+    sb._parse_v0({"bones": [1], "stiffiness": 2.0, "dragForce": 0.7, "hitRadius": 0.02}, [])
+    assert len(sb.chains) == 1
+    assert len(sb.chains[0].joints) == 2
+    assert not sb.chains[0].joints[0].virtual_tail
+    assert sb.chains[0].joints[1].virtual_tail
+    assert abs(sb.chains[0].joints[1].bone_length - vs.VIRTUAL_TAIL_LEN) < 1e-6
+
+
+def _identity():
+    return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+
+
+def _translate(x, y, z):
+    m = _identity()
+    m[12], m[13], m[14] = x, y, z
+    return m
+
+
+def test_stiffness_dt2_does_not_snap_like_paper():
+    sb = object.__new__(SpringBone)
+    sb._wind = [0.0, 0.0, 0.0]
+    sb.colliders = []
+    sb._wmats = [_translate(0, 0, 0), _translate(0, 1, 0)]
+    sb._nodes = [
+        {"name": "p", "t": [0, 0, 0], "r": [0, 0, 0, 1], "s": [1, 1, 1], "children": [1], "parent": None},
+        {"name": "c", "t": [0, 1, 0], "r": [0, 0, 0, 1], "s": [1, 1, 1], "children": [], "parent": 0},
+    ]
+    parent = _Joint(node_idx=0, stiffness=1.0, drag=0.4, gravity=[0, 0, 0], radius=0.02)
+    child = _Joint(
+        node_idx=1, stiffness=1.0, drag=0.4, gravity=[0, 0, 0], radius=0.02,
+        bone_length=1.0, rest_dir_local=[0.0, 1.0, 0.0],
+    )
+    child.curr = [0.6, 0.8, 0.0]
+    child.prev = [0.6, 0.8, 0.0]
+    chain = _Chain(joints=[parent, child], collider_ids=[])
+    sb._simulate(chain, 1.0 / 60.0)
+    dist = (
+        (child.curr[0] - child.target[0]) ** 2
+        + (child.curr[1] - child.target[1]) ** 2
+        + (child.curr[2] - child.target[2]) ** 2
+    ) ** 0.5
+    assert dist > 0.25, f"stiffness*dt² must lag, dist={dist}"
+
+
+def test_sleeve_follow_and_weight_transfer():
+    assert vs.sleeve_follow(0.018) < 0.02
+    assert vs.sleeve_follow(0.040) > 0.95
+    assert vs.is_sleeve_bone_name("J_Sec_L_Sleeve")
+    assert vs.is_sleeve_bone_name("袖_L")
+    assert not vs.is_sleeve_bone_name("cloth")
+    assert not vs.is_sleeve_bone_name("skirt_01_01")
+    j, w = vs.transfer_sleeve_weights([3, 0, 0, 0], [1.0, 0.0, 0.0, 0.0], 3, 62, 0.82)
+    helper = sum(w[i] for i in range(4) if j[i] == 62)
+    arm = sum(w[i] for i in range(4) if j[i] == 3)
+    assert abs(helper - 0.82) < 0.02
+    assert abs(arm - 0.18) < 0.02
+    j2, w2 = vs.transfer_sleeve_weights([3, 1, 2, 4], [0.7, 0.1, 0.1, 0.1], 3, 9, 0.0)
+    assert j2 == [3, 1, 2, 4]
+    assert abs(w2[0] - 0.7) < 1e-5
