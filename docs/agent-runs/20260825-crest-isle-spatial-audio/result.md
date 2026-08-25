@@ -21,6 +21,10 @@
 - `cargo test -p kagra-core --no-default-features --locked --lib` → **138 passed** (5 new `audio::tests`)
 - GPU `open_world_smoke` / desktop Crest Isle **not** run here (no `kagra_core` wheel / no wgpu adapter). CI / Emma's Windows is the GPU+audio stand-in.
 
+**GitHub CI: 17 checks passed** on `01384fe` (`cursor/crest-isle-spatial-audio-7ba1`).
+
+PR: https://github.com/EMMA019/KAGRA/pull/88
+
 ## Try
 
 ```bash
