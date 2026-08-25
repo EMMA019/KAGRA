@@ -10,9 +10,13 @@ White meadow / white Kenney pines in Emma’s clip were **untextured Fallback Wh
 
 Delayed stop: `#80` `rehold_block` lasted one extra frame. After a long auto-repeat, Win32 leftover `repeat=false` KEYDOWN can arrive later, especially if `stream_tiles` / Prop bake stalled winit. Wish-idle `vx/vz` snap was already correct once `held` clears.
 
-## Verify
+## Verify (this VM)
 
-Pending local commands on this pass (bind-group LRU + quiet window).
+- `python3 tools/gen_api_index.py --check`: **OK** (422 entries)
+- `python3 -m pytest tests -m "not golden"`: **passed** (386 collected; 10 golden deselected)
+- `rustup run stable cargo test -p kagra-core --no-default-features --locked input`: **16 passed** (includes 30 leftover KEYDOWN + 15 quiet + real press, leftover refresh, hitch `saw_repeat`; IME / `#80` tap window still pass)
+- `rustup run stable cargo test -p kagra-core --no-default-features --locked mesh3d_`: **4 passed** (LRU, live keys kept, dead keys dropped, max ≥ 256)
+- GPU / `kagra.verify`: **not run** here (`kagra_core` wheel not built). CI is the GPU stand-in.
 
 ## Files
 

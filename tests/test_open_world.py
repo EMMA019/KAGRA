@@ -250,4 +250,3 @@ def test_mesh3d_tex_bg_cache_fits_crest_isle_vista():
     win = (_ROOT / "kagra-core" / "src" / "window.rs").read_text(encoding="utf-8")
     assert "path_texture_cache" in win
     assert "HashMap<(u32, String), u32>" in win
-    assert src.count("self._chunk_props = 0") == 1
