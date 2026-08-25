@@ -19,6 +19,8 @@ python -m kagra.verify examples/verify_scenarios/multi_avatar_smoke.json
 
 Share must hold: `vertex_buffers * live == primitives` and `shared_instances == live - unique_paths`. Desktop FPS is the HUD. This cloud VM had no usable GPU/rustc pair (rustc 1.83 vs lock `hashbrown 0.17.1` edition2024), so FPS is not a desktop number here.
 
+**GitHub CI: 17 checks passed** on `3d649a0` (`cursor/crest-isle-multi-avatar-06e8`), including `golden`, `rust-test`, `python-unit` 3.10/3.11/3.12, and Windows/Linux/macOS builds. PR: https://github.com/EMMA019/KAGRA/pull/89
+
 ## Left out
 
 True GPU instancing of skinned meshes (different palettes). Sharing across different VRM files. Extra bodies inside Crest Isle. Mixamo / Rapier / spatial / terrain / CSM / SSAO / WebXR / HRTF / doppler.

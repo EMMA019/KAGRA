@@ -24,4 +24,5 @@ Crest Isle stays 1 player so this PR does not touch `examples/vrm_open_world.py`
 
 - `pytest tests -m "not golden"` — pass (this VM).
 - `python tools/gen_api_index.py --check` — pass.
-- GPU smoke: this cloud rustc is 1.83; `Cargo.lock` already pins `hashbrown 0.17.1` (edition2024). `maturin develop` / `kagra.verify` could not run here. CI / Emma Windows is the GPU clock. Headless metric shipped: `kagra.vrm_gpu_stats()` + `scratch/multi_avatar_stats.json`.
+- GPU smoke: this cloud rustc is 1.83; `Cargo.lock` already pins `hashbrown 0.17.1` (edition2024). `maturin develop` / `kagra.verify` could not run here. Headless metric shipped: `kagra.vrm_gpu_stats()` + `scratch/multi_avatar_stats.json`.
+- GitHub CI: **17 checks passed** on `3d649a0` (includes `golden` + `rust-test`). Desktop FPS still needs Emma's GPU HUD.
