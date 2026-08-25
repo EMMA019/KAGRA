@@ -164,8 +164,10 @@ def test_game_file_uses_only_public_imports():
     # Optional VRMA override is allowed; Mixamo/BVH walk via resolve_asset is not.
     assert "walk.vrma" in text
     assert "except Exception:\n                pass" not in text
-    # Built-in idle/walk is the default (T-pose arm drop + swing).
+    # Built-in idle/walk/run is the fallback; Mixamo FBX is optional.
     assert "built-in" in text
+    assert "bind_locomotion" in text
+    assert "set_locomotion" in text
     for name in (
         "ensure_vrm",
         "resolve_asset",
@@ -190,6 +192,8 @@ def test_game_file_uses_only_public_imports():
         "ActionController",
         "Label",
         "draw_vignette",
+        "set_locomotion",
+        "bind_locomotion",
     ):
         assert name in text, name
 
@@ -197,3 +201,14 @@ def test_game_file_uses_only_public_imports():
 def test_readme_sample_line_stays():
     readme = (_ROOT / "README.md").read_text(encoding="utf-8")
     assert "python examples/vrm_relic_run.py" in readme
+
+
+def test_relic_run_poses_with_speed_blend_not_clip_snap():
+    src = (_ROOT / "examples" / "vrm_relic_run.py").read_text(encoding="utf-8")
+    pose = src[src.index("    def _pose") :]
+    nxt = pose.find("\n    def ", 10)
+    pose = pose[:nxt] if nxt != -1 else pose
+    assert "set_locomotion" in pose
+    assert 'want = "walk" if moving else "idle"' not in pose
+    assert "self.avatar.play(want" not in pose
+    assert "hypot(p.vx, p.vz)" in pose

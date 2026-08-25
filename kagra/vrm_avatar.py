@@ -1194,6 +1194,34 @@ class VrmAvatar:
         self._loco.speed = max(0.0, float(speed))
         self._loco.enabled = True
 
+    def bind_locomotion(self, mixamo_dir: str | None = None) -> dict:
+        """Load local Mixamo Idle/Walk/Run into the locomotion mixer clips.
+
+        Does **not** resolve the ``walk`` alias (that hits
+        ``tests/fixtures/synthetic_walk.bvh`` and used to overwrite built-in
+        walk). Missing files keep ``PRESETS``. Loaded FBX is rest+roll
+        retargeted in ``add_motion``. Damping is off so arm swing is full.
+
+        Returns ``{clip_name: path}`` for clips that loaded.
+        """
+        from kagra.contracts import resolve_mixamo_locomotion
+        from kagra.fbx_player import load_fbx
+
+        found = resolve_mixamo_locomotion(directory=mixamo_dir)
+        loaded: dict = {}
+        for clip_name, path in found.items():
+            try:
+                motion = load_fbx(str(path))
+                motion.apply_damp = False
+                self.add_motion(clip_name, motion)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Mixamo {clip_name} failed to load: {path}"
+                ) from exc
+            loaded[clip_name] = str(path)
+            print(f"[VrmAvatar] locomotion {clip_name} ← {path}")
+        return loaded
+
     def _overlay_owned_bones(self) -> set:
         """Bones currently claimed by the upper layer or ActionController."""
         owned: set = set()
@@ -1219,14 +1247,22 @@ class VrmAvatar:
         """BvhMotion / FbxMotion / VrmaMotion をクリップとして登録する。"""
         from kagra.fbx_player import FbxMotion
         from kagra.vrma_player import VrmaMotion
+        from kagra.retarget import mixamo_tpose_worlds, retarget_clip
         if isinstance(motion, FbxMotion):
             motion.vrm_hips_y = self._hips_bind_y()
             motion._cache = None
         clip = motion.to_clip()
         # dest 共役は VRMA の NormalizedLocalRotation 専用。
-        # Mixamo / BVH のローカルデルタに掛けると腰・袖が潰れて骨格お化けになる。
+        # Mixamo / BVH は source ワールドも要る（dest だけだと骨格お化け）。
         if isinstance(motion, VrmaMotion):
             clip = self._retarget_vrma_clip(clip)
+        else:
+            src = dict(getattr(motion, "src_worlds", None) or {})
+            if not src and isinstance(motion, FbxMotion):
+                src = mixamo_tpose_worlds()
+            dst = getattr(self, "_bind_worlds", None) or {}
+            if dst:
+                clip = retarget_clip(clip, src, dst)
         self._anim.register(name, clip)
         print(f"[VrmAvatar] '{name}': {len(clip)} frames @ {motion.fps:.1f}fps")
 

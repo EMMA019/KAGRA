@@ -296,12 +296,13 @@ impl Engine {
     }
 
     /// Mixamo 等の FBX アニメを読み込む。
-    /// 戻り値: [(clip_name, frame_time, frames), ...]
+    /// 戻り値: [(clip_name, frame_time, frames, bind_worlds), ...]
     /// frames[i] = [(name, tx,ty,tz, qx,qy,qz,qw, has_trans), ...]
+    /// bind_worlds = [(name, qx,qy,qz,qw), ...] バインドのワールド回転（ボーンロール）
     pub fn load_fbx_anim(
         &self,
         path: &str,
-    ) -> PyResult<Vec<(String, f64, Vec<Vec<(String, f32, f32, f32, f32, f32, f32, f32, bool)>>)>> {
+    ) -> PyResult<Vec<(String, f64, Vec<Vec<(String, f32, f32, f32, f32, f32, f32, f32, bool)>>, Vec<(String, f32, f32, f32, f32)>)>> {
         let clips = crate::fbx_loader::load_fbx_anim(path)?;
         Ok(clips
             .into_iter()
@@ -328,7 +329,12 @@ impl Engine {
                             .collect()
                     })
                     .collect();
-                (c.name, c.frame_time, frames)
+                let bind_worlds = c
+                    .bind_worlds
+                    .into_iter()
+                    .map(|(n, q)| (n, q[0], q[1], q[2], q[3]))
+                    .collect();
+                (c.name, c.frame_time, frames, bind_worlds)
             })
             .collect())
     }

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Mixamo FBX locomotion on VRoid: rest-pose + bone-roll retarget so Idle/Walk/Run hang and swing instead of folding into a carry pose (T-pose Emma and A-pose Alicia). `avatar.bind_locomotion()` loads local Mixamo FBX into the existing `set_locomotion` mixer (never the `walk` alias / `synthetic_walk.bvh`). `dance()` stays a full-body drop path. No Mixamo binaries in git.
+
 - Multi-avatar GPU share: same-path `kagra.avatar()` / `load_vrm()` clones Arc-share mesh / texture / MToon. Joint palettes, pose, expressions, and SpringBone stay per instance. Mesh3D LRU (256, never evict live diffuse) is still Props-only — a second Alicia does not multiply that cache. Measure with `kagra.vrm_gpu_stats()`. Spawn extras in `examples/vrm_multi_avatar.py` (`KAGRA_AVATARS=N`). Crest Isle play stays one player (title / input / camera). No Rapier / Mixamo / spatial audio / terrain retune.
 - Crest Isle spatial audio: engine listener + world sources (`set_listener`, `play_se(..., x=, y=, z=)`, `play_loop`). Inverse-distance gain and equal-power stereo pan (no HRTF). Crest Isle loops a procedural sea drone at west water; crest/coin pickups play at the collectible. Title/start/win stay 2D. `sound()` unchanged. No Rapier / Mixamo / locomotion / multi-avatar / CSM.
 - Crest Isle locomotion: `avatar.set_locomotion(speed)` blends built-in idle/walk/run (no Mixamo). Start/stop and analog stick no longer hard-cut the clip. `play_upper` / ActionController own spine/arms while legs keep walking (overlay does not mutate locomotion `current_rots`). `walk_wish` keeps analog magnitude. Mixamo/BVH walk still skipped (folded arms). No Rapier / terrain retune / spatial audio / multi-avatar.

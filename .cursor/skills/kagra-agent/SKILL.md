@@ -43,7 +43,8 @@ Outdoor: `apply_outdoor_look` / `World3D.set_height_fn(overworld_height, tile=10
 fall and stack; `Walk` stands on them (`add_box(..., is_static=False)`).
 Play: `clicked_prop` / `Walk.carry` / `animate` / `Label` / `sound`.
 3D SE: `set_listener` / `play_se(..., x=, y=, z=)` / `play_loop` (distance + stereo pan).
-`avatar.set_locomotion(speed)` blends idle/walk/run (built-in `run` clip).
+`avatar.set_locomotion(speed)` blends idle/walk/run. Local Mixamo FBX:
+`avatar.bind_locomotion()` (rest+roll onto VRoid; never the `walk` alias).
 `play_upper` / `ActionController` overlay spine/arms without fighting the legs.
 Same-path `kagra.avatar()` shares GPU mesh/texture/MToon (`vrm_gpu_stats()`).
 Agent eyes: `kagra.annotate` (click → JSONL) / `kagra.debug_trace` (foot vs terrain, threshold 0.05).

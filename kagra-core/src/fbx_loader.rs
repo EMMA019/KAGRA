@@ -16,6 +16,8 @@ pub struct FbxClip {
     pub name: String,
     pub frame_time: f64,
     pub frames: Vec<Vec<FbxBoneFrame>>,
+    /// Bind-pose world rotations (name, xyzw). Mixamo T-pose bone roll.
+    pub bind_worlds: Vec<(String, [f32; 4])>,
 }
 
 fn qmul(a: [f32;4], b: [f32;4]) -> [f32;4] {
@@ -45,6 +47,53 @@ fn to_q(q: &ufbx::Quat) -> [f32;4] {
     qnorm([q.x as f32, q.y as f32, q.z as f32, q.w as f32])
 }
 
+/// Rotation part of `node_to_world` (column-major 3x3).
+fn mat_to_quat(m: &ufbx::Matrix) -> [f32; 4] {
+    let m00 = m.m00 as f32;
+    let m11 = m.m11 as f32;
+    let m22 = m.m22 as f32;
+    let m10 = m.m10 as f32;
+    let m01 = m.m01 as f32;
+    let m20 = m.m20 as f32;
+    let m02 = m.m02 as f32;
+    let m21 = m.m21 as f32;
+    let m12 = m.m12 as f32;
+    let trace = m00 + m11 + m22;
+    if trace > 0.0 {
+        let s = (trace + 1.0).sqrt() * 2.0;
+        qnorm([
+            (m21 - m12) / s,
+            (m02 - m20) / s,
+            (m10 - m01) / s,
+            0.25 * s,
+        ])
+    } else if m00 > m11 && m00 > m22 {
+        let s = (1.0 + m00 - m11 - m22).sqrt() * 2.0;
+        qnorm([
+            0.25 * s,
+            (m01 + m10) / s,
+            (m02 + m20) / s,
+            (m21 - m12) / s,
+        ])
+    } else if m11 > m22 {
+        let s = (1.0 + m11 - m00 - m22).sqrt() * 2.0;
+        qnorm([
+            (m01 + m10) / s,
+            0.25 * s,
+            (m12 + m21) / s,
+            (m02 - m20) / s,
+        ])
+    } else {
+        let s = (1.0 + m22 - m00 - m11).sqrt() * 2.0;
+        qnorm([
+            (m02 + m20) / s,
+            (m12 + m21) / s,
+            0.25 * s,
+            (m10 - m01) / s,
+        ])
+    }
+}
+
 pub fn load_fbx_anim(path: &str) -> KaguraResult<Vec<FbxClip>> {
     let opts = ufbx::LoadOpts {
         target_axes: ufbx::CoordinateAxes::right_handed_y_up(),
@@ -54,9 +103,13 @@ pub fn load_fbx_anim(path: &str) -> KaguraResult<Vec<FbxClip>> {
     let scene = ufbx::load_file(path, opts)
         .map_err(|e| KaguraError::FbxLoad(format!("FBX load error: {}", e.description)))?;
 
-    // バインドポーズのローカル回転を収集
+    // バインドポーズのローカル回転とワールド回転を収集
     let bind_local: Vec<[f32;4]> = scene.nodes.iter()
         .map(|n| to_q(&n.local_transform.rotation))
+        .collect();
+    let bind_worlds: Vec<(String, [f32; 4])> = scene.nodes.iter()
+        .map(|n| (n.element.name.to_string(), mat_to_quat(&n.node_to_world)))
+        .filter(|(name, _)| !name.is_empty())
         .collect();
 
     let mut clips = Vec::new();
@@ -152,6 +205,7 @@ pub fn load_fbx_anim(path: &str) -> KaguraResult<Vec<FbxClip>> {
             name: clip_name,
             frame_time,
             frames,
+            bind_worlds: bind_worlds.clone(),
         });
     }
 

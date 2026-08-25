@@ -132,6 +132,7 @@ class _Joint:
     name:     str
     channels: list[str]
     vrm_name: Optional[str]
+    parent:   Optional[int] = None
 
 def _qinv(q: list) -> list:
     """単位クォータニオンの逆。"""
@@ -159,6 +160,7 @@ class BvhMotion:
     frames:     list[list[float]]
     up_axis:    str = "y"
     _cache:     Optional[list] = field(default=None, repr=False)
+    src_worlds: dict = field(default_factory=dict)
 
     @property
     def fps(self) -> float:
@@ -233,6 +235,47 @@ class BvhMotion:
 
         return bones, hips_pos
 
+    def _frame_locals(self, frame_vals: list[float]) -> list:
+        """Per-joint rest/anim local quats (identity if the joint has no rotation)."""
+        locals_q = [[0.0, 0.0, 0.0, 1.0] for _ in self._joints]
+        offset = 0
+        for i, joint in enumerate(self._joints):
+            n = len(joint.channels)
+            vals = frame_vals[offset:offset + n]
+            offset += n
+            ro, rv = [], []
+            for ch, v in zip(joint.channels, vals):
+                if "ROTATION" in ch.upper():
+                    ro.append(ch[0].upper())
+                    rv.append(v)
+            if len(ro) != 3:
+                continue
+            q = euler_to_quat(rv, "".join(ro))
+            if joint.vrm_name == "J_Bip_C_Hips":
+                q = self._remap_hips_quat(q)
+            locals_q[i] = _quat_normalize(q)
+        return locals_q
+
+    def rest_worlds(self) -> dict:
+        """Frame-0 world rest (same rest ``to_clip`` deltas are relative to)."""
+        if not self.frames:
+            return {}
+        if self.src_worlds:
+            return self.src_worlds
+        locals_q = self._frame_locals(self.frames[0])
+        worlds_i = [[0.0, 0.0, 0.0, 1.0] for _ in self._joints]
+        out = {}
+        for i, joint in enumerate(self._joints):
+            local = locals_q[i]
+            if joint.parent is None:
+                worlds_i[i] = local
+            else:
+                worlds_i[i] = _quat_normalize(_qmul(worlds_i[joint.parent], local))
+            if joint.vrm_name:
+                out[joint.vrm_name] = tuple(worlds_i[i])
+        self.src_worlds = out
+        return out
+
     def to_clip(self) -> list:
         """VrmAvatar 向け [(bones_dict, duration, root_pos), ...] に変換する。
 
@@ -265,6 +308,7 @@ class BvhMotion:
             clip.append((deltas, self.frame_time, root_pos))
 
         self._cache = clip
+        self.rest_worlds()
         return clip
 
 
@@ -286,14 +330,17 @@ def _skip_block(lines: list[str], idx: int) -> int:
 
 def _parse_joint(lines: list[str], idx: int,
                  joints: list[_Joint],
-                 extra_map: dict) -> int:
+                 extra_map: dict,
+                 parent: int | None = None) -> int:
     """ROOT / JOINT ブロックを再帰的にパースする。"""
     raw_name = lines[idx].split()[-1]
     joint = _Joint(
         name=raw_name,
         channels=[],
         vrm_name=_to_vrm(raw_name, extra_map),
+        parent=parent,
     )
+    my_idx = len(joints)
     joints.append(joint)
     idx += 1  # { を読み飛ばす
     if idx < len(lines) and lines[idx].strip() == "{":
@@ -309,7 +356,7 @@ def _parse_joint(lines: list[str], idx: int,
             joint.channels = tok[2:2+n]
             idx += 1
         elif kw == "JOINT":
-            idx = _parse_joint(lines, idx, joints, extra_map)
+            idx = _parse_joint(lines, idx, joints, extra_map, parent=my_idx)
         elif kw == "END":          # End Site
             idx += 1               # "End Site" 行
             idx = _skip_block(lines, idx)

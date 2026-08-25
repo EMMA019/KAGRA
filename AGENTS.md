@@ -82,8 +82,11 @@ PNG/WAV/projection:
 - `Camera3D.follow(..., world=)` — pull the chase camera in so it does not go through walls
 - `ActionController` — one-shot poses; `ActionController.names()` lists them
 - `avatar.set_locomotion(speed)` — idle/walk/run speed blend (no clip snap).
-  `play_upper` keeps spine/arms independent; ActionController overlays do not
-  fight the walk arm swing
+  Local Mixamo Idle/Walk/Run: `avatar.bind_locomotion()` (rest+roll
+  compensation onto VRoid). Do not resolve the `walk` alias
+  (`synthetic_walk.bvh`). `play_upper` keeps spine/arms independent;
+  ActionController overlays do not fight the walk arm swing.
+  `dance()` is a full-body clip, not locomotion.
 - `kagra.avatar(path)` twice shares GPU mesh/texture/MToon. Measure with
   `vrm_gpu_stats()`. Extra bodies: `examples/vrm_multi_avatar.py`
   (Crest Isle stays one player)

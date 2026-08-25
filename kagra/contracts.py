@@ -277,6 +277,93 @@ def require_files(paths: Iterable[str | Path], *, root: Path | None = None) -> l
     return found
 
 
+_MIXAMO_CLIP_FILES: dict[str, tuple[str, ...]] = {
+    "idle": (
+        "Idle.fbx",
+        "idle.fbx",
+        "Female Standing Pose.fbx",
+        "Standing Idle.fbx",
+    ),
+    "walk": (
+        "walk.fbx",
+        "Walk.fbx",
+        "Walking.fbx",
+        "Catwalk Walk.fbx",
+        "Female Tough Walk.fbx",
+    ),
+    "run": (
+        "Running.fbx",
+        "running.fbx",
+        "Run.fbx",
+        "run.fbx",
+        "Jogging.fbx",
+    ),
+}
+
+
+def mixamo_search_dirs(
+    *,
+    root: Path | None = None,
+    directory: str | Path | None = None,
+) -> list[Path]:
+    """Folders that may hold Emma's local Mixamo pack. No test fixtures."""
+    root = root or project_root()
+    out: list[Path] = []
+    if directory:
+        out.append(Path(directory))
+    env = os.environ.get("KAGRA_MIXAMO_DIR")
+    if env:
+        out.append(Path(env))
+    out.extend(
+        [
+            root / "assets" / "mixamo",
+            root / "assets",
+            Path(r"D:\program\kagra\assets\mixamo"),
+            Path(r"D:\program\kagra\assets"),
+        ]
+    )
+    seen: set[str] = set()
+    dirs: list[Path] = []
+    for p in out:
+        key = os.path.normcase(str(p))
+        if key in seen:
+            continue
+        seen.add(key)
+        dirs.append(p)
+    return dirs
+
+
+def resolve_mixamo_locomotion(
+    *,
+    root: Path | None = None,
+    directory: str | Path | None = None,
+) -> dict[str, Path]:
+    """Idle/Walk/Run Mixamo FBX only. Never ``synthetic_walk.bvh``.
+
+    Looks in ``KAGRA_MIXAMO_DIR``, ``assets/mixamo/``, ``assets/``, and
+    Emma's Windows ``D:\\program\\kagra\\assets\\mixamo\\``.
+    """
+    root = root or project_root()
+    dirs = [d for d in mixamo_search_dirs(root=root, directory=directory) if d.is_dir()]
+    found: dict[str, Path] = {}
+    for clip, names in _MIXAMO_CLIP_FILES.items():
+        for folder in dirs:
+            hit = None
+            try:
+                listing = {n.lower(): folder / n for n in os.listdir(folder)}
+            except OSError:
+                continue
+            for name in names:
+                p = listing.get(name.lower())
+                if p is not None and p.is_file() and p.suffix.lower() == ".fbx":
+                    hit = p.resolve()
+                    break
+            if hit is not None:
+                found[clip] = hit
+                break
+    return found
+
+
 def describe_environment(root: Path | None = None) -> dict:
     """エージェント向け環境スナップショット。"""
     root = root or project_root()

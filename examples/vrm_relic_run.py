@@ -11,9 +11,9 @@ Art (CC0, not in the pip wheel):
   Poly Haven aerial_grass_rock + kloofendal_48d_partly_cloudy_puresky —
   https://polyhaven.com (CC0). See examples/assets/relic_run/LICENSE.md.
 
-Walk: built-in VrmAvatar idle/walk (T-pose arm drop + opposite-phase swing).
-Mixamo/synthetic BVH walk is NOT loaded — those clips rest in T-pose, so
-bind*delta leaves Emma's arms folded forward like a carry/formal pose.
+Walk: ``avatar.set_locomotion`` (idle/walk/run). Local Mixamo Idle/Walk/Run
+is loaded when present (rest+roll retarget). Otherwise built-in clips.
+The ``walk`` alias (synthetic_walk.bvh) is not used.
 
 操作:
   WASD / 左スティック : 歩く
@@ -84,9 +84,9 @@ def _gltf(name: str) -> str:
 
 
 def _bind_locomotion(avatar) -> None:
-    """Keep engine idle/walk. Mixamo/BVH walk rest is T-pose → folded arms.
+    """Optional VRMA, else local Mixamo Idle/Walk/Run, else built-in clips.
 
-    A shipped VRMA next to the example is loaded with no silent except.
+    Never resolves the ``walk`` alias (synthetic_walk.bvh overwrote built-in).
     """
     vrma = _ASSETS / "walk.vrma"
     if vrma.is_file():
@@ -98,7 +98,11 @@ def _bind_locomotion(avatar) -> None:
             ) from exc
         print(f"[RelicRun] walk ← {vrma}")
         return
-    print("[RelicRun] walk ← built-in idle/walk (arm swing). Mixamo/BVH skipped.")
+    loaded = avatar.bind_locomotion()
+    if loaded:
+        print(f"[RelicRun] locomotion ← Mixamo {loaded}")
+        return
+    print("[RelicRun] walk ← built-in idle/walk/run (arm swing). Mixamo FBX not found.")
 
 
 def _relic_glow_tex():
@@ -355,12 +359,14 @@ class RelicRun(kagra.Scene):
 
     def _pose(self, dt, *, move: bool):
         p = self.world.player
-        moving = False
+        speed = 0.0
         if move and p is not None:
-            moving = p.vx * p.vx + p.vz * p.vz > 0.04 or abs(getattr(p, "vy", 0.0)) > 0.4
-        want = "walk" if moving else "idle"
-        if getattr(self.avatar, "clip", None) != want:
-            self.avatar.play(want, loop=True)
+            speed = math.hypot(p.vx, p.vz)
+        self.avatar.set_locomotion(
+            speed,
+            walk_speed=2.2,
+            run_speed=float(getattr(self.walk, "speed", PLAYER_SPEED)),
+        )
         self.avatar.update(dt)
         self.action.update(dt)
         if p is None:

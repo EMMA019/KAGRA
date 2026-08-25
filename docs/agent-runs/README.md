@@ -52,3 +52,4 @@
 - `20260825-crest-isle-loco-blend/` — Crest Isle 歩き速度ブレンド + 上半身レイヤ（idle/walk/run。Mixamo は入れない）
 - `20260825-crest-isle-spatial-audio/` — Crest Isle 立体音（listener + 海ループ + 拾い SE。HRTF ではない）
 - `20260825-multi-avatar/` — 複数 VRM の GPU 共有 + FPS 見本（Crest Isle は 1 人のまま）
+- `20260825-mixamo-vroid-locomotion/` — Mixamo FBX を VRoid に rest+roll 補償して歩きに載せる（前傾腕をやめる）

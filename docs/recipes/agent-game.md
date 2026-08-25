@@ -77,7 +77,7 @@ Result: `examples/vrm_dodge_room.py`
 | 3D SE | `set_listener(x,y,z, fx,fy,fz)` then `play_se(path, x=, y=, z=)` / `play_loop` |
 | Score | `kagra.save_json` / `kagra.load_json` |
 | One-shot pose | `ActionController(avatar)` then `action.play("clap")` — `ActionController.names()` |
-| Locomotion blend | `avatar.set_locomotion(speed)` idle/walk/run. `play_upper("idle")` for spine/arms while legs walk |
+| Locomotion blend | `avatar.set_locomotion(speed)` idle/walk/run. Local Mixamo: `bind_locomotion()` (not the `walk` alias). `play_upper("idle")` for spine/arms while legs walk |
 | N VRM | same-path `kagra.avatar(path)` shares GPU. `vrm_gpu_stats()`. Example: `vrm_multi_avatar.py` |
 
 ## Close the loop
