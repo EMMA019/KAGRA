@@ -74,6 +74,7 @@ Result: `examples/vrm_dodge_room.py`
 | Shape hit | `Prop("sphere")` / `cylinder` collide and hover as those shapes, not boxes |
 | Mesh retain | `upload_mesh_3d` once, `draw_mesh_id` each frame — or `world.bake` / `world.draw` |
 | Art / SE | `kagra.texture_from_fn` / `kagra.tone` / `kagra.sound` / `kagra.draw_billboard` |
+| 3D SE | `set_listener(x,y,z, fx,fy,fz)` then `play_se(path, x=, y=, z=)` / `play_loop` |
 | Score | `kagra.save_json` / `kagra.load_json` |
 | One-shot pose | `ActionController(avatar)` then `action.play("clap")` — `ActionController.names()` |
 

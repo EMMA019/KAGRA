@@ -1074,6 +1074,60 @@ impl Engine {
     pub fn play_se(&self, path: &str, volume: f32) -> PyResult<()> {
         self.with_audio(|a| a.play_se(path, volume))
     }
+    #[pyo3(signature = (path, x, y, z, volume=1.0, ref_distance=4.0, max_distance=48.0))]
+    pub fn play_se_at(
+        &self,
+        path: &str,
+        x: f32,
+        y: f32,
+        z: f32,
+        volume: f32,
+        ref_distance: f32,
+        max_distance: f32,
+    ) -> PyResult<()> {
+        self.with_audio(|a| a.play_se_at(path, [x, y, z], volume, ref_distance, max_distance))
+    }
+    #[pyo3(signature = (x, y, z, fx=0.0, fy=0.0, fz=1.0, ux=0.0, uy=1.0, uz=0.0))]
+    pub fn set_listener(
+        &self,
+        x: f32,
+        y: f32,
+        z: f32,
+        fx: f32,
+        fy: f32,
+        fz: f32,
+        ux: f32,
+        uy: f32,
+        uz: f32,
+    ) {
+        if let Some(a) = lock_recover(&self.audio).as_ref() {
+            a.set_listener(x, y, z, fx, fy, fz, ux, uy, uz);
+        }
+    }
+    #[pyo3(signature = (path, x, y, z, volume=0.4, ref_distance=12.0, max_distance=72.0))]
+    pub fn play_loop_at(
+        &self,
+        path: &str,
+        x: f32,
+        y: f32,
+        z: f32,
+        volume: f32,
+        ref_distance: f32,
+        max_distance: f32,
+    ) -> PyResult<u32> {
+        match lock_recover(&self.audio).as_ref() {
+            Some(a) => a
+                .play_loop_at(path, [x, y, z], volume, ref_distance, max_distance)
+                .map_err(pyo3::exceptions::PyRuntimeError::new_err),
+            None => Ok(0),
+        }
+    }
+    #[pyo3(signature = (source_id=None))]
+    pub fn stop_loop(&self, source_id: Option<u32>) {
+        if let Some(a) = lock_recover(&self.audio).as_ref() {
+            a.stop_loop(source_id);
+        }
+    }
     pub fn stop_all_se(&self) {
         if let Some(a) = lock_recover(&self.audio).as_ref() { a.stop_all_se(); }
     }

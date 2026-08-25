@@ -49,3 +49,4 @@
 - `20260825-crest-isle-repress-look/` — 長押し後の再押し無視・茶色い草原・白い空・チェイスカメラが頭に刺さる（ゲーム修正。GPU は CI / Emma の Windows）
 - `20260825-crest-isle-title/` — Crest Isle タイトルが半透明で割れた島の上に乗っていたのを不透明メニューにする（ゲーム修正。GPU は SMOKE=play のまま）
 - `20260825-sleeve-stiffness/` — Crest Isle 袖/布の剛性（SpringBone Verlet を UniVRM に合わせ、Alicia に袖ヘルパー。ゲームではない）
+- `20260825-crest-isle-spatial-audio/` — Crest Isle 立体音（listener + 海ループ + 拾い SE。HRTF ではない）

@@ -72,7 +72,7 @@ Walk の strafe は画面右（#55）。
 | `mouse` クリック | `clicked_prop` / `carry` | 使って持つ（見本で） | フルインベントリ UI |
 | `e.animate` | `animate` / Sequence | 手書き `p.x +=` をやめる | Tween カタログ全部 |
 | `Button` / `Text` | `Label` / `Button` | エージェントが `fill`+`text` を書かない | Dear ImGui |
-| `Audio` | `sound("coin")` | 一行 | DAW |
+| `Audio` | `sound("coin")` / `play_se(..., x=)` | 2D + 距離/パン | HRTF / DAW |
 | `Entity(model='*.glb')` | 静的に畳む。`mesh_hit` | 法線が画素で見える | スキン Prop |
 | ゲームパッド | `inject_pad` + gilrs | 実機で歩く | 全ベンダ抽象 |
 

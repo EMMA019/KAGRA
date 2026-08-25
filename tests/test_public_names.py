@@ -51,6 +51,8 @@ DEMO_CALLABLES = (
     "open_world_height",
     "overworld_height",
     "play_se",
+    "play_loop",
+    "set_listener",
     "pressed",
     "quit",
     "save_json",

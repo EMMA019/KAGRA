@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **422**
+エントリ数: **426**
 
 棚の**手前**は VRM / 3D ワールド / エージェントゲーム。
 棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。
@@ -56,6 +56,8 @@
 | `mouse_delta` | `mouse_delta() -> tuple` |
 | `open_world_height` | `open_world_height(x: float, z: float) -> float` |
 | `overworld_height` | `overworld_height(x: float, z: float) -> float` |
+| `play_loop` | `play_loop(path: str, x: float, y: float, z: float, *, volume: float = 0.4, ref_distance: float = 12.0, max_distance: float = 72.0) -> int` |
+| `play_se` | `play_se(path: str, volume: float = 1.0, *, x: float \| None = None, y: float = 0.0, z: float = 0.0, ref_distance: float = 4.0, max_distance: float = 48.0) -> None` |
 | `pressed` | `pressed(name: str) -> bool` |
 | `quad_y_mesh` | `quad_y_mesh(cx: float = 0.0, cy: float = 0.0, cz: float = 0.0, size: float = 0.5)` |
 | `quit` | `quit()` |
@@ -75,6 +77,7 @@
 | `set_fog` | `set_fog(start: float = 5.0, end: float = 20.0, color: tuple = (110, 180, 230), *, enabled: bool = True)` |
 | `set_hdri` | `set_hdri(path: str \| None = 'studio', strength: float = 1.0)` |
 | `set_light_dir` | `set_light_dir(x: float, y: float, z: float)` |
+| `set_listener` | `set_listener(x: float, y: float, z: float, fx: float = 0.0, fy: float = 0.0, fz: float = 1.0, ux: float = 0.0, uy: float = 1.0, uz: float = 0.0) -> None` |
 | `set_mesh_cull` | `set_mesh_cull(enabled: bool = True)` |
 | `set_mesh_normal` | `set_mesh_normal(mesh_id: int, texture_id: int = 0)` |
 | `set_mesh_pbr` | `set_mesh_pbr(mesh_id: int, metallic: float = 0.0, roughness: float = 1.0, base_color: tuple = (1.0, 1.0, 1.0))` |
@@ -88,9 +91,11 @@
 | `sky` | `sky(*, radius: float = 18.0, look: bool = True)` |
 | `solid_tex` | `solid_tex(color)` |
 | `sound` | `sound(name: str = 'coin', freqs=None, duration: float = 0.1, volume: float = 0.32) -> str` |
+| `spatial_mix` | `spatial_mix(lx: float, ly: float, lz: float, fx: float, fy: float, fz: float, sx: float, sy: float, sz: float, *, ref_distance: float = 4.0, max_distance: float = 48.0, ux: float = 0.0, uy: float = 1.0, uz: float = 0.0) -> tuple[float, float, float, float]` |
 | `sphere_mesh` | `sphere_mesh(cx: float = 0.0, cy: float = 0.0, cz: float = 0.0, radius: float = 0.5, segs: int = 16)` |
 | `stage` | `stage(path: str = 'stage', *, radius: float = 12.0) -> 'Stage'` |
 | `stair_y` | `stair_y(x: float, z: float, *, x0: float, x1: float, z0: float, z1: float, y0: float, y1: float, steps: int = 6, axis: str = 'z')` |
+| `stop_loop` | `stop_loop(source_id: int \| None = None) -> None` |
 | `text` | `text(s, x: float, y: float, size: int = 24, color=(255, 255, 255), font: int = None, alpha: int = 255)` |
 | `texture_from_fn` | `texture_from_fn(width: int, height: int, pixel_fn, *, name: str \| None = None, srgb: bool = True) -> int` |
 | `tick_count` | `tick_count() -> int` |
@@ -240,7 +245,6 @@
 | `once` | `once(event, callback, priority=0)` |
 | `pick_vrm_bone` | `pick_vrm_bone(vrm_id: int, ox: float, oy: float, oz: float, dx: float, dy: float, dz: float, max_dist: float = 100.0)` |
 | `play_bgm` | `play_bgm(path: str, loop_=True, volume=0.8)` |
-| `play_se` | `play_se(path: str, volume=1.0)` |
 | `point_in_rect` | `point_in_rect(px, py, rx, ry, rw, rh)` |
 | `polygon` | `polygon(pts: list, color=(255, 255, 255), alpha: int = 255)` |
 | `polygon_outline` | `polygon_outline(pts: list, color=(255, 255, 255), width: float = 1, alpha: int = 255)` |
@@ -458,7 +462,7 @@
 - カメラ壁クリップ: `Camera3D.follow(..., world=)` がプレイヤー→カメラの線分を静的箱に当て、当たったら距離を縮める。`min_distance` / `max_distance` で VRM 頭の中と Tiny speck を防ぐ。`Walk` は自動。
 - 動く Prop: `p.x` / `set_position` / `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)` か `p.enabled = False`。持つのは `Walk.carry(prop)`。
 - `animate(obj, "y", end)` / `sequence` / `Tween`。`Prop.update_all` が回す。
-- HUD: `Label` / `Button`（画面空間。2D `kagra.ui` の同名は棚）。音は `sound("coin")`。
+- HUD: `Label` / `Button`（画面空間。2D `kagra.ui` の同名は棚）。音は `sound("coin")`。3D は `set_listener` + `play_se(..., x=, y=, z=)` / `play_loop`（距離減衰 + ステレオパン。HRTF ではない）。
 - 球 / 円柱の当たりとホバーは AABB ではない。`World3D.add_sphere` / `add_cylinder`。
 - Prop テクスチャ: `texture=kagra.texture_from_fn(...)` または `load`。0 なら `color`。
 - Prop 親子は 4 段（玄孫まで）。子の `x,y,z,yaw` はローカル。
