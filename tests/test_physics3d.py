@@ -140,6 +140,28 @@ def test_raycast_obb():
     assert hit[0] is wall
 
 
+def test_raycast_ignore_skips_body():
+    m = _phys()
+    p = m.Physics3D(gravity=0)
+    cap = p.add_capsule(0, 0, 1, radius=0.3, height=1.6)
+    wall = p.add_body(0, 0, 4, 2.0, 2.0, 0.4, is_static=True)
+    hit = p.raycast(0, 0.8, 0, 0, 0, 1, max_dist=20)
+    assert hit is not None and hit[0] is cap
+    hit = p.raycast(0, 0.8, 0, 0, 0, 1, max_dist=20, ignore=cap)
+    assert hit is not None and hit[0] is wall
+
+
+def test_raycast_static_only_skips_dynamic():
+    m = _phys()
+    p = m.Physics3D(gravity=0)
+    p.add_body(0, 0, 2, 1.0, 1.0, 1.0, is_static=False)
+    wall = p.add_body(0, 0, 5, 2.0, 2.0, 0.4, is_static=True)
+    hit = p.raycast(0, 0.5, 0, 0, 0, 1, max_dist=20, static_only=True)
+    assert hit is not None and hit[0] is wall
+    hit = p.raycast(0, 0.5, 0, 0, 0, 1, max_dist=20)
+    assert hit is not None and hit[0].is_static is False
+
+
 def test_sync_vrm_reads_avatar_id():
     m = _phys()
     p = m.Physics3D()

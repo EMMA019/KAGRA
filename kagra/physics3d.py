@@ -687,8 +687,14 @@ class Physics3D:
 
     def raycast(self, ox: float, oy: float, oz: float,
                 dx: float, dy: float, dz: float,
-                max_dist: float = 100.0) -> Optional[tuple]:
-        """レイキャスト。AABB / カプセル / OBB。
+                max_dist: float = 100.0, *,
+                ignore=None,
+                skip_triggers: bool = False,
+                static_only: bool = False) -> Optional[tuple]:
+        """レイキャスト。AABB / カプセル / OBB / 三角形。
+
+        ``ignore`` は 1 体か iterable。カメラ壁クリップはプレイヤーを除外する。
+        ``static_only`` は動く積み木を飛ばす（Chase が箱に吸い付かない）。
 
         Returns:
             (body, distance, hit_x, hit_y, hit_z) または None
@@ -700,11 +706,26 @@ class Physics3D:
         dy /= length
         dz /= length
 
+        skip: set[int] = set()
+        if ignore is not None:
+            if isinstance(ignore, RigidBody3D):
+                skip.add(id(ignore))
+            else:
+                for body in ignore:
+                    if body is not None:
+                        skip.add(id(body))
+
         best_t = max_dist
         best_body = None
 
         for body in self.bodies:
             if not body.active:
+                continue
+            if id(body) in skip:
+                continue
+            if skip_triggers and body.trigger:
+                continue
+            if static_only and not body.is_static:
                 continue
             t = _ray_body(ox, oy, oz, dx, dy, dz, body)
             if t is not None and 0 < t < best_t:

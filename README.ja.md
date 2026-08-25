@@ -104,6 +104,7 @@ python -m kagra
 KAGRA の開発ループは人間だけでなく AI コーディングエージェント用に設計されています。エージェントは API を検索し、シーンを書き、**画面を見ずにヘッドレスで検証**できます。
 
 - **[AGENTS.md](AGENTS.md)** — どのエージェントでも使える行動規範（Claude Code / Cursor / Windsurf …）。Cursor は `.cursor/skills/` から同じ規則を自動で拾う
+- **エージェントの目** — `kagra.annotate`（クリックを数値に）と `kagra.debug_trace`（足と地形の JSONL）。ビジュアルエディタではない
 - **API 索引** — [`docs/API_INDEX.md`](docs/API_INDEX.md) は AST から生成。エージェントは推測ではなく検索する
 - **ヘッドレス検証** — `python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json` で目視なしにループを閉じる
 - **MCP サーバー** — `tools/mcp_kagra/server.py`: `kagra_api_search` / `kagra_env` / `kagra_resolve_asset` / `kagra_verify` / `kagra_render`

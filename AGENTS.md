@@ -76,6 +76,9 @@ PNG/WAV/projection:
 - `Prop("crate.glb")` — static glTF part (not `stage()`). Alias `cube.glb`
 - `axis("left")` / `pad("a")` / `inject_pad` — gamepad. `Walk` reads both sticks
 - `kagra.save_json` / `load_json` — high scores
+- `kagra.annotate(sx, sy)` — preview click → JSONL (screen / world / bone / Prop id). How 「ここもう少し」 becomes numbers. Not a visual editor
+- `kagra.debug_trace(foot_y=…, height_fn=…)` — slope-float detector (`|foot-terrain|` while grounded). `debug_trace_summary()` → `frames 32-48 floated 0.15`
+- `Camera3D.follow(..., world=)` — pull the chase camera in so it does not go through walls
 - `ActionController` — one-shot poses; `ActionController.names()` lists them
 
 Verify: `examples/verify_scenarios/orb_rush_smoke.json`,

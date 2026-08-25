@@ -117,6 +117,7 @@ class PrettyRoom(kagra.Scene):
         self.cam.follow(
             p.x, p.y, p.z,
             lerp=1.0, yaw=yaw, distance=dist, height=height, look_y=look_y,
+            world=self.world,
         )
         kagra.set_camera3d(self.cam)
         self.walk = kagra.Walk(

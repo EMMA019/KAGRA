@@ -148,3 +148,13 @@ def test_pairwise_outdoor_crawl():
     # 平行光のウンブラは mix(0.50)。室内スポットの 4.0 より弱い。0.000 は未到達。
     assert_pngs_differ(on, off, min_mean_abs=2.0, name="outdoor_crawl")
     assert_pngs_similar(on, nudge, max_mean_abs=2.5, name="outdoor_crawl_nudge")
+
+
+def test_pairwise_prop_toon():
+    """Prop/terrain Lambert uses cam.toon when softness < 0.999 (same as VRM)."""
+    _ensure_kagra()
+    from tests.golden_utils import assert_pngs_differ
+
+    on = _render("prop_toon", "prop_toon.png")
+    off = _render("prop_toon_off", "prop_toon_off.png")
+    assert_pngs_differ(on, off, min_mean_abs=2.0, name="prop_toon")

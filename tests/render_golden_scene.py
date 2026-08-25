@@ -331,6 +331,45 @@ class OutdoorCrawlOff(OutdoorCrawl):
     shadows = False
 
 
+class PropToon(kagra.Scene):
+    """Lambert Prop/terrain with cam.toon stepped lighting (same path as VRM)."""
+
+    toon = True
+
+    def on_enter(self):
+        self.tex = kagra.load(solid_png(210, 170, 120))
+        _bind_cam(self, 3.4, 0.85, 0.38, (0.0, 0.55, 0.0), fov=40.0)
+        fv, fi = kagra.quad_y_mesh(0.0, 0.0, 0.0, 3.0)
+        bv, bi = kagra.box_mesh(0.0, 0.55, 0.0, 1.1, 1.1, 1.1)
+        self.floor = kagra.upload_mesh_3d(self.tex, fv, fi)
+        self.box = kagra.upload_mesh_3d(self.tex, bv, bi)
+        kagra.set_shadow_enabled(False)
+        kagra.set_bloom(enabled=False)
+        kagra.set_tonemap(False)
+        kagra.set_hdri(None, strength=0.0)
+        kagra.set_ambient(0.04, 0.04, 0.05, 0.06)
+        kagra.set_light_dir(0.85, 0.22, 0.12)
+        kagra.set_exposure(1.0)
+        if self.toon:
+            kagra.set_toon_params(threshold=0.45, softness=0.06, shade=0.22, lit=1.25)
+        else:
+            kagra.set_toon_params(threshold=0.5, softness=1.0, shade=0.55, lit=1.0)
+
+    def update(self, dt):
+        engine = kagra.get_engine()
+        if engine:
+            self.cam.update(engine)
+
+    def draw(self):
+        kagra.cls(18, 16, 22)
+        kagra.draw_mesh_id(self.floor)
+        kagra.draw_mesh_id(self.box)
+
+
+class PropToonOff(PropToon):
+    toon = False
+
+
 SCENES = {
     "shapes2d": (Shapes2D, 8),
     "mesh3d": (Mesh3D, 10),
@@ -347,6 +386,8 @@ SCENES = {
     "outdoor_crawl": (OutdoorCrawl, 14),
     "outdoor_crawl_nudge": (OutdoorCrawlNudge, 14),
     "outdoor_crawl_off": (OutdoorCrawlOff, 14),
+    "prop_toon": (PropToon, 12),
+    "prop_toon_off": (PropToonOff, 12),
 }
 
 

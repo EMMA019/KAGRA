@@ -100,6 +100,49 @@ def _perspective_wgpu(fov_deg: float, aspect: float,
     ]
 
 
+def clip_eye(
+    origin: tuple[float, float, float],
+    dest: tuple[float, float, float],
+    world,
+    *,
+    margin: float = 0.18,
+    ignore=None,
+) -> tuple[float, float, float]:
+    """Pull ``dest`` toward ``origin`` if a static World3D collider is in between.
+
+    Skips triggers, dynamic boxes, and ``world.player`` (or ``ignore``).
+    No hit → ``dest`` unchanged. GPU-free.
+    """
+    phys = getattr(world, "physics", None)
+    if phys is None or not hasattr(phys, "raycast"):
+        return dest
+    ox, oy, oz = origin
+    dx = dest[0] - ox
+    dy = dest[1] - oy
+    dz = dest[2] - oz
+    dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+    if dist < 1e-6:
+        return dest
+    skip = ignore
+    if skip is None:
+        skip = getattr(world, "player", None)
+    hit = phys.raycast(
+        ox, oy, oz, dx / dist, dy / dist, dz / dist,
+        max_dist=dist,
+        ignore=skip,
+        skip_triggers=True,
+        static_only=True,
+    )
+    if hit is None:
+        return dest
+    t = float(hit[1])
+    pull = max(0.05, t - max(0.0, float(margin)))
+    if pull >= dist:
+        return dest
+    s = pull / dist
+    return ox + dx * s, oy + dy * s, oz + dz * s
+
+
 class Camera3D:
     """
     3D カメラ。
@@ -229,6 +272,8 @@ class Camera3D:
         lerp: float = 0.18,
         yaw: float = 0.0,
         bounds_half: float | None = None,
+        world=None,
+        clip_margin: float = 0.18,
     ):
         """ワールド上の点を追うチェイスカメラ。orbit / showcase は切る。
 
@@ -236,6 +281,8 @@ class Camera3D:
         ``lerp=1`` で瞬間移動。毎フレーム呼んでから ``update(engine)``。
         ``bounds_half`` があれば目の XZ を箱部屋の内側にクランプする
         （既定 distance が壁の外に出る Switch / Dodge 用）。
+        ``world`` があればプレイヤー→カメラの線分を静的箱 / 三角形に当て、
+        壁を突き抜けないよう距離を縮める（角のクリップ）。
         """
         self._orbit = False
         self._showcase = False
@@ -250,6 +297,11 @@ class Camera3D:
             lim = max(0.05, float(bounds_half) - 0.15)
             bx = max(-lim, min(lim, bx))
             bz = max(-lim, min(lim, bz))
+        if world is not None:
+            bx, by, bz = clip_eye(
+                (tx, ty, tz), (bx, by, bz), world,
+                margin=float(clip_margin),
+            )
         t = max(0.0, min(1.0, float(lerp)))
         if t >= 1.0:
             self.position = (bx, by, bz)

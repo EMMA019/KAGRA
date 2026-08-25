@@ -364,9 +364,22 @@ struct II { @location(3) pos_yaw: vec4<f32>, @location(4) scale: vec4<f32> }
             * cam.env.x * (1.0 - rough) * f;
         rgb = sun + albedo * local_lit(n, in.world_pos, loc_sh) + hemi + env * (1.0 - metallic) * 0.65 + spec_env;
     } else {
-        var ndotl = in.light;
-        if mesh_mat.params.z > 0.5 {
-            ndotl = clamp(dot(n, normalize(cam.light_dir.xyz)), 0.2, 1.0);
+        let light_dir = normalize(cam.light_dir.xyz);
+        var ndotl: f32;
+        // set_toon_params: same cam.toon stepped lighting as VRM. softness>=0.999 keeps Lambert.
+        if cam.toon.y < 0.999 {
+            let half_lambert = dot(n, light_dir) * 0.5 + 0.5;
+            let threshold = cam.toon.x;
+            let softness = cam.toon.y;
+            let edge0 = threshold - softness;
+            let edge1 = threshold + max(softness, 1e-4);
+            let t = smoothstep(edge0, edge1, half_lambert);
+            ndotl = mix(cam.toon.z, cam.toon.w, t);
+        } else {
+            ndotl = in.light;
+            if mesh_mat.params.z > 0.5 {
+                ndotl = clamp(dot(n, light_dir), 0.2, 1.0);
+            }
         }
         let sh = shadow_factor(in.world_pos);
         let sun_sh = select(sh, 1.0, shadow_u.params.y > 0.5);

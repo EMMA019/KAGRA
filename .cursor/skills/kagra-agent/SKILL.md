@@ -42,6 +42,8 @@ Outdoor: `apply_outdoor_look` / `World3D.set_height_fn(overworld_height, tile=10
 `load_city` / `Walk(..., jump=)`. City JSON is not OSM. Dynamic boxes
 fall and stack; `Walk` stands on them (`add_box(..., is_static=False)`).
 Play: `clicked_prop` / `Walk.carry` / `animate` / `Label` / `sound`.
+Agent eyes: `kagra.annotate` (click → JSONL) / `kagra.debug_trace` (foot vs terrain).
+Not a Tk/Inspector. `Camera3D.follow(..., world=)` clips through walls.
 Pointer lock follows first person (OS may refuse). USB pad is gilrs on the
 EventLoop (`inject_pad` still wins for CI).
 

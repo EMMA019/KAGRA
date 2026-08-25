@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Agent eyes: `kagra.annotate` (click → JSONL) and `kagra.debug_trace` (foot vs terrain). Not a visual editor.
+- `Camera3D.follow(..., world=)` pulls the chase camera in so it does not go through walls.
+- Prop / terrain Lambert uses the same `cam.toon` stepped lighting as VRM when `set_toon_params` softness < 0.999.
+
 ## 0.1.4
 
 Playable 3D, picture pixels, and `kagra.brain` on the wheel. Windows / Linux,

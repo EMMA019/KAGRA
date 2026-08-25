@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **418**
+エントリ数: **422**
 
 棚の**手前**は VRM / 3D ワールド / エージェントゲーム。
 棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。
@@ -11,6 +11,7 @@
 
 | Name | Signature |
 |---|---|
+| `annotate` | `annotate(sx: float \| None = None, sy: float \| None = None, *, cam=None, avatar=None, world=None, screenshot: str \| None = None, note: str \| None = None, path: str \| None = None, capture: bool = False, persist: bool = True)` |
 | `apply_live_look` | `apply_live_look(*, mascot: bool = False)` |
 | `apply_outdoor_look` | `apply_outdoor_look()` |
 | `apply_room_look` | `apply_room_look()` |
@@ -24,6 +25,8 @@
 | `clicked_prop` | `clicked_prop(cam=None, *, button: int = 1, max_dist: float = 80.0)` |
 | `cls` | `cls(r=0, g=0, b=0)` |
 | `cylinder_mesh` | `cylinder_mesh(cx: float = 0.0, cy: float = 0.0, cz: float = 0.0, radius: float = 0.5, height: float = 1.0, segs: int = 16)` |
+| `debug_trace` | `debug_trace(*, foot_y: float, x: float = 0.0, z: float = 0.0, ground_y: float \| None = None, height_fn=None, world=None, vx: float \| None = None, vz: float \| None = None, on_ground: bool \| None = None, camera_distance: float \| None = None, threshold: float = 0.05, frame: int \| None = None, path: str \| None = None, persist: bool = True, reset: bool = False)` |
+| `debug_trace_summary` | `debug_trace_summary() -> str` |
 | `destroy` | `destroy(prop) -> None` |
 | `disk_mesh` | `disk_mesh(cx: float, cy: float, cz: float, radius: float, segs: int = 48)` |
 | `down` | `down(name: str) -> bool` |
@@ -108,6 +111,7 @@
 | `Button` | `class Button  (from kagra.hud)` |
 | `Camera3D` | `class Camera3D  (from kagra.camera3d)` |
 | `ChatInbox` | `class ChatInbox  (from kagra.stream)` |
+| `DebugTrace` | `class DebugTrace  (from kagra.trace)` |
 | `describe_environment` | `export describe_environment  (from kagra.contracts)` |
 | `EmotionController` | `class EmotionController  (from kagra.vrm_emotion)` |
 | `ensure_vrm` | `export ensure_vrm  (from kagra.samples)` |
@@ -450,6 +454,8 @@
 - 短い 3D: `Prop` + `Walk` + `sky()` / `room()` / `water()`。地形は `World3D.set_height_fn` + `island_height` / `overworld_height` / `open_world_height`。タイル化は `tile=` / `stream_radius=`。遠いタイルは `lod_radius=` / `lod_cells=`。拾いは `can_pick`。`Walk(..., jump=)`。
 - 一人称: `Walk(..., first_person=True)`。目線は `eye_height`。ポインタロックは一人称のとき（OS が拒めばフォールバック）。`F` で切替えるデモは Prop Garden。
 - ホバー / クリック: `hovered_prop(cam)`。`clicked_prop(cam)` は押下。レイ直打ちは `kagra.play.hovered_prop(ox,oy,oz,dx,dy,dz)`。`plane` は除外。
+- エージェントの目: `kagra.annotate(sx, sy)` はプレビュークリックを JSONL に残す（screen / world / bone / Prop id）。`kagra.debug_trace(foot_y=…, height_fn=…)` は接地浮き。エディタではない。「ここもう少し」は数値にする。
+- カメラ壁クリップ: `Camera3D.follow(..., world=)` がプレイヤー→カメラの線分を静的箱に当て、当たったら距離を縮める。`Walk` は自動。
 - 動く Prop: `p.x` / `set_position` / `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)` か `p.enabled = False`。持つのは `Walk.carry(prop)`。
 - `animate(obj, "y", end)` / `sequence` / `Tween`。`Prop.update_all` が回す。
 - HUD: `Label` / `Button`（画面空間。2D `kagra.ui` の同名は棚）。音は `sound("coin")`。

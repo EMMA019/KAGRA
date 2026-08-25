@@ -207,6 +207,13 @@ def test_prop_world_verts_match_instance_scale():
     assert max(ys) == pytest.approx(3.0)
 
 
+def test_prop_sequential_id():
+    a = play.Prop("box", collision=False)
+    b = play.Prop("sphere", collision=False)
+    assert a.id >= 1
+    assert b.id == a.id + 1
+
+
 def test_prop_bake_without_engine_is_zero():
     p = play.Prop("sphere", color="gold", collision=False)
     assert p.bake() == 0
