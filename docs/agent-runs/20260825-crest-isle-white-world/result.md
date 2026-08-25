@@ -17,6 +17,9 @@ Delayed stop: `#80` `rehold_block` lasted one extra frame. After a long auto-rep
 - `rustup run stable cargo test -p kagra-core --no-default-features --locked input`: **16 passed** (includes 30 leftover KEYDOWN + 15 quiet + real press, leftover refresh, hitch `saw_repeat`; IME / `#80` tap window still pass)
 - `rustup run stable cargo test -p kagra-core --no-default-features --locked mesh3d_`: **4 passed** (LRU, live keys kept, dead keys dropped, max ≥ 256)
 - GPU / `kagra.verify`: **not run** here (`kagra_core` wheel not built). CI is the GPU stand-in.
+- **GitHub CI: 17 checks passed** on `56f3042` (`cursor/crest-isle-tex-bg-561b`).
+
+PR: https://github.com/EMMA019/KAGRA/pull/82
 
 ## Files
 
