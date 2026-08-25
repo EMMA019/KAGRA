@@ -240,6 +240,16 @@ def test_flatten_reads_sibling_png_uri(tmp_path: Path):
     assert flat.image == png
 
 
+def test_read_relative_image_windows_backslash(tmp_path: Path):
+    png = _png_1x1(10, 200, 30)
+    (tmp_path / "Textures").mkdir()
+    (tmp_path / "Textures" / "colormap.png").write_bytes(png)
+    glb = tmp_path / "tree.glb"
+    glb.write_bytes(b"glTF")
+    got = gm._read_relative_image("Textures\\colormap.png", glb)
+    assert got == png
+
+
 def test_flatten_rejects_parent_png_uri(tmp_path: Path):
     secret = tmp_path / "secret.png"
     secret.write_bytes(_png_1x1(1, 2, 3))

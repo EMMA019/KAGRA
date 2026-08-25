@@ -153,9 +153,24 @@ def test_cc0_assets_are_vendored():
 def test_kenney_tree_loads_colormap():
     gm = load_kagra_submodule("gltf_mesh")
     tree = _ROOT / "examples" / "assets" / "open_world" / "kenney" / "forest" / "tree.glb"
+    cmap = tree.parent / "Textures" / "colormap.png"
+    assert cmap.is_file()
+    assert gm._read_relative_image("Textures/colormap.png", tree) == cmap.read_bytes()
     flat = gm.flatten_gltf(tree)
     assert flat.image is not None
     assert flat.image[:8] == b"\x89PNG\r\n\x1a\n"
+    assert flat.image == cmap.read_bytes()
+
+
+def test_crest_isle_sun_and_ibl_are_sane():
+    src = (_ROOT / "examples" / "vrm_open_world.py").read_text(encoding="utf-8")
+    assert "set_light_dir(-0.32, -1.0" not in src
+    assert "set_light_dir(-0.32, 1.0, 0.22)" in src
+    assert "strength=0.95" not in src
+    assert "strength=0.32" in src
+    stage = (_ROOT / "kagra" / "stage.py").read_text(encoding="utf-8")
+    assert "enabled=False" in stage
+    assert "current_fog" in stage
 
 
 def test_game_file_uses_only_public_imports():

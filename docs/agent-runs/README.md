@@ -45,3 +45,4 @@
 - `20260825-agent-eyes/` — annotate + debug_trace + follow 壁クリップ + Prop/地形 toon（エディタではない）
 - `20260825-unshadow-stage/` — `kagra.stage` が submodule に隠れて Crest Isle が TypeError だったのを直す
 - `20260825-slope-ground/` — 斜面接地（足 AABB を絞る + 接平面。`debug_trace` で測る。Rapier は入れない）
+- `20260825-crest-isle-white-world/` — Crest Isle 白世界 + 長押し後の遅れ停止（ゲーム修正。GPU は CI / Emma の Windows）

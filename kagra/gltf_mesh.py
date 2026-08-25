@@ -135,10 +135,14 @@ def _read_relative_image(uri: str, base: Path | None) -> Optional[bytes]:
     """Kenney-style ``Textures/colormap.png`` next to the .glb. No remote fetch."""
     if base is None:
         return None
-    if not uri or "://" in uri or uri.startswith("/") or "\\" in uri:
+    if not uri or "://" in uri:
+        return None
+    # Kenney uses forward slashes; Windows exporters may write backslashes.
+    rel = uri.replace("\\", "/")
+    if rel.startswith("/") or rel.startswith("../") or "/../" in f"/{rel}/":
         return None
     root = base.parent.resolve()
-    cand = (root / uri).resolve()
+    cand = (root / rel).resolve()
     try:
         cand.relative_to(root)
     except ValueError:

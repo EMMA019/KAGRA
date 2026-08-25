@@ -531,6 +531,18 @@ def test_prop_gltf_flatten_is_cached():
     assert a._gltf_flat is b._gltf_flat
 
 
+def test_gltf_image_tmp_path_is_unique_per_bytes():
+    a = b"\x89PNG\r\n\x1a\n" + b"alpha"
+    b = b"\x89PNG\r\n\x1a\n" + b"bravo"
+    pa = play.gltf_image_tmp_path(a)
+    pb = play.gltf_image_tmp_path(b)
+    assert pa != pb
+    assert play.gltf_image_tmp_path(a) == pa
+    assert "kagra_prop_gltf.png" not in pa.name
+    assert play.gltf_image_cache_key(a) != play.gltf_image_cache_key(b)
+    assert play.gltf_image_cache_key(a) == play.gltf_image_cache_key(a)
+
+
 def test_prop_gltf_alias_and_collision():
     w = play.World3D(gravity=0.0)
     play.Prop("cube.glb", x=1.2, y=0.5, z=0.0, world=w)

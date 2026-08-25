@@ -4,7 +4,10 @@ GPU 不要な計算（色・歩行ベクトル・当たり）は純関数。描�
 """
 from __future__ import annotations
 
+import hashlib
 import math
+import tempfile
+from pathlib import Path
 from typing import Optional
 
 from kagra.color_utils import clamp_u8
@@ -388,7 +391,22 @@ def _unit_mesh(model: str):
 _solid_cache: dict[tuple[int, int, int], int] = {}
 _unit_cache: dict[tuple, int] = {}
 _gltf_flat_cache: dict[str, FlatMesh] = {}
+_gltf_gpu_tex: dict[str, int] = {}
 _sky_cache = None
+
+
+def gltf_image_cache_key(img: bytes, *, normal: bool = False) -> str:
+    """Share one GPU texture across Kenney instances of the same PNG/JPEG."""
+    tag = "n" if normal else "a"
+    return f"{tag}:{hashlib.sha1(img).hexdigest()}"
+
+
+def gltf_image_tmp_path(img: bytes, *, normal: bool = False) -> Path:
+    """Unique tempfile per image bytes. Shared ``kagra_prop_gltf.png`` clobbered."""
+    digest = hashlib.sha1(img).hexdigest()[:16]
+    suffix = ".jpg" if img[:2] == b"\xff\xd8" else ".png"
+    tag = "n" if normal else "a"
+    return Path(tempfile.gettempdir()) / f"kagra_prop_gltf_{tag}_{digest}{suffix}"
 
 
 def solid_tex(color) -> int:
@@ -423,7 +441,14 @@ def sky(*, radius: float = 18.0, look: bool = True):
     if _sky_cache is None:
         _sky_cache = load_default_sky(radius=radius)
     tex, verts, idx = _sky_cache
+    from kagra.look import current_fog
+
+    fog = current_fog()
+    if fog["enabled"]:
+        kagra.set_fog(fog["start"], fog["end"], fog["color"], enabled=False)
     kagra.draw_mesh_3d(tex, verts, idx)
+    if fog["enabled"]:
+        kagra.set_fog(fog["start"], fog["end"], fog["color"], enabled=True)
 
 
 _water_cache = None
@@ -942,13 +967,16 @@ class Prop:
             return int(self.texture)
         img = getattr(self._gltf_flat, "image", None) if self._gltf_flat is not None else None
         if img:
-            import tempfile
-            from pathlib import Path
-
-            suffix = ".jpg" if img[:2] == b"\xff\xd8" else ".png"
-            path = Path(tempfile.gettempdir()) / f"kagra_prop_gltf{suffix}"
-            path.write_bytes(img)
-            return int(kagra.load(str(path)))
+            key = gltf_image_cache_key(img)
+            cached = _gltf_gpu_tex.get(key)
+            if cached:
+                return cached
+            path = gltf_image_tmp_path(img)
+            if not path.is_file() or path.stat().st_size != len(img):
+                path.write_bytes(img)
+            tid = int(kagra.load(str(path)))
+            _gltf_gpu_tex[key] = tid
+            return tid
         return solid_tex(self.color)
 
     def _bake_normal(self) -> int:
@@ -957,13 +985,16 @@ class Prop:
             return int(self.normal)
         img = getattr(self._gltf_flat, "normal_image", None) if self._gltf_flat is not None else None
         if img:
-            import tempfile
-            from pathlib import Path
-
-            suffix = ".jpg" if img[:2] == b"\xff\xd8" else ".png"
-            path = Path(tempfile.gettempdir()) / f"kagra_prop_gltf_n{suffix}"
-            path.write_bytes(img)
-            return int(kagra.load(str(path), srgb=False))
+            key = gltf_image_cache_key(img, normal=True)
+            cached = _gltf_gpu_tex.get(key)
+            if cached:
+                return cached
+            path = gltf_image_tmp_path(img, normal=True)
+            if not path.is_file() or path.stat().st_size != len(img):
+                path.write_bytes(img)
+            tid = int(kagra.load(str(path), srgb=False))
+            _gltf_gpu_tex[key] = tid
+            return tid
         return 0
 
     def _draw_immediate(self) -> None:

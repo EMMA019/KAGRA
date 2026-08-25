@@ -2,6 +2,14 @@
 use std::collections::{HashMap, HashSet};
 use winit::keyboard::{Key, KeyCode, NamedKey, NativeKeyCode, PhysicalKey};
 
+/// Auto-repeat typically starts after ~250ms. Holds longer than this many
+/// `begin_frame`s get a longer post-up block (Issue B, Crest Isle).
+const LONG_HOLD_FRAMES: u32 = 8;
+/// Ignore non-repeat re-downs this many frames after a long-hold key-up.
+/// Win32 leftover KEYDOWN after auto-repeat can arrive well after the
+/// 1–2 frame window from #80, especially if a load hitch stalled begin_frame.
+const LONG_REHOLD_FRAMES: u8 = 16;
+
 pub struct InputState {
     held: HashSet<u32>,
     pressed: HashSet<u32>,
@@ -9,6 +17,10 @@ pub struct InputState {
     /// Codes that went up last frame. Windows WM_KEYUP then a queued KEYDOWN has
     /// KF_REPEAT clear (`repeat=false`), so #71's repeat filter misses it.
     rehold_block: HashSet<u32>,
+    /// Extra frames to ignore leftover KEYDOWN after a long hold.
+    rehold_left: HashMap<u32, u8>,
+    /// `begin_frame`s seen while the key was held.
+    hold_frames: HashMap<u32, u32>,
     /// Physical token → KeyCode while down. IME `Process` / JIS Unidentified
     /// release still clears the same walk key.
     native_held: HashMap<u64, KeyCode>,
@@ -39,6 +51,8 @@ impl InputState {
             pressed: HashSet::new(),
             released: HashSet::new(),
             rehold_block: HashSet::new(),
+            rehold_left: HashMap::new(),
+            hold_frames: HashMap::new(),
             native_held: HashMap::new(),
             mouse_x: 0.0,
             mouse_y: 0.0,
@@ -62,6 +76,13 @@ impl InputState {
     }
 
     pub fn begin_frame(&mut self) {
+        for code in self.held.iter() {
+            *self.hold_frames.entry(*code).or_insert(0) += 1;
+        }
+        self.rehold_left.retain(|_, n| {
+            *n = n.saturating_sub(1);
+            *n > 0
+        });
         // Last frame's key-ups block a non-repeat re-down for one more frame.
         self.rehold_block = std::mem::take(&mut self.released);
         self.pressed.clear();
@@ -101,21 +122,35 @@ impl InputState {
             self.pressed.insert(code);
         }
         self.held.insert(code);
+        self.hold_frames.entry(code).or_insert(0);
+    }
+
+    fn arm_rehold(&mut self, code: u32) {
+        let held = self.hold_frames.remove(&code).unwrap_or(0);
+        if held >= LONG_HOLD_FRAMES {
+            self.rehold_left.insert(code, LONG_REHOLD_FRAMES);
+        }
     }
 
     pub fn on_key_up(&mut self, code: u32) {
         self.held.remove(&code);
         self.released.insert(code);
+        self.arm_rehold(code);
     }
 
     /// OS auto-repeat must not re-press a key after release (sticky walk).
     ///
     /// Windows: after WM_KEYUP, a late WM_KEYDOWN has bit 30 clear so winit
     /// reports `repeat=false`. Ignore that re-down for the rest of this frame
-    /// and the next (`rehold_block`).
+    /// and the next (`rehold_block`). After a long hold, also ignore leftover
+    /// non-repeat KEYDOWN for `LONG_REHOLD_FRAMES` (`rehold_left`).
     pub fn apply_key(&mut self, code: u32, down: bool, repeat: bool) {
         if down {
-            if repeat || self.released.contains(&code) || self.rehold_block.contains(&code) {
+            if repeat
+                || self.released.contains(&code)
+                || self.rehold_block.contains(&code)
+                || self.rehold_left.contains_key(&code)
+            {
                 return;
             }
             self.on_key_down(code);
@@ -161,8 +196,10 @@ impl InputState {
 
     /// Focus loss / IME: key-up often never arrives, so treat every key as released.
     pub fn release_all(&mut self) {
-        for code in self.held.drain() {
+        let held: Vec<u32> = self.held.drain().collect();
+        for code in held {
             self.released.insert(code);
+            self.arm_rehold(code);
         }
         self.native_held.clear();
         for btn in self.mouse_held.drain() {
@@ -429,6 +466,56 @@ mod tests {
         assert!(
             inp.is_key_down(DOWN),
             "a real re-press after the block window must work"
+        );
+    }
+
+    #[test]
+    fn long_hold_keyup_blocks_multiframe_nonrepeat_burst() {
+        // After auto-repeat, Win32 can deliver leftover KEYDOWN (repeat=false)
+        // several frames after WM_KEYUP — longer than rehold_block's 1–2 frames.
+        let mut inp = InputState::new();
+        inp.apply_key(DOWN, true, false);
+        for _ in 0..LONG_HOLD_FRAMES {
+            inp.begin_frame();
+            inp.apply_key(DOWN, true, true);
+        }
+        inp.apply_key(DOWN, false, false);
+        for _ in 0..12 {
+            inp.begin_frame();
+            inp.apply_key(DOWN, true, false);
+            assert!(
+                !inp.is_key_down(DOWN),
+                "post-up leftover KEYDOWN burst after a long hold must not stick"
+            );
+        }
+        for _ in 0..(LONG_REHOLD_FRAMES as usize) {
+            inp.begin_frame();
+        }
+        inp.apply_key(DOWN, true, false);
+        assert!(
+            inp.is_key_down(DOWN),
+            "a real re-press after the long-hold block must work"
+        );
+    }
+
+    #[test]
+    fn short_tap_still_reholds_after_one_frame_block() {
+        // Taps must stay snappy: only the #80 1–2 frame window, not 16 frames.
+        let mut inp = InputState::new();
+        inp.apply_key(KEY_S, true, false);
+        inp.begin_frame();
+        inp.apply_key(KEY_S, false, false);
+        inp.begin_frame();
+        inp.apply_key(KEY_S, true, false);
+        assert!(
+            !inp.is_key_down(KEY_S),
+            "one-frame rehold_block still applies to taps"
+        );
+        inp.begin_frame();
+        inp.apply_key(KEY_S, true, false);
+        assert!(
+            inp.is_key_down(KEY_S),
+            "a tap re-press after the short block window must work"
         );
     }
 

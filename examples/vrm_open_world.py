@@ -207,10 +207,12 @@ class CrestIsle(kagra.Scene):
         self.sky_stage = None
         if sky_png is not None:
             self.sky_stage = kagra.stage(str(sky_png), radius=140.0)
-            kagra.set_hdri(str(sky_png), strength=0.95)
+            # IBL is fill (Lambert * albedo * 0.35). 0.95 blew the meadow white.
+            kagra.set_hdri(str(sky_png), strength=0.32)
         kagra.set_fog(start=48.0, end=102.0, color=(150, 175, 195), enabled=True)
         kagra.set_bloom(threshold=0.80, intensity=0.28)
-        kagra.set_light_dir(-0.32, -1.0, 0.22)
+        # Vector toward the sun (+Y). -1.0 left the ground at Lambert floor 0.2.
+        kagra.set_light_dir(-0.32, 1.0, 0.22)
         if not SMOKE:
             kagra.set_spot_light(
                 6.0, 18.0, -8.0, -0.18, -1.0, 0.22,

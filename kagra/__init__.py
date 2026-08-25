@@ -1542,9 +1542,12 @@ def set_fog(start: float = 5., end: float = 20.,
         kagra.set_fog(start=3.0, end=12.0, color=(35,25,20))
         kagra.set_fog(enabled=False)
     """
+    from kagra.look import record_fog
+
+    rgb = (int(color[0]), int(color[1]), int(color[2]))
+    record_fog(float(start), float(end), rgb, bool(enabled))
     _check()
-    _engine.set_fog(float(start), float(end),
-                    int(color[0]), int(color[1]), int(color[2]), enabled)
+    _engine.set_fog(float(start), float(end), rgb[0], rgb[1], rgb[2], enabled)
 
 
 # ── Event Bus ─────────────────────────────────────────────────
