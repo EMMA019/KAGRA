@@ -21,6 +21,8 @@ Share must hold: `vertex_buffers * live == primitives` and `shared_instances == 
 
 **GitHub CI: 17 checks passed** on `3d649a0` (`cursor/crest-isle-multi-avatar-06e8`), including `golden`, `rust-test`, `python-unit` 3.10/3.11/3.12, and Windows/Linux/macOS builds. PR: https://github.com/EMMA019/KAGRA/pull/89
 
+Rebased onto master after #87 + #88. All three feature sets kept. Local `pytest tests -m "not golden"` pass.
+
 ## Left out
 
 True GPU instancing of skinned meshes (different palettes). Sharing across different VRM files. Extra bodies inside Crest Isle. Mixamo / Rapier / spatial / terrain / CSM / SSAO / WebXR / HRTF / doppler.
