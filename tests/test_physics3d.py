@@ -547,3 +547,52 @@ def test_overworld_height_walk_under_grounded_float():
         assert abs(player.y - gy) <= budget
     assert grounded > 120
     assert walkable > 80
+
+
+def test_wish_zero_stops_on_walkable_slope():
+    """Physics leftover after #79: wish 0 must not keep walking on grade 0.4.
+
+    Tiny settle is OK; continued walk-speed is not. Steep slide is a
+    different path (``test_steep_ramp_slides_down``).
+    """
+    m = _phys()
+    fn = lambda x, _z: 0.4 * x
+    p = m.Physics3D(gravity=20.0)
+    p.set_height_fn(fn)
+    player = p.add_capsule(1.0, 0.5, 0.0, 0.28, 1.7)
+    player.friction = 0.0
+    for _ in range(20):
+        player.vx = 3.2
+        player.vz = 0.0
+        p.update(0.016)
+    x0, z0 = player.x, player.z
+    for _ in range(30):
+        player.vx = 0.0
+        player.vz = 0.0
+        p.update(0.016)
+    dist = math.hypot(player.x - x0, player.z - z0)
+    walked = 3.2 * 0.016 * 30
+    assert dist < 0.35, f"walkable slope idle moved {dist:.3f}m (held would be ~{walked:.2f})"
+    assert abs(player.vx) < 1.0
+    assert dist < walked * 0.25
+
+
+def test_wish_zero_stops_on_flat():
+    m = _phys()
+    p = m.Physics3D(gravity=20.0)
+    p.set_ground_y(0.0)
+    player = p.add_capsule(0.0, 0.2, 0.0, 0.28, 1.7)
+    for _ in range(10):
+        p.update(0.016)
+    for _ in range(15):
+        player.vx = 3.2
+        player.vz = 0.0
+        p.update(0.016)
+    x0, z0 = player.x, player.z
+    for _ in range(30):
+        player.vx = 0.0
+        player.vz = 0.0
+        p.update(0.016)
+    dist = math.hypot(player.x - x0, player.z - z0)
+    assert dist < 0.12
+    assert abs(player.vx) < 0.05 and abs(player.vz) < 0.05

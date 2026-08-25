@@ -1156,6 +1156,8 @@ impl Engine {
         let mut inp = lock_recover(&self.window.input);
         inp.ime_x = x as f32;
         inp.ime_y = y as f32;
+        use crate::window::WindowCommand;
+        lock_recover(&self.window.window_commands).push(WindowCommand::SetImeAllowed(true));
     }
     pub fn backspace_pressed(&self) -> bool { lock_recover(&self.window.input).backspace_pressed }
     pub fn enter_pressed(&self) -> bool { lock_recover(&self.window.input).enter_pressed }

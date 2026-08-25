@@ -1157,6 +1157,7 @@ class Walk:
             vz *= 0.55
         self.face = facing_yaw(vx, vz, self.face)
         self.world.move_player(vx, vz)
+        idle = abs(fwd) < 1e-9 and abs(right) < 1e-9
         p = self.world.player
         dt = float(dt)
         if p is not None and self.jump > 0.0:
@@ -1193,6 +1194,15 @@ class Walk:
         p = self.world.player
         if p is None:
             return
+        # Wish idle: Walk already wrote vx/vz=0. If collision/snap added a
+        # kick, kill it so release does not keep walking. Steep slide keeps
+        # `_slope_vx` and must not be zeroed (tiny slide-to-stop is OK).
+        if idle:
+            sx = float(getattr(p, "_slope_vx", 0.0) or 0.0)
+            sz = float(getattr(p, "_slope_vz", 0.0) or 0.0)
+            if abs(sx) < 1e-6 and abs(sz) < 1e-6:
+                p.vx = 0.0
+                p.vz = 0.0
         if self.first_person:
             eye, tgt = first_person_eye(
                 p.x, p.y, p.z, self.yaw, self.pitch, eye_height=self.eye_height,

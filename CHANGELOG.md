@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Sticky Walk after key-up on Windows: ignore post-`WM_KEYUP` KEYDOWN (`repeat=false`, which #71 missed), pair IME/JIS `Unidentified`/`Process` releases to WASD/arrows, disable IME on the game window, and stop leftover vx/vz when wish is 0 (steep slide kept). GPU-free tests cover the remaining path, not only #71.
 - Slope grounding: tight foot AABB (0.08) + extra samples + snap-to-plane. `|foot_y − terrain|` while `on_ground` stays under 0.05 (`debug_trace`). Fat capsule AABB max-Y on a slope still floats — measure first. Still no Rapier.
 - `kagra.stage` is the documented callable again (it was shadowed by `kagra/stage.py`). Same guard for `annotate` / `pad` / `brain`. Crest Isle / Relic Run sky spheres no longer TypeError.
 - Crest Isle: init `_chunk_props` before `bake_terrain` so the first tile stream does not AttributeError.
