@@ -104,7 +104,7 @@ kagra-shared + mobile/     ──► 別の運転デモ（道路・トラック�
 ```
 
 - **公開 API は Front に寄せる。** Shelf の `Entity` / 2D `world_to_screen` をエージェントに踏ませない。
-- **物理はキャラコン + 静的三角形 + AABB 剛体（落ちる・積む・乗る）+ 持つ。** OSM は外。Rapier クレートは wheel に入れない。
+- 物理はキャラコン + 静的三角形 + AABB 剛体（落ちる・積む・乗る）+ 持つ。坂の接地は小さい足 AABB + 接平面（`debug_trace`）。OSM は外。Rapier クレートは wheel に入れない。
 - **Windows は EventLoop 1 本。** GPU は必ず subprocess（`kagra.verify`）。
 - **kagra-shared のレンダラは今混ぜない。** 統合は 80% の外。
 

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Slope grounding: tight foot AABB (0.08) + extra samples + snap-to-plane. `|foot_y − terrain|` while `on_ground` stays under 0.05 (`debug_trace`). Fat capsule AABB max-Y on a slope still floats — measure first. Still no Rapier.
 - Crest Isle: init `_chunk_props` before `bake_terrain` so the first tile stream does not AttributeError.
 - Agent eyes: `kagra.annotate` (click → JSONL) and `kagra.debug_trace` (foot vs terrain). Not a visual editor.
 - `Camera3D.follow(..., world=)` pulls the chase camera in so it does not go through walls.

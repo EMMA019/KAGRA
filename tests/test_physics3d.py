@@ -332,12 +332,16 @@ def test_stairs_are_climbable():
     p.set_height_fn(fn)
     player = p.add_capsule(0.0, 0.0, 0.1, 0.25, 1.6)
     player.friction = 0.0
+    peak_on_stair = -999.0
     for _ in range(80):
         player.vx = 0.0
         player.vz = 3.0
         p.update(0.016)
+        if 0.0 <= player.z <= 3.2:
+            peak_on_stair = max(peak_on_stair, player.y)
     assert player.z > 2.2
-    assert player.y > 1.2
+    assert peak_on_stair > 1.2
+    assert player.y > -0.1
 
 
 def test_jump_not_killed_by_slope():
@@ -447,3 +451,99 @@ def test_water_buoyancy_lifts():
         p.update(0.016)
     assert player.y > -0.4
     assert player.y < 3.0
+
+
+def test_height_support_plane_does_not_fat_lift():
+    """Linear slope: plane snap ≈ center, fat max-Y lifts by grade * radius."""
+    m = _phys()
+    fn = lambda x, _z: 0.4 * x
+    h_center = fn(1.0, 0.0)
+    plane, _n = m.height_support(fn, 1.0, 0.0, foot_radius=0.08, snap_to_plane=True)
+    fat, _n = m.height_support(
+        fn, 1.0, 0.0, foot_radius=0.28, snap_to_plane=False,
+    )
+    assert abs(plane - h_center) < m.GROUNDED_FLOAT
+    assert fat - h_center == pytest.approx(0.4 * 0.28, abs=0.001)
+
+
+def test_cliff_beside_foot_is_ignored():
+    m = _phys()
+    fn = lambda x, _z: 5.0 if x > 0.05 else 0.0
+    y, _n = m.height_support(fn, 0.0, 0.0, foot_radius=0.08, snap_to_plane=True)
+    assert y == pytest.approx(0.0, abs=0.01)
+
+
+def test_walk_known_slope_under_grounded_float():
+    """GPU-free: Walk-radius capsule on grade 0.4 stays within |foot − terrain|.
+
+    Documented budget: ``GROUNDED_FLOAT`` = 0.05 (``debug_trace`` default).
+    Still no Rapier.
+    """
+    m = _phys()
+    fn = lambda x, _z: 0.4 * x
+    p = m.Physics3D(gravity=20.0)
+    p.set_height_fn(fn)
+    player = p.add_capsule(1.0, 0.5, 0.0, 0.28, 1.7)
+    player.friction = 0.0
+    budget = m.GROUNDED_FLOAT
+    grounded = 0
+    peak = 0.0
+    for _ in range(160):
+        player.vx = 3.2
+        player.vz = 0.0
+        p.update(0.016)
+        gy = fn(player.x, player.z)
+        if player.on_ground:
+            grounded += 1
+            peak = max(peak, abs(player.y - gy))
+            assert abs(player.y - gy) <= budget
+    assert grounded > 100
+    assert peak <= budget
+
+
+def test_fat_aabb_float_exceeds_budget():
+    """Hypothesis check: loosen foot to the wall capsule, skip plane snap."""
+    m = _phys()
+    fn = lambda x, _z: 0.4 * x
+    p = m.Physics3D(gravity=20.0)
+    p.set_height_fn(fn)
+    p.foot_radius = 0.28
+    p.snap_to_plane = False
+    player = p.add_capsule(1.0, 0.5, 0.0, 0.28, 1.7)
+    player.friction = 0.0
+    peak = 0.0
+    for _ in range(80):
+        player.vx = 3.0
+        p.update(0.016)
+        if player.on_ground:
+            peak = max(peak, abs(player.y - fn(player.x, player.z)))
+    assert peak > m.GROUNDED_FLOAT
+    assert peak == pytest.approx(0.4 * 0.28, abs=0.02)
+
+
+def test_overworld_height_walk_under_grounded_float():
+    land = load_kagra_submodule("land")
+    m = _phys()
+    fn = land.overworld_height
+    p = m.Physics3D(gravity=20.0)
+    p.set_height_fn(fn)
+    player = p.add_capsule(4.0, fn(4.0, 4.0) + 0.3, 4.0, 0.28, 1.7)
+    player.friction = 0.0
+    budget = m.GROUNDED_FLOAT
+    grounded = 0
+    walkable = 0
+    for _ in range(200):
+        player.vx = 3.2
+        player.vz = 1.1
+        p.update(0.016)
+        if not player.on_ground:
+            continue
+        grounded += 1
+        gy = fn(player.x, player.z)
+        _nx, ny, _nz = m.height_normal(fn, player.x, player.z)
+        if ny < p._walkable_ny():
+            continue
+        walkable += 1
+        assert abs(player.y - gy) <= budget
+    assert grounded > 120
+    assert walkable > 80
