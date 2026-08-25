@@ -12,9 +12,12 @@ Delayed stop: `#80` `rehold_block` lasted one extra frame. After a long auto-rep
 
 Loading hitch: every Kenney `Prop.bake` rewrote one shared tempfile and uploaded a new texture, so the unit-mesh cache missed.
 
-## Verify
+## Verify (this VM)
 
-(filled after local commands)
+- `python3 tools/gen_api_index.py --check`: **OK** (422 entries)
+- `python3 -m pytest tests -m "not golden"`: **384 passed**, 10 deselected
+- `rustup run stable cargo test -p kagra-core --no-default-features --locked input`: **14 passed** (includes `long_hold_keyup_blocks_multiframe_nonrepeat_burst` and `short_tap_still_reholds_after_one_frame_block`; IME / `#80` tests still pass)
+- `python -m kagra.verify` / GPU golden: **not run** here (`kagra_core` wheel not built; Lambert HDRI-off goldens should be unchanged). CI is the GPU stand-in.
 
 ## Files
 
