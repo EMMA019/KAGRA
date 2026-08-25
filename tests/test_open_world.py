@@ -245,6 +245,34 @@ def test_chunk_props_ready_before_first_stream():
     assert init_i < fill_i < bake_i
 
 
+def test_title_draw_skips_live_world():
+    """Title is opaque and must not composite the half-streamed island."""
+    src = (_ROOT / "examples" / "vrm_open_world.py").read_text(encoding="utf-8")
+    assert 'self.mode = "play" if SMOKE else "title"' in src
+    start = src.index("    def draw(self):")
+    nxt = src.index("\n    def ", start + 1)
+    draw = src[start:nxt]
+    title_if = draw.index('if self.mode == "title"')
+    title_ret = draw.index("return", title_if)
+    title_arm = draw[title_if:title_ret]
+    for needle in (
+        "self.world.draw()",
+        "kagra.Prop.draw_all()",
+        "kagra.draw_vrm",
+        "kagra.water(",
+    ):
+        assert needle not in title_arm, needle
+        assert draw.index(needle) > title_ret, needle
+    assert "overlay_alpha=255" in title_arm
+    assert "118" not in title_arm
+    banner = src[src.index("    def _banner") :]
+    assert "overlay_alpha: int = 118" in banner
+    assert "Alicia Solid" in banner
+    assert '"Crest Isle"' in title_arm
+    assert "草原・海・山を走れ" in title_arm
+    assert "SPACE" in title_arm
+
+
 def test_mesh3d_tex_bg_cache_fits_crest_isle_vista():
     """FIFO 64 evicted grass into Fallback White after 120+ Kenney Props."""
     src = (_ROOT / "kagra-core" / "src" / "renderer" / "gpu_helpers.rs").read_text(

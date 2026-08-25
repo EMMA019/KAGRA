@@ -47,3 +47,4 @@
 - `20260825-slope-ground/` — 斜面接地（足 AABB を絞る + 接平面。`debug_trace` で測る。Rapier は入れない）
 - `20260825-crest-isle-white-world/` — Crest Isle 白世界 + 長押し後の遅れ停止（ゲーム修正。GPU は CI / Emma の Windows）
 - `20260825-crest-isle-repress-look/` — 長押し後の再押し無視・茶色い草原・白い空・チェイスカメラが頭に刺さる（ゲーム修正。GPU は CI / Emma の Windows）
+- `20260825-crest-isle-title/` — Crest Isle タイトルが半透明で割れた島の上に乗っていたのを不透明メニューにする（ゲーム修正。GPU は SMOKE=play のまま）

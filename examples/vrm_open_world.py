@@ -425,6 +425,17 @@ class CrestIsle(kagra.Scene):
         self.avatar.set_yaw(self.walk.face)
 
     def draw(self):
+        if self.mode == "title":
+            # Live island stays off the title. Half-streamed / UV-split terrain
+            # used to show through alpha-118 fill (Emma's pre-SPACE shot).
+            kagra.cls(6, 12, 20)
+            self._banner(
+                "Crest Isle",
+                "草原・海・山を走れ  紋章を 6 つ集めろ  SPACE でスタート",
+                overlay_alpha=255,
+            )
+            return
+
         kagra.cls(150, 175, 195)
         if self.sky_stage is not None:
             self.sky_stage.draw()
@@ -452,12 +463,6 @@ class CrestIsle(kagra.Scene):
         kagra.draw_vrm(self.avatar.vrm_id)
         kagra.draw_vignette()
 
-        if self.mode == "title":
-            self._banner(
-                "Crest Isle",
-                "草原・海・山を走れ  紋章を 6 つ集めろ  SPACE でスタート",
-            )
-            return
         if self.mode == "result":
             self._banner(
                 "CLEAR",
@@ -485,8 +490,8 @@ class CrestIsle(kagra.Scene):
             w, _ = kagra.measure(self.msg, 30)
             kagra.text(self.msg, (SW - w) // 2, 120, 30, (255, 240, 160))
 
-    def _banner(self, title: str, sub: str):
-        kagra.fill(0, 0, SW, SH, (6, 12, 20), 118)
+    def _banner(self, title: str, sub: str, *, overlay_alpha: int = 118):
+        kagra.fill(0, 0, SW, SH, (6, 12, 20), overlay_alpha)
         w, _ = kagra.measure(title, 48)
         kagra.text(title, (SW - w) // 2, SH // 2 - 70, 48, (255, 220, 130))
         w2, _ = kagra.measure(sub, 18)
