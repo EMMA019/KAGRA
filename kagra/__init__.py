@@ -22,6 +22,31 @@ from typing import Optional
 import sys, types
 from pathlib import Path
 
+
+class _KagraPackage(types.ModuleType):
+    """Keep documented callables from being hidden by same-named submodules.
+
+    ``from kagra.stage import Stage`` (and the import machinery) bind
+    ``kagra.stage`` to ``kagra/stage.py``. The README API is
+    ``kagra.stage(...)``, so that bind must not win. The module remains in
+    ``sys.modules['kagra.stage']``, so ``from kagra.stage import Stage``
+    still works.
+    """
+
+    def __setattr__(self, name, value):
+        cur = self.__dict__.get(name)
+        if (
+            cur is not None
+            and not isinstance(cur, types.ModuleType)
+            and isinstance(value, types.ModuleType)
+            and getattr(value, "__name__", None) == f"{self.__name__}.{name}"
+        ):
+            return
+        types.ModuleType.__setattr__(self, name, value)
+
+
+sys.modules[__name__].__class__ = _KagraPackage
+
 try:
     from kagra.kagra_core import Engine as _Engine
 except ImportError as e:
@@ -2263,6 +2288,15 @@ def spring_bone(vrm_path: str, vrm_id: int) -> "SpringBone":
     return SpringBone(vrm_path, vrm_id)
 
 
+# Snapshot public names before late ``from kagra.X import`` so a loader that
+# writes the submodule onto this package can be undone. ``stage`` is the one
+# Emma hit; ``annotate`` is the same pattern on first call.
+_keep_public = {
+    k: v
+    for k, v in list(globals().items())
+    if not k.startswith("_") and not isinstance(v, types.ModuleType)
+}
+
 
 # ── 遅延インポート（kagra.Scene が定義された後に行う）──────────
 from kagra.scene_io      import serialize_entity, serialize_transform, serialize_component, save_scene
@@ -2663,4 +2697,20 @@ from kagra.http_client import (
 from kagra.stream import StreamHud, ChatInbox, ChatMessage, VirtualCam
 from kagra.voicevox import VoicevoxError
 from kagra.mic import MicLipsync
+
+
+def _restore_public_from_submodules() -> None:
+    """Put back callables that ``from kagra.X import ...`` rebound to modules."""
+    keep = globals().get("_keep_public")
+    if not keep:
+        return
+    g = globals()
+    for name, obj in keep.items():
+        cur = g.get(name)
+        if isinstance(cur, types.ModuleType) and not isinstance(obj, types.ModuleType):
+            g[name] = obj
+    g.pop("_keep_public", None)
+
+
+_restore_public_from_submodules()
 
