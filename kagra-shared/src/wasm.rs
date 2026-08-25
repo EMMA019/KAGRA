@@ -63,14 +63,29 @@ impl WasmSession {
         self.inner.set_drive(steer, throttle, brake);
     }
 
-    /// 0 = 運転（3D）、1 = タッチデモ（2D）。
+    /// 0 = 運転（3D）、1 = タッチデモ（2D）、2 = Crest Isle。
     #[wasm_bindgen(js_name = setScene)]
     pub fn set_scene(&mut self, kind: u8) {
         let kind = match kind {
             1 => crate::session::SceneKind::Demo2D,
+            2 => crate::session::SceneKind::Collectathon,
             _ => crate::session::SceneKind::Driving,
         };
         self.inner.set_scene_kind(kind);
+        if kind == crate::session::SceneKind::Collectathon {
+            self.inner.boot_collectathon();
+        }
+    }
+
+    /// Crest Isle の歩き。`lx`/`lz` は -1..1。
+    #[wasm_bindgen(js_name = setWalk)]
+    pub fn set_walk(&mut self, lx: f32, lz: f32, jump: bool) {
+        self.inner.set_walk(lx, lz, jump);
+    }
+
+    #[wasm_bindgen(js_name = setJump)]
+    pub fn set_jump(&mut self, held: bool) {
+        self.inner.set_jump(held);
     }
 
     /// 速度（km/h）。HUD をブラウザ側で出すとき用。
@@ -134,7 +149,11 @@ impl WasmSession {
     /// ゲーム状態 JSON（phase / time / score / objective）。
     #[wasm_bindgen(js_name = gameJson)]
     pub fn game_json(&self) -> String {
-        serde_json::to_string(&self.inner.game).unwrap_or_else(|_| "{}".into())
+        if self.inner.kind == crate::session::SceneKind::Collectathon {
+            serde_json::to_string(&self.inner.isle.game).unwrap_or_else(|_| "{}".into())
+        } else {
+            serde_json::to_string(&self.inner.game).unwrap_or_else(|_| "{}".into())
+        }
     }
 
     /// canvas を描画先にする。WebGPU / WebGL2 のどちらかが使えれば成功する。

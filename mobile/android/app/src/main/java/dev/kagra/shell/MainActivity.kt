@@ -19,7 +19,7 @@ import androidx.appcompat.app.AppCompatActivity
  * 描画は諦めて手順をテキストで出す。
  */
 class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
-    private enum class Control { STEER, PEDAL }
+    private enum class Control { STICK, JUMP }
 
     private lateinit var surfaceView: SurfaceView
     private lateinit var status: TextView
@@ -28,9 +28,9 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     /** 指 id ごとの役割。両手で同時に操作するために必要。 */
     private val controls = mutableMapOf<Int, Control>()
-    private var steer = 0f
-    private var throttle = 0f
-    private var brake = 0f
+    private var stickX = 0f
+    private var stickZ = 0f
+    private var jump = false
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,6 +66,8 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
             return
         }
         KagraNative.setAssetRoot(filesDir.absolutePath)
+        // Crest Isle（Kenney 風カプセル。VRM ではない）。運転デモは setScene(0)。
+        KagraNative.setScene(2)
         surfaceView.holder.addCallback(this)
         surfaceView.setOnTouchListener { view, ev -> onTouch(view.width, view.height, ev) }
     }
@@ -112,7 +114,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
                     status.text = buildString {
                         append("kagra-shared ${KagraNative.version()}  frame=$frame\n")
                         append(KagraNative.statsJson())
-                        append("\n\n左半分＝ハンドル / 右半分＝上でアクセル・下でブレーキ")
+                        append("\n\nCrest Isle — 左＝歩き / 右下＝ジャンプ（VRM ではない）")
                     }
                 }
                 Choreographer.getInstance().postFrameCallback(this)
@@ -130,7 +132,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
     // ── 入力 ─────────────────────────────────────────────
 
     /**
-     * 画面の下半分を左右に割り、左＝ハンドル、右＝アクセル／ブレーキにする。
+     * 左半分＝仮想スティック（歩き）、右下＝ジャンプ。
      * 指ごとに役割を覚えるので、両手で同時に操作できる。
      */
     private fun onTouch(width: Int, height: Int, ev: MotionEvent): Boolean {
@@ -147,40 +149,43 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
             ev.getPointerId(idx), ev.getX(idx), ev.getY(idx), phase, ev.getPressure(idx)
         )
 
+        val jumpLeft = width * 0.62f
+        val jumpTop = height * 0.62f
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN ->
                 controls[ev.getPointerId(idx)] =
-                    if (ev.getX(idx) < width / 2f) Control.STEER else Control.PEDAL
+                    if (ev.getX(idx) >= jumpLeft && ev.getY(idx) >= jumpTop) {
+                        Control.JUMP
+                    } else {
+                        Control.STICK
+                    }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP,
             MotionEvent.ACTION_CANCEL -> {
                 when (controls.remove(ev.getPointerId(idx))) {
-                    Control.STEER -> steer = 0f
-                    Control.PEDAL -> { throttle = 0f; brake = 0f }
+                    Control.STICK -> { stickX = 0f; stickZ = 0f }
+                    Control.JUMP -> jump = false
                     null -> Unit
                 }
             }
         }
 
-        // 押されている指をすべて見て、役割ごとに最新値へ更新する。
+        jump = false
         for (i in 0 until ev.pointerCount) {
             when (controls[ev.getPointerId(i)]) {
-                Control.STEER -> {
-                    // 左半分の中心からの左右のずれを切れ角にする。
-                    val half = width / 2f
-                    steer = ((ev.getX(i) / half) * 2f - 1f).coerceIn(-1f, 1f)
+                Control.STICK -> {
+                    val well = minOf(width, height) * 0.22f
+                    val cx = well
+                    val cy = height - well
+                    stickX = ((ev.getX(i) - cx) / well).coerceIn(-1f, 1f)
+                    stickZ = (-(ev.getY(i) - cy) / well).coerceIn(-1f, 1f)
                 }
-                Control.PEDAL -> {
-                    // 上半分がアクセル、下半分がブレーキ。
-                    val t = ((ev.getY(i) / height) * 2f - 1f).coerceIn(-1f, 1f)
-                    throttle = if (t < 0) -t else 0f
-                    brake = if (t > 0) t else 0f
-                }
+                Control.JUMP -> jump = true
                 null -> Unit
             }
         }
 
-        KagraNative.setDrive(steer, throttle, brake)
+        KagraNative.setWalk(stickX, stickZ, jump)
         return true
     }
 

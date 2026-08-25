@@ -9,6 +9,7 @@
 
 pub mod assets;
 pub mod audio;
+pub mod collectathon;
 pub mod collide;
 pub mod driving;
 pub mod ffi;
@@ -35,6 +36,9 @@ pub mod wasm;
 
 pub use assets::{resolve_alias, AssetKind};
 pub use audio::AudioLevels;
+pub use collectathon::{
+    CollectathonScene, IsleGame, WalkInput, GAME_ID as ISLE_GAME_ID, GAME_TITLE as ISLE_GAME_TITLE,
+};
 pub use collide::Obb2;
 pub use driving::{DrivingScene, MeshIds, MeshSet};
 pub use game::{DemoGame, GamePhase, GAME_ID, GAME_TITLE};
