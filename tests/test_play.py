@@ -141,6 +141,66 @@ def test_walk_release_clears_player_velocity():
     assert p.vx == 0.0 and p.vz == 0.0
 
 
+def _walk_then_release(world, speed=3.2, frames_walk=20, frames_idle=30, vx=3.2, vz=0.0):
+    """Crest Isle path: Walk writes wish every frame, then World3D.update."""
+    p = world.player
+    assert p is not None
+    for _ in range(frames_walk):
+        world.move_player(vx, vz)
+        world.update(0.016)
+    x0, z0 = p.x, p.z
+    for _ in range(frames_idle):
+        fwd, right = play.walk_axes(0.0, 0.0, 0.0, 0.0)
+        wx, wz = play.walk_wish(fwd, right, 0.0, speed=speed)
+        assert wx == 0.0 and wz == 0.0
+        world.move_player(wx, wz)
+        world.update(0.016)
+        sx = float(getattr(p, "_slope_vx", 0.0) or 0.0)
+        sz = float(getattr(p, "_slope_vz", 0.0) or 0.0)
+        if abs(sx) < 1e-6 and abs(sz) < 1e-6:
+            p.vx = 0.0
+            p.vz = 0.0
+    return p, x0, z0
+
+
+def test_walk_release_stops_on_flat_after_physics():
+    """#71 only asserted move_player(0,0). Remaining path is World3D.update."""
+    w = play.World3D(gravity=9.8)
+    p = w.add_player(0.0, 0.0, radius=0.28, height=1.7)
+    for _ in range(8):
+        w.update(0.016)
+    p, x0, z0 = _walk_then_release(w, vx=3.2, vz=0.0)
+    dist = math.hypot(p.x - x0, p.z - z0)
+    assert dist < 0.12, f"flat idle still moved {dist:.3f}m"
+    assert abs(p.vx) < 0.05 and abs(p.vz) < 0.05
+
+
+def test_walk_release_does_not_keep_walking_on_grade():
+    """Wish 0 on a walkable slope must not keep walking like a held key."""
+    w = play.World3D(gravity=20.0, half=24.0)
+    w.set_height_fn(lambda x, _z: 0.4 * x)
+    p = w.add_player(1.0, 0.0, radius=0.28, height=1.7)
+    p.friction = 0.0
+    for _ in range(12):
+        w.update(0.016)
+    p, x0, z0 = _walk_then_release(w, vx=3.2, vz=0.0)
+    dist = math.hypot(p.x - x0, p.z - z0)
+    walked = 3.2 * 0.016 * 30
+    assert dist < 0.35, f"slope idle moved {dist:.3f}m (held-key would be ~{walked:.2f})"
+    assert dist < walked * 0.25
+
+
+def test_s_and_arrow_down_same_axis():
+    held: set[str] = {"S"}
+
+    def down(name: str) -> bool:
+        return name in held
+
+    assert play.walk_key_axes(down) == play.walk_key_axes(lambda n: n == "DOWN")
+    held.clear()
+    assert play.walk_key_axes(down) == (0.0, 0.0)
+
+
 def test_look_yaw_subtracts_mouse_x():
     assert play.look_yaw(0.0, 10.0, sens=0.01) == pytest.approx(-0.1)
 

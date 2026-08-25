@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use winit::{
     event::{DeviceEvent, ElementState, Event, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    keyboard::{Key, KeyCode},
+    keyboard::{Key, KeyCode, NativeKey},
     window::{CursorGrabMode, WindowBuilder, WindowLevel},
 };
 
@@ -26,7 +26,7 @@ pub enum InjectEvent {
 
 use crate::color::Color;
 use crate::error::lock_recover;
-use crate::input::{self, InputState};
+use crate::input::InputState;
 use crate::renderer::{
     DrawCommand, PolygonCommand, RectCommand, RendererV2, SkinnedMeshCommand, SpriteCommand, TextCommand,
 };
@@ -48,6 +48,7 @@ pub enum WindowCommand {
     SetDecorations(bool),
     SetTitle(String),
     SetCursorLocked(bool),
+    SetImeAllowed(bool),
 }
 
 pub struct KagraWindow {
@@ -550,7 +551,10 @@ impl KagraWindow {
         let renderer = pollster::block_on(RendererV2::new(window_arc.clone(), self.width, self.height, self.transparent))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?;
 
-        window_arc.set_ime_allowed(true);
+        // Games (Crest Isle WASD) must not go through IME: JP Windows maps
+        // key-up to VK_PROCESSKEY / Unidentified and the avatar keeps walking.
+        // Text fields opt in via set_ime_cursor_pos → SetImeAllowed(true).
+        window_arc.set_ime_allowed(false);
         window_arc.set_ime_cursor_area(
             winit::dpi::PhysicalPosition::new(100, 600),
             winit::dpi::PhysicalSize::new(400, 30),
@@ -610,31 +614,27 @@ impl KagraWindow {
                         match ime_event {
                             Ime::Preedit(text, cursor) => inp.on_preedit(&text, cursor),
                             Ime::Commit(text) => inp.on_commit(&text),
-                            Ime::Enabled => {},
+                            Ime::Enabled => inp.release_all(),
                             Ime::Disabled => { inp.preedit_text.clear(); inp.preedit_cursor = None; },
                         }
                     },
                     Event::WindowEvent { event: WindowEvent::KeyboardInput { event: key_ev, .. }, .. } => {
                         let KeyEvent { physical_key, logical_key: ref lkey, state, repeat, .. } = key_ev;
-                        if let Some(code) = input::resolve_keycode(physical_key, lkey) {
-                            let c = code as u32;
-                            let mut inp = lock_recover(&input_ref);
-                            match state {
-                                ElementState::Pressed => {
-                                    inp.apply_key(c, true, repeat);
-                                    match code {
-                                        KeyCode::Backspace => inp.set_backspace_pressed(),
-                                        KeyCode::Enter => inp.set_enter_pressed(),
-                                        KeyCode::Escape => inp.set_escape_pressed(),
-                                        _ => {}
-                                    }
-                                    if let Key::Character(ref s) = lkey {
-                                        if inp.preedit_text.is_empty() {
-                                            for ch in s.chars() { if ch >= ' ' { inp.on_char(ch); } }
-                                        }
+                        let down = matches!(state, ElementState::Pressed);
+                        let mut inp = lock_recover(&input_ref);
+                        if let Some(code) = inp.ingest_key(physical_key, lkey, down, repeat) {
+                            if down {
+                                match code {
+                                    KeyCode::Backspace => inp.set_backspace_pressed(),
+                                    KeyCode::Enter => inp.set_enter_pressed(),
+                                    KeyCode::Escape => inp.set_escape_pressed(),
+                                    _ => {}
+                                }
+                                if let Key::Character(ref s) = lkey {
+                                    if inp.preedit_text.is_empty() {
+                                        for ch in s.chars() { if ch >= ' ' { inp.on_char(ch); } }
                                     }
                                 }
-                                ElementState::Released => inp.apply_key(c, false, repeat),
                             }
                         }
                     },
@@ -643,6 +643,18 @@ impl KagraWindow {
                     },
                     Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } => {
                         lock_recover(&input_ref).on_mouse_delta(delta.0 as f32, delta.1 as f32);
+                    },
+                    Event::DeviceEvent { event: DeviceEvent::Key(raw), .. } => {
+                        // Pointer-lock can drop WindowEvent key-up. Apply raw
+                        // *releases* only — DeviceEvent repeats have no
+                        // `repeat` flag and would re-hold after #71.
+                        if matches!(raw.state, ElementState::Released) {
+                            let mut inp = lock_recover(&input_ref);
+                            if inp.focused {
+                                let logical = Key::Unidentified(NativeKey::Unidentified);
+                                let _ = inp.ingest_key(raw.physical_key, &logical, false, false);
+                            }
+                        }
                     },
                     Event::WindowEvent { event: WindowEvent::Focused(gained), .. } => {
                         let mut inp = lock_recover(&input_ref);
@@ -714,6 +726,12 @@ impl KagraWindow {
                                         if window.set_cursor_grab(mode).is_err() && locked {
                                             let _ = window.set_cursor_grab(CursorGrabMode::Confined);
                                         }
+                                    }
+                                    WindowCommand::SetImeAllowed(allowed) => {
+                                        if allowed {
+                                            lock_recover(&input_ref).release_all();
+                                        }
+                                        window.set_ime_allowed(allowed);
                                     }
                                 }
                             }
