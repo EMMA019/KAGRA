@@ -51,3 +51,16 @@ def test_city_boxes_skip_spawn_and_sea():
     # west bay is sea
     sea_ix = land.tile_index(-12.0, 0.0)[0]
     assert land.city_boxes(sea_ix, 0) == []
+
+
+def test_open_world_has_grass_sea_mountain():
+    fn = land.open_world_height
+    assert land.biome_at(0.0, -7.0, fn=fn) == "grass"
+    assert land.biome_at(-28.0, 8.0, fn=fn) == "sea"
+    assert fn(8.0, 52.0) > 8.0
+    assert land.biome_at(8.0, 52.0, fn=fn) == "mountain"
+    # spawn camera looks +Z: left is sea, ahead is mountain
+    assert land.biome_at(-22.0, 12.0, fn=fn) == "sea"
+    assert fn(8.0, 52.0) > fn(0.0, -7.0) + 6.0
+    # stair path is higher than the meadow
+    assert fn(8.0, 40.0) > fn(0.0, 8.0) + 2.0

@@ -148,6 +148,7 @@ python examples/vrm_heart_catch.py       # 3-lane catch (agent-run log)
 python examples/vrm_switch_room.py       # boxed room, camera follow
 python examples/vrm_dodge_room.py        # falling boxes, survive (agent-run log)
 python examples/vrm_relic_run.py          # island relic collect 30s (agent-run log)
+python examples/vrm_open_world.py         # Crest Isle — wide grass/sea/mountains collectathon
 python examples/vrm_prop_garden.py       # Prop / Walk / sky (play surface)
 python examples/vrm_pretty_room.py       # enclosed room / spot / IBL
 python examples/vrm_overworld.py         # tiled island — city JSON, mesh ramp, crates

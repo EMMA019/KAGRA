@@ -1,0 +1,12 @@
+{
+  "name": "open_world_smoke",
+  "script": "examples/vrm_open_world.py",
+  "timeout_sec": 240,
+  "env": {
+    "KAGRA_SMOKE": "1",
+    "KAGRA_SMOKE_FRAMES": "40",
+    "KAGRA_SMOKE_OUT": "scratch/open_world_smoke.png"
+  },
+  "expect_files": ["scratch/open_world_smoke.png"],
+  "min_file_bytes": 2000
+}

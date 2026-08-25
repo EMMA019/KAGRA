@@ -149,6 +149,7 @@ python examples/vrm_heart_catch.py       # 3 レーンキャッチ（エージ�
 python examples/vrm_switch_room.py       # 箱部屋、カメラ追従
 python examples/vrm_dodge_room.py        # 降ってくる箱を避ける（エージェントログあり）
 python examples/vrm_relic_run.py          # 島の遺跡集め 30 秒（エージェントログあり）
+python examples/vrm_open_world.py         # Crest Isle — 広い草原・海・山の収集
 python examples/vrm_prop_garden.py       # Prop / Walk / sky
 python examples/vrm_pretty_room.py       # 閉じた部屋 / スポット / IBL
 python examples/vrm_overworld.py         # 島 — 街 JSON、メッシュ坂、箱

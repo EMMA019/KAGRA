@@ -1031,6 +1031,26 @@ def overworld_height(x: float, z: float) -> float:
     return _fn(x, z)
 
 
+def open_world_height(x: float, z: float) -> float:
+    """大きい半島。手前が草原、西が海、北が山。``half=80`` 向け。"""
+    from kagra.land import open_world_height as _fn
+    return _fn(x, z)
+
+
+def can_pick(
+    px: float,
+    pz: float,
+    x: float,
+    z: float,
+    *,
+    reach: float = 1.2,
+) -> bool:
+    """XZ の拾い半径。コイン / 星。GPU 不要。"""
+    import math
+
+    return math.hypot(float(px) - float(x), float(pz) - float(z)) <= float(reach)
+
+
 def height_normal(fn, x: float, z: float, eps: float = 0.12):
     """高さ関数の単位法線。"""
     from kagra.physics3d import height_normal as _fn

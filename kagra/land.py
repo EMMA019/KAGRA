@@ -184,6 +184,51 @@ def overworld_height(x: float, z: float) -> float:
     return compose_height(island_height, _plaza_stair, _plaza_ramp)(x, z)
 
 
+def _smoothstep(t: float) -> float:
+    t = max(0.0, min(1.0, float(t)))
+    return t * t * (3.0 - 2.0 * t)
+
+
+def _open_world_base(x: float, z: float) -> float:
+    """大きい半島の下地。手前が草原、西が海、北が山。"""
+    x = float(x)
+    z = float(z)
+    meadow = 1.22 + 0.30 * math.sin(x * 0.15) * math.cos(z * 0.13)
+    meadow += 0.18 * math.sin(x * 0.33 + 1.1) * math.sin(z * 0.27)
+    # 西の海岸線はスポーンから見て画面左（-X）に入る
+    west = -9.5 * _smoothstep((-x - 15.0) / 13.0)
+    sw = -4.8 * math.exp(-((x + 24.0) ** 2 + (z + 6.0) ** 2) / 160.0)
+    south = -7.2 * _smoothstep((-z - 36.0) / 14.0)
+    # なだらかな丘は草原のまま（2.2 未満）。山は遠く北。
+    h1 = 0.85 * math.exp(-((x - 18.0) ** 2 + (z - 18.0) ** 2) / 95.0)
+    h2 = 0.70 * math.exp(-((x + 5.0) ** 2 + (z - 22.0) ** 2) / 80.0)
+    peak = 11.2 * math.exp(-((x - 8.0) ** 2 + (z - 52.0) ** 2) / 190.0)
+    ridge = 9.4 * math.exp(-((x - 24.0) ** 2 + (z - 48.0) ** 2) / 220.0)
+    far = 13.5 * math.exp(-((x - 1.0) ** 2 + (z - 66.0) ** 2) / 200.0)
+    east = 0.90 * math.exp(-((x - 30.0) ** 2 + (z - 12.0) ** 2) / 110.0)
+    y = meadow + west + sw + south + h1 + h2 + peak + ridge + far + east
+    # スポーン草原を平らに（歩きやすく、最初のショットが草地）
+    w = math.exp(-(x * x + (z + 7.0) ** 2) / 58.0)
+    return y * (1.0 - 0.58 * w) + 1.18 * w
+
+
+def _crest_stair(x: float, z: float) -> float | None:
+    """峰へ続く段。ジャンプで上がれる。"""
+    return stair_y(
+        x, z,
+        x0=5.0, x1=11.0, z0=26.0, z1=53.5,
+        y0=1.85, y1=12.8, steps=16, axis="z",
+    )
+
+
+def open_world_height(x: float, z: float) -> float:
+    """大きい半島。手前が草原、西〜南西が海、北が山脈。
+
+    Relic / Overworld の島（半辺 24）より広い。``World3D(half=80)`` 向け。
+    """
+    return compose_height(_open_world_base, _crest_stair)(x, z)
+
+
 def city_boxes(
     ix: int,
     iz: int,

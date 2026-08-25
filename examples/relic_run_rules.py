@@ -41,6 +41,17 @@ TREE_PLACEMENTS = (
     ("plant.glb", -0.8, 2.6, 2.40, -0.20),
     ("plant.glb", 1.8, -2.2, 2.60, 0.40),
     ("plant.glb", -0.4, 3.2, 2.50, 1.10),
+    ("plant.glb", 0.2, 1.4, 2.70, 0.20),
+    ("plant.glb", 2.6, 1.8, 2.55, -0.80),
+    ("plant.glb", -2.2, 0.6, 2.45, 1.40),
+    ("fence.glb", 1.2, -0.6, 1.25, 0.12),
+    ("fence.glb", 3.4, -0.4, 1.25, 0.10),
+    ("flag.glb", 1.4, 4.2, 1.55, 0.05),
+    ("flag.glb", 5.4, 2.8, 1.45, -0.40),
+    ("patch-grass.glb", 0.6, -1.6, 1.80, 0.30),
+    ("patch-grass.glb", 2.2, 0.4, 1.70, 1.10),
+    ("patch-dirt.glb", -1.0, 0.2, 1.50, 0.50),
+    ("tent.glb", 3.2, 4.0, 0.95, -0.70),
 )
 
 ROCK_PLACEMENTS = (
@@ -71,6 +82,11 @@ GLTF_HALF_Y = {
     "rock_tallA.glb": 0.498,
     "stone_smallTopA.glb": 0.110,
     "mushroom_red.glb": 0.101,
+    "fence.glb": 0.200,
+    "flag.glb": 0.375,
+    "patch-grass.glb": 0.086,
+    "patch-dirt.glb": 0.050,
+    "tent.glb": 0.500,
 }
 
 WATER_Y = 0.0

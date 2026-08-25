@@ -457,6 +457,13 @@ def test_prop_mesh_hit_is_trimesh():
     assert prop.body.tris
 
 
+def test_prop_gltf_flatten_is_cached():
+    cube = Path(__file__).resolve().parents[1] / "kagra" / "data" / "unit_cube.glb"
+    a = play.Prop(str(cube), x=0.0, y=0.5, z=0.0, collision=False)
+    b = play.Prop(str(cube), x=2.0, y=0.5, z=0.0, collision=False)
+    assert a._gltf_flat is b._gltf_flat
+
+
 def test_prop_gltf_alias_and_collision():
     w = play.World3D(gravity=0.0)
     play.Prop("cube.glb", x=1.2, y=0.5, z=0.0, world=w)

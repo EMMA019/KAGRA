@@ -24,6 +24,11 @@ Solid (`kagra.ensure_vrm`), credited separately (Dwango) in
 | `kenney/rocks-low.glb` | Models/GLB format/rocks-low.glb |
 | `kenney/stones.glb` | Models/GLB format/stones.glb |
 | `kenney/plant.glb` | Models/GLB format/plant.glb |
+| `kenney/fence.glb` | Models/GLB format/fence.glb |
+| `kenney/flag.glb` | Models/GLB format/flag.glb |
+| `kenney/patch-grass.glb` | Models/GLB format/patch-grass.glb |
+| `kenney/patch-dirt.glb` | Models/GLB format/patch-dirt.glb |
+| `kenney/tent.glb` | Models/GLB format/tent.glb |
 | `kenney/Textures/colormap.png` | Models/GLB format/Textures/colormap.png (referenced by the Mini Forest glTFs) |
 
 ## Kenney Nature Kit 2.1
