@@ -30,6 +30,14 @@ object KagraNative {
     /** 連続値のドライバ入力。steer は -1..1、throttle と brake は 0..1。 */
     external fun setDrive(steer: Float, throttle: Float, brake: Float): Boolean
 
+    /** 0 = 運転、1 = 2D、2 = Crest Isle。 */
+    external fun setScene(kind: Int): Boolean
+
+    /** Crest Isle の歩き。lx/lz は -1..1。 */
+    external fun setWalk(lx: Float, lz: Float, jump: Boolean): Boolean
+
+    external fun setJump(held: Boolean): Boolean
+
     external fun requestFrame(): Long
     external fun statsJson(): String
 

@@ -3,71 +3,60 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Corridor Haul — KAGRA</title>
+  <title>Crest Isle — KAGRA mobile</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Sans+JP:wght@400;600;700&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --ink: #1a1510;
-      --paper: #f2ebe0;
-      --amber: #e8a03a;
-      --amber-deep: #c47820;
+      --ink: #142018;
+      --paper: #f3f6e8;
+      --gold: #e8b03a;
       --teal: #2a8f7c;
-      --danger: #d45a3a;
-      --glass: rgba(18, 16, 14, 0.55);
-      --line: rgba(242, 235, 224, 0.28);
+      --glass: rgba(14, 22, 16, 0.55);
+      --line: rgba(243, 246, 232, 0.28);
     }
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; }
     body {
       font-family: "IBM Plex Sans JP", sans-serif;
       color: var(--paper);
-      background: #0e1210;
+      background: #0c1410;
       overflow: hidden;
     }
-
     #app {
       position: relative;
       width: 100vw;
-      height: 100vh;
       height: 100dvh;
       background:
-        radial-gradient(120% 80% at 70% 0%, rgba(232, 160, 58, 0.18), transparent 55%),
-        radial-gradient(90% 70% at 10% 100%, rgba(42, 143, 124, 0.16), transparent 50%),
-        #0e1210;
+        radial-gradient(120% 80% at 70% 0%, rgba(232, 176, 58, 0.16), transparent 55%),
+        radial-gradient(90% 70% at 8% 90%, rgba(42, 143, 124, 0.18), transparent 50%),
+        #0c1410;
     }
-
-    #stage {
-      position: absolute;
-      inset: 0;
-    }
+    #stage { position: absolute; inset: 0; }
     canvas {
       display: block;
       width: 100%;
       height: 100%;
-      background: #10151f;
+      background: #6aa0c8;
       touch-action: none;
     }
-
-    /* タッチ操作帯 */
     #touch {
       position: absolute;
       inset: auto 0 0 0;
-      height: min(42%, 280px);
+      height: min(40%, 260px);
       display: none;
       pointer-events: none;
-      gap: 10px;
+      gap: 12px;
       padding: 10px;
       padding-bottom: max(10px, env(safe-area-inset-bottom));
     }
     #touch.visible { display: flex; }
     #touch div {
-      flex: 1;
-      border-radius: 18px;
+      border-radius: 22px;
       pointer-events: auto;
       border: 1px solid var(--line);
-      background: rgba(18, 16, 14, 0.35);
+      background: rgba(14, 22, 16, 0.35);
       backdrop-filter: blur(6px);
       display: flex;
       align-items: flex-end;
@@ -75,17 +64,16 @@
       padding-bottom: 16px;
       font: 600 12px/1 "IBM Plex Sans JP", sans-serif;
       letter-spacing: 0.04em;
-      color: rgba(242, 235, 224, 0.55);
+      color: rgba(243, 246, 232, 0.55);
       user-select: none;
       -webkit-user-select: none;
-      transition: background 160ms ease, color 160ms ease;
     }
+    #pad-stick { flex: 1.4; }
+    #pad-jump { flex: 0.7; }
     #touch div.on {
-      background: rgba(232, 160, 58, 0.28);
+      background: rgba(232, 176, 58, 0.28);
       color: var(--paper);
     }
-
-    /* HUD */
     #hud {
       position: absolute;
       inset: 0;
@@ -101,66 +89,35 @@
       max-width: min(420px, 86vw);
       padding: 14px 16px;
       border-radius: 4px 16px 16px 4px;
-      border-left: 4px solid var(--amber);
+      border-left: 4px solid var(--gold);
       background: var(--glass);
       backdrop-filter: blur(8px);
-      box-shadow: 0 12px 40px rgba(0,0,0,.28);
-      animation: rise 480ms cubic-bezier(.2,.8,.2,1) both;
     }
     #objective .label {
       font-family: "Bebas Neue", sans-serif;
       font-size: 13px;
       letter-spacing: 0.18em;
-      color: var(--amber);
+      color: var(--gold);
     }
-    #objective .text {
-      font-size: 18px;
-      font-weight: 700;
-      line-height: 1.35;
-    }
+    #objective .text { font-size: 18px; font-weight: 700; }
     #meters {
       position: absolute;
       right: 18px;
       top: max(16px, env(safe-area-inset-top));
       text-align: right;
-      font-variant-numeric: tabular-nums;
-      animation: rise 560ms 60ms cubic-bezier(.2,.8,.2,1) both;
     }
     #meters .time {
       font-family: "Bebas Neue", sans-serif;
       font-size: clamp(36px, 8vw, 56px);
-      letter-spacing: 0.04em;
       line-height: 1;
     }
-    #meters .sub {
-      margin-top: 4px;
-      font-size: 12px;
-      opacity: 0.7;
-    }
-    #pauseBtn {
-      pointer-events: auto;
-      position: absolute;
-      left: 18px;
-      bottom: calc(min(42%, 280px) + 12px);
-      border: 1px solid var(--line);
-      background: var(--glass);
-      color: var(--paper);
-      border-radius: 999px;
-      padding: 10px 16px;
-      font: 600 12px/1 "IBM Plex Sans JP", sans-serif;
-      letter-spacing: 0.08em;
-      cursor: pointer;
-    }
-
-    /* タイトル / 完了オーバーレイ */
+    #meters .sub { margin-top: 4px; font-size: 12px; opacity: 0.7; }
     .overlay {
       position: absolute;
       inset: 0;
       display: none;
       align-items: stretch;
-      justify-content: stretch;
-      background:
-        linear-gradient(120deg, rgba(14,18,16,.82) 0%, rgba(14,18,16,.35) 48%, rgba(14,18,16,.78) 100%);
+      background: linear-gradient(120deg, rgba(12,20,16,.82), rgba(12,20,16,.35) 48%, rgba(12,20,16,.78));
       pointer-events: auto;
     }
     .overlay.visible { display: flex; }
@@ -168,86 +125,48 @@
       margin: auto;
       width: min(520px, 92vw);
       padding: clamp(28px, 5vw, 48px);
-      animation: rise 620ms cubic-bezier(.2,.8,.2,1) both;
     }
     .brand {
       font-family: "Bebas Neue", sans-serif;
       font-size: clamp(64px, 16vw, 104px);
       line-height: 0.9;
-      letter-spacing: 0.02em;
       margin: 0 0 12px;
-      background: linear-gradient(180deg, #fff6e8 0%, var(--amber) 70%, var(--amber-deep) 100%);
+      background: linear-gradient(180deg, #fff6e8, var(--gold));
       -webkit-background-clip: text;
       background-clip: text;
       color: transparent;
-      text-shadow: none;
-      filter: drop-shadow(0 10px 28px rgba(232,160,58,.25));
     }
-    .tag {
-      font-size: 15px;
-      line-height: 1.55;
-      opacity: 0.88;
-      max-width: 28em;
-      margin: 0 0 28px;
-    }
+    .tag { font-size: 15px; line-height: 1.55; opacity: 0.88; max-width: 32em; }
     .cta {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
       border: 0;
       border-radius: 999px;
       padding: 14px 26px;
       font: 700 15px/1 "IBM Plex Sans JP", sans-serif;
-      letter-spacing: 0.04em;
       color: var(--ink);
-      background: linear-gradient(180deg, #f0c06a, var(--amber));
+      background: linear-gradient(180deg, #f0c06a, var(--gold));
       cursor: pointer;
-      box-shadow: 0 10px 30px rgba(232,160,58,.35);
-      transition: transform 160ms ease, box-shadow 160ms ease;
     }
-    .cta:hover { transform: translateY(-1px); }
-    .cta:active { transform: translateY(1px); }
-    .meta {
-      margin-top: 22px;
+    .meta { margin-top: 22px; font-size: 12px; opacity: 0.55; }
+    .note {
+      margin-top: 10px;
       font-size: 12px;
-      opacity: 0.55;
-      letter-spacing: 0.04em;
+      opacity: 0.7;
+      max-width: 36em;
     }
-    .score-row {
-      display: flex;
-      gap: 28px;
-      margin: 8px 0 28px;
-    }
-    .score-row div span {
-      display: block;
-      font-size: 11px;
-      letter-spacing: 0.14em;
-      opacity: 0.6;
-      margin-bottom: 4px;
-    }
-    .score-row strong {
-      font-family: "Bebas Neue", sans-serif;
-      font-size: 42px;
-      letter-spacing: 0.03em;
-      font-weight: 400;
-    }
-
+    .score-row { display: flex; gap: 28px; margin: 8px 0 28px; }
+    .score-row strong { font-family: "Bebas Neue", sans-serif; font-size: 42px; font-weight: 400; }
     #boot {
       position: absolute;
       inset: 0;
       display: grid;
       place-items: center;
-      background: #0e1210;
+      background: #0c1410;
       z-index: 5;
       font-size: 14px;
       letter-spacing: 0.08em;
     }
     #boot.err { color: #ff9d7a; padding: 24px; text-align: center; white-space: pre-wrap; }
-
-    @keyframes rise {
-      from { opacity: 0; transform: translateY(14px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
+    a.haul { color: var(--gold); }
   </style>
 </head>
 <body>
@@ -255,48 +174,43 @@
     <div id="stage">
       <canvas id="c"></canvas>
       <div id="touch">
-        <div id="pad-steer">STEER</div>
-        <div id="pad-pedal">上＝アクセル / 下＝ブレーキ・バック</div>
+        <div id="pad-stick">WALK</div>
+        <div id="pad-jump">JUMP</div>
       </div>
     </div>
-
     <div id="hud">
       <div id="objective">
-        <div class="label">JOB</div>
-        <div class="text" id="objectiveText">倉庫へ向かう</div>
+        <div class="label">CRESTS</div>
+        <div class="text" id="objectiveText">6 つの紋章を集める</div>
       </div>
       <div id="meters">
         <div class="time" id="timeText">0:00</div>
-        <div class="sub" id="speedText">0 km/h</div>
+        <div class="sub" id="countText">0 / 6 · coin 0</div>
       </div>
-      <button id="pauseBtn" type="button">PAUSE</button>
     </div>
-
     <div class="overlay visible" id="title">
       <div class="overlay-inner">
-        <h1 class="brand">CORRIDOR<br>HAUL</h1>
-        <p class="tag">OpenStreetMap 由来の渋谷周辺を走れ。緑のビーコンで積み、橙で下ろせ。交差する街路と交通に注意。</p>
-        <button class="cta" id="startBtn" type="button">配送を開始する</button>
-        <p class="meta" id="titleMeta">↑アクセル ↓ブレーキ／バック ・ 画面下のパッド · <a href="./crest.html" style="color:#e8a03a">Crest Isle</a></p>
+        <h1 class="brand">CREST<br>ISLE</h1>
+        <p class="tag">草原・海・山の半島で紋章を集める。プレイヤーは Kenney 風カプセル。<strong>VRM ではない</strong>（Python の Alicia はデスクトップ専用）。</p>
+        <button class="cta" id="startBtn" type="button">島を歩く</button>
+        <p class="note">左スティックで走る、右でジャンプ。WASD + Space。デスクトップ本編は <code>python examples/vrm_open_world.py</code>。</p>
+        <p class="meta" id="titleMeta"><a class="haul" href="./index.html">Corridor Haul（運転デモ）</a></p>
       </div>
     </div>
-
     <div class="overlay" id="complete">
       <div class="overlay-inner">
-        <h1 class="brand">DELIVERED</h1>
-        <p class="tag">荷物が届いた。次の便も待っている。</p>
+        <h1 class="brand">CRESTS</h1>
+        <p class="tag">紋章が揃った。峰の旗まで取るとボーナス。</p>
         <div class="score-row">
           <div><span>TIME</span><strong id="finishTime">0:00</strong></div>
           <div><span>SCORE</span><strong id="finishScore">0</strong></div>
           <div><span>BEST</span><strong id="finishBest">—</strong></div>
         </div>
-        <button class="cta" id="againBtn" type="button">もう一便走る</button>
+        <button class="cta" id="againBtn" type="button">もう一度歩く</button>
       </div>
     </div>
-
-    <div id="boot">CORRIDOR HAUL — loading</div>
+    <div id="boot">CREST ISLE — loading</div>
   </div>
-
   <script type="module">
     import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js";
 
@@ -305,29 +219,18 @@
     const complete = document.getElementById("complete");
     const hud = document.getElementById("hud");
     const touch = document.getElementById("touch");
-    const objectiveText = document.getElementById("objectiveText");
-    const timeText = document.getElementById("timeText");
-    const speedText = document.getElementById("speedText");
-    const titleMeta = document.getElementById("titleMeta");
-
-    const OBJECTIVES = {
-      title: "配送を開始する",
-      pickup: "緑のビーコンへ — 荷物を積む",
-      dropoff: "橙のビーコンへ — 荷物を届ける",
-      complete: "配達完了",
-    };
 
     const fmt = (s) => {
       const t = Math.max(0, s | 0);
       const m = (t / 60) | 0;
-      const sec = t % 60;
-      return `${m}:${sec.toString().padStart(2, "0")}`;
+      return `${m}:${(t % 60).toString().padStart(2, "0")}`;
     };
 
     let session;
     try {
       await init();
       session = new WasmSession();
+      session.setScene(2);
       window.kagra = session;
     } catch (e) {
       boot.className = "err";
@@ -335,7 +238,6 @@
       throw e;
     }
 
-    const BEST_KEY = "corridor-haul-best";
     const canvas = document.getElementById("c");
     const dpr = () => Math.min(window.devicePixelRatio || 1, 2);
     const sizeCanvas = () => {
@@ -363,13 +265,8 @@
       throw new Error("no render");
     }
     boot.style.display = "none";
-
-    // ベストタイムをタイトルに反映
-    try {
-      const best = localStorage.getItem(BEST_KEY);
-      if (best) titleMeta.textContent = `BEST ${fmt(parseFloat(best))}  ·  ${sharedVersion()}`;
-      else titleMeta.textContent = `矢印 / WASD ・ 画面下のパッド  ·  ${sharedVersion()}`;
-    } catch (_) {}
+    document.getElementById("titleMeta").textContent =
+      `WASD + Space ・ 左スティック / 右ジャンプ  ·  ${sharedVersion()}  ·  not VRM`;
 
     const setPhaseUi = (phase) => {
       title.classList.toggle("visible", phase === "title");
@@ -383,31 +280,20 @@
       session.startGame();
       setPhaseUi("playing");
     };
-
     document.getElementById("startBtn").addEventListener("click", beginRun);
     document.getElementById("againBtn").addEventListener("click", beginRun);
-    document.getElementById("pauseBtn").addEventListener("click", () => {
-      session.pause();
-    });
 
-    // ---- 入力 ----
-    const steerEl = document.getElementById("pad-steer");
-    const pedalEl = document.getElementById("pad-pedal");
-    const touchState = { steer: 0, throttle: 0, brake: 0 };
+    const stickEl = document.getElementById("pad-stick");
+    const jumpEl = document.getElementById("pad-jump");
+    const touchState = { lx: 0, lz: 0, jump: false };
     const held = new Set();
     const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
-    const onSteer = (e) => {
-      const r = steerEl.getBoundingClientRect();
-      touchState.steer = clamp(((e.clientX - r.left) / r.width) * 2 - 1, -1, 1);
-      steerEl.classList.add("on");
-    };
-    const onPedal = (e) => {
-      const r = pedalEl.getBoundingClientRect();
-      const t = ((e.clientY - r.top) / r.height) * 2 - 1;
-      touchState.throttle = t < 0 ? clamp(-t, 0, 1) : 0;
-      touchState.brake = t > 0 ? clamp(t, 0, 1) : 0;
-      pedalEl.classList.add("on");
+    const onStick = (e) => {
+      const r = stickEl.getBoundingClientRect();
+      touchState.lx = clamp(((e.clientX - r.left) / r.width) * 2 - 1, -1, 1);
+      touchState.lz = clamp(-(((e.clientY - r.top) / r.height) * 2 - 1), -1, 1);
+      stickEl.classList.add("on");
     };
     const bindPad = (el, move, release) => {
       el.addEventListener("pointerdown", (e) => {
@@ -419,41 +305,39 @@
       el.addEventListener("pointerup", up);
       el.addEventListener("pointercancel", up);
     };
-    bindPad(steerEl, onSteer, () => { touchState.steer = 0; });
-    bindPad(pedalEl, onPedal, () => { touchState.throttle = 0; touchState.brake = 0; });
+    bindPad(stickEl, onStick, () => { touchState.lx = 0; touchState.lz = 0; });
+    bindPad(jumpEl, () => { touchState.jump = true; jumpEl.classList.add("on"); }, () => { touchState.jump = false; });
 
     window.addEventListener("keydown", (e) => {
       held.add(e.key);
-      if (e.key.startsWith("Arrow") || e.key === " ") e.preventDefault();
+      if (e.key === " " || e.key.startsWith("Arrow")) e.preventDefault();
       if (e.key === "Enter" || e.key === " ") {
         const st = JSON.parse(session.statsJson());
         if (st.game_phase === "title" || st.game_phase === "complete") beginRun();
       }
-      if (e.key === "Escape") session.pause();
-      if (e.key === "r" || e.key === "R") beginRun();
     });
     window.addEventListener("keyup", (e) => held.delete(e.key));
     window.addEventListener("resize", () => { scale = sizeCanvas(); });
 
-    const keyAxis = () => {
+    const keyWalk = () => {
       const l = held.has("ArrowLeft") || held.has("a") || held.has("A");
       const r = held.has("ArrowRight") || held.has("d") || held.has("D");
       const u = held.has("ArrowUp") || held.has("w") || held.has("W");
       const d = held.has("ArrowDown") || held.has("s") || held.has("S");
       return {
-        steer: (r ? 1 : 0) - (l ? 1 : 0),
-        throttle: u ? 1 : 0,
-        brake: d ? 1 : 0,
+        lx: (r ? 1 : 0) - (l ? 1 : 0),
+        lz: (u ? 1 : 0) - (d ? 1 : 0),
+        jump: held.has(" ") || held.has("j") || held.has("J"),
       };
     };
 
     let lastPhase = "title";
     const loop = () => {
-      const k = keyAxis();
-      session.setDrive(
-        clamp(k.steer + touchState.steer, -1, 1),
-        clamp(k.throttle + touchState.throttle, 0, 1),
-        clamp(k.brake + touchState.brake, 0, 1),
+      const k = keyWalk();
+      session.setWalk(
+        clamp(k.lx + touchState.lx, -1, 1),
+        clamp(k.lz + touchState.lz, -1, 1),
+        k.jump || touchState.jump,
       );
       session.requestFrame();
       if (rendering) {
@@ -464,7 +348,6 @@
           boot.textContent = `render failed: ${e}`;
         }
       }
-
       let st;
       try { st = JSON.parse(session.statsJson()); } catch { st = {}; }
       const phase = st.game_phase || "title";
@@ -473,19 +356,18 @@
         lastPhase = phase;
       }
       if (phase === "playing") {
-        objectiveText.textContent = OBJECTIVES[st.objective] || OBJECTIVES.pickup;
-        timeText.textContent = fmt(st.game_time_s || 0);
-        const gear = st.reversing ? " · R" : "";
-        speedText.textContent = `${(st.speed_kmh || 0).toFixed(0)} km/h${gear} · 交通 ${st.traffic_count || 0}`;
+        const need = st.star_need || 6;
+        document.getElementById("objectiveText").textContent =
+          `${st.stars || 0} / ${need} 紋章 · 峰の旗まで`;
+        document.getElementById("timeText").textContent = fmt(st.game_time_s || 0);
+        document.getElementById("countText").textContent =
+          `${st.stars || 0} / ${need} · coin ${st.coins || 0}`;
       }
       if (phase === "complete") {
         document.getElementById("finishTime").textContent = fmt(st.game_time_s || 0);
         document.getElementById("finishScore").textContent = String(st.game_score || 0);
         const best = st.game_best_s;
-        document.getElementById("finishBest").textContent = best != null ? fmt(best) : "—";
-        try {
-          if (best != null) localStorage.setItem(BEST_KEY, String(best));
-        } catch {}
+        document.getElementById("finishBest").textContent = best != null ? String(best | 0) : "—";
       }
       requestAnimationFrame(loop);
     };

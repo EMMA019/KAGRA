@@ -93,7 +93,7 @@ Scene scripts (`examples/vrm_*.py`) live in the git repo. `pip` gives you `impor
 - **3D play** — `Prop` / `Walk` / `sky` / `room` / `World3D`. Four local lights (`slot=0..3`), indoor umbra, 2-cascade outdoor shadows, tangent-space normal maps. AABB crates fall, stack, and `Walk` stands on them. USB/XInput is read on the EventLoop (`gilrs`); tests use `inject_pad`
 - **Brain** — `kagra.brain("kairi"|"ollama"|"openai")`. Hosted kairi needs `KAIRI_API_TOKEN`. Models are not in the wheel
 - **Agent loop** — API index, `kagra.verify`, MCP tools, golden renders
-- **Mobile / Wasm** — `kagra-shared` + `mobile/` is a **separate driving demo** (roads, truck, OSM). It is not the Python VRM / game stack. Do not merge the two renderers
+- **Mobile / Wasm** — `kagra-shared` + `mobile/` is a **separate renderer** from Python `kagra-core`. Corridor Haul (driving) plus a Crest Isle collectathon slice (Kenney-style capsule, **not VRM**). Do not merge the two renderers
 
 Tilemaps, ECS, and the 2D editor are on the shelf ([`examples/archive/`](examples/archive/)). They are not the 3D headline.
 
@@ -149,7 +149,11 @@ python examples/vrm_heart_catch.py       # 3-lane catch (agent-run log)
 python examples/vrm_switch_room.py       # boxed room, camera follow
 python examples/vrm_dodge_room.py        # falling boxes, survive (agent-run log)
 python examples/vrm_relic_run.py          # island relic collect 30s (agent-run log)
-python examples/vrm_open_world.py         # Crest Isle — wide grass/sea/mountains collectathon
+python examples/vrm_open_world.py         # Crest Isle — wide grass/sea/mountains (desktop VRM)
+# Crest Isle mobile (kagra-shared; not VRM — Kenney-style capsule)
+./scripts/build_wasm.sh && python -m http.server -d kagra-shared/www 8000
+# → http://localhost:8000/crest.html
+./scripts/build_android_native.sh && cd mobile/android && gradle :app:assembleDebug
 python examples/vrm_prop_garden.py       # Prop / Walk / sky (play surface)
 python examples/vrm_pretty_room.py       # enclosed room / spot / IBL
 python examples/vrm_overworld.py         # tiled island — city JSON, mesh ramp, crates
