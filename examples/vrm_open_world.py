@@ -183,6 +183,8 @@ class CrestIsle(kagra.Scene):
             lod_radius=LOD_RADIUS, lod_cells=LOD_CELLS,
         )
         self.world.set_water_y(WATER_Y)
+        # bake_terrain streams immediately and calls _fill_chunk.
+        self._chunk_props = 0
         self.world.set_chunk_fill(self._fill_chunk)
         self.world.add_player(*START_XZ)
 
@@ -220,7 +222,6 @@ class CrestIsle(kagra.Scene):
                 intensity=0.40, radius=18.0, slot=1,
             )
 
-        self._chunk_props = 0
         for rel, x, z, scale, yaw, hit in VISTA_PROPS:
             _place_gltf(rel, x, z, scale, yaw, self.world, collision=hit)
 

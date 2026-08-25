@@ -190,3 +190,26 @@ def test_chunk_fill_once_per_tile():
     w.stream_tiles(0.0, 0.0)
     assert hits[: len(first)] == first
     assert len(hits) == len(set(hits))
+
+
+def test_bake_terrain_invokes_chunk_fill():
+    """bake_terrain streams at once — fill callbacks must be ready first.
+
+    Crest Isle crashed because ``_chunk_props`` was assigned after bake.
+    """
+    m = _world()
+    w = m.World3D(half=24.0)
+    w.set_height_fn(lambda _x, _z: 0.0, tile=10.0, stream_radius=8.0)
+    w.add_player(0.0, 0.0)
+
+    class Host:
+        def __init__(self):
+            self._chunk_props = 0
+
+        def fill(self, _ix, _iz):
+            self._chunk_props += 1
+
+    host = Host()
+    w.set_chunk_fill(host.fill)
+    w.bake_terrain(1)
+    assert host._chunk_props >= 1
