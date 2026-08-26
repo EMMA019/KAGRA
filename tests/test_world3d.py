@@ -237,6 +237,7 @@ def test_terrain_base_defaults_white_for_relic_run():
     assert w.terrain_uv_period is None
     assert w.terrain_uv_blend == 0.0
     assert w.terrain_uv_pad == 0.0
+    assert w.terrain_uv_rect is None
     w.terrain_base = (0.55, 1.55, 0.70)
     assert w.terrain_base[1] > w.terrain_base[0]
 

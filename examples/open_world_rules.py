@@ -51,11 +51,18 @@ AERIAL_GRASS_ALBEDO = (0.446, 0.381, 0.143)
 # whole moss window inside one tile; lod_cells=3 triangles that straddled a
 # fold interpolated as a 1D UV sliver (barcode / 1-axis stretch). Period is
 # a multiple of TILE so folds land on chunk edges, not inside a coarse
-# triangle. Pad keeps ping-pong off the dirt rim. Blend stays 0.
+# triangle. Pad 0.28 skips the square dirt rim (~0.12 UV) but the *interior*
+# is still mixed moss + brown rock. Period 48 then made each TILE a different
+# biome slice of that interior (green tile glued to bald dirt). TERRAIN_UV_RECT
+# is a compact meadow-green window measured on the tinted 1K (low B, no dirt
+# rim / rock patch). Ping-pong maps into that rect only. Relic Run keeps the
+# uncropped JPEG / default UV. Blend stays 0.
 AERIAL_GRASS_DIRT_RIM = 0.12
 TERRAIN_UV_PERIOD = 48.0
 TERRAIN_UV_BLEND = 0.0
 TERRAIN_UV_PAD = 0.28
+# (u0, v0, u1, v1) into aerial_grass_rock_diff_1k.jpg after GRASS_TINT.
+TERRAIN_UV_RECT = (0.535, 0.485, 0.640, 0.590)
 
 PICK_REACH = 1.25
 STAR_NEED = 6
@@ -70,6 +77,24 @@ COIN_GLOW = 0.55
 SPHERE_HALF_Y = 0.5
 
 _START_FACE = 0.0  # body +Z; camera behind looks at grass / sea / mountains
+
+
+def _pingpong01(t: float) -> float:
+    """Fold into 0..1. Same as ``kagra.gamekit`` (Crest UVs stay GPU-free)."""
+    t = float(t)
+    n = math.floor(t)
+    f = t - n
+    if int(n) % 2:
+        return 1.0 - f
+    return f
+
+
+def terrain_uv(x: float, z: float) -> tuple[float, float]:
+    """Crest Isle world XZ → JPEG UV. Ping-pong into ``TERRAIN_UV_RECT``."""
+    u = _pingpong01(float(x) / TERRAIN_UV_PERIOD)
+    v = _pingpong01(float(z) / TERRAIN_UV_PERIOD)
+    u0, v0, u1, v1 = TERRAIN_UV_RECT
+    return u0 + u * (u1 - u0), v0 + v * (v1 - v0)
 
 
 # Flatten-centered half-height (Kenney Mini Forest / Nature / Town / Castle / Dungeon).
