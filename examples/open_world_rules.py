@@ -13,7 +13,9 @@ HALF = 80.0
 TILE = 16.0
 STREAM_RADIUS = 64.0
 LOD_RADIUS = 28.0
-LOD_CELLS = 3
+# 3-cell far tiles + period < TILE made 16 m chunks a 1-axis UV sliver
+# (barcode). Keep coarser than CELLS=8, but not a 5 m triangle on a fold.
+LOD_CELLS = 6
 CELLS = 8
 WATER_Y = 0.0
 LAND_MIN_Y = WATER_Y - 0.04
@@ -42,16 +44,16 @@ GRASS_TINT = (0.55, 1.55, 0.70)
 AERIAL_GRASS_ALBEDO = (0.446, 0.381, 0.143)
 # The JPEG is a non-tiling aerial photo (1024²). Mossy speckle sits in the
 # interior; UV 0 and 1 are bare earth (higher B, yellowish dirt). Engine
-# sampler is ClampToEdge + Nearest, so mapping 0..1 onto a world rectangle
-# (per-tile local UV, or ping-pong of the full image) stamps a grass island
-# with an axis-aligned dirt frame, then stretches the dirt rim everywhere
-# else. Pad 0.035 only skipped ~36 px and did not hide that frame.
-# AERIAL_GRASS_DIRT_RIM is the UV inset that still reads as the square
-# border (measured on the vendored 1K). Period ≠ TILE so the 16 m stream
-# grid is not a second stamp. Blend is unused: world-continuous UVs already
-# match at the join; the 0.018 wobble was not the bald rectangle.
+# sampler is ClampToEdge + Nearest. Do not map 0..1 onto a tile (that stamps
+# the JPEG square). Do not Repeat this photo (dirt rim at every fold).
+# Period must be significantly *larger* than TILE so one 16 m chunk maps to
+# a small 2D window of the moss interior. Period 9.5 < TILE ping-ponged the
+# whole moss window inside one tile; lod_cells=3 triangles that straddled a
+# fold interpolated as a 1D UV sliver (barcode / 1-axis stretch). Period is
+# a multiple of TILE so folds land on chunk edges, not inside a coarse
+# triangle. Pad keeps ping-pong off the dirt rim. Blend stays 0.
 AERIAL_GRASS_DIRT_RIM = 0.12
-TERRAIN_UV_PERIOD = 9.5
+TERRAIN_UV_PERIOD = 48.0
 TERRAIN_UV_BLEND = 0.0
 TERRAIN_UV_PAD = 0.28
 

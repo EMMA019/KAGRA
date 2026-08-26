@@ -530,7 +530,9 @@ def test_crest_isle_ships_blob_sparks_and_tile_blend():
     assert "terrain_uv_blend = TERRAIN_UV_BLEND" in src
     assert "terrain_uv_pad = TERRAIN_UV_PAD" in src
     assert "terrain_uv_half = HALF" in src
-    assert TERRAIN_UV_PERIOD != TILE
+    assert TERRAIN_UV_PERIOD > TILE
+    assert TERRAIN_UV_PERIOD >= TILE * 2.0
+    assert abs(TERRAIN_UV_PERIOD / TILE - round(TERRAIN_UV_PERIOD / TILE)) < 1e-9
     assert TERRAIN_UV_BLEND == 0.0
     assert TERRAIN_UV_PAD >= AERIAL_GRASS_DIRT_RIM
     assert TERRAIN_UV_PAD > 0.2
@@ -575,6 +577,69 @@ def test_crest_meadow_uvs_stay_inside_jpeg_moss():
     assert join_a[7] == pytest.approx(join_b[7], abs=1e-6)
     c0, c1 = at(verts_a, TILE * 0.5, 8.0), at(verts_b, TILE * 1.5, 8.0)
     assert abs(c0[6] - c1[6]) > 0.05
+
+
+def test_crest_meadow_lod3_tile_is_not_a_barcode():
+    """Emma's remaining ハゲ: 16 m tiles with 1-axis JPEG stretch (barcode).
+
+    Period 9.5 < TILE ping-ponged the moss window inside one chunk. A
+    lod_cells=3 triangle that straddled a fold had ΔU≈0 (or aspect ~8) so
+    Nearest ClampToEdge smeared one texel column across the tile. Period
+    must be > TILE so each chunk is a small 2D moss window; pad still
+    skips the dirt rim. Not per-tile 0..1 UV.
+    """
+    kit = load_kagra_submodule("gamekit")
+
+    def fn(_x, _z):
+        return 0.4
+
+    kwargs = dict(
+        tile=TILE, cells=3,
+        uv_period=TERRAIN_UV_PERIOD,
+        uv_blend=TERRAIN_UV_BLEND,
+        uv_pad=TERRAIN_UV_PAD,
+        uv_half=HALF,
+    )
+    assert TERRAIN_UV_PERIOD > TILE
+    for ix in range(-5, 5):
+        for iz in range(-5, 5):
+            verts, idx = kit.heightfield_tile(fn, ix * TILE, iz * TILE, **kwargs)
+            for t in range(0, len(idx), 3):
+                tri = idx[t:t + 3]
+                us = [verts[i][6] for i in tri]
+                vs = [verts[i][7] for i in tri]
+                du = max(us) - min(us)
+                dv = max(vs) - min(vs)
+                assert du > 0.04 and dv > 0.04, (ix, iz, du, dv, us, vs)
+                aspect = max(du, dv) / min(du, dv)
+                assert aspect < 3.0, (ix, iz, aspect, du, dv)
+                for u, v in zip(us, vs):
+                    edge = min(u, 1.0 - u, v, 1.0 - v)
+                    assert edge >= AERIAL_GRASS_DIRT_RIM - 1e-9, (ix, iz, u, v)
+
+
+def test_period_below_tile_makes_lod3_barcode():
+    """The #94 period 9.5 < TILE sliver is what Emma's screenshot showed."""
+    kit = load_kagra_submodule("gamekit")
+
+    def fn(_x, _z):
+        return 0.4
+
+    verts, idx = kit.heightfield_tile(
+        fn, 16.0, 0.0, tile=TILE, cells=3,
+        uv_period=9.5, uv_blend=0.0, uv_pad=0.28, uv_half=HALF,
+    )
+    skinny = 0
+    for t in range(0, len(idx), 3):
+        tri = idx[t:t + 3]
+        us = [verts[i][6] for i in tri]
+        vs = [verts[i][7] for i in tri]
+        du = max(us) - min(us)
+        dv = max(vs) - min(vs)
+        aspect = max(du, dv) / max(min(du, dv), 1e-12)
+        if du <= 0.04 or dv <= 0.04 or aspect >= 3.0:
+            skinny += 1
+    assert skinny >= 1
 
 
 def test_crest_gold_orbs_use_metal_not_plastic():

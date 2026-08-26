@@ -144,7 +144,7 @@ def test_heightfield_uv_blend_is_not_a_step_at_the_join():
     def fn(_x, _z):
         return 0.4
 
-    kwargs = dict(tile=16.0, cells=8, uv_period=9.5, uv_blend=0.0, uv_pad=0.28)
+    kwargs = dict(tile=16.0, cells=8, uv_period=48.0, uv_blend=0.0, uv_pad=0.28)
     a, _ = kit.heightfield_tile(fn, 0.0, 0.0, **kwargs)
     b, _ = kit.heightfield_tile(fn, 16.0, 0.0, **kwargs)
     ae = sorted(_edge_verts(a, x=16.0), key=lambda v: v[2])
@@ -175,7 +175,7 @@ def test_heightfield_crest_uvs_skip_jpeg_dirt_border():
         return 0.4
 
     rim = 0.12
-    kwargs = dict(tile=16.0, cells=8, uv_period=9.5, uv_blend=0.0, uv_pad=0.28)
+    kwargs = dict(tile=16.0, cells=8, uv_period=48.0, uv_blend=0.0, uv_pad=0.28)
     tiles = []
     for ix in range(-1, 2):
         for iz in range(-1, 2):
@@ -195,7 +195,7 @@ def test_heightfield_adjacent_tiles_have_no_tile_sized_albedo_step():
     def fn(_x, _z):
         return 0.4
 
-    kwargs = dict(tile=16.0, cells=16, uv_period=9.5, uv_blend=0.0, uv_pad=0.28)
+    kwargs = dict(tile=16.0, cells=16, uv_period=48.0, uv_blend=0.0, uv_pad=0.28)
     a, _ = kit.heightfield_tile(fn, 0.0, 0.0, **kwargs)
     b, _ = kit.heightfield_tile(fn, 16.0, 0.0, **kwargs)
     z = 8.0

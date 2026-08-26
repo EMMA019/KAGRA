@@ -85,13 +85,15 @@ def test_height_fn_player_spawns_on_terrain():
 
 def test_stream_tiles_load_and_unload():
     m = _world()
-    w = m.World3D(half=24.0)
+    w = m.World3D(half=48.0)
     w.set_height_fn(lambda _x, _z: 0.0, tile=10.0, stream_radius=12.0)
     n = w.stream_tiles(0.0, 0.0)
     assert n >= 1
     near = set(w.loaded_tiles())
     assert any(abs(ix) <= 1 and abs(iz) <= 1 for ix, iz in near)
-    w.stream_tiles(30.0, 0.0)
+    w.stream_tiles(50.0, 0.0)
+    # Delayed unload: origin may linger one frame after leaving want.
+    w.stream_tiles(50.0, 0.0)
     far = set(w.loaded_tiles())
     assert near != far
     assert (0, 0) not in far
@@ -292,3 +294,147 @@ def test_world_update_feeds_debug_trace_on_slope():
         assert "floated" in tracer2.summary()
     finally:
         tr._ACTIVE = None
+
+
+def test_failed_upload_is_not_sticky_loaded(monkeypatch):
+    """GPU upload fail / zero id must not skip forever as a bald rectangle."""
+    import sys
+
+    m = _world()
+    w = m.World3D(half=24.0)
+    w.set_height_fn(lambda _x, _z: 0.0, tile=10.0, stream_radius=12.0)
+    w._terrain_tex = 7
+    kagra = sys.modules["kagra"]
+    calls = {"n": 0}
+
+    def boom(*_a, **_k):
+        calls["n"] += 1
+        raise RuntimeError("upload failed")
+
+    monkeypatch.setattr(kagra, "upload_mesh_3d", boom, raising=False)
+    monkeypatch.setattr(kagra, "unload_mesh_3d", lambda *_a, **_k: None, raising=False)
+    w.stream_tiles(0.0, 0.0)
+    want = w.wanted_tiles(0.0, 0.0)
+    assert want
+    assert calls["n"] >= 1
+    for key in want:
+        assert key not in w._loaded_tiles
+        assert key not in w._tile_lod
+        assert key not in w._tile_meshes
+
+    def zero(*_a, **_k):
+        calls["n"] += 1
+        return 0
+
+    monkeypatch.setattr(kagra, "upload_mesh_3d", zero, raising=False)
+    w.stream_tiles(0.0, 0.0)
+    for key in want:
+        assert key not in w._loaded_tiles
+        assert key not in w._tile_lod
+
+    ids = {"n": 0}
+
+    def ok(*_a, **_k):
+        ids["n"] += 1
+        return ids["n"]
+
+    monkeypatch.setattr(kagra, "upload_mesh_3d", ok, raising=False)
+    w.stream_tiles(0.0, 0.0)
+    loaded = set(w.loaded_tiles())
+    assert loaded
+    assert loaded <= set(want)
+    assert all(k in w._tile_lod for k in loaded)
+    assert all(k in w._tile_meshes for k in loaded)
+    assert ids["n"] >= 1
+
+
+def test_cpu_stream_then_gpu_retries_missing_mesh(monkeypatch):
+    """stream_tiles before bake_terrain used to mark keys loaded with no mesh."""
+    import sys
+
+    m = _world()
+    w = m.World3D(half=24.0)
+    w.set_height_fn(lambda _x, _z: 0.0, tile=10.0, stream_radius=12.0)
+    w.stream_tiles(0.0, 0.0)
+    first = set(w.loaded_tiles())
+    assert first
+    assert not w._tile_meshes
+    w._terrain_tex = 3
+    kagra = sys.modules["kagra"]
+    ids = {"n": 0}
+
+    def ok(*_a, **_k):
+        ids["n"] += 1
+        return 100 + ids["n"]
+
+    monkeypatch.setattr(kagra, "upload_mesh_3d", ok, raising=False)
+    monkeypatch.setattr(kagra, "unload_mesh_3d", lambda *_a, **_k: None, raising=False)
+    w.stream_tiles(0.0, 0.0)
+    assert ids["n"] >= 1
+    assert first <= set(w.loaded_tiles())
+    assert first <= set(w._tile_meshes)
+
+
+def test_stream_delayed_unload_keeps_tile_one_frame():
+    land = load_kagra_submodule("land")
+    m = _world()
+    w = m.World3D(half=48.0)
+    w.set_height_fn(lambda _x, _z: 0.0, tile=10.0, stream_radius=12.0)
+    w.stream_tiles(0.0, 0.0)
+    assert (0, 0) in w.loaded_tiles()
+    want_far = set(w.wanted_tiles(40.0, 0.0))
+    vis_far = set(land.tile_keys(40.0, 0.0, tile=10.0, radius=12.0, half=48.0))
+    assert (0, 0) not in want_far
+    assert (0, 0) not in vis_far
+    w.stream_tiles(40.0, 0.0)
+    assert (0, 0) in w.loaded_tiles()
+    w.stream_tiles(40.0, 0.0)
+    assert (0, 0) not in w.loaded_tiles()
+
+
+def test_stream_prefetches_plus_x_before_visible():
+    land = load_kagra_submodule("land")
+    m = _world()
+    w = m.World3D(half=48.0)
+    w.set_height_fn(lambda _x, _z: 0.0, tile=10.0, stream_radius=12.0)
+    vis0 = set(land.tile_keys(0.0, 0.0, tile=10.0, radius=12.0, half=48.0))
+    want0 = set(w.wanted_tiles(0.0, 0.0))
+    extra = want0 - vis0
+    assert extra
+    east = max(ix for ix, _iz in vis0)
+    plus = {(east + 1, iz) for ix, iz in vis0 if ix == east}
+    assert plus <= want0
+    assert not plus <= vis0
+    step = 4.0
+    vis1 = set(land.tile_keys(step, 0.0, tile=10.0, radius=12.0, half=48.0))
+    want1 = set(w.wanted_tiles(step, 0.0))
+    new_vis = vis1 - vis0
+    assert plus <= want1
+    if new_vis and new_vis <= plus:
+        assert plus <= want0
+
+
+def test_stream_upgrades_near_lod_before_new_far_tiles():
+    m = _world()
+    w = m.World3D(half=80.0)
+    w.set_height_fn(
+        lambda _x, _z: 0.0,
+        tile=16.0, stream_radius=48.0, cells=8,
+        lod_radius=20.0, lod_cells=3,
+    )
+    w.stream_tiles(0.0, 0.0)
+    coarse = [k for k, cells in w._tile_lod.items() if cells == 3]
+    assert coarse
+    target = min(coarse, key=lambda k: (k[0] - 0) ** 2 + k[1] ** 2)
+    ox = (target[0] + 0.5) * 16.0
+    oz = (target[1] + 0.5) * 16.0
+    assert w._cells_for(target, 0.0, 0.0) == 3
+    assert w._cells_for(target, ox, oz) == 8
+    before = set(w.loaded_tiles())
+    w.stream_tiles(ox, oz, max_new=1)
+    after = set(w.loaded_tiles())
+    added = after - before
+    assert target in w.loaded_tiles()
+    assert w._tile_lod[target] == 8
+    assert len(added) == 0
+

@@ -5,6 +5,7 @@ once the renderer exists — tests can skip that and still walk the room.
 
 高さ場は既定でタイル分割する（1 枚だと影 AABB が 24 を超えて空扱いになる）。
 ``stream_radius`` を付けると歩きながらタイルを載せる / 外す。
+ストリーム時は見える半径に 1 タイル先読みし、外すのは 1 フレーム遅らせる。
 """
 from __future__ import annotations
 
@@ -58,6 +59,7 @@ class World3D:
         self._city = None
         self._drawn_dynamic: list[tuple[RigidBody3D, int]] = []
         self._stream_warm = False
+        self._prev_want: set[tuple[int, int]] = set()
         self.terrain_base: tuple[float, float, float] = (1.0, 1.0, 1.0)
         # None → ``self.half`` (one 0..1 map across the world). Crest Isle
         # sets period/pad so stream tiles stay inside the JPEG moss, not a
@@ -181,6 +183,13 @@ class World3D:
             return int(self._lod_cells)
         return self._height_cells
 
+    def _tile_dist2(self, key: tuple[int, int], x: float, z: float) -> float:
+        t = float(self._tile or 0.0)
+        ox, oz = tile_origin(key[0], key[1], t)
+        dx = ox + t * 0.5 - float(x)
+        dz = oz + t * 0.5 - float(z)
+        return dx * dx + dz * dz
+
     def add_trimesh(self, verts, indices, *, is_static: bool = True) -> RigidBody3D:
         """静的な三角形当たり。描画は呼び出し側で ``upload_mesh_3d``。"""
         body = self.physics.add_trimesh(verts, indices, is_static=is_static)
@@ -203,7 +212,7 @@ class World3D:
         return frozenset(self._loaded_tiles)
 
     def wanted_tiles(self, x: float, z: float) -> list[tuple[int, int]]:
-        """プレイヤー位置から載せるタイル。"""
+        """プレイヤー位置から載せるタイル。ストリーム時は見える半径に 1 タイル先読み。"""
         if self._height_fn is None:
             return []
         if self._tile is None:
@@ -211,9 +220,10 @@ class World3D:
         if self._stream_radius is None:
             radius = self.half * 1.42 + self._tile
             return tile_keys(0.0, 0.0, tile=self._tile, radius=radius, half=self.half)
+        radius = float(self._stream_radius) + float(self._tile)
         return tile_keys(
             float(x), float(z),
-            tile=self._tile, radius=self._stream_radius, half=self.half,
+            tile=self._tile, radius=radius, half=self.half,
         )
 
     def set_water_y(self, y: float | None) -> None:
@@ -310,34 +320,53 @@ class World3D:
         """近くのタイルを載せ、遠いタイルを外す。エンジン無しでもキーは更新する。
 
         ``max_new`` は新規タイル数の上限。``None`` は無制限（最初のリング /
-        テスト）。歩き中は ``update`` が 1 枚/フレームに絞る。
+        テスト）。歩き中は ``update`` が 1 枚/フレームに絞る。外すのは
+        1 フレーム遅らせる。LOD 更新は新規アップロードより先。
         """
         if self._height_fn is None:
             return 0
         want = set(self.wanted_tiles(x, z))
+        prev = self._prev_want
         for key in list(self._loaded_tiles):
-            if key not in want:
+            if key not in want and key not in prev:
                 self._unload_tile(key)
                 self._loaded_tiles.discard(key)
-        added = 0
+        self._prev_want = set(want)
+        gpu_ready = self._terrain_tex > 0
+        upgrades: list[tuple[int, int]] = []
+        news: list[tuple[int, int]] = []
         for key in want:
             want_cells = self._cells_for(key, x, z)
             have = key in self._loaded_tiles
-            lod_ok = have and self._tile_lod.get(key) == want_cells
+            lod_match = self._tile_lod.get(key) == want_cells
+            has_mesh = key in self._tile_meshes
+            lod_ok = have and lod_match and (has_mesh if gpu_ready else True)
             if lod_ok:
                 continue
+            (upgrades if have else news).append(key)
+        upgrades.sort(key=lambda k: self._tile_dist2(k, x, z))
+        news.sort(key=lambda k: self._tile_dist2(k, x, z))
+        added = 0
+        for key in upgrades + news:
             if max_new is not None and added >= max_new:
                 # Keep the old LOD mesh. Unloading first painted missing-tile
                 # rectangles while the 1-tile/frame budget caught up.
                 break
-            self._loaded_tiles.add(key)
-            if key not in self._filled_chunks:
+            was_loaded = key in self._loaded_tiles
+            if not was_loaded and key not in self._filled_chunks:
                 if self._chunk_fill is not None:
                     self._chunk_fill(key[0], key[1])
                 self._place_city_chunk(key[0], key[1])
                 self._filled_chunks.add(key)
-            self._upload_tile(key, viewer_x=x, viewer_z=z)
+            mid = self._upload_tile(key, viewer_x=x, viewer_z=z)
             added += 1
+            if gpu_ready and not mid:
+                # Failed / zero upload must not stick as loaded (bald tile).
+                if not was_loaded:
+                    self._loaded_tiles.discard(key)
+                    self._tile_lod.pop(key, None)
+                continue
+            self._loaded_tiles.add(key)
         return len(self._loaded_tiles)
 
     def _place_city_chunk(self, ix: int, iz: int) -> None:
@@ -378,8 +407,11 @@ class World3D:
         self, key: tuple[int, int], *, viewer_x: float = 0.0, viewer_z: float = 0.0,
     ) -> int:
         cells = self._cells_for(key, viewer_x, viewer_z)
-        self._tile_lod[key] = cells
-        if self._height_fn is None or self._terrain_tex <= 0:
+        if self._height_fn is None:
+            return 0
+        if self._terrain_tex <= 0:
+            # GPU-free tests still track lod / loaded keys.
+            self._tile_lod[key] = cells
             return 0
         try:
             import kagra
@@ -407,6 +439,7 @@ class World3D:
             return 0
         if not mid:
             return 0
+        self._tile_lod[key] = cells
         mid = int(mid)
         old = self._tile_meshes.get(key)
         self._tile_meshes[key] = mid
