@@ -5,8 +5,16 @@
 //! おかげでカメラ行列・視錐台カリング・ワールド生成を GPU の無い CI で検証できる。
 //!
 //! 座標系は右手系で y が上。奥行きは wgpu に合わせて 0..1 に写す。
+//!
+//! JSON のソース・オブ・トゥルースは `docs/schemas/world.json`（version 1）。
+//! `Scene3D::from_world_json` が `World.dump()` を読む。整数 GPU mesh id は
+//! ゲームオブジェクトではないので JSON には出さない。レンダラ切替は次のスライス。
 
 use glam::{Mat4, Vec3, Vec4, Vec4Swizzles};
+use serde::{Deserialize, Serialize};
+
+/// `docs/schemas/world.json` の version。他は拒否する。
+pub const WORLD_DUMP_VERSION: u32 = 1;
 
 /// 位置と法線だけの頂点。テクスチャは後段で足す。
 #[repr(C)]
@@ -253,7 +261,10 @@ fn normalize_plane(p: Vec4) -> Vec4 {
     }
 }
 
-/// 1 フレームぶんの 3D 描画内容。
+/// 1 フレームぶんの 3D 描画内容 + 世界 dump（`docs/schemas/world.json`）。
+///
+/// `batches` / `MeshId` は描画用。ゲームオブジェクトは安定した文字列 id
+///（`props` / `walkers` / `lights` / `cameras` / heightfield tiles）。
 #[derive(Clone, Debug)]
 pub struct Scene3D {
     pub camera: Camera,
@@ -268,6 +279,20 @@ pub struct Scene3D {
     pub fog_start: f32,
     pub fog_end: f32,
     pub batches: Vec<Batch>,
+    /// World dump version. `WORLD_DUMP_VERSION` after a successful ingest.
+    pub version: u32,
+    pub half: f32,
+    pub floor_y: f32,
+    pub gravity: f32,
+    pub water_y: Option<f32>,
+    pub coins: u32,
+    pub player: Option<WorldWalker>,
+    pub props: Vec<WorldProp>,
+    pub walkers: Vec<WorldWalker>,
+    pub lights: Vec<WorldLight>,
+    /// Dump cameras (`camera:main`). The active draw camera is `camera`.
+    pub cameras: Vec<WorldCamera>,
+    pub heightfield: Option<WorldHeightfield>,
 }
 
 impl Default for Scene3D {
@@ -281,6 +306,18 @@ impl Default for Scene3D {
             fog_start: 120.0,
             fog_end: 420.0,
             batches: Vec::new(),
+            version: 0,
+            half: 0.0,
+            floor_y: 0.0,
+            gravity: 9.8,
+            water_y: None,
+            coins: 0,
+            player: None,
+            props: Vec::new(),
+            walkers: Vec::new(),
+            lights: Vec::new(),
+            cameras: Vec::new(),
+            heightfield: None,
         }
     }
 }
@@ -288,6 +325,293 @@ impl Default for Scene3D {
 impl Scene3D {
     pub fn instance_count(&self) -> usize {
         self.batches.iter().map(|b| b.instances.len()).sum()
+    }
+
+    /// Ingest `World.dump()` JSON (`docs/schemas/world.json` version 1).
+    /// GPU mesh ids are ignored if present; they are not game objects.
+    pub fn from_world_json(json: &str) -> Result<Self, String> {
+        let dump: WorldDumpFile = serde_json::from_str(json).map_err(|e| e.to_string())?;
+        dump.into_scene()
+    }
+
+    /// Emit world dump JSON. Draw batches / MeshId are not written.
+    pub fn to_world_json(&self) -> Result<String, String> {
+        let dump = WorldDumpFile::from_scene(self);
+        serde_json::to_string_pretty(&dump).map_err(|e| e.to_string())
+    }
+
+    /// Stable string ids in dump order (props, walkers, lights, cameras, tiles).
+    pub fn stable_ids(&self) -> Vec<String> {
+        let mut ids = Vec::new();
+        ids.extend(self.props.iter().map(|p| p.id.clone()));
+        ids.extend(self.walkers.iter().map(|w| w.id.clone()));
+        ids.extend(self.lights.iter().map(|l| l.id.clone()));
+        ids.extend(self.cameras.iter().map(|c| c.id.clone()));
+        if let Some(hf) = &self.heightfield {
+            ids.extend(hf.tiles.iter().map(|t| t.id.clone()));
+        }
+        ids
+    }
+}
+
+/// Prop record. Parent is a string id (one level; n-level TRS is later).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct WorldProp {
+    pub id: String,
+    #[serde(rename = "type", default = "prop_type")]
+    pub kind: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub position: [f32; 3],
+    #[serde(default)]
+    pub yaw: f32,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub gltf: Option<String>,
+    #[serde(default = "unit_scale")]
+    pub scale: [f32; 3],
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub parent: Option<String>,
+    #[serde(default)]
+    pub color: Option<[u32; 3]>,
+}
+
+fn prop_type() -> String {
+    "prop".into()
+}
+
+fn unit_scale() -> [f32; 3] {
+    [1.0, 1.0, 1.0]
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Walker record (`walker:player`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct WorldWalker {
+    pub id: String,
+    #[serde(rename = "type", default = "walker_type")]
+    pub kind: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub position: [f32; 3],
+    #[serde(default)]
+    pub yaw: f32,
+    #[serde(default)]
+    pub face: f32,
+    #[serde(default)]
+    pub on_ground: bool,
+}
+
+fn walker_type() -> String {
+    "walker".into()
+}
+
+/// Light record (`light:0`). Stored; M3 lights/joints/TRS is not this slice.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct WorldLight {
+    pub id: String,
+    #[serde(rename = "type", default = "light_type")]
+    pub kind_type: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub position: [f32; 3],
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub slot: u32,
+    #[serde(default)]
+    pub intensity: f32,
+    #[serde(default)]
+    pub radius: f32,
+    #[serde(default)]
+    pub color: Option<[f32; 3]>,
+    #[serde(default)]
+    pub direction: Option<[f32; 3]>,
+}
+
+fn light_type() -> String {
+    "light".into()
+}
+
+/// Camera record (`camera:main`). `fov` is degrees, matching Python `fov_deg`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct WorldCamera {
+    pub id: String,
+    #[serde(rename = "type", default = "camera_type")]
+    pub kind: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub position: [f32; 3],
+    #[serde(default)]
+    pub target: [f32; 3],
+    #[serde(default = "default_fov")]
+    pub fov: f32,
+}
+
+fn camera_type() -> String {
+    "camera".into()
+}
+
+fn default_fov() -> f32 {
+    30.0
+}
+
+/// Terrain tile key (`tile:ix,iz`). UV/streaming are names only this slice.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct WorldTerrainTile {
+    pub id: String,
+    #[serde(rename = "type", default = "tile_type")]
+    pub kind: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub ix: i32,
+    #[serde(default)]
+    pub iz: i32,
+    #[serde(default)]
+    pub position: [f32; 3],
+    #[serde(default)]
+    pub loaded: bool,
+    #[serde(default)]
+    pub has_mesh: bool,
+    #[serde(default)]
+    pub albedo_ok: bool,
+}
+
+fn tile_type() -> String {
+    "terrain_tile".into()
+}
+
+/// Heightfield UV keys. Values are stored; Crest Isle streaming is not retuned.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct WorldHeightfieldUv {
+    #[serde(default)]
+    pub half: Option<f32>,
+    #[serde(default)]
+    pub period: Option<f32>,
+    #[serde(default)]
+    pub blend: f32,
+    #[serde(default)]
+    pub pad: f32,
+    #[serde(default)]
+    pub rect: Option<[f32; 4]>,
+}
+
+/// Named height fn + samples + tile keys. Live Python fn cannot dump.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct WorldHeightfield {
+    #[serde(rename = "fn", default)]
+    pub fn_name: Option<String>,
+    #[serde(default)]
+    pub tile: Option<f32>,
+    #[serde(default)]
+    pub stream_radius: Option<f32>,
+    #[serde(default)]
+    pub cells: Option<i32>,
+    #[serde(default)]
+    pub lod_radius: Option<f32>,
+    #[serde(default)]
+    pub lod_cells: Option<i32>,
+    #[serde(default)]
+    pub uv: Option<WorldHeightfieldUv>,
+    #[serde(default)]
+    pub tiles: Vec<WorldTerrainTile>,
+    #[serde(default)]
+    pub samples: Vec<[f32; 3]>,
+}
+
+/// Wire format for `docs/schemas/world.json`. Not a second scene type.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+struct WorldDumpFile {
+    version: u32,
+    #[serde(default)]
+    half: f32,
+    #[serde(default)]
+    floor_y: f32,
+    #[serde(default = "default_gravity")]
+    gravity: f32,
+    #[serde(default)]
+    water_y: Option<f32>,
+    #[serde(default)]
+    coins: u32,
+    #[serde(default)]
+    player: Option<WorldWalker>,
+    #[serde(default)]
+    props: Vec<WorldProp>,
+    #[serde(default)]
+    walkers: Vec<WorldWalker>,
+    #[serde(default)]
+    lights: Vec<WorldLight>,
+    #[serde(default)]
+    cameras: Vec<WorldCamera>,
+    #[serde(default)]
+    heightfield: Option<WorldHeightfield>,
+}
+
+fn default_gravity() -> f32 {
+    9.8
+}
+
+impl WorldDumpFile {
+    fn into_scene(self) -> Result<Scene3D, String> {
+        if self.version != WORLD_DUMP_VERSION {
+            return Err(format!(
+                "unsupported world dump version {} (want {})",
+                self.version, WORLD_DUMP_VERSION
+            ));
+        }
+        let mut scene = Scene3D {
+            version: self.version,
+            half: self.half,
+            floor_y: self.floor_y,
+            gravity: self.gravity,
+            water_y: self.water_y,
+            coins: self.coins,
+            player: self.player,
+            props: self.props,
+            walkers: self.walkers,
+            lights: self.lights,
+            cameras: self.cameras,
+            heightfield: self.heightfield,
+            ..Scene3D::default()
+        };
+        if let Some(cam) = scene.cameras.first() {
+            scene.camera.eye = Vec3::from_array(cam.position);
+            scene.camera.target = Vec3::from_array(cam.target);
+            scene.camera.fov_y = cam.fov.to_radians();
+        }
+        Ok(scene)
+    }
+
+    fn from_scene(scene: &Scene3D) -> Self {
+        Self {
+            version: if scene.version == 0 {
+                WORLD_DUMP_VERSION
+            } else {
+                scene.version
+            },
+            half: scene.half,
+            floor_y: scene.floor_y,
+            gravity: scene.gravity,
+            water_y: scene.water_y,
+            coins: scene.coins,
+            player: scene.player.clone(),
+            props: scene.props.clone(),
+            walkers: scene.walkers.clone(),
+            lights: scene.lights.clone(),
+            cameras: scene.cameras.clone(),
+            heightfield: scene.heightfield.clone(),
+        }
     }
 }
 
@@ -716,5 +1040,114 @@ mod tests {
         let b = m.bounds();
         assert_eq!(b.max.x, 5.0);
         assert_eq!(b.max.z, 2.0);
+    }
+
+    const CREST_ISLE_DUMP: &str = include_str!("../tests/fixtures/crest_isle_world.json");
+    const ORB_RUSH_DUMP: &str = include_str!("../tests/fixtures/orb_rush_world.json");
+    const WORLD_SCHEMA: &str = include_str!("../../docs/schemas/world.json");
+
+    fn assert_roundtrip_ids_positions_parent_height(json: &str) {
+        let scene = Scene3D::from_world_json(json).expect("parse dump");
+        assert_eq!(scene.version, WORLD_DUMP_VERSION);
+        assert!(scene.batches.is_empty(), "GPU batches are not game objects");
+        let again = scene.to_world_json().expect("emit dump");
+        let scene2 = Scene3D::from_world_json(&again).expect("reparse dump");
+        assert_eq!(scene.stable_ids(), scene2.stable_ids());
+        assert_eq!(scene.props.len(), scene2.props.len());
+        for (a, b) in scene.props.iter().zip(scene2.props.iter()) {
+            assert_eq!(a.id, b.id);
+            assert_eq!(a.position, b.position);
+            assert_eq!(a.parent, b.parent);
+        }
+        match (&scene.heightfield, &scene2.heightfield) {
+            (None, None) => {}
+            (Some(a), Some(b)) => {
+                assert_eq!(a.fn_name, b.fn_name);
+                let keys_a: Vec<_> = a
+                    .tiles
+                    .iter()
+                    .map(|t| (t.id.as_str(), t.ix, t.iz))
+                    .collect();
+                let keys_b: Vec<_> = b
+                    .tiles
+                    .iter()
+                    .map(|t| (t.id.as_str(), t.ix, t.iz))
+                    .collect();
+                assert_eq!(keys_a, keys_b);
+            }
+            other => panic!("heightfield roundtrip mismatch: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn world_schema_version_matches_scene3d() {
+        let v: serde_json::Value = serde_json::from_str(WORLD_SCHEMA).unwrap();
+        assert_eq!(v["properties"]["version"]["const"], WORLD_DUMP_VERSION);
+        let defs = &v["$defs"];
+        for key in [
+            "prop",
+            "walker",
+            "light",
+            "camera",
+            "heightfield",
+            "terrain_tile",
+        ] {
+            assert!(defs.get(key).is_some(), "schema missing $defs.{key}");
+        }
+    }
+
+    #[test]
+    fn crest_isle_dump_parses_as_scene3d_and_roundtrips() {
+        let scene = Scene3D::from_world_json(CREST_ISLE_DUMP).unwrap();
+        assert_eq!(scene.half, 80.0);
+        assert_eq!(scene.water_y, Some(0.0));
+        let hf = scene.heightfield.as_ref().expect("heightfield");
+        assert_eq!(hf.fn_name.as_deref(), Some("open_world_height"));
+        assert_eq!(hf.tile, Some(16.0));
+        let tile_ids: Vec<_> = hf.tiles.iter().map(|t| t.id.as_str()).collect();
+        assert!(tile_ids.contains(&"tile:0,0"));
+        assert!(tile_ids.contains(&"tile:-1,0"));
+        let crate_p = scene
+            .props
+            .iter()
+            .find(|p| p.name == "crate")
+            .expect("crate");
+        let coin = scene.props.iter().find(|p| p.name == "coin").expect("coin");
+        assert_eq!(crate_p.id, "prop:crate");
+        assert_eq!(coin.parent.as_deref(), Some("prop:crate"));
+        assert_eq!(coin.position, [2.3, 1.1, -1.0]);
+        assert_eq!(scene.player.as_ref().unwrap().id, "walker:player");
+        assert_eq!(scene.player.as_ref().unwrap().position, [0.0, 1.2, -8.0]);
+        assert_eq!(scene.cameras[0].id, "camera:main");
+        assert!((scene.camera.eye.x - 0.0).abs() < 1e-5);
+        assert!((scene.camera.fov_y - 54f32.to_radians()).abs() < 1e-5);
+        assert_roundtrip_ids_positions_parent_height(CREST_ISLE_DUMP);
+        let json = scene.to_world_json().unwrap();
+        assert!(!json.contains("mesh_id"), "GPU mesh ids must not dump");
+        assert!(!json.contains("batches"));
+    }
+
+    #[test]
+    fn orb_rush_dump_parses_as_scene3d_and_roundtrips() {
+        let scene = Scene3D::from_world_json(ORB_RUSH_DUMP).unwrap();
+        assert_eq!(scene.half, 6.0);
+        assert!(scene.heightfield.is_none());
+        assert_eq!(scene.player.as_ref().unwrap().id, "walker:player");
+        assert_eq!(scene.player.as_ref().unwrap().position, [0.0, 0.0, 0.0]);
+        let stars: Vec<_> = scene.props.iter().filter(|p| p.name == "star").collect();
+        let bombs: Vec<_> = scene.props.iter().filter(|p| p.name == "bomb").collect();
+        assert_eq!(stars.len(), 2);
+        assert_eq!(bombs.len(), 1);
+        assert_eq!(stars[0].id, "prop:star-a");
+        assert_eq!(stars[0].position, [1.5, 0.5, -1.0]);
+        assert!(stars.iter().all(|p| p.parent.is_none()));
+        assert_eq!(scene.cameras[0].id, "camera:main");
+        assert_roundtrip_ids_positions_parent_height(ORB_RUSH_DUMP);
+    }
+
+    #[test]
+    fn world_dump_rejects_unknown_version() {
+        let err = Scene3D::from_world_json("{\"version\": 2}").unwrap_err();
+        assert!(err.contains("version"), "{err}");
     }
 }

@@ -27,9 +27,9 @@ VRM はオプションのローダであり、背骨ではない。
 
 | # | 山 | 状態 |
 |---|---|---|
-| **M0** | 看板（タイル）。Crest Isle 16m タイル / UV。PR #97 | 閉じつつある。`uv_rect` / `_upload_tile` / `stream_tiles` / `TERRAIN_UV_*` は触らない |
-| **M1** | **世界をデータに**（本 PR）。`World.query` / `dump` / `load`。15% → 35% へ | 今ここ。描画は触らない |
-| **M2** | ランタイムは一つ。2D ECS と 3D World を混ぜて「統一」と呼ばない | 次 |
+| **M0** | 看板（タイル）。Crest Isle 16m タイル / UV。PR #97 | 閉じた。`uv_rect` / `_upload_tile` / `stream_tiles` / `TERRAIN_UV_*` は触らない |
+| **M1** | 世界をデータに。`World.query` / `dump` / `load`。15% → 35% へ | 閉じた（#99） |
+| **M2** | **ランタイムは一つ。** 本 PR は第一スライス: `world.dump()` JSON（[schemas/world.json](schemas/world.json)）を既存 `Scene3D` が読む。レンダラ切替（wgpu 0.19 と 30 を混ぜない / デスクトップ窓を shared に付け替えない）は次 | 今ここ。スキーマ。2D ECS に z を足さない |
 | **M3** | ゲームとして足りる（30 秒の見本が遊べる） | その次 |
 | **M4** | 出荷（エージェントが画面なしで普通のゲームを出す） | 80% の手前まで |
 
@@ -47,6 +47,7 @@ VRM はオプションのローダであり、背骨ではない。
 `world.query(type=, name=, aabb=)` はスクショなしで position / name / type / id を返す。
 タイルは `type="terrain_tile"` で `loaded` / `albedo_ok`（はげを PNG なしで検出）。
 `world.dump()` / `world.load()` のスキーマは [schemas/world.json](schemas/world.json)。
+kagra-shared の `Scene3D::from_world_json` が同じ JSON を読む（M2 第一スライス）。レンダラ切替は次。
 
 ## 今あるもの（嘘にしない）
 
@@ -54,17 +55,18 @@ VRM はオプションのローダであり、背骨ではない。
 - 高さ場タイル（Relic Run の UV 既定は維持。Crest の meadow 窓は #97）
 - AABB の箱（落ちる・積む・乗る）。Rapier は入れない
 - VRM ローダ（歌・踊り・リップ・LookAt）。体の背骨ではない
-- `kagra.verify` の PNG サイズ煙 + **世界アサーション**（本 PR）
+- `kagra.verify` の PNG サイズ煙 + **世界アサーション**（#99）
+- `Scene3D::from_world_json`（dump JSON。描画はまだ Python / shared 別）
 - エージェントループ: `docs/API_INDEX.md` / MCP / `docs/agent-runs/`
 
 ## 嘘（今 15% を大きく呼ばない）
 
 - 「今約 63%」「絵は three.js 級 85%」——旧定義。アーカイブへ
-- 「エージェントがゲームを出荷できる」——まだ。query が無いと画面が要る
+- 「エージェントがゲームを出荷できる」——まだ。ランタイムが二つ
 - 「2D ECS に z を足せば 3D」——やらない
 - 「VRM がエンジンの背骨」「Wasm に VRM を移植」——やらない
 - 「Tk / Inspector が人間用エディタ」——禁止。目は `annotate` / `debug_trace` / `world.query`
-- 描画を触らずに「世界が揃った」——M1 はデータ。絵は M0 の看板
+- dump JSON を読んだだけで「ランタイムは一つ」——本スライスはスキーマ。レンダラ切替は次
 
 ## 80% の外（今やらない）
 
@@ -75,9 +77,12 @@ Cinemachine、PhysX 完全、VRM-on-Wasm。
 加えて（エンジン都合）: Rapier、SSAO / 4 段 CSM、wgpu 0.19 と 30 の混合、
 OSM、ボクセル、ナビメッシュ、lights/joints/prefab-instantiate/TRS 階層/particles の新規山。
 
-## 本 PR の Done（M1）
+## 本 PR の Done（M2 第一スライス — スキーマ）
 
-- スクショなしで: プレイヤーはどこ、コインは何枚、このタイルは loaded / albedo_ok か
-- API_INDEX の Walk が 2D ECS に落ちない
-- Orb Rush と Crest Isle が同じ `World` 型を構築・query する
-- `pytest tests -m "not golden"` と `python3 tools/gen_api_index.py --check` が緑
+- GPU 無し: Crest Isle 形 / Orb Rush 形の `World.dump()` JSON が Rust の `Scene3D` としてパースされ、安定 id・position・parent・heightfield `fn` / tile key がラウンドトリップする
+- デスクトップ Python の dump JSON を shared クレートが受け取る（新しい公開ゲーム API は足さない）
+- [schemas/world.json](schemas/world.json) と `Scene3D` が揃っている
+- レンダラ切替は次。`(-12800,-12800)` の fake-headless はレンダラ切替が要るのでこのスライスでは触らない
+- `pytest tests -m "not golden"` と `cargo test -p kagra-shared` が緑
+
+M1（query / dump / load）は #99 で閉じた。
