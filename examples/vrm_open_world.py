@@ -100,6 +100,7 @@ SW, SH = 960, 540
 SMOKE = os.environ.get("KAGRA_SMOKE") == "1"
 SMOKE_FRAMES = int(os.environ.get("KAGRA_SMOKE_FRAMES", "40"))
 SMOKE_SHOT = os.environ.get("KAGRA_SMOKE_OUT", "scratch/open_world_smoke.png")
+SMOKE_WORLD = os.environ.get("KAGRA_SMOKE_WORLD", "scratch/open_world_world.json")
 _ASSETS = Path(_HERE) / "assets" / "open_world"
 _KENNEY = _ASSETS / "kenney"
 _POLY = (
@@ -216,13 +217,14 @@ def _se(sfx: dict, key: str, volume: float = 1.0, *, pos=None):
         kagra.sound("coin" if key in ("coin", "star") else "ok")
 
 
-def _place_gltf(rel: str, x: float, z: float, scale: float, yaw: float, world, *, collision: bool):
+def _place_gltf(rel: str, x: float, z: float, scale: float, yaw: float, world, *, collision: bool, name: str = ""):
     half = GLTF_HALF_Y[rel]
     gy = world.ground_y(x, z)
     return kagra.Prop(
         _gltf(rel),
         x=x, y=sit_y(gy, half, scale), z=z,
         scale=scale, yaw=yaw, world=world, collision=collision,
+        name=name,
     )
 
 
@@ -241,7 +243,7 @@ class CrestIsle(kagra.Scene):
         self.avatar.enable_emotion()
         self.action = kagra.ActionController(self.avatar)
 
-        self.world = kagra.World3D(half=HALF)
+        self.world = kagra.World(half=HALF)  # World is World3D
         self.world.set_height_fn(
             kagra.open_world_height,
             cells=CELLS, tile=TILE, stream_radius=STREAM_RADIUS,
@@ -310,7 +312,7 @@ class CrestIsle(kagra.Scene):
         self.star_props = []
         for (sx, sz), model, sc in zip(STAR_XZ, STAR_MODELS, STAR_SCALES):
             self.star_props.append(
-                _place_gltf(model, sx, sz, sc, 0.15, self.world, collision=False)
+                _place_gltf(model, sx, sz, sc, 0.15, self.world, collision=False, name="crest")
             )
         self.coin_props = []
         for cx, cz in COIN_XZ:
@@ -321,6 +323,7 @@ class CrestIsle(kagra.Scene):
                     x=cx, y=sit_y(gy, SPHERE_HALF_Y, COIN_SCALE) + COIN_HOVER, z=cz,
                     scale=COIN_SCALE, world=self.world, collision=False,
                     color="gold", metallic=GOLD_METALLIC, roughness=GOLD_ROUGHNESS,
+                    name="coin",
                 )
             )
 
@@ -437,6 +440,7 @@ class CrestIsle(kagra.Scene):
             if n == 24:
                 kagra.screenshot(SMOKE_SHOT)
             if n >= SMOKE_FRAMES:
+                self.world.dump(SMOKE_WORLD)
                 kagra.quit()
                 return
 

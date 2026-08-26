@@ -21,6 +21,7 @@ import zlib
 import kagra
 from kagra.physics import Rigidbody, BoxCollider, PhysicsSystem
 from kagra.tilemap import TileSet, TileMap, TILE_SOLID
+from kagra.entity import World
 from kagra.camera import Camera
 from kagra.effects import EffectManager
 from kagra.ui import ProgressBar, VBox, Button, Label, Tween, Easing
@@ -560,7 +561,7 @@ class GameScene(kagra.Scene):
         self.time = 0.0
         
         # --- システム初期化 ---
-        self.world = kagra.World()
+        self.world = World()
         self.physics = PhysicsSystem(gravity=GRAVITY)
         
         self.cam = Camera(screen_w=SW, screen_h=SH, world_w=MAP_W, world_h=MAP_H, zoom=1.0)

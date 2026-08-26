@@ -59,4 +59,5 @@
 - `20260826-crest-isle-meadow-window/` — Crest Isle meadow ハゲ after #95 (JPEG biome windows / TERRAIN_UV_RECT)
 - `20260826-crest-isle-ggx-tile/` — remaining ハゲ: one 16 m TILE dead albedo / GGX-only (upload swallow + Mesh3D pin)
 - `20260826-character-controller/` — game-ready capsule CharacterController (accel / slope sit / step-up / jump). No Rapier.
+- `20260826-world-as-data/` — World query/dump/load + 80% redefined (now ~15%; old 63% archived). Not a game; the M1 mountain.
 - `20260826-crest-isle-black-peel-zoom/` — remaining Nature Kit black trees, orbit peel (tiles/fog/hair), chase-cam zoom keys

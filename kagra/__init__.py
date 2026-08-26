@@ -58,18 +58,12 @@ except ImportError as e:
 # ── 外部モジュール再エクスポート ───────────────────────────────
 from kagra.camera        import Camera
 from kagra.camera3d      import Camera3D
-from kagra.tilemap       import TileSet, TileMap
-from kagra.tilemap       import TILE_SOLID, TILE_WATER, TILE_LADDER, TILE_DOOR, TILE_DAMAGE
 from kagra.ui            import (
     TweenManager, Easing,
     Panel,
     MessageWindow, EventFlags, DialogScript,
     SaveLoad, ChoiceMenu, TransitionScene,
     ProgressBar, VBox, HBox, ScrollView, UIGroup,
-)
-from kagra.entity        import (
-    Component, Script, Transform, Sprite, SpriteRenderer, TextRenderer,
-    RigRenderer, RectRenderer, AnimatorComponent, Collider, Entity, World, EntityScene,
 )
 from kagra.skeleton      import (
     Transform2D, Attachment, MeshVertex, MeshAttachment, Bone,
@@ -836,9 +830,14 @@ def set_point_light(
 
     スロット 0 に点を置くと、そのスロットのスポットを消す。他スロットは触らない。
     """
-    from kagra.look import check_light_slot
+    from kagra.look import check_light_slot, record_point_light
 
     slot = check_light_slot(slot)
+    record_point_light(
+        float(x), float(y), float(z),
+        r=float(r), g=float(g), b=float(b),
+        intensity=float(intensity), radius=float(radius), slot=int(slot),
+    )
     _check()
     _engine.set_point_light(
         float(x), float(y), float(z),
@@ -870,9 +869,16 @@ def set_spot_light(
     ``(dx,dy,dz)`` は光が向かう方向。``angle`` は外角（ラジアン）。
     同じスロットの点光と共有。
     """
-    from kagra.look import check_light_slot
+    from kagra.look import check_light_slot, record_spot_light
 
     slot = check_light_slot(slot)
+    record_spot_light(
+        float(x), float(y), float(z),
+        float(dx), float(dy), float(dz),
+        angle=float(angle), penumbra=float(penumbra),
+        intensity=float(intensity), radius=float(radius),
+        r=float(r), g=float(g), b=float(b), slot=int(slot),
+    )
     _check()
     _engine.set_spot_light(
         float(x), float(y), float(z),
@@ -2454,6 +2460,7 @@ from kagra.anim_io       import (
 from kagra.physics       import BoxCollider, Rigidbody, PhysicsSystem, TopDownPhysicsSystem
 from kagra.physics3d     import Physics3D, RigidBody3D, AABB
 from kagra.world3d       import World3D
+from kagra.world         import World  # World is World3D + query/dump/load
 from kagra.controller    import CharacterController
 from kagra.play          import Prop, Walk  # hovered_prop is the wrapper above
 from kagra.trace         import DebugTrace
@@ -2843,4 +2850,37 @@ def _restore_public_from_submodules() -> None:
 
 
 _restore_public_from_submodules()
+
+# Official public table. Entity / tilemap / Tk editor stay on disk (import
+# from kagra.entity / kagra.tilemap / kagra.editor_app) but not here.
+_PUBLIC_OFF = {
+    "Entity",
+    "EntityScene",
+    "Component",
+    "Script",
+    "Transform",
+    "Sprite",
+    "SpriteRenderer",
+    "TextRenderer",
+    "RigRenderer",
+    "RectRenderer",
+    "AnimatorComponent",
+    "Collider",
+    "TileMap",
+    "TileSet",
+    "TILE_SOLID",
+    "TILE_WATER",
+    "TILE_LADDER",
+    "TILE_DOOR",
+    "TILE_DAMAGE",
+    "KagraEditorApp",
+}
+
+__all__ = sorted(
+    n
+    for n, v in globals().items()
+    if not n.startswith("_")
+    and n not in _PUBLIC_OFF
+    and not isinstance(v, types.ModuleType)
+)
 

@@ -234,6 +234,8 @@ class Camera3D:
         self.position  = (0.0, 1.0, 3.0)
         self.target    = (0.0, 1.0, 0.0)
         self.up        = (0.0, 1.0, 0.0)
+        self.sid = "camera:main"
+        self.name = "main"
 
         # 軌道カメラ
         self._orbit    = False

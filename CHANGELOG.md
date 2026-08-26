@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- World as data (15% → toward 35%): ``World`` is ``World3D``. Stable string ids. ``world.query(type=, name=, aabb=)`` returns position / name / type / id without a screenshot; terrain tiles expose ``loaded`` / ``albedo_ok`` so Crest Isle はげ is detectable without a PNG. ``world.dump()`` / ``world.load()`` JSON (schema ``docs/schemas/world.json``) for Prop + parent id, heightfield name/samples, lights, camera, walkers. ``kagra.verify`` ``expect_world`` asserts player.on_ground / coins / query counts. Entity / tilemap / Tk are off ``import kagra`` (files stay; archive 2D imports from ``kagra.entity`` / ``kagra.tilemap``). Roadmap 80% redefined (100% = screenless indie ship; now ~15%; old 63% archived). Drawing / Rapier / SSAO / terrain stream (PR #97) / Relic Run UV defaults untouched.
+
 - Crest Isle remaining ハゲ (GGX-only 16 m TILE): ``World3D._upload_tile`` no longer swallows TypeError / bind failure into a leftover mesh. Failed / 1×1 / missing albedo unloads the GPU id and retries (does not stick ``lod_ok``). LOD upgrade keeps the previous good mesh. Mesh3D bind groups are created at ``upload_mesh_3d`` and culled stream tiles stay pinned (PR #92 family). ``TERRAIN_UV_RECT`` / stream retry / prefetch unchanged. No Rapier / SSAO / Repeat / per-tile 0..1.
 
 - Crest Isle remaining meadow ハゲ: ``aerial_grass_rock_diff_1k.jpg`` is mixed moss + brown rock even inside pad 0.28. Period 48 made each 16 m TILE a different 2D biome window (green tile glued to yellowish dirt). Crest UVs now ping-pong into a compact meadow-green ``TERRAIN_UV_RECT`` measured on the tinted JPEG. Period 48 / stream retry / LOD_CELLS=6 stay. Relic Run keeps the uncropped JPEG / default UV. No Rapier / SSAO / Repeat / per-tile 0..1.
