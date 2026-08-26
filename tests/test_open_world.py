@@ -26,9 +26,13 @@ from open_world_rules import (
     STAR_XZ,
     START_XZ,
     STREAM_RADIUS,
+    TERRAIN_UV_BLEND,
+    TERRAIN_UV_PAD,
+    TERRAIN_UV_PERIOD,
     TILE,
     VISTA_PROPS,
     WATER_Y,
+    SparkBurst,
     chunk_decor,
     grade_for,
     hero_theta,
@@ -158,14 +162,20 @@ def test_cc0_assets_are_vendored():
 
 def test_kenney_tree_loads_colormap():
     gm = load_kagra_submodule("gltf_mesh")
-    tree = _ROOT / "examples" / "assets" / "open_world" / "kenney" / "forest" / "tree.glb"
-    cmap = tree.parent / "Textures" / "colormap.png"
+    forest = _ROOT / "examples" / "assets" / "open_world" / "kenney" / "forest"
+    cmap = forest / "Textures" / "colormap.png"
     assert cmap.is_file()
-    assert gm._read_relative_image("Textures/colormap.png", tree) == cmap.read_bytes()
-    flat = gm.flatten_gltf(tree)
-    assert flat.image is not None
-    assert flat.image[:8] == b"\x89PNG\r\n\x1a\n"
-    assert flat.image == cmap.read_bytes()
+    assert cmap.stat().st_size == 10659
+    assert gm._read_relative_image("Textures/colormap.png", forest / "tree.glb") == cmap.read_bytes()
+    for name in ("tree.glb", "tree-high.glb"):
+        tree = forest / name
+        flat = gm.flatten_gltf(tree)
+        assert flat.image is not None, name
+        assert flat.image[:8] == b"\x89PNG\r\n\x1a\n"
+        assert flat.image == cmap.read_bytes(), name
+        uvs = [(v[6], v[7]) for v in flat.verts]
+        assert uvs
+        assert max(u for u, _ in uvs) > min(u for u, _ in uvs)
 
 
 def test_crest_isle_sun_and_ibl_are_sane():
@@ -228,6 +238,9 @@ def test_game_file_uses_only_public_imports():
         "Label",
         "draw_vignette",
         "draw_billboard_instances",
+        "quad_y_mesh",
+        "draw_mesh_3d",
+        "SparkBurst",
         "set_listener",
         "play_loop",
         "play_se",
@@ -375,3 +388,40 @@ def test_crest_isle_poses_with_speed_blend_not_clip_snap():
     assert "walk_speed=2.2" in pose
     assert "run_speed=" in pose
     assert "hypot(p.vx, p.vz)" in pose
+
+
+def test_spark_burst_spawns_expires_and_fades():
+    burst = SparkBurst()
+    n = burst.burst(1.0, 2.0, 3.0, count=8, life=0.4, seed=7)
+    assert n == 8
+    assert len(burst.sparks) == 8
+    assert all(s.fade == 1.0 for s in burst.sparks)
+    sizes0 = [s.draw_size for s in burst.sparks]
+    burst.update(0.15)
+    assert len(burst.sparks) == 8
+    assert all(0.0 < s.fade < 1.0 for s in burst.sparks)
+    sizes1 = [s.draw_size for s in burst.sparks]
+    assert all(b < a for a, b in zip(sizes0, sizes1))
+    items = burst.items()
+    assert len(items) == 8
+    assert all(len(it) == 4 and it[3] > 0 for it in items)
+    burst.update(0.5)
+    assert burst.sparks == []
+    assert burst.items() == []
+
+
+def test_crest_isle_ships_blob_sparks_and_tile_blend():
+    src = (_ROOT / "examples" / "vrm_open_world.py").read_text(encoding="utf-8")
+    assert "def _draw_blob" in src
+    assert "quad_y_mesh" in src
+    assert "skip_fog=True" in src
+    assert "self.sparks.burst" in src
+    assert "draw_billboard_instances(self.tex_spark" in src
+    assert "terrain_uv_period = TERRAIN_UV_PERIOD" in src
+    assert "terrain_uv_blend = TERRAIN_UV_BLEND" in src
+    assert TERRAIN_UV_PERIOD != TILE
+    assert TERRAIN_UV_BLEND > 1.0
+    assert 0.0 < TERRAIN_UV_PAD < 0.2
+    relic = (_ROOT / "examples" / "vrm_relic_run.py").read_text(encoding="utf-8")
+    assert "terrain_uv_period" not in relic
+    assert "terrain_uv_blend" not in relic

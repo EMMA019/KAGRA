@@ -1231,12 +1231,16 @@ def heightfield_mesh(
     origin_x: float = 0.0,
     origin_z: float = 0.0,
     uv_half: float | None = None,
+    uv_period: float | None = None,
+    uv_blend: float = 0.0,
+    uv_pad: float = 0.0,
 ):
     """高さ関数の格子メッシュ。"""
     from kagra.gamekit import heightfield_mesh as _fn
     return _fn(
         fn, half=half, cells=cells,
         origin_x=origin_x, origin_z=origin_z, uv_half=uv_half,
+        uv_period=uv_period, uv_blend=uv_blend, uv_pad=uv_pad,
     )
 
 
@@ -1248,10 +1252,16 @@ def heightfield_tile(
     cells: int = 8,
     *,
     uv_half: float | None = None,
+    uv_period: float | None = None,
+    uv_blend: float = 0.0,
+    uv_pad: float = 0.0,
 ):
     """高さ場の 1 タイル。AABB が小さく影に入る。"""
     from kagra.gamekit import heightfield_tile as _fn
-    return _fn(fn, origin_x, origin_z, tile, cells, uv_half=uv_half)
+    return _fn(
+        fn, origin_x, origin_z, tile, cells,
+        uv_half=uv_half, uv_period=uv_period, uv_blend=uv_blend, uv_pad=uv_pad,
+    )
 
 
 def room(

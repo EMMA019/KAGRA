@@ -16,6 +16,7 @@ Idle/Walk/Run FBX is loaded when present (rest+roll retarget onto VRoid).
 Otherwise built-in clips. The ``walk`` alias (synthetic_walk.bvh) is not used.
 Upper-body clap/banzai stay on ActionController and do not fight walk arms.
 Spatial audio: looping sea to the west + pickup SE at the crest/coin.
+Fake AO: a ground blob under the feet. Pickups spawn a CPU billboard burst.
 
 操作:
   WASD / 左スティック : 歩く
@@ -67,9 +68,13 @@ from open_world_rules import (
     STAR_XZ,
     START_XZ,
     STREAM_RADIUS,
+    TERRAIN_UV_BLEND,
+    TERRAIN_UV_PAD,
+    TERRAIN_UV_PERIOD,
     TILE,
     VISTA_PROPS,
     WATER_Y,
+    SparkBurst,
     chunk_decor,
     grade_for,
     hero_theta,
@@ -145,6 +150,30 @@ def _glow_tex():
     return kagra.texture_from_fn(64, 64, px, name="crest_glow")
 
 
+def _blob_tex():
+    """Soft ground ellipse. Not SSAO — a cheap always-on character blob."""
+
+    def px(x, y):
+        nx = (x - 31.5) / 30.5
+        ny = (y - 31.5) / 22.0
+        d = math.hypot(nx, ny)
+        a = max(0.0, 1.0 - d)
+        a = a * a * 0.52
+        return (6, 8, 12, max(0, int(a * 255)))
+
+    return kagra.texture_from_fn(64, 64, px, name="crest_blob")
+
+
+def _spark_tex():
+    def px(x, y):
+        d = math.hypot(x - 15.5, y - 15.5) / 15.5
+        core = max(0.0, 1.0 - d * 1.35)
+        a = core * core
+        return (255, 240, 170, max(0, int(a * 255)))
+
+    return kagra.texture_from_fn(32, 32, px, name="crest_spark")
+
+
 # West water. Spawn looks +Z; sea is screen-left (-X). Looping drone lives here.
 SEA_LOOP_XZ = (-28.0, 8.0)
 
@@ -210,6 +239,10 @@ class CrestIsle(kagra.Scene):
             lod_radius=LOD_RADIUS, lod_cells=LOD_CELLS,
         )
         self.world.set_water_y(WATER_Y)
+        # Crest Isle meadow only: hide stream-tile knife lines / JPEG edge bands.
+        self.world.terrain_uv_period = TERRAIN_UV_PERIOD
+        self.world.terrain_uv_blend = TERRAIN_UV_BLEND
+        self.world.terrain_uv_pad = TERRAIN_UV_PAD
         # bake_terrain streams immediately and calls _fill_chunk.
         self._chunk_props = 0
         self.world.set_chunk_fill(self._fill_chunk)
@@ -257,6 +290,9 @@ class CrestIsle(kagra.Scene):
             _place_gltf(rel, x, z, scale, yaw, self.world, collision=hit)
 
         self.tex_glow = _glow_tex()
+        self.tex_blob = _blob_tex()
+        self.tex_spark = _spark_tex()
+        self.sparks = SparkBurst()
         self.star_props = []
         for (sx, sz), model, sc in zip(STAR_XZ, STAR_MODELS, STAR_SCALES):
             self.star_props.append(
@@ -360,6 +396,7 @@ class CrestIsle(kagra.Scene):
             p.vx = p.vy = p.vz = 0.0
         self.walk.face = start_face()
         self.walk.yaw = hero_theta(self.walk.face)
+        self.sparks = SparkBurst()
 
     def update(self, dt):
         dt = min(dt, 0.05)
@@ -407,6 +444,7 @@ class CrestIsle(kagra.Scene):
         self.time_s += dt
         kagra.Prop.update_all(dt)
         self.walk.step(dt)
+        self.sparks.update(dt)
 
         p = self.world.player
         if p is not None:
@@ -425,6 +463,7 @@ class CrestIsle(kagra.Scene):
                     self.avatar.feel("joy", min(1.0, 0.4 + self.star_got * 0.1))
                     self.action.play("banzai" if peak else "clap")
                     _se(self.sfx, "star", pos=(star.x, self._star_y(star, i), star.z))
+                    self.sparks.burst(star.x, self._star_y(star, i) + 0.4, star.z, count=16)
             for coin, prop in zip(self.coins, self.coin_props):
                 if not coin.live:
                     continue
@@ -436,6 +475,7 @@ class CrestIsle(kagra.Scene):
                     prop.enabled = False
                     self.coin_got += 1
                     _se(self.sfx, "coin", volume=0.7, pos=(coin.x, self._coin_y(coin), coin.z))
+                    self.sparks.burst(coin.x, self._coin_y(coin) + 0.2, coin.z, count=10, size=0.16)
 
         if won(self.star_got):
             self.score = round_score(self.star_got, self.coin_got, self.time_s)
@@ -477,6 +517,17 @@ class CrestIsle(kagra.Scene):
         self.avatar.set_position(p.x, p.y, p.z)
         self.avatar.set_yaw(self.walk.face)
 
+    def _draw_blob(self):
+        """Cheap ellipse under the feet. Ground-projected; shrinks in air."""
+        p = self.world.player
+        if p is None:
+            return
+        gy = self.world.ground_y(p.x, p.z)
+        air = max(0.0, float(p.y) - gy)
+        half = 0.62 * (1.0 / (1.0 + air * 0.55))
+        verts, idx = kagra.quad_y_mesh(p.x, gy + 0.03, p.z, half)
+        kagra.draw_mesh_3d(self.tex_blob, verts, idx, skip_fog=True)
+
     def draw(self):
         if self.mode == "title":
             # Live island stays off the title. Half-streamed / UV-split terrain
@@ -497,6 +548,7 @@ class CrestIsle(kagra.Scene):
         self.world.draw()
         kagra.water(WATER_Y, half=HALF, world=self.world)
         kagra.Prop.draw_all()
+        self._draw_blob()
 
         glow_items = []
         for i, star in enumerate(self.stars):
@@ -512,6 +564,9 @@ class CrestIsle(kagra.Scene):
             glow_items.append((coin.x, y + 0.12, coin.z, COIN_GLOW))
         if glow_items:
             kagra.draw_billboard_instances(self.tex_glow, glow_items, self.cam)
+        spark_items = self.sparks.items()
+        if spark_items:
+            kagra.draw_billboard_instances(self.tex_spark, spark_items, self.cam)
 
         kagra.draw_vrm(self.avatar.vrm_id)
         kagra.draw_vignette()

@@ -43,8 +43,8 @@
 | `get_engine` | `get_engine() -> _Engine` |
 | `get_screen_size` | `get_screen_size() -> tuple` |
 | `height_normal` | `height_normal(fn, x: float, z: float, eps: float = 0.12)` |
-| `heightfield_mesh` | `heightfield_mesh(fn, half: float = 16.0, cells: int = 32, *, origin_x: float = 0.0, origin_z: float = 0.0, uv_half: float \| None = None)` |
-| `heightfield_tile` | `heightfield_tile(fn, origin_x: float, origin_z: float, tile: float = 10.0, cells: int = 8, *, uv_half: float \| None = None)` |
+| `heightfield_mesh` | `heightfield_mesh(fn, half: float = 16.0, cells: int = 32, *, origin_x: float = 0.0, origin_z: float = 0.0, uv_half: float \| None = None, uv_period: float \| None = None, uv_blend: float = 0.0, uv_pad: float = 0.0)` |
+| `heightfield_tile` | `heightfield_tile(fn, origin_x: float, origin_z: float, tile: float = 10.0, cells: int = 8, *, uv_half: float \| None = None, uv_period: float \| None = None, uv_blend: float = 0.0, uv_pad: float = 0.0)` |
 | `hovered_prop` | `hovered_prop(cam=None, sx: float \| None = None, sy: float \| None = None, *, max_dist: float = 80.0)` |
 | `init` | `init(width=1280, height=720, title='KAGRA Game', fps=60, transparent=False, decorations=True, always_on_top=False, visible=True)` |
 | `inject_key` | `inject_key(name: str, down: bool = True)` |
