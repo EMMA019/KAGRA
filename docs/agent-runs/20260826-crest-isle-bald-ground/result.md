@@ -17,7 +17,7 @@ Relic Run UV / #92 pin / Walk.wish untouched.
 
 ```
 python3 tools/gen_api_index.py --check   # OK (427 entries)
-python3 -m pytest tests -m "not golden"  # 462 passed, 10 deselected
+python3 -m pytest tests -m "not golden"  # 475 passed, 10 deselected (after merging #93)
 ```
 
 GPU smoke (`python -m kagra.verify examples/verify_scenarios/open_world_smoke.json`) not run: no `kagra_core` wheel in this environment.

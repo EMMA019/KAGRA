@@ -11,6 +11,11 @@ from pathlib import Path
 from typing import Optional
 
 from kagra.color_utils import clamp_u8
+from kagra.controller import (
+    CharacterController,
+    IDLE_SNAP,
+    jump_vy,
+)
 from kagra.gamekit import box_mesh, cylinder_mesh, quad_y_mesh, sphere_mesh
 from kagra.gltf_mesh import FlatMesh, flatten_gltf, is_gltf_name, resolve_gltf_path
 from kagra.pad import axis as pad_axis, poll_pad, stick_move
@@ -47,24 +52,6 @@ def color_name(rgb) -> str | None:
     for name, value in COLORS.items():
         if value == want:
             return name
-    return None
-
-
-def jump_vy(
-    on_ground: bool,
-    in_water: bool,
-    jump: float,
-    *,
-    coyote: bool = False,
-) -> float | None:
-    """ジャンプ／泳ぎの鉛直速度。しないなら None。``coyote`` は接地猶予。"""
-    jump = float(jump)
-    if jump <= 0.0:
-        return None
-    if in_water:
-        return jump * 0.42
-    if on_ground or coyote:
-        return jump
     return None
 
 
@@ -1087,6 +1074,9 @@ class Walk:
     ``yaw`` は視点（カメラが後ろに付く向き）。``face`` は移動方向で、停止中は
     直前の向きを保つ。三人称の VRM は ``avatar.set_yaw(walk.face)``。
     ``walk.yaw`` をそのまま向きにすると、カメラへ歩く（S）ときに振り返らない。
+
+    Motor: ``wish`` / ``move`` / ``try_jump`` (or pass ``CharacterController``).
+    Accel/decel default on. Sticky-walk quiet gap 3 is input, not this class.
     """
 
     def __init__(
@@ -1111,6 +1101,10 @@ class Walk:
         lock_cursor: bool | None = None,
         min_distance: float | None = None,
         max_distance: float | None = None,
+        accel: float = 14.0,
+        decel: float = 22.0,
+        air_control: float = 0.38,
+        controller: Optional[CharacterController] = None,
     ):
         self.world = world
         self.cam = cam
@@ -1139,6 +1133,46 @@ class Walk:
         self._buffer_left = 0.0
         self._locked = False
         self._last_mouse: Optional[tuple[float, float]] = None
+        self._axes_override: Optional[tuple[float, float]] = None
+        self._world_move: Optional[tuple[float, float]] = None
+        if controller is not None:
+            self.ctrl = controller
+            self.speed = float(controller.speed)
+            self.jump = float(controller.jump)
+            self.coyote = float(controller.coyote)
+            self.jump_buffer = float(controller.jump_buffer)
+        else:
+            self.ctrl = CharacterController(
+                speed=self.speed,
+                accel=float(accel),
+                decel=float(decel),
+                jump=self.jump,
+                coyote=self.coyote,
+                jump_buffer=self.jump_buffer,
+                air_control=float(air_control),
+            )
+        self.accel = float(self.ctrl.accel)
+        self.decel = float(self.ctrl.decel)
+
+    def wish(self, forward: float, right: float) -> None:
+        """Camera-relative analog wish this frame. Agents: ``wish`` then ``update``.
+
+        Consumed by the next ``update`` (does not stick across frames).
+        """
+        self._axes_override = (float(forward), float(right))
+
+    def move(self, vx: float, vz: float) -> None:
+        """World-space desired XZ (m/s) this frame. Accel-limited."""
+        self._world_move = (float(vx), float(vz))
+
+    def try_jump(self) -> None:
+        """Buffer a jump (SPACE / A also do this). Fires in ``update`` if allowed."""
+        self.ctrl.try_jump()
+
+    @property
+    def landed(self) -> bool:
+        """True for the frame the motor went airborne → grounded."""
+        return bool(self.ctrl.landed)
 
     def zoom_chase(self, delta: float) -> tuple[float, float]:
         """Player zoom. ``delta<0`` closer. Clamped to ``min_distance`` / ``max_distance``.
@@ -1223,37 +1257,40 @@ class Walk:
         except Exception:
             key_fwd, key_right = 0.0, 0.0
         lx, ly = pad_axis("left")
-        fwd, right = walk_axes(lx, ly, key_fwd, key_right, deadzone=self.stick_deadzone)
-        vx, vz = walk_wish(fwd, right, self.yaw, self.speed)
+        if self._axes_override is not None:
+            fwd, right = self._axes_override
+            self._axes_override = None
+        else:
+            fwd, right = walk_axes(lx, ly, key_fwd, key_right, deadzone=self.stick_deadzone)
+        if self._world_move is not None:
+            wx, wz = self._world_move
+            self._world_move = None
+            idle = abs(wx) < 1e-9 and abs(wz) < 1e-9
+        else:
+            wx, wz = walk_wish(fwd, right, self.yaw, self.speed)
+            idle = abs(fwd) < 1e-9 and abs(right) < 1e-9
         if self.world.in_water():
-            vx *= 0.55
-            vz *= 0.55
-        self.face = facing_yaw(vx, vz, self.face)
-        self.world.move_player(vx, vz)
-        idle = abs(fwd) < 1e-9 and abs(right) < 1e-9
+            wx *= 0.55
+            wz *= 0.55
+        self.face = facing_yaw(wx, wz, self.face)
         p = self.world.player
         dt = float(dt)
-        if p is not None and self.jump > 0.0:
-            grounded = bool(p.on_ground)
-            if grounded:
-                self._coyote_left = self.coyote
-            else:
-                self._coyote_left = max(0.0, self._coyote_left - dt)
-            if kagra.pressed("SPACE") or kagra.pad_pressed("a"):
-                self._buffer_left = self.jump_buffer
-            else:
-                self._buffer_left = max(0.0, self._buffer_left - dt)
-            if self._buffer_left > 0.0:
-                vy = jump_vy(
-                    grounded,
-                    self.world.in_water(p),
-                    self.jump,
-                    coyote=self._coyote_left > 0.0,
-                )
-                if vy is not None:
-                    p.vy = float(vy)
-                    self._buffer_left = 0.0
-                    self._coyote_left = 0.0
+        if p is not None:
+            self.ctrl.speed = self.speed
+            self.ctrl.jump = self.jump
+            self.ctrl.wish(wx, wz)
+            jumped = False
+            if self.jump > 0.0:
+                try:
+                    jumped = bool(kagra.pressed("SPACE") or kagra.pad_pressed("a"))
+                except Exception:
+                    jumped = False
+            if jumped:
+                self.ctrl.try_jump()
+            self.ctrl.apply(p, dt, in_water=self.world.in_water(p))
+            # Keep the old coyote fields in sync for tests that peek at Walk.
+            self._coyote_left = self.ctrl._coyote_left
+            self._buffer_left = self.ctrl._buffer_left
         if self.held is not None:
             h = self.held
             if getattr(h, "enabled", False) is False or getattr(h, "_destroyed", False):
@@ -1267,15 +1304,16 @@ class Walk:
         p = self.world.player
         if p is None:
             return
-        # Wish idle: Walk already wrote vx/vz=0. If collision/snap added a
-        # kick, kill it so release does not keep walking. Steep slide keeps
-        # `_slope_vx` and must not be zeroed (tiny slide-to-stop is OK).
+        # Wish idle: motor already decelerated. Snap leftover collision kicks
+        # once we are slow. Steep slide keeps `_slope_vx` (tiny slide-to-stop
+        # is OK). Sticky-walk quiet gap 3 is input, not this snap.
         if idle:
             sx = float(getattr(p, "_slope_vx", 0.0) or 0.0)
             sz = float(getattr(p, "_slope_vz", 0.0) or 0.0)
             if abs(sx) < 1e-6 and abs(sz) < 1e-6:
-                p.vx = 0.0
-                p.vz = 0.0
+                if math.hypot(p.vx, p.vz) < IDLE_SNAP:
+                    p.vx = 0.0
+                    p.vz = 0.0
         if self.first_person:
             eye, tgt = first_person_eye(
                 p.x, p.y, p.z, self.yaw, self.pitch, eye_height=self.eye_height,
@@ -1293,7 +1331,10 @@ class Walk:
                 min_distance=self.min_distance,
                 max_distance=self.max_distance,
             )
-        eng = kagra.get_engine()
+        try:
+            eng = kagra.get_engine()
+        except Exception:
+            eng = None
         if eng:
             self.cam.update(eng)
 

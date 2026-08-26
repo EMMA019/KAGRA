@@ -32,3 +32,7 @@ Fallback that looks the same: `heightfield_tile` without `uv_period` defaults `u
 - `world.terrain_uv_half = HALF` as a ClampToEdge safety net.
 
 Shared `heightfield_mesh` / Relic Run defaults unchanged.
+
+## Merge
+
+`origin/master` after PR #93 (AABB CharacterController) merged in. Conflicts only in `CHANGELOG.md` and `docs/agent-runs/README.md` (kept both bullets). `Walk.wish` / `Walk.move` / `Walk.try_jump` / `CharacterController` taken from master unchanged. No Rapier.
