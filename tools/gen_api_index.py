@@ -336,7 +336,7 @@ def render_markdown(items: list[tuple[str, str, str]]) -> str:
         "- 一人称: `Walk(..., first_person=True)`。目線は `eye_height`。ポインタロックは一人称のとき（OS が拒めばフォールバック）。`F` で切替えるデモは Prop Garden。",
         "- ホバー / クリック: `hovered_prop(cam)`。`clicked_prop(cam)` は押下。レイ直打ちは `kagra.play.hovered_prop(ox,oy,oz,dx,dy,dz)`。`plane` は除外。",
         "- エージェントの目: `kagra.annotate(sx, sy)` はプレビュークリックを JSONL に残す（screen / world / bone / Prop id）。`kagra.debug_trace(foot_y=…, height_fn=…)` は接地浮き。エディタではない。「ここもう少し」は数値にする。",
-        "- カメラ壁クリップ: `Camera3D.follow(..., world=)` がプレイヤー→カメラの線分を静的箱に当て、当たったら距離を縮める。`min_distance` / `max_distance` で VRM 頭の中と Tiny speck を防ぐ。`Walk` は自動。",
+        "- カメラ壁クリップ: `Camera3D.follow(..., world=)` がプレイヤー→カメラの線分を静的箱に当て、当たったら距離を縮める。`min_distance` / `max_distance` で VRM 頭の中と Tiny speck を防ぐ。`Walk` は自動。プレイヤーズームは `Walk.zoom_chase(delta)`（`delta<0` で近づく。[ ] / - = / ホイール。クランプは維持）。",
         "- 動く Prop: `p.x` / `set_position` / `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)` か `p.enabled = False`。持つのは `Walk.carry(prop)`。",
         "- `animate(obj, \"y\", end)` / `sequence` / `Tween`。`Prop.update_all` が回す。",
         "- HUD: `Label` / `Button`（画面空間。2D `kagra.ui` の同名は棚）。音は `sound(\"coin\")`。3D は `set_listener` + `play_se(..., x=, y=, z=)` / `play_loop`（距離減衰 + ステレオパン。HRTF ではない）。",

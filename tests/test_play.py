@@ -591,3 +591,26 @@ def test_walk_chase_distance_frozen_against_mutation():
     assert walk._chase_height == pytest.approx(4.4)
     assert walk.min_distance == pytest.approx(6.0)
     assert walk.max_distance == pytest.approx(12.6)
+
+
+def test_walk_zoom_chase_clamps_3d_distance():
+    """[ ] / wheel may shorten the arm; it must not enter the skull or fly away."""
+    w = play.World3D(gravity=0.0)
+    w.add_player(0.0, 0.0)
+    cam = load_kagra_submodule("camera3d").Camera3D(960, 540)
+    walk = play.Walk(
+        w, cam,
+        distance=12.2, height=4.4, look_y=1.25,
+        min_distance=6.0, max_distance=12.6,
+    )
+    authored = (walk._chase_distance ** 2 + (walk._chase_height - walk.look_y) ** 2) ** 0.5
+    assert authored == pytest.approx(12.6, abs=0.05)
+    walk.zoom_chase(-80.0)
+    near = (walk._chase_distance ** 2 + (walk._chase_height - walk.look_y) ** 2) ** 0.5
+    assert near == pytest.approx(6.0, abs=1e-3)
+    walk.zoom_chase(80.0)
+    far = (walk._chase_distance ** 2 + (walk._chase_height - walk.look_y) ** 2) ** 0.5
+    assert far == pytest.approx(12.6, abs=1e-3)
+    # Public field still does not rewrite the arm (hitch protection).
+    walk.distance = 0.05
+    assert walk._chase_distance > 1.0

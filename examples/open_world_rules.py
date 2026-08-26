@@ -33,6 +33,8 @@ FOV_DEG = 54.0
 # horizontal CAM_DISTANCE alone.
 CAM_MIN_DISTANCE = 6.0
 CAM_MAX_DISTANCE = math.hypot(CAM_DISTANCE, CAM_HEIGHT - CAM_LOOK_Y)
+# Player zoom ([ ] / - = / wheel). Horizontal step; 3D clamp stays on the arm.
+CAM_ZOOM_STEP = 0.55
 
 # aerial_grass_rock_diff_1k.jpg mean is brown dirt (R=0.45, G=0.38, B=0.14).
 # Crest Isle only: multiply mesh_mat.base so Lambert reads as 草原.
@@ -223,6 +225,15 @@ def _vista_props() -> tuple[tuple[str, float, float, float, float, bool], ...]:
         ("castle/tree-small.glb", -7.8, 2.2, 1.80, 0.90, True),
         ("forest/tree.glb", 7.2, 7.8, 1.70, -1.40, True),
         ("forest/tree-high.glb", -3.8, 17.4, 2.05, 0.45, True),
+        # Extra pines / oak / default in the opening cone (not one cloned tree).
+        ("nature/tree_pineTallB.glb", -8.4, 6.8, 3.20, 0.55, True),
+        ("nature/tree_pineTallA.glb", 8.4, 5.6, 3.10, -0.70, True),
+        ("nature/tree_tall.glb", -1.0, 5.4, 2.40, 0.35, True),
+        ("nature/tree_oak.glb", 10.2, 16.8, 2.90, 1.05, True),
+        ("nature/tree_pineTallB.glb", -5.6, 20.2, 3.50, -0.90, True),
+        ("nature/tree_default.glb", 4.4, 19.0, 2.30, 0.60, True),
+        ("nature/tree_pineTallA.glb", 13.8, 8.8, 3.30, 1.40, True),
+        ("nature/tree_tall.glb", 0.8, 22.8, 2.55, -0.20, True),
     )
     items.extend(trees)
 
@@ -239,6 +250,12 @@ def _vista_props() -> tuple[tuple[str, float, float, float, float, bool], ...]:
         ("nature/rock_tallB.glb", -6.0, 15.4, 1.50, -0.25, True),
         ("nature/log.glb", 0.6, 5.5, 2.40, 1.20, True),
         ("nature/stump_round.glb", 3.0, 3.4, 2.20, 0.40, True),
+        ("nature/rock_smallA.glb", -2.8, 1.4, 1.80, 0.85, True),
+        ("nature/rock_largeA.glb", 7.6, 14.2, 2.40, -0.50, True),
+        ("nature/stone_smallTopA.glb", 1.0, 7.2, 2.00, 0.15, False),
+        ("nature/rock_smallA.glb", 5.8, 4.0, 1.70, 1.35, True),
+        ("nature/stump_round.glb", -3.2, 12.6, 2.10, -0.70, True),
+        ("nature/log.glb", 8.8, 18.0, 2.20, 0.40, True),
     )
     items.extend(rocks)
 
@@ -285,6 +302,10 @@ def _vista_props() -> tuple[tuple[str, float, float, float, float, bool], ...]:
         ("forest/patch-dirt.glb", 1.6, 2.8, 1.80, 0.6, False),
         ("forest/patch-grass.glb", -5.0, 7.0, 2.30, 0.9, False),
         ("forest/patch-grass.glb", 6.0, 10.4, 2.00, -0.2, False),
+        ("forest/patch-grass.glb", -1.2, -5.4, 2.40, 0.55, False),
+        ("forest/patch-grass.glb", 2.2, -5.0, 2.20, -0.30, False),
+        ("forest/patch-grass.glb", -3.6, 0.6, 2.10, 0.80, False),
+        ("forest/patch-grass.glb", 4.8, 6.2, 2.25, 1.05, False),
         ("nature/path_stone.glb", 0.4, 1.6, 1.70, 0.05, False),
         ("nature/path_stone.glb", 0.6, 4.6, 1.70, 0.08, False),
     )
@@ -302,13 +323,16 @@ def _vista_props() -> tuple[tuple[str, float, float, float, float, bool], ...]:
         "nature/plant_bush.glb",
         "nature/plant_bushSmall.glb",
         "nature/plant_bushDetailed.glb",
+        "nature/plant_bushLarge.glb",
     )
     n = 0
-    for z in range(-6, 22, 2):
-        for x in range(-11, 14, 2):
-            if math.hypot(x - START_XZ[0], z - START_XZ[1]) < 1.8:
+    # 1 m checkerboard + jitter: denser meadow than the old 2 m lattice,
+    # without one cloned stamp.
+    for z in range(-6, 22, 1):
+        for x in range(-9, 14, 1):
+            if (x + z) % 2 == 0:
                 continue
-            if x <= -10:
+            if math.hypot(x - START_XZ[0], z - START_XZ[1]) < 1.8:
                 continue
             name = flowers[n % len(flowers)]
             scale = 2.15 + (n % 6) * 0.12
@@ -332,11 +356,14 @@ VISTA_PROPS = _vista_props()
 def chunk_decor(
     ix: int, iz: int, *, tile: float = TILE,
 ) -> list[tuple[str, float, float, float, float, bool]]:
-    """Sparse Kenney when a far grass tile streams in. Spawn tiles stay authored."""
+    """Kenney when a far grass tile streams in. Spawn tiles stay authored.
+
+    Variation (pines / oak / grass / flowers / bushes / rocks), not one clone.
+    """
     if abs(int(ix)) <= 1 and -1 <= int(iz) <= 1:
         return []
     seed = abs(int(ix) * 17 + int(iz) * 31)
-    if seed % 4 == 0:
+    if seed % 7 == 0:
         return []
     t = float(tile)
     cx = (int(ix) + 0.5) * t
@@ -345,17 +372,36 @@ def chunk_decor(
         "forest/tree.glb",
         "forest/tree-high.glb",
         "nature/tree_pineTallA.glb",
+        "nature/tree_pineTallB.glb",
+        "nature/tree_oak.glb",
+        "nature/tree_tall.glb",
+        "nature/tree_default.glb",
         "town/tree-crooked.glb",
         "castle/tree-small.glb",
     )
     ground = (
         "nature/flower_redA.glb",
+        "nature/flower_redB.glb",
+        "nature/flower_yellowA.glb",
+        "nature/flower_purpleA.glb",
+        "nature/grass.glb",
         "nature/grass_large.glb",
+        "nature/grass_leafs.glb",
         "forest/plant.glb",
         "nature/plant_bush.glb",
+        "nature/plant_bushSmall.glb",
+        "nature/plant_bushDetailed.glb",
+        "nature/plant_bushLarge.glb",
+    )
+    rocks = (
+        "forest/rocks-low.glb",
+        "nature/rock_smallA.glb",
+        "nature/rock_largeA.glb",
+        "nature/stump_round.glb",
+        "nature/log.glb",
     )
     out: list[tuple[str, float, float, float, float, bool]] = []
-    n_tree = 1 + seed % 3
+    n_tree = 2 + seed % 3
     for i in range(n_tree):
         dx = ((seed + i * 13) % 11 - 5) * 0.55
         dz = ((seed + i * 7) % 11 - 5) * 0.55
@@ -365,16 +411,18 @@ def chunk_decor(
         out.append(
             (name, cx + dx, cz + dz, scale * (1.7 if pine else 1.0), (i * 0.9), True)
         )
-    for i in range(3):
+    n_ground = 6 + seed % 4
+    for i in range(n_ground):
         dx = ((seed + i * 19) % 13 - 6) * 0.5
         dz = ((seed + i * 23) % 13 - 6) * 0.5
         name = ground[(seed + i) % len(ground)]
         out.append(
-            (name, cx + dx, cz + dz, 2.2 + (i % 3) * 0.2, i * 0.6, False)
+            (name, cx + dx, cz + dz, 2.0 + (i % 4) * 0.18, i * 0.6, False)
         )
-    if seed % 5 == 1:
+    if seed % 3 == 1:
+        rname = rocks[(seed // 3) % len(rocks)]
         out.append(
-            ("forest/rocks-low.glb", cx + 1.2, cz - 0.8, 1.4, 0.3, True)
+            (rname, cx + 1.2, cz - 0.8, 1.4 + (seed % 5) * 0.08, 0.3, True)
         )
     return out
 

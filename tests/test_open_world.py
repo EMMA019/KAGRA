@@ -15,6 +15,7 @@ from open_world_rules import (
     CAM_LOOK_Y,
     CAM_MAX_DISTANCE,
     CAM_MIN_DISTANCE,
+    CAM_ZOOM_STEP,
     COIN_XZ,
     GLTF_HALF_Y,
     GOLD_METALLIC,
@@ -76,7 +77,7 @@ def test_collectathon_layout():
     assert START_XZ not in STAR_XZ
     assert len(COIN_XZ) >= 20
     assert len(set(STAR_XZ)) == 8
-    assert len(VISTA_PROPS) >= 120
+    assert len(VISTA_PROPS) >= 280
 
 
 def test_vista_is_in_opening_frustum():
@@ -85,7 +86,22 @@ def test_vista_is_in_opening_frustum():
         (x, z) for _n, x, z, _s, _y, _c in VISTA_PROPS
         if -16.0 <= x <= 18.0 and -8.0 <= z <= 24.0
     ]
-    assert len(in_shot) >= 80
+    assert len(in_shot) >= 200
+
+
+def test_vista_kenney_is_varied_not_one_clone():
+    names = [n for n, *_ in VISTA_PROPS]
+    uniq = set(names)
+    assert any("grass" in n for n in uniq)
+    assert any("flower" in n for n in uniq)
+    assert any("plant_bush" in n for n in uniq)
+    assert any("pine" in n for n in uniq)
+    assert any("rock" in n for n in uniq)
+    trees = {n for n in uniq if "tree" in n}
+    assert len(trees) >= 6
+    assert sum(1 for n in names if "pine" in n) >= 6
+    for n in uniq:
+        assert n in GLTF_HALF_Y, n
 
 
 def test_stars_and_coins_are_reachable_land():
@@ -130,6 +146,25 @@ def test_chunk_decor_skips_spawn_tiles():
     assert far
     for _n, x, z, _s, _y, _c in far:
         assert abs(x) > 8.0 or abs(z) > 8.0
+
+
+def test_chunk_decor_is_varied_kenney_not_one_clone():
+    names: set[str] = set()
+    n = 0
+    for ix in range(-5, 6):
+        for iz in range(-5, 6):
+            rows = chunk_decor(ix, iz)
+            n += len(rows)
+            names.update(r[0] for r in rows)
+    assert n >= 200
+    assert any("grass" in n for n in names)
+    assert any("flower" in n for n in names)
+    assert any("plant_bush" in n for n in names)
+    assert any("pine" in n for n in names)
+    trees = {x for x in names if "tree" in x}
+    assert len(trees) >= 4
+    for rel in names:
+        assert rel in GLTF_HALF_Y, rel
 
 
 def test_cc0_assets_are_vendored():
@@ -178,6 +213,51 @@ def test_kenney_tree_loads_colormap():
         uvs = [(v[6], v[7]) for v in flat.verts]
         assert uvs
         assert max(u for u, _ in uvs) > min(u for u, _ in uvs)
+
+
+def test_nature_unlit_trees_are_not_black_chrome():
+    """#91 fixed forest colormap; Nature Kit bark-first pines stayed metallic=1."""
+    gm = load_kagra_submodule("gltf_mesh")
+    nature = _ROOT / "examples" / "assets" / "open_world" / "kenney" / "nature"
+    for name in (
+        "tree_pineTallA.glb",
+        "tree_pineTallB.glb",
+        "tree_default.glb",
+        "tree_palm.glb",
+        "tree_oak.glb",
+        "tree_tall.glb",
+        "tree_palmDetailedTall.glb",
+    ):
+        flat = gm.flatten_gltf(nature / name)
+        assert flat.metallic < 0.05, (name, flat.metallic)
+        assert flat.image is not None, name
+        assert flat.image[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_placed_crest_trees_flatten_colored():
+    """Vista + chunk_decor trees must not flatten to untextured chrome."""
+    gm = load_kagra_submodule("gltf_mesh")
+    kenney = _ROOT / "examples" / "assets" / "open_world" / "kenney"
+    rels = {row[0] for row in VISTA_PROPS if "tree" in row[0]}
+    for ix in range(-4, 5):
+        for iz in range(-4, 5):
+            for row in chunk_decor(ix, iz):
+                if "tree" in row[0]:
+                    rels.add(row[0])
+    assert "nature/tree_pineTallA.glb" in rels
+    assert "nature/tree_default.glb" in rels
+    assert "forest/tree.glb" in rels
+    for rel in sorted(rels):
+        path = kenney / rel
+        assert path.is_file(), rel
+        flat = gm.flatten_gltf(path)
+        assert not (flat.image is None and flat.metallic > 0.5), rel
+        if rel.startswith("nature/tree"):
+            assert flat.metallic < 0.05, rel
+            assert flat.image is not None, rel
+        if rel.startswith(("forest/", "town/", "castle/")):
+            assert flat.image is not None, rel
+            assert flat.metallic < 0.05, rel
 
 
 def test_crest_isle_sun_and_ibl_are_sane():
@@ -246,6 +326,8 @@ def test_game_file_uses_only_public_imports():
         "set_listener",
         "play_loop",
         "play_se",
+        "zoom_chase",
+        "CAM_ZOOM_STEP",
     ):
         assert name in text, name
 
@@ -304,8 +386,20 @@ def test_mesh3d_tex_bg_cache_fits_crest_isle_vista():
     )
     assert "MESH3D_TEX_BG_MAX: usize = 256" in src
     assert "fn lru_evict_dead" in src
-    assert "Live textures must not become Fallback White" in src
+    assert "fn mesh3d_tex_ref_add" in src
+    assert "fn mesh3d_tex_pinned" in src
+    assert "ref>0" in src
+    assert "Off-camera ≠ unreferenced" in src or "Off-camera this frame is not" in src
+    rend = (_ROOT / "kagra-core" / "src" / "renderer" / "mod.rs").read_text(
+        encoding="utf-8",
+    )
+    assert "mesh3d_tex_refs" in rend
+    assert "mesh3d_tex_pinned" in rend
+    assert "live_frame.contains(&k)" in rend
+    assert "textures.contains_key(&k.0)" not in rend
     win = (_ROOT / "kagra-core" / "src" / "window.rs").read_text(encoding="utf-8")
+    assert "retain_mesh_texture" in win
+    assert "release_mesh_texture" in win
     assert "path_texture_cache" in win
     assert "HashMap<(u32, String), u32>" in win
 
@@ -320,7 +414,14 @@ def test_crest_chase_cam_band_is_authored_3d_distance():
     assert "max_distance=CAM_MAX_DISTANCE" in src
     cam = (_ROOT / "kagra" / "camera3d.py").read_text(encoding="utf-8")
     assert "def clamp_eye" in cam
+    assert "def clamp_chase_arm" in cam
     assert "min_hit" in cam
+    assert CAM_ZOOM_STEP > 0.0
+    assert "def _zoom_input" in src
+    assert '"BracketLeft"' in src
+    assert '"BracketRight"' in src
+    assert 'kagra.text("[ ] / - = / wheel  zoom"' in src
+    assert "頭の中" in src
 
 
 def test_crest_grass_tint_is_green_not_white():
@@ -350,8 +451,11 @@ def test_crest_sky_snapshots_fog_off_and_mtoon_flips_backfaces():
     assert "skip_fog: bool = False" in py
     stage = (_ROOT / "kagra" / "stage.py").read_text(encoding="utf-8")
     assert "skip_fog=True" in stage
+    assert "rings=32" in stage
+    assert "segs=48" in stage
     play = (_ROOT / "kagra" / "play.py").read_text(encoding="utf-8")
     assert "skip_fog=True" in play
+    assert "def zoom_chase" in play
     inp = (_ROOT / "kagra-core" / "src" / "input.rs").read_text(encoding="utf-8")
     assert "REHOLD_QUIET_FRAMES: u8 = 3" in inp
     assert "REHOLD_QUIET_FRAMES: u8 = 15" not in inp
@@ -455,6 +559,9 @@ def test_mtoon_boosts_hair_rim_not_face():
     assert "fn boost_hair_rim" in mtoon
     assert 'lower.contains("hair")' in mtoon
     assert '"face"' in mtoon
+    assert "is_hair_material(material_name(mat))" in mtoon
+    assert "ds = true" in mtoon
+    assert "fn hair_orbit_uses_double_sided" in mtoon
     shaders = (_ROOT / "kagra-core" / "src" / "renderer" / "shaders.rs").read_text(
         encoding="utf-8",
     )

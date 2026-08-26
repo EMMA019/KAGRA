@@ -1,5 +1,6 @@
 // GPU helper utilities
 use nalgebra;
+use std::collections::HashMap;
 
 /// Directional shadow map resolution
 pub(super) const SHADOW_MAP_SIZE: u32 = 2048;
@@ -16,9 +17,9 @@ pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 pub const MSAA_COUNT: u32 = 4;
 /// Mesh3D (diffuse, normal) bind groups. FIFO 64 evicted Crest Isle grass
 /// (uploaded first) after 120+ Kenney Props → Fallback White 1×1.
-/// VRM skinned draws do **not** use this cache (they bind `textures` +
-/// per-draw skin palettes). Same-path VRM clones share VB/IB/MToon via
-/// `VrmModel::instantiate`; a second Alicia does not multiply Mesh3D LRU.
+/// Cap is a hint. **Pinned** keys (live stream tile / placed Prop, ref>0)
+/// are never dropped when the cap is hit. Off-camera this frame is not
+/// unreferenced. VRM skinned draws do **not** use this cache.
 pub(super) const MESH3D_TEX_BG_MAX: usize = 256;
 
 pub(super) fn lru_touch<T: PartialEq>(order: &mut std::collections::VecDeque<T>, key: T) {
@@ -28,8 +29,9 @@ pub(super) fn lru_touch<T: PartialEq>(order: &mut std::collections::VecDeque<T>,
     order.push_back(key);
 }
 
-/// Drop only dead keys. Live textures must not become Fallback White,
-/// even if that means the cache grows past `max` (Crest Isle grass).
+/// Drop only unreferenced keys. `is_live` is ref>0 (or this-frame immediate).
+/// Live stream tiles / Props must not become Fallback White 1×1, even if
+/// that means the cache grows past `max`. Off-camera ≠ unreferenced.
 pub(super) fn lru_evict_dead<T: Copy>(
     order: &mut std::collections::VecDeque<T>,
     mut is_live: impl FnMut(T) -> bool,
@@ -48,6 +50,24 @@ pub(super) fn lru_evict_dead<T: Copy>(
         }
     });
     dropped
+}
+
+/// Bind-group pin for a retained Mesh3D. `ref>0` never evicts; `ref==0` is LRU.
+pub(super) fn mesh3d_tex_ref_add(map: &mut HashMap<(u32, u32), u32>, key: (u32, u32)) {
+    *map.entry(key).or_insert(0) += 1;
+}
+
+pub(super) fn mesh3d_tex_ref_sub(map: &mut HashMap<(u32, u32), u32>, key: (u32, u32)) {
+    if let Some(count) = map.get_mut(&key) {
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            map.remove(&key);
+        }
+    }
+}
+
+pub(super) fn mesh3d_tex_pinned(map: &HashMap<(u32, u32), u32>, key: (u32, u32)) -> bool {
+    map.get(&key).copied().unwrap_or(0) > 0
 }
 
 pub fn msaa_state() -> wgpu::MultisampleState {
@@ -599,6 +619,53 @@ mod light_dir_tests {
         let dropped = super::lru_evict_dead(&mut order, |k| k != 1, 3);
         assert_eq!(dropped, vec![1]);
         assert_eq!(order, std::collections::VecDeque::from([2, 3]));
+    }
+
+    #[test]
+    fn mesh3d_cache_keeps_this_frame_keys() {
+        let mut order = std::collections::VecDeque::from([1u32, 2, 3, 4]);
+        let frame = [1u32, 4];
+        let dropped = super::lru_evict_dead(&mut order, |k| frame.contains(&k), 4);
+        assert_eq!(dropped, vec![2, 3]);
+        assert_eq!(order, std::collections::VecDeque::from([1, 4]));
+    }
+
+    #[test]
+    fn mesh3d_tex_ref_pins_until_zero() {
+        let mut refs = std::collections::HashMap::new();
+        let grass = (1u32, 0u32);
+        let tree = (2u32, 0u32);
+        super::mesh3d_tex_ref_add(&mut refs, grass);
+        super::mesh3d_tex_ref_add(&mut refs, grass);
+        super::mesh3d_tex_ref_add(&mut refs, tree);
+        assert!(super::mesh3d_tex_pinned(&refs, grass));
+        super::mesh3d_tex_ref_sub(&mut refs, grass);
+        assert!(super::mesh3d_tex_pinned(&refs, grass));
+        super::mesh3d_tex_ref_sub(&mut refs, grass);
+        assert!(!super::mesh3d_tex_pinned(&refs, grass));
+        assert!(super::mesh3d_tex_pinned(&refs, tree));
+    }
+
+    #[test]
+    fn mesh3d_cache_does_not_evict_pinned_off_camera() {
+        // Orbit culls a live stream tile / Prop. It is still referenced (ref>0).
+        // This-frame-only would drop it to Fallback White 1×1.
+        let grass = (1u32, 0u32);
+        let stale = (2u32, 0u32);
+        let visible = (3u32, 0u32);
+        let mut refs = std::collections::HashMap::new();
+        super::mesh3d_tex_ref_add(&mut refs, grass);
+        let mut order = std::collections::VecDeque::from([grass, stale, visible]);
+        let frame = [visible];
+        let dropped = super::lru_evict_dead(
+            &mut order,
+            |k| super::mesh3d_tex_pinned(&refs, k) || frame.contains(&k),
+            3,
+        );
+        assert!(!dropped.contains(&grass), "pinned grass must survive orbit cull");
+        assert!(dropped.contains(&stale));
+        assert!(order.contains(&grass));
+        assert!(order.contains(&visible));
     }
 
     #[test]

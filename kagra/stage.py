@@ -147,7 +147,13 @@ class Stage:
         if kind == "gltf":
             return cls(kind, path, model_id=kagra.load_gltf(str(path)))
         tex_id = kagra.load(str(path))
-        verts, indices = backdrop_sphere(radius)
+        # Large outdoor sky: low rings/segs made a faceted white rectangle
+        # when the chase cam orbited (one huge triangle covering half the
+        # view, then fog/ACES blew it). Indoor halls keep the dense default.
+        if float(radius) >= 40.0:
+            verts, indices = backdrop_sphere(float(radius), rings=32, segs=48)
+        else:
+            verts, indices = backdrop_sphere(radius)
         return cls(kind, path, tex_id=tex_id, verts=verts, indices=indices)
 
     def draw(self) -> None:

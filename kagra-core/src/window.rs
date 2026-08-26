@@ -359,13 +359,20 @@ impl KagraWindow {
         base_color: [f32; 3],
         normal_texture_id: u32,
     ) -> u32 {
-        if let Some(r) = lock_recover(&self.renderer).as_mut() {
+        let id = if let Some(r) = lock_recover(&self.renderer).as_mut() {
             r.upload_mesh_3d(
                 texture_id, verts, indices, metallic, roughness, base_color, normal_texture_id,
             )
         } else {
             0
+        };
+        if id != 0 {
+            // Pin GPU pixels for as long as the retained mesh exists. Frustum
+            // cull / "not drawn this frame" must not drop grass to 1×1.
+            self.retain_mesh_texture(texture_id);
+            self.retain_mesh_texture(normal_texture_id);
         }
+        id
     }
 
     pub fn queue_retained_mesh_3d(&self, mesh_id: u32) {
@@ -381,9 +388,30 @@ impl KagraWindow {
     }
 
     pub fn unload_mesh_3d(&self, mesh_id: u32) {
-        if let Some(r) = lock_recover(&self.renderer).as_mut() {
-            r.unload_mesh_3d(mesh_id);
+        let ids = if let Some(r) = lock_recover(&self.renderer).as_mut() {
+            r.unload_mesh_3d(mesh_id)
+        } else {
+            None
+        };
+        if let Some((diffuse, normal)) = ids {
+            let _ = self.release_mesh_texture(diffuse);
+            let _ = self.release_mesh_texture(normal);
         }
+    }
+
+    fn retain_mesh_texture(&self, id: u32) {
+        if id == 0 {
+            return;
+        }
+        let mut rc = lock_recover(&self.texture_refcount);
+        *rc.entry(id).or_insert(0) += 1;
+    }
+
+    fn release_mesh_texture(&self, id: u32) -> Result<(), String> {
+        if id == 0 {
+            return Ok(());
+        }
+        self.unload_texture(id)
     }
 
     pub fn draw_texture_ex(

@@ -1,6 +1,8 @@
 """Camera3D.ray_from_screen — GPU 不要。"""
 from __future__ import annotations
 
+import pytest
+
 from tests.conftest import load_kagra_submodule
 
 
@@ -212,6 +214,26 @@ def test_clip_eye_no_hit_keeps_dest():
     world = w3.World3D(half=6.0)
     dest = m.clip_eye((0.0, 1.0, 0.0), (0.0, 2.4, -4.8), world)
     assert dest == (0.0, 2.4, -4.8)
+
+
+def test_clamp_chase_arm_keeps_pitch_and_3d_band():
+    """Player zoom scales the arm; 3D hypot stays in [min, max]."""
+    import math
+
+    m = _cam()
+    d0, h0, look = 12.2, 4.4, 1.25
+    d, h = m.clamp_chase_arm(d0, h0, look, min_distance=6.0, max_distance=12.6, delta=0.0)
+    assert d == pytest.approx(d0, abs=1e-4)
+    assert h == pytest.approx(h0, abs=1e-4)
+    ratio = (h0 - look) / d0
+    d, h = m.clamp_chase_arm(d0, h0, look, min_distance=6.0, max_distance=12.6, delta=-80.0)
+    eye = math.hypot(d, h - look)
+    assert eye == pytest.approx(6.0, abs=1e-3)
+    assert (h - look) / d == pytest.approx(ratio, abs=1e-4)
+    d, h = m.clamp_chase_arm(d0, h0, look, min_distance=6.0, max_distance=12.6, delta=80.0)
+    eye = math.hypot(d, h - look)
+    assert eye == pytest.approx(12.6, abs=1e-3)
+    assert (h - look) / d == pytest.approx(ratio, abs=1e-4)
 
 
 def test_clamp_eye_rejects_skull_and_tiny_speck():
