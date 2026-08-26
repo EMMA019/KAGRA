@@ -692,6 +692,16 @@ fn cotangent_frame(n: vec3<f32>, p: vec3<f32>, uv: vec2<f32>) -> mat3x3<f32> {
     let rim_lift = mtoon.params.y;
     let rim = pow(max(1.0 - saturate(dot(n, V)), 0.0), max(rim_power, 1e-3)) * rim_lift;
     col = col + rim * mtoon.rim_color.rgb;
+    // Unnamed hair (authored lift ~0): silhouette on darker/saturated albedo.
+    // Pale skin (high luma, low sat) stays off so the face cannot white-mask.
+    // Named hair already has rim_lift from parse; skip to avoid a double rim.
+    if rim_lift < 0.05 {
+        let luma = dot(base.rgb, vec3<f32>(0.299, 0.587, 0.114));
+        let sat = max(base.r, max(base.g, base.b)) - min(base.r, min(base.g, base.b));
+        let not_skin = saturate((0.70 - luma) * 4.0) * saturate((sat - 0.10) * 6.0);
+        let hair_edge = pow(max(1.0 - saturate(dot(n, V)), 0.0), 3.4);
+        col = col + hair_edge * not_skin * 0.42 * vec3<f32>(1.0, 0.88, 0.80);
+    }
     // light_dir.w = グローバルリム。0 なら従来どおり（ゴールデン互換）。
     let global_rim = cam.light_dir.w;
     if global_rim > 0.001 {

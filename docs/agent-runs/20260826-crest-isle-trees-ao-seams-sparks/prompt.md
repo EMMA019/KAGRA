@@ -18,3 +18,13 @@ Crest Isle places `forest/tree-high.glb` via `examples/open_world_rules.py`.
 Constraints: no Unity/Tk editor; agent eyes stay `kagra.annotate` / `kagra.debug_trace`. Keep sticky-walk quiet gap 3, Mesh3D LRU 256, chase cam clamp, opaque title, spatial listener, set_locomotion, Mixamo bind_locomotion. Tests pass (`pytest tests -m "not golden"`, rust tests you can run, API index check). GPU smoke optional if no wheel.
 
 Investigate, implement, test, open the PR. Report in the PR body: black-tree root cause you confirmed, what shipped, how to try, what you left out.
+
+---
+
+Keep going on the same PR #91 (do not open a second PR). Emma still does not want chat reports until ~21:00 JST.
+
+Add the leftover polish only:
+1. Stronger hair rim on the Crest Isle / VRoid MToon character (Alicia/Emma). Do not blow the face to a white mask — master already flips MToon backfaces for that. Tune rim so hair reads, not the skull interior.
+2. Gold collectible spheres: real metallic/roughness (crest/coin or the gold orbs in Crest Isle). Should read as metal, not yellow plastic.
+
+Do not add SSAO, CSM, volumetric fog, Rapier, editor, Web/XR. Do not revert tree URI / blob AO / tile blend / sparks. Push onto `cursor/crest-isle-trees-ao-seams-sparks-910f`. Tests must still pass. Update the PR body with these two items. Do not merge.

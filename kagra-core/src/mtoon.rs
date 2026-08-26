@@ -100,6 +100,52 @@ fn f32_val(v: Option<&serde_json::Value>, def: f32) -> f32 {
     v.and_then(|x| x.as_f64()).map(|x| x as f32).unwrap_or(def)
 }
 
+/// VRoid / Alicia hair names. Face / skin / eyes stay off this path so a
+/// stronger rim cannot blow the skull to a white mask.
+pub fn is_hair_material(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    let lower = name.to_ascii_lowercase();
+    const NOT_HAIR: &[&str] = &[
+        "face", "skin", "eye", "iris", "brow", "lash", "lip", "mouth", "tooth",
+        "teeth", "tongue", "cheek", "nose",
+    ];
+    if NOT_HAIR.iter().any(|s| lower.contains(s)) {
+        return false;
+    }
+    if name.contains('顔') || name.contains('肌') || name.contains('目') {
+        return false;
+    }
+    lower.contains("hair")
+        || lower.contains("bang")
+        || lower.contains("ahoge")
+        || name.contains('髪')
+}
+
+/// Visible hair silhouette. VRoid often authors black rim + lift 0 (no rim).
+/// Do not use (1,1,1) — that is the white-mask path. Backfaces stay flipped
+/// in the skinning shader so the skull interior does not light as hair.
+pub fn boost_hair_rim(gpu: &mut MtoonGpu) {
+    let sum = gpu.rim_color[0] + gpu.rim_color[1] + gpu.rim_color[2];
+    if sum < 0.08 {
+        gpu.rim_color[0] = 1.00;
+        gpu.rim_color[1] = 0.86;
+        gpu.rim_color[2] = 0.78;
+    }
+    // Tighter than a fill, wider than UniVRM default 5 so strands read.
+    if gpu.rim_color[3] > 4.5 || gpu.rim_color[3] < 2.0 {
+        gpu.rim_color[3] = 3.4;
+    }
+    if gpu.params[1] < 0.62 {
+        gpu.params[1] = 0.62;
+    }
+}
+
+fn material_name(mat: &serde_json::Value) -> &str {
+    mat.get("name").and_then(|s| s.as_str()).unwrap_or("")
+}
+
 fn tex_index(ext: &serde_json::Value, key: &str) -> Option<usize> {
     ext.get(key)
         .and_then(|t| t.get("index"))
@@ -180,6 +226,10 @@ pub fn parse_mtoon(
         .and_then(|i| i.as_u64())
     {
         textures.normal = tex_id_map.get(&(ti as usize)).copied();
+    }
+
+    if is_hair_material(material_name(mat)) {
+        boost_hair_rim(&mut gpu);
     }
 
     let mut mat_out = MtoonMaterial::create(device, gpu, textures);
@@ -371,6 +421,13 @@ pub fn parse_vrm0_material_properties(
         if let Some(v) = vrm0_cull_double_sided(prop) {
             ds = v;
         }
+        let vrm0_name = prop
+            .get("name")
+            .and_then(|s| s.as_str())
+            .unwrap_or_else(|| materials.get(i).map(material_name).unwrap_or(""));
+        if is_hair_material(vrm0_name) {
+            boost_hair_rim(&mut gpu);
+        }
         out[i] = MtoonMaterial::create(device, gpu, textures);
         out[i].double_sided = ds;
     }
@@ -401,6 +458,37 @@ mod tests {
         assert_eq!(vrm0_cull_double_sided(&prop), Some(true));
         let back = serde_json::json!({"floatProperties": {"_CullMode": 2.0}});
         assert_eq!(vrm0_cull_double_sided(&back), Some(false));
+    }
+
+    #[test]
+    fn hair_name_is_hair_face_is_not() {
+        assert!(is_hair_material("Alicia_hair"));
+        assert!(is_hair_material("F00_000_Hair_00"));
+        assert!(is_hair_material("N00_000_00_HairBack_00_HAIR"));
+        assert!(is_hair_material("髪"));
+        assert!(is_hair_material("bangs"));
+        assert!(!is_hair_material(""));
+        assert!(!is_hair_material("Alicia_face"));
+        assert!(!is_hair_material("Face"));
+        assert!(!is_hair_material("F00_000_Face_00_SKIN"));
+        assert!(!is_hair_material("EyeIris"));
+        assert!(!is_hair_material("Body"));
+        assert!(!is_hair_material("顔"));
+    }
+
+    #[test]
+    fn boost_hair_rim_sets_visible_warm_rim_on_black() {
+        let mut gpu = MtoonGpu::default();
+        assert_eq!(gpu.params[1], 0.0);
+        boost_hair_rim(&mut gpu);
+        assert!(gpu.params[1] >= 0.6);
+        assert!(gpu.rim_color[0] > 0.8);
+        assert!(gpu.rim_color[1] < gpu.rim_color[0]);
+        assert!(gpu.rim_color[2] < gpu.rim_color[0]);
+        assert!(gpu.rim_color[3] < 5.0);
+        let face = MtoonGpu::default();
+        assert_eq!(face.params[1], 0.0);
+        assert!(face.rim_color[0] + face.rim_color[1] + face.rim_color[2] < 0.08);
     }
 
     #[test]

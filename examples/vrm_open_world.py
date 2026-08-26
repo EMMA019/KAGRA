@@ -17,6 +17,7 @@ Otherwise built-in clips. The ``walk`` alias (synthetic_walk.bvh) is not used.
 Upper-body clap/banzai stay on ActionController and do not fight walk arms.
 Spatial audio: looping sea to the west + pickup SE at the crest/coin.
 Fake AO: a ground blob under the feet. Pickups spawn a CPU billboard burst.
+Coins are gold PBR spheres (metallic 1 / roughness 0.12), not yellow plastic.
 
 操作:
   WASD / 左スティック : 歩く
@@ -50,10 +51,13 @@ from open_world_rules import (
     CAM_MIN_DISTANCE,
     CELLS,
     COIN_GLOW,
+    COIN_HOVER,
     COIN_SCALE,
     COIN_XZ,
     FOV_DEG,
     GLTF_HALF_Y,
+    GOLD_METALLIC,
+    GOLD_ROUGHNESS,
     GRASS_TINT,
     HALF,
     JUMP,
@@ -62,6 +66,7 @@ from open_world_rules import (
     PEAK_XZ,
     PICK_REACH,
     PLAYER_SPEED,
+    SPHERE_HALF_Y,
     STAR_MODELS,
     STAR_NEED,
     STAR_SCALES,
@@ -301,13 +306,12 @@ class CrestIsle(kagra.Scene):
         self.coin_props = []
         for cx, cz in COIN_XZ:
             gy = self.world.ground_y(cx, cz)
-            half = GLTF_HALF_Y["dungeon/coin.glb"]
             self.coin_props.append(
                 kagra.Prop(
-                    _gltf("dungeon/coin.glb"),
-                    x=cx, y=sit_y(gy, half, COIN_SCALE) + 0.35, z=cz,
-                    scale=COIN_SCALE, yaw=0.4, world=self.world, collision=False,
-                    metallic=0.85, roughness=0.22,
+                    "sphere",
+                    x=cx, y=sit_y(gy, SPHERE_HALF_Y, COIN_SCALE) + COIN_HOVER, z=cz,
+                    scale=COIN_SCALE, world=self.world, collision=False,
+                    color="gold", metallic=GOLD_METALLIC, roughness=GOLD_ROUGHNESS,
                 )
             )
 
@@ -370,7 +374,7 @@ class CrestIsle(kagra.Scene):
 
     def _coin_y(self, coin) -> float:
         gy = self.world.ground_y(coin.x, coin.z)
-        return sit_y(gy, GLTF_HALF_Y["dungeon/coin.glb"], COIN_SCALE) + 0.35 + 0.14 * math.sin(coin.phase)
+        return sit_y(gy, SPHERE_HALF_Y, COIN_SCALE) + COIN_HOVER + 0.14 * math.sin(coin.phase)
 
     def _reset_round(self):
         self.stars = spawn_stars()

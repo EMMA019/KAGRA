@@ -454,7 +454,7 @@
 - ワンショットポーズは `ActionController`（`ActionController.names()`）。歩きは `avatar.set_locomotion(speed)`（idle/walk/run を速度ブレンド）。ローカル Mixamo は `avatar.bind_locomotion()`（rest+roll 補償。`walk` エイリアス / synthetic_walk.bvh は使わない）。上半身は `play_upper`。`play("walk")` はクリップ切替。`dance()` は全身置換。
 - 静的メッシュは `upload_mesh_3d` で一度載せ、`draw_mesh_id` で描く。
 - ワールド箱は視錐台カリングされる。箱の描画は `draw_mesh_instances`。直前フレームは `render_stats()`。
-- VRM プリミティブはパッド付きボーン AABB でカリング。`doubleSided` のときだけ両面。MToon は裏面法線を反転（頭の中からのリム白飛び / 髪越しの顔を防ぐ）。
+- VRM プリミティブはパッド付きボーン AABB でカリング。`doubleSided` のときだけ両面。MToon は裏面法線を反転（頭の中からのリム白飛び / 髪越しの顔を防ぐ）。Hair / 髪 マテリアルだけ `rimLift` を上げる（顔は触らない）。
 - 同じパスの `kagra.avatar()` はメッシュ / テクスチャ / MToon を共有する。ジョイントパレットはインスタンスごと。計測は `vrm_gpu_stats()`。見本は `examples/vrm_multi_avatar.py`（Crest Isle は 1 人のまま）。
 - 床と箱: `World3D`（または `Physics3D` + `box_mesh`）。カメラは `Camera3D.follow`。
 - 短い 3D: `Prop` + `Walk` + `sky()` / `room()` / `water()`。地形は `World3D.set_height_fn` + `island_height` / `overworld_height` / `open_world_height`。タイル化は `tile=` / `stream_radius=`。遠いタイルは `lod_radius=` / `lod_cells=`。拾いは `can_pick`。`Walk(..., jump=)`。

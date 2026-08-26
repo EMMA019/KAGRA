@@ -47,8 +47,14 @@ TERRAIN_UV_PAD = 0.035
 PICK_REACH = 1.25
 STAR_NEED = 6
 STAR_SCALE = 1.55
-COIN_SCALE = 1.35
+# Kenney dungeon/coin.glb is a painted yellow disc (still reads plastic at
+# metallic 0.85 / roughness 0.22). Crest coins are gold PBR spheres.
+GOLD_METALLIC = 1.0
+GOLD_ROUGHNESS = 0.12
+COIN_SCALE = 0.48
+COIN_HOVER = 0.32
 COIN_GLOW = 0.55
+SPHERE_HALF_Y = 0.5
 
 _START_FACE = 0.0  # body +Z; camera behind looks at grass / sea / mountains
 

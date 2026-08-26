@@ -17,6 +17,8 @@ from open_world_rules import (
     CAM_MIN_DISTANCE,
     COIN_XZ,
     GLTF_HALF_Y,
+    GOLD_METALLIC,
+    GOLD_ROUGHNESS,
     GRASS_TINT,
     HALF,
     LOD_CELLS,
@@ -425,3 +427,38 @@ def test_crest_isle_ships_blob_sparks_and_tile_blend():
     relic = (_ROOT / "examples" / "vrm_relic_run.py").read_text(encoding="utf-8")
     assert "terrain_uv_period" not in relic
     assert "terrain_uv_blend" not in relic
+
+
+def test_crest_gold_orbs_use_metal_not_plastic():
+    """Crest coins are gold PBR spheres, not Kenney yellow discs."""
+    assert GOLD_METALLIC >= 0.95
+    assert GOLD_ROUGHNESS <= 0.14
+    src = (_ROOT / "examples" / "vrm_open_world.py").read_text(encoding="utf-8")
+    assert 'kagra.Prop(' in src
+    assert '"sphere"' in src
+    assert 'color="gold"' in src
+    assert "GOLD_METALLIC" in src
+    assert "GOLD_ROUGHNESS" in src
+    assert 'dungeon/coin.glb' not in src
+    assert "metallic=0.85" not in src
+    look = (_ROOT / "kagra" / "look.py").read_text(encoding="utf-8")
+    outdoor = look[look.index("def apply_outdoor_look") :]
+    nxt = outdoor.find("\ndef ", 10)
+    outdoor = outdoor[:nxt] if nxt != -1 else outdoor
+    assert "set_rim" not in outdoor
+
+
+def test_mtoon_boosts_hair_rim_not_face():
+    """Hair material rim is lifted; backface flip stays; face names are skipped."""
+    mtoon = (_ROOT / "kagra-core" / "src" / "mtoon.rs").read_text(encoding="utf-8")
+    assert "fn is_hair_material" in mtoon
+    assert "fn boost_hair_rim" in mtoon
+    assert 'lower.contains("hair")' in mtoon
+    assert '"face"' in mtoon
+    shaders = (_ROOT / "kagra-core" / "src" / "renderer" / "shaders.rs").read_text(
+        encoding="utf-8",
+    )
+    assert "@builtin(front_facing) front" in shaders
+    assert "if !front" in shaders
+    assert "not_skin" in shaders
+    assert "rim_lift < 0.05" in shaders
