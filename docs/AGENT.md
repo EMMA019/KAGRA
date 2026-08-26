@@ -18,7 +18,8 @@
 | Touch | `kagra/touch.py` |
 | Mobile scaffold | `mobile/` |
 | Shared scene (GPU 非依存) | `kagra-shared/src/scene.rs` |
-| Shared 3D scene + world dump | `kagra-shared/src/scene3d.rs` (`Scene3D::from_world_json`, schema `docs/schemas/world.json`) |
+| Shared 3D draw list | `kagra-shared/src/scene3d.rs` (`Scene3D` = 1 frame: camera / batches / fog) |
+| Shared world dump | `kagra-shared/src/world_doc.rs` (`WorldDoc::from_json`, `compile_scene`, schema `docs/schemas/world.json`) |
 | Shared renderer | `kagra-shared/src/render/` |
 
 Rust errors surface as `[CODE] message` (see `KaguraError::code`).

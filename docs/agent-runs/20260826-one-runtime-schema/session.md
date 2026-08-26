@@ -1,10 +1,9 @@
 # Session
 
-- Fetched origin/master (`9ddf13d`, PR #99 World query/dump/load already merged). Branched `cursor/one-runtime-scene3d-dump-d6bc`.
-- Investigated existing `Scene3D` (`kagra-shared/src/scene3d.rs`): it was a GPU-free *draw list* (camera, batches, MeshId). Mobile JSON playback is `SaveGame` / `IsleGame` (score/phase), not `world.dump()`. `kagra-shared/src/world.rs` is corridor buildings, not World3D. Did not invent a second scene type.
-- Grew `Scene3D` with dump fields (props / walkers / lights / cameras / heightfield). Wire format is private `WorldDumpFile` matching `docs/schemas/world.json` version 1. `from_world_json` / `to_world_json`. GPU `batches` stay empty on ingest. Draw-list builders (`collectathon` / `driving`) use `..Default::default()`.
-- `fn` / `type` are serde-renamed (`fn_name`, `kind`). Dump `fov` is degrees; the draw `Camera.fov_y` is radians, filled from `cameras[0]` so a later renderer switch has an eye.
-- Fixtures: `kagra-shared/tests/fixtures/crest_isle_world.json` (open_world_height, parented coin, tile:0,0 / tile:-1,0) and `orb_rush_world.json` (flat arena, star/bomb, no heightfield). Rust roundtrips ids / positions / parent / fn / tile keys. Python `World.dump()` of matching synthetic worlds, and `World.load()` of the same fixtures. No new public game API.
-- `(-12800,-12800)` fake-headless is in `kagra-core/src/window.rs` and needs the renderer switch; left it.
-- Did not touch Crest Isle UV/stream, wgpu mix, VRM-on-Wasm, Rapier, SSAO, editor, goldens, M3 TRS.
-- Verify: `cargo test -p kagra-shared --locked` 113 passed (4 new dump tests). `pytest tests -m "not golden"` 500 passed, 10 deselected. Clippy `-D warnings` and rustfmt clean. `python3 tools/gen_api_index.py --check` OK (409).
+- Fetched origin/master (`56cf64d`, PR #98 hillside tile + PR #99). Merged into this branch. Did not touch tile UV/streaming.
+- First pass stuffed dump JSON into `Scene3D`. Emma: `Scene3D` is a one-frame draw list (camera, batches, fog); collectathon/driving already build it. Dump in that struct would break mobile.
+- Correct shape: persistent `WorldDoc` (`kagra-shared/src/world_doc.rs`) matching `docs/schemas/world.json`. `from_json` / `to_json` roundtrip. `compile_scene` → `Scene3D` (box / sphere / capsule / plane primitives). `Scene3D` API restored to the draw-list struct (no dump fields, no `..Default::default()` required).
+- `kagra-shared/src/world.rs` stays corridor buildings. Name is `WorldDoc`, not a second `Scene3D`.
+- `(-12800,-12800)` fake-headless left (needs renderer switch). No wgpu mix, no RendererV2 delete.
+- Did not start the renderer switch.
+

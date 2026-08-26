@@ -191,7 +191,7 @@ class _Cam:
         self.fov_deg = float(rec["fov"])
 
 
-def _assert_dump_is_scene3d_world_v1(data: dict):
+def _assert_dump_is_world_doc_v1(data: dict):
     assert data["version"] == 1
     for key in (
         "half",
@@ -212,8 +212,8 @@ def _assert_dump_is_scene3d_world_v1(data: dict):
     assert "batches" not in blob
 
 
-def test_crest_isle_shaped_dump_is_scene3d_world_v1():
-    """Crest Isle-shaped World.dump() is the JSON Scene3D ingests (no GPU)."""
+def test_crest_isle_shaped_dump_is_world_doc_v1():
+    """Crest Isle-shaped World.dump() is the JSON WorldDoc ingests (no GPU)."""
     land = load_kagra_submodule("land")
     w = _world(half=80.0, gravity=9.8)
     w.set_height_fn(
@@ -276,7 +276,7 @@ def test_crest_isle_shaped_dump_is_scene3d_world_v1():
         )
     )
     data = w.dump()
-    _assert_dump_is_scene3d_world_v1(data)
+    _assert_dump_is_world_doc_v1(data)
     assert data["half"] == 80.0
     assert data["heightfield"]["fn"] == "open_world_height"
     assert data["heightfield"]["tile"] == 16.0
@@ -293,8 +293,8 @@ def test_crest_isle_shaped_dump_is_scene3d_world_v1():
     assert fixture["props"][1]["parent"] == "prop:crate"
 
 
-def test_orb_rush_shaped_dump_is_scene3d_world_v1():
-    """Orb Rush-shaped World.dump() is the JSON Scene3D ingests (no GPU)."""
+def test_orb_rush_shaped_dump_is_world_doc_v1():
+    """Orb Rush-shaped World.dump() is the JSON WorldDoc ingests (no GPU)."""
     w = _world(half=6.0)
     w.add_player(0.0, 0.0)
     w.player.y = 0.0
@@ -326,7 +326,7 @@ def test_orb_rush_shaped_dump_is_scene3d_world_v1():
         )
     )
     data = w.dump()
-    _assert_dump_is_scene3d_world_v1(data)
+    _assert_dump_is_world_doc_v1(data)
     assert data["half"] == 6.0
     assert data["heightfield"] is None
     assert data["coins"] == 0
@@ -338,7 +338,7 @@ def test_orb_rush_shaped_dump_is_scene3d_world_v1():
 
 
 def test_shared_world_fixtures_load_in_python():
-    """Committed Scene3D fixtures are World.dump() JSON Python can load."""
+    """Committed WorldDoc fixtures are World.dump() JSON Python can load."""
     land = load_kagra_submodule("land")
     w = _world(half=1.0)
     w.load(str(CREST_FIXTURE))
