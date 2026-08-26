@@ -7,3 +7,4 @@
 - Fixtures: `kagra-shared/tests/fixtures/crest_isle_world.json` (open_world_height, parented coin, tile:0,0 / tile:-1,0) and `orb_rush_world.json` (flat arena, star/bomb, no heightfield). Rust roundtrips ids / positions / parent / fn / tile keys. Python `World.dump()` of matching synthetic worlds, and `World.load()` of the same fixtures. No new public game API.
 - `(-12800,-12800)` fake-headless is in `kagra-core/src/window.rs` and needs the renderer switch; left it.
 - Did not touch Crest Isle UV/stream, wgpu mix, VRM-on-Wasm, Rapier, SSAO, editor, goldens, M3 TRS.
+- Verify: `cargo test -p kagra-shared --locked` 113 passed (4 new dump tests). `pytest tests -m "not golden"` 500 passed, 10 deselected. Clippy `-D warnings` and rustfmt clean. `python3 tools/gen_api_index.py --check` OK (409).
