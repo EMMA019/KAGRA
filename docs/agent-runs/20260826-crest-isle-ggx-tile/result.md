@@ -15,5 +15,8 @@ One streamed 16 m tile could keep a GPU mesh with vertex normals (slope GGX) aft
 ## Verify
 
 ```
-python3 -m pytest tests -m "not golden"
+python3 tools/gen_api_index.py --check   # OK (428 entries)
+python3 -m pytest tests -m "not golden"  # 487 passed, 10 deselected
 ```
+
+GPU smoke (`python -m kagra.verify`) not run: no `kagra_core` wheel in this environment. Acceptance is the GPU-free leftover-mesh / 1×1 / signature tests plus Emma's tile reading as meadow albedo, not slope-only GGX.
