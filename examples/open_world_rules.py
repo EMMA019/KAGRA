@@ -334,11 +334,14 @@ VISTA_PROPS = _vista_props()
 def chunk_decor(
     ix: int, iz: int, *, tile: float = TILE,
 ) -> list[tuple[str, float, float, float, float, bool]]:
-    """Sparse Kenney when a far grass tile streams in. Spawn tiles stay authored."""
+    """Kenney when a far grass tile streams in. Spawn tiles stay authored.
+
+    Variation (pines / oak / grass / flowers / bushes / rocks), not one clone.
+    """
     if abs(int(ix)) <= 1 and -1 <= int(iz) <= 1:
         return []
     seed = abs(int(ix) * 17 + int(iz) * 31)
-    if seed % 4 == 0:
+    if seed % 7 == 0:
         return []
     t = float(tile)
     cx = (int(ix) + 0.5) * t
@@ -347,17 +350,36 @@ def chunk_decor(
         "forest/tree.glb",
         "forest/tree-high.glb",
         "nature/tree_pineTallA.glb",
+        "nature/tree_pineTallB.glb",
+        "nature/tree_oak.glb",
+        "nature/tree_tall.glb",
+        "nature/tree_default.glb",
         "town/tree-crooked.glb",
         "castle/tree-small.glb",
     )
     ground = (
         "nature/flower_redA.glb",
+        "nature/flower_redB.glb",
+        "nature/flower_yellowA.glb",
+        "nature/flower_purpleA.glb",
+        "nature/grass.glb",
         "nature/grass_large.glb",
+        "nature/grass_leafs.glb",
         "forest/plant.glb",
         "nature/plant_bush.glb",
+        "nature/plant_bushSmall.glb",
+        "nature/plant_bushDetailed.glb",
+        "nature/plant_bushLarge.glb",
+    )
+    rocks = (
+        "forest/rocks-low.glb",
+        "nature/rock_smallA.glb",
+        "nature/rock_largeA.glb",
+        "nature/stump_round.glb",
+        "nature/log.glb",
     )
     out: list[tuple[str, float, float, float, float, bool]] = []
-    n_tree = 1 + seed % 3
+    n_tree = 2 + seed % 3
     for i in range(n_tree):
         dx = ((seed + i * 13) % 11 - 5) * 0.55
         dz = ((seed + i * 7) % 11 - 5) * 0.55
@@ -367,16 +389,18 @@ def chunk_decor(
         out.append(
             (name, cx + dx, cz + dz, scale * (1.7 if pine else 1.0), (i * 0.9), True)
         )
-    for i in range(3):
+    n_ground = 6 + seed % 4
+    for i in range(n_ground):
         dx = ((seed + i * 19) % 13 - 6) * 0.5
         dz = ((seed + i * 23) % 13 - 6) * 0.5
         name = ground[(seed + i) % len(ground)]
         out.append(
-            (name, cx + dx, cz + dz, 2.2 + (i % 3) * 0.2, i * 0.6, False)
+            (name, cx + dx, cz + dz, 2.0 + (i % 4) * 0.18, i * 0.6, False)
         )
-    if seed % 5 == 1:
+    if seed % 3 == 1:
+        rname = rocks[(seed // 3) % len(rocks)]
         out.append(
-            ("forest/rocks-low.glb", cx + 1.2, cz - 0.8, 1.4, 0.3, True)
+            (rname, cx + 1.2, cz - 0.8, 1.4 + (seed % 5) * 0.08, 0.3, True)
         )
     return out
 

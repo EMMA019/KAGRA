@@ -164,6 +164,8 @@ pub struct RendererV2 {
     mesh3d_tex_bgl: wgpu::BindGroupLayout,
     mesh3d_tex_bgs: std::collections::HashMap<(u32, u32), wgpu::BindGroup>,
     mesh3d_tex_bg_order: VecDeque<(u32, u32)>,
+    /// Retained Mesh3D pins. ref>0 ⇒ never evict the bind group (orbit cull).
+    mesh3d_tex_refs: std::collections::HashMap<(u32, u32), u32>,
     fallback_mesh3d_bg: wgpu::BindGroup,
     shader_clock: Instant,
     mesh_3d_queue: Vec<Mesh3DCommand>,
@@ -1293,6 +1295,7 @@ impl RendererV2 {
             mesh3d_tex_bgl,
             mesh3d_tex_bgs: std::collections::HashMap::new(),
             mesh3d_tex_bg_order: VecDeque::new(),
+            mesh3d_tex_refs: std::collections::HashMap::new(),
             fallback_mesh3d_bg,
             shader_clock: Instant::now(),
             mesh_3d_queue: Vec::new(),
@@ -1561,13 +1564,12 @@ impl RendererV2 {
                 wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(nrm_ref) },
             ],
         });
-        // Keep this-frame draws *and* still-loaded textures. This-frame-only
-        // dropped Crest grass when a later Kenney pass filled 256 slots;
-        // texture-exists-only still failed when `live` was the fallback 1×1.
-        let textures = &self.textures;
+        // Pin is retained-mesh refcount, not frustum visibility. Off-camera
+        // this frame is still referenced by a live stream tile / placed Prop.
+        let refs = &self.mesh3d_tex_refs;
         for old in gpu_helpers::lru_evict_dead(
             &mut self.mesh3d_tex_bg_order,
-            |k| live_frame.contains(&k) || textures.contains_key(&k.0),
+            |k| gpu_helpers::mesh3d_tex_pinned(refs, k) || live_frame.contains(&k),
             gpu_helpers::MESH3D_TEX_BG_MAX,
         ) {
             self.mesh3d_tex_bgs.remove(&old);
@@ -2257,6 +2259,10 @@ impl RendererV2 {
             base_color,
             normal_texture_id,
         });
+        gpu_helpers::mesh3d_tex_ref_add(
+            &mut self.mesh3d_tex_refs,
+            (texture_id, normal_texture_id),
+        );
         id
     }
 
@@ -2280,9 +2286,14 @@ impl RendererV2 {
         }
     }
 
-    pub fn unload_mesh_3d(&mut self, mesh_id: u32) -> bool {
+    pub fn unload_mesh_3d(&mut self, mesh_id: u32) -> Option<(u32, u32)> {
         self.retained_draw_queue.retain(|&x| x != mesh_id);
-        self.retained_meshes.remove(&mesh_id).is_some()
+        let mesh = self.retained_meshes.remove(&mesh_id)?;
+        gpu_helpers::mesh3d_tex_ref_sub(
+            &mut self.mesh3d_tex_refs,
+            (mesh.texture_id, mesh.normal_texture_id),
+        );
+        Some((mesh.texture_id, mesh.normal_texture_id))
     }
 
     pub fn update_skin_uniforms(&mut self, matrices: &[nalgebra::Matrix4<f32>]) {

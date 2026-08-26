@@ -133,6 +133,25 @@ def test_chunk_decor_skips_spawn_tiles():
         assert abs(x) > 8.0 or abs(z) > 8.0
 
 
+def test_chunk_decor_is_varied_kenney_not_one_clone():
+    names: set[str] = set()
+    n = 0
+    for ix in range(-5, 6):
+        for iz in range(-5, 6):
+            rows = chunk_decor(ix, iz)
+            n += len(rows)
+            names.update(r[0] for r in rows)
+    assert n >= 200
+    assert any("grass" in n for n in names)
+    assert any("flower" in n for n in names)
+    assert any("plant_bush" in n for n in names)
+    assert any("pine" in n for n in names)
+    trees = {x for x in names if "tree" in x}
+    assert len(trees) >= 4
+    for rel in names:
+        assert rel in GLTF_HALF_Y, rel
+
+
 def test_cc0_assets_are_vendored():
     root = _ROOT / "examples" / "assets" / "open_world"
     assert (root / "LICENSE.md").is_file()
@@ -352,13 +371,20 @@ def test_mesh3d_tex_bg_cache_fits_crest_isle_vista():
     )
     assert "MESH3D_TEX_BG_MAX: usize = 256" in src
     assert "fn lru_evict_dead" in src
-    assert "Live textures must not become Fallback White" in src
+    assert "fn mesh3d_tex_ref_add" in src
+    assert "fn mesh3d_tex_pinned" in src
+    assert "ref>0" in src
+    assert "Off-camera ≠ unreferenced" in src or "Off-camera this frame is not" in src
     rend = (_ROOT / "kagra-core" / "src" / "renderer" / "mod.rs").read_text(
         encoding="utf-8",
     )
+    assert "mesh3d_tex_refs" in rend
+    assert "mesh3d_tex_pinned" in rend
     assert "live_frame.contains(&k)" in rend
-    assert "textures.contains_key(&k.0)" in rend
+    assert "textures.contains_key(&k.0)" not in rend
     win = (_ROOT / "kagra-core" / "src" / "window.rs").read_text(encoding="utf-8")
+    assert "retain_mesh_texture" in win
+    assert "release_mesh_texture" in win
     assert "path_texture_cache" in win
     assert "HashMap<(u32, String), u32>" in win
 

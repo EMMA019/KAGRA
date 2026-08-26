@@ -1,18 +1,21 @@
 # Result — Crest Isle black trees / peel / zoom
 
-## Files
+## A. Texture lifetime (the peel)
 
-- `kagra/gltf_mesh.py` — glb-dir URI (not cwd); file-level unlit; multi-material color atlas
-- `kagra-core/src/gltf_common.rs` — same URI contract + cwd unit test
-- `kagra/world3d.py` — LOD swap without holes; upload-then-unload
-- `kagra/play.py` — `Walk.zoom_chase`; water `skip_fog`; wheel zoom
-- `kagra/camera3d.py` — `clamp_chase_arm`
-- `kagra/stage.py` — denser outdoor sky sphere
-- `kagra-core/src/renderer/mod.rs` — Mesh3D this-frame **or** live texture; morph BG this-frame
-- `kagra-core/src/mtoon.rs` — hair `double_sided`
-- `kagra-core/src/engine/mod.rs`, `input.rs` — `[` `]` `-` `=` key names
-- `examples/vrm_open_world.py`, `open_world_rules.py` — zoom keys / HUD / `CAM_ZOOM_STEP`
-- Tests: `test_gltf_mesh.py`, `test_open_world.py`, `test_play.py`, `test_camera3d.py`, `test_world3d.py`
+Orbiting must not strip grass/trees to the white 1×1 fallback.
+
+- `kagra-core/src/renderer/gpu_helpers.rs` — `mesh3d_tex_ref_add` / `_sub` / `_pinned`. `ref>0` never evicts.
+- `kagra-core/src/renderer/mod.rs` — retained Mesh3D pins bind groups; this-frame is only for immediate draws.
+- `kagra-core/src/window.rs` — `upload_mesh_3d` / `unload_mesh_3d` bump `texture_refcount` so GPU pixels match the pin.
+
+White rectangle on the right = fog/camera far/sky (water `skip_fog`, denser outdoor sphere). Not the black squares. Hair is a third system (MToon double-sided left in place; not this LRU).
+
+## Other
+
+- Nature Kit unlit atlas so bark-first pines are not black chrome.
+- GLB texture URI from glb dir, not cwd.
+- `Walk.zoom_chase` + `[` `]` / `-` `=` / wheel.
+- `chunk_decor` denser Kenney variation (existing assets only).
 
 ## Play
 
@@ -20,7 +23,7 @@
 python examples/vrm_open_world.py
 ```
 
-Nature Kit bark-first trees (default / palm / pineTallA) should read brown+mint, not black chrome. Forest Kenney still uses colormap. Orbit/pan should not punch missing-tile rectangles, a white fog slab, or bald hair. `[` `]` / `-` `=` / wheel zoom the chase cam inside the existing 3D clamp.
+Orbit: grass and Kenney stay textured. `[` `]` zoom the chase cam inside the clamp.
 
 ## Verify
 
@@ -29,8 +32,8 @@ python tools/gen_api_index.py --check
 pytest tests -m "not golden"
 ```
 
-GPU smoke (`python -m kagra.verify examples/verify_scenarios/open_world_smoke.json`) if a `kagra_core` wheel is present.
+GPU smoke if a `kagra_core` wheel is present.
 
 ## Left out
 
-SSAO, 4-cascade CSM, volumetric fog, Rapier, visual editor, Web/XR. Did not swap Nature trees to a different Kenney; they color via the unlit atlas. Emma merges.
+SSAO, CSM, volumetric fog, Rapier, editor, Web/XR, prefetch. Emma merges.

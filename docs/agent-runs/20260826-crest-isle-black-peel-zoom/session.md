@@ -1,29 +1,31 @@
 # Session — Crest Isle remaining black trees / peel / chase zoom
 
-Started from `origin/master` after PR #91 (`a27779e`). Did not stop at "colormap URI should have fixed it."
+Started from `origin/master` after PR #91 (`a27779e`). Emma+review: chase texture lifetime first. Do **not** treat black trees as a missing Kenney material first.
 
-## Black trees (confirmed)
+## A. Texture lifetime (black/white peel) — done first
 
-Flattened every tree path in `VISTA_PROPS` + `chunk_decor`:
+Priority read: `World3D.stream_tiles` → chunk fill (Props stay; tiles unload meshes only) → Prop/terrain `upload_mesh_3d` → Mesh3D bind-group LRU → eviction → draw `fallback_mesh3d_bg` (white 1×1) → GPU `textures` + `texture_refcount`.
 
-- `forest/tree.glb`, `forest/tree-high.glb`, `town/tree-crooked.glb`, `castle/tree-*` already load sibling `Textures/colormap.png` (`metallic=0`). #91's URI + KHR UV path is fine for these **if** resolve uses the glb directory, not cwd.
-- Nature Kit `tree_pineTallA` / `tree_default` / `tree_palm` / `tree_oak` / `tree_tall` have **no images**, `KHR_materials_unlit` on **file** `extensionsUsed` only (not on each material), `metallicFactor: 1`, per-primitive `baseColorFactor` (bark brown vs mint foliage).
-- `flatten_gltf` took PBR from the **first primitive**. Bark-first pines (`pineTallA`, `tree_default`, `tree_palm`) became metallic=1 with no albedo → black chrome silhouettes. Foliage-first `pineTallB` looked mint (Emma: "Nature Kit pines look OK").
-- Vista matches her shot: palms at x≈-11/-10/-9, `tree_default` at `(1.6, 10.2)`, `pineTallA` further back.
+Root cause: eviction equated **off-camera this frame** with **unreferenced**. Frustum cull skips a live stream tile / placed Prop, then `MESH3D_TEX_BG_MAX=256` dropped its bind group. Next visible draw missed the BG and sampled Fallback White. Kenney density after that is what fills the 256 slots.
 
-Fix: treat file-level `KHR_materials_unlit` as unlit; bake a 1×N `baseColorFactor` atlas (Nearest-safe UV `(i+0.5)/n`) when a GLB has 2+ untextured colors; force `metallic=0` / `roughness=1`. Do **not** treat untextured `metallic>0.5` as unlit (that would zero a real chrome material; `test_flatten_reads_pbr_factors` stays 0.7). URI resolve: `_gltf_dir` + `Path.resolve()` against the glb parent, percent-decode, reject `..`. Cwd is never consulted.
+Fix:
 
-## Peel / はげる (several causes, not one)
+- Each `upload_mesh_3d` **pins** `(diffuse, normal)` (`mesh3d_tex_refs`, ref>0 never evict).
+- `unload_mesh_3d` drops the pin. `ref==0` is the LRU candidate.
+- Hitting 256 must not evict a key still referenced by a live retained mesh (stream tile or Prop). Cache may grow past 256.
+- Same pin on `window.texture_refcount` so GPU pixels stay until the last live mesh is gone.
+- Immediate draws (water / blob) still count as this-frame live.
 
-1. **Missing-tile rectangles:** `stream_tiles` unloaded LOD-stale tiles first, then re-uploaded with `max_new=1`. Camera+walk left dark holes / sky showing as a white slab until the budget caught up. Now: keep the old LOD mesh; upload replacement then unload the old id. `_upload_tile` had an indent bug (assignment sat under `if not mid: return 0`) — fixed so GPU ids actually stick.
-2. **White fog rectangle:** `water(..., half=80)` was fogged (huge quad reads as a screen-aligned slab). `skip_fog=True`. Outdoor puresky used `backdrop_sphere` default 16×24 → one huge triangle covering half the view when orbiting; `radius>=40` now uses rings=32, segs=48.
-3. **Stretched grass / dropping Kenney:** Mesh3D LRU 256. Texture-exists-only still failed if `live` was the fallback 1×1; this-frame-only would drop grass when a later Kenney pass filled 256 slots. Evict only when **neither** this-frame **nor** the diffuse texture is loaded. Morph BG cache was FIFO 128 and skipped draws with `None` → VRM hair went bald; now `lru_evict_dead` with this-frame morph keys.
-4. **Hair cards vanish behind the head:** single-sided cull. Hair materials (VRM0 + VRM1 name match) force `double_sided`. Face stays authored.
+Streaming pop-in (B) and prefetch are **not** this fix. LOD still keeps the old mesh until a replacement uploads (no missing-tile hole). White slab on the right is fog/far/background (C), not the black squares. Hair balding is VRM/MToon, not this LRU.
+
+## Black trees (kept, not the peel)
+
+Nature Kit bark-first pines: file-level `KHR_materials_unlit` + `metallic=1` + no albedo. Flatten bakes a 1×N color atlas. Forest Kenney colormap URI still resolves from the **glb directory**, not cwd.
 
 ## Zoom
 
-`Walk.distance` is hitch-protected (mutating the public field does not move the arm). Added `Walk.zoom_chase(delta)` → `clamp_chase_arm` (scale horizontal arm, keep pitch, clamp 3D hypot to min/max). Crest Isle: `[` / `-` closer, `]` / `=` farther, mouse wheel on `Walk.update`. HUD + console + docstring. Engine `get_key_code` / `character_to_keycode` map those glyphs.
+`Walk.zoom_chase` + `[` `]` / `-` `=` / wheel. Clamp unchanged.
 
-## Left in place
+## Density (after A)
 
-Blob AO, tile UV period/blend/pad, sparks, hair rim, gold coins, Mixamo `bind_locomotion`, spatial listener, sticky-walk quiet gap 3, opaque title, Mesh3D cap 256, chase clamp constants (`CAM_MIN_DISTANCE=6`, max = authored hypot). No SSAO / CSM / volumetric fog / Rapier / editor / WebXR.
+`chunk_decor` uses more already-vendored Kenney (pines, oak, grass, flowers, bushes, rocks). Variation, not one cloned tree. No new binaries.
