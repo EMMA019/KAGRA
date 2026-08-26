@@ -27,7 +27,7 @@ pytest tests -m "not golden"            # 449 passed, 10 deselected
 cargo test -p kagra-core --lib          # blocked: Cargo 1.83 / hashbrown 0.17.1 edition2024
 ```
 
-GPU smoke (`python -m kagra.verify examples/verify_scenarios/open_world_smoke.json`) not run (no `kagra_core` wheel on this VM).
+GPU smoke (`python -m kagra.verify examples/verify_scenarios/open_world_smoke.json`) not run here (no `kagra_core` wheel). GitHub CI on PR #91 head `20fd713`: **17 checks green** (trees/blob/seams/sparks + hair rim + gold orbs). Prior commit `1ad693e` was also 17 green.
 
 ## Left out
 

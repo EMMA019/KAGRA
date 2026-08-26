@@ -35,3 +35,5 @@ No SSAO. Blob is `quad_y_mesh` + alpha ellipse (`draw_mesh_3d(..., skip_fog=True
 Hair: `apply_outdoor_look` does **not** call `set_rim` (global rim would light face + hair and risk the white mask). Per-material: `is_hair_material` matches Hair / 髪 / bangs and skips face/skin/eyes. `boost_hair_rim` writes a warm rim (not 1,1,1) and lift 0.62 after VRM0 overlay so authored `_RimLift: 0` cannot wipe it. Shader keeps `if !front { n = -n; }`. Unnamed hair with lift ~0 gets a dark/saturated albedo silhouette only; pale skin stays off.
 
 Gold: Kenney `dungeon/coin.glb` is a painted yellow disc — metallic 0.85 / roughness 0.22 still reads plastic. Crest coins are now `Prop("sphere", color="gold", metallic=1.0, roughness=0.12)` (pretty-room chrome path). Kenney crests (flags/banners/chests) stay. Relic Run orbs not retuned.
+
+GitHub CI: `1ad693e` 17 green, then head `20fd713` 17 green.
