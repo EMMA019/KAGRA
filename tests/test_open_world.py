@@ -401,7 +401,15 @@ def test_mesh3d_tex_bg_cache_fits_crest_isle_vista():
     assert "mesh3d_tex_refs" in rend
     assert "mesh3d_tex_pinned" in rend
     assert "live_frame.contains(&k)" in rend
+    assert "fn retained_mesh3d_tex_keys" in rend
     assert "textures.contains_key(&k.0)" not in rend
+    up = rend.find("pub fn upload_mesh_3d")
+    assert up != -1
+    up_end = rend.find("fn retained_mesh3d_tex_keys", up)
+    upload_body = rend[up:up_end]
+    assert "ensure_mesh3d_tex_bg" in upload_body
+    assert "unload_mesh_3d(id)" in upload_body
+    assert "mesh3d_tex_bgs.contains_key" in upload_body
     win = (_ROOT / "kagra-core" / "src" / "window.rs").read_text(encoding="utf-8")
     assert "retain_mesh_texture" in win
     assert "release_mesh_texture" in win

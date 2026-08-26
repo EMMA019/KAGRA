@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Crest Isle remaining ハゲ (GGX-only 16 m TILE): ``World3D._upload_tile`` no longer swallows TypeError / bind failure into a leftover mesh. Failed / 1×1 / missing albedo unloads the GPU id and retries (does not stick ``lod_ok``). LOD upgrade keeps the previous good mesh. Mesh3D bind groups are created at ``upload_mesh_3d`` and culled stream tiles stay pinned (PR #92 family). ``TERRAIN_UV_RECT`` / stream retry / prefetch unchanged. No Rapier / SSAO / Repeat / per-tile 0..1.
+
 - Crest Isle remaining meadow ハゲ: ``aerial_grass_rock_diff_1k.jpg`` is mixed moss + brown rock even inside pad 0.28. Period 48 made each 16 m TILE a different 2D biome window (green tile glued to yellowish dirt). Crest UVs now ping-pong into a compact meadow-green ``TERRAIN_UV_RECT`` measured on the tinted JPEG. Period 48 / stream retry / LOD_CELLS=6 stay. Relic Run keeps the uncropped JPEG / default UV. No Rapier / SSAO / Repeat / per-tile 0..1.
 
 - World3D terrain stream: failed ``upload_mesh_3d`` no longer sticks as loaded (bald tile skip-forever). Streaming worlds prefetch a 1-tile ring and delay unload one frame; LOD upgrades beat brand-new far tiles (still 1 GPU upload/frame while walking). Crest Isle meadow UVs: ``TERRAIN_UV_PERIOD=48`` (3× TILE, world-continuous, pad 0.28) so a 16 m chunk is a small 2D moss window — period 9.5 < TILE + ``lod_cells=3`` was the barcode / 1-axis JPEG stretch. ``LOD_CELLS=6``. Relic Run UV defaults unchanged. No Rapier / SSAO / Repeat sampler / per-tile 0..1 UV.
