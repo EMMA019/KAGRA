@@ -205,6 +205,28 @@ def test_stream_tiles_budget_caps_new_tiles():
     assert len(added) <= 1
 
 
+def test_stream_lod_budget_does_not_open_holes():
+    """Stale-LOD tiles must stay until a replacement uploads (max_new=1)."""
+    m = _world()
+    w = m.World3D(half=80.0)
+    w.set_height_fn(
+        lambda _x, _z: 0.0,
+        tile=16.0, stream_radius=48.0, cells=8,
+        lod_radius=20.0, lod_cells=3,
+    )
+    w.stream_tiles(0.0, 0.0)
+    first = set(w.loaded_tiles())
+    assert first
+    nx, nz = 36.0, 0.0
+    still_wanted = first & set(w.wanted_tiles(nx, nz))
+    assert still_wanted
+    w.stream_tiles(nx, nz, max_new=1)
+    loaded = set(w.loaded_tiles())
+    assert still_wanted <= loaded
+    for key in still_wanted:
+        assert key in w._tile_lod
+
+
 def test_terrain_base_defaults_white_for_relic_run():
     """Crest Isle tints meadow via world.terrain_base; Relic Run keeps JPEG albedo."""
     m = _world()

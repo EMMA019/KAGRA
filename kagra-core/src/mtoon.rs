@@ -233,7 +233,9 @@ pub fn parse_mtoon(
     }
 
     let mut mat_out = MtoonMaterial::create(device, gpu, textures);
-    mat_out.double_sided = material_double_sided(mat);
+    // Hair cards are strips. Single-sided cull makes them vanish when the
+    // chase cam orbits behind the head (bald). Face stays authored.
+    mat_out.double_sided = material_double_sided(mat) || is_hair_material(material_name(mat));
     mat_out
 }
 
@@ -427,6 +429,7 @@ pub fn parse_vrm0_material_properties(
             .unwrap_or_else(|| materials.get(i).map(material_name).unwrap_or(""));
         if is_hair_material(vrm0_name) {
             boost_hair_rim(&mut gpu);
+            ds = true;
         }
         out[i] = MtoonMaterial::create(device, gpu, textures);
         out[i].double_sided = ds;
@@ -474,6 +477,17 @@ mod tests {
         assert!(!is_hair_material("EyeIris"));
         assert!(!is_hair_material("Body"));
         assert!(!is_hair_material("顔"));
+    }
+
+    #[test]
+    fn hair_orbit_uses_double_sided() {
+        // Single-sided hair cards vanish when the chase cam orbits behind.
+        let hair = serde_json::json!({"name": "Alicia_hair"});
+        assert!(is_hair_material(material_name(&hair)));
+        assert!(material_double_sided(&hair) || is_hair_material(material_name(&hair)));
+        let face = serde_json::json!({"name": "Face"});
+        assert!(!is_hair_material(material_name(&face)));
+        assert!(!material_double_sided(&face));
     }
 
     #[test]

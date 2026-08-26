@@ -415,6 +415,10 @@ fn character_to_keycode(s: &str) -> Option<KeyCode> {
         'X' => KeyCode::KeyX,
         'Y' => KeyCode::KeyY,
         'Z' => KeyCode::KeyZ,
+        '-' | '_' => KeyCode::Minus,
+        '=' | '+' => KeyCode::Equal,
+        '[' => KeyCode::BracketLeft,
+        ']' => KeyCode::BracketRight,
         _ => return None,
     })
 }

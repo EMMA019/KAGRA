@@ -313,6 +313,56 @@ pub fn load_gltf_document(path: &str) -> KaguraResult<(Value, Vec<u8>)> {
     Ok((gltf, bin))
 }
 
+fn percent_decode_uri(uri: &str) -> String {
+    let b = uri.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            let h = hex_nibble(b[i + 1]);
+            let l = hex_nibble(b[i + 2]);
+            if let (Some(h), Some(l)) = (h, l) {
+                out.push((h << 4) | l);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn hex_nibble(c: u8) -> Option<u8> {
+    Some(match c {
+        b'0'..=b'9' => c - b'0',
+        b'a'..=b'f' => c - b'a' + 10,
+        b'A'..=b'F' => c - b'A' + 10,
+        _ => return None,
+    })
+}
+
+/// Kenney ``Textures/colormap.png`` next to the .gltf / .glb. Never cwd.
+fn read_gltf_relative_image(base_dir: &std::path::Path, uri: &str) -> Option<Vec<u8>> {
+    if uri.is_empty() || uri.contains("://") || uri.starts_with("data:") {
+        return None;
+    }
+    let rel = percent_decode_uri(&uri.replace('\\', "/"));
+    if rel.starts_with('/') || rel.starts_with("../") || rel.contains("/../") {
+        return None;
+    }
+    let cand = base_dir.join(&rel);
+    match (base_dir.canonicalize(), cand.canonicalize()) {
+        (Ok(root), Ok(got)) => {
+            if !got.starts_with(&root) {
+                return None;
+            }
+            fs::read(got).ok()
+        }
+        _ => fs::read(&cand).ok(),
+    }
+}
+
 /// glTF/VRM のテクスチャ抽出。GLB の bufferView と `.gltf` の外部 URI の両方。
 pub fn extract_texture_data_from_glb(path: &str) -> KaguraResult<Vec<(usize, Vec<u8>, String)>> {
     let (gltf, bin_data) = load_gltf_document(path)?;
@@ -336,9 +386,8 @@ pub fn extract_texture_data_from_glb(path: &str) -> KaguraResult<Vec<(usize, Vec
             if uri.starts_with("data:") {
                 continue;
             }
-            let bytes = match fs::read(base.join(uri)) {
-                Ok(b) => b,
-                Err(_) => continue,
+            let Some(bytes) = read_gltf_relative_image(base, uri) else {
+                continue;
             };
             let mime = img["mimeType"].as_str().unwrap_or("");
             let ext = gltf_image_ext(mime, &bytes);
@@ -808,6 +857,32 @@ mod tests {
         )
         .unwrap();
         let tex = extract_texture_data_from_glb(dir.join("tree.gltf").to_str().unwrap()).unwrap();
+        assert_eq!(tex.len(), 1);
+        assert_eq!(&tex[0].1[..8], &png[..8]);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn extract_texture_uri_uses_gltf_dir_not_cwd() {
+        let dir = std::env::temp_dir().join(format!("kagra_gltf_cwd_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("Textures")).unwrap();
+        let png = tiny_png();
+        fs::write(dir.join("Textures/colormap.png"), &png).unwrap();
+        fs::write(
+            dir.join("tree.gltf"),
+            r#"{"asset":{"version":"2.0"},"images":[{"uri":"Textures/colormap.png"}],"textures":[{"source":0}]}"#,
+        )
+        .unwrap();
+        let prev = std::env::current_dir().unwrap();
+        let empty = std::env::temp_dir().join(format!("kagra_gltf_cwd_empty_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&empty);
+        fs::create_dir_all(&empty).unwrap();
+        std::env::set_current_dir(&empty).unwrap();
+        let tex = extract_texture_data_from_glb(dir.join("tree.gltf").to_str().unwrap());
+        std::env::set_current_dir(&prev).unwrap();
+        let _ = fs::remove_dir_all(&empty);
+        let tex = tex.unwrap();
         assert_eq!(tex.len(), 1);
         assert_eq!(&tex[0].1[..8], &png[..8]);
         let _ = fs::remove_dir_all(&dir);

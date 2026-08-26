@@ -364,3 +364,107 @@ def test_flatten_identity_khr_texcoord_keeps_uvs(tmp_path: Path):
     assert (0.0, 0.0) in uvs
     assert (1.0, 0.0) in uvs
     assert (0.0, 1.0) in uvs
+
+
+def test_flatten_texture_uri_uses_glb_dir_not_cwd(tmp_path: Path, monkeypatch):
+    """Kenney colormap is next to the glb. Process cwd must not win."""
+    png = _png_1x1(10, 200, 30)
+    decoy = _png_1x1(255, 0, 0)
+    glb_dir = tmp_path / "kenney" / "forest"
+    (glb_dir / "Textures").mkdir(parents=True)
+    (glb_dir / "Textures" / "colormap.png").write_bytes(png)
+    path = _write_uv_tri_glb(glb_dir / "tree.glb")
+    cwd = tmp_path / "elsewhere"
+    (cwd / "Textures").mkdir(parents=True)
+    (cwd / "Textures" / "colormap.png").write_bytes(decoy)
+    monkeypatch.chdir(cwd)
+    flat = gm.flatten_gltf(path)
+    assert flat.image == png
+    assert gm._read_relative_image("Textures/colormap.png", path) == png
+    assert gm._read_relative_image("Textures/colormap.png", cwd / "tree.glb") != png
+
+
+def test_read_relative_image_percent_encoded(tmp_path: Path):
+    png = _png_1x1(9, 8, 7)
+    (tmp_path / "Textures").mkdir()
+    (tmp_path / "Textures" / "colormap.png").write_bytes(png)
+    glb = tmp_path / "tree.glb"
+    glb.write_bytes(b"glTF")
+    got = gm._read_relative_image("Textures/colormap%2Epng", glb)
+    assert got == png
+
+
+def _write_unlit_two_color_glb(path: Path) -> Path:
+    """Two triangles, two untextured materials (Nature Kit pine: bark + mint)."""
+    pos = [
+        -0.5, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 1.0, 0.0,
+        -0.5, 0.0, 1.0, 0.5, 0.0, 1.0, 0.0, 1.0, 1.0,
+    ]
+    pos_b = struct.pack("<18f", *pos)
+    idx0 = struct.pack("<3H", 0, 1, 2)
+    idx1 = struct.pack("<3H", 3, 4, 5)
+    idx0_pad = idx0 + b"\x00" * _pad4(len(idx0))
+    blob = pos_b + idx0_pad + idx1
+    gltf = {
+        "asset": {"version": "2.0"},
+        "extensionsUsed": ["KHR_materials_unlit"],
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": [{"mesh": 0}],
+        "meshes": [{"primitives": [
+            {"attributes": {"POSITION": 0}, "indices": 1, "material": 0},
+            {"attributes": {"POSITION": 0}, "indices": 2, "material": 1},
+        ]}],
+        "materials": [
+            {
+                "pbrMetallicRoughness": {
+                    "baseColorFactor": [0.32, 0.22, 0.14, 1.0],
+                    "metallicFactor": 1.0,
+                    "roughnessFactor": 1.0,
+                },
+            },
+            {
+                "pbrMetallicRoughness": {
+                    "baseColorFactor": [0.55, 0.78, 0.42, 1.0],
+                    "metallicFactor": 1.0,
+                    "roughnessFactor": 1.0,
+                },
+            },
+        ],
+        "accessors": [
+            {
+                "bufferView": 0, "componentType": 5126, "count": 6, "type": "VEC3",
+                "min": [-0.5, 0.0, 0.0], "max": [0.5, 1.0, 1.0],
+            },
+            {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"},
+            {"bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR"},
+        ],
+        "bufferViews": [
+            {"buffer": 0, "byteOffset": 0, "byteLength": len(pos_b)},
+            {"buffer": 0, "byteOffset": len(pos_b), "byteLength": 6},
+            {"buffer": 0, "byteOffset": len(pos_b) + len(idx0_pad), "byteLength": 6},
+        ],
+        "buffers": [{"byteLength": len(blob)}],
+    }
+    json_b = json.dumps(gltf, separators=(",", ":")).encode("utf-8")
+    json_b += b" " * _pad4(len(json_b))
+    total = 12 + 8 + len(json_b) + 8 + len(blob)
+    path.write_bytes(
+        struct.pack("<4sII", b"glTF", 2, total)
+        + struct.pack("<II", len(json_b), 0x4E4F534A) + json_b
+        + struct.pack("<II", len(blob), 0x004E4942) + blob
+    )
+    return path
+
+
+def test_flatten_unlit_two_materials_bakes_atlas(tmp_path: Path):
+    """Nature Kit pines: file-level unlit + metallic=1 would be black chrome."""
+    path = _write_unlit_two_color_glb(tmp_path / "pine.glb")
+    flat = gm.flatten_gltf(path, center=False)
+    assert flat.metallic == pytest.approx(0.0)
+    assert flat.roughness == pytest.approx(1.0)
+    assert flat.image is not None
+    assert flat.image[:8] == b"\x89PNG\r\n\x1a\n"
+    uvs = {(round(v[6], 5), round(v[7], 5)) for v in flat.verts}
+    assert (0.25, 0.5) in uvs
+    assert (0.75, 0.5) in uvs

@@ -318,15 +318,16 @@ class World3D:
             if key not in want:
                 self._unload_tile(key)
                 self._loaded_tiles.discard(key)
-                continue
-            if self._tile_lod.get(key) != self._cells_for(key, x, z):
-                self._unload_tile(key)
-                self._loaded_tiles.discard(key)
         added = 0
         for key in want:
-            if key in self._loaded_tiles:
+            want_cells = self._cells_for(key, x, z)
+            have = key in self._loaded_tiles
+            lod_ok = have and self._tile_lod.get(key) == want_cells
+            if lod_ok:
                 continue
             if max_new is not None and added >= max_new:
+                # Keep the old LOD mesh. Unloading first painted missing-tile
+                # rectangles while the 1-tile/frame budget caught up.
                 break
             self._loaded_tiles.add(key)
             if key not in self._filled_chunks:
@@ -406,10 +407,18 @@ class World3D:
         if not mid:
             return 0
         mid = int(mid)
+        old = self._tile_meshes.get(key)
         self._tile_meshes[key] = mid
         self.terrain_mesh_id = mid
         if mid not in self.mesh_ids:
             self.mesh_ids.append(mid)
+        if old and old != mid:
+            try:
+                kagra.unload_mesh_3d(int(old))
+            except Exception:
+                pass
+            if old in self.mesh_ids:
+                self.mesh_ids.remove(old)
         return mid
 
     def bake_terrain(self, tex: int) -> int:

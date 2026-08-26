@@ -131,12 +131,21 @@ def _node_worlds(nodes: list) -> list[list[float]]:
     return [w if w is not None else _node_local(nodes[i]) for i, w in enumerate(worlds)]
 
 
+def _gltf_dir(base: Path) -> Path:
+    """Directory that owns the .glb / .gltf. Never cwd (relative URI resolve)."""
+    path = Path(base)
+    if path.suffix.lower() in (".glb", ".gltf") or path.is_file():
+        return path.parent
+    return path
+
+
 def _read_relative_image(uri: str, base: Path | None) -> Optional[bytes]:
     """Kenney-style ``Textures/colormap.png`` next to the .glb. No remote fetch.
 
     Forest Mini Forest glTFs store the atlas as an external URI (not
     bufferView / not embedded). Missing this path used to fall through to a
-    1×1 fallback and paint the trees black.
+    1×1 fallback and paint the trees black. Resolve against the glb
+    directory even if the process cwd is somewhere else.
     """
     if base is None:
         return None
@@ -148,11 +157,15 @@ def _read_relative_image(uri: str, base: Path | None) -> Optional[bytes]:
     rel = unquote(uri.replace("\\", "/"))
     if rel.startswith("/") or rel.startswith("../") or "/../" in f"/{rel}/":
         return None
-    root = base.parent.resolve()
-    cand = (root / rel).resolve()
+    root = _gltf_dir(Path(base).expanduser())
+    cand = root / rel
     try:
-        cand.relative_to(root)
-    except ValueError:
+        # Absolute glb dir: resolve does not consult cwd.
+        root_res = root.resolve()
+        cand_res = cand.resolve()
+        cand_res.relative_to(root_res)
+        cand = cand_res
+    except (ValueError, OSError, RuntimeError):
         return None
     if not cand.is_file():
         return None
@@ -341,12 +354,94 @@ def _pbr_from_gltf(gltf: dict) -> tuple[float, float, tuple[float, float, float]
     bc = pbr.get("baseColorFactor")
     if isinstance(bc, (list, tuple)) and len(bc) >= 3:
         base = (float(bc[0]), float(bc[1]), float(bc[2]))
+    if _gltf_is_unlit(gltf) or _mat_is_unlit_color(materials[mat_idx]):
+        metallic, roughness = 0.0, 1.0
     return metallic, roughness, base
+
+
+def _gltf_is_unlit(gltf: dict) -> bool:
+    """Kenney Nature Kit lists ``KHR_materials_unlit`` on the file, not the mat."""
+    used = gltf.get("extensionsUsed") or []
+    return "KHR_materials_unlit" in used
+
+
+def _mat_is_unlit_color(mat: dict | None) -> bool:
+    """Per-material ``KHR_materials_unlit``. Nature Kit often omits this and
+    only lists the extension on the file (see ``_gltf_is_unlit``). Do not treat
+    untextured metallic>0.5 as unlit — that is a real chrome material."""
+    if not isinstance(mat, dict):
+        return False
+    return "KHR_materials_unlit" in (mat.get("extensions") or {})
+
+
+def _prim_mat(gltf: dict, prim: dict) -> dict | None:
+    materials = gltf.get("materials") or []
+    idx = prim.get("material")
+    if idx is None:
+        return None
+    try:
+        mi = int(idx)
+    except (TypeError, ValueError):
+        return None
+    if mi < 0 or mi >= len(materials):
+        return None
+    return materials[mi]
+
+
+def _mat_base_rgb(mat: dict | None) -> tuple[float, float, float]:
+    if not isinstance(mat, dict):
+        return (1.0, 1.0, 1.0)
+    pbr = mat.get("pbrMetallicRoughness") or {}
+    bc = pbr.get("baseColorFactor")
+    if isinstance(bc, (list, tuple)) and len(bc) >= 3:
+        return (float(bc[0]), float(bc[1]), float(bc[2]))
+    return (1.0, 1.0, 1.0)
+
+
+def _mat_has_albedo_tex(mat: dict | None) -> bool:
+    if not isinstance(mat, dict):
+        return False
+    pbr = mat.get("pbrMetallicRoughness") or {}
+    return _tex_index(pbr.get("baseColorTexture")) is not None
+
+
+def _png_rgba_strip(colors: list[tuple[float, float, float]]) -> bytes:
+    """1×N unlit atlas. Nearest samples the pixel center ``(i+0.5)/n``."""
+    import zlib
+
+    n = max(1, len(colors))
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        crc = zlib.crc32(tag + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
+
+    raw = b"\x00"
+    for r, g, b in colors:
+        raw += bytes((
+            max(0, min(255, int(round(r * 255.0)))),
+            max(0, min(255, int(round(g * 255.0)))),
+            max(0, min(255, int(round(b * 255.0)))),
+            255,
+        ))
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", n, 1, 8, 6, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw, 9))
+        + chunk(b"IEND", b"")
+    )
+
+
+def _color_slot_uv(index: int, n: int) -> tuple[float, float]:
+    n = max(1, int(n))
+    return (float(index) + 0.5) / float(n), 0.5
 
 
 def flatten_gltf(path: str | Path, *, center: bool = True) -> FlatMesh:
     """静的プリミティブを 1 メッシュに畳む。スキンは無視（部品用）。"""
-    gltf, blob = _read_glb_or_gltf(path)
+    src = Path(path)
+    if src.exists():
+        src = src.resolve()
+    gltf, blob = _read_glb_or_gltf(src)
     meshes = gltf.get("meshes") or []
     if not meshes:
         raise ValueError(f"gltf has no meshes: {path}")
@@ -360,12 +455,39 @@ def flatten_gltf(path: str | Path, *, center: bool = True) -> FlatMesh:
         for mi in range(len(meshes)):
             jobs.append((mi, _mat4_identity()))
 
+    file_unlit = _gltf_is_unlit(gltf)
+    color_slots: list[tuple[float, float, float]] = []
+    slot_of: dict[tuple[float, float, float], int] = {}
+
+    def _slot(rgb: tuple[float, float, float]) -> int:
+        key = (round(rgb[0], 4), round(rgb[1], 4), round(rgb[2], 4))
+        hit = slot_of.get(key)
+        if hit is None:
+            hit = len(color_slots)
+            slot_of[key] = hit
+            color_slots.append(rgb)
+        return hit
+
+    bake_prims: list[tuple[dict, bool, int | None]] = []
+    for mi, _world in jobs:
+        mesh = meshes[mi]
+        for prim in mesh.get("primitives") or []:
+            mat = _prim_mat(gltf, prim)
+            textured = _mat_has_albedo_tex(mat)
+            bake = (not textured) and (file_unlit or _mat_is_unlit_color(mat))
+            slot = _slot(_mat_base_rgb(mat)) if bake else None
+            bake_prims.append((prim, bake, slot))
+    nslot = max(1, len(color_slots))
+
     verts: list[list[float]] = []
     indices: list[int] = []
+    bake_i = 0
     for mi, world in jobs:
         mesh = meshes[mi]
         for prim in mesh.get("primitives") or []:
             mode = int(prim.get("mode", 4))
+            bake, slot = bake_prims[bake_i][1], bake_prims[bake_i][2]
+            bake_i += 1
             if mode != 4:
                 continue
             attrs = prim.get("attributes") or {}
@@ -384,6 +506,7 @@ def flatten_gltf(path: str | Path, *, center: bool = True) -> FlatMesh:
             else:
                 face = list(range(len(pos)))
             base = len(verts)
+            atlas_uv = _color_slot_uv(slot, nslot) if slot is not None else None
             for i, p in enumerate(pos):
                 x, y, z = float(p[0]), float(p[1]), float(p[2])
                 wx, wy, wz = _xform_point(world, x, y, z)
@@ -392,7 +515,9 @@ def flatten_gltf(path: str | Path, *, center: bool = True) -> FlatMesh:
                     nx, ny, nz = _xform_normal(world, nx, ny, nz)
                 else:
                     nx, ny, nz = 0.0, 1.0, 0.0
-                if i < len(uvs):
+                if atlas_uv is not None:
+                    u, v = atlas_uv
+                elif i < len(uvs):
                     u, v = float(uvs[i][0]), float(uvs[i][1])
                     u, v = _apply_khr_uv(u, v, ox, oy, rot, su, sv)
                 else:
@@ -420,7 +545,12 @@ def flatten_gltf(path: str | Path, *, center: bool = True) -> FlatMesh:
             aabb[3] - cx, aabb[4] - cy, aabb[5] - cz,
         )
     metallic, roughness, base = _pbr_from_gltf(gltf)
-    albedo, normal = _material_images(gltf, blob, base=Path(path))
+    albedo, normal = _material_images(gltf, blob, base=src)
+    if albedo is None and len(color_slots) >= 2:
+        albedo = _png_rgba_strip(color_slots)
+        metallic, roughness, base = 0.0, 1.0, (1.0, 1.0, 1.0)
+    elif albedo is None and file_unlit:
+        metallic, roughness = 0.0, 1.0
     return FlatMesh(
         verts=verts,
         indices=indices,
