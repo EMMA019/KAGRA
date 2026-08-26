@@ -85,15 +85,15 @@ def test_height_fn_player_spawns_on_terrain():
 
 def test_stream_tiles_load_and_unload():
     m = _world()
-    w = m.World3D(half=24.0)
+    w = m.World3D(half=48.0)
     w.set_height_fn(lambda _x, _z: 0.0, tile=10.0, stream_radius=12.0)
     n = w.stream_tiles(0.0, 0.0)
     assert n >= 1
     near = set(w.loaded_tiles())
     assert any(abs(ix) <= 1 and abs(iz) <= 1 for ix, iz in near)
-    w.stream_tiles(30.0, 0.0)
+    w.stream_tiles(50.0, 0.0)
     # Delayed unload: origin may linger one frame after leaving want.
-    w.stream_tiles(30.0, 0.0)
+    w.stream_tiles(50.0, 0.0)
     far = set(w.loaded_tiles())
     assert near != far
     assert (0, 0) not in far
