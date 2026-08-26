@@ -2263,7 +2263,27 @@ impl RendererV2 {
             &mut self.mesh3d_tex_refs,
             (texture_id, normal_texture_id),
         );
+        // Pin is not enough if the bind group is created only on first
+        // visible draw: a streamed terrain tile can keep vertex normals
+        // (GGX slope) while albedo is Fallback White 1×1. Create now.
+        // Off-camera this frame is still referenced (same family as Prop).
+        self.ensure_mesh3d_tex_bg(texture_id, normal_texture_id);
+        if texture_id != 0
+            && !self.mesh3d_tex_bgs.contains_key(&(texture_id, normal_texture_id))
+        {
+            self.unload_mesh_3d(id);
+            return 0;
+        }
         id
+    }
+
+    /// Albedo keys of every retained Mesh3D, including frustum-culled
+    /// stream tiles. Off-camera ≠ unreferenced while the mesh exists.
+    fn retained_mesh3d_tex_keys(&self) -> Vec<(u32, u32)> {
+        self.retained_meshes
+            .values()
+            .map(|m| (m.texture_id, m.normal_texture_id))
+            .collect()
     }
 
     pub fn set_mesh_cull(&mut self, enabled: bool) {
@@ -2948,13 +2968,17 @@ impl RendererV2 {
             self.pack_mesh_mat(slot, m.0, m.1, m.2, m.4, false);
             slot += 1;
         }
-        let mut tex_keys: Vec<(u32, u32)> = Vec::with_capacity(draws.len() + retained_mats.len());
+        let retained_tex = self.retained_mesh3d_tex_keys();
+        let mut tex_keys: Vec<(u32, u32)> =
+            Vec::with_capacity(draws.len() + retained_mats.len() + retained_tex.len());
         for d in &draws {
             tex_keys.push((d.0, d.1));
         }
         for m in &retained_mats {
             tex_keys.push((m.3, m.4));
         }
+        // Culled stream tiles still pin albedo (GGX-only was a missing BG).
+        tex_keys.extend(retained_tex);
         self.ensure_mesh3d_tex_bgs(&tex_keys);
 
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -3071,11 +3095,14 @@ impl RendererV2 {
             })
         }).collect();
         self.ensure_mesh_mat_slots(inst_mats.len().max(1) as u32);
-        let mut tex_keys: Vec<(u32, u32)> = Vec::with_capacity(inst_mats.len());
+        let retained_tex = self.retained_mesh3d_tex_keys();
+        let mut tex_keys: Vec<(u32, u32)> =
+            Vec::with_capacity(inst_mats.len() + retained_tex.len());
         for (i, m) in inst_mats.iter().enumerate() {
             self.pack_mesh_mat(i as u32, m.0, m.1, m.2, m.4, false);
             tex_keys.push((m.3, m.4));
         }
+        tex_keys.extend(retained_tex);
         self.ensure_mesh3d_tex_bgs(&tex_keys);
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("3D Instance Pass"),
