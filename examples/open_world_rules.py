@@ -225,6 +225,15 @@ def _vista_props() -> tuple[tuple[str, float, float, float, float, bool], ...]:
         ("castle/tree-small.glb", -7.8, 2.2, 1.80, 0.90, True),
         ("forest/tree.glb", 7.2, 7.8, 1.70, -1.40, True),
         ("forest/tree-high.glb", -3.8, 17.4, 2.05, 0.45, True),
+        # Extra pines / oak / default in the opening cone (not one cloned tree).
+        ("nature/tree_pineTallB.glb", -8.4, 6.8, 3.20, 0.55, True),
+        ("nature/tree_pineTallA.glb", 8.4, 5.6, 3.10, -0.70, True),
+        ("nature/tree_tall.glb", -1.0, 5.4, 2.40, 0.35, True),
+        ("nature/tree_oak.glb", 10.2, 16.8, 2.90, 1.05, True),
+        ("nature/tree_pineTallB.glb", -5.6, 20.2, 3.50, -0.90, True),
+        ("nature/tree_default.glb", 4.4, 19.0, 2.30, 0.60, True),
+        ("nature/tree_pineTallA.glb", 13.8, 8.8, 3.30, 1.40, True),
+        ("nature/tree_tall.glb", 0.8, 22.8, 2.55, -0.20, True),
     )
     items.extend(trees)
 
@@ -241,6 +250,12 @@ def _vista_props() -> tuple[tuple[str, float, float, float, float, bool], ...]:
         ("nature/rock_tallB.glb", -6.0, 15.4, 1.50, -0.25, True),
         ("nature/log.glb", 0.6, 5.5, 2.40, 1.20, True),
         ("nature/stump_round.glb", 3.0, 3.4, 2.20, 0.40, True),
+        ("nature/rock_smallA.glb", -2.8, 1.4, 1.80, 0.85, True),
+        ("nature/rock_largeA.glb", 7.6, 14.2, 2.40, -0.50, True),
+        ("nature/stone_smallTopA.glb", 1.0, 7.2, 2.00, 0.15, False),
+        ("nature/rock_smallA.glb", 5.8, 4.0, 1.70, 1.35, True),
+        ("nature/stump_round.glb", -3.2, 12.6, 2.10, -0.70, True),
+        ("nature/log.glb", 8.8, 18.0, 2.20, 0.40, True),
     )
     items.extend(rocks)
 
@@ -287,6 +302,10 @@ def _vista_props() -> tuple[tuple[str, float, float, float, float, bool], ...]:
         ("forest/patch-dirt.glb", 1.6, 2.8, 1.80, 0.6, False),
         ("forest/patch-grass.glb", -5.0, 7.0, 2.30, 0.9, False),
         ("forest/patch-grass.glb", 6.0, 10.4, 2.00, -0.2, False),
+        ("forest/patch-grass.glb", -1.2, -5.4, 2.40, 0.55, False),
+        ("forest/patch-grass.glb", 2.2, -5.0, 2.20, -0.30, False),
+        ("forest/patch-grass.glb", -3.6, 0.6, 2.10, 0.80, False),
+        ("forest/patch-grass.glb", 4.8, 6.2, 2.25, 1.05, False),
         ("nature/path_stone.glb", 0.4, 1.6, 1.70, 0.05, False),
         ("nature/path_stone.glb", 0.6, 4.6, 1.70, 0.08, False),
     )
@@ -304,13 +323,16 @@ def _vista_props() -> tuple[tuple[str, float, float, float, float, bool], ...]:
         "nature/plant_bush.glb",
         "nature/plant_bushSmall.glb",
         "nature/plant_bushDetailed.glb",
+        "nature/plant_bushLarge.glb",
     )
     n = 0
-    for z in range(-6, 22, 2):
-        for x in range(-11, 14, 2):
-            if math.hypot(x - START_XZ[0], z - START_XZ[1]) < 1.8:
+    # 1 m checkerboard + jitter: denser meadow than the old 2 m lattice,
+    # without one cloned stamp.
+    for z in range(-6, 22, 1):
+        for x in range(-9, 14, 1):
+            if (x + z) % 2 == 0:
                 continue
-            if x <= -10:
+            if math.hypot(x - START_XZ[0], z - START_XZ[1]) < 1.8:
                 continue
             name = flowers[n % len(flowers)]
             scale = 2.15 + (n % 6) * 0.12

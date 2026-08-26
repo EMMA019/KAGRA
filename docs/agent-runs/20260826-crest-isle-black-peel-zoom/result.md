@@ -15,7 +15,7 @@ White rectangle on the right = fog/camera far/sky (water `skip_fog`, denser outd
 - Nature Kit unlit atlas so bark-first pines are not black chrome.
 - GLB texture URI from glb dir, not cwd.
 - `Walk.zoom_chase` + `[` `]` / `-` `=` / wheel.
-- `chunk_decor` denser Kenney variation (existing assets only).
+- Vista + `chunk_decor` denser Kenney (grass, flowers, bushes, rocks, extra pines). Existing assets only; no new binaries. Blob AO / tile blend / sparks unchanged.
 
 ## Play
 
@@ -29,7 +29,7 @@ Orbit: grass and Kenney stay textured. `[` `]` zoom the chase cam inside the cla
 
 ```bash
 python tools/gen_api_index.py --check   # OK (427 entries)
-pytest tests -m "not golden"            # 458 passed, 10 deselected
+pytest tests -m "not golden"            # 459 passed, 10 deselected
 ```
 
 GPU smoke (`python -m kagra.verify examples/verify_scenarios/open_world_smoke.json`) not run here (no `kagra_core` wheel). `cargo test -p kagra-core` not run (registry/offline).

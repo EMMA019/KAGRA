@@ -28,4 +28,11 @@ Nature Kit bark-first pines: file-level `KHR_materials_unlit` + `metallic=1` + n
 
 ## Density (after A)
 
-`chunk_decor` uses more already-vendored Kenney (pines, oak, grass, flowers, bushes, rocks). Variation, not one cloned tree. No new binaries.
+`chunk_decor` only fills far streamed tiles, so the opening meadow was still sparse. Same PR, already-vendored Kenney only:
+
+- Extra pines / oak / tall / default in the +Z cone (not one cloned tree).
+- More rocks, stumps, logs, grass patches on the spawn meadow.
+- Ground cover is a 1 m checkerboard of Nature Kit grass / flowers / bushes (jittered).
+- `chunk_decor` still mixes pines, oak, grass, flowers, bushes, rocks on streamed tiles.
+
+Blob AO / tile blend / sparks / zoom / texture pin untouched. No Quaternius / Mixamo / Emma.vrm binaries.

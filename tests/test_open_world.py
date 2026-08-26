@@ -77,7 +77,7 @@ def test_collectathon_layout():
     assert START_XZ not in STAR_XZ
     assert len(COIN_XZ) >= 20
     assert len(set(STAR_XZ)) == 8
-    assert len(VISTA_PROPS) >= 120
+    assert len(VISTA_PROPS) >= 280
 
 
 def test_vista_is_in_opening_frustum():
@@ -86,7 +86,22 @@ def test_vista_is_in_opening_frustum():
         (x, z) for _n, x, z, _s, _y, _c in VISTA_PROPS
         if -16.0 <= x <= 18.0 and -8.0 <= z <= 24.0
     ]
-    assert len(in_shot) >= 80
+    assert len(in_shot) >= 200
+
+
+def test_vista_kenney_is_varied_not_one_clone():
+    names = [n for n, *_ in VISTA_PROPS]
+    uniq = set(names)
+    assert any("grass" in n for n in uniq)
+    assert any("flower" in n for n in uniq)
+    assert any("plant_bush" in n for n in uniq)
+    assert any("pine" in n for n in uniq)
+    assert any("rock" in n for n in uniq)
+    trees = {n for n in uniq if "tree" in n}
+    assert len(trees) >= 6
+    assert sum(1 for n in names if "pine" in n) >= 6
+    for n in uniq:
+        assert n in GLTF_HALF_Y, n
 
 
 def test_stars_and_coins_are_reachable_land():
