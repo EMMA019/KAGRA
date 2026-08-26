@@ -203,6 +203,23 @@ def _pingpong01(t: float) -> float:
     return f
 
 
+def _as_uv_rect(rect) -> tuple[float, float, float, float] | None:
+    """``(u0, v0, u1, v1)`` JPEG window, or None. Relic Run leaves this unset."""
+    if rect is None:
+        return None
+    seq = tuple(rect)
+    if len(seq) != 4:
+        raise ValueError("uv_rect is (u0, v0, u1, v1)")
+    u0, v0, u1, v1 = (float(seq[0]), float(seq[1]), float(seq[2]), float(seq[3]))
+    u0 = max(0.0, min(1.0, u0))
+    v0 = max(0.0, min(1.0, v0))
+    u1 = max(0.0, min(1.0, u1))
+    v1 = max(0.0, min(1.0, v1))
+    if u1 - u0 < 1e-4 or v1 - v0 < 1e-4:
+        raise ValueError("uv_rect is degenerate")
+    return u0, v0, u1, v1
+
+
 def heightfield_mesh(
     fn,
     half: float = 16.0,
@@ -214,6 +231,7 @@ def heightfield_mesh(
     uv_period: float | None = None,
     uv_blend: float = 0.0,
     uv_pad: float = 0.0,
+    uv_rect=None,
 ) -> tuple[list, list]:
     """``(x, z) → y`` の格子メッシュ。``verts`` は ``[x,y,z,nx,ny,nz,u,v]``。
 
@@ -222,8 +240,9 @@ def heightfield_mesh(
     法線はタイルの外まで ``fn`` を取るので、隣接チャンクのライティングが
     片側差分のナイフ線にならない。``uv_period`` は ClampToEdge 向けの
     ping-pong 繰り返し（ワールド連続。タイル局所の 0..1 ではない）。
-    ``uv_pad`` は JPEG の土縁を避ける inset。``uv_blend`` はタイル縁の
-    わずかなゆらぎ（Crest Isle は 0。継ぎ目は period で連続）。
+    ``uv_pad`` は JPEG の土縁を避ける inset。``uv_rect`` は ping-pong 先の
+    部分窓（Crest Isle の苔だけ。未指定なら pad / 0..1）。``uv_blend`` は
+    タイル縁のわずかなゆらぎ（Crest Isle は 0。継ぎ目は period で連続）。
     """
     cells = max(2, int(cells))
     half = float(half)
@@ -233,6 +252,7 @@ def heightfield_mesh(
     period = None if uv_period is None or float(uv_period) <= 1e-6 else float(uv_period)
     blend = max(0.0, float(uv_blend))
     pad = max(0.0, min(0.45, float(uv_pad)))
+    rect = _as_uv_rect(uv_rect)
     step = (2.0 * half) / float(cells)
     n = cells + 1
     ys = [[0.0] * n for _ in range(n)]
@@ -251,7 +271,11 @@ def heightfield_mesh(
         else:
             u = (x / uh + 1.0) * 0.5
             v = (z / uh + 1.0) * 0.5
-        if pad > 0:
+        if rect is not None:
+            u0, v0, u1, v1 = rect
+            u = u0 + u * (u1 - u0)
+            v = v0 + v * (v1 - v0)
+        elif pad > 0:
             u = pad + u * (1.0 - 2.0 * pad)
             v = pad + v * (1.0 - 2.0 * pad)
         if blend > 1e-6:
@@ -260,7 +284,11 @@ def heightfield_mesh(
             # World-continuous wobble: both tiles share x or z on the join.
             u += 0.018 * math.sin(z * 0.41) * (1.0 - w)
             v += 0.018 * math.sin(x * 0.37) * (1.0 - w)
-            if pad > 0:
+            if rect is not None:
+                u0, v0, u1, v1 = rect
+                u = max(u0, min(u1, u))
+                v = max(v0, min(v1, v))
+            elif pad > 0:
                 u = max(pad, min(1.0 - pad, u))
                 v = max(pad, min(1.0 - pad, v))
         return u, v
@@ -326,6 +354,7 @@ def heightfield_tile(
     uv_period: float | None = None,
     uv_blend: float = 0.0,
     uv_pad: float = 0.0,
+    uv_rect=None,
 ) -> tuple[list, list]:
     """南西角 ``(origin_x, origin_z)``、辺 ``tile`` の高さ場タイル。"""
     t = float(tile)
@@ -340,6 +369,7 @@ def heightfield_tile(
         uv_period=uv_period,
         uv_blend=uv_blend,
         uv_pad=uv_pad,
+        uv_rect=uv_rect,
     )
 
 

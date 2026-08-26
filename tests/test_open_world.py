@@ -35,6 +35,7 @@ from open_world_rules import (
     TERRAIN_UV_BLEND,
     TERRAIN_UV_PAD,
     TERRAIN_UV_PERIOD,
+    TERRAIN_UV_RECT,
     TILE,
     VISTA_PROPS,
     WATER_Y,
@@ -48,6 +49,7 @@ from open_world_rules import (
     spawn_coins,
     spawn_stars,
     start_face,
+    terrain_uv,
     won,
 )
 
@@ -529,6 +531,7 @@ def test_crest_isle_ships_blob_sparks_and_tile_blend():
     assert "terrain_uv_period = TERRAIN_UV_PERIOD" in src
     assert "terrain_uv_blend = TERRAIN_UV_BLEND" in src
     assert "terrain_uv_pad = TERRAIN_UV_PAD" in src
+    assert "terrain_uv_rect = TERRAIN_UV_RECT" in src
     assert "terrain_uv_half = HALF" in src
     assert TERRAIN_UV_PERIOD > TILE
     assert TERRAIN_UV_PERIOD >= TILE * 2.0
@@ -536,10 +539,16 @@ def test_crest_isle_ships_blob_sparks_and_tile_blend():
     assert TERRAIN_UV_BLEND == 0.0
     assert TERRAIN_UV_PAD >= AERIAL_GRASS_DIRT_RIM
     assert TERRAIN_UV_PAD > 0.2
+    u0, v0, u1, v1 = TERRAIN_UV_RECT
+    assert u1 > u0 and v1 > v0
+    assert min(u0, v0, 1.0 - u1, 1.0 - v1) >= AERIAL_GRASS_DIRT_RIM
+    assert min(u0, v0) >= TERRAIN_UV_PAD
+    assert max(u1, v1) <= 1.0 - TERRAIN_UV_PAD
     relic = (_ROOT / "examples" / "vrm_relic_run.py").read_text(encoding="utf-8")
     assert "terrain_uv_period" not in relic
     assert "terrain_uv_blend" not in relic
     assert "terrain_uv_half" not in relic
+    assert "terrain_uv_rect" not in relic
 
 
 def test_crest_meadow_uvs_stay_inside_jpeg_moss():
@@ -556,6 +565,7 @@ def test_crest_meadow_uvs_stay_inside_jpeg_moss():
         uv_period=TERRAIN_UV_PERIOD,
         uv_blend=TERRAIN_UV_BLEND,
         uv_pad=TERRAIN_UV_PAD,
+        uv_rect=TERRAIN_UV_RECT,
     )
 
     def fn(_x, _z):
@@ -566,6 +576,9 @@ def test_crest_meadow_uvs_stay_inside_jpeg_moss():
     for v in verts_a + verts_b:
         edge = min(v[6], 1.0 - v[6], v[7], 1.0 - v[7])
         assert edge >= AERIAL_GRASS_DIRT_RIM - 1e-9, (v[0], v[2], v[6], v[7], edge)
+        u0, v0, u1, v1 = TERRAIN_UV_RECT
+        assert u0 - 1e-9 <= v[6] <= u1 + 1e-9
+        assert v0 - 1e-9 <= v[7] <= v1 + 1e-9
 
     def at(verts, x, z):
         hits = [p for p in verts if abs(p[0] - x) < 1e-6 and abs(p[2] - z) < 1e-6]
@@ -576,7 +589,9 @@ def test_crest_meadow_uvs_stay_inside_jpeg_moss():
     assert join_a[6] == pytest.approx(join_b[6], abs=1e-6)
     assert join_a[7] == pytest.approx(join_b[7], abs=1e-6)
     c0, c1 = at(verts_a, TILE * 0.5, 8.0), at(verts_b, TILE * 1.5, 8.0)
-    assert abs(c0[6] - c1[6]) > 0.05
+    # Meadow window is ~0.10 UV, so adjacent tile centers move ~0.03 U, not 0
+    # (per-tile 0..1 restart would share U). Not a barcode-sized 0.05 of 0..1.
+    assert abs(c0[6] - c1[6]) > 0.02
 
 
 def test_crest_meadow_lod3_tile_is_not_a_barcode():
@@ -598,9 +613,16 @@ def test_crest_meadow_lod3_tile_is_not_a_barcode():
         uv_period=TERRAIN_UV_PERIOD,
         uv_blend=TERRAIN_UV_BLEND,
         uv_pad=TERRAIN_UV_PAD,
+        uv_rect=TERRAIN_UV_RECT,
         uv_half=HALF,
     )
     assert TERRAIN_UV_PERIOD > TILE
+    u0, v0, u1, v1 = TERRAIN_UV_RECT
+    win = min(u1 - u0, v1 - v0)
+    # Compact meadow window (~0.10 UV). Period 48 still yields 2D triangles
+    # (aspect ~1), not a 1-axis sliver. du is smaller than the old 0.44 pad
+    # window; require a few texels, not 0.04 of the full photo.
+    min_du = win * (TILE / 3.0) / TERRAIN_UV_PERIOD * 0.85
     for ix in range(-5, 5):
         for iz in range(-5, 5):
             verts, idx = kit.heightfield_tile(fn, ix * TILE, iz * TILE, **kwargs)
@@ -610,12 +632,14 @@ def test_crest_meadow_lod3_tile_is_not_a_barcode():
                 vs = [verts[i][7] for i in tri]
                 du = max(us) - min(us)
                 dv = max(vs) - min(vs)
-                assert du > 0.04 and dv > 0.04, (ix, iz, du, dv, us, vs)
+                assert du > min_du and dv > min_du, (ix, iz, du, dv, us, vs)
                 aspect = max(du, dv) / min(du, dv)
                 assert aspect < 3.0, (ix, iz, aspect, du, dv)
                 for u, v in zip(us, vs):
                     edge = min(u, 1.0 - u, v, 1.0 - v)
                     assert edge >= AERIAL_GRASS_DIRT_RIM - 1e-9, (ix, iz, u, v)
+                    assert u0 - 1e-9 <= u <= u1 + 1e-9
+                    assert v0 - 1e-9 <= v <= v1 + 1e-9
 
 
 def test_period_below_tile_makes_lod3_barcode():
@@ -640,6 +664,135 @@ def test_period_below_tile_makes_lod3_barcode():
         if du <= 0.04 or dv <= 0.04 or aspect >= 3.0:
             skinny += 1
     assert skinny >= 1
+
+
+def _load_aerial_rgb() -> tuple[int, int, bytes]:
+    """Decode the vendored 1K JPEG, or a 128² box-average fallback (CI)."""
+    import shutil
+    import subprocess
+    import zlib
+
+    path = (
+        _ROOT / "examples" / "assets" / "relic_run" / "polyhaven"
+        / "aerial_grass_rock_diff_1k.jpg"
+    )
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg:
+        raw = subprocess.check_output(
+            [
+                ffmpeg, "-hide_banner", "-loglevel", "error",
+                "-i", str(path),
+                "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
+            ]
+        )
+        if len(raw) == 1024 * 1024 * 3:
+            return 1024, 1024, raw
+    zpath = _ROOT / "tests" / "data" / "aerial_grass_rock_128.rgb.z"
+    raw = zlib.decompress(zpath.read_bytes())
+    n = 128
+    assert len(raw) == n * n * 3
+    return n, n, raw
+
+
+def _tinted_jpeg_at(raw: bytes, w: int, h: int, u: float, v: float) -> tuple[float, float, float]:
+    x = int(max(0, min(w - 1, float(u) * w)))
+    y = int(max(0, min(h - 1, float(v) * h)))
+    i = (y * w + x) * 3
+    r, g, b = raw[i] / 255.0, raw[i + 1] / 255.0, raw[i + 2] / 255.0
+    return r * GRASS_TINT[0], g * GRASS_TINT[1], b * GRASS_TINT[2]
+
+
+def test_crest_meadow_tinted_jpeg_has_no_tile_biome_step():
+    """Adjacent 16 m Crest tiles must not jump lush grass → yellowish dirt.
+
+    ``aerial_grass_rock_diff_1k.jpg`` is mixed moss + brown rock even inside
+    pad 0.28. Period 48 made each TILE a different 2D window of that interior
+    (Emma's remaining ハゲ after #95). Crest UVs ping-pong into TERRAIN_UV_RECT
+    only. Relic Run keeps the uncropped JPEG.
+    """
+    kit = load_kagra_submodule("gamekit")
+    w, h, rgb = _load_aerial_rgb()
+    u0, v0, u1, v1 = TERRAIN_UV_RECT
+
+    def fn(_x, _z):
+        return 0.4
+
+    kwargs = dict(
+        tile=TILE, cells=8,
+        uv_period=TERRAIN_UV_PERIOD,
+        uv_blend=TERRAIN_UV_BLEND,
+        uv_pad=TERRAIN_UV_PAD,
+        uv_rect=TERRAIN_UV_RECT,
+        uv_half=HALF,
+    )
+    means: dict[tuple[int, int], tuple[float, float, float]] = {}
+    for iz in range(-1, 2):
+        for ix in range(-1, 2):
+            gs: list[float] = []
+            bs: list[float] = []
+            rs: list[float] = []
+            verts, _ = kit.heightfield_tile(fn, ix * TILE, iz * TILE, **kwargs)
+            for v in verts:
+                u, vv = v[6], v[7]
+                assert u0 - 1e-9 <= u <= u1 + 1e-9
+                assert v0 - 1e-9 <= vv <= v1 + 1e-9
+                tu, tv = terrain_uv(v[0], v[2])
+                assert tu == pytest.approx(u, abs=1e-6)
+                assert tv == pytest.approx(vv, abs=1e-6)
+            # Dense world samples (not only mesh verts) across the 16 m tile.
+            for j in range(12):
+                for i in range(12):
+                    x = ix * TILE + (i + 0.5) * (TILE / 12.0)
+                    z = iz * TILE + (j + 0.5) * (TILE / 12.0)
+                    u, vv = terrain_uv(x, z)
+                    r, g, b = _tinted_jpeg_at(rgb, w, h, u, vv)
+                    rs.append(r)
+                    gs.append(g)
+                    bs.append(b)
+            n = float(len(gs))
+            means[ix, iz] = (sum(rs) / n, sum(gs) / n, sum(bs) / n)
+
+    greens = [m[1] for m in means.values()]
+    blues = [m[2] for m in means.values()]
+    # After GRASS_TINT the meadow is G-dominant with low B (not yellow dirt).
+    assert min(greens) > 0.50
+    assert max(blues) < 0.05
+    for (ix, iz), (r, g, b) in means.items():
+        assert g > r and g > b, (ix, iz, r, g, b)
+        if (ix + 1, iz) in means:
+            nbr = means[ix + 1, iz]
+            assert abs(g - nbr[1]) < 0.08, (ix, iz, g, nbr[1])
+            assert abs(b - nbr[2]) < 0.025, (ix, iz, b, nbr[2])
+        if (ix, iz + 1) in means:
+            nbr = means[ix, iz + 1]
+            assert abs(g - nbr[1]) < 0.08, (ix, iz, g, nbr[1])
+            assert abs(b - nbr[2]) < 0.025, (ix, iz, b, nbr[2])
+
+    # Pad-0.28 interior (the #95 mapping) still has a dirt-biome tile step.
+    # That is the bug this rect exists to close; keep the contrast locked.
+    pad_b: list[float] = []
+    for ix in (0, 1):
+        acc = 0.0
+        n = 0
+        for j in range(8):
+            for i in range(8):
+                x = ix * TILE + (i + 0.5) * (TILE / 8.0)
+                z = (j + 0.5) * (TILE / 8.0)
+                t = x / TERRAIN_UV_PERIOD
+                nt = math.floor(t)
+                f = t - nt
+                pu = (1.0 - f) if int(nt) % 2 else f
+                t = z / TERRAIN_UV_PERIOD
+                nt = math.floor(t)
+                f = t - nt
+                pv = (1.0 - f) if int(nt) % 2 else f
+                u = TERRAIN_UV_PAD + pu * (1.0 - 2.0 * TERRAIN_UV_PAD)
+                vv = TERRAIN_UV_PAD + pv * (1.0 - 2.0 * TERRAIN_UV_PAD)
+                _, _, b = _tinted_jpeg_at(rgb, w, h, u, vv)
+                acc += b
+                n += 1
+        pad_b.append(acc / n)
+    assert abs(pad_b[0] - pad_b[1]) > 0.02, pad_b
 
 
 def test_crest_gold_orbs_use_metal_not_plastic():

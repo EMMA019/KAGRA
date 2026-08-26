@@ -62,12 +62,14 @@ class World3D:
         self._prev_want: set[tuple[int, int]] = set()
         self.terrain_base: tuple[float, float, float] = (1.0, 1.0, 1.0)
         # None → ``self.half`` (one 0..1 map across the world). Crest Isle
-        # sets period/pad so stream tiles stay inside the JPEG moss, not a
-        # 16 m ClampToEdge dirt stamp. Relic Run leaves these at defaults.
+        # sets period/rect so stream tiles stay inside a meadow-green JPEG
+        # window, not a 16 m ClampToEdge dirt stamp. Relic Run leaves these
+        # at defaults.
         self.terrain_uv_half: float | None = None
         self.terrain_uv_period: float | None = None
         self.terrain_uv_blend: float = 0.0
         self.terrain_uv_pad: float = 0.0
+        self.terrain_uv_rect = None
 
     def add_floor(self, size: float | None = None):
         """Y = ``floor_y`` の正方形床を予約する。半辺は ``size`` または ``half``。"""
@@ -421,6 +423,7 @@ class World3D:
                 uv_period=self.terrain_uv_period,
                 uv_blend=self.terrain_uv_blend,
                 uv_pad=self.terrain_uv_pad,
+                uv_rect=self.terrain_uv_rect,
             )
             if self._tile is None:
                 verts, idx = heightfield_mesh(

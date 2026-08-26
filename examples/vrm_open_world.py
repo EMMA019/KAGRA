@@ -79,6 +79,7 @@ from open_world_rules import (
     TERRAIN_UV_BLEND,
     TERRAIN_UV_PAD,
     TERRAIN_UV_PERIOD,
+    TERRAIN_UV_RECT,
     TILE,
     VISTA_PROPS,
     WATER_Y,
@@ -249,11 +250,13 @@ class CrestIsle(kagra.Scene):
         self.world.set_water_y(WATER_Y)
         # Crest Isle meadow only: world-continuous UVs inside the JPEG moss.
         # Period > TILE so a 16 m chunk is a small 2D window, not a ping-pong
-        # barcode. Pad skips the dirt rim. Not per-tile 0..1.
+        # barcode. Rect is the compact meadow-green interior (not the mixed
+        # pad-0.28 moss+dirt photo). Not per-tile 0..1.
         self.world.terrain_uv_half = HALF
         self.world.terrain_uv_period = TERRAIN_UV_PERIOD
         self.world.terrain_uv_blend = TERRAIN_UV_BLEND
         self.world.terrain_uv_pad = TERRAIN_UV_PAD
+        self.world.terrain_uv_rect = TERRAIN_UV_RECT
         # bake_terrain streams immediately and calls _fill_chunk.
         self._chunk_props = 0
         self.world.set_chunk_fill(self._fill_chunk)
