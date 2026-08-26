@@ -246,7 +246,9 @@ class CrestIsle(kagra.Scene):
             lod_radius=LOD_RADIUS, lod_cells=LOD_CELLS,
         )
         self.world.set_water_y(WATER_Y)
-        # Crest Isle meadow only: hide stream-tile knife lines / JPEG edge bands.
+        # Crest Isle meadow only: world-continuous UVs inside the JPEG moss,
+        # not a 16 m ClampToEdge stamp of the dirt rim.
+        self.world.terrain_uv_half = HALF
         self.world.terrain_uv_period = TERRAIN_UV_PERIOD
         self.world.terrain_uv_blend = TERRAIN_UV_BLEND
         self.world.terrain_uv_pad = TERRAIN_UV_PAD

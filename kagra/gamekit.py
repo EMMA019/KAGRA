@@ -221,7 +221,9 @@ def heightfield_mesh(
     ワールド範囲に合わせるので、タイルしても 1 枚の地形テクスチャが使える。
     法線はタイルの外まで ``fn`` を取るので、隣接チャンクのライティングが
     片側差分のナイフ線にならない。``uv_period`` は ClampToEdge 向けの
-    ping-pong 繰り返し。``uv_blend`` はタイル縁の UV をなだらかにする。
+    ping-pong 繰り返し（ワールド連続。タイル局所の 0..1 ではない）。
+    ``uv_pad`` は JPEG の土縁を避ける inset。``uv_blend`` はタイル縁の
+    わずかなゆらぎ（Crest Isle は 0。継ぎ目は period で連続）。
     """
     cells = max(2, int(cells))
     half = float(half)
