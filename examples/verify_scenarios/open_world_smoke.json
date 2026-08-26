@@ -8,5 +8,6 @@
     "KAGRA_SMOKE_OUT": "scratch/open_world_smoke.png"
   },
   "expect_files": ["scratch/open_world_smoke.png"],
-  "min_file_bytes": 2000
+  "min_file_bytes": 2000,
+  "notes": "Hillside 16 m tiles must stay meadow Lambert, not a black PBR quad with a gold spec streak. SMOKE=1 skips play lighting/chunk decor; GPU-free coverage is tests/test_open_world.py (hillside UV window) and tests/test_world3d.py (Lambert upload + draw _tile_meshes)."
 }

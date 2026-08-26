@@ -603,8 +603,10 @@ impl RendererV2 {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let mesh_mat_init = [1.0f32, 1.0, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0];
-        queue.write_buffer(&mesh_mat_buf, 0, bytemuck::cast_slice(&mesh_mat_init));
+        // Every slot starts Lambert. Growing used to leave GPU memory
+        // undefined; a streamed terrain draw that missed a pack then read
+        // leftover coin PBR (metallic=1, roughness=0.12) as a black+gold tile.
+        write_mesh_mat_lambert_slots(&queue, &mesh_mat_buf, MESH_MAT_SLOTS, MESH_MAT_STRIDE);
         let mesh_mat_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("MeshMat BG"),
             layout: &mesh_mat_bgl,
@@ -2136,6 +2138,7 @@ impl RendererV2 {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        write_mesh_mat_lambert_slots(&self.queue, &self.mesh_mat_buf, slots, 256);
         self.mesh_mat_slots = slots;
         self.mesh_mat_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("MeshMat BG"),
@@ -2932,21 +2935,23 @@ impl RendererV2 {
             return;
         }
 
-        let retained_mats: Vec<(f32, f32, [f32; 3], u32, u32)> = visible_retained.iter().filter_map(|id| {
-            self.retained_meshes.get(id).map(|m| {
-                (m.metallic, m.roughness, m.base_color, m.texture_id, m.normal_texture_id)
+        // One mat slot per draw. filter_map used to drop a missing mesh and
+        // shift later tiles onto leftover PBR (Crest hillside black+gold).
+        // Missing ids pack Lambert so pack-list length == draw-list length.
+        let retained_mats: Vec<(f32, f32, [f32; 3], u32, u32)> = visible_retained
+            .iter()
+            .map(|id| match self.retained_meshes.get(id) {
+                Some(m) => (m.metallic, m.roughness, m.base_color, m.texture_id, m.normal_texture_id),
+                None => (0.0, 1.0, [1.0, 1.0, 1.0], 0, 0),
             })
-        }).collect();
+            .collect();
         let nmat = (draws.len() + retained_mats.len()) as u32;
         self.ensure_mesh_mat_slots(nmat.max(1));
-        let mut slot = 0u32;
-        for d in &draws {
-            self.pack_mesh_mat(slot, d.5, d.6, d.7, d.1, d.8);
-            slot += 1;
+        for (slot, d) in draws.iter().enumerate() {
+            self.pack_mesh_mat(slot as u32, d.5, d.6, d.7, d.1, d.8);
         }
-        for m in &retained_mats {
-            self.pack_mesh_mat(slot, m.0, m.1, m.2, m.4, false);
-            slot += 1;
+        for (i, m) in retained_mats.iter().enumerate() {
+            self.pack_mesh_mat(draws.len() as u32 + i as u32, m.0, m.1, m.2, m.4, false);
         }
         let mut tex_keys: Vec<(u32, u32)> = Vec::with_capacity(draws.len() + retained_mats.len());
         for d in &draws {
@@ -2969,8 +2974,9 @@ impl RendererV2 {
         rp.set_bind_group(2, &self.shadow_bg, &[]);
         let mut drawn = 0u32;
         let mut tris = 0u32;
-        let mut slot = 0u32;
-        for (texture_id, normal_id, v_off, i_off, index_count, _, _, _, _) in draws {
+        let n_imm = draws.len() as u32;
+        for (i, (texture_id, normal_id, v_off, i_off, index_count, _, _, _, _)) in draws.into_iter().enumerate() {
+            let slot = i as u32;
             let bg = self.mesh3d_tex_bg(texture_id, normal_id);
             rp.set_bind_group(1, bg, &[]);
             rp.set_bind_group(3, &self.mesh_mat_bg, &[slot * 256]);
@@ -2979,10 +2985,10 @@ impl RendererV2 {
             rp.draw_indexed(0..index_count, 0, 0..1);
             drawn += 1;
             tris += index_count / 3;
-            slot += 1;
         }
-        for id in visible_retained {
-            let Some(mesh) = self.retained_meshes.get(&id) else { continue };
+        for (i, id) in visible_retained.iter().enumerate() {
+            let Some(mesh) = self.retained_meshes.get(id) else { continue };
+            let slot = n_imm + i as u32;
             let bg = self.mesh3d_tex_bg(mesh.texture_id, mesh.normal_texture_id);
             rp.set_bind_group(1, bg, &[]);
             rp.set_bind_group(3, &self.mesh_mat_bg, &[slot * 256]);
@@ -2991,7 +2997,6 @@ impl RendererV2 {
             rp.draw_indexed(0..mesh.index_count, 0, 0..1);
             drawn += 1;
             tris += mesh.index_count / 3;
-            slot += 1;
         }
         drop(rp);
         self.stats.draw_calls += drawn;
@@ -3488,6 +3493,25 @@ impl RendererV2 {
     }
 }
 
+/// Lambert white: metallic=0, roughness=1, pbr off, fog on. Coin PBR is
+/// metallic=1 / roughness=0.12; an uninit slot of that leftover turns one
+/// streamed heightfield tile into a black quad with a gold GGX streak.
+fn mesh_mat_lambert_slot() -> [f32; 8] {
+    [1.0, 1.0, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0]
+}
+
+fn write_mesh_mat_lambert_slots(
+    queue: &wgpu::Queue,
+    buf: &wgpu::Buffer,
+    slots: u32,
+    stride: u64,
+) {
+    let data = mesh_mat_lambert_slot();
+    for slot in 0..slots {
+        queue.write_buffer(buf, slot as u64 * stride, bytemuck::cast_slice(&data));
+    }
+}
+
 fn rgba_to_rgb(rgba: &[u8]) -> Vec<u8> {
     let mut rgb = Vec::with_capacity(rgba.len() / 4 * 3);
     for px in rgba.chunks_exact(4) {
@@ -3503,6 +3527,16 @@ mod grab_tests {
     #[test]
     fn rgba_drops_alpha() {
         assert_eq!(rgba_to_rgb(&[1, 2, 3, 255, 4, 5, 6, 0]), vec![1, 2, 3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn mesh_mat_lambert_is_not_coin_pbr() {
+        let s = super::mesh_mat_lambert_slot();
+        assert!(s[4] <= 0.001, "metallic {}", s[4]);
+        assert!(s[5] >= 0.999, "roughness {}", s[5]);
+        assert!(s[7] < 0.5, "pbr flag {}", s[7]);
+        assert!(crate::hdri::pbr_enabled(1.0, 0.12));
+        assert!(!crate::hdri::pbr_enabled(s[4], s[5]));
     }
 }
 

@@ -59,3 +59,4 @@
 - `20260826-crest-isle-meadow-window/` — Crest Isle meadow ハゲ after #95 (JPEG biome windows / TERRAIN_UV_RECT)
 - `20260826-character-controller/` — game-ready capsule CharacterController (accel / slope sit / step-up / jump). No Rapier.
 - `20260826-crest-isle-black-peel-zoom/` — remaining Nature Kit black trees, orbit peel (tiles/fog/hair), chase-cam zoom keys
+- `20260826-crest-isle-black-tile-spec/` — Crest Isle hillside black 16 m tile + gold GGX (coin PBR leftover / mesh_mat slot), not #94/#95/#96 JPEG UV

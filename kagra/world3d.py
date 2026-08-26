@@ -434,8 +434,14 @@ class World3D:
                 verts, idx = heightfield_tile(
                     self._height_fn, ox, oz, self._tile, cells, **uv_kw,
                 )
+            # Terrain is Lambert grass. Coins use metallic=1 / roughness=0.12
+            # on a later instance pass; a leftover mesh_mat slot (or a PBR
+            # default) paints one streamed tile pitch-black with a gold GGX
+            # streak. Force 0/1 here and pin via set_mesh_pbr.
             mid = kagra.upload_mesh_3d(
                 int(self._terrain_tex), verts, idx,
+                metallic=0.0,
+                roughness=1.0,
                 base_color=tuple(self.terrain_base),
             )
         except Exception:
@@ -444,6 +450,13 @@ class World3D:
             return 0
         self._tile_lod[key] = cells
         mid = int(mid)
+        try:
+            kagra.set_mesh_pbr(
+                mid, metallic=0.0, roughness=1.0,
+                base_color=tuple(self.terrain_base),
+            )
+        except Exception:
+            pass
         old = self._tile_meshes.get(key)
         self._tile_meshes[key] = mid
         self.terrain_mesh_id = mid
@@ -502,14 +515,23 @@ class World3D:
         return ids
 
     def draw(self):
-        """保持メッシュを描く。箱はインスタンス。"""
+        """保持メッシュを描く。箱はインスタンス。
+
+        Streamed heightfield tiles are drawn from ``_tile_meshes`` (the live
+        GPU ids). ``mesh_ids`` still holds floors / extra meshes (Relic ramp)
+        and a copy of tile ids; a desync used to skip a live tile or keep
+        drawing a stale one.
+        """
         try:
             import kagra
         except Exception:
             return
-        for mid in self.mesh_ids:
-            if mid == self.box_mesh_id:
-                continue
+        live_tiles = {int(mid) for mid in self._tile_meshes.values() if mid}
+        for mid in live_tiles:
             kagra.draw_mesh_id(mid)
+        for mid in self.mesh_ids:
+            if not mid or mid == self.box_mesh_id or int(mid) in live_tiles:
+                continue
+            kagra.draw_mesh_id(int(mid))
         if self.box_mesh_id and self.box_xforms:
             kagra.draw_mesh_instances(self.box_mesh_id, self.box_xforms)

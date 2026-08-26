@@ -666,6 +666,122 @@ def test_period_below_tile_makes_lod3_barcode():
     assert skinny >= 1
 
 
+def test_crest_hillside_tile_uv_is_not_degenerate():
+    """TILE-sized Crest chunks (LOD 6 and 8) must not collapse UV to a sliver.
+
+    Zero-area / 1-axis UV is the barcode bug (#95). A black quad with a gold
+    spec streak is a different failure (PBR/material); this locks that the
+    hillside chunk around the peak is still a 2D window inside TERRAIN_UV_RECT.
+    """
+    kit = load_kagra_submodule("gamekit")
+    land = load_kagra_submodule("land")
+    fn = land.open_world_height
+    u0, v0, u1, v1 = TERRAIN_UV_RECT
+    win = min(u1 - u0, v1 - v0)
+    kwargs_base = dict(
+        tile=TILE,
+        uv_period=TERRAIN_UV_PERIOD,
+        uv_blend=TERRAIN_UV_BLEND,
+        uv_pad=TERRAIN_UV_PAD,
+        uv_rect=TERRAIN_UV_RECT,
+        uv_half=HALF,
+    )
+    # Peak (8, 52) sits on tile (0, 3). Neighbors cover the visible hillside.
+    keys = [(0, 3), (0, 2), (1, 3), (-1, 3), (0, 1)]
+    for cells in (LOD_CELLS, 8):
+        min_du = win * (TILE / float(cells)) / TERRAIN_UV_PERIOD * 0.85
+        for ix, iz in keys:
+            verts, idx = kit.heightfield_tile(
+                fn, ix * TILE, iz * TILE, cells=cells, **kwargs_base,
+            )
+            assert verts and idx
+            us = [v[6] for v in verts]
+            vs = [v[7] for v in verts]
+            span_u = max(us) - min(us)
+            span_v = max(vs) - min(vs)
+            assert span_u > min_du * 0.9 and span_v > min_du * 0.9, (
+                ix, iz, cells, span_u, span_v,
+            )
+            aspect = max(span_u, span_v) / max(min(span_u, span_v), 1e-12)
+            assert aspect < 3.0, (ix, iz, cells, aspect, span_u, span_v)
+            for u, v in zip(us, vs):
+                assert u0 - 1e-9 <= u <= u1 + 1e-9, (ix, iz, u, v)
+                assert v0 - 1e-9 <= v <= v1 + 1e-9, (ix, iz, u, v)
+            for v in verts:
+                nx, ny, nz = v[3], v[4], v[5]
+                leng = math.sqrt(nx * nx + ny * ny + nz * nz)
+                assert leng == pytest.approx(1.0, abs=1e-4)
+                assert ny > 0.2, (ix, iz, cells, nx, ny, nz)
+            for t in range(0, len(idx), 3):
+                tri = idx[t:t + 3]
+                tu = [verts[i][6] for i in tri]
+                tv = [verts[i][7] for i in tri]
+                du = max(tu) - min(tu)
+                dv = max(tv) - min(tv)
+                area = du * dv
+                assert area > 1e-8, (ix, iz, cells, du, dv, tu, tv)
+                assert du > min_du * 0.5 and dv > min_du * 0.5, (
+                    ix, iz, cells, du, dv,
+                )
+
+
+def test_crest_hillside_jpeg_window_is_not_a_black_texel():
+    """Nearest ClampToEdge must not sample a near-black texel for a TILE window."""
+    kit = load_kagra_submodule("gamekit")
+    land = load_kagra_submodule("land")
+    w, h, rgb = _load_aerial_rgb()
+    fn = land.open_world_height
+    lum_min = 1.0
+    kwargs = dict(
+        tile=TILE, cells=8,
+        uv_period=TERRAIN_UV_PERIOD,
+        uv_blend=TERRAIN_UV_BLEND,
+        uv_pad=TERRAIN_UV_PAD,
+        uv_rect=TERRAIN_UV_RECT,
+        uv_half=HALF,
+    )
+    verts, _ = kit.heightfield_tile(fn, 0.0, 3.0 * TILE, **kwargs)
+    for v in verts:
+        r, g, b = _tinted_jpeg_at(rgb, w, h, v[6], v[7])
+        lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+        lum_min = min(lum_min, lum)
+        assert lum > 0.20, (v[0], v[2], v[6], v[7], r, g, b, lum)
+        assert g > r and g > b
+    assert lum_min > 0.20
+
+
+def test_world3d_draw_source_uses_tile_meshes():
+    src = (_ROOT / "kagra" / "world3d.py").read_text(encoding="utf-8")
+    assert "live_tiles" in src
+    assert "metallic=0.0" in src
+    assert "roughness=1.0" in src
+    assert "set_mesh_pbr" in src
+    assert "GOLD_METALLIC" not in src
+
+
+def test_uv_rect_kwarg_is_applied_not_ignored():
+    """If gamekit dropped uv_rect, ping-pong would fill 0..1 (or pad), not RECT."""
+    kit = load_kagra_submodule("gamekit")
+    rect = (0.40, 0.41, 0.52, 0.53)
+
+    def fn(_x, _z):
+        return 0.4
+
+    verts, _ = kit.heightfield_tile(
+        fn, 0.0, 0.0, tile=TILE, cells=8,
+        uv_period=TERRAIN_UV_PERIOD, uv_rect=rect,
+    )
+    assert verts
+    for v in verts:
+        assert rect[0] - 1e-9 <= v[6] <= rect[2] + 1e-9
+        assert rect[1] - 1e-9 <= v[7] <= rect[3] + 1e-9
+    with pytest.raises(ValueError, match="degenerate"):
+        kit.heightfield_tile(
+            fn, 0.0, 0.0, tile=TILE, cells=4, uv_period=48.0,
+            uv_rect=(0.5, 0.5, 0.5, 0.6),
+        )
+
+
 def _load_aerial_rgb() -> tuple[int, int, bytes]:
     """Decode the vendored 1K JPEG, or a 128² box-average fallback (CI)."""
     import shutil

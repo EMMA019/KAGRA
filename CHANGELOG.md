@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Crest Isle hillside black tile + gold spec: one streamed 16 m chunk was a pitch-black quad with a GGX highlight (geometry still there). Not the #94 dirt-rim stamp, not the #95 barcode / failed-upload hole, not the #96 JPEG biome window. Terrain upload now pins Lambert (``metallic=0``, ``roughness=1``) so coin PBR cannot stick to a heightfield tile; ``World3D.draw`` draws live ``_tile_meshes``; mesh_mat slots init Lambert and pack 1:1 with the draw list (a missing mesh no longer shifts later tiles onto leftover gold). ``uv_rect`` stays applied. Relic Run UV / PBR defaults unchanged. No Rapier / SSAO / brighter ``GRASS_TINT``.
+
 - Crest Isle remaining meadow ハゲ: ``aerial_grass_rock_diff_1k.jpg`` is mixed moss + brown rock even inside pad 0.28. Period 48 made each 16 m TILE a different 2D biome window (green tile glued to yellowish dirt). Crest UVs now ping-pong into a compact meadow-green ``TERRAIN_UV_RECT`` measured on the tinted JPEG. Period 48 / stream retry / LOD_CELLS=6 stay. Relic Run keeps the uncropped JPEG / default UV. No Rapier / SSAO / Repeat / per-tile 0..1.
 
 - World3D terrain stream: failed ``upload_mesh_3d`` no longer sticks as loaded (bald tile skip-forever). Streaming worlds prefetch a 1-tile ring and delay unload one frame; LOD upgrades beat brand-new far tiles (still 1 GPU upload/frame while walking). Crest Isle meadow UVs: ``TERRAIN_UV_PERIOD=48`` (3× TILE, world-continuous, pad 0.28) so a 16 m chunk is a small 2D moss window — period 9.5 < TILE + ``lod_cells=3`` was the barcode / 1-axis JPEG stretch. ``LOD_CELLS=6``. Relic Run UV defaults unchanged. No Rapier / SSAO / Repeat sampler / per-tile 0..1 UV.
