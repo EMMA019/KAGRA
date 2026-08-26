@@ -28,11 +28,11 @@ Orbit: grass and Kenney stay textured. `[` `]` zoom the chase cam inside the cla
 ## Verify
 
 ```bash
-python tools/gen_api_index.py --check
-pytest tests -m "not golden"
+python tools/gen_api_index.py --check   # OK (427 entries)
+pytest tests -m "not golden"            # 458 passed, 10 deselected
 ```
 
-GPU smoke if a `kagra_core` wheel is present.
+GPU smoke (`python -m kagra.verify examples/verify_scenarios/open_world_smoke.json`) not run here (no `kagra_core` wheel). `cargo test -p kagra-core` not run (registry/offline).
 
 ## Left out
 
