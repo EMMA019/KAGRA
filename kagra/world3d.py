@@ -59,6 +59,12 @@ class World3D:
         self._drawn_dynamic: list[tuple[RigidBody3D, int]] = []
         self._stream_warm = False
         self.terrain_base: tuple[float, float, float] = (1.0, 1.0, 1.0)
+        # None → ``self.half`` (one 0..1 map across the world). Crest Isle
+        # sets period/blend/pad so stream-tile joins are not a knife line.
+        self.terrain_uv_half: float | None = None
+        self.terrain_uv_period: float | None = None
+        self.terrain_uv_blend: float = 0.0
+        self.terrain_uv_pad: float = 0.0
 
     def add_floor(self, size: float | None = None):
         """Y = ``floor_y`` の正方形床を予約する。半辺は ``size`` または ``half``。"""
@@ -375,15 +381,21 @@ class World3D:
             return 0
         try:
             import kagra
+            uv_half = self.half if self.terrain_uv_half is None else float(self.terrain_uv_half)
+            uv_kw = dict(
+                uv_half=uv_half,
+                uv_period=self.terrain_uv_period,
+                uv_blend=self.terrain_uv_blend,
+                uv_pad=self.terrain_uv_pad,
+            )
             if self._tile is None:
                 verts, idx = heightfield_mesh(
-                    self._height_fn, self.half, cells,
+                    self._height_fn, self.half, cells, **uv_kw,
                 )
             else:
                 ox, oz = tile_origin(key[0], key[1], self._tile)
                 verts, idx = heightfield_tile(
-                    self._height_fn, ox, oz, self._tile, cells,
-                    uv_half=self.half,
+                    self._height_fn, ox, oz, self._tile, cells, **uv_kw,
                 )
             mid = kagra.upload_mesh_3d(
                 int(self._terrain_tex), verts, idx,

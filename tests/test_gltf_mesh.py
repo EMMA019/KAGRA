@@ -283,3 +283,84 @@ def test_flatten_rejects_parent_png_uri(tmp_path: Path):
     bad.write_bytes(data)
     with pytest.raises(ValueError, match="no meshes"):
         gm.flatten_gltf(bad)
+
+
+def _write_uv_tri_glb(path: Path, *, khr: dict | None = None, image_uri: str | None = None) -> Path:
+    pos = [-0.5, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 1.0, 0.0]
+    uv = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0]
+    idx = [0, 1, 2]
+    pos_b = struct.pack("<9f", *pos)
+    uv_b = struct.pack("<6f", *uv)
+    idx_b = struct.pack("<3H", *idx)
+    idx_b += b"\x00" * _pad4(len(idx_b))
+    blob = pos_b + uv_b + idx_b
+    tex_info: dict = {"index": 0}
+    if khr is not None:
+        tex_info["extensions"] = {"KHR_texture_transform": khr}
+    gltf = {
+        "asset": {"version": "2.0"},
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": [{"mesh": 0}],
+        "meshes": [{"primitives": [{
+            "attributes": {"POSITION": 0, "TEXCOORD_0": 1},
+            "indices": 2,
+            "material": 0,
+        }]}],
+        "materials": [{"pbrMetallicRoughness": {"baseColorTexture": tex_info, "metallicFactor": 0.0}}],
+        "textures": [{"source": 0}],
+        "images": [{"uri": image_uri or "Textures/colormap.png"}],
+        "accessors": [
+            {
+                "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3",
+                "min": [-0.5, 0.0, 0.0], "max": [0.5, 1.0, 0.0],
+            },
+            {"bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2"},
+            {"bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR"},
+        ],
+        "bufferViews": [
+            {"buffer": 0, "byteOffset": 0, "byteLength": len(pos_b)},
+            {"buffer": 0, "byteOffset": len(pos_b), "byteLength": len(uv_b)},
+            {"buffer": 0, "byteOffset": len(pos_b) + len(uv_b), "byteLength": 6},
+        ],
+        "buffers": [{"byteLength": len(blob)}],
+        "extensionsUsed": ["KHR_texture_transform"],
+    }
+    json_b = json.dumps(gltf, separators=(",", ":")).encode("utf-8")
+    json_b += b" " * _pad4(len(json_b))
+    total = 12 + 8 + len(json_b) + 8 + len(blob)
+    path.write_bytes(
+        struct.pack("<4sII", b"glTF", 2, total)
+        + struct.pack("<II", len(json_b), 0x4E4F534A) + json_b
+        + struct.pack("<II", len(blob), 0x004E4942) + blob
+    )
+    return path
+
+
+def test_flatten_applies_khr_texture_transform_atlas(tmp_path: Path):
+    png = _png_1x1(10, 200, 30)
+    (tmp_path / "Textures").mkdir()
+    (tmp_path / "Textures" / "colormap.png").write_bytes(png)
+    path = _write_uv_tri_glb(
+        tmp_path / "tree.glb",
+        khr={"offset": [0.25, 0.5], "scale": [0.25, 0.25], "texCoord": 0},
+    )
+    flat = gm.flatten_gltf(path, center=False)
+    assert flat.image == png
+    uvs = [(round(v[6], 5), round(v[7], 5)) for v in flat.verts]
+    # (0,0) → (0.25, 0.5); (1,0) → (0.50, 0.5); (0,1) → (0.25, 0.75)
+    assert (0.25, 0.5) in uvs
+    assert (0.5, 0.5) in uvs
+    assert (0.25, 0.75) in uvs
+
+
+def test_flatten_identity_khr_texcoord_keeps_uvs(tmp_path: Path):
+    png = _png_1x1(4, 5, 6)
+    (tmp_path / "Textures").mkdir()
+    (tmp_path / "Textures" / "colormap.png").write_bytes(png)
+    path = _write_uv_tri_glb(tmp_path / "tree.glb", khr={"texCoord": 0})
+    flat = gm.flatten_gltf(path, center=False)
+    uvs = {(round(v[6], 5), round(v[7], 5)) for v in flat.verts}
+    assert (0.0, 0.0) in uvs
+    assert (1.0, 0.0) in uvs
+    assert (0.0, 1.0) in uvs

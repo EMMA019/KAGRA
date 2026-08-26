@@ -109,6 +109,58 @@ def test_heightfield_tile_aabb_fits_shadow():
     assert max(xs) == pytest.approx(10.0)
 
 
+def _edge_verts(verts, *, x=None, z=None, tol=1e-6):
+    out = []
+    for v in verts:
+        if x is not None and abs(v[0] - x) > tol:
+            continue
+        if z is not None and abs(v[2] - z) > tol:
+            continue
+        out.append(v)
+    return out
+
+
+def test_heightfield_adjacent_tiles_share_edge_normals():
+    """One-sided in-tile diffs used to light a hard knife at stream borders."""
+
+    def fn(x, z):
+        return 0.15 * x + 0.22 * z
+
+    left, _ = kit.heightfield_tile(fn, 0.0, 0.0, tile=10.0, cells=8, uv_half=80.0)
+    right, _ = kit.heightfield_tile(fn, 10.0, 0.0, tile=10.0, cells=8, uv_half=80.0)
+    le = sorted(_edge_verts(left, x=10.0), key=lambda v: v[2])
+    re = sorted(_edge_verts(right, x=10.0), key=lambda v: v[2])
+    assert len(le) == 9 and len(re) == 9
+    for a, b in zip(le, re):
+        assert a[1] == pytest.approx(b[1], abs=1e-9)
+        assert a[3] == pytest.approx(b[3], abs=1e-6)
+        assert a[4] == pytest.approx(b[4], abs=1e-6)
+        assert a[5] == pytest.approx(b[5], abs=1e-6)
+        assert a[6] == pytest.approx(b[6], abs=1e-6)
+        assert a[7] == pytest.approx(b[7], abs=1e-6)
+
+
+def test_heightfield_uv_blend_is_not_a_step_at_the_join():
+    def fn(_x, _z):
+        return 0.4
+
+    kwargs = dict(tile=16.0, cells=8, uv_period=13.5, uv_blend=2.6, uv_pad=0.035)
+    a, _ = kit.heightfield_tile(fn, 0.0, 0.0, **kwargs)
+    b, _ = kit.heightfield_tile(fn, 16.0, 0.0, **kwargs)
+    ae = sorted(_edge_verts(a, x=16.0), key=lambda v: v[2])
+    be = sorted(_edge_verts(b, x=16.0), key=lambda v: v[2])
+    for va, vb in zip(ae, be):
+        assert va[6] == pytest.approx(vb[6], abs=1e-6)
+        assert va[7] == pytest.approx(vb[7], abs=1e-6)
+        assert 0.02 <= va[6] <= 0.98
+        assert 0.02 <= va[7] <= 0.98
+    # Interior UV differs from the join (blend actually moves something).
+    interior = [v for v in a if abs(v[0] - 8.0) < 1e-6 and abs(v[2] - 8.0) < 1e-6]
+    assert interior
+    join_u = ae[len(ae) // 2][6]
+    assert abs(interior[0][6] - join_u) > 1e-4
+
+
 def test_save_load_roundtrip(tmp_path):
     kit.save_json("hi", {"score": 42}, directory=tmp_path)
     assert kit.load_json("hi", directory=tmp_path) == {"score": 42}

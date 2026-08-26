@@ -6,6 +6,7 @@ Agent-built showcase: docs/agent-runs/20260824-open-world/
 from __future__ import annotations
 
 import math
+import random
 from dataclasses import dataclass
 
 HALF = 80.0
@@ -37,12 +38,23 @@ CAM_MAX_DISTANCE = math.hypot(CAM_DISTANCE, CAM_HEIGHT - CAM_LOOK_Y)
 # Crest Isle only: multiply mesh_mat.base so Lambert reads as 草原.
 GRASS_TINT = (0.55, 1.55, 0.70)
 AERIAL_GRASS_ALBEDO = (0.446, 0.381, 0.143)
+# Meadow JPEG is ClampToEdge. Ping-pong period ≠ TILE so grass/dirt does not
+# restart on the 16 m stream grid. Blend width hides the remaining join.
+TERRAIN_UV_PERIOD = 13.5
+TERRAIN_UV_BLEND = 2.6
+TERRAIN_UV_PAD = 0.035
 
 PICK_REACH = 1.25
 STAR_NEED = 6
 STAR_SCALE = 1.55
-COIN_SCALE = 1.35
+# Kenney dungeon/coin.glb is a painted yellow disc (still reads plastic at
+# metallic 0.85 / roughness 0.22). Crest coins are gold PBR spheres.
+GOLD_METALLIC = 1.0
+GOLD_ROUGHNESS = 0.12
+COIN_SCALE = 0.48
+COIN_HOVER = 0.32
 COIN_GLOW = 0.55
+SPHERE_HALF_Y = 0.5
 
 _START_FACE = 0.0  # body +Z; camera behind looks at grass / sea / mountains
 
@@ -374,6 +386,97 @@ class Pickup:
     live: bool = True
     phase: float = 0.0
     kind: str = "coin"
+
+
+@dataclass
+class Spark:
+    """One CPU billboard spark. Fade is 1 at spawn, 0 at expire."""
+
+    x: float
+    y: float
+    z: float
+    vx: float
+    vy: float
+    vz: float
+    life: float = 0.0
+    max_life: float = 0.55
+    size: float = 0.22
+
+    @property
+    def fade(self) -> float:
+        if self.max_life <= 1e-9:
+            return 0.0
+        return max(0.0, 1.0 - self.life / self.max_life)
+
+    @property
+    def draw_size(self) -> float:
+        return self.size * (0.28 + 0.72 * self.fade)
+
+
+class SparkBurst:
+    """Tiny CPU particle list. Draw with ``draw_billboard_instances``."""
+
+    def __init__(self) -> None:
+        self.sparks: list[Spark] = []
+
+    def burst(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        *,
+        count: int = 14,
+        speed: float = 2.8,
+        life: float = 0.58,
+        size: float = 0.20,
+        seed: int | None = None,
+    ) -> int:
+        rng = random.Random(seed)
+        n = max(1, int(count))
+        for i in range(n):
+            a = (i / n) * math.tau + rng.uniform(-0.35, 0.35)
+            up = rng.uniform(0.4, 1.05)
+            spd = speed * rng.uniform(0.5, 1.15)
+            self.sparks.append(
+                Spark(
+                    x=float(x),
+                    y=float(y),
+                    z=float(z),
+                    vx=math.cos(a) * spd * 0.78,
+                    vy=spd * up,
+                    vz=math.sin(a) * spd * 0.78,
+                    life=0.0,
+                    max_life=life * rng.uniform(0.72, 1.12),
+                    size=size * rng.uniform(0.7, 1.2),
+                )
+            )
+        return n
+
+    def update(self, dt: float, *, gravity: float = 3.8) -> None:
+        dt = float(dt)
+        live: list[Spark] = []
+        for s in self.sparks:
+            s.life += dt
+            if s.life >= s.max_life:
+                continue
+            s.vy -= gravity * dt
+            s.x += s.vx * dt
+            s.y += s.vy * dt
+            s.z += s.vz * dt
+            live.append(s)
+        self.sparks = live
+
+    def items(self) -> list[tuple[float, float, float, float]]:
+        """``(x, y, z, size)`` for ``draw_billboard_instances``."""
+        out: list[tuple[float, float, float, float]] = []
+        for s in self.sparks:
+            if s.fade <= 1e-4:
+                continue
+            sz = s.draw_size
+            if sz < 1e-4:
+                continue
+            out.append((s.x, s.y, s.z, sz))
+        return out
 
 
 def start_face() -> float:

@@ -447,6 +447,36 @@ pub fn image_format_from_ext(ext: &str) -> Option<image::ImageFormat> {
     })
 }
 
+/// ``KHR_texture_transform``: ``uv' = offset + rotation * scale * uv``.
+/// Identity when the extension is missing (Kenney often stores ``{texCoord:0}``).
+pub fn khr_texture_transform_uv(tex_info: &Value, u: f32, v: f32) -> [f32; 2] {
+    let ext = &tex_info["extensions"]["KHR_texture_transform"];
+    if ext.is_null() {
+        return [u, v];
+    }
+    let ox = ext["offset"][0].as_f64().unwrap_or(0.0) as f32;
+    let oy = ext["offset"][1].as_f64().unwrap_or(0.0) as f32;
+    let sx = ext["scale"][0].as_f64().unwrap_or(1.0) as f32;
+    let sy = ext["scale"][1].as_f64().unwrap_or(1.0) as f32;
+    let rot = ext["rotation"].as_f64().unwrap_or(0.0) as f32;
+    let us = u * sx;
+    let vs = v * sy;
+    if rot.abs() <= 1e-12 {
+        return [ox + us, oy + vs];
+    }
+    let (c, s) = (rot.cos(), rot.sin());
+    [ox + us * c + vs * s, oy + us * (-s) + vs * c]
+}
+
+/// ``texCoord`` from the texture info or ``KHR_texture_transform`` (default 0).
+pub fn khr_tex_coord_set(tex_info: &Value) -> u64 {
+    let ext = &tex_info["extensions"]["KHR_texture_transform"];
+    ext["texCoord"]
+        .as_u64()
+        .or_else(|| tex_info["texCoord"].as_u64())
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -759,5 +789,47 @@ mod tests {
         assert_eq!(doc["asset"]["version"], "2.0");
         assert!(bin.is_empty());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn extract_texture_from_dir_relative_colormap_uri() {
+        let dir = std::env::temp_dir().join(format!("kagra_gltf_cmap_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("Textures")).unwrap();
+        let png = tiny_png();
+        fs::write(dir.join("Textures/colormap.png"), &png).unwrap();
+        fs::write(
+            dir.join("tree.gltf"),
+            r#"{
+              "asset":{"version":"2.0"},
+              "images":[{"uri":"Textures/colormap.png","name":"colormap"}],
+              "textures":[{"source":0}]
+            }"#,
+        )
+        .unwrap();
+        let tex = extract_texture_data_from_glb(dir.join("tree.gltf").to_str().unwrap()).unwrap();
+        assert_eq!(tex.len(), 1);
+        assert_eq!(&tex[0].1[..8], &png[..8]);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn khr_texture_transform_identity_and_atlas() {
+        let ident = json!({"index": 0, "extensions": {"KHR_texture_transform": {"texCoord": 0}}});
+        assert_eq!(khr_texture_transform_uv(&ident, 0.25, 0.5), [0.25, 0.5]);
+        assert_eq!(khr_tex_coord_set(&ident), 0);
+        let atlas = json!({
+            "index": 0,
+            "extensions": {
+                "KHR_texture_transform": {
+                    "offset": [0.25, 0.5],
+                    "scale": [0.25, 0.25],
+                    "texCoord": 0
+                }
+            }
+        });
+        let uv = khr_texture_transform_uv(&atlas, 1.0, 0.0);
+        assert!((uv[0] - 0.5).abs() < 1e-5);
+        assert!((uv[1] - 0.5).abs() < 1e-5);
     }
 }

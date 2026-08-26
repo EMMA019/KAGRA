@@ -132,13 +132,20 @@ def _node_worlds(nodes: list) -> list[list[float]]:
 
 
 def _read_relative_image(uri: str, base: Path | None) -> Optional[bytes]:
-    """Kenney-style ``Textures/colormap.png`` next to the .glb. No remote fetch."""
+    """Kenney-style ``Textures/colormap.png`` next to the .glb. No remote fetch.
+
+    Forest Mini Forest glTFs store the atlas as an external URI (not
+    bufferView / not embedded). Missing this path used to fall through to a
+    1×1 fallback and paint the trees black.
+    """
     if base is None:
         return None
     if not uri or "://" in uri:
         return None
+    from urllib.parse import unquote
+
     # Kenney uses forward slashes; Windows exporters may write backslashes.
-    rel = uri.replace("\\", "/")
+    rel = unquote(uri.replace("\\", "/"))
     if rel.startswith("/") or rel.startswith("../") or "/../" in f"/{rel}/":
         return None
     root = base.parent.resolve()
@@ -214,6 +221,71 @@ def _tex_index(info) -> Optional[int]:
         return int(info["index"])
     except (TypeError, ValueError):
         return None
+
+
+def _khr_tex_transform(tex_info) -> tuple[float, float, float, float, float, int]:
+    """``KHR_texture_transform`` → (ox, oy, rotation, sx, sy, texCoord).
+
+    Identity when the extension is missing. Kenney Mini Forest currently
+    ships ``{texCoord: 0}`` (offset/scale default); atlas UVs still need
+    this path when a later export fills offset/scale.
+    """
+    ox = oy = rot = 0.0
+    sx = sy = 1.0
+    tex_coord = 0
+    if not isinstance(tex_info, dict):
+        return ox, oy, rot, sx, sy, tex_coord
+    if "texCoord" in tex_info:
+        try:
+            tex_coord = int(tex_info["texCoord"])
+        except (TypeError, ValueError):
+            tex_coord = 0
+    ext = (tex_info.get("extensions") or {}).get("KHR_texture_transform")
+    if not isinstance(ext, dict):
+        return ox, oy, rot, sx, sy, tex_coord
+    off = ext.get("offset")
+    if isinstance(off, (list, tuple)) and len(off) >= 2:
+        ox, oy = float(off[0]), float(off[1])
+    sc = ext.get("scale")
+    if isinstance(sc, (list, tuple)) and len(sc) >= 2:
+        sx, sy = float(sc[0]), float(sc[1])
+    if "rotation" in ext:
+        try:
+            rot = float(ext["rotation"])
+        except (TypeError, ValueError):
+            rot = 0.0
+    if "texCoord" in ext:
+        try:
+            tex_coord = int(ext["texCoord"])
+        except (TypeError, ValueError):
+            pass
+    return ox, oy, rot, sx, sy, tex_coord
+
+
+def _apply_khr_uv(
+    u: float, v: float, ox: float, oy: float, rot: float, sx: float, sy: float,
+) -> tuple[float, float]:
+    """glTF ``uv' = offset + rotation * scale * uv`` (rotation in radians)."""
+    us, vs = float(u) * float(sx), float(v) * float(sy)
+    if abs(rot) > 1e-12:
+        c, s = math.cos(rot), math.sin(rot)
+        us, vs = c * us + s * vs, -s * us + c * vs
+    return us + float(ox), vs + float(oy)
+
+
+def _prim_tex_transform(gltf: dict, prim: dict) -> tuple[float, float, float, float, float, int]:
+    materials = gltf.get("materials") or []
+    mat_idx = prim.get("material")
+    if mat_idx is None:
+        return 0.0, 0.0, 0.0, 1.0, 1.0, 0
+    try:
+        mi = int(mat_idx)
+    except (TypeError, ValueError):
+        return 0.0, 0.0, 0.0, 1.0, 1.0, 0
+    if mi < 0 or mi >= len(materials):
+        return 0.0, 0.0, 0.0, 1.0, 1.0, 0
+    pbr = materials[mi].get("pbrMetallicRoughness") or {}
+    return _khr_tex_transform(pbr.get("baseColorTexture"))
 
 
 def _material_images(
@@ -301,7 +373,11 @@ def flatten_gltf(path: str | Path, *, center: bool = True) -> FlatMesh:
                 continue
             pos = _read_accessor(gltf, blob, int(attrs["POSITION"]))
             nrm = _read_accessor(gltf, blob, int(attrs["NORMAL"])) if "NORMAL" in attrs else []
-            uvs = _read_accessor(gltf, blob, int(attrs["TEXCOORD_0"])) if "TEXCOORD_0" in attrs else []
+            ox, oy, rot, su, sv, tex_set = _prim_tex_transform(gltf, prim)
+            uv_key = f"TEXCOORD_{int(tex_set)}"
+            if uv_key not in attrs:
+                uv_key = "TEXCOORD_0"
+            uvs = _read_accessor(gltf, blob, int(attrs[uv_key])) if uv_key in attrs else []
             if prim.get("indices") is not None:
                 raw_idx = _read_accessor(gltf, blob, int(prim["indices"]))
                 face = [int(x) for x in raw_idx]
@@ -318,6 +394,7 @@ def flatten_gltf(path: str | Path, *, center: bool = True) -> FlatMesh:
                     nx, ny, nz = 0.0, 1.0, 0.0
                 if i < len(uvs):
                     u, v = float(uvs[i][0]), float(uvs[i][1])
+                    u, v = _apply_khr_uv(u, v, ox, oy, rot, su, sv)
                 else:
                     u, v = 0.0, 0.0
                 verts.append([wx, wy, wz, nx, ny, nz, u, v])

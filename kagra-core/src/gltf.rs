@@ -207,18 +207,26 @@ pub fn load_gltf(
             let mat_idx = prim["material"].as_u64().map(|v| v as usize);
             let idx_acc = prim["indices"].as_u64().map(|v| v as usize);
 
-            // テクスチャID
-            let kagra_tex_id = mat_idx
-                .and_then(|mi| materials.get(mi))
-                .and_then(|mat| {
-                    mat["pbrMetallicRoughness"]["baseColorTexture"]["index"]
+            // テクスチャID + Kenney atlas UV (KHR_texture_transform)
+            let tex_info = mat_idx.and_then(|mi| materials.get(mi)).map(|mat| {
+                &mat["pbrMetallicRoughness"]["baseColorTexture"]
+            });
+            let kagra_tex_id = tex_info
+                .and_then(|info| {
+                    info["index"]
                         .as_u64()
                         .map(|ti| tex_id_map.get(&(ti as usize)).copied().unwrap_or(0))
                 })
                 .unwrap_or(0);
 
             let pos_acc = attrs["POSITION"].as_u64().map(|v| v as usize);
-            let uv_acc = attrs["TEXCOORD_0"].as_u64().map(|v| v as usize);
+            let tex_set = tex_info.map(khr_tex_coord_set).unwrap_or(0);
+            let uv_key = format!("TEXCOORD_{tex_set}");
+            let uv_acc = attrs
+                .get(uv_key.as_str())
+                .and_then(|v| v.as_u64())
+                .or_else(|| attrs["TEXCOORD_0"].as_u64())
+                .map(|v| v as usize);
             let jnt_acc = attrs["JOINTS_0"].as_u64().map(|v| v as usize);
             let wgt_acc = attrs["WEIGHTS_0"].as_u64().map(|v| v as usize);
             let nrm_acc = attrs["NORMAL"].as_u64().map(|v| v as usize);
@@ -239,12 +247,19 @@ pub fn load_gltf(
             let normals = resolve_normals(normal_rows.as_ref(), &pos_xyz, &indices);
 
             let vertices: Vec<SkinnedVertex> = (0..n).map(|i| {
-                let u = uvs.get(i).map(|v| [v[0], v[1]]).unwrap_or([0.0;2]);
+                let uv = uvs.get(i).map(|row| {
+                    let u = row[0];
+                    let v = row[1];
+                    match tex_info {
+                        Some(info) => khr_texture_transform_uv(info, u, v),
+                        None => [u, v],
+                    }
+                }).unwrap_or([0.0;2]);
                 let j = joints.get(i).copied().unwrap_or([0;4]);
                 let w = weights.get(i).map(|v| [v[0], v[1], v[2], v[3]]).unwrap_or([1.0,0.0,0.0,0.0]);
                 SkinnedVertex {
                     position: pos_xyz[i],
-                    uv: u,
+                    uv,
                     joints: j,
                     weights: w,
                     normal: normals[i],

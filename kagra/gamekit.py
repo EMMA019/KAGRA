@@ -188,6 +188,21 @@ def quad_y_mesh(cx: float, cy: float, cz: float, size: float) -> tuple[list, lis
     return verts, [0, 1, 2, 0, 2, 3]
 
 
+def _smooth01(t: float) -> float:
+    t = max(0.0, min(1.0, float(t)))
+    return t * t * (3.0 - 2.0 * t)
+
+
+def _pingpong01(t: float) -> float:
+    """Fold into 0..1. Sampler is ClampToEdge, so UVs must not wrap past 1."""
+    t = float(t)
+    n = math.floor(t)
+    f = t - n
+    if int(n) % 2:
+        return 1.0 - f
+    return f
+
+
 def heightfield_mesh(
     fn,
     half: float = 16.0,
@@ -196,17 +211,26 @@ def heightfield_mesh(
     origin_x: float = 0.0,
     origin_z: float = 0.0,
     uv_half: float | None = None,
+    uv_period: float | None = None,
+    uv_blend: float = 0.0,
+    uv_pad: float = 0.0,
 ) -> tuple[list, list]:
     """``(x, z) → y`` の格子メッシュ。``verts`` は ``[x,y,z,nx,ny,nz,u,v]``。
 
     中心は ``(origin_x, origin_z)``。UV は ``uv_half``（省略時は ``half``）の
     ワールド範囲に合わせるので、タイルしても 1 枚の地形テクスチャが使える。
+    法線はタイルの外まで ``fn`` を取るので、隣接チャンクのライティングが
+    片側差分のナイフ線にならない。``uv_period`` は ClampToEdge 向けの
+    ping-pong 繰り返し。``uv_blend`` はタイル縁の UV をなだらかにする。
     """
     cells = max(2, int(cells))
     half = float(half)
     ox, oz = float(origin_x), float(origin_z)
     uh = float(uv_half) if uv_half is not None else half
     uh = max(uh, 1e-6)
+    period = None if uv_period is None or float(uv_period) <= 1e-6 else float(uv_period)
+    blend = max(0.0, float(uv_blend))
+    pad = max(0.0, min(0.45, float(uv_pad)))
     step = (2.0 * half) / float(cells)
     n = cells + 1
     ys = [[0.0] * n for _ in range(n)]
@@ -215,25 +239,45 @@ def heightfield_mesh(
             x = ox - half + i * step
             z = oz - half + j * step
             ys[j][i] = float(fn(x, z))
+    x0, x1 = ox - half, ox + half
+    z0, z1 = oz - half, oz + half
+
+    def _uv_at(x: float, z: float) -> tuple[float, float]:
+        if period is not None:
+            u = _pingpong01(x / period)
+            v = _pingpong01(z / period)
+        else:
+            u = (x / uh + 1.0) * 0.5
+            v = (z / uh + 1.0) * 0.5
+        if pad > 0:
+            u = pad + u * (1.0 - 2.0 * pad)
+            v = pad + v * (1.0 - 2.0 * pad)
+        if blend > 1e-6:
+            edge = min(x - x0, x1 - x, z - z0, z1 - z)
+            w = _smooth01(edge / blend)
+            # World-continuous wobble: both tiles share x or z on the join.
+            u += 0.018 * math.sin(z * 0.41) * (1.0 - w)
+            v += 0.018 * math.sin(x * 0.37) * (1.0 - w)
+            if pad > 0:
+                u = max(pad, min(1.0 - pad, u))
+                v = max(pad, min(1.0 - pad, v))
+        return u, v
+
     verts: list[list[float]] = []
+    two = 2.0 * step
     for j in range(n):
         for i in range(n):
             x = ox - half + i * step
             z = oz - half + j * step
             y = ys[j][i]
-            i0 = max(0, i - 1)
-            i1 = min(cells, i + 1)
-            j0 = max(0, j - 1)
-            j1 = min(cells, j + 1)
-            dx = 2.0 * step if i1 != i0 else step
-            dz = 2.0 * step if j1 != j0 else step
-            # 隣接高さから法線（-dY/dX, 1, -dY/dZ）
-            nx = -(ys[j][i1] - ys[j][i0]) / dx
-            nz = -(ys[j1][i] - ys[j0][i]) / dz
+            # Sample *outside* the tile so adjacent chunks share the same normal.
+            hx = float(fn(x + step, z)) - float(fn(x - step, z))
+            hz = float(fn(x, z + step)) - float(fn(x, z - step))
+            nx = -hx / two
+            nz = -hz / two
             ny = 1.0
             leng = math.sqrt(nx * nx + ny * ny + nz * nz) or 1.0
-            u = (x / uh + 1.0) * 0.5
-            v = (z / uh + 1.0) * 0.5
+            u, v = _uv_at(x, z)
             verts.append([x, y, z, nx / leng, ny / leng, nz / leng, u, v])
     indices: list[int] = []
     for j in range(cells):
@@ -277,6 +321,9 @@ def heightfield_tile(
     cells: int = 8,
     *,
     uv_half: float | None = None,
+    uv_period: float | None = None,
+    uv_blend: float = 0.0,
+    uv_pad: float = 0.0,
 ) -> tuple[list, list]:
     """南西角 ``(origin_x, origin_z)``、辺 ``tile`` の高さ場タイル。"""
     t = float(tile)
@@ -288,6 +335,9 @@ def heightfield_tile(
         origin_x=float(origin_x) + half,
         origin_z=float(origin_z) + half,
         uv_half=uv_half,
+        uv_period=uv_period,
+        uv_blend=uv_blend,
+        uv_pad=uv_pad,
     )
 
 
