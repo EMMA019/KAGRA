@@ -17,5 +17,11 @@
       {"type": "walker", "name": "player", "count": 1},
       {"type": "prop", "name": "star", "min_count": 1}
     ]
+  },
+  "expect_offscreen": {
+    "out": "scratch/orb_rush_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
   }
 }

@@ -33,6 +33,9 @@ a game **without a human looking at the screen**.
 python tools/gen_api_index.py --check                              # API index drift
 python -m kagra.verify examples/verify_scenarios/blank_smoke.json  # headless smoke
 python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json
+# shared wgpu 30 offscreen of a World.dump JSON (skips if no helper; not RendererV2)
+python -m kagra.render_world scratch/orb_rush_world.json scratch/orb_rush_shared.png
+# cargo run -p kagra-shared --features render --example offscreen -- W H out.png world dump.json
 python tools/mcp_kagra/server.py                                   # MCP (stdio)
 pytest tests -m "not golden"                                       # pure-python tests
 ```
