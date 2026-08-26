@@ -34,6 +34,7 @@ DEMO_CALLABLES = (
     "Label",
     "Prop",
     "Walk",
+    "CharacterController",
     "World3D",
     "apply_outdoor_look",
     "avatar",

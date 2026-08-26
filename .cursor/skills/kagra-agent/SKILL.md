@@ -41,14 +41,15 @@ Picture: `set_point_light` / `set_spot_light` (`slot=0..3`; 0 is the key) /
 Outdoor: `apply_outdoor_look` / `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` /
 `load_city` / `Walk(..., jump=)`. City JSON is not OSM. Dynamic boxes
 fall and stack; `Walk` stands on them (`add_box(..., is_static=False)`).
-Play: `clicked_prop` / `Walk.carry` / `animate` / `Label` / `sound`.
+Play: `clicked_prop` / `Walk.carry` / `Walk.wish` / `Walk.move` / `Walk.try_jump`
+(or `CharacterController`) / `animate` / `Label` / `sound`. Accel/decel default.
 3D SE: `set_listener` / `play_se(..., x=, y=, z=)` / `play_loop` (distance + stereo pan).
 `avatar.set_locomotion(speed)` blends idle/walk/run. Local Mixamo FBX:
 `avatar.bind_locomotion()` (rest+roll onto VRoid; never the `walk` alias).
 `play_upper` / `ActionController` overlay spine/arms without fighting the legs.
 Same-path `kagra.avatar()` shares GPU mesh/texture/MToon (`vrm_gpu_stats()`).
 Agent eyes: `kagra.annotate` (click → JSONL) / `kagra.debug_trace` (foot vs terrain, threshold 0.05).
-Slope sit is a tight foot AABB + snap-to-plane; still no Rapier. Not a Tk/Inspector.
+Slope sit is a tight foot AABB + 8-point ring + snap-to-plane; still no Rapier. Not a Tk/Inspector.
 Pointer lock follows first person (OS may refuse). USB pad is gilrs on the
 EventLoop (`inject_pad` still wins for CI).
 

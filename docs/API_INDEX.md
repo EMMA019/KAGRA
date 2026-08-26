@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **427**
+エントリ数: **428**
 
 棚の**手前**は VRM / 3D ワールド / エージェントゲーム。
 棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。
@@ -116,6 +116,7 @@
 | `BrainError` | `class BrainError  (from kagra.brain)` |
 | `Button` | `class Button  (from kagra.hud)` |
 | `Camera3D` | `class Camera3D  (from kagra.camera3d)` |
+| `CharacterController` | `class CharacterController  (from kagra.controller)` |
 | `ChatInbox` | `class ChatInbox  (from kagra.stream)` |
 | `DebugTrace` | `class DebugTrace  (from kagra.trace)` |
 | `describe_environment` | `export describe_environment  (from kagra.contracts)` |
@@ -457,7 +458,7 @@
 - VRM プリミティブはパッド付きボーン AABB でカリング。`doubleSided` のときだけ両面。MToon は裏面法線を反転（頭の中からのリム白飛び / 髪越しの顔を防ぐ）。Hair / 髪 マテリアルだけ `rimLift` を上げる（顔は触らない）。
 - 同じパスの `kagra.avatar()` はメッシュ / テクスチャ / MToon を共有する。ジョイントパレットはインスタンスごと。計測は `vrm_gpu_stats()`。見本は `examples/vrm_multi_avatar.py`（Crest Isle は 1 人のまま）。
 - 床と箱: `World3D`（または `Physics3D` + `box_mesh`）。カメラは `Camera3D.follow`。
-- 短い 3D: `Prop` + `Walk` + `sky()` / `room()` / `water()`。地形は `World3D.set_height_fn` + `island_height` / `overworld_height` / `open_world_height`。タイル化は `tile=` / `stream_radius=`。遠いタイルは `lod_radius=` / `lod_cells=`。拾いは `can_pick`。`Walk(..., jump=)`。
+- 短い 3D: `Prop` + `Walk` + `sky()` / `room()` / `water()`。地形は `World3D.set_height_fn` + `island_height` / `overworld_height` / `open_world_height`。タイル化は `tile=` / `stream_radius=`。遠いタイルは `lod_radius=` / `lod_cells=`。拾いは `can_pick`。`Walk(..., jump=)`。キャラコン: `Walk.wish` / `Walk.move` / `Walk.try_jump`（または `CharacterController`）。accel/decel 既定。坂は接平面に接地し、段差は `step_height`。Rapier は入れない。
 - 一人称: `Walk(..., first_person=True)`。目線は `eye_height`。ポインタロックは一人称のとき（OS が拒めばフォールバック）。`F` で切替えるデモは Prop Garden。
 - ホバー / クリック: `hovered_prop(cam)`。`clicked_prop(cam)` は押下。レイ直打ちは `kagra.play.hovered_prop(ox,oy,oz,dx,dy,dz)`。`plane` は除外。
 - エージェントの目: `kagra.annotate(sx, sy)` はプレビュークリックを JSONL に残す（screen / world / bone / Prop id）。`kagra.debug_trace(foot_y=…, height_fn=…)` は接地浮き。エディタではない。「ここもう少し」は数値にする。
@@ -473,7 +474,7 @@
 - 影は床・箱・Prop も落とす。`set_shadow_cascades(2)` で近／遠の 2 段（既定 1。Prop Garden は変えない）。屋外はテクセルスナップ。OSM ではない街 JSON は `load_city`。三角形当たりは `add_trimesh` / `Prop(..., mesh_hit=True)`。積み木は `add_box(..., is_static=False)`（落ちて積もり、Walk が乗る。Rapier クレートは wheel に入れない）。
 - 点光源 4: `set_point_light(..., slot=0..3)`。0 がキー（影は無し）。1..3 は埋め。スポットは `set_spot_light(..., slot=)`。室内の透視影はスロット 0 のスポットだけ。平行光は埋め。
 - HDRI: `set_hdri("studio")` または正距円筒のパス。拡散は小さな irradiance キューブ。スペキュラは mip LOD。露出は `set_exposure`（既定 1）。ACES は `set_tonemap`（既定オフ）。
-- 坂は接平面、急斜面は滑る。接地は小さい足 AABB + 接平面（太いカプセル AABB の max-Y は浮く。`debug_trace` で測る。Rapier は入れない）。デモは Pretty Room / Overworld。
+- 坂は接平面、急斜面は滑る。接地は小さい足 AABB + 8 点リング + 接平面（太いカプセル AABB の max-Y は浮く。片側 max-Y も浮く。`debug_trace` で測る。Rapier は入れない — AABB で足りる）。デモは Pretty Room / Overworld / Crest Isle。
 - 汎用メッシュの金属/粗さ: `upload_mesh_3d(..., metallic=, roughness=)` / `Prop(..., metallic=)` / `set_mesh_pbr`。接空間法線は `normal_texture_id` / `Prop(..., normal=)` / `set_mesh_normal` / glTF `normalTexture`（cotangent frame。ストライドは 32）。MToon は触らない。
 - 色付きメッシュ: `solid_tex` + `sphere_mesh` / `cylinder_mesh` / `box_mesh`。
 - `kagra-shared` / `mobile/` は別の運転デモ。この Python スタックと混ぜない。

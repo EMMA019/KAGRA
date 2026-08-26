@@ -596,3 +596,87 @@ def test_wish_zero_stops_on_flat():
     dist = math.hypot(player.x - x0, player.z - z0)
     assert dist < 0.12
     assert abs(player.vx) < 0.05 and abs(player.vz) < 0.05
+
+
+def test_foot_offsets_include_diagonals():
+    """4 cardinals miss a diagonal ridge — that was the one-sided sample."""
+    m = _phys()
+    offs = m.foot_offsets(0.08)
+    assert len(offs) == 9
+    diags = [o for o in offs if abs(o[0]) > 0.01 and abs(o[1]) > 0.01]
+    assert len(diags) == 4
+
+
+def test_one_sided_terrace_does_not_fat_lift():
+    """Hypothesis: a 6 cm shelf 8 cm uphill used to raise sit by raw max-Y.
+
+    Center-plane + BUMP_PLANE_ERR keeps |sit − center| under GROUNDED_FLOAT.
+    Not missing Rapier.
+    """
+    m = _phys()
+
+    def fn(x, _z):
+        base = 0.4 * x
+        return base + 0.06 if x > 1.04 else base
+
+    h_center = fn(1.0, 0.0)
+    y, _n = m.height_support(fn, 1.0, 0.0, foot_radius=0.08, snap_to_plane=True)
+    assert abs(y - h_center) <= m.GROUNDED_FLOAT
+
+
+def test_diagonal_pebble_is_sampled():
+    """8-point ring sees a pebble on the diagonal; 4 cardinals would miss it."""
+    m = _phys()
+
+    def fn(x, z):
+        if abs(x - 0.056) < 0.012 and abs(z - 0.056) < 0.012:
+            return 0.10
+        return 0.0
+
+    y, _n = m.height_support(fn, 0.0, 0.0, foot_radius=0.08, snap_to_plane=True)
+    assert y > 0.07
+
+
+def test_ground_stick_snaps_down_on_slope():
+    m = _phys()
+    p = m.Physics3D(gravity=20.0)
+    fn = lambda x, _z: 0.4 * x
+    p.set_height_fn(fn)
+    player = p.add_capsule(1.0, 0.44, 0.0, 0.28, 1.7)
+    player.vy = 0.0
+    p.update(0.016)
+    gy = fn(player.x, player.z)
+    assert player.on_ground
+    assert abs(player.y - gy) <= m.GROUNDED_FLOAT
+
+
+def test_capsule_steps_up_low_crate():
+    """Static prop lip (~30 cm) is a step, not a wall."""
+    m = _phys()
+    p = m.Physics3D(gravity=20.0)
+    p.set_ground_y(0.0)
+    player = p.add_capsule(0.0, 0.0, 0.0, 0.28, 1.7)
+    p.add_body(0.75, 0.0, 0.0, 0.8, 0.30, 0.8, is_static=True)
+    player.friction = 0.0
+    for _ in range(10):
+        p.update(0.016)
+    for _ in range(55):
+        player.vx = 2.4
+        p.update(0.016)
+    assert player.x > 0.45, f"stuck at x={player.x:.3f} y={player.y:.3f}"
+    assert player.y > 0.22
+    assert player.on_ground
+
+
+def test_capsule_still_blocked_by_tall_wall():
+    m = _phys()
+    p = m.Physics3D(gravity=0.0)
+    p.set_ground_y(-10.0)
+    player = p.add_capsule(0.0, 0.0, 0.0, 0.28, 1.7)
+    player.use_gravity = False
+    p.add_body(0.8, 0.0, 0.0, 0.5, 2.0, 1.2, is_static=True)
+    player.vx = 3.0
+    for _ in range(40):
+        p.update(0.016)
+    assert player.x < 0.7
+    assert player.y < 0.2
