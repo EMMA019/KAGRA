@@ -28,3 +28,7 @@ Compact meadow (low B, dirt frac ~0.03, inside rim 0.12 and pad 0.28): UV **(0.5
 - `heightfield_mesh` / `heightfield_tile` / `World3D`: optional `uv_rect=(u0,v0,u1,v1)`. Ping-pong 0..1 maps into that window. Unset → existing pad / 0..1 (Relic Run).
 - `TERRAIN_UV_RECT = (0.535, 0.485, 0.640, 0.590)`. Period 48, pad 0.28, blend 0, `LOD_CELLS=6` unchanged.
 - GPU-free test samples the tinted JPEG (ffmpeg 1K, or `tests/data/aerial_grass_rock_128.rgb.z` box-average) across a 3×3 TILE neighborhood.
+
+## CI
+
+GitHub on PR #96 head `1adc793`: **17 checks green**.

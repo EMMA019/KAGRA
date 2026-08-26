@@ -21,3 +21,5 @@ python3 -m pytest tests -m "not golden"  # 483 passed, 10 deselected
 ```
 
 GPU smoke (`python -m kagra.verify examples/verify_scenarios/open_world_smoke.json`) not run: no `kagra_core` wheel in this environment. Acceptance is the GPU-free tinted-JPEG 3×3 TILE sample plus Emma's hill reading as continuous 草原.
+
+**GitHub CI: 17 checks passed** on `1adc793` (PR #96), including `golden`, `python-unit` 3.10–3.12, and Windows/macOS/Linux wheels.
