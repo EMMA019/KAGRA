@@ -3,7 +3,7 @@
 // 構造体名: RendererV2
 // 修正: Surface を内部で所有し、render() は引数なし
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu::util::DeviceExt;
@@ -1525,7 +1525,18 @@ impl RendererV2 {
     }
 
     fn ensure_mesh3d_tex_bg(&mut self, diffuse_id: u32, normal_id: u32) {
-        let key = (diffuse_id, normal_id);
+        self.ensure_mesh3d_tex_bgs(&[(diffuse_id, normal_id)]);
+    }
+
+    fn ensure_mesh3d_tex_bgs(&mut self, keys: &[(u32, u32)]) {
+        let frame: HashSet<(u32, u32)> = keys.iter().copied().collect();
+        for key in keys {
+            self.ensure_mesh3d_tex_bg_live(*key, &frame);
+        }
+    }
+
+    fn ensure_mesh3d_tex_bg_live(&mut self, key: (u32, u32), live_frame: &HashSet<(u32, u32)>) {
+        let (diffuse_id, normal_id) = key;
         if self.mesh3d_tex_bgs.contains_key(&key) {
             gpu_helpers::lru_touch(&mut self.mesh3d_tex_bg_order, key);
             return;
@@ -1550,10 +1561,13 @@ impl RendererV2 {
                 wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(nrm_ref) },
             ],
         });
-        let live = &self.textures;
+        // Keep this-frame draws *and* still-loaded textures. This-frame-only
+        // dropped Crest grass when a later Kenney pass filled 256 slots;
+        // texture-exists-only still failed when `live` was the fallback 1×1.
+        let textures = &self.textures;
         for old in gpu_helpers::lru_evict_dead(
             &mut self.mesh3d_tex_bg_order,
-            |k| live.contains_key(&k.0),
+            |k| live_frame.contains(&k) || textures.contains_key(&k.0),
             gpu_helpers::MESH3D_TEX_BG_MAX,
         ) {
             self.mesh3d_tex_bgs.remove(&old);
@@ -2923,12 +2937,14 @@ impl RendererV2 {
             self.pack_mesh_mat(slot, m.0, m.1, m.2, m.4, false);
             slot += 1;
         }
+        let mut tex_keys: Vec<(u32, u32)> = Vec::with_capacity(draws.len() + retained_mats.len());
         for d in &draws {
-            self.ensure_mesh3d_tex_bg(d.0, d.1);
+            tex_keys.push((d.0, d.1));
         }
         for m in &retained_mats {
-            self.ensure_mesh3d_tex_bg(m.3, m.4);
+            tex_keys.push((m.3, m.4));
         }
+        self.ensure_mesh3d_tex_bgs(&tex_keys);
 
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("3D Pass"),
@@ -3044,10 +3060,12 @@ impl RendererV2 {
             })
         }).collect();
         self.ensure_mesh_mat_slots(inst_mats.len().max(1) as u32);
+        let mut tex_keys: Vec<(u32, u32)> = Vec::with_capacity(inst_mats.len());
         for (i, m) in inst_mats.iter().enumerate() {
             self.pack_mesh_mat(i as u32, m.0, m.1, m.2, m.4, false);
-            self.ensure_mesh3d_tex_bg(m.3, m.4);
+            tex_keys.push((m.3, m.4));
         }
+        self.ensure_mesh3d_tex_bgs(&tex_keys);
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("3D Instance Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -3086,15 +3104,24 @@ impl RendererV2 {
     }
 
     fn build_skinned_morph_bgs(&mut self, cmds: &[SkinnedMeshCommand]) -> Vec<Option<Arc<wgpu::BindGroup>>> {
-        let mut morph_bgs: Vec<Option<Arc<wgpu::BindGroup>>> = Vec::with_capacity(cmds.len());
-        for cmd in cmds {
+        type MorphKey = (u32, u32, u32, u32, u32, usize, usize);
+        let morph_key = |cmd: &SkinnedMeshCommand| -> MorphKey {
             let shade_tex_id = cmd.shade_texture_id.unwrap_or(cmd.texture_id);
             let matcap_id = cmd.matcap_texture_id.unwrap_or(0);
             let normal_id = cmd.normal_texture_id.unwrap_or(0);
             let uvmask_id = cmd.uv_mask_texture_id.unwrap_or(0);
             let morph_ptr = Arc::as_ptr(&cmd.morph_delta_buffer) as *const () as usize;
             let blend_ptr = Arc::as_ptr(&cmd.blend_weights_buffer) as *const () as usize;
-            let key = (cmd.texture_id, shade_tex_id, matcap_id, normal_id, uvmask_id, morph_ptr, blend_ptr);
+            (cmd.texture_id, shade_tex_id, matcap_id, normal_id, uvmask_id, morph_ptr, blend_ptr)
+        };
+        let frame: HashSet<MorphKey> = cmds.iter().map(morph_key).collect();
+        let mut morph_bgs: Vec<Option<Arc<wgpu::BindGroup>>> = Vec::with_capacity(cmds.len());
+        for cmd in cmds {
+            let shade_tex_id = cmd.shade_texture_id.unwrap_or(cmd.texture_id);
+            let matcap_id = cmd.matcap_texture_id.unwrap_or(0);
+            let normal_id = cmd.normal_texture_id.unwrap_or(0);
+            let uvmask_id = cmd.uv_mask_texture_id.unwrap_or(0);
+            let key = morph_key(cmd);
             if let Some(bg) = self.morph_bg_cache.get(&key) {
                 morph_bgs.push(Some(bg.clone()));
                 continue;
@@ -3157,12 +3184,12 @@ impl RendererV2 {
                 ],
             });
             let bg = Arc::new(bg);
-            while self.morph_bg_cache.len() >= MORPH_BG_CACHE_MAX {
-                if let Some(old) = self.morph_bg_order.pop_front() {
-                    self.morph_bg_cache.remove(&old);
-                } else {
-                    break;
-                }
+            for old in gpu_helpers::lru_evict_dead(
+                &mut self.morph_bg_order,
+                |k| frame.contains(&k),
+                MORPH_BG_CACHE_MAX,
+            ) {
+                self.morph_bg_cache.remove(&old);
             }
             self.morph_bg_order.push_back(key);
             self.morph_bg_cache.insert(key, bg.clone());

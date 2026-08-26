@@ -22,6 +22,7 @@ Coins are gold PBR spheres (metallic 1 / roughness 0.12), not yellow plastic.
 操作:
   WASD / 左スティック : 歩く
   マウス / 右スティック : 視点（三人称のみ）
+  [ ] / - = / ホイール : カメラ距離（頭の中と Tiny speck には入らない）
   SPACE / A           : ジャンプ
   SPACE / ENTER       : スタート（タイトル）/ リトライ（結果）
   ESC                 : 終了
@@ -49,6 +50,7 @@ from open_world_rules import (
     CAM_LOOK_Y,
     CAM_MAX_DISTANCE,
     CAM_MIN_DISTANCE,
+    CAM_ZOOM_STEP,
     CELLS,
     COIN_GLOW,
     COIN_HOVER,
@@ -338,6 +340,7 @@ class CrestIsle(kagra.Scene):
         )
         self.walk.face = face0
 
+        print("[CrestIsle] zoom: [ ] or - = or mouse wheel (clamped)")
         self.sfx = _make_sfx()
         self.sea_loop = 0
         sea = self.sfx.get("sea")
@@ -448,6 +451,7 @@ class CrestIsle(kagra.Scene):
         self.time_s += dt
         kagra.Prop.update_all(dt)
         self.walk.step(dt)
+        self._zoom_input()
         self.sparks.update(dt)
 
         p = self.world.player
@@ -521,6 +525,29 @@ class CrestIsle(kagra.Scene):
         self.avatar.set_position(p.x, p.y, p.z)
         self.avatar.set_yaw(self.walk.face)
 
+    def _zoom_input(self):
+        """[ ] or - = hold. Wheel is Walk.zoom_chase. Clamp stays on the arm."""
+        closer = False
+        farther = False
+        for name in ("[", "BracketLeft", "-", "Minus"):
+            try:
+                if kagra.key(name):
+                    closer = True
+                    break
+            except Exception:
+                continue
+        for name in ("]", "BracketRight", "=", "Equal"):
+            try:
+                if kagra.key(name):
+                    farther = True
+                    break
+            except Exception:
+                continue
+        if closer:
+            self.walk.zoom_chase(-CAM_ZOOM_STEP)
+        if farther:
+            self.walk.zoom_chase(CAM_ZOOM_STEP)
+
     def _draw_blob(self):
         """Cheap ellipse under the feet. Ground-projected; shrinks in air."""
         p = self.world.player
@@ -582,7 +609,7 @@ class CrestIsle(kagra.Scene):
             )
             return
 
-        kagra.fill(0, 0, 430, 108, (8, 18, 28), 160)
+        kagra.fill(0, 0, 560, 118, (8, 18, 28), 160)
         self.title.draw()
         hint = nearest_live(
             self.world.player.x if self.world.player else START_XZ[0],
@@ -598,6 +625,7 @@ class CrestIsle(kagra.Scene):
             f"{self.time_s:4.0f}s{tip}"
         )
         self.hud.draw()
+        kagra.text("[ ] / - = / wheel  zoom", 18, 78, 14, (170, 190, 205))
         if self.msg_t > 0 and self.msg:
             w, _ = kagra.measure(self.msg, 30)
             kagra.text(self.msg, (SW - w) // 2, 120, 30, (255, 240, 160))

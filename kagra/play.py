@@ -473,7 +473,7 @@ def water(y: float = 0.0, *, half: float = 24.0, world: Optional[World3D] = None
         verts, idx = quad_y_mesh(0.0, float(y) + 0.04, 0.0, float(half) + 0.4)
         _water_cache = (key, int(tex), verts, idx)
     _tex, verts, idx = _water_cache[1], _water_cache[2], _water_cache[3]
-    kagra.draw_mesh_3d(_tex, verts, idx)
+    kagra.draw_mesh_3d(_tex, verts, idx, skip_fog=True)
 
 
 def room_layout(half: float = 6.0, height: float = 3.2, thick: float = 0.18) -> list[dict]:
@@ -1140,6 +1140,27 @@ class Walk:
         self._locked = False
         self._last_mouse: Optional[tuple[float, float]] = None
 
+    def zoom_chase(self, delta: float) -> tuple[float, float]:
+        """Player zoom. ``delta<0`` closer. Clamped to ``min_distance`` / ``max_distance``.
+
+        Mutating ``self.distance`` still does not move the arm (hitch / wheel
+        on the public field). This is the explicit control path.
+        """
+        from kagra.camera3d import clamp_chase_arm
+
+        hi = 1e9 if self.max_distance is None else float(self.max_distance)
+        d, h = clamp_chase_arm(
+            self._chase_distance,
+            self._chase_height,
+            self.look_y,
+            min_distance=self.min_distance,
+            max_distance=hi,
+            delta=float(delta),
+        )
+        self._chase_distance = d
+        self._chase_height = h
+        return d, h
+
     def step(self, dt: float) -> None:
         """``update`` の別名。"""
         self.update(dt)
@@ -1188,6 +1209,14 @@ class Walk:
             self.yaw -= rx * self.stick_sens * dt_look
             if self.first_person:
                 self.pitch = look_pitch(self.pitch, ry * self.stick_sens * dt_look, sens=1.0)
+        if not self.first_person:
+            try:
+                _, wy = kagra.mouse_wheel()
+            except Exception:
+                wy = 0.0
+            if wy:
+                # Scroll up (positive) = closer. Keep the authored 3D clamp.
+                self.zoom_chase(-float(wy) * 0.42)
 
         try:
             key_fwd, key_right = walk_key_axes(kagra.key)

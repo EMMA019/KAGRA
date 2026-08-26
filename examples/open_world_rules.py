@@ -33,6 +33,8 @@ FOV_DEG = 54.0
 # horizontal CAM_DISTANCE alone.
 CAM_MIN_DISTANCE = 6.0
 CAM_MAX_DISTANCE = math.hypot(CAM_DISTANCE, CAM_HEIGHT - CAM_LOOK_Y)
+# Player zoom ([ ] / - = / wheel). Horizontal step; 3D clamp stays on the arm.
+CAM_ZOOM_STEP = 0.55
 
 # aerial_grass_rock_diff_1k.jpg mean is brown dirt (R=0.45, G=0.38, B=0.14).
 # Crest Isle only: multiply mesh_mat.base so Lambert reads as 草原.

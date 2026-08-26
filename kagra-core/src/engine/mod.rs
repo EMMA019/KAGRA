@@ -1303,6 +1303,10 @@ impl Engine {
             "F10" => KeyCode::F10,
             "F11" => KeyCode::F11,
             "F12" => KeyCode::F12,
+            "Minus" | "-" | "MINUS" => KeyCode::Minus,
+            "Equal" | "=" | "+" | "EQUAL" => KeyCode::Equal,
+            "BracketLeft" | "[" => KeyCode::BracketLeft,
+            "BracketRight" | "]" => KeyCode::BracketRight,
             _ => return None,
         };
         Some(key_code as u32)

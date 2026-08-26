@@ -602,6 +602,17 @@ mod light_dir_tests {
     }
 
     #[test]
+    fn mesh3d_cache_keeps_this_frame_keys() {
+        // Camera orbit reveals more Kenney props; grass (1) and a live tree (4)
+        // must stay while stale ids drop.
+        let mut order = std::collections::VecDeque::from([1u32, 2, 3, 4]);
+        let frame = [1u32, 4];
+        let dropped = super::lru_evict_dead(&mut order, |k| frame.contains(&k), 4);
+        assert_eq!(dropped, vec![2, 3]);
+        assert_eq!(order, std::collections::VecDeque::from([1, 4]));
+    }
+
+    #[test]
     fn mesh3d_tex_bg_max_fits_crest_isle_vista() {
         assert!(super::MESH3D_TEX_BG_MAX >= 120);
         assert!(super::MESH3D_TEX_BG_MAX >= 256);

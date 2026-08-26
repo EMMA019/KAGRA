@@ -54,3 +54,4 @@
 - `20260825-multi-avatar/` — 複数 VRM の GPU 共有 + FPS 見本（Crest Isle は 1 人のまま）
 - `20260825-mixamo-vroid-locomotion/` — Mixamo FBX を VRoid に rest+roll 補償して歩きに載せる（前傾腕をやめる）
 - `20260826-crest-isle-trees-ao-seams-sparks/` — Crest Isle Kenney colormap / blob AO / tile seams / CPU sparks + hair rim / gold PBR orbs
+- `20260826-crest-isle-black-peel-zoom/` — remaining Nature Kit black trees, orbit peel (tiles/fog/hair), chase-cam zoom keys

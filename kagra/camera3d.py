@@ -130,6 +130,37 @@ def clamp_eye(
     return ox + dx * s, oy + dy * s, oz + dz * s
 
 
+def clamp_chase_arm(
+    distance: float,
+    height: float,
+    look_y: float,
+    *,
+    min_distance: float,
+    max_distance: float,
+    delta: float = 0.0,
+) -> tuple[float, float]:
+    """Zoom the chase arm along its pitch. 3D eye distance stays in ``[min, max]``.
+
+    ``delta`` is added to the horizontal ``distance`` (negative = closer).
+    Height above the look-at is scaled so the camera does not dive into the
+    skull or flatten to a top-down speck. GPU-free.
+    """
+    horiz = max(1e-4, float(distance))
+    look = float(look_y)
+    rise = float(height) - look
+    ratio = rise / horiz
+    horiz = max(1e-4, horiz + float(delta))
+    k = math.sqrt(1.0 + ratio * ratio)
+    lo = max(0.05, float(min_distance))
+    hi = max(lo, float(max_distance))
+    eye = horiz * k
+    if eye < lo:
+        horiz = lo / k
+    elif eye > hi:
+        horiz = hi / k
+    return horiz, look + ratio * horiz
+
+
 def clip_eye(
     origin: tuple[float, float, float],
     dest: tuple[float, float, float],
