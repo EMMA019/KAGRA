@@ -49,10 +49,7 @@ pub use mission::{Mission, MissionPhase};
 pub use road::{LodLevel, RoadChunk, RoadFrame, RoadPath, RoadStreamer};
 pub use save::{SaveGame, Settings};
 pub use scene::{DemoScene, DrawList, Quad};
-pub use scene3d::{
-    Aabb, Camera, Frustum, Instance, Material, MeshData, MeshId, Scene3D, Vertex3, WorldCamera,
-    WorldHeightfield, WorldLight, WorldProp, WorldTerrainTile, WorldWalker, WORLD_DUMP_VERSION,
-};
+pub use scene3d::{Aabb, Camera, Frustum, Instance, Material, MeshData, MeshId, Scene3D, Vertex3};
 pub use session::{FrameStats, SharedSession};
 pub use traffic::{TrafficCar, TrafficSystem};
 pub use ui::{PauseMenu, UiAction, UiMode};

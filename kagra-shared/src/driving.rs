@@ -312,7 +312,6 @@ impl DrivingScene {
             fog_start: 140.0,
             fog_end: VIEW_AHEAD,
             batches: b.finish(),
-            ..Default::default()
         }
     }
 

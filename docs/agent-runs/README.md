@@ -62,3 +62,4 @@
 - `20260826-world-as-data/` — World query/dump/load + 80% redefined (now ~15%; old 63% archived). Not a game; the M1 mountain.
 - `20260826-one-runtime-schema/` — M2 first slice: Scene3D ingests World.dump() JSON. Schema only; renderer switch is next.
 - `20260826-crest-isle-black-peel-zoom/` — remaining Nature Kit black trees, orbit peel (tiles/fog/hair), chase-cam zoom keys
+- `20260826-crest-isle-black-tile-spec/` — Crest Isle hillside black 16 m tile + gold GGX (coin PBR leftover / mesh_mat slot), not #94/#95/#96 JPEG UV

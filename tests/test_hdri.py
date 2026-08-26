@@ -38,6 +38,8 @@ def test_pbr_enabled_defaults_off():
     assert not hdri.pbr_enabled(0.0, 1.0)
     assert hdri.pbr_enabled(1.0, 1.0)
     assert hdri.pbr_enabled(0.0, 0.2)
+    # Crest coins (black+gold tile must not inherit this).
+    assert hdri.pbr_enabled(1.0, 0.12)
 
 
 def test_irradiance_constant_matches_source():

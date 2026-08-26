@@ -411,7 +411,6 @@ impl CollectathonScene {
             fog_start: 48.0,
             fog_end: 150.0,
             batches: b.finish(),
-            ..Default::default()
         }
     }
 

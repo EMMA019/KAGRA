@@ -228,6 +228,27 @@ def test_heightfield_adjacent_tiles_have_no_tile_sized_albedo_step():
     assert abs(al - ar) < 0.05
 
 
+def test_heightfield_uv_rect_maps_pingpong_into_window():
+    """World3D passes uv_rect into heightfield_tile; ignoring it is a bug."""
+
+    def fn(_x, _z):
+        return 0.4
+
+    rect = (0.535, 0.485, 0.640, 0.590)
+    verts, _ = kit.heightfield_tile(
+        fn, 16.0, 48.0, tile=16.0, cells=8,
+        uv_period=48.0, uv_pad=0.28, uv_rect=rect,
+    )
+    u0, v0, u1, v1 = rect
+    for v in verts:
+        assert u0 - 1e-9 <= v[6] <= u1 + 1e-9
+        assert v0 - 1e-9 <= v[7] <= v1 + 1e-9
+    with pytest.raises(ValueError, match="degenerate"):
+        kit.heightfield_tile(
+            fn, 0.0, 0.0, tile=16.0, cells=4, uv_rect=(0.2, 0.2, 0.2, 0.8),
+        )
+
+
 
 def test_save_load_roundtrip(tmp_path):
     kit.save_json("hi", {"score": 42}, directory=tmp_path)
