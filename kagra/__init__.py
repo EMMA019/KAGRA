@@ -2450,6 +2450,7 @@ from kagra.anim_io       import (
 from kagra.physics       import BoxCollider, Rigidbody, PhysicsSystem, TopDownPhysicsSystem
 from kagra.physics3d     import Physics3D, RigidBody3D, AABB
 from kagra.world3d       import World3D
+from kagra.controller    import CharacterController
 from kagra.play          import Prop, Walk  # hovered_prop is the wrapper above
 from kagra.trace         import DebugTrace
 from kagra.motion        import animate, sequence, Tween, Sequence

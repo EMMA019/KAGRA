@@ -14,6 +14,7 @@ Art (CC0, not in the pip wheel): examples/assets/open_world/LICENSE.md
 Walk: ``avatar.set_locomotion`` (idle/walk/run speed blend). Local Mixamo
 Idle/Walk/Run FBX is loaded when present (rest+roll retarget onto VRoid).
 Otherwise built-in clips. The ``walk`` alias (synthetic_walk.bvh) is not used.
+Motor: ``CharacterController`` (accel/decel, slope sit, step-up, jump).
 Upper-body clap/banzai stay on ActionController and do not fight walk arms.
 Spatial audio: looping sea to the west + pickup SE at the crest/coin.
 Fake AO: a ground blob under the feet. Pickups spawn a CPU billboard burst.
@@ -337,6 +338,9 @@ class CrestIsle(kagra.Scene):
             distance=CAM_DISTANCE, height=CAM_HEIGHT, look_y=CAM_LOOK_Y,
             min_distance=CAM_MIN_DISTANCE,
             max_distance=CAM_MAX_DISTANCE,
+            controller=kagra.CharacterController(
+                speed=PLAYER_SPEED, jump=JUMP, accel=14.0, decel=22.0,
+            ),
         )
         self.walk.face = face0
 

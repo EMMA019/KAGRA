@@ -7,7 +7,8 @@
 動く箱は落ちて積もり、カプセルはその上に乗れる（80% の剛体。Rapier クレートは
 5MB wheel のため入れない）。高さ関数があるときは接平面に沿って歩き、
 急斜面では滑る（Y 吸着だけではない）。斜面接地はカプセル壁半径ではなく
-小さい足 AABB をサンプリングし、接平面に載せる（太い箱の max-Y では浮く）。
+小さい足 AABB を 8 点サンプリングし、接平面に載せる（太い箱の max-Y も
+片側 max-Y も浮く。`CharacterController` が accel / 段差 / ジャンプ）。
 
 Example::
     physics = kagra.Physics3D(gravity=9.8)
@@ -134,6 +135,11 @@ class RigidBody3D:
         self._slope_vy = 0.0
         self._slope_vz = 0.0
 
+        # CharacterController.apply sets this so ground friction does not
+        # fight accel/decel. Uncontrolled capsules still need friction
+        # (trimesh ramps, stacked boxes).
+        self.controlled = False
+
         # 静的三角形。積み木のスリープ。
         self.tris: list[tuple] = []
         self.sleeping = False
@@ -205,16 +211,28 @@ FOOT_RADIUS = 0.08
 # |foot_y − height_fn(x,z)| while on_ground. Same number as ``kagra.trace.DEFAULT_THRESHOLD``.
 GROUNDED_FLOAT = 0.05
 GROUND_SKIN = 0.02
+# Pull down to the plane while walking (not jumping). Covers one-frame hover
+# without yanking the body off a crate taller than this.
+GROUND_STICK = GROUNDED_FLOAT
+# Ring sample must beat the tangent plane by this much before it is a bump
+# (stairs / cobble). Smaller errors are slope curvature — raising by raw
+# max-Y is the fat AABB leak (one-sided height sample).
+BUMP_PLANE_ERR = 0.08
 
 
 def foot_offsets(radius: float) -> tuple[tuple[float, float], ...]:
-    """Center + 4 axis samples. Empty radius → center only."""
+    """Center + 4 axes + 4 diagonals. Empty radius → center only.
+
+    Cardinals alone miss a diagonal ridge; that is the one-sided sample.
+    """
     r = max(0.0, float(radius))
     if r <= 1e-8:
         return ((0.0, 0.0),)
+    h = r * 0.7071067811865476
     return (
         (0.0, 0.0),
         (r, 0.0), (-r, 0.0), (0.0, r), (0.0, -r),
+        (h, h), (h, -h), (-h, h), (-h, -h),
     )
 
 
@@ -268,8 +286,9 @@ def height_support(
     support = h_center + extra
     dx, dz = bx - x, bz - z
     plane_at_best = h_center - (nx * dx + nz * dz) / ny_safe
-    if best_h > plane_at_best + 1e-4:
-        # 接平面では説明できない凸（小石）。坂の max-Y 浮きではない。
+    # Only raise for a real ledge. Slope curvature / one-sided max-Y of the
+    # foot ring is why a tight AABB still floated (not missing Rapier).
+    if best_h > plane_at_best + BUMP_PLANE_ERR:
         support = max(support, best_h)
     return max(support, h_center), (nx, ny, nz)
 
@@ -595,7 +614,9 @@ class Physics3D:
         body.y += body.vy * dt
         body.z = nz
 
-        if body.on_ground and not wet and not steep:
+        # Capsules driven by CharacterController / Walk own XZ accel-decel.
+        # Uncontrolled capsules still get friction (stand on a trimesh ramp).
+        if body.on_ground and not wet and not steep and not getattr(body, "controlled", False):
             damp = max(0.0, 1.0 - body.friction * dt * 10.0)
             body.vx *= damp
             body.vz *= damp
@@ -624,7 +645,9 @@ class Physics3D:
         else:
             gy = self._ground_y
 
-        if body.y < gy:
+        delta = float(body.y) - float(gy)
+        jumping = body.vy > 0.25
+        if delta < 0.0:
             body.y = gy
             if nrm is not None:
                 nx, ny, nz = nrm
@@ -638,7 +661,21 @@ class Physics3D:
                 if abs(body.vy) < 0.1:
                     body.vy = 0.0
             body.on_ground = True
-        elif (body.y - gy) < GROUND_SKIN:
+        elif (not jumping) and delta <= GROUND_STICK:
+            # Snap down as well as up so a 2–5 cm hover does not look floaty.
+            # Jump (vy > 0.25) must not be glued back to the plane.
+            body.y = gy
+            if nrm is not None:
+                nx, ny, nz = nrm
+                vn = body.vx * nx + body.vy * ny + body.vz * nz
+                if vn < 0.0:
+                    body.vx -= vn * nx
+                    body.vy -= vn * ny
+                    body.vz -= vn * nz
+            elif body.vy < 0.0:
+                body.vy = 0.0
+            body.on_ground = True
+        elif delta < GROUND_SKIN:
             body.on_ground = True
 
     def _solves(self, a: RigidBody3D, b: RigidBody3D) -> bool:
@@ -692,6 +729,8 @@ class Physics3D:
         rest: float,
     ) -> None:
         """法線はカプセル→固体。箱は動かさないので乗れる。"""
+        if self._try_step_up(cap, _solid, nx, ny, nz):
+            return
         cap.x -= nx * pen
         cap.y -= ny * pen
         cap.z -= nz * pen
@@ -702,6 +741,44 @@ class Physics3D:
             cap.vz -= (1 + rest) * dv * nz
         if ny < -0.5:
             cap.on_ground = True
+
+    def _try_step_up(
+        self,
+        cap: RigidBody3D,
+        solid: RigidBody3D,
+        nx: float,
+        ny: float,
+        nz: float,
+    ) -> bool:
+        """If the hit is a low lip, stand on it instead of sliding the wall.
+
+        Heightfield stairs already snap via ``step_height``. Static props
+        (crates / kerbs) need this or Walk looks cheap against furniture.
+        """
+        if cap.shape != "capsule":
+            return False
+        if solid.shape == "trimesh":
+            # AABB top of a ramp/mesh is not a kerb. Heightfield stairs snap
+            # via step_height; a full-mesh max-Y launch falls through.
+            return False
+        if abs(ny) > 0.55:
+            return False
+        if cap.vy > 0.45:
+            return False
+        top = float(solid.aabb.max_y)
+        rise = top - float(cap.y)
+        if rise <= 0.02 or rise > float(self.step_height) + 1e-4:
+            return False
+        old_x, old_y, old_z = cap.x, cap.y, cap.z
+        cap.y = top + 0.012
+        hit = _collide_pair(cap, solid)
+        if hit is None or hit[3] < 1e-3:
+            cap.on_ground = True
+            if cap.vy > 0.0:
+                cap.vy = 0.0
+            return True
+        cap.x, cap.y, cap.z = old_x, old_y, old_z
+        return False
 
     def _resolve_normal(self, a: RigidBody3D, b: RigidBody3D,
                         nx: float, ny: float, nz: float, pen: float):

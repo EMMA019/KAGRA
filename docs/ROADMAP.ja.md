@@ -174,7 +174,7 @@ API は usable-week で載った。チェックは見本と実機。
 
 - [x] 高さ場タイル、街 JSON、静的三角形、AABB 積み木
 - [x] **剛体。** 落ちる・積む・乗る（`add_box(..., is_static=False)` + Walk）。Rapier クレートは 5MB wheel のため入れない。OSM / ボクセルは 80% の外
-- [x] **斜面接地。** 足 AABB を絞り、接平面に載せ、`debug_trace` で |foot−terrain| を測る。まだ Rapier ではない（測ってから別判断）
+- [x] **斜面接地。** 足 AABB を絞り、8 点リング + 接平面に載せ、`debug_trace` で |foot−terrain| を測る。片側 max-Y は測って捨てた。キャラコン（accel / 段差 / ジャンプ着地）は AABB。Rapier クレートは入れない
 
 ### 80% の外（禁止ではない）
 

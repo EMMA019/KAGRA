@@ -65,11 +65,15 @@ PNG/WAV/projection:
 - `Prop` / `Walk` / `sky()` / `room()` / `water()` — short 3D.
   Outdoor island: `World3D.set_height_fn(..., tile=, stream_radius=)` /
   `load_city` / `overworld_height` / `Walk(..., jump=)` /
+  `Walk.wish` / `CharacterController` /
   `apply_outdoor_look()`. City JSON is not OSM. Dynamic boxes fall and
   stack; `Walk` stands on them (`add_box(..., is_static=False)`). Rapier
   crate stays out of the 5MB wheel. OSM is outside 80%.
 - `Walk(first_person=True)` / `hovered_prop(cam)` / `clicked_prop(cam)` /
   `Walk.carry` — lock on first person, click to use, pick up
+- `Walk.wish` / `Walk.move` / `Walk.try_jump` (or `CharacterController`) —
+  accel/decel, slope sit, step-up, jump+land. Not Rapier. Sticky-walk quiet
+  gap 3 is input.
 - `animate` / `Label` / `Button` — tween and screen HUD
 - `destroy(prop)` / `Prop.update_all(dt)` — kinematic move and delete
 - Sphere / cylinder `Prop` collide and hover as those shapes (not boxes)
@@ -78,7 +82,7 @@ PNG/WAV/projection:
 - `axis("left")` / `pad("a")` / `inject_pad` — gamepad. `Walk` reads both sticks
 - `kagra.save_json` / `load_json` — high scores
 - `kagra.annotate(sx, sy)` — preview click → JSONL (screen / world / bone / Prop id). How 「ここもう少し」 becomes numbers. Not a visual editor
-- `kagra.debug_trace(foot_y=…, height_fn=…)` — slope-float detector (`|foot-terrain|` while grounded). Default threshold 0.05. `debug_trace_summary()` → `frames 32-48 floated 0.15`. `World3D.update` feeds it when a tracer is active. Slope sit uses a tight foot AABB, not Rapier.
+- `kagra.debug_trace(foot_y=…, height_fn=…)` — slope-float detector (`|foot-terrain|` while grounded). Default threshold 0.05. `debug_trace_summary()` → `frames 32-48 floated 0.15`. `World3D.update` feeds it when a tracer is active. Slope sit uses a tight foot AABB + 8-point ring + snap-to-plane, not Rapier.
 - `Camera3D.follow(..., world=)` — pull the chase camera in so it does not go through walls
 - `ActionController` — one-shot poses; `ActionController.names()` lists them
 - `avatar.set_locomotion(speed)` — idle/walk/run speed blend (no clip snap).
