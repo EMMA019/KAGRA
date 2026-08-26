@@ -233,10 +233,7 @@ fn unique_rgb(rgba: &[u8]) -> usize {
 fn render_world_fixture(json: &str) -> Option<Vec<u8>> {
     let _guard = GPU.lock().unwrap_or_else(|e| e.into_inner());
     let doc = kagra_shared::WorldDoc::from_json(json).expect("parse dump");
-    match kagra_shared::render_world_doc(&doc, W, H) {
-        Ok(rgba) => Some(rgba),
-        Err(_) => None,
-    }
+    kagra_shared::render_world_doc(&doc, W, H).ok()
 }
 
 /// Compiled WorldDoc through wgpu 30 offscreen (no kagra-core window).
