@@ -22,9 +22,9 @@ Forest Kenney trees should show colormap (not black). Blob under feet. Meadow jo
 ## Verify
 
 ```bash
-python tools/gen_api_index.py --check
-pytest tests -m "not golden"
-cargo test -p kagra-core --lib          # may be blocked: Cargo 1.83 / hashbrown 0.17.1 edition2024
+python tools/gen_api_index.py --check   # OK (427 entries)
+pytest tests -m "not golden"            # 449 passed, 10 deselected
+cargo test -p kagra-core --lib          # blocked: Cargo 1.83 / hashbrown 0.17.1 edition2024
 ```
 
 GPU smoke (`python -m kagra.verify examples/verify_scenarios/open_world_smoke.json`) not run (no `kagra_core` wheel on this VM).
