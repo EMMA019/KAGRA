@@ -312,6 +312,7 @@ def test_game_file_uses_only_public_imports():
         "can_pick",
         "lod_radius",
         "stream_radius",
+        "World",
         "World3D",
         "Camera3D",
         "follow",

@@ -67,7 +67,7 @@ pip install kagra
 python -m kagra
 ```
 
-`pip install kagra` is **0.1.4** and is the product: renderer, VRM, sing, dance, `.vrma`, lipsync, look-at, IK, expressions, SpringBone, plus the 3D play surface (`Prop` / `Walk` / `World3D`), local lights, indoor/outdoor shadows, normal maps, AABB crates, USB/XInput on the EventLoop, and `kagra.brain`. No Rust. Face tracking, virtual camera, and mic are extras. LLM models are not in the wheel.
+`pip install kagra` is **0.1.4** and is the product: renderer, VRM, sing, dance, `.vrma`, lipsync, look-at, IK, expressions, SpringBone, plus the 3D play surface (`Prop` / `Walk` / `World`), local lights, indoor/outdoor shadows, normal maps, AABB crates, USB/XInput on the EventLoop, and `kagra.brain`. No Rust. Face tracking, virtual camera, and mic are extras. LLM models are not in the wheel.
 
 If you run `python -m kagra` from a checkout that contains a `kagra/` folder, Python imports that folder instead of the installed wheel. The command now prints the escape hatch (`cd %TEMP%` / `maturin develop`). `No module named kagra.__main__` is the older local package — run from another directory:
 
@@ -90,14 +90,14 @@ Scene scripts (`examples/vrm_*.py`) live in the git repo. `pip` gives you `impor
 ## What you get
 
 - **VRM** — GPU skinning, SpringBone, MToon, look-at, lipsync, IK, expressions. Same-path `kagra.avatar()` clones share mesh/texture/MToon (`vrm_gpu_stats()`)
-- **3D play** — `Prop` / `Walk` / `sky` / `room` / `World3D`. Four local lights (`slot=0..3`), indoor umbra, 2-cascade outdoor shadows, tangent-space normal maps. AABB crates fall, stack, and `Walk` stands on them. USB/XInput is read on the EventLoop (`gilrs`); tests use `inject_pad`
+- **3D play** — `Prop` / `Walk` / `sky` / `room` / `World` (`World3D` is the same type). `world.query` / `dump` / `load` read the world without a screenshot. Four local lights (`slot=0..3`), indoor umbra, 2-cascade outdoor shadows, tangent-space normal maps. AABB crates fall, stack, and `Walk` stands on them. USB/XInput is read on the EventLoop (`gilrs`); tests use `inject_pad`
 - **Brain** — `kagra.brain("kairi"|"ollama"|"openai")`. Hosted kairi needs `KAIRI_API_TOKEN`. Models are not in the wheel
 - **Agent loop** — API index, `kagra.verify`, MCP tools, golden renders
 - **Mobile / Wasm** — `kagra-shared` + `mobile/` is a **separate renderer** from Python `kagra-core`. Corridor Haul (driving) plus a Crest Isle collectathon slice (Kenney-style capsule, **not VRM**). Do not merge the two renderers
 
 Tilemaps, ECS, and the 2D editor are on the shelf ([`examples/archive/`](examples/archive/)). They are not the 3D headline.
 
-Where the engine sits, and what is still open (30-second demos): [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md). Do not call this three.js-class yet.
+Where the engine sits: [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md). 100% = an agent ships a normal indie game with no human looking at the screen. Now ~15%. Old "63%" is archived. Do not call this 80% yet.
 
 ## Let your AI agent build the game
 

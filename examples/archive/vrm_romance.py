@@ -9,6 +9,7 @@ ECS 設計 + 性格進化 + 選択肢 + イベント + Boids エフェクト + �
   .env ファイルに DEEPSEEK_API_KEY=sk-... を記述
 """
 import kagra
+from kagra.entity import EntityScene
 import threading, math, json, os, random, time
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -480,7 +481,7 @@ class ChatInputScript(kagra.Script):
 #  メインシーン（EntityScene を継承）
 # ══════════════════════════════════════════════════════════════
 
-class RomanceScene(kagra.EntityScene):
+class RomanceScene(EntityScene):
 
     def on_enter(self):
         self.font    = kagra.assets.font("meiryo")

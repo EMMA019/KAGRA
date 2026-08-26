@@ -309,6 +309,8 @@ _FOG_STATE = {
     "enabled": False,
 }
 
+_LIGHT_STATE: list[dict | None] = [None] * LOCAL_LIGHT_SLOTS
+
 
 def record_fog(start: float, end: float, color, enabled: bool) -> None:
     """Last ``set_fog`` args. Backdrop draw turns fog off without a getter."""
@@ -326,6 +328,65 @@ def current_fog() -> dict:
         "color": tuple(_FOG_STATE["color"]),
         "enabled": bool(_FOG_STATE["enabled"]),
     }
+
+
+def record_point_light(
+    x: float,
+    y: float,
+    z: float,
+    *,
+    r: float = 1.0,
+    g: float = 0.95,
+    b: float = 0.85,
+    intensity: float = 1.0,
+    radius: float = 8.0,
+    slot: int = 0,
+) -> None:
+    s = check_light_slot(slot)
+    _LIGHT_STATE[s] = {
+        "kind": "point",
+        "slot": s,
+        "position": [float(x), float(y), float(z)],
+        "color": [float(r), float(g), float(b)],
+        "intensity": float(intensity),
+        "radius": float(radius),
+        "direction": None,
+    }
+
+
+def record_spot_light(
+    x: float,
+    y: float,
+    z: float,
+    dx: float,
+    dy: float,
+    dz: float,
+    *,
+    angle: float = 0.8,
+    penumbra: float = 0.25,
+    intensity: float = 1.0,
+    radius: float = 10.0,
+    r: float = 1.0,
+    g: float = 0.95,
+    b: float = 0.85,
+    slot: int = 0,
+) -> None:
+    s = check_light_slot(slot)
+    _LIGHT_STATE[s] = {
+        "kind": "spot",
+        "slot": s,
+        "position": [float(x), float(y), float(z)],
+        "direction": [float(dx), float(dy), float(dz)],
+        "color": [float(r), float(g), float(b)],
+        "intensity": float(intensity),
+        "radius": float(radius),
+        "angle": float(angle),
+        "penumbra": float(penumbra),
+    }
+
+
+def current_lights() -> list[dict]:
+    return [dict(item) for item in _LIGHT_STATE if item]
 
 
 def lambert_rgb(

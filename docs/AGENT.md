@@ -8,7 +8,8 @@
 |-------|------|
 | API index | `docs/API_INDEX.md` |
 | Engine review | `docs/REVIEW.ja.md` |
-| Roadmap | `docs/ROADMAP.ja.md` |
+| Roadmap | `docs/ROADMAP.ja.md` (100% = screenless indie ship; now ~15%. Old 63% is archived) |
+| World dump schema | `docs/schemas/world.json` |
 | Input schema | `docs/schemas/input_events.json` |
 | Verify scenarios | `examples/verify_scenarios/` |
 | MCP server | `tools/mcp_kagra/server.py` |

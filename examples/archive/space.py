@@ -14,6 +14,7 @@ space_shooter.py - KAGRA ECS デモ：スペースシューター（難易度強
   ESC      : 終了
 """
 import kagra
+from kagra.entity import EntityScene
 import math
 import random
 
@@ -240,7 +241,7 @@ class StarField:
 #  メインシーン
 # ════════════════════════════════════════════════════════════
 
-class ShooterScene(kagra.EntityScene):
+class ShooterScene(EntityScene):
     def on_enter(self):
         self.font    = kagra.assets.font("meiryo")
         self.score   = 0

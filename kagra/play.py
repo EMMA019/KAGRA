@@ -623,6 +623,7 @@ class Prop:
         roughness: float | None = None,
         mesh_hit: bool = False,
         normal: int = 0,
+        name: str = "",
     ):
         self.gltf_path = None
         self._gltf_flat: Optional[FlatMesh] = None
@@ -683,6 +684,8 @@ class Prop:
         # Crest Isle constructs 120+ vista Props then bake_all once.
         self.id = Prop._next_id
         Prop._next_id += 1
+        self.name = str(name or "")
+        self.sid = f"prop:{self.id}"
         self.body = None
         self._parent: Optional[Prop] = None
         self._children: list[Prop] = []
@@ -1105,9 +1108,12 @@ class Walk:
         decel: float = 22.0,
         air_control: float = 0.38,
         controller: Optional[CharacterController] = None,
+        name: str = "player",
     ):
         self.world = world
         self.cam = cam
+        self.name = str(name or "player")
+        self.sid = f"walker:{self.name}"
         self.speed = float(speed)
         self.mouse_sens = float(mouse_sens)
         self.distance = float(distance)
@@ -1153,6 +1159,19 @@ class Walk:
             )
         self.accel = float(self.ctrl.accel)
         self.decel = float(self.ctrl.decel)
+        walkers = getattr(world, "_walkers", None)
+        if walkers is not None and self not in walkers:
+            walkers.append(self)
+        cams = getattr(world, "_cameras", None)
+        if cams is not None and cam is not None and cam not in cams:
+            try:
+                if not getattr(cam, "sid", None):
+                    cam.sid = "camera:main"
+                if not getattr(cam, "name", None):
+                    cam.name = "main"
+            except AttributeError:
+                pass
+            cams.append(cam)
 
     def wish(self, forward: float, right: float) -> None:
         """Camera-relative analog wish this frame. Agents: ``wish`` then ``update``.

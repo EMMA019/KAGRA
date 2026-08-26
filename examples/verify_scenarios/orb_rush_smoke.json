@@ -5,8 +5,17 @@
   "env": {
     "KAGRA_SMOKE": "1",
     "KAGRA_SMOKE_FRAMES": "24",
-    "KAGRA_SMOKE_OUT": "scratch/orb_rush_smoke.png"
+    "KAGRA_SMOKE_OUT": "scratch/orb_rush_smoke.png",
+    "KAGRA_SMOKE_WORLD": "scratch/orb_rush_world.json"
   },
   "expect_files": ["scratch/orb_rush_smoke.png"],
-  "min_file_bytes": 2000
+  "min_file_bytes": 2000,
+  "expect_world": {
+    "path": "scratch/orb_rush_world.json",
+    "player.on_ground": true,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "prop", "name": "star", "min_count": 1}
+    ]
+  }
 }
