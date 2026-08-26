@@ -9,7 +9,7 @@
 | `height_support` | 8-point ring. Bump raise only if sample beats plane by 0.08 m |
 | `GROUND_STICK` | Snap down ≤ 0.05 m while not jumping |
 | Step-up | Capsule vs static prop lip ≤ `step_height` |
-| Capsule friction | Skipped; motor owns XZ stop |
+| Capsule friction | Skipped only when `body.controlled` (motor owns XZ stop) |
 | Crest Isle | Thin `Walk(..., controller=CharacterController(...))` |
 | Rapier | **not added** (AABB was enough). Wheel size: no crate impact |
 
@@ -27,7 +27,7 @@ This checkout: **462 passed, 10 deselected**.
 
 Focused: accel ramps then stops, Walk.wish/move/try_jump, jump+land, slope stand under `GROUNDED_FLOAT`, one-sided terrace does not fat-lift, diagonal pebble sampled, crate step-up, tall wall still blocks, fat AABB still floats (hypothesis check), sticky-walk idle path unchanged.
 
-GPU smoke (`kagra.verify` open_world) not claimed on this agent VM (no kagra_core / display). GitHub CI will run it.
+**GitHub CI: 17 checks passed** on `461a500` (including `golden`, Windows/macOS/Linux wheels, python-unit 3.10–3.12). Cursor Bugbot was usage-limited (neutral). No Rapier crate.
 
 ## Out of this PR
 
