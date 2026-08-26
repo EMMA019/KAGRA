@@ -656,14 +656,18 @@ def test_capsule_steps_up_low_crate():
     p = m.Physics3D(gravity=20.0)
     p.set_ground_y(0.0)
     player = p.add_capsule(0.0, 0.0, 0.0, 0.28, 1.7)
-    p.add_body(0.75, 0.0, 0.0, 0.8, 0.30, 0.8, is_static=True)
+    # Long enough that 50 frames at 2.4 m/s still stands on it.
+    p.add_body(1.4, 0.0, 0.0, 2.2, 0.30, 0.8, is_static=True)
     player.friction = 0.0
     for _ in range(10):
         p.update(0.016)
+    peak_y = player.y
     for _ in range(55):
         player.vx = 2.4
         p.update(0.016)
+        peak_y = max(peak_y, player.y)
     assert player.x > 0.45, f"stuck at x={player.x:.3f} y={player.y:.3f}"
+    assert peak_y > 0.22, f"never stepped up (peak y={peak_y:.3f})"
     assert player.y > 0.22
     assert player.on_ground
 

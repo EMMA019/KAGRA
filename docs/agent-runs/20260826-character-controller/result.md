@@ -19,11 +19,15 @@ Sticky-walk quiet gap 3 (`kagra-core` input) unchanged. Mixamo bind, spatial aud
 
 ```bash
 python3 tools/gen_api_index.py --check
-python3 -m pytest tests/test_controller.py tests/test_physics3d.py tests/test_debug_trace.py tests/test_play.py tests/test_public_names.py -q
-python3 -m pytest tests -m "not golden"
+python3 -m pytest tests/test_controller.py tests/test_physics3d.py tests/test_debug_trace.py tests/test_play.py tests/test_public_names.py tests/test_api_index.py tests/test_world3d.py -q
+python3 -m pytest tests -m "not golden" -p tests.no_extension_plugin
 ```
 
-(Results filled after pytest.)
+This checkout: **462 passed, 10 deselected**.
+
+Focused: accel ramps then stops, Walk.wish/move/try_jump, jump+land, slope stand under `GROUNDED_FLOAT`, one-sided terrace does not fat-lift, diagonal pebble sampled, crate step-up, tall wall still blocks, fat AABB still floats (hypothesis check), sticky-walk idle path unchanged.
+
+GPU smoke (`kagra.verify` open_world) not claimed on this agent VM (no kagra_core / display). GitHub CI will run it.
 
 ## Out of this PR
 

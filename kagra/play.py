@@ -1302,7 +1302,10 @@ class Walk:
                 min_distance=self.min_distance,
                 max_distance=self.max_distance,
             )
-        eng = kagra.get_engine()
+        try:
+            eng = kagra.get_engine()
+        except Exception:
+            eng = None
         if eng:
             self.cam.update(eng)
 

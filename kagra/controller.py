@@ -115,6 +115,7 @@ class CharacterController:
         self._jump_queued = False
         self._coyote_left = 0.0
         self._buffer_left = 0.0
+        self._inited = False
 
     def wish(self, wx: float, wz: float) -> None:
         """World-space desired XZ velocity (m/s). Accel-limited in ``apply``."""
@@ -136,8 +137,16 @@ class CharacterController:
     def apply(self, body, dt: float, *, in_water: bool = False) -> None:
         """Write ``body.vx`` / ``body.vz`` (and maybe ``vy``). No physics step."""
         dt = float(dt)
+        try:
+            body.controlled = True
+        except Exception:
+            pass
         grounded = bool(getattr(body, "on_ground", False))
-        self.landed = bool(grounded and not self.on_ground)
+        if self._inited:
+            self.landed = bool(grounded and not self.on_ground)
+        else:
+            self.landed = False
+            self._inited = True
         self.on_ground = grounded
         if grounded:
             self._coyote_left = self.coyote

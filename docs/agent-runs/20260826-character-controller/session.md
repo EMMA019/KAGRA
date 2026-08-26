@@ -39,5 +39,8 @@ Discarded Rapier for this PR. Wheel size unchanged (no new crate).
 
 - `Walk.jump` is already the impulse height, so the method is `try_jump` (same pattern as `jump_vy`).
 - Idle `vx=0` after `world.update` would hide decel. Now only snaps when hypot < `IDLE_SNAP` (0.12) and not steep-sliding.
-- `Walk.update` + dummy `object()` cam crashes on `cam.follow`. Tests use `Camera3D`.
+- Skipping friction on all capsules made a trimesh ramp slide through (`test_capsule_does_not_fall_through_ramp`). Friction skip is only when `body.controlled` (set by `apply`).
+- Step-up used trimesh AABB max-Y as a kerb and launched over ramps. Trimesh is skipped; heightfield stairs still use `step_height`.
+- First `apply` on an already-grounded body must not count as `landed`.
+- `Walk.update` + stub `kagra` had no `get_engine`; wrap it. Dummy `object()` cam still cannot `follow` — tests use `Camera3D`.
 - Did not rewrite `vrm_open_world.py` beyond the Walk constructor / one docstring line.

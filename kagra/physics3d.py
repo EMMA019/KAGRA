@@ -135,6 +135,11 @@ class RigidBody3D:
         self._slope_vy = 0.0
         self._slope_vz = 0.0
 
+        # CharacterController.apply sets this so ground friction does not
+        # fight accel/decel. Uncontrolled capsules still need friction
+        # (trimesh ramps, stacked boxes).
+        self.controlled = False
+
         # 静的三角形。積み木のスリープ。
         self.tris: list[tuple] = []
         self.sleeping = False
@@ -609,9 +614,9 @@ class Physics3D:
         body.y += body.vy * dt
         body.z = nz
 
-        # Capsules: CharacterController / Walk own XZ accel-decel. Ground
-        # friction here would fight the motor and cap walk speed.
-        if body.on_ground and not wet and not steep and body.shape != "capsule":
+        # Capsules driven by CharacterController / Walk own XZ accel-decel.
+        # Uncontrolled capsules still get friction (stand on a trimesh ramp).
+        if body.on_ground and not wet and not steep and not getattr(body, "controlled", False):
             damp = max(0.0, 1.0 - body.friction * dt * 10.0)
             body.vx *= damp
             body.vz *= damp
@@ -751,6 +756,10 @@ class Physics3D:
         (crates / kerbs) need this or Walk looks cheap against furniture.
         """
         if cap.shape != "capsule":
+            return False
+        if solid.shape == "trimesh":
+            # AABB top of a ramp/mesh is not a kerb. Heightfield stairs snap
+            # via step_height; a full-mesh max-Y launch falls through.
             return False
         if abs(ny) > 0.55:
             return False
