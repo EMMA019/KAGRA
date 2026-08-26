@@ -604,3 +604,82 @@ def test_stream_upgrades_near_lod_before_new_far_tiles():
     assert w._tile_lod[target] == 8
     assert len(added) == 0
 
+
+def test_upload_tile_forces_lambert_not_coin_pbr(monkeypatch):
+    """Crest coins are metallic=1 / roughness=0.12. Terrain must stay Lambert.
+
+    A PBR default (or leftover mesh_mat slot) is the black quad + gold spec
+    on one streamed hillside tile. Do not paper over with a brighter tint.
+    """
+    import sys
+
+    hdri = load_kagra_submodule("hdri")
+    m = _world()
+    w = m.World3D(half=24.0)
+    w.set_height_fn(lambda _x, _z: 0.4, tile=16.0, stream_radius=12.0)
+    w.terrain_base = (0.55, 1.55, 0.70)
+    w._terrain_tex = 7
+    kagra = sys.modules["kagra"]
+    calls = []
+
+    def upload(*_a, **kw):
+        calls.append(kw)
+        return 40 + len(calls)
+
+    pbr = []
+
+    def set_pbr(mid, **kw):
+        pbr.append((int(mid), kw))
+
+    monkeypatch.setattr(kagra, "upload_mesh_3d", upload, raising=False)
+    monkeypatch.setattr(kagra, "set_mesh_pbr", set_pbr, raising=False)
+    monkeypatch.setattr(kagra, "unload_mesh_3d", lambda *_a, **_k: None, raising=False)
+    w.stream_tiles(0.0, 0.0)
+    assert calls
+    for kw in calls:
+        metallic = float(kw.get("metallic", 99.0))
+        roughness = float(kw.get("roughness", 0.0))
+        assert metallic == 0.0, kw
+        assert roughness == 1.0, kw
+        assert not hdri.pbr_enabled(metallic, roughness)
+        assert kw.get("base_color") == (0.55, 1.55, 0.70)
+    assert pbr
+    for _mid, kw in pbr:
+        assert float(kw.get("metallic", 99.0)) == 0.0
+        assert float(kw.get("roughness", 0.0)) == 1.0
+        assert kw.get("base_color") == (0.55, 1.55, 0.70)
+    assert hdri.pbr_enabled(1.0, 0.12)
+
+
+def test_draw_emits_live_tile_meshes_not_stale_mesh_ids(monkeypatch):
+    """Draw path must use ``_tile_meshes``, not a desynced ``mesh_ids`` list.
+
+    A live tile missing from mesh_ids used to vanish (or a leftover id kept
+    drawing). Extra mesh_ids (Relic/Overworld ramp) still draw.
+    """
+    import sys
+
+    m = _world()
+    w = m.World3D(half=24.0)
+    w._tile_meshes = {(0, 0): 11, (1, 0): 12}
+    w.mesh_ids = [99, 11]
+    w.box_mesh_id = 5
+    kagra = sys.modules["kagra"]
+    drawn = []
+    instanced = []
+    monkeypatch.setattr(kagra, "draw_mesh_id", lambda mid: drawn.append(int(mid)), raising=False)
+    monkeypatch.setattr(
+        kagra, "draw_mesh_instances",
+        lambda mid, xforms: instanced.append((int(mid), xforms)),
+        raising=False,
+    )
+    w.box_xforms = [[0.0, 0.5, 0.0, 1.0, 1.0, 1.0, 0.0]]
+    w.draw()
+    assert 11 in drawn
+    assert 12 in drawn
+    assert 99 in drawn
+    assert 5 not in drawn
+    assert instanced and instanced[0][0] == 5
+    assert drawn.count(11) == 1
+
+
