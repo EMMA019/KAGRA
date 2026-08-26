@@ -29,3 +29,7 @@ Retry-on-failed-upload cannot produce that rectangle. The mesh is there; the UVs
 - Reverting #94 pad / `terrain_uv_half`.
 - New agent APIs.
 - Rapier / SSAO.
+
+## CI
+
+GitHub on PR #95 head `0eefd29`: **17 checks green**.

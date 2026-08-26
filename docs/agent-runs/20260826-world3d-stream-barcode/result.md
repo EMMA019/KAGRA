@@ -11,6 +11,8 @@
 
 GPU-free: `pytest tests -m "not golden"` → **482 passed, 10 deselected**. `python tools/gen_api_index.py --check` OK (428). No `kagra.verify` GPU pass in this environment (no `kagra_core` wheel). Acceptance is Emma's barcode rectangle vs world-continuous 2D moss windows.
 
+**GitHub CI: 17 checks passed** on `0eefd29` (PR #95), including `golden`, `python-unit` 3.10–3.12, and Windows/macOS/Linux wheels.
+
 Relic Run does not set `terrain_uv_period` / pad / half.
 
 ## Not done
