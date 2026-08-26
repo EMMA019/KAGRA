@@ -38,7 +38,7 @@ Gamepad: `axis` / `pad` / `inject_pad`. USB/XInput via gilrs on the EventLoop.
 Picture: `set_point_light` / `set_spot_light` (`slot=0..3`; 0 is the key) /
 `set_hdri("studio")` /
 `set_exposure` / `set_tonemap` / `Prop(..., metallic=, normal=)`. Indoor: `apply_room_look`.
-Outdoor: `apply_outdoor_look` / `World3D.set_height_fn(overworld_height, tile=10, stream_radius=28)` /
+Outdoor: `apply_outdoor_look` / `World.set_height_fn(overworld_height, tile=10, stream_radius=28)` /
 `load_city` / `Walk(..., jump=)`. City JSON is not OSM. Dynamic boxes
 fall and stack; `Walk` stands on them (`add_box(..., is_static=False)`).
 Play: `clicked_prop` / `Walk.carry` / `Walk.wish` / `Walk.move` / `Walk.try_jump`
@@ -53,17 +53,19 @@ Slope sit is a tight foot AABB + 8-point ring + snap-to-plane; still no Rapier. 
 Pointer lock follows first person (OS may refuse). USB pad is gilrs on the
 EventLoop (`inject_pad` still wins for CI).
 
-Engine target is **80%** in `docs/ROADMAP.ja.md` (now ~63%). 100% = Python
-replacement of three-vrm + three.js + Ursina for everyday work. Body is
-~80%. Picture is ~85% (indoor, crawl, normals, local-four, ACES/metal on CI).
-Parent is 4 levels. Local lights are `slot=0..3`.
-Rigid boxes are AABB equal (fall / stack / stand). Next: the 30s demos.
-OSM / 4-cascade CSM / SSAO stay outside 80%.
+Engine bar is in `docs/ROADMAP.ja.md` (2026-08-26). **100%** = an AI agent
+ships a normal indie 2D/3D game with no human screen. **80%** = that minus
+net, destruction, cloth, vehicles, GI bake, DOTS, HDRP, human editor,
+Shader Graph, Visual Scripting, Addressables, Terrain sculpt, ProBuilder,
+Cinemachine, PhysX-complete, VRM-on-Wasm. **Now ~15%.** Mountains in order:
+signboard (tiles, #97) → world as data (`World.query` / `dump` / `load`) →
+one runtime → game-enough → ship. Old "63%" is archived; do not copy it.
+Official public names: `World` / `Prop` / `Walk` / mesh-or-avatar / Camera /
+input / sound. `World` is `World3D`. 2D `Entity` / tilemap / Tk are not on
+`import kagra`. OSM / Rapier / SSAO / VRM-on-Wasm stay outside 80%.
 Final goal is first-recall; 80% is not a substitute. Brain hook is
 `kagra.brain("kairi")` — default `https://kairi.onrender.com`, token in
-`KAIRI_API_TOKEN`. Not in the wheel. Do not start D-6 as a fourth box room;
-D-6 needs 30s of play and a score or goal. Do not call 80% or three.js-class
-until pixels and the 30s demos say so.
+`KAIRI_API_TOKEN`. Not in the wheel. Do not start D-6 as a fourth box room.
 
 ## Touch / mobile
 

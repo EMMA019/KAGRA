@@ -7,7 +7,12 @@
       "script": "scratch/smoke_orb_rush.py",
       "timeout_sec": 120,
       "expect_files": ["scratch/orb_rush_smoke.png"],
-      "min_file_bytes": 1000
+      "min_file_bytes": 1000,
+      "expect_world": {
+        "path": "scratch/orb_rush_world.json",
+        "player.on_ground": true,
+        "query": [{"type": "walker", "name": "player", "count": 1}]
+      }
     }
 
 またはインライン（別プロセスで小さなシーンを生成）::
@@ -57,6 +62,7 @@ class Scenario:
     timeout_sec: float = 180.0
     expect: list[Expectation] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
+    expect_world: dict[str, Any] | None = None
 
 
 @dataclass
@@ -68,6 +74,7 @@ class VerifyResult:
     stderr: str = ""
     missing: list[str] = field(default_factory=list)
     too_small: list[str] = field(default_factory=list)
+    world_errors: list[str] = field(default_factory=list)
     error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -77,6 +84,7 @@ class VerifyResult:
             "elapsed_sec": round(self.elapsed_sec, 3),
             "missing": self.missing,
             "too_small": self.too_small,
+            "world_errors": self.world_errors,
             "error": self.error,
             "stdout_tail": self.stdout[-2000:],
             "stderr_tail": self.stderr[-2000:],
@@ -98,6 +106,9 @@ def _load_scenario(data: dict[str, Any]) -> Scenario:
                     must_exist=bool(item.get("must_exist", True)),
                 )
             )
+    world_spec = data.get("expect_world")
+    if world_spec is not None and not isinstance(world_spec, dict):
+        world_spec = None
     return Scenario(
         name=str(data.get("name", "unnamed")),
         script=data.get("script"),
@@ -106,6 +117,7 @@ def _load_scenario(data: dict[str, Any]) -> Scenario:
         timeout_sec=float(data.get("timeout_sec", 180)),
         expect=expects,
         env={str(k): str(v) for k, v in (data.get("env") or {}).items()},
+        expect_world=world_spec,
     )
 
 
@@ -115,6 +127,28 @@ def load_scenario(path: str | Path) -> Scenario:
     if "name" not in data:
         data["name"] = p.stem
     return _load_scenario(data)
+
+
+def _eval_expect_world(spec: dict[str, Any] | None, cwd: Path) -> list[str]:
+    """GPU-free world assertions from a dump JSON. PNG size stays smoke-only."""
+    if not spec:
+        return []
+    path = spec.get("path")
+    if not path:
+        return ["expect_world.path missing"]
+    p = Path(str(path))
+    if not p.is_absolute():
+        p = cwd / p
+    if not p.exists():
+        return [f"world dump missing: {p}"]
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:
+        return [f"world dump unreadable: {e}"]
+    from kagra.world import eval_world_expect
+
+    checks = {k: v for k, v in spec.items() if k != "path"}
+    return list(eval_world_expect(data, checks))
 
 
 def _write_inline_script(inline: dict[str, Any]) -> Path:
@@ -223,7 +257,13 @@ def run_scenario(scenario: Scenario, *, python: str | None = None) -> VerifyResu
             elif p.exists() and p.stat().st_size < exp.min_bytes:
                 too_small.append(f"{p} ({p.stat().st_size} < {exp.min_bytes})")
 
-        ok = proc.returncode == 0 and not missing and not too_small
+        world_errors = _eval_expect_world(scenario.expect_world, cwd)
+        ok = (
+            proc.returncode == 0
+            and not missing
+            and not too_small
+            and not world_errors
+        )
         return VerifyResult(
             ok=ok,
             name=scenario.name,
@@ -232,12 +272,14 @@ def run_scenario(scenario: Scenario, *, python: str | None = None) -> VerifyResu
             stderr=proc.stderr or "",
             missing=missing,
             too_small=too_small,
+            world_errors=world_errors,
             error=None
             if ok
             else (
                 f"exit={proc.returncode}"
                 + (f"; missing={missing}" if missing else "")
                 + (f"; too_small={too_small}" if too_small else "")
+                + (f"; world={world_errors}" if world_errors else "")
             ),
         )
     except Exception as e:

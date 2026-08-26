@@ -322,6 +322,7 @@ def test_failed_upload_is_not_sticky_loaded(monkeypatch):
         assert key not in w._loaded_tiles
         assert key not in w._tile_lod
         assert key not in w._tile_meshes
+    assert w.mesh_ids == []
 
     def zero(*_a, **_k):
         calls["n"] += 1
@@ -332,6 +333,8 @@ def test_failed_upload_is_not_sticky_loaded(monkeypatch):
     for key in want:
         assert key not in w._loaded_tiles
         assert key not in w._tile_lod
+        assert key not in w._tile_meshes
+    assert w.mesh_ids == []
 
     ids = {"n": 0}
 
@@ -347,6 +350,168 @@ def test_failed_upload_is_not_sticky_loaded(monkeypatch):
     assert all(k in w._tile_lod for k in loaded)
     assert all(k in w._tile_meshes for k in loaded)
     assert ids["n"] >= 1
+    assert w.mesh_ids
+    assert set(w.mesh_ids) == set(w._tile_meshes.values())
+
+
+def test_upload_tile_uv_kwargs_match_live_heightfield_signature():
+    """Drift TypeError on uv_rect must not be a silent except-return-0."""
+    import inspect
+
+    m = _world()
+    w = m.World3D(half=80.0)
+    w.terrain_uv_period = 48.0
+    w.terrain_uv_blend = 0.0
+    w.terrain_uv_pad = 0.28
+    w.terrain_uv_rect = (0.535, 0.485, 0.640, 0.590)
+    raw = w._terrain_uv_raw()
+    assert set(raw) == {"uv_half", "uv_period", "uv_blend", "uv_pad", "uv_rect"}
+    fn = lambda _x, _z: 0.0
+    inspect.signature(m.heightfield_tile).bind(fn, 0.0, 0.0, 16.0, 8, **raw)
+    inspect.signature(m.heightfield_mesh).bind(fn, 16.0, 8, **raw)
+    assert m._uv_kwargs_for(m.heightfield_tile, **raw) == raw
+    assert m._uv_kwargs_for(m.heightfield_mesh, **raw) == raw
+
+    def old_tile(
+        _fn, _ox, _oz, tile=10.0, cells=8, *,
+        uv_half=None, uv_period=None, uv_blend=0.0, uv_pad=0.0,
+    ):
+        raise AssertionError("uv_rect must not be silently dropped")
+
+    with pytest.raises(TypeError, match="uv_rect"):
+        m._uv_kwargs_for(old_tile, **raw)
+
+
+def test_uv_rect_signature_drift_does_not_leave_mesh(monkeypatch):
+    """Old heightfield_tile (no uv_rect) must not stick a GPU mesh."""
+    import sys
+
+    m = _world()
+
+    def old_tile(
+        _fn, _ox, _oz, tile=10.0, cells=8, *,
+        uv_half=None, uv_period=None, uv_blend=0.0, uv_pad=0.0,
+    ):
+        raise AssertionError("TypeError should fire before the call")
+
+    monkeypatch.setattr(m, "heightfield_tile", old_tile)
+    w = m.World3D(half=24.0)
+    w.set_height_fn(lambda _x, _z: 0.0, tile=10.0, stream_radius=12.0)
+    w.terrain_uv_rect = (0.5, 0.5, 0.6, 0.6)
+    w._terrain_tex = 7
+    kagra = sys.modules["kagra"]
+    uploaded = []
+
+    def boom(*_a, **_k):
+        uploaded.append(1)
+        return 77
+
+    monkeypatch.setattr(kagra, "upload_mesh_3d", boom, raising=False)
+    monkeypatch.setattr(kagra, "unload_mesh_3d", lambda *_a, **_k: None, raising=False)
+    w.stream_tiles(0.0, 0.0)
+    assert uploaded == []
+    assert not w._tile_meshes
+    assert w.mesh_ids == []
+    want = w.wanted_tiles(0.0, 0.0)
+    for key in want:
+        assert key not in w._loaded_tiles
+
+
+def test_upload_1x1_or_missing_tex_is_unloaded_not_sticky(monkeypatch):
+    """upload_mesh_3d id + 1×1 / missing albedo must not stick as lod_ok."""
+    import sys
+
+    m = _world()
+    w = m.World3D(half=24.0)
+    w.set_height_fn(lambda _x, _z: 0.0, tile=10.0, stream_radius=12.0)
+    w._terrain_tex = 7
+    kagra = sys.modules["kagra"]
+    ids = {"n": 0}
+    unloaded = []
+    size = {"wh": (1, 1)}
+
+    def ok(*_a, **_k):
+        ids["n"] += 1
+        return 400 + ids["n"]
+
+    def unload(mid, *_a, **_k):
+        unloaded.append(int(mid))
+
+    monkeypatch.setattr(kagra, "upload_mesh_3d", ok, raising=False)
+    monkeypatch.setattr(kagra, "unload_mesh_3d", unload, raising=False)
+    monkeypatch.setattr(kagra, "texture_size", lambda _tid: size["wh"], raising=False)
+    w.stream_tiles(0.0, 0.0)
+    want = w.wanted_tiles(0.0, 0.0)
+    assert ids["n"] >= 1
+    assert unloaded == [400 + i for i in range(1, ids["n"] + 1)]
+    assert not w._tile_meshes
+    assert w.mesh_ids == []
+    for key in want:
+        assert key not in w._loaded_tiles
+        assert key not in w._tile_lod
+
+    ids["n"] = 0
+    unloaded.clear()
+    size["wh"] = None
+    w.stream_tiles(0.0, 0.0)
+    assert ids["n"] >= 1
+    assert len(unloaded) == ids["n"]
+    assert not w._tile_meshes
+    assert w.mesh_ids == []
+
+    ids["n"] = 0
+    unloaded.clear()
+    size["wh"] = (128, 128)
+    w.stream_tiles(0.0, 0.0)
+    loaded = set(w.loaded_tiles())
+    assert loaded
+    assert all(k in w._tile_meshes for k in loaded)
+    assert set(w.mesh_ids) == set(w._tile_meshes.values())
+    assert not unloaded
+
+
+def test_lod_upgrade_dead_albedo_keeps_previous_mesh(monkeypatch):
+    """Failed LOD replacement must not swap in a black GGX-only mesh."""
+    import sys
+
+    m = _world()
+    w = m.World3D(half=80.0)
+    w.set_height_fn(
+        lambda _x, _z: 0.0,
+        tile=16.0, stream_radius=48.0, cells=8,
+        lod_radius=20.0, lod_cells=3,
+    )
+    w._terrain_tex = 7
+    kagra = sys.modules["kagra"]
+    ids = {"n": 0}
+    unloaded = []
+    size = {"wh": (128, 128)}
+
+    def ok(*_a, **_k):
+        ids["n"] += 1
+        return 800 + ids["n"]
+
+    def unload(mid, *_a, **_k):
+        unloaded.append(int(mid))
+
+    monkeypatch.setattr(kagra, "upload_mesh_3d", ok, raising=False)
+    monkeypatch.setattr(kagra, "unload_mesh_3d", unload, raising=False)
+    monkeypatch.setattr(kagra, "texture_size", lambda _tid: size["wh"], raising=False)
+    w.stream_tiles(0.0, 0.0)
+    key = (0, 0)
+    assert key in w._tile_meshes
+    old = w._tile_meshes[key]
+    assert w._tile_lod[key] == 8
+    size["wh"] = (1, 1)
+    w._lod_radius = 0.0
+    n_before = ids["n"]
+    w.stream_tiles(0.0, 0.0, max_new=1)
+    assert ids["n"] == n_before + 1
+    assert unloaded == [800 + ids["n"]]
+    assert w._tile_meshes[key] == old
+    assert old in w.mesh_ids
+    assert w._tile_lod[key] == 8
+    assert key in w._loaded_tiles
 
 
 def test_cpu_stream_then_gpu_retries_missing_mesh(monkeypatch):

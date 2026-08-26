@@ -30,6 +30,7 @@ VRM_PATH = os.environ.get("KAGRA_VRM") or "assets/Emma.vrm"
 SMOKE = os.environ.get("KAGRA_SMOKE") == "1"
 SMOKE_FRAMES = int(os.environ.get("KAGRA_SMOKE_FRAMES", "24"))
 SMOKE_SHOT = os.environ.get("KAGRA_SMOKE_OUT", "scratch/orb_rush_smoke.png")
+SMOKE_WORLD = os.environ.get("KAGRA_SMOKE_WORLD", "scratch/orb_rush_world.json")
 FONT = None  # kagra.font() がシステムフォントを選ぶ
 
 ARENA_R = 5.0
@@ -181,7 +182,7 @@ class FX:
 # ── ゲームオブジェクト ────────────────────────────────────────
 
 class Orb:
-    __slots__ = ("x", "z", "kind", "phase", "alive")
+    __slots__ = ("x", "z", "kind", "phase", "alive", "prop")
 
     def __init__(self, kind: str, avoid=None):
         for _ in range(12):
@@ -195,6 +196,7 @@ class Orb:
         self.kind = kind  # "star" | "bomb"
         self.phase = random.random() * math.tau
         self.alive = True
+        self.prop = None
 
 
 # ── シーン ────────────────────────────────────────────────────
@@ -231,6 +233,13 @@ class OrbRush(kagra.Scene):
 
         self.cam = Camera3D(SW, SH, fov_deg=38.0)
         self.cam.use_orbit(radius=7.2, theta=0.55, phi=0.42, target=(0.0, 0.85, 0.0))
+        kagra.set_camera3d(self.cam)
+
+        self.world = kagra.World(half=ARENA_R + 1.0)
+        self.world.add_player(0.0, 0.0)
+        body = self.world.player
+        body.use_gravity = False
+        body.on_ground = True
 
         # intro → title → countdown → play → result
         self.mode = "play" if SMOKE else "intro"
@@ -242,7 +251,42 @@ class OrbRush(kagra.Scene):
         self.title_alpha = 0.0
         self._reset_round()
 
+    def _attach_orb(self, orb: Orb) -> Orb:
+        """Queryable stand-in. Drawing stays billboards (Prop.draw_all is not called)."""
+        orb.prop = kagra.Prop(
+            "sphere",
+            x=orb.x,
+            y=0.5,
+            z=orb.z,
+            scale=0.28 if orb.kind == "star" else 0.32,
+            world=self.world,
+            collision=False,
+            name=orb.kind,
+            color="gold" if orb.kind == "star" else "red",
+        )
+        return orb
+
+    def _sync_world(self) -> None:
+        p = self.world.player
+        if p is not None:
+            p.x = float(self.px)
+            p.y = 0.0
+            p.z = float(self.pz)
+            p.on_ground = True
+        for orb in self.orbs:
+            prop = orb.prop
+            if prop is None:
+                continue
+            if not orb.alive:
+                prop.enabled = False
+                continue
+            prop.enabled = True
+            prop.set_position(orb.x, 0.5, orb.z)
+
     def _reset_round(self):
+        for orb in getattr(self, "orbs", None) or []:
+            if orb.prop is not None:
+                kagra.destroy(orb.prop)
         self.px = 0.0
         self.pz = 0.0
         self.facing = 0.0
@@ -260,9 +304,10 @@ class OrbRush(kagra.Scene):
         self._walk_phase = 0.0
         self.fx.clear()
         for _ in range(5):
-            self.orbs.append(Orb("star", avoid=(0.0, 0.0)))
+            self.orbs.append(self._attach_orb(Orb("star", avoid=(0.0, 0.0))))
         for _ in range(2):
-            self.orbs.append(Orb("bomb", avoid=(0.0, 0.0)))
+            self.orbs.append(self._attach_orb(Orb("bomb", avoid=(0.0, 0.0))))
+        self._sync_world()
 
     def _progress(self) -> float:
         """0=開始 → 1=終了。序盤は緩やか、終盤で急勾配。"""
@@ -303,8 +348,13 @@ class OrbRush(kagra.Scene):
             kind = "bomb" if bombs < d["max_bombs"] else "star"
         if kind == "bomb" and bombs >= d["max_bombs"]:
             kind = "star"
-        self.orbs.append(Orb(kind, avoid=(self.px, self.pz)))
-        self.orbs = [o for o in self.orbs if o.alive][-d["max_orbs"] :]
+        self.orbs.append(self._attach_orb(Orb(kind, avoid=(self.px, self.pz))))
+        keep = [o for o in self.orbs if o.alive][-d["max_orbs"] :]
+        keep_set = set(id(o) for o in keep)
+        for o in self.orbs:
+            if id(o) not in keep_set and o.prop is not None:
+                kagra.destroy(o.prop)
+        self.orbs = keep
 
     def _begin_countdown(self):
         self.mode = "countdown"
@@ -326,6 +376,8 @@ class OrbRush(kagra.Scene):
             if n == 10:
                 kagra.screenshot(SMOKE_SHOT)
             if n >= SMOKE_FRAMES:
+                self._sync_world()
+                self.world.dump(SMOKE_WORLD)
                 kagra.quit()
                 return
         if kagra.pressed("ESCAPE"):
@@ -455,6 +507,8 @@ class OrbRush(kagra.Scene):
 
             if math.hypot(orb.x - self.px, orb.z - self.pz) < 0.55:
                 orb.alive = False
+                if orb.prop is not None:
+                    orb.prop.enabled = False
                 bob_y = 0.55 + math.sin(orb.phase) * 0.12
                 if orb.kind == "star":
                     self.combo += 1
@@ -502,6 +556,7 @@ class OrbRush(kagra.Scene):
         self.action.update(dt)
         self._apply_pose()
         self._update_cam(dt)
+        self._sync_world()
 
     def _apply_pose(self):
         speed = math.hypot(self.vx, self.vz)

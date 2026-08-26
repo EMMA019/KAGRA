@@ -67,7 +67,7 @@ pip install kagra
 python -m kagra
 ```
 
-`pip install kagra` は **0.1.4** で、それが製品です。レンダラ、VRM、歌う、踊る、`.vrma`、リップシンク、視線、IK、表情、SpringBone に加え、3D の遊び場（`Prop` / `Walk` / `World3D`）、局所ライト、室内・屋外の影、法線マップ、AABB の箱、EventLoop 上の USB/XInput、`kagra.brain` が入ります。Rust は不要です。顔トラ・仮想カメラ・マイクだけ extra。LLM モデルは wheel に入れません。
+`pip install kagra` は **0.1.4** で、それが製品です。レンダラ、VRM、歌う、踊る、`.vrma`、リップシンク、視線、IK、表情、SpringBone に加え、3D の遊び場（`Prop` / `Walk` / `World`）、局所ライト、室内・屋外の影、法線マップ、AABB の箱、EventLoop 上の USB/XInput、`kagra.brain` が入ります。Rust は不要です。顔トラ・仮想カメラ・マイクだけ extra。LLM モデルは wheel に入れません。
 
 リポジトリのフォルダ（中に `kagra\` がある場所）で `python -m kagra` すると、pip の版ではなくその場のソースが優先されます。`No module named kagra.__main__` と出たら、別のディレクトリから実行してください。
 
@@ -90,14 +90,14 @@ python -m kagra
 ## 入っているもの
 
 - **VRM** — GPU スキニング、SpringBone、MToon、視線、リップシンク、IK、表情。同じパスの `kagra.avatar()` はメッシュ / テクスチャ / MToon を共有（`vrm_gpu_stats()`）
-- **3D の遊び場** — `Prop` / `Walk` / `sky` / `room` / `World3D`。局所ライト 4 本（`slot=0..3`）、室内ウンブラ、屋外 2 段シャドウ、接空間法線。AABB の箱は落ちる・積む・`Walk` が乗る。USB/XInput は EventLoop が `gilrs` で読む（テストは `inject_pad`）
+- **3D の遊び場** — `Prop` / `Walk` / `sky` / `room` / `World`（`World3D` と同じ型）。`world.query` / `dump` / `load` でスクショなしに世界を読む。局所ライト 4 本（`slot=0..3`）、室内ウンブラ、屋外 2 段シャドウ、接空間法線。AABB の箱は落ちる・積む・`Walk` が乗る。USB/XInput は EventLoop が `gilrs` で読む（テストは `inject_pad`）
 - **頭脳** — `kagra.brain("kairi"|"ollama"|"openai")`。ホスト kairi は `KAIRI_API_TOKEN`。モデルは wheel に入れない
 - **エージェントループ** — API 索引、`kagra.verify`、MCP、golden
 - **Mobile / Wasm** — `kagra-shared` と `mobile/` は **Python `kagra-core` とは別レンダラ**。運転デモ（Corridor Haul）に加え、Crest Isle の収集スライス（Kenney 風カプセル。**VRM ではない**）を Android debug APK / wasm で遊べる。レンダラは統合しない
 
 タイルマップ・ECS・2D エディタは棚（[`examples/archive/`](examples/archive/)）。3D の見出しではない。
 
-エンジンが今どこまでで、何がまだ開いているか（30 秒見本）は [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md)。three.js 級とはまだ言わない。
+エンジンが今どこまでかは [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md)。100% は画面を見ずにインディーを出荷できること。今約 15%。旧「63%」はアーカイブ。80% とはまだ言わない。
 
 ## AI エージェントにゲームを作らせる
 

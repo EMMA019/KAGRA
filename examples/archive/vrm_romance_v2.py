@@ -17,6 +17,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 
 import kagra
+from kagra.entity import EntityScene
 import math
 from kagra_romance import (
     PersonalityComp, EmotionComp, ChatComp, EventComp, TimeComp, EffectComp,
@@ -27,7 +28,7 @@ from kagra_romance import (
 SW, SH = 1280, 720
 
 
-class RomanceScene(kagra.EntityScene):
+class RomanceScene(EntityScene):
 
     def on_enter(self):
         self.font    = kagra.assets.font("meiryo")

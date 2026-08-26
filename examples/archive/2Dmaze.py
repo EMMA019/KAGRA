@@ -5,6 +5,7 @@
 import math, random, os, struct, tempfile, zlib
 import kagra
 from kagra.tilemap import TileSet, TileMap, TILE_SOLID
+from kagra.entity import World
 from kagra.effects import EffectManager
 from kagra.camera import Camera
 from kagra.physics import Rigidbody, BoxCollider, TopDownPhysicsSystem
@@ -147,7 +148,7 @@ class MazeGame(kagra.Scene):
         self.cam   = Camera(screen_w=SW, screen_h=SH, world_w=1, world_h=1)
         kagra.set_camera(self.cam)
 
-        self.world   = kagra.World()
+        self.world   = World()
         self.physics = TopDownPhysicsSystem()
         self.player  = self.world.create("Player")
         self.player.add(Rigidbody(gravity=0.0, mass=1.0, bounce=0.0))

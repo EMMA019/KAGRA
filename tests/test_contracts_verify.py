@@ -115,3 +115,20 @@ def test_load_scenario_dict():
     )
     assert sc.script.endswith("smoke_orb_rush.py")
     assert sc.expect[0].min_bytes == 10
+    assert sc.expect_world is None
+
+
+def test_load_open_world_scenario_has_world_expect():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/open_world_smoke.json")
+    assert sc.expect_world
+    assert sc.expect_world["path"].endswith("open_world_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+
+
+def test_eval_expect_world_missing_dump(tmp_path):
+    errors = _verify._eval_expect_world(
+        {"path": str(tmp_path / "nope.json"), "coins": 0},
+        tmp_path,
+    )
+    assert errors
+    assert "missing" in errors[0]

@@ -13,6 +13,7 @@ import kagra
 from kagra.camera3d import Camera3D
 from kagra.tilemap import TileSet, TileMap, TILE_SOLID
 from kagra.physics import Rigidbody, BoxCollider, TopDownPhysicsSystem
+from kagra.entity import World
 
 SW, SH  = 1280, 720
 TW = TH = 48
@@ -318,7 +319,7 @@ class MazeGame(kagra.Scene):
                 print("VRM ロード成功")
             except Exception as e: print(f"VRM ロード失敗: {e}")
 
-        self.world=kagra.World(); self.physics=TopDownPhysicsSystem()
+        self.world=World(); self.physics=TopDownPhysicsSystem()
         self.player=self.world.create("Player")
         self.player.add(Rigidbody(gravity=0.,mass=1.,bounce=0.))
         col=self.player.add(BoxCollider(w=28,h=28,offset_x=-14,offset_y=-14))

@@ -61,9 +61,9 @@ PNG/WAV/projection:
 - `avatar.set_position` / `avatar.set_yaw` — move a VRM in the arena
 - `kagra.billboard_mesh` / `disk_mesh` / `quad_y_mesh` / `box_mesh` — 3D sprites / floor / crates
 - `kagra.upload_mesh_3d` / `draw_mesh_id` — retain a mesh, draw by id
-- `World3D` + `Camera3D.follow` — floor / box collision and a chase camera
+- `World` (`World3D` と同じ型) + `Camera3D.follow` — floor / box collision and a chase camera. `world.query` / `world.dump` / `world.load` read the world without a screenshot
 - `Prop` / `Walk` / `sky()` / `room()` / `water()` — short 3D.
-  Outdoor island: `World3D.set_height_fn(..., tile=, stream_radius=)` /
+  Outdoor island: `World.set_height_fn(..., tile=, stream_radius=)` /
   `load_city` / `overworld_height` / `Walk(..., jump=)` /
   `Walk.wish` / `CharacterController` /
   `apply_outdoor_look()`. City JSON is not OSM. Dynamic boxes fall and
@@ -108,5 +108,5 @@ The API index front is VRM / 3D / agents; the shelf is legacy 2D.
 - `docs/AGENT.md` — contracts table, CI-parity commands, Cargo.lock policy
 - `docs/API_INDEX.md` — the searchable public API
 - `docs/REVIEW.ja.md` — engine review vs three.js / three-vrm / Ursina
-- `docs/ROADMAP.ja.md` — 最終目標は第一想起。エンジン到達点は 80%（今約 63%）。頭脳は `kagra.brain("kairi")` → kairi.onrender.com。次は 3 見本の 30 秒
+- `docs/ROADMAP.ja.md` — 100% = 画面なしでインディーを出荷。80% はそのマイナス（ネット・破壊・布・乗り物・GI bake・DOTS・HDRP・人間エディタ・VRM-on-Wasm ほか）。今約 15%、山は看板(#97) → 世界をデータに → ランタイム一つ → ゲームとして足りる → 出荷。旧 63% は `docs/archive/`。頭脳は `kagra.brain("kairi")`
 - `docs/schemas/input_events.json` — touch / pointer input schema

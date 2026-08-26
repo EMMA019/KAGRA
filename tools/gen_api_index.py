@@ -82,6 +82,7 @@ def _public_from_init() -> list[tuple[str, str, str]]:
     src = (KAGRA_PKG / "__init__.py").read_text(encoding="utf-8")
     tree = ast.parse(src)
     items: list[tuple[str, str, str]] = []
+    denied = _denied_from_init(tree)
 
     # __all__ があれば優先
     all_names: set[str] | None = None
@@ -98,11 +99,15 @@ def _public_from_init() -> list[tuple[str, str, str]]:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             if node.name.startswith("_"):
                 continue
+            if node.name in denied:
+                continue
             if all_names is not None and node.name not in all_names:
                 continue
             items.append((node.name, _sig_from_ast(node), "function"))
         elif isinstance(node, ast.ClassDef):
             if node.name.startswith("_"):
+                continue
+            if node.name in denied:
                 continue
             if all_names is not None and node.name not in all_names:
                 continue
@@ -111,6 +116,8 @@ def _public_from_init() -> list[tuple[str, str, str]]:
             # audio = _Audio() のような公開シングルトン
             for t in node.targets:
                 if isinstance(t, ast.Name) and not t.id.startswith("_"):
+                    if t.id in denied:
+                        continue
                     if all_names is not None and t.id not in all_names:
                         continue
                     if t.id in {n for n, _, _ in items}:
@@ -125,6 +132,8 @@ def _public_from_init() -> list[tuple[str, str, str]]:
             for alias in node.names:
                 name = alias.asname or alias.name
                 if name.startswith("_"):
+                    continue
+                if name in denied:
                     continue
                 if all_names is not None and name not in all_names:
                     continue
@@ -264,6 +273,7 @@ FRONT_NAMES = {
     "VirtualPad",
     "VrmAvatar",
     "Walk",
+    "World",
     "World3D",
     "set_tonemap",
     "apply_outdoor_look",
@@ -322,7 +332,7 @@ def render_markdown(items: list[tuple[str, str, str]]) -> str:
         "## Agent notes",
         "",
         "- 存在しない API を呼ばないこと。ここに無い名前は未公開か内部用です。",
-        "- 3D ゲームは Front から探す。Shelf の tilemap / ECS / 2D `Camera` は推奨しない。",
+        "- 3D ゲームは Front から探す。`World` が世界。Shelf の tilemap / 2D ECS `Entity` は `kagra.entity` / `kagra.tilemap` に残るが `import kagra` の表には出ない。",
         "- `world_to_screen(wx, wy)` は **2D**。3D は `Camera3D.world_to_screen(wx, wy, wz)`。",
         "- セーブは `save_json` / `load_json`。`load_data` はアセットレジストリ。",
         "- VRM が checkout に無いときは `ensure_vrm()`。パスを直書きしない。",
@@ -331,8 +341,8 @@ def render_markdown(items: list[tuple[str, str, str]]) -> str:
         "- ワールド箱は視錐台カリングされる。箱の描画は `draw_mesh_instances`。直前フレームは `render_stats()`。",
         "- VRM プリミティブはパッド付きボーン AABB でカリング。`doubleSided` のときだけ両面。MToon は裏面法線を反転（頭の中からのリム白飛び / 髪越しの顔を防ぐ）。Hair / 髪 マテリアルだけ `rimLift` を上げる（顔は触らない）。",
         "- 同じパスの `kagra.avatar()` はメッシュ / テクスチャ / MToon を共有する。ジョイントパレットはインスタンスごと。計測は `vrm_gpu_stats()`。見本は `examples/vrm_multi_avatar.py`（Crest Isle は 1 人のまま）。",
-        "- 床と箱: `World3D`（または `Physics3D` + `box_mesh`）。カメラは `Camera3D.follow`。",
-        "- 短い 3D: `Prop` + `Walk` + `sky()` / `room()` / `water()`。地形は `World3D.set_height_fn` + `island_height` / `overworld_height` / `open_world_height`。タイル化は `tile=` / `stream_radius=`。遠いタイルは `lod_radius=` / `lod_cells=`。拾いは `can_pick`。`Walk(..., jump=)`。キャラコン: `Walk.wish` / `Walk.move` / `Walk.try_jump`（または `CharacterController`）。accel/decel 既定。坂は接平面に接地し、段差は `step_height`。Rapier は入れない。",
+        "- 床と箱: `World`（`World3D` と同じ型）または `Physics3D` + `box_mesh`。カメラは `Camera3D.follow`。`world.query` / `world.dump` / `world.load` はスクショなしで世界を読む。",
+        "- 短い 3D: `Prop` + `Walk` + `sky()` / `room()` / `water()`。地形は `World.set_height_fn` + `island_height` / `overworld_height` / `open_world_height`。タイル化は `tile=` / `stream_radius=`。遠いタイルは `lod_radius=` / `lod_cells=`。拾いは `can_pick`。`Walk(..., jump=)`。キャラコン: `Walk.wish` / `Walk.move` / `Walk.try_jump`（または `CharacterController`）。accel/decel 既定。坂は接平面に接地し、段差は `step_height`。Rapier は入れない。",
         "- 一人称: `Walk(..., first_person=True)`。目線は `eye_height`。ポインタロックは一人称のとき（OS が拒めばフォールバック）。`F` で切替えるデモは Prop Garden。",
         "- ホバー / クリック: `hovered_prop(cam)`。`clicked_prop(cam)` は押下。レイ直打ちは `kagra.play.hovered_prop(ox,oy,oz,dx,dy,dz)`。`plane` は除外。",
         "- エージェントの目: `kagra.annotate(sx, sy)` はプレビュークリックを JSONL に残す（screen / world / bone / Prop id）。`kagra.debug_trace(foot_y=…, height_fn=…)` は接地浮き。エディタではない。「ここもう少し」は数値にする。",
@@ -340,7 +350,7 @@ def render_markdown(items: list[tuple[str, str, str]]) -> str:
         "- 動く Prop: `p.x` / `set_position` / `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)` か `p.enabled = False`。持つのは `Walk.carry(prop)`。",
         "- `animate(obj, \"y\", end)` / `sequence` / `Tween`。`Prop.update_all` が回す。",
         "- HUD: `Label` / `Button`（画面空間。2D `kagra.ui` の同名は棚）。音は `sound(\"coin\")`。3D は `set_listener` + `play_se(..., x=, y=, z=)` / `play_loop`（距離減衰 + ステレオパン。HRTF ではない）。",
-        "- 球 / 円柱の当たりとホバーは AABB ではない。`World3D.add_sphere` / `add_cylinder`。",
+        "- 球 / 円柱の当たりとホバーは AABB ではない。`World.add_sphere` / `add_cylinder`（`World3D` と同じ）。",
         "- Prop テクスチャ: `texture=kagra.texture_from_fn(...)` または `load`。0 なら `color`。",
         "- Prop 親子は 4 段（玄孫まで）。子の `x,y,z,yaw` はローカル。",
         "- glTF 部品: `Prop(\"crate.glb\")`。`stage()` / `load_gltf` は会場。同梱エイリアス `cube.glb`。当たりは AABB。`mesh_hit=True` で三角形。",
@@ -360,10 +370,28 @@ def render_markdown(items: list[tuple[str, str, str]]) -> str:
     return "\n".join(lines)
 
 
-def main() -> int:
+def _runtime_enrich(items: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+    """Hook for MCP search. AST index is already the public table."""
+    return items
+
+
+def _denied_from_init(tree: ast.AST) -> set[str]:
+    """Names in ``_PUBLIC_OFF`` stay off the index even if re-imported."""
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name) and t.id == "_PUBLIC_OFF":
+                    try:
+                        return set(ast.literal_eval(node.value))
+                    except Exception:
+                        return set()
+    return set()
+
+
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="既存ファイルと一致するか検証")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     items = _public_from_init()
     text = render_markdown(items)

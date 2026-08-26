@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **428**
+エントリ数: **409**
 
 棚の**手前**は VRM / 3D ワールド / エージェントゲーム。
 棚の**奥**はレガシー 2D・タイルマップ・ECS・エディタ。推奨しない。
@@ -149,6 +149,7 @@
 | `VirtualCam` | `class VirtualCam  (from kagra.stream)` |
 | `VirtualPad` | `class VirtualPad  (from kagra.touch)` |
 | `Walk` | `class Walk  (from kagra.play)` |
+| `World` | `class World  (from kagra.world)` |
 | `World3D` | `class World3D  (from kagra.world3d)` |
 
 ## Shelf (legacy 2D / tilemap / editor / ECS)
@@ -299,7 +300,6 @@
 | `world_to_screen` | `world_to_screen(wx: float, wy: float) -> tuple[float, float]` |
 | `AnimationClip` | `class AnimationClip  (from kagra.skeleton)` |
 | `AnimationTrack` | `class AnimationTrack  (from kagra.skeleton)` |
-| `AnimatorComponent` | `class AnimatorComponent  (from kagra.entity)` |
 | `ArmIK` | `class ArmIK  (from kagra.vrm_ik)` |
 | `asset_debug_info` | `export asset_debug_info  (from kagra.debug_tools)` |
 | `AssetDatabase` | `class AssetDatabase  (from kagra.asset_db)` |
@@ -320,16 +320,12 @@
 | `ChatMessage` | `class ChatMessage  (from kagra.stream)` |
 | `ChoiceMenu` | `class ChoiceMenu  (from kagra.ui)` |
 | `classify_stage_file` | `export classify_stage_file  (from kagra.stage)` |
-| `Collider` | `class Collider  (from kagra.entity)` |
-| `Component` | `class Component  (from kagra.entity)` |
 | `DataObject` | `class DataObject  (from kagra.scriptable)` |
 | `DataRegistry` | `class DataRegistry  (from kagra.scriptable)` |
 | `DevConsole` | `class DevConsole  (from kagra.console)` |
 | `DialogScript` | `class DialogScript  (from kagra.ui)` |
 | `Easing` | `class Easing  (from kagra.ui)` |
-| `Entity` | `class Entity  (from kagra.entity)` |
 | `EntityAnimTrack` | `class EntityAnimTrack  (from kagra.timeline)` |
-| `EntityScene` | `class EntityScene  (from kagra.entity)` |
 | `EventBus` | `class EventBus  (from kagra.event_bus)` |
 | `EventFlags` | `class EventFlags  (from kagra.ui)` |
 | `EventTrack` | `class EventTrack  (from kagra.timeline)` |
@@ -382,13 +378,11 @@
 | `PoseKeyframe` | `class PoseKeyframe  (from kagra.vrm_anim)` |
 | `Prefab` | `class Prefab  (from kagra.prefab)` |
 | `ProgressBar` | `class ProgressBar  (from kagra.ui)` |
-| `RectRenderer` | `class RectRenderer  (from kagra.entity)` |
 | `register_spawn_rule` | `export register_spawn_rule  (from kagra.scriptable)` |
 | `reset_global_bus` | `export reset_global_bus  (from kagra.event_bus)` |
 | `resolve_stage_path` | `export resolve_stage_path  (from kagra.stage)` |
 | `RhythmJudge` | `class RhythmJudge  (from kagra.bgm_sync)` |
 | `Rigidbody` | `class Rigidbody  (from kagra.physics)` |
-| `RigRenderer` | `class RigRenderer  (from kagra.entity)` |
 | `save_all` | `export save_all  (from kagra.anim_io)` |
 | `save_clips` | `export save_clips  (from kagra.anim_io)` |
 | `save_scene` | `export save_scene  (from kagra.scene_io)` |
@@ -399,7 +393,6 @@
 | `scene` | `scene` |
 | `SceneGraph` | `class SceneGraph  (from kagra.scenegraph)` |
 | `SceneRuntime` | `class SceneRuntime  (from kagra.scene_runtime)` |
-| `Script` | `class Script  (from kagra.entity)` |
 | `ScrollView` | `class ScrollView  (from kagra.ui)` |
 | `serialize_component` | `export serialize_component  (from kagra.scene_io)` |
 | `serialize_entity` | `export serialize_entity  (from kagra.scene_io)` |
@@ -416,23 +409,12 @@
 | `spawn_from` | `export spawn_from  (from kagra.scriptable)` |
 | `spawn_rule` | `export spawn_rule  (from kagra.scriptable)` |
 | `SpringBone` | `class SpringBone  (from kagra.vrm_spring)` |
-| `Sprite` | `class Sprite  (from kagra.entity)` |
-| `SpriteRenderer` | `class SpriteRenderer  (from kagra.entity)` |
-| `TextRenderer` | `class TextRenderer  (from kagra.entity)` |
-| `TILE_DAMAGE` | `class TILE_DAMAGE  (from kagra.tilemap)` |
-| `TILE_DOOR` | `class TILE_DOOR  (from kagra.tilemap)` |
-| `TILE_LADDER` | `class TILE_LADDER  (from kagra.tilemap)` |
-| `TILE_SOLID` | `class TILE_SOLID  (from kagra.tilemap)` |
-| `TILE_WATER` | `class TILE_WATER  (from kagra.tilemap)` |
-| `TileMap` | `class TileMap  (from kagra.tilemap)` |
-| `TileSet` | `class TileSet  (from kagra.tilemap)` |
 | `Timeline` | `class Timeline  (from kagra.timeline)` |
 | `timeline_from_audio_query` | `export timeline_from_audio_query  (from kagra.vrm_lipsync)` |
 | `TimelinePlayer` | `class TimelinePlayer  (from kagra.timeline)` |
 | `TopDownMovement` | `class TopDownMovement  (from kagra.components)` |
 | `TopDownPhysicsSystem` | `class TopDownPhysicsSystem  (from kagra.physics)` |
 | `Track` | `class Track  (from kagra.timeline)` |
-| `Transform` | `class Transform  (from kagra.entity)` |
 | `Transform2D` | `class Transform2D  (from kagra.skeleton)` |
 | `TransitionScene` | `class TransitionScene  (from kagra.ui)` |
 | `TweenManager` | `class TweenManager  (from kagra.ui)` |
@@ -443,12 +425,11 @@
 | `VoicevoxError` | `class VoicevoxError  (from kagra.voicevox)` |
 | `VrmAnimator` | `class VrmAnimator  (from kagra.vrm_anim)` |
 | `VrmModel` | `class VrmModel  (from kagra.vrm_loader)` |
-| `World` | `class World  (from kagra.entity)` |
 
 ## Agent notes
 
 - 存在しない API を呼ばないこと。ここに無い名前は未公開か内部用です。
-- 3D ゲームは Front から探す。Shelf の tilemap / ECS / 2D `Camera` は推奨しない。
+- 3D ゲームは Front から探す。`World` が世界。Shelf の tilemap / 2D ECS `Entity` は `kagra.entity` / `kagra.tilemap` に残るが `import kagra` の表には出ない。
 - `world_to_screen(wx, wy)` は **2D**。3D は `Camera3D.world_to_screen(wx, wy, wz)`。
 - セーブは `save_json` / `load_json`。`load_data` はアセットレジストリ。
 - VRM が checkout に無いときは `ensure_vrm()`。パスを直書きしない。
@@ -457,8 +438,8 @@
 - ワールド箱は視錐台カリングされる。箱の描画は `draw_mesh_instances`。直前フレームは `render_stats()`。
 - VRM プリミティブはパッド付きボーン AABB でカリング。`doubleSided` のときだけ両面。MToon は裏面法線を反転（頭の中からのリム白飛び / 髪越しの顔を防ぐ）。Hair / 髪 マテリアルだけ `rimLift` を上げる（顔は触らない）。
 - 同じパスの `kagra.avatar()` はメッシュ / テクスチャ / MToon を共有する。ジョイントパレットはインスタンスごと。計測は `vrm_gpu_stats()`。見本は `examples/vrm_multi_avatar.py`（Crest Isle は 1 人のまま）。
-- 床と箱: `World3D`（または `Physics3D` + `box_mesh`）。カメラは `Camera3D.follow`。
-- 短い 3D: `Prop` + `Walk` + `sky()` / `room()` / `water()`。地形は `World3D.set_height_fn` + `island_height` / `overworld_height` / `open_world_height`。タイル化は `tile=` / `stream_radius=`。遠いタイルは `lod_radius=` / `lod_cells=`。拾いは `can_pick`。`Walk(..., jump=)`。キャラコン: `Walk.wish` / `Walk.move` / `Walk.try_jump`（または `CharacterController`）。accel/decel 既定。坂は接平面に接地し、段差は `step_height`。Rapier は入れない。
+- 床と箱: `World`（`World3D` と同じ型）または `Physics3D` + `box_mesh`。カメラは `Camera3D.follow`。`world.query` / `world.dump` / `world.load` はスクショなしで世界を読む。
+- 短い 3D: `Prop` + `Walk` + `sky()` / `room()` / `water()`。地形は `World.set_height_fn` + `island_height` / `overworld_height` / `open_world_height`。タイル化は `tile=` / `stream_radius=`。遠いタイルは `lod_radius=` / `lod_cells=`。拾いは `can_pick`。`Walk(..., jump=)`。キャラコン: `Walk.wish` / `Walk.move` / `Walk.try_jump`（または `CharacterController`）。accel/decel 既定。坂は接平面に接地し、段差は `step_height`。Rapier は入れない。
 - 一人称: `Walk(..., first_person=True)`。目線は `eye_height`。ポインタロックは一人称のとき（OS が拒めばフォールバック）。`F` で切替えるデモは Prop Garden。
 - ホバー / クリック: `hovered_prop(cam)`。`clicked_prop(cam)` は押下。レイ直打ちは `kagra.play.hovered_prop(ox,oy,oz,dx,dy,dz)`。`plane` は除外。
 - エージェントの目: `kagra.annotate(sx, sy)` はプレビュークリックを JSONL に残す（screen / world / bone / Prop id）。`kagra.debug_trace(foot_y=…, height_fn=…)` は接地浮き。エディタではない。「ここもう少し」は数値にする。
@@ -466,7 +447,7 @@
 - 動く Prop: `p.x` / `set_position` / `vx` + `Prop.update_all(dt)`。消すのは `destroy(p)` か `p.enabled = False`。持つのは `Walk.carry(prop)`。
 - `animate(obj, "y", end)` / `sequence` / `Tween`。`Prop.update_all` が回す。
 - HUD: `Label` / `Button`（画面空間。2D `kagra.ui` の同名は棚）。音は `sound("coin")`。3D は `set_listener` + `play_se(..., x=, y=, z=)` / `play_loop`（距離減衰 + ステレオパン。HRTF ではない）。
-- 球 / 円柱の当たりとホバーは AABB ではない。`World3D.add_sphere` / `add_cylinder`。
+- 球 / 円柱の当たりとホバーは AABB ではない。`World.add_sphere` / `add_cylinder`（`World3D` と同じ）。
 - Prop テクスチャ: `texture=kagra.texture_from_fn(...)` または `load`。0 なら `color`。
 - Prop 親子は 4 段（玄孫まで）。子の `x,y,z,yaw` はローカル。
 - glTF 部品: `Prop("crate.glb")`。`stage()` / `load_gltf` は会場。同梱エイリアス `cube.glb`。当たりは AABB。`mesh_hit=True` で三角形。

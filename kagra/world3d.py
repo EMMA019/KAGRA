@@ -9,6 +9,7 @@ once the renderer exists — tests can skip that and still walk the room.
 """
 from __future__ import annotations
 
+import inspect
 import math
 from typing import Callable, Optional
 
@@ -17,11 +18,59 @@ from kagra.land import tile_keys, tile_origin
 from kagra.physics3d import Physics3D, RigidBody3D
 
 
+def _uv_kwargs_for(fn, **raw) -> dict:
+    """Pass only kwargs the live ``heightfield_*`` accepts.
+
+    A mixed install (old gamekit + new World3D) used to TypeError on
+    ``uv_rect`` inside ``_upload_tile``'s ``except Exception: return 0``.
+    That swallow left a GPU mesh with vertex normals (GGX slope) and no
+    albedo. Unknown keys raise so the inspect test catches drift; the
+    upload path unloads any leftover id and retries instead of sticking.
+    """
+    try:
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return raw
+    params = sig.parameters
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return raw
+    missing = [k for k in raw if k not in params]
+    if missing:
+        name = getattr(fn, "__name__", "heightfield")
+        raise TypeError(f"{name}() does not accept {missing}")
+    return raw
+
+
+def _terrain_albedo_ok(kagra_mod, tex_id: int) -> bool:
+    """True unless the live GPU tex is missing or the 1×1 Mesh3D fallback.
+
+    Engine-not-running (GPU-free tests, ``_check()``) is not a dead albedo.
+    An explicit ``None`` / ``(1, 1)`` from ``texture_size`` is.
+    """
+    fn = getattr(kagra_mod, "texture_size", None)
+    if fn is None:
+        return True
+    try:
+        size = fn(int(tex_id))
+    except Exception:
+        return True
+    if not size:
+        return False
+    try:
+        w = int(size[0])
+        h = int(size[1])
+    except (TypeError, IndexError, ValueError):
+        return False
+    return w > 1 and h > 1
+
+
 class World3D:
     """床と箱のある部屋。高さ関数を付けると島になる。カメラは ``Camera3D.follow``。
 
+    ``World`` はこの型の別名。``query`` / ``dump`` / ``load`` でスクショなしに世界を読む。
+
     Example::
-        world = World3D(half=6.0)
+        world = World(half=6.0)
         world.add_floor()
         world.add_box(2, 0, -1, 1.2, 1.0, 1.2)
         player = world.add_player(0, 3)
@@ -29,6 +78,7 @@ class World3D:
         world.move_player(vx, vz)
         world.update(dt)
         world.draw()
+        where = world.query(type="walker", name="player")
     """
 
     def __init__(self, *, floor_y: float = 0.0, half: float = 6.0, gravity: float = 9.8):
@@ -70,6 +120,10 @@ class World3D:
         self.terrain_uv_blend: float = 0.0
         self.terrain_uv_pad: float = 0.0
         self.terrain_uv_rect = None
+        # World-as-data (query/dump/load). String ids, not GPU mesh integers.
+        self._walkers: list = []
+        self._cameras: list = []
+        self._lights: list = []
 
     def add_floor(self, size: float | None = None):
         """Y = ``floor_y`` の正方形床を予約する。半辺は ``size`` または ``half``。"""
@@ -259,6 +313,8 @@ class World3D:
             float(x), gy, float(z),
             float(radius), float(height),
         )
+        self.player.sid = "walker:player"
+        self.player.name = "player"
         return self.player
 
     def move_player(self, vx: float, vz: float):
@@ -397,13 +453,35 @@ class World3D:
             return
         try:
             import kagra
-            kagra.unload_mesh_3d(int(mid))
+            self._discard_mesh(kagra, int(mid))
+        except Exception:
+            if mid in self.mesh_ids:
+                self.mesh_ids.remove(mid)
+            if self.terrain_mesh_id == mid:
+                self.terrain_mesh_id = 0
+
+    def _discard_mesh(self, kagra_mod, mid: int) -> None:
+        """Drop a GPU mesh that must not stay as a dead-albedo tile."""
+        if not mid:
+            return
+        try:
+            kagra_mod.unload_mesh_3d(int(mid))
         except Exception:
             pass
         if mid in self.mesh_ids:
             self.mesh_ids.remove(mid)
         if self.terrain_mesh_id == mid:
             self.terrain_mesh_id = 0
+
+    def _terrain_uv_raw(self) -> dict:
+        uv_half = self.half if self.terrain_uv_half is None else float(self.terrain_uv_half)
+        return dict(
+            uv_half=uv_half,
+            uv_period=self.terrain_uv_period,
+            uv_blend=self.terrain_uv_blend,
+            uv_pad=self.terrain_uv_pad,
+            uv_rect=self.terrain_uv_rect,
+        )
 
     def _upload_tile(
         self, key: tuple[int, int], *, viewer_x: float = 0.0, viewer_z: float = 0.0,
@@ -415,21 +493,18 @@ class World3D:
             # GPU-free tests still track lod / loaded keys.
             self._tile_lod[key] = cells
             return 0
+        mid = 0
+        kagra_mod = None
         try:
-            import kagra
-            uv_half = self.half if self.terrain_uv_half is None else float(self.terrain_uv_half)
-            uv_kw = dict(
-                uv_half=uv_half,
-                uv_period=self.terrain_uv_period,
-                uv_blend=self.terrain_uv_blend,
-                uv_pad=self.terrain_uv_pad,
-                uv_rect=self.terrain_uv_rect,
-            )
+            import kagra as kagra_mod
+            uv_kw_raw = self._terrain_uv_raw()
             if self._tile is None:
+                uv_kw = _uv_kwargs_for(heightfield_mesh, **uv_kw_raw)
                 verts, idx = heightfield_mesh(
                     self._height_fn, self.half, cells, **uv_kw,
                 )
             else:
+                uv_kw = _uv_kwargs_for(heightfield_tile, **uv_kw_raw)
                 ox, oz = tile_origin(key[0], key[1], self._tile)
                 verts, idx = heightfield_tile(
                     self._height_fn, ox, oz, self._tile, cells, **uv_kw,
@@ -438,20 +513,28 @@ class World3D:
             # on a later instance pass; a leftover mesh_mat slot (or a PBR
             # default) paints one streamed tile pitch-black with a gold GGX
             # streak. Force 0/1 here and pin via set_mesh_pbr.
-            mid = kagra.upload_mesh_3d(
+            mid = int(kagra_mod.upload_mesh_3d(
                 int(self._terrain_tex), verts, idx,
                 metallic=0.0,
                 roughness=1.0,
                 base_color=tuple(self.terrain_base),
-            )
+            ) or 0)
+            # Shared JPEG is pinned per retained tile mesh (PR #92 family).
+            # A 1×1 / missing bind is Fallback White: slope GGX, dead albedo.
+            if mid and not _terrain_albedo_ok(kagra_mod, int(self._terrain_tex)):
+                self._discard_mesh(kagra_mod, mid)
+                mid = 0
         except Exception:
+            if kagra_mod is not None and mid:
+                self._discard_mesh(kagra_mod, mid)
             return 0
         if not mid:
+            # Keep the previous good LOD mesh. Never store a dead replacement.
             return 0
         self._tile_lod[key] = cells
         mid = int(mid)
         try:
-            kagra.set_mesh_pbr(
+            kagra_mod.set_mesh_pbr(
                 mid, metallic=0.0, roughness=1.0,
                 base_color=tuple(self.terrain_base),
             )
@@ -463,12 +546,7 @@ class World3D:
         if mid not in self.mesh_ids:
             self.mesh_ids.append(mid)
         if old and old != mid:
-            try:
-                kagra.unload_mesh_3d(int(old))
-            except Exception:
-                pass
-            if old in self.mesh_ids:
-                self.mesh_ids.remove(old)
+            self._discard_mesh(kagra_mod, int(old))
         return mid
 
     def bake_terrain(self, tex: int) -> int:
@@ -535,3 +613,21 @@ class World3D:
             kagra.draw_mesh_id(int(mid))
         if self.box_mesh_id and self.box_xforms:
             kagra.draw_mesh_instances(self.box_mesh_id, self.box_xforms)
+
+    def query(self, type: str | None = None, name: str | None = None, aabb=None):
+        """Filter by type / name / AABB. Dicts an agent can read without a screenshot."""
+        from kagra.world import query as _query
+
+        return _query(self, type=type, name=name, aabb=aabb)
+
+    def dump(self, path: str | None = None) -> dict:
+        """JSON world (Prop, parent id, heightfield, lights, camera, walkers)."""
+        from kagra.world import dump_json as _dump
+
+        return _dump(self, path)
+
+    def load(self, data) -> "World3D":
+        """Mutate this world from a dump dict or JSON path. Not GPU mesh ids."""
+        from kagra.world import load as _load
+
+        return _load(self, data)
