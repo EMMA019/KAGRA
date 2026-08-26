@@ -5,11 +5,14 @@ import math
 import sys
 from pathlib import Path
 
+import pytest
+
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "examples"))
 
 from open_world_rules import (
     AERIAL_GRASS_ALBEDO,
+    AERIAL_GRASS_DIRT_RIM,
     CAM_DISTANCE,
     CAM_HEIGHT,
     CAM_LOOK_Y,
@@ -525,12 +528,53 @@ def test_crest_isle_ships_blob_sparks_and_tile_blend():
     assert "draw_billboard_instances(self.tex_spark" in src
     assert "terrain_uv_period = TERRAIN_UV_PERIOD" in src
     assert "terrain_uv_blend = TERRAIN_UV_BLEND" in src
+    assert "terrain_uv_pad = TERRAIN_UV_PAD" in src
+    assert "terrain_uv_half = HALF" in src
     assert TERRAIN_UV_PERIOD != TILE
-    assert TERRAIN_UV_BLEND > 1.0
-    assert 0.0 < TERRAIN_UV_PAD < 0.2
+    assert TERRAIN_UV_BLEND == 0.0
+    assert TERRAIN_UV_PAD >= AERIAL_GRASS_DIRT_RIM
+    assert TERRAIN_UV_PAD > 0.2
     relic = (_ROOT / "examples" / "vrm_relic_run.py").read_text(encoding="utf-8")
     assert "terrain_uv_period" not in relic
     assert "terrain_uv_blend" not in relic
+    assert "terrain_uv_half" not in relic
+
+
+def test_crest_meadow_uvs_stay_inside_jpeg_moss():
+    """Vendored aerial_grass_rock has a dirt square-border; Crest UVs must miss it.
+
+    Per-tile local 0..1 (uv_half = TILE/2, no period) is the bald rectangle:
+    one 16 m stamp of the JPEG, ClampToEdge dirt everywhere else.
+    """
+    from tests.conftest import load_kagra_submodule
+
+    kit = load_kagra_submodule("gamekit")
+    kwargs = dict(
+        tile=TILE, cells=16,
+        uv_period=TERRAIN_UV_PERIOD,
+        uv_blend=TERRAIN_UV_BLEND,
+        uv_pad=TERRAIN_UV_PAD,
+    )
+
+    def fn(_x, _z):
+        return 0.4
+
+    verts_a, _ = kit.heightfield_tile(fn, 0.0, 0.0, **kwargs)
+    verts_b, _ = kit.heightfield_tile(fn, TILE, 0.0, **kwargs)
+    for v in verts_a + verts_b:
+        edge = min(v[6], 1.0 - v[6], v[7], 1.0 - v[7])
+        assert edge >= AERIAL_GRASS_DIRT_RIM - 1e-9, (v[0], v[2], v[6], v[7], edge)
+
+    def at(verts, x, z):
+        hits = [p for p in verts if abs(p[0] - x) < 1e-6 and abs(p[2] - z) < 1e-6]
+        assert hits, (x, z)
+        return hits[0]
+
+    join_a, join_b = at(verts_a, TILE, 8.0), at(verts_b, TILE, 8.0)
+    assert join_a[6] == pytest.approx(join_b[6], abs=1e-6)
+    assert join_a[7] == pytest.approx(join_b[7], abs=1e-6)
+    c0, c1 = at(verts_a, TILE * 0.5, 8.0), at(verts_b, TILE * 1.5, 8.0)
+    assert abs(c0[6] - c1[6]) > 0.05
 
 
 def test_crest_gold_orbs_use_metal_not_plastic():

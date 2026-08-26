@@ -40,11 +40,20 @@ CAM_ZOOM_STEP = 0.55
 # Crest Isle only: multiply mesh_mat.base so Lambert reads as 草原.
 GRASS_TINT = (0.55, 1.55, 0.70)
 AERIAL_GRASS_ALBEDO = (0.446, 0.381, 0.143)
-# Meadow JPEG is ClampToEdge. Ping-pong period ≠ TILE so grass/dirt does not
-# restart on the 16 m stream grid. Blend width hides the remaining join.
-TERRAIN_UV_PERIOD = 13.5
-TERRAIN_UV_BLEND = 2.6
-TERRAIN_UV_PAD = 0.035
+# The JPEG is a non-tiling aerial photo (1024²). Mossy speckle sits in the
+# interior; UV 0 and 1 are bare earth (higher B, yellowish dirt). Engine
+# sampler is ClampToEdge + Nearest, so mapping 0..1 onto a world rectangle
+# (per-tile local UV, or ping-pong of the full image) stamps a grass island
+# with an axis-aligned dirt frame, then stretches the dirt rim everywhere
+# else. Pad 0.035 only skipped ~36 px and did not hide that frame.
+# AERIAL_GRASS_DIRT_RIM is the UV inset that still reads as the square
+# border (measured on the vendored 1K). Period ≠ TILE so the 16 m stream
+# grid is not a second stamp. Blend is unused: world-continuous UVs already
+# match at the join; the 0.018 wobble was not the bald rectangle.
+AERIAL_GRASS_DIRT_RIM = 0.12
+TERRAIN_UV_PERIOD = 9.5
+TERRAIN_UV_BLEND = 0.0
+TERRAIN_UV_PAD = 0.28
 
 PICK_REACH = 1.25
 STAR_NEED = 6

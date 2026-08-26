@@ -60,7 +60,8 @@ class World3D:
         self._stream_warm = False
         self.terrain_base: tuple[float, float, float] = (1.0, 1.0, 1.0)
         # None → ``self.half`` (one 0..1 map across the world). Crest Isle
-        # sets period/blend/pad so stream-tile joins are not a knife line.
+        # sets period/pad so stream tiles stay inside the JPEG moss, not a
+        # 16 m ClampToEdge dirt stamp. Relic Run leaves these at defaults.
         self.terrain_uv_half: float | None = None
         self.terrain_uv_period: float | None = None
         self.terrain_uv_blend: float = 0.0
