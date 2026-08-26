@@ -29,7 +29,7 @@ VRM はオプションのローダであり、背骨ではない。
 |---|---|---|
 | **M0** | 看板（タイル）。Crest Isle 16m タイル / UV。PR #97 | 閉じた。`uv_rect` / `_upload_tile` / `stream_tiles` / `TERRAIN_UV_*` は触らない |
 | **M1** | 世界をデータに。`World.query` / `dump` / `load`。15% → 35% へ | 閉じた（#99） |
-| **M2** | **ランタイムは一つ。** 本 PR は第一スライス: `world.dump()` JSON（[schemas/world.json](schemas/world.json)）を永続 `WorldDoc` が読む。`WorldDoc::compile_scene` が 1 フレームの `Scene3D`（draw list）を出す。`Scene3D` に dump を詰め込まない。レンダラ切替（wgpu 0.19 と 30 を混ぜない / デスクトップ窓を shared に付け替えない）は次 | 今ここ。スキーマ。2D ECS に z を足さない |
+| **M2** | **ランタイムは一つ。** スキーマ（`WorldDoc` + `compile_scene`）の次が本スライス: kagra-shared wgpu 30 のオフスクリーンで `WorldDoc` を描く（`compile_meshes` を upload → `Scene3D` batches → RGBA readback）。`Scene3D` は 1 フレームの draw list のまま。デスクトップ窓 / `RendererV2` / wgpu 0.19 混合はまだ。2D ECS に z を足さない | 今ここ。shared オフスクリーン。窓の付け替えは次 |
 | **M3** | ゲームとして足りる（30 秒の見本が遊べる） | その次 |
 | **M4** | 出荷（エージェントが画面なしで普通のゲームを出す） | 80% の手前まで |
 
@@ -47,7 +47,7 @@ VRM はオプションのローダであり、背骨ではない。
 `world.query(type=, name=, aabb=)` はスクショなしで position / name / type / id を返す。
 タイルは `type="terrain_tile"` で `loaded` / `albedo_ok`（はげを PNG なしで検出）。
 `world.dump()` / `world.load()` のスキーマは [schemas/world.json](schemas/world.json)。
-kagra-shared の `WorldDoc::from_json` が同じ JSON を読む。`compile_scene` が `Scene3D` を出す（M2 第一スライス）。レンダラ切替は次。
+kagra-shared の `WorldDoc::from_json` が同じ JSON を読む。`compile_scene` が `Scene3D` を出す。`render_world_doc` が shared wgpu 30 オフスクリーンでそのフレームを RGBA にする。デスクトップ窓 / `RendererV2` の付け替えは次。
 
 ## 今あるもの（嘘にしない）
 
@@ -56,7 +56,7 @@ kagra-shared の `WorldDoc::from_json` が同じ JSON を読む。`compile_scene
 - AABB の箱（落ちる・積む・乗る）。Rapier は入れない
 - VRM ローダ（歌・踊り・リップ・LookAt）。体の背骨ではない
 - `kagra.verify` の PNG サイズ煙 + **世界アサーション**（#99）
-- `WorldDoc`（dump JSON。`compile_scene` → 1 フレーム `Scene3D`。描画はまだ Python / shared 別）
+- `WorldDoc`（dump JSON。`compile_scene` → 1 フレーム `Scene3D`。shared wgpu 30 オフスクリーン `render_world_doc` で RGBA。デスクトップ窓はまだ kagra-core）
 - エージェントループ: `docs/API_INDEX.md` / MCP / `docs/agent-runs/`
 
 ## 嘘（今 15% を大きく呼ばない）
@@ -66,7 +66,7 @@ kagra-shared の `WorldDoc::from_json` が同じ JSON を読む。`compile_scene
 - 「2D ECS に z を足せば 3D」——やらない
 - 「VRM がエンジンの背骨」「Wasm に VRM を移植」——やらない
 - 「Tk / Inspector が人間用エディタ」——禁止。目は `annotate` / `debug_trace` / `world.query`
-- dump JSON を読んだだけで「ランタイムは一つ」——本スライスはスキーマ。レンダラ切替は次
+- dump JSON を読んだだけで「ランタイムは一つ」——スキーマと shared オフスクリーンまでは来た。デスクトップ窓の付け替えは次
 
 ## 80% の外（今やらない）
 
@@ -77,13 +77,14 @@ Cinemachine、PhysX 完全、VRM-on-Wasm。
 加えて（エンジン都合）: Rapier、SSAO / 4 段 CSM、wgpu 0.19 と 30 の混合、
 OSM、ボクセル、ナビメッシュ、lights/joints/prefab-instantiate/TRS 階層/particles の新規山。
 
-## 本 PR の Done（M2 第一スライス — スキーマ）
+## 本 PR の Done（M2 — スキーマ + shared オフスクリーン）
 
 - GPU 無し: Crest Isle 形 / Orb Rush 形の `World.dump()` JSON が `WorldDoc` としてパースされ、安定 id・position・parent・heightfield `fn` / tile key がラウンドトリップする
 - `WorldDoc::compile_scene` が `Scene3D`（camera + batches）を出す。`Scene3D` は 1 フレームの draw list のまま（モバイル collectathon / driving を壊さない）
+- `render_world_doc`（feature = `render`）が `compile_meshes` を upload し、compiled `Scene3D` を wgpu 30 オフスクリーンに描いて RGBA を返す。kagra-core の窓 / `RendererV2` / `(-12800,-12800)` には触れない。アダプタ無しはスキップ
 - デスクトップ Python の dump JSON を shared クレートが受け取る（新しい公開ゲーム API は足さない）
 - [schemas/world.json](schemas/world.json) と `WorldDoc` が揃っている
-- レンダラ切替は次。`(-12800,-12800)` の fake-headless はレンダラ切替が要るのでこのスライスでは触らない
+- デスクトップ窓の付け替えは次。`(-12800,-12800)` の fake-headless は触らない
 - `pytest tests -m "not golden"` と `cargo test -p kagra-shared` が緑
 
 M1（query / dump / load）は #99 で閉じた。

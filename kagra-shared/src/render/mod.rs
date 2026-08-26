@@ -735,6 +735,56 @@ impl Renderer {
         buffer.unmap();
         Ok(out)
     }
+
+    /// Upload `compile_meshes()` so `WorldDoc::compile_scene` batch ids match GPU slots.
+    /// Call on a renderer with no meshes yet (a fresh offscreen target).
+    pub fn upload_compile_meshes(&mut self) -> Result<(), String> {
+        if !self.meshes.is_empty() {
+            return Err("upload_compile_meshes requires an empty mesh list".into());
+        }
+        let mut meshes = crate::world_doc::compile_meshes();
+        meshes.sort_by_key(|(id, _)| id.0);
+        for (id, mesh) in meshes {
+            let got = self.upload_mesh(&mesh);
+            if got != id {
+                return Err(format!(
+                    "compile mesh id mismatch: compiled {} uploaded {}",
+                    id.0, got.0
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Draw a compiled `WorldDoc` into the offscreen target and read RGBA8.
+    /// No kagra-core window. Capsules / boxes are the primitives.
+    pub fn render_world_doc(
+        &mut self,
+        doc: &crate::world_doc::WorldDoc,
+    ) -> Result<Vec<u8>, String> {
+        if !self.is_offscreen() {
+            return Err("render_world_doc requires an offscreen renderer".into());
+        }
+        if self.meshes.is_empty() {
+            self.upload_compile_meshes()?;
+        }
+        let scene = doc.compile_scene(self.aspect());
+        self.render_frame(Some(&scene), &DrawList::default())?;
+        self.read_rgba()
+    }
+}
+
+/// wgpu 30 offscreen RGBA8 of a compiled `WorldDoc`. Linux CI / no desktop window.
+///
+/// Skips at the call site when `new_offscreen` has no adapter. Does not touch
+/// kagra-core `RendererV2` or the `(-12800,-12800)` fake-headless path.
+pub fn render_world_doc(
+    doc: &crate::world_doc::WorldDoc,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, String> {
+    let mut renderer = pollster::block_on(Renderer::new_offscreen(width, height))?;
+    renderer.render_world_doc(doc)
 }
 
 fn new_instance() -> wgpu::Instance {

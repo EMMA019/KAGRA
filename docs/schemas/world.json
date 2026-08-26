@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kagra.dev/schemas/world.json",
   "title": "KAGRA World dump",
-  "description": "JSON from World.dump() / World.load(), ingested by kagra-shared WorldDoc (not Scene3D). Scene3D is a one-frame draw list; WorldDoc::compile_scene builds it. Stable string ids, not GPU mesh integers. Python mutates the world. Height fn cannot dump; named demo fn or samples. Single parent id (n-level TRS is later). Renderer switch is the next slice.",
+  "description": "JSON from World.dump() / World.load(), ingested by kagra-shared WorldDoc (not Scene3D). Scene3D is a one-frame draw list; WorldDoc::compile_scene builds it. render_world_doc (shared wgpu 30 offscreen) draws that frame to RGBA. Stable string ids, not GPU mesh integers. Python mutates the world. Height fn cannot dump; named demo fn or samples. Single parent id (n-level TRS is later). Desktop window / RendererV2 retarget is the next slice.",
   "type": "object",
   "required": ["version"],
   "properties": {

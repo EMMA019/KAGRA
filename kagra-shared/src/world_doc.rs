@@ -4,6 +4,8 @@
 //! and driving already build that. Dump JSON lives here as `WorldDoc`, then
 //! `compile_scene` turns it into a `Scene3D` for one frame (box / sphere /
 //! capsule primitives). Integer GPU mesh ids are not game objects.
+//! Offscreen draw (feature = "render") is `render_world_doc`: upload
+//! `compile_meshes`, draw the batches, read RGBA. Not a kagra-core window.
 
 use crate::scene3d::{primitives, Camera, Material, MeshId, Scene3D, SceneBuilder};
 use glam::{Mat4, Quat, Vec3};
@@ -521,5 +523,16 @@ mod tests {
         let meshes = compile_meshes();
         assert_eq!(meshes.len(), 4);
         assert!(meshes.iter().all(|(_, m)| !m.vertices.is_empty()));
+        let ids: std::collections::HashSet<_> = meshes.iter().map(|(id, _)| id.0).collect();
+        for json in [CREST_ISLE_DUMP, ORB_RUSH_DUMP] {
+            let scene = WorldDoc::from_json(json).unwrap().compile_scene(1.0);
+            for batch in &scene.batches {
+                assert!(
+                    ids.contains(&batch.mesh.0),
+                    "compiled batch mesh {} is not in compile_meshes()",
+                    batch.mesh.0
+                );
+            }
+        }
     }
 }

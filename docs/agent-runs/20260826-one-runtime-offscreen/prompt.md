@@ -1,0 +1,3 @@
+PR #100 is open and looks right (WorldDoc + compile_scene, Scene3D stays a frame). Keep the SAME branch. Next slice on this PR if it stays small, otherwise a follow-up commit is fine: kagra-shared wgpu 30 OFFSCREEN render of a compiled WorldDoc (PNG or raw RGBA). Linux CI / no kagra-core window / no (-12800,-12800). Use the existing shared Renderer (render feature). Upload compile_meshes(), draw the Scene3D batches, read back.
+
+Do NOT touch kagra-core RendererV2. Do NOT mix wgpu 0.19. Do NOT delete the desktop window path. Capsules/boxes OK. GPU-free tests stay; GPU test can be feature-gated or skipped without an adapter. pytest -m "not golden" and kagra-shared tests green. Do not merge. Emma checks ~18:00 JST.

@@ -8,6 +8,7 @@
 //! # 2D のタッチデモを見る
 //! cargo run -p kagra-shared --features render --example offscreen -- 640 360 demo.png 2d
 //! cargo run -p kagra-shared --features render --example offscreen -- 960 540 isle.png isle
+//! cargo run -p kagra-shared --features render --example offscreen -- 640 360 world.png world
 //! ```
 
 use std::fs::File;
@@ -30,6 +31,23 @@ fn main() -> Result<(), String> {
     let mode = args.next().unwrap_or_default();
     let two_d = mode == "2d";
     let isle = mode == "isle";
+    let world = mode == "world";
+
+    if world {
+        let json = include_str!("../tests/fixtures/crest_isle_world.json");
+        let doc = kagra_shared::WorldDoc::from_json(json)?;
+        let mut renderer = pollster::block_on(Renderer::new_offscreen(width, height))?;
+        let pixels = renderer.render_world_doc(&doc)?;
+        write_png(&out, width, height, &pixels)?;
+        println!(
+            "wrote {} ({}x{}, {} bytes) from WorldDoc compile_scene",
+            out.display(),
+            width,
+            height,
+            pixels.len()
+        );
+        return Ok(());
+    }
 
     let mut session = SharedSession::default();
     session.create_surface(width, height);

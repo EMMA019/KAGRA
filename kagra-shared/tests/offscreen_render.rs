@@ -222,6 +222,65 @@ fn offscreen_frame_shows_2d_scene() {
     );
 }
 
+fn unique_rgb(rgba: &[u8]) -> usize {
+    let mut set = std::collections::HashSet::new();
+    for chunk in rgba.chunks(4) {
+        set.insert([chunk[0], chunk[1], chunk[2]]);
+    }
+    set.len()
+}
+
+fn render_world_fixture(json: &str) -> Option<Vec<u8>> {
+    let _guard = GPU.lock().unwrap_or_else(|e| e.into_inner());
+    let doc = kagra_shared::WorldDoc::from_json(json).expect("parse dump");
+    match kagra_shared::render_world_doc(&doc, W, H) {
+        Ok(rgba) => Some(rgba),
+        Err(_) => None,
+    }
+}
+
+/// Compiled WorldDoc through wgpu 30 offscreen (no kagra-core window).
+/// No adapter → skip. GPU-free roundtrip tests live in world_doc.rs.
+#[test]
+fn world_doc_offscreen_crest_isle_is_not_flat() {
+    let json = include_str!("fixtures/crest_isle_world.json");
+    let Some(rgba) = render_world_fixture(json) else {
+        eprintln!("no GPU adapter; skipping WorldDoc offscreen test");
+        return;
+    };
+    assert_eq!(rgba.len() as u32, W * H * 4);
+    let sky = pixel(&rgba, W, W / 2, 2);
+    assert!(
+        sky[2] > sky[0],
+        "expected sky-ish clear at the top, got {sky:?}"
+    );
+    let colors = unique_rgb(&rgba);
+    assert!(
+        colors > 4,
+        "compiled WorldDoc should shade more than a clear color (got {colors} unique)"
+    );
+}
+
+#[test]
+fn world_doc_offscreen_orb_rush_draws_batches() {
+    let json = include_str!("fixtures/orb_rush_world.json");
+    let Some(rgba) = render_world_fixture(json) else {
+        eprintln!("no GPU adapter; skipping WorldDoc orb offscreen test");
+        return;
+    };
+    assert_eq!(rgba.len() as u32, W * H * 4);
+    let first = pixel(&rgba, W, 0, 0);
+    assert!(
+        rgba.chunks(4).any(|p| p != first.as_slice()),
+        "frame is a flat color; compile_scene batches were not drawn"
+    );
+    let colors = unique_rgb(&rgba);
+    assert!(
+        colors > 4,
+        "orb dump should draw walker/props, got {colors} unique"
+    );
+}
+
 #[test]
 fn resize_keeps_rendering() {
     let Some(rgba) = with_session(W, H, |session| {
