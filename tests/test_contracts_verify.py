@@ -473,3 +473,9 @@ def test_load_fish_cast_scenario_is_world_and_offscreen():
     assert sc.expect_world["player.on_ground"] is True
     assert sc.expect_offscreen["out"].endswith("fish_cast_shared.png")
 
+def test_load_shop_buy_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/shop_buy_smoke.json")
+    assert sc.name == "shop_buy_smoke"
+    assert sc.expect_world["path"].endswith("shop_buy_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen["out"].endswith("shop_buy_shared.png")

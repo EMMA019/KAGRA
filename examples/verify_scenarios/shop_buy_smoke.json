@@ -1,0 +1,41 @@
+{
+  "name": "shop_buy_smoke",
+  "notes": "M3 shop slice 1 on shared wgpu 30. Title -> play -> result (player has coins; stand at stall; J/click spends coins and dump-visible bought flag/name, coins decreased) lives in WorldPlay / python -m kagra.play_world. Capsules/boxes. Stall readable. Overlay coin pip, not screenshot-only. Indoor lights 4 slots. Stall camera looks at the counter. No RendererV2, no VRM, no Rapier, no SSAO/GI, no inventory grid, no net, no economy sim. World assertions + dump query (not golden pixels). Picture slice inherited.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/shop_buy_world.json",
+    "player.on_ground": true,
+    "query": [
+      {
+        "type": "walker",
+        "name": "player",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "stall",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "goods",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "flag",
+        "count": 1
+      },
+      {
+        "type": "light",
+        "count": 4
+      }
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/shop_buy_world.json",
+    "out": "scratch/shop_buy_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

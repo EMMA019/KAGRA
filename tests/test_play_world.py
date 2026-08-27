@@ -588,3 +588,23 @@ def test_fish_cast_fixture_has_dock_and_water():
     assert data.get("heightfield") in (None, {})
     assert data.get("coins", 0) == 0
 
+def test_shop_buy_fixture_has_stall_and_coins():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/shop_buy_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    stalls = [p for p in data["props"] if p.get("name") == "stall"]
+    assert len(stalls) == 1
+    assert stalls[0].get("model") == "box"
+    goods = [p for p in data["props"] if p.get("name") == "goods"]
+    assert len(goods) == 1
+    assert goods[0].get("model") == "box"
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+    assert data.get("coins", 0) == 8

@@ -21,6 +21,7 @@ use crate::puzzle::{self, PuzzleGame};
 use crate::race::{self, RaceGame};
 use crate::rhythm::{self, RhythmGame};
 use crate::fish::{self, FishGame};
+use crate::shop::{self, ShopGame};
 use crate::rpg::{self, RpgGame};
 use crate::scene::{DrawList, Quad};
 use crate::sim::{self, SimGame};
@@ -57,6 +58,7 @@ pub struct WorldPlay {
     pub survival: SurvivalGame,
     pub rhythm: RhythmGame,
     pub fish: FishGame,
+    pub shop: ShopGame,
     seed: WorldDoc,
     vy: f32,
 }
@@ -81,6 +83,7 @@ impl WorldPlay {
         survival::seed(&mut doc);
         rhythm::seed(&mut doc);
         fish::seed(&mut doc);
+        shop::seed(&mut doc);
         refresh_coin_count(&mut doc);
         if survival::is_survival(&doc) {
             doc.coins = survival::NEED;
@@ -90,6 +93,9 @@ impl WorldPlay {
         }
         if fish::is_fish(&doc) {
             doc.coins = 0;
+        }
+        if shop::is_shop(&doc) {
+            doc.coins = shop::START;
         }
         let look_yaw = look_yaw_from_doc(&doc);
         let action = ActionGame::from_doc(&doc);
@@ -108,6 +114,7 @@ impl WorldPlay {
         let survival_game = SurvivalGame::from_doc(&doc);
         let rhythm_game = RhythmGame::from_doc(&doc);
         let fish_game = FishGame::from_doc(&doc);
+        let shop_game = ShopGame::from_doc(&doc);
         if action2d::is_action2d(&doc) {
             action2d::place_side_camera(&mut doc);
         }
@@ -147,6 +154,9 @@ impl WorldPlay {
         if fish::is_fish(&doc) {
             fish::place_dock_camera(&mut doc);
         }
+        if shop::is_shop(&doc) {
+            shop::place_stall_camera(&mut doc);
+        }
         let game = if is_collectathon(&doc)
             || action::is_action(&doc)
             || action2d::is_action2d(&doc)
@@ -164,6 +174,7 @@ impl WorldPlay {
             || survival::is_survival(&doc)
             || rhythm::is_rhythm(&doc)
             || fish::is_fish(&doc)
+            || shop::is_shop(&doc)
         {
             IsleGame::default()
         } else {
@@ -194,6 +205,7 @@ impl WorldPlay {
             survival: survival_game,
             rhythm: rhythm_game,
             fish: fish_game,
+            shop: shop_game,
             vy: 0.0,
         }
     }
@@ -241,6 +253,7 @@ impl WorldPlay {
         self.survival = SurvivalGame::from_doc(&self.doc);
         self.rhythm = RhythmGame::from_doc(&self.doc);
         self.fish = FishGame::from_doc(&self.doc);
+        self.shop = ShopGame::from_doc(&self.doc);
         if action2d::is_action2d(&self.doc) {
             action2d::place_side_camera(&mut self.doc);
         }
@@ -280,6 +293,9 @@ impl WorldPlay {
         if fish::is_fish(&self.doc) {
             fish::place_dock_camera(&mut self.doc);
         }
+        if shop::is_shop(&self.doc) {
+            shop::place_stall_camera(&mut self.doc);
+        }
         refresh_coin_count(&mut self.doc);
         if survival::is_survival(&self.doc) {
             self.doc.coins = survival::NEED;
@@ -289,6 +305,9 @@ impl WorldPlay {
         }
         if fish::is_fish(&self.doc) {
             self.doc.coins = 0;
+        }
+        if shop::is_shop(&self.doc) {
+            self.doc.coins = shop::START;
         }
     }
 
@@ -362,6 +381,10 @@ impl WorldPlay {
 
     pub fn is_fish(&self) -> bool {
         fish::is_fish(&self.doc) || fish::is_fish(&self.seed)
+    }
+
+    pub fn is_shop(&self) -> bool {
+        shop::is_shop(&self.doc) || shop::is_shop(&self.seed)
     }
 
     /// Mouse / arrow look. Pitch is clamped.
@@ -565,6 +588,17 @@ impl WorldPlay {
             }
             return;
         }
+        if self.is_shop() {
+            shop::tick(&mut self.doc, &mut self.shop, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.shop.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = if self.shop.bought { 250 } else { 0 };
+            }
+            return;
+        }
         self.collect_pickups();
         self.game.time_s += dt;
         self.input.jump = false;
@@ -623,6 +657,9 @@ impl WorldPlay {
         }
         if self.is_fish() {
             return fish::build_hud(&self.fish, self.game.phase, width, height);
+        }
+        if self.is_shop() {
+            return shop::build_hud(&self.shop, self.game.phase, width, height);
         }
         let w = width.max(1) as f32;
         let h = height.max(1) as f32;
