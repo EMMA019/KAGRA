@@ -12,6 +12,7 @@ use crate::collectathon::{
     CAM_LOOK_Y, GRAVITY, JUMP_V, PICK_REACH, PLAYER_SPEED, STAR_XZ,
 };
 use crate::fight::{self, FightGame};
+use crate::novel::{self, NovelGame};
 use crate::fps::{self, FpsGame};
 use crate::game::GamePhase;
 use crate::platformer::{self, PlatformGame};
@@ -39,6 +40,7 @@ pub struct WorldPlay {
     pub td: TdGame,
     pub race: RaceGame,
     pub fight: FightGame,
+    pub novel: NovelGame,
     seed: WorldDoc,
     vy: f32,
 }
@@ -54,6 +56,7 @@ impl WorldPlay {
         td::seed(&mut doc);
         race::seed(&mut doc);
         fight::seed(&mut doc);
+        novel::seed(&mut doc);
         refresh_coin_count(&mut doc);
         let look_yaw = look_yaw_from_doc(&doc);
         let action = ActionGame::from_doc(&doc);
@@ -63,6 +66,7 @@ impl WorldPlay {
         let td_game = TdGame::from_doc(&doc);
         let race_game = RaceGame::from_doc(&doc);
         let fight_game = FightGame::from_doc(&doc);
+        let novel_game = NovelGame::from_doc(&doc);
         if fps::is_fps(&doc) {
             fps::place_eye_camera(&mut doc, look_yaw, 0.0);
         }
@@ -75,6 +79,9 @@ impl WorldPlay {
         if fight::is_fight(&doc) {
             fight::place_dual_camera(&mut doc);
         }
+        if novel::is_novel(&doc) {
+            novel::place_room_camera(&mut doc);
+        }
         let game = if is_collectathon(&doc)
             || action::is_action(&doc)
             || platformer::is_platformer(&doc)
@@ -83,6 +90,7 @@ impl WorldPlay {
             || td::is_td(&doc)
             || race::is_race(&doc)
             || fight::is_fight(&doc)
+            || novel::is_novel(&doc)
         {
             IsleGame::default()
         } else {
@@ -104,6 +112,7 @@ impl WorldPlay {
             td: td_game,
             race: race_game,
             fight: fight_game,
+            novel: novel_game,
             vy: 0.0,
         }
     }
@@ -142,6 +151,7 @@ impl WorldPlay {
         self.td = TdGame::from_doc(&self.doc);
         self.race = RaceGame::from_doc(&self.doc);
         self.fight = FightGame::from_doc(&self.doc);
+        self.novel = NovelGame::from_doc(&self.doc);
         if fps::is_fps(&self.doc) {
             fps::place_eye_camera(&mut self.doc, self.look_yaw, self.look_pitch);
         }
@@ -153,6 +163,9 @@ impl WorldPlay {
         }
         if fight::is_fight(&self.doc) {
             fight::place_dual_camera(&mut self.doc);
+        }
+        if novel::is_novel(&self.doc) {
+            novel::place_room_camera(&mut self.doc);
         }
         refresh_coin_count(&mut self.doc);
     }
@@ -191,6 +204,10 @@ impl WorldPlay {
 
     pub fn is_fight(&self) -> bool {
         fight::is_fight(&self.doc) || fight::is_fight(&self.seed)
+    }
+
+    pub fn is_novel(&self) -> bool {
+        novel::is_novel(&self.doc) || novel::is_novel(&self.seed)
     }
 
     /// Mouse / arrow look. Pitch is clamped.
@@ -295,6 +312,17 @@ impl WorldPlay {
             }
             return;
         }
+        if self.is_novel() {
+            novel::tick(&mut self.doc, &mut self.novel, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.novel.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = if self.novel.choice == 0 { 1 } else { 2 };
+            }
+            return;
+        }
         self.collect_pickups();
         self.game.time_s += dt;
         self.input.jump = false;
@@ -326,6 +354,9 @@ impl WorldPlay {
         }
         if self.is_fight() {
             return fight::build_hud(&self.fight, self.game.phase, width, height);
+        }
+        if self.is_novel() {
+            return novel::build_hud(&self.novel, self.game.phase, width, height);
         }
         let w = width.max(1) as f32;
         let h = height.max(1) as f32;

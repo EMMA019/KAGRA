@@ -165,6 +165,8 @@ fn main() -> Result<(), String> {
             "KAGRA Race Drive (shared wgpu 30)"
         } else if play.is_fight() {
             "KAGRA Fight Ring (shared wgpu 30)"
+        } else if play.is_novel() {
+            "KAGRA Novel Pages (shared wgpu 30)"
         } else if play.is_sprite() {
             "KAGRA Sprite Card (shared wgpu 30)"
         } else {
@@ -278,7 +280,7 @@ fn main() -> Result<(), String> {
                     }
                     let dt = last.elapsed().as_secs_f32();
                     last = Instant::now();
-                    let (arrow_yaw, arrow_pitch) = if play.is_race() || play.is_fight() {
+                    let (arrow_yaw, arrow_pitch) = if play.is_race() || play.is_fight() || play.is_novel() {
                         (0.0, 0.0)
                     } else {
                         keys.look_delta(dt)
@@ -292,6 +294,10 @@ fn main() -> Result<(), String> {
                         input.lx = (input.lx + ax).clamp(-1.0, 1.0);
                         input.lz = (input.lz + az).clamp(-1.0, 1.0);
                     }
+                    if play.is_novel() {
+                        let ax = (keys.right as i32 - keys.left as i32) as f32;
+                        input.lx = (input.lx + ax).clamp(-1.0, 1.0);
+                    }
                     // Headless-ish smoke: --seconds walks forward so a live
                     // tick is visible without a human holding W.
                     if seconds.is_some()
@@ -299,6 +305,7 @@ fn main() -> Result<(), String> {
                         && input.lz.abs() < 1e-4
                         && input.lx.abs() < 1e-4
                         && !play.is_td()
+                        && !play.is_novel()
                     {
                         input.lz = 1.0;
                     }
@@ -307,6 +314,10 @@ fn main() -> Result<(), String> {
                     }
                     if seconds.is_some() && play.is_fight() && play.game.is_playing() {
                         input.attack = true;
+                    }
+                    if seconds.is_some() && play.is_novel() && play.game.is_playing() {
+                        input.jump = true;
+                        input.lx = -1.0;
                     }
                     if seconds.is_some() && play.is_platformer() && play.game.is_playing() {
                         // hop so landing is visible without a human holding Space

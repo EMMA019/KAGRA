@@ -376,6 +376,26 @@ def test_race_drive_fixture_has_track_finish_and_car():
     assert slots == [0, 1, 2, 3]
     assert data.get("heightfield") in (None, {})
 
+def test_novel_pages_fixture_has_room_and_flag():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/novel_pages_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    assert any(p.get("name") == "page" for p in data["props"])
+    speakers = [p for p in data["props"] if p.get("name") == "speaker"]
+    assert len(speakers) == 1
+    assert speakers[0].get("model") == "capsule"
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    assert any(p.get("name") == "floor" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+
+
 def test_fight_hitstun_fixture_has_two_capsules():
     import json
 

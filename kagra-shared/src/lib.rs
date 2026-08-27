@@ -25,6 +25,7 @@ pub mod platformer;
 pub mod road;
 pub mod race;
 pub mod rpg;
+pub mod novel;
 pub mod save;
 pub mod scene;
 pub mod scene3d;
