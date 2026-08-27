@@ -787,8 +787,8 @@ impl Renderer {
         &mut self,
         meshes: Vec<(crate::scene3d::MeshId, crate::scene3d::MeshData)>,
     ) -> Result<(), String> {
-        let mut expect = 0u32;
-        for (id, mesh) in meshes {
+        for (expect, (id, mesh)) in meshes.into_iter().enumerate() {
+            let expect = expect as u32;
             if id.0 != expect {
                 return Err(format!(
                     "compile mesh ids must be dense, got {} want {expect}",
@@ -802,7 +802,6 @@ impl Renderer {
                     id.0, got.0
                 ));
             }
-            expect += 1;
         }
         Ok(())
     }

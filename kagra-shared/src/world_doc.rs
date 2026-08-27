@@ -791,12 +791,14 @@ mod tests {
     fn named_island_height_matches_python_shelf() {
         let y = island_height(0.0, 0.0);
         assert!((y - 0.38).abs() < 0.05, "{y}");
-        let mut doc = WorldDoc::default();
-        doc.version = WORLD_DUMP_VERSION;
-        doc.heightfield = Some(WorldHeightfield {
-            fn_name: Some("island_height".into()),
+        let doc = WorldDoc {
+            version: WORLD_DUMP_VERSION,
+            heightfield: Some(WorldHeightfield {
+                fn_name: Some("island_height".into()),
+                ..Default::default()
+            }),
             ..Default::default()
-        });
+        };
         assert!((doc.height_at(0.0, 0.0) - y).abs() < 1e-5);
     }
 }
