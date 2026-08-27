@@ -545,6 +545,7 @@ mod tests {
         assert_eq!(GAME_ID, "action_side");
         assert!(!crate::platformer::is_platformer(&doc));
         assert!(!crate::sim::is_sim(&doc));
+        assert!(!crate::survival::is_survival(&doc));
         assert!(!crate::sports::is_sports(&doc));
         assert!(!crate::fps::is_fps(&doc));
         assert!(crate::sprite::is_sprite(&doc));

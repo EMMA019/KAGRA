@@ -1,0 +1,46 @@
+{
+  "name": "survival_meter_smoke",
+  "notes": "M3 survival slice 1 on shared wgpu 30. Title -> play -> result (hunger/stamina coins meter ticks down; stand in camp or pick ration to fill; starve/ok are dump-visible name/flag/coins) lives in WorldPlay / python -m kagra.play_world. Capsules/boxes. Overlay starve/ok, not screenshot-only. Indoor lights 4 slots. Camp/ration readable. Chase camera follows play. No RendererV2, no VRM, no Rapier, no SSAO/GI. World assertions + dump query (not golden pixels). Picture slice inherited.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/survival_meter_world.json",
+    "player.on_ground": true,
+    "query": [
+      {
+        "type": "walker",
+        "name": "player",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "camp",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "ration",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "floor",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "flag",
+        "count": 1
+      },
+      {
+        "type": "light",
+        "count": 4
+      }
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/survival_meter_world.json",
+    "out": "scratch/survival_meter_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

@@ -23,6 +23,7 @@ use crate::rpg::{self, RpgGame};
 use crate::scene::{DrawList, Quad};
 use crate::sim::{self, SimGame};
 use crate::sports::{self, SportsGame};
+use crate::survival::{self, SurvivalGame};
 use crate::sprite;
 use crate::stealth::{self, StealthGame};
 use crate::td::{self, TdGame};
@@ -51,6 +52,7 @@ pub struct WorldPlay {
     pub puzzle: PuzzleGame,
     pub sports: SportsGame,
     pub sim: SimGame,
+    pub survival: SurvivalGame,
     seed: WorldDoc,
     vy: f32,
 }
@@ -72,7 +74,11 @@ impl WorldPlay {
         puzzle::seed(&mut doc);
         sports::seed(&mut doc);
         sim::seed(&mut doc);
+        survival::seed(&mut doc);
         refresh_coin_count(&mut doc);
+        if survival::is_survival(&doc) {
+            doc.coins = survival::NEED;
+        }
         let look_yaw = look_yaw_from_doc(&doc);
         let action = ActionGame::from_doc(&doc);
         let action2d_game = Action2dGame::from_doc(&doc);
@@ -87,6 +93,7 @@ impl WorldPlay {
         let puzzle_game = PuzzleGame::from_doc(&doc);
         let sports_game = SportsGame::from_doc(&doc);
         let sim_game = SimGame::from_doc(&doc);
+        let survival_game = SurvivalGame::from_doc(&doc);
         if action2d::is_action2d(&doc) {
             action2d::place_side_camera(&mut doc);
         }
@@ -117,6 +124,9 @@ impl WorldPlay {
         if sim::is_sim(&doc) {
             sim::place_chase_camera(&mut doc);
         }
+        if survival::is_survival(&doc) {
+            survival::place_chase_camera(&mut doc);
+        }
         let game = if is_collectathon(&doc)
             || action::is_action(&doc)
             || action2d::is_action2d(&doc)
@@ -131,6 +141,7 @@ impl WorldPlay {
             || puzzle::is_puzzle(&doc)
             || sports::is_sports(&doc)
             || sim::is_sim(&doc)
+            || survival::is_survival(&doc)
         {
             IsleGame::default()
         } else {
@@ -158,6 +169,7 @@ impl WorldPlay {
             puzzle: puzzle_game,
             sports: sports_game,
             sim: sim_game,
+            survival: survival_game,
             vy: 0.0,
         }
     }
@@ -202,6 +214,7 @@ impl WorldPlay {
         self.puzzle = PuzzleGame::from_doc(&self.doc);
         self.sports = SportsGame::from_doc(&self.doc);
         self.sim = SimGame::from_doc(&self.doc);
+        self.survival = SurvivalGame::from_doc(&self.doc);
         if action2d::is_action2d(&self.doc) {
             action2d::place_side_camera(&mut self.doc);
         }
@@ -232,7 +245,13 @@ impl WorldPlay {
         if sim::is_sim(&self.doc) {
             sim::place_chase_camera(&mut self.doc);
         }
+        if survival::is_survival(&self.doc) {
+            survival::place_chase_camera(&mut self.doc);
+        }
         refresh_coin_count(&mut self.doc);
+        if survival::is_survival(&self.doc) {
+            self.doc.coins = survival::NEED;
+        }
     }
 
     pub fn is_collectathon(&self) -> bool {
@@ -293,6 +312,10 @@ impl WorldPlay {
 
     pub fn is_sim(&self) -> bool {
         sim::is_sim(&self.doc) || sim::is_sim(&self.seed)
+    }
+
+    pub fn is_survival(&self) -> bool {
+        survival::is_survival(&self.doc) || survival::is_survival(&self.seed)
     }
 
     /// Mouse / arrow look. Pitch is clamped.
@@ -463,6 +486,17 @@ impl WorldPlay {
             }
             return;
         }
+        if self.is_survival() {
+            survival::tick(&mut self.doc, &mut self.survival, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.survival.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = if self.survival.ok { 250 } else { 0 };
+            }
+            return;
+        }
         self.collect_pickups();
         self.game.time_s += dt;
         self.input.jump = false;
@@ -512,6 +546,9 @@ impl WorldPlay {
         }
         if self.is_sim() {
             return sim::build_hud(&self.sim, self.game.phase, width, height);
+        }
+        if self.is_survival() {
+            return survival::build_hud(&self.survival, self.game.phase, width, height);
         }
         let w = width.max(1) as f32;
         let h = height.max(1) as f32;

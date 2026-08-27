@@ -514,3 +514,26 @@ def test_action_side_fixture_has_sprite_foe_and_wall():
     slots = sorted(int(lit["slot"]) for lit in data["lights"])
     assert slots == [0, 1, 2, 3]
     assert data.get("heightfield") in (None, {})
+
+
+def test_survival_meter_fixture_has_camp_and_ration():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/survival_meter_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    camps = [p for p in data["props"] if p.get("name") == "camp"]
+    assert len(camps) == 1
+    assert camps[0].get("model") == "box"
+    rations = [p for p in data["props"] if p.get("name") == "ration"]
+    assert len(rations) == 1
+    assert rations[0].get("model") == "box"
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    assert any(p.get("name") == "floor" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+    assert data.get("coins", 0) == 8
