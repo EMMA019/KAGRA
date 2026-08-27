@@ -31,21 +31,11 @@ const BOUGHT_PIP: [u8; 4] = [70, 180, 110, 255];
 /// Live shop around a dump. Bought stays here; `name` + flag enable and
 /// `coins` in the dump are the query source of truth. Spend is J/click at
 /// the stall, not Rapier, not an inventory grid.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ShopGame {
     pub bought: bool,
     pub done: bool,
     pub coins: u32,
-}
-
-impl Default for ShopGame {
-    fn default() -> Self {
-        Self {
-            bought: false,
-            done: false,
-            coins: 0,
-        }
-    }
 }
 
 impl ShopGame {
