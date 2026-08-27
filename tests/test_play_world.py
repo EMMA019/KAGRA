@@ -184,7 +184,8 @@ def test_crest_fixture_has_heightfield_fn_and_player():
     hf = data["heightfield"]
     assert hf["fn"] == "open_world_height"
     assert hf["samples"]
-    assert any(p.get("gltf") in (None, "") for p in data["props"])
+    crate_p = next(p for p in data["props"] if p.get("name") == "crate")
+    assert crate_p.get("gltf") == "crate.glb"
 
 
 def test_gltf_prop_dump_shape(tmp_path):

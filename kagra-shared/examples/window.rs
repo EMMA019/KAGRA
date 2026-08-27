@@ -23,10 +23,10 @@ use kagra_shared::collectathon::WalkInput;
 use kagra_shared::render::Renderer;
 use kagra_shared::scene::DrawList;
 use kagra_shared::WorldPlay;
-use winit::event::{DeviceEvent, ElementState, Event, KeyEvent, WindowEvent};
+use winit::event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::keyboard::{Key, NamedKey};
-use winit::window::WindowBuilder;
+use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
+use winit::window::{CursorGrabMode, WindowBuilder};
 
 struct Args {
     dump: PathBuf,
@@ -68,7 +68,21 @@ impl Keys {
     }
 }
 
-fn apply_key(keys: &mut Keys, key: &Key, down: bool) {
+fn apply_key(keys: &mut Keys, key: &Key, physical: &PhysicalKey, down: bool) {
+    if let PhysicalKey::Code(code) = physical {
+        match code {
+            KeyCode::KeyW => keys.w = down,
+            KeyCode::KeyA => keys.a = down,
+            KeyCode::KeyS => keys.s = down,
+            KeyCode::KeyD => keys.d = down,
+            KeyCode::ArrowLeft => keys.left = down,
+            KeyCode::ArrowRight => keys.right = down,
+            KeyCode::ArrowUp => keys.up = down,
+            KeyCode::ArrowDown => keys.down = down,
+            KeyCode::Space => keys.jump = down,
+            _ => {}
+        }
+    }
     match key {
         Key::Named(NamedKey::ArrowLeft) => keys.left = down,
         Key::Named(NamedKey::ArrowRight) => keys.right = down,
@@ -90,6 +104,13 @@ fn apply_key(keys: &mut Keys, key: &Key, down: bool) {
     }
 }
 
+fn grab_cursor(window: &winit::window::Window) {
+    let _ = window
+        .set_cursor_grab(CursorGrabMode::Locked)
+        .or_else(|_| window.set_cursor_grab(CursorGrabMode::Confined));
+    window.set_cursor_visible(false);
+}
+
 fn main() -> Result<(), String> {
     let args = parse_args()?;
     let json = std::fs::read_to_string(&args.dump)
@@ -109,11 +130,12 @@ fn main() -> Result<(), String> {
     let mut renderer = pollster::block_on(Renderer::new_for_window(window.clone(), width, height))?;
     renderer.upload_world_meshes(&play.doc)?;
     println!(
-        "WorldDoc window {} ({}x{}) WASD walk, mouse/arrows look, Esc to close",
+        "WorldDoc window {} ({}x{})\n  WASD walk | mouse or arrows look | Space jump | Esc quit\n  click the window if the mouse look is not captured",
         args.dump.display(),
         width,
         height
     );
+    grab_cursor(&window);
 
     let start = Instant::now();
     let mut last = Instant::now();
@@ -134,6 +156,7 @@ fn main() -> Result<(), String> {
                             event:
                                 KeyEvent {
                                     logical_key,
+                                    physical_key,
                                     state,
                                     repeat: false,
                                     ..
@@ -147,8 +170,17 @@ fn main() -> Result<(), String> {
                         elwt.exit();
                         return;
                     }
-                    apply_key(&mut keys, &logical_key, down);
+                    apply_key(&mut keys, &logical_key, &physical_key, down);
                 }
+                Event::WindowEvent {
+                    event:
+                        WindowEvent::MouseInput {
+                            state: ElementState::Pressed,
+                            button: MouseButton::Left,
+                            ..
+                        },
+                    ..
+                } => grab_cursor(&window),
                 Event::DeviceEvent {
                     event: DeviceEvent::MouseMotion { delta },
                     ..

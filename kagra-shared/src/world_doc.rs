@@ -661,6 +661,7 @@ mod tests {
         let crate_p = doc.props.iter().find(|p| p.name == "crate").expect("crate");
         let coin = doc.props.iter().find(|p| p.name == "coin").expect("coin");
         assert_eq!(crate_p.id, "prop:crate");
+        assert_eq!(crate_p.gltf.as_deref(), Some("crate.glb"));
         assert_eq!(coin.parent.as_deref(), Some("prop:crate"));
         assert_eq!(coin.position, [2.3, 1.1, -1.0]);
         assert_eq!(doc.player.as_ref().unwrap().id, "walker:player");
@@ -698,6 +699,14 @@ mod tests {
         assert!((scene.camera.eye - Vec3::new(0.0, 5.65, 4.2)).length() < 1e-4);
         assert!(!scene.batches.is_empty(), "compiled frame needs batches");
         assert!(scene.instance_count() >= 3, "ground + props + walker");
+        assert!(
+            scene.batches.iter().any(|b| b.mesh == MESH_HEIGHTFIELD),
+            "Crest dump must compile a heightfield, not a flat plane"
+        );
+        assert!(
+            scene.batches.iter().any(|b| b.mesh.0 >= MESH_GLTF_BASE),
+            "Crest crate.glb must compile as a glTF slot"
+        );
         // Scene3D stays a draw list: no dump fields to roundtrip from it.
         let orb = WorldDoc::from_json(ORB_RUSH_DUMP).unwrap();
         let scene = orb.compile_scene(1.0);
