@@ -17,6 +17,10 @@
 //!
 //! `python -m kagra.play_world dump.json` shells to this example (or an
 //! installed helper). Skip when there is no display.
+//!
+//! Desktop-only. Wasm canvas uses `Renderer::new_for_surface`.
+
+#![cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -25,9 +29,13 @@ use std::time::Instant;
 use kagra_shared::render::Renderer;
 use kagra_shared::scene::DrawList;
 use kagra_shared::{Camera, WorldDoc};
+#[cfg(not(target_arch = "wasm32"))]
 use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
+#[cfg(not(target_arch = "wasm32"))]
 use winit::event_loop::{ControlFlow, EventLoop};
+#[cfg(not(target_arch = "wasm32"))]
 use winit::keyboard::{Key, NamedKey};
+#[cfg(not(target_arch = "wasm32"))]
 use winit::window::WindowBuilder;
 
 struct Args {
@@ -37,6 +45,12 @@ struct Args {
     seconds: Option<f32>,
 }
 
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    // Example `window` is desktop-only. Wasm stays on `new_for_surface`.
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), String> {
     let args = parse_args()?;
     let json = std::fs::read_to_string(&args.dump)
@@ -124,6 +138,7 @@ fn main() -> Result<(), String> {
         .map_err(|e| format!("window event loop: {e}"))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn is_quit_key(key: &Key) -> bool {
     match key {
         Key::Named(NamedKey::Escape) => true,

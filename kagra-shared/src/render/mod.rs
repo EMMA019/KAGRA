@@ -106,6 +106,10 @@ impl Renderer {
     /// `Renderer` as Android / iOS / canvas / offscreen. Not kagra-core
     /// `RendererV2`. The instance gets the window's display handle so GLES /
     /// X11 can present (Vulkan ignores it).
+    ///
+    /// Desktop-only. wgpu's `WgpuHasDisplayHandle` is `Send + Sync`; wasm
+    /// canvas/`JsValue` handles are not. Wasm stays on `new_for_surface`.
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn new_for_window(
         window: impl wgpu::DisplayAndWindowHandle + Clone + std::fmt::Debug + 'static,
         width: u32,
