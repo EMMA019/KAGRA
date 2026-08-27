@@ -19,6 +19,7 @@ pub mod gltf_load;
 pub mod input;
 pub mod map;
 pub mod mission;
+pub mod platformer;
 pub mod road;
 pub mod save;
 pub mod scene;

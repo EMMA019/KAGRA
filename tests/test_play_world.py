@@ -271,3 +271,17 @@ def test_action_arena_fixture_has_foes_and_player():
     assert "box" in models
     assert any(p.get("name") == "floor" for p in data["props"])
 
+
+def test_box_hop_fixture_has_platforms_and_checkpoint():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/box_hop_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    plats = [p for p in data["props"] if p.get("name") == "platform"]
+    assert len(plats) >= 2
+    assert any(p.get("name") == "checkpoint" for p in data["props"])
+    assert any(p.get("name") == "goal" for p in data["props"])
+    assert data.get("heightfield") in (None, {})
+

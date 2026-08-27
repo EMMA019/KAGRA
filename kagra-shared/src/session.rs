@@ -282,7 +282,16 @@ impl SharedSession {
             self.isle.set_input(WalkInput::default());
             return;
         }
-        self.isle.set_input(WalkInput { lx, lz, jump, attack: false, dodge: false }.clamped());
+        self.isle.set_input(
+            WalkInput {
+                lx,
+                lz,
+                jump,
+                attack: false,
+                dodge: false,
+            }
+            .clamped(),
+        );
     }
 
     pub fn set_jump(&mut self, jump: bool) {

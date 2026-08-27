@@ -153,6 +153,8 @@ fn main() -> Result<(), String> {
     let window = WindowBuilder::new()
         .with_title(if play.is_action() {
             "KAGRA Action Arena (shared wgpu 30)"
+        } else if play.is_platformer() {
+            "KAGRA Box Hop (shared wgpu 30)"
         } else {
             "KAGRA Crest Isle (shared wgpu 30)"
         })
@@ -279,6 +281,10 @@ fn main() -> Result<(), String> {
                     }
                     if seconds.is_some() && play.is_action() && play.game.is_playing() {
                         input.attack = true;
+                    }
+                    if seconds.is_some() && play.is_platformer() && play.game.is_playing() {
+                        // hop so landing is visible without a human holding Space
+                        input.jump = true;
                     }
                     if !play.game.is_playing() {
                         input = WalkInput::default();

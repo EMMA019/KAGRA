@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "half": 16.0,
+  "floor_y": -12.0,
+  "gravity": 22.0,
+  "water_y": null,
+  "coins": 0,
+  "player": {
+    "id": "walker:player",
+    "type": "walker",
+    "name": "player",
+    "position": [0.0, 1.75, 0.0],
+    "yaw": 0.0,
+    "face": 0.0,
+    "on_ground": true
+  },
+  "props": [
+    {
+      "id": "prop:plat-start",
+      "type": "prop",
+      "name": "platform",
+      "position": [0.0, 0.4, 0.0],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [6.0, 0.8, 4.0],
+      "enabled": true,
+      "parent": null,
+      "color": [92, 110, 88]
+    },
+    {
+      "id": "prop:plat-mid",
+      "type": "prop",
+      "name": "platform",
+      "position": [0.0, 1.1, 6.5],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [4.0, 0.8, 3.2],
+      "enabled": true,
+      "parent": null,
+      "color": [110, 96, 72]
+    },
+    {
+      "id": "prop:checkpoint",
+      "type": "prop",
+      "name": "checkpoint",
+      "position": [0.0, 2.1, 6.5],
+      "yaw": 0.0,
+      "model": "cylinder",
+      "gltf": null,
+      "scale": [0.35, 1.4, 0.35],
+      "enabled": true,
+      "parent": null,
+      "color": [240, 196, 72]
+    },
+    {
+      "id": "prop:plat-goal",
+      "type": "prop",
+      "name": "platform",
+      "position": [0.0, 1.6, 12.0],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [3.6, 0.8, 3.0],
+      "enabled": true,
+      "parent": null,
+      "color": [72, 120, 96]
+    },
+    {
+      "id": "prop:goal",
+      "type": "prop",
+      "name": "goal",
+      "position": [0.0, 2.7, 12.0],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [0.4, 1.6, 0.12],
+      "enabled": true,
+      "parent": null,
+      "color": [70, 170, 90]
+    }
+  ],
+  "walkers": [
+    {
+      "id": "walker:player",
+      "type": "walker",
+      "name": "player",
+      "position": [0.0, 1.75, 0.0],
+      "yaw": 0.0,
+      "face": 0.0,
+      "on_ground": true
+    }
+  ],
+  "lights": [
+    {
+      "id": "light:0",
+      "type": "light",
+      "name": "key",
+      "position": [4.0, 10.0, -2.0],
+      "kind": "point",
+      "slot": 0,
+      "intensity": 1.05,
+      "radius": 24.0,
+      "color": [1.0, 0.95, 0.88],
+      "direction": null
+    }
+  ],
+  "cameras": [
+    {
+      "id": "camera:main",
+      "type": "camera",
+      "name": "main",
+      "position": [0.0, 5.4, -12.2],
+      "target": [0.0, 2.2, 0.0],
+      "fov": 54.0
+    }
+  ],
+  "heightfield": null
+}

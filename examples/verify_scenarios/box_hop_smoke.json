@@ -1,0 +1,21 @@
+{
+  "name": "box_hop_smoke",
+  "notes": "M3 platformer close on shared wgpu 30. Jump, fall, land, checkpoint retry on play_world. Capsule on boxes. No sprites, no Rapier, no VRM.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/box_hop_world.json",
+    "player.on_ground": true,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "prop", "name": "platform", "min_count": 2},
+      {"type": "prop", "name": "checkpoint", "count": 1},
+      {"type": "prop", "name": "goal", "count": 1}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/box_hop_world.json",
+    "out": "scratch/box_hop_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

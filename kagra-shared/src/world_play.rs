@@ -12,6 +12,7 @@ use crate::collectathon::{
     CAM_LOOK_Y, GRAVITY, JUMP_V, PICK_REACH, PLAYER_SPEED, STAR_XZ,
 };
 use crate::game::GamePhase;
+use crate::platformer::{self, PlatformGame};
 use crate::scene::{DrawList, Quad};
 use crate::world_doc::{WorldDoc, WorldProp, WorldWalker};
 use glam::Vec3;
@@ -26,6 +27,7 @@ pub struct WorldPlay {
     pub look_pitch: f32,
     pub game: IsleGame,
     pub action: ActionGame,
+    pub platform: PlatformGame,
     seed: WorldDoc,
     vy: f32,
 }
@@ -35,10 +37,15 @@ impl WorldPlay {
         let mut doc = doc;
         seed_collectathon_pickups(&mut doc);
         action::seed(&mut doc);
+        platformer::seed(&mut doc);
         refresh_coin_count(&mut doc);
         let look_yaw = look_yaw_from_doc(&doc);
         let action = ActionGame::from_doc(&doc);
-        let game = if is_collectathon(&doc) || action::is_action(&doc) {
+        let platform = PlatformGame::from_doc(&doc);
+        let game = if is_collectathon(&doc)
+            || action::is_action(&doc)
+            || platformer::is_platformer(&doc)
+        {
             IsleGame::default()
         } else {
             let mut g = IsleGame::default();
@@ -53,6 +60,7 @@ impl WorldPlay {
             look_pitch: 0.0,
             game,
             action,
+            platform,
             vy: 0.0,
         }
     }
@@ -80,6 +88,12 @@ impl WorldPlay {
         self.game.best_score = best;
         self.game.start();
         self.action = ActionGame::from_doc(&self.doc);
+        let ckpt = self.platform.checkpoint;
+        self.platform = PlatformGame::from_doc(&self.doc);
+        if ckpt.is_some() {
+            self.platform.checkpoint = ckpt;
+            platformer::restore_checkpoint(&mut self.doc, &self.platform);
+        }
         refresh_coin_count(&mut self.doc);
     }
 
@@ -89,6 +103,10 @@ impl WorldPlay {
 
     pub fn is_action(&self) -> bool {
         action::is_action(&self.doc) || action::is_action(&self.seed)
+    }
+
+    pub fn is_platformer(&self) -> bool {
+        platformer::is_platformer(&self.doc) || platformer::is_platformer(&self.seed)
     }
 
     /// Mouse / arrow look. Pitch is clamped.
@@ -121,6 +139,17 @@ impl WorldPlay {
             }
             return;
         }
+        if self.is_platformer() {
+            platformer::tick(&mut self.doc, &mut self.platform, &mut self.vy, input, dt);
+            self.follow_camera();
+            self.game.time_s += dt;
+            self.input.jump = false;
+            if self.platform.dead || self.platform.won {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = self.platform.landed * 50;
+            }
+            return;
+        }
         self.collect_pickups();
         self.game.time_s += dt;
         self.input.jump = false;
@@ -134,6 +163,9 @@ impl WorldPlay {
     pub fn build_hud(&self, width: u32, height: u32) -> DrawList {
         if self.is_action() {
             return action::build_hud(&self.action, self.game.phase, width, height);
+        }
+        if self.is_platformer() {
+            return platformer::build_hud(&self.platform, self.game.phase, width, height);
         }
         let w = width.max(1) as f32;
         let h = height.max(1) as f32;
