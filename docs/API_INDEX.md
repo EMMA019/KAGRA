@@ -439,6 +439,7 @@
 - VRM プリミティブはパッド付きボーン AABB でカリング。`doubleSided` のときだけ両面。MToon は裏面法線を反転（頭の中からのリム白飛び / 髪越しの顔を防ぐ）。Hair / 髪 マテリアルだけ `rimLift` を上げる（顔は触らない）。
 - 同じパスの `kagra.avatar()` はメッシュ / テクスチャ / MToon を共有する。ジョイントパレットはインスタンスごと。計測は `vrm_gpu_stats()`。見本は `examples/vrm_multi_avatar.py`（Crest Isle は 1 人のまま）。
 - 床と箱: `World`（`World3D` と同じ型）または `Physics3D` + `box_mesh`。カメラは `Camera3D.follow`。`world.query` / `world.dump` / `world.load` はスクショなしで世界を読む。
+- dump JSON の共有オフスクリーン: `python -m kagra.render_world dump.json out.png`（または `kagra.verify` の `expect_offscreen`）。wgpu 30 の subprocess。kagra-core 窓 / `(-12800,-12800)` ではない。ヘルパ無し・アダプタ無しはスキップ。golden pixel ではない。
 - 短い 3D: `Prop` + `Walk` + `sky()` / `room()` / `water()`。地形は `World.set_height_fn` + `island_height` / `overworld_height` / `open_world_height`。タイル化は `tile=` / `stream_radius=`。遠いタイルは `lod_radius=` / `lod_cells=`。拾いは `can_pick`。`Walk(..., jump=)`。キャラコン: `Walk.wish` / `Walk.move` / `Walk.try_jump`（または `CharacterController`）。accel/decel 既定。坂は接平面に接地し、段差は `step_height`。Rapier は入れない。
 - 一人称: `Walk(..., first_person=True)`。目線は `eye_height`。ポインタロックは一人称のとき（OS が拒めばフォールバック）。`F` で切替えるデモは Prop Garden。
 - ホバー / クリック: `hovered_prop(cam)`。`clicked_prop(cam)` は押下。レイ直打ちは `kagra.play.hovered_prop(ox,oy,oz,dx,dy,dz)`。`plane` は除外。

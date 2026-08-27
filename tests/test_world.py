@@ -2,8 +2,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from tests.conftest import load_kagra_submodule
+
+ROOT = Path(__file__).resolve().parents[1]
+CREST_FIXTURE = ROOT / "kagra-shared" / "tests" / "fixtures" / "crest_isle_world.json"
+ORB_FIXTURE = ROOT / "kagra-shared" / "tests" / "fixtures" / "orb_rush_world.json"
 
 play = load_kagra_submodule("play")
 world_mod = load_kagra_submodule("world")
@@ -173,3 +178,187 @@ def test_eval_world_expect_player_coins_query():
     bad = world_mod.eval_world_expect(data, {"coins": 0, "player.on_ground": False})
     assert any("coins" in e for e in bad)
     assert any("on_ground" in e for e in bad)
+
+
+class _Cam:
+    def __init__(self, rec):
+        pos = rec["position"]
+        tgt = rec["target"]
+        self.sid = rec["id"]
+        self.name = rec["name"]
+        self.position = (float(pos[0]), float(pos[1]), float(pos[2]))
+        self.target = (float(tgt[0]), float(tgt[1]), float(tgt[2]))
+        self.fov_deg = float(rec["fov"])
+
+
+def _assert_dump_is_world_doc_v1(data: dict):
+    assert data["version"] == 1
+    for key in (
+        "half",
+        "floor_y",
+        "gravity",
+        "water_y",
+        "coins",
+        "player",
+        "props",
+        "walkers",
+        "lights",
+        "cameras",
+        "heightfield",
+    ):
+        assert key in data, key
+    blob = json.dumps(data)
+    assert "mesh_id" not in blob
+    assert "batches" not in blob
+
+
+def test_crest_isle_shaped_dump_is_world_doc_v1():
+    """Crest Isle-shaped World.dump() is the JSON WorldDoc ingests (no GPU)."""
+    land = load_kagra_submodule("land")
+    w = _world(half=80.0, gravity=9.8)
+    w.set_height_fn(
+        land.open_world_height,
+        cells=8,
+        tile=16.0,
+        stream_radius=64.0,
+        lod_radius=28.0,
+        lod_cells=6,
+    )
+    w.set_water_y(0.0)
+    w.terrain_uv_half = 80.0
+    w.terrain_uv_period = 48.0
+    w.terrain_uv_blend = 0.12
+    w.terrain_uv_pad = 0.28
+    w.terrain_uv_rect = [0.22, 0.28, 0.62, 0.78]
+    w.add_player(0.0, -8.0)
+    w.player.y = 1.2
+    w.player.on_ground = True
+    w._loaded_tiles.update({(0, 0), (-1, 0)})
+    crate = play.Prop(
+        "box", x=2.0, y=0.5, z=-1.0, world=w, collision=False, name="crate",
+    )
+    crate.sid = "prop:crate"
+    coin = play.Prop(
+        "sphere",
+        x=0.3,
+        y=0.6,
+        z=0.0,
+        world=w,
+        collision=False,
+        name="coin",
+        parent=crate,
+        scale=0.4,
+        color=(255, 220, 80),
+    )
+    coin.sid = "prop:coin"
+    w._lights.append(
+        {
+            "id": "light:0",
+            "name": "key",
+            "kind": "spot",
+            "slot": 0,
+            "position": [6.0, 18.0, -8.0],
+            "intensity": 1.15,
+            "radius": 36.0,
+            "color": [1.0, 0.96, 0.86],
+            "direction": [-0.18, -1.0, 0.22],
+        }
+    )
+    w._cameras.append(
+        _Cam(
+            {
+                "id": "camera:main",
+                "name": "main",
+                "position": [0.0, 5.65, 4.2],
+                "target": [0.0, 1.25, -8.0],
+                "fov": 54.0,
+            }
+        )
+    )
+    data = w.dump()
+    _assert_dump_is_world_doc_v1(data)
+    assert data["half"] == 80.0
+    assert data["heightfield"]["fn"] == "open_world_height"
+    assert data["heightfield"]["tile"] == 16.0
+    tile_ids = {t["id"] for t in data["heightfield"]["tiles"]}
+    assert "tile:0,0" in tile_ids
+    assert "tile:-1,0" in tile_ids
+    by_id = {p["id"]: p for p in data["props"]}
+    assert by_id["prop:coin"]["parent"] == "prop:crate"
+    assert by_id["prop:crate"]["position"][0] == 2.0
+    assert data["player"]["id"] == "walker:player"
+    fixture = json.loads(CREST_FIXTURE.read_text(encoding="utf-8"))
+    assert fixture["heightfield"]["fn"] == data["heightfield"]["fn"]
+    assert {t["id"] for t in fixture["heightfield"]["tiles"]} == tile_ids
+    assert fixture["props"][1]["parent"] == "prop:crate"
+
+
+def test_orb_rush_shaped_dump_is_world_doc_v1():
+    """Orb Rush-shaped World.dump() is the JSON WorldDoc ingests (no GPU)."""
+    w = _world(half=6.0)
+    w.add_player(0.0, 0.0)
+    w.player.y = 0.0
+    w.player.on_ground = True
+    star_a = play.Prop(
+        "sphere", x=1.5, y=0.5, z=-1.0, world=w, collision=False, name="star",
+        scale=0.28, color=(255, 220, 80),
+    )
+    star_a.sid = "prop:star-a"
+    star_b = play.Prop(
+        "sphere", x=-2.0, y=0.5, z=2.5, world=w, collision=False, name="star",
+        scale=0.28, color=(255, 220, 80),
+    )
+    star_b.sid = "prop:star-b"
+    bomb = play.Prop(
+        "sphere", x=3.0, y=0.5, z=1.0, world=w, collision=False, name="bomb",
+        scale=0.32, color=(255, 70, 90),
+    )
+    bomb.sid = "prop:bomb-a"
+    w._cameras.append(
+        _Cam(
+            {
+                "id": "camera:main",
+                "name": "main",
+                "position": [0.0, 3.2, 6.5],
+                "target": [0.0, 0.85, 0.0],
+                "fov": 38.0,
+            }
+        )
+    )
+    data = w.dump()
+    _assert_dump_is_world_doc_v1(data)
+    assert data["half"] == 6.0
+    assert data["heightfield"] is None
+    assert data["coins"] == 0
+    by_id = {p["id"]: p for p in data["props"]}
+    assert by_id["prop:star-a"]["position"] == [1.5, 0.5, -1.0]
+    assert by_id["prop:star-a"]["parent"] is None
+    fixture = json.loads(ORB_FIXTURE.read_text(encoding="utf-8"))
+    assert {p["id"] for p in fixture["props"]} == set(by_id)
+
+
+def test_shared_world_fixtures_load_in_python():
+    """Committed WorldDoc fixtures are World.dump() JSON Python can load."""
+    land = load_kagra_submodule("land")
+    w = _world(half=1.0)
+    w.load(str(CREST_FIXTURE))
+    assert abs(w.half - 80.0) < 1e-6
+    assert w._height_fn is land.open_world_height
+    assert (0, 0) in w._loaded_tiles
+    coins = w.query(type="prop", name="coin")
+    crates = w.query(type="prop", name="crate")
+    assert len(coins) == 1 and len(crates) == 1
+    assert coins[0]["parent"] == crates[0]["id"]
+    again = w.dump()
+    assert again["heightfield"]["fn"] == "open_world_height"
+    assert {t["id"] for t in again["heightfield"]["tiles"]} >= {"tile:0,0", "tile:-1,0"}
+
+    play.Prop.clear()
+    w2 = _world(half=1.0)
+    w2.load(str(ORB_FIXTURE))
+    assert abs(w2.half - 6.0) < 1e-6
+    stars = w2.query(type="prop", name="star")
+    bombs = w2.query(type="prop", name="bomb")
+    assert len(stars) == 2
+    assert len(bombs) == 1
+    assert w2._height_fn is None

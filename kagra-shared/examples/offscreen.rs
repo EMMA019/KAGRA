@@ -8,7 +8,13 @@
 //! # 2D のタッチデモを見る
 //! cargo run -p kagra-shared --features render --example offscreen -- 640 360 demo.png 2d
 //! cargo run -p kagra-shared --features render --example offscreen -- 960 540 isle.png isle
+//! cargo run -p kagra-shared --features render --example offscreen -- 640 360 world.png world
+//! cargo run -p kagra-shared --features render --example offscreen -- 640 360 world.png world path/to/dump.json
 //! ```
+//!
+//! `python -m kagra.render_world dump.json out.png` shells to this example (or an
+//! installed helper). Dump JSON is `World.dump()` / `docs/schemas/world.json`.
+//! Not kagra-core `RendererV2`. Not the `(-12800,-12800)` fake-headless window.
 
 use std::fs::File;
 use std::io::BufWriter;
@@ -30,6 +36,35 @@ fn main() -> Result<(), String> {
     let mode = args.next().unwrap_or_default();
     let two_d = mode == "2d";
     let isle = mode == "isle";
+    let world = mode == "world";
+
+    if world {
+        let dump_arg = args.next();
+        let (json, source) = match dump_arg {
+            Some(path) => {
+                let text = std::fs::read_to_string(&path)
+                    .map_err(|e| format!("read world dump {path}: {e}"))?;
+                (text, path)
+            }
+            None => (
+                include_str!("../tests/fixtures/crest_isle_world.json").to_string(),
+                "kagra-shared/tests/fixtures/crest_isle_world.json".to_string(),
+            ),
+        };
+        let doc = kagra_shared::WorldDoc::from_json(&json)?;
+        let mut renderer = pollster::block_on(Renderer::new_offscreen(width, height))?;
+        let pixels = renderer.render_world_doc(&doc)?;
+        write_png(&out, width, height, &pixels)?;
+        println!(
+            "wrote {} ({}x{}, {} bytes) from WorldDoc {} compile_scene",
+            out.display(),
+            width,
+            height,
+            pixels.len(),
+            source
+        );
+        return Ok(());
+    }
 
     let mut session = SharedSession::default();
     session.create_surface(width, height);

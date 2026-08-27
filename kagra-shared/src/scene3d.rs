@@ -5,6 +5,10 @@
 //! おかげでカメラ行列・視錐台カリング・ワールド生成を GPU の無い CI で検証できる。
 //!
 //! 座標系は右手系で y が上。奥行きは wgpu に合わせて 0..1 に写す。
+//!
+//! 永続ワールドは `WorldDoc`（`docs/schemas/world.json`）。ここは 1 フレームの
+//! 描画内容だけ。dump JSON を `Scene3D` に詰め込まない（モバイルの collectathon /
+//! driving がこの型を組み立てる）。
 
 use glam::{Mat4, Vec3, Vec4, Vec4Swizzles};
 

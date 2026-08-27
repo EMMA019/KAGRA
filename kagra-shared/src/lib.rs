@@ -27,6 +27,7 @@ pub mod traffic;
 pub mod ui;
 pub mod vehicle;
 pub mod world;
+pub mod world_doc;
 
 #[cfg(feature = "render")]
 pub mod render;
@@ -54,9 +55,13 @@ pub use session::{FrameStats, SharedSession};
 pub use traffic::{TrafficCar, TrafficSystem};
 pub use ui::{PauseMenu, UiAction, UiMode};
 pub use vehicle::{ChaseCamera, DriveInput, Truck, TruckSpec};
+pub use world_doc::{
+    compile_meshes, WorldCamera, WorldDoc, WorldHeightfield, WorldLight, WorldProp,
+    WorldTerrainTile, WorldWalker, WORLD_DUMP_VERSION,
+};
 
 #[cfg(feature = "render")]
-pub use render::{Renderer, SurfaceSource};
+pub use render::{render_world_doc, Renderer, SurfaceSource};
 
 /// セマンティックバージョン（ネイティブ／Wasm 双方で照会可能）。
 pub const KAGRA_SHARED_VERSION: &str = env!("CARGO_PKG_VERSION");

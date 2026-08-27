@@ -19,5 +19,11 @@
       {"type": "prop", "name": "coin", "min_count": 1},
       {"type": "terrain_tile", "min_count": 1, "loaded": true}
     ]
+  },
+  "expect_offscreen": {
+    "out": "scratch/open_world_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
   }
 }
