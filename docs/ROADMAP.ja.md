@@ -1,6 +1,6 @@
 # KAGRA ロードマップ — 画面を見ないエージェントがゲームを出す
 
-最終更新: 2026-08-26（kagra **0.1.4**）。
+最終更新: 2026-08-27（kagra **0.1.4**）。
 旧「今 63% / 到達点 80%（three-vrm + three.js + Ursina 置換）」は
 [archive](archive/ROADMAP.ja.md.63pct-2026-08-25.md) に移した。エージェントは 63% をコピーしない。
 
@@ -29,7 +29,7 @@ VRM はオプションのローダであり、背骨ではない。
 |---|---|---|
 | **M0** | 看板（タイル）。Crest Isle 16m タイル / UV。PR #97 | 閉じた。`uv_rect` / `_upload_tile` / `stream_tiles` / `TERRAIN_UV_*` は触らない |
 | **M1** | 世界をデータに。`World.query` / `dump` / `load`。15% → 35% へ | 閉じた（#99） |
-| **M2** | **ランタイムは一つ。** スキーマ（`WorldDoc` + `compile_scene`）の次が本スライス: kagra-shared wgpu 30 のオフスクリーンで `WorldDoc` を描く（`compile_meshes` を upload → `Scene3D` batches → RGBA readback）。`Scene3D` は 1 フレームの draw list のまま。デスクトップ窓 / `RendererV2` / wgpu 0.19 混合はまだ。2D ECS に z を足さない | 今ここ。shared オフスクリーン。窓の付け替えは次 |
+| **M2** | **ランタイムは一つ。** スキーマ + shared オフスクリーンは閉じた。本スライスは **wgpu 30 デスクトップ窓の楔**: WorldDoc → `compile_scene` → 既存の kagra-shared `Renderer` が普通の winit 窓に present。`Scene3D` は 1 フレームの draw list のまま。**デスクトップ VRM / Crest Isle はまだ RendererV2**（VRM skin が shared に無い）。0.19 と 30 を混ぜない。2D ECS に z を足さない | 今ここ。shared 窓楔。Crest Isle の付け替えは次ではない（VRM） |
 | **M3** | ゲームとして足りる（30 秒の見本が遊べる） | その次 |
 | **M4** | 出荷（エージェントが画面なしで普通のゲームを出す） | 80% の手前まで |
 
@@ -47,7 +47,7 @@ VRM はオプションのローダであり、背骨ではない。
 `world.query(type=, name=, aabb=)` はスクショなしで position / name / type / id を返す。
 タイルは `type="terrain_tile"` で `loaded` / `albedo_ok`（はげを PNG なしで検出）。
 `world.dump()` / `world.load()` のスキーマは [schemas/world.json](schemas/world.json)。
-kagra-shared の `WorldDoc::from_json` が同じ JSON を読む。`compile_scene` が `Scene3D` を出す。`render_world_doc` が shared wgpu 30 オフスクリーンでそのフレームを RGBA にする。デスクトップ窓 / `RendererV2` の付け替えは次。
+kagra-shared の `WorldDoc::from_json` が同じ JSON を読む。`compile_scene` が `Scene3D` を出す。`render_world_doc` が shared wgpu 30 オフスクリーンでそのフレームを RGBA にする。`python -m kagra.play_world` が同じ Renderer を **普通のデスクトップ窓** に present する（wgpu 30 の楔。kagra-core `window.rs` / `(-12800,-12800)` ではない）。**デスクトップ VRM / Crest Isle はまだ RendererV2。**
 
 ## 今あるもの（嘘にしない）
 
@@ -56,7 +56,7 @@ kagra-shared の `WorldDoc::from_json` が同じ JSON を読む。`compile_scene
 - AABB の箱（落ちる・積む・乗る）。Rapier は入れない
 - VRM ローダ（歌・踊り・リップ・LookAt）。体の背骨ではない
 - `kagra.verify` の PNG サイズ煙 + **世界アサーション**（#99）+ 任意の **shared オフスクリーン煙**（IHDR / バイト数。golden ではない。ヘルパ無しはスキップ）
-- `WorldDoc`（dump JSON。`compile_scene` → 1 フレーム `Scene3D`。shared wgpu 30 オフスクリーン `render_world_doc` で RGBA。デスクトップ窓はまだ kagra-core）
+- `WorldDoc`（dump JSON。`compile_scene` → 1 フレーム `Scene3D`。shared wgpu 30 オフスクリーン `render_world_doc` で RGBA。デスクトップ楔は `play_world` / example `window`。VRM/Crest Isle は RendererV2）
 - エージェントループ: `docs/API_INDEX.md` / MCP / `docs/agent-runs/`
 
 ## 嘘（今 15% を大きく呼ばない）
@@ -66,7 +66,7 @@ kagra-shared の `WorldDoc::from_json` が同じ JSON を読む。`compile_scene
 - 「2D ECS に z を足せば 3D」——やらない
 - 「VRM がエンジンの背骨」「Wasm に VRM を移植」——やらない
 - 「Tk / Inspector が人間用エディタ」——禁止。目は `annotate` / `debug_trace` / `world.query`
-- dump JSON を読んだだけで「ランタイムは一つ」——スキーマと shared オフスクリーンまでは来た。デスクトップ窓の付け替えは次
+- dump JSON を読んだだけで「ランタイムは一つ」——スキーマ + shared オフスクリーン + wgpu 30 窓楔までは来た。Crest Isle VRM の付け替えはまだ（skin が shared に無い）
 
 ## 80% の外（今やらない）
 
@@ -77,15 +77,13 @@ Cinemachine、PhysX 完全、VRM-on-Wasm。
 加えて（エンジン都合）: Rapier、SSAO / 4 段 CSM、wgpu 0.19 と 30 の混合、
 OSM、ボクセル、ナビメッシュ、lights/joints/prefab-instantiate/TRS 階層/particles の新規山。
 
-## 本 PR の Done（M2 — スキーマ + shared オフスクリーン）
+## 本 PR の Done（M2 — wgpu 30 デスクトップ窓楔）
 
-- GPU 無し: Crest Isle 形 / Orb Rush 形の `World.dump()` JSON が `WorldDoc` としてパースされ、安定 id・position・parent・heightfield `fn` / tile key がラウンドトリップする
-- `WorldDoc::compile_scene` が `Scene3D`（camera + batches）を出す。`Scene3D` は 1 フレームの draw list のまま（モバイル collectathon / driving を壊さない）
-- `render_world_doc`（feature = `render`）が `compile_meshes` を upload し、compiled `Scene3D` を wgpu 30 オフスクリーンに描いて RGBA を返す。kagra-core の窓 / `RendererV2` / `(-12800,-12800)` には触れない。アダプタ無しはスキップ
-- デスクトップ Python の dump JSON を shared クレートが受け取る（新しい公開ゲーム API は足さない）
-- [schemas/world.json](schemas/world.json) と `WorldDoc` が揃っている
-- デスクトップ窓の付け替えは次。`(-12800,-12800)` の fake-headless は kagra-core 窓側に残る。agent verify の shared PNG は `python -m kagra.render_world` / `expect_offscreen` で別プロセス（wgpu 30）
-- `pytest tests -m "not golden"` と `cargo test -p kagra-shared` が緑
+- `Renderer::new_for_window` が既存の kagra-shared wgpu 30 `Renderer` で普通のサーフェスを開く（collectathon / mobile と同じ）。kagra-core `RendererV2` / `window.rs` / `(-12800,-12800)` には触れない
+- `python -m kagra.play_world [dump.json]`（または `python examples/world_doc_window.py`）が World.dump JSON を読み、WorldDoc → Scene3D を **本物の窓** に present。既定は Crest Isle フィクスチャ。Esc / 閉じる / 任意の `--seconds` カメラ周回。WASD はまだ
+- GPU 無しテストは緑。画面無し・ヘルパ無し・アダプタ無しはスキップ
+- **デスクトップ VRM / Crest Isle は RendererV2 のまま**（VRM skin が Wasm/shared に無い。この PR では付け替えない）
+- 0.19 と 30 を混ぜない。Rapier / SSAO / エディタ / 追加 PNG golden / タイル UV / M3 lights/joints は触らない
+- `pytest tests -m "not golden"` が緑
 
-M1（query / dump / load）は #99 で閉じた。
-M2 schema + shared offscreen は #100。agent verify の配線がこの次の薄いスライス。
+M1 は #99。M2 schema は #100。M2 offscreen verify は #101。このスライスは窓楔。Crest Isle の shared 付け替えは VRM の後。

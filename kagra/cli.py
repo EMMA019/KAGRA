@@ -11,6 +11,7 @@ Usage:
   python -m kagra demo         same
   python -m kagra verify FILE  run an agent verify scenario
   python -m kagra render-world FILE [OUT.png]  shared wgpu 30 offscreen of a World.dump JSON
+  python -m kagra play-world [FILE]  shared wgpu 30 desktop window of a World.dump JSON
   kagra --help
 """
 
@@ -36,6 +37,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd in ("render-world", "render_world"):
         from kagra.render_world import main as render_world_main
         return render_world_main(rest)
+    if cmd in ("play-world", "play_world"):
+        from kagra.play_world import main as play_world_main
+        return play_world_main(rest)
     # 未知のサブコマンドはデモの引数として扱う（--offline 等）
     if cmd.startswith("-"):
         from kagra.demo import main as demo_main
