@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- ``Renderer::new_for_window`` requires ``Send + Sync`` so wgpu 30
+  ``new_with_display_handle`` type-checks on wasm32 (CI ``kagra-shared``
+  job after #102). Desktop ``Arc<Window>`` already is. No API change.
+
 - One runtime (M2 window wedge): ``python -m kagra.play_world dump.json`` (or ``python examples/world_doc_window.py``) opens a **real** desktop window and presents a compiled ``WorldDoc`` through the existing kagra-shared wgpu 30 ``Renderer`` (same as collectathon / mobile / ``render_world``). Esc / close / optional ``--seconds`` camera orbit. Subprocess so wgpu 0.19 and 30 never mix. Does not use kagra-core ``RendererV2`` or ``window.rs`` / ``(-12800,-12800)``. Desktop VRM / Crest Isle stay on RendererV2. Missing helper, no display, or no adapter skips. No WASD, no Rapier, no extra PNG goldens.
 
 - One runtime (M2 verify): ``python -m kagra.render_world dump.json out.png`` shells to the shared wgpu 30 offscreen helper (installed ``kagra-offscreen``, already-built ``target/*/examples/offscreen``, or ``cargo run -p kagra-shared --features render --example offscreen -- W H out.png world dump.json``). ``kagra.verify`` ``expect_offscreen`` smokes PNG file size / non-empty / IHDR dimensions (not golden pixels). Missing helper or no GPU adapter skips. Does not delete ``RendererV2``, does not retarget the desktop window, does not mix wgpu 0.19 and 30, does not use ``(-12800,-12800)``. Crest Isle UV/streaming untouched.
