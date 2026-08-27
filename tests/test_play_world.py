@@ -537,3 +537,30 @@ def test_survival_meter_fixture_has_camp_and_ration():
     assert slots == [0, 1, 2, 3]
     assert data.get("heightfield") in (None, {})
     assert data.get("coins", 0) == 8
+
+
+def test_rhythm_beat_fixture_has_stage_and_marker():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/rhythm_beat_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    stages = [p for p in data["props"] if p.get("name") == "stage"]
+    assert len(stages) == 1
+    assert stages[0].get("model") == "box"
+    markers = [p for p in data["props"] if p.get("name") == "marker"]
+    assert len(markers) == 1
+    assert markers[0].get("model") == "box"
+    judges = [p for p in data["props"] if p.get("name") == "judge"]
+    assert len(judges) == 1
+    assert judges[0].get("model") == "box"
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    assert any(p.get("name") == "floor" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+    assert data.get("coins", 0) == 0
+

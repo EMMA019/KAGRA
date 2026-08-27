@@ -332,6 +332,7 @@ fn main() -> Result<(), String> {
                         && !play.is_td()
                         && !play.is_novel()
                         && !play.is_stealth()
+                        && !play.is_rhythm()
                     {
                         input.lz = 1.0;
                     }
@@ -342,6 +343,9 @@ fn main() -> Result<(), String> {
                         input.attack = true;
                     }
                     if seconds.is_some() && play.is_fight() && play.game.is_playing() {
+                        input.attack = true;
+                    }
+                    if seconds.is_some() && play.is_rhythm() && play.game.is_playing() {
                         input.attack = true;
                     }
                     if seconds.is_some() && play.is_novel() && play.game.is_playing() {

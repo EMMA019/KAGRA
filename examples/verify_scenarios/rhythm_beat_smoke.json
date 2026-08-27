@@ -1,0 +1,51 @@
+{
+  "name": "rhythm_beat_smoke",
+  "notes": "M3 rhythm slice 1 on shared wgpu 30. Title -> play -> result (moving marker toward judge; J/click in the window hits; miss is a passed beat; NEED hits is dump-visible clear/flag/coins/name) lives in WorldPlay / python -m kagra.play_world. Capsules/boxes. Overlay lane+pip, not screenshot-only. Indoor lights 4 slots. Marker readable. Stage camera looks at the beat. No RendererV2, no VRM, no Rapier, no SSAO/GI, no audio chart. World assertions + dump query (not golden pixels). Picture slice inherited.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/rhythm_beat_world.json",
+    "player.on_ground": true,
+    "query": [
+      {
+        "type": "walker",
+        "name": "player",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "stage",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "marker",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "judge",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "floor",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "flag",
+        "count": 1
+      },
+      {
+        "type": "light",
+        "count": 4
+      }
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/rhythm_beat_world.json",
+    "out": "scratch/rhythm_beat_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

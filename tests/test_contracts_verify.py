@@ -456,3 +456,12 @@ def test_load_survival_meter_scenario_is_world_and_offscreen():
     assert sc.expect_world["path"].endswith("survival_meter_world.json")
     assert sc.expect_world["player.on_ground"] is True
     assert sc.expect_offscreen["out"].endswith("survival_meter_shared.png")
+
+
+def test_load_rhythm_beat_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/rhythm_beat_smoke.json")
+    assert sc.name == "rhythm_beat_smoke"
+    assert sc.expect_world["path"].endswith("rhythm_beat_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen["out"].endswith("rhythm_beat_shared.png")
+
