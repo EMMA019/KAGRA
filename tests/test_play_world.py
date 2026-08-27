@@ -456,3 +456,24 @@ def test_puzzle_pad_fixture_has_crate_and_pad():
     assert slots == [0, 1, 2, 3]
     assert data.get("heightfield") in (None, {})
 
+def test_sports_goal_fixture_has_ball_and_goal():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/sports_goal_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    balls = [p for p in data["props"] if p.get("name") == "ball"]
+    assert len(balls) == 1
+    assert balls[0].get("model") == "sphere"
+    goals = [p for p in data["props"] if p.get("name") == "goal"]
+    assert len(goals) == 1
+    assert goals[0].get("model") == "box"
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    assert any(p.get("name") == "pitch" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+

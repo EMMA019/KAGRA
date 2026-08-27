@@ -20,6 +20,7 @@ use crate::puzzle::{self, PuzzleGame};
 use crate::race::{self, RaceGame};
 use crate::rpg::{self, RpgGame};
 use crate::scene::{DrawList, Quad};
+use crate::sports::{self, SportsGame};
 use crate::sprite;
 use crate::stealth::{self, StealthGame};
 use crate::td::{self, TdGame};
@@ -45,6 +46,7 @@ pub struct WorldPlay {
     pub novel: NovelGame,
     pub stealth: StealthGame,
     pub puzzle: PuzzleGame,
+    pub sports: SportsGame,
     seed: WorldDoc,
     vy: f32,
 }
@@ -63,6 +65,7 @@ impl WorldPlay {
         novel::seed(&mut doc);
         stealth::seed(&mut doc);
         puzzle::seed(&mut doc);
+        sports::seed(&mut doc);
         refresh_coin_count(&mut doc);
         let look_yaw = look_yaw_from_doc(&doc);
         let action = ActionGame::from_doc(&doc);
@@ -75,6 +78,7 @@ impl WorldPlay {
         let novel_game = NovelGame::from_doc(&doc);
         let stealth_game = StealthGame::from_doc(&doc);
         let puzzle_game = PuzzleGame::from_doc(&doc);
+        let sports_game = SportsGame::from_doc(&doc);
         if fps::is_fps(&doc) {
             fps::place_eye_camera(&mut doc, look_yaw, 0.0);
         }
@@ -96,6 +100,9 @@ impl WorldPlay {
         if puzzle::is_puzzle(&doc) {
             puzzle::place_room_camera(&mut doc);
         }
+        if sports::is_sports(&doc) {
+            sports::place_chase_camera(&mut doc);
+        }
         let game = if is_collectathon(&doc)
             || action::is_action(&doc)
             || platformer::is_platformer(&doc)
@@ -107,6 +114,7 @@ impl WorldPlay {
             || novel::is_novel(&doc)
             || stealth::is_stealth(&doc)
             || puzzle::is_puzzle(&doc)
+            || sports::is_sports(&doc)
         {
             IsleGame::default()
         } else {
@@ -131,6 +139,7 @@ impl WorldPlay {
             novel: novel_game,
             stealth: stealth_game,
             puzzle: puzzle_game,
+            sports: sports_game,
             vy: 0.0,
         }
     }
@@ -172,6 +181,7 @@ impl WorldPlay {
         self.novel = NovelGame::from_doc(&self.doc);
         self.stealth = StealthGame::from_doc(&self.doc);
         self.puzzle = PuzzleGame::from_doc(&self.doc);
+        self.sports = SportsGame::from_doc(&self.doc);
         if fps::is_fps(&self.doc) {
             fps::place_eye_camera(&mut self.doc, self.look_yaw, self.look_pitch);
         }
@@ -192,6 +202,9 @@ impl WorldPlay {
         }
         if puzzle::is_puzzle(&self.doc) {
             puzzle::place_room_camera(&mut self.doc);
+        }
+        if sports::is_sports(&self.doc) {
+            sports::place_chase_camera(&mut self.doc);
         }
         refresh_coin_count(&mut self.doc);
     }
@@ -242,6 +255,10 @@ impl WorldPlay {
 
     pub fn is_puzzle(&self) -> bool {
         puzzle::is_puzzle(&self.doc) || puzzle::is_puzzle(&self.seed)
+    }
+
+    pub fn is_sports(&self) -> bool {
+        sports::is_sports(&self.doc) || sports::is_sports(&self.seed)
     }
 
     /// Mouse / arrow look. Pitch is clamped.
@@ -379,6 +396,17 @@ impl WorldPlay {
             }
             return;
         }
+        if self.is_sports() {
+            sports::tick(&mut self.doc, &mut self.sports, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.sports.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = if self.sports.scored { 250 } else { 0 };
+            }
+            return;
+        }
         self.collect_pickups();
         self.game.time_s += dt;
         self.input.jump = false;
@@ -419,6 +447,9 @@ impl WorldPlay {
         }
         if self.is_puzzle() {
             return puzzle::build_hud(&self.puzzle, self.game.phase, width, height);
+        }
+        if self.is_sports() {
+            return sports::build_hud(&self.sports, self.game.phase, width, height);
         }
         let w = width.max(1) as f32;
         let h = height.max(1) as f32;
