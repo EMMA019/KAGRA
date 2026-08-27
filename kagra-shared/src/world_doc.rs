@@ -4,12 +4,14 @@
 //! and driving already build that. Dump JSON lives here as `WorldDoc`, then
 //! `compile_scene` turns it into a `Scene3D` for one frame. Heightfield
 //! batches come from named demo fns (`open_world_height` / `island_height` /
-//! `overworld_height`) or dump samples. glTF props use `gltf_load` (capsule
-//! player; VRM skin is not ported). Integer GPU mesh ids are not game
-//! objects. Live play is `WorldPlay` (WASD → `WalkInput` → sit on
-//! heightfield). Offscreen draw (feature = "render") is `render_world_doc`.
-//! A real desktop window is `Renderer::new_for_window` + example `window`.
-//! Not kagra-core `RendererV2` / `window.rs`.
+//! `overworld_height`) or dump samples — production island mesh, not a
+//! placeholder plane. Coins use `Material::Metal` (existing GGX). Lights are
+//! slot 0..3 1:1. glTF props use `gltf_load` (capsule player; VRM skin is
+//! not ported). Integer GPU mesh ids are not game objects. Live play is
+//! `WorldPlay` (title → play → result, WASD → `WalkInput` → sit on
+//! heightfield → pick up). Offscreen draw (feature = "render") is
+//! `render_world_doc`. A real desktop window is `Renderer::new_for_window`
+//! + example `window`. Not kagra-core `RendererV2` / `window.rs`.
 //!
 //! Python `Walk.wish` / `CharacterController` (accel 14 / decel 22 / 8-point
 //! foot ring / step-up) is the leftover VRM motor. This crate does **not**
@@ -22,7 +24,7 @@ use std::path::Path;
 use crate::collectathon::open_world_height;
 use crate::gltf_load::{mesh_from_embedded_gltf, mesh_from_gltf_json, unit_cube_gltf};
 use crate::scene3d::{
-    primitives, Camera, Material, MeshData, MeshId, Scene3D, SceneBuilder, Vertex3,
+    primitives, Camera, LocalLight, Material, MeshData, MeshId, Scene3D, SceneBuilder, Vertex3,
 };
 use glam::{Mat4, Quat, Vec3};
 use serde::{Deserialize, Serialize};
@@ -93,6 +95,12 @@ pub struct WorldProp {
     pub parent: Option<String>,
     #[serde(default)]
     pub color: Option<[u32; 3]>,
+    /// 0..1. Coins dump 1.0. Default 0 (Lambert).
+    #[serde(default)]
+    pub metallic: f32,
+    /// 0..1. Coins dump 0.12. Default 1 (dielectric).
+    #[serde(default = "default_roughness")]
+    pub roughness: f32,
 }
 
 fn prop_type() -> String {
@@ -105,6 +113,10 @@ fn unit_scale() -> [f32; 3] {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_roughness() -> f32 {
+    1.0
 }
 
 /// Walker record (`walker:player`).
@@ -321,7 +333,8 @@ impl WorldDoc {
             let scale = Vec3::from_array(prop.scale);
             let model =
                 Mat4::from_scale_rotation_translation(scale, Quat::from_rotation_y(prop.yaw), pos);
-            b.push(mesh, model, color_u8(prop.color));
+            let mat = material_for_prop(prop);
+            b.push_material(mesh, model, color_u8(prop.color), mat);
         }
 
         let mut seen = std::collections::HashSet::new();
@@ -329,22 +342,27 @@ impl WorldDoc {
             if !seen.insert(walk.id.as_str()) {
                 continue;
             }
+            // Capsule body + head so the player reads against grass (not a lone blob).
             let pos = Vec3::from_array(walk.position);
-            let model = Mat4::from_scale_rotation_translation(
-                Vec3::new(0.56, 0.95, 0.56),
-                Quat::from_rotation_y(walk.yaw),
-                pos,
+            let yaw = Quat::from_rotation_y(walk.yaw);
+            let body = Mat4::from_scale_rotation_translation(Vec3::new(0.56, 0.95, 0.56), yaw, pos);
+            b.push(MESH_CAPSULE, body, [62, 176, 184, 255]);
+            let head = Mat4::from_scale_rotation_translation(
+                Vec3::new(0.38, 0.32, 0.38),
+                yaw,
+                pos + Vec3::Y * 0.62,
             );
-            b.push(MESH_CAPSULE, model, [64, 180, 176, 255]);
+            b.push(MESH_BOX, head, [236, 214, 176, 255]);
         }
 
-        let (light_dir, ambient) = self.draw_light();
+        let (light_dir, ambient, local_lights) = self.draw_lights();
         let sky = [130, 165, 205, 255];
         Scene3D {
             camera,
             clear: sky,
             light_dir,
             ambient,
+            local_lights,
             fog_color: sky,
             fog_start: 48.0,
             fog_end: 220.0,
@@ -375,6 +393,37 @@ impl WorldDoc {
             };
         }
         Camera::default()
+    }
+
+    fn draw_lights(&self) -> (Vec3, f32, [LocalLight; 4]) {
+        let mut local = [LocalLight::OFF; 4];
+        for lit in &self.lights {
+            if lit.slot > 3 {
+                continue;
+            }
+            let color = lit.color.unwrap_or([1.0, 0.96, 0.88]);
+            let dir = lit.direction.map(Vec3::from_array).unwrap_or(Vec3::ZERO);
+            local[lit.slot as usize] = LocalLight {
+                position: Vec3::from_array(lit.position),
+                direction: dir,
+                color,
+                intensity: lit.intensity.max(0.0),
+                radius: lit.radius.max(0.0),
+                spot: lit.kind.eq_ignore_ascii_case("spot"),
+            };
+        }
+        let sun = if local[0].intensity > 1e-5 {
+            if local[0].direction.length_squared() > 1e-8 {
+                (-local[0].direction.normalize(), 0.42)
+            } else if local[0].position.length_squared() > 1e-8 {
+                (local[0].position.normalize(), 0.42)
+            } else {
+                (Vec3::new(-0.4, 1.0, 0.3).normalize(), 0.35)
+            }
+        } else {
+            self.draw_light()
+        };
+        (sun.0, sun.1, local)
     }
 
     fn draw_light(&self) -> (Vec3, f32) {
@@ -427,7 +476,9 @@ impl WorldDoc {
             return primitives::plane_mesh(1.0, 1.0);
         }
         let half = self.half.max(4.0);
-        let cells = 32u32;
+        // Production island mesh (not a placeholder plane). 48 cells over
+        // Crest's 160 m span is ~3.3 m — readable hills, not a billboard.
+        let cells = 48u32;
         let step = (half * 2.0) / cells as f32;
         let mut mesh = MeshData::default();
         for iz in 0..=cells {
@@ -497,10 +548,23 @@ fn mesh_for_prop(prop: &WorldProp, gltf_ids: &HashMap<String, MeshId>) -> MeshId
         }
     }
     match prop.model.to_ascii_lowercase().as_str() {
+        "sphere" if is_coin_prop(prop) => MESH_CAPSULE,
         "sphere" => MESH_SPHERE,
         "cylinder" | "capsule" => MESH_CAPSULE,
         "plane" => MESH_PLANE,
         _ => MESH_BOX,
+    }
+}
+
+fn is_coin_prop(prop: &WorldProp) -> bool {
+    prop.name.eq_ignore_ascii_case("coin") || prop.metallic >= 0.5
+}
+
+fn material_for_prop(prop: &WorldProp) -> Material {
+    if is_coin_prop(prop) {
+        Material::Metal
+    } else {
+        Material::Solid
     }
 }
 
@@ -583,7 +647,7 @@ fn color_u8(rgb: Option<[u32; 3]>) -> [u8; 4] {
 pub fn compile_meshes() -> Vec<(MeshId, crate::scene3d::MeshData)> {
     vec![
         (MESH_BOX, primitives::box_mesh(Vec3::ONE)),
-        (MESH_SPHERE, primitives::box_mesh(Vec3::ONE)), // stand-in; sphere mesh is later
+        (MESH_SPHERE, primitives::cylinder_mesh(0.5, 1.0, 12)),
         (MESH_CAPSULE, primitives::cylinder_mesh(0.5, 1.0, 12)),
         (MESH_PLANE, primitives::plane_mesh(1.0, 1.0)),
     ]
@@ -809,5 +873,129 @@ mod tests {
             ..Default::default()
         };
         assert!((doc.height_at(0.0, 0.0) - y).abs() < 1e-5);
+    }
+
+    #[test]
+    fn heightfield_mesh_is_an_island_not_a_plane() {
+        let doc = WorldDoc::from_json(CREST_ISLE_DUMP).unwrap();
+        let meshes = doc.compile_meshes();
+        let hf = meshes
+            .iter()
+            .find(|(id, _)| *id == MESH_HEIGHTFIELD)
+            .expect("heightfield");
+        let mut min_y = f32::MAX;
+        let mut max_y = f32::MIN;
+        for v in &hf.1.vertices {
+            min_y = min_y.min(v.pos[1]);
+            max_y = max_y.max(v.pos[1]);
+        }
+        assert!(max_y - min_y > 6.0, "island relief, span {}", max_y - min_y);
+        assert!(
+            hf.1.vertices.len() > 400,
+            "got {} verts",
+            hf.1.vertices.len()
+        );
+        let scene = doc.compile_scene(16.0 / 9.0);
+        let grass = scene
+            .batches
+            .iter()
+            .find(|b| b.mesh == MESH_HEIGHTFIELD)
+            .expect("heightfield batch");
+        assert!(
+            grass
+                .instances
+                .iter()
+                .all(|i| i.material == Material::Grass),
+            "heightfield albedo is Grass, not a bald Lambert plane"
+        );
+    }
+
+    #[test]
+    fn coins_compile_as_metal() {
+        let mut doc = WorldDoc::from_json(CREST_ISLE_DUMP).unwrap();
+        if !doc.props.iter().any(|p| p.name == "coin") {
+            doc.props.push(WorldProp {
+                id: "prop:coin".into(),
+                kind: "prop".into(),
+                name: "coin".into(),
+                position: [2.3, 1.1, -1.0],
+                model: "sphere".into(),
+                scale: [0.42, 0.08, 0.42],
+                enabled: true,
+                color: Some([255, 208, 64]),
+                metallic: 1.0,
+                roughness: 0.12,
+                ..Default::default()
+            });
+        }
+        let scene = doc.compile_scene(16.0 / 9.0);
+        let metal = scene
+            .batches
+            .iter()
+            .flat_map(|b| b.instances.iter())
+            .filter(|i| i.material == Material::Metal)
+            .count();
+        assert!(
+            metal >= 1,
+            "coin must compile as Material::Metal, got {metal}"
+        );
+    }
+
+    #[test]
+    fn light_slots_are_one_to_one_no_leak() {
+        let mut doc = WorldDoc::from_json(ORB_RUSH_DUMP).unwrap();
+        doc.lights = vec![
+            WorldLight {
+                id: "light:0".into(),
+                kind_type: "light".into(),
+                name: "key".into(),
+                position: [6.0, 18.0, -8.0],
+                kind: "spot".into(),
+                slot: 0,
+                intensity: 1.15,
+                radius: 36.0,
+                color: Some([1.0, 0.96, 0.86]),
+                direction: Some([-0.18, -1.0, 0.22]),
+            },
+            WorldLight {
+                id: "light:2".into(),
+                kind_type: "light".into(),
+                name: "fill".into(),
+                position: [-8.0, 10.0, 4.0],
+                kind: "point".into(),
+                slot: 2,
+                intensity: 0.55,
+                radius: 22.0,
+                color: Some([0.6, 0.7, 1.0]),
+                direction: None,
+            },
+            WorldLight {
+                id: "light:9".into(),
+                kind_type: "light".into(),
+                name: "overflow".into(),
+                position: [0.0, 50.0, 0.0],
+                kind: "point".into(),
+                slot: 9,
+                intensity: 9.0,
+                radius: 1.0,
+                color: Some([1.0, 0.0, 0.0]),
+                direction: None,
+            },
+        ];
+        let scene = doc.compile_scene(1.0);
+        assert!(scene.local_lights[0].intensity > 1.0);
+        assert!((scene.local_lights[0].position.x - 6.0).abs() < 1e-4);
+        assert!(
+            scene.local_lights[1].intensity == 0.0,
+            "slot 1 must stay empty (no leak from 0 or 2)"
+        );
+        assert!((scene.local_lights[2].intensity - 0.55).abs() < 1e-4);
+        assert!(scene.local_lights[2].position.x < 0.0);
+        assert!(
+            scene.local_lights[3].intensity == 0.0,
+            "slot 9 must not land in slot 3"
+        );
+        assert!(scene.local_lights[0].spot);
+        assert!(!scene.local_lights[2].spot);
     }
 }

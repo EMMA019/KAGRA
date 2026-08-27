@@ -97,7 +97,7 @@ Scene scripts (`examples/vrm_*.py`) live in the git repo. `pip` gives you `impor
 
 Tilemaps, ECS, and the 2D editor are on the shelf ([`examples/archive/`](examples/archive/)). They are not the 3D headline.
 
-Where the engine sits: [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md). 100% = an agent ships a normal indie game with no human looking at the screen. Now ~15%. Old "63%" is archived. Do not call this 80% yet.
+Where the engine sits: [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md). 100% = an agent ships a normal indie game with no human looking at the screen. Now ~40% (M0–M2 closed; collectathon is the first M3 genre). Old "63%" is archived. Do not call this 80% yet.
 
 ## Let your AI agent build the game
 

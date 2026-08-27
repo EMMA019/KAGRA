@@ -308,6 +308,7 @@ impl DrivingScene {
             clear: sky,
             light_dir: Vec3::new(-0.35, 0.9, 0.25).normalize(),
             ambient: 0.42,
+            local_lights: [crate::scene3d::LocalLight::OFF; 4],
             fog_color: sky,
             fog_start: 140.0,
             fog_end: VIEW_AHEAD,

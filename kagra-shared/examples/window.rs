@@ -1,8 +1,10 @@
 //! Real desktop window: WorldDoc → live tick → Scene3D → kagra-shared wgpu 30.
 //!
-//! WASD walks, mouse / arrows look. Shared `WorldPlay` advances the dump each
-//! frame (wish → sit on heightfield). Capsule player; VRM is not this path.
-//! Esc / Q / close quit. `--seconds` injects forward walk then exits.
+//! Collectathon loop on the official path: title → play → result.
+//! WASD walks, mouse / arrows look, Space starts (title) or jumps (play).
+//! Shared `WorldPlay` advances the dump each frame (wish → sit on heightfield
+//! → pick up coins/stars). Capsule player; VRM is not this path.
+//! Esc / Q / close quit. `--seconds` starts, injects forward walk, then exits.
 //!
 //! winit 0.29 is the workspace line. Separate process + wgpu 30. Do not load
 //! RendererV2 in this process.
@@ -25,7 +27,6 @@ use std::time::Instant;
 
 use kagra_shared::collectathon::WalkInput;
 use kagra_shared::render::Renderer;
-use kagra_shared::scene::DrawList;
 use kagra_shared::WorldPlay;
 #[cfg(not(target_arch = "wasm32"))]
 use winit::event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent};
@@ -135,7 +136,7 @@ fn main() -> Result<(), String> {
 
     let event_loop = EventLoop::new().map_err(|e| format!("no display: {e}"))?;
     let window = WindowBuilder::new()
-        .with_title("KAGRA WorldDoc (shared wgpu 30)")
+        .with_title("KAGRA Crest Isle (shared wgpu 30)")
         .with_inner_size(winit::dpi::LogicalSize::new(args.width, args.height))
         .build(&event_loop)
         .map_err(|e| format!("no display: {e}"))?;
@@ -146,7 +147,7 @@ fn main() -> Result<(), String> {
     let mut renderer = pollster::block_on(Renderer::new_for_window(window.clone(), width, height))?;
     renderer.upload_world_meshes(&play.doc)?;
     println!(
-        "WorldDoc window {} ({}x{})\n  WASD walk | mouse or arrows look | Space jump | Esc quit\n  click the window if the mouse look is not captured",
+        "WorldDoc window {} ({}x{})\n  Space / Enter start (title or result)\n  WASD walk | mouse or arrows look | Space jump | Esc quit\n  click the window if the mouse look is not captured",
         args.dump.display(),
         width,
         height
@@ -158,6 +159,8 @@ fn main() -> Result<(), String> {
     let seconds = args.seconds;
     let mut keys = Keys::default();
     let mut mouse_look = (0.0f32, 0.0f32);
+    let mut view_w = width;
+    let mut view_h = height;
     event_loop
         .run(move |event, elwt| {
             elwt.set_control_flow(ControlFlow::Poll);
@@ -186,6 +189,10 @@ fn main() -> Result<(), String> {
                         elwt.exit();
                         return;
                     }
+                    if down && is_start_key(&logical_key) && !play.game.is_playing() {
+                        play.confirm();
+                        return;
+                    }
                     apply_key(&mut keys, &logical_key, &physical_key, down);
                 }
                 Event::WindowEvent {
@@ -196,7 +203,12 @@ fn main() -> Result<(), String> {
                             ..
                         },
                     ..
-                } => grab_cursor(&window),
+                } => {
+                    if !play.game.is_playing() {
+                        play.confirm();
+                    }
+                    grab_cursor(&window);
+                }
                 Event::DeviceEvent {
                     event: DeviceEvent::MouseMotion { delta },
                     ..
@@ -210,6 +222,8 @@ fn main() -> Result<(), String> {
                     ..
                 } => {
                     if size.width > 0 && size.height > 0 {
+                        view_w = size.width;
+                        view_h = size.height;
                         renderer.resize(size.width, size.height);
                     }
                 }
@@ -223,6 +237,9 @@ fn main() -> Result<(), String> {
                             elwt.exit();
                             return;
                         }
+                        if !play.game.is_playing() {
+                            play.start();
+                        }
                     }
                     let dt = last.elapsed().as_secs_f32();
                     last = Instant::now();
@@ -232,13 +249,21 @@ fn main() -> Result<(), String> {
                     let mut input = keys.walk_input();
                     // Headless-ish smoke: --seconds walks forward so a live
                     // tick is visible without a human holding W.
-                    if seconds.is_some() && input.lz.abs() < 1e-4 && input.lx.abs() < 1e-4 {
+                    if seconds.is_some()
+                        && play.game.is_playing()
+                        && input.lz.abs() < 1e-4
+                        && input.lx.abs() < 1e-4
+                    {
                         input.lz = 1.0;
+                    }
+                    if !play.game.is_playing() {
+                        input = WalkInput::default();
                     }
                     play.input = input;
                     play.tick(dt);
                     let scene = play.doc.compile_scene(renderer.aspect());
-                    if let Err(e) = renderer.render_frame(Some(&scene), &DrawList::default()) {
+                    let hud = play.build_hud(view_w, view_h);
+                    if let Err(e) = renderer.render_frame(Some(&scene), &hud) {
                         eprintln!("draw: {e}");
                         elwt.exit();
                     }
@@ -257,6 +282,15 @@ fn is_quit_key(key: &Key) -> bool {
     match key {
         Key::Named(NamedKey::Escape) => true,
         Key::Character(c) => c.eq_ignore_ascii_case("q"),
+        _ => false,
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn is_start_key(key: &Key) -> bool {
+    match key {
+        Key::Named(NamedKey::Enter | NamedKey::Space) => true,
+        Key::Character(c) => c.eq_ignore_ascii_case(" ") || c.eq_ignore_ascii_case("enter"),
         _ => false,
     }
 }
@@ -318,7 +352,8 @@ fn print_help() {
              [--width 960] [--height 540] [--seconds N]\n\
          \n\
          WASD walk, mouse / arrows look, Space jump, Esc / Q / close.\n\
-         Default dump is the Crest Isle fixture. --seconds injects forward walk then exits.\n\
+         Space / Enter / click starts from the title or result.\n\
+         Default dump is the Crest Isle collectathon. --seconds starts, walks, then exits.\n\
          No display → error containing \"no display\" (Python skips)."
     );
 }

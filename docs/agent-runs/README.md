@@ -65,5 +65,6 @@
 - `20260826-verify-shared-offscreen/` — wire `kagra.verify` to shared wgpu 30 offscreen (no `(-12800,-12800)`). Not a game.
 - `20260826-one-runtime-window/` — M2 desktop wedge: WorldDoc in a real winit/shared wgpu 30 window. Not RendererV2. Crest Isle VRM stays.
 - `20260827-one-runtime-wasd-live/` — M2 remaining: WASD + heightfield/glTF compile + live WorldDoc tick. Official Crest play is play_world (capsule).
+- `20260827-collectathon-m3/` — first M3 genre: collectathon on play_world (title→play→result, pick/count/end) + shared wgpu 30 island picture.
 - `20260826-crest-isle-black-peel-zoom/` — remaining Nature Kit black trees, orbit peel (tiles/fog/hair), chase-cam zoom keys
 - `20260826-crest-isle-black-tile-spec/` — Crest Isle hillside black 16 m tile + gold GGX (coin PBR leftover / mesh_mat slot), not #94/#95/#96 JPEG UV

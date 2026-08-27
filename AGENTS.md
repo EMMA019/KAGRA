@@ -104,7 +104,7 @@ Verify: `examples/verify_scenarios/orb_rush_smoke.json`,
 `heart_catch_smoke.json`, `switch_room_smoke.json`,
 `dodge_room_smoke.json`, `prop_garden_smoke.json`,
 and `pretty_room_smoke.json`, `overworld_smoke.json`,
-`multi_avatar_smoke.json`.
+`multi_avatar_smoke.json`, `collectathon_smoke.json`.
 Logged builds live in `docs/agent-runs/`.
 The API index front is VRM / 3D / agents; the shelf is legacy 2D.
 
@@ -113,5 +113,5 @@ The API index front is VRM / 3D / agents; the shelf is legacy 2D.
 - `docs/AGENT.md` — contracts table, CI-parity commands, Cargo.lock policy
 - `docs/API_INDEX.md` — the searchable public API
 - `docs/REVIEW.ja.md` — engine review vs three.js / three-vrm / Ursina
-- `docs/ROADMAP.ja.md` — 100% = 画面なしでインディーを出荷。80% はそのマイナス（ネット・破壊・布・乗り物・GI bake・DOTS・HDRP・人間エディタ・VRM-on-Wasm ほか）。今約 15%、山は看板(#97) → 世界をデータに → ランタイム一つ → ゲームとして足りる → 出荷。旧 63% は `docs/archive/`。頭脳は `kagra.brain("kairi")`
+- `docs/ROADMAP.ja.md` — 100% = 画面なしでインディーを出荷。80% はそのマイナス（ネット・破壊・布・乗り物・GI bake・DOTS・HDRP・人間エディタ・VRM-on-Wasm ほか）。今約 40%。M0–M2 閉じた。閉じたジャンルは collectathon。山は看板(#97) → 世界をデータに → ランタイム一つ → ゲームとして足りる → 出荷。旧 63% は `docs/archive/`。頭脳は `kagra.brain("kairi")`
 - `docs/schemas/input_events.json` — touch / pointer input schema

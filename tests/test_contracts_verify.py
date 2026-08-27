@@ -172,10 +172,16 @@ def test_load_orb_rush_scenario_has_offscreen_expect():
     assert sc.expect_offscreen["height"] == 180
 
 
-def test_load_open_world_scenario_has_offscreen_expect():
-    sc = load_scenario(ROOT / "examples/verify_scenarios/open_world_smoke.json")
+def test_load_collectathon_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/collectathon_smoke.json")
+    assert sc.script is None
+    assert sc.inline is None
+    assert sc.expect_world
+    assert sc.expect_world["path"].endswith("crest_isle_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_world["coins"] == 1
     assert sc.expect_offscreen
-    assert sc.expect_offscreen["out"].endswith("open_world_shared.png")
+    assert sc.expect_offscreen["out"].endswith("collectathon_shared.png")
 
 
 def test_png_dimensions_reads_ihdr(tmp_path):

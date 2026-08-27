@@ -407,6 +407,7 @@ impl CollectathonScene {
             clear: sky,
             light_dir: Vec3::new(-0.42, 0.86, 0.28).normalize(),
             ambient: 0.46,
+            local_lights: [crate::scene3d::LocalLight::OFF; 4],
             fog_color: sky,
             fog_start: 48.0,
             fog_end: 150.0,

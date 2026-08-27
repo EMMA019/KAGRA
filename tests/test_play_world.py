@@ -181,11 +181,20 @@ def test_crest_fixture_has_heightfield_fn_and_player():
 
     data = json.loads(default_world_dump(root=ROOT).read_text(encoding="utf-8"))
     assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
     hf = data["heightfield"]
     assert hf["fn"] == "open_world_height"
     assert hf["samples"]
     crate_p = next(p for p in data["props"] if p.get("name") == "crate")
     assert crate_p.get("gltf") == "crate.glb"
+    coin = next(p for p in data["props"] if p.get("name") == "coin")
+    assert coin.get("metallic") == 1.0
+    assert coin.get("roughness") == 0.12
+    tiles = hf["tiles"]
+    assert tiles and all(t.get("albedo_ok") for t in tiles)
+    slots = {int(lit["slot"]) for lit in data["lights"]}
+    assert 0 in slots
+    assert data["coins"] >= 1
 
 
 def test_gltf_prop_dump_shape(tmp_path):

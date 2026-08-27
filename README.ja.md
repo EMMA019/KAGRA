@@ -97,7 +97,7 @@ python -m kagra
 
 タイルマップ・ECS・2D エディタは棚（[`examples/archive/`](examples/archive/)）。3D の見出しではない。
 
-エンジンが今どこまでかは [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md)。100% は画面を見ずにインディーを出荷できること。今約 15%。旧「63%」はアーカイブ。80% とはまだ言わない。
+エンジンが今どこまでかは [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md)。100% は画面を見ずにインディーを出荷できること。今約 40%（M0–M2 閉じた。collectathon が最初の M3 ジャンル）。旧「63%」はアーカイブ。80% とはまだ言わない。
 
 ## AI エージェントにゲームを作らせる
 
@@ -151,7 +151,7 @@ python examples/vrm_switch_room.py       # 箱部屋、カメラ追従
 python examples/vrm_dodge_room.py        # 降ってくる箱を避ける（エージェントログあり）
 python examples/vrm_relic_run.py          # 島の遺跡集め 30 秒（エージェントログあり）
 python examples/vrm_open_world.py         # 旧 VRM Crest Isle（RendererV2）
-python -m kagra.play_world                # 公式 Crest プレイ: wgpu 30 窓で dump を歩く（カプセル、WASD）
+python -m kagra.play_world                # 公式 Crest collectathon: タイトル→プレイ→結果（カプセル、WASD）
 python examples/vrm_multi_avatar.py       # 複数 VRM。GPU 共有 + FPS（`KAGRA_AVATARS=8`）
 # Crest Isle モバイル（kagra-shared。VRM ではない。Kenney 風カプセル）
 ./scripts/build_wasm.sh && python -m http.server -d kagra-shared/www 8000

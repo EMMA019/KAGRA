@@ -53,6 +53,7 @@ pub struct MeshId(pub u32);
 
 /// フラグメント側の見た目。テクスチャファイルは持たず、ワールド座標の
 /// 手続きノイズでアスファルトや草を出す（WebGL2 でもそのまま動く）。
+/// `Metal` は既存 shared GGX（コイン）。第二レンダラではない。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[repr(u8)]
 pub enum Material {
@@ -62,6 +63,30 @@ pub enum Material {
     Grass = 2,
     /// カメラ追従の天球。ライティング無しで空のグラデーションを塗る。
     Sky = 3,
+    /// 金属（GGX。コイン。metallic=1 / roughness≈0.12）。
+    Metal = 4,
+}
+
+/// One of four local lights (`slot=0..3`). Intensity 0 = unused (no slot leak).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LocalLight {
+    pub position: Vec3,
+    pub direction: Vec3,
+    pub color: [f32; 3],
+    pub intensity: f32,
+    pub radius: f32,
+    pub spot: bool,
+}
+
+impl LocalLight {
+    pub const OFF: Self = Self {
+        position: Vec3::ZERO,
+        direction: Vec3::ZERO,
+        color: [0.0, 0.0, 0.0],
+        intensity: 0.0,
+        radius: 0.0,
+        spot: false,
+    };
 }
 
 /// 1 個の描画実体。行列と色だけなので、同じメッシュを大量に並べられる。
@@ -267,6 +292,8 @@ pub struct Scene3D {
     pub light_dir: Vec3,
     /// 影側の明るさ（0..1）。
     pub ambient: f32,
+    /// Local lights by slot (0 = key). Unused slots are `LocalLight::OFF`.
+    pub local_lights: [LocalLight; 4],
     pub fog_color: [u8; 4],
     /// フォグが効き始める距離と、完全に覆う距離。
     pub fog_start: f32,
@@ -281,6 +308,7 @@ impl Default for Scene3D {
             clear: [130, 165, 205, 255],
             light_dir: Vec3::new(-0.4, 1.0, 0.3).normalize(),
             ambient: 0.35,
+            local_lights: [LocalLight::OFF; 4],
             fog_color: [130, 165, 205, 255],
             fog_start: 120.0,
             fog_end: 420.0,
