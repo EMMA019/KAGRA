@@ -341,8 +341,19 @@ impl WorldDoc {
         }
 
         let mut seen = std::collections::HashSet::new();
+        let hide_local = self
+            .cameras
+            .first()
+            .map(|c| c.name == "eye")
+            .unwrap_or(false);
+        let local_id = self.player.as_ref().map(|p| p.id.as_str());
         for walk in self.walkers.iter().chain(self.player.iter()) {
             if !seen.insert(walk.id.as_str()) {
+                continue;
+            }
+            // First-person: camera sits in the capsule. Skip local body/head so
+            // we do not clip into a white interior. Walker stays in the dump.
+            if hide_local && local_id == Some(walk.id.as_str()) {
                 continue;
             }
             // Capsule body + head so the player reads against grass (not a lone blob).

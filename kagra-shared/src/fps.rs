@@ -1,9 +1,11 @@
-//! FPS slice 1 on play_world: look, fire, hit.
+//! FPS on play_world: first-person eye camera, look, fire, hit.
 //!
 //! Sibling of collectathon / action. Hitscan (click or J) vs capsule / sprite
-//! targets on a World.dump. Title -> play -> result reuses `WorldPlay` /
-//! `GamePhase`. Muzzle and hit flash are `DrawList` quads on shared wgpu 30.
-//! No recoil, inventory, net, Rapier, VRM skin, RendererV2, or new ECS.
+//! targets on a World.dump. Camera sits at capsule eye; the body stays in the
+//! dump (local mesh hidden so the near plane does not clip a white interior).
+//! Title -> play -> result reuses `WorldPlay` / `GamePhase`. Muzzle and hit
+//! flash are `DrawList` quads on shared wgpu 30. No recoil, inventory, net,
+//! Rapier, VRM skin, RendererV2, or new ECS.
 
 use crate::collectathon::WalkInput;
 use crate::game::GamePhase;
@@ -162,7 +164,7 @@ pub fn seed(doc: &mut WorldDoc) {
     }
 }
 
-/// Hitscan fire. Caller already stepped the walker and chase camera.
+/// Hitscan fire. Caller already stepped the walker and placed the eye camera.
 pub fn tick(
     doc: &mut WorldDoc,
     game: &mut FpsGame,
@@ -200,6 +202,32 @@ fn look_dir(yaw: f32, pitch: f32) -> Vec3 {
     let (s, c) = yaw.sin_cos();
     let (sp, cp) = pitch.sin_cos();
     Vec3::new(s * cp, sp, c * cp)
+}
+
+/// Sit the dump camera at capsule eye. Body stays in WorldDoc.
+/// `name == "eye"` is the draw cue to skip the local mesh (no white interior).
+pub fn place_eye_camera(doc: &mut WorldDoc, look_yaw: f32, look_pitch: f32) {
+    let Some(w) = player_ref(doc) else {
+        return;
+    };
+    let origin = Vec3::new(w.position[0], w.position[1] + EYE_Y, w.position[2]);
+    let dir = look_dir(look_yaw, look_pitch);
+    let target = origin + dir * 8.0;
+    let fov = doc.cameras.first().map(|c| c.fov).unwrap_or(54.0);
+    if let Some(cam) = doc.cameras.first_mut() {
+        cam.position = origin.to_array();
+        cam.target = target.to_array();
+        cam.name = "eye".into();
+    } else {
+        doc.cameras.push(crate::world_doc::WorldCamera {
+            id: "camera:main".into(),
+            kind: "camera".into(),
+            name: "eye".into(),
+            position: origin.to_array(),
+            target: target.to_array(),
+            fov,
+        });
+    }
 }
 
 /// Ray vs vertical capsule (XZ circle + Y slab). `dir` should be unit length.
@@ -592,5 +620,86 @@ mod tests {
         let action = WorldPlay::from_json(ARENA).unwrap();
         assert!(action.is_action());
         assert!(!action.is_fps());
+    }
+
+    #[test]
+    fn fps_camera_is_eye_not_chase_and_tracks_body() {
+        let chase = WorldDoc::from_json(RANGE_JSON).unwrap();
+        let n_chase = chase.compile_scene(16.0 / 9.0).instance_count();
+        let mut play = WorldPlay::from_json(RANGE_JSON).unwrap();
+        assert!(play.is_fps());
+        let p = play.doc.player.as_ref().unwrap().position;
+        let cam = play.doc.cameras[0].position;
+        assert!(
+            (cam[0] - p[0]).abs() < 0.02 && (cam[2] - p[2]).abs() < 0.02,
+            "eye xz must sit on the body, cam={cam:?} body={p:?}"
+        );
+        assert!(
+            (cam[1] - (p[1] + EYE_Y)).abs() < 0.02,
+            "eye y {} vs body {} + EYE_Y",
+            cam[1],
+            p[1]
+        );
+        assert_eq!(play.doc.cameras[0].name, "eye");
+        assert_eq!(play.doc.player.as_ref().unwrap().id, "walker:player");
+        assert_eq!(play.doc.player.as_ref().unwrap().name, "player");
+        let n_eye = play.doc.compile_scene(16.0 / 9.0).instance_count();
+        assert!(
+            n_eye < n_chase,
+            "hide local body/head so we do not clip, chase={n_chase} eye={n_eye}"
+        );
+        assert!(
+            n_eye >= 3,
+            "floor + targets must remain (not a white void), n_eye={n_eye}"
+        );
+
+        play.start();
+        play.add_look(0.0, 0.4);
+        play.tick(1.0 / 60.0);
+        let cam = &play.doc.cameras[0];
+        let p = play.doc.player.as_ref().unwrap().position;
+        assert!((cam.position[0] - p[0]).abs() < 0.02);
+        assert!((cam.position[2] - p[2]).abs() < 0.02);
+        assert!(
+            cam.target[1] > cam.position[1] + 0.2,
+            "pitch up should raise look target, tgt={} eye={}",
+            cam.target[1],
+            cam.position[1]
+        );
+
+        play.input.lz = 1.0;
+        for _ in 0..30 {
+            play.tick(1.0 / 60.0);
+        }
+        let p = play.doc.player.as_ref().unwrap().position;
+        let cam = play.doc.cameras[0].position;
+        assert!(
+            (cam[0] - p[0]).abs() < 0.02 && (cam[2] - p[2]).abs() < 0.02,
+            "camera must not lose the body after walk, cam={cam:?} body={p:?}"
+        );
+        assert!(
+            p[2] > 0.4,
+            "WASD forward should move the dump body, z={}",
+            p[2]
+        );
+        assert_eq!(play.doc.cameras[0].name, "eye");
+    }
+
+    #[test]
+    fn fire_from_eye_still_hits_after_look() {
+        let mut play = play_started();
+        put_player(&mut play, 0.0, 0.0, 0.0);
+        play.add_look(0.0, 0.05);
+        play.tick(1.0 / 60.0);
+        let cam = play.doc.cameras[0].position;
+        let p = play.doc.player.as_ref().unwrap().position;
+        assert!((cam[1] - (p[1] + EYE_Y)).abs() < 0.02);
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
+        assert!(
+            play.fps.hits >= 1,
+            "hitscan from eye forward, hits {}",
+            play.fps.hits
+        );
     }
 }

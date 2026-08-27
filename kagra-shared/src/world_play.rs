@@ -51,6 +51,9 @@ impl WorldPlay {
         let platform = PlatformGame::from_doc(&doc);
         let rpg_game = RpgGame::from_doc(&doc);
         let fps_game = FpsGame::from_doc(&doc);
+        if fps::is_fps(&doc) {
+            fps::place_eye_camera(&mut doc, look_yaw, 0.0);
+        }
         let game = if is_collectathon(&doc)
             || action::is_action(&doc)
             || platformer::is_platformer(&doc)
@@ -109,6 +112,9 @@ impl WorldPlay {
         }
         self.rpg = RpgGame::from_doc(&self.doc);
         self.fps = FpsGame::from_doc(&self.doc);
+        if fps::is_fps(&self.doc) {
+            fps::place_eye_camera(&mut self.doc, self.look_yaw, self.look_pitch);
+        }
         refresh_coin_count(&mut self.doc);
     }
 
@@ -186,6 +192,7 @@ impl WorldPlay {
             return;
         }
         if self.is_fps() {
+            fps::place_eye_camera(&mut self.doc, self.look_yaw, self.look_pitch);
             fps::tick(
                 &mut self.doc,
                 &mut self.fps,
