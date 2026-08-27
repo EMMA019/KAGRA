@@ -16,12 +16,13 @@
 | Contracts | `kagra/contracts.py` |
 | Verify runner | `kagra/verify.py` (`expect_world` + optional `expect_offscreen`) |
 | Shared offscreen CLI | `kagra/render_world.py` (`python -m kagra.render_world dump.json out.png`) |
+| Shared desktop window | `kagra/play_world.py` (`python -m kagra.play_world dump.json`) — wgpu 30 winit; not RendererV2 |
 | Touch | `kagra/touch.py` |
 | Mobile scaffold | `mobile/` |
 | Shared scene (GPU 非依存) | `kagra-shared/src/scene.rs` |
 | Shared 3D draw list | `kagra-shared/src/scene3d.rs` (`Scene3D` = 1 frame: camera / batches / fog) |
 | Shared world dump | `kagra-shared/src/world_doc.rs` (`WorldDoc::from_json`, `compile_scene`, `compile_meshes`, schema `docs/schemas/world.json`) |
-| Shared renderer | `kagra-shared/src/render/` (`render_world_doc` = wgpu 30 offscreen of a compiled WorldDoc; not RendererV2) |
+| Shared renderer | `kagra-shared/src/render/` (`render_world_doc` = wgpu 30 offscreen; `new_for_window` = same Renderer on a real window; not RendererV2) |
 
 Rust errors surface as `[CODE] message` (see `KaguraError::code`).
 
@@ -37,6 +38,7 @@ Rust errors surface as `[CODE] message` (see `KaguraError::code`).
 | 共有コアの描画 | `cargo test -p kagra-shared --features render`（GPU が無ければ自動スキップ） |
 | 描画を目で確認 | `cargo run -p kagra-shared --features render --example offscreen` → `scratch/shared_offscreen.png`（`world dump.json` で WorldDoc） |
 | World.dump → PNG | `python -m kagra.render_world dump.json out.png`（ヘルパ無しはスキップ。`(-12800,-12800)` ではない） |
+| World.dump → 窓 | `python -m kagra.play_world dump.json` / `cargo run -p kagra-shared --features render --example window`（画面無しはスキップ。RendererV2 ではない） |
 | Wasm ビルド | `cargo build -p kagra-shared --target wasm32-unknown-unknown --features wasm,render` |
 
 `tests/` のテストは `import kagra`（Rust 拡張）に依存させないこと。純ロジックの

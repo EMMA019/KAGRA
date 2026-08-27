@@ -36,6 +36,8 @@ python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json
 # shared wgpu 30 offscreen of a World.dump JSON (skips if no helper; not RendererV2)
 python -m kagra.render_world scratch/orb_rush_world.json scratch/orb_rush_shared.png
 # cargo run -p kagra-shared --features render --example offscreen -- W H out.png world dump.json
+# real desktop window (wgpu 30; skips without a display; not RendererV2 / Crest Isle VRM)
+python -m kagra.play_world kagra-shared/tests/fixtures/crest_isle_world.json --seconds 8
 python tools/mcp_kagra/server.py                                   # MCP (stdio)
 pytest tests -m "not golden"                                       # pure-python tests
 ```

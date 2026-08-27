@@ -292,6 +292,9 @@ def test_verify_eval_offscreen_skips_without_binary(tmp_path, monkeypatch):
 
 def test_looks_like_no_adapter():
     assert looks_like_no_adapter("Failed to find an appropriate adapter")
+    assert looks_like_no_adapter(
+        'Error: "No suitable graphics adapter found; noop support not compiled in"'
+    )
     assert not looks_like_no_adapter("wrote out.png from WorldDoc")
 
 

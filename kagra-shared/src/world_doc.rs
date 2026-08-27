@@ -5,7 +5,9 @@
 //! `compile_scene` turns it into a `Scene3D` for one frame (box / sphere /
 //! capsule primitives). Integer GPU mesh ids are not game objects.
 //! Offscreen draw (feature = "render") is `render_world_doc`: upload
-//! `compile_meshes`, draw the batches, read RGBA. Not a kagra-core window.
+//! `compile_meshes`, draw the batches, read RGBA. A real desktop window is
+//! `Renderer::new_for_window` + `draw_world_doc` (example `window`). Not
+//! kagra-core `RendererV2` / `window.rs`.
 
 use crate::scene3d::{primitives, Camera, Material, MeshId, Scene3D, SceneBuilder};
 use glam::{Mat4, Quat, Vec3};

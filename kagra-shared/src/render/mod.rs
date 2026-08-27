@@ -99,6 +99,31 @@ impl Renderer {
     ) -> Result<Self, String> {
         let instance = new_instance();
         let surface = source.create(&instance)?;
+        Self::from_surface(instance, surface, width, height).await
+    }
+
+    /// Desktop winit (or any window that wgpu can present to). Same wgpu 30
+    /// `Renderer` as Android / iOS / canvas / offscreen. Not kagra-core
+    /// `RendererV2`. The instance gets the window's display handle so GLES /
+    /// X11 can present (Vulkan ignores it).
+    pub async fn new_for_window(
+        window: impl wgpu::DisplayAndWindowHandle + Clone + std::fmt::Debug + 'static,
+        width: u32,
+        height: u32,
+    ) -> Result<Self, String> {
+        let mut desc = wgpu::InstanceDescriptor::new_with_display_handle(Box::new(window.clone()));
+        desc.backends = wgpu::Backends::all();
+        let instance = wgpu::Instance::new(desc);
+        let surface = instance.create_surface(window).map_err(|e| e.to_string())?;
+        Self::from_surface(instance, surface, width, height).await
+    }
+
+    async fn from_surface(
+        instance: wgpu::Instance,
+        surface: wgpu::Surface<'static>,
+        width: u32,
+        height: u32,
+    ) -> Result<Self, String> {
         let (adapter, device, queue) = request_device(&instance, Some(&surface)).await?;
 
         // present_mode / alpha_mode / color_space の妥当な組み合わせは
@@ -756,6 +781,16 @@ impl Renderer {
         Ok(())
     }
 
+    /// Draw a compiled `WorldDoc` to the current target (window or offscreen).
+    /// Uploads `compile_meshes` on first call. Capsules / boxes / plane.
+    pub fn draw_world_doc(&mut self, doc: &crate::world_doc::WorldDoc) -> Result<(), String> {
+        if self.meshes.is_empty() {
+            self.upload_compile_meshes()?;
+        }
+        let scene = doc.compile_scene(self.aspect());
+        self.render_frame(Some(&scene), &DrawList::default())
+    }
+
     /// Draw a compiled `WorldDoc` into the offscreen target and read RGBA8.
     /// No kagra-core window. Capsules / boxes are the primitives.
     pub fn render_world_doc(
@@ -765,11 +800,7 @@ impl Renderer {
         if !self.is_offscreen() {
             return Err("render_world_doc requires an offscreen renderer".into());
         }
-        if self.meshes.is_empty() {
-            self.upload_compile_meshes()?;
-        }
-        let scene = doc.compile_scene(self.aspect());
-        self.render_frame(Some(&scene), &DrawList::default())?;
+        self.draw_world_doc(doc)?;
         self.read_rgba()
     }
 }

@@ -47,6 +47,8 @@ _NO_ADAPTER_MARKERS = (
     "requestadaptererror",
     "adapter not found",
     "no suitable gpu",
+    "no suitable graphics adapter",
+    "noop support not compiled",
 )
 
 
