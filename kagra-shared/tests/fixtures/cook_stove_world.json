@@ -1,0 +1,181 @@
+{
+  "version": 1,
+  "half": 8.0,
+  "floor_y": 0.0,
+  "gravity": 9.8,
+  "water_y": null,
+  "coins": 0,
+  "player": {
+    "id": "walker:player",
+    "type": "walker",
+    "name": "player",
+    "position": [0.0, 0.95, 0.7],
+    "yaw": 3.14159,
+    "face": 3.14159,
+    "on_ground": true
+  },
+  "props": [
+    {
+      "id": "prop:floor",
+      "type": "prop",
+      "name": "floor",
+      "position": [0.0, -0.05, 0.0],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [12.0, 0.1, 12.0],
+      "enabled": true,
+      "parent": null,
+      "color": [48, 52, 58],
+      "metallic": 0.0,
+      "roughness": 0.92
+    },
+    {
+      "id": "prop:stove",
+      "type": "prop",
+      "name": "stove",
+      "position": [0.0, 0.45, -1.0],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [2.4, 0.9, 1.2],
+      "enabled": true,
+      "parent": null,
+      "color": [86, 90, 98],
+      "metallic": 0.68,
+      "roughness": 0.22
+    },
+    {
+      "id": "prop:hood",
+      "type": "prop",
+      "name": "hood",
+      "position": [0.0, 2.05, -1.15],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [2.6, 0.16, 1.4],
+      "enabled": true,
+      "parent": null,
+      "color": [42, 44, 50],
+      "metallic": 0.55,
+      "roughness": 0.35
+    },
+    {
+      "id": "prop:pan",
+      "type": "prop",
+      "name": "pan",
+      "position": [0.0, 0.98, -0.85],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [0.7, 0.12, 0.7],
+      "enabled": true,
+      "parent": null,
+      "color": [72, 76, 82],
+      "metallic": 0.82,
+      "roughness": 0.16
+    },
+    {
+      "id": "prop:meal",
+      "type": "prop",
+      "name": "meal",
+      "position": [0.0, 1.14, -0.85],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [0.32, 0.16, 0.32],
+      "enabled": false,
+      "parent": null,
+      "color": [220, 90, 48],
+      "metallic": 0.08,
+      "roughness": 0.62
+    },
+    {
+      "id": "prop:flag",
+      "type": "prop",
+      "name": "flag",
+      "position": [2.0, 0.52, -0.5],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [0.28, 0.84, 0.12],
+      "enabled": false,
+      "parent": null,
+      "color": [80, 84, 78],
+      "metallic": 0.0,
+      "roughness": 0.85
+    }
+  ],
+  "walkers": [
+    {
+      "id": "walker:player",
+      "type": "walker",
+      "name": "player",
+      "position": [0.0, 0.95, 0.7],
+      "yaw": 3.14159,
+      "face": 3.14159,
+      "on_ground": true
+    }
+  ],
+  "lights": [
+    {
+      "id": "light:0",
+      "type": "light",
+      "name": "key",
+      "position": [-1.0, 5.2, 1.4],
+      "kind": "point",
+      "slot": 0,
+      "intensity": 1.18,
+      "radius": 18.0,
+      "color": [1.0, 0.9, 0.72],
+      "direction": null
+    },
+    {
+      "id": "light:1",
+      "type": "light",
+      "name": "fill",
+      "position": [3.0, 3.2, 3.2],
+      "kind": "point",
+      "slot": 1,
+      "intensity": 0.42,
+      "radius": 14.0,
+      "color": [0.55, 0.72, 1.0],
+      "direction": null
+    },
+    {
+      "id": "light:2",
+      "type": "light",
+      "name": "rim",
+      "position": [0.0, 3.2, -4.2],
+      "kind": "point",
+      "slot": 2,
+      "intensity": 0.38,
+      "radius": 12.0,
+      "color": [0.9, 0.7, 0.45],
+      "direction": null
+    },
+    {
+      "id": "light:3",
+      "type": "light",
+      "name": "bounce",
+      "position": [-1.8, 1.0, -1.0],
+      "kind": "point",
+      "slot": 3,
+      "intensity": 0.32,
+      "radius": 10.0,
+      "color": [0.72, 0.55, 0.4],
+      "direction": null
+    }
+  ],
+  "cameras": [
+    {
+      "id": "camera:main",
+      "type": "camera",
+      "name": "stove",
+      "position": [0.0, 6.05, 7.4],
+      "target": [0.0, 0.45, -0.65],
+      "fov": 52.0
+    }
+  ],
+  "heightfield": null
+}

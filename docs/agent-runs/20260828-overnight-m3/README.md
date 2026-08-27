@@ -1,6 +1,6 @@
-# Overnight M3 try index ? 2026-08-28
+# Overnight M3 try index - 2026-08-28
 
-Compare: https://github.com/EMMA019/KAGRA/compare/master...local/m3-shop-buy
+Compare: https://github.com/EMMA019/KAGRA/compare/master...local/m3-cook-stove
 
 `origin/master` is still `9792702` (#106 collectathon). **Not merged.** `gh` is missing from PATH, so no PR numbers for these stacked slices.
 
@@ -29,5 +29,9 @@ Stacked from #106 master to HEAD, oldest first. Try from repo root.
 | 17 | `local/m3-survival-meter` | survival hunger/stamina meter | `python -m kagra.play_world kagra-shared/tests/fixtures/survival_meter_world.json` |
 | 18 | `local/m3-rhythm-beat` | rhythm hit on beat | `python -m kagra.play_world kagra-shared/tests/fixtures/rhythm_beat_world.json` |
 | 19 | `local/m3-fish-cast` | fishing cast + catch | `python -m kagra.play_world kagra-shared/tests/fixtures/fish_cast_world.json` |
+| 20 | `local/m3-shop-buy` | shop buy with coins | `python -m kagra.play_world kagra-shared/tests/fixtures/shop_buy_world.json` |
+| 21 | `local/m3-cook-stove` | stove cook (stand, wait, J/click) | `python -m kagra.play_world kagra-shared/tests/fixtures/cook_stove_world.json` |
 
-SHAs on origin (do not invent): `436d08f` `a3ff7c4` `6aa11bc` `d1804c1` `5191437` `fcb7c73` `3454a35` `6a7c6e9` `7da8f7b` `e4fe1df` `75ff481` `3e8886f` `979f824` `37282f5` `2b67fd9` `cf293f9` `b79c572` `c4580ba` `44ff05b`.
+Stopped after cooking slice 1. No further genres.
+
+SHAs on origin (do not invent): `436d08f` `a3ff7c4` `6aa11bc` `d1804c1` `5191437` `fcb7c73` `3454a35` `6a7c6e9` `7da8f7b` `e4fe1df` `75ff481` `3e8886f` `979f824` `37282f5` `2b67fd9` `cf293f9` `b79c572` `c4580ba` `44ff05b` `d0c2e5e`.

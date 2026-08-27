@@ -35,6 +35,7 @@ pub mod survival;
 pub mod rhythm;
 pub mod fish;
 pub mod shop;
+pub mod cook;
 pub mod save;
 pub mod scene;
 pub mod scene3d;

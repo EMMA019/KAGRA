@@ -12,7 +12,9 @@ use crate::collectathon::{
     spawn_coins, spawn_stars, won, IsleGame, WalkInput, BODY_H, CAM_DISTANCE, CAM_HEIGHT,
     CAM_LOOK_Y, GRAVITY, JUMP_V, PICK_REACH, PLAYER_SPEED, STAR_XZ,
 };
+use crate::cook::{self, CookGame};
 use crate::fight::{self, FightGame};
+use crate::fish::{self, FishGame};
 use crate::fps::{self, FpsGame};
 use crate::game::GamePhase;
 use crate::novel::{self, NovelGame};
@@ -20,10 +22,9 @@ use crate::platformer::{self, PlatformGame};
 use crate::puzzle::{self, PuzzleGame};
 use crate::race::{self, RaceGame};
 use crate::rhythm::{self, RhythmGame};
-use crate::fish::{self, FishGame};
-use crate::shop::{self, ShopGame};
 use crate::rpg::{self, RpgGame};
 use crate::scene::{DrawList, Quad};
+use crate::shop::{self, ShopGame};
 use crate::sim::{self, SimGame};
 use crate::sports::{self, SportsGame};
 use crate::sprite;
@@ -59,6 +60,7 @@ pub struct WorldPlay {
     pub rhythm: RhythmGame,
     pub fish: FishGame,
     pub shop: ShopGame,
+    pub cook: CookGame,
     seed: WorldDoc,
     vy: f32,
 }
@@ -84,6 +86,7 @@ impl WorldPlay {
         rhythm::seed(&mut doc);
         fish::seed(&mut doc);
         shop::seed(&mut doc);
+        cook::seed(&mut doc);
         refresh_coin_count(&mut doc);
         if survival::is_survival(&doc) {
             doc.coins = survival::NEED;
@@ -96,6 +99,9 @@ impl WorldPlay {
         }
         if shop::is_shop(&doc) {
             doc.coins = shop::START;
+        }
+        if cook::is_cook(&doc) {
+            doc.coins = 0;
         }
         let look_yaw = look_yaw_from_doc(&doc);
         let action = ActionGame::from_doc(&doc);
@@ -115,6 +121,7 @@ impl WorldPlay {
         let rhythm_game = RhythmGame::from_doc(&doc);
         let fish_game = FishGame::from_doc(&doc);
         let shop_game = ShopGame::from_doc(&doc);
+        let cook_game = CookGame::from_doc(&doc);
         if action2d::is_action2d(&doc) {
             action2d::place_side_camera(&mut doc);
         }
@@ -157,6 +164,9 @@ impl WorldPlay {
         if shop::is_shop(&doc) {
             shop::place_stall_camera(&mut doc);
         }
+        if cook::is_cook(&doc) {
+            cook::place_stove_camera(&mut doc);
+        }
         let game = if is_collectathon(&doc)
             || action::is_action(&doc)
             || action2d::is_action2d(&doc)
@@ -175,6 +185,7 @@ impl WorldPlay {
             || rhythm::is_rhythm(&doc)
             || fish::is_fish(&doc)
             || shop::is_shop(&doc)
+            || cook::is_cook(&doc)
         {
             IsleGame::default()
         } else {
@@ -206,6 +217,7 @@ impl WorldPlay {
             rhythm: rhythm_game,
             fish: fish_game,
             shop: shop_game,
+            cook: cook_game,
             vy: 0.0,
         }
     }
@@ -254,6 +266,7 @@ impl WorldPlay {
         self.rhythm = RhythmGame::from_doc(&self.doc);
         self.fish = FishGame::from_doc(&self.doc);
         self.shop = ShopGame::from_doc(&self.doc);
+        self.cook = CookGame::from_doc(&self.doc);
         if action2d::is_action2d(&self.doc) {
             action2d::place_side_camera(&mut self.doc);
         }
@@ -296,6 +309,9 @@ impl WorldPlay {
         if shop::is_shop(&self.doc) {
             shop::place_stall_camera(&mut self.doc);
         }
+        if cook::is_cook(&self.doc) {
+            cook::place_stove_camera(&mut self.doc);
+        }
         refresh_coin_count(&mut self.doc);
         if survival::is_survival(&self.doc) {
             self.doc.coins = survival::NEED;
@@ -308,6 +324,9 @@ impl WorldPlay {
         }
         if shop::is_shop(&self.doc) {
             self.doc.coins = shop::START;
+        }
+        if cook::is_cook(&self.doc) {
+            self.doc.coins = 0;
         }
     }
 
@@ -385,6 +404,10 @@ impl WorldPlay {
 
     pub fn is_shop(&self) -> bool {
         shop::is_shop(&self.doc) || shop::is_shop(&self.seed)
+    }
+
+    pub fn is_cook(&self) -> bool {
+        cook::is_cook(&self.doc) || cook::is_cook(&self.seed)
     }
 
     /// Mouse / arrow look. Pitch is clamped.
@@ -599,6 +622,17 @@ impl WorldPlay {
             }
             return;
         }
+        if self.is_cook() {
+            cook::tick(&mut self.doc, &mut self.cook, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.cook.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = if self.cook.cooked { 250 } else { 0 };
+            }
+            return;
+        }
         self.collect_pickups();
         self.game.time_s += dt;
         self.input.jump = false;
@@ -660,6 +694,9 @@ impl WorldPlay {
         }
         if self.is_shop() {
             return shop::build_hud(&self.shop, self.game.phase, width, height);
+        }
+        if self.is_cook() {
+            return cook::build_hud(&self.cook, self.game.phase, width, height);
         }
         let w = width.max(1) as f32;
         let h = height.max(1) as f32;

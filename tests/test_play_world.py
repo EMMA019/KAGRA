@@ -608,3 +608,29 @@ def test_shop_buy_fixture_has_stall_and_coins():
     assert slots == [0, 1, 2, 3]
     assert data.get("heightfield") in (None, {})
     assert data.get("coins", 0) == 8
+
+def test_cook_stove_fixture_has_stove_and_pan():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/cook_stove_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    stoves = [p for p in data["props"] if p.get("name") == "stove"]
+    assert len(stoves) == 1
+    assert stoves[0].get("model") == "box"
+    pans = [p for p in data["props"] if p.get("name") == "pan"]
+    assert len(pans) == 1
+    assert pans[0].get("model") == "box"
+    meals = [p for p in data["props"] if p.get("name") == "meal"]
+    assert len(meals) == 1
+    assert meals[0].get("model") == "box"
+    assert meals[0].get("enabled") is False
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+    assert data.get("coins", 0) == 0
+    assert not any(p.get("name") == "stall" for p in data["props"])
