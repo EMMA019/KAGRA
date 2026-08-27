@@ -7,6 +7,7 @@
 //! and not Rapier.
 
 use crate::action::{self, ActionGame};
+use crate::action2d::{self, Action2dGame};
 use crate::collectathon::{
     spawn_coins, spawn_stars, won, IsleGame, WalkInput, BODY_H, CAM_DISTANCE, CAM_HEIGHT,
     CAM_LOOK_Y, GRAVITY, JUMP_V, PICK_REACH, PLAYER_SPEED, STAR_XZ,
@@ -38,6 +39,7 @@ pub struct WorldPlay {
     pub look_pitch: f32,
     pub game: IsleGame,
     pub action: ActionGame,
+    pub action2d: Action2dGame,
     pub platform: PlatformGame,
     pub rpg: RpgGame,
     pub fps: FpsGame,
@@ -58,6 +60,7 @@ impl WorldPlay {
         let mut doc = doc;
         seed_collectathon_pickups(&mut doc);
         action::seed(&mut doc);
+        action2d::seed(&mut doc);
         platformer::seed(&mut doc);
         rpg::seed(&mut doc);
         fps::seed(&mut doc);
@@ -72,6 +75,7 @@ impl WorldPlay {
         refresh_coin_count(&mut doc);
         let look_yaw = look_yaw_from_doc(&doc);
         let action = ActionGame::from_doc(&doc);
+        let action2d_game = Action2dGame::from_doc(&doc);
         let platform = PlatformGame::from_doc(&doc);
         let rpg_game = RpgGame::from_doc(&doc);
         let fps_game = FpsGame::from_doc(&doc);
@@ -83,6 +87,9 @@ impl WorldPlay {
         let puzzle_game = PuzzleGame::from_doc(&doc);
         let sports_game = SportsGame::from_doc(&doc);
         let sim_game = SimGame::from_doc(&doc);
+        if action2d::is_action2d(&doc) {
+            action2d::place_side_camera(&mut doc);
+        }
         if fps::is_fps(&doc) {
             fps::place_eye_camera(&mut doc, look_yaw, 0.0);
         }
@@ -112,6 +119,7 @@ impl WorldPlay {
         }
         let game = if is_collectathon(&doc)
             || action::is_action(&doc)
+            || action2d::is_action2d(&doc)
             || platformer::is_platformer(&doc)
             || rpg::is_rpg(&doc)
             || fps::is_fps(&doc)
@@ -138,6 +146,7 @@ impl WorldPlay {
             look_pitch: 0.0,
             game,
             action,
+            action2d: action2d_game,
             platform,
             rpg: rpg_game,
             fps: fps_game,
@@ -176,6 +185,7 @@ impl WorldPlay {
         self.game.best_score = best;
         self.game.start();
         self.action = ActionGame::from_doc(&self.doc);
+        self.action2d = Action2dGame::from_doc(&self.doc);
         let ckpt = self.platform.checkpoint;
         self.platform = PlatformGame::from_doc(&self.doc);
         if ckpt.is_some() {
@@ -192,6 +202,9 @@ impl WorldPlay {
         self.puzzle = PuzzleGame::from_doc(&self.doc);
         self.sports = SportsGame::from_doc(&self.doc);
         self.sim = SimGame::from_doc(&self.doc);
+        if action2d::is_action2d(&self.doc) {
+            action2d::place_side_camera(&mut self.doc);
+        }
         if fps::is_fps(&self.doc) {
             fps::place_eye_camera(&mut self.doc, self.look_yaw, self.look_pitch);
         }
@@ -227,7 +240,11 @@ impl WorldPlay {
     }
 
     pub fn is_action(&self) -> bool {
-        action::is_action(&self.doc) || action::is_action(&self.seed)
+        (action::is_action(&self.doc) || action::is_action(&self.seed)) && !self.is_action2d()
+    }
+
+    pub fn is_action2d(&self) -> bool {
+        action2d::is_action2d(&self.doc) || action2d::is_action2d(&self.seed)
     }
 
     pub fn is_platformer(&self) -> bool {
@@ -294,6 +311,17 @@ impl WorldPlay {
             return;
         }
         let input = self.input.clamped();
+        if self.is_action2d() {
+            action2d::tick(&mut self.doc, &mut self.action2d, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.action2d.dead || self.action2d.won {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = self.action2d.kills * 250 + self.action2d.hits * 20;
+            }
+            return;
+        }
         self.step_walker(input, dt);
         self.follow_camera();
         if self.is_action() {
@@ -446,6 +474,9 @@ impl WorldPlay {
 
     /// Font-free HUD: title band / star+coin pips / result band.
     pub fn build_hud(&self, width: u32, height: u32) -> DrawList {
+        if self.is_action2d() {
+            return action2d::build_hud(&self.action2d, self.game.phase, width, height);
+        }
         if self.is_action() {
             return action::build_hud(&self.action, self.game.phase, width, height);
         }

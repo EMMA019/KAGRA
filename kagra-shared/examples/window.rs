@@ -151,7 +151,9 @@ fn main() -> Result<(), String> {
 
     let event_loop = EventLoop::new().map_err(|e| format!("no display: {e}"))?;
     let window = WindowBuilder::new()
-        .with_title(if play.is_action() {
+        .with_title(if play.is_action2d() {
+            "KAGRA Action Side (shared wgpu 30)"
+        } else if play.is_action() {
             "KAGRA Action Arena (shared wgpu 30)"
         } else if play.is_platformer() {
             "KAGRA Box Hop (shared wgpu 30)"
@@ -295,6 +297,7 @@ fn main() -> Result<(), String> {
                         || play.is_puzzle()
                         || play.is_sports()
                         || play.is_sim()
+                        || play.is_action2d()
                     {
                         (0.0, 0.0)
                     } else {
@@ -309,6 +312,7 @@ fn main() -> Result<(), String> {
                         || play.is_puzzle()
                         || play.is_sports()
                         || play.is_sim()
+                        || play.is_action2d()
                     {
                         let ax = (keys.right as i32 - keys.left as i32) as f32;
                         let az = (keys.up as i32 - keys.down as i32) as f32;
@@ -332,6 +336,9 @@ fn main() -> Result<(), String> {
                         input.lz = 1.0;
                     }
                     if seconds.is_some() && play.is_action() && play.game.is_playing() {
+                        input.attack = true;
+                    }
+                    if seconds.is_some() && play.is_action2d() && play.game.is_playing() {
                         input.attack = true;
                     }
                     if seconds.is_some() && play.is_fight() && play.game.is_playing() {

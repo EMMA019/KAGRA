@@ -441,3 +441,10 @@ def test_load_sim_meter_scenario_is_world_and_offscreen():
     assert sc.expect_world["path"].endswith("sim_meter_world.json")
     assert sc.expect_world["player.on_ground"] is True
     assert sc.expect_offscreen["out"].endswith("sim_meter_shared.png")
+
+def test_load_action_side_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/action_side_smoke.json")
+    assert sc.name == "action_side_smoke"
+    assert sc.expect_world["path"].endswith("action_side_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen["out"].endswith("action_side_shared.png")

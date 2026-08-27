@@ -1,0 +1,46 @@
+{
+  "name": "action_side_smoke",
+  "notes": "M3 2D-action slice on shared wgpu 30. Side-view sprite/quad WorldDoc (MESH_QUAD already in compile_scene). Title -> play -> result (walk the player card, hit a foe sprite, dump-visible hurt/kill) lives in WorldPlay / python -m kagra.play_world. Overlay flash, not screenshot-only. Camera framed on the 2D plane against a back wall/floor. No RendererV2, no VRM, no Rapier, no new ECS, no 3D action.rs rewrite. World assertions + dump query (not golden pixels).",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/action_side_world.json",
+    "player.on_ground": true,
+    "query": [
+      {
+        "type": "walker",
+        "name": "player",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "foe",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "sprite",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "wall",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "floor",
+        "count": 1
+      },
+      {
+        "type": "light",
+        "count": 4
+      }
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/action_side_world.json",
+    "out": "scratch/action_side_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

@@ -497,3 +497,20 @@ def test_sim_meter_fixture_has_zone_and_flag():
     assert slots == [0, 1, 2, 3]
     assert data.get("heightfield") in (None, {})
     assert data.get("coins", 0) == 0
+
+def test_action_side_fixture_has_sprite_foe_and_wall():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/action_side_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    foes = [p for p in data["props"] if p.get("name") == "foe"]
+    assert len(foes) == 1
+    assert foes[0].get("model") == "sprite"
+    assert any(p.get("name") == "sprite" and p.get("model") == "sprite" for p in data["props"])
+    assert any(p.get("name") == "wall" for p in data["props"])
+    assert any(p.get("name") == "floor" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})

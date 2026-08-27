@@ -8,6 +8,7 @@
 //! - FFI: C ABI（`ffi`）と任意の wasm-bindgen（feature = "wasm"）
 
 pub mod action;
+pub mod action2d;
 pub mod assets;
 pub mod audio;
 pub mod collectathon;
