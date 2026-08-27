@@ -1,11 +1,13 @@
-//! Fighting round on play_world: attack, hitstun, KO / retry.
+//! Fighting round on play_world: attack, hitstun, guard, 2-hit combo, KO / retry.
 //!
 //! Sibling of collectathon / action / race. Two capsules on a World.dump ring
-//! (player walker + opponent prop). J/click attack, facing, stun frames.
-//! KO/retry is dump-visible (`name` stun/ko/win + opponent enable). Title ->
-//! play -> result reuses `WorldPlay` / `GamePhase`. Dual-body camera keeps
-//! both in view. Hit flash overlay on shared wgpu 30. Capsules, not VRM, not
-//! Rapier. No combo editor, specials, net, or new ECS.
+//! (player walker + opponent prop). J/click attack, Shift/C/K guard, facing,
+//! stun frames. Incoming hit while guarding is blocked (no damage / no KO).
+//! Two attacks in a combo window register as a combo when the first landed.
+//! KO/retry is dump-visible (`name` stun/hurt/block/combo/ko/win + opponent
+//! enable). Title -> play -> result reuses `WorldPlay` / `GamePhase`. Dual-body
+//! camera keeps both in view. Hit flash overlay on shared wgpu 30. Capsules,
+//! not VRM, not Rapier. No combo editor, specials, net, or new ECS.
 
 use crate::collectathon::WalkInput;
 use crate::game::GamePhase;
@@ -25,6 +27,8 @@ pub const ATTACK_R: f32 = 0.62;
 pub const ATTACK_TIME: f32 = 0.22;
 pub const STUN_TIME: f32 = 0.40;
 pub const HIT_FLASH: f32 = 0.22;
+pub const COMBO_TIME: f32 = 0.55;
+pub const BLOCK_TIME: f32 = 0.30;
 pub const OPP_SPEED: f32 = 2.6;
 pub const OPP_ATTACK_CD: f32 = 0.90;
 pub const RING_Z: f32 = 1.6;
@@ -53,9 +57,13 @@ pub struct FightGame {
     pub opp_cd: f32,
     pub flash_t: f32,
     pub hurt_flash: bool,
+    pub combo: u32,
+    pub guarding: bool,
     pub ko: bool,
     pub won: bool,
     pub done: bool,
+    combo_t: f32,
+    block_t: f32,
     swing_hit: bool,
     opp_swing_hit: bool,
 }
@@ -79,9 +87,13 @@ impl Default for FightGame {
             opp_cd: 0.0,
             flash_t: 0.0,
             hurt_flash: false,
+            combo: 0,
+            guarding: false,
             ko: false,
             won: false,
             done: false,
+            combo_t: 0.0,
+            block_t: 0.0,
             swing_hit: false,
             opp_swing_hit: false,
         }
@@ -229,6 +241,7 @@ pub fn tick(doc: &mut WorldDoc, game: &mut FightGame, input: WalkInput, dt: f32)
     }
     let input = input.clamped();
     tick_timers(game, dt);
+    game.guarding = input.dodge && game.stun_t <= 0.0;
     face_each_other(game);
     drive_player(doc, game, input, dt);
     player_attack(doc, game, input);
@@ -248,6 +261,11 @@ fn tick_timers(game: &mut FightGame, dt: f32) {
     game.opp_stun_t = (game.opp_stun_t - dt).max(0.0);
     game.opp_cd = (game.opp_cd - dt).max(0.0);
     game.flash_t = (game.flash_t - dt).max(0.0);
+    game.combo_t = (game.combo_t - dt).max(0.0);
+    game.block_t = (game.block_t - dt).max(0.0);
+    if game.combo_t <= 0.0 {
+        game.combo = 0;
+    }
     if game.attack_t <= 0.0 {
         game.swing_hit = false;
     }
@@ -275,7 +293,7 @@ fn player_attack(doc: &mut WorldDoc, game: &mut FightGame, input: WalkInput) {
     if game.done || game.stun_t > 0.0 {
         return;
     }
-    if input.attack && game.attack_t <= 0.0 {
+    if input.attack && game.attack_t <= 0.0 && !game.guarding {
         game.attack_t = ATTACK_TIME;
         game.swing_hit = false;
     }
@@ -288,6 +306,12 @@ fn player_attack(doc: &mut WorldDoc, game: &mut FightGame, input: WalkInput) {
     game.swing_hit = true;
     game.opp_hp = game.opp_hp.saturating_sub(1);
     game.hits = game.hits.saturating_add(1);
+    if game.combo_t > 0.0 {
+        game.combo = game.combo.saturating_add(1);
+    } else {
+        game.combo = 1;
+    }
+    game.combo_t = COMBO_TIME;
     game.opp_stun_t = STUN_TIME;
     game.opp_attack_t = 0.0;
     game.flash_t = HIT_FLASH;
@@ -335,11 +359,19 @@ fn opponent_attack(game: &mut FightGame) {
         return;
     }
     game.opp_swing_hit = true;
+    if game.guarding {
+        game.block_t = BLOCK_TIME;
+        game.flash_t = HIT_FLASH;
+        game.hurt_flash = false;
+        return;
+    }
     game.hp = game.hp.saturating_sub(1);
     game.stun_t = STUN_TIME;
     game.attack_t = 0.0;
     game.flash_t = HIT_FLASH;
     game.hurt_flash = true;
+    game.combo = 0;
+    game.combo_t = 0.0;
 }
 
 fn hit_test(ax: f32, az: f32, yaw: f32, tx: f32, tz: f32, target_r: f32) -> bool {
@@ -402,6 +434,10 @@ fn write_pose(doc: &mut WorldDoc, game: &FightGame) {
         w.name = "win".into();
     } else if game.stun_t > 0.0 {
         w.name = "stun".into();
+    } else if game.block_t > 0.0 || game.guarding {
+        w.name = "block".into();
+    } else if game.combo >= 2 {
+        w.name = "combo".into();
     } else if game.flash_t > 0.0 && !game.hurt_flash {
         w.name = "hurt".into();
     } else {
@@ -497,7 +533,9 @@ pub fn build_hud(game: &FightGame, phase: GamePhase, width: u32, height: u32) ->
             }
             if game.flash_t > 0.0 {
                 let a = (90.0 + 140.0 * (game.flash_t / HIT_FLASH)) as u8;
-                let col = if game.hurt_flash {
+                let col = if game.block_t > 0.0 {
+                    [80, 180, 255, a.min(140)]
+                } else if game.hurt_flash {
                     [210, 30, 30, a]
                 } else {
                     [255, 220, 80, a.min(120)]
@@ -812,6 +850,63 @@ mod tests {
         assert!(d > 0.15, "dual cam should follow the pair, d={d}");
         assert_eq!(play.doc.cameras[0].name, "dual");
         assert!(camera_keeps_both(&play.doc));
+    }
+
+    #[test]
+    fn guard_blocks_incoming_hit_dump_visible() {
+        let mut play = play_started();
+        put_bodies(&mut play, -0.7, 0.0, 0.7, 0.0);
+        play.input.dodge = true;
+        play.tick(1.0 / 60.0);
+        assert!(play.fight.guarding);
+        assert_eq!(play.doc.player.as_ref().unwrap().name, "block");
+        let hp0 = play.fight.hp;
+        let mut blocked = play.fight.block_t > 0.0;
+        let mut n = 0;
+        while !blocked && n < 90 {
+            play.input.dodge = true;
+            play.input.attack = false;
+            play.tick(1.0 / 60.0);
+            blocked = play.fight.block_t > 0.0;
+            n += 1;
+        }
+        assert!(blocked, "held guard must register a blocked hit, n={n}");
+        assert_eq!(play.fight.hp, hp0, "guard must prevent damage");
+        assert!(!play.fight.ko);
+        assert_eq!(play.game.phase, GamePhase::Playing);
+        assert_eq!(play.doc.player.as_ref().unwrap().name, "block");
+        let dump = play.doc.to_json().unwrap();
+        assert!(dump.contains("block"), "block must be dump-visible");
+    }
+
+    #[test]
+    fn two_hit_combo_is_dump_visible() {
+        let mut play = play_started();
+        put_bodies(&mut play, -0.8, 0.0, 0.8, 0.0);
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
+        assert!(play.fight.hits >= 1, "first hit must land");
+        assert_eq!(play.fight.combo, 1);
+        assert_eq!(play.doc.player.as_ref().unwrap().name, "hurt");
+        let recover = (ATTACK_TIME * 60.0).ceil() as u32 + 1;
+        for _ in 0..recover {
+            play.input.attack = false;
+            play.tick(1.0 / 60.0);
+        }
+        assert_eq!(play.fight.combo, 1, "combo window must still be open");
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
+        assert!(
+            play.fight.hits >= 2,
+            "second hit must connect if first landed, hits={}",
+            play.fight.hits
+        );
+        assert!(play.fight.combo >= 2, "two hits in window are a combo");
+        assert!(!play.fight.won, "two hits must not KO yet");
+        assert_eq!(play.doc.coins, play.fight.hits);
+        assert_eq!(play.doc.player.as_ref().unwrap().name, "combo");
+        let dump = play.doc.to_json().unwrap();
+        assert!(dump.contains("combo"), "combo must be dump-visible");
     }
 
     #[test]

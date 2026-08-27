@@ -252,6 +252,7 @@ def test_walk_input_from_keys_attack_dodge():
     assert walk_input_from_keys(["z"])["attack"] is True
     assert walk_input_from_keys(["shift"])["dodge"] is True
     assert walk_input_from_keys(["c"])["dodge"] is True
+    assert walk_input_from_keys(["k"])["dodge"] is True
     # WASD still owns the walker.
     assert walk_input_from_keys(["j"])["lz"] == 0.0
 
