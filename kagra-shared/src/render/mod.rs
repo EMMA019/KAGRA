@@ -105,9 +105,10 @@ impl Renderer {
     /// Desktop winit (or any window that wgpu can present to). Same wgpu 30
     /// `Renderer` as Android / iOS / canvas / offscreen. Not kagra-core
     /// `RendererV2`. The instance gets the window's display handle so GLES /
-    /// X11 can present (Vulkan ignores it).
+    /// X11 can present (Vulkan ignores it). Wasm uses `new_for_surface` + canvas.
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn new_for_window(
-        window: impl wgpu::DisplayAndWindowHandle + Clone + std::fmt::Debug + 'static,
+        window: impl wgpu::DisplayAndWindowHandle + Clone + std::fmt::Debug + Send + Sync + 'static,
         width: u32,
         height: u32,
     ) -> Result<Self, String> {
