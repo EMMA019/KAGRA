@@ -54,7 +54,7 @@
         "yaw": { "type": "number" },
         "model": {
           "type": "string",
-          "description": "box/sphere/capsule/plane/sprite/quad. sprite|quad is a standing XY card in compile_scene (same WorldDoc as 3D)."
+          "description": "box/sphere/capsule/plane/sprite/quad. sprite|quad is a standing XY card in compile_scene (same WorldDoc as 3D). name target = FPS range hitscan (look + fire + hit)."
         },
         "gltf": { "type": ["string", "null"] },
         "scale": {

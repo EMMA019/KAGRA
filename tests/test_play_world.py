@@ -314,3 +314,25 @@ def test_sprite_card_fixture_has_quads():
     sprites = [p for p in data["props"] if p.get("model") in ("sprite", "quad")]
     assert len(sprites) >= 2
     assert data.get("heightfield") in (None, {})
+
+def test_fps_range_fixture_has_targets_and_player():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/fps_range_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    targets = [p for p in data["props"] if p.get("name") == "target" and p.get("enabled") is not False]
+    assert len(targets) >= 2
+    models = {p.get("model") for p in targets}
+    assert "capsule" in models
+    assert "sprite" in models
+    assert any(p.get("name") == "floor" for p in data["props"])
+    assert data.get("heightfield") in (None, {})
+
+
+def test_walk_input_from_keys_fire_alias():
+    assert walk_input_from_keys(["fire"])["attack"] is True
+    assert walk_input_from_keys(["mouse1"])["attack"] is True
+    assert walk_input_from_keys(["j"])["attack"] is True
+

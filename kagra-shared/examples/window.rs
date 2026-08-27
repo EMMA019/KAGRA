@@ -386,7 +386,7 @@ fn print_help() {
          cargo run -p kagra-shared --features render --example window -- [dump.json] \\\n\
              [--width 960] [--height 540] [--seconds N]\n\
          \n\
-         WASD walk, mouse / arrows look, click/J attack, Shift/C dodge, Space jump, Esc / Q / close.\n\
+         WASD walk, mouse / arrows look, click/J attack/fire, Shift/C dodge, Space jump, Esc / Q / close.\n\
          Space / Enter / click starts from the title or result.\n\
          Default dump is the Crest Isle collectathon. --seconds starts, walks, then exits.\n\
          No display → error containing \"no display\" (Python skips)."

@@ -216,6 +216,15 @@ def test_load_sprite_card_scenario_is_world_and_offscreen():
     assert sc.expect_offscreen
 
 
+def test_load_fps_range_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/fps_range_smoke.json")
+    assert sc.expect_world
+    assert sc.expect_world["path"].endswith("fps_range_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen
+    assert sc.expect_offscreen["out"].endswith("fps_range_shared.png")
+
+
 
 def test_png_dimensions_reads_ihdr(tmp_path):
     p = tmp_path / "a.png"

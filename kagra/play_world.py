@@ -235,7 +235,7 @@ def walk_input_from_keys(held) -> dict:
         1.0 if names & {"arrowdown", "down"} else 0.0
     )
     jump = bool(names & {"space", " ", "jump"})
-    attack = bool(names & {"j", "z", "f", "mouse1", "click", "attack"})
+    attack = bool(names & {"j", "z", "f", "mouse1", "click", "attack", "fire"})
     dodge = bool(names & {"shift", "c", "control", "ctrl", "dodge"})
     return {
         "lx": max(-1.0, min(1.0, lx)),

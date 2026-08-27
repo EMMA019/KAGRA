@@ -11,11 +11,12 @@ use crate::collectathon::{
     spawn_coins, spawn_stars, won, IsleGame, WalkInput, BODY_H, CAM_DISTANCE, CAM_HEIGHT,
     CAM_LOOK_Y, GRAVITY, JUMP_V, PICK_REACH, PLAYER_SPEED, STAR_XZ,
 };
+use crate::fps::{self, FpsGame};
 use crate::game::GamePhase;
 use crate::platformer::{self, PlatformGame};
 use crate::rpg::{self, RpgGame};
-use crate::sprite;
 use crate::scene::{DrawList, Quad};
+use crate::sprite;
 use crate::world_doc::{WorldDoc, WorldProp, WorldWalker};
 use glam::Vec3;
 
@@ -31,6 +32,7 @@ pub struct WorldPlay {
     pub action: ActionGame,
     pub platform: PlatformGame,
     pub rpg: RpgGame,
+    pub fps: FpsGame,
     seed: WorldDoc,
     vy: f32,
 }
@@ -42,15 +44,18 @@ impl WorldPlay {
         action::seed(&mut doc);
         platformer::seed(&mut doc);
         rpg::seed(&mut doc);
+        fps::seed(&mut doc);
         refresh_coin_count(&mut doc);
         let look_yaw = look_yaw_from_doc(&doc);
         let action = ActionGame::from_doc(&doc);
         let platform = PlatformGame::from_doc(&doc);
         let rpg_game = RpgGame::from_doc(&doc);
+        let fps_game = FpsGame::from_doc(&doc);
         let game = if is_collectathon(&doc)
             || action::is_action(&doc)
             || platformer::is_platformer(&doc)
             || rpg::is_rpg(&doc)
+            || fps::is_fps(&doc)
         {
             IsleGame::default()
         } else {
@@ -68,6 +73,7 @@ impl WorldPlay {
             action,
             platform,
             rpg: rpg_game,
+            fps: fps_game,
             vy: 0.0,
         }
     }
@@ -102,6 +108,7 @@ impl WorldPlay {
             platformer::restore_checkpoint(&mut self.doc, &self.platform);
         }
         self.rpg = RpgGame::from_doc(&self.doc);
+        self.fps = FpsGame::from_doc(&self.doc);
         refresh_coin_count(&mut self.doc);
     }
 
@@ -123,6 +130,10 @@ impl WorldPlay {
 
     pub fn is_sprite(&self) -> bool {
         sprite::is_sprite(&self.doc) || sprite::is_sprite(&self.seed)
+    }
+
+    pub fn is_fps(&self) -> bool {
+        fps::is_fps(&self.doc) || fps::is_fps(&self.seed)
     }
 
     /// Mouse / arrow look. Pitch is clamped.
@@ -174,6 +185,24 @@ impl WorldPlay {
             self.input.attack = false;
             return;
         }
+        if self.is_fps() {
+            fps::tick(
+                &mut self.doc,
+                &mut self.fps,
+                input,
+                self.look_yaw,
+                self.look_pitch,
+                dt,
+            );
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.fps.won {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = self.fps.kills * 250 + self.fps.hits * 20;
+            }
+            return;
+        }
         self.collect_pickups();
         self.game.time_s += dt;
         self.input.jump = false;
@@ -193,6 +222,9 @@ impl WorldPlay {
         }
         if self.is_rpg() {
             return rpg::build_hud(&self.rpg, self.game.phase, width, height);
+        }
+        if self.is_fps() {
+            return fps::build_hud(&self.fps, self.game.phase, width, height);
         }
         let w = width.max(1) as f32;
         let h = height.max(1) as f32;

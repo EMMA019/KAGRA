@@ -14,6 +14,7 @@ pub mod collectathon;
 pub mod collide;
 pub mod driving;
 pub mod ffi;
+pub mod fps;
 pub mod game;
 pub mod gltf_load;
 pub mod input;
