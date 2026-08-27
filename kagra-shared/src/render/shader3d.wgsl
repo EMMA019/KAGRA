@@ -122,6 +122,42 @@ fn local_lit(n: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
         + light_one(n, world, 3);
 }
 
+// Metal locals: GGX spec only. Lambert local_lit on metal reads as plastic.
+fn light_one_metal(n: vec3<f32>, world: vec3<f32>, v: vec3<f32>, f0: vec3<f32>, rough: f32, i: i32) -> vec3<f32> {
+    let pos_i = g.light_pos[i];
+    if (pos_i.w <= 1e-5) {
+        return vec3<f32>(0.0);
+    }
+    let col_r = g.light_col[i];
+    let dir_s = g.light_dir[i];
+    let to_l = pos_i.xyz - world;
+    let dist = length(to_l);
+    let ldir = to_l / max(dist, 1e-4);
+    let rad = max(col_r.w, 0.5);
+    let atten = pos_i.w / (1.0 + (dist * dist) / (rad * rad));
+    var cone = 1.0;
+    if (dir_s.w > 0.5) {
+        let d = normalize(dir_s.xyz);
+        cone = pow(max(dot(ldir, -d), 0.0), 6.0);
+    }
+    let h = normalize(v + ldir);
+    let ndotl = max(dot(n, ldir), 0.0);
+    let ndotv = max(dot(n, v), 0.0);
+    let ndoth = max(dot(n, h), 0.0);
+    let vdoth = max(dot(v, h), 0.0);
+    let f = f0 + (1.0 - f0) * pow(1.0 - vdoth, 5.0);
+    let spec = ggx_d(ndoth, rough) * smith_g(ndotv, ndotl, rough) * f
+        / max(4.0 * ndotv * ndotl, 1e-4);
+    return col_r.rgb * spec * ndotl * atten * cone;
+}
+
+fn local_metal(n: vec3<f32>, world: vec3<f32>, v: vec3<f32>, f0: vec3<f32>, rough: f32) -> vec3<f32> {
+    return light_one_metal(n, world, v, f0, rough, 0)
+        + light_one_metal(n, world, v, f0, rough, 1)
+        + light_one_metal(n, world, v, f0, rough, 2)
+        + light_one_metal(n, world, v, f0, rough, 3);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let mat_id = i32(in.material + 0.5);
@@ -178,10 +214,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             / max(4.0 * ndotv * ndotl, 1e-4);
         let kd = (vec3<f32>(1.0) - f) * (1.0 - metallic);
         lit = (kd * albedo + spec) * ndotl + albedo * ambient * 0.22;
+        lit += local_metal(n, in.world, v, f0, rough);
     } else {
         lit = albedo * (ambient + (1.0 - ambient) * ndl);
+        lit += albedo * local_lit(n, in.world);
     }
-    lit += albedo * local_lit(n, in.world);
 
     let dist = length(in.world - g.camera_pos.xyz);
     let span = max(g.fog_range.y - g.fog_range.x, 1e-3);
