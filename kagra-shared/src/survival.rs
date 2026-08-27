@@ -609,7 +609,10 @@ mod tests {
             play.tick(1.0 / 60.0);
         }
         let before = play.doc.coins;
-        assert!(before <= NEED - 2, "need room to see a pick fill, coins={before}");
+        assert!(
+            before <= NEED - 2,
+            "need room to see a pick fill, coins={before}"
+        );
         let ration = play
             .doc
             .props

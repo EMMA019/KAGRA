@@ -227,7 +227,9 @@ fn sit_props(doc: &mut WorldDoc) {
     let mut updates: Vec<(usize, f32)> = Vec::new();
     for (i, p) in doc.props.iter().enumerate() {
         let y = match p.name.as_str() {
-            "dock" | "flag" | "bank" => doc.height_at(p.position[0], p.position[2]) + p.scale[1].abs() * 0.5,
+            "dock" | "flag" | "bank" => {
+                doc.height_at(p.position[0], p.position[2]) + p.scale[1].abs() * 0.5
+            }
             "bobber" => water_y + p.scale[1].abs() * 0.5 + 0.04,
             _ => continue,
         };

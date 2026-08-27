@@ -503,8 +503,7 @@ mod tests {
         play.input.attack = true;
         play.tick(1.0 / 60.0);
         assert_eq!(
-            play.doc.coins,
-            coins,
+            play.doc.coins, coins,
             "bought flag is enough; no second spend"
         );
         assert_eq!(play.doc.player.as_ref().unwrap().name, NAME_BOUGHT);

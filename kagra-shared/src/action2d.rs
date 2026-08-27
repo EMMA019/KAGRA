@@ -141,11 +141,7 @@ pub fn place_side_camera(doc: &mut WorldDoc) {
         .unwrap_or((0.0, BODY_H));
     let eye = [px, py.max(CAM_Y), CAM_Z];
     let target = [px, CAM_LOOK_Y.max(0.4), PLANE_Z];
-    let fov = doc
-        .cameras
-        .first()
-        .map(|cam| cam.fov)
-        .unwrap_or(CAM_FOV);
+    let fov = doc.cameras.first().map(|cam| cam.fov).unwrap_or(CAM_FOV);
     if let Some(cam) = doc.cameras.first_mut() {
         cam.position = eye;
         cam.target = target;

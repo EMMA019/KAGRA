@@ -424,7 +424,10 @@ mod tests {
         assert!(!is_novel(&ring));
         assert!(doc.props.iter().any(|p| p.name == "page"));
         assert!(doc.props.iter().any(|p| p.name == "flag" && !p.enabled));
-        assert!(doc.props.iter().any(|p| p.name == "speaker" && p.model == "capsule"));
+        assert!(doc
+            .props
+            .iter()
+            .any(|p| p.name == "speaker" && p.model == "capsule"));
         assert_eq!(doc.player.as_ref().unwrap().name, "player");
         assert!(doc.player.as_ref().unwrap().on_ground);
         assert_eq!(doc.lights.len(), 4);

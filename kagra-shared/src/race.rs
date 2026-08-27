@@ -457,11 +457,23 @@ mod tests {
         assert!(!is_race(&fps));
         let td = WorldDoc::from_json(LANE).unwrap();
         assert!(!is_race(&td));
-        let finish: Vec<_> = doc.props.iter().filter(|p| is_finish(p) && p.enabled).collect();
+        let finish: Vec<_> = doc
+            .props
+            .iter()
+            .filter(|p| is_finish(p) && p.enabled)
+            .collect();
         assert_eq!(finish.len(), 1);
         assert!(is_boxish(finish[0]));
-        let roads: Vec<_> = doc.props.iter().filter(|p| p.name == "road" && p.enabled).collect();
-        assert!(roads.len() >= 4, "need a readable track, got {}", roads.len());
+        let roads: Vec<_> = doc
+            .props
+            .iter()
+            .filter(|p| p.name == "road" && p.enabled)
+            .collect();
+        assert!(
+            roads.len() >= 4,
+            "need a readable track, got {}",
+            roads.len()
+        );
         let car = doc.props.iter().find(|p| is_car(p) && p.enabled).unwrap();
         assert!(is_boxish(car) || car.model == "capsule");
         let flag = doc.props.iter().find(|p| is_flag(p) && p.enabled);
@@ -631,7 +643,10 @@ mod tests {
         }
         let cam = play.doc.cameras[0].position;
         let d = (cam[0] - cam0[0]).abs() + (cam[2] - cam0[2]).abs();
-        assert!(d > 0.4, "chase cam should follow, d={d} cam={cam:?} was={cam0:?}");
+        assert!(
+            d > 0.4,
+            "chase cam should follow, d={d} cam={cam:?} was={cam0:?}"
+        );
         assert_eq!(play.doc.cameras[0].name, "chase");
         let p = play.doc.player.as_ref().unwrap().position;
         let tgt = play.doc.cameras[0].target;

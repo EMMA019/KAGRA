@@ -681,12 +681,7 @@ mod tests {
         assert_eq!(play.doc.player.as_ref().unwrap().name, "hurt");
         let dump = play.doc.to_json().unwrap();
         assert!(dump.contains("hurt"), "hit must be dump-visible");
-        let opp = play
-            .doc
-            .props
-            .iter()
-            .find(|p| is_opponent(p))
-            .unwrap();
+        let opp = play.doc.props.iter().find(|p| is_opponent(p)).unwrap();
         assert_eq!(opp.color, Some(OPP_STUN_COLOR));
         let hud = play.build_hud(960, 540);
         assert!(hud.quads.len() >= 4, "HP pips + flash overlay");
@@ -709,12 +704,7 @@ mod tests {
         assert!(play.fight.won, "opponent must KO");
         assert!(play.fight.done);
         assert_eq!(play.game.phase, GamePhase::Complete);
-        let opp = play
-            .doc
-            .props
-            .iter()
-            .find(|p| is_opponent(p))
-            .unwrap();
+        let opp = play.doc.props.iter().find(|p| is_opponent(p)).unwrap();
         assert!(!opp.enabled, "KO opponent must be disabled in the dump");
         assert_eq!(play.doc.player.as_ref().unwrap().name, "win");
         let dump = play.doc.to_json().unwrap();
@@ -754,12 +744,22 @@ mod tests {
         assert!(
             camera_keeps_both(&play.doc),
             "camera must keep both, cam={:?} player={:?} opp={:?}",
-            play.doc.cameras.first().map(|c| (c.target, c.name.as_str())),
+            play.doc
+                .cameras
+                .first()
+                .map(|c| (c.target, c.name.as_str())),
             play.doc.player.as_ref().map(|p| p.position),
-            play.doc.props.iter().find(|p| is_opponent(p)).map(|p| p.position)
+            play.doc
+                .props
+                .iter()
+                .find(|p| is_opponent(p))
+                .map(|p| p.position)
         );
         let dump = play.doc.to_json().unwrap();
-        assert!(dump.contains("\"ko\"") || dump.contains("ko"), "KO must be dump-visible");
+        assert!(
+            dump.contains("\"ko\"") || dump.contains("ko"),
+            "KO must be dump-visible"
+        );
         let hud = play.build_hud(960, 540);
         assert!(hud.quads.len() >= 2, "KO overlay");
 

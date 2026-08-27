@@ -776,8 +776,16 @@ mod tests {
         let m = primitives::quad_mesh(2.0, 3.0);
         assert!(m.vertices.iter().all(|v| v.pos[2].abs() < 1e-6));
         assert_eq!(m.vertices.len(), 8);
-        assert!(m.vertices.iter().take(4).all(|v| v.normal == [0.0, 0.0, 1.0]));
-        assert!(m.vertices.iter().skip(4).all(|v| v.normal == [0.0, 0.0, -1.0]));
+        assert!(m
+            .vertices
+            .iter()
+            .take(4)
+            .all(|v| v.normal == [0.0, 0.0, 1.0]));
+        assert!(m
+            .vertices
+            .iter()
+            .skip(4)
+            .all(|v| v.normal == [0.0, 0.0, -1.0]));
         let b = m.bounds();
         assert!((b.max.x - 1.0).abs() < 1e-5);
         assert!((b.max.y - 1.5).abs() < 1e-5);

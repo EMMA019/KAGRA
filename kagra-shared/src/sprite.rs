@@ -10,10 +10,7 @@ use crate::world_doc::{WorldDoc, WorldProp};
 pub const GAME_ID: &str = "sprite_card";
 
 pub fn is_sprite_prop(prop: &WorldProp) -> bool {
-    matches!(
-        prop.model.to_ascii_lowercase().as_str(),
-        "sprite" | "quad"
-    )
+    matches!(prop.model.to_ascii_lowercase().as_str(), "sprite" | "quad")
 }
 
 pub fn is_sprite(doc: &WorldDoc) -> bool {
