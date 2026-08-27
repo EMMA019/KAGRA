@@ -703,7 +703,9 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
 fn read_f32x3(doc: &GltfFile, blobs: &[Vec<u8>], accessor: usize) -> Result<Vec<Vec3>, String> {
     let floats = read_f32_components(doc, blobs, accessor, 3)?;
     Ok(floats
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|c| Vec3::new(c[0], c[1], c[2]))
         .collect())
 }
@@ -718,12 +720,10 @@ fn read_mat4(doc: &GltfFile, blobs: &[Vec<u8>], accessor: usize) -> Result<Vec<M
     }
     let floats = read_f32_components(doc, blobs, accessor, 16)?;
     Ok(floats
-        .chunks_exact(16)
-        .map(|c| {
-            let mut a = [0.0f32; 16];
-            a.copy_from_slice(c);
-            Mat4::from_cols_array(&a)
-        })
+        .as_chunks::<16>()
+        .0
+        .iter()
+        .map(Mat4::from_cols_array)
         .collect())
 }
 
@@ -844,9 +844,7 @@ fn read_weights(
     match acc.component_type {
         5126 => {
             let f = read_f32_components(doc, blobs, accessor, 4)?;
-            Ok(f.chunks_exact(4)
-                .map(|c| [c[0], c[1], c[2], c[3]])
-                .collect())
+            Ok(f.as_chunks::<4>().0.to_vec())
         }
         5121 => {
             let view_idx = acc
