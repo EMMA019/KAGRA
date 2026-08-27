@@ -4,7 +4,7 @@
   "floor_y": 0.0,
   "gravity": 9.8,
   "water_y": null,
-  "coins": 0,
+  "coins": 10,
   "player": {
     "id": "walker:player",
     "type": "walker",
@@ -196,6 +196,32 @@
       "enabled": true,
       "parent": "prop:tower",
       "color": [240, 196, 72]
+    },
+    {
+      "id": "prop:slot-0",
+      "type": "prop",
+      "name": "slot",
+      "position": [-5.0, 0.12, 3.5],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [2.0, 0.2, 2.0],
+      "enabled": true,
+      "parent": null,
+      "color": [64, 148, 120]
+    },
+    {
+      "id": "prop:slot-1",
+      "type": "prop",
+      "name": "slot",
+      "position": [5.0, 0.12, -3.5],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [2.0, 0.2, 2.0],
+      "enabled": true,
+      "parent": null,
+      "color": [64, 148, 120]
     },
     {
       "id": "prop:gate",

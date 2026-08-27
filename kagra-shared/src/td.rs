@@ -1,11 +1,14 @@
-//! Tower defense on play_world: path, spawn, hit.
+//! Tower defense on play_world: path, spawn, hit, place.
 //!
 //! Sibling of collectathon / action / fps. Creeps walk waypoint boxes on a
-//! World.dump. One tower damages in range. Leak or clear is dump-visible
-//! (`name` + `coins` count). Title -> play -> result reuses `WorldPlay` /
+//! World.dump. Towers damage in range. Player places extra towers with J /
+//! click (`WalkInput.attack`) on a `slot` (not puzzle `pad`). Placement
+//! spends `coins` (cost + remaining dump-visible). Leak or clear is
+//! dump-visible (`name`). Title -> play -> result reuses `WorldPlay` /
 //! `GamePhase`. Capsules/boxes, not VRM. Overlay count on shared wgpu 30.
-//! No player-placed towers, waves editor, Rapier, RendererV2, or new ECS.
+//! No waves editor, Rapier, RendererV2, or new ECS.
 
+use crate::collectathon::WalkInput;
 use crate::game::GamePhase;
 use crate::scene::{DrawList, Quad};
 use crate::world_doc::{WorldDoc, WorldProp, WorldWalker};
@@ -20,14 +23,18 @@ pub const TOWER_RANGE: f32 = 8.5;
 pub const TOWER_COOLDOWN: f32 = 0.40;
 pub const HIT_FLASH: f32 = 0.16;
 pub const BODY_H: f32 = 0.95;
+pub const START: u32 = 10;
+pub const COST: u32 = 5;
+pub const PLACE_REACH: f32 = 2.2;
 
-/// Live lane around a dump. HP / path t stay here; creeps and the tower in
-/// the dump (`name == "creep"` / `"tower"`) are the query/dump source of truth.
+/// Live lane around a dump. HP / path t stay here; creeps, towers, slots,
+/// and `coins` in the dump are the query/dump source of truth.
 #[derive(Clone, Debug)]
 pub struct TdGame {
     pub hits: u32,
     pub kills: u32,
     pub leaks: u32,
+    pub coins: u32,
     pub fire_t: f32,
     pub flash_t: f32,
     pub won: bool,
@@ -45,6 +52,7 @@ impl Default for TdGame {
             hits: 0,
             kills: 0,
             leaks: 0,
+            coins: 0,
             fire_t: 0.0,
             flash_t: 0.0,
             won: false,
@@ -74,6 +82,7 @@ impl TdGame {
         self.hits = 0;
         self.kills = 0;
         self.leaks = 0;
+        self.coins = START;
         self.fire_t = 0.0;
         self.flash_t = 0.0;
         self.won = false;
@@ -95,6 +104,10 @@ pub fn is_td(doc: &WorldDoc) -> bool {
 
 fn is_tower(p: &WorldProp) -> bool {
     p.name == "tower" || p.name == "fire"
+}
+
+fn is_slot(p: &WorldProp) -> bool {
+    p.name == "slot"
 }
 
 fn is_waypoint(p: &WorldProp) -> bool {
@@ -171,7 +184,7 @@ pub fn seed(doc: &mut WorldDoc) {
     }
     let mut ys = Vec::new();
     for (i, p) in doc.props.iter().enumerate() {
-        if !(is_tower(p) || is_waypoint(p) || is_creep(p)) || !p.enabled {
+        if !(is_tower(p) || is_waypoint(p) || is_creep(p) || is_slot(p)) || !p.enabled {
             continue;
         }
         let y = doc.height_at(p.position[0], p.position[2]) + sit_extra(p);
@@ -189,7 +202,7 @@ pub fn seed(doc: &mut WorldDoc) {
         w.on_ground = true;
         write_player(doc, w);
     }
-    doc.coins = 0;
+    doc.coins = START;
     place_overview_camera(doc);
 }
 
@@ -224,15 +237,16 @@ pub fn place_overview_camera(doc: &mut WorldDoc) {
     }
 }
 
-/// Advance spawn, path walk, tower hit. Caller already stepped the walker.
-pub fn tick(doc: &mut WorldDoc, game: &mut TdGame, dt: f32) {
+/// Advance spawn, path walk, tower hit, place. Caller already stepped the walker.
+pub fn tick(doc: &mut WorldDoc, game: &mut TdGame, input: WalkInput, dt: f32) {
     if game.done {
+        doc.coins = game.coins;
         return;
     }
     game.fire_t = (game.fire_t - dt).max(0.0);
     game.flash_t = (game.flash_t - dt).max(0.0);
     if game.flash_t <= 0.0 {
-        if let Some(t) = doc.props.iter_mut().find(|p| is_tower(p)) {
+        for t in doc.props.iter_mut().filter(|p| p.name == "fire") {
             t.name = "tower".into();
         }
         for p in doc.props.iter_mut().filter(|p| p.name == "hurt") {
@@ -240,11 +254,68 @@ pub fn tick(doc: &mut WorldDoc, game: &mut TdGame, dt: f32) {
         }
     }
 
+    if input.attack {
+        try_place(doc, game);
+    }
     spawn_creeps(game, dt);
     step_creeps(doc, game, dt);
     apply_tower(doc, game);
-    doc.coins = game.leaks;
+    doc.coins = game.coins;
     finish_if_resolved(doc, game);
+}
+
+fn player_at_slot(doc: &WorldDoc) -> Option<String> {
+    let player = player_ref(doc)?;
+    let mut best: Option<(f32, String)> = None;
+    for p in &doc.props {
+        if !is_slot(p) || !p.enabled {
+            continue;
+        }
+        let dx = player.position[0] - p.position[0];
+        let dz = player.position[2] - p.position[2];
+        let d = (dx * dx + dz * dz).sqrt();
+        if d <= PLACE_REACH && best.as_ref().map(|(bd, _)| d < *bd).unwrap_or(true) {
+            best = Some((d, p.id.clone()));
+        }
+    }
+    best.map(|(_, id)| id)
+}
+
+fn try_place(doc: &mut WorldDoc, game: &mut TdGame) {
+    if game.coins < COST {
+        return;
+    }
+    let Some(slot_id) = player_at_slot(doc) else {
+        return;
+    };
+    let Some(slot) = doc.props.iter().find(|p| p.id == slot_id) else {
+        return;
+    };
+    let pos = slot.position;
+    let yaw = slot.yaw;
+    if let Some(p) = doc.props.iter_mut().find(|p| p.id == slot_id) {
+        p.name = "used".into();
+    }
+    let n = doc.props.iter().filter(|p| is_tower(p)).count();
+    let extra = 0.5 * 3.2_f32;
+    let y = doc.height_at(pos[0], pos[2]) + extra;
+    doc.props.push(WorldProp {
+        id: format!("prop:tower-{n}"),
+        kind: "prop".into(),
+        name: "tower".into(),
+        position: [pos[0], y, pos[2]],
+        yaw,
+        model: "box".into(),
+        gltf: None,
+        scale: [1.5, 3.2, 1.5],
+        enabled: true,
+        parent: None,
+        color: Some([54, 92, 110]),
+        metallic: 0.0,
+        roughness: 1.0,
+    });
+    game.coins = game.coins.saturating_sub(COST);
+    doc.coins = game.coins;
 }
 
 fn spawn_creeps(game: &mut TdGame, dt: f32) {
@@ -337,49 +408,68 @@ fn leak_creep(doc: &mut WorldDoc, game: &mut TdGame, id: &str) {
     }
     game.leaks = game.leaks.saturating_add(1);
     set_player_name(doc, "leak");
-    doc.coins = game.leaks;
 }
 
 fn apply_tower(doc: &mut WorldDoc, game: &mut TdGame) {
     if game.fire_t > 0.0 {
         return;
     }
-    let Some(tower) = doc.props.iter().find(|p| is_tower(p) && p.enabled) else {
+    let towers: Vec<(String, Vec3)> = doc
+        .props
+        .iter()
+        .filter(|p| is_tower(p) && p.enabled)
+        .map(|p| (p.id.clone(), Vec3::from_array(p.position)))
+        .collect();
+    if towers.is_empty() {
         return;
-    };
-    let origin = Vec3::from_array(tower.position);
-    let mut best: Option<(f32, String)> = None;
-    for p in &doc.props {
-        if !is_creep(p) || !p.enabled || p.name == "leaked" || p.name == "dead" {
-            continue;
+    }
+    let mut fire_ids = Vec::new();
+    let mut hit_ids = Vec::new();
+    for (tid, origin) in &towers {
+        let mut best: Option<(f32, String)> = None;
+        for p in &doc.props {
+            if !is_creep(p) || !p.enabled || p.name == "leaked" || p.name == "dead" {
+                continue;
+            }
+            if game.spawned.get(&p.id) != Some(&true) {
+                continue;
+            }
+            let d = Vec3::new(p.position[0] - origin.x, 0.0, p.position[2] - origin.z).length();
+            if d <= TOWER_RANGE && best.as_ref().map(|(bd, _)| d < *bd).unwrap_or(true) {
+                best = Some((d, p.id.clone()));
+            }
         }
-        if game.spawned.get(&p.id) != Some(&true) {
-            continue;
-        }
-        let d = Vec3::new(p.position[0] - origin.x, 0.0, p.position[2] - origin.z).length();
-        if d <= TOWER_RANGE && best.as_ref().map(|(bd, _)| d < *bd).unwrap_or(true) {
-            best = Some((d, p.id.clone()));
+        if let Some((_, id)) = best {
+            fire_ids.push(tid.clone());
+            hit_ids.push(id);
         }
     }
-    let Some((_, id)) = best else {
+    if fire_ids.is_empty() {
         return;
-    };
+    }
     game.fire_t = TOWER_COOLDOWN;
     game.flash_t = HIT_FLASH;
-    game.hits = game.hits.saturating_add(1);
-    if let Some(t) = doc.props.iter_mut().find(|p| is_tower(p)) {
-        t.name = "fire".into();
-    }
-    let hp = game.creep_hp.entry(id.clone()).or_insert(CREEP_HP);
-    *hp = hp.saturating_sub(1);
-    if *hp == 0 {
-        if let Some(p) = doc.props.iter_mut().find(|p| p.id == id) {
-            p.name = "dead".into();
-            p.enabled = false;
+    for tid in &fire_ids {
+        if let Some(t) = doc.props.iter_mut().find(|p| p.id == *tid) {
+            t.name = "fire".into();
         }
-        game.kills = game.kills.saturating_add(1);
-    } else if let Some(p) = doc.props.iter_mut().find(|p| p.id == id) {
-        p.name = "hurt".into();
+    }
+    for id in hit_ids {
+        let hp = game.creep_hp.entry(id.clone()).or_insert(CREEP_HP);
+        if *hp == 0 {
+            continue;
+        }
+        *hp = hp.saturating_sub(1);
+        game.hits = game.hits.saturating_add(1);
+        if *hp == 0 {
+            if let Some(p) = doc.props.iter_mut().find(|p| p.id == id) {
+                p.name = "dead".into();
+                p.enabled = false;
+            }
+            game.kills = game.kills.saturating_add(1);
+        } else if let Some(p) = doc.props.iter_mut().find(|p| p.id == id) {
+            p.name = "hurt".into();
+        }
     }
 }
 
@@ -404,7 +494,6 @@ fn finish_if_resolved(doc: &mut WorldDoc, game: &mut TdGame) {
     } else {
         set_player_name(doc, "leak");
     }
-    doc.coins = game.leaks;
 }
 
 pub fn build_hud(game: &TdGame, phase: GamePhase, width: u32, height: u32) -> DrawList {
@@ -458,6 +547,15 @@ pub fn build_hud(game: &TdGame, phase: GamePhase, width: u32, height: u32) -> Dr
                     [196, 72, 54, 255],
                 ));
             }
+            for i in 0..game.coins.min(12) {
+                quads.push(Quad::new(
+                    pad + i as f32 * (pip + gap),
+                    pad + (pip + gap) * 2.0,
+                    pip,
+                    pip,
+                    [240, 196, 72, 255],
+                ));
+            }
             if game.flash_t > 0.0 {
                 let a = (50.0 + 90.0 * (game.flash_t / HIT_FLASH)) as u8;
                 quads.push(Quad::new(
@@ -507,7 +605,6 @@ pub fn build_hud(game: &TdGame, phase: GamePhase, width: u32, height: u32) -> Dr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::collectathon::WalkInput;
     use crate::game::GamePhase;
     use crate::world_play::WorldPlay;
 
@@ -561,6 +658,18 @@ mod tests {
             .collect();
         assert_eq!(towers.len(), 1);
         assert!(is_boxish(towers[0]) || towers[0].model == "capsule");
+        let pads: Vec<_> = doc
+            .props
+            .iter()
+            .filter(|p| is_slot(p) && p.enabled)
+            .collect();
+        assert!(pads.len() >= 2, "need place slots, got {}", pads.len());
+        assert!(pads.iter().all(|p| is_boxish(p)));
+        assert_eq!(doc.coins, START);
+        assert!(
+            !crate::puzzle::is_puzzle(&doc),
+            "slot must not be puzzle pad"
+        );
         let wps: Vec<_> = doc.props.iter().filter(|p| is_waypoint(p)).collect();
         assert!(wps.len() >= 3, "need a path, got {}", wps.len());
         let creeps: Vec<_> = doc
@@ -733,7 +842,7 @@ mod tests {
         assert_eq!(play.doc.player.as_ref().unwrap().name, "clear");
         let dump = play.doc.to_json().unwrap();
         assert!(dump.contains("clear"), "clear must be dump-visible");
-        assert_eq!(play.doc.coins, 0);
+        assert_eq!(play.doc.coins, START);
         let hud = play.build_hud(960, 540);
         assert!(hud.quads.len() >= 2);
 
@@ -780,7 +889,7 @@ mod tests {
         let p = play.doc.props.iter().find(|p| p.id == id).unwrap();
         assert_eq!(p.name, "leaked");
         assert!(play.td.leaks >= 1);
-        assert_eq!(play.doc.coins, play.td.leaks);
+        assert_eq!(play.doc.coins, START, "leaks must not steal place-coins");
         assert_eq!(play.doc.player.as_ref().unwrap().name, "leak");
         let dump = play.doc.to_json().unwrap();
         assert!(dump.contains("leaked") || dump.contains("\"leak\""));
@@ -814,5 +923,186 @@ mod tests {
             "overview must not chase, cam={cam:?} was={cam0:?}"
         );
         assert_eq!(play.doc.cameras[0].name, "overview");
+    }
+
+    fn put_player(play: &mut WorldPlay, x: f32, z: f32) {
+        let y = play.doc.height_at(x, z) + BODY_H;
+        if let Some(w) = play.doc.player.as_mut() {
+            w.position = [x, y, z];
+            w.on_ground = true;
+        }
+        if let Some(w) = play.doc.walkers.first_mut() {
+            w.position = [x, y, z];
+            w.on_ground = true;
+        }
+    }
+
+    fn slot_xz(play: &WorldPlay) -> (f32, f32) {
+        let p = play
+            .doc
+            .props
+            .iter()
+            .filter(|p| is_slot(p) && p.enabled)
+            .min_by(|a, b| a.id.cmp(&b.id))
+            .unwrap();
+        (p.position[0], p.position[2])
+    }
+
+    #[test]
+    fn attack_on_slot_places_tower_and_spends_coins() {
+        let mut play = play_started();
+        assert_eq!(play.doc.coins, START);
+        let towers0 = play.doc.props.iter().filter(|p| is_tower(p)).count();
+        let (x, z) = slot_xz(&play);
+        put_player(&mut play, x, z);
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
+        let towers1 = play.doc.props.iter().filter(|p| is_tower(p)).count();
+        assert_eq!(towers1, towers0 + 1, "place must add a tower entity");
+        assert_eq!(play.doc.coins, START - COST);
+        assert_eq!(play.td.coins, START - COST);
+        assert!(
+            play.doc.props.iter().any(|p| p.name == "used"),
+            "occupied slot must be dump-visible"
+        );
+        let dump = play.doc.to_json().unwrap();
+        assert!(
+            dump.contains("prop:tower-"),
+            "new tower id must be dump-visible"
+        );
+        assert!(
+            dump.contains(&format!("\"coins\": {0}", START - COST))
+                || dump.contains(&format!("\"coins\":{0}", START - COST)),
+            "remaining coins must be dump-visible, dump coins field missing {0}",
+            START - COST
+        );
+        assert!(dump.contains("used"));
+        let hud = play.build_hud(960, 540);
+        assert!(hud.quads.len() >= 3, "coin overlay");
+        assert_eq!(play.doc.cameras[0].name, "overview");
+    }
+
+    #[test]
+    fn attack_away_from_slot_does_not_place() {
+        let mut play = play_started();
+        put_player(&mut play, 0.0, 14.0);
+        let towers0 = play.doc.props.iter().filter(|p| is_tower(p)).count();
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
+        let towers1 = play.doc.props.iter().filter(|p| is_tower(p)).count();
+        assert_eq!(towers1, towers0, "off-slot J is not a place");
+        assert_eq!(play.doc.coins, START);
+        assert!(!play.doc.props.iter().any(|p| p.name == "used"));
+    }
+
+    #[test]
+    fn place_without_coins_is_ignored() {
+        let mut play = play_started();
+        play.td.coins = COST - 1;
+        play.doc.coins = COST - 1;
+        let (x, z) = slot_xz(&play);
+        put_player(&mut play, x, z);
+        let towers0 = play.doc.props.iter().filter(|p| is_tower(p)).count();
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
+        let towers1 = play.doc.props.iter().filter(|p| is_tower(p)).count();
+        assert_eq!(towers1, towers0, "not enough coins");
+        assert_eq!(play.doc.coins, COST - 1);
+        assert!(!play.doc.props.iter().any(|p| p.name == "used"));
+    }
+
+    #[test]
+    fn second_place_on_same_slot_does_not_spend() {
+        let mut play = play_started();
+        let (x, z) = slot_xz(&play);
+        put_player(&mut play, x, z);
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
+        let coins = play.doc.coins;
+        let towers = play.doc.props.iter().filter(|p| is_tower(p)).count();
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
+        assert_eq!(play.doc.coins, coins, "used slot must not spend again");
+        assert_eq!(
+            play.doc.props.iter().filter(|p| is_tower(p)).count(),
+            towers
+        );
+    }
+
+    #[test]
+    fn placed_tower_auto_fires() {
+        let mut play = play_started();
+        let (x, z) = slot_xz(&play);
+        put_player(&mut play, x, z);
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
+        let placed = play
+            .doc
+            .props
+            .iter()
+            .find(|p| p.id.starts_with("prop:tower-"))
+            .unwrap();
+        let pos = placed.position;
+        let id = play
+            .doc
+            .props
+            .iter()
+            .find(|p| is_creep(p) && p.enabled)
+            .unwrap()
+            .id
+            .clone();
+        park_creep(&mut play, &id, pos[0] + 1.2, pos[2]);
+        play.td.fire_t = 0.0;
+        play.tick(1.0 / 60.0);
+        assert!(
+            play.td.hits >= 1,
+            "placed tower should auto-fire, hits {}",
+            play.td.hits
+        );
+        let dump = play.doc.to_json().unwrap();
+        assert!(
+            dump.contains("hurt") || dump.contains("dead") || dump.contains("fire"),
+            "placed-tower hit must be dump-visible"
+        );
+    }
+
+    #[test]
+    fn title_does_not_place() {
+        let mut play = WorldPlay::from_json(LANE).unwrap();
+        assert_eq!(play.game.phase, GamePhase::Title);
+        let (x, z) = slot_xz(&play);
+        put_player(&mut play, x, z);
+        let towers0 = play.doc.props.iter().filter(|p| is_tower(p)).count();
+        play.input.attack = true;
+        for _ in 0..20 {
+            play.tick(1.0 / 60.0);
+        }
+        let towers1 = play.doc.props.iter().filter(|p| is_tower(p)).count();
+        assert_eq!(towers1, towers0, "title must not place");
+        assert_eq!(play.doc.coins, START);
+    }
+
+    #[test]
+    fn confirm_retry_restores_towers_and_coins() {
+        let mut play = play_started();
+        let (x, z) = slot_xz(&play);
+        put_player(&mut play, x, z);
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
+        assert!(play.doc.coins < START);
+        play.start();
+        assert_eq!(play.game.phase, GamePhase::Playing);
+        assert_eq!(play.doc.coins, START);
+        assert_eq!(play.td.coins, START);
+        assert_eq!(
+            play.doc
+                .props
+                .iter()
+                .filter(|p| is_tower(p) && p.enabled)
+                .count(),
+            1
+        );
+        assert!(play.doc.props.iter().any(|p| is_slot(p) && p.enabled));
+        assert!(!play.doc.props.iter().any(|p| p.name == "used"));
     }
 }

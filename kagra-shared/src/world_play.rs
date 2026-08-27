@@ -110,6 +110,9 @@ impl WorldPlay {
         if fps::is_fps(&doc) {
             doc.coins = fps::MAG;
         }
+        if td::is_td(&doc) {
+            doc.coins = td::START;
+        }
         let look_yaw = look_yaw_from_doc(&doc);
         let action = ActionGame::from_doc(&doc);
         let action2d_game = Action2dGame::from_doc(&doc);
@@ -342,6 +345,9 @@ impl WorldPlay {
         if fps::is_fps(&self.doc) {
             self.doc.coins = fps::MAG;
         }
+        if td::is_td(&self.doc) {
+            self.doc.coins = td::START;
+        }
     }
 
     pub fn is_collectathon(&self) -> bool {
@@ -517,7 +523,7 @@ impl WorldPlay {
         }
         if self.is_td() {
             td::place_overview_camera(&mut self.doc);
-            td::tick(&mut self.doc, &mut self.td, dt);
+            td::tick(&mut self.doc, &mut self.td, input, dt);
             self.game.time_s += dt;
             self.input.jump = false;
             self.input.attack = false;

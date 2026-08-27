@@ -356,6 +356,10 @@ def test_td_lane_fixture_has_path_tower_and_creeps():
     assert "capsule" in models
     assert any(p.get("name") == "path" for p in data["props"])
     assert any(p.get("name") == "floor" for p in data["props"])
+    pads = [p for p in data["props"] if p.get("name") == "slot"]
+    assert len(pads) >= 2
+    assert all(p.get("model") == "box" for p in pads)
+    assert data.get("coins", 0) == 10
     slots = sorted(int(lit["slot"]) for lit in data["lights"])
     assert slots == [0, 1, 2, 3]
     assert data.get("heightfield") in (None, {})
