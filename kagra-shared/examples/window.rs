@@ -155,6 +155,8 @@ fn main() -> Result<(), String> {
             "KAGRA Action Arena (shared wgpu 30)"
         } else if play.is_platformer() {
             "KAGRA Box Hop (shared wgpu 30)"
+        } else if play.is_rpg() {
+            "KAGRA Town Gate (shared wgpu 30)"
         } else {
             "KAGRA Crest Isle (shared wgpu 30)"
         })

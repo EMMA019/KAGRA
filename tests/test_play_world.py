@@ -285,3 +285,15 @@ def test_box_hop_fixture_has_platforms_and_checkpoint():
     assert any(p.get("name") == "goal" for p in data["props"])
     assert data.get("heightfield") in (None, {})
 
+
+def test_rpg_town_fixture_has_npc_door_and_dungeon():
+    import json
+
+    town = json.loads((ROOT / "kagra-shared/tests/fixtures/rpg_town_world.json").read_text(encoding="utf-8"))
+    dun = json.loads((ROOT / "kagra-shared/tests/fixtures/rpg_dungeon_world.json").read_text(encoding="utf-8"))
+    assert town["player"]["on_ground"] is True
+    assert any(p.get("name") == "npc" for p in town["props"])
+    assert any(p.get("name") == "door" for p in town["props"])
+    assert any(p.get("name") == "crystal" for p in dun["props"])
+    assert any(p.get("name") == "door" for p in dun["props"])
+

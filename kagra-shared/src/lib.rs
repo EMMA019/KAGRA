@@ -21,6 +21,7 @@ pub mod map;
 pub mod mission;
 pub mod platformer;
 pub mod road;
+pub mod rpg;
 pub mod save;
 pub mod scene;
 pub mod scene3d;

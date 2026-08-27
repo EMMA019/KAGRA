@@ -13,6 +13,7 @@ use crate::collectathon::{
 };
 use crate::game::GamePhase;
 use crate::platformer::{self, PlatformGame};
+use crate::rpg::{self, RpgGame};
 use crate::scene::{DrawList, Quad};
 use crate::world_doc::{WorldDoc, WorldProp, WorldWalker};
 use glam::Vec3;
@@ -28,6 +29,7 @@ pub struct WorldPlay {
     pub game: IsleGame,
     pub action: ActionGame,
     pub platform: PlatformGame,
+    pub rpg: RpgGame,
     seed: WorldDoc,
     vy: f32,
 }
@@ -38,13 +40,16 @@ impl WorldPlay {
         seed_collectathon_pickups(&mut doc);
         action::seed(&mut doc);
         platformer::seed(&mut doc);
+        rpg::seed(&mut doc);
         refresh_coin_count(&mut doc);
         let look_yaw = look_yaw_from_doc(&doc);
         let action = ActionGame::from_doc(&doc);
         let platform = PlatformGame::from_doc(&doc);
+        let rpg_game = RpgGame::from_doc(&doc);
         let game = if is_collectathon(&doc)
             || action::is_action(&doc)
             || platformer::is_platformer(&doc)
+            || rpg::is_rpg(&doc)
         {
             IsleGame::default()
         } else {
@@ -61,6 +66,7 @@ impl WorldPlay {
             game,
             action,
             platform,
+            rpg: rpg_game,
             vy: 0.0,
         }
     }
@@ -94,6 +100,7 @@ impl WorldPlay {
             self.platform.checkpoint = ckpt;
             platformer::restore_checkpoint(&mut self.doc, &self.platform);
         }
+        self.rpg = RpgGame::from_doc(&self.doc);
         refresh_coin_count(&mut self.doc);
     }
 
@@ -107,6 +114,10 @@ impl WorldPlay {
 
     pub fn is_platformer(&self) -> bool {
         platformer::is_platformer(&self.doc) || platformer::is_platformer(&self.seed)
+    }
+
+    pub fn is_rpg(&self) -> bool {
+        rpg::is_rpg(&self.doc) || rpg::is_rpg(&self.seed)
     }
 
     /// Mouse / arrow look. Pitch is clamped.
@@ -150,6 +161,14 @@ impl WorldPlay {
             }
             return;
         }
+        if self.is_rpg() {
+            rpg::tick(&mut self.doc, &mut self.rpg, input, dt);
+            self.follow_camera();
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            return;
+        }
         self.collect_pickups();
         self.game.time_s += dt;
         self.input.jump = false;
@@ -166,6 +185,9 @@ impl WorldPlay {
         }
         if self.is_platformer() {
             return platformer::build_hud(&self.platform, self.game.phase, width, height);
+        }
+        if self.is_rpg() {
+            return rpg::build_hud(&self.rpg, self.game.phase, width, height);
         }
         let w = width.max(1) as f32;
         let h = height.max(1) as f32;

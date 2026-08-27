@@ -201,6 +201,13 @@ def test_load_box_hop_scenario_is_world_and_offscreen():
     assert sc.expect_offscreen["out"].endswith("box_hop_shared.png")
 
 
+def test_load_rpg_town_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/rpg_town_smoke.json")
+    assert sc.expect_world
+    assert sc.expect_world["path"].endswith("rpg_town_world.json")
+    assert sc.expect_offscreen
+
+
 def test_png_dimensions_reads_ihdr(tmp_path):
     p = tmp_path / "a.png"
     p.write_bytes(_rgba_png(32, 24))
