@@ -98,7 +98,19 @@
         "position": { "$ref": "#/$defs/vec3" },
         "yaw": { "type": "number" },
         "face": { "type": "number" },
-        "on_ground": { "type": "boolean" }
+        "on_ground": { "type": "boolean" },
+        "model": {
+          "type": "string",
+          "description": "Same dump key as prop.model. Capsule fallback when no glTF."
+        },
+        "gltf": {
+          "type": ["string", "null"],
+          "description": "Same dump key as prop.gltf. Skinned glTF 2.0 (skin + Walk clip) CPU-skinned into Vertex3 on play_world. Capsule if missing."
+        },
+        "clip": {
+          "type": "number",
+          "description": "Seconds into the walk clip. 0 = rest / T-pose. Advances while WASD walking."
+        }
       }
     },
     "light": {

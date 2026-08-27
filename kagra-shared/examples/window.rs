@@ -383,6 +383,9 @@ fn main() -> Result<(), String> {
                     play.input = input;
                     play.tick(dt);
                     keys.attack = false;
+                    if let Err(e) = renderer.update_world_gltf(&play.doc) {
+                        eprintln!("skin: {e}");
+                    }
                     let scene = play.doc.compile_scene(renderer.aspect());
                     let hud = play.build_hud(view_w, view_h);
                     if let Err(e) = renderer.render_frame(Some(&scene), &hud) {

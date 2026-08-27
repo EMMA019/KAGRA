@@ -10,8 +10,8 @@
 //! Coins use `Material::Metal` (existing GGX, metallic=1 / roughness=0.12).
 //! Lights are slot 0..3 1:1; an empty dump still gets default key+fill
 //! (slots 0+1; 2 and 3 stay off). Capsules and props get a ground contact
-//! blob (`MESH_PLANE` + instance alpha). glTF props use `gltf_load` (capsule player; VRM skin is
-//! not ported). Integer GPU mesh ids are not game objects. Live play is
+//! blob (`MESH_PLANE` + instance alpha). glTF props use `gltf_load`. Walker may name a skinned glTF (`gltf` / `model`);
+//! CPU-skin into Vertex3. Capsule remains the fallback. VRM is not this slice. Integer GPU mesh ids are not game objects. Live play is
 //! `WorldPlay` (title → play → result, WASD → `WalkInput` → sit on
 //! heightfield → pick up). Offscreen draw (feature = "render") is
 //! `render_world_doc`. A real desktop window is `Renderer::new_for_window`
@@ -26,7 +26,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::collectathon::open_world_height;
-use crate::gltf_load::{mesh_from_embedded_gltf, mesh_from_gltf_json, unit_cube_gltf};
+use crate::gltf_load::{
+    is_walk_skinned_spec, mesh_from_embedded_gltf, mesh_from_gltf_json, sample_skinned,
+    skinned_from_embedded_gltf, skinned_from_gltf_json, unit_cube_gltf, walk_skinned_gltf,
+};
 use crate::scene3d::{
     primitives, Camera, LocalLight, Material, MeshData, MeshId, Scene3D, SceneBuilder, Vertex3,
 };
@@ -140,6 +143,14 @@ pub struct WorldWalker {
     pub face: f32,
     #[serde(default)]
     pub on_ground: bool,
+    /// Same dump keys as props (`model` name / `gltf` path). Capsule if unset.
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub gltf: Option<String>,
+    /// Seconds into the walk clip. 0 = rest / T-pose. Dump-visible.
+    #[serde(default)]
+    pub clip: f32,
 }
 
 fn walker_type() -> String {
@@ -305,7 +316,7 @@ impl WorldDoc {
         let mut b = SceneBuilder::new(&camera, aspect.max(1e-3));
         // Do not register bounds: a dump camera can be tight, and compile must
         // still emit the document's objects (unregistered meshes are never culled).
-        let gltf_ids = self.gltf_mesh_ids();
+        let (gltf_ids, walker_gltf_ids) = self.gltf_mesh_ids();
 
         if self.heightfield.is_some() {
             b.push_material(
@@ -359,15 +370,13 @@ impl WorldDoc {
             if hide_local && local_id == Some(walk.id.as_str()) {
                 continue;
             }
-            // Capsule body + head so the player reads against grass (not a lone blob).
+            // Named glTF (dump `gltf` / `model`) is CPU-skinned at `clip` and
+            // drawn at walker pose. Capsule + head remains the fallback.
             // Action genre: name "hurt" / "dead" is dump-visible and tinted here.
             let pos = Vec3::from_array(walk.position);
             let yaw = Quat::from_rotation_y(walk.yaw);
             let dead = walk.name == "dead";
             let hurt = walk.name == "hurt";
-            let body_h = if dead { 0.28 } else { 0.95 };
-            let body =
-                Mat4::from_scale_rotation_translation(Vec3::new(0.56, body_h, 0.56), yaw, pos);
             let body_col = if dead {
                 [70, 74, 82, 255]
             } else if hurt {
@@ -375,6 +384,14 @@ impl WorldDoc {
             } else {
                 [62, 176, 184, 255]
             };
+            if let Some(&mesh) = walker_gltf_ids.get(&walk.id) {
+                let model = Mat4::from_scale_rotation_translation(Vec3::ONE, yaw, pos);
+                b.push(mesh, model, body_col);
+                continue;
+            }
+            let body_h = if dead { 0.28 } else { 0.95 };
+            let body =
+                Mat4::from_scale_rotation_translation(Vec3::new(0.56, body_h, 0.56), yaw, pos);
             b.push(MESH_CAPSULE, body, body_col);
             let head = Mat4::from_scale_rotation_translation(
                 Vec3::new(0.38, 0.32, 0.38),
@@ -583,8 +600,12 @@ impl WorldDoc {
     pub fn compile_meshes(&self) -> Vec<(MeshId, MeshData)> {
         let mut out = compile_meshes();
         out.push((MESH_HEIGHTFIELD, self.heightfield_mesh()));
-        for (i, spec) in self.gltf_specs().into_iter().enumerate() {
-            let mesh = gltf_mesh_for(&spec).unwrap_or_else(|| primitives::box_mesh(Vec3::ONE));
+        for (i, slot) in self.gltf_slots().into_iter().enumerate() {
+            let mesh = match &slot {
+                GltfSlot::Rest(spec) => gltf_mesh_for(spec),
+                GltfSlot::Skinned { spec, clip, .. } => gltf_skinned_mesh_for(spec, *clip),
+            }
+            .unwrap_or_else(|| primitives::box_mesh(Vec3::ONE));
             out.push((MeshId(MESH_GLTF_BASE + i as u32), mesh));
         }
         out
@@ -628,7 +649,7 @@ impl WorldDoc {
         mesh
     }
 
-    fn gltf_specs(&self) -> Vec<String> {
+    fn gltf_slots(&self) -> Vec<GltfSlot> {
         let mut seen = HashSet::new();
         let mut out = Vec::new();
         for prop in &self.props {
@@ -643,19 +664,67 @@ impl WorldDoc {
                 continue;
             }
             if seen.insert(spec.to_string()) {
-                out.push(spec.to_string());
+                out.push(GltfSlot::Rest(spec.to_string()));
+            }
+        }
+        let mut seen_w = HashSet::new();
+        for walk in self.walkers.iter().chain(self.player.iter()) {
+            if !seen_w.insert(walk.id.as_str()) {
+                continue;
+            }
+            if let Some(spec) = walker_gltf_spec(walk) {
+                out.push(GltfSlot::Skinned {
+                    walker_id: walk.id.clone(),
+                    spec: spec.to_string(),
+                    clip: walk.clip,
+                });
             }
         }
         out
     }
 
-    fn gltf_mesh_ids(&self) -> HashMap<String, MeshId> {
-        self.gltf_specs()
-            .into_iter()
-            .enumerate()
-            .map(|(i, spec)| (spec, MeshId(MESH_GLTF_BASE + i as u32)))
-            .collect()
+    fn gltf_mesh_ids(&self) -> (HashMap<String, MeshId>, HashMap<String, MeshId>) {
+        let mut props = HashMap::new();
+        let mut walkers = HashMap::new();
+        for (i, slot) in self.gltf_slots().into_iter().enumerate() {
+            let id = MeshId(MESH_GLTF_BASE + i as u32);
+            match slot {
+                GltfSlot::Rest(spec) => {
+                    props.insert(spec, id);
+                }
+                GltfSlot::Skinned { walker_id, .. } => {
+                    walkers.insert(walker_id, id);
+                }
+            }
+        }
+        (props, walkers)
     }
+}
+
+enum GltfSlot {
+    Rest(String),
+    Skinned {
+        walker_id: String,
+        spec: String,
+        clip: f32,
+    },
+}
+
+fn walker_gltf_spec(w: &WorldWalker) -> Option<&str> {
+    if let Some(g) = w.gltf.as_deref().map(str::trim) {
+        if !g.is_empty() {
+            return Some(g);
+        }
+    }
+    let m = w.model.trim();
+    if m.is_empty() {
+        return None;
+    }
+    let lower = m.to_ascii_lowercase();
+    if lower.ends_with(".gltf") || lower.ends_with(".glb") {
+        return Some(m);
+    }
+    None
 }
 
 fn mesh_for_prop(prop: &WorldProp, gltf_ids: &HashMap<String, MeshId>) -> MeshId {
@@ -740,6 +809,9 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or(lower.as_str());
+    if is_walk_skinned_spec(spec) {
+        return mesh_from_embedded_gltf(&walk_skinned_gltf()).ok();
+    }
     if matches!(
         stem,
         "cube.glb" | "cube.gltf" | "crate.glb" | "crate.gltf" | "cube"
@@ -751,6 +823,44 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
         let json = std::fs::read_to_string(path).ok()?;
         let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
         return mesh_from_gltf_json(&json, |uri| {
+            std::fs::read(base.join(uri)).map_err(|e| e.to_string())
+        })
+        .ok();
+    }
+    None
+}
+
+fn gltf_skinned_mesh_for(spec: &str, clip: f32) -> Option<MeshData> {
+    if let Some(skin) = load_skinned(spec) {
+        return Some(sample_skinned(&skin, clip));
+    }
+    gltf_mesh_for(spec)
+}
+
+fn load_skinned(spec: &str) -> Option<crate::gltf_load::SkinnedMesh> {
+    let spec = spec.trim();
+    if spec.starts_with('{') {
+        return skinned_from_embedded_gltf(spec).ok();
+    }
+    if is_walk_skinned_spec(spec) {
+        return skinned_from_embedded_gltf(&walk_skinned_gltf()).ok();
+    }
+    let lower = spec.to_ascii_lowercase();
+    let stem = Path::new(&lower)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(lower.as_str());
+    if matches!(
+        stem,
+        "cube.glb" | "cube.gltf" | "crate.glb" | "crate.gltf" | "cube"
+    ) {
+        return skinned_from_embedded_gltf(&unit_cube_gltf()).ok();
+    }
+    let path = Path::new(spec);
+    if path.is_file() && lower.ends_with(".gltf") {
+        let json = std::fs::read_to_string(path).ok()?;
+        let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        return skinned_from_gltf_json(&json, |uri| {
             std::fs::read(base.join(uri)).map_err(|e| e.to_string())
         })
         .ok();
@@ -832,6 +942,15 @@ mod tests {
         ] {
             assert!(defs.get(key).is_some(), "schema missing $defs.{key}");
         }
+        let walker = &defs["walker"]["properties"];
+        assert!(
+            walker.get("gltf").is_some(),
+            "walker dump style includes gltf"
+        );
+        assert!(
+            walker.get("model").is_some(),
+            "walker dump style includes model"
+        );
     }
 
     #[test]
@@ -1238,6 +1357,68 @@ mod tests {
             blobs.len() >= 4,
             "orb rush: walker + 3 props, got {}",
             blobs.len()
+        );
+    }
+
+    #[test]
+    fn walker_gltf_path_is_dump_queryable_and_compiles_skinned_not_capsule() {
+        const DUMP: &str = include_str!("../tests/fixtures/skinned_walker_world.json");
+        let doc = WorldDoc::from_json(DUMP).expect("parse");
+        let w = doc.player.as_ref().expect("player");
+        assert_eq!(w.id, "walker:player");
+        assert_eq!(w.gltf.as_deref(), Some("walk_skinned.gltf"));
+        assert_eq!(w.model, "capsule");
+        assert_eq!(w.clip, 0.0);
+        let json = doc.to_json().unwrap();
+        assert!(json.contains("walk_skinned.gltf"), "gltf path queryable");
+        let scene = doc.compile_scene(1.0);
+        assert!(
+            scene.batches.iter().any(|b| b.mesh.0 >= MESH_GLTF_BASE),
+            "skinned walker must use a glTF mesh slot, not the capsule"
+        );
+        assert!(
+            !scene.batches.iter().any(|b| b.mesh == MESH_CAPSULE),
+            "capsule fallback must not draw when walker names a glTF"
+        );
+        let meshes = doc.compile_meshes();
+        let skinned = meshes
+            .iter()
+            .find(|(id, _)| id.0 >= MESH_GLTF_BASE)
+            .expect("skinned mesh");
+        assert_eq!(skinned.1.vertices.len(), 8);
+        assert_eq!(skinned.1.indices.len(), 36);
+    }
+
+    #[test]
+    fn walker_clip_changes_skinned_vertices() {
+        const DUMP: &str = include_str!("../tests/fixtures/skinned_walker_world.json");
+        let mut rest = WorldDoc::from_json(DUMP).unwrap();
+        rest.player.as_mut().unwrap().clip = 0.0;
+        let mut walk = rest.clone();
+        walk.player.as_mut().unwrap().clip = 0.25;
+        if let Some(w) = walk.walkers.first_mut() {
+            w.clip = 0.25;
+        }
+        let a = rest
+            .compile_meshes()
+            .into_iter()
+            .find(|(id, _)| id.0 >= MESH_GLTF_BASE)
+            .unwrap()
+            .1;
+        let b = walk
+            .compile_meshes()
+            .into_iter()
+            .find(|(id, _)| id.0 >= MESH_GLTF_BASE)
+            .unwrap()
+            .1;
+        let mut max_d = 0.0f32;
+        for (va, vb) in a.vertices.iter().zip(b.vertices.iter()) {
+            let d = (Vec3::from_array(va.pos) - Vec3::from_array(vb.pos)).length();
+            max_d = max_d.max(d);
+        }
+        assert!(
+            max_d > 0.05,
+            "clip 0.25 must move verts off T-pose, max_d={max_d}"
         );
     }
 }

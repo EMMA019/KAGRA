@@ -241,6 +241,7 @@ fn sit_player(doc: &mut WorldDoc, name: &str) {
             yaw: SEAT_YAW,
             face: SEAT_YAW,
             on_ground: true,
+            ..Default::default()
         },
     );
 }

@@ -817,12 +817,12 @@ impl WorldPlay {
         let wish = right * input.lx + fwd * input.lz;
         let wish_len = wish.length();
 
-        let (id, mut x, mut y, mut z, mut yaw, mut on_ground) = {
+        let (mut updated, mut x, mut y, mut z, mut yaw, mut on_ground) = {
             let Some(w) = player_ref(&self.doc) else {
                 return;
             };
             (
-                w.id.clone(),
+                w.clone(),
                 w.position[0],
                 w.position[1],
                 w.position[2],
@@ -837,6 +837,9 @@ impl WorldPlay {
             x += dir.x * speed * dt;
             z += dir.z * speed * dt;
             yaw = dir.x.atan2(dir.z);
+            updated.clip += dt;
+        } else {
+            updated.clip = 0.0;
         }
         let pad = 2.0;
         x = x.clamp(-half + pad, half - pad);
@@ -856,15 +859,12 @@ impl WorldPlay {
             on_ground = false;
         }
 
-        let updated = WorldWalker {
-            id: id.clone(),
-            kind: "walker".into(),
-            name: "player".into(),
-            position: [x, y, z],
-            yaw,
-            face: yaw,
-            on_ground,
-        };
+        updated.kind = "walker".into();
+        updated.name = "player".into();
+        updated.position = [x, y, z];
+        updated.yaw = yaw;
+        updated.face = yaw;
+        updated.on_ground = on_ground;
         write_player(&mut self.doc, updated);
     }
 
@@ -1277,5 +1277,57 @@ mod tests {
         }
         let player = play.doc.player.as_ref().unwrap();
         assert!(player.on_ground);
+    }
+
+    #[test]
+    fn wasd_plays_walk_clip_idle_is_tpose() {
+        const DUMP: &str = include_str!("../tests/fixtures/skinned_walker_world.json");
+        let mut play = WorldPlay::from_json(DUMP).unwrap();
+        play.start();
+        let rest = play.doc.player.as_ref().unwrap().clip;
+        assert_eq!(rest, 0.0);
+        let rest_mesh = play
+            .doc
+            .compile_meshes()
+            .into_iter()
+            .find(|(id, _)| id.0 >= crate::world_doc::MESH_GLTF_BASE)
+            .unwrap()
+            .1;
+        play.input = WalkInput {
+            lx: 0.0,
+            lz: 1.0,
+            jump: false,
+            attack: false,
+            dodge: false,
+        };
+        for _ in 0..20 {
+            play.tick(1.0 / 60.0);
+        }
+        let w = play.doc.player.as_ref().unwrap();
+        assert!(w.clip > 0.2, "WASD must advance walk clip, got {}", w.clip);
+        assert_eq!(w.gltf.as_deref(), Some("walk_skinned.gltf"));
+        let walk_mesh = play
+            .doc
+            .compile_meshes()
+            .into_iter()
+            .find(|(id, _)| id.0 >= crate::world_doc::MESH_GLTF_BASE)
+            .unwrap()
+            .1;
+        let mut max_d = 0.0f32;
+        for (a, b) in rest_mesh.vertices.iter().zip(walk_mesh.vertices.iter()) {
+            let d = (glam::Vec3::from_array(a.pos) - glam::Vec3::from_array(b.pos)).length();
+            max_d = max_d.max(d);
+        }
+        assert!(
+            max_d > 0.02,
+            "walking must not be a T-pose statue, max_d={max_d}"
+        );
+        play.input = WalkInput::default();
+        play.tick(1.0 / 60.0);
+        assert_eq!(
+            play.doc.player.as_ref().unwrap().clip,
+            0.0,
+            "idle returns to T-pose clip 0"
+        );
     }
 }

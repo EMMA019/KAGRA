@@ -225,6 +225,7 @@ fn apply_walk(doc: &mut WorldDoc, game: &mut Action2dGame, input: WalkInput, dt:
                 0.0
             },
             on_ground: true,
+            ..Default::default()
         },
     );
 }

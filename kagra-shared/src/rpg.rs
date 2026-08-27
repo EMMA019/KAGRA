@@ -367,6 +367,7 @@ fn ensure_party(doc: &mut WorldDoc) {
         yaw,
         face: yaw,
         on_ground: true,
+        ..Default::default()
     });
 }
 

@@ -6,7 +6,7 @@ wgpu 30 never share a process. It presents through the existing shared
 It does **not** use kagra-core ``window.rs`` or the ``(-12800,-12800)``
 fake-headless path.
 
-Official Crest play on this path is a **capsule** collectathon (title →
+Official Crest play on this path is a collectathon (capsule fallback; walker dump `gltf` / `model` is CPU-skinned Vertex3 on wgpu 30) (title →
 play → result, pick up, count, finish) walking a World.dump. WASD +
 mouse/arrows. ``examples/vrm_open_world.py`` may keep RendererV2 for the
 leftover VRM skin. New games must not start on RendererV2.

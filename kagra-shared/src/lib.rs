@@ -63,7 +63,10 @@ pub use collectathon::{
 pub use collide::Obb2;
 pub use driving::{DrivingScene, MeshIds, MeshSet};
 pub use game::{DemoGame, GamePhase, GAME_ID, GAME_TITLE};
-pub use gltf_load::{mesh_from_embedded_gltf, mesh_from_gltf_json};
+pub use gltf_load::{
+    mesh_from_embedded_gltf, mesh_from_gltf_json, sample_skinned, skinned_from_embedded_gltf,
+    walk_skinned_gltf,
+};
 pub use input::{KeyEvent, PointerEvent, PointerPhase, VirtualPad};
 pub use map::{MapBuilding, MapEdge, RoadNetwork, DEMO_CITY_JSON, SHIBUYA_DEMO_JSON};
 pub use mission::{Mission, MissionPhase};

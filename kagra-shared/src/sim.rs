@@ -206,6 +206,7 @@ fn sit_named(doc: &mut WorldDoc, name: &str) {
             yaw,
             face: yaw,
             on_ground: true,
+            ..Default::default()
         },
     );
 }

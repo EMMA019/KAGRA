@@ -433,7 +433,7 @@ impl Renderer {
             &self.device,
             "kagra-shared mesh vertices",
             bytemuck::cast_slice(&mesh.vertices),
-            wgpu::BufferUsages::VERTEX,
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         );
         let ibuf = create_init_buffer(
             &self.device,
@@ -814,6 +814,40 @@ impl Renderer {
         let mut meshes = doc.compile_meshes();
         meshes.sort_by_key(|(id, _)| id.0);
         self.upload_mesh_list(meshes)
+    }
+
+    /// Overwrite CPU-skinned walker vertices. Topology stays; COPY_DST vertex buf.
+    pub fn update_mesh(&mut self, id: MeshId, mesh: &MeshData) -> Result<(), String> {
+        let i = id.0 as usize;
+        if i >= self.meshes.len() {
+            return Err(format!("update_mesh: {i} out of range"));
+        }
+        let vbytes: &[u8] = bytemuck::cast_slice(&mesh.vertices);
+        let need = vbytes.len() as u64;
+        if need == 0 {
+            return Ok(());
+        }
+        if need > self.meshes[i].vbuf.size() {
+            self.meshes[i].vbuf = create_init_buffer(
+                &self.device,
+                "kagra-shared mesh vertices",
+                vbytes,
+                wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            );
+        } else {
+            self.queue.write_buffer(&self.meshes[i].vbuf, 0, vbytes);
+        }
+        Ok(())
+    }
+
+    /// Re-skin walker glTF slots after a live tick. Primitive / heightfield stay.
+    pub fn update_world_gltf(&mut self, doc: &crate::world_doc::WorldDoc) -> Result<(), String> {
+        for (id, mesh) in doc.compile_meshes() {
+            if id.0 >= crate::world_doc::MESH_GLTF_BASE {
+                self.update_mesh(id, &mesh)?;
+            }
+        }
+        Ok(())
     }
 
     fn upload_mesh_list(

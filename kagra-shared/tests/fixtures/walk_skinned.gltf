@@ -1,0 +1,182 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "kagra-hand-authored-walk"
+  },
+  "buffers": [
+    {
+      "byteLength": 684,
+      "uri": "data:application/octet-stream;base64,zcxMvgAAAACPwvW9zcxMPgAAAACPwvW9zcxMPgAAAACPwvU9zcxMvgAAAACPwvU9zcxMvs3MzD+PwvW9zcxMPs3MzD+PwvW9zcxMPs3MzD+PwvU9zcxMvs3MzD+PwvU9k8R1vpPEdb/ydRO+k8R1PpPEdb/ydRO+k8R1PpPEdb/ydRM+k8R1vpPEdb/ydRM+k8R1vpPEdT/ydRO+k8R1PpPEdT/ydRO+k8R1PpPEdT/ydRM+k8R1vpPEdT/ydRM+AAABAAUAAAAFAAQAAwAHAAYAAwAGAAIAAAAEAAcAAAAHAAMAAQACAAYAAQAGAAUAAAADAAIAAAACAAEABAAFAAYABAAGAAcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAADNzEy/AAAAAAAAgD8AAAAAAACAPgAAAD8AAEA/AACAPwAAAAAAAAAAAAAAAAAAgD8zCIs+AAAAAAAAAAB/YXY/AAAAAAAAAAAAAAAAAACAPzMIi74AAAAAAAAAAH9hdj8AAAAAAAAAAAAAAAAAAIA/"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 96
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 96,
+      "byteLength": 96
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 192,
+      "byteLength": 72
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 264,
+      "byteLength": 64
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 328,
+      "byteLength": 128
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 456,
+      "byteLength": 128
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 584,
+      "byteLength": 20
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 604,
+      "byteLength": 80
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 8,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 8,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5123,
+      "count": 36,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5123,
+      "count": 8,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 8,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5126,
+      "count": 2,
+      "type": "MAT4"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 5,
+      "type": "SCALAR",
+      "min": [
+        0.0
+      ],
+      "max": [
+        1.0
+      ]
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 5,
+      "type": "VEC4"
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Hips",
+      "children": [
+        1
+      ]
+    },
+    {
+      "name": "Chest",
+      "translation": [
+        0.0,
+        0.8,
+        0.0
+      ]
+    }
+  ],
+  "skins": [
+    {
+      "name": "WalkSkin",
+      "joints": [
+        0,
+        1
+      ],
+      "inverseBindMatrices": 5
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Body",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "JOINTS_0": 3,
+            "WEIGHTS_0": 4
+          },
+          "indices": 2,
+          "mode": 4
+        }
+      ]
+    }
+  ],
+  "animations": [
+    {
+      "name": "Walk",
+      "channels": [
+        {
+          "sampler": 0,
+          "target": {
+            "node": 1,
+            "path": "rotation"
+          }
+        }
+      ],
+      "samplers": [
+        {
+          "input": 6,
+          "output": 7,
+          "interpolation": "LINEAR"
+        }
+      ]
+    }
+  ],
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "scene": 0
+}
