@@ -28,6 +28,7 @@ pub mod ui;
 pub mod vehicle;
 pub mod world;
 pub mod world_doc;
+pub mod world_play;
 
 #[cfg(feature = "render")]
 pub mod render;
@@ -59,6 +60,7 @@ pub use world_doc::{
     compile_meshes, WorldCamera, WorldDoc, WorldHeightfield, WorldLight, WorldProp,
     WorldTerrainTile, WorldWalker, WORLD_DUMP_VERSION,
 };
+pub use world_play::WorldPlay;
 
 #[cfg(feature = "render")]
 pub use render::{render_world_doc, Renderer, SurfaceSource};

@@ -1,13 +1,11 @@
-//! Real desktop window: WorldDoc → Scene3D → kagra-shared wgpu 30 Renderer.
+//! Real desktop window: WorldDoc → live tick → Scene3D → kagra-shared wgpu 30.
 //!
-//! Same `Renderer` as collectathon / mobile / the offscreen example. Not
-//! kagra-core `RendererV2`. Not the `(-12800,-12800)` fake-headless window.
-//! Capsules / boxes / plane. Esc or the close button quit. Optional timed
-//! orbit, then exit (`--seconds`). WASD is a later slice.
+//! WASD walks, mouse / arrows look. Shared `WorldPlay` advances the dump each
+//! frame (wish → sit on heightfield). Capsule player; VRM is not this path.
+//! Esc / Q / close quit. `--seconds` injects forward walk then exits.
 //!
-//! winit 0.29 is the workspace line (kagra-core also uses it with wgpu 0.19).
-//! This example is a **separate process** talking to wgpu 30 via
-//! raw-window-handle 0.6. Do not load both renderers in one process.
+//! winit 0.29 is the workspace line. Separate process + wgpu 30. Do not load
+//! RendererV2 in this process.
 //!
 //! ```bash
 //! cargo run -p kagra-shared --features render --example window
@@ -15,17 +13,17 @@
 //! cargo run -p kagra-shared --features render --example window -- dump.json --width 960 --height 540 --seconds 8
 //! ```
 //!
-//! `python -m kagra.play_world dump.json` shells to this example (or an
-//! installed helper). Skip when there is no display.
+//! `python -m kagra.play_world dump.json` shells to this example.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
+use kagra_shared::collectathon::WalkInput;
 use kagra_shared::render::Renderer;
 use kagra_shared::scene::DrawList;
-use kagra_shared::{Camera, WorldDoc};
-use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
+use kagra_shared::WorldPlay;
+use winit::event::{DeviceEvent, ElementState, Event, KeyEvent, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowBuilder;
@@ -37,14 +35,66 @@ struct Args {
     seconds: Option<f32>,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct Keys {
+    w: bool,
+    a: bool,
+    s: bool,
+    d: bool,
+    left: bool,
+    right: bool,
+    up: bool,
+    down: bool,
+    jump: bool,
+}
+
+impl Keys {
+    fn walk_input(self) -> WalkInput {
+        let lx = (self.d as i32 - self.a as i32) as f32;
+        let lz = (self.w as i32 - self.s as i32) as f32;
+        WalkInput {
+            lx,
+            lz,
+            jump: self.jump,
+        }
+        .clamped()
+    }
+
+    fn look_delta(self, dt: f32) -> (f32, f32) {
+        const SPEED: f32 = 1.6;
+        let yaw = (self.right as i32 - self.left as i32) as f32 * SPEED * dt;
+        let pitch = (self.up as i32 - self.down as i32) as f32 * SPEED * dt;
+        (yaw, pitch)
+    }
+}
+
+fn apply_key(keys: &mut Keys, key: &Key, down: bool) {
+    match key {
+        Key::Named(NamedKey::ArrowLeft) => keys.left = down,
+        Key::Named(NamedKey::ArrowRight) => keys.right = down,
+        Key::Named(NamedKey::ArrowUp) => keys.up = down,
+        Key::Named(NamedKey::ArrowDown) => keys.down = down,
+        Key::Named(NamedKey::Space) => keys.jump = down,
+        Key::Character(c) => {
+            if c.eq_ignore_ascii_case("w") {
+                keys.w = down;
+            } else if c.eq_ignore_ascii_case("a") {
+                keys.a = down;
+            } else if c.eq_ignore_ascii_case("s") {
+                keys.s = down;
+            } else if c.eq_ignore_ascii_case("d") {
+                keys.d = down;
+            }
+        }
+        _ => {}
+    }
+}
+
 fn main() -> Result<(), String> {
     let args = parse_args()?;
     let json = std::fs::read_to_string(&args.dump)
         .map_err(|e| format!("read world dump {}: {e}", args.dump.display()))?;
-    let doc = WorldDoc::from_json(&json)?;
-    let base_cam = doc
-        .compile_scene(args.width as f32 / args.height.max(1) as f32)
-        .camera;
+    let mut play = WorldPlay::from_json(&json)?;
 
     let event_loop = EventLoop::new().map_err(|e| format!("no display: {e}"))?;
     let window = WindowBuilder::new()
@@ -57,19 +107,22 @@ fn main() -> Result<(), String> {
     let width = size.width.max(1);
     let height = size.height.max(1);
     let mut renderer = pollster::block_on(Renderer::new_for_window(window.clone(), width, height))?;
-    renderer.upload_compile_meshes()?;
+    renderer.upload_world_meshes(&play.doc)?;
     println!(
-        "WorldDoc window {} ({}x{}) compile_scene → shared wgpu 30 (Esc to close)",
+        "WorldDoc window {} ({}x{}) WASD walk, mouse/arrows look, Esc to close",
         args.dump.display(),
         width,
         height
     );
 
     let start = Instant::now();
+    let mut last = Instant::now();
     let seconds = args.seconds;
+    let mut keys = Keys::default();
+    let mut mouse_look = (0.0f32, 0.0f32);
     event_loop
         .run(move |event, elwt| {
-            elwt.set_control_flow(ControlFlow::Wait);
+            elwt.set_control_flow(ControlFlow::Poll);
             match event {
                 Event::WindowEvent {
                     event: WindowEvent::CloseRequested,
@@ -81,14 +134,29 @@ fn main() -> Result<(), String> {
                             event:
                                 KeyEvent {
                                     logical_key,
-                                    state: ElementState::Pressed,
+                                    state,
                                     repeat: false,
                                     ..
                                 },
                             ..
                         },
                     ..
-                } if is_quit_key(&logical_key) => elwt.exit(),
+                } => {
+                    let down = state == ElementState::Pressed;
+                    if down && is_quit_key(&logical_key) {
+                        elwt.exit();
+                        return;
+                    }
+                    apply_key(&mut keys, &logical_key, down);
+                }
+                Event::DeviceEvent {
+                    event: DeviceEvent::MouseMotion { delta },
+                    ..
+                } => {
+                    const SENS: f32 = 0.005;
+                    mouse_look.0 += delta.0 as f32 * SENS;
+                    mouse_look.1 += delta.1 as f32 * SENS;
+                }
                 Event::WindowEvent {
                     event: WindowEvent::Resized(size),
                     ..
@@ -108,8 +176,20 @@ fn main() -> Result<(), String> {
                             return;
                         }
                     }
-                    let mut scene = doc.compile_scene(renderer.aspect());
-                    scene.camera = orbit_camera(base_cam, t);
+                    let dt = last.elapsed().as_secs_f32();
+                    last = Instant::now();
+                    let (arrow_yaw, arrow_pitch) = keys.look_delta(dt);
+                    play.add_look(arrow_yaw + mouse_look.0, arrow_pitch + mouse_look.1);
+                    mouse_look = (0.0, 0.0);
+                    let mut input = keys.walk_input();
+                    // Headless-ish smoke: --seconds walks forward so a live
+                    // tick is visible without a human holding W.
+                    if seconds.is_some() && input.lz.abs() < 1e-4 && input.lx.abs() < 1e-4 {
+                        input.lz = 1.0;
+                    }
+                    play.input = input;
+                    play.tick(dt);
+                    let scene = play.doc.compile_scene(renderer.aspect());
                     if let Err(e) = renderer.render_frame(Some(&scene), &DrawList::default()) {
                         eprintln!("draw: {e}");
                         elwt.exit();
@@ -129,22 +209,6 @@ fn is_quit_key(key: &Key) -> bool {
         Key::Named(NamedKey::Escape) => true,
         Key::Character(c) => c.eq_ignore_ascii_case("q"),
         _ => false,
-    }
-}
-
-/// Slow XZ orbit so a few seconds of present is visible. Height stays.
-fn orbit_camera(cam: Camera, t: f32) -> Camera {
-    use glam::Vec3;
-    let target = cam.target;
-    let rel = cam.eye - target;
-    let radius = rel.length().max(0.5);
-    let height = rel.y;
-    let xz = (radius * radius - height * height).max(0.25).sqrt();
-    let base = rel.z.atan2(rel.x);
-    let ang = base + t * 0.28;
-    Camera {
-        eye: target + Vec3::new(xz * ang.cos(), height, xz * ang.sin()),
-        ..cam
     }
 }
 
@@ -204,7 +268,8 @@ fn print_help() {
          cargo run -p kagra-shared --features render --example window -- [dump.json] \\\n\
              [--width 960] [--height 540] [--seconds N]\n\
          \n\
-         Esc / Q / window close. Default dump is the Crest Isle fixture.\n\
+         WASD walk, mouse / arrows look, Space jump, Esc / Q / close.\n\
+         Default dump is the Crest Isle fixture. --seconds injects forward walk then exits.\n\
          No display → error containing \"no display\" (Python skips)."
     );
 }

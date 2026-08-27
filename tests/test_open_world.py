@@ -341,8 +341,10 @@ def test_game_file_uses_only_public_imports():
 def test_readme_sample_line():
     readme = (_ROOT / "README.md").read_text(encoding="utf-8")
     assert "python examples/vrm_open_world.py" in readme
+    assert "python -m kagra.play_world" in readme
     ja = (_ROOT / "README.ja.md").read_text(encoding="utf-8")
     assert "python examples/vrm_open_world.py" in ja
+    assert "python -m kagra.play_world" in ja
 
 
 def test_chunk_props_ready_before_first_stream():

@@ -761,15 +761,40 @@ impl Renderer {
         Ok(out)
     }
 
-    /// Upload `compile_meshes()` so `WorldDoc::compile_scene` batch ids match GPU slots.
-    /// Call on a renderer with no meshes yet (a fresh offscreen target).
+    /// Upload primitive `compile_meshes()` (box/sphere/capsule/plane). Prefer
+    /// `upload_world_meshes` so heightfield + glTF slots match `compile_scene`.
     pub fn upload_compile_meshes(&mut self) -> Result<(), String> {
         if !self.meshes.is_empty() {
             return Err("upload_compile_meshes requires an empty mesh list".into());
         }
         let mut meshes = crate::world_doc::compile_meshes();
         meshes.sort_by_key(|(id, _)| id.0);
+        self.upload_mesh_list(meshes)
+    }
+
+    /// Upload `WorldDoc::compile_meshes` (primitives + heightfield + glTF).
+    /// Call on a renderer with no meshes yet (a fresh window / offscreen).
+    pub fn upload_world_meshes(&mut self, doc: &crate::world_doc::WorldDoc) -> Result<(), String> {
+        if !self.meshes.is_empty() {
+            return Err("upload_world_meshes requires an empty mesh list".into());
+        }
+        let mut meshes = doc.compile_meshes();
+        meshes.sort_by_key(|(id, _)| id.0);
+        self.upload_mesh_list(meshes)
+    }
+
+    fn upload_mesh_list(
+        &mut self,
+        meshes: Vec<(crate::scene3d::MeshId, crate::scene3d::MeshData)>,
+    ) -> Result<(), String> {
+        let mut expect = 0u32;
         for (id, mesh) in meshes {
+            if id.0 != expect {
+                return Err(format!(
+                    "compile mesh ids must be dense, got {} want {expect}",
+                    id.0
+                ));
+            }
             let got = self.upload_mesh(&mesh);
             if got != id {
                 return Err(format!(
@@ -777,15 +802,16 @@ impl Renderer {
                     id.0, got.0
                 ));
             }
+            expect += 1;
         }
         Ok(())
     }
 
     /// Draw a compiled `WorldDoc` to the current target (window or offscreen).
-    /// Uploads `compile_meshes` on first call. Capsules / boxes / plane.
+    /// Uploads world meshes on first call (heightfield + glTF + primitives).
     pub fn draw_world_doc(&mut self, doc: &crate::world_doc::WorldDoc) -> Result<(), String> {
         if self.meshes.is_empty() {
-            self.upload_compile_meshes()?;
+            self.upload_world_meshes(doc)?;
         }
         let scene = doc.compile_scene(self.aspect());
         self.render_frame(Some(&scene), &DrawList::default())

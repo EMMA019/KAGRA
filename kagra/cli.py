@@ -11,7 +11,7 @@ Usage:
   python -m kagra demo         same
   python -m kagra verify FILE  run an agent verify scenario
   python -m kagra render-world FILE [OUT.png]  shared wgpu 30 offscreen of a World.dump JSON
-  python -m kagra play-world [FILE]  shared wgpu 30 desktop window of a World.dump JSON
+  python -m kagra play-world [FILE]  shared wgpu 30 desktop window (WASD; official Crest play)
   kagra --help
 """
 

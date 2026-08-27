@@ -20,6 +20,7 @@ play_world_dump = _play.play_world_dump
 default_world_dump = _play.default_world_dump
 resolve_window_cmd = _play.resolve_window_cmd
 helper_argv = _play.helper_argv
+walk_input_from_keys = _play.walk_input_from_keys
 
 
 def test_default_dump_is_crest_isle_fixture():
@@ -157,3 +158,78 @@ def test_cli_help_does_not_need_kagra_core():
     with pytest.raises(SystemExit) as exc:
         _play.main(["--help"])
     assert exc.value.code == 0
+
+
+def test_walk_input_from_keys_wasd_and_look():
+    idle = walk_input_from_keys(())
+    assert idle["lx"] == 0.0 and idle["lz"] == 0.0 and idle["jump"] is False
+    fwd = walk_input_from_keys(["w"])
+    assert fwd["lz"] == 1.0 and fwd["lx"] == 0.0
+    strafe = walk_input_from_keys(["a", "d"])  # cancel
+    assert strafe["lx"] == 0.0
+    left = walk_input_from_keys(["a"])
+    assert left["lx"] == -1.0
+    look = walk_input_from_keys(["ArrowLeft", "ArrowUp"])
+    assert look["look_x"] == -1.0 and look["look_y"] == 1.0
+    assert walk_input_from_keys(["space"])["jump"] is True
+    # Arrows are look, not wish — WASD owns the walker.
+    assert walk_input_from_keys(["left"])["lz"] == 0.0
+
+
+def test_crest_fixture_has_heightfield_fn_and_player():
+    import json
+
+    data = json.loads(default_world_dump(root=ROOT).read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    hf = data["heightfield"]
+    assert hf["fn"] == "open_world_height"
+    assert hf["samples"]
+    assert any(p.get("gltf") in (None, "") for p in data["props"])
+
+
+def test_gltf_prop_dump_shape(tmp_path):
+    import json
+
+    dump = {
+        "version": 1,
+        "half": 8.0,
+        "player": {
+            "id": "walker:player",
+            "type": "walker",
+            "position": [0.0, 1.0, 0.0],
+            "yaw": 0.0,
+            "on_ground": True,
+        },
+        "props": [
+            {
+                "id": "prop:crate",
+                "type": "prop",
+                "name": "crate",
+                "position": [2.0, 0.5, 0.0],
+                "model": "box",
+                "gltf": "cube.glb",
+                "scale": [1.0, 1.0, 1.0],
+                "enabled": True,
+            }
+        ],
+        "heightfield": {
+            "fn": "island_height",
+            "samples": [[0.0, 0.0, 0.38], [4.0, 0.0, 0.2]],
+        },
+        "cameras": [
+            {
+                "id": "camera:main",
+                "type": "camera",
+                "position": [0.0, 4.0, 8.0],
+                "target": [0.0, 1.0, 0.0],
+                "fov": 54.0,
+            }
+        ],
+    }
+    path = tmp_path / "gltf_world.json"
+    path.write_text(json.dumps(dump), encoding="utf-8")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["props"][0]["gltf"] == "cube.glb"
+    assert data["heightfield"]["fn"] == "island_height"
+    wish = walk_input_from_keys(["w", "d"])
+    assert wish["lz"] == 1.0 and wish["lx"] == 1.0

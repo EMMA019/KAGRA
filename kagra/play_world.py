@@ -4,7 +4,11 @@ This is a **subprocess** helper so wgpu 0.19 (kagra-core ``RendererV2``) and
 wgpu 30 never share a process. It presents through the existing shared
 ``Renderer`` (the same one collectathon / mobile / ``render_world`` use).
 It does **not** use kagra-core ``window.rs`` or the ``(-12800,-12800)``
-fake-headless path. Crest Isle VRM play stays on RendererV2.
+fake-headless path.
+
+Official Crest play on this path is a **capsule** walking a World.dump
+(WASD + mouse/arrows). ``examples/vrm_open_world.py`` may keep RendererV2
+for the leftover VRM skin. New games must not start on RendererV2.
 
 CLI::
 
@@ -213,6 +217,32 @@ def resolve_window_cmd(
     return None
 
 
+def walk_input_from_keys(held) -> dict:
+    """Map held key names to collectathon ``WalkInput`` + look.
+
+    WASD = wish (camera-relative). Arrows = look. Space = jump.
+    Shared ``WorldPlay`` applies this; Python ``CharacterController`` is
+    the leftover VRM motor (accel/decel / foot ring) and is not copied.
+    """
+    names = {str(h).strip().lower() for h in (held or ())}
+    lx = (1.0 if "d" in names else 0.0) - (1.0 if "a" in names else 0.0)
+    lz = (1.0 if "w" in names else 0.0) - (1.0 if "s" in names else 0.0)
+    look_x = (1.0 if names & {"arrowright", "right"} else 0.0) - (
+        1.0 if names & {"arrowleft", "left"} else 0.0
+    )
+    look_y = (1.0 if names & {"arrowup", "up"} else 0.0) - (
+        1.0 if names & {"arrowdown", "down"} else 0.0
+    )
+    jump = bool(names & {"space", " ", "jump"})
+    return {
+        "lx": max(-1.0, min(1.0, lx)),
+        "lz": max(-1.0, min(1.0, lz)),
+        "look_x": max(-1.0, min(1.0, look_x)),
+        "look_y": max(-1.0, min(1.0, look_y)),
+        "jump": jump,
+    }
+
+
 def looks_like_no_adapter(text: str) -> bool:
     low = (text or "").lower()
     return any(m in low for m in _NO_ADAPTER_MARKERS)
@@ -359,7 +389,7 @@ def main(argv: list[str] | None = None) -> int:
         "--seconds",
         type=float,
         default=None,
-        help="orbit then exit (default: until Esc / close)",
+        help="inject forward walk then exit (default: until Esc / close)",
     )
     p.add_argument(
         "--cargo",

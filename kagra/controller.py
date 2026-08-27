@@ -6,6 +6,11 @@
 Accel/decel live here so ``Physics3D`` can keep being a solver (capsules
 skip ground friction; the motor owns stop). Sticky-walk quiet gap 3 is
 input (``kagra-core``), not this file.
+
+Official dump play (``python -m kagra.play_world``) ticks on the shared
+side: collectathon ``WalkInput`` → sit on the named height fn / samples.
+This Python motor stays the leftover VRM path. Do not copy it into
+kagra-shared and do not add Rapier.
 """
 from __future__ import annotations
 
