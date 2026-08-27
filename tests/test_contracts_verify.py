@@ -434,3 +434,10 @@ def test_load_sports_goal_scenario_is_world_and_offscreen():
     assert sc.expect_world["player.on_ground"] is True
     assert sc.expect_offscreen["out"].endswith("sports_goal_shared.png")
 
+
+def test_load_sim_meter_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/sim_meter_smoke.json")
+    assert sc.name == "sim_meter_smoke"
+    assert sc.expect_world["path"].endswith("sim_meter_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen["out"].endswith("sim_meter_shared.png")

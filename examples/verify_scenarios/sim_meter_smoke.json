@@ -1,0 +1,41 @@
+{
+  "name": "sim_meter_smoke",
+  "notes": "M3 sim slice 1 on shared wgpu 30. Title -> play -> result (player stands in a zone; coins meter ticks; full flag is dump-visible name/flag/coins) lives in WorldPlay / python -m kagra.play_world. Capsules/boxes. Overlay full, not screenshot-only. Indoor lights 4 slots. Zone readable. Chase camera follows play. No RendererV2, no VRM, no Rapier, no Unity/Godot API. World assertions + dump query (not golden pixels). Fallback because enemy.chase / avatar.state / world.spawn are not in docs/API_INDEX.md.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/sim_meter_world.json",
+    "player.on_ground": true,
+    "query": [
+      {
+        "type": "walker",
+        "name": "player",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "zone",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "floor",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "flag",
+        "count": 1
+      },
+      {
+        "type": "light",
+        "count": 4
+      }
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/sim_meter_world.json",
+    "out": "scratch/sim_meter_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

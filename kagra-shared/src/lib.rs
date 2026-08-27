@@ -29,6 +29,7 @@ pub mod novel;
 pub mod stealth;
 pub mod puzzle;
 pub mod sports;
+pub mod sim;
 pub mod save;
 pub mod scene;
 pub mod scene3d;

@@ -173,6 +173,8 @@ fn main() -> Result<(), String> {
             "KAGRA Puzzle Pad (shared wgpu 30)"
         } else if play.is_sports() {
             "KAGRA Sports Goal (shared wgpu 30)"
+        } else if play.is_sim() {
+            "KAGRA Sim Meter (shared wgpu 30)"
         } else if play.is_sprite() {
             "KAGRA Sprite Card (shared wgpu 30)"
         } else {
@@ -292,6 +294,7 @@ fn main() -> Result<(), String> {
                         || play.is_stealth()
                         || play.is_puzzle()
                         || play.is_sports()
+                        || play.is_sim()
                     {
                         (0.0, 0.0)
                     } else {
@@ -305,6 +308,7 @@ fn main() -> Result<(), String> {
                         || play.is_stealth()
                         || play.is_puzzle()
                         || play.is_sports()
+                        || play.is_sim()
                     {
                         let ax = (keys.right as i32 - keys.left as i32) as f32;
                         let az = (keys.up as i32 - keys.down as i32) as f32;
