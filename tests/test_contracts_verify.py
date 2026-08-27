@@ -244,6 +244,15 @@ def test_load_race_drive_scenario_is_world_and_offscreen():
     assert sc.expect_offscreen["out"].endswith("race_drive_shared.png")
 
 
+def test_load_fight_hitstun_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/fight_hitstun_smoke.json")
+    assert sc.expect_world
+    assert sc.expect_world["path"].endswith("fight_hitstun_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen
+    assert sc.expect_offscreen["out"].endswith("fight_hitstun_shared.png")
+
+
 def test_png_dimensions_reads_ihdr(tmp_path):
     p = tmp_path / "a.png"
     p.write_bytes(_rgba_png(32, 24))

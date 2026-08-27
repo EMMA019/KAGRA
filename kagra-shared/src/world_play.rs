@@ -11,6 +11,7 @@ use crate::collectathon::{
     spawn_coins, spawn_stars, won, IsleGame, WalkInput, BODY_H, CAM_DISTANCE, CAM_HEIGHT,
     CAM_LOOK_Y, GRAVITY, JUMP_V, PICK_REACH, PLAYER_SPEED, STAR_XZ,
 };
+use crate::fight::{self, FightGame};
 use crate::fps::{self, FpsGame};
 use crate::game::GamePhase;
 use crate::platformer::{self, PlatformGame};
@@ -37,6 +38,7 @@ pub struct WorldPlay {
     pub fps: FpsGame,
     pub td: TdGame,
     pub race: RaceGame,
+    pub fight: FightGame,
     seed: WorldDoc,
     vy: f32,
 }
@@ -51,6 +53,7 @@ impl WorldPlay {
         fps::seed(&mut doc);
         td::seed(&mut doc);
         race::seed(&mut doc);
+        fight::seed(&mut doc);
         refresh_coin_count(&mut doc);
         let look_yaw = look_yaw_from_doc(&doc);
         let action = ActionGame::from_doc(&doc);
@@ -59,6 +62,7 @@ impl WorldPlay {
         let fps_game = FpsGame::from_doc(&doc);
         let td_game = TdGame::from_doc(&doc);
         let race_game = RaceGame::from_doc(&doc);
+        let fight_game = FightGame::from_doc(&doc);
         if fps::is_fps(&doc) {
             fps::place_eye_camera(&mut doc, look_yaw, 0.0);
         }
@@ -68,6 +72,9 @@ impl WorldPlay {
         if race::is_race(&doc) {
             race::place_chase_camera(&mut doc);
         }
+        if fight::is_fight(&doc) {
+            fight::place_dual_camera(&mut doc);
+        }
         let game = if is_collectathon(&doc)
             || action::is_action(&doc)
             || platformer::is_platformer(&doc)
@@ -75,6 +82,7 @@ impl WorldPlay {
             || fps::is_fps(&doc)
             || td::is_td(&doc)
             || race::is_race(&doc)
+            || fight::is_fight(&doc)
         {
             IsleGame::default()
         } else {
@@ -95,6 +103,7 @@ impl WorldPlay {
             fps: fps_game,
             td: td_game,
             race: race_game,
+            fight: fight_game,
             vy: 0.0,
         }
     }
@@ -132,6 +141,7 @@ impl WorldPlay {
         self.fps = FpsGame::from_doc(&self.doc);
         self.td = TdGame::from_doc(&self.doc);
         self.race = RaceGame::from_doc(&self.doc);
+        self.fight = FightGame::from_doc(&self.doc);
         if fps::is_fps(&self.doc) {
             fps::place_eye_camera(&mut self.doc, self.look_yaw, self.look_pitch);
         }
@@ -140,6 +150,9 @@ impl WorldPlay {
         }
         if race::is_race(&self.doc) {
             race::place_chase_camera(&mut self.doc);
+        }
+        if fight::is_fight(&self.doc) {
+            fight::place_dual_camera(&mut self.doc);
         }
         refresh_coin_count(&mut self.doc);
     }
@@ -174,6 +187,10 @@ impl WorldPlay {
 
     pub fn is_race(&self) -> bool {
         race::is_race(&self.doc) || race::is_race(&self.seed)
+    }
+
+    pub fn is_fight(&self) -> bool {
+        fight::is_fight(&self.doc) || fight::is_fight(&self.seed)
     }
 
     /// Mouse / arrow look. Pitch is clamped.
@@ -267,6 +284,17 @@ impl WorldPlay {
             }
             return;
         }
+        if self.is_fight() {
+            fight::tick(&mut self.doc, &mut self.fight, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.fight.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = self.fight.hits * 250;
+            }
+            return;
+        }
         self.collect_pickups();
         self.game.time_s += dt;
         self.input.jump = false;
@@ -295,6 +323,9 @@ impl WorldPlay {
         }
         if self.is_race() {
             return race::build_hud(&self.race, self.game.phase, width, height);
+        }
+        if self.is_fight() {
+            return fight::build_hud(&self.fight, self.game.phase, width, height);
         }
         let w = width.max(1) as f32;
         let h = height.max(1) as f32;

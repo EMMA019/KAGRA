@@ -163,6 +163,8 @@ fn main() -> Result<(), String> {
             "KAGRA TD Lane (shared wgpu 30)"
         } else if play.is_race() {
             "KAGRA Race Drive (shared wgpu 30)"
+        } else if play.is_fight() {
+            "KAGRA Fight Ring (shared wgpu 30)"
         } else if play.is_sprite() {
             "KAGRA Sprite Card (shared wgpu 30)"
         } else {
@@ -276,7 +278,7 @@ fn main() -> Result<(), String> {
                     }
                     let dt = last.elapsed().as_secs_f32();
                     last = Instant::now();
-                    let (arrow_yaw, arrow_pitch) = if play.is_race() {
+                    let (arrow_yaw, arrow_pitch) = if play.is_race() || play.is_fight() {
                         (0.0, 0.0)
                     } else {
                         keys.look_delta(dt)
@@ -284,7 +286,7 @@ fn main() -> Result<(), String> {
                     play.add_look(arrow_yaw + mouse_look.0, arrow_pitch + mouse_look.1);
                     mouse_look = (0.0, 0.0);
                     let mut input = keys.walk_input();
-                    if play.is_race() {
+                    if play.is_race() || play.is_fight() {
                         let ax = (keys.right as i32 - keys.left as i32) as f32;
                         let az = (keys.up as i32 - keys.down as i32) as f32;
                         input.lx = (input.lx + ax).clamp(-1.0, 1.0);
@@ -301,6 +303,9 @@ fn main() -> Result<(), String> {
                         input.lz = 1.0;
                     }
                     if seconds.is_some() && play.is_action() && play.game.is_playing() {
+                        input.attack = true;
+                    }
+                    if seconds.is_some() && play.is_fight() && play.game.is_playing() {
                         input.attack = true;
                     }
                     if seconds.is_some() && play.is_platformer() && play.game.is_playing() {

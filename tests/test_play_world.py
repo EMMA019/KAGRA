@@ -376,3 +376,19 @@ def test_race_drive_fixture_has_track_finish_and_car():
     assert slots == [0, 1, 2, 3]
     assert data.get("heightfield") in (None, {})
 
+def test_fight_hitstun_fixture_has_two_capsules():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/fight_hitstun_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    opps = [p for p in data["props"] if p.get("name") == "opponent" and p.get("enabled") is not False]
+    assert len(opps) == 1
+    assert opps[0].get("model") == "capsule"
+    assert any(p.get("name") == "floor" for p in data["props"])
+    assert any(p.get("name") == "ring" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+

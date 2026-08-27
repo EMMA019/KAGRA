@@ -1,0 +1,41 @@
+{
+  "name": "fight_hitstun_smoke",
+  "notes": "M3 fighting slice 1 on shared wgpu 30. Title -> play -> result (J/click attack, hitstun, KO/retry) lives in WorldPlay / python -m kagra.play_world. Two capsules on a ring. Dual-body camera. Indoor lights 4 slots. No RendererV2, no VRM, no Rapier, no combo editor. World assertions + dump query (not golden pixels).",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/fight_hitstun_world.json",
+    "player.on_ground": true,
+    "query": [
+      {
+        "type": "walker",
+        "name": "player",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "opponent",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "floor",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "ring",
+        "count": 1
+      },
+      {
+        "type": "light",
+        "count": 4
+      }
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/fight_hitstun_world.json",
+    "out": "scratch/fight_hitstun_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}
