@@ -8,8 +8,12 @@
   "player": {
     "id": "walker:player",
     "type": "walker",
-    "name": "player",
-    "position": [0.0, 0.95, 0.0],
+    "name": "hero",
+    "position": [
+      0.0,
+      0.95,
+      0.0
+    ],
     "yaw": 0.0,
     "face": 0.0,
     "on_ground": true
@@ -19,48 +23,290 @@
       "id": "prop:floor",
       "type": "prop",
       "name": "floor",
-      "position": [0.0, -0.05, 0.0],
+      "position": [
+        0.0,
+        -0.05,
+        0.0
+      ],
       "yaw": 0.0,
       "model": "box",
       "gltf": null,
-      "scale": [14.0, 0.1, 14.0],
+      "scale": [
+        14.0,
+        0.1,
+        14.0
+      ],
       "enabled": true,
       "parent": null,
-      "color": [48, 46, 52]
+      "color": [
+        48,
+        46,
+        52
+      ]
     },
     {
       "id": "prop:return-door",
       "type": "prop",
       "name": "door",
-      "position": [0.0, 1.2, -5.0],
+      "position": [
+        0.0,
+        1.2,
+        -5.0
+      ],
       "yaw": 0.0,
       "model": "box",
       "gltf": null,
-      "scale": [1.6, 2.4, 0.4],
+      "scale": [
+        1.6,
+        2.4,
+        0.4
+      ],
       "enabled": true,
       "parent": null,
-      "color": [96, 64, 40]
+      "color": [
+        96,
+        64,
+        40
+      ]
     },
     {
       "id": "prop:crystal",
       "type": "prop",
       "name": "crystal",
-      "position": [0.0, 0.9, 3.2],
+      "position": [
+        0.0,
+        0.9,
+        3.2
+      ],
       "yaw": 0.0,
       "model": "capsule",
       "gltf": null,
-      "scale": [0.5, 1.4, 0.5],
+      "scale": [
+        0.5,
+        1.4,
+        0.5
+      ],
       "enabled": true,
       "parent": null,
-      "color": [160, 90, 220]
+      "color": [
+        160,
+        90,
+        220
+      ]
+    },
+    {
+      "id": "prop:slot-0",
+      "type": "prop",
+      "name": "slot",
+      "position": [
+        -0.55,
+        0.35,
+        -0.8
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.22,
+        0.22,
+        0.22
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        70,
+        62,
+        54
+      ],
+      "metallic": 0.0,
+      "roughness": 1.0
+    },
+    {
+      "id": "prop:slot-1",
+      "type": "prop",
+      "name": "slot",
+      "position": [
+        -0.15,
+        0.35,
+        -0.8
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.22,
+        0.22,
+        0.22
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        70,
+        62,
+        54
+      ],
+      "metallic": 0.0,
+      "roughness": 1.0
+    },
+    {
+      "id": "prop:item-key",
+      "type": "prop",
+      "name": "key",
+      "position": [
+        -0.55,
+        0.55,
+        -0.8
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.22,
+        0.22,
+        0.22
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        240,
+        196,
+        72
+      ],
+      "metallic": 0.85,
+      "roughness": 0.18
+    },
+    {
+      "id": "prop:held",
+      "type": "prop",
+      "name": "held",
+      "position": [
+        0.35,
+        1.4,
+        0.0
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.22,
+        0.22,
+        0.22
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        240,
+        196,
+        72
+      ],
+      "metallic": 0.0,
+      "roughness": 1.0
+    },
+    {
+      "id": "prop:overlay",
+      "type": "prop",
+      "name": "field",
+      "position": [
+        0.0,
+        0.2,
+        0.0
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.22,
+        0.22,
+        0.22
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        40,
+        36,
+        52
+      ],
+      "metallic": 0.0,
+      "roughness": 1.0
+    },
+    {
+      "id": "prop:enemy",
+      "type": "prop",
+      "name": "enemy",
+      "position": [
+        1.15,
+        0.95,
+        1.15
+      ],
+      "yaw": 0.0,
+      "model": "capsule",
+      "gltf": null,
+      "scale": [
+        0.7,
+        1.1,
+        0.7
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        200,
+        64,
+        72
+      ],
+      "metallic": 0.0,
+      "roughness": 1.0
+    },
+    {
+      "id": "prop:hp-foe",
+      "type": "prop",
+      "name": "hp",
+      "position": [
+        1.15,
+        2.15,
+        1.15
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.35,
+        0.84,
+        0.35
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        220,
+        70,
+        70
+      ],
+      "metallic": 0.0,
+      "roughness": 1.0
     }
   ],
   "walkers": [
     {
       "id": "walker:player",
       "type": "walker",
-      "name": "player",
-      "position": [0.0, 0.95, 0.0],
+      "name": "hero",
+      "position": [
+        0.0,
+        0.95,
+        0.0
+      ],
+      "yaw": 0.0,
+      "face": 0.0,
+      "on_ground": true
+    },
+    {
+      "id": "walker:ally",
+      "type": "walker",
+      "name": "ally",
+      "position": [
+        -1.1,
+        0.95,
+        0.0
+      ],
       "yaw": 0.0,
       "face": 0.0,
       "on_ground": true
@@ -71,12 +317,80 @@
       "id": "light:0",
       "type": "light",
       "name": "key",
-      "position": [2.0, 6.0, 2.0],
+      "position": [
+        2.2,
+        3.4,
+        1.6
+      ],
       "kind": "point",
       "slot": 0,
-      "intensity": 0.85,
-      "radius": 18.0,
-      "color": [0.7, 0.55, 1.0],
+      "intensity": 1.0,
+      "radius": 12.0,
+      "color": [
+        1.0,
+        0.9,
+        0.78
+      ],
+      "direction": null
+    },
+    {
+      "id": "light:1",
+      "type": "light",
+      "name": "fill",
+      "position": [
+        -2.4,
+        2.8,
+        2.2
+      ],
+      "kind": "point",
+      "slot": 1,
+      "intensity": 0.7,
+      "radius": 12.0,
+      "color": [
+        1.0,
+        0.9,
+        0.78
+      ],
+      "direction": null
+    },
+    {
+      "id": "light:2",
+      "type": "light",
+      "name": "rim",
+      "position": [
+        0.2,
+        2.6,
+        -3.4
+      ],
+      "kind": "point",
+      "slot": 2,
+      "intensity": 0.55,
+      "radius": 12.0,
+      "color": [
+        1.0,
+        0.9,
+        0.78
+      ],
+      "direction": null
+    },
+    {
+      "id": "light:3",
+      "type": "light",
+      "name": "bounce",
+      "position": [
+        -1.6,
+        0.9,
+        -1.2
+      ],
+      "kind": "point",
+      "slot": 3,
+      "intensity": 0.4,
+      "radius": 12.0,
+      "color": [
+        1.0,
+        0.9,
+        0.78
+      ],
       "direction": null
     }
   ],
@@ -85,8 +399,16 @@
       "id": "camera:main",
       "type": "camera",
       "name": "main",
-      "position": [0.0, 5.1, -12.2],
-      "target": [0.0, 1.25, 0.0],
+      "position": [
+        0.0,
+        5.1,
+        -12.2
+      ],
+      "target": [
+        0.0,
+        1.25,
+        0.0
+      ],
       "fov": 54.0
     }
   ],

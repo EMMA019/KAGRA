@@ -87,7 +87,11 @@ impl WorldPlay {
         fish::seed(&mut doc);
         shop::seed(&mut doc);
         cook::seed(&mut doc);
+        let rpg_coins = rpg::is_rpg(&doc).then_some(doc.coins);
         refresh_coin_count(&mut doc);
+        if let Some(coins) = rpg_coins {
+            rpg::restore_coins(&mut doc, coins);
+        }
         if survival::is_survival(&doc) {
             doc.coins = survival::NEED;
         }
@@ -248,7 +252,7 @@ impl WorldPlay {
         self.action2d = Action2dGame::from_doc(&self.doc);
         let ckpt = self.platform.checkpoint;
         self.platform = PlatformGame::from_doc(&self.doc);
-        if ckpt.is_some() {
+        if ckpt.is_some() && self.is_platformer() {
             self.platform.checkpoint = ckpt;
             platformer::restore_checkpoint(&mut self.doc, &self.platform);
         }
@@ -312,7 +316,11 @@ impl WorldPlay {
         if cook::is_cook(&self.doc) {
             cook::place_stove_camera(&mut self.doc);
         }
+        let rpg_coins = rpg::is_rpg(&self.doc).then_some(self.doc.coins);
         refresh_coin_count(&mut self.doc);
+        if let Some(coins) = rpg_coins {
+            rpg::restore_coins(&mut self.doc, coins);
+        }
         if survival::is_survival(&self.doc) {
             self.doc.coins = survival::NEED;
         }
@@ -437,6 +445,25 @@ impl WorldPlay {
             }
             return;
         }
+        if self.is_rpg() {
+            let mut walk = input;
+            walk.jump = false;
+            if self.rpg.blocks_walk() {
+                walk.lx = 0.0;
+                walk.lz = 0.0;
+            }
+            self.step_walker(walk, dt);
+            rpg::tick(&mut self.doc, &mut self.rpg, input, dt);
+            self.follow_camera();
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            self.input.dodge = false;
+            if self.rpg.won || self.rpg.lost {
+                self.game.phase = GamePhase::Complete;
+            }
+            return;
+        }
         self.step_walker(input, dt);
         self.follow_camera();
         if self.is_action() {
@@ -460,14 +487,6 @@ impl WorldPlay {
                 self.game.phase = GamePhase::Complete;
                 self.game.score = self.platform.landed * 50;
             }
-            return;
-        }
-        if self.is_rpg() {
-            rpg::tick(&mut self.doc, &mut self.rpg, input, dt);
-            self.follow_camera();
-            self.game.time_s += dt;
-            self.input.jump = false;
-            self.input.attack = false;
             return;
         }
         if self.is_fps() {

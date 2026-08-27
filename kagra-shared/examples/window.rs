@@ -360,6 +360,9 @@ fn main() -> Result<(), String> {
                     if seconds.is_some() && play.is_shop() && play.game.is_playing() {
                         input.attack = true;
                     }
+                    if seconds.is_some() && play.is_rpg() && play.game.is_playing() {
+                        input.attack = true;
+                    }
                     if seconds.is_some() && play.is_novel() && play.game.is_playing() {
                         input.jump = true;
                         input.lx = -1.0;
