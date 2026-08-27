@@ -6,8 +6,10 @@
 //! `WorldPlay` / `GamePhase`. Dump-visible name (player/pushing/solved)
 //! and flag. Capsules/boxes, not VRM. Indoor lights stay 4 slots. Pad and
 //! crate stay readable (contact blob plus metal GGX inherited). Does not
-//! rewrite other genre loops. No sokoban editor, joints, net, inventory,
-//! or vehicles.
+//! rewrite other genre loops. A lid uses dump parent as a kinematic fixed joint (moving the crate
+//! moves the lid). Click / J look-ray vs the sensor AABB opens the latch.
+//! Dump-visible ray / open. No sokoban editor, net, inventory, vehicles,
+//! or Rapier.
 
 use crate::collectathon::WalkInput;
 use crate::game::GamePhase;
@@ -19,24 +21,63 @@ pub const BODY_H: f32 = 0.95;
 pub const PLAYER_R: f32 = 0.46;
 pub const NAME_PLAYER: &str = "player";
 pub const NAME_PUSHING: &str = "pushing";
+pub const NAME_RAY: &str = "ray";
 pub const NAME_SOLVED: &str = "solved";
+pub const NAME_LID: &str = "lid";
+pub const NAME_SENSOR: &str = "sensor";
+pub const NAME_LATCH: &str = "latch";
+pub const NAME_OPEN: &str = "open";
+pub const ID_CRATE: &str = "prop:crate";
+pub const ID_LID: &str = "prop:lid";
+pub const ID_SENSOR: &str = "prop:sensor";
+pub const ID_LATCH: &str = "prop:latch";
+const RAY_REACH: f32 = 14.0;
+const LATCH_OPEN_YAW: f32 = 1.25;
 
 const FLAG_SOLVED_COLOR: [u32; 3] = [70, 180, 110];
+const LATCH_OPEN_COLOR: [u32; 3] = [220, 168, 64];
 const PUSH_PIP: [u8; 4] = [240, 196, 72, 255];
+const RAY_PIP: [u8; 4] = [48, 200, 210, 255];
 const SOLVED_PIP: [u8; 4] = [70, 180, 110, 255];
 
-/// Live puzzle around a dump. Pushing/solved stay here; `name` + flag
-/// enable in the dump are the query source of truth.
+/// Live puzzle around a dump. Pushing/solved/ray/open stay here; `name`
+/// + flag enable + lid parent in the dump are the query source of truth.
 #[derive(Clone, Debug, Default)]
 pub struct PuzzleGame {
     pub pushing: bool,
     pub solved: bool,
     pub done: bool,
+    pub ray_hit: bool,
+    pub latch_open: bool,
+    /// Lid offset in crate space (fixed joint; dump `parent` is the link).
+    pub lid_local: [f32; 3],
 }
 
 impl PuzzleGame {
-    pub fn from_doc(_doc: &WorldDoc) -> Self {
-        Self::default()
+    pub fn from_doc(doc: &WorldDoc) -> Self {
+        let mut game = Self::default();
+        if let Some(crate_prop) = doc
+            .props
+            .iter()
+            .find(|p| p.id == ID_CRATE || p.name == "crate")
+        {
+            if let Some(lid) = doc.props.iter().find(|p| {
+                p.id == ID_LID
+                    || p.name == NAME_LID
+                    || p.parent.as_deref() == Some(crate_prop.id.as_str())
+            }) {
+                game.lid_local = [
+                    lid.position[0] - crate_prop.position[0],
+                    lid.position[1] - crate_prop.position[1],
+                    lid.position[2] - crate_prop.position[2],
+                ];
+            }
+        }
+        game.latch_open = doc
+            .props
+            .iter()
+            .any(|p| p.id == ID_LATCH && p.name == NAME_OPEN);
+        game
     }
 }
 
@@ -107,18 +148,28 @@ pub fn place_room_camera(doc: &mut WorldDoc) {
     }
 }
 
-/// Kinematic push + pad tick. Caller already walked; room camera wins.
-pub fn tick(doc: &mut WorldDoc, game: &mut PuzzleGame, _input: WalkInput, _dt: f32) {
+/// Kinematic push + fixed joint + look-ray + pad tick.
+/// Caller already walked; room camera wins.
+pub fn tick(doc: &mut WorldDoc, game: &mut PuzzleGame, input: WalkInput, _dt: f32) {
     if game.done {
+        apply_fixed_joint(doc, game);
         write_beat(doc, game);
         place_room_camera(doc);
         return;
     }
     game.pushing = push_crate(doc);
+    apply_fixed_joint(doc, game);
+    game.ray_hit = false;
+    if input.attack && look_ray_hits_sensor(doc) {
+        game.ray_hit = true;
+        game.latch_open = true;
+        open_latch(doc);
+    }
     if crate_on_pad(doc) {
         game.solved = true;
         game.done = true;
         game.pushing = false;
+        game.ray_hit = false;
     }
     write_beat(doc, game);
     place_room_camera(doc);
@@ -129,6 +180,8 @@ fn beat_name(game: &PuzzleGame) -> &'static str {
         NAME_SOLVED
     } else if game.pushing {
         NAME_PUSHING
+    } else if game.ray_hit {
+        NAME_RAY
     } else {
         NAME_PLAYER
     }
@@ -307,6 +360,114 @@ fn crate_on_pad(doc: &WorldDoc) -> bool {
         && (crate_prop.position[2] - pad.position[2]).abs() <= hz * 0.55
 }
 
+fn prop_index_id(doc: &WorldDoc, id: &str) -> Option<usize> {
+    doc.props.iter().position(|p| p.id == id)
+}
+
+/// Kinematic fixed joint: children with dump `parent` == crate id follow
+/// the crate by the stored local offset. No Rapier; TRS hierarchy is later.
+fn apply_fixed_joint(doc: &mut WorldDoc, game: &PuzzleGame) {
+    let Some(idx) = prop_index_id(doc, ID_CRATE).or_else(|| named_prop_index(doc, "crate")) else {
+        return;
+    };
+    let parent_id = doc.props[idx].id.clone();
+    let px = doc.props[idx].position[0];
+    let py = doc.props[idx].position[1];
+    let pz = doc.props[idx].position[2];
+    let ox = game.lid_local[0];
+    let oy = game.lid_local[1];
+    let oz = game.lid_local[2];
+    for p in &mut doc.props {
+        if p.parent.as_deref() == Some(parent_id.as_str()) || p.id == ID_LID {
+            p.position[0] = px + ox;
+            p.position[1] = py + oy;
+            p.position[2] = pz + oz;
+        }
+    }
+}
+
+/// Look ray along walker yaw vs the sensor AABB. Query only; crate/walls
+/// do not occlude (the sensor is the interact target).
+fn look_ray_hits_sensor(doc: &WorldDoc) -> bool {
+    let Some(player) = player_ref(doc) else {
+        return false;
+    };
+    let Some(idx) = prop_index_id(doc, ID_SENSOR).or_else(|| {
+        doc.props
+            .iter()
+            .position(|p| p.name == NAME_SENSOR || p.name == "hit")
+    }) else {
+        return false;
+    };
+    let sensor = &doc.props[idx];
+    if !sensor.enabled {
+        return false;
+    }
+    let yaw = player.yaw;
+    let dir = [yaw.sin(), 0.0, yaw.cos()];
+    let origin = player.position;
+    let half = [
+        sensor.scale[0].abs() * 0.5,
+        sensor.scale[1].abs() * 0.5,
+        sensor.scale[2].abs() * 0.5,
+    ];
+    ray_hit_aabb(origin, dir, sensor.position, half, RAY_REACH)
+}
+
+fn ray_hit_aabb(
+    origin: [f32; 3],
+    dir: [f32; 3],
+    center: [f32; 3],
+    half: [f32; 3],
+    reach: f32,
+) -> bool {
+    let mut tmin = 0.0f32;
+    let mut tmax = reach.max(0.0);
+    for i in 0..3 {
+        let min_i = center[i] - half[i];
+        let max_i = center[i] + half[i];
+        if dir[i].abs() < 1e-8 {
+            if origin[i] < min_i || origin[i] > max_i {
+                return false;
+            }
+            continue;
+        }
+        let inv = 1.0 / dir[i];
+        let mut t0 = (min_i - origin[i]) * inv;
+        let mut t1 = (max_i - origin[i]) * inv;
+        if t0 > t1 {
+            std::mem::swap(&mut t0, &mut t1);
+        }
+        tmin = tmin.max(t0);
+        tmax = tmax.min(t1);
+        if tmax < tmin {
+            return false;
+        }
+    }
+    tmax >= 0.0 && tmin <= reach
+}
+
+fn open_latch(doc: &mut WorldDoc) {
+    let Some(idx) = prop_index_id(doc, ID_LATCH).or_else(|| {
+        doc.props
+            .iter()
+            .position(|p| p.name == NAME_LATCH || p.name == NAME_OPEN)
+    }) else {
+        return;
+    };
+    if let Some(p) = doc.props.get_mut(idx) {
+        p.name = NAME_OPEN.into();
+        p.yaw = LATCH_OPEN_YAW;
+        p.color = Some(LATCH_OPEN_COLOR);
+        p.enabled = true;
+    }
+    if let Some(idx) = prop_index_id(doc, ID_SENSOR) {
+        if let Some(p) = doc.props.get_mut(idx) {
+            p.name = "hit".into();
+        }
+    }
+}
+
 pub fn build_hud(game: &PuzzleGame, phase: GamePhase, width: u32, height: u32) -> DrawList {
     let w = width.max(1) as f32;
     let h = height.max(1) as f32;
@@ -351,6 +512,17 @@ pub fn build_hud(game: &PuzzleGame, phase: GamePhase, width: u32, height: u32) -
                     SOLVED_PIP
                 } else {
                     [36, 48, 40, 160]
+                },
+            ));
+            quads.push(Quad::new(
+                72.0 * scale,
+                16.0 * scale,
+                22.0 * scale,
+                22.0 * scale,
+                if game.latch_open || game.ray_hit {
+                    RAY_PIP
+                } else {
+                    [24, 36, 40, 160]
                 },
             ));
         }
@@ -415,6 +587,24 @@ mod tests {
         }
     }
 
+    fn lid_pos(play: &WorldPlay) -> [f32; 3] {
+        play.doc
+            .props
+            .iter()
+            .find(|p| p.id == ID_LID || p.name == NAME_LID)
+            .unwrap()
+            .position
+    }
+
+    fn face_yaw(play: &mut WorldPlay, yaw: f32) {
+        if let Some(p) = play.doc.player.as_mut() {
+            p.yaw = yaw;
+            p.face = yaw;
+        }
+        let walker = play.doc.player.clone().unwrap();
+        write_player(&mut play.doc, walker);
+    }
+
     #[test]
     fn dump_is_puzzle_not_other_genres() {
         let doc = WorldDoc::from_json(ROOM).unwrap();
@@ -446,6 +636,17 @@ mod tests {
             .props
             .iter()
             .any(|p| p.name == "crate" && p.model == "box"));
+        let lid = doc.props.iter().find(|p| p.name == NAME_LID).unwrap();
+        assert_eq!(lid.model, "box");
+        assert_eq!(lid.parent.as_deref(), Some(ID_CRATE));
+        assert!(doc
+            .props
+            .iter()
+            .any(|p| p.name == NAME_SENSOR && p.model == "box"));
+        assert!(doc
+            .props
+            .iter()
+            .any(|p| p.name == NAME_LATCH && p.model == "box"));
         let crate_prop = doc.props.iter().find(|p| p.name == "crate").unwrap();
         assert!(
             crate_prop.metallic >= 0.5,
@@ -463,6 +664,10 @@ mod tests {
         let json = doc.to_json().unwrap();
         assert!(json.contains("pad"));
         assert!(json.contains("crate"));
+        assert!(json.contains(NAME_LID));
+        assert!(json.contains(NAME_SENSOR));
+        assert!(json.contains(NAME_LATCH));
+        assert!(json.contains(ID_CRATE));
         let scene = doc.compile_scene(16.0 / 9.0);
         assert!(
             scene.instance_count() >= 6,
@@ -489,7 +694,10 @@ mod tests {
         for _ in 0..20 {
             play.tick(1.0 / 60.0);
         }
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
         assert!(!play.puzzle.done, "title must not solve");
+        assert!(!play.puzzle.latch_open, "title must not ray-open");
         assert_eq!(play.doc.player.as_ref().unwrap().position, start);
         assert_eq!(crate_xz(&play), crate0);
         play.confirm();
@@ -550,8 +758,11 @@ mod tests {
         assert!(!play.puzzle.done);
         assert!(!play.puzzle.solved);
         assert!(!play.puzzle.pushing);
+        assert!(!play.puzzle.latch_open);
         let flag = play.doc.props.iter().find(|p| p.name == "flag").unwrap();
         assert!(!flag.enabled, "retry restores flag off");
+        let latch = play.doc.props.iter().find(|p| p.id == ID_LATCH).unwrap();
+        assert_eq!(latch.name, NAME_LATCH, "retry restores latch closed");
         assert_eq!(play.doc.player.as_ref().unwrap().name, NAME_PLAYER);
     }
 
@@ -574,6 +785,79 @@ mod tests {
         assert_eq!(play.game.phase, GamePhase::Complete);
         assert_eq!(play.doc.player.as_ref().unwrap().name, NAME_SOLVED);
         assert_eq!(play.doc.cameras[0].name, "room");
+    }
+
+    #[test]
+    fn pushing_crate_moves_parented_lid() {
+        let mut play = play_started();
+        let lid = play.doc.props.iter().find(|p| p.name == NAME_LID).unwrap();
+        assert_eq!(
+            lid.parent.as_deref(),
+            Some(ID_CRATE),
+            "lid must use dump parent"
+        );
+        let lid0 = lid.position;
+        let (cx, cz) = crate_xz(&play);
+        put_player(&mut play, cx, cz + 0.7);
+        play.tick(1.0 / 60.0);
+        assert!(play.puzzle.pushing, "overlap must push");
+        let crate_p = play
+            .doc
+            .props
+            .iter()
+            .find(|p| p.name == "crate")
+            .unwrap()
+            .position;
+        let lid1 = lid_pos(&play);
+        assert!(
+            (lid1[0] - lid0[0]).abs() > 0.02 || (lid1[2] - lid0[2]).abs() > 0.02,
+            "lid should move with crate, before={lid0:?} after={lid1:?}"
+        );
+        assert!(
+            (lid1[0] - crate_p[0] - play.puzzle.lid_local[0]).abs() < 1e-3
+                && (lid1[2] - crate_p[2] - play.puzzle.lid_local[2]).abs() < 1e-3,
+            "fixed joint must keep lid offset, crate={crate_p:?} lid={lid1:?} local={:?}",
+            play.puzzle.lid_local
+        );
+        let dump = play.doc.to_json().unwrap();
+        assert!(dump.contains(NAME_LID), "lid must be dump-visible");
+        assert!(dump.contains(ID_CRATE), "parent id must stay in the dump");
+    }
+
+    #[test]
+    fn look_ray_opens_latch() {
+        let mut play = play_started();
+        let sensor = play
+            .doc
+            .props
+            .iter()
+            .find(|p| p.name == NAME_SENSOR)
+            .unwrap()
+            .position;
+        put_player(&mut play, 0.0, sensor[2]);
+        face_yaw(&mut play, std::f32::consts::FRAC_PI_2);
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
+        assert!(play.puzzle.ray_hit, "look ray must hit the sensor");
+        assert!(play.puzzle.latch_open);
+        assert_eq!(play.doc.player.as_ref().unwrap().name, NAME_RAY);
+        let latch = play.doc.props.iter().find(|p| p.id == ID_LATCH).unwrap();
+        assert_eq!(latch.name, NAME_OPEN, "latch open must be dump-visible");
+        assert!((latch.yaw - LATCH_OPEN_YAW).abs() < 1e-4);
+        let sensor = play.doc.props.iter().find(|p| p.id == ID_SENSOR).unwrap();
+        assert_eq!(sensor.name, "hit");
+        let dump = play.doc.to_json().unwrap();
+        assert!(dump.contains("ray"), "ray must be dump-visible");
+        assert!(dump.contains(NAME_OPEN), "open latch must be dump-visible");
+        assert!(!play.puzzle.done, "ray must not skip the pad solve");
+        let hud = play.build_hud(960, 540);
+        assert!(hud.quads.len() >= 3, "open pip overlay");
+
+        play.input.attack = true;
+        face_yaw(&mut play, 0.0);
+        play.tick(1.0 / 60.0);
+        assert!(!play.puzzle.ray_hit, "facing away must miss");
+        assert!(play.puzzle.latch_open, "open latch stays open");
     }
 
     #[test]

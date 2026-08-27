@@ -455,6 +455,12 @@ def test_puzzle_pad_fixture_has_crate_and_pad():
     crates = [p for p in data["props"] if p.get("name") == "crate"]
     assert len(crates) == 1
     assert crates[0].get("model") == "box"
+    lids = [p for p in data["props"] if p.get("name") == "lid"]
+    assert len(lids) == 1
+    assert lids[0].get("model") == "box"
+    assert lids[0].get("parent") == "prop:crate"
+    assert any(p.get("name") == "sensor" for p in data["props"])
+    assert any(p.get("name") == "latch" for p in data["props"])
     flags = [p for p in data["props"] if p.get("name") == "flag"]
     assert len(flags) == 1
     assert flags[0].get("enabled") is False
