@@ -11,7 +11,7 @@
 //! Lights are slot 0..3 1:1; an empty dump still gets default key+fill
 //! (slots 0+1; 2 and 3 stay off). Capsules and props get a ground contact
 //! blob (`MESH_PLANE` + instance alpha). glTF props use `gltf_load`. Walker may name a skinned glTF (`gltf` / `model`);
-//! CPU-skin into Vertex3. Capsule remains the fallback. VRM is not this slice. Integer GPU mesh ids are not game objects. Live play is
+//! CPU-skin into Vertex3. `.vrm` is glTF-binary on the same path. Capsule remains the fallback. Integer GPU mesh ids are not game objects. Live play is
 //! `WorldPlay` (title → play → result, WASD → `WalkInput` → sit on
 //! heightfield → pick up). Offscreen draw (feature = "render") is
 //! `render_world_doc`. A real desktop window is `Renderer::new_for_window`
@@ -27,8 +27,9 @@ use std::path::Path;
 
 use crate::collectathon::open_world_height;
 use crate::gltf_load::{
-    is_walk_skinned_spec, mesh_from_embedded_gltf, mesh_from_gltf_json, sample_skinned,
-    skinned_from_embedded_gltf, skinned_from_gltf_json, unit_cube_gltf, walk_skinned_gltf,
+    is_walk_skinned_spec, is_walk_vrm_spec, mesh_from_embedded_gltf, mesh_from_glb,
+    mesh_from_gltf_json, sample_skinned, skinned_from_embedded_gltf, skinned_from_glb,
+    skinned_from_gltf_json, unit_cube_gltf, walk_skinned_gltf, walk_skinned_vrm,
 };
 use crate::scene3d::{
     primitives, Camera, LocalLight, Material, MeshData, MeshId, Scene3D, SceneBuilder, Vertex3,
@@ -721,7 +722,7 @@ fn walker_gltf_spec(w: &WorldWalker) -> Option<&str> {
         return None;
     }
     let lower = m.to_ascii_lowercase();
-    if lower.ends_with(".gltf") || lower.ends_with(".glb") {
+    if lower.ends_with(".gltf") || lower.ends_with(".glb") || lower.ends_with(".vrm") {
         return Some(m);
     }
     None
@@ -812,6 +813,9 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
     if is_walk_skinned_spec(spec) {
         return mesh_from_embedded_gltf(&walk_skinned_gltf()).ok();
     }
+    if is_walk_vrm_spec(spec) {
+        return mesh_from_glb(&walk_skinned_vrm()).ok();
+    }
     if matches!(
         stem,
         "cube.glb" | "cube.gltf" | "crate.glb" | "crate.gltf" | "cube"
@@ -826,6 +830,10 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
             std::fs::read(base.join(uri)).map_err(|e| e.to_string())
         })
         .ok();
+    }
+    if path.is_file() && (lower.ends_with(".glb") || lower.ends_with(".vrm")) {
+        let bytes = std::fs::read(path).ok()?;
+        return mesh_from_glb(&bytes).ok();
     }
     None
 }
@@ -844,6 +852,9 @@ fn load_skinned(spec: &str) -> Option<crate::gltf_load::SkinnedMesh> {
     }
     if is_walk_skinned_spec(spec) {
         return skinned_from_embedded_gltf(&walk_skinned_gltf()).ok();
+    }
+    if is_walk_vrm_spec(spec) {
+        return skinned_from_glb(&walk_skinned_vrm()).ok();
     }
     let lower = spec.to_ascii_lowercase();
     let stem = Path::new(&lower)
@@ -864,6 +875,10 @@ fn load_skinned(spec: &str) -> Option<crate::gltf_load::SkinnedMesh> {
             std::fs::read(base.join(uri)).map_err(|e| e.to_string())
         })
         .ok();
+    }
+    if path.is_file() && (lower.ends_with(".glb") || lower.ends_with(".vrm")) {
+        let bytes = std::fs::read(path).ok()?;
+        return skinned_from_glb(&bytes).ok();
     }
     None
 }
@@ -1419,6 +1434,47 @@ mod tests {
         assert!(
             max_d > 0.05,
             "clip 0.25 must move verts off T-pose, max_d={max_d}"
+        );
+    }
+
+    #[test]
+    fn walker_vrm_path_is_dump_queryable_and_compiles_not_capsule() {
+        const DUMP: &str = include_str!("../tests/fixtures/vrm_walker_world.json");
+        let doc = WorldDoc::from_json(DUMP).expect("parse");
+        let w = doc.player.as_ref().expect("player");
+        assert_eq!(w.id, "walker:player");
+        assert_eq!(w.gltf.as_deref(), Some("walk_skinned.vrm"));
+        assert_eq!(w.model, "capsule");
+        let json = doc.to_json().unwrap();
+        assert!(json.contains("walk_skinned.vrm"), "vrm path queryable");
+        let scene = doc.compile_scene(1.0);
+        assert!(
+            scene.batches.iter().any(|b| b.mesh.0 >= MESH_GLTF_BASE),
+            "VRM walker must use a glTF mesh slot, not the capsule"
+        );
+        assert!(
+            !scene.batches.iter().any(|b| b.mesh == MESH_CAPSULE),
+            "capsule fallback must not draw when walker names a VRM"
+        );
+        let meshes = doc.compile_meshes();
+        let skinned = meshes
+            .iter()
+            .find(|(id, _)| id.0 >= MESH_GLTF_BASE)
+            .expect("vrm mesh");
+        assert_eq!(skinned.1.vertices.len(), 8);
+        assert_eq!(skinned.1.indices.len(), 36);
+    }
+
+    #[test]
+    fn crest_isle_walker_stays_capsule_not_vrm() {
+        let doc = WorldDoc::from_json(CREST_ISLE_DUMP).unwrap();
+        let w = doc.player.as_ref().unwrap();
+        assert!(w.gltf.is_none() || w.gltf.as_deref() == Some(""));
+        assert!(!w.model.to_ascii_lowercase().ends_with(".vrm"));
+        let scene = doc.compile_scene(16.0 / 9.0);
+        assert!(
+            scene.batches.iter().any(|b| b.mesh == MESH_CAPSULE),
+            "Crest walker stays capsule unless dump names glTF/VRM"
         );
     }
 }

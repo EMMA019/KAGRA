@@ -105,7 +105,7 @@
         },
         "gltf": {
           "type": ["string", "null"],
-          "description": "Same dump key as prop.gltf. Skinned glTF 2.0 (skin + Walk clip) CPU-skinned into Vertex3 on play_world. Capsule if missing."
+          "description": "Same dump key as prop.gltf. Skinned glTF 2.0 / .glb / .vrm (glTF-binary + VRM 0/1 extras). CPU-skinned into Vertex3 on play_world. Capsule if missing."
         },
         "clip": {
           "type": "number",

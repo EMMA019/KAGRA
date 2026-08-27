@@ -64,6 +64,7 @@ scratch/
 !kagra/data/
 !kagra/data/**/*.bvh
 *.vrm
+!kagra-shared/tests/fixtures/*.vrm
 *.png
 *.jpg
 # Relic Run (and future example) CC0 textures / Kenney colormap

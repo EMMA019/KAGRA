@@ -3,13 +3,16 @@
 //! first Walk/walk clip). CPU-skins into `Vertex3` so the wgpu 30 shader can
 //! stay put (WebGL2-friendly: no storage buffers, no joint palette).
 //!
-//! Does not pull the heavy `gltf` crate. External .bin uses `resolve_buffer`.
+//! Does not pull the heavy `gltf` crate. External .bin uses `resolve_buffer`. `.vrm` is GLB plus VRM 0/1 humanoid extras.
+
+use std::collections::HashMap;
 
 use crate::scene3d::{MeshData, Vertex3};
 use glam::{Mat4, Quat, Vec3};
 use serde::Deserialize;
 
 const WALK_SKINNED_GLTF: &str = include_str!("../tests/fixtures/walk_skinned.gltf");
+const WALK_SKINNED_VRM: &[u8] = include_bytes!("../tests/fixtures/walk_skinned.vrm");
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,7 +22,12 @@ struct GltfFile {
     buffers: Vec<Buffer>,
     meshes: Vec<Mesh>,
     #[serde(default)]
+    #[allow(dead_code)]
     materials: Vec<serde_json::Value>,
+    #[serde(default)]
+    extensions: Option<serde_json::Value>,
+    #[serde(default)]
+    extras: Option<serde_json::Value>,
     #[serde(default)]
     nodes: Vec<GltfNode>,
     #[serde(default)]
@@ -97,6 +105,8 @@ struct Attributes {
 #[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct GltfNode {
+    #[serde(default)]
+    name: String,
     #[serde(default)]
     children: Vec<usize>,
     #[serde(default)]
@@ -176,6 +186,8 @@ pub struct SkinnedMesh {
     pub nodes: Vec<NodeRest>,
     pub skin_joints: Vec<usize>,
     pub clip: Option<AnimClip>,
+    /// VRM 0/1 humanoid bone name -> node index. Empty when extras are absent.
+    pub humanoid: HashMap<String, usize>,
 }
 
 /// Rest-pose node (children + TRS). `matrix` is baked into TRS when present.
@@ -219,7 +231,7 @@ pub fn mesh_from_gltf_json(
     json: &str,
     resolve: impl FnMut(&str) -> Result<Vec<u8>, String>,
 ) -> Result<MeshData, String> {
-    let (doc, blobs) = parse_gltf(json, resolve)?;
+    let (doc, blobs) = parse_gltf(json, resolve, None)?;
     static_mesh_from_doc(&doc, &blobs)
 }
 
@@ -235,7 +247,7 @@ pub fn skinned_from_gltf_json(
     json: &str,
     resolve: impl FnMut(&str) -> Result<Vec<u8>, String>,
 ) -> Result<SkinnedMesh, String> {
-    let (doc, blobs) = parse_gltf(json, resolve)?;
+    let (doc, blobs) = parse_gltf(json, resolve, None)?;
     skinned_from_doc(&doc, &blobs)
 }
 
@@ -244,6 +256,43 @@ pub fn skinned_from_embedded_gltf(json: &str) -> Result<SkinnedMesh, String> {
     skinned_from_gltf_json(json, |_| {
         Err("external buffers not allowed in embedded mode".into())
     })
+}
+
+/// Binary glTF / `.vrm` (GLB). Buffer 0 is the BIN chunk when `uri` is omitted.
+pub fn mesh_from_glb(bytes: &[u8]) -> Result<MeshData, String> {
+    let (json, bin) = split_glb(bytes)?;
+    let (doc, blobs) = parse_gltf(
+        &json,
+        |_| Err("external buffers not allowed in glb mode".into()),
+        bin.as_deref(),
+    )?;
+    static_mesh_from_doc(&doc, &blobs)
+}
+
+/// Skinned mesh from a `.glb` / `.vrm` (same CPU-skin path as JSON glTF).
+pub fn skinned_from_glb(bytes: &[u8]) -> Result<SkinnedMesh, String> {
+    let (json, bin) = split_glb(bytes)?;
+    let (doc, blobs) = parse_gltf(
+        &json,
+        |_| Err("external buffers not allowed in glb mode".into()),
+        bin.as_deref(),
+    )?;
+    skinned_from_doc(&doc, &blobs)
+}
+
+/// Hand-authored 2-joint walk as a tiny VRM 0 (GLB + humanoid extras).
+pub fn walk_skinned_vrm() -> Vec<u8> {
+    WALK_SKINNED_VRM.to_vec()
+}
+
+/// True when `spec` names the bundled VRM fixture (path or stem).
+pub fn is_walk_vrm_spec(spec: &str) -> bool {
+    let lower = spec.trim().to_ascii_lowercase();
+    let stem = std::path::Path::new(&lower)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(lower.as_str());
+    matches!(stem, "walk_skinned.vrm" | "walk.vrm")
 }
 
 /// Hand-authored 2-joint walk clip (glTF 2.0, skin + Walk). Tiny fixture.
@@ -319,6 +368,7 @@ pub fn sample_skinned(skin: &SkinnedMesh, t: f32) -> MeshData {
 fn parse_gltf(
     json: &str,
     mut resolve: impl FnMut(&str) -> Result<Vec<u8>, String>,
+    bin: Option<&[u8]>,
 ) -> Result<(GltfFile, Vec<Vec<u8>>), String> {
     let doc: GltfFile = serde_json::from_str(json).map_err(|e| e.to_string())?;
     let mut blobs = Vec::with_capacity(doc.buffers.len());
@@ -326,11 +376,14 @@ fn parse_gltf(
         let bytes = match &buf.uri {
             Some(uri) if uri.starts_with("data:") => decode_data_uri(uri)?,
             Some(uri) => resolve(uri)?,
-            None => {
-                return Err(format!(
-                    "buffer {i} has no uri; pass embedded data: URIs for headless loads"
-                ));
-            }
+            None => match bin {
+                Some(bytes) if i == 0 => bytes.to_vec(),
+                _ => {
+                    return Err(format!(
+                        "buffer {i} has no uri; pass embedded data: URIs for headless loads"
+                    ));
+                }
+            },
         };
         if bytes.len() < buf.byte_length {
             return Err(format!(
@@ -377,7 +430,6 @@ fn static_mesh_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<MeshData, S
     if mesh.vertices.is_empty() {
         return Err("empty mesh".into());
     }
-    let _ = &doc.materials;
     Ok(mesh)
 }
 
@@ -417,6 +469,7 @@ fn skinned_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<SkinnedMesh, St
         nodes,
         skin_joints,
         clip,
+        humanoid: parse_humanoid(doc),
     })
 }
 
@@ -698,6 +751,109 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
         }
     }
     Ok(out)
+}
+
+const GLB_MAGIC: u32 = 0x4654_6C67;
+const GLB_JSON: u32 = 0x4E4F_534A;
+const GLB_BIN: u32 = 0x004E_4942;
+
+fn split_glb(bytes: &[u8]) -> Result<(String, Option<Vec<u8>>), String> {
+    if bytes.len() < 12 {
+        return Err("glb too short".into());
+    }
+    let magic = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+    if magic != GLB_MAGIC {
+        return Err("not a glTF binary (missing glTF magic)".into());
+    }
+    let version = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+    if version != 2 {
+        return Err(format!("unsupported glb version {version}"));
+    }
+    let declared = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+    let end = declared.min(bytes.len());
+    let mut off = 12;
+    let mut json = None;
+    let mut bin = None;
+    while off + 8 <= end {
+        let chunk_len = u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap()) as usize;
+        let chunk_type = u32::from_le_bytes(bytes[off + 4..off + 8].try_into().unwrap());
+        off += 8;
+        let chunk_end = off.saturating_add(chunk_len);
+        if chunk_end > bytes.len() {
+            return Err("glb chunk truncated".into());
+        }
+        let data = &bytes[off..chunk_end];
+        match chunk_type {
+            GLB_JSON => {
+                let t = std::str::from_utf8(data).map_err(|e| e.to_string())?;
+                json = Some(t.trim_end().to_string());
+            }
+            GLB_BIN => bin = Some(data.to_vec()),
+            _ => {}
+        }
+        off = chunk_end;
+    }
+    let json = json.ok_or_else(|| "glb has no JSON chunk".to_string())?;
+    Ok((json, bin))
+}
+
+fn parse_humanoid(doc: &GltfFile) -> HashMap<String, usize> {
+    let mut map = HashMap::new();
+    if let Some(ext) = &doc.extensions {
+        if let Some(obj) = ext
+            .pointer("/VRMC_vrm/humanoid/humanBones")
+            .and_then(|v| v.as_object())
+        {
+            for (name, entry) in obj {
+                if let Some(node) = entry.get("node").and_then(|n| n.as_u64()) {
+                    map.insert(name.clone(), node as usize);
+                }
+            }
+        }
+        if let Some(arr) = ext
+            .pointer("/VRM/humanoid/humanBones")
+            .and_then(|v| v.as_array())
+        {
+            for entry in arr {
+                let name = entry.get("bone").and_then(|b| b.as_str()).unwrap_or("");
+                if name.is_empty() {
+                    continue;
+                }
+                if let Some(node) = entry.get("node").and_then(|n| n.as_u64()) {
+                    map.entry(name.to_string()).or_insert(node as usize);
+                }
+            }
+        }
+    }
+    if let Some(extra) = &doc.extras {
+        if let Some(arr) = extra
+            .pointer("/VRM/humanoid/humanBones")
+            .and_then(|v| v.as_array())
+        {
+            for entry in arr {
+                let name = entry.get("bone").and_then(|b| b.as_str()).unwrap_or("");
+                if name.is_empty() {
+                    continue;
+                }
+                if let Some(node) = entry.get("node").and_then(|n| n.as_u64()) {
+                    map.entry(name.to_string()).or_insert(node as usize);
+                }
+            }
+        }
+    }
+    for (i, n) in doc.nodes.iter().enumerate() {
+        let name = n.name.trim();
+        if name.is_empty() {
+            continue;
+        }
+        map.entry(name.to_string()).or_insert(i);
+        let mut chars = name.chars();
+        if let Some(c) = chars.next() {
+            let camel = format!("{}{}", c.to_ascii_lowercase(), chars.as_str());
+            map.entry(camel).or_insert(i);
+        }
+    }
+    map
 }
 
 fn read_f32x3(doc: &GltfFile, blobs: &[Vec<u8>], accessor: usize) -> Result<Vec<Vec3>, String> {
@@ -1054,5 +1210,40 @@ mod tests {
         let mesh = mesh_from_embedded_gltf(&walk_skinned_gltf()).expect("static");
         assert_eq!(mesh.vertices.len(), 8);
         assert_eq!(mesh.indices.len(), 36);
+    }
+
+    #[test]
+    fn vrm_fixture_is_glb_with_skin_and_humanoid() {
+        let bytes = walk_skinned_vrm();
+        assert_eq!(&bytes[0..4], b"glTF");
+        let skin = skinned_from_glb(&bytes).expect("vrm");
+        assert_eq!(skin.rest.vertices.len(), 8);
+        assert_eq!(skin.rest.indices.len(), 36);
+        assert_eq!(skin.joints.len(), 8);
+        assert_eq!(skin.weights.len(), 8);
+        assert_eq!(skin.skin_joints.len(), 2);
+        assert_eq!(skin.humanoid.get("hips").copied(), Some(0));
+        assert_eq!(skin.humanoid.get("chest").copied(), Some(1));
+        let clip = skin.clip.as_ref().expect("Walk clip");
+        assert!(clip.name.eq_ignore_ascii_case("walk"));
+        let rest = sample_skinned(&skin, 0.0);
+        let walk = sample_skinned(&skin, 0.25);
+        let mut max_d = 0.0f32;
+        for (a, b) in rest.vertices.iter().zip(walk.vertices.iter()) {
+            max_d = max_d.max((Vec3::from_array(a.pos) - Vec3::from_array(b.pos)).length());
+        }
+        assert!(max_d > 0.05, "VRM Walk clip must move verts, max_d={max_d}");
+    }
+
+    #[test]
+    fn vrm_without_clip_stays_bind_pose() {
+        let mut skin = skinned_from_glb(&walk_skinned_vrm()).expect("vrm");
+        skin.clip = None;
+        let a = sample_skinned(&skin, 0.0);
+        let b = sample_skinned(&skin, 0.5);
+        for (va, vb) in a.vertices.iter().zip(b.vertices.iter()) {
+            let d = (Vec3::from_array(va.pos) - Vec3::from_array(vb.pos)).length();
+            assert!(d < 1e-4, "no clip => bind pose at any t");
+        }
     }
 }

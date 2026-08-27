@@ -3,7 +3,7 @@
 //! Collectathon loop on the official path: title → play → result.
 //! WASD walks, mouse / arrows look, Space starts (title) or jumps (play).
 //! Shared `WorldPlay` advances the dump each frame (wish → sit on heightfield
-//! → pick up coins/stars). Capsule player; VRM is not this path.
+//! → pick up coins/stars). Capsule fallback; dump `gltf` (.gltf/.glb/.vrm) is CPU-skinned Vertex3.
 //! Esc / Q / close quit. `--seconds` starts, injects forward walk, then exits.
 //!
 //! winit 0.29 is the workspace line. Separate process + wgpu 30. Do not load

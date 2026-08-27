@@ -1330,4 +1330,52 @@ mod tests {
             "idle returns to T-pose clip 0"
         );
     }
+
+    #[test]
+    fn wasd_plays_vrm_walk_clip_like_gltf() {
+        const DUMP: &str = include_str!("../tests/fixtures/vrm_walker_world.json");
+        let mut play = WorldPlay::from_json(DUMP).unwrap();
+        play.start();
+        assert_eq!(
+            play.doc.player.as_ref().unwrap().gltf.as_deref(),
+            Some("walk_skinned.vrm")
+        );
+        let rest = play
+            .doc
+            .compile_meshes()
+            .into_iter()
+            .find(|(id, _)| id.0 >= crate::world_doc::MESH_GLTF_BASE)
+            .unwrap()
+            .1;
+        play.input = WalkInput {
+            lx: 0.0,
+            lz: 1.0,
+            jump: false,
+            attack: false,
+            dodge: false,
+        };
+        for _ in 0..20 {
+            play.tick(1.0 / 60.0);
+        }
+        assert!(
+            play.doc.player.as_ref().unwrap().clip > 0.2,
+            "WASD must advance VRM walk clip"
+        );
+        let walk = play
+            .doc
+            .compile_meshes()
+            .into_iter()
+            .find(|(id, _)| id.0 >= crate::world_doc::MESH_GLTF_BASE)
+            .unwrap()
+            .1;
+        let mut max_d = 0.0f32;
+        for (a, b) in rest.vertices.iter().zip(walk.vertices.iter()) {
+            let d = (glam::Vec3::from_array(a.pos) - glam::Vec3::from_array(b.pos)).length();
+            max_d = max_d.max(d);
+        }
+        assert!(
+            max_d > 0.02,
+            "VRM walking must not be a T-pose statue, max_d={max_d}"
+        );
+    }
 }
