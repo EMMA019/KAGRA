@@ -343,16 +343,33 @@ impl WorldDoc {
                 continue;
             }
             // Capsule body + head so the player reads against grass (not a lone blob).
+            // Action genre: name "hurt" / "dead" is dump-visible and tinted here.
             let pos = Vec3::from_array(walk.position);
             let yaw = Quat::from_rotation_y(walk.yaw);
-            let body = Mat4::from_scale_rotation_translation(Vec3::new(0.56, 0.95, 0.56), yaw, pos);
-            b.push(MESH_CAPSULE, body, [62, 176, 184, 255]);
+            let dead = walk.name == "dead";
+            let hurt = walk.name == "hurt";
+            let body_h = if dead { 0.28 } else { 0.95 };
+            let body =
+                Mat4::from_scale_rotation_translation(Vec3::new(0.56, body_h, 0.56), yaw, pos);
+            let body_col = if dead {
+                [70, 74, 82, 255]
+            } else if hurt {
+                [220, 64, 64, 255]
+            } else {
+                [62, 176, 184, 255]
+            };
+            b.push(MESH_CAPSULE, body, body_col);
             let head = Mat4::from_scale_rotation_translation(
                 Vec3::new(0.38, 0.32, 0.38),
                 yaw,
-                pos + Vec3::Y * 0.62,
+                pos + Vec3::Y * (if dead { 0.18 } else { 0.62 }),
             );
-            b.push(MESH_BOX, head, [236, 214, 176, 255]);
+            let head_col = if dead {
+                [90, 86, 82, 255]
+            } else {
+                [236, 214, 176, 255]
+            };
+            b.push(MESH_BOX, head, head_col);
         }
 
         let (light_dir, ambient, local_lights) = self.draw_lights();

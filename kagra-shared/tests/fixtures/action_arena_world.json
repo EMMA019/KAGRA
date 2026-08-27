@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "half": 12.0,
+  "floor_y": 0.0,
+  "gravity": 9.8,
+  "water_y": null,
+  "coins": 0,
+  "player": {
+    "id": "walker:player",
+    "type": "walker",
+    "name": "player",
+    "position": [0.0, 0.95, 0.0],
+    "yaw": 0.0,
+    "face": 0.0,
+    "on_ground": true
+  },
+  "props": [
+    {
+      "id": "prop:floor",
+      "type": "prop",
+      "name": "floor",
+      "position": [0.0, -0.05, 0.0],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [24.0, 0.1, 24.0],
+      "enabled": true,
+      "parent": null,
+      "color": [72, 78, 70]
+    },
+    {
+      "id": "prop:foe-capsule",
+      "type": "prop",
+      "name": "foe",
+      "position": [0.0, 0.95, 2.2],
+      "yaw": 3.14,
+      "model": "capsule",
+      "gltf": null,
+      "scale": [0.7, 1.1, 0.7],
+      "enabled": true,
+      "parent": null,
+      "color": [196, 64, 54]
+    },
+    {
+      "id": "prop:foe-box",
+      "type": "prop",
+      "name": "foe",
+      "position": [3.6, 0.55, -0.4],
+      "yaw": 1.2,
+      "model": "box",
+      "gltf": null,
+      "scale": [0.9, 1.1, 0.9],
+      "enabled": true,
+      "parent": null,
+      "color": [160, 50, 70]
+    }
+  ],
+  "walkers": [
+    {
+      "id": "walker:player",
+      "type": "walker",
+      "name": "player",
+      "position": [0.0, 0.95, 0.0],
+      "yaw": 0.0,
+      "face": 0.0,
+      "on_ground": true
+    }
+  ],
+  "lights": [
+    {
+      "id": "light:0",
+      "type": "light",
+      "name": "key",
+      "position": [6.0, 10.0, -4.0],
+      "kind": "point",
+      "slot": 0,
+      "intensity": 1.1,
+      "radius": 28.0,
+      "color": [1.0, 0.92, 0.82],
+      "direction": null
+    },
+    {
+      "id": "light:1",
+      "type": "light",
+      "name": "fill",
+      "position": [-8.0, 6.0, 6.0],
+      "kind": "point",
+      "slot": 1,
+      "intensity": 0.4,
+      "radius": 22.0,
+      "color": [0.55, 0.65, 1.0],
+      "direction": null
+    }
+  ],
+  "cameras": [
+    {
+      "id": "camera:main",
+      "type": "camera",
+      "name": "main",
+      "position": [0.0, 5.1, -12.2],
+      "target": [0.0, 1.25, 0.0],
+      "fov": 54.0
+    }
+  ],
+  "heightfield": null
+}

@@ -1,0 +1,21 @@
+{
+  "name": "action_arena_smoke",
+  "notes": "M3 action close on shared wgpu 30. Title -> play -> result (hit, dodge, kill, die, retry) lives in WorldPlay / python -m kagra.play_world. Capsule vs capsule/box foes. No RendererV2, no VRM, no Rapier. World assertions + dump query (not golden pixels).",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/action_arena_world.json",
+    "player.on_ground": true,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "prop", "name": "foe", "min_count": 2},
+      {"type": "prop", "name": "floor", "count": 1},
+      {"type": "light", "min_count": 1}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/action_arena_world.json",
+    "out": "scratch/action_arena_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

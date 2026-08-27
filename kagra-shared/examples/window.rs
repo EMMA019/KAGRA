@@ -55,6 +55,8 @@ struct Keys {
     up: bool,
     down: bool,
     jump: bool,
+    attack: bool,
+    dodge: bool,
 }
 
 impl Keys {
@@ -65,6 +67,8 @@ impl Keys {
             lx,
             lz,
             jump: self.jump,
+            attack: self.attack,
+            dodge: self.dodge,
         }
         .clamped()
     }
@@ -90,6 +94,10 @@ fn apply_key(keys: &mut Keys, key: &Key, physical: &PhysicalKey, down: bool) {
             KeyCode::ArrowUp => keys.up = down,
             KeyCode::ArrowDown => keys.down = down,
             KeyCode::Space => keys.jump = down,
+            KeyCode::KeyJ | KeyCode::KeyZ | KeyCode::KeyF => keys.attack = down,
+            KeyCode::ShiftLeft | KeyCode::ShiftRight | KeyCode::KeyC | KeyCode::ControlLeft => {
+                keys.dodge = down
+            }
             _ => {}
         }
     }
@@ -108,6 +116,13 @@ fn apply_key(keys: &mut Keys, key: &Key, physical: &PhysicalKey, down: bool) {
                 keys.s = down;
             } else if c.eq_ignore_ascii_case("d") {
                 keys.d = down;
+            } else if c.eq_ignore_ascii_case("j")
+                || c.eq_ignore_ascii_case("z")
+                || c.eq_ignore_ascii_case("f")
+            {
+                keys.attack = down;
+            } else if c.eq_ignore_ascii_case("c") {
+                keys.dodge = down;
             }
         }
         _ => {}
@@ -136,7 +151,11 @@ fn main() -> Result<(), String> {
 
     let event_loop = EventLoop::new().map_err(|e| format!("no display: {e}"))?;
     let window = WindowBuilder::new()
-        .with_title("KAGRA Crest Isle (shared wgpu 30)")
+        .with_title(if play.is_action() {
+            "KAGRA Action Arena (shared wgpu 30)"
+        } else {
+            "KAGRA Crest Isle (shared wgpu 30)"
+        })
         .with_inner_size(winit::dpi::LogicalSize::new(args.width, args.height))
         .build(&event_loop)
         .map_err(|e| format!("no display: {e}"))?;
@@ -206,6 +225,8 @@ fn main() -> Result<(), String> {
                 } => {
                     if !play.game.is_playing() {
                         play.confirm();
+                    } else {
+                        keys.attack = true;
                     }
                     grab_cursor(&window);
                 }
@@ -256,11 +277,15 @@ fn main() -> Result<(), String> {
                     {
                         input.lz = 1.0;
                     }
+                    if seconds.is_some() && play.is_action() && play.game.is_playing() {
+                        input.attack = true;
+                    }
                     if !play.game.is_playing() {
                         input = WalkInput::default();
                     }
                     play.input = input;
                     play.tick(dt);
+                    keys.attack = false;
                     let scene = play.doc.compile_scene(renderer.aspect());
                     let hud = play.build_hud(view_w, view_h);
                     if let Err(e) = renderer.render_frame(Some(&scene), &hud) {
@@ -351,7 +376,7 @@ fn print_help() {
          cargo run -p kagra-shared --features render --example window -- [dump.json] \\\n\
              [--width 960] [--height 540] [--seconds N]\n\
          \n\
-         WASD walk, mouse / arrows look, Space jump, Esc / Q / close.\n\
+         WASD walk, mouse / arrows look, click/J attack, Shift/C dodge, Space jump, Esc / Q / close.\n\
          Space / Enter / click starts from the title or result.\n\
          Default dump is the Crest Isle collectathon. --seconds starts, walks, then exits.\n\
          No display → error containing \"no display\" (Python skips)."

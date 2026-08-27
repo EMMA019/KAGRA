@@ -243,3 +243,31 @@ def test_gltf_prop_dump_shape(tmp_path):
     assert data["heightfield"]["fn"] == "island_height"
     wish = walk_input_from_keys(["w", "d"])
     assert wish["lz"] == 1.0 and wish["lx"] == 1.0
+
+
+def test_walk_input_from_keys_attack_dodge():
+    idle = walk_input_from_keys(())
+    assert idle["attack"] is False and idle["dodge"] is False
+    assert walk_input_from_keys(["j"])["attack"] is True
+    assert walk_input_from_keys(["z"])["attack"] is True
+    assert walk_input_from_keys(["shift"])["dodge"] is True
+    assert walk_input_from_keys(["c"])["dodge"] is True
+    # WASD still owns the walker.
+    assert walk_input_from_keys(["j"])["lz"] == 0.0
+
+
+def test_action_arena_fixture_has_foes_and_player():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/action_arena_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    assert data.get("heightfield") in (None, {},)
+    foes = [p for p in data["props"] if p.get("name") == "foe" and p.get("enabled") is not False]
+    assert len(foes) >= 2
+    models = {p.get("model") for p in foes}
+    assert "capsule" in models
+    assert "box" in models
+    assert any(p.get("name") == "floor" for p in data["props"])
+

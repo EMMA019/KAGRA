@@ -7,6 +7,7 @@
 //! - 描画: wgpu 3D + 2D HUD（feature = "render"）
 //! - FFI: C ABI（`ffi`）と任意の wasm-bindgen（feature = "wasm"）
 
+pub mod action;
 pub mod assets;
 pub mod audio;
 pub mod collectathon;

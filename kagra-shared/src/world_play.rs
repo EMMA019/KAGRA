@@ -6,6 +6,7 @@
 //! `CharacterController` is the leftover VRM motor — documented, not copied,
 //! and not Rapier.
 
+use crate::action::{self, ActionGame};
 use crate::collectathon::{
     spawn_coins, spawn_stars, won, IsleGame, WalkInput, BODY_H, CAM_DISTANCE, CAM_HEIGHT,
     CAM_LOOK_Y, GRAVITY, JUMP_V, PICK_REACH, PLAYER_SPEED, STAR_XZ,
@@ -24,6 +25,7 @@ pub struct WorldPlay {
     pub look_yaw: f32,
     pub look_pitch: f32,
     pub game: IsleGame,
+    pub action: ActionGame,
     seed: WorldDoc,
     vy: f32,
 }
@@ -32,9 +34,11 @@ impl WorldPlay {
     pub fn new(doc: WorldDoc) -> Self {
         let mut doc = doc;
         seed_collectathon_pickups(&mut doc);
+        action::seed(&mut doc);
         refresh_coin_count(&mut doc);
         let look_yaw = look_yaw_from_doc(&doc);
-        let game = if is_collectathon(&doc) {
+        let action = ActionGame::from_doc(&doc);
+        let game = if is_collectathon(&doc) || action::is_action(&doc) {
             IsleGame::default()
         } else {
             let mut g = IsleGame::default();
@@ -48,6 +52,7 @@ impl WorldPlay {
             look_yaw,
             look_pitch: 0.0,
             game,
+            action,
             vy: 0.0,
         }
     }
@@ -74,11 +79,16 @@ impl WorldPlay {
         self.game = IsleGame::default();
         self.game.best_score = best;
         self.game.start();
+        self.action = ActionGame::from_doc(&self.doc);
         refresh_coin_count(&mut self.doc);
     }
 
     pub fn is_collectathon(&self) -> bool {
         is_collectathon(&self.doc) || is_collectathon(&self.seed)
+    }
+
+    pub fn is_action(&self) -> bool {
+        action::is_action(&self.doc) || action::is_action(&self.seed)
     }
 
     /// Mouse / arrow look. Pitch is clamped.
@@ -99,6 +109,18 @@ impl WorldPlay {
         let input = self.input.clamped();
         self.step_walker(input, dt);
         self.follow_camera();
+        if self.is_action() {
+            action::tick(&mut self.doc, &mut self.action, input, self.look_yaw, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            self.input.dodge = false;
+            if self.action.dead || self.action.won {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = self.action.kills * 250 + self.action.hits * 20;
+            }
+            return;
+        }
         self.collect_pickups();
         self.game.time_s += dt;
         self.input.jump = false;
@@ -110,6 +132,9 @@ impl WorldPlay {
 
     /// Font-free HUD: title band / star+coin pips / result band.
     pub fn build_hud(&self, width: u32, height: u32) -> DrawList {
+        if self.is_action() {
+            return action::build_hud(&self.action, self.game.phase, width, height);
+        }
         let w = width.max(1) as f32;
         let h = height.max(1) as f32;
         let scale = (w.min(h) / 720.0).clamp(0.5, 2.0);
@@ -452,6 +477,8 @@ mod tests {
             lx: 0.0,
             lz: 1.0,
             jump: false,
+            attack: false,
+            dodge: false,
         };
         for _ in 0..45 {
             play.tick(1.0 / 60.0);
@@ -508,6 +535,8 @@ mod tests {
             lx: 1.0,
             lz: 0.0,
             jump: false,
+            attack: false,
+            dodge: false,
         };
         for _ in 0..20 {
             play.tick(1.0 / 60.0);
@@ -535,6 +564,8 @@ mod tests {
             lx: 0.0,
             lz: 1.0,
             jump: false,
+            attack: false,
+            dodge: false,
         };
         for _ in 0..30 {
             play.tick(1.0 / 60.0);
@@ -546,6 +577,8 @@ mod tests {
             lx: 0.0,
             lz: 1.0,
             jump: false,
+            attack: false,
+            dodge: false,
         };
         for _ in 0..30 {
             play.tick(1.0 / 60.0);

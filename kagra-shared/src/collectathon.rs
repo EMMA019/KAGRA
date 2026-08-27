@@ -50,6 +50,10 @@ pub struct WalkInput {
     pub lx: f32,
     pub lz: f32,
     pub jump: bool,
+    /// One-shot melee. Shared action genre; collectathon ignores it.
+    pub attack: bool,
+    /// One-shot i-frame dash. Shared action genre; collectathon ignores it.
+    pub dodge: bool,
 }
 
 impl WalkInput {
@@ -58,6 +62,8 @@ impl WalkInput {
             lx: self.lx.clamp(-1.0, 1.0),
             lz: self.lz.clamp(-1.0, 1.0),
             jump: self.jump,
+            attack: self.attack,
+            dodge: self.dodge,
         }
     }
 }
@@ -1044,6 +1050,8 @@ mod tests {
             lx: 0.0,
             lz: 1.0,
             jump: false,
+            attack: false,
+            dodge: false,
         };
         for _ in 0..60 {
             step_walker(&mut w, input, 0.0, FIXED_DT);
@@ -1059,6 +1067,8 @@ mod tests {
             lx: 0.0,
             lz: 0.0,
             jump: true,
+            attack: false,
+            dodge: false,
         };
         step_walker(&mut w, input, 0.0, FIXED_DT);
         input.jump = false;
@@ -1109,6 +1119,8 @@ mod tests {
             lx: 0.0,
             lz: 1.0,
             jump: false,
+            attack: false,
+            dodge: false,
         });
         let z = s.walker.z;
         for _ in 0..30 {
