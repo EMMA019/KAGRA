@@ -263,6 +263,8 @@ impl SharedSession {
                 lx: x,
                 lz: -y,
                 jump,
+                attack: false,
+                dodge: false,
             });
             return;
         }
@@ -280,7 +282,7 @@ impl SharedSession {
             self.isle.set_input(WalkInput::default());
             return;
         }
-        self.isle.set_input(WalkInput { lx, lz, jump }.clamped());
+        self.isle.set_input(WalkInput { lx, lz, jump, attack: false, dodge: false }.clamped());
     }
 
     pub fn set_jump(&mut self, jump: bool) {
