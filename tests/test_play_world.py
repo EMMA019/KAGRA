@@ -412,3 +412,24 @@ def test_fight_hitstun_fixture_has_two_capsules():
     assert slots == [0, 1, 2, 3]
     assert data.get("heightfield") in (None, {})
 
+def test_stealth_hide_fixture_has_hide_guard_and_exit():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/stealth_hide_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    hides = [p for p in data["props"] if p.get("name") == "hide"]
+    assert len(hides) == 1
+    assert hides[0].get("model") == "box"
+    guards = [p for p in data["props"] if p.get("name") == "guard"]
+    assert len(guards) == 1
+    assert guards[0].get("model") == "capsule"
+    assert any(p.get("name") == "exit" for p in data["props"])
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    assert any(p.get("name") == "floor" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})

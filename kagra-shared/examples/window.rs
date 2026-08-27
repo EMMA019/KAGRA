@@ -167,6 +167,8 @@ fn main() -> Result<(), String> {
             "KAGRA Fight Ring (shared wgpu 30)"
         } else if play.is_novel() {
             "KAGRA Novel Pages (shared wgpu 30)"
+        } else if play.is_stealth() {
+            "KAGRA Stealth Hide (shared wgpu 30)"
         } else if play.is_sprite() {
             "KAGRA Sprite Card (shared wgpu 30)"
         } else {
@@ -280,7 +282,11 @@ fn main() -> Result<(), String> {
                     }
                     let dt = last.elapsed().as_secs_f32();
                     last = Instant::now();
-                    let (arrow_yaw, arrow_pitch) = if play.is_race() || play.is_fight() || play.is_novel() {
+                    let (arrow_yaw, arrow_pitch) = if play.is_race()
+                        || play.is_fight()
+                        || play.is_novel()
+                        || play.is_stealth()
+                    {
                         (0.0, 0.0)
                     } else {
                         keys.look_delta(dt)
@@ -288,7 +294,7 @@ fn main() -> Result<(), String> {
                     play.add_look(arrow_yaw + mouse_look.0, arrow_pitch + mouse_look.1);
                     mouse_look = (0.0, 0.0);
                     let mut input = keys.walk_input();
-                    if play.is_race() || play.is_fight() {
+                    if play.is_race() || play.is_fight() || play.is_stealth() {
                         let ax = (keys.right as i32 - keys.left as i32) as f32;
                         let az = (keys.up as i32 - keys.down as i32) as f32;
                         input.lx = (input.lx + ax).clamp(-1.0, 1.0);
@@ -306,6 +312,7 @@ fn main() -> Result<(), String> {
                         && input.lx.abs() < 1e-4
                         && !play.is_td()
                         && !play.is_novel()
+                        && !play.is_stealth()
                     {
                         input.lz = 1.0;
                     }
