@@ -357,3 +357,22 @@ def test_td_lane_fixture_has_path_tower_and_creeps():
     assert slots == [0, 1, 2, 3]
     assert data.get("heightfield") in (None, {})
 
+def test_race_drive_fixture_has_track_finish_and_car():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/race_drive_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    assert any(p.get("name") == "finish" for p in data["props"])
+    assert any(p.get("name") == "split" for p in data["props"])
+    assert any(p.get("name") == "flag" for p in data["props"])
+    roads = [p for p in data["props"] if p.get("name") == "road"]
+    assert len(roads) >= 4
+    cars = [p for p in data["props"] if p.get("name") == "car" and p.get("enabled") is not False]
+    assert len(cars) == 1
+    assert cars[0].get("model") in ("box", "cube", "capsule")
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+

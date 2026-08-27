@@ -161,6 +161,8 @@ fn main() -> Result<(), String> {
             "KAGRA FPS Range (shared wgpu 30)"
         } else if play.is_td() {
             "KAGRA TD Lane (shared wgpu 30)"
+        } else if play.is_race() {
+            "KAGRA Race Drive (shared wgpu 30)"
         } else if play.is_sprite() {
             "KAGRA Sprite Card (shared wgpu 30)"
         } else {
@@ -274,10 +276,20 @@ fn main() -> Result<(), String> {
                     }
                     let dt = last.elapsed().as_secs_f32();
                     last = Instant::now();
-                    let (arrow_yaw, arrow_pitch) = keys.look_delta(dt);
+                    let (arrow_yaw, arrow_pitch) = if play.is_race() {
+                        (0.0, 0.0)
+                    } else {
+                        keys.look_delta(dt)
+                    };
                     play.add_look(arrow_yaw + mouse_look.0, arrow_pitch + mouse_look.1);
                     mouse_look = (0.0, 0.0);
                     let mut input = keys.walk_input();
+                    if play.is_race() {
+                        let ax = (keys.right as i32 - keys.left as i32) as f32;
+                        let az = (keys.up as i32 - keys.down as i32) as f32;
+                        input.lx = (input.lx + ax).clamp(-1.0, 1.0);
+                        input.lz = (input.lz + az).clamp(-1.0, 1.0);
+                    }
                     // Headless-ish smoke: --seconds walks forward so a live
                     // tick is visible without a human holding W.
                     if seconds.is_some()

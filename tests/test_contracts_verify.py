@@ -235,6 +235,15 @@ def test_load_td_lane_scenario_is_world_and_offscreen():
     assert sc.expect_offscreen["out"].endswith("td_lane_shared.png")
 
 
+def test_load_race_drive_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/race_drive_smoke.json")
+    assert sc.expect_world
+    assert sc.expect_world["path"].endswith("race_drive_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen
+    assert sc.expect_offscreen["out"].endswith("race_drive_shared.png")
+
+
 def test_png_dimensions_reads_ihdr(tmp_path):
     p = tmp_path / "a.png"
     p.write_bytes(_rgba_png(32, 24))

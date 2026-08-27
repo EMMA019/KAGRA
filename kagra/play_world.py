@@ -221,7 +221,7 @@ def resolve_window_cmd(
 def walk_input_from_keys(held) -> dict:
     """Map held key names to collectathon ``WalkInput`` + look.
 
-    WASD = wish (camera-relative). Arrows = look. Space = jump. J/Z/F = attack. Shift/C = dodge.
+    WASD = wish (camera-relative). Arrows = look (race: arrows also steer+throttle). Space = jump. J/Z/F = attack. Shift/C = dodge.
     Shared ``WorldPlay`` applies this; Python ``CharacterController`` is
     the leftover VRM motor (accel/decel / foot ring) and is not copied.
     """
