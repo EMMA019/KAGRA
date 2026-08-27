@@ -1,4 +1,8 @@
-"""VRM Crest Isle — Mario-like outdoor collectathon (not Nintendo IP).
+"""VRM Crest Isle — leftover RendererV2 path (not Nintendo IP).
+
+Official play is ``python -m kagra.play_world`` (kagra-shared wgpu 30 window,
+capsule, WASD on a Crest dump). This file keeps the old VRM skin + RendererV2.
+New games must not start here.
 
 Wide peninsula: grass meadow in front, sea on the left horizon, mountains
 ahead. Kenney Mini Forest / Nature Kit / Fantasy Town / Castle / Mini Dungeon

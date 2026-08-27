@@ -2,8 +2,9 @@
 """Desktop wgpu 30 window for a World.dump JSON.
 
 Thin alias for ``python -m kagra.play_world`` / ``python kagra/play_world.py``.
-Does not import ``kagra`` (no kagra-core / RendererV2). Crest Isle VRM play
-stays on the old window; this is the shared-runtime wedge (capsules / boxes).
+Does not import ``kagra`` (no kagra-core / RendererV2). Official Crest play
+is this window walking a dump (capsule). ``examples/vrm_open_world.py`` may
+keep RendererV2 for the leftover VRM skin.
 """
 from __future__ import annotations
 

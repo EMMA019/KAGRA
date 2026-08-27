@@ -2,14 +2,28 @@
 //!
 //! `Scene3D` is a **one-frame draw list** (camera, batches, fog). Collectathon
 //! and driving already build that. Dump JSON lives here as `WorldDoc`, then
-//! `compile_scene` turns it into a `Scene3D` for one frame (box / sphere /
-//! capsule primitives). Integer GPU mesh ids are not game objects.
-//! Offscreen draw (feature = "render") is `render_world_doc`: upload
-//! `compile_meshes`, draw the batches, read RGBA. A real desktop window is
-//! `Renderer::new_for_window` + `draw_world_doc` (example `window`). Not
-//! kagra-core `RendererV2` / `window.rs`.
+//! `compile_scene` turns it into a `Scene3D` for one frame. Heightfield
+//! batches come from named demo fns (`open_world_height` / `island_height` /
+//! `overworld_height`) or dump samples. glTF props use `gltf_load` (capsule
+//! player; VRM skin is not ported). Integer GPU mesh ids are not game
+//! objects. Live play is `WorldPlay` (WASD → `WalkInput` → sit on
+//! heightfield). Offscreen draw (feature = "render") is `render_world_doc`.
+//! A real desktop window is `Renderer::new_for_window` + example `window`.
+//! Not kagra-core `RendererV2` / `window.rs`.
+//!
+//! Python `Walk.wish` / `CharacterController` (accel 14 / decel 22 / 8-point
+//! foot ring / step-up) is the leftover VRM motor. This crate does **not**
+//! copy that solver and does not add Rapier. Shared tick matches collectathon
+//! `WalkInput`: camera-relative wish, sit on `height_at`, optional jump.
 
-use crate::scene3d::{primitives, Camera, Material, MeshId, Scene3D, SceneBuilder};
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
+
+use crate::collectathon::open_world_height;
+use crate::gltf_load::{mesh_from_embedded_gltf, mesh_from_gltf_json, unit_cube_gltf};
+use crate::scene3d::{
+    primitives, Camera, Material, MeshData, MeshId, Scene3D, SceneBuilder, Vertex3,
+};
 use glam::{Mat4, Quat, Vec3};
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +34,8 @@ const MESH_BOX: MeshId = MeshId(0);
 const MESH_SPHERE: MeshId = MeshId(1);
 const MESH_CAPSULE: MeshId = MeshId(2);
 const MESH_PLANE: MeshId = MeshId(3);
+pub(crate) const MESH_HEIGHTFIELD: MeshId = MeshId(4);
+pub(crate) const MESH_GLTF_BASE: u32 = 5;
 
 /// Persistent world. JSON source of truth. Not a draw list.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -264,26 +280,35 @@ impl WorldDoc {
         ids
     }
 
-    /// One-frame draw list. Capsules / box / sphere / plane primitives.
-    /// Does not mutate this document. GPU upload is a later slice.
+    /// One-frame draw list. Heightfield + glTF/box/sphere/capsule primitives.
+    /// Does not mutate this document. GPU upload uses `compile_meshes`.
     pub fn compile_scene(&self, aspect: f32) -> Scene3D {
         let camera = self.draw_camera();
         let mut b = SceneBuilder::new(&camera, aspect.max(1e-3));
         // Do not register bounds: a dump camera can be tight, and compile must
         // still emit the document's objects (unregistered meshes are never culled).
+        let gltf_ids = self.gltf_mesh_ids();
 
         if self.heightfield.is_some() {
-            let span = (self.half * 2.0).max(4.0);
-            let y = self.floor_y;
+            b.push_material(
+                MESH_HEIGHTFIELD,
+                Mat4::IDENTITY,
+                [78, 138, 64, 255],
+                Material::Grass,
+            );
+        }
+
+        if let Some(wy) = self.water_y {
+            let span = (self.half * 2.0).max(8.0);
             b.push_material(
                 MESH_PLANE,
                 Mat4::from_scale_rotation_translation(
                     Vec3::new(span, 1.0, span),
                     Quat::IDENTITY,
-                    Vec3::new(0.0, y, 0.0),
+                    Vec3::new(0.0, wy - 0.04, 0.0),
                 ),
-                [78, 138, 64, 255],
-                Material::Grass,
+                [42, 92, 110, 255],
+                Material::Solid,
             );
         }
 
@@ -291,7 +316,7 @@ impl WorldDoc {
             if !prop.enabled {
                 continue;
             }
-            let mesh = mesh_for_prop(prop);
+            let mesh = mesh_for_prop(prop, &gltf_ids);
             let pos = Vec3::from_array(prop.position);
             let scale = Vec3::from_array(prop.scale);
             let model =
@@ -367,11 +392,109 @@ impl WorldDoc {
         }
         (Vec3::new(-0.4, 1.0, 0.3).normalize(), 0.35)
     }
+
+    /// Named demo fn, else nearest dump sample, else `floor_y`.
+    pub fn height_at(&self, x: f32, z: f32) -> f32 {
+        if let Some(hf) = &self.heightfield {
+            if let Some(name) = hf.fn_name.as_deref() {
+                match name {
+                    "open_world_height" => return open_world_height(x, z),
+                    "island_height" => return island_height(x, z),
+                    "overworld_height" => return overworld_height(x, z),
+                    _ => {}
+                }
+            }
+            if !hf.samples.is_empty() {
+                return nearest_sample(&hf.samples, x, z);
+            }
+        }
+        self.floor_y
+    }
+
+    /// Primitive slots 0..3 plus heightfield (4) plus one mesh per unique glTF.
+    pub fn compile_meshes(&self) -> Vec<(MeshId, MeshData)> {
+        let mut out = compile_meshes();
+        out.push((MESH_HEIGHTFIELD, self.heightfield_mesh()));
+        for (i, spec) in self.gltf_specs().into_iter().enumerate() {
+            let mesh = gltf_mesh_for(&spec).unwrap_or_else(|| primitives::box_mesh(Vec3::ONE));
+            out.push((MeshId(MESH_GLTF_BASE + i as u32), mesh));
+        }
+        out
+    }
+
+    fn heightfield_mesh(&self) -> MeshData {
+        if self.heightfield.is_none() {
+            return primitives::plane_mesh(1.0, 1.0);
+        }
+        let half = self.half.max(4.0);
+        let cells = 32u32;
+        let step = (half * 2.0) / cells as f32;
+        let mut mesh = MeshData::default();
+        for iz in 0..=cells {
+            for ix in 0..=cells {
+                let x = -half + ix as f32 * step;
+                let z = -half + iz as f32 * step;
+                let y = self.height_at(x, z);
+                let dx = (self.height_at(x + step, z) - self.height_at(x - step, z)) / (2.0 * step);
+                let dz = (self.height_at(x, z + step) - self.height_at(x, z - step)) / (2.0 * step);
+                let n = Vec3::new(-dx, 1.0, -dz).normalize_or(Vec3::Y);
+                mesh.vertices.push(Vertex3::new(Vec3::new(x, y, z), n));
+            }
+        }
+        let stride = cells + 1;
+        for iz in 0..cells {
+            for ix in 0..cells {
+                let i = iz * stride + ix;
+                mesh.indices.extend_from_slice(&[
+                    i,
+                    i + stride,
+                    i + 1,
+                    i + 1,
+                    i + stride,
+                    i + stride + 1,
+                ]);
+            }
+        }
+        mesh
+    }
+
+    fn gltf_specs(&self) -> Vec<String> {
+        let mut seen = HashSet::new();
+        let mut out = Vec::new();
+        for prop in &self.props {
+            if !prop.enabled {
+                continue;
+            }
+            let Some(raw) = prop.gltf.as_deref() else {
+                continue;
+            };
+            let spec = raw.trim();
+            if spec.is_empty() {
+                continue;
+            }
+            if seen.insert(spec.to_string()) {
+                out.push(spec.to_string());
+            }
+        }
+        out
+    }
+
+    fn gltf_mesh_ids(&self) -> HashMap<String, MeshId> {
+        self.gltf_specs()
+            .into_iter()
+            .enumerate()
+            .map(|(i, spec)| (spec, MeshId(MESH_GLTF_BASE + i as u32)))
+            .collect()
+    }
 }
 
-fn mesh_for_prop(prop: &WorldProp) -> MeshId {
-    if prop.gltf.is_some() {
-        return MESH_BOX;
+fn mesh_for_prop(prop: &WorldProp, gltf_ids: &HashMap<String, MeshId>) -> MeshId {
+    if let Some(spec) = prop.gltf.as_deref().map(str::trim) {
+        if !spec.is_empty() {
+            if let Some(id) = gltf_ids.get(spec) {
+                return *id;
+            }
+        }
     }
     match prop.model.to_ascii_lowercase().as_str() {
         "sphere" => MESH_SPHERE,
@@ -379,6 +502,74 @@ fn mesh_for_prop(prop: &WorldProp) -> MeshId {
         "plane" => MESH_PLANE,
         _ => MESH_BOX,
     }
+}
+
+/// Python `kagra.land.island_height` — data, not a live Python fn.
+pub fn island_height(x: f32, z: f32) -> f32 {
+    let r = (x * x + z * z).sqrt();
+    let shelf = 0.38 - 0.052 * r;
+    let hill = 4.3 * (-((x - 9.0).powi(2) + (z - 6.0).powi(2)) / 28.0).exp();
+    let bay = -2.7 * (-((x + 11.0).powi(2) + z * z) / 36.0).exp();
+    shelf + hill + bay
+}
+
+/// Python `kagra.land.overworld_height` (island + plaza stair/ramp).
+pub fn overworld_height(x: f32, z: f32) -> f32 {
+    let mut y = island_height(x, z);
+    if (-5.2..=-3.2).contains(&x) && (1.5..=5.8).contains(&z) {
+        let n = 6.0;
+        let t = ((z - 1.5) / (5.8 - 1.5)).clamp(0.0, 0.999_999);
+        let step = (t * n).floor();
+        y = y.max(0.42 + (1.85 - 0.42) * (step + 1.0) / n);
+    }
+    if (2.5..=7.0).contains(&x) && (-7.0..=-4.5).contains(&z) {
+        let t = ((x - 2.5) / (7.0 - 2.5)).clamp(0.0, 1.0);
+        y = y.max(0.35 + (1.7 - 0.35) * t);
+    }
+    y
+}
+
+fn nearest_sample(samples: &[[f32; 3]], x: f32, z: f32) -> f32 {
+    let mut best_y = samples[0][2];
+    let mut best_d = f32::MAX;
+    for row in samples {
+        let dx = row[0] - x;
+        let dz = row[1] - z;
+        let d = dx * dx + dz * dz;
+        if d < best_d {
+            best_d = d;
+            best_y = row[2];
+        }
+    }
+    best_y
+}
+
+fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
+    let spec = spec.trim();
+    if spec.starts_with('{') {
+        return mesh_from_embedded_gltf(spec).ok();
+    }
+    let lower = spec.to_ascii_lowercase();
+    let stem = Path::new(&lower)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(lower.as_str());
+    if matches!(
+        stem,
+        "cube.glb" | "cube.gltf" | "crate.glb" | "crate.gltf" | "cube"
+    ) {
+        return mesh_from_embedded_gltf(&unit_cube_gltf()).ok();
+    }
+    let path = Path::new(spec);
+    if path.is_file() && lower.ends_with(".gltf") {
+        let json = std::fs::read_to_string(path).ok()?;
+        let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        return mesh_from_gltf_json(&json, |uri| {
+            std::fs::read(base.join(uri)).map_err(|e| e.to_string())
+        })
+        .ok();
+    }
+    None
 }
 
 fn color_u8(rgb: Option<[u32; 3]>) -> [u8; 4] {
@@ -401,6 +592,7 @@ pub fn compile_meshes() -> Vec<(MeshId, crate::scene3d::MeshData)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::collectathon::open_world_height;
 
     const CREST_ISLE_DUMP: &str = include_str!("../tests/fixtures/crest_isle_world.json");
     const ORB_RUSH_DUMP: &str = include_str!("../tests/fixtures/orb_rush_world.json");
@@ -469,6 +661,7 @@ mod tests {
         let crate_p = doc.props.iter().find(|p| p.name == "crate").expect("crate");
         let coin = doc.props.iter().find(|p| p.name == "coin").expect("coin");
         assert_eq!(crate_p.id, "prop:crate");
+        assert_eq!(crate_p.gltf.as_deref(), Some("crate.glb"));
         assert_eq!(coin.parent.as_deref(), Some("prop:crate"));
         assert_eq!(coin.position, [2.3, 1.1, -1.0]);
         assert_eq!(doc.player.as_ref().unwrap().id, "walker:player");
@@ -506,6 +699,14 @@ mod tests {
         assert!((scene.camera.eye - Vec3::new(0.0, 5.65, 4.2)).length() < 1e-4);
         assert!(!scene.batches.is_empty(), "compiled frame needs batches");
         assert!(scene.instance_count() >= 3, "ground + props + walker");
+        assert!(
+            scene.batches.iter().any(|b| b.mesh == MESH_HEIGHTFIELD),
+            "Crest dump must compile a heightfield, not a flat plane"
+        );
+        assert!(
+            scene.batches.iter().any(|b| b.mesh.0 >= MESH_GLTF_BASE),
+            "Crest crate.glb must compile as a glTF slot"
+        );
         // Scene3D stays a draw list: no dump fields to roundtrip from it.
         let orb = WorldDoc::from_json(ORB_RUSH_DUMP).unwrap();
         let scene = orb.compile_scene(1.0);
@@ -525,16 +726,88 @@ mod tests {
         let meshes = compile_meshes();
         assert_eq!(meshes.len(), 4);
         assert!(meshes.iter().all(|(_, m)| !m.vertices.is_empty()));
-        let ids: std::collections::HashSet<_> = meshes.iter().map(|(id, _)| id.0).collect();
         for json in [CREST_ISLE_DUMP, ORB_RUSH_DUMP] {
-            let scene = WorldDoc::from_json(json).unwrap().compile_scene(1.0);
+            let doc = WorldDoc::from_json(json).unwrap();
+            let compiled = doc.compile_meshes();
+            assert!(compiled.iter().all(|(_, m)| !m.vertices.is_empty()));
+            let ids: std::collections::HashSet<_> = compiled.iter().map(|(id, _)| id.0).collect();
+            let scene = doc.compile_scene(1.0);
             for batch in &scene.batches {
                 assert!(
                     ids.contains(&batch.mesh.0),
-                    "compiled batch mesh {} is not in compile_meshes()",
+                    "compiled batch mesh {} is not in WorldDoc::compile_meshes()",
                     batch.mesh.0
                 );
             }
         }
+    }
+
+    #[test]
+    fn compile_scene_emits_heightfield_and_gltf_batches() {
+        let mut doc = WorldDoc::from_json(CREST_ISLE_DUMP).unwrap();
+        doc.props.push(WorldProp {
+            id: "prop:cube".into(),
+            kind: "prop".into(),
+            name: "cube".into(),
+            position: [1.0, 1.2, -2.0],
+            gltf: Some("cube.glb".into()),
+            scale: [1.0, 1.0, 1.0],
+            enabled: true,
+            ..Default::default()
+        });
+        let scene = doc.compile_scene(16.0 / 9.0);
+        assert!(
+            scene.batches.iter().any(|b| b.mesh == MESH_HEIGHTFIELD),
+            "Crest dump must emit a heightfield batch, not a flat plane stand-in"
+        );
+        assert!(
+            scene.batches.iter().any(|b| b.mesh.0 >= MESH_GLTF_BASE),
+            "glTF cube.glb prop must get its own mesh slot"
+        );
+        let meshes = doc.compile_meshes();
+        let hf = meshes
+            .iter()
+            .find(|(id, _)| *id == MESH_HEIGHTFIELD)
+            .expect("heightfield mesh");
+        assert!(
+            hf.1.vertices.len() > 100,
+            "heightfield grid, got {} verts",
+            hf.1.vertices.len()
+        );
+        let gltf = meshes
+            .iter()
+            .find(|(id, _)| id.0 >= MESH_GLTF_BASE)
+            .expect("gltf mesh");
+        assert_eq!(gltf.1.vertices.len(), 24);
+        assert!((doc.height_at(0.0, -8.0) - open_world_height(0.0, -8.0)).abs() < 1e-4);
+    }
+
+    #[test]
+    fn height_at_uses_samples_when_fn_unknown() {
+        let mut doc = WorldDoc::from_json(ORB_RUSH_DUMP).unwrap();
+        doc.heightfield = Some(WorldHeightfield {
+            fn_name: Some("unknown_live_fn".into()),
+            samples: vec![[0.0, 0.0, 1.5], [4.0, 0.0, 3.0]],
+            ..Default::default()
+        });
+        assert!((doc.height_at(0.1, 0.0) - 1.5).abs() < 1e-4);
+        assert!((doc.height_at(4.0, 0.1) - 3.0).abs() < 1e-4);
+        let scene = doc.compile_scene(1.0);
+        assert!(scene.batches.iter().any(|b| b.mesh == MESH_HEIGHTFIELD));
+    }
+
+    #[test]
+    fn named_island_height_matches_python_shelf() {
+        let y = island_height(0.0, 0.0);
+        assert!((y - 0.38).abs() < 0.05, "{y}");
+        let doc = WorldDoc {
+            version: WORLD_DUMP_VERSION,
+            heightfield: Some(WorldHeightfield {
+                fn_name: Some("island_height".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!((doc.height_at(0.0, 0.0) - y).abs() < 1e-5);
     }
 }

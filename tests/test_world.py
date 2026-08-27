@@ -350,6 +350,9 @@ def test_shared_world_fixtures_load_in_python():
     assert len(coins) == 1 and len(crates) == 1
     assert coins[0]["parent"] == crates[0]["id"]
     again = w.dump()
+    crate_row = next(p for p in again["props"] if p.get("name") == "crate")
+    assert crate_row.get("model") == "box"
+    assert crate_row.get("gltf") == "crate.glb"
     assert again["heightfield"]["fn"] == "open_world_height"
     assert {t["id"] for t in again["heightfield"]["tiles"]} >= {"tile:0,0", "tile:-1,0"}
 

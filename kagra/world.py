@@ -553,6 +553,24 @@ class _LoadedCamera:
         self.fov_deg = float(rec.get("fov") or 30.0)
 
 
+_PRIM_MODELS = {"box", "sphere", "cylinder", "plane"}
+
+
+def _prop_ctor_name(rec: dict[str, Any]) -> str:
+    """Primitive first. Shared ``compile_scene`` still reads the ``gltf`` alias.
+
+    Dump may carry ``model: box`` plus ``gltf: crate.glb``. ``Prop("crate.glb")``
+    needs a real file; swallowing that exception dropped the Crest crate.
+    """
+    model = str(rec.get("model") or "").strip()
+    gltf = rec.get("gltf")
+    if model.lower() in _PRIM_MODELS:
+        return model.lower()
+    if gltf:
+        return str(gltf)
+    return model or "box"
+
+
 def _load_props(world: World3D, recs: list[dict]) -> None:
     try:
         from kagra.play import Prop, destroy
@@ -568,7 +586,7 @@ def _load_props(world: World3D, recs: list[dict]) -> None:
     pending_parent: list[tuple[Any, str]] = []
     for rec in recs:
         sid = str(rec.get("id") or "")
-        model = rec.get("gltf") or rec.get("model") or "box"
+        model = _prop_ctor_name(rec)
         pos = rec.get("position") or [0.0, 0.5, 0.0]
         scale = rec.get("scale") or [1.0, 1.0, 1.0]
         color = rec.get("color") or (230, 230, 235)
@@ -587,6 +605,9 @@ def _load_props(world: World3D, recs: list[dict]) -> None:
             )
         except Exception:
             continue
+        gltf = rec.get("gltf")
+        if gltf and getattr(prop, "gltf_path", None) is None:
+            prop.gltf_path = str(gltf)
         prop.sid = sid or prop.sid
         if rec.get("enabled") is False:
             prop.enabled = False
