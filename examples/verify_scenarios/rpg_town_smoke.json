@@ -1,0 +1,20 @@
+{
+  "name": "rpg_town_smoke",
+  "notes": "M3 RPG talk + scene switch + flag on play_world. Town NPC talk overlay, dump-visible flag, door to dungeon. No inventory/party/turn combat.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/rpg_town_world.json",
+    "player.on_ground": true,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "prop", "name": "npc", "count": 1},
+      {"type": "prop", "name": "door", "count": 1}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/rpg_town_world.json",
+    "out": "scratch/rpg_town_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

@@ -794,7 +794,7 @@ impl Renderer {
         Ok(out)
     }
 
-    /// Upload primitive `compile_meshes()` (box/sphere/capsule/plane). Prefer
+    /// Upload primitive `compile_meshes()` (box/sphere/capsule/plane/quad). Prefer
     /// `upload_world_meshes` so heightfield + glTF slots match `compile_scene`.
     pub fn upload_compile_meshes(&mut self) -> Result<(), String> {
         if !self.meshes.is_empty() {

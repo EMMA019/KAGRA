@@ -1,0 +1,46 @@
+{
+  "name": "stealth_hide_smoke",
+  "notes": "M3 stealth slice 1 on shared wgpu 30. Title -> play -> result (hide volume, guard facing cone, unseen exit = clear, seen = caught) lives in WorldPlay / python -m kagra.play_world. Capsules/boxes. Overlay caught/clear, not screenshot-only. Indoor lights 4 slots. No RendererV2, no VRM, no Rapier, no patrol editor. World assertions + dump query (not golden pixels).",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/stealth_hide_world.json",
+    "player.on_ground": true,
+    "query": [
+      {
+        "type": "walker",
+        "name": "player",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "hide",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "guard",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "exit",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "floor",
+        "count": 1
+      },
+      {
+        "type": "light",
+        "count": 4
+      }
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/stealth_hide_world.json",
+    "out": "scratch/stealth_hide_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

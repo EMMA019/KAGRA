@@ -21,7 +21,7 @@
 | Mobile scaffold | `mobile/` |
 | Shared scene (GPU 非依存) | `kagra-shared/src/scene.rs` |
 | Shared 3D draw list | `kagra-shared/src/scene3d.rs` (`Scene3D` = 1 frame: camera / batches / fog) |
-| Shared world dump | `kagra-shared/src/world_doc.rs` (`WorldDoc::from_json`, `compile_scene` heightfield+metal coins+lights 1:1, `WorldPlay` title/play/result, schema `docs/schemas/world.json`) |
+| Shared world dump | `kagra-shared/src/world_doc.rs` (`WorldDoc::from_json`, `compile_scene` heightfield+metal coins+lights 1:1 (empty dump key+fill, contact blob), `WorldPlay` title/play/result, schema `docs/schemas/world.json`) |
 | Shared renderer | `kagra-shared/src/render/` (`render_world_doc` = wgpu 30 offscreen; `new_for_window` = same Renderer on a real window; not RendererV2) |
 
 Rust errors surface as `[CODE] message` (see `KaguraError::code`).

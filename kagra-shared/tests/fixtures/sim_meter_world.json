@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "half": 8.0,
+  "floor_y": 0.0,
+  "gravity": 9.8,
+  "water_y": null,
+  "coins": 0,
+  "player": {
+    "id": "walker:player",
+    "type": "walker",
+    "name": "player",
+    "position": [0.0, 0.95, 5.0],
+    "yaw": 3.14159,
+    "face": 3.14159,
+    "on_ground": true
+  },
+  "props": [
+    {
+      "id": "prop:floor",
+      "type": "prop",
+      "name": "floor",
+      "position": [0.0, -0.05, 0.0],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [14.0, 0.1, 14.0],
+      "enabled": true,
+      "parent": null,
+      "color": [48, 52, 58],
+      "metallic": 0.0,
+      "roughness": 0.92
+    },
+    {
+      "id": "prop:zone",
+      "type": "prop",
+      "name": "zone",
+      "position": [0.0, 0.08, -1.0],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [3.6, 0.16, 10.0],
+      "enabled": true,
+      "parent": null,
+      "color": [236, 196, 78],
+      "metallic": 0.62,
+      "roughness": 0.22
+    },
+    {
+      "id": "prop:flag",
+      "type": "prop",
+      "name": "flag",
+      "position": [3.2, 0.42, 0.0],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [0.28, 0.84, 0.12],
+      "enabled": false,
+      "parent": null,
+      "color": [80, 84, 78],
+      "metallic": 0.0,
+      "roughness": 0.85
+    }
+  ],
+  "walkers": [
+    {
+      "id": "walker:player",
+      "type": "walker",
+      "name": "player",
+      "position": [0.0, 0.95, 5.0],
+      "yaw": 3.14159,
+      "face": 3.14159,
+      "on_ground": true
+    }
+  ],
+  "lights": [
+    {
+      "id": "light:0",
+      "type": "light",
+      "name": "key",
+      "position": [-1.2, 5.4, 1.6],
+      "kind": "point",
+      "slot": 0,
+      "intensity": 1.18,
+      "radius": 18.0,
+      "color": [1.0, 0.94, 0.78],
+      "direction": null
+    },
+    {
+      "id": "light:1",
+      "type": "light",
+      "name": "fill",
+      "position": [3.2, 3.2, 3.4],
+      "kind": "point",
+      "slot": 1,
+      "intensity": 0.42,
+      "radius": 14.0,
+      "color": [0.52, 0.7, 1.0],
+      "direction": null
+    },
+    {
+      "id": "light:2",
+      "type": "light",
+      "name": "rim",
+      "position": [0.0, 3.0, -4.4],
+      "kind": "point",
+      "slot": 2,
+      "intensity": 0.38,
+      "radius": 12.0,
+      "color": [0.78, 0.92, 0.7],
+      "direction": null
+    },
+    {
+      "id": "light:3",
+      "type": "light",
+      "name": "bounce",
+      "position": [-2.0, 1.0, -1.2],
+      "kind": "point",
+      "slot": 3,
+      "intensity": 0.32,
+      "radius": 10.0,
+      "color": [0.62, 0.8, 0.55],
+      "direction": null
+    }
+  ],
+  "cameras": [
+    {
+      "id": "camera:main",
+      "type": "camera",
+      "name": "chase",
+      "position": [0.0, 5.75, 12.2],
+      "target": [0.0, 0.55, 1.2],
+      "fov": 52.0
+    }
+  ],
+  "heightfield": null
+}

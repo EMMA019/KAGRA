@@ -151,8 +151,38 @@ fn main() -> Result<(), String> {
 
     let event_loop = EventLoop::new().map_err(|e| format!("no display: {e}"))?;
     let window = WindowBuilder::new()
-        .with_title(if play.is_action() {
+        .with_title(if play.is_action2d() {
+            "KAGRA Action Side (shared wgpu 30)"
+        } else if play.is_action() {
             "KAGRA Action Arena (shared wgpu 30)"
+        } else if play.is_platformer() {
+            "KAGRA Box Hop (shared wgpu 30)"
+        } else if play.is_rpg() {
+            "KAGRA Town Gate (shared wgpu 30)"
+        } else if play.is_fps() {
+            "KAGRA FPS Range (shared wgpu 30)"
+        } else if play.is_td() {
+            "KAGRA TD Lane (shared wgpu 30)"
+        } else if play.is_race() {
+            "KAGRA Race Drive (shared wgpu 30)"
+        } else if play.is_fight() {
+            "KAGRA Fight Ring (shared wgpu 30)"
+        } else if play.is_novel() {
+            "KAGRA Novel Pages (shared wgpu 30)"
+        } else if play.is_stealth() {
+            "KAGRA Stealth Hide (shared wgpu 30)"
+        } else if play.is_puzzle() {
+            "KAGRA Puzzle Pad (shared wgpu 30)"
+        } else if play.is_sports() {
+            "KAGRA Sports Goal (shared wgpu 30)"
+        } else if play.is_sim() {
+            "KAGRA Sim Meter (shared wgpu 30)"
+        } else if play.is_sprite() {
+            "KAGRA Sprite Card (shared wgpu 30)"
+        } else if play.is_fish() {
+            "KAGRA Fish Dock (shared wgpu 30)"
+        } else if play.is_shop() {
+            "KAGRA Shop Stall (shared wgpu 30)"
         } else {
             "KAGRA Crest Isle (shared wgpu 30)"
         })
@@ -264,21 +294,79 @@ fn main() -> Result<(), String> {
                     }
                     let dt = last.elapsed().as_secs_f32();
                     last = Instant::now();
-                    let (arrow_yaw, arrow_pitch) = keys.look_delta(dt);
+                    let (arrow_yaw, arrow_pitch) = if play.is_race()
+                        || play.is_fight()
+                        || play.is_novel()
+                        || play.is_stealth()
+                        || play.is_puzzle()
+                        || play.is_sports()
+                        || play.is_sim()
+                        || play.is_action2d()
+                    {
+                        (0.0, 0.0)
+                    } else {
+                        keys.look_delta(dt)
+                    };
                     play.add_look(arrow_yaw + mouse_look.0, arrow_pitch + mouse_look.1);
                     mouse_look = (0.0, 0.0);
                     let mut input = keys.walk_input();
+                    if play.is_race()
+                        || play.is_fight()
+                        || play.is_stealth()
+                        || play.is_puzzle()
+                        || play.is_sports()
+                        || play.is_sim()
+                        || play.is_action2d()
+                    {
+                        let ax = (keys.right as i32 - keys.left as i32) as f32;
+                        let az = (keys.up as i32 - keys.down as i32) as f32;
+                        input.lx = (input.lx + ax).clamp(-1.0, 1.0);
+                        input.lz = (input.lz + az).clamp(-1.0, 1.0);
+                    }
+                    if play.is_novel() {
+                        let ax = (keys.right as i32 - keys.left as i32) as f32;
+                        input.lx = (input.lx + ax).clamp(-1.0, 1.0);
+                    }
                     // Headless-ish smoke: --seconds walks forward so a live
                     // tick is visible without a human holding W.
                     if seconds.is_some()
                         && play.game.is_playing()
                         && input.lz.abs() < 1e-4
                         && input.lx.abs() < 1e-4
+                        && !play.is_td()
+                        && !play.is_novel()
+                        && !play.is_stealth()
+                        && !play.is_rhythm()
+                        && !play.is_fish()
+                        && !play.is_shop()
                     {
                         input.lz = 1.0;
                     }
                     if seconds.is_some() && play.is_action() && play.game.is_playing() {
                         input.attack = true;
+                    }
+                    if seconds.is_some() && play.is_action2d() && play.game.is_playing() {
+                        input.attack = true;
+                    }
+                    if seconds.is_some() && play.is_fight() && play.game.is_playing() {
+                        input.attack = true;
+                    }
+                    if seconds.is_some() && play.is_rhythm() && play.game.is_playing() {
+                        input.attack = true;
+                    }
+                    if seconds.is_some() && play.is_fish() && play.game.is_playing() {
+                        input.attack = true;
+                    }
+                    if seconds.is_some() && play.is_shop() && play.game.is_playing() {
+                        input.attack = true;
+                    }
+                    if seconds.is_some() && play.is_novel() && play.game.is_playing() {
+                        input.jump = true;
+                        input.lx = -1.0;
+                    }
+                    if seconds.is_some() && play.is_platformer() && play.game.is_playing() {
+                        // hop so landing is visible without a human holding Space
+                        input.jump = true;
                     }
                     if !play.game.is_playing() {
                         input = WalkInput::default();
@@ -376,7 +464,7 @@ fn print_help() {
          cargo run -p kagra-shared --features render --example window -- [dump.json] \\\n\
              [--width 960] [--height 540] [--seconds N]\n\
          \n\
-         WASD walk, mouse / arrows look, click/J attack, Shift/C dodge, Space jump, Esc / Q / close.\n\
+         WASD walk, mouse / arrows look, click/J attack/fire, Shift/C dodge, Space jump, Esc / Q / close.\n\
          Space / Enter / click starts from the title or result.\n\
          Default dump is the Crest Isle collectathon. --seconds starts, walks, then exits.\n\
          No display → error containing \"no display\" (Python skips)."

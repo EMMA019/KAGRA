@@ -1,0 +1,41 @@
+{
+  "name": "sports_goal_smoke",
+  "notes": "M3 sports slice 1 on shared wgpu 30. Title -> play -> result (player walks into / kicks a ball; ball entering a goal volume is dump-visible scored name/flag/coins) lives in WorldPlay / python -m kagra.play_world. Capsules/spheres/boxes, kinematic impulse only. Overlay scored, not screenshot-only. Outdoor lights 4 slots. Pitch and goal readable. Chase camera follows play. No RendererV2, no VRM, no Rapier, no FIFA. World assertions + dump query (not golden pixels).",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/sports_goal_world.json",
+    "player.on_ground": true,
+    "query": [
+      {
+        "type": "walker",
+        "name": "player",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "ball",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "goal",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "pitch",
+        "count": 2
+      },
+      {
+        "type": "light",
+        "count": 4
+      }
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/sports_goal_world.json",
+    "out": "scratch/sports_goal_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

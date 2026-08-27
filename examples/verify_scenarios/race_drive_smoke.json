@@ -1,0 +1,25 @@
+{
+  "name": "race_drive_smoke",
+  "notes": "M3 racing slice 1 on shared wgpu 30. Title -> play -> result (kinematic steer+throttle, lap/finish) lives in WorldPlay / python -m kagra.play_world. Capsule walker + box car, box track. Indoor lights 4 slots. No RendererV2, no VRM, no Rapier vehicles. World assertions + dump query (not golden pixels).",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/race_drive_world.json",
+    "player.on_ground": true,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "prop", "name": "finish", "count": 1},
+      {"type": "prop", "name": "split", "count": 1},
+      {"type": "prop", "name": "flag", "count": 1},
+      {"type": "prop", "name": "car", "count": 1},
+      {"type": "prop", "name": "road", "min_count": 4},
+      {"type": "prop", "name": "floor", "count": 1},
+      {"type": "light", "count": 4}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/race_drive_world.json",
+    "out": "scratch/race_drive_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

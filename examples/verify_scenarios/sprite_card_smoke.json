@@ -1,0 +1,20 @@
+{
+  "name": "sprite_card_smoke",
+  "notes": "M3 2D sprite/quad as the same WorldDoc. Standing XY cards compile_scene with 3D floor/walker. No second renderer, no ECS, no VRM.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/sprite_card_world.json",
+    "player.on_ground": true,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "prop", "name": "sprite", "count": 2},
+      {"type": "prop", "name": "sign", "count": 1}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/sprite_card_world.json",
+    "out": "scratch/sprite_card_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

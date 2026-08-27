@@ -1,0 +1,21 @@
+{
+  "name": "fps_range_smoke",
+  "notes": "M3 FPS slice 1 on shared wgpu 30. Title -> play -> result (look, hitscan fire, hurt/kill) lives in WorldPlay / python -m kagra.play_world. Capsule + sprite targets. No RendererV2, no VRM, no Rapier. World assertions + dump query (not golden pixels).",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/fps_range_world.json",
+    "player.on_ground": true,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "prop", "name": "target", "min_count": 2},
+      {"type": "prop", "name": "floor", "count": 1},
+      {"type": "light", "min_count": 1}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/fps_range_world.json",
+    "out": "scratch/fps_range_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

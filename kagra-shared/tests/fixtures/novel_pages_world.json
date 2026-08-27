@@ -1,0 +1,364 @@
+{
+  "version": 1,
+  "half": 8.0,
+  "floor_y": 0.0,
+  "gravity": 9.8,
+  "water_y": null,
+  "coins": 0,
+  "player": {
+    "id": "walker:player",
+    "type": "walker",
+    "name": "player",
+    "position": [
+      1.05,
+      0.95,
+      1.35
+    ],
+    "yaw": -1.5707964,
+    "face": -1.5707964,
+    "on_ground": true
+  },
+  "props": [
+    {
+      "id": "prop:floor",
+      "type": "prop",
+      "name": "floor",
+      "position": [
+        0.0,
+        -0.05,
+        0.4
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        8.4,
+        0.1,
+        7.2
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        62,
+        54
+      ]
+    },
+    {
+      "id": "prop:wall-back",
+      "type": "prop",
+      "name": "wall",
+      "position": [
+        0.0,
+        1.5,
+        -3.1
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        8.4,
+        3.0,
+        0.14
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        118,
+        86,
+        74
+      ]
+    },
+    {
+      "id": "prop:wall-left",
+      "type": "prop",
+      "name": "wall",
+      "position": [
+        -4.2,
+        1.5,
+        0.4
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.14,
+        3.0,
+        7.2
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        110,
+        80,
+        70
+      ]
+    },
+    {
+      "id": "prop:wall-right",
+      "type": "prop",
+      "name": "wall",
+      "position": [
+        4.2,
+        1.5,
+        0.4
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.14,
+        3.0,
+        7.2
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        110,
+        80,
+        70
+      ]
+    },
+    {
+      "id": "prop:desk",
+      "type": "prop",
+      "name": "desk",
+      "position": [
+        0.0,
+        0.36,
+        0.15
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        2.1,
+        0.72,
+        0.9
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        86,
+        52,
+        36
+      ]
+    },
+    {
+      "id": "prop:lamp",
+      "type": "prop",
+      "name": "lamp",
+      "position": [
+        -1.7,
+        1.15,
+        -1.15
+      ],
+      "yaw": 0.0,
+      "model": "capsule",
+      "gltf": null,
+      "scale": [
+        0.28,
+        0.9,
+        0.28
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        240,
+        210,
+        140
+      ]
+    },
+    {
+      "id": "prop:speaker",
+      "type": "prop",
+      "name": "speaker",
+      "position": [
+        -1.05,
+        0.95,
+        1.35
+      ],
+      "yaw": 1.5707964,
+      "model": "capsule",
+      "gltf": null,
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        186,
+        92,
+        88
+      ]
+    },
+    {
+      "id": "prop:page",
+      "type": "prop",
+      "name": "page",
+      "position": [
+        0.35,
+        0.78,
+        0.18
+      ],
+      "yaw": 0.2,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.42,
+        0.06,
+        0.32
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        236,
+        224,
+        200
+      ]
+    },
+    {
+      "id": "prop:flag",
+      "type": "prop",
+      "name": "flag",
+      "position": [
+        2.15,
+        0.42,
+        -1.05
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.28,
+        0.84,
+        0.12
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        90,
+        80,
+        70
+      ]
+    }
+  ],
+  "walkers": [
+    {
+      "id": "walker:player",
+      "type": "walker",
+      "name": "player",
+      "position": [
+        1.05,
+        0.95,
+        1.35
+      ],
+      "yaw": -1.5707964,
+      "face": -1.5707964,
+      "on_ground": true
+    }
+  ],
+  "lights": [
+    {
+      "id": "light:0",
+      "type": "light",
+      "name": "key",
+      "position": [
+        -1.4,
+        2.7,
+        -0.8
+      ],
+      "kind": "point",
+      "slot": 0,
+      "intensity": 1.15,
+      "radius": 18.0,
+      "color": [
+        1.0,
+        0.86,
+        0.68
+      ],
+      "direction": null
+    },
+    {
+      "id": "light:1",
+      "type": "light",
+      "name": "fill",
+      "position": [
+        2.6,
+        2.3,
+        2.2
+      ],
+      "kind": "point",
+      "slot": 1,
+      "intensity": 0.42,
+      "radius": 16.0,
+      "color": [
+        0.55,
+        0.68,
+        1.0
+      ],
+      "direction": null
+    },
+    {
+      "id": "light:2",
+      "type": "light",
+      "name": "rim",
+      "position": [
+        0.0,
+        2.1,
+        -2.6
+      ],
+      "kind": "point",
+      "slot": 2,
+      "intensity": 0.4,
+      "radius": 14.0,
+      "color": [
+        0.75,
+        0.82,
+        1.0
+      ],
+      "direction": null
+    },
+    {
+      "id": "light:3",
+      "type": "light",
+      "name": "bounce",
+      "position": [
+        0.0,
+        1.3,
+        1.2
+      ],
+      "kind": "point",
+      "slot": 3,
+      "intensity": 0.28,
+      "radius": 12.0,
+      "color": [
+        0.95,
+        0.78,
+        0.68
+      ],
+      "direction": null
+    }
+  ],
+  "cameras": [
+    {
+      "id": "camera:main",
+      "type": "camera",
+      "name": "room",
+      "position": [
+        0.0,
+        2.35,
+        6.2
+      ],
+      "target": [
+        0.0,
+        1.05,
+        0.35
+      ],
+      "fov": 48.0
+    }
+  ],
+  "heightfield": null
+}

@@ -1,0 +1,364 @@
+{
+  "version": 1,
+  "half": 8.0,
+  "floor_y": 0.0,
+  "gravity": 9.8,
+  "water_y": null,
+  "coins": 0,
+  "player": {
+    "id": "walker:player",
+    "type": "walker",
+    "name": "player",
+    "position": [
+      3.5,
+      0.95,
+      3.6
+    ],
+    "yaw": -2.4,
+    "face": -2.4,
+    "on_ground": true
+  },
+  "props": [
+    {
+      "id": "prop:floor",
+      "type": "prop",
+      "name": "floor",
+      "position": [
+        0.0,
+        -0.05,
+        0.2
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        12.0,
+        0.1,
+        10.4
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        58,
+        62,
+        56
+      ]
+    },
+    {
+      "id": "prop:wall-back",
+      "type": "prop",
+      "name": "wall",
+      "position": [
+        0.0,
+        1.6,
+        -4.9
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        12.0,
+        3.2,
+        0.16
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        72,
+        78,
+        74
+      ]
+    },
+    {
+      "id": "prop:wall-left",
+      "type": "prop",
+      "name": "wall",
+      "position": [
+        -6.0,
+        1.6,
+        0.2
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.16,
+        3.2,
+        10.4
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        68,
+        74,
+        70
+      ]
+    },
+    {
+      "id": "prop:wall-right",
+      "type": "prop",
+      "name": "wall",
+      "position": [
+        6.0,
+        1.6,
+        0.2
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.16,
+        3.2,
+        10.4
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        68,
+        74,
+        70
+      ]
+    },
+    {
+      "id": "prop:hide",
+      "type": "prop",
+      "name": "hide",
+      "position": [
+        -1.4,
+        0.7,
+        0.5
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        1.8,
+        1.4,
+        1.6
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        96,
+        72,
+        48
+      ]
+    },
+    {
+      "id": "prop:guard",
+      "type": "prop",
+      "name": "guard",
+      "position": [
+        0.2,
+        0.95,
+        -2.2
+      ],
+      "yaw": 0.0,
+      "model": "capsule",
+      "gltf": null,
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        70,
+        92,
+        118
+      ]
+    },
+    {
+      "id": "prop:beam",
+      "type": "prop",
+      "name": "beam",
+      "position": [
+        0.2,
+        0.04,
+        0.7
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        2.8,
+        0.06,
+        5.4
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        164,
+        52,
+        44
+      ]
+    },
+    {
+      "id": "prop:exit",
+      "type": "prop",
+      "name": "exit",
+      "position": [
+        -3.4,
+        0.25,
+        -2.6
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        1.5,
+        0.5,
+        1.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        70,
+        180,
+        110
+      ]
+    },
+    {
+      "id": "prop:flag",
+      "type": "prop",
+      "name": "flag",
+      "position": [
+        3.4,
+        0.42,
+        -3.4
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.28,
+        0.84,
+        0.12
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        80,
+        84,
+        78
+      ]
+    }
+  ],
+  "walkers": [
+    {
+      "id": "walker:player",
+      "type": "walker",
+      "name": "player",
+      "position": [
+        3.5,
+        0.95,
+        3.6
+      ],
+      "yaw": -2.4,
+      "face": -2.4,
+      "on_ground": true
+    }
+  ],
+  "lights": [
+    {
+      "id": "light:0",
+      "type": "light",
+      "name": "key",
+      "position": [
+        -1.6,
+        3.1,
+        -1.2
+      ],
+      "kind": "point",
+      "slot": 0,
+      "intensity": 1.12,
+      "radius": 18.0,
+      "color": [
+        1.0,
+        0.88,
+        0.72
+      ],
+      "direction": null
+    },
+    {
+      "id": "light:1",
+      "type": "light",
+      "name": "fill",
+      "position": [
+        2.8,
+        2.4,
+        2.4
+      ],
+      "kind": "point",
+      "slot": 1,
+      "intensity": 0.4,
+      "radius": 16.0,
+      "color": [
+        0.52,
+        0.68,
+        1.0
+      ],
+      "direction": null
+    },
+    {
+      "id": "light:2",
+      "type": "light",
+      "name": "rim",
+      "position": [
+        0.0,
+        2.4,
+        -3.4
+      ],
+      "kind": "point",
+      "slot": 2,
+      "intensity": 0.38,
+      "radius": 14.0,
+      "color": [
+        0.7,
+        0.82,
+        1.0
+      ],
+      "direction": null
+    },
+    {
+      "id": "light:3",
+      "type": "light",
+      "name": "bounce",
+      "position": [
+        -1.2,
+        1.4,
+        0.6
+      ],
+      "kind": "point",
+      "slot": 3,
+      "intensity": 0.3,
+      "radius": 12.0,
+      "color": [
+        0.95,
+        0.78,
+        0.62
+      ],
+      "direction": null
+    }
+  ],
+  "cameras": [
+    {
+      "id": "camera:main",
+      "type": "camera",
+      "name": "room",
+      "position": [
+        0.15,
+        5.1,
+        8.2
+      ],
+      "target": [
+        0.0,
+        0.9,
+        -0.2
+      ],
+      "fov": 48.0
+    }
+  ],
+  "heightfield": null
+}

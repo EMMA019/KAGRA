@@ -1,0 +1,41 @@
+{
+  "name": "novel_pages_smoke",
+  "notes": "M3 novel slice 1 on shared wgpu 30. Title -> play -> result (Space/click advance pages, one 2-way choice writes a dump flag) lives in WorldPlay / python -m kagra.play_world. Capsule in a room. Overlay text pages, not screenshot-only. Indoor lights 4 slots. No RendererV2, no VRM, no Rapier, no portraits atlas. World assertions + dump query (not golden pixels).",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/novel_pages_world.json",
+    "player.on_ground": true,
+    "query": [
+      {
+        "type": "walker",
+        "name": "player",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "page",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "speaker",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "floor",
+        "count": 1
+      },
+      {
+        "type": "light",
+        "count": 4
+      }
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/novel_pages_world.json",
+    "out": "scratch/novel_pages_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

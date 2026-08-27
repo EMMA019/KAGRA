@@ -5,8 +5,12 @@
 //! `compile_scene` turns it into a `Scene3D` for one frame. Heightfield
 //! batches come from named demo fns (`open_world_height` / `island_height` /
 //! `overworld_height`) or dump samples — production island mesh, not a
-//! placeholder plane. Coins use `Material::Metal` (existing GGX). Lights are
-//! slot 0..3 1:1. glTF props use `gltf_load` (capsule player; VRM skin is
+//! placeholder plane. Sprite/quad props (`model: "sprite"` / `"quad"`) compile
+//! to a standing XY card in the same Scene3D — 2D and 3D share WorldDoc.
+//! Coins use `Material::Metal` (existing GGX, metallic=1 / roughness=0.12).
+//! Lights are slot 0..3 1:1; an empty dump still gets default key+fill
+//! (slots 0+1; 2 and 3 stay off). Capsules and props get a ground contact
+//! blob (`MESH_PLANE` + instance alpha). glTF props use `gltf_load` (capsule player; VRM skin is
 //! not ported). Integer GPU mesh ids are not game objects. Live play is
 //! `WorldPlay` (title → play → result, WASD → `WalkInput` → sit on
 //! heightfield → pick up). Offscreen draw (feature = "render") is
@@ -37,7 +41,8 @@ const MESH_SPHERE: MeshId = MeshId(1);
 const MESH_CAPSULE: MeshId = MeshId(2);
 const MESH_PLANE: MeshId = MeshId(3);
 pub(crate) const MESH_HEIGHTFIELD: MeshId = MeshId(4);
-pub(crate) const MESH_GLTF_BASE: u32 = 5;
+pub(crate) const MESH_QUAD: MeshId = MeshId(5);
+pub(crate) const MESH_GLTF_BASE: u32 = 6;
 
 /// Persistent world. JSON source of truth. Not a draw list.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -292,8 +297,9 @@ impl WorldDoc {
         ids
     }
 
-    /// One-frame draw list. Heightfield + glTF/box/sphere/capsule primitives.
-    /// Does not mutate this document. GPU upload uses `compile_meshes`.
+    /// One-frame draw list. Heightfield + glTF/box/sphere/capsule + sprite/quad.
+    /// Empty lights get default key+fill (max 4 slots). Capsules/props get a
+    /// ground contact blob. Does not mutate this document. GPU upload uses `compile_meshes`.
     pub fn compile_scene(&self, aspect: f32) -> Scene3D {
         let camera = self.draw_camera();
         let mut b = SceneBuilder::new(&camera, aspect.max(1e-3));
@@ -338,8 +344,19 @@ impl WorldDoc {
         }
 
         let mut seen = std::collections::HashSet::new();
+        let hide_local = self
+            .cameras
+            .first()
+            .map(|c| c.name == "eye")
+            .unwrap_or(false);
+        let local_id = self.player.as_ref().map(|p| p.id.as_str());
         for walk in self.walkers.iter().chain(self.player.iter()) {
             if !seen.insert(walk.id.as_str()) {
+                continue;
+            }
+            // First-person: camera sits in the capsule. Skip local body/head so
+            // we do not clip into a white interior. Walker stays in the dump.
+            if hide_local && local_id == Some(walk.id.as_str()) {
                 continue;
             }
             // Capsule body + head so the player reads against grass (not a lone blob).
@@ -371,6 +388,8 @@ impl WorldDoc {
             };
             b.push(MESH_BOX, head, head_col);
         }
+
+        self.push_contact_blobs(&mut b, hide_local, local_id);
 
         let (light_dir, ambient, local_lights) = self.draw_lights();
         let sky = [130, 165, 205, 255];
@@ -413,6 +432,17 @@ impl WorldDoc {
     }
 
     fn draw_lights(&self) -> (Vec3, f32, [LocalLight; 4]) {
+        // Empty dump: still light the shared picture (key+fill). Occupied
+        // slots stay 1:1; unused stay OFF (max 4 indoor slots, no leak).
+        if self.lights.is_empty() {
+            let local = self.default_key_fill();
+            let sun = if local[0].direction.length_squared() > 1e-8 {
+                (-local[0].direction.normalize(), 0.42)
+            } else {
+                (Vec3::new(-0.4, 1.0, 0.3).normalize(), 0.35)
+            };
+            return (sun.0, sun.1, local);
+        }
         let mut local = [LocalLight::OFF; 4];
         for lit in &self.lights {
             if lit.slot > 3 {
@@ -441,6 +471,78 @@ impl WorldDoc {
             self.draw_light()
         };
         (sun.0, sun.1, local)
+    }
+
+    /// Indoor key (slot 0) + cool fill (slot 1). Slots 2 and 3 stay OFF.
+    fn default_key_fill(&self) -> [LocalLight; 4] {
+        let a = self.scene_anchor();
+        let mut local = [LocalLight::OFF; 4];
+        local[0] = LocalLight {
+            position: a + Vec3::new(6.0, 16.0, -8.0),
+            direction: Vec3::new(-0.18, -1.0, 0.22),
+            color: [1.0, 0.96, 0.86],
+            intensity: 1.15,
+            radius: 36.0,
+            spot: true,
+        };
+        local[1] = LocalLight {
+            position: a + Vec3::new(-12.0, 8.0, 6.0),
+            direction: Vec3::ZERO,
+            color: [0.55, 0.72, 1.0],
+            intensity: 0.45,
+            radius: 28.0,
+            spot: false,
+        };
+        local
+    }
+
+    fn scene_anchor(&self) -> Vec3 {
+        if let Some(p) = self.player.as_ref().or(self.walkers.first()) {
+            return Vec3::from_array(p.position);
+        }
+        if let Some(c) = self.cameras.first() {
+            return Vec3::from_array(c.target);
+        }
+        Vec3::ZERO
+    }
+
+    /// Ground contact disc (MESH_PLANE + instance alpha). Shared picture,
+    /// not a second shadow pass / SSAO / V2 umbra.
+    fn push_contact_blobs(&self, b: &mut SceneBuilder, hide_local: bool, local_id: Option<&str>) {
+        let mut seen = HashSet::new();
+        for walk in self.walkers.iter().chain(self.player.iter()) {
+            if !seen.insert(walk.id.as_str()) {
+                continue;
+            }
+            if hide_local && local_id == Some(walk.id.as_str()) {
+                continue;
+            }
+            let pos = Vec3::from_array(walk.position);
+            self.push_contact_blob(b, pos.x, pos.z, 0.62);
+        }
+        for prop in &self.props {
+            if !prop.enabled {
+                continue;
+            }
+            if prop.model.eq_ignore_ascii_case("plane") {
+                continue;
+            }
+            let pos = Vec3::from_array(prop.position);
+            let sx = prop.scale[0].abs().max(0.2);
+            let sz = prop.scale[2].abs().max(0.2);
+            let radius = (sx.max(sz) * 0.7).clamp(0.28, 2.4);
+            self.push_contact_blob(b, pos.x, pos.z, radius);
+        }
+    }
+
+    fn push_contact_blob(&self, b: &mut SceneBuilder, x: f32, z: f32, radius: f32) {
+        let y = self.height_at(x, z) + 0.03;
+        let model = Mat4::from_scale_rotation_translation(
+            Vec3::new(radius * 2.0, 1.0, radius * 2.0),
+            Quat::IDENTITY,
+            Vec3::new(x, y, z),
+        );
+        b.push_material(MESH_PLANE, model, [18, 14, 12, 120], Material::Solid);
     }
 
     fn draw_light(&self) -> (Vec3, f32) {
@@ -477,7 +579,7 @@ impl WorldDoc {
         self.floor_y
     }
 
-    /// Primitive slots 0..3 plus heightfield (4) plus one mesh per unique glTF.
+    /// Primitive slots 0..3, heightfield (4), sprite/quad (5), then one mesh per unique glTF.
     pub fn compile_meshes(&self) -> Vec<(MeshId, MeshData)> {
         let mut out = compile_meshes();
         out.push((MESH_HEIGHTFIELD, self.heightfield_mesh()));
@@ -569,6 +671,7 @@ fn mesh_for_prop(prop: &WorldProp, gltf_ids: &HashMap<String, MeshId>) -> MeshId
         "sphere" => MESH_SPHERE,
         "cylinder" | "capsule" => MESH_CAPSULE,
         "plane" => MESH_PLANE,
+        "sprite" | "quad" => MESH_QUAD,
         _ => MESH_BOX,
     }
 }
@@ -577,6 +680,8 @@ fn is_coin_prop(prop: &WorldProp) -> bool {
     prop.name.eq_ignore_ascii_case("coin") || prop.metallic >= 0.5
 }
 
+/// Metal coins/props: dump `metallic>=0.5` or name coin. Shader GGX uses the
+/// coin defaults (metallic=1, roughness=0.12) so they read as metal, not plastic.
 fn material_for_prop(prop: &WorldProp) -> Material {
     if is_coin_prop(prop) {
         Material::Metal
@@ -660,13 +765,14 @@ fn color_u8(rgb: Option<[u32; 3]>) -> [u8; 4] {
     }
 }
 
-/// Primitive meshes that `compile_scene` refers to by `MeshId`.
+/// Primitive meshes that `compile_scene` refers to by `MeshId` (includes sprite/quad).
 pub fn compile_meshes() -> Vec<(MeshId, crate::scene3d::MeshData)> {
     vec![
         (MESH_BOX, primitives::box_mesh(Vec3::ONE)),
         (MESH_SPHERE, primitives::cylinder_mesh(0.5, 1.0, 12)),
         (MESH_CAPSULE, primitives::cylinder_mesh(0.5, 1.0, 12)),
         (MESH_PLANE, primitives::plane_mesh(1.0, 1.0)),
+        (MESH_QUAD, primitives::quad_mesh(1.0, 1.0)),
     ]
 }
 
@@ -805,7 +911,7 @@ mod tests {
     #[test]
     fn compile_meshes_cover_batch_ids() {
         let meshes = compile_meshes();
-        assert_eq!(meshes.len(), 4);
+        assert_eq!(meshes.len(), 5);
         assert!(meshes.iter().all(|(_, m)| !m.vertices.is_empty()));
         for json in [CREST_ISLE_DUMP, ORB_RUSH_DUMP] {
             let doc = WorldDoc::from_json(json).unwrap();
@@ -1014,5 +1120,124 @@ mod tests {
         );
         assert!(scene.local_lights[0].spot);
         assert!(!scene.local_lights[2].spot);
+    }
+
+    #[test]
+    fn empty_lights_get_default_key_and_fill() {
+        let doc = WorldDoc::from_json(ORB_RUSH_DUMP).unwrap();
+        assert!(
+            doc.lights.is_empty(),
+            "orb rush fixture must stay empty in the dump"
+        );
+        let scene = doc.compile_scene(1.0);
+        assert!(
+            scene.local_lights[0].intensity > 1.0,
+            "slot 0 key, got {}",
+            scene.local_lights[0].intensity
+        );
+        assert!(scene.local_lights[0].spot, "key is the crest-style spot");
+        assert!(
+            scene.local_lights[1].intensity > 0.3,
+            "slot 1 fill, got {}",
+            scene.local_lights[1].intensity
+        );
+        assert!(!scene.local_lights[1].spot);
+        assert_eq!(
+            scene.local_lights[2].intensity, 0.0,
+            "empty dump must not invent slot 2"
+        );
+        assert_eq!(
+            scene.local_lights[3].intensity, 0.0,
+            "empty dump must not invent slot 3"
+        );
+        assert_eq!(scene.local_lights.len(), 4);
+        // compile_scene must not mutate the dump
+        assert!(doc.lights.is_empty());
+    }
+
+    #[test]
+    fn crest_keeps_dumped_key_fill_rim() {
+        let doc = WorldDoc::from_json(CREST_ISLE_DUMP).unwrap();
+        assert_eq!(doc.lights.len(), 3);
+        let scene = doc.compile_scene(16.0 / 9.0);
+        assert!((scene.local_lights[0].intensity - 1.15).abs() < 1e-4);
+        assert!((scene.local_lights[1].intensity - 0.45).abs() < 1e-4);
+        assert!((scene.local_lights[2].intensity - 0.35).abs() < 1e-4);
+        assert_eq!(scene.local_lights[3].intensity, 0.0);
+    }
+
+    #[test]
+    fn coin_without_metallic_field_still_compiles_as_metal() {
+        let mut doc = WorldDoc::from_json(ORB_RUSH_DUMP).unwrap();
+        doc.props.push(WorldProp {
+            id: "prop:coin-bare".into(),
+            kind: "prop".into(),
+            name: "coin".into(),
+            position: [0.5, 0.4, 0.5],
+            model: "sphere".into(),
+            scale: [0.4, 0.08, 0.4],
+            enabled: true,
+            color: Some([255, 208, 64]),
+            ..Default::default()
+        });
+        assert!(doc
+            .props
+            .iter()
+            .any(|p| p.name == "coin" && p.metallic < 0.5));
+        let scene = doc.compile_scene(1.0);
+        let metal = scene
+            .batches
+            .iter()
+            .flat_map(|b| b.instances.iter())
+            .filter(|i| i.material == Material::Metal)
+            .count();
+        assert!(
+            metal >= 1,
+            "bare coin must still be Material::Metal, got {metal}"
+        );
+    }
+
+    #[test]
+    fn contact_blob_under_capsule_and_prop() {
+        let crest = WorldDoc::from_json(CREST_ISLE_DUMP).unwrap();
+        let scene = crest.compile_scene(16.0 / 9.0);
+        let blobs: Vec<_> = scene
+            .batches
+            .iter()
+            .filter(|b| b.mesh == MESH_PLANE)
+            .flat_map(|b| b.instances.iter())
+            .filter(|i| i.color[3] < 200)
+            .collect();
+        assert!(
+            blobs.len() >= 2,
+            "walker + crate/coin need ground contact blobs, got {}",
+            blobs.len()
+        );
+        let walker = crest.player.as_ref().unwrap().position;
+        let gy = crest.height_at(walker[0], walker[2]);
+        assert!(
+            blobs.iter().any(|i| {
+                let t = i.model.w_axis;
+                (t.x - walker[0]).abs() < 0.05
+                    && (t.z - walker[2]).abs() < 0.05
+                    && (t.y - (gy + 0.03)).abs() < 0.05
+            }),
+            "walker contact blob must sit on the heightfield"
+        );
+
+        let orb = WorldDoc::from_json(ORB_RUSH_DUMP).unwrap();
+        let scene = orb.compile_scene(1.0);
+        let blobs: Vec<_> = scene
+            .batches
+            .iter()
+            .filter(|b| b.mesh == MESH_PLANE)
+            .flat_map(|b| b.instances.iter())
+            .filter(|i| i.color[3] < 200)
+            .collect();
+        assert!(
+            blobs.len() >= 4,
+            "orb rush: walker + 3 props, got {}",
+            blobs.len()
+        );
     }
 }

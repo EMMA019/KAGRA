@@ -47,7 +47,7 @@ VRM はオプションのローダであり、背骨ではない。
 `world.query(type=, name=, aabb=)` はスクショなしで position / name / type / id を返す。
 タイルは `type="terrain_tile"` で `loaded` / `albedo_ok`（はげを PNG なしで検出）。
 `world.dump()` / `world.load()` のスキーマは [schemas/world.json](schemas/world.json)。
-kagra-shared の `WorldDoc::from_json` が同じ JSON を読む。`compile_scene` が `Scene3D` を出す（高さ場バッチ + 草 albedo + glTF + 金属コイン + ライト slot 1:1 + カプセル）。`WorldPlay` がタイトル→プレイ→結果（WASD / 拾う / 数える / 終わる）で dump を進める。`render_world_doc` が shared wgpu 30 オフスクリーンでそのフレームを RGBA にする。`python -m kagra.play_world` が同じ Renderer を **普通のデスクトップ窓** に present する。**公式 Crest プレイはこの窓**（カプセル collectathon）。`examples/vrm_open_world.py` は旧 VRM / RendererV2 のまま残してよい。新しいゲームは RendererV2 で始めない。`(-12800,-12800)` は旧 V2 スモーク専用。人間のスクショ修正ではジャンルは閉じない。
+kagra-shared の `WorldDoc::from_json` が同じ JSON を読む。`compile_scene` が `Scene3D` を出す（高さ場バッチ + 草 albedo + glTF + 金属コイン + ライト slot 1:1、空 dump は key+fill + 接地 blob + カプセル）。`WorldPlay` がタイトル→プレイ→結果（WASD / 拾う / 数える / 終わる）で dump を進める。`render_world_doc` が shared wgpu 30 オフスクリーンでそのフレームを RGBA にする。`python -m kagra.play_world` が同じ Renderer を **普通のデスクトップ窓** に present する。**公式 Crest プレイはこの窓**（カプセル collectathon）。`examples/vrm_open_world.py` は旧 VRM / RendererV2 のまま残してよい。新しいゲームは RendererV2 で始めない。`(-12800,-12800)` は旧 V2 スモーク専用。人間のスクショ修正ではジャンルは閉じない。
 
 ## 今あるもの（嘘にしない）
 
@@ -56,7 +56,7 @@ kagra-shared の `WorldDoc::from_json` が同じ JSON を読む。`compile_scene
 - AABB の箱（落ちる・積む・乗る）。Rapier は入れない
 - VRM ローダ（歌・踊り・リップ・LookAt）。体の背骨ではない
 - `kagra.verify` の PNG サイズ煙 + **世界アサーション**（coins / on_ground / query / albedo_ok）+ 任意の **shared オフスクリーン煙**（空でない。golden ではない。ヘルパ無しはスキップ）
-- `WorldDoc` / `WorldPlay`（dump JSON。collectathon ループ。`compile_scene` は島の高さ場 + 金属コイン + ライト 4 スロット。shared wgpu 30 オフスクリーン / `play_world` 窓。公式 Crest プレイはカプセル。旧 VRM デモは RendererV2 のまま）
+- `WorldDoc` / `WorldPlay`（dump JSON。collectathon ループ。`compile_scene` は島の高さ場 + 金属コイン + ライト 4 スロット（空 dump は key+fill）+ 接地 blob。shared wgpu 30 オフスクリーン / `play_world` 窓。公式 Crest プレイはカプセル。旧 VRM デモは RendererV2 のまま）
 - エージェントループ: `docs/API_INDEX.md` / MCP / `docs/agent-runs/`
 
 ## 嘘（今 40% を大きく呼ばない）

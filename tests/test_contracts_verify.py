@@ -193,6 +193,84 @@ def test_load_action_arena_scenario_is_world_and_offscreen():
     assert sc.expect_offscreen["out"].endswith("action_arena_shared.png")
 
 
+def test_load_box_hop_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/box_hop_smoke.json")
+    assert sc.expect_world
+    assert sc.expect_world["path"].endswith("box_hop_world.json")
+    assert sc.expect_offscreen
+    assert sc.expect_offscreen["out"].endswith("box_hop_shared.png")
+
+
+def test_load_rpg_town_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/rpg_town_smoke.json")
+    assert sc.expect_world
+    assert sc.expect_world["path"].endswith("rpg_town_world.json")
+    assert sc.expect_offscreen
+
+
+
+def test_load_sprite_card_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/sprite_card_smoke.json")
+    assert sc.expect_world
+    assert sc.expect_world["path"].endswith("sprite_card_world.json")
+    assert sc.expect_offscreen
+
+
+def test_load_fps_range_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/fps_range_smoke.json")
+    assert sc.expect_world
+    assert sc.expect_world["path"].endswith("fps_range_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen
+    assert sc.expect_offscreen["out"].endswith("fps_range_shared.png")
+
+
+
+def test_load_td_lane_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/td_lane_smoke.json")
+    assert sc.expect_world
+    assert sc.expect_world["path"].endswith("td_lane_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen
+    assert sc.expect_offscreen["out"].endswith("td_lane_shared.png")
+
+
+def test_load_race_drive_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/race_drive_smoke.json")
+    assert sc.expect_world
+    assert sc.expect_world["path"].endswith("race_drive_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen
+    assert sc.expect_offscreen["out"].endswith("race_drive_shared.png")
+
+
+def test_load_fight_hitstun_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/fight_hitstun_smoke.json")
+    assert sc.expect_world
+    assert sc.expect_world["path"].endswith("fight_hitstun_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen
+    assert sc.expect_offscreen["out"].endswith("fight_hitstun_shared.png")
+
+
+def test_load_novel_pages_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/novel_pages_smoke.json")
+    assert sc.expect_world
+    assert sc.expect_world["path"].endswith("novel_pages_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen
+    assert sc.expect_offscreen["out"].endswith("novel_pages_shared.png")
+
+
+def test_load_stealth_hide_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/stealth_hide_smoke.json")
+    assert sc.expect_world
+    assert sc.expect_world["path"].endswith("stealth_hide_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen
+    assert sc.expect_offscreen["out"].endswith("stealth_hide_shared.png")
+
+
 def test_png_dimensions_reads_ihdr(tmp_path):
     p = tmp_path / "a.png"
     p.write_bytes(_rgba_png(32, 24))
@@ -340,3 +418,64 @@ def test_real_shared_offscreen_png_dimensions(tmp_path, monkeypatch):
         pytest.skip(result.skip_reason or "offscreen skipped")
     assert result.ok, result.error
     assert png_dimensions(out) == (64, 48)
+
+
+def test_load_puzzle_pad_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/puzzle_pad_smoke.json")
+    assert sc.name == "puzzle_pad_smoke"
+    assert sc.expect_world["path"].endswith("puzzle_pad_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen["out"].endswith("puzzle_pad_shared.png")
+
+def test_load_sports_goal_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/sports_goal_smoke.json")
+    assert sc.name == "sports_goal_smoke"
+    assert sc.expect_world["path"].endswith("sports_goal_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen["out"].endswith("sports_goal_shared.png")
+
+
+def test_load_sim_meter_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/sim_meter_smoke.json")
+    assert sc.name == "sim_meter_smoke"
+    assert sc.expect_world["path"].endswith("sim_meter_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen["out"].endswith("sim_meter_shared.png")
+
+def test_load_action_side_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/action_side_smoke.json")
+    assert sc.name == "action_side_smoke"
+    assert sc.expect_world["path"].endswith("action_side_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen["out"].endswith("action_side_shared.png")
+
+
+def test_load_survival_meter_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/survival_meter_smoke.json")
+    assert sc.name == "survival_meter_smoke"
+    assert sc.expect_world["path"].endswith("survival_meter_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen["out"].endswith("survival_meter_shared.png")
+
+
+def test_load_rhythm_beat_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/rhythm_beat_smoke.json")
+    assert sc.name == "rhythm_beat_smoke"
+    assert sc.expect_world["path"].endswith("rhythm_beat_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen["out"].endswith("rhythm_beat_shared.png")
+
+
+def test_load_fish_cast_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/fish_cast_smoke.json")
+    assert sc.name == "fish_cast_smoke"
+    assert sc.expect_world["path"].endswith("fish_cast_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen["out"].endswith("fish_cast_shared.png")
+
+def test_load_shop_buy_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/shop_buy_smoke.json")
+    assert sc.name == "shop_buy_smoke"
+    assert sc.expect_world["path"].endswith("shop_buy_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen["out"].endswith("shop_buy_shared.png")

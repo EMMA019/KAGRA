@@ -271,3 +271,366 @@ def test_action_arena_fixture_has_foes_and_player():
     assert "box" in models
     assert any(p.get("name") == "floor" for p in data["props"])
 
+
+def test_box_hop_fixture_has_platforms_and_checkpoint():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/box_hop_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    plats = [p for p in data["props"] if p.get("name") == "platform"]
+    assert len(plats) >= 2
+    assert any(p.get("name") == "checkpoint" for p in data["props"])
+    assert any(p.get("name") == "goal" for p in data["props"])
+    assert any(p.get("model") == "sprite" for p in data["props"])
+    assert data.get("heightfield") in (None, {})
+
+
+def test_rpg_town_fixture_has_npc_door_and_dungeon():
+    import json
+
+    town = json.loads((ROOT / "kagra-shared/tests/fixtures/rpg_town_world.json").read_text(encoding="utf-8"))
+    dun = json.loads((ROOT / "kagra-shared/tests/fixtures/rpg_dungeon_world.json").read_text(encoding="utf-8"))
+    assert town["player"]["on_ground"] is True
+    assert any(p.get("name") == "npc" for p in town["props"])
+    assert any(p.get("name") == "door" for p in town["props"])
+    assert any(p.get("name") == "crystal" for p in dun["props"])
+    assert any(p.get("name") == "door" for p in dun["props"])
+
+
+
+def test_sprite_card_fixture_has_quads():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/sprite_card_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    models = {p.get("model") for p in data["props"]}
+    assert "sprite" in models
+    assert "quad" in models
+    assert "plane" in models
+    sprites = [p for p in data["props"] if p.get("model") in ("sprite", "quad")]
+    assert len(sprites) >= 2
+    assert data.get("heightfield") in (None, {})
+
+def test_fps_range_fixture_has_targets_and_player():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/fps_range_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    targets = [p for p in data["props"] if p.get("name") == "target" and p.get("enabled") is not False]
+    assert len(targets) >= 2
+    models = {p.get("model") for p in targets}
+    assert "capsule" in models
+    assert "sprite" in models
+    assert any(p.get("name") == "floor" for p in data["props"])
+    assert data.get("heightfield") in (None, {})
+
+
+def test_walk_input_from_keys_fire_alias():
+    assert walk_input_from_keys(["fire"])["attack"] is True
+    assert walk_input_from_keys(["mouse1"])["attack"] is True
+    assert walk_input_from_keys(["j"])["attack"] is True
+
+
+def test_td_lane_fixture_has_path_tower_and_creeps():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/td_lane_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    assert any(p.get("name") == "tower" for p in data["props"])
+    wps = [p for p in data["props"] if p.get("name") == "waypoint"]
+    assert len(wps) >= 3
+    creeps = [p for p in data["props"] if p.get("name") == "creep" and p.get("enabled") is not False]
+    assert len(creeps) >= 2
+    models = {p.get("model") for p in creeps}
+    assert "capsule" in models
+    assert any(p.get("name") == "path" for p in data["props"])
+    assert any(p.get("name") == "floor" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+
+def test_race_drive_fixture_has_track_finish_and_car():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/race_drive_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    assert any(p.get("name") == "finish" for p in data["props"])
+    assert any(p.get("name") == "split" for p in data["props"])
+    assert any(p.get("name") == "flag" for p in data["props"])
+    roads = [p for p in data["props"] if p.get("name") == "road"]
+    assert len(roads) >= 4
+    cars = [p for p in data["props"] if p.get("name") == "car" and p.get("enabled") is not False]
+    assert len(cars) == 1
+    assert cars[0].get("model") in ("box", "cube", "capsule")
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+
+def test_novel_pages_fixture_has_room_and_flag():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/novel_pages_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    assert any(p.get("name") == "page" for p in data["props"])
+    speakers = [p for p in data["props"] if p.get("name") == "speaker"]
+    assert len(speakers) == 1
+    assert speakers[0].get("model") == "capsule"
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    assert any(p.get("name") == "floor" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+
+
+def test_fight_hitstun_fixture_has_two_capsules():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/fight_hitstun_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    opps = [p for p in data["props"] if p.get("name") == "opponent" and p.get("enabled") is not False]
+    assert len(opps) == 1
+    assert opps[0].get("model") == "capsule"
+    assert any(p.get("name") == "floor" for p in data["props"])
+    assert any(p.get("name") == "ring" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+
+def test_stealth_hide_fixture_has_hide_guard_and_exit():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/stealth_hide_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    hides = [p for p in data["props"] if p.get("name") == "hide"]
+    assert len(hides) == 1
+    assert hides[0].get("model") == "box"
+    guards = [p for p in data["props"] if p.get("name") == "guard"]
+    assert len(guards) == 1
+    assert guards[0].get("model") == "capsule"
+    assert any(p.get("name") == "exit" for p in data["props"])
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    assert any(p.get("name") == "floor" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+
+
+def test_puzzle_pad_fixture_has_crate_and_pad():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/puzzle_pad_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    pads = [p for p in data["props"] if p.get("name") == "pad"]
+    assert len(pads) == 1
+    assert pads[0].get("model") == "box"
+    crates = [p for p in data["props"] if p.get("name") == "crate"]
+    assert len(crates) == 1
+    assert crates[0].get("model") == "box"
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    assert any(p.get("name") == "floor" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+
+def test_sports_goal_fixture_has_ball_and_goal():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/sports_goal_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    balls = [p for p in data["props"] if p.get("name") == "ball"]
+    assert len(balls) == 1
+    assert balls[0].get("model") == "sphere"
+    goals = [p for p in data["props"] if p.get("name") == "goal"]
+    assert len(goals) == 1
+    assert goals[0].get("model") == "box"
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    assert any(p.get("name") == "pitch" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+
+
+
+def test_sim_meter_fixture_has_zone_and_flag():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/sim_meter_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    zones = [p for p in data["props"] if p.get("name") == "zone"]
+    assert len(zones) == 1
+    assert zones[0].get("model") == "box"
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    assert any(p.get("name") == "floor" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+    assert data.get("coins", 0) == 0
+
+def test_action_side_fixture_has_sprite_foe_and_wall():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/action_side_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    foes = [p for p in data["props"] if p.get("name") == "foe"]
+    assert len(foes) == 1
+    assert foes[0].get("model") == "sprite"
+    assert any(p.get("name") == "sprite" and p.get("model") == "sprite" for p in data["props"])
+    assert any(p.get("name") == "wall" for p in data["props"])
+    assert any(p.get("name") == "floor" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+
+
+def test_survival_meter_fixture_has_camp_and_ration():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/survival_meter_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    camps = [p for p in data["props"] if p.get("name") == "camp"]
+    assert len(camps) == 1
+    assert camps[0].get("model") == "box"
+    rations = [p for p in data["props"] if p.get("name") == "ration"]
+    assert len(rations) == 1
+    assert rations[0].get("model") == "box"
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    assert any(p.get("name") == "floor" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+    assert data.get("coins", 0) == 8
+
+
+def test_rhythm_beat_fixture_has_stage_and_marker():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/rhythm_beat_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    stages = [p for p in data["props"] if p.get("name") == "stage"]
+    assert len(stages) == 1
+    assert stages[0].get("model") == "box"
+    markers = [p for p in data["props"] if p.get("name") == "marker"]
+    assert len(markers) == 1
+    assert markers[0].get("model") == "box"
+    judges = [p for p in data["props"] if p.get("name") == "judge"]
+    assert len(judges) == 1
+    assert judges[0].get("model") == "box"
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    assert any(p.get("name") == "floor" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+    assert data.get("coins", 0) == 0
+
+
+def test_fish_cast_fixture_has_dock_and_water():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/fish_cast_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    assert data.get("water_y") == 0.0
+    docks = [p for p in data["props"] if p.get("name") == "dock"]
+    assert len(docks) == 1
+    assert docks[0].get("model") == "box"
+    bobbers = [p for p in data["props"] if p.get("name") == "bobber"]
+    assert len(bobbers) == 1
+    assert bobbers[0].get("model") == "box"
+    assert bobbers[0].get("enabled") is False
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+    assert data.get("coins", 0) == 0
+
+def test_shop_buy_fixture_has_stall_and_coins():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/shop_buy_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    stalls = [p for p in data["props"] if p.get("name") == "stall"]
+    assert len(stalls) == 1
+    assert stalls[0].get("model") == "box"
+    goods = [p for p in data["props"] if p.get("name") == "goods"]
+    assert len(goods) == 1
+    assert goods[0].get("model") == "box"
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+    assert data.get("coins", 0) == 8
+
+def test_cook_stove_fixture_has_stove_and_pan():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/cook_stove_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    stoves = [p for p in data["props"] if p.get("name") == "stove"]
+    assert len(stoves) == 1
+    assert stoves[0].get("model") == "box"
+    pans = [p for p in data["props"] if p.get("name") == "pan"]
+    assert len(pans) == 1
+    assert pans[0].get("model") == "box"
+    meals = [p for p in data["props"] if p.get("name") == "meal"]
+    assert len(meals) == 1
+    assert meals[0].get("model") == "box"
+    assert meals[0].get("enabled") is False
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+    assert data.get("coins", 0) == 0
+    assert not any(p.get("name") == "stall" for p in data["props"])

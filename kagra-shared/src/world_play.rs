@@ -7,12 +7,30 @@
 //! and not Rapier.
 
 use crate::action::{self, ActionGame};
+use crate::action2d::{self, Action2dGame};
 use crate::collectathon::{
     spawn_coins, spawn_stars, won, IsleGame, WalkInput, BODY_H, CAM_DISTANCE, CAM_HEIGHT,
     CAM_LOOK_Y, GRAVITY, JUMP_V, PICK_REACH, PLAYER_SPEED, STAR_XZ,
 };
+use crate::cook::{self, CookGame};
+use crate::fight::{self, FightGame};
+use crate::fish::{self, FishGame};
+use crate::fps::{self, FpsGame};
 use crate::game::GamePhase;
+use crate::novel::{self, NovelGame};
+use crate::platformer::{self, PlatformGame};
+use crate::puzzle::{self, PuzzleGame};
+use crate::race::{self, RaceGame};
+use crate::rhythm::{self, RhythmGame};
+use crate::rpg::{self, RpgGame};
 use crate::scene::{DrawList, Quad};
+use crate::shop::{self, ShopGame};
+use crate::sim::{self, SimGame};
+use crate::sports::{self, SportsGame};
+use crate::sprite;
+use crate::stealth::{self, StealthGame};
+use crate::survival::{self, SurvivalGame};
+use crate::td::{self, TdGame};
 use crate::world_doc::{WorldDoc, WorldProp, WorldWalker};
 use glam::Vec3;
 
@@ -26,6 +44,23 @@ pub struct WorldPlay {
     pub look_pitch: f32,
     pub game: IsleGame,
     pub action: ActionGame,
+    pub action2d: Action2dGame,
+    pub platform: PlatformGame,
+    pub rpg: RpgGame,
+    pub fps: FpsGame,
+    pub td: TdGame,
+    pub race: RaceGame,
+    pub fight: FightGame,
+    pub novel: NovelGame,
+    pub stealth: StealthGame,
+    pub puzzle: PuzzleGame,
+    pub sports: SportsGame,
+    pub sim: SimGame,
+    pub survival: SurvivalGame,
+    pub rhythm: RhythmGame,
+    pub fish: FishGame,
+    pub shop: ShopGame,
+    pub cook: CookGame,
     seed: WorldDoc,
     vy: f32,
 }
@@ -35,10 +70,123 @@ impl WorldPlay {
         let mut doc = doc;
         seed_collectathon_pickups(&mut doc);
         action::seed(&mut doc);
+        action2d::seed(&mut doc);
+        platformer::seed(&mut doc);
+        rpg::seed(&mut doc);
+        fps::seed(&mut doc);
+        td::seed(&mut doc);
+        race::seed(&mut doc);
+        fight::seed(&mut doc);
+        novel::seed(&mut doc);
+        stealth::seed(&mut doc);
+        puzzle::seed(&mut doc);
+        sports::seed(&mut doc);
+        sim::seed(&mut doc);
+        survival::seed(&mut doc);
+        rhythm::seed(&mut doc);
+        fish::seed(&mut doc);
+        shop::seed(&mut doc);
+        cook::seed(&mut doc);
         refresh_coin_count(&mut doc);
+        if survival::is_survival(&doc) {
+            doc.coins = survival::NEED;
+        }
+        if rhythm::is_rhythm(&doc) {
+            doc.coins = 0;
+        }
+        if fish::is_fish(&doc) {
+            doc.coins = 0;
+        }
+        if shop::is_shop(&doc) {
+            doc.coins = shop::START;
+        }
+        if cook::is_cook(&doc) {
+            doc.coins = 0;
+        }
         let look_yaw = look_yaw_from_doc(&doc);
         let action = ActionGame::from_doc(&doc);
-        let game = if is_collectathon(&doc) || action::is_action(&doc) {
+        let action2d_game = Action2dGame::from_doc(&doc);
+        let platform = PlatformGame::from_doc(&doc);
+        let rpg_game = RpgGame::from_doc(&doc);
+        let fps_game = FpsGame::from_doc(&doc);
+        let td_game = TdGame::from_doc(&doc);
+        let race_game = RaceGame::from_doc(&doc);
+        let fight_game = FightGame::from_doc(&doc);
+        let novel_game = NovelGame::from_doc(&doc);
+        let stealth_game = StealthGame::from_doc(&doc);
+        let puzzle_game = PuzzleGame::from_doc(&doc);
+        let sports_game = SportsGame::from_doc(&doc);
+        let sim_game = SimGame::from_doc(&doc);
+        let survival_game = SurvivalGame::from_doc(&doc);
+        let rhythm_game = RhythmGame::from_doc(&doc);
+        let fish_game = FishGame::from_doc(&doc);
+        let shop_game = ShopGame::from_doc(&doc);
+        let cook_game = CookGame::from_doc(&doc);
+        if action2d::is_action2d(&doc) {
+            action2d::place_side_camera(&mut doc);
+        }
+        if fps::is_fps(&doc) {
+            fps::place_eye_camera(&mut doc, look_yaw, 0.0);
+        }
+        if td::is_td(&doc) {
+            td::place_overview_camera(&mut doc);
+        }
+        if race::is_race(&doc) {
+            race::place_chase_camera(&mut doc);
+        }
+        if fight::is_fight(&doc) {
+            fight::place_dual_camera(&mut doc);
+        }
+        if novel::is_novel(&doc) {
+            novel::place_room_camera(&mut doc);
+        }
+        if stealth::is_stealth(&doc) {
+            stealth::place_room_camera(&mut doc);
+        }
+        if puzzle::is_puzzle(&doc) {
+            puzzle::place_room_camera(&mut doc);
+        }
+        if sports::is_sports(&doc) {
+            sports::place_chase_camera(&mut doc);
+        }
+        if sim::is_sim(&doc) {
+            sim::place_chase_camera(&mut doc);
+        }
+        if survival::is_survival(&doc) {
+            survival::place_chase_camera(&mut doc);
+        }
+        if rhythm::is_rhythm(&doc) {
+            rhythm::place_stage_camera(&mut doc);
+        }
+        if fish::is_fish(&doc) {
+            fish::place_dock_camera(&mut doc);
+        }
+        if shop::is_shop(&doc) {
+            shop::place_stall_camera(&mut doc);
+        }
+        if cook::is_cook(&doc) {
+            cook::place_stove_camera(&mut doc);
+        }
+        let game = if is_collectathon(&doc)
+            || action::is_action(&doc)
+            || action2d::is_action2d(&doc)
+            || platformer::is_platformer(&doc)
+            || rpg::is_rpg(&doc)
+            || fps::is_fps(&doc)
+            || td::is_td(&doc)
+            || race::is_race(&doc)
+            || fight::is_fight(&doc)
+            || novel::is_novel(&doc)
+            || stealth::is_stealth(&doc)
+            || puzzle::is_puzzle(&doc)
+            || sports::is_sports(&doc)
+            || sim::is_sim(&doc)
+            || survival::is_survival(&doc)
+            || rhythm::is_rhythm(&doc)
+            || fish::is_fish(&doc)
+            || shop::is_shop(&doc)
+            || cook::is_cook(&doc)
+        {
             IsleGame::default()
         } else {
             let mut g = IsleGame::default();
@@ -53,6 +201,23 @@ impl WorldPlay {
             look_pitch: 0.0,
             game,
             action,
+            action2d: action2d_game,
+            platform,
+            rpg: rpg_game,
+            fps: fps_game,
+            td: td_game,
+            race: race_game,
+            fight: fight_game,
+            novel: novel_game,
+            stealth: stealth_game,
+            puzzle: puzzle_game,
+            sports: sports_game,
+            sim: sim_game,
+            survival: survival_game,
+            rhythm: rhythm_game,
+            fish: fish_game,
+            shop: shop_game,
+            cook: cook_game,
             vy: 0.0,
         }
     }
@@ -80,7 +245,89 @@ impl WorldPlay {
         self.game.best_score = best;
         self.game.start();
         self.action = ActionGame::from_doc(&self.doc);
+        self.action2d = Action2dGame::from_doc(&self.doc);
+        let ckpt = self.platform.checkpoint;
+        self.platform = PlatformGame::from_doc(&self.doc);
+        if ckpt.is_some() {
+            self.platform.checkpoint = ckpt;
+            platformer::restore_checkpoint(&mut self.doc, &self.platform);
+        }
+        self.rpg = RpgGame::from_doc(&self.doc);
+        self.fps = FpsGame::from_doc(&self.doc);
+        self.td = TdGame::from_doc(&self.doc);
+        self.race = RaceGame::from_doc(&self.doc);
+        self.fight = FightGame::from_doc(&self.doc);
+        self.novel = NovelGame::from_doc(&self.doc);
+        self.stealth = StealthGame::from_doc(&self.doc);
+        self.puzzle = PuzzleGame::from_doc(&self.doc);
+        self.sports = SportsGame::from_doc(&self.doc);
+        self.sim = SimGame::from_doc(&self.doc);
+        self.survival = SurvivalGame::from_doc(&self.doc);
+        self.rhythm = RhythmGame::from_doc(&self.doc);
+        self.fish = FishGame::from_doc(&self.doc);
+        self.shop = ShopGame::from_doc(&self.doc);
+        self.cook = CookGame::from_doc(&self.doc);
+        if action2d::is_action2d(&self.doc) {
+            action2d::place_side_camera(&mut self.doc);
+        }
+        if fps::is_fps(&self.doc) {
+            fps::place_eye_camera(&mut self.doc, self.look_yaw, self.look_pitch);
+        }
+        if td::is_td(&self.doc) {
+            td::place_overview_camera(&mut self.doc);
+        }
+        if race::is_race(&self.doc) {
+            race::place_chase_camera(&mut self.doc);
+        }
+        if fight::is_fight(&self.doc) {
+            fight::place_dual_camera(&mut self.doc);
+        }
+        if novel::is_novel(&self.doc) {
+            novel::place_room_camera(&mut self.doc);
+        }
+        if stealth::is_stealth(&self.doc) {
+            stealth::place_room_camera(&mut self.doc);
+        }
+        if puzzle::is_puzzle(&self.doc) {
+            puzzle::place_room_camera(&mut self.doc);
+        }
+        if sports::is_sports(&self.doc) {
+            sports::place_chase_camera(&mut self.doc);
+        }
+        if sim::is_sim(&self.doc) {
+            sim::place_chase_camera(&mut self.doc);
+        }
+        if survival::is_survival(&self.doc) {
+            survival::place_chase_camera(&mut self.doc);
+        }
+        if rhythm::is_rhythm(&self.doc) {
+            rhythm::place_stage_camera(&mut self.doc);
+        }
+        if fish::is_fish(&self.doc) {
+            fish::place_dock_camera(&mut self.doc);
+        }
+        if shop::is_shop(&self.doc) {
+            shop::place_stall_camera(&mut self.doc);
+        }
+        if cook::is_cook(&self.doc) {
+            cook::place_stove_camera(&mut self.doc);
+        }
         refresh_coin_count(&mut self.doc);
+        if survival::is_survival(&self.doc) {
+            self.doc.coins = survival::NEED;
+        }
+        if rhythm::is_rhythm(&self.doc) {
+            self.doc.coins = 0;
+        }
+        if fish::is_fish(&self.doc) {
+            self.doc.coins = 0;
+        }
+        if shop::is_shop(&self.doc) {
+            self.doc.coins = shop::START;
+        }
+        if cook::is_cook(&self.doc) {
+            self.doc.coins = 0;
+        }
     }
 
     pub fn is_collectathon(&self) -> bool {
@@ -88,7 +335,79 @@ impl WorldPlay {
     }
 
     pub fn is_action(&self) -> bool {
-        action::is_action(&self.doc) || action::is_action(&self.seed)
+        (action::is_action(&self.doc) || action::is_action(&self.seed)) && !self.is_action2d()
+    }
+
+    pub fn is_action2d(&self) -> bool {
+        action2d::is_action2d(&self.doc) || action2d::is_action2d(&self.seed)
+    }
+
+    pub fn is_platformer(&self) -> bool {
+        platformer::is_platformer(&self.doc) || platformer::is_platformer(&self.seed)
+    }
+
+    pub fn is_rpg(&self) -> bool {
+        rpg::is_rpg(&self.doc) || rpg::is_rpg(&self.seed)
+    }
+
+    pub fn is_sprite(&self) -> bool {
+        sprite::is_sprite(&self.doc) || sprite::is_sprite(&self.seed)
+    }
+
+    pub fn is_fps(&self) -> bool {
+        fps::is_fps(&self.doc) || fps::is_fps(&self.seed)
+    }
+
+    pub fn is_td(&self) -> bool {
+        td::is_td(&self.doc) || td::is_td(&self.seed)
+    }
+
+    pub fn is_race(&self) -> bool {
+        race::is_race(&self.doc) || race::is_race(&self.seed)
+    }
+
+    pub fn is_fight(&self) -> bool {
+        fight::is_fight(&self.doc) || fight::is_fight(&self.seed)
+    }
+
+    pub fn is_novel(&self) -> bool {
+        novel::is_novel(&self.doc) || novel::is_novel(&self.seed)
+    }
+
+    pub fn is_stealth(&self) -> bool {
+        stealth::is_stealth(&self.doc) || stealth::is_stealth(&self.seed)
+    }
+
+    pub fn is_puzzle(&self) -> bool {
+        puzzle::is_puzzle(&self.doc) || puzzle::is_puzzle(&self.seed)
+    }
+
+    pub fn is_sports(&self) -> bool {
+        sports::is_sports(&self.doc) || sports::is_sports(&self.seed)
+    }
+
+    pub fn is_sim(&self) -> bool {
+        sim::is_sim(&self.doc) || sim::is_sim(&self.seed)
+    }
+
+    pub fn is_survival(&self) -> bool {
+        survival::is_survival(&self.doc) || survival::is_survival(&self.seed)
+    }
+
+    pub fn is_rhythm(&self) -> bool {
+        rhythm::is_rhythm(&self.doc) || rhythm::is_rhythm(&self.seed)
+    }
+
+    pub fn is_fish(&self) -> bool {
+        fish::is_fish(&self.doc) || fish::is_fish(&self.seed)
+    }
+
+    pub fn is_shop(&self) -> bool {
+        shop::is_shop(&self.doc) || shop::is_shop(&self.seed)
+    }
+
+    pub fn is_cook(&self) -> bool {
+        cook::is_cook(&self.doc) || cook::is_cook(&self.seed)
     }
 
     /// Mouse / arrow look. Pitch is clamped.
@@ -107,6 +426,17 @@ impl WorldPlay {
             return;
         }
         let input = self.input.clamped();
+        if self.is_action2d() {
+            action2d::tick(&mut self.doc, &mut self.action2d, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.action2d.dead || self.action2d.won {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = self.action2d.kills * 250 + self.action2d.hits * 20;
+            }
+            return;
+        }
         self.step_walker(input, dt);
         self.follow_camera();
         if self.is_action() {
@@ -121,6 +451,188 @@ impl WorldPlay {
             }
             return;
         }
+        if self.is_platformer() {
+            platformer::tick(&mut self.doc, &mut self.platform, &mut self.vy, input, dt);
+            self.follow_camera();
+            self.game.time_s += dt;
+            self.input.jump = false;
+            if self.platform.dead || self.platform.won {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = self.platform.landed * 50;
+            }
+            return;
+        }
+        if self.is_rpg() {
+            rpg::tick(&mut self.doc, &mut self.rpg, input, dt);
+            self.follow_camera();
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            return;
+        }
+        if self.is_fps() {
+            fps::place_eye_camera(&mut self.doc, self.look_yaw, self.look_pitch);
+            fps::tick(
+                &mut self.doc,
+                &mut self.fps,
+                input,
+                self.look_yaw,
+                self.look_pitch,
+                dt,
+            );
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.fps.won {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = self.fps.kills * 250 + self.fps.hits * 20;
+            }
+            return;
+        }
+        if self.is_td() {
+            td::place_overview_camera(&mut self.doc);
+            td::tick(&mut self.doc, &mut self.td, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.td.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = self.td.kills * 250 + self.td.hits * 20;
+            }
+            return;
+        }
+        if self.is_race() {
+            race::tick(&mut self.doc, &mut self.race, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.race.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = self.race.laps * 250;
+            }
+            return;
+        }
+        if self.is_fight() {
+            fight::tick(&mut self.doc, &mut self.fight, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.fight.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = self.fight.hits * 250;
+            }
+            return;
+        }
+        if self.is_novel() {
+            novel::tick(&mut self.doc, &mut self.novel, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.novel.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = if self.novel.choice == 0 { 1 } else { 2 };
+            }
+            return;
+        }
+        if self.is_stealth() {
+            stealth::tick(&mut self.doc, &mut self.stealth, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.stealth.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = if self.stealth.clear { 250 } else { 0 };
+            }
+            return;
+        }
+        if self.is_puzzle() {
+            puzzle::tick(&mut self.doc, &mut self.puzzle, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.puzzle.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = if self.puzzle.solved { 250 } else { 0 };
+            }
+            return;
+        }
+        if self.is_sports() {
+            sports::tick(&mut self.doc, &mut self.sports, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.sports.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = if self.sports.scored { 250 } else { 0 };
+            }
+            return;
+        }
+        if self.is_sim() {
+            sim::tick(&mut self.doc, &mut self.sim, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.sim.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = if self.sim.full { 250 } else { 0 };
+            }
+            return;
+        }
+        if self.is_survival() {
+            survival::tick(&mut self.doc, &mut self.survival, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.survival.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = if self.survival.ok { 250 } else { 0 };
+            }
+            return;
+        }
+        if self.is_rhythm() {
+            rhythm::tick(&mut self.doc, &mut self.rhythm, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.rhythm.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = if self.rhythm.clear { 250 } else { 0 };
+            }
+            return;
+        }
+        if self.is_fish() {
+            fish::tick(&mut self.doc, &mut self.fish, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.fish.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = if self.fish.caught { 250 } else { 0 };
+            }
+            return;
+        }
+        if self.is_shop() {
+            shop::tick(&mut self.doc, &mut self.shop, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.shop.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = if self.shop.bought { 250 } else { 0 };
+            }
+            return;
+        }
+        if self.is_cook() {
+            cook::tick(&mut self.doc, &mut self.cook, input, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.cook.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = if self.cook.cooked { 250 } else { 0 };
+            }
+            return;
+        }
         self.collect_pickups();
         self.game.time_s += dt;
         self.input.jump = false;
@@ -132,8 +644,59 @@ impl WorldPlay {
 
     /// Font-free HUD: title band / star+coin pips / result band.
     pub fn build_hud(&self, width: u32, height: u32) -> DrawList {
+        if self.is_action2d() {
+            return action2d::build_hud(&self.action2d, self.game.phase, width, height);
+        }
         if self.is_action() {
             return action::build_hud(&self.action, self.game.phase, width, height);
+        }
+        if self.is_platformer() {
+            return platformer::build_hud(&self.platform, self.game.phase, width, height);
+        }
+        if self.is_rpg() {
+            return rpg::build_hud(&self.rpg, self.game.phase, width, height);
+        }
+        if self.is_fps() {
+            return fps::build_hud(&self.fps, self.game.phase, width, height);
+        }
+        if self.is_td() {
+            return td::build_hud(&self.td, self.game.phase, width, height);
+        }
+        if self.is_race() {
+            return race::build_hud(&self.race, self.game.phase, width, height);
+        }
+        if self.is_fight() {
+            return fight::build_hud(&self.fight, self.game.phase, width, height);
+        }
+        if self.is_novel() {
+            return novel::build_hud(&self.novel, self.game.phase, width, height);
+        }
+        if self.is_stealth() {
+            return stealth::build_hud(&self.stealth, self.game.phase, width, height);
+        }
+        if self.is_puzzle() {
+            return puzzle::build_hud(&self.puzzle, self.game.phase, width, height);
+        }
+        if self.is_sports() {
+            return sports::build_hud(&self.sports, self.game.phase, width, height);
+        }
+        if self.is_sim() {
+            return sim::build_hud(&self.sim, self.game.phase, width, height);
+        }
+        if self.is_survival() {
+            return survival::build_hud(&self.survival, self.game.phase, width, height);
+        }
+        if self.is_rhythm() {
+            return rhythm::build_hud(&self.rhythm, self.game.phase, width, height);
+        }
+        if self.is_fish() {
+            return fish::build_hud(&self.fish, self.game.phase, width, height);
+        }
+        if self.is_shop() {
+            return shop::build_hud(&self.shop, self.game.phase, width, height);
+        }
+        if self.is_cook() {
+            return cook::build_hud(&self.cook, self.game.phase, width, height);
         }
         let w = width.max(1) as f32;
         let h = height.max(1) as f32;
