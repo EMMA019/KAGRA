@@ -336,3 +336,24 @@ def test_walk_input_from_keys_fire_alias():
     assert walk_input_from_keys(["mouse1"])["attack"] is True
     assert walk_input_from_keys(["j"])["attack"] is True
 
+
+def test_td_lane_fixture_has_path_tower_and_creeps():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/td_lane_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    assert any(p.get("name") == "tower" for p in data["props"])
+    wps = [p for p in data["props"] if p.get("name") == "waypoint"]
+    assert len(wps) >= 3
+    creeps = [p for p in data["props"] if p.get("name") == "creep" and p.get("enabled") is not False]
+    assert len(creeps) >= 2
+    models = {p.get("model") for p in creeps}
+    assert "capsule" in models
+    assert any(p.get("name") == "path" for p in data["props"])
+    assert any(p.get("name") == "floor" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+

@@ -226,6 +226,15 @@ def test_load_fps_range_scenario_is_world_and_offscreen():
 
 
 
+def test_load_td_lane_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/td_lane_smoke.json")
+    assert sc.expect_world
+    assert sc.expect_world["path"].endswith("td_lane_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen
+    assert sc.expect_offscreen["out"].endswith("td_lane_shared.png")
+
+
 def test_png_dimensions_reads_ihdr(tmp_path):
     p = tmp_path / "a.png"
     p.write_bytes(_rgba_png(32, 24))

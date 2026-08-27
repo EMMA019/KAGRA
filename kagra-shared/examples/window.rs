@@ -157,6 +157,10 @@ fn main() -> Result<(), String> {
             "KAGRA Box Hop (shared wgpu 30)"
         } else if play.is_rpg() {
             "KAGRA Town Gate (shared wgpu 30)"
+        } else if play.is_fps() {
+            "KAGRA FPS Range (shared wgpu 30)"
+        } else if play.is_td() {
+            "KAGRA TD Lane (shared wgpu 30)"
         } else if play.is_sprite() {
             "KAGRA Sprite Card (shared wgpu 30)"
         } else {
@@ -280,6 +284,7 @@ fn main() -> Result<(), String> {
                         && play.game.is_playing()
                         && input.lz.abs() < 1e-4
                         && input.lx.abs() < 1e-4
+                        && !play.is_td()
                     {
                         input.lz = 1.0;
                     }

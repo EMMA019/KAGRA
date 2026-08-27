@@ -17,6 +17,7 @@ use crate::platformer::{self, PlatformGame};
 use crate::rpg::{self, RpgGame};
 use crate::scene::{DrawList, Quad};
 use crate::sprite;
+use crate::td::{self, TdGame};
 use crate::world_doc::{WorldDoc, WorldProp, WorldWalker};
 use glam::Vec3;
 
@@ -33,6 +34,7 @@ pub struct WorldPlay {
     pub platform: PlatformGame,
     pub rpg: RpgGame,
     pub fps: FpsGame,
+    pub td: TdGame,
     seed: WorldDoc,
     vy: f32,
 }
@@ -45,20 +47,26 @@ impl WorldPlay {
         platformer::seed(&mut doc);
         rpg::seed(&mut doc);
         fps::seed(&mut doc);
+        td::seed(&mut doc);
         refresh_coin_count(&mut doc);
         let look_yaw = look_yaw_from_doc(&doc);
         let action = ActionGame::from_doc(&doc);
         let platform = PlatformGame::from_doc(&doc);
         let rpg_game = RpgGame::from_doc(&doc);
         let fps_game = FpsGame::from_doc(&doc);
+        let td_game = TdGame::from_doc(&doc);
         if fps::is_fps(&doc) {
             fps::place_eye_camera(&mut doc, look_yaw, 0.0);
+        }
+        if td::is_td(&doc) {
+            td::place_overview_camera(&mut doc);
         }
         let game = if is_collectathon(&doc)
             || action::is_action(&doc)
             || platformer::is_platformer(&doc)
             || rpg::is_rpg(&doc)
             || fps::is_fps(&doc)
+            || td::is_td(&doc)
         {
             IsleGame::default()
         } else {
@@ -77,6 +85,7 @@ impl WorldPlay {
             platform,
             rpg: rpg_game,
             fps: fps_game,
+            td: td_game,
             vy: 0.0,
         }
     }
@@ -112,8 +121,12 @@ impl WorldPlay {
         }
         self.rpg = RpgGame::from_doc(&self.doc);
         self.fps = FpsGame::from_doc(&self.doc);
+        self.td = TdGame::from_doc(&self.doc);
         if fps::is_fps(&self.doc) {
             fps::place_eye_camera(&mut self.doc, self.look_yaw, self.look_pitch);
+        }
+        if td::is_td(&self.doc) {
+            td::place_overview_camera(&mut self.doc);
         }
         refresh_coin_count(&mut self.doc);
     }
@@ -140,6 +153,10 @@ impl WorldPlay {
 
     pub fn is_fps(&self) -> bool {
         fps::is_fps(&self.doc) || fps::is_fps(&self.seed)
+    }
+
+    pub fn is_td(&self) -> bool {
+        td::is_td(&self.doc) || td::is_td(&self.seed)
     }
 
     /// Mouse / arrow look. Pitch is clamped.
@@ -210,6 +227,18 @@ impl WorldPlay {
             }
             return;
         }
+        if self.is_td() {
+            td::place_overview_camera(&mut self.doc);
+            td::tick(&mut self.doc, &mut self.td, dt);
+            self.game.time_s += dt;
+            self.input.jump = false;
+            self.input.attack = false;
+            if self.td.done {
+                self.game.phase = GamePhase::Complete;
+                self.game.score = self.td.kills * 250 + self.td.hits * 20;
+            }
+            return;
+        }
         self.collect_pickups();
         self.game.time_s += dt;
         self.input.jump = false;
@@ -232,6 +261,9 @@ impl WorldPlay {
         }
         if self.is_fps() {
             return fps::build_hud(&self.fps, self.game.phase, width, height);
+        }
+        if self.is_td() {
+            return td::build_hud(&self.td, self.game.phase, width, height);
         }
         let w = width.max(1) as f32;
         let h = height.max(1) as f32;

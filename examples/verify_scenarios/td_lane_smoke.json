@@ -1,0 +1,24 @@
+{
+  "name": "td_lane_smoke",
+  "notes": "M3 TD slice 1 on shared wgpu 30. Title -> play -> result (path walk, spawn, tower hit, leak/clear) lives in WorldPlay / python -m kagra.play_world. Capsule/box creeps, box path + tower. Indoor lights 4 slots. No RendererV2, no VRM, no Rapier, no player-placed towers. World assertions + dump query (not golden pixels).",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/td_lane_world.json",
+    "player.on_ground": true,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "prop", "name": "tower", "count": 1},
+      {"type": "prop", "name": "waypoint", "min_count": 3},
+      {"type": "prop", "name": "creep", "min_count": 2},
+      {"type": "prop", "name": "path", "min_count": 1},
+      {"type": "prop", "name": "floor", "count": 1},
+      {"type": "light", "count": 4}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/td_lane_world.json",
+    "out": "scratch/td_lane_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

@@ -28,6 +28,7 @@ pub mod scene;
 pub mod scene3d;
 pub mod session;
 pub mod sprite;
+pub mod td;
 pub mod traffic;
 pub mod ui;
 pub mod vehicle;
