@@ -34,6 +34,9 @@ struct Globals {
     fog_color: [f32; 4],
     fog_range: [f32; 4],
     camera_pos: [f32; 4],
+    light_pos: [[f32; 4]; 4],
+    light_col: [[f32; 4]; 4],
+    light_dir: [[f32; 4]; 4],
 }
 
 /// インスタンスごとの頂点属性（location 2..7）。
@@ -681,6 +684,29 @@ impl Renderer {
 
     fn upload_globals(&self, scene: &Scene3D) {
         let cam = &scene.camera;
+        let mut light_pos = [[0.0f32; 4]; 4];
+        let mut light_col = [[0.0f32; 4]; 4];
+        let mut light_dir = [[0.0f32; 4]; 4];
+        for (i, lit) in scene.local_lights.iter().enumerate() {
+            light_pos[i] = [
+                lit.position.x,
+                lit.position.y,
+                lit.position.z,
+                lit.intensity.max(0.0),
+            ];
+            light_col[i] = [
+                lit.color[0],
+                lit.color[1],
+                lit.color[2],
+                lit.radius.max(0.0),
+            ];
+            light_dir[i] = [
+                lit.direction.x,
+                lit.direction.y,
+                lit.direction.z,
+                if lit.spot { 1.0 } else { 0.0 },
+            ];
+        }
         let g = Globals {
             view_proj: cam.view_projection(self.aspect()).to_cols_array_2d(),
             light: [
@@ -692,6 +718,9 @@ impl Renderer {
             fog_color: to_linear(scene.fog_color, self.format),
             fog_range: [scene.fog_start, scene.fog_end, 0.0, 0.0],
             camera_pos: [cam.eye.x, cam.eye.y, cam.eye.z, 0.0],
+            light_pos,
+            light_col,
+            light_dir,
         };
         self.queue
             .write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&g));

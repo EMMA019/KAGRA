@@ -1,0 +1,24 @@
+{
+  "name": "collectathon_smoke",
+  "notes": "First M3 genre close: Crest collectathon on shared wgpu 30. Title → play → result lives in WorldPlay / python -m kagra.play_world. No RendererV2, no VRM, no Rapier. World assertions + shared offscreen (not golden pixels).",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/crest_isle_world.json",
+    "player.on_ground": true,
+    "coins": 1,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "prop", "name": "coin", "min_count": 1},
+      {"type": "prop", "name": "crate", "count": 1},
+      {"type": "terrain_tile", "min_count": 1, "loaded": true},
+      {"type": "terrain_tile", "albedo_ok": true, "all": true, "require_any": true},
+      {"type": "light", "min_count": 1}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/crest_isle_world.json",
+    "out": "scratch/collectathon_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

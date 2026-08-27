@@ -10,7 +10,7 @@ python examples/vrm_switch_room.py       # boxed room + camera follow
 python examples/vrm_dodge_room.py        # falling boxes, survive (agent-run log)
 python examples/vrm_relic_run.py          # island relic collect 30s
 python examples/vrm_open_world.py         # leftover VRM Crest (RendererV2)
-python -m kagra.play_world                # official Crest play: wgpu 30 window, capsule, WASD
+python -m kagra.play_world                # official Crest collectathon: wgpu 30 window, title→play→result
 python examples/vrm_vrma.py
 python examples/vrm_stream.py
 python examples/desktop_mascot.py

@@ -1,6 +1,6 @@
 // 3D: インスタンス化したメッシュ + 方向光 + 距離フォグ + 手続きテクスチャ。
 //
-// マテリアルはインスタンス属性の material（0=solid, 1=road, 2=grass, 3=sky）。
+// マテリアルはインスタンス属性の material（0=solid, 1=road, 2=grass, 3=sky, 4=metal）。
 // テクスチャファイルは持たず、ワールド XZ のノイズで路面と草を出す。
 
 struct Globals {
@@ -12,6 +12,11 @@ struct Globals {
     // x = 効き始める距離、y = 覆いきる距離
     fog_range: vec4<f32>,
     camera_pos: vec4<f32>,
+    // slot 0..3 の局所光。xyz + w=intensity / rgb + w=radius / xyz dir + w=spot。
+    // 強度 0 は未使用（スロット漏れなし）。
+    light_pos: array<vec4<f32>, 4>,
+    light_col: array<vec4<f32>, 4>,
+    light_dir: array<vec4<f32>, 4>,
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;
@@ -76,6 +81,47 @@ fn fbm(p: vec2<f32>) -> f32 {
     return v;
 }
 
+fn ggx_d(ndoth: f32, rough: f32) -> f32 {
+    let a = max(rough * rough, 0.002);
+    let a2 = a * a;
+    let d = ndoth * ndoth * (a2 - 1.0) + 1.0;
+    return a2 / max(3.14159265 * d * d, 1e-6);
+}
+
+fn smith_g(ndotv: f32, ndotl: f32, rough: f32) -> f32 {
+    let k = max(rough * rough, 0.002) * 0.5;
+    let gv = ndotv / max(ndotv * (1.0 - k) + k, 1e-5);
+    let gl = ndotl / max(ndotl * (1.0 - k) + k, 1e-5);
+    return gv * gl;
+}
+
+fn light_one(n: vec3<f32>, world: vec3<f32>, i: i32) -> vec3<f32> {
+    let pos_i = g.light_pos[i];
+    if (pos_i.w <= 1e-5) {
+        return vec3<f32>(0.0);
+    }
+    let col_r = g.light_col[i];
+    let dir_s = g.light_dir[i];
+    let to_l = pos_i.xyz - world;
+    let dist = length(to_l);
+    let ldir = to_l / max(dist, 1e-4);
+    let rad = max(col_r.w, 0.5);
+    let atten = pos_i.w / (1.0 + (dist * dist) / (rad * rad));
+    var cone = 1.0;
+    if (dir_s.w > 0.5) {
+        let d = normalize(dir_s.xyz);
+        cone = pow(max(dot(ldir, -d), 0.0), 6.0);
+    }
+    return col_r.rgb * max(dot(n, ldir), 0.0) * atten * cone;
+}
+
+fn local_lit(n: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
+    return light_one(n, world, 0)
+        + light_one(n, world, 1)
+        + light_one(n, world, 2)
+        + light_one(n, world, 3);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let mat_id = i32(in.material + 0.5);
@@ -93,20 +139,49 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var albedo = in.color.rgb;
     if (mat_id == 1) {
         // アスファルト: 細かいノイズ + 薄い轍。
-        let n = fbm(in.world.xz * 0.35);
+        let gn = fbm(in.world.xz * 0.35);
         let grooves = smoothstep(0.45, 0.55, abs(fract(in.world.x * 0.12) - 0.5));
-        albedo *= (0.78 + 0.28 * n) * (1.0 - 0.08 * grooves);
+        albedo *= (0.78 + 0.28 * gn) * (1.0 - 0.08 * grooves);
     } else if (mat_id == 2) {
-        // 草地: まだらな緑。
-        let n = fbm(in.world.xz * 0.18);
-        albedo *= (0.75 + 0.4 * n);
-        albedo = mix(albedo, albedo * vec3<f32>(0.85, 1.05, 0.8), n);
+        // 草地: まだらな緑。高さで磯／岩に混ぜ、平面のハゲ緑にしない。
+        let gn = fbm(in.world.xz * 0.18);
+        albedo *= (0.75 + 0.4 * gn);
+        albedo = mix(albedo, albedo * vec3<f32>(0.85, 1.05, 0.8), gn);
+        let hy = in.world.y;
+        if (hy < 0.12) {
+            let shore = vec3<f32>(0.42, 0.40, 0.30);
+            albedo = mix(shore, albedo, clamp((hy + 0.25) / 0.40, 0.0, 1.0));
+        } else if (hy > 2.2) {
+            let rock = vec3<f32>(0.40, 0.36, 0.32);
+            albedo = mix(albedo, rock, clamp((hy - 2.2) / 6.0, 0.0, 0.85));
+        }
     }
 
     let n = normalize(in.normal);
-    let ndl = max(dot(n, normalize(g.light.xyz)), 0.0);
+    let ldir = normalize(g.light.xyz);
+    let ndl = max(dot(n, ldir), 0.0);
     let ambient = g.light.w;
-    let lit = albedo * (ambient + (1.0 - ambient) * ndl);
+    var lit: vec3<f32>;
+    if (mat_id == 4) {
+        // 金属コイン: 既存 GGX（RendererV2 と同じ式）。第二レンダラではない。
+        let v = normalize(g.camera_pos.xyz - in.world);
+        let h = normalize(v + ldir);
+        let ndotl = ndl;
+        let ndotv = max(dot(n, v), 0.0);
+        let ndoth = max(dot(n, h), 0.0);
+        let vdoth = max(dot(v, h), 0.0);
+        let metallic = 1.0;
+        let rough = 0.12;
+        let f0 = mix(vec3<f32>(0.04), albedo, metallic);
+        let f = f0 + (1.0 - f0) * pow(1.0 - vdoth, 5.0);
+        let spec = ggx_d(ndoth, rough) * smith_g(ndotv, ndotl, rough) * f
+            / max(4.0 * ndotv * ndotl, 1e-4);
+        let kd = (vec3<f32>(1.0) - f) * (1.0 - metallic);
+        lit = (kd * albedo + spec) * ndotl + albedo * ambient * 0.22;
+    } else {
+        lit = albedo * (ambient + (1.0 - ambient) * ndl);
+    }
+    lit += albedo * local_lit(n, in.world);
 
     let dist = length(in.world - g.camera_pos.xyz);
     let span = max(g.fog_range.y - g.fog_range.x, 1e-3);

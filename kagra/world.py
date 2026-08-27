@@ -174,6 +174,8 @@ def _prop_rows(world: World3D) -> list[dict[str, Any]]:
                 "enabled": bool(p.enabled),
                 "parent": parent_id,
                 "color": [int(c) for c in (p.color or (255, 255, 255))[:3]],
+                "metallic": float(getattr(p, "metallic", 0.0) or 0.0),
+                "roughness": float(getattr(p, "roughness", 1.0) if getattr(p, "roughness", None) is not None else 1.0),
             }
         )
     return rows
@@ -602,6 +604,8 @@ def _load_props(world: World3D, recs: list[dict]) -> None:
                 world=world,
                 yaw=float(rec.get("yaw") or 0.0),
                 name=str(rec.get("name") or ""),
+                metallic=rec.get("metallic"),
+                roughness=rec.get("roughness"),
             )
         except Exception:
             continue

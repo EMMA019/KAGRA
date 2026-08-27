@@ -21,7 +21,7 @@ description: >-
 python tools/gen_api_index.py
 python -m kagra.verify examples/verify_scenarios/blank_smoke.json
 python -m kagra.render_world dump.json out.png   # shared wgpu 30; skips if no helper
-python -m kagra.play_world dump.json             # shared wgpu 30 window; WASD; skips if no display
+python -m kagra.play_world dump.json             # shared wgpu 30; collectathon title→play→result; skips if no display
 python tools/mcp_kagra/server.py   # MCP stdio
 ```
 
@@ -55,11 +55,12 @@ Slope sit is a tight foot AABB + 8-point ring + snap-to-plane; still no Rapier. 
 Pointer lock follows first person (OS may refuse). USB pad is gilrs on the
 EventLoop (`inject_pad` still wins for CI).
 
-Engine bar is in `docs/ROADMAP.ja.md` (2026-08-26). **100%** = an AI agent
+Engine bar is in `docs/ROADMAP.ja.md` (2026-08-27). **100%** = an AI agent
 ships a normal indie 2D/3D game with no human screen. **80%** = that minus
 net, destruction, cloth, vehicles, GI bake, DOTS, HDRP, human editor,
 Shader Graph, Visual Scripting, Addressables, Terrain sculpt, ProBuilder,
-Cinemachine, PhysX-complete, VRM-on-Wasm. **Now ~15%.** Mountains in order:
+Cinemachine, PhysX-complete, VRM-on-Wasm. **Now ~40%.** M0–M2 closed.
+Closed genre: collectathon. Mountains in order:
 signboard (tiles, #97) → world as data (`World.query` / `dump` / `load`) →
 one runtime → game-enough → ship. Old "63%" is archived; do not copy it.
 Official public names: `World` / `Prop` / `Walk` / mesh-or-avatar / Camera /

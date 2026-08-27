@@ -180,6 +180,27 @@ def test_eval_world_expect_player_coins_query():
     assert any("on_ground" in e for e in bad)
 
 
+def test_eval_collectathon_fixture_coins_ground_tiles():
+    data = json.loads(CREST_FIXTURE.read_text(encoding="utf-8"))
+    errors = world_mod.eval_world_expect(
+        data,
+        {
+            "player.on_ground": True,
+            "coins": 1,
+            "query": [
+                {"type": "walker", "name": "player", "count": 1},
+                {"type": "prop", "name": "coin", "min_count": 1},
+                {"type": "terrain_tile", "min_count": 1, "loaded": True},
+                {"type": "terrain_tile", "albedo_ok": True, "all": True, "require_any": True},
+            ],
+        },
+    )
+    assert errors == []
+    coin = next(p for p in data["props"] if p.get("name") == "coin")
+    assert coin.get("metallic") == 1.0
+    assert {int(lit["slot"]) for lit in data["lights"]} >= {0, 1, 2}
+
+
 class _Cam:
     def __init__(self, rec):
         pos = rec["position"]

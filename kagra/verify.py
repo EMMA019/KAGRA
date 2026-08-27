@@ -252,12 +252,36 @@ def run_scenario(scenario: Scenario, *, python: str | None = None) -> VerifyResu
                     Expectation(path=str(scenario.inline["out"]), min_bytes=200)
                 )
             cmd = [py, str(tmp_script)]
+        elif scenario.expect_world or scenario.expect_offscreen:
+            t0 = time.perf_counter()
+            world_errors = _eval_expect_world(scenario.expect_world, cwd)
+            if world_errors:
+                offscreen_errors, offscreen_skipped = [], None
+            else:
+                offscreen_errors, offscreen_skipped = _eval_expect_offscreen(
+                    scenario.expect_offscreen, scenario.expect_world, cwd
+                )
+            ok = not world_errors and not offscreen_errors
+            return VerifyResult(
+                ok=ok,
+                name=scenario.name,
+                elapsed_sec=time.perf_counter() - t0,
+                world_errors=world_errors,
+                offscreen_errors=offscreen_errors,
+                offscreen_skipped=offscreen_skipped,
+                error=None
+                if ok
+                else (
+                    (f"world={world_errors}" if world_errors else "")
+                    + (f"; offscreen={offscreen_errors}" if offscreen_errors else "")
+                ).strip("; "),
+            )
         else:
             return VerifyResult(
                 ok=False,
                 name=scenario.name,
                 elapsed_sec=0.0,
-                error="scenario needs 'script' or 'inline'",
+                error="scenario needs 'script', 'inline', or expect_world/expect_offscreen",
             )
 
         t0 = time.perf_counter()
