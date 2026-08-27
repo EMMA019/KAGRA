@@ -95,9 +95,11 @@ fn apply_key(keys: &mut Keys, key: &Key, physical: &PhysicalKey, down: bool) {
             KeyCode::ArrowDown => keys.down = down,
             KeyCode::Space => keys.jump = down,
             KeyCode::KeyJ | KeyCode::KeyZ | KeyCode::KeyF => keys.attack = down,
-            KeyCode::ShiftLeft | KeyCode::ShiftRight | KeyCode::KeyC | KeyCode::ControlLeft => {
-                keys.dodge = down
-            }
+            KeyCode::ShiftLeft
+            | KeyCode::ShiftRight
+            | KeyCode::KeyC
+            | KeyCode::KeyR
+            | KeyCode::ControlLeft => keys.dodge = down,
             _ => {}
         }
     }
@@ -121,7 +123,7 @@ fn apply_key(keys: &mut Keys, key: &Key, physical: &PhysicalKey, down: bool) {
                 || c.eq_ignore_ascii_case("f")
             {
                 keys.attack = down;
-            } else if c.eq_ignore_ascii_case("c") {
+            } else if c.eq_ignore_ascii_case("c") || c.eq_ignore_ascii_case("r") {
                 keys.dodge = down;
             }
         }
@@ -467,7 +469,7 @@ fn print_help() {
          cargo run -p kagra-shared --features render --example window -- [dump.json] \\\n\
              [--width 960] [--height 540] [--seconds N]\n\
          \n\
-         WASD walk, mouse / arrows look, click/J attack/fire, Shift/C dodge, Space jump, Esc / Q / close.\n\
+         WASD walk, mouse / arrows look, click/J attack/fire, R reload (FPS), Shift/C dodge, Space jump, Esc / Q / close.\n\
          Space / Enter / click starts from the title or result.\n\
          Default dump is the Crest Isle collectathon. --seconds starts, walks, then exits.\n\
          No display → error containing \"no display\" (Python skips)."

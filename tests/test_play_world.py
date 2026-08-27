@@ -335,6 +335,8 @@ def test_walk_input_from_keys_fire_alias():
     assert walk_input_from_keys(["fire"])["attack"] is True
     assert walk_input_from_keys(["mouse1"])["attack"] is True
     assert walk_input_from_keys(["j"])["attack"] is True
+    assert walk_input_from_keys(["r"])["dodge"] is True
+    assert walk_input_from_keys(["reload"])["dodge"] is True
 
 
 def test_td_lane_fixture_has_path_tower_and_creeps():

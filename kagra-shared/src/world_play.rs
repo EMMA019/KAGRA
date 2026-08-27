@@ -107,6 +107,9 @@ impl WorldPlay {
         if cook::is_cook(&doc) {
             doc.coins = 0;
         }
+        if fps::is_fps(&doc) {
+            doc.coins = fps::MAG;
+        }
         let look_yaw = look_yaw_from_doc(&doc);
         let action = ActionGame::from_doc(&doc);
         let action2d_game = Action2dGame::from_doc(&doc);
@@ -336,6 +339,9 @@ impl WorldPlay {
         if cook::is_cook(&self.doc) {
             self.doc.coins = 0;
         }
+        if fps::is_fps(&self.doc) {
+            self.doc.coins = fps::MAG;
+        }
     }
 
     pub fn is_collectathon(&self) -> bool {
@@ -502,6 +508,7 @@ impl WorldPlay {
             self.game.time_s += dt;
             self.input.jump = false;
             self.input.attack = false;
+            self.input.dodge = false;
             if self.fps.won {
                 self.game.phase = GamePhase::Complete;
                 self.game.score = self.fps.kills * 250 + self.fps.hits * 20;

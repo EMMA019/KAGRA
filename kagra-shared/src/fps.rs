@@ -1,10 +1,12 @@
-//! FPS on play_world: first-person eye camera, look, fire, hit.
+//! FPS on play_world: first-person eye camera, look, fire, hit, ammo, reload.
 //!
 //! Sibling of collectathon / action. Hitscan (click or J) vs capsule / sprite
 //! targets on a World.dump. Camera sits at capsule eye; the body stays in the
 //! dump (local mesh hidden so the near plane does not clip a white interior).
-//! Title -> play -> result reuses `WorldPlay` / `GamePhase`. Muzzle and hit
-//! flash are `DrawList` quads on shared wgpu 30. No recoil, inventory, net,
+//! Mag count is dump `coins`. Fire spends a round; empty click is dump-visible
+//! `empty` and does not hitscan. R (`WalkInput.dodge`) reloads after a short
+//! delay. Title -> play -> result reuses `WorldPlay` / `GamePhase`. Muzzle and
+//! hit flash are `DrawList` quads on shared wgpu 30. No recoil, inventory, net,
 //! Rapier, VRM skin, RendererV2, or new ECS.
 
 use crate::collectathon::WalkInput;
@@ -19,6 +21,8 @@ pub const TARGET_HP: u32 = 2;
 pub const FIRE_TIME: f32 = 0.16;
 pub const HIT_FLASH: f32 = 0.18;
 pub const MUZZLE_FLASH: f32 = 0.10;
+pub const MAG: u32 = 6;
+pub const RELOAD_TIME: f32 = 0.70;
 pub const RANGE: f32 = 48.0;
 pub const EYE_Y: f32 = 0.55;
 pub const BODY_H: f32 = 0.95;
@@ -30,9 +34,11 @@ pub const CAPSULE_R: f32 = 0.50;
 pub struct FpsGame {
     pub hits: u32,
     pub kills: u32,
+    pub ammo: u32,
     pub fire_t: f32,
     pub flash_t: f32,
     pub muzzle_t: f32,
+    pub reload_t: f32,
     pub hurt_flash: bool,
     pub won: bool,
     target_hp: HashMap<String, u32>,
@@ -43,9 +49,11 @@ impl Default for FpsGame {
         Self {
             hits: 0,
             kills: 0,
+            ammo: MAG,
             fire_t: 0.0,
             flash_t: 0.0,
             muzzle_t: 0.0,
+            reload_t: 0.0,
             hurt_flash: false,
             won: false,
             target_hp: HashMap::new(),
@@ -144,6 +152,7 @@ pub fn seed(doc: &mut WorldDoc) {
     if !is_fps(doc) {
         return;
     }
+    doc.coins = MAG;
     let mut ys = Vec::new();
     for (i, p) in doc.props.iter().enumerate() {
         if !is_target(p) || !p.enabled {
@@ -179,12 +188,21 @@ pub fn tick(
     game.fire_t = (game.fire_t - dt).max(0.0);
     game.flash_t = (game.flash_t - dt).max(0.0);
     game.muzzle_t = (game.muzzle_t - dt).max(0.0);
-    if game.flash_t <= 0.0 && game.muzzle_t <= 0.0 {
-        set_player_name(doc, "player");
+    let was_reloading = game.reload_t > 0.0;
+    game.reload_t = (game.reload_t - dt).max(0.0);
+    if was_reloading && game.reload_t <= 0.0 {
+        game.ammo = MAG;
+    }
+    if game.reload_t > 0.0 {
+        set_player_name(doc, "reload");
+    } else if game.flash_t <= 0.0 && game.muzzle_t <= 0.0 {
+        set_player_name(doc, if game.ammo == 0 { "empty" } else { "player" });
         game.hurt_flash = false;
     }
 
+    apply_reload(doc, game, input);
     apply_fire(doc, game, input, look_yaw, look_pitch);
+    doc.coins = game.ammo;
 
     if live_targets(doc) == 0 {
         game.won = true;
@@ -273,6 +291,14 @@ fn ray_hit_t(origin: Vec3, dir: Vec3, center: Vec3, radius: f32, half_h: f32) ->
     Some(t)
 }
 
+fn apply_reload(doc: &mut WorldDoc, game: &mut FpsGame, input: WalkInput) {
+    if !input.dodge || game.reload_t > 0.0 || game.ammo >= MAG {
+        return;
+    }
+    game.reload_t = RELOAD_TIME;
+    set_player_name(doc, "reload");
+}
+
 fn apply_fire(
     doc: &mut WorldDoc,
     game: &mut FpsGame,
@@ -280,9 +306,15 @@ fn apply_fire(
     look_yaw: f32,
     look_pitch: f32,
 ) {
-    if !(input.attack && game.fire_t <= 0.0) {
+    if !(input.attack && game.fire_t <= 0.0 && game.reload_t <= 0.0) {
         return;
     }
+    if game.ammo == 0 {
+        game.fire_t = FIRE_TIME;
+        set_player_name(doc, "empty");
+        return;
+    }
+    game.ammo = game.ammo.saturating_sub(1);
     game.fire_t = FIRE_TIME;
     game.muzzle_t = MUZZLE_FLASH;
     set_player_name(doc, "fire");
@@ -356,6 +388,33 @@ pub fn build_hud(game: &FpsGame, phase: GamePhase, width: u32, height: u32) -> D
                     pip,
                     pip,
                     [240, 196, 72, 255],
+                ));
+            }
+            // Mag pips: dump `coins` is the same count.
+            let mag_w = 8.0 * scale;
+            let mag_h = 16.0 * scale;
+            for i in 0..MAG {
+                let filled = i < game.ammo;
+                quads.push(Quad::new(
+                    pad + i as f32 * (mag_w + gap),
+                    h - pad - mag_h,
+                    mag_w,
+                    mag_h,
+                    if filled {
+                        [240, 220, 90, 255]
+                    } else {
+                        [36, 32, 24, 180]
+                    },
+                ));
+            }
+            if game.reload_t > 0.0 {
+                let frac = (game.reload_t / RELOAD_TIME).clamp(0.0, 1.0);
+                quads.push(Quad::new(
+                    pad,
+                    h - pad - mag_h - 8.0 * scale,
+                    (mag_w + gap) * MAG as f32 * frac,
+                    4.0 * scale,
+                    [180, 180, 190, 220],
                 ));
             }
             // Crosshair: look is already mouse/arrows; fire lands on this overlay.
@@ -474,6 +533,9 @@ mod tests {
         let json = doc.to_json().unwrap();
         assert!(json.contains("target"));
         assert!(json.contains("walker:player"));
+        let play = WorldPlay::from_json(RANGE_JSON).unwrap();
+        assert_eq!(play.doc.coins, MAG, "mag must be dump-visible");
+        assert_eq!(play.fps.ammo, MAG);
     }
 
     #[test]
@@ -601,6 +663,8 @@ mod tests {
         assert_eq!(play.game.phase, GamePhase::Playing);
         assert!(!play.fps.won);
         assert_eq!(play.fps.hits, 0);
+        assert_eq!(play.fps.ammo, MAG);
+        assert_eq!(play.doc.coins, MAG);
         assert_eq!(play.doc.player.as_ref().unwrap().name, "player");
         let live = play
             .doc
@@ -699,6 +763,105 @@ mod tests {
         assert!(
             play.fps.hits >= 1,
             "hitscan from eye forward, hits {}",
+            play.fps.hits
+        );
+    }
+
+    #[test]
+    fn fire_spends_a_round_in_the_dump() {
+        let mut play = play_started();
+        assert_eq!(play.doc.coins, MAG);
+        assert_eq!(play.fps.ammo, MAG);
+        put_player(&mut play, 0.0, 0.0, 0.0);
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
+        assert_eq!(play.fps.ammo, MAG - 1);
+        assert_eq!(play.doc.coins, MAG - 1, "ammo must be dump-visible coins");
+        assert!(play.fps.hits >= 1);
+        let hud = play.build_hud(960, 540);
+        assert!(
+            hud.quads.len() as u32 >= MAG + 2,
+            "crosshair + mag pips, n={}",
+            hud.quads.len()
+        );
+    }
+
+    #[test]
+    fn empty_click_does_not_kill() {
+        let mut play = play_started();
+        put_player(&mut play, 0.0, 0.0, 0.0);
+        for _ in 0..MAG {
+            play.input.attack = true;
+            play.tick(1.0 / 60.0);
+            for _ in 0..20 {
+                play.input.attack = false;
+                play.tick(1.0 / 60.0);
+            }
+        }
+        assert_eq!(play.fps.ammo, 0);
+        assert_eq!(play.doc.coins, 0);
+        let sprite_id = play
+            .doc
+            .props
+            .iter()
+            .find(|p| is_target(p) && is_sprite_target(p) && p.enabled)
+            .expect("sprite still live after draining at the +Z capsule")
+            .id
+            .clone();
+        let (x, z) = {
+            let p = play.doc.props.iter().find(|p| p.id == sprite_id).unwrap();
+            (p.position[0], p.position[2])
+        };
+        put_player(&mut play, 0.0, 0.0, x.atan2(z));
+        let hits = play.fps.hits;
+        let kills = play.fps.kills;
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
+        assert_eq!(play.fps.ammo, 0);
+        assert_eq!(play.fps.hits, hits, "empty click must not hitscan");
+        assert_eq!(play.fps.kills, kills);
+        assert!(
+            play.doc
+                .props
+                .iter()
+                .find(|p| p.id == sprite_id)
+                .unwrap()
+                .enabled,
+            "empty click must not kill"
+        );
+        assert_eq!(play.doc.player.as_ref().unwrap().name, "empty");
+        let dump = play.doc.to_json().unwrap();
+        assert!(dump.contains("empty"), "empty must be dump-visible");
+        assert_eq!(play.doc.coins, 0);
+    }
+
+    #[test]
+    fn reload_r_restores_ammo() {
+        let mut play = play_started();
+        put_player(&mut play, 0.0, 0.0, 0.0);
+        play.fps.ammo = 0;
+        play.doc.coins = 0;
+        play.input.dodge = true;
+        play.tick(1.0 / 60.0);
+        assert!(play.fps.reload_t > 0.0);
+        assert_eq!(play.doc.player.as_ref().unwrap().name, "reload");
+        let dump = play.doc.to_json().unwrap();
+        assert!(dump.contains("reload"), "reload must be dump-visible");
+        assert_eq!(play.fps.ammo, 0, "mag fills when the delay ends");
+        let steps = (RELOAD_TIME * 60.0).ceil() as u32 + 2;
+        for _ in 0..steps {
+            play.input.dodge = false;
+            play.tick(1.0 / 60.0);
+        }
+        assert!(play.fps.reload_t <= 0.0);
+        assert_eq!(play.fps.ammo, MAG);
+        assert_eq!(play.doc.coins, MAG);
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
+        assert_eq!(play.fps.ammo, MAG - 1);
+        assert!(
+            play.fps.hits >= 1,
+            "after reload, fire must hitscan, hits {}",
             play.fps.hits
         );
     }

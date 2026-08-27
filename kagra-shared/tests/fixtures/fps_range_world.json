@@ -4,7 +4,7 @@
   "floor_y": 0.0,
   "gravity": 9.8,
   "water_y": null,
-  "coins": 0,
+  "coins": 6,
   "player": {
     "id": "walker:player",
     "type": "walker",
