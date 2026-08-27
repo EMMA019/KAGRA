@@ -25,6 +25,7 @@ once_cell = "1.19"
 # 外に置く。どちらも純粋な計算で wasm でも動く。
 glam = { version = "0.33", default-features = false, features = ["std"] }
 bytemuck = { version = "1", features = ["derive"] }
+png = "0.17"
 
 # kagra-core（0.19）とは独立に現行世代を使う。古い wgpu の WebGPU バックエンドは
 # 今のブラウザが外した limit（maxInterStageShaderComponents）を要求して
@@ -62,7 +63,6 @@ web-sys = { version = "0.3", optional = true, features = [
 wgpu = { version = "30", optional = true, features = ["webgpu", "webgl"] }
 
 [dev-dependencies]
-png = "0.17"
 pollster = "0.3"
 
 # Desktop WorldDoc window only (example `window`). Same winit 0.29 *line* as

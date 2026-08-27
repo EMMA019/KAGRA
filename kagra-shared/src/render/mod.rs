@@ -54,6 +54,8 @@ struct GpuMesh {
     vbuf: wgpu::Buffer,
     ibuf: wgpu::Buffer,
     index_count: u32,
+    albedo_bind: Option<wgpu::BindGroup>,
+    _albedo_tex: Option<wgpu::Texture>,
 }
 
 #[derive(Debug)]
@@ -91,6 +93,10 @@ pub struct Renderer {
     inst_buf: wgpu::Buffer,
     inst_capacity: usize,
     meshes: Vec<GpuMesh>,
+    albedo_layout: wgpu::BindGroupLayout,
+    albedo_sampler: wgpu::Sampler,
+    default_albedo_bind: wgpu::BindGroup,
+    _white_albedo: wgpu::Texture,
 }
 
 impl Renderer {
@@ -304,15 +310,63 @@ impl Renderer {
             }],
         });
 
+        let albedo_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("kagra-shared albedo layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let albedo_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("kagra-shared albedo sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            ..Default::default()
+        });
+        let white_albedo = create_albedo_texture(&device, &queue, 1, 1, &[255, 255, 255, 255]);
+        let white_view = white_albedo.create_view(&Default::default());
+        let default_albedo_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("kagra-shared default albedo"),
+            layout: &albedo_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&white_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&albedo_sampler),
+                },
+            ],
+        });
+
         let layout3d = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("kagra-shared 3d layout"),
-            bind_group_layouts: &[Some(&globals_layout)],
+            bind_group_layouts: &[Some(&globals_layout), Some(&albedo_layout)],
             immediate_size: 0,
         });
 
         // vertex_attr_array! の一時配列を名前付きに固定しないと、layout の
         // attributes 参照が文の終わりで死ぬ。
-        let mesh_attrs = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+        // UV is location 8 so instance locations 2..7 stay put (WebGL2 / no base_instance).
+        let mesh_attrs = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 8 => Float32x2];
         let inst_attrs = wgpu::vertex_attr_array![
             2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4,
             6 => Float32x4, 7 => Float32
@@ -422,6 +476,10 @@ impl Renderer {
             inst_buf,
             inst_capacity,
             meshes: Vec::new(),
+            albedo_layout,
+            albedo_sampler,
+            default_albedo_bind,
+            _white_albedo: white_albedo,
         };
         me.upload_screen();
         me
@@ -441,10 +499,40 @@ impl Renderer {
             bytemuck::cast_slice(&mesh.indices),
             wgpu::BufferUsages::INDEX,
         );
+        let (albedo_bind, albedo_tex) = match &mesh.albedo {
+            Some(alb) if alb.width > 0 && alb.height > 0 && !alb.rgba.is_empty() => {
+                let tex = create_albedo_texture(
+                    &self.device,
+                    &self.queue,
+                    alb.width,
+                    alb.height,
+                    &alb.rgba,
+                );
+                let view = tex.create_view(&Default::default());
+                let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("kagra-shared mesh albedo"),
+                    layout: &self.albedo_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(&view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(&self.albedo_sampler),
+                        },
+                    ],
+                });
+                (Some(bind), Some(tex))
+            }
+            _ => (None, None),
+        };
         self.meshes.push(GpuMesh {
             vbuf,
             ibuf,
             index_count: mesh.indices.len() as u32,
+            albedo_bind,
+            _albedo_tex: albedo_tex,
         });
         MeshId(self.meshes.len() as u32 - 1)
     }
@@ -613,6 +701,11 @@ impl Renderer {
                         continue;
                     }
                     let m = &self.meshes[*mesh];
+                    pass.set_bind_group(
+                        1,
+                        m.albedo_bind.as_ref().unwrap_or(&self.default_albedo_bind),
+                        &[],
+                    );
                     pass.set_vertex_buffer(0, m.vbuf.slice(..));
                     pass.set_vertex_buffer(1, self.inst_buf.slice(*offset..));
                     pass.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);
@@ -624,6 +717,11 @@ impl Renderer {
                         continue;
                     }
                     let m = &self.meshes[*mesh];
+                    pass.set_bind_group(
+                        1,
+                        m.albedo_bind.as_ref().unwrap_or(&self.default_albedo_bind),
+                        &[],
+                    );
                     pass.set_vertex_buffer(0, m.vbuf.slice(..));
                     pass.set_vertex_buffer(1, self.inst_buf.slice(*offset..));
                     pass.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);
@@ -947,6 +1045,57 @@ async fn request_device(
         .await
         .map_err(|e| e.to_string())?;
     Ok((adapter, device, queue))
+}
+
+fn create_albedo_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+) -> wgpu::Texture {
+    let width = width.max(1);
+    let height = height.max(1);
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("kagra-shared albedo"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let expected = (width as usize) * (height as usize) * 4;
+    let data = if rgba.len() >= expected {
+        &rgba[..expected]
+    } else {
+        rgba
+    };
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &tex,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        data,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * width),
+            rows_per_image: Some(height),
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+    tex
 }
 
 fn create_offscreen_texture(

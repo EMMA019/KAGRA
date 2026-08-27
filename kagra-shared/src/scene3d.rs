@@ -12,21 +12,35 @@
 
 use glam::{Mat4, Vec3, Vec4, Vec4Swizzles};
 
-/// 位置と法線だけの頂点。テクスチャは後段で足す。
+/// 位置 + 法線 + UV。カプセル / プロップ / ハイトフィールドは uv = 0（1x1 白）。
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex3 {
     pub pos: [f32; 3],
     pub normal: [f32; 3],
+    pub uv: [f32; 2],
 }
 
 impl Vertex3 {
     pub fn new(pos: Vec3, normal: Vec3) -> Self {
+        Self::with_uv(pos, normal, [0.0, 0.0])
+    }
+
+    pub fn with_uv(pos: Vec3, normal: Vec3, uv: [f32; 2]) -> Self {
         Self {
             pos: pos.to_array(),
             normal: normal.to_array(),
+            uv,
         }
     }
+}
+
+/// RGBA8 baseColor（glTF / VRM）。無しならレンダラが 1x1 白を貼る。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AlbedoRgba {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
 }
 
 /// CPU 側のメッシュ。`Renderer::upload_mesh` で GPU に載せて `MeshId` を得る。
@@ -34,6 +48,7 @@ impl Vertex3 {
 pub struct MeshData {
     pub vertices: Vec<Vertex3>,
     pub indices: Vec<u32>,
+    pub albedo: Option<AlbedoRgba>,
 }
 
 impl MeshData {
@@ -479,6 +494,7 @@ pub mod primitives {
                 Vertex3::new(Vec3::new(-w, 0.0, -d), n),
             ],
             indices: vec![0, 1, 2, 0, 2, 3],
+            albedo: None,
         }
     }
 
@@ -500,6 +516,7 @@ pub mod primitives {
                 Vertex3::new(Vec3::new(-hx, hy, 0.0), bn),
             ],
             indices: vec![0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6],
+            albedo: None,
         }
     }
 
@@ -791,5 +808,17 @@ mod tests {
         assert!((b.max.y - 1.5).abs() < 1e-5);
         assert!(b.max.z.abs() < 1e-5);
         assert_eq!(m.indices.len(), 12);
+        assert!(m.vertices.iter().all(|v| v.uv == [0.0, 0.0]));
+        assert!(m.albedo.is_none());
+    }
+
+    #[test]
+    fn vertex3_uv_keeps_compatible_stride() {
+        assert_eq!(std::mem::size_of::<Vertex3>(), 32);
+        let cap = primitives::cylinder_mesh(0.5, 1.0, 12);
+        assert!(cap.vertices.iter().all(|v| v.uv == [0.0, 0.0]));
+        assert!(cap.albedo.is_none());
+        let plane = primitives::plane_mesh(1.0, 1.0);
+        assert!(plane.vertices.iter().all(|v| v.uv == [0.0, 0.0]));
     }
 }

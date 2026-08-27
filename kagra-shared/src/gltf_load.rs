@@ -1,13 +1,15 @@
-//! Minimal glTF 2.0 loader. Static meshes (POSITION + NORMAL + indices) and
+//! Minimal glTF 2.0 loader. Static meshes (POSITION + NORMAL + TEXCOORD_0 + indices) and
 //! one skinned mesh (nodes, skins, JOINTS_0, WEIGHTS_0, inverseBindMatrices,
 //! first Walk/walk clip). CPU-skins into `Vertex3` so the wgpu 30 shader can
 //! stay put (WebGL2-friendly: no storage buffers, no joint palette).
 //!
-//! Does not pull the heavy `gltf` crate. External .bin uses `resolve_buffer`. `.vrm` is GLB plus VRM 0/1 humanoid extras.
+//! Optional `pbrMetallicRoughness.baseColorTexture` (or VRM0 `_MainTex`) is decoded
+//! into `MeshData.albedo`. Does not pull the heavy `gltf` crate. External .bin uses
+//! `resolve_buffer`. `.vrm` is GLB plus VRM 0/1 humanoid extras.
 
 use std::collections::HashMap;
 
-use crate::scene3d::{MeshData, Vertex3};
+use crate::scene3d::{AlbedoRgba, MeshData, Vertex3};
 use glam::{Mat4, Quat, Vec3};
 use serde::Deserialize;
 
@@ -22,8 +24,11 @@ struct GltfFile {
     buffers: Vec<Buffer>,
     meshes: Vec<Mesh>,
     #[serde(default)]
-    #[allow(dead_code)]
     materials: Vec<serde_json::Value>,
+    #[serde(default)]
+    textures: Vec<GltfTexture>,
+    #[serde(default)]
+    images: Vec<GltfImage>,
     #[serde(default)]
     extensions: Option<serde_json::Value>,
     #[serde(default)]
@@ -56,7 +61,6 @@ struct BufferView {
     buffer: usize,
     #[serde(default)]
     byte_offset: usize,
-    #[allow(dead_code)]
     byte_length: usize,
     #[serde(default)]
     byte_stride: Option<usize>,
@@ -85,6 +89,8 @@ struct Primitive {
     indices: Option<usize>,
     #[serde(default)]
     mode: Option<u32>,
+    #[serde(default)]
+    material: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -100,6 +106,28 @@ struct Attributes {
     #[serde(rename = "WEIGHTS_0")]
     #[serde(default)]
     weights: Option<usize>,
+    #[serde(rename = "TEXCOORD_0")]
+    #[serde(default)]
+    texcoord: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GltfTexture {
+    #[serde(default)]
+    source: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GltfImage {
+    #[serde(default)]
+    uri: Option<String>,
+    #[serde(default)]
+    buffer_view: Option<usize>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    mime_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -333,6 +361,7 @@ pub fn sample_skinned(skin: &SkinnedMesh, t: f32) -> MeshData {
     let mut out = MeshData {
         vertices: Vec::with_capacity(skin.rest.vertices.len()),
         indices: skin.rest.indices.clone(),
+        albedo: skin.rest.albedo.clone(),
     };
     for (i, v) in skin.rest.vertices.iter().enumerate() {
         let p = Vec3::from_array(v.pos);
@@ -360,7 +389,7 @@ pub fn sample_skinned(skin: &SkinnedMesh, t: f32) -> MeshData {
             sn = n;
         }
         out.vertices
-            .push(Vertex3::new(sp, sn.normalize_or(Vec3::Y)));
+            .push(Vertex3::with_uv(sp, sn.normalize_or(Vec3::Y), v.uv));
     }
     out
 }
@@ -415,6 +444,16 @@ fn static_mesh_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<MeshData, S
     if positions.len() != normals.len() {
         return Err("POSITION/NORMAL count mismatch".into());
     }
+    let uvs = match prim.attributes.texcoord {
+        Some(i) => {
+            let uv = read_uv(doc, blobs, i)?;
+            if uv.len() != positions.len() {
+                return Err("POSITION/TEXCOORD_0 count mismatch".into());
+            }
+            uv
+        }
+        None => vec![[0.0, 0.0]; positions.len()],
+    };
     let indices = match prim.indices {
         Some(i) => read_indices(doc, blobs, i)?,
         None => (0..positions.len() as u32).collect(),
@@ -423,9 +462,11 @@ fn static_mesh_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<MeshData, S
         vertices: positions
             .into_iter()
             .zip(normals)
-            .map(|(p, n)| Vertex3::new(p, n.normalize_or(Vec3::Y)))
+            .zip(uvs)
+            .map(|((p, n), uv)| Vertex3::with_uv(p, n.normalize_or(Vec3::Y), uv))
             .collect(),
         indices,
+        albedo: load_base_color(doc, blobs, prim),
     };
     if mesh.vertices.is_empty() {
         return Err("empty mesh".into());
@@ -856,6 +897,154 @@ fn parse_humanoid(doc: &GltfFile) -> HashMap<String, usize> {
     map
 }
 
+fn load_base_color(doc: &GltfFile, blobs: &[Vec<u8>], prim: &Primitive) -> Option<AlbedoRgba> {
+    let tex = base_color_tex_index(doc, prim)?;
+    let src = doc.textures.get(tex)?.source?;
+    let img = doc.images.get(src)?;
+    let bytes = image_bytes(doc, blobs, img).ok()?;
+    decode_png(&bytes).ok()
+}
+
+fn base_color_tex_index(doc: &GltfFile, prim: &Primitive) -> Option<usize> {
+    if let Some(mi) = prim.material {
+        if let Some(mat) = doc.materials.get(mi) {
+            if let Some(idx) = mat
+                .pointer("/pbrMetallicRoughness/baseColorTexture/index")
+                .and_then(|v| v.as_u64())
+            {
+                return Some(idx as usize);
+            }
+        }
+    }
+    let mats = doc
+        .extensions
+        .as_ref()
+        .and_then(|e| e.pointer("/VRM/materialProperties"))
+        .and_then(|v| v.as_array())?;
+    let entry = prim
+        .material
+        .and_then(|i| mats.get(i))
+        .or_else(|| mats.first())?;
+    entry
+        .pointer("/textureProperties/_MainTex")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize)
+}
+
+fn image_bytes(doc: &GltfFile, blobs: &[Vec<u8>], img: &GltfImage) -> Result<Vec<u8>, String> {
+    if let Some(uri) = img.uri.as_deref() {
+        if uri.starts_with("data:") {
+            return decode_data_uri(uri);
+        }
+        return Err("external image uri not supported".into());
+    }
+    let view_idx = img
+        .buffer_view
+        .ok_or_else(|| "image has no uri or bufferView".to_string())?;
+    let view = doc
+        .buffer_views
+        .get(view_idx)
+        .ok_or_else(|| format!("missing image bufferView {view_idx}"))?;
+    let blob = blobs
+        .get(view.buffer)
+        .ok_or_else(|| format!("missing buffer {}", view.buffer))?;
+    blob.get(view.byte_offset..view.byte_offset + view.byte_length)
+        .map(|s| s.to_vec())
+        .ok_or_else(|| "image bufferView out of range".into())
+}
+
+fn decode_png(bytes: &[u8]) -> Result<AlbedoRgba, String> {
+    let decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+    let mut reader = decoder.read_info().map_err(|e| e.to_string())?;
+    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf).map_err(|e| e.to_string())?;
+    let w = info.width;
+    let h = info.height;
+    let src = &buf[..info.buffer_size()];
+    let rgba = match info.color_type {
+        png::ColorType::Rgba => src.to_vec(),
+        png::ColorType::Rgb => {
+            let mut o = Vec::with_capacity((w * h * 4) as usize);
+            for c in src.as_chunks::<3>().0 {
+                o.extend_from_slice(&[c[0], c[1], c[2], 255]);
+            }
+            o
+        }
+        png::ColorType::Grayscale => src.iter().flat_map(|&g| [g, g, g, 255]).collect::<Vec<_>>(),
+        png::ColorType::GrayscaleAlpha => {
+            let mut o = Vec::with_capacity((w * h * 4) as usize);
+            for c in src.as_chunks::<2>().0 {
+                o.extend_from_slice(&[c[0], c[0], c[0], c[1]]);
+            }
+            o
+        }
+        png::ColorType::Indexed => return Err("indexed PNG albedo not supported".into()),
+    };
+    if rgba.len() != (w as usize) * (h as usize) * 4 {
+        return Err("png size mismatch".into());
+    }
+    Ok(AlbedoRgba {
+        width: w,
+        height: h,
+        rgba,
+    })
+}
+
+fn read_uv(doc: &GltfFile, blobs: &[Vec<u8>], accessor: usize) -> Result<Vec<[f32; 2]>, String> {
+    let acc = doc
+        .accessors
+        .get(accessor)
+        .ok_or_else(|| format!("missing accessor {accessor}"))?;
+    if acc.type_name != "VEC2" {
+        return Err("TEXCOORD_0 must be VEC2".into());
+    }
+    match acc.component_type {
+        5126 => {
+            let f = read_f32_components(doc, blobs, accessor, 2)?;
+            Ok(f.as_chunks::<2>().0.to_vec())
+        }
+        5123 => read_norm_uv(doc, blobs, accessor, 2, 65535.0),
+        5121 => read_norm_uv(doc, blobs, accessor, 1, 255.0),
+        other => Err(format!("unsupported TEXCOORD_0 componentType {other}")),
+    }
+}
+
+fn read_norm_uv(
+    doc: &GltfFile,
+    blobs: &[Vec<u8>],
+    accessor: usize,
+    elem: usize,
+    denom: f32,
+) -> Result<Vec<[f32; 2]>, String> {
+    let acc = &doc.accessors[accessor];
+    let view_idx = acc
+        .buffer_view
+        .ok_or_else(|| "accessor has no bufferView".to_string())?;
+    let view = &doc.buffer_views[view_idx];
+    let blob = blobs
+        .get(view.buffer)
+        .ok_or_else(|| format!("missing buffer {}", view.buffer))?;
+    let start = view.byte_offset + acc.byte_offset;
+    let stride = view.byte_stride.unwrap_or(elem * 2);
+    let mut out = Vec::with_capacity(acc.count);
+    for i in 0..acc.count {
+        let off = start + i * stride;
+        let s = blob
+            .get(off..off + elem * 2)
+            .ok_or_else(|| "TEXCOORD_0 out of range".to_string())?;
+        let (u, v) = if elem == 2 {
+            (
+                u16::from_le_bytes(s[0..2].try_into().unwrap()) as f32 / denom,
+                u16::from_le_bytes(s[2..4].try_into().unwrap()) as f32 / denom,
+            )
+        } else {
+            (s[0] as f32 / denom, s[1] as f32 / denom)
+        };
+        out.push([u, v]);
+    }
+    Ok(out)
+}
+
 fn read_f32x3(doc: &GltfFile, blobs: &[Vec<u8>], accessor: usize) -> Result<Vec<Vec3>, String> {
     let floats = read_f32_components(doc, blobs, accessor, 3)?;
     Ok(floats
@@ -1245,5 +1434,45 @@ mod tests {
             let d = (Vec3::from_array(va.pos) - Vec3::from_array(vb.pos)).length();
             assert!(d < 1e-4, "no clip => bind pose at any t");
         }
+    }
+
+    #[test]
+    fn walk_gltf_loads_uv_and_base_color() {
+        let skin = skinned_from_embedded_gltf(&walk_skinned_gltf()).expect("skin");
+        assert!(
+            skin.rest.vertices.iter().any(|v| v.uv != [0.0, 0.0]),
+            "fixture must carry TEXCOORD_0"
+        );
+        let alb = skin.rest.albedo.as_ref().expect("baseColor PNG");
+        assert!(
+            alb.width >= 2 && alb.height >= 2,
+            "tiny PNG, got {}x{}",
+            alb.width,
+            alb.height
+        );
+        assert_eq!(alb.rgba.len(), (alb.width * alb.height * 4) as usize);
+        let unique: std::collections::HashSet<_> =
+            alb.rgba.as_chunks::<4>().0.iter().copied().collect();
+        assert!(
+            unique.len() >= 3,
+            "albedo must not be a flat color, unique={}",
+            unique.len()
+        );
+        let sampled = sample_skinned(&skin, 0.25);
+        assert_eq!(sampled.vertices[0].uv, skin.rest.vertices[0].uv);
+        assert!(sampled.albedo.is_some());
+    }
+
+    #[test]
+    fn walk_vrm_loads_uv_and_maintex() {
+        let skin = skinned_from_glb(&walk_skinned_vrm()).expect("vrm");
+        assert!(skin.rest.vertices.iter().any(|v| v.uv != [0.0, 0.0]));
+        let alb = skin
+            .rest
+            .albedo
+            .as_ref()
+            .expect("VRM0 _MainTex / baseColor");
+        assert!(alb.width >= 2 && alb.height >= 2);
+        assert_eq!(alb.rgba.len(), (alb.width * alb.height * 4) as usize);
     }
 }

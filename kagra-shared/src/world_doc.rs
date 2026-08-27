@@ -387,7 +387,21 @@ impl WorldDoc {
             };
             if let Some(&mesh) = walker_gltf_ids.get(&walk.id) {
                 let model = Mat4::from_scale_rotation_translation(Vec3::ONE, yaw, pos);
-                b.push(mesh, model, body_col);
+                let col = if walker_gltf_spec(walk)
+                    .map(walker_spec_has_albedo)
+                    .unwrap_or(false)
+                {
+                    if dead {
+                        [70, 74, 82, 255]
+                    } else if hurt {
+                        [220, 64, 64, 255]
+                    } else {
+                        [255, 255, 255, 255]
+                    }
+                } else {
+                    body_col
+                };
+                b.push(mesh, model, col);
                 continue;
             }
             let body_h = if dead { 0.28 } else { 0.95 };
@@ -709,6 +723,15 @@ enum GltfSlot {
         spec: String,
         clip: f32,
     },
+}
+
+fn walker_spec_has_albedo(spec: &str) -> bool {
+    if let Some(skin) = load_skinned(spec) {
+        return skin.rest.albedo.is_some();
+    }
+    gltf_mesh_for(spec)
+        .map(|m| m.albedo.is_some())
+        .unwrap_or(false)
 }
 
 fn walker_gltf_spec(w: &WorldWalker) -> Option<&str> {
@@ -1402,6 +1425,22 @@ mod tests {
             .expect("skinned mesh");
         assert_eq!(skinned.1.vertices.len(), 8);
         assert_eq!(skinned.1.indices.len(), 36);
+        assert!(
+            skinned.1.vertices.iter().any(|v| v.uv != [0.0, 0.0]),
+            "skinned walker must sample TEXCOORD_0"
+        );
+        let alb = skinned.1.albedo.as_ref().expect("baseColor on walker mesh");
+        assert!(alb.width >= 2 && alb.height >= 2);
+        let batch = scene
+            .batches
+            .iter()
+            .find(|b| b.mesh.0 >= MESH_GLTF_BASE)
+            .expect("walker batch");
+        assert_eq!(
+            batch.instances[0].color,
+            [255, 255, 255, 255],
+            "textured walker uses white instance color so the PNG shows"
+        );
     }
 
     #[test]
@@ -1463,6 +1502,8 @@ mod tests {
             .expect("vrm mesh");
         assert_eq!(skinned.1.vertices.len(), 8);
         assert_eq!(skinned.1.indices.len(), 36);
+        assert!(skinned.1.vertices.iter().any(|v| v.uv != [0.0, 0.0]));
+        assert!(skinned.1.albedo.as_ref().is_some_and(|a| a.width >= 2));
     }
 
     #[test]

@@ -74,7 +74,8 @@ pub use road::{LodLevel, RoadChunk, RoadFrame, RoadPath, RoadStreamer};
 pub use save::{SaveGame, Settings};
 pub use scene::{DemoScene, DrawList, Quad};
 pub use scene3d::{
-    Aabb, Camera, Frustum, Instance, LocalLight, Material, MeshData, MeshId, Scene3D, Vertex3,
+    Aabb, AlbedoRgba, Camera, Frustum, Instance, LocalLight, Material, MeshData, MeshId, Scene3D,
+    Vertex3,
 };
 pub use session::{FrameStats, SharedSession};
 pub use traffic::{TrafficCar, TrafficSystem};

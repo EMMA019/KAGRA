@@ -1,7 +1,7 @@
 // 3D: インスタンス化したメッシュ + 方向光 + 距離フォグ + 手続きテクスチャ。
 //
 // マテリアルはインスタンス属性の material（0=solid, 1=road, 2=grass, 3=sky, 4=metal）。
-// テクスチャファイルは持たず、ワールド XZ のノイズで路面と草を出す。
+// 路面と草はワールド XZ のノイズ。baseColor は group 1（無ければ 1x1 白）。
 
 struct Globals {
     view_proj: mat4x4<f32>,
@@ -20,6 +20,8 @@ struct Globals {
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;
+@group(1) @binding(0) var albedo_tex: texture_2d<f32>;
+@group(1) @binding(1) var albedo_samp: sampler;
 
 struct VsIn {
     @location(0) pos: vec3<f32>,
@@ -30,6 +32,7 @@ struct VsIn {
     @location(5) m3: vec4<f32>,
     @location(6) color: vec4<f32>,
     @location(7) material: f32,
+    @location(8) uv: vec2<f32>,
 };
 
 struct VsOut {
@@ -38,6 +41,7 @@ struct VsOut {
     @location(1) normal: vec3<f32>,
     @location(2) world: vec3<f32>,
     @location(3) material: f32,
+    @location(4) uv: vec2<f32>,
 };
 
 @vertex
@@ -51,6 +55,7 @@ fn vs_main(in: VsIn) -> VsOut {
     out.normal = mat3x3<f32>(in.m0.xyz, in.m1.xyz, in.m2.xyz) * in.normal;
     out.world = world.xyz;
     out.material = in.material;
+    out.uv = in.uv;
     return out;
 }
 
@@ -172,7 +177,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         return vec4<f32>(col, 1.0);
     }
 
-    var albedo = in.color.rgb;
+    var albedo = in.color.rgb * textureSample(albedo_tex, albedo_samp, in.uv).rgb;
     if (mat_id == 1) {
         // アスファルト: 細かいノイズ + 薄い轍。
         let gn = fbm(in.world.xz * 0.35);
