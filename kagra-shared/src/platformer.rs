@@ -2,7 +2,7 @@
 //!
 //! Sibling of `collectathon` / `action`. Capsule player on box platforms.
 //! Title -> play -> result reuses `WorldPlay`. Fall death is visible; retry
-//! restores the last checkpoint in the dump. No sprites, no Rapier, no VRM.
+//! restores the last checkpoint in the dump. Sprite/quad cards compile via WorldDoc; jump loop unchanged. No Rapier, no VRM.
 
 use crate::collectathon::WalkInput;
 use crate::game::GamePhase;

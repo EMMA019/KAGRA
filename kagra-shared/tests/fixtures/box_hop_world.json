@@ -79,6 +79,19 @@
       "enabled": true,
       "parent": null,
       "color": [70, 170, 90]
+    },
+    {
+      "id": "prop:flag-card",
+      "type": "prop",
+      "name": "sprite",
+      "position": [0.9, 2.5, 6.5],
+      "yaw": 3.14159,
+      "model": "sprite",
+      "gltf": null,
+      "scale": [0.9, 1.6, 1.0],
+      "enabled": true,
+      "parent": null,
+      "color": [240, 196, 72]
     }
   ],
   "walkers": [

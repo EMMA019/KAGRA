@@ -5,7 +5,9 @@
 //! `compile_scene` turns it into a `Scene3D` for one frame. Heightfield
 //! batches come from named demo fns (`open_world_height` / `island_height` /
 //! `overworld_height`) or dump samples — production island mesh, not a
-//! placeholder plane. Coins use `Material::Metal` (existing GGX). Lights are
+//! placeholder plane. Sprite/quad props (`model: "sprite"` / `"quad"`) compile
+//! to a standing XY card in the same Scene3D — 2D and 3D share WorldDoc.
+//! Coins use `Material::Metal` (existing GGX). Lights are
 //! slot 0..3 1:1. glTF props use `gltf_load` (capsule player; VRM skin is
 //! not ported). Integer GPU mesh ids are not game objects. Live play is
 //! `WorldPlay` (title → play → result, WASD → `WalkInput` → sit on
@@ -37,7 +39,8 @@ const MESH_SPHERE: MeshId = MeshId(1);
 const MESH_CAPSULE: MeshId = MeshId(2);
 const MESH_PLANE: MeshId = MeshId(3);
 pub(crate) const MESH_HEIGHTFIELD: MeshId = MeshId(4);
-pub(crate) const MESH_GLTF_BASE: u32 = 5;
+pub(crate) const MESH_QUAD: MeshId = MeshId(5);
+pub(crate) const MESH_GLTF_BASE: u32 = 6;
 
 /// Persistent world. JSON source of truth. Not a draw list.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -292,7 +295,7 @@ impl WorldDoc {
         ids
     }
 
-    /// One-frame draw list. Heightfield + glTF/box/sphere/capsule primitives.
+    /// One-frame draw list. Heightfield + glTF/box/sphere/capsule + sprite/quad.
     /// Does not mutate this document. GPU upload uses `compile_meshes`.
     pub fn compile_scene(&self, aspect: f32) -> Scene3D {
         let camera = self.draw_camera();
@@ -477,7 +480,7 @@ impl WorldDoc {
         self.floor_y
     }
 
-    /// Primitive slots 0..3 plus heightfield (4) plus one mesh per unique glTF.
+    /// Primitive slots 0..3, heightfield (4), sprite/quad (5), then one mesh per unique glTF.
     pub fn compile_meshes(&self) -> Vec<(MeshId, MeshData)> {
         let mut out = compile_meshes();
         out.push((MESH_HEIGHTFIELD, self.heightfield_mesh()));
@@ -569,6 +572,7 @@ fn mesh_for_prop(prop: &WorldProp, gltf_ids: &HashMap<String, MeshId>) -> MeshId
         "sphere" => MESH_SPHERE,
         "cylinder" | "capsule" => MESH_CAPSULE,
         "plane" => MESH_PLANE,
+        "sprite" | "quad" => MESH_QUAD,
         _ => MESH_BOX,
     }
 }
@@ -660,13 +664,14 @@ fn color_u8(rgb: Option<[u32; 3]>) -> [u8; 4] {
     }
 }
 
-/// Primitive meshes that `compile_scene` refers to by `MeshId`.
+/// Primitive meshes that `compile_scene` refers to by `MeshId` (includes sprite/quad).
 pub fn compile_meshes() -> Vec<(MeshId, crate::scene3d::MeshData)> {
     vec![
         (MESH_BOX, primitives::box_mesh(Vec3::ONE)),
         (MESH_SPHERE, primitives::cylinder_mesh(0.5, 1.0, 12)),
         (MESH_CAPSULE, primitives::cylinder_mesh(0.5, 1.0, 12)),
         (MESH_PLANE, primitives::plane_mesh(1.0, 1.0)),
+        (MESH_QUAD, primitives::quad_mesh(1.0, 1.0)),
     ]
 }
 
@@ -805,7 +810,7 @@ mod tests {
     #[test]
     fn compile_meshes_cover_batch_ids() {
         let meshes = compile_meshes();
-        assert_eq!(meshes.len(), 4);
+        assert_eq!(meshes.len(), 5);
         assert!(meshes.iter().all(|(_, m)| !m.vertices.is_empty()));
         for json in [CREST_ISLE_DUMP, ORB_RUSH_DUMP] {
             let doc = WorldDoc::from_json(json).unwrap();

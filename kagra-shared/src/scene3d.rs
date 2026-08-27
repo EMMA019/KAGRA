@@ -482,6 +482,27 @@ pub mod primitives {
         }
     }
 
+    /// Standing XY card (2D sprite in the same WorldDoc as 3D). Origin center,
+    /// faces +Z, two-sided so walking around still sees it. Scale is width/height.
+    pub fn quad_mesh(width: f32, height: f32) -> MeshData {
+        let (hx, hy) = (width * 0.5, height * 0.5);
+        let n = Vec3::Z;
+        let bn = Vec3::NEG_Z;
+        MeshData {
+            vertices: vec![
+                Vertex3::new(Vec3::new(-hx, -hy, 0.0), n),
+                Vertex3::new(Vec3::new(hx, -hy, 0.0), n),
+                Vertex3::new(Vec3::new(hx, hy, 0.0), n),
+                Vertex3::new(Vec3::new(-hx, hy, 0.0), n),
+                Vertex3::new(Vec3::new(-hx, -hy, 0.0), bn),
+                Vertex3::new(Vec3::new(hx, -hy, 0.0), bn),
+                Vertex3::new(Vec3::new(hx, hy, 0.0), bn),
+                Vertex3::new(Vec3::new(-hx, hy, 0.0), bn),
+            ],
+            indices: vec![0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6],
+        }
+    }
+
     /// カメラを包む天球。内側から見るので、スカイ用パイプラインはカリング無し。
     pub fn sky_dome(radius: f32, segments: u32) -> MeshData {
         let segments = segments.max(8);
@@ -748,5 +769,19 @@ mod tests {
         let b = m.bounds();
         assert_eq!(b.max.x, 5.0);
         assert_eq!(b.max.z, 2.0);
+    }
+
+    #[test]
+    fn quad_mesh_is_vertical_and_faces_plus_z() {
+        let m = primitives::quad_mesh(2.0, 3.0);
+        assert!(m.vertices.iter().all(|v| v.pos[2].abs() < 1e-6));
+        assert_eq!(m.vertices.len(), 8);
+        assert!(m.vertices.iter().take(4).all(|v| v.normal == [0.0, 0.0, 1.0]));
+        assert!(m.vertices.iter().skip(4).all(|v| v.normal == [0.0, 0.0, -1.0]));
+        let b = m.bounds();
+        assert!((b.max.x - 1.0).abs() < 1e-5);
+        assert!((b.max.y - 1.5).abs() < 1e-5);
+        assert!(b.max.z.abs() < 1e-5);
+        assert_eq!(m.indices.len(), 12);
     }
 }

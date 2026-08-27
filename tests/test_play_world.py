@@ -283,6 +283,7 @@ def test_box_hop_fixture_has_platforms_and_checkpoint():
     assert len(plats) >= 2
     assert any(p.get("name") == "checkpoint" for p in data["props"])
     assert any(p.get("name") == "goal" for p in data["props"])
+    assert any(p.get("model") == "sprite" for p in data["props"])
     assert data.get("heightfield") in (None, {})
 
 
@@ -297,3 +298,19 @@ def test_rpg_town_fixture_has_npc_door_and_dungeon():
     assert any(p.get("name") == "crystal" for p in dun["props"])
     assert any(p.get("name") == "door" for p in dun["props"])
 
+
+
+def test_sprite_card_fixture_has_quads():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/sprite_card_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    models = {p.get("model") for p in data["props"]}
+    assert "sprite" in models
+    assert "quad" in models
+    assert "plane" in models
+    sprites = [p for p in data["props"] if p.get("model") in ("sprite", "quad")]
+    assert len(sprites) >= 2
+    assert data.get("heightfield") in (None, {})

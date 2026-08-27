@@ -14,6 +14,7 @@ use crate::collectathon::{
 use crate::game::GamePhase;
 use crate::platformer::{self, PlatformGame};
 use crate::rpg::{self, RpgGame};
+use crate::sprite;
 use crate::scene::{DrawList, Quad};
 use crate::world_doc::{WorldDoc, WorldProp, WorldWalker};
 use glam::Vec3;
@@ -118,6 +119,10 @@ impl WorldPlay {
 
     pub fn is_rpg(&self) -> bool {
         rpg::is_rpg(&self.doc) || rpg::is_rpg(&self.seed)
+    }
+
+    pub fn is_sprite(&self) -> bool {
+        sprite::is_sprite(&self.doc) || sprite::is_sprite(&self.seed)
     }
 
     /// Mouse / arrow look. Pitch is clamped.
