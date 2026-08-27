@@ -17,4 +17,4 @@ C header: `include/kagra_shared.h`
 
 `set_scene(2)` が Crest Isle（Kenney 風カプセル。VRM ではない）。運転デモは `0`。
 
-`WorldDoc::from_json` がデスクトップ `World.dump()` JSON（`docs/schemas/world.json` version 1）を読む。`WorldDoc::compile_scene` が 1 フレームの `Scene3D`（draw list）を出す。`Scene3D` に dump を詰め込まない。`render_world_doc`（`--features render`）が `compile_meshes` を upload してオフスクリーン RGBA を返す。GPU mesh id はゲームオブジェクトではない。デスクトップ窓 / `RendererV2` はまだ。
+`WorldDoc::from_json` がデスクトップ `World.dump()` JSON（`docs/schemas/world.json` version 1）を読む。`WorldDoc::compile_scene` が 1 フレームの `Scene3D`（draw list）を出す。`Scene3D` に dump を詰め込まない。`render_world_doc`（`--features render`）が `compile_meshes` を upload してオフスクリーン RGBA を返す。PNG は `cargo run -p kagra-shared --features render --example offscreen -- W H out.png world dump.json`。Python は `python -m kagra.render_world dump.json out.png`（ヘルパ無しはスキップ）。GPU mesh id はゲームオブジェクトではない。デスクトップ窓 / `RendererV2` はまだ。

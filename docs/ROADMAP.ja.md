@@ -55,7 +55,7 @@ kagra-shared の `WorldDoc::from_json` が同じ JSON を読む。`compile_scene
 - 高さ場タイル（Relic Run の UV 既定は維持。Crest の meadow 窓は #97）
 - AABB の箱（落ちる・積む・乗る）。Rapier は入れない
 - VRM ローダ（歌・踊り・リップ・LookAt）。体の背骨ではない
-- `kagra.verify` の PNG サイズ煙 + **世界アサーション**（#99）
+- `kagra.verify` の PNG サイズ煙 + **世界アサーション**（#99）+ 任意の **shared オフスクリーン煙**（IHDR / バイト数。golden ではない。ヘルパ無しはスキップ）
 - `WorldDoc`（dump JSON。`compile_scene` → 1 フレーム `Scene3D`。shared wgpu 30 オフスクリーン `render_world_doc` で RGBA。デスクトップ窓はまだ kagra-core）
 - エージェントループ: `docs/API_INDEX.md` / MCP / `docs/agent-runs/`
 
@@ -84,7 +84,8 @@ OSM、ボクセル、ナビメッシュ、lights/joints/prefab-instantiate/TRS �
 - `render_world_doc`（feature = `render`）が `compile_meshes` を upload し、compiled `Scene3D` を wgpu 30 オフスクリーンに描いて RGBA を返す。kagra-core の窓 / `RendererV2` / `(-12800,-12800)` には触れない。アダプタ無しはスキップ
 - デスクトップ Python の dump JSON を shared クレートが受け取る（新しい公開ゲーム API は足さない）
 - [schemas/world.json](schemas/world.json) と `WorldDoc` が揃っている
-- デスクトップ窓の付け替えは次。`(-12800,-12800)` の fake-headless は触らない
+- デスクトップ窓の付け替えは次。`(-12800,-12800)` の fake-headless は kagra-core 窓側に残る。agent verify の shared PNG は `python -m kagra.render_world` / `expect_offscreen` で別プロセス（wgpu 30）
 - `pytest tests -m "not golden"` と `cargo test -p kagra-shared` が緑
 
 M1（query / dump / load）は #99 で閉じた。
+M2 schema + shared offscreen は #100。agent verify の配線がこの次の薄いスライス。

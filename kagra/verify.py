@@ -12,8 +12,18 @@
         "path": "scratch/orb_rush_world.json",
         "player.on_ground": true,
         "query": [{"type": "walker", "name": "player", "count": 1}]
+      },
+      "expect_offscreen": {
+        "out": "scratch/orb_rush_shared.png",
+        "width": 320,
+        "height": 180,
+        "min_bytes": 200
       }
     }
+
+``expect_offscreen`` shells to kagra-shared wgpu 30 (``python -m kagra.render_world``)
+and smokes PNG size / dimensions — not golden pixels. Missing helper or no GPU
+adapter skips cleanly. Does not use the ``(-12800,-12800)`` fake-headless window.
 
 またはインライン（別プロセスで小さなシーンを生成）::
 
@@ -63,6 +73,7 @@ class Scenario:
     expect: list[Expectation] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
     expect_world: dict[str, Any] | None = None
+    expect_offscreen: dict[str, Any] | None = None
 
 
 @dataclass
@@ -75,6 +86,8 @@ class VerifyResult:
     missing: list[str] = field(default_factory=list)
     too_small: list[str] = field(default_factory=list)
     world_errors: list[str] = field(default_factory=list)
+    offscreen_errors: list[str] = field(default_factory=list)
+    offscreen_skipped: str | None = None
     error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -85,6 +98,8 @@ class VerifyResult:
             "missing": self.missing,
             "too_small": self.too_small,
             "world_errors": self.world_errors,
+            "offscreen_errors": self.offscreen_errors,
+            "offscreen_skipped": self.offscreen_skipped,
             "error": self.error,
             "stdout_tail": self.stdout[-2000:],
             "stderr_tail": self.stderr[-2000:],
@@ -109,6 +124,13 @@ def _load_scenario(data: dict[str, Any]) -> Scenario:
     world_spec = data.get("expect_world")
     if world_spec is not None and not isinstance(world_spec, dict):
         world_spec = None
+    off_spec = data.get("expect_offscreen")
+    if off_spec is True:
+        off_spec = {}
+    elif off_spec is False:
+        off_spec = None
+    elif off_spec is not None and not isinstance(off_spec, dict):
+        off_spec = None
     return Scenario(
         name=str(data.get("name", "unnamed")),
         script=data.get("script"),
@@ -118,6 +140,7 @@ def _load_scenario(data: dict[str, Any]) -> Scenario:
         expect=expects,
         env={str(k): str(v) for k, v in (data.get("env") or {}).items()},
         expect_world=world_spec,
+        expect_offscreen=off_spec,
     )
 
 
@@ -149,6 +172,20 @@ def _eval_expect_world(spec: dict[str, Any] | None, cwd: Path) -> list[str]:
 
     checks = {k: v for k, v in spec.items() if k != "path"}
     return list(eval_world_expect(data, checks))
+
+
+def _eval_expect_offscreen(
+    spec: dict[str, Any] | None,
+    world_spec: dict[str, Any] | None,
+    cwd: Path,
+) -> tuple[list[str], str | None]:
+    """Optional shared wgpu 30 PNG smoke. Skip when the helper is missing."""
+    if not spec:
+        return [], None
+    from kagra.render_world import eval_expect_offscreen
+
+    errors, skipped, _result = eval_expect_offscreen(spec, world_spec, cwd)
+    return list(errors), skipped
 
 
 def _write_inline_script(inline: dict[str, Any]) -> Path:
@@ -258,11 +295,18 @@ def run_scenario(scenario: Scenario, *, python: str | None = None) -> VerifyResu
                 too_small.append(f"{p} ({p.stat().st_size} < {exp.min_bytes})")
 
         world_errors = _eval_expect_world(scenario.expect_world, cwd)
+        if world_errors:
+            offscreen_errors, offscreen_skipped = [], None
+        else:
+            offscreen_errors, offscreen_skipped = _eval_expect_offscreen(
+                scenario.expect_offscreen, scenario.expect_world, cwd
+            )
         ok = (
             proc.returncode == 0
             and not missing
             and not too_small
             and not world_errors
+            and not offscreen_errors
         )
         return VerifyResult(
             ok=ok,
@@ -273,6 +317,8 @@ def run_scenario(scenario: Scenario, *, python: str | None = None) -> VerifyResu
             missing=missing,
             too_small=too_small,
             world_errors=world_errors,
+            offscreen_errors=offscreen_errors,
+            offscreen_skipped=offscreen_skipped,
             error=None
             if ok
             else (
@@ -280,6 +326,7 @@ def run_scenario(scenario: Scenario, *, python: str | None = None) -> VerifyResu
                 + (f"; missing={missing}" if missing else "")
                 + (f"; too_small={too_small}" if too_small else "")
                 + (f"; world={world_errors}" if world_errors else "")
+                + (f"; offscreen={offscreen_errors}" if offscreen_errors else "")
             ),
         )
     except Exception as e:

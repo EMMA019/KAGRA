@@ -20,6 +20,7 @@ description: >-
 ```bash
 python tools/gen_api_index.py
 python -m kagra.verify examples/verify_scenarios/blank_smoke.json
+python -m kagra.render_world dump.json out.png   # shared wgpu 30; skips if no helper
 python tools/mcp_kagra/server.py   # MCP stdio
 ```
 

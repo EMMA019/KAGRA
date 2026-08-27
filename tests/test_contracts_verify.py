@@ -132,3 +132,193 @@ def test_eval_expect_world_missing_dump(tmp_path):
     )
     assert errors
     assert "missing" in errors[0]
+
+
+def _rgba_png(width: int, height: int, pixel=(40, 80, 160, 255)) -> bytes:
+    import struct
+    import zlib
+
+    r, g, b, a = pixel
+    row = bytes([0]) + bytes([r, g, b, a]) * width
+    raw = zlib.compress(row * height, 9)
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        crc = zlib.crc32(tag + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+        + chunk(b"IDAT", raw)
+        + chunk(b"IEND", b"")
+    )
+
+
+_render_world = load_kagra_submodule("render_world")
+png_dimensions = _render_world.png_dimensions
+check_offscreen_png = _render_world.check_offscreen_png
+find_offscreen_helper = _render_world.find_offscreen_helper
+render_world_dump = _render_world.render_world_dump
+eval_expect_offscreen = _render_world.eval_expect_offscreen
+looks_like_no_adapter = _render_world.looks_like_no_adapter
+
+
+def test_load_orb_rush_scenario_has_offscreen_expect():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/orb_rush_smoke.json")
+    assert sc.expect_world
+    assert sc.expect_offscreen
+    assert sc.expect_offscreen["out"].endswith("orb_rush_shared.png")
+    assert sc.expect_offscreen["width"] == 320
+    assert sc.expect_offscreen["height"] == 180
+
+
+def test_load_open_world_scenario_has_offscreen_expect():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/open_world_smoke.json")
+    assert sc.expect_offscreen
+    assert sc.expect_offscreen["out"].endswith("open_world_shared.png")
+
+
+def test_png_dimensions_reads_ihdr(tmp_path):
+    p = tmp_path / "a.png"
+    p.write_bytes(_rgba_png(32, 24))
+    assert png_dimensions(p) == (32, 24)
+
+
+def test_check_offscreen_png_smoke_not_golden(tmp_path):
+    p = tmp_path / "ok.png"
+    p.write_bytes(_rgba_png(16, 9))
+    assert check_offscreen_png(p, width=16, height=9, min_bytes=10) == []
+    assert check_offscreen_png(p, width=8, height=9, min_bytes=10)
+    empty = tmp_path / "missing.png"
+    assert "missing" in check_offscreen_png(empty, width=16, height=9)[0]
+
+
+def test_eval_expect_offscreen_skips_without_helper(tmp_path, monkeypatch):
+    monkeypatch.setenv("KAGRA_OFFSCREEN", str(tmp_path / "no-such-helper"))
+    monkeypatch.delenv("KAGRA_OFFSCREEN_CARGO", raising=False)
+    dump = tmp_path / "world.json"
+    dump.write_text('{"version": 1, "props": []}', encoding="utf-8")
+    errors, skipped, result = eval_expect_offscreen(
+        {"out": "shot.png", "width": 16, "height": 9, "world": str(dump)},
+        None,
+        tmp_path,
+        allow_cargo=False,
+        root=tmp_path,
+    )
+    assert errors == []
+    assert skipped
+    assert result is not None and result.skipped
+
+
+def test_eval_expect_offscreen_required_fails_without_helper(tmp_path, monkeypatch):
+    monkeypatch.setenv("KAGRA_OFFSCREEN", str(tmp_path / "no-such-helper"))
+    dump = tmp_path / "world.json"
+    dump.write_text('{"version": 1}', encoding="utf-8")
+    errors, skipped, _result = eval_expect_offscreen(
+        {
+            "out": "shot.png",
+            "world": str(dump),
+            "required": True,
+        },
+        None,
+        tmp_path,
+        allow_cargo=False,
+        root=tmp_path,
+    )
+    assert errors
+    assert skipped is None
+
+
+def test_offscreen_helper_writes_png_and_checks_dimensions(tmp_path, monkeypatch):
+    """GPU-free: a helper that speaks the offscreen CLI writes a PNG; we check IHDR."""
+    helper = tmp_path / "fake_offscreen.py"
+    helper.write_text(
+        "import sys, struct, zlib\n"
+        "from pathlib import Path\n"
+        "w, h = int(sys.argv[1]), int(sys.argv[2])\n"
+        "out = Path(sys.argv[3])\n"
+        "assert sys.argv[4] == 'world'\n"
+        "world = Path(sys.argv[5])\n"
+        "assert world.is_file()\n"
+        "row = bytes([0]) + bytes([40, 80, 160, 255]) * w\n"
+        "raw = zlib.compress(row * h, 9)\n"
+        "def chunk(tag, data):\n"
+        "    crc = zlib.crc32(tag + data) & 0xFFFFFFFF\n"
+        "    return struct.pack('>I', len(data)) + tag + data + struct.pack('>I', crc)\n"
+        "out.parent.mkdir(parents=True, exist_ok=True)\n"
+        "out.write_bytes(\n"
+        "    b'\\x89PNG\\r\\n\\x1a\\n'\n"
+        "    + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 6, 0, 0, 0))\n"
+        "    + chunk(b'IDAT', raw)\n"
+        "    + chunk(b'IEND', b'')\n"
+        ")\n"
+        "print('wrote', out, w, h)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("KAGRA_OFFSCREEN", str(helper))
+    dump = tmp_path / "world.json"
+    dump.write_text((ROOT / "kagra-shared/tests/fixtures/orb_rush_world.json").read_text(encoding="utf-8"))
+    out = tmp_path / "shared.png"
+    result = render_world_dump(
+        dump,
+        out,
+        width=32,
+        height=24,
+        min_bytes=32,
+        allow_cargo=False,
+        root=tmp_path,
+        cwd=tmp_path,
+    )
+    assert result.ok, result.error
+    assert not result.skipped
+    assert out.is_file()
+    assert png_dimensions(out) == (32, 24)
+    assert result.width == 32 and result.height == 24
+
+
+def test_verify_eval_offscreen_skips_without_binary(tmp_path, monkeypatch):
+    monkeypatch.setenv("KAGRA_OFFSCREEN", str(tmp_path / "missing-bin"))
+    monkeypatch.delenv("KAGRA_OFFSCREEN_CARGO", raising=False)
+    dump = tmp_path / "world.json"
+    dump.write_text('{"version": 1}', encoding="utf-8")
+    errors, skipped = _verify._eval_expect_offscreen(
+        {"path": str(dump), "out": str(tmp_path / "x.png"), "width": 8, "height": 8},
+        {"path": str(dump)},
+        tmp_path,
+    )
+    assert errors == []
+    assert skipped
+
+
+def test_looks_like_no_adapter():
+    assert looks_like_no_adapter("Failed to find an appropriate adapter")
+    assert not looks_like_no_adapter("wrote out.png from WorldDoc")
+
+
+def test_find_offscreen_helper_none_in_empty_root(tmp_path, monkeypatch):
+    monkeypatch.delenv("KAGRA_OFFSCREEN", raising=False)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    assert find_offscreen_helper(root=tmp_path) is None
+
+
+def test_real_shared_offscreen_png_dimensions(tmp_path, monkeypatch):
+    """If the wgpu 30 example/binary is already built, smoke IHDR — not golden."""
+    monkeypatch.delenv("KAGRA_OFFSCREEN", raising=False)
+    helper = find_offscreen_helper(root=ROOT)
+    if helper is None:
+        pytest.skip("no shared offscreen helper")
+    out = tmp_path / "real.png"
+    result = render_world_dump(
+        ROOT / "kagra-shared/tests/fixtures/orb_rush_world.json",
+        out,
+        width=64,
+        height=48,
+        min_bytes=64,
+        allow_cargo=False,
+        root=ROOT,
+        cwd=tmp_path,
+    )
+    if result.skipped:
+        pytest.skip(result.skip_reason or "offscreen skipped")
+    assert result.ok, result.error
+    assert png_dimensions(out) == (64, 48)
