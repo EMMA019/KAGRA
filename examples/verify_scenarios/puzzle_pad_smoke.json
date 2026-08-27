@@ -1,0 +1,41 @@
+{
+  "name": "puzzle_pad_smoke",
+  "notes": "M3 puzzle slice 1 on shared wgpu 30. Title -> play -> result (player pushes a box onto a pad; dump-visible solved name/flag) lives in WorldPlay / python -m kagra.play_world. Capsules/boxes, kinematic push only. Overlay solved, not screenshot-only. Indoor lights 4 slots. Pad and crate readable. No RendererV2, no VRM, no Rapier, no sokoban editor. World assertions + dump query (not golden pixels).",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/puzzle_pad_world.json",
+    "player.on_ground": true,
+    "query": [
+      {
+        "type": "walker",
+        "name": "player",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "pad",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "crate",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "floor",
+        "count": 1
+      },
+      {
+        "type": "light",
+        "count": 4
+      }
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/puzzle_pad_world.json",
+    "out": "scratch/puzzle_pad_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

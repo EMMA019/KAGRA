@@ -169,6 +169,8 @@ fn main() -> Result<(), String> {
             "KAGRA Novel Pages (shared wgpu 30)"
         } else if play.is_stealth() {
             "KAGRA Stealth Hide (shared wgpu 30)"
+        } else if play.is_puzzle() {
+            "KAGRA Puzzle Pad (shared wgpu 30)"
         } else if play.is_sprite() {
             "KAGRA Sprite Card (shared wgpu 30)"
         } else {
@@ -286,6 +288,7 @@ fn main() -> Result<(), String> {
                         || play.is_fight()
                         || play.is_novel()
                         || play.is_stealth()
+                        || play.is_puzzle()
                     {
                         (0.0, 0.0)
                     } else {
@@ -294,7 +297,7 @@ fn main() -> Result<(), String> {
                     play.add_look(arrow_yaw + mouse_look.0, arrow_pitch + mouse_look.1);
                     mouse_look = (0.0, 0.0);
                     let mut input = keys.walk_input();
-                    if play.is_race() || play.is_fight() || play.is_stealth() {
+                    if play.is_race() || play.is_fight() || play.is_stealth() || play.is_puzzle() {
                         let ax = (keys.right as i32 - keys.left as i32) as f32;
                         let az = (keys.up as i32 - keys.down as i32) as f32;
                         input.lx = (input.lx + ax).clamp(-1.0, 1.0);

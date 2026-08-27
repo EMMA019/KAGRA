@@ -418,3 +418,12 @@ def test_real_shared_offscreen_png_dimensions(tmp_path, monkeypatch):
         pytest.skip(result.skip_reason or "offscreen skipped")
     assert result.ok, result.error
     assert png_dimensions(out) == (64, 48)
+
+
+def test_load_puzzle_pad_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/puzzle_pad_smoke.json")
+    assert sc.name == "puzzle_pad_smoke"
+    assert sc.expect_world["path"].endswith("puzzle_pad_world.json")
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen["out"].endswith("puzzle_pad_shared.png")
+

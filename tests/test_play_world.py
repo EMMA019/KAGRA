@@ -433,3 +433,26 @@ def test_stealth_hide_fixture_has_hide_guard_and_exit():
     slots = sorted(int(lit["slot"]) for lit in data["lights"])
     assert slots == [0, 1, 2, 3]
     assert data.get("heightfield") in (None, {})
+
+
+def test_puzzle_pad_fixture_has_crate_and_pad():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/puzzle_pad_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    pads = [p for p in data["props"] if p.get("name") == "pad"]
+    assert len(pads) == 1
+    assert pads[0].get("model") == "box"
+    crates = [p for p in data["props"] if p.get("name") == "crate"]
+    assert len(crates) == 1
+    assert crates[0].get("model") == "box"
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    assert any(p.get("name") == "floor" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+

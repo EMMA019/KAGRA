@@ -27,6 +27,7 @@ pub mod race;
 pub mod rpg;
 pub mod novel;
 pub mod stealth;
+pub mod puzzle;
 pub mod save;
 pub mod scene;
 pub mod scene3d;
