@@ -64,8 +64,11 @@ wgpu = { version = "30", optional = true, features = ["webgpu", "webgl"] }
 [dev-dependencies]
 png = "0.17"
 pollster = "0.3"
-# Desktop WorldDoc window only (example). Same winit 0.29 *line* as kagra-core,
-# but a separate process + wgpu 30 via raw-window-handle. Do not mix renderers.
+
+# Desktop WorldDoc window only (example `window`). Same winit 0.29 *line* as
+# kagra-core, but a separate process + wgpu 30 via raw-window-handle.
+# Native-only: do not compile this example (or pull winit) for wasm32.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 winit = { version = "0.29", default-features = true }
 
 [[example]]
