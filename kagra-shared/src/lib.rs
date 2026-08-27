@@ -33,6 +33,7 @@ pub mod sports;
 pub mod sim;
 pub mod survival;
 pub mod rhythm;
+pub mod fish;
 pub mod save;
 pub mod scene;
 pub mod scene3d;

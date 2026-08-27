@@ -1,0 +1,41 @@
+{
+  "name": "fish_cast_smoke",
+  "notes": "M3 fishing slice 1 on shared wgpu 30. Title -> play -> result (stand on dock; J/click casts; short wait is a bite; J/click lands dump-visible catch/flag/coins/name) lives in WorldPlay / python -m kagra.play_world. Capsules/boxes. Official water_y plane + dock readable. Overlay wait pip, not screenshot-only. Indoor lights 4 slots. Dock camera looks at water + dock. No RendererV2, no VRM, no Rapier, no SSAO/GI, no inventory, no net. World assertions + dump query (not golden pixels). Picture slice inherited.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/fish_cast_world.json",
+    "player.on_ground": true,
+    "query": [
+      {
+        "type": "walker",
+        "name": "player",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "dock",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "bobber",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "flag",
+        "count": 1
+      },
+      {
+        "type": "light",
+        "count": 4
+      }
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/fish_cast_world.json",
+    "out": "scratch/fish_cast_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

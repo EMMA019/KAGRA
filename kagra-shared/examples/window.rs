@@ -179,6 +179,8 @@ fn main() -> Result<(), String> {
             "KAGRA Sim Meter (shared wgpu 30)"
         } else if play.is_sprite() {
             "KAGRA Sprite Card (shared wgpu 30)"
+        } else if play.is_fish() {
+            "KAGRA Fish Dock (shared wgpu 30)"
         } else {
             "KAGRA Crest Isle (shared wgpu 30)"
         })
@@ -333,6 +335,7 @@ fn main() -> Result<(), String> {
                         && !play.is_novel()
                         && !play.is_stealth()
                         && !play.is_rhythm()
+                        && !play.is_fish()
                     {
                         input.lz = 1.0;
                     }
@@ -346,6 +349,9 @@ fn main() -> Result<(), String> {
                         input.attack = true;
                     }
                     if seconds.is_some() && play.is_rhythm() && play.game.is_playing() {
+                        input.attack = true;
+                    }
+                    if seconds.is_some() && play.is_fish() && play.game.is_playing() {
                         input.attack = true;
                     }
                     if seconds.is_some() && play.is_novel() && play.game.is_playing() {

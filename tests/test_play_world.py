@@ -564,3 +564,27 @@ def test_rhythm_beat_fixture_has_stage_and_marker():
     assert data.get("heightfield") in (None, {})
     assert data.get("coins", 0) == 0
 
+
+def test_fish_cast_fixture_has_dock_and_water():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/fish_cast_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    assert data.get("water_y") == 0.0
+    docks = [p for p in data["props"] if p.get("name") == "dock"]
+    assert len(docks) == 1
+    assert docks[0].get("model") == "box"
+    bobbers = [p for p in data["props"] if p.get("name") == "bobber"]
+    assert len(bobbers) == 1
+    assert bobbers[0].get("model") == "box"
+    assert bobbers[0].get("enabled") is False
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("heightfield") in (None, {})
+    assert data.get("coins", 0) == 0
+
