@@ -216,6 +216,8 @@ pub struct SkinnedMesh {
     pub clip: Option<AnimClip>,
     /// VRM 0/1 humanoid bone name -> node index. Empty when extras are absent.
     pub humanoid: HashMap<String, usize>,
+    /// VRM 0 secondaryAnimation / VRM 1 VRMC_springBone chains (rest).
+    pub springs: crate::spring::SpringState,
 }
 
 /// Rest-pose node (children + TRS). `matrix` is baked into TRS when present.
@@ -366,13 +368,23 @@ pub fn is_walk_skinned_spec(spec: &str) -> bool {
 /// CPU-skin `rest` vertices into `Vertex3` at time `t` (seconds, looped).
 /// `t = 0` is the first key / T-pose for the bundled Walk clip.
 pub fn sample_skinned(skin: &SkinnedMesh, t: f32) -> MeshData {
+    sample_skinned_hair(skin, Some(t), 0.0)
+}
+
+/// CPU-skin with optional clip time and dump `hair` yaw on the first spring node.
+/// `t = None` is bind/rest (idle T-pose, not Mixamo key 0).
+pub fn sample_skinned_hair(skin: &SkinnedMesh, t: Option<f32>, hair: f32) -> MeshData {
     if skin.skin_joints.is_empty()
         || skin.joints.len() != skin.rest.vertices.len()
         || skin.weights.len() != skin.rest.vertices.len()
     {
         return skin.rest.clone();
     }
-    let locals = sample_locals(skin, t);
+    let mut locals = match t {
+        Some(tt) => sample_locals(skin, tt),
+        None => rest_locals(skin),
+    };
+    apply_hair(skin, &mut locals, hair);
     let globals = global_pose(&skin.nodes, &locals);
     let mut joint_mats = vec![Mat4::IDENTITY; skin.skin_joints.len()];
     for (j, &node) in skin.skin_joints.iter().enumerate() {
@@ -535,6 +547,10 @@ fn skinned_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<SkinnedMesh, St
         skin_joints,
         clip,
         humanoid: parse_humanoid(doc),
+        springs: {
+            let children: Vec<Vec<usize>> = doc.nodes.iter().map(|n| n.children.clone()).collect();
+            crate::spring::parse_spring_bones(doc.extensions.as_ref(), &children)
+        },
     };
     crate::mixamo::bind_locomotion(&mut skin);
     Ok(skin)
@@ -621,6 +637,52 @@ fn pick_clip(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<Option<AnimClip>, Stri
         duration,
         channels,
     }))
+}
+
+fn rest_locals(skin: &SkinnedMesh) -> Vec<NodeLocal> {
+    skin.nodes
+        .iter()
+        .map(|n| NodeLocal {
+            translation: n.translation,
+            rotation: n.rotation,
+            scale: n.scale,
+        })
+        .collect()
+}
+
+fn apply_hair(skin: &SkinnedMesh, locals: &mut [NodeLocal], hair: f32) {
+    if hair.abs() < 1e-8 {
+        return;
+    }
+    let Some(node) = crate::spring::hair_node(&skin.springs) else {
+        return;
+    };
+    if node >= locals.len() {
+        return;
+    }
+    locals[node].rotation *= Quat::from_axis_angle(Vec3::Z, hair);
+}
+
+/// Step Verlet after pose. Returns dump-visible hair yaw.
+pub fn step_springs(
+    skin: &SkinnedMesh,
+    sim: &mut crate::spring::SpringState,
+    t: Option<f32>,
+    dt: f32,
+) -> f32 {
+    if sim.chains.is_empty() {
+        *sim = skin.springs.clone();
+    }
+    if sim.chains.is_empty() {
+        return 0.0;
+    }
+    let locals = match t {
+        Some(tt) => sample_locals(skin, tt),
+        None => rest_locals(skin),
+    };
+    let world = global_pose(&skin.nodes, &locals);
+    crate::spring::step(sim, &world, dt);
+    crate::spring::hair_yaw(sim)
 }
 
 fn sample_locals(skin: &SkinnedMesh, t: f32) -> Vec<NodeLocal> {
@@ -1522,9 +1584,14 @@ mod tests {
         assert_eq!(skin.rest.indices.len(), 36);
         assert_eq!(skin.joints.len(), 8);
         assert_eq!(skin.weights.len(), 8);
-        assert_eq!(skin.skin_joints.len(), 2);
+        assert_eq!(skin.skin_joints.len(), 4);
+        assert_eq!(skin.nodes.len(), 4);
         assert_eq!(skin.humanoid.get("hips").copied(), Some(0));
         assert_eq!(skin.humanoid.get("chest").copied(), Some(1));
+        assert_eq!(skin.springs.chains.len(), 1);
+        assert_eq!(skin.springs.chains[0].joints.len(), 2);
+        assert_eq!(skin.springs.chains[0].joints[0].node, 2);
+        assert_eq!(skin.springs.chains[0].joints[1].node, 3);
         let clip = skin.clip.as_ref().expect("Walk clip");
         assert!(clip.name.eq_ignore_ascii_case("walk"));
         let rest = sample_skinned(&skin, 0.0);
@@ -1546,6 +1613,33 @@ mod tests {
             let d = (Vec3::from_array(va.pos) - Vec3::from_array(vb.pos)).length();
             assert!(d < 1e-4, "no clip => bind pose at any t");
         }
+    }
+
+    #[test]
+    fn vrm_hair_yaw_moves_skinned_verts() {
+        let bytes = walk_skinned_vrm();
+        let skin = skinned_from_glb(&bytes).expect("vrm");
+        assert!(!skin.springs.is_empty());
+        let rest = sample_skinned_hair(&skin, None, 0.0);
+        let sag = sample_skinned_hair(&skin, None, 0.35);
+        let mut max_d = 0.0f32;
+        for (a, b) in rest.vertices.iter().zip(sag.vertices.iter()) {
+            max_d = max_d.max((Vec3::from_array(a.pos) - Vec3::from_array(b.pos)).length());
+        }
+        assert!(
+            max_d > 0.01,
+            "hair yaw must move skinned verts before CPU skin, max_d={max_d}"
+        );
+        let mut sim = skin.springs.clone();
+        let y0 = step_springs(&skin, &mut sim, None, 1.0 / 60.0);
+        let mut y1 = y0;
+        for _ in 0..24 {
+            y1 = step_springs(&skin, &mut sim, None, 1.0 / 60.0);
+        }
+        assert!(
+            (y1 - y0).abs() > 1e-4,
+            "idle Verlet must change hair yaw, y0={y0} y1={y1}"
+        );
     }
 
     #[test]

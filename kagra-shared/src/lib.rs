@@ -39,6 +39,7 @@ pub mod session;
 pub mod shop;
 pub mod sim;
 pub mod sports;
+pub mod spring;
 pub mod sprite;
 pub mod stealth;
 pub mod survival;

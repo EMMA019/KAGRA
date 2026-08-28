@@ -28,7 +28,7 @@ use std::path::Path;
 use crate::collectathon::open_world_height;
 use crate::gltf_load::{
     is_tpose_humanoid_spec, is_walk_skinned_spec, is_walk_vrm_spec, mesh_from_embedded_gltf,
-    mesh_from_glb, mesh_from_gltf_json, sample_skinned, skinned_from_embedded_gltf,
+    mesh_from_glb, mesh_from_gltf_json, sample_skinned_hair, skinned_from_embedded_gltf,
     skinned_from_glb, skinned_from_gltf_json, skinned_tpose_humanoid, unit_cube_gltf,
     walk_skinned_gltf, walk_skinned_vrm,
 };
@@ -153,6 +153,9 @@ pub struct WorldWalker {
     /// Seconds into the walk clip. 0 = rest / T-pose. Dump-visible.
     #[serde(default)]
     pub clip: f32,
+    /// First spring-bone local yaw (radians). Dump-visible. Changes idle/walk.
+    #[serde(default)]
+    pub hair: f32,
 }
 
 fn walker_type() -> String {
@@ -627,7 +630,9 @@ impl WorldDoc {
         for (i, slot) in self.gltf_slots().into_iter().enumerate() {
             let mesh = match &slot {
                 GltfSlot::Rest(spec) => gltf_mesh_for(spec),
-                GltfSlot::Skinned { spec, clip, .. } => gltf_skinned_mesh_for(spec, *clip),
+                GltfSlot::Skinned {
+                    spec, clip, hair, ..
+                } => gltf_skinned_mesh_for(spec, *clip, *hair),
             }
             .unwrap_or_else(|| primitives::box_mesh(Vec3::ONE));
             out.push((MeshId(MESH_GLTF_BASE + i as u32), mesh));
@@ -701,6 +706,7 @@ impl WorldDoc {
                     walker_id: walk.id.clone(),
                     spec: spec.to_string(),
                     clip: walk.clip,
+                    hair: walk.hair,
                 });
             }
         }
@@ -731,6 +737,7 @@ enum GltfSlot {
         walker_id: String,
         spec: String,
         clip: f32,
+        hair: f32,
     },
 }
 
@@ -879,17 +886,17 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
     None
 }
 
-fn gltf_skinned_mesh_for(spec: &str, clip: f32) -> Option<MeshData> {
+fn gltf_skinned_mesh_for(spec: &str, clip: f32, hair: f32) -> Option<MeshData> {
     if let Some(skin) = load_skinned(spec) {
         if clip <= 0.0 {
-            return Some(skin.rest.clone());
+            return Some(sample_skinned_hair(&skin, None, hair));
         }
-        return Some(sample_skinned(&skin, clip));
+        return Some(sample_skinned_hair(&skin, Some(clip), hair));
     }
     gltf_mesh_for(spec)
 }
 
-fn load_skinned(spec: &str) -> Option<crate::gltf_load::SkinnedMesh> {
+pub(crate) fn load_skinned(spec: &str) -> Option<crate::gltf_load::SkinnedMesh> {
     let spec = spec.trim();
     if spec.starts_with('{') {
         return skinned_from_embedded_gltf(spec).ok();
@@ -1528,6 +1535,44 @@ mod tests {
         assert_eq!(skinned.1.indices.len(), 36);
         assert!(skinned.1.vertices.iter().any(|v| v.uv != [0.0, 0.0]));
         assert!(skinned.1.albedo.as_ref().is_some_and(|a| a.width >= 2));
+        assert_eq!(w.hair, 0.0);
+        assert!(json.contains("\"hair\""), "hair yaw dump-visible");
+    }
+
+    #[test]
+    fn walker_hair_yaw_moves_compiled_verts() {
+        const DUMP: &str = include_str!("../tests/fixtures/vrm_walker_world.json");
+        let mut rest = WorldDoc::from_json(DUMP).expect("parse");
+        rest.player.as_mut().unwrap().hair = 0.0;
+        if let Some(w) = rest.walkers.first_mut() {
+            w.hair = 0.0;
+        }
+        let mut sag = rest.clone();
+        sag.player.as_mut().unwrap().hair = 0.4;
+        if let Some(w) = sag.walkers.first_mut() {
+            w.hair = 0.4;
+        }
+        let rest_m = rest
+            .compile_meshes()
+            .into_iter()
+            .find(|(id, _)| id.0 >= MESH_GLTF_BASE)
+            .expect("rest")
+            .1;
+        let sag_m = sag
+            .compile_meshes()
+            .into_iter()
+            .find(|(id, _)| id.0 >= MESH_GLTF_BASE)
+            .expect("sag")
+            .1;
+        let mut max_d = 0.0f32;
+        for (a, b) in rest_m.vertices.iter().zip(sag_m.vertices.iter()) {
+            max_d =
+                max_d.max((glam::Vec3::from_array(a.pos) - glam::Vec3::from_array(b.pos)).length());
+        }
+        assert!(
+            max_d > 0.01,
+            "dump hair yaw must move CPU-skinned verts, max_d={max_d}"
+        );
     }
 
     #[test]
