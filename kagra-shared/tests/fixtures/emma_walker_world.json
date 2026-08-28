@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "half": 16.0,
+  "floor_y": 0.0,
+  "gravity": 9.8,
+  "water_y": null,
+  "coins": 0,
+  "player": {
+    "id": "walker:player",
+    "type": "walker",
+    "name": "player",
+    "position": [0.0, 0.0, 0.0],
+    "yaw": 0.0,
+    "face": 0.0,
+    "on_ground": true,
+    "model": "capsule",
+    "gltf": "assets/Emma.vrm",
+    "clip": 0.0
+  },
+  "props": [],
+  "walkers": [
+    {
+      "id": "walker:player",
+      "type": "walker",
+      "name": "player",
+      "position": [0.0, 0.0, 0.0],
+      "yaw": 0.0,
+      "face": 0.0,
+      "on_ground": true,
+      "model": "capsule",
+      "gltf": "assets/Emma.vrm",
+      "clip": 0.0
+    }
+  ],
+  "lights": [],
+  "cameras": [
+    {
+      "id": "camera:main",
+      "type": "camera",
+      "name": "main",
+      "position": [0.0, 2.4, 6.0],
+      "target": [0.0, 0.9, 0.0],
+      "fov": 54.0
+    }
+  ],
+  "heightfield": null
+}

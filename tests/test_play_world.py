@@ -30,6 +30,17 @@ def test_default_dump_is_crest_isle_fixture():
     assert '"version": 1' in text or '"version":1' in text
     assert "walker:player" in text
 
+def test_emma_walker_dump_is_repo_relative():
+    path = ROOT / "kagra-shared" / "tests" / "fixtures" / "emma_walker_world.json"
+    assert path.is_file()
+    import json
+    data = json.loads(path.read_text(encoding="utf-8-sig"))
+    spec = data["player"]["gltf"]
+    assert spec == "assets/Emma.vrm"
+    assert "D:" not in spec and "\\" not in spec
+    default = default_world_dump(root=ROOT)
+    assert default.name == "crest_isle_world.json"
+
 
 def test_looks_like_no_display_and_adapter():
     assert looks_like_no_display("no display: EventLoopError")

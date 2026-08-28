@@ -23,7 +23,7 @@
 //! `WalkInput`: camera-relative wish, sit on `height_at`, optional jump.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::collectathon::open_world_height;
 use crate::gltf_load::{
@@ -869,6 +869,37 @@ fn nearest_sample(samples: &[[f32; 3]], x: f32, z: f32) -> f32 {
     best_y
 }
 
+fn existing_asset_path(spec: &str) -> Option<PathBuf> {
+    let spec = spec.trim();
+    let mut names: Vec<String> = vec![spec.to_string()];
+    let stem = Path::new(spec)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(spec);
+    if stem.eq_ignore_ascii_case("emma") || spec.eq_ignore_ascii_case("emma") {
+        for a in crate::assets::resolve_alias("emma") {
+            if !names.iter().any(|n| n == a) {
+                names.push(a.to_string());
+            }
+        }
+    }
+    for name in names {
+        let direct = PathBuf::from(&name);
+        if direct.is_file() {
+            return Some(direct);
+        }
+        let from_crate = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(&name);
+        if from_crate.is_file() {
+            return Some(from_crate);
+        }
+    }
+    None
+}
+
+fn is_emma_vrm_stem(stem: &str) -> bool {
+    stem.eq_ignore_ascii_case("emma.vrm")
+}
+
 fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
     let spec = spec.trim();
     if spec.starts_with('{') {
@@ -891,18 +922,19 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
     ) {
         return mesh_from_embedded_gltf(&unit_cube_gltf()).ok();
     }
-    let path = Path::new(spec);
-    if path.is_file() && lower.ends_with(".gltf") {
-        let json = std::fs::read_to_string(path).ok()?;
-        let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
-        return mesh_from_gltf_json(&json, |uri| {
-            std::fs::read(base.join(uri)).map_err(|e| e.to_string())
-        })
-        .ok();
-    }
-    if path.is_file() && (lower.ends_with(".glb") || lower.ends_with(".vrm")) {
-        let bytes = std::fs::read(path).ok()?;
-        return mesh_from_glb(&bytes).ok();
+    if let Some(path) = existing_asset_path(spec) {
+        if lower.ends_with(".gltf") {
+            let json = std::fs::read_to_string(&path).ok()?;
+            let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+            return mesh_from_gltf_json(&json, |uri| {
+                std::fs::read(base.join(uri)).map_err(|e| e.to_string())
+            })
+            .ok();
+        }
+        if lower.ends_with(".glb") || lower.ends_with(".vrm") {
+            let bytes = std::fs::read(&path).ok()?;
+            return mesh_from_glb(&bytes).ok();
+        }
     }
     None
 }
@@ -958,18 +990,24 @@ pub(crate) fn load_skinned(spec: &str) -> Option<crate::gltf_load::SkinnedMesh> 
     ) {
         return skinned_from_embedded_gltf(&unit_cube_gltf()).ok();
     }
-    let path = Path::new(spec);
-    if path.is_file() && lower.ends_with(".gltf") {
-        let json = std::fs::read_to_string(path).ok()?;
-        let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
-        return skinned_from_gltf_json(&json, |uri| {
-            std::fs::read(base.join(uri)).map_err(|e| e.to_string())
-        })
-        .ok();
+    if let Some(path) = existing_asset_path(spec) {
+        if lower.ends_with(".gltf") {
+            let json = std::fs::read_to_string(&path).ok()?;
+            let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+            return skinned_from_gltf_json(&json, |uri| {
+                std::fs::read(base.join(uri)).map_err(|e| e.to_string())
+            })
+            .ok();
+        }
+        if lower.ends_with(".glb") || lower.ends_with(".vrm") {
+            let bytes = std::fs::read(&path).ok()?;
+            return skinned_from_glb(&bytes).ok();
+        }
     }
-    if path.is_file() && (lower.ends_with(".glb") || lower.ends_with(".vrm")) {
-        let bytes = std::fs::read(path).ok()?;
-        return skinned_from_glb(&bytes).ok();
+    if is_emma_vrm_stem(stem) {
+        // Official dump points at assets/Emma.vrm (gitignored, large).
+        // CI / missing file: tiny clip-less tpose_humanoid (same Mixamo walk).
+        return skinned_tpose_humanoid().ok();
     }
     None
 }
@@ -1763,6 +1801,26 @@ mod tests {
         assert!(
             !scene.batches.iter().any(|b| b.mesh == MESH_CAPSULE),
             "mixamo walker is a VRM mesh, not the capsule"
+        );
+    }
+
+    #[test]
+    fn emma_walker_dump_is_repo_relative_and_compiles() {
+        const DUMP: &str = include_str!("../tests/fixtures/emma_walker_world.json");
+        let doc = WorldDoc::from_json(DUMP).unwrap();
+        let spec = doc.player.as_ref().unwrap().gltf.as_deref().unwrap();
+        assert_eq!(spec, "assets/Emma.vrm");
+        assert!(!spec.contains('\\') && !spec.contains(':'));
+        let scene = doc.compile_scene(1.0);
+        let batch = scene
+            .batches
+            .iter()
+            .find(|b| b.mesh.0 >= MESH_GLTF_BASE)
+            .expect("emma walker batch (Emma.vrm or tpose_humanoid fallback)");
+        assert_eq!(batch.instances[0].material, Material::Toon);
+        assert!(
+            !scene.batches.iter().any(|b| b.mesh == MESH_CAPSULE),
+            "emma dump must not surprise-swap to the capsule"
         );
     }
 }

@@ -1682,4 +1682,59 @@ mod tests {
             "look-at toward camera must move mesh, max_d={max_d} look_yaw={ly}"
         );
     }
+
+    #[test]
+    fn emma_walker_wasd_mixamo_walks() {
+        const DUMP: &str = include_str!("../tests/fixtures/emma_walker_world.json");
+        let mut play = WorldPlay::from_json(DUMP).unwrap();
+        play.start();
+        assert_eq!(
+            play.doc.player.as_ref().unwrap().gltf.as_deref(),
+            Some("assets/Emma.vrm")
+        );
+        play.input = WalkInput {
+            lx: 0.0,
+            lz: 1.0,
+            jump: false,
+            attack: false,
+            dodge: false,
+        };
+        for _ in 0..20 {
+            play.tick(1.0 / 60.0);
+        }
+        assert!(play.doc.player.as_ref().unwrap().clip > 0.2);
+        let walk = play
+            .doc
+            .compile_meshes()
+            .into_iter()
+            .find(|(id, _)| id.0 >= crate::world_doc::MESH_GLTF_BASE)
+            .unwrap()
+            .1;
+        let bind = {
+            let mut idle = play.doc.clone();
+            if let Some(w) = idle.player.as_mut() {
+                w.clip = 0.0;
+            }
+            for w in &mut idle.walkers {
+                w.clip = 0.0;
+            }
+            idle.compile_meshes()
+                .into_iter()
+                .find(|(id, _)| id.0 >= crate::world_doc::MESH_GLTF_BASE)
+                .unwrap()
+                .1
+        };
+        let mut max_d = 0.0f32;
+        for (a, b) in bind.vertices.iter().zip(walk.vertices.iter()) {
+            let d = (glam::Vec3::from_array(a.pos) - glam::Vec3::from_array(b.pos)).length();
+            max_d = max_d.max(d);
+        }
+        assert!(
+            max_d > 0.02,
+            "Emma Mixamo walk (or tpose fallback) max_d={max_d}"
+        );
+        play.input = WalkInput::default();
+        play.tick(1.0 / 60.0);
+        assert_eq!(play.doc.player.as_ref().unwrap().clip, 0.0);
+    }
 }

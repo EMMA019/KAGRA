@@ -151,6 +151,7 @@ python examples/vrm_dodge_room.py        # falling boxes, survive (agent-run log
 python examples/vrm_relic_run.py          # island relic collect 30s (agent-run log)
 python examples/vrm_open_world.py         # leftover VRM Crest Isle (RendererV2)
 python -m kagra.play_world                # official Crest play: wgpu 30 window walking a dump (capsule, WASD)
+python -m kagra.play_world kagra-shared/tests/fixtures/emma_walker_world.json  # VRoid Emma WASD walk (wgpu 30)
 python examples/vrm_multi_avatar.py       # N VRM clones; GPU share + FPS HUD (`KAGRA_AVATARS=8`)
 # Crest Isle mobile (kagra-shared; not VRM — Kenney-style capsule)
 ./scripts/build_wasm.sh && python -m http.server -d kagra-shared/www 8000

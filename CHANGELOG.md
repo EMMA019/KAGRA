@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Official Emma VRoid play dump: ``python -m kagra.play_world kagra-shared/tests/fixtures/emma_walker_world.json`` walks ``assets/Emma.vrm`` (repo-relative; Mixamo rest+roll, MToon/albedo/spring/morph/look-at already on VRM walkers). ``python -m kagra.play_world`` with no args stays Crest Isle capsule collectathon. ``Emma.vrm`` stays gitignored; missing file falls back to tiny ``tpose_humanoid.vrm`` so CI stays green. No Rapier / SSAO / second renderer / new ECS. ``examples/vrm_open_world.py`` not rewritten.
+
 - 2D action projectile + room switch on ``play_world``: J / click from range spawns a dump-visible ``shot`` sprite that moves and can hit/kill; crossing a ``trigger`` swaps hall <-> den (dump scene / name / flag). Walk / melee hit / kill stay. Sprite/quad stays on WorldDoc. No SSAO, no VRM, no new ECS, no RendererV2, no Rapier.
 
 - First M3 genre (collectathon): ``python -m kagra.play_world`` is one loop — title → play → result, walk the island, pick up, count, finish. Shared ``WorldPlay`` reuses collectathon ``IsleGame`` / pickups (no new ECS). ``compile_scene`` production picture on shared wgpu 30: island heightfield (not a placeholder plane) + Grass albedo, metal coins (existing GGX ``Material::Metal``), lights slot 0..3 1:1 (no leak), readable capsule (body+head). Verify: ``examples/verify_scenarios/collectathon_smoke.json`` (coins / on_ground / query / tile albedo_ok + offscreen not empty). GPU-free tests stay green. ``new_for_window`` stays ``cfg(not(wasm32))``. No VRM skin, no Rapier, no RendererV2 delete, no action/RPG.

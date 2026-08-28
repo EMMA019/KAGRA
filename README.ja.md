@@ -152,6 +152,7 @@ python examples/vrm_dodge_room.py        # 降ってくる箱を避ける（エ�
 python examples/vrm_relic_run.py          # 島の遺跡集め 30 秒（エージェントログあり）
 python examples/vrm_open_world.py         # 旧 VRM Crest Isle（RendererV2）
 python -m kagra.play_world                # 公式 Crest collectathon: タイトル→プレイ→結果（カプセル、WASD）
+python -m kagra.play_world kagra-shared/tests/fixtures/emma_walker_world.json  # VRoid Emma 歩き（wgpu 30）
 python examples/vrm_multi_avatar.py       # 複数 VRM。GPU 共有 + FPS（`KAGRA_AVATARS=8`）
 # Crest Isle モバイル（kagra-shared。VRM ではない。Kenney 風カプセル）
 ./scripts/build_wasm.sh && python -m http.server -d kagra-shared/www 8000
