@@ -413,9 +413,24 @@ impl Default for Scene3D {
     }
 }
 
+/// Draw-list stats for one compiled frame. Not dumped (GPU ids are not game objects).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RenderStats {
+    pub batches: u32,
+    pub instances: u32,
+}
+
 impl Scene3D {
     pub fn instance_count(&self) -> usize {
         self.batches.iter().map(|b| b.instances.len()).sum()
+    }
+
+    /// Batch + instance counts after GPU instancing (same mesh+material = one draw).
+    pub fn render_stats(&self) -> RenderStats {
+        RenderStats {
+            batches: self.batches.len() as u32,
+            instances: self.instance_count() as u32,
+        }
     }
 }
 
@@ -472,7 +487,13 @@ impl SceneBuilder {
             }
         }
         let inst = Instance::with_material(model, color, material);
-        match self.batches.iter_mut().find(|b| b.mesh == mesh) {
+        // Same mesh + material = one draw. WebGL2 instance vertex buffers
+        // (locations 2..7); renderer slices the buffer (no base_instance).
+        match self
+            .batches
+            .iter_mut()
+            .find(|b| b.mesh == mesh && b.instances.first().is_some_and(|i| i.material == material))
+        {
             Some(b) => b.instances.push(inst),
             None => self.batches.push(Batch {
                 mesh,
@@ -883,6 +904,45 @@ mod tests {
         let batches = b.finish();
         assert_eq!(batches.len(), 1, "same mesh should share one batch");
         assert_eq!(batches[0].instances.len(), 2);
+    }
+
+    #[test]
+    fn builder_instances_n_trees_as_one_batch() {
+        let c = cam();
+        let mut b = SceneBuilder::new(&c, 1.0);
+        let mesh = MeshId(0);
+        b.register(mesh, Aabb::from_center_size(Vec3::ZERO, Vec3::ONE));
+        for i in 0..32 {
+            b.push(
+                mesh,
+                Mat4::from_translation(Vec3::new(i as f32 * 0.15, 0.0, 0.0)),
+                [46, 120, 52, 255],
+            );
+        }
+        let batches = b.finish();
+        assert_eq!(batches.len(), 1, "N trees of the same mesh = 1 GPU batch");
+        assert_eq!(batches[0].instances.len(), 32);
+        let stats = Scene3D {
+            batches: batches.clone(),
+            ..Scene3D::default()
+        }
+        .render_stats();
+        assert_eq!(stats.batches, 1);
+        assert_eq!(stats.instances, 32);
+    }
+
+    #[test]
+    fn builder_splits_batches_by_material() {
+        let mut b = SceneBuilder::new(&cam(), 1.0);
+        b.push_material(MeshId(0), Mat4::IDENTITY, [255; 4], Material::Solid);
+        b.push_material(
+            MeshId(0),
+            Mat4::IDENTITY,
+            [20, 80, 110, 255],
+            Material::Water,
+        );
+        let batches = b.finish();
+        assert_eq!(batches.len(), 2, "water and solid must not share a draw");
     }
 
     #[test]

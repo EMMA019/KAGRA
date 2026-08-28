@@ -50,7 +50,8 @@ const MESH_CAPSULE: MeshId = MeshId(2);
 const MESH_PLANE: MeshId = MeshId(3);
 pub(crate) const MESH_HEIGHTFIELD: MeshId = MeshId(4);
 pub(crate) const MESH_QUAD: MeshId = MeshId(5);
-pub(crate) const MESH_GLTF_BASE: u32 = 6;
+const MESH_CONE: MeshId = MeshId(6);
+pub(crate) const MESH_GLTF_BASE: u32 = 7;
 
 /// Persistent world. JSON source of truth. Not a draw list.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -367,18 +368,33 @@ impl WorldDoc {
             );
         }
 
+        let lod_r = self.vegetation_lod_radius();
         for prop in &self.props {
             if !prop.enabled {
                 continue;
             }
-            let mesh = mesh_for_prop(prop, &gltf_ids);
             let pos = Vec3::from_array(prop.position);
             let scale = Vec3::from_array(prop.scale);
+            let mat = material_for_prop(prop);
+            let veg = is_vegetation_prop(prop);
+            let cheap = veg && camera.eye.distance(pos) > lod_r;
+            if cheap {
+                let h = scale.y.abs().max(scale.x.abs()).max(0.4);
+                let model = Mat4::from_scale_rotation_translation(
+                    Vec3::new(h * 0.7, h, 1.0),
+                    Quat::from_rotation_y(billboard_yaw(camera.eye, pos)),
+                    pos,
+                );
+                b.push_material(MESH_QUAD, model, color_u8(prop.color), mat);
+                continue;
+            }
+            let mesh = mesh_for_prop(prop, &gltf_ids);
             let model =
                 Mat4::from_scale_rotation_translation(scale, Quat::from_rotation_y(prop.yaw), pos);
-            let mat = material_for_prop(prop);
             b.push_material(mesh, model, color_u8(prop.color), mat);
         }
+
+        self.push_vista(&mut b, &camera);
 
         let mut seen = std::collections::HashSet::new();
         let hide_local = self
@@ -595,6 +611,7 @@ impl WorldDoc {
             if prop.model.eq_ignore_ascii_case("plane")
                 || prop.model.eq_ignore_ascii_case("water")
                 || prop.name.eq_ignore_ascii_case("water")
+                || is_vegetation_prop(prop)
             {
                 continue;
             }
@@ -654,6 +671,8 @@ impl WorldDoc {
     pub fn compile_meshes(&self) -> Vec<(MeshId, MeshData)> {
         let mut out = compile_meshes();
         out.push((MESH_HEIGHTFIELD, self.heightfield_mesh()));
+        let cone_segs = self.vegetation_lod_cells();
+        out.push((MESH_CONE, primitives::cone_mesh(0.5, 1.0, cone_segs)));
         for (i, slot) in self.gltf_slots().into_iter().enumerate() {
             let mesh = match &slot {
                 GltfSlot::Rest(spec) => gltf_mesh_for(spec),
@@ -680,6 +699,8 @@ impl WorldDoc {
         let half = self.half.max(4.0);
         // Production island mesh (not a placeholder plane). 48 cells over
         // Crest's 160 m span is ~3.3 m — readable hills, not a billboard.
+        // Dump cells/lod_cells are Python 16 m tile tessellation (Crest 8/6);
+        // they drive vegetation LOD, not this island mesh (Relic Run UV stays).
         let cells = 48u32;
         let step = (half * 2.0) / cells as f32;
         let mut mesh = MeshData::default();
@@ -765,6 +786,261 @@ impl WorldDoc {
         }
         (props, walkers)
     }
+
+    fn vegetation_lod_radius(&self) -> f32 {
+        self.heightfield
+            .as_ref()
+            .and_then(|h| h.lod_radius)
+            .unwrap_or(28.0)
+            .max(1.0)
+    }
+
+    fn vegetation_lod_cells(&self) -> u32 {
+        self.heightfield
+            .as_ref()
+            .and_then(|h| h.lod_cells)
+            .unwrap_or(8)
+            .clamp(6, 12) as u32
+    }
+
+    fn dumped_vegetation_count(&self) -> usize {
+        self.props
+            .iter()
+            .filter(|p| p.enabled && is_vegetation_prop(p))
+            .count()
+    }
+
+    /// Kenney-style grove as instanced primitives. Not dumped (scenery).
+    /// Distance LOD: full trunk+cone vs existing billboard quad. Do not thin.
+    fn push_vista(&self, b: &mut SceneBuilder, camera: &Camera) {
+        if self.heightfield.is_none() || self.half < 40.0 {
+            return;
+        }
+        if self.dumped_vegetation_count() >= 8 {
+            return;
+        }
+        let lod_r = self.vegetation_lod_radius();
+        let eye = camera.eye;
+        let water = self.water_y.unwrap_or(0.0);
+        let trees = [
+            (-3.4, 1.2, 2.15, true, 0.40),
+            (4.1, 2.0, 1.85, false, 1.10),
+            (2.6, 6.4, 2.25, true, -0.35),
+            (-5.2, 4.8, 1.95, false, 0.80),
+            (6.8, 3.1, 2.05, true, 0.20),
+            (-2.0, 8.6, 1.75, false, -0.90),
+            (8.8, 9.4, 1.55, false, 0.50),
+            (-6.6, 11.2, 1.45, false, 1.30),
+            (3.8, 12.5, 2.10, true, -0.20),
+            (11.2, 2.4, 1.80, false, 2.00),
+            (-1.2, 14.8, 2.00, true, 0.70),
+            (5.4, 16.2, 1.70, false, -0.55),
+            (9.6, 13.0, 1.90, true, 0.15),
+            (12.4, 18.5, 3.20, true, 0.40),
+            (15.0, 21.0, 3.50, true, -0.30),
+            (18.2, 24.6, 3.80, true, 0.80),
+            (6.2, 22.4, 3.40, true, 1.10),
+            (-4.8, 9.8, 2.60, false, 0.25),
+            (-11.2, 3.4, 2.40, false, 0.60),
+            (-10.4, 8.2, 2.20, false, -0.40),
+            (-9.6, 13.6, 2.50, false, 1.20),
+            (1.6, 10.2, 2.00, false, 0.10),
+            (-7.8, 2.2, 1.70, false, 0.90),
+            (7.2, 7.8, 1.60, true, -1.40),
+            (-3.8, 17.4, 1.95, true, 0.45),
+            (8.0, 40.0, 2.40, true, 0.20),
+            (10.8, 46.0, 2.80, true, -0.40),
+            (4.2, 48.5, 2.50, true, 0.70),
+        ];
+        for (x, z, s, pine, yaw) in trees {
+            push_tree(
+                b,
+                eye,
+                lod_r,
+                x,
+                z,
+                s,
+                pine,
+                yaw,
+                self.height_at(x, z),
+                water,
+            );
+        }
+        let mut n = 0u32;
+        let mut z: f32 = -32.0;
+        while z < 56.0 {
+            let mut x: f32 = -28.0;
+            while x < 28.0 {
+                let jx = ((n.wrapping_mul(37) + 11) % 100) as f32 / 100.0 * 2.4 - 1.2;
+                let jz = ((n.wrapping_mul(17) + 4) % 100) as f32 / 100.0 * 2.4 - 1.2;
+                let px = x + jx;
+                let pz = z + jz;
+                let keep = (n.wrapping_mul(13) + 7) % 10 > 3;
+                n += 1;
+                if keep {
+                    let near_sig = trees
+                        .iter()
+                        .any(|(tx, tz, _, _, _)| (px - tx).hypot(pz - tz) < 3.2);
+                    let spawn = px.hypot(pz + 8.0) < 3.0;
+                    if !near_sig && !spawn {
+                        let g = self.height_at(px, pz);
+                        let pine = g > 2.2 || n.is_multiple_of(3);
+                        let scale = 1.45 + (n % 7) as f32 * 0.12;
+                        let yaw = n as f32 * 0.37;
+                        push_tree(b, eye, lod_r, px, pz, scale, pine, yaw, g, water);
+                    }
+                }
+                x += 7.0;
+            }
+            z += 7.0;
+        }
+        let flowers = [
+            [210u8, 70, 70, 255],
+            [230, 200, 60, 255],
+            [150, 90, 200, 255],
+            [80, 160, 70, 255],
+        ];
+        n = 0;
+        let mut z: f32 = -6.0;
+        while z < 22.0 {
+            let mut x: f32 = -11.0;
+            while x < 14.0 {
+                if x.hypot(z + 8.0) >= 1.8 && x > -10.0 {
+                    let jx = ((n.wrapping_mul(37) + 11) % 100) as f32 / 100.0 * 0.7 - 0.35;
+                    let jz = ((n.wrapping_mul(17) + 4) % 100) as f32 / 100.0 * 0.55 - 0.27;
+                    let px = x + jx;
+                    let pz = z + jz;
+                    let g = self.height_at(px, pz);
+                    if g > water + 0.05 {
+                        let col = flowers[(n as usize) % flowers.len()];
+                        let h = 0.22 + (n % 5) as f32 * 0.04;
+                        let pos = Vec3::new(px, g + h * 0.5, pz);
+                        if eye.distance(pos) > lod_r {
+                            let model = Mat4::from_scale_rotation_translation(
+                                Vec3::new(h * 0.9, h, 1.0),
+                                Quat::from_rotation_y(billboard_yaw(eye, pos)),
+                                pos,
+                            );
+                            b.push_material(MESH_QUAD, model, col, Material::Solid);
+                        } else {
+                            let model = Mat4::from_scale_rotation_translation(
+                                Vec3::new(0.16, h, 0.16),
+                                Quat::from_rotation_y(n as f32 * 0.47),
+                                pos,
+                            );
+                            b.push(MESH_BOX, model, col);
+                        }
+                    }
+                    n += 1;
+                }
+                x += 2.6;
+            }
+            z += 2.4;
+        }
+        let rocks = [
+            (1.4, 0.8, 1.4, 0.9, 1.2, 0.20),
+            (-1.6, 3.2, 1.6, 0.7, 1.3, 0.90),
+            (5.0, 1.1, 1.3, 0.6, 1.1, -0.40),
+            (-9.2, 5.4, 1.5, 1.0, 1.4, 0.55),
+            (12.0, 7.2, 1.8, 0.8, 1.3, -0.80),
+            (2.2, 4.6, 0.9, 1.2, 0.8, 0.30),
+            (9.0, 19.4, 1.6, 1.1, 1.5, 0.15),
+            (4.6, 9.0, 1.3, 0.7, 1.4, 0.70),
+            (-6.0, 15.4, 1.1, 1.3, 0.9, -0.25),
+        ];
+        for (x, z, sx, sy, sz, yaw) in rocks {
+            let g = self.height_at(x, z);
+            let m = Mat4::from_scale_rotation_translation(
+                Vec3::new(sx, sy, sz),
+                Quat::from_rotation_y(yaw),
+                Vec3::new(x, g + sy * 0.45, z),
+            );
+            b.push(MESH_BOX, m, [128, 118, 108, 255]);
+        }
+    }
+}
+
+fn is_vegetation_prop(prop: &WorldProp) -> bool {
+    let mut n = String::new();
+    n.push_str(&prop.name);
+    n.push(' ');
+    n.push_str(&prop.model);
+    if let Some(g) = prop.gltf.as_deref() {
+        n.push(' ');
+        n.push_str(g);
+    }
+    let n = n.to_ascii_lowercase();
+    n.contains("tree")
+        || n.contains("pine")
+        || n.contains("grass")
+        || n.contains("bush")
+        || n.contains("plant")
+        || n.contains("flower")
+        || n.contains("weed")
+        || n.contains("foliage")
+        || n.contains("nature")
+}
+
+fn billboard_yaw(eye: Vec3, pos: Vec3) -> f32 {
+    (eye.x - pos.x).atan2(eye.z - pos.z)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_tree(
+    b: &mut SceneBuilder,
+    eye: Vec3,
+    lod_r: f32,
+    x: f32,
+    z: f32,
+    scale: f32,
+    pine: bool,
+    yaw: f32,
+    ground: f32,
+    water_y: f32,
+) {
+    if ground < water_y + 0.05 {
+        return;
+    }
+    let pos = Vec3::new(x, ground, z);
+    if eye.distance(pos) > lod_r {
+        let h = scale * if pine { 3.6 } else { 2.6 };
+        let model = Mat4::from_scale_rotation_translation(
+            Vec3::new(h * 0.55, h, 1.0),
+            Quat::from_rotation_y(billboard_yaw(eye, pos)),
+            pos + Vec3::Y * (h * 0.45),
+        );
+        let col = if pine {
+            [46, 102, 58, 255]
+        } else {
+            [62, 132, 52, 255]
+        };
+        b.push_material(MESH_QUAD, model, col, Material::Solid);
+        return;
+    }
+    let q = Quat::from_rotation_y(yaw);
+    let trunk_h = scale * if pine { 1.15 } else { 0.85 };
+    let trunk = Mat4::from_scale_rotation_translation(
+        Vec3::new(0.22 * scale, trunk_h, 0.22 * scale),
+        q,
+        pos,
+    );
+    b.push(MESH_CAPSULE, trunk, [92, 62, 38, 255]);
+    let foliage_h = scale * if pine { 2.6 } else { 1.9 };
+    let foliage_r = scale * if pine { 0.95 } else { 1.35 };
+    let fol = Mat4::from_scale_rotation_translation(
+        Vec3::new(foliage_r, foliage_h, foliage_r),
+        q,
+        Vec3::new(x, ground + trunk_h * 0.55, z),
+    );
+    b.push(
+        MESH_CONE,
+        fol,
+        if pine {
+            [46, 102, 58, 255]
+        } else {
+            [62, 132, 52, 255]
+        },
+    );
 }
 
 enum GltfSlot {
@@ -1907,5 +2183,158 @@ mod tests {
             !scene.batches.iter().any(|b| b.mesh == MESH_CAPSULE),
             "emma dump must not surprise-swap to the capsule"
         );
+    }
+
+    #[test]
+    fn n_trees_share_one_instance_batch() {
+        let props: Vec<WorldProp> = (0..12)
+            .map(|i| WorldProp {
+                id: format!("prop:tree-{i}"),
+                kind: "prop".into(),
+                name: "tree".into(),
+                model: "tree".into(),
+                position: [i as f32 * 1.1 - 6.0, 1.0, 0.0],
+                scale: [1.0, 2.0, 1.0],
+                enabled: true,
+                ..Default::default()
+            })
+            .collect();
+        let doc = WorldDoc {
+            version: WORLD_DUMP_VERSION,
+            half: 40.0,
+            cameras: vec![WorldCamera {
+                id: "camera:main".into(),
+                kind: "camera".into(),
+                name: "main".into(),
+                position: [0.0, 4.0, 8.0],
+                target: [0.0, 1.0, 0.0],
+                fov: 54.0,
+            }],
+            heightfield: Some(WorldHeightfield {
+                fn_name: Some("open_world_height".into()),
+                lod_radius: Some(28.0),
+                lod_cells: Some(6),
+                ..Default::default()
+            }),
+            props,
+            ..Default::default()
+        };
+        assert_eq!(doc.dumped_vegetation_count(), 12);
+        let scene = doc.compile_scene(1.0);
+        let tree_batch = scene
+            .batches
+            .iter()
+            .find(|b| b.mesh == MESH_BOX && b.instances.len() >= 12)
+            .expect("12 dumped trees must be one MESH_BOX batch");
+        assert_eq!(tree_batch.instances.len(), 12, "N trees = 1 GPU batch");
+        let stats = scene.render_stats();
+        assert_eq!(stats.batches, scene.batches.len() as u32);
+        assert!(stats.instances >= 12);
+        assert!(
+            scene.batches.iter().filter(|b| b.mesh == MESH_BOX).count() <= 2,
+            "repeated trees must not be unique draws"
+        );
+    }
+
+    #[test]
+    fn far_trees_use_billboard_not_thinned() {
+        let mut props = Vec::new();
+        for i in 0..8 {
+            props.push(WorldProp {
+                id: format!("prop:tree-near-{i}"),
+                kind: "prop".into(),
+                name: "tree".into(),
+                model: "tree".into(),
+                position: [i as f32 * 0.8 - 3.0, 1.0, 0.0],
+                scale: [1.0, 2.0, 1.0],
+                enabled: true,
+                ..Default::default()
+            });
+        }
+        for i in 0..8 {
+            props.push(WorldProp {
+                id: format!("prop:tree-far-{i}"),
+                kind: "prop".into(),
+                name: "pine".into(),
+                model: "tree".into(),
+                position: [i as f32 * 0.8 - 3.0, 1.0, 40.0],
+                scale: [1.0, 2.4, 1.0],
+                enabled: true,
+                ..Default::default()
+            });
+        }
+        let doc = WorldDoc {
+            version: WORLD_DUMP_VERSION,
+            half: 40.0,
+            cameras: vec![WorldCamera {
+                id: "camera:main".into(),
+                kind: "camera".into(),
+                name: "main".into(),
+                position: [0.0, 4.0, 0.0],
+                target: [0.0, 1.0, 0.0],
+                fov: 54.0,
+            }],
+            heightfield: Some(WorldHeightfield {
+                lod_radius: Some(10.0),
+                lod_cells: Some(6),
+                ..Default::default()
+            }),
+            props,
+            ..Default::default()
+        };
+        let scene = doc.compile_scene(1.0);
+        let full = scene
+            .batches
+            .iter()
+            .filter(|b| b.mesh == MESH_BOX)
+            .map(|b| b.instances.len())
+            .sum::<usize>();
+        let cheap = scene
+            .batches
+            .iter()
+            .filter(|b| b.mesh == MESH_QUAD)
+            .map(|b| b.instances.len())
+            .sum::<usize>();
+        assert_eq!(full, 8, "near trees stay full mesh, got {full}");
+        assert_eq!(cheap, 8, "far trees become one billboard each, got {cheap}");
+        assert_eq!(full + cheap, 16, "do not thin vegetation");
+        let quad_batches = scene.batches.iter().filter(|b| b.mesh == MESH_QUAD).count();
+        assert_eq!(quad_batches, 1, "far trees share one instanced draw");
+    }
+
+    #[test]
+    fn crest_isle_vegetation_is_dense_and_instanced() {
+        let doc = WorldDoc::from_json(CREST_ISLE_DUMP).unwrap();
+        let hf = doc.heightfield.as_ref().expect("heightfield");
+        assert_eq!(hf.lod_radius, Some(28.0));
+        assert_eq!(hf.lod_cells, Some(6));
+        let scene = doc.compile_scene(16.0 / 9.0);
+        let stats = scene.render_stats();
+        assert!(
+            stats.instances >= 80,
+            "Crest grove must stay dense, instances={}",
+            stats.instances
+        );
+        let cone = scene
+            .batches
+            .iter()
+            .find(|b| b.mesh == MESH_CONE)
+            .expect("near trees use cone foliage");
+        assert!(
+            cone.instances.len() >= 8,
+            "cone foliage must instance, got {}",
+            cone.instances.len()
+        );
+        let cone_draws = scene.batches.iter().filter(|b| b.mesh == MESH_CONE).count();
+        assert_eq!(cone_draws, 1, "same-mesh foliage is one draw");
+        let meshes = doc.compile_meshes();
+        assert!(
+            meshes
+                .iter()
+                .any(|(id, m)| *id == MESH_CONE && !m.vertices.is_empty()),
+            "lod_cells cone is in compile_meshes"
+        );
+        let crate_p = doc.props.iter().find(|p| p.name == "crate").unwrap();
+        assert!(!is_vegetation_prop(crate_p));
     }
 }
