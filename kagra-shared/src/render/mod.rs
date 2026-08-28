@@ -44,7 +44,7 @@ struct Globals {
     light_view_proj: [[f32; 4]; 4],
 }
 
-/// インスタンスごとの頂点属性（location 2..7）。
+/// インスタンスごとの頂点属性（location 2..7, 9..11）。
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct InstanceRaw {
@@ -54,6 +54,12 @@ struct InstanceRaw {
     _pad: [f32; 3],
     /// Location 9: rgb = MToon shadeColor, a = shadingToony. Zeros if not toon.
     mtoon: [f32; 4],
+    /// Location 10: rgb = rimColor, a = rimFresnelPower.
+    mtoon2: [f32; 4],
+    /// Location 11: rgb = outlineColor, a = outlineWidth.
+    mtoon3: [f32; 4],
+    /// Location 12: x = shadingShift, y = rimLift.
+    mtoon4: [f32; 4],
 }
 
 #[derive(Debug)]
@@ -64,6 +70,9 @@ struct GpuMesh {
     albedo_bind: Option<wgpu::BindGroup>,
     _albedo_tex: Option<wgpu::Texture>,
     mtoon: [f32; 4],
+    mtoon2: [f32; 4],
+    mtoon3: [f32; 4],
+    mtoon4: [f32; 4],
 }
 
 #[derive(Debug)]
@@ -96,6 +105,8 @@ pub struct Renderer {
     pipeline3d: wgpu::RenderPipeline,
     /// 天球用。深度は書いて読まず、裏面カリングもしない。
     pipeline_sky: wgpu::RenderPipeline,
+    /// MToon アウトライン（backface push-out、カリング Front）。
+    pipeline_outline: wgpu::RenderPipeline,
     /// Depth-only sun map. Not a cascade, not RendererV2.
     pipeline_shadow: wgpu::RenderPipeline,
     globals_buf: wgpu::Buffer,
@@ -477,6 +488,21 @@ impl Renderer {
                 offset: 96,
                 shader_location: 9,
             },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x4,
+                offset: 112,
+                shader_location: 10,
+            },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x4,
+                offset: 128,
+                shader_location: 11,
+            },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x4,
+                offset: 144,
+                shader_location: 12,
+            },
         ];
         let vertex_buffers = [
             Some(wgpu::VertexBufferLayout {
@@ -560,6 +586,37 @@ impl Renderer {
             cache: None,
         });
 
+        let pipeline_outline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("kagra-shared outline pipeline"),
+            layout: Some(&layout3d),
+            vertex: wgpu::VertexState {
+                module: &shader3d,
+                entry_point: Some("vs_outline"),
+                compilation_options: Default::default(),
+                buffers: &vertex_buffers,
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader3d,
+                entry_point: Some("fs_outline"),
+                compilation_options: Default::default(),
+                targets: &hdr_target,
+            }),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: Some(wgpu::Face::Front),
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
         let pipeline_shadow = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("kagra-shared shadow pipeline"),
             layout: Some(&layout_shadow),
@@ -610,6 +667,7 @@ impl Renderer {
             vbuf_capacity,
             pipeline3d,
             pipeline_sky,
+            pipeline_outline,
             pipeline_shadow,
             globals_buf,
             globals_bind,
@@ -676,6 +734,18 @@ impl Renderer {
             .mtoon
             .map(crate::scene3d::MtoonShade::gpu)
             .unwrap_or([0.0; 4]);
+        let mtoon2 = mesh
+            .mtoon
+            .map(crate::scene3d::MtoonShade::gpu_rim)
+            .unwrap_or([0.0; 4]);
+        let mtoon3 = mesh
+            .mtoon
+            .map(crate::scene3d::MtoonShade::gpu_outline)
+            .unwrap_or([0.0; 4]);
+        let mtoon4 = mesh
+            .mtoon
+            .map(crate::scene3d::MtoonShade::gpu_shift_lift)
+            .unwrap_or([0.0; 4]);
         self.meshes.push(GpuMesh {
             vbuf,
             ibuf,
@@ -683,6 +753,9 @@ impl Renderer {
             albedo_bind,
             _albedo_tex: albedo_tex,
             mtoon,
+            mtoon2,
+            mtoon3,
+            mtoon4,
         });
         MeshId(self.meshes.len() as u32 - 1)
     }
@@ -780,20 +853,24 @@ impl Renderer {
                 let is_sky = mat0 == crate::scene3d::Material::Sky;
                 let casts_shadow = !is_sky && mat0 != crate::scene3d::Material::Water;
                 for inst in &batch.instances {
-                    let mtoon = if inst.material == crate::scene3d::Material::Toon {
-                        self.meshes
-                            .get(mesh)
-                            .map(|g| g.mtoon)
-                            .unwrap_or([0.55, 0.50, 0.52, 0.85])
-                    } else {
-                        [0.0; 4]
-                    };
+                    let (mtoon, mtoon2, mtoon3, mtoon4) =
+                        if inst.material == crate::scene3d::Material::Toon {
+                            match self.meshes.get(mesh) {
+                                Some(g) => (g.mtoon, g.mtoon2, g.mtoon3, g.mtoon4),
+                                None => ([0.55, 0.50, 0.52, 0.85], [0.0; 4], [0.0; 4], [0.0; 4]),
+                            }
+                        } else {
+                            ([0.0; 4], [0.0; 4], [0.0; 4], [0.0; 4])
+                        };
                     raw.push(InstanceRaw {
                         model: inst.model.to_cols_array_2d(),
                         color: to_linear(inst.color, self.format),
                         material: inst.material as u8 as f32,
                         _pad: [0.0; 3],
                         mtoon,
+                        mtoon2,
+                        mtoon3,
+                        mtoon4,
                     });
                 }
                 draws.push((
@@ -929,6 +1006,27 @@ impl Renderer {
                 pass.set_pipeline(&self.pipeline3d);
                 for (mesh, offset, count, is_sky, _cast) in &draws {
                     if *is_sky {
+                        continue;
+                    }
+                    let m = &self.meshes[*mesh];
+                    pass.set_bind_group(
+                        1,
+                        m.albedo_bind.as_ref().unwrap_or(&self.default_albedo_bind),
+                        &[],
+                    );
+                    pass.set_vertex_buffer(0, m.vbuf.slice(..));
+                    pass.set_vertex_buffer(1, self.inst_buf.slice(*offset..));
+                    pass.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..m.index_count, 0, 0..*count);
+                }
+                // MToon アウトライン: 本体の後にカリング Front で押し出し背面。
+                // outline_width > 0 の Toon メッシュだけ（非 Toon は mtoon3 がゼロ）。
+                pass.set_pipeline(&self.pipeline_outline);
+                for (mesh, offset, count, is_sky, _cast) in &draws {
+                    if *is_sky {
+                        continue;
+                    }
+                    if self.meshes[*mesh].mtoon3[3] <= 0.0 {
                         continue;
                     }
                     let m = &self.meshes[*mesh];

@@ -1249,8 +1249,8 @@ fn f32_val(v: Option<&serde_json::Value>, def: f32) -> f32 {
     v.and_then(|x| x.as_f64()).map(|x| x as f32).unwrap_or(def)
 }
 
-/// VRM 1 VRMC_materials_mtoon / VRM 0 materialProperties shadeColor + toony.
-/// Minimum port of kagra-core mtoon.rs (no GPU, no rim/matcap/outline).
+/// VRM 1 VRMC_materials_mtoon / VRM 0 materialProperties shade + rim + outline.
+/// Port of kagra-core mtoon.rs (no GPU, no matcap/normal/uv-anim textures).
 fn load_mtoon(doc: &GltfFile, prim: &Primitive) -> Option<MtoonShade> {
     let mut shade = MtoonShade::default();
     let mut found = false;
@@ -1266,6 +1266,25 @@ fn load_mtoon(doc: &GltfFile, prim: &Primitive) -> Option<MtoonShade> {
                 shade.shading_toony =
                     f32_val(mtoon.get("shadingToonyFactor"), shade.shading_toony).clamp(0.0, 0.999);
                 shade.shading_shift = f32_val(mtoon.get("shadingShiftFactor"), shade.shading_shift);
+                shade.rim_color = f32_arr3(mtoon.get("parametricRimColorFactor"), shade.rim_color);
+                shade.rim_power = f32_val(
+                    mtoon.get("parametricRimFresnelPowerFactor"),
+                    shade.rim_power,
+                )
+                .max(0.1);
+                shade.rim_lift = f32_val(mtoon.get("parametricRimLiftFactor"), shade.rim_lift);
+                shade.outline_color =
+                    f32_arr3(mtoon.get("outlineColorFactor"), shade.outline_color);
+                let ow = f32_val(mtoon.get("outlineWidthFactor"), 0.0);
+                let mode = mtoon
+                    .get("outlineWidthMode")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("none");
+                shade.outline_width = match mode {
+                    "worldCoordinates" => ow,
+                    "screenCoordinates" => ow * 0.01,
+                    _ => 0.0,
+                };
             }
         }
     }
@@ -1312,6 +1331,56 @@ fn load_mtoon(doc: &GltfFile, prim: &Primitive) -> Option<MtoonShade> {
                 .and_then(|x| x.as_f64())
             {
                 shade.shading_shift = v as f32;
+            }
+            if let Some(arr) = prop
+                .pointer("/vectorProperties/_RimColor")
+                .or_else(|| prop.pointer("/vectorProperties/RimColor"))
+                .and_then(|a| a.as_array())
+            {
+                shade.rim_color = [
+                    arr.first().and_then(|x| x.as_f64()).unwrap_or(0.0) as f32,
+                    arr.get(1).and_then(|x| x.as_f64()).unwrap_or(0.0) as f32,
+                    arr.get(2).and_then(|x| x.as_f64()).unwrap_or(0.0) as f32,
+                ];
+            }
+            if let Some(v) = prop
+                .pointer("/floatProperties/_RimFresnelPower")
+                .or_else(|| prop.pointer("/floatProperties/RimFresnelPower"))
+                .and_then(|x| x.as_f64())
+            {
+                shade.rim_power = (v as f32).max(0.1);
+            }
+            if let Some(v) = prop
+                .pointer("/floatProperties/_RimLift")
+                .or_else(|| prop.pointer("/floatProperties/RimLift"))
+                .and_then(|x| x.as_f64())
+            {
+                shade.rim_lift = v as f32;
+            }
+            if let Some(arr) = prop
+                .pointer("/vectorProperties/_OutlineColor")
+                .or_else(|| prop.pointer("/vectorProperties/OutlineColor"))
+                .and_then(|a| a.as_array())
+            {
+                shade.outline_color = [
+                    arr.first().and_then(|x| x.as_f64()).unwrap_or(0.05) as f32,
+                    arr.get(1).and_then(|x| x.as_f64()).unwrap_or(0.05) as f32,
+                    arr.get(2).and_then(|x| x.as_f64()).unwrap_or(0.08) as f32,
+                ];
+            }
+            if let Some(ow) = prop
+                .pointer("/floatProperties/_OutlineWidth")
+                .or_else(|| prop.pointer("/floatProperties/OutlineWidth"))
+                .and_then(|x| x.as_f64())
+            {
+                let mode = prop
+                    .pointer("/floatProperties/_OutlineWidthMode")
+                    .or_else(|| prop.pointer("/floatProperties/OutlineWidthMode"))
+                    .and_then(|x| x.as_f64())
+                    .unwrap_or(1.0);
+                if mode > 0.5 {
+                    shade.outline_width = ((ow as f32) * 0.01).clamp(0.002, 0.04);
+                }
             }
         }
     }
@@ -2021,6 +2090,18 @@ mod tests {
             parts.iter().any(|p| p.clip.is_some()),
             "clip-less VRM must bind Mixamo walk"
         );
+        let mtoons: Vec<_> = parts.iter().filter_map(|p| p.rest.mtoon).collect();
+        assert!(!mtoons.is_empty(), "Emma must carry MToon shade");
+        assert!(
+            mtoons
+                .iter()
+                .any(|m| m.rim_color.iter().sum::<f32>() > 0.05 || m.outline_width > 0.0),
+            "Emma hair should author rim or outline: {:?}",
+            mtoons
+                .iter()
+                .map(|m| (m.rim_color, m.outline_width))
+                .collect::<Vec<_>>()
+        );
         let skin = &parts[0];
         let rest = sample_skinned_look(skin, None, 0.0, 0.0, 0.0, 0.0);
         let walk = sample_skinned_look(skin, Some(0.25), 0.0, 0.0, 0.0, 0.0);
@@ -2031,6 +2112,110 @@ mod tests {
         assert!(
             max_d > 0.01,
             "Mixamo walk must move Emma verts, max_d={max_d}"
+        );
+    }
+
+    #[test]
+    fn load_mtoon_parses_rim_and_outline_vrm1() {
+        let doc: GltfFile = serde_json::from_value(serde_json::json!({
+            "accessors": [], "bufferViews": [], "buffers": [], "meshes": [],
+            "materials": [{
+                "extensions": {
+                    "VRMC_materials_mtoon": {
+                        "shadeColorFactor": [0.2, 0.3, 0.4],
+                        "shadingToonyFactor": 0.8,
+                        "shadingShiftFactor": 0.1,
+                        "parametricRimColorFactor": [1.0, 0.5, 0.2],
+                        "parametricRimFresnelPowerFactor": 4.0,
+                        "parametricRimLiftFactor": 0.2,
+                        "outlineWidthMode": "worldCoordinates",
+                        "outlineWidthFactor": 0.02,
+                        "outlineColorFactor": [0.1, 0.0, 0.0]
+                    }
+                }
+            }]
+        }))
+        .expect("parse gltf json");
+        let prim = Primitive {
+            attributes: Attributes {
+                position: 0,
+                normal: None,
+                joints: None,
+                weights: None,
+                texcoord: None,
+            },
+            indices: None,
+            mode: None,
+            material: Some(0),
+            targets: Vec::new(),
+        };
+        let shade = load_mtoon(&doc, &prim).expect("mtoon");
+        assert_eq!(shade.shade_color, [0.2, 0.3, 0.4]);
+        assert!((shade.shading_toony - 0.8).abs() < 1e-4);
+        assert!((shade.shading_shift - 0.1).abs() < 1e-4);
+        assert_eq!(shade.rim_color, [1.0, 0.5, 0.2]);
+        assert!((shade.rim_power - 4.0).abs() < 1e-4);
+        assert!((shade.rim_lift - 0.2).abs() < 1e-4);
+        assert_eq!(shade.outline_color, [0.1, 0.0, 0.0]);
+        assert!((shade.outline_width - 0.02).abs() < 1e-4);
+        // GPU pack
+        assert_eq!(shade.gpu()[..3], [0.2, 0.3, 0.4]);
+        assert_eq!(shade.gpu_rim()[..3], [1.0, 0.5, 0.2]);
+        assert!((shade.gpu_rim()[3] - 4.0).abs() < 1e-4);
+        assert_eq!(shade.gpu_outline()[..3], [0.1, 0.0, 0.0]);
+        assert!((shade.gpu_outline()[3] - 0.02).abs() < 1e-4);
+        let s = shade.gpu_shift_lift();
+        assert!((s[0] - 0.1).abs() < 1e-4);
+        assert!((s[1] - 0.2).abs() < 1e-4);
+    }
+
+    #[test]
+    fn load_mtoon_parses_vrm0_rim_outline() {
+        let doc: GltfFile = serde_json::from_value(serde_json::json!({
+            "accessors": [], "bufferViews": [], "buffers": [], "meshes": [],
+            "materials": [{}],
+            "extensions": {
+                "VRM": {
+                    "materialProperties": [{
+                        "name": "Hair",
+                        "shader": "VRM/MToon",
+                        "vectorProperties": {
+                            "_RimColor": [0.9, 0.3, 0.1],
+                            "_OutlineColor": [0.1, 0.1, 0.2]
+                        },
+                        "floatProperties": {
+                            "_RimFresnelPower": 3.0,
+                            "_RimLift": 0.6,
+                            "_OutlineWidth": 2.0,
+                            "_OutlineWidthMode": 1.0
+                        }
+                    }]
+                }
+            }
+        }))
+        .expect("parse vrm0 json");
+        let prim = Primitive {
+            attributes: Attributes {
+                position: 0,
+                normal: None,
+                joints: None,
+                weights: None,
+                texcoord: None,
+            },
+            indices: None,
+            mode: None,
+            material: Some(0),
+            targets: Vec::new(),
+        };
+        let shade = load_mtoon(&doc, &prim).expect("mtoon");
+        assert_eq!(shade.rim_color, [0.9, 0.3, 0.1]);
+        assert!((shade.rim_power - 3.0).abs() < 1e-4);
+        assert!((shade.rim_lift - 0.6).abs() < 1e-4);
+        assert_eq!(shade.outline_color, [0.1, 0.1, 0.2]);
+        assert!(
+            shade.outline_width > 0.0 && shade.outline_width <= 0.04,
+            "VRM0 outline width clamped, got {}",
+            shade.outline_width
         );
     }
 }

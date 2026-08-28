@@ -60,6 +60,7 @@ kagra-shared の `WorldDoc::from_json` が同じ JSON を読む。`compile_scene
 - **接着 API 4本（フェーズ1 圧縮）**: `prop.interact`（調べる/話す/使う → on_use イベント）、`doc.timers`（待つ。0 で on_done イベント）、`doc.events`（出来事。emit → take で複数システムが読む。コールバック無し）、`walker.anim`（状態→アニメ。エンジンは wish から walk/idle を導出、ジャンル名は静止中保持）。ジャンル専用ロジックはゲーム側。`docs/agent-runs/20260831-adhesive-api/`
 - **HDR + ブルーム**: 3D パスは線形 HDR フレーム（Rgba16Float）、`set_bloom(threshold, intensity)` の閾値ブルームを HDR 空間で適用し、composite が exposure + ACES + sRGB を掛ける。HUD はトーン後に重ねる。play_world / offscreen はデフォルト有効（0.85 / 0.35）。`docs/agent-runs/20260831-hdr-bloom/`
 - **FXAA**: composite 出力（sRGB）に輝度エッジ検出 + 勾配ブレンド。`set_fxaa(bool)`（デフォルト有効）。HUD は FXAA 後に重ねる。`docs/agent-runs/20260831-fxaa/`
+- **MToon 完全移植**: 影2段階（shade色 + toony + shift）、リム（色 + fresnel power + lift）、アウトライン（backface push-out）。VRM 1.0 / VRM 0.x の MToon 拡張をパース。matcap / normal テクスチャは次。`docs/agent-runs/20260831-mtoon-full/`
 - エージェントループ: `docs/API_INDEX.md` / MCP / `docs/agent-runs/`
 
 ## 嘘（今 40% を大きく呼ばない）

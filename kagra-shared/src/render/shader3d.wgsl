@@ -41,6 +41,9 @@ struct VsIn {
     @location(7) material: f32,
     @location(8) uv: vec2<f32>,
     @location(9) mtoon: vec4<f32>,
+    @location(10) mtoon2: vec4<f32>,
+    @location(11) mtoon3: vec4<f32>,
+    @location(12) mtoon4: vec4<f32>,
 };
 
 struct VsOut {
@@ -51,6 +54,9 @@ struct VsOut {
     @location(3) material: f32,
     @location(4) uv: vec2<f32>,
     @location(5) mtoon: vec4<f32>,
+    @location(6) mtoon2: vec4<f32>,
+    @location(7) mtoon3: vec4<f32>,
+    @location(8) mtoon4: vec4<f32>,
 };
 
 @vertex
@@ -66,7 +72,38 @@ fn vs_main(in: VsIn) -> VsOut {
     out.material = in.material;
     out.uv = in.uv;
     out.mtoon = in.mtoon;
+    out.mtoon2 = in.mtoon2;
+    out.mtoon3 = in.mtoon3;
+    out.mtoon4 = in.mtoon4;
     return out;
+}
+
+// アウトライン（MToon backface push-out）。法線方向へ width 押し出し、
+// 単色で塗る。カリングは Front（裏面だけ見える）。
+@vertex
+fn vs_outline(in: VsIn) -> VsOut {
+    let model = mat4x4<f32>(in.m0, in.m1, in.m2, in.m3);
+    let world_pos = model * vec4<f32>(in.pos, 1.0);
+    let world_n = normalize(mat3x3<f32>(in.m0.xyz, in.m1.xyz, in.m2.xyz) * in.normal);
+    let world = world_pos + vec4<f32>(world_n * max(in.mtoon3.w, 0.0), 0.0);
+
+    var out: VsOut;
+    out.clip = g.view_proj * world;
+    out.color = vec4<f32>(in.mtoon3.rgb, 1.0);
+    out.normal = world_n;
+    out.world = world.xyz;
+    out.material = in.material;
+    out.uv = in.uv;
+    out.mtoon = in.mtoon;
+    out.mtoon2 = in.mtoon2;
+    out.mtoon3 = in.mtoon3;
+    out.mtoon4 = in.mtoon4;
+    return out;
+}
+
+@fragment
+fn fs_outline(in: VsOut) -> @location(0) vec4<f32> {
+    return vec4<f32>(in.color.rgb, 1.0);
 }
 
 @vertex
@@ -281,16 +318,21 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let sh = shadow_factor(in.world);
     var lit: vec3<f32>;
     if (mat_id == 5) {
-        // Thin MToon: half-Lambert mix(shadeColor * albedo, albedo, t).
-        // Hair rimLift / matcap / outline stay leftover V2.
+        // MToon: half-Lambert + shadeShift + toony（影 2 段階）、
+        // リム（色 + fresnel power + lift）。matcap はテクスチャの次スライス。
+        let shift = in.mtoon4.x;
         let half_l = (dot(n, ldir) * sh) * 0.5 + 0.5;
         let toony = in.mtoon.a;
-        let shade_t = clamp((half_l - 0.5) / max(1e-3, 1.0 - toony) + 0.5, 0.0, 1.0);
+        let shade_t =
+            clamp((half_l - 0.5) / max(1e-3, 1.0 - toony) + 0.5 + shift, 0.0, 1.0);
         let shade_rgb = in.mtoon.rgb * albedo;
         lit = mix(shade_rgb, albedo, shade_t);
         let view_dir = normalize(g.camera_pos.xyz - in.world);
-        let fresnel = pow(max(1.0 - clamp(dot(n, view_dir), 0.0, 1.0), 0.0), 3.0);
-        lit = lit + fresnel * 0.16 * vec3<f32>(1.0, 0.90, 0.78);
+        let fresnel = pow(
+            max(1.0 - clamp(dot(n, view_dir), 0.0, 1.0), 0.0),
+            in.mtoon2.w,
+        );
+        lit += in.mtoon2.rgb * (fresnel + in.mtoon4.y);
         // V2 toon IBL is irr * albedo * 0.35. Keep face from white-masking.
         lit += albedo * env_irradiance(n) * 0.35;
     } else if (mat_id == 4) {

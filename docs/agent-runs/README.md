@@ -73,3 +73,4 @@
 - `20260831-adhesive-api/` — 接着 API 4本（interact / event / timer / anim）を WorldDoc に載せる。ジャンル専用はゲーム側。ゲームではない。
 - `20260831-hdr-bloom/` — shared wgpu 30 に HDR フレーム + 閾値ブルーム（0.19 移植）。ゲームではない。
 - `20260831-fxaa/` — shared wgpu 30 に FXAA（輝度エッジ検出 + 勾配ブレンド）。ゲームではない。
+- `20260831-mtoon-full/` — shared wgpu 30 の MToon を完全版に（影2段階・リム・アウトライン）。ゲームではない。

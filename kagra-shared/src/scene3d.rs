@@ -45,13 +45,18 @@ pub struct AlbedoRgba {
     pub rgba: Arc<[u8]>,
 }
 
-/// Thin MToon shade (VRM 0 materialProperties / VRM 1 VRMC_materials_mtoon).
-/// Not RendererV2: shadeColor + shadingToony/shift only.
+/// MToon shade (VRM 0 materialProperties / VRM 1 VRMC_materials_mtoon).
+/// Port of kagra-core mtoon.rs minus GPU: shade + rim + outline parameters.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MtoonShade {
     pub shade_color: [f32; 3],
     pub shading_toony: f32,
     pub shading_shift: f32,
+    pub rim_color: [f32; 3],
+    pub rim_power: f32,
+    pub rim_lift: f32,
+    pub outline_color: [f32; 3],
+    pub outline_width: f32,
 }
 
 impl Default for MtoonShade {
@@ -60,6 +65,11 @@ impl Default for MtoonShade {
             shade_color: [0.55, 0.50, 0.52],
             shading_toony: 0.85,
             shading_shift: 0.0,
+            rim_color: [0.0, 0.0, 0.0],
+            rim_power: 5.0,
+            rim_lift: 0.0,
+            outline_color: [0.05, 0.05, 0.08],
+            outline_width: 0.0,
         }
     }
 }
@@ -72,6 +82,36 @@ impl MtoonShade {
             self.shade_color[1],
             self.shade_color[2],
             self.shading_toony.clamp(0.0, 0.999),
+        ]
+    }
+
+    /// GPU instance location 10: rgb = rimColor, a = rimFresnelPower.
+    pub fn gpu_rim(self) -> [f32; 4] {
+        [
+            self.rim_color[0],
+            self.rim_color[1],
+            self.rim_color[2],
+            self.rim_power.max(0.1),
+        ]
+    }
+
+    /// GPU instance location 11: rgb = outlineColor, a = outlineWidth.
+    pub fn gpu_outline(self) -> [f32; 4] {
+        [
+            self.outline_color[0],
+            self.outline_color[1],
+            self.outline_color[2],
+            self.outline_width.max(0.0),
+        ]
+    }
+
+    /// Shift/toony/lift packed for shader uniforms use.
+    pub fn gpu_shift_lift(self) -> [f32; 4] {
+        [
+            self.shading_shift,
+            self.rim_lift,
+            self.shading_toony.clamp(0.0, 0.999),
+            0.0,
         ]
     }
 }
