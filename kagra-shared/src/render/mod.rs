@@ -161,7 +161,7 @@ impl Renderer {
         let mut config = surface
             .get_default_config(&adapter, width.max(1), height.max(1))
             .ok_or("surface is not supported by this adapter")?;
-        config.usage = wgpu::TextureUsages::RENDER_ATTACHMENT;
+        config.usage = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST;
         let caps = surface.get_capabilities(&adapter);
         if let Some(srgb) = caps.formats.iter().copied().find(|f| f.is_srgb()) {
             config.format = srgb;
@@ -714,6 +714,11 @@ impl Renderer {
         self.bloom.set_params(threshold, intensity);
     }
 
+    /// FXAA edge smoothing on the composite output. Default on.
+    pub fn set_fxaa(&mut self, enabled: bool) {
+        self.bloom.set_fxaa(enabled);
+    }
+
     fn upload_screen(&self) {
         let data = [self.width as f32, self.height as f32, 0.0, 0.0];
         self.queue
@@ -826,11 +831,12 @@ impl Renderer {
             Target::Offscreen { .. } => None,
         };
 
-        let view = match (&frame, &self.target) {
-            (Some(f), _) => f.texture.create_view(&Default::default()),
-            (None, Target::Offscreen { texture }) => texture.create_view(&Default::default()),
+        let target_texture: &wgpu::Texture = match (&frame, &self.target) {
+            (Some(f), _) => &f.texture,
+            (None, Target::Offscreen { texture }) => texture,
             _ => return Err("no render target".into()),
         };
+        let view = target_texture.create_view(&Default::default());
         // 3D は線形 HDR フレームへ。Bloom が最終ターゲットへ合成し、HUD は
         // その後に重ねる（トーン後の色を保つ）。
         let frame_view = self.bloom.frame_view();
@@ -947,7 +953,7 @@ impl Renderer {
             &self.device,
             &self.queue,
             &mut encoder,
-            &view,
+            (target_texture, &view),
             exposure,
             tonemap,
         );
@@ -1368,7 +1374,9 @@ fn create_offscreen_texture(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     })
 }

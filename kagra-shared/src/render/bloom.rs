@@ -44,6 +44,13 @@ pub(super) struct BloomPass {
     half_b_view: wgpu::TextureView,
     half_w: u32,
     half_h: u32,
+    /// Composite output (sRGB, full res). FXAA reads this and writes the final
+    /// target; disabled FXAA copies it over.
+    composite_tex: wgpu::Texture,
+    composite_view: wgpu::TextureView,
+    fxaa_pipeline: wgpu::RenderPipeline,
+    fxaa_params: (wgpu::Buffer, wgpu::BindGroup),
+    fxaa_enabled: bool,
 }
 
 impl BloomPass {
@@ -144,6 +151,28 @@ impl BloomPass {
         let frame_tex = make_frame_tex(device, width, height);
         let frame_view = frame_tex.create_view(&Default::default());
 
+        // FXAA: composite（sRGB）を読んで最終ターゲットへ。HUD はその後。
+        let fxaa_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("FXAA"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("fxaa.wgsl").into()),
+        });
+        let fxaa_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("FXAA Layout"),
+            bind_group_layouts: &[Some(&tex_bgl), Some(&params_bgl)],
+            immediate_size: 0,
+        });
+        let fxaa_pipeline = make_fs_pipeline(
+            device,
+            &fxaa_shader,
+            "fs_main",
+            &fxaa_layout,
+            format,
+            "FXAA",
+        );
+        let fxaa_params = make_params(device, &params_bgl, "FXAA Params");
+        let composite_tex = make_composite_tex(device, format, width, height);
+        let composite_view = composite_tex.create_view(&Default::default());
+
         Self {
             width,
             height,
@@ -166,6 +195,11 @@ impl BloomPass {
             half_b_view,
             half_w,
             half_h,
+            composite_tex,
+            composite_view,
+            fxaa_pipeline,
+            fxaa_params,
+            fxaa_enabled: true,
         }
     }
 
@@ -195,22 +229,32 @@ impl BloomPass {
         self.half_b_view = half_b_view;
         self.half_w = half_w;
         self.half_h = half_h;
+        let format = self.composite_tex.format();
+        self.composite_tex = make_composite_tex(device, format, width, height);
+        self.composite_view = self.composite_tex.create_view(&Default::default());
         self.width = width;
         self.height = height;
     }
 
+    /// Edge smoothing on the composite output. Default on.
+    pub fn set_fxaa(&mut self, enabled: bool) {
+        self.fxaa_enabled = enabled;
+    }
+
     /// `frame_tex`(linear HDR 3D)→ 最終 sRGB ターゲットへ。アクティブなら
-    /// extract/blur を走らせ、常に composite(sharp + bloom*intensity →
-    /// exposure → ACES → target)で書く。HUD はこの後に別パスで重ねる。
+    /// extract/blur を走らせ、composite(sharp + bloom*intensity → exposure →
+    /// ACES → sRGB)を composite_tex に書く。その後 FXAA が composite_tex を
+    /// 最終ターゲットへ（無効時はコピー）。HUD はこの後に別パスで重ねる。
     pub fn apply(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        target_view: &wgpu::TextureView,
+        target: (&wgpu::Texture, &wgpu::TextureView),
         exposure: f32,
         tonemap: bool,
     ) {
+        let (target_texture, target_view) = target;
         let src_bg = bind_tex(
             device,
             &self.tex_bgl,
@@ -268,6 +312,7 @@ impl BloomPass {
             );
         }
 
+        // composite → composite_tex（sRGB）。
         let a_bg = bind_tex(
             device,
             &self.tex_bgl,
@@ -288,10 +333,51 @@ impl BloomPass {
         fullscreen(
             encoder,
             &self.composite_pipeline,
-            target_view,
+            &self.composite_view,
             &[&src_bg, &self.composite_params.1, &a_bg],
             "Bloom Composite",
         );
+
+        // FXAA or plain copy → 最終ターゲット。
+        let inv_w = 1.0 / self.width.max(1) as f32;
+        let inv_h = 1.0 / self.height.max(1) as f32;
+        write_params(queue, &self.fxaa_params.0, [inv_w, inv_h, 0.0, 0.0]);
+        if self.fxaa_enabled {
+            let fxaa_bg = bind_tex(
+                device,
+                &self.tex_bgl,
+                &self.composite_view,
+                &self.sampler,
+                "FXAA Src",
+            );
+            fullscreen(
+                encoder,
+                &self.fxaa_pipeline,
+                target_view,
+                &[&fxaa_bg, &self.fxaa_params.1],
+                "FXAA",
+            );
+        } else {
+            encoder.copy_texture_to_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self.composite_tex,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyTextureInfo {
+                    texture: target_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
     }
 }
 
@@ -313,6 +399,31 @@ fn make_frame_tex(device: &wgpu::Device, w: u32, h: u32) -> wgpu::Texture {
         dimension: wgpu::TextureDimension::D2,
         format: BLOOM_FORMAT,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    })
+}
+
+/// Composite output（sRGB、フル解像度）。FXAA が読み、最終ターゲットへ出す。
+fn make_composite_tex(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    w: u32,
+    h: u32,
+) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Composite Frame"),
+        size: wgpu::Extent3d {
+            width: w.max(1),
+            height: h.max(1),
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     })
 }

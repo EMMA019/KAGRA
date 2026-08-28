@@ -41,9 +41,10 @@ fn main() -> Result<(), String> {
     if world {
         let dump_arg = args.next();
         let rest: Vec<String> = args.collect();
-        // Threshold bloom on by default (same as the play_world window);
-        // --no-bloom compares the raw frame.
+        // Threshold bloom + FXAA on by default (same as the play_world window);
+        // --no-bloom / --no-fxaa compare the raw pipeline stages.
         let bloom = !rest.iter().any(|a| a == "--no-bloom");
+        let fxaa = !rest.iter().any(|a| a == "--no-fxaa");
         let (json, source) = match dump_arg {
             Some(path) => {
                 let text = std::fs::read_to_string(&path)
@@ -58,6 +59,7 @@ fn main() -> Result<(), String> {
         let doc = kagra_shared::WorldDoc::from_json(&json)?;
         let mut renderer = pollster::block_on(Renderer::new_offscreen(width, height))?;
         renderer.set_bloom(0.85, if bloom { 0.35 } else { 0.0 });
+        renderer.set_fxaa(fxaa);
         let pixels = renderer.render_world_doc(&doc)?;
         write_png(&out, width, height, &pixels)?;
         println!(

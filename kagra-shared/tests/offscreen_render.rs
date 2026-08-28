@@ -243,6 +243,7 @@ fn render_world_fixture(json: &str) -> Option<Vec<u8>> {
 /// を超えて抽出される。intensity 0 なら外側は黒のまま。
 #[test]
 fn bloom_spills_light_around_bright_quad() {
+    let _guard = GPU.lock().unwrap_or_else(|e| e.into_inner());
     let Ok(mut renderer) = pollster::block_on(Renderer::new_offscreen(W, H)) else {
         eprintln!("no GPU adapter; skipping bloom test");
         return;
@@ -305,6 +306,77 @@ fn bloom_spills_light_around_bright_quad() {
     // box の中心は白いまま（にじみで濁らない）。
     let inside = pixel(&on, W, W / 2, H / 2);
     assert!(inside[0] > 200, "box core stays bright, got {inside:?}");
+}
+
+/// FXAA が白 box の縁に中間色を作る（ジャギー除去）。無効なら縁は白か黒のみ。
+#[test]
+fn fxaa_smooths_edges_with_intermediate_colors() {
+    let _guard = GPU.lock().unwrap_or_else(|e| e.into_inner());
+    let Ok(mut renderer) = pollster::block_on(Renderer::new_offscreen(W, H)) else {
+        eprintln!("no GPU adapter; skipping fxaa test");
+        return;
+    };
+    let all = kagra_shared::world_doc::compile_meshes();
+    for (id, mesh) in all {
+        if id.0 == 0 {
+            let got = renderer.upload_mesh(&mesh);
+            assert_eq!(got, MeshId(0));
+        }
+    }
+    let scene = Scene3D {
+        camera: Camera {
+            eye: glam::Vec3::new(0.0, 0.0, 6.0),
+            target: glam::Vec3::ZERO,
+            up: glam::Vec3::Y,
+            fov_y: 60f32.to_radians(),
+            near: 0.1,
+            far: 100.0,
+        },
+        clear: [0, 0, 0, 255],
+        ambient: 1.0,
+        ibl: 0.0,
+        batches: vec![Batch {
+            mesh: MeshId(0),
+            instances: vec![Instance {
+                model: glam::Mat4::from_translation(glam::Vec3::ZERO),
+                color: [255, 255, 255, 255],
+                material: Material::Solid,
+            }],
+        }],
+        ..Default::default()
+    };
+    let list = DrawList::default();
+    renderer.set_bloom(0.85, 0.0); // bloom なし。FXAA のみを検証。
+    renderer.set_fxaa(true);
+    renderer
+        .render_frame(Some(&scene), &list)
+        .expect("fxaa on frame");
+    let on = renderer.read_rgba().expect("fxaa on readback");
+    renderer.set_fxaa(false);
+    renderer
+        .render_frame(Some(&scene), &list)
+        .expect("fxaa off frame");
+    let off = renderer.read_rgba().expect("fxaa off readback");
+
+    // box の縁（1x1x1 が距離 6 で中心 ±~7px）を横断する中間色ピクセルを数える。
+    // ACES 後の白は ~232 なので、真の「エッジ中間色」は 50..220 で判定。
+    let count_mid = |rgba: &[u8]| {
+        (50..80u32)
+            .filter(|&x| {
+                let p = pixel(rgba, W, x, H / 2);
+                (50..220).contains(&p[0])
+            })
+            .count()
+    };
+    let mid_on = count_mid(&on);
+    let mid_off = count_mid(&off);
+    assert!(
+        mid_on > mid_off,
+        "FXAA must create intermediate edge pixels, on={mid_on} off={mid_off}"
+    );
+    // box の中心は白のまま（エッジだけ滑らかにする）。
+    let center = pixel(&on, W, W / 2, H / 2);
+    assert!(center[0] > 200, "box core stays white, got {center:?}");
 }
 
 /// Compiled WorldDoc through wgpu 30 offscreen (no kagra-core window).
