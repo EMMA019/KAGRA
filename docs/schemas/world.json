@@ -34,6 +34,18 @@
         { "type": "null" },
         { "$ref": "#/$defs/heightfield" }
       ]
+    },
+    "ibl": {
+      "type": ["number", "null"],
+      "description": "Diffuse IBL strength. Omit = 0.35 (outdoor). 0 = off. Shared wgpu 30 shader Globals.env.x; not a 4K HDR cubemap."
+    },
+    "exposure": {
+      "type": ["number", "null"],
+      "description": "Linear exposure. Omit = 1.0. Globals.env.y."
+    },
+    "tonemap": {
+      "type": ["boolean", "null"],
+      "description": "ACES tonemap. Omit = on. Globals.env.w. Reinhard is not used; ACES matches kagra-core V2."
     }
   },
   "$defs": {

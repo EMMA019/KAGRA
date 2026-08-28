@@ -34,6 +34,8 @@ struct Globals {
     fog_color: [f32; 4],
     fog_range: [f32; 4],
     camera_pos: [f32; 4],
+    /// x = IBL, y = exposure, z unused, w = ACES (>0.5 on). Matches shader Globals.env.
+    env: [f32; 4],
     light_pos: [[f32; 4]; 4],
     light_col: [[f32; 4]; 4],
     light_dir: [[f32; 4]; 4],
@@ -867,6 +869,12 @@ impl Renderer {
             fog_color: to_linear(scene.fog_color, self.format),
             fog_range: [scene.fog_start, scene.fog_end, 0.0, 0.0],
             camera_pos: [cam.eye.x, cam.eye.y, cam.eye.z, 0.0],
+            env: [
+                scene.ibl.max(0.0),
+                scene.exposure.max(0.0),
+                0.0,
+                if scene.tonemap { 1.0 } else { 0.0 },
+            ],
             light_pos,
             light_col,
             light_dir,
@@ -1273,5 +1281,21 @@ mod tests {
         assert!((white[0] - 1.0).abs() < 1e-5);
         let plain = to_linear([128, 0, 0, 255], wgpu::TextureFormat::Rgba8Unorm);
         assert!((plain[0] - 128.0 / 255.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn shader3d_has_ibl_and_aces() {
+        let src = include_str!("shader3d.wgsl");
+        assert!(src.contains("aces_tonemap"), "ACES on shared wgpu 30");
+        assert!(src.contains("env_irradiance"), "diffuse IBL / tiny SH");
+        assert!(src.contains("env: vec4<f32>"), "Globals.env");
+        assert!(!src.contains("var<storage"), "WebGL2: no storage buffers");
+    }
+
+    #[test]
+    fn globals_env_is_16_aligned() {
+        assert_eq!(std::mem::size_of::<Globals>() % 16, 0);
+        // view_proj 64 + 5 vec4 (light, fog_color, fog_range, camera_pos, env) + 3*4 lights
+        assert_eq!(std::mem::size_of::<Globals>(), 336);
     }
 }

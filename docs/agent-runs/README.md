@@ -69,3 +69,4 @@
 - `20260826-crest-isle-black-peel-zoom/` — remaining Nature Kit black trees, orbit peel (tiles/fog/hair), chase-cam zoom keys
 - `20260826-crest-isle-black-tile-spec/` — Crest Isle hillside black 16 m tile + gold GGX (coin PBR leftover / mesh_mat slot), not #94/#95/#96 JPEG UV
 - `20260828-m3-emma-play/` — official Emma VRoid play dump on play_world (WASD Mixamo walk; no RendererV2). Crest no-args stays capsule.
+- `20260828-m3-ibl-tone/` — shared wgpu 30 に薄い IBL（SH 半球）+ ACES。Bevy / RendererV2 ではない。

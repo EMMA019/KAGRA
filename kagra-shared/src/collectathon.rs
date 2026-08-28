@@ -417,6 +417,9 @@ impl CollectathonScene {
             fog_color: sky,
             fog_start: 48.0,
             fog_end: 150.0,
+            ibl: 0.35,
+            exposure: 1.0,
+            tonemap: true,
             batches: b.finish(),
         }
     }

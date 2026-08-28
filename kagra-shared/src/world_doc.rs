@@ -9,7 +9,8 @@
 //! to a standing XY card in the same Scene3D — 2D and 3D share WorldDoc.
 //! Coins use `Material::Metal` (existing GGX, metallic=1 / roughness=0.12).
 //! Lights are slot 0..3 1:1; an empty dump still gets default key+fill
-//! (slots 0+1; 2 and 3 stay off). Capsules and props get a ground contact
+//! (slots 0+1; 2 and 3 stay off). Outdoor dumps default IBL 0.35 + ACES
+//! (shader Globals.env; no cubemap bind, no RendererV2). Capsules and props get a ground contact
 //! blob (`MESH_PLANE` + instance alpha). glTF props use `gltf_load`. Walker may name a skinned glTF (`gltf` / `model`);
 //! CPU-skin into Vertex3. `.vrm` is glTF-binary on the same path. Walker MToon uses Material::Toon (shadeColor + shadingToony). Capsule remains the fallback. Integer GPU mesh ids are not game objects. Live play is
 //! `WorldPlay` (title → play → result, WASD → `WalkInput` → sit on
@@ -75,6 +76,15 @@ pub struct WorldDoc {
     pub cameras: Vec<WorldCamera>,
     #[serde(default)]
     pub heightfield: Option<WorldHeightfield>,
+    /// Diffuse IBL strength. None = 0.35 (outdoor). 0 = off.
+    #[serde(default)]
+    pub ibl: Option<f32>,
+    /// Linear exposure. None = 1.0.
+    #[serde(default)]
+    pub exposure: Option<f32>,
+    /// ACES tonemap. None = on.
+    #[serde(default)]
+    pub tonemap: Option<bool>,
 }
 
 fn default_gravity() -> f32 {
@@ -455,6 +465,9 @@ impl WorldDoc {
             fog_color: sky,
             fog_start: 48.0,
             fog_end: 220.0,
+            ibl: self.ibl.unwrap_or(0.35),
+            exposure: self.exposure.unwrap_or(1.0),
+            tonemap: self.tonemap.unwrap_or(true),
             batches: b.finish(),
         }
     }
@@ -1416,6 +1429,28 @@ mod tests {
         assert_eq!(scene.local_lights.len(), 4);
         // compile_scene must not mutate the dump
         assert!(doc.lights.is_empty());
+    }
+
+    #[test]
+    fn outdoor_dump_defaults_ibl_and_aces() {
+        let empty = WorldDoc::from_json(ORB_RUSH_DUMP).unwrap();
+        assert!(
+            empty.ibl.is_none() && empty.tonemap.is_none(),
+            "fixtures omit look fields"
+        );
+        let scene = empty.compile_scene(1.0);
+        assert!((scene.ibl - 0.35).abs() < 1e-5, "default IBL {}", scene.ibl);
+        assert!((scene.exposure - 1.0).abs() < 1e-5);
+        assert!(scene.tonemap, "ACES default on");
+        let crest = WorldDoc::from_json(CREST_ISLE_DUMP).unwrap();
+        let cs = crest.compile_scene(16.0 / 9.0);
+        assert!(cs.tonemap);
+        assert!(cs.ibl > 0.0);
+        let off: WorldDoc =
+            serde_json::from_str(r#"{"version":1,"tonemap":false,"ibl":0.0}"#).unwrap();
+        let s = off.compile_scene(1.0);
+        assert!(!s.tonemap);
+        assert_eq!(s.ibl, 0.0);
     }
 
     #[test]

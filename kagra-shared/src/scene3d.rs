@@ -348,6 +348,12 @@ pub struct Scene3D {
     /// フォグが効き始める距離と、完全に覆う距離。
     pub fog_start: f32,
     pub fog_end: f32,
+    /// Diffuse IBL strength. 0 = off. Default 0.35 (studio outdoor, V2 set_hdri).
+    pub ibl: f32,
+    /// Linear exposure. Default 1.0 (V2 set_exposure).
+    pub exposure: f32,
+    /// ACES tonemap. Default on so outdoor dumps are not key+fill-flat.
+    pub tonemap: bool,
     pub batches: Vec<Batch>,
 }
 
@@ -362,6 +368,9 @@ impl Default for Scene3D {
             fog_color: [130, 165, 205, 255],
             fog_start: 120.0,
             fog_end: 420.0,
+            ibl: 0.35,
+            exposure: 1.0,
+            tonemap: true,
             batches: Vec::new(),
         }
     }

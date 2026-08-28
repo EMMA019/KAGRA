@@ -12,6 +12,9 @@ struct Globals {
     // x = 効き始める距離、y = 覆いきる距離
     fog_range: vec4<f32>,
     camera_pos: vec4<f32>,
+    // x = IBL strength, y = exposure (1), z unused, w = ACES on if >0.5.
+    // Thin V2 cam.env port. Procedural SH, no cubemap bind (WebGL2).
+    env: vec4<f32>,
     // slot 0..3 の局所光。xyz + w=intensity / rgb + w=radius / xyz dir + w=spot。
     // 強度 0 は未使用（スロット漏れなし）。
     light_pos: array<vec4<f32>, 4>,
@@ -166,6 +169,34 @@ fn local_metal(n: vec3<f32>, world: vec3<f32>, v: vec3<f32>, f0: vec3<f32>, roug
         + light_one_metal(n, world, v, f0, rough, 3);
 }
 
+
+fn aces_tonemap(x: vec3<f32>) -> vec3<f32> {
+    // Narkowicz ACES, same as kagra-core V2. Swapchain is sRGB: no extra gamma.
+    return saturate((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14));
+}
+
+// Tiny SH L1 / hemisphere. Studio zenith vs warm ground (V2 studio_equirect idea).
+// No 4K HDR, no cubemap texture, no storage buffer.
+fn env_irradiance(n: vec3<f32>) -> vec3<f32> {
+    if (g.env.x < 1e-4) {
+        return vec3<f32>(0.0);
+    }
+    let sky = vec3<f32>(0.48, 0.56, 0.78);
+    let ground = vec3<f32>(0.42, 0.30, 0.18);
+    let sh0 = mix(ground, sky, 0.55);
+    let shy = (sky - ground) * 0.5;
+    let shx = vec3<f32>(0.06, 0.04, 0.02);
+    return (sh0 + shy * n.y + shx * n.x) * g.env.x;
+}
+
+fn tone_map(rgb: vec3<f32>) -> vec3<f32> {
+    var c = rgb * max(g.env.y, 0.0);
+    if (g.env.w > 0.5) {
+        c = aces_tonemap(c);
+    }
+    return c;
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let mat_id = i32(in.material + 0.5);
@@ -177,7 +208,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let zenith = vec3<f32>(0.35, 0.55, 0.95);
         let horizon = vec3<f32>(0.78, 0.86, 0.95);
         let col = mix(horizon, zenith, t * t);
-        return vec4<f32>(col, 1.0);
+        return vec4<f32>(tone_map(col), 1.0);
     }
 
     var albedo = in.color.rgb * textureSample(albedo_tex, albedo_samp, in.uv).rgb;
@@ -217,6 +248,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let view_dir = normalize(g.camera_pos.xyz - in.world);
         let fresnel = pow(max(1.0 - clamp(dot(n, view_dir), 0.0, 1.0), 0.0), 3.0);
         lit = lit + fresnel * 0.16 * vec3<f32>(1.0, 0.90, 0.78);
+        // V2 toon IBL is irr * albedo * 0.35. Keep face from white-masking.
+        lit += albedo * env_irradiance(n) * 0.35;
     } else if (mat_id == 4) {
         // 金属コイン: 既存 GGX（RendererV2 と同じ式）。第二レンダラではない。
         let v = normalize(g.camera_pos.xyz - in.world);
@@ -234,14 +267,19 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let kd = (vec3<f32>(1.0) - f) * (1.0 - metallic);
         lit = (kd * albedo + spec) * ndotl + albedo * ambient * 0.22;
         lit += local_metal(n, in.world, v, f0, rough);
+        // Metals have no Lambert; SH * f0 is the thin diffuse IBL so coins
+        // pick up sky/ground in shadow. GGX locals stay.
+        lit += f0 * env_irradiance(n);
     } else {
         lit = albedo * (ambient + (1.0 - ambient) * ndl);
         lit += albedo * local_lit(n, in.world);
+        lit += albedo * env_irradiance(n);
     }
 
     let dist = length(in.world - g.camera_pos.xyz);
     let span = max(g.fog_range.y - g.fog_range.x, 1e-3);
     let fog = clamp((dist - g.fog_range.x) / span, 0.0, 1.0);
 
-    return vec4<f32>(mix(lit, g.fog_color.rgb, fog), in.color.a);
+    let rgb = mix(lit, g.fog_color.rgb, fog);
+    return vec4<f32>(tone_map(rgb), in.color.a);
 }
