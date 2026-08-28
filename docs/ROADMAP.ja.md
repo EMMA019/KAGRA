@@ -1,6 +1,6 @@
 # KAGRA ロードマップ — 画面を見ないエージェントがゲームを出す
 
-最終更新: 2026-08-27（kagra **0.1.4**）。
+最終更新: 2026-08-31。
 旧「今 63% / 到達点 80%（three-vrm + three.js + Ursina 置換）」は
 [archive](archive/ROADMAP.ja.md.63pct-2026-08-25.md) に移した。エージェントは 63% をコピーしない。
 
@@ -18,7 +18,7 @@
 |---|---|
 | **100%** | AI エージェントが、人間が画面を見ずに、普通のインディー 2D/3D ゲームを出荷できる。 |
 | **80%** | その 100% から、ネット・破壊・布・乗り物・GI bake・DOTS・HDRP・人間用エディタ・Shader Graph・Visual Scripting・Addressables・Terrain sculpt・ProBuilder・Cinemachine・PhysX 完全・VRM-on-Wasm を外したもの。**マルチは 100%。** 絵は別山ではない。ジャンルを閉じるたびに shared wgpu 30 の絵を上げる。HQ 密度/光/材質は保つ。VRM はローダ/衣装であり天井ではない。世界の絵は Prop / 高さ場 / glTF / 光。 |
-| **今** | **約 40%。** M0–M2 は閉じた。閉じたジャンルは **collectathon（1）**。M3 はジャンル+絵（40%→80%）。M4 はエージェントが一人で出荷。 |
+| **今** | **約 40%。** M0–M2 は閉じた。閉じたジャンルは **collectathon（1）**。接着 API 4本・絵の土台（HDR+ブルーム/FXAA/IBL/PCF/水面/LOD）・VRM 完全移植（MToon/表情/SpringBone コリジョン）は載った。M3 はジャンル+絵（40%→80%）。M4 はエージェントが一人で出荷。 |
 
 Unity 機能パリティではない。圧縮した高レベル API。人間用エディタは禁止。
 VRM はオプションのローダであり、背骨ではない。
@@ -30,7 +30,7 @@ VRM はオプションのローダであり、背骨ではない。
 | **M0** | 看板（タイル）。Crest Isle 16m タイル / UV。PR #97 | 閉じた。`uv_rect` / `_upload_tile` / `stream_tiles` / `TERRAIN_UV_*` は触らない |
 | **M1** | 世界をデータに。`World.query` / `dump` / `load`。15% → 35% へ | 閉じた（#99） |
 | **M2** | **ランタイムは一つ。** スキーマ + shared オフスクリーン + wgpu 30 窓 + WASD/高さ場/glTF/ライブ tick。公式プレイは `python -m kagra.play_world`。`examples/vrm_open_world.py` は leftover VRM。新しいゲームは V2 に乗らない | 閉じた（#100–#102, #104, #105） |
-| **M3** | ゲームとして足りる（ジャンル+絵）。本スライスは **collectathon**（歩く・拾う・数える・終わる。タイトル→プレイ→結果）+ shared wgpu 30 の島の絵 | collectathon を閉じた。action / RPG は次 |
+| **M3** | ゲームとして足りる（ジャンル+絵）。本スライスは **collectathon**（歩く・拾う・数える・終わる。タイトル→プレイ→結果）+ shared wgpu 30 の島の絵 | collectathon を閉じた。接着 API 4本・絵の土台・VRM 完全移植も載った。**次のジャンルは釣り（接着 API の実証）→ action / RPG** |
 | **M4** | 出荷（エージェントが画面なしで普通のゲームを出す） | 80% の手前まで |
 
 ## 公式の公開面
@@ -91,5 +91,13 @@ VRM skin、GI、乗り物、エディタ、第二 HQ レンダラ、RendererV2 �
 - 絵（shared wgpu 30 のみ）: 高さ場が島に見える（平面プレースホルダではない）。草はハゲない（Grass 手続き + 高さバイオーム）。コインは金属（既存 GGX / `Material::Metal`）。ライト slot 1:1（漏れなし）。カプセルは読める（胴+頭）
 - Verify: coins / on_ground / query / tile albedo_ok / オフスクリーンが空でない。`examples/verify_scenarios/collectathon_smoke.json`。GPU 無しテストは緑
 - `new_for_window` は `cfg(not(target_arch = "wasm32"))` のまま。RendererV2 は消さない。0.19 と 30 を混ぜない
+
+## 最近の Done（M3 の土台スライス）
+
+- **接着 API 4本** — interact（調べる/話す/使う → on_use イベント）、timer（待つ → on_done）、event（emit → take）、anim（状態→アニメ）。`f63f136`
+- **絵の土台** — HDR + ブルーム（`5178e51`）、FXAA（`736da4b`）。IBL / PCF / 水面 / LOD は先行スライス
+- **VRM 完全移植** — 完全 MToon（影2段階・リム・アウトライン・matcap/normal、`040dc03`）、表情プリセット（`20b3f22`）、SpringBone コリジョン + constraint + firstPerson（`2d61849`）
+- **アセットライブラリ** — kaykit / quaternius / polyhaven（CC0/CC-BY、`0a9e2c2`）
+- テスト: lib 370 / offscreen 12。clippy クリーン
 
 M0 は #97。M1 は #99。M2 は #100–#102 / #104 / #105。このスライスが最初の M3 ジャンル。
