@@ -18,6 +18,7 @@ use crate::fish::{self, FishGame};
 use crate::fps::{self, FpsGame};
 use crate::game::GamePhase;
 use crate::gltf_load::step_springs;
+use crate::morph;
 use crate::novel::{self, NovelGame};
 use crate::platformer::{self, PlatformGame};
 use crate::puzzle::{self, PuzzleGame};
@@ -66,6 +67,7 @@ pub struct WorldPlay {
     seed: WorldDoc,
     vy: f32,
     spring: SpringState,
+    blink_t: f32,
 }
 
 impl WorldPlay {
@@ -233,6 +235,7 @@ impl WorldPlay {
             cook: cook_game,
             vy: 0.0,
             spring: SpringState::default(),
+            blink_t: 0.0,
         }
     }
 
@@ -255,6 +258,7 @@ impl WorldPlay {
         self.look_yaw = look_yaw_from_doc(&self.doc);
         self.look_pitch = 0.0;
         self.vy = 0.0;
+        self.blink_t = 0.0;
         self.game = IsleGame::default();
         self.game.best_score = best;
         self.game.start();
@@ -871,6 +875,7 @@ impl WorldPlay {
         updated.on_ground = on_ground;
         write_player(&mut self.doc, updated);
         self.step_hair(dt);
+        self.step_morph(dt);
     }
 
     fn step_hair(&mut self, dt: f32) {
@@ -903,6 +908,42 @@ impl WorldPlay {
         };
         let mut updated = w.clone();
         updated.hair = hair;
+        write_player(&mut self.doc, updated);
+    }
+
+    fn step_morph(&mut self, dt: f32) {
+        let spec = {
+            let Some(w) = player_ref(&self.doc) else {
+                return;
+            };
+            let spec = w
+                .gltf
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .unwrap_or(w.model.trim())
+                .to_string();
+            if spec.is_empty() {
+                return;
+            }
+            spec
+        };
+        let Some(skin) = load_skinned(&spec) else {
+            return;
+        };
+        if skin.morphs.is_empty() {
+            return;
+        }
+        self.blink_t += dt;
+        let mut morph = morph::blink_weight(self.blink_t);
+        if self.input.attack || self.rpg.talking {
+            morph = 1.0;
+        }
+        let Some(w) = player_ref(&self.doc) else {
+            return;
+        };
+        let mut updated = w.clone();
+        updated.morph = morph;
         write_player(&mut self.doc, updated);
     }
 
@@ -1477,5 +1518,75 @@ mod tests {
             hair_walk.abs() > 1e-6 || (hair_walk - hair_idle).abs() > 0.0,
             "walk still steps springs, hair_walk={hair_walk}"
         );
+    }
+
+    #[test]
+    fn idle_blink_and_hold_j_set_dump_morph() {
+        const DUMP: &str = include_str!("../tests/fixtures/vrm_walker_world.json");
+        let mut play = WorldPlay::from_json(DUMP).unwrap();
+        play.start();
+        assert_eq!(play.doc.player.as_ref().unwrap().morph, 0.0);
+        play.input = WalkInput::default();
+        for _ in 0..4 {
+            play.tick(1.0 / 60.0);
+        }
+        let blink = play.doc.player.as_ref().unwrap().morph;
+        assert!(blink > 0.4, "idle blink must raise dump morph, got {blink}");
+        let blink_mesh = play
+            .doc
+            .compile_meshes()
+            .into_iter()
+            .find(|(id, _)| id.0 >= crate::world_doc::MESH_GLTF_BASE)
+            .unwrap()
+            .1;
+        let mut zero = play.doc.clone();
+        if let Some(w) = zero.player.as_mut() {
+            w.morph = 0.0;
+        }
+        for w in &mut zero.walkers {
+            w.morph = 0.0;
+        }
+        let rest_mesh = zero
+            .compile_meshes()
+            .into_iter()
+            .find(|(id, _)| id.0 >= crate::world_doc::MESH_GLTF_BASE)
+            .unwrap()
+            .1;
+        let mut max_d = 0.0f32;
+        for (a, b) in rest_mesh.vertices.iter().zip(blink_mesh.vertices.iter()) {
+            let d = (glam::Vec3::from_array(a.pos) - glam::Vec3::from_array(b.pos)).length();
+            max_d = max_d.max(d);
+        }
+        assert!(
+            max_d > 0.02,
+            "idle blink must move mesh, max_d={max_d} morph={blink}"
+        );
+        play.input = WalkInput {
+            lx: 0.0,
+            lz: 0.0,
+            jump: false,
+            attack: true,
+            dodge: false,
+        };
+        play.tick(1.0 / 60.0);
+        let held = play.doc.player.as_ref().unwrap().morph;
+        assert!(
+            (held - 1.0).abs() < 1e-5,
+            "hold J (attack) forces morph 1, got {held}"
+        );
+    }
+
+    #[test]
+    fn crest_isle_walker_stays_capsule_morph_zero() {
+        const CREST: &str = include_str!("../tests/fixtures/crest_isle_world.json");
+        let mut play = WorldPlay::from_json(CREST).unwrap();
+        play.start();
+        play.input = WalkInput::default();
+        for _ in 0..10 {
+            play.tick(1.0 / 60.0);
+        }
+        let w = play.doc.player.as_ref().unwrap();
+        assert!(w.gltf.is_none() || w.gltf.as_deref() == Some(""));
+        assert_eq!(w.morph, 0.0);
     }
 }

@@ -4,7 +4,7 @@
 //! stay put (WebGL2-friendly: no storage buffers, no joint palette).
 //!
 //! Optional `pbrMetallicRoughness.baseColorTexture` (or VRM0 `_MainTex`) is decoded
-//! into `MeshData.albedo`. VRM 0 materialProperties / VRM 1 VRMC_materials_mtoon shadeColor + shadingToony land on MeshData.mtoon. Does not pull the heavy `gltf` crate. External .bin uses
+//! into `MeshData.albedo`. VRM 0 materialProperties / VRM 1 VRMC_materials_mtoon shadeColor + shadingToony land on MeshData.mtoon. Morph targets (POSITION deltas) plus VRM 0 blendShapeMaster / VRM 1 VRMC_vrm expressions apply one named shape onto CPU-skinned Vertex3. Does not pull the heavy `gltf` crate. External .bin uses
 //! `resolve_buffer`. `.vrm` is GLB plus VRM 0/1 humanoid extras.
 
 use std::collections::HashMap;
@@ -91,6 +91,15 @@ struct Primitive {
     mode: Option<u32>,
     #[serde(default)]
     material: Option<usize>,
+    #[serde(default)]
+    targets: Vec<MorphAttrs>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct MorphAttrs {
+    #[serde(rename = "POSITION")]
+    #[serde(default)]
+    position: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -218,6 +227,10 @@ pub struct SkinnedMesh {
     pub humanoid: HashMap<String, usize>,
     /// VRM 0 secondaryAnimation / VRM 1 VRMC_springBone chains (rest).
     pub springs: crate::spring::SpringState,
+    /// glTF morph target POSITION deltas (one vec per target, rest-pose).
+    pub morphs: Vec<Vec<Vec3>>,
+    /// VRM 0 blendShapeMaster / VRM 1 VRMC_vrm expression name -> binds.
+    pub expressions: crate::morph::Expressions,
 }
 
 /// Rest-pose node (children + TRS). `matrix` is baked into TRS when present.
@@ -368,12 +381,12 @@ pub fn is_walk_skinned_spec(spec: &str) -> bool {
 /// CPU-skin `rest` vertices into `Vertex3` at time `t` (seconds, looped).
 /// `t = 0` is the first key / T-pose for the bundled Walk clip.
 pub fn sample_skinned(skin: &SkinnedMesh, t: f32) -> MeshData {
-    sample_skinned_hair(skin, Some(t), 0.0)
+    sample_skinned_hair(skin, Some(t), 0.0, 0.0)
 }
 
-/// CPU-skin with optional clip time and dump `hair` yaw on the first spring node.
+/// CPU-skin with optional clip time, dump `hair` yaw, and dump `morph` weight.
 /// `t = None` is bind/rest (idle T-pose, not Mixamo key 0).
-pub fn sample_skinned_hair(skin: &SkinnedMesh, t: Option<f32>, hair: f32) -> MeshData {
+pub fn sample_skinned_hair(skin: &SkinnedMesh, t: Option<f32>, hair: f32, morph: f32) -> MeshData {
     if skin.skin_joints.is_empty()
         || skin.joints.len() != skin.rest.vertices.len()
         || skin.weights.len() != skin.rest.vertices.len()
@@ -398,8 +411,9 @@ pub fn sample_skinned_hair(skin: &SkinnedMesh, t: Option<f32>, hair: f32) -> Mes
         albedo: skin.rest.albedo.clone(),
         mtoon: skin.rest.mtoon,
     };
+    let rest_pos = morphed_rest(skin, morph);
     for (i, v) in skin.rest.vertices.iter().enumerate() {
-        let p = Vec3::from_array(v.pos);
+        let p = rest_pos.get(i).copied().unwrap_or(Vec3::from_array(v.pos));
         let n = Vec3::from_array(v.normal);
         let js = skin.joints[i];
         let ws = skin.weights[i];
@@ -551,9 +565,75 @@ fn skinned_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<SkinnedMesh, St
             let children: Vec<Vec<usize>> = doc.nodes.iter().map(|n| n.children.clone()).collect();
             crate::spring::parse_spring_bones(doc.extensions.as_ref(), &children)
         },
+        morphs: load_morphs(doc, blobs, prim, nverts)?,
+        expressions: {
+            let e = crate::morph::parse_expressions(doc.extensions.as_ref());
+            crate::morph::with_default_names(e, prim.targets.len())
+        },
     };
     crate::mixamo::bind_locomotion(&mut skin);
     Ok(skin)
+}
+
+fn load_morphs(
+    doc: &GltfFile,
+    blobs: &[Vec<u8>],
+    prim: &Primitive,
+    nverts: usize,
+) -> Result<Vec<Vec<Vec3>>, String> {
+    let mut morphs = Vec::with_capacity(prim.targets.len());
+    for (i, tgt) in prim.targets.iter().enumerate() {
+        let Some(acc) = tgt.position else {
+            morphs.push(vec![Vec3::ZERO; nverts]);
+            continue;
+        };
+        let d = read_f32x3(doc, blobs, acc)?;
+        if d.len() != nverts {
+            return Err(format!(
+                "morph target {i} POSITION count mismatch: {} != {nverts}",
+                d.len()
+            ));
+        }
+        morphs.push(d);
+    }
+    Ok(morphs)
+}
+
+fn morphed_rest(skin: &SkinnedMesh, morph: f32) -> Vec<Vec3> {
+    let mut pos: Vec<Vec3> = skin
+        .rest
+        .vertices
+        .iter()
+        .map(|v| Vec3::from_array(v.pos))
+        .collect();
+    if morph.abs() < 1e-8 {
+        return pos;
+    }
+    let binds: Vec<crate::morph::MorphBind> = if let Some(name) = skin.expressions.pick() {
+        skin.expressions
+            .by_name
+            .get(name)
+            .cloned()
+            .unwrap_or_default()
+    } else if !skin.morphs.is_empty() {
+        vec![crate::morph::MorphBind {
+            index: 0,
+            weight: 1.0,
+        }]
+    } else {
+        return pos;
+    };
+    for b in binds {
+        let Some(deltas) = skin.morphs.get(b.index) else {
+            continue;
+        };
+        let w = morph * b.weight;
+        let n = pos.len().min(deltas.len());
+        for i in 0..n {
+            pos[i] += w * deltas[i];
+        }
+    }
+    pos
 }
 
 fn node_rest(n: &GltfNode) -> NodeRest {
@@ -1620,8 +1700,8 @@ mod tests {
         let bytes = walk_skinned_vrm();
         let skin = skinned_from_glb(&bytes).expect("vrm");
         assert!(!skin.springs.is_empty());
-        let rest = sample_skinned_hair(&skin, None, 0.0);
-        let sag = sample_skinned_hair(&skin, None, 0.35);
+        let rest = sample_skinned_hair(&skin, None, 0.0, 0.0);
+        let sag = sample_skinned_hair(&skin, None, 0.35, 0.0);
         let mut max_d = 0.0f32;
         for (a, b) in rest.vertices.iter().zip(sag.vertices.iter()) {
             max_d = max_d.max((Vec3::from_array(a.pos) - Vec3::from_array(b.pos)).length());
@@ -1702,5 +1782,33 @@ mod tests {
         assert!((m.shade_color[1] - 0.28).abs() < 1e-4);
         assert!((m.shade_color[2] - 0.32).abs() < 1e-4);
         assert!((m.shading_toony - 0.88).abs() < 1e-4);
+    }
+
+    #[test]
+    fn vrm_parses_morph_targets_and_blink_aa() {
+        let skin = skinned_from_glb(&walk_skinned_vrm()).expect("vrm");
+        assert_eq!(skin.morphs.len(), 1);
+        assert_eq!(skin.morphs[0].len(), 8);
+        let max_d = skin.morphs[0]
+            .iter()
+            .map(|d| d.length())
+            .fold(0.0f32, f32::max);
+        assert!(
+            max_d > 0.1,
+            "fixture blink deltas must be non-zero, max_d={max_d}"
+        );
+        assert!(skin.expressions.by_name.contains_key("blink"));
+        assert!(skin.expressions.by_name.contains_key("aa"));
+        assert_eq!(skin.expressions.pick(), Some("blink"));
+        let rest = sample_skinned_hair(&skin, None, 0.0, 0.0);
+        let blink = sample_skinned_hair(&skin, None, 0.0, 1.0);
+        let mut moved = 0.0f32;
+        for (a, b) in rest.vertices.iter().zip(blink.vertices.iter()) {
+            moved = moved.max((Vec3::from_array(a.pos) - Vec3::from_array(b.pos)).length());
+        }
+        assert!(
+            moved > 0.05,
+            "blink weight 1 must move CPU-skinned verts, moved={moved}"
+        );
     }
 }

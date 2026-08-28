@@ -25,6 +25,7 @@ pub mod input;
 pub mod map;
 pub mod mission;
 pub mod mixamo;
+pub mod morph;
 pub mod novel;
 pub mod platformer;
 pub mod puzzle;

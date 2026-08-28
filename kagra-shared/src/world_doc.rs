@@ -156,6 +156,9 @@ pub struct WorldWalker {
     /// First spring-bone local yaw (radians). Dump-visible. Changes idle/walk.
     #[serde(default)]
     pub hair: f32,
+    /// Named expression weight (blink, else aa). Dump-visible. Idle blink / hold J.
+    #[serde(default)]
+    pub morph: f32,
 }
 
 fn walker_type() -> String {
@@ -631,8 +634,12 @@ impl WorldDoc {
             let mesh = match &slot {
                 GltfSlot::Rest(spec) => gltf_mesh_for(spec),
                 GltfSlot::Skinned {
-                    spec, clip, hair, ..
-                } => gltf_skinned_mesh_for(spec, *clip, *hair),
+                    spec,
+                    clip,
+                    hair,
+                    morph,
+                    ..
+                } => gltf_skinned_mesh_for(spec, *clip, *hair, *morph),
             }
             .unwrap_or_else(|| primitives::box_mesh(Vec3::ONE));
             out.push((MeshId(MESH_GLTF_BASE + i as u32), mesh));
@@ -707,6 +714,7 @@ impl WorldDoc {
                     spec: spec.to_string(),
                     clip: walk.clip,
                     hair: walk.hair,
+                    morph: walk.morph,
                 });
             }
         }
@@ -738,6 +746,7 @@ enum GltfSlot {
         spec: String,
         clip: f32,
         hair: f32,
+        morph: f32,
     },
 }
 
@@ -886,12 +895,12 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
     None
 }
 
-fn gltf_skinned_mesh_for(spec: &str, clip: f32, hair: f32) -> Option<MeshData> {
+fn gltf_skinned_mesh_for(spec: &str, clip: f32, hair: f32, morph: f32) -> Option<MeshData> {
     if let Some(skin) = load_skinned(spec) {
         if clip <= 0.0 {
-            return Some(sample_skinned_hair(&skin, None, hair));
+            return Some(sample_skinned_hair(&skin, None, hair, morph));
         }
-        return Some(sample_skinned_hair(&skin, Some(clip), hair));
+        return Some(sample_skinned_hair(&skin, Some(clip), hair, morph));
     }
     gltf_mesh_for(spec)
 }
@@ -1572,6 +1581,46 @@ mod tests {
         assert!(
             max_d > 0.01,
             "dump hair yaw must move CPU-skinned verts, max_d={max_d}"
+        );
+    }
+
+    #[test]
+    fn walker_morph_weight_is_dump_queryable_and_moves_verts() {
+        const DUMP: &str = include_str!("../tests/fixtures/vrm_walker_world.json");
+        let mut rest = WorldDoc::from_json(DUMP).expect("parse");
+        let w = rest.player.as_ref().unwrap();
+        assert_eq!(w.morph, 0.0);
+        let json = rest.to_json().expect("json");
+        assert!(json.contains("\"morph\""), "morph weight dump-visible");
+        rest.player.as_mut().unwrap().morph = 0.0;
+        if let Some(w) = rest.walkers.first_mut() {
+            w.morph = 0.0;
+        }
+        let mut blink = rest.clone();
+        blink.player.as_mut().unwrap().morph = 1.0;
+        if let Some(w) = blink.walkers.first_mut() {
+            w.morph = 1.0;
+        }
+        let rest_m = rest
+            .compile_meshes()
+            .into_iter()
+            .find(|(id, _)| id.0 >= MESH_GLTF_BASE)
+            .expect("rest")
+            .1;
+        let blink_m = blink
+            .compile_meshes()
+            .into_iter()
+            .find(|(id, _)| id.0 >= MESH_GLTF_BASE)
+            .expect("blink")
+            .1;
+        let mut max_d = 0.0f32;
+        for (a, b) in rest_m.vertices.iter().zip(blink_m.vertices.iter()) {
+            max_d =
+                max_d.max((glam::Vec3::from_array(a.pos) - glam::Vec3::from_array(b.pos)).length());
+        }
+        assert!(
+            max_d > 0.05,
+            "dump morph 1 must move CPU-skinned verts, max_d={max_d}"
         );
     }
 
