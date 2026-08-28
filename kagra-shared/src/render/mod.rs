@@ -69,6 +69,8 @@ struct GpuMesh {
     index_count: u32,
     albedo_bind: Option<wgpu::BindGroup>,
     _albedo_tex: Option<wgpu::Texture>,
+    _matcap_tex: Option<wgpu::Texture>,
+    _normal_tex: Option<wgpu::Texture>,
     mtoon: [f32; 4],
     mtoon2: [f32; 4],
     mtoon3: [f32; 4],
@@ -121,6 +123,9 @@ pub struct Renderer {
     albedo_sampler: wgpu::Sampler,
     default_albedo_bind: wgpu::BindGroup,
     _white_albedo: wgpu::Texture,
+    _white_view: wgpu::TextureView,
+    _black_view: wgpu::TextureView,
+    _flat_view: wgpu::TextureView,
     /// Seconds for shader env.z (water scroll). Frame accum, not Instant (wasm).
     elapsed: f32,
     /// Threshold bloom: linear-HDR frame → extract/blur → composite → target.
@@ -339,8 +344,9 @@ impl Renderer {
         });
 
         let albedo_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("kagra-shared albedo layout"),
+            label: Some("kagra-shared tex layout"),
             entries: &[
+                // 0/1 albedo, 2/3 matcap, 4/5 normal. 無いメッシュはデフォルト白/黒/フラット。
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -353,6 +359,38 @@ impl Renderer {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
@@ -370,8 +408,12 @@ impl Renderer {
         });
         let white_albedo = create_albedo_texture(&device, &queue, 1, 1, &[255, 255, 255, 255]);
         let white_view = white_albedo.create_view(&Default::default());
+        let black_matcap = create_albedo_texture(&device, &queue, 1, 1, &[0, 0, 0, 255]);
+        let black_view = black_matcap.create_view(&Default::default());
+        let flat_normal = create_albedo_texture(&device, &queue, 1, 1, &[128, 128, 255, 255]);
+        let flat_view = flat_normal.create_view(&Default::default());
         let default_albedo_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("kagra-shared default albedo"),
+            label: Some("kagra-shared default tex"),
             layout: &albedo_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -380,6 +422,22 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&albedo_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&black_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&albedo_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&flat_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
                     resource: wgpu::BindingResource::Sampler(&albedo_sampler),
                 },
             ],
@@ -681,6 +739,9 @@ impl Renderer {
             albedo_sampler,
             default_albedo_bind,
             _white_albedo: white_albedo,
+            _white_view: white_view,
+            _black_view: black_view,
+            _flat_view: flat_view,
             elapsed: 0.0,
             bloom,
         };
@@ -702,33 +763,85 @@ impl Renderer {
             bytemuck::cast_slice(&mesh.indices),
             wgpu::BufferUsages::INDEX,
         );
-        let (albedo_bind, albedo_tex) = match &mesh.albedo {
-            Some(alb) if alb.width > 0 && alb.height > 0 && !alb.rgba.is_empty() => {
-                let tex = create_albedo_texture(
-                    &self.device,
-                    &self.queue,
-                    alb.width,
-                    alb.height,
-                    &alb.rgba,
-                );
-                let view = tex.create_view(&Default::default());
-                let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("kagra-shared mesh albedo"),
-                    layout: &self.albedo_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(&view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Sampler(&self.albedo_sampler),
-                        },
-                    ],
+        // albedo / matcap / normal を 1 つの bind group に（無いスロットはデフォルト）。
+        let tex_ok = |a: &Option<crate::scene3d::AlbedoRgba>| -> bool {
+            a.as_ref()
+                .is_some_and(|alb| alb.width > 0 && alb.height > 0 && !alb.rgba.is_empty())
+        };
+        let has_any = tex_ok(&mesh.albedo) || tex_ok(&mesh.matcap) || tex_ok(&mesh.normal);
+        let (albedo_bind, albedo_tex, matcap_tex, normal_tex) = if has_any {
+            let alb_tex = mesh
+                .albedo
+                .as_ref()
+                .filter(|_| tex_ok(&mesh.albedo))
+                .map(|alb| {
+                    create_albedo_texture(
+                        &self.device,
+                        &self.queue,
+                        alb.width,
+                        alb.height,
+                        &alb.rgba,
+                    )
                 });
-                (Some(bind), Some(tex))
-            }
-            _ => (None, None),
+            let mc_tex = mesh
+                .matcap
+                .as_ref()
+                .filter(|_| tex_ok(&mesh.matcap))
+                .map(|a| {
+                    create_albedo_texture(&self.device, &self.queue, a.width, a.height, &a.rgba)
+                });
+            let nm_tex = mesh
+                .normal
+                .as_ref()
+                .filter(|_| tex_ok(&mesh.normal))
+                .map(|a| {
+                    create_albedo_texture(&self.device, &self.queue, a.width, a.height, &a.rgba)
+                });
+            let alb_view = alb_tex
+                .as_ref()
+                .map(|t| t.create_view(&Default::default()))
+                .unwrap_or_else(|| self._white_view.clone());
+            let mc_view = mc_tex
+                .as_ref()
+                .map(|t| t.create_view(&Default::default()))
+                .unwrap_or_else(|| self._black_view.clone());
+            let nm_view = nm_tex
+                .as_ref()
+                .map(|t| t.create_view(&Default::default()))
+                .unwrap_or_else(|| self._flat_view.clone());
+            let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("kagra-shared mesh tex"),
+                layout: &self.albedo_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&alb_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.albedo_sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&mc_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::Sampler(&self.albedo_sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(&nm_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::Sampler(&self.albedo_sampler),
+                    },
+                ],
+            });
+            (Some(bind), alb_tex, mc_tex, nm_tex)
+        } else {
+            (None, None, None, None)
         };
         let mtoon = mesh
             .mtoon
@@ -752,6 +865,8 @@ impl Renderer {
             index_count: mesh.indices.len() as u32,
             albedo_bind,
             _albedo_tex: albedo_tex,
+            _matcap_tex: matcap_tex,
+            _normal_tex: normal_tex,
             mtoon,
             mtoon2,
             mtoon3,

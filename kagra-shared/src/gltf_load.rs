@@ -161,6 +161,9 @@ struct GltfNode {
     #[serde(default)]
     #[allow(dead_code)]
     skin: Option<usize>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    extensions: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -234,6 +237,10 @@ pub struct SkinnedMesh {
     pub expressions: crate::morph::Expressions,
     /// VRM 0 firstPerson / VRM 1 VRMC_vrm.lookAt maps. None when absent.
     pub look_at: Option<crate::lookat::LookAt>,
+    /// VRMC_node_constraint 1.0 (rotation / roll). Aim parses, not applied.
+    pub constraints: Vec<crate::constraint::NodeConstraint>,
+    /// VRM 0.x / VRM 1.0 firstPerson annotations (parsed; applied with an FPS cam).
+    pub first_person: crate::first_person::FirstPerson,
 }
 
 /// Rest-pose node (children + TRS). `matrix` is baked into TRS when present.
@@ -462,6 +469,8 @@ pub fn sample_skinned_look(
         vertices: Vec::with_capacity(skin.rest.vertices.len()),
         indices: skin.rest.indices.clone(),
         albedo: skin.rest.albedo.clone(),
+        matcap: skin.rest.matcap.clone(),
+        normal: skin.rest.normal.clone(),
         mtoon: skin.rest.mtoon,
     };
     let rest_pos = morphed_rest(skin, expression, morph);
@@ -576,6 +585,8 @@ fn static_mesh_from_prim(
             .collect(),
         indices,
         albedo: load_base_color(doc, blobs, prim),
+        matcap: matcap_tex_index(doc, prim).and_then(|ti| texture_by_index(doc, blobs, ti)),
+        normal: normal_tex_index(doc, prim).and_then(|ti| texture_by_index(doc, blobs, ti)),
         mtoon: load_mtoon(doc, prim),
     };
     if mesh.vertices.is_empty() {
@@ -666,6 +677,13 @@ fn skinned_from_prim(
             crate::morph::with_default_names(e, prim.targets.len())
         },
         look_at: crate::lookat::parse_look_at(doc.extensions.as_ref()),
+        constraints: crate::constraint::parse_from_node_extensions(
+            &doc.nodes
+                .iter()
+                .map(|n| n.extensions.clone())
+                .collect::<Vec<_>>(),
+        ),
+        first_person: crate::first_person::parse_mesh_annotations(doc.extensions.as_ref()),
     };
     crate::mixamo::bind_locomotion(&mut skin);
     Ok(skin)
@@ -984,7 +1002,66 @@ fn sample_locals(skin: &SkinnedMesh, t: f32) -> Vec<NodeLocal> {
             }
         }
     }
+    apply_constraints(skin, &mut locals);
     locals
+}
+
+/// VRMC_node_constraint: copy source rotation / roll onto the dest bone.
+fn apply_constraints(skin: &SkinnedMesh, locals: &mut [NodeLocal]) {
+    if skin.constraints.is_empty() {
+        return;
+    }
+    for c in &skin.constraints {
+        let dest = c.dest;
+        if dest >= locals.len() {
+            continue;
+        }
+        let dst_rest = skin
+            .nodes
+            .get(dest)
+            .map(|n| n.rotation)
+            .unwrap_or(Quat::IDENTITY);
+        match c.kind {
+            crate::constraint::ConstraintKind::Rotation { source, weight } => {
+                if source >= locals.len() {
+                    continue;
+                }
+                let src_rest = skin
+                    .nodes
+                    .get(source)
+                    .map(|n| n.rotation)
+                    .unwrap_or(Quat::IDENTITY);
+                locals[dest].rotation = crate::constraint::apply_rotation(
+                    locals[source].rotation,
+                    src_rest,
+                    dst_rest,
+                    weight,
+                );
+            }
+            crate::constraint::ConstraintKind::Roll {
+                source,
+                weight,
+                axis,
+            } => {
+                if source >= locals.len() {
+                    continue;
+                }
+                let src_rest = skin
+                    .nodes
+                    .get(source)
+                    .map(|n| n.rotation)
+                    .unwrap_or(Quat::IDENTITY);
+                locals[dest].rotation = crate::constraint::apply_roll(
+                    locals[source].rotation,
+                    src_rest,
+                    dst_rest,
+                    Vec3::from_array(axis),
+                    weight,
+                );
+            }
+            crate::constraint::ConstraintKind::Aim { .. } => {}
+        }
+    }
 }
 
 fn sample_vec3(ch: &AnimChannel, t: f32) -> Option<Vec3> {
@@ -1296,6 +1373,15 @@ fn load_mtoon(doc: &GltfFile, prim: &Primitive) -> Option<MtoonShade> {
                     "screenCoordinates" => ow * 0.01,
                     _ => 0.0,
                 };
+                if let Some(ti) = mtoon
+                    .pointer("/matcapTexture/index")
+                    .and_then(|v| v.as_u64())
+                {
+                    shade.has_matcap = (ti as usize) < doc.textures.len();
+                }
+                if let Some(ti) = mat.pointer("/normalTexture/index").and_then(|v| v.as_u64()) {
+                    shade.has_normal = (ti as usize) < doc.textures.len();
+                }
             }
         }
     }
@@ -1393,6 +1479,23 @@ fn load_mtoon(doc: &GltfFile, prim: &Primitive) -> Option<MtoonShade> {
                     shade.outline_width = ((ow as f32) * 0.01).clamp(0.002, 0.04);
                 }
             }
+            if prop
+                .pointer("/textureProperties/_SphereAdd")
+                .or_else(|| prop.pointer("/textureProperties/_MatcapTexture"))
+                .or_else(|| prop.pointer("/textureProperties/SphereAdd"))
+                .and_then(|v| v.as_u64())
+                .is_some()
+            {
+                shade.has_matcap = true;
+            }
+            if prop
+                .pointer("/textureProperties/_BumpMap")
+                .or_else(|| prop.pointer("/textureProperties/BumpMap"))
+                .and_then(|v| v.as_u64())
+                .is_some()
+            {
+                shade.has_normal = true;
+            }
         }
     }
 
@@ -1429,6 +1532,68 @@ fn base_color_tex_index(doc: &GltfFile, prim: &Primitive) -> Option<usize> {
         .or_else(|| mats.first())?;
     entry
         .pointer("/textureProperties/_MainTex")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize)
+}
+
+/// Decode a texture by glTF texture index (data URI or bufferView).
+fn texture_by_index(doc: &GltfFile, blobs: &[Vec<u8>], tex: usize) -> Option<AlbedoRgba> {
+    let src = doc.textures.get(tex)?.source?;
+    let img = doc.images.get(src)?;
+    let bytes = image_bytes(doc, blobs, img).ok()?;
+    decode_png(&bytes).ok()
+}
+
+/// MToon matcap texture index: VRM 1 matcapTexture / VRM 0 _SphereAdd.
+fn matcap_tex_index(doc: &GltfFile, prim: &Primitive) -> Option<usize> {
+    if let Some(mi) = prim.material {
+        if let Some(mat) = doc.materials.get(mi) {
+            if let Some(idx) = mat
+                .pointer("/extensions/VRMC_materials_mtoon/matcapTexture/index")
+                .and_then(|v| v.as_u64())
+            {
+                return Some(idx as usize);
+            }
+        }
+    }
+    let mats = doc
+        .extensions
+        .as_ref()
+        .and_then(|e| e.pointer("/VRM/materialProperties"))
+        .and_then(|v| v.as_array())?;
+    let entry = prim
+        .material
+        .and_then(|i| mats.get(i))
+        .or_else(|| mats.first())?;
+    entry
+        .pointer("/textureProperties/_SphereAdd")
+        .or_else(|| entry.pointer("/textureProperties/_MatcapTexture"))
+        .or_else(|| entry.pointer("/textureProperties/SphereAdd"))
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize)
+}
+
+/// Normal map texture index: glTF normalTexture / VRM 0 _BumpMap.
+fn normal_tex_index(doc: &GltfFile, prim: &Primitive) -> Option<usize> {
+    if let Some(mi) = prim.material {
+        if let Some(mat) = doc.materials.get(mi) {
+            if let Some(idx) = mat.pointer("/normalTexture/index").and_then(|v| v.as_u64()) {
+                return Some(idx as usize);
+            }
+        }
+    }
+    let mats = doc
+        .extensions
+        .as_ref()
+        .and_then(|e| e.pointer("/VRM/materialProperties"))
+        .and_then(|v| v.as_array())?;
+    let entry = prim
+        .material
+        .and_then(|i| mats.get(i))
+        .or_else(|| mats.first())?;
+    entry
+        .pointer("/textureProperties/_BumpMap")
+        .or_else(|| entry.pointer("/textureProperties/BumpMap"))
         .and_then(|v| v.as_u64())
         .map(|n| n as usize)
 }
@@ -2129,6 +2294,14 @@ mod tests {
         );
         let mtoons: Vec<_> = parts.iter().filter_map(|p| p.rest.mtoon).collect();
         assert!(!mtoons.is_empty(), "Emma must carry MToon shade");
+        assert!(
+            parts.iter().any(|p| p.rest.matcap.is_some()),
+            "VRoid hair authors matcap (SphereAdd)"
+        );
+        assert!(
+            parts.iter().any(|p| p.rest.normal.is_some()),
+            "VRoid authors normal maps"
+        );
         assert!(
             mtoons
                 .iter()

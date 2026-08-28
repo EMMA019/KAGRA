@@ -46,7 +46,7 @@ pub struct AlbedoRgba {
 }
 
 /// MToon shade (VRM 0 materialProperties / VRM 1 VRMC_materials_mtoon).
-/// Port of kagra-core mtoon.rs minus GPU: shade + rim + outline parameters.
+/// Port of kagra-core mtoon.rs minus GPU: shade + rim + outline + matcap/normal.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MtoonShade {
     pub shade_color: [f32; 3],
@@ -57,6 +57,9 @@ pub struct MtoonShade {
     pub rim_lift: f32,
     pub outline_color: [f32; 3],
     pub outline_width: f32,
+    /// matcap / normal textures present (flags ride gpu_shift_lift z/w).
+    pub has_matcap: bool,
+    pub has_normal: bool,
 }
 
 impl Default for MtoonShade {
@@ -70,6 +73,8 @@ impl Default for MtoonShade {
             rim_lift: 0.0,
             outline_color: [0.05, 0.05, 0.08],
             outline_width: 0.0,
+            has_matcap: false,
+            has_normal: false,
         }
     }
 }
@@ -106,12 +111,13 @@ impl MtoonShade {
     }
 
     /// Shift/toony/lift packed for shader uniforms use.
+    /// z = hasMatcap, w = hasNormal (ride along so no extra instance slot).
     pub fn gpu_shift_lift(self) -> [f32; 4] {
         [
             self.shading_shift,
             self.rim_lift,
-            self.shading_toony.clamp(0.0, 0.999),
-            0.0,
+            if self.has_matcap { 1.0 } else { 0.0 },
+            if self.has_normal { 1.0 } else { 0.0 },
         ]
     }
 }
@@ -122,6 +128,10 @@ pub struct MeshData {
     pub vertices: Vec<Vertex3>,
     pub indices: Vec<u32>,
     pub albedo: Option<AlbedoRgba>,
+    /// MToon matcap (SphereAdd). Present for hair with a matcap texture.
+    pub matcap: Option<AlbedoRgba>,
+    /// MToon / glTF normal map (RGBA, blue channel is the bump).
+    pub normal: Option<AlbedoRgba>,
     /// Present when the glTF/VRM primitive authored MToon shade.
     pub mtoon: Option<MtoonShade>,
 }
@@ -650,6 +660,8 @@ pub mod primitives {
             ],
             indices: vec![0, 1, 2, 0, 2, 3],
             albedo: None,
+            matcap: None,
+            normal: None,
             mtoon: None,
         }
     }
@@ -673,6 +685,8 @@ pub mod primitives {
             ],
             indices: vec![0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6],
             albedo: None,
+            matcap: None,
+            normal: None,
             mtoon: None,
         }
     }

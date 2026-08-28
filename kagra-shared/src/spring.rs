@@ -1,5 +1,6 @@
-//! Thin VRM 0 `secondaryAnimation` / VRM 1 `VRMC_springBone` chain.
-//! Gravity + stiffness + one-step Verlet. No colliders, sleeves, or RendererV2.
+//! VRM 0 `secondaryAnimation` / VRM 1 `VRMC_springBone` chains.
+//! Gravity + stiffness + one-step Verlet + sphere/capsule colliders.
+//! Ported colliders from kagra-core vrm_spring.rs (no sleeves, no RendererV2).
 
 use glam::{Mat4, Quat, Vec3};
 use serde_json::Value;
@@ -7,12 +8,34 @@ use serde_json::Value;
 /// UniVRM virtual tail for a leaf with no child (metres).
 const VIRTUAL_TAIL_LEN: f32 = 0.07;
 
+/// Sphere (or capsule via `tail`) collider in a node's local space.
+#[derive(Clone, Debug)]
+pub struct SpringCollider {
+    pub node: usize,
+    pub offset: [f32; 3],
+    pub radius: f32,
+    pub tail: Option<[f32; 3]>,
+}
+
+impl Default for SpringCollider {
+    fn default() -> Self {
+        Self {
+            node: usize::MAX,
+            offset: [0.0, 0.0, 0.0],
+            radius: 0.05,
+            tail: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct SpringJoint {
     pub node: usize,
     pub stiffness: f32,
     pub drag: f32,
     pub gravity: [f32; 3],
+    /// Joint radius added to collider radius (metres).
+    pub radius: f32,
     pub bone_length: f32,
     pub rest_dir_local: [f32; 3],
     pub curr: [f32; 3],
@@ -24,11 +47,13 @@ pub struct SpringJoint {
 #[derive(Clone, Debug, Default)]
 pub struct SpringChain {
     pub joints: Vec<SpringJoint>,
+    pub collider_ids: Vec<usize>,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct SpringState {
     pub chains: Vec<SpringChain>,
+    pub colliders: Vec<SpringCollider>,
     pub initialized: bool,
 }
 
@@ -67,12 +92,19 @@ fn as_vec3(v: Option<&Value>, default: [f32; 3]) -> [f32; 3] {
     default
 }
 
-fn new_joint(node: usize, stiffness: f32, drag: f32, gravity: [f32; 3]) -> SpringJoint {
+fn new_joint(
+    node: usize,
+    stiffness: f32,
+    drag: f32,
+    gravity: [f32; 3],
+    radius: f32,
+) -> SpringJoint {
     SpringJoint {
         node,
         stiffness,
         drag,
         gravity,
+        radius,
         bone_length: VIRTUAL_TAIL_LEN,
         rest_dir_local: [0.0, 1.0, 0.0],
         curr: [0.0; 3],
@@ -82,10 +114,34 @@ fn new_joint(node: usize, stiffness: f32, drag: f32, gravity: [f32; 3]) -> Sprin
     }
 }
 
-fn virtual_tail(stiffness: f32, drag: f32, gravity: [f32; 3]) -> SpringJoint {
-    let mut j = new_joint(usize::MAX, stiffness, drag, gravity);
+fn virtual_tail(stiffness: f32, drag: f32, gravity: [f32; 3], radius: f32) -> SpringJoint {
+    let mut j = new_joint(usize::MAX, stiffness, drag, gravity, radius);
     j.virtual_tail = true;
     j
+}
+
+/// Push `point` out of a sphere, or return it unchanged when outside.
+fn collide_sphere(point: Vec3, center: Vec3, radius: f32, fallback: Vec3) -> Vec3 {
+    let to = point - center;
+    let dist = to.length();
+    if dist >= radius {
+        return point;
+    }
+    if dist < 1e-8 {
+        return center + fallback.normalize_or(Vec3::Y) * radius;
+    }
+    center + to * (radius / dist)
+}
+
+/// Push `point` out of a capsule (segment a-b with radius).
+fn collide_capsule(point: Vec3, a: Vec3, b: Vec3, radius: f32, fallback: Vec3) -> Vec3 {
+    let ab = b - a;
+    let len2 = ab.length_squared();
+    if len2 < 1e-12 {
+        return collide_sphere(point, a, radius, fallback);
+    }
+    let t = ((point - a).dot(ab) / len2).clamp(0.0, 1.0);
+    collide_sphere(point, a + ab * t, radius, fallback)
 }
 
 fn walk_v0_chain(children: &[Vec<usize>], root: usize) -> Vec<usize> {
@@ -104,7 +160,8 @@ fn walk_v0_chain(children: &[Vec<usize>], root: usize) -> Vec<usize> {
     out
 }
 
-/// Parse VRM 0.x `secondaryAnimation` and/or VRM 1.0 `VRMC_springBone`.
+/// Parse VRM 0.x `secondaryAnimation` and/or VRM 1.0 `VRMC_springBone`,
+/// including sphere/capsule colliders and per-chain collider groups.
 pub fn parse_spring_bones(extensions: Option<&Value>, children: &[Vec<usize>]) -> SpringState {
     let mut state = SpringState::default();
     let nlen = children.len();
@@ -112,7 +169,26 @@ pub fn parse_spring_bones(extensions: Option<&Value>, children: &[Vec<usize>]) -
         return state;
     };
 
+    // VRM 0 colliders (sphere only).
+    let mut v0_groups: Vec<Vec<usize>> = Vec::new();
     if let Some(sa) = ext.pointer("/VRM/secondaryAnimation") {
+        if let Some(cgs) = sa.get("colliderGroups").and_then(|v| v.as_array()) {
+            for cg in cgs {
+                let start = state.colliders.len();
+                if let Some(cols) = cg.get("colliders").and_then(|v| v.as_array()) {
+                    for col in cols {
+                        state.colliders.push(SpringCollider {
+                            node: col.get("node").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+                            offset: as_vec3(col.get("offset"), [0.0; 3]),
+                            radius: col.get("radius").and_then(|v| v.as_f64()).unwrap_or(0.05)
+                                as f32,
+                            tail: None,
+                        });
+                    }
+                }
+                v0_groups.push((start..state.colliders.len()).collect());
+            }
+        }
         if let Some(groups) = sa.get("boneGroups").and_then(|v| v.as_array()) {
             for g in groups {
                 let stiff = g.get("stiffiness").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
@@ -123,6 +199,17 @@ pub fn parse_spring_bones(extensions: Option<&Value>, children: &[Vec<usize>]) -
                     .unwrap_or(0.0) as f32;
                 let gd = as_vec3(g.get("gravityDir"), [0.0, -1.0, 0.0]);
                 let grav = [gd[0] * gp, gd[1] * gp, gd[2] * gp];
+                let hit_r = g.get("hitRadius").and_then(|v| v.as_f64()).unwrap_or(0.02) as f32;
+                let mut col_ids = Vec::new();
+                if let Some(ids) = g.get("colliderGroups").and_then(|v| v.as_array()) {
+                    for gi in ids {
+                        if let Some(i) = gi.as_u64() {
+                            if (i as usize) < v0_groups.len() {
+                                col_ids.extend_from_slice(&v0_groups[i as usize]);
+                            }
+                        }
+                    }
+                }
                 let Some(bones) = g.get("bones").and_then(|v| v.as_array()) else {
                     continue;
                 };
@@ -132,20 +219,61 @@ pub fn parse_spring_bones(extensions: Option<&Value>, children: &[Vec<usize>]) -
                     let mut joints: Vec<SpringJoint> = idxs
                         .into_iter()
                         .filter(|&i| i < nlen)
-                        .map(|i| new_joint(i, stiff, drag, grav))
+                        .map(|i| new_joint(i, stiff, drag, grav, hit_r))
                         .collect();
                     if joints.len() == 1 {
-                        joints.push(virtual_tail(stiff, drag, grav));
+                        joints.push(virtual_tail(stiff, drag, grav, hit_r));
                     }
                     if joints.len() >= 2 {
-                        state.chains.push(SpringChain { joints });
+                        state.chains.push(SpringChain {
+                            joints,
+                            collider_ids: col_ids.clone(),
+                        });
                     }
                 }
             }
         }
     }
 
+    // VRM 1 colliders (sphere + capsule).
+    let mut v1_groups: Vec<Vec<usize>> = Vec::new();
     if let Some(sb1) = ext.pointer("/VRMC_springBone") {
+        if let Some(cols) = sb1.get("colliders").and_then(|v| v.as_array()) {
+            for col in cols {
+                let node = col.get("node").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                let shape = col.get("shape").cloned().unwrap_or(Value::Null);
+                if let Some(cap) = shape.get("capsule") {
+                    state.colliders.push(SpringCollider {
+                        node,
+                        offset: as_vec3(cap.get("offset"), [0.0; 3]),
+                        radius: cap.get("radius").and_then(|v| v.as_f64()).unwrap_or(0.05) as f32,
+                        tail: Some(as_vec3(cap.get("tail"), [0.0; 3])),
+                    });
+                } else {
+                    let sph = shape.get("sphere").cloned().unwrap_or(Value::Null);
+                    state.colliders.push(SpringCollider {
+                        node,
+                        offset: as_vec3(sph.get("offset"), [0.0; 3]),
+                        radius: sph.get("radius").and_then(|v| v.as_f64()).unwrap_or(0.05) as f32,
+                        tail: None,
+                    });
+                }
+            }
+        }
+        if let Some(cgs) = sb1.get("colliderGroups").and_then(|v| v.as_array()) {
+            for cg in cgs {
+                let ids = cg
+                    .get("colliders")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_u64().map(|i| i as usize))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                v1_groups.push(ids);
+            }
+        }
         if let Some(springs) = sb1.get("springs").and_then(|v| v.as_array()) {
             for sp in springs {
                 let mut joints = Vec::new();
@@ -166,11 +294,28 @@ pub fn parse_spring_bones(extensions: Option<&Value>, children: &[Vec<usize>]) -
                             jd.get("stiffness").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32,
                             jd.get("dragForce").and_then(|v| v.as_f64()).unwrap_or(0.4) as f32,
                             [gd[0] * gp, gd[1] * gp, gd[2] * gp],
+                            jd.get("hitRadius").and_then(|v| v.as_f64()).unwrap_or(0.02) as f32,
                         ));
                     }
                 }
+                let mut col_ids = Vec::new();
+                if let Some(ids) = sp.get("colliderGroups").and_then(|v| v.as_array()) {
+                    for gi in ids {
+                        if let Some(i) = gi.as_u64() {
+                            if (i as usize) < v1_groups.len() {
+                                col_ids.extend_from_slice(&v1_groups[i as usize]);
+                            }
+                        }
+                    }
+                }
+                if col_ids.is_empty() {
+                    col_ids = (0..state.colliders.len()).collect();
+                }
                 if joints.len() >= 2 {
-                    state.chains.push(SpringChain { joints });
+                    state.chains.push(SpringChain {
+                        joints,
+                        collider_ids: col_ids,
+                    });
                 }
             }
         }
@@ -185,6 +330,47 @@ fn world_pos(m: Mat4) -> Vec3 {
 fn world_rot(m: Mat4) -> Quat {
     let (_, r, _) = m.to_scale_rotation_translation();
     r
+}
+
+/// Push `point` out of every collider assigned to the chain (all when none).
+fn collide_chain(
+    colliders: &[SpringCollider],
+    chain: &SpringChain,
+    point: Vec3,
+    hit_radius: f32,
+    fallback: Vec3,
+    world: &[Mat4],
+) -> Vec3 {
+    let ids: Vec<usize> = if chain.collider_ids.is_empty() {
+        (0..colliders.len()).collect()
+    } else {
+        chain.collider_ids.clone()
+    };
+    let mut pos = point;
+    for ci in ids {
+        if ci >= colliders.len() {
+            continue;
+        }
+        let c = &colliders[ci];
+        if c.node >= world.len() {
+            continue;
+        }
+        let m = world[c.node];
+        let center = m.transform_point3(Vec3::from_array(c.offset));
+        let rad = c.radius + hit_radius;
+        pos = if let Some(tail) = c.tail {
+            collide_capsule(
+                pos,
+                center,
+                m.transform_point3(Vec3::from_array(tail)),
+                rad,
+                fallback,
+            )
+        } else {
+            collide_sphere(pos, center, rad, fallback)
+        };
+    }
+    pos
 }
 
 fn joint_world_pos(j: &SpringJoint, parent_pos: Vec3, parent_q: Quat, world: &[Mat4]) -> Vec3 {
@@ -343,6 +529,15 @@ pub fn step(state: &mut SpringState, world: &[Mat4], dt: f32) {
             if dist > 1e-6 {
                 new_pos = parent_pos + to_new * (bone_len / dist);
             }
+            // コリジョン解決: チェーンに割り当てられた球/カプセルで押し出す。
+            new_pos = collide_chain(
+                &state.colliders,
+                &state.chains[ci],
+                new_pos,
+                j.radius,
+                rest_world,
+                world,
+            );
             state.chains[ci].joints[i].prev = state.chains[ci].joints[i].curr;
             state.chains[ci].joints[i].curr = new_pos.to_array();
         }
@@ -409,10 +604,12 @@ mod tests {
         let mut st = SpringState {
             chains: vec![SpringChain {
                 joints: vec![
-                    new_joint(0, stiffness, 0.4, gravity),
-                    new_joint(1, stiffness, 0.4, gravity),
+                    new_joint(0, stiffness, 0.4, gravity, 0.02),
+                    new_joint(1, stiffness, 0.4, gravity, 0.02),
                 ],
+                collider_ids: vec![],
             }],
+            colliders: vec![],
             initialized: false,
         };
         let mats = [
@@ -429,9 +626,10 @@ mod tests {
         let mut st = SpringState {
             chains: vec![SpringChain {
                 joints: vec![
-                    new_joint(0, 1.0, 0.4, [0.0; 3]),
-                    new_joint(1, 1.0, 0.4, [0.0; 3]),
+                    new_joint(0, 1.0, 0.4, [0.0; 3], 0.02),
+                    new_joint(1, 1.0, 0.4, [0.0; 3], 0.02),
                 ],
+                collider_ids: vec![],
             }],
             ..SpringState::default()
         };
@@ -477,5 +675,85 @@ mod tests {
             "gravity Verlet must change hair yaw, y0={y0} y1={y1}"
         );
         assert_eq!(hair_node(&st), Some(0));
+    }
+
+    #[test]
+    fn collider_parses_v0_and_v1() {
+        let gltf = json!({
+            "VRM": {
+                "secondaryAnimation": {
+                    "colliderGroups": [{
+                        "colliders": [{"offset": {"x": 0.0, "y": 0.0, "z": 0.0}, "radius": 0.1}]
+                    }],
+                    "boneGroups": [{
+                        "bones": [1],
+                        "colliderGroups": [0]
+                    }]
+                }
+            },
+            "VRMC_springBone": {
+                "colliders": [{
+                    "node": 0,
+                    "shape": {"capsule": {"offset": [0, 0, 0], "tail": [0, 0.2, 0], "radius": 0.08}}
+                }],
+                "colliderGroups": [{"colliders": [0]}],
+                "springs": [{
+                    "joints": [
+                        {"node": 1, "stiffness": 1.0},
+                        {"node": 2, "stiffness": 1.0}
+                    ],
+                    "colliderGroups": [0]
+                }]
+            }
+        });
+        let children = vec![vec![1], vec![2], vec![]];
+        let st = parse_spring_bones(Some(&gltf), &children);
+        assert!(st.colliders.len() >= 2, "v0 sphere + v1 capsule");
+        assert!(
+            st.colliders.iter().any(|c| c.tail.is_some()),
+            "v1 capsule has a tail"
+        );
+        assert!(
+            !st.chains[0].collider_ids.is_empty(),
+            "v0 chain binds collider"
+        );
+        assert!(
+            !st.chains[1].collider_ids.is_empty(),
+            "v1 chain binds collider"
+        );
+    }
+
+    #[test]
+    fn collider_pushes_joint_out() {
+        // Chain: root (0) -> joint (1) at (0.1, 1.0, 0). A sphere collider at
+        // the root with radius 1.0 must push the joint out to radius distance.
+        let mut st = SpringState {
+            chains: vec![SpringChain {
+                joints: vec![
+                    new_joint(0, 1.0, 0.4, [0.0; 3], 0.02),
+                    new_joint(1, 1.0, 0.4, [0.0; 3], 0.02),
+                ],
+                collider_ids: vec![0],
+            }],
+            colliders: vec![SpringCollider {
+                node: 0,
+                offset: [0.0, 0.0, 0.0],
+                radius: 1.0,
+                tail: None,
+            }],
+            initialized: false,
+        };
+        let mats = [
+            Mat4::from_translation(Vec3::ZERO),
+            Mat4::from_translation(Vec3::new(0.1, 1.0, 0.0)),
+        ];
+        step(&mut st, &mats, 1.0 / 60.0); // snap
+        step(&mut st, &mats, 1.0 / 60.0);
+        let curr = Vec3::from_array(st.chains[0].joints[1].curr);
+        let dist = curr.length();
+        assert!(
+            dist >= 1.02 - 0.05,
+            "collider must push the joint out, dist={dist}"
+        );
     }
 }

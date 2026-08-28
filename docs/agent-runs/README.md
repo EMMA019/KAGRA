@@ -75,3 +75,4 @@
 - `20260831-fxaa/` — shared wgpu 30 に FXAA（輝度エッジ検出 + 勾配ブレンド）。ゲームではない。
 - `20260831-mtoon-full/` — shared wgpu 30 の MToon を完全版に（影2段階・リム・アウトライン）。ゲームではない。
 - `20260831-expressions/` — walker.expression で VRM 表情プリセット（smile / angry / aa 等）を選択。ゲームではない。
+- `20260831-vrm-rest/` — SpringBone コリジョン + MToon matcap/normal + ボーン制約/firstPerson。ゲームではない。

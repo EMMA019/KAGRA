@@ -27,6 +27,10 @@ struct Globals {
 @group(0) @binding(0) var<uniform> g: Globals;
 @group(1) @binding(0) var albedo_tex: texture_2d<f32>;
 @group(1) @binding(1) var albedo_samp: sampler;
+@group(1) @binding(2) var matcap_tex: texture_2d<f32>;
+@group(1) @binding(3) var matcap_samp: sampler;
+@group(1) @binding(4) var normal_tex: texture_2d<f32>;
+@group(1) @binding(5) var normal_samp: sampler;
 @group(2) @binding(0) var shadow_tex: texture_depth_2d;
 @group(2) @binding(1) var shadow_samp: sampler_comparison;
 
@@ -319,9 +323,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var lit: vec3<f32>;
     if (mat_id == 5) {
         // MToon: half-Lambert + shadeShift + toony（影 2 段階）、
-        // リム（色 + fresnel power + lift）。matcap はテクスチャの次スライス。
+        // リム（色 + fresnel power + lift）、matcap（反射 UV）、normal マップ。
         let shift = in.mtoon4.x;
-        let half_l = (dot(n, ldir) * sh) * 0.5 + 0.5;
+        var n2 = n;
+        if (in.mtoon4.w > 0.5) {
+            let tn = textureSample(normal_tex, normal_samp, in.uv).rgb * 2.0 - 1.0;
+            n2 = normalize(n2 + tn * 0.5);
+        }
+        let half_l = (dot(n2, ldir) * sh) * 0.5 + 0.5;
         let toony = in.mtoon.a;
         let shade_t =
             clamp((half_l - 0.5) / max(1e-3, 1.0 - toony) + 0.5 + shift, 0.0, 1.0);
@@ -329,12 +338,17 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         lit = mix(shade_rgb, albedo, shade_t);
         let view_dir = normalize(g.camera_pos.xyz - in.world);
         let fresnel = pow(
-            max(1.0 - clamp(dot(n, view_dir), 0.0, 1.0), 0.0),
+            max(1.0 - clamp(dot(n2, view_dir), 0.0, 1.0), 0.0),
             in.mtoon2.w,
         );
         lit += in.mtoon2.rgb * (fresnel + in.mtoon4.y);
+        if (in.mtoon4.z > 0.5) {
+            let r = reflect(-view_dir, n2);
+            let muv = r.xy * 0.5 + vec2<f32>(0.5, 0.5);
+            lit += textureSample(matcap_tex, matcap_samp, muv).rgb;
+        }
         // V2 toon IBL is irr * albedo * 0.35. Keep face from white-masking.
-        lit += albedo * env_irradiance(n) * 0.35;
+        lit += albedo * env_irradiance(n2) * 0.35;
     } else if (mat_id == 4) {
         // 金属コイン: 既存 GGX（RendererV2 と同じ式）。第二レンダラではない。
         let v = normalize(g.camera_pos.xyz - in.world);

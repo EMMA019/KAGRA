@@ -62,6 +62,7 @@ kagra-shared の `WorldDoc::from_json` が同じ JSON を読む。`compile_scene
 - **FXAA**: composite 出力（sRGB）に輝度エッジ検出 + 勾配ブレンド。`set_fxaa(bool)`（デフォルト有効）。HUD は FXAA 後に重ねる。`docs/agent-runs/20260831-fxaa/`
 - **MToon 完全移植**: 影2段階（shade色 + toony + shift）、リム（色 + fresnel power + lift）、アウトライン（backface push-out）。VRM 1.0 / VRM 0.x の MToon 拡張をパース。matcap / normal テクスチャは次。`docs/agent-runs/20260831-mtoon-full/`
 - **表情プリセット**: `walker.expression`（smile / angry / sad / joy / blink / aa / ih / ou / ee / oh / custom）で VRM 表情を選択。blink は自動まばたき。`docs/agent-runs/20260831-expressions/`
+- **VRM 残り**: SpringBone コリジョン（球/カプセル）、MToon matcap/normal、ボーン制約（VRMC_node_constraint rotation/roll）、firstPerson 注釈。`docs/agent-runs/20260831-vrm-rest/`
 - エージェントループ: `docs/API_INDEX.md` / MCP / `docs/agent-runs/`
 
 ## 嘘（今 40% を大きく呼ばない）
