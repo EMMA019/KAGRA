@@ -29,6 +29,16 @@ impl Expressions {
         }
         self.by_name.keys().next().map(String::as_str)
     }
+
+    /// Named preset binds. Names are stored lowercased. None = model lacks it.
+    pub fn get(&self, name: &str) -> Option<&Vec<MorphBind>> {
+        self.by_name.get(&name.trim().to_ascii_lowercase())
+    }
+
+    /// Whether the model has this expression (including the auto blink fallback).
+    pub fn has(&self, name: &str) -> bool {
+        name.eq_ignore_ascii_case("blink") || self.get(name).is_some()
+    }
 }
 
 fn as_usize(v: Option<&Value>) -> Option<usize> {
@@ -224,5 +234,27 @@ mod tests {
         assert!(open.abs() < 1e-5, "open, got {open}");
         let looped = blink_weight(3.06);
         assert!((looped - mid).abs() < 1e-5);
+    }
+
+    #[test]
+    fn get_and_has_named_preset() {
+        let ext = json!({
+            "VRMC_vrm": {
+                "expressions": {
+                    "preset": {
+                        "smile": { "morphTargetBinds": [{"index": 1, "weight": 1.0}] }
+                    }
+                }
+            }
+        });
+        let e = parse_expressions(Some(&ext));
+        assert!(e.has("smile"));
+        assert!(e.has("Smile"), "names are case-insensitive");
+        assert!(!e.has("angry"));
+        assert!(e.has("blink"), "auto blink is always available");
+        let binds = e.get("smile").expect("smile binds");
+        assert_eq!(binds[0].index, 1);
+        assert!(e.get("missing").is_none());
+        assert!(e.get("").is_none());
     }
 }

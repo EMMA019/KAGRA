@@ -413,20 +413,28 @@ pub fn is_walk_skinned_spec(spec: &str) -> bool {
 /// CPU-skin `rest` vertices into `Vertex3` at time `t` (seconds, looped).
 /// `t = 0` is the first key / T-pose for the bundled Walk clip.
 pub fn sample_skinned(skin: &SkinnedMesh, t: f32) -> MeshData {
-    sample_skinned_hair(skin, Some(t), 0.0, 0.0)
+    sample_skinned_hair(skin, Some(t), 0.0, "blink", 0.0)
 }
 
-/// CPU-skin with optional clip time, dump `hair` yaw, and dump `morph` weight.
-/// `t = None` is bind/rest (idle T-pose, not Mixamo key 0).
-pub fn sample_skinned_hair(skin: &SkinnedMesh, t: Option<f32>, hair: f32, morph: f32) -> MeshData {
-    sample_skinned_look(skin, t, hair, morph, 0.0, 0.0)
+/// CPU-skin with optional clip time, dump `hair` yaw, named expression, and
+/// dump `morph` weight. `t = None` is bind/rest (idle T-pose, not Mixamo key 0).
+pub fn sample_skinned_hair(
+    skin: &SkinnedMesh,
+    t: Option<f32>,
+    hair: f32,
+    expression: &str,
+    morph: f32,
+) -> MeshData {
+    sample_skinned_look(skin, t, hair, expression, morph, 0.0, 0.0)
 }
 
-/// CPU-skin with dump `hair`, `morph`, and head look yaw/pitch.
+/// CPU-skin with dump `hair`, named `expression` + `morph` weight, and head
+/// look yaw/pitch.
 pub fn sample_skinned_look(
     skin: &SkinnedMesh,
     t: Option<f32>,
     hair: f32,
+    expression: &str,
     morph: f32,
     look_yaw: f32,
     look_pitch: f32,
@@ -456,7 +464,7 @@ pub fn sample_skinned_look(
         albedo: skin.rest.albedo.clone(),
         mtoon: skin.rest.mtoon,
     };
-    let rest_pos = morphed_rest(skin, morph);
+    let rest_pos = morphed_rest(skin, expression, morph);
     for (i, v) in skin.rest.vertices.iter().enumerate() {
         let p = rest_pos.get(i).copied().unwrap_or(Vec3::from_array(v.pos));
         let n = Vec3::from_array(v.normal);
@@ -687,7 +695,7 @@ fn load_morphs(
     Ok(morphs)
 }
 
-fn morphed_rest(skin: &SkinnedMesh, morph: f32) -> Vec<Vec3> {
+fn morphed_rest(skin: &SkinnedMesh, expression: &str, morph: f32) -> Vec<Vec3> {
     let mut pos: Vec<Vec3> = skin
         .rest
         .vertices
@@ -697,20 +705,23 @@ fn morphed_rest(skin: &SkinnedMesh, morph: f32) -> Vec<Vec3> {
     if morph.abs() < 1e-8 {
         return pos;
     }
-    let binds: Vec<crate::morph::MorphBind> = if let Some(name) = skin.expressions.pick() {
-        skin.expressions
-            .by_name
-            .get(name)
-            .cloned()
-            .unwrap_or_default()
-    } else if !skin.morphs.is_empty() {
-        vec![crate::morph::MorphBind {
-            index: 0,
-            weight: 1.0,
-        }]
-    } else {
-        return pos;
-    };
+    // 名前付き表情（smile / angry / ...）か、自動（blink → aa → 最初）。
+    let binds: Vec<crate::morph::MorphBind> =
+        if !expression.is_empty() && !expression.eq_ignore_ascii_case("blink") {
+            skin.expressions
+                .get(expression)
+                .cloned()
+                .unwrap_or_default()
+        } else {
+            match skin.expressions.pick() {
+                Some(name) => skin.expressions.get(name).cloned().unwrap_or_default(),
+                None if !skin.morphs.is_empty() => vec![crate::morph::MorphBind {
+                    index: 0,
+                    weight: 1.0,
+                }],
+                None => return pos,
+            }
+        };
     for b in binds {
         let Some(deltas) = skin.morphs.get(b.index) else {
             continue;
@@ -1940,8 +1951,8 @@ mod tests {
         let bytes = walk_skinned_vrm();
         let skin = skinned_from_glb(&bytes).expect("vrm");
         assert!(!skin.springs.is_empty());
-        let rest = sample_skinned_hair(&skin, None, 0.0, 0.0);
-        let sag = sample_skinned_hair(&skin, None, 0.35, 0.0);
+        let rest = sample_skinned_hair(&skin, None, 0.0, "blink", 0.0);
+        let sag = sample_skinned_hair(&skin, None, 0.35, "blink", 0.0);
         let mut max_d = 0.0f32;
         for (a, b) in rest.vertices.iter().zip(sag.vertices.iter()) {
             max_d = max_d.max((Vec3::from_array(a.pos) - Vec3::from_array(b.pos)).length());
@@ -2040,8 +2051,8 @@ mod tests {
         assert!(skin.expressions.by_name.contains_key("blink"));
         assert!(skin.expressions.by_name.contains_key("aa"));
         assert_eq!(skin.expressions.pick(), Some("blink"));
-        let rest = sample_skinned_hair(&skin, None, 0.0, 0.0);
-        let blink = sample_skinned_hair(&skin, None, 0.0, 1.0);
+        let rest = sample_skinned_hair(&skin, None, 0.0, "blink", 0.0);
+        let blink = sample_skinned_hair(&skin, None, 0.0, "blink", 1.0);
         let mut moved = 0.0f32;
         for (a, b) in rest.vertices.iter().zip(blink.vertices.iter()) {
             moved = moved.max((Vec3::from_array(a.pos) - Vec3::from_array(b.pos)).length());
@@ -2053,11 +2064,37 @@ mod tests {
     }
 
     #[test]
+    fn named_expression_aa_moves_morph_targets() {
+        let skin = skinned_from_glb(&walk_skinned_vrm()).expect("vrm");
+        assert!(skin.expressions.has("aa"), "walk fixture has the aa viseme");
+        let rest = sample_skinned_hair(&skin, None, 0.0, "aa", 0.0);
+        let aa = sample_skinned_hair(&skin, None, 0.0, "aa", 1.0);
+        let mut moved = 0.0f32;
+        for (a, b) in rest.vertices.iter().zip(aa.vertices.iter()) {
+            moved = moved.max((Vec3::from_array(a.pos) - Vec3::from_array(b.pos)).length());
+        }
+        assert!(
+            moved > 0.05,
+            "aa weight 1 must move CPU-skinned verts, moved={moved}"
+        );
+        // モデルに無い表情は動かない（空 bind → 無害）。
+        let missing = sample_skinned_hair(&skin, None, 0.0, "smile", 1.0);
+        let mut drift = 0.0f32;
+        for (a, b) in rest.vertices.iter().zip(missing.vertices.iter()) {
+            drift = drift.max((Vec3::from_array(a.pos) - Vec3::from_array(b.pos)).length());
+        }
+        assert!(
+            drift < 1e-5,
+            "unknown expression must not move verts, drift={drift}"
+        );
+    }
+
+    #[test]
     fn vrm_look_yaw_moves_skinned_verts() {
         let skin = skinned_from_glb(&walk_skinned_vrm()).expect("vrm");
         assert_eq!(crate::lookat::head_node(&skin.humanoid), Some(4));
-        let rest = sample_skinned_look(&skin, None, 0.0, 0.0, 0.0, 0.0);
-        let look = sample_skinned_look(&skin, None, 0.0, 0.0, 0.6, 0.2);
+        let rest = sample_skinned_look(&skin, None, 0.0, "blink", 0.0, 0.0, 0.0);
+        let look = sample_skinned_look(&skin, None, 0.0, "blink", 0.0, 0.6, 0.2);
         let mut max_d = 0.0f32;
         for (a, b) in rest.vertices.iter().zip(look.vertices.iter()) {
             max_d = max_d.max((Vec3::from_array(a.pos) - Vec3::from_array(b.pos)).length());
@@ -2103,8 +2140,8 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         let skin = &parts[0];
-        let rest = sample_skinned_look(skin, None, 0.0, 0.0, 0.0, 0.0);
-        let walk = sample_skinned_look(skin, Some(0.25), 0.0, 0.0, 0.0, 0.0);
+        let rest = sample_skinned_look(skin, None, 0.0, "blink", 0.0, 0.0, 0.0);
+        let walk = sample_skinned_look(skin, Some(0.25), 0.0, "blink", 0.0, 0.0, 0.0);
         let mut max_d = 0.0f32;
         for (a, b) in rest.vertices.iter().zip(walk.vertices.iter()) {
             max_d = max_d.max((Vec3::from_array(a.pos) - Vec3::from_array(b.pos)).length());

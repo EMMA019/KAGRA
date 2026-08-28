@@ -199,6 +199,10 @@
         "anim": {
           "type": "string",
           "description": "Current animation state: idle / walk (engine-derived from wish) or a genre-set name (cast, reel, hit) that survives while standing. Dump-visible so the game state machine reads it without an engine hook."
+        },
+        "expression": {
+          "type": "string",
+          "description": "Selected VRM expression preset: blink (auto) / smile / angry / sad / joy / aa / ih / ou / ee / oh / custom. Dump-visible; games flip it via events / interact."
         }
       }
     },

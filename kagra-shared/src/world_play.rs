@@ -36,7 +36,8 @@ use crate::stealth::{self, StealthGame};
 use crate::survival::{self, SurvivalGame};
 use crate::td::{self, TdGame};
 use crate::world_doc::{
-    load_skinned, walker_rest_min_y, WorldDoc, WorldEvent, WorldProp, WorldTimer, WorldWalker,
+    load_skinned, load_skinned_parts, walker_rest_min_y, WorldDoc, WorldEvent, WorldProp,
+    WorldTimer, WorldWalker,
 };
 use glam::Vec3;
 
@@ -990,7 +991,7 @@ impl WorldPlay {
     }
 
     fn step_morph(&mut self, dt: f32) {
-        let spec = {
+        let (spec, expression) = {
             let Some(w) = player_ref(&self.doc) else {
                 return;
             };
@@ -1004,19 +1005,30 @@ impl WorldPlay {
             if spec.is_empty() {
                 return;
             }
-            spec
+            (spec, w.expression.clone())
         };
-        let Some(skin) = load_skinned(&spec) else {
+        // モーフは Face 等のパーツにある（Body は morphs 空でも expressions
+        // を持つ）ので、全パーツで判定する。
+        let Some(parts) = load_skinned_parts(&spec) else {
             return;
         };
-        if skin.morphs.is_empty() {
+        if !parts.iter().any(|p| !p.morphs.is_empty()) {
             return;
         }
-        self.blink_t += dt;
-        let mut morph = morph::blink_weight(self.blink_t);
-        if self.input.attack || self.rpg.talking {
-            morph = 1.0;
-        }
+        // "blink"（または未指定）= 自動まばたき。名前付き表情（smile /
+        // angry / aa / ...）はモデルのいずれかのパーツが持っていれば重み 1.0。
+        let morph = if expression.eq_ignore_ascii_case("blink") || expression.is_empty() {
+            self.blink_t += dt;
+            let mut m = morph::blink_weight(self.blink_t);
+            if self.input.attack || self.rpg.talking {
+                m = 1.0;
+            }
+            m
+        } else if parts.iter().any(|p| p.expressions.has(&expression)) {
+            1.0
+        } else {
+            0.0
+        };
         let Some(w) = player_ref(&self.doc) else {
             return;
         };
@@ -2005,6 +2017,49 @@ mod tests {
         play.input = WalkInput::default();
         play.tick(1.0 / 60.0);
         assert_eq!(play.doc.player.as_ref().unwrap().clip, 0.0);
+    }
+
+    #[test]
+    fn expression_preset_flips_morph_weight() {
+        const DUMP: &str = include_str!("../tests/fixtures/emma_walker_world.json");
+        let mut play = WorldPlay::from_json(DUMP).unwrap();
+        play.start();
+        // モデルが aa を持つ場合のみ検証（Emma.vrm on disk）。tpose フォール
+        // バック（morphs 空）やディスク無しはスキップ。
+        let spec = play
+            .doc
+            .player
+            .as_ref()
+            .unwrap()
+            .gltf
+            .as_deref()
+            .unwrap_or("")
+            .to_string();
+        let Some(parts) = load_skinned_parts(&spec) else {
+            return;
+        };
+        if !parts.iter().any(|p| p.expressions.has("aa")) {
+            return;
+        }
+        if let Some(w) = play.doc.player.as_mut() {
+            w.expression = "aa".into();
+        }
+        play.tick(1.0 / 60.0);
+        assert_eq!(
+            play.doc.player.as_ref().unwrap().morph,
+            1.0,
+            "named expression applies full weight"
+        );
+        // blink に戻すと自動まばたきエンベロープ。
+        if let Some(w) = play.doc.player.as_mut() {
+            w.expression = "blink".into();
+        }
+        play.tick(1.0 / 60.0);
+        let m = play.doc.player.as_ref().unwrap().morph;
+        assert!(m <= 1.0, "auto blink envelope, got {m}");
+        // dump に expression が残る。
+        let json = play.doc.to_json().unwrap();
+        assert!(json.contains("\"expression\": \"blink\""));
     }
 
     #[test]

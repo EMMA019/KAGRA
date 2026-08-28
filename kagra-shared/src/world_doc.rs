@@ -272,10 +272,18 @@ pub struct WorldWalker {
     /// Dump-visible, so the game state machine reads it without an engine hook.
     #[serde(default = "default_idle_anim")]
     pub anim: String,
+    /// Selected VRM expression preset ("blink" = auto, "smile", "angry",
+    /// "aa", ...). Dump-visible; games flip it via events / interact.
+    #[serde(default = "default_expression")]
+    pub expression: String,
 }
 
 fn default_idle_anim() -> String {
     "idle".into()
+}
+
+fn default_expression() -> String {
+    "blink".into()
 }
 
 fn walker_type() -> String {
@@ -822,19 +830,27 @@ impl WorldDoc {
                     clip,
                     hair,
                     morph,
+                    expression,
                     look_yaw,
                     look_pitch,
                     ..
-                } => {
-                    gltf_skinned_mesh_for(spec, *part, *clip, *hair, *morph, *look_yaw, *look_pitch)
-                        .or_else(|| {
-                            if *part == 0 {
-                                walker_tpose_mesh(*clip, *hair, *morph, *look_yaw, *look_pitch)
-                            } else {
-                                None
-                            }
-                        })
-                }
+                } => gltf_skinned_mesh_for(
+                    spec,
+                    *part,
+                    *clip,
+                    *hair,
+                    *morph,
+                    expression,
+                    *look_yaw,
+                    *look_pitch,
+                )
+                .or_else(|| {
+                    if *part == 0 {
+                        walker_tpose_mesh(*clip, *hair, *morph, *look_yaw, *look_pitch)
+                    } else {
+                        None
+                    }
+                }),
             }
             .unwrap_or_else(|| primitives::box_mesh(Vec3::ONE));
             out.push((MeshId(MESH_GLTF_BASE + i as u32), mesh));
@@ -915,6 +931,7 @@ impl WorldDoc {
                         clip: walk.clip,
                         hair: walk.hair,
                         morph: walk.morph,
+                        expression: walk.expression.clone(),
                         look_yaw: walk.look_yaw,
                         look_pitch: walk.look_pitch,
                     });
@@ -1206,6 +1223,7 @@ enum GltfSlot {
         clip: f32,
         hair: f32,
         morph: f32,
+        expression: String,
         look_yaw: f32,
         look_pitch: f32,
     },
@@ -1339,7 +1357,7 @@ fn walker_tpose_mesh(
     let skin = skinned_tpose_humanoid().ok()?;
     let t = if clip <= 0.0 { None } else { Some(clip) };
     Some(sample_skinned_look(
-        &skin, t, hair, morph, look_yaw, look_pitch,
+        &skin, t, hair, "blink", morph, look_yaw, look_pitch,
     ))
 }
 
@@ -1440,12 +1458,14 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
     None
 }
 
+#[allow(clippy::too_many_arguments)]
 fn gltf_skinned_mesh_for(
     spec: &str,
     part: usize,
     clip: f32,
     hair: f32,
     morph: f32,
+    expression: &str,
     look_yaw: f32,
     look_pitch: f32,
 ) -> Option<MeshData> {
@@ -1453,7 +1473,7 @@ fn gltf_skinned_mesh_for(
         let skin = parts.get(part)?;
         let t = if clip <= 0.0 { None } else { Some(clip) };
         return Some(sample_skinned_look(
-            skin, t, hair, morph, look_yaw, look_pitch,
+            skin, t, hair, expression, morph, look_yaw, look_pitch,
         ));
     }
     if part == 0 {
@@ -1497,7 +1517,7 @@ pub(crate) fn walker_rest_min_y(spec: &str) -> f32 {
     }
 }
 
-fn load_skinned_parts(spec: &str) -> Option<Arc<Vec<crate::gltf_load::SkinnedMesh>>> {
+pub(crate) fn load_skinned_parts(spec: &str) -> Option<Arc<Vec<crate::gltf_load::SkinnedMesh>>> {
     let spec = spec.trim();
     if spec.is_empty() {
         return None;
