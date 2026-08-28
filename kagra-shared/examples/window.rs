@@ -1,4 +1,4 @@
-﻿//! Real desktop window: WorldDoc → live tick → Scene3D → kagra-shared wgpu 30.
+//! Real desktop window: WorldDoc → live tick → Scene3D → kagra-shared wgpu 30.
 //!
 //! Collectathon loop on the official path: title → play → result.
 //! WASD walks, mouse / arrows look, Space starts (title) or jumps (play).
@@ -167,6 +167,9 @@ fn main() -> Result<(), String> {
     let height = size.height.max(1);
     let mut renderer = pollster::block_on(Renderer::new_for_window(window.clone(), width, height))?;
     renderer.upload_world_meshes(&play.doc)?;
+    // Threshold bloom: sun / water / metal highlights glow, toon outlines stay
+    // crisp (same default as kagra-core set_bloom(0.85, 0.35)).
+    renderer.set_bloom(0.85, 0.35);
     if let Some(err) = play
         .doc
         .player

@@ -71,3 +71,4 @@
 - `20260828-m3-emma-play/` — official Emma VRoid play dump on play_world (WASD Mixamo walk; no RendererV2). Crest no-args stays capsule.
 - `20260828-m3-ibl-tone/` — shared wgpu 30 に薄い IBL（SH 半球）+ ACES。Bevy / RendererV2 ではない。
 - `20260831-adhesive-api/` — 接着 API 4本（interact / event / timer / anim）を WorldDoc に載せる。ジャンル専用はゲーム側。ゲームではない。
+- `20260831-hdr-bloom/` — shared wgpu 30 に HDR フレーム + 閾値ブルーム（0.19 移植）。ゲームではない。

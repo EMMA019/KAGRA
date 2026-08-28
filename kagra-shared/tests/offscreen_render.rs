@@ -8,6 +8,8 @@
 use std::sync::{Mutex, OnceLock};
 
 use kagra_shared::render::Renderer;
+use kagra_shared::scene::DrawList;
+use kagra_shared::scene3d::{Batch, Camera, Instance, Material, MeshId, Scene3D};
 use kagra_shared::session::SceneKind;
 use kagra_shared::SharedSession;
 
@@ -234,6 +236,75 @@ fn render_world_fixture(json: &str) -> Option<Vec<u8>> {
     let _guard = GPU.lock().unwrap_or_else(|e| e.into_inner());
     let doc = kagra_shared::WorldDoc::from_json(json).expect("parse dump");
     kagra_shared::render_world_doc(&doc, W, H).ok()
+}
+
+/// ポスト（threshold bloom）が明るい 3D オブジェクトの周囲に光をにじませる。
+/// 3D フレームは線形 HDR（トーン前）なので、白 box（リニア 1.0）は閾値 0.85
+/// を超えて抽出される。intensity 0 なら外側は黒のまま。
+#[test]
+fn bloom_spills_light_around_bright_quad() {
+    let Ok(mut renderer) = pollster::block_on(Renderer::new_offscreen(W, H)) else {
+        eprintln!("no GPU adapter; skipping bloom test");
+        return;
+    };
+    // compile_meshes は heightfield 無しだと id が飛ぶ（dense チェックに
+    // 引っかかる）ので、box だけを個別に登録する。
+    let all = kagra_shared::world_doc::compile_meshes();
+    for (id, mesh) in all {
+        if id.0 == 0 {
+            let got = renderer.upload_mesh(&mesh);
+            assert_eq!(got, MeshId(0), "box must be the first mesh");
+        }
+    }
+    // 白 box（Solid、ambient=1 → リニア 1.0）を画面中央に。ibl 0 で IBL を外し、
+    // クリアは黒。
+    let scene = Scene3D {
+        camera: Camera {
+            eye: glam::Vec3::new(0.0, 0.0, 6.0),
+            target: glam::Vec3::ZERO,
+            up: glam::Vec3::Y,
+            fov_y: 60f32.to_radians(),
+            near: 0.1,
+            far: 100.0,
+        },
+        clear: [0, 0, 0, 255],
+        ambient: 1.0,
+        ibl: 0.0,
+        batches: vec![Batch {
+            mesh: MeshId(0),
+            instances: vec![Instance {
+                model: glam::Mat4::from_translation(glam::Vec3::ZERO),
+                color: [255, 255, 255, 255],
+                material: Material::Solid,
+            }],
+        }],
+        ..Default::default()
+    };
+    let list = DrawList::default();
+    renderer
+        .render_frame(Some(&scene), &list)
+        .expect("off frame");
+    let off = renderer.read_rgba().expect("off readback");
+    renderer.set_bloom(0.85, 0.6);
+    renderer
+        .render_frame(Some(&scene), &list)
+        .expect("bloom frame");
+    let on = renderer.read_rgba().expect("bloom readback");
+    // box の縁から数 px 外で、bloom が off より明るいピクセルが存在する。
+    let mut spilled = false;
+    for dx in 8..28u32 {
+        let x = W / 2 + dx;
+        let po = pixel(&off, W, x, H / 2);
+        let pn = pixel(&on, W, x, H / 2);
+        if pn[0] as i32 > po[0] as i32 + 6 {
+            spilled = true;
+            break;
+        }
+    }
+    assert!(spilled, "bloom must brighten pixels outside the box");
+    // box の中心は白いまま（にじみで濁らない）。
+    let inside = pixel(&on, W, W / 2, H / 2);
+    assert!(inside[0] > 200, "box core stays bright, got {inside:?}");
 }
 
 /// Compiled WorldDoc through wgpu 30 offscreen (no kagra-core window).

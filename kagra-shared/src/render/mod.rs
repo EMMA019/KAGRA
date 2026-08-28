@@ -8,12 +8,14 @@
 //! WebGL2 でも動く範囲に収めてある。ストレージバッファを使わず、インスタンスは
 //! 頂点バッファで渡し、base instance には頼らない（GLES に無いため）。
 
+mod bloom;
 mod target;
 
 pub use target::SurfaceSource;
 
 use crate::scene::DrawList;
 use crate::scene3d::{MeshData, MeshId, Scene3D};
+use bloom::BloomPass;
 
 const MAX_TEXTURE_SIDE: u32 = 8192;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -110,6 +112,8 @@ pub struct Renderer {
     _white_albedo: wgpu::Texture,
     /// Seconds for shader env.z (water scroll). Frame accum, not Instant (wasm).
     elapsed: f32,
+    /// Threshold bloom: linear-HDR frame → extract/blur → composite → target.
+    bloom: BloomPass,
 }
 
 impl Renderer {
@@ -487,8 +491,9 @@ impl Renderer {
             }),
         ];
 
-        let color_target = [Some(wgpu::ColorTargetState {
-            format,
+        // 3D は線形 HDR フレームへ（トーンは bloom composite が適用）。
+        let hdr_target = [Some(wgpu::ColorTargetState {
+            format: bloom::BLOOM_FORMAT,
             blend: Some(wgpu::BlendState::ALPHA_BLENDING),
             write_mask: wgpu::ColorWrites::ALL,
         })];
@@ -506,7 +511,7 @@ impl Renderer {
                 module: &shader3d,
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
-                targets: &color_target,
+                targets: &hdr_target,
             }),
             primitive: wgpu::PrimitiveState {
                 cull_mode: Some(wgpu::Face::Back),
@@ -537,7 +542,7 @@ impl Renderer {
                 module: &shader3d,
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
-                targets: &color_target,
+                targets: &hdr_target,
             }),
             primitive: wgpu::PrimitiveState {
                 cull_mode: None,
@@ -588,6 +593,7 @@ impl Renderer {
         let inst_capacity = 256;
         let inst_buf = create_instance_buffer(&device, inst_capacity);
         let depth = create_depth_view(&device, width, height);
+        let bloom = BloomPass::new(&device, format, width, height);
 
         let me = Self {
             device,
@@ -618,6 +624,7 @@ impl Renderer {
             default_albedo_bind,
             _white_albedo: white_albedo,
             elapsed: 0.0,
+            bloom,
         };
         me.upload_screen();
         me
@@ -700,6 +707,13 @@ impl Renderer {
         matches!(self.target, Target::Offscreen { .. })
     }
 
+    /// Threshold bloom. `intensity` 0 = composite がそのままフレームを通す
+    /// （絵は変わらない）。Defaults off so the picture never silently changes;
+    /// games / play_world turn it on.
+    pub fn set_bloom(&mut self, threshold: f32, intensity: f32) {
+        self.bloom.set_params(threshold, intensity);
+    }
+
     fn upload_screen(&self) {
         let data = [self.width as f32, self.height as f32, 0.0, 0.0];
         self.queue
@@ -725,6 +739,7 @@ impl Renderer {
             }
         }
         self.depth = create_depth_view(&self.device, width, height);
+        self.bloom.resize(&self.device, width, height);
         self.upload_screen();
     }
 
@@ -816,6 +831,9 @@ impl Renderer {
             (None, Target::Offscreen { texture }) => texture.create_view(&Default::default()),
             _ => return Err("no render target".into()),
         };
+        // 3D は線形 HDR フレームへ。Bloom が最終ターゲットへ合成し、HUD は
+        // その後に重ねる（トーン後の色を保つ）。
+        let frame_view = self.bloom.frame_view();
 
         let mut encoder = self
             .device
@@ -851,11 +869,12 @@ impl Renderer {
                 pass.draw_indexed(0..m.index_count, 0, 0..*count);
             }
         }
+        // Pass 1: 3D（スカイ + メッシュ）→ 線形 HDR フレーム。クリアは常時。
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("kagra-shared 2d pass"),
+                label: Some("kagra-shared 3d pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: frame_view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -918,13 +937,49 @@ impl Renderer {
                     pass.draw_indexed(0..m.index_count, 0, 0..*count);
                 }
             }
-
-            if !vertices.is_empty() {
-                pass.set_pipeline(&self.pipeline);
-                pass.set_bind_group(0, &self.screen_bind, &[]);
-                pass.set_vertex_buffer(0, self.vbuf.slice(..));
-                pass.draw(0..vertices.len() as u32, 0..1);
-            }
+        }
+        // Pass 2: Bloom（extract/blur → composite で exposure + ACES → target）。
+        let (exposure, tonemap) = match world {
+            Some(scene) => (scene.exposure.max(0.0), scene.tonemap),
+            None => (1.0, true),
+        };
+        self.bloom.apply(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &view,
+            exposure,
+            tonemap,
+        );
+        // Pass 3: HUD → 最終ターゲット（トーン後の色をそのまま重ねる）。
+        if !vertices.is_empty() {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("kagra-shared hud pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &self.screen_bind, &[]);
+            pass.set_vertex_buffer(0, self.vbuf.slice(..));
+            pass.draw(0..vertices.len() as u32, 0..1);
         }
         self.queue.submit(Some(encoder.finish()));
         if let Some(f) = frame {

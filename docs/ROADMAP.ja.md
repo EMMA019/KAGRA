@@ -58,6 +58,7 @@ kagra-shared の `WorldDoc::from_json` が同じ JSON を読む。`compile_scene
 - `kagra.verify` の PNG サイズ煙 + **世界アサーション**（coins / on_ground / query / albedo_ok）+ 任意の **shared オフスクリーン煙**（空でない。golden ではない。ヘルパ無しはスキップ）
 - `WorldDoc` / `WorldPlay`（dump JSON。collectathon ループ。`compile_scene` は島の高さ場 + 金属コイン + ライト 4 スロット（空 dump は key+fill）+ 接地 blob。shared wgpu 30 オフスクリーン / `play_world` 窓。公式 Crest プレイはカプセル。旧 VRM デモは RendererV2 のまま）
 - **接着 API 4本（フェーズ1 圧縮）**: `prop.interact`（調べる/話す/使う → on_use イベント）、`doc.timers`（待つ。0 で on_done イベント）、`doc.events`（出来事。emit → take で複数システムが読む。コールバック無し）、`walker.anim`（状態→アニメ。エンジンは wish から walk/idle を導出、ジャンル名は静止中保持）。ジャンル専用ロジックはゲーム側。`docs/agent-runs/20260831-adhesive-api/`
+- **HDR + ブルーム**: 3D パスは線形 HDR フレーム（Rgba16Float）、`set_bloom(threshold, intensity)` の閾値ブルームを HDR 空間で適用し、composite が exposure + ACES + sRGB を掛ける。HUD はトーン後に重ねる。play_world / offscreen はデフォルト有効（0.85 / 0.35）。`docs/agent-runs/20260831-hdr-bloom/`
 - エージェントループ: `docs/API_INDEX.md` / MCP / `docs/agent-runs/`
 
 ## 嘘（今 40% を大きく呼ばない）

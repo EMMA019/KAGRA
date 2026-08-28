@@ -181,11 +181,6 @@ fn local_metal(n: vec3<f32>, world: vec3<f32>, v: vec3<f32>, f0: vec3<f32>, roug
 }
 
 
-fn aces_tonemap(x: vec3<f32>) -> vec3<f32> {
-    // Narkowicz ACES, same as kagra-core V2. Swapchain is sRGB: no extra gamma.
-    return saturate((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14));
-}
-
 // Tiny SH L1 / hemisphere. Studio zenith vs warm ground (V2 studio_equirect idea).
 // No 4K HDR, no cubemap texture, no storage buffer.
 fn env_irradiance(n: vec3<f32>) -> vec3<f32> {
@@ -198,14 +193,6 @@ fn env_irradiance(n: vec3<f32>) -> vec3<f32> {
     let shy = (sky - ground) * 0.5;
     let shx = vec3<f32>(0.06, 0.04, 0.02);
     return (sh0 + shy * n.y + shx * n.x) * g.env.x;
-}
-
-fn tone_map(rgb: vec3<f32>) -> vec3<f32> {
-    var c = rgb * max(g.env.y, 0.0);
-    if (g.env.w > 0.5) {
-        c = aces_tonemap(c);
-    }
-    return c;
 }
 
 // One directional map, 3x3 PCF. Depth compare (WebGL2 sampler2DShadow).
@@ -256,13 +243,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var alpha = in.color.a;
 
     // スカイ: 天頂〜地平のグラデーション。ライティングもフォグも掛けない。
+    // Linear HDR; exposure + ACES are applied by the bloom composite pass.
     if (mat_id == 3) {
         let dir = normalize(in.world - g.camera_pos.xyz);
         let t = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
         let zenith = vec3<f32>(0.35, 0.55, 0.95);
         let horizon = vec3<f32>(0.78, 0.86, 0.95);
         let col = mix(horizon, zenith, t * t);
-        return vec4<f32>(tone_map(col), 1.0);
+        return vec4<f32>(col, 1.0);
     }
 
     var albedo = in.color.rgb * textureSample(albedo_tex, albedo_samp, in.uv).rgb;
@@ -353,6 +341,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let span = max(g.fog_range.y - g.fog_range.x, 1e-3);
     let fog = clamp((dist - g.fog_range.x) / span, 0.0, 1.0);
 
+    // Linear HDR. exposure + ACES are applied by the bloom composite pass,
+    // which also adds the bloom spill before tonemapping.
     let rgb = mix(lit, g.fog_color.rgb, fog);
-    return vec4<f32>(tone_map(rgb), alpha);
+    return vec4<f32>(rgb, alpha);
 }
