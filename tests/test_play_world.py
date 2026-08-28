@@ -42,6 +42,42 @@ def test_emma_walker_dump_is_repo_relative():
     assert default.name == "crest_isle_world.json"
 
 
+def test_play_world_sets_kagra_root(tmp_path, monkeypatch):
+    helper = tmp_path / "fake_window.py"
+    helper.write_text(
+        "import os, sys\n"
+        "from pathlib import Path\n"
+        "root = os.environ.get('KAGRA_ROOT', '')\n"
+        "assert root, 'KAGRA_ROOT missing'\n"
+        "assert Path(root).is_dir()\n"
+        "world = Path(sys.argv[1])\n"
+        "assert world.is_file()\n"
+        "print('opened', world, 'root', root)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("KAGRA_WORLD_WINDOW", str(helper))
+    monkeypatch.setenv("KAGRA_WORLD_WINDOW_FORCE", "1")
+    dump = tmp_path / "world.json"
+    dump.write_text(
+        (ROOT / "kagra-shared/tests/fixtures/emma_walker_world.json").read_text(
+            encoding="utf-8"
+        ),
+        encoding="utf-8",
+    )
+    result = play_world_dump(
+        dump,
+        width=320,
+        height=180,
+        seconds=0.2,
+        allow_cargo=False,
+        root=tmp_path,
+        cwd=tmp_path,
+        timeout_sec=10,
+    )
+    assert result.ok, result.error
+    assert not result.skipped
+
+
 def test_looks_like_no_display_and_adapter():
     assert looks_like_no_display("no display: EventLoopError")
     assert looks_like_no_display("Library libxkbcommon-x11.so could not be loaded")

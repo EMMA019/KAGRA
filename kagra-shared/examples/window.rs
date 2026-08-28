@@ -157,41 +157,7 @@ fn main() -> Result<(), String> {
 
     let event_loop = EventLoop::new().map_err(|e| format!("no display: {e}"))?;
     let window = WindowBuilder::new()
-        .with_title(if play.is_action2d() {
-            "KAGRA Action Side (shared wgpu 30)"
-        } else if play.is_action() {
-            "KAGRA Action Arena (shared wgpu 30)"
-        } else if play.is_platformer() {
-            "KAGRA Box Hop (shared wgpu 30)"
-        } else if play.is_rpg() {
-            "KAGRA Town Gate (shared wgpu 30)"
-        } else if play.is_fps() {
-            "KAGRA FPS Range (shared wgpu 30)"
-        } else if play.is_td() {
-            "KAGRA TD Lane (shared wgpu 30)"
-        } else if play.is_race() {
-            "KAGRA Race Drive (shared wgpu 30)"
-        } else if play.is_fight() {
-            "KAGRA Fight Ring (shared wgpu 30)"
-        } else if play.is_novel() {
-            "KAGRA Novel Pages (shared wgpu 30)"
-        } else if play.is_stealth() {
-            "KAGRA Stealth Hide (shared wgpu 30)"
-        } else if play.is_puzzle() {
-            "KAGRA Puzzle Pad (shared wgpu 30)"
-        } else if play.is_sports() {
-            "KAGRA Sports Goal (shared wgpu 30)"
-        } else if play.is_sim() {
-            "KAGRA Sim Meter (shared wgpu 30)"
-        } else if play.is_sprite() {
-            "KAGRA Sprite Card (shared wgpu 30)"
-        } else if play.is_fish() {
-            "KAGRA Fish Dock (shared wgpu 30)"
-        } else if play.is_shop() {
-            "KAGRA Shop Stall (shared wgpu 30)"
-        } else {
-            "KAGRA Crest Isle (shared wgpu 30)"
-        })
+        .with_title(desktop_title(&play, &args.dump))
         .with_inner_size(winit::dpi::LogicalSize::new(args.width, args.height))
         .build(&event_loop)
         .map_err(|e| format!("no display: {e}"))?;
@@ -201,6 +167,14 @@ fn main() -> Result<(), String> {
     let height = size.height.max(1);
     let mut renderer = pollster::block_on(Renderer::new_for_window(window.clone(), width, height))?;
     renderer.upload_world_meshes(&play.doc)?;
+    if let Some(err) = play
+        .doc
+        .player
+        .as_ref()
+        .and_then(|w| w.load_error.as_deref())
+    {
+        eprintln!("walker gltf: {err}");
+    }
     println!(
         "WorldDoc window {} ({}x{})\n  Space / Enter start (title or result)\n  WASD walk | mouse or arrows look | Space jump | Esc quit\n  click the window if the mouse look is not captured",
         args.dump.display(),
@@ -418,6 +392,54 @@ fn is_start_key(key: &Key) -> bool {
         Key::Character(c) => c.eq_ignore_ascii_case(" ") || c.eq_ignore_ascii_case("enter"),
         _ => false,
     }
+}
+
+fn desktop_title(play: &WorldPlay, dump: &std::path::Path) -> String {
+    const SUFFIX: &str = " (shared wgpu 30)";
+    let name = if play.is_action2d() {
+        "Action Side"
+    } else if play.is_action() {
+        "Action Arena"
+    } else if play.is_platformer() {
+        "Box Hop"
+    } else if play.is_rpg() {
+        "Town Gate"
+    } else if play.is_fps() {
+        "FPS Range"
+    } else if play.is_td() {
+        "TD Lane"
+    } else if play.is_race() {
+        "Race Drive"
+    } else if play.is_fight() {
+        "Fight Ring"
+    } else if play.is_novel() {
+        "Novel Pages"
+    } else if play.is_stealth() {
+        "Stealth Hide"
+    } else if play.is_puzzle() {
+        "Puzzle Pad"
+    } else if play.is_sports() {
+        "Sports Goal"
+    } else if play.is_sim() {
+        "Sim Meter"
+    } else if play.is_sprite() {
+        "Sprite Card"
+    } else if play.is_survival() {
+        "Survival Meter"
+    } else if play.is_rhythm() {
+        "Rhythm Beat"
+    } else if play.is_fish() {
+        "Fish Dock"
+    } else if play.is_shop() {
+        "Shop Stall"
+    } else if play.is_cook() {
+        "Cook Stove"
+    } else if play.is_collectathon() {
+        "Crest Isle"
+    } else {
+        dump.file_stem().and_then(|s| s.to_str()).unwrap_or("World")
+    };
+    format!("KAGRA {name}{SUFFIX}")
 }
 
 fn parse_args() -> Result<Args, String> {

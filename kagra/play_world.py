@@ -325,10 +325,13 @@ def play_world_dump(
             path=str(world_p),
         )
 
+    env = os.environ.copy()
+    env.setdefault("KAGRA_ROOT", str(root))
     try:
         proc = subprocess.run(
             cmd,
             cwd=str(root),
+            env=env,
             capture_output=True,
             text=True,
             timeout=float(timeout_sec),

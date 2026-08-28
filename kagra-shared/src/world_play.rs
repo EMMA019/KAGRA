@@ -183,6 +183,7 @@ impl WorldPlay {
         if cook::is_cook(&doc) {
             cook::place_stove_camera(&mut doc);
         }
+        doc.refresh_asset_status();
         let game = if is_collectathon(&doc)
             || action::is_action(&doc)
             || action2d::is_action2d(&doc)
@@ -766,30 +767,40 @@ impl WorldPlay {
             GamePhase::Playing => {
                 let pip = 22.0 * scale;
                 let gap = 6.0 * scale;
-                for i in 0..STAR_XZ.len() {
-                    let x = pad + i as f32 * (pip + gap);
-                    let got = (i as u32) < self.game.stars;
-                    quads.push(Quad::new(
-                        x,
-                        pad,
-                        pip,
-                        pip,
-                        if got {
-                            [240, 196, 72, 255]
-                        } else {
-                            [20, 24, 18, 150]
-                        },
-                    ));
+                if is_collectathon(&self.doc) {
+                    for i in 0..STAR_XZ.len() {
+                        let x = pad + i as f32 * (pip + gap);
+                        let got = (i as u32) < self.game.stars;
+                        quads.push(Quad::new(
+                            x,
+                            pad,
+                            pip,
+                            pip,
+                            if got {
+                                [240, 196, 72, 255]
+                            } else {
+                                [20, 24, 18, 150]
+                            },
+                        ));
+                    }
                 }
-                let coin_w = 8.0 * scale;
-                for i in 0..self.game.coins.min(24) {
-                    quads.push(Quad::new(
-                        pad + i as f32 * (coin_w + 3.0 * scale),
-                        pad + pip + 8.0 * scale,
-                        coin_w,
-                        coin_w,
-                        [255, 210, 70, 255],
-                    ));
+                // Coin pips only for collected coins. coins=0 → none (no gray row).
+                if self.game.coins > 0 {
+                    let coin_w = 8.0 * scale;
+                    let y = if is_collectathon(&self.doc) {
+                        pad + pip + 8.0 * scale
+                    } else {
+                        pad
+                    };
+                    for i in 0..self.game.coins.min(24) {
+                        quads.push(Quad::new(
+                            pad + i as f32 * (coin_w + 3.0 * scale),
+                            y,
+                            coin_w,
+                            coin_w,
+                            [255, 210, 70, 255],
+                        ));
+                    }
                 }
             }
             GamePhase::Complete => {
@@ -1736,5 +1747,41 @@ mod tests {
         play.input = WalkInput::default();
         play.tick(1.0 / 60.0);
         assert_eq!(play.doc.player.as_ref().unwrap().clip, 0.0);
+    }
+
+    #[test]
+    fn emma_play_hides_collectathon_pips_and_notes_load() {
+        const DUMP: &str = include_str!("../tests/fixtures/emma_walker_world.json");
+        let play = WorldPlay::from_json(DUMP).unwrap();
+        assert!(!play.is_collectathon());
+        assert_eq!(play.doc.coins, 0);
+        assert_eq!(play.game.coins, 0);
+        assert_eq!(play.game.phase, crate::game::GamePhase::Playing);
+        let hud = play.build_hud(960, 540);
+        assert!(
+            hud.quads.is_empty(),
+            "coins=0 walker dump must not show 8 gray Crest pips, got {}",
+            hud.quads.len()
+        );
+        assert_eq!(
+            play.doc.player.as_ref().unwrap().gltf.as_deref(),
+            Some("assets/Emma.vrm")
+        );
+        let json = play.doc.to_json().unwrap();
+        if play.doc.player.as_ref().unwrap().load_error.is_some() {
+            assert!(json.contains("load_error"));
+        }
+        let scene = play.doc.compile_scene(1.0);
+        assert!(
+            !scene.batches.iter().any(|b| b.mesh.0 == 2),
+            "play compile must not draw capsule"
+        );
+        assert!(
+            scene
+                .batches
+                .iter()
+                .any(|b| b.mesh.0 >= crate::world_doc::MESH_GLTF_BASE),
+            "play compile must draw the skinned walker"
+        );
     }
 }

@@ -178,6 +178,9 @@ pub struct WorldWalker {
     /// Head look pitch (radians, toward camera). Dump-visible.
     #[serde(default)]
     pub look_pitch: f32,
+    /// Last glTF/VRM load error (`path: reason`). Dump-visible. None if ok.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load_error: Option<String>,
 }
 
 fn walker_type() -> String {
@@ -322,6 +325,32 @@ impl WorldDoc {
         serde_json::to_string_pretty(&out).map_err(|e| e.to_string())
     }
 
+    /// Probe walker `gltf` paths. Missing/parse failures are dump-visible;
+    /// `compile_scene` still draws a skinned tpose, never a silent capsule.
+    pub fn refresh_asset_status(&mut self) {
+        let mut seen = HashSet::new();
+        let mut errs: Vec<(String, Option<String>)> = Vec::new();
+        for w in self.walkers.iter().chain(self.player.iter()) {
+            if !seen.insert(w.id.clone()) {
+                continue;
+            }
+            let err = walker_gltf_spec(w).and_then(walker_asset_error);
+            errs.push((w.id.clone(), err));
+        }
+        for (id, err) in errs {
+            for w in &mut self.walkers {
+                if w.id == id {
+                    w.load_error = err.clone();
+                }
+            }
+            if let Some(w) = self.player.as_mut() {
+                if w.id == id {
+                    w.load_error = err.clone();
+                }
+            }
+        }
+    }
+
     /// Stable string ids in dump order (props, walkers, lights, cameras, tiles).
     pub fn stable_ids(&self) -> Vec<String> {
         let mut ids = Vec::new();
@@ -349,6 +378,19 @@ impl WorldDoc {
             b.push_material(
                 MESH_HEIGHTFIELD,
                 Mat4::IDENTITY,
+                [78, 138, 64, 255],
+                Material::Grass,
+            );
+        } else {
+            // Dump without heightfield/water/props is otherwise a clear-color void.
+            let span = (self.half.abs() * 2.0).max(8.0);
+            b.push_material(
+                MESH_PLANE,
+                Mat4::from_scale_rotation_translation(
+                    Vec3::new(span, 1.0, span),
+                    Quat::IDENTITY,
+                    Vec3::new(0.0, self.floor_y, 0.0),
+                ),
                 [78, 138, 64, 255],
                 Material::Grass,
             );
@@ -413,7 +455,8 @@ impl WorldDoc {
                 continue;
             }
             // Named glTF (dump `gltf` / `model`) is CPU-skinned at `clip` and
-            // drawn at walker pose. Capsule + head remains the fallback.
+            // drawn at walker pose. `model: capsule` must not win when `gltf`
+            // is set. Capsule + head remains the fallback only if no glTF spec.
             // Action genre: name "hurt" / "dead" is dump-visible and tinted here.
             let pos = Vec3::from_array(walk.position);
             let yaw = Quat::from_rotation_y(walk.yaw);
@@ -684,7 +727,8 @@ impl WorldDoc {
                     look_yaw,
                     look_pitch,
                     ..
-                } => gltf_skinned_mesh_for(spec, *clip, *hair, *morph, *look_yaw, *look_pitch),
+                } => gltf_skinned_mesh_for(spec, *clip, *hair, *morph, *look_yaw, *look_pitch)
+                    .or_else(|| walker_tpose_mesh(*clip, *hair, *morph, *look_yaw, *look_pitch)),
             }
             .unwrap_or_else(|| primitives::box_mesh(Vec3::ONE));
             out.push((MeshId(MESH_GLTF_BASE + i as u32), mesh));
@@ -1171,30 +1215,75 @@ fn nearest_sample(samples: &[[f32; 3]], x: f32, z: f32) -> f32 {
 }
 
 fn existing_asset_path(spec: &str) -> Option<PathBuf> {
+    crate::assets::resolve_asset(spec)
+}
+
+fn walker_tpose_mesh(
+    clip: f32,
+    hair: f32,
+    morph: f32,
+    look_yaw: f32,
+    look_pitch: f32,
+) -> Option<MeshData> {
+    let skin = skinned_tpose_humanoid().ok()?;
+    let t = if clip <= 0.0 { None } else { Some(clip) };
+    Some(sample_skinned_look(
+        &skin, t, hair, morph, look_yaw, look_pitch,
+    ))
+}
+
+fn walker_asset_error(spec: &str) -> Option<String> {
+    probe_walker_asset(spec).err()
+}
+
+fn probe_walker_asset(spec: &str) -> Result<(), String> {
     let spec = spec.trim();
-    let mut names: Vec<String> = vec![spec.to_string()];
-    let stem = Path::new(spec)
-        .file_stem()
+    if spec.starts_with('{')
+        || is_walk_skinned_spec(spec)
+        || is_walk_vrm_spec(spec)
+        || is_tpose_humanoid_spec(spec)
+    {
+        return Ok(());
+    }
+    let lower = spec.to_ascii_lowercase();
+    let stem = Path::new(&lower)
+        .file_name()
         .and_then(|s| s.to_str())
-        .unwrap_or(spec);
-    if stem.eq_ignore_ascii_case("emma") || spec.eq_ignore_ascii_case("emma") {
-        for a in crate::assets::resolve_alias("emma") {
-            if !names.iter().any(|n| n == a) {
-                names.push(a.to_string());
-            }
-        }
+        .unwrap_or(lower.as_str());
+    if matches!(
+        stem,
+        "cube.glb" | "cube.gltf" | "crate.glb" | "crate.gltf" | "cube"
+    ) {
+        return Ok(());
     }
-    for name in names {
-        let direct = PathBuf::from(&name);
-        if direct.is_file() {
-            return Some(direct);
-        }
-        let from_crate = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(&name);
-        if from_crate.is_file() {
-            return Some(from_crate);
-        }
+    let path = existing_asset_path(spec)
+        .ok_or_else(|| format!("{spec}: missing (repo root / KAGRA_ROOT / window.exe dir)"))?;
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or(spec);
+    if lower.ends_with(".gltf") {
+        let json = std::fs::read_to_string(&path).map_err(|e| format!("{name}: {e}"))?;
+        skinned_from_gltf_json(&json, |uri| {
+            let base = path.parent().unwrap_or(Path::new("."));
+            std::fs::read(base.join(uri)).map_err(|e| e.to_string())
+        })
+        .map(|_| ())
+        .or_else(|e| {
+            mesh_from_gltf_json(&json, |uri| {
+                let base = path.parent().unwrap_or(Path::new("."));
+                std::fs::read(base.join(uri)).map_err(|err| err.to_string())
+            })
+            .map(|_| ())
+            .map_err(|_| format!("{name}: {e}"))
+        })
+    } else if lower.ends_with(".glb") || lower.ends_with(".vrm") {
+        let bytes = std::fs::read(&path).map_err(|e| format!("{name}: {e}"))?;
+        skinned_from_glb(&bytes).map(|_| ()).or_else(|e| {
+            mesh_from_glb(&bytes)
+                .map(|_| ())
+                .map_err(|_| format!("{name}: {e}"))
+        })
+    } else {
+        Ok(())
     }
-    None
 }
 
 fn is_emma_vrm_stem(stem: &str) -> bool {
@@ -1293,21 +1382,32 @@ pub(crate) fn load_skinned(spec: &str) -> Option<crate::gltf_load::SkinnedMesh> 
     }
     if let Some(path) = existing_asset_path(spec) {
         if lower.ends_with(".gltf") {
-            let json = std::fs::read_to_string(&path).ok()?;
-            let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
-            return skinned_from_gltf_json(&json, |uri| {
-                std::fs::read(base.join(uri)).map_err(|e| e.to_string())
-            })
-            .ok();
+            if let Ok(json) = std::fs::read_to_string(&path) {
+                let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+                if let Ok(skin) = skinned_from_gltf_json(&json, |uri| {
+                    std::fs::read(base.join(uri)).map_err(|e| e.to_string())
+                }) {
+                    return Some(skin);
+                }
+            }
+            // File present but unreadable: do not silent-capsule. Fall through.
         }
         if lower.ends_with(".glb") || lower.ends_with(".vrm") {
-            let bytes = std::fs::read(&path).ok()?;
-            return skinned_from_glb(&bytes).ok();
+            if let Ok(bytes) = std::fs::read(&path) {
+                if let Ok(skin) = skinned_from_glb(&bytes) {
+                    return Some(skin);
+                }
+            }
+            // File present but unreadable: do not silent-capsule. Fall through.
         }
     }
-    if is_emma_vrm_stem(stem) {
+    if is_emma_vrm_stem(stem)
+        || lower.ends_with(".vrm")
+        || lower.ends_with(".gltf")
+        || lower.ends_with(".glb")
+    {
         // Official dump points at assets/Emma.vrm (gitignored, large).
-        // CI / missing file: tiny clip-less tpose_humanoid (same Mixamo walk).
+        // CI / missing / parse fail: tiny clip-less tpose_humanoid (Mixamo walk).
         return skinned_tpose_humanoid().ok();
     }
     None
@@ -2168,10 +2268,30 @@ mod tests {
     #[test]
     fn emma_walker_dump_is_repo_relative_and_compiles() {
         const DUMP: &str = include_str!("../tests/fixtures/emma_walker_world.json");
-        let doc = WorldDoc::from_json(DUMP).unwrap();
-        let spec = doc.player.as_ref().unwrap().gltf.as_deref().unwrap();
+        let mut doc = WorldDoc::from_json(DUMP).unwrap();
+        let spec = doc
+            .player
+            .as_ref()
+            .unwrap()
+            .gltf
+            .clone()
+            .expect("emma gltf");
         assert_eq!(spec, "assets/Emma.vrm");
         assert!(!spec.contains('\\') && !spec.contains(':'));
+        assert_eq!(doc.player.as_ref().unwrap().model, "capsule");
+        assert!(doc.heightfield.is_none());
+        assert!(doc.props.is_empty());
+        assert!(doc.water_y.is_none());
+        doc.refresh_asset_status();
+        let json = doc.to_json().unwrap();
+        if existing_asset_path(&spec).is_none() {
+            assert!(
+                json.contains("load_error") && json.contains("Emma.vrm"),
+                "missing Emma.vrm must be dump-visible, got {json}"
+            );
+        } else if let Some(err) = &doc.player.as_ref().unwrap().load_error {
+            assert!(err.contains("Emma") || err.contains(".vrm"), "{err}");
+        }
         let scene = doc.compile_scene(1.0);
         let batch = scene
             .batches
@@ -2182,6 +2302,72 @@ mod tests {
         assert!(
             !scene.batches.iter().any(|b| b.mesh == MESH_CAPSULE),
             "emma dump must not surprise-swap to the capsule"
+        );
+        let ground = scene.batches.iter().any(|b| {
+            (b.mesh == MESH_PLANE || b.mesh == MESH_HEIGHTFIELD)
+                && b.instances
+                    .iter()
+                    .any(|i| i.material == Material::Grass && i.color[3] == 255)
+        });
+        assert!(ground, "emma dump must compile a floor, not a blue void");
+        let skinned = doc
+            .compile_meshes()
+            .into_iter()
+            .find(|(id, _)| id.0 >= MESH_GLTF_BASE)
+            .expect("skinned")
+            .1;
+        let cyl = primitives::cylinder_mesh(0.5, 1.0, 12);
+        assert_ne!(
+            skinned.vertices.len(),
+            cyl.vertices.len(),
+            "fallback must be a skinned mesh, not a cylinder"
+        );
+        assert!(
+            skinned.vertices.len() >= 8,
+            "skinned walker verts {}",
+            skinned.vertices.len()
+        );
+    }
+
+    #[test]
+    fn walker_gltf_load_fail_is_skinned_not_capsule() {
+        const DUMP: &str = include_str!("../tests/fixtures/emma_walker_world.json");
+        let mut doc = WorldDoc::from_json(DUMP).unwrap();
+        let bad = "assets/does_not_exist_walker.vrm";
+        if let Some(w) = doc.player.as_mut() {
+            w.gltf = Some(bad.into());
+            w.model = "capsule".into();
+        }
+        for w in &mut doc.walkers {
+            w.gltf = Some(bad.into());
+            w.model = "capsule".into();
+        }
+        doc.refresh_asset_status();
+        let json = doc.to_json().unwrap();
+        assert!(
+            json.contains("load_error") && json.contains("does_not_exist_walker"),
+            "load fail must be dump-visible, got {json}"
+        );
+        assert_eq!(doc.player.as_ref().unwrap().model, "capsule");
+        let scene = doc.compile_scene(1.0);
+        assert!(
+            scene.batches.iter().any(|b| b.mesh.0 >= MESH_GLTF_BASE),
+            "named gltf must keep a skinned slot"
+        );
+        assert!(
+            !scene.batches.iter().any(|b| b.mesh == MESH_CAPSULE),
+            "model:capsule must not win when gltf is set"
+        );
+        let skinned = doc
+            .compile_meshes()
+            .into_iter()
+            .find(|(id, _)| id.0 >= MESH_GLTF_BASE)
+            .expect("tpose fallback")
+            .1;
+        assert_eq!(
+            skinned.vertices.len(),
+            8,
+            "tpose_humanoid fallback, not a cylinder"
         );
     }
 
