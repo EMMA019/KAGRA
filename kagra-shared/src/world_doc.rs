@@ -28,7 +28,7 @@ use std::path::Path;
 use crate::collectathon::open_world_height;
 use crate::gltf_load::{
     is_tpose_humanoid_spec, is_walk_skinned_spec, is_walk_vrm_spec, mesh_from_embedded_gltf,
-    mesh_from_glb, mesh_from_gltf_json, sample_skinned_hair, skinned_from_embedded_gltf,
+    mesh_from_glb, mesh_from_gltf_json, sample_skinned_look, skinned_from_embedded_gltf,
     skinned_from_glb, skinned_from_gltf_json, skinned_tpose_humanoid, unit_cube_gltf,
     walk_skinned_gltf, walk_skinned_vrm,
 };
@@ -159,6 +159,12 @@ pub struct WorldWalker {
     /// Named expression weight (blink, else aa). Dump-visible. Idle blink / hold J.
     #[serde(default)]
     pub morph: f32,
+    /// Head look yaw (radians, toward camera). Dump-visible.
+    #[serde(default)]
+    pub look_yaw: f32,
+    /// Head look pitch (radians, toward camera). Dump-visible.
+    #[serde(default)]
+    pub look_pitch: f32,
 }
 
 fn walker_type() -> String {
@@ -638,8 +644,10 @@ impl WorldDoc {
                     clip,
                     hair,
                     morph,
+                    look_yaw,
+                    look_pitch,
                     ..
-                } => gltf_skinned_mesh_for(spec, *clip, *hair, *morph),
+                } => gltf_skinned_mesh_for(spec, *clip, *hair, *morph, *look_yaw, *look_pitch),
             }
             .unwrap_or_else(|| primitives::box_mesh(Vec3::ONE));
             out.push((MeshId(MESH_GLTF_BASE + i as u32), mesh));
@@ -715,6 +723,8 @@ impl WorldDoc {
                     clip: walk.clip,
                     hair: walk.hair,
                     morph: walk.morph,
+                    look_yaw: walk.look_yaw,
+                    look_pitch: walk.look_pitch,
                 });
             }
         }
@@ -747,6 +757,8 @@ enum GltfSlot {
         clip: f32,
         hair: f32,
         morph: f32,
+        look_yaw: f32,
+        look_pitch: f32,
     },
 }
 
@@ -895,12 +907,28 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
     None
 }
 
-fn gltf_skinned_mesh_for(spec: &str, clip: f32, hair: f32, morph: f32) -> Option<MeshData> {
+fn gltf_skinned_mesh_for(
+    spec: &str,
+    clip: f32,
+    hair: f32,
+    morph: f32,
+    look_yaw: f32,
+    look_pitch: f32,
+) -> Option<MeshData> {
     if let Some(skin) = load_skinned(spec) {
         if clip <= 0.0 {
-            return Some(sample_skinned_hair(&skin, None, hair, morph));
+            return Some(sample_skinned_look(
+                &skin, None, hair, morph, look_yaw, look_pitch,
+            ));
         }
-        return Some(sample_skinned_hair(&skin, Some(clip), hair, morph));
+        return Some(sample_skinned_look(
+            &skin,
+            Some(clip),
+            hair,
+            morph,
+            look_yaw,
+            look_pitch,
+        ));
     }
     gltf_mesh_for(spec)
 }
@@ -1546,6 +1574,10 @@ mod tests {
         assert!(skinned.1.albedo.as_ref().is_some_and(|a| a.width >= 2));
         assert_eq!(w.hair, 0.0);
         assert!(json.contains("\"hair\""), "hair yaw dump-visible");
+        assert_eq!(w.look_yaw, 0.0);
+        assert_eq!(w.look_pitch, 0.0);
+        assert!(json.contains("look_yaw"), "look yaw dump-visible");
+        assert!(json.contains("look_pitch"), "look pitch dump-visible");
     }
 
     #[test]
@@ -1621,6 +1653,49 @@ mod tests {
         assert!(
             max_d > 0.05,
             "dump morph 1 must move CPU-skinned verts, max_d={max_d}"
+        );
+    }
+
+    #[test]
+    fn walker_look_yaw_is_dump_queryable_and_moves_verts() {
+        const DUMP: &str = include_str!("../tests/fixtures/vrm_walker_world.json");
+        let mut rest = WorldDoc::from_json(DUMP).expect("parse");
+        let w = rest.player.as_ref().unwrap();
+        assert_eq!(w.look_yaw, 0.0);
+        assert_eq!(w.look_pitch, 0.0);
+        let json = rest.to_json().expect("json");
+        assert!(json.contains("look_yaw"), "look yaw dump-visible");
+        rest.player.as_mut().unwrap().look_yaw = 0.0;
+        if let Some(w) = rest.walkers.first_mut() {
+            w.look_yaw = 0.0;
+        }
+        let mut turned = rest.clone();
+        turned.player.as_mut().unwrap().look_yaw = 0.6;
+        turned.player.as_mut().unwrap().look_pitch = 0.2;
+        if let Some(w) = turned.walkers.first_mut() {
+            w.look_yaw = 0.6;
+            w.look_pitch = 0.2;
+        }
+        let rest_m = rest
+            .compile_meshes()
+            .into_iter()
+            .find(|(id, _)| id.0 >= MESH_GLTF_BASE)
+            .expect("rest")
+            .1;
+        let look_m = turned
+            .compile_meshes()
+            .into_iter()
+            .find(|(id, _)| id.0 >= MESH_GLTF_BASE)
+            .expect("look")
+            .1;
+        let mut max_d = 0.0f32;
+        for (a, b) in rest_m.vertices.iter().zip(look_m.vertices.iter()) {
+            max_d =
+                max_d.max((glam::Vec3::from_array(a.pos) - glam::Vec3::from_array(b.pos)).length());
+        }
+        assert!(
+            max_d > 0.01,
+            "dump look yaw/pitch must move CPU-skinned verts, max_d={max_d}"
         );
     }
 

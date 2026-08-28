@@ -392,7 +392,7 @@ pub fn folded_forward(rest_dir: Vec3, anim_dir: Vec3, thresh: f32) -> bool {
     fwd >= thresh && along < 0.55
 }
 
-fn rest_world_rotations(nodes: &[NodeRest]) -> Vec<Quat> {
+pub(crate) fn rest_world_rotations(nodes: &[NodeRest]) -> Vec<Quat> {
     let n = nodes.len();
     let mut parent = vec![None; n];
     for (i, node) in nodes.iter().enumerate() {

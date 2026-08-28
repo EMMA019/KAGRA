@@ -4,7 +4,7 @@
 //! stay put (WebGL2-friendly: no storage buffers, no joint palette).
 //!
 //! Optional `pbrMetallicRoughness.baseColorTexture` (or VRM0 `_MainTex`) is decoded
-//! into `MeshData.albedo`. VRM 0 materialProperties / VRM 1 VRMC_materials_mtoon shadeColor + shadingToony land on MeshData.mtoon. Morph targets (POSITION deltas) plus VRM 0 blendShapeMaster / VRM 1 VRMC_vrm expressions apply one named shape onto CPU-skinned Vertex3. Does not pull the heavy `gltf` crate. External .bin uses
+//! into `MeshData.albedo`. VRM 0 materialProperties / VRM 1 VRMC_materials_mtoon shadeColor + shadingToony land on MeshData.mtoon. Morph targets (POSITION deltas) plus VRM 0 blendShapeMaster / VRM 1 VRMC_vrm expressions apply one named shape onto CPU-skinned Vertex3. VRM 0 firstPerson / VRM 1 VRMC_vrm.lookAt yaw/pitch the head (eyes if present) with Mixamo rest+roll, not raw bind*delta. Does not pull the heavy `gltf` crate. External .bin uses
 //! `resolve_buffer`. `.vrm` is GLB plus VRM 0/1 humanoid extras.
 
 use std::collections::HashMap;
@@ -231,6 +231,8 @@ pub struct SkinnedMesh {
     pub morphs: Vec<Vec<Vec3>>,
     /// VRM 0 blendShapeMaster / VRM 1 VRMC_vrm expression name -> binds.
     pub expressions: crate::morph::Expressions,
+    /// VRM 0 firstPerson / VRM 1 VRMC_vrm.lookAt maps. None when absent.
+    pub look_at: Option<crate::lookat::LookAt>,
 }
 
 /// Rest-pose node (children + TRS). `matrix` is baked into TRS when present.
@@ -387,6 +389,18 @@ pub fn sample_skinned(skin: &SkinnedMesh, t: f32) -> MeshData {
 /// CPU-skin with optional clip time, dump `hair` yaw, and dump `morph` weight.
 /// `t = None` is bind/rest (idle T-pose, not Mixamo key 0).
 pub fn sample_skinned_hair(skin: &SkinnedMesh, t: Option<f32>, hair: f32, morph: f32) -> MeshData {
+    sample_skinned_look(skin, t, hair, morph, 0.0, 0.0)
+}
+
+/// CPU-skin with dump `hair`, `morph`, and head look yaw/pitch.
+pub fn sample_skinned_look(
+    skin: &SkinnedMesh,
+    t: Option<f32>,
+    hair: f32,
+    morph: f32,
+    look_yaw: f32,
+    look_pitch: f32,
+) -> MeshData {
     if skin.skin_joints.is_empty()
         || skin.joints.len() != skin.rest.vertices.len()
         || skin.weights.len() != skin.rest.vertices.len()
@@ -397,6 +411,7 @@ pub fn sample_skinned_hair(skin: &SkinnedMesh, t: Option<f32>, hair: f32, morph:
         Some(tt) => sample_locals(skin, tt),
         None => rest_locals(skin),
     };
+    apply_look(skin, &mut locals, look_yaw, look_pitch);
     apply_hair(skin, &mut locals, hair);
     let globals = global_pose(&skin.nodes, &locals);
     let mut joint_mats = vec![Mat4::IDENTITY; skin.skin_joints.len()];
@@ -570,6 +585,7 @@ fn skinned_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<SkinnedMesh, St
             let e = crate::morph::parse_expressions(doc.extensions.as_ref());
             crate::morph::with_default_names(e, prim.targets.len())
         },
+        look_at: crate::lookat::parse_look_at(doc.extensions.as_ref()),
     };
     crate::mixamo::bind_locomotion(&mut skin);
     Ok(skin)
@@ -728,6 +744,86 @@ fn rest_locals(skin: &SkinnedMesh) -> Vec<NodeLocal> {
             scale: n.scale,
         })
         .collect()
+}
+
+fn apply_look(skin: &SkinnedMesh, locals: &mut [NodeLocal], yaw: f32, pitch: f32) {
+    if yaw.abs() < 1e-8 && pitch.abs() < 1e-8 {
+        return;
+    }
+    let Some(head) = crate::lookat::head_node(&skin.humanoid) else {
+        return;
+    };
+    if head >= locals.len() {
+        return;
+    }
+    let worlds = crate::mixamo::rest_world_rotations(&skin.nodes);
+    let meta = skin.look_at.clone().unwrap_or_default();
+    let (hy, hp) = crate::lookat::clamp_head(&meta, yaw, pitch);
+    let mut head_yaw = hy;
+    if let Some(neck) = crate::lookat::neck_node(&skin.humanoid) {
+        if neck < locals.len() {
+            let ny = hy * 0.4;
+            head_yaw = hy - ny;
+            apply_look_bone(locals, &worlds, neck, Quat::from_rotation_y(ny));
+        }
+    }
+    apply_look_bone(
+        locals,
+        &worlds,
+        head,
+        crate::lookat::look_quat(head_yaw, hp),
+    );
+    let (ey, ep) = crate::lookat::map_eyes(&meta, yaw, pitch);
+    if ey.abs() > 1e-8 || ep.abs() > 1e-8 {
+        let eq = crate::lookat::look_quat(ey, ep);
+        for i in crate::lookat::eye_nodes(&skin.humanoid)
+            .into_iter()
+            .flatten()
+        {
+            if i < locals.len() {
+                apply_look_bone(locals, &worlds, i, eq);
+            }
+        }
+    }
+}
+
+fn apply_look_bone(locals: &mut [NodeLocal], worlds: &[Quat], i: usize, delta_src: Quat) {
+    let wd = worlds.get(i).copied().unwrap_or(Quat::IDENTITY);
+    locals[i].rotation = crate::lookat::compensated_local(locals[i].rotation, wd, delta_src);
+}
+
+/// Rest-pose world translation of the head bone (plus lookAt offset).
+pub fn head_world_pos(skin: &SkinnedMesh) -> Vec3 {
+    let Some(head) = crate::lookat::head_node(&skin.humanoid) else {
+        return Vec3::new(0.0, 1.2, 0.0);
+    };
+    let n = skin.nodes.len();
+    let mut parent = vec![None; n];
+    for (i, node) in skin.nodes.iter().enumerate() {
+        for &c in &node.children {
+            if c < n {
+                parent[c] = Some(i);
+            }
+        }
+    }
+    let mut chain = Vec::new();
+    let mut cur = Some(head);
+    while let Some(i) = cur {
+        chain.push(i);
+        cur = parent[i];
+    }
+    let mut pos = Vec3::ZERO;
+    let mut rot = Quat::IDENTITY;
+    for &i in chain.iter().rev() {
+        pos += rot * skin.nodes[i].translation;
+        rot *= skin.nodes[i].rotation;
+    }
+    let off = skin
+        .look_at
+        .as_ref()
+        .map(|l| l.offset_from_head_bone)
+        .unwrap_or([0.0, 0.06, 0.0]);
+    pos + rot * Vec3::from_array(off)
 }
 
 fn apply_hair(skin: &SkinnedMesh, locals: &mut [NodeLocal], hair: f32) {
@@ -1665,9 +1761,12 @@ mod tests {
         assert_eq!(skin.joints.len(), 8);
         assert_eq!(skin.weights.len(), 8);
         assert_eq!(skin.skin_joints.len(), 4);
-        assert_eq!(skin.nodes.len(), 4);
+        assert_eq!(skin.nodes.len(), 5);
         assert_eq!(skin.humanoid.get("hips").copied(), Some(0));
         assert_eq!(skin.humanoid.get("chest").copied(), Some(1));
+        assert_eq!(skin.humanoid.get("head").copied(), Some(4));
+        let la = skin.look_at.as_ref().expect("lookAt");
+        assert_eq!(la.look_at_type, "bone");
         assert_eq!(skin.springs.chains.len(), 1);
         assert_eq!(skin.springs.chains[0].joints.len(), 2);
         assert_eq!(skin.springs.chains[0].joints[0].node, 2);
@@ -1809,6 +1908,22 @@ mod tests {
         assert!(
             moved > 0.05,
             "blink weight 1 must move CPU-skinned verts, moved={moved}"
+        );
+    }
+
+    #[test]
+    fn vrm_look_yaw_moves_skinned_verts() {
+        let skin = skinned_from_glb(&walk_skinned_vrm()).expect("vrm");
+        assert_eq!(crate::lookat::head_node(&skin.humanoid), Some(4));
+        let rest = sample_skinned_look(&skin, None, 0.0, 0.0, 0.0, 0.0);
+        let look = sample_skinned_look(&skin, None, 0.0, 0.0, 0.6, 0.2);
+        let mut max_d = 0.0f32;
+        for (a, b) in rest.vertices.iter().zip(look.vertices.iter()) {
+            max_d = max_d.max((Vec3::from_array(a.pos) - Vec3::from_array(b.pos)).length());
+        }
+        assert!(
+            max_d > 0.01,
+            "head look yaw/pitch must move CPU-skinned verts, max_d={max_d}"
         );
     }
 }

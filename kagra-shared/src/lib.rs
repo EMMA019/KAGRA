@@ -22,6 +22,7 @@ pub mod fps;
 pub mod game;
 pub mod gltf_load;
 pub mod input;
+pub mod lookat;
 pub mod map;
 pub mod mission;
 pub mod mixamo;

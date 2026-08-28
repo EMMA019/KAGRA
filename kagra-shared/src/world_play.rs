@@ -17,7 +17,8 @@ use crate::fight::{self, FightGame};
 use crate::fish::{self, FishGame};
 use crate::fps::{self, FpsGame};
 use crate::game::GamePhase;
-use crate::gltf_load::step_springs;
+use crate::gltf_load::{head_world_pos, step_springs};
+use crate::lookat;
 use crate::morph;
 use crate::novel::{self, NovelGame};
 use crate::platformer::{self, PlatformGame};
@@ -947,6 +948,46 @@ impl WorldPlay {
         write_player(&mut self.doc, updated);
     }
 
+    fn step_look(&mut self) {
+        let (spec, pos, yaw) = {
+            let Some(w) = player_ref(&self.doc) else {
+                return;
+            };
+            let spec = w
+                .gltf
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .unwrap_or(w.model.trim())
+                .to_string();
+            if spec.is_empty() {
+                return;
+            }
+            (spec, Vec3::from_array(w.position), w.yaw)
+        };
+        let Some(skin) = load_skinned(&spec) else {
+            return;
+        };
+        if lookat::head_node(&skin.humanoid).is_none() {
+            return;
+        }
+        let Some(cam) = self.doc.cameras.first() else {
+            return;
+        };
+        let head = pos + head_world_pos(&skin);
+        let cam_pos = Vec3::from_array(cam.position);
+        let (ly, lp) = lookat::yaw_pitch_toward(head, cam_pos, yaw);
+        let meta = skin.look_at.clone().unwrap_or_default();
+        let (ly, lp) = lookat::clamp_head(&meta, ly, lp);
+        let Some(w) = player_ref(&self.doc) else {
+            return;
+        };
+        let mut updated = w.clone();
+        updated.look_yaw = ly;
+        updated.look_pitch = lp;
+        write_player(&mut self.doc, updated);
+    }
+
     fn follow_camera(&mut self) {
         let Some(w) = player_ref(&self.doc) else {
             return;
@@ -971,6 +1012,7 @@ impl WorldPlay {
                 fov,
             });
         }
+        self.step_look();
     }
 
     fn collect_pickups(&mut self) {
@@ -1588,5 +1630,56 @@ mod tests {
         let w = play.doc.player.as_ref().unwrap();
         assert!(w.gltf.is_none() || w.gltf.as_deref() == Some(""));
         assert_eq!(w.morph, 0.0);
+        assert_eq!(w.look_yaw, 0.0);
+        assert_eq!(w.look_pitch, 0.0);
+    }
+
+    #[test]
+    fn idle_look_at_camera_sets_dump_yaw() {
+        const DUMP: &str = include_str!("../tests/fixtures/vrm_walker_world.json");
+        let mut play = WorldPlay::from_json(DUMP).unwrap();
+        play.start();
+        play.input = WalkInput::default();
+        for _ in 0..4 {
+            play.tick(1.0 / 60.0);
+        }
+        let ly = play.doc.player.as_ref().unwrap().look_yaw;
+        let lp = play.doc.player.as_ref().unwrap().look_pitch;
+        assert!(
+            ly.abs() > 0.2 || lp.abs() > 0.05,
+            "chase cam look-at must set dump yaw/pitch, look_yaw={ly} look_pitch={lp}"
+        );
+        let live = play
+            .doc
+            .compile_meshes()
+            .into_iter()
+            .find(|(id, _)| id.0 >= crate::world_doc::MESH_GLTF_BASE)
+            .unwrap()
+            .1;
+        let bind = {
+            let mut idle = play.doc.clone();
+            if let Some(w) = idle.player.as_mut() {
+                w.look_yaw = 0.0;
+                w.look_pitch = 0.0;
+            }
+            for w in &mut idle.walkers {
+                w.look_yaw = 0.0;
+                w.look_pitch = 0.0;
+            }
+            idle.compile_meshes()
+                .into_iter()
+                .find(|(id, _)| id.0 >= crate::world_doc::MESH_GLTF_BASE)
+                .unwrap()
+                .1
+        };
+        let mut max_d = 0.0f32;
+        for (a, b) in bind.vertices.iter().zip(live.vertices.iter()) {
+            max_d =
+                max_d.max((glam::Vec3::from_array(a.pos) - glam::Vec3::from_array(b.pos)).length());
+        }
+        assert!(
+            max_d > 0.01,
+            "look-at toward camera must move mesh, max_d={max_d} look_yaw={ly}"
+        );
     }
 }
