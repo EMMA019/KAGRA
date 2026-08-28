@@ -27,9 +27,10 @@ use std::path::Path;
 
 use crate::collectathon::open_world_height;
 use crate::gltf_load::{
-    is_walk_skinned_spec, is_walk_vrm_spec, mesh_from_embedded_gltf, mesh_from_glb,
-    mesh_from_gltf_json, sample_skinned, skinned_from_embedded_gltf, skinned_from_glb,
-    skinned_from_gltf_json, unit_cube_gltf, walk_skinned_gltf, walk_skinned_vrm,
+    is_tpose_humanoid_spec, is_walk_skinned_spec, is_walk_vrm_spec, mesh_from_embedded_gltf,
+    mesh_from_glb, mesh_from_gltf_json, sample_skinned, skinned_from_embedded_gltf,
+    skinned_from_glb, skinned_from_gltf_json, skinned_tpose_humanoid, unit_cube_gltf,
+    walk_skinned_gltf, walk_skinned_vrm,
 };
 use crate::scene3d::{
     primitives, Camera, LocalLight, Material, MeshData, MeshId, Scene3D, SceneBuilder, Vertex3,
@@ -863,6 +864,9 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
 
 fn gltf_skinned_mesh_for(spec: &str, clip: f32) -> Option<MeshData> {
     if let Some(skin) = load_skinned(spec) {
+        if clip <= 0.0 {
+            return Some(skin.rest.clone());
+        }
         return Some(sample_skinned(&skin, clip));
     }
     gltf_mesh_for(spec)
@@ -878,6 +882,9 @@ fn load_skinned(spec: &str) -> Option<crate::gltf_load::SkinnedMesh> {
     }
     if is_walk_vrm_spec(spec) {
         return skinned_from_glb(&walk_skinned_vrm()).ok();
+    }
+    if is_tpose_humanoid_spec(spec) {
+        return skinned_tpose_humanoid().ok();
     }
     let lower = spec.to_ascii_lowercase();
     let stem = Path::new(&lower)

@@ -322,6 +322,28 @@ pub fn is_walk_vrm_spec(spec: &str) -> bool {
         .unwrap_or(lower.as_str());
     matches!(stem, "walk_skinned.vrm" | "walk.vrm")
 }
+/// Bundled clip-less humanoid (same bytes as the VRM walk fixture; clip stripped on load).
+pub fn tpose_humanoid_vrm() -> Vec<u8> {
+    WALK_SKINNED_VRM.to_vec()
+}
+
+/// Clip-less bundled humanoid with Mixamo walk retargeted (rest+roll).
+pub fn skinned_tpose_humanoid() -> Result<SkinnedMesh, String> {
+    let mut skin = skinned_from_glb(&tpose_humanoid_vrm())?;
+    skin.clip = None;
+    crate::mixamo::bind_locomotion(&mut skin);
+    Ok(skin)
+}
+
+/// True when `spec` names the clip-less Mixamo target (not Emma.vrm on disk).
+pub fn is_tpose_humanoid_spec(spec: &str) -> bool {
+    let lower = spec.trim().to_ascii_lowercase();
+    let stem = std::path::Path::new(&lower)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(lower.as_str());
+    matches!(stem, "tpose_humanoid.vrm" | "tpose_humanoid.gltf")
+}
 
 /// Hand-authored 2-joint walk clip (glTF 2.0, skin + Walk). Tiny fixture.
 pub fn walk_skinned_gltf() -> String {
@@ -502,7 +524,7 @@ fn skinned_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<SkinnedMesh, St
     };
     let nodes = doc.nodes.iter().map(node_rest).collect::<Vec<_>>();
     let clip = pick_clip(doc, blobs)?;
-    Ok(SkinnedMesh {
+    let mut skin = SkinnedMesh {
         rest,
         joints,
         weights,
@@ -511,7 +533,9 @@ fn skinned_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<SkinnedMesh, St
         skin_joints,
         clip,
         humanoid: parse_humanoid(doc),
-    })
+    };
+    crate::mixamo::bind_locomotion(&mut skin);
+    Ok(skin)
 }
 
 fn node_rest(n: &GltfNode) -> NodeRest {
