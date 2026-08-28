@@ -524,9 +524,30 @@ def test_action_side_fixture_has_sprite_foe_and_wall():
     assert any(p.get("name") == "sprite" and p.get("model") == "sprite" for p in data["props"])
     assert any(p.get("name") == "wall" for p in data["props"])
     assert any(p.get("name") == "floor" for p in data["props"])
+    assert any(p.get("name") == "trigger" for p in data["props"])
+    assert any(p.get("id") == "prop:scene" and p.get("name") == "hall" for p in data["props"])
     slots = sorted(int(lit["slot"]) for lit in data["lights"])
     assert slots == [0, 1, 2, 3]
     assert data.get("heightfield") in (None, {})
+
+
+def test_action_side_den_fixture_is_distinct_room():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/action_side_den_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    hall = json.loads(
+        (ROOT / "kagra-shared/tests/fixtures/action_side_world.json").read_text(encoding="utf-8")
+    )
+    assert data["player"]["id"] == "walker:player"
+    assert any(p.get("name") == "foe" and p.get("model") == "sprite" for p in data["props"])
+    assert any(p.get("name") == "trigger" for p in data["props"])
+    assert any(p.get("id") == "prop:scene" and p.get("name") == "den" for p in data["props"])
+    hall_wall = next(p["color"] for p in hall["props"] if p.get("name") == "wall")
+    den_wall = next(p["color"] for p in data["props"] if p.get("name") == "wall")
+    assert hall_wall != den_wall
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
 
 
 def test_survival_meter_fixture_has_camp_and_ration():

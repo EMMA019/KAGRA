@@ -1,13 +1,17 @@
-//! 2D action on play_world: side-view sprite walk, hit, hurt, kill.
+//! 2D action on play_world: side-view sprite walk, hit, hurt, kill,
+//! projectile, and room switch.
 //!
 //! Sibling of 3D `action` / `sprite`. Player card and foe card are the same
 //! `model: "sprite"` / `"quad"` WorldDoc path (`MESH_QUAD` in `compile_scene`).
-//! Walk along X on a back wall + floor; J hits the foe sprite. Hurt / kill
+//! Walk along X on a back wall + floor. J / click hits the foe sprite when
+//! in reach; otherwise it spawns a dump-visible `shot` card that moves and
+//! can hit/kill. Crossing a `trigger` swaps hall <-> den (dump scene / name
+//! / flag like RPG town <-> dungeon). Sprite stays on WorldDoc. Hurt / kill
 //! are dump-visible (`name` + foe `enabled`). Title -> play -> result reuses
 //! `WorldPlay` / `GamePhase`. Overlay flash is `DrawList` quads on shared
-//! wgpu 30. Does not rewrite 3D `action.rs`. No new ECS, no RendererV2, no
-//! Rapier, no VRM, no billboards, no net. No `enemy.chase` (not in
-//! docs/API_INDEX.md).
+//! wgpu 30. Does not rewrite 3D `action.rs`, RPG, FPS, fight, TD, puzzle, or
+//! VRM. No new ECS, no RendererV2, no Rapier, no billboards, no net. No
+//! `enemy.chase` (not in docs/API_INDEX.md). Empty / no-ammo is not this slice.
 
 use crate::collectathon::WalkInput;
 use crate::game::GamePhase;
@@ -33,6 +37,25 @@ pub const CAM_FOV: f32 = 48.0;
 pub const NAME_PLAYER: &str = "player";
 pub const NAME_HURT: &str = "hurt";
 pub const NAME_DEAD: &str = "dead";
+pub const NAME_SHOT: &str = "shot";
+pub const NAME_TRIGGER: &str = "trigger";
+pub const SCENE_HALL: &str = "hall";
+pub const SCENE_DEN: &str = "den";
+pub const FLAG_DEN: &str = "den";
+pub const SHOT_SPEED: f32 = 12.0;
+pub const SHOT_REACH: f32 = 0.42;
+pub const FIRE_OFFSET: f32 = 0.70;
+pub const TRIGGER_REACH: f32 = 1.35;
+pub const SWITCH_CD: f32 = 0.45;
+pub const HALL_RETURN_X: f32 = -4.6;
+pub const DEN_SPAWN_X: f32 = 3.0;
+pub const ID_SHOT: &str = "prop:shot";
+pub const ID_SCENE: &str = "prop:scene";
+pub const ID_FLAG: &str = "prop:flag";
+pub const ID_TRIGGER: &str = "prop:trigger";
+
+const HALL_JSON: &str = include_str!("../tests/fixtures/action_side_world.json");
+const DEN_JSON: &str = include_str!("../tests/fixtures/action_side_den_world.json");
 
 const HERO_COLOR: [u32; 3] = [62, 176, 184];
 const HERO_HURT: [u32; 3] = [220, 64, 64];
@@ -53,9 +76,17 @@ pub struct Action2dGame {
     pub iframe_t: f32,
     pub dead: bool,
     pub won: bool,
+    pub scene: String,
+    pub flags: Vec<String>,
     foe_hp: u32,
+    hall_foe_hp: u32,
+    den_foe_hp: u32,
     swing_hit: bool,
     facing: f32,
+    shot_vx: f32,
+    switch_cd: f32,
+    hall: WorldDoc,
+    den: WorldDoc,
 }
 
 impl Default for Action2dGame {
@@ -71,20 +102,36 @@ impl Default for Action2dGame {
             iframe_t: 0.0,
             dead: false,
             won: false,
+            scene: SCENE_HALL.into(),
+            flags: Vec::new(),
             foe_hp: FOE_HP,
+            hall_foe_hp: FOE_HP,
+            den_foe_hp: FOE_HP,
             swing_hit: false,
             facing: 1.0,
+            shot_vx: 0.0,
+            switch_cd: 0.0,
+            hall: WorldDoc::from_json(HALL_JSON).unwrap_or_default(),
+            den: WorldDoc::from_json(DEN_JSON).unwrap_or_default(),
         }
     }
 }
 
 impl Action2dGame {
     pub fn from_doc(doc: &WorldDoc) -> Self {
-        let mut g = Self::default();
-        if live_foes(doc) == 0 {
-            g.foe_hp = 0;
+        let scene = if is_den(doc) { SCENE_DEN } else { SCENE_HALL };
+        let foe_hp = if live_foes(doc) == 0 { 0 } else { FOE_HP };
+        Self {
+            scene: scene.into(),
+            foe_hp,
+            hall_foe_hp: if scene == SCENE_HALL { foe_hp } else { FOE_HP },
+            den_foe_hp: if scene == SCENE_DEN { foe_hp } else { FOE_HP },
+            ..Self::default()
         }
-        g
+    }
+
+    pub fn has_flag(&self, name: &str) -> bool {
+        self.flags.iter().any(|f| f == name)
     }
 }
 
@@ -97,7 +144,27 @@ fn is_sprite_foe(p: &WorldProp) -> bool {
 }
 
 fn is_hero_card(p: &WorldProp) -> bool {
-    sprite::is_sprite_prop(p) && p.name != "foe" && p.name != "wall" && p.name != "floor"
+    sprite::is_sprite_prop(p)
+        && p.name != "foe"
+        && p.name != NAME_SHOT
+        && p.name != NAME_TRIGGER
+        && p.name != "wall"
+        && p.name != "floor"
+        && p.name != "flag"
+        && p.name != SCENE_HALL
+        && p.name != SCENE_DEN
+}
+
+fn is_den(doc: &WorldDoc) -> bool {
+    doc.props
+        .iter()
+        .any(|p| p.id == ID_SCENE && p.name == SCENE_DEN)
+        || (doc.props.iter().any(|p| p.name == SCENE_DEN)
+            && !doc.props.iter().any(|p| p.name == SCENE_HALL))
+}
+
+fn shot_live(doc: &WorldDoc) -> bool {
+    doc.props.iter().any(|p| p.name == NAME_SHOT && p.enabled)
 }
 
 fn player_ref(doc: &WorldDoc) -> Option<&WorldWalker> {
@@ -131,6 +198,7 @@ pub fn seed(doc: &mut WorldDoc) {
     if !is_action2d(doc) {
         return;
     }
+    ensure_markers(doc);
     sit_plane(doc);
     place_side_camera(doc);
 }
@@ -170,13 +238,16 @@ pub fn tick(doc: &mut WorldDoc, game: &mut Action2dGame, input: WalkInput, dt: f
     game.flash_t = (game.flash_t - dt).max(0.0);
     game.contact_cd = (game.contact_cd - dt).max(0.0);
     game.iframe_t = (game.iframe_t - dt).max(0.0);
+    game.switch_cd = (game.switch_cd - dt).max(0.0);
     if game.flash_t <= 0.0 && !game.dead {
         game.hurt_flash = false;
     }
 
     apply_walk(doc, game, input, dt);
     apply_attack(doc, game, input);
+    apply_shots(doc, game, dt);
     apply_contact(doc, game);
+    apply_switch(doc, game);
     write_beat(doc, game);
     place_side_camera(doc);
 
@@ -234,12 +305,21 @@ fn apply_attack(doc: &mut WorldDoc, game: &mut Action2dGame, input: WalkInput) {
     if input.attack && game.attack_t <= 0.0 {
         game.attack_t = ATTACK_TIME;
         game.swing_hit = false;
-    }
-    if game.attack_t <= 0.0 || game.swing_hit {
+        if try_melee_hit(doc, game) {
+            return;
+        }
+        spawn_shot(doc, game);
         return;
     }
+    if game.attack_t <= 0.0 || game.swing_hit || shot_live(doc) {
+        return;
+    }
+    try_melee_hit(doc, game);
+}
+
+fn try_melee_hit(doc: &mut WorldDoc, game: &mut Action2dGame) -> bool {
     let Some(w) = player_ref(doc) else {
-        return;
+        return false;
     };
     let ax = w.position[0] + game.facing * ATTACK_REACH * 0.55;
     let mut hit_id: Option<String> = None;
@@ -256,9 +336,14 @@ fn apply_attack(doc: &mut WorldDoc, game: &mut Action2dGame, input: WalkInput) {
         }
     }
     let Some(id) = hit_id else {
-        return;
+        return false;
     };
     game.swing_hit = true;
+    apply_foe_hit(doc, game, &id);
+    true
+}
+
+fn apply_foe_hit(doc: &mut WorldDoc, game: &mut Action2dGame, id: &str) {
     game.foe_hp = game.foe_hp.saturating_sub(1);
     game.hits += 1;
     game.flash_t = HIT_FLASH;
@@ -268,6 +353,280 @@ fn apply_attack(doc: &mut WorldDoc, game: &mut Action2dGame, input: WalkInput) {
             p.enabled = false;
         }
         game.kills += 1;
+    }
+    if game.scene == SCENE_DEN {
+        game.den_foe_hp = game.foe_hp;
+    } else {
+        game.hall_foe_hp = game.foe_hp;
+    }
+}
+
+fn spawn_shot(doc: &mut WorldDoc, game: &mut Action2dGame) {
+    let Some(w) = player_ref(doc) else {
+        return;
+    };
+    let x = w.position[0] + game.facing * FIRE_OFFSET;
+    let y = w.position[1].max(BODY_H);
+    ensure_shot(doc);
+    if let Some(p) = doc
+        .props
+        .iter_mut()
+        .find(|p| p.id == ID_SHOT || p.name == NAME_SHOT)
+    {
+        p.enabled = true;
+        p.name = NAME_SHOT.into();
+        p.model = "sprite".into();
+        p.position = [x, y, PLANE_Z];
+        p.scale = [0.50, 0.28, 1.0];
+        p.color = Some([240, 220, 90]);
+        p.yaw = if game.facing < 0.0 {
+            std::f32::consts::PI
+        } else {
+            0.0
+        };
+    }
+    game.shot_vx = game.facing.signum() * SHOT_SPEED;
+}
+
+fn apply_shots(doc: &mut WorldDoc, game: &mut Action2dGame, dt: f32) {
+    if !shot_live(doc) {
+        game.shot_vx = 0.0;
+        return;
+    }
+    let half = doc.half.max(4.0);
+    let (sx, sz) = if let Some(shot) = doc
+        .props
+        .iter_mut()
+        .find(|p| p.name == NAME_SHOT && p.enabled)
+    {
+        shot.position[0] += game.shot_vx * dt;
+        shot.position[2] = PLANE_Z;
+        (shot.position[0], shot.position[2])
+    } else {
+        return;
+    };
+    let out = sx.abs() > half + 1.5;
+    let mut hit_id: Option<String> = None;
+    if !out {
+        for p in &doc.props {
+            if !is_sprite_foe(p) || !p.enabled {
+                continue;
+            }
+            let r = foe_half(p) + SHOT_REACH;
+            let dx = sx - p.position[0];
+            let dz = sz - p.position[2];
+            if dx * dx + dz * dz <= r * r {
+                hit_id = Some(p.id.clone());
+                break;
+            }
+        }
+    }
+    if out {
+        disable_shots(doc);
+        game.shot_vx = 0.0;
+        return;
+    }
+    if let Some(id) = hit_id {
+        apply_foe_hit(doc, game, &id);
+        disable_shots(doc);
+        game.shot_vx = 0.0;
+    }
+}
+
+fn disable_shots(doc: &mut WorldDoc) {
+    for p in &mut doc.props {
+        if p.name == NAME_SHOT {
+            p.enabled = false;
+        }
+    }
+}
+
+fn apply_switch(doc: &mut WorldDoc, game: &mut Action2dGame) {
+    if game.switch_cd > 0.0 || game.dead || game.won {
+        return;
+    }
+    if !near_named(doc, NAME_TRIGGER, TRIGGER_REACH) {
+        return;
+    }
+    if game.scene == SCENE_HALL {
+        game.hall_foe_hp = game.foe_hp;
+        game.hall = doc.clone();
+        *doc = game.den.clone();
+        game.scene = SCENE_DEN.into();
+        if !game.has_flag(FLAG_DEN) {
+            game.flags.push(FLAG_DEN.into());
+        }
+        game.foe_hp = bind_room_hp(doc, game.den_foe_hp);
+        park_player(doc, game, DEN_SPAWN_X);
+    } else {
+        game.den_foe_hp = game.foe_hp;
+        game.den = doc.clone();
+        *doc = game.hall.clone();
+        game.scene = SCENE_HALL.into();
+        game.foe_hp = bind_room_hp(doc, game.hall_foe_hp);
+        park_player(doc, game, HALL_RETURN_X);
+    }
+    game.shot_vx = 0.0;
+    game.switch_cd = SWITCH_CD;
+    disable_shots(doc);
+    seed(doc);
+    write_beat(doc, game);
+}
+
+fn park_player(doc: &mut WorldDoc, game: &Action2dGame, x: f32) {
+    let half = doc.half.max(4.0);
+    let pad = 1.6;
+    let x = x.clamp(-half + pad, half - pad);
+    let y = doc.height_at(x, PLANE_Z) + BODY_H;
+    let Some(w) = player_ref(doc).cloned() else {
+        return;
+    };
+    write_player(
+        doc,
+        WorldWalker {
+            id: w.id,
+            kind: "walker".into(),
+            name: beat_name(game).into(),
+            position: [x, y, PLANE_Z],
+            yaw: if game.facing < 0.0 {
+                std::f32::consts::PI
+            } else {
+                0.0
+            },
+            face: if game.facing < 0.0 {
+                std::f32::consts::PI
+            } else {
+                0.0
+            },
+            on_ground: true,
+            ..Default::default()
+        },
+    );
+}
+
+fn bind_room_hp(doc: &WorldDoc, stored: u32) -> u32 {
+    if live_foes(doc) == 0 {
+        0
+    } else if stored == 0 {
+        FOE_HP
+    } else {
+        stored.min(FOE_HP)
+    }
+}
+
+fn near_named(doc: &WorldDoc, name: &str, reach: f32) -> bool {
+    let Some(w) = player_ref(doc) else {
+        return false;
+    };
+    doc.props.iter().any(|p| {
+        p.enabled && p.name == name && {
+            let dx = w.position[0] - p.position[0];
+            let dz = w.position[2] - p.position[2];
+            dx * dx + dz * dz <= reach * reach
+        }
+    })
+}
+
+fn ensure_markers(doc: &mut WorldDoc) {
+    let den = is_den(doc);
+    ensure_prop(
+        doc,
+        WorldProp {
+            id: ID_TRIGGER.into(),
+            kind: "prop".into(),
+            name: NAME_TRIGGER.into(),
+            position: if den {
+                [7.2, 1.2, PLANE_Z]
+            } else {
+                [-7.2, 1.2, PLANE_Z]
+            },
+            yaw: 0.0,
+            model: "box".into(),
+            gltf: None,
+            scale: [0.5, 2.4, 1.2],
+            enabled: true,
+            parent: None,
+            color: Some(if den { [180, 140, 88] } else { [160, 120, 72] }),
+            metallic: 0.0,
+            roughness: 0.85,
+        },
+    );
+    ensure_shot(doc);
+    ensure_prop(
+        doc,
+        tiny_prop(
+            ID_SCENE,
+            if den { SCENE_DEN } else { SCENE_HALL },
+            [0.0, 0.2, 0.8],
+            true,
+            if den { [52, 44, 72] } else { [40, 36, 52] },
+        ),
+    );
+    ensure_prop(
+        doc,
+        tiny_prop(
+            ID_FLAG,
+            "flag",
+            if den {
+                [7.2, 2.6, PLANE_Z]
+            } else {
+                [-7.2, 2.6, PLANE_Z]
+            },
+            false,
+            [240, 196, 72],
+        ),
+    );
+}
+
+fn ensure_shot(doc: &mut WorldDoc) {
+    ensure_prop(
+        doc,
+        WorldProp {
+            id: ID_SHOT.into(),
+            kind: "prop".into(),
+            name: NAME_SHOT.into(),
+            position: [0.0, BODY_H, PLANE_Z],
+            yaw: 0.0,
+            model: "sprite".into(),
+            gltf: None,
+            scale: [0.50, 0.28, 1.0],
+            enabled: false,
+            parent: None,
+            color: Some([240, 220, 90]),
+            metallic: 0.0,
+            roughness: 0.7,
+        },
+    );
+}
+
+fn ensure_prop(doc: &mut WorldDoc, prop: WorldProp) {
+    if doc.props.iter().any(|p| p.id == prop.id) {
+        return;
+    }
+    doc.props.push(prop);
+}
+
+fn tiny_prop(
+    id: &str,
+    name: &str,
+    position: [f32; 3],
+    enabled: bool,
+    color: [u32; 3],
+) -> WorldProp {
+    WorldProp {
+        id: id.into(),
+        kind: "prop".into(),
+        name: name.into(),
+        position,
+        yaw: 0.0,
+        model: "box".into(),
+        gltf: None,
+        scale: [0.22, 0.22, 0.22],
+        enabled,
+        parent: None,
+        color: Some(color),
+        metallic: 0.0,
+        roughness: 1.0,
     }
 }
 
@@ -343,6 +702,13 @@ fn write_beat(doc: &mut WorldDoc, game: &Action2dGame) {
     let px = doc.player.as_ref().map(|w| w.position[0]).unwrap_or(0.0);
     let hy = doc.height_at(px, PLANE_Z);
     for p in &mut doc.props {
+        if p.id == ID_SCENE {
+            p.name = game.scene.clone();
+            p.enabled = true;
+        }
+        if p.name == "flag" || p.id == ID_FLAG {
+            p.enabled = game.has_flag(FLAG_DEN);
+        }
         if is_hero_card(p) {
             p.enabled = true;
             p.position[0] = px;
@@ -364,6 +730,10 @@ fn sit_plane(doc: &mut WorldDoc) {
             "foe" if sprite::is_sprite_prop(p) => {
                 doc.height_at(p.position[0], PLANE_Z) + p.scale[1].abs() * 0.5
             }
+            NAME_SHOT if sprite::is_sprite_prop(p) => {
+                doc.height_at(p.position[0], PLANE_Z) + p.scale[1].abs() * 0.5
+            }
+            NAME_TRIGGER => doc.floor_y + p.scale[1].abs() * 0.5,
             _ if is_hero_card(p) => doc.height_at(p.position[0], PLANE_Z) + p.scale[1].abs() * 0.5,
             _ => continue,
         };
@@ -451,6 +821,24 @@ pub fn build_hud(game: &Action2dGame, phase: GamePhase, width: u32, height: u32)
                     kill_w,
                     kill_w,
                     [240, 196, 72, 255],
+                ));
+            }
+            if game.has_flag(FLAG_DEN) {
+                quads.push(Quad::new(
+                    pad,
+                    pad + pip + 8.0 * scale + kill_w + 6.0 * scale,
+                    16.0 * scale,
+                    16.0 * scale,
+                    [240, 196, 72, 255],
+                ));
+            }
+            if game.scene == SCENE_DEN {
+                quads.push(Quad::new(
+                    w - pad - 18.0 * scale,
+                    pad,
+                    18.0 * scale,
+                    18.0 * scale,
+                    [72, 78, 118, 255],
                 ));
             }
             if game.flash_t > 0.0 {
@@ -560,7 +948,12 @@ mod tests {
         assert!(doc.props.iter().any(is_sprite_foe));
         assert!(doc.props.iter().any(|p| p.name == "wall"));
         assert!(doc.props.iter().any(|p| p.name == "floor"));
+        assert!(doc.props.iter().any(|p| p.name == NAME_TRIGGER));
         assert!(doc.props.iter().any(is_hero_card));
+        assert!(
+            !crate::rpg::is_rpg(&doc),
+            "trigger must not look like an RPG door"
+        );
         assert_eq!(doc.player.as_ref().unwrap().name, NAME_PLAYER);
         assert!(doc.player.as_ref().unwrap().on_ground);
         assert_eq!(doc.lights.len(), 4);
@@ -757,5 +1150,140 @@ mod tests {
         let yard = WorldPlay::from_json(YARD).unwrap();
         assert!(yard.is_sim());
         assert!(!yard.is_action2d());
+    }
+
+    #[test]
+    fn fire_from_range_spawns_dump_visible_shot_that_hits() {
+        let mut play = play_started();
+        let foe_x = play
+            .doc
+            .props
+            .iter()
+            .find(|p| is_sprite_foe(p) && p.enabled)
+            .unwrap()
+            .position[0];
+        put_player(&mut play, foe_x - 4.2);
+        play.action2d.facing = 1.0;
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
+        let shot = play
+            .doc
+            .props
+            .iter()
+            .find(|p| p.name == NAME_SHOT)
+            .expect("shot prop");
+        assert!(
+            shot.enabled,
+            "J/click from range must spawn a dump-visible shot"
+        );
+        assert!(sprite::is_sprite_prop(shot));
+        let dump = play.doc.to_json().unwrap();
+        assert!(dump.contains("shot"));
+        let x0 = shot.position[0];
+        play.input.attack = false;
+        play.tick(1.0 / 60.0);
+        let shot = play.doc.props.iter().find(|p| p.name == NAME_SHOT).unwrap();
+        assert!(
+            shot.position[0] > x0 + 0.05,
+            "shot must move, x0={x0} x={}",
+            shot.position[0]
+        );
+        let mut n = 0;
+        while play.action2d.hits == 0 && n < 180 {
+            play.input.attack = false;
+            play.tick(1.0 / 60.0);
+            n += 1;
+        }
+        assert!(play.action2d.hits >= 1, "moving shot must hit, n={n}");
+        assert_eq!(play.doc.player.as_ref().unwrap().name, NAME_HURT);
+        let shot = play.doc.props.iter().find(|p| p.name == NAME_SHOT).unwrap();
+        assert!(!shot.enabled, "shot is consumed on hit");
+    }
+
+    #[test]
+    fn crossing_trigger_switches_hall_and_den() {
+        let mut play = play_started();
+        assert_eq!(play.action2d.scene, SCENE_HALL);
+        assert!(!play.is_rpg());
+        let hall_wall = play
+            .doc
+            .props
+            .iter()
+            .find(|p| p.name == "wall")
+            .unwrap()
+            .color;
+        let tx = play
+            .doc
+            .props
+            .iter()
+            .find(|p| p.name == NAME_TRIGGER)
+            .unwrap()
+            .position[0];
+        put_player(&mut play, tx);
+        play.input = Default::default();
+        play.tick(1.0 / 60.0);
+        assert_eq!(play.action2d.scene, SCENE_DEN);
+        assert!(play.is_action2d());
+        assert!(play.doc.props.iter().any(is_hero_card));
+        assert!(play.doc.props.iter().any(|p| is_sprite_foe(p) && p.enabled));
+        assert_eq!(play.doc.cameras[0].name, "side");
+        let dump = play.doc.to_json().unwrap();
+        assert!(dump.contains("den"), "scene name must be dump-visible");
+        assert!(play
+            .doc
+            .props
+            .iter()
+            .any(|p| p.id == ID_SCENE && p.name == SCENE_DEN));
+        assert!(play.doc.props.iter().any(|p| p.name == "flag" && p.enabled));
+        let den_wall = play
+            .doc
+            .props
+            .iter()
+            .find(|p| p.name == "wall")
+            .unwrap()
+            .color;
+        assert_ne!(den_wall, hall_wall, "rooms must look distinct");
+        let px = play.doc.player.as_ref().unwrap().position[0];
+        assert!(
+            (px - DEN_SPAWN_X).abs() < 0.3,
+            "park away from the return trigger, px={px}"
+        );
+
+        for _ in 0..40 {
+            play.input = Default::default();
+            play.tick(1.0 / 60.0);
+        }
+        let tx = play
+            .doc
+            .props
+            .iter()
+            .find(|p| p.name == NAME_TRIGGER)
+            .unwrap()
+            .position[0];
+        put_player(&mut play, tx);
+        play.tick(1.0 / 60.0);
+        assert_eq!(play.action2d.scene, SCENE_HALL);
+        let dump = play.doc.to_json().unwrap();
+        assert!(dump.contains("hall"));
+        assert!(play.doc.props.iter().any(|p| p.name == "flag" && p.enabled));
+        assert_eq!(play.doc.cameras[0].name, "side");
+        assert!(play.doc.props.iter().any(is_hero_card));
+    }
+
+    #[test]
+    fn den_fixture_is_action2d_not_rpg() {
+        const DEN: &str = include_str!("../tests/fixtures/action_side_den_world.json");
+        let doc = WorldDoc::from_json(DEN).unwrap();
+        assert!(is_action2d(&doc));
+        assert!(is_den(&doc));
+        assert!(!crate::rpg::is_rpg(&doc));
+        let play = WorldPlay::from_json(DEN).unwrap();
+        assert!(play.is_action2d());
+        assert!(!play.is_rpg());
+        assert!(
+            !play.is_action(),
+            "WorldPlay must keep 3D action.rs off sprite foes"
+        );
+        assert_eq!(play.action2d.scene, SCENE_DEN);
     }
 }
