@@ -27,12 +27,14 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::collectathon::open_world_height;
 use crate::gltf_load::{
     is_tpose_humanoid_spec, is_walk_skinned_spec, is_walk_vrm_spec, mesh_from_embedded_gltf,
     mesh_from_glb, mesh_from_gltf_json, sample_skinned_look, skinned_from_embedded_gltf,
-    skinned_from_glb, skinned_from_gltf_json, skinned_tpose_humanoid, unit_cube_gltf,
+    skinned_from_glb, skinned_from_gltf_json, skinned_parts_from_embedded_gltf,
+    skinned_parts_from_glb, skinned_parts_from_gltf_json, skinned_tpose_humanoid, unit_cube_gltf,
     walk_skinned_gltf, walk_skinned_vrm,
 };
 use crate::scene3d::{
@@ -469,7 +471,7 @@ impl WorldDoc {
             } else {
                 [62, 176, 184, 255]
             };
-            if let Some(&mesh) = walker_gltf_ids.get(&walk.id) {
+            if let Some(meshes) = walker_gltf_ids.get(&walk.id) {
                 let model = Mat4::from_scale_rotation_translation(Vec3::ONE, yaw, pos);
                 let col = if walker_gltf_spec(walk)
                     .map(walker_spec_has_albedo)
@@ -493,7 +495,9 @@ impl WorldDoc {
                 } else {
                     Material::Solid
                 };
-                b.push_material(mesh, model, col, mat);
+                for &mesh in meshes {
+                    b.push_material(mesh, model, col, mat);
+                }
                 continue;
             }
             let body_h = if dead { 0.28 } else { 0.95 };
@@ -721,14 +725,23 @@ impl WorldDoc {
                 GltfSlot::Rest(spec) => gltf_mesh_for(spec),
                 GltfSlot::Skinned {
                     spec,
+                    part,
                     clip,
                     hair,
                     morph,
                     look_yaw,
                     look_pitch,
                     ..
-                } => gltf_skinned_mesh_for(spec, *clip, *hair, *morph, *look_yaw, *look_pitch)
-                    .or_else(|| walker_tpose_mesh(*clip, *hair, *morph, *look_yaw, *look_pitch)),
+                } => {
+                    gltf_skinned_mesh_for(spec, *part, *clip, *hair, *morph, *look_yaw, *look_pitch)
+                        .or_else(|| {
+                            if *part == 0 {
+                                walker_tpose_mesh(*clip, *hair, *morph, *look_yaw, *look_pitch)
+                            } else {
+                                None
+                            }
+                        })
+                }
             }
             .unwrap_or_else(|| primitives::box_mesh(Vec3::ONE));
             out.push((MeshId(MESH_GLTF_BASE + i as u32), mesh));
@@ -800,23 +813,27 @@ impl WorldDoc {
                 continue;
             }
             if let Some(spec) = walker_gltf_spec(walk) {
-                out.push(GltfSlot::Skinned {
-                    walker_id: walk.id.clone(),
-                    spec: spec.to_string(),
-                    clip: walk.clip,
-                    hair: walk.hair,
-                    morph: walk.morph,
-                    look_yaw: walk.look_yaw,
-                    look_pitch: walk.look_pitch,
-                });
+                let n = skinned_part_count(spec);
+                for part in 0..n {
+                    out.push(GltfSlot::Skinned {
+                        walker_id: walk.id.clone(),
+                        spec: spec.to_string(),
+                        part,
+                        clip: walk.clip,
+                        hair: walk.hair,
+                        morph: walk.morph,
+                        look_yaw: walk.look_yaw,
+                        look_pitch: walk.look_pitch,
+                    });
+                }
             }
         }
         out
     }
 
-    fn gltf_mesh_ids(&self) -> (HashMap<String, MeshId>, HashMap<String, MeshId>) {
+    fn gltf_mesh_ids(&self) -> (HashMap<String, MeshId>, HashMap<String, Vec<MeshId>>) {
         let mut props = HashMap::new();
-        let mut walkers = HashMap::new();
+        let mut walkers: HashMap<String, Vec<MeshId>> = HashMap::new();
         for (i, slot) in self.gltf_slots().into_iter().enumerate() {
             let id = MeshId(MESH_GLTF_BASE + i as u32);
             match slot {
@@ -824,7 +841,7 @@ impl WorldDoc {
                     props.insert(spec, id);
                 }
                 GltfSlot::Skinned { walker_id, .. } => {
-                    walkers.insert(walker_id, id);
+                    walkers.entry(walker_id).or_default().push(id);
                 }
             }
         }
@@ -1092,6 +1109,7 @@ enum GltfSlot {
     Skinned {
         walker_id: String,
         spec: String,
+        part: usize,
         clip: f32,
         hair: f32,
         morph: f32,
@@ -1101,8 +1119,8 @@ enum GltfSlot {
 }
 
 fn walker_spec_has_mtoon(spec: &str) -> bool {
-    if let Some(skin) = load_skinned(spec) {
-        return skin.rest.mtoon.is_some();
+    if let Some(parts) = load_skinned_parts(spec) {
+        return parts.iter().any(|s| s.rest.mtoon.is_some());
     }
     gltf_mesh_for(spec)
         .map(|m| m.mtoon.is_some())
@@ -1110,8 +1128,8 @@ fn walker_spec_has_mtoon(spec: &str) -> bool {
 }
 
 fn walker_spec_has_albedo(spec: &str) -> bool {
-    if let Some(skin) = load_skinned(spec) {
-        return skin.rest.albedo.is_some();
+    if let Some(parts) = load_skinned_parts(spec) {
+        return parts.iter().any(|s| s.rest.albedo.is_some());
     }
     gltf_mesh_for(spec)
         .map(|m| m.albedo.is_some())
@@ -1331,43 +1349,100 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
 
 fn gltf_skinned_mesh_for(
     spec: &str,
+    part: usize,
     clip: f32,
     hair: f32,
     morph: f32,
     look_yaw: f32,
     look_pitch: f32,
 ) -> Option<MeshData> {
-    if let Some(skin) = load_skinned(spec) {
-        if clip <= 0.0 {
-            return Some(sample_skinned_look(
-                &skin, None, hair, morph, look_yaw, look_pitch,
-            ));
-        }
+    if let Some(parts) = load_skinned_parts(spec) {
+        let skin = parts.get(part)?;
+        let t = if clip <= 0.0 { None } else { Some(clip) };
         return Some(sample_skinned_look(
-            &skin,
-            Some(clip),
-            hair,
-            morph,
-            look_yaw,
-            look_pitch,
+            skin, t, hair, morph, look_yaw, look_pitch,
         ));
     }
-    gltf_mesh_for(spec)
+    if part == 0 {
+        return gltf_mesh_for(spec);
+    }
+    None
 }
 
-pub(crate) fn load_skinned(spec: &str) -> Option<crate::gltf_load::SkinnedMesh> {
+fn skinned_parts_cache() -> &'static Mutex<HashMap<String, Arc<Vec<crate::gltf_load::SkinnedMesh>>>>
+{
+    static CACHE: OnceLock<Mutex<HashMap<String, Arc<Vec<crate::gltf_load::SkinnedMesh>>>>> =
+        OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn skinned_part_count(spec: &str) -> usize {
+    load_skinned_parts(spec)
+        .map(|p| p.len().max(1))
+        .unwrap_or(1)
+}
+
+/// Rest-pose lowest vertex Y across every primitive (VRM feet sit on this).
+pub(crate) fn walker_rest_min_y(spec: &str) -> f32 {
+    let Some(parts) = load_skinned_parts(spec) else {
+        return 0.0;
+    };
+    let mut min_y = 0.0f32;
+    let mut any = false;
+    for s in parts.iter() {
+        for v in &s.rest.vertices {
+            if !any || v.pos[1] < min_y {
+                min_y = v.pos[1];
+                any = true;
+            }
+        }
+    }
+    if any {
+        min_y
+    } else {
+        0.0
+    }
+}
+
+fn load_skinned_parts(spec: &str) -> Option<Arc<Vec<crate::gltf_load::SkinnedMesh>>> {
+    let spec = spec.trim();
+    if spec.is_empty() {
+        return None;
+    }
+    if let Ok(cache) = skinned_parts_cache().lock() {
+        if let Some(hit) = cache.get(spec) {
+            return if hit.is_empty() {
+                None
+            } else {
+                Some(Arc::clone(hit))
+            };
+        }
+    }
+    let loaded = load_skinned_parts_uncached(spec).unwrap_or_default();
+    let arc = Arc::new(loaded);
+    if let Ok(mut cache) = skinned_parts_cache().lock() {
+        cache.insert(spec.to_string(), Arc::clone(&arc));
+    }
+    if arc.is_empty() {
+        None
+    } else {
+        Some(arc)
+    }
+}
+
+fn load_skinned_parts_uncached(spec: &str) -> Option<Vec<crate::gltf_load::SkinnedMesh>> {
     let spec = spec.trim();
     if spec.starts_with('{') {
-        return skinned_from_embedded_gltf(spec).ok();
+        return skinned_parts_from_embedded_gltf(spec).ok();
     }
     if is_walk_skinned_spec(spec) {
-        return skinned_from_embedded_gltf(&walk_skinned_gltf()).ok();
+        return skinned_parts_from_embedded_gltf(&walk_skinned_gltf()).ok();
     }
     if is_walk_vrm_spec(spec) {
-        return skinned_from_glb(&walk_skinned_vrm()).ok();
+        return skinned_parts_from_glb(&walk_skinned_vrm()).ok();
     }
     if is_tpose_humanoid_spec(spec) {
-        return skinned_tpose_humanoid().ok();
+        return skinned_tpose_humanoid().ok().map(|s| vec![s]);
     }
     let lower = spec.to_ascii_lowercase();
     let stem = Path::new(&lower)
@@ -1378,27 +1453,31 @@ pub(crate) fn load_skinned(spec: &str) -> Option<crate::gltf_load::SkinnedMesh> 
         stem,
         "cube.glb" | "cube.gltf" | "crate.glb" | "crate.gltf" | "cube"
     ) {
-        return skinned_from_embedded_gltf(&unit_cube_gltf()).ok();
+        return skinned_from_embedded_gltf(&unit_cube_gltf())
+            .ok()
+            .map(|s| vec![s]);
     }
     if let Some(path) = existing_asset_path(spec) {
         if lower.ends_with(".gltf") {
             if let Ok(json) = std::fs::read_to_string(&path) {
                 let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
-                if let Ok(skin) = skinned_from_gltf_json(&json, |uri| {
+                if let Ok(parts) = skinned_parts_from_gltf_json(&json, |uri| {
                     std::fs::read(base.join(uri)).map_err(|e| e.to_string())
                 }) {
-                    return Some(skin);
+                    if !parts.is_empty() {
+                        return Some(parts);
+                    }
                 }
             }
-            // File present but unreadable: do not silent-capsule. Fall through.
         }
         if lower.ends_with(".glb") || lower.ends_with(".vrm") {
             if let Ok(bytes) = std::fs::read(&path) {
-                if let Ok(skin) = skinned_from_glb(&bytes) {
-                    return Some(skin);
+                if let Ok(parts) = skinned_parts_from_glb(&bytes) {
+                    if !parts.is_empty() {
+                        return Some(parts);
+                    }
                 }
             }
-            // File present but unreadable: do not silent-capsule. Fall through.
         }
     }
     if is_emma_vrm_stem(stem)
@@ -1406,11 +1485,13 @@ pub(crate) fn load_skinned(spec: &str) -> Option<crate::gltf_load::SkinnedMesh> 
         || lower.ends_with(".gltf")
         || lower.ends_with(".glb")
     {
-        // Official dump points at assets/Emma.vrm (gitignored, large).
-        // CI / missing / parse fail: tiny clip-less tpose_humanoid (Mixamo walk).
-        return skinned_tpose_humanoid().ok();
+        return skinned_tpose_humanoid().ok().map(|s| vec![s]);
     }
     None
+}
+
+pub(crate) fn load_skinned(spec: &str) -> Option<crate::gltf_load::SkinnedMesh> {
+    load_skinned_parts(spec)?.first().cloned()
 }
 
 fn color_u8(rgb: Option<[u32; 3]>) -> [u8; 4] {
@@ -2327,6 +2408,23 @@ mod tests {
             "skinned walker verts {}",
             skinned.vertices.len()
         );
+        if existing_asset_path(&spec).is_some() {
+            let n_parts = doc
+                .compile_meshes()
+                .iter()
+                .filter(|(id, _)| id.0 >= MESH_GLTF_BASE)
+                .count();
+            assert!(
+                n_parts >= 3,
+                "Emma.vrm on disk must draw Body/Face/Hair prims, got {n_parts}"
+            );
+            assert!(
+                doc.compile_meshes()
+                    .iter()
+                    .any(|(id, m)| id.0 >= MESH_GLTF_BASE && m.albedo.is_some()),
+                "Emma.vrm baseColor must bind"
+            );
+        }
     }
 
     #[test]

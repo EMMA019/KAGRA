@@ -718,7 +718,9 @@ fn step_walker(w: &mut Walker, input: WalkInput, cam_yaw: f32, dt: f32) {
     let (s, c) = cam_yaw.sin_cos();
     // カメラ前 = +yaw の +Z。スティック lz が前。
     let fwd = Vec3::new(s, 0.0, c);
-    let right = Vec3::new(c, 0.0, -s);
+    // カメラは -fwd 側（後ろ）から +fwd を見るので画面の右 = fwd × up = (-c, 0, s)。
+    // +lx（パッド右）は画面の右へ。
+    let right = Vec3::new(-c, 0.0, s);
     let wish = right * input.lx + fwd * input.lz;
     let wish_len = wish.length();
     if wish_len > 0.08 {
@@ -1061,6 +1063,29 @@ mod tests {
         }
         assert!(w.z > start_z + 3.0, "z {} from {}", w.z, start_z);
         assert!(w.on_ground);
+    }
+
+    #[test]
+    fn strafe_right_moves_screen_right() {
+        let mut w = Walker::spawn();
+        let start_x = w.x;
+        let input = WalkInput {
+            lx: 1.0,
+            lz: 0.0,
+            jump: false,
+            attack: false,
+            dodge: false,
+        };
+        for _ in 0..60 {
+            step_walker(&mut w, input, 0.0, FIXED_DT);
+        }
+        // cam_yaw=0: camera at -Z looking +Z, so screen-right = fwd × up = -X.
+        assert!(
+            w.x < start_x - 3.0,
+            "stick right must strafe screen-right (-X), x {} from {}",
+            w.x,
+            start_x
+        );
     }
 
     #[test]

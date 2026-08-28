@@ -193,6 +193,8 @@ fn bone(humanoid: &HashMap<String, usize>, names: &[&str]) -> Option<usize> {
 }
 
 /// Head yaw/pitch in walker space: +yaw looks right, +pitch looks up.
+/// "Right" follows the chase-cam convention: camera at look - fwd*dist looks
+/// along +fwd, so screen-right = fwd × up = (-c, 0, s).
 pub fn yaw_pitch_toward(from: Vec3, to: Vec3, facing_yaw: f32) -> (f32, f32) {
     let d = to - from;
     if d.length_squared() < 1e-10 {
@@ -201,7 +203,7 @@ pub fn yaw_pitch_toward(from: Vec3, to: Vec3, facing_yaw: f32) -> (f32, f32) {
     let d = d.normalize();
     let (s, c) = facing_yaw.sin_cos();
     let forward = Vec3::new(s, 0.0, c);
-    let right = Vec3::new(c, 0.0, -s);
+    let right = Vec3::new(-c, 0.0, s);
     let local = Vec3::new(d.dot(right), d.dot(Vec3::Y), d.dot(forward));
     let horiz = (local.x * local.x + local.z * local.z).sqrt();
     let yaw = local.x.atan2(local.z);
@@ -308,6 +310,20 @@ mod tests {
             ey.abs() <= 10f32.to_radians() + 1e-4,
             "eyes use outputScale, ey={ey}"
         );
+    }
+
+    #[test]
+    fn camera_on_screen_right_yaws_head_right() {
+        let from = Vec3::new(0.0, 1.2, 0.0);
+        // Walker faces +Z (yaw=0); chase cam sits behind at -Z, so screen-right
+        // = fwd × up = -X. A camera to the walker's screen-right must yaw the
+        // head right (+), not mirror it to the left.
+        let cam_right = Vec3::new(-6.0, 1.6, 0.0);
+        let (yaw, _pitch) = yaw_pitch_toward(from, cam_right, 0.0);
+        assert!(yaw > 0.0, "screen-right cam must yaw the head right, yaw={yaw}");
+        let cam_left = Vec3::new(6.0, 1.6, 0.0);
+        let (yaw2, _pitch2) = yaw_pitch_toward(from, cam_left, 0.0);
+        assert!(yaw2 < 0.0, "screen-left cam must yaw the head left, yaw={yaw2}");
     }
 
     #[test]

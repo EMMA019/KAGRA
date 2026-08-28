@@ -35,7 +35,7 @@ use crate::sprite;
 use crate::stealth::{self, StealthGame};
 use crate::survival::{self, SurvivalGame};
 use crate::td::{self, TdGame};
-use crate::world_doc::{load_skinned, WorldDoc, WorldProp, WorldWalker};
+use crate::world_doc::{load_skinned, walker_rest_min_y, WorldDoc, WorldProp, WorldWalker};
 use glam::Vec3;
 
 /// Running play state around a dump document. `doc` is the JSON source of
@@ -440,6 +440,25 @@ impl WorldPlay {
         cook::is_cook(&self.doc) || cook::is_cook(&self.seed)
     }
 
+    /// Named glTF/VRM walker dump (Emma) that is not Crest / FPS / TD / RPG.
+    pub fn is_gltf_walk_play(&self) -> bool {
+        if self.is_collectathon() || self.is_fps() || self.is_td() || self.is_rpg() {
+            return false;
+        }
+        walker_has_gltf(&self.doc) || walker_has_gltf(&self.seed)
+    }
+
+    /// Arrows add to WalkInput (not look). Crest/FPS keep arrows as look.
+    pub fn arrows_move_walker(&self) -> bool {
+        self.is_race()
+            || self.is_fight()
+            || self.is_stealth()
+            || self.is_puzzle()
+            || self.is_sports()
+            || self.is_sim()
+            || self.is_action2d()
+            || self.is_gltf_walk_play()
+    }
     /// Mouse / arrow look. Pitch is clamped.
     pub fn add_look(&mut self, dyaw: f32, dpitch: f32) {
         self.look_yaw += dyaw;
@@ -746,6 +765,21 @@ impl WorldPlay {
         let pad = 16.0 * scale;
         let mut quads = Vec::new();
 
+        if self
+            .doc
+            .player
+            .as_ref()
+            .and_then(|w| w.load_error.as_deref())
+            .is_some_and(|e| !e.is_empty())
+        {
+            quads.push(Quad::new(
+                pad,
+                h - 32.0 * scale - pad,
+                w - pad * 2.0,
+                28.0 * scale,
+                [180, 48, 40, 230],
+            ));
+        }
         match self.game.phase {
             GamePhase::Title => {
                 quads.push(Quad::new(0.0, 0.0, w, h, [10, 14, 12, 150]));
@@ -833,7 +867,9 @@ impl WorldPlay {
         let half = self.doc.half.max(4.0);
         let (s, c) = self.look_yaw.sin_cos();
         let fwd = Vec3::new(s, 0.0, c);
-        let right = Vec3::new(c, 0.0, -s);
+        // Camera sits at look - fwd*dist and looks along +fwd, so screen-right
+        // is fwd × up = (-c, 0, s). +lx (D / ArrowRight) must strafe screen-right.
+        let right = Vec3::new(-c, 0.0, s);
         let wish = right * input.lx + fwd * input.lz;
         let wish_len = wish.length();
 
@@ -870,7 +906,7 @@ impl WorldPlay {
         }
         self.vy -= GRAVITY * dt;
         y += self.vy * dt;
-        let ground = self.doc.height_at(x, z) + BODY_H;
+        let ground = sit_y(&self.doc, self.doc.height_at(x, z));
         if y <= ground {
             y = ground;
             self.vy = 0.0;
@@ -1153,6 +1189,37 @@ fn refresh_coin_count(doc: &mut WorldDoc) {
 
 fn player_ref(doc: &WorldDoc) -> Option<&WorldWalker> {
     doc.player.as_ref().or(doc.walkers.first())
+}
+
+fn walker_has_gltf(doc: &WorldDoc) -> bool {
+    let Some(w) = player_ref(doc) else {
+        return false;
+    };
+    if w.gltf
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|s| !s.is_empty())
+    {
+        return true;
+    }
+    let m = w.model.trim().to_ascii_lowercase();
+    m.ends_with(".gltf") || m.ends_with(".glb") || m.ends_with(".vrm")
+}
+
+fn sit_y(doc: &WorldDoc, ground: f32) -> f32 {
+    let Some(w) = player_ref(doc) else {
+        return ground + BODY_H;
+    };
+    let spec = w
+        .gltf
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("");
+    if spec.is_empty() {
+        return ground + BODY_H;
+    }
+    ground - walker_rest_min_y(spec)
 }
 
 fn write_player(doc: &mut WorldDoc, walker: WorldWalker) {
@@ -1744,6 +1811,36 @@ mod tests {
             max_d > 0.02,
             "Emma Mixamo walk (or tpose fallback) max_d={max_d}"
         );
+        assert!(play.arrows_move_walker());
+        assert!(play.is_gltf_walk_play());
+        let pos = play.doc.player.as_ref().unwrap().position;
+        let dist = (pos[0] * pos[0] + pos[2] * pos[2]).sqrt();
+        assert!(dist > 0.2, "WASD must translate Emma on grass, dist={dist}");
+        assert!(
+            pos[1] < 0.35,
+            "feet on grass, not capsule BODY_H hover, y={}",
+            pos[1]
+        );
+        // Strafe: +lx (ArrowRight / D) is screen-right. Emma chase cam sits at
+        // +Z (look_yaw=π), so screen-right = fwd × up = +X.
+        play.input = WalkInput {
+            lx: 1.0,
+            lz: 0.0,
+            jump: false,
+            attack: false,
+            dodge: false,
+        };
+        let sx = play.doc.player.as_ref().unwrap().position[0];
+        for _ in 0..20 {
+            play.tick(1.0 / 60.0);
+        }
+        let p = play.doc.player.as_ref().unwrap();
+        assert!(
+            p.position[0] > sx + 0.4,
+            "ArrowRight / D must strafe screen-right (+X), x {} from {}",
+            p.position[0],
+            sx
+        );
         play.input = WalkInput::default();
         play.tick(1.0 / 60.0);
         assert_eq!(play.doc.player.as_ref().unwrap().clip, 0.0);
@@ -1758,11 +1855,19 @@ mod tests {
         assert_eq!(play.game.coins, 0);
         assert_eq!(play.game.phase, crate::game::GamePhase::Playing);
         let hud = play.build_hud(960, 540);
-        assert!(
-            hud.quads.is_empty(),
-            "coins=0 walker dump must not show 8 gray Crest pips, got {}",
-            hud.quads.len()
-        );
+        let err = play.doc.player.as_ref().and_then(|w| w.load_error.as_ref());
+        if err.is_some() {
+            assert!(
+                hud.quads.iter().any(|q| q.color == [180, 48, 40, 230]),
+                "load_error must be dump-visible on the HUD"
+            );
+        } else {
+            assert!(
+                hud.quads.is_empty(),
+                "coins=0 walker dump must not show 8 gray Crest pips, got {}",
+                hud.quads.len()
+            );
+        }
         assert_eq!(
             play.doc.player.as_ref().unwrap().gltf.as_deref(),
             Some("assets/Emma.vrm")

@@ -8,6 +8,7 @@
 //! `resolve_buffer`. `.vrm` is GLB plus VRM 0/1 humanoid extras.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::scene3d::{AlbedoRgba, MeshData, MtoonShade, Vertex3};
 use glam::{Mat4, Quat, Vec3};
@@ -325,6 +326,35 @@ pub fn skinned_from_glb(bytes: &[u8]) -> Result<SkinnedMesh, String> {
     skinned_from_doc(&doc, &blobs)
 }
 
+/// Every triangle primitive as its own skinned mesh (shared skeleton / Mixamo clip).
+/// VRoid / VRM 1 files are Body+Face+Hair with many materials; first-prim-only
+/// is a nude T-pose mannequin.
+pub fn skinned_parts_from_glb(bytes: &[u8]) -> Result<Vec<SkinnedMesh>, String> {
+    let (json, bin) = split_glb(bytes)?;
+    let (doc, blobs) = parse_gltf(
+        &json,
+        |_| Err("external buffers not allowed in glb mode".into()),
+        bin.as_deref(),
+    )?;
+    skinned_parts_from_doc(&doc, &blobs)
+}
+
+/// JSON glTF counterpart of `skinned_parts_from_glb`.
+pub fn skinned_parts_from_gltf_json(
+    json: &str,
+    resolve: impl FnMut(&str) -> Result<Vec<u8>, String>,
+) -> Result<Vec<SkinnedMesh>, String> {
+    let (doc, blobs) = parse_gltf(json, resolve, None)?;
+    skinned_parts_from_doc(&doc, &blobs)
+}
+
+/// data URI only.
+pub fn skinned_parts_from_embedded_gltf(json: &str) -> Result<Vec<SkinnedMesh>, String> {
+    skinned_parts_from_gltf_json(json, |_| {
+        Err("external buffers not allowed in embedded mode".into())
+    })
+}
+
 /// Hand-authored 2-joint walk as a tiny VRM 0 (GLB + humanoid extras).
 pub fn walk_skinned_vrm() -> Vec<u8> {
     WALK_SKINNED_VRM.to_vec()
@@ -494,7 +524,14 @@ fn static_mesh_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<MeshData, S
     if doc.meshes.is_empty() || doc.meshes[0].primitives.is_empty() {
         return Err("gltf has no mesh primitives".into());
     }
-    let prim = &doc.meshes[0].primitives[0];
+    static_mesh_from_prim(doc, blobs, &doc.meshes[0].primitives[0])
+}
+
+fn static_mesh_from_prim(
+    doc: &GltfFile,
+    blobs: &[Vec<u8>],
+    prim: &Primitive,
+) -> Result<MeshData, String> {
     if let Some(mode) = prim.mode {
         if mode != 4 {
             return Err(format!("only TRIANGLES (mode=4) supported, got {mode}"));
@@ -540,8 +577,43 @@ fn static_mesh_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<MeshData, S
 }
 
 fn skinned_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<SkinnedMesh, String> {
-    let rest = static_mesh_from_doc(doc, blobs)?;
-    let prim = &doc.meshes[0].primitives[0];
+    if doc.meshes.is_empty() || doc.meshes[0].primitives.is_empty() {
+        return Err("gltf has no mesh primitives".into());
+    }
+    skinned_from_prim(doc, blobs, &doc.meshes[0].primitives[0])
+}
+
+fn skinned_parts_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<Vec<SkinnedMesh>, String> {
+    let mut parts = Vec::new();
+    let mut last_err = None;
+    for mesh in &doc.meshes {
+        for prim in &mesh.primitives {
+            match skinned_from_prim(doc, blobs, prim) {
+                Ok(s) => parts.push(s),
+                Err(e) => last_err = Some(e),
+            }
+        }
+    }
+    if parts.is_empty() {
+        return Err(last_err.unwrap_or_else(|| "gltf has no mesh primitives".into()));
+    }
+    let clip = parts.first().and_then(|p| p.clip.clone());
+    if let Some(clip) = clip {
+        for p in parts.iter_mut().skip(1) {
+            if p.clip.is_none() {
+                p.clip = Some(clip.clone());
+            }
+        }
+    }
+    Ok(parts)
+}
+
+fn skinned_from_prim(
+    doc: &GltfFile,
+    blobs: &[Vec<u8>],
+    prim: &Primitive,
+) -> Result<SkinnedMesh, String> {
+    let rest = static_mesh_from_prim(doc, blobs, prim)?;
     let nverts = rest.vertices.len();
     let mut joints = vec![[0u16; 4]; nverts];
     let mut weights = vec![[1.0, 0.0, 0.0, 0.0]; nverts];
@@ -1336,7 +1408,7 @@ fn decode_png(bytes: &[u8]) -> Result<AlbedoRgba, String> {
     Ok(AlbedoRgba {
         width: w,
         height: h,
-        rgba,
+        rgba: Arc::from(rgba),
     })
 }
 
@@ -1924,6 +1996,41 @@ mod tests {
         assert!(
             max_d > 0.01,
             "head look yaw/pitch must move CPU-skinned verts, max_d={max_d}"
+        );
+    }
+
+    #[test]
+    fn emma_vrm_on_disk_loads_all_textured_parts() {
+        let Some(path) = crate::assets::resolve_asset("assets/Emma.vrm") else {
+            return;
+        };
+        let bytes = std::fs::read(&path).expect("read Emma.vrm");
+        let parts = skinned_parts_from_glb(&bytes).expect("Emma.vrm parts");
+        assert!(
+            parts.len() >= 3,
+            "VRoid Body+Face+Hair prims, got {}",
+            parts.len()
+        );
+        let verts: usize = parts.iter().map(|p| p.rest.vertices.len()).sum();
+        assert!(verts > 1000, "full Emma not first-prim-only, verts={verts}");
+        assert!(
+            parts.iter().any(|p| p.rest.albedo.is_some()),
+            "baseColor must bind on at least one primitive"
+        );
+        assert!(
+            parts.iter().any(|p| p.clip.is_some()),
+            "clip-less VRM must bind Mixamo walk"
+        );
+        let skin = &parts[0];
+        let rest = sample_skinned_look(skin, None, 0.0, 0.0, 0.0, 0.0);
+        let walk = sample_skinned_look(skin, Some(0.25), 0.0, 0.0, 0.0, 0.0);
+        let mut max_d = 0.0f32;
+        for (a, b) in rest.vertices.iter().zip(walk.vertices.iter()) {
+            max_d = max_d.max((Vec3::from_array(a.pos) - Vec3::from_array(b.pos)).length());
+        }
+        assert!(
+            max_d > 0.01,
+            "Mixamo walk must move Emma verts, max_d={max_d}"
         );
     }
 }

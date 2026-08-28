@@ -1,4 +1,4 @@
-//! Real desktop window: WorldDoc → live tick → Scene3D → kagra-shared wgpu 30.
+﻿//! Real desktop window: WorldDoc → live tick → Scene3D → kagra-shared wgpu 30.
 //!
 //! Collectathon loop on the official path: title → play → result.
 //! WASD walks, mouse / arrows look, Space starts (title) or jumps (play).
@@ -282,6 +282,7 @@ fn main() -> Result<(), String> {
                         || play.is_sports()
                         || play.is_sim()
                         || play.is_action2d()
+                        || play.is_gltf_walk_play()
                     {
                         (0.0, 0.0)
                     } else {
@@ -290,14 +291,7 @@ fn main() -> Result<(), String> {
                     play.add_look(arrow_yaw + mouse_look.0, arrow_pitch + mouse_look.1);
                     mouse_look = (0.0, 0.0);
                     let mut input = keys.walk_input();
-                    if play.is_race()
-                        || play.is_fight()
-                        || play.is_stealth()
-                        || play.is_puzzle()
-                        || play.is_sports()
-                        || play.is_sim()
-                        || play.is_action2d()
-                    {
+                    if play.arrows_move_walker() {
                         let ax = (keys.right as i32 - keys.left as i32) as f32;
                         let az = (keys.up as i32 - keys.down as i32) as f32;
                         input.lx = (input.lx + ax).clamp(-1.0, 1.0);

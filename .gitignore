@@ -98,3 +98,8 @@ assets/maps/
 assets/prefabs/
 assets/scenes/
 assets/data/
+
+# ダウンロードキャッシュ / 録画ファイル / ルート空ファイル
+cache/
+examples/*.mp4
+/python

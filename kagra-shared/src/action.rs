@@ -214,7 +214,8 @@ fn apply_dodge(
     };
     let (s, c) = look_yaw.sin_cos();
     let fwd = Vec3::new(s, 0.0, c);
-    let right = Vec3::new(c, 0.0, -s);
+    // Chase cam looks along +fwd from behind: screen-right = fwd × up = (-c, 0, s).
+    let right = Vec3::new(-c, 0.0, s);
     let mut wish = right * input.lx + fwd * input.lz;
     if wish.length() < 0.08 {
         wish = Vec3::new(w.yaw.sin(), 0.0, w.yaw.cos());

@@ -10,6 +10,8 @@
 //! 描画内容だけ。dump JSON を `Scene3D` に詰め込まない（モバイルの collectathon /
 //! driving がこの型を組み立てる）。
 
+use std::sync::Arc;
+
 use glam::{Mat4, Vec3, Vec4, Vec4Swizzles};
 
 /// 位置 + 法線 + UV。カプセル / プロップ / ハイトフィールドは uv = 0（1x1 白）。
@@ -40,7 +42,7 @@ impl Vertex3 {
 pub struct AlbedoRgba {
     pub width: u32,
     pub height: u32,
-    pub rgba: Vec<u8>,
+    pub rgba: Arc<[u8]>,
 }
 
 /// Thin MToon shade (VRM 0 materialProperties / VRM 1 VRMC_materials_mtoon).
