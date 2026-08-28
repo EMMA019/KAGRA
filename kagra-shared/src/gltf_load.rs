@@ -4,12 +4,12 @@
 //! stay put (WebGL2-friendly: no storage buffers, no joint palette).
 //!
 //! Optional `pbrMetallicRoughness.baseColorTexture` (or VRM0 `_MainTex`) is decoded
-//! into `MeshData.albedo`. Does not pull the heavy `gltf` crate. External .bin uses
+//! into `MeshData.albedo`. VRM 0 materialProperties / VRM 1 VRMC_materials_mtoon shadeColor + shadingToony land on MeshData.mtoon. Does not pull the heavy `gltf` crate. External .bin uses
 //! `resolve_buffer`. `.vrm` is GLB plus VRM 0/1 humanoid extras.
 
 use std::collections::HashMap;
 
-use crate::scene3d::{AlbedoRgba, MeshData, Vertex3};
+use crate::scene3d::{AlbedoRgba, MeshData, MtoonShade, Vertex3};
 use glam::{Mat4, Quat, Vec3};
 use serde::Deserialize;
 
@@ -384,6 +384,7 @@ pub fn sample_skinned(skin: &SkinnedMesh, t: f32) -> MeshData {
         vertices: Vec::with_capacity(skin.rest.vertices.len()),
         indices: skin.rest.indices.clone(),
         albedo: skin.rest.albedo.clone(),
+        mtoon: skin.rest.mtoon,
     };
     for (i, v) in skin.rest.vertices.iter().enumerate() {
         let p = Vec3::from_array(v.pos);
@@ -489,6 +490,7 @@ fn static_mesh_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<MeshData, S
             .collect(),
         indices,
         albedo: load_base_color(doc, blobs, prim),
+        mtoon: load_mtoon(doc, prim),
     };
     if mesh.vertices.is_empty() {
         return Err("empty mesh".into());
@@ -919,6 +921,92 @@ fn parse_humanoid(doc: &GltfFile) -> HashMap<String, usize> {
         }
     }
     map
+}
+
+fn f32_arr3(v: Option<&serde_json::Value>, def: [f32; 3]) -> [f32; 3] {
+    v.and_then(|a| a.as_array())
+        .map(|a| {
+            [
+                a.first().and_then(|x| x.as_f64()).unwrap_or(def[0] as f64) as f32,
+                a.get(1).and_then(|x| x.as_f64()).unwrap_or(def[1] as f64) as f32,
+                a.get(2).and_then(|x| x.as_f64()).unwrap_or(def[2] as f64) as f32,
+            ]
+        })
+        .unwrap_or(def)
+}
+
+fn f32_val(v: Option<&serde_json::Value>, def: f32) -> f32 {
+    v.and_then(|x| x.as_f64()).map(|x| x as f32).unwrap_or(def)
+}
+
+/// VRM 1 VRMC_materials_mtoon / VRM 0 materialProperties shadeColor + toony.
+/// Minimum port of kagra-core mtoon.rs (no GPU, no rim/matcap/outline).
+fn load_mtoon(doc: &GltfFile, prim: &Primitive) -> Option<MtoonShade> {
+    let mut shade = MtoonShade::default();
+    let mut found = false;
+
+    if let Some(mi) = prim.material {
+        if let Some(mat) = doc.materials.get(mi) {
+            if let Some(mtoon) = mat
+                .pointer("/extensions/VRMC_materials_mtoon")
+                .or_else(|| mat.pointer("/extensions/VRM/materials_mtoon"))
+            {
+                found = true;
+                shade.shade_color = f32_arr3(mtoon.get("shadeColorFactor"), shade.shade_color);
+                shade.shading_toony =
+                    f32_val(mtoon.get("shadingToonyFactor"), shade.shading_toony).clamp(0.0, 0.999);
+                shade.shading_shift = f32_val(mtoon.get("shadingShiftFactor"), shade.shading_shift);
+            }
+        }
+    }
+
+    let props = doc
+        .extensions
+        .as_ref()
+        .and_then(|e| e.pointer("/VRM/materialProperties"))
+        .and_then(|v| v.as_array());
+    if let Some(props) = props {
+        let entry = prim
+            .material
+            .and_then(|i| props.get(i))
+            .or_else(|| props.first());
+        if let Some(prop) = entry {
+            let shader = prop.get("shader").and_then(|s| s.as_str()).unwrap_or("");
+            if shader.to_ascii_lowercase().contains("mtoon") {
+                found = true;
+            }
+            if let Some(arr) = prop
+                .pointer("/vectorProperties/_ShadeColor")
+                .or_else(|| prop.pointer("/vectorProperties/ShadeColor"))
+                .and_then(|a| a.as_array())
+            {
+                found = true;
+                shade.shade_color = [
+                    arr.first().and_then(|x| x.as_f64()).unwrap_or(0.55) as f32,
+                    arr.get(1).and_then(|x| x.as_f64()).unwrap_or(0.50) as f32,
+                    arr.get(2).and_then(|x| x.as_f64()).unwrap_or(0.52) as f32,
+                ];
+            }
+            if let Some(v) = prop
+                .pointer("/floatProperties/_ShadeToony")
+                .or_else(|| prop.pointer("/floatProperties/_ShadingToony"))
+                .or_else(|| prop.pointer("/floatProperties/ShadeToony"))
+                .and_then(|x| x.as_f64())
+            {
+                found = true;
+                shade.shading_toony = (v as f32).clamp(0.0, 0.999);
+            }
+            if let Some(v) = prop
+                .pointer("/floatProperties/_ShadeShift")
+                .or_else(|| prop.pointer("/floatProperties/ShadeShift"))
+                .and_then(|x| x.as_f64())
+            {
+                shade.shading_shift = v as f32;
+            }
+        }
+    }
+
+    found.then_some(shade)
 }
 
 fn load_base_color(doc: &GltfFile, blobs: &[Vec<u8>], prim: &Primitive) -> Option<AlbedoRgba> {
@@ -1498,5 +1586,27 @@ mod tests {
             .expect("VRM0 _MainTex / baseColor");
         assert!(alb.width >= 2 && alb.height >= 2);
         assert_eq!(alb.rgba.len(), (alb.width * alb.height * 4) as usize);
+    }
+
+    #[test]
+    fn walk_gltf_loads_mtoon_shade() {
+        let skin = skinned_from_embedded_gltf(&walk_skinned_gltf()).expect("skin");
+        let m = skin.rest.mtoon.expect("VRMC_materials_mtoon");
+        assert!((m.shade_color[0] - 0.42).abs() < 1e-4);
+        assert!((m.shade_color[1] - 0.28).abs() < 1e-4);
+        assert!((m.shade_color[2] - 0.32).abs() < 1e-4);
+        assert!((m.shading_toony - 0.88).abs() < 1e-4);
+        let sampled = sample_skinned(&skin, 0.25);
+        assert_eq!(sampled.mtoon, skin.rest.mtoon);
+    }
+
+    #[test]
+    fn walk_vrm_loads_mtoon_shade() {
+        let skin = skinned_from_glb(&walk_skinned_vrm()).expect("vrm");
+        let m = skin.rest.mtoon.expect("VRM0 MToon shade");
+        assert!((m.shade_color[0] - 0.42).abs() < 1e-4);
+        assert!((m.shade_color[1] - 0.28).abs() < 1e-4);
+        assert!((m.shade_color[2] - 0.32).abs() < 1e-4);
+        assert!((m.shading_toony - 0.88).abs() < 1e-4);
     }
 }

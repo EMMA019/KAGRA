@@ -47,6 +47,8 @@ struct InstanceRaw {
     color: [f32; 4],
     material: f32,
     _pad: [f32; 3],
+    /// Location 9: rgb = MToon shadeColor, a = shadingToony. Zeros if not toon.
+    mtoon: [f32; 4],
 }
 
 #[derive(Debug)]
@@ -56,6 +58,7 @@ struct GpuMesh {
     index_count: u32,
     albedo_bind: Option<wgpu::BindGroup>,
     _albedo_tex: Option<wgpu::Texture>,
+    mtoon: [f32; 4],
 }
 
 #[derive(Debug)]
@@ -366,10 +369,44 @@ impl Renderer {
         // vertex_attr_array! の一時配列を名前付きに固定しないと、layout の
         // attributes 参照が文の終わりで死ぬ。
         // UV is location 8 so instance locations 2..7 stay put (WebGL2 / no base_instance).
+        // Location 9 is MToon shade+toony at offset 96 (16-byte aligned).
         let mesh_attrs = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 8 => Float32x2];
-        let inst_attrs = wgpu::vertex_attr_array![
-            2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4,
-            6 => Float32x4, 7 => Float32
+        let inst_attrs = [
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x4,
+                offset: 0,
+                shader_location: 2,
+            },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x4,
+                offset: 16,
+                shader_location: 3,
+            },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x4,
+                offset: 32,
+                shader_location: 4,
+            },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x4,
+                offset: 48,
+                shader_location: 5,
+            },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x4,
+                offset: 64,
+                shader_location: 6,
+            },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32,
+                offset: 80,
+                shader_location: 7,
+            },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x4,
+                offset: 96,
+                shader_location: 9,
+            },
         ];
         let vertex_buffers = [
             Some(wgpu::VertexBufferLayout {
@@ -527,12 +564,17 @@ impl Renderer {
             }
             _ => (None, None),
         };
+        let mtoon = mesh
+            .mtoon
+            .map(crate::scene3d::MtoonShade::gpu)
+            .unwrap_or([0.0; 4]);
         self.meshes.push(GpuMesh {
             vbuf,
             ibuf,
             index_count: mesh.indices.len() as u32,
             albedo_bind,
             _albedo_tex: albedo_tex,
+            mtoon,
         });
         MeshId(self.meshes.len() as u32 - 1)
     }
@@ -615,11 +657,20 @@ impl Renderer {
                     (raw.len() * std::mem::size_of::<InstanceRaw>()) as wgpu::BufferAddress;
                 let is_sky = batch.instances[0].material == crate::scene3d::Material::Sky;
                 for inst in &batch.instances {
+                    let mtoon = if inst.material == crate::scene3d::Material::Toon {
+                        self.meshes
+                            .get(mesh)
+                            .map(|g| g.mtoon)
+                            .unwrap_or([0.55, 0.50, 0.52, 0.85])
+                    } else {
+                        [0.0; 4]
+                    };
                     raw.push(InstanceRaw {
                         model: inst.model.to_cols_array_2d(),
                         color: to_linear(inst.color, self.format),
                         material: inst.material as u8 as f32,
                         _pad: [0.0; 3],
+                        mtoon,
                     });
                 }
                 draws.push((mesh, offset, batch.instances.len() as u32, is_sky));

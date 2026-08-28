@@ -11,7 +11,7 @@
 //! Lights are slot 0..3 1:1; an empty dump still gets default key+fill
 //! (slots 0+1; 2 and 3 stay off). Capsules and props get a ground contact
 //! blob (`MESH_PLANE` + instance alpha). glTF props use `gltf_load`. Walker may name a skinned glTF (`gltf` / `model`);
-//! CPU-skin into Vertex3. `.vrm` is glTF-binary on the same path. Capsule remains the fallback. Integer GPU mesh ids are not game objects. Live play is
+//! CPU-skin into Vertex3. `.vrm` is glTF-binary on the same path. Walker MToon uses Material::Toon (shadeColor + shadingToony). Capsule remains the fallback. Integer GPU mesh ids are not game objects. Live play is
 //! `WorldPlay` (title → play → result, WASD → `WalkInput` → sit on
 //! heightfield → pick up). Offscreen draw (feature = "render") is
 //! `render_world_doc`. A real desktop window is `Renderer::new_for_window`
@@ -402,7 +402,15 @@ impl WorldDoc {
                 } else {
                     body_col
                 };
-                b.push(mesh, model, col);
+                let mat = if walker_gltf_spec(walk)
+                    .map(walker_spec_has_mtoon)
+                    .unwrap_or(false)
+                {
+                    Material::Toon
+                } else {
+                    Material::Solid
+                };
+                b.push_material(mesh, model, col, mat);
                 continue;
             }
             let body_h = if dead { 0.28 } else { 0.95 };
@@ -724,6 +732,15 @@ enum GltfSlot {
         spec: String,
         clip: f32,
     },
+}
+
+fn walker_spec_has_mtoon(spec: &str) -> bool {
+    if let Some(skin) = load_skinned(spec) {
+        return skin.rest.mtoon.is_some();
+    }
+    gltf_mesh_for(spec)
+        .map(|m| m.mtoon.is_some())
+        .unwrap_or(false)
 }
 
 fn walker_spec_has_albedo(spec: &str) -> bool {
@@ -1523,6 +1540,60 @@ mod tests {
         assert!(
             scene.batches.iter().any(|b| b.mesh == MESH_CAPSULE),
             "Crest walker stays capsule unless dump names glTF/VRM"
+        );
+        assert!(
+            scene
+                .batches
+                .iter()
+                .flat_map(|b| b.instances.iter())
+                .all(|i| i.material != Material::Toon),
+            "Crest Isle must not pick up walker MToon"
+        );
+    }
+
+    #[test]
+    fn vrm_walker_compiles_as_toon_not_lambert() {
+        const DUMP: &str = include_str!("../tests/fixtures/vrm_walker_world.json");
+        let doc = WorldDoc::from_json(DUMP).unwrap();
+        let scene = doc.compile_scene(1.0);
+        let batch = scene
+            .batches
+            .iter()
+            .find(|b| b.mesh.0 >= MESH_GLTF_BASE)
+            .expect("vrm walker batch");
+        assert_eq!(
+            batch.instances[0].material,
+            Material::Toon,
+            "VRM walker with MToon must not be a plastic Lambert blob"
+        );
+        let meshes = doc.compile_meshes();
+        let skinned = meshes
+            .iter()
+            .find(|(id, _)| id.0 >= MESH_GLTF_BASE)
+            .expect("vrm mesh");
+        let m = skinned.1.mtoon.expect("mtoon on compiled vrm mesh");
+        assert!(m.shade_color[0] < 0.5);
+        assert!(m.shading_toony > 0.8);
+    }
+
+    #[test]
+    fn mixamo_walker_compiles_as_toon() {
+        const DUMP: &str = include_str!("../tests/fixtures/mixamo_walker_world.json");
+        let doc = WorldDoc::from_json(DUMP).unwrap();
+        assert_eq!(
+            doc.player.as_ref().unwrap().gltf.as_deref(),
+            Some("tpose_humanoid.vrm")
+        );
+        let scene = doc.compile_scene(1.0);
+        let batch = scene
+            .batches
+            .iter()
+            .find(|b| b.mesh.0 >= MESH_GLTF_BASE)
+            .expect("mixamo walker batch");
+        assert_eq!(batch.instances[0].material, Material::Toon);
+        assert!(
+            !scene.batches.iter().any(|b| b.mesh == MESH_CAPSULE),
+            "mixamo walker is a VRM mesh, not the capsule"
         );
     }
 }

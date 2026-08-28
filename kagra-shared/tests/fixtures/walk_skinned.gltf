@@ -205,6 +205,17 @@
         "baseColorTexture": {
           "index": 0
         }
+      },
+      "extensions": {
+        "VRMC_materials_mtoon": {
+          "shadeColorFactor": [
+            0.42,
+            0.28,
+            0.32
+          ],
+          "shadingToonyFactor": 0.88,
+          "shadingShiftFactor": 0.0
+        }
       }
     }
   ],
@@ -218,5 +229,8 @@
       "mimeType": "image/png",
       "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAJElEQVR42mOw0lL4j4xfHFmAghnooMCu4MB/ZKxl5YGC6aAAAJ59jmGcUqD8AAAAAElFTkSuQmCC"
     }
+  ],
+  "extensionsUsed": [
+    "VRMC_materials_mtoon"
   ]
 }

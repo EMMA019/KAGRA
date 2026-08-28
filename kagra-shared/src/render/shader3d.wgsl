@@ -1,6 +1,6 @@
 // 3D: インスタンス化したメッシュ + 方向光 + 距離フォグ + 手続きテクスチャ。
 //
-// マテリアルはインスタンス属性の material（0=solid, 1=road, 2=grass, 3=sky, 4=metal）。
+// マテリアルはインスタンス属性の material（0=solid, 1=road, 2=grass, 3=sky, 4=metal, 5=toon）。
 // 路面と草はワールド XZ のノイズ。baseColor は group 1（無ければ 1x1 白）。
 
 struct Globals {
@@ -33,6 +33,7 @@ struct VsIn {
     @location(6) color: vec4<f32>,
     @location(7) material: f32,
     @location(8) uv: vec2<f32>,
+    @location(9) mtoon: vec4<f32>,
 };
 
 struct VsOut {
@@ -42,6 +43,7 @@ struct VsOut {
     @location(2) world: vec3<f32>,
     @location(3) material: f32,
     @location(4) uv: vec2<f32>,
+    @location(5) mtoon: vec4<f32>,
 };
 
 @vertex
@@ -56,6 +58,7 @@ fn vs_main(in: VsIn) -> VsOut {
     out.world = world.xyz;
     out.material = in.material;
     out.uv = in.uv;
+    out.mtoon = in.mtoon;
     return out;
 }
 
@@ -203,7 +206,18 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let ndl = max(dot(n, ldir), 0.0);
     let ambient = g.light.w;
     var lit: vec3<f32>;
-    if (mat_id == 4) {
+    if (mat_id == 5) {
+        // Thin MToon: half-Lambert mix(shadeColor * albedo, albedo, t).
+        // Hair rimLift / matcap / outline stay leftover V2.
+        let half_l = dot(n, ldir) * 0.5 + 0.5;
+        let toony = in.mtoon.a;
+        let shade_t = clamp((half_l - 0.5) / max(1e-3, 1.0 - toony) + 0.5, 0.0, 1.0);
+        let shade_rgb = in.mtoon.rgb * albedo;
+        lit = mix(shade_rgb, albedo, shade_t);
+        let view_dir = normalize(g.camera_pos.xyz - in.world);
+        let fresnel = pow(max(1.0 - clamp(dot(n, view_dir), 0.0, 1.0), 0.0), 3.0);
+        lit = lit + fresnel * 0.16 * vec3<f32>(1.0, 0.90, 0.78);
+    } else if (mat_id == 4) {
         // 金属コイン: 既存 GGX（RendererV2 と同じ式）。第二レンダラではない。
         let v = normalize(g.camera_pos.xyz - in.world);
         let h = normalize(v + ldir);

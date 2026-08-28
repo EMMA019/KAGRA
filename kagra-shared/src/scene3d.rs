@@ -43,12 +43,45 @@ pub struct AlbedoRgba {
     pub rgba: Vec<u8>,
 }
 
+/// Thin MToon shade (VRM 0 materialProperties / VRM 1 VRMC_materials_mtoon).
+/// Not RendererV2: shadeColor + shadingToony/shift only.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MtoonShade {
+    pub shade_color: [f32; 3],
+    pub shading_toony: f32,
+    pub shading_shift: f32,
+}
+
+impl Default for MtoonShade {
+    fn default() -> Self {
+        Self {
+            shade_color: [0.55, 0.50, 0.52],
+            shading_toony: 0.85,
+            shading_shift: 0.0,
+        }
+    }
+}
+
+impl MtoonShade {
+    /// GPU instance location 9: rgb = shadeColor, a = shadingToony.
+    pub fn gpu(self) -> [f32; 4] {
+        [
+            self.shade_color[0],
+            self.shade_color[1],
+            self.shade_color[2],
+            self.shading_toony.clamp(0.0, 0.999),
+        ]
+    }
+}
+
 /// CPU 側のメッシュ。`Renderer::upload_mesh` で GPU に載せて `MeshId` を得る。
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MeshData {
     pub vertices: Vec<Vertex3>,
     pub indices: Vec<u32>,
     pub albedo: Option<AlbedoRgba>,
+    /// Present when the glTF/VRM primitive authored MToon shade.
+    pub mtoon: Option<MtoonShade>,
 }
 
 impl MeshData {
@@ -68,7 +101,7 @@ pub struct MeshId(pub u32);
 
 /// フラグメント側の見た目。テクスチャファイルは持たず、ワールド座標の
 /// 手続きノイズでアスファルトや草を出す（WebGL2 でもそのまま動く）。
-/// `Metal` は既存 shared GGX（コイン）。第二レンダラではない。
+/// `Metal` は既存 shared GGX（コイン）。`Toon` は VRM MToon の shade 段。第二レンダラではない。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[repr(u8)]
 pub enum Material {
@@ -80,6 +113,8 @@ pub enum Material {
     Sky = 3,
     /// 金属（GGX。コイン。metallic=1 / roughness≈0.12）。
     Metal = 4,
+    /// VRM MToon shade step (shadeColor + shadingToony). Not a second renderer.
+    Toon = 5,
 }
 
 /// One of four local lights (`slot=0..3`). Intensity 0 = unused (no slot leak).
@@ -495,6 +530,7 @@ pub mod primitives {
             ],
             indices: vec![0, 1, 2, 0, 2, 3],
             albedo: None,
+            mtoon: None,
         }
     }
 
@@ -517,6 +553,7 @@ pub mod primitives {
             ],
             indices: vec![0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6],
             albedo: None,
+            mtoon: None,
         }
     }
 
@@ -820,5 +857,12 @@ mod tests {
         assert!(cap.albedo.is_none());
         let plane = primitives::plane_mesh(1.0, 1.0);
         assert!(plane.vertices.iter().all(|v| v.uv == [0.0, 0.0]));
+    }
+    #[test]
+    fn toon_material_id_is_five() {
+        assert_eq!(Material::Toon as u8, 5);
+        assert_eq!(Material::Metal as u8, 4);
+        let plane = primitives::plane_mesh(1.0, 1.0);
+        assert!(plane.mtoon.is_none());
     }
 }
