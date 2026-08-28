@@ -20,11 +20,15 @@ struct Globals {
     light_pos: array<vec4<f32>, 4>,
     light_col: array<vec4<f32>, 4>,
     light_dir: array<vec4<f32>, 4>,
+    // Directional sun ortho. Same family, not a cascade / V2 umbra.
+    light_view_proj: mat4x4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;
 @group(1) @binding(0) var albedo_tex: texture_2d<f32>;
 @group(1) @binding(1) var albedo_samp: sampler;
+@group(2) @binding(0) var shadow_tex: texture_depth_2d;
+@group(2) @binding(1) var shadow_samp: sampler_comparison;
 
 struct VsIn {
     @location(0) pos: vec3<f32>,
@@ -63,6 +67,13 @@ fn vs_main(in: VsIn) -> VsOut {
     out.uv = in.uv;
     out.mtoon = in.mtoon;
     return out;
+}
+
+@vertex
+fn vs_shadow(in: VsIn) -> @builtin(position) vec4<f32> {
+    let model = mat4x4<f32>(in.m0, in.m1, in.m2, in.m3);
+    let world = model * vec4<f32>(in.pos, 1.0);
+    return g.light_view_proj * world;
 }
 
 fn hash21(p: vec2<f32>) -> f32 {
@@ -197,6 +208,32 @@ fn tone_map(rgb: vec3<f32>) -> vec3<f32> {
     return c;
 }
 
+// One directional map, 3x3 PCF. Depth compare (WebGL2 sampler2DShadow).
+// Contact blob stays; this is the sun umbra on ground / capsule / human.
+fn shadow_factor(world: vec3<f32>) -> f32 {
+    let sc = g.light_view_proj * vec4<f32>(world, 1.0);
+    let ndc = sc.xyz / sc.w;
+    let uv = vec2<f32>(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
+    let depth = ndc.z;
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || depth < 0.0 || depth > 1.0) {
+        return 1.0;
+    }
+    let texel = 1.0 / 2048.0;
+    let d = depth - 0.0015;
+    var s = 0.0;
+    for (var y = -1; y <= 1; y++) {
+        for (var x = -1; x <= 1; x++) {
+            s += textureSampleCompare(
+                shadow_tex,
+                shadow_samp,
+                uv + vec2<f32>(f32(x), f32(y)) * texel,
+                d,
+            );
+        }
+    }
+    return mix(0.42, 1.0, s / 9.0);
+}
+
 // Two scrolling procedural normals (fbm gradients). env.z = seconds.
 // No normal-map texture, no SSR, no storage buffer.
 fn water_normal(world: vec3<f32>, geo_n: vec3<f32>) -> vec3<f32> {
@@ -253,11 +290,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let ldir = normalize(g.light.xyz);
     let ndl = max(dot(n, ldir), 0.0);
     let ambient = g.light.w;
+    let sh = shadow_factor(in.world);
     var lit: vec3<f32>;
     if (mat_id == 5) {
         // Thin MToon: half-Lambert mix(shadeColor * albedo, albedo, t).
         // Hair rimLift / matcap / outline stay leftover V2.
-        let half_l = dot(n, ldir) * 0.5 + 0.5;
+        let half_l = (dot(n, ldir) * sh) * 0.5 + 0.5;
         let toony = in.mtoon.a;
         let shade_t = clamp((half_l - 0.5) / max(1e-3, 1.0 - toony) + 0.5, 0.0, 1.0);
         let shade_rgb = in.mtoon.rgb * albedo;
@@ -282,7 +320,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let spec = ggx_d(ndoth, rough) * smith_g(ndotv, ndotl, rough) * f
             / max(4.0 * ndotv * ndotl, 1e-4);
         let kd = (vec3<f32>(1.0) - f) * (1.0 - metallic);
-        lit = (kd * albedo + spec) * ndotl + albedo * ambient * 0.22;
+        lit = (kd * albedo + spec) * ndotl * sh + albedo * ambient * 0.22;
         lit += local_metal(n, in.world, v, f0, rough);
         // Metals have no Lambert; SH * f0 is the thin diffuse IBL so coins
         // pick up sky/ground in shadow. GGX locals stay.
@@ -298,15 +336,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let body = mix(deep, albedo, ndotv * 0.65);
         let r = reflect(-v, nw);
         let spec_sun = pow(max(dot(nw, normalize(v + ldir)), 0.0), 96.0);
-        lit = body * (ambient * 0.85 + (1.0 - ambient) * max(dot(nw, ldir), 0.0) * 0.35);
+        lit = body * (ambient * 0.85 + (1.0 - ambient) * max(dot(nw, ldir), 0.0) * 0.35 * sh);
         lit += body * local_lit(nw, in.world) * 0.25;
         lit += env_irradiance(r) * mix(0.22, 1.05, fresnel);
         lit += env_irradiance(nw) * body * 0.20;
-        lit += vec3<f32>(0.95, 0.97, 1.0) * spec_sun * 0.55;
+        lit += vec3<f32>(0.95, 0.97, 1.0) * spec_sun * 0.55 * sh;
         // Cheap depth fade: looking down is more transmissive (no scene-depth prepass).
         alpha = mix(0.92, 0.34, ndotv) * in.color.a;
     } else {
-        lit = albedo * (ambient + (1.0 - ambient) * ndl);
+        lit = albedo * (ambient + (1.0 - ambient) * ndl * sh);
         lit += albedo * local_lit(n, in.world);
         lit += albedo * env_irradiance(n);
     }

@@ -221,6 +221,41 @@ impl Camera {
     }
 }
 
+/// One directional map. 2048 matches `shader3d.wgsl` PCF texel (WebGL2 max).
+pub const SHADOW_MAP_SIZE: u32 = 2048;
+/// Ortho half-extent around the look target. Covers Crest contact + nearby casters.
+pub const SHADOW_ORTHO_HALF: f32 = 24.0;
+
+/// Snap XZ to shadow texels so the umbra does not crawl when the eye moves.
+pub fn snap_shadow_center_xz(center: Vec3, half: f32, map_size: f32) -> Vec3 {
+    let texel = (2.0 * half.max(0.5)) / map_size.max(1.0);
+    if texel < 1e-8 {
+        return center;
+    }
+    Vec3::new(
+        (center.x / texel).round() * texel,
+        center.y,
+        (center.z / texel).round() * texel,
+    )
+}
+
+/// Directional sun ortho, DirectX/WebGPU Z 0..1. `light_dir` is toward the light.
+pub fn directional_shadow_view_proj(light_dir: Vec3, focus: Vec3, half: f32) -> Mat4 {
+    let dir = if light_dir.length_squared() < 1e-12 {
+        Vec3::Y
+    } else {
+        light_dir.normalize()
+    };
+    let half = half.max(0.5);
+    let light_dist = half + 8.0;
+    let far = light_dist + half + 8.0;
+    let eye = focus + dir * light_dist;
+    let up = if dir.y.abs() > 0.99 { Vec3::Z } else { Vec3::Y };
+    let view = glam::camera::rh::view::look_at_mat4(eye, focus, up);
+    let proj = glam::camera::rh::proj::directx::orthographic(-half, half, -half, half, 0.1, far);
+    proj * view
+}
+
 /// 軸並行境界箱。
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Aabb {
@@ -382,6 +417,17 @@ impl Scene3D {
     pub fn instance_count(&self) -> usize {
         self.batches.iter().map(|b| b.instances.len()).sum()
     }
+}
+
+/// Camera-centered map for a compiled scene (play_world / offscreen).
+pub fn scene_shadow_view_proj(scene: &Scene3D) -> Mat4 {
+    let t = scene.camera.target;
+    let focus = snap_shadow_center_xz(
+        Vec3::new(t.x, t.y.max(1.0), t.z),
+        SHADOW_ORTHO_HALF,
+        SHADOW_MAP_SIZE as f32,
+    );
+    directional_shadow_view_proj(scene.light_dir, focus, SHADOW_ORTHO_HALF)
 }
 
 /// バッチを組み立てながら視錐台の外を落とすヘルパ。
@@ -725,6 +771,46 @@ mod tests {
             (far_pt.z / far_pt.w - 1.0).abs() < 1e-3,
             "far should map to 1"
         );
+    }
+
+    #[test]
+    fn directional_shadow_maps_focus_and_caster() {
+        let light = Vec3::new(-0.4, 1.0, 0.3).normalize();
+        let focus = Vec3::new(0.0, 1.0, 0.0);
+        let vp = directional_shadow_view_proj(light, focus, SHADOW_ORTHO_HALF);
+        let clip = vp * focus.extend(1.0);
+        let ndc = clip.xyz() / clip.w;
+        assert!(
+            ndc.x.abs() < 1e-4 && ndc.y.abs() < 1e-4,
+            "focus off-center {ndc}"
+        );
+        assert!(
+            ndc.z > 0.0 && ndc.z < 1.0,
+            "focus depth should sit inside the ortho, got {}",
+            ndc.z
+        );
+        // A capsule standing on the focus casts along -light onto the ground.
+        let ground = Vec3::new(0.0, 0.0, 0.0);
+        let gclip = vp * ground.extend(1.0);
+        let gndc = gclip.xyz() / gclip.w;
+        assert!(
+            gndc.x.abs() < 1.0 && gndc.y.abs() < 1.0 && gndc.z > 0.0 && gndc.z < 1.0,
+            "ground at focus must be on the map {gndc}"
+        );
+    }
+
+    #[test]
+    fn shadow_center_snap_is_stable_for_sub_texel_eye_move() {
+        let half = SHADOW_ORTHO_HALF;
+        let map = SHADOW_MAP_SIZE as f32;
+        let texel = (2.0 * half) / map;
+        let a = snap_shadow_center_xz(Vec3::new(4.0, 1.5, -2.0), half, map);
+        let b = snap_shadow_center_xz(
+            Vec3::new(a.x + texel * 0.2, a.y, a.z + texel * 0.2),
+            half,
+            map,
+        );
+        assert!((a.x - b.x).abs() < 1e-5 && (a.z - b.z).abs() < 1e-5);
     }
 
     #[test]

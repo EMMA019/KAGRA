@@ -39,6 +39,7 @@ struct Globals {
     light_pos: [[f32; 4]; 4],
     light_col: [[f32; 4]; 4],
     light_dir: [[f32; 4]; 4],
+    light_view_proj: [[f32; 4]; 4],
 }
 
 /// インスタンスごとの頂点属性（location 2..7）。
@@ -93,8 +94,13 @@ pub struct Renderer {
     pipeline3d: wgpu::RenderPipeline,
     /// 天球用。深度は書いて読まず、裏面カリングもしない。
     pipeline_sky: wgpu::RenderPipeline,
+    /// Depth-only sun map. Not a cascade, not RendererV2.
+    pipeline_shadow: wgpu::RenderPipeline,
     globals_buf: wgpu::Buffer,
     globals_bind: wgpu::BindGroup,
+    _shadow_tex: wgpu::Texture,
+    shadow_view: wgpu::TextureView,
+    shadow_bind: wgpu::BindGroup,
     inst_buf: wgpu::Buffer,
     inst_capacity: usize,
     meshes: Vec<GpuMesh>,
@@ -364,9 +370,65 @@ impl Renderer {
             ],
         });
 
+        let (shadow_tex, shadow_view) = create_shadow_map(&device);
+        let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("kagra-shared shadow compare"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            compare: Some(wgpu::CompareFunction::LessEqual),
+            ..Default::default()
+        });
+        let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("kagra-shared shadow layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                    count: None,
+                },
+            ],
+        });
+        let shadow_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("kagra-shared shadow bind"),
+            layout: &shadow_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&shadow_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&shadow_sampler),
+                },
+            ],
+        });
+
         let layout3d = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("kagra-shared 3d layout"),
-            bind_group_layouts: &[Some(&globals_layout), Some(&albedo_layout)],
+            bind_group_layouts: &[
+                Some(&globals_layout),
+                Some(&albedo_layout),
+                Some(&shadow_layout),
+            ],
+            immediate_size: 0,
+        });
+        let layout_shadow = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("kagra-shared shadow layout"),
+            bind_group_layouts: &[Some(&globals_layout)],
             immediate_size: 0,
         });
 
@@ -493,6 +555,36 @@ impl Renderer {
             cache: None,
         });
 
+        let pipeline_shadow = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("kagra-shared shadow pipeline"),
+            layout: Some(&layout_shadow),
+            vertex: wgpu::VertexState {
+                module: &shader3d,
+                entry_point: Some("vs_shadow"),
+                compilation_options: Default::default(),
+                buffers: &vertex_buffers,
+            },
+            fragment: None,
+            primitive: wgpu::PrimitiveState {
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: Default::default(),
+                bias: wgpu::DepthBiasState {
+                    constant: 2,
+                    slope_scale: 2.0,
+                    clamp: 0.0,
+                },
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
         let inst_capacity = 256;
         let inst_buf = create_instance_buffer(&device, inst_capacity);
         let depth = create_depth_view(&device, width, height);
@@ -512,8 +604,12 @@ impl Renderer {
             vbuf_capacity,
             pipeline3d,
             pipeline_sky,
+            pipeline_shadow,
             globals_buf,
             globals_bind,
+            _shadow_tex: shadow_tex,
+            shadow_view,
+            shadow_bind,
             inst_buf,
             inst_capacity,
             meshes: Vec::new(),
@@ -649,8 +745,8 @@ impl Renderer {
         // 3D のインスタンスを 1 本のバッファに連結し、バッチごとの開始位置を覚える。
         // base instance は GLES に無いので、描画時は毎回 0.. で数え、バッファの
         // スライス位置でずらす。
-        // (mesh, byte_offset, instance_count, is_sky)
-        let mut draws: Vec<(usize, u64, u32, bool)> = Vec::new();
+        // (mesh, byte_offset, instance_count, is_sky, casts_shadow)
+        let mut draws: Vec<(usize, u64, u32, bool, bool)> = Vec::new();
         if let Some(scene) = world {
             let mut raw: Vec<InstanceRaw> = Vec::with_capacity(scene.instance_count());
             for batch in &scene.batches {
@@ -660,7 +756,9 @@ impl Renderer {
                 }
                 let offset =
                     (raw.len() * std::mem::size_of::<InstanceRaw>()) as wgpu::BufferAddress;
-                let is_sky = batch.instances[0].material == crate::scene3d::Material::Sky;
+                let mat0 = batch.instances[0].material;
+                let is_sky = mat0 == crate::scene3d::Material::Sky;
+                let casts_shadow = !is_sky && mat0 != crate::scene3d::Material::Water;
                 for inst in &batch.instances {
                     let mtoon = if inst.material == crate::scene3d::Material::Toon {
                         self.meshes
@@ -678,7 +776,13 @@ impl Renderer {
                         mtoon,
                     });
                 }
-                draws.push((mesh, offset, batch.instances.len() as u32, is_sky));
+                draws.push((
+                    mesh,
+                    offset,
+                    batch.instances.len() as u32,
+                    is_sky,
+                    casts_shadow,
+                ));
             }
             if !raw.is_empty() {
                 self.ensure_instance_capacity(raw.len());
@@ -718,6 +822,35 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("kagra-shared frame"),
             });
+        if !draws.is_empty() {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("kagra-shared shadow"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.shadow_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.pipeline_shadow);
+            pass.set_bind_group(0, &self.globals_bind, &[]);
+            for (mesh, offset, count, _is_sky, casts) in &draws {
+                if !*casts {
+                    continue;
+                }
+                let m = &self.meshes[*mesh];
+                pass.set_vertex_buffer(0, m.vbuf.slice(..));
+                pass.set_vertex_buffer(1, self.inst_buf.slice(*offset..));
+                pass.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..m.index_count, 0, 0..*count);
+            }
+        }
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("kagra-shared 2d pass"),
@@ -750,9 +883,10 @@ impl Renderer {
 
             if !draws.is_empty() {
                 pass.set_bind_group(0, &self.globals_bind, &[]);
+                pass.set_bind_group(2, &self.shadow_bind, &[]);
                 // 空を先に。深度を書かないので、このあと地面が上に乗る。
                 pass.set_pipeline(&self.pipeline_sky);
-                for (mesh, offset, count, is_sky) in &draws {
+                for (mesh, offset, count, is_sky, _cast) in &draws {
                     if !*is_sky {
                         continue;
                     }
@@ -768,7 +902,7 @@ impl Renderer {
                     pass.draw_indexed(0..m.index_count, 0, 0..*count);
                 }
                 pass.set_pipeline(&self.pipeline3d);
-                for (mesh, offset, count, is_sky) in &draws {
+                for (mesh, offset, count, is_sky, _cast) in &draws {
                     if *is_sky {
                         continue;
                     }
@@ -881,6 +1015,7 @@ impl Renderer {
             light_pos,
             light_col,
             light_dir,
+            light_view_proj: crate::scene3d::scene_shadow_view_proj(scene).to_cols_array_2d(),
         };
         self.queue
             .write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&g));
@@ -1201,6 +1336,36 @@ fn create_instance_buffer(device: &wgpu::Device, instances: usize) -> wgpu::Buff
     })
 }
 
+fn create_shadow_map(device: &wgpu::Device) -> (wgpu::Texture, wgpu::TextureView) {
+    let size = crate::scene3d::SHADOW_MAP_SIZE.max(1);
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("kagra-shared shadow map"),
+        size: wgpu::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: DEPTH_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor {
+        label: Some("kagra-shared shadow view"),
+        format: Some(DEPTH_FORMAT),
+        dimension: Some(wgpu::TextureViewDimension::D2),
+        usage: None,
+        aspect: wgpu::TextureAspect::DepthOnly,
+        base_mip_level: 0,
+        mip_level_count: Some(1),
+        base_array_layer: 0,
+        array_layer_count: Some(1),
+    });
+    (texture, view)
+}
+
 fn create_depth_view(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("kagra-shared depth"),
@@ -1298,13 +1463,22 @@ mod tests {
             "water material on shared family"
         );
         assert!(src.contains("water_normal"), "scrolling procedural waves");
+        assert!(src.contains("fn shadow_factor"), "directional PCF");
+        assert!(src.contains("textureSampleCompare"), "depth compare PCF");
+        assert!(src.contains("fn vs_shadow"), "shadow pass");
+        assert!(src.contains("2048.0"), "PCF texel matches SHADOW_MAP_SIZE");
         assert!(!src.contains("var<storage"), "WebGL2: no storage buffers");
+        assert!(
+            !src.contains("@location(10)"),
+            "vertex/instance locations unchanged"
+        );
     }
 
     #[test]
     fn globals_env_is_16_aligned() {
         assert_eq!(std::mem::size_of::<Globals>() % 16, 0);
-        // view_proj 64 + 5 vec4 (light, fog_color, fog_range, camera_pos, env) + 3*4 lights
-        assert_eq!(std::mem::size_of::<Globals>(), 336);
+        // view_proj 64 + 5 vec4 + 3*4 lights 64*3 + light_view_proj 64
+        assert_eq!(std::mem::size_of::<Globals>(), 400);
+        assert_eq!(crate::scene3d::SHADOW_MAP_SIZE, 2048);
     }
 }
