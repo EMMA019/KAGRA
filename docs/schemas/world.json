@@ -46,6 +46,16 @@
     "tonemap": {
       "type": ["boolean", "null"],
       "description": "ACES tonemap. Omit = on. Globals.env.w. Reinhard is not used; ACES matches kagra-core V2."
+    },
+    "timers": {
+      "type": "array",
+      "description": "Generic countdowns. WorldPlay::start_timer / tick_timers. On 0, on_done is emitted as an event and active flips false. Cooking wait, fishing cast→bite, cooldowns.",
+      "items": { "$ref": "#/$defs/timer" }
+    },
+    "events": {
+      "type": "array",
+      "description": "Named happenings. WorldPlay::emit_event aggregates by name; take_events consumes. Multiple systems (score, UI, save) read the same event from the dump — no callback bus.",
+      "items": { "$ref": "#/$defs/event" }
     }
   },
   "$defs": {
@@ -97,6 +107,69 @@
           "minimum": 0,
           "maximum": 1,
           "description": "Coins dump 0.12 (GGX). Default 1."
+        },
+        "interact": {
+          "$ref": "#/$defs/interact",
+          "description": "Interaction metadata (talk / use / examine). None = plain scenery. on_use emits an event when the player presses J/attack in reach."
+        }
+      }
+    },
+    "interact": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "talk | use | examine. HUD glyph/color can key off this."
+        },
+        "prompt": {
+          "type": "string",
+          "description": "Short HUD label while in reach (水辺, cast)."
+        },
+        "on_use": {
+          "type": ["string", "null"],
+          "description": "Event name emitted when used (e.g. cast). WorldPlay::step_interact emits it with {prop, name} payload."
+        },
+        "reach": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Horizontal reach in world units. Default 2.5."
+        }
+      }
+    },
+    "timer": {
+      "type": "object",
+      "required": ["id", "type"],
+      "properties": {
+        "id": { "type": "string", "description": "e.g. timer:cast" },
+        "type": { "const": "timer" },
+        "name": { "type": "string", "description": "e.g. cast / cook / cooldown" },
+        "seconds": { "type": "number", "minimum": 0, "description": "Total seconds." },
+        "remaining": { "type": "number", "minimum": 0, "description": "Remaining seconds. WorldPlay::tick_timers counts down while active." },
+        "on_done": {
+          "type": ["string", "null"],
+          "description": "Event name emitted when the countdown completes (e.g. bite)."
+        },
+        "active": {
+          "type": "boolean",
+          "description": "False = parked. A game starts it via start_timer / the use event."
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "required": ["id", "type"],
+      "properties": {
+        "id": { "type": "string", "description": "e.g. event:0" },
+        "type": { "const": "event" },
+        "name": { "type": "string", "description": "e.g. fish_caught / cast / bite" },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Aggregated occurrences (two fish = count 2)."
+        },
+        "data": {
+          "type": ["object", "null"],
+          "description": "Optional payload (which prop, which fish)."
         }
       }
     },
@@ -122,6 +195,10 @@
         "clip": {
           "type": "number",
           "description": "Seconds into the walk clip. 0 = rest / T-pose. Advances while WASD walking."
+        },
+        "anim": {
+          "type": "string",
+          "description": "Current animation state: idle / walk (engine-derived from wish) or a genre-set name (cast, reel, hit) that survives while standing. Dump-visible so the game state machine reads it without an engine hook."
         }
       }
     },

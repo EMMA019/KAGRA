@@ -320,10 +320,16 @@ mod tests {
         // head right (+), not mirror it to the left.
         let cam_right = Vec3::new(-6.0, 1.6, 0.0);
         let (yaw, _pitch) = yaw_pitch_toward(from, cam_right, 0.0);
-        assert!(yaw > 0.0, "screen-right cam must yaw the head right, yaw={yaw}");
+        assert!(
+            yaw > 0.0,
+            "screen-right cam must yaw the head right, yaw={yaw}"
+        );
         let cam_left = Vec3::new(6.0, 1.6, 0.0);
         let (yaw2, _pitch2) = yaw_pitch_toward(from, cam_left, 0.0);
-        assert!(yaw2 < 0.0, "screen-left cam must yaw the head left, yaw={yaw2}");
+        assert!(
+            yaw2 < 0.0,
+            "screen-left cam must yaw the head left, yaw={yaw2}"
+        );
     }
 
     #[test]

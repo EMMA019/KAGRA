@@ -279,6 +279,7 @@ fn tiny_prop(
         color: Some(color),
         metallic: 0.0,
         roughness: 1.0,
+        interact: None,
     }
 }
 
@@ -451,6 +452,7 @@ fn ensure_enemy(doc: &mut WorldDoc) {
             color: Some([200, 64, 72]),
             metallic: 0.0,
             roughness: 1.0,
+            interact: None,
         });
     }
     if doc.props.iter().any(|p| p.id == ID_HP) {
@@ -478,6 +480,7 @@ fn ensure_enemy(doc: &mut WorldDoc) {
             color: Some([220, 70, 70]),
             metallic: 0.0,
             roughness: 1.0,
+            interact: None,
         },
     );
 }

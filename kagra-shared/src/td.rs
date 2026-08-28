@@ -313,6 +313,7 @@ fn try_place(doc: &mut WorldDoc, game: &mut TdGame) {
         color: Some([54, 92, 110]),
         metallic: 0.0,
         roughness: 1.0,
+        interact: None,
     });
     game.coins = game.coins.saturating_sub(COST);
     doc.coins = game.coins;

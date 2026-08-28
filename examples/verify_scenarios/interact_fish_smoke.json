@@ -1,0 +1,20 @@
+{
+  "name": "interact_fish_smoke",
+  "notes": "Adhesive API slice on shared WorldDoc: prop.interact (J at the shore emits cast), doc.timers (cast counts down, on_done emits bite), doc.events (aggregated, take-able), walker.anim (state→animation). Genre logic stays in the game; the engine only carries data. World assertions + shared offscreen (not golden pixels).",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/interact_fish_world.json",
+    "player.on_ground": true,
+    "coins": 0,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "prop", "name": "shore", "count": 1}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/interact_fish_world.json",
+    "out": "scratch/interact_fish_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

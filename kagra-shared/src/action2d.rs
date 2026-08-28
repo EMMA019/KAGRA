@@ -549,6 +549,7 @@ fn ensure_markers(doc: &mut WorldDoc) {
             color: Some(if den { [180, 140, 88] } else { [160, 120, 72] }),
             metallic: 0.0,
             roughness: 0.85,
+            interact: None,
         },
     );
     ensure_shot(doc);
@@ -595,6 +596,7 @@ fn ensure_shot(doc: &mut WorldDoc) {
             color: Some([240, 220, 90]),
             metallic: 0.0,
             roughness: 0.7,
+            interact: None,
         },
     );
 }
@@ -627,6 +629,7 @@ fn tiny_prop(
         color: Some(color),
         metallic: 0.0,
         roughness: 1.0,
+        interact: None,
     }
 }
 

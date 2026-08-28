@@ -35,7 +35,9 @@ use crate::sprite;
 use crate::stealth::{self, StealthGame};
 use crate::survival::{self, SurvivalGame};
 use crate::td::{self, TdGame};
-use crate::world_doc::{load_skinned, walker_rest_min_y, WorldDoc, WorldProp, WorldWalker};
+use crate::world_doc::{
+    load_skinned, walker_rest_min_y, WorldDoc, WorldEvent, WorldProp, WorldTimer, WorldWalker,
+};
 use glam::Vec3;
 
 /// Running play state around a dump document. `doc` is the JSON source of
@@ -694,6 +696,8 @@ impl WorldPlay {
             }
             return;
         }
+        self.tick_timers(dt);
+        self.step_interact();
         self.collect_pickups();
         self.game.time_s += dt;
         self.input.jump = false;
@@ -836,6 +840,26 @@ impl WorldPlay {
                         ));
                     }
                 }
+                // Interact prompt: nearest usable prop within reach. Text-less
+                // bar (font-free HUD); the label is the prompt/kind string.
+                if let Some((i, _)) = self.nearest_interact() {
+                    if let Some(it) = self.doc.props[i].interact.as_ref() {
+                        let label = if it.prompt.is_empty() {
+                            it.kind.clone()
+                        } else {
+                            it.prompt.clone()
+                        };
+                        let bw = (label.len() as f32 * 13.0 + 64.0) * scale;
+                        let bh = 30.0 * scale;
+                        quads.push(Quad::new(
+                            (w - bw) * 0.5,
+                            h - 64.0 * scale,
+                            bw,
+                            bh,
+                            [34, 46, 38, 230],
+                        ));
+                    }
+                }
             }
             GamePhase::Complete => {
                 quads.push(Quad::new(0.0, h * 0.22, w, h * 0.36, [12, 16, 12, 210]));
@@ -894,7 +918,13 @@ impl WorldPlay {
             z += dir.z * speed * dt;
             yaw = dir.x.atan2(dir.z);
             updated.clip += dt;
+            // Engine-derived locomotion state. Genre names ("cast", "reel")
+            // are not touched here; they only survive while standing still.
+            updated.anim = "walk".into();
         } else {
+            if updated.anim == "walk" {
+                updated.anim = "idle".into();
+            }
             updated.clip = 0.0;
         }
         let pad = 2.0;
@@ -1095,6 +1125,135 @@ impl WorldPlay {
             .count() as u32;
         refresh_coin_count(&mut self.doc);
     }
+
+    /// Record an event (aggregated by name). Systems read it via
+    /// [`Self::take_events`]. No callback bus — the dump is the bus.
+    pub fn emit_event(&mut self, name: &str, data: Option<serde_json::Value>) {
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return;
+        }
+        if let Some(ev) = self.doc.events.iter_mut().find(|e| e.name == name) {
+            ev.count += 1;
+            if data.is_some() {
+                ev.data = data;
+            }
+            return;
+        }
+        self.doc.events.push(WorldEvent {
+            id: format!("event:{}", self.doc.events.len()),
+            kind: "event".into(),
+            name,
+            count: 1,
+            data,
+        });
+    }
+
+    /// Take (consume) all events with this name. Each system handles a
+    /// happening exactly once; the dump stops carrying it afterwards.
+    pub fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        let mut out = Vec::new();
+        self.doc.events.retain(|e| {
+            if e.name == name {
+                out.push(e.clone());
+                false
+            } else {
+                true
+            }
+        });
+        out
+    }
+
+    /// Start (or restart) a named timer. The engine counts it down and emits
+    /// `on_done` as an event when it reaches 0. Genre code calls this; the
+    /// dump shows the countdown (`timers[]`) without any engine hook.
+    pub fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        let id = format!("timer:{name}");
+        if let Some(t) = self.doc.timers.iter_mut().find(|t| t.id == id) {
+            t.name = name.into();
+            t.seconds = seconds;
+            t.remaining = seconds;
+            t.on_done = on_done.map(|s| s.into());
+            t.active = true;
+            return id;
+        }
+        self.doc.timers.push(WorldTimer {
+            id: id.clone(),
+            kind: "timer".into(),
+            name: name.into(),
+            seconds,
+            remaining: seconds,
+            on_done: on_done.map(|s| s.into()),
+            active: true,
+        });
+        id
+    }
+
+    /// Advance generic timers; a timer that hits 0 emits its `on_done` event
+    /// and parks (`active = false`). Cast→bite, cook→done, cooldowns all map
+    /// onto this. Genre code starts timers, the engine counts them down.
+    pub fn tick_timers(&mut self, dt: f32) {
+        let mut done: Vec<String> = Vec::new();
+        for t in &mut self.doc.timers {
+            if !t.active {
+                continue;
+            }
+            t.remaining = (t.remaining - dt).max(0.0);
+            if t.remaining <= 1e-4 {
+                t.active = false;
+                if let Some(ev) = t.on_done.clone() {
+                    done.push(ev);
+                }
+            }
+        }
+        for ev in done {
+            self.emit_event(&ev, None);
+        }
+    }
+
+    /// Nearest enabled prop with interaction metadata within its own reach.
+    /// Returns (prop index, distance). None = nothing usable nearby.
+    pub fn nearest_interact(&self) -> Option<(usize, f32)> {
+        let p = player_ref(&self.doc)?;
+        let (px, pz) = (p.position[0], p.position[2]);
+        let mut best: Option<(usize, f32)> = None;
+        for (i, prop) in self.doc.props.iter().enumerate() {
+            if !prop.enabled || prop.interact.is_none() {
+                continue;
+            }
+            let reach = prop.interact.as_ref().map(|it| it.reach).unwrap_or(2.5);
+            let dx = px - prop.position[0];
+            let dz = pz - prop.position[2];
+            let d = (dx * dx + dz * dz).sqrt();
+            if d <= reach && best.is_none_or(|(_, bd)| d < bd) {
+                best = Some((i, d));
+            }
+        }
+        best
+    }
+
+    /// J/click on a reachable interactable emits its `on_use` event. Pure
+    /// glue: genre code reacts by taking the event. No genre logic here.
+    pub fn step_interact(&mut self) {
+        if !self.input.attack {
+            return;
+        }
+        let Some((i, _)) = self.nearest_interact() else {
+            return;
+        };
+        let Some(on_use) = self.doc.props[i]
+            .interact
+            .as_ref()
+            .and_then(|it| it.on_use.clone())
+        else {
+            return;
+        };
+        let (id, name) = (self.doc.props[i].id.clone(), self.doc.props[i].name.clone());
+        self.emit_event(
+            &on_use,
+            Some(serde_json::json!({ "prop": id, "name": name })),
+        );
+    }
 }
 
 fn is_collectathon(doc: &WorldDoc) -> bool {
@@ -1258,9 +1417,11 @@ fn look_yaw_from_doc(doc: &WorldDoc) -> f32 {
 mod tests {
     use super::*;
     use crate::collectathon::{coin_path, BODY_H, STAR_NEED};
+    use serde_json::json;
 
     const CREST: &str = include_str!("../tests/fixtures/crest_isle_world.json");
     const ORB: &str = include_str!("../tests/fixtures/orb_rush_world.json");
+    const FISH: &str = include_str!("../tests/fixtures/interact_fish_world.json");
 
     #[test]
     fn wasd_tick_moves_walker_on_heightfield() {
@@ -1887,6 +2048,155 @@ mod tests {
                 .iter()
                 .any(|b| b.mesh.0 >= crate::world_doc::MESH_GLTF_BASE),
             "play compile must draw the skinned walker"
+        );
+    }
+
+    // ── Adhesive API: interact / event / timer / state→animation ──────────
+
+    #[test]
+    fn interact_emits_on_use_within_reach() {
+        let mut play = WorldPlay::from_json(FISH).unwrap();
+        play.start();
+        // Player at origin; shore at (4,0,0) with reach 5 → usable.
+        assert!(play.nearest_interact().is_some(), "shore in reach");
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
+        let evs = play.take_events("cast");
+        assert_eq!(evs.len(), 1, "J at the shore emits the on_use event");
+        assert_eq!(evs[0].count, 1);
+        let data = evs[0].data.as_ref().expect("payload");
+        assert_eq!(data["prop"], "prop:shore");
+    }
+
+    #[test]
+    fn interact_out_of_reach_does_not_emit() {
+        let mut play = WorldPlay::from_json(FISH).unwrap();
+        play.start();
+        if let Some(w) = play.doc.player.as_mut() {
+            w.position = [20.0, 0.0, 0.0];
+        }
+        assert!(play.nearest_interact().is_none(), "shore out of reach");
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
+        assert!(
+            play.take_events("cast").is_empty(),
+            "no on_use event outside reach"
+        );
+    }
+
+    #[test]
+    fn events_aggregate_and_take_consumes() {
+        let mut play = WorldPlay::from_json(FISH).unwrap();
+        play.start();
+        play.emit_event("fish_caught", Some(json!({"kind": "koi"})));
+        play.emit_event("fish_caught", Some(json!({"kind": "saba"})));
+        play.emit_event("other", None);
+        let evs = play.take_events("fish_caught");
+        assert_eq!(evs.len(), 1);
+        assert_eq!(evs[0].count, 2, "same-name events aggregate");
+        assert_eq!(evs[0].data.as_ref().unwrap()["kind"], "saba");
+        assert_eq!(play.doc.events.len(), 1, "only 'other' remains");
+        assert_eq!(play.take_events("other").len(), 1);
+        assert!(play.doc.events.is_empty(), "take consumes");
+    }
+
+    #[test]
+    fn timer_counts_down_and_emits_on_done() {
+        let mut play = WorldPlay::from_json(FISH).unwrap();
+        play.start();
+        play.start_timer("cast", 3.0, Some("bite"));
+        assert_eq!(play.doc.timers.len(), 1);
+        assert!(play.doc.timers[0].active);
+        for _ in 0..150 {
+            play.tick(1.0 / 60.0); // 2.5s — not done yet
+        }
+        assert!(play.take_events("bite").is_empty(), "bite only after 3s");
+        assert!(play.doc.timers[0].active);
+        for _ in 0..60 {
+            play.tick(1.0 / 60.0); // +1.0s → 3.5s total
+        }
+        let evs = play.take_events("bite");
+        assert_eq!(evs.len(), 1, "on_done emits the named event");
+        assert!(!play.doc.timers[0].active, "done timer parks");
+        assert!(play.doc.timers[0].remaining <= 1e-4);
+    }
+
+    #[test]
+    fn anim_follows_wish_and_keeps_genre_state() {
+        let mut play = WorldPlay::from_json(FISH).unwrap();
+        play.start();
+        assert_eq!(play.doc.player.as_ref().unwrap().anim, "idle");
+        play.input = WalkInput {
+            lx: 0.0,
+            lz: 1.0,
+            jump: false,
+            attack: false,
+            dodge: false,
+        };
+        for _ in 0..10 {
+            play.tick(1.0 / 60.0);
+        }
+        let p = play.doc.player.as_ref().unwrap();
+        assert_eq!(p.anim, "walk", "wish derives locomotion state");
+        assert!(p.clip > 0.0);
+        play.input = WalkInput::default();
+        play.tick(1.0 / 60.0);
+        assert_eq!(play.doc.player.as_ref().unwrap().anim, "idle");
+        if let Some(w) = play.doc.player.as_mut() {
+            w.anim = "cast".into();
+        }
+        play.tick(1.0 / 60.0);
+        assert_eq!(
+            play.doc.player.as_ref().unwrap().anim,
+            "cast",
+            "genre anim survives standing still"
+        );
+        play.input = WalkInput {
+            lx: 0.0,
+            lz: 1.0,
+            jump: false,
+            attack: false,
+            dodge: false,
+        };
+        play.tick(1.0 / 60.0);
+        assert_eq!(
+            play.doc.player.as_ref().unwrap().anim,
+            "walk",
+            "movement overwrites genre anim"
+        );
+    }
+
+    #[test]
+    fn cast_interact_timer_bite_loop() {
+        // The whole adhesive loop on one dump: J at the shore → "cast" event
+        // → game starts a timer → countdown → "bite" event → game flips the
+        // animation state. Engine only carries data; the reactions here stand
+        // in for genre code (fish.rs-style), not engine logic.
+        let mut play = WorldPlay::from_json(FISH).unwrap();
+        play.start();
+        play.input.attack = true;
+        play.tick(1.0 / 60.0);
+        assert_eq!(play.take_events("cast").len(), 1, "interact → cast event");
+        play.input.attack = false;
+
+        play.start_timer("cast", 3.0, Some("bite"));
+        if let Some(w) = play.doc.player.as_mut() {
+            w.anim = "cast".into();
+        }
+        for _ in 0..180 {
+            play.tick(1.0 / 60.0); // 3.0s
+        }
+        assert_eq!(play.take_events("bite").len(), 1, "timer → bite event");
+        assert_eq!(play.doc.player.as_ref().unwrap().anim, "cast");
+
+        if let Some(w) = play.doc.player.as_mut() {
+            w.anim = "hit".into();
+        }
+        play.tick(1.0 / 60.0);
+        assert_eq!(
+            play.doc.player.as_ref().unwrap().anim,
+            "hit",
+            "game switches anim on the bite event"
         );
     }
 }

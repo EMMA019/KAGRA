@@ -90,6 +90,64 @@ pub struct WorldDoc {
     /// ACES tonemap. None = on.
     #[serde(default)]
     pub tonemap: Option<bool>,
+    /// Generic countdowns. WorldPlay::tick_timers advances `remaining`; on 0 it
+    /// emits `on_done` as an event and flips `active` false. Cooking wait,
+    /// fishing cast→bite, cooldowns all map onto this. Genre code stays out.
+    #[serde(default)]
+    pub timers: Vec<WorldTimer>,
+    /// Named things that happened. WorldPlay::emit_event (aggregates by name) /
+    /// take_events (consumes). Multiple systems read the same event (score, UI,
+    /// save) without an in-process callback bus. Dump-visible.
+    #[serde(default)]
+    pub events: Vec<WorldEvent>,
+}
+
+/// Generic countdown. Dump-visible: a fishing dump shows `cast` counting down,
+/// then the `bite` event appears. Not a scheduler with callbacks — the engine
+/// only advances time and emits one event at completion.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct WorldTimer {
+    pub id: String,
+    #[serde(rename = "type", default = "timer_type")]
+    pub kind: String,
+    #[serde(default)]
+    pub name: String,
+    /// Total seconds. Remaining starts here unless the dump says otherwise.
+    #[serde(default)]
+    pub seconds: f32,
+    /// Remaining seconds. WorldPlay::tick_timers counts down while active.
+    #[serde(default)]
+    pub remaining: f32,
+    /// Event name emitted when the countdown completes (e.g. "bite").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_done: Option<String>,
+    /// False = parked (not counting down). A game starts it via emit/use.
+    #[serde(default = "default_true")]
+    pub active: bool,
+}
+
+fn timer_type() -> String {
+    "timer".into()
+}
+
+/// A named event. `count` aggregates repeats (two fish = count 2). `data` is
+/// an optional JSON payload (which fish, which prop). Events stay in the dump
+/// until a system takes them, so save/UI/score can all react to the same one.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct WorldEvent {
+    pub id: String,
+    #[serde(rename = "type", default = "event_type")]
+    pub kind: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+fn event_type() -> String {
+    "event".into()
 }
 
 fn default_gravity() -> f32 {
@@ -126,6 +184,32 @@ pub struct WorldProp {
     /// 0..1. Coins dump 0.12. Default 1 (dielectric).
     #[serde(default = "default_roughness")]
     pub roughness: f32,
+    /// Interaction metadata (talk / use / examine). None = plain scenery.
+    /// `on_use` emits an event when the player presses J/attack in reach.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interact: Option<WorldInteract>,
+}
+
+/// Prop interaction. The engine handles reach + on_use event; the game owns
+/// the prompt text and what the event means (dialogue, reward, cast).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct WorldInteract {
+    /// "talk" | "use" | "examine". HUD glyph/color can key off this.
+    #[serde(default)]
+    pub kind: String,
+    /// Short label shown on the HUD while in reach ("水辺", "cast").
+    #[serde(default)]
+    pub prompt: String,
+    /// Event name emitted when the player uses it (e.g. "cast").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_use: Option<String>,
+    /// Horizontal reach in world units. Default 2.5.
+    #[serde(default = "default_reach")]
+    pub reach: f32,
+}
+
+fn default_reach() -> f32 {
+    2.5
 }
 
 fn prop_type() -> String {
@@ -183,6 +267,15 @@ pub struct WorldWalker {
     /// Last glTF/VRM load error (`path: reason`). Dump-visible. None if ok.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub load_error: Option<String>,
+    /// Current animation state: "idle" / "walk" (engine-derived from wish) or a
+    /// genre-set name ("cast", "reel", "hit") that survives while standing.
+    /// Dump-visible, so the game state machine reads it without an engine hook.
+    #[serde(default = "default_idle_anim")]
+    pub anim: String,
+}
+
+fn default_idle_anim() -> String {
+    "idle".into()
 }
 
 fn walker_type() -> String {
