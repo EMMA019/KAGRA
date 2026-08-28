@@ -89,15 +89,17 @@ python -m kagra
 
 ## 入っているもの
 
-- **VRM** — GPU スキニング、SpringBone、MToon、視線、リップシンク、IK、表情。同じパスの `kagra.avatar()` はメッシュ / テクスチャ / MToon を共有（`vrm_gpu_stats()`）
+- **VRM** — GPU スキニング、SpringBone（コリジョン付き）、MToon（完全版: 影 2 段階・リム・アウトライン・matcap/normal）、視線、リップシンク、IK、表情プリセット。同じパスの `kagra.avatar()` はメッシュ / テクスチャ / MToon を共有（`vrm_gpu_stats()`）
 - **3D の遊び場** — `Prop` / `Walk` / `sky` / `room` / `World`（`World3D` と同じ型）。`world.query` / `dump` / `load` でスクショなしに世界を読む。局所ライト 4 本（`slot=0..3`）、室内ウンブラ、屋外 2 段シャドウ、接空間法線。AABB の箱は落ちる・積む・`Walk` が乗る。USB/XInput は EventLoop が `gilrs` で読む（テストは `inject_pad`）
+- **接着 API（shared wgpu 30 の本線）** — `prop.interact`（調べる/話す/使う → on_use イベント）、`doc.timers`（待つ。0 で on_done イベント）、`doc.events`（出来事。emit → take で複数システムが読む）、`walker.anim` / `walker.expression`（状態→アニメ/表情）。ジャンル専用ロジックはゲーム側
 - **頭脳** — `kagra.brain("kairi"|"ollama"|"openai")`。ホスト kairi は `KAIRI_API_TOKEN`。モデルは wheel に入れない
 - **エージェントループ** — API 索引、`kagra.verify`、MCP、golden
+- **絵（shared wgpu 30）** — HDR フレーム + 閾値ブルーム、FXAA、IBL、PCF 影、水面（Fresnel + IBL 反射）、LOD/GPU インスタンス、ACES トーンマップ
 - **Mobile / Wasm** — `kagra-shared` と `mobile/` は **Python `kagra-core` とは別レンダラ**。運転デモ（Corridor Haul）に加え、Crest Isle の収集スライス（Kenney 風カプセル。**VRM ではない**）を Android debug APK / wasm で遊べる。レンダラは統合しない
 
 タイルマップ・ECS・2D エディタは棚（[`examples/archive/`](examples/archive/)）。3D の見出しではない。
 
-エンジンが今どこまでかは [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md)。100% は画面を見ずにインディーを出荷できること。今約 40%（M0–M2 閉じた。collectathon が最初の M3 ジャンル）。旧「63%」はアーカイブ。80% とはまだ言わない。
+エンジンが今どこまでかは [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md)。100% は画面を見ずにインディーを出荷できること。今約 40%（M0–M2 閉じた。collectathon が最初の M3 ジャンル。接着 API 4本と絵の土台が載った）。旧「63%」はアーカイブ。80% とはまだ言わない。
 
 ## AI エージェントにゲームを作らせる
 
@@ -106,10 +108,10 @@ KAGRA の開発ループは人間だけでなく AI コーディングエージ�
 - **[AGENTS.md](AGENTS.md)** — どのエージェントでも使える行動規範（Claude Code / Cursor / Windsurf …）。Cursor は `.cursor/skills/` から同じ規則を自動で拾う
 - **エージェントの目** — `kagra.annotate`（クリックを数値に）と `kagra.debug_trace`（足と地形の JSONL）。ビジュアルエディタではない
 - **API 索引** — [`docs/API_INDEX.md`](docs/API_INDEX.md) は AST から生成。エージェントは推測ではなく検索する
-- **ヘッドレス検証** — `python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json` で目視なしにループを閉じる
+- **ヘッドレス検証** — `python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json` で目視なしにループを閉じる（世界アサーション + shared wgpu 30 オフスクリーン煙）
 - **MCP サーバー** — `tools/mcp_kagra/server.py`: `kagra_api_search` / `kagra_env` / `kagra_resolve_asset` / `kagra_verify` / `kagra_render`
 
-`examples/vrm_orb_rush.py` が参照ゲーム（公開 API のみ。生成ログは無い）。ログ付きのエージェント製は [`docs/agent-runs/`](docs/agent-runs/README.md) の Heart Catch、Switch Room、Dodge Room（`examples/vrm_dodge_room.py` — 降ってくる箱を避ける）。Dodge Room は別のエージェントが `AGENTS.md` と一行プロンプトから書いた。
+`examples/vrm_orb_rush.py` が参照ゲーム（公開 API のみ。生成ログは無い）。ログ付きのエージェント製は [`docs/agent-runs/`](docs/agent-runs/README.md): Heart Catch、Switch Room、Dodge Room（`examples/vrm_dodge_room.py` — 降ってくる箱を避ける。別のエージェントが `AGENTS.md` と一行プロンプトから書いた）に加え、接着 API / HDR+ブルーム / FXAA / MToon 完全移植 / 表情 / VRM 残りスライスの実証ログが並ぶ。
 
 ## まだ無いもの
 
@@ -153,6 +155,10 @@ python examples/vrm_relic_run.py          # 島の遺跡集め 30 秒（エー�
 python examples/vrm_open_world.py         # 旧 VRM Crest Isle（RendererV2）
 python -m kagra.play_world                # 公式 Crest collectathon: タイトル→プレイ→結果（カプセル、WASD）
 python -m kagra.play_world kagra-shared/tests/fixtures/emma_walker_world.json  # VRoid Emma 歩き（wgpu 30）
+python -m kagra.play_world kagra-shared/tests/fixtures/interact_fish_world.json  # 接着 API デモ（水辺で J → cast → 3秒 → bite）
+python -m kagra.render_world kagra-shared/tests/fixtures/crest_isle_world.json scratch/crest.png  # オフスクリーン描画（bloom 付き）
+python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json        # ヘッドレス検証（世界 + オフスクリーン）
+python -m kagra.verify examples/verify_scenarios/interact_fish_smoke.json       # 接着 API の検証
 python examples/vrm_multi_avatar.py       # 複数 VRM。GPU 共有 + FPS（`KAGRA_AVATARS=8`）
 # Crest Isle モバイル（kagra-shared。VRM ではない。Kenney 風カプセル）
 ./scripts/build_wasm.sh && python -m http.server -d kagra-shared/www 8000

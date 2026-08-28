@@ -89,15 +89,17 @@ Scene scripts (`examples/vrm_*.py`) live in the git repo. `pip` gives you `impor
 
 ## What you get
 
-- **VRM** — GPU skinning, SpringBone, MToon, look-at, lipsync, IK, expressions. Same-path `kagra.avatar()` clones share mesh/texture/MToon (`vrm_gpu_stats()`)
+- **VRM** — GPU skinning, SpringBone (with colliders), full MToon (2-step shade, rim, outline, matcap/normal), look-at, lipsync, IK, expression presets. Same-path `kagra.avatar()` clones share mesh/texture/MToon (`vrm_gpu_stats()`)
 - **3D play** — `Prop` / `Walk` / `sky` / `room` / `World` (`World3D` is the same type). `world.query` / `dump` / `load` read the world without a screenshot. Four local lights (`slot=0..3`), indoor umbra, 2-cascade outdoor shadows, tangent-space normal maps. AABB crates fall, stack, and `Walk` stands on them. USB/XInput is read on the EventLoop (`gilrs`); tests use `inject_pad`
+- **Adhesive API (shared wgpu 30 mainline)** — `prop.interact` (examine/talk/use → on_use event), `doc.timers` (wait; emits on_done at 0), `doc.events` (happenings; emit → take for many systems), `walker.anim` / `walker.expression` (state → animation/expression). Genre logic stays in the game
 - **Brain** — `kagra.brain("kairi"|"ollama"|"openai")`. Hosted kairi needs `KAIRI_API_TOKEN`. Models are not in the wheel
 - **Agent loop** — API index, `kagra.verify`, MCP tools, golden renders
+- **Picture (shared wgpu 30)** — HDR frame + threshold bloom, FXAA, IBL, PCF shadows, water (Fresnel + IBL reflection), LOD/GPU instancing, ACES tonemap
 - **Mobile / Wasm** — `kagra-shared` + `mobile/` is a **separate renderer** from Python `kagra-core`. Corridor Haul (driving) plus a Crest Isle collectathon slice (Kenney-style capsule, **not VRM**). Do not merge the two renderers
 
 Tilemaps, ECS, and the 2D editor are on the shelf ([`examples/archive/`](examples/archive/)). They are not the 3D headline.
 
-Where the engine sits: [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md). 100% = an agent ships a normal indie game with no human looking at the screen. Now ~40% (M0–M2 closed; collectathon is the first M3 genre). Old "63%" is archived. Do not call this 80% yet.
+Where the engine sits: [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md). 100% = an agent ships a normal indie game with no human looking at the screen. Now ~40% (M0–M2 closed; collectathon is the first M3 genre; the adhesive API and the picture base are in). Old "63%" is archived. Do not call this 80% yet.
 
 ## Let your AI agent build the game
 
@@ -106,10 +108,10 @@ KAGRA's development loop is designed for AI coding agents, not just humans. An a
 - **[AGENTS.md](AGENTS.md)** — rules for any agent (Claude Code, Cursor, Windsurf, ...). Cursor picks up the same rules via `.cursor/skills/`
 - **Agent eyes** — `kagra.annotate` (click → numbers) and `kagra.debug_trace` (foot vs terrain JSONL). Not a visual editor
 - **API index** — [`docs/API_INDEX.md`](docs/API_INDEX.md) is generated from the AST, so agents search instead of guessing signatures
-- **Headless verify** — `python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json` closes the loop in CI or a subprocess
+- **Headless verify** — `python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json` closes the loop in CI or a subprocess (world assertions + shared wgpu 30 offscreen smoke)
 - **MCP server** — `tools/mcp_kagra/server.py`: `kagra_api_search` / `kagra_env` / `kagra_resolve_asset` / `kagra_verify` / `kagra_render`
 
-`examples/vrm_orb_rush.py` is the reference game (public APIs only; no generation log). Logged agent-built games live in [`docs/agent-runs/`](docs/agent-runs/README.md): Heart Catch, Switch Room, and Dodge Room (`examples/vrm_dodge_room.py` — survive falling boxes). Dodge Room was written by a second agent from `AGENTS.md` + a one-line prompt.
+`examples/vrm_orb_rush.py` is the reference game (public APIs only; no generation log). Logged agent-built games live in [`docs/agent-runs/`](docs/agent-runs/README.md): Heart Catch, Switch Room, and Dodge Room (`examples/vrm_dodge_room.py` — survive falling boxes; written by a second agent from `AGENTS.md` + a one-line prompt), plus build logs for the adhesive API, HDR + bloom, FXAA, full MToon, expressions, and the remaining VRM slices.
 
 ## Not yet
 
@@ -152,6 +154,10 @@ python examples/vrm_relic_run.py          # island relic collect 30s (agent-run 
 python examples/vrm_open_world.py         # leftover VRM Crest Isle (RendererV2)
 python -m kagra.play_world                # official Crest play: wgpu 30 window walking a dump (capsule, WASD)
 python -m kagra.play_world kagra-shared/tests/fixtures/emma_walker_world.json  # VRoid Emma WASD walk (wgpu 30)
+python -m kagra.play_world kagra-shared/tests/fixtures/interact_fish_world.json  # adhesive-API demo (J at the shore → cast → 3s → bite)
+python -m kagra.render_world kagra-shared/tests/fixtures/crest_isle_world.json scratch/crest.png  # offscreen render (bloom on)
+python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json        # headless verify (world + offscreen)
+python -m kagra.verify examples/verify_scenarios/interact_fish_smoke.json       # adhesive-API verify
 python examples/vrm_multi_avatar.py       # N VRM clones; GPU share + FPS HUD (`KAGRA_AVATARS=8`)
 # Crest Isle mobile (kagra-shared; not VRM — Kenney-style capsule)
 ./scripts/build_wasm.sh && python -m http.server -d kagra-shared/www 8000
