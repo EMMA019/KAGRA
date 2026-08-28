@@ -34,7 +34,7 @@ struct Globals {
     fog_color: [f32; 4],
     fog_range: [f32; 4],
     camera_pos: [f32; 4],
-    /// x = IBL, y = exposure, z unused, w = ACES (>0.5 on). Matches shader Globals.env.
+    /// x = IBL, y = exposure, z = elapsed seconds (water scroll), w = ACES (>0.5 on). Matches shader Globals.env.
     env: [f32; 4],
     light_pos: [[f32; 4]; 4],
     light_col: [[f32; 4]; 4],
@@ -102,6 +102,8 @@ pub struct Renderer {
     albedo_sampler: wgpu::Sampler,
     default_albedo_bind: wgpu::BindGroup,
     _white_albedo: wgpu::Texture,
+    /// Seconds for shader env.z (water scroll). Frame accum, not Instant (wasm).
+    elapsed: f32,
 }
 
 impl Renderer {
@@ -519,6 +521,7 @@ impl Renderer {
             albedo_sampler,
             default_albedo_bind,
             _white_albedo: white_albedo,
+            elapsed: 0.0,
         };
         me.upload_screen();
         me
@@ -833,7 +836,7 @@ impl Renderer {
         self.inst_capacity = cap;
     }
 
-    fn upload_globals(&self, scene: &Scene3D) {
+    fn upload_globals(&mut self, scene: &Scene3D) {
         let cam = &scene.camera;
         let mut light_pos = [[0.0f32; 4]; 4];
         let mut light_col = [[0.0f32; 4]; 4];
@@ -872,7 +875,7 @@ impl Renderer {
             env: [
                 scene.ibl.max(0.0),
                 scene.exposure.max(0.0),
-                0.0,
+                self.elapsed,
                 if scene.tonemap { 1.0 } else { 0.0 },
             ],
             light_pos,
@@ -881,6 +884,7 @@ impl Renderer {
         };
         self.queue
             .write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&g));
+        self.elapsed += 1.0 / 60.0;
     }
 
     /// オフスクリーンの内容を RGBA8 で読み出す。
@@ -1289,6 +1293,11 @@ mod tests {
         assert!(src.contains("aces_tonemap"), "ACES on shared wgpu 30");
         assert!(src.contains("env_irradiance"), "diffuse IBL / tiny SH");
         assert!(src.contains("env: vec4<f32>"), "Globals.env");
+        assert!(
+            src.contains("mat_id == 6"),
+            "water material on shared family"
+        );
+        assert!(src.contains("water_normal"), "scrolling procedural waves");
         assert!(!src.contains("var<storage"), "WebGL2: no storage buffers");
     }
 

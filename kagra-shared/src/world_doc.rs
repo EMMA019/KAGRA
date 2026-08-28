@@ -8,6 +8,8 @@
 //! placeholder plane. Sprite/quad props (`model: "sprite"` / `"quad"`) compile
 //! to a standing XY card in the same Scene3D — 2D and 3D share WorldDoc.
 //! Coins use `Material::Metal` (existing GGX, metallic=1 / roughness=0.12).
+//! Water uses `Material::Water` (prop name/model `water`, or the `water_y` plane).
+//! Same shader family as Metal/Toon; not a Water Renderer / V2.
 //! Lights are slot 0..3 1:1; an empty dump still gets default key+fill
 //! (slots 0+1; 2 and 3 stay off). Outdoor dumps default IBL 0.35 + ACES
 //! (shader Globals.env; no cubemap bind, no RendererV2). Capsules and props get a ground contact
@@ -361,7 +363,7 @@ impl WorldDoc {
                     Vec3::new(0.0, wy - 0.04, 0.0),
                 ),
                 [42, 92, 110, 255],
-                Material::Solid,
+                Material::Water,
             );
         }
 
@@ -590,7 +592,10 @@ impl WorldDoc {
             if !prop.enabled {
                 continue;
             }
-            if prop.model.eq_ignore_ascii_case("plane") {
+            if prop.model.eq_ignore_ascii_case("plane")
+                || prop.model.eq_ignore_ascii_case("water")
+                || prop.name.eq_ignore_ascii_case("water")
+            {
                 continue;
             }
             let pos = Vec3::from_array(prop.position);
@@ -822,7 +827,7 @@ fn mesh_for_prop(prop: &WorldProp, gltf_ids: &HashMap<String, MeshId>) -> MeshId
         "sphere" if is_coin_prop(prop) => MESH_CAPSULE,
         "sphere" => MESH_SPHERE,
         "cylinder" | "capsule" => MESH_CAPSULE,
-        "plane" => MESH_PLANE,
+        "plane" | "water" => MESH_PLANE,
         "sprite" | "quad" => MESH_QUAD,
         _ => MESH_BOX,
     }
@@ -832,10 +837,17 @@ fn is_coin_prop(prop: &WorldProp) -> bool {
     prop.name.eq_ignore_ascii_case("coin") || prop.metallic >= 0.5
 }
 
+fn is_water_prop(prop: &WorldProp) -> bool {
+    prop.name.eq_ignore_ascii_case("water") || prop.model.eq_ignore_ascii_case("water")
+}
+
 /// Metal coins/props: dump `metallic>=0.5` or name coin. Shader GGX uses the
 /// coin defaults (metallic=1, roughness=0.12) so they read as metal, not plastic.
+/// Water: dump name/model `water` (plane mesh). Same shader family as Metal/Toon.
 fn material_for_prop(prop: &WorldProp) -> Material {
-    if is_coin_prop(prop) {
+    if is_water_prop(prop) {
+        Material::Water
+    } else if is_coin_prop(prop) {
         Material::Metal
     } else {
         Material::Solid
@@ -1493,6 +1505,44 @@ mod tests {
             metal >= 1,
             "bare coin must still be Material::Metal, got {metal}"
         );
+    }
+
+    #[test]
+    fn water_prop_and_water_y_compile_as_water_material() {
+        let crest = WorldDoc::from_json(CREST_ISLE_DUMP).unwrap();
+        let cs = crest.compile_scene(16.0 / 9.0);
+        let crest_water = cs
+            .batches
+            .iter()
+            .flat_map(|b| b.instances.iter())
+            .filter(|i| i.material == Material::Water)
+            .count();
+        assert!(
+            crest_water >= 1,
+            "Crest water_y plane must be Material::Water, got {crest_water}"
+        );
+
+        const WATER: &str = include_str!("../tests/fixtures/water_plane_world.json");
+        let doc = WorldDoc::from_json(WATER).unwrap();
+        assert!(
+            doc.props
+                .iter()
+                .any(|p| p.name.eq_ignore_ascii_case("water")),
+            "fixture names a water prop (existing dump style)"
+        );
+        let scene = doc.compile_scene(16.0 / 9.0);
+        let n = scene
+            .batches
+            .iter()
+            .flat_map(|b| b.instances.iter())
+            .filter(|i| i.material == Material::Water)
+            .count();
+        assert!(n >= 1, "lake prop must compile as Material::Water, got {n}");
+
+        const EMMA: &str = include_str!("../tests/fixtures/emma_walker_world.json");
+        let emma = WorldDoc::from_json(EMMA).unwrap();
+        let es = emma.compile_scene(16.0 / 9.0);
+        assert!(es.instance_count() >= 1, "emma_walker still compiles");
     }
 
     #[test]

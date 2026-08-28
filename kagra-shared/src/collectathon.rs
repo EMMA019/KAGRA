@@ -395,7 +395,7 @@ impl CollectathonScene {
             ids.water,
             Mat4::from_translation(Vec3::new(0.0, WATER_Y - 0.04, 20.0)),
             [38, 92, 118, 255],
-            Material::Solid,
+            Material::Water,
         );
         b.push_material(
             ids.terrain,

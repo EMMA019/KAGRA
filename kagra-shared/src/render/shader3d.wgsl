@@ -1,6 +1,6 @@
 // 3D: インスタンス化したメッシュ + 方向光 + 距離フォグ + 手続きテクスチャ。
 //
-// マテリアルはインスタンス属性の material（0=solid, 1=road, 2=grass, 3=sky, 4=metal, 5=toon）。
+// マテリアルはインスタンス属性の material（0=solid, 1=road, 2=grass, 3=sky, 4=metal, 5=toon, 6=water）。
 // 路面と草はワールド XZ のノイズ。baseColor は group 1（無ければ 1x1 白）。
 
 struct Globals {
@@ -12,7 +12,7 @@ struct Globals {
     // x = 効き始める距離、y = 覆いきる距離
     fog_range: vec4<f32>,
     camera_pos: vec4<f32>,
-    // x = IBL strength, y = exposure (1), z unused, w = ACES on if >0.5.
+    // x = IBL strength, y = exposure (1), z = elapsed seconds (water scroll), w = ACES on if >0.5.
     // Thin V2 cam.env port. Procedural SH, no cubemap bind (WebGL2).
     env: vec4<f32>,
     // slot 0..3 の局所光。xyz + w=intensity / rgb + w=radius / xyz dir + w=spot。
@@ -197,9 +197,26 @@ fn tone_map(rgb: vec3<f32>) -> vec3<f32> {
     return c;
 }
 
+// Two scrolling procedural normals (fbm gradients). env.z = seconds.
+// No normal-map texture, no SSR, no storage buffer.
+fn water_normal(world: vec3<f32>, geo_n: vec3<f32>) -> vec3<f32> {
+    let t = g.env.z;
+    let xz = world.xz;
+    let uv1 = xz * 0.18 + vec2<f32>(t * 0.06, t * 0.025);
+    let uv2 = xz * 0.47 + vec2<f32>(-t * 0.04, t * 0.055);
+    let e = 0.10;
+    let n1x = fbm(uv1 + vec2<f32>(e, 0.0)) - fbm(uv1 - vec2<f32>(e, 0.0));
+    let n1z = fbm(uv1 + vec2<f32>(0.0, e)) - fbm(uv1 - vec2<f32>(0.0, e));
+    let n2x = fbm(uv2 + vec2<f32>(e, 0.0)) - fbm(uv2 - vec2<f32>(e, 0.0));
+    let n2z = fbm(uv2 + vec2<f32>(0.0, e)) - fbm(uv2 - vec2<f32>(0.0, e));
+    let bump = vec3<f32>((n1x + n2x) * 1.6, 0.0, (n1z + n2z) * 1.6);
+    return normalize(normalize(geo_n) + bump);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let mat_id = i32(in.material + 0.5);
+    var alpha = in.color.a;
 
     // スカイ: 天頂〜地平のグラデーション。ライティングもフォグも掛けない。
     if (mat_id == 3) {
@@ -270,6 +287,24 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // Metals have no Lambert; SH * f0 is the thin diffuse IBL so coins
         // pick up sky/ground in shadow. GGX locals stay.
         lit += f0 * env_irradiance(n);
+    } else if (mat_id == 6) {
+        // Water: two scrolling normals + Fresnel + SH reflection.
+        // Not a Water Renderer / V2. No SSR, no physics sim, no caustics.
+        let nw = water_normal(in.world, n);
+        let v = normalize(g.camera_pos.xyz - in.world);
+        let ndotv = max(dot(nw, v), 0.0);
+        let fresnel = pow(1.0 - ndotv, 5.0);
+        let deep = albedo * vec3<f32>(0.45, 0.70, 0.82);
+        let body = mix(deep, albedo, ndotv * 0.65);
+        let r = reflect(-v, nw);
+        let spec_sun = pow(max(dot(nw, normalize(v + ldir)), 0.0), 96.0);
+        lit = body * (ambient * 0.85 + (1.0 - ambient) * max(dot(nw, ldir), 0.0) * 0.35);
+        lit += body * local_lit(nw, in.world) * 0.25;
+        lit += env_irradiance(r) * mix(0.22, 1.05, fresnel);
+        lit += env_irradiance(nw) * body * 0.20;
+        lit += vec3<f32>(0.95, 0.97, 1.0) * spec_sun * 0.55;
+        // Cheap depth fade: looking down is more transmissive (no scene-depth prepass).
+        alpha = mix(0.92, 0.34, ndotv) * in.color.a;
     } else {
         lit = albedo * (ambient + (1.0 - ambient) * ndl);
         lit += albedo * local_lit(n, in.world);
@@ -281,5 +316,5 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let fog = clamp((dist - g.fog_range.x) / span, 0.0, 1.0);
 
     let rgb = mix(lit, g.fog_color.rgb, fog);
-    return vec4<f32>(tone_map(rgb), in.color.a);
+    return vec4<f32>(tone_map(rgb), alpha);
 }

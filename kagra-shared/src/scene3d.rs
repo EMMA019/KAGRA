@@ -115,6 +115,8 @@ pub enum Material {
     Metal = 4,
     /// VRM MToon shade step (shadeColor + shadingToony). Not a second renderer.
     Toon = 5,
+    /// Water: procedural waves + Fresnel + IBL reflection. Same shader family, not a second renderer.
+    Water = 6,
 }
 
 /// One of four local lights (`slot=0..3`). Intensity 0 = unused (no slot leak).
@@ -871,6 +873,7 @@ mod tests {
     fn toon_material_id_is_five() {
         assert_eq!(Material::Toon as u8, 5);
         assert_eq!(Material::Metal as u8, 4);
+        assert_eq!(Material::Water as u8, 6);
         let plane = primitives::plane_mesh(1.0, 1.0);
         assert!(plane.mtoon.is_none());
     }

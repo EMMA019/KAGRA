@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "half": 16.0,
+  "floor_y": 0.0,
+  "gravity": 9.8,
+  "water_y": null,
+  "coins": 0,
+  "player": {
+    "id": "walker:player",
+    "type": "walker",
+    "name": "player",
+    "position": [0.0, 0.95, 6.5],
+    "yaw": 3.1416,
+    "face": 0.0,
+    "on_ground": true
+  },
+  "props": [
+    {
+      "id": "prop:shore",
+      "type": "prop",
+      "name": "floor",
+      "position": [0.0, 0.0, 6.0],
+      "yaw": 0.0,
+      "model": "plane",
+      "gltf": null,
+      "scale": [18.0, 1.0, 10.0],
+      "enabled": true,
+      "parent": null,
+      "color": [92, 118, 78]
+    },
+    {
+      "id": "prop:lake",
+      "type": "prop",
+      "name": "water",
+      "position": [0.0, -0.02, -2.5],
+      "yaw": 0.0,
+      "model": "plane",
+      "gltf": null,
+      "scale": [22.0, 1.0, 16.0],
+      "enabled": true,
+      "parent": null,
+      "color": [42, 92, 110]
+    },
+    {
+      "id": "prop:rock",
+      "type": "prop",
+      "name": "rock",
+      "position": [3.2, 0.28, 1.4],
+      "yaw": 0.4,
+      "model": "box",
+      "gltf": null,
+      "scale": [1.1, 0.55, 0.9],
+      "enabled": true,
+      "parent": null,
+      "color": [86, 82, 76]
+    }
+  ],
+  "walkers": [
+    {
+      "id": "walker:player",
+      "type": "walker",
+      "name": "player",
+      "position": [0.0, 0.95, 6.5],
+      "yaw": 3.1416,
+      "face": 0.0,
+      "on_ground": true
+    }
+  ],
+  "lights": [
+    {
+      "id": "light:0",
+      "type": "light",
+      "name": "key",
+      "position": [4.0, 9.0, 7.0],
+      "kind": "point",
+      "slot": 0,
+      "intensity": 1.05,
+      "radius": 24.0,
+      "color": [1.0, 0.96, 0.9],
+      "direction": null
+    }
+  ],
+  "cameras": [
+    {
+      "id": "camera:main",
+      "type": "camera",
+      "name": "main",
+      "position": [0.0, 2.6, 10.2],
+      "target": [0.0, 0.15, -1.5],
+      "fov": 48.0
+    }
+  ],
+  "heightfield": null
+}
