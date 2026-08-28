@@ -1,10 +1,61 @@
 # KAGRA
 
-Python 数行で、VRM が歌って踊る。
+An engine where an **AI agent builds a game — headless, no human watching the screen**.
 
 [日本語 README](README.ja.md)
 
 https://github.com/user-attachments/assets/1a1af44d-d6cc-4ea4-a05d-6f8ad6c193c2
+
+```bash
+git clone https://github.com/EMMA019/KAGRA.git
+cd KAGRA
+python -m kagra.play_world                    # Crest Isle collectathon — wgpu 30 window, WASD
+python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json  # headless close-the-loop
+```
+
+That's the mainline: a **shared wgpu 30 runtime** where the world is data
+(`World.dump()` JSON), play is one loop (title → play → result), and an AI
+agent searches the API, writes a scene, and verifies it headlessly. The
+old `pip install kagra` demo (VRM singing and dancing) still exists — see
+[The pip demo](#the-pip-demo-old-renderer-kagra-core).
+
+## The mainline
+
+- **World is data** — `World.dump()` / `WorldDoc` is a stable JSON schema
+  (`docs/schemas/world.json`). `world.query` / `dump` / `load` read the world
+  without a screenshot. The same JSON drives the desktop window, wasm, Android,
+  iOS, and offscreen rendering.
+- **Play is one loop** — `WorldPlay` ticks title → play → result (WASD,
+  pickups, finish) on `python -m kagra.play_world`. Genre code (fishing,
+  cooking, RPG) lives in the game, not the engine.
+- **Adhesive API** — `prop.interact` (examine / talk / use → on_use event),
+  `doc.timers` (wait; emits on_done at 0), `doc.events` (happenings;
+  emit → take for many systems), `walker.anim` / `walker.expression`
+  (state → animation / expression). The dump is the bus — no callback soup.
+- **Picture** — HDR frame + threshold bloom, FXAA, IBL, PCF shadows, water
+  (Fresnel + IBL reflection), LOD / GPU instancing, ACES tonemap. Full MToon
+  (2-step shade, rim, outline, matcap/normal), VRM 0/1 expression presets,
+  SpringBone with colliders, VRMC_node_constraint, firstPerson annotations.
+- **Mobile / Wasm** — the same shared runtime builds to wasm / Android / iOS
+  (Crest Isle capsule collectathon; driving demo). `kagra-core` (the pip demo)
+  is a separate renderer — do not merge the two.
+
+## Let your AI agent build the game
+
+KAGRA's development loop is designed for AI coding agents, not just humans:
+
+- **[AGENTS.md](AGENTS.md)** — rules for any agent (Claude Code, Cursor, Windsurf, ...)
+- **API index** — [`docs/API_INDEX.md`](docs/API_INDEX.md), generated from the AST, so agents search instead of guessing signatures
+- **Agent eyes** — `kagra.annotate` (click → numbers) and `kagra.debug_trace` (foot vs terrain JSONL)
+- **Headless verify** — `python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json` (world assertions + shared wgpu 30 offscreen smoke)
+- **MCP server** — `tools/mcp_kagra/server.py`: `kagra_api_search` / `kagra_env` / `kagra_resolve_asset` / `kagra_verify` / `kagra_render`
+- **Build logs** — [`docs/agent-runs/`](docs/agent-runs/README.md): agent-built games (Heart Catch, Switch Room, Dodge Room) and engine slices (adhesive API, HDR + bloom, FXAA, full MToon, expressions, VRM rest)
+
+## Where the engine sits
+
+[docs/ROADMAP.ja.md](docs/ROADMAP.ja.md): **100% = an agent ships a normal indie game with no human looking at the screen.** Now ~40% — M0–M2 closed, collectathon is the first M3 genre, the adhesive API and the picture base are in. Old "63%" is archived. Do not call this 80% yet.
+
+## The pip demo (old renderer, kagra-core)
 
 ```bash
 pip install kagra
@@ -12,168 +63,33 @@ python -m kagra
 python -m kagra --vrm me.vrm --song my.wav
 ```
 
-That's it. The first run downloads a sample VRM (Alicia Solid, once) and plays a synthesized song with lipsync and a bundled dance. ESC to quit. Your own model is the third line — [recipe](docs/recipes/own-vrm.md).
-
-On Windows cmd, `'-m' is not recognized` means an extra `>` was typed. Use `py -3 -m kagra` or `kagra.cmd`.
-
-| | KAGRA | Unity + UniVRM | VSeeFace | three-vrm |
-|---|---|---|---|---|
-| Install | `pip install kagra` (~5MB wheel, no Rust) | Unity editor + UniVRM package | download the app | `npm` + a WebGL/WebGPU page |
-| Code to sing & dance | 2 commands, or ~15 lines of Python | scene + C# + Animator | GUI, no code | JavaScript + assets |
-| License | MIT | Unity + UniVRM licenses | proprietary app | MIT |
-| AI hook | Python. TTS stays outside the wheel. `kagra.brain` is in 0.1.4 (models are not) | editor plugins | limited | JavaScript |
-
-Facts only. UniVRM and three-vrm are the VRM implementations we measure against; VSeeFace is the desktop tracker people actually open.
-
-```python
-import kagra
-from kagra.camera3d import Camera3D
-
-kagra.init()
-cam = Camera3D(); cam.use_showcase()
-av = None
-
-def ready():
-    global av
-    kagra.apply_live_look()
-    av = kagra.avatar(str(kagra.ensure_vrm()))
-    av.dance(); av.sing()
-
-def update(dt):
-    av.update(dt)
-    cam.update(kagra.get_engine(), dt)
-
-def draw():
-    kagra.cls(8, 6, 18)
-    kagra.draw_vrm(av.vrm_id)
-    kagra.draw_vignette()
-
-kagra.run(update, draw, on_ready=ready)
-```
-
-Use your own model with `kagra.avatar("/path/to/me.vrm")` or `assets/Emma.vrm`. Use your own song with `av.sing("song.wav")`. Drop Mixamo `.fbx` on `av.dance("ymca.fbx")` or `python -m kagra --dance ymca.fbx`. A [VRM Animation](https://vrm.dev/en/vrma/) (`.vrma`) is the same one-liner — same clip, any VRM. Clips from [text-to-vrma](https://github.com/Kirakun0328/text-to-vrma) work as-is (fingers + expressions + LookAt). Drop a Sketchfab hall the same way: `kagra.stage("venue.glb")` (or `--stage` / a PNG `--backdrop`).
-
-## Install
-
-**Python 3.10+.** Wheels include the Rust renderer — you do **not** need a Rust toolchain.
-
-```bash
-python -m venv .venv
-# Windows: .venv\Scripts\activate
-# macOS / Linux:
-source .venv/bin/activate
-
-pip install kagra
-python -m kagra
-```
-
-`pip install kagra` is **0.1.4** and is the product: renderer, VRM, sing, dance, `.vrma`, lipsync, look-at, IK, expressions, SpringBone, plus the 3D play surface (`Prop` / `Walk` / `World`), local lights, indoor/outdoor shadows, normal maps, AABB crates, USB/XInput on the EventLoop, and `kagra.brain`. No Rust. Face tracking, virtual camera, and mic are extras. LLM models are not in the wheel.
-
-If you run `python -m kagra` from a checkout that contains a `kagra/` folder, Python imports that folder instead of the installed wheel. The command now prints the escape hatch (`cd %TEMP%` / `maturin develop`). `No module named kagra.__main__` is the older local package — run from another directory:
-
-```powershell
-cd $env:TEMP
-python -m kagra
-```
-
-| | |
-|---|---|
-| Windows / Linux | `pip install kagra` |
-| macOS | from source (`maturin develop`) until CI macos wheels are published |
-| Webcam face tracking | `pip install "kagra[facetrack]"` (MediaPipe + OpenCV) |
-| Virtual camera (OBS) | `pip install "kagra[stream]"` then `python -m kagra --loop --stream` |
-| Mic lipsync | `pip install "kagra[mic]"` |
-| Contributors | `pip install maturin && maturin develop` |
-
-Scene scripts (`examples/vrm_*.py`) live in the git repo. `pip` gives you `import kagra`.
-
-## What you get
-
-- **VRM** — GPU skinning, SpringBone (with colliders), full MToon (2-step shade, rim, outline, matcap/normal), look-at, lipsync, IK, expression presets. Same-path `kagra.avatar()` clones share mesh/texture/MToon (`vrm_gpu_stats()`)
-- **3D play** — `Prop` / `Walk` / `sky` / `room` / `World` (`World3D` is the same type). `world.query` / `dump` / `load` read the world without a screenshot. Four local lights (`slot=0..3`), indoor umbra, 2-cascade outdoor shadows, tangent-space normal maps. AABB crates fall, stack, and `Walk` stands on them. USB/XInput is read on the EventLoop (`gilrs`); tests use `inject_pad`
-- **Adhesive API (shared wgpu 30 mainline)** — `prop.interact` (examine/talk/use → on_use event), `doc.timers` (wait; emits on_done at 0), `doc.events` (happenings; emit → take for many systems), `walker.anim` / `walker.expression` (state → animation/expression). Genre logic stays in the game
-- **Brain** — `kagra.brain("kairi"|"ollama"|"openai")`. Hosted kairi needs `KAIRI_API_TOKEN`. Models are not in the wheel
-- **Agent loop** — API index, `kagra.verify`, MCP tools, golden renders
-- **Picture (shared wgpu 30)** — HDR frame + threshold bloom, FXAA, IBL, PCF shadows, water (Fresnel + IBL reflection), LOD/GPU instancing, ACES tonemap
-- **Mobile / Wasm** — `kagra-shared` + `mobile/` is a **separate renderer** from Python `kagra-core`. Corridor Haul (driving) plus a Crest Isle collectathon slice (Kenney-style capsule, **not VRM**). Do not merge the two renderers
-
-Tilemaps, ECS, and the 2D editor are on the shelf ([`examples/archive/`](examples/archive/)). They are not the 3D headline.
-
-Where the engine sits: [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md). 100% = an agent ships a normal indie game with no human looking at the screen. Now ~40% (M0–M2 closed; collectathon is the first M3 genre; the adhesive API and the picture base are in). Old "63%" is archived. Do not call this 80% yet.
-
-## Let your AI agent build the game
-
-KAGRA's development loop is designed for AI coding agents, not just humans. An agent can search the API, write a scene, and **verify it headlessly** — no human looking at the screen:
-
-- **[AGENTS.md](AGENTS.md)** — rules for any agent (Claude Code, Cursor, Windsurf, ...). Cursor picks up the same rules via `.cursor/skills/`
-- **Agent eyes** — `kagra.annotate` (click → numbers) and `kagra.debug_trace` (foot vs terrain JSONL). Not a visual editor
-- **API index** — [`docs/API_INDEX.md`](docs/API_INDEX.md) is generated from the AST, so agents search instead of guessing signatures
-- **Headless verify** — `python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json` closes the loop in CI or a subprocess (world assertions + shared wgpu 30 offscreen smoke)
-- **MCP server** — `tools/mcp_kagra/server.py`: `kagra_api_search` / `kagra_env` / `kagra_resolve_asset` / `kagra_verify` / `kagra_render`
-
-`examples/vrm_orb_rush.py` is the reference game (public APIs only; no generation log). Logged agent-built games live in [`docs/agent-runs/`](docs/agent-runs/README.md): Heart Catch, Switch Room, and Dodge Room (`examples/vrm_dodge_room.py` — survive falling boxes; written by a second agent from `AGENTS.md` + a one-line prompt), plus build logs for the adhesive API, HDR + bloom, FXAA, full MToon, expressions, and the remaining VRM slices.
-
-## Not yet
-
-Honesty list. Missing on purpose, or not the bar yet:
-
-- **macOS wheels** — build from source until a Mac can verify them
-- **30-second stranger demos** — Pretty Room / Overworld / Prop Garden APIs are in 0.1.4; the recordings are not yet the bar
-- **Real-hardware gamepad 30s** — USB/XInput poll is in the wheel; CI uses `inject_pad`. We do not claim a pad in your hand
-- **YouTube / Twitch chat APIs** — write `{user,text}` JSONL yourself (`ChatInbox`)
-- **NDI / RTMP** — OBS window capture still works; virtual cam is the extra
-- **Autopilot / unattended safety** — not shipped
-- **VOICEVOX / Irodori-TTS** — not bundled. VOICEVOX recipe: [docs/recipes/voicevox.md](docs/recipes/voicevox.md)
-- **Pointer lock** — requested for first-person; the OS may refuse
-- Song WAV and `.vrma` stay out of the wheel (~5MB install). First run downloads the sample VRM
-
-Recipes: [own VRM](docs/recipes/own-vrm.md) · [dance / VRMA](docs/recipes/motion.md) · [VOICEVOX](docs/recipes/voicevox.md) · [OBS / stream](docs/recipes/stream.md) · [mascot](docs/recipes/mascot.md) · [brain / kairi](docs/recipes/ai-brain.md) · [agent game](docs/recipes/agent-game.md). Review: [docs/REVIEW.ja.md](docs/REVIEW.ja.md). Roadmap: [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md) (final goal: first-recall — “if you give an AI a body in Python, it’s KAGRA”).
-
-See [docs/PUBLISHING.md](docs/PUBLISHING.md) to cut a release.
-
-## Stable core
-
-These names are what the README and `python -m kagra` rely on. We will not break them without a major version:
-
-`init` · `run` · `quit` · `Scene` · `avatar` · `ensure_vrm` · `draw_vrm` · `cls` · `font` · `text` · `fill` · `key` · `pressed` · `Camera3D`
-
-Everything else in [`docs/API_INDEX.md`](docs/API_INDEX.md) is available but may still move.
+The original "Python 数行で VRM が歌って踊る" demo — still on PyPI (0.1.4).
+`kagra-core` (wgpu 0.19 / RendererV2) stays for leftover VRM demos; new games
+start on the shared wgpu 30 mainline. Own model: `kagra.avatar("/path/to/me.vrm")`;
+own song: `av.sing("song.wav")`; Mixamo `.fbx` / `.vrma` dance: `av.dance("ymca.fbx")`.
 
 ## Samples
 
-Clone the repo for these scripts. `pip install kagra` is enough for `import kagra`.
+Clone the repo for these. The mainline first:
 
 ```bash
-python -m kagra                          # sing & dance
-python -m kagra --loop --stream          # HUD + virtual cam (needs kagra[stream])
-python examples/vrm_orb_rush.py          # reference game
-python examples/vrm_heart_catch.py       # 3-lane catch (agent-run log)
-python examples/vrm_switch_room.py       # boxed room, camera follow
-python examples/vrm_dodge_room.py        # falling boxes, survive (agent-run log)
-python examples/vrm_relic_run.py          # island relic collect 30s (agent-run log)
-python examples/vrm_open_world.py         # leftover VRM Crest Isle (RendererV2)
-python -m kagra.play_world                # official Crest play: wgpu 30 window walking a dump (capsule, WASD)
-python -m kagra.play_world kagra-shared/tests/fixtures/emma_walker_world.json  # VRoid Emma WASD walk (wgpu 30)
+python -m kagra.play_world                # official Crest play: title → play → result (capsule, WASD)
+python -m kagra.play_world kagra-shared/tests/fixtures/emma_walker_world.json  # VRoid Emma walk (wgpu 30)
 python -m kagra.play_world kagra-shared/tests/fixtures/interact_fish_world.json  # adhesive-API demo (J at the shore → cast → 3s → bite)
 python -m kagra.render_world kagra-shared/tests/fixtures/crest_isle_world.json scratch/crest.png  # offscreen render (bloom on)
 python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json        # headless verify (world + offscreen)
 python -m kagra.verify examples/verify_scenarios/interact_fish_smoke.json       # adhesive-API verify
-python examples/vrm_multi_avatar.py       # N VRM clones; GPU share + FPS HUD (`KAGRA_AVATARS=8`)
 # Crest Isle mobile (kagra-shared; not VRM — Kenney-style capsule)
 ./scripts/build_wasm.sh && python -m http.server -d kagra-shared/www 8000
 # → http://localhost:8000/crest.html
 ./scripts/build_android_native.sh && cd mobile/android && gradle :app:assembleDebug
-python examples/vrm_prop_garden.py       # Prop / Walk / sky (play surface)
-python examples/vrm_pretty_room.py       # enclosed room / spot / IBL
-python examples/vrm_overworld.py         # tiled island — city JSON, mesh ramp, crates
-python examples/vrm_kairi_chat.py        # VRM talks via kairi.onrender.com (needs KAIRI_API_TOKEN)
-python examples/vrm_vrma.py              # .vrma (or a generated wave)
-python examples/vrm_stream.py            # OBS / JSONL chat
 ```
 
-Several VRM in one scene: `python examples/vrm_multi_avatar.py` (or `KAGRA_AVATARS=8`). Same-path clones share mesh/texture/MToon; `kagra.vrm_gpu_stats()` is the headless metric (`vertex_buffers * live == primitives`). Crest Isle stays one player. Desktop FPS is the HUD; CI/cloud boxes without a GPU adapter record the share invariant instead of a frame-time number.
-
-Legacy 2D / tilemap / editor demos: [`examples/archive/`](examples/archive/).
+The pip demo (`kagra-core` / RendererV2) scripts: `examples/vrm_*.py` —
+`python -m kagra` (sing & dance), `examples/vrm_orb_rush.py` (reference game),
+`vrm_heart_catch.py` / `vrm_switch_room.py` / `vrm_dodge_room.py` /
+`vrm_relic_run.py` (agent-run logs). Legacy 2D / tilemap / editor demos:
+[`examples/archive/`](examples/archive/).
 
 ## Agent / from source
 
@@ -192,6 +108,9 @@ MCP (Cursor): `.cursor/mcp.json` → `kagra_api_search` / `kagra_verify` / `kagr
 
 MIT — [LICENSE](LICENSE).
 
-Sample VRM downloaded by the demo is Alicia Solid (ニコニ立体ちゃん) © Dwango, used under [their terms](https://3d.nicovideo.jp/alicia/rule.html). Credit the character if you post screenshots.
+Sample VRM downloaded by the pip demo is Alicia Solid (ニコニ立体ちゃん) © Dwango,
+used under [their terms](https://3d.nicovideo.jp/alicia/rule.html). Credit the
+character if you post screenshots.
 
-KAGRA is named after the Kamioka Gravitational Wave Detector. Solid, precise, and built for fun.
+KAGRA is named after the Kamioka Gravitational Wave Detector. Solid, precise,
+and built for fun.
