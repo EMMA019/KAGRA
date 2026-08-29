@@ -18,8 +18,9 @@ import json
 import math
 from pathlib import Path
 
-from kagra.audio import se  # noqa: F401  (再生は Windows winsound、他は no-op)
+from kagra.audio import play_wav, se  # noqa: F401  (再生は Windows winsound、他は no-op)
 from kagra.gameloop import Scene, draw_world, mouse_clicked, mouse_pos, was_pressed
+from kagra.tts import VOWEL_TO_EXPRESSION, tts_ping, tts_speak  # noqa: F401
 from kagra.ui2d import bar, choice_menu, list_lines, merge, message
 
 W, H = 480, 300
@@ -39,6 +40,9 @@ class BunnyGarden(Scene):
         saved = self._load() if (start_day <= 1 and self.save_path.exists()) else None
         self.game = saved if saved is not None else self._new_game()
         self._rng = 0xC0FFEE + self.game["day"] * 7919
+        # TTS リップシンク（VOICEVOX があれば）。(母音タイミング, 開始clock)
+        self._lips: list[tuple[str, float, float]] | None = None
+        self._lips_t0 = 0.0
         self.world = self._build_world()
         self.sel = 0
         self.state = "msg"          # msg | menu | drink | end
@@ -88,10 +92,37 @@ class BunnyGarden(Scene):
         if self.queue:
             self.message = self.queue.pop(0)
             self.state = "msg"
+            self._speak(self.message)
         else:
             self.message = ""
             self.state = "menu"
             self.sel = 0
+            self._lips = None
+
+    def _speak(self, text: str) -> None:
+        """VOICEVOX があれば音声 + リップタイミングを仕込む（無ければ黙って表示）。"""
+        self._lips = None
+        try:
+            if not tts_ping():
+                return
+            wav, moras = tts_speak(text)
+            if not moras:
+                return
+            play_wav(wav)
+            self._lips = moras
+            self._lips_t0 = self.clock
+        except Exception:
+            self._lips = None
+
+    def _lipsync_expression(self) -> str | None:
+        """現在のモーラ窓に対応する VRM 表情（口の形）。"""
+        if not self._lips:
+            return None
+        t = self.clock - self._lips_t0
+        for vowel, t0, t1 in self._lips:
+            if t0 <= t < t1:
+                return VOWEL_TO_EXPRESSION.get(vowel)
+        return None
 
     def _drain(self) -> None:
         """メッセージ待ちを飛ばしてメニューへ（ヘッドレス / verify 用）。"""
@@ -313,8 +344,9 @@ class BunnyGarden(Scene):
                  # 頭を左右に見渡す（カメラ方向を中心に）
                  "look_yaw": 0.14 * math.sin(self.clock * 1.2),
                  "look_pitch": 0.06,
-                 # 好感度が高いほど表情が明るくなる
-                 "expression": "joy" if self._aff() >= 70 else "smile"},
+                 # 好感度が高いほど表情が明るくなる。TTS リップ中は口の形
+                 "expression": self._lipsync_expression()
+                 or ("joy" if self._aff() >= 70 else "smile")},
             ],
             "lights": [
                 {"id": "light:warm", "type": "light", "name": "warm", "position": [0, 2.8, 0.8],
