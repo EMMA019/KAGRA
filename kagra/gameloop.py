@@ -257,6 +257,9 @@ def run(
     root.bind("<ButtonRelease-1>", _on_mouse_up)
     root.bind("<ButtonRelease-2>", _on_mouse_up)
     root.bind("<ButtonRelease-3>", _on_mouse_up)
+    # Windows ではコンソールにフォーカスが残ることがあるので前面化 + 強制フォーカス
+    root.lift()
+    root.focus_force()
     root.focus_set()
 
     frame_ms = max(1, int(1000.0 / fps))

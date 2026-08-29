@@ -1460,6 +1460,11 @@ impl Renderer {
     ) -> Result<(), String> {
         if self.meshes.is_empty() {
             self.upload_world_meshes(doc)?;
+        } else {
+            // ライブ tick: walker glTF は clip/hair/morph/look で毎フレーム
+            // 再スキンする（初回アップロードのみだと T-pose のまま固定）。
+            // 静的 dump（glTF スロット無し）では実質 no-op。
+            self.update_world_gltf(doc)?;
         }
         let scene = doc.compile_scene(self.aspect());
         self.render_frame(Some(&scene), hud)

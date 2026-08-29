@@ -31,14 +31,17 @@ def main() -> None:
     save_path: Path | None = None
     if "--save" in sys.argv:
         save_path = Path(sys.argv[sys.argv.index("--save") + 1])
-
     if headless:
         idx = sys.argv.index("--headless")
         out = sys.argv[idx + 1] if len(sys.argv) > idx + 1 else "scratch/torneko.png"
         Path(out).parent.mkdir(parents=True, exist_ok=True)
-        turns = int(sys.argv[sys.argv.index("--turns") + 1]) if "--turns" in sys.argv else 200
+        # ヘッドレスはユーザーの既定セーブ（~/.kagra）を読まない。構築前に決める。
+        if save_path is None:
+            save_path = Path(out).with_suffix(".save.json")
 
-        game = Torneko(seed=seed, save_path=save_path)
+    game = Torneko(seed=seed, save_path=save_path)
+    if headless:
+        turns = int(sys.argv[sys.argv.index("--turns") + 1]) if "--turns" in sys.argv else 200
         steps = scripted_policy(game, turns)
         game._save()
         game.draw()

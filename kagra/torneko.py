@@ -450,11 +450,13 @@ class Torneko(Scene):
             self._dirty = False
         p = self.player
         parts = [
-            message(f"B{self.floor}F   HP {p['hp']}/{p['max_hp']}  攻 {p['atk']}", 8, 8, 190, size=12,
+            message(f"B{self.floor}F   HP {p['hp']}/{p['max_hp']}  攻 {p['atk']}", 10, 10, 210, size=13,
                     color=[240, 235, 220, 255]),
-            bar(210, 10, 142, 7, ratio=p["hp"] / p["max_hp"], color=[240, 110, 100, 255]),
-            list_lines([f"道具: {len(self.inventory)}   [X]メニュー", f"seed {self.seed}"],
-                       x=210, y=22, size=9, color=[170, 170, 160, 255]),
+            bar(230, 12, 100, 8, ratio=p["hp"] / p["max_hp"], color=[240, 110, 100, 255]),
+            list_lines(
+                [f"WASD/矢印 移動 / Z 攻撃 / X 道具", f"seed {self.seed}  B{self.floor}F"],
+                x=340, y=10, size=10, color=[180, 180, 168, 255],
+            ),
         ]
         if self.state == "menu":
             parts.append(

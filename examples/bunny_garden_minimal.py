@@ -47,13 +47,14 @@ def main() -> None:
         Path(out).parent.mkdir(parents=True, exist_ok=True)
         if "--days" in sys.argv:
             days = int(sys.argv[sys.argv.index("--days") + 1])
+        # ヘッドレスはユーザーの既定セーブ（~/.kagra）を読まない。構築前に決める。
+        if save_path is None:
+            save_path = Path(out).with_suffix(".save.json")
     if "--save" in sys.argv:
         save_path = Path(sys.argv[sys.argv.index("--save") + 1])
 
     scene = BunnyGarden(save_path=save_path)
     if headless:
-        if save_path is None:
-            scene.save_path = Path(out).with_suffix(".save.json")
         for _ in range(days):
             _headless_policy(scene)
             scene._next_day()   # 閉店確定 → 翌日（対話プレイと同じ流れ）

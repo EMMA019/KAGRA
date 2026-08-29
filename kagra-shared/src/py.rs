@@ -206,6 +206,16 @@ fn parse_hud(hud_json: Option<&str>) -> PyResult<crate::scene::DrawList> {
     Ok(list)
 }
 
+/// オフスクリーンレンダラのプロセス内キャッシュ。
+///
+/// 毎フレーム `Renderer::new_offscreen` を呼ぶと wgpu デバイス生成（数百 ms）
+/// が毎回走り、Python ゲームマスターの窓が数 FPS になる。サイズが同じ間は
+/// 1 個の Renderer を使い回す（ゲームループは GIL 保持なので排他は不要だが、
+/// 念のため Mutex で守る）。
+static CACHED_RENDERER: once_cell::sync::Lazy<
+    std::sync::Mutex<Option<(u32, u32, crate::render::Renderer)>>,
+> = once_cell::sync::Lazy::new(|| std::sync::Mutex::new(None));
+
 /// dump JSON を shared wgpu 30 でオフスクリーン描画し、RGBA8 を bytes で返す。
 /// `hud_json`（省略可）: `{"quads":[{x,y,w,h,color}], "texts":[{text,x,y,size,color,align}]}`。
 #[pyfunction(name = "render_world_doc")]
@@ -218,7 +228,25 @@ fn render_world_doc_py(
 ) -> PyResult<pyo3::Py<pyo3::types::PyBytes>> {
     let doc = WorldDoc::from_json(json).map_err(pyerr)?;
     let hud = parse_hud(hud_json)?;
-    let rgba = crate::render::render_world_doc_with_hud(&doc, width, height, &hud).map_err(pyerr)?;
+    let rgba = {
+        let mut guard = CACHED_RENDERER
+            .lock()
+            .map_err(|_| pyerr("cached renderer lock poisoned"))?;
+        let need_new = match &*guard {
+            Some((w, h, r)) => *w != width || *h != height || !r.is_offscreen(),
+            None => true,
+        };
+        if need_new {
+            let r =
+                pollster::block_on(crate::render::Renderer::new_offscreen(width, height))
+                    .map_err(pyerr)?;
+            *guard = Some((width, height, r));
+        }
+        let (_, _, renderer) = guard.as_mut().expect("renderer present");
+        renderer
+            .render_world_doc_with_hud(&doc, &hud)
+            .map_err(pyerr)?
+    };
     Ok(pyo3::types::PyBytes::new_bound(py, &rgba).unbind())
 }
 

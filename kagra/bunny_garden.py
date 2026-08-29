@@ -21,7 +21,7 @@ from kagra.audio import se  # noqa: F401  (再生は Windows winsound、他は n
 from kagra.gameloop import Scene, draw_world, mouse_clicked, mouse_pos, was_pressed
 from kagra.ui2d import bar, choice_menu, list_lines, merge, message
 
-W, H = 360, 200
+W, H = 480, 300
 CHAR = "ミミ"
 SAVE_DEFAULT = Path.home() / ".kagra" / "bunny_garden.json"
 
@@ -43,7 +43,7 @@ class BunnyGarden(Scene):
         self.message = ""
         self.queue: list[str] = []
         self._choice_rects: list[tuple[float, float, float, float]] = []
-        self._push(f"{self.game['day']}日目、営業開始！")
+        self._push(f"{self.game['day']}日目、営業開始！  ↑↓ で選んで Z で決定")
         self._show_next()
 
     # ── 状態 ──────────────────────────────────────────────────────────────
@@ -192,7 +192,13 @@ class BunnyGarden(Scene):
     # ── 入力 ──────────────────────────────────────────────────────────────
 
     def _confirm(self) -> bool:
-        return was_pressed("z") or was_pressed("j") or was_pressed("return")
+        return (
+            was_pressed("z")
+            or was_pressed("j")
+            or was_pressed("return")
+            or was_pressed("space")
+            or mouse_clicked(1)  # クリックでも進められる
+        )
 
     def _nav(self, n: int) -> None:
         if was_pressed("down") or was_pressed("s"):
@@ -235,8 +241,7 @@ class BunnyGarden(Scene):
 
     # ── 世界と描画 ────────────────────────────────────────────────────────
 
-    @staticmethod
-    def _build_world() -> dict:
+    def _build_world(self) -> dict:
         return {
             "version": 1,
             "half": 8.0,
@@ -246,47 +251,84 @@ class BunnyGarden(Scene):
             "coins": 0,
             "player": None,
             "props": [
+                # 床とカーペット
                 {"id": "prop:floor", "type": "prop", "name": "floor", "position": [0, -0.5, 0],
-                 "model": "box", "scale": [16, 1, 12], "enabled": True, "color": [72, 50, 40], "roughness": 0.9},
-                {"id": "prop:counter", "type": "prop", "name": "counter", "position": [0, 0.55, 3.4],
-                 "model": "box", "scale": [5.0, 1.1, 0.7], "enabled": True, "color": [130, 88, 52], "roughness": 0.6},
-                {"id": "prop:lamp", "type": "prop", "name": "lamp", "position": [2.6, 1.3, 1.2],
-                 "model": "sphere", "scale": [0.35, 0.35, 0.35], "enabled": True, "color": [255, 214, 140], "metallic": 0.4, "roughness": 0.3},
-                {"id": "prop:lamp2", "type": "prop", "name": "lamp2", "position": [-2.6, 1.3, 1.2],
-                 "model": "sphere", "scale": [0.35, 0.35, 0.35], "enabled": True, "color": [255, 214, 140], "metallic": 0.4, "roughness": 0.3},
+                 "model": "box", "scale": [16, 1, 12], "enabled": True, "color": [58, 40, 30], "roughness": 0.95},
+                {"id": "prop:rug", "type": "prop", "name": "rug", "position": [0, -0.08, 0.2],
+                 "model": "box", "scale": [4.4, 0.12, 3.2], "enabled": True, "color": [110, 42, 52], "roughness": 0.9},
+                # 背面の壁と棚
+                {"id": "prop:backwall", "type": "prop", "name": "backwall", "position": [0, 1.4, -4.4],
+                 "model": "box", "scale": [15, 3.0, 0.5], "enabled": True, "color": [66, 38, 34], "roughness": 0.9},
+                {"id": "prop:shelf", "type": "prop", "name": "shelf", "position": [0, 1.9, -4.1],
+                 "model": "box", "scale": [6.0, 0.16, 0.6], "enabled": True, "color": [96, 62, 40], "roughness": 0.7},
+                # 棚のボトル
+                *[
+                    {"id": f"prop:bottle{i}", "type": "prop", "name": "bottle", "position": [x, 2.12, -4.1],
+                     "model": "cylinder", "scale": [0.14, 0.4, 0.14], "enabled": True,
+                     "color": c, "metallic": 0.1, "roughness": 0.3}
+                    for i, (x, c) in enumerate([(-2.2, [150, 60, 70]), (0.0, [60, 150, 90]), (2.2, [230, 190, 80])])
+                ],
+                # カウンター（手前）と客席スツール
+                {"id": "prop:counter", "type": "prop", "name": "counter", "position": [0, 0.45, 3.4],
+                 "model": "box", "scale": [5.0, 0.9, 0.7], "enabled": True, "color": [110, 74, 44], "roughness": 0.6},
+                {"id": "prop:stool1", "type": "prop", "name": "stool", "position": [1.9, 0.14, 2.5],
+                 "model": "box", "scale": [0.5, 0.28, 0.5], "enabled": True, "color": [80, 56, 40], "roughness": 0.7},
+                {"id": "prop:stool2", "type": "prop", "name": "stool", "position": [-1.9, 0.14, 2.5],
+                 "model": "box", "scale": [0.5, 0.28, 0.5], "enabled": True, "color": [80, 56, 40], "roughness": 0.7},
+                # ランプ
+                {"id": "prop:lamp", "type": "prop", "name": "lamp", "position": [2.6, 1.5, 0.6],
+                 "model": "sphere", "scale": [0.4, 0.4, 0.4], "enabled": True, "color": [255, 214, 140], "metallic": 0.4, "roughness": 0.3},
+                {"id": "prop:lamp2", "type": "prop", "name": "lamp2", "position": [-2.6, 1.5, 0.6],
+                 "model": "sphere", "scale": [0.4, 0.4, 0.4], "enabled": True, "color": [255, 214, 140], "metallic": 0.4, "roughness": 0.3},
             ],
             "walkers": [
-                {"id": "walker:mimi", "type": "walker", "name": CHAR, "position": [0, 0, 0.6],
+                {"id": "walker:mimi", "type": "walker", "name": CHAR, "position": [0, 0, 0.9],
                  "yaw": 0.0, "face": 0.0, "on_ground": True, "model": "capsule",
-                 "gltf": "assets/Emma.vrm", "clip": 0.0, "anim": "idle", "expression": "smile"},
+                 "gltf": "assets/Emma.vrm",
+                 # clip を進めると歩行サイクルがその場でループ（待機の揺れ）。
+                 # rem_euclid で折り返すので長くても OK。
+                 "clip": (self.clock * 1.1) % 10.0,
+                 "anim": "walk",
+                 # カメラ（[0,1.7,5.6]）を見上げる頭の向き
+                 "look_yaw": 0.0, "look_pitch": 0.06,
+                 # 好感度が高いほど表情が明るくなる
+                 "expression": "joy" if self._aff() >= 70 else "smile"},
             ],
             "lights": [
-                {"id": "light:warm", "type": "light", "name": "warm", "position": [0, 2.6, 1.0],
-                 "kind": "point", "slot": 0, "intensity": 3.0, "radius": 6.0, "color": [1.0, 0.85, 0.65]},
+                {"id": "light:warm", "type": "light", "name": "warm", "position": [0, 2.8, 0.8],
+                 "kind": "point", "slot": 0, "intensity": 3.6, "radius": 7.0, "color": [1.0, 0.82, 0.62]},
+                {"id": "light:cool", "type": "light", "name": "cool", "position": [0, 2.4, -3.0],
+                 "kind": "point", "slot": 1, "intensity": 1.2, "radius": 6.0, "color": [0.6, 0.75, 1.0]},
             ],
             "cameras": [
                 {"id": "camera:main", "type": "camera", "name": "main", "position": [0, 1.7, 5.6],
-                 "target": [0, 0.95, 0.0], "fov": 50},
+                 "target": [0, 1.05, 0.5], "fov": 42},
             ],
             "heightfield": None,
+            "ibl": 0.5,
         }
 
     def draw(self) -> None:
+        # キャラが clip アニメするので毎フレーム世界を再構築（10ms 程度）
+        self.world = self._build_world()
         g = self.game
         parts = [
-            message(f"DAY {g['day']}    所持金 {g['money']}G", 8, 8, 200, size=11, color=[220, 220, 205, 255]),
-            bar(220, 10, 132, 8, ratio=self._aff() / 100.0, label=f"{CHAR} 好感度", color=[255, 150, 170, 255]),
+            message(f"DAY {g['day']}    所持金 {g['money']}G", 10, 10, 260, size=14, color=[240, 236, 220, 255]),
+            bar(280, 12, 190, 9, ratio=self._aff() / 100.0, label=f"{CHAR} 好感度", color=[255, 150, 170, 255]),
+            list_lines(
+                [f"在庫: {('  '.join(f'{n}x{c}' for n, c in g['stock'].items() if c > 0) or 'なし')}",
+                 "↑↓ 選択 / Z 決定 / X 戻る / クリック可"],
+                x=10, y=42, size=10, color=[180, 180, 168, 255],
+            ),
         ]
-        stock_str = "  ".join(f"{n}x{c}" for n, c in g["stock"].items() if c > 0) or "なし"
-        parts.append(list_lines([f"在庫: {stock_str}"], x=8, y=30, size=9, color=[170, 170, 160, 255]))
         if self.state == "menu":
             items = self._choices()
-            m = choice_menu(items, selected=self.sel, x=216, y=96, w=136)
+            m = choice_menu(items, selected=self.sel, x=300, y=120, w=170, size=15)
             self._choice_rects = [(q["x"], q["y"], q["w"], q["h"]) for q in m["quads"]]
             parts.append(m)
         elif self.state == "drink":
-            parts.append(choice_menu(self._drink_items(), selected=self.sel, x=216, y=96, w=136))
+            parts.append(choice_menu(self._drink_items(), selected=self.sel, x=300, y=120, w=170, size=15))
         # メッセージウィンドウは常時（空なら隠れる）
         if self.message:
-            parts.append(message(self.message, 8, H - 74, 344, size=13))
+            parts.append(message(self.message, 10, H - 92, 460, size=16))
         self._canvas_png = draw_world(self.world, self.width, self.height, hud=merge(*parts))
