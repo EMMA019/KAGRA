@@ -15,6 +15,9 @@ default = []
 wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:web-sys", "dep:wasm-bindgen-futures"]
 # wgpu レンダラ。無効ならセッション／入力／シーン記述だけの純ロジック lib になる。
 render = ["dep:wgpu", "dep:raw-window-handle", "dep:pollster"]
+# Python バインディング（PyO3）。render を伴うので、Python ゲームマスターが
+# dump → WorldPlay.tick → render_world_doc を 1 プロセスで呼べる。
+python = ["dep:pyo3", "pyo3/extension-module", "render"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -57,6 +60,8 @@ web-sys = { version = "0.3", optional = true, features = [
     "CssStyleDeclaration",
     "Element",
 ] }
+# Python バインディング。kagra-core と同じ 0.21 を使う（workspace 内で世代を増やさない）。
+pyo3 = { version = "0.21", optional = true }
 
 # ブラウザでは WebGPU を優先し、無ければ WebGL2 に落ちる。
 [target.'cfg(target_arch = "wasm32")'.dependencies]

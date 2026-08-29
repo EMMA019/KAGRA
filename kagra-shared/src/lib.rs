@@ -58,6 +58,9 @@ pub mod world_play;
 #[cfg(feature = "render")]
 pub mod render;
 
+#[cfg(feature = "python")]
+pub mod py;
+
 #[cfg(feature = "wasm")]
 pub mod wasm;
 

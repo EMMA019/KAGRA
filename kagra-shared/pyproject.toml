@@ -1,0 +1,15 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "kagra-shared"
+version = "0.1.0"
+description = "KAGRA shared runtime Python bindings — Python game master over the wgpu 30 mainline"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+[tool.maturin]
+manifest-path = "Cargo.toml"
+module-name = "kagra_shared"
+features = ["python"]
