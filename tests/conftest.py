@@ -16,6 +16,12 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 KAGRA_DIR = ROOT / "kagra"
 
+# 旧 examples の *_rules 定数を kagra/ モジュールのテスト（camera3d / look）
+# が参照するためのブリッジ。定数だけを読み、旧エンジン本体は使わない。
+OLD_EXAMPLES = ROOT / "old" / "examples"
+if str(OLD_EXAMPLES) not in sys.path:
+    sys.path.insert(0, str(OLD_EXAMPLES))
+
 
 def load_kagra_submodule(name: str):
     """`kagra.<name>` を __init__.py 経由なしでロードする。

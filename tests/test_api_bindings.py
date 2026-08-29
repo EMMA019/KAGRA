@@ -13,7 +13,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-ENGINE_RS = ROOT / "kagra-core" / "src" / "engine" / "mod.rs"
+# 旧エンジン（pip デモ）のバインディング整合性。ソースは old/ にアーカイブ。
+ENGINE_RS = ROOT / "old" / "kagra-core" / "src" / "engine" / "mod.rs"
 KAGRA_PY = ROOT / "kagra"
 
 

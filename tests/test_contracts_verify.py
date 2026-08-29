@@ -144,7 +144,7 @@ def test_load_scenario_dict():
 
 
 def test_load_open_world_scenario_has_world_expect():
-    sc = load_scenario(ROOT / "examples/verify_scenarios/open_world_smoke.json")
+    sc = load_scenario(ROOT / "old/examples/verify_scenarios/open_world_smoke.json")
     assert sc.expect_world
     assert sc.expect_world["path"].endswith("open_world_world.json")
     assert sc.expect_world["player.on_ground"] is True
@@ -189,7 +189,8 @@ looks_like_no_adapter = _render_world.looks_like_no_adapter
 
 
 def test_load_orb_rush_scenario_has_offscreen_expect():
-    sc = load_scenario(ROOT / "examples/verify_scenarios/orb_rush_smoke.json")
+    # orb_rush は旧エンジンの参照ゲーム。シナリオも旧/ にアーカイブ済み。
+    sc = load_scenario(ROOT / "old/examples/verify_scenarios/orb_rush_smoke.json")
     assert sc.expect_world
     assert sc.expect_offscreen
     assert sc.expect_offscreen["out"].endswith("orb_rush_shared.png")

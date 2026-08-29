@@ -1,11 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
-    "kagra-core",
     "kagra-shared",
 ]
-# kagra-core は Python 拡張。共有 lib は独立に wasm / NDK / iOS へ出す。
-default-members = ["kagra-core", "kagra-shared"]
+# kagra-core（旧エンジン wgpu 0.19）は old/kagra-core でスタンドアロンに
+# ビルドする（pip デモ用。新本線には含めない）。
+default-members = ["kagra-shared"]
 
 [profile.release]
 opt-level = 3

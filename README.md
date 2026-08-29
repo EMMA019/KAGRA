@@ -55,18 +55,21 @@ KAGRA's development loop is designed for AI coding agents, not just humans:
 
 [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md): **100% = an agent ships a normal indie game with no human looking at the screen.** Now ~40% — M0–M2 closed, collectathon is the first M3 genre, the adhesive API and the picture base are in. Old "63%" is archived. Do not call this 80% yet.
 
-## The pip demo (old renderer, kagra-core)
+## The pip demo (old engine — archived under `old/`)
+
+The original "Python 数行で VRM が歌って踊る" demo (0.1.4, PyPI) runs on the
+**old engine** (`kagra-core`, wgpu 0.19 / RendererV2). It is **past history**:
+source, examples and docs moved to [`old/`](old/README.md) so it never mixes
+with the new shared wgpu 30 mainline. `import kagra` still works (the compiled
+extension stays in `kagra/`), and the old demos run from `old/`:
 
 ```bash
-pip install kagra
-python -m kagra
-python -m kagra --vrm me.vrm --song my.wav
+# old engine (archived). New games must NOT start here.
+python -m kagra                                  # sing & dance (0.19 pip demo)
+python old/examples/vrm_orb_rush.py              # reference game (RendererV2)
+python old/examples/vrm_open_world.py            # leftover VRM Crest Isle (RendererV2)
+cd old/kagra-core && maturin develop --release   # rebuild the old extension (pip demo)
 ```
-
-The original "Python 数行で VRM が歌って踊る" demo — still on PyPI (0.1.4).
-`kagra-core` (wgpu 0.19 / RendererV2) stays for leftover VRM demos; new games
-start on the shared wgpu 30 mainline. Own model: `kagra.avatar("/path/to/me.vrm")`;
-own song: `av.sing("song.wav")`; Mixamo `.fbx` / `.vrma` dance: `av.dance("ymca.fbx")`.
 
 ## Samples
 
@@ -85,19 +88,15 @@ python -m kagra.verify examples/verify_scenarios/interact_fish_smoke.json       
 ./scripts/build_android_native.sh && cd mobile/android && gradle :app:assembleDebug
 ```
 
-The pip demo (`kagra-core` / RendererV2) scripts:
+Python game-master games (game logic is Python-only):
 
 ```bash
-python -m kagra                                  # sing & dance
-python examples/vrm_orb_rush.py                  # reference game
-python examples/vrm_heart_catch.py               # 3-lane catch (agent-run log)
-python examples/vrm_switch_room.py               # boxed room, camera follow
-python examples/vrm_dodge_room.py                # falling boxes (agent-run log)
-python examples/vrm_relic_run.py                 # island relic collect 30s (agent-run log)
-python examples/vrm_open_world.py                # leftover VRM Crest Isle (RendererV2)
+python examples/bunny_garden_minimal.py             # VRM talk: affection, days, save (ESC / × saves)
+python examples/torneko_minimal.py --seed 12345     # roguelike: seeded dungeon, turns, inventory
 ```
 
-Legacy 2D / tilemap / editor demos: [`examples/archive/`](examples/archive/).
+Old pip demo scripts: [`old/examples/`](old/examples/) — RendererV2 only.
+Legacy 2D / tilemap / editor demos: [`old/examples/archive/`](old/examples/archive/).
 
 ## Build a game in Python (game logic is Python-only)
 

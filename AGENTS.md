@@ -32,9 +32,9 @@ a game **without a human looking at the screen**.
 ```bash
 python tools/gen_api_index.py --check                              # API index drift
 python -m kagra.verify examples/verify_scenarios/blank_smoke.json  # headless smoke
-python -m kagra.verify examples/verify_scenarios/orb_rush_smoke.json
+python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json
 # shared wgpu 30 offscreen of a World.dump JSON (skips if no helper; not RendererV2)
-python -m kagra.render_world scratch/orb_rush_world.json scratch/orb_rush_shared.png
+python -m kagra.render_world scratch/crest_isle_world.json scratch/crest_shared.png
 # cargo run -p kagra-shared --features render --example offscreen -- W H out.png world dump.json
 # real desktop window (wgpu 30; WASD + look; skips without a display; not RendererV2)
 python -m kagra.play_world kagra-shared/tests/fixtures/crest_isle_world.json --seconds 8
@@ -54,10 +54,13 @@ pytest tests -m "not golden"                                       # pure-python
 
 ## Reference game
 
-`examples/vrm_orb_rush.py` is the reference game for this loop (title →
-countdown → play → result, procedural SFX, particles, difficulty curve)
-and is written against **public APIs only**. Prefer these over hand-rolled
-PNG/WAV/projection:
+`examples/vrm_orb_rush.py` is the **old** (RendererV2) reference game — archived
+at `old/examples/vrm_orb_rush.py`. The current reference for the agent loop is
+the Python game master: `examples/bunny_garden_minimal.py` / `examples/torneko_minimal.py`
+(game logic in Python, world is dump data, `kagra.gameloop` / `kagra.ui2d` /
+`kagra.audio`). The old public APIs below (`kagra.texture_from_fn` 等) still
+exist for the archived pip demo (`import kagra` keeps working), but **new games
+start on the shared wgpu 30 mainline**.
 
 - `kagra.texture_from_fn` / `kagra.tone` / `kagra.sound` — procedural art and SE
 - `kagra.set_listener` / `play_se(..., x=, y=, z=)` / `play_loop` — 3D SE (distance + stereo pan). `sound()` stays 2D
@@ -97,14 +100,16 @@ PNG/WAV/projection:
   ActionController overlays do not fight the walk arm swing.
   `dance()` is a full-body clip, not locomotion.
 - `kagra.avatar(path)` twice shares GPU mesh/texture/MToon. Measure with
-  `vrm_gpu_stats()`. Extra bodies: `examples/vrm_multi_avatar.py`
+  `vrm_gpu_stats()`. Extra bodies: `old/examples/vrm_multi_avatar.py`
   (Crest Isle stays one player)
 
-Verify: `examples/verify_scenarios/orb_rush_smoke.json`,
-`heart_catch_smoke.json`, `switch_room_smoke.json`,
-`dodge_room_smoke.json`, `prop_garden_smoke.json`,
-and `pretty_room_smoke.json`, `overworld_smoke.json`,
-`multi_avatar_smoke.json`, `collectathon_smoke.json`.
+Verify: `examples/verify_scenarios/collectathon_smoke.json`,
+`interact_fish_smoke.json` and the per-genre smokes (action_arena / action_side /
+box_hop / fps_range / td_lane / race_drive / fight_hitstun / novel_pages /
+stealth_hide / puzzle_pad / sports_goal / sim_meter / survival_meter /
+rhythm_beat / fish_cast / shop_buy / cook / sprite_card / rpg_town …).
+Old RendererV2 smokes (orb_rush / heart_catch / switch_room / …) are archived
+at `old/examples/verify_scenarios/`.
 Logged builds live in `docs/agent-runs/`.
 The API index front is VRM / 3D / agents; the shelf is legacy 2D.
 
@@ -113,5 +118,5 @@ The API index front is VRM / 3D / agents; the shelf is legacy 2D.
 - `docs/AGENT.md` — contracts table, CI-parity commands, Cargo.lock policy
 - `docs/API_INDEX.md` — the searchable public API
 - `docs/REVIEW.ja.md` — engine review vs three.js / three-vrm / Ursina
-- `docs/ROADMAP.ja.md` — 100% = 画面なしでインディーを出荷。80% はそのマイナス（ネット・破壊・布・乗り物・GI bake・DOTS・HDRP・人間エディタ・VRM-on-Wasm ほか）。今約 40%。M0–M2 閉じた。閉じたジャンルは collectathon。山は看板(#97) → 世界をデータに → ランタイム一つ → ゲームとして足りる → 出荷。旧 63% は `docs/archive/`。頭脳は `kagra.brain("kairi")`
+- `docs/ROADMAP.ja.md` — 100% = 画面なしでインディーを出荷。80% はそのマイナス（ネット・破壊・布・乗り物・GI bake・DOTS・HDRP・人間エディタ・VRM-on-Wasm ほか）。今約 40%。M0–M2 閉じた。閉じたジャンルは collectathon。山は看板(#97) → 世界をデータに → ランタイム一つ → ゲームとして足りる → 出荷。旧 63% は `old/docs-archive/`。頭脳は `kagra.brain("kairi")`
 - `docs/schemas/input_events.json` — touch / pointer input schema

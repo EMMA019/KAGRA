@@ -57,19 +57,21 @@ KAGRA の開発ループは人間だけでなく AI コーディングエージ�
 今約 40% — M0–M2 閉じた、collectathon が最初の M3 ジャンル、接着 API 4本と絵の
 土台が載った。旧「63%」はアーカイブ。80% とはまだ言わない。
 
-## pip デモ（旧レンダラー kagra-core）
+## pip デモ（旧エンジン — `old/` にアーカイブ）
+
+元祖「Python 数行で VRM が歌って踊る」デモ（0.1.4、PyPI）は**旧エンジン**
+（`kagra-core`、wgpu 0.19 / RendererV2）で動きます。**これは過去のもの**:
+ソース・examples・docs は [`old/`](old/README.md) に移し、新本線
+（shared wgpu 30）と混ざらないようにしました。`import kagra` は引き続き
+動きます（コンパイル済み拡張は `kagra/` に残置）。旧デモは `old/` から:
 
 ```bash
-pip install kagra
-python -m kagra
-python -m kagra --vrm me.vrm --song my.wav
+# 旧エンジン（アーカイブ）。新しいゲームはここから始めない。
+python -m kagra                                  # 歌って踊る（0.19 pip デモ）
+python old/examples/vrm_orb_rush.py              # 参照ゲーム（RendererV2）
+python old/examples/vrm_open_world.py            # 残置 VRM Crest Isle（RendererV2）
+cd old/kagra-core && maturin develop --release   # 旧拡張の再ビルド（pip デモ用）
 ```
-
-元祖「Python 数行で VRM が歌って踊る」デモ。今も PyPI（0.1.4）に出ています。
-`kagra-core`（wgpu 0.19 / RendererV2）は残置の VRM デモ用。**新しいゲームは
-shared wgpu 30 の本線で始めます。** 自分のモデルは `kagra.avatar("/path/to/me.vrm")`、
-自分の曲は `av.sing("song.wav")`、Mixamo `.fbx` / `.vrma` のダンスは
-`av.dance("ymca.fbx")`。
 
 ## サンプル
 
@@ -88,19 +90,15 @@ python -m kagra.verify examples/verify_scenarios/interact_fish_smoke.json       
 ./scripts/build_android_native.sh && cd mobile/android && gradle :app:assembleDebug
 ```
 
-pip デモ（`kagra-core` / RendererV2）の脚本:
+Python ゲームマスターのゲーム（ロジックは Python のみ）:
 
 ```bash
-python -m kagra                                  # 歌って踊る
-python examples/vrm_orb_rush.py                  # 参照ゲーム
-python examples/vrm_heart_catch.py               # 3 レーンキャッチ（エージェントログあり）
-python examples/vrm_switch_room.py               # 箱部屋、カメラ追従
-python examples/vrm_dodge_room.py                # 降ってくる箱を避ける（エージェントログあり）
-python examples/vrm_relic_run.py                 # 島の遺跡集め 30 秒（エージェントログあり）
-python examples/vrm_open_world.py                # 残置 VRM Crest Isle（RendererV2）
+python examples/bunny_garden_minimal.py             # VRM 会話: 好感度・日程・セーブ（ESC / × でセーブ）
+python examples/torneko_minimal.py --seed 12345     # ローグライク: seed ダンジョン・ターン・在庫
 ```
 
-レガシー 2D / タイルマップ / エディタ: [`examples/archive/`](examples/archive/)。
+旧 pip デモの脚本: [`old/examples/`](old/examples/) — RendererV2 専用。
+レガシー 2D / タイルマップ / エディタ: [`old/examples/archive/`](old/examples/archive/)。
 
 ## Python でゲームを作る（ゲームロジックはパイソンのみ）
 

@@ -24,8 +24,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 INIT = ROOT / "kagra" / "__init__.py"
-OPEN_WORLD = ROOT / "examples" / "vrm_open_world.py"
-RELIC_RUN = ROOT / "examples" / "vrm_relic_run.py"
+OPEN_WORLD = ROOT / "old" / "examples" / "vrm_open_world.py"
+RELIC_RUN = ROOT / "old" / "examples" / "vrm_relic_run.py"
 
 # Public functions Crest Isle / Relic Run call as ``kagra.X(...)`` (on_enter
 # plus the helpers on_enter invokes). Classes too.

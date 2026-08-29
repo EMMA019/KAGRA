@@ -16,7 +16,7 @@ No API token is stored in the repo. The workflow uses OIDC (`id-token: write`).
 
 ## Cut a release
 
-1. Bump `version` in `pyproject.toml` and `kagra-core/Cargo.toml` together.
+1. Bump `version` in `pyproject.toml` and `old/kagra-core/Cargo.toml` together.
 2. Add a `CHANGELOG.md` section.
 3. Tag and push:
 

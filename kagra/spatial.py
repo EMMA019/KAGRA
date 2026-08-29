@@ -1,4 +1,4 @@
-"""Listener-relative gain and stereo pan. GPU-free. Keep in sync with kagra-core/src/audio.rs."""
+"""Listener-relative gain and stereo pan. GPU-free. Keep in sync with old/kagra-core/src/audio.rs."""
 from __future__ import annotations
 
 import math

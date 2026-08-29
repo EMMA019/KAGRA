@@ -38,7 +38,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev pkg-config
 
       - name: Cargo test (no extension-module)
-        working-directory: kagra-core
+        working-directory: old/kagra-core
         run: cargo test --no-default-features --locked
 
   python-unit:

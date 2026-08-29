@@ -57,10 +57,10 @@ def test_same_path_share_invariant():
 
 
 def test_engine_shares_same_path_before_reupload():
-    engine = (ROOT / "kagra-core" / "src" / "engine" / "mod.rs").read_text(
+    engine = (ROOT / "old" / "kagra-core" / "src" / "engine" / "mod.rs").read_text(
         encoding="utf-8",
     )
-    vrm = (ROOT / "kagra-core" / "src" / "vrm.rs").read_text(encoding="utf-8")
+    vrm = (ROOT / "old" / "kagra-core" / "src" / "vrm.rs").read_text(encoding="utf-8")
     assert "fn instantiate" in vrm
     assert "cached_weights: None" in vrm
     assert "pub struct VrmGpuShare" in vrm
@@ -73,12 +73,12 @@ def test_engine_shares_same_path_before_reupload():
 
 
 def test_mesh3d_lru_is_not_the_vrm_path():
-    src = (ROOT / "kagra-core" / "src" / "renderer" / "gpu_helpers.rs").read_text(
+    src = (ROOT / "old" / "kagra-core" / "src" / "renderer" / "gpu_helpers.rs").read_text(
         encoding="utf-8",
     )
     assert "MESH3D_TEX_BG_MAX: usize = 256" in src
     assert "VRM skinned draws do **not** use this cache" in src
-    rend = (ROOT / "kagra-core" / "src" / "renderer" / "mod.rs").read_text(
+    rend = (ROOT / "old" / "kagra-core" / "src" / "renderer" / "mod.rs").read_text(
         encoding="utf-8",
     )
     assert "fn alloc_skin_palette" in rend
@@ -86,14 +86,14 @@ def test_mesh3d_lru_is_not_the_vrm_path():
 
 
 def test_crest_isle_stays_single_player():
-    src = (ROOT / "examples" / "vrm_open_world.py").read_text(encoding="utf-8")
+    src = (ROOT / "old" / "examples" / "vrm_open_world.py").read_text(encoding="utf-8")
     assert src.count("kagra.avatar(") == 1
     assert "KAGRA_AVATARS" not in src
     assert 'self.mode = "play" if SMOKE else "title"' in src
 
 
 def test_example_is_public_api_and_measures():
-    src = (ROOT / "examples" / "vrm_multi_avatar.py").read_text(encoding="utf-8")
+    src = (ROOT / "old" / "examples" / "vrm_multi_avatar.py").read_text(encoding="utf-8")
     assert "kagra.avatar(" in src
     assert "kagra.vrm_gpu_stats()" in src
     assert "kagra.draw_vrm(" in src

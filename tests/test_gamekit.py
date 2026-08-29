@@ -259,7 +259,7 @@ def test_save_load_roundtrip(tmp_path):
 def test_orb_rush_has_no_private_imports():
     from pathlib import Path
 
-    src = Path(__file__).resolve().parents[1] / "examples" / "vrm_orb_rush.py"
+    src = Path(__file__).resolve().parents[1] / "old" / "examples" / "vrm_orb_rush.py"
     text = src.read_text(encoding="utf-8")
     for name in (
         "_look_at",
