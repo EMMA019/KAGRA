@@ -938,7 +938,7 @@ impl WorldPlay {
         }
         self.vy -= GRAVITY * dt;
         y += self.vy * dt;
-        let ground = sit_y(&self.doc, self.doc.height_at(x, z));
+        let ground = sit_y(&self.doc, slope_ground(&self.doc, x, z));
         if y <= ground {
             y = ground;
             self.vy = 0.0;
@@ -1394,6 +1394,26 @@ fn sit_y(doc: &WorldDoc, ground: f32) -> f32 {
     ground - walker_rest_min_y(spec)
 }
 
+/// 足元リング（半径 r）の最大地形高。坂でカプセルの足が斜面に
+/// 埋まらず浮かないようにする（0.19 の 8 点リング接地相当）。
+fn slope_ground(doc: &WorldDoc, x: f32, z: f32) -> f32 {
+    let r = 0.3;
+    let mut g = doc.height_at(x, z);
+    for (dx, dz) in [
+        (r, 0.0),
+        (-r, 0.0),
+        (0.0, r),
+        (0.0, -r),
+        (r * 0.7, r * 0.7),
+        (-r * 0.7, r * 0.7),
+        (r * 0.7, -r * 0.7),
+        (-r * 0.7, -r * 0.7),
+    ] {
+        g = g.max(doc.height_at(x + dx, z + dz));
+    }
+    g
+}
+
 fn write_player(doc: &mut WorldDoc, walker: WorldWalker) {
     if let Some(existing) = doc.player.as_mut() {
         *existing = walker.clone();
@@ -1435,6 +1455,27 @@ mod tests {
     const CREST: &str = include_str!("../tests/fixtures/crest_isle_world.json");
     const ORB: &str = include_str!("../tests/fixtures/orb_rush_world.json");
     const FISH: &str = include_str!("../tests/fixtures/interact_fish_world.json");
+
+    #[test]
+    fn slope_ground_uses_foot_ring_max() {
+        let doc = WorldDoc::from_json(&slope_dump()).expect("slope dump");
+        // 中心 y=1.0 でも +x リングは y=2.0 → カプセルは斜面の高い側に接地
+        assert!((slope_ground(&doc, 0.0, 0.0) - 2.0).abs() < 1e-5);
+        // 平らな場所は中心のまま
+        assert!((slope_ground(&doc, 5.0, 5.0) - 0.5).abs() < 1e-5);
+    }
+
+    fn slope_dump() -> String {
+        serde_json::json!({
+            "version": 1, "half": 16.0, "floor_y": 0.0, "gravity": 9.8, "water_y": null,
+            "coins": 0, "player": null, "props": [], "walkers": [], "lights": [], "cameras": [],
+            "heightfield": { "samples": [
+                [0.0, 0.0, 1.0], [0.3, 0.0, 2.0], [-0.3, 0.0, 0.5],
+                [0.0, 0.3, 1.2], [0.0, -0.3, 0.8], [5.0, 5.0, 0.5]
+            ] }
+        })
+        .to_string()
+    }
 
     #[test]
     fn wasd_tick_moves_walker_on_heightfield() {
