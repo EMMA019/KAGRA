@@ -923,11 +923,13 @@ impl WorldPlay {
             // Engine-derived locomotion state. Genre names ("cast", "reel")
             // are not touched here; they only survive while standing still.
             updated.anim = "walk".into();
+            updated.anim_blend += (1.0 - updated.anim_blend) * (dt * 8.0).min(1.0);
         } else {
             if updated.anim == "walk" {
                 updated.anim = "idle".into();
             }
             updated.clip = 0.0;
+            updated.anim_blend *= (1.0 - (dt * 8.0).min(1.0)).max(0.0);
         }
         let pad = 2.0;
         x = x.clamp(-half + pad, half - pad);

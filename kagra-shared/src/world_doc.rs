@@ -32,10 +32,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 use crate::collectathon::open_world_height;
 use crate::gltf_load::{
     is_tpose_humanoid_spec, is_walk_skinned_spec, is_walk_vrm_spec, mesh_from_embedded_gltf,
-    mesh_from_glb, mesh_from_gltf_json, sample_skinned_look, skinned_from_embedded_gltf,
-    skinned_from_glb, skinned_from_gltf_json, skinned_parts_from_embedded_gltf,
-    skinned_parts_from_glb, skinned_parts_from_gltf_json, skinned_tpose_humanoid, unit_cube_gltf,
-    walk_skinned_gltf, walk_skinned_vrm,
+    mesh_from_glb, mesh_from_gltf_json, sample_skinned_look, sample_skinned_look_blend,
+    skinned_from_embedded_gltf, skinned_from_glb, skinned_from_gltf_json,
+    skinned_parts_from_embedded_gltf, skinned_parts_from_glb, skinned_parts_from_gltf_json,
+    skinned_tpose_humanoid, unit_cube_gltf, walk_skinned_gltf, walk_skinned_vrm,
 };
 use crate::scene3d::{
     primitives, Camera, LocalLight, Material, MeshData, MeshId, Scene3D, SceneBuilder, Vertex3,
@@ -279,6 +279,10 @@ pub struct WorldWalker {
     /// "aa", ...). Dump-visible; games flip it via events / interact.
     #[serde(default = "default_expression")]
     pub expression: String,
+    /// ロコモーションブレンド係数 0..1（0 = rest/idle、1 = walk クリップ）。
+    /// 速度から連続的に変化させ、状態切替のポップを防ぐ（Phase 2）。
+    #[serde(default)]
+    pub anim_blend: f32,
 }
 
 fn default_idle_anim() -> String {
@@ -852,6 +856,7 @@ impl WorldDoc {
                     expression,
                     look_yaw,
                     look_pitch,
+                    anim_blend,
                     ..
                 } => gltf_skinned_mesh_for(
                     spec,
@@ -862,6 +867,7 @@ impl WorldDoc {
                     expression,
                     *look_yaw,
                     *look_pitch,
+                    *anim_blend,
                 )
                 .or_else(|| {
                     if *part == 0 {
@@ -953,6 +959,7 @@ impl WorldDoc {
                         expression: walk.expression.clone(),
                         look_yaw: walk.look_yaw,
                         look_pitch: walk.look_pitch,
+                        anim_blend: walk.anim_blend,
                     });
                 }
             }
@@ -1245,6 +1252,7 @@ pub(crate) enum GltfSlot {
         expression: String,
         look_yaw: f32,
         look_pitch: f32,
+        anim_blend: f32,
     },
 }
 
@@ -1487,12 +1495,20 @@ fn gltf_skinned_mesh_for(
     expression: &str,
     look_yaw: f32,
     look_pitch: f32,
+    anim_blend: f32,
 ) -> Option<MeshData> {
     if let Some(parts) = load_skinned_parts(spec) {
         let skin = parts.get(part)?;
         let t = if clip <= 0.0 { None } else { Some(clip) };
-        return Some(sample_skinned_look(
-            skin, t, hair, expression, morph, look_yaw, look_pitch,
+        return Some(sample_skinned_look_blend(
+            skin,
+            t,
+            hair,
+            expression,
+            morph,
+            look_yaw,
+            look_pitch,
+            anim_blend,
         ));
     }
     if part == 0 {
@@ -2230,8 +2246,10 @@ mod tests {
         rest.player.as_mut().unwrap().clip = 0.0;
         let mut walk = rest.clone();
         walk.player.as_mut().unwrap().clip = 0.25;
+        walk.player.as_mut().unwrap().anim_blend = 1.0; // フルクリップを見る
         if let Some(w) = walk.walkers.first_mut() {
             w.clip = 0.25;
+            w.anim_blend = 1.0;
         }
         let a = rest
             .compile_meshes()

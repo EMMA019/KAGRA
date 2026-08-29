@@ -449,7 +449,43 @@ pub fn sample_skinned_look(
     look_yaw: f32,
     look_pitch: f32,
 ) -> MeshData {
-    sample_skinned_inner(skin, t, hair, expression, morph, look_yaw, look_pitch, None)
+    sample_skinned_inner(
+        skin,
+        t,
+        hair,
+        expression,
+        morph,
+        look_yaw,
+        look_pitch,
+        // ブレンド指定なし = t が与えられればフルクリップ（従来挙動）
+        1.0,
+        None,
+    )
+}
+
+/// `sample_skinned_look` + ロコモーションブレンド係数（0 = rest、1 = clip）。
+#[allow(clippy::too_many_arguments)]
+pub fn sample_skinned_look_blend(
+    skin: &SkinnedMesh,
+    t: Option<f32>,
+    hair: f32,
+    expression: &str,
+    morph: f32,
+    look_yaw: f32,
+    look_pitch: f32,
+    anim_blend: f32,
+) -> MeshData {
+    sample_skinned_inner(
+        skin,
+        t,
+        hair,
+        expression,
+        morph,
+        look_yaw,
+        look_pitch,
+        anim_blend,
+        None,
+    )
 }
 
 /// `sample_skinned_look` + SpringBone の布シミュレーション。
@@ -488,6 +524,7 @@ pub fn sample_skinned_cloth(
     morph: f32,
     look_yaw: f32,
     look_pitch: f32,
+    anim_blend: f32,
     sim: &mut crate::spring::SpringState,
     dt: f32,
 ) -> MeshData {
@@ -499,6 +536,7 @@ pub fn sample_skinned_cloth(
         morph,
         look_yaw,
         look_pitch,
+        anim_blend,
         Some((sim, dt)),
     )
 }
@@ -512,6 +550,7 @@ fn sample_skinned_inner(
     morph: f32,
     look_yaw: f32,
     look_pitch: f32,
+    anim_blend: f32,
     cloth: Option<(&mut crate::spring::SpringState, f32)>,
 ) -> MeshData {
     if skin.skin_joints.is_empty()
@@ -521,7 +560,17 @@ fn sample_skinned_inner(
         return skin.rest.clone();
     }
     let mut locals = match t {
-        Some(tt) => sample_locals(skin, tt),
+        Some(tt) => {
+            let clip = sample_locals(skin, tt);
+            let blend = anim_blend.clamp(0.0, 1.0);
+            if blend >= 1.0 - 1e-5 {
+                clip
+            } else if blend <= 1e-5 {
+                rest_locals(skin)
+            } else {
+                blend_locals(&rest_locals(skin), &clip, blend)
+            }
+        }
         None => rest_locals(skin),
     };
     apply_look(skin, &mut locals, look_yaw, look_pitch);
@@ -929,6 +978,20 @@ fn rest_locals(skin: &SkinnedMesh) -> Vec<NodeLocal> {
             scale: n.scale,
         })
         .collect()
+}
+
+/// rest と clip のローカル TRS を係数でブレンド（回転は slerp）。
+fn blend_locals(rest: &[NodeLocal], clip: &[NodeLocal], blend: f32) -> Vec<NodeLocal> {
+    let n = rest.len().min(clip.len());
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        out.push(NodeLocal {
+            translation: rest[i].translation.lerp(clip[i].translation, blend),
+            rotation: rest[i].rotation.slerp(clip[i].rotation, blend),
+            scale: rest[i].scale.lerp(clip[i].scale, blend),
+        });
+    }
+    out
 }
 
 fn apply_look(skin: &SkinnedMesh, locals: &mut [NodeLocal], yaw: f32, pitch: f32) {
@@ -2103,6 +2166,29 @@ mod tests {
     }
 
     #[test]
+    fn anim_blend_interpolates_rest_to_clip() {
+        let bytes = walk_skinned_vrm();
+        let skin = skinned_from_glb(&bytes).expect("vrm");
+        let rest = sample_skinned_look_blend(&skin, Some(0.25), 0.0, "blink", 0.0, 0.0, 0.0, 0.0);
+        let full = sample_skinned_look_blend(&skin, Some(0.25), 0.0, "blink", 0.0, 0.0, 0.0, 1.0);
+        let half = sample_skinned_look_blend(&skin, Some(0.25), 0.0, "blink", 0.0, 0.0, 0.0, 0.5);
+        let mut d_full = 0.0f32;
+        let mut d_half = 0.0f32;
+        for i in 0..rest.vertices.len() {
+            let a = Vec3::from_array(rest.vertices[i].pos);
+            let b = Vec3::from_array(full.vertices[i].pos);
+            let c = Vec3::from_array(half.vertices[i].pos);
+            d_full = d_full.max((b - a).length());
+            d_half = d_half.max((c - a).length());
+        }
+        assert!(d_full > 0.02, "blend 1 = clip pose, d_full={d_full}");
+        assert!(
+            d_half > d_full * 0.3 && d_half < d_full * 0.8,
+            "blend 0.5 は rest と clip の間、d_half={d_half} d_full={d_full}"
+        );
+    }
+
+    #[test]
     fn first_person_hides_third_person_and_auto_parts() {
         use crate::first_person::{FirstPerson, MeshAnnotation};
         let mut part = SkinnedMesh {
@@ -2249,7 +2335,9 @@ mod tests {
         assert!(!skin.springs.is_empty());
         let mut sim = skin.springs.clone();
         // 初回は snap（布は動かない）
-        let a = sample_skinned_cloth(&skin, None, 0.0, "blink", 0.0, 0.0, 0.0, &mut sim, 1.0 / 60.0);
+        let a = sample_skinned_cloth(
+            &skin, None, 0.0, "blink", 0.0, 0.0, 0.0, 0.0, &mut sim, 1.0 / 60.0,
+        );
         // 布の関節を手でずらす → Verlet → 回転デルタ → 頂点が変わる
         if let Some(c) = sim.chains.first_mut() {
             if c.joints.len() >= 2 {
@@ -2257,7 +2345,9 @@ mod tests {
                 c.joints[1].prev = [0.4, 0.85, 0.0];
             }
         }
-        let b = sample_skinned_cloth(&skin, None, 0.0, "blink", 0.0, 0.0, 0.0, &mut sim, 1.0 / 60.0);
+        let b = sample_skinned_cloth(
+            &skin, None, 0.0, "blink", 0.0, 0.0, 0.0, 0.0, &mut sim, 1.0 / 60.0,
+        );
         let mut max_d = 0.0f32;
         for (va, vb) in a.vertices.iter().zip(b.vertices.iter()) {
             max_d = max_d.max((Vec3::from_array(va.pos) - Vec3::from_array(vb.pos)).length());

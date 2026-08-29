@@ -1431,6 +1431,7 @@ impl Renderer {
                 expression,
                 look_yaw,
                 look_pitch,
+                anim_blend,
                 ..
             } = slot
             else {
@@ -1457,6 +1458,7 @@ impl Renderer {
                     morph,
                     look_yaw,
                     look_pitch,
+                    anim_blend,
                     sim,
                     crate::scene::FIXED_DT,
                 )

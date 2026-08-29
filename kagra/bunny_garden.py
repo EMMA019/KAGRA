@@ -341,6 +341,8 @@ class BunnyGarden(Scene):
                  # rem_euclid で折り返すので長くても OK。
                  "clip": (self.clock * 1.6) % 10.0,
                  "anim": "walk",
+                 # フルクリップ（ロコモーションブレンドは 1 で固定）
+                 "anim_blend": 1.0,
                  # 頭を左右に見渡す（カメラ方向を中心に）
                  "look_yaw": 0.14 * math.sin(self.clock * 1.2),
                  "look_pitch": 0.06,
