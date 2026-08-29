@@ -102,6 +102,53 @@ python examples/vrm_open_world.py                # 残置 VRM Crest Isle（Rende
 
 レガシー 2D / タイルマップ / エディタ: [`examples/archive/`](examples/archive/)。
 
+## Python でゲームを作る（ゲームロジックはパイソンのみ）
+
+0.19 の `kagra.run(start_scene)` の形を、shared wgpu 30 の上で復活させたもの:
+**ゲームロジックは全部 Python** — Rust（`kagra_shared`）は世界の tick と描画だけ。
+新しいジャンルを作るときはこの形をコピーする。
+
+```bash
+cd kagra-shared && maturin develop --release && cd ..   # 最初の一度: kagra_shared をビルド
+python examples/python_game_minimal.py                  # 窓: WASD + 水辺で J
+python examples/python_game_minimal.py --headless scratch/hello.png  # CI / verify: PNG 出力
+```
+
+パターン（[`examples/python_game_minimal.py`](examples/python_game_minimal.py) より）:
+
+```python
+import json
+import kagra
+from kagra.gameloop import Scene, run, draw_world, pressed, was_pressed
+
+class MyGame(Scene):
+    def __init__(self):
+        super().__init__()
+        self.play = kagra.WorldPlay.from_json(open("world.json").read())
+        self.play.confirm()                    # タイトル → プレイ（プレイ中は無視）
+        self.world = json.loads(self.play.dump())
+
+    def update(self, dt):                      # ← ゲームロジックは全部ここ
+        lx = (1.0 if pressed("d") else 0.0) - (1.0 if pressed("a") else 0.0)
+        lz = (1.0 if pressed("w") else 0.0) - (1.0 if pressed("s") else 0.0)
+        self.play.set_input(lx, lz, False, was_pressed("j"), False)
+        self.play.tick(dt)                     # エンジンが世界を進める
+        self.world = json.loads(self.play.dump())
+        if self.play.take_events("cast"):      # 接着イベント → こっちのロジック
+            self.play.start_timer("cast", 3.0, "bite")
+
+    def draw(self):
+        self._canvas_png = draw_world(self.world, self.width, self.height)  # shared 描画
+
+run(MyGame())
+```
+
+Python 橋渡し（`kagra.WorldDoc` / `kagra.WorldPlay` / `kagra.render_world_doc`）は
+`kagra_shared` からの再エクスポート。`kagra/gameloop.py` に `Scene` / `run` /
+`draw_world` / `pressed` / `was_pressed`（tkinter、標準ライブラリのみ）。
+ジャンルロジック（敵 AI・ターン・識別）は Python に書く — dump JSON が世界で、
+イベントがバス。
+
 ## エージェント / ソースから
 
 ```bash

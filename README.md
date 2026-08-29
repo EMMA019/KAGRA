@@ -99,6 +99,53 @@ python examples/vrm_open_world.py                # leftover VRM Crest Isle (Rend
 
 Legacy 2D / tilemap / editor demos: [`examples/archive/`](examples/archive/).
 
+## Build a game in Python (game logic is Python-only)
+
+0.19's `kagra.run(start_scene)` shape, revived on the shared wgpu 30 runtime:
+**the game logic is all Python** — Rust (`kagra_shared`) only ticks the world
+and renders. That is the shape an agent should copy for a new genre.
+
+```bash
+cd kagra-shared && maturin develop --release && cd ..   # once: build kagra_shared
+python examples/python_game_minimal.py                  # window: WASD + J at the shore
+python examples/python_game_minimal.py --headless scratch/hello.png  # CI / verify: PNG out
+```
+
+The pattern (from [`examples/python_game_minimal.py`](examples/python_game_minimal.py)):
+
+```python
+import json
+import kagra
+from kagra.gameloop import Scene, run, draw_world, pressed, was_pressed
+
+class MyGame(Scene):
+    def __init__(self):
+        super().__init__()
+        self.play = kagra.WorldPlay.from_json(open("world.json").read())
+        self.play.confirm()                    # title → play (no-op when playing)
+        self.world = json.loads(self.play.dump())
+
+    def update(self, dt):                      # ← all game logic lives here
+        lx = (1.0 if pressed("d") else 0.0) - (1.0 if pressed("a") else 0.0)
+        lz = (1.0 if pressed("w") else 0.0) - (1.0 if pressed("s") else 0.0)
+        self.play.set_input(lx, lz, False, was_pressed("j"), False)
+        self.play.tick(dt)                     # engine steps the world
+        self.world = json.loads(self.play.dump())
+        if self.play.take_events("cast"):      # adhesive events → your logic
+            self.play.start_timer("cast", 3.0, "bite")
+
+    def draw(self):
+        self._canvas_png = draw_world(self.world, self.width, self.height)  # shared render
+
+run(MyGame())
+```
+
+The Python bridge (`kagra.WorldDoc` / `kagra.WorldPlay` / `kagra.render_world_doc`)
+re-exports from `kagra_shared`; see `kagra/gameloop.py` for `Scene` / `run` /
+`draw_world` / `pressed` / `was_pressed` (tkinter, stdlib only). Genre logic
+(enemy AI, turns, item identification) stays in Python — the dump JSON is the
+world, the events are the bus.
+
 ## Agent / from source
 
 ```bash

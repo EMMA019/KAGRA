@@ -2851,6 +2851,20 @@ def _restore_public_from_submodules() -> None:
 
 _restore_public_from_submodules()
 
+# ── shared wgpu 30 バインディング（Python ゲームマスター） ────────────────
+# kagra_shared は kagra-shared/ で `maturin develop` すると入る。無い環境
+# （pip 版 / 旧デモ）では呼び出し時に ImportError を出すだけで import は壊さない。
+try:
+    from kagra_shared import WorldDoc, WorldPlay, render_world_doc
+except ImportError:  # pragma: no cover - 旧デモ・pip 版
+    WorldDoc = None  # type: ignore[assignment]
+    WorldPlay = None  # type: ignore[assignment]
+
+    def render_world_doc(*_a, **_k):  # type: ignore[misc]
+        raise ImportError(
+            "kagra_shared not installed: run `cd kagra-shared && maturin develop --release`"
+        )
+
 # Official public table. Entity / tilemap / Tk editor stay on disk (import
 # from kagra.entity / kagra.tilemap / kagra.editor_app) but not here.
 _PUBLIC_OFF = {

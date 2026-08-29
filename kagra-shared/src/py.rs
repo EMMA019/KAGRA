@@ -136,11 +136,17 @@ impl PyWorldPlay {
     }
 }
 
-/// dump JSON を shared wgpu 30 でオフスクリーン描画し、RGBA8 を返す。
+/// dump JSON を shared wgpu 30 でオフスクリーン描画し、RGBA8 を bytes で返す。
 #[pyfunction(name = "render_world_doc")]
-fn render_world_doc_py(json: &str, width: u32, height: u32) -> PyResult<Vec<u8>> {
+fn render_world_doc_py(
+    py: Python<'_>,
+    json: &str,
+    width: u32,
+    height: u32,
+) -> PyResult<pyo3::Py<pyo3::types::PyBytes>> {
     let doc = WorldDoc::from_json(json).map_err(pyerr)?;
-    crate::render::render_world_doc(&doc, width, height).map_err(pyerr)
+    let rgba = crate::render::render_world_doc(&doc, width, height).map_err(pyerr)?;
+    Ok(pyo3::types::PyBytes::new(py, &rgba).into())
 }
 
 #[pymodule]

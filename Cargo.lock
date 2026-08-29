@@ -1405,6 +1405,7 @@ dependencies = [
  "once_cell",
  "png",
  "pollster",
+ "pyo3",
  "raw-window-handle",
  "serde",
  "serde_json",
