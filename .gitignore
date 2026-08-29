@@ -105,3 +105,6 @@ assets/data/
 cache/
 examples/*.mp4
 /python
+
+# torneko headless runner stray save (--seed フラグのパース残り)
+--seed*
