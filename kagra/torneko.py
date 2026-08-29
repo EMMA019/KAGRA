@@ -23,6 +23,7 @@ from pathlib import Path
 from kagra.audio import se  # noqa: F401
 from kagra.gameloop import Scene, draw_world, pressed, was_pressed
 from kagra.mapgen import DungeonTiles, MapGen
+from kagra.path import find_path
 from kagra.ui2d import bar, choice_menu, list_lines, merge, message
 
 W, H = 480, 300
@@ -488,38 +489,24 @@ class Torneko(Scene):
 
 
 def _path_to(game: "Torneko", target: tuple[int, int]) -> list[tuple[int, int]]:
-    """BFS で (敵を避けつつ) 目標タイルへの最短歩行経路。到達不可は []。"""
-    from collections import deque
+    """kagra.path.find_path で (敵を避けつつ) 目標タイルへの最短歩行経路。
 
+    BFS と同じ契約: start を含まない・target を含む経路。到達不可は []。
+    決定論（A* は同入力 → 同経路）。4 近傍のみ（ダンジョンは斜め移動なし）。
+    """
     start = (game.player["x"], game.player["y"])
     if start == target:
         return []
-    q: deque = deque([start])
-    prev = {start: None}
-    while q:
-        cur = q.popleft()
-        if cur == target:
-            break
-        for d in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            n = (cur[0] + d[0], cur[1] + d[1])
-            if n in prev:
-                continue
-            cx, cy = n
-            if not game.is_walkable(cx, cy):
-                continue
-            if game.enemy_at(cx, cy) is not None:
-                continue
-            prev[n] = cur
-            q.append(n)
-    if target not in prev:
+
+    def walkable(c: int, r: int) -> bool:
+        return game.is_walkable(c, r) and game.enemy_at(c, r) is None
+
+    if not walkable(*target):
+        return []  # 目標マスが塞がれている（BFS 版と同じ: 経路なし）
+    path = find_path(walkable, start, target, diagonal=False)
+    if path is None:
         return []
-    path = []
-    cur = target
-    while prev[cur] is not None:
-        path.append(cur)
-        cur = prev[cur]
-    path.reverse()
-    return path
+    return path[1:]  # start を除く（BFS 版と同じ形）
 
 
 def scripted_policy(game: "Torneko", turns: int) -> list[str]:
