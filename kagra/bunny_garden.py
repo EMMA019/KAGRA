@@ -14,18 +14,19 @@ VRM キャラ（Emma）と会話し、好感度を上げて日々を経営する
 """
 from __future__ import annotations
 
-import json
 import math
 from pathlib import Path
 
 from kagra.audio import play_wav, se  # noqa: F401  (再生は Windows winsound、他は no-op)
 from kagra.gameloop import Scene, draw_world, mouse_clicked, mouse_pos, was_pressed
+from kagra.save import load_data, save_data
 from kagra.tts import VOWEL_TO_EXPRESSION, tts_ping, tts_speak  # noqa: F401
 from kagra.ui2d import bar, choice_menu, list_lines, merge, message
 
 W, H = 480, 300
 CHAR = "ミミ"
 SAVE_DEFAULT = Path.home() / ".kagra" / "bunny_garden.json"
+SAVE_VERSION = 1
 
 _DRINK_PRICE = 80
 
@@ -66,14 +67,10 @@ class BunnyGarden(Scene):
         }
 
     def _load(self) -> dict:
-        try:
-            return json.loads(self.save_path.read_text(encoding="utf-8"))
-        except Exception:
-            return self._new_game()
+        return load_data(self.save_path, version=SAVE_VERSION, default=None) or self._new_game()
 
     def _save(self) -> None:
-        self.save_path.parent.mkdir(parents=True, exist_ok=True)
-        self.save_path.write_text(json.dumps(self.game, ensure_ascii=False, indent=1), encoding="utf-8")
+        save_data(self.save_path, self.game, version=SAVE_VERSION)
 
     def _rnd(self, n: int) -> int:
         self._rng = (self._rng * 1103515245 + 12345) & 0x7FFFFFFF

@@ -16,7 +16,6 @@
 """
 from __future__ import annotations
 
-import json
 import random
 from pathlib import Path
 
@@ -24,6 +23,7 @@ from kagra.audio import se  # noqa: F401
 from kagra.gameloop import Scene, draw_world, pressed, was_pressed
 from kagra.mapgen import DungeonTiles, MapGen
 from kagra.path import find_path
+from kagra.save import load_data, save_data
 from kagra.ui2d import bar, choice_menu, list_lines, merge, message, panel, scroll_window
 
 W, H = 480, 300
@@ -31,6 +31,7 @@ W, H = 480, 300
 COLS, ROWS = 17, 17
 FLOORS_TO_WIN = 3
 SAVE_DEFAULT = Path.home() / ".kagra" / "torneko.json"
+SAVE_VERSION = 1
 
 ITEMS = {
     "薬草": {"heal": 15, "desc": "HP を 15 回復"},
@@ -81,16 +82,10 @@ class Torneko(Scene):
         }
 
     def _save(self) -> None:
-        self.save_path.parent.mkdir(parents=True, exist_ok=True)
-        self.save_path.write_text(
-            json.dumps(self._save_dict(), ensure_ascii=False, indent=1), encoding="utf-8"
-        )
+        save_data(self.save_path, self._save_dict(), version=SAVE_VERSION)
 
     def _load(self) -> dict | None:
-        try:
-            return json.loads(self.save_path.read_text(encoding="utf-8"))
-        except Exception:
-            return None
+        return load_data(self.save_path, version=SAVE_VERSION, default=None)
 
     def _restore(self, d: dict) -> None:
         self.seed = int(d["seed"])
