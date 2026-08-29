@@ -89,3 +89,5 @@
 - `20260902-phase4-dsp/` — 汎用エンジン化 Phase 4: 音 DSP（mix / reverb / crossfade / duck。純 Python、WAV bytes 加工）。
 - `20260902-phase5-ui/` — 汎用エンジン化 Phase 5: UI 成熟（scroll_window / paged_menu。torneko ログをスクロール窓化）。
 - `20260902-phase6-save/` — 汎用エンジン化 Phase 6: セーブ深化（version 付き + マイグレーション + .bak バックアップ + SlotStore。bunny/torneko を共通化）。
+- `20260902-phase7-i18n/` — 汎用エンジン化 Phase 7: ローカライズ（i18n テーブル + 言語切替。bunny/torneko の UI 文字列を t() 経由に）。
+- `20260902-roadmap-2to7-complete/` — 汎用エンジン化 Phase 2–7 完了サマリ（Phase 1 物理はトリガーまで保留）。
