@@ -94,7 +94,7 @@ def draw_world(
     Scene.draw() 内で呼び、結果を run() の窓が表示する（または保存する）。
     """
     if _ks is None:
-        raise ImportError("kagra_shared not installed: cd kagra-shared && maturin develop --release")
+        raise ImportError(_missing_shared_message())
     hud_json = json.dumps(hud) if hud else None
     rgba = _ks.render_world_doc(
         json.dumps(world), int(width), int(height), hud_json
@@ -204,6 +204,16 @@ def was_pressed(name: str) -> bool:
     return name.lower() in _just
 
 
+def _missing_shared_message() -> str:
+    return (
+        "kagra_shared（shared wgpu 30 バインディング）が見つかりません。\n"
+        "実行には .venv の Python を使ってください:\n"
+        "    .venv\\Scripts\\python.exe examples\\bunny_garden_minimal.py\n"
+        "または kagra_shared をビルドしてインストール:\n"
+        "    cd kagra-shared && maturin develop --release"
+    )
+
+
 def run(
     scene: Scene,
     *,
@@ -219,6 +229,11 @@ def run(
     draw_world を直接使う）。
     """
     import tkinter as tk
+
+    if _ks is None:
+        # 窓を開く前に止める: tkinter コールバック内の生トレースバックを避ける
+        print(_missing_shared_message())
+        return
 
     scene.width = width
     scene.height = height
