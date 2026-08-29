@@ -44,7 +44,17 @@ try:
 except ImportError:  # pragma: no cover
     _ks = None
 
-__all__ = ["Scene", "run", "draw_world", "pressed", "was_pressed", "rgba_to_png"]
+__all__ = [
+    "Scene",
+    "run",
+    "draw_world",
+    "pressed",
+    "was_pressed",
+    "mouse_pos",
+    "mouse_down",
+    "mouse_clicked",
+    "rgba_to_png",
+]
 
 
 def rgba_to_png(rgba: bytes, width: int, height: int) -> bytes:
@@ -121,6 +131,47 @@ class Scene:
 _down: set[str] = set()        # 押されているキー
 _just: set[str] = set()        # このフレーム押されたキー
 
+# ── マウス（Motion / Button / ButtonRelease から記録） ────────────────────
+
+_mouse: dict[str, Any] = {
+    "x": 0,
+    "y": 0,
+    "buttons": set(),   # 押されているボタン（1=左, 2=中, 3=右）
+    "just": set(),      # このフレーム押されたボタン
+}
+
+
+def _on_mouse_motion(event) -> None:
+    _mouse["x"] = int(getattr(event, "x", 0))
+    _mouse["y"] = int(getattr(event, "y", 0))
+
+
+def _on_mouse_down(event) -> None:
+    btn = int(getattr(event, "num", 1))
+    if btn in (1, 2, 3):
+        _mouse["buttons"].add(btn)
+        _mouse["just"].add(btn)
+
+
+def _on_mouse_up(event) -> None:
+    btn = int(getattr(event, "num", 1))
+    _mouse["buttons"].discard(btn)
+
+
+def mouse_pos() -> tuple[int, int]:
+    """窓内カーソル位置（左上原点、ピクセル）。"""
+    return _mouse["x"], _mouse["y"]
+
+
+def mouse_down(button: int = 1) -> bool:
+    """いま押されているか（ホールド）。"""
+    return button in _mouse["buttons"]
+
+
+def mouse_clicked(button: int = 1) -> bool:
+    """このフレーム押された瞬間か。"""
+    return button in _mouse["just"]
+
 _KEYMAP = {
     "w": "w", "a": "a", "s": "s", "d": "d",
     "space": "space", "j": "j", "z": "z", "f": "f",
@@ -181,6 +232,13 @@ def run(
 
     root.bind("<KeyPress>", _on_key_down)
     root.bind("<KeyRelease>", _on_key_up)
+    root.bind("<Motion>", _on_mouse_motion)
+    root.bind("<Button-1>", _on_mouse_down)
+    root.bind("<Button-2>", _on_mouse_down)
+    root.bind("<Button-3>", _on_mouse_down)
+    root.bind("<ButtonRelease-1>", _on_mouse_up)
+    root.bind("<ButtonRelease-2>", _on_mouse_up)
+    root.bind("<ButtonRelease-3>", _on_mouse_up)
     root.focus_set()
 
     frame_ms = max(1, int(1000.0 / fps))
@@ -196,6 +254,7 @@ def run(
         last = now
         scene.clock += dt
         _just.clear()
+        _mouse["just"].clear()
         scene.update(dt)
         if not scene.running:
             root.destroy()

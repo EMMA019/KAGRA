@@ -69,3 +69,21 @@ def test_scene_basics():
     assert calls == [1 / 60]
     assert not s.running
     assert s.clock == 0.0
+
+
+def test_mouse_handlers_record_state():
+    from types import SimpleNamespace
+
+    gm._mouse["buttons"].clear()
+    gm._mouse["just"].clear()
+    gm._on_mouse_motion(SimpleNamespace(x=123, y=45))
+    assert gm.mouse_pos() == (123, 45)
+    assert not gm.mouse_down(1)
+    gm._on_mouse_down(SimpleNamespace(num=1))
+    assert gm.mouse_down(1)
+    assert gm.mouse_clicked(1)
+    gm._on_mouse_up(SimpleNamespace(num=1))
+    assert not gm.mouse_down(1)
+    assert not gm.mouse_down(3)
+    gm._on_mouse_down(SimpleNamespace(num=3))
+    assert gm.mouse_down(3)
