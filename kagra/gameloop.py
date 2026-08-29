@@ -293,9 +293,11 @@ def run(
         dt = min((now - last) / 1000.0, 0.1)
         last = now
         scene.clock += dt
+        scene.update(dt)
+        # フレーム間に入力されたキー/クリックを update が確実に見るため、
+        # クリアは update の後（前だと毎回消えて入力が永遠に届かない）。
         _just.clear()
         _mouse["just"].clear()
-        scene.update(dt)
         if not scene.running:
             root.destroy()
             return
