@@ -66,14 +66,29 @@ def rgba_to_png(rgba: bytes, width: int, height: int) -> bytes:
     )
 
 
-def draw_world(world: dict[str, Any], width: int = 320, height: int = 180) -> bytes:
+def draw_world(
+    world: dict[str, Any],
+    width: int = 320,
+    height: int = 180,
+    hud: dict[str, Any] | None = None,
+) -> bytes:
     """dump dict → shared wgpu 30 オフスクリーン描画 → PNG bytes。
+
+    `hud`（省略可）: 世界の上に重ねる HUD。テキスト付きなので、文字の無い
+    shared HUD を卒業できる。形式::
+
+        {"quads": [{"x":..,"y":..,"w":..,"h":..,"color":[r,g,b,a]}],
+         "texts": [{"text":"こんにちは","x":..,"y":..,"size":16,
+                    "color":[r,g,b,a],"align":"left|center|right"}]}
 
     Scene.draw() 内で呼び、結果を run() の窓が表示する（または保存する）。
     """
     if _ks is None:
         raise ImportError("kagra_shared not installed: cd kagra-shared && maturin develop --release")
-    rgba = _ks.render_world_doc(json.dumps(world), int(width), int(height))
+    hud_json = json.dumps(hud) if hud else None
+    rgba = _ks.render_world_doc(
+        json.dumps(world), int(width), int(height), hud_json
+    )
     return rgba_to_png(rgba, int(width), int(height))
 
 

@@ -25,11 +25,54 @@ impl Quad {
     }
 }
 
+/// テキスト行の水平揃え。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum TextAlign {
+    #[default]
+    Left,
+    Center,
+    Right,
+}
+
+/// 画面座標系（左上原点）のテキスト。`size` は em のピクセル高。
+///
+/// GPU には依存しない: グリフは `font.rs` がカバレッジ画素 → `Quad` に
+/// 展開するので、CI も wasm も同じ絵を出す。
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextQuad {
+    pub text: String,
+    pub x: f32,
+    pub y: f32,
+    pub size: f32,
+    /// RGBA（0..255）。カバレッジでアルファを掛ける。
+    pub color: [u8; 4],
+    pub align: TextAlign,
+}
+
+impl TextQuad {
+    pub fn new(text: &str, x: f32, y: f32, size: f32, color: [u8; 4]) -> Self {
+        Self {
+            text: text.to_string(),
+            x,
+            y,
+            size,
+            color,
+            align: TextAlign::Left,
+        }
+    }
+
+    pub fn aligned(mut self, align: TextAlign) -> Self {
+        self.align = align;
+        self
+    }
+}
+
 /// 1 フレームぶんの描画内容。
 #[derive(Clone, Debug, Default)]
 pub struct DrawList {
     pub clear: [u8; 4],
     pub quads: Vec<Quad>,
+    pub texts: Vec<TextQuad>,
 }
 
 /// シェルの実フレームレートに関係なく同じ絵を出すため固定ステップで進める。
@@ -198,6 +241,7 @@ impl DemoScene {
         DrawList {
             clear: [16, 18, 28, 255],
             quads,
+            ..Default::default()
         }
     }
 }

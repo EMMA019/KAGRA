@@ -380,6 +380,7 @@ pub fn build_hud(game: &NovelGame, phase: GamePhase, width: u32, height: u32) ->
     DrawList {
         clear: [42, 32, 36, 255],
         quads,
+        ..Default::default()
     }
 }
 

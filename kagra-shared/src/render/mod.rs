@@ -130,6 +130,8 @@ pub struct Renderer {
     elapsed: f32,
     /// Threshold bloom: linear-HDR frame → extract/blur → composite → target.
     bloom: BloomPass,
+    /// TextQuad → カバレッジ Quad のキャッシュ。GPU 状態を持たない。
+    text: crate::font::TextRaster,
 }
 
 impl Renderer {
@@ -744,6 +746,7 @@ impl Renderer {
             _flat_view: flat_view,
             elapsed: 0.0,
             bloom,
+            text: crate::font::TextRaster::new(),
         };
         me.upload_screen();
         me
@@ -1213,14 +1216,14 @@ impl Renderer {
         }
     }
 
-    fn build_vertices(&self, list: &DrawList) -> Vec<Vertex> {
-        let mut out = Vec::with_capacity(list.quads.len() * 6);
+    fn build_vertices(&mut self, list: &DrawList) -> Vec<Vertex> {
+        let mut out = Vec::with_capacity((list.quads.len() + list.texts.len() * 64) * 6);
         for q in &list.quads {
-            let color = to_linear(q.color, self.format);
-            let (l, t, r, b) = (q.x, q.y, q.x + q.w, q.y + q.h);
-            let corners = [[l, t], [r, t], [r, b], [l, t], [r, b], [l, b]];
-            for pos in corners {
-                out.push(Vertex { pos, color });
+            out.extend(quad_vertices(q, self.format));
+        }
+        for t in &list.texts {
+            for q in self.text.text_quads(t) {
+                out.extend(quad_vertices(&q, self.format));
             }
         }
         out
@@ -1446,11 +1449,20 @@ impl Renderer {
     /// Draw a compiled `WorldDoc` to the current target (window or offscreen).
     /// Uploads world meshes on first call (heightfield + glTF + primitives).
     pub fn draw_world_doc(&mut self, doc: &crate::world_doc::WorldDoc) -> Result<(), String> {
+        self.draw_world_doc_with_hud(doc, &DrawList::default())
+    }
+
+    /// `draw_world_doc` に HUD（quad + テキスト）を重ねる版。
+    pub fn draw_world_doc_with_hud(
+        &mut self,
+        doc: &crate::world_doc::WorldDoc,
+        hud: &DrawList,
+    ) -> Result<(), String> {
         if self.meshes.is_empty() {
             self.upload_world_meshes(doc)?;
         }
         let scene = doc.compile_scene(self.aspect());
-        self.render_frame(Some(&scene), &DrawList::default())
+        self.render_frame(Some(&scene), hud)
     }
 
     /// Draw a compiled `WorldDoc` into the offscreen target and read RGBA8.
@@ -1459,10 +1471,19 @@ impl Renderer {
         &mut self,
         doc: &crate::world_doc::WorldDoc,
     ) -> Result<Vec<u8>, String> {
+        self.render_world_doc_with_hud(doc, &DrawList::default())
+    }
+
+    /// `render_world_doc` に HUD（quad + テキスト）を重ねる版。
+    pub fn render_world_doc_with_hud(
+        &mut self,
+        doc: &crate::world_doc::WorldDoc,
+        hud: &DrawList,
+    ) -> Result<Vec<u8>, String> {
         if !self.is_offscreen() {
             return Err("render_world_doc requires an offscreen renderer".into());
         }
-        self.draw_world_doc(doc)?;
+        self.draw_world_doc_with_hud(doc, hud)?;
         self.read_rgba()
     }
 }
@@ -1476,8 +1497,18 @@ pub fn render_world_doc(
     width: u32,
     height: u32,
 ) -> Result<Vec<u8>, String> {
+    render_world_doc_with_hud(doc, width, height, &DrawList::default())
+}
+
+/// `render_world_doc` に HUD（quad + テキスト）を重ねる版。
+pub fn render_world_doc_with_hud(
+    doc: &crate::world_doc::WorldDoc,
+    width: u32,
+    height: u32,
+    hud: &DrawList,
+) -> Result<Vec<u8>, String> {
     let mut renderer = pollster::block_on(Renderer::new_offscreen(width, height))?;
-    renderer.render_world_doc(doc)
+    renderer.render_world_doc_with_hud(doc, hud)
 }
 
 fn new_instance() -> wgpu::Instance {
@@ -1714,6 +1745,17 @@ fn to_linear(color: [u8; 4], format: wgpu::TextureFormat) -> [f32; 4] {
     }
 }
 
+/// 1 つの Quad → 三角形 2 つ分の頂点（左上原点、y 下向き）。
+fn quad_vertices(q: &crate::scene::Quad, format: wgpu::TextureFormat) -> [Vertex; 6] {
+    let color = to_linear(q.color, format);
+    let (l, t, r, b) = (q.x, q.y, q.x + q.w, q.y + q.h);
+    let corners = [[l, t], [r, t], [r, b], [l, t], [r, b], [l, b]];
+    std::array::from_fn(|i| Vertex {
+        pos: corners[i],
+        color,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1731,7 +1773,9 @@ mod tests {
     #[test]
     fn shader3d_has_ibl_and_aces() {
         let src = include_str!("shader3d.wgsl");
-        assert!(src.contains("aces_tonemap"), "ACES on shared wgpu 30");
+        // ACES は HDR+bloom コミット以降 composite（bloom.wgsl）で適用される。
+        let composite = include_str!("bloom.wgsl");
+        assert!(composite.contains("aces_tonemap"), "ACES in bloom composite");
         assert!(src.contains("env_irradiance"), "diffuse IBL / tiny SH");
         assert!(src.contains("env: vec4<f32>"), "Globals.env");
         assert!(
@@ -1744,9 +1788,10 @@ mod tests {
         assert!(src.contains("fn vs_shadow"), "shadow pass");
         assert!(src.contains("2048.0"), "PCF texel matches SHADOW_MAP_SIZE");
         assert!(!src.contains("var<storage"), "WebGL2: no storage buffers");
+        // MToon 完全移植でインスタンススロットは 2..=12（mtoon2/3/4）まで使う。
         assert!(
-            !src.contains("@location(10)"),
-            "vertex/instance locations unchanged"
+            src.contains("@location(12) mtoon4"),
+            "MToon instance slots wired up to 12"
         );
     }
 

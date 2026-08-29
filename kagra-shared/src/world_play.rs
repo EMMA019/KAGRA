@@ -885,6 +885,7 @@ impl WorldPlay {
         DrawList {
             clear: [130, 165, 205, 255],
             quads,
+            ..Default::default()
         }
     }
 

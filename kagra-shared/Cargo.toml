@@ -23,6 +23,9 @@ python = ["dep:pyo3", "pyo3/extension-module", "render"]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 once_cell = "1.19"
+# テキスト → グリフ・カバレッジ（埋め込み PixelMplus、M+ ライセンス）。
+# GPU 非依存: カバレッジ画素を Quad に展開するので wasm / CI でも同じ絵。
+ab_glyph = "0.2"
 
 # シーン記述は GPU 非依存のまま 3D を扱うので、行列と頂点型は render feature の
 # 外に置く。どちらも純粋な計算で wasm でも動く。

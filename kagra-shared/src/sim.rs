@@ -315,6 +315,7 @@ pub fn build_hud(game: &SimGame, phase: GamePhase, width: u32, height: u32) -> D
     DrawList {
         clear: [24, 28, 34, 255],
         quads,
+        ..Default::default()
     }
 }
 

@@ -869,6 +869,7 @@ pub fn build_hud(game: &RpgGame, phase: GamePhase, width: u32, height: u32) -> D
             [120, 160, 110, 255]
         },
         quads,
+        ..Default::default()
     }
 }
 

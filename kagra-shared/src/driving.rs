@@ -572,6 +572,7 @@ impl DrivingScene {
         DrawList {
             clear: [0, 0, 0, 0],
             quads,
+            ..Default::default()
         }
     }
 }

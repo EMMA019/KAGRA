@@ -20,6 +20,7 @@ pub mod ffi;
 pub mod fight;
 pub mod first_person;
 pub mod fish;
+pub mod font;
 pub mod fps;
 pub mod game;
 pub mod gltf_load;
@@ -77,11 +78,12 @@ pub use gltf_load::{
     skinned_from_embedded_gltf, skinned_from_glb, walk_skinned_gltf, walk_skinned_vrm,
 };
 pub use input::{KeyEvent, PointerEvent, PointerPhase, VirtualPad};
+pub use font::TextRaster;
 pub use map::{MapBuilding, MapEdge, RoadNetwork, DEMO_CITY_JSON, SHIBUYA_DEMO_JSON};
 pub use mission::{Mission, MissionPhase};
 pub use road::{LodLevel, RoadChunk, RoadFrame, RoadPath, RoadStreamer};
 pub use save::{SaveGame, Settings};
-pub use scene::{DemoScene, DrawList, Quad};
+pub use scene::{DemoScene, DrawList, Quad, TextAlign, TextQuad};
 pub use scene3d::{
     Aabb, AlbedoRgba, Camera, Frustum, Instance, LocalLight, Material, MeshData, MeshId,
     RenderStats, Scene3D, Vertex3,
@@ -97,7 +99,7 @@ pub use world_doc::{
 pub use world_play::WorldPlay;
 
 #[cfg(feature = "render")]
-pub use render::{render_world_doc, Renderer, SurfaceSource};
+pub use render::{render_world_doc, render_world_doc_with_hud, Renderer, SurfaceSource};
 
 /// セマンティックバージョン（ネイティブ／Wasm 双方で照会可能）。
 pub const KAGRA_SHARED_VERSION: &str = env!("CARGO_PKG_VERSION");

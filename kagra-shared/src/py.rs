@@ -136,17 +136,84 @@ impl PyWorldPlay {
     }
 }
 
+/// HUD JSON（Python が quad / テキストを渡す。オプション）。
+#[derive(serde::Deserialize, Default)]
+struct HudJson {
+    #[serde(default)]
+    quads: Vec<HudQuadJson>,
+    #[serde(default)]
+    texts: Vec<HudTextJson>,
+}
+
+#[derive(serde::Deserialize)]
+struct HudQuadJson {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    #[serde(default = "default_white")]
+    color: [u8; 4],
+}
+
+#[derive(serde::Deserialize)]
+struct HudTextJson {
+    text: String,
+    x: f32,
+    y: f32,
+    #[serde(default = "default_text_size")]
+    size: f32,
+    #[serde(default = "default_white")]
+    color: [u8; 4],
+    #[serde(default)]
+    align: String,
+}
+
+fn default_white() -> [u8; 4] {
+    [255, 255, 255, 255]
+}
+
+fn default_text_size() -> f32 {
+    16.0
+}
+
+fn parse_hud(hud_json: Option<&str>) -> PyResult<crate::scene::DrawList> {
+    let mut list = crate::scene::DrawList::default();
+    let Some(s) = hud_json else {
+        return Ok(list);
+    };
+    if s.trim().is_empty() {
+        return Ok(list);
+    }
+    let hud: HudJson = serde_json::from_str(s).map_err(pyerr)?;
+    for q in hud.quads {
+        list.quads.push(crate::scene::Quad::new(q.x, q.y, q.w, q.h, q.color));
+    }
+    for t in hud.texts {
+        let align = match t.align.as_str() {
+            "center" => crate::scene::TextAlign::Center,
+            "right" => crate::scene::TextAlign::Right,
+            _ => crate::scene::TextAlign::Left,
+        };
+        list.texts
+            .push(crate::scene::TextQuad::new(&t.text, t.x, t.y, t.size, t.color).aligned(align));
+    }
+    Ok(list)
+}
+
 /// dump JSON を shared wgpu 30 でオフスクリーン描画し、RGBA8 を bytes で返す。
+/// `hud_json`（省略可）: `{"quads":[{x,y,w,h,color}], "texts":[{text,x,y,size,color,align}]}`。
 #[pyfunction(name = "render_world_doc")]
 fn render_world_doc_py(
     py: Python<'_>,
     json: &str,
     width: u32,
     height: u32,
+    hud_json: Option<&str>,
 ) -> PyResult<pyo3::Py<pyo3::types::PyBytes>> {
     let doc = WorldDoc::from_json(json).map_err(pyerr)?;
-    let rgba = crate::render::render_world_doc(&doc, width, height).map_err(pyerr)?;
-    Ok(pyo3::types::PyBytes::new(py, &rgba).into())
+    let hud = parse_hud(hud_json)?;
+    let rgba = crate::render::render_world_doc_with_hud(&doc, width, height, &hud).map_err(pyerr)?;
+    Ok(pyo3::types::PyBytes::new_bound(py, &rgba).unbind())
 }
 
 #[pymodule]

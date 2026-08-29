@@ -31,6 +31,30 @@ def test_draw_world_when_shared_installed():
     assert len(png) > 500
 
 
+def test_draw_world_hud_text_when_shared_installed():
+    """HUD テキスト（日本語含む）を世界の上に重ねて描画できる。"""
+    try:
+        import kagra_shared  # noqa: F401
+    except ImportError:
+        return
+    import json
+
+    dump = json.loads(
+        (ROOT / "kagra-shared/tests/fixtures/crest_isle_world.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    hud = {
+        "quads": [{"x": 4, "y": 4, "w": 24, "h": 10, "color": [30, 40, 30, 220]}],
+        "texts": [
+            {"text": "こんにちは KAGRA", "x": 16, "y": 6, "size": 6, "color": [255, 255, 255, 255]},
+        ],
+    }
+    png = gm.draw_world(dump, 32, 32, hud=hud)
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert len(png) > 500
+
+
 def test_scene_basics():
     calls = []
 

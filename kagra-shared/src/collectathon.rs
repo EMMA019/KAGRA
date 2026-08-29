@@ -503,6 +503,7 @@ impl CollectathonScene {
         DrawList {
             clear: [150, 188, 228, 255],
             quads,
+            ..Default::default()
         }
     }
 }

@@ -54,7 +54,16 @@ class FishPlay(Scene):
             self.casting = False
 
     def draw(self) -> None:
-        self._canvas_png = draw_world(self.world, self.width, self.height)
+        hint = "WASD: 歩く    J: 釣る"
+        if self.casting:
+            hint = "🎣 待て…"
+        hud = {
+            "quads": [{"x": 8, "y": 8, "w": 304, "h": 22, "color": [20, 28, 20, 200]}],
+            "texts": [
+                {"text": hint, "x": 160, "y": 13, "size": 14, "color": [240, 230, 180, 255], "align": "center"},
+            ],
+        }
+        self._canvas_png = draw_world(self.world, self.width, self.height, hud=hud)
 
 
 def main() -> None:
@@ -73,7 +82,12 @@ def main() -> None:
         scene.play.set_input(0.0, 0.0, False, True, False)  # J → cast プロンプト
         scene.play.tick(1 / 60)
         scene.world = json.loads(scene.play.dump())
-        png = draw_world(scene.world, 320, 180)
+        hud = {
+            "texts": [
+                {"text": "KAGRA python game master", "x": 160, "y": 12, "size": 14, "color": [255, 255, 255, 255], "align": "center"},
+            ],
+        }
+        png = draw_world(scene.world, 320, 180, hud=hud)
         Path(out).write_bytes(png)
         print(f"wrote {out} ({len(png)} bytes)")
         return

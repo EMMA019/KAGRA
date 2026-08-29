@@ -437,6 +437,7 @@ pub fn build_hud(game: &RhythmGame, phase: GamePhase, width: u32, height: u32) -
     DrawList {
         clear: [22, 24, 32, 255],
         quads,
+        ..Default::default()
     }
 }
 

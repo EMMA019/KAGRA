@@ -342,6 +342,7 @@ pub fn build_hud(game: &StealthGame, phase: GamePhase, width: u32, height: u32) 
     DrawList {
         clear: [28, 34, 36, 255],
         quads,
+        ..Default::default()
     }
 }
 

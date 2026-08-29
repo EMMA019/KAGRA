@@ -89,6 +89,8 @@ scratch/
 *.mp3
 *.ttf
 *.ttc
+# 埋め込みフォント（include_bytes でビルドに必要）は例外。
+!kagra-shared/assets/PixelMplus10-Regular.ttf
 
 # マップやタイルセットの大規模フォルダ
 map/

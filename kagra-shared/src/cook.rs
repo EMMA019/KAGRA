@@ -366,6 +366,7 @@ pub fn build_hud(game: &CookGame, phase: GamePhase, width: u32, height: u32) -> 
     DrawList {
         clear: [28, 22, 20, 255],
         quads,
+        ..Default::default()
     }
 }
 #[cfg(test)]

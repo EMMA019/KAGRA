@@ -890,6 +890,7 @@ pub fn build_hud(game: &Action2dGame, phase: GamePhase, width: u32, height: u32)
     DrawList {
         clear: [96, 88, 78, 255],
         quads,
+        ..Default::default()
     }
 }
 
