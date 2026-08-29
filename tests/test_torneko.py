@@ -194,3 +194,26 @@ def test_scripted_policy_progresses(tmp_path):
     steps = tk.scripted_policy(g, 60)
     assert steps, "60 ターンで何かしら動く"
     assert len(g.log_lines) > 0
+
+
+def test_esc_saves_and_quits(tmp_path):
+    from tests.conftest import load_kagra_submodule
+
+    gl = load_kagra_submodule("gameloop")
+    g = _game(tmp_path)
+    g.player["hp"] = 14
+    gl._just.clear()
+    gl._just.add("escape")
+    g.update(1 / 60)
+    assert not g.running, "ESC で終了"
+    assert (tmp_path / "torneko.json").exists(), "ESC でセーブされる"
+    h = _game(tmp_path)
+    assert h.player["hp"] == 14, "再開で状態が復元される"
+
+
+def test_on_close_saves(tmp_path):
+    g = _game(tmp_path)
+    g.player["hp"] = 9
+    g.on_close()
+    assert not g.running
+    assert (tmp_path / "torneko.json").exists(), "窓を閉じてもセーブされる"

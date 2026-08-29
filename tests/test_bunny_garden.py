@@ -123,3 +123,26 @@ def test_headless_policy_three_days(tmp_path):
     assert g.game["money"] > 300
     assert g.game["affection"][bg.CHAR] > 30
     assert g.game["stock"]["モヒート"] == 0, "3 日で 3 杯飲んだ"
+
+
+def test_esc_saves_and_quits(tmp_path):
+    from tests.conftest import load_kagra_submodule
+
+    gl = load_kagra_submodule("gameloop")
+    g = _game(tmp_path)
+    g._set_aff(25)
+    gl._just.clear()
+    gl._just.add("escape")
+    g.update(1 / 60)
+    assert not g.running, "ESC で終了"
+    assert (tmp_path / "save.json").exists(), "ESC でセーブされる"
+    h = _game(tmp_path)
+    assert h.game["affection"][bg.CHAR] == 25, "再開で状態が復元される"
+
+
+def test_on_close_saves(tmp_path):
+    g = _game(tmp_path)
+    g._set_aff(12)
+    g.on_close()
+    assert not g.running
+    assert (tmp_path / "save.json").exists(), "窓を閉じてもセーブされる"

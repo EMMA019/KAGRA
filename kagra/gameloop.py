@@ -125,6 +125,14 @@ class Scene:
     def quit(self) -> None:
         self.running = False
 
+    def on_close(self) -> None:
+        """窓の × ボタンで閉じられたときに呼ばれる。既定はそのまま終了。
+
+        ゲーム側で override してセーブしてから終了できる（例: ESC / ×
+        でセーブして quit）。
+        """
+        self.quit()
+
 
 # ── 入力（tkinter の KeyPress / KeyRelease から記録） ──────────────────────
 
@@ -280,6 +288,8 @@ def run(
         root.after(600, lambda: root.attributes("-topmost", False))
     except Exception:
         pass
+    # × ボタンで閉じたら on_close（既定 = quit。ゲームはセーブを override）
+    root.protocol("WM_DELETE_WINDOW", lambda: (scene.on_close(), root.destroy()))
 
     frame_ms = max(1, int(1000.0 / fps))
     last = time_monotonic()

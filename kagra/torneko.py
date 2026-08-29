@@ -303,6 +303,11 @@ class Torneko(Scene):
     # ── 入力 ──────────────────────────────────────────────────────────────
 
     def update(self, dt: float) -> None:
+        if was_pressed("escape") and self.state != "dead":
+            # セーブして終了（窓の × も同じ）
+            self._save()
+            self.quit()
+            return
         if self.state == "dead":
             if was_pressed("z") or was_pressed("j"):
                 self.save_path.unlink(missing_ok=True)
@@ -330,7 +335,7 @@ class Torneko(Scene):
         if dx or dy:
             self._try_move(dx, dy)
             return
-        if was_pressed("x") or was_pressed("escape"):
+        if was_pressed("x"):
             self.state = "menu"
             self.sel = 0
             se("ok")
@@ -344,6 +349,11 @@ class Torneko(Scene):
             else:
                 self._push_log("誰もいない…")
 
+    def on_close(self) -> None:
+        """窓を閉じたらセーブして終了（ESC も同じ）。"""
+        self._save()
+        self.quit()
+
     def _menu_input(self) -> None:
         items = self.inventory + ["閉じる"]
         if was_pressed("up") or was_pressed("w"):
@@ -356,7 +366,7 @@ class Torneko(Scene):
             else:
                 self.state = "play"
             se("ok")
-        if was_pressed("x") or was_pressed("escape"):
+        if was_pressed("x"):
             self.state = "play"
 
     # ── 世界と描画（ターン制: 状態変化時のみ再描画） ─────────────────────
@@ -454,7 +464,7 @@ class Torneko(Scene):
                     color=[240, 235, 220, 255]),
             bar(230, 12, 100, 8, ratio=p["hp"] / p["max_hp"], color=[240, 110, 100, 255]),
             list_lines(
-                [f"WASD/矢印 移動 / Z 攻撃 / X 道具", f"seed {self.seed}  B{self.floor}F"],
+                [f"WASD/矢印 移動 / Z 攻撃 / X 道具", f"ESC セーブして終了   seed {self.seed}  B{self.floor}F"],
                 x=340, y=10, size=10, color=[180, 180, 168, 255],
             ),
         ]

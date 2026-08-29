@@ -36,7 +36,8 @@ class BunnyGarden(Scene):
         super().__init__()
         self.width, self.height = W, H
         self.save_path = Path(save_path) if save_path else SAVE_DEFAULT
-        self.game = self._load() if (start_day <= 1 and self.save_path.exists()) else self._new_game()
+        saved = self._load() if (start_day <= 1 and self.save_path.exists()) else None
+        self.game = saved if saved is not None else self._new_game()
         self._rng = 0xC0FFEE + self.game["day"] * 7919
         self.world = self._build_world()
         self.sel = 0
@@ -44,6 +45,8 @@ class BunnyGarden(Scene):
         self.message = ""
         self.queue: list[str] = []
         self._choice_rects: list[tuple[float, float, float, float]] = []
+        if saved is not None:
+            self._push(f"セーブデータから再開（DAY {self.game['day']}）")
         self._push(f"{self.game['day']}日目、営業開始！  ↑↓ で選んで Z で決定")
         self._show_next()
 
@@ -223,7 +226,15 @@ class BunnyGarden(Scene):
             for k in ("up", "down", "left", "right", "z", "j", "x", "return", "space", "w", "a", "s", "d")
         )
 
+    def on_close(self) -> None:
+        """窓を閉じたらセーブして終了（ESC も同じ）。"""
+        self._save()
+        self.quit()
+
     def update(self, dt: float) -> None:
+        if was_pressed("escape"):
+            self.on_close()
+            return
         if self.state == "msg":
             if self._confirm() or self._any_key():
                 se("ok")
@@ -328,7 +339,7 @@ class BunnyGarden(Scene):
             bar(280, 12, 190, 9, ratio=self._aff() / 100.0, label=f"{CHAR} 好感度", color=[255, 150, 170, 255]),
             list_lines(
                 [f"在庫: {('  '.join(f'{n}x{c}' for n, c in g['stock'].items() if c > 0) or 'なし')}",
-                 "↑↓ 選択 / Z 決定 / X 戻る / クリック可"],
+                 "↑↓ 選択 / Z 決定 / X 戻る / クリック可 / ESC セーブ終了"],
                 x=10, y=42, size=10, color=[180, 180, 168, 255],
             ),
         ]
