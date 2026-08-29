@@ -24,7 +24,7 @@ from kagra.audio import se  # noqa: F401
 from kagra.gameloop import Scene, draw_world, pressed, was_pressed
 from kagra.mapgen import DungeonTiles, MapGen
 from kagra.path import find_path
-from kagra.ui2d import bar, choice_menu, list_lines, merge, message
+from kagra.ui2d import bar, choice_menu, list_lines, merge, message, panel, scroll_window
 
 W, H = 480, 300
 # MapGen.dungeon は部屋サイズを randint(4, cols//4) で取るため 16 以上必要。
@@ -177,7 +177,7 @@ class Torneko(Scene):
 
     def _push_log(self, line: str) -> None:
         self.log_lines.append(line)
-        self.log_lines = self.log_lines[-5:]
+        self.log_lines = self.log_lines[-8:]  # スクロール窓で末尾 3 行表示
         self._dirty = True
 
     # ── プレイヤーターン ──────────────────────────────────────────────────
@@ -476,9 +476,25 @@ class Torneko(Scene):
                     size=12,
                 )
             )
-        # メッセージログ（下 3 行）
-        log = " / ".join(self.log_lines[-3:])
-        parts.append(message(log, 8, H - 56, 344, size=11))
+        # メッセージログ（下 3 行・スクロール窓。履歴は 8 行まで保持）
+        log_hud = scroll_window(self.log_lines, offset=99, visible=3, size=11)
+        pad = 8.0
+        log_hud = merge(
+            panel(8, H - 56, 344, 11 * 1.4 * 3 + pad * 2),
+            {
+                "texts": [
+                    {
+                        "text": t["text"],
+                        "x": 8 + pad,
+                        "y": H - 56 + pad + i * 11 * 1.4,
+                        "size": t["size"],
+                        "color": t["color"],
+                    }
+                    for i, t in enumerate(log_hud["texts"])
+                ]
+            },
+        )
+        parts.append(log_hud)
         if self.state == "dead":
             parts.append(message("トルネコは倒れた…（Z でやり直し）", 40, 80, 280, size=14,
                                  color=[255, 200, 190, 255]))

@@ -34,6 +34,11 @@ __all__ = [
     "choice_menu",
     "bar",
     "list_lines",
+    "fit_lines",
+    "page_count",
+    "clamp_scroll",
+    "scroll_window",
+    "paged_menu",
 ]
 
 _WHITE = [255, 255, 255, 255]
@@ -228,3 +233,119 @@ def list_lines(
         for i, it in enumerate(items)
     ]
     return {"quads": [], "texts": texts}
+
+
+# ── Phase 5: スクロール / ページ送り ────────────────────────────────────
+
+def fit_lines(text: str, size: float, max_w: float) -> list[str]:
+    """``wrap_text`` と同じ折り返し。別名として純ロジックテストから使う。"""
+    return wrap_text(text, size, max_w)
+
+
+def page_count(n_items: int, per_page: int) -> int:
+    """``n_items`` を 1 ページ ``per_page`` 件で分割したページ数。"""
+    if per_page <= 0:
+        return 1
+    return max(1, (n_items + per_page - 1) // per_page)
+
+
+def clamp_scroll(offset: int, n_lines: int, visible: int) -> int:
+    """スクロールオフセットを有効範囲に収める（0..max）。
+
+    ``visible`` 行しか見えない窓で ``n_lines`` 行のテキストを表示するとき、
+    offset は ``max(0, n_lines - visible)`` まで。1 ページに収まれば 0。
+    """
+    if visible <= 0:
+        return 0
+    return max(0, min(offset, max(0, n_lines - visible)))
+
+
+def scroll_window(
+    lines: list[str],
+    offset: int,
+    visible: int,
+    *,
+    size: float = 12.0,
+    color=_TEXT,
+    line_h: float | None = None,
+) -> dict[str, Any]:
+    """末尾側が「今の行」に見えるスクロール窓（ログ表示）。
+
+    純ロジック: ``clamp_scroll`` で offset を補正し、``visible`` 行だけ
+    hud texts にする。offset を進めると古い行が上に流れる。
+    """
+    off = clamp_scroll(offset, len(lines), visible)
+    shown = lines[off : off + visible]
+    lh = line_h if line_h is not None else size * 1.4
+    texts = [
+        {"text": ln, "x": 0.0, "y": i * lh, "size": size, "color": list(color)}
+        for i, ln in enumerate(shown)
+    ]
+    return {"quads": [], "texts": texts, "_offset": off}
+
+
+def paged_menu(
+    options: list[str],
+    selected: int,
+    x: float,
+    y: float,
+    w: float,
+    *,
+    per_page: int = 6,
+    size: float = 14.0,
+    color=_TEXT,
+    cursor: str = ">",
+    cursor_color=(255, 220, 90, 255),
+) -> dict[str, Any]:
+    """ページ送り付き選択肢メニュー。
+
+    ``selected`` が ``per_page`` を超えると自動でページを切り替え、
+    右上に「n/N」を出す（SLG のユニット一覧など長いメニュー用）。
+    返り値の ``_page`` / ``_pages`` は選択がどのページか。
+    """
+    pages = page_count(len(options), per_page)
+    page = min(selected // per_page, pages - 1) if options else 0
+    start = page * per_page
+    page_opts = options[start : start + per_page]
+    sel_on_page = selected - start if start <= selected < start + per_page else -1
+    pad = 8.0
+    line_h = size * 1.4
+    h = line_h * len(page_opts) + pad * 2
+    parts = [panel(x, y, w, h)]
+    texts = []
+    if pages > 1:
+        texts.append(
+            {
+                "text": f"{page + 1}/{pages}",
+                "x": x + w - pad - size * 1.2,
+                "y": y + pad * 0.4,
+                "size": size * 0.8,
+                "color": [180, 180, 170, 255],
+                "align": "right",
+            }
+        )
+    for i, opt in enumerate(page_opts):
+        ty = y + pad + i * line_h
+        is_sel = i == sel_on_page
+        texts.append(
+            {
+                "text": cursor if is_sel else " ",
+                "x": x + pad,
+                "y": ty,
+                "size": size,
+                "color": list(cursor_color) if is_sel else list(color),
+            }
+        )
+        texts.append(
+            {
+                "text": opt,
+                "x": x + pad + size * 0.9,
+                "y": ty,
+                "size": size,
+                "color": list(cursor_color) if is_sel else list(color),
+            }
+        )
+    out = merge(parts[0], {"texts": texts})
+    out["_page"] = page
+    out["_pages"] = pages
+    return out
