@@ -20,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import kagra  # noqa: E402
+from kagra.audio import se  # noqa: E402
 from kagra.gameloop import Scene, draw_world, pressed, run, was_pressed  # noqa: E402
 
 DUMP = Path(__file__).resolve().parents[1] / "kagra-shared/tests/fixtures/interact_fish_world.json"
@@ -47,10 +48,12 @@ class FishPlay(Scene):
         self.world = json.loads(self.play.dump())
         # 出来事を消費してゲームロジックを進める（Python の仕事）
         if not self.casting and self.play.take_events("cast"):
+            se("cast")
             self.play.start_timer("cast", 3.0, "bite")
             self.casting = True
         if self.play.take_events("bite"):
             print("🎣 釣れた！")
+            se("bite")
             self.casting = False
 
     def draw(self) -> None:
