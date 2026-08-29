@@ -241,7 +241,10 @@ def run(
     root.title(title)
     label = tk.Label(root)
     label.pack()
-    img = tk.PhotoImage(width=1, height=1)
+    # 窓サイズを先に確定させる透明プレースホルダ。PhotoImage の
+    # configure(data=) はサイズを変えない（白画面の原因）ので、
+    # 毎フレーム新規 PhotoImage を作って差し替える。
+    img = tk.PhotoImage(width=width, height=height)
     label.config(image=img)
     label.image = img
 
@@ -276,7 +279,9 @@ def run(
             return
         scene.draw()
         if scene._canvas_png:
-            img.configure(data=scene._canvas_png)
+            img = tk.PhotoImage(data=scene._canvas_png)
+            label.config(image=img)
+            label.image = img  # 参照を保持しないと GC で消える
         root.after(frame_ms, _tick)
 
     root.after(frame_ms, _tick)
