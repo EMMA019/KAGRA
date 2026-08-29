@@ -91,3 +91,4 @@
 - `20260902-phase6-save/` — 汎用エンジン化 Phase 6: セーブ深化（version 付き + マイグレーション + .bak バックアップ + SlotStore。bunny/torneko を共通化）。
 - `20260902-phase7-i18n/` — 汎用エンジン化 Phase 7: ローカライズ（i18n テーブル + 言語切替。bunny/torneko の UI 文字列を t() 経由に）。
 - `20260902-roadmap-2to7-complete/` — 汎用エンジン化 Phase 2–7 完了サマリ（Phase 1 物理はトリガーまで保留）。
+- `20260902-phase1-rapier/` — 汎用エンジン化 Phase 1: Rapier 剛体物理を本線に導入（is_static 動的 props / 高さ場 / 決定論 / Python ラッパー）。
