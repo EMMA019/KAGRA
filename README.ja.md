@@ -80,6 +80,7 @@ cd old/kagra-core && maturin develop --release   # 旧拡張の再ビルド（pi
 ```bash
 python -m kagra.play_world                # 公式 Crest play: タイトル→プレイ→結果（カプセル、WASD）
 python -m kagra.play_world kagra-shared/tests/fixtures/emma_walker_world.json  # VRoid Emma 歩き（wgpu 30）
+python -m kagra.play_world kagra-shared/tests/fixtures/crest_emma_world.json  # VRM Crest Isle collectathon（タイトル→プレイ→結果、Emma）
 python -m kagra.play_world kagra-shared/tests/fixtures/interact_fish_world.json  # 接着 API デモ（水辺で J → cast → 3秒 → bite）
 python -m kagra.render_world kagra-shared/tests/fixtures/crest_isle_world.json scratch/crest.png  # オフスクリーン描画（bloom 付き）
 python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json        # ヘッドレス検証（世界 + オフスクリーン）

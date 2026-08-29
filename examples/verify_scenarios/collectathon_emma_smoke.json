@@ -1,0 +1,23 @@
+{
+  "name": "collectathon_emma_smoke",
+  "notes": "Phase 0-08: VRM Crest Isle 本編統合 — official collectathon loop (title→play→result) with the Emma VRM walker instead of the capsule. Same heightfield/pickups, gltf walker is CPU-skinned on wgpu 30. World assertions + shared offscreen.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/crest_emma_world.json",
+    "player.on_ground": true,
+    "coins": 1,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "prop", "name": "coin", "min_count": 1},
+      {"type": "prop", "name": "crate", "count": 1},
+      {"type": "terrain_tile", "min_count": 1, "loaded": true},
+      {"type": "terrain_tile", "albedo_ok": true, "all": true, "require_any": true}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/crest_emma_world.json",
+    "out": "scratch/collectathon_emma_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200
+  }
+}

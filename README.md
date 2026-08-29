@@ -78,6 +78,7 @@ Clone the repo for these. The mainline first:
 ```bash
 python -m kagra.play_world                # official Crest play: title → play → result (capsule, WASD)
 python -m kagra.play_world kagra-shared/tests/fixtures/emma_walker_world.json  # VRoid Emma walk (wgpu 30)
+python -m kagra.play_world kagra-shared/tests/fixtures/crest_emma_world.json  # VRM Crest Isle collectathon (title→play→result, Emma)
 python -m kagra.play_world kagra-shared/tests/fixtures/interact_fish_world.json  # adhesive-API demo (J at the shore → cast → 3s → bite)
 python -m kagra.render_world kagra-shared/tests/fixtures/crest_isle_world.json scratch/crest.png  # offscreen render (bloom on)
 python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json        # headless verify (world + offscreen)

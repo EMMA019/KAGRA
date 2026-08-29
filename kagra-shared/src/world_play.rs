@@ -1457,6 +1457,29 @@ mod tests {
     const FISH: &str = include_str!("../tests/fixtures/interact_fish_world.json");
 
     #[test]
+    fn crest_emma_collectathon_ticks_vrm_walker() {
+        const CREST_EMMA: &str = include_str!("../tests/fixtures/crest_emma_world.json");
+        let mut play = WorldPlay::from_json(CREST_EMMA).expect("crest+emma dump");
+        play.confirm(); // title → play
+        let start = play.doc.player.as_ref().unwrap().position;
+        play.input = WalkInput {
+            lx: 0.0,
+            lz: 1.0,
+            jump: false,
+            attack: false,
+            dodge: false,
+        };
+        for _ in 0..45 {
+            play.tick(1.0 / 60.0);
+        }
+        let p = play.doc.player.as_ref().unwrap();
+        let d = (Vec3::from_array(p.position) - Vec3::from_array(start)).length();
+        assert!(d > 1.0, "VRM walker must walk the collectathon, d={d}");
+        assert!(p.on_ground, "VRM walker sits on the grass");
+        assert!(play.is_collectathon());
+    }
+
+    #[test]
     fn slope_ground_uses_foot_ring_max() {
         let doc = WorldDoc::from_json(&slope_dump()).expect("slope dump");
         // 中心 y=1.0 でも +x リングは y=2.0 → カプセルは斜面の高い側に接地
