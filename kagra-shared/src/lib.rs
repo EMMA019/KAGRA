@@ -43,6 +43,7 @@ pub mod scene3d;
 pub mod session;
 pub mod shop;
 pub mod sim;
+pub mod sleeve;
 pub mod sports;
 pub mod spring;
 pub mod sprite;

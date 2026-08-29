@@ -52,6 +52,29 @@ pub struct SpringChain {
     pub collider_ids: Vec<usize>,
 }
 
+impl SpringChain {
+    /// 根 + 仮想テールの 2 節チェーン（袖ヘルパー等、葉に子が無い場合）。
+    pub fn simple(
+        root: usize,
+        stiffness: f32,
+        drag: f32,
+        gravity: [f32; 3],
+        radius: f32,
+        rest_dir_local: [f32; 3],
+        bone_length: f32,
+    ) -> Self {
+        let mut joints = vec![new_joint(root, stiffness, drag, gravity, radius)];
+        let mut tail = virtual_tail(stiffness, drag, gravity, radius);
+        tail.rest_dir_local = rest_dir_local;
+        tail.bone_length = bone_length.max(0.04);
+        joints.push(tail);
+        Self {
+            joints,
+            collider_ids: vec![],
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct SpringState {
     pub chains: Vec<SpringChain>,

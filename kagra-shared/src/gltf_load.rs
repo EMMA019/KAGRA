@@ -246,6 +246,7 @@ pub struct SkinnedMesh {
 /// Rest-pose node (children + TRS). `matrix` is baked into TRS when present.
 #[derive(Clone, Debug)]
 pub struct NodeRest {
+    pub name: String,
     pub children: Vec<usize>,
     pub translation: Vec3,
     pub rotation: Quat,
@@ -740,6 +741,8 @@ fn skinned_from_prim(
         first_person: crate::first_person::parse_mesh_annotations(doc.extensions.as_ref()),
     };
     crate::mixamo::bind_locomotion(&mut skin);
+    // 袖ボーンが無い VRM にヘルパーを足す（スキニング・布は既存経路が扱う）
+    crate::sleeve::ensure_sleeve_cloth(&mut skin);
     Ok(skin)
 }
 
@@ -812,6 +815,7 @@ fn node_rest(n: &GltfNode) -> NodeRest {
         let mat = Mat4::from_cols_array(&m);
         let (scale, rotation, translation) = mat.to_scale_rotation_translation();
         return NodeRest {
+            name: n.name.clone(),
             children: n.children.clone(),
             translation,
             rotation,
@@ -819,6 +823,7 @@ fn node_rest(n: &GltfNode) -> NodeRest {
         };
     }
     NodeRest {
+        name: n.name.clone(),
         children: n.children.clone(),
         translation: n.translation.map(Vec3::from_array).unwrap_or(Vec3::ZERO),
         rotation: n
