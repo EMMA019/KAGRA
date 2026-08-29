@@ -124,6 +124,23 @@ class BunnyGarden(Scene):
                 return VOWEL_TO_EXPRESSION.get(vowel)
         return None
 
+    def _gesture_overlay(self) -> dict:
+        """TTS 発話中: 上半身の腕ジェスチャー（overlay_bones、ローカル回転）。
+
+        歩きクリップ（anim_blend=1.0）の上に腕が重なり、無言なら空 → 何も
+        動かない。ノード名は VRM humanoid 名（Emma = left/rightUpperArm）。
+        """
+        if not self._lips:
+            return {}
+        # ゆっくり両腕を外側へ揺らす（挨拶 / 説明の身振り）。
+        a = 0.3 * math.sin(self.clock * 2.4)
+        half = a * 0.5
+        s, c = math.sin(half), math.cos(half)
+        return {
+            "leftUpperArm": [0.0, 0.0, s, c],
+            "rightUpperArm": [0.0, 0.0, -s, c],
+        }
+
     def _drain(self) -> None:
         """メッセージ待ちを飛ばしてメニューへ（ヘッドレス / verify 用）。"""
         self.queue.clear()
@@ -348,7 +365,10 @@ class BunnyGarden(Scene):
                  "look_pitch": 0.06,
                  # 好感度が高いほど表情が明るくなる。TTS リップ中は口の形
                  "expression": self._lipsync_expression()
-                 or ("joy" if self._aff() >= 70 else "smile")},
+                 or ("joy" if self._aff() >= 70 else "smile"),
+                 # TTS 発話中は腕ジェスチャー（上半身のみ、歩きクリップに乗る）
+                 "overlay_bones": self._gesture_overlay(),
+                 "overlay_weight": 0.5},
             ],
             "lights": [
                 {"id": "light:warm", "type": "light", "name": "warm", "position": [0, 2.8, 0.8],

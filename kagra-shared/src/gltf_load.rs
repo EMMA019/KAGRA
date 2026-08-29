@@ -420,6 +420,48 @@ pub fn is_walk_skinned_spec(spec: &str) -> bool {
     )
 }
 
+/// ウォーカー描画パラメータ（dump 由来）。ロコモーションブレンドと
+/// 上半身ジェスチャー（overlay）を束ねる（Phase 2）。
+#[derive(Clone, Debug, Default)]
+pub struct WalkerPose {
+    /// クリップ時間（秒）。None = rest。
+    pub clip: Option<f32>,
+    pub hair: f32,
+    pub expression: String,
+    pub morph: f32,
+    pub look_yaw: f32,
+    pub look_pitch: f32,
+    /// ロコモーションブレンド 0..1（0 = rest、1 = walk クリップ）。
+    pub anim_blend: f32,
+    /// 上半身ジェスチャー: ノード名（humanoid 名 or node 名）→ 目標ローカル回転。
+    pub overlay_bones: std::collections::HashMap<String, [f32; 4]>,
+    /// overlay のブレンド係数 0..1。
+    pub overlay_weight: f32,
+}
+
+impl WalkerPose {
+    fn from_parts(
+        t: Option<f32>,
+        hair: f32,
+        expression: &str,
+        morph: f32,
+        look_yaw: f32,
+        look_pitch: f32,
+        anim_blend: f32,
+    ) -> Self {
+        Self {
+            clip: t,
+            hair,
+            expression: expression.to_string(),
+            morph,
+            look_yaw,
+            look_pitch,
+            anim_blend,
+            ..Self::default()
+        }
+    }
+}
+
 /// CPU-skin `rest` vertices into `Vertex3` at time `t` (seconds, looped).
 /// `t = 0` is the first key / T-pose for the bundled Walk clip.
 pub fn sample_skinned(skin: &SkinnedMesh, t: f32) -> MeshData {
@@ -449,18 +491,8 @@ pub fn sample_skinned_look(
     look_yaw: f32,
     look_pitch: f32,
 ) -> MeshData {
-    sample_skinned_inner(
-        skin,
-        t,
-        hair,
-        expression,
-        morph,
-        look_yaw,
-        look_pitch,
-        // ブレンド指定なし = t が与えられればフルクリップ（従来挙動）
-        1.0,
-        None,
-    )
+    let pose = WalkerPose::from_parts(t, hair, expression, morph, look_yaw, look_pitch, 1.0);
+    sample_skinned_inner(skin, &pose, None)
 }
 
 /// `sample_skinned_look` + ロコモーションブレンド係数（0 = rest、1 = clip）。
@@ -475,17 +507,13 @@ pub fn sample_skinned_look_blend(
     look_pitch: f32,
     anim_blend: f32,
 ) -> MeshData {
-    sample_skinned_inner(
-        skin,
-        t,
-        hair,
-        expression,
-        morph,
-        look_yaw,
-        look_pitch,
-        anim_blend,
-        None,
-    )
+    let pose = WalkerPose::from_parts(t, hair, expression, morph, look_yaw, look_pitch, anim_blend);
+    sample_skinned_inner(skin, &pose, None)
+}
+
+/// `WalkerPose` 直接版（布なし）。overlay（上半身ジェスチャー）込み。
+pub fn sample_skinned_pose(skin: &SkinnedMesh, pose: &WalkerPose) -> MeshData {
+    sample_skinned_inner(skin, pose, None)
 }
 
 /// `sample_skinned_look` + SpringBone の布シミュレーション。
@@ -528,29 +556,24 @@ pub fn sample_skinned_cloth(
     sim: &mut crate::spring::SpringState,
     dt: f32,
 ) -> MeshData {
-    sample_skinned_inner(
-        skin,
-        t,
-        hair,
-        expression,
-        morph,
-        look_yaw,
-        look_pitch,
-        anim_blend,
-        Some((sim, dt)),
-    )
+    let pose = WalkerPose::from_parts(t, hair, expression, morph, look_yaw, look_pitch, anim_blend);
+    sample_skinned_inner(skin, &pose, Some((sim, dt)))
+}
+
+/// `sample_skinned_cloth` のポーズ直接版（レンダラ用。overlay 込み）。
+pub fn sample_skinned_cloth_pose(
+    skin: &SkinnedMesh,
+    pose: &WalkerPose,
+    sim: &mut crate::spring::SpringState,
+    dt: f32,
+) -> MeshData {
+    sample_skinned_inner(skin, pose, Some((sim, dt)))
 }
 
 #[allow(clippy::too_many_arguments)]
 fn sample_skinned_inner(
     skin: &SkinnedMesh,
-    t: Option<f32>,
-    hair: f32,
-    expression: &str,
-    morph: f32,
-    look_yaw: f32,
-    look_pitch: f32,
-    anim_blend: f32,
+    pose: &WalkerPose,
     cloth: Option<(&mut crate::spring::SpringState, f32)>,
 ) -> MeshData {
     if skin.skin_joints.is_empty()
@@ -559,10 +582,10 @@ fn sample_skinned_inner(
     {
         return skin.rest.clone();
     }
-    let mut locals = match t {
+    let mut locals = match pose.clip {
         Some(tt) => {
             let clip = sample_locals(skin, tt);
-            let blend = anim_blend.clamp(0.0, 1.0);
+            let blend = pose.anim_blend.clamp(0.0, 1.0);
             if blend >= 1.0 - 1e-5 {
                 clip
             } else if blend <= 1e-5 {
@@ -573,8 +596,9 @@ fn sample_skinned_inner(
         }
         None => rest_locals(skin),
     };
-    apply_look(skin, &mut locals, look_yaw, look_pitch);
-    apply_hair(skin, &mut locals, hair);
+    apply_look(skin, &mut locals, pose.look_yaw, pose.look_pitch);
+    apply_hair(skin, &mut locals, pose.hair);
+    apply_overlay(skin, &mut locals, pose);
     if let Some((sim, dt)) = cloth {
         let parents = node_parents(&skin.nodes);
         let pose_globals = global_pose(&skin.nodes, &locals);
@@ -600,7 +624,7 @@ fn sample_skinned_inner(
         normal: skin.rest.normal.clone(),
         mtoon: skin.rest.mtoon,
     };
-    let rest_pos = morphed_rest(skin, expression, morph);
+    let rest_pos = morphed_rest(skin, &pose.expression, pose.morph);
     for (i, v) in skin.rest.vertices.iter().enumerate() {
         let p = rest_pos.get(i).copied().unwrap_or(Vec3::from_array(v.pos));
         let n = Vec3::from_array(v.normal);
@@ -1085,6 +1109,32 @@ fn apply_hair(skin: &SkinnedMesh, locals: &mut [NodeLocal], hair: f32) {
         return;
     }
     locals[node].rotation *= Quat::from_axis_angle(Vec3::Z, hair);
+}
+
+/// 上半身ジェスチャー（overlay）: ノード名（humanoid 名 or node 名）→ 目標ローカル
+/// 回転を `overlay_weight` でスラープする。腕等が歩きクリップに乗って揺れる
+/// （Phase 2: 上半身/下半身レイヤー分離）。
+fn apply_overlay(skin: &SkinnedMesh, locals: &mut [NodeLocal], pose: &WalkerPose) {
+    let w = pose.overlay_weight.clamp(0.0, 1.0);
+    if w < 1e-5 || pose.overlay_bones.is_empty() {
+        return;
+    }
+    for (name, target) in &pose.overlay_bones {
+        let node = skin.humanoid.get(name).copied().or_else(|| {
+            skin.nodes
+                .iter()
+                .position(|n| n.name == *name)
+        });
+        let Some(node) = node else {
+            continue;
+        };
+        if node >= locals.len() {
+            continue;
+        }
+        let target_q = Quat::from_array(*target);
+        let cur = locals[node].rotation;
+        locals[node].rotation = cur.slerp(target_q, w);
+    }
 }
 
 /// Step Verlet after pose. Returns dump-visible hair yaw.
@@ -2570,6 +2620,87 @@ mod tests {
             max_d > 0.01,
             "Mixamo walk must move Emma verts, max_d={max_d}"
         );
+    }
+
+    #[test]
+    fn overlay_moves_upper_body_but_not_legs() {
+        let Some(path) = crate::assets::resolve_asset("assets/Emma.vrm") else {
+            return;
+        };
+        let bytes = std::fs::read(&path).expect("read Emma.vrm");
+        let parts = skinned_parts_from_glb(&bytes).expect("Emma.vrm parts");
+        let skin = &parts[0];
+        let Some(&larm) = skin.humanoid.get("leftUpperArm") else {
+            return;
+        };
+        // 腕チェーン（上腕→前腕→手）と脚チェーン（大腿→下腿→足）のノード集合。
+        let chain = |names: &[&str]| -> Vec<usize> {
+            names
+                .iter()
+                .filter_map(|n| skin.humanoid.get(*n).copied())
+                .collect()
+        };
+        let arm_nodes = chain(&["leftUpperArm", "leftLowerArm", "leftHand"]);
+        let leg_nodes = chain(&["leftUpperLeg", "leftLowerLeg", "leftFoot"]);
+        assert!(
+            !arm_nodes.is_empty() && !leg_nodes.is_empty(),
+            "Emma humanoid must have arm+leg bones"
+        );
+        // 頂点の支配ジョイント（最大 weight）をノードへ変換。
+        let dominant = |i: usize| -> usize {
+            let js = skin.joints[i];
+            let ws = skin.weights[i];
+            let mut best = js[0] as usize;
+            let mut bw = ws[0];
+            for k in 1..4 {
+                if ws[k] > bw {
+                    bw = ws[k];
+                    best = js[k] as usize;
+                }
+            }
+            skin.skin_joints.get(best).copied().unwrap_or(usize::MAX)
+        };
+        let rest = sample_skinned_pose(skin, &WalkerPose::default());
+        // 左腕をローカル Y 軸周りに大きく回す overlay（weight 1.0）。
+        let mut pose = WalkerPose::default();
+        pose.overlay_bones.insert(
+            "leftUpperArm".into(),
+            Quat::from_rotation_y(2.2).to_array(),
+        );
+        pose.overlay_weight = 1.0;
+        let moved = sample_skinned_pose(skin, &pose);
+        let mut arm_d = 0.0f32;
+        let mut leg_d = 0.0f32;
+        for i in 0..rest.vertices.len() {
+            let d = (Vec3::from_array(rest.vertices[i].pos)
+                - Vec3::from_array(moved.vertices[i].pos))
+            .length();
+            let n = dominant(i);
+            if arm_nodes.contains(&n) {
+                arm_d = arm_d.max(d);
+            }
+            if leg_nodes.contains(&n) {
+                leg_d = leg_d.max(d);
+            }
+        }
+        assert!(
+            arm_d > 0.01,
+            "overlay must swing the upper arm, arm_d={arm_d}"
+        );
+        assert!(
+            leg_d < 1e-4,
+            "overlay must not move leg verts, leg_d={leg_d}"
+        );
+        // weight 0 では何も動かない。
+        let mut zero = pose.clone();
+        zero.overlay_weight = 0.0;
+        let none = sample_skinned_pose(skin, &zero);
+        for i in 0..rest.vertices.len() {
+            let d = (Vec3::from_array(rest.vertices[i].pos)
+                - Vec3::from_array(none.vertices[i].pos))
+            .length();
+            assert!(d < 1e-4, "weight 0 must be a no-op, d={d}");
+        }
     }
 
     #[test]

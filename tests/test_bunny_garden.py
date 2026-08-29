@@ -146,3 +146,28 @@ def test_on_close_saves(tmp_path):
     g.on_close()
     assert not g.running
     assert (tmp_path / "save.json").exists(), "窓を閉じてもセーブされる"
+
+
+def test_gesture_overlay_only_while_speaking(tmp_path):
+    g = _game(tmp_path)
+    assert g._gesture_overlay() == {}, "無言では腕ジェスチャーなし"
+    g._lips = [("a", 0.0, 0.2)]
+    g._lips_t0 = g.clock
+    overlay = g._gesture_overlay()
+    assert overlay, "発話中は腕ジェスチャーが出る"
+    assert "leftUpperArm" in overlay and "rightUpperArm" in overlay
+    for q in overlay.values():
+        assert len(q) == 4, "四元数 [x,y,z,w]"
+        assert abs(sum(c * c for c in q) - 1.0) < 1e-3, "正規化された回転"
+
+
+def test_walker_dump_has_overlay_while_speaking(tmp_path):
+    g = _game(tmp_path)
+    g._lips = [("a", 0.0, 0.2)]
+    g._lips_t0 = g.clock
+    g.clock = 0.25
+    walkers = g._build_world()["walkers"]
+    assert walkers[0]["overlay_bones"], "dump に overlay_bones が入る"
+    assert walkers[0]["overlay_weight"] == 0.5
+    g._lips = None
+    assert g._build_world()["walkers"][0]["overlay_bones"] == {}

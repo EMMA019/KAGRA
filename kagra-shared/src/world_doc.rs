@@ -32,10 +32,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 use crate::collectathon::open_world_height;
 use crate::gltf_load::{
     is_tpose_humanoid_spec, is_walk_skinned_spec, is_walk_vrm_spec, mesh_from_embedded_gltf,
-    mesh_from_glb, mesh_from_gltf_json, sample_skinned_look, sample_skinned_look_blend,
+    mesh_from_glb, mesh_from_gltf_json, sample_skinned_look,
     skinned_from_embedded_gltf, skinned_from_glb, skinned_from_gltf_json,
     skinned_parts_from_embedded_gltf, skinned_parts_from_glb, skinned_parts_from_gltf_json,
-    skinned_tpose_humanoid, unit_cube_gltf, walk_skinned_gltf, walk_skinned_vrm,
+    skinned_tpose_humanoid, unit_cube_gltf, walk_skinned_gltf, walk_skinned_vrm, WalkerPose,
 };
 use crate::scene3d::{
     primitives, Camera, LocalLight, Material, MeshData, MeshId, Scene3D, SceneBuilder, Vertex3,
@@ -283,6 +283,13 @@ pub struct WorldWalker {
     /// 速度から連続的に変化させ、状態切替のポップを防ぐ（Phase 2）。
     #[serde(default)]
     pub anim_blend: f32,
+    /// 上半身ジェスチャー: ノード名（humanoid 名 or node 名）→ 目標ローカル回転
+    /// [x,y,z,w]。歩きクリップに乗る腕ジェスチャー等（Phase 2-2）。
+    #[serde(default)]
+    pub overlay_bones: HashMap<String, [f32; 4]>,
+    /// `overlay_bones` のブレンド係数 0..1（0 = 無効、1 = 目標回転へ完全スラープ）。
+    #[serde(default)]
+    pub overlay_weight: f32,
 }
 
 fn default_idle_anim() -> String {
@@ -857,17 +864,23 @@ impl WorldDoc {
                     look_yaw,
                     look_pitch,
                     anim_blend,
+                    overlay_bones,
+                    overlay_weight,
                     ..
                 } => gltf_skinned_mesh_for(
                     spec,
                     *part,
-                    *clip,
-                    *hair,
-                    *morph,
-                    expression,
-                    *look_yaw,
-                    *look_pitch,
-                    *anim_blend,
+                    crate::gltf_load::WalkerPose {
+                        clip: if *clip > 0.0 { Some(*clip) } else { None },
+                        hair: *hair,
+                        expression: expression.clone(),
+                        morph: *morph,
+                        look_yaw: *look_yaw,
+                        look_pitch: *look_pitch,
+                        anim_blend: *anim_blend,
+                        overlay_bones: overlay_bones.clone(),
+                        overlay_weight: *overlay_weight,
+                    },
                 )
                 .or_else(|| {
                     if *part == 0 {
@@ -960,6 +973,8 @@ impl WorldDoc {
                         look_yaw: walk.look_yaw,
                         look_pitch: walk.look_pitch,
                         anim_blend: walk.anim_blend,
+                        overlay_bones: walk.overlay_bones.clone(),
+                        overlay_weight: walk.overlay_weight,
                     });
                 }
             }
@@ -1253,6 +1268,8 @@ pub(crate) enum GltfSlot {
         look_yaw: f32,
         look_pitch: f32,
         anim_blend: f32,
+        overlay_bones: HashMap<String, [f32; 4]>,
+        overlay_weight: f32,
     },
 }
 
@@ -1485,31 +1502,10 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
     None
 }
 
-#[allow(clippy::too_many_arguments)]
-fn gltf_skinned_mesh_for(
-    spec: &str,
-    part: usize,
-    clip: f32,
-    hair: f32,
-    morph: f32,
-    expression: &str,
-    look_yaw: f32,
-    look_pitch: f32,
-    anim_blend: f32,
-) -> Option<MeshData> {
+fn gltf_skinned_mesh_for(spec: &str, part: usize, pose: WalkerPose) -> Option<MeshData> {
     if let Some(parts) = load_skinned_parts(spec) {
         let skin = parts.get(part)?;
-        let t = if clip <= 0.0 { None } else { Some(clip) };
-        return Some(sample_skinned_look_blend(
-            skin,
-            t,
-            hair,
-            expression,
-            morph,
-            look_yaw,
-            look_pitch,
-            anim_blend,
-        ));
+        return Some(crate::gltf_load::sample_skinned_pose(skin, &pose));
     }
     if part == 0 {
         return gltf_mesh_for(spec);

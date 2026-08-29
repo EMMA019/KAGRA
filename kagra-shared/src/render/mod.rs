@@ -1432,6 +1432,8 @@ impl Renderer {
                 look_yaw,
                 look_pitch,
                 anim_blend,
+                overlay_bones,
+                overlay_weight,
                 ..
             } = slot
             else {
@@ -1449,19 +1451,18 @@ impl Renderer {
                     .entry(spec.clone())
                     .or_insert_with(|| skin.springs.clone());
                 sim.wind = doc.wind;
-                let t = if clip > 0.0 { Some(clip) } else { None };
-                crate::gltf_load::sample_skinned_cloth(
-                    skin,
-                    t,
+                let pose = crate::gltf_load::WalkerPose {
+                    clip: if clip > 0.0 { Some(clip) } else { None },
                     hair,
-                    &expression,
+                    expression,
                     morph,
                     look_yaw,
                     look_pitch,
                     anim_blend,
-                    sim,
-                    crate::scene::FIXED_DT,
-                )
+                    overlay_bones,
+                    overlay_weight,
+                };
+                crate::gltf_load::sample_skinned_cloth_pose(skin, &pose, sim, crate::scene::FIXED_DT)
             };
             let id = crate::scene3d::MeshId(crate::world_doc::MESH_GLTF_BASE + i as u32);
             self.update_mesh(id, &mesh)?;
