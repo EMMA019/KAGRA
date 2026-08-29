@@ -40,8 +40,23 @@ Phase 1（物理）が完了した。これは「Rapier は 5MB wheel の外」�
   （`a.y=0.550 b.y=1.549`）を offscreen 描画、`ok: true`
 - `gen_api_index --check` OK
 
+## 追補（同日・3b0456a）: 歩行者キネマティック共存 + 球/カプセル形状
+
+| 項目 | 内容 |
+|---|---|
+| 歩行者キネマティック化 | 歩行者を `kinematic_position_based` 剛体に変更。位置はゲーム所有で `sync_walkers`（doc 一括） / `set_walker_position`（単体）で毎フレーム押し込む。重力で落ちず、箱を押し、`sync` は歩行者位置を上書きしない → WorldPlay の WASD 移動と共存 |
+| 形状対応 | `collider_for` を拡張: sphere → `ball`（半径 = max(x,z) 半幅）、capsule/cylinder → `capsule_y`（半径 = min(x,z) 半幅、高さ = y）。描画と同じ中心基準・scale=全体サイズ |
+| Python API | `sync_walkers` / `set_walker_position` / `is_kinematic` を `kagra.rigid` に公開 |
+| verify | 歩行者が箱 c を x=3.0 → 6.09 まで押す段を追加（`PHYSICS_OK a.y=0.550 b.y=1.549 c.x=6.090`） |
+
+- cargo test（physics,render）: 404 lib + 12 offscreen、physics 8 件
+- pytest: 629 パス（test_rigid.py 9 件: 実機 8 + スキップ 1）
+- 注意: カプセルは動的だと転がって横倒しになる（直立中心 y≈0.9 / 横倒し
+  ≈0.3）。テストは転がり込みの範囲で検証
+
 ## 次の山
 
-Phase 1 の残り（任意）: 歩行者のキネマティック駆動（WorldPlay と物理の
-共存）、球/カプセル prop の形状対応、コライダーイベント（on_ground の
-正確化）。ユーザー長期リストの SLG は既存の `move_range` 等で続行可能。
+Phase 1 の残り（任意）: WorldPlay 内蔵の物理統合（tick が PhysicsWorld を
+持ち、箱と歩行者を同時に進める）、コライダーイベント（on_ground の正確化）、
+trimesh / glTF 衝突。ユーザー長期リストの SLG は既存の `move_range` 等で
+続行可能。
