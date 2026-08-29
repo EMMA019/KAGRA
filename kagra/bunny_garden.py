@@ -216,14 +216,21 @@ class BunnyGarden(Scene):
                 return i
         return None
 
+    def _any_key(self) -> bool:
+        """どのキーでもメッセージを送れる（RPG 定番。キーが届くかを気にしない）。"""
+        return any(
+            was_pressed(k)
+            for k in ("up", "down", "left", "right", "z", "j", "x", "return", "space", "w", "a", "s", "d")
+        )
+
     def update(self, dt: float) -> None:
         if self.state == "msg":
-            if self._confirm():
+            if self._confirm() or self._any_key():
                 se("ok")
                 self._show_next()
             return
         if self.state == "end":
-            if self._confirm():
+            if self._confirm() or self._any_key():
                 self._next_day()
             return
         if self.state == "menu":

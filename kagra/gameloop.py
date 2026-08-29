@@ -248,19 +248,38 @@ def run(
     label.config(image=img)
     label.image = img
 
-    root.bind("<KeyPress>", _on_key_down)
-    root.bind("<KeyRelease>", _on_key_up)
-    root.bind("<Motion>", _on_mouse_motion)
-    root.bind("<Button-1>", _on_mouse_down)
-    root.bind("<Button-2>", _on_mouse_down)
-    root.bind("<Button-3>", _on_mouse_down)
-    root.bind("<ButtonRelease-1>", _on_mouse_up)
-    root.bind("<ButtonRelease-2>", _on_mouse_up)
-    root.bind("<ButtonRelease-3>", _on_mouse_up)
-    # Windows ではコンソールにフォーカスが残ることがあるので前面化 + 強制フォーカス
-    root.lift()
-    root.focus_force()
-    root.focus_set()
+    root.bind_all("<KeyPress>", _on_key_down)
+    root.bind_all("<KeyRelease>", _on_key_up)
+    root.bind_all("<Motion>", _on_mouse_motion)
+    root.bind_all("<Button-1>", _on_mouse_down)
+    root.bind_all("<Button-2>", _on_mouse_down)
+    root.bind_all("<Button-3>", _on_mouse_down)
+    root.bind_all("<ButtonRelease-1>", _on_mouse_up)
+    root.bind_all("<ButtonRelease-2>", _on_mouse_up)
+    root.bind_all("<ButtonRelease-3>", _on_mouse_up)
+    # Windows ではコンソールにフォーカスが残ることが多い。前面化 + 強制
+    # フォーカスを数回リトライし、クリックでもフォーカスを奪い返す。
+    root.bind_all(
+        "<Button-1>",
+        lambda _e: (root.focus_set(), root.focus_force()),
+        add="+",
+    )
+
+    def _grab_focus() -> None:
+        root.lift()
+        root.focus_force()
+        root.update_idletasks()
+
+    root.update_idletasks()
+    _grab_focus()
+    root.after(120, _grab_focus)
+    root.after(400, _grab_focus)
+    # 最前面フラッシュ（0.6 秒後解除）で視認性も上げる
+    try:
+        root.attributes("-topmost", True)
+        root.after(600, lambda: root.attributes("-topmost", False))
+    except Exception:
+        pass
 
     frame_ms = max(1, int(1000.0 / fps))
     last = time_monotonic()
