@@ -21,10 +21,27 @@ from pathlib import Path
 
 from kagra.audio import se  # noqa: F401
 from kagra.gameloop import Scene, draw_world, pressed, was_pressed
+from kagra.i18n import add_table, t as _t
 from kagra.mapgen import DungeonTiles, MapGen
 from kagra.path import find_path
 from kagra.save import load_data, save_data
 from kagra.ui2d import bar, choice_menu, list_lines, merge, message, panel, scroll_window
+
+# ── 文字列テーブル（Phase 7 ローカライズ） ──────────────────────────────
+add_table("ja", {
+    "menu.close": "閉じる",
+    "hud.help": "WASD/矢印 移動 / Z 攻撃 / X 道具",
+    "hud.quit": "ESC セーブして終了   seed {seed}  B{floor}F",
+    "msg.dead": "トルネコは倒れた…（Z でやり直し）",
+    "msg.win": "ダンジョンを脱出した！ 大成功！",
+})
+add_table("en", {
+    "menu.close": "Close",
+    "hud.help": "WASD/Arrows move / Z attack / X item",
+    "hud.quit": "ESC save & quit   seed {seed}  B{floor}F",
+    "msg.dead": "Torneko fell... (Z to retry)",
+    "msg.win": "Escaped the dungeon! Great success!",
+})
 
 W, H = 480, 300
 # MapGen.dungeon は部屋サイズを randint(4, cols//4) で取るため 16 以上必要。
@@ -460,14 +477,14 @@ class Torneko(Scene):
                     color=[240, 235, 220, 255]),
             bar(230, 12, 100, 8, ratio=p["hp"] / p["max_hp"], color=[240, 110, 100, 255]),
             list_lines(
-                [f"WASD/矢印 移動 / Z 攻撃 / X 道具", f"ESC セーブして終了   seed {self.seed}  B{self.floor}F"],
+                [_t("hud.help"), _t("hud.quit", seed=self.seed, floor=self.floor)],
                 x=340, y=10, size=10, color=[180, 180, 168, 255],
             ),
         ]
         if self.state == "menu":
             parts.append(
                 choice_menu(
-                    self.inventory + ["閉じる"], selected=self.sel, x=200, y=80, w=152,
+                    self.inventory + [_t("menu.close")], selected=self.sel, x=200, y=80, w=152,
                     size=12,
                 )
             )
@@ -491,10 +508,10 @@ class Torneko(Scene):
         )
         parts.append(log_hud)
         if self.state == "dead":
-            parts.append(message("トルネコは倒れた…（Z でやり直し）", 40, 80, 280, size=14,
+            parts.append(message(_t("msg.dead"), 40, 80, 280, size=14,
                                  color=[255, 200, 190, 255]))
         elif self.state == "win":
-            parts.append(message("ダンジョンを脱出した！ 大成功！", 40, 80, 280, size=14,
+            parts.append(message(_t("msg.win"), 40, 80, 280, size=14,
                                  color=[255, 235, 160, 255]))
         self._canvas_png = draw_world(self.world, self.width, self.height, hud=merge(*parts))
 

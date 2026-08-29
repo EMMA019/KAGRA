@@ -19,9 +19,36 @@ from pathlib import Path
 
 from kagra.audio import play_wav, se  # noqa: F401  (再生は Windows winsound、他は no-op)
 from kagra.gameloop import Scene, draw_world, mouse_clicked, mouse_pos, was_pressed
+from kagra.i18n import add_table, t as _t
 from kagra.save import load_data, save_data
 from kagra.tts import VOWEL_TO_EXPRESSION, tts_ping, tts_speak  # noqa: F401
 from kagra.ui2d import bar, choice_menu, list_lines, merge, message
+
+# ── 文字列テーブル（Phase 7 ローカライズ） ──────────────────────────────
+add_table("ja", {
+    "menu.talk": "話す",
+    "menu.drink": "飲み物を出す",
+    "menu.praise": "ほめる",
+    "menu.close": "閉店",
+    "menu.cancel": "やめる",
+    "hud.day": "DAY {day}    所持金 {money}G",
+    "hud.affection": "{char} 好感度",
+    "hud.stock": "在庫: {items}",
+    "hud.stock_empty": "なし",
+    "hud.help": "↑↓ 選択 / Z 決定 / X 戻る / クリック可 / ESC セーブ終了",
+})
+add_table("en", {
+    "menu.talk": "Talk",
+    "menu.drink": "Serve drink",
+    "menu.praise": "Praise",
+    "menu.close": "Close",
+    "menu.cancel": "Cancel",
+    "hud.day": "DAY {day}    Money {money}G",
+    "hud.affection": "{char} affection",
+    "hud.stock": "Stock: {items}",
+    "hud.stock_empty": "none",
+    "hud.help": "Up/Down choose / Z OK / X back / click / ESC save & quit",
+})
 
 W, H = 480, 300
 CHAR = "ミミ"
@@ -178,7 +205,7 @@ class BunnyGarden(Scene):
     # ── メニュー処理（UI とヘッドレスが同じ道を通る） ─────────────────────
 
     def _choices(self) -> list[str]:
-        return ["話す", "飲み物を出す", "ほめる", "閉店"]
+        return [_t("menu.talk"), _t("menu.drink"), _t("menu.praise"), _t("menu.close")]
 
     def _do_choice(self, i: int) -> None:
         se("ok")
@@ -201,7 +228,7 @@ class BunnyGarden(Scene):
 
     def _drink_items(self) -> list[str]:
         items = [f"{n} x{c}" for n, c in self.game["stock"].items() if c > 0]
-        items.append("やめる")
+        items.append(_t("menu.cancel"))
         return items
 
     def _do_drink(self, i: int) -> None:
@@ -388,11 +415,11 @@ class BunnyGarden(Scene):
         self.world = self._build_world()
         g = self.game
         parts = [
-            message(f"DAY {g['day']}    所持金 {g['money']}G", 10, 10, 260, size=14, color=[240, 236, 220, 255]),
-            bar(280, 12, 190, 9, ratio=self._aff() / 100.0, label=f"{CHAR} 好感度", color=[255, 150, 170, 255]),
+            message(_t("hud.day", day=g["day"], money=g["money"]), 10, 10, 260, size=14, color=[240, 236, 220, 255]),
+            bar(280, 12, 190, 9, ratio=self._aff() / 100.0, label=_t("hud.affection", char=CHAR), color=[255, 150, 170, 255]),
             list_lines(
-                [f"在庫: {('  '.join(f'{n}x{c}' for n, c in g['stock'].items() if c > 0) or 'なし')}",
-                 "↑↓ 選択 / Z 決定 / X 戻る / クリック可 / ESC セーブ終了"],
+                [(_t("hud.stock", items=('  '.join(f'{n}x{c}' for n, c in g['stock'].items() if c > 0) or _t("hud.stock_empty")))),
+                 _t("hud.help")],
                 x=10, y=42, size=10, color=[180, 180, 168, 255],
             ),
         ]
