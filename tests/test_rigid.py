@@ -105,3 +105,92 @@ def test_deterministic(ks):
         a.step(1 / 60)
         b.step(1 / 60)
     assert a.position("prop:box") == b.position("prop:box")
+
+
+def _world_with_player(**kw):
+    w = _world()
+    w["player"] = {
+        "id": "walker:player",
+        "type": "walker",
+        "name": "player",
+        "position": [0.0, 1.0, 0.0],
+        "on_ground": False,
+    }
+    w.update(kw)
+    return w
+
+
+def test_walker_is_kinematic_and_keeps_position(ks):
+    if ks is None:
+        pytest.skip("no kagra_shared")
+    w = _world_with_player()
+    phys = rigid.PhysicsWorld(w)
+    assert phys.is_kinematic("walker:player")
+    assert not phys.is_dynamic("walker:player")
+    for _ in range(240):
+        phys.sync_walkers(w)  # ゲームが位置を所有
+        phys.step(1 / 60)
+    out = phys.to_world()
+    assert out["player"]["position"][1] == 1.0, "sync は歩行者位置を上書きしない"
+
+
+def test_kinematic_walker_pushes_box(ks):
+    if ks is None:
+        pytest.skip("no kagra_shared")
+    w = _world_with_player()
+    w["props"] = [
+        {
+            "id": "prop:box",
+            "type": "prop",
+            "name": "box",
+            "model": "box",
+            "position": [2.0, 0.6, 0.0],
+            "scale": [1.0, 1.0, 1.0],
+            "enabled": True,
+            "is_static": False,
+        }
+    ]
+    phys = rigid.PhysicsWorld(w)
+    px = 0.0
+    for _ in range(240):
+        px += 0.02
+        w["player"]["position"][0] = px
+        phys.sync_walkers(w)
+        phys.step(1 / 60)
+    box_x = phys.position("prop:box")[0]
+    assert box_x > 2.2, f"歩行者が箱を押す, box_x={box_x}"
+
+
+def test_sphere_and_capsule_fall(ks):
+    if ks is None:
+        pytest.skip("no kagra_shared")
+    w = _world()
+    w["props"] = [
+        {
+            "id": "prop:ball",
+            "type": "prop",
+            "name": "ball",
+            "model": "sphere",
+            "position": [0.0, 3.0, 0.0],
+            "scale": [1.0, 1.0, 1.0],
+            "enabled": True,
+            "is_static": False,
+        },
+        {
+            "id": "prop:pill",
+            "type": "prop",
+            "name": "pill",
+            "model": "capsule",
+            "position": [2.0, 4.0, 0.0],
+            "scale": [0.6, 1.8, 0.6],
+            "enabled": True,
+            "is_static": False,
+        },
+    ]
+    phys = rigid.PhysicsWorld(w)
+    for _ in range(360):
+        phys.step(1 / 60)
+    by = phys.position("prop:ball")[1]
+    py = phys.position("prop:pill")[1]
+    assert 0.4 < by < 0.9, f"球は床に落ちる, by={by}"
+    assert 0.2 < py < 1.1, f"カプセルは床に落ちて止まる, py={py}"

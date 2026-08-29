@@ -51,8 +51,24 @@ class PhysicsWorld:
         return _ks.PhysicsWorld.from_json(_json_dumps(world))
 
     def step(self, dt: float) -> None:
-        """1 フレーム進める。`dt` は秒（1/60 など）。"""
+        """1 フレーム進める。`dt` は秒（1/60 など）。
+
+        歩行者（player / walkers）を動かすゲームは、step の前に
+        ``sync_walkers(world_dict)`` を呼ぶ（キネマティック剛体の位置更新）。
+        """
         self._inner.step(float(dt))
+
+    def sync_walkers(self, world: dict[str, Any]) -> None:
+        """歩行者のゲーム側位置をキネマティック剛体へ押し込む。
+
+        WorldPlay の WASD 移動 / Python の位置更新と共存するため、毎フレーム
+        ``step`` の前に呼ぶ。呼ばないと歩行者は前回位置に留まる。
+        """
+        self._inner.sync_walkers(_json_dumps(world))
+
+    def set_walker_position(self, prop_id: str, p: list[float]) -> bool:
+        """歩行者 1 体の位置を押し込む（``sync_walkers`` の単体版）。"""
+        return bool(self._inner.set_walker_position(prop_id, [float(x) for x in p]))
 
     def to_world(self) -> dict[str, Any]:
         """剛体位置を書き戻した世界 dict。"""
@@ -67,6 +83,10 @@ class PhysicsWorld:
 
     def is_dynamic(self, prop_id: str) -> bool:
         return bool(self._inner.is_dynamic(prop_id))
+
+    def is_kinematic(self, prop_id: str) -> bool:
+        """歩行者（player / walkers）かどうか。"""
+        return bool(self._inner.is_kinematic(prop_id))
 
     def set_velocity(self, prop_id: str, v: list[float]) -> bool:
         """動的剛体の速度を設定（投げる / 吹き飛ばす）。"""

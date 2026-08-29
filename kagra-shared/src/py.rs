@@ -192,9 +192,26 @@ impl PyPhysicsWorld {
         self.inner.position(id)
     }
 
-    /// 動的剛体かどうか。
+    /// 動的 prop かどうか。
     fn is_dynamic(&self, id: &str) -> bool {
         self.inner.is_dynamic(id)
+    }
+
+    /// キネマティック歩行者かどうか。
+    fn is_kinematic(&self, id: &str) -> bool {
+        self.inner.is_kinematic(id)
+    }
+
+    /// 歩行者のゲーム側位置をキネマティック剛体へ押し込む（step 前に毎フレーム）。
+    fn sync_walkers(&mut self, json: &str) -> PyResult<()> {
+        let doc = WorldDoc::from_json(json).map_err(pyerr)?;
+        self.inner.sync_walkers(&doc);
+        Ok(())
+    }
+
+    /// 歩行者 1 体の位置を押し込む。
+    fn set_walker_position(&mut self, id: &str, p: [f32; 3]) -> bool {
+        self.inner.set_walker_position(id, p)
     }
 
     /// 動的剛体の速度を設定（投げる / 吹き飛ばす）。

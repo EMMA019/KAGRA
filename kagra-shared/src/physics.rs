@@ -8,7 +8,10 @@
 //!   `add_box(is_static=False)` と同じ契約、ただし Rapier で本物の物理）。
 //! - 地形は `height_at` をサンプリングして高さ場コライダーにする
 //!   （`halfspace` に比べて島の丘に沿って箱が転がる）。
-//! - 歩行者は動的剛体（カプセル）として入れ、床に落ちて箱に乗る。
+//! - 歩行者は**キネマティック剛体**（カプセル）。位置はゲーム（WorldPlay /
+//!   Python）が所有し、毎フレーム `sync_walkers` で押し込む。重力で落ちず、
+//!   箱にぶつかって押し、箱の上に立つ。`sync` は歩行者の位置を上書きしない
+//!   （WorldPlay の WASD 移動と共存する）。
 //!
 //! `enhanced-determinism` feature により、同一プラットフォームで
 //! 同入力 → 同結果（ゲームの決定論ルールを満たす）。
@@ -34,25 +37,39 @@ pub struct PhysicsWorld {
     dynamic: HashMap<String, RigidBodyHandle>,
     /// prop id → コライダーハンドル（静的 + 動的）。
     colliders: HashMap<String, ColliderHandle>,
+    /// 歩行者 id → キネマティック剛体ハンドル。
+    kinematic: HashMap<String, RigidBodyHandle>,
 }
 
-/// prop の半辺（model → 形状）。y は半分の高さ（Rapier cuboid は中心基準）。
-fn prop_half_extents(p: &WorldProp) -> Option<[f32; 3]> {
+/// コライダー形状を作る。None は「物理に参加しない」。
+///
+/// 形状は描画と同じ中心基準（prop.position は中心、scale は全体サイズ）:
+/// - box / crate → cuboid（半辺）
+/// - sphere → ball（半径 = max(x, z) 半幅。coin 等の円盤に近い）
+/// - capsule / cylinder → capsule_y（半径 = min(x, z) 半幅、高さ = y）
+fn collider_for(p: &WorldProp) -> Option<ColliderBuilder> {
     let s = p.scale;
-    match p.model.to_ascii_lowercase().as_str() {
-        "box" | "crate" | "" => Some([s[0] * 0.5, s[1] * 0.5, s[2] * 0.5]),
+    let friction = p.friction;
+    let restitution = p.restitution;
+    let base = |b: ColliderBuilder| b.friction(friction).restitution(restitution);
+    let m = p.model.to_ascii_lowercase();
+    match m.as_str() {
+        "box" | "crate" | "" => Some(base(ColliderBuilder::cuboid(
+            s[0].abs() * 0.5,
+            s[1].abs() * 0.5,
+            s[2].abs() * 0.5,
+        ))),
+        "sphere" => {
+            let r = (s[0].abs().max(s[2].abs()) * 0.5).max(0.05);
+            Some(base(ColliderBuilder::ball(r)))
+        }
+        "capsule" | "cylinder" => {
+            let r = (s[0].abs().min(s[2].abs()) * 0.5).max(0.05);
+            let half = (s[1].abs() * 0.5 - r).max(0.02);
+            Some(base(ColliderBuilder::capsule_y(half, r)))
+        }
         _ => None,
     }
-}
-
-/// コライダー形状を作る。box のみ（第一歩）。None は「物理に参加しない」。
-fn collider_for(p: &WorldProp) -> Option<ColliderBuilder> {
-    let half = prop_half_extents(p)?;
-    Some(
-        ColliderBuilder::cuboid(half[0], half[1], half[2])
-            .friction(p.friction)
-            .restitution(p.restitution),
-    )
 }
 
 impl PhysicsWorld {
@@ -89,16 +106,19 @@ impl PhysicsWorld {
                 }
             }
         }
-        // 歩行者（player + walkers）: カプセル剛体。箱に乗る・床に立つ。
+        // 歩行者（player + walkers）: キネマティックカプセル。
+        // 位置はゲーム（WorldPlay / Python）が所有。重力で落ちず、箱に
+        // ぶつかって押し、箱の上に立つ。sync では書き戻さない。
         for w in doc.player.iter().chain(doc.walkers.iter()) {
-            let body = this
-                .inner
-                .insert_body(RigidBodyBuilder::dynamic().translation(w.position.into()));
+            let body = this.inner.insert_body(
+                RigidBodyBuilder::kinematic_position_based()
+                    .translation(w.position.into()),
+            );
             let collider = ColliderBuilder::capsule_y(0.7, 0.28)
                 .friction(0.0)
                 .density(1.0);
             this.inner.insert_collider(collider, Some(body));
-            this.dynamic.insert(w.id.clone(), body);
+            this.kinematic.insert(w.id.clone(), body);
         }
         this
     }
@@ -130,6 +150,9 @@ impl PhysicsWorld {
     }
 
     /// 1 フレーム進める。`dt` を固定ステップに分割して積む（爆発防止）。
+    ///
+    /// キネマティック歩行者は、直前の `sync_walkers` で設定された
+    /// next_kinematic_translation に向かって動く。
     pub fn step(&mut self, dt: f32) {
         let dt = dt.clamp(0.0, 0.05);
         let mut remaining = dt;
@@ -141,21 +164,36 @@ impl PhysicsWorld {
         }
     }
 
-    /// 剛体位置を props / walkers に書き戻す。
+    /// 歩行者のゲーム側位置をキネマティック剛体へ押し込む（毎フレーム、
+    /// `step` の前に呼ぶ）。WorldPlay の WASD 移動と共存する。
+    pub fn sync_walkers(&mut self, doc: &WorldDoc) {
+        for w in doc.player.iter().chain(doc.walkers.iter()) {
+            if let Some(&body) = self.kinematic.get(&w.id) {
+                if let Some(rb) = self.inner.bodies.get_mut(body) {
+                    rb.set_next_kinematic_translation(Vec3::from_array(w.position));
+                }
+            }
+        }
+    }
+
+    /// 歩行者 1 体のゲーム側位置を押し込む（`sync_walkers` の単体版）。
+    pub fn set_walker_position(&mut self, id: &str, p: [f32; 3]) -> bool {
+        let Some(&body) = self.kinematic.get(id) else {
+            return false;
+        };
+        if let Some(rb) = self.inner.bodies.get_mut(body) {
+            rb.set_next_kinematic_translation(Vec3::from_array(p));
+            return true;
+        }
+        false
+    }
+
+    /// 剛体位置を props に書き戻す（歩行者はゲーム所有なので触らない）。
     pub fn sync(&self, doc: &mut WorldDoc) {
         for p in &mut doc.props {
             if let Some(&body) = self.dynamic.get(&p.id) {
                 if let Some(rb) = self.inner.bodies.get(body) {
                     p.position = rb.translation().to_array();
-                }
-            }
-        }
-        for w in doc.player.iter_mut().chain(doc.walkers.iter_mut()) {
-            if let Some(&body) = self.dynamic.get(&w.id) {
-                if let Some(rb) = self.inner.bodies.get(body) {
-                    w.position = rb.translation().to_array();
-                    let vel = rb.linvel();
-                    w.on_ground = vel.y.abs() < 0.05 && rb.translation().y > -10.0;
                 }
             }
         }
@@ -193,9 +231,19 @@ impl PhysicsWorld {
         Some(rb.translation().to_array())
     }
 
-    /// 動的剛体かどうか。
+    /// 動的 prop かどうか（is_static=false の prop）。
     pub fn is_dynamic(&self, id: &str) -> bool {
         self.dynamic.contains_key(id)
+    }
+
+    /// キネマティック歩行者かどうか（player / walkers）。
+    pub fn is_kinematic(&self, id: &str) -> bool {
+        self.kinematic.contains_key(id)
+    }
+
+    /// 物理に参加する剛体か（動的 prop + 歩行者）。
+    pub fn is_body(&self, id: &str) -> bool {
+        self.dynamic.contains_key(id) || self.kinematic.contains_key(id)
     }
 }
 
@@ -319,7 +367,8 @@ mod tests {
     }
 
     #[test]
-    fn walker_stands_on_ground() {
+    fn walker_is_kinematic_and_keeps_game_position() {
+        // キネマティック: 重力で落ちない（位置はゲーム所有）。
         let mut doc = WorldDoc {
             version: crate::world_doc::WORLD_DUMP_VERSION,
             half: 10.0,
@@ -334,11 +383,97 @@ mod tests {
             ..Default::default()
         };
         let mut world = PhysicsWorld::from_doc(&doc);
+        assert!(world.is_kinematic("walker:player"), "歩行者はキネマティック");
         for _ in 0..300 {
+            world.sync_walkers(&doc);
             world.step(1.0 / 60.0);
         }
         world.sync(&mut doc);
         let p = doc.player.as_ref().unwrap();
-        assert!(p.position[1] > 0.8 && p.position[1] < 1.4, "歩行者は床に立つ, y={}", p.position[1]);
+        assert_eq!(p.position, [0.0, 3.0, 0.0], "sync は歩行者位置を上書きしない");
+    }
+
+    #[test]
+    fn kinematic_walker_pushes_dynamic_box() {
+        // 歩行者が箱に向かって進むと、キネマティックが動的箱を押す。
+        let mut doc = WorldDoc {
+            version: crate::world_doc::WORLD_DUMP_VERSION,
+            half: 10.0,
+            floor_y: 0.0,
+            props: vec![WorldProp {
+                id: "prop:box".into(),
+                kind: "prop".into(),
+                name: "box".into(),
+                model: "box".into(),
+                position: [2.0, 0.6, 0.0],
+                scale: [1.0, 1.0, 1.0],
+                enabled: true,
+                is_static: false,
+                ..Default::default()
+            }],
+            player: Some(crate::world_doc::WorldWalker {
+                id: "walker:player".into(),
+                kind: "walker".into(),
+                name: "player".into(),
+                position: [0.0, 1.0, 0.0],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let mut world = PhysicsWorld::from_doc(&doc);
+        let mut px = 0.0f32;
+        for _ in 0..240 {
+            px += 0.02; // 歩行者が +X へ進む（ゲーム所有の移動）
+            doc.player.as_mut().unwrap().position[0] = px;
+            world.sync_walkers(&doc);
+            world.step(1.0 / 60.0);
+        }
+        let box_x = world.position("prop:box").unwrap()[0];
+        assert!(box_x > 2.2, "歩行者が箱を押す, box_x={box_x}");
+    }
+
+    #[test]
+    fn sphere_and_capsule_colliders_work() {
+        let mut doc = WorldDoc {
+            version: crate::world_doc::WORLD_DUMP_VERSION,
+            half: 10.0,
+            floor_y: 0.0,
+            props: vec![
+                WorldProp {
+                    id: "prop:ball".into(),
+                    kind: "prop".into(),
+                    name: "ball".into(),
+                    model: "sphere".into(),
+                    position: [0.0, 3.0, 0.0],
+                    scale: [1.0, 1.0, 1.0],
+                    enabled: true,
+                    is_static: false,
+                    ..Default::default()
+                },
+                WorldProp {
+                    id: "prop:pill".into(),
+                    kind: "prop".into(),
+                    name: "pill".into(),
+                    model: "capsule".into(),
+                    position: [2.0, 4.0, 0.0],
+                    scale: [0.6, 1.8, 0.6],
+                    enabled: true,
+                    is_static: false,
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let mut world = PhysicsWorld::from_doc(&doc);
+        for _ in 0..360 {
+            world.step(1.0 / 60.0);
+        }
+        // 球（半径 0.5）は床に着地 → 中心 y ≈ 0.5
+        let by = world.position("prop:ball").unwrap()[1];
+        assert!(by > 0.4 && by < 0.9, "球は床に落ちる, by={by}");
+        // カプセルは床に落ちて転がって安定する。直立なら中心 y ≈ 0.9
+        // （half 0.6 + r 0.3）、横倒しなら ≈ 0.3。0.3..1.0 の範囲。
+        let py = world.position("prop:pill").unwrap()[1];
+        assert!(py > 0.2 && py < 1.1, "カプセルは床に落ちて止まる, py={py}");
     }
 }
