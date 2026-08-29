@@ -7,10 +7,12 @@ AVAudioEngine / Web Audio が担当するので、ここでは触らない。
 
 使い方::
 
-    from kagra.audio import se, tone, play_wav
+    from kagra.audio import se, tone, play_wav, set_listener, play_se
 
     se("coin")          # プリセット SE（キャッシュ済み）
     play_wav(tone(880, 0.08, wave="sine"))   # 任意トーン
+    set_listener(0, 0, 0, 0, 0, 1)           # 聞き手を置く（前 = +Z）
+    play_se("coin", x=5, y=0, z=0)           # 右から聞こえる（距離減衰 + パン）
 """
 from __future__ import annotations
 
@@ -20,7 +22,9 @@ import sys
 import wave
 from io import BytesIO
 
-__all__ = ["tone", "sound", "se", "play_wav", "preset_names"]
+from kagra.spatial import spatial_mix
+
+__all__ = ["tone", "sound", "se", "play_wav", "preset_names", "set_listener", "play_se"]
 
 RATE = 22050
 
@@ -168,6 +172,81 @@ def play_wav(wav: bytes, loop: bool = False) -> None:
         winsound.PlaySound(wav, flags)
     except Exception:  # pragma: no cover - 音が出せない環境は静かに無視
         pass
+
+
+# ── 3D 音響（距離減衰 + ステレオパン） ────────────────────────────────────
+
+_listener = {
+    "x": 0.0, "y": 0.0, "z": 0.0,
+    "fx": 0.0, "fy": 0.0, "fz": 1.0,
+    "ux": 0.0, "uy": 1.0, "uz": 0.0,
+}
+
+
+def set_listener(
+    x: float = 0.0,
+    y: float = 0.0,
+    z: float = 0.0,
+    fx: float = 0.0,
+    fy: float = 0.0,
+    fz: float = 1.0,
+    ux: float = 0.0,
+    uy: float = 1.0,
+    uz: float = 0.0,
+) -> None:
+    """聞き手の位置と向き（前 = forward、上 = up）。play_se の定位基準。"""
+    _listener.update(
+        x=x, y=y, z=z, fx=fx, fy=fy, fz=fz, ux=ux, uy=uy, uz=uz
+    )
+
+
+def _spatialize(wav: bytes, left: float, right: float) -> bytes:
+    """モノ WAV をステレオ WAV にし、左右ゲインを焼き込む（0..1）。"""
+    pcm = _pcm(wav)
+    l = max(0.0, min(1.0, left))
+    r = max(0.0, min(1.0, right))
+    n = len(pcm) // 2
+    out = bytearray()
+    for i in range(n):
+        s = struct.unpack_from("<h", pcm, i * 2)[0]
+        out += struct.pack("<hh", int(s * l), int(s * r))
+    buf = BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(RATE)
+        w.writeframes(bytes(out))
+    return buf.getvalue()
+
+
+def play_se(
+    name: str,
+    x: float = 0.0,
+    y: float = 0.0,
+    z: float = 0.0,
+    volume: float = 1.0,
+    ref_distance: float = 4.0,
+    max_distance: float = 48.0,
+) -> None:
+    """3D SE。聞き手（set_listener）から見た距離減衰 + ステレオパン。
+
+    0.19 の ``play_se(path, x=, y=, z=, ref_distance=, max_distance=)`` 相当
+    （spatial.py と同じ逆二乗減衰 + equal-power パン。HRTF ではない）。
+    ``x=y=z=0`` かつリスナーが原点なら 2D のまま（パン無し）。
+    """
+    _, _, left, right = spatial_mix(
+        _listener["x"], _listener["y"], _listener["z"],
+        _listener["fx"], _listener["fy"], _listener["fz"],
+        x, y, z,
+        ref_distance=ref_distance,
+        max_distance=max_distance,
+        ux=_listener["ux"], uy=_listener["uy"], uz=_listener["uz"],
+    )
+    if left <= 0.0 and right <= 0.0:
+        return
+    v = max(0.0, min(1.0, volume))
+    stereo = _spatialize(sound(name), left * v, right * v)
+    play_wav(stereo)
 
 
 def se(name: str) -> None:
