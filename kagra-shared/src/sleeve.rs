@@ -333,6 +333,7 @@ mod tests {
             ],
             skin_joints: vec![0, 1, 2, 3, 4, 5, 6],
             clip: None,
+            mesh_index: 0,
             humanoid: [
                 ("hips", 0),
                 ("leftUpperArm", 1),

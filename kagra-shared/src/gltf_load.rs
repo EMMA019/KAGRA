@@ -229,6 +229,8 @@ pub struct SkinnedMesh {
     pub clip: Option<AnimClip>,
     /// VRM 0/1 humanoid bone name -> node index. Empty when extras are absent.
     pub humanoid: HashMap<String, usize>,
+    /// glTF メッシュインデックス（firstPerson の by_mesh 注釈参照用）。
+    pub mesh_index: usize,
     /// VRM 0 secondaryAnimation / VRM 1 VRMC_springBone chains (rest).
     pub springs: crate::spring::SpringState,
     /// glTF morph target POSITION deltas (one vec per target, rest-pose).
@@ -452,6 +454,27 @@ pub fn sample_skinned_look(
 
 /// `sample_skinned_look` + SpringBone の布シミュレーション。
 ///
+/// 一人称視点（"eye" カメラ）でこのパーツを隠すべきか。
+///
+/// VRM firstPerson 注釈: ThirdPersonOnly / Auto（頭部相当）は一人称で隠す。
+/// FirstPersonOnly（手等）は残す。注釈が無ければ Auto 扱い（隠す）。
+pub fn part_hidden_in_first_person(part: &SkinnedMesh) -> bool {
+    use crate::first_person::MeshAnnotation;
+    let by_mesh = part.first_person.by_mesh.get(&part.mesh_index);
+    let by_node = part
+        .skin_joints
+        .iter()
+        .find_map(|&n| part.first_person.by_node.get(&n));
+    let flag = by_mesh
+        .or(by_node)
+        .copied()
+        .unwrap_or(MeshAnnotation::Auto);
+    matches!(
+        flag,
+        MeshAnnotation::ThirdPersonOnly | MeshAnnotation::Auto
+    )
+}
+
 /// ポーズのワールド行列で Verlet を 1 ステップ進め、得られた関節の回転
 /// デルタをノードのローカル回転に足してからスキンする。`sim` はフレームを
 /// 跨いで保持する（レンダラが walker spec ごとに持つ）。初回は snap で
@@ -654,15 +677,15 @@ fn skinned_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<SkinnedMesh, St
     if doc.meshes.is_empty() || doc.meshes[0].primitives.is_empty() {
         return Err("gltf has no mesh primitives".into());
     }
-    skinned_from_prim(doc, blobs, &doc.meshes[0].primitives[0])
+    skinned_from_prim(doc, blobs, &doc.meshes[0].primitives[0], 0)
 }
 
 fn skinned_parts_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<Vec<SkinnedMesh>, String> {
     let mut parts = Vec::new();
     let mut last_err = None;
-    for mesh in &doc.meshes {
+    for (mesh_idx, mesh) in doc.meshes.iter().enumerate() {
         for prim in &mesh.primitives {
-            match skinned_from_prim(doc, blobs, prim) {
+            match skinned_from_prim(doc, blobs, prim, mesh_idx) {
                 Ok(s) => parts.push(s),
                 Err(e) => last_err = Some(e),
             }
@@ -686,6 +709,7 @@ fn skinned_from_prim(
     doc: &GltfFile,
     blobs: &[Vec<u8>],
     prim: &Primitive,
+    mesh_index: usize,
 ) -> Result<SkinnedMesh, String> {
     let rest = static_mesh_from_prim(doc, blobs, prim)?;
     let nverts = rest.vertices.len();
@@ -721,6 +745,7 @@ fn skinned_from_prim(
         nodes,
         skin_joints,
         clip,
+        mesh_index,
         humanoid: parse_humanoid(doc),
         springs: {
             let children: Vec<Vec<usize>> = doc.nodes.iter().map(|n| n.children.clone()).collect();
@@ -2075,6 +2100,46 @@ mod tests {
         let b = mesh.bounds();
         assert!((b.min + Vec3::splat(0.5)).length() < 1e-3);
         assert!((b.max - Vec3::splat(0.5)).length() < 1e-3);
+    }
+
+    #[test]
+    fn first_person_hides_third_person_and_auto_parts() {
+        use crate::first_person::{FirstPerson, MeshAnnotation};
+        let mut part = SkinnedMesh {
+            rest: crate::scene3d::MeshData::default(),
+            joints: vec![],
+            weights: vec![],
+            inverse_bind: vec![],
+            nodes: vec![],
+            skin_joints: vec![],
+            clip: None,
+            mesh_index: 1,
+            humanoid: Default::default(),
+            springs: Default::default(),
+            morphs: vec![],
+            expressions: Default::default(),
+            look_at: None,
+            constraints: vec![],
+            first_person: FirstPerson::default(),
+        };
+        // mesh 注釈: ThirdPersonOnly → 一人称で隠す
+        part.first_person.by_mesh.insert(1, MeshAnnotation::ThirdPersonOnly);
+        assert!(part_hidden_in_first_person(&part));
+        // FirstPersonOnly → 残す
+        part.first_person.by_mesh.insert(1, MeshAnnotation::FirstPersonOnly);
+        assert!(!part_hidden_in_first_person(&part));
+        // Auto → 隠す
+        part.first_person.by_mesh.insert(1, MeshAnnotation::Auto);
+        assert!(part_hidden_in_first_person(&part));
+        // 注釈なし → Auto 扱いで隠す
+        part.first_person = FirstPerson::default();
+        assert!(part_hidden_in_first_person(&part));
+        // node 注釈（VRM 1.0）: スキンジョイントのノードが ThirdPersonOnly
+        part.skin_joints = vec![7];
+        part.first_person.by_node.insert(7, MeshAnnotation::ThirdPersonOnly);
+        assert!(part_hidden_in_first_person(&part));
+        part.first_person.by_node.insert(7, MeshAnnotation::FirstPersonOnly);
+        assert!(!part_hidden_in_first_person(&part));
     }
 
     #[test]

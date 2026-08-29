@@ -555,9 +555,12 @@ impl WorldDoc {
             if !seen.insert(walk.id.as_str()) {
                 continue;
             }
-            // First-person: camera sits in the capsule. Skip local body/head so
-            // we do not clip into a white interior. Walker stays in the dump.
-            if hide_local && local_id == Some(walk.id.as_str()) {
+            // First-person: camera sits in the capsule. glTF（VRM）なら
+            // firstPerson 注釈でパーツをフィルタするためスキップしない
+            // （下の gltf 分岐で ThirdPersonOnly/Auto を隠す）。カプセル等
+            // glTF なしは全体を隠す。
+            if hide_local && local_id == Some(walk.id.as_str()) && walker_gltf_spec(walk).is_none()
+            {
                 continue;
             }
             // Named glTF (dump `gltf` / `model`) is CPU-skinned at `clip` and
@@ -599,7 +602,20 @@ impl WorldDoc {
                 } else {
                     Material::Solid
                 };
-                for &mesh in meshes {
+                for (pi, &mesh) in meshes.iter().enumerate() {
+                    // 一人称（"eye"）: ThirdPersonOnly / Auto パーツを隠す。
+                    // firstPerson 注釈が読める glTF だけフィルタし、読めない
+                    // （カプセル等）は従来どおり全体を隠す（上で continue）。
+                    if hide_local && local_id == Some(walk.id.as_str()) {
+                        let hidden = walker_gltf_spec(walk)
+                            .and_then(load_skinned_parts)
+                            .and_then(|parts| parts.get(pi).cloned())
+                            .map(|part| crate::gltf_load::part_hidden_in_first_person(&part))
+                            .unwrap_or(true);
+                        if hidden {
+                            continue;
+                        }
+                    }
                     b.push_material(mesh, model, col, mat);
                 }
                 continue;
