@@ -88,11 +88,19 @@ python -m kagra.verify examples/verify_scenarios/interact_fish_smoke.json       
 ./scripts/build_android_native.sh && cd mobile/android && gradle :app:assembleDebug
 ```
 
-pip デモ（`kagra-core` / RendererV2）の脚本: `examples/vrm_*.py` —
-`python -m kagra`（歌って踊る）、`examples/vrm_orb_rush.py`（参照ゲーム）、
-`vrm_heart_catch.py` / `vrm_switch_room.py` / `vrm_dodge_room.py` /
-`vrm_relic_run.py`（エージェントログあり）。レガシー 2D / タイルマップ / エディタ:
-[`examples/archive/`](examples/archive/)。
+pip デモ（`kagra-core` / RendererV2）の脚本:
+
+```bash
+python -m kagra                                  # 歌って踊る
+python examples/vrm_orb_rush.py                  # 参照ゲーム
+python examples/vrm_heart_catch.py               # 3 レーンキャッチ（エージェントログあり）
+python examples/vrm_switch_room.py               # 箱部屋、カメラ追従
+python examples/vrm_dodge_room.py                # 降ってくる箱を避ける（エージェントログあり）
+python examples/vrm_relic_run.py                 # 島の遺跡集め 30 秒（エージェントログあり）
+python examples/vrm_open_world.py                # 残置 VRM Crest Isle（RendererV2）
+```
+
+レガシー 2D / タイルマップ / エディタ: [`examples/archive/`](examples/archive/)。
 
 ## エージェント / ソースから
 

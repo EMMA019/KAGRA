@@ -67,6 +67,7 @@ _SEARCH_ROOTS = (
     "assets",
     "assets/model",
     "assets/models",
+    "assets/library",
     "assets/anim",
     "assets/motion",
     "assets/stage",
@@ -151,6 +152,31 @@ def _exts_for(kind: AssetKind) -> tuple[str, ...]:
     return _EXTENSIONS.get(kind, ())
 
 
+_GLTF_INDEX_CACHE: dict[str, dict[str, list[Path]]] = {}
+
+
+def gltf_index(root: Path | None = None) -> dict[str, list[Path]]:
+    """assets/library + assets/models の glTF をステム名（小文字）で索引。
+
+    エージェントが「こんなアセット置いた」「木が欲しい」を名前で引けるように
+    する。コミット済みの kaykit / quaternius / polyhaven が対象。起動時に
+    rglob で走査し、結果はプロセス内キャッシュ。
+    """
+    root = root or project_root()
+    key = os.path.normcase(str(root))
+    if key in _GLTF_INDEX_CACHE:
+        return _GLTF_INDEX_CACHE[key]
+    out: dict[str, list[Path]] = {}
+    for base in ("assets/library", "assets/models"):
+        d = root / base
+        if not d.is_dir():
+            continue
+        for p in list(d.rglob("*.glb")) + list(d.rglob("*.gltf")):
+            out.setdefault(p.stem.lower(), []).append(p)
+    _GLTF_INDEX_CACHE[key] = out
+    return out
+
+
 def candidate_paths(
     kind: AssetKind,
     name: str,
@@ -204,6 +230,11 @@ def candidate_paths(
                     out.append(root / base / f"{stem.capitalize()}{ext}")
             else:
                 out.append(root / base / stem)
+
+    # assets/library + assets/models の実ファイルを名前で引く（深い階層）。
+    if kind is AssetKind.GLTF or kind is AssetKind.ANY:
+        for hit in gltf_index(root).get(Path(name).stem.lower(), []):
+            out.append(hit)
 
     # 重複除去（順序維持）
     seen: set[str] = set()
@@ -389,6 +420,7 @@ def describe_environment(root: Path | None = None) -> dict:
         if fixtures.exists()
         else []
     )
+    idx = gltf_index(root)
     return {
         "root": str(root),
         "has_assets_dir": assets.is_dir(),
@@ -397,6 +429,11 @@ def describe_environment(root: Path | None = None) -> dict:
         "gltf_files": gltfs[:20],
         "bvh_fixtures": bvh[:20],
         "vrma_fixtures": vrma[:20],
+        # アセットカタログ: assets/library + assets/models の glTF 名。
+        # エージェントは「こんなゲーム」の部品を名前で引き、
+        # kagra_resolve_asset(kind=gltf, name=…) でパスを得る。
+        "gltf_names": sorted(idx.keys()),
+        "gltf_count": sum(len(v) for v in idx.values()),
         "aliases": {k: v for k, v in _ALIASES.items()},
         "api_index": str(root / "docs" / "API_INDEX.md"),
     }

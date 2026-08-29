@@ -136,12 +136,18 @@ def _run_fastmcp() -> None:
 
     @mcp.tool()
     def kagra_env() -> str:
-        """List available VRM/FBX/BVH assets and aliases for this checkout."""
+        """Asset environment snapshot: VRM/FBX/glTF catalog (assets/library +
+        assets/models) plus aliases. 'gltf_names' lists every CC0 glTF you can
+        place or resolve — search it for the part you want (tree, fish, ...)."""
         return _env()
 
     @mcp.tool()
     def kagra_resolve_asset(kind: str, name: str) -> str:
-        """Resolve an asset logical name (e.g. kind=vrm name=Emma) to a filesystem path."""
+        """Resolve an asset logical name to a filesystem path (e.g. kind=gltf
+        name=Knight → assets/library/kaykit/.../Knight.glb). Kinds: vrm|fbx|
+        bvh|vrma|gltf|texture|font|audio|any. Place new assets under assets/
+        (CC0 glTF into assets/library or assets/models) and they join the
+        catalog automatically."""
         return _resolve(kind, name)
 
     @mcp.tool()
@@ -205,12 +211,12 @@ def _run_minimal() -> None:
         },
         {
             "name": "kagra_env",
-            "description": "Asset environment snapshot",
+            "description": "Asset environment snapshot: VRM/FBX/glTF catalog (assets/library + assets/models) plus aliases. 'gltf_names' lists every CC0 glTF to pick from.",
             "inputSchema": {"type": "object", "properties": {}},
         },
         {
             "name": "kagra_resolve_asset",
-            "description": "Resolve asset path",
+            "description": "Resolve an asset logical name to a filesystem path (kind=gltf name=Knight → assets/library/kaykit/...). New CC0 glTF under assets/library or assets/models join the catalog automatically.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

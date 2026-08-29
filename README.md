@@ -85,11 +85,19 @@ python -m kagra.verify examples/verify_scenarios/interact_fish_smoke.json       
 ./scripts/build_android_native.sh && cd mobile/android && gradle :app:assembleDebug
 ```
 
-The pip demo (`kagra-core` / RendererV2) scripts: `examples/vrm_*.py` —
-`python -m kagra` (sing & dance), `examples/vrm_orb_rush.py` (reference game),
-`vrm_heart_catch.py` / `vrm_switch_room.py` / `vrm_dodge_room.py` /
-`vrm_relic_run.py` (agent-run logs). Legacy 2D / tilemap / editor demos:
-[`examples/archive/`](examples/archive/).
+The pip demo (`kagra-core` / RendererV2) scripts:
+
+```bash
+python -m kagra                                  # sing & dance
+python examples/vrm_orb_rush.py                  # reference game
+python examples/vrm_heart_catch.py               # 3-lane catch (agent-run log)
+python examples/vrm_switch_room.py               # boxed room, camera follow
+python examples/vrm_dodge_room.py                # falling boxes (agent-run log)
+python examples/vrm_relic_run.py                 # island relic collect 30s (agent-run log)
+python examples/vrm_open_world.py                # leftover VRM Crest Isle (RendererV2)
+```
+
+Legacy 2D / tilemap / editor demos: [`examples/archive/`](examples/archive/).
 
 ## Agent / from source
 

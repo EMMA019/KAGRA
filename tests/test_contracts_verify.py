@@ -34,6 +34,31 @@ def test_describe_environment():
     env = describe_environment(ROOT)
     assert env["root"]
     assert "aliases" in env
+    # アセットカタログ: assets/library + assets/models の glTF 名。
+    assert env["gltf_count"] > 0
+    assert "tree" in env["gltf_names"]
+    assert "knight" in env["gltf_names"]
+
+
+def test_resolve_library_gltf_by_name():
+    # assets/library の深い階層（kaykit）を名前で解決できる。
+    p = resolve_asset(AssetKind.GLTF, "Knight", root=ROOT)
+    assert p.is_file()
+    assert "kaykit" in str(p)
+
+
+def test_resolve_models_gltf_by_name():
+    p = resolve_asset(AssetKind.GLTF, "Tree", root=ROOT)
+    assert p.is_file()
+    assert p.suffix.lower() == ".glb"
+
+
+def test_gltf_index_names_lowercased():
+    from kagra.contracts import gltf_index
+
+    idx = gltf_index(ROOT)
+    assert all(k == k.lower() for k in idx)
+    assert any("pine" in k or "tree" in k for k in idx)
 
 
 def test_resolve_walk_fixture():
