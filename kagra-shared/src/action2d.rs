@@ -1,4 +1,4 @@
-//! 2D action on play_world: side-view sprite walk, hit, hurt, kill,
+﻿//! 2D action on play_world: side-view sprite walk, hit, hurt, kill,
 //! projectile, and room switch.
 //!
 //! Sibling of 3D `action` / `sprite`. Player card and foe card are the same
@@ -550,6 +550,9 @@ fn ensure_markers(doc: &mut WorldDoc) {
             metallic: 0.0,
             roughness: 0.85,
             interact: None,
+            is_static: true,
+            friction: 0.85,
+            restitution: 0.0,
         },
     );
     ensure_shot(doc);
@@ -597,6 +600,9 @@ fn ensure_shot(doc: &mut WorldDoc) {
             metallic: 0.0,
             roughness: 0.7,
             interact: None,
+            is_static: true,
+            friction: 0.85,
+            restitution: 0.0,
         },
     );
 }
@@ -630,6 +636,9 @@ fn tiny_prop(
         metallic: 0.0,
         roughness: 1.0,
         interact: None,
+            is_static: true,
+            friction: 0.85,
+            restitution: 0.0,
     }
 }
 

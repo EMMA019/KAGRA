@@ -2630,7 +2630,7 @@ mod tests {
         let bytes = std::fs::read(&path).expect("read Emma.vrm");
         let parts = skinned_parts_from_glb(&bytes).expect("Emma.vrm parts");
         let skin = &parts[0];
-        let Some(&larm) = skin.humanoid.get("leftUpperArm") else {
+        let Some(_larm) = skin.humanoid.get("leftUpperArm") else {
             return;
         };
         // 腕チェーン（上腕→前腕→手）と脚チェーン（大腿→下腿→足）のノード集合。

@@ -142,6 +142,72 @@ fn measure_text_py(text: &str, size: f32) -> f32 {
     crate::font::measure_text(text, size)
 }
 
+/// Rapier 剛体物理（Phase 1）。dump JSON からワールドを作り、step で進め、
+/// to_json で位置を書き戻す。
+///
+/// 使い方（Python）::
+///
+///     import kagra_shared as ks
+///     phys = ks.PhysicsWorld.from_json(json.dumps(world))
+///     phys.step(1/60)
+///     world = json.loads(phys.to_json())
+#[cfg(feature = "physics")]
+#[pyclass(name = "PhysicsWorld")]
+struct PyPhysicsWorld {
+    inner: crate::physics::PhysicsWorld,
+    doc: WorldDoc,
+}
+
+#[cfg(feature = "physics")]
+#[pymethods]
+impl PyPhysicsWorld {
+    #[staticmethod]
+    fn from_json(json: &str) -> PyResult<Self> {
+        let doc = WorldDoc::from_json(json).map_err(pyerr)?;
+        Ok(Self {
+            inner: crate::physics::PhysicsWorld::from_doc(&doc),
+            doc,
+        })
+    }
+
+    /// 1 フレーム進める。`dt` は秒（1/60 など）。
+    fn step(&mut self, dt: f32) {
+        self.inner.step(dt);
+    }
+
+    /// 剛体位置を書き戻した dump JSON。
+    fn to_json(&self) -> PyResult<String> {
+        let mut doc = self.doc.clone();
+        self.inner.sync(&mut doc);
+        doc.to_json().map_err(pyerr)
+    }
+
+    /// 同期前の dump JSON（from_json した時点の世界）。
+    fn dump(&self) -> PyResult<String> {
+        self.doc.to_json().map_err(pyerr)
+    }
+
+    /// 動的剛体（is_static=false の prop / walker）の現在位置。
+    fn position(&self, id: &str) -> Option<[f32; 3]> {
+        self.inner.position(id)
+    }
+
+    /// 動的剛体かどうか。
+    fn is_dynamic(&self, id: &str) -> bool {
+        self.inner.is_dynamic(id)
+    }
+
+    /// 動的剛体の速度を設定（投げる / 吹き飛ばす）。
+    fn set_velocity(&mut self, id: &str, v: [f32; 3]) -> bool {
+        self.inner.set_velocity(id, v)
+    }
+
+    /// 動的剛体の位置を直接設定（テレポート / リスポーン）。
+    fn set_position(&mut self, id: &str, p: [f32; 3]) -> bool {
+        self.inner.set_position(id, p)
+    }
+}
+
 /// HUD JSON（Python が quad / テキストを渡す。オプション）。
 #[derive(serde::Deserialize, Default)]
 struct HudJson {
@@ -256,6 +322,8 @@ fn kagra_shared(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyWorldPlay>()?;
     m.add_function(wrap_pyfunction!(render_world_doc_py, m)?)?;
     m.add_function(wrap_pyfunction!(measure_text_py, m)?)?;
+    #[cfg(feature = "physics")]
+    m.add_class::<PyPhysicsWorld>()?;
     m.add("__version__", crate::KAGRA_SHARED_VERSION)?;
     Ok(())
 }

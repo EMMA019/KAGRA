@@ -1,0 +1,8 @@
+{
+  "name": "physics_stack_smoke",
+  "notes": "Phase 1: Rapier 剛体物理 — is_static=false の箱 2 個が落ちて積もり、offscreen で描画。kagra_shared に physics feature が無ければスキップ（exit 0 / expect ファイル無し）。",
+  "script": "examples/verify_scenarios/physics_stack.py",
+  "timeout_sec": 120,
+  "expect_files": ["scratch/verify_physics.png"],
+  "min_file_bytes": 500
+}

@@ -1,4 +1,4 @@
-//! RPG talk + menu + party + inventory + turn combat on play_world.
+﻿//! RPG talk + menu + party + inventory + turn combat on play_world.
 //!
 //! Sibling of collectathon / action / platformer / shop. Town dump talks to an
 //! NPC (overlay + a dump-visible flag + talk-grant item), menu is an overlay
@@ -280,6 +280,9 @@ fn tiny_prop(
         metallic: 0.0,
         roughness: 1.0,
         interact: None,
+            is_static: true,
+            friction: 0.85,
+            restitution: 0.0,
     }
 }
 
@@ -453,6 +456,9 @@ fn ensure_enemy(doc: &mut WorldDoc) {
             metallic: 0.0,
             roughness: 1.0,
             interact: None,
+            is_static: true,
+            friction: 0.85,
+            restitution: 0.0,
         });
     }
     if doc.props.iter().any(|p| p.id == ID_HP) {
@@ -481,6 +487,9 @@ fn ensure_enemy(doc: &mut WorldDoc) {
             metallic: 0.0,
             roughness: 1.0,
             interact: None,
+            is_static: true,
+            friction: 0.85,
+            restitution: 0.0,
         },
     );
 }

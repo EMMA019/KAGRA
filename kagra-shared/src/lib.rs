@@ -31,6 +31,8 @@ pub mod mission;
 pub mod mixamo;
 pub mod morph;
 pub mod novel;
+#[cfg(feature = "physics")]
+pub mod physics;
 pub mod platformer;
 pub mod puzzle;
 pub mod race;

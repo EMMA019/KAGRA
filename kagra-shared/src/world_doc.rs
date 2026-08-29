@@ -191,6 +191,17 @@ pub struct WorldProp {
     /// `on_use` emits an event when the player presses J/attack in reach.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interact: Option<WorldInteract>,
+    /// 剛体物理（Phase 1 / Rapier）: True = 動かない（壁・床・景観）、
+    /// False = 落下・衝突・積み重なる動的剛体。デフォルト true（既存は静的）。
+    /// dump キー `is_static`。
+    #[serde(default = "default_true")]
+    pub is_static: bool,
+    /// 動的剛体の摩擦係数（デフォルト 0.85、old physics3d と同じ）。
+    #[serde(default = "default_friction")]
+    pub friction: f32,
+    /// 動的剛体の反発係数（デフォルト 0.0 = 跳ねない）。
+    #[serde(default)]
+    pub restitution: f32,
 }
 
 /// Prop interaction. The engine handles reach + on_use event; the game owns
@@ -213,6 +224,10 @@ pub struct WorldInteract {
 
 fn default_reach() -> f32 {
     2.5
+}
+
+fn default_friction() -> f32 {
+    0.85
 }
 
 fn prop_type() -> String {
