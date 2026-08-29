@@ -114,6 +114,8 @@ python examples/python_game_minimal.py                  # 窓: WASD + 水辺で 
 python examples/python_game_minimal.py --headless scratch/hello.png  # CI / verify: PNG 出力
 python examples/bunny_garden_minimal.py                 # 1 本目ジャンル: Emma と会話・好感度・日程・セーブ
 python examples/bunny_garden_minimal.py --headless scratch/bunny.png --days 3  # ヘッドレス verify
+python examples/torneko_minimal.py --seed 12345         # ローグライク: seed 決定論ダンジョン・ターン・在庫・セーブ
+python examples/torneko_minimal.py --headless scratch/torneko.png --turns 800  # 決定論 verify（同 seed → 同 PNG）
 ```
 
 パターン（[`examples/python_game_minimal.py`](examples/python_game_minimal.py) より）:

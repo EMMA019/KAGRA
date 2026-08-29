@@ -111,6 +111,8 @@ python examples/python_game_minimal.py                  # window: WASD + J at th
 python examples/python_game_minimal.py --headless scratch/hello.png  # CI / verify: PNG out
 python examples/bunny_garden_minimal.py                 # first genre game: talk to Emma (VRM), affection, days, save
 python examples/bunny_garden_minimal.py --headless scratch/bunny.png --days 3  # headless verify
+python examples/torneko_minimal.py --seed 12345         # roguelike: seeded dungeon, turns, inventory, save
+python examples/torneko_minimal.py --headless scratch/torneko.png --turns 800  # deterministic verify (same seed → same PNG)
 ```
 
 The pattern (from [`examples/python_game_minimal.py`](examples/python_game_minimal.py)):

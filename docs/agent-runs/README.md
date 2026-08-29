@@ -82,3 +82,4 @@
 - `20260901-audio/` — tone/sound SE 合成（純 Python）+ winsound 再生。共通コア ③。
 - `20260901-mouse-input/` — gameloop にマウス（pos / down / clicked）。共通コア ④。
 - `20260901-bunny-garden/` — **1 本目ジャンル**: バニーガーデン系ミニマルゲーム（VRM キャラ + 会話 + 好感度 + 日程 + セーブ）。ロジックは Python のみ。
+- `20260901-torneko/` — **2 本目ジャンル**: トルネコライク（seed 決定論ダンジョン + グリッド + ターン + 在庫 + セーブ）。同 seed → 同 PNG を実証。
