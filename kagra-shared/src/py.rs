@@ -136,6 +136,12 @@ impl PyWorldPlay {
     }
 }
 
+/// テキスト行幅（ピクセル）。UI パネルの折り返し用。
+#[pyfunction(name = "measure_text")]
+fn measure_text_py(text: &str, size: f32) -> f32 {
+    crate::font::measure_text(text, size)
+}
+
 /// HUD JSON（Python が quad / テキストを渡す。オプション）。
 #[derive(serde::Deserialize, Default)]
 struct HudJson {
@@ -221,6 +227,7 @@ fn kagra_shared(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyWorldDoc>()?;
     m.add_class::<PyWorldPlay>()?;
     m.add_function(wrap_pyfunction!(render_world_doc_py, m)?)?;
+    m.add_function(wrap_pyfunction!(measure_text_py, m)?)?;
     m.add("__version__", crate::KAGRA_SHARED_VERSION)?;
     Ok(())
 }

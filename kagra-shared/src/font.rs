@@ -36,6 +36,13 @@ pub struct TextRaster {
     cache: HashMap<(char, u32), Coverage>,
 }
 
+/// 行幅（ピクセル）。キャッシュ不要: h_advance だけで出るので
+/// Python 側のテキスト折り返し（UI パネル）でも気軽に呼べる。
+pub fn measure_text(text: &str, size: f32) -> f32 {
+    let scaled = FONT.as_scaled(size.max(1.0));
+    text.chars().map(|c| scaled.h_advance(scaled.glyph_id(c))).sum()
+}
+
 impl TextRaster {
     pub fn new() -> Self {
         Self::default()
