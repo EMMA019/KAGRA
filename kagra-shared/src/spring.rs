@@ -57,6 +57,8 @@ pub struct SpringState {
     pub chains: Vec<SpringChain>,
     pub colliders: Vec<SpringCollider>,
     pub initialized: bool,
+    /// 風（重力と同様に外部加速度として作用）。kagra-core set_spring_wind 移植。
+    pub wind: [f32; 3],
 }
 
 impl SpringState {
@@ -545,7 +547,8 @@ fn verlet(state: &mut SpringState, world: &[Mat4], dt: f32) {
             let j = &state.chains[ci].joints[i];
             let vel = (Vec3::from_array(j.curr) - Vec3::from_array(j.prev)) * (1.0 - j.drag);
             let spring = rest_world * (j.stiffness * dt * dt);
-            let external = Vec3::from_array(j.gravity) * (dt * dt);
+            let wind = Vec3::from_array(state.wind) * (dt * dt);
+            let external = Vec3::from_array(j.gravity) * (dt * dt) + wind;
             let mut new_pos = Vec3::from_array(j.curr) + vel + spring + external;
             let to_new = new_pos - parent_pos;
             let dist = to_new.length();
@@ -677,6 +680,7 @@ mod tests {
             }],
             colliders: vec![],
             initialized: false,
+            wind: [0.0; 3],
         };
         let mats = [
             Mat4::from_translation(Vec3::ZERO),
@@ -825,6 +829,36 @@ mod tests {
     }
 
     #[test]
+    fn wind_moves_chain_without_gravity() {
+        // 重力 0 でも風があれば布（テール）が流れる
+        let mut st = SpringState {
+            chains: vec![SpringChain {
+                joints: vec![
+                    new_joint(0, 0.6, 0.4, [0.0; 3], 0.02),
+                    new_joint(1, 0.6, 0.4, [0.0; 3], 0.02),
+                ],
+                collider_ids: vec![],
+            }],
+            ..SpringState::default()
+        };
+        let mats = [
+            Mat4::from_translation(Vec3::ZERO),
+            Mat4::from_translation(Vec3::new(0.0, 1.0, 0.0)),
+        ];
+        step(&mut st, &mats, 1.0 / 60.0); // snap
+        st.wind = [1.2, 0.0, 0.0];
+        for _ in 0..30 {
+            step(&mut st, &mats, 1.0 / 60.0);
+        }
+        let curr = Vec3::from_array(st.chains[0].joints[1].curr);
+        assert!(
+            curr.x > 0.01,
+            "wind must push the tail sideways, x={}",
+            curr.x
+        );
+    }
+
+    #[test]
     fn collider_pushes_joint_out() {
         // Chain: root (0) -> joint (1) at (0.1, 1.0, 0). A sphere collider at
         // the root with radius 1.0 must push the joint out to radius distance.
@@ -843,6 +877,7 @@ mod tests {
                 tail: None,
             }],
             initialized: false,
+            wind: [0.0; 3],
         };
         let mats = [
             Mat4::from_translation(Vec3::ZERO),

@@ -446,6 +446,50 @@ pub fn sample_skinned_look(
     look_yaw: f32,
     look_pitch: f32,
 ) -> MeshData {
+    sample_skinned_inner(skin, t, hair, expression, morph, look_yaw, look_pitch, None)
+}
+
+/// `sample_skinned_look` + SpringBone の布シミュレーション。
+///
+/// ポーズのワールド行列で Verlet を 1 ステップ進め、得られた関節の回転
+/// デルタをノードのローカル回転に足してからスキンする。`sim` はフレームを
+/// 跨いで保持する（レンダラが walker spec ごとに持つ）。初回は snap で
+/// 動かない。
+#[allow(clippy::too_many_arguments)]
+pub fn sample_skinned_cloth(
+    skin: &SkinnedMesh,
+    t: Option<f32>,
+    hair: f32,
+    expression: &str,
+    morph: f32,
+    look_yaw: f32,
+    look_pitch: f32,
+    sim: &mut crate::spring::SpringState,
+    dt: f32,
+) -> MeshData {
+    sample_skinned_inner(
+        skin,
+        t,
+        hair,
+        expression,
+        morph,
+        look_yaw,
+        look_pitch,
+        Some((sim, dt)),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sample_skinned_inner(
+    skin: &SkinnedMesh,
+    t: Option<f32>,
+    hair: f32,
+    expression: &str,
+    morph: f32,
+    look_yaw: f32,
+    look_pitch: f32,
+    cloth: Option<(&mut crate::spring::SpringState, f32)>,
+) -> MeshData {
     if skin.skin_joints.is_empty()
         || skin.joints.len() != skin.rest.vertices.len()
         || skin.weights.len() != skin.rest.vertices.len()
@@ -458,6 +502,16 @@ pub fn sample_skinned_look(
     };
     apply_look(skin, &mut locals, look_yaw, look_pitch);
     apply_hair(skin, &mut locals, hair);
+    if let Some((sim, dt)) = cloth {
+        let parents = node_parents(&skin.nodes);
+        let pose_globals = global_pose(&skin.nodes, &locals);
+        let updates = crate::spring::step_with_updates(sim, &pose_globals, &parents, dt);
+        for (node, q) in updates {
+            if node < locals.len() {
+                locals[node].rotation = q;
+            }
+        }
+    }
     let globals = global_pose(&skin.nodes, &locals);
     let mut joint_mats = vec![Mat4::IDENTITY; skin.skin_joints.len()];
     for (j, &node) in skin.skin_joints.iter().enumerate() {
@@ -1130,7 +1184,8 @@ fn key_span(times: &[f32], t: f32) -> Option<(usize, usize, f32)> {
     Some((last, last, 0.0))
 }
 
-fn global_pose(nodes: &[NodeRest], locals: &[NodeLocal]) -> Vec<Mat4> {
+/// Node の親リスト（children から導出）。
+pub(crate) fn node_parents(nodes: &[NodeRest]) -> Vec<Option<usize>> {
     let n = nodes.len();
     let mut parent = vec![None; n];
     for (i, node) in nodes.iter().enumerate() {
@@ -1140,6 +1195,12 @@ fn global_pose(nodes: &[NodeRest], locals: &[NodeLocal]) -> Vec<Mat4> {
             }
         }
     }
+    parent
+}
+
+fn global_pose(nodes: &[NodeRest], locals: &[NodeLocal]) -> Vec<Mat4> {
+    let n = nodes.len();
+    let parent = node_parents(nodes);
     let mut local_mat = vec![Mat4::IDENTITY; n];
     for (i, loc) in locals.iter().enumerate() {
         local_mat[i] =
@@ -2109,6 +2170,32 @@ mod tests {
             let d = (Vec3::from_array(va.pos) - Vec3::from_array(vb.pos)).length();
             assert!(d < 1e-4, "no clip => bind pose at any t");
         }
+    }
+
+    #[test]
+    fn cloth_step_moves_skinned_verts() {
+        let bytes = walk_skinned_vrm();
+        let skin = skinned_from_glb(&bytes).expect("vrm");
+        assert!(!skin.springs.is_empty());
+        let mut sim = skin.springs.clone();
+        // 初回は snap（布は動かない）
+        let a = sample_skinned_cloth(&skin, None, 0.0, "blink", 0.0, 0.0, 0.0, &mut sim, 1.0 / 60.0);
+        // 布の関節を手でずらす → Verlet → 回転デルタ → 頂点が変わる
+        if let Some(c) = sim.chains.first_mut() {
+            if c.joints.len() >= 2 {
+                c.joints[1].curr = [0.4, 0.85, 0.0];
+                c.joints[1].prev = [0.4, 0.85, 0.0];
+            }
+        }
+        let b = sample_skinned_cloth(&skin, None, 0.0, "blink", 0.0, 0.0, 0.0, &mut sim, 1.0 / 60.0);
+        let mut max_d = 0.0f32;
+        for (va, vb) in a.vertices.iter().zip(b.vertices.iter()) {
+            max_d = max_d.max((Vec3::from_array(va.pos) - Vec3::from_array(vb.pos)).length());
+        }
+        assert!(
+            max_d > 1e-4,
+            "cloth must move skinned verts, max_d={max_d}"
+        );
     }
 
     #[test]

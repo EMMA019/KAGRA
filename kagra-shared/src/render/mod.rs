@@ -132,6 +132,8 @@ pub struct Renderer {
     bloom: BloomPass,
     /// TextQuad → カバレッジ Quad のキャッシュ。GPU 状態を持たない。
     text: crate::font::TextRaster,
+    /// walker glTF spec → SpringBone 布シミュ（フレーム跨ぎで保持）。
+    cloth: std::collections::HashMap<String, crate::spring::SpringState>,
 }
 
 impl Renderer {
@@ -747,6 +749,7 @@ impl Renderer {
             elapsed: 0.0,
             bloom,
             text: crate::font::TextRaster::new(),
+            cloth: std::collections::HashMap::new(),
         };
         me.upload_screen();
         me
@@ -1414,11 +1417,52 @@ impl Renderer {
     }
 
     /// Re-skin walker glTF slots after a live tick. Primitive / heightfield stay.
+    /// SpringBone 布シミュ（`self.cloth`、spec ごと）を 1 ステップ進めてから
+    /// スキンするので、フレームを跨いで布が実際に揺れる。
     pub fn update_world_gltf(&mut self, doc: &crate::world_doc::WorldDoc) -> Result<(), String> {
-        for (id, mesh) in doc.compile_meshes() {
-            if id.0 >= crate::world_doc::MESH_GLTF_BASE {
-                self.update_mesh(id, &mesh)?;
-            }
+        use crate::world_doc::GltfSlot;
+        for (i, slot) in doc.gltf_slots().into_iter().enumerate() {
+            let GltfSlot::Skinned {
+                spec,
+                part,
+                clip,
+                hair,
+                morph,
+                expression,
+                look_yaw,
+                look_pitch,
+                ..
+            } = slot
+            else {
+                continue;
+            };
+            let Some(parts) = crate::world_doc::load_skinned_parts(&spec) else {
+                continue;
+            };
+            let Some(skin) = parts.get(part) else {
+                continue;
+            };
+            let mesh = {
+                let sim = self
+                    .cloth
+                    .entry(spec.clone())
+                    .or_insert_with(|| skin.springs.clone());
+                sim.wind = doc.wind;
+                let t = if clip > 0.0 { Some(clip) } else { None };
+                crate::gltf_load::sample_skinned_cloth(
+                    skin,
+                    t,
+                    hair,
+                    &expression,
+                    morph,
+                    look_yaw,
+                    look_pitch,
+                    sim,
+                    crate::scene::FIXED_DT,
+                )
+            };
+            let id = crate::scene3d::MeshId(crate::world_doc::MESH_GLTF_BASE + i as u32);
+            self.update_mesh(id, &mesh)?;
         }
         Ok(())
     }

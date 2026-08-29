@@ -327,6 +327,8 @@ class BunnyGarden(Scene):
                  "target": [0, 1.05, 0.5], "fov": 42},
             ],
             "heightfield": None,
+            # そよ風: SpringBone の布（スカート・髪）を揺らす
+            "wind": [0.25, 0.0, 0.15],
             "ibl": 0.5,
         }
 

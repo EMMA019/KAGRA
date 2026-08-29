@@ -100,6 +100,9 @@ pub struct WorldDoc {
     /// save) without an in-process callback bus. Dump-visible.
     #[serde(default)]
     pub events: Vec<WorldEvent>,
+    /// 風（SpringBone 布の外部加速度、m/s^2 相当）。デフォルト無風。
+    #[serde(default)]
+    pub wind: [f32; 3],
 }
 
 /// Generic countdown. Dump-visible: a fishing dump shows `cast` counting down,
@@ -898,7 +901,7 @@ impl WorldDoc {
         mesh
     }
 
-    fn gltf_slots(&self) -> Vec<GltfSlot> {
+    pub(crate) fn gltf_slots(&self) -> Vec<GltfSlot> {
         let mut seen = HashSet::new();
         let mut out = Vec::new();
         for prop in &self.props {
@@ -1214,7 +1217,7 @@ fn push_tree(
     );
 }
 
-enum GltfSlot {
+pub(crate) enum GltfSlot {
     Rest(String),
     Skinned {
         walker_id: String,
