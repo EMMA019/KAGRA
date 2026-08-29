@@ -86,3 +86,4 @@
 - `20260901-spatial-audio/` — 汎用エンジン化 Phase 0-②: set_listener / play_se(x,y,z) の距離減衰 + ステレオパン（0.19 spatial.py 移植）。
 - `20260902-phase2-layers/` — 汎用エンジン化 Phase 2: ロコモーションブレンド（anim_blend）+ 上半身/下半身レイヤー分離（overlay ジェスチャー）。
 - `20260902-phase3-path/` — 汎用エンジン化 Phase 3: 汎用グリッド経路探索（find_path / move_range / LOS / simplify。torneko BFS を置換）。
+- `20260902-phase4-dsp/` — 汎用エンジン化 Phase 4: 音 DSP（mix / reverb / crossfade / duck。純 Python、WAV bytes 加工）。
