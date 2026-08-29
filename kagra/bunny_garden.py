@@ -15,6 +15,7 @@ VRM キャラ（Emma）と会話し、好感度を上げて日々を経営する
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 from kagra.audio import se  # noqa: F401  (再生は Windows winsound、他は no-op)
@@ -282,15 +283,18 @@ class BunnyGarden(Scene):
                  "model": "sphere", "scale": [0.4, 0.4, 0.4], "enabled": True, "color": [255, 214, 140], "metallic": 0.4, "roughness": 0.3},
             ],
             "walkers": [
-                {"id": "walker:mimi", "type": "walker", "name": CHAR, "position": [0, 0, 0.9],
+                {"id": "walker:mimi", "type": "walker", "name": CHAR,
+                 # 体の上下動（呼吸っぽい）で静止感を消す
+                 "position": [0, 0.07 * math.sin(self.clock * 3.0), 0.9],
                  "yaw": 0.0, "face": 0.0, "on_ground": True, "model": "capsule",
                  "gltf": "assets/Emma.vrm",
-                 # clip を進めると歩行サイクルがその場でループ（待機の揺れ）。
+                 # clip を進めると歩行サイクルがその場でループ（常時動く）。
                  # rem_euclid で折り返すので長くても OK。
-                 "clip": (self.clock * 1.1) % 10.0,
+                 "clip": (self.clock * 1.6) % 10.0,
                  "anim": "walk",
-                 # カメラ（[0,1.7,5.6]）を見上げる頭の向き
-                 "look_yaw": 0.0, "look_pitch": 0.06,
+                 # 頭を左右に見渡す（カメラ方向を中心に）
+                 "look_yaw": 0.14 * math.sin(self.clock * 1.2),
+                 "look_pitch": 0.06,
                  # 好感度が高いほど表情が明るくなる
                  "expression": "joy" if self._aff() >= 70 else "smile"},
             ],
