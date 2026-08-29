@@ -42,6 +42,8 @@ pub struct SpringJoint {
     pub prev: [f32; 3],
     pub target: [f32; 3],
     pub virtual_tail: bool,
+    /// Parent node world rotation at the last Verlet step (for rotation deltas).
+    pub parent_world_rot: [f32; 4],
 }
 
 #[derive(Clone, Debug, Default)]
@@ -111,6 +113,7 @@ fn new_joint(
         prev: [0.0; 3],
         target: [0.0; 3],
         virtual_tail: false,
+        parent_world_rot: [0.0, 0.0, 0.0, 1.0],
     }
 }
 
@@ -480,6 +483,25 @@ pub fn hair_node(state: &SpringState) -> Option<usize> {
 
 /// One Verlet step after pose. First call snaps rest (no motion).
 pub fn step(state: &mut SpringState, world: &[Mat4], dt: f32) {
+    verlet(state, world, dt);
+}
+
+/// Verlet 1 ステップ + 各関節の回転デルタ（`(node, local quat)`）を返す。
+///
+/// kagra-core vrm_spring::step の末尾移植: チェーンの各節で「目標方向（rest
+/// 軸）→ 現在方向」の回転をワールド→ローカルに変換し、ポーズに掛ける。
+/// スキナーがこのデルタをノードのローカル回転に足すと、布が実際に揺れる。
+pub fn step_with_updates(
+    state: &mut SpringState,
+    world: &[Mat4],
+    parents: &[Option<usize>],
+    dt: f32,
+) -> Vec<(usize, Quat)> {
+    verlet(state, world, dt);
+    compute_updates(state, world, parents)
+}
+
+fn verlet(state: &mut SpringState, world: &[Mat4], dt: f32) {
     if state.chains.is_empty() {
         return;
     }
@@ -512,6 +534,7 @@ pub fn step(state: &mut SpringState, world: &[Mat4], dt: f32) {
             } else {
                 Quat::IDENTITY
             };
+            state.chains[ci].joints[i].parent_world_rot = parent_q.to_array();
             let rest_world = (parent_q
                 * Vec3::from_array(state.chains[ci].joints[i].rest_dir_local))
             .normalize_or(Vec3::Y);
@@ -542,6 +565,49 @@ pub fn step(state: &mut SpringState, world: &[Mat4], dt: f32) {
             state.chains[ci].joints[i].curr = new_pos.to_array();
         }
     }
+}
+
+/// 各節の「目標方向 → 現在方向」の回転をローカル回転デルタとして返す。
+fn compute_updates(
+    state: &SpringState,
+    world: &[Mat4],
+    parents: &[Option<usize>],
+) -> Vec<(usize, Quat)> {
+    let mut updates = Vec::new();
+    for chain in &state.chains {
+        for i in 0..chain.joints.len().saturating_sub(1) {
+            let j = &chain.joints[i];
+            let jn = &chain.joints[i + 1];
+            let t = Vec3::from_array(jn.target) - Vec3::from_array(j.curr);
+            let c = Vec3::from_array(jn.curr) - Vec3::from_array(j.curr);
+            if t.length() < 0.001 || c.length() < 0.001 {
+                continue;
+            }
+            let target_dir = t.normalize();
+            let curr_dir = c.normalize();
+            let delta_world = Quat::from_rotation_arc(target_dir, curr_dir);
+            let pw = Quat::from_array(jn.parent_world_rot);
+            let delta_local = (pw.inverse() * (delta_world * pw)).normalize();
+            // 恒等に近いデルタ（静止中）は捨てる: 布に影響しない更新で
+            // スキナーを汚さない。
+            if delta_local.w.abs() > 0.9999 {
+                continue;
+            }
+            let pose_local = if let Some(pi) = parents.get(j.node).copied().flatten() {
+                if pi < world.len() && j.node < world.len() {
+                    (world_rot(world[pi]).inverse() * world_rot(world[j.node])).normalize()
+                } else {
+                    world_rot(world[j.node])
+                }
+            } else if j.node < world.len() {
+                world_rot(world[j.node])
+            } else {
+                Quat::IDENTITY
+            };
+            updates.push((j.node, (delta_local * pose_local).normalize()));
+        }
+    }
+    updates
 }
 
 #[cfg(test)]
@@ -721,6 +787,41 @@ mod tests {
             !st.chains[1].collider_ids.is_empty(),
             "v1 chain binds collider"
         );
+    }
+
+    #[test]
+    fn step_with_updates_returns_rotation_deltas() {
+        let mut st = SpringState {
+            chains: vec![SpringChain {
+                joints: vec![
+                    new_joint(0, 1.0, 0.4, [0.0; 3], 0.02),
+                    new_joint(1, 1.0, 0.4, [0.0; 3], 0.02),
+                ],
+                collider_ids: vec![],
+            }],
+            ..SpringState::default()
+        };
+        let mats = [
+            Mat4::from_translation(Vec3::ZERO),
+            Mat4::from_translation(Vec3::new(0.0, 1.0, 0.0)),
+        ];
+        let parents = vec![None, Some(0)];
+        // 1 回目は snap なのでデルタなし
+        let first = step_with_updates(&mut st, &mats, &parents, 1.0 / 60.0);
+        assert!(first.is_empty(), "snap ステップはデルタなし");
+        // 手で引っ張ってから step → 目標方向とずれた回転デルタが出る
+        st.chains[0].joints[1].curr = [0.3, 0.95, 0.0];
+        st.chains[0].joints[1].prev = [0.3, 0.95, 0.0];
+        let updates = step_with_updates(&mut st, &mats, &parents, 1.0 / 60.0);
+        assert!(!updates.is_empty(), "ずれた関節に回転デルタが出る");
+        for (n, q) in &updates {
+            assert_eq!(*n, 0, "最初の節のノードにデルタ");
+            assert!((q.length() - 1.0).abs() < 1e-4, "デルタは正規化 quat");
+            assert!(
+                q.w.abs() < 0.999,
+                "ノード 0 の回転デルタは非恒等（目標とずれている）"
+            );
+        }
     }
 
     #[test]
