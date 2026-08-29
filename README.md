@@ -109,6 +109,8 @@ and renders. That is the shape an agent should copy for a new genre.
 cd kagra-shared && maturin develop --release && cd ..   # once: build kagra_shared
 python examples/python_game_minimal.py                  # window: WASD + J at the shore
 python examples/python_game_minimal.py --headless scratch/hello.png  # CI / verify: PNG out
+python examples/bunny_garden_minimal.py                 # first genre game: talk to Emma (VRM), affection, days, save
+python examples/bunny_garden_minimal.py --headless scratch/bunny.png --days 3  # headless verify
 ```
 
 The pattern (from [`examples/python_game_minimal.py`](examples/python_game_minimal.py)):

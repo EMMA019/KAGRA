@@ -77,3 +77,8 @@
 - `20260831-expressions/` — walker.expression で VRM 表情プリセット（smile / angry / aa 等）を選択。ゲームではない。
 - `20260831-vrm-rest/` — SpringBone コリジョン + MToon matcap/normal + ボーン制約/firstPerson。ゲームではない。
 - `20260831-python-bindings/` — kagra-shared に PyO3 バインディング（Python ゲームマスターの橋）。ゲームではない。
+- `20260901-text-rendering/` — shared に文字描画（TextQuad + PixelMplus + ab_glyph）。共通コア ①。
+- `20260901-ui2d/` — Python 2D UI パネル（メッセージ/選択肢/バー/リスト → hud）。共通コア ②。
+- `20260901-audio/` — tone/sound SE 合成（純 Python）+ winsound 再生。共通コア ③。
+- `20260901-mouse-input/` — gameloop にマウス（pos / down / clicked）。共通コア ④。
+- `20260901-bunny-garden/` — **1 本目ジャンル**: バニーガーデン系ミニマルゲーム（VRM キャラ + 会話 + 好感度 + 日程 + セーブ）。ロジックは Python のみ。

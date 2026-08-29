@@ -112,6 +112,8 @@ python examples/vrm_open_world.py                # 残置 VRM Crest Isle（Rende
 cd kagra-shared && maturin develop --release && cd ..   # 最初の一度: kagra_shared をビルド
 python examples/python_game_minimal.py                  # 窓: WASD + 水辺で J
 python examples/python_game_minimal.py --headless scratch/hello.png  # CI / verify: PNG 出力
+python examples/bunny_garden_minimal.py                 # 1 本目ジャンル: Emma と会話・好感度・日程・セーブ
+python examples/bunny_garden_minimal.py --headless scratch/bunny.png --days 3  # ヘッドレス verify
 ```
 
 パターン（[`examples/python_game_minimal.py`](examples/python_game_minimal.py) より）:
