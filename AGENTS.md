@@ -26,6 +26,9 @@ a game **without a human looking at the screen**.
    save the prompt, the key decisions, and the verify results under
    `docs/agent-runs/` (see `docs/agent-runs/README.md`). The log is a
    first-class artifact, not an afterthought.
+7. **Format Rust before push.** `cargo fmt -p kagra-shared -- --check`
+   must stay clean (CI fails on rustfmt drift). MSRV is 1.88
+   (`kagra-shared/Cargo.toml` `rust-version`).
 
 ## Commands
 
@@ -33,6 +36,8 @@ a game **without a human looking at the screen**.
 python tools/gen_api_index.py --check                              # API index drift
 python -m kagra.verify examples/verify_scenarios/blank_smoke.json  # headless smoke
 python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json
+python -m kagra.verify examples/verify_scenarios/bar_sim_smoke.json
+python examples/bar_sim_minimal.py --headless scratch/bar.png --days 3 --seed 1
 # shared wgpu 30 offscreen of a World.dump JSON (skips if no helper; not RendererV2)
 python -m kagra.render_world scratch/crest_isle_world.json scratch/crest_shared.png
 # cargo run -p kagra-shared --features render --example offscreen -- W H out.png world dump.json
@@ -56,11 +61,14 @@ pytest tests -m "not golden"                                       # pure-python
 
 `examples/vrm_orb_rush.py` is the **old** (RendererV2) reference game — archived
 at `old/examples/vrm_orb_rush.py`. The current reference for the agent loop is
-the Python game master: `examples/bunny_garden_minimal.py` / `examples/torneko_minimal.py`
+the Python game master: `examples/bunny_garden_minimal.py` /
+`examples/torneko_minimal.py` / `examples/bar_sim_minimal.py`
 (game logic in Python, world is dump data, `kagra.gameloop` / `kagra.ui2d` /
-`kagra.audio`). The old public APIs below (`kagra.texture_from_fn` 等) still
-exist for the archived pip demo (`import kagra` keeps working), but **new games
-start on the shared wgpu 30 mainline**.
+`kagra.audio`). Archived RendererV2 APIs (`texture_from_fn` / `Walk` / `Prop` / `kagra_core`)
+live under `old/` and are **not** on `import kagra`. New games start on the
+shared wgpu 30 mainline (`WorldDoc` / `WorldPlay` / `kagra.gameloop`).
+Set `WorldDoc.genre` explicitly (`crest_isle`, `town_gate`, …). Prop names are
+scenery — a dump with `door` is not an RPG unless `genre` says so.
 
 - `kagra.texture_from_fn` / `kagra.tone` / `kagra.sound` — procedural art and SE
 - `kagra.set_listener` / `play_se(..., x=, y=, z=)` / `play_loop` — 3D SE (distance + stereo pan). `sound()` stays 2D

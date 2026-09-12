@@ -111,8 +111,7 @@ impl PhysicsWorld {
         // ぶつかって押し、箱の上に立つ。sync では書き戻さない。
         for w in doc.player.iter().chain(doc.walkers.iter()) {
             let body = this.inner.insert_body(
-                RigidBodyBuilder::kinematic_position_based()
-                    .translation(w.position.into()),
+                RigidBodyBuilder::kinematic_position_based().translation(w.position.into()),
             );
             let collider = ColliderBuilder::capsule_y(0.7, 0.28)
                 .friction(0.0)
@@ -279,7 +278,10 @@ mod tests {
             world.step(1.0 / 60.0);
         }
         let y = world.position("prop:box").unwrap()[1];
-        assert!(y > 0.4 && y < 1.6, "箱は床に落ちて止まる（半辺 0.5）, y={y}");
+        assert!(
+            y > 0.4 && y < 1.6,
+            "箱は床に落ちて止まる（半辺 0.5）, y={y}"
+        );
         assert!(!world.is_dynamic("prop:box") || world.position("prop:box").is_some());
     }
 
@@ -291,9 +293,16 @@ mod tests {
         for _ in 0..120 {
             world.step(1.0 / 60.0);
         }
-        assert!(!world.is_dynamic("prop:box"), "静的 prop は動的剛体ではない");
+        assert!(
+            !world.is_dynamic("prop:box"),
+            "静的 prop は動的剛体ではない"
+        );
         world.sync(&mut doc);
-        assert_eq!(doc.props[0].position, [0.0, 3.0, 0.0], "静的 prop は動かない");
+        assert_eq!(
+            doc.props[0].position,
+            [0.0, 3.0, 0.0],
+            "静的 prop は動かない"
+        );
     }
 
     #[test]
@@ -335,7 +344,10 @@ mod tests {
         let ya = world.position("prop:a").unwrap()[1];
         let yb = world.position("prop:b").unwrap()[1];
         assert!(ya > 0.4 && ya < 1.0, "下の箱は床に着く, ya={ya}");
-        assert!(yb > ya + 0.7 && yb < ya + 1.6, "上の箱は下の箱に積もる, yb={yb} ya={ya}");
+        assert!(
+            yb > ya + 0.7 && yb < ya + 1.6,
+            "上の箱は下の箱に積もる, yb={yb} ya={ya}"
+        );
         world.sync(&mut doc);
         assert_eq!(doc.props[0].position[1], ya);
     }
@@ -383,14 +395,21 @@ mod tests {
             ..Default::default()
         };
         let mut world = PhysicsWorld::from_doc(&doc);
-        assert!(world.is_kinematic("walker:player"), "歩行者はキネマティック");
+        assert!(
+            world.is_kinematic("walker:player"),
+            "歩行者はキネマティック"
+        );
         for _ in 0..300 {
             world.sync_walkers(&doc);
             world.step(1.0 / 60.0);
         }
         world.sync(&mut doc);
         let p = doc.player.as_ref().unwrap();
-        assert_eq!(p.position, [0.0, 3.0, 0.0], "sync は歩行者位置を上書きしない");
+        assert_eq!(
+            p.position,
+            [0.0, 3.0, 0.0],
+            "sync は歩行者位置を上書きしない"
+        );
     }
 
     #[test]

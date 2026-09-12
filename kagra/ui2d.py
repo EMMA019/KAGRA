@@ -39,6 +39,7 @@ __all__ = [
     "clamp_scroll",
     "scroll_window",
     "paged_menu",
+    "image",
 ]
 
 _WHITE = [255, 255, 255, 255]
@@ -60,13 +61,19 @@ def measure(text: str, size: float) -> float:
 
 def merge(*parts: dict[str, Any]) -> dict[str, Any]:
     """複数の UI 部品を 1 つの hud dict に合成する。"""
-    out: dict[str, Any] = {"quads": [], "texts": []}
+    out: dict[str, Any] = {"quads": [], "texts": [], "images": []}
     for p in parts:
         if not p:
             continue
         out["quads"].extend(p.get("quads", []))
         out["texts"].extend(p.get("texts", []))
+        out["images"].extend(p.get("images", []))
     return out
+
+
+def image(path: str, x: float, y: float, w: float, h: float) -> dict[str, Any]:
+    """HUD に PNG を置く（shared がオフスクリーン RGBA にブレンドする）。"""
+    return {"images": [{"path": str(path), "x": float(x), "y": float(y), "w": float(w), "h": float(h)}]}
 
 
 def panel(

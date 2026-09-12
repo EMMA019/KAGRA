@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **0.2.0 mainline cut:** `import kagra` is shared wgpu 30 (`WorldDoc` /
+  `WorldPlay` / `gameloop`). Root `pyproject.toml` builds `kagra-shared` as
+  `kagra.kagra_shared`. Archived RendererV2 / `kagra_core` is not imported.
+  `WorldDoc.genre` is the only genre switch (prop names are scenery).
+  `WorldProp.texture` + HUD `images` show PNG art. MSRV 1.88 + `rust-toolchain.toml`.
+  Bar management sim: `examples/bar_sim_minimal.py` (free-world dump, procedural
+  assets under `assets/bar/`).
+
 - Distance LOD + GPU instancing on shared wgpu 30: repeated vegetation (Crest trees/grass) uses dump lod_radius / lod_cells for two levels (full trunk+cone vs existing billboard quad) and batches same-mesh props into one draw (instance locations 2..7, no base_instance, WebGL2-safe). Kenney vegetation is not thinned. Scene3D::render_stats exposes batch/instance counts. No Bevy / SSAO / GI / SSR / Rapier / second renderer. world_play.rs untouched. Relic Run UV defaults stay. examples/vrm_open_world.py not rewritten.
 
 - Official Emma VRoid play dump: ``python -m kagra.play_world kagra-shared/tests/fixtures/emma_walker_world.json`` walks ``assets/Emma.vrm`` (repo-relative; Mixamo rest+roll, MToon/albedo/spring/morph/look-at already on VRM walkers). ``python -m kagra.play_world`` with no args stays Crest Isle capsule collectathon. ``Emma.vrm`` stays gitignored; missing file falls back to tiny ``tpose_humanoid.vrm`` so CI stays green. No Rapier / SSAO / second renderer / new ECS. ``examples/vrm_open_world.py`` not rewritten.

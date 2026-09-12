@@ -7,6 +7,10 @@
   "required": ["version"],
   "properties": {
     "version": { "const": 1 },
+    "genre": {
+      "type": ["string", "null"],
+      "description": "Explicit genre id (crest_isle, fish_cast, town_gate, …). Omit = free world: walk / camera / interact / timers / events only. Prop names are never reserved."
+    },
     "half": { "type": "number" },
     "floor_y": { "type": "number" },
     "gravity": { "type": "number" },
@@ -79,6 +83,10 @@
           "description": "box/sphere/capsule/plane/sprite/quad. sprite|quad is a standing XY card in compile_scene (same WorldDoc as 3D). name target = FPS range hitscan (look + fire + hit). name tower + waypoint + creep = TD lane (path walk, tower hit, leak/clear). name finish + split = race drive (steer+throttle, lap/finish). name opponent = fight round (J/click attack, hitstun, KO)."
         },
         "gltf": { "type": ["string", "null"] },
+        "texture": {
+          "type": ["string", "null"],
+          "description": "Repo-relative PNG path. compile_meshes attaches albedo on box/plane/sprite/quad. Alpha < 0.5 is discarded."
+        },
         "scale": {
           "type": "array",
           "minItems": 3,

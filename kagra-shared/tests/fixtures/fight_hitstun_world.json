@@ -260,5 +260,6 @@
       "fov": 48.0
     }
   ],
-  "heightfield": null
+  "heightfield": null,
+  "genre": "fight_hitstun"
 }

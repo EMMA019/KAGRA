@@ -360,5 +360,6 @@
       "fov": 48.0
     }
   ],
-  "heightfield": null
+  "heightfield": null,
+  "genre": "stealth_hide"
 }

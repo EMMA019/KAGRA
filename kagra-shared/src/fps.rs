@@ -79,7 +79,7 @@ impl FpsGame {
 }
 
 pub fn is_fps(doc: &WorldDoc) -> bool {
-    doc.props.iter().any(is_target)
+    doc.genre_is(GAME_ID)
 }
 
 fn is_target(p: &WorldProp) -> bool {

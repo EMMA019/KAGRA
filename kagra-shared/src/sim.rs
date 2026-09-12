@@ -49,7 +49,7 @@ impl SimGame {
 }
 
 pub fn is_sim(doc: &WorldDoc) -> bool {
-    doc.props.iter().any(|p| p.name == "zone")
+    doc.genre_is(GAME_ID)
 }
 
 fn player_ref(doc: &WorldDoc) -> Option<&WorldWalker> {

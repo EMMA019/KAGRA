@@ -78,7 +78,7 @@ impl RaceGame {
 }
 
 pub fn is_race(doc: &WorldDoc) -> bool {
-    doc.props.iter().any(is_finish)
+    doc.genre_is(GAME_ID)
 }
 
 fn is_finish(p: &WorldProp) -> bool {

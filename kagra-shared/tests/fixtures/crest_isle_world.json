@@ -9,7 +9,11 @@
     "id": "walker:player",
     "type": "walker",
     "name": "player",
-    "position": [0.0, 1.2, -8.0],
+    "position": [
+      0.0,
+      1.2,
+      -8.0
+    ],
     "yaw": 0.0,
     "face": 0.0,
     "on_ground": true
@@ -19,27 +23,51 @@
       "id": "prop:crate",
       "type": "prop",
       "name": "crate",
-      "position": [2.0, 0.5, -1.0],
+      "position": [
+        2.0,
+        0.5,
+        -1.0
+      ],
       "yaw": 0.0,
       "model": "box",
       "gltf": "crate.glb",
-      "scale": [1.0, 1.0, 1.0],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
       "enabled": true,
       "parent": null,
-      "color": [230, 230, 235]
+      "color": [
+        230,
+        230,
+        235
+      ]
     },
     {
       "id": "prop:coin",
       "type": "prop",
       "name": "coin",
-      "position": [2.3, 1.1, -1.0],
+      "position": [
+        2.3,
+        1.1,
+        -1.0
+      ],
       "yaw": 0.0,
       "model": "sphere",
       "gltf": null,
-      "scale": [0.42, 0.08, 0.42],
+      "scale": [
+        0.42,
+        0.08,
+        0.42
+      ],
       "enabled": true,
       "parent": "prop:crate",
-      "color": [255, 208, 64],
+      "color": [
+        255,
+        208,
+        64
+      ],
       "metallic": 1.0,
       "roughness": 0.12
     }
@@ -49,7 +77,11 @@
       "id": "walker:player",
       "type": "walker",
       "name": "player",
-      "position": [0.0, 1.2, -8.0],
+      "position": [
+        0.0,
+        1.2,
+        -8.0
+      ],
       "yaw": 0.0,
       "face": 0.0,
       "on_ground": true
@@ -60,36 +92,64 @@
       "id": "light:0",
       "type": "light",
       "name": "key",
-      "position": [6.0, 18.0, -8.0],
+      "position": [
+        6.0,
+        18.0,
+        -8.0
+      ],
       "kind": "spot",
       "slot": 0,
       "intensity": 1.15,
       "radius": 36.0,
-      "color": [1.0, 0.96, 0.86],
-      "direction": [-0.18, -1.0, 0.22]
+      "color": [
+        1.0,
+        0.96,
+        0.86
+      ],
+      "direction": [
+        -0.18,
+        -1.0,
+        0.22
+      ]
     },
     {
       "id": "light:1",
       "type": "light",
       "name": "fill",
-      "position": [-14.0, 9.0, 6.0],
+      "position": [
+        -14.0,
+        9.0,
+        6.0
+      ],
       "kind": "point",
       "slot": 1,
       "intensity": 0.45,
       "radius": 28.0,
-      "color": [0.55, 0.72, 1.0],
+      "color": [
+        0.55,
+        0.72,
+        1.0
+      ],
       "direction": null
     },
     {
       "id": "light:2",
       "type": "light",
       "name": "rim",
-      "position": [18.0, 12.0, 22.0],
+      "position": [
+        18.0,
+        12.0,
+        22.0
+      ],
       "kind": "point",
       "slot": 2,
       "intensity": 0.35,
       "radius": 32.0,
-      "color": [1.0, 0.82, 0.55],
+      "color": [
+        1.0,
+        0.82,
+        0.55
+      ],
       "direction": null
     }
   ],
@@ -98,8 +158,16 @@
       "id": "camera:main",
       "type": "camera",
       "name": "main",
-      "position": [0.0, 5.65, 4.2],
-      "target": [0.0, 1.25, -8.0],
+      "position": [
+        0.0,
+        5.65,
+        4.2
+      ],
+      "target": [
+        0.0,
+        1.25,
+        -8.0
+      ],
       "fov": 54.0
     }
   ],
@@ -115,7 +183,12 @@
       "period": 48.0,
       "blend": 0.12,
       "pad": 0.28,
-      "rect": [0.22, 0.28, 0.62, 0.78]
+      "rect": [
+        0.22,
+        0.28,
+        0.62,
+        0.78
+      ]
     },
     "tiles": [
       {
@@ -126,7 +199,11 @@
         "loaded": true,
         "has_mesh": true,
         "albedo_ok": true,
-        "position": [8.0, 0.4, 8.0]
+        "position": [
+          8.0,
+          0.4,
+          8.0
+        ]
       },
       {
         "id": "tile:-1,0",
@@ -136,12 +213,25 @@
         "loaded": true,
         "has_mesh": true,
         "albedo_ok": true,
-        "position": [-8.0, 0.4, 8.0]
+        "position": [
+          -8.0,
+          0.4,
+          8.0
+        ]
       }
     ],
     "samples": [
-      [0.0, -8.0, 1.18],
-      [8.0, 52.0, 12.4]
+      [
+        0.0,
+        -8.0,
+        1.18
+      ],
+      [
+        8.0,
+        52.0,
+        12.4
+      ]
     ]
-  }
+  },
+  "genre": "crest_isle"
 }

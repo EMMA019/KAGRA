@@ -2,6 +2,7 @@
 name = "kagra-shared"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.88"
 description = "KAGRA shared runtime for Wasm / Android / iOS (input + session + 3D/2D renderer + C ABI)"
 license = "MIT"
 

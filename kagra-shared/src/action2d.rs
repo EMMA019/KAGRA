@@ -1,4 +1,4 @@
-﻿//! 2D action on play_world: side-view sprite walk, hit, hurt, kill,
+//! 2D action on play_world: side-view sprite walk, hit, hurt, kill,
 //! projectile, and room switch.
 //!
 //! Sibling of 3D `action` / `sprite`. Player card and foe card are the same
@@ -136,7 +136,7 @@ impl Action2dGame {
 }
 
 pub fn is_action2d(doc: &WorldDoc) -> bool {
-    doc.props.iter().any(is_sprite_foe)
+    doc.genre_is(GAME_ID)
 }
 
 fn is_sprite_foe(p: &WorldProp) -> bool {
@@ -553,6 +553,7 @@ fn ensure_markers(doc: &mut WorldDoc) {
             is_static: true,
             friction: 0.85,
             restitution: 0.0,
+            texture: None,
         },
     );
     ensure_shot(doc);
@@ -603,6 +604,7 @@ fn ensure_shot(doc: &mut WorldDoc) {
             is_static: true,
             friction: 0.85,
             restitution: 0.0,
+            texture: None,
         },
     );
 }
@@ -636,9 +638,10 @@ fn tiny_prop(
         metallic: 0.0,
         roughness: 1.0,
         interact: None,
-            is_static: true,
-            friction: 0.85,
-            restitution: 0.0,
+        is_static: true,
+        friction: 0.85,
+        restitution: 0.0,
+        texture: None,
     }
 }
 

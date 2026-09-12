@@ -18,7 +18,7 @@
 |---|---|
 | **100%** | AI エージェントが、人間が画面を見ずに、普通のインディー 2D/3D ゲームを出荷できる。 |
 | **80%** | その 100% から、ネット・破壊・布・乗り物・GI bake・DOTS・HDRP・人間用エディタ・Shader Graph・Visual Scripting・Addressables・Terrain sculpt・ProBuilder・Cinemachine・PhysX 完全・VRM-on-Wasm を外したもの。**マルチは 100%。** 絵は別山ではない。ジャンルを閉じるたびに shared wgpu 30 の絵を上げる。HQ 密度/光/材質は保つ。VRM はローダ/衣装であり天井ではない。世界の絵は Prop / 高さ場 / glTF / 光。 |
-| **今** | **約 40%。** M0–M2 は閉じた。閉じたジャンルは **collectathon（1）**。接着 API 4本・絵の土台（HDR+ブルーム/FXAA/IBL/PCF/水面/LOD）・VRM 完全移植（MToon/表情/SpringBone コリジョン）は載った。M3 はジャンル+絵（40%→80%）。M4 はエージェントが一人で出荷。 |
+| **今** | **約 40%。** M0–M2 は閉じた。閉じたジャンルは **collectathon（1）** と Python ゲームマスターの **経営シム（Bar）**。接着 API 4本・絵の土台（HDR+ブルーム/FXAA/IBL/PCF/水面/LOD）・VRM 完全移植（MToon/表情/SpringBone コリジョン）は載った。M3 はジャンル+絵（40%→80%）。M4 はエージェントが一人で出荷。 |
 
 Unity 機能パリティではない。圧縮した高レベル API。人間用エディタは禁止。
 VRM はオプションのローダであり、背骨ではない。

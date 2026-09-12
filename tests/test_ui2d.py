@@ -56,6 +56,14 @@ def test_merge_concatenates():
     assert len(m["texts"]) == 1
 
 
+def test_image_and_merge_keep_paths():
+    im = ui2d.image("assets/bar/tex/ren.png", 16, 70, 72, 90)
+    assert im["images"][0]["path"].endswith("ren.png")
+    m = ui2d.merge(ui2d.panel(0, 0, 10, 10), im)
+    assert len(m["images"]) == 1
+    assert m["images"][0]["w"] == 72.0
+
+
 def test_draw_world_with_ui2d_when_shared_installed():
     try:
         import kagra_shared  # noqa: F401

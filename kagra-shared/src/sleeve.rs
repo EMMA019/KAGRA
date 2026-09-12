@@ -30,7 +30,10 @@ const ARM_LINKS: [(&str, &str, &str); 4] = [
 /// 袖 / ソデ系のボーン名。メッシュ名の generic `cloth` は人体ボーンではないので除外。
 pub fn is_sleeve_bone_name(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
-    lower.contains("sleeve") || lower.contains("sode") || name.contains('袖') || name.contains("ソデ")
+    lower.contains("sleeve")
+        || lower.contains("sode")
+        || name.contains('袖')
+        || name.contains("ソデ")
 }
 
 /// 腕の芯（〜2cm）は腕に残し、セーラーの外側の筒（〜4cm）をヘルパーへ。
@@ -160,10 +163,15 @@ fn bind_world_mats(nodes: &[NodeRest]) -> Vec<Mat4> {
 
 /// 袖ボーンが無いスキンにヘルパーを足し、外側筒ウェイトを移す（ロード時に 1 回）。
 pub fn ensure_sleeve_cloth(skin: &mut SkinnedMesh) {
-    let arm_nodes: Vec<usize> = ["leftUpperArm", "leftLowerArm", "rightUpperArm", "rightLowerArm"]
-        .iter()
-        .filter_map(|k| skin.humanoid.get(*k).copied())
-        .collect();
+    let arm_nodes: Vec<usize> = [
+        "leftUpperArm",
+        "leftLowerArm",
+        "rightUpperArm",
+        "rightLowerArm",
+    ]
+    .iter()
+    .filter_map(|k| skin.humanoid.get(*k).copied())
+    .collect();
     let names: Vec<String> = skin.nodes.iter().map(|n| n.name.clone()).collect();
     let parents = node_parents(&skin.nodes);
     if arm_nodes.is_empty() || has_sleeve_coverage(&skin.springs, &names, &arm_nodes, &parents) {

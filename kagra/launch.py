@@ -19,18 +19,18 @@ def checkout_kagra_dir(cwd: Path | None = None) -> Path | None:
 
 
 def extension_present(package_dir: Path) -> bool:
-    """maturin が置いた ``kagra_core`` 拡張があるか。"""
+    """maturin が置いた ``kagra_shared`` 拡張があるか。"""
     names = {p.name for p in package_dir.iterdir()} if package_dir.is_dir() else set()
-    if "kagra_core.py" in names or "kagra_core.pyi" in names:
-        return True
-    for name in names:
-        if name.startswith("kagra_core.") and name.endswith(
-            (".so", ".pyd", ".dylib", ".dll")
-        ):
+    for stem in ("kagra_shared", "kagra.kagra_shared"):
+        if f"{stem}.py" in names or f"{stem}.pyi" in names:
             return True
-        # maturin: kagra_core.cpython-312-x86_64-linux-gnu.so
-        if name.startswith("kagra_core."):
-            return True
+        for name in names:
+            if name.startswith(f"{stem}.") and name.endswith(
+                (".so", ".pyd", ".dylib", ".dll")
+            ):
+                return True
+            if name.startswith(f"{stem}."):
+                return True
     return False
 
 
@@ -70,7 +70,7 @@ def format_core_import_error(
 ) -> str:
     hint = shadow_hint(cwd=cwd, loaded_from=loaded_from, has_core=False)
     base = (
-        "kagra_core が見つかりません。"
+        "kagra_shared が見つかりません。"
         " pip なら `pip install -U kagra`、ソースなら `maturin develop`。"
     )
     if hint:

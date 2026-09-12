@@ -529,14 +529,8 @@ pub fn part_hidden_in_first_person(part: &SkinnedMesh) -> bool {
         .skin_joints
         .iter()
         .find_map(|&n| part.first_person.by_node.get(&n));
-    let flag = by_mesh
-        .or(by_node)
-        .copied()
-        .unwrap_or(MeshAnnotation::Auto);
-    matches!(
-        flag,
-        MeshAnnotation::ThirdPersonOnly | MeshAnnotation::Auto
-    )
+    let flag = by_mesh.or(by_node).copied().unwrap_or(MeshAnnotation::Auto);
+    matches!(flag, MeshAnnotation::ThirdPersonOnly | MeshAnnotation::Auto)
 }
 
 /// ポーズのワールド行列で Verlet を 1 ステップ進め、得られた関節の回転
@@ -1120,11 +1114,11 @@ fn apply_overlay(skin: &SkinnedMesh, locals: &mut [NodeLocal], pose: &WalkerPose
         return;
     }
     for (name, target) in &pose.overlay_bones {
-        let node = skin.humanoid.get(name).copied().or_else(|| {
-            skin.nodes
-                .iter()
-                .position(|n| n.name == *name)
-        });
+        let node = skin
+            .humanoid
+            .get(name)
+            .copied()
+            .or_else(|| skin.nodes.iter().position(|n| n.name == *name));
         let Some(node) = node else {
             continue;
         };
@@ -1824,7 +1818,7 @@ fn image_bytes(doc: &GltfFile, blobs: &[Vec<u8>], img: &GltfImage) -> Result<Vec
         .ok_or_else(|| "image bufferView out of range".into())
 }
 
-fn decode_png(bytes: &[u8]) -> Result<AlbedoRgba, String> {
+pub(crate) fn decode_png(bytes: &[u8]) -> Result<AlbedoRgba, String> {
     let decoder = png::Decoder::new(std::io::Cursor::new(bytes));
     let mut reader = decoder.read_info().map_err(|e| e.to_string())?;
     let mut buf = vec![0u8; reader.output_buffer_size()];
@@ -2259,10 +2253,14 @@ mod tests {
             first_person: FirstPerson::default(),
         };
         // mesh 注釈: ThirdPersonOnly → 一人称で隠す
-        part.first_person.by_mesh.insert(1, MeshAnnotation::ThirdPersonOnly);
+        part.first_person
+            .by_mesh
+            .insert(1, MeshAnnotation::ThirdPersonOnly);
         assert!(part_hidden_in_first_person(&part));
         // FirstPersonOnly → 残す
-        part.first_person.by_mesh.insert(1, MeshAnnotation::FirstPersonOnly);
+        part.first_person
+            .by_mesh
+            .insert(1, MeshAnnotation::FirstPersonOnly);
         assert!(!part_hidden_in_first_person(&part));
         // Auto → 隠す
         part.first_person.by_mesh.insert(1, MeshAnnotation::Auto);
@@ -2272,9 +2270,13 @@ mod tests {
         assert!(part_hidden_in_first_person(&part));
         // node 注釈（VRM 1.0）: スキンジョイントのノードが ThirdPersonOnly
         part.skin_joints = vec![7];
-        part.first_person.by_node.insert(7, MeshAnnotation::ThirdPersonOnly);
+        part.first_person
+            .by_node
+            .insert(7, MeshAnnotation::ThirdPersonOnly);
         assert!(part_hidden_in_first_person(&part));
-        part.first_person.by_node.insert(7, MeshAnnotation::FirstPersonOnly);
+        part.first_person
+            .by_node
+            .insert(7, MeshAnnotation::FirstPersonOnly);
         assert!(!part_hidden_in_first_person(&part));
     }
 
@@ -2386,7 +2388,16 @@ mod tests {
         let mut sim = skin.springs.clone();
         // 初回は snap（布は動かない）
         let a = sample_skinned_cloth(
-            &skin, None, 0.0, "blink", 0.0, 0.0, 0.0, 0.0, &mut sim, 1.0 / 60.0,
+            &skin,
+            None,
+            0.0,
+            "blink",
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            &mut sim,
+            1.0 / 60.0,
         );
         // 布の関節を手でずらす → Verlet → 回転デルタ → 頂点が変わる
         if let Some(c) = sim.chains.first_mut() {
@@ -2396,16 +2407,22 @@ mod tests {
             }
         }
         let b = sample_skinned_cloth(
-            &skin, None, 0.0, "blink", 0.0, 0.0, 0.0, 0.0, &mut sim, 1.0 / 60.0,
+            &skin,
+            None,
+            0.0,
+            "blink",
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            &mut sim,
+            1.0 / 60.0,
         );
         let mut max_d = 0.0f32;
         for (va, vb) in a.vertices.iter().zip(b.vertices.iter()) {
             max_d = max_d.max((Vec3::from_array(va.pos) - Vec3::from_array(vb.pos)).length());
         }
-        assert!(
-            max_d > 1e-4,
-            "cloth must move skinned verts, max_d={max_d}"
-        );
+        assert!(max_d > 1e-4, "cloth must move skinned verts, max_d={max_d}");
     }
 
     #[test]
@@ -2663,10 +2680,8 @@ mod tests {
         let rest = sample_skinned_pose(skin, &WalkerPose::default());
         // 左腕をローカル Y 軸周りに大きく回す overlay（weight 1.0）。
         let mut pose = WalkerPose::default();
-        pose.overlay_bones.insert(
-            "leftUpperArm".into(),
-            Quat::from_rotation_y(2.2).to_array(),
-        );
+        pose.overlay_bones
+            .insert("leftUpperArm".into(), Quat::from_rotation_y(2.2).to_array());
         pose.overlay_weight = 1.0;
         let moved = sample_skinned_pose(skin, &pose);
         let mut arm_d = 0.0f32;

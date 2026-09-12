@@ -86,7 +86,7 @@ impl RhythmGame {
 }
 
 pub fn is_rhythm(doc: &WorldDoc) -> bool {
-    doc.props.iter().any(|p| p.name == "stage")
+    doc.genre_is(GAME_ID)
 }
 
 fn player_ref(doc: &WorldDoc) -> Option<&WorldWalker> {

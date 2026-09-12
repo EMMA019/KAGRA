@@ -42,7 +42,12 @@ from typing import Any
 try:
     import kagra_shared as _ks
 except ImportError:  # pragma: no cover
-    _ks = None
+    try:
+        import importlib
+
+        _ks = importlib.import_module("kagra.kagra_shared")
+    except ImportError:  # pragma: no cover
+        _ks = None
 
 __all__ = [
     "Scene",

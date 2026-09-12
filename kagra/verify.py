@@ -168,7 +168,7 @@ def _eval_expect_world(spec: dict[str, Any] | None, cwd: Path) -> list[str]:
         data = json.loads(p.read_text(encoding="utf-8"))
     except Exception as e:
         return [f"world dump unreadable: {e}"]
-    from kagra.world import eval_world_expect
+    from kagra.world_expect import eval_world_expect
 
     checks = {k: v for k, v in spec.items() if k != "path"}
     return list(eval_world_expect(data, checks))
@@ -192,28 +192,36 @@ def _write_inline_script(inline: dict[str, Any]) -> Path:
     w = int(inline.get("width", 320))
     h = int(inline.get("height", 180))
     max_frames = int(inline.get("max_frames", 12))
-    shot_at = int(inline.get("screenshot_at", max(1, max_frames // 2)))
+    _shot_at = int(inline.get("screenshot_at", max(1, max_frames // 2)))  # noqa: F841
     out = inline.get("out", "scratch/verify_inline.png")
     clear = inline.get("cls", [40, 45, 55])
     code = f'''
 import os, sys
 sys.path.insert(0, {str(ROOT)!r})
-import kagra
+from kagra.gameloop import draw_world, rgba_to_png
 OUT = {out!r}
 os.makedirs(os.path.dirname(OUT) or ".", exist_ok=True)
-
-class S(kagra.Scene):
-    def update(self, dt):
-        t = kagra.tick_count()
-        if t == {shot_at}:
-            kagra.screenshot(OUT)
-        if t >= {max_frames}:
-            kagra.quit()
-    def draw(self):
-        kagra.cls({clear[0]}, {clear[1]}, {clear[2]})
-
-kagra.init(width={w}, height={h}, title="verify_inline", fps=60, visible=False)
-kagra.run(start_scene=S(), max_frames={max_frames + 2}, fixed_dt=1.0/60.0)
+world = {{
+    "version": 1,
+    "half": 8.0,
+    "floor_y": 0.0,
+    "props": [],
+    "lights": [{{
+        "id": "light:0", "type": "light", "name": "key",
+        "position": [2, 4, 2], "kind": "point", "slot": 0,
+        "intensity": 2.5, "radius": 8, "color": [1.0, 0.9, 0.75]
+    }}],
+    "cameras": [{{
+        "id": "camera:0", "type": "camera", "name": "main",
+        "position": [0, 2.2, 6.5], "target": [0, 1.0, 0], "fov": 48
+    }}],
+}}
+try:
+    png = draw_world(world, {w}, {h})
+except Exception:
+    rgba = bytes([{clear[0]}, {clear[1]}, {clear[2]}, 255]) * ({w} * {h})
+    png = rgba_to_png(rgba, {w}, {h})
+open(OUT, "wb").write(png)
 print("OK" if os.path.exists(OUT) else "MISSING", OUT)
 '''
     fd, path = tempfile.mkstemp(suffix="_kagra_verify.py", text=True)

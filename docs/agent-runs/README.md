@@ -92,3 +92,4 @@
 - `20260902-phase7-i18n/` — 汎用エンジン化 Phase 7: ローカライズ（i18n テーブル + 言語切替。bunny/torneko の UI 文字列を t() 経由に）。
 - `20260902-roadmap-2to7-complete/` — 汎用エンジン化 Phase 2–7 完了サマリ（Phase 1 物理はトリガーまで保留）。
 - `20260902-phase1-rapier/` — 汎用エンジン化 Phase 1: Rapier 剛体物理を本線に導入（is_static 動的 props / 高さ場 / 決定論 / Python ラッパー）。
+- `20260912-bar-sim/` — 本線を kagra_core から切り離し + **Bar 経営シム**（仕入れ / 客 / 帳簿。genre 明示。AI/手続き素材）。

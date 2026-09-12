@@ -161,15 +161,30 @@ def play_wav(wav: bytes, loop: bool = False) -> None:
     shared の「実際の再生はシェル側」方針どおり、ここは Python（シェル）
     側の最小実装。wasm / mobile は各プラットフォームの再生経路が担う。
     """
-    if sys.platform != "win32":
-        return
     try:
-        import winsound  # type: ignore[import-not-found]
+        if sys.platform == "win32":
+            import winsound  # type: ignore[import-not-found]
 
-        flags = winsound.SND_MEMORY | winsound.SND_ASYNC
-        if loop:
-            flags |= winsound.SND_LOOP
-        winsound.PlaySound(wav, flags)
+            flags = winsound.SND_MEMORY | winsound.SND_ASYNC
+            if loop:
+                flags |= winsound.SND_LOOP
+            winsound.PlaySound(wav, flags)
+            return
+        import shutil
+        import subprocess
+        import tempfile
+
+        player = next((c for c in ("afplay", "aplay", "paplay") if shutil.which(c)), None)
+        if player is None:
+            return
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            f.write(wav)
+            path = f.name
+        subprocess.Popen(
+            [player, path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
     except Exception:  # pragma: no cover - 音が出せない環境は静かに無視
         pass
 
