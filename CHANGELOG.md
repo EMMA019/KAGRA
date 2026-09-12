@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Extension-free ``WorldDoc`` / ``WorldPlay`` names on ``import kagra``
+  (``kagra.world_fallback``). python-unit CI has no ``kagra_shared``;
+  dump ``from_json`` / ``to_json`` still work. ``tick`` / render still
+  need the wheel.
+
 - Dump picture fields: ``sky`` (clear+fog), ``ground`` (auto grass plane;
   indoor rooms set false), ``WorldProp.uv_scale`` (CPU-tiled albedo).
   ``expect_offscreen.pixels`` checks region mean / not_solid (not golden).

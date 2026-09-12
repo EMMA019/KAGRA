@@ -32,18 +32,12 @@ from kagra.world_expect import eval_world_expect
 
 try:
     from kagra.kagra_shared import WorldDoc, WorldPlay, render_world_doc
-except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
+except ImportError:  # pragma: no cover — wheel / `maturin develop`
     try:
         from kagra_shared import WorldDoc, WorldPlay, render_world_doc
-    except ImportError:  # pragma: no cover
-        WorldDoc = None  # type: ignore[assignment]
-        WorldPlay = None  # type: ignore[assignment]
-
-        def render_world_doc(*_a, **_k):  # type: ignore[misc]
-            raise ImportError(
-                "kagra_shared not installed: `maturin develop --release` "
-                "(root pyproject) or `cd kagra-shared && maturin develop --release`"
-            )
+    except ImportError:
+        # python-unit CI is extension-free. Dump JSON still works.
+        from kagra.world_fallback import WorldDoc, WorldPlay, render_world_doc
 
 
 # Names that stay on disk (kagra.play / kagra.world3d / …) but must not
