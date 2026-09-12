@@ -53,6 +53,7 @@ __all__ = [
     "Scene",
     "run",
     "draw_world",
+    "last_draw_was_fallback",
     "pressed",
     "was_pressed",
     "mouse_pos",
@@ -104,11 +105,32 @@ def draw_world(
     hud_json = json.dumps(hud) if hud else None
     try:
         rgba = _ks.render_world_doc(json.dumps(world), w, h, hud_json)
-    except Exception:
-        # Headless CI / no adapter: still return a PNG so verify and
-        # ``--headless`` games can close the loop without a GPU.
+    except RuntimeError as exc:
+        # Only a missing GPU adapter falls back to a solid frame so headless
+        # CI can still close the loop. Bad dumps / HUD JSON stay loud.
+        if "adapter" not in str(exc).lower():
+            raise
+        _warn_no_gpu_once(exc)
         rgba = bytes([32, 24, 28, 255]) * (w * h)
     return rgba_to_png(rgba, w, h)
+
+
+_no_gpu_warned = False
+
+
+def _warn_no_gpu_once(exc: BaseException) -> None:
+    global _no_gpu_warned
+    if _no_gpu_warned:
+        return
+    _no_gpu_warned = True
+    import sys
+
+    print(f"[kagra] no GPU adapter — draw_world returns a solid frame ({exc})", file=sys.stderr)
+
+
+def last_draw_was_fallback() -> bool:
+    """True once ``draw_world`` has fallen back to a solid frame in this process."""
+    return _no_gpu_warned
 
 
 class Scene:

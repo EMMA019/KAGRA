@@ -67,8 +67,11 @@ def main() -> None:
         scene.draw()
         png = scene._canvas_png or b""
         Path(out).write_bytes(png)
+        from kagra.gameloop import last_draw_was_fallback
+
         print(json.dumps(scene.game, ensure_ascii=False))
-        print(f"wrote {out} ({len(png)} bytes)")
+        how = "solid fallback, no GPU" if last_draw_was_fallback() else "rendered"
+        print(f"wrote {out} ({len(png)} bytes, {how})")
         return
     run(scene, width=W, height=H, title="KAGRA — Lumen Bar")
 

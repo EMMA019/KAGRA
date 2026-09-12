@@ -10,11 +10,10 @@
       "id": "prop:floor",
       "type": "prop",
       "name": "floor",
-      "position": [0.0, -0.5, 0.0],
+      "position": [0.0, -0.48, 0.0],
       "model": "box",
       "scale": [16.0, 1.0, 12.0],
       "enabled": true,
-      "color": [48, 32, 28],
       "roughness": 0.95,
       "texture": "assets/bar/tex/wood.png"
     },
@@ -22,13 +21,45 @@
       "id": "prop:backwall",
       "type": "prop",
       "name": "wall",
-      "position": [0.0, 1.5, -4.5],
+      "position": [0.0, 2.0, -4.5],
       "model": "box",
-      "scale": [16.0, 3.2, 0.4],
+      "scale": [16.0, 4.4, 0.4],
       "enabled": true,
-      "color": [40, 28, 36],
       "roughness": 0.9,
       "texture": "assets/bar/tex/wall.png"
+    },
+    {
+      "id": "prop:sidewall_l",
+      "type": "prop",
+      "name": "wall",
+      "position": [-8.0, 2.0, 0.0],
+      "model": "box",
+      "scale": [0.4, 4.4, 12.0],
+      "enabled": true,
+      "roughness": 0.9,
+      "texture": "assets/bar/tex/wall.png"
+    },
+    {
+      "id": "prop:sidewall_r",
+      "type": "prop",
+      "name": "wall",
+      "position": [8.0, 2.0, 0.0],
+      "model": "box",
+      "scale": [0.4, 4.4, 12.0],
+      "enabled": true,
+      "roughness": 0.9,
+      "texture": "assets/bar/tex/wall.png"
+    },
+    {
+      "id": "prop:ceiling",
+      "type": "prop",
+      "name": "ceiling",
+      "position": [0.0, 4.3, 0.0],
+      "model": "box",
+      "scale": [16.0, 0.3, 12.0],
+      "enabled": true,
+      "color": [28, 20, 24],
+      "roughness": 1.0
     },
     {
       "id": "prop:counter",
@@ -38,7 +69,6 @@
       "model": "box",
       "scale": [6.0, 0.9, 0.8],
       "enabled": true,
-      "color": [110, 74, 44],
       "roughness": 0.55,
       "texture": "assets/bar/tex/wood.png",
       "interact": { "kind": "use", "prompt": "counter", "on_use": "counter", "reach": 3.0 }
@@ -158,9 +188,9 @@
       "id": "camera:main",
       "type": "camera",
       "name": "main",
-      "position": [0.0, 1.7, 6.4],
-      "target": [0.0, 1.05, 0.4],
-      "fov": 42.0
+      "position": [0.0, 2.2, 7.2],
+      "target": [0.0, 1.2, -1.0],
+      "fov": 44.0
     }
   ],
   "heightfield": null,

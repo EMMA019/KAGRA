@@ -402,7 +402,7 @@ class BarSim(Scene):
 
     def draw(self) -> None:
         g = self.game
-        stock = "  ".join(f"{k[0]}:{v}" for k, v in g["stock"].items())
+        stock = "  ".join(f"{k[:2]}:{v}" for k, v in g["stock"].items())
         parts = [
             panel(8, 8, 464, 36, color=(18, 14, 16, 220), border=(160, 110, 70, 255)),
             message(_t("hud.day", day=g["day"], money=g["money"], rep=g["rep"]), 14, 12, 300, size=14),

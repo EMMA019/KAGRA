@@ -19,3 +19,11 @@
   `rust-version = "1.88"` (as_chunks / is_multiple_of).
 - Primitive meshes had UV = 0, so textures would have been a single texel
   without the box/plane/quad UV fix.
+- First real render (lavapipe software Vulkan) showed three things no test
+  caught: the engine's default green grass plane (no heightfield) z-fought
+  the wood floor; `color` × `texture` double-darkened the wall to black;
+  the sky showed over a 3.2 m wall. Fixed in the dump (floor top +0.02,
+  no `color` on textured props, taller walls + ceiling, camera pulled back).
+  `draw_world` first swallowed every render error into a solid PNG — that
+  made verify pass with a broken renderer. Now only "no adapter" falls back,
+  with a stderr warning and `last_draw_was_fallback()`.
