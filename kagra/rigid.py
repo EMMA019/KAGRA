@@ -46,7 +46,7 @@ class PhysicsWorld:
 
     @staticmethod
     def _build(world: dict[str, Any]):
-        if _ks is None:
+        if _ks is None or not hasattr(_ks, "PhysicsWorld"):
             raise RuntimeError(_missing_message())
         return _ks.PhysicsWorld.from_json(_json_dumps(world))
 

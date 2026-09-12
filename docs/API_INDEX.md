@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **51**
+エントリ数: **54**
 
 棚の**手前**は shared wgpu 30（WorldDoc / WorldPlay / gameloop）。
 棚の**奥**は再エクスポートの余り。旧 RendererV2 API は `old/`。
@@ -46,6 +46,7 @@
 | `play_se` | `export play_se  (from kagra.audio)` |
 | `play_wav` | `export play_wav  (from kagra.audio)` |
 | `pressed` | `export pressed  (from kagra.gameloop)` |
+| `render_world_doc` | `export render_world_doc  (from kagra.kagra_shared)` |
 | `resolve_asset` | `export resolve_asset  (from kagra.contracts)` |
 | `rgba_to_png` | `export rgba_to_png  (from kagra.gameloop)` |
 | `run` | `export run  (from kagra.gameloop)` |
@@ -62,6 +63,8 @@
 | `t` | `export t  (from kagra.i18n)` |
 | `tone` | `export tone  (from kagra.audio)` |
 | `was_pressed` | `export was_pressed  (from kagra.gameloop)` |
+| `WorldDoc` | `class WorldDoc  (from kagra.kagra_shared)` |
+| `WorldPlay` | `class WorldPlay  (from kagra.kagra_shared)` |
 
 ## Shelf (legacy 2D / tilemap / editor / ECS)
 

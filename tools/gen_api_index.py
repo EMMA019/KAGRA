@@ -142,6 +142,16 @@ def _public_from_init() -> list[tuple[str, str, str]]:
                 kind = "class" if name[0].isupper() else "export"
                 items.append((name, f"{kind} {name}  (from {node.module})", kind))
 
+    # try/except の拡張 import（WorldDoc / WorldPlay）は AST の
+    # ImportFrom に出ない。__all__ にあれば索引へ足す。
+    if all_names is not None:
+        have = {n for n, _, _ in items}
+        for name in sorted(all_names):
+            if name in have or name in denied:
+                continue
+            kind = "class" if name[0].isupper() else "export"
+            items.append((name, f"{kind} {name}  (from kagra.kagra_shared)", kind))
+
     # 名前順
     items.sort(key=lambda x: (x[2] != "function", x[0].lower()))
     return items

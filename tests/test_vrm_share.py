@@ -102,5 +102,5 @@ def test_example_is_public_api_and_measures():
     assert "play_loop" not in src
     assert "spatial_mix" not in src
     py = (ROOT / "kagra" / "__init__.py").read_text(encoding="utf-8")
-    assert "def vrm_gpu_stats()" in py
-    assert "_engine.vrm_gpu_stats()" in py
+    assert "def vrm_gpu_stats()" not in py
+    assert "vrm_gpu_stats" not in py

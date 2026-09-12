@@ -177,6 +177,7 @@ class BarSim(Scene):
         self._choice_rects: list[tuple[float, float, float, float]] = []
         self.guest: dict[str, Any] | None = None
         self.tonight: list[dict[str, Any]] = []
+        self.night_open = False
         self.world = _room_world()
         self._push(_t("msg.welcome", name=_t("char.haru"), bar=BAR_NAME))
         self._show_next()
@@ -284,11 +285,17 @@ class BarSim(Scene):
         self.rng = Rng(self.seed + self.game["day"] * 7919)
         self.tonight = self.rng.guests_for_day(self.game["day"])
         self.game["sales_today"] = 0
+        self.night_open = True
         self._next_guest()
 
     def _next_guest(self) -> None:
         if not self.tonight:
-            self._close_day()
+            if self.night_open:
+                self.night_open = False
+                self._close_day()
+            else:
+                self.guest = None
+                self._show_next()
             return
         self.guest = dict(self.tonight.pop(0))
         name = _t(f"char.{self.guest['id']}")
