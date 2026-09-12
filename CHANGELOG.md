@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- ``import kagra`` exposes Python ``WorldDoc`` / ``WorldPlay`` when
+  ``kagra_shared`` is not built (python-unit CI). Tick / render still
+  need the extension.
+
 - Dump picture fields: ``sky`` (clear+fog), ``ground`` (auto grass plane;
   indoor rooms set false), ``WorldProp.uv_scale`` (CPU-tiled albedo).
   ``expect_offscreen.pixels`` checks region mean / not_solid (not golden).
