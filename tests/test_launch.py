@@ -27,9 +27,17 @@ def test_no_hint_when_extension_present(tmp_path: Path):
     pkg = tmp_path / "kagra"
     pkg.mkdir()
     (pkg / "__init__.py").write_text("", encoding="utf-8")
-    (pkg / "kagra_core.so").write_bytes(b"x")
+    (pkg / "kagra_shared.so").write_bytes(b"x")
     assert launch.extension_present(pkg) is True
     assert launch.shadow_hint(cwd=tmp_path, loaded_from=pkg) is None
+
+
+def test_old_core_so_is_not_the_mainline_extension(tmp_path: Path):
+    pkg = tmp_path / "kagra"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "kagra_core.so").write_bytes(b"x")
+    assert launch.extension_present(pkg) is False
 
 
 def test_import_error_includes_shadow(tmp_path: Path):
@@ -41,6 +49,6 @@ def test_import_error_includes_shadow(tmp_path: Path):
         cwd=tmp_path,
         loaded_from=pkg,
     )
-    assert "kagra_core が見つかりません" in text
+    assert "kagra_shared が見つかりません" in text
     assert "maturin develop" in text
     assert "boom" in text

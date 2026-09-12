@@ -134,43 +134,37 @@ def test_critical_bindings_present():
     assert not missing, f"必須バインディング欠落: {missing}"
 
 
-def test_set_fog_python_wrapper_exists():
-    """set_fog の Python ラッパが公開され、Rust 側へ転送している。
-
-    拡張のビルドを要求しないよう AST で検査する（pure-python CI で回る）。
-    """
+def test_old_engine_wrappers_are_off_import_kagra():
+    """RendererV2 wrappers stay off the 0.2 public package."""
     src = (KAGRA_PY / "__init__.py").read_text(encoding="utf-8")
     tree = ast.parse(src)
-    fn = next(
+    defined = {
+        n.name
+        for n in tree.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    }
+    all_node = next(
         (
-            n
+            n.value
             for n in tree.body
-            if isinstance(n, ast.FunctionDef) and n.name == "set_fog"
+            if isinstance(n, ast.Assign)
+            and any(getattr(t, "id", None) == "__all__" for t in n.targets)
         ),
         None,
     )
-    assert fn is not None, "kagra.set_fog が未公開"
-    assert "_engine.set_fog" in ast.unparse(fn), "set_fog が Rust 側へ転送していない"
-
-
-def test_gltf_python_wrappers_exist():
-    src = (KAGRA_PY / "__init__.py").read_text(encoding="utf-8")
-    tree = ast.parse(src)
-    names = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
-    for name, rust in (
-        ("load_gltf", "_engine.load_gltf"),
-        ("draw_gltf", "_engine.draw_gltf"),
-        ("unload_gltf", "_engine.unload_gltf"),
-        ("upload_mesh_3d", "_engine.upload_mesh_3d"),
-        ("draw_mesh_id", "_engine.draw_mesh_id"),
-        ("unload_mesh_3d", "_engine.unload_mesh_3d"),
-        ("stage", "Stage.load"),
-        ("set_grab_frames", "_engine.set_grab_frames"),
-        ("grab_frame", "_engine.grab_frame"),
-        ("set_point_light", "_engine.set_point_light"),
-        ("set_hdri", "_engine.set_hdri"),
-        ("set_mesh_pbr", "_engine.set_mesh_pbr"),
-        ("set_rim", "_engine.set_rim"),
-    ):
-        assert name in names, f"kagra.{name} が未公開"
-        assert rust in ast.unparse(names[name]), f"{name} が {rust} を呼んでいない"
+    public = set(ast.literal_eval(all_node)) if all_node is not None else set()
+    cut = {
+        "set_fog",
+        "load_gltf",
+        "draw_gltf",
+        "stage",
+        "upload_mesh_3d",
+        "set_point_light",
+        "set_hdri",
+        "vrm_gpu_stats",
+        "Walk",
+        "Prop",
+        "World",
+    }
+    assert not (cut & defined), f"old wrappers still defined: {sorted(cut & defined)}"
+    assert not (cut & public), f"old wrappers still in __all__: {sorted(cut & public)}"

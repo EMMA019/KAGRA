@@ -7,6 +7,10 @@
   "required": ["version"],
   "properties": {
     "version": { "const": 1 },
+    "genre": {
+      "type": ["string", "null"],
+      "description": "Explicit genre id (crest_isle, fish_cast, town_gate, …). Omit = free world: walk / camera / interact / timers / events only. Prop names are never reserved."
+    },
     "half": { "type": "number" },
     "floor_y": { "type": "number" },
     "gravity": { "type": "number" },
@@ -47,6 +51,17 @@
       "type": ["boolean", "null"],
       "description": "ACES tonemap. Omit = on. Globals.env.w. Reinhard is not used; ACES matches kagra-core V2."
     },
+    "sky": {
+      "type": ["array", "null"],
+      "minItems": 4,
+      "maxItems": 4,
+      "items": { "type": "integer", "minimum": 0, "maximum": 255 },
+      "description": "Clear + fog RGBA. Omit = outdoor [130, 165, 205, 255]. Indoor rooms dump a dark color."
+    },
+    "ground": {
+      "type": ["boolean", "null"],
+      "description": "Auto grass plane when there is no heightfield. Omit = true. Indoor rooms dump false and place their own floor."
+    },
     "timers": {
       "type": "array",
       "description": "Generic countdowns. WorldPlay::start_timer / tick_timers. On 0, on_done is emitted as an event and active flips false. Cooking wait, fishing cast→bite, cooldowns.",
@@ -79,6 +94,17 @@
           "description": "box/sphere/capsule/plane/sprite/quad. sprite|quad is a standing XY card in compile_scene (same WorldDoc as 3D). name target = FPS range hitscan (look + fire + hit). name tower + waypoint + creep = TD lane (path walk, tower hit, leak/clear). name finish + split = race drive (steer+throttle, lap/finish). name opponent = fight round (J/click attack, hitstun, KO)."
         },
         "gltf": { "type": ["string", "null"] },
+        "texture": {
+          "type": ["string", "null"],
+          "description": "Repo-relative PNG path. compile_meshes attaches albedo on box/plane/sprite/quad. Alpha < 0.5 is discarded."
+        },
+        "uv_scale": {
+          "type": ["array", "null"],
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number" },
+          "description": "Repeat the albedo this many times (CPU tile; sampler stays ClampToEdge). Omit = [1, 1]."
+        },
         "scale": {
           "type": "array",
           "minItems": 3,

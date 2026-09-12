@@ -40,7 +40,9 @@ pub struct TextRaster {
 /// Python 側のテキスト折り返し（UI パネル）でも気軽に呼べる。
 pub fn measure_text(text: &str, size: f32) -> f32 {
     let scaled = FONT.as_scaled(size.max(1.0));
-    text.chars().map(|c| scaled.h_advance(scaled.glyph_id(c))).sum()
+    text.chars()
+        .map(|c| scaled.h_advance(scaled.glyph_id(c)))
+        .sum()
 }
 
 impl TextRaster {
@@ -64,7 +66,10 @@ impl TextRaster {
         let scaled = FONT.as_scaled(size.max(1.0));
         let mut max_w = 0.0f32;
         for line in text.split('\n') {
-            let w: f32 = line.chars().map(|c| scaled.h_advance(scaled.glyph_id(c))).sum();
+            let w: f32 = line
+                .chars()
+                .map(|c| scaled.h_advance(scaled.glyph_id(c)))
+                .sum();
             max_w = max_w.max(w);
         }
         max_w
@@ -79,7 +84,10 @@ impl TextRaster {
         let mut out = Vec::new();
         let mut line_start_y = baseline;
         for line in tq.text.split('\n') {
-            let line_w: f32 = line.chars().map(|c| scaled.h_advance(scaled.glyph_id(c))).sum();
+            let line_w: f32 = line
+                .chars()
+                .map(|c| scaled.h_advance(scaled.glyph_id(c)))
+                .sum();
             let x0 = match tq.align {
                 TextAlign::Left => tq.x,
                 TextAlign::Center => tq.x - line_w * 0.5,
@@ -171,7 +179,13 @@ mod tests {
     fn japanese_kana_and_kanji_rasterize() {
         let mut r = raster();
         for ch in ['あ', 'カ', 'ト', 'ル', 'ネ', 'コ', '食'] {
-            let qs = r.text_quads(&TextQuad::new(&ch.to_string(), 0.0, 0.0, 16.0, [255, 255, 255, 255]));
+            let qs = r.text_quads(&TextQuad::new(
+                &ch.to_string(),
+                0.0,
+                0.0,
+                16.0,
+                [255, 255, 255, 255],
+            ));
             assert!(!qs.is_empty(), "char {ch} must rasterize");
         }
     }
@@ -182,7 +196,10 @@ mod tests {
         let w10 = r.measure_text_width("abc", 10.0);
         let w20 = r.measure_text_width("abc", 20.0);
         assert!(w10 > 0.0);
-        assert!((w20 - w10 * 2.0).abs() < 2.0, "doubling size doubles width: {w10} {w20}");
+        assert!(
+            (w20 - w10 * 2.0).abs() < 2.0,
+            "doubling size doubles width: {w10} {w20}"
+        );
     }
 
     #[test]
@@ -192,7 +209,10 @@ mod tests {
         let ys: Vec<f32> = qs.iter().map(|q| q.y).collect();
         let min_y = ys.iter().cloned().fold(f32::MAX, f32::min);
         let max_y = ys.iter().cloned().fold(f32::MIN, f32::max);
-        assert!(max_y - min_y > 10.0, "two lines must be vertically separated");
+        assert!(
+            max_y - min_y > 10.0,
+            "two lines must be vertically separated"
+        );
     }
 
     #[test]
@@ -204,7 +224,10 @@ mod tests {
         );
         let l_min = left.iter().map(|q| q.x).fold(f32::MAX, f32::min);
         let c_min = center.iter().map(|q| q.x).fold(f32::MAX, f32::min);
-        assert!(c_min < l_min, "center text starts further left: {c_min} < {l_min}");
+        assert!(
+            c_min < l_min,
+            "center text starts further left: {c_min} < {l_min}"
+        );
     }
 
     #[test]

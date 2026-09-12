@@ -323,5 +323,6 @@
       "fov": 54.0
     }
   ],
-  "heightfield": null
+  "heightfield": null,
+  "genre": "town_gate"
 }

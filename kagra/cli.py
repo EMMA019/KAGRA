@@ -6,12 +6,12 @@ import sys
 _HELP = """KAGRA — Kernel for Anime/Game Runtime Architecture
 
 Usage:
-  python -m kagra              sing & dance demo (downloads a sample VRM once)
-  python -m kagra --loop --stream   HUD + virtual camera (needs kagra[stream])
-  python -m kagra demo         same
-  python -m kagra verify FILE  run an agent verify scenario
-  python -m kagra render-world FILE [OUT.png]  shared wgpu 30 offscreen of a World.dump JSON
-  python -m kagra play-world [FILE]  shared wgpu 30 desktop window (WASD; official Crest play)
+  python -m kagra --help
+  python -m kagra verify FILE           run an agent verify scenario
+  python -m kagra render-world FILE [OUT.png]  shared wgpu 30 offscreen of a WorldDoc JSON
+  python -m kagra play-world [FILE]     shared wgpu 30 desktop window (WASD)
+  python examples/bar_sim_minimal.py    Bar management sim (Python game master)
+  python -m kagra demo                  archived RendererV2 sing & dance (needs old wheel)
   kagra --help
 """
 
@@ -22,11 +22,8 @@ def main(argv: list[str] | None = None) -> int:
     warn_checkout_shadow()
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or argv[0] in ("-h", "--help"):
-        if argv and argv[0] in ("-h", "--help"):
-            print(_HELP)
-            return 0
-        from kagra.demo import main as demo_main
-        return demo_main([])
+        print(_HELP)
+        return 0
     cmd, rest = argv[0], argv[1:]
     if cmd == "demo":
         from kagra.demo import main as demo_main
@@ -40,10 +37,6 @@ def main(argv: list[str] | None = None) -> int:
     if cmd in ("play-world", "play_world"):
         from kagra.play_world import main as play_world_main
         return play_world_main(rest)
-    # 未知のサブコマンドはデモの引数として扱う（--offline 等）
-    if cmd.startswith("-"):
-        from kagra.demo import main as demo_main
-        return demo_main(argv)
     print(_HELP, file=sys.stderr)
     print(f"unknown command: {cmd}", file=sys.stderr)
     return 2

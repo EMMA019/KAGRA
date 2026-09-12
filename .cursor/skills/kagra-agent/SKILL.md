@@ -11,6 +11,9 @@ description: >-
 ## Rules
 
 1. **Do not invent APIs.** Search `docs/API_INDEX.md` or MCP `kagra_api_search` first.
+   `import kagra` is the shared wgpu 30 mainline (`WorldDoc` / `WorldPlay`).
+   Push only after `cargo fmt -p kagra-shared -- --check`.
+   Do not add a genre module to `WorldPlay`. New games stay in Python.
 2. **Resolve assets via contracts.** Prefer `kagra.contracts.resolve_asset` / MCP `kagra_resolve_asset` (aliases: Emma, walk, dance).
 3. **Close the loop.** After visual changes, run a verify scenario or MCP `kagra_render` / `kagra_verify`.
 4. **One EventLoop per process on Windows.** Always run GPU scenes in a **subprocess** (`kagra.verify`).
@@ -63,9 +66,9 @@ Cinemachine, PhysX-complete, VRM-on-Wasm. **Now ~40%.** M0–M2 closed.
 Closed genre: collectathon. Mountains in order:
 signboard (tiles, #97) → world as data (`World.query` / `dump` / `load`) →
 one runtime → game-enough → ship. Old "63%" is archived; do not copy it.
-Official public names: `World` / `Prop` / `Walk` / mesh-or-avatar / Camera /
-input / sound. `World` is `World3D`. 2D `Entity` / tilemap / Tk are not on
-`import kagra`. OSM / Rapier / SSAO / VRM-on-Wasm stay outside 80%.
+Official public names: `WorldDoc` / `WorldPlay` / `kagra.gameloop` / `ui2d` /
+`audio`. `World` / `Prop` / `Walk` are archived RendererV2 (`old/`). 2D
+`Entity` / tilemap / Tk are not on `import kagra`. OSM / Rapier / SSAO / VRM-on-Wasm stay outside 80%.
 Final goal is first-recall; 80% is not a substitute. Brain hook is
 `kagra.brain("kairi")` — default `https://kairi.onrender.com`, token in
 `KAIRI_API_TOKEN`. Not in the wheel. Do not start D-6 as a fourth box room.

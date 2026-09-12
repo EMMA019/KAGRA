@@ -85,7 +85,7 @@ impl ActionGame {
 }
 
 pub fn is_action(doc: &WorldDoc) -> bool {
-    doc.props.iter().any(is_foe)
+    doc.genre_is(GAME_ID)
 }
 
 fn is_foe(p: &WorldProp) -> bool {

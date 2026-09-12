@@ -48,9 +48,7 @@ impl PlatformGame {
 }
 
 pub fn is_platformer(doc: &WorldDoc) -> bool {
-    doc.props
-        .iter()
-        .any(|p| p.name == "platform" || p.name == "checkpoint")
+    doc.genre_is(GAME_ID)
 }
 
 fn is_named_platform(p: &WorldProp) -> bool {

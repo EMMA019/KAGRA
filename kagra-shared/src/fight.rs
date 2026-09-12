@@ -123,7 +123,7 @@ impl FightGame {
 }
 
 pub fn is_fight(doc: &WorldDoc) -> bool {
-    doc.props.iter().any(is_opponent)
+    doc.genre_is(GAME_ID)
 }
 
 fn is_opponent(p: &WorldProp) -> bool {

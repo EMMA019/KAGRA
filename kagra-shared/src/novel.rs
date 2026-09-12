@@ -61,7 +61,7 @@ impl NovelGame {
 }
 
 pub fn is_novel(doc: &WorldDoc) -> bool {
-    doc.props.iter().any(|p| p.name == "page")
+    doc.genre_is(GAME_ID)
 }
 
 fn player_ref(doc: &WorldDoc) -> Option<&WorldWalker> {

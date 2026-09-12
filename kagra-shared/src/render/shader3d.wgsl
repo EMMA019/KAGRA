@@ -294,7 +294,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         return vec4<f32>(col, 1.0);
     }
 
-    var albedo = in.color.rgb * textureSample(albedo_tex, albedo_samp, in.uv).rgb;
+    let tex = textureSample(albedo_tex, albedo_samp, in.uv);
+    if (tex.a < 0.5) {
+        discard;
+    }
+    var albedo = in.color.rgb * tex.rgb;
     if (mat_id == 1) {
         // アスファルト: 細かいノイズ + 薄い轍。
         let gn = fbm(in.world.xz * 0.35);

@@ -10,6 +10,7 @@ CLI::
 
 Helper search order (skip cleanly when none are present):
 
+0. in-process ``kagra.kagra_shared.render_world_doc`` (installed wheel)
 1. ``$KAGRA_OFFSCREEN`` (installed binary, or a ``.py`` stand-in)
 2. ``kagra-offscreen`` / ``kagra-shared-offscreen`` on ``PATH``
 3. already-built ``target/{release,debug}/examples/offscreen``
@@ -17,7 +18,8 @@ Helper search order (skip cleanly when none are present):
    (CLI default; verify scenarios only use cargo when ``KAGRA_OFFSCREEN_CARGO=1``
    or ``expect_offscreen.cargo`` is true)
 
-PNG checks are smoke: file exists, non-empty, IHDR width/height. Not golden pixels.
+PNG checks are smoke: file exists, non-empty, IHDR width/height. Optional
+``expect_offscreen.pixels`` (region mean / not_solid) is not a golden image.
 """
 from __future__ import annotations
 
@@ -183,6 +185,45 @@ def looks_like_no_adapter(text: str) -> bool:
     return any(m in low for m in _NO_ADAPTER_MARKERS)
 
 
+def _render_via_python_extension(
+    world_p: Path, out_p: Path, width: int, height: int
+) -> RenderWorldResult | None:
+    """Use the installed ``kagra_shared`` wheel. None = extension missing."""
+    try:
+        from kagra.kagra_shared import render_world_doc
+    except ImportError:
+        try:
+            from kagra_shared import render_world_doc
+        except ImportError:
+            return None
+    from kagra.gameloop import rgba_to_png
+
+    try:
+        rgba = render_world_doc(world_p.read_text(encoding="utf-8"), int(width), int(height))
+    except Exception as exc:
+        if looks_like_no_adapter(str(exc)):
+            return RenderWorldResult(
+                ok=True,
+                skipped=True,
+                skip_reason="shared offscreen helper has no GPU adapter",
+                path=str(out_p),
+                cmd=["kagra.kagra_shared.render_world_doc"],
+            )
+        return RenderWorldResult(
+            ok=False,
+            error=str(exc),
+            path=str(out_p),
+            cmd=["kagra.kagra_shared.render_world_doc"],
+        )
+    out_p.parent.mkdir(parents=True, exist_ok=True)
+    out_p.write_bytes(rgba_to_png(bytes(rgba), int(width), int(height)))
+    return RenderWorldResult(
+        ok=True,
+        path=str(out_p),
+        cmd=["kagra.kagra_shared.render_world_doc"],
+    )
+
+
 @dataclass
 class RenderWorldResult:
     ok: bool
@@ -254,6 +295,25 @@ def render_world_dump(
             path=str(out_p),
         )
 
+    via_py = None
+    if not os.environ.get("KAGRA_OFFSCREEN", "").strip():
+        via_py = _render_via_python_extension(world_p, out_p, int(width), int(height))
+    if via_py is not None:
+        if via_py.ok and not via_py.skipped:
+            errors = check_offscreen_png(
+                out_p, width=int(width), height=int(height), min_bytes=int(min_bytes)
+            )
+            size = out_p.stat().st_size if out_p.is_file() else 0
+            via_py.error = "; ".join(errors) if errors else None
+            via_py.ok = not errors
+            via_py.size_bytes = size
+            if out_p.is_file() and not errors:
+                try:
+                    via_py.width, via_py.height = png_dimensions(out_p)
+                except Exception:
+                    pass
+        return via_py
+
     cmd = resolve_offscreen_cmd(
         int(width),
         int(height),
@@ -316,7 +376,9 @@ def render_world_dump(
             cmd=cmd,
         )
 
-    errors = check_offscreen_png(out_p, width=int(width), height=int(height), min_bytes=int(min_bytes))
+    errors = check_offscreen_png(
+        out_p, width=int(width), height=int(height), min_bytes=int(min_bytes)
+    )
     size = out_p.stat().st_size if out_p.is_file() else 0
     got_w = got_h = None
     if out_p.is_file() and not errors:
@@ -389,7 +451,12 @@ def eval_expect_offscreen(
         return [], result.skip_reason, result
     if not result.ok:
         return [result.error or "offscreen failed"], None, result
-    return [], None, result
+    pixel_errors = []
+    if result.path and spec.get("pixels"):
+        from kagra.pixels import eval_expect_pixels
+
+        pixel_errors = eval_expect_pixels(result.path, spec.get("pixels"))
+    return pixel_errors, None, result
 
 
 def main(argv: list[str] | None = None) -> int:

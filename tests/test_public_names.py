@@ -1,16 +1,8 @@
-"""Runtime checks: documented ``kagra.X`` must not be a same-named submodule.
+"""Runtime checks: mainline ``import kagra`` is WorldDoc / WorldPlay.
 
-Emma's Crest Isle crash after #77::
-
-    kagra.stage(str(sky_png), radius=140.0)
-    TypeError: 'module' object is not callable
-
-``def stage`` lives in ``kagra/__init__.py``, but ``from kagra.stage import Stage``
-rebinds ``kagra.stage`` to ``kagra/stage.py``. AST / source-order tests still
-see ``def stage`` and miss this. These tests import the package (stub Engine,
-no GPU / Rust) and fail if the name is a module.
-
-``from kagra.stage import Stage`` must keep working.
+Archived RendererV2 names (Walk / Prop / stage / avatar) stay off the
+public package. Submodule collisions that remain (annotate / brain) must
+still be callables, not the ``kagra/*.py`` modules.
 """
 from __future__ import annotations
 
@@ -27,9 +19,26 @@ INIT = ROOT / "kagra" / "__init__.py"
 OPEN_WORLD = ROOT / "old" / "examples" / "vrm_open_world.py"
 RELIC_RUN = ROOT / "old" / "examples" / "vrm_relic_run.py"
 
-# Public functions Crest Isle / Relic Run call as ``kagra.X(...)`` (on_enter
-# plus the helpers on_enter invokes). Classes too.
-DEMO_CALLABLES = (
+MAINLINE_NAMES = (
+    "WorldDoc",
+    "WorldPlay",
+    "Scene",
+    "annotate",
+    "brain",
+    "choice_menu",
+    "draw_world",
+    "eval_world_expect",
+    "image",
+    "merge",
+    "play_se",
+    "play_wav",
+    "pressed",
+    "run",
+    "run_scenario",
+    "tone",
+)
+
+CUT_NAMES = (
     "ActionController",
     "Label",
     "Prop",
@@ -37,48 +46,13 @@ DEMO_CALLABLES = (
     "CharacterController",
     "World",
     "World3D",
-    "apply_outdoor_look",
     "avatar",
-    "can_pick",
-    "draw_billboard_instances",
-    "draw_vignette",
-    "draw_vrm",
-    "ensure_vrm",
-    "fill",
-    "font",
-    "inject_key",
-    "load",
-    "load_json",
-    "measure",
-    "open_world_height",
-    "overworld_height",
-    "play_se",
-    "play_loop",
-    "set_listener",
-    "pressed",
-    "quit",
-    "save_json",
-    "screenshot",
-    "set_bloom",
-    "set_camera3d",
-    "set_fog",
-    "set_hdri",
-    "set_light_dir",
-    "set_point_light",
-    "set_spot_light",
-    "sky",
-    "solid_tex",
-    "sound",
+    "get_engine",
     "stage",
-    "text",
-    "texture_from_fn",
-    "tick_count",
-    "tone",
+    "sky",
     "water",
+    "texture_from_fn",
 )
-
-# Same-named submodules that are documented as functions (not Camera3D vs camera3d).
-COLLISION_CALLABLES = ("stage", "annotate", "pad", "brain")
 
 
 def _submodule_stems() -> set[str]:
@@ -92,7 +66,7 @@ def _submodule_stems() -> set[str]:
 
 
 def _init_names_matching_submodules() -> list[str]:
-    """``def stage`` / ``from kagra.pad import pad`` — names that collide."""
+    """``from kagra.annotate import annotate`` — names that collide."""
     tree = ast.parse(INIT.read_text(encoding="utf-8"))
     sub = _submodule_stems()
     names: list[str] = []
@@ -146,8 +120,6 @@ def _kagra_calls_in_method(path: Path, class_name: str, method: str) -> list[ast
 
 _RUNTIME_CHECKER = textwrap.dedent(
     r"""
-    import inspect
-    import importlib
     import json
     import sys
     import types
@@ -156,75 +128,25 @@ _RUNTIME_CHECKER = textwrap.dedent(
     root = Path(sys.argv[1])
     sys.path.insert(0, str(root))
 
-    core = types.ModuleType("kagra.kagra_core")
-
-    class Engine:
-        pass
-
-    core.Engine = Engine
-    sys.modules["kagra.kagra_core"] = core
-
     import kagra
 
     errors = []
-    names = json.loads(sys.argv[2])
-    collisions = json.loads(sys.argv[3])
+    mainline = json.loads(sys.argv[2])
+    cut = json.loads(sys.argv[3])
 
     def fail(msg):
         errors.append(msg)
 
-    def must_callable(name):
+    for name in mainline:
         obj = getattr(kagra, name, None)
         if obj is None:
             fail(f"missing kagra.{name}")
-            return None
-        if isinstance(obj, types.ModuleType):
+        elif isinstance(obj, types.ModuleType):
             fail(f"kagra.{name} is a module ({getattr(obj, '__file__', '?')})")
-            return None
-        if not callable(obj):
-            fail(f"kagra.{name} is {type(obj).__name__}, not callable")
-            return None
-        return obj
 
-    for name in names:
-        must_callable(name)
-
-    for name in collisions:
-        must_callable(name)
-
-    # The exact crash: kagra.stage must accept a PNG path + radius.
-    stage = getattr(kagra, "stage", None)
-    if callable(stage) and not isinstance(stage, types.ModuleType):
-        try:
-            inspect.signature(stage).bind("sky.png", radius=140.0)
-        except TypeError as exc:
-            fail(f"kagra.stage bind failed: {exc}")
-    else:
-        fail("kagra.stage is not callable (Crest Isle / Relic Run sky sphere)")
-
-    from kagra.stage import Stage
-    if not isinstance(Stage, type):
-        fail(f"from kagra.stage import Stage gave {Stage!r}")
-    if not callable(kagra.stage) or isinstance(kagra.stage, types.ModuleType):
-        fail("from kagra.stage import Stage re-shadowed kagra.stage")
-
-    # ``import kagra.stage as m`` follows getattr(kagra, "stage") — the
-    # callable. The module itself stays in sys.modules for from-import.
-    stage_mod = importlib.import_module("kagra.stage")
-    if stage_mod.Stage is not Stage:
-        fail("importlib.import_module('kagra.stage') did not yield Stage")
-    if not callable(kagra.stage) or isinstance(kagra.stage, types.ModuleType):
-        fail("loading kagra.stage re-shadowed the callable")
-
-    from kagra.pad import axis
-    if not callable(kagra.pad) or isinstance(kagra.pad, types.ModuleType):
-        fail("from kagra.pad import axis shadowed kagra.pad")
-
-    brain_mod = importlib.import_module("kagra.brain")
-    if not callable(kagra.brain) or isinstance(kagra.brain, types.ModuleType):
-        fail("import kagra.brain shadowed kagra.brain")
-    if not hasattr(brain_mod, "Brain"):
-        fail("kagra.brain module missing Brain")
+    for name in cut:
+        if hasattr(kagra, name) and name in getattr(kagra, "__all__", ()):
+            fail(f"cut name still public: kagra.{name}")
 
     from kagra.annotate import annotate as annotate_impl
     if not callable(kagra.annotate) or isinstance(kagra.annotate, types.ModuleType):
@@ -232,59 +154,11 @@ _RUNTIME_CHECKER = textwrap.dedent(
     if not callable(annotate_impl):
         fail("kagra.annotate.annotate missing")
 
-    # Demo on_enter kwargs must match public signatures (next TypeError).
-    calls = json.loads(sys.argv[4])
-    for rec in calls:
-        name = rec["name"]
-        obj = getattr(kagra, name, None)
-        if obj is None:
-            fail(f"demo calls kagra.{name} but it is missing")
-            continue
-        if isinstance(obj, types.ModuleType):
-            fail(f"demo calls kagra.{name}(...) but it is a module")
-            continue
-        target = obj
-        try:
-            sig = inspect.signature(target)
-        except (TypeError, ValueError):
-            target = getattr(obj, "__init__", obj)
-            try:
-                sig = inspect.signature(target)
-            except (TypeError, ValueError) as exc:
-                fail(f"kagra.{name} has no signature: {exc}")
-                continue
-        params = list(sig.parameters)
-        args = [None] * rec["nargs"]
-        kwargs = {k: None for k in rec["keywords"]}
-        # Class __init__ still lists self.
-        if params and params[0] == "self":
-            args = [None, *args]
-        try:
-            sig.bind(*args, **kwargs)
-        except TypeError as exc:
-            fail(
-                f"{rec['where']} kagra.{name}({rec['nargs']} pos, {rec['keywords']}) "
-                f"does not bind: {exc}"
-            )
-
-    # Camera3D.follow / World3D.set_height_fn used in on_enter.
-    extra = json.loads(sys.argv[5])
-    for rec in extra:
-        cls = getattr(kagra, rec["cls"])
-        method = getattr(cls, rec["method"])
-        sig = inspect.signature(method)
-        args = [None] * rec["nargs"]
-        kwargs = {k: None for k in rec["keywords"]}
-        params = list(sig.parameters)
-        if params and params[0] == "self":
-            args = [None, *args]
-        try:
-            sig.bind(*args, **kwargs)
-        except TypeError as exc:
-            fail(
-                f"{rec['where']} {rec['cls']}.{rec['method']} "
-                f"({rec['nargs']} pos, {rec['keywords']}) does not bind: {exc}"
-            )
+    brain_mod = __import__("kagra.brain", fromlist=["Brain"])
+    if not callable(kagra.brain) or isinstance(kagra.brain, types.ModuleType):
+        fail("import kagra.brain shadowed kagra.brain")
+    if not hasattr(brain_mod, "Brain"):
+        fail("kagra.brain module missing Brain")
 
     if errors:
         sys.stderr.write("\n".join(errors) + "\n")
@@ -293,76 +167,17 @@ _RUNTIME_CHECKER = textwrap.dedent(
 ).strip()
 
 
-def _call_record(call: ast.Call, where: str) -> dict:
-    assert isinstance(call.func, ast.Attribute)
-    return {
-        "where": where,
-        "name": call.func.attr,
-        "nargs": len(call.args),
-        "keywords": [k.arg for k in call.keywords if k.arg],
-    }
-
-
-def _method_call_records(path: Path, class_name: str, method: str) -> list[dict]:
-    where = f"{path.name}:{class_name}.{method}"
-    return [_call_record(c, where) for c in _kagra_calls_in_method(path, class_name, method)]
-
-
-def _follow_and_height_records() -> list[dict]:
-    """self.cam.follow / world.set_height_fn — next crash after stage()."""
-    records = []
-    for path, cls, method in (
-        (OPEN_WORLD, "CrestIsle", "on_enter"),
-        (RELIC_RUN, "RelicRun", "on_enter"),
-    ):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        target = None
-        for node in tree.body:
-            if isinstance(node, ast.ClassDef) and node.name == cls:
-                for item in node.body:
-                    if isinstance(item, ast.FunctionDef) and item.name == method:
-                        target = item
-        assert target is not None
-        where = f"{path.name}:{cls}.{method}"
-
-        class V(ast.NodeVisitor):
-            def visit_Call(self, node: ast.Call) -> None:
-                fn = node.func
-                if isinstance(fn, ast.Attribute):
-                    rec = {
-                        "where": where,
-                        "method": fn.attr,
-                        "nargs": len(node.args),
-                        "keywords": [k.arg for k in node.keywords if k.arg],
-                    }
-                    if fn.attr == "follow":
-                        rec["cls"] = "Camera3D"
-                        records.append(rec)
-                    elif fn.attr == "set_height_fn":
-                        rec["cls"] = "World3D"
-                        records.append(rec)
-                self.generic_visit(node)
-
-        V().visit(target)
-    return records
-
-
 def _run_runtime_checker() -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
-    calls = _method_call_records(OPEN_WORLD, "CrestIsle", "on_enter")
-    calls += _method_call_records(RELIC_RUN, "RelicRun", "on_enter")
-    extra = _follow_and_height_records()
     return subprocess.run(
         [
             sys.executable,
             "-c",
             _RUNTIME_CHECKER,
             str(ROOT),
-            json.dumps(list(DEMO_CALLABLES)),
-            json.dumps(list(_init_names_matching_submodules() or COLLISION_CALLABLES)),
-            json.dumps(calls),
-            json.dumps(extra),
+            json.dumps(list(MAINLINE_NAMES)),
+            json.dumps(list(CUT_NAMES)),
         ],
         cwd=str(ROOT),
         capture_output=True,
@@ -372,29 +187,25 @@ def _run_runtime_checker() -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_stage_is_not_a_module_at_runtime():
-    """Fails if ``kagra.stage`` is ``kagra/stage.py``. Not a source-order test."""
+def test_mainline_import_is_not_old_engine():
     proc = _run_runtime_checker()
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
 def test_collision_names_are_detected():
-    """Audit: every public def/import that shares a submodule name is checked."""
     names = _init_names_matching_submodules()
-    assert "stage" in names
     assert "annotate" in names
-    assert "pad" in names
     assert "brain" in names
-    # These are modules on purpose (classes live as Camera3D / World3D / Prop).
+    assert "stage" not in names
+    assert "pad" not in names
     assert "look" not in names
     assert "play" not in names
     assert "camera3d" not in names
     assert "world3d" not in names
-    assert "demo" not in names
 
 
-def test_crest_isle_on_enter_calls_stage_with_radius():
-    """The exact line Emma hit must stay a public ``kagra.stage`` call."""
+def test_crest_isle_on_enter_still_uses_archived_stage():
+    """Archived Crest Isle source still calls the old ``kagra.stage``."""
     calls = _kagra_calls_in_method(OPEN_WORLD, "CrestIsle", "on_enter")
     stage_calls = [
         c
@@ -409,7 +220,7 @@ def test_crest_isle_on_enter_calls_stage_with_radius():
     assert "kagra.stage.stage" not in text
 
 
-def test_relic_run_on_enter_calls_stage_with_radius():
+def test_relic_run_on_enter_still_uses_archived_stage():
     calls = _kagra_calls_in_method(RELIC_RUN, "RelicRun", "on_enter")
     stage_calls = [
         c
@@ -422,36 +233,3 @@ def test_relic_run_on_enter_calls_stage_with_radius():
     text = RELIC_RUN.read_text(encoding="utf-8")
     assert "from kagra.stage import stage" not in text
     assert "kagra.stage.stage" not in text
-
-
-def test_on_enter_after_stage_uses_public_names():
-    """Catch the next AttributeError: names after kagra.stage(...) must exist."""
-    common = {
-        "set_hdri",
-        "set_fog",
-        "set_bloom",
-        "set_spot_light",
-        "set_point_light",
-        "set_camera3d",
-        "Walk",
-        "Label",
-        "load_json",
-        "Prop",
-    }
-    extra = {
-        "CrestIsle": {"set_light_dir"},
-        "RelicRun": set(),
-    }
-    for path, cls in ((OPEN_WORLD, "CrestIsle"), (RELIC_RUN, "RelicRun")):
-        names = {
-            c.func.attr
-            for c in _kagra_calls_in_method(path, cls, "on_enter")
-            if isinstance(c.func, ast.Attribute)
-        }
-        needed = common | extra[cls]
-        missing = sorted(needed - names)
-        assert not missing, f"{cls}.on_enter missing kagra.{missing}"
-        src = path.read_text(encoding="utf-8")
-        assert "self._reset_round()" in src
-        assert "kagra.Prop.bake_all()" in src
-        assert "self.cam.follow(" in src

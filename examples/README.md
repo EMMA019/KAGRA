@@ -1,25 +1,15 @@
 # examples/
 
-Front of the shelf — VRM body, agent games, verify. Start here.
+本線 — Python ゲームマスター + `WorldDoc` / `WorldPlay`（shared wgpu 30）。
 
 ```bash
-python -m kagra                          # sing & dance
-python examples/vrm_orb_rush.py          # reference game (public APIs)
-python examples/vrm_heart_catch.py       # agent-run log in docs/agent-runs/
-python examples/vrm_switch_room.py       # boxed room + camera follow
-python examples/vrm_dodge_room.py        # falling boxes, survive (agent-run log)
-python examples/vrm_relic_run.py          # island relic collect 30s
-python examples/vrm_open_world.py         # leftover VRM Crest (RendererV2)
-python -m kagra.play_world                # official Crest collectathon: wgpu 30 window, title→play→result
-python examples/vrm_vrma.py
-python examples/vrm_stream.py
-python examples/desktop_mascot.py
+python -m kagra.play_world                # Crest collectathon
+python examples/python_game_minimal.py    # 接着 API（岸で J → cast）
+python examples/bunny_garden_minimal.py   # 会話 / 好感度
+python examples/torneko_minimal.py --seed 12345
+python examples/bar_sim_minimal.py        # Bar 経営シム
+python -m kagra.verify examples/verify_scenarios/bar_sim_smoke.json
 ```
 
-`kagra-shared` and `mobile/` are a **separate driving demo** (roads, truck, OSM / Wasm).
-They are not this Python VRM / game stack. Do not merge the two renderers.
-
-## Archive
-
-Legacy 2D / tilemap / editor / romance / boids live in [`archive/`](archive/).
-They still run; they are not the recommended surface.
+旧 VRM / RendererV2 デモは [`old/examples/`](../old/examples/) にあります。
+`import kagra` は kagra_core を必要としません。

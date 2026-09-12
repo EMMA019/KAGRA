@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use glam::{Mat4, Vec3, Vec4, Vec4Swizzles};
 
-/// 位置 + 法線 + UV。カプセル / プロップ / ハイトフィールドは uv = 0（1x1 白）。
+/// 位置 + 法線 + UV。box / plane / quad / cylinder は 0..1。未指定は [0,0]（1x1 白）。
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex3 {
@@ -635,11 +635,12 @@ pub mod primitives {
             ),
         ];
 
+        let uvs = [[0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]];
         let mut mesh = MeshData::default();
         for (normal, corners) in faces {
             let base = mesh.vertices.len() as u32;
-            for c in corners {
-                mesh.vertices.push(Vertex3::new(c, normal));
+            for (c, uv) in corners.into_iter().zip(uvs) {
+                mesh.vertices.push(Vertex3::with_uv(c, normal, uv));
             }
             mesh.indices
                 .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -653,10 +654,10 @@ pub mod primitives {
         let n = Vec3::Y;
         MeshData {
             vertices: vec![
-                Vertex3::new(Vec3::new(-w, 0.0, d), n),
-                Vertex3::new(Vec3::new(w, 0.0, d), n),
-                Vertex3::new(Vec3::new(w, 0.0, -d), n),
-                Vertex3::new(Vec3::new(-w, 0.0, -d), n),
+                Vertex3::with_uv(Vec3::new(-w, 0.0, d), n, [0.0, 0.0]),
+                Vertex3::with_uv(Vec3::new(w, 0.0, d), n, [1.0, 0.0]),
+                Vertex3::with_uv(Vec3::new(w, 0.0, -d), n, [1.0, 1.0]),
+                Vertex3::with_uv(Vec3::new(-w, 0.0, -d), n, [0.0, 1.0]),
             ],
             indices: vec![0, 1, 2, 0, 2, 3],
             albedo: None,
@@ -674,14 +675,14 @@ pub mod primitives {
         let bn = Vec3::NEG_Z;
         MeshData {
             vertices: vec![
-                Vertex3::new(Vec3::new(-hx, -hy, 0.0), n),
-                Vertex3::new(Vec3::new(hx, -hy, 0.0), n),
-                Vertex3::new(Vec3::new(hx, hy, 0.0), n),
-                Vertex3::new(Vec3::new(-hx, hy, 0.0), n),
-                Vertex3::new(Vec3::new(-hx, -hy, 0.0), bn),
-                Vertex3::new(Vec3::new(hx, -hy, 0.0), bn),
-                Vertex3::new(Vec3::new(hx, hy, 0.0), bn),
-                Vertex3::new(Vec3::new(-hx, hy, 0.0), bn),
+                Vertex3::with_uv(Vec3::new(-hx, -hy, 0.0), n, [0.0, 1.0]),
+                Vertex3::with_uv(Vec3::new(hx, -hy, 0.0), n, [1.0, 1.0]),
+                Vertex3::with_uv(Vec3::new(hx, hy, 0.0), n, [1.0, 0.0]),
+                Vertex3::with_uv(Vec3::new(-hx, hy, 0.0), n, [0.0, 0.0]),
+                Vertex3::with_uv(Vec3::new(-hx, -hy, 0.0), bn, [1.0, 1.0]),
+                Vertex3::with_uv(Vec3::new(hx, -hy, 0.0), bn, [0.0, 1.0]),
+                Vertex3::with_uv(Vec3::new(hx, hy, 0.0), bn, [0.0, 0.0]),
+                Vertex3::with_uv(Vec3::new(-hx, hy, 0.0), bn, [1.0, 0.0]),
             ],
             indices: vec![0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6],
             albedo: None,
@@ -781,11 +782,13 @@ pub mod primitives {
             let t0 = Vec3::new(c0 * radius, height, s0 * radius);
             let t1 = Vec3::new(c1 * radius, height, s1 * radius);
             let n = Vec3::new(c0 + c1, 0.0, s0 + s1).normalize_or(Vec3::X);
+            let u0 = i as f32 / segments as f32;
+            let u1 = (i + 1) as f32 / segments as f32;
             let base = mesh.vertices.len() as u32;
-            mesh.vertices.push(Vertex3::new(b0, n));
-            mesh.vertices.push(Vertex3::new(b1, n));
-            mesh.vertices.push(Vertex3::new(t1, n));
-            mesh.vertices.push(Vertex3::new(t0, n));
+            mesh.vertices.push(Vertex3::with_uv(b0, n, [u0, 1.0]));
+            mesh.vertices.push(Vertex3::with_uv(b1, n, [u1, 1.0]));
+            mesh.vertices.push(Vertex3::with_uv(t1, n, [u1, 0.0]));
+            mesh.vertices.push(Vertex3::with_uv(t0, n, [u0, 0.0]));
             mesh.indices
                 .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
         }
@@ -1058,7 +1061,11 @@ mod tests {
         assert!((b.max.y - 1.5).abs() < 1e-5);
         assert!(b.max.z.abs() < 1e-5);
         assert_eq!(m.indices.len(), 12);
-        assert!(m.vertices.iter().all(|v| v.uv == [0.0, 0.0]));
+        assert!(
+            m.vertices.iter().any(|v| v.uv == [0.0, 0.0])
+                && m.vertices.iter().any(|v| v.uv == [1.0, 1.0]),
+            "quad UVs cover the PNG"
+        );
         assert!(m.albedo.is_none());
     }
 
@@ -1066,10 +1073,17 @@ mod tests {
     fn vertex3_uv_keeps_compatible_stride() {
         assert_eq!(std::mem::size_of::<Vertex3>(), 32);
         let cap = primitives::cylinder_mesh(0.5, 1.0, 12);
-        assert!(cap.vertices.iter().all(|v| v.uv == [0.0, 0.0]));
+        assert!(
+            cap.vertices.iter().any(|v| v.uv[0] > 0.0 && v.uv[1] > 0.0),
+            "cylinder sides unwrap so a bottle PNG shows"
+        );
         assert!(cap.albedo.is_none());
         let plane = primitives::plane_mesh(1.0, 1.0);
-        assert!(plane.vertices.iter().all(|v| v.uv == [0.0, 0.0]));
+        assert!(
+            plane.vertices.iter().any(|v| v.uv == [0.0, 0.0])
+                && plane.vertices.iter().any(|v| v.uv == [1.0, 1.0]),
+            "plane UVs cover the PNG"
+        );
     }
     #[test]
     fn toon_material_id_is_five() {

@@ -1,7 +1,7 @@
-"""kagra_core なしで kagra サブモジュールをロードするためのヘルパ。
+"""kagra サブモジュールをロードするためのヘルパ。
 
-`import kagra` は Rust 拡張を必須にするため、純粋ロジックの単体テストでは
-パッケージの __init__.py を踏まずにサブモジュールを直接読み込む。
+本線の `import kagra` は kagra_core を必要としない。サブモジュール単体テストは
+引き続き __init__.py を踏まずにファイルを直接読む（拡張非依存）。
 """
 from __future__ import annotations
 

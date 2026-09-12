@@ -67,6 +67,11 @@ scratch/
 !kagra-shared/tests/fixtures/*.vrm
 *.png
 !kagra-shared/tests/fixtures/*.png
+# Bar sim generated art / SE (procedural contract)
+!assets/bar/
+!assets/bar/**
+!assets/bar/**/*.png
+!assets/bar/**/*.json
 *.jpg
 # Relic Run (and future example) CC0 textures / Kenney colormap
 !examples/assets/
@@ -85,6 +90,7 @@ scratch/
 !docs/media/**/*.mp4
 *.wav
 !assets/cute_song_trial.wav
+!assets/bar/**/*.wav
 *.ogg
 *.mp3
 *.ttf

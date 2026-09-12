@@ -13,8 +13,9 @@ mod target;
 
 pub use target::SurfaceSource;
 
-use crate::scene::DrawList;
+use crate::scene::{DrawList, ImageQuad};
 use crate::scene3d::{MeshData, MeshId, Scene3D};
+use crate::world_doc::load_png_albedo;
 use bloom::BloomPass;
 
 const MAX_TEXTURE_SIDE: u32 = 8192;
@@ -1462,7 +1463,12 @@ impl Renderer {
                     overlay_bones,
                     overlay_weight,
                 };
-                crate::gltf_load::sample_skinned_cloth_pose(skin, &pose, sim, crate::scene::FIXED_DT)
+                crate::gltf_load::sample_skinned_cloth_pose(
+                    skin,
+                    &pose,
+                    sim,
+                    crate::scene::FIXED_DT,
+                )
             };
             let id = crate::scene3d::MeshId(crate::world_doc::MESH_GLTF_BASE + i as u32);
             self.update_mesh(id, &mesh)?;
@@ -1536,7 +1542,9 @@ impl Renderer {
             return Err("render_world_doc requires an offscreen renderer".into());
         }
         self.draw_world_doc_with_hud(doc, hud)?;
-        self.read_rgba()
+        let mut rgba = self.read_rgba()?;
+        blit_hud_images(&mut rgba, self.width(), self.height(), &hud.images);
+        Ok(rgba)
     }
 }
 
@@ -1561,6 +1569,59 @@ pub fn render_world_doc_with_hud(
 ) -> Result<Vec<u8>, String> {
     let mut renderer = pollster::block_on(Renderer::new_offscreen(width, height))?;
     renderer.render_world_doc_with_hud(doc, hud)
+}
+
+fn blit_hud_images(rgba: &mut [u8], width: u32, height: u32, images: &[ImageQuad]) {
+    if images.is_empty() {
+        return;
+    }
+    let (dw, dh) = (width as i32, height as i32);
+    for img in images {
+        let Some(alb) = load_png_albedo(&img.path) else {
+            continue;
+        };
+        if alb.width == 0 || alb.height == 0 {
+            continue;
+        }
+        let (dx0, dy0, dw_i, dh_i) = (
+            img.x.round() as i32,
+            img.y.round() as i32,
+            img.w.max(1.0).round() as i32,
+            img.h.max(1.0).round() as i32,
+        );
+        for oy in 0..dh_i {
+            let dy = dy0 + oy;
+            if dy < 0 || dy >= dh {
+                continue;
+            }
+            let v = (oy as f32 + 0.5) / dh_i as f32;
+            let sy = ((v * alb.height as f32) as u32).min(alb.height - 1);
+            for ox in 0..dw_i {
+                let dx = dx0 + ox;
+                if dx < 0 || dx >= dw {
+                    continue;
+                }
+                let u = (ox as f32 + 0.5) / dw_i as f32;
+                let sx = ((u * alb.width as f32) as u32).min(alb.width - 1);
+                let si = ((sy * alb.width + sx) * 4) as usize;
+                let src = &alb.rgba[si..si + 4];
+                let a = src[3] as u32;
+                if a == 0 {
+                    continue;
+                }
+                let di = ((dy as u32 * width + dx as u32) * 4) as usize;
+                if a == 255 {
+                    rgba[di..di + 4].copy_from_slice(src);
+                    continue;
+                }
+                let ia = 255 - a;
+                for c in 0..3 {
+                    rgba[di + c] = ((src[c] as u32 * a + rgba[di + c] as u32 * ia) / 255) as u8;
+                }
+                rgba[di + 3] = 255;
+            }
+        }
+    }
 }
 
 fn new_instance() -> wgpu::Instance {
@@ -1827,7 +1888,10 @@ mod tests {
         let src = include_str!("shader3d.wgsl");
         // ACES は HDR+bloom コミット以降 composite（bloom.wgsl）で適用される。
         let composite = include_str!("bloom.wgsl");
-        assert!(composite.contains("aces_tonemap"), "ACES in bloom composite");
+        assert!(
+            composite.contains("aces_tonemap"),
+            "ACES in bloom composite"
+        );
         assert!(src.contains("env_irradiance"), "diffuse IBL / tiny SH");
         assert!(src.contains("env: vec4<f32>"), "Globals.env");
         assert!(

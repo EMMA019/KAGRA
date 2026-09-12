@@ -885,5 +885,6 @@
       "fov": 52.0
     }
   ],
-  "heightfield": null
+  "heightfield": null,
+  "genre": "race_drive"
 }

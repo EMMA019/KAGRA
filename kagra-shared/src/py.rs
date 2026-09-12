@@ -232,6 +232,8 @@ struct HudJson {
     quads: Vec<HudQuadJson>,
     #[serde(default)]
     texts: Vec<HudTextJson>,
+    #[serde(default)]
+    images: Vec<HudImageJson>,
 }
 
 #[derive(serde::Deserialize)]
@@ -265,6 +267,15 @@ fn default_text_size() -> f32 {
     16.0
 }
 
+#[derive(serde::Deserialize)]
+struct HudImageJson {
+    path: String,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
 fn parse_hud(hud_json: Option<&str>) -> PyResult<crate::scene::DrawList> {
     let mut list = crate::scene::DrawList::default();
     let Some(s) = hud_json else {
@@ -275,7 +286,8 @@ fn parse_hud(hud_json: Option<&str>) -> PyResult<crate::scene::DrawList> {
     }
     let hud: HudJson = serde_json::from_str(s).map_err(pyerr)?;
     for q in hud.quads {
-        list.quads.push(crate::scene::Quad::new(q.x, q.y, q.w, q.h, q.color));
+        list.quads
+            .push(crate::scene::Quad::new(q.x, q.y, q.w, q.h, q.color));
     }
     for t in hud.texts {
         let align = match t.align.as_str() {
@@ -285,6 +297,11 @@ fn parse_hud(hud_json: Option<&str>) -> PyResult<crate::scene::DrawList> {
         };
         list.texts
             .push(crate::scene::TextQuad::new(&t.text, t.x, t.y, t.size, t.color).aligned(align));
+    }
+    for im in hud.images {
+        list.images.push(crate::scene::ImageQuad::new(
+            &im.path, im.x, im.y, im.w, im.h,
+        ));
     }
     Ok(list)
 }
@@ -320,9 +337,8 @@ fn render_world_doc_py(
             None => true,
         };
         if need_new {
-            let r =
-                pollster::block_on(crate::render::Renderer::new_offscreen(width, height))
-                    .map_err(pyerr)?;
+            let r = pollster::block_on(crate::render::Renderer::new_offscreen(width, height))
+                .map_err(pyerr)?;
             *guard = Some((width, height, r));
         }
         let (_, _, renderer) = guard.as_mut().expect("renderer present");

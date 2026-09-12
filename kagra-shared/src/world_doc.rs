@@ -32,10 +32,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 use crate::collectathon::open_world_height;
 use crate::gltf_load::{
     is_tpose_humanoid_spec, is_walk_skinned_spec, is_walk_vrm_spec, mesh_from_embedded_gltf,
-    mesh_from_glb, mesh_from_gltf_json, sample_skinned_look,
-    skinned_from_embedded_gltf, skinned_from_glb, skinned_from_gltf_json,
-    skinned_parts_from_embedded_gltf, skinned_parts_from_glb, skinned_parts_from_gltf_json,
-    skinned_tpose_humanoid, unit_cube_gltf, walk_skinned_gltf, walk_skinned_vrm, WalkerPose,
+    mesh_from_glb, mesh_from_gltf_json, sample_skinned_look, skinned_from_embedded_gltf,
+    skinned_from_glb, skinned_from_gltf_json, skinned_parts_from_embedded_gltf,
+    skinned_parts_from_glb, skinned_parts_from_gltf_json, skinned_tpose_humanoid, unit_cube_gltf,
+    walk_skinned_gltf, walk_skinned_vrm, WalkerPose,
 };
 use crate::scene3d::{
     primitives, Camera, LocalLight, Material, MeshData, MeshId, Scene3D, SceneBuilder, Vertex3,
@@ -59,6 +59,11 @@ pub(crate) const MESH_GLTF_BASE: u32 = 7;
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct WorldDoc {
     pub version: u32,
+    /// Explicit genre id (`crest_isle`, `fish_cast`, …). None = free world:
+    /// walk / camera / interact / timers / events only. Prop names are not
+    /// reserved words.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub genre: Option<String>,
     #[serde(default)]
     pub half: f32,
     #[serde(default)]
@@ -103,6 +108,13 @@ pub struct WorldDoc {
     /// 風（SpringBone 布の外部加速度、m/s^2 相当）。デフォルト無風。
     #[serde(default)]
     pub wind: [f32; 3],
+    /// Clear + fog color. None = outdoor sky `[130, 165, 205, 255]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sky: Option<[u8; 4]>,
+    /// Auto grass plane when there is no heightfield. None = true (legacy).
+    /// Indoor rooms dump `false` and place their own floor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ground: Option<bool>,
 }
 
 /// Generic countdown. Dump-visible: a fishing dump shows `cast` counting down,
@@ -202,6 +214,14 @@ pub struct WorldProp {
     /// 動的剛体の反発係数（デフォルト 0.0 = 跳ねない）。
     #[serde(default)]
     pub restitution: f32,
+    /// PNG path (repo-relative). compile_meshes clones the primitive and
+    /// attaches albedo so box / plane / sprite / quad can show AI art.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub texture: Option<String>,
+    /// Repeat the albedo this many times (CPU tile; sampler stays Clamp).
+    /// None = `[1, 1]`. Wood floors dump `[8, 6]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uv_scale: Option<[f32; 2]>,
 }
 
 /// Prop interaction. The engine handles reach + on_use event; the game owns
@@ -436,6 +456,11 @@ pub struct WorldHeightfield {
 }
 
 impl WorldDoc {
+    /// True when `genre` is exactly `id`. Missing genre is never a match.
+    pub fn genre_is(&self, id: &str) -> bool {
+        self.genre.as_deref() == Some(id)
+    }
+
     /// Ingest `World.dump()` JSON (`docs/schemas/world.json` version 1).
     pub fn from_json(json: &str) -> Result<Self, String> {
         let doc: Self = serde_json::from_str(json).map_err(|e| e.to_string())?;
@@ -505,6 +530,7 @@ impl WorldDoc {
         // Do not register bounds: a dump camera can be tight, and compile must
         // still emit the document's objects (unregistered meshes are never culled).
         let (gltf_ids, walker_gltf_ids) = self.gltf_mesh_ids();
+        let tex_ids = self.texture_mesh_ids();
 
         if self.heightfield.is_some() {
             b.push_material(
@@ -513,8 +539,9 @@ impl WorldDoc {
                 [78, 138, 64, 255],
                 Material::Grass,
             );
-        } else {
+        } else if self.ground.unwrap_or(true) {
             // Dump without heightfield/water/props is otherwise a clear-color void.
+            // Indoor rooms set `ground: false` and bring their own floor.
             let span = (self.half.abs() * 2.0).max(8.0);
             b.push_material(
                 MESH_PLANE,
@@ -562,10 +589,21 @@ impl WorldDoc {
                 b.push_material(MESH_QUAD, model, color_u8(prop.color), mat);
                 continue;
             }
-            let mesh = mesh_for_prop(prop, &gltf_ids);
+            let mesh = mesh_for_prop(prop, &gltf_ids, &tex_ids);
             let model =
                 Mat4::from_scale_rotation_translation(scale, Quat::from_rotation_y(prop.yaw), pos);
-            b.push_material(mesh, model, color_u8(prop.color), mat);
+            let col = if prop
+                .texture
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|s| !s.is_empty())
+                && prop.color.is_none()
+            {
+                [255, 255, 255, 255]
+            } else {
+                color_u8(prop.color)
+            };
+            b.push_material(mesh, model, col, mat);
         }
 
         self.push_vista(&mut b, &camera);
@@ -666,7 +704,7 @@ impl WorldDoc {
         self.push_contact_blobs(&mut b, hide_local, local_id);
 
         let (light_dir, ambient, local_lights) = self.draw_lights();
-        let sky = [130, 165, 205, 255];
+        let sky = self.sky.unwrap_or([130, 165, 205, 255]);
         Scene3D {
             camera,
             clear: sky,
@@ -908,6 +946,12 @@ impl WorldDoc {
             .unwrap_or_else(|| primitives::box_mesh(Vec3::ONE));
             out.push((MeshId(MESH_GLTF_BASE + i as u32), mesh));
         }
+        let tex_base = MESH_GLTF_BASE + self.gltf_slots().len() as u32;
+        for (i, prop) in self.textured_props().into_iter().enumerate() {
+            if let Some(mesh) = textured_prop_mesh(prop) {
+                out.push((MeshId(tex_base + i as u32), mesh));
+            }
+        }
         out
     }
 
@@ -1012,6 +1056,22 @@ impl WorldDoc {
             }
         }
         (props, walkers)
+    }
+
+    fn textured_props(&self) -> Vec<&WorldProp> {
+        self.props
+            .iter()
+            .filter(|p| p.enabled && prop_texture_path(p).is_some())
+            .collect()
+    }
+
+    fn texture_mesh_ids(&self) -> HashMap<String, MeshId> {
+        let base = MESH_GLTF_BASE + self.gltf_slots().len() as u32;
+        let mut out = HashMap::new();
+        for (i, prop) in self.textured_props().into_iter().enumerate() {
+            out.insert(prop.id.clone(), MeshId(base + i as u32));
+        }
+        out
     }
 
     fn vegetation_lod_radius(&self) -> f32 {
@@ -1323,7 +1383,84 @@ fn walker_gltf_spec(w: &WorldWalker) -> Option<&str> {
     None
 }
 
-fn mesh_for_prop(prop: &WorldProp, gltf_ids: &HashMap<String, MeshId>) -> MeshId {
+fn prop_texture_path(prop: &WorldProp) -> Option<&str> {
+    prop.texture
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+/// Load a PNG as albedo. Repo-relative paths resolve from cwd or the crate parent.
+pub fn load_png_albedo(path: &str) -> Option<crate::scene3d::AlbedoRgba> {
+    let spec = path.trim();
+    if spec.is_empty() {
+        return None;
+    }
+    let candidates = [
+        PathBuf::from(spec),
+        PathBuf::from(".").join(spec),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join(spec),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(spec),
+    ];
+    let file = candidates.iter().find(|p| p.is_file())?;
+    let bytes = std::fs::read(file).ok()?;
+    crate::gltf_load::decode_png(&bytes).ok()
+}
+
+fn textured_prop_mesh(prop: &WorldProp) -> Option<MeshData> {
+    let path = prop_texture_path(prop)?;
+    let albedo = load_png_albedo(path)?;
+    let mut mesh = match prop.model.to_ascii_lowercase().as_str() {
+        "plane" | "water" => primitives::plane_mesh(1.0, 1.0),
+        "sprite" | "quad" => primitives::quad_mesh(1.0, 1.0),
+        "sphere" | "cylinder" | "capsule" => primitives::cylinder_mesh(0.5, 1.0, 12),
+        _ => primitives::box_mesh(Vec3::ONE),
+    };
+    mesh.albedo = Some(tile_albedo(albedo, prop.uv_scale));
+    Some(mesh)
+}
+
+fn tile_albedo(
+    src: crate::scene3d::AlbedoRgba,
+    scale: Option<[f32; 2]>,
+) -> crate::scene3d::AlbedoRgba {
+    let (nx, ny) = match scale {
+        Some([u, v]) => (u.max(1.0).round() as u32, v.max(1.0).round() as u32),
+        None => (1, 1),
+    };
+    if nx <= 1 && ny <= 1 {
+        return src;
+    }
+    let w = src.width.saturating_mul(nx).max(1);
+    let h = src.height.saturating_mul(ny).max(1);
+    let sw = src.width as usize;
+    let mut rgba = vec![0u8; w as usize * h as usize * 4];
+    for ty in 0..ny {
+        for y in 0..src.height {
+            let src_row = (y as usize * sw) * 4;
+            for tx in 0..nx {
+                let dst = (((ty * src.height + y) as usize * w as usize) + tx as usize * sw) * 4;
+                rgba[dst..dst + sw * 4].copy_from_slice(&src.rgba[src_row..src_row + sw * 4]);
+            }
+        }
+    }
+    crate::scene3d::AlbedoRgba {
+        width: w,
+        height: h,
+        rgba: rgba.into(),
+    }
+}
+
+fn mesh_for_prop(
+    prop: &WorldProp,
+    gltf_ids: &HashMap<String, MeshId>,
+    tex_ids: &HashMap<String, MeshId>,
+) -> MeshId {
+    if let Some(id) = tex_ids.get(&prop.id) {
+        return *id;
+    }
     if let Some(spec) = prop.gltf.as_deref().map(str::trim) {
         if !spec.is_empty() {
             if let Some(id) = gltf_ids.get(spec) {
@@ -2781,5 +2918,91 @@ mod tests {
         );
         let crate_p = doc.props.iter().find(|p| p.name == "crate").unwrap();
         assert!(!is_vegetation_prop(crate_p));
+    }
+
+    #[test]
+    fn prop_texture_compiles_to_albedo_mesh() {
+        let mut doc = WorldDoc {
+            version: WORLD_DUMP_VERSION,
+            ..Default::default()
+        };
+        doc.props.push(WorldProp {
+            id: "prop:sign".into(),
+            kind: "prop".into(),
+            name: "sign".into(),
+            model: "quad".into(),
+            texture: Some("kagra-shared/tests/fixtures/tex_check.png".into()),
+            enabled: true,
+            scale: [1.0, 1.0, 1.0],
+            ..Default::default()
+        });
+        let meshes = doc.compile_meshes();
+        assert!(
+            meshes
+                .iter()
+                .any(|(_, m)| m.albedo.as_ref().is_some_and(|a| a.width == 2)),
+            "textured prop must compile with PNG albedo"
+        );
+        let scene = doc.compile_scene(1.0);
+        let ids = doc.texture_mesh_ids();
+        let mid = *ids.get("prop:sign").expect("texture slot");
+        assert!(
+            scene.batches.iter().any(|b| b.mesh == mid),
+            "compile_scene must draw the textured mesh"
+        );
+    }
+
+    #[test]
+    fn indoor_sky_and_no_auto_ground() {
+        let outdoor = WorldDoc {
+            version: WORLD_DUMP_VERSION,
+            ..Default::default()
+        };
+        let out_scene = outdoor.compile_scene(1.0);
+        assert_eq!(out_scene.clear, [130, 165, 205, 255]);
+        assert!(
+            out_scene.batches.iter().any(|b| b.mesh == MESH_PLANE),
+            "legacy dump still gets the grass plane"
+        );
+
+        let indoor = WorldDoc {
+            version: WORLD_DUMP_VERSION,
+            sky: Some([18, 14, 16, 255]),
+            ground: Some(false),
+            ..Default::default()
+        };
+        let in_scene = indoor.compile_scene(1.0);
+        assert_eq!(in_scene.clear, [18, 14, 16, 255]);
+        assert_eq!(in_scene.fog_color, [18, 14, 16, 255]);
+        assert!(
+            !in_scene.batches.iter().any(|b| b.mesh == MESH_PLANE),
+            "ground:false must not emit the default grass"
+        );
+    }
+
+    #[test]
+    fn uv_scale_tiles_albedo() {
+        let mut doc = WorldDoc {
+            version: WORLD_DUMP_VERSION,
+            ..Default::default()
+        };
+        doc.props.push(WorldProp {
+            id: "prop:floor".into(),
+            kind: "prop".into(),
+            model: "box".into(),
+            texture: Some("kagra-shared/tests/fixtures/tex_check.png".into()),
+            uv_scale: Some([4.0, 2.0]),
+            enabled: true,
+            scale: [1.0, 1.0, 1.0],
+            ..Default::default()
+        });
+        let meshes = doc.compile_meshes();
+        assert!(
+            meshes.iter().any(|(_, m)| m
+                .albedo
+                .as_ref()
+                .is_some_and(|a| a.width == 8 && a.height == 4)),
+            "2x2 PNG tiled 4x2 must become 8x4"
+        );
     }
 }

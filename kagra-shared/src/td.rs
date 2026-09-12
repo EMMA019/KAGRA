@@ -1,4 +1,4 @@
-﻿//! Tower defense on play_world: path, spawn, hit, place.
+//! Tower defense on play_world: path, spawn, hit, place.
 //!
 //! Sibling of collectathon / action / fps. Creeps walk waypoint boxes on a
 //! World.dump. Towers damage in range. Player places extra towers with J /
@@ -99,7 +99,7 @@ impl TdGame {
 }
 
 pub fn is_td(doc: &WorldDoc) -> bool {
-    doc.props.iter().any(is_tower)
+    doc.genre_is(GAME_ID)
 }
 
 fn is_tower(p: &WorldProp) -> bool {
@@ -314,9 +314,11 @@ fn try_place(doc: &mut WorldDoc, game: &mut TdGame) {
         metallic: 0.0,
         roughness: 1.0,
         interact: None,
-            is_static: true,
-            friction: 0.85,
-            restitution: 0.0,
+        is_static: true,
+        friction: 0.85,
+        restitution: 0.0,
+        texture: None,
+        uv_scale: None,
     });
     game.coins = game.coins.saturating_sub(COST);
     doc.coins = game.coins;

@@ -29,8 +29,10 @@ def test_api_index_up_to_date():
 def test_api_index_walk_is_not_2d_ecs():
     """Front World is the 3D world. Entity / tilemap stay off the public table."""
     text = (ROOT / "docs" / "API_INDEX.md").read_text(encoding="utf-8")
-    assert "| `World` |" in text
-    assert "from kagra.world" in text
+    assert "| `WorldPlay` |" in text
+    assert "| `WorldDoc` |" in text
+    assert "| `eval_world_expect` |" in text
+    assert "| `World` |" not in text
     assert "| `Entity` |" not in text
     assert "| `EntityScene` |" not in text
     assert "| `TileMap` |" not in text

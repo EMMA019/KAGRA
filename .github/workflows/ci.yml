@@ -87,7 +87,12 @@ jobs:
       - name: Clippy with rendering
         run: cargo clippy -p kagra-shared --all-targets --features render --locked -- -D warnings
 
+      - name: Install lavapipe (software Vulkan)
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+
       - name: Unit tests with rendering
+        env:
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
         run: cargo test -p kagra-shared --features render --locked
 
       - name: Build for wasm32 (render + wasm)
@@ -147,45 +152,8 @@ jobs:
           path: mobile/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: ignore
 
-  # GPU ヘッドレスのゴールデン画像回帰。Windows は DXGI + 画面外ウィンドウの
-  # 経路が実機検証済みなので、まず windows-latest のみで回す。
-  golden:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install maturin + pytest
-        run: |
-          pip install --upgrade pip
-          pip install maturin "pytest>=7.0"
-
-      # maturin develop は virtualenv の中でしか動かない。CI の Python は
-      # 素の環境なので、ホイールを作って入れる。テストからの見え方は同じ。
-      - name: Build wheel
-        run: maturin build --release --out dist
-
-      - name: Install wheel
-        shell: bash
-        run: pip install dist/*.whl
-
-      - name: Run golden image tests
-        run: pytest tests -m golden -v
-
-      - name: Upload diffs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: golden-diffs
-          path: scratch/golden_diffs/
-          if-no-files-found: ignore
+  # 旧 RendererV2 golden は old/ に切り離した。本線の画素回帰は
+  # kagra-shared --features render（アダプタ無しはスキップ）。
 
   build:
     strategy:
@@ -214,16 +182,16 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       # rodio -> cpal -> alsa-sys は pkg-config で ALSA を探す。
-      - name: Install ALSA headers
+      - name: Install ALSA headers + lavapipe
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev pkg-config mesa-vulkan-drivers
 
       - name: Install build dependencies
         run: |
           pip install --upgrade pip
           pip install maturin
 
-      - name: Build kagra_core with maturin
+      - name: Build kagra_shared with maturin
         run: maturin build --release --out dist
 
       - name: Install built wheel
@@ -234,10 +202,15 @@ jobs:
         shell: python
         run: |
           import kagra
-          print("kagra imported OK")
-          print("get_engine:", hasattr(kagra, "get_engine"))
-          print("draw_polygon:", hasattr(kagra, "draw_polygon"))
-          print("polygon:", hasattr(kagra, "polygon"))
-          print("font:", hasattr(kagra, "font"))
-          print("circle_outline:", hasattr(kagra, "circle_outline"))
+          print("kagra imported OK", kagra.__file__)
+          assert hasattr(kagra, "WorldPlay")
+          assert hasattr(kagra, "draw_world")
+          assert hasattr(kagra, "eval_world_expect")
+          assert not hasattr(kagra, "get_engine")
           print("API check OK")
+
+      - name: Verify bar room (lavapipe)
+        if: runner.os == 'Linux'
+        env:
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
+        run: python -m kagra.verify examples/verify_scenarios/bar_sim_smoke.json

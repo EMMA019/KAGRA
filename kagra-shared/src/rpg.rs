@@ -1,4 +1,4 @@
-﻿//! RPG talk + menu + party + inventory + turn combat on play_world.
+//! RPG talk + menu + party + inventory + turn combat on play_world.
 //!
 //! Sibling of collectathon / action / platformer / shop. Town dump talks to an
 //! NPC (overlay + a dump-visible flag + talk-grant item), menu is an overlay
@@ -174,9 +174,7 @@ impl RpgGame {
 }
 
 pub fn is_rpg(doc: &WorldDoc) -> bool {
-    doc.props
-        .iter()
-        .any(|p| p.name == "npc" || p.name == "door")
+    doc.genre_is(GAME_ID)
 }
 
 fn is_dungeon(doc: &WorldDoc) -> bool {
@@ -280,9 +278,11 @@ fn tiny_prop(
         metallic: 0.0,
         roughness: 1.0,
         interact: None,
-            is_static: true,
-            friction: 0.85,
-            restitution: 0.0,
+        is_static: true,
+        friction: 0.85,
+        restitution: 0.0,
+        texture: None,
+        uv_scale: None,
     }
 }
 
@@ -459,6 +459,8 @@ fn ensure_enemy(doc: &mut WorldDoc) {
             is_static: true,
             friction: 0.85,
             restitution: 0.0,
+            texture: None,
+            uv_scale: None,
         });
     }
     if doc.props.iter().any(|p| p.id == ID_HP) {
@@ -490,6 +492,8 @@ fn ensure_enemy(doc: &mut WorldDoc) {
             is_static: true,
             friction: 0.85,
             restitution: 0.0,
+            texture: None,
+            uv_scale: None,
         },
     );
 }

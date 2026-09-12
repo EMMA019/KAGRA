@@ -1272,7 +1272,9 @@ impl WorldPlay {
 }
 
 fn is_collectathon(doc: &WorldDoc) -> bool {
-    doc.heightfield.as_ref().and_then(|h| h.fn_name.as_deref()) == Some("open_world_height")
+    // Genre dispatch is dump-only. Do not add another name-heuristic here.
+    // New games stay in Python (`kagra.gameloop` + a free WorldDoc).
+    doc.genre_is(crate::collectathon::GAME_ID) || doc.genre.as_deref() == Some("collectathon")
 }
 
 fn seed_collectathon_pickups(doc: &mut WorldDoc) {
@@ -2320,5 +2322,52 @@ mod tests {
             "hit",
             "game switches anim on the bite event"
         );
+    }
+
+    #[test]
+    fn dock_prop_does_not_steal_collectathon_without_genre() {
+        let mut data: serde_json::Value = serde_json::from_str(CREST).unwrap();
+        data["genre"] = serde_json::json!("crest_isle");
+        let props = data["props"].as_array_mut().unwrap();
+        props.push(serde_json::json!({
+            "id": "prop:dock",
+            "type": "prop",
+            "name": "dock",
+            "position": [3.0, 0.2, -6.0],
+            "model": "box",
+            "scale": [2.0, 0.4, 2.0],
+            "enabled": true
+        }));
+        let mut play = WorldPlay::from_json(&data.to_string()).unwrap();
+        play.confirm();
+        play.tick(1.0 / 60.0);
+        assert!(
+            play.is_collectathon(),
+            "explicit crest_isle genre stays collectathon"
+        );
+        assert!(!play.is_fish(), "name=dock must not start fishing");
+        assert!(play.doc.coins > 0, "collectathon coins must not be zeroed");
+    }
+
+    #[test]
+    fn bar_room_door_is_not_an_rpg() {
+        const BAR: &str = include_str!("../tests/fixtures/bar_room_world.json");
+        let play = WorldPlay::from_json(BAR).unwrap();
+        assert!(!play.is_rpg(), "door scenery must not start town_gate");
+        assert!(!play.is_shop());
+        assert!(!play.is_cook());
+        assert!(!play.is_fish());
+        assert!(!play.is_collectathon());
+    }
+
+    #[test]
+    fn missing_genre_is_free_world() {
+        let mut data: serde_json::Value = serde_json::from_str(CREST).unwrap();
+        data.as_object_mut().unwrap().remove("genre");
+        let mut play = WorldPlay::from_json(&data.to_string()).unwrap();
+        play.confirm();
+        assert!(!play.is_collectathon());
+        assert!(!play.is_fish());
+        assert!(!play.is_rpg());
     }
 }

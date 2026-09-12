@@ -67,12 +67,35 @@ impl TextQuad {
     }
 }
 
+/// Screen-space image blit (left-top origin). Decoded after GPU readback.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImageQuad {
+    pub path: String,
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+impl ImageQuad {
+    pub fn new(path: &str, x: f32, y: f32, w: f32, h: f32) -> Self {
+        Self {
+            path: path.to_string(),
+            x,
+            y,
+            w,
+            h,
+        }
+    }
+}
+
 /// 1 フレームぶんの描画内容。
 #[derive(Clone, Debug, Default)]
 pub struct DrawList {
     pub clear: [u8; 4],
     pub quads: Vec<Quad>,
     pub texts: Vec<TextQuad>,
+    pub images: Vec<ImageQuad>,
 }
 
 /// シェルの実フレームレートに関係なく同じ絵を出すため固定ステップで進める。
