@@ -27,3 +27,7 @@
   `draw_world` first swallowed every render error into a solid PNG — that
   made verify pass with a broken renderer. Now only "no adapter" falls back,
   with a stderr warning and `last_draw_was_fallback()`.
+- Follow-up: `sky` / `ground` / `uv_scale` on the dump so the room is data,
+  not a compile_scene special case. `expect_offscreen.pixels` + lavapipe
+  on Linux CI so "wall is the outdoor sky" fails the job. New games stay
+  out of WorldPlay (AGENTS rule 8).

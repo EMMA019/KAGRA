@@ -43,7 +43,15 @@ agent = ["mcp>=1.1", "pytest>=7.0"]
 manifest-path = "kagra-shared/Cargo.toml"
 module-name = "kagra.kagra_shared"
 features = ["python"]
-include = ["LICENSE"]
+include = ["LICENSE", "assets/bar/**"]
+exclude = [
+  "kagra/play.py",
+  "kagra/world3d.py",
+  "kagra/demo.py",
+  "kagra/editor_app.py",
+  "kagra/vrm_avatar.py",
+  "kagra/vrm_loader.py",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

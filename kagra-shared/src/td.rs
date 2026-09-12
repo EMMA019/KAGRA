@@ -318,6 +318,7 @@ fn try_place(doc: &mut WorldDoc, game: &mut TdGame) {
         friction: 0.85,
         restitution: 0.0,
         texture: None,
+        uv_scale: None,
     });
     game.coins = game.coins.saturating_sub(COST);
     doc.coins = game.coins;

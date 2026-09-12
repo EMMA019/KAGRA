@@ -282,6 +282,7 @@ fn tiny_prop(
         friction: 0.85,
         restitution: 0.0,
         texture: None,
+        uv_scale: None,
     }
 }
 
@@ -459,6 +460,7 @@ fn ensure_enemy(doc: &mut WorldDoc) {
             friction: 0.85,
             restitution: 0.0,
             texture: None,
+            uv_scale: None,
         });
     }
     if doc.props.iter().any(|p| p.id == ID_HP) {
@@ -491,6 +493,7 @@ fn ensure_enemy(doc: &mut WorldDoc) {
             friction: 0.85,
             restitution: 0.0,
             texture: None,
+            uv_scale: None,
         },
     );
 }

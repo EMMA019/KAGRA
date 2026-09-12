@@ -1272,6 +1272,8 @@ impl WorldPlay {
 }
 
 fn is_collectathon(doc: &WorldDoc) -> bool {
+    // Genre dispatch is dump-only. Do not add another name-heuristic here.
+    // New games stay in Python (`kagra.gameloop` + a free WorldDoc).
     doc.genre_is(crate::collectathon::GAME_ID) || doc.genre.as_deref() == Some("collectathon")
 }
 

@@ -554,6 +554,7 @@ fn ensure_markers(doc: &mut WorldDoc) {
             friction: 0.85,
             restitution: 0.0,
             texture: None,
+            uv_scale: None,
         },
     );
     ensure_shot(doc);
@@ -605,6 +606,7 @@ fn ensure_shot(doc: &mut WorldDoc) {
             friction: 0.85,
             restitution: 0.0,
             texture: None,
+            uv_scale: None,
         },
     );
 }
@@ -642,6 +644,7 @@ fn tiny_prop(
         friction: 0.85,
         restitution: 0.0,
         texture: None,
+        uv_scale: None,
     }
 }
 

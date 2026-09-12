@@ -87,7 +87,12 @@ jobs:
       - name: Clippy with rendering
         run: cargo clippy -p kagra-shared --all-targets --features render --locked -- -D warnings
 
+      - name: Install lavapipe (software Vulkan)
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+
       - name: Unit tests with rendering
+        env:
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
         run: cargo test -p kagra-shared --features render --locked
 
       - name: Build for wasm32 (render + wasm)
@@ -177,9 +182,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       # rodio -> cpal -> alsa-sys は pkg-config で ALSA を探す。
-      - name: Install ALSA headers
+      - name: Install ALSA headers + lavapipe
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev pkg-config mesa-vulkan-drivers
 
       - name: Install build dependencies
         run: |
@@ -203,3 +208,9 @@ jobs:
           assert hasattr(kagra, "eval_world_expect")
           assert not hasattr(kagra, "get_engine")
           print("API check OK")
+
+      - name: Verify bar room (lavapipe)
+        if: runner.os == 'Linux'
+        env:
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
+        run: python -m kagra.verify examples/verify_scenarios/bar_sim_smoke.json

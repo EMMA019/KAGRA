@@ -1,6 +1,6 @@
 {
   "name": "bar_sim_smoke",
-  "notes": "Bar management sim on shared wgpu 30. Free WorldDoc (no genre). door/counter/shelf are scenery, not RPG/shop/cook magic names.",
+  "notes": "Bar management sim on shared wgpu 30. Free WorldDoc (no genre). door/counter/shelf are scenery, not RPG/shop/cook magic names. pixels catch outdoor-sky / grass-floor regressions.",
   "expect_world": {
     "path": "kagra-shared/tests/fixtures/bar_room_world.json",
     "query": [
@@ -16,6 +16,10 @@
     "out": "scratch/bar_sim_shared.png",
     "width": 320,
     "height": 180,
-    "min_bytes": 200
+    "min_bytes": 200,
+    "pixels": [
+      {"x": 80, "y": 2, "w": 160, "h": 20, "mean_max": [110, 100, 110]},
+      {"x": 80, "y": 140, "w": 160, "h": 28, "mean_min": [50, 20, 5], "not_solid": true}
+    ]
   }
 }

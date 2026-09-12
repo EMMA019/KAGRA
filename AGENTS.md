@@ -29,6 +29,12 @@ a game **without a human looking at the screen**.
 7. **Format Rust before push.** `cargo fmt -p kagra-shared -- --check`
    must stay clean (CI fails on rustfmt drift). MSRV is 1.88
    (`kagra-shared/Cargo.toml` `rust-version`).
+8. **Do not add a genre module to WorldPlay.** New games are Python
+   (`kagra.gameloop` + a free `WorldDoc`). Rust owns walk / timers /
+   events / interact / physics. Picture fields live on the dump
+   (`sky`, `ground`, `WorldProp.texture`, `uv_scale`). Verify picture
+   with `expect_offscreen.pixels` (region mean / not_solid), not a
+   golden PNG.
 
 ## Commands
 

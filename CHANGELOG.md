@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Dump picture fields: ``sky`` (clear+fog), ``ground`` (auto grass plane;
+  indoor rooms set false), ``WorldProp.uv_scale`` (CPU-tiled albedo).
+  ``expect_offscreen.pixels`` checks region mean / not_solid (not golden).
+  Linux CI installs lavapipe and runs ``bar_sim_smoke`` after the wheel
+  import. ``render_world`` prefers the installed ``kagra_shared`` extension.
+
 - **0.2.0 mainline cut:** `import kagra` is shared wgpu 30 (`WorldDoc` /
   `WorldPlay` / `gameloop`). Root `pyproject.toml` builds `kagra-shared` as
   `kagra.kagra_shared`. Archived RendererV2 / `kagra_core` is not imported.

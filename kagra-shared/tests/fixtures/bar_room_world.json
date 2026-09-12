@@ -2,6 +2,8 @@
   "version": 1,
   "half": 8.0,
   "floor_y": 0.0,
+  "sky": [18, 14, 16, 255],
+  "ground": false,
   "gravity": 9.8,
   "coins": 0,
   "player": null,
@@ -15,7 +17,8 @@
       "scale": [16.0, 1.0, 12.0],
       "enabled": true,
       "roughness": 0.95,
-      "texture": "assets/bar/tex/wood.png"
+      "texture": "assets/bar/tex/wood.png",
+      "uv_scale": [8, 6]
     },
     {
       "id": "prop:backwall",

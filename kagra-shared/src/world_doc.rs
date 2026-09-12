@@ -108,6 +108,13 @@ pub struct WorldDoc {
     /// 風（SpringBone 布の外部加速度、m/s^2 相当）。デフォルト無風。
     #[serde(default)]
     pub wind: [f32; 3],
+    /// Clear + fog color. None = outdoor sky `[130, 165, 205, 255]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sky: Option<[u8; 4]>,
+    /// Auto grass plane when there is no heightfield. None = true (legacy).
+    /// Indoor rooms dump `false` and place their own floor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ground: Option<bool>,
 }
 
 /// Generic countdown. Dump-visible: a fishing dump shows `cast` counting down,
@@ -211,6 +218,10 @@ pub struct WorldProp {
     /// attaches albedo so box / plane / sprite / quad can show AI art.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub texture: Option<String>,
+    /// Repeat the albedo this many times (CPU tile; sampler stays Clamp).
+    /// None = `[1, 1]`. Wood floors dump `[8, 6]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uv_scale: Option<[f32; 2]>,
 }
 
 /// Prop interaction. The engine handles reach + on_use event; the game owns
@@ -528,8 +539,9 @@ impl WorldDoc {
                 [78, 138, 64, 255],
                 Material::Grass,
             );
-        } else {
+        } else if self.ground.unwrap_or(true) {
             // Dump without heightfield/water/props is otherwise a clear-color void.
+            // Indoor rooms set `ground: false` and bring their own floor.
             let span = (self.half.abs() * 2.0).max(8.0);
             b.push_material(
                 MESH_PLANE,
@@ -692,7 +704,7 @@ impl WorldDoc {
         self.push_contact_blobs(&mut b, hide_local, local_id);
 
         let (light_dir, ambient, local_lights) = self.draw_lights();
-        let sky = [130, 165, 205, 255];
+        let sky = self.sky.unwrap_or([130, 165, 205, 255]);
         Scene3D {
             camera,
             clear: sky,
@@ -1406,8 +1418,39 @@ fn textured_prop_mesh(prop: &WorldProp) -> Option<MeshData> {
         "sphere" | "cylinder" | "capsule" => primitives::cylinder_mesh(0.5, 1.0, 12),
         _ => primitives::box_mesh(Vec3::ONE),
     };
-    mesh.albedo = Some(albedo);
+    mesh.albedo = Some(tile_albedo(albedo, prop.uv_scale));
     Some(mesh)
+}
+
+fn tile_albedo(
+    src: crate::scene3d::AlbedoRgba,
+    scale: Option<[f32; 2]>,
+) -> crate::scene3d::AlbedoRgba {
+    let (nx, ny) = match scale {
+        Some([u, v]) => (u.max(1.0).round() as u32, v.max(1.0).round() as u32),
+        None => (1, 1),
+    };
+    if nx <= 1 && ny <= 1 {
+        return src;
+    }
+    let w = src.width.saturating_mul(nx).max(1);
+    let h = src.height.saturating_mul(ny).max(1);
+    let sw = src.width as usize;
+    let mut rgba = vec![0u8; w as usize * h as usize * 4];
+    for ty in 0..ny {
+        for y in 0..src.height {
+            let src_row = (y as usize * sw) * 4;
+            for tx in 0..nx {
+                let dst = (((ty * src.height + y) as usize * w as usize) + tx as usize * sw) * 4;
+                rgba[dst..dst + sw * 4].copy_from_slice(&src.rgba[src_row..src_row + sw * 4]);
+            }
+        }
+    }
+    crate::scene3d::AlbedoRgba {
+        width: w,
+        height: h,
+        rgba: rgba.into(),
+    }
 }
 
 fn mesh_for_prop(
@@ -2906,6 +2949,60 @@ mod tests {
         assert!(
             scene.batches.iter().any(|b| b.mesh == mid),
             "compile_scene must draw the textured mesh"
+        );
+    }
+
+    #[test]
+    fn indoor_sky_and_no_auto_ground() {
+        let outdoor = WorldDoc {
+            version: WORLD_DUMP_VERSION,
+            ..Default::default()
+        };
+        let out_scene = outdoor.compile_scene(1.0);
+        assert_eq!(out_scene.clear, [130, 165, 205, 255]);
+        assert!(
+            out_scene.batches.iter().any(|b| b.mesh == MESH_PLANE),
+            "legacy dump still gets the grass plane"
+        );
+
+        let indoor = WorldDoc {
+            version: WORLD_DUMP_VERSION,
+            sky: Some([18, 14, 16, 255]),
+            ground: Some(false),
+            ..Default::default()
+        };
+        let in_scene = indoor.compile_scene(1.0);
+        assert_eq!(in_scene.clear, [18, 14, 16, 255]);
+        assert_eq!(in_scene.fog_color, [18, 14, 16, 255]);
+        assert!(
+            !in_scene.batches.iter().any(|b| b.mesh == MESH_PLANE),
+            "ground:false must not emit the default grass"
+        );
+    }
+
+    #[test]
+    fn uv_scale_tiles_albedo() {
+        let mut doc = WorldDoc {
+            version: WORLD_DUMP_VERSION,
+            ..Default::default()
+        };
+        doc.props.push(WorldProp {
+            id: "prop:floor".into(),
+            kind: "prop".into(),
+            model: "box".into(),
+            texture: Some("kagra-shared/tests/fixtures/tex_check.png".into()),
+            uv_scale: Some([4.0, 2.0]),
+            enabled: true,
+            scale: [1.0, 1.0, 1.0],
+            ..Default::default()
+        });
+        let meshes = doc.compile_meshes();
+        assert!(
+            meshes.iter().any(|(_, m)| m
+                .albedo
+                .as_ref()
+                .is_some_and(|a| a.width == 8 && a.height == 4)),
+            "2x2 PNG tiled 4x2 must become 8x4"
         );
     }
 }
