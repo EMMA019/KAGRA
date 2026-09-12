@@ -10,13 +10,14 @@
 
 ## Verify (this session)
 
-- `cargo +stable test -p kagra-shared --locked`: **394 passed** (all targets)
+- `cargo +stable test -p kagra-shared --locked --lib`: **396 passed**
+  (sky/ground + uv_scale tests)
 - `cargo +stable clippy -p kagra-shared --all-targets [--features render] -- -D warnings`: clean
 - `cargo +stable fmt -p kagra-shared -- --check`: clean
 - `cargo build --target wasm32-unknown-unknown --features wasm,render --release`: ok
 - root `maturin build --release` → `kagra-0.2.0-cp312-manylinux_2_35_x86_64.whl` (4.0 MB);
   `import kagra` from the wheel: `WorldPlay` present, `get_engine` absent
-- `pytest tests -m "not golden"`: **636 passed, 9 skipped**
+- `pytest tests -m "not golden"`: **640 passed, 8 skipped**
 - `python tools/gen_api_index.py --check`: **54 entries**, clean
 - Real render (lavapipe): `python -m kagra.render_world bar_room_world.json` ok;
   `examples/bar_sim_minimal.py --headless` writes a rendered 30 KB PNG
