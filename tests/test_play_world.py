@@ -1142,3 +1142,76 @@ def test_shop_session_buys_from_a_tap():
     assert session.bought and session.done
     assert session.coins == 3
     assert session.phase == "complete"
+
+
+def test_rhythm_fixture_is_four_lane_chart_not_beat():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/rhythm_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["genre"] == "rhythm"
+    assert data["genre"] != "rhythm_beat"
+    assert data["player"]["on_ground"] is True
+    assert data["player"]["name"] == "player"
+    assert data["player"].get("gltf") == "knight"
+    lanes = [p for p in data["props"] if p.get("name") == "lane"]
+    notes = [p for p in data["props"] if p.get("name") == "note"]
+    receptors = [p for p in data["props"] if p.get("name") == "receptor"]
+    assert len(lanes) == 4
+    assert len(notes) == 6
+    assert all(p.get("gltf") == "crate.glb" for p in notes)
+    assert len(receptors) == 4
+    assert all(p.get("gltf") == "chest" for p in receptors)
+    assert any(p.get("gltf") == "inn" for p in data["props"])
+    crates = [p for p in data["props"] if p.get("name") == "crate"]
+    assert len(crates) == 1
+    assert crates[0].get("gltf") == "crate.glb"
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("coins", 0) == 0
+    text = (ROOT / "examples/rhythm_minimal.py").read_text(encoding="utf-8")
+    assert "\u2014" not in text
+    assert "\u2013" not in text
+    assert "D F J K" in text
+
+
+def test_rhythm_session_judges_and_clears():
+    try:
+        from kagra.kagra_shared import RhythmSession
+    except ImportError:
+        try:
+            from kagra_shared import RhythmSession
+        except ImportError:
+            pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/rhythm_world.json"
+    session = RhythmSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "rhythm"
+    assert session.phase == "title"
+    assert session.lane_count == 4
+    assert session.bpm == 120.0
+    session.press_lane(0)
+    session.tick(1.0)
+    assert session.phase == "title"
+    assert session.song_time == 0.0
+    session.confirm()
+    assert session.phase == "playing"
+    session.tick(0.8)
+    assert session.press_lane(0) == "perfect"
+    assert session.perfect_count == 1
+    assert session.combo == 1
+    assert session.score == 300
+    session.set_auto(True)
+    for _ in range(900):
+        if session.phase == "complete":
+            break
+        session.tick(1.0 / 60.0)
+    assert session.phase == "complete"
+    assert session.miss_count == 0
+    assert session.perfect_count == session.note_count
+    assert session.rank == "S"
+    session.pointer(10.0, 10.0, 320.0, 180.0)
+    assert session.phase == "title"
+    assert session.score == 0

@@ -170,6 +170,7 @@ FRONT_NAMES = {
     "PuzzlePadSession",
     "PuzzleSession",
     "RaceSession",
+    "RhythmSession",
     "RpgSession",
     "Scene",
     "ShopSession",
