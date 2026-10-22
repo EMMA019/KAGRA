@@ -164,6 +164,7 @@ FRONT_NAMES = {
     "BrainError",
     "KagraContractError",
     "KairiBrain",
+    "FpsSession",
     "NovelSession",
     "OpenAIBrain",
     "PlatformerSession",

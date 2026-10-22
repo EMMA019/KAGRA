@@ -1,13 +1,18 @@
 //! FPS on play_world: first-person eye camera, look, fire, hit, ammo, reload.
 //!
 //! Sibling of collectathon / action. Hitscan (click or J) vs capsule / sprite
-//! targets on a World.dump. Camera sits at capsule eye; the body stays in the
-//! dump (local mesh hidden so the near plane does not clip a white interior).
-//! Mag count is dump `coins`. Fire spends a round; empty click is dump-visible
-//! `empty` and does not hitscan. R (`WalkInput.dodge`) reloads after a short
-//! delay. Title -> play -> result reuses `WorldPlay` / `GamePhase`. Muzzle and
-//! hit flash are `DrawList` quads on shared wgpu 30. No recoil, inventory, net,
-//! Rapier, VRM skin, RendererV2, or new ECS.
+//! targets and hostile walkers on a World.dump. Camera sits at capsule eye; the
+//! body stays in the dump (local mesh hidden so the near plane does not clip a
+//! white interior). Mag count is dump `coins`. Fire spends a round; empty click
+//! is dump-visible `empty` and does not hitscan. R (`WalkInput.dodge`) reloads
+//! after a short delay.
+//!
+//! Walkers named `enemy` chase and deal contact damage. `reserve` walkers are
+//! the next wave (id `walker:enemy:<n>:<who>`); they rise when the current wave
+//! is gone. Player HP lives here. Clearing every wave wins; HP 0 loses. Title
+//! -> play -> result reuses `WorldPlay` / `GamePhase`. Retry restores the seed
+//! dump. Muzzle and hit flash are `DrawList` quads on shared wgpu 30. No
+//! recoil, inventory, net, Rapier, or RendererV2.
 
 use crate::collectathon::WalkInput;
 use crate::game::GamePhase;
@@ -27,6 +32,11 @@ pub const RANGE: f32 = 48.0;
 pub const EYE_Y: f32 = 0.55;
 pub const BODY_H: f32 = 0.95;
 pub const CAPSULE_R: f32 = 0.50;
+pub const PLAYER_HP: u32 = 5;
+pub const PLAYER_R: f32 = 0.46;
+pub const ENEMY_R: f32 = 0.55;
+pub const ENEMY_SPEED: f32 = 2.35;
+pub const CONTACT_CD: f32 = 0.60;
 
 /// Live range around a dump. HP stays here; targets in the dump
 /// (`name == "target"`) are the query/dump source of truth when killed.
@@ -41,6 +51,10 @@ pub struct FpsGame {
     pub reload_t: f32,
     pub hurt_flash: bool,
     pub won: bool,
+    pub lost: bool,
+    pub hp: u32,
+    pub wave: u32,
+    pub contact_cd: f32,
     target_hp: HashMap<String, u32>,
 }
 
@@ -56,6 +70,10 @@ impl Default for FpsGame {
             reload_t: 0.0,
             hurt_flash: false,
             won: false,
+            lost: false,
+            hp: PLAYER_HP,
+            wave: 1,
+            contact_cd: 0.0,
             target_hp: HashMap::new(),
         }
     }
@@ -71,11 +89,28 @@ impl FpsGame {
     fn rebind_targets(&mut self, doc: &WorldDoc) {
         self.target_hp.clear();
         for p in &doc.props {
-            if is_target(p) && p.enabled {
+            if is_shootable(p) && p.enabled {
                 self.target_hp.insert(p.id.clone(), TARGET_HP);
             }
         }
+        for w in &doc.walkers {
+            if is_enemy_walker(w) || is_reserve_walker(w) {
+                self.target_hp.insert(w.id.clone(), TARGET_HP);
+            }
+        }
     }
+}
+
+/// Highest `walker:enemy:<n>:` index in the dump. Range targets with no
+/// hostile walkers report 1.
+pub fn wave_count(doc: &WorldDoc) -> u32 {
+    let mut max_wave = 0u32;
+    for w in &doc.walkers {
+        if is_enemy_walker(w) || is_reserve_walker(w) || w.name == "down" {
+            max_wave = max_wave.max(wave_index(&w.id));
+        }
+    }
+    max_wave.max(1)
 }
 
 pub fn is_fps(doc: &WorldDoc) -> bool {
@@ -84,6 +119,49 @@ pub fn is_fps(doc: &WorldDoc) -> bool {
 
 fn is_target(p: &WorldProp) -> bool {
     p.name == "target"
+}
+
+fn is_shootable(p: &WorldProp) -> bool {
+    is_target(p) || p.name == "enemy"
+}
+
+fn is_enemy_walker(w: &WorldWalker) -> bool {
+    w.name == "enemy"
+}
+
+fn is_reserve_walker(w: &WorldWalker) -> bool {
+    w.name == "reserve"
+}
+
+fn walker_spec(w: &WorldWalker) -> &str {
+    w.gltf
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(w.model.as_str())
+}
+
+/// Feet on the floor. Same rest-pose offset the walker sit uses.
+fn stand_y(doc: &WorldDoc, x: f32, z: f32, spec: &str) -> f32 {
+    let ground = doc.height_at(x, z);
+    let spec = spec.trim();
+    if spec.is_empty() {
+        ground + BODY_H
+    } else {
+        ground - crate::world_doc::walker_rest_min_y(spec)
+    }
+}
+
+/// `walker:enemy:2:mage` -> 2. Anything else is wave 1.
+fn wave_index(id: &str) -> u32 {
+    let mut parts = id.split(':');
+    let _kind = parts.next();
+    let _role = parts.next();
+    parts
+        .next()
+        .and_then(|n| n.parse::<u32>().ok())
+        .filter(|n| *n >= 1)
+        .unwrap_or(1)
 }
 
 fn is_sprite_target(p: &WorldProp) -> bool {
@@ -171,6 +249,33 @@ pub fn seed(doc: &mut WorldDoc) {
             p.position[1] = y;
         }
     }
+    // Active wave stands on the floor. Later waves wait under the arena so
+    // they are not in the hitscan until `advance_waves` raises them.
+    let seated: Vec<(usize, f32)> = doc
+        .walkers
+        .iter()
+        .enumerate()
+        .filter_map(|(i, w)| {
+            if is_enemy_walker(w) {
+                let spec = walker_spec(w).to_string();
+                let y = stand_y(doc, w.position[0], w.position[2], &spec);
+                Some((i, y))
+            } else {
+                None
+            }
+        })
+        .collect();
+    for w in &mut doc.walkers {
+        if is_reserve_walker(w) {
+            w.position[1] = -40.0;
+        }
+    }
+    for (i, y) in seated {
+        if let Some(w) = doc.walkers.get_mut(i) {
+            w.position[1] = y;
+            w.on_ground = true;
+        }
+    }
 }
 
 /// Hitscan fire. Caller already stepped the walker and placed the eye camera.
@@ -182,12 +287,13 @@ pub fn tick(
     look_pitch: f32,
     dt: f32,
 ) {
-    if game.won {
+    if game.won || game.lost {
         return;
     }
     game.fire_t = (game.fire_t - dt).max(0.0);
     game.flash_t = (game.flash_t - dt).max(0.0);
     game.muzzle_t = (game.muzzle_t - dt).max(0.0);
+    game.contact_cd = (game.contact_cd - dt).max(0.0);
     let was_reloading = game.reload_t > 0.0;
     game.reload_t = (game.reload_t - dt).max(0.0);
     if was_reloading && game.reload_t <= 0.0 {
@@ -203,23 +309,52 @@ pub fn tick(
     apply_reload(doc, game, input);
     apply_fire(doc, game, input, look_yaw, look_pitch);
     doc.coins = game.ammo;
+    advance_waves(doc, game);
+    chase_enemies(doc, game, dt);
+    apply_contact(doc, game);
 
-    if live_targets(doc) == 0 {
+    if arena_clear(doc) {
         game.won = true;
+    } else if game.hp == 0 {
+        game.lost = true;
+        game.hp = 0;
+        set_player_name(doc, "dead");
     }
 }
 
-fn live_targets(doc: &WorldDoc) -> usize {
-    doc.props
+fn live_shootables(doc: &WorldDoc) -> usize {
+    let props = doc
+        .props
         .iter()
-        .filter(|p| is_target(p) && p.enabled)
-        .count()
+        .filter(|p| is_shootable(p) && p.enabled)
+        .count();
+    let walkers = doc.walkers.iter().filter(|w| is_enemy_walker(w)).count();
+    props + walkers
+}
+
+fn arena_clear(doc: &WorldDoc) -> bool {
+    live_shootables(doc) == 0 && !doc.walkers.iter().any(is_reserve_walker)
 }
 
 fn look_dir(yaw: f32, pitch: f32) -> Vec3 {
     let (s, c) = yaw.sin_cos();
     let (sp, cp) = pitch.sin_cos();
     Vec3::new(s * cp, sp, c * cp)
+}
+
+/// Keep the gameplay capsule at eye height. A KayKit rig whose rest pose
+/// starts at the feet would otherwise sit the camera on the ankles.
+pub fn pin_player_capsule(doc: &mut WorldDoc) {
+    let Some(mut w) = player_ref(doc).cloned() else {
+        return;
+    };
+    let y = doc.height_at(w.position[0], w.position[2]) + BODY_H;
+    if (w.position[1] - y).abs() < 0.001 && w.on_ground {
+        return;
+    }
+    w.position[1] = y;
+    w.on_ground = true;
+    write_player(doc, w);
 }
 
 /// Sit the dump camera at capsule eye. Body stays in WorldDoc.
@@ -324,15 +459,28 @@ fn apply_fire(
     };
     let origin = Vec3::new(w.position[0], w.position[1] + EYE_Y, w.position[2]);
     let dir = look_dir(look_yaw, look_pitch);
+    let player_id = player_ref(doc).map(|w| w.id.clone());
     let mut best: Option<(f32, String)> = None;
     for p in &doc.props {
-        if !is_target(p) || !p.enabled {
+        if !is_shootable(p) || !p.enabled {
             continue;
         }
         let center = Vec3::from_array(p.position);
         if let Some(t) = ray_hit_t(origin, dir, center, target_radius(p), target_half_h(p)) {
             if best.as_ref().map(|(bt, _)| t < *bt).unwrap_or(true) {
                 best = Some((t, p.id.clone()));
+            }
+        }
+    }
+    for w in &doc.walkers {
+        if !is_enemy_walker(w) || player_id.as_deref() == Some(w.id.as_str()) {
+            continue;
+        }
+        let ground = doc.height_at(w.position[0], w.position[2]);
+        let center = Vec3::new(w.position[0], ground + BODY_H, w.position[2]);
+        if let Some(t) = ray_hit_t(origin, dir, center, ENEMY_R, BODY_H) {
+            if best.as_ref().map(|(bt, _)| t < *bt).unwrap_or(true) {
+                best = Some((t, w.id.clone()));
             }
         }
     }
@@ -349,8 +497,171 @@ fn apply_fire(
         if let Some(p) = doc.props.iter_mut().find(|p| p.id == id) {
             p.enabled = false;
         }
+        if let Some(w) = doc.walkers.iter_mut().find(|w| w.id == id) {
+            w.name = "down".into();
+            w.position[1] = -40.0;
+            w.anim = "idle".into();
+        }
         game.kills += 1;
     }
+}
+
+fn advance_waves(doc: &mut WorldDoc, game: &mut FpsGame) {
+    let wave_alive = doc
+        .walkers
+        .iter()
+        .any(|w| is_enemy_walker(w) && wave_index(&w.id) == game.wave);
+    if wave_alive {
+        return;
+    }
+    let tracked = doc
+        .walkers
+        .iter()
+        .any(|w| is_enemy_walker(w) || is_reserve_walker(w) || w.name == "down");
+    if !tracked {
+        return;
+    }
+    let next = game.wave + 1;
+    let rising: Vec<(usize, f32)> = doc
+        .walkers
+        .iter()
+        .enumerate()
+        .filter_map(|(i, w)| {
+            if is_reserve_walker(w) && wave_index(&w.id) == next {
+                let spec = walker_spec(w).to_string();
+                let y = stand_y(doc, w.position[0], w.position[2], &spec);
+                Some((i, y))
+            } else {
+                None
+            }
+        })
+        .collect();
+    if rising.is_empty() {
+        return;
+    }
+    for (i, y) in rising {
+        if let Some(w) = doc.walkers.get_mut(i) {
+            w.name = "enemy".into();
+            w.position[1] = y;
+            w.on_ground = true;
+        }
+    }
+    game.wave = next;
+    let ids: Vec<String> = doc
+        .walkers
+        .iter()
+        .filter(|w| is_enemy_walker(w))
+        .map(|w| w.id.clone())
+        .collect();
+    for id in ids {
+        game.target_hp.entry(id).or_insert(TARGET_HP);
+    }
+}
+
+fn chase_enemies(doc: &mut WorldDoc, game: &FpsGame, dt: f32) {
+    if game.lost || game.won {
+        return;
+    }
+    let Some(player) = player_ref(doc) else {
+        return;
+    };
+    let px = player.position[0];
+    let pz = player.position[2];
+    let player_id = player.id.clone();
+    let half = doc.half.max(4.0);
+    // (index, x, z, yaw, spec). Empty spec keeps the current feet height.
+    let mut plans: Vec<(usize, f32, f32, f32, String)> = Vec::new();
+    for (i, w) in doc.walkers.iter().enumerate() {
+        if !is_enemy_walker(w) || w.id == player_id {
+            continue;
+        }
+        let dx = px - w.position[0];
+        let dz = pz - w.position[2];
+        let dist = (dx * dx + dz * dz).sqrt();
+        let stop = ENEMY_R + PLAYER_R + 0.08;
+        let yaw = dx.atan2(dz);
+        if dist <= stop + 0.02 {
+            plans.push((i, w.position[0], w.position[2], yaw, String::new()));
+            continue;
+        }
+        let nx = dx / dist.max(1e-4);
+        let nz = dz / dist.max(1e-4);
+        let x = (w.position[0] + nx * ENEMY_SPEED * dt).clamp(-half + 1.0, half - 1.0);
+        let z = (w.position[2] + nz * ENEMY_SPEED * dt).clamp(-half + 1.0, half - 1.0);
+        plans.push((i, x, z, yaw, walker_spec(w).to_string()));
+    }
+    let mut moves: Vec<(usize, f32, f32, f32, f32)> = Vec::new();
+    for (i, x, z, yaw, spec) in plans {
+        let y = if spec.is_empty() {
+            doc.walkers.get(i).map(|w| w.position[1]).unwrap_or(0.0)
+        } else {
+            stand_y(doc, x, z, &spec)
+        };
+        moves.push((i, x, y, z, yaw));
+    }
+    separate_moves(&mut moves);
+    for (i, x, y, z, yaw) in moves {
+        if let Some(w) = doc.walkers.get_mut(i) {
+            w.position = [x, y, z];
+            w.yaw = yaw;
+            w.face = yaw;
+            w.on_ground = true;
+            w.anim = "walk".into();
+        }
+    }
+}
+
+fn separate_moves(moves: &mut [(usize, f32, f32, f32, f32)]) {
+    let min_d = ENEMY_R * 2.0;
+    for i in 0..moves.len() {
+        for j in (i + 1)..moves.len() {
+            let dx = moves[j].1 - moves[i].1;
+            let dz = moves[j].3 - moves[i].3;
+            let dist = (dx * dx + dz * dz).sqrt();
+            if dist >= min_d {
+                continue;
+            }
+            let (nx, nz) = if dist < 1e-4 {
+                (1.0, 0.0)
+            } else {
+                (dx / dist, dz / dist)
+            };
+            let push = (min_d - dist) * 0.5;
+            moves[i].1 -= nx * push;
+            moves[i].3 -= nz * push;
+            moves[j].1 += nx * push;
+            moves[j].3 += nz * push;
+        }
+    }
+}
+
+fn apply_contact(doc: &mut WorldDoc, game: &mut FpsGame) {
+    if game.hp == 0 || game.contact_cd > 0.0 || game.lost || game.won {
+        return;
+    }
+    let Some(player) = player_ref(doc) else {
+        return;
+    };
+    let px = player.position[0];
+    let pz = player.position[2];
+    let player_id = player.id.clone();
+    let hit = doc.walkers.iter().any(|w| {
+        if !is_enemy_walker(w) || w.id == player_id {
+            return false;
+        }
+        let dx = px - w.position[0];
+        let dz = pz - w.position[2];
+        let r = ENEMY_R + PLAYER_R;
+        dx * dx + dz * dz <= r * r
+    });
+    if !hit {
+        return;
+    }
+    game.hp = game.hp.saturating_sub(1);
+    game.contact_cd = CONTACT_CD;
+    game.flash_t = HIT_FLASH;
+    game.hurt_flash = true;
+    set_player_name(doc, "hurt");
 }
 
 pub fn build_hud(game: &FpsGame, phase: GamePhase, width: u32, height: u32) -> DrawList {
@@ -381,12 +692,26 @@ pub fn build_hud(game: &FpsGame, phase: GamePhase, width: u32, height: u32) -> D
         GamePhase::Playing => {
             let pip = 18.0 * scale;
             let gap = 6.0 * scale;
-            for i in 0..game.kills.min(12) {
+            for i in 0..PLAYER_HP {
+                let filled = i < game.hp;
                 quads.push(Quad::new(
                     pad + i as f32 * (pip + gap),
                     pad,
                     pip,
-                    pip,
+                    pip * 0.72,
+                    if filled {
+                        [220, 64, 72, 255]
+                    } else {
+                        [40, 24, 24, 170]
+                    },
+                ));
+            }
+            for i in 0..game.kills.min(12) {
+                quads.push(Quad::new(
+                    pad + i as f32 * (pip + gap),
+                    pad + pip + 6.0 * scale,
+                    pip * 0.62,
+                    pip * 0.62,
                     [240, 196, 72, 255],
                 ));
             }
@@ -452,21 +777,40 @@ pub fn build_hud(game: &FpsGame, phase: GamePhase, width: u32, height: u32) -> D
             }
         }
         GamePhase::Complete => {
-            quads.push(Quad::new(0.0, h * 0.22, w, h * 0.36, [12, 16, 18, 210]));
+            let win = !game.lost;
+            quads.push(Quad::new(
+                0.0,
+                h * 0.22,
+                w,
+                h * 0.36,
+                if win {
+                    [12, 16, 18, 210]
+                } else {
+                    [28, 10, 12, 220]
+                },
+            ));
             let bar = (game.kills.max(1) as f32 / 3.0).clamp(0.15, 1.0);
             quads.push(Quad::new(
                 w * 0.22,
                 h * 0.40,
                 w * 0.56 * bar,
                 18.0 * scale,
-                [240, 196, 72, 255],
+                if win {
+                    [240, 196, 72, 255]
+                } else {
+                    [180, 64, 64, 255]
+                },
             ));
             quads.push(Quad::new(
                 w * 0.32,
                 h * 0.62,
                 w * 0.36,
                 48.0 * scale,
-                [70, 160, 110, 240],
+                if win {
+                    [70, 160, 110, 240]
+                } else {
+                    [170, 64, 64, 240]
+                },
             ));
         }
     }
@@ -864,6 +1208,166 @@ mod tests {
             play.fps.hits >= 1,
             "after reload, fire must hitscan, hits {}",
             play.fps.hits
+        );
+    }
+
+    const ARENA_JSON: &str = include_str!("../tests/fixtures/fps_world.json");
+
+    fn arena_started() -> WorldPlay {
+        let mut play = WorldPlay::from_json(ARENA_JSON).unwrap();
+        play.start();
+        play
+    }
+
+    fn nearest_enemy(play: &WorldPlay) -> Option<(f32, f32, f32)> {
+        let p = play.doc.player.as_ref()?.position;
+        let mut best: Option<(f32, f32, f32)> = None;
+        for w in &play.doc.walkers {
+            if w.name != "enemy" {
+                continue;
+            }
+            let d = (w.position[0] - p[0]).powi(2) + (w.position[2] - p[2]).powi(2);
+            if best.map(|(bd, _, _)| d < bd).unwrap_or(true) {
+                best = Some((d, w.position[0], w.position[2]));
+            }
+        }
+        best
+    }
+
+    fn aim_and_hold(play: &mut WorldPlay, attack: bool, dodge: bool, lz: f32) {
+        if let Some((_, x, z)) = nearest_enemy(play) {
+            let p = play.doc.player.as_ref().unwrap().position;
+            let desired = (x - p[0]).atan2(z - p[2]);
+            let err = crate::vehicle::wrap_angle(desired - play.look_yaw);
+            play.add_look(err, -play.look_pitch);
+        }
+        play.input.lx = 0.0;
+        play.input.lz = lz;
+        play.input.attack = attack;
+        play.input.dodge = dodge;
+        play.input.jump = false;
+    }
+
+    #[test]
+    fn arena_enemies_chase_and_waves_stay_buried() {
+        let mut play = arena_started();
+        assert_eq!(play.fps.hp, PLAYER_HP);
+        assert_eq!(play.fps.wave, 1);
+        assert_eq!(wave_count(&play.doc), 3);
+        let reserves: Vec<_> = play
+            .doc
+            .walkers
+            .iter()
+            .filter(|w| w.name == "reserve")
+            .collect();
+        assert!(reserves.len() >= 4, "later waves {}", reserves.len());
+        assert!(reserves.iter().all(|w| w.position[1] < -10.0));
+        let z0 = play
+            .doc
+            .walkers
+            .iter()
+            .find(|w| w.id == "walker:enemy:1:rogue")
+            .unwrap()
+            .position[2];
+        for _ in 0..90 {
+            aim_and_hold(&mut play, false, false, 0.0);
+            play.tick(1.0 / 60.0);
+        }
+        let z1 = play
+            .doc
+            .walkers
+            .iter()
+            .find(|w| w.id == "walker:enemy:1:rogue")
+            .unwrap()
+            .position[2];
+        assert!(
+            z1 < z0 - 1.0,
+            "enemy should close on the player, z0={z0} z1={z1}"
+        );
+        assert!(play.fps.hp <= PLAYER_HP);
+        assert!(!play.fps.lost);
+        assert_eq!(play.game.phase, GamePhase::Playing);
+    }
+
+    #[test]
+    fn contact_drains_hp_and_retry_restores_waves() {
+        let mut play = arena_started();
+        let (x, z) = {
+            let w = play.doc.walkers.iter().find(|w| w.name == "enemy").unwrap();
+            (w.position[0], w.position[2])
+        };
+        put_player(&mut play, x, z, 0.0);
+        for _ in 0..400 {
+            if play.fps.lost {
+                break;
+            }
+            play.input = WalkInput::default();
+            play.tick(1.0 / 60.0);
+        }
+        assert!(play.fps.lost, "hp {}", play.fps.hp);
+        assert_eq!(play.fps.hp, 0);
+        assert_eq!(play.game.phase, GamePhase::Complete);
+        assert_eq!(play.doc.player.as_ref().unwrap().name, "dead");
+        play.confirm();
+        assert_eq!(play.game.phase, GamePhase::Playing);
+        assert!(!play.fps.lost);
+        assert!(!play.fps.won);
+        assert_eq!(play.fps.hp, PLAYER_HP);
+        assert_eq!(play.fps.ammo, MAG);
+        assert_eq!(play.fps.wave, 1);
+        let live = play
+            .doc
+            .walkers
+            .iter()
+            .filter(|w| w.name == "enemy")
+            .count();
+        let buried = play
+            .doc
+            .walkers
+            .iter()
+            .filter(|w| w.name == "reserve")
+            .count();
+        assert_eq!(live, 2, "wave 1 returns");
+        assert!(buried >= 4, "later waves buried again, n={buried}");
+    }
+
+    #[test]
+    fn clearing_wave_one_raises_the_next() {
+        let mut play = arena_started();
+        for _ in 0..900 {
+            let enemies = play
+                .doc
+                .walkers
+                .iter()
+                .filter(|w| w.name == "enemy")
+                .count();
+            if enemies == 0 || play.fps.wave >= 2 || play.fps.lost {
+                break;
+            }
+            let dist = nearest_enemy(&play)
+                .map(|(d, _, _)| d.sqrt())
+                .unwrap_or(99.0);
+            let lz = if dist < 3.4 { -1.0 } else { 0.0 };
+            let dodge = play.fps.ammo == 0;
+            let attack = play.fps.ammo > 0 && play.fps.reload_t <= 0.0;
+            aim_and_hold(&mut play, attack, dodge, lz);
+            play.tick(1.0 / 60.0);
+        }
+        assert!(!play.fps.lost, "hp {}", play.fps.hp);
+        assert!(play.fps.wave >= 2, "wave {}", play.fps.wave);
+        assert!(
+            play.doc
+                .walkers
+                .iter()
+                .any(|w| w.name == "enemy" && w.id.contains(":2:")),
+            "wave 2 should be standing"
+        );
+        assert!(
+            play.doc
+                .walkers
+                .iter()
+                .any(|w| w.name == "reserve" && w.position[1] < -10.0),
+            "wave 3 stays buried"
         );
     }
 }

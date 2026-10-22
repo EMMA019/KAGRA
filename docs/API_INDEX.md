@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **61**
+エントリ数: **62**
 
 棚の**手前**は shared wgpu 30（WorldDoc / WorldPlay / gameloop）。
 棚の**奥**は再エクスポートの余り。旧 RendererV2 API は `old/`。
@@ -24,6 +24,7 @@
 | `draw_world` | `export draw_world  (from kagra.gameloop)` |
 | `eval_world_expect` | `export eval_world_expect  (from kagra.world_expect)` |
 | `find_path` | `export find_path  (from kagra.path)` |
+| `FpsSession` | `class FpsSession  (from kagra.kagra_shared)` |
 | `get_lang` | `export get_lang  (from kagra.i18n)` |
 | `image` | `export image  (from kagra.ui2d)` |
 | `island_height` | `export island_height  (from kagra.land)` |

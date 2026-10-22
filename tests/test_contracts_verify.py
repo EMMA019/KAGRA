@@ -516,6 +516,16 @@ def test_load_shop_buy_scenario_is_world_and_offscreen():
     assert sc.expect_offscreen["out"].endswith("shop_buy_shared.png")
 
 
+def test_load_fps_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/fps_smoke.json")
+    assert sc.name == "fps_smoke"
+    assert sc.expect_world["path"].endswith("fps_world.json")
+    assert sc.expect_world["genre"] == "fps_range"
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen["out"].endswith("fps_shared.png")
+    assert sc.expect_offscreen["pixels"]
+
+
 def test_load_platformer_scenario_is_world_and_offscreen():
     sc = load_scenario(ROOT / "examples/verify_scenarios/platformer_smoke.json")
     assert sc.name == "platformer_smoke"
