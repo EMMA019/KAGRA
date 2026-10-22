@@ -168,7 +168,7 @@ jobs:
         run: |
           set -eu
           probe="${url}catalog.json"
-          for i in $(seq 1 30); do
+          for i in $(seq 1 6); do
             code=$(curl -fsS -o /tmp/kagra-catalog.json -w "%{http_code}" "$probe" || true)
             echo "try ${i} ${probe} -> ${code}"
             if [ "$code" = "200" ] && grep -q platformer /tmp/kagra-catalog.json; then

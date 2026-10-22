@@ -16,6 +16,18 @@ val pagesBase = (pagesProps.getProperty("pages_base") ?: "https://emma019.github
     .replace("\\", "")
     .replace("\"", "")
 
+// Share the shell sources without compiling MainActivity. AGP's public source
+// set has srcDir, but exclude/filter are not callable from this script.
+val sharedShell = layout.buildDirectory.dir("shared-shell")
+val syncSharedShell = tasks.register<Copy>("syncSharedShell") {
+    from("../app/src/main/java") {
+        include("dev/kagra/shell/KagraNative.kt")
+        include("dev/kagra/shell/AudioBus.kt")
+    }
+    into(sharedShell)
+}
+tasks.named("preBuild").configure { dependsOn(syncSharedShell) }
+
 android {
     namespace = "dev.kagra.shell"
     compileSdk = 35
@@ -75,12 +87,7 @@ android {
 
     sourceSets {
         getByName("main") {
-            // The import of java.util makes a bare `java` the package, not this source set.
-            with(this.java) {
-                srcDir("../app/src/main/java")
-                // AGP's Kotlin DSL source set has no exclude(); it lives on filter.
-                filter.exclude("**/MainActivity.kt")
-            }
+            this.java.srcDir(sharedShell)
             jniLibs.srcDir("../app/src/main/jniLibs")
         }
     }
