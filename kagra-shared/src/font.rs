@@ -30,17 +30,33 @@ static UI_FONT: Lazy<ab_glyph::FontArc> = Lazy::new(|| {
         .expect("embedded PublicSans-Bold.ttf must parse")
 });
 
-fn select_font(ch: char) -> &'static ab_glyph::FontArc {
-    if (ch as u32) <= 0x024F && UI_FONT.glyph_id(ch).0 != 0 {
-        &UI_FONT
-    } else {
-        &FONT
+fn font_has_glyph(font: &ab_glyph::FontArc, ch: char) -> bool {
+    // Glyph 0 is `.notdef`. Drawing it paints a missing-glyph box.
+    font.glyph_id(ch).0 != 0
+}
+
+/// Latin prefers Public Sans. Everything else, and any Latin the UI face
+/// lacks, falls back to PixelMplus (JIS). If neither face has the character,
+/// return `None` so the caller skips the glyph instead of rasterizing `.notdef`.
+fn select_font(ch: char) -> Option<&'static ab_glyph::FontArc> {
+    if (ch as u32) <= 0x024F && font_has_glyph(&UI_FONT, ch) {
+        return Some(&UI_FONT);
     }
+    if font_has_glyph(&FONT, ch) {
+        return Some(&FONT);
+    }
+    if font_has_glyph(&UI_FONT, ch) {
+        return Some(&UI_FONT);
+    }
+    None
 }
 
 fn char_advance(ch: char, size: f32) -> f32 {
-    let font = select_font(ch);
-    let scaled = font.as_scaled(size.max(1.0));
+    let size = size.max(1.0);
+    let Some(font) = select_font(ch) else {
+        return size * 0.5;
+    };
+    let scaled = font.as_scaled(size);
     scaled.h_advance(scaled.glyph_id(ch))
 }
 
@@ -151,7 +167,7 @@ fn coverage_quads(cov: &Coverage, x: f32, y: f32, color: [u8; 4]) -> Vec<Quad> {
 
 fn rasterize(ch: char, px: u32) -> Option<Coverage> {
     let size = px.max(1) as f32;
-    let font = select_font(ch);
+    let font = select_font(ch)?;
     let scaled = font.as_scaled(size);
     let glyph = scaled.scaled_glyph(ch);
     let outline = scaled.outline_glyph(glyph)?;
@@ -210,7 +226,61 @@ mod tests {
                 [255, 255, 255, 255],
             ));
             assert!(!qs.is_empty(), "char {ch} must rasterize");
+            assert!(
+                !is_hollow_box(&qs),
+                "char {ch} must not be a missing-glyph box"
+            );
         }
+    }
+
+    #[test]
+    fn japanese_falls_back_off_the_latin_ui_face() {
+        assert_eq!(UI_FONT.glyph_id('あ').0, 0, "Public Sans has no hiragana");
+        assert_ne!(FONT.glyph_id('あ').0, 0, "PixelMplus covers あ");
+        assert!(select_font('あ').is_some());
+        assert!(select_font('A').is_some());
+        assert_eq!(
+            select_font('A').map(|f| f.glyph_id('A').0),
+            Some(UI_FONT.glyph_id('A').0)
+        );
+    }
+
+    #[test]
+    fn missing_glyph_draws_no_notdef_box() {
+        let ch = '\u{E000}';
+        assert_eq!(UI_FONT.glyph_id(ch).0, 0);
+        assert_eq!(FONT.glyph_id(ch).0, 0);
+        assert!(select_font(ch).is_none());
+        let mut r = raster();
+        let qs = r.text_quads(&TextQuad::new(
+            &ch.to_string(),
+            0.0,
+            0.0,
+            16.0,
+            [255, 255, 255, 255],
+        ));
+        assert!(qs.is_empty(), "missing glyph must not paint a tofu box");
+    }
+
+    /// Hollow rectangle (`.notdef`): every coverage pixel sits on the bbox edge.
+    fn is_hollow_box(qs: &[Quad]) -> bool {
+        if qs.len() < 8 {
+            return false;
+        }
+        let min_x = qs.iter().map(|q| q.x).fold(f32::MAX, f32::min);
+        let max_x = qs.iter().map(|q| q.x).fold(f32::MIN, f32::max);
+        let min_y = qs.iter().map(|q| q.y).fold(f32::MAX, f32::min);
+        let max_y = qs.iter().map(|q| q.y).fold(f32::MIN, f32::max);
+        let w = max_x - min_x;
+        let h = max_y - min_y;
+        if w < 4.0 || h < 4.0 {
+            return false;
+        }
+        qs.iter().all(|q| {
+            let on_x = (q.x - min_x).abs() < 0.5 || (q.x - max_x).abs() < 0.5;
+            let on_y = (q.y - min_y).abs() < 0.5 || (q.y - max_y).abs() < 0.5;
+            on_x || on_y
+        })
     }
 
     #[test]
