@@ -764,6 +764,43 @@ def test_novel_session_genre_contract():
     assert session.phase == "complete"
 
 
+def test_td_session_tap_places_and_hud_is_ascii():
+    import json
+
+    try:
+        from kagra.kagra_shared import TdSession
+    except ImportError:
+        try:
+            from kagra_shared import TdSession
+        except ImportError:
+            pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/td_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["genre"] == "td_lane"
+    creeps = [p for p in data["props"] if p.get("name") == "creep"]
+    assert len(creeps) >= 15
+    assert {p.get("gltf") for p in creeps} >= {"raccoon", "wolf"}
+    assert any(p.get("name") == "slot" and p.get("gltf") == "crate.glb" for p in data["props"])
+    session = TdSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "td_lane"
+    assert session.phase == "title"
+    assert session.waves == 5
+    assert session.lives == 15
+    session.pointer(8.0, 8.0, 960, 540)
+    assert session.phase == "playing"
+    hud = session.hud_json(960, 540)
+    assert hud.isascii()
+    assert "wave 1/5" in hud and "gold" in hud and "lives" in hud
+    assert "\u2014" not in hud
+    world = json.loads(session.dump())
+    slot = next(p for p in world["props"] if p["id"] == "prop:slot-a")
+    screen = session.world_to_screen(float(slot["position"][0]), 0.0, float(slot["position"][2]), 960, 540)
+    assert screen is not None
+    session.pointer(float(screen[0]), float(screen[1]), 960, 540)
+    assert session.gold < 80
+    assert "gazebo" in session.dump()
+
+
 def test_platformer_fixture_is_side_stage_with_glb():
     import json
 

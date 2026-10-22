@@ -170,6 +170,7 @@ FRONT_NAMES = {
     "PuzzlePadSession",
     "Scene",
     "SlotStore",
+    "TdSession",
     "WorldDoc",
     "WorldPlay",
     "add_table",
