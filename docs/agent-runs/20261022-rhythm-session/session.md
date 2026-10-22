@@ -9,3 +9,5 @@ Keys D F J K are edge-triggered lane presses. `k` was missing from the gameloop 
 `assets/cute_song_trial.wav` plays when a desktop run starts. The chart clock does not read the file; timing stays the fixed BPM if playback is silent.
 
 Lavapipe rendered the title highway, a mid-chart frame (combo 9, PERFECT), and the result (S, score 8400).
+
+Merged `origin/master` after race and tower defense landed. Shared files keep all three sessions.

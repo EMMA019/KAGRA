@@ -1,0 +1,31 @@
+{
+  "name": "race_smoke",
+  "notes": "race_drive GenreSession 3-lap oval. KayKit sedan, taxi ghost, road tiles, lap timer in Rust. HUD is Python (ASCII). No Rapier, no VRM.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/race_world.json",
+    "genre": "race_drive",
+    "player.on_ground": true,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "prop", "name": "car", "count": 1},
+      {"type": "prop", "name": "ghost", "count": 1},
+      {"type": "prop", "name": "road", "min_count": 8},
+      {"type": "prop", "name": "finish", "count": 1},
+      {"type": "prop", "name": "split", "count": 1},
+      {"type": "prop", "name": "flag", "count": 1},
+      {"type": "prop", "name": "waypoint", "min_count": 8},
+      {"type": "prop", "name": "tree", "count": 1},
+      {"type": "prop", "name": "rock", "min_count": 1}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/race_world.json",
+    "out": "scratch/race_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200,
+    "pixels": [
+      {"x": 40, "y": 30, "w": 240, "h": 110, "not_solid": true}
+    ]
+  }
+}

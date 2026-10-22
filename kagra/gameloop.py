@@ -253,6 +253,7 @@ _KEYMAP = {
     "escape": "escape", "return": "enter",
     "up": "up", "down": "down", "left": "left", "right": "right",
     "shift_l": "shift", "shift_r": "shift",
+    "1": "1", "2": "2", "3": "3",
 }
 
 
