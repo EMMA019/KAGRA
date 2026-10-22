@@ -12,6 +12,9 @@ Creates (under repo root):
   - examples/verify_scenarios/<module>_smoke.json
 
 Does not edit genre_session.rs or WorldPlay — those are the next manual steps.
+
+HUD `text` fields must use ASCII hyphen (-), not Unicode em dash (U+2014); the
+font stack may not cover em dash in Public Sans.
 """
 from __future__ import annotations
 
@@ -152,6 +155,10 @@ class {pascal(module)}Play(Scene):
         super().__init__()
         raise NotImplementedError("implement {class_name} + fixture {fixture}")
 
+    # def draw(self) -> None:
+    #     hud = {{"texts": [{{"text": f"{genre_id} - playing", "x": 120, "y": 13, "size": 14}}]}}
+    #     self._canvas_png = draw_world(self.world, self.width, self.height, hud=hud)
+
 
 def main() -> None:
     run({pascal(module)}Play())
@@ -197,7 +204,8 @@ if __name__ == "__main__":
         print(f"  1. impl GenreSession for {class_name} in kagra-shared/src/genre_session.rs")
         print(f"  2. mod {module}; in kagra-shared/src/py/mod.rs + add_class::<{py_class}>()")
         print(f"  3. Author {fixture} (genre: {genre_id!r}) with bundled .glb props")
-        print("  4. cargo test -p kagra-shared --lib && python -m kagra.verify ...")
+        print("  4. HUD strings: ASCII '-' only (not em dash U+2014)")
+        print("  5. cargo test -p kagra-shared --lib && python -m kagra.verify ...")
     return 0
 
 

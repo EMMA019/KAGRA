@@ -48,12 +48,12 @@ class PuzzlePlay(Scene):
         if self.session.solved:
             status = "solved!"
         elif self.session.pushing:
-            status = "pushing…"
+            status = "pushing..."
         hud = {
             "quads": [{"x": 8, "y": 8, "w": 280, "h": 22, "color": [24, 28, 32, 210]}],
             "texts": [
                 {
-                    "text": f"puzzle_pad — {status}  (WASD / J look)",
+                    "text": f"puzzle_pad - {status}  (WASD / J look)",
                     "x": 148,
                     "y": 13,
                     "size": 14,
