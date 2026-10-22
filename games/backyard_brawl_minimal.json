@@ -1,0 +1,6 @@
+{
+  "title": "Backyard Brawl",
+  "icon": "games/icons/backyard_brawl.png",
+  "version": "0.1.0",
+  "entry": "examples/backyard_brawl_minimal.py"
+}

@@ -1,7 +1,22 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+val gameProps = Properties()
+val gamePropsFile = rootProject.file("kagra.game.properties")
+if (gamePropsFile.exists()) {
+    gamePropsFile.reader(Charsets.UTF_8).use { gameProps.load(it) }
+}
+
+fun gameProp(key: String, default: String): String {
+    val raw = gameProps.getProperty(key)
+    return if (raw.isNullOrBlank()) default else raw.trim()
+}
+
+val releaseKeystore = System.getenv("ANDROID_KEYSTORE_FILE")
 
 android {
     namespace = "dev.kagra.shell"
@@ -10,11 +25,16 @@ android {
     ndkVersion = "26.1.10909125"
 
     defaultConfig {
-        applicationId = "dev.kagra.shell"
+        applicationId = gameProp("application_id", "dev.kagra.shell")
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = gameProp("version_code", "1").toInt()
+        versionName = gameProp("version_name", "0.1.0")
+        manifestPlaceholders["appLabel"] = gameProp("title", "KAGRA Shell")
+        manifestPlaceholders["appIcon"] = gameProp(
+            "icon",
+            "@android:drawable/sym_def_app_icon",
+        )
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         externalNativeBuild {
@@ -28,9 +48,23 @@ android {
         }
     }
 
+    if (!releaseKeystore.isNullOrBlank()) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (!releaseKeystore.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

@@ -1,0 +1,9 @@
+{
+  "title": "Studio Chess",
+  "icon": "games/icons/chess.png",
+  "version": "0.1.0",
+  "entry": "examples/chess_minimal.py",
+  "bundle_assets": [
+    "assets/library/polyhaven/props/chess_set"
+  ]
+}

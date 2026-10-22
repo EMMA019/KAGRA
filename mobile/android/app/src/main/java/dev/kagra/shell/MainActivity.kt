@@ -11,26 +11,35 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import java.io.File
+import java.io.IOException
+import org.json.JSONObject
 
 /**
  * 共有コア（kagra-shared）が SurfaceView に直接描く。
  *
- * `libkagra_shared.so` が無い ABI では JNI がスタブになるので、
- * 描画は諦めて手順をテキストで出す。
+ * `assets/kagra_root/kagra_game.json` があるときは、そのゲームの world dump を
+ * WorldPlay で進める。無いときは従来どおり Crest Isle（setScene(2)）。
+ * `libkagra_shared.so` が無い ABI では JNI がスタブになるので、描画は諦めて
+ * 手順をテキストで出す。
  */
 class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
-    private enum class Control { STICK, JUMP }
+    private enum class Control { STICK, JUMP, ATTACK }
 
     private lateinit var surfaceView: SurfaceView
     private lateinit var status: TextView
     private var rendering = false
     private var frameCallback: Choreographer.FrameCallback? = null
+    private var packaged = false
+    private var holdStatus = false
+    private var gameTitle = "KAGRA Shell"
 
     /** 指 id ごとの役割。両手で同時に操作するために必要。 */
     private val controls = mutableMapOf<Int, Control>()
     private var stickX = 0f
     private var stickZ = 0f
     private var jump = false
+    private var attack = false
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,11 +74,89 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
             status.text = "native init failed: ${KagraNative.lastError()}"
             return
         }
-        KagraNative.setAssetRoot(filesDir.absolutePath)
-        // Crest Isle（Kenney 風カプセル。VRM ではない）。運転デモは setScene(0)。
-        KagraNative.setScene(2)
+        bootGame()
         surfaceView.holder.addCallback(this)
         surfaceView.setOnTouchListener { view, ev -> onTouch(view.width, view.height, ev) }
+    }
+
+    /**
+     * マニフェスト付き APK なら world dump を展開して WorldPlay を起動する。
+     * マニフェストが無ければ Crest Isle。
+     */
+    private fun bootGame() {
+        val manifest = readAssetText("kagra_root/kagra_game.json")
+        if (manifest == null) {
+            KagraNative.setAssetRoot(filesDir.absolutePath)
+            KagraNative.setScene(2)
+            gameTitle = "Crest Isle"
+            return
+        }
+        gameTitle = parseTitle(manifest)
+        val extracted = File(filesDir, "kagra_root")
+        if (!sameManifest(extracted, manifest)) {
+            extracted.deleteRecursively()
+            copyAssetTree("kagra_root", extracted)
+        }
+        KagraNative.setAssetRoot(extracted.absolutePath)
+        val world = File(extracted, "world.json")
+        if (!world.isFile) {
+            packaged = false
+            holdStatus = true
+            KagraNative.pause()
+            status.text = buildString {
+                append(gameTitle)
+                append("\n\n")
+                append("このゲームのルールは Python 側にあります。")
+                append("Android で WorldPlay を動かすにはマニフェストの world が必要です。")
+                append("Windows の exe が入口の例をそのまま起動します。")
+            }
+            return
+        }
+        packaged = KagraNative.loadGameFile(world.absolutePath)
+        if (!packaged) {
+            status.text = "$gameTitle\n\nnative load failed: ${KagraNative.lastError()}"
+        }
+    }
+
+    private fun parseTitle(json: String): String {
+        return try {
+            JSONObject(json).optString("title", gameTitle).ifBlank { gameTitle }
+        } catch (_: Exception) {
+            gameTitle
+        }
+    }
+
+    private fun sameManifest(extracted: File, manifest: String): Boolean {
+        val existing = File(extracted, "kagra_game.json")
+        if (!existing.isFile) return false
+        return existing.readText() == manifest
+    }
+
+    private fun readAssetText(path: String): String? {
+        return try {
+            assets.open(path).bufferedReader().use { it.readText() }
+        } catch (_: IOException) {
+            null
+        }
+    }
+
+    private fun copyAssetTree(assetPath: String, dest: File) {
+        val children = assets.list(assetPath) ?: emptyArray()
+        if (children.isEmpty()) {
+            dest.parentFile?.mkdirs()
+            try {
+                assets.open(assetPath).use { input ->
+                    dest.outputStream().use { output -> input.copyTo(output) }
+                }
+            } catch (_: IOException) {
+                dest.mkdirs()
+            }
+            return
+        }
+        dest.mkdirs()
+        for (child in children) {
+            copyAssetTree("$assetPath/$child", File(dest, child))
+        }
     }
 
     // ── Surface のライフサイクル ──────────────────────────
@@ -81,7 +168,8 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         rendering = KagraNative.attachSurface(holder.surface, width, height)
         if (!rendering) {
             status.text = buildString {
-                append("kagra-shared ${KagraNative.version()}\n")
+                append(gameTitle)
+                append("\nkagra-shared ${KagraNative.version()}\n")
                 append("renderer unavailable: ${KagraNative.lastError()}\n\n")
                 append("Build the native lib with rendering:\n")
                 append("  ./scripts/build_android_native.sh")
@@ -105,16 +193,26 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         if (frameCallback != null) return
         val cb = object : Choreographer.FrameCallback {
             override fun doFrame(frameTimeNanos: Long) {
+                if (packaged) {
+                    KagraNative.setPlayInput(stickX, stickZ, jump, attack, false)
+                } else {
+                    KagraNative.setWalk(stickX, stickZ, jump)
+                }
                 val frame = KagraNative.requestFrame()
                 if (rendering && !KagraNative.render()) {
                     rendering = false
                     status.text = "render failed: ${KagraNative.lastError()}"
                 }
-                if (rendering && frame % 15 == 0L) {
+                if (!holdStatus && rendering && frame % 15 == 0L) {
                     status.text = buildString {
-                        append("kagra-shared ${KagraNative.version()}  frame=$frame\n")
+                        append(gameTitle)
+                        append("  ·  kagra-shared ${KagraNative.version()}  frame=$frame\n")
                         append(KagraNative.statsJson())
-                        append("\n\nCrest Isle — 左＝歩き / 右下＝ジャンプ（VRM ではない）")
+                        if (packaged) {
+                            append("\n\n左＝移動 / 右下＝ジャンプ / 右上＝アクション。タップで開始")
+                        } else {
+                            append("\n\nCrest Isle — 左＝歩き / 右下＝ジャンプ（VRM ではない）")
+                        }
                     }
                 }
                 Choreographer.getInstance().postFrameCallback(this)
@@ -132,7 +230,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
     // ── 入力 ─────────────────────────────────────────────
 
     /**
-     * 左半分＝仮想スティック（歩き）、右下＝ジャンプ。
+     * 左半分＝仮想スティック（歩き）、右下＝ジャンプ、右上＝アクション。
      * 指ごとに役割を覚えるので、両手で同時に操作できる。
      */
     private fun onTouch(width: Int, height: Int, ev: MotionEvent): Boolean {
@@ -153,24 +251,21 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         val jumpTop = height * 0.62f
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN ->
-                controls[ev.getPointerId(idx)] =
-                    if (ev.getX(idx) >= jumpLeft && ev.getY(idx) >= jumpTop) {
-                        Control.JUMP
-                    } else {
-                        Control.STICK
-                    }
+                controls[ev.getPointerId(idx)] = controlFor(ev.getX(idx), ev.getY(idx), jumpLeft, jumpTop)
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP,
             MotionEvent.ACTION_CANCEL -> {
                 when (controls.remove(ev.getPointerId(idx))) {
                     Control.STICK -> { stickX = 0f; stickZ = 0f }
                     Control.JUMP -> jump = false
+                    Control.ATTACK -> attack = false
                     null -> Unit
                 }
             }
         }
 
         jump = false
+        attack = false
         for (i in 0 until ev.pointerCount) {
             when (controls[ev.getPointerId(i)]) {
                 Control.STICK -> {
@@ -181,12 +276,23 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
                     stickZ = (-(ev.getY(i) - cy) / well).coerceIn(-1f, 1f)
                 }
                 Control.JUMP -> jump = true
+                Control.ATTACK -> attack = true
                 null -> Unit
             }
         }
 
-        KagraNative.setWalk(stickX, stickZ, jump)
+        if (packaged) {
+            KagraNative.setPlayInput(stickX, stickZ, jump, attack, false)
+        } else {
+            KagraNative.setWalk(stickX, stickZ, jump)
+        }
         return true
+    }
+
+    private fun controlFor(x: Float, y: Float, jumpLeft: Float, jumpTop: Float): Control {
+        if (x >= jumpLeft && y >= jumpTop) return Control.JUMP
+        if (x >= jumpLeft) return Control.ATTACK
+        return Control.STICK
     }
 
     override fun onPause() {

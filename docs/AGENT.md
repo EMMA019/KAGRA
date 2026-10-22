@@ -41,6 +41,8 @@ Rust errors surface as `[CODE] message` (see `KaguraError::code`).
 | World.dump → PNG | `python -m kagra.render_world dump.json out.png`（ヘルパ無しはスキップ。`(-12800,-12800)` ではない） |
 | World.dump → 窓 | `python -m kagra.play_world dump.json` / `cargo run -p kagra-shared --features render --example window`（collectathon: タイトル→プレイ→結果。画面無しはスキップ。公式 Crest プレイ。RendererV2 ではない） |
 | Wasm ビルド | `cargo build -p kagra-shared --target wasm32-unknown-unknown --features wasm,render` |
+| Windows 配布 zip | `python scripts/package_windows.py --game examples/platformer_minimal.py`（exe は Windows。手順は [distribution.md](distribution.md)） |
+| Android 配布 APK | `python scripts/package_android.py --game examples/platformer_minimal.py`（デバッグ署名。リリース署名は distribution.md） |
 
 `tests/` のテストは `import kagra`（Rust 拡張）に依存させないこと。純ロジックの
 モジュールは `tests/conftest.py` の `load_kagra_submodule()` で読む。索引は AST

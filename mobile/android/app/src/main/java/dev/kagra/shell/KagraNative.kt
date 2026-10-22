@@ -36,6 +36,18 @@ object KagraNative {
     /** Crest Isle の歩き。lx/lz は -1..1。 */
     external fun setWalk(lx: Float, lz: Float, jump: Boolean): Boolean
 
+    /** パッケージした WorldPlay。ボタンは押しているあいだ true。 */
+    external fun setPlayInput(
+        lx: Float,
+        lz: Float,
+        jump: Boolean,
+        attack: Boolean,
+        dodge: Boolean,
+    ): Boolean
+
+    /** 展開済み dump ファイルを読む。成功するとシーンが World になる。 */
+    external fun loadGameFile(path: String): Boolean
+
     external fun setJump(held: Boolean): Boolean
 
     external fun requestFrame(): Long

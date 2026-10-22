@@ -1,0 +1,7 @@
+{
+  "title": "Stealth",
+  "icon": "games/icons/stealth.png",
+  "version": "0.1.0",
+  "entry": "examples/stealth_minimal.py",
+  "world": "kagra-shared/tests/fixtures/stealth_world.json"
+}

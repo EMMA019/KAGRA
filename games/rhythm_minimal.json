@@ -1,0 +1,7 @@
+{
+  "title": "Rhythm",
+  "icon": "games/icons/rhythm.png",
+  "version": "0.1.0",
+  "entry": "examples/rhythm_minimal.py",
+  "world": "kagra-shared/tests/fixtures/rhythm_world.json"
+}

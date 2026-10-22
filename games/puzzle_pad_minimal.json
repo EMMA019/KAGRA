@@ -1,0 +1,7 @@
+{
+  "title": "Puzzle Pad",
+  "icon": "games/icons/puzzle_pad.png",
+  "version": "0.1.0",
+  "entry": "examples/puzzle_pad_minimal.py",
+  "world": "kagra-shared/tests/fixtures/puzzle_pad_world.json"
+}
