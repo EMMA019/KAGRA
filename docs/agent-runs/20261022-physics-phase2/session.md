@@ -35,4 +35,5 @@ maturin の features を `python,physics` にして、通常の Python ビルド
 - `pytest tests -m "not golden"` passed（PhysicsWorld あり）。
 - `python tools/gen_api_index.py --check` OK。
 - lavapipe（`lvp_icd.json`）で `examples/physics_minimal.py --headless`。PNG 79923 bytes、480×270。宝箱はノック済み。
-- `examples/verify_scenarios/*.json` は `demo_live_smoke`（スクリプト欠落）以外 pass。`physics_smoke` と `physics_stack_smoke` を含む。
+- `examples/verify_scenarios/*.json` は `demo_live_smoke`（スクリプト欠落）以外 pass。`physics_smoke` と `physics_stack_smoke` を含む。master をマージしたあとの action / sports / survival / stealth / fishcook / rhythm / rpg / td の smoke も同じ。
+- master マージで増えた `WorldProp` リテラル（RPG の HP バー、TD の設置）にも `..Default::default()` を足した。
