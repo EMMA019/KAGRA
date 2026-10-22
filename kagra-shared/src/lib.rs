@@ -78,7 +78,7 @@ pub use collide::Obb2;
 pub use driving::{DrivingScene, MeshIds, MeshSet};
 pub use font::TextRaster;
 pub use game::{DemoGame, GamePhase, GAME_ID, GAME_TITLE};
-pub use genre_session::{GenreSession, GenreSessionError, PuzzlePadSession};
+pub use genre_session::{GenreSession, GenreSessionError, PlatformerSession, PuzzlePadSession};
 pub use gltf_load::{
     mesh_from_embedded_gltf, mesh_from_glb, mesh_from_gltf_json, sample_skinned,
     skinned_from_embedded_gltf, skinned_from_glb, walk_skinned_gltf, walk_skinned_vrm,

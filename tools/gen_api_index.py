@@ -165,6 +165,7 @@ FRONT_NAMES = {
     "KagraContractError",
     "KairiBrain",
     "OpenAIBrain",
+    "PlatformerSession",
     "PuzzlePadSession",
     "Scene",
     "SlotStore",
