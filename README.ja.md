@@ -96,6 +96,7 @@ Python ゲームマスターのゲーム（ロジックは Python のみ）:
 ```bash
 python examples/bunny_garden_minimal.py             # VRM 会話: 好感度・日程・セーブ（ESC / × でセーブ）
 python examples/torneko_minimal.py --seed 12345     # ローグライク: seed ダンジョン・ターン・在庫
+python examples/flight_minimal.py                   # 島の上空: ピッチ / バンク / 親子の機体、リング
 ```
 
 旧 pip デモの脚本: [`old/examples/`](old/examples/) — RendererV2 専用。

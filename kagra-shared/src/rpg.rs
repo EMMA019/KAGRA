@@ -283,6 +283,9 @@ fn tiny_prop(
         restitution: 0.0,
         texture: None,
         uv_scale: None,
+        pitch: 0.0,
+        roll: 0.0,
+        local: false,
     }
 }
 
@@ -461,6 +464,9 @@ fn ensure_enemy(doc: &mut WorldDoc) {
             restitution: 0.0,
             texture: None,
             uv_scale: None,
+            pitch: 0.0,
+            roll: 0.0,
+            local: false,
         });
     }
     if doc.props.iter().any(|p| p.id == ID_HP) {
@@ -494,6 +500,9 @@ fn ensure_enemy(doc: &mut WorldDoc) {
             restitution: 0.0,
             texture: None,
             uv_scale: None,
+            pitch: 0.0,
+            roll: 0.0,
+            local: false,
         },
     );
 }

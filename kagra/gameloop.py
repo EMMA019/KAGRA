@@ -53,6 +53,7 @@ __all__ = [
     "Scene",
     "run",
     "draw_world",
+    "render_rgba",
     "last_draw_was_fallback",
     "pressed",
     "was_pressed",
@@ -60,6 +61,7 @@ __all__ = [
     "mouse_down",
     "mouse_clicked",
     "rgba_to_png",
+    "rgba_to_ppm",
 ]
 
 
@@ -82,6 +84,49 @@ def rgba_to_png(rgba: bytes, width: int, height: int) -> bytes:
     )
 
 
+def rgba_to_ppm(rgba: bytes, width: int, height: int) -> bytes:
+    """RGBA8 → binary PPM (P6). Tk PhotoImage reads this without zlib."""
+    w, h = int(width), int(height)
+    need = w * h * 4
+    if len(rgba) < need:
+        raise ValueError(f"rgba short: {len(rgba)} < {need}")
+    rgb = bytearray(w * h * 3)
+    src = 0
+    dst = 0
+    for _ in range(w * h):
+        rgb[dst] = rgba[src]
+        rgb[dst + 1] = rgba[src + 1]
+        rgb[dst + 2] = rgba[src + 2]
+        src += 4
+        dst += 3
+    header = f"P6\n{w} {h}\n255\n".encode("ascii")
+    return header + bytes(rgb)
+
+
+def render_rgba(
+    world: dict[str, Any],
+    width: int = 320,
+    height: int = 180,
+    hud: dict[str, Any] | None = None,
+) -> bytes:
+    """dump dict → shared wgpu 30 offscreen RGBA8 (no PNG).
+
+    `hud` matches ``draw_world``. A missing GPU adapter returns a solid
+    frame; other render errors raise.
+    """
+    w, h = int(width), int(height)
+    if _ks is None:
+        raise ImportError(_missing_shared_message())
+    hud_json = json.dumps(hud) if hud else None
+    try:
+        return _ks.render_world_doc(json.dumps(world), w, h, hud_json)
+    except RuntimeError as exc:
+        if "adapter" not in str(exc).lower():
+            raise
+        _warn_no_gpu_once(exc)
+        return bytes([32, 24, 28, 255]) * (w * h)
+
+
 def draw_world(
     world: dict[str, Any],
     width: int = 320,
@@ -98,21 +143,11 @@ def draw_world(
                     "color":[r,g,b,a],"align":"left|center|right"}]}
 
     Scene.draw() 内で呼び、結果を run() の窓が表示する（または保存する）。
+    窓だけ速くしたいときは ``render_rgba`` を ``Scene._frame_rgba`` に置く。
+    ``run`` はそれを PPM のまま PhotoImage に渡す。
     """
-    w, h = int(width), int(height)
-    if _ks is None:
-        raise ImportError(_missing_shared_message())
-    hud_json = json.dumps(hud) if hud else None
-    try:
-        rgba = _ks.render_world_doc(json.dumps(world), w, h, hud_json)
-    except RuntimeError as exc:
-        # Only a missing GPU adapter falls back to a solid frame so headless
-        # CI can still close the loop. Bad dumps / HUD JSON stay loud.
-        if "adapter" not in str(exc).lower():
-            raise
-        _warn_no_gpu_once(exc)
-        rgba = bytes([32, 24, 28, 255]) * (w * h)
-    return rgba_to_png(rgba, w, h)
+    rgba = render_rgba(world, width, height, hud)
+    return rgba_to_png(rgba, int(width), int(height))
 
 
 _no_gpu_warned = False
@@ -146,6 +181,7 @@ class Scene:
         self.running = True
         self.clock = 0.0
         self._canvas_png: bytes | None = None
+        self._frame_rgba: bytes | None = None
 
     def update(self, dt: float) -> None:
         """毎フレーム呼ばれる。ゲームロジックはここに書く。"""
@@ -343,8 +379,13 @@ def run(
             root.destroy()
             return
         scene.draw()
-        if scene._canvas_png:
-            img = tk.PhotoImage(data=scene._canvas_png)
+        frame = None
+        if scene._frame_rgba is not None:
+            frame = rgba_to_ppm(scene._frame_rgba, scene.width, scene.height)
+        elif scene._canvas_png:
+            frame = scene._canvas_png
+        if frame:
+            img = tk.PhotoImage(data=frame)
             label.config(image=img)
             label.image = img  # 参照を保持しないと GC で消える
         root.after(frame_ms, _tick)

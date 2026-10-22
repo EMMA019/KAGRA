@@ -95,6 +95,7 @@ Python game-master games (game logic is Python-only):
 python examples/bunny_garden_minimal.py             # VRM talk: affection, days, save (ESC / × saves)
 python examples/torneko_minimal.py --seed 12345     # roguelike: seeded dungeon, turns, inventory
 python examples/bar_sim_minimal.py                  # bar sim: stock, guests, ledger (ESC saves)
+python examples/flight_minimal.py                   # fly the island: pitch / roll / parented airframe, rings
 ```
 
 Old pip demo scripts: [`old/examples/`](old/examples/) — RendererV2 only.

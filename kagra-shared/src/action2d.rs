@@ -555,6 +555,9 @@ fn ensure_markers(doc: &mut WorldDoc) {
             restitution: 0.0,
             texture: None,
             uv_scale: None,
+            pitch: 0.0,
+            roll: 0.0,
+            local: false,
         },
     );
     ensure_shot(doc);
@@ -607,6 +610,9 @@ fn ensure_shot(doc: &mut WorldDoc) {
             restitution: 0.0,
             texture: None,
             uv_scale: None,
+            pitch: 0.0,
+            roll: 0.0,
+            local: false,
         },
     );
 }
@@ -645,6 +651,9 @@ fn tiny_prop(
         restitution: 0.0,
         texture: None,
         uv_scale: None,
+        pitch: 0.0,
+        roll: 0.0,
+        local: false,
     }
 }
 

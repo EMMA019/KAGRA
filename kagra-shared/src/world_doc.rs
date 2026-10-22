@@ -40,7 +40,7 @@ use crate::gltf_load::{
 use crate::scene3d::{
     primitives, Camera, LocalLight, Material, MeshData, MeshId, Scene3D, SceneBuilder, Vertex3,
 };
-use glam::{Mat4, Quat, Vec3};
+use glam::{EulerRot, Mat4, Quat, Vec3};
 use serde::{Deserialize, Serialize};
 
 /// `docs/schemas/world.json` の version。他は拒否する。
@@ -53,7 +53,8 @@ const MESH_PLANE: MeshId = MeshId(3);
 pub(crate) const MESH_HEIGHTFIELD: MeshId = MeshId(4);
 pub(crate) const MESH_QUAD: MeshId = MeshId(5);
 const MESH_CONE: MeshId = MeshId(6);
-pub(crate) const MESH_GLTF_BASE: u32 = 7;
+const MESH_TORUS: MeshId = MeshId(7);
+pub(crate) const MESH_GLTF_BASE: u32 = 8;
 
 /// Persistent world. JSON source of truth. Not a draw list.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -169,7 +170,8 @@ fn default_gravity() -> f32 {
     9.8
 }
 
-/// Prop record. Parent is a string id (one level; n-level TRS is later).
+/// Prop record. `position` / `yaw` / `pitch` / `roll` are world-space unless
+/// `local` is set, in which case they are parent-space (up to 4 links).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct WorldProp {
     pub id: String,
@@ -181,6 +183,12 @@ pub struct WorldProp {
     pub position: [f32; 3],
     #[serde(default)]
     pub yaw: f32,
+    /// Nose up (radians). Applied as intrinsic Y, then X, then Z with `roll`.
+    #[serde(default, skip_serializing_if = "is_zero_f32")]
+    pub pitch: f32,
+    /// Bank (radians). Positive lifts the local +X side.
+    #[serde(default, skip_serializing_if = "is_zero_f32")]
+    pub roll: f32,
     #[serde(default)]
     pub model: String,
     #[serde(default)]
@@ -191,6 +199,11 @@ pub struct WorldProp {
     pub enabled: bool,
     #[serde(default)]
     pub parent: Option<String>,
+    /// When true, `position` / `yaw` / `pitch` / `roll` / `scale` are in the
+    /// parent prop's space (`parent` * local). Crest coins leave this false:
+    /// `parent` stays a link and `position` stays world-space.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub local: bool,
     #[serde(default)]
     pub color: Option<[u32; 3]>,
     /// 0..1. Coins dump 1.0. Default 0 (Lambert).
@@ -264,6 +277,27 @@ fn default_true() -> bool {
 
 fn default_roughness() -> f32 {
     1.0
+}
+
+fn is_zero_f32(v: &f32) -> bool {
+    *v == 0.0
+}
+
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
+/// Yaw, then pitch (nose up), then roll. Positive yaw turns +Z toward +X.
+pub(crate) fn prop_rotation(prop: &WorldProp) -> Quat {
+    Quat::from_euler(EulerRot::YXZ, prop.yaw, -prop.pitch, prop.roll)
+}
+
+fn prop_local_matrix(prop: &WorldProp) -> Mat4 {
+    Mat4::from_scale_rotation_translation(
+        Vec3::from_array(prop.scale),
+        prop_rotation(prop),
+        Vec3::from_array(prop.position),
+    )
 }
 
 /// Walker record (`walker:player`).
@@ -521,6 +555,54 @@ impl WorldDoc {
         ids
     }
 
+    /// World matrix per prop id. `local: true` multiplies up to 4 parents.
+    /// A disabled prop still contributes a transform so it can be a hinge.
+    fn prop_world_mats(&self) -> HashMap<String, Mat4> {
+        let mut memo = HashMap::new();
+        let mut stack = Vec::new();
+        for prop in &self.props {
+            self.prop_world_mat(&prop.id, 0, &mut stack, &mut memo);
+        }
+        memo
+    }
+
+    fn prop_world_mat(
+        &self,
+        id: &str,
+        depth: u32,
+        stack: &mut Vec<String>,
+        memo: &mut HashMap<String, Mat4>,
+    ) -> Mat4 {
+        if let Some(ready) = memo.get(id) {
+            return *ready;
+        }
+        let Some(prop) = self.props.iter().find(|p| p.id == id) else {
+            return Mat4::IDENTITY;
+        };
+        let local = prop_local_matrix(prop);
+        let world = if prop.local && depth < 4 {
+            match prop
+                .parent
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                Some(_) if stack.iter().any(|seen| seen == id) => local,
+                Some(parent) => {
+                    stack.push(id.to_string());
+                    let parent_m = self.prop_world_mat(parent, depth + 1, stack, memo);
+                    stack.pop();
+                    parent_m * local
+                }
+                None => local,
+            }
+        } else {
+            local
+        };
+        memo.insert(id.to_string(), world);
+        world
+    }
+
     /// One-frame draw list. Heightfield + glTF/box/sphere/capsule + sprite/quad.
     /// Empty lights get default key+fill (max 4 slots). Capsules/props get a
     /// ground contact blob. Does not mutate this document. GPU upload uses `compile_meshes`.
@@ -570,28 +652,28 @@ impl WorldDoc {
         }
 
         let lod_r = self.vegetation_lod_radius();
+        let worlds = self.prop_world_mats();
         for prop in &self.props {
             if !prop.enabled {
                 continue;
             }
-            let pos = Vec3::from_array(prop.position);
+            let model = worlds.get(&prop.id).copied().unwrap_or(Mat4::IDENTITY);
+            let pos = model.transform_point3(Vec3::ZERO);
             let scale = Vec3::from_array(prop.scale);
             let mat = material_for_prop(prop);
             let veg = is_vegetation_prop(prop);
             let cheap = veg && camera.eye.distance(pos) > lod_r;
             if cheap {
                 let h = scale.y.abs().max(scale.x.abs()).max(0.4);
-                let model = Mat4::from_scale_rotation_translation(
+                let billboard = Mat4::from_scale_rotation_translation(
                     Vec3::new(h * 0.7, h, 1.0),
                     Quat::from_rotation_y(billboard_yaw(camera.eye, pos)),
                     pos,
                 );
-                b.push_material(MESH_QUAD, model, color_u8(prop.color), mat);
+                b.push_material(MESH_QUAD, billboard, color_u8(prop.color), mat);
                 continue;
             }
             let mesh = mesh_for_prop(prop, &gltf_ids, &tex_ids);
-            let model =
-                Mat4::from_scale_rotation_translation(scale, Quat::from_rotation_y(prop.yaw), pos);
             let col = if prop
                 .texture
                 .as_deref()
@@ -846,6 +928,14 @@ impl WorldDoc {
             {
                 continue;
             }
+            if prop.local
+                || prop.model.eq_ignore_ascii_case("torus")
+                || prop.model.eq_ignore_ascii_case("ring")
+                || prop.name.eq_ignore_ascii_case("cloud")
+                || prop.name.eq_ignore_ascii_case("ring")
+            {
+                continue;
+            }
             let pos = Vec3::from_array(prop.position);
             let sx = prop.scale[0].abs().max(0.2);
             let sz = prop.scale[2].abs().max(0.2);
@@ -904,6 +994,7 @@ impl WorldDoc {
         out.push((MESH_HEIGHTFIELD, self.heightfield_mesh()));
         let cone_segs = self.vegetation_lod_cells();
         out.push((MESH_CONE, primitives::cone_mesh(0.5, 1.0, cone_segs)));
+        out.push((MESH_TORUS, primitives::torus_mesh(0.5, 0.07, 20, 8)));
         for (i, slot) in self.gltf_slots().into_iter().enumerate() {
             let mesh = match &slot {
                 GltfSlot::Rest(spec) => gltf_mesh_for(spec),
@@ -1474,6 +1565,7 @@ fn mesh_for_prop(
         "cylinder" | "capsule" => MESH_CAPSULE,
         "plane" | "water" => MESH_PLANE,
         "sprite" | "quad" => MESH_QUAD,
+        "torus" | "ring" => MESH_TORUS,
         _ => MESH_BOX,
     }
 }
@@ -1899,6 +1991,83 @@ mod tests {
         let json = doc.to_json().unwrap();
         assert!(!json.contains("mesh_id"), "GPU mesh ids must not dump");
         assert!(!json.contains("batches"));
+    }
+
+    fn instance_pos(m: Mat4) -> Vec3 {
+        m.transform_point3(Vec3::ZERO)
+    }
+
+    #[test]
+    fn pitch_and_local_parent_compose_without_moving_world_coins() {
+        let crest = WorldDoc::from_json(CREST_ISLE_DUMP).unwrap();
+        let scene = crest.compile_scene(1.0);
+        let coin = crest.props.iter().find(|p| p.name == "coin").unwrap();
+        assert!(!coin.local, "existing parent links stay world-space");
+        assert!(
+            scene
+                .batches
+                .iter()
+                .flat_map(|b| b.instances.iter())
+                .any(|i| {
+                    instance_pos(i.model).distance(Vec3::from_array(coin.position)) < 0.05
+                }),
+            "coin parent must not offset a world-space position"
+        );
+
+        let doc = WorldDoc::from_json(
+            r#"{
+                "version": 1,
+                "ground": false,
+                "props": [
+                    {"id":"root","type":"prop","name":"root","position":[0,10,0],
+                     "pitch":1.5707963,"model":"box","enabled":false},
+                    {"id":"nose","type":"prop","name":"nose","parent":"root","local":true,
+                     "position":[0,0,2],"model":"box","scale":[1,1,1]},
+                    {"id":"tip","type":"prop","name":"tip","parent":"nose","local":true,
+                     "position":[0,0,1],"model":"box","scale":[0.1,0.1,0.1]},
+                    {"id":"gate","type":"prop","name":"ring","model":"ring",
+                     "position":[4,10,0],"scale":[6,6,6]}
+                ]
+            }"#,
+        )
+        .unwrap();
+        assert!((doc.props[0].pitch - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+        let again = WorldDoc::from_json(&doc.to_json().unwrap()).unwrap();
+        assert!((again.props[0].pitch - doc.props[0].pitch).abs() < 1e-5);
+        assert!(again.props[1].local);
+        let worlds = doc.prop_world_mats();
+        let nose = instance_pos(worlds["nose"]);
+        assert!(
+            nose.distance(Vec3::new(0.0, 12.0, 0.0)) < 0.08,
+            "nose-up parent should lift a +Z child, got {nose:?}"
+        );
+        let tip = instance_pos(worlds["tip"]);
+        assert!(
+            tip.distance(Vec3::new(0.0, 13.0, 0.0)) < 0.12,
+            "second local link should keep climbing, got {tip:?}"
+        );
+        let scene = doc.compile_scene(1.0);
+        assert!(
+            scene.batches.iter().any(|b| b.mesh == MESH_TORUS),
+            "model ring compiles to the torus slot"
+        );
+        assert!(
+            !scene.batches.iter().any(|b| {
+                b.mesh == MESH_BOX
+                    && instance_pos(b.instances[0].model).distance(Vec3::new(0.0, 10.0, 0.0)) < 0.2
+            }),
+            "disabled root hinge is not drawn"
+        );
+        let ids: Vec<u32> = {
+            let mut v: Vec<u32> = doc.compile_meshes().iter().map(|(id, _)| id.0).collect();
+            v.sort_unstable();
+            v
+        };
+        assert!(
+            ids.windows(2).all(|w| w[1] == w[0] + 1),
+            "compile mesh ids must stay dense, got {ids:?}"
+        );
+        assert_eq!(*ids.last().unwrap(), MESH_TORUS.0);
     }
 
     #[test]

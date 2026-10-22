@@ -1,0 +1,28 @@
+{
+  "name": "flight_smoke",
+  "notes": "Python flight over island_height. Free WorldDoc (no genre). Straight script passes 3 rings. pixels: sky band is blue, the frame is not a flat color.",
+  "script": "examples/flight_minimal.py",
+  "env": {"KAGRA_FLIGHT_HEADLESS": "1"},
+  "timeout_sec": 180,
+  "expect_files": ["scratch/flight.png", "scratch/flight_world.json"],
+  "min_file_bytes": 200,
+  "expect_world": {
+    "path": "scratch/flight_world.json",
+    "query": [
+      {"type": "prop", "name": "fuselage", "count": 1},
+      {"type": "prop", "name": "wing", "count": 1},
+      {"type": "prop", "name": "ring", "min_count": 3}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "scratch/flight_world.json",
+    "out": "scratch/flight_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200,
+    "pixels": [
+      {"x": 40, "y": 4, "w": 240, "h": 24, "mean_min": [40, 70, 100]},
+      {"x": 30, "y": 36, "w": 260, "h": 110, "not_solid": true}
+    ]
+  }
+}

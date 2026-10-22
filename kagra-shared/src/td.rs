@@ -319,6 +319,9 @@ fn try_place(doc: &mut WorldDoc, game: &mut TdGame) {
         restitution: 0.0,
         texture: None,
         uv_scale: None,
+        pitch: 0.0,
+        roll: 0.0,
+        local: false,
     });
     game.coins = game.coins.saturating_sub(COST);
     doc.coins = game.coins;

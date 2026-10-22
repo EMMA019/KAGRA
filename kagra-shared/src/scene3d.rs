@@ -821,6 +821,47 @@ pub mod primitives {
         }
         mesh
     }
+
+    /// Ring in the XY plane (hole along +Z) so a `yaw` of 0 faces a +Z flight path.
+    /// Major radius 0.5, minor radius given. Origin is the ring center.
+    pub fn torus_mesh(major: f32, minor: f32, major_seg: u32, minor_seg: u32) -> MeshData {
+        let major_seg = major_seg.max(8);
+        let minor_seg = minor_seg.max(6);
+        let mut mesh = MeshData::default();
+        for i in 0..major_seg {
+            let u0 = i as f32 / major_seg as f32 * std::f32::consts::TAU;
+            let u1 = (i + 1) as f32 / major_seg as f32 * std::f32::consts::TAU;
+            for j in 0..minor_seg {
+                let v0 = j as f32 / minor_seg as f32 * std::f32::consts::TAU;
+                let v1 = (j + 1) as f32 / minor_seg as f32 * std::f32::consts::TAU;
+                let ring = |u: f32, v: f32| -> (Vec3, Vec3) {
+                    let (su, cu) = u.sin_cos();
+                    let (sv, cv) = v.sin_cos();
+                    let n = Vec3::new(cu * cv, su * cv, sv);
+                    let pos = Vec3::new(major * cu, major * su, 0.0) + n * minor;
+                    (pos, n)
+                };
+                let (p00, n00) = ring(u0, v0);
+                let (p10, n10) = ring(u1, v0);
+                let (p11, n11) = ring(u1, v1);
+                let (p01, n01) = ring(u0, v1);
+                let base = mesh.vertices.len() as u32;
+                mesh.vertices.push(Vertex3::new(p00, n00));
+                mesh.vertices.push(Vertex3::new(p10, n10));
+                mesh.vertices.push(Vertex3::new(p11, n11));
+                mesh.vertices.push(Vertex3::new(p01, n01));
+                mesh.indices.extend_from_slice(&[
+                    base,
+                    base + 1,
+                    base + 2,
+                    base,
+                    base + 2,
+                    base + 3,
+                ]);
+            }
+        }
+        mesh
+    }
 }
 
 #[cfg(test)]
