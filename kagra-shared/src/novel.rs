@@ -1,15 +1,15 @@
 //! Novel pages + a 2-way choice + dump flag on play_world.
 //!
-//! Sibling of RPG talk. Overlay text pages (Space / click advance), then one
-//! 2-way choice writes a dump-visible flag. Title -> play -> result reuses
-//! `WorldPlay` / `GamePhase`. Capsule in a room (not VRM). Indoor lights stay
-//! 4 slots. Text is overlay HUD state, not screenshot-only. Does not rewrite
-//! `rpg.rs` or other genre loops. No portraits, inventory, branching save
-//! editor, or net.
+//! Sibling of RPG talk. Overlay text pages (Space / click / tap advance), then
+//! one 2-way choice writes a dump-visible flag. Title -> play -> result reuses
+//! `WorldPlay` / `GamePhase`. The lines (name, body, choices) live here so a
+//! host without Python (Android) can draw the same story. Glyphs go through
+//! `font.rs` (Public Sans, PixelMplus fallback). Indoor lights stay 4 slots.
+//! Does not rewrite `rpg.rs`. No portraits atlas, inventory, script editor, or net.
 
 use crate::collectathon::WalkInput;
 use crate::game::GamePhase;
-use crate::scene::{DrawList, Quad};
+use crate::scene::{DrawList, Quad, TextAlign, TextQuad};
 use crate::world_doc::{WorldDoc, WorldWalker};
 
 pub const GAME_ID: &str = "novel_pages";
@@ -25,6 +25,18 @@ const SEAT_YAW: f32 = -std::f32::consts::FRAC_PI_2;
 const FLAG_STAY_COLOR: [u32; 3] = [240, 196, 72];
 const FLAG_LEAVE_COLOR: [u32; 3] = [90, 140, 220];
 
+/// Speaker name. Katakana so the name plate stays inside PixelMplus.
+const SPEAKER: &str = "ユキ";
+const TITLE: &str = "雨の駅";
+const TITLE_HINT: &str = "タップではじめる";
+const PAGES: [&str; STORY_PAGES as usize] =
+    ["雨の駅で、傘を閉じた。", "終電はもう出た。残るか、歩くか。"];
+const CHOICE_PROMPT: &str = "どうする?";
+const CHOICE_LABELS: [&str; 2] = ["残る", "歩く"];
+const END_STAY: &str = "朝まで、駅の明かりを数えた。";
+const END_LEAVE: &str = "傘を開いて、夜の道へ出た。";
+const ADVANCE_HINT: &str = "タップで進む";
+
 /// Live novel around a dump. Page / choice stay here; `name` page/choice/stay/leave
 /// + flag enable in the dump are the query source of truth.
 #[derive(Clone, Debug)]
@@ -35,6 +47,10 @@ pub struct NovelGame {
     pub flag: Option<String>,
     held: bool,
     repeat_t: f32,
+    /// One-shot advance from a tap (`pointer`). Consumed by `tick`.
+    pointer: bool,
+    /// Choice index chosen by a tap on a button. Applied after stick `lx`.
+    pointer_choice: Option<u32>,
 }
 
 impl Default for NovelGame {
@@ -46,6 +62,8 @@ impl Default for NovelGame {
             flag: None,
             held: false,
             repeat_t: 0.0,
+            pointer: false,
+            pointer_choice: None,
         }
     }
 }
@@ -58,6 +76,48 @@ impl NovelGame {
     pub fn has_flag(&self, name: &str) -> bool {
         self.flag.as_deref() == Some(name)
     }
+}
+
+pub fn speaker() -> &'static str {
+    SPEAKER
+}
+
+pub fn body(game: &NovelGame) -> &'static str {
+    if game.done {
+        if game.choice == 0 {
+            END_STAY
+        } else {
+            END_LEAVE
+        }
+    } else if game.page >= CHOICE_PAGE {
+        CHOICE_PROMPT
+    } else {
+        PAGES[game.page as usize]
+    }
+}
+
+pub fn choice_label(index: u32) -> &'static str {
+    CHOICE_LABELS.get(index as usize).copied().unwrap_or("")
+}
+
+/// Tap / click. Text pages advance anywhere. The choice page only the buttons.
+/// Title and result are the host's `confirm` (see `NovelSession::pointer`).
+pub fn pointer(game: &mut NovelGame, x: f32, y: f32, width: u32, height: u32) {
+    if game.done {
+        return;
+    }
+    let (w, h, scale) = ui_scale(width, height);
+    if game.page >= CHOICE_PAGE {
+        for (i, rect) in choice_buttons(w, h, scale).iter().enumerate() {
+            if rect.contains(x, y) {
+                game.pointer_choice = Some(i as u32);
+                game.pointer = true;
+                return;
+            }
+        }
+        return;
+    }
+    game.pointer = true;
 }
 
 pub fn is_novel(doc: &WorldDoc) -> bool {
@@ -153,8 +213,19 @@ pub fn tick(doc: &mut WorldDoc, game: &mut NovelGame, input: WalkInput, dt: f32)
     } else if input.lx > 0.2 {
         game.choice = 1;
     }
-    let press = input.jump || input.attack;
-    if press {
+    if let Some(picked) = game.pointer_choice.take() {
+        game.choice = picked;
+    }
+    // A tap is its own edge. Key hold still repeats. Calling `pointer` then
+    // `tick` twice must advance two pages (touch does not send a release).
+    let tap = game.pointer;
+    game.pointer = false;
+    let key = input.jump || input.attack;
+    if tap {
+        advance(doc, game);
+        game.held = true;
+        game.repeat_t = REPEAT_S;
+    } else if key {
         if !game.held {
             advance(doc, game);
             game.held = true;
@@ -226,18 +297,29 @@ fn write_beat(doc: &mut WorldDoc, game: &NovelGame) {
     };
 }
 
+/// The capsule reader sits in the room. A separate `character` walker is the
+/// portrait, so the capsule steps off camera and does not cover them.
+fn seat_for(doc: &WorldDoc) -> [f32; 3] {
+    if doc.walkers.iter().any(|w| w.name == "character") {
+        [8.0, 0.95, 8.0]
+    } else {
+        SEAT
+    }
+}
+
 fn sit_player(doc: &mut WorldDoc, name: &str) {
     let id = player_ref(doc)
         .map(|w| w.id.clone())
         .unwrap_or_else(|| "walker:player".into());
-    let y = doc.height_at(SEAT[0], SEAT[2]) + BODY_H;
+    let seat = seat_for(doc);
+    let y = doc.height_at(seat[0], seat[2]) + BODY_H;
     write_player(
         doc,
         WorldWalker {
             id,
             kind: "walker".into(),
             name: name.into(),
-            position: [SEAT[0], y, SEAT[2]],
+            position: [seat[0], y, seat[2]],
             yaw: SEAT_YAW,
             face: SEAT_YAW,
             on_ground: true,
@@ -246,11 +328,54 @@ fn sit_player(doc: &mut WorldDoc, name: &str) {
     );
 }
 
-pub fn build_hud(game: &NovelGame, phase: GamePhase, width: u32, height: u32) -> DrawList {
+struct ScreenRect {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
+impl ScreenRect {
+    fn contains(&self, px: f32, py: f32) -> bool {
+        px >= self.x && px <= self.x + self.w && py >= self.y && py <= self.y + self.h
+    }
+}
+
+fn ui_scale(width: u32, height: u32) -> (f32, f32, f32) {
     let w = width.max(1) as f32;
     let h = height.max(1) as f32;
     let scale = (w.min(h) / 720.0).clamp(0.5, 2.0);
+    (w, h, scale)
+}
+
+fn choice_buttons(w: f32, h: f32, scale: f32) -> [ScreenRect; 2] {
+    let bh = 48.0 * scale;
+    [
+        ScreenRect {
+            x: w * 0.16,
+            y: h * 0.68,
+            w: w * 0.30,
+            h: bh,
+        },
+        ScreenRect {
+            x: w * 0.54,
+            y: h * 0.68,
+            w: w * 0.30,
+            h: bh,
+        },
+    ]
+}
+
+fn text_line(text: &str, x: f32, y: f32, size: f32, color: [u8; 4], align: TextAlign) -> TextQuad {
+    TextQuad::new(text, x, y, size, color).aligned(align)
+}
+
+pub fn build_hud(game: &NovelGame, phase: GamePhase, width: u32, height: u32) -> DrawList {
+    let (w, h, scale) = ui_scale(width, height);
     let mut quads = Vec::new();
+    let mut texts = Vec::new();
+    let ink = [236, 228, 220, 255];
+    let name_ink = [36, 22, 18, 255];
     match phase {
         GamePhase::Title => {
             quads.push(Quad::new(0.0, 0.0, w, h, [18, 12, 16, 160]));
@@ -267,6 +392,22 @@ pub fn build_hud(game: &NovelGame, phase: GamePhase, width: u32, height: u32) ->
                 w * 0.36,
                 52.0 * scale,
                 [240, 196, 72, 255],
+            ));
+            texts.push(text_line(
+                TITLE,
+                w * 0.5,
+                h * 0.32,
+                28.0 * scale,
+                ink,
+                TextAlign::Center,
+            ));
+            texts.push(text_line(
+                TITLE_HINT,
+                w * 0.5,
+                h * 0.60,
+                16.0 * scale,
+                name_ink,
+                TextAlign::Center,
             ));
         }
         GamePhase::Playing => {
@@ -287,6 +428,22 @@ pub fn build_hud(game: &NovelGame, phase: GamePhase, width: u32, height: u32) ->
                     },
                 ));
             }
+            let name_y = h * 0.62 - 34.0 * scale;
+            quads.push(Quad::new(
+                w * 0.10,
+                name_y - 4.0 * scale,
+                92.0 * scale,
+                28.0 * scale,
+                [240, 196, 72, 240],
+            ));
+            texts.push(text_line(
+                SPEAKER,
+                w * 0.10 + 12.0 * scale,
+                name_y,
+                16.0 * scale,
+                name_ink,
+                TextAlign::Left,
+            ));
             if game.page < CHOICE_PAGE {
                 quads.push(Quad::new(
                     w * 0.10,
@@ -295,16 +452,22 @@ pub fn build_hud(game: &NovelGame, phase: GamePhase, width: u32, height: u32) ->
                     h * 0.28,
                     [18, 14, 20, 230],
                 ));
-                let lines = (game.page + 1).min(2);
-                for i in 0..lines {
-                    quads.push(Quad::new(
-                        w * 0.14,
-                        h * 0.68 + i as f32 * 22.0 * scale,
-                        w * (0.52 - i as f32 * 0.10),
-                        14.0 * scale,
-                        [230, 214, 220, 255],
-                    ));
-                }
+                texts.push(text_line(
+                    body(game),
+                    w * 0.14,
+                    h * 0.70,
+                    18.0 * scale,
+                    ink,
+                    TextAlign::Left,
+                ));
+                texts.push(text_line(
+                    ADVANCE_HINT,
+                    w * 0.86,
+                    h * 0.84,
+                    12.0 * scale,
+                    [190, 170, 160, 255],
+                    TextAlign::Right,
+                ));
             } else {
                 quads.push(Quad::new(
                     w * 0.10,
@@ -313,29 +476,43 @@ pub fn build_hud(game: &NovelGame, phase: GamePhase, width: u32, height: u32) ->
                     h * 0.32,
                     [18, 14, 20, 230],
                 ));
-                let left_on = game.choice == 0;
-                quads.push(Quad::new(
-                    w * 0.16,
-                    h * 0.68,
-                    w * 0.30,
-                    48.0 * scale,
-                    if left_on {
-                        [240, 196, 72, 255]
-                    } else {
-                        [70, 50, 48, 200]
-                    },
+                texts.push(text_line(
+                    body(game),
+                    w * 0.14,
+                    h * 0.60,
+                    16.0 * scale,
+                    ink,
+                    TextAlign::Left,
                 ));
-                quads.push(Quad::new(
-                    w * 0.54,
-                    h * 0.68,
-                    w * 0.30,
-                    48.0 * scale,
-                    if !left_on {
-                        [90, 140, 220, 255]
-                    } else {
-                        [48, 50, 70, 200]
-                    },
-                ));
+                let buttons = choice_buttons(w, h, scale);
+                for (i, rect) in buttons.iter().enumerate() {
+                    let on = game.choice == i as u32;
+                    quads.push(Quad::new(
+                        rect.x,
+                        rect.y,
+                        rect.w,
+                        rect.h,
+                        if on {
+                            if i == 0 {
+                                [240, 196, 72, 255]
+                            } else {
+                                [90, 140, 220, 255]
+                            }
+                        } else if i == 0 {
+                            [70, 50, 48, 200]
+                        } else {
+                            [48, 50, 70, 200]
+                        },
+                    ));
+                    texts.push(text_line(
+                        CHOICE_LABELS[i],
+                        rect.x + rect.w * 0.5,
+                        rect.y + 10.0 * scale,
+                        18.0 * scale,
+                        if on { name_ink } else { ink },
+                        TextAlign::Center,
+                    ));
+                }
             }
             if game.has_flag(FLAG_STAY) || game.has_flag(FLAG_LEAVE) {
                 quads.push(Quad::new(
@@ -375,13 +552,69 @@ pub fn build_hud(game: &NovelGame, phase: GamePhase, width: u32, height: u32) ->
                     [90, 140, 220, 240]
                 },
             ));
+            texts.push(text_line(
+                SPEAKER,
+                w * 0.5,
+                h * 0.28,
+                16.0 * scale,
+                [240, 210, 160, 255],
+                TextAlign::Center,
+            ));
+            texts.push(text_line(
+                body(game),
+                w * 0.5,
+                h * 0.36,
+                20.0 * scale,
+                ink,
+                TextAlign::Center,
+            ));
         }
     }
     DrawList {
         clear: [42, 32, 36, 255],
         quads,
+        texts,
         ..Default::default()
     }
+}
+
+/// HUD JSON for `draw_world(..., hud=)`. Same quads and Japanese lines as `build_hud`.
+pub fn hud_json(game: &NovelGame, phase: GamePhase, width: u32, height: u32) -> String {
+    let hud = build_hud(game, phase, width, height);
+    let quads: Vec<_> = hud
+        .quads
+        .iter()
+        .map(|q| {
+            serde_json::json!({
+                "x": q.x,
+                "y": q.y,
+                "w": q.w,
+                "h": q.h,
+                "color": q.color,
+            })
+        })
+        .collect();
+    let texts: Vec<_> = hud
+        .texts
+        .iter()
+        .map(|t| {
+            let align = match t.align {
+                TextAlign::Left => "left",
+                TextAlign::Center => "center",
+                TextAlign::Right => "right",
+            };
+            serde_json::json!({
+                "text": t.text,
+                "x": t.x,
+                "y": t.y,
+                "size": t.size,
+                "color": t.color,
+                "align": align,
+            })
+        })
+        .collect();
+    serde_json::to_string(&serde_json::json!({ "quads": quads, "texts": texts }))
+        .unwrap_or_else(|_| "{}".to_string())
 }
 
 #[cfg(test)]
@@ -555,5 +788,101 @@ mod tests {
         let crest = WorldPlay::from_json(CREST).unwrap();
         assert!(crest.is_collectathon());
         assert!(!crest.is_novel());
+    }
+
+    #[test]
+    fn japanese_lines_rasterize_without_missing_glyph_boxes() {
+        use crate::font::TextRaster;
+        use crate::scene::TextQuad;
+
+        let mut play = play_started();
+        let mut lines = Vec::new();
+        lines.extend(hud_lines(&play.build_hud(960, 540)));
+        tap_advance(&mut play);
+        lines.extend(hud_lines(&play.build_hud(960, 540)));
+        tap_advance(&mut play);
+        lines.extend(hud_lines(&play.build_hud(960, 540)));
+        let joined = lines.join("");
+        assert!(joined.contains(super::SPEAKER), "name plate");
+        assert!(joined.contains("雨"), "page one");
+        assert!(
+            joined.contains("残る") && joined.contains("歩く"),
+            "choices"
+        );
+        let mut raster = TextRaster::new();
+        for ch in joined.chars() {
+            if ch.is_whitespace() {
+                continue;
+            }
+            let qs = raster.text_quads(&TextQuad::new(
+                &ch.to_string(),
+                0.0,
+                0.0,
+                16.0,
+                [255, 255, 255, 255],
+            ));
+            assert!(
+                !qs.is_empty(),
+                "glyph {ch} (U+{:04X}) did not rasterize",
+                ch as u32
+            );
+            assert!(
+                !hollow_box(&qs),
+                "glyph {ch} (U+{:04X}) looks like a missing-glyph box",
+                ch as u32
+            );
+        }
+    }
+
+    #[test]
+    fn tap_advances_and_picks_a_choice() {
+        let mut play = play_started();
+        pointer(&mut play.novel, 40.0, 40.0, 960, 540);
+        play.tick(1.0 / 60.0);
+        assert_eq!(play.novel.page, 1, "tap advances a page");
+        pointer(&mut play.novel, 40.0, 40.0, 960, 540);
+        play.tick(1.0 / 60.0);
+        assert_eq!(play.novel.page, CHOICE_PAGE);
+        // A tap outside the buttons must not confirm.
+        pointer(&mut play.novel, 8.0, 8.0, 960, 540);
+        play.tick(1.0 / 60.0);
+        assert!(!play.novel.done);
+        let (w, h, scale) = super::ui_scale(960, 540);
+        let buttons = super::choice_buttons(w, h, scale);
+        let stay = &buttons[0];
+        pointer(
+            &mut play.novel,
+            stay.x + stay.w * 0.5,
+            stay.y + stay.h * 0.5,
+            960,
+            540,
+        );
+        play.tick(1.0 / 60.0);
+        assert!(play.novel.has_flag(FLAG_STAY));
+        assert_eq!(play.game.phase, GamePhase::Complete);
+        let hud = hud_json(&play.novel, play.game.phase, 960, 540);
+        assert!(hud.contains(super::END_STAY));
+    }
+
+    fn hud_lines(hud: &crate::scene::DrawList) -> Vec<String> {
+        hud.texts.iter().map(|t| t.text.clone()).collect()
+    }
+
+    fn hollow_box(qs: &[crate::scene::Quad]) -> bool {
+        if qs.len() < 8 {
+            return false;
+        }
+        let min_x = qs.iter().map(|q| q.x).fold(f32::MAX, f32::min);
+        let max_x = qs.iter().map(|q| q.x).fold(f32::MIN, f32::max);
+        let min_y = qs.iter().map(|q| q.y).fold(f32::MAX, f32::min);
+        let max_y = qs.iter().map(|q| q.y).fold(f32::MIN, f32::max);
+        if max_x - min_x < 4.0 || max_y - min_y < 4.0 {
+            return false;
+        }
+        qs.iter().all(|q| {
+            let on_x = (q.x - min_x).abs() < 0.5 || (q.x - max_x).abs() < 0.5;
+            let on_y = (q.y - min_y).abs() < 0.5 || (q.y - max_y).abs() < 0.5;
+            on_x || on_y
+        })
     }
 }
