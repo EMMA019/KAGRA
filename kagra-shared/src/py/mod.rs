@@ -19,7 +19,7 @@ mod physics;
 use pyo3::prelude::*;
 
 use measure::measure_text_py;
-use puzzle::PyPuzzlePadSession;
+use puzzle::{PyPuzzlePadSession, PyPuzzleSession};
 use render::render_world_doc_py;
 use world_doc::PyWorldDoc;
 use world_play::PyWorldPlay;
@@ -32,6 +32,7 @@ fn kagra_shared(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyWorldDoc>()?;
     m.add_class::<PyWorldPlay>()?;
     m.add_class::<PyPuzzlePadSession>()?;
+    m.add_class::<PyPuzzleSession>()?;
     m.add_function(wrap_pyfunction!(render_world_doc_py, m)?)?;
     m.add_function(wrap_pyfunction!(measure_text_py, m)?)?;
     #[cfg(feature = "physics")]

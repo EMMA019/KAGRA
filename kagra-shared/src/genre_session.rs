@@ -11,6 +11,8 @@ use crate::puzzle;
 use crate::world_doc::WorldEvent;
 use crate::world_play::WorldPlay;
 
+pub use crate::puzzle_board::PuzzleSession;
+
 /// Session errors (JSON parse, wrong `WorldDoc.genre`, serialize).
 pub type GenreSessionError = String;
 
@@ -113,6 +115,58 @@ impl GenreSession for PuzzlePadSession {
     }
 }
 
+/// Slide / lights-out grid / match. Not [`PuzzlePadSession`] (crate push).
+impl GenreSession for PuzzleSession {
+    fn genre_id(&self) -> &'static str {
+        crate::puzzle_board::GAME_ID
+    }
+
+    fn from_json(json: &str) -> Result<Self, GenreSessionError> {
+        PuzzleSession::open(json)
+    }
+
+    fn set_input(&mut self, input: WalkInput) {
+        self.apply_input(input);
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.step(dt);
+    }
+
+    fn dump(&self) -> Result<String, GenreSessionError> {
+        self.world_json()
+    }
+
+    fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        self.drain_events(name)
+    }
+
+    fn confirm(&mut self) {
+        self.confirm_action();
+    }
+
+    fn emit_event(
+        &mut self,
+        name: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), GenreSessionError> {
+        self.record_event(name, data);
+        Ok(())
+    }
+
+    fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        self.begin_timer(name, seconds, on_done)
+    }
+
+    fn step_interact(&mut self) {
+        self.use_nearby();
+    }
+
+    fn phase(&self) -> GamePhase {
+        self.current_phase()
+    }
+}
+
 impl PuzzlePadSession {
     pub fn pushing(&self) -> bool {
         self.inner.puzzle.pushing
@@ -169,6 +223,32 @@ mod tests {
     fn wrong_genre_rejected() {
         let crest = include_str!("../tests/fixtures/crest_isle_world.json");
         let err = PuzzlePadSession::from_json(crest).unwrap_err();
+        assert!(err.contains("puzzle_pad"));
+    }
+
+    #[test]
+    fn puzzle_session_clears_slide_grid_and_match() {
+        let mut s = PuzzleSession::from_json(r#"{"version":1,"genre":"puzzle"}"#).expect("open");
+        assert_eq!(s.genre_id(), "puzzle");
+        assert_eq!(s.phase(), GamePhase::Title);
+        s.confirm();
+        assert_eq!(s.phase(), GamePhase::Playing);
+        for _ in 0..16 {
+            if s.phase() == GamePhase::Complete {
+                break;
+            }
+            if s.solved() {
+                s.confirm();
+            } else {
+                assert!(s.play_demo_move(), "level {}", s.level());
+            }
+        }
+        assert!(s.won());
+        assert_eq!(s.phase(), GamePhase::Complete);
+        let dump = s.dump().expect("dump");
+        assert!(dump.contains("solved"));
+        assert!(s.take_events("win").len() == 1);
+        let err = PuzzlePadSession::from_json(r#"{"version":1,"genre":"puzzle"}"#).unwrap_err();
         assert!(err.contains("puzzle_pad"));
     }
 }

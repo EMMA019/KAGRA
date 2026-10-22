@@ -166,6 +166,7 @@ FRONT_NAMES = {
     "KairiBrain",
     "OpenAIBrain",
     "PuzzlePadSession",
+    "PuzzleSession",
     "Scene",
     "SlotStore",
     "WorldDoc",
