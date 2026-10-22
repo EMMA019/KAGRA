@@ -75,8 +75,9 @@ android {
 
     sourceSets {
         getByName("main") {
-            java.srcDir("../app/src/main/java")
-            java.exclude("dev/kagra/shell/MainActivity.kt")
+            // This file imports java.util, so `java` is that package, not the source set.
+            getJava().srcDir("../app/src/main/java")
+            getJava().exclude("**/MainActivity.kt")
             jniLibs.srcDir("../app/src/main/jniLibs")
         }
     }

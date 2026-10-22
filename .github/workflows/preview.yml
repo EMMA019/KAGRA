@@ -49,7 +49,7 @@ jobs:
         run: cargo install wasm-bindgen-cli --version 0.2.127
 
       - name: Build wasm
-        run: ./scripts/build_wasm.sh
+        run: bash scripts/build_wasm.sh
 
       - name: Stage the browser preview
         run: python scripts/build_browser_preview.py --out dist/preview --require-pkg

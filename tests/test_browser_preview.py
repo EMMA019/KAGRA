@@ -126,3 +126,6 @@ def test_dev_shell_is_a_separate_debug_app():
     assert jni.is_file()
     settings = (ROOT / "mobile/android/settings.gradle.kts").read_text(encoding="utf-8")
     assert 'include(":dev")' in settings
+    assert "getJava().exclude" in gradle
+    preview_yml = (ROOT / ".github/workflows/preview.yml").read_text(encoding="utf-8")
+    assert "bash scripts/build_wasm.sh" in preview_yml
