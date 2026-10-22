@@ -67,6 +67,27 @@ int kagra_shared_set_save_root(const char *path);
 /* BGM ゲインと効果音名の JSON。ヘッドレスでは再生せずキューだけ返す。 */
 int kagra_shared_take_audio_cues(char *buf, unsigned buflen);
 
+/* Debug / preview 「直してここ」. Release shells leave enabled at 0. */
+int kagra_shared_set_playtest_enabled(SharedSession *ptr, int on);
+int kagra_shared_set_playtest_external_chrome(SharedSession *ptr, int on);
+int kagra_shared_set_playtest_device(SharedSession *ptr, const char *label, const char *lang);
+int kagra_shared_playtest_pointer(
+    SharedSession *ptr,
+    unsigned id,
+    float x,
+    float y,
+    unsigned phase,
+    float pressure
+);
+int kagra_shared_push_key(SharedSession *ptr, const char *name, int down);
+int kagra_shared_playtest_set_note(SharedSession *ptr, const char *note);
+int kagra_shared_playtest_set_shot_path(SharedSession *ptr, const char *path);
+int kagra_shared_playtest_push_text(SharedSession *ptr, const char *text);
+int kagra_shared_playtest_action(SharedSession *ptr, const char *action);
+int kagra_shared_playtest_blocks_input(SharedSession *ptr);
+int kagra_shared_playtest_state_json(SharedSession *ptr, char *buf, unsigned buflen);
+int kagra_shared_playtest_packet_json(SharedSession *ptr, char *buf, unsigned buflen);
+
 /* 描画。"render" feature 無しでビルドされた lib では -1 を返し、
  * kagra_shared_last_error() に理由が入る。 */
 int kagra_shared_attach_android_surface(

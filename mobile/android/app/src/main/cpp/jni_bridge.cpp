@@ -349,3 +349,164 @@ Java_dev_kagra_shell_KagraNative_render(JNIEnv *, jobject) {
   return JNI_FALSE;
 #endif
 }
+
+// ── 「直してここ」 ──────────────────────────────────────────
+
+#if KAGRA_HAS_SHARED
+static jstring playtest_json(JNIEnv *env, int (*fn)(SharedSession *, char *, unsigned)) {
+  if (!g_session) return env->NewStringUTF("{}");
+  int need = fn(g_session, nullptr, 0);
+  if (need <= 1) return env->NewStringUTF("{}");
+  std::vector<char> buf((size_t)need);
+  fn(g_session, buf.data(), (unsigned)buf.size());
+  return env->NewStringUTF(buf.data());
+}
+#endif
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_setPlaytestEnabled(JNIEnv *, jobject, jboolean on) {
+#if KAGRA_HAS_SHARED
+  return g_session && kagra_shared_set_playtest_enabled(g_session, on ? 1 : 0) == 0;
+#else
+  (void)on;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_setPlaytestExternalChrome(JNIEnv *, jobject, jboolean on) {
+#if KAGRA_HAS_SHARED
+  return g_session && kagra_shared_set_playtest_external_chrome(g_session, on ? 1 : 0) == 0;
+#else
+  (void)on;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_setPlaytestDevice(
+    JNIEnv *env, jobject, jstring label, jstring lang) {
+#if KAGRA_HAS_SHARED
+  if (!g_session) return JNI_FALSE;
+  const char *c_label = label ? env->GetStringUTFChars(label, nullptr) : nullptr;
+  const char *c_lang = lang ? env->GetStringUTFChars(lang, nullptr) : nullptr;
+  int rc = kagra_shared_set_playtest_device(g_session, c_label, c_lang);
+  if (c_label) env->ReleaseStringUTFChars(label, c_label);
+  if (c_lang) env->ReleaseStringUTFChars(lang, c_lang);
+  return rc == 0 ? JNI_TRUE : JNI_FALSE;
+#else
+  (void)env;
+  (void)label;
+  (void)lang;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_playtestPointer(
+    JNIEnv *, jobject, jint id, jfloat x, jfloat y, jint phase, jfloat pressure) {
+#if KAGRA_HAS_SHARED
+  if (!g_session) return JNI_FALSE;
+  return kagra_shared_playtest_pointer(
+             g_session, (unsigned)id, x, y, (unsigned)phase, pressure) == 1;
+#else
+  (void)id;
+  (void)x;
+  (void)y;
+  (void)phase;
+  (void)pressure;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_pushKey(JNIEnv *env, jobject, jstring name, jboolean down) {
+#if KAGRA_HAS_SHARED
+  if (!g_session || !name) return JNI_FALSE;
+  const char *c = env->GetStringUTFChars(name, nullptr);
+  if (!c) return JNI_FALSE;
+  int rc = kagra_shared_push_key(g_session, c, down ? 1 : 0);
+  env->ReleaseStringUTFChars(name, c);
+  return rc == 1 ? JNI_TRUE : JNI_FALSE;
+#else
+  (void)env;
+  (void)name;
+  (void)down;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_playtestSetNote(JNIEnv *env, jobject, jstring note) {
+#if KAGRA_HAS_SHARED
+  if (!g_session) return JNI_FALSE;
+  const char *c = note ? env->GetStringUTFChars(note, nullptr) : nullptr;
+  int rc = kagra_shared_playtest_set_note(g_session, c);
+  if (c) env->ReleaseStringUTFChars(note, c);
+  return rc == 0 ? JNI_TRUE : JNI_FALSE;
+#else
+  (void)env;
+  (void)note;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_playtestSetShotPath(JNIEnv *env, jobject, jstring path) {
+#if KAGRA_HAS_SHARED
+  if (!g_session) return JNI_FALSE;
+  const char *c = path ? env->GetStringUTFChars(path, nullptr) : nullptr;
+  int rc = kagra_shared_playtest_set_shot_path(g_session, c);
+  if (c) env->ReleaseStringUTFChars(path, c);
+  return rc == 0 ? JNI_TRUE : JNI_FALSE;
+#else
+  (void)env;
+  (void)path;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_playtestAction(JNIEnv *env, jobject, jstring action) {
+#if KAGRA_HAS_SHARED
+  if (!g_session || !action) return JNI_FALSE;
+  const char *c = env->GetStringUTFChars(action, nullptr);
+  if (!c) return JNI_FALSE;
+  int rc = kagra_shared_playtest_action(g_session, c);
+  env->ReleaseStringUTFChars(action, c);
+  return rc == 0 ? JNI_TRUE : JNI_FALSE;
+#else
+  (void)env;
+  (void)action;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_dev_kagra_shell_KagraNative_playtestBlocksInput(JNIEnv *, jobject) {
+#if KAGRA_HAS_SHARED
+  if (!g_session) return 0;
+  int rc = kagra_shared_playtest_blocks_input(g_session);
+  return rc < 0 ? 0 : rc;
+#else
+  return 0;
+#endif
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_kagra_shell_KagraNative_playtestStateJson(JNIEnv *env, jobject) {
+#if KAGRA_HAS_SHARED
+  return playtest_json(env, kagra_shared_playtest_state_json);
+#else
+  return env->NewStringUTF("{}");
+#endif
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_kagra_shell_KagraNative_playtestPacketJson(JNIEnv *env, jobject) {
+#if KAGRA_HAS_SHARED
+  return playtest_json(env, kagra_shared_playtest_packet_json);
+#else
+  return env->NewStringUTF("{}");
+#endif
+}

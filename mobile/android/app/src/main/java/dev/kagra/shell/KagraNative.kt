@@ -77,4 +77,17 @@ object KagraNative {
 
     /** 現在のシーンを 1 枚描く。[requestFrame] の後に呼ぶ。 */
     external fun render(): Boolean
+
+    /** Debug / preview 「直してここ」。Release は on=false のまま。 */
+    external fun setPlaytestEnabled(on: Boolean): Boolean
+    external fun setPlaytestExternalChrome(on: Boolean): Boolean
+    external fun setPlaytestDevice(label: String, lang: String): Boolean
+    external fun playtestPointer(id: Int, x: Float, y: Float, phase: Int, pressure: Float): Boolean
+    external fun pushKey(name: String, down: Boolean): Boolean
+    external fun playtestSetNote(note: String): Boolean
+    external fun playtestSetShotPath(path: String): Boolean
+    external fun playtestAction(action: String): Boolean
+    external fun playtestBlocksInput(): Int
+    external fun playtestStateJson(): String
+    external fun playtestPacketJson(): String
 }

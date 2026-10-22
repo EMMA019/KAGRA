@@ -969,6 +969,7 @@ version = "0.1.0"
 dependencies = [
  "ab_glyph",
  "bytemuck",
+ "flate2",
  "glam 0.33.3",
  "js-sys",
  "once_cell",

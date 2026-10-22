@@ -26,6 +26,9 @@ def bundle_root() -> Path:
 
 
 def main() -> None:
+    # Packaged play builds opt into 「直してここ」. A store build can set
+    # KAGRA_PLAYTEST=0 before launch and this will not override it.
+    os.environ.setdefault("KAGRA_PLAYTEST", "1")
     root = bundle_root()
     os.environ["KAGRA_ROOT"] = str(root)
     os.chdir(root)

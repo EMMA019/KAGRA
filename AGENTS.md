@@ -39,6 +39,12 @@ a game **without a human looking at the screen**.
    (`sky`, `ground`, `WorldProp.texture`, `uv_scale`). Verify picture
    with `expect_offscreen.pixels` (region mean / not_solid), not a
    golden PNG.
+9. **Repro a playtest issue before editing it.** 「直してここ」 files a
+   `playtest` issue (`KAGRA-PLAYTEST-1` block: dump + ~10 s of input).
+   Run `python scripts/repro_issue.py <issue number or block>` first and
+   keep the screenshot. After the fix, run it again and attach the
+   before/after screenshots. The overlay is debug / preview only
+   (3-finger long-press or F12). It does not embed a token.
 
 ## Commands
 
@@ -58,6 +64,9 @@ pytest tests -m "not golden"                                       # pure-python
 # Windows zip / Android debug APK from the same game manifest (docs/distribution.md)
 python scripts/package_windows.py --game examples/platformer_minimal.py --stage-only
 python scripts/package_android.py --game examples/platformer_minimal.py --stage-only
+# 「直してここ」: rebuild the session, replay the logged input, save a shot
+python scripts/repro_issue.py 123
+python scripts/repro_issue.py path/to/block.txt --out scratch/playtest-repro
 ```
 
 ## MCP tools (`tools/mcp_kagra/server.py`)

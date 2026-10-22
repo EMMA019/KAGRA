@@ -26,10 +26,11 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use kagra_shared::collectathon::WalkInput;
-use kagra_shared::render::Renderer;
+use kagra_shared::playtest::{self, Playtest};
+use kagra_shared::render::{self, Renderer};
 use kagra_shared::WorldPlay;
 #[cfg(not(target_arch = "wasm32"))]
-use winit::event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent};
+use winit::event::{DeviceEvent, ElementState, Event, Ime, KeyEvent, MouseButton, WindowEvent};
 #[cfg(not(target_arch = "wasm32"))]
 use winit::event_loop::{ControlFlow, EventLoop};
 #[cfg(not(target_arch = "wasm32"))]
@@ -179,12 +180,21 @@ fn main() -> Result<(), String> {
         eprintln!("walker gltf: {err}");
     }
     println!(
-        "WorldDoc window {} ({}x{})\n  Space / Enter start (title or result)\n  WASD walk | mouse or arrows look | Space jump | Esc quit\n  click the window if the mouse look is not captured",
+        "WorldDoc window {} ({}x{})\n  Space / Enter start (title or result)\n  WASD walk | mouse or arrows look | Space jump | Esc quit\n  F12 直してここ（debug / KAGRA_PLAYTEST）\n  click the window if the mouse look is not captured",
         args.dump.display(),
         width,
         height
     );
     grab_cursor(&window);
+
+    let mut playtest = Playtest::new(playtest::host_default_enabled());
+    playtest.set_viewport(width, height);
+    if playtest.enabled() {
+        if let Ok(dump) = play.doc.to_json() {
+            playtest.snapshot_dump(&dump);
+        }
+    }
+    let mut last_packet = 0u32;
 
     let start = Instant::now();
     let mut last = Instant::now();
@@ -209,7 +219,7 @@ fn main() -> Result<(), String> {
                                     logical_key,
                                     physical_key,
                                     state,
-                                    repeat: false,
+                                    repeat,
                                     ..
                                 },
                             ..
@@ -217,8 +227,19 @@ fn main() -> Result<(), String> {
                     ..
                 } => {
                     let down = state == ElementState::Pressed;
-                    if down && is_quit_key(&logical_key) {
+                    if repeat && !playtest.is_open() {
+                        return;
+                    }
+                    let name = key_name(&logical_key);
+                    if down && is_quit_key(&logical_key) && !playtest.is_open() {
                         elwt.exit();
+                        return;
+                    }
+                    if !name.is_empty() && playtest.on_key(&name, down) {
+                        if playtest.is_open() {
+                            keys = Keys::default();
+                            window.set_ime_allowed(true);
+                        }
                         return;
                     }
                     if down && is_start_key(&logical_key) && !play.game.is_playing() {
@@ -227,6 +248,14 @@ fn main() -> Result<(), String> {
                     }
                     apply_key(&mut keys, &logical_key, &physical_key, down);
                 }
+                Event::WindowEvent {
+                    event: WindowEvent::Ime(ime),
+                    ..
+                } => match ime {
+                    Ime::Commit(text) => playtest.push_text(&text),
+                    Ime::Preedit(text, _) => playtest.set_preedit(text),
+                    Ime::Enabled | Ime::Disabled => {}
+                },
                 Event::WindowEvent {
                     event:
                         WindowEvent::MouseInput {
@@ -277,7 +306,14 @@ fn main() -> Result<(), String> {
                     }
                     let dt = last.elapsed().as_secs_f32();
                     last = Instant::now();
-                    let (arrow_yaw, arrow_pitch) = if play.is_race()
+                    playtest.set_viewport(view_w, view_h);
+                    playtest.advance(dt);
+                    let frozen = playtest.blocks_sim();
+                    if frozen {
+                        keys = Keys::default();
+                    }
+                    let (arrow_yaw, arrow_pitch) = if frozen
+                        || play.is_race()
                         || play.is_fight()
                         || play.is_novel()
                         || play.is_stealth()
@@ -291,7 +327,9 @@ fn main() -> Result<(), String> {
                     } else {
                         keys.look_delta(dt)
                     };
-                    play.add_look(arrow_yaw + mouse_look.0, arrow_pitch + mouse_look.1);
+                    if !frozen {
+                        play.add_look(arrow_yaw + mouse_look.0, arrow_pitch + mouse_look.1);
+                    }
                     mouse_look = (0.0, 0.0);
                     let mut input = keys.walk_input();
                     if play.arrows_move_walker() {
@@ -351,14 +389,53 @@ fn main() -> Result<(), String> {
                     if !play.game.is_playing() {
                         input = WalkInput::default();
                     }
-                    play.input = input;
-                    play.tick(dt);
+                    if !frozen {
+                        playtest.note_walk(
+                            input.lx,
+                            input.lz,
+                            input.jump,
+                            input.attack,
+                            input.dodge,
+                        );
+                        play.input = input;
+                        play.tick(dt);
+                        playtest.commit_walk(dt);
+                        if playtest.wants_snapshot() {
+                            if let Ok(dump) = play.doc.to_json() {
+                                playtest.snapshot_dump(&dump);
+                            }
+                        }
+                    }
                     keys.attack = false;
+                    if playtest.packet_seq() != last_packet {
+                        last_packet = playtest.packet_seq();
+                        handoff_playtest(&playtest);
+                    }
                     if let Err(e) = renderer.update_world_gltf(&play.doc) {
                         eprintln!("skin: {e}");
                     }
                     let scene = play.doc.compile_scene(renderer.aspect());
-                    let hud = play.build_hud(view_w, view_h);
+                    let mut hud = play.build_hud(view_w, view_h);
+                    if playtest.take_shot() {
+                        match render::render_world_doc_with_hud(&play.doc, view_w, view_h, &hud) {
+                            Ok(pixels) => {
+                                let mut path = playtest::downloads_dir();
+                                path.push(format!(
+                                    "kagra-playtest-{}.png",
+                                    std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .map(|d| d.as_secs())
+                                        .unwrap_or(0)
+                                ));
+                                if playtest::write_rgba_png(&path, view_w, view_h, &pixels).is_ok()
+                                {
+                                    playtest.set_shot_path(&path.display().to_string());
+                                }
+                            }
+                            Err(e) => eprintln!("playtest shot skipped: {e}"),
+                        }
+                    }
+                    playtest.append_hud(&mut hud, view_w, view_h);
                     if let Err(e) = renderer.render_frame(Some(&scene), &hud) {
                         eprintln!("draw: {e}");
                         elwt.exit();
@@ -389,6 +466,38 @@ fn is_start_key(key: &Key) -> bool {
         Key::Character(c) => c.eq_ignore_ascii_case(" ") || c.eq_ignore_ascii_case("enter"),
         _ => false,
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn key_name(key: &Key) -> String {
+    match key {
+        Key::Named(NamedKey::F12) => "F12".into(),
+        Key::Named(NamedKey::Escape) => "Escape".into(),
+        Key::Named(NamedKey::Backspace) => "Backspace".into(),
+        Key::Named(NamedKey::Enter) => "Enter".into(),
+        Key::Character(c) => c.to_string(),
+        _ => String::new(),
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn handoff_playtest(pt: &Playtest) {
+    let Some(packet) = pt.packet() else {
+        return;
+    };
+    if packet.action == "send" {
+        let _ = playtest::open_url(&packet.url);
+    }
+    let _ = playtest::copy_text(&packet.copy);
+    let mut path = playtest::downloads_dir();
+    path.push(format!(
+        "kagra-playtest-{}.txt",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    ));
+    let _ = std::fs::write(&path, packet.block.as_bytes());
 }
 
 fn desktop_title(play: &WorldPlay, dump: &std::path::Path) -> String {

@@ -297,6 +297,7 @@
     <div id="boot">CORRIDOR HAUL — loading</div>
   </div>
 
+  <script src="playtest.js"></script>
   <script type="module">
     import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js";
 
@@ -346,6 +347,7 @@
       return scale;
     };
     let scale = sizeCanvas();
+    if (window.kagraPlaytest) window.kagraPlaytest.attach(session, canvas);
 
     let rendering = false;
     if (session.renderSupported()) {
