@@ -4,7 +4,7 @@
 //! - `world_doc` / `world_play` — 既存の世界データ + マルチジャンル tick
 //! - `render` / `measure` — 描画と HUD 計測
 //! - `physics` — Rapier（feature）
-//! - `<genre>` — `GenreSession` 実装ごとの薄いラッパ（例: `puzzle`, `platformer`, `novel`）
+//! - `<genre>` — `GenreSession` 実装ごとの薄いラッパ（例: `puzzle`, `platformer`, `novel`, `rhythm`）
 
 mod common;
 mod measure;
@@ -12,6 +12,7 @@ mod novel;
 mod platformer;
 mod puzzle;
 mod render;
+mod rhythm;
 mod world_doc;
 mod world_play;
 
@@ -25,6 +26,7 @@ use novel::PyNovelSession;
 use platformer::PyPlatformerSession;
 use puzzle::{PyPuzzlePadSession, PyPuzzleSession};
 use render::render_world_doc_py;
+use rhythm::PyRhythmSession;
 use world_doc::PyWorldDoc;
 use world_play::PyWorldPlay;
 
@@ -39,6 +41,7 @@ fn kagra_shared(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPuzzleSession>()?;
     m.add_class::<PyNovelSession>()?;
     m.add_class::<PyPlatformerSession>()?;
+    m.add_class::<PyRhythmSession>()?;
     m.add_function(wrap_pyfunction!(render_world_doc_py, m)?)?;
     m.add_function(wrap_pyfunction!(measure_text_py, m)?)?;
     #[cfg(feature = "physics")]

@@ -14,6 +14,7 @@ use crate::world_doc::WorldEvent;
 use crate::world_play::WorldPlay;
 
 pub use crate::puzzle_board::PuzzleSession;
+pub use crate::rhythm_chart::RhythmSession;
 
 /// Session errors (JSON parse, wrong `WorldDoc.genre`, serialize).
 pub type GenreSessionError = String;
@@ -376,6 +377,59 @@ impl NovelSession {
     }
 }
 
+/// 4-lane chart (`rhythm`). Timing, judgement, combo, and score stay in
+/// `rhythm_chart`. `rhythm_beat` (one marker, `WorldPlay`) is a different genre.
+impl GenreSession for RhythmSession {
+    fn genre_id(&self) -> &'static str {
+        crate::rhythm_chart::GAME_ID
+    }
+
+    fn from_json(json: &str) -> Result<Self, GenreSessionError> {
+        RhythmSession::open(json)
+    }
+
+    fn set_input(&mut self, input: WalkInput) {
+        self.apply_input(input);
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.step(dt);
+    }
+
+    fn dump(&self) -> Result<String, GenreSessionError> {
+        self.world_json()
+    }
+
+    fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        self.drain_events(name)
+    }
+
+    fn confirm(&mut self) {
+        self.confirm_action();
+    }
+
+    fn emit_event(
+        &mut self,
+        name: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), GenreSessionError> {
+        self.record_event(name, data);
+        Ok(())
+    }
+
+    fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        self.begin_timer(name, seconds, on_done)
+    }
+
+    fn step_interact(&mut self) {
+        self.use_nearby();
+    }
+
+    fn phase(&self) -> GamePhase {
+        self.current_phase()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -584,5 +638,34 @@ mod tests {
     fn novel_session_rejects_other_genres() {
         let err = NovelSession::from_json(ROOM).unwrap_err();
         assert!(err.contains("novel_pages"));
+    }
+
+    #[test]
+    fn rhythm_session_auto_clears_chart() {
+        let mut s = RhythmSession::from_json(r#"{"version":1,"genre":"rhythm"}"#).expect("open");
+        assert_eq!(s.genre_id(), "rhythm");
+        assert_eq!(s.phase(), GamePhase::Title);
+        assert!(s.lane_count() == 4);
+        s.confirm();
+        assert_eq!(s.phase(), GamePhase::Playing);
+        s.set_auto(true);
+        for _ in 0..900 {
+            if s.phase() == GamePhase::Complete {
+                break;
+            }
+            s.tick(1.0 / 60.0);
+        }
+        assert_eq!(s.phase(), GamePhase::Complete);
+        assert_eq!(s.miss_count(), 0);
+        assert_eq!(s.perfect_count(), s.note_count());
+        assert!(s.score() >= 300);
+        let dump = s.dump().expect("dump");
+        assert!(dump.contains("clear"));
+        assert!(dump.contains("crate.glb"));
+        assert!(s.take_events("clear").len() == 1);
+        let err =
+            RhythmSession::from_json(include_str!("../tests/fixtures/rhythm_beat_world.json"))
+                .unwrap_err();
+        assert!(err.contains("rhythm_beat"));
     }
 }

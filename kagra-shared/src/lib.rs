@@ -39,6 +39,7 @@ pub mod puzzle;
 pub mod puzzle_board;
 pub mod race;
 pub mod rhythm;
+pub mod rhythm_chart;
 pub mod road;
 pub mod rpg;
 pub mod save;
@@ -81,6 +82,7 @@ pub use font::TextRaster;
 pub use game::{DemoGame, GamePhase, GAME_ID, GAME_TITLE};
 pub use genre_session::{
     GenreSession, GenreSessionError, NovelSession, PlatformerSession, PuzzlePadSession,
+    RhythmSession,
 };
 pub use gltf_load::{
     mesh_from_embedded_gltf, mesh_from_glb, mesh_from_gltf_json, sample_skinned,

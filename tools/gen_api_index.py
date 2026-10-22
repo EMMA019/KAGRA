@@ -169,6 +169,7 @@ FRONT_NAMES = {
     "PlatformerSession",
     "PuzzlePadSession",
     "PuzzleSession",
+    "RhythmSession",
     "Scene",
     "SlotStore",
     "WorldDoc",
