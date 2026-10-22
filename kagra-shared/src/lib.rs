@@ -84,7 +84,7 @@ pub use game::{DemoGame, GamePhase, GAME_ID, GAME_TITLE};
 pub use genre_session::{
     ActionSession, FightSession, FishCookSession, GenreSession, GenreSessionError, NovelSession,
     PlatformerSession, PuzzlePadSession, RaceSession, RhythmSession, RpgSession, ShopSession,
-    TdSession,
+    StealthSession, TdSession,
 };
 pub use gltf_load::{
     mesh_from_embedded_gltf, mesh_from_glb, mesh_from_gltf_json, sample_skinned,
