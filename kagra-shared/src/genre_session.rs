@@ -15,6 +15,7 @@ use crate::puzzle;
 use crate::race;
 use crate::rpg;
 use crate::shop;
+use crate::sports;
 use crate::stealth;
 use crate::survival;
 use crate::td;
@@ -1412,6 +1413,116 @@ impl GenreSession for SurvivalSession {
     }
 }
 
+/// Kick / 1v1 match (`sports_goal`). Implements [`GenreSession`].
+///
+/// Ball impulse, the goal volume, opponent chase, the match clock, and
+/// first-to-N stay in `sports.rs`. This wrapper is the host surface.
+#[derive(Clone, Debug)]
+pub struct SportsSession {
+    inner: WorldPlay,
+}
+
+impl GenreSession for SportsSession {
+    fn genre_id(&self) -> &'static str {
+        sports::GAME_ID
+    }
+
+    fn from_json(json: &str) -> Result<Self, GenreSessionError> {
+        let inner = WorldPlay::from_json(json)?;
+        if !sports::is_sports(&inner.doc) {
+            return Err(format!(
+                "WorldDoc.genre must be {:?}, got {:?}",
+                sports::GAME_ID,
+                inner.doc.genre
+            ));
+        }
+        Ok(Self { inner })
+    }
+
+    fn set_input(&mut self, input: WalkInput) {
+        self.inner.input = input.clamped();
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.inner.tick(dt);
+    }
+
+    fn dump(&self) -> Result<String, GenreSessionError> {
+        self.inner.doc.to_json()
+    }
+
+    fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        self.inner.take_events(name)
+    }
+
+    fn confirm(&mut self) {
+        self.inner.confirm();
+    }
+
+    fn emit_event(
+        &mut self,
+        name: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), GenreSessionError> {
+        self.inner.emit_event(name, data);
+        Ok(())
+    }
+
+    fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        self.inner.start_timer(name, seconds, on_done)
+    }
+
+    fn step_interact(&mut self) {
+        self.inner.step_interact();
+    }
+
+    fn phase(&self) -> GamePhase {
+        self.inner.game.phase
+    }
+}
+
+impl SportsSession {
+    pub fn kicking(&self) -> bool {
+        self.inner.sports.kicking
+    }
+
+    pub fn scored(&self) -> bool {
+        self.inner.sports.scored
+    }
+
+    pub fn done(&self) -> bool {
+        self.inner.sports.done
+    }
+
+    pub fn won(&self) -> bool {
+        self.inner.sports.won
+    }
+
+    pub fn match_mode(&self) -> bool {
+        self.inner.sports.match_mode
+    }
+
+    pub fn player_score(&self) -> u32 {
+        self.inner.sports.player_score
+    }
+
+    pub fn opp_score(&self) -> u32 {
+        self.inner.sports.opp_score
+    }
+
+    pub fn score_to_win(&self) -> u32 {
+        self.inner.sports.score_to_win
+    }
+
+    pub fn match_left(&self) -> f32 {
+        self.inner.sports.match_left
+    }
+
+    pub fn match_len(&self) -> f32 {
+        self.inner.sports.match_len
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2299,6 +2410,59 @@ mod tests {
         assert!(s.take_events("nonexistent").is_empty());
         let err = FishCookSession::from_json(ROOM).unwrap_err();
         assert!(err.contains("fishcook"));
+    }
+
+    const SPORTS: &str = include_str!("../tests/fixtures/sports_world.json");
+
+    #[test]
+    fn sports_session_match_shot_and_rematch() {
+        let mut s = SportsSession::from_json(SPORTS).expect("fixture");
+        assert_eq!(s.genre_id(), "sports_goal");
+        assert_eq!(s.phase(), GamePhase::Title);
+        assert!(s.match_mode());
+        assert_eq!(s.score_to_win(), 2);
+        assert!((s.match_len() - 45.0).abs() < 0.05);
+        let dump = s.dump().expect("dump");
+        assert!(dump.contains("knight"));
+        assert!(dump.contains("rogue"));
+        assert!(dump.contains("\"net\""));
+        s.confirm();
+        assert_eq!(s.phase(), GamePhase::Playing);
+        for _ in 0..900 {
+            if s.won() {
+                break;
+            }
+            s.set_input(WalkInput {
+                lx: 0.0,
+                lz: 1.0,
+                jump: false,
+                attack: true,
+                dodge: false,
+            });
+            s.tick(1.0 / 60.0);
+        }
+        assert!(
+            s.won() && s.done() && s.player_score() >= 2 && s.opp_score() == 0,
+            "won={} score={}-{} left={:.2}",
+            s.won(),
+            s.player_score(),
+            s.opp_score(),
+            s.match_left(),
+        );
+        assert_eq!(s.phase(), GamePhase::Complete);
+        assert!(s.take_events("goal").len() == 1);
+        s.confirm();
+        assert_eq!(s.phase(), GamePhase::Playing);
+        assert_eq!(s.player_score(), 0);
+        assert!(!s.done());
+        assert!(s.match_left() > 40.0);
+    }
+
+    #[test]
+    fn sports_session_rejects_other_genre() {
+        let crest = include_str!("../tests/fixtures/crest_isle_world.json");
+        let err = SportsSession::from_json(crest).unwrap_err();
+        assert!(err.contains("sports_goal"));
     }
 
     const CLEARING: &str = include_str!("../tests/fixtures/survival_world.json");

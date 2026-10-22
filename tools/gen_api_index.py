@@ -176,6 +176,7 @@ FRONT_NAMES = {
     "RpgSession",
     "Scene",
     "ShopSession",
+    "SportsSession",
     "SlotStore",
     "StealthSession",
     "SurvivalSession",

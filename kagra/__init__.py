@@ -45,6 +45,7 @@ try:
         RhythmSession,
         RpgSession,
         ShopSession,
+        SportsSession,
         StealthSession,
         SurvivalSession,
         TdSession,
@@ -66,6 +67,7 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
             RhythmSession,
             RpgSession,
             ShopSession,
+            SportsSession,
             StealthSession,
             SurvivalSession,
             TdSession,
@@ -86,6 +88,7 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
         RhythmSession = None  # type: ignore[assignment]
         RpgSession = None  # type: ignore[assignment]
         ShopSession = None  # type: ignore[assignment]
+        SportsSession = None  # type: ignore[assignment]
         StealthSession = None  # type: ignore[assignment]
         SurvivalSession = None  # type: ignore[assignment]
         TdSession = None  # type: ignore[assignment]
@@ -130,6 +133,7 @@ __all__ = [
     "RpgSession",
     "Scene",
     "ShopSession",
+    "SportsSession",
     "SlotStore",
     "StealthSession",
     "SurvivalSession",

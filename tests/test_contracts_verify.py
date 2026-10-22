@@ -543,3 +543,13 @@ def test_load_platformer_scenario_is_world_and_offscreen():
     assert sc.expect_world["player.on_ground"] is True
     assert sc.expect_offscreen["out"].endswith("platformer_shared.png")
     assert sc.expect_offscreen["pixels"]
+
+
+def test_load_sports_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/sports_smoke.json")
+    assert sc.name == "sports_smoke"
+    assert sc.expect_world["path"].endswith("sports_world.json")
+    assert sc.expect_world["genre"] == "sports_goal"
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen["out"].endswith("sports_shared.png")
+    assert sc.expect_offscreen["pixels"]
