@@ -2,8 +2,10 @@ package dev.kagra.shell
 
 import android.annotation.SuppressLint
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.view.Choreographer
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -11,9 +13,11 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import java.io.File
 import java.io.IOException
+import java.util.Locale
 import org.json.JSONObject
 
 /**
@@ -35,6 +39,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var holdStatus = false
     private var gameTitle = "KAGRA Shell"
     private var audio: AudioBus? = null
+    private var playtest: PlaytestOverlay? = null
 
     /** 指 id ごとの役割。両手で同時に操作するために必要。 */
     private val controls = mutableMapOf<Int, Control>()
@@ -79,10 +84,27 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
             addView(status)
         }
         setContentView(root)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (KagraNative.available && KagraNative.playtestBlocksInput() == 1) {
+                    KagraNative.playtestAction("close")
+                    return
+                }
+                isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
+            }
+        })
 
         if (!KagraNative.create()) {
             status.text = "native init failed: ${KagraNative.lastError()}"
             return
+        }
+        if (BuildConfig.DEBUG) {
+            playtest = PlaytestOverlay(this, root, surfaceView)
+            val label = "${Build.MANUFACTURER} ${Build.MODEL} Android ${Build.VERSION.RELEASE} ${BuildConfig.BUILD_TYPE}"
+            KagraNative.setPlaytestEnabled(true)
+            KagraNative.setPlaytestExternalChrome(true)
+            KagraNative.setPlaytestDevice(label, Locale.getDefault().toLanguageTag())
         }
         bootGame()
         surfaceView.holder.addCallback(this)
@@ -230,19 +252,21 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         if (frameCallback != null) return
         val cb = object : Choreographer.FrameCallback {
             override fun doFrame(frameTimeNanos: Long) {
+                playtest?.syncNote()
                 if (packaged) {
                     KagraNative.setPlayInput(stickX, stickZ, jump, attack, false)
                 } else {
                     KagraNative.setWalk(stickX, stickZ, jump)
                 }
                 val frame = KagraNative.requestFrame()
+                val capturing = playtest?.onFrame() == true
                 if (packaged) {
                     try {
                         audio?.apply(KagraNative.takeAudioCues())
                     } catch (_: Exception) {
                     }
                 }
-                if (rendering && !KagraNative.render()) {
+                if (rendering && !capturing && !KagraNative.render()) {
                     rendering = false
                     status.text = "render failed: ${KagraNative.lastError()}"
                 }
@@ -286,9 +310,24 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> 2
             else -> 3
         }
-        KagraNative.pushPointer(
-            ev.getPointerId(idx), ev.getX(idx), ev.getY(idx), phase, ev.getPressure(idx)
-        )
+        if (ev.actionMasked == MotionEvent.ACTION_MOVE) {
+            for (i in 0 until ev.pointerCount) {
+                KagraNative.pushPointer(
+                    ev.getPointerId(i), ev.getX(i), ev.getY(i), 1, ev.getPressure(i)
+                )
+            }
+        } else {
+            KagraNative.pushPointer(
+                ev.getPointerId(idx), ev.getX(idx), ev.getY(idx), phase, ev.getPressure(idx)
+            )
+        }
+        if (KagraNative.playtestBlocksInput() == 1) {
+            stickX = 0f
+            stickZ = 0f
+            jump = false
+            attack = false
+            return true
+        }
 
         val jumpLeft = width * 0.62f
         val jumpTop = height * 0.62f
@@ -336,6 +375,19 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         if (x >= jumpLeft && y >= jumpTop) return Control.JUMP
         if (x >= jumpLeft) return Control.ATTACK
         return Control.STICK
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (
+            event.keyCode == KeyEvent.KEYCODE_F12 &&
+            event.action == KeyEvent.ACTION_DOWN &&
+            event.repeatCount == 0 &&
+            KagraNative.available
+        ) {
+            KagraNative.pushKey("F12", true)
+            return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onPause() {
