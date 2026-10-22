@@ -18,6 +18,7 @@
 | Shared offscreen CLI | `kagra/render_world.py` (`python -m kagra.render_world dump.json out.png`) |
 | Shared desktop window | `kagra/play_world.py` (`python -m kagra.play_world dump.json`) — wgpu 30 winit; collectathon title→play→result; official Crest play |
 | Touch | `kagra/touch.py` |
+| Local versus + input sync | `docs/netplay.md` (`FightSession.set_player_input`, `kagra.netplay`, `server/netplay_relay.py`) |
 | Mobile scaffold | `mobile/` |
 | Shared scene (GPU 非依存) | `kagra-shared/src/scene.rs` |
 | Shared 3D draw list | `kagra-shared/src/scene3d.rs` (`Scene3D` = 1 frame: camera / batches / fog) |

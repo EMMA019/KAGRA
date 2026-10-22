@@ -5,12 +5,14 @@
 //! - `render` / `measure` — 描画と HUD 計測
 //! - `physics` — Rapier（feature）
 //! - `<genre>` — `GenreSession` 実装ごとの薄いラッパ（例: `puzzle`, `platformer`, `novel`, `race`, `action`, `fight`, `rhythm`, `td`, `rpg`, `shop`, `fishcook`, `stealth`, `survival`）
+//! - `netplay` — ロックステップ入力同期（ソケットは Python 側）
 
 mod action;
 mod common;
 mod fight;
 mod fishcook;
 mod measure;
+mod netplay;
 mod novel;
 mod platformer;
 mod puzzle;
@@ -34,6 +36,7 @@ use action::PyActionSession;
 use fight::PyFightSession;
 use fishcook::PyFishCookSession;
 use measure::measure_text_py;
+use netplay::PyLockstep;
 use novel::PyNovelSession;
 use platformer::PyPlatformerSession;
 use puzzle::{PyPuzzlePadSession, PyPuzzleSession};
@@ -62,6 +65,7 @@ fn kagra_shared(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRaceSession>()?;
     m.add_class::<PyActionSession>()?;
     m.add_class::<PyFightSession>()?;
+    m.add_class::<PyLockstep>()?;
     m.add_class::<PyRhythmSession>()?;
     m.add_class::<PyRpgSession>()?;
     m.add_class::<PyShopSession>()?;

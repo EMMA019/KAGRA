@@ -61,6 +61,19 @@ pub trait GenreSession: Sized {
     fn step_interact(&mut self);
 
     fn phase(&self) -> GamePhase;
+
+    /// Per-player stick. Slot 0 is the walker ([`set_input`]).
+    /// Genres with one human keep this default and ignore other slots.
+    fn set_player_input(&mut self, slot: u8, input: WalkInput) {
+        if slot == 0 {
+            self.set_input(input);
+        }
+    }
+
+    /// How many human slots this session is driving. One until a genre opts in.
+    fn player_slots(&self) -> u8 {
+        1
+    }
 }
 
 /// Reference implementation: push-box puzzle (`puzzle_pad`).
@@ -1091,10 +1104,11 @@ impl ActionSession {
 }
 
 /// 1v1 round (`fight_hitstun`). Hitstun, guard, combo, and opponent AI stay
-/// in `fight.rs`.
+/// in `fight.rs`. Slot 1 ([`GenreSession::set_player_input`]) replaces the AI.
 #[derive(Clone, Debug)]
 pub struct FightSession {
     inner: WorldPlay,
+    p2: Option<WalkInput>,
 }
 
 impl GenreSession for FightSession {
@@ -1111,15 +1125,37 @@ impl GenreSession for FightSession {
                 inner.doc.genre
             ));
         }
-        Ok(Self { inner })
+        Ok(Self { inner, p2: None })
     }
 
     fn set_input(&mut self, input: WalkInput) {
-        self.inner.input = input.clamped();
+        self.set_player_input(0, input);
+    }
+
+    fn set_player_input(&mut self, slot: u8, input: WalkInput) {
+        let input = input.clamped();
+        match slot {
+            0 => self.inner.input = input,
+            1 => self.p2 = Some(input),
+            _ => {}
+        }
+    }
+
+    fn player_slots(&self) -> u8 {
+        if self.p2.is_some() {
+            2
+        } else {
+            1
+        }
     }
 
     fn tick(&mut self, dt: f32) {
+        self.inner.fight.p2_input = self.p2;
         self.inner.tick(dt);
+        if let Some(p2) = self.p2.as_mut() {
+            p2.attack = false;
+            p2.jump = false;
+        }
     }
 
     fn dump(&self) -> Result<String, GenreSessionError> {
@@ -1195,6 +1231,10 @@ impl FightSession {
 
     pub fn guarding(&self) -> bool {
         self.inner.fight.guarding
+    }
+
+    pub fn fingerprint(&self) -> u64 {
+        fight::state_hash(&self.inner.fight, self.phase())
     }
 }
 
@@ -2209,6 +2249,73 @@ mod tests {
         assert!(!s.done());
         assert_eq!(s.opp_hp(), fight::OPP_HP);
         assert!(s.take_events("nonexistent").is_empty());
+    }
+
+    #[test]
+    fn fight_two_humans_stay_in_lockstep() {
+        let mut a = FightSession::from_json(RING).expect("fixture");
+        let mut b = FightSession::from_json(RING).expect("fixture");
+        assert_eq!(a.player_slots(), 1);
+        a.confirm();
+        b.confirm();
+        for tick in 0..48u32 {
+            let p1 = WalkInput {
+                lx: 1.0,
+                lz: 0.0,
+                jump: false,
+                attack: tick % 15 < 2,
+                dodge: false,
+            };
+            let p2 = WalkInput {
+                lx: -1.0,
+                lz: 0.0,
+                jump: false,
+                attack: false,
+                dodge: (21..30).contains(&tick),
+            };
+            for session in [&mut a, &mut b] {
+                session.set_player_input(0, p1);
+                session.set_player_input(1, p2);
+                session.tick(1.0 / 60.0);
+            }
+        }
+        assert_eq!(a.player_slots(), 2);
+        assert_eq!(b.player_slots(), 2);
+        assert_eq!(a.fingerprint(), b.fingerprint());
+        assert_eq!(a.dump().unwrap(), b.dump().unwrap());
+        assert_ne!(a.fingerprint(), 0);
+    }
+
+    #[test]
+    fn puzzle_ignores_extra_player_slots() {
+        let mut a = PuzzlePadSession::from_json(ROOM).expect("fixture");
+        let mut b = PuzzlePadSession::from_json(ROOM).expect("fixture");
+        a.confirm();
+        b.confirm();
+        let input = WalkInput {
+            lx: 1.0,
+            lz: 0.0,
+            jump: false,
+            attack: true,
+            dodge: true,
+        };
+        a.set_input(input);
+        b.set_player_input(
+            1,
+            WalkInput {
+                lx: -1.0,
+                lz: 0.5,
+                jump: true,
+                attack: false,
+                dodge: false,
+            },
+        );
+        b.set_player_input(0, input);
+        assert_eq!(a.player_slots(), 1);
+        assert_eq!(b.player_slots(), 1);
+        a.tick(1.0 / 60.0);
+        b.tick(1.0 / 60.0);
+        assert_eq!(a.dump().unwrap(), b.dump().unwrap());
     }
 
     #[test]
