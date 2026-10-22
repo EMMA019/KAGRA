@@ -71,6 +71,11 @@
       "type": "array",
       "description": "Named happenings. WorldPlay::emit_event aggregates by name; take_events consumes. Multiple systems (score, UI, save) read the same event from the dump — no callback bus.",
       "items": { "$ref": "#/$defs/event" }
+    },
+    "joints": {
+      "type": "array",
+      "description": "Rapier impulse joints (physics feature). name is fixed / revolute / spherical. Anchors are body-local. Omit when empty.",
+      "items": { "$ref": "#/$defs/joint" }
     }
   },
   "$defs": {
@@ -149,7 +154,37 @@
         "interact": {
           "$ref": "#/$defs/interact",
           "description": "Interaction metadata (talk / use / examine). None = plain scenery. on_use emits an event when the player presses J/attack in reach."
+        },
+        "body": {
+          "type": ["string", "null"],
+          "description": "Rapier body: static / dynamic / kinematic. Omit = is_static (default static)."
+        },
+        "collider": {
+          "type": ["string", "null"],
+          "description": "box / sphere / capsule / cylinder / cone / none. Omit = infer from model."
+        },
+        "sensor": {
+          "type": "boolean",
+          "description": "True = overlap events only. Omit = false."
+        },
+        "mass": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Dynamic mass in kg. Omit or 0 = collider density."
         }
+      }
+    },
+    "joint": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "description": "joint, or the joint name if name is empty." },
+        "name": { "type": "string", "description": "fixed / revolute / spherical" },
+        "body_a": { "type": "string" },
+        "body_b": { "type": "string" },
+        "anchor_a": { "$ref": "#/$defs/vec3" },
+        "anchor_b": { "$ref": "#/$defs/vec3" },
+        "axis": { "$ref": "#/$defs/vec3", "description": "Revolute axis, local. Default +Y." }
       }
     },
     "interact": {

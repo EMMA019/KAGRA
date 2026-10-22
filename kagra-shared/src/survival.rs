@@ -7,14 +7,25 @@
 //! `WorldPlay` / `GamePhase`. Capsules/boxes, not VRM. Indoor lights stay
 //! 4 slots. Camp/ration stay readable (contact blob plus metal GGX
 //! inherited). Chase camera follows play. Does not rewrite other genre
-//! loops. No Rapier, SSAO, GI, inventory, or ECS. Picture slice stays.
+//! loops. No Rapier, SSAO, GI, or ECS. Picture slice stays.
+//!
+//! `SurvivalSession` (`genre: survival`) is a separate camp loop in this
+//! module: three day/night cycles, hunger, health, wood and food, a campfire,
+//! and a shelter. It does not plug into `WorldPlay` — the meter slice keeps
+//! `survival_meter`.
 
 use crate::collectathon::WalkInput;
 use crate::game::GamePhase;
 use crate::scene::{DrawList, Quad};
-use crate::world_doc::{WorldDoc, WorldProp, WorldWalker};
+use crate::world_doc::{
+    WorldCamera, WorldDoc, WorldEvent, WorldLight, WorldProp, WorldTimer, WorldWalker,
+};
 
 pub const GAME_ID: &str = "survival_meter";
+/// Camp loop (`SurvivalSession`). Not the `survival_meter` WorldPlay slice.
+pub const CAMP_ID: &str = "survival";
+pub const DAYS_TO_WIN: u32 = 3;
+pub const DAY_SECONDS: f32 = 22.0;
 pub const BODY_H: f32 = 0.95;
 pub const PLAYER_R: f32 = 0.46;
 pub const NEED: u32 = 8;
@@ -391,12 +402,899 @@ pub fn build_hud(game: &SurvivalGame, phase: GamePhase, width: u32, height: u32)
     }
 }
 
+const NIGHT_AT: f32 = 0.62;
+const WALK_SPEED: f32 = 7.6;
+const HUNGER_MAX: f32 = 100.0;
+const HEALTH_MAX: f32 = 100.0;
+const HUNGER_DRAIN: f32 = 2.05;
+const EAT_GAIN: f32 = 48.0;
+const EAT_BELOW: f32 = 40.0;
+const STARVE_DPS: f32 = 22.0;
+const NIGHT_DPS: f32 = 26.0;
+const FIRE_COST: u32 = 4;
+const SHELTER_COST: u32 = 4;
+const WOOD_YIELD: u32 = 2;
+const GATHER_REACH: f32 = 1.85;
+const GATHER_CD: f32 = 0.28;
+const CRAFT_REACH: f32 = 2.6;
+const FIRE_SAFE: f32 = 3.3;
+const SHELTER_SAFE: f32 = 3.8;
+const DUSK_AT: f32 = 0.50;
+const DAY_SKY: [u8; 4] = [176, 214, 242, 255];
+const NIGHT_SKY: [u8; 4] = [10, 14, 32, 255];
+
+pub fn is_camp(doc: &WorldDoc) -> bool {
+    doc.genre_is(CAMP_ID)
+}
+
+#[derive(Clone, Debug)]
+struct CampGame {
+    day: u32,
+    clock: f32,
+    hunger: f32,
+    health: f32,
+    wood: u32,
+    food: u32,
+    fire: bool,
+    shelter: bool,
+    won: bool,
+    dead: bool,
+    night: bool,
+    saw_night: bool,
+    gather_cd: f32,
+    eat_cd: f32,
+    craft_cd: f32,
+}
+
+impl CampGame {
+    fn fresh() -> Self {
+        Self {
+            day: 1,
+            clock: 0.0,
+            hunger: HUNGER_MAX,
+            health: HEALTH_MAX,
+            wood: 0,
+            food: 0,
+            fire: false,
+            shelter: false,
+            won: false,
+            dead: false,
+            night: false,
+            saw_night: false,
+            gather_cd: 0.0,
+            eat_cd: 0.0,
+            craft_cd: 0.0,
+        }
+    }
+}
+
+/// Three-day camp (`genre: survival`). Walk, gather, craft, and the clock
+/// stay here. Python sends stick / gather / eat / build and draws the dump.
+#[derive(Clone, Debug)]
+pub struct SurvivalSession {
+    doc: WorldDoc,
+    seed: String,
+    camp: CampGame,
+    input: WalkInput,
+    phase: GamePhase,
+    look_yaw: f32,
+}
+
+impl SurvivalSession {
+    pub fn open(json: &str) -> Result<Self, String> {
+        let doc = WorldDoc::from_json(json)?;
+        if !is_camp(&doc) {
+            return Err(format!(
+                "WorldDoc.genre must be {:?}, got {:?}",
+                CAMP_ID, doc.genre
+            ));
+        }
+        if doc.player.is_none() {
+            return Err("survival dump needs a player".into());
+        }
+        if !doc.props.iter().any(|p| p.name == "campfire") {
+            return Err("survival dump needs a campfire prop".into());
+        }
+        if !doc.props.iter().any(|p| p.name == "shelter") {
+            return Err("survival dump needs a shelter prop".into());
+        }
+        let mut session = Self {
+            doc,
+            seed: json.to_string(),
+            camp: CampGame::fresh(),
+            input: WalkInput::default(),
+            phase: GamePhase::Title,
+            look_yaw: 0.0,
+        };
+        session.prepare();
+        Ok(session)
+    }
+
+    pub fn current_phase(&self) -> GamePhase {
+        self.phase
+    }
+
+    pub fn day(&self) -> u32 {
+        self.camp.day
+    }
+
+    pub fn days_need(&self) -> u32 {
+        DAYS_TO_WIN
+    }
+
+    pub fn time_of_day(&self) -> f32 {
+        (self.camp.clock / DAY_SECONDS).clamp(0.0, 1.0)
+    }
+
+    pub fn night(&self) -> bool {
+        self.camp.night
+    }
+
+    pub fn hunger(&self) -> f32 {
+        self.camp.hunger
+    }
+
+    pub fn health(&self) -> f32 {
+        self.camp.health
+    }
+
+    pub fn wood(&self) -> u32 {
+        self.camp.wood
+    }
+
+    pub fn food(&self) -> u32 {
+        self.camp.food
+    }
+
+    pub fn fire(&self) -> bool {
+        self.camp.fire
+    }
+
+    pub fn shelter(&self) -> bool {
+        self.camp.shelter
+    }
+
+    pub fn won(&self) -> bool {
+        self.camp.won
+    }
+
+    pub fn dead(&self) -> bool {
+        self.camp.dead
+    }
+
+    pub fn is_safe(&self) -> bool {
+        let (px, pz) = self.player_xz();
+        self.is_safe_at(px, pz)
+    }
+
+    /// ASCII HUD line. Hyphen, not an em dash.
+    pub fn status(&self) -> String {
+        if self.camp.won {
+            return "survived 3 days".into();
+        }
+        if self.camp.dead {
+            return if self.camp.hunger <= 0.05 {
+                "down - starved".into()
+            } else {
+                "down - night".into()
+            };
+        }
+        let phase = if self.camp.night { "night" } else { "day" };
+        let mut line = format!(
+            "day {}/{} - {}  HP {:.0}  HUN {:.0}  wood {}  food {}",
+            self.camp.day.min(DAYS_TO_WIN),
+            DAYS_TO_WIN,
+            phase,
+            self.camp.health,
+            self.camp.hunger,
+            self.camp.wood,
+            self.camp.food
+        );
+        if self.camp.fire {
+            line.push_str("  fire");
+        }
+        if self.camp.shelter {
+            line.push_str("  shelter");
+        }
+        if self.camp.night && self.is_safe() {
+            line.push_str("  safe");
+        }
+        line
+    }
+
+    pub fn apply_input(&mut self, input: WalkInput) {
+        self.input = input.clamped();
+    }
+
+    pub fn step(&mut self, dt: f32) {
+        let dt = dt.clamp(0.0, 0.05);
+        if dt <= 0.0 || self.phase != GamePhase::Playing || self.camp.won || self.camp.dead {
+            return;
+        }
+        let input = self.input;
+        self.act(input, dt);
+        self.step_move(input, dt);
+        self.tick_timers(dt);
+        self.advance_clock(dt);
+        self.apply_vitals(dt);
+        self.finish_if_needed();
+        self.present();
+    }
+
+    pub fn world_json(&self) -> Result<String, String> {
+        self.doc.to_json()
+    }
+
+    pub fn drain_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        let mut out = Vec::new();
+        self.doc.events.retain(|e| {
+            if e.name == name {
+                out.push(e.clone());
+                false
+            } else {
+                true
+            }
+        });
+        out
+    }
+
+    pub fn confirm_action(&mut self) {
+        match self.phase {
+            GamePhase::Title => {
+                self.phase = GamePhase::Playing;
+                self.present();
+            }
+            GamePhase::Playing => {}
+            GamePhase::Complete => {
+                let seed = self.seed.clone();
+                if let Ok(doc) = WorldDoc::from_json(&seed) {
+                    self.doc = doc;
+                    self.camp = CampGame::fresh();
+                    self.input = WalkInput::default();
+                    self.phase = GamePhase::Playing;
+                    self.prepare();
+                }
+            }
+        }
+    }
+
+    pub fn record_event(&mut self, name: &str, data: Option<serde_json::Value>) {
+        let name = name.trim();
+        if name.is_empty() {
+            return;
+        }
+        if let Some(ev) = self.doc.events.iter_mut().find(|e| e.name == name) {
+            ev.count = ev.count.saturating_add(1);
+            if data.is_some() {
+                ev.data = data;
+            }
+            return;
+        }
+        self.doc.events.push(WorldEvent {
+            id: format!("event:{}", self.doc.events.len()),
+            kind: "event".into(),
+            name: name.into(),
+            count: 1,
+            data,
+        });
+    }
+
+    pub fn begin_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        let id = format!("timer:{name}");
+        if let Some(t) = self.doc.timers.iter_mut().find(|t| t.id == id) {
+            t.name = name.into();
+            t.seconds = seconds;
+            t.remaining = seconds;
+            t.on_done = on_done.map(str::to_string);
+            t.active = true;
+            return id;
+        }
+        self.doc.timers.push(WorldTimer {
+            id: id.clone(),
+            kind: "timer".into(),
+            name: name.into(),
+            seconds,
+            remaining: seconds,
+            on_done: on_done.map(str::to_string),
+            active: true,
+        });
+        id
+    }
+
+    /// Gather the nearest wood or food in reach (attack / interact).
+    pub fn use_nearby(&mut self) {
+        if self.phase != GamePhase::Playing || self.camp.won || self.camp.dead {
+            return;
+        }
+        let (px, pz) = self.player_xz();
+        if self.gather_at(px, pz) {
+            self.camp.gather_cd = GATHER_CD;
+            self.present();
+        }
+    }
+
+    /// Scripted stick for headless play. Human input stays on the host.
+    pub fn demo_input(&self) -> WalkInput {
+        if self.phase != GamePhase::Playing || self.camp.won || self.camp.dead {
+            return WalkInput::default();
+        }
+        let (px, pz) = self.player_xz();
+        let eat = self.camp.hunger < EAT_BELOW && self.camp.food > 0;
+        let frac = self.time_of_day();
+        if self.camp.fire {
+            let far = prop_dist(&self.doc, "campfire", px, pz).unwrap_or(99.0);
+            if (self.camp.night || frac >= DUSK_AT) && far > FIRE_SAFE - 0.45 {
+                let (lx, lz, _) = steer_toward(px, pz, camp_anchor(&self.doc), self.look_yaw, 0.85);
+                return WalkInput {
+                    lx,
+                    lz,
+                    jump: eat,
+                    attack: false,
+                    dodge: false,
+                };
+            }
+        }
+        if !self.camp.fire && self.camp.wood >= FIRE_COST {
+            return self.craft_toward(px, pz, eat);
+        }
+        if !self.camp.fire && self.camp.wood < FIRE_COST {
+            if let Some(spot) = nearest_xz(&self.doc, px, pz, is_wood) {
+                return self.gather_toward(px, pz, spot, eat);
+            }
+        }
+        if self.camp.fire && self.camp.food == 0 {
+            if let Some(spot) = nearest_xz(&self.doc, px, pz, is_food) {
+                return self.gather_toward(px, pz, spot, eat);
+            }
+        }
+        if self.camp.fire && !self.camp.shelter && self.camp.wood >= SHELTER_COST {
+            return self.craft_toward(px, pz, eat);
+        }
+        if self.camp.fire && !self.camp.shelter && self.camp.wood < SHELTER_COST {
+            if let Some(spot) = nearest_xz(&self.doc, px, pz, is_wood) {
+                return self.gather_toward(px, pz, spot, eat);
+            }
+        }
+        if self.camp.food < 2 {
+            if let Some(spot) = nearest_xz(&self.doc, px, pz, is_food) {
+                return self.gather_toward(px, pz, spot, eat);
+            }
+        }
+        if self.camp.fire {
+            let (lx, lz, _) = steer_toward(px, pz, camp_anchor(&self.doc), self.look_yaw, 0.9);
+            return WalkInput {
+                lx,
+                lz,
+                jump: eat,
+                attack: false,
+                dodge: false,
+            };
+        }
+        WalkInput {
+            lx: 0.0,
+            lz: 0.0,
+            jump: eat,
+            attack: false,
+            dodge: false,
+        }
+    }
+
+    fn craft_toward(&self, px: f32, pz: f32, eat: bool) -> WalkInput {
+        let (lx, lz, there) = steer_toward(px, pz, camp_anchor(&self.doc), self.look_yaw, 1.15);
+        WalkInput {
+            lx,
+            lz,
+            jump: eat,
+            attack: false,
+            dodge: there,
+        }
+    }
+
+    fn gather_toward(&self, px: f32, pz: f32, spot: (f32, f32), eat: bool) -> WalkInput {
+        let (lx, lz, there) = steer_toward(px, pz, spot, self.look_yaw, 1.15);
+        WalkInput {
+            lx,
+            lz,
+            jump: eat,
+            attack: there,
+            dodge: false,
+        }
+    }
+
+    fn prepare(&mut self) {
+        for p in &mut self.doc.props {
+            if p.name == "campfire" || p.name == "shelter" {
+                p.enabled = false;
+            }
+        }
+        self.camp.fire = false;
+        self.camp.shelter = false;
+        if let Some(w) = self.doc.player.clone() {
+            self.look_yaw = w.yaw;
+            let y = self.doc.height_at(w.position[0], w.position[2]) + 0.02;
+            let mut w = w;
+            w.position[1] = y;
+            w.on_ground = true;
+            if w.name.is_empty() {
+                w.name = "player".into();
+            }
+            write_player(&mut self.doc, w);
+        }
+        self.doc.coins = 0;
+        self.present();
+    }
+
+    fn act(&mut self, input: WalkInput, dt: f32) {
+        self.camp.gather_cd = (self.camp.gather_cd - dt).max(0.0);
+        self.camp.eat_cd = (self.camp.eat_cd - dt).max(0.0);
+        self.camp.craft_cd = (self.camp.craft_cd - dt).max(0.0);
+        let (px, pz) = self.player_xz();
+        if input.attack && self.camp.gather_cd <= 0.0 && self.gather_at(px, pz) {
+            self.camp.gather_cd = GATHER_CD;
+        }
+        if input.jump && self.camp.eat_cd <= 0.0 && self.try_eat() {
+            self.camp.eat_cd = 0.4;
+        }
+        if input.dodge && self.camp.craft_cd <= 0.0 && self.try_craft(px, pz) {
+            self.camp.craft_cd = 0.35;
+        }
+    }
+
+    fn gather_at(&mut self, px: f32, pz: f32) -> bool {
+        let Some(i) = nearest_within(&self.doc, px, pz, GATHER_REACH, |p| {
+            is_wood(p) || is_food(p)
+        }) else {
+            return false;
+        };
+        let wood = is_wood(&self.doc.props[i]);
+        self.doc.props[i].enabled = false;
+        if wood {
+            self.camp.wood = self.camp.wood.saturating_add(WOOD_YIELD);
+            emit(&mut self.doc, "gather_wood");
+        } else {
+            self.camp.food = self.camp.food.saturating_add(1);
+            emit(&mut self.doc, "gather_food");
+        }
+        true
+    }
+
+    fn try_eat(&mut self) -> bool {
+        if self.camp.food == 0 || self.camp.hunger >= HUNGER_MAX - 0.5 {
+            return false;
+        }
+        self.camp.food -= 1;
+        self.camp.hunger = (self.camp.hunger + EAT_GAIN).min(HUNGER_MAX);
+        emit(&mut self.doc, "eat");
+        true
+    }
+
+    fn try_craft(&mut self, px: f32, pz: f32) -> bool {
+        if !self.at_campfire(px, pz) {
+            return false;
+        }
+        if !self.camp.fire && self.camp.wood >= FIRE_COST {
+            self.camp.wood -= FIRE_COST;
+            self.camp.fire = true;
+            emit(&mut self.doc, "craft_fire");
+            return true;
+        }
+        if self.camp.fire && !self.camp.shelter && self.camp.wood >= SHELTER_COST {
+            self.camp.wood -= SHELTER_COST;
+            self.camp.shelter = true;
+            emit(&mut self.doc, "build_shelter");
+            return true;
+        }
+        false
+    }
+
+    fn step_move(&mut self, input: WalkInput, dt: f32) {
+        let half = self.doc.half.max(8.0);
+        let (s, c) = self.look_yaw.sin_cos();
+        let wish_x = -c * input.lx + s * input.lz;
+        let wish_z = s * input.lx + c * input.lz;
+        let wish_len = (wish_x * wish_x + wish_z * wish_z).sqrt();
+        let Some(mut w) = player_ref(&self.doc).cloned() else {
+            return;
+        };
+        let mut x = w.position[0];
+        let mut z = w.position[2];
+        if wish_len > 0.08 {
+            let inv = 1.0 / wish_len;
+            let dir_x = wish_x * inv;
+            let dir_z = wish_z * inv;
+            let speed = WALK_SPEED * wish_len.min(1.0);
+            x += dir_x * speed * dt;
+            z += dir_z * speed * dt;
+            let yaw = dir_x.atan2(dir_z);
+            w.yaw = yaw;
+            w.face = yaw;
+            self.look_yaw = yaw;
+            w.anim = "walk".into();
+            w.clip += dt;
+        } else if w.anim == "walk" {
+            w.anim = "idle".into();
+            w.clip = 0.0;
+        }
+        let pad = 1.2;
+        x = x.clamp(-half + pad, half - pad);
+        z = z.clamp(-half + pad, half - pad);
+        let y = self.doc.height_at(x, z) + 0.02;
+        w.position = [x, y, z];
+        w.on_ground = true;
+        if w.name.is_empty() {
+            w.name = "player".into();
+        }
+        write_player(&mut self.doc, w);
+    }
+
+    fn tick_timers(&mut self, dt: f32) {
+        let mut done: Vec<String> = Vec::new();
+        for t in &mut self.doc.timers {
+            if t.name == "day" || !t.active {
+                continue;
+            }
+            t.remaining = (t.remaining - dt).max(0.0);
+            if t.remaining <= 1e-4 {
+                t.active = false;
+                if let Some(ev) = t.on_done.clone() {
+                    done.push(ev);
+                }
+            }
+        }
+        for ev in done {
+            emit(&mut self.doc, &ev);
+        }
+    }
+
+    fn advance_clock(&mut self, dt: f32) {
+        self.camp.clock += dt;
+        while self.camp.clock >= DAY_SECONDS {
+            self.camp.clock -= DAY_SECONDS;
+            self.camp.day = self.camp.day.saturating_add(1);
+            emit(&mut self.doc, "dawn");
+        }
+        let night = self.time_of_day() >= NIGHT_AT;
+        if night && !self.camp.saw_night {
+            self.camp.saw_night = true;
+            emit(&mut self.doc, "night");
+        }
+        if !night {
+            self.camp.saw_night = false;
+        }
+        self.camp.night = night;
+    }
+
+    fn apply_vitals(&mut self, dt: f32) {
+        self.camp.hunger = (self.camp.hunger - HUNGER_DRAIN * dt).max(0.0);
+        if self.camp.hunger <= 0.05 {
+            self.camp.health -= STARVE_DPS * dt;
+        }
+        let (px, pz) = self.player_xz();
+        if self.camp.night && !self.is_safe_at(px, pz) {
+            self.camp.health -= NIGHT_DPS * dt;
+        }
+        self.camp.health = self.camp.health.clamp(0.0, HEALTH_MAX);
+    }
+
+    fn finish_if_needed(&mut self) {
+        if self.camp.health <= 0.05 {
+            self.camp.health = 0.0;
+            self.camp.dead = true;
+            self.camp.won = false;
+            self.phase = GamePhase::Complete;
+            emit(&mut self.doc, "dead");
+            return;
+        }
+        if self.camp.day > DAYS_TO_WIN && self.camp.fire && self.camp.shelter {
+            self.camp.won = true;
+            self.phase = GamePhase::Complete;
+            emit(&mut self.doc, "win");
+        }
+    }
+
+    fn present(&mut self) {
+        let fire = self.camp.fire;
+        let shelter = self.camp.shelter;
+        for p in &mut self.doc.props {
+            if p.name == "campfire" {
+                p.enabled = fire;
+            } else if p.name == "shelter" {
+                p.enabled = shelter;
+            }
+        }
+        self.doc.coins = self.camp.wood;
+        let night_amt = night_amount(self.time_of_day());
+        self.doc.sky = Some(mix_sky(night_amt));
+        self.doc.exposure = Some(1.08 - 0.55 * night_amt);
+        self.doc.ibl = Some(0.42 - 0.30 * night_amt);
+        self.write_day_timer();
+        self.write_lights(night_amt);
+        self.place_camera();
+    }
+
+    fn write_day_timer(&mut self) {
+        let remaining = (DAY_SECONDS - self.camp.clock).max(0.0);
+        if let Some(t) = self.doc.timers.iter_mut().find(|t| t.name == "day") {
+            t.seconds = DAY_SECONDS;
+            t.remaining = remaining;
+            t.active = self.phase == GamePhase::Playing && !self.camp.won && !self.camp.dead;
+            return;
+        }
+        self.doc.timers.push(WorldTimer {
+            id: "timer:day".into(),
+            kind: "timer".into(),
+            name: "day".into(),
+            seconds: DAY_SECONDS,
+            remaining,
+            on_done: None,
+            active: self.phase == GamePhase::Playing && !self.camp.won && !self.camp.dead,
+        });
+    }
+
+    fn write_lights(&mut self, night_amt: f32) {
+        let (fx, fz) = camp_anchor(&self.doc);
+        let key = 1.45 * (1.0 - night_amt) + 0.05;
+        paint_light(
+            &mut self.doc,
+            0,
+            "sun",
+            [5.0, 9.5, 8.0],
+            key,
+            40.0,
+            mix_rgb([1.0, 0.94, 0.82], [0.35, 0.45, 0.75], night_amt),
+        );
+        paint_light(
+            &mut self.doc,
+            1,
+            "fill",
+            [-6.0, 4.0, 2.0],
+            0.38 * (1.0 - night_amt) + 0.04,
+            24.0,
+            [0.75, 0.84, 0.95],
+        );
+        let fire_i = if self.camp.fire { 2.8 } else { 0.0 };
+        paint_light(
+            &mut self.doc,
+            2,
+            "fire",
+            [fx, 1.15, fz],
+            fire_i,
+            9.0,
+            [1.0, 0.55, 0.18],
+        );
+        paint_light(
+            &mut self.doc,
+            3,
+            "moon",
+            [-3.0, 7.0, -6.0],
+            0.12 + 0.42 * night_amt,
+            28.0,
+            [0.55, 0.68, 0.95],
+        );
+    }
+
+    fn place_camera(&mut self) {
+        let Some(w) = player_ref(&self.doc) else {
+            return;
+        };
+        let px = w.position[0];
+        let py = w.position[1];
+        let pz = w.position[2];
+        let (s, c) = self.look_yaw.sin_cos();
+        let eye = [px - s * 7.4, py + 4.6, pz - c * 7.4];
+        let target = [px, py + 1.15, pz];
+        let fov = self.doc.cameras.first().map(|cam| cam.fov).unwrap_or(52.0);
+        if let Some(cam) = self.doc.cameras.first_mut() {
+            cam.position = eye;
+            cam.target = target;
+            cam.name = "chase".into();
+        } else {
+            self.doc.cameras.push(WorldCamera {
+                id: "camera:main".into(),
+                kind: "camera".into(),
+                name: "chase".into(),
+                position: eye,
+                target,
+                fov,
+            });
+        }
+    }
+
+    fn player_xz(&self) -> (f32, f32) {
+        player_ref(&self.doc)
+            .map(|w| (w.position[0], w.position[2]))
+            .unwrap_or((0.0, 0.0))
+    }
+
+    fn at_campfire(&self, px: f32, pz: f32) -> bool {
+        prop_dist(&self.doc, "campfire", px, pz).is_some_and(|d| d <= CRAFT_REACH)
+    }
+
+    fn is_safe_at(&self, px: f32, pz: f32) -> bool {
+        if self.camp.fire
+            && prop_dist(&self.doc, "campfire", px, pz).is_some_and(|d| d <= FIRE_SAFE)
+        {
+            return true;
+        }
+        if self.camp.shelter
+            && prop_dist(&self.doc, "shelter", px, pz).is_some_and(|d| d <= SHELTER_SAFE)
+        {
+            return true;
+        }
+        false
+    }
+}
+
+fn is_wood(p: &WorldProp) -> bool {
+    matches!(p.name.as_str(), "tree" | "pine" | "wood")
+}
+
+fn is_food(p: &WorldProp) -> bool {
+    p.name == "food"
+}
+
+fn emit(doc: &mut WorldDoc, name: &str) {
+    if let Some(ev) = doc.events.iter_mut().find(|e| e.name == name) {
+        ev.count = ev.count.saturating_add(1);
+        return;
+    }
+    doc.events.push(WorldEvent {
+        id: format!("event:{}", doc.events.len()),
+        kind: "event".into(),
+        name: name.into(),
+        count: 1,
+        data: None,
+    });
+}
+
+fn prop_dist(doc: &WorldDoc, name: &str, px: f32, pz: f32) -> Option<f32> {
+    doc.props.iter().find(|p| p.name == name).map(|p| {
+        let dx = p.position[0] - px;
+        let dz = p.position[2] - pz;
+        dx.hypot(dz)
+    })
+}
+
+fn camp_anchor(doc: &WorldDoc) -> (f32, f32) {
+    doc.props
+        .iter()
+        .find(|p| p.name == "campfire")
+        .map(|p| (p.position[0], p.position[2]))
+        .unwrap_or((0.0, -1.0))
+}
+
+fn nearest_within(
+    doc: &WorldDoc,
+    px: f32,
+    pz: f32,
+    reach: f32,
+    pred: impl Fn(&WorldProp) -> bool,
+) -> Option<usize> {
+    let mut best: Option<(usize, f32)> = None;
+    for (i, p) in doc.props.iter().enumerate() {
+        if !p.enabled || !pred(p) {
+            continue;
+        }
+        let d = (p.position[0] - px).hypot(p.position[2] - pz);
+        if d <= reach && best.is_none_or(|(_, bd)| d < bd) {
+            best = Some((i, d));
+        }
+    }
+    best.map(|(i, _)| i)
+}
+
+fn nearest_xz(
+    doc: &WorldDoc,
+    px: f32,
+    pz: f32,
+    pred: impl Fn(&WorldProp) -> bool,
+) -> Option<(f32, f32)> {
+    let mut best: Option<(f32, f32, f32)> = None;
+    for p in &doc.props {
+        if !p.enabled || !pred(p) {
+            continue;
+        }
+        let d = (p.position[0] - px).hypot(p.position[2] - pz);
+        if best.is_none_or(|(_, _, bd)| d < bd) {
+            best = Some((p.position[0], p.position[2], d));
+        }
+    }
+    best.map(|(x, z, _)| (x, z))
+}
+
+/// Stick relative to `yaw`. `arrived` is true inside `stop` meters.
+fn steer_toward(px: f32, pz: f32, target: (f32, f32), yaw: f32, stop: f32) -> (f32, f32, bool) {
+    let dx = target.0 - px;
+    let dz = target.1 - pz;
+    let dist = dx.hypot(dz);
+    if dist <= stop {
+        return (0.0, 0.0, true);
+    }
+    let (s, c) = yaw.sin_cos();
+    let inv = 1.0 / dist;
+    let dir_x = dx * inv;
+    let dir_z = dz * inv;
+    let lx = (dir_x * -c + dir_z * s).clamp(-1.0, 1.0);
+    let lz = (dir_x * s + dir_z * c).clamp(-1.0, 1.0);
+    (lx, lz, false)
+}
+
+fn night_amount(frac: f32) -> f32 {
+    let dusk = (NIGHT_AT - 0.08).max(0.0);
+    let dawn = 0.94;
+    if frac < dusk {
+        0.0
+    } else if frac < NIGHT_AT {
+        (frac - dusk) / (NIGHT_AT - dusk)
+    } else if frac < dawn {
+        1.0
+    } else {
+        ((1.0 - frac) / (1.0 - dawn)).clamp(0.0, 1.0)
+    }
+}
+
+fn mix_u8(a: u8, b: u8, t: f32) -> u8 {
+    let t = t.clamp(0.0, 1.0);
+    (f32::from(a) + (f32::from(b) - f32::from(a)) * t).round() as u8
+}
+
+fn mix_sky(t: f32) -> [u8; 4] {
+    [
+        mix_u8(DAY_SKY[0], NIGHT_SKY[0], t),
+        mix_u8(DAY_SKY[1], NIGHT_SKY[1], t),
+        mix_u8(DAY_SKY[2], NIGHT_SKY[2], t),
+        255,
+    ]
+}
+
+fn mix_rgb(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
+    let t = t.clamp(0.0, 1.0);
+    [
+        a[0] + (b[0] - a[0]) * t,
+        a[1] + (b[1] - a[1]) * t,
+        a[2] + (b[2] - a[2]) * t,
+    ]
+}
+
+fn paint_light(
+    doc: &mut WorldDoc,
+    slot: u32,
+    name: &str,
+    position: [f32; 3],
+    intensity: f32,
+    radius: f32,
+    color: [f32; 3],
+) {
+    if let Some(light) = doc.lights.iter_mut().find(|l| l.slot == slot) {
+        light.name = name.into();
+        light.position = position;
+        light.kind = "point".into();
+        light.intensity = intensity;
+        light.radius = radius;
+        light.color = Some(color);
+        return;
+    }
+    doc.lights.push(WorldLight {
+        id: format!("light:{slot}"),
+        kind_type: "light".into(),
+        name: name.into(),
+        position,
+        kind: "point".into(),
+        slot,
+        intensity,
+        radius,
+        color: Some(color),
+        direction: None,
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::world_play::WorldPlay;
 
     const CAMP: &str = include_str!("../tests/fixtures/survival_meter_world.json");
+    const CLEARING: &str = include_str!("../tests/fixtures/survival_world.json");
     const CREST: &str = include_str!("../tests/fixtures/crest_isle_world.json");
     const TOWN: &str = include_str!("../tests/fixtures/rpg_town_world.json");
     const PAGES: &str = include_str!("../tests/fixtures/novel_pages_world.json");
@@ -699,5 +1597,128 @@ mod tests {
         let side = WorldPlay::from_json(SIDE).unwrap();
         assert!(side.is_action2d());
         assert!(!side.is_survival());
+    }
+
+    fn camp_place(s: &mut SurvivalSession, x: f32, z: f32) {
+        let y = s.doc.height_at(x, z) + 0.02;
+        let mut w = s.doc.player.clone().unwrap();
+        w.position = [x, y, z];
+        w.on_ground = true;
+        write_player(&mut s.doc, w);
+    }
+
+    #[test]
+    fn camp_dump_is_not_the_meter_slice() {
+        let doc = WorldDoc::from_json(CLEARING).unwrap();
+        assert!(is_camp(&doc));
+        assert!(!is_survival(&doc));
+        assert_eq!(CAMP_ID, "survival");
+        let meter = WorldDoc::from_json(CAMP).unwrap();
+        assert!(is_survival(&meter));
+        assert!(!is_camp(&meter));
+        let err = SurvivalSession::open(CAMP).unwrap_err();
+        assert!(err.contains("survival"));
+        let err = SurvivalSession::open(CREST).unwrap_err();
+        assert!(err.contains("survival"));
+    }
+
+    #[test]
+    fn camp_gather_and_craft_fire() {
+        let mut s = SurvivalSession::open(CLEARING).unwrap();
+        assert_eq!(s.current_phase(), GamePhase::Title);
+        s.confirm_action();
+        assert_eq!(s.current_phase(), GamePhase::Playing);
+        let (tx, tz) = s
+            .doc
+            .props
+            .iter()
+            .find(|p| p.name == "tree" && p.enabled)
+            .map(|p| (p.position[0], p.position[2]))
+            .unwrap();
+        camp_place(&mut s, tx, tz);
+        s.apply_input(WalkInput {
+            attack: true,
+            ..WalkInput::default()
+        });
+        s.step(1.0 / 60.0);
+        assert_eq!(s.wood(), 2, "one tree is 2 wood");
+        assert!(s.doc.props.iter().any(|p| p.name == "tree" && !p.enabled));
+        s.camp.wood = 4;
+        let (fx, fz) = camp_anchor(&s.doc);
+        camp_place(&mut s, fx, fz);
+        s.apply_input(WalkInput {
+            dodge: true,
+            ..WalkInput::default()
+        });
+        s.step(1.0 / 60.0);
+        assert!(s.fire());
+        assert!(s
+            .doc
+            .props
+            .iter()
+            .any(|p| p.name == "campfire" && p.enabled));
+        assert!(!s.status().contains('\u{2014}'));
+        assert!(s.status().contains("fire"));
+    }
+
+    #[test]
+    fn camp_idle_dies_at_night() {
+        let mut s = SurvivalSession::open(CLEARING).unwrap();
+        s.confirm_action();
+        s.apply_input(WalkInput::default());
+        for _ in 0..2200 {
+            s.step(1.0 / 60.0);
+            if s.dead() {
+                break;
+            }
+        }
+        assert!(s.dead() && !s.won(), "status {}", s.status());
+        assert_eq!(s.current_phase(), GamePhase::Complete);
+        assert!(s.status().starts_with("down"));
+    }
+
+    #[test]
+    fn camp_autopilot_survives_three_days() {
+        let mut s = SurvivalSession::open(CLEARING).unwrap();
+        s.confirm_action();
+        let mut frames = 0;
+        for _ in 0..7000 {
+            frames += 1;
+            if s.won() || s.dead() {
+                break;
+            }
+            s.apply_input(s.demo_input());
+            s.step(1.0 / 60.0);
+        }
+        let pos = s.doc.player.as_ref().unwrap().position;
+        assert!(
+            s.won() && !s.dead() && s.fire() && s.shelter(),
+            "frames={frames} won={} dead={} day={} t={:.2} night={} hp={:.0} hun={:.0} wood={} food={} fire={} shelter={} pos={pos:?} status={}",
+            s.won(),
+            s.dead(),
+            s.day(),
+            s.time_of_day(),
+            s.night(),
+            s.health(),
+            s.hunger(),
+            s.wood(),
+            s.food(),
+            s.fire(),
+            s.shelter(),
+            s.status(),
+        );
+        assert!(s.day() > DAYS_TO_WIN);
+        assert_eq!(s.status(), "survived 3 days");
+        assert!(s.drain_events("gather_wood").iter().any(|e| e.count >= 1));
+        assert!(s.drain_events("gather_food").iter().any(|e| e.count >= 1));
+        assert!(s.drain_events("craft_fire").iter().any(|e| e.count >= 1));
+        assert!(s.drain_events("build_shelter").iter().any(|e| e.count >= 1));
+        assert!(s.drain_events("eat").iter().any(|e| e.count >= 1));
+        assert_eq!(s.current_phase(), GamePhase::Complete);
+        let dump = s.world_json().unwrap();
+        assert!(dump.contains("knight"));
+        assert!(dump.contains("stylized_tree"));
+        assert!(dump.contains("Bonfire"));
+        assert!(dump.contains("gazebo"));
     }
 }

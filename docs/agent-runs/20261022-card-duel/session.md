@@ -21,4 +21,5 @@ Card duel as a slim `GenreSession`, not a `WorldPlay` genre module. Picture stay
 - A fan step of `0.52 * card_w` stacked faces so the titles were unreadable. Step is now `0.78 * card_w`, the hand sits lower, and the hint sits between the board and the hand.
 - Moving the knight to z=4.55 cropped the head out of frame. Restored z=3.15.
 - `maturin develop` needs a virtualenv. `python3-venv` is not installed. `virtualenv` created `.venv` (gitignored).
-- Running every smoke in one process made `update_mesh: N out of range` on flight / novel / platformer. Fresh processes pass. `rpg_town_smoke` fails on its own: the walker is named `hero`, the scenario asks for `player`. That mismatch is on master and was not edited here.
+- Running every smoke in one process made `update_mesh: N out of range` on flight / novel / platformer. Fresh processes pass. Before the master merge, `rpg_town_smoke` failed because the walker was named `hero`. After merging origin/master the scenario passes.
+- Shared files conflicted with the parallel genre sessions (fps, physics, sports, and the rest). Resolution kept their registrations and added `CardSession` beside them. `genre_session.rs` was taken from master and the card impl was reapplied, because the two appends had interleaved.

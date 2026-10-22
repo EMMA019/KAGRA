@@ -116,6 +116,10 @@ pub struct WorldDoc {
     /// Indoor rooms dump `false` and place their own floor.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ground: Option<bool>,
+    /// Rapier joints (`physics` feature). Empty dumps omit the key.
+    /// `name` is `fixed` / `revolute` / `spherical`. Anchors are body-local.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub joints: Vec<WorldJoint>,
 }
 
 /// Generic countdown. Dump-visible: a fishing dump shows `cast` counting down,
@@ -235,6 +239,56 @@ pub struct WorldProp {
     /// None = `[1, 1]`. Wood floors dump `[8, 6]`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uv_scale: Option<[f32; 2]>,
+    /// Rapier body kind: `static` / `dynamic` / `kinematic`.
+    /// None = `is_static` (true → static, false → dynamic).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    /// Collider shape: `box` / `sphere` / `capsule` / `cylinder` / `cone` / `none`.
+    /// None = infer from `model` (unknown models stay out of the sim).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collider: Option<String>,
+    /// Overlap events only. No contact response.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub sensor: bool,
+    /// Dynamic mass in kilograms. 0 = density from the collider volume.
+    #[serde(default, skip_serializing_if = "is_zero_f32")]
+    pub mass: f32,
+}
+
+/// Impulse joint between two prop / walker ids. Physics (`physics` feature)
+/// builds it; the dump is the source of truth for Android later.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct WorldJoint {
+    #[serde(default)]
+    pub id: String,
+    /// Record type. `joint`, or the joint name if `name` is empty
+    /// (`fixed` / `revolute` / `spherical`).
+    #[serde(rename = "type", default = "joint_type")]
+    pub kind: String,
+    /// `fixed` / `revolute` / `spherical` (aliases: weld, hinge, ball).
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub body_a: String,
+    #[serde(default)]
+    pub body_b: String,
+    /// Anchor in body A local space.
+    #[serde(default)]
+    pub anchor_a: [f32; 3],
+    /// Anchor in body B local space.
+    #[serde(default)]
+    pub anchor_b: [f32; 3],
+    /// Revolute axis in each body's local space. Default +Y.
+    #[serde(default = "default_joint_axis")]
+    pub axis: [f32; 3],
+}
+
+fn joint_type() -> String {
+    "joint".into()
+}
+
+fn default_joint_axis() -> [f32; 3] {
+    [0.0, 1.0, 0.0]
 }
 
 /// Prop interaction. The engine handles reach + on_use event; the game owns
@@ -737,9 +791,13 @@ impl WorldDoc {
             // drawn at walker pose. `model: capsule` must not win when `gltf`
             // is set. Capsule + head remains the fallback only if no glTF spec.
             // Action genre: name "hurt" / "dead" is dump-visible and tinted here.
+            // Action boss waits off-stage until minions fall (`name == "wait"`).
+            if walk.name == "wait" {
+                continue;
+            }
             let pos = Vec3::from_array(walk.position);
             let yaw = Quat::from_rotation_y(walk.yaw);
-            let dead = walk.name == "dead";
+            let dead = walk.name == "dead" || walk.name == "ko";
             let hurt = walk.name == "hurt";
             let body_col = if dead {
                 [70, 74, 82, 255]
@@ -1631,6 +1689,7 @@ fn mesh_for_prop(
         "plane" | "water" => MESH_PLANE,
         "sprite" | "quad" => MESH_QUAD,
         "torus" | "ring" => MESH_TORUS,
+        "cone" => MESH_CONE,
         _ => MESH_BOX,
     }
 }

@@ -8,12 +8,12 @@
 
 ## Verify
 
-- `cargo test -p kagra-shared --lib --locked` — 431 passed（merge 前）
+- `cargo test -p kagra-shared --lib --locked` — 490 passed（origin/master を merge したあと）
 - `cargo clippy -p kagra-shared --lib --locked -- -D warnings` — clean
 - `cargo clippy -p kagra-shared --lib --locked --features render -- -D warnings` — clean
-- `pytest tests -m "not golden"` — 662 passed, 10 skipped
+- `pytest tests -m "not golden"` — 684 passed, 14 skipped
 - `python -m kagra.verify examples/verify_scenarios/card_smoke.json` — ok（lavapipe）
-- 既存シナリオはプロセスごとに ok。`demo_live` と `physics_stack` は既知の失敗として未実行。`rpg_town_smoke` は master 上で walker 名が `hero` のまま失敗する。
+- 既存の verify シナリオもプロセスごとに ok。`demo_live` と `physics_stack` は既知の失敗として未実行。
 - `python examples/card_minimal.py --headless` — `dragged=True winner=1`、再戦で体力 20。PNG は lavapipe（llvmpipe）の 960x540。
 
 Screenshot: `/opt/cursor/artifacts/card_duel.png`（手元のコピー `scratch/card_duel.png`）。
