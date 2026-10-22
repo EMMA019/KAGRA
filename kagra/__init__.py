@@ -82,25 +82,6 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
     except ImportError:  # pragma: no cover
         from kagra.world_doc import WorldDoc, WorldPlay, render_world_doc
 
-        ActionSession = None  # type: ignore[assignment]
-        FightSession = None  # type: ignore[assignment]
-        PuzzlePadSession = None  # type: ignore[assignment]
-        PuzzleSession = None  # type: ignore[assignment]
-        NovelSession = None  # type: ignore[assignment]
-        PlatformerSession = None  # type: ignore[assignment]
-        RaceSession = None  # type: ignore[assignment]
-        CardSession = None  # type: ignore[assignment]
-        FpsSession = None  # type: ignore[assignment]
-        RhythmSession = None  # type: ignore[assignment]
-        RpgSession = None  # type: ignore[assignment]
-        ShopSession = None  # type: ignore[assignment]
-        SportsSession = None  # type: ignore[assignment]
-        StealthSession = None  # type: ignore[assignment]
-        SurvivalSession = None  # type: ignore[assignment]
-        TdSession = None  # type: ignore[assignment]
-        FishCookSession = None  # type: ignore[assignment]
-
-
 # Names that stay on disk (kagra.play / kagra.world3d / …) but must not
 # appear on `import kagra`. The archived RendererV2 surface lives in old/.
 _PUBLIC_OFF = {
@@ -190,3 +171,9 @@ __all__ = [
     "tone",
     "was_pressed",
 ]
+
+# GenreSession types live on kagra_shared. Without the wheel they stay
+# None so `import kagra` and `from kagra import *` still work in python-unit.
+for _name in __all__:
+    if _name not in globals():
+        globals()[_name] = None
