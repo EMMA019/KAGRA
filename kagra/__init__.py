@@ -80,8 +80,8 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
             render_world_doc,
         )
     except ImportError:  # pragma: no cover
-        WorldDoc = None  # type: ignore[assignment]
-        WorldPlay = None  # type: ignore[assignment]
+        from kagra.world_doc import WorldDoc, WorldPlay, render_world_doc
+
         ActionSession = None  # type: ignore[assignment]
         FightSession = None  # type: ignore[assignment]
         PuzzlePadSession = None  # type: ignore[assignment]
@@ -99,12 +99,6 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
         SurvivalSession = None  # type: ignore[assignment]
         TdSession = None  # type: ignore[assignment]
         FishCookSession = None  # type: ignore[assignment]
-
-        def render_world_doc(*_a, **_k):  # type: ignore[misc]
-            raise ImportError(
-                "kagra_shared not installed: `maturin develop --release` "
-                "(root pyproject) or `cd kagra-shared && maturin develop --release`"
-            )
 
 
 # Names that stay on disk (kagra.play / kagra.world3d / …) but must not

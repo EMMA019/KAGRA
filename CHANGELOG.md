@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `import kagra` keeps `WorldDoc` / `WorldPlay` without the Rust wheel
+  (python-unit CI). Tick / render still need `kagra_shared`.
+
 - Flight pose on a free `WorldDoc`: `WorldProp.pitch` / `roll` (nose up / bank)
   and `local: true` parent TRS (up to 4 links). `parent` without `local` stays
   a link so existing world-space positions do not move. `model: "ring"` is an
