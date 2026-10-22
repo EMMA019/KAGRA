@@ -5,8 +5,10 @@
 name: Package Android
 
 on:
-  pull_request:
-    paths:
+  push:
+    branches:
+      - master
+    paths: &package_android_paths
       - ".github/workflows/package-android.yml"
       - "scripts/package_android.py"
       - "scripts/build_android_native.sh"
@@ -20,6 +22,8 @@ on:
       - "mobile/android/**"
       - "pyproject.toml"
       - "examples/platformer_minimal.py"
+  pull_request:
+    paths: *package_android_paths
   workflow_dispatch:
     inputs:
       game:
@@ -102,8 +106,9 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: python scripts/package_android.py --game "$KAGRA_GAME" --out dist/android --release --skip-native
 
-      # 16 KB ページ（Android 15+ / Pixel 10）と、DT_NEEDED に絶対パスが無いこと。
-      # llvm-readelf -l / -d と zipalign -P 16 の失敗でジョブを落とす。
+      # 16 KB ページ（Android 15+ / Pixel 10）と、APK 内の全 .so の DT_NEEDED。
+      # llvm-readelf -d と ELF 文字列の両方で、'/' を含む NEEDED があれば落とす。
+      # 対象は dist/android の全 APK（platformer-debug.apk を含む）。
       - name: Check 16 KB alignment and DT_NEEDED
         run: |
           set -eu

@@ -87,6 +87,12 @@ def test_package_android_workflow_checks_load_and_zipalign():
     assert "-Wl,-z,max-page-size=16384" in cmake
     assert "-Wl,-z,common-page-size=16384" in cmake
     assert 'IMPORTED_SONAME "libkagra_shared.so"' in cmake
+    assert "IMPORTED_NO_SONAME FALSE" in cmake
+    assert "-Wl,-l:libkagra_shared.so" in cmake
+    assert "target_link_libraries(kagra_jni kagra_shared" not in cmake
+    build_rs = (ROOT / "kagra-shared" / "build.rs").read_text(encoding="utf-8")
+    assert 'target.contains("android")' in build_rs
+    assert "cargo:rustc-cdylib-link-arg=-Wl,-soname,libkagra_shared.so" in build_rs
     native = (ROOT / "mobile/android/app/src/main/java/dev/kagra/shell/KagraNative.kt").read_text(
         encoding="utf-8"
     )
@@ -135,6 +141,91 @@ def test_shared_library_without_soname_is_rejected():
     mod = _checker()
     text = "  0x0000000000000001 (NEEDED)             Shared library: [libc.so]\n"
     errors = mod.dynamic_errors("libkagra_shared.so", text, filename="libkagra_shared.so")
+    assert len(errors) == 1
+    assert "SONAME" in errors[0]
+
+
+def _elf64(needed: list[str], soname: str | None) -> bytes:
+    """Tiny identity-mapped ELF64 whose dynamic strings are exactly `needed`."""
+    import struct
+
+    strings = b"\x00"
+    offsets: list[int] = []
+    for name in needed:
+        offsets.append(len(strings))
+        strings += name.encode() + b"\x00"
+    soname_off = None
+    if soname is not None:
+        soname_off = len(strings)
+        strings += soname.encode() + b"\x00"
+    # ELF header + 2 program headers, then dynamic, then strings.
+    phoff = 64
+    dyn_off = phoff + 56 * 2
+    # DT_NEEDED * n + optional DT_SONAME + DT_STRTAB + DT_NULL
+    dyn_count = len(needed) + (1 if soname_off is not None else 0) + 2
+    str_off = dyn_off + dyn_count * 16
+    blob = bytearray(str_off + len(strings))
+    blob[0:4] = b"\x7fELF"
+    blob[4] = 2  # ELFCLASS64
+    blob[5] = 1  # ELFDATA2LSB
+    blob[6] = 1
+    struct.pack_into("<HHIQQQIHHHHHH", blob, 16, 3, 183, 1, 0, phoff, 0, 0, 64, 56, 2, 0, 0, 0)
+    filesz = len(blob)
+
+    def phdr(index: int, p_type: int, flags: int, offset: int, filesz_ph: int, align: int) -> None:
+        struct.pack_into(
+            "<IIQQQQQQ",
+            blob,
+            phoff + index * 56,
+            p_type,
+            flags,
+            offset,
+            offset,
+            offset,
+            filesz_ph,
+            filesz_ph,
+            align,
+        )
+
+    phdr(0, 1, 5, 0, filesz, 0x4000)  # PT_LOAD
+    phdr(1, 2, 6, dyn_off, dyn_count * 16, 8)  # PT_DYNAMIC
+    cursor = dyn_off
+    for off in offsets:
+        struct.pack_into("<qQ", blob, cursor, 1, off)  # DT_NEEDED
+        cursor += 16
+    if soname_off is not None:
+        struct.pack_into("<qQ", blob, cursor, 14, soname_off)  # DT_SONAME
+        cursor += 16
+    struct.pack_into("<qQ", blob, cursor, 5, str_off)  # DT_STRTAB
+    cursor += 16
+    struct.pack_into("<qQ", blob, cursor, 0, 0)  # DT_NULL
+    blob[str_off:] = strings
+    return bytes(blob)
+
+
+def test_elf_needed_path_is_rejected_without_readelf():
+    mod = _checker()
+    bad = "/home/runner/work/KAGRA/KAGRA/mobile/android/app/src/main/cpp/../jniLibs/arm64-v8a/libkagra_shared.so"
+    soname, needed = mod.elf_dynamic(_elf64([bad, "liblog.so"], "libkagra_jni.so"))
+    assert soname == "libkagra_jni.so"
+    assert bad in needed
+    errors = mod._dynamic_string_errors("lib/arm64-v8a/libkagra_jni.so", "libkagra_jni.so", soname, needed)
+    assert any(bad in error and "DT_NEEDED" in error for error in errors)
+
+
+def test_elf_bare_needed_and_shared_soname_are_accepted():
+    mod = _checker()
+    soname, needed = mod.elf_dynamic(
+        _elf64(["libkagra_shared.so", "liblog.so", "libc.so"], "libkagra_shared.so")
+    )
+    assert needed[0] == "libkagra_shared.so"
+    assert mod._dynamic_string_errors("libkagra_shared.so", "libkagra_shared.so", soname, needed) == []
+
+
+def test_elf_shared_without_soname_is_rejected():
+    mod = _checker()
+    soname, needed = mod.elf_dynamic(_elf64(["libc.so"], None))
+    errors = mod._dynamic_string_errors("libkagra_shared.so", "libkagra_shared.so", soname, needed)
     assert len(errors) == 1
     assert "SONAME" in errors[0]
 

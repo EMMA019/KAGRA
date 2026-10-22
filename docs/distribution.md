@@ -122,11 +122,14 @@ NDK r29・cargo-ndk・Gradle 8.7・AGP 8.5.2・platform 35 を入れて debug AP
 
 16 KB ページ（Android 15 以降、Pixel 10 など）では、各 `.so` の ELF LOAD の
 `p_align` が 16384 以上で、APK 内では非圧縮かつ 16 KB zip アラインである必要がある。
-Rust は `.cargo/config.toml` の Android ターゲットへ
-`-Wl,-z,max-page-size=16384` と `common-page-size`、それに
-`-Wl,-soname,libkagra_shared.so` を渡す。JNI も同じページサイズで、
-`IMPORTED_SONAME` は `libkagra_shared.so`。SONAME が無いと `libkagra_jni.so` の
-`DT_NEEDED` が CI の絶対パスになり、実機の `dlopen` が失敗する。
+Rust は `.cargo/config.toml` の Android ターゲットと
+`kagra-shared/build.rs` の `cargo:rustc-cdylib-link-arg` で
+`-Wl,-z,max-page-size=16384`、`common-page-size`、
+`-Wl,-soname,libkagra_shared.so` を渡す。JNI は同じページサイズで、
+`IMPORTED_SONAME` を `libkagra_shared.so` にしたうえで、絶対パスではなく
+`-Wl,-L<jniLibs> -Wl,-l:libkagra_shared.so` でリンクする。
+`IMPORTED_LOCATION` をそのまま渡すと `libkagra_jni.so` の `DT_NEEDED` が
+CI の絶対パスになり、実機の `dlopen` が失敗する。
 `libc++_shared.so` は NDK r28+ のプリビルドを使う（`c++_shared`）。
 パッケージは `useLegacyPackaging = false` で、AGP 8.5.1 以降が `zipalign -P 16` する。
 CI は `llvm-readelf -l`、`llvm-readelf -d`（`DT_NEEDED` に `/` が無いこと）、
