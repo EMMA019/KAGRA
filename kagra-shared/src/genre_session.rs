@@ -11,10 +11,12 @@ use crate::novel;
 use crate::platformer;
 use crate::puzzle;
 use crate::race;
+use crate::survival;
 use crate::world_doc::WorldEvent;
 use crate::world_play::WorldPlay;
 
 pub use crate::puzzle_board::PuzzleSession;
+pub use crate::survival::SurvivalSession;
 
 /// Session errors (JSON parse, wrong `WorldDoc.genre`, serialize).
 pub type GenreSessionError = String;
@@ -484,6 +486,59 @@ impl RaceSession {
     }
 }
 
+/// Camp survival (`survival`). Day/night, hunger, health, gathering, crafting,
+/// and the shelter stay in `survival.rs`. Not the `survival_meter` WorldPlay slice.
+impl GenreSession for SurvivalSession {
+    fn genre_id(&self) -> &'static str {
+        survival::CAMP_ID
+    }
+
+    fn from_json(json: &str) -> Result<Self, GenreSessionError> {
+        SurvivalSession::open(json)
+    }
+
+    fn set_input(&mut self, input: WalkInput) {
+        self.apply_input(input);
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.step(dt);
+    }
+
+    fn dump(&self) -> Result<String, GenreSessionError> {
+        self.world_json()
+    }
+
+    fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        self.drain_events(name)
+    }
+
+    fn confirm(&mut self) {
+        self.confirm_action();
+    }
+
+    fn emit_event(
+        &mut self,
+        name: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), GenreSessionError> {
+        self.record_event(name, data);
+        Ok(())
+    }
+
+    fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        self.begin_timer(name, seconds, on_done)
+    }
+
+    fn step_interact(&mut self) {
+        self.use_nearby();
+    }
+
+    fn phase(&self) -> GamePhase {
+        self.current_phase()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -826,5 +881,46 @@ mod tests {
         let crest = include_str!("../tests/fixtures/crest_isle_world.json");
         let err = RaceSession::from_json(crest).unwrap_err();
         assert!(err.contains("race_drive"));
+    }
+
+    const CLEARING: &str = include_str!("../tests/fixtures/survival_world.json");
+
+    #[test]
+    fn survival_session_walks_and_rejects_meter() {
+        let mut s = SurvivalSession::from_json(CLEARING).expect("fixture");
+        assert_eq!(s.genre_id(), "survival");
+        assert_eq!(s.phase(), GamePhase::Title);
+        let dump = s.dump().expect("dump");
+        assert!(dump.contains("knight"));
+        assert!(dump.contains("stylized_tree"));
+        assert!(dump.contains("campfire"));
+        s.confirm();
+        assert_eq!(s.phase(), GamePhase::Playing);
+        let z0 = serde_json::from_str::<serde_json::Value>(&s.dump().unwrap()).unwrap()["player"]
+            ["position"][2]
+            .as_f64()
+            .unwrap();
+        s.set_input(WalkInput {
+            lx: 0.0,
+            lz: 1.0,
+            jump: false,
+            attack: false,
+            dodge: false,
+        });
+        for _ in 0..20 {
+            s.tick(1.0 / 60.0);
+        }
+        let z1 = serde_json::from_str::<serde_json::Value>(&s.dump().unwrap()).unwrap()["player"]
+            ["position"][2]
+            .as_f64()
+            .unwrap();
+        assert!(
+            (z1 - z0).abs() > 0.4,
+            "stick forward should leave spawn, z0={z0} z1={z1}"
+        );
+        assert!(s.take_events("nonexistent").is_empty());
+        let meter = include_str!("../tests/fixtures/survival_meter_world.json");
+        let err = SurvivalSession::from_json(meter).unwrap_err();
+        assert!(err.contains("survival"));
     }
 }

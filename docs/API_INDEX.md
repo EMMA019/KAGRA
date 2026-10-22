@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **61**
+エントリ数: **62**
 
 棚の**手前**は shared wgpu 30（WorldDoc / WorldPlay / gameloop）。
 棚の**奥**は再エクスポートの余り。旧 RendererV2 API は `old/`。
@@ -67,6 +67,7 @@
 | `set_listener` | `export set_listener  (from kagra.audio)` |
 | `SlotStore` | `class SlotStore  (from kagra.save)` |
 | `sound` | `export sound  (from kagra.audio)` |
+| `SurvivalSession` | `class SurvivalSession  (from kagra.kagra_shared)` |
 | `t` | `export t  (from kagra.i18n)` |
 | `tone` | `export tone  (from kagra.audio)` |
 | `was_pressed` | `export was_pressed  (from kagra.gameloop)` |
