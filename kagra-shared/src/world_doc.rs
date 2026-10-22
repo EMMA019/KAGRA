@@ -1205,6 +1205,24 @@ impl WorldDoc {
         mesh
     }
 
+    /// Stable while a walker only changes pose. A different glTF or texture
+    /// set must reupload; clip / hair / look stay on the same slots.
+    pub fn gpu_mesh_key(&self) -> String {
+        let mut parts = Vec::new();
+        for slot in self.gltf_slots() {
+            match slot {
+                GltfSlot::Rest(spec) => parts.push(format!("r:{spec}")),
+                GltfSlot::Skinned { spec, part, .. } => parts.push(format!("s:{spec}:{part}")),
+            }
+        }
+        for prop in self.textured_props() {
+            let tex = prop_texture_path(prop).unwrap_or("");
+            parts.push(format!("t:{}:{tex}", prop.id));
+        }
+        parts.push(format!("lod:{}", self.vegetation_lod_cells()));
+        parts.join("|")
+    }
+
     pub(crate) fn gltf_slots(&self) -> Vec<GltfSlot> {
         let mut seen = HashSet::new();
         let mut out = Vec::new();

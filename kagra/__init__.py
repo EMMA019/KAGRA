@@ -7,7 +7,20 @@ The archived RendererV2 / ``kagra_core`` demo is under ``old/``.
 from __future__ import annotations
 
 from kagra.annotate import annotate
-from kagra.audio import play_se, play_wav, se, set_listener, sound, tone
+from kagra.audio import (
+    mixer_state,
+    play_bgm,
+    play_se,
+    play_sfx,
+    play_wav,
+    se,
+    set_group_volume,
+    set_listener,
+    set_mute,
+    sound,
+    stop_bgm,
+    tone,
+)
 from kagra.brain import Brain, BrainError, KairiBrain, OpenAIBrain, brain
 from kagra.contracts import AssetKind, KagraContractError, resolve_asset
 from kagra.gameloop import (
@@ -26,6 +39,7 @@ from kagra.gameloop import (
 from kagra.i18n import add_table, get_lang, set_lang, t
 from kagra.land import island_height, open_world_height, overworld_height
 from kagra.path import find_path, move_range
+from kagra.flow import save_dir
 from kagra.save import SlotStore, load_data, save_data
 from kagra.trace import debug_trace, debug_trace_summary
 from kagra.ui2d import bar, choice_menu, image, list_lines, merge, message, paged_menu, panel, scroll_window
@@ -167,6 +181,7 @@ __all__ = [
     "load_scenario",
     "merge",
     "message",
+    "mixer_state",
     "mouse_clicked",
     "mouse_down",
     "mouse_pos",
@@ -175,7 +190,9 @@ __all__ = [
     "overworld_height",
     "paged_menu",
     "panel",
+    "play_bgm",
     "play_se",
+    "play_sfx",
     "play_wav",
     "pressed",
     "render_rgba",
@@ -187,11 +204,15 @@ __all__ = [
     "run_scenario",
     "run_scenario_path",
     "save_data",
+    "save_dir",
     "scroll_window",
     "se",
+    "set_group_volume",
     "set_lang",
     "set_listener",
+    "set_mute",
     "sound",
+    "stop_bgm",
     "t",
     "tone",
     "was_pressed",

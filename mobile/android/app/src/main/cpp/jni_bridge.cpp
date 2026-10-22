@@ -255,6 +255,35 @@ Java_dev_kagra_shell_KagraNative_setSettings(
 #endif
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_setSaveRoot(JNIEnv *env, jobject, jstring path) {
+#if KAGRA_HAS_SHARED
+  if (!path) return JNI_FALSE;
+  const char *c = env->GetStringUTFChars(path, nullptr);
+  if (!c) return JNI_FALSE;
+  int rc = kagra_shared_set_save_root(c);
+  env->ReleaseStringUTFChars(path, c);
+  return rc == 0 ? JNI_TRUE : JNI_FALSE;
+#else
+  (void)env;
+  (void)path;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_kagra_shell_KagraNative_takeAudioCues(JNIEnv *env, jobject) {
+#if KAGRA_HAS_SHARED
+  int need = kagra_shared_take_audio_cues(nullptr, 0);
+  if (need <= 1) return env->NewStringUTF("{}");
+  std::vector<char> buf((size_t)need);
+  kagra_shared_take_audio_cues(buf.data(), (unsigned)buf.size());
+  return env->NewStringUTF(buf.data());
+#else
+  return env->NewStringUTF("{}");
+#endif
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_dev_kagra_shell_KagraNative_audioJson(JNIEnv *env, jobject) {
 #if KAGRA_HAS_SHARED

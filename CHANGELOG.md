@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Box Hop（配布の既定）にタイトル → プレイ → ポーズ → 結果 → リトライ。
+  音量とハイスコアは Rust の JSON セーブ（Windows は `%APPDATA%\kagra`、
+  Android は内部ストレージ）。`kagra.audio` は BGM のフェード、効果音、
+  グループ音量、ミュート。クリップは `assets/audio/` の CC0 合成音。
+  デバイスが無いときは無音。箱跳びのジャンプ、FPS の発射、カードのプレイに
+  効果音を付けた。
+
 - Flight pose on a free `WorldDoc`: `WorldProp.pitch` / `roll` (nose up / bank)
   and `local: true` parent TRS (up to 4 links). `parent` without `local` stays
   a link so existing world-space positions do not move. `model: "ring"` is an

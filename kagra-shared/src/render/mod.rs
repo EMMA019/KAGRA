@@ -135,6 +135,8 @@ pub struct Renderer {
     text: crate::font::TextRaster,
     /// walker glTF spec → SpringBone 布シミュ（フレーム跨ぎで保持）。
     cloth: std::collections::HashMap<String, crate::spring::SpringState>,
+    /// Which `WorldDoc` mesh table is on the GPU. A new dump reuploads.
+    mesh_key: String,
 }
 
 impl Renderer {
@@ -752,6 +754,7 @@ impl Renderer {
             bloom,
             text: crate::font::TextRaster::new(),
             cloth: std::collections::HashMap::new(),
+            mesh_key: String::new(),
         };
         me.upload_screen();
         me
@@ -885,6 +888,15 @@ impl Renderer {
 
     pub fn mesh_count(&self) -> usize {
         self.meshes.len()
+    }
+
+    /// Drop uploaded meshes so the next world draw can upload `compile_meshes`.
+    /// Driving and collectathon attach their own meshes first; a packaged
+    /// `World` scene cannot skin glTF on top of that list.
+    pub fn clear_meshes(&mut self) {
+        self.meshes.clear();
+        self.cloth.clear();
+        self.mesh_key.clear();
     }
 
     pub fn aspect(&self) -> f32 {
@@ -1517,8 +1529,12 @@ impl Renderer {
         doc: &crate::world_doc::WorldDoc,
         hud: &DrawList,
     ) -> Result<(), String> {
-        if self.meshes.is_empty() {
+        let key = doc.gpu_mesh_key();
+        if self.meshes.is_empty() || self.mesh_key != key {
+            // Driving meshes, or a previous world's glTF table, are not this doc.
+            self.clear_meshes();
             self.upload_world_meshes(doc)?;
+            self.mesh_key = key;
         } else {
             // ライブ tick: walker glTF は clip/hair/morph/look で毎フレーム
             // 再スキンする（初回アップロードのみだと T-pose のまま固定）。

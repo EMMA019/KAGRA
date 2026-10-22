@@ -15,6 +15,7 @@ use crate::collectathon::{
 use crate::cook::{self, CookGame};
 use crate::fight::{self, FightGame};
 use crate::fish::{self, FishGame};
+use crate::flow::{FlowAction, FlowPhase, GameFlow};
 use crate::fps::{self, FpsGame};
 use crate::game::GamePhase;
 use crate::gltf_load::{head_world_pos, step_springs};
@@ -68,6 +69,8 @@ pub struct WorldPlay {
     pub fish: FishGame,
     pub shop: ShopGame,
     pub cook: CookGame,
+    /// Title / pause / result for genres that opt in (`uses_flow`).
+    pub flow: GameFlow,
     seed: WorldDoc,
     vy: f32,
     spring: SpringState,
@@ -187,6 +190,7 @@ impl WorldPlay {
             cook::place_stove_camera(&mut doc);
         }
         doc.refresh_asset_status();
+        let game_id = doc.genre.clone().unwrap_or_default();
         let game = if is_collectathon(&doc)
             || action::is_action(&doc)
             || action2d::is_action2d(&doc)
@@ -238,6 +242,7 @@ impl WorldPlay {
             fish: fish_game,
             shop: shop_game,
             cook: cook_game,
+            flow: GameFlow::new(game_id),
             vy: 0.0,
             spring: SpringState::default(),
             blink_t: 0.0,
@@ -249,11 +254,113 @@ impl WorldPlay {
     }
 
     /// Title / result: Space or Enter. Playing ignores this (Space is jump).
+    /// Pause uses the flow buttons so confirm does not restart a paused run.
     pub fn confirm(&mut self) {
+        if self.uses_flow() && self.flow.phase == FlowPhase::Pause {
+            return;
+        }
         match self.game.phase {
-            GamePhase::Title | GamePhase::Complete => self.start(),
+            GamePhase::Title | GamePhase::Complete => {
+                self.start();
+                if self.uses_flow() {
+                    self.flow.enter_play();
+                }
+            }
             GamePhase::Playing => {}
         }
+    }
+
+    pub fn uses_flow(&self) -> bool {
+        self.is_platformer()
+    }
+
+    pub fn flow_paused(&self) -> bool {
+        self.uses_flow() && self.flow.phase == FlowPhase::Pause
+    }
+
+    pub fn flow_phase_name(&self) -> &'static str {
+        if self.uses_flow() {
+            self.flow.phase.name()
+        } else {
+            match self.game.phase {
+                GamePhase::Title => "title",
+                GamePhase::Playing => "play",
+                GamePhase::Complete => "result",
+            }
+        }
+    }
+
+    pub fn apply_flow_key(&mut self, key: &str) -> bool {
+        if !self.uses_flow() {
+            return false;
+        }
+        let Some(action) = self.flow.on_key(key) else {
+            return false;
+        };
+        self.apply_flow_action(action);
+        true
+    }
+
+    pub fn apply_flow_pointer(&mut self, x: f32, y: f32, width: u32, height: u32) -> bool {
+        if !self.uses_flow() {
+            return false;
+        }
+        let Some(action) = self.flow.hit(x, y, width, height) else {
+            return false;
+        };
+        self.apply_flow_action(action);
+        true
+    }
+
+    pub fn request_pause(&mut self) -> bool {
+        if self.uses_flow() && self.flow.phase == FlowPhase::Play && self.game.is_playing() {
+            self.flow.pause();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn apply_flow_action(&mut self, action: FlowAction) {
+        if !self.uses_flow() {
+            return;
+        }
+        match action {
+            FlowAction::Start => self.confirm(),
+            FlowAction::Retry => {
+                self.flow.phase = FlowPhase::Title;
+                self.game.phase = GamePhase::Complete;
+                self.confirm();
+            }
+            FlowAction::Resume => self.flow.resume(),
+            FlowAction::ToTitle => {
+                self.flow.show_title();
+                self.game.phase = GamePhase::Title;
+                self.input = WalkInput::default();
+            }
+            FlowAction::Pause => {
+                self.flow.pause();
+            }
+            FlowAction::VolumeUp => self.flow.bump_master(0.1),
+            FlowAction::VolumeDown => self.flow.bump_master(-0.1),
+            FlowAction::ToggleMute => self.flow.toggle_mute(),
+        }
+    }
+
+    pub fn load_progress(&mut self) {
+        if self.uses_flow() {
+            self.flow.load_save();
+        }
+    }
+
+    pub fn save_progress(&self) {
+        if self.uses_flow() {
+            let _ = self.flow.write_save();
+        }
+    }
+
+    pub fn hud_json(&self, width: u32, height: u32) -> String {
+        crate::flow::draw_list_json(&self.build_hud(width, height))
     }
 
     pub fn start(&mut self) {
@@ -471,10 +578,16 @@ impl WorldPlay {
     /// Advance walker + chase camera + pickups. `dt` is seconds (clamped).
     pub fn tick(&mut self, dt: f32) {
         let dt = dt.clamp(0.0, 0.05);
+        if dt > 0.0 {
+            crate::mixer::tick(dt);
+        }
         if dt <= 0.0 {
             return;
         }
         if !self.game.is_playing() {
+            return;
+        }
+        if self.flow_paused() {
             return;
         }
         let input = self.input.clamped();
@@ -513,6 +626,17 @@ impl WorldPlay {
             }
             return;
         }
+        if self.is_platformer() && input.jump {
+            let grounded = self
+                .doc
+                .player
+                .as_ref()
+                .map(|w| w.on_ground)
+                .unwrap_or(false);
+            if grounded {
+                crate::mixer::cue_sfx("jump");
+            }
+        }
         self.step_walker(walked, dt);
         self.follow_camera();
         if self.is_action() {
@@ -534,7 +658,13 @@ impl WorldPlay {
             self.input.jump = false;
             if self.platform.dead || self.platform.won {
                 self.game.phase = GamePhase::Complete;
-                self.game.score = self.platform.landed * 50;
+                let mut score = self.platform.landed * 50;
+                if self.platform.won {
+                    score += 1000;
+                }
+                self.game.score = score;
+                let subtitle = if self.platform.won { "GOAL" } else { "FELL" };
+                self.flow.finish(score, self.platform.landed, subtitle);
             }
             return;
         }
@@ -725,7 +855,21 @@ impl WorldPlay {
             return action::build_hud(&self.action, self.game.phase, width, height);
         }
         if self.is_platformer() {
-            return platformer::build_hud(&self.platform, self.game.phase, width, height);
+            let mut list = platformer::build_hud(&self.platform, self.game.phase, width, height);
+            // Flow owns title / pause / result. The genre slabs would sit on
+            // the same buttons. A `start()` that never confirmed stays in
+            // Play for the unit tests, so those pips stay.
+            let flow_covers = self.uses_flow()
+                && match self.flow.phase {
+                    FlowPhase::Play => false,
+                    FlowPhase::Title => !self.game.is_playing(),
+                    FlowPhase::Pause | FlowPhase::Result => true,
+                };
+            if flow_covers {
+                list.quads.clear();
+            }
+            self.flow.paint(&mut list, width, height);
+            return list;
         }
         if self.is_rpg() {
             return rpg::build_hud(&self.rpg, self.game.phase, width, height);

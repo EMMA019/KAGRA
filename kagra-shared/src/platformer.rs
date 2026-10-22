@@ -362,10 +362,13 @@ mod tests {
 
     #[test]
     fn jump_leaves_box_and_lands() {
+        crate::mixer::reset_mixer();
         let mut play = started();
         let y0 = play.doc.player.as_ref().unwrap().position[1];
         play.input.jump = true;
         play.tick(1.0 / 60.0);
+        let jumped = crate::mixer::with_mixer(|m| m.log().iter().any(|s| s == "jump"));
+        assert!(jumped, "a grounded hop plays the jump one-shot");
         play.input.jump = false;
         assert!(
             !play.doc.player.as_ref().unwrap().on_ground

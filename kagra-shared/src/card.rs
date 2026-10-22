@@ -715,6 +715,7 @@ impl CardSession {
         self.clamp_cursor();
         self.push_log(side, "play", uid, def_id, -1, i32::from(cost));
         self.check_end();
+        crate::mixer::cue_sfx("card");
         true
     }
 
@@ -1258,7 +1259,12 @@ mod tests {
         s.state.you.hand.push(wolf);
         s.state.you.hand.push(king);
         assert!(!s.play(1), "the king costs 7");
+        crate::mixer::reset_mixer();
         assert!(s.play(0));
+        assert!(crate::mixer::with_mixer(|m| m
+            .log()
+            .iter()
+            .any(|s| s == "card")));
         assert_eq!(s.mana(), 0);
         assert_eq!(s.you_board(), 1);
         assert!(s.state.you.board[0].sick);

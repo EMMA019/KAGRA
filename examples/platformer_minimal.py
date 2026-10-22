@@ -17,7 +17,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import kagra  # noqa: E402
-from kagra.gameloop import Scene, draw_world, mouse_down, mouse_pos, pressed, run, was_pressed  # noqa: E402
+from kagra.gameloop import (  # noqa: E402
+    Scene,
+    draw_world,
+    mouse_clicked,
+    mouse_down,
+    mouse_pos,
+    pressed,
+    run,
+    was_pressed,
+)
 
 DUMP = Path(__file__).resolve().parents[1] / "kagra-shared/tests/fixtures/platformer_world.json"
 
@@ -62,11 +71,18 @@ class PlatformPlay(Scene):
     def __init__(self) -> None:
         super().__init__()
         self.session = _load_session()
-        self.session.confirm()
+        if hasattr(self.session, "load_progress"):
+            self.session.load_progress()
         self.world = json.loads(self.session.dump())
         self._edges = _jump_edges(self.world)
         self._scripted = False
         self._touch = (False, False, False)
+
+    def _flow(self) -> str:
+        phase = getattr(self.session, "flow_phase", None)
+        if isinstance(phase, str) and phase:
+            return phase
+        return "play" if self.session.phase == "playing" else "title"
 
     def _scripted_wish(self) -> tuple[float, bool]:
         if self.session.won:
@@ -80,55 +96,72 @@ class PlatformPlay(Scene):
         jump = on_ground and any((edge - 0.85) < x < (edge - 0.12) for edge in self._edges)
         return 1.0, jump
 
+    def _ui_key(self) -> None:
+        if not hasattr(self.session, "flow_key"):
+            if self._flow() != "play" and (
+                was_pressed("space") or was_pressed("enter") or was_pressed("return")
+            ):
+                self.session.confirm()
+            return
+        for key in ("escape", "p", "enter", "space", "r", "t", "m", "minus", "equal"):
+            if was_pressed(key):
+                self.session.flow_key(key)
+        if mouse_clicked() and hasattr(self.session, "flow_pointer"):
+            mx, my = mouse_pos()
+            self.session.flow_pointer(mx, my, self.width, self.height)
+
     def update(self, dt: float) -> None:
         if self._scripted:
             lx, jump = self._scripted_wish()
             self._touch = (False, False, False)
         else:
-            if self.session.phase != "playing" and (
-                was_pressed("space") or was_pressed("enter") or was_pressed("return")
-            ):
-                self.session.confirm()
-            lx = (1.0 if pressed("d") or pressed("right") else 0.0) - (
-                1.0 if pressed("a") or pressed("left") else 0.0
-            )
-            jump = pressed("space") or pressed("w") or pressed("up") or pressed("k")
-            left, right, pad = _touch_layout(self.width, self.height)
-            mx, my = mouse_pos()
-            held = mouse_down()
-            touch_l = held and _hit(left, mx, my)
-            touch_r = held and _hit(right, mx, my)
-            touch_j = held and _hit(pad, mx, my)
-            if touch_l:
-                lx -= 1.0
-            if touch_r:
-                lx += 1.0
-            if touch_j:
-                jump = True
-            lx = max(-1.0, min(1.0, lx))
-            self._touch = (touch_l, touch_r, touch_j)
+            self._ui_key()
+            if self._flow() != "play":
+                lx, jump = 0.0, False
+                self._touch = (False, False, False)
+            else:
+                lx = (1.0 if pressed("d") or pressed("right") else 0.0) - (
+                    1.0 if pressed("a") or pressed("left") else 0.0
+                )
+                jump = pressed("space") or pressed("w") or pressed("up") or pressed("k")
+                left, right, pad = _touch_layout(self.width, self.height)
+                mx, my = mouse_pos()
+                held = mouse_down()
+                touch_l = held and _hit(left, mx, my)
+                touch_r = held and _hit(right, mx, my)
+                touch_j = held and _hit(pad, mx, my)
+                if touch_l:
+                    lx -= 1.0
+                if touch_r:
+                    lx += 1.0
+                if touch_j:
+                    jump = True
+                lx = max(-1.0, min(1.0, lx))
+                self._touch = (touch_l, touch_r, touch_j)
         self.session.set_input(lx, 0.0, jump, False, False)
         self.session.tick(dt)
         self.world = json.loads(self.session.dump())
 
     def draw(self) -> None:
-        if self.session.won:
-            status = "box_hop - goal"
-        elif self.session.dead:
-            status = "box_hop - fell"
+        if hasattr(self.session, "hud_json"):
+            hud = json.loads(self.session.hud_json(self.width, self.height))
         else:
-            status = f"box_hop - {self.session.phase}"
+            hud = {"quads": [], "texts": []}
+        hud.setdefault("quads", [])
+        hud.setdefault("texts", [])
         left, right, pad = _touch_layout(self.width, self.height)
         touch_l, touch_r, touch_j = self._touch
+        if self._flow() != "play":
+            self._canvas_png = draw_world(self.world, self.width, self.height, hud=hud)
+            return
 
         def pad_color(active: bool, base: list[int]) -> list[int]:
             if active:
                 return [base[0] + 40, base[1] + 40, base[2] + 30, 235]
             return base
 
-        hud = {
-            "quads": [
-                {"x": 8, "y": 8, "w": 300, "h": 36, "color": [20, 28, 40, 210]},
+        hud["quads"].extend(
+            [
                 {
                     "x": left[0],
                     "y": left[1],
@@ -150,22 +183,16 @@ class PlatformPlay(Scene):
                     "h": pad[3],
                     "color": pad_color(touch_j, [48, 110, 170, 230]),
                 },
-            ],
-            "texts": [
+            ]
+        )
+        hud["texts"].extend(
+            [
                 {
-                    "text": status,
+                    "text": "A/D or L/R   SPACE jump   P pause",
                     "x": 16,
                     "y": 16,
-                    "size": 15,
+                    "size": 12,
                     "color": [236, 242, 248, 255],
-                    "align": "left",
-                },
-                {
-                    "text": "A/D or L/R   SPACE jump",
-                    "x": 16,
-                    "y": 32,
-                    "size": 11,
-                    "color": [200, 214, 226, 255],
                     "align": "left",
                 },
                 {
@@ -192,22 +219,21 @@ class PlatformPlay(Scene):
                     "color": [248, 252, 255, 255],
                     "align": "center",
                 },
-            ],
-        }
+            ]
+        )
         self._canvas_png = draw_world(self.world, self.width, self.height, hud=hud)
 
 
 def main() -> None:
     headless = "--headless" in sys.argv
-    out = None
+    scene = PlatformPlay()
     if headless:
         idx = sys.argv.index("--headless")
         out = sys.argv[idx + 1] if len(sys.argv) > idx + 1 else "scratch/platformer.png"
         Path(out).parent.mkdir(parents=True, exist_ok=True)
-    scene = PlatformPlay()
-    if headless:
         scene.width = 640
         scene.height = 360
+        scene.session.confirm()
         scene._scripted = True
         for _ in range(900):
             scene.update(1.0 / 60.0)

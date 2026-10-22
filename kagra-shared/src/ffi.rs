@@ -674,3 +674,37 @@ pub unsafe extern "C" fn kagra_shared_resolve_alias(
     let n = CStr::from_ptr(name).to_string_lossy();
     write_cstr(&resolve_alias(&n).join("\n"), buf, buflen)
 }
+
+/// セーブ先。Android は `filesDir`（内部ストレージ）。空文字で解除。
+///
+/// # Safety
+/// `path` は NUL 終端文字列か NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_set_save_root(path: *const c_char) -> c_int {
+    if path.is_null() {
+        crate::flow::set_save_root(None);
+        return 0;
+    }
+    let text = CStr::from_ptr(path).to_string_lossy();
+    if text.is_empty() {
+        crate::flow::set_save_root(None);
+    } else {
+        crate::flow::set_save_root(Some(std::path::PathBuf::from(text.as_ref())));
+    }
+    0
+}
+
+/// ミキサーのキュー（BGM ゲインと効果音名）を JSON で取り出す。取り出した効果音は消える。
+///
+/// # Safety
+/// `buf` は NULL か `buflen` バイト以上の領域。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_take_audio_cues(buf: *mut c_char, buflen: c_uint) -> c_int {
+    let json = crate::mixer::cues_json();
+    let need = json.len() + 1;
+    if buf.is_null() || (buflen as usize) < need {
+        crate::mixer::hold_cues(json);
+        return need as c_int;
+    }
+    write_cstr(&json, buf, buflen)
+}

@@ -184,6 +184,23 @@ base64 は Actions 用。
 4. Pricing は No payments のままでよい。**Public** にする前に、下の実機確認を終える
 5. このリポジトリの Actions からは公開ボタンを押さない
 
+## タイトル・セーブ・音
+
+既定のパッケージ（`examples/platformer_minimal.py` / Box Hop）は、起動すると
+タイトルで待つ。Space / Enter / タップで始まり、P または右上の PAUSE で
+止まり、ゴールか落下のあと RETRY / TITLE に戻る。音量とミュートはポーズから
+変える。ハイスコアは JSON で残る。
+
+| OS | パス |
+|---|---|
+| Windows | `%APPDATA%\kagra\box_hop.json` |
+| Android | アプリ内部ストレージ `filesDir/kagra/box_hop.json` |
+| その他 | `$XDG_DATA_HOME/kagra` か `~/.local/share/kagra` |
+
+効果音と BGM は `assets/audio/` の CC0 合成音（`LICENSE.txt`）。デバイスが
+無い CI や lavapipe ではミキサーが無音のままフレームを止めない。Android は
+同じキューを SoundPool / MediaPlayer で鳴らす。
+
 ## 何が配布物に入るか
 
 - Windows: 例の Python、`kagra` パッケージ、ネイティブモジュール、dump、

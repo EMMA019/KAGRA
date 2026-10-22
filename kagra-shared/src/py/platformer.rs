@@ -47,6 +47,42 @@ impl PyPlatformerSession {
         self.inner.landed()
     }
 
+    /// `title` / `play` / `pause` / `result`.
+    #[getter]
+    fn flow_phase(&self) -> &'static str {
+        self.inner.flow_phase()
+    }
+
+    #[getter]
+    fn best_score(&self) -> u32 {
+        self.inner.best_score()
+    }
+
+    #[getter]
+    fn score(&self) -> u32 {
+        self.inner.score()
+    }
+
+    fn flow_key(&mut self, key: &str) -> bool {
+        self.inner.apply_flow_key(key)
+    }
+
+    fn flow_pointer(&mut self, x: f32, y: f32, width: u32, height: u32) -> bool {
+        self.inner.apply_flow_pointer(x, y, width, height)
+    }
+
+    fn load_progress(&mut self) {
+        self.inner.load_progress()
+    }
+
+    fn save_progress(&self) {
+        self.inner.save_progress()
+    }
+
+    fn hud_json(&self, width: u32, height: u32) -> String {
+        self.inner.hud_json(width, height)
+    }
+
     fn tick(&mut self, dt: f32) {
         self.inner.tick(dt);
     }
