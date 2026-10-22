@@ -16,7 +16,7 @@
 //! `enhanced-determinism` feature により、同一プラットフォームで
 //! 同入力 → 同結果（ゲームの決定論ルールを満たす）。
 //!
-//! Python からは `kagra_shared.PhysicsWorld`（py.rs）で使う。ゲームロジック
+//! Python からは `kagra_shared.PhysicsWorld`（`py/physics.rs`）で使う。ゲームロジック
 //! （いつ箱を落とすか等）は Python 側。
 
 use std::collections::HashMap;

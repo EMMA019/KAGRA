@@ -9,7 +9,7 @@ use std::sync::{Mutex, OnceLock};
 
 use kagra_shared::render::Renderer;
 use kagra_shared::scene::DrawList;
-use kagra_shared::scene3d::{Batch, Camera, Instance, Material, MeshId, Scene3D};
+use kagra_shared::scene3d::{Batch, Camera, Instance, MeshId, Scene3D};
 use kagra_shared::session::SceneKind;
 use kagra_shared::SharedSession;
 
@@ -273,11 +273,10 @@ fn bloom_spills_light_around_bright_quad() {
         ibl: 0.0,
         batches: vec![Batch {
             mesh: MeshId(0),
-            instances: vec![Instance {
-                model: glam::Mat4::from_translation(glam::Vec3::ZERO),
-                color: [255, 255, 255, 255],
-                material: Material::Solid,
-            }],
+            instances: vec![Instance::new(
+                glam::Mat4::from_translation(glam::Vec3::ZERO),
+                [255, 255, 255, 255],
+            )],
         }],
         ..Default::default()
     };
@@ -337,11 +336,10 @@ fn fxaa_smooths_edges_with_intermediate_colors() {
         ibl: 0.0,
         batches: vec![Batch {
             mesh: MeshId(0),
-            instances: vec![Instance {
-                model: glam::Mat4::from_translation(glam::Vec3::ZERO),
-                color: [255, 255, 255, 255],
-                material: Material::Solid,
-            }],
+            instances: vec![Instance::new(
+                glam::Mat4::from_translation(glam::Vec3::ZERO),
+                [255, 255, 255, 255],
+            )],
         }],
         ..Default::default()
     };
