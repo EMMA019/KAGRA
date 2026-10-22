@@ -28,6 +28,7 @@ pub mod fps;
 pub mod game;
 pub mod genre_session;
 pub mod gltf_load;
+pub mod grade;
 pub mod input;
 pub mod lookat;
 pub mod map;

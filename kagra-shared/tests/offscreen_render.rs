@@ -502,3 +502,48 @@ fn truck_pixels(rgba: &[u8]) -> (usize, f32) {
     };
     (count, center)
 }
+
+fn channel_mean(rgba: &[u8], ch: usize) -> f32 {
+    let n = rgba.len() / 4;
+    if n == 0 {
+        return 0.0;
+    }
+    let mut sum = 0u64;
+    for i in 0..n {
+        sum += rgba[i * 4 + ch] as u64;
+    }
+    sum as f32 / n as f32
+}
+
+/// Warm LUT must shift a gray outdoor dump. Vignette and bloom stay off so
+/// the grade is the only difference.
+#[test]
+fn warm_lut_lifts_red_and_drops_blue() {
+    let _guard = GPU.lock().unwrap_or_else(|e| e.into_inner());
+    let Ok(mut renderer) = pollster::block_on(Renderer::new_offscreen(W, H)) else {
+        eprintln!("no GPU adapter; skipping lut test");
+        return;
+    };
+    let off = kagra_shared::world_doc::WorldDoc::from_json(
+        r#"{"version":1,"sky":[150,150,150,255],"ibl":0.2,"exposure":1.0,"tonemap":true,"bloom":0.0,"vignette":0.0,"lut":"off","fxaa":false,"ground":true}"#,
+    )
+    .expect("off doc");
+    let warm = kagra_shared::world_doc::WorldDoc::from_json(
+        r#"{"version":1,"sky":[150,150,150,255],"ibl":0.2,"exposure":1.0,"tonemap":true,"bloom":0.0,"vignette":0.0,"lut":"warm","lut_strength":1.0,"fxaa":false,"ground":true}"#,
+    )
+    .expect("warm doc");
+    let plain = renderer.render_world_doc(&off).expect("off frame");
+    let graded = renderer.render_world_doc(&warm).expect("warm frame");
+    let plain_r = channel_mean(&plain, 0);
+    let plain_b = channel_mean(&plain, 2);
+    let warm_r = channel_mean(&graded, 0);
+    let warm_b = channel_mean(&graded, 2);
+    assert!(
+        warm_r > plain_r + 0.5,
+        "warm LUT should lift red {plain_r} -> {warm_r}"
+    );
+    assert!(
+        warm_b + 0.5 < plain_b,
+        "warm LUT should drop blue {plain_b} -> {warm_b}"
+    );
+}
