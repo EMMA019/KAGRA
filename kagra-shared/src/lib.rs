@@ -33,6 +33,7 @@ pub mod map;
 pub mod mission;
 pub mod mixamo;
 pub mod morph;
+pub mod netplay;
 pub mod novel;
 #[cfg(feature = "physics")]
 pub mod physics;
@@ -95,6 +96,7 @@ pub use gltf_load::{
 pub use input::{KeyEvent, PointerEvent, PointerPhase, VirtualPad};
 pub use map::{MapBuilding, MapEdge, RoadNetwork, DEMO_CITY_JSON, SHIBUYA_DEMO_JSON};
 pub use mission::{Mission, MissionPhase};
+pub use netplay::{fixed_dt, Lockstep, NetMessage, WireInput, PROTO_VERSION};
 pub use road::{LodLevel, RoadChunk, RoadFrame, RoadPath, RoadStreamer};
 pub use save::{SaveGame, Settings};
 pub use scene::{DemoScene, DrawList, Quad, TextAlign, TextQuad};

@@ -7,7 +7,9 @@
 //! KO/retry is dump-visible (`name` stun/hurt/block/combo/ko/win + opponent
 //! enable). Title -> play -> result reuses `WorldPlay` / `GamePhase`. Dual-body
 //! camera keeps both in view. Hit flash overlay on shared wgpu 30. Capsules,
-//! not VRM, not Rapier. No combo editor, specials, net, or new ECS.
+//! not VRM, not Rapier. No combo editor, specials, or new ECS.
+//! `FightGame::p2_input` replaces the opponent AI for a second human. Sockets
+//! stay in `netplay`.
 
 use crate::collectathon::WalkInput;
 use crate::game::GamePhase;
@@ -59,6 +61,9 @@ pub struct FightGame {
     pub hurt_flash: bool,
     pub combo: u32,
     pub guarding: bool,
+    /// Second human. `None` keeps the opponent AI.
+    pub p2_input: Option<WalkInput>,
+    pub opp_guarding: bool,
     pub ko: bool,
     pub won: bool,
     pub done: bool,
@@ -89,6 +94,8 @@ impl Default for FightGame {
             hurt_flash: false,
             combo: 0,
             guarding: false,
+            p2_input: None,
+            opp_guarding: false,
             ko: false,
             won: false,
             done: false,
@@ -237,11 +244,16 @@ pub fn tick(doc: &mut WorldDoc, game: &mut FightGame, input: WalkInput, dt: f32)
     if game.done {
         write_pose(doc, game);
         place_dual_camera(doc);
+        clear_p2_oneshots(game);
         return;
     }
     let input = input.clamped();
     tick_timers(game, dt);
     game.guarding = input.dodge && game.stun_t <= 0.0;
+    game.opp_guarding = game
+        .p2_input
+        .map(|p| p.dodge && game.opp_stun_t <= 0.0)
+        .unwrap_or(false);
     face_each_other(game);
     drive_player(doc, game, input, dt);
     player_attack(doc, game, input);
@@ -252,6 +264,58 @@ pub fn tick(doc: &mut WorldDoc, game: &mut FightGame, input: WalkInput, dt: f32)
     write_pose(doc, game);
     check_ko(doc, game);
     place_dual_camera(doc);
+    clear_p2_oneshots(game);
+}
+
+fn clear_p2_oneshots(game: &mut FightGame) {
+    if let Some(p2) = game.p2_input.as_mut() {
+        p2.attack = false;
+        p2.jump = false;
+    }
+}
+
+/// Compact round state. Inputs are not part of the hash; positions are
+/// millisecond integers so two hosts compare the same bits.
+pub fn state_hash(game: &FightGame, phase: GamePhase) -> u64 {
+    let mut bytes = Vec::with_capacity(48);
+    let phase_id = match phase {
+        GamePhase::Title => 0u8,
+        GamePhase::Playing => 1,
+        GamePhase::Complete => 2,
+    };
+    bytes.push(phase_id);
+    bytes.extend_from_slice(&game.hp.to_le_bytes());
+    bytes.extend_from_slice(&game.opp_hp.to_le_bytes());
+    bytes.extend_from_slice(&game.hits.to_le_bytes());
+    bytes.extend_from_slice(&game.combo.to_le_bytes());
+    for v in [
+        game.px,
+        game.pz,
+        game.ox,
+        game.oz,
+        game.pyaw,
+        game.oyaw,
+        game.attack_t,
+        game.stun_t,
+        game.opp_attack_t,
+        game.opp_stun_t,
+    ] {
+        bytes.extend_from_slice(&milli(v).to_le_bytes());
+    }
+    bytes.push(u8::from(game.guarding));
+    bytes.push(u8::from(game.opp_guarding));
+    bytes.push(u8::from(game.ko));
+    bytes.push(u8::from(game.won));
+    bytes.push(u8::from(game.done));
+    crate::netplay::fnv1a64(&bytes)
+}
+
+fn milli(v: f32) -> i32 {
+    if !v.is_finite() {
+        return 0;
+    }
+    let n = (v * 1000.0).round();
+    n.clamp(i32::MIN as f32, i32::MAX as f32) as i32
 }
 
 fn tick_timers(game: &mut FightGame, dt: f32) {
@@ -279,14 +343,36 @@ fn face_each_other(game: &mut FightGame) {
     game.oyaw = face_toward(game.ox, game.oz, game.px, game.pz);
 }
 
-fn drive_player(doc: &WorldDoc, game: &mut FightGame, input: WalkInput, dt: f32) {
-    if game.stun_t > 0.0 || game.attack_t > 0.0 || game.done {
+struct BodyStep {
+    stun_t: f32,
+    attack_t: f32,
+    done: bool,
+    input: WalkInput,
+}
+
+fn drive_body(doc: &WorldDoc, x: &mut f32, z: &mut f32, step: BodyStep, dt: f32) {
+    if step.stun_t > 0.0 || step.attack_t > 0.0 || step.done {
         return;
     }
     let half = doc.half.max(4.0);
     let pad = 2.0;
-    game.px = (game.px + input.lx * MOVE_SPEED * dt).clamp(-half + pad, half - pad);
-    game.pz = (game.pz + input.lz * MOVE_SPEED * dt).clamp(-RING_Z, RING_Z);
+    *x = (*x + step.input.lx * MOVE_SPEED * dt).clamp(-half + pad, half - pad);
+    *z = (*z + step.input.lz * MOVE_SPEED * dt).clamp(-RING_Z, RING_Z);
+}
+
+fn drive_player(doc: &WorldDoc, game: &mut FightGame, input: WalkInput, dt: f32) {
+    drive_body(
+        doc,
+        &mut game.px,
+        &mut game.pz,
+        BodyStep {
+            stun_t: game.stun_t,
+            attack_t: game.attack_t,
+            done: game.done,
+            input,
+        },
+        dt,
+    );
 }
 
 fn player_attack(doc: &mut WorldDoc, game: &mut FightGame, input: WalkInput) {
@@ -304,6 +390,9 @@ fn player_attack(doc: &mut WorldDoc, game: &mut FightGame, input: WalkInput) {
         return;
     }
     game.swing_hit = true;
+    if game.opp_guarding {
+        return;
+    }
     game.opp_hp = game.opp_hp.saturating_sub(1);
     game.hits = game.hits.saturating_add(1);
     if game.combo_t > 0.0 {
@@ -323,6 +412,21 @@ fn player_attack(doc: &mut WorldDoc, game: &mut FightGame, input: WalkInput) {
 }
 
 fn drive_opponent(doc: &WorldDoc, game: &mut FightGame, dt: f32) {
+    if let Some(input) = game.p2_input {
+        drive_body(
+            doc,
+            &mut game.ox,
+            &mut game.oz,
+            BodyStep {
+                stun_t: game.opp_stun_t,
+                attack_t: game.opp_attack_t,
+                done: game.done,
+                input,
+            },
+            dt,
+        );
+        return;
+    }
     if game.done || game.opp_stun_t > 0.0 || game.opp_attack_t > 0.0 {
         return;
     }
@@ -342,6 +446,10 @@ fn drive_opponent(doc: &WorldDoc, game: &mut FightGame, dt: f32) {
 }
 
 fn opponent_attack(game: &mut FightGame) {
+    if let Some(input) = game.p2_input {
+        human_opponent_attack(game, input);
+        return;
+    }
     if game.done || game.opp_stun_t > 0.0 {
         return;
     }
@@ -365,6 +473,34 @@ fn opponent_attack(game: &mut FightGame) {
         game.hurt_flash = false;
         return;
     }
+    apply_player_hit(game);
+}
+
+fn human_opponent_attack(game: &mut FightGame, input: WalkInput) {
+    if game.done || game.opp_stun_t > 0.0 {
+        return;
+    }
+    if input.attack && game.opp_attack_t <= 0.0 && !game.opp_guarding {
+        game.opp_attack_t = ATTACK_TIME;
+        game.opp_swing_hit = false;
+    }
+    if game.opp_attack_t <= 0.0 || game.opp_swing_hit {
+        return;
+    }
+    if !hit_test(game.ox, game.oz, game.oyaw, game.px, game.pz, PLAYER_R) {
+        return;
+    }
+    game.opp_swing_hit = true;
+    if game.guarding {
+        game.block_t = BLOCK_TIME;
+        game.flash_t = HIT_FLASH;
+        game.hurt_flash = false;
+        return;
+    }
+    apply_player_hit(game);
+}
+
+fn apply_player_hit(game: &mut FightGame) {
     game.hp = game.hp.saturating_sub(1);
     game.stun_t = STUN_TIME;
     game.attack_t = 0.0;
@@ -927,5 +1063,41 @@ mod tests {
         let td = WorldPlay::from_json(LANE).unwrap();
         assert!(td.is_td());
         assert!(!td.is_fight());
+    }
+
+    #[test]
+    fn human_p2_walks_away_and_can_block() {
+        let mut play = play_started();
+        put_bodies(&mut play, -2.0, 0.0, 2.0, 0.0);
+        let ox = play.fight.ox;
+        play.fight.p2_input = Some(WalkInput {
+            lx: 1.0,
+            lz: 0.0,
+            jump: false,
+            attack: false,
+            dodge: false,
+        });
+        play.input = WalkInput::default();
+        play.tick(1.0 / 60.0);
+        assert!(
+            play.fight.ox > ox + 0.04,
+            "slot 2 should step away from the player, ox {ox} -> {}",
+            play.fight.ox
+        );
+        assert!(play.fight.p2_input.unwrap().lx > 0.0);
+
+        let mut blocked = play_started();
+        put_bodies(&mut blocked, -0.8, 0.0, 0.8, 0.0);
+        blocked.fight.p2_input = Some(WalkInput {
+            lx: 0.0,
+            lz: 0.0,
+            jump: false,
+            attack: false,
+            dodge: true,
+        });
+        blocked.input.attack = true;
+        blocked.tick(1.0 / 60.0);
+        assert_eq!(blocked.fight.opp_hp, OPP_HP, "guard must stop the hit");
+        assert!(blocked.fight.opp_guarding);
     }
 }

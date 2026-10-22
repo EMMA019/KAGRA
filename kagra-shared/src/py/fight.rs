@@ -95,16 +95,39 @@ impl PyFightSession {
     }
 
     fn set_input(&mut self, lx: f32, lz: f32, jump: bool, attack: bool, dodge: bool) {
-        self.inner.set_input(
+        self.set_player_input(0, lx, lz, jump, attack, dodge);
+    }
+
+    /// Slot 0 is the local fighter. Slot 1 replaces the opponent AI.
+    fn set_player_input(
+        &mut self,
+        slot: u8,
+        lx: f32,
+        lz: f32,
+        jump: bool,
+        attack: bool,
+        dodge: bool,
+    ) {
+        self.inner.set_player_input(
+            slot,
             WalkInput {
                 lx,
                 lz,
                 jump,
                 attack,
                 dodge,
-            }
-            .clamped(),
+            },
         );
+    }
+
+    #[getter]
+    fn player_slots(&self) -> u8 {
+        self.inner.player_slots()
+    }
+
+    #[getter]
+    fn fingerprint(&self) -> u64 {
+        self.inner.fingerprint()
     }
 
     fn emit_event(&mut self, name: &str, data_json: Option<&str>) -> PyResult<()> {

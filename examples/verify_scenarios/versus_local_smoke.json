@@ -1,0 +1,10 @@
+{
+  "name": "versus_local_smoke",
+  "notes": "Local 1v1 fight on one device. Headless script drives both FightSession slots and writes a shared wgpu 30 PNG. Not a golden image.",
+  "script": "examples/versus_local.py",
+  "timeout_sec": 120,
+  "env": {"KAGRA_HEADLESS": "1"},
+  "expect_files": [
+    {"path": "scratch/versus_local.png", "min_bytes": 200}
+  ]
+}
