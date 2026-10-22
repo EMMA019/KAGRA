@@ -2,26 +2,32 @@
 # NDK r28+ の clang は既定で max-page-size=16384 だが、cargo-ndk は r28 以上では
 # そのフラグを足さない。rustc がリンカに渡す引数としてここへ固定する。
 # https://developer.android.com/guide/practices/page-sizes
+# SONAME が無いと CMake が絶対パスでリンクし、libkagra_jni.so の DT_NEEDED が
+# CI のビルドパスになる（実機で dlopen が失敗する）。
 [target.aarch64-linux-android]
 rustflags = [
     "-C", "link-arg=-Wl,-z,max-page-size=16384",
     "-C", "link-arg=-Wl,-z,common-page-size=16384",
+    "-C", "link-arg=-Wl,-soname,libkagra_shared.so",
 ]
 
 [target.x86_64-linux-android]
 rustflags = [
     "-C", "link-arg=-Wl,-z,max-page-size=16384",
     "-C", "link-arg=-Wl,-z,common-page-size=16384",
+    "-C", "link-arg=-Wl,-soname,libkagra_shared.so",
 ]
 
 [target.armv7-linux-androideabi]
 rustflags = [
     "-C", "link-arg=-Wl,-z,max-page-size=16384",
     "-C", "link-arg=-Wl,-z,common-page-size=16384",
+    "-C", "link-arg=-Wl,-soname,libkagra_shared.so",
 ]
 
 [target.i686-linux-android]
 rustflags = [
     "-C", "link-arg=-Wl,-z,max-page-size=16384",
     "-C", "link-arg=-Wl,-z,common-page-size=16384",
+    "-C", "link-arg=-Wl,-soname,libkagra_shared.so",
 ]

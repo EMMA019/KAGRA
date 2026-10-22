@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Fail unless Android native libraries are 16 KB page aligned.
+"""Fail unless Android native libraries are 16 KB aligned and relocatable.
 
 For each ``.so`` in an APK (or a loose ``.so`` / directory):
 
 * ``llvm-readelf -l`` — every LOAD ``p_align`` must be >= 16384
+* ``llvm-readelf -d`` — no ``DT_NEEDED`` entry contains ``/`` (an absolute
+  link path). ``libkagra_shared.so`` must also advertise SONAME
+  ``libkagra_shared.so``.
 * ``zipalign -c -P 16 -v 4`` — the APK stores those libraries uncompressed
   on a 16 KB zip boundary (skipped with ``--elf-only``)
 
@@ -25,7 +28,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE_ALIGN = 16384
+SHARED_SONAME = "libkagra_shared.so"
 _NDK_PIN = re.compile(r'^NDK_VERSION="(\d+\.\d+\.\d+)"', re.M)
+_NEEDED_RE = re.compile(r"\(NEEDED\)\s+Shared library:\s+\[([^\]]*)\]")
+_SONAME_RE = re.compile(r"\(SONAME\)\s+Library soname:\s+\[([^\]]*)\]")
 
 
 def pinned_ndk_version() -> str:
@@ -49,6 +55,34 @@ def load_aligns_from_readelf(text: str) -> list[int]:
         except ValueError as exc:
             raise ValueError(f"LOAD alignment is not an integer: {raw.strip()}") from exc
     return aligns
+
+
+def needed_entries(text: str) -> list[str]:
+    """Library names from ``llvm-readelf -d`` ``DT_NEEDED`` rows."""
+    return _NEEDED_RE.findall(text)
+
+
+def soname_entries(text: str) -> list[str]:
+    return _SONAME_RE.findall(text)
+
+
+def dynamic_errors(label: str, text: str, *, filename: str) -> list[str]:
+    """Reject DT_NEEDED paths and a missing SONAME on libkagra_shared.so."""
+    errors: list[str] = []
+    parsed = needed_entries(text)
+    for name in parsed:
+        if "/" in name or "\\" in name:
+            errors.append(f"{label}: DT_NEEDED contains a path: {name}")
+    if not parsed:
+        for raw in text.splitlines():
+            if "(NEEDED)" in raw and ("/" in raw or "\\" in raw):
+                errors.append(f"{label}: DT_NEEDED contains a path: {raw.strip()}")
+    if filename == SHARED_SONAME:
+        sonames = soname_entries(text)
+        if sonames != [SHARED_SONAME]:
+            shown = ", ".join(sonames) if sonames else "(none)"
+            errors.append(f"{label}: SONAME is {shown}, expected {SHARED_SONAME}")
+    return errors
 
 
 def alignment_errors(label: str, aligns: list[int]) -> list[str]:
@@ -184,22 +218,37 @@ def _extract_apk_libs(apk: Path, dest: Path) -> list[Path]:
     return sorted(extracted)
 
 
+def _readelf(readelf: Path, mode: str, path: Path) -> subprocess.CompletedProcess[str]:
+    cmd = [str(readelf), mode, "--wide", str(path)]
+    print("+", " ".join(cmd), flush=True)
+    return subprocess.run(cmd, check=False, capture_output=True, text=True)
+
+
 def check_elf(path: Path, readelf: Path, label: str | None = None) -> list[str]:
     label = label or str(path)
-    cmd = [str(readelf), "-l", "--wide", str(path)]
-    print("+", " ".join(cmd), flush=True)
-    proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout).strip()
-        return [f"{label}: llvm-readelf -l failed ({proc.returncode}): {detail}"]
+    load = _readelf(readelf, "-l", path)
+    if load.returncode != 0:
+        detail = (load.stderr or load.stdout).strip()
+        return [f"{label}: llvm-readelf -l failed ({load.returncode}): {detail}"]
     try:
-        aligns = load_aligns_from_readelf(proc.stdout)
+        aligns = load_aligns_from_readelf(load.stdout)
     except ValueError as exc:
         return [f"{label}: {exc}"]
     errors = alignment_errors(label, aligns)
     if not errors:
         shown = ", ".join(f"{align:#x}" for align in aligns)
         print(f"{label}: LOAD p_align {shown}")
+
+    dynamic = _readelf(readelf, "-d", path)
+    if dynamic.returncode != 0:
+        detail = (dynamic.stderr or dynamic.stdout).strip()
+        errors.append(f"{label}: llvm-readelf -d failed ({dynamic.returncode}): {detail}")
+        return errors
+    dyn_errors = dynamic_errors(label, dynamic.stdout, filename=path.name)
+    if not dyn_errors:
+        needed = ", ".join(needed_entries(dynamic.stdout)) or "(none)"
+        print(f"{label}: DT_NEEDED {needed}")
+    errors.extend(dyn_errors)
     return errors
 
 
@@ -268,7 +317,7 @@ def main(argv: list[str] | None = None) -> int:
         for error in errors:
             print(error, file=sys.stderr)
         return 1
-    print(f"16 KB alignment OK ({PAGE_ALIGN})")
+    print(f"16 KB alignment OK ({PAGE_ALIGN}); DT_NEEDED has no paths")
     return 0
 
 

@@ -94,8 +94,8 @@ Actions の **Run workflow** で `game` にパスを入れる。zip は artifact
 ## Android
 
 既存のシェル（`mobile/android`、JNI、`scripts/build_android_native.sh`）を
-`--game` で切り替える。デバッグ APK は Android SDK の debug keystore で
-署名される。自分で keystore を作らなくても実機に入る。
+`--game` で切り替える。デバッグ APK はリポジトリの
+`mobile/android/app/debug.keystore` で署名される。自分で keystore を作らなくても実機に入る。
 
 ```bash
 # cargo-ndk と ANDROID_NDK_HOME（NDK r29 / 29.0.14206865、16 KB ページ）
@@ -123,16 +123,24 @@ NDK r29・cargo-ndk・Gradle 8.7・AGP 8.5.2・platform 35 を入れて debug AP
 16 KB ページ（Android 15 以降、Pixel 10 など）では、各 `.so` の ELF LOAD の
 `p_align` が 16384 以上で、APK 内では非圧縮かつ 16 KB zip アラインである必要がある。
 Rust は `.cargo/config.toml` の Android ターゲットへ
-`-Wl,-z,max-page-size=16384` と `common-page-size` を渡す。JNI も同じリンカ引数。
+`-Wl,-z,max-page-size=16384` と `common-page-size`、それに
+`-Wl,-soname,libkagra_shared.so` を渡す。JNI も同じページサイズで、
+`IMPORTED_SONAME` は `libkagra_shared.so`。SONAME が無いと `libkagra_jni.so` の
+`DT_NEEDED` が CI の絶対パスになり、実機の `dlopen` が失敗する。
 `libc++_shared.so` は NDK r28+ のプリビルドを使う（`c++_shared`）。
 パッケージは `useLegacyPackaging = false` で、AGP 8.5.1 以降が `zipalign -P 16` する。
-CI は `llvm-readelf -l` と `zipalign -c -P 16 -v 4` で落とす。手元では:
+CI は `llvm-readelf -l`、`llvm-readelf -d`（`DT_NEEDED` に `/` が無いこと）、
+`zipalign -c -P 16 -v 4` で落とす。手元では:
 
 ```bash
 python scripts/check_android_16k.py dist/android/platformer-debug.apk
 ```
 
 ネイティブのロードに失敗したときは、画面に `UnsatisfiedLinkError` の全文が出る。
+
+デバッグ APK は `mobile/android/app/debug.keystore`（alias `androiddebugkey`、
+パスワード `android`）で署名する。公開のデバッグ鍵なので、CI が変わっても
+同じ `applicationId` の上にインストールできる。リリース鍵はリポジトリに置かない。
 
 実機確認:
 

@@ -53,8 +53,17 @@ android {
         }
     }
 
-    if (!releaseKeystore.isNullOrBlank()) {
-        signingConfigs {
+    signingConfigs {
+        // 公開デバッグ鍵（store/key パスワードは android）。CI ごとに鍵が変わると
+        // 同じ applicationId への上書きが INSTALL_FAILED_UPDATE_INCOMPATIBLE になる。
+        // Play 用のリリース鍵ではない。
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+        if (!releaseKeystore.isNullOrBlank()) {
             create("release") {
                 storeFile = file(releaseKeystore)
                 storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
