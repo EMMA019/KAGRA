@@ -8,6 +8,7 @@
 use crate::collectathon::WalkInput;
 use crate::game::GamePhase;
 use crate::novel;
+use crate::platformer;
 use crate::puzzle;
 use crate::world_doc::WorldEvent;
 use crate::world_play::WorldPlay;
@@ -129,6 +130,88 @@ impl PuzzlePadSession {
 
     pub fn latch_open(&self) -> bool {
         self.inner.puzzle.latch_open
+    }
+}
+
+/// Side-scrolling platformer (`box_hop`). Implements [`GenreSession`].
+///
+/// Jump, land, fall, checkpoint, and goal stay in `platformer.rs` / `WorldPlay`.
+/// This wrapper is the host surface (Python, and later Android FFI / Wasm).
+#[derive(Clone, Debug)]
+pub struct PlatformerSession {
+    inner: WorldPlay,
+}
+
+impl GenreSession for PlatformerSession {
+    fn genre_id(&self) -> &'static str {
+        platformer::GAME_ID
+    }
+
+    fn from_json(json: &str) -> Result<Self, GenreSessionError> {
+        let inner = WorldPlay::from_json(json)?;
+        if !platformer::is_platformer(&inner.doc) {
+            return Err(format!(
+                "WorldDoc.genre must be {:?}, got {:?}",
+                platformer::GAME_ID,
+                inner.doc.genre
+            ));
+        }
+        Ok(Self { inner })
+    }
+
+    fn set_input(&mut self, input: WalkInput) {
+        self.inner.input = input.clamped();
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.inner.tick(dt);
+    }
+
+    fn dump(&self) -> Result<String, GenreSessionError> {
+        self.inner.doc.to_json()
+    }
+
+    fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        self.inner.take_events(name)
+    }
+
+    fn confirm(&mut self) {
+        self.inner.confirm();
+    }
+
+    fn emit_event(
+        &mut self,
+        name: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), GenreSessionError> {
+        self.inner.emit_event(name, data);
+        Ok(())
+    }
+
+    fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        self.inner.start_timer(name, seconds, on_done)
+    }
+
+    fn step_interact(&mut self) {
+        self.inner.step_interact();
+    }
+
+    fn phase(&self) -> GamePhase {
+        self.inner.game.phase
+    }
+}
+
+impl PlatformerSession {
+    pub fn dead(&self) -> bool {
+        self.inner.platform.dead
+    }
+
+    pub fn won(&self) -> bool {
+        self.inner.platform.won
+    }
+
+    pub fn landed(&self) -> u32 {
+        self.inner.platform.landed
     }
 }
 
@@ -280,6 +363,115 @@ mod tests {
         assert!(err.contains("puzzle_pad"));
     }
 
+    const HOP: &str = include_str!("../tests/fixtures/platformer_world.json");
+
+    fn hop_value(s: &PlatformerSession) -> serde_json::Value {
+        serde_json::from_str(&s.dump().expect("dump")).expect("json")
+    }
+
+    fn hop_pos(s: &PlatformerSession) -> [f32; 3] {
+        let v = hop_value(s);
+        let p = &v["player"]["position"];
+        [
+            p[0].as_f64().unwrap() as f32,
+            p[1].as_f64().unwrap() as f32,
+            p[2].as_f64().unwrap() as f32,
+        ]
+    }
+
+    fn hop_on_ground(s: &PlatformerSession) -> bool {
+        hop_value(s)["player"]["on_ground"]
+            .as_bool()
+            .unwrap_or(false)
+    }
+
+    /// Right edges of every platform except the goal (rightmost) slab.
+    fn hop_jump_edges(s: &PlatformerSession) -> Vec<f32> {
+        let v = hop_value(s);
+        let mut edges = Vec::new();
+        for p in v["props"].as_array().expect("props") {
+            if p["name"].as_str() == Some("platform") {
+                let x = p["position"][0].as_f64().unwrap() as f32;
+                let sx = p["scale"][0].as_f64().unwrap() as f32;
+                edges.push(x + 0.5 * sx.abs());
+            }
+        }
+        edges.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        edges.pop();
+        edges
+    }
+
+    fn hop_drive(s: &mut PlatformerSession, edges: &[f32]) {
+        if s.dead() {
+            s.confirm();
+        }
+        let pos = hop_pos(s);
+        let jump = hop_on_ground(s)
+            && edges
+                .iter()
+                .any(|edge| pos[0] > edge - 0.85 && pos[0] < edge - 0.12);
+        s.set_input(WalkInput {
+            lx: 1.0,
+            lz: 0.0,
+            jump,
+            attack: false,
+            dodge: false,
+        });
+        s.tick(1.0 / 60.0);
+    }
+
+    #[test]
+    fn platformer_session_side_scroll_to_goal() {
+        let mut s = PlatformerSession::from_json(HOP).expect("fixture");
+        assert_eq!(s.genre_id(), "box_hop");
+        assert_eq!(s.phase(), GamePhase::Title);
+        let dump = s.dump().expect("dump");
+        assert!(dump.contains("knight"));
+        assert!(dump.contains("crate.glb"));
+        assert!(dump.contains("chest"));
+        assert!(dump.contains("well"));
+        let edges = hop_jump_edges(&s);
+        assert_eq!(
+            edges.len(),
+            3,
+            "three gaps before the goal slab, got {edges:?}"
+        );
+        s.confirm();
+        assert_eq!(s.phase(), GamePhase::Playing);
+        for _ in 0..30 {
+            hop_drive(&mut s, &edges);
+        }
+        let pos = hop_pos(&s);
+        assert!(
+            pos[0] > -9.2,
+            "D / +lx must run toward +X (screen right), pos={pos:?}"
+        );
+        assert!(pos[2].abs() < 0.25, "lane stays on Z=0, pos={pos:?}");
+        for _ in 0..900 {
+            if s.won() {
+                break;
+            }
+            hop_drive(&mut s, &edges);
+        }
+        let pos = hop_pos(&s);
+        assert!(
+            s.won() && !s.dead(),
+            "scripted jumps should reach the chest, won={} dead={} landed={} pos={pos:?}",
+            s.won(),
+            s.dead(),
+            s.landed(),
+        );
+        assert_eq!(s.phase(), GamePhase::Complete);
+        assert!(s.landed() >= 1);
+        assert!(s.take_events("nonexistent").is_empty());
+    }
+
+    #[test]
+    fn platformer_rejects_other_genre() {
+        let crest = include_str!("../tests/fixtures/crest_isle_world.json");
+        let err = PlatformerSession::from_json(crest).unwrap_err();
+        assert!(err.contains("box_hop"));
+    }
     const NOVEL: &str = include_str!("../tests/fixtures/novel_pages_world.json");
 
     #[test]

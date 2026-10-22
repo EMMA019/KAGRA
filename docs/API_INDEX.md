@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **58**
+エントリ数: **59**
 
 棚の**手前**は shared wgpu 30（WorldDoc / WorldPlay / gameloop）。
 棚の**奥**は再エクスポートの余り。旧 RendererV2 API は `old/`。
@@ -44,6 +44,7 @@
 | `overworld_height` | `export overworld_height  (from kagra.land)` |
 | `paged_menu` | `export paged_menu  (from kagra.ui2d)` |
 | `panel` | `export panel  (from kagra.ui2d)` |
+| `PlatformerSession` | `class PlatformerSession  (from kagra.kagra_shared)` |
 | `play_se` | `export play_se  (from kagra.audio)` |
 | `play_wav` | `export play_wav  (from kagra.audio)` |
 | `pressed` | `export pressed  (from kagra.gameloop)` |
