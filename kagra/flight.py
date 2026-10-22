@@ -187,16 +187,13 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
     ux, uy, uz = m[0][1], m[1][1], m[2][1]
     # 機体と眼下の島・村が両方映る斜め上のチェイス視点
     cam = [
-        x - fx * 5.2 + ux * 1.9 + rx * 1.6,
-        y - fy * 5.2 + uy * 1.9 + ry * 1.6,
-        z - fz * 5.2 + uz * 1.9 + rz * 1.6,
+        x - fx * 6.4 + ux * 2.5 + rx * 2.1,
+        y - fy * 6.4 + uy * 2.5 + ry * 2.1,
+        z - fz * 6.4 + uz * 2.5 + rz * 2.1,
     ]
-    look = [x + fx * 3.2, y + fy * 3.2 - 1.1, z + fz * 3.2]
+    look = [x + fx * 3.6, y + fy * 3.6 - 1.2, z + fz * 3.6]
 
-    red_body = [224, 48, 38]
-    cream_wing = [232, 186, 108]
-    navy_trim = [38, 56, 88]
-    canopy_glass = [92, 198, 250]
+    red_body = [228, 52, 42]
     gold = [252, 194, 48]
     silver = [224, 232, 242]
     cloud = [238, 244, 252]
@@ -205,26 +202,28 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
     t = state.get("time", 0.0)
     passed: set[int] = state.get("passed", set())
 
-    # 鮮やかな赤い複葉機（親ヒンジ + 12 パーツ、曲面メタリック・グロス塗装）
+    # マルチマテリアル .glb 複葉機（biplane.glb: 翼型断面・テーパー胴体・カウリング・支柱・脚）+ 回転プロペラ
     props = [
         _prop("prop:plane", "plane", "box", [x, y, z], [1, 1, 1], red_body, yaw=yaw, pitch=pitch, roll=roll, enabled=False),
-        _prop("prop:fuselage", "fuselage", "sphere", [0, 0, -0.05], [0.62, 0.52, 2.30], red_body, parent="prop:plane", local=True, metallic=0.68, roughness=0.11),
-        _prop("prop:cowling", "cowling", "cylinder", [0, -0.01, 0.96], [0.48, 0.40, 0.48], navy_trim, parent="prop:plane", local=True, pitch=1.5708, metallic=0.76, roughness=0.12),
-        _prop("prop:canopy", "canopy", "sphere", [0, 0.26, -0.08], [0.40, 0.30, 0.80], canopy_glass, parent="prop:plane", local=True, metallic=0.90, roughness=0.08),
-        _prop("prop:wing", "wing", "sphere", [0, -0.05, 0.18], [3.85, 0.15, 0.74], cream_wing, parent="prop:plane", local=True, metallic=0.58, roughness=0.12),
-        _prop("prop:upper_wing", "upper_wing", "sphere", [0, 0.48, 0.22], [3.65, 0.15, 0.70], cream_wing, parent="prop:plane", local=True, metallic=0.58, roughness=0.12),
-        _prop("prop:wing_stripe", "wing_stripe", "sphere", [0, 0.52, 0.22], [2.45, 0.12, 0.32], red_body, parent="prop:plane", local=True, metallic=0.68, roughness=0.11),
-        _prop("prop:strut_l", "strut", "cylinder", [-1.15, 0.22, 0.20], [0.06, 0.52, 0.06], navy_trim, parent="prop:plane", local=True, metallic=0.70, roughness=0.14),
-        _prop("prop:strut_r", "strut", "cylinder", [1.15, 0.22, 0.20], [0.06, 0.52, 0.06], navy_trim, parent="prop:plane", local=True, metallic=0.70, roughness=0.14),
-        _prop("prop:tail", "tail", "sphere", [0, 0.08, -0.92], [1.45, 0.13, 0.46], cream_wing, parent="prop:plane", local=True, metallic=0.58, roughness=0.12),
-        _prop("prop:fin", "fin", "sphere", [0, 0.32, -0.95], [0.14, 0.58, 0.48], red_body, parent="prop:plane", local=True, metallic=0.68, roughness=0.11),
-        _prop("prop:nose", "nose", "sphere", [0, -0.01, 1.18], [0.28, 0.28, 0.34], gold, parent="prop:plane", local=True, metallic=0.95, roughness=0.10),
+        _prop(
+            "prop:fuselage",
+            "fuselage",
+            "box",
+            [0, 0, 0],
+            [1.15, 1.15, 1.15],
+            [255, 255, 255],
+            gltf="biplane",
+            parent="prop:plane",
+            local=True,
+            metallic=0.22,
+            roughness=0.18,
+        ),
         _prop(
             "prop:propeller",
             "propeller",
             "box",
-            [0, -0.01, 1.28],
-            [1.42, 0.11, 0.04],
+            [0, -0.01, 1.58],
+            [1.55, 0.11, 0.04],
             silver,
             parent="prop:plane",
             local=True,

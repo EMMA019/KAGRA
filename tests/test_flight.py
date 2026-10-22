@@ -24,9 +24,10 @@ def test_scripted_flight_clears_three_rings():
     assert state["y"] > 10.0
     world = flight.make_world(state)
     assert world.get("genre") is None
-    wing = next(p for p in world["props"] if p["name"] == "wing")
-    assert wing["local"] is True
-    assert wing["parent"] == "prop:plane"
+    body = next(p for p in world["props"] if p["name"] == "fuselage")
+    assert body["local"] is True
+    assert body["parent"] == "prop:plane"
+    assert body["gltf"] == "biplane"
     hinge = next(p for p in world["props"] if p["id"] == "prop:plane")
     assert hinge["enabled"] is False
     assert "pitch" in hinge and "roll" in hinge

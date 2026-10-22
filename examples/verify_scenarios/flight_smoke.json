@@ -10,7 +10,7 @@
     "path": "scratch/flight_world.json",
     "query": [
       {"type": "prop", "name": "fuselage", "count": 1},
-      {"type": "prop", "name": "wing", "count": 1},
+      {"type": "prop", "name": "propeller", "count": 1},
       {"type": "prop", "name": "ring", "min_count": 3}
     ]
   },

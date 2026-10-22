@@ -16,6 +16,16 @@ def test_scripted_match_steals_and_captures_flag():
     assert bat["parent"] == "prop:player_hand"
 
 
+def test_clock_expiry_ends_the_match():
+    state = brawl.default_state()
+    state["time_left"] = 0.01
+    state["blue_score"] = 1
+    brawl.step_brawl(state, 1.0 / 60.0, 0.0, 0.0, False, False)
+    assert state["phase"] == "result"
+    assert state["won"] is True
+    assert "BLUE WINS" in state["banner"]
+
+
 def test_swing_bonks_nearby_red_bot_and_drops_flag():
     state = brawl.default_state()
     p = state["player"]

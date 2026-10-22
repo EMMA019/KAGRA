@@ -94,3 +94,4 @@
 - `20260902-phase1-rapier/` — 汎用エンジン化 Phase 1: Rapier 剛体物理を本線に導入（is_static 動的 props / 高さ場 / 決定論 / Python ラッパー）。
 - `20260912-bar-sim/` — 本線を kagra_core から切り離し + **Bar 経営シム**（仕入れ / 客 / 帳簿。genre 明示。AI/手続き素材）。
 - `20261022-flight/` — 自由 WorldDoc の飛行。pitch / roll / local 親子（4 段）+ ring トーラス。WorldPlay にジャンルは足さない。見本 `examples/flight_minimal.py`。
+- `20261022-biplane-match/` — 複葉機を `biplane.glb` に差し替え、チェスの淡いハイライトと床グラデ、旗取りのタイトル / 90 秒 / 勝敗。WorldPlay にジャンルは足さない。

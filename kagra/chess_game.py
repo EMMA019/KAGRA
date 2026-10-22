@@ -61,7 +61,7 @@ def default_state() -> dict[str, Any]:
         "captured_b": 0,
         "cam_angle": 0.32,
         "cam_pitch": 0.62,
-        "status": "WHITE TO MOVE — SELECT A PIECE",
+        "status": "WHITE TO MOVE - SELECT A PIECE",
     }
 
 
@@ -192,7 +192,7 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
     """スタジオ照明 + 光沢マホガニー外枠 + 大理石/黒檀マスのチェス盤と PolyHaven 彫刻駒。"""
     props: list[dict[str, Any]] = []
 
-    # スタジオテーブル・背景サイクロラマ（グラデーション背景）・真鍮フレーム外枠
+    # スタジオテーブル（中央スポットライト＋外周ビネット減衰）・背景サイクロラマ・真鍮フレーム外枠
     props.extend(
         [
             {
@@ -202,9 +202,9 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
                 "model": "box",
                 "position": [0.0, -0.28, 0.0],
                 "scale": [42.0, 0.20, 42.0],
-                "color": [26, 32, 44],
-                "metallic": 0.22,
-                "roughness": 0.24,
+                "color": [54, 68, 92],
+                "metallic": 0.18,
+                "roughness": 0.26,
                 "enabled": True,
             },
             {
@@ -215,7 +215,7 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
                 "position": [0.0, 4.2, -10.2],
                 "pitch": 0.32,
                 "scale": [44.0, 18.0, 0.40],
-                "color": [30, 38, 54],
+                "color": [36, 46, 66],
                 "metallic": 0.14,
                 "roughness": 0.36,
                 "enabled": True,
@@ -264,27 +264,27 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
     legal_set = set(state.get("legal", []))
     last = state.get("last_move")
 
-    # 8x8 の大理石＆ウォルナット盤面タイル（ツヤのある低ラフネス）
+    # 8x8 の大理石＆ウォルナット盤面タイル（淡く上品なハイライト色＋ツヤのある低ラフネス）
     for r in range(8):
         for c in range(8):
             x, z = _sq_xz(r, c)
             light_sq = (r + c) % 2 == 0
             if (r, c) == (cur_r, cur_c):
-                col = [88, 198, 245]
-                rough = 0.12
-                met = 0.30
-            elif sel and (r, c) == tuple(sel):
-                col = [242, 198, 68]
+                col = [188, 204, 218] if light_sq else [82, 98, 114]
                 rough = 0.14
-                met = 0.38
+                met = 0.12
+            elif sel and (r, c) == tuple(sel):
+                col = [224, 204, 148] if light_sq else [118, 92, 54]
+                rough = 0.14
+                met = 0.16
             elif (r, c) in legal_set:
-                col = [84, 216, 138]
+                col = [188, 210, 194] if light_sq else [76, 98, 84]
                 rough = 0.15
-                met = 0.25
-            elif last and ((r, c) == (last[0], last[1]) or (r, c) == (last[2], last[3])):
-                col = [216, 180, 108] if light_sq else [124, 84, 48]
-                rough = 0.16
                 met = 0.10
+            elif last and ((r, c) == (last[0], last[1]) or (r, c) == (last[2], last[3])):
+                col = [216, 190, 138] if light_sq else [104, 72, 44]
+                rough = 0.16
+                met = 0.08
             elif light_sq:
                 col = [208, 195, 175]
                 rough = 0.16
@@ -308,6 +308,21 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
                     "enabled": True,
                 }
             )
+            if (r, c) in legal_set:
+                props.append(
+                    {
+                        "id": f"prop:marker_{r}_{c}",
+                        "type": "prop",
+                        "name": "marker",
+                        "model": "cylinder",
+                        "position": [x, 0.031, z],
+                        "scale": [0.15, 0.008, 0.15],
+                        "color": [156, 196, 172] if light_sq else [132, 176, 150],
+                        "metallic": 0.25,
+                        "roughness": 0.16,
+                        "enabled": True,
+                    }
+                )
 
     # 32 個の彫刻チェス駒（白 = 白飛びしない上品なアイボリー大理石、黒 = 黒檀＆ブロンズ光沢）
     board = state["board"]

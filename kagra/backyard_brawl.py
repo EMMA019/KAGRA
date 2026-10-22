@@ -20,6 +20,7 @@ from kagra.ui2d import bar, list_lines, merge, panel
 
 W, H = 800, 450
 WIN_CAPTURES = 3
+MATCH_SECONDS = 90.0
 BONK_REACH = 2.6
 BONK_COOLDOWN = 0.55
 STUN_SEC = 1.4
@@ -75,7 +76,9 @@ def _bot(
 
 def default_state() -> dict[str, Any]:
     return {
+        "phase": "play",
         "time": 0.0,
+        "time_left": MATCH_SECONDS,
         "blue_score": 0,
         "red_score": 0,
         "won": False,
@@ -144,10 +147,22 @@ def step_brawl(
     """1 フレーム進める。イベント辞書（bonk / pickup / score）を返す。"""
     dt = max(0.0, min(float(dt), 0.1))
     events = {"bonk": False, "pickup": False, "score": False}
-    if state.get("won"):
+    if state.get("phase", "play") != "play" or state.get("won"):
         return events
 
     state["time"] += dt
+    state["time_left"] = max(0.0, float(state.get("time_left", MATCH_SECONDS)) - dt)
+    if state["time_left"] <= 0.0:
+        state["won"] = True
+        state["phase"] = "result"
+        if state["blue_score"] > state["red_score"]:
+            state["banner"] = f"TIME UP - BLUE WINS {state['blue_score']} - {state['red_score']}!"
+        elif state["blue_score"] < state["red_score"]:
+            state["banner"] = f"TIME UP - RED WINS {state['red_score']} - {state['blue_score']}!"
+        else:
+            state["banner"] = "TIME UP - DRAW GAME!"
+        state["banner_t"] = 99.0
+        return events
     if state["banner_t"] > 0.0:
         state["banner_t"] = max(0.0, state["banner_t"] - dt)
 
@@ -249,7 +264,8 @@ def step_brawl(
                 events["score"] = True
                 if state["blue_score"] >= WIN_CAPTURES:
                     state["won"] = True
-                    state["banner"] = "BLUE TEAM WINS 3 - 0!"
+                    state["phase"] = "result"
+                    state["banner"] = "VICTORY! BLUE TEAM WINS 3 - 0!"
                     state["banner_t"] = 99.0
                 else:
                     state["banner"] = f"FLAG CAPTURED! ({state['blue_score']} / {WIN_CAPTURES})"
@@ -548,11 +564,30 @@ class BackyardRascals(Scene):
         self.width = W
         self.height = H
         self.state = default_state()
+        self.state["phase"] = "title"
         self.world = make_world(self.state)
 
     def update(self, dt: float) -> None:
         if was_pressed("escape"):
             self.quit()
+            return
+        confirm = any(was_pressed(k) for k in ("space", "enter", "j", "z")) or mouse_clicked(1)
+        phase = self.state.get("phase", "play")
+        if phase == "title":
+            self.state["time"] += dt
+            if confirm:
+                self.state["phase"] = "play"
+                self.state["banner"] = "STEAL THE RED FLAG!"
+                self.state["banner_t"] = 2.0
+                se("ok")
+            self.world = make_world(self.state)
+            return
+        if phase == "result" or self.state.get("won"):
+            if confirm:
+                self.state = default_state()
+                self.state["phase"] = "title"
+                se("ok")
+            self.world = make_world(self.state)
             return
         mx = (1.0 if pressed("d") or pressed("right") else 0.0) - (
             1.0 if pressed("a") or pressed("left") else 0.0
@@ -571,6 +606,8 @@ class BackyardRascals(Scene):
     def draw(self) -> None:
         blue = self.state["blue_score"]
         red = self.state["red_score"]
+        t_left = max(0, int(math.ceil(self.state.get("time_left", MATCH_SECONDS))))
+        mm, ss = divmod(t_left, 60)
         parts = [
             panel(
                 12,
@@ -592,6 +629,24 @@ class BackyardRascals(Scene):
             ),
             bar(24, 44, 254, 10, ratio=blue / WIN_CAPTURES, color=[72, 180, 255, 255]),
             panel(
+                self.width - 134,
+                12,
+                122,
+                34,
+                color=(14, 22, 38, 178),
+                border=(120, 190, 255, 210),
+                border_w=1.5,
+                radius=9.0,
+            ),
+            list_lines(
+                [f"TIME  {mm:02d}:{ss:02d}"],
+                x=self.width - 118,
+                y=21,
+                size=14,
+                color=[235, 244, 255, 255],
+                shadow=True,
+            ),
+            panel(
                 12,
                 self.height - 38,
                 448,
@@ -610,7 +665,34 @@ class BackyardRascals(Scene):
                 shadow=True,
             ),
         ]
-        if self.state["banner_t"] > 0.0 and self.state["banner"]:
+        if self.state.get("phase") == "title":
+            parts.append(
+                panel(
+                    self.width // 2 - 190,
+                    self.height // 2 - 54,
+                    380,
+                    108,
+                    color=(14, 20, 34, 215),
+                    border=(255, 204, 72, 240),
+                    border_w=2.0,
+                    radius=12.0,
+                )
+            )
+            parts.append(
+                list_lines(
+                    [
+                        "BACKYARD RASCALS - 3v3 CTF",
+                        "Steal 3 Red Flags before time runs out!",
+                        "Press SPACE or CLICK to Start",
+                    ],
+                    x=self.width // 2 - 160,
+                    y=self.height // 2 - 36,
+                    size=15,
+                    color=[255, 242, 195, 255],
+                    shadow=True,
+                )
+            )
+        elif self.state["banner_t"] > 0.0 and self.state["banner"]:
             parts.append(
                 panel(
                     self.width // 2 - 158,

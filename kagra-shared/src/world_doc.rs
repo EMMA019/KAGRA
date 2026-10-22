@@ -965,6 +965,7 @@ impl WorldDoc {
                 || prop.name.eq_ignore_ascii_case("brass_trim")
                 || prop.name.eq_ignore_ascii_case("backdrop")
                 || prop.name.eq_ignore_ascii_case("lane")
+                || prop.name.eq_ignore_ascii_case("marker")
             {
                 continue;
             }

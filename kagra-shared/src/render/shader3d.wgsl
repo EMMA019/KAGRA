@@ -434,6 +434,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             lit += env_irradiance(r) * fresnel * gloss * gloss * 1.5;
             lit += vec3<f32>(1.0, 0.98, 0.95) * (studio_spec * 0.22 + pow(1.0 - ndotv, 4.0) * gloss * 0.18);
         }
+        // Studio tabletop / cyclorama radial gradient (active on studio floor y < -0.12 when ibl < 0.30)
+        if (in.world.y < -0.12 && g.env.x < 0.30) {
+            let r_dist = length(in.world.xz);
+            let spot = smoothstep(8.2, 1.8, r_dist);
+            let outer = smoothstep(10.5, 3.2, r_dist);
+            lit = lit * mix(0.08, 1.15, outer) + vec3<f32>(0.09, 0.13, 0.22) * spot * spot;
+        }
     }
 
     let dist = length(in.world - g.camera_pos.xyz);

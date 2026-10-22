@@ -60,13 +60,13 @@ def main() -> int:
     if "--seconds" in sys.argv:
         seconds = float(sys.argv[sys.argv.index("--seconds") + 1])
     state = scripted_flight(seconds=seconds)
-    # 3 つのリングをクリアした状態で、眼下の島と村・3 つ目のリングを見下ろす爽快なバンク旋回ポーズ
-    state["x"] = -1.6
-    state["y"] = ALT + 0.8
-    state["z"] = -16.5
-    state["yaw"] = 0.08
-    state["pitch"] = 0.12
-    state["roll"] = 0.42
+    # 3 つのリングをクリアした状態で、眼下の島と村・3 つ目のクリア済みリングを見渡す旋回ポーズ
+    state["x"] = -1.2
+    state["y"] = ALT + 0.6
+    state["z"] = -18.5
+    state["yaw"] = 0.06
+    state["pitch"] = 0.08
+    state["roll"] = 0.32
     scene = FlightGame()
     scene.state = state
     scene.world = make_world(state)
