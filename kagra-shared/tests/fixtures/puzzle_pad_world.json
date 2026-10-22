@@ -165,11 +165,11 @@
       ],
       "yaw": 0.0,
       "model": "box",
-      "gltf": null,
+      "gltf": "crate.glb",
       "scale": [
-        1.1,
-        1.1,
-        1.1
+        1.0,
+        1.0,
+        1.0
       ],
       "enabled": true,
       "parent": null,

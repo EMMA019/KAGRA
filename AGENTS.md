@@ -133,6 +133,24 @@ at `old/examples/verify_scenarios/`.
 Logged builds live in `docs/agent-runs/`.
 The API index front is VRM / 3D / agents; the shelf is legacy 2D.
 
+## Adding a genre (Python / Android / Wasm)
+
+Rust genre logic stays in `kagra-shared/src/<genre>.rs` and plugs into `WorldPlay`.
+The **host contract** is `GenreSession` (`kagra-shared/src/genre_session.rs`):
+`from_json` / `set_input` / `tick` / `dump` / `take_events` (+ adhesive:
+`confirm`, `emit_event`, `start_timer`, `step_interact`, `phase`).
+
+1. Implement or extend the genre module; keep `WorldDoc.genre` explicit.
+2. Add `impl GenreSession for YourSession` in `genre_session.rs` (thin wrapper over `WorldPlay` today).
+3. Add `kagra-shared/src/py/<genre>.rs` and register it in `py/mod.rs` (`PuzzlePadSession` is the reference).
+4. Fixture `kagra-shared/tests/fixtures/<genre>_world.json` — use bundled `.glb` props (`crate.glb`, …), not bare boxes for hero meshes.
+5. `examples/<genre>_minimal.py` + `examples/verify_scenarios/<genre>_smoke.json`.
+6. Scaffold: `python scripts/new_genre.py <slug>` (then fill Rust + fixture).
+7. Verify: `python -m kagra.verify examples/verify_scenarios/<genre>_smoke.json`.
+
+`WorldPlay` / `WorldDoc` remain for multi-genre Python masters; per-genre
+`FooSession` classes are for focused games and future JNI/FFI shims.
+
 ## More context
 
 - `docs/AGENT.md` — contracts table, CI-parity commands, Cargo.lock policy

@@ -634,10 +634,9 @@ mod tests {
             .props
             .iter()
             .any(|p| p.name == "pad" && p.model == "box"));
-        assert!(doc
-            .props
-            .iter()
-            .any(|p| p.name == "crate" && p.model == "box"));
+        assert!(doc.props.iter().any(|p| {
+            p.name == "crate" && p.model == "box" && p.gltf.as_deref() == Some("crate.glb")
+        }));
         let lid = doc.props.iter().find(|p| p.name == NAME_LID).unwrap();
         assert_eq!(lid.model, "box");
         assert_eq!(lid.parent.as_deref(), Some(ID_CRATE));

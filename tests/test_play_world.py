@@ -502,6 +502,7 @@ def test_puzzle_pad_fixture_has_crate_and_pad():
     crates = [p for p in data["props"] if p.get("name") == "crate"]
     assert len(crates) == 1
     assert crates[0].get("model") == "box"
+    assert crates[0].get("gltf") == "crate.glb"
     lids = [p for p in data["props"] if p.get("name") == "lid"]
     assert len(lids) == 1
     assert lids[0].get("model") == "box"
@@ -715,3 +716,23 @@ def test_cook_stove_fixture_has_stove_and_pan():
     assert data.get("heightfield") in (None, {})
     assert data.get("coins", 0) == 0
     assert not any(p.get("name") == "stall" for p in data["props"])
+
+
+def test_puzzle_pad_session_genre_contract():
+    try:
+        from kagra_shared import PuzzlePadSession
+    except ImportError:
+        pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/puzzle_pad_world.json"
+    session = PuzzlePadSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "puzzle_pad"
+    assert session.phase == "title"
+    session.confirm()
+    assert session.phase == "playing"
+    session.set_input(0.0, 1.0, False, False, False)
+    for _ in range(200):
+        session.tick(1.0 / 60.0)
+        if session.done:
+            break
+    assert session.solved and session.done
+    assert session.phase == "complete"
