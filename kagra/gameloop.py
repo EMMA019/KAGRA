@@ -249,10 +249,11 @@ def mouse_clicked(button: int = 1) -> bool:
 
 _KEYMAP = {
     "w": "w", "a": "a", "s": "s", "d": "d",
-    "space": "space", "j": "j", "k": "k", "z": "z", "f": "f",
+    "space": "space", "j": "j", "k": "k", "z": "z", "f": "f", "c": "c",
     "escape": "escape", "return": "enter",
     "up": "up", "down": "down", "left": "left", "right": "right",
     "shift_l": "shift", "shift_r": "shift",
+    "control_l": "control", "control_r": "control",
     "1": "1", "2": "2", "3": "3",
 }
 

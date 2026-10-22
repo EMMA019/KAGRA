@@ -1287,3 +1287,62 @@ def test_rhythm_session_judges_and_clears():
     session.pointer(10.0, 10.0, 320.0, 180.0)
     assert session.phase == "title"
     assert session.score == 0
+
+
+def test_stealth_yard_fixture_has_guards_cones_and_key():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/stealth_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["genre"] == "stealth_hide"
+    assert data["player"]["on_ground"] is True
+    assert data["player"].get("gltf") == "rogue"
+    guards = [p for p in data["props"] if p.get("name") == "guard"]
+    assert len(guards) == 2
+    assert all(p.get("gltf") == "knight" for p in guards)
+    assert sum(1 for p in data["props"] if p.get("name") == "cone") == 2
+    assert sum(1 for p in data["props"] if p.get("name") == "patrol") == 4
+    key = next(p for p in data["props"] if p.get("name") == "key")
+    assert "dagger" in (key.get("gltf") or "")
+    assert key.get("enabled") is True
+    hide = next(p for p in data["props"] if p.get("name") == "hide")
+    assert hide.get("gltf") == "crate.glb"
+    assert any(p.get("name") == "exit" for p in data["props"])
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    text = (ROOT / "examples/stealth_minimal.py").read_text(encoding="utf-8")
+    assert "\u2014" not in text
+    assert "\u2013" not in text
+    assert "CROUCH" in text
+    assert "demo_input" in text
+
+
+def test_stealth_session_grabs_key_and_escapes():
+    try:
+        from kagra.kagra_shared import StealthSession
+    except ImportError:
+        try:
+            from kagra_shared import StealthSession
+        except ImportError:
+            pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/stealth_world.json"
+    session = StealthSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "stealth_hide"
+    assert session.phase == "title"
+    assert session.alert_state == "calm"
+    session.confirm()
+    assert session.phase == "playing"
+    for _ in range(1800):
+        if session.clear:
+            break
+        if session.done and not session.clear:
+            break
+        lx, lz, crouch = session.demo_input()
+        session.set_input(lx, lz, False, False, crouch)
+        session.tick(1.0 / 60.0)
+    assert session.has_key and session.clear and session.done
+    assert session.phase == "complete"
+    session.confirm()
+    assert session.phase == "playing"
+    assert not session.has_key
+    assert session.alert < 0.01

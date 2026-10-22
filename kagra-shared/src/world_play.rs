@@ -478,6 +478,11 @@ impl WorldPlay {
             return;
         }
         let input = self.input.clamped();
+        let walked = if self.is_stealth() {
+            stealth::locomotion(input)
+        } else {
+            input
+        };
         if self.is_action2d() {
             action2d::tick(&mut self.doc, &mut self.action2d, input, dt);
             self.game.time_s += dt;
@@ -508,7 +513,7 @@ impl WorldPlay {
             }
             return;
         }
-        self.step_walker(input, dt);
+        self.step_walker(walked, dt);
         self.follow_camera();
         if self.is_action() {
             action::tick(&mut self.doc, &mut self.action, input, self.look_yaw, dt);
@@ -603,6 +608,7 @@ impl WorldPlay {
             self.game.time_s += dt;
             self.input.jump = false;
             self.input.attack = false;
+            self.input.dodge = false;
             if self.stealth.done {
                 self.game.phase = GamePhase::Complete;
                 self.game.score = if self.stealth.clear { 250 } else { 0 };

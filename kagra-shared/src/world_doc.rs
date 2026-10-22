@@ -1635,6 +1635,7 @@ fn mesh_for_prop(
         "plane" | "water" => MESH_PLANE,
         "sprite" | "quad" => MESH_QUAD,
         "torus" | "ring" => MESH_TORUS,
+        "cone" => MESH_CONE,
         _ => MESH_BOX,
     }
 }

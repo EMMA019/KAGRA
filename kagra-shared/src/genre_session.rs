@@ -15,6 +15,7 @@ use crate::puzzle;
 use crate::race;
 use crate::rpg;
 use crate::shop;
+use crate::stealth;
 use crate::td;
 use crate::world_doc::WorldEvent;
 use crate::world_play::WorldPlay;
@@ -1194,6 +1195,114 @@ impl FightSession {
     }
 }
 
+/// Stealth (`stealth_hide`). Patrols, vision cones, noise, and alert stay in Rust.
+#[derive(Clone, Debug)]
+pub struct StealthSession {
+    inner: WorldPlay,
+}
+
+impl GenreSession for StealthSession {
+    fn genre_id(&self) -> &'static str {
+        stealth::GAME_ID
+    }
+
+    fn from_json(json: &str) -> Result<Self, GenreSessionError> {
+        let inner = WorldPlay::from_json(json)?;
+        if !stealth::is_stealth(&inner.doc) {
+            return Err(format!(
+                "WorldDoc.genre must be {:?}, got {:?}",
+                stealth::GAME_ID,
+                inner.doc.genre
+            ));
+        }
+        Ok(Self { inner })
+    }
+
+    fn set_input(&mut self, input: WalkInput) {
+        self.inner.input = input.clamped();
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.inner.tick(dt);
+    }
+
+    fn dump(&self) -> Result<String, GenreSessionError> {
+        self.inner.doc.to_json()
+    }
+
+    fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        self.inner.take_events(name)
+    }
+
+    fn confirm(&mut self) {
+        self.inner.confirm();
+    }
+
+    fn emit_event(
+        &mut self,
+        name: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), GenreSessionError> {
+        self.inner.emit_event(name, data);
+        Ok(())
+    }
+
+    fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        self.inner.start_timer(name, seconds, on_done)
+    }
+
+    fn step_interact(&mut self) {
+        self.inner.step_interact();
+    }
+
+    fn phase(&self) -> GamePhase {
+        self.inner.game.phase
+    }
+}
+
+impl StealthSession {
+    pub fn hidden(&self) -> bool {
+        self.inner.stealth.hidden
+    }
+
+    pub fn seen(&self) -> bool {
+        self.inner.stealth.seen
+    }
+
+    pub fn done(&self) -> bool {
+        self.inner.stealth.done
+    }
+
+    pub fn clear(&self) -> bool {
+        self.inner.stealth.clear
+    }
+
+    pub fn alert(&self) -> f32 {
+        self.inner.stealth.alert
+    }
+
+    pub fn alert_state(&self) -> &'static str {
+        self.inner.stealth.alert_state()
+    }
+
+    pub fn has_key(&self) -> bool {
+        self.inner.stealth.has_key
+    }
+
+    pub fn crouching(&self) -> bool {
+        self.inner.stealth.crouching
+    }
+
+    pub fn noise(&self) -> f32 {
+        self.inner.stealth.noise
+    }
+
+    /// Scripted crouch route for the yard dump. `(lx, lz, crouch)`.
+    pub fn demo_input(&self) -> WalkInput {
+        stealth::demo_input(&self.inner.doc, &self.inner.stealth)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1997,5 +2106,58 @@ mod tests {
     fn fight_rejects_other_genre() {
         let err = FightSession::from_json(ARENA).unwrap_err();
         assert!(err.contains("fight_hitstun"));
+    }
+
+    const YARD: &str = include_str!("../tests/fixtures/stealth_world.json");
+
+    #[test]
+    fn stealth_session_sneaks_past_guards_with_the_key() {
+        let mut s = StealthSession::from_json(YARD).expect("yard");
+        assert_eq!(s.genre_id(), "stealth_hide");
+        assert_eq!(s.phase(), GamePhase::Title);
+        assert_eq!(s.alert_state(), "calm");
+        assert!(!s.has_key());
+        let dump = s.dump().expect("dump");
+        assert!(dump.contains("rogue"));
+        assert!(dump.contains("knight"));
+        assert!(dump.contains("crate.glb"));
+        assert!(dump.contains("dagger"));
+        s.confirm();
+        assert_eq!(s.phase(), GamePhase::Playing);
+        for _ in 0..1800 {
+            if s.clear() {
+                break;
+            }
+            if s.done() && !s.clear() {
+                break;
+            }
+            let wish = s.demo_input();
+            s.set_input(wish);
+            s.tick(1.0 / 60.0);
+        }
+        assert!(
+            s.has_key() && s.clear() && s.done(),
+            "clear={} key={} alert={} state={}",
+            s.clear(),
+            s.has_key(),
+            s.alert(),
+            s.alert_state(),
+        );
+        assert_eq!(s.phase(), GamePhase::Complete);
+        let caught = s.dump().expect("dump");
+        assert!(caught.contains("clear"));
+        s.confirm();
+        assert_eq!(s.phase(), GamePhase::Playing);
+        assert!(!s.done());
+        assert!(!s.has_key());
+        assert!(s.alert() < 0.01);
+        assert!(s.take_events("nonexistent").is_empty());
+    }
+
+    #[test]
+    fn stealth_rejects_other_genre() {
+        let crest = include_str!("../tests/fixtures/crest_isle_world.json");
+        let err = StealthSession::from_json(crest).unwrap_err();
+        assert!(err.contains("stealth_hide"));
     }
 }
