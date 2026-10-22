@@ -14,17 +14,41 @@ use once_cell::sync::Lazy;
 
 use crate::scene::{Quad, TextAlign, TextQuad};
 
-/// 埋め込みフォント（M+ ライセンス）。
+/// 埋め込みフォント（M+ ライセンス: 日本語フォールバック）。
 pub const DEFAULT_FONT_BYTES: &[u8] = include_bytes!("../assets/PixelMplus10-Regular.ttf");
+
+/// 滑らかな欧文 UI フォント（Public Sans Bold, SIL OFL）。
+pub const UI_FONT_BYTES: &[u8] = include_bytes!("../assets/PublicSans-Bold.ttf");
 
 static FONT: Lazy<ab_glyph::FontArc> = Lazy::new(|| {
     ab_glyph::FontArc::try_from_slice(DEFAULT_FONT_BYTES)
         .expect("embedded PixelMplus10-Regular.ttf must parse")
 });
 
-/// グリフのカバレッジ画素（0..1）。レイアウト位置は持たない。
+static UI_FONT: Lazy<ab_glyph::FontArc> = Lazy::new(|| {
+    ab_glyph::FontArc::try_from_slice(UI_FONT_BYTES)
+        .expect("embedded PublicSans-Bold.ttf must parse")
+});
+
+fn select_font(ch: char) -> &'static ab_glyph::FontArc {
+    if (ch as u32) <= 0x024F && UI_FONT.glyph_id(ch).0 != 0 {
+        &UI_FONT
+    } else {
+        &FONT
+    }
+}
+
+fn char_advance(ch: char, size: f32) -> f32 {
+    let font = select_font(ch);
+    let scaled = font.as_scaled(size.max(1.0));
+    scaled.h_advance(scaled.glyph_id(ch))
+}
+
+/// グリフのカバレッジ画素（0..1）とベースライン相対オフセット。
 #[derive(Debug)]
 struct Coverage {
+    dx: f32,
+    dy: f32,
     w: u32,
     h: u32,
     pixels: Vec<f32>,
@@ -39,10 +63,8 @@ pub struct TextRaster {
 /// 行幅（ピクセル）。キャッシュ不要: h_advance だけで出るので
 /// Python 側のテキスト折り返し（UI パネル）でも気軽に呼べる。
 pub fn measure_text(text: &str, size: f32) -> f32 {
-    let scaled = FONT.as_scaled(size.max(1.0));
-    text.chars()
-        .map(|c| scaled.h_advance(scaled.glyph_id(c)))
-        .sum()
+    let s = size.max(1.0);
+    text.chars().map(|c| char_advance(c, s)).sum()
 }
 
 impl TextRaster {
@@ -63,13 +85,10 @@ impl TextRaster {
 
     /// このサイズでの行幅（ピクセル）。`\n` は区切りで、最長行を返す。
     pub fn measure_text_width(&mut self, text: &str, size: f32) -> f32 {
-        let scaled = FONT.as_scaled(size.max(1.0));
+        let s = size.max(1.0);
         let mut max_w = 0.0f32;
         for line in text.split('\n') {
-            let w: f32 = line
-                .chars()
-                .map(|c| scaled.h_advance(scaled.glyph_id(c)))
-                .sum();
+            let w: f32 = line.chars().map(|c| char_advance(c, s)).sum();
             max_w = max_w.max(w);
         }
         max_w
@@ -78,16 +97,13 @@ impl TextRaster {
     /// TextQuad を Quad の列に展開する。点灯画素 1 つ = 1px の Quad。
     pub fn text_quads(&mut self, tq: &TextQuad) -> Vec<Quad> {
         let size = tq.size.max(1.0);
-        let scaled = FONT.as_scaled(size);
-        let baseline = tq.y + scaled.ascent();
-        let line_h = scaled.height().max(size);
+        let scaled = UI_FONT.as_scaled(size);
+        let baseline = (tq.y + scaled.ascent()).round();
+        let line_h = scaled.height().max(size * 1.2).round();
         let mut out = Vec::new();
-        let mut line_start_y = baseline;
+        let mut line_base_y = baseline;
         for line in tq.text.split('\n') {
-            let line_w: f32 = line
-                .chars()
-                .map(|c| scaled.h_advance(scaled.glyph_id(c)))
-                .sum();
+            let line_w: f32 = line.chars().map(|c| char_advance(c, size)).sum();
             let x0 = match tq.align {
                 TextAlign::Left => tq.x,
                 TextAlign::Center => tq.x - line_w * 0.5,
@@ -95,15 +111,15 @@ impl TextRaster {
             };
             let mut col = x0;
             for ch in line.chars() {
-                let advance = scaled.h_advance(scaled.glyph_id(ch));
+                let advance = char_advance(ch, size);
                 if ch != ' ' {
                     if let Some(cov) = self.coverage(ch, size.round() as u32) {
-                        out.extend(coverage_quads(cov, col, line_start_y, tq.color));
+                        out.extend(coverage_quads(cov, col.round(), line_base_y, tq.color));
                     }
                 }
                 col += advance;
             }
-            line_start_y += line_h;
+            line_base_y += line_h;
         }
         out
     }
@@ -114,7 +130,7 @@ fn coverage_quads(cov: &Coverage, x: f32, y: f32, color: [u8; 4]) -> Vec<Quad> {
     for py in 0..cov.h {
         for px in 0..cov.w {
             let a = cov.pixels[(py * cov.w + px) as usize];
-            if a <= 0.0 {
+            if a <= 0.02 {
                 continue;
             }
             let alpha = ((color[3] as f32) * a).round().clamp(0.0, 255.0) as u8;
@@ -122,8 +138,8 @@ fn coverage_quads(cov: &Coverage, x: f32, y: f32, color: [u8; 4]) -> Vec<Quad> {
                 continue;
             }
             out.push(Quad::new(
-                x + px as f32,
-                y + py as f32,
+                x + cov.dx + px as f32,
+                y + cov.dy + py as f32,
                 1.0,
                 1.0,
                 [color[0], color[1], color[2], alpha],
@@ -135,7 +151,8 @@ fn coverage_quads(cov: &Coverage, x: f32, y: f32, color: [u8; 4]) -> Vec<Quad> {
 
 fn rasterize(ch: char, px: u32) -> Option<Coverage> {
     let size = px.max(1) as f32;
-    let scaled = FONT.as_scaled(size);
+    let font = select_font(ch);
+    let scaled = font.as_scaled(size);
     let glyph = scaled.scaled_glyph(ch);
     let outline = scaled.outline_glyph(glyph)?;
     let bounds = outline.px_bounds();
@@ -153,7 +170,13 @@ fn rasterize(ch: char, px: u32) -> Option<Coverage> {
             pixels[yi * w as usize + xi] = coverage.clamp(0.0, 1.0);
         }
     });
-    Some(Coverage { w, h, pixels })
+    Some(Coverage {
+        dx: bounds.min.x.floor(),
+        dy: bounds.min.y.floor(),
+        w,
+        h,
+        pixels,
+    })
 }
 
 #[cfg(test)]

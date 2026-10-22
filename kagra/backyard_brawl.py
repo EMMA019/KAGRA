@@ -264,18 +264,44 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
     px, pz = p["x"], p["z"]
 
     props: list[dict[str, Any]] = [
-        # 中央の小道と芝生のアクセント
+        # 中央の石畳レーン（低ラフネスで太陽光ハイライトを反射）
+        {
+            "id": "prop:lane_border",
+            "type": "prop",
+            "name": "lane",
+            "model": "box",
+            "position": [0.0, 0.004, 0.0],
+            "scale": [3.8, 0.008, 16.2],
+            "color": [128, 114, 96],
+            "metallic": 0.12,
+            "roughness": 0.28,
+            "enabled": True,
+        },
         {
             "id": "prop:lane",
             "type": "prop",
             "name": "lane",
             "model": "box",
-            "position": [0.0, 0.02, 0.0],
-            "scale": [3.2, 0.04, 15.5],
-            "color": [210, 178, 126],
+            "position": [0.0, 0.008, 0.0],
+            "scale": [3.2, 0.012, 15.5],
+            "color": [214, 184, 134],
+            "metallic": 0.08,
+            "roughness": 0.22,
             "enabled": True,
         },
-        # 青拠点（手前）と赤拠点（奥）のリング
+        # 青拠点（手前）と赤拠点（奥）の光沢リング＆台座
+        {
+            "id": "prop:blue_pad",
+            "type": "prop",
+            "name": "lane",
+            "model": "cylinder",
+            "position": [HOME_POS[0], 0.02, HOME_POS[1]],
+            "scale": [3.1, 0.04, 3.1],
+            "color": [36, 78, 138],
+            "metallic": 0.45,
+            "roughness": 0.16,
+            "enabled": True,
+        },
         {
             "id": "prop:blue_base",
             "type": "prop",
@@ -284,9 +310,21 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
             "position": [HOME_POS[0], 0.12, HOME_POS[1]],
             "pitch": 1.5708,
             "scale": [3.4, 3.4, 3.4],
-            "color": [64, 168, 255],
-            "metallic": 0.65,
-            "roughness": 0.2,
+            "color": [72, 178, 255],
+            "metallic": 0.78,
+            "roughness": 0.14,
+            "enabled": True,
+        },
+        {
+            "id": "prop:red_pad",
+            "type": "prop",
+            "name": "lane",
+            "model": "cylinder",
+            "position": [ENEMY_POS[0], 0.02, ENEMY_POS[1]],
+            "scale": [3.1, 0.04, 3.1],
+            "color": [138, 38, 34],
+            "metallic": 0.45,
+            "roughness": 0.16,
             "enabled": True,
         },
         {
@@ -297,9 +335,9 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
             "position": [ENEMY_POS[0], 0.12, ENEMY_POS[1]],
             "pitch": 1.5708,
             "scale": [3.4, 3.4, 3.4],
-            "color": [255, 82, 72],
-            "metallic": 0.65,
-            "roughness": 0.2,
+            "color": [255, 86, 74],
+            "metallic": 0.78,
+            "roughness": 0.14,
             "enabled": True,
         },
     ]
@@ -314,7 +352,9 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
                 "model": "cylinder",
                 "position": [HOME_POS[0] - 1.3, 0.0, HOME_POS[1]],
                 "scale": [0.10, 2.2, 0.10],
-                "color": [230, 220, 195],
+                "color": [235, 225, 200],
+                "metallic": 0.75,
+                "roughness": 0.16,
                 "enabled": True,
             },
             {
@@ -326,7 +366,9 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
                 "local": True,
                 "position": [0.42, 1.85, 0.0],
                 "scale": [0.80, 0.46, 0.06],
-                "color": [52, 148, 255],
+                "color": [58, 156, 255],
+                "metallic": 0.20,
+                "roughness": 0.22,
                 "enabled": True,
             },
         ]
@@ -345,7 +387,9 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
                 "position": [flag["x"], fy, flag["z"]],
                 "yaw": state["time"] * 2.0 if flag["carrier"] else 0.0,
                 "scale": [0.11, 2.2, 0.11],
-                "color": [245, 225, 160],
+                "color": [248, 222, 140],
+                "metallic": 0.82,
+                "roughness": 0.14,
                 "enabled": True,
             },
             {
@@ -357,7 +401,9 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
                 "local": True,
                 "position": [0.45, 1.85, 0.0],
                 "scale": [0.85, 0.50, 0.07],
-                "color": [255, 64, 56],
+                "color": [255, 68, 58],
+                "metallic": 0.20,
+                "roughness": 0.22,
                 "enabled": True,
             },
         ]
@@ -388,14 +434,17 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
                 "pitch": swing_angle,
                 "roll": -0.35,
                 "scale": [0.14, 1.05, 0.14],
-                "color": [214, 148, 76],
+                "color": [220, 152, 78],
+                "metallic": 0.18,
+                "roughness": 0.20,
                 "enabled": True,
             },
         ]
     )
 
-    # 庭の建物・木・岩（同梱の glTF アセット）
+    # 庭の建物・木・岩（同梱の glTF アセット、ツヤのある PBR マテリアル設定）
     for i, (alias, sx, sz, syaw, sscale) in enumerate(YARD_SCENERY):
+        is_chest = alias == "chest"
         props.append(
             {
                 "id": f"prop:yard_{i}",
@@ -406,6 +455,8 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
                 "position": [sx, 0.0, sz],
                 "yaw": syaw,
                 "scale": [sscale, sscale, sscale],
+                "metallic": 0.45 if is_chest else 0.10,
+                "roughness": 0.18 if is_chest else 0.24,
                 "enabled": True,
             }
         )
@@ -448,7 +499,10 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
         "version": 1,
         "half": 28.0,
         "floor_y": 0.0,
-        "sky": [128, 188, 240, 255],
+        "sky": [116, 178, 236, 255],
+        "ibl": 0.36,
+        "exposure": 0.90,
+        "tonemap": True,
         "props": props,
         "walkers": walkers,
         "lights": [
@@ -456,12 +510,12 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
                 "id": "light:0",
                 "type": "light",
                 "name": "sun",
-                "position": [14, 26, 16],
+                "position": [16, 22, 14],
                 "kind": "point",
                 "slot": 0,
-                "intensity": 2.6,
+                "intensity": 2.2,
                 "radius": 120,
-                "color": [1.0, 0.96, 0.86],
+                "color": [1.0, 0.95, 0.84],
             },
             {
                 "id": "light:1",
@@ -470,9 +524,9 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
                 "position": [-14, 18, -10],
                 "kind": "point",
                 "slot": 1,
-                "intensity": 0.9,
+                "intensity": 0.85,
                 "radius": 90,
-                "color": [0.68, 0.84, 1.0],
+                "color": [0.64, 0.82, 1.0],
             },
         ],
         "cameras": [
@@ -518,35 +572,65 @@ class BackyardRascals(Scene):
         blue = self.state["blue_score"]
         red = self.state["red_score"]
         parts = [
-            panel(12, 12, 260, 52, color=(16, 26, 44, 215), border=(88, 176, 255, 255)),
+            panel(
+                12,
+                12,
+                282,
+                56,
+                color=(14, 22, 38, 178),
+                border=(88, 176, 255, 220),
+                border_w=1.5,
+                radius=10.0,
+            ),
             list_lines(
                 [f"BLUE CRITTERS  {blue} / {WIN_CAPTURES}    RED  {red}"],
-                x=22,
-                y=18,
+                x=24,
+                y=19,
                 size=14,
                 color=[245, 248, 255, 255],
+                shadow=True,
             ),
-            bar(22, 42, 236, 10, ratio=blue / WIN_CAPTURES, color=[72, 180, 255, 255]),
-            panel(12, self.height - 34, 420, 24, color=(16, 26, 44, 190), border=(255, 200, 80, 220)),
+            bar(24, 44, 254, 10, ratio=blue / WIN_CAPTURES, color=[72, 180, 255, 255]),
+            panel(
+                12,
+                self.height - 38,
+                448,
+                28,
+                color=(14, 22, 38, 168),
+                border=(255, 200, 80, 200),
+                border_w=1.5,
+                radius=8.0,
+            ),
             list_lines(
                 ["WASD Move   Space/Click BONK!   Shift Dash"],
-                x=22,
-                y=self.height - 29,
+                x=24,
+                y=self.height - 31,
                 size=13,
                 color=[245, 244, 220, 245],
+                shadow=True,
             ),
         ]
         if self.state["banner_t"] > 0.0 and self.state["banner"]:
             parts.append(
-                panel(self.width // 2 - 150, 14, 300, 30, color=(28, 20, 18, 215), border=(255, 204, 72, 255))
+                panel(
+                    self.width // 2 - 158,
+                    14,
+                    316,
+                    34,
+                    color=(24, 18, 20, 182),
+                    border=(255, 204, 72, 230),
+                    border_w=1.5,
+                    radius=9.0,
+                )
             )
             parts.append(
                 list_lines(
                     [self.state["banner"]],
-                    x=self.width // 2 - 136,
-                    y=21,
+                    x=self.width // 2 - 138,
+                    y=22,
                     size=14,
                     color=[255, 232, 130, 255],
+                    shadow=True,
                 )
             )
         self._frame_rgba = render_rgba(self.world, self.width, self.height, hud=merge(*parts))

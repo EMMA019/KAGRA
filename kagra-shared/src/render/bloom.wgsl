@@ -78,5 +78,8 @@ fn fs_composite(in: VO) -> @location(0) vec4<f32> {
     if (params.z > 0.5) {
         c = aces_tonemap(c);
     }
+    let d = (in.uv - vec2<f32>(0.5, 0.5)) * vec2<f32>(1.15, 1.0);
+    let vig = clamp(1.0 - dot(d, d) * 0.56, 0.54, 1.0);
+    c = c * vig;
     return vec4<f32>(c, sharp.a);
 }

@@ -614,6 +614,13 @@ impl WorldDoc {
         let (gltf_ids, walker_gltf_ids) = self.gltf_mesh_ids();
         let tex_ids = self.texture_mesh_ids();
 
+        let sky = self.sky.unwrap_or([130, 165, 205, 255]);
+        b.push_material(
+            MESH_SPHERE,
+            Mat4::from_scale_rotation_translation(Vec3::splat(360.0), Quat::IDENTITY, camera.eye),
+            sky,
+            Material::Sky,
+        );
         if self.heightfield.is_some() {
             b.push_material(
                 MESH_HEIGHTFIELD,
@@ -779,7 +786,7 @@ impl WorldDoc {
                             continue;
                         }
                     }
-                    b.push_material(mesh, model, col, mat);
+                    b.push_pbr(mesh, model, col, mat, 0.08, 0.30);
                 }
                 continue;
             }
@@ -946,29 +953,65 @@ impl WorldDoc {
                 continue;
             }
             if prop.local
+                || !prop.gltf.is_none() && prop.name == "plane"
                 || prop.model.eq_ignore_ascii_case("torus")
                 || prop.model.eq_ignore_ascii_case("ring")
                 || prop.name.eq_ignore_ascii_case("cloud")
                 || prop.name.eq_ignore_ascii_case("ring")
+                || prop.name.eq_ignore_ascii_case("plane")
+                || prop.name.eq_ignore_ascii_case("tile")
+                || prop.name.eq_ignore_ascii_case("studio_floor")
+                || prop.name.eq_ignore_ascii_case("board_frame")
+                || prop.name.eq_ignore_ascii_case("brass_trim")
+                || prop.name.eq_ignore_ascii_case("backdrop")
+                || prop.name.eq_ignore_ascii_case("lane")
             {
                 continue;
             }
             let pos = Vec3::from_array(prop.position);
+            let ground_y = self.height_at(pos.x, pos.z);
+            if (pos.y - ground_y) > 2.5 && !prop.name.starts_with("piece_") {
+                continue;
+            }
             let sx = prop.scale[0].abs().max(0.2);
             let sz = prop.scale[2].abs().max(0.2);
+            let is_chess_piece = prop.name.starts_with("piece_");
+            if is_chess_piece {
+                // Tight ambient-occlusion ring under the piece base + soft directional cast shadow on the board tile
+                self.push_contact_blob_alpha(b, pos.x, 0.033, pos.z, 0.23, 168);
+                self.push_contact_blob_alpha(b, pos.x - 0.055, 0.0318, pos.z - 0.045, 0.25, 118);
+                continue;
+            }
             let radius = (sx.max(sz) * 0.7).clamp(0.28, 2.4);
-            self.push_contact_blob(b, pos.x, pos.z, radius);
+            let by = self.height_at(pos.x, pos.z) + 0.03;
+            self.push_contact_blob_at(b, pos.x, by, pos.z, radius);
         }
     }
 
     fn push_contact_blob(&self, b: &mut SceneBuilder, x: f32, z: f32, radius: f32) {
         let y = self.height_at(x, z) + 0.03;
+        self.push_contact_blob_at(b, x, y, z, radius);
+    }
+
+    fn push_contact_blob_at(&self, b: &mut SceneBuilder, x: f32, y: f32, z: f32, radius: f32) {
+        self.push_contact_blob_alpha(b, x, y, z, radius, 135);
+    }
+
+    fn push_contact_blob_alpha(
+        &self,
+        b: &mut SceneBuilder,
+        x: f32,
+        y: f32,
+        z: f32,
+        radius: f32,
+        alpha: u8,
+    ) {
         let model = Mat4::from_scale_rotation_translation(
             Vec3::new(radius * 2.0, 1.0, radius * 2.0),
             Quat::IDENTITY,
             Vec3::new(x, y, z),
         );
-        b.push_material(MESH_PLANE, model, [18, 14, 12, 120], Material::Solid);
+        b.push_material(MESH_PLANE, model, [12, 10, 14, alpha], Material::Solid);
     }
 
     fn draw_light(&self) -> (Vec3, f32) {
@@ -1011,7 +1054,7 @@ impl WorldDoc {
         out.push((MESH_HEIGHTFIELD, self.heightfield_mesh()));
         let cone_segs = self.vegetation_lod_cells();
         out.push((MESH_CONE, primitives::cone_mesh(0.5, 1.0, cone_segs)));
-        out.push((MESH_TORUS, primitives::torus_mesh(0.5, 0.07, 20, 8)));
+        out.push((MESH_TORUS, primitives::torus_mesh(0.5, 0.075, 48, 20)));
         for (i, slot) in self.gltf_slots().into_iter().enumerate() {
             let mesh = match &slot {
                 GltfSlot::Rest(spec) => gltf_mesh_for(spec),
@@ -1955,8 +1998,8 @@ fn color_u8(rgb: Option<[u32; 3]>) -> [u8; 4] {
 pub fn compile_meshes() -> Vec<(MeshId, crate::scene3d::MeshData)> {
     vec![
         (MESH_BOX, primitives::box_mesh(Vec3::ONE)),
-        (MESH_SPHERE, primitives::cylinder_mesh(0.5, 1.0, 12)),
-        (MESH_CAPSULE, primitives::cylinder_mesh(0.5, 1.0, 12)),
+        (MESH_SPHERE, primitives::sphere_mesh(0.5, 24)),
+        (MESH_CAPSULE, primitives::cylinder_mesh(0.5, 1.0, 20)),
         (MESH_PLANE, primitives::plane_mesh(1.0, 1.0)),
         (MESH_QUAD, primitives::quad_mesh(1.0, 1.0)),
     ]

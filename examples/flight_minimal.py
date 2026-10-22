@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from kagra.flight import H, W, FlightGame, make_world, scripted_flight  # noqa: E402
+from kagra.flight import ALT, H, W, FlightGame, make_world, scripted_flight  # noqa: E402
 from kagra.gameloop import rgba_to_png, run  # noqa: E402
 
 
@@ -60,6 +60,13 @@ def main() -> int:
     if "--seconds" in sys.argv:
         seconds = float(sys.argv[sys.argv.index("--seconds") + 1])
     state = scripted_flight(seconds=seconds)
+    # 3 つのリングをクリアした状態で、眼下の島と村・3 つ目のリングを見下ろす爽快なバンク旋回ポーズ
+    state["x"] = -1.6
+    state["y"] = ALT + 0.8
+    state["z"] = -16.5
+    state["yaw"] = 0.08
+    state["pitch"] = 0.12
+    state["roll"] = 0.42
     scene = FlightGame()
     scene.state = state
     scene.world = make_world(state)

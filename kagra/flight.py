@@ -148,8 +148,8 @@ def _prop(
     yaw: float = 0.0,
     pitch: float = 0.0,
     roll: float = 0.0,
-    metallic: float = 0.0,
-    roughness: float = 1.0,
+    metallic: float = 0.08,
+    roughness: float = 0.22,
     enabled: bool = True,
 ) -> dict[str, Any]:
     prop: dict[str, Any] = {
@@ -162,6 +162,8 @@ def _prop(
         "roll": float(roll),
         "model": model,
         "scale": [float(v) for v in scale],
+        "metallic": float(metallic),
+        "roughness": float(roughness),
         "enabled": enabled,
     }
     if color is not None:
@@ -172,9 +174,6 @@ def _prop(
         prop["parent"] = parent
     if local:
         prop["local"] = True
-    if metallic > 0.0:
-        prop["metallic"] = float(metallic)
-        prop["roughness"] = float(roughness)
     return prop
 
 
@@ -188,47 +187,50 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
     ux, uy, uz = m[0][1], m[1][1], m[2][1]
     # 機体と眼下の島・村が両方映る斜め上のチェイス視点
     cam = [
-        x - fx * 6.8 + ux * 2.8 + rx * 2.4,
-        y - fy * 6.8 + uy * 2.8 + ry * 2.4,
-        z - fz * 6.8 + uz * 2.8 + rz * 2.4,
+        x - fx * 5.2 + ux * 1.9 + rx * 1.6,
+        y - fy * 5.2 + uy * 1.9 + ry * 1.6,
+        z - fz * 5.2 + uz * 1.9 + rz * 1.6,
     ]
-    look = [x + fx * 3.5, y + fy * 3.5 - 1.2, z + fz * 3.5]
+    look = [x + fx * 3.2, y + fy * 3.2 - 1.1, z + fz * 3.2]
 
-    red_body = [228, 58, 48]
-    cream_wing = [248, 240, 218]
-    navy_trim = [44, 62, 94]
-    canopy_glass = [110, 200, 245]
-    gold = [255, 200, 52]
-    silver = [220, 228, 238]
-    cloud = [248, 250, 255]
+    red_body = [224, 48, 38]
+    cream_wing = [232, 186, 108]
+    navy_trim = [38, 56, 88]
+    canopy_glass = [92, 198, 250]
+    gold = [252, 194, 48]
+    silver = [224, 232, 242]
+    cloud = [238, 244, 252]
 
     spin = state.get("spin", 0.0)
     t = state.get("time", 0.0)
     passed: set[int] = state.get("passed", set())
 
-    # 鮮やかな赤い複葉機（親ヒンジ + 11 パーツ）
+    # 鮮やかな赤い複葉機（親ヒンジ + 12 パーツ、曲面メタリック・グロス塗装）
     props = [
         _prop("prop:plane", "plane", "box", [x, y, z], [1, 1, 1], red_body, yaw=yaw, pitch=pitch, roll=roll, enabled=False),
-        _prop("prop:fuselage", "fuselage", "box", [0, 0, 0.05], [0.46, 0.38, 1.85], red_body, parent="prop:plane", local=True),
-        _prop("prop:cowling", "cowling", "cylinder", [0, -0.02, 1.02], [0.44, 0.34, 0.44], navy_trim, parent="prop:plane", local=True, pitch=1.5708),
-        _prop("prop:canopy", "canopy", "sphere", [0, 0.24, -0.05], [0.34, 0.24, 0.68], canopy_glass, parent="prop:plane", local=True, metallic=0.6, roughness=0.15),
-        _prop("prop:wing", "wing", "box", [0, -0.04, 0.18], [3.6, 0.07, 0.62], cream_wing, parent="prop:plane", local=True),
-        _prop("prop:upper_wing", "upper_wing", "box", [0, 0.48, 0.22], [3.4, 0.07, 0.58], cream_wing, parent="prop:plane", local=True),
-        _prop("prop:strut_l", "strut", "box", [-1.15, 0.22, 0.20], [0.06, 0.52, 0.08], navy_trim, parent="prop:plane", local=True),
-        _prop("prop:strut_r", "strut", "box", [1.15, 0.22, 0.20], [0.06, 0.52, 0.08], navy_trim, parent="prop:plane", local=True),
-        _prop("prop:tail", "tail", "box", [0, 0.08, -0.82], [1.28, 0.06, 0.36], cream_wing, parent="prop:plane", local=True),
-        _prop("prop:fin", "fin", "box", [0, 0.30, -0.84], [0.07, 0.48, 0.38], red_body, parent="prop:plane", local=True),
-        _prop("prop:nose", "nose", "sphere", [0, -0.02, 1.18], [0.22, 0.22, 0.26], gold, parent="prop:plane", local=True, metallic=0.9, roughness=0.15),
+        _prop("prop:fuselage", "fuselage", "sphere", [0, 0, -0.05], [0.62, 0.52, 2.30], red_body, parent="prop:plane", local=True, metallic=0.68, roughness=0.11),
+        _prop("prop:cowling", "cowling", "cylinder", [0, -0.01, 0.96], [0.48, 0.40, 0.48], navy_trim, parent="prop:plane", local=True, pitch=1.5708, metallic=0.76, roughness=0.12),
+        _prop("prop:canopy", "canopy", "sphere", [0, 0.26, -0.08], [0.40, 0.30, 0.80], canopy_glass, parent="prop:plane", local=True, metallic=0.90, roughness=0.08),
+        _prop("prop:wing", "wing", "sphere", [0, -0.05, 0.18], [3.85, 0.15, 0.74], cream_wing, parent="prop:plane", local=True, metallic=0.58, roughness=0.12),
+        _prop("prop:upper_wing", "upper_wing", "sphere", [0, 0.48, 0.22], [3.65, 0.15, 0.70], cream_wing, parent="prop:plane", local=True, metallic=0.58, roughness=0.12),
+        _prop("prop:wing_stripe", "wing_stripe", "sphere", [0, 0.52, 0.22], [2.45, 0.12, 0.32], red_body, parent="prop:plane", local=True, metallic=0.68, roughness=0.11),
+        _prop("prop:strut_l", "strut", "cylinder", [-1.15, 0.22, 0.20], [0.06, 0.52, 0.06], navy_trim, parent="prop:plane", local=True, metallic=0.70, roughness=0.14),
+        _prop("prop:strut_r", "strut", "cylinder", [1.15, 0.22, 0.20], [0.06, 0.52, 0.06], navy_trim, parent="prop:plane", local=True, metallic=0.70, roughness=0.14),
+        _prop("prop:tail", "tail", "sphere", [0, 0.08, -0.92], [1.45, 0.13, 0.46], cream_wing, parent="prop:plane", local=True, metallic=0.58, roughness=0.12),
+        _prop("prop:fin", "fin", "sphere", [0, 0.32, -0.95], [0.14, 0.58, 0.48], red_body, parent="prop:plane", local=True, metallic=0.68, roughness=0.11),
+        _prop("prop:nose", "nose", "sphere", [0, -0.01, 1.18], [0.28, 0.28, 0.34], gold, parent="prop:plane", local=True, metallic=0.95, roughness=0.10),
         _prop(
             "prop:propeller",
             "propeller",
             "box",
-            [0, -0.02, 1.26],
-            [1.35, 0.10, 0.04],
+            [0, -0.01, 1.28],
+            [1.42, 0.11, 0.04],
             silver,
             parent="prop:plane",
             local=True,
             roll=spin,
+            metallic=0.92,
+            roughness=0.10,
         ),
     ]
 
@@ -289,8 +291,11 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
         "half": 64.0,
         "floor_y": 0.0,
         "water_y": 0.0,
-        "sky": [125, 184, 235, 255],
-        "heightfield": {"fn": "island_height", "tile": 16.0},
+        "sky": [114, 176, 232, 255],
+        "ibl": 0.38,
+        "exposure": 0.90,
+        "tonemap": True,
+        "heightfield": {"fn": "island_height", "tile": 16.0, "lod_radius": 120.0},
         "props": props,
         "walkers": walkers,
         "lights": [
@@ -298,23 +303,23 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
                 "id": "light:0",
                 "type": "light",
                 "name": "sun",
-                "position": [28, 52, 16],
+                "position": [x + 12.0, y + 18.0, z + 14.0],
                 "kind": "point",
                 "slot": 0,
-                "intensity": 2.6,
-                "radius": 200,
-                "color": [1.0, 0.96, 0.86],
+                "intensity": 2.4,
+                "radius": 220,
+                "color": [1.0, 0.95, 0.84],
             },
             {
                 "id": "light:1",
                 "type": "light",
                 "name": "sky_fill",
-                "position": [-24, 30, -12],
+                "position": [x - 14.0, y + 10.0, z - 12.0],
                 "kind": "point",
                 "slot": 1,
-                "intensity": 0.85,
-                "radius": 160,
-                "color": [0.65, 0.82, 1.0],
+                "intensity": 1.15,
+                "radius": 180,
+                "color": [0.65, 0.84, 1.0],
             },
         ],
         "cameras": [
@@ -359,17 +364,36 @@ class FlightGame(Scene):
         title = "ALL RINGS CLEAR!" if done else f"RINGS  {score} / {total}"
         alt_m = int(round(self.state["y"]))
         hud = merge(
-            panel(12, 12, 236, 48, color=(14, 24, 40, 210), border=(255, 200, 72, 255)),
-            list_lines([title], x=22, y=18, size=14, color=[255, 242, 200, 255]),
-            bar(22, 38, 150, 10, ratio=score / max(1, total), color=[255, 196, 64, 255]),
-            list_lines([f"ALT {alt_m}m"], x=180, y=36, size=11, color=[210, 230, 250, 240]),
-            panel(12, self.height - 34, 330, 24, color=(14, 24, 40, 185), border=(90, 140, 190, 220)),
+            panel(
+                12,
+                12,
+                258,
+                54,
+                color=(12, 20, 36, 178),
+                border=(255, 200, 72, 220),
+                border_w=1.5,
+                radius=10.0,
+            ),
+            list_lines([title], x=24, y=18, size=14, color=[255, 242, 200, 255], shadow=True),
+            bar(24, 42, 156, 10, ratio=score / max(1, total), color=[255, 196, 64, 255]),
+            list_lines([f"ALT {alt_m}m"], x=190, y=39, size=12, color=[210, 230, 250, 240], shadow=True),
+            panel(
+                12,
+                self.height - 38,
+                360,
+                28,
+                color=(12, 20, 36, 168),
+                border=(96, 148, 200, 200),
+                border_w=1.5,
+                radius=8.0,
+            ),
             list_lines(
                 ["W/S Pitch   A/D Bank   Shift Boost"],
-                x=22,
-                y=self.height - 29,
+                x=24,
+                y=self.height - 31,
                 size=13,
-                color=[235, 242, 250, 240],
+                color=[235, 242, 250, 245],
+                shadow=True,
             ),
         )
         self._frame_rgba = render_rgba(self.world, self.width, self.height, hud=hud)

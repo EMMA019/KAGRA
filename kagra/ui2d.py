@@ -18,12 +18,16 @@ PixelMplus の実測幅（kagra_shared.measure_text）で行う。kagra_shared �
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
 try:
     import kagra_shared as _ks
 except ImportError:  # pragma: no cover - 未ビルド環境は近似幅
-    _ks = None
+    try:
+        from kagra import kagra_shared as _ks  # type: ignore[no-redef]
+    except ImportError:
+        _ks = None
 
 __all__ = [
     "merge",
@@ -76,6 +80,52 @@ def image(path: str, x: float, y: float, w: float, h: float) -> dict[str, Any]:
     return {"images": [{"path": str(path), "x": float(x), "y": float(y), "w": float(w), "h": float(h)}]}
 
 
+def _rounded_rect_quads(
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    r: float,
+    color: list[int],
+) -> list[dict[str, Any]]:
+    """角丸矩形を水平スキャンライン + 中央矩形の Quad 列に展開する。"""
+    w = max(1.0, float(w))
+    h = max(1.0, float(h))
+    ri = int(max(0.0, min(float(r), w * 0.5 - 1.0, h * 0.5 - 1.0)))
+    if ri <= 0:
+        return [{"x": float(x), "y": float(y), "w": w, "h": h, "color": list(color)}]
+    quads: list[dict[str, Any]] = []
+    rf = float(ri)
+    for row in range(ri):
+        dy = rf - (row + 0.5)
+        dx = rf - math.sqrt(max(0.0, rf * rf - dy * dy))
+        inset = round(dx, 2)
+        span = max(1.0, w - 2.0 * inset)
+        quads.append(
+            {"x": float(x) + inset, "y": float(y) + row, "w": span, "h": 1.0, "color": list(color)}
+        )
+    mid_h = h - 2.0 * ri
+    if mid_h > 0.0:
+        quads.append(
+            {"x": float(x), "y": float(y) + ri, "w": w, "h": mid_h, "color": list(color)}
+        )
+    for row in range(ri):
+        dy = row + 0.5
+        dx = rf - math.sqrt(max(0.0, rf * rf - dy * dy))
+        inset = round(dx, 2)
+        span = max(1.0, w - 2.0 * inset)
+        quads.append(
+            {
+                "x": float(x) + inset,
+                "y": float(y) + h - ri + row,
+                "w": span,
+                "h": 1.0,
+                "color": list(color),
+            }
+        )
+    return quads
+
+
 def panel(
     x: float,
     y: float,
@@ -84,21 +134,55 @@ def panel(
     color=(16, 20, 16, 230),
     border=(100, 110, 100, 255),
     border_w: float = 2.0,
+    *,
+    radius: float = 0.0,
 ) -> dict[str, Any]:
-    """背景 + 枠の四角。"""
-    return {
-        "quads": [
-            {"x": x, "y": y, "w": w, "h": h, "color": list(border)},
+    """背景 + 枠の四角。``radius > 0`` のときはドロップシャドウ付きの角丸半透明パネル。"""
+    if radius <= 0.0:
+        return {
+            "quads": [
+                {"x": x, "y": y, "w": w, "h": h, "color": list(border)},
+                {
+                    "x": x + border_w,
+                    "y": y + border_w,
+                    "w": max(1.0, w - 2 * border_w),
+                    "h": max(1.0, h - 2 * border_w),
+                    "color": list(color),
+                },
+            ],
+            "texts": [],
+        }
+    bw = max(1.0, float(border_w))
+    r_out = float(radius)
+    r_in = max(1.0, r_out - bw)
+    quads: list[dict[str, Any]] = []
+    # 外側のソフトなドロップシャドウ
+    quads.extend(_rounded_rect_quads(x + 2.0, y + 3.0, w, h, r_out, [4, 8, 16, 85]))
+    # 枠線と内側パネル
+    quads.extend(_rounded_rect_quads(x, y, w, h, r_out, list(border)))
+    quads.extend(
+        _rounded_rect_quads(
+            x + bw,
+            y + bw,
+            max(1.0, w - 2.0 * bw),
+            max(1.0, h - 2.0 * bw),
+            r_in,
+            list(color),
+        )
+    )
+    # 上端のガラス風ハイライトライン
+    hi_inset = bw + r_in * 0.7
+    if w > hi_inset * 2.0:
+        quads.append(
             {
-                "x": x + border_w,
-                "y": y + border_w,
-                "w": max(1.0, w - 2 * border_w),
-                "h": max(1.0, h - 2 * border_w),
-                "color": list(color),
-            },
-        ],
-        "texts": [],
-    }
+                "x": x + hi_inset,
+                "y": y + bw + 1.0,
+                "w": w - hi_inset * 2.0,
+                "h": 1.0,
+                "color": [255, 255, 255, 38],
+            }
+        )
+    return {"quads": quads, "texts": []}
 
 
 def wrap_text(text: str, size: float, max_w: float) -> list[str]:
@@ -232,13 +316,18 @@ def list_lines(
     size: float = 12.0,
     color=_TEXT,
     line_h: float | None = None,
+    shadow: bool = False,
 ) -> dict[str, Any]:
     """在庫・ステータスなどの単純リスト（パネルなし）。"""
     lh = line_h if line_h is not None else size * 1.4
-    texts = [
-        {"text": it, "x": x, "y": y + i * lh, "size": size, "color": list(color)}
-        for i, it in enumerate(items)
-    ]
+    texts: list[dict[str, Any]] = []
+    for i, it in enumerate(items):
+        ty = y + i * lh
+        if shadow:
+            texts.append(
+                {"text": it, "x": x + 1.0, "y": ty + 1.0, "size": size, "color": [6, 10, 18, 165]}
+            )
+        texts.append({"text": it, "x": x, "y": ty, "size": size, "color": list(color)})
     return {"quads": [], "texts": texts}
 
 

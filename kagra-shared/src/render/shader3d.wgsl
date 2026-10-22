@@ -112,6 +112,9 @@ fn fs_outline(in: VsOut) -> @location(0) vec4<f32> {
 
 @vertex
 fn vs_shadow(in: VsIn) -> @builtin(position) vec4<f32> {
+    if (in.color.a < 0.72) {
+        return vec4<f32>(0.0, 0.0, -2.0, 1.0);
+    }
     let model = mat4x4<f32>(in.m0, in.m1, in.m2, in.m3);
     let world = model * vec4<f32>(in.pos, 1.0);
     return g.light_view_proj * world;
@@ -178,8 +181,8 @@ fn light_one(n: vec3<f32>, world: vec3<f32>, i: i32) -> vec3<f32> {
     return col_r.rgb * max(dot(n, ldir), 0.0) * atten * cone;
 }
 
-fn local_lit(n: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
-    return light_one(n, world, 0)
+fn local_lit(n: vec3<f32>, world: vec3<f32>, sh: f32) -> vec3<f32> {
+    return light_one(n, world, 0) * sh
         + light_one(n, world, 1)
         + light_one(n, world, 2)
         + light_one(n, world, 3);
@@ -214,8 +217,8 @@ fn light_one_metal(n: vec3<f32>, world: vec3<f32>, v: vec3<f32>, f0: vec3<f32>, 
     return col_r.rgb * spec * ndotl * atten * cone;
 }
 
-fn local_metal(n: vec3<f32>, world: vec3<f32>, v: vec3<f32>, f0: vec3<f32>, rough: f32) -> vec3<f32> {
-    return light_one_metal(n, world, v, f0, rough, 0)
+fn local_metal(n: vec3<f32>, world: vec3<f32>, v: vec3<f32>, f0: vec3<f32>, rough: f32, sh: f32) -> vec3<f32> {
+    return light_one_metal(n, world, v, f0, rough, 0) * sh
         + light_one_metal(n, world, v, f0, rough, 1)
         + light_one_metal(n, world, v, f0, rough, 2)
         + light_one_metal(n, world, v, f0, rough, 3);
@@ -283,14 +286,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let mat_id = i32(in.material + 0.5);
     var alpha = in.color.a;
 
-    // スカイ: 天頂〜地平のグラデーション。ライティングもフォグも掛けない。
+    // スカイ: in.color.rgb を基準に天頂〜地平〜足元のスタジオグラデーション。
     // Linear HDR; exposure + ACES are applied by the bloom composite pass.
     if (mat_id == 3) {
         let dir = normalize(in.world - g.camera_pos.xyz);
         let t = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
-        let zenith = vec3<f32>(0.35, 0.55, 0.95);
-        let horizon = vec3<f32>(0.78, 0.86, 0.95);
-        let col = mix(horizon, zenith, t * t);
+        let base = in.color.rgb;
+        let zenith = base * vec3<f32>(0.68, 0.80, 1.05);
+        let horizon = mix(base * 1.45, vec3<f32>(0.78, 0.86, 0.96), clamp(dot(base, vec3<f32>(0.333)), 0.0, 1.0) * 0.65);
+        let col = mix(horizon, zenith, smoothstep(0.32, 0.88, t));
         return vec4<f32>(col, 1.0);
     }
 
@@ -368,12 +372,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let spec = ggx_d(ndoth, rough) * smith_g(ndotv, ndotl, rough) * f
             / max(4.0 * ndotv * ndotl, 1e-4);
         let kd = (vec3<f32>(1.0) - f) * (1.0 - metallic);
-        lit = (kd * albedo + spec) * ndotl * sh + albedo * ambient * 0.22;
-        lit += local_metal(n, in.world, v, f0, rough);
-        // Metals have no Lambert; SH * f0 is the thin diffuse IBL so coins
-        // pick up sky/ground in shadow. GGX locals stay.
+        let fresnel_edge = pow(1.0 - ndotv, 4.0);
+        lit = (kd * albedo + spec * 1.45) * ndotl * sh + albedo * ambient * 0.28;
+        lit += kd * albedo * local_lit(n, in.world, sh);
+        lit += local_metal(n, in.world, v, f0, rough, sh) * 1.35;
         let r = reflect(-v, n);
-        lit += f0 * env_irradiance(r) * (1.0 - rough * 0.65);
+        let studio_spec = pow(max(r.y * 0.65 + 0.35, 0.0), 6.0) * (1.0 - rough);
+        lit += f0 * env_irradiance(r) * (1.2 - rough * 0.5);
+        lit += mix(f0, vec3<f32>(1.0, 0.98, 0.94), 0.55) * (studio_spec * 0.48 + fresnel_edge * 0.36);
     } else if (mat_id == 6) {
         // Water: two scrolling normals + Fresnel + SH reflection.
         // Not a Water Renderer / V2. No SSR, no physics sim, no caustics.
@@ -386,13 +392,26 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let r = reflect(-v, nw);
         let spec_sun = pow(max(dot(nw, normalize(v + ldir)), 0.0), 96.0);
         lit = body * (ambient * 0.85 + (1.0 - ambient) * max(dot(nw, ldir), 0.0) * 0.35 * sh);
-        lit += body * local_lit(nw, in.world) * 0.25;
+        lit += body * local_lit(nw, in.world, sh) * 0.25;
         lit += env_irradiance(r) * mix(0.22, 1.05, fresnel);
         lit += env_irradiance(nw) * body * 0.20;
         lit += vec3<f32>(0.95, 0.97, 1.0) * spec_sun * 0.55 * sh;
         // Cheap depth fade: looking down is more transmissive (no scene-depth prepass).
         alpha = mix(0.92, 0.34, ndotv) * in.color.a;
     } else {
+        // Radial contact blob: soft round AO under feet/pieces instead of a hard square.
+        if (alpha < 0.72 && mat_id == 0) {
+            let r2 = dot(in.uv - vec2<f32>(0.5, 0.5), in.uv - vec2<f32>(0.5, 0.5)) * 4.0;
+            if (r2 >= 1.0) {
+                discard;
+            }
+            let soft = (1.0 - r2) * (1.0 - r2);
+            let ao = clamp(alpha * soft * 1.75, 0.0, 0.85);
+            if (ao < 0.03) {
+                discard;
+            }
+            return vec4<f32>(vec3<f32>(0.008, 0.010, 0.018), ao);
+        }
         let rough = select(clamp(in.mtoon4.y, 0.04, 1.0), 0.42, in.mtoon4.y <= 1e-4);
         let metallic = clamp(in.mtoon4.x, 0.0, 1.0);
         let v = normalize(g.camera_pos.xyz - in.world);
@@ -405,13 +424,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let sun_spec = ggx_d(ndoth, rough) * smith_g(ndotv, ndl, rough) * fresnel
             / max(4.0 * ndotv * max(ndl, 1e-3), 1e-4);
         lit = albedo * (ambient + (1.0 - ambient) * ndl * sh);
-        lit += albedo * local_lit(n, in.world);
+        lit += albedo * local_lit(n, in.world, sh);
         lit += albedo * env_irradiance(n);
         if (gloss > 0.08) {
             let r = reflect(-v, n);
-            lit += sun_spec * ndl * sh * gloss;
-            lit += local_metal(n, in.world, v, f0, rough) * gloss;
-            lit += env_irradiance(r) * fresnel * gloss * gloss * 1.35;
+            let studio_spec = pow(max(r.y * 0.65 + 0.35, 0.0), 8.0) * gloss;
+            lit += sun_spec * ndl * sh * gloss * 1.4;
+            lit += local_metal(n, in.world, v, f0, rough, sh) * gloss * 1.3;
+            lit += env_irradiance(r) * fresnel * gloss * gloss * 1.5;
+            lit += vec3<f32>(1.0, 0.98, 0.95) * (studio_spec * 0.22 + pow(1.0 - ndotv, 4.0) * gloss * 0.18);
         }
     }
 

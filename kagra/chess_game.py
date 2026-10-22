@@ -192,7 +192,7 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
     """スタジオ照明 + 光沢マホガニー外枠 + 大理石/黒檀マスのチェス盤と PolyHaven 彫刻駒。"""
     props: list[dict[str, Any]] = []
 
-    # スタジオテーブル＆真鍮フレーム外枠
+    # スタジオテーブル・背景サイクロラマ（グラデーション背景）・真鍮フレーム外枠
     props.extend(
         [
             {
@@ -201,10 +201,35 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
                 "name": "studio_floor",
                 "model": "box",
                 "position": [0.0, -0.28, 0.0],
-                "scale": [18.0, 0.20, 18.0],
-                "color": [22, 26, 34],
-                "metallic": 0.15,
-                "roughness": 0.28,
+                "scale": [42.0, 0.20, 42.0],
+                "color": [26, 32, 44],
+                "metallic": 0.22,
+                "roughness": 0.24,
+                "enabled": True,
+            },
+            {
+                "id": "prop:backdrop",
+                "type": "prop",
+                "name": "backdrop",
+                "model": "box",
+                "position": [0.0, 4.2, -10.2],
+                "pitch": 0.32,
+                "scale": [44.0, 18.0, 0.40],
+                "color": [30, 38, 54],
+                "metallic": 0.14,
+                "roughness": 0.36,
+                "enabled": True,
+            },
+            {
+                "id": "prop:board_plinth",
+                "type": "prop",
+                "name": "board_frame",
+                "model": "box",
+                "position": [0.0, -0.14, 0.0],
+                "scale": [SQ * 9.35, 0.12, SQ * 9.35],
+                "color": [42, 22, 14],
+                "metallic": 0.10,
+                "roughness": 0.22,
                 "enabled": True,
             },
             {
@@ -226,9 +251,9 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
                 "model": "box",
                 "position": [0.0, -0.06, 0.0],
                 "scale": [SQ * 8.32, 0.14, SQ * 8.32],
-                "color": [232, 184, 78],
-                "metallic": 0.92,
-                "roughness": 0.14,
+                "color": [224, 176, 74],
+                "metallic": 0.90,
+                "roughness": 0.15,
                 "enabled": True,
             },
         ]
@@ -245,28 +270,28 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
             x, z = _sq_xz(r, c)
             light_sq = (r + c) % 2 == 0
             if (r, c) == (cur_r, cur_c):
-                col = [96, 210, 255]
-                rough = 0.10
-                met = 0.35
-            elif sel and (r, c) == tuple(sel):
-                col = [255, 214, 76]
+                col = [88, 198, 245]
                 rough = 0.12
-                met = 0.45
-            elif (r, c) in legal_set:
-                col = [92, 232, 148]
-                rough = 0.14
                 met = 0.30
+            elif sel and (r, c) == tuple(sel):
+                col = [242, 198, 68]
+                rough = 0.14
+                met = 0.38
+            elif (r, c) in legal_set:
+                col = [84, 216, 138]
+                rough = 0.15
+                met = 0.25
             elif last and ((r, c) == (last[0], last[1]) or (r, c) == (last[2], last[3])):
-                col = [238, 198, 118] if light_sq else [132, 92, 54]
-                rough = 0.14
-                met = 0.12
-            elif light_sq:
-                col = [238, 228, 210]
-                rough = 0.14
-                met = 0.05
-            else:
-                col = [68, 44, 32]
+                col = [216, 180, 108] if light_sq else [124, 84, 48]
                 rough = 0.16
+                met = 0.10
+            elif light_sq:
+                col = [208, 195, 175]
+                rough = 0.16
+                met = 0.04
+            else:
+                col = [62, 38, 26]
+                rough = 0.18
                 met = 0.08
 
             props.append(
@@ -284,7 +309,7 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
                 }
             )
 
-    # 32 個の彫刻チェス駒（白 = アイボリー大理石、黒 = 黒檀＆ブロンズ光沢）
+    # 32 個の彫刻チェス駒（白 = 白飛びしない上品なアイボリー大理石、黒 = 黒檀＆ブロンズ光沢）
     board = state["board"]
     for r in range(8):
         for c in range(8):
@@ -294,9 +319,9 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
             side, kind = piece[0], piece[1]
             x, z = _sq_xz(r, c)
             is_white = side == "w"
-            col = [248, 240, 222] if is_white else [46, 52, 66]
-            met = 0.12 if is_white else 0.58
-            rough = 0.14 if is_white else 0.16
+            col = [212, 198, 178] if is_white else [42, 48, 62]
+            met = 0.06 if is_white else 0.56
+            rough = 0.20 if is_white else 0.15
             yaw = math.pi if is_white else 0.0
             lift = 0.12 if (sel and (r, c) == tuple(sel)) else 0.03
             props.append(
@@ -328,9 +353,9 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
         "half": 16.0,
         "floor_y": -0.38,
         "ground": False,
-        "sky": [20, 25, 36, 255],
-        "ibl": 0.48,
-        "exposure": 1.12,
+        "sky": [14, 18, 28, 255],
+        "ibl": 0.28,
+        "exposure": 0.80,
         "tonemap": True,
         "props": props,
         "lights": [
@@ -338,34 +363,34 @@ def make_world(state: dict[str, Any]) -> dict[str, Any]:
                 "id": "light:0",
                 "type": "light",
                 "name": "key_warm",
-                "position": [4.5, 6.5, 4.2],
+                "position": [4.5, 6.8, 4.2],
                 "kind": "point",
                 "slot": 0,
-                "intensity": 3.2,
-                "radius": 24.0,
-                "color": [1.0, 0.95, 0.86],
+                "intensity": 1.55,
+                "radius": 22.0,
+                "color": [1.0, 0.94, 0.84],
             },
             {
                 "id": "light:1",
                 "type": "light",
                 "name": "rim_cool",
-                "position": [-5.0, 4.8, -4.5],
+                "position": [-5.2, 4.8, -4.5],
                 "kind": "point",
                 "slot": 1,
-                "intensity": 1.8,
-                "radius": 22.0,
-                "color": [0.62, 0.80, 1.0],
+                "intensity": 1.15,
+                "radius": 20.0,
+                "color": [0.58, 0.78, 1.0],
             },
             {
                 "id": "light:2",
                 "type": "light",
-                "name": "gold_accent",
-                "position": [0.0, 3.8, -5.2],
+                "name": "backdrop_glow",
+                "position": [0.0, 2.8, -6.6],
                 "kind": "point",
                 "slot": 2,
-                "intensity": 1.2,
-                "radius": 18.0,
-                "color": [1.0, 0.82, 0.55],
+                "intensity": 1.35,
+                "radius": 16.0,
+                "color": [0.92, 0.74, 0.48],
             },
         ],
         "cameras": [
@@ -438,7 +463,16 @@ class StudioChess(Scene):
 
     def draw(self) -> None:
         hud = merge(
-            panel(14, 14, 380, 48, color=(14, 18, 28, 220), border=(228, 182, 78, 255)),
+            panel(
+                14,
+                14,
+                420,
+                54,
+                color=(12, 16, 26, 178),
+                border=(214, 174, 88, 215),
+                border_w=1.5,
+                radius=10.0,
+            ),
             list_lines(
                 [
                     f"KAGRA STUDIO CHESS   |   MOVE {self.state['move_count']}",
@@ -446,16 +480,27 @@ class StudioChess(Scene):
                 ],
                 x=26,
                 y=20,
-                size=13,
-                color=[245, 240, 225, 255],
+                size=14,
+                color=[244, 238, 224, 255],
+                shadow=True,
             ),
-            panel(14, self.height - 34, 430, 24, color=(14, 18, 28, 200), border=(90, 120, 165, 220)),
+            panel(
+                14,
+                self.height - 38,
+                460,
+                28,
+                color=(12, 16, 26, 168),
+                border=(96, 128, 176, 195),
+                border_w=1.5,
+                radius=8.0,
+            ),
             list_lines(
                 ["Arrows: Square   Space: Move   WASD: Orbit Camera"],
-                x=24,
-                y=self.height - 29,
-                size=12,
-                color=[215, 228, 245, 240],
+                x=26,
+                y=self.height - 31,
+                size=13,
+                color=[218, 230, 248, 245],
+                shadow=True,
             ),
         )
         self._frame_rgba = render_rgba(self.world, self.width, self.height, hud=hud)
@@ -473,9 +518,9 @@ def scripted_opening(state: dict[str, Any] | None = None) -> dict[str, Any]:
     # 3. Bc4 (f1 -> c4) + 黒 AI 応手
     apply_move(state, (7, 5), (4, 2))
     step_black_ai(state)
-    # 次の手で白クイーン d1 またはナイト f3 を選択して合法手を光らせる
-    state["selected"] = [5, 5]
-    state["cursor"] = [3, 4]
-    state["legal"] = legal_moves_for(state["board"], 5, 5)
-    state["status"] = "KNIGHT f3 SELECTED — 5 LEGAL MOVES"
+    # 次の手で白ビショップ c4 を選択して合法手を光らせる
+    state["selected"] = [4, 2]
+    state["cursor"] = [1, 5]
+    state["legal"] = legal_moves_for(state["board"], 4, 2)
+    state["status"] = f"BISHOP c4 SELECTED  |  {len(state['legal'])} LEGAL MOVES"
     return state

@@ -905,6 +905,41 @@ pub mod primitives {
         }
         mesh
     }
+
+    /// 外側から見る球体メッシュ（反時計回りカリング対応）。
+    pub fn sphere_mesh(radius: f32, segments: u32) -> MeshData {
+        let segments = segments.max(8);
+        let rings = segments / 2;
+        let mut mesh = MeshData::default();
+        for y in 0..=rings {
+            let v = y as f32 / rings as f32;
+            let pitch = std::f32::consts::PI * (v - 0.5);
+            let (sp, cp) = pitch.sin_cos();
+            for x in 0..=segments {
+                let u = x as f32 / segments as f32;
+                let yaw = u * std::f32::consts::TAU;
+                let (sy, cy) = yaw.sin_cos();
+                let dir = Vec3::new(cy * cp, sp, sy * cp);
+                mesh.vertices
+                    .push(Vertex3::with_uv(dir * radius, dir, [u, 1.0 - v]));
+            }
+        }
+        let stride = segments + 1;
+        for y in 0..rings {
+            for x in 0..segments {
+                let i = y * stride + x;
+                mesh.indices.extend_from_slice(&[
+                    i,
+                    i + 1,
+                    i + stride,
+                    i + 1,
+                    i + stride + 1,
+                    i + stride,
+                ]);
+            }
+        }
+        mesh
+    }
 }
 
 #[cfg(test)]
