@@ -12,4 +12,4 @@ license = { text = "MIT" }
 [tool.maturin]
 manifest-path = "Cargo.toml"
 module-name = "kagra_shared"
-features = ["python"]
+features = ["python", "physics"]

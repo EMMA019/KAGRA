@@ -1,17 +1,16 @@
-"""Rapier 剛体物理（Python 側ラッパー）。汎用エンジン化 Phase 1。
-
-ゲームロジックは Python のみ。`kagra_shared.PhysicsWorld`（Rust + Rapier）
-を dict 世界で使えるように包む:
+"""Rapier 剛体物理（Python 側ラッパー）。ロジックは Rust（`kagra_shared.PhysicsWorld`）。
 
     from kagra.rigid import PhysicsWorld
 
-    phys = PhysicsWorld(world_dict)     # props の is_static=false が動的剛体に
-    phys.step(1 / 60)                   # 落ちる・積もる・衝突
-    world_dict = phys.to_world()        # 位置が書き戻される
+    phys = PhysicsWorld(world_dict)
+    phys.step(1 / 60)
+    world_dict = phys.to_world()        # 位置・姿勢が書き戻される
 
-- `is_static: true`（既定）の prop → 壁・床・景観（動かない）
-- `is_static: false` の prop → 落下・衝突・積み重なる動的剛体
-- walker（player / walkers）→ カプセル剛体（床に立ち、箱に乗る）
+- `body`: `static` / `dynamic` / `kinematic`。省略時は `is_static`
+- `collider`: `box` / `sphere` / `capsule` / `cylinder` / `cone` / `none`
+- `joints`: `fixed` / `revolute` / `spherical`（アンカーは各剛体のローカル）
+- `apply_impulse` / `apply_force` / `raycast` / `take_events`
+- walker（player / walkers）はキネマティックカプセル。`sync` は上書きしない
 - 地形は高さ場コライダー（`height_at` をサンプリング）
 - 決定論: `enhanced-determinism`（同入力 → 同結果）
 
@@ -77,7 +76,7 @@ class PhysicsWorld:
         return json.loads(self._inner.to_json())
 
     def position(self, prop_id: str) -> list[float] | None:
-        """動的剛体の現在位置 [x, y, z]。静的 or 未登録は None。"""
+        """動的・キネマティック剛体の位置 [x, y, z]。静的 or 未登録は None。"""
         p = self._inner.position(prop_id)
         return list(p) if p is not None else None
 
@@ -85,7 +84,7 @@ class PhysicsWorld:
         return bool(self._inner.is_dynamic(prop_id))
 
     def is_kinematic(self, prop_id: str) -> bool:
-        """歩行者（player / walkers）かどうか。"""
+        """歩行者、または ``body: kinematic`` の prop。"""
         return bool(self._inner.is_kinematic(prop_id))
 
     def set_velocity(self, prop_id: str, v: list[float]) -> bool:
@@ -93,8 +92,103 @@ class PhysicsWorld:
         return bool(self._inner.set_velocity(prop_id, [float(x) for x in v]))
 
     def set_position(self, prop_id: str, p: list[float]) -> bool:
-        """動的剛体の位置を直接設定（テレポート / リスポーン）。"""
+        """動的剛体のテレポート、またはキネマティック prop の位置。
+
+        歩行者は ``set_walker_position`` / ``sync_walkers``。
+        """
         return bool(self._inner.set_position(prop_id, [float(x) for x in p]))
+
+    def set_kinematic_target(self, prop_id: str, p: list[float]) -> bool:
+        """キネマティック prop または歩行者の次姿勢。"""
+        return bool(self._inner.set_kinematic_target(prop_id, _vec3(p)))
+
+    def apply_impulse(self, prop_id: str, impulse: list[float]) -> bool:
+        """動的剛体へ瞬間的な力積（kg·m/s）。"""
+        return bool(self._inner.apply_impulse(prop_id, _vec3(impulse)))
+
+    def apply_force(self, prop_id: str, force: list[float]) -> bool:
+        """動的剛体へ力（ニュートン）。次の step まで蓄積される。"""
+        return bool(self._inner.apply_force(prop_id, _vec3(force)))
+
+    def apply_torque_impulse(self, prop_id: str, torque: list[float]) -> bool:
+        """動的剛体へ瞬間的な角力積。"""
+        return bool(self._inner.apply_torque_impulse(prop_id, _vec3(torque)))
+
+    def velocity(self, prop_id: str) -> list[float] | None:
+        v = self._inner.velocity(prop_id)
+        return list(v) if v is not None else None
+
+    def angular_velocity(self, prop_id: str) -> list[float] | None:
+        v = self._inner.angular_velocity(prop_id)
+        return list(v) if v is not None else None
+
+    def rotation(self, prop_id: str) -> list[float] | None:
+        """オイラー角 ``[yaw, pitch, roll]``。``WorldProp`` と同じ規約。"""
+        r = self._inner.rotation_euler(prop_id)
+        return list(r) if r is not None else None
+
+    def body_type(self, prop_id: str) -> str | None:
+        """``static`` / ``dynamic`` / ``kinematic``。未登録は None。"""
+        kind = self._inner.body_type(prop_id)
+        return str(kind) if kind is not None else None
+
+    def add_joint(
+        self,
+        kind: str,
+        body_a: str,
+        body_b: str,
+        anchor_a: list[float],
+        anchor_b: list[float],
+        axis: list[float] | None = None,
+    ) -> bool:
+        """``fixed`` / ``revolute`` / ``spherical``。アンカーは各剛体のローカル。"""
+        ax = [0.0, 1.0, 0.0] if axis is None else _vec3(axis)
+        return bool(
+            self._inner.add_joint(
+                kind,
+                body_a,
+                body_b,
+                _vec3(anchor_a),
+                _vec3(anchor_b),
+                ax,
+            )
+        )
+
+    def take_events(self, name: str) -> list[dict[str, Any]]:
+        """``collision`` または ``contact`` を取り出して空にする。"""
+        import json
+
+        out: list[dict[str, Any]] = []
+        for raw in self._inner.take_events(name):
+            out.append(json.loads(raw))
+        return out
+
+    def raycast(
+        self,
+        origin: list[float],
+        direction: list[float],
+        max_toi: float = 100.0,
+        exclude: str | None = None,
+    ) -> dict[str, Any] | None:
+        """最近傍ヒット。``direction`` は内部で正規化される。``toi`` はメートル。
+
+        ブロードフェーズは ``step`` で更新されるので、1 step 後に呼ぶ。
+        ``exclude`` は発射体の id。
+        """
+        hit = self._inner.raycast(_vec3(origin), _vec3(direction), float(max_toi), exclude)
+        if hit is None:
+            return None
+        ident, toi, point, normal = hit
+        return {
+            "id": str(ident),
+            "toi": float(toi),
+            "point": list(point),
+            "normal": list(normal),
+        }
+
+
+def _vec3(v: list[float]) -> list[float]:
+    return [float(v[0]), float(v[1]), float(v[2])]
 
 
 def _json_dumps(world: dict[str, Any]) -> str:

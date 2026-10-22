@@ -194,3 +194,134 @@ def test_sphere_and_capsule_fall(ks):
     py = phys.position("prop:pill")[1]
     assert 0.4 < by < 0.9, f"球は床に落ちる, by={by}"
     assert 0.2 < py < 1.1, f"カプセルは床に落ちて止まる, py={py}"
+
+
+def test_body_type_and_kinematic_prop(ks):
+    if ks is None:
+        pytest.skip("no kagra_shared")
+    w = _world()
+    w["props"] = [
+        {
+            "id": "prop:wall",
+            "type": "prop",
+            "name": "wall",
+            "model": "box",
+            "position": [0.0, 1.0, 0.0],
+            "scale": [1.0, 1.0, 1.0],
+            "enabled": True,
+            "is_static": True,
+        },
+        {
+            "id": "prop:ram",
+            "type": "prop",
+            "name": "ram",
+            "model": "box",
+            "position": [2.0, 1.5, 0.0],
+            "scale": [0.5, 0.5, 0.5],
+            "enabled": True,
+            "is_static": True,
+            "body": "kinematic",
+        },
+    ]
+    phys = rigid.PhysicsWorld(w)
+    assert phys.body_type("prop:wall") == "static"
+    assert phys.position("prop:wall") is None
+    assert phys.body_type("prop:ram") == "kinematic"
+    assert phys.is_kinematic("prop:ram")
+    for _ in range(60):
+        phys.step(1 / 60)
+    assert abs(phys.position("prop:ram")[1] - 1.5) < 0.05
+    assert phys.set_kinematic_target("prop:ram", [2.4, 0.4, 0.0])
+    assert abs(phys.position("prop:ram")[0] - 2.4) < 1e-3
+
+
+def test_impulse_force_and_raycast(ks):
+    if ks is None:
+        pytest.skip("no kagra_shared")
+    phys = rigid.PhysicsWorld(_world())
+    assert phys.apply_impulse("prop:box", [2.0, 0.0, 0.0])
+    phys.step(1 / 60)
+    assert phys.velocity("prop:box")[0] > 0.2
+    x0 = phys.position("prop:box")[0]
+    for _ in range(20):
+        assert phys.apply_force("prop:box", [30.0, 0.0, 0.0])
+        phys.step(1 / 60)
+    x1 = phys.position("prop:box")[0]
+    assert x1 > x0 + 0.15
+    hit = phys.raycast([x1, 8.0, 0.0], [0.0, -1.0, 0.0], 20.0)
+    assert hit is not None and hit["id"] == "prop:box"
+    assert hit["toi"] > 0.5
+    missed = phys.raycast([x1, 8.0, 0.0], [0.0, -1.0, 0.0], 20.0, exclude="prop:box")
+    assert missed is None or missed["id"] != "prop:box"
+    assert phys.apply_torque_impulse("prop:box", [0.0, 0.5, 0.0])
+
+
+def test_collision_events_drain(ks):
+    if ks is None:
+        pytest.skip("no kagra_shared")
+    phys = rigid.PhysicsWorld(_world())
+    for _ in range(240):
+        phys.step(1 / 60)
+    hits = phys.take_events("collision")
+    assert any(
+        ev.get("name") == "collision"
+        and (ev.get("data") or {}).get("state") == "started"
+        and "prop:box" in ((ev.get("data") or {}).get("a"), (ev.get("data") or {}).get("b"))
+        for ev in hits
+    )
+    assert phys.take_events("collision") == []
+    contacts = phys.take_events("contact")
+    assert any("prop:box" in ((ev.get("data") or {}).get("a"), (ev.get("data") or {}).get("b")) for ev in contacts)
+
+
+def test_revolute_joint_and_unknown_kind(ks):
+    if ks is None:
+        pytest.skip("no kagra_shared")
+    w = _world(half=12.0)
+    w["props"] = [
+        {
+            "id": "prop:pivot",
+            "type": "prop",
+            "name": "pivot",
+            "model": "box",
+            "position": [0.0, 3.15, 0.0],
+            "scale": [0.25, 0.25, 0.25],
+            "enabled": True,
+            "is_static": True,
+        },
+        {
+            "id": "prop:bob",
+            "type": "prop",
+            "name": "bob",
+            "model": "sphere",
+            "position": [1.60, 2.57, 0.0],
+            "scale": [0.7, 0.7, 0.7],
+            "enabled": True,
+            "is_static": False,
+            "mass": 5.0,
+            "friction": 0.4,
+            "restitution": 0.05,
+        },
+    ]
+    w["joints"] = [
+        {
+            "id": "joint:swing",
+            "type": "joint",
+            "name": "revolute",
+            "body_a": "prop:pivot",
+            "body_b": "prop:bob",
+            "anchor_a": [0.0, 0.0, 0.0],
+            "anchor_b": [-1.60, 0.58, 0.0],
+            "axis": [0.0, 0.0, 1.0],
+        }
+    ]
+    phys = rigid.PhysicsWorld(w)
+    assert phys.body_type("prop:pivot") == "static"
+    assert phys.body_type("prop:bob") == "dynamic"
+    assert not phys.add_joint("nope", "prop:pivot", "prop:bob", [0, 0, 0], [0, 0, 0])
+    for _ in range(180):
+        phys.step(1 / 60)
+    bob = phys.position("prop:bob")
+    dist = (bob[0] ** 2 + (bob[1] - 3.15) ** 2 + bob[2] ** 2) ** 0.5
+    assert abs(dist - 1.70) < 0.25, f"revolute holds, dist={dist} bob={bob}"
+    assert bob[1] > 0.9
