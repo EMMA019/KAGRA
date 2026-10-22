@@ -1,0 +1,30 @@
+{
+  "name": "card_smoke",
+  "notes": "Card duel table on shared wgpu 30. Genre card. Rules stay in Rust CardSession (deck, seed shuffle, mana, play, AI). The picture is felt plus crate.glb decks, a chest opponent, and a knight. ASCII and Japanese HUD is drawn by examples/card_minimal.py. No RendererV2.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/card_world.json",
+    "genre": "card",
+    "player.on_ground": true,
+    "coins": 0,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "prop", "name": "felt", "count": 1},
+      {"type": "prop", "name": "floor", "count": 1},
+      {"type": "prop", "name": "deck", "count": 2},
+      {"type": "prop", "name": "foe", "count": 1},
+      {"type": "prop", "name": "flag", "count": 1},
+      {"type": "light", "count": 4},
+      {"type": "camera", "name": "table", "count": 1}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/card_world.json",
+    "out": "scratch/card_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200,
+    "pixels": [
+      {"x": 80, "y": 70, "w": 160, "h": 70, "not_solid": true}
+    ]
+  }
+}

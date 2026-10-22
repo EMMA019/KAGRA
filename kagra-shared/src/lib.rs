@@ -11,6 +11,7 @@ pub mod action;
 pub mod action2d;
 pub mod assets;
 pub mod audio;
+pub mod card;
 pub mod collectathon;
 pub mod collide;
 pub mod constraint;
@@ -82,9 +83,10 @@ pub use driving::{DrivingScene, MeshIds, MeshSet};
 pub use font::TextRaster;
 pub use game::{DemoGame, GamePhase, GAME_ID, GAME_TITLE};
 pub use genre_session::{
-    ActionSession, FightSession, FishCookSession, FpsSession, GenreSession, GenreSessionError,
-    NovelSession, PlatformerSession, PuzzlePadSession, RaceSession, RhythmSession, RpgSession,
-    ShopSession, SportsSession, StealthSession, SurvivalSession, TdSession,
+    ActionSession, CardSession, FightSession, FishCookSession, FpsSession, GenreSession,
+    GenreSessionError, NovelSession, PlatformerSession, PuzzlePadSession, RaceSession,
+    RhythmSession, RpgSession, ShopSession, SportsSession, StealthSession, SurvivalSession,
+    TdSession,
 };
 pub use gltf_load::{
     mesh_from_embedded_gltf, mesh_from_glb, mesh_from_gltf_json, sample_skinned,

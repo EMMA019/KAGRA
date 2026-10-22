@@ -4,9 +4,10 @@
 //! - `world_doc` / `world_play` — 既存の世界データ + マルチジャンル tick
 //! - `render` / `measure` — 描画と HUD 計測
 //! - `physics` — Rapier（feature）
-//! - `<genre>` — `GenreSession` 実装ごとの薄いラッパ（例: `puzzle`, `platformer`, `novel`, `race`, `fps`, `sports`, `action`, `fight`, `rhythm`, `td`, `rpg`, `shop`, `fishcook`, `stealth`, `survival`）
+//! - `<genre>` — `GenreSession` 実装ごとの薄いラッパ（例: `puzzle`, `card`, `platformer`, `novel`, `race`, `fps`, `sports`, `action`, `fight`, `rhythm`, `td`, `rpg`, `shop`, `fishcook`, `stealth`, `survival`）
 
 mod action;
+mod card;
 mod common;
 mod fight;
 mod fishcook;
@@ -33,6 +34,7 @@ mod physics;
 use pyo3::prelude::*;
 
 use action::PyActionSession;
+use card::PyCardSession;
 use fight::PyFightSession;
 use fishcook::PyFishCookSession;
 use fps::PyFpsSession;
@@ -61,6 +63,7 @@ fn kagra_shared(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyWorldPlay>()?;
     m.add_class::<PyPuzzlePadSession>()?;
     m.add_class::<PyPuzzleSession>()?;
+    m.add_class::<PyCardSession>()?;
     m.add_class::<PyNovelSession>()?;
     m.add_class::<PyPlatformerSession>()?;
     m.add_class::<PyRaceSession>()?;

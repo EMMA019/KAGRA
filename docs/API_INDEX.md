@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **72**
+エントリ数: **73**
 
 棚の**手前**は shared wgpu 30（WorldDoc / WorldPlay / gameloop）。
 棚の**奥**は再エクスポートの余り。旧 RendererV2 API は `old/`。
@@ -19,6 +19,7 @@
 | `Brain` | `class Brain  (from kagra.brain)` |
 | `brain` | `export brain  (from kagra.brain)` |
 | `BrainError` | `class BrainError  (from kagra.brain)` |
+| `CardSession` | `class CardSession  (from kagra.kagra_shared)` |
 | `choice_menu` | `export choice_menu  (from kagra.ui2d)` |
 | `debug_trace` | `export debug_trace  (from kagra.trace)` |
 | `debug_trace_summary` | `export debug_trace_summary  (from kagra.trace)` |
