@@ -77,7 +77,7 @@ def run_client(port: int, name: str, ticks: int, out: str) -> int:
             waits = 0
             while not client.ready(tick):
                 waits += 1
-                if waits > 80:
+                if waits > 80 or client.peer_left:
                     raise TimeoutError(f"tick {tick} slot {client.slot}")
                 client.pump(0.05)
             rows = client.inputs(tick)

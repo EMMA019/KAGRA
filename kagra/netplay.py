@@ -133,6 +133,7 @@ class RoomClient:
         self.slot: int | None = None
         self.dt: float | None = None
         self.started = False
+        self.peer_left = False
 
     def connect(self, timeout: float = 5.0) -> None:
         lockstep = _lockstep()
@@ -209,4 +210,11 @@ class RoomClient:
                 raise RuntimeError("input before welcome")
             self.lockstep.ingest(text)
         elif op == "bye":
-            raise ConnectionError(str(msg.get("reason") or "bye"))
+            reason = str(msg.get("reason") or "bye")
+            # Once the match has started, a peer can finish its last tick
+            # and close while this socket still has that tick's input queued
+            # ahead of "peer left". Record it; the match loop fails only
+            # when a tick is still missing.
+            if self.slot is None or not self.started:
+                raise ConnectionError(reason)
+            self.peer_left = True

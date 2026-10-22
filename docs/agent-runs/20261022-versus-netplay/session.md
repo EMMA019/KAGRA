@@ -21,9 +21,13 @@ Prediction and rollback are not in this step. Sockets stay out of
   `BodyStep` carries stun / attack / done / stick.
 - Reporting slot 0 with `slot or -1` treated 0 as missing. Both sims still
   matched; the checker then rejected the pair. Compare `is not None`.
-- `physics_stack_smoke` still fails with a missing PNG. That scenario only
-  writes the file when the physics feature is built. `demo_live_smoke` was
-  not run (known failure). `rpg_town_smoke` passed.
+- `physics_stack_smoke` on the pre-merge tree missed its PNG when the
+  wheel had no physics feature. After merging master, that scenario writes
+  a rest-pose PNG and passes. `demo_live_smoke` still fails because
+  `examples/demo_live_smoke.py` is missing.
+- A client that finished its last tick and closed could deliver `peer left`
+  in the same read as that tick's input. The bridge records the bye after
+  start and the match loop fails only when the tick is still missing.
 
 ## Verify
 
