@@ -14,6 +14,13 @@
 
 set -euo pipefail
 
+# NDK r28+ compiles arm64-v8a / x86_64 shared libraries 16 KB aligned by
+# default, including the prebuilt libc++_shared.so. r29 is the current stable
+# r28+. Keep this pin identical to the fallback in
+# mobile/android/app/build.gradle.kts (ndkVersion).
+# https://developer.android.com/guide/practices/page-sizes
+NDK_VERSION="29.0.14206865"
+
 SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
   for cand in /usr/local/lib/android/sdk /usr/lib/android-sdk "${HOME}/Android/Sdk"; do
@@ -57,9 +64,14 @@ fi
 
 mkdir -p "$SDK/platform-tools"
 
+NDK_HOME="$SDK/ndk/$NDK_VERSION"
+
 if [ -n "${GITHUB_ENV:-}" ]; then
   echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
   echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+  echo "KAGRA_ANDROID_NDK_VERSION=$NDK_VERSION" >> "$GITHUB_ENV"
+  echo "ANDROID_NDK_HOME=$NDK_HOME" >> "$GITHUB_ENV"
+  echo "ANDROID_NDK_ROOT=$NDK_HOME" >> "$GITHUB_ENV"
 fi
 if [ -n "${GITHUB_PATH:-}" ]; then
   echo "$bin" >> "$GITHUB_PATH"
@@ -67,5 +79,8 @@ if [ -n "${GITHUB_PATH:-}" ]; then
 else
   echo "ANDROID_HOME=$SDK"
   echo "ANDROID_SDK_ROOT=$SDK"
+  echo "KAGRA_ANDROID_NDK_VERSION=$NDK_VERSION"
+  echo "ANDROID_NDK_HOME=$NDK_HOME"
+  echo "ANDROID_NDK_ROOT=$NDK_HOME"
   echo "PATH=$bin:$SDK/platform-tools:\$PATH"
 fi

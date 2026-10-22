@@ -66,7 +66,7 @@ WebGPU が無いブラウザでも WebGL2 バックエンドで動く。
 
 ```bash
 # 1) native（--features render 付きで .so を作る）
-./scripts/build_android_native.sh   # needs cargo-ndk + NDK
+./scripts/build_android_native.sh   # needs cargo-ndk + NDK r28+ (16 KB pages)
 
 # 2) APK
 cd mobile/android

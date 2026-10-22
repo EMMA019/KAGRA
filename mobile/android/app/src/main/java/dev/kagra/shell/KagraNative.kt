@@ -1,5 +1,6 @@
 package dev.kagra.shell
 
+import android.util.Log
 import android.view.Surface
 
 object KagraNative {
@@ -7,12 +8,21 @@ object KagraNative {
     var available: Boolean = false
         private set
 
+    /**
+     * [System.loadLibrary] が投げた UnsatisfiedLinkError の全文。
+     * 16 KB アライン失敗の dlopen 理由もここに入る。成功時は null。
+     */
+    var loadError: String? = null
+        private set
+
     init {
         try {
             System.loadLibrary("kagra_jni")
             available = true
         } catch (e: UnsatisfiedLinkError) {
-            // CMake が libkagra_shared をリンクできない環境でも UI は起動可能に
+            val text = e.toString()
+            loadError = text
+            Log.e("kagra", text, e)
         }
     }
 

@@ -21,8 +21,11 @@ val releaseKeystore = System.getenv("ANDROID_KEYSTORE_FILE")
 android {
     namespace = "dev.kagra.shell"
     compileSdk = 35
-    // CI と手元で同じ NDK / CMake を使う（AGP 8.5 の既定値に合わせる）
-    ndkVersion = "26.1.10909125"
+    // NDK r28+（ここでは r29）は arm64-v8a / x86_64 を 16 KB アラインで出す。
+    // libc++_shared.so もこの NDK のプリビルドを APK に入れる。
+    // バージョンは scripts/setup_android_sdk.sh の NDK_VERSION と揃える。
+    // CI は KAGRA_ANDROID_NDK_VERSION を渡す。
+    ndkVersion = System.getenv("KAGRA_ANDROID_NDK_VERSION") ?: "29.0.14206865"
 
     defaultConfig {
         applicationId = gameProp("application_id", "dev.kagra.shell")
@@ -40,6 +43,8 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags += "-std=c++17"
+                // c++_shared: NDK r28+ の libc++_shared.so（16 KB アライン）を同梱する。
+                // c++_static にすると libc++_shared.so は消えるが、NDK を上げれば足りる。
                 arguments += listOf("-DANDROID_STL=c++_shared")
             }
         }
@@ -88,6 +93,14 @@ android {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
+        }
+    }
+
+    // 非圧縮の .so を 16 KB zip 境界に置く。AGP 8.5.1+ が zipalign -P 16 する。
+    // useLegacyPackaging true は圧縮してしまい、16 KB 端末で mmap できない。
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
         }
     }
 

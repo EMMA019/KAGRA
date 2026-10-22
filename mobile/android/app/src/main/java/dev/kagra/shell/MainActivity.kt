@@ -11,6 +11,7 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -51,6 +52,18 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        if (!KagraNative.available) {
+            val detail = KagraNative.loadError
+            showLoadError(
+                if (detail.isNullOrBlank()) {
+                    "kagra_jni could not be loaded — check the NDK build."
+                } else {
+                    "kagra_jni could not be loaded — check the NDK build.\n\n$detail"
+                }
+            )
+            return
+        }
+
         surfaceView = SurfaceView(this)
         status = TextView(this).apply {
             textSize = 13f
@@ -82,10 +95,6 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
             }
         })
 
-        if (!KagraNative.available) {
-            status.text = "kagra_jni could not be loaded — check the NDK build."
-            return
-        }
         if (!KagraNative.create()) {
             status.text = "native init failed: ${KagraNative.lastError()}"
             return
@@ -100,6 +109,29 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         bootGame()
         surfaceView.holder.addCallback(this)
         surfaceView.setOnTouchListener { view, ev -> onTouch(view.width, view.height, ev) }
+    }
+
+    /** UnsatisfiedLinkError の全文をスクロールできるように出す。 */
+    private fun showLoadError(message: String) {
+        val error = TextView(this).apply {
+            textSize = 13f
+            setPadding(32, 64, 32, 32)
+            setTextColor(0xFFE8ECF4.toInt())
+            setTextIsSelectable(true)
+            text = message
+        }
+        setContentView(
+            ScrollView(this).apply {
+                setBackgroundColor(0xFF1C2230.toInt())
+                addView(
+                    error,
+                    ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                    )
+                )
+            }
+        )
     }
 
     /**

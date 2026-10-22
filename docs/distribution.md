@@ -98,7 +98,7 @@ Actions の **Run workflow** で `game` にパスを入れる。zip は artifact
 署名される。自分で keystore を作らなくても実機に入る。
 
 ```bash
-# cargo-ndk と ANDROID_NDK_HOME（NDK 26.1.10909125）
+# cargo-ndk と ANDROID_NDK_HOME（NDK r29 / 29.0.14206865、16 KB ページ）
 python scripts/package_android.py --game examples/platformer_minimal.py
 ```
 
@@ -118,7 +118,21 @@ APK は `dist/android/<slug>-debug.apk`。
 
 GitHub Actions（無料の `ubuntu-latest`）:
 [`.github/workflows/package-android.yml`](../.github/workflows/package-android.yml)。
-NDK・cargo-ndk・Gradle 8.7・platform 35 を入れて debug APK を artifact にする。
+NDK r29・cargo-ndk・Gradle 8.7・AGP 8.5.2・platform 35 を入れて debug APK を artifact にする。
+
+16 KB ページ（Android 15 以降、Pixel 10 など）では、各 `.so` の ELF LOAD の
+`p_align` が 16384 以上で、APK 内では非圧縮かつ 16 KB zip アラインである必要がある。
+Rust は `.cargo/config.toml` の Android ターゲットへ
+`-Wl,-z,max-page-size=16384` と `common-page-size` を渡す。JNI も同じリンカ引数。
+`libc++_shared.so` は NDK r28+ のプリビルドを使う（`c++_shared`）。
+パッケージは `useLegacyPackaging = false` で、AGP 8.5.1 以降が `zipalign -P 16` する。
+CI は `llvm-readelf -l` と `zipalign -c -P 16 -v 4` で落とす。手元では:
+
+```bash
+python scripts/check_android_16k.py dist/android/platformer-debug.apk
+```
+
+ネイティブのロードに失敗したときは、画面に `UnsatisfiedLinkError` の全文が出る。
 
 実機確認:
 
