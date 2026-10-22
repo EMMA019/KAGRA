@@ -1161,6 +1161,7 @@ fn ensure_foe_hp(doc: &mut WorldDoc) {
             pitch: 0.0,
             roll: 0.0,
             local: false,
+            ..Default::default()
         },
     );
 }

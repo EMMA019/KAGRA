@@ -597,6 +597,7 @@ fn place_kind_on_slot(doc: &mut WorldDoc, game: &mut TdGame, slot_id: &str, kind
         pitch: 0.0,
         roll: 0.0,
         local: false,
+        ..Default::default()
     });
     game.coins = game.coins.saturating_sub(cost);
     doc.coins = game.coins;
