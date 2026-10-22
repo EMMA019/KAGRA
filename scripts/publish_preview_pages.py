@@ -92,78 +92,109 @@ def publish(src: Path, dest: str, *, delete: bool, repo: str, token: str) -> Non
     raise SystemExit("gh-pages push failed after retries")
 
 
-def _git(cwd: Path, token: str, *args: str) -> subprocess.CompletedProcess[str]:
-    cmd = ["git", "-c", f"http.extraheader=AUTHORIZATION: bearer {token}", *args]
-    result = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True)
+def authed_remote(remote: str, token: str) -> str:
+    """HTTPS remote with the Actions token. Not written into the preview tree."""
+    prefix = "https://"
+    if not remote.startswith(prefix):
+        raise SystemExit(f"remote must be https, got {remote!r}")
+    if not token or any(ch in token for ch in "\r\n\x00 @"):
+        raise SystemExit("refusing an empty or unsafe token")
+    return f"https://x-access-token:{token}@{remote[len(prefix):]}"
+
+
+def redact(text: str, token: str) -> str:
+    if token and text:
+        return text.replace(token, "***")
+    return text or ""
+
+
+def _git_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
+
+
+def _git(cwd: Path, *args: str, token: str = "") -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        ["git", *args], cwd=cwd, text=True, capture_output=True, env=_git_env()
+    )
     if result.returncode != 0:
-        err = (result.stderr or result.stdout or "").replace(token, "***")
-        shown = " ".join(args)
-        raise SystemExit(f"git {shown} failed:\n{err}")
+        err = redact((result.stderr or "") + (result.stdout or ""), token)
+        raise SystemExit(f"git {' '.join(args)} failed:\n{err}")
     return result
 
 
 def _clone(work: Path, remote: str, token: str) -> None:
     parent = work.parent
     parent.mkdir(parents=True, exist_ok=True)
+    # A bearer extraheader is ignored or rejected here (git then prompts).
+    # The token stays on the clone/push URL only, and origin is rewritten
+    # to the public URL so it is not stored in the gh-pages checkout.
     probe = subprocess.run(
         [
             "git",
-            "-c",
-            f"http.extraheader=AUTHORIZATION: bearer {token}",
             "clone",
             "--branch",
             "gh-pages",
             "--single-branch",
             "--depth",
             "1",
-            remote,
+            authed_remote(remote, token),
             str(work),
         ],
         text=True,
         capture_output=True,
+        env=_git_env(),
     )
     if probe.returncode == 0:
+        subprocess.run(
+            ["git", "remote", "set-url", "origin", remote], cwd=work, check=True
+        )
         return
+    err = redact((probe.stderr or "") + (probe.stdout or ""), token)
     if work.exists():
         shutil.rmtree(work)
+    missing = "Remote branch" in err or "not found" in err.lower()
+    if not missing:
+        raise SystemExit(f"gh-pages clone failed:\n{err}")
     work.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "init", "-b", "gh-pages"], cwd=work, check=True)
+    subprocess.run(["git", "init", "-b", "gh-pages"], cwd=work, check=True, env=_git_env())
     subprocess.run(["git", "remote", "add", "origin", remote], cwd=work, check=True)
 
 
 def _commit_and_push(work: Path, remote: str, token: str, dest: str, delete: bool) -> bool:
-    _git(work, token, "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com")
-    _git(work, token, "config", "user.name", "github-actions[bot]")
-    _git(work, token, "add", "-A")
+    _git(
+        work,
+        "config",
+        "user.email",
+        "41898282+github-actions[bot]@users.noreply.github.com",
+    )
+    _git(work, "config", "user.name", "github-actions[bot]")
+    _git(work, "add", "-A")
     status = subprocess.run(
         ["git", "status", "--porcelain"],
         cwd=work,
         text=True,
         capture_output=True,
         check=True,
+        env=_git_env(),
     )
     if not status.stdout.strip():
         print("gh-pages already up to date")
         return True
     label = f"delete {dest}" if delete else (dest or "root")
-    _git(work, token, "commit", "-m", f"preview {label}")
+    _git(work, "commit", "-m", f"preview {label}")
     push = subprocess.run(
-        [
-            "git",
-            "-c",
-            f"http.extraheader=AUTHORIZATION: bearer {token}",
-            "push",
-            remote,
-            "HEAD:gh-pages",
-        ],
+        ["git", "push", authed_remote(remote, token), "HEAD:gh-pages"],
         cwd=work,
         text=True,
         capture_output=True,
+        env=_git_env(),
     )
     if push.returncode == 0:
         print(f"pushed gh-pages ({label})")
         return True
-    err = (push.stderr or "").replace(token, "***")
+    err = redact((push.stderr or "") + (push.stdout or ""), token)
     print(f"push rejected, retrying:\n{err}", file=sys.stderr)
     return False
 

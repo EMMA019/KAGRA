@@ -126,6 +126,18 @@ def test_dev_shell_is_a_separate_debug_app():
     assert jni.is_file()
     settings = (ROOT / "mobile/android/settings.gradle.kts").read_text(encoding="utf-8")
     assert 'include(":dev")' in settings
-    assert "getJava().exclude" in gradle
+    assert "this.java" in gradle
+    assert 'exclude("**/MainActivity.kt")' in gradle
     preview_yml = (ROOT / ".github/workflows/preview.yml").read_text(encoding="utf-8")
     assert "bash scripts/build_wasm.sh" in preview_yml
+
+
+def test_pages_remote_keeps_the_token_out_of_logs():
+    secret = "ghs_secret"
+    url = pages.authed_remote("https://github.com/EMMA019/KAGRA.git", secret)
+    assert url == "https://x-access-token:ghs_secret@github.com/EMMA019/KAGRA.git"
+    assert pages.redact(f"push {url} failed", secret) == (
+        "push https://x-access-token:***@github.com/EMMA019/KAGRA.git failed"
+    )
+    with pytest.raises(SystemExit):
+        pages.authed_remote("git@github.com:EMMA019/KAGRA.git", secret)

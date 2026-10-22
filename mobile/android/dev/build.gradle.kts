@@ -75,9 +75,11 @@ android {
 
     sourceSets {
         getByName("main") {
-            // This file imports java.util, so `java` is that package, not the source set.
-            getJava().srcDir("../app/src/main/java")
-            getJava().exclude("**/MainActivity.kt")
+            // The import of java.util makes a bare `java` the package, not this source set.
+            with(this.java) {
+                srcDir("../app/src/main/java")
+                exclude("**/MainActivity.kt")
+            }
             jniLibs.srcDir("../app/src/main/jniLibs")
         }
     }
