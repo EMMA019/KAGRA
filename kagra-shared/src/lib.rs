@@ -36,6 +36,7 @@ pub mod novel;
 pub mod physics;
 pub mod platformer;
 pub mod puzzle;
+pub mod puzzle_board;
 pub mod race;
 pub mod rhythm;
 pub mod road;

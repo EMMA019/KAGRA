@@ -23,7 +23,7 @@ use pyo3::prelude::*;
 use measure::measure_text_py;
 use novel::PyNovelSession;
 use platformer::PyPlatformerSession;
-use puzzle::PyPuzzlePadSession;
+use puzzle::{PyPuzzlePadSession, PyPuzzleSession};
 use render::render_world_doc_py;
 use world_doc::PyWorldDoc;
 use world_play::PyWorldPlay;
@@ -36,6 +36,7 @@ fn kagra_shared(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyWorldDoc>()?;
     m.add_class::<PyWorldPlay>()?;
     m.add_class::<PyPuzzlePadSession>()?;
+    m.add_class::<PyPuzzleSession>()?;
     m.add_class::<PyNovelSession>()?;
     m.add_class::<PyPlatformerSession>()?;
     m.add_function(wrap_pyfunction!(render_world_doc_py, m)?)?;

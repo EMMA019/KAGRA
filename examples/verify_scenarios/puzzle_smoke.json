@@ -1,0 +1,62 @@
+{
+  "name": "puzzle_smoke",
+  "notes": "Board puzzle (slide / grid / match) on shared wgpu 30. Genre puzzle, not puzzle_pad. Title picture is the 3x3 slide board: crate.glb tiles, blank, board, flag off, 4 lights. Rules stay in Rust PuzzleSession. ASCII HUD is in the Python example. No RendererV2.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/puzzle_world.json",
+    "genre": "puzzle",
+    "player.on_ground": true,
+    "coins": 0,
+    "query": [
+      {
+        "type": "walker",
+        "name": "player",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "tile",
+        "count": 8
+      },
+      {
+        "type": "prop",
+        "name": "blank",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "board",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "floor",
+        "count": 1
+      },
+      {
+        "type": "prop",
+        "name": "flag",
+        "count": 1
+      },
+      {
+        "type": "light",
+        "count": 4
+      },
+      {
+        "type": "camera",
+        "name": "board",
+        "count": 1
+      }
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/puzzle_world.json",
+    "out": "scratch/puzzle_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200,
+    "pixels": [
+      {"x": 80, "y": 2, "w": 160, "h": 16, "mean_max": [80, 90, 110]},
+      {"x": 100, "y": 60, "w": 120, "h": 70, "mean_min": [40, 40, 30], "not_solid": true}
+    ]
+  }
+}

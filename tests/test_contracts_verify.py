@@ -453,6 +453,15 @@ def test_load_puzzle_pad_scenario_is_world_and_offscreen():
     assert sc.expect_world["player.on_ground"] is True
     assert sc.expect_offscreen["out"].endswith("puzzle_pad_shared.png")
 
+
+def test_load_puzzle_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/puzzle_smoke.json")
+    assert sc.name == "puzzle_smoke"
+    assert sc.expect_world["path"].endswith("puzzle_world.json")
+    assert sc.expect_world["genre"] == "puzzle"
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen["out"].endswith("puzzle_shared.png")
+
 def test_load_sports_goal_scenario_is_world_and_offscreen():
     sc = load_scenario(ROOT / "examples/verify_scenarios/sports_goal_smoke.json")
     assert sc.name == "sports_goal_smoke"

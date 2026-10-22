@@ -718,11 +718,68 @@ def test_cook_stove_fixture_has_stove_and_pan():
     assert not any(p.get("name") == "stall" for p in data["props"])
 
 
+def test_puzzle_fixture_is_slide_board_not_pad():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/puzzle_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["genre"] == "puzzle"
+    assert data["genre"] != "puzzle_pad"
+    assert data["player"]["on_ground"] is True
+    assert data["player"]["name"] == "player"
+    tiles = [p for p in data["props"] if p.get("name") == "tile"]
+    assert len(tiles) == 8
+    assert all(p.get("gltf") == "crate.glb" for p in tiles)
+    assert len([p for p in data["props"] if p.get("name") == "blank"]) == 1
+    assert len([p for p in data["props"] if p.get("name") == "board"]) == 1
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("coins", 0) == 0
+    text = (ROOT / "examples/puzzle_minimal.py").read_text(encoding="utf-8")
+    assert "\u2014" not in text
+    assert "\u2013" not in text
+
+
+def test_puzzle_session_clears_levels():
+    try:
+        from kagra_shared import PuzzleSession
+    except ImportError:
+        try:
+            from kagra.kagra_shared import PuzzleSession
+        except ImportError:
+            pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/puzzle_world.json"
+    session = PuzzleSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "puzzle"
+    assert session.phase == "title"
+    assert session.kind == "slide"
+    session.confirm()
+    assert session.phase == "playing"
+    for _ in range(16):
+        if session.phase == "complete":
+            break
+        if session.solved:
+            session.confirm()
+        else:
+            assert session.play_demo_move()
+    assert session.won
+    assert session.phase == "complete"
+    session.retry()
+    assert session.phase == "playing"
+    assert not session.won
+
+
 def test_puzzle_pad_session_genre_contract():
     try:
         from kagra_shared import PuzzlePadSession
     except ImportError:
-        pytest.skip("kagra_shared not built")
+        try:
+            from kagra.kagra_shared import PuzzlePadSession
+        except ImportError:
+            pytest.skip("kagra_shared not built")
     path = ROOT / "kagra-shared/tests/fixtures/puzzle_pad_world.json"
     session = PuzzlePadSession.from_json(path.read_text(encoding="utf-8"))
     assert session.genre_id == "puzzle_pad"
