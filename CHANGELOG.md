@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- CI: `python-unit` はネイティブ拡張が本当に無いときだけ `WorldDoc` /
+  `WorldPlay` の実体チェックをスキップする（切った名前と annotate / brain は
+  検査したまま）。ホイールを入れた `build` ジョブが両方の `from_json` を断言する。
+  Android debug APK は `android-actions/setup-android` の `sdkmanager tools` を
+  やめ、Package Android と同じ `scripts/setup_android_sdk.sh` を使う。
+  `demo_live_smoke` は欠落スクリプトのまま本線に置かず、`old/examples/` へ移した。
+
 - Box Hop（配布の既定）にタイトル → プレイ → ポーズ → 結果 → リトライ。
   音量とハイスコアは Rust の JSON セーブ（Windows は `%APPDATA%\kagra`、
   Android は内部ストレージ）。`kagra.audio` は BGM のフェード、効果音、

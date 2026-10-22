@@ -1,6 +1,7 @@
 # ジャンル例を Windows 用 zip（.exe）にして artifact にする。
 # 公開はしない。アップロード先は Actions の artifact だけ。
 # 無料枠の windows-latest。PyInstaller + maturin。
+# python-unit はホイールを積まない。このジョブが maturin build してから包む。
 
 name: Package Windows
 

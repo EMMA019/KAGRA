@@ -55,6 +55,45 @@ KAGRA's development loop is designed for AI coding agents, not just humans:
 
 [docs/ROADMAP.ja.md](docs/ROADMAP.ja.md): **100% = an agent ships a normal indie game with no human looking at the screen.** Now ~40% — M0–M2 closed, collectathon is the first M3 genre, the adhesive API and the picture base are in. Old "63%" is archived. Do not call this 80% yet.
 
+## Map
+
+The longer index is [`docs/AGENT.md`](docs/AGENT.md). Rust `GenreSession` games (rules in Rust, Python is the shell):
+
+| Genre | Run |
+|---|---|
+| collectathon | `python -m kagra.play_world` |
+| action | `python examples/action_minimal.py` |
+| card | `python examples/card_minimal.py` |
+| fight / versus | `python examples/versus_local.py` |
+| fishcook | `python examples/fishcook_minimal.py` |
+| fps | `python examples/fps_minimal.py` |
+| novel | `python examples/novel_minimal.py` |
+| platformer (Box Hop) | `python examples/platformer_minimal.py` |
+| puzzle | `python examples/puzzle_minimal.py` |
+| puzzle_pad | `python examples/puzzle_pad_minimal.py` |
+| race | `python examples/race_minimal.py` |
+| rhythm | `python examples/rhythm_minimal.py` |
+| rpg | `python examples/rpg_minimal.py` |
+| shop | `python -m kagra.play_world kagra-shared/tests/fixtures/shop_buy_world.json` |
+| sports | `python examples/sports_minimal.py` |
+| stealth | `python examples/stealth_minimal.py` |
+| survival | `python examples/survival_minimal.py` |
+| td | `python examples/td_minimal.py` |
+
+Python game master (logic stays in Python, free `WorldDoc`): `examples/bunny_garden_minimal.py`, `torneko_minimal.py`, `bar_sim_minimal.py`, `flight_minimal.py`, `backyard_brawl_minimal.py`, `chess_minimal.py`, `physics_minimal.py`, `python_game_minimal.py`.
+
+WorldPlay ids that are a fixture only (`python -m kagra.play_world kagra-shared/tests/fixtures/<id>_world.json`): `action_side`, `sprite_card`, `sim_meter`, `fish_cast`, `rhythm_beat`, `cook_stove`, `survival_meter`, `box_hop`.
+
+| System | Where |
+|---|---|
+| Physics | `examples/physics_minimal.py`, `kagra/rigid.py` — Rapier `PhysicsWorld` when the wheel is built with the `physics` feature |
+| FPS | `examples/fps_minimal.py` (`FpsSession`: look, hitscan, ammo) |
+| Card | `examples/card_minimal.py` (`CardSession`) |
+| Versus / netplay | [`docs/netplay.md`](docs/netplay.md) — `examples/versus_local.py`, `examples/versus_online.py`, `server/netplay_relay.py` |
+| Distribution | [`docs/distribution.md`](docs/distribution.md) — one manifest, Windows zip and Android APK |
+| Audio | `kagra/audio.py` (BGM fade, effects, groups, mute, positional `play_se`), `kagra-shared/src/mixer.rs` |
+| Flow | `kagra/flow.py` (`save_dir`), `kagra-shared/src/flow.rs` (title → play → pause → result, volume, high score) |
+
 ## The pip demo (old engine — archived under `old/`)
 
 The original "Python 数行で VRM が歌って踊る" demo (0.1.4, PyPI) runs on the

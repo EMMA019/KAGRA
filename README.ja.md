@@ -57,6 +57,45 @@ KAGRA の開発ループは人間だけでなく AI コーディングエージ�
 今約 40% — M0–M2 閉じた、collectathon が最初の M3 ジャンル、接着 API 4本と絵の
 土台が載った。旧「63%」はアーカイブ。80% とはまだ言わない。
 
+## 索引
+
+詳しい表は [`docs/AGENT.md`](docs/AGENT.md)。Rust の `GenreSession`（ルールは Rust、Python は殻）:
+
+| ジャンル | 起動 |
+|---|---|
+| collectathon | `python -m kagra.play_world` |
+| action | `python examples/action_minimal.py` |
+| card | `python examples/card_minimal.py` |
+| fight / versus | `python examples/versus_local.py` |
+| fishcook | `python examples/fishcook_minimal.py` |
+| fps | `python examples/fps_minimal.py` |
+| novel | `python examples/novel_minimal.py` |
+| platformer（Box Hop） | `python examples/platformer_minimal.py` |
+| puzzle | `python examples/puzzle_minimal.py` |
+| puzzle_pad | `python examples/puzzle_pad_minimal.py` |
+| race | `python examples/race_minimal.py` |
+| rhythm | `python examples/rhythm_minimal.py` |
+| rpg | `python examples/rpg_minimal.py` |
+| shop | `python -m kagra.play_world kagra-shared/tests/fixtures/shop_buy_world.json` |
+| sports | `python examples/sports_minimal.py` |
+| stealth | `python examples/stealth_minimal.py` |
+| survival | `python examples/survival_minimal.py` |
+| td | `python examples/td_minimal.py` |
+
+Python ゲームマスター（ロジックは Python、自由な `WorldDoc`）: `examples/bunny_garden_minimal.py`、`torneko_minimal.py`、`bar_sim_minimal.py`、`flight_minimal.py`、`backyard_brawl_minimal.py`、`chess_minimal.py`、`physics_minimal.py`、`python_game_minimal.py`。
+
+例ファイルが無く、フィクスチャだけのもの（`python -m kagra.play_world kagra-shared/tests/fixtures/<id>_world.json`）: `action_side`、`sprite_card`、`sim_meter`、`fish_cast`、`rhythm_beat`、`cook_stove`、`survival_meter`、`box_hop`。
+
+| 仕組み | 場所 |
+|---|---|
+| 物理 | `examples/physics_minimal.py`、`kagra/rigid.py` — ホイールを `physics` feature でビルドしたときの Rapier `PhysicsWorld` |
+| FPS | `examples/fps_minimal.py`（`FpsSession`: 視点、ヒットスキャン、弾） |
+| カード | `examples/card_minimal.py`（`CardSession`） |
+| 対戦 / netplay | [`docs/netplay.md`](docs/netplay.md) — `examples/versus_local.py`、`examples/versus_online.py`、`server/netplay_relay.py` |
+| 配布 | [`docs/distribution.md`](docs/distribution.md) — 同じマニフェストから Windows zip と Android APK |
+| 音 | `kagra/audio.py`（BGM フェード、効果音、グループ、ミュート、定位 `play_se`）、`kagra-shared/src/mixer.rs` |
+| フロー | `kagra/flow.py`（`save_dir`）、`kagra-shared/src/flow.rs`（タイトル → プレイ → ポーズ → 結果、音量、ハイスコア） |
+
 ## pip デモ（旧エンジン — `old/` にアーカイブ）
 
 元祖「Python 数行で VRM が歌って踊る」デモ（0.1.4、PyPI）は**旧エンジン**

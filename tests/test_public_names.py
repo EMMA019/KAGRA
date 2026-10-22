@@ -14,6 +14,8 @@ import sys
 import textwrap
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 INIT = ROOT / "kagra" / "__init__.py"
 OPEN_WORLD = ROOT / "old" / "examples" / "vrm_open_world.py"
@@ -118,8 +120,22 @@ def _kagra_calls_in_method(path: Path, class_name: str, method: str) -> list[ast
     return calls
 
 
+# Re-exported from the native module. Without that module ``__init__``
+# sets them to None on purpose. Every other mainline name is pure Python.
+_NATIVE_MAINLINE = ("WorldDoc", "WorldPlay")
+
+_NATIVE_ABSENT_REASON = (
+    "kagra_shared is not installed (no kagra.kagra_shared extension and no "
+    "top-level kagra_shared), so kagra.WorldDoc and kagra.WorldPlay are None "
+    "stubs. python-unit does not build the wheel. Cut names, annotate/brain, "
+    "and the pure-Python mainline names are still checked. "
+    "`maturin develop` or the CI build job (installed wheel) checks the "
+    "native re-export."
+)
+
 _RUNTIME_CHECKER = textwrap.dedent(
     r"""
+    import importlib.util
     import json
     import sys
     import types
@@ -133,16 +149,60 @@ _RUNTIME_CHECKER = textwrap.dedent(
     errors = []
     mainline = json.loads(sys.argv[2])
     cut = json.loads(sys.argv[3])
+    native_names = set(json.loads(sys.argv[4]))
+    require_native = sys.argv[5] == "1"
 
     def fail(msg):
         errors.append(msg)
 
+    def native_state():
+        # "absent" only when neither import path exists. A module file that
+        # fails to load is "broken" and must fail the test, not skip.
+        # find_spec raises only when a parent import fails; a missing
+        # submodule returns None.
+        load_errors = []
+        found = False
+        for mod_name in ("kagra.kagra_shared", "kagra_shared"):
+            try:
+                spec = importlib.util.find_spec(mod_name)
+            except ValueError as exc:
+                load_errors.append(f"{mod_name}: {exc}")
+                continue
+            if spec is None:
+                continue
+            found = True
+            try:
+                __import__(mod_name)
+                return "present", ""
+            except ImportError as exc:
+                return "broken", f"{mod_name}: {exc}"
+        if load_errors and not found:
+            return "broken", "; ".join(load_errors)
+        return "absent", ""
+
+    state, detail = native_state()
+    if state == "broken":
+        fail(
+            "kagra_shared is present but failed to import: "
+            + detail
+            + " (WorldDoc / WorldPlay must not be skipped)"
+        )
+    elif state == "absent" and require_native:
+        sys.stdout.write("NATIVE_ABSENT\n")
+        sys.exit(2)
+
     for name in mainline:
         obj = getattr(kagra, name, None)
         if obj is None:
+            if name in native_names and state == "absent" and not require_native:
+                continue
             fail(f"missing kagra.{name}")
         elif isinstance(obj, types.ModuleType):
             fail(f"kagra.{name} is a module ({getattr(obj, '__file__', '?')})")
+        elif name in native_names and state == "present" and not callable(
+            getattr(obj, "from_json", None)
+        ):
+            fail(f"kagra.{name} has no from_json")
 
     for name in cut:
         if hasattr(kagra, name) and name in getattr(kagra, "__all__", ()):
@@ -163,11 +223,13 @@ _RUNTIME_CHECKER = textwrap.dedent(
     if errors:
         sys.stderr.write("\n".join(errors) + "\n")
         sys.exit(1)
+    if state == "absent":
+        sys.stdout.write("NATIVE_ABSENT\n")
     """
 ).strip()
 
 
-def _run_runtime_checker() -> subprocess.CompletedProcess[str]:
+def _run_runtime_checker(*, require_native: bool) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
     return subprocess.run(
@@ -178,6 +240,8 @@ def _run_runtime_checker() -> subprocess.CompletedProcess[str]:
             str(ROOT),
             json.dumps(list(MAINLINE_NAMES)),
             json.dumps(list(CUT_NAMES)),
+            json.dumps(list(_NATIVE_MAINLINE)),
+            "1" if require_native else "0",
         ],
         cwd=str(ROOT),
         capture_output=True,
@@ -188,7 +252,25 @@ def _run_runtime_checker() -> subprocess.CompletedProcess[str]:
 
 
 def test_mainline_import_is_not_old_engine():
-    proc = _run_runtime_checker()
+    """Public surface is WorldDoc / WorldPlay, not the archived engine.
+
+    Cut names, annotate/brain, and pure-Python exports are always checked.
+    ``WorldDoc`` / ``WorldPlay`` may be None only when the native module is
+    genuinely absent. A present-but-broken extension still fails.
+    """
+    proc = _run_runtime_checker(require_native=False)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_worlddoc_worldplay_follow_the_native_module():
+    """When the wheel is installed, WorldDoc / WorldPlay are real types.
+
+    python-unit does not build the wheel. Skip only in that case, with a
+    reason. The CI build job imports the installed wheel and asserts both.
+    """
+    proc = _run_runtime_checker(require_native=True)
+    if proc.returncode == 2 and "NATIVE_ABSENT" in proc.stdout:
+        pytest.skip(_NATIVE_ABSENT_REASON)
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
 

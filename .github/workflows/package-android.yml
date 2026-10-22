@@ -10,6 +10,7 @@ on:
       - ".github/workflows/package-android.yml"
       - "scripts/package_android.py"
       - "scripts/build_android_native.sh"
+      - "scripts/setup_android_sdk.sh"
       - "kagra/distribute.py"
       - "kagra/contracts.py"
       - "games/**"
@@ -56,48 +57,10 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      # 既定は ubuntu-latest に入っている SDK。無いときだけ公式の
-      # commandlinetools を落とす。android-actions/setup-android は
-      # `sdkmanager tools` で落ちる（master の Android debug APK ジョブと同じ）。
+      # android-actions/setup-android は `sdkmanager tools` で落ちる。
+      # CI の Android debug APK と同じ scripts/setup_android_sdk.sh。
       - name: Setup Android SDK
-        run: |
-          set -eu
-          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
-          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
-            for cand in /usr/local/lib/android/sdk /usr/lib/android-sdk "$HOME/Android/Sdk"; do
-              if [ -d "$cand" ]; then
-                SDK="$cand"
-                break
-              fi
-            done
-          fi
-          if [ -z "${SDK:-}" ] || [ ! -d "$SDK" ]; then
-            SDK="$HOME/android-sdk"
-            mkdir -p "$SDK"
-          fi
-          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
-          if [ -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
-            echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          else
-            tool="$(find "$SDK/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort | tail -1 || true)"
-            if [ -n "${tool:-}" ]; then
-              echo "$(dirname "$tool")" >> "$GITHUB_PATH"
-            else
-              sudo apt-get update
-              sudo apt-get install -y unzip
-              tmp="$(mktemp -d)"
-              curl -fsSL -o "$tmp/cmdtools.zip" \
-                https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-              unzip -q "$tmp/cmdtools.zip" -d "$tmp"
-              mkdir -p "$SDK/cmdline-tools"
-              rm -rf "$SDK/cmdline-tools/latest"
-              mv "$tmp/cmdline-tools" "$SDK/cmdline-tools/latest"
-              echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-            fi
-          fi
-          mkdir -p "$SDK/platform-tools"
-          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+        run: bash scripts/setup_android_sdk.sh
 
       - name: Install Android SDK packages
         run: |

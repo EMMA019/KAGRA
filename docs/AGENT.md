@@ -18,7 +18,13 @@
 | Shared offscreen CLI | `kagra/render_world.py` (`python -m kagra.render_world dump.json out.png`) |
 | Shared desktop window | `kagra/play_world.py` (`python -m kagra.play_world dump.json`) — wgpu 30 winit; collectathon title→play→result; official Crest play |
 | Touch | `kagra/touch.py` |
-| Local versus + input sync | `docs/netplay.md` (`FightSession.set_player_input`, `kagra.netplay`, `server/netplay_relay.py`) |
+| Local versus + input sync | `docs/netplay.md` (`FightSession.set_player_input`, `kagra.netplay`, `server/netplay_relay.py`, `examples/versus_local.py`, `examples/versus_online.py`) |
+| Physics | `kagra/rigid.py`, `examples/physics_minimal.py`, `kagra-shared/src/physics.rs` (Rapier `PhysicsWorld`, wheel feature `physics`) |
+| FPS | `examples/fps_minimal.py`, `kagra-shared/src/fps.rs` (`FpsSession`) |
+| Card | `examples/card_minimal.py`, `kagra-shared/src/card.rs` (`CardSession`) |
+| Distribution | `docs/distribution.md` (one manifest → Windows zip and Android APK) |
+| Audio | `kagra/audio.py` (BGM fade, sfx, groups, mute, positional `play_se`), `kagra-shared/src/mixer.rs` |
+| Flow | `kagra/flow.py` (`save_dir`), `kagra-shared/src/flow.rs` (title → play → pause → result, volume, high score) |
 | Mobile scaffold | `mobile/` |
 | Shared scene (GPU 非依存) | `kagra-shared/src/scene.rs` |
 | Shared 3D draw list | `kagra-shared/src/scene3d.rs` (`Scene3D` = 1 frame: camera / batches / fog) |
@@ -26,6 +32,48 @@
 | Shared renderer | `kagra-shared/src/render/` (`render_world_doc` = wgpu 30 offscreen; `new_for_window` = same Renderer on a real window; not RendererV2) |
 
 Rust errors surface as `[CODE] message` (see `KaguraError::code`).
+
+## Genres
+
+Rust `GenreSession` (rules in Rust, Python is the shell). Smoke JSON is under `examples/verify_scenarios/`.
+
+| Genre | Example | Session |
+|---|---|---|
+| collectathon | `python -m kagra.play_world` | `WorldPlay` |
+| action | `examples/action_minimal.py` | `ActionSession` |
+| card | `examples/card_minimal.py` | `CardSession` |
+| fight / versus | `examples/versus_local.py` | `FightSession` |
+| fishcook | `examples/fishcook_minimal.py` | `FishCookSession` |
+| fps | `examples/fps_minimal.py` | `FpsSession` |
+| novel | `examples/novel_minimal.py` | `NovelSession` |
+| platformer (Box Hop) | `examples/platformer_minimal.py` | `PlatformerSession` |
+| puzzle | `examples/puzzle_minimal.py` | `PuzzleSession` |
+| puzzle_pad | `examples/puzzle_pad_minimal.py` | `PuzzlePadSession` |
+| race | `examples/race_minimal.py` | `RaceSession` |
+| rhythm | `examples/rhythm_minimal.py` | `RhythmSession` |
+| rpg | `examples/rpg_minimal.py` | `RpgSession` |
+| shop | `kagra-shared/tests/fixtures/shop_buy_world.json` | `ShopSession` (`shop_buy_smoke`) |
+| sports | `examples/sports_minimal.py` | `SportsSession` |
+| stealth | `examples/stealth_minimal.py` | `StealthSession` |
+| survival | `examples/survival_minimal.py` | `SurvivalSession` |
+| td | `examples/td_minimal.py` | `TdSession` |
+
+Python game master (free `WorldDoc`, logic in Python): `bunny_garden_minimal.py`, `torneko_minimal.py`, `bar_sim_minimal.py`, `flight_minimal.py`, `backyard_brawl_minimal.py`, `chess_minimal.py`, `physics_minimal.py`, `python_game_minimal.py`.
+
+WorldPlay ids with a fixture and no `*_minimal.py` (`python -m kagra.play_world kagra-shared/tests/fixtures/<id>_world.json`):
+
+| id | fixture |
+|---|---|
+| action_side | `action_side_world.json` |
+| sprite_card | `sprite_card_world.json` |
+| sim_meter | `sim_meter_world.json` |
+| fish_cast | `fish_cast_world.json` |
+| rhythm_beat | `rhythm_beat_world.json` |
+| cook_stove | `cook_stove_world.json` |
+| survival_meter | `survival_meter_world.json` |
+| box_hop | `box_hop_world.json` (same loop as platformer) |
+
+`demo_live_smoke` is the archived RendererV2 live demo. It lives at `old/examples/verify_scenarios/demo_live_smoke.json` with `old/examples/demo_live_smoke.py`. The mainline scenario folder does not point at a missing script.
 
 ## CI に合わせたローカル実行
 

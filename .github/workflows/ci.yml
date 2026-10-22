@@ -130,14 +130,19 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      # ランナーに Android SDK は入っているが sdkmanager は PATH に無い。
-      # この action が cmdline-tools を配置して PATH を通す。
+      # android-actions/setup-android@v3 は `sdkmanager tools` で落ちる
+      # （今の cmdline-tools に tools パッケージは無い）。Package Android と
+      # 同じ scripts/setup_android_sdk.sh を使う。
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        run: bash scripts/setup_android_sdk.sh
 
       # AGP は未インストールの platform / NDK を自動取得しないので明示する。
       - name: Install Android SDK packages
         run: |
+          set -eu
+          set +o pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          set -o pipefail
           sdkmanager --install "platforms;android-35" "build-tools;35.0.0" \
             "cmake;3.22.1" "ndk;26.1.10909125"
 
@@ -201,9 +206,18 @@ jobs:
       - name: Import test (headless)
         shell: python
         run: |
+          import types
           import kagra
           print("kagra imported OK", kagra.__file__)
-          assert hasattr(kagra, "WorldPlay")
+          # python-unit はホイールを積まないので WorldDoc / WorldPlay が None
+          # のときだけその2つをスキップする。ここはインストール済みホイール
+          # なので、クラスであって None でもモジュールでもないことを断言する。
+          assert kagra.WorldDoc is not None, "wheel left WorldDoc as None"
+          assert kagra.WorldPlay is not None, "wheel left WorldPlay as None"
+          assert not isinstance(kagra.WorldDoc, types.ModuleType)
+          assert not isinstance(kagra.WorldPlay, types.ModuleType)
+          assert callable(kagra.WorldDoc.from_json)
+          assert callable(kagra.WorldPlay.from_json)
           assert hasattr(kagra, "draw_world")
           assert hasattr(kagra, "eval_world_expect")
           assert not hasattr(kagra, "get_engine")
