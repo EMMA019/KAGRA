@@ -43,6 +43,8 @@ try:
         PuzzleSession,
         RaceSession,
         RhythmSession,
+        RpgSession,
+        ShopSession,
         TdSession,
         WorldDoc,
         WorldPlay,
@@ -60,6 +62,8 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
             PuzzleSession,
             RaceSession,
             RhythmSession,
+            RpgSession,
+            ShopSession,
             TdSession,
             WorldDoc,
             WorldPlay,
@@ -76,6 +80,8 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
         PlatformerSession = None  # type: ignore[assignment]
         RaceSession = None  # type: ignore[assignment]
         RhythmSession = None  # type: ignore[assignment]
+        RpgSession = None  # type: ignore[assignment]
+        ShopSession = None  # type: ignore[assignment]
         TdSession = None  # type: ignore[assignment]
         FishCookSession = None  # type: ignore[assignment]
 
@@ -115,7 +121,9 @@ __all__ = [
     "PuzzleSession",
     "RaceSession",
     "RhythmSession",
+    "RpgSession",
     "Scene",
+    "ShopSession",
     "SlotStore",
     "TdSession",
     "WorldDoc",

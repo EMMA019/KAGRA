@@ -1015,6 +1015,135 @@ def test_race_session_three_laps_and_ghost():
     assert session.phase == "complete"
 
 
+def test_rpg_village_fixture_uses_kaykit_and_hero():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/rpg_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["genre"] == "town_gate"
+    assert data["player"]["name"] == "hero"
+    assert data["player"]["on_ground"] is True
+    assert data["player"].get("gltf") == "knight"
+    assert data["coins"] == 20
+    names = {p.get("name"): p.get("gltf") for p in data["props"]}
+    assert names["npc"] == "mage"
+    assert names["shop"] == "inn"
+    assert names["enemy"] == "barbarian"
+    assert names["village"] == "chest"
+    assert names["house"] == "house"
+    assert names["well"] == "well"
+    ally = next(w for w in data["walkers"] if w.get("name") == "ally")
+    assert ally.get("gltf") == "rogue"
+    assert len(data["lights"]) == 4
+
+
+def test_rpg_session_talk_shop_level():
+    import json
+    import math
+
+    try:
+        from kagra.kagra_shared import RpgSession
+    except ImportError:
+        try:
+            from kagra_shared import RpgSession
+        except ImportError:
+            pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/rpg_world.json"
+    session = RpgSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "town_gate"
+    assert session.village
+    assert session.phase == "title"
+    session.confirm()
+    assert session.phase == "playing"
+    hud = session.hud_json(960, 540)
+    assert "話す" in hud and "買う" in hud and "戦う" in hud
+    assert "\u2014" not in hud
+
+    def pose():
+        world = json.loads(session.dump())
+        pos = world["player"]["position"]
+        cam = world["cameras"][0]
+        dx = float(cam["position"][0]) - float(cam["target"][0])
+        dz = float(cam["position"][2]) - float(cam["target"][2])
+        return float(pos[0]), float(pos[2]), math.atan2(-dx, -dz)
+
+    def walk_to(tx, tz):
+        for _ in range(240):
+            x, z, yaw = pose()
+            wx, wz = tx - x, tz - z
+            dist = math.hypot(wx, wz)
+            if dist < 0.8:
+                session.set_input(0.0, 0.0, False, False, False)
+                session.tick(1.0 / 60.0)
+                return
+            wx /= dist
+            wz /= dist
+            sy, cy = math.sin(yaw), math.cos(yaw)
+            session.set_input(-cy * wx + sy * wz, sy * wx + cy * wz, False, False, False)
+            session.tick(1.0 / 60.0)
+        raise AssertionError((tx, tz, pose()))
+
+    def tap(kind):
+        w, h = 960.0, 540.0
+        scale = min(w, h) / 720.0
+        bw, bh, gap = 140.0 * scale, 48.0 * scale, 12.0 * scale
+        y = h - bh - 18.0 * scale
+        total = bw * 4.0 + gap * 3.0
+        x0 = (w - total) * 0.5
+        x = x0 + kind * (bw + gap)
+        session.pointer(x + bw * 0.5, y + bh * 0.5, 960, 540)
+        session.tick(1.0 / 60.0)
+
+    walk_to(0.2, 2.4)
+    tap(0)
+    assert session.talking
+    assert session.has_flag("met")
+    tap(0)
+    walk_to(-5.2, -0.4)
+    tap(1)
+    assert session.shop_open
+    tap(1)
+    assert session.has_item("potion")
+    assert session.gold == 12
+    walk_to(4.6, 1.6)
+    tap(2)
+    assert session.combat
+    session.set_input(0.0, 0.0, False, True, False)
+    session.tick(1.0 / 60.0)
+    session.set_input(0.0, 0.0, False, True, False)
+    session.tick(1.0 / 60.0)
+    assert session.won and session.leveled
+    assert session.level == 2
+    assert session.phase == "complete"
+    assert "レベルが上がった" in session.hud_json(960, 540)
+
+
+def test_shop_session_buys_from_a_tap():
+    try:
+        from kagra.kagra_shared import ShopSession
+    except ImportError:
+        try:
+            from kagra_shared import ShopSession
+        except ImportError:
+            pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/shop_buy_world.json"
+    session = ShopSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "shop_buy"
+    assert session.phase == "title"
+    assert session.coins == 8
+    assert session.price == 5
+    hud = session.hud_json(960, 540)
+    assert hud.isascii()
+    assert "BUY" in hud and "\u2014" not in hud
+    session.pointer(10.0, 10.0, 960, 540)
+    assert session.phase == "playing"
+    session.set_input(0.0, 0.0, False, True, False)
+    session.tick(1.0 / 60.0)
+    assert session.bought and session.done
+    assert session.coins == 3
+    assert session.phase == "complete"
+
+
 def test_action_fixture_is_kaykit_arena():
     import json
 

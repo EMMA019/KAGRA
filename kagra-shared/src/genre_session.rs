@@ -13,6 +13,8 @@ use crate::novel;
 use crate::platformer;
 use crate::puzzle;
 use crate::race;
+use crate::rpg;
+use crate::shop;
 use crate::td;
 use crate::world_doc::WorldEvent;
 use crate::world_play::WorldPlay;
@@ -620,6 +622,284 @@ impl RaceSession {
 
     pub fn ghost(&self) -> bool {
         self.inner.race.has_ghost()
+    }
+}
+
+/// Town RPG (`town_gate`). Talk, turn battle, inventory, and the village
+/// shop / level-up loop stay in `rpg.rs`.
+#[derive(Clone, Debug)]
+pub struct RpgSession {
+    inner: WorldPlay,
+}
+
+impl GenreSession for RpgSession {
+    fn genre_id(&self) -> &'static str {
+        rpg::GAME_ID
+    }
+
+    fn from_json(json: &str) -> Result<Self, GenreSessionError> {
+        let inner = WorldPlay::from_json(json)?;
+        if !rpg::is_rpg(&inner.doc) {
+            return Err(format!(
+                "WorldDoc.genre must be {:?}, got {:?}",
+                rpg::GAME_ID,
+                inner.doc.genre
+            ));
+        }
+        Ok(Self { inner })
+    }
+
+    fn set_input(&mut self, input: WalkInput) {
+        self.inner.input = input.clamped();
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.inner.tick(dt);
+    }
+
+    fn dump(&self) -> Result<String, GenreSessionError> {
+        self.inner.doc.to_json()
+    }
+
+    fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        self.inner.take_events(name)
+    }
+
+    fn confirm(&mut self) {
+        self.inner.confirm();
+    }
+
+    fn emit_event(
+        &mut self,
+        name: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), GenreSessionError> {
+        self.inner.emit_event(name, data);
+        Ok(())
+    }
+
+    fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        self.inner.start_timer(name, seconds, on_done)
+    }
+
+    fn step_interact(&mut self) {
+        self.inner.step_interact();
+    }
+
+    fn phase(&self) -> GamePhase {
+        self.inner.game.phase
+    }
+}
+
+impl RpgSession {
+    pub fn hp(&self) -> u32 {
+        self.inner.rpg.hp
+    }
+
+    pub fn max_hp(&self) -> u32 {
+        self.inner.rpg.max_hp
+    }
+
+    pub fn foe_hp(&self) -> u32 {
+        self.inner.rpg.foe_hp
+    }
+
+    pub fn level(&self) -> u32 {
+        self.inner.rpg.level
+    }
+
+    pub fn xp(&self) -> u32 {
+        self.inner.rpg.xp
+    }
+
+    pub fn atk(&self) -> u32 {
+        self.inner.rpg.atk
+    }
+
+    pub fn def(&self) -> u32 {
+        self.inner.rpg.def
+    }
+
+    pub fn gold(&self) -> u32 {
+        self.inner.rpg.gold
+    }
+
+    pub fn talking(&self) -> bool {
+        self.inner.rpg.talking
+    }
+
+    pub fn menu(&self) -> bool {
+        self.inner.rpg.menu
+    }
+
+    pub fn combat(&self) -> bool {
+        self.inner.rpg.combat
+    }
+
+    pub fn shop_open(&self) -> bool {
+        self.inner.rpg.shop_open
+    }
+
+    pub fn won(&self) -> bool {
+        self.inner.rpg.won
+    }
+
+    pub fn lost(&self) -> bool {
+        self.inner.rpg.lost
+    }
+
+    pub fn leveled(&self) -> bool {
+        self.inner.rpg.leveled
+    }
+
+    pub fn village(&self) -> bool {
+        self.inner.rpg.village
+    }
+
+    pub fn scene(&self) -> String {
+        self.inner.rpg.scene.clone()
+    }
+
+    pub fn inventory(&self) -> Vec<String> {
+        self.inner.rpg.inventory.clone()
+    }
+
+    pub fn has_item(&self, item: &str) -> bool {
+        self.inner.rpg.inventory.iter().any(|i| i == item)
+    }
+
+    pub fn has_flag(&self, name: &str) -> bool {
+        self.inner.rpg.has_flag(name)
+    }
+
+    pub fn subtitle(&self) -> String {
+        rpg::subtitle(&self.inner.rpg, self.phase())
+    }
+
+    /// Screen tap. Title / result starts or retries.
+    /// Play hits 話す / 買う / 戦う / 持ち物.
+    pub fn pointer(&mut self, x: f32, y: f32, width: u32, height: u32) {
+        match self.phase() {
+            GamePhase::Title | GamePhase::Complete => self.confirm(),
+            GamePhase::Playing => {
+                rpg::pointer_play(
+                    &mut self.inner.doc,
+                    &mut self.inner.rpg,
+                    x,
+                    y,
+                    width,
+                    height,
+                );
+            }
+        }
+    }
+
+    pub fn hud_json(&self, width: u32, height: u32) -> String {
+        rpg::hud_json(&self.inner.rpg, self.phase(), width, height)
+    }
+}
+
+/// Stall purchase (`shop_buy`). Coins and the bought flag stay in `shop.rs`.
+#[derive(Clone, Debug)]
+pub struct ShopSession {
+    inner: WorldPlay,
+}
+
+impl GenreSession for ShopSession {
+    fn genre_id(&self) -> &'static str {
+        shop::GAME_ID
+    }
+
+    fn from_json(json: &str) -> Result<Self, GenreSessionError> {
+        let inner = WorldPlay::from_json(json)?;
+        if !shop::is_shop(&inner.doc) {
+            return Err(format!(
+                "WorldDoc.genre must be {:?}, got {:?}",
+                shop::GAME_ID,
+                inner.doc.genre
+            ));
+        }
+        Ok(Self { inner })
+    }
+
+    fn set_input(&mut self, input: WalkInput) {
+        self.inner.input = input.clamped();
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.inner.tick(dt);
+    }
+
+    fn dump(&self) -> Result<String, GenreSessionError> {
+        self.inner.doc.to_json()
+    }
+
+    fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        self.inner.take_events(name)
+    }
+
+    fn confirm(&mut self) {
+        self.inner.confirm();
+    }
+
+    fn emit_event(
+        &mut self,
+        name: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), GenreSessionError> {
+        self.inner.emit_event(name, data);
+        Ok(())
+    }
+
+    fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        self.inner.start_timer(name, seconds, on_done)
+    }
+
+    fn step_interact(&mut self) {
+        self.inner.step_interact();
+    }
+
+    fn phase(&self) -> GamePhase {
+        self.inner.game.phase
+    }
+}
+
+impl ShopSession {
+    pub fn coins(&self) -> u32 {
+        self.inner.shop.coins
+    }
+
+    pub fn price(&self) -> u32 {
+        shop::PRICE
+    }
+
+    pub fn bought(&self) -> bool {
+        self.inner.shop.bought
+    }
+
+    pub fn done(&self) -> bool {
+        self.inner.shop.done
+    }
+
+    /// Screen tap. Title / result starts or retries. Play buys at the stall.
+    pub fn pointer(&mut self, x: f32, y: f32, width: u32, height: u32) {
+        match self.phase() {
+            GamePhase::Title | GamePhase::Complete => self.confirm(),
+            GamePhase::Playing => {
+                shop::pointer_play(
+                    &mut self.inner.doc,
+                    &mut self.inner.shop,
+                    x,
+                    y,
+                    width,
+                    height,
+                );
+            }
+        }
+    }
+
+    pub fn hud_json(&self, width: u32, height: u32) -> String {
+        shop::hud_json(&self.inner.shop, self.phase(), width, height)
     }
 }
 
@@ -1352,6 +1632,180 @@ mod tests {
         let crest = include_str!("../tests/fixtures/crest_isle_world.json");
         let err = RaceSession::from_json(crest).unwrap_err();
         assert!(err.contains("race_drive"));
+    }
+
+    const VILLAGE: &str = include_str!("../tests/fixtures/rpg_world.json");
+    const STALL: &str = include_str!("../tests/fixtures/shop_buy_world.json");
+
+    fn rpg_value(s: &RpgSession) -> serde_json::Value {
+        serde_json::from_str(&s.dump().expect("dump")).expect("json")
+    }
+
+    fn rpg_pose(s: &RpgSession) -> (f32, f32, f32) {
+        let v = rpg_value(s);
+        let p = &v["player"]["position"];
+        let cam = &v["cameras"][0];
+        let dx =
+            cam["position"][0].as_f64().unwrap() as f32 - cam["target"][0].as_f64().unwrap() as f32;
+        let dz =
+            cam["position"][2].as_f64().unwrap() as f32 - cam["target"][2].as_f64().unwrap() as f32;
+        let yaw = (-dx).atan2(-dz);
+        (
+            p[0].as_f64().unwrap() as f32,
+            p[2].as_f64().unwrap() as f32,
+            yaw,
+        )
+    }
+
+    fn rpg_drive(s: &mut RpgSession, tx: f32, tz: f32) -> bool {
+        let (x, z, yaw) = rpg_pose(s);
+        let dx = tx - x;
+        let dz = tz - z;
+        if dx * dx + dz * dz < 0.64 {
+            s.set_input(WalkInput {
+                lx: 0.0,
+                lz: 0.0,
+                jump: false,
+                attack: false,
+                dodge: false,
+            });
+            s.tick(1.0 / 60.0);
+            return true;
+        }
+        let len = (dx * dx + dz * dz).sqrt().max(0.001);
+        let wx = dx / len;
+        let wz = dz / len;
+        let (sy, cy) = yaw.sin_cos();
+        s.set_input(WalkInput {
+            lx: -cy * wx + sy * wz,
+            lz: sy * wx + cy * wz,
+            jump: false,
+            attack: false,
+            dodge: false,
+        });
+        s.tick(1.0 / 60.0);
+        false
+    }
+
+    fn rpg_walk_to(s: &mut RpgSession, tx: f32, tz: f32) {
+        for _ in 0..240 {
+            if rpg_drive(s, tx, tz) {
+                return;
+            }
+        }
+        let (x, z, _) = rpg_pose(s);
+        panic!("did not reach ({tx},{tz}) from ({x},{z})");
+    }
+
+    fn rpg_tap(s: &mut RpgSession, index: usize) {
+        let (_, x, y, w, h) = rpg::action_buttons(960, 540)[index];
+        s.pointer(x + w * 0.5, y + h * 0.5, 960, 540);
+        s.tick(1.0 / 60.0);
+    }
+
+    #[test]
+    fn rpg_session_village_talk_shop_battle_level() {
+        let mut s = RpgSession::from_json(VILLAGE).expect("fixture");
+        assert_eq!(s.genre_id(), "town_gate");
+        assert!(s.village());
+        assert_eq!(s.phase(), GamePhase::Title);
+        assert_eq!(s.level(), 1);
+        assert_eq!(s.gold(), rpg::START_GOLD);
+        let dump = s.dump().expect("dump");
+        assert!(dump.contains("knight"));
+        assert!(dump.contains("mage"));
+        assert!(dump.contains("barbarian"));
+        assert!(dump.contains("inn") || dump.contains("house"));
+        s.pointer(12.0, 12.0, 960, 540);
+        assert_eq!(s.phase(), GamePhase::Playing);
+        let hud = s.hud_json(960, 540);
+        assert!(hud.contains("話す"));
+        assert!(hud.contains("買う"));
+        assert!(hud.contains("戦う"));
+        assert!(!hud.contains('\u{2014}'));
+        rpg_tap(&mut s, 3);
+        assert!(s.menu());
+        rpg_tap(&mut s, 3);
+        assert!(!s.menu());
+        rpg_walk_to(&mut s, 0.2, 2.4);
+        rpg_tap(&mut s, 0);
+        assert!(s.talking());
+        assert!(s.has_flag(rpg::FLAG_MET));
+        assert!(s.subtitle().contains("薬"));
+        rpg_tap(&mut s, 0);
+        assert!(!s.talking());
+        rpg_walk_to(&mut s, -5.2, -0.4);
+        rpg_tap(&mut s, 1);
+        assert!(s.shop_open());
+        rpg_tap(&mut s, 1);
+        assert!(s.has_item(rpg::ITEM_POTION));
+        assert_eq!(s.gold(), rpg::START_GOLD - rpg::POTION_PRICE);
+        rpg_walk_to(&mut s, 4.6, 1.6);
+        rpg_tap(&mut s, 2);
+        assert!(s.combat());
+        assert_eq!(s.foe_hp(), rpg::VILLAGE_FOE_HP);
+        rpg_tap(&mut s, 2);
+        assert!(s.foe_hp() < rpg::VILLAGE_FOE_HP);
+        rpg_tap(&mut s, 2);
+        assert!(s.won() && s.leveled());
+        assert_eq!(s.level(), 2);
+        assert_eq!(s.atk(), rpg::START_ATK + rpg::LEVEL_ATK);
+        assert_eq!(
+            s.gold(),
+            rpg::START_GOLD - rpg::POTION_PRICE + rpg::FOE_GOLD
+        );
+        assert_eq!(s.phase(), GamePhase::Complete);
+        assert!(s.hud_json(960, 540).contains(rpg::WIN_LINE));
+        assert!(s.take_events("nonexistent").is_empty());
+        s.pointer(12.0, 12.0, 960, 540);
+        assert_eq!(s.phase(), GamePhase::Playing);
+        assert_eq!(s.level(), 1);
+        assert_eq!(s.gold(), rpg::START_GOLD);
+        assert!(!s.has_item(rpg::ITEM_POTION));
+    }
+
+    #[test]
+    fn rpg_session_rejects_other_genres() {
+        let err = RpgSession::from_json(STALL).unwrap_err();
+        assert!(err.contains("town_gate"));
+    }
+
+    #[test]
+    fn shop_session_tap_buys_and_retries() {
+        let mut s = ShopSession::from_json(STALL).expect("fixture");
+        assert_eq!(s.genre_id(), "shop_buy");
+        assert_eq!(s.phase(), GamePhase::Title);
+        assert_eq!(s.coins(), shop::START);
+        assert_eq!(s.price(), shop::PRICE);
+        assert!(!s.bought());
+        let hud = s.hud_json(960, 540);
+        assert!(hud.is_ascii(), "{hud}");
+        assert!(hud.contains("shop"));
+        assert!(hud.contains("BUY"));
+        assert!(!hud.contains('\u{2014}'));
+        s.pointer(12.0, 12.0, 960, 540);
+        assert_eq!(s.phase(), GamePhase::Playing);
+        let (bx, by, bw, bh) = shop::buy_button(960, 540);
+        s.pointer(bx + bw * 0.5, by + bh * 0.5, 960, 540);
+        s.tick(1.0 / 60.0);
+        assert!(s.bought() && s.done());
+        assert_eq!(s.coins(), shop::START - shop::PRICE);
+        assert_eq!(s.phase(), GamePhase::Complete);
+        let done = s.hud_json(960, 540);
+        assert!(done.is_ascii());
+        assert!(done.contains("bought"));
+        assert!(s.dump().unwrap().contains("bought"));
+        s.pointer(8.0, 8.0, 960, 540);
+        assert_eq!(s.phase(), GamePhase::Playing);
+        assert!(!s.bought());
+        assert_eq!(s.coins(), shop::START);
+        assert!(s.take_events("nonexistent").is_empty());
+    }
+
+    #[test]
+    fn shop_session_rejects_other_genres() {
+        let err = ShopSession::from_json(VILLAGE).unwrap_err();
+        assert!(err.contains("shop_buy"));
     }
 
     #[test]
