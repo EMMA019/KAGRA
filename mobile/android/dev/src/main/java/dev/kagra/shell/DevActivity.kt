@@ -256,7 +256,7 @@ class DevActivity : AppCompatActivity(), SurfaceHolder.Callback {
                     pickerStatus.text = "${rows.size} 件。タップすると読み込みます。"
                     for ((slug, title) in rows) {
                         list.addView(Button(this).apply {
-                            text = title
+                            setText(title)
                             setOnClickListener {
                                 slugField.setText(slug)
                                 beginLoad()
