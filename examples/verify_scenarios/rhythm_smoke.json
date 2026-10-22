@@ -1,0 +1,37 @@
+{
+  "name": "rhythm_smoke",
+  "notes": "4-lane rhythm chart on shared wgpu 30. Genre rhythm, not rhythm_beat. Title picture is the highway: 4 lanes, crate.glb notes, chest receptors, knight, inn, trees, flag off, 4 lights. Judgement stays in Rust RhythmSession. ASCII HUD is in the Python example. No RendererV2.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/rhythm_world.json",
+    "genre": "rhythm",
+    "player.on_ground": true,
+    "coins": 0,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "prop", "name": "lane", "count": 4},
+      {"type": "prop", "name": "note", "count": 6},
+      {"type": "prop", "name": "receptor", "count": 4},
+      {"type": "prop", "name": "judge", "count": 1},
+      {"type": "prop", "name": "floor", "count": 1},
+      {"type": "prop", "name": "flag", "count": 1},
+      {"type": "prop", "name": "inn", "count": 1},
+      {"type": "prop", "name": "tree", "count": 1},
+      {"type": "prop", "name": "pine", "count": 1},
+      {"type": "prop", "name": "rock", "count": 1},
+      {"type": "prop", "name": "crate", "count": 1},
+      {"type": "light", "count": 4},
+      {"type": "camera", "name": "stage", "count": 1}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/rhythm_world.json",
+    "out": "scratch/rhythm_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200,
+    "pixels": [
+      {"x": 8, "y": 2, "w": 48, "h": 16, "mean_max": [90, 80, 110]},
+      {"x": 90, "y": 50, "w": 140, "h": 80, "mean_min": [20, 18, 20], "not_solid": true}
+    ]
+  }
+}

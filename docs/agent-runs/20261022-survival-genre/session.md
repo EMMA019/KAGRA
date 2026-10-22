@@ -4,7 +4,7 @@
 
 `survival.rs` is the `survival_meter` WorldPlay slice: a hunger meter that drains, fills in the camp box, and ends on `ok` or `starve`. Those tests stay. `WorldPlay` was not given a new genre branch.
 
-On this checkout the GenreSession bindings were platformer, novel, puzzle, and race. The task named td, rhythm, action, fight, rpg, and shop as well; those land on master from other branches and are merged at the end.
+On this checkout the GenreSession bindings were platformer, novel, puzzle, and race. Master later added action, fight, rhythm, td, rpg, shop, fishcook, and stealth. Those landed in a merge of `origin/master` with both sides kept.
 
 ## Decisions
 
@@ -16,8 +16,10 @@ On this checkout the GenreSession bindings were platformer, novel, puzzle, and r
 
 ## Verify
 
-- `cargo test -p kagra-shared --lib --locked` — 425 passed.
-- `cargo clippy -p kagra-shared --lib --locked -- -D warnings` and the same with `--features render` and `--features python` — clean.
-- `pytest tests -m "not golden"` — passed (a few skips where the extension or optional assets are absent in some tests).
-- `python -m kagra.verify` on `examples/verify_scenarios/*.json` with lavapipe — `survival_smoke` ok. `demo_live_smoke` (missing script) and `physics_stack_smoke` (png not written) still fail. `rpg_town_smoke` still fails (fixture walker is `hero`, query asks for `player`); not touched here.
+After merging `origin/master`:
+
+- `cargo test -p kagra-shared --lib --locked` — 468 passed.
+- `cargo clippy -p kagra-shared --locked -- -D warnings` for default, `--features render`, and `--features python` — clean.
+- `pytest tests -m "not golden"` — passed (a few skips).
+- `python -m kagra.verify` on `examples/verify_scenarios/*.json` with lavapipe — every smoke ok, including `survival_smoke` and `rpg_town_smoke`. `demo_live_smoke` and `physics_stack_smoke` were not run (already fail on master).
 - Headless lavapipe: `examples/survival_minimal.py --headless scratch/survival.png` — won, day 4, fire and shelter, status `survived 3 days`.

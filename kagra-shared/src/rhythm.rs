@@ -1,5 +1,8 @@
 //! Hit on beat as an M3 slice on play_world.
 //!
+//! 4-lane charts (perfect / good / miss, combo, score) live in `rhythm_chart`
+//! (`genre: rhythm`) and do not enter this `WorldPlay` loop.
+//!
 //! Sibling of survival. A metal marker travels a stage toward a judge
 //! box; J / click (`WalkInput.attack`) inside the window scores. Miss is
 //! a beat that passes with no press. `NEED` hits is dump-visible `clear`.
