@@ -1455,3 +1455,83 @@ def test_stealth_session_grabs_key_and_escapes():
     assert session.phase == "playing"
     assert not session.has_key
     assert session.alert < 0.01
+
+
+def test_fps_fixture_is_three_wave_arena_with_glb():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/fps_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["genre"] == "fps_range"
+    assert data["player"]["on_ground"] is True
+    assert data["player"].get("gltf") == "knight"
+    enemies = [w for w in data["walkers"] if w.get("name") == "enemy"]
+    reserves = [w for w in data["walkers"] if w.get("name") == "reserve"]
+    assert len(enemies) == 2
+    assert len(reserves) >= 4
+    ids = " ".join(w.get("id") or "" for w in data["walkers"])
+    assert ":1:" in ids and ":2:" in ids and ":3:" in ids
+    gltfs = {w.get("gltf") for w in data["walkers"]}
+    assert {"knight", "rogue", "mage", "barbarian"} <= gltfs
+    assert any(p.get("gltf") == "crate.glb" for p in data["props"])
+    assert any(p.get("gltf") == "stylized_tree" for p in data["props"])
+    assert any(p.get("gltf") == "rock" for p in data["props"])
+    assert data.get("heightfield") in (None, {})
+
+
+def test_fps_session_clears_waves():
+    import json
+    import math
+
+    try:
+        from kagra.kagra_shared import FpsSession
+    except ImportError:
+        try:
+            from kagra_shared import FpsSession
+        except ImportError:
+            pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/fps_world.json"
+    session = FpsSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "fps_range"
+    assert session.phase == "title"
+    assert session.hp == session.hp_max
+    assert session.ammo == session.mag
+    assert session.waves == 3
+    session.confirm()
+    assert session.phase == "playing"
+
+    def wrap(a: float) -> float:
+        return (a + math.pi) % (2.0 * math.pi) - math.pi
+
+    for _ in range(2400):
+        if session.won or session.lost:
+            break
+        world = json.loads(session.dump())
+        player = world["player"]["position"]
+        px, pz = float(player[0]), float(player[2])
+        best = None
+        for walker in world["walkers"]:
+            if walker.get("name") != "enemy":
+                continue
+            pos = walker["position"]
+            d = (pos[0] - px) ** 2 + (pos[2] - pz) ** 2
+            if best is None or d < best[0]:
+                best = (d, float(pos[0]), float(pos[2]))
+        if best is None:
+            session.set_input(0.0, 0.0, False, False, False)
+        else:
+            d, x, z = best
+            err = wrap(math.atan2(x - px, z - pz) - float(session.look_yaw))
+            session.add_look(err, -float(session.look_pitch))
+            lz = -1.0 if math.sqrt(d) < 3.4 else 0.0
+            dodge = int(session.ammo) == 0
+            attack = int(session.ammo) > 0 and not session.reloading
+            session.set_input(0.0, lz, False, attack, dodge)
+        session.tick(1.0 / 60.0)
+    assert session.won and not session.lost
+    assert session.kills >= 7
+    assert session.phase == "complete"
+    session.confirm()
+    assert session.phase == "playing"
+    assert session.hp == session.hp_max
+    assert session.wave == 1

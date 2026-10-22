@@ -166,6 +166,7 @@ FRONT_NAMES = {
     "KagraContractError",
     "FishCookSession",
     "KairiBrain",
+    "FpsSession",
     "NovelSession",
     "OpenAIBrain",
     "PlatformerSession",

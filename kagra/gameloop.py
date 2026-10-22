@@ -252,6 +252,7 @@ _KEYMAP = {
     "space": "space", "j": "j", "k": "k", "z": "z", "f": "f", "c": "c",
     "escape": "escape", "return": "enter",
     "up": "up", "down": "down", "left": "left", "right": "right",
+    "r": "r",
     "shift_l": "shift", "shift_r": "shift",
     "control_l": "control", "control_r": "control",
     "1": "1", "2": "2", "3": "3",

@@ -37,6 +37,7 @@ try:
         ActionSession,
         FightSession,
         FishCookSession,
+        FpsSession,
         NovelSession,
         PlatformerSession,
         PuzzlePadSession,
@@ -59,6 +60,7 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
             ActionSession,
             FightSession,
             FishCookSession,
+            FpsSession,
             NovelSession,
             PlatformerSession,
             PuzzlePadSession,
@@ -85,6 +87,7 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
         NovelSession = None  # type: ignore[assignment]
         PlatformerSession = None  # type: ignore[assignment]
         RaceSession = None  # type: ignore[assignment]
+        FpsSession = None  # type: ignore[assignment]
         RhythmSession = None  # type: ignore[assignment]
         RpgSession = None  # type: ignore[assignment]
         ShopSession = None  # type: ignore[assignment]
@@ -123,6 +126,7 @@ __all__ = [
     "FishCookSession",
     "KagraContractError",
     "KairiBrain",
+    "FpsSession",
     "NovelSession",
     "OpenAIBrain",
     "PlatformerSession",
