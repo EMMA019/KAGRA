@@ -96,6 +96,27 @@ pub struct WorldDoc {
     /// ACES tonemap. None = on.
     #[serde(default)]
     pub tonemap: Option<bool>,
+    /// Bloom intensity on the offscreen dump path. None = 0 so an old dump
+    /// stays unbloomed. The desktop window example sets its own default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bloom: Option<f32>,
+    /// Bloom extract threshold. None = 0.85.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bloom_threshold: Option<f32>,
+    /// Vignette strength. None = 1 (the historical composite curve). 0 = off.
+    /// Values above 1 darken the corners a second time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vignette: Option<f32>,
+    /// Color-grade LUT preset: `off` / `warm` / `punch` / `cool`. None = off.
+    /// Unknown names bake an identity strip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lut: Option<String>,
+    /// Mix toward the LUT after ACES, 0..1. None = 1 when a preset is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lut_strength: Option<f32>,
+    /// FXAA on the composite. None = on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fxaa: Option<bool>,
     /// Generic countdowns. WorldPlay::tick_timers advances `remaining`; on 0 it
     /// emits `on_done` as an event and flips `active` false. Cooking wait,
     /// fishing cast→bite, cooldowns all map onto this. Genre code stays out.
@@ -413,6 +434,10 @@ pub struct WorldWalker {
     /// `overlay_bones` のブレンド係数 0..1（0 = 無効、1 = 目標回転へ完全スラープ）。
     #[serde(default)]
     pub overlay_weight: f32,
+    /// Draw scale. None = (1, 1, 1). Squash/stretch writes this on the picture
+    /// dump; the walker sim does not read it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<[f32; 3]>,
 }
 
 fn default_idle_anim() -> String {
@@ -568,6 +593,43 @@ impl WorldDoc {
             out.version = WORLD_DUMP_VERSION;
         }
         serde_json::to_string_pretty(&out).map_err(|e| e.to_string())
+    }
+
+    /// Bloom intensity for `render_world_doc`. None in the dump means off.
+    pub fn bloom_intensity(&self) -> f32 {
+        self.bloom.unwrap_or(0.0).max(0.0)
+    }
+
+    /// Bloom extract threshold. None = 0.85.
+    pub fn bloom_threshold(&self) -> f32 {
+        self.bloom_threshold.unwrap_or(0.85).clamp(0.0, 2.0)
+    }
+
+    /// Vignette mix. None = 1, the curve that shipped with the bloom composite.
+    pub fn vignette_strength(&self) -> f32 {
+        self.vignette.unwrap_or(1.0).clamp(0.0, 2.0)
+    }
+
+    /// LUT preset name. Empty / missing / `off` skip the grade.
+    pub fn lut_preset(&self) -> &str {
+        match self.lut.as_deref().map(str::trim) {
+            None | Some("") | Some("off") => "off",
+            Some(name) => name,
+        }
+    }
+
+    /// 0 when the preset is off, otherwise `lut_strength` or 1.
+    pub fn lut_mix(&self) -> f32 {
+        if self.lut_preset() == "off" {
+            0.0
+        } else {
+            self.lut_strength.unwrap_or(1.0).clamp(0.0, 1.0)
+        }
+    }
+
+    /// FXAA. None = on.
+    pub fn fxaa_enabled(&self) -> bool {
+        self.fxaa.unwrap_or(true)
     }
 
     /// Probe walker `gltf` paths. Missing/parse failures are dump-visible;
@@ -797,6 +859,7 @@ impl WorldDoc {
             }
             let pos = Vec3::from_array(walk.position);
             let yaw = Quat::from_rotation_y(walk.yaw);
+            let sc = Vec3::from_array(walk.scale.unwrap_or([1.0, 1.0, 1.0]));
             let dead = walk.name == "dead" || walk.name == "ko";
             let hurt = walk.name == "hurt";
             let body_col = if dead {
@@ -807,7 +870,7 @@ impl WorldDoc {
                 [62, 176, 184, 255]
             };
             if let Some(meshes) = walker_gltf_ids.get(&walk.id) {
-                let model = Mat4::from_scale_rotation_translation(Vec3::ONE, yaw, pos);
+                let model = Mat4::from_scale_rotation_translation(sc, yaw, pos);
                 let col = if walker_gltf_spec(walk)
                     .map(walker_spec_has_albedo)
                     .unwrap_or(false)
@@ -849,13 +912,17 @@ impl WorldDoc {
                 continue;
             }
             let body_h = if dead { 0.28 } else { 0.95 };
-            let body =
-                Mat4::from_scale_rotation_translation(Vec3::new(0.56, body_h, 0.56), yaw, pos);
-            b.push(MESH_CAPSULE, body, body_col);
-            let head = Mat4::from_scale_rotation_translation(
-                Vec3::new(0.38, 0.32, 0.38),
+            let body = Mat4::from_scale_rotation_translation(
+                Vec3::new(0.56 * sc.x, body_h * sc.y, 0.56 * sc.z),
                 yaw,
-                pos + Vec3::Y * (if dead { 0.18 } else { 0.62 }),
+                pos,
+            );
+            b.push(MESH_CAPSULE, body, body_col);
+            let head_lift = if dead { 0.18 } else { 0.62 };
+            let head = Mat4::from_scale_rotation_translation(
+                Vec3::new(0.38 * sc.x, 0.32 * sc.y, 0.38 * sc.z),
+                yaw,
+                pos + Vec3::Y * head_lift * sc.y,
             );
             let head_col = if dead {
                 [90, 86, 82, 255]
@@ -2592,6 +2659,58 @@ mod tests {
         let s = off.compile_scene(1.0);
         assert!(!s.tonemap);
         assert_eq!(s.ibl, 0.0);
+    }
+
+    #[test]
+    fn post_fields_default_to_the_legacy_picture() {
+        let doc = WorldDoc::from_json(r#"{"version":1}"#).unwrap();
+        assert_eq!(doc.bloom_intensity(), 0.0);
+        assert!((doc.bloom_threshold() - 0.85).abs() < 1e-6);
+        assert!((doc.vignette_strength() - 1.0).abs() < 1e-6);
+        assert_eq!(doc.lut_preset(), "off");
+        assert_eq!(doc.lut_mix(), 0.0);
+        assert!(doc.fxaa_enabled());
+        assert!(!doc.to_json().unwrap().contains("\"bloom\""));
+        let on = WorldDoc::from_json(
+            r#"{"version":1,"bloom":0.4,"bloom_threshold":0.7,"vignette":0.0,"lut":"warm","lut_strength":0.5,"fxaa":false}"#,
+        )
+        .unwrap();
+        assert!((on.bloom_intensity() - 0.4).abs() < 1e-6);
+        assert!((on.bloom_threshold() - 0.7).abs() < 1e-6);
+        assert_eq!(on.vignette_strength(), 0.0);
+        assert_eq!(on.lut_preset(), "warm");
+        assert!((on.lut_mix() - 0.5).abs() < 1e-6);
+        assert!(!on.fxaa_enabled());
+    }
+
+    #[test]
+    fn walker_scale_reaches_the_capsule() {
+        let plain = WorldDoc::from_json(
+            r#"{"version":1,"ground":false,"player":{"id":"p","type":"walker","position":[0.0,1.0,0.0]}}"#,
+        )
+        .unwrap();
+        let scene = plain.compile_scene(1.0);
+        let body = scene
+            .batches
+            .iter()
+            .find(|b| b.mesh == MESH_CAPSULE)
+            .expect("capsule");
+        let sy = body.instances[0].model.y_axis.length();
+        assert!((sy - 0.95).abs() < 1e-3, "default height {sy}");
+        let squashed = WorldDoc::from_json(
+            r#"{"version":1,"ground":false,"player":{"id":"p","type":"walker","position":[0.0,1.0,0.0],"scale":[2.0,0.5,2.0]}}"#,
+        )
+        .unwrap();
+        let scene = squashed.compile_scene(1.0);
+        let body = scene
+            .batches
+            .iter()
+            .find(|b| b.mesh == MESH_CAPSULE)
+            .expect("squashed capsule");
+        let sy = body.instances[0].model.y_axis.length();
+        let sx = body.instances[0].model.x_axis.length();
+        assert!((sy - 0.475).abs() < 1e-3, "squashed height {sy}");
+        assert!((sx - 1.12).abs() < 1e-3, "squashed width {sx}");
     }
 
     #[test]

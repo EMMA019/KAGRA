@@ -1563,6 +1563,17 @@ impl Renderer {
         if !self.is_offscreen() {
             return Err("render_world_doc requires an offscreen renderer".into());
         }
+        // Dump-driven post. Omitted fields stay the legacy picture (bloom off,
+        // vignette 1, LUT off, FXAA on). The live window calls set_bloom
+        // itself and does not come through here, so its default is unchanged.
+        self.bloom.set_grade(
+            doc.bloom_threshold(),
+            doc.bloom_intensity(),
+            doc.vignette_strength(),
+            doc.fxaa_enabled(),
+            doc.lut_preset(),
+            doc.lut_mix(),
+        );
         self.draw_world_doc_with_hud(doc, hud)?;
         let mut rgba = self.read_rgba()?;
         blit_hud_images(&mut rgba, self.width(), self.height(), &hud.images);
@@ -1971,6 +1982,11 @@ mod tests {
         assert!(
             composite.contains("aces_tonemap"),
             "ACES in bloom composite"
+        );
+        assert!(composite.contains("fn sample_lut"), "strip LUT");
+        assert!(
+            composite.contains("params.v.w"),
+            "vignette strength is a uniform"
         );
         assert!(src.contains("env_irradiance"), "diffuse IBL / tiny SH");
         assert!(src.contains("env: vec4<f32>"), "Globals.env");

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Phone-web picture on the shared renderer: dump `bloom`, `bloom_threshold`,
+  `vignette`, `lut` (`off` / `warm` / `punch` / `cool`), `lut_strength`, `fxaa`.
+  Omit them and the old picture stays (bloom off, vignette 1, no LUT, FXAA on).
+  The LUT is a 16³ strip in a `texture_2d` so WebGL2 can sample it.
+  `kagra.Juice` is shake, hitstop, squash/stretch, and easing.
+  `kagra.Emitter` is a capped CPU spark list drawn as sphere props.
+  Box Hop uses the mobile preset (`KAGRA_QUALITY=0` turns it off).
+  Gap table: `docs/quality_gap.md`.
+
 - CI: `python-unit` はネイティブ拡張が本当に無いときだけ `WorldDoc` /
   `WorldPlay` の実体チェックをスキップする（切った名前と annotate / brain は
   検査したまま）。ホイールを入れた `build` ジョブが両方の `from_json` を断言する。

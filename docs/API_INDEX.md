@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **80**
+エントリ数: **84**
 
 棚の**手前**は shared wgpu 30（WorldDoc / WorldPlay / gameloop）。
 棚の**奥**は再エクスポートの余り。旧 RendererV2 API は `old/`。
@@ -14,6 +14,7 @@
 | `ActionSession` | `class ActionSession  (from kagra.kagra_shared)` |
 | `add_table` | `export add_table  (from kagra.i18n)` |
 | `annotate` | `export annotate  (from kagra.annotate)` |
+| `apply_post` | `export apply_post  (from kagra.juice)` |
 | `AssetKind` | `class AssetKind  (from kagra.contracts)` |
 | `bar` | `export bar  (from kagra.ui2d)` |
 | `Brain` | `class Brain  (from kagra.brain)` |
@@ -24,6 +25,8 @@
 | `debug_trace` | `export debug_trace  (from kagra.trace)` |
 | `debug_trace_summary` | `export debug_trace_summary  (from kagra.trace)` |
 | `draw_world` | `export draw_world  (from kagra.gameloop)` |
+| `ease` | `export ease  (from kagra.juice)` |
+| `Emitter` | `class Emitter  (from kagra.particles)` |
 | `eval_world_expect` | `export eval_world_expect  (from kagra.world_expect)` |
 | `FightSession` | `class FightSession  (from kagra.kagra_shared)` |
 | `find_path` | `export find_path  (from kagra.path)` |
@@ -32,6 +35,7 @@
 | `get_lang` | `export get_lang  (from kagra.i18n)` |
 | `image` | `export image  (from kagra.ui2d)` |
 | `island_height` | `export island_height  (from kagra.land)` |
+| `Juice` | `class Juice  (from kagra.juice)` |
 | `KagraContractError` | `class KagraContractError  (from kagra.contracts)` |
 | `KairiBrain` | `class KairiBrain  (from kagra.brain)` |
 | `list_lines` | `export list_lines  (from kagra.ui2d)` |
@@ -105,6 +109,7 @@
 - テクスチャは `WorldProp.texture`（PNG パス）+ `uv_scale`（CPU タイル）。室内は dump `sky` / `ground: false`。HUD 画像は `kagra.ui2d.image` → `draw_world(..., hud=)`。
 - プロペラや機体は `pitch` / `roll` と `local: true`（親の空間、4 段まで）。`local` 無しの `parent` はリンクだけで position はワールドのまま。リングは `model: "ring"`（穴は +Z）。窓の毎フレームは `render_rgba` → `Scene._frame_rgba`（PPM）。見本は `examples/flight_minimal.py`。
 - 絵の検証は `expect_offscreen.pixels`（領域の平均色 / not_solid）。golden PNG は使わない。新ジャンルを `WorldPlay` に足さない。
+- 電話の絵: dump `bloom` / `bloom_threshold` / `vignette` / `lut`（`off` `warm` `punch` `cool`）/ `lut_strength` / `fxaa`。省略すると旧来の絵（bloom 0、vignette 1、LUT なし、FXAA あり）。`Juice` は shake / hitstop / squash / tween。`Emitter` は CPU の火花を sphere prop にする。`apply_post(world, "mobile")` が電話プリセット。
 - dump JSON の共有オフスクリーン: `python -m kagra.render_world dump.json out.png`（または `kagra.verify` の `expect_offscreen`）。wgpu 30。アダプタ無しはスキップ。
 - dump JSON の共有デスクトップ窓: `python -m kagra.play_world dump.json`。Crest collectathon は `genre: crest_isle`。新しいゲームは RendererV2 で始めない。
 - 参照ゲーム: `examples/bunny_garden_minimal.py` / `examples/torneko_minimal.py` / `examples/bar_sim_minimal.py` / `examples/flight_minimal.py` / `examples/backyard_brawl_minimal.py` / `examples/chess_minimal.py`。
