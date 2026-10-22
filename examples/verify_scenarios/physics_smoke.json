@@ -1,0 +1,28 @@
+{
+  "name": "physics_smoke",
+  "notes": "Python physics puzzle on a free WorldDoc. Revolute bob knocks a chest off two crates. pixels: sky band is blue, the frame is not a flat color. Without PhysicsWorld the script still writes the PNG and exits 0.",
+  "script": "examples/physics_minimal.py",
+  "env": {"KAGRA_PHYSICS_HEADLESS": "1"},
+  "timeout_sec": 180,
+  "expect_files": ["scratch/physics.png", "scratch/physics_world.json"],
+  "min_file_bytes": 500,
+  "expect_world": {
+    "path": "scratch/physics_world.json",
+    "query": [
+      {"type": "prop", "name": "crate", "min_count": 2},
+      {"type": "prop", "name": "bob", "count": 1},
+      {"type": "prop", "name": "target", "count": 1}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "scratch/physics_world.json",
+    "out": "scratch/physics_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 500,
+    "pixels": [
+      {"x": 40, "y": 4, "w": 240, "h": 24, "mean_min": [40, 70, 100]},
+      {"x": 30, "y": 36, "w": 260, "h": 110, "not_solid": true}
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+KAGRA (Rust kagra-shared + Python). Read AGENTS.md, kagra-shared/src/genre_session.rs, the existing physics binding in kagra-shared/src/py/physics.rs and the physics feature first.
+
+Goal (Phase 2-1): make rapier3d physics properly usable from Python for physics-heavy games: rigid bodies (dynamic/kinematic/static), common colliders, joints (fixed, revolute, spherical at least), forces/impulses, raycasts, and collision/contact events via take_events, synced to WorldDoc entities so they render with bundled .glb assets. Keep logic in Rust so Android can use it later. Also fix the existing physics_stack_smoke failure on master (it produces no PNG without the physics feature) so it passes in the normal verify run. Deliver: bindings, examples/physics_minimal.py (a small physics puzzle: knock over a stack / swing on a joint to hit a target, retry, touch plus keyboard), examples/verify_scenarios/physics_smoke.json, HUD strings ASCII only.
+
+Other agents work in parallel (survival, sports genres): keep shared-file edits small and additive; before finishing, merge latest master into your branch (no force-push) and resolve conflicts.
+
+Done when cargo test -p kagra-shared --lib --locked, clippy -D warnings (default, render, and the physics feature), pytest tests -m "not golden" and all verify scenarios pass except the known demo_live failure. Render a real headless screenshot with lavapipe and save as artifact. Open a PR against master with a short Japanese summary. Do not merge.

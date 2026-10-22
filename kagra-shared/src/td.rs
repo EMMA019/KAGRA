@@ -322,6 +322,7 @@ fn try_place(doc: &mut WorldDoc, game: &mut TdGame) {
         pitch: 0.0,
         roll: 0.0,
         local: false,
+        ..Default::default()
     });
     game.coins = game.coins.saturating_sub(COST);
     doc.coins = game.coins;

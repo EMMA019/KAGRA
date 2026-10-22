@@ -5,7 +5,7 @@
     "path": "kagra-shared/tests/fixtures/rpg_town_world.json",
     "player.on_ground": true,
     "query": [
-      {"type": "walker", "name": "player", "count": 1},
+      {"type": "walker", "name": "hero", "count": 1},
       {"type": "prop", "name": "npc", "count": 1},
       {"type": "prop", "name": "door", "count": 1}
     ]
