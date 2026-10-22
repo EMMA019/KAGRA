@@ -27,3 +27,10 @@ else()
   target_compile_definitions(kagra_jni PRIVATE KAGRA_HAS_SHARED=0)
   target_link_libraries(kagra_jni ${log-lib} android)
 endif()
+
+# 16 KB ELF alignment. NDK r28+ does this by default; the flags also cover an
+# older NDK so libkagra_jni.so LOAD p_align stays >= 16384.
+# https://developer.android.com/guide/practices/page-sizes
+target_link_options(kagra_jni PRIVATE
+  "-Wl,-z,max-page-size=16384"
+  "-Wl,-z,common-page-size=16384")

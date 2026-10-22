@@ -11,6 +11,8 @@ on:
       - "scripts/package_android.py"
       - "scripts/build_android_native.sh"
       - "scripts/setup_android_sdk.sh"
+      - "scripts/check_android_16k.py"
+      - ".cargo/config.toml"
       - "kagra/distribute.py"
       - "kagra/contracts.py"
       - "games/**"
@@ -69,7 +71,7 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           set -o pipefail
           sdkmanager --install "platforms;android-35" "build-tools;35.0.0" \
-            "cmake;3.22.1" "ndk;26.1.10909125"
+            "cmake;3.22.1" "ndk;${KAGRA_ANDROID_NDK_VERSION}"
 
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
@@ -82,7 +84,9 @@ jobs:
           if [ -z "${ANDROID_HOME:-}" ] && [ -n "${ANDROID_SDK_ROOT:-}" ]; then
             export ANDROID_HOME="$ANDROID_SDK_ROOT"
           fi
-          export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/26.1.10909125"
+          if [ -z "${ANDROID_NDK_HOME:-}" ]; then
+            export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${KAGRA_ANDROID_NDK_VERSION}"
+          fi
           test -d "$ANDROID_NDK_HOME"
           python scripts/package_android.py --game "$KAGRA_GAME" --out dist/android
 
@@ -97,6 +101,27 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: python scripts/package_android.py --game "$KAGRA_GAME" --out dist/android --release --skip-native
+
+      # 16 KB ページ（Android 15+ / Pixel 10）。LOAD p_align < 16384 か
+      # zipalign -P 16 の失敗でジョブを落とす。
+      - name: Check 16 KB page alignment
+        run: |
+          set -eu
+          if [ -z "${ANDROID_HOME:-}" ] && [ -n "${ANDROID_SDK_ROOT:-}" ]; then
+            export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          fi
+          if [ -z "${ANDROID_NDK_HOME:-}" ]; then
+            export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${KAGRA_ANDROID_NDK_VERSION}"
+          fi
+          test -d "$ANDROID_NDK_HOME"
+          test -x "$ANDROID_HOME/build-tools/35.0.0/zipalign"
+          shopt -s nullglob
+          apks=(dist/android/*.apk)
+          if [ ${#apks[@]} -eq 0 ]; then
+            echo "no apk under dist/android" >&2
+            exit 1
+          fi
+          python scripts/check_android_16k.py "${apks[@]}"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
