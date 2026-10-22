@@ -738,6 +738,32 @@ def test_puzzle_pad_session_genre_contract():
     assert session.phase == "complete"
 
 
+def test_novel_session_genre_contract():
+    try:
+        from kagra_shared import NovelSession
+    except ImportError:
+        pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/novel_world.json"
+    session = NovelSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "novel_pages"
+    assert session.phase == "title"
+    assert session.speaker == "ユキ"
+    session.confirm()
+    assert session.phase == "playing"
+    hud = session.hud_json(960, 540)
+    assert "雨" in hud and "ユキ" in hud
+    session.pointer(20.0, 20.0, 960, 540)
+    session.tick(1.0 / 60.0)
+    session.pointer(20.0, 20.0, 960, 540)
+    session.tick(1.0 / 60.0)
+    assert session.page == 2
+    session.pointer(960 * 0.31, 540 * 0.70, 960, 540)
+    session.tick(1.0 / 60.0)
+    assert session.done
+    assert session.flag == "stay"
+    assert session.phase == "complete"
+
+
 def test_platformer_fixture_is_side_stage_with_glb():
     import json
 
