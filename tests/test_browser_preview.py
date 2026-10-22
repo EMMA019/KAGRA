@@ -127,7 +127,7 @@ def test_dev_shell_is_a_separate_debug_app():
     settings = (ROOT / "mobile/android/settings.gradle.kts").read_text(encoding="utf-8")
     assert 'include(":dev")' in settings
     assert "this.java" in gradle
-    assert 'exclude("**/MainActivity.kt")' in gradle
+    assert 'filter.exclude("**/MainActivity.kt")' in gradle
     preview_yml = (ROOT / ".github/workflows/preview.yml").read_text(encoding="utf-8")
     assert "bash scripts/build_wasm.sh" in preview_yml
 

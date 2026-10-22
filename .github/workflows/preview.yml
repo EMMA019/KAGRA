@@ -177,6 +177,9 @@ jobs:
             sleep 20
           done
           echo "Pages did not serve ${probe}" >&2
+          echo "Settings → Pages → Build and deployment → Source: Deploy from a branch." >&2
+          echo "Branch: gh-pages. Folder: / (root). Save." >&2
+          echo "GITHUB_TOKEN cannot create that site. A repo admin has to turn Pages on once." >&2
           exit 1
 
   cleanup:
