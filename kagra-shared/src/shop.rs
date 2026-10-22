@@ -20,6 +20,9 @@ pub const BODY_H: f32 = 0.95;
 pub const PLAYER_R: f32 = 0.46;
 pub const START: u32 = 8;
 pub const PRICE: u32 = 5;
+/// Coins a cooked dish pays at a stall. `shop_buy` spends [`PRICE`];
+/// a cook stall credits this instead.
+pub const SALE_PRICE: u32 = 4;
 pub const SHOP_REACH: f32 = 2.2;
 pub const NAME_PLAYER: &str = "player";
 pub const NAME_BOUGHT: &str = "bought";
@@ -122,6 +125,11 @@ pub fn place_stall_camera(doc: &mut WorldDoc) {
     }
 }
 
+/// Add the stall's sale price. Saturates instead of wrapping.
+pub fn credit_sale(coins: u32) -> u32 {
+    coins.saturating_add(SALE_PRICE)
+}
+
 /// J/click at the stall spends coins and lands bought. Caller may have
 /// walked; stall cam wins so the counter stays readable.
 pub fn tick(doc: &mut WorldDoc, game: &mut ShopGame, input: WalkInput, _dt: f32) {
@@ -209,7 +217,7 @@ fn named_prop_any<'a>(doc: &'a WorldDoc, name: &str) -> Option<&'a WorldProp> {
     doc.props.iter().find(|p| p.name == name)
 }
 
-fn player_at_stall(doc: &WorldDoc) -> bool {
+pub(crate) fn player_at_stall(doc: &WorldDoc) -> bool {
     let Some(player) = player_ref(doc) else {
         return false;
     };
@@ -584,5 +592,12 @@ mod tests {
         let dock = WorldPlay::from_json(DOCK).unwrap();
         assert!(dock.is_fish());
         assert!(!dock.is_shop());
+    }
+
+    #[test]
+    fn credit_sale_adds_the_stall_price() {
+        assert_eq!(credit_sale(0), SALE_PRICE);
+        assert_eq!(credit_sale(4), 8);
+        assert_eq!(credit_sale(u32::MAX), u32::MAX);
     }
 }

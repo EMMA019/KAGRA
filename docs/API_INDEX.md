@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **63**
+エントリ数: **64**
 
 棚の**手前**は shared wgpu 30（WorldDoc / WorldPlay / gameloop）。
 棚の**奥**は再エクスポートの余り。旧 RendererV2 API は `old/`。
@@ -24,6 +24,7 @@
 | `draw_world` | `export draw_world  (from kagra.gameloop)` |
 | `eval_world_expect` | `export eval_world_expect  (from kagra.world_expect)` |
 | `find_path` | `export find_path  (from kagra.path)` |
+| `FishCookSession` | `class FishCookSession  (from kagra.kagra_shared)` |
 | `get_lang` | `export get_lang  (from kagra.i18n)` |
 | `image` | `export image  (from kagra.ui2d)` |
 | `island_height` | `export island_height  (from kagra.land)` |
@@ -84,7 +85,7 @@
 
 - 存在しない API を呼ばないこと。ここに無い名前は未公開か内部用です。
 - 新しいゲームは Front だけ。世界は `WorldDoc` JSON、プレイは `WorldPlay` / `kagra.gameloop`。`Walk` / `Prop` / `World3D` / `kagra_core` は `old/`（`import kagra` に出ない）。
-- ジャンルは `WorldDoc.genre`（`crest_isle` / `town_gate` / `fish_cast` / …）。無指定は自由世界。prop 名（`door` / `dock` / `stove`）は景色でありジャンルを起動しない。
+- ジャンルは `WorldDoc.genre`（`crest_isle` / `town_gate` / `fish_cast` / `fishcook` / …）。無指定は自由世界。prop 名（`door` / `dock` / `stove`）は景色でありジャンルを起動しない。
 - テクスチャは `WorldProp.texture`（PNG パス）+ `uv_scale`（CPU タイル）。室内は dump `sky` / `ground: false`。HUD 画像は `kagra.ui2d.image` → `draw_world(..., hud=)`。
 - プロペラや機体は `pitch` / `roll` と `local: true`（親の空間、4 段まで）。`local` 無しの `parent` はリンクだけで position はワールドのまま。リングは `model: "ring"`（穴は +Z）。窓の毎フレームは `render_rgba` → `Scene._frame_rgba`（PPM）。見本は `examples/flight_minimal.py`。
 - 絵の検証は `expect_offscreen.pixels`（領域の平均色 / not_solid）。golden PNG は使わない。新ジャンルを `WorldPlay` に足さない。

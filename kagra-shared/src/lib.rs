@@ -20,6 +20,7 @@ pub mod ffi;
 pub mod fight;
 pub mod first_person;
 pub mod fish;
+pub mod fishcook;
 pub mod font;
 pub mod fps;
 pub mod game;
@@ -81,8 +82,8 @@ pub use driving::{DrivingScene, MeshIds, MeshSet};
 pub use font::TextRaster;
 pub use game::{DemoGame, GamePhase, GAME_ID, GAME_TITLE};
 pub use genre_session::{
-    GenreSession, GenreSessionError, NovelSession, PlatformerSession, PuzzlePadSession,
-    RaceSession, RhythmSession, TdSession,
+    FishCookSession, GenreSession, GenreSessionError, NovelSession, PlatformerSession,
+    PuzzlePadSession, RaceSession, RhythmSession, TdSession,
 };
 pub use gltf_load::{
     mesh_from_embedded_gltf, mesh_from_glb, mesh_from_gltf_json, sample_skinned,

@@ -95,3 +95,4 @@
 - `20260912-bar-sim/` — 本線を kagra_core から切り離し + **Bar 経営シム**（仕入れ / 客 / 帳簿。genre 明示。AI/手続き素材）。
 - `20261022-flight/` — 自由 WorldDoc の飛行。pitch / roll / local 親子（4 段）+ ring トーラス。WorldPlay にジャンルは足さない。見本 `examples/flight_minimal.py`。
 - `20261022-biplane-match/` — 複葉機を `biplane.glb` に差し替え、チェスの淡いハイライトと床グラデ、旗取りのタイトル / 90 秒 / 勝敗。WorldPlay にジャンルは足さない。
+- `20261022-fishcook/` — 釣り（テンションリール）→ 調理 → 売却の一日。`FishCookSession`。`fish_cast` / `cook_stove` のワンショットは WorldPlay のまま。
