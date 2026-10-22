@@ -17,7 +17,7 @@
 
 ## Tests
 
-- `cargo test -p kagra-shared --lib --locked` — 420 passed
+- `cargo test -p kagra-shared --lib --locked` — 474 passed after merging master
 - physics feature unit tests — 17 passed
 - `pytest tests -m "not golden"` — passed with the physics extension installed
 - clippy `-D warnings` — default, render, physics, and python+physics
