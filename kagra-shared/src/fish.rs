@@ -251,7 +251,7 @@ fn named_prop_mut<'a>(doc: &'a mut WorldDoc, name: &str) -> Option<&'a mut World
     doc.props.iter_mut().find(|p| p.name == name)
 }
 
-fn player_on_dock(doc: &WorldDoc) -> bool {
+pub(crate) fn player_on_dock(doc: &WorldDoc) -> bool {
     let Some(player) = player_ref(doc) else {
         return false;
     };
@@ -265,7 +265,7 @@ fn player_on_dock(doc: &WorldDoc) -> bool {
     dx.abs() <= hx && dz.abs() <= hz
 }
 
-fn show_bobber(doc: &mut WorldDoc, color: [u32; 3]) {
+pub(crate) fn show_bobber(doc: &mut WorldDoc, color: [u32; 3]) {
     sit_props(doc);
     if let Some(p) = named_prop_mut(doc, "bobber") {
         p.enabled = true;
@@ -273,11 +273,137 @@ fn show_bobber(doc: &mut WorldDoc, color: [u32; 3]) {
     }
 }
 
-fn paint_bobber(doc: &mut WorldDoc, color: [u32; 3]) {
+pub(crate) fn paint_bobber(doc: &mut WorldDoc, color: [u32; 3]) {
     if let Some(p) = named_prop_mut(doc, "bobber") {
         p.enabled = true;
         p.color = Some(color);
     }
+}
+
+/// Cast line for a longer fishing loop. [`tick`] still lands a catch on the
+/// bite for `fish_cast`. This waits, then stops on the bite so a reel can
+/// take over.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CastPhase {
+    Idle,
+    Waiting,
+    Bite,
+}
+
+#[derive(Clone, Debug)]
+pub struct Cast {
+    pub phase: CastPhase,
+    pub wait: f32,
+}
+
+impl Default for Cast {
+    fn default() -> Self {
+        Self {
+            phase: CastPhase::Idle,
+            wait: 0.0,
+        }
+    }
+}
+
+/// `attack_edge` on the dock starts the wait. After [`WAIT_S`] the phase is
+/// [`CastPhase::Bite`]. The bite does not grant a catch.
+pub fn tick_cast(cast: &mut Cast, attack_edge: bool, on_dock: bool, dt: f32) {
+    let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+    match cast.phase {
+        CastPhase::Idle => {
+            if attack_edge && on_dock {
+                cast.phase = CastPhase::Waiting;
+                cast.wait = 0.0;
+            }
+        }
+        CastPhase::Waiting => {
+            cast.wait = (cast.wait + dt).min(WAIT_S);
+            if cast.wait >= WAIT_S - 1e-4 {
+                cast.phase = CastPhase::Bite;
+            }
+        }
+        CastPhase::Bite => {}
+    }
+}
+
+/// One sweep of the tension marker, seconds.
+pub const REEL_PERIOD: f32 = 1.0;
+/// Sweet band on the 0..1 marker. Hold here.
+pub const REEL_ZONE_LO: f32 = 0.36;
+pub const REEL_ZONE_HI: f32 = 0.64;
+pub const REEL_FILL_RATE: f32 = 1.35;
+pub const REEL_FILL_NEED: f32 = 0.48;
+/// Holding outside the band. A full bad gap (~0.36s) crosses the snap.
+pub const REEL_STRAIN_RATE: f32 = 1.8;
+pub const REEL_STRAIN_DECAY: f32 = 1.6;
+pub const REEL_STRAIN_SNAP: f32 = 0.50;
+
+/// Tension reel. The marker sweeps 0..1..0. Hold inside the band to fill
+/// the catch. Hold outside and the line strains, then snaps.
+#[derive(Clone, Debug)]
+pub struct Reel {
+    pub t: f32,
+    pub fill: f32,
+    pub strain: f32,
+    pub landed: bool,
+    pub snapped: bool,
+}
+
+impl Default for Reel {
+    fn default() -> Self {
+        Self {
+            t: 0.0,
+            fill: 0.0,
+            strain: 0.0,
+            landed: false,
+            snapped: false,
+        }
+    }
+}
+
+/// Triangle sweep in 0..1. `t` is seconds from the bite.
+pub fn reel_marker(t: f32) -> f32 {
+    let period = REEL_PERIOD.max(1.0e-3);
+    let mut p = if t.is_finite() {
+        (t / period).fract()
+    } else {
+        0.0
+    };
+    if p < 0.0 {
+        p += 1.0;
+    }
+    if p < 0.5 {
+        p * 2.0
+    } else {
+        (1.0 - p) * 2.0
+    }
+}
+
+pub fn reel_in_zone(marker: f32) -> bool {
+    (REEL_ZONE_LO..=REEL_ZONE_HI).contains(&marker)
+}
+
+pub fn tick_reel(reel: &mut Reel, hold: bool, dt: f32) {
+    if reel.landed || reel.snapped {
+        return;
+    }
+    let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+    let inside = reel_in_zone(reel_marker(reel.t));
+    if hold && inside {
+        reel.fill = (reel.fill + REEL_FILL_RATE * dt).min(1.0);
+        reel.strain = (reel.strain - REEL_STRAIN_DECAY * dt).max(0.0);
+        if reel.fill >= REEL_FILL_NEED {
+            reel.landed = true;
+        }
+    } else if hold {
+        reel.strain = (reel.strain + REEL_STRAIN_RATE * dt).min(2.0);
+        if reel.strain >= REEL_STRAIN_SNAP {
+            reel.snapped = true;
+        }
+    } else {
+        reel.strain = (reel.strain - REEL_STRAIN_DECAY * dt).max(0.0);
+    }
+    reel.t += dt;
 }
 
 pub fn build_hud(game: &FishGame, phase: GamePhase, width: u32, height: u32) -> DrawList {
@@ -690,5 +816,51 @@ mod tests {
         let stage = WorldPlay::from_json(STAGE).unwrap();
         assert!(stage.is_rhythm());
         assert!(!stage.is_fish());
+    }
+
+    #[test]
+    fn reel_hold_in_the_band_lands_and_a_held_line_snaps() {
+        let mut reel = Reel::default();
+        for _ in 0..240 {
+            let hold = reel_in_zone(reel_marker(reel.t));
+            tick_reel(&mut reel, hold, 1.0 / 60.0);
+            if reel.landed {
+                break;
+            }
+        }
+        assert!(reel.landed && !reel.snapped, "fill {}", reel.fill);
+        assert!(reel.fill + 1e-3 >= REEL_FILL_NEED);
+
+        let mut held = Reel::default();
+        for _ in 0..180 {
+            tick_reel(&mut held, true, 1.0 / 60.0);
+            if held.snapped {
+                break;
+            }
+        }
+        assert!(held.snapped && !held.landed, "strain {}", held.strain);
+    }
+
+    #[test]
+    fn cast_waits_then_bites_without_landing() {
+        let mut cast = Cast::default();
+        tick_cast(&mut cast, true, true, 1.0 / 60.0);
+        assert_eq!(cast.phase, CastPhase::Waiting);
+        tick_cast(&mut cast, true, true, 1.0 / 60.0);
+        assert_eq!(
+            cast.phase,
+            CastPhase::Waiting,
+            "held attack does not recast"
+        );
+        for _ in 0..80 {
+            tick_cast(&mut cast, false, true, 1.0 / 60.0);
+            if cast.phase == CastPhase::Bite {
+                break;
+            }
+        }
+        assert_eq!(cast.phase, CastPhase::Bite);
+        let mut off = Cast::default();
+        tick_cast(&mut off, true, false, 1.0 / 60.0);
+        assert_eq!(off.phase, CastPhase::Idle);
     }
 }

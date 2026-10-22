@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **62**
+エントリ数: **72**
 
 棚の**手前**は shared wgpu 30（WorldDoc / WorldPlay / gameloop）。
 棚の**奥**は再エクスポートの余り。旧 RendererV2 API は `old/`。
@@ -11,6 +11,7 @@
 
 | Name | Signature |
 |---|---|
+| `ActionSession` | `class ActionSession  (from kagra.kagra_shared)` |
 | `add_table` | `export add_table  (from kagra.i18n)` |
 | `annotate` | `export annotate  (from kagra.annotate)` |
 | `AssetKind` | `class AssetKind  (from kagra.contracts)` |
@@ -23,7 +24,9 @@
 | `debug_trace_summary` | `export debug_trace_summary  (from kagra.trace)` |
 | `draw_world` | `export draw_world  (from kagra.gameloop)` |
 | `eval_world_expect` | `export eval_world_expect  (from kagra.world_expect)` |
+| `FightSession` | `class FightSession  (from kagra.kagra_shared)` |
 | `find_path` | `export find_path  (from kagra.path)` |
+| `FishCookSession` | `class FishCookSession  (from kagra.kagra_shared)` |
 | `FpsSession` | `class FpsSession  (from kagra.kagra_shared)` |
 | `get_lang` | `export get_lang  (from kagra.i18n)` |
 | `image` | `export image  (from kagra.ui2d)` |
@@ -57,6 +60,8 @@
 | `resolve_asset` | `export resolve_asset  (from kagra.contracts)` |
 | `rgba_to_png` | `export rgba_to_png  (from kagra.gameloop)` |
 | `rgba_to_ppm` | `export rgba_to_ppm  (from kagra.gameloop)` |
+| `RhythmSession` | `class RhythmSession  (from kagra.kagra_shared)` |
+| `RpgSession` | `class RpgSession  (from kagra.kagra_shared)` |
 | `run` | `export run  (from kagra.gameloop)` |
 | `run_scenario` | `export run_scenario  (from kagra.verify)` |
 | `run_scenario_path` | `export run_scenario_path  (from kagra.verify)` |
@@ -66,9 +71,14 @@
 | `se` | `export se  (from kagra.audio)` |
 | `set_lang` | `export set_lang  (from kagra.i18n)` |
 | `set_listener` | `export set_listener  (from kagra.audio)` |
+| `ShopSession` | `class ShopSession  (from kagra.kagra_shared)` |
 | `SlotStore` | `class SlotStore  (from kagra.save)` |
 | `sound` | `export sound  (from kagra.audio)` |
+| `SportsSession` | `class SportsSession  (from kagra.kagra_shared)` |
+| `StealthSession` | `class StealthSession  (from kagra.kagra_shared)` |
+| `SurvivalSession` | `class SurvivalSession  (from kagra.kagra_shared)` |
 | `t` | `export t  (from kagra.i18n)` |
+| `TdSession` | `class TdSession  (from kagra.kagra_shared)` |
 | `tone` | `export tone  (from kagra.audio)` |
 | `was_pressed` | `export was_pressed  (from kagra.gameloop)` |
 | `WorldDoc` | `class WorldDoc  (from kagra.kagra_shared)` |
@@ -83,7 +93,7 @@
 
 - 存在しない API を呼ばないこと。ここに無い名前は未公開か内部用です。
 - 新しいゲームは Front だけ。世界は `WorldDoc` JSON、プレイは `WorldPlay` / `kagra.gameloop`。`Walk` / `Prop` / `World3D` / `kagra_core` は `old/`（`import kagra` に出ない）。
-- ジャンルは `WorldDoc.genre`（`crest_isle` / `town_gate` / `fish_cast` / …）。無指定は自由世界。prop 名（`door` / `dock` / `stove`）は景色でありジャンルを起動しない。
+- ジャンルは `WorldDoc.genre`（`crest_isle` / `town_gate` / `fish_cast` / `fishcook` / …）。無指定は自由世界。prop 名（`door` / `dock` / `stove`）は景色でありジャンルを起動しない。
 - テクスチャは `WorldProp.texture`（PNG パス）+ `uv_scale`（CPU タイル）。室内は dump `sky` / `ground: false`。HUD 画像は `kagra.ui2d.image` → `draw_world(..., hud=)`。
 - プロペラや機体は `pitch` / `roll` と `local: true`（親の空間、4 段まで）。`local` 無しの `parent` はリンクだけで position はワールドのまま。リングは `model: "ring"`（穴は +Z）。窓の毎フレームは `render_rgba` → `Scene._frame_rgba`（PPM）。見本は `examples/flight_minimal.py`。
 - 絵の検証は `expect_offscreen.pixels`（領域の平均色 / not_solid）。golden PNG は使わない。新ジャンルを `WorldPlay` に足さない。

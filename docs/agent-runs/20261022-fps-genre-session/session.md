@@ -17,4 +17,16 @@ Expose the existing `fps_range` module as a `GenreSession`, with a three-wave ar
 
 - The first combat frame floated the KayKit bodies because seed placed them at the capsule center (`height + BODY_H`) while the rest-pose feet sit at local Y 0. `stand_y` plants the feet. Hitscan still aims at the torso.
 - A player gltf at feet height dropped the eye to the ankles. `pin_player_capsule` plus `vy = 0` keeps the eye on the head. Range tests still pass.
-- A bulk verify loop parsed a nested JSON object (stdout is pretty JSON plus a `RuntimeWarning`) and reported every smoke as failed. `JSONDecoder.raw_decode` shows the real result: `fps_smoke` and `fps_range_smoke` are ok. `rpg_town_smoke` fails on master too (walker name is `hero`, the smoke asks for `player`). `demo_live` and `physics_stack` stay the known skips.
+- A bulk verify loop parsed a nested JSON object (stdout is pretty JSON plus a `RuntimeWarning`) and reported every smoke as failed. `JSONDecoder.raw_decode` is the real result. Before the master merge, `rpg_town_smoke` failed on this branch and on master (walker name `hero`, smoke asked for `player`). After merging master the RPG fixture matches the smoke, so that scenario passes. `demo_live` and `physics_stack` stay the known skips.
+
+## Verify
+
+- `cargo test -p kagra-shared --lib --locked` — 479 passed (after merging master)
+- `cargo clippy -p kagra-shared --all-targets --locked -- -D warnings` — clean
+- `cargo clippy -p kagra-shared --all-targets --locked --no-default-features --features render -- -D warnings` — clean
+- `cargo clippy -p kagra-shared --all-targets --locked --features python -- -D warnings` — clean
+- `cargo fmt -p kagra-shared -- --check` — clean
+- `pytest tests -m "not golden"` — passed (`maturin develop --release`)
+- `python examples/fps_minimal.py --headless` — won, HP 5/5, 7 kills, wave 3/3 (lavapipe)
+- `fps_smoke.json` and `fps_range_smoke.json` — ok, offscreen not skipped
+- Other current smokes ok on lavapipe except the known skips: `demo_live_smoke`, `physics_stack_smoke` (39 passed, 2 skipped)
