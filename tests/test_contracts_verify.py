@@ -501,6 +501,16 @@ def test_load_rhythm_beat_scenario_is_world_and_offscreen():
     assert sc.expect_offscreen["out"].endswith("rhythm_beat_shared.png")
 
 
+def test_load_fishcook_scenario_is_world_and_offscreen():
+    sc = load_scenario(ROOT / "examples/verify_scenarios/fishcook_smoke.json")
+    assert sc.name == "fishcook_smoke"
+    assert sc.expect_world["path"].endswith("fishcook_world.json")
+    assert sc.expect_world["genre"] == "fishcook"
+    assert sc.expect_world["player.on_ground"] is True
+    assert sc.expect_offscreen["out"].endswith("fishcook_shared.png")
+    assert sc.expect_offscreen["pixels"]
+
+
 def test_load_fish_cast_scenario_is_world_and_offscreen():
     sc = load_scenario(ROOT / "examples/verify_scenarios/fish_cast_smoke.json")
     assert sc.name == "fish_cast_smoke"

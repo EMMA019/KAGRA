@@ -4,11 +4,12 @@
 //! - `world_doc` / `world_play` — 既存の世界データ + マルチジャンル tick
 //! - `render` / `measure` — 描画と HUD 計測
 //! - `physics` — Rapier（feature）
-//! - `<genre>` — `GenreSession` 実装ごとの薄いラッパ（例: `puzzle`, `platformer`, `novel`, `race`, `action`, `fight`, `rhythm`, `td`, `rpg`, `shop`, `stealth`）
+//! - `<genre>` — `GenreSession` 実装ごとの薄いラッパ（例: `puzzle`, `platformer`, `novel`, `race`, `action`, `fight`, `rhythm`, `td`, `rpg`, `shop`, `fishcook`, `stealth`）
 
 mod action;
 mod common;
 mod fight;
+mod fishcook;
 mod measure;
 mod novel;
 mod platformer;
@@ -30,6 +31,7 @@ use pyo3::prelude::*;
 
 use action::PyActionSession;
 use fight::PyFightSession;
+use fishcook::PyFishCookSession;
 use measure::measure_text_py;
 use novel::PyNovelSession;
 use platformer::PyPlatformerSession;
@@ -62,6 +64,7 @@ fn kagra_shared(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRpgSession>()?;
     m.add_class::<PyShopSession>()?;
     m.add_class::<PyTdSession>()?;
+    m.add_class::<PyFishCookSession>()?;
     m.add_class::<PyStealthSession>()?;
     m.add_function(wrap_pyfunction!(render_world_doc_py, m)?)?;
     m.add_function(wrap_pyfunction!(measure_text_py, m)?)?;

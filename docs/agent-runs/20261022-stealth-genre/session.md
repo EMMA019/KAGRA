@@ -11,3 +11,5 @@ The scripted route waits by the dagger until the hallway guard is walking +X and
 Clippy `-D warnings` rejected `Vec<(String, [f32; 3], f32, f32, [f32; 3])>` in `sync_cones`. A small `ConePose` struct replaced the tuple. `segment_hits_rect` takes one `[f32; 4]` so the slab test stays under the argument-count lint.
 
 Shared edits stayed additive: `py/mod.rs`, `lib.rs` re-export, `kagra/__init__.py`, `FRONT_NAMES`, `tests/test_play_world.py`, one `mesh_for_prop` arm, the stealth walk scale in `world_play.rs`, and `c` / Control in the gameloop keymap.
+
+Merged `origin/master` (`d834a31`, fishcook GenreSession) before the PR. `genre_session.rs`, `lib.rs`, and `py/mod.rs` conflicted where both branches registered a session. Both `StealthSession` and `FishCookSession` stay.
