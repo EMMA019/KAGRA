@@ -31,6 +31,31 @@ impl WasmSession {
         self.inner.set_asset_root(root);
     }
 
+    /// Repo-relative file for [`crate::assets::resolve_asset`] (no filesystem on wasm).
+    #[wasm_bindgen(js_name = mountFile)]
+    pub fn mount_file(&mut self, path: &str, bytes: &[u8]) {
+        crate::assets::mount_file(path, bytes.to_vec());
+    }
+
+    #[wasm_bindgen(js_name = clearMount)]
+    pub fn clear_mount(&mut self) {
+        crate::assets::clear_mount();
+    }
+
+    /// World dump JSON. The scene waits on the title until a tap confirms.
+    #[wasm_bindgen(js_name = loadGame)]
+    pub fn load_game(&mut self, json: &str) -> Result<(), JsValue> {
+        self.inner
+            .load_game_json(json)
+            .map_err(|e| JsValue::from_str(&e))
+    }
+
+    /// Packaged WorldPlay. Sticks are -1..1. Buttons are held, not edges.
+    #[wasm_bindgen(js_name = setPlayInput)]
+    pub fn set_play_input(&mut self, lx: f32, lz: f32, jump: bool, attack: bool, dodge: bool) {
+        self.inner.set_play_input(lx, lz, jump, attack, dodge);
+    }
+
     pub fn pause(&mut self) {
         self.inner.pause();
     }

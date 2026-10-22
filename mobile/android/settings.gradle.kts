@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "KagraShell"
 include(":app")
+include(":dev")

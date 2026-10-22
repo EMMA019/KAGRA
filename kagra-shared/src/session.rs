@@ -183,6 +183,7 @@ impl SharedSession {
 
     /// ジャンル dump を読み、シーンを `World` にする。タイトルのまま待つ。
     pub fn load_game_json(&mut self, json: &str) -> Result<(), String> {
+        crate::world_doc::clear_runtime_asset_cache();
         let mut play = WorldPlay::from_json(json)?;
         play.load_progress();
         self.world = Some(play);

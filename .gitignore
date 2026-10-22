@@ -53,6 +53,8 @@ kagra-shared/www/pkg/
 
 # scripts/package_android.py が書くゲーム別のシェル設定
 mobile/android/kagra.game.properties
+# Package Android が KAGRA Dev に焼く公開 Pages URL（秘密ではない）
+mobile/android/kagra.pages.properties
 mobile/android/app/src/main/assets/kagra_root/
 mobile/android/app/src/main/res/drawable-mdpi/ic_launcher.png
 

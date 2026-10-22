@@ -23,6 +23,7 @@
 | FPS | `examples/fps_minimal.py`, `kagra-shared/src/fps.rs` (`FpsSession`) |
 | Card | `examples/card_minimal.py`, `kagra-shared/src/card.rs` (`CardSession`) |
 | Distribution | `docs/distribution.md` (one manifest → Windows zip and Android APK) |
+| Phone preview | `docs/preview.md` (GitHub Pages wasm, per-PR path, KAGRA Dev APK) |
 | Audio | `kagra/audio.py` (BGM fade, sfx, groups, mute, positional `play_se`), `kagra-shared/src/mixer.rs` |
 | Flow | `kagra/flow.py` (`save_dir`), `kagra-shared/src/flow.rs` (title → play → pause → result, volume, high score) |
 | Mobile scaffold | `mobile/` |

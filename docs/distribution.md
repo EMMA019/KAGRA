@@ -222,6 +222,7 @@ base64 は Actions 用。
 - Android: 同じステージを `assets/kagra_root` に入れた debug APK（または
   上の秘密で署名した release APK）と、`libkagra_shared.so`
 
-入らないもの: PyPI への publish、itch.io への自動投稿、keystore 本体、
-iOS / ブラウザ用のこのフェーズのパッケージ（既存の wasm 手順は
-[`mobile/README.md`](../mobile/README.md) のまま）。
+入らないもの: PyPI への publish、itch.io への自動投稿、keystore 本体、iOS。
+ブラウザのプレビューと、ケーブル無しで追試する KAGRA Dev は
+[preview.md](preview.md)。Crest Isle の wasm 手順は
+[`mobile/README.md`](../mobile/README.md) のまま。

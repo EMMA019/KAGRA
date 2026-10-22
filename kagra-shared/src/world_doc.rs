@@ -1636,8 +1636,8 @@ pub fn load_png_albedo(path: &str) -> Option<crate::scene3d::AlbedoRgba> {
             .join(spec),
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(spec),
     ];
-    let file = candidates.iter().find(|p| p.is_file())?;
-    let bytes = std::fs::read(file).ok()?;
+    let file = candidates.iter().find(|p| crate::assets::is_file(p))?;
+    let bytes = crate::assets::read_bytes(file).ok()?;
     crate::gltf_load::decode_png(&bytes).ok()
 }
 
@@ -1843,22 +1843,22 @@ fn probe_walker_asset(spec: &str) -> Result<(), String> {
         .map(|e| e.to_ascii_lowercase())
         .unwrap_or_default();
     if p_lower == "gltf" {
-        let json = std::fs::read_to_string(&path).map_err(|e| format!("{name}: {e}"))?;
+        let json = crate::assets::read_to_string(&path).map_err(|e| format!("{name}: {e}"))?;
         skinned_from_gltf_json(&json, |uri| {
             let base = path.parent().unwrap_or(Path::new("."));
-            std::fs::read(base.join(uri)).map_err(|e| e.to_string())
+            crate::assets::read_bytes(base.join(uri)).map_err(|e| e.to_string())
         })
         .map(|_| ())
         .or_else(|e| {
             mesh_from_gltf_json(&json, |uri| {
                 let base = path.parent().unwrap_or(Path::new("."));
-                std::fs::read(base.join(uri)).map_err(|err| err.to_string())
+                crate::assets::read_bytes(base.join(uri)).map_err(|err| err.to_string())
             })
             .map(|_| ())
             .map_err(|_| format!("{name}: {e}"))
         })
     } else if p_lower == "glb" || p_lower == "vrm" {
-        let bytes = std::fs::read(&path).map_err(|e| format!("{name}: {e}"))?;
+        let bytes = crate::assets::read_bytes(&path).map_err(|e| format!("{name}: {e}"))?;
         skinned_from_glb(&bytes).map(|_| ()).or_else(|e| {
             mesh_from_glb(&bytes)
                 .map(|_| ())
@@ -1903,21 +1903,21 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
             .map(|e| e.to_ascii_lowercase())
             .unwrap_or_default();
         if p_lower == "gltf" {
-            let json = std::fs::read_to_string(&path).ok()?;
+            let json = crate::assets::read_to_string(&path).ok()?;
             let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
             if let Some(idx) = mesh_sel {
                 return mesh_index_from_gltf_json(&json, idx, |uri| {
-                    std::fs::read(base.join(uri)).map_err(|e| e.to_string())
+                    crate::assets::read_bytes(base.join(uri)).map_err(|e| e.to_string())
                 })
                 .ok();
             }
             return mesh_from_gltf_json(&json, |uri| {
-                std::fs::read(base.join(uri)).map_err(|e| e.to_string())
+                crate::assets::read_bytes(base.join(uri)).map_err(|e| e.to_string())
             })
             .ok();
         }
         if p_lower == "glb" || p_lower == "vrm" {
-            let bytes = std::fs::read(&path).ok()?;
+            let bytes = crate::assets::read_bytes(&path).ok()?;
             return mesh_from_glb(&bytes).ok();
         }
     }
@@ -1940,6 +1940,13 @@ fn skinned_parts_cache() -> &'static Mutex<HashMap<String, Arc<Vec<crate::gltf_l
     static CACHE: OnceLock<Mutex<HashMap<String, Arc<Vec<crate::gltf_load::SkinnedMesh>>>>> =
         OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Drop CPU-skinned meshes so a reloaded bundle (browser or KAGRA Dev) is read again.
+pub(crate) fn clear_runtime_asset_cache() {
+    if let Ok(mut cache) = skinned_parts_cache().lock() {
+        cache.clear();
+    }
 }
 
 fn skinned_part_count(spec: &str) -> usize {
@@ -2030,10 +2037,10 @@ fn load_skinned_parts_uncached(spec: &str) -> Option<Vec<crate::gltf_load::Skinn
             .map(|e| e.to_ascii_lowercase())
             .unwrap_or_default();
         if p_lower == "gltf" {
-            if let Ok(json) = std::fs::read_to_string(&path) {
+            if let Ok(json) = crate::assets::read_to_string(&path) {
                 let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
                 if let Ok(parts) = skinned_parts_from_gltf_json(&json, |uri| {
-                    std::fs::read(base.join(uri)).map_err(|e| e.to_string())
+                    crate::assets::read_bytes(base.join(uri)).map_err(|e| e.to_string())
                 }) {
                     if !parts.is_empty() {
                         return Some(parts);
@@ -2042,7 +2049,7 @@ fn load_skinned_parts_uncached(spec: &str) -> Option<Vec<crate::gltf_load::Skinn
             }
         }
         if p_lower == "glb" || p_lower == "vrm" {
-            if let Ok(bytes) = std::fs::read(&path) {
+            if let Ok(bytes) = crate::assets::read_bytes(&path) {
                 if let Ok(parts) = skinned_parts_from_glb(&bytes) {
                     if !parts.is_empty() {
                         return Some(parts);
