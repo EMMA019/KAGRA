@@ -976,3 +976,77 @@ def test_race_session_three_laps_and_ghost():
     assert session.best_lap > 0.5
     assert session.ghost
     assert session.phase == "complete"
+
+
+def test_card_fixture_is_a_table():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/card_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["genre"] == "card"
+    assert data["player"]["on_ground"] is True
+    assert data["player"].get("gltf") == "knight"
+    decks = [p for p in data["props"] if p.get("name") == "deck"]
+    assert len(decks) == 2
+    assert all(p.get("gltf") == "crate.glb" for p in decks)
+    foes = [p for p in data["props"] if p.get("name") == "foe"]
+    assert len(foes) == 1 and foes[0].get("gltf") == "chest"
+    assert data.get("ground") is False
+    text = (ROOT / "examples/card_minimal.py").read_text(encoding="utf-8")
+    assert "\u2014" not in text
+    assert "CardSession" in text
+    assert "feed_pointer" in text
+
+
+def test_card_session_duel_round_trip_and_rematch():
+    import json
+
+    try:
+        from kagra_shared import CardSession
+    except ImportError:
+        try:
+            from kagra.kagra_shared import CardSession
+        except ImportError:
+            pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/card_world.json"
+    session = CardSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "card"
+    assert session.phase == "title"
+    assert "カード" in session.status()
+    session.confirm()
+    assert session.phase == "playing"
+    assert session.you_hand == 4
+    assert session.foe_hand == 3
+    assert session.mana == 1
+    view = json.loads(session.view_json())
+    assert "hand" not in view["foe"]
+    assert view["foe"]["hand_n"] == 3
+    assert view["you"]["hand"]
+    dump = session.dump()
+    restored = CardSession.from_json(dump)
+    assert restored.phase == "playing"
+    assert restored.you_life == session.you_life
+    assert restored.foe_hand == session.foe_hand
+    guard = 0
+    while session.phase == "playing" and guard < 80:
+        guard += 1
+        for _ in range(8):
+            played = False
+            for index in range(session.you_hand - 1, -1, -1):
+                if session.play(index):
+                    played = True
+                    break
+            if not played:
+                break
+        if session.phase != "playing":
+            break
+        for index in range(session.you_board):
+            session.attack(index, -1)
+        if session.phase == "playing":
+            assert session.end_turn()
+    assert session.phase == "complete"
+    assert session.winner in (0, 1)
+    session.confirm()
+    assert session.phase == "playing"
+    assert session.you_life == 20
+    assert session.foe_life == 20

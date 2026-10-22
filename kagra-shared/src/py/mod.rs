@@ -4,8 +4,9 @@
 //! - `world_doc` / `world_play` — 既存の世界データ + マルチジャンル tick
 //! - `render` / `measure` — 描画と HUD 計測
 //! - `physics` — Rapier（feature）
-//! - `<genre>` — `GenreSession` 実装ごとの薄いラッパ（例: `puzzle`, `platformer`, `novel`, `race`）
+//! - `<genre>` — `GenreSession` 実装ごとの薄いラッパ（例: `puzzle`, `card`, `platformer`, `novel`, `race`）
 
+mod card;
 mod common;
 mod measure;
 mod novel;
@@ -21,6 +22,7 @@ mod physics;
 
 use pyo3::prelude::*;
 
+use card::PyCardSession;
 use measure::measure_text_py;
 use novel::PyNovelSession;
 use platformer::PyPlatformerSession;
@@ -39,6 +41,7 @@ fn kagra_shared(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyWorldPlay>()?;
     m.add_class::<PyPuzzlePadSession>()?;
     m.add_class::<PyPuzzleSession>()?;
+    m.add_class::<PyCardSession>()?;
     m.add_class::<PyNovelSession>()?;
     m.add_class::<PyPlatformerSession>()?;
     m.add_class::<PyRaceSession>()?;

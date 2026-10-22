@@ -162,6 +162,7 @@ FRONT_NAMES = {
     "AssetKind",
     "Brain",
     "BrainError",
+    "CardSession",
     "KagraContractError",
     "KairiBrain",
     "NovelSession",

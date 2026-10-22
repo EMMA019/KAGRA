@@ -14,6 +14,7 @@ use crate::race;
 use crate::world_doc::WorldEvent;
 use crate::world_play::WorldPlay;
 
+pub use crate::card::CardSession;
 pub use crate::puzzle_board::PuzzleSession;
 
 /// Session errors (JSON parse, wrong `WorldDoc.genre`, serialize).
@@ -484,6 +485,58 @@ impl RaceSession {
     }
 }
 
+/// Card duel (`card`). Rules stay in `card.rs`. Not a `WorldPlay` genre module.
+impl GenreSession for CardSession {
+    fn genre_id(&self) -> &'static str {
+        crate::card::GAME_ID
+    }
+
+    fn from_json(json: &str) -> Result<Self, GenreSessionError> {
+        CardSession::open(json)
+    }
+
+    fn set_input(&mut self, input: WalkInput) {
+        self.apply_input(input);
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.step(dt);
+    }
+
+    fn dump(&self) -> Result<String, GenreSessionError> {
+        self.dump_json()
+    }
+
+    fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        self.drain_events(name)
+    }
+
+    fn confirm(&mut self) {
+        self.confirm_action();
+    }
+
+    fn emit_event(
+        &mut self,
+        name: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), GenreSessionError> {
+        self.record_event(name, data);
+        Ok(())
+    }
+
+    fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        self.begin_timer(name, seconds, on_done)
+    }
+
+    fn step_interact(&mut self) {
+        self.use_nearby();
+    }
+
+    fn phase(&self) -> GamePhase {
+        self.current_phase()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -826,5 +879,24 @@ mod tests {
         let crest = include_str!("../tests/fixtures/crest_isle_world.json");
         let err = RaceSession::from_json(crest).unwrap_err();
         assert!(err.contains("race_drive"));
+    }
+
+    #[test]
+    fn card_session_deals_and_round_trips() {
+        let mut session = CardSession::from_json(r#"{"version":1,"genre":"card"}"#).expect("open");
+        assert_eq!(session.genre_id(), "card");
+        assert_eq!(session.phase(), GamePhase::Title);
+        session.confirm();
+        assert_eq!(session.phase(), GamePhase::Playing);
+        assert_eq!(session.you_hand(), 4);
+        let dump = session.dump().expect("dump");
+        assert!(dump.contains("\"card\""));
+        let restored = CardSession::from_json(&dump).expect("restore");
+        assert_eq!(restored.you_life(), session.you_life());
+        assert_eq!(restored.foe_hand(), session.foe_hand());
+        assert_eq!(restored.phase(), GamePhase::Playing);
+        let err = CardSession::from_json(r#"{"version":1,"genre":"puzzle"}"#).unwrap_err();
+        assert!(err.contains("card"));
+        assert!(session.take_events("missing").is_empty());
     }
 }
