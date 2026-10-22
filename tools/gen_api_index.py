@@ -172,6 +172,7 @@ FRONT_NAMES = {
     "RaceSession",
     "Scene",
     "SlotStore",
+    "TdSession",
     "WorldDoc",
     "WorldPlay",
     "add_table",
