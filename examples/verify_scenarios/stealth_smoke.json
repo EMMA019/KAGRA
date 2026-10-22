@@ -1,0 +1,31 @@
+{
+  "name": "stealth_smoke",
+  "notes": "stealth_hide GenreSession yard. KayKit rogue, two patrolling knights, vision cones, key, exit. Patrols, noise, and the alert meter stay in Rust. HUD is Python (ASCII). No Rapier, no VRM.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/stealth_world.json",
+    "genre": "stealth_hide",
+    "player.on_ground": true,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "prop", "name": "guard", "count": 2},
+      {"type": "prop", "name": "cone", "count": 2},
+      {"type": "prop", "name": "patrol", "count": 4},
+      {"type": "prop", "name": "key", "count": 1},
+      {"type": "prop", "name": "exit", "count": 1},
+      {"type": "prop", "name": "hide", "count": 1},
+      {"type": "prop", "name": "wall", "min_count": 4},
+      {"type": "prop", "name": "floor", "count": 1},
+      {"type": "light", "count": 4}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/stealth_world.json",
+    "out": "scratch/stealth_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200,
+    "pixels": [
+      {"x": 40, "y": 30, "w": 240, "h": 110, "not_solid": true}
+    ]
+  }
+}

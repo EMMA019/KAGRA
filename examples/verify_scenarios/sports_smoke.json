@@ -1,0 +1,31 @@
+{
+  "name": "sports_smoke",
+  "notes": "sports_goal 1v1 GenreSession. KayKit knight vs rogue, kinematic ball, opponent chase and match clock in Rust. HUD is Python (ASCII). No Rapier, no VRM.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/sports_world.json",
+    "genre": "sports_goal",
+    "player.on_ground": true,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "walker", "name": "opponent", "count": 1},
+      {"type": "prop", "name": "ball", "count": 1},
+      {"type": "prop", "name": "goal", "count": 1},
+      {"type": "prop", "name": "net", "count": 1},
+      {"type": "prop", "name": "pitch", "count": 2},
+      {"type": "prop", "name": "tree", "count": 1},
+      {"type": "prop", "name": "rock", "count": 1},
+      {"type": "prop", "name": "well", "count": 1},
+      {"type": "light", "count": 4}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/sports_world.json",
+    "out": "scratch/sports_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200,
+    "pixels": [
+      {"x": 40, "y": 30, "w": 240, "h": 110, "not_solid": true}
+    ]
+  }
+}

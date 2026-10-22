@@ -12,7 +12,7 @@
 
 use crate::collectathon::WalkInput;
 use crate::game::GamePhase;
-use crate::scene::{DrawList, Quad};
+use crate::scene::{DrawList, Quad, TextAlign, TextQuad};
 use crate::world_doc::{WorldDoc, WorldProp, WorldWalker};
 
 pub const GAME_ID: &str = "shop_buy";
@@ -20,6 +20,9 @@ pub const BODY_H: f32 = 0.95;
 pub const PLAYER_R: f32 = 0.46;
 pub const START: u32 = 8;
 pub const PRICE: u32 = 5;
+/// Coins a cooked dish pays at a stall. `shop_buy` spends [`PRICE`];
+/// a cook stall credits this instead.
+pub const SALE_PRICE: u32 = 4;
 pub const SHOP_REACH: f32 = 2.2;
 pub const NAME_PLAYER: &str = "player";
 pub const NAME_BOUGHT: &str = "bought";
@@ -54,6 +57,15 @@ impl ShopGame {
 
 pub fn is_shop(doc: &WorldDoc) -> bool {
     doc.genre_is(GAME_ID)
+}
+
+/// Spend `price` when `coins` covers it. Shared by the stall and the RPG counter.
+pub fn try_spend(coins: u32, price: u32) -> Option<u32> {
+    if price > 0 && coins >= price {
+        Some(coins - price)
+    } else {
+        None
+    }
 }
 
 fn player_ref(doc: &WorldDoc) -> Option<&WorldWalker> {
@@ -122,6 +134,11 @@ pub fn place_stall_camera(doc: &mut WorldDoc) {
     }
 }
 
+/// Add the stall's sale price. Saturates instead of wrapping.
+pub fn credit_sale(coins: u32) -> u32 {
+    coins.saturating_add(SALE_PRICE)
+}
+
 /// J/click at the stall spends coins and lands bought. Caller may have
 /// walked; stall cam wins so the counter stays readable.
 pub fn tick(doc: &mut WorldDoc, game: &mut ShopGame, input: WalkInput, _dt: f32) {
@@ -130,13 +147,24 @@ pub fn tick(doc: &mut WorldDoc, game: &mut ShopGame, input: WalkInput, _dt: f32)
         place_stall_camera(doc);
         return;
     }
-    if input.attack && player_at_stall(doc) && !game.bought && game.coins >= PRICE {
-        game.bought = true;
-        game.done = true;
-        game.coins -= PRICE;
+    if input.attack {
+        try_buy(doc, game);
     }
     write_beat(doc, game);
     place_stall_camera(doc);
+}
+
+fn try_buy(doc: &WorldDoc, game: &mut ShopGame) -> bool {
+    if game.done || game.bought || !player_at_stall(doc) {
+        return false;
+    }
+    let Some(left) = try_spend(game.coins, PRICE) else {
+        return false;
+    };
+    game.bought = true;
+    game.done = true;
+    game.coins = left;
+    true
 }
 
 fn beat_name(game: &ShopGame) -> &'static str {
@@ -209,7 +237,7 @@ fn named_prop_any<'a>(doc: &'a WorldDoc, name: &str) -> Option<&'a WorldProp> {
     doc.props.iter().find(|p| p.name == name)
 }
 
-fn player_at_stall(doc: &WorldDoc) -> bool {
+pub(crate) fn player_at_stall(doc: &WorldDoc) -> bool {
     let Some(player) = player_ref(doc) else {
         return false;
     };
@@ -224,11 +252,18 @@ fn player_at_stall(doc: &WorldDoc) -> bool {
     (dx * dx + dz * dz).sqrt() <= SHOP_REACH
 }
 
+fn shop_text(text: &str, x: f32, y: f32, size: f32, color: [u8; 4], align: TextAlign) -> TextQuad {
+    TextQuad::new(text, x, y, size, color).aligned(align)
+}
+
 pub fn build_hud(game: &ShopGame, phase: GamePhase, width: u32, height: u32) -> DrawList {
     let w = width.max(1) as f32;
     let h = height.max(1) as f32;
     let scale = (w.min(h) / 720.0).clamp(0.5, 2.0);
     let mut quads = Vec::new();
+    let mut texts = Vec::new();
+    let ink = [244, 236, 220, 255];
+    let dark = [28, 22, 16, 255];
     match phase {
         GamePhase::Title => {
             quads.push(Quad::new(0.0, 0.0, w, h, [12, 14, 18, 160]));
@@ -245,6 +280,22 @@ pub fn build_hud(game: &ShopGame, phase: GamePhase, width: u32, height: u32) -> 
                 w * 0.36,
                 52.0 * scale,
                 [240, 196, 72, 255],
+            ));
+            texts.push(shop_text(
+                "shop - tap to start",
+                w * 0.5,
+                h * 0.32,
+                22.0 * scale,
+                ink,
+                TextAlign::Center,
+            ));
+            texts.push(shop_text(
+                "BUY",
+                w * 0.5,
+                h * 0.60,
+                16.0 * scale,
+                dark,
+                TextAlign::Center,
             ));
         }
         GamePhase::Playing => {
@@ -274,6 +325,24 @@ pub fn build_hud(game: &ShopGame, phase: GamePhase, width: u32, height: u32) -> 
                     [36, 48, 40, 160]
                 },
             ));
+            texts.push(shop_text(
+                &format!("shop - gold {}  price {}", game.coins, PRICE),
+                16.0 * scale,
+                40.0 * scale,
+                16.0 * scale,
+                ink,
+                TextAlign::Left,
+            ));
+            let (bx, by, bw, bh) = buy_button(width, height);
+            quads.push(Quad::new(bx, by, bw, bh, [240, 196, 72, 255]));
+            texts.push(shop_text(
+                "BUY",
+                bx + bw * 0.5,
+                by + 12.0 * scale,
+                16.0 * scale,
+                dark,
+                TextAlign::Center,
+            ));
         }
         GamePhase::Complete => {
             quads.push(Quad::new(0.0, h * 0.22, w, h * 0.36, [12, 28, 18, 210]));
@@ -284,13 +353,104 @@ pub fn build_hud(game: &ShopGame, phase: GamePhase, width: u32, height: u32) -> 
                 48.0 * scale,
                 BOUGHT_PIP,
             ));
+            texts.push(shop_text(
+                "shop - bought",
+                w * 0.5,
+                h * 0.32,
+                22.0 * scale,
+                ink,
+                TextAlign::Center,
+            ));
+            texts.push(shop_text(
+                "tap to retry",
+                w * 0.5,
+                h * 0.64,
+                16.0 * scale,
+                dark,
+                TextAlign::Center,
+            ));
         }
     }
     DrawList {
         clear: [28, 24, 22, 255],
         quads,
+        texts,
         ..Default::default()
     }
+}
+
+/// Bottom BUY button. Same rect as the HUD tap target.
+pub fn buy_button(width: u32, height: u32) -> (f32, f32, f32, f32) {
+    let w = width.max(1) as f32;
+    let h = height.max(1) as f32;
+    let scale = (w.min(h) / 720.0).clamp(0.5, 2.0);
+    let bw = 180.0 * scale;
+    let bh = 48.0 * scale;
+    let x = (w - bw) * 0.5;
+    let y = h - bh - 18.0 * scale;
+    (x, y, bw, bh)
+}
+
+/// Playing-phase tap at the stall. Buys with [`try_spend`] when in reach.
+pub fn pointer_play(
+    doc: &mut WorldDoc,
+    game: &mut ShopGame,
+    x: f32,
+    y: f32,
+    width: u32,
+    height: u32,
+) {
+    if game.done {
+        write_beat(doc, game);
+        place_stall_camera(doc);
+        return;
+    }
+    let (bx, by, bw, bh) = buy_button(width, height);
+    let on_button = x >= bx && x <= bx + bw && y >= by && y <= by + bh;
+    if on_button || player_at_stall(doc) {
+        try_buy(doc, game);
+    }
+    write_beat(doc, game);
+    place_stall_camera(doc);
+}
+
+/// HUD JSON (`quads` + ASCII `texts`) for `draw_world`.
+pub fn hud_json(game: &ShopGame, phase: GamePhase, width: u32, height: u32) -> String {
+    let hud = build_hud(game, phase, width, height);
+    let quads: Vec<_> = hud
+        .quads
+        .iter()
+        .map(|q| {
+            serde_json::json!({
+                "x": q.x,
+                "y": q.y,
+                "w": q.w,
+                "h": q.h,
+                "color": q.color,
+            })
+        })
+        .collect();
+    let texts: Vec<_> = hud
+        .texts
+        .iter()
+        .map(|t| {
+            let align = match t.align {
+                TextAlign::Left => "left",
+                TextAlign::Center => "center",
+                TextAlign::Right => "right",
+            };
+            serde_json::json!({
+                "text": t.text,
+                "x": t.x,
+                "y": t.y,
+                "size": t.size,
+                "color": t.color,
+                "align": align,
+            })
+        })
+        .collect();
+    serde_json::to_string(&serde_json::json!({ "quads": quads, "texts": texts }))
+        .unwrap_or_else(|_| "{}".to_string())
 }
 
 #[cfg(test)]
@@ -584,5 +744,12 @@ mod tests {
         let dock = WorldPlay::from_json(DOCK).unwrap();
         assert!(dock.is_fish());
         assert!(!dock.is_shop());
+    }
+
+    #[test]
+    fn credit_sale_adds_the_stall_price() {
+        assert_eq!(credit_sale(0), SALE_PRICE);
+        assert_eq!(credit_sale(4), 8);
+        assert_eq!(credit_sale(u32::MAX), u32::MAX);
     }
 }

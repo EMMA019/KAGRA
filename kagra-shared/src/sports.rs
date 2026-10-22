@@ -7,12 +7,17 @@
 //! and flag + coins. Capsules/spheres/boxes, not VRM. Outdoor lights stay
 //! 4 slots. Pitch and goal stay readable (contact blob plus metal GGX
 //! inherited). Chase camera follows play. Does not rewrite other genre
-//! loops. No FIFA, net, inventory, vehicles, or sokoban editor.
+//! loops. No FIFA, inventory, vehicles, or sokoban editor.
+//!
+//! A dump that also has an `opponent` walker is a 1v1 match: the same ball
+//! roll, plus a slower chaser, a second volume named `net`, a countdown on
+//! the `match` timer, and first-to-N (`win` prop scale.x, default 2).
+//! Confirm on the result reloads the seed (rematch).
 
 use crate::collectathon::WalkInput;
 use crate::game::GamePhase;
 use crate::scene::{DrawList, Quad};
-use crate::world_doc::{WorldDoc, WorldProp, WorldWalker};
+use crate::world_doc::{WorldDoc, WorldEvent, WorldProp, WorldWalker};
 
 pub const GAME_ID: &str = "sports_goal";
 pub const BODY_H: f32 = 0.95;
@@ -25,6 +30,15 @@ pub const CAM_LOOK: f32 = 0.55;
 pub const NAME_PLAYER: &str = "player";
 pub const NAME_KICKING: &str = "kicking";
 pub const NAME_SCORED: &str = "scored";
+pub const NAME_OPPONENT: &str = "opponent";
+pub const NAME_NET: &str = "net";
+pub const OPP_SPEED: f32 = 3.15;
+pub const OPP_KICK: f32 = 9.5;
+pub const SHOT_REACH: f32 = 2.35;
+pub const SHOT_SPEED: f32 = 15.0;
+pub const KICKOFF_S: f32 = 0.45;
+pub const MATCH_DEFAULT_S: f32 = 45.0;
+pub const WIN_DEFAULT: u32 = 2;
 
 const FLAG_SCORED_COLOR: [u32; 3] = [70, 180, 110];
 const KICK_PIP: [u8; 4] = [240, 196, 72, 255];
@@ -33,19 +47,79 @@ const SCORED_PIP: [u8; 4] = [70, 180, 110, 255];
 /// Live sports around a dump. Kicking/scored stay here; `name` + flag
 /// enable in the dump are the query source of truth. Ball velocity is
 /// kinematic (impulse + damp), not Rapier.
+///
+/// `match_mode` is set when the dump has an opponent walker. Scores and the
+/// clock live here; the `match` timer remaining mirrors `match_left`.
 #[derive(Clone, Debug, Default)]
 pub struct SportsGame {
     pub kicking: bool,
     pub scored: bool,
     pub done: bool,
+    pub won: bool,
     pub ball_vx: f32,
     pub ball_vz: f32,
+    pub match_mode: bool,
+    pub player_score: u32,
+    pub opp_score: u32,
+    pub score_to_win: u32,
+    pub match_left: f32,
+    pub match_len: f32,
+    kickoff: f32,
+    player_spawn: [f32; 3],
+    player_yaw: f32,
+    opp_spawn: [f32; 3],
+    opp_yaw: f32,
+    ball_spawn: [f32; 3],
 }
 
 impl SportsGame {
-    pub fn from_doc(_doc: &WorldDoc) -> Self {
-        Self::default()
+    pub fn from_doc(doc: &WorldDoc) -> Self {
+        if !is_match(doc) {
+            return Self::default();
+        }
+        let (player_spawn, player_yaw) = player_ref(doc)
+            .map(|w| (w.position, w.yaw))
+            .unwrap_or(([0.0, BODY_H, 3.5], std::f32::consts::PI));
+        let (opp_spawn, opp_yaw) = doc
+            .walkers
+            .iter()
+            .find(|w| w.name == NAME_OPPONENT)
+            .map(|w| (w.position, w.yaw))
+            .unwrap_or(([5.0, BODY_H, -3.0], 0.0));
+        let ball_spawn = named_prop(doc, "ball")
+            .map(|p| p.position)
+            .unwrap_or([0.0, 0.32, 1.6]);
+        let match_len = doc
+            .timers
+            .iter()
+            .find(|t| t.name == "match")
+            .map(|t| t.seconds.max(t.remaining))
+            .filter(|s| *s > 0.5)
+            .unwrap_or(MATCH_DEFAULT_S);
+        let score_to_win = doc
+            .props
+            .iter()
+            .find(|p| p.name == "win")
+            .map(|p| (p.scale[0].round() as u32).max(1))
+            .unwrap_or(WIN_DEFAULT)
+            .max(1);
+        Self {
+            match_mode: true,
+            score_to_win,
+            match_left: match_len,
+            match_len,
+            player_spawn,
+            player_yaw,
+            opp_spawn,
+            opp_yaw,
+            ball_spawn,
+            ..Self::default()
+        }
     }
+}
+
+fn is_match(doc: &WorldDoc) -> bool {
+    doc.walkers.iter().any(|w| w.name == NAME_OPPONENT)
 }
 
 pub fn is_sports(doc: &WorldDoc) -> bool {
@@ -84,6 +158,7 @@ pub fn seed(doc: &mut WorldDoc) {
         return;
     }
     sit_named(doc, NAME_PLAYER);
+    sit_opponent(doc);
     sit_props(doc);
     for p in &mut doc.props {
         if p.name == "flag" {
@@ -127,7 +202,18 @@ pub fn place_chase_camera(doc: &mut WorldDoc) {
 }
 
 /// Kinematic kick + roll + goal tick. Caller already walked; chase cam wins.
-pub fn tick(doc: &mut WorldDoc, game: &mut SportsGame, _input: WalkInput, dt: f32) {
+///
+/// One goal (no opponent walker) ends the slice. A match keeps going until
+/// someone reaches `score_to_win` or the clock hits zero.
+pub fn tick(doc: &mut WorldDoc, game: &mut SportsGame, input: WalkInput, dt: f32) {
+    if game.match_mode {
+        tick_match(doc, game, input, dt);
+        return;
+    }
+    tick_goal(doc, game, dt);
+}
+
+fn tick_goal(doc: &mut WorldDoc, game: &mut SportsGame, dt: f32) {
     if game.done {
         write_beat(doc, game);
         place_chase_camera(doc);
@@ -137,6 +223,7 @@ pub fn tick(doc: &mut WorldDoc, game: &mut SportsGame, _input: WalkInput, dt: f3
     roll_ball(doc, game, dt);
     if ball_in_goal(doc) {
         game.scored = true;
+        game.won = true;
         game.done = true;
         game.kicking = false;
         game.ball_vx = 0.0;
@@ -144,6 +231,82 @@ pub fn tick(doc: &mut WorldDoc, game: &mut SportsGame, _input: WalkInput, dt: f3
     }
     write_beat(doc, game);
     place_chase_camera(doc);
+}
+
+fn tick_match(doc: &mut WorldDoc, game: &mut SportsGame, input: WalkInput, dt: f32) {
+    if game.done {
+        write_beat(doc, game);
+        place_chase_camera(doc);
+        sync_match_clock(doc, game);
+        return;
+    }
+    game.match_left = (game.match_left - dt).max(0.0);
+    if game.match_left <= 1e-3 {
+        finish_clock(game);
+        write_beat(doc, game);
+        place_chase_camera(doc);
+        sync_match_clock(doc, game);
+        return;
+    }
+    if game.kickoff > 0.0 {
+        game.kickoff = (game.kickoff - dt).max(0.0);
+        game.kicking = false;
+        game.ball_vx = 0.0;
+        game.ball_vz = 0.0;
+        snap_roster(doc, game);
+        write_beat(doc, game);
+        place_chase_camera(doc);
+        sync_match_clock(doc, game);
+        return;
+    }
+    step_opponent(doc, dt);
+    game.kicking = kick_actors(doc, game, input);
+    roll_ball(doc, game, dt);
+    if ball_in_goal(doc) {
+        award(doc, game, true);
+    } else if ball_in_net(doc) {
+        award(doc, game, false);
+    }
+    write_beat(doc, game);
+    place_chase_camera(doc);
+    sync_match_clock(doc, game);
+}
+
+fn finish_clock(game: &mut SportsGame) {
+    game.done = true;
+    game.won = game.player_score > game.opp_score;
+    game.scored = game.won;
+    game.kicking = false;
+    game.ball_vx = 0.0;
+    game.ball_vz = 0.0;
+    game.kickoff = 0.0;
+}
+
+fn award(doc: &mut WorldDoc, game: &mut SportsGame, player_goal: bool) {
+    if player_goal {
+        game.player_score = game.player_score.saturating_add(1);
+        push_event(doc, "goal");
+    } else {
+        game.opp_score = game.opp_score.saturating_add(1);
+        push_event(doc, "concede");
+    }
+    game.kicking = false;
+    game.ball_vx = 0.0;
+    game.ball_vz = 0.0;
+    if game.player_score >= game.score_to_win {
+        game.done = true;
+        game.won = true;
+        game.scored = true;
+        game.kickoff = 0.0;
+    } else if game.opp_score >= game.score_to_win {
+        game.done = true;
+        game.won = false;
+        game.scored = false;
+        game.kickoff = 0.0;
+    } else {
+        game.kickoff = KICKOFF_S;
+        snap_roster(doc, game);
+    }
 }
 
 fn beat_name(game: &SportsGame) -> &'static str {
@@ -157,6 +320,21 @@ fn beat_name(game: &SportsGame) -> &'static str {
 }
 
 fn write_beat(doc: &mut WorldDoc, game: &SportsGame) {
+    if game.match_mode {
+        let name = if game.done && game.won {
+            NAME_SCORED
+        } else if game.kicking {
+            NAME_KICKING
+        } else {
+            NAME_PLAYER
+        };
+        sit_named(doc, name);
+        doc.coins = game.player_score;
+        if game.done && game.won {
+            set_flag_prop(doc);
+        }
+        return;
+    }
     sit_named(doc, beat_name(game));
     doc.coins = if game.done || game.scored {
         10
@@ -180,27 +358,32 @@ fn set_flag_prop(doc: &mut WorldDoc) {
 }
 
 fn sit_named(doc: &mut WorldDoc, name: &str) {
-    let Some(p) = player_ref(doc) else {
+    let Some(p) = player_ref(doc).cloned() else {
         return;
     };
-    let id = p.id.clone();
     let x = p.position[0];
     let z = p.position[2];
-    let yaw = p.yaw;
-    let y = doc.height_at(x, z) + BODY_H;
-    write_player(
-        doc,
-        WorldWalker {
-            id,
-            kind: "walker".into(),
-            name: name.into(),
-            position: [x, y, z],
-            yaw,
-            face: yaw,
-            on_ground: true,
-            ..Default::default()
-        },
-    );
+    let mut w = p;
+    w.name = name.into();
+    w.position[1] = foot_y(doc, &w, x, z);
+    w.face = w.yaw;
+    w.on_ground = true;
+    write_player(doc, w);
+}
+
+fn foot_y(doc: &WorldDoc, w: &WorldWalker, x: f32, z: f32) -> f32 {
+    let ground = doc.height_at(x, z);
+    let spec = w
+        .gltf
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("");
+    if spec.is_empty() {
+        ground + BODY_H
+    } else {
+        ground - crate::world_doc::walker_rest_min_y(spec)
+    }
 }
 
 fn sit_props(doc: &mut WorldDoc) {
@@ -208,7 +391,7 @@ fn sit_props(doc: &mut WorldDoc) {
     for (i, p) in doc.props.iter().enumerate() {
         let extra = match p.name.as_str() {
             "ball" => p.scale[1].abs() * 0.5,
-            "goal" | "post" | "bar" | "flag" | "wall" => p.scale[1].abs() * 0.5,
+            "goal" | "net" | "post" | "bar" | "flag" | "wall" => p.scale[1].abs() * 0.5,
             _ => continue,
         };
         let y = doc.height_at(p.position[0], p.position[2]) + extra;
@@ -325,10 +508,18 @@ fn bounce_walls(doc: &WorldDoc, x: &mut f32, z: &mut f32, vx: &mut f32, vz: &mut
 }
 
 fn ball_in_goal(doc: &WorldDoc) -> bool {
+    ball_in_named(doc, "goal")
+}
+
+fn ball_in_net(doc: &WorldDoc) -> bool {
+    ball_in_named(doc, NAME_NET)
+}
+
+fn ball_in_named(doc: &WorldDoc, name: &str) -> bool {
     let Some(ball) = named_prop(doc, "ball") else {
         return false;
     };
-    let Some(goal) = named_prop(doc, "goal") else {
+    let Some(goal) = named_prop(doc, name) else {
         return false;
     };
     let hx = goal.scale[0].abs() * 0.5;
@@ -337,6 +528,212 @@ fn ball_in_goal(doc: &WorldDoc) -> bool {
     (ball.position[0] - goal.position[0]).abs() <= hx * 0.95
         && (ball.position[2] - goal.position[2]).abs() <= hz * 0.95
         && (ball.position[1] - goal.position[1]).abs() <= hy + ball_radius(ball)
+}
+
+fn opponent_index(doc: &WorldDoc) -> Option<usize> {
+    doc.walkers.iter().position(|w| w.name == NAME_OPPONENT)
+}
+
+fn sit_opponent(doc: &mut WorldDoc) {
+    let Some(i) = opponent_index(doc) else {
+        return;
+    };
+    let w = doc.walkers[i].clone();
+    let y = foot_y(doc, &w, w.position[0], w.position[2]);
+    doc.walkers[i].position[1] = y;
+    doc.walkers[i].on_ground = true;
+}
+
+fn snap_roster(doc: &mut WorldDoc, game: &SportsGame) {
+    if let Some(p) = player_ref(doc).cloned() {
+        let mut w = p;
+        w.position = game.player_spawn;
+        w.position[1] = foot_y(doc, &w, game.player_spawn[0], game.player_spawn[2]);
+        w.yaw = game.player_yaw;
+        w.face = game.player_yaw;
+        w.on_ground = true;
+        w.anim = "idle".into();
+        write_player(doc, w);
+    }
+    if let Some(i) = opponent_index(doc) {
+        let spec_y = {
+            let w = &doc.walkers[i];
+            foot_y(doc, w, game.opp_spawn[0], game.opp_spawn[2])
+        };
+        let w = &mut doc.walkers[i];
+        w.position = [game.opp_spawn[0], spec_y, game.opp_spawn[2]];
+        w.yaw = game.opp_yaw;
+        w.face = game.opp_yaw;
+        w.on_ground = true;
+        w.anim = "idle".into();
+        w.clip = 0.0;
+    }
+    put_ball_at(doc, game.ball_spawn[0], game.ball_spawn[2]);
+}
+
+fn put_ball_at(doc: &mut WorldDoc, x: f32, z: f32) {
+    let Some(idx) = named_prop_index(doc, "ball") else {
+        return;
+    };
+    let r = ball_radius(&doc.props[idx]);
+    let y = doc.height_at(x, z) + r;
+    if let Some(p) = doc.props.get_mut(idx) {
+        p.position = [x, y, z];
+    }
+}
+
+fn step_opponent(doc: &mut WorldDoc, dt: f32) {
+    let Some((bx, bz)) = named_prop(doc, "ball").map(|p| (p.position[0], p.position[2])) else {
+        return;
+    };
+    let Some(i) = opponent_index(doc) else {
+        return;
+    };
+    let ox = doc.walkers[i].position[0];
+    let oz = doc.walkers[i].position[2];
+    let dx = bx - ox;
+    let dz = bz - oz;
+    let dist = (dx * dx + dz * dz).sqrt();
+    let moving = dist > 0.9;
+    let (nx, nz) = if dist > 1e-4 {
+        (dx / dist, dz / dist)
+    } else {
+        (0.0, 1.0)
+    };
+    let mut x = ox;
+    let mut z = oz;
+    let mut yaw = doc.walkers[i].yaw;
+    if moving {
+        x += nx * OPP_SPEED * dt;
+        z += nz * OPP_SPEED * dt;
+        yaw = nx.atan2(nz);
+    }
+    if let Some(p) = player_ref(doc) {
+        let sx = x - p.position[0];
+        let sz = z - p.position[2];
+        let sd = (sx * sx + sz * sz).sqrt();
+        if sd < 0.95 && sd > 1e-4 {
+            x = p.position[0] + sx / sd * 0.95;
+            z = p.position[2] + sz / sd * 0.95;
+        }
+    }
+    let half = doc.half.max(4.0);
+    let pad = 1.6;
+    x = x.clamp(-half + pad, half - pad);
+    z = z.clamp(-half + pad, half - pad);
+    let y = foot_y(doc, &doc.walkers[i], x, z);
+    let w = &mut doc.walkers[i];
+    w.position = [x, y, z];
+    w.yaw = yaw;
+    w.face = yaw;
+    w.on_ground = true;
+    if moving {
+        w.clip += dt;
+        w.anim = "walk".into();
+        w.anim_blend = (w.anim_blend + dt * 8.0).min(1.0);
+    } else {
+        w.anim = "idle".into();
+        w.anim_blend = (w.anim_blend - dt * 8.0).max(0.0);
+    }
+}
+
+fn kick_actors(doc: &WorldDoc, game: &mut SportsGame, input: WalkInput) -> bool {
+    if input.attack && shot_at_goal(doc, game) {
+        return true;
+    }
+    let opp = opp_kick(doc, game);
+    let player = kick_ball(doc, game);
+    player || opp
+}
+
+fn shot_at_goal(doc: &WorldDoc, game: &mut SportsGame) -> bool {
+    let Some(player) = player_ref(doc) else {
+        return false;
+    };
+    let Some(ball) = named_prop(doc, "ball") else {
+        return false;
+    };
+    let Some(goal) = named_prop(doc, "goal") else {
+        return false;
+    };
+    let dx = ball.position[0] - player.position[0];
+    let dz = ball.position[2] - player.position[2];
+    if dx * dx + dz * dz > SHOT_REACH * SHOT_REACH {
+        return false;
+    }
+    aim_ball(
+        game,
+        ball.position[0],
+        ball.position[2],
+        goal.position[0],
+        goal.position[2],
+        SHOT_SPEED,
+    );
+    true
+}
+
+fn opp_kick(doc: &WorldDoc, game: &mut SportsGame) -> bool {
+    let Some(i) = opponent_index(doc) else {
+        return false;
+    };
+    let opp = &doc.walkers[i];
+    let Some(ball) = named_prop(doc, "ball") else {
+        return false;
+    };
+    let Some(net) = named_prop(doc, NAME_NET) else {
+        return false;
+    };
+    let dx = ball.position[0] - opp.position[0];
+    let dz = ball.position[2] - opp.position[2];
+    let reach = PLAYER_R + ball_radius(ball);
+    if dx * dx + dz * dz >= reach * reach {
+        return false;
+    }
+    aim_ball(
+        game,
+        ball.position[0],
+        ball.position[2],
+        net.position[0],
+        net.position[2],
+        OPP_KICK,
+    );
+    true
+}
+
+fn aim_ball(game: &mut SportsGame, bx: f32, bz: f32, tx: f32, tz: f32, speed: f32) {
+    let dx = tx - bx;
+    let dz = tz - bz;
+    let dist = (dx * dx + dz * dz).sqrt();
+    let (nx, nz) = if dist < 1e-4 {
+        (0.0, 1.0)
+    } else {
+        (dx / dist, dz / dist)
+    };
+    game.ball_vx = nx * speed;
+    game.ball_vz = nz * speed;
+}
+
+fn sync_match_clock(doc: &mut WorldDoc, game: &SportsGame) {
+    let Some(timer) = doc.timers.iter_mut().find(|t| t.name == "match") else {
+        return;
+    };
+    timer.seconds = game.match_len;
+    timer.remaining = game.match_left;
+    timer.active = game.match_mode && !game.done;
+}
+
+fn push_event(doc: &mut WorldDoc, name: &str) {
+    if let Some(ev) = doc.events.iter_mut().find(|e| e.name == name) {
+        ev.count = ev.count.saturating_add(1);
+        return;
+    }
+    doc.events.push(WorldEvent {
+        id: format!("event:{}", doc.events.len()),
+        kind: "event".into(),
+        name: name.into(),
+        count: 1,
+        data: None,
+    });
 }
 
 pub fn build_hud(game: &SportsGame, phase: GamePhase, width: u32, height: u32) -> DrawList {
@@ -644,5 +1041,119 @@ mod tests {
         let hop = WorldPlay::from_json(HOP).unwrap();
         assert!(hop.is_platformer());
         assert!(!hop.is_sports());
+    }
+
+    const MATCH: &str = include_str!("../tests/fixtures/sports_world.json");
+
+    fn opp_xz(play: &WorldPlay) -> (f32, f32) {
+        let w = play
+            .doc
+            .walkers
+            .iter()
+            .find(|w| w.name == NAME_OPPONENT)
+            .unwrap();
+        (w.position[0], w.position[2])
+    }
+
+    #[test]
+    fn single_goal_dump_is_not_a_match() {
+        let goal = WorldDoc::from_json(PITCH).unwrap();
+        assert!(!is_match(&goal));
+        let doc = WorldDoc::from_json(MATCH).unwrap();
+        assert!(is_sports(&doc));
+        assert!(is_match(&doc));
+        assert!(doc.props.iter().any(|p| p.name == "net"));
+        assert!(doc.timers.iter().any(|t| t.name == "match"));
+        assert_eq!(doc.player.as_ref().unwrap().gltf.as_deref(), Some("knight"));
+        assert!(doc
+            .walkers
+            .iter()
+            .any(|w| w.name == NAME_OPPONENT && w.gltf.as_deref() == Some("rogue")));
+    }
+
+    #[test]
+    fn opponent_closes_on_the_ball() {
+        let mut play = WorldPlay::from_json(MATCH).unwrap();
+        play.confirm();
+        assert!(play.sports.match_mode);
+        assert_eq!(play.sports.score_to_win, 2);
+        assert!((play.sports.match_len - 45.0).abs() < 0.05);
+        let (ox, oz) = opp_xz(&play);
+        let (bx, bz) = ball_xz(&play);
+        let d0 = (ox - bx).hypot(oz - bz);
+        for _ in 0..50 {
+            play.tick(1.0 / 60.0);
+        }
+        let (bx2, bz2) = ball_xz(&play);
+        assert!(
+            (bx2 - bx).abs() + (bz2 - bz).abs() < 0.05,
+            "ball should sit until someone reaches it"
+        );
+        let (ox2, oz2) = opp_xz(&play);
+        let d1 = (ox2 - bx).hypot(oz2 - bz);
+        assert!(d1 < d0 - 0.5, "opponent should chase, {d0:.2} -> {d1:.2}");
+        assert!(play.sports.match_left < play.sports.match_len - 0.4);
+        assert!(!play.sports.done);
+        assert_eq!(
+            play.doc.player.as_ref().unwrap().gltf.as_deref(),
+            Some("knight")
+        );
+    }
+
+    fn drive_match(play: &mut WorldPlay, attack: bool) {
+        for _ in 0..900 {
+            if play.sports.done {
+                break;
+            }
+            play.input.lz = 1.0;
+            play.input.attack = attack;
+            play.tick(1.0 / 60.0);
+        }
+    }
+
+    #[test]
+    fn walk_scores_without_the_shot_button() {
+        let mut play = WorldPlay::from_json(MATCH).unwrap();
+        play.confirm();
+        drive_match(&mut play, false);
+        assert!(
+            play.sports.player_score >= 1,
+            "overlap kick should score, ball={:?} opp={} player={}",
+            ball_xz(&play),
+            play.sports.opp_score,
+            play.sports.player_score
+        );
+    }
+
+    #[test]
+    fn shot_reaches_two_then_rematch() {
+        let mut play = WorldPlay::from_json(MATCH).unwrap();
+        play.confirm();
+        drive_match(&mut play, true);
+        assert!(
+            play.sports.won && play.sports.player_score >= 2 && play.sports.opp_score == 0,
+            "shot should win 2-0, won={} score={}-{} left={:.2} ball={:?}",
+            play.sports.won,
+            play.sports.player_score,
+            play.sports.opp_score,
+            play.sports.match_left,
+            ball_xz(&play)
+        );
+        assert_eq!(play.game.phase, GamePhase::Complete);
+        assert_eq!(play.doc.player.as_ref().unwrap().name, NAME_SCORED);
+        let flag = play.doc.props.iter().find(|p| p.name == "flag").unwrap();
+        assert!(flag.enabled);
+        let clock = play.doc.timers.iter().find(|t| t.name == "match").unwrap();
+        assert!(clock.remaining < clock.seconds);
+        assert!(clock.remaining > 0.0, "win should land before the horn");
+        play.confirm();
+        assert_eq!(play.game.phase, GamePhase::Playing);
+        assert_eq!(play.sports.player_score, 0);
+        assert_eq!(play.sports.opp_score, 0);
+        assert!(!play.sports.done);
+        assert!(!play.sports.won);
+        assert!(play.sports.match_left > 40.0);
+        let flag = play.doc.props.iter().find(|p| p.name == "flag").unwrap();
+        assert!(!flag.enabled, "rematch lowers the flag");
     }
 }

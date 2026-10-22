@@ -1,0 +1,29 @@
+{
+  "name": "td_smoke",
+  "notes": "td_lane GenreSession. Five waves, three tower pads, raccoon/wolf creeps, gazebo/mill/bell-tower placed at runtime. Gold, lives, win/lose, retry stay in Rust. HUD is ASCII. Bundled glb props. No Rapier, no VRM.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/td_world.json",
+    "player.on_ground": true,
+    "genre": "td_lane",
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "prop", "name": "waypoint", "min_count": 3},
+      {"type": "prop", "name": "creep", "min_count": 5},
+      {"type": "prop", "name": "slot", "min_count": 3},
+      {"type": "prop", "name": "path", "min_count": 1},
+      {"type": "prop", "name": "tree", "min_count": 1},
+      {"type": "prop", "name": "floor", "count": 1},
+      {"type": "light", "count": 4}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/td_world.json",
+    "out": "scratch/td_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200,
+    "pixels": [
+      {"x": 40, "y": 30, "w": 240, "h": 110, "not_solid": true}
+    ]
+  }
+}
