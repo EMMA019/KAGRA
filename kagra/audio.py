@@ -24,7 +24,22 @@ from io import BytesIO
 
 from kagra.spatial import spatial_mix
 
-__all__ = ["tone", "sound", "se", "play_wav", "preset_names", "set_listener", "play_se"]
+__all__ = [
+    "tone",
+    "sound",
+    "se",
+    "play_wav",
+    "preset_names",
+    "set_listener",
+    "play_se",
+    "play_bgm",
+    "stop_bgm",
+    "play_sfx",
+    "set_group_volume",
+    "set_mute",
+    "mixer_state",
+    "tick",
+]
 
 RATE = 22050
 
@@ -267,3 +282,194 @@ def play_se(
 def se(name: str) -> None:
     """プリセット SE を鳴らす（なければ合成して鳴らす）。"""
     play_wav(sound(name))
+
+
+# ── グループ / BGM / ワンショット ────────────────────────────────────────
+# ロジックは純 Python（テストが拡張無しで見る）。再生できるときは Rust の
+# rodio ミキサーへ渡す。デバイスが無いと Rust 側も no-op。
+
+class _Bus:
+    def __init__(self) -> None:
+        self.master = 0.8
+        self.bgm = 0.7
+        self.sfx = 1.0
+        self.muted = False
+        self.bgm_name = ""
+        self.bgm_gain = 0.0
+        self.bgm_target = 0.0
+        self.fade_rate = 0.0
+        self.loop = True
+        self.oneshots: list[str] = []
+        self.log: list[str] = []
+
+    def set_group(self, group: str, volume: float) -> None:
+        volume = max(0.0, min(1.0, float(volume)))
+        if group == "master":
+            self.master = volume
+        elif group == "bgm":
+            self.bgm = volume
+        elif group == "sfx":
+            self.sfx = volume
+        else:
+            raise ValueError(f"unknown volume group {group}")
+
+    def sfx_audible(self) -> bool:
+        return (not self.muted) and self.master > 0.0 and self.sfx > 0.0
+
+    def play_bgm(self, name: str, fade: float, loop: bool) -> None:
+        self.bgm_name = name
+        self.loop = loop
+        self.bgm_target = 1.0
+        if fade <= 1.0e-4:
+            self.bgm_gain = 1.0
+            self.fade_rate = 0.0
+        else:
+            self.fade_rate = 1.0 / fade
+        self.log.append(f"bgm:{name}")
+
+    def stop_bgm(self, fade: float) -> None:
+        self.bgm_target = 0.0
+        if fade <= 1.0e-4:
+            self.bgm_gain = 0.0
+            self.fade_rate = 0.0
+            self.bgm_name = ""
+        else:
+            self.fade_rate = 1.0 / fade
+
+    def play_sfx(self, name: str) -> None:
+        if not name:
+            return
+        self.log.append(name)
+        if self.sfx_audible() and len(self.oneshots) < 8:
+            self.oneshots.append(name)
+
+    def tick(self, dt: float) -> None:
+        dt = max(0.0, min(1.0, float(dt)))
+        if dt <= 0.0 or self.fade_rate <= 0.0:
+            return
+        step = self.fade_rate * dt
+        if self.bgm_gain < self.bgm_target:
+            self.bgm_gain = min(self.bgm_target, self.bgm_gain + step)
+        elif self.bgm_gain > self.bgm_target:
+            self.bgm_gain = max(self.bgm_target, self.bgm_gain - step)
+        if self.bgm_gain <= 1.0e-4 and self.bgm_target <= 0.0:
+            self.bgm_gain = 0.0
+            self.bgm_name = ""
+            self.fade_rate = 0.0
+
+    def state(self) -> dict[str, object]:
+        return {
+            "master": self.master,
+            "bgm": self.bgm,
+            "sfx": self.sfx,
+            "muted": self.muted,
+            "bgm_name": self.bgm_name,
+            "bgm_gain": self.bgm_gain,
+            "bgm_target": self.bgm_target,
+            "loop_bgm": self.loop,
+            "oneshots": list(self.oneshots),
+        }
+
+
+_BUS = _Bus()
+
+
+def _native():
+    """Rust ミキサー。拡張が無いテストでは None。import 時には触らない。"""
+    try:
+        from kagra import kagra_shared as native  # type: ignore
+    except Exception:
+        try:
+            import kagra_shared as native  # type: ignore
+        except Exception:
+            return None
+    if not hasattr(native, "play_sfx"):
+        return None
+    return native
+
+
+def play_bgm(name: str, fade: float = 0.4, loop: bool = True) -> None:
+    """BGM をループ再生し、``fade`` 秒で音量を上げる。"""
+    _BUS.play_bgm(name, fade, loop)
+    native = _native()
+    if native is not None:
+        try:
+            native.play_bgm(name, float(fade))
+        except Exception:
+            pass
+
+
+def stop_bgm(fade: float = 0.4) -> None:
+    """BGM を ``fade`` 秒で消す。"""
+    _BUS.stop_bgm(fade)
+    native = _native()
+    if native is not None:
+        try:
+            native.stop_bgm(float(fade))
+        except Exception:
+            pass
+
+
+def play_sfx(name: str) -> None:
+    """効果音のワンショット。ミュート中は鳴らない。デバイスが無ければ no-op。"""
+    _BUS.play_sfx(name)
+    native = _native()
+    if native is not None:
+        try:
+            native.play_sfx(name)
+            return
+        except Exception:
+            pass
+    if _BUS.sfx_audible():
+        path = _clip_path(name)
+        if path is not None:
+            play_wav(path.read_bytes())
+        else:
+            play_wav(sound(name))
+
+
+def set_group_volume(group: str, volume: float) -> None:
+    """``master`` / ``bgm`` / ``sfx`` を 0..1 に揃える。"""
+    _BUS.set_group(group, volume)
+    native = _native()
+    if native is not None:
+        try:
+            native.set_group_volume(group, float(volume))
+        except Exception:
+            pass
+
+
+def set_mute(muted: bool) -> None:
+    _BUS.muted = bool(muted)
+    native = _native()
+    if native is not None:
+        try:
+            native.set_mute(bool(muted))
+        except Exception:
+            pass
+
+
+def tick(dt: float) -> None:
+    """フェードを進める。ゲームループが Rust 側を tick するときは不要。"""
+    _BUS.tick(dt)
+
+
+def mixer_state() -> dict[str, object]:
+    native = _native()
+    if native is not None and hasattr(native, "mixer_state"):
+        try:
+            import json
+
+            data = json.loads(native.mixer_state())
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+    return _BUS.state()
+
+
+def _clip_path(name: str):
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "assets" / "audio" / f"{name}.wav"
+    return path if path.is_file() else None

@@ -63,6 +63,39 @@ def test_coin_is_two_tones():
     assert 0.15 * 22050 < n < 0.22 * 22050, f"coin は 2 音（frames={n}）"
 
 
+def test_bgm_fade_groups_and_mute():
+    audio.tick(0)  # no-op
+    audio.set_group_volume("master", 1.0)
+    audio.set_group_volume("bgm", 1.0)
+    audio.set_group_volume("sfx", 1.0)
+    audio.set_mute(False)
+    audio.play_bgm("bgm", fade=0.4)
+    state = audio.mixer_state()
+    assert state["bgm_name"] == "bgm"
+    assert state["bgm_gain"] < 0.1
+    audio.tick(0.2)
+    audio.tick(0.2)
+    assert audio.mixer_state()["bgm_gain"] > 0.9
+    audio.set_mute(True)
+    audio.play_sfx("jump")
+    muted = audio.mixer_state()
+    assert muted["muted"] is True
+    assert muted["oneshots"] == []
+    audio.set_mute(False)
+    audio.play_sfx("fire")
+    assert "fire" in audio.mixer_state()["oneshots"]
+    audio.stop_bgm(0.0)
+    assert audio.mixer_state()["bgm_name"] == ""
+
+
+def test_unknown_volume_group():
+    try:
+        audio.set_group_volume("voice", 1.0)
+    except ValueError:
+        return
+    raise AssertionError("unknown group must raise")
+
+
 def test_play_wav_never_raises():
     audio.play_wav(b"garbage-not-a-wav")
     audio.play_wav(audio.tone(440, 0.05, rate=8000), loop=False)

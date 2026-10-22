@@ -99,6 +99,7 @@ scratch/
 *.wav
 !assets/cute_song_trial.wav
 !assets/bar/**/*.wav
+!assets/audio/*.wav
 *.ogg
 *.mp3
 *.ttf

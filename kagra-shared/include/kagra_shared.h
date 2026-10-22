@@ -62,6 +62,10 @@ int kagra_shared_set_settings(
     int muted
 );
 int kagra_shared_audio_json(SharedSession *ptr, char *buf, unsigned buflen);
+/* セーブディレクトリ。Android は filesDir。空文字で解除。 */
+int kagra_shared_set_save_root(const char *path);
+/* BGM ゲインと効果音名の JSON。ヘッドレスでは再生せずキューだけ返す。 */
+int kagra_shared_take_audio_cues(char *buf, unsigned buflen);
 
 /* 描画。"render" feature 無しでビルドされた lib では -1 を返し、
  * kagra_shared_last_error() に理由が入る。 */

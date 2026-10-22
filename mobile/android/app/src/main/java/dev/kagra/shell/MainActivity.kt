@@ -33,6 +33,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private var packaged = false
     private var holdStatus = false
     private var gameTitle = "KAGRA Shell"
+    private var audio: AudioBus? = null
 
     /** 指 id ごとの役割。両手で同時に操作するために必要。 */
     private val controls = mutableMapOf<Int, Control>()
@@ -84,6 +85,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
      * マニフェストが無ければ Crest Isle。
      */
     private fun bootGame() {
+        KagraNative.setSaveRoot(File(filesDir, "kagra").absolutePath)
         val manifest = readAssetText("kagra_root/kagra_game.json")
         if (manifest == null) {
             KagraNative.setAssetRoot(filesDir.absolutePath)
@@ -113,6 +115,9 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
             return
         }
         packaged = KagraNative.loadGameFile(world.absolutePath)
+        if (packaged) {
+            audio = AudioBus(extracted)
+        }
         if (!packaged) {
             status.text = "$gameTitle\n\nnative load failed: ${KagraNative.lastError()}"
         }
@@ -199,6 +204,12 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
                     KagraNative.setWalk(stickX, stickZ, jump)
                 }
                 val frame = KagraNative.requestFrame()
+                if (packaged) {
+                    try {
+                        audio?.apply(KagraNative.takeAudioCues())
+                    } catch (_: Exception) {
+                    }
+                }
                 if (rendering && !KagraNative.render()) {
                     rendering = false
                     status.text = "render failed: ${KagraNative.lastError()}"
@@ -307,6 +318,8 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     override fun onDestroy() {
         stopLoop()
+        audio?.release()
+        audio = null
         if (KagraNative.available) KagraNative.destroy()
         super.onDestroy()
     }

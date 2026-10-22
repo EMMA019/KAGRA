@@ -37,6 +37,7 @@ fn main() -> Result<(), String> {
     let two_d = mode == "2d";
     let isle = mode == "isle";
     let world = mode == "world";
+    let flow = mode == "flow";
 
     if world {
         let dump_arg = args.next();
@@ -76,7 +77,24 @@ fn main() -> Result<(), String> {
     let mut session = SharedSession::default();
     session.create_surface(width, height);
 
-    if isle {
+    if flow {
+        let which = args.next().unwrap_or_else(|| "title".into());
+        let json = include_str!("../tests/fixtures/platformer_world.json");
+        session.load_game_json(json)?;
+        if which == "pause" {
+            if let Some(play) = session.world.as_mut() {
+                play.confirm();
+                play.request_pause();
+            }
+        } else if which == "result" {
+            if let Some(play) = session.world.as_mut() {
+                play.confirm();
+                play.flow.finish(1000, 1, "GOAL");
+                play.game.phase = kagra_shared::GamePhase::Complete;
+            }
+        }
+        println!("box hop flow screen: {which}");
+    } else if isle {
         session.boot_collectathon();
         session.start_game();
         session.set_walk(0.15, 0.85, false);

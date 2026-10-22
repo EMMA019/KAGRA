@@ -14,6 +14,7 @@ mod fight;
 mod fishcook;
 mod fps;
 mod measure;
+mod mixer;
 mod netplay;
 mod novel;
 mod platformer;
@@ -41,6 +42,10 @@ use fight::PyFightSession;
 use fishcook::PyFishCookSession;
 use fps::PyFpsSession;
 use measure::measure_text_py;
+use mixer::{
+    cues_json_py, mixer_state_py, play_bgm_py, play_sfx_py, save_dir_py, set_group_volume_py,
+    set_mute_py, set_save_dir_py, stop_bgm_py,
+};
 use netplay::PyLockstep;
 use novel::PyNovelSession;
 use platformer::PyPlatformerSession;
@@ -84,6 +89,15 @@ fn kagra_shared(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySurvivalSession>()?;
     m.add_function(wrap_pyfunction!(render_world_doc_py, m)?)?;
     m.add_function(wrap_pyfunction!(measure_text_py, m)?)?;
+    m.add_function(wrap_pyfunction!(play_bgm_py, m)?)?;
+    m.add_function(wrap_pyfunction!(stop_bgm_py, m)?)?;
+    m.add_function(wrap_pyfunction!(play_sfx_py, m)?)?;
+    m.add_function(wrap_pyfunction!(set_group_volume_py, m)?)?;
+    m.add_function(wrap_pyfunction!(set_mute_py, m)?)?;
+    m.add_function(wrap_pyfunction!(mixer_state_py, m)?)?;
+    m.add_function(wrap_pyfunction!(cues_json_py, m)?)?;
+    m.add_function(wrap_pyfunction!(set_save_dir_py, m)?)?;
+    m.add_function(wrap_pyfunction!(save_dir_py, m)?)?;
     #[cfg(feature = "physics")]
     m.add_class::<PyPhysicsWorld>()?;
     m.add("__version__", crate::KAGRA_SHARED_VERSION)?;

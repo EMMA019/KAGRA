@@ -237,6 +237,8 @@ impl GenreSession for PlatformerSession {
                 inner.doc.genre
             ));
         }
+        let mut inner = inner;
+        inner.load_progress();
         Ok(Self { inner })
     }
 
@@ -293,6 +295,38 @@ impl PlatformerSession {
 
     pub fn landed(&self) -> u32 {
         self.inner.platform.landed
+    }
+
+    pub fn flow_phase(&self) -> &'static str {
+        self.inner.flow_phase_name()
+    }
+
+    pub fn best_score(&self) -> u32 {
+        self.inner.flow.best_score
+    }
+
+    pub fn score(&self) -> u32 {
+        self.inner.game.score
+    }
+
+    pub fn apply_flow_key(&mut self, key: &str) -> bool {
+        self.inner.apply_flow_key(key)
+    }
+
+    pub fn apply_flow_pointer(&mut self, x: f32, y: f32, width: u32, height: u32) -> bool {
+        self.inner.apply_flow_pointer(x, y, width, height)
+    }
+
+    pub fn load_progress(&mut self) {
+        self.inner.load_progress()
+    }
+
+    pub fn save_progress(&self) {
+        self.inner.save_progress()
+    }
+
+    pub fn hud_json(&self, width: u32, height: u32) -> String {
+        self.inner.hud_json(width, height)
     }
 }
 

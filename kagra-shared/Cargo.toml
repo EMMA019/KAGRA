@@ -18,7 +18,10 @@ wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:web-sys", "dep:wasm-bindgen-futur
 render = ["dep:wgpu", "dep:raw-window-handle", "dep:pollster"]
 # Python バインディング（PyO3）。render を伴うので、Python ゲームマスターが
 # dump → WorldPlay.tick → render_world_doc を 1 プロセスで呼べる。
-python = ["dep:pyo3", "pyo3/extension-module", "render"]
+# Desktop speakers (rodio). Android drains mixer cues; wasm stays silent.
+# Headless `try_default` failure is a no-op (CI, lavapipe).
+playback = ["dep:rodio"]
+python = ["dep:pyo3", "pyo3/extension-module", "render", "playback"]
 # Rapier 剛体物理（Phase 1）。Python ゲームから PhysicsWorld で使う。
 # wasm32 は simd 無しで動く（parry の simd を外す）。
 physics = ["dep:rapier3d", "rapier3d/enhanced-determinism"]
@@ -69,6 +72,9 @@ web-sys = { version = "0.3", optional = true, features = [
 ] }
 # Python バインディング。kagra-core と同じ 0.21 を使う（workspace 内で世代を増やさない）。
 pyo3 = { version = "0.21", optional = true }
+# WAV one-shots and a looping BGM. Optional so wasm / the logic lib stay
+# free of cpal. The Python wheel turns `playback` on.
+rodio = { version = "0.20", optional = true, default-features = false, features = ["wav"] }
 
 # 剛体物理（Phase 1）。wasm32 は simd 無し（parry3d simd は target 非依存にしない）。
 rapier3d = { version = "0.35", optional = true, default-features = false, features = ["dim3", "f32", "std"] }

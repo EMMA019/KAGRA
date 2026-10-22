@@ -30,6 +30,13 @@ static UI_FONT: Lazy<ab_glyph::FontArc> = Lazy::new(|| {
         .expect("embedded PublicSans-Bold.ttf must parse")
 });
 
+/// True when every non-whitespace character has a real glyph (not `.notdef`).
+pub fn text_covered(text: &str) -> bool {
+    text.chars()
+        .filter(|ch| !ch.is_whitespace())
+        .all(|ch| select_font(ch).is_some())
+}
+
 fn font_has_glyph(font: &ab_glyph::FontArc, ch: char) -> bool {
     // Glyph 0 is `.notdef`. Drawing it paints a missing-glyph box.
     font.glyph_id(ch).0 != 0

@@ -453,6 +453,7 @@ fn apply_fire(
     game.fire_t = FIRE_TIME;
     game.muzzle_t = MUZZLE_FLASH;
     set_player_name(doc, "fire");
+    crate::mixer::cue_sfx("fire");
 
     let Some(w) = player_ref(doc) else {
         return;
@@ -1118,8 +1119,13 @@ mod tests {
         assert_eq!(play.doc.coins, MAG);
         assert_eq!(play.fps.ammo, MAG);
         put_player(&mut play, 0.0, 0.0, 0.0);
+        crate::mixer::reset_mixer();
         play.input.attack = true;
         play.tick(1.0 / 60.0);
+        assert!(crate::mixer::with_mixer(|m| m
+            .log()
+            .iter()
+            .any(|s| s == "fire")));
         assert_eq!(play.fps.ammo, MAG - 1);
         assert_eq!(play.doc.coins, MAG - 1, "ammo must be dump-visible coins");
         assert!(play.fps.hits >= 1);

@@ -64,6 +64,12 @@ object KagraNative {
     /** 音声レベル JSON（engine / wind / brake）。再生は AudioTrack 側。 */
     external fun audioJson(): String
 
+    /** セーブ先。内部ストレージの filesDir を渡す。 */
+    external fun setSaveRoot(path: String): Boolean
+
+    /** BGM と効果音のキュー。呼ぶたびに効果音は消費される。 */
+    external fun takeAudioCues(): String
+
     /** SurfaceView の Surface を描画先にする。 */
     external fun attachSurface(surface: Surface, width: Int, height: Int): Boolean
     external fun detachSurface()

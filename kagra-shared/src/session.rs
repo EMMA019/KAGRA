@@ -120,6 +120,9 @@ pub struct SharedSession {
     mesh_ids: Option<crate::driving::MeshIds>,
     #[cfg(feature = "render")]
     isle_mesh_ids: Option<crate::collectathon::MeshIds>,
+    /// World draws need `compile_meshes`, not the driving/isle list from attach.
+    #[cfg(feature = "render")]
+    world_meshes: bool,
 }
 
 impl Default for SharedSession {
@@ -152,6 +155,8 @@ impl Default for SharedSession {
             mesh_ids: None,
             #[cfg(feature = "render")]
             isle_mesh_ids: None,
+            #[cfg(feature = "render")]
+            world_meshes: false,
         }
     }
 }
@@ -178,10 +183,15 @@ impl SharedSession {
 
     /// ジャンル dump を読み、シーンを `World` にする。タイトルのまま待つ。
     pub fn load_game_json(&mut self, json: &str) -> Result<(), String> {
-        let play = WorldPlay::from_json(json)?;
+        let mut play = WorldPlay::from_json(json)?;
+        play.load_progress();
         self.world = Some(play);
         self.kind = SceneKind::World;
         self.paused = false;
+        #[cfg(feature = "render")]
+        {
+            self.world_meshes = false;
+        }
         Ok(())
     }
 
@@ -202,7 +212,8 @@ impl SharedSession {
     pub fn push_pointer(&mut self, ev: PointerEvent) {
         if self.kind == SceneKind::World && matches!(ev.phase, PointerPhase::Begin) {
             if let Some(play) = self.world.as_mut() {
-                if !play.game.is_playing() {
+                let handled = play.apply_flow_pointer(ev.x, ev.y, self.width, self.height);
+                if !handled && !play.game.is_playing() {
                     play.confirm();
                 }
             }
@@ -320,7 +331,7 @@ impl SharedSession {
         let Some(play) = self.world.as_mut() else {
             return;
         };
-        if !play.game.is_playing() {
+        if !play.game.is_playing() || play.flow_paused() {
             play.input = WalkInput::default();
             return;
         }
@@ -498,7 +509,7 @@ impl SharedSession {
                     .mission
                     .progress_along_route(self.driving.path_s)
             },
-            ui: if self.paused {
+            ui: if self.paused || (packaged && play.is_some_and(|p| p.flow_paused())) {
                 UiMode::Pause
             } else {
                 UiMode::Hud
@@ -571,8 +582,12 @@ impl SharedSession {
             SceneKind::Demo2D => self
                 .scene
                 .draw(self.width, self.height, self.frame, self.paused),
-            // 世界の絵は `draw_world_doc`。HUD はシェルのオーバーレイに任せる。
-            SceneKind::World => DrawList::default(),
+            // Title / pause / result quads and text ride on the world picture.
+            SceneKind::World => self
+                .world
+                .as_ref()
+                .map(|play| play.build_hud(self.width, self.height))
+                .unwrap_or_default(),
         }
     }
 
@@ -630,7 +645,19 @@ impl SharedSession {
             let hud = self.draw_list();
             let mut renderer = self.renderer.take();
             let result = match (renderer.as_mut(), self.world.as_ref()) {
-                (Some(r), Some(play)) => r.draw_world_doc_with_hud(&play.doc, &hud),
+                (Some(r), Some(play)) => {
+                    // attach_renderer loads driving + isle meshes. WorldDoc ids
+                    // start at the primitive/glTF table, so reuse would
+                    // `update_mesh` past the end of that list.
+                    if !self.world_meshes {
+                        r.clear_meshes();
+                    }
+                    let drawn = r.draw_world_doc_with_hud(&play.doc, &hud);
+                    if drawn.is_ok() {
+                        self.world_meshes = true;
+                    }
+                    drawn
+                }
                 (None, _) => Err("no renderer attached".into()),
                 (Some(_), None) => Err("no packaged world".into()),
             };
@@ -985,5 +1012,50 @@ mod tests {
             .position;
         assert!(s.stats().game_time_s > 0.4);
         assert_ne!(moved, start);
+    }
+
+    #[test]
+    fn packaged_title_and_pause_are_on_the_hud() {
+        let json = include_str!("../tests/fixtures/platformer_world.json");
+        let mut s = SharedSession::default();
+        s.load_game_json(json).unwrap();
+        let title = s.draw_list();
+        assert!(title.texts.iter().any(|t| t.text == "BOX HOP"));
+        assert!(title.texts.iter().any(|t| t.text == "はじめる"));
+        s.push_pointer(PointerEvent {
+            id: 2,
+            x: 8.0,
+            y: 8.0,
+            phase: PointerPhase::Begin,
+            pressure: 1.0,
+        });
+        assert_eq!(s.stats().game_phase, crate::game::GamePhase::Playing);
+        let start = s
+            .world
+            .as_ref()
+            .unwrap()
+            .doc
+            .player
+            .as_ref()
+            .unwrap()
+            .position;
+        assert!(s.world.as_mut().unwrap().request_pause());
+        assert_eq!(s.stats().ui, crate::ui::UiMode::Pause);
+        let pause = s.draw_list();
+        assert!(pause.texts.iter().any(|t| t.text == "ポーズ"));
+        for _ in 0..20 {
+            s.set_play_input(1.0, 0.0, true, false, false);
+            s.request_frame();
+        }
+        let held = s
+            .world
+            .as_ref()
+            .unwrap()
+            .doc
+            .player
+            .as_ref()
+            .unwrap()
+            .position;
+        assert_eq!(held, start);
     }
 }

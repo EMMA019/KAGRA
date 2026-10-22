@@ -3,5 +3,6 @@
   "icon": "games/icons/fps.png",
   "version": "0.1.0",
   "entry": "examples/fps_minimal.py",
-  "world": "kagra-shared/tests/fixtures/fps_world.json"
+  "world": "kagra-shared/tests/fixtures/fps_world.json",
+  "bundle_assets": ["assets/audio"]
 }
