@@ -37,6 +37,8 @@ try:
         NovelSession,
         PlatformerSession,
         PuzzlePadSession,
+        PuzzleSession,
+        RaceSession,
         TdSession,
         WorldDoc,
         WorldPlay,
@@ -48,6 +50,8 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
             NovelSession,
             PlatformerSession,
             PuzzlePadSession,
+            PuzzleSession,
+            RaceSession,
             TdSession,
             WorldDoc,
             WorldPlay,
@@ -57,8 +61,10 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
         WorldDoc = None  # type: ignore[assignment]
         WorldPlay = None  # type: ignore[assignment]
         PuzzlePadSession = None  # type: ignore[assignment]
+        PuzzleSession = None  # type: ignore[assignment]
         NovelSession = None  # type: ignore[assignment]
         PlatformerSession = None  # type: ignore[assignment]
+        RaceSession = None  # type: ignore[assignment]
         TdSession = None  # type: ignore[assignment]
 
         def render_world_doc(*_a, **_k):  # type: ignore[misc]
@@ -92,6 +98,8 @@ __all__ = [
     "OpenAIBrain",
     "PlatformerSession",
     "PuzzlePadSession",
+    "PuzzleSession",
+    "RaceSession",
     "Scene",
     "SlotStore",
     "TdSession",

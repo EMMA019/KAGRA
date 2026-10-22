@@ -168,6 +168,8 @@ FRONT_NAMES = {
     "OpenAIBrain",
     "PlatformerSession",
     "PuzzlePadSession",
+    "PuzzleSession",
+    "RaceSession",
     "Scene",
     "SlotStore",
     "TdSession",

@@ -125,8 +125,8 @@ scenery — a dump with `door` is not an RPG unless `genre` says so.
 
 Verify: `examples/verify_scenarios/collectathon_smoke.json`,
 `interact_fish_smoke.json` and the per-genre smokes (action_arena / action_side /
-box_hop / fps_range / td_lane / race_drive / fight_hitstun / novel_pages / novel /
-stealth_hide / puzzle_pad / sports_goal / sim_meter / survival_meter /
+box_hop / fps_range / td_lane / race_drive / race / fight_hitstun / novel_pages / novel /
+stealth_hide / puzzle_pad / puzzle / sports_goal / sim_meter / survival_meter /
 rhythm_beat / fish_cast / shop_buy / cook / sprite_card / rpg_town …).
 Old RendererV2 smokes (orb_rush / heart_catch / switch_room / …) are archived
 at `old/examples/verify_scenarios/`.

@@ -10,9 +10,12 @@ use crate::game::GamePhase;
 use crate::novel;
 use crate::platformer;
 use crate::puzzle;
+use crate::race;
 use crate::td;
 use crate::world_doc::WorldEvent;
 use crate::world_play::WorldPlay;
+
+pub use crate::puzzle_board::PuzzleSession;
 
 /// Session errors (JSON parse, wrong `WorldDoc.genre`, serialize).
 pub type GenreSessionError = String;
@@ -113,6 +116,58 @@ impl GenreSession for PuzzlePadSession {
 
     fn phase(&self) -> GamePhase {
         self.inner.game.phase
+    }
+}
+
+/// Slide / lights-out grid / match. Not [`PuzzlePadSession`] (crate push).
+impl GenreSession for PuzzleSession {
+    fn genre_id(&self) -> &'static str {
+        crate::puzzle_board::GAME_ID
+    }
+
+    fn from_json(json: &str) -> Result<Self, GenreSessionError> {
+        PuzzleSession::open(json)
+    }
+
+    fn set_input(&mut self, input: WalkInput) {
+        self.apply_input(input);
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.step(dt);
+    }
+
+    fn dump(&self) -> Result<String, GenreSessionError> {
+        self.world_json()
+    }
+
+    fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        self.drain_events(name)
+    }
+
+    fn confirm(&mut self) {
+        self.confirm_action();
+    }
+
+    fn emit_event(
+        &mut self,
+        name: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), GenreSessionError> {
+        self.record_event(name, data);
+        Ok(())
+    }
+
+    fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        self.begin_timer(name, seconds, on_done)
+    }
+
+    fn step_interact(&mut self) {
+        self.use_nearby();
+    }
+
+    fn phase(&self) -> GamePhase {
+        self.current_phase()
     }
 }
 
@@ -457,6 +512,113 @@ impl TdSession {
     }
 }
 
+/// Racing (`race_drive`). Implements [`GenreSession`].
+///
+/// Steer, throttle, laps, the lap clock, and the best-lap ghost stay in
+/// `race.rs` (the `vehicle` / `road` / `driving` stack when the dump has
+/// waypoints). This wrapper is the host surface.
+#[derive(Clone, Debug)]
+pub struct RaceSession {
+    inner: WorldPlay,
+}
+
+impl GenreSession for RaceSession {
+    fn genre_id(&self) -> &'static str {
+        race::GAME_ID
+    }
+
+    fn from_json(json: &str) -> Result<Self, GenreSessionError> {
+        let inner = WorldPlay::from_json(json)?;
+        if !race::is_race(&inner.doc) {
+            return Err(format!(
+                "WorldDoc.genre must be {:?}, got {:?}",
+                race::GAME_ID,
+                inner.doc.genre
+            ));
+        }
+        Ok(Self { inner })
+    }
+
+    fn set_input(&mut self, input: WalkInput) {
+        self.inner.input = input.clamped();
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.inner.tick(dt);
+    }
+
+    fn dump(&self) -> Result<String, GenreSessionError> {
+        self.inner.doc.to_json()
+    }
+
+    fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        self.inner.take_events(name)
+    }
+
+    fn confirm(&mut self) {
+        self.inner.confirm();
+    }
+
+    fn emit_event(
+        &mut self,
+        name: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), GenreSessionError> {
+        self.inner.emit_event(name, data);
+        Ok(())
+    }
+
+    fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        self.inner.start_timer(name, seconds, on_done)
+    }
+
+    fn step_interact(&mut self) {
+        self.inner.step_interact();
+    }
+
+    fn phase(&self) -> GamePhase {
+        self.inner.game.phase
+    }
+}
+
+impl RaceSession {
+    pub fn laps(&self) -> u32 {
+        self.inner.race.laps
+    }
+
+    pub fn laps_need(&self) -> u32 {
+        self.inner.race.laps_need
+    }
+
+    pub fn lap_time(&self) -> f32 {
+        self.inner.race.lap_time
+    }
+
+    pub fn best_lap(&self) -> f32 {
+        self.inner.race.best_lap
+    }
+
+    pub fn race_time(&self) -> f32 {
+        self.inner.race.race_time
+    }
+
+    pub fn speed(&self) -> f32 {
+        self.inner.race.speed
+    }
+
+    pub fn won(&self) -> bool {
+        self.inner.race.won
+    }
+
+    pub fn done(&self) -> bool {
+        self.inner.race.done
+    }
+
+    pub fn ghost(&self) -> bool {
+        self.inner.race.has_ghost()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -495,6 +657,32 @@ mod tests {
     fn wrong_genre_rejected() {
         let crest = include_str!("../tests/fixtures/crest_isle_world.json");
         let err = PuzzlePadSession::from_json(crest).unwrap_err();
+        assert!(err.contains("puzzle_pad"));
+    }
+
+    #[test]
+    fn puzzle_session_clears_slide_grid_and_match() {
+        let mut s = PuzzleSession::from_json(r#"{"version":1,"genre":"puzzle"}"#).expect("open");
+        assert_eq!(s.genre_id(), "puzzle");
+        assert_eq!(s.phase(), GamePhase::Title);
+        s.confirm();
+        assert_eq!(s.phase(), GamePhase::Playing);
+        for _ in 0..16 {
+            if s.phase() == GamePhase::Complete {
+                break;
+            }
+            if s.solved() {
+                s.confirm();
+            } else {
+                assert!(s.play_demo_move(), "level {}", s.level());
+            }
+        }
+        assert!(s.won());
+        assert_eq!(s.phase(), GamePhase::Complete);
+        let dump = s.dump().expect("dump");
+        assert!(dump.contains("solved"));
+        assert!(s.take_events("win").len() == 1);
+        let err = PuzzlePadSession::from_json(r#"{"version":1,"genre":"puzzle"}"#).unwrap_err();
         assert!(err.contains("puzzle_pad"));
     }
 
@@ -681,5 +869,139 @@ mod tests {
     fn td_session_rejects_other_genres() {
         let err = TdSession::from_json(ROOM).unwrap_err();
         assert!(err.contains("td_lane"));
+    }
+
+    const RACE: &str = include_str!("../tests/fixtures/race_world.json");
+
+    fn race_value(s: &RaceSession) -> serde_json::Value {
+        serde_json::from_str(&s.dump().expect("dump")).expect("json")
+    }
+
+    fn race_pose(s: &RaceSession) -> (f32, f32, f32) {
+        let v = race_value(s);
+        let p = &v["player"]["position"];
+        (
+            p[0].as_f64().unwrap() as f32,
+            p[2].as_f64().unwrap() as f32,
+            v["player"]["yaw"].as_f64().unwrap() as f32,
+        )
+    }
+
+    fn race_waypoints(s: &RaceSession) -> Vec<(f32, f32)> {
+        let v = race_value(s);
+        let mut rows: Vec<(String, f32, f32)> = Vec::new();
+        for p in v["props"].as_array().expect("props") {
+            if p["name"].as_str() == Some("waypoint") {
+                rows.push((
+                    p["id"].as_str().unwrap_or("").to_string(),
+                    p["position"][0].as_f64().unwrap() as f32,
+                    p["position"][2].as_f64().unwrap() as f32,
+                ));
+            }
+        }
+        rows.sort_by(|a, b| a.0.cmp(&b.0));
+        rows.into_iter().map(|(_, x, z)| (x, z)).collect()
+    }
+
+    fn race_steer(x: f32, z: f32, yaw: f32, wps: &[(f32, f32)]) -> (f32, f32) {
+        let mut nearest = 0usize;
+        let mut best = f32::MAX;
+        for (i, w) in wps.iter().enumerate() {
+            let d = (w.0 - x).powi(2) + (w.1 - z).powi(2);
+            if d < best {
+                best = d;
+                nearest = i;
+            }
+        }
+        let ahead = if best < 2.2 * 2.2 { 2 } else { 1 };
+        let (tx, tz) = wps[(nearest + ahead) % wps.len()];
+        let desired = (tx - x).atan2(tz - z);
+        let err = crate::vehicle::wrap_angle(desired - yaw);
+        let steer = (-err * 2.4).clamp(-1.0, 1.0);
+        let throttle = if steer.abs() > 0.55 { 0.62 } else { 1.0 };
+        (steer, throttle)
+    }
+
+    #[test]
+    fn race_session_three_laps_timer_and_ghost() {
+        let mut s = RaceSession::from_json(RACE).expect("fixture");
+        assert_eq!(s.genre_id(), "race_drive");
+        assert_eq!(s.phase(), GamePhase::Title);
+        assert_eq!(s.laps_need(), 3);
+        assert!(!s.ghost());
+        let dump = s.dump().expect("dump");
+        assert!(dump.contains("car_sedan"));
+        assert!(dump.contains("road_straight"));
+        assert!(dump.contains("car_taxi"));
+        assert!(dump.contains("stylized_tree"));
+        let wps = race_waypoints(&s);
+        assert!(wps.len() >= 8, "waypoints {}", wps.len());
+        s.confirm();
+        assert_eq!(s.phase(), GamePhase::Playing);
+        let mut saw_ghost_ahead = false;
+        for _ in 0..4200 {
+            if s.won() {
+                break;
+            }
+            let (x, z, yaw) = race_pose(&s);
+            let (steer, throttle) = if s.laps() >= 1 && s.lap_time() < 0.45 {
+                (0.0, 0.15)
+            } else {
+                race_steer(x, z, yaw, &wps)
+            };
+            if s.laps() == 1 && s.ghost() && s.lap_time() > 0.2 && s.lap_time() < 0.45 {
+                let ghost_x = race_value(&s)["props"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|p| p["name"].as_str() == Some("ghost"))
+                    .and_then(|p| p["position"][0].as_f64())
+                    .unwrap_or(0.0) as f32;
+                if ghost_x > x + 0.8 {
+                    saw_ghost_ahead = true;
+                }
+            }
+            s.set_input(WalkInput {
+                lx: steer,
+                lz: throttle,
+                jump: false,
+                attack: false,
+                dodge: false,
+            });
+            s.tick(1.0 / 60.0);
+        }
+        let (x, z, _) = race_pose(&s);
+        assert!(
+            s.won() && s.done() && s.laps() >= 3,
+            "3 laps, won={} laps={} best={:.2} t={:.2} ghost={} pos=({x:.1},{z:.1})",
+            s.won(),
+            s.laps(),
+            s.best_lap(),
+            s.race_time(),
+            s.ghost(),
+        );
+        assert!(s.best_lap() > 0.5, "best lap {}", s.best_lap());
+        assert!(s.ghost(), "best lap must leave a ghost");
+        assert!(
+            saw_ghost_ahead,
+            "slow lap 2 should see the faster ghost ahead"
+        );
+        assert_eq!(s.phase(), GamePhase::Complete);
+        let clock = race_value(&s);
+        let lap = clock["timers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"].as_str() == Some("lap"))
+            .expect("lap timer");
+        assert!(lap["seconds"].as_f64().unwrap() > 0.0);
+        assert!(s.take_events("nonexistent").is_empty());
+    }
+
+    #[test]
+    fn race_rejects_other_genre() {
+        let crest = include_str!("../tests/fixtures/crest_isle_world.json");
+        let err = RaceSession::from_json(crest).unwrap_err();
+        assert!(err.contains("race_drive"));
     }
 }

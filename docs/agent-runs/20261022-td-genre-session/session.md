@@ -15,7 +15,7 @@ Expose `kagra-shared/src/td.rs` (`td_lane`) as a `GenreSession`, with a small ma
 
 ## Verify
 
-- `cargo test -p kagra-shared --lib --locked` — 414 passed
+- `cargo test -p kagra-shared --lib --locked` — 426 passed (after merging race and puzzle from master)
 - clippy `-D warnings` default, `render`, and `python` — clean
 - `cargo fmt -p kagra-shared -- --check` — clean
 - `pytest tests -m "not golden"` — passed
