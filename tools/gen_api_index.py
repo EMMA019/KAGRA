@@ -171,6 +171,7 @@ FRONT_NAMES = {
     "PuzzleSession",
     "RaceSession",
     "Scene",
+    "SportsSession",
     "SlotStore",
     "WorldDoc",
     "WorldPlay",
