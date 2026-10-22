@@ -7,7 +7,7 @@
 
 Headless (lavapipe), scripted day: `phase=complete won=True coins=8/8 sold=2`.
 
-`cargo test -p kagra-shared --lib --locked`: 447 passed before the action/fight merge; re-run after the merge.
+`cargo test -p kagra-shared --lib --locked`: 451 passed after merging action and fight.
 `cargo clippy -p kagra-shared --all-targets --locked -- -D warnings`: clean.
 `cargo clippy -p kagra-shared --all-targets --features render --locked -- -D warnings`: clean.
 `cargo clippy -p kagra-shared --all-targets --features python --locked -- -D warnings`: clean.

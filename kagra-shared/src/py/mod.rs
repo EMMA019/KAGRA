@@ -4,9 +4,11 @@
 //! - `world_doc` / `world_play` — 既存の世界データ + マルチジャンル tick
 //! - `render` / `measure` — 描画と HUD 計測
 //! - `physics` — Rapier（feature）
-//! - `<genre>` — `GenreSession` 実装ごとの薄いラッパ（例: `puzzle`, `platformer`, `novel`, `race`, `rhythm`, `td`, `fishcook`）
+//! - `<genre>` — `GenreSession` 実装ごとの薄いラッパ（例: `puzzle`, `platformer`, `novel`, `race`, `action`, `fight`, `rhythm`, `td`, `fishcook`）
 
+mod action;
 mod common;
+mod fight;
 mod fishcook;
 mod measure;
 mod novel;
@@ -24,6 +26,8 @@ mod physics;
 
 use pyo3::prelude::*;
 
+use action::PyActionSession;
+use fight::PyFightSession;
 use fishcook::PyFishCookSession;
 use measure::measure_text_py;
 use novel::PyNovelSession;
@@ -48,6 +52,8 @@ fn kagra_shared(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyNovelSession>()?;
     m.add_class::<PyPlatformerSession>()?;
     m.add_class::<PyRaceSession>()?;
+    m.add_class::<PyActionSession>()?;
+    m.add_class::<PyFightSession>()?;
     m.add_class::<PyRhythmSession>()?;
     m.add_class::<PyTdSession>()?;
     m.add_class::<PyFishCookSession>()?;
