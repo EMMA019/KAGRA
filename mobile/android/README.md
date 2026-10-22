@@ -12,8 +12,10 @@ gradle :app:assembleDebug
 
 NDK は r29（`29.0.14206865`、`scripts/setup_android_sdk.sh`）。16 KB ページ端末向けに
 Rust / JNI は `max-page-size=16384` でリンクし、`libc++_shared.so` は NDK のものを同梱する。
-`libkagra_shared.so` の SONAME は `libkagra_shared.so`。パッケージしたゲームと
-`dev.kagra.shell` は同じ `CMakeLists.txt` でリンクする。デバッグ署名は
+`libkagra_shared.so` の SONAME は `libkagra_shared.so`（`build.rs` の
+`cargo:rustc-cdylib-link-arg`）。JNI は `-Wl,-l:libkagra_shared.so` でリンクし、
+`DT_NEEDED` にビルドマシンの絶対パスを書かない。パッケージしたゲームと
+`dev.kagra.shell` は同じ `app/src/main/cpp/CMakeLists.txt` を使う。デバッグ署名は
 `app/debug.keystore`（`android` / `androiddebugkey`）。
 
 `libkagra_shared.so` が無い ABI では JNI スタブで起動し、画面にビルド手順を出す。
