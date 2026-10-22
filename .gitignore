@@ -51,6 +51,11 @@ build/
 # wasm-bindgen / wasm-pack が生成する JS グルーと .wasm
 kagra-shared/www/pkg/
 
+# scripts/package_android.py が書くゲーム別のシェル設定
+mobile/android/kagra.game.properties
+mobile/android/app/src/main/assets/kagra_root/
+mobile/android/app/src/main/res/drawable-mdpi/ic_launcher.png
+
 # 開発ツールのローカル状態
 .vision-pm/
 scratch/
@@ -67,6 +72,9 @@ scratch/
 !kagra-shared/tests/fixtures/*.vrm
 *.png
 !kagra-shared/tests/fixtures/*.png
+# 配布マニフェストのアイコン（games/*.json の icon）
+!games/icons/
+!games/icons/*.png
 # Bar sim generated art / SE (procedural contract)
 !assets/bar/
 !assets/bar/**

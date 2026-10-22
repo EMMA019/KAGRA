@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kagra.dev/schemas/game_manifest.json",
+  "title": "KAGRA game manifest",
+  "description": "Windows の exe と Android の APK が同じ JSON を読む。置き場所は games/<example-stem>.json。",
+  "type": "object",
+  "required": ["title", "icon", "version", "entry"],
+  "additionalProperties": false,
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "窓の名前と Android のランチャー名。UTF-8。"
+    },
+    "icon": {
+      "type": "string",
+      "minLength": 1,
+      "description": "リポジトリ相対の PNG。Android は drawable、Windows は ICO に包む。"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+",
+      "description": "versionName。versionCode は major*10000+minor*100+patch。"
+    },
+    "entry": {
+      "type": "string",
+      "minLength": 1,
+      "description": "起動する Python 例。例: examples/platformer_minimal.py"
+    },
+    "application_id": {
+      "type": "string",
+      "description": "省略時は dev.kagra.<slug>。Java のパッケージ名。"
+    },
+    "world": {
+      "type": "string",
+      "description": "WorldPlay が読む dump。Android はこのファイルを進める。省略すると電話側は Python 専用である旨を表示する。"
+    },
+    "bundle_assets": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "追加で同梱するリポジトリ相対パス。省略時は world と entry から参照アセットを集める。[\"assets\"] で assets/ 全体。"
+    }
+  }
+}

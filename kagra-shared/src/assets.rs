@@ -1,6 +1,24 @@
 //! アセット別名（Python `kagra.contracts` と揃える）。
 
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+/// Filesystem root of a packaged game (Android `filesDir`, Windows bundle).
+///
+/// `resolve_asset` checks this before `$KAGRA_ROOT` and the compile-time
+/// workspace path. The host sets it from `SharedSession::set_asset_root`.
+static PACKAGED_ROOT: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+/// Point asset lookup at a packaged tree. `None` clears it.
+pub fn set_packaged_root(root: Option<PathBuf>) {
+    if let Ok(mut guard) = PACKAGED_ROOT.lock() {
+        *guard = root;
+    }
+}
+
+fn packaged_root() -> Option<PathBuf> {
+    PACKAGED_ROOT.lock().ok().and_then(|guard| guard.clone())
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -120,6 +138,11 @@ fn looks_like_repo_root(p: &Path) -> bool {
     p.join("kagra-shared").join("Cargo.toml").is_file()
 }
 
+/// A cargo workspace, or a staged game tree (`assets/` or `kagra_game.json`).
+fn usable_game_root(p: &Path) -> bool {
+    looks_like_repo_root(p) || p.join("assets").is_dir() || p.join("kagra_game.json").is_file()
+}
+
 fn ancestors_of(p: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     for a in p.ancestors() {
@@ -137,9 +160,14 @@ fn ancestors_of(p: &Path) -> Vec<PathBuf> {
 /// running `window.exe` (so `target/debug/examples` still finds repo-root
 /// `assets/Emma.vrm`).
 pub fn repo_root() -> Option<PathBuf> {
+    if let Some(p) = packaged_root() {
+        if usable_game_root(&p) {
+            return Some(p);
+        }
+    }
     if let Ok(raw) = std::env::var("KAGRA_ROOT") {
         let p = PathBuf::from(raw.trim());
-        if looks_like_repo_root(&p) {
+        if usable_game_root(&p) {
             return Some(p);
         }
     }
@@ -207,6 +235,26 @@ mod tests {
     fn emma_alias() {
         let a = resolve_alias("Emma");
         assert!(a.iter().any(|p| p.ends_with("Emma.vrm")));
+    }
+
+    #[test]
+    fn packaged_root_resolves_before_the_workspace() {
+        let tmp = std::env::temp_dir().join(format!("kagra-packaged-root-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("assets")).unwrap();
+        std::fs::write(tmp.join("assets").join("marker.txt"), b"ok").unwrap();
+        std::fs::write(tmp.join("kagra_game.json"), b"{}").unwrap();
+        set_packaged_root(Some(tmp.clone()));
+        let got = resolve_asset("assets/marker.txt").expect("marker via packaged root");
+        let got = got.canonicalize().unwrap();
+        let expect = tmp
+            .join("assets")
+            .join("marker.txt")
+            .canonicalize()
+            .unwrap();
+        set_packaged_root(None);
+        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(got, expect);
     }
 
     #[test]

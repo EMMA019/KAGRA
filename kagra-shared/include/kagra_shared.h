@@ -36,6 +36,18 @@ int kagra_shared_set_scene(SharedSession *ptr, unsigned kind);
 /* Crest Isle: lx/lz は -1..1、jump は 0/1。 */
 int kagra_shared_set_walk(SharedSession *ptr, float lx, float lz, int jump);
 int kagra_shared_set_jump(SharedSession *ptr, int held);
+/* パッケージした WorldPlay。ボタンは 0/1。 */
+int kagra_shared_set_play_input(
+    SharedSession *ptr,
+    float lx,
+    float lz,
+    int jump,
+    int attack,
+    int dodge
+);
+/* dump JSON、または展開済みファイル。成功でシーンが World になる。 */
+int kagra_shared_load_game(SharedSession *ptr, const char *json);
+int kagra_shared_load_game_file(SharedSession *ptr, const char *path);
 
 int64_t kagra_shared_request_frame(SharedSession *ptr);
 int kagra_shared_stats_json(SharedSession *ptr, char *buf, unsigned buflen);

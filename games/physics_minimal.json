@@ -1,0 +1,6 @@
+{
+  "title": "Physics Stack",
+  "icon": "games/icons/physics.png",
+  "version": "0.1.0",
+  "entry": "examples/physics_minimal.py"
+}

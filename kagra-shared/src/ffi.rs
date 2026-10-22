@@ -256,6 +256,80 @@ pub unsafe extern "C" fn kagra_shared_set_walk(
     }
 }
 
+/// パッケージした WorldPlay への入力。各ボタンは 0/1。
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_set_play_input(
+    ptr: *mut SharedSession,
+    lx: c_float,
+    lz: c_float,
+    jump: c_int,
+    attack: c_int,
+    dodge: c_int,
+) -> c_int {
+    match session(ptr) {
+        Some(s) => {
+            s.set_play_input(lx, lz, jump != 0, attack != 0, dodge != 0);
+            0
+        }
+        None => -1,
+    }
+}
+
+/// ジャンル dump JSON を読み、シーンを World にする。
+///
+/// # Safety
+/// `ptr` は生存中のハンドル。`json` は NUL 終端。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_load_game(
+    ptr: *mut SharedSession,
+    json: *const c_char,
+) -> c_int {
+    let Some(s) = session(ptr) else {
+        return -1;
+    };
+    if json.is_null() {
+        set_err("json is null");
+        return -1;
+    }
+    let text = CStr::from_ptr(json).to_str().unwrap_or("");
+    match s.load_game_json(text) {
+        Ok(()) => 0,
+        Err(e) => {
+            set_err(e);
+            -1
+        }
+    }
+}
+
+/// ジャンル dump をファイルから読む。Android は展開済みパスを渡す。
+///
+/// # Safety
+/// `ptr` は生存中のハンドル。`path` は NUL 終端。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_load_game_file(
+    ptr: *mut SharedSession,
+    path: *const c_char,
+) -> c_int {
+    let Some(s) = session(ptr) else {
+        return -1;
+    };
+    if path.is_null() {
+        set_err("path is null");
+        return -1;
+    }
+    let text = CStr::from_ptr(path).to_string_lossy();
+    match s.load_game_file(&text) {
+        Ok(()) => 0,
+        Err(e) => {
+            set_err(e);
+            -1
+        }
+    }
+}
+
 /// Crest Isle のジャンプ。`held` は 0/1。
 ///
 /// # Safety

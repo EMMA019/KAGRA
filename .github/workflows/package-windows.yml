@@ -1,0 +1,63 @@
+# ジャンル例を Windows 用 zip（.exe）にして artifact にする。
+# 公開はしない。アップロード先は Actions の artifact だけ。
+# 無料枠の windows-latest。PyInstaller + maturin。
+
+name: Package Windows
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/package-windows.yml"
+      - "scripts/package_windows.py"
+      - "scripts/frozen_launch.py"
+      - "kagra/distribute.py"
+      - "kagra/contracts.py"
+      - "games/**"
+      - "kagra-shared/**"
+      - "pyproject.toml"
+      - "examples/platformer_minimal.py"
+  workflow_dispatch:
+    inputs:
+      game:
+        description: "Example or manifest (repo-relative)"
+        default: "examples/platformer_minimal.py"
+        type: string
+
+jobs:
+  package:
+    name: windows zip
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install maturin and PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "maturin>=1.5,<2.0" "pyinstaller>=6.0"
+
+      - name: Build and install the kagra wheel
+        run: |
+          maturin build --release --locked --out dist/wheel
+          python -m pip install (Get-ChildItem dist/wheel/*.whl | Select-Object -First 1).FullName
+
+      - name: Package the example
+        shell: bash
+        env:
+          KAGRA_GAME: ${{ github.event_name == 'workflow_dispatch' && inputs.game || 'examples/platformer_minimal.py' }}
+        run: python scripts/package_windows.py --game "$KAGRA_GAME" --out dist/windows
+
+      - name: Upload zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: kagra-windows-zip
+          path: dist/windows/*-windows.zip
+          if-no-files-found: error

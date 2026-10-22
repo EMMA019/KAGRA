@@ -1,0 +1,6 @@
+{
+  "title": "Torneko",
+  "icon": "games/icons/torneko.png",
+  "version": "0.1.0",
+  "entry": "examples/torneko_minimal.py"
+}

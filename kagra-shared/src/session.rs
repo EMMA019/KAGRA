@@ -11,7 +11,9 @@ use crate::save::{SaveGame, Settings};
 use crate::scene::{DemoScene, DrawList};
 use crate::ui::{PauseMenu, UiAction, UiMode};
 use crate::vehicle::DriveInput;
+use crate::world_play::WorldPlay;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct FrameStats {
@@ -86,6 +88,8 @@ pub enum SceneKind {
     Demo2D,
     /// Crest Isle 収集（Kenney 風カプセル。VRM ではない）。
     Collectathon,
+    /// パッケージしたジャンル例。`WorldPlay` が dump JSON を進める。
+    World,
 }
 
 #[derive(Debug)]
@@ -102,6 +106,8 @@ pub struct SharedSession {
     pub isle: CollectathonScene,
     pub game: DemoGame,
     pub settings: Settings,
+    /// `load_game_json` で入ったジャンル dump。`kind == World` のときだけ進む。
+    pub world: Option<WorldPlay>,
     pointers: Vec<PointerEvent>,
     pending_keys: Vec<KeyEvent>,
     /// このフレームで新しく触れた座標。`poll_pointers` の意味を変えずに
@@ -136,6 +142,7 @@ impl Default for SharedSession {
                 ..DemoGame::default()
             },
             settings: Settings::default(),
+            world: None,
             pointers: Vec::new(),
             pending_keys: Vec::new(),
             pending_taps: Vec::new(),
@@ -161,6 +168,27 @@ impl SharedSession {
 
     pub fn set_asset_root(&mut self, root: impl Into<String>) {
         self.asset_root = root.into();
+        let path = PathBuf::from(&self.asset_root);
+        crate::assets::set_packaged_root(if path.as_os_str().is_empty() {
+            None
+        } else {
+            Some(path)
+        });
+    }
+
+    /// ジャンル dump を読み、シーンを `World` にする。タイトルのまま待つ。
+    pub fn load_game_json(&mut self, json: &str) -> Result<(), String> {
+        let play = WorldPlay::from_json(json)?;
+        self.world = Some(play);
+        self.kind = SceneKind::World;
+        self.paused = false;
+        Ok(())
+    }
+
+    /// `load_game_json` のファイル版。Android は APK から展開したパスを渡す。
+    pub fn load_game_file(&mut self, path: &str) -> Result<(), String> {
+        let json = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
+        self.load_game_json(&json)
     }
 
     pub fn pause(&mut self) {
@@ -172,6 +200,13 @@ impl SharedSession {
     }
 
     pub fn push_pointer(&mut self, ev: PointerEvent) {
+        if self.kind == SceneKind::World && matches!(ev.phase, PointerPhase::Begin) {
+            if let Some(play) = self.world.as_mut() {
+                if !play.game.is_playing() {
+                    play.confirm();
+                }
+            }
+        }
         if matches!(ev.phase, PointerPhase::Begin) {
             let isle_phase = self.isle.game.phase;
             match (self.kind, self.game.phase, isle_phase) {
@@ -273,8 +308,39 @@ impl SharedSession {
         self.set_drive(x, (-y).max(0.0), y.max(0.0));
     }
 
+    /// パッケージした `WorldPlay` への歩き。攻撃と回避は 0/1。
+    pub fn set_play_input(&mut self, lx: f32, lz: f32, jump: bool, attack: bool, dodge: bool) {
+        if self.kind == SceneKind::Collectathon {
+            self.set_walk(lx, lz, jump);
+            return;
+        }
+        if self.kind != SceneKind::World {
+            return;
+        }
+        let Some(play) = self.world.as_mut() else {
+            return;
+        };
+        if !play.game.is_playing() {
+            play.input = WalkInput::default();
+            return;
+        }
+        play.input = WalkInput {
+            lx,
+            lz,
+            jump,
+            attack,
+            dodge,
+        }
+        .clamped();
+    }
+
     /// Crest Isle の歩き。`lx`/`lz` は -1..1、`jump` は今フレーム跳ぶか。
+    /// `World` のときは攻撃なしの `set_play_input` になる。
     pub fn set_walk(&mut self, lx: f32, lz: f32, jump: bool) {
+        if self.kind == SceneKind::World {
+            self.set_play_input(lx, lz, jump, false, false);
+            return;
+        }
         if self.kind != SceneKind::Collectathon {
             return;
         }
@@ -378,6 +444,14 @@ impl SharedSession {
                     let pad = self.pad.stick();
                     self.scene.update(self.width, self.height, pad, &taps);
                 }
+                SceneKind::World => {
+                    let _ = taps;
+                    if let Some(play) = self.world.as_mut() {
+                        if play.game.is_playing() {
+                            play.tick(crate::scene::FIXED_DT);
+                        }
+                    }
+                }
             }
         }
         self.stats()
@@ -385,6 +459,8 @@ impl SharedSession {
 
     fn stats(&self) -> FrameStats {
         let isle = self.kind == SceneKind::Collectathon;
+        let packaged = self.kind == SceneKind::World;
+        let play = self.world.as_ref();
         FrameStats {
             frame: self.frame,
             width: self.width,
@@ -403,7 +479,10 @@ impl SharedSession {
                 self.driving.odometer
             },
             audio: self.audio_levels(),
-            mission: if isle {
+            mission: if packaged {
+                play.and_then(|p| p.doc.genre.clone())
+                    .unwrap_or_else(|| "world".into())
+            } else if isle {
                 format!(
                     "{}/{}",
                     self.isle.game.stars,
@@ -425,19 +504,37 @@ impl SharedSession {
                 UiMode::Hud
             },
             traffic_count: self.driving.traffic.count() as u32,
-            game_id: if isle { ISLE_ID } else { GAME_ID },
-            game_title: if isle { ISLE_TITLE } else { GAME_TITLE },
-            game_phase: if isle {
+            game_id: if packaged {
+                "world"
+            } else if isle {
+                ISLE_ID
+            } else {
+                GAME_ID
+            },
+            game_title: if packaged {
+                "KAGRA"
+            } else if isle {
+                ISLE_TITLE
+            } else {
+                GAME_TITLE
+            },
+            game_phase: if packaged {
+                play.map(|p| p.game.phase).unwrap_or(self.game.phase)
+            } else if isle {
                 self.isle.game.phase
             } else {
                 self.game.phase
             },
-            game_time_s: if isle {
+            game_time_s: if packaged {
+                play.map(|p| p.game.time_s).unwrap_or(0.0)
+            } else if isle {
                 self.isle.game.time_s
             } else {
                 self.game.time_s
             },
-            game_score: if isle {
+            game_score: if packaged {
+                play.map(|p| p.game.score).unwrap_or(0)
+            } else if isle {
                 self.isle.game.score
             } else {
                 self.game.score
@@ -448,7 +545,9 @@ impl SharedSession {
                 self.game.best_time_s
             },
             has_cargo: self.game.has_cargo,
-            objective: if isle {
+            objective: if packaged {
+                play.and_then(|p| p.doc.genre.clone()).unwrap_or_default()
+            } else if isle {
                 self.isle.game.objective_key().into()
             } else {
                 self.game.objective_key(&self.driving.mission).into()
@@ -472,6 +571,8 @@ impl SharedSession {
             SceneKind::Demo2D => self
                 .scene
                 .draw(self.width, self.height, self.frame, self.paused),
+            // 世界の絵は `draw_world_doc`。HUD はシェルのオーバーレイに任せる。
+            SceneKind::World => DrawList::default(),
         }
     }
 
@@ -525,6 +626,17 @@ impl SharedSession {
 
     /// 現在のシーンを 1 枚描く。レンダラ未接続ならエラー。
     pub fn render(&mut self) -> Result<(), String> {
+        if self.kind == SceneKind::World {
+            let hud = self.draw_list();
+            let mut renderer = self.renderer.take();
+            let result = match (renderer.as_mut(), self.world.as_ref()) {
+                (Some(r), Some(play)) => r.draw_world_doc_with_hud(&play.doc, &hud),
+                (None, _) => Err("no renderer attached".into()),
+                (Some(_), None) => Err("no packaged world".into()),
+            };
+            self.renderer = renderer;
+            return result;
+        }
         let hud = self.draw_list();
         let Some(r) = self.renderer.as_mut() else {
             return Err("no renderer attached".into());
@@ -815,5 +927,63 @@ mod tests {
         }
         assert_eq!(s.isle.walker.z, z0);
         assert_eq!(s.isle.game.phase, crate::game::GamePhase::Title);
+    }
+
+    #[test]
+    fn packaged_world_stays_on_title_until_confirm() {
+        let json = include_str!("../tests/fixtures/platformer_world.json");
+        let mut s = SharedSession::default();
+        assert!(s.load_game_json("{").is_err());
+        assert_eq!(s.kind, SceneKind::Driving);
+        s.load_game_json(json).unwrap();
+        assert_eq!(s.kind, SceneKind::World);
+        assert_eq!(s.stats().game_phase, crate::game::GamePhase::Title);
+        assert_eq!(s.stats().objective, "box_hop");
+        let start = s
+            .world
+            .as_ref()
+            .unwrap()
+            .doc
+            .player
+            .as_ref()
+            .unwrap()
+            .position;
+        s.set_play_input(1.0, 0.0, true, false, false);
+        for _ in 0..20 {
+            s.request_frame();
+        }
+        let held = s
+            .world
+            .as_ref()
+            .unwrap()
+            .doc
+            .player
+            .as_ref()
+            .unwrap()
+            .position;
+        assert_eq!(held, start);
+        s.push_pointer(PointerEvent {
+            id: 1,
+            x: 8.0,
+            y: 8.0,
+            phase: PointerPhase::Begin,
+            pressure: 1.0,
+        });
+        assert_eq!(s.stats().game_phase, crate::game::GamePhase::Playing);
+        for _ in 0..30 {
+            s.set_play_input(1.0, 0.0, false, false, false);
+            s.request_frame();
+        }
+        let moved = s
+            .world
+            .as_ref()
+            .unwrap()
+            .doc
+            .player
+            .as_ref()
+            .unwrap()
+            .position;
+        assert!(s.stats().game_time_s > 0.4);
+        assert_ne!(moved, start);
     }
 }

@@ -55,6 +55,9 @@ python -m kagra.render_world scratch/crest_isle_world.json scratch/crest_shared.
 python -m kagra.play_world kagra-shared/tests/fixtures/crest_isle_world.json --seconds 8
 python tools/mcp_kagra/server.py                                   # MCP (stdio)
 pytest tests -m "not golden"                                       # pure-python tests
+# Windows zip / Android debug APK from the same game manifest (docs/distribution.md)
+python scripts/package_windows.py --game examples/platformer_minimal.py --stage-only
+python scripts/package_android.py --game examples/platformer_minimal.py --stage-only
 ```
 
 ## MCP tools (`tools/mcp_kagra/server.py`)

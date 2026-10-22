@@ -1,0 +1,7 @@
+{
+  "title": "Action Arena",
+  "icon": "games/icons/action.png",
+  "version": "0.1.0",
+  "entry": "examples/action_minimal.py",
+  "world": "kagra-shared/tests/fixtures/action_world.json"
+}

@@ -175,7 +175,9 @@ has_renderer / detach_surface
 - Web: [`kagra-shared/www/crest.html`](../kagra-shared/www/crest.html)。`./scripts/build_wasm.sh` のあと
   `python -m http.server -d kagra-shared/www 8000` → `http://localhost:8000/crest.html`。
 - Android: `./scripts/build_android_native.sh` のあと `cd mobile/android && gradle :app:assembleDebug`。
-  起動は Crest Isle。左＝歩き、右下＝ジャンプ。
+  マニフェストが無ければ Crest Isle。左＝歩き、右下＝ジャンプ。
+  ジャンル例の APK は `python scripts/package_android.py --game examples/platformer_minimal.py`
+  （[docs/distribution.md](../docs/distribution.md)）。
 - iOS: `setScene(.collectathon)`。実機描画は `libkagra_shared.a`（`--features render`）をリンク。
 - `set_scene(2)` / `set_walk` / `stats_json` の `stars` / `coins` / `star_need`。
 

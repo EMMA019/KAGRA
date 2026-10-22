@@ -1,0 +1,7 @@
+{
+  "title": "Sports Pitch",
+  "icon": "games/icons/sports.png",
+  "version": "0.1.0",
+  "entry": "examples/sports_minimal.py",
+  "world": "kagra-shared/tests/fixtures/sports_world.json"
+}

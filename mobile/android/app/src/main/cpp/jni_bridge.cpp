@@ -156,6 +156,33 @@ Java_dev_kagra_shell_KagraNative_setWalk(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_setPlayInput(
+    JNIEnv *, jobject, jfloat lx, jfloat lz, jboolean jump, jboolean attack, jboolean dodge) {
+#if KAGRA_HAS_SHARED
+  return g_session && kagra_shared_set_play_input(
+      g_session, lx, lz, jump ? 1 : 0, attack ? 1 : 0, dodge ? 1 : 0) == 0;
+#else
+  (void)lx; (void)lz; (void)jump; (void)attack; (void)dodge;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_loadGameFile(JNIEnv *env, jobject, jstring path) {
+#if KAGRA_HAS_SHARED
+  if (!g_session || !path) return JNI_FALSE;
+  const char *c = env->GetStringUTFChars(path, nullptr);
+  if (!c) return JNI_FALSE;
+  int rc = kagra_shared_load_game_file(g_session, c);
+  env->ReleaseStringUTFChars(path, c);
+  return rc == 0 ? JNI_TRUE : JNI_FALSE;
+#else
+  (void)env; (void)path;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_dev_kagra_shell_KagraNative_setJump(JNIEnv *, jobject, jboolean held) {
 #if KAGRA_HAS_SHARED
   return g_session && kagra_shared_set_jump(g_session, held ? 1 : 0) == 0;

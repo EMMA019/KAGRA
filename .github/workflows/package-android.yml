@@ -1,0 +1,143 @@
+# 同じ --game でデバッグ署名の APK を作り、artifact にする。
+# 公開はしない。リリース署名は secrets があるときだけ workflow_dispatch で。
+# 秘密はリポジトリに作らない。手順は docs/distribution.md。
+
+name: Package Android
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/package-android.yml"
+      - "scripts/package_android.py"
+      - "scripts/build_android_native.sh"
+      - "kagra/distribute.py"
+      - "kagra/contracts.py"
+      - "games/**"
+      - "kagra-shared/**"
+      - "mobile/android/**"
+      - "pyproject.toml"
+      - "examples/platformer_minimal.py"
+  workflow_dispatch:
+    inputs:
+      game:
+        description: "Example or manifest (repo-relative)"
+        default: "examples/platformer_minimal.py"
+        type: string
+      sign_release:
+        description: "assembleRelease with keystore secrets (see docs/distribution.md)"
+        default: false
+        type: boolean
+
+jobs:
+  package:
+    name: android apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      # 既定は ubuntu-latest に入っている SDK。無いときだけ公式の
+      # commandlinetools を落とす。android-actions/setup-android は
+      # `sdkmanager tools` で落ちる（master の Android debug APK ジョブと同じ）。
+      - name: Setup Android SDK
+        run: |
+          set -eu
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
+            for cand in /usr/local/lib/android/sdk /usr/lib/android-sdk "$HOME/Android/Sdk"; do
+              if [ -d "$cand" ]; then
+                SDK="$cand"
+                break
+              fi
+            done
+          fi
+          if [ -z "${SDK:-}" ] || [ ! -d "$SDK" ]; then
+            SDK="$HOME/android-sdk"
+            mkdir -p "$SDK"
+          fi
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          if [ -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+            echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          else
+            tool="$(find "$SDK/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort | tail -1 || true)"
+            if [ -n "${tool:-}" ]; then
+              echo "$(dirname "$tool")" >> "$GITHUB_PATH"
+            else
+              sudo apt-get update
+              sudo apt-get install -y unzip
+              tmp="$(mktemp -d)"
+              curl -fsSL -o "$tmp/cmdtools.zip" \
+                https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+              unzip -q "$tmp/cmdtools.zip" -d "$tmp"
+              mkdir -p "$SDK/cmdline-tools"
+              rm -rf "$SDK/cmdline-tools/latest"
+              mv "$tmp/cmdline-tools" "$SDK/cmdline-tools/latest"
+              echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+            fi
+          fi
+          mkdir -p "$SDK/platform-tools"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+
+      - name: Install Android SDK packages
+        run: |
+          set -eu
+          set +o pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          set -o pipefail
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" \
+            "cmake;3.22.1" "ndk;26.1.10909125"
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Package the example (debug-signed)
+        env:
+          KAGRA_GAME: ${{ github.event_name == 'workflow_dispatch' && inputs.game || 'examples/platformer_minimal.py' }}
+        run: |
+          set -eu
+          if [ -z "${ANDROID_HOME:-}" ] && [ -n "${ANDROID_SDK_ROOT:-}" ]; then
+            export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          fi
+          export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/26.1.10909125"
+          test -d "$ANDROID_NDK_HOME"
+          python scripts/package_android.py --game "$KAGRA_GAME" --out dist/android
+
+      # 秘密は作らない。keystore をリポジトリ secrets に置いた人が
+      # workflow_dispatch で sign_release を選んだときだけ assembleRelease する。
+      - name: Package a release APK when asked
+        if: github.event_name == 'workflow_dispatch' && inputs.sign_release
+        env:
+          KAGRA_GAME: ${{ inputs.game }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: python scripts/package_android.py --game "$KAGRA_GAME" --out dist/android --release --skip-native
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: kagra-android-apk
+          path: dist/android/*.apk
+          if-no-files-found: error

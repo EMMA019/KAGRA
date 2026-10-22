@@ -161,7 +161,18 @@ _ALIASES: dict[str, list[str]] = {
 
 
 def project_root(start: Path | None = None) -> Path:
-    """kagra パッケージまたは cwd からリポジトリルートを推定。"""
+    """kagra パッケージまたは cwd からリポジトリルートを推定。
+
+    パッケージ済みの exe / APK 展開先は ``KAGRA_ROOT`` を見る。そこには
+    ``kagra-shared/Cargo.toml`` か ``kagra_game.json`` がある。
+    """
+    env = os.environ.get("KAGRA_ROOT", "").strip()
+    if env:
+        packaged = Path(env)
+        if (packaged / "kagra-shared" / "Cargo.toml").is_file() or (
+            packaged / "kagra_game.json"
+        ).is_file():
+            return packaged
     if start is None:
         start = Path.cwd()
     cur = start.resolve()
