@@ -16,6 +16,7 @@ on:
       - "games/**"
       - "kagra-shared/**"
       - "pyproject.toml"
+      - ".cargo/config.toml"
       - "examples/platformer_minimal.py"
   workflow_dispatch:
     inputs:

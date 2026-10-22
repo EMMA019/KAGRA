@@ -5,10 +5,13 @@
 
 ```bash
 # リポジトリルートから
-./scripts/build_android_native.sh   # cargo-ndk + NDK。libkagra_shared.so を jniLibs へ
+./scripts/build_android_native.sh   # cargo-ndk + NDK r28+。libkagra_shared.so を jniLibs へ
 cd mobile/android
 gradle :app:assembleDebug
 ```
+
+NDK は r29（`29.0.14206865`、`scripts/setup_android_sdk.sh`）。16 KB ページ端末向けに
+Rust / JNI は `max-page-size=16384` でリンクし、`libc++_shared.so` は NDK のものを同梱する。
 
 `libkagra_shared.so` が無い ABI では JNI スタブで起動し、画面にビルド手順を出す。
 操作: 左＝歩き、右下＝ジャンプ、右上＝アクション。タップでタイトルから開始。

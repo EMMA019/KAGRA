@@ -84,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         libs = list((ANDROID / "app" / "src" / "main" / "jniLibs").rglob("libkagra_shared.so"))
         if not libs:
             print(
-                "libkagra_shared.so was not produced. Install cargo-ndk and the NDK "
+                "libkagra_shared.so was not produced. Install cargo-ndk and NDK r28+ "
                 "(ANDROID_NDK_HOME), then re-run. See docs/distribution.md.",
                 file=sys.stderr,
             )
