@@ -34,12 +34,20 @@ from kagra.world_expect import eval_world_expect
 
 try:
     from kagra.kagra_shared import (
+        ActionSession,
+        FightSession,
+        FishCookSession,
         NovelSession,
         PlatformerSession,
         PuzzlePadSession,
         PuzzleSession,
         RaceSession,
+        RhythmSession,
+        RpgSession,
+        ShopSession,
         SportsSession,
+        StealthSession,
+        TdSession,
         WorldDoc,
         WorldPlay,
         render_world_doc,
@@ -47,12 +55,20 @@ try:
 except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
     try:
         from kagra_shared import (  # type: ignore[no-redef]
+            ActionSession,
+            FightSession,
+            FishCookSession,
             NovelSession,
             PlatformerSession,
             PuzzlePadSession,
             PuzzleSession,
             RaceSession,
+            RhythmSession,
+            RpgSession,
+            ShopSession,
             SportsSession,
+            StealthSession,
+            TdSession,
             WorldDoc,
             WorldPlay,
             render_world_doc,
@@ -60,12 +76,20 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
     except ImportError:  # pragma: no cover
         WorldDoc = None  # type: ignore[assignment]
         WorldPlay = None  # type: ignore[assignment]
+        ActionSession = None  # type: ignore[assignment]
+        FightSession = None  # type: ignore[assignment]
         PuzzlePadSession = None  # type: ignore[assignment]
         PuzzleSession = None  # type: ignore[assignment]
         NovelSession = None  # type: ignore[assignment]
         PlatformerSession = None  # type: ignore[assignment]
         RaceSession = None  # type: ignore[assignment]
+        RhythmSession = None  # type: ignore[assignment]
+        RpgSession = None  # type: ignore[assignment]
+        ShopSession = None  # type: ignore[assignment]
         SportsSession = None  # type: ignore[assignment]
+        StealthSession = None  # type: ignore[assignment]
+        TdSession = None  # type: ignore[assignment]
+        FishCookSession = None  # type: ignore[assignment]
 
         def render_world_doc(*_a, **_k):  # type: ignore[misc]
             raise ImportError(
@@ -89,9 +113,11 @@ _PUBLIC_OFF = {
 }
 
 __all__ = [
+    "ActionSession",
     "AssetKind",
     "Brain",
     "BrainError",
+    "FishCookSession",
     "KagraContractError",
     "KairiBrain",
     "NovelSession",
@@ -100,9 +126,14 @@ __all__ = [
     "PuzzlePadSession",
     "PuzzleSession",
     "RaceSession",
+    "RhythmSession",
+    "RpgSession",
     "Scene",
+    "ShopSession",
     "SportsSession",
     "SlotStore",
+    "StealthSession",
+    "TdSession",
     "WorldDoc",
     "WorldPlay",
     "add_table",
@@ -114,6 +145,7 @@ __all__ = [
     "debug_trace_summary",
     "draw_world",
     "eval_world_expect",
+    "FightSession",
     "find_path",
     "get_lang",
     "image",

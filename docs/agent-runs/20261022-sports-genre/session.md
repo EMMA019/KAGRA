@@ -15,13 +15,16 @@ Expose `sports.rs` as a `GenreSession`, with a 1v1 example (score to win, result
 
 ## Verify
 
-- `cargo test -p kagra-shared --lib --locked` — 426 passed
+After merging `origin/master` (other genre sessions landed in parallel; shared files kept both sides):
+
+- `cargo test -p kagra-shared --lib --locked` — 469 passed
 - `cargo clippy -p kagra-shared --all-targets --locked -- -D warnings` — clean
 - `cargo clippy -p kagra-shared --all-targets --features render --locked -- -D warnings` — clean
-- `cargo clippy -p kagra-shared --all-targets --features python --locked -- -D warnings` — clean
+- `cargo clippy -p kagra-shared --features python --locked -- -D warnings` — clean
 - `cargo fmt -p kagra-shared -- --check` — clean
-- `pytest tests -m "not golden"` — 658 passed, 10 skipped
+- `python tools/gen_api_index.py --check` — 70 entries
+- `pytest tests -m "not golden"` — 672 passed, 10 skipped
 - `python examples/sports_minimal.py --headless` — won 2-0, rematch phase playing, score 0 (lavapipe)
 - `python -m kagra.verify examples/verify_scenarios/sports_smoke.json` — ok, offscreen not skipped
 - `sports_goal_smoke` still ok
-- Other current smokes ok on lavapipe except three that already fail without this change: `demo_live_smoke` (script missing), `physics_stack_smoke` (png only when the physics feature is built), `rpg_town_smoke` (fixture walker name is `hero`, smoke asks for `player`)
+- Other current smokes ok on lavapipe except two that already fail without this change: `demo_live_smoke` (script missing), `physics_stack_smoke` (png only when the physics feature is built)

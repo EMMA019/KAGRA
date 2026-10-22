@@ -260,7 +260,7 @@ fn named_prop_mut<'a>(doc: &'a mut WorldDoc, name: &str) -> Option<&'a mut World
     doc.props.iter_mut().find(|p| p.name == name)
 }
 
-fn player_at_stove(doc: &WorldDoc) -> bool {
+pub(crate) fn player_at_stove(doc: &WorldDoc) -> bool {
     let Some(player) = player_ref(doc) else {
         return false;
     };
@@ -275,16 +275,67 @@ fn player_at_stove(doc: &WorldDoc) -> bool {
     (dx * dx + dz * dz).sqrt() <= COOK_REACH
 }
 
-fn paint_pan(doc: &mut WorldDoc, color: [u32; 3]) {
+pub(crate) fn paint_pan(doc: &mut WorldDoc, color: [u32; 3]) {
     if let Some(p) = named_prop_mut(doc, "pan") {
         p.enabled = true;
         p.color = Some(color);
     }
 }
 
-fn show_meal(doc: &mut WorldDoc) {
+pub(crate) fn show_meal(doc: &mut WorldDoc) {
     if let Some(p) = named_prop_mut(doc, "meal") {
         p.enabled = true;
+    }
+}
+
+/// Heat rises on its own. Tap inside the band to finish. Tap early and the
+/// pan is still raw. Past the band, or letting it hit the burn line, burns.
+pub const HEAT_RISE: f32 = 0.50;
+pub const HEAT_LO: f32 = 0.40;
+pub const HEAT_HI: f32 = 0.72;
+pub const HEAT_BURN: f32 = 0.90;
+
+#[derive(Clone, Debug)]
+pub struct Heat {
+    pub value: f32,
+    pub cooked: bool,
+    pub burnt: bool,
+    pub early: bool,
+}
+
+impl Default for Heat {
+    fn default() -> Self {
+        Self {
+            value: 0.0,
+            cooked: false,
+            burnt: false,
+            early: false,
+        }
+    }
+}
+
+pub fn heat_in_zone(value: f32) -> bool {
+    (HEAT_LO..=HEAT_HI).contains(&value)
+}
+
+pub fn tick_heat(heat: &mut Heat, tap: bool, dt: f32) {
+    if heat.cooked || heat.burnt || heat.early {
+        return;
+    }
+    let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+    if tap {
+        if heat_in_zone(heat.value) {
+            heat.cooked = true;
+        } else if heat.value > HEAT_HI {
+            heat.burnt = true;
+        } else {
+            heat.early = true;
+        }
+        return;
+    }
+    heat.value = (heat.value + HEAT_RISE * dt).min(1.0);
+    if heat.value >= HEAT_BURN {
+        heat.burnt = true;
     }
 }
 
@@ -706,5 +757,31 @@ mod tests {
         let stage = WorldPlay::from_json(STAGE).unwrap();
         assert!(stage.is_rhythm());
         assert!(!stage.is_cook());
+    }
+
+    #[test]
+    fn heat_tap_in_the_band_cooks_and_a_missed_pan_burns() {
+        let mut heat = Heat::default();
+        for _ in 0..180 {
+            let tap = heat_in_zone(heat.value);
+            tick_heat(&mut heat, tap, 1.0 / 60.0);
+            if heat.cooked {
+                break;
+            }
+        }
+        assert!(heat.cooked && !heat.burnt, "value {}", heat.value);
+
+        let mut missed = Heat::default();
+        for _ in 0..180 {
+            tick_heat(&mut missed, false, 1.0 / 60.0);
+            if missed.burnt {
+                break;
+            }
+        }
+        assert!(missed.burnt && !missed.cooked, "value {}", missed.value);
+
+        let mut early = Heat::default();
+        tick_heat(&mut early, true, 1.0 / 60.0);
+        assert!(early.early && !early.cooked);
     }
 }

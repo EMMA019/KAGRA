@@ -10,3 +10,5 @@ Headless (lavapipe), scripted shot: `won=True score=2-0 rematch_phase=playing re
 Screenshot: `scratch/sports.png` (YOU WIN 2-0, stick, KICK, knight and rogue).
 
 `python -m kagra.verify examples/verify_scenarios/sports_smoke.json` — ok, offscreen not skipped (`scratch/sports_shared.png`).
+
+Merged `origin/master` before push. `cargo test -p kagra-shared --lib --locked` 469 passed. `pytest tests -m "not golden"` 672 passed, 10 skipped. Verify loop fails only `demo_live_smoke` and `physics_stack_smoke`.

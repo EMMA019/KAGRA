@@ -1,0 +1,32 @@
+{
+  "name": "rpg_smoke",
+  "notes": "town_gate village GenreSession. Talk, turn battle, shop, gold, XP level-up stay in Rust. KayKit knight/mage/barbarian/rogue plus inn, house, well, trees. HUD is Japanese (PixelMplus) or ASCII. Walker name is hero.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/rpg_world.json",
+    "player.on_ground": true,
+    "genre": "town_gate",
+    "coins": 20,
+    "query": [
+      {"type": "walker", "name": "hero", "count": 1},
+      {"type": "walker", "name": "ally", "count": 1},
+      {"type": "prop", "name": "npc", "count": 1},
+      {"type": "prop", "name": "shop", "count": 1},
+      {"type": "prop", "name": "enemy", "count": 1},
+      {"type": "prop", "name": "village", "count": 1},
+      {"type": "prop", "name": "house", "count": 1},
+      {"type": "prop", "name": "well", "count": 1},
+      {"type": "prop", "name": "tree", "min_count": 1},
+      {"type": "light", "count": 4}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/rpg_world.json",
+    "out": "scratch/rpg_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200,
+    "pixels": [
+      {"x": 40, "y": 30, "w": 240, "h": 110, "not_solid": true}
+    ]
+  }
+}

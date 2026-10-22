@@ -1,0 +1,31 @@
+{
+  "name": "action_smoke",
+  "notes": "action_arena GenreSession. KayKit knight vs rogue/mage minions, then a barbarian boss. Hitboxes, HP, combos, and enemy AI stay in Rust. HUD is Python (ASCII). Keyboard plus on-screen stick and ATK/DODGE. No Rapier, no VRM.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/action_world.json",
+    "genre": "action_arena",
+    "player.on_ground": true,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "walker", "name": "foe", "count": 3},
+      {"type": "walker", "name": "boss", "count": 1},
+      {"type": "prop", "name": "floor", "count": 1},
+      {"type": "prop", "name": "tree", "count": 1},
+      {"type": "prop", "name": "pine", "count": 1},
+      {"type": "prop", "name": "rock", "count": 1},
+      {"type": "prop", "name": "well", "count": 1},
+      {"type": "prop", "name": "pillar", "min_count": 1},
+      {"type": "light", "min_count": 1}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/action_world.json",
+    "out": "scratch/action_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200,
+    "pixels": [
+      {"x": 40, "y": 30, "w": 240, "h": 110, "not_solid": true}
+    ]
+  }
+}

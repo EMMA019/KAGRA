@@ -1,0 +1,39 @@
+{
+  "name": "fishcook_smoke",
+  "notes": "fishcook GenreSession. Cast, tension reel, cook, sell, day goal. Knight, gazebo, mill, chest, inn, trees, rock, crate.glb pier. HUD ASCII in the Python example. Not fish_cast or cook_stove. No Rapier, no VRM.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/fishcook_world.json",
+    "genre": "fishcook",
+    "player.on_ground": true,
+    "coins": 0,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "prop", "name": "dock", "count": 1},
+      {"type": "prop", "name": "gazebo", "count": 1},
+      {"type": "prop", "name": "stove", "count": 1},
+      {"type": "prop", "name": "stall", "count": 1},
+      {"type": "prop", "name": "inn", "count": 1},
+      {"type": "prop", "name": "tree", "count": 1},
+      {"type": "prop", "name": "pine", "count": 1},
+      {"type": "prop", "name": "rock", "count": 1},
+      {"type": "prop", "name": "bobber", "count": 1},
+      {"type": "prop", "name": "fish", "count": 1},
+      {"type": "prop", "name": "pan", "count": 1},
+      {"type": "prop", "name": "meal", "count": 1},
+      {"type": "prop", "name": "flag", "count": 1},
+      {"type": "prop", "name": "floor", "count": 1},
+      {"type": "light", "count": 4},
+      {"type": "camera", "name": "shore", "count": 1}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/fishcook_world.json",
+    "out": "scratch/fishcook_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200,
+    "pixels": [
+      {"x": 40, "y": 24, "w": 240, "h": 120, "not_solid": true}
+    ]
+  }
+}
