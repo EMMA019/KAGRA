@@ -159,6 +159,7 @@ def _public_from_init() -> list[tuple[str, str, str]]:
 
 # 本線（shared wgpu 30 / Python ゲームマスター）。棚の奥は残った再エクスポート。
 FRONT_NAMES = {
+    "ActionSession",
     "AssetKind",
     "Brain",
     "BrainError",
@@ -182,6 +183,7 @@ FRONT_NAMES = {
     "debug_trace",
     "debug_trace_summary",
     "draw_world",
+    "FightSession",
     "eval_world_expect",
     "find_path",
     "get_lang",

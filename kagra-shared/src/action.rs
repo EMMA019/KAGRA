@@ -1,9 +1,11 @@
-//! Action close on play_world: hit, dodge, kill, die, retry.
+//! Action close on play_world: hit, dodge, combo, kill, die, retry.
 //!
-//! Sibling of `collectathon`. Capsule player vs capsule / box foes on a
-//! World.dump. Title -> play -> result reuses `WorldPlay` / `GamePhase`.
-//! Hit flash and death overlay are `DrawList` quads on shared wgpu 30.
-//! No Rapier, no VRM skin, no RendererV2, no new ECS.
+//! Sibling of `collectathon` / `fight`. Capsule or KayKit walkers vs foes on a
+//! World.dump. Minions (`name == "foe"`) fall first; a `boss` prop or walker
+//! wakes after that and must be defeated to win. Two hits inside `COMBO_TIME`
+//! are a combo (dump name `combo`). Title -> play -> result reuses
+//! `WorldPlay` / `GamePhase`. Hit flash and death overlay are `DrawList`
+//! quads on shared wgpu 30. No Rapier, no VRM skin, no RendererV2, no new ECS.
 
 use crate::collectathon::WalkInput;
 use crate::game::GamePhase;
@@ -26,6 +28,13 @@ pub const DODGE_SPEED: f32 = 13.0;
 pub const HIT_FLASH: f32 = 0.20;
 pub const CONTACT_CD: f32 = 0.55;
 pub const FOE_SPEED: f32 = 2.2;
+pub const BOSS_HP: u32 = 4;
+pub const BOSS_SPEED: f32 = 3.15;
+pub const BOSS_DASH_SPEED: f32 = 8.5;
+pub const BOSS_DASH_TIME: f32 = 0.16;
+pub const BOSS_DASH_CD: f32 = 1.15;
+pub const BOSS_R: f32 = 0.62;
+pub const COMBO_TIME: f32 = 0.48;
 pub const BODY_H: f32 = 0.95;
 
 /// Live combat around a dump. HP / swing / i-frames stay here; foes in the
@@ -43,8 +52,18 @@ pub struct ActionGame {
     pub contact_cd: f32,
     pub dead: bool,
     pub won: bool,
+    /// Landed hits still inside [`COMBO_TIME`]. 2+ is a combo.
+    pub combo: u32,
+    /// Boss pool. 0 when the dump has no boss.
+    pub boss_hp: u32,
+    /// True once minions are gone and the boss is in the fight.
+    pub boss_up: bool,
     foe_hp: HashMap<String, u32>,
     swing_hit: HashSet<String>,
+    boss_id: Option<String>,
+    combo_t: f32,
+    boss_cd: f32,
+    boss_dash: f32,
 }
 
 impl Default for ActionGame {
@@ -61,8 +80,15 @@ impl Default for ActionGame {
             contact_cd: 0.0,
             dead: false,
             won: false,
+            combo: 0,
+            boss_hp: 0,
+            boss_up: false,
             foe_hp: HashMap::new(),
             swing_hit: HashSet::new(),
+            boss_id: None,
+            combo_t: 0.0,
+            boss_cd: 0.4,
+            boss_dash: 0.0,
         }
     }
 }
@@ -74,11 +100,37 @@ impl ActionGame {
         g
     }
 
+    pub fn has_boss(&self) -> bool {
+        self.boss_id.is_some()
+    }
+
     fn rebind_foes(&mut self, doc: &WorldDoc) {
         self.foe_hp.clear();
+        self.boss_id = None;
+        self.boss_hp = 0;
+        self.boss_up = false;
+        self.boss_cd = 0.4;
+        self.boss_dash = 0.0;
+        let pid = player_id(doc);
         for p in &doc.props {
             if is_foe(p) && p.enabled {
                 self.foe_hp.insert(p.id.clone(), FOE_HP);
+            } else if is_boss_prop(p) {
+                self.boss_id = Some(p.id.clone());
+                self.boss_hp = BOSS_HP;
+                self.boss_up = p.enabled && live_minions(doc) == 0;
+            }
+        }
+        for w in &doc.walkers {
+            if Some(w.id.as_str()) == pid {
+                continue;
+            }
+            if w.name == "foe" {
+                self.foe_hp.insert(w.id.clone(), FOE_HP);
+            } else if w.name == "boss" || w.name == "wait" {
+                self.boss_id = Some(w.id.clone());
+                self.boss_hp = BOSS_HP;
+                self.boss_up = w.name == "boss" && live_minions(doc) == 0;
             }
         }
     }
@@ -90,6 +142,14 @@ pub fn is_action(doc: &WorldDoc) -> bool {
 
 fn is_foe(p: &WorldProp) -> bool {
     p.name == "foe"
+}
+
+fn is_boss_prop(p: &WorldProp) -> bool {
+    p.name == "boss"
+}
+
+fn player_id(doc: &WorldDoc) -> Option<&str> {
+    player_ref(doc).map(|w| w.id.as_str())
 }
 
 fn is_box_foe(p: &WorldProp) -> bool {
@@ -139,14 +199,16 @@ fn set_player_name(doc: &mut WorldDoc, name: &str) {
     write_player(doc, w);
 }
 
-/// Sit foes on the floor. Does not spawn extra foes (dump is source of truth).
+/// Sit foes on the floor. A boss stays dormant (`wait` / disabled) while any
+/// minion is still up. Does not spawn extra foes (dump is source of truth).
 pub fn seed(doc: &mut WorldDoc) {
     if !is_action(doc) {
         return;
     }
-    let mut ys = Vec::new();
+    let minions = live_minions(doc);
+    let mut prop_y = Vec::new();
     for (i, p) in doc.props.iter().enumerate() {
-        if !is_foe(p) || !p.enabled {
+        if !is_foe(p) && !is_boss_prop(p) {
             continue;
         }
         let extra = if is_box_foe(p) {
@@ -155,13 +217,46 @@ pub fn seed(doc: &mut WorldDoc) {
             BODY_H
         };
         let y = doc.height_at(p.position[0], p.position[2]) + extra;
-        ys.push((i, y));
+        prop_y.push((i, y));
     }
-    for (i, y) in ys {
+    for (i, y) in prop_y {
         if let Some(p) = doc.props.get_mut(i) {
             p.position[1] = y;
+            if is_boss_prop(p) && minions > 0 {
+                p.enabled = false;
+            }
         }
     }
+    let pid = player_id(doc).unwrap_or("").to_string();
+    let mut walker_y = Vec::new();
+    for (i, w) in doc.walkers.iter().enumerate() {
+        if w.id == pid {
+            continue;
+        }
+        if w.name != "foe" && w.name != "boss" && w.name != "wait" {
+            continue;
+        }
+        let spec = w.gltf.as_deref().filter(|s| !s.trim().is_empty());
+        let y = stand_y(doc, w.position[0], w.position[2], spec, None);
+        walker_y.push((i, y, minions > 0 && w.name == "boss"));
+    }
+    for (i, y, park) in walker_y {
+        if let Some(w) = doc.walkers.get_mut(i) {
+            w.position[1] = y;
+            w.on_ground = true;
+            if park {
+                w.name = "wait".into();
+            }
+        }
+    }
+}
+
+fn stand_y(doc: &WorldDoc, x: f32, z: f32, spec: Option<&str>, box_extra: Option<f32>) -> f32 {
+    let ground = doc.height_at(x, z);
+    if let Some(spec) = spec.map(str::trim).filter(|s| !s.is_empty()) {
+        return ground - crate::world_doc::walker_rest_min_y(spec);
+    }
+    ground + box_extra.unwrap_or(BODY_H)
 }
 
 /// Combat + foe chase. Caller already stepped the walker and chase camera.
@@ -174,6 +269,12 @@ pub fn tick(doc: &mut WorldDoc, game: &mut ActionGame, input: WalkInput, look_ya
     game.iframe_t = (game.iframe_t - dt).max(0.0);
     game.flash_t = (game.flash_t - dt).max(0.0);
     game.contact_cd = (game.contact_cd - dt).max(0.0);
+    game.combo_t = (game.combo_t - dt).max(0.0);
+    game.boss_cd = (game.boss_cd - dt).max(0.0);
+    game.boss_dash = (game.boss_dash - dt).max(0.0);
+    if game.combo_t <= 0.0 {
+        game.combo = 0;
+    }
     if game.flash_t <= 0.0 && !game.dead {
         set_player_name(doc, "player");
         game.hurt_flash = false;
@@ -183,16 +284,31 @@ pub fn tick(doc: &mut WorldDoc, game: &mut ActionGame, input: WalkInput, look_ya
     apply_attack(doc, game, input);
     chase_foes(doc, game, dt);
     apply_contact(doc, game);
+    doc.coins = game.hits;
 
     if game.hp == 0 && !game.dead {
         die(doc, game);
-    } else if live_foes(doc) == 0 {
-        game.won = true;
+    } else if live_minions(doc) == 0 {
+        if game.boss_hp > 0 && !game.boss_up {
+            if let Some(id) = game.boss_id.clone() {
+                wake_boss(doc, &id);
+                game.boss_up = true;
+            }
+        } else if game.boss_id.is_none() || game.boss_hp == 0 {
+            game.won = true;
+        }
     }
 }
 
-fn live_foes(doc: &WorldDoc) -> usize {
-    doc.props.iter().filter(|p| is_foe(p) && p.enabled).count()
+fn live_minions(doc: &WorldDoc) -> usize {
+    let pid = player_id(doc);
+    let props = doc.props.iter().filter(|p| is_foe(p) && p.enabled).count();
+    let walks = doc
+        .walkers
+        .iter()
+        .filter(|w| w.name == "foe" && Some(w.id.as_str()) != pid)
+        .count();
+    props + walks
 }
 
 fn apply_dodge(
@@ -234,6 +350,144 @@ fn apply_dodge(
     write_player(doc, w);
 }
 
+#[derive(Clone)]
+struct Spot {
+    id: String,
+    x: f32,
+    z: f32,
+    radius: f32,
+    boss: bool,
+    walker: bool,
+    box_extra: Option<f32>,
+    spec: Option<String>,
+}
+
+fn live_spots(doc: &WorldDoc) -> Vec<Spot> {
+    let pid = player_id(doc);
+    let mut out = Vec::new();
+    for p in &doc.props {
+        if !p.enabled {
+            continue;
+        }
+        let boss = is_boss_prop(p);
+        if !is_foe(p) && !boss {
+            continue;
+        }
+        let box_extra = if is_box_foe(p) {
+            Some(0.5 * p.scale[1].abs().max(0.4))
+        } else {
+            None
+        };
+        out.push(Spot {
+            id: p.id.clone(),
+            x: p.position[0],
+            z: p.position[2],
+            radius: foe_radius(p),
+            boss,
+            walker: false,
+            box_extra,
+            spec: None,
+        });
+    }
+    for w in &doc.walkers {
+        if Some(w.id.as_str()) == pid {
+            continue;
+        }
+        let boss = w.name == "boss";
+        if w.name != "foe" && !boss {
+            continue;
+        }
+        let spec = w
+            .gltf
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        out.push(Spot {
+            id: w.id.clone(),
+            x: w.position[0],
+            z: w.position[2],
+            radius: if boss { BOSS_R } else { FOE_CAPSULE_R },
+            boss,
+            walker: true,
+            box_extra: None,
+            spec,
+        });
+    }
+    out
+}
+
+fn place_body(doc: &mut WorldDoc, spot: &Spot, x: f32, y: f32, z: f32, yaw: f32) {
+    let pid = player_id(doc).unwrap_or("").to_string();
+    if spot.id == pid {
+        return;
+    }
+    if !spot.walker {
+        if let Some(p) = doc.props.iter_mut().find(|p| p.id == spot.id) {
+            p.position = [x, y, z];
+            p.yaw = yaw;
+        }
+        return;
+    }
+    if let Some(w) = doc.walkers.iter_mut().find(|w| w.id == spot.id) {
+        w.position = [x, y, z];
+        w.yaw = yaw;
+        w.face = yaw;
+        w.on_ground = true;
+        w.anim = "walk".into();
+        w.clip += 1.0 / 60.0;
+        w.anim_blend = (w.anim_blend + 0.15).min(1.0);
+    }
+}
+
+fn defeat_body(doc: &mut WorldDoc, id: &str) {
+    let pid = player_id(doc).unwrap_or("").to_string();
+    if id == pid {
+        return;
+    }
+    if let Some(p) = doc.props.iter_mut().find(|p| p.id == id) {
+        p.enabled = false;
+    }
+    if let Some(w) = doc.walkers.iter_mut().find(|w| w.id == id) {
+        w.name = "ko".into();
+        w.anim = "idle".into();
+        w.anim_blend = 0.0;
+    }
+}
+
+fn wake_boss(doc: &mut WorldDoc, id: &str) {
+    let pid = player_id(doc).unwrap_or("").to_string();
+    if id == pid {
+        return;
+    }
+    if let Some(p) = doc.props.iter_mut().find(|p| p.id == id) {
+        p.enabled = true;
+        if p.name != "boss" {
+            p.name = "boss".into();
+        }
+    }
+    if let Some(w) = doc.walkers.iter_mut().find(|w| w.id == id) {
+        w.name = "boss".into();
+    }
+}
+
+fn note_hit(doc: &mut WorldDoc, game: &mut ActionGame) {
+    game.hits += 1;
+    if game.combo_t > 0.0 {
+        game.combo = game.combo.saturating_add(1);
+    } else {
+        game.combo = 1;
+    }
+    game.combo_t = COMBO_TIME;
+    game.flash_t = HIT_FLASH;
+    game.hurt_flash = false;
+    if game.combo >= 2 {
+        set_player_name(doc, "combo");
+    } else {
+        set_player_name(doc, "hurt");
+    }
+}
+
 fn apply_attack(doc: &mut WorldDoc, game: &mut ActionGame, input: WalkInput) {
     if input.attack && game.attack_t <= 0.0 {
         game.attack_t = ATTACK_TIME;
@@ -248,39 +502,40 @@ fn apply_attack(doc: &mut WorldDoc, game: &mut ActionGame, input: WalkInput) {
     let (s, c) = w.yaw.sin_cos();
     let ax = w.position[0] + s * ATTACK_REACH * 0.62;
     let az = w.position[2] + c * ATTACK_REACH * 0.62;
-    let mut hits: Vec<String> = Vec::new();
-    for p in &doc.props {
-        if !is_foe(p) || !p.enabled {
+    let spots = live_spots(doc);
+    let mut hits: Vec<Spot> = Vec::new();
+    for spot in spots {
+        if game.swing_hit.contains(&spot.id) {
             continue;
         }
-        if game.swing_hit.contains(&p.id) {
-            continue;
-        }
-        let r = foe_radius(p) + ATTACK_R;
-        let dx = ax - p.position[0];
-        let dz = az - p.position[2];
+        let r = spot.radius + ATTACK_R;
+        let dx = ax - spot.x;
+        let dz = az - spot.z;
         if dx * dx + dz * dz <= r * r {
-            hits.push(p.id.clone());
+            hits.push(spot);
         }
     }
-    for id in hits {
-        game.swing_hit.insert(id.clone());
-        let hp = game.foe_hp.entry(id.clone()).or_insert(FOE_HP);
-        *hp = hp.saturating_sub(1);
-        game.hits += 1;
-        game.flash_t = HIT_FLASH;
-        game.hurt_flash = false;
-        set_player_name(doc, "hurt");
-        if *hp == 0 {
-            if let Some(p) = doc.props.iter_mut().find(|p| p.id == id) {
-                p.enabled = false;
+    for spot in hits {
+        game.swing_hit.insert(spot.id.clone());
+        note_hit(doc, game);
+        if spot.boss {
+            game.boss_hp = game.boss_hp.saturating_sub(1);
+            if game.boss_hp == 0 {
+                defeat_body(doc, &spot.id);
+                game.kills += 1;
             }
-            game.kills += 1;
+        } else {
+            let hp = game.foe_hp.entry(spot.id.clone()).or_insert(FOE_HP);
+            *hp = hp.saturating_sub(1);
+            if *hp == 0 {
+                defeat_body(doc, &spot.id);
+                game.kills += 1;
+            }
         }
     }
 }
 
-fn chase_foes(doc: &mut WorldDoc, game: &ActionGame, dt: f32) {
+fn chase_foes(doc: &mut WorldDoc, game: &mut ActionGame, dt: f32) {
     if game.dead {
         return;
     }
@@ -290,36 +545,62 @@ fn chase_foes(doc: &mut WorldDoc, game: &ActionGame, dt: f32) {
     let px = w.position[0];
     let pz = w.position[2];
     let half = doc.half.max(4.0);
-    let mut moves: Vec<(usize, f32, f32, f32)> = Vec::new();
-    for (i, p) in doc.props.iter().enumerate() {
-        if !is_foe(p) || !p.enabled {
-            continue;
-        }
-        let dx = px - p.position[0];
-        let dz = pz - p.position[2];
+    let spots = live_spots(doc);
+    let mut moves: Vec<(Spot, f32, f32, f32, f32)> = Vec::new();
+    let mut start_dash = false;
+    for spot in spots {
+        let dx = px - spot.x;
+        let dz = pz - spot.z;
         let dist = (dx * dx + dz * dz).sqrt();
-        let stop = foe_radius(p) + PLAYER_R + 0.08;
-        if dist <= stop + 0.02 {
+        let stop = spot.radius + PLAYER_R + 0.08;
+        let dashing = spot.boss && game.boss_dash > 0.0;
+        if dist <= stop + 0.02 && !dashing {
+            let yaw = (px - spot.x).atan2(pz - spot.z);
+            let sx = spot.x;
+            let sz = spot.z;
+            moves.push((spot, sx, 0.0, sz, yaw));
             continue;
         }
+        if spot.boss && dist < 2.6 && game.boss_cd <= 0.0 && game.boss_dash <= 0.0 {
+            start_dash = true;
+        }
+        let speed = if spot.boss {
+            if game.boss_dash > 0.0 {
+                BOSS_DASH_SPEED
+            } else {
+                BOSS_SPEED
+            }
+        } else {
+            FOE_SPEED
+        };
         let nx = dx / dist.max(1e-4);
         let nz = dz / dist.max(1e-4);
-        let x = (p.position[0] + nx * FOE_SPEED * dt).clamp(-half + 1.0, half - 1.0);
-        let z = (p.position[2] + nz * FOE_SPEED * dt).clamp(-half + 1.0, half - 1.0);
-        let extra = if is_box_foe(p) {
-            0.5 * p.scale[1].abs().max(0.4)
-        } else {
-            BODY_H
-        };
-        let y = doc.height_at(x, z) + extra;
-        moves.push((i, x, y, z));
+        let x = (spot.x + nx * speed * dt).clamp(-half + 1.0, half - 1.0);
+        let z = (spot.z + nz * speed * dt).clamp(-half + 1.0, half - 1.0);
+        let y = stand_y(doc, x, z, spot.spec.as_deref(), spot.box_extra);
+        let yaw = (px - x).atan2(pz - z);
+        moves.push((spot, x, y, z, yaw));
     }
-    for (i, x, y, z) in moves {
-        if let Some(p) = doc.props.get_mut(i) {
-            p.position = [x, y, z];
-            p.yaw = (px - x).atan2(pz - z);
-        }
+    if start_dash {
+        game.boss_dash = BOSS_DASH_TIME;
+        game.boss_cd = BOSS_DASH_CD;
     }
+    for (spot, x, y, z, yaw) in moves {
+        let held = (y - 0.0).abs() < 1e-6 && (x - spot.x).abs() < 1e-6 && (z - spot.z).abs() < 1e-6;
+        let py = if held { body_y(doc, &spot.id) } else { y };
+        place_body(doc, &spot, x, py, z, yaw);
+    }
+}
+
+fn body_y(doc: &WorldDoc, id: &str) -> f32 {
+    if let Some(p) = doc.props.iter().find(|p| p.id == id) {
+        return p.position[1];
+    }
+    doc.walkers
+        .iter()
+        .find(|w| w.id == id)
+        .map(|w| w.position[1])
+        .unwrap_or(0.0)
 }
 
 fn apply_contact(doc: &mut WorldDoc, game: &mut ActionGame) {
@@ -332,13 +613,10 @@ fn apply_contact(doc: &mut WorldDoc, game: &mut ActionGame) {
     let px = w.position[0];
     let pz = w.position[2];
     let mut hit = false;
-    for p in &doc.props {
-        if !is_foe(p) || !p.enabled {
-            continue;
-        }
-        let r = foe_radius(p) + PLAYER_R;
-        let dx = px - p.position[0];
-        let dz = pz - p.position[2];
+    for spot in live_spots(doc) {
+        let r = spot.radius + PLAYER_R;
+        let dx = px - spot.x;
+        let dz = pz - spot.z;
         if dx * dx + dz * dz <= r * r {
             hit = true;
             break;
@@ -440,6 +718,16 @@ pub fn build_hud(game: &ActionGame, phase: GamePhase, width: u32, height: u32) -
                     8.0 * scale,
                     [80, 180, 220, 220],
                 ));
+            }
+            if game.boss_up && BOSS_HP > 0 {
+                let bw = 160.0 * scale;
+                let bh = 10.0 * scale;
+                let bx = w - pad - bw;
+                quads.push(Quad::new(bx, pad, bw, bh, [28, 16, 16, 180]));
+                let frac = (game.boss_hp as f32 / BOSS_HP as f32).clamp(0.0, 1.0);
+                if frac > 0.0 {
+                    quads.push(Quad::new(bx, pad, bw * frac, bh, [196, 48, 64, 255]));
+                }
             }
         }
         GamePhase::Complete => {

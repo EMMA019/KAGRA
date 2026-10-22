@@ -976,3 +976,75 @@ def test_race_session_three_laps_and_ghost():
     assert session.best_lap > 0.5
     assert session.ghost
     assert session.phase == "complete"
+
+
+def test_action_fixture_is_kaykit_arena():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/action_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["genre"] == "action_arena"
+    assert data["player"]["on_ground"] is True
+    assert data["player"].get("gltf") == "knight"
+    foes = [w for w in data["walkers"] if w.get("name") == "foe"]
+    assert len(foes) == 3
+    assert {w.get("gltf") for w in foes} >= {"rogue", "mage"}
+    boss = next(w for w in data["walkers"] if w.get("name") == "boss")
+    assert boss.get("gltf") == "barbarian"
+    assert any(p.get("gltf") == "stylized_tree" for p in data["props"])
+    assert any(p.get("gltf") == "rock" for p in data["props"])
+    assert any(p.get("gltf") == "crate.glb" for p in data["props"])
+    assert data.get("heightfield") in (None, {})
+
+
+def test_action_session_clears_minions_then_boss():
+    import importlib.util
+    import json
+
+    try:
+        from kagra.kagra_shared import ActionSession, FightSession
+    except ImportError:
+        try:
+            from kagra_shared import ActionSession, FightSession
+        except ImportError:
+            pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/action_world.json"
+    raw = path.read_text(encoding="utf-8")
+    with pytest.raises(Exception):
+        FightSession.from_json(raw)
+    session = ActionSession.from_json(raw)
+    assert session.genre_id == "action_arena"
+    assert session.phase == "title"
+    assert session.foes_left == 3
+    assert session.boss_hp_max == 4
+    assert not session.boss_up
+    session.confirm()
+    spec = importlib.util.spec_from_file_location(
+        "action_minimal", ROOT / "examples/action_minimal.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    saw_boss = False
+    saw_combo = False
+    for _ in range(3600):
+        if session.won:
+            break
+        if session.phase != "playing":
+            session.confirm()
+        world = json.loads(session.dump())
+        if session.boss_up:
+            saw_boss = True
+        if session.combo >= 2:
+            saw_combo = True
+        lx, lz, attack, dodge = mod._wish(world)
+        session.set_input(lx, lz, False, attack, dodge)
+        session.tick(1.0 / 60.0)
+    assert session.won and not session.dead
+    assert saw_boss and saw_combo
+    assert session.kills >= 4
+    assert session.phase == "complete"
+    session.confirm()
+    assert session.phase == "playing"
+    assert session.foes_left == 3
+    assert session.hp == session.hp_max

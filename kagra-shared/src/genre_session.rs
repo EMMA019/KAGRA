@@ -5,7 +5,9 @@
 //! `kagra-shared/src/<genre>.rs`; this module is the thin adapter over
 //! `WorldPlay` (today) or a slimmer loop later.
 
+use crate::action;
 use crate::collectathon::WalkInput;
+use crate::fight;
 use crate::game::GamePhase;
 use crate::novel;
 use crate::platformer;
@@ -484,6 +486,245 @@ impl RaceSession {
     }
 }
 
+/// Arena combat (`action_arena`). Hitboxes, HP, combos, minion AI, and the
+/// boss wave stay in `action.rs`.
+#[derive(Clone, Debug)]
+pub struct ActionSession {
+    inner: WorldPlay,
+}
+
+impl GenreSession for ActionSession {
+    fn genre_id(&self) -> &'static str {
+        action::GAME_ID
+    }
+
+    fn from_json(json: &str) -> Result<Self, GenreSessionError> {
+        let inner = WorldPlay::from_json(json)?;
+        if !action::is_action(&inner.doc) {
+            return Err(format!(
+                "WorldDoc.genre must be {:?}, got {:?}",
+                action::GAME_ID,
+                inner.doc.genre
+            ));
+        }
+        Ok(Self { inner })
+    }
+
+    fn set_input(&mut self, input: WalkInput) {
+        self.inner.input = input.clamped();
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.inner.tick(dt);
+    }
+
+    fn dump(&self) -> Result<String, GenreSessionError> {
+        self.inner.doc.to_json()
+    }
+
+    fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        self.inner.take_events(name)
+    }
+
+    fn confirm(&mut self) {
+        self.inner.confirm();
+    }
+
+    fn emit_event(
+        &mut self,
+        name: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), GenreSessionError> {
+        self.inner.emit_event(name, data);
+        Ok(())
+    }
+
+    fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        self.inner.start_timer(name, seconds, on_done)
+    }
+
+    fn step_interact(&mut self) {
+        self.inner.step_interact();
+    }
+
+    fn phase(&self) -> GamePhase {
+        self.inner.game.phase
+    }
+}
+
+impl ActionSession {
+    pub fn hp(&self) -> u32 {
+        self.inner.action.hp
+    }
+
+    pub fn hp_max(&self) -> u32 {
+        action::PLAYER_HP
+    }
+
+    pub fn hits(&self) -> u32 {
+        self.inner.action.hits
+    }
+
+    pub fn kills(&self) -> u32 {
+        self.inner.action.kills
+    }
+
+    pub fn combo(&self) -> u32 {
+        self.inner.action.combo
+    }
+
+    pub fn dead(&self) -> bool {
+        self.inner.action.dead
+    }
+
+    pub fn won(&self) -> bool {
+        self.inner.action.won
+    }
+
+    pub fn boss_up(&self) -> bool {
+        self.inner.action.boss_up
+    }
+
+    pub fn boss_hp(&self) -> u32 {
+        self.inner.action.boss_hp
+    }
+
+    pub fn boss_hp_max(&self) -> u32 {
+        if self.inner.action.has_boss() {
+            action::BOSS_HP
+        } else {
+            0
+        }
+    }
+
+    pub fn foes_left(&self) -> u32 {
+        let pid = self.inner.doc.player.as_ref().map(|w| w.id.as_str());
+        let props = self
+            .inner
+            .doc
+            .props
+            .iter()
+            .filter(|p| p.name == "foe" && p.enabled)
+            .count();
+        let walks = self
+            .inner
+            .doc
+            .walkers
+            .iter()
+            .filter(|w| w.name == "foe" && Some(w.id.as_str()) != pid)
+            .count();
+        (props + walks) as u32
+    }
+}
+
+/// 1v1 round (`fight_hitstun`). Hitstun, guard, combo, and opponent AI stay
+/// in `fight.rs`.
+#[derive(Clone, Debug)]
+pub struct FightSession {
+    inner: WorldPlay,
+}
+
+impl GenreSession for FightSession {
+    fn genre_id(&self) -> &'static str {
+        fight::GAME_ID
+    }
+
+    fn from_json(json: &str) -> Result<Self, GenreSessionError> {
+        let inner = WorldPlay::from_json(json)?;
+        if !fight::is_fight(&inner.doc) {
+            return Err(format!(
+                "WorldDoc.genre must be {:?}, got {:?}",
+                fight::GAME_ID,
+                inner.doc.genre
+            ));
+        }
+        Ok(Self { inner })
+    }
+
+    fn set_input(&mut self, input: WalkInput) {
+        self.inner.input = input.clamped();
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.inner.tick(dt);
+    }
+
+    fn dump(&self) -> Result<String, GenreSessionError> {
+        self.inner.doc.to_json()
+    }
+
+    fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        self.inner.take_events(name)
+    }
+
+    fn confirm(&mut self) {
+        self.inner.confirm();
+    }
+
+    fn emit_event(
+        &mut self,
+        name: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), GenreSessionError> {
+        self.inner.emit_event(name, data);
+        Ok(())
+    }
+
+    fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        self.inner.start_timer(name, seconds, on_done)
+    }
+
+    fn step_interact(&mut self) {
+        self.inner.step_interact();
+    }
+
+    fn phase(&self) -> GamePhase {
+        self.inner.game.phase
+    }
+}
+
+impl FightSession {
+    pub fn hp(&self) -> u32 {
+        self.inner.fight.hp
+    }
+
+    pub fn hp_max(&self) -> u32 {
+        fight::PLAYER_HP
+    }
+
+    pub fn opp_hp(&self) -> u32 {
+        self.inner.fight.opp_hp
+    }
+
+    pub fn opp_hp_max(&self) -> u32 {
+        fight::OPP_HP
+    }
+
+    pub fn hits(&self) -> u32 {
+        self.inner.fight.hits
+    }
+
+    pub fn combo(&self) -> u32 {
+        self.inner.fight.combo
+    }
+
+    pub fn won(&self) -> bool {
+        self.inner.fight.won
+    }
+
+    pub fn ko(&self) -> bool {
+        self.inner.fight.ko
+    }
+
+    pub fn done(&self) -> bool {
+        self.inner.fight.done
+    }
+
+    pub fn guarding(&self) -> bool {
+        self.inner.fight.guarding
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -826,5 +1067,221 @@ mod tests {
         let crest = include_str!("../tests/fixtures/crest_isle_world.json");
         let err = RaceSession::from_json(crest).unwrap_err();
         assert!(err.contains("race_drive"));
+    }
+
+    const ARENA: &str = include_str!("../tests/fixtures/action_world.json");
+    const RING: &str = include_str!("../tests/fixtures/fight_hitstun_world.json");
+
+    fn arena_value(s: &ActionSession) -> serde_json::Value {
+        serde_json::from_str(&s.dump().expect("dump")).expect("json")
+    }
+
+    fn arena_input(s: &ActionSession) -> WalkInput {
+        let v = arena_value(s);
+        let p = &v["player"]["position"];
+        let px = p[0].as_f64().unwrap() as f32;
+        let pz = p[2].as_f64().unwrap() as f32;
+        let facing = v["player"]["yaw"].as_f64().unwrap_or(0.0) as f32;
+        let cam = &v["cameras"][0];
+        let dx =
+            cam["position"][0].as_f64().unwrap() as f32 - cam["target"][0].as_f64().unwrap() as f32;
+        let dz =
+            cam["position"][2].as_f64().unwrap() as f32 - cam["target"][2].as_f64().unwrap() as f32;
+        let yaw = (-dx).atan2(-dz);
+        let (siny, cosy) = yaw.sin_cos();
+        let pid = v["player"]["id"].as_str().unwrap_or("");
+        let mut best: Option<(f32, f32, f32)> = None;
+        for w in v["walkers"].as_array().unwrap() {
+            let id = w["id"].as_str().unwrap_or("");
+            if id == pid {
+                continue;
+            }
+            let name = w["name"].as_str().unwrap_or("");
+            if name != "foe" && name != "boss" {
+                continue;
+            }
+            let x = w["position"][0].as_f64().unwrap() as f32;
+            let z = w["position"][2].as_f64().unwrap() as f32;
+            let d = (x - px).hypot(z - pz);
+            if best.map(|(bd, _, _)| d < bd).unwrap_or(true) {
+                best = Some((d, x, z));
+            }
+        }
+        for prop in v["props"].as_array().unwrap() {
+            if prop["enabled"].as_bool() == Some(false) {
+                continue;
+            }
+            let name = prop["name"].as_str().unwrap_or("");
+            if name != "foe" && name != "boss" {
+                continue;
+            }
+            let x = prop["position"][0].as_f64().unwrap() as f32;
+            let z = prop["position"][2].as_f64().unwrap() as f32;
+            let d = (x - px).hypot(z - pz);
+            if best.map(|(bd, _, _)| d < bd).unwrap_or(true) {
+                best = Some((d, x, z));
+            }
+        }
+        let Some((dist, tx, tz)) = best else {
+            return WalkInput::default();
+        };
+        let len = (tx - px).hypot(tz - pz).max(1e-4);
+        let nx = (tx - px) / len;
+        let nz = (tz - pz) / len;
+        let lx = nx * -cosy + nz * siny;
+        let lz = nx * siny + nz * cosy;
+        let desired = nx.atan2(nz);
+        let mut err = desired - facing;
+        while err > std::f32::consts::PI {
+            err -= std::f32::consts::TAU;
+        }
+        while err < -std::f32::consts::PI {
+            err += std::f32::consts::TAU;
+        }
+        // Wish must stay above the walk deadzone or the body never turns into the swing.
+        let approach = if dist < 0.95 {
+            -1.0
+        } else if err.abs() > 0.45 || dist > 1.35 {
+            1.0
+        } else {
+            0.35
+        };
+        WalkInput {
+            lx: (lx * approach).clamp(-1.0, 1.0),
+            lz: (lz * approach).clamp(-1.0, 1.0),
+            jump: false,
+            attack: dist < 1.7 && err.abs() < 0.65,
+            dodge: dist < 0.98,
+        }
+    }
+
+    #[test]
+    fn action_session_clears_minions_then_boss() {
+        let mut s = ActionSession::from_json(ARENA).expect("fixture");
+        assert_eq!(s.genre_id(), "action_arena");
+        assert_eq!(s.phase(), GamePhase::Title);
+        let dump = s.dump().expect("dump");
+        assert!(dump.contains("knight"));
+        assert!(dump.contains("rogue"));
+        assert!(dump.contains("mage"));
+        assert!(dump.contains("barbarian"));
+        assert_eq!(s.foes_left(), 3);
+        assert!(!s.boss_up());
+        assert_eq!(s.boss_hp_max(), action::BOSS_HP);
+        s.confirm();
+        assert_eq!(s.phase(), GamePhase::Playing);
+        let mut saw_boss = false;
+        let mut saw_combo = false;
+        let mut deaths = 0u32;
+        for _ in 0..3600 {
+            if s.won() {
+                break;
+            }
+            if s.dead() || s.phase() != GamePhase::Playing {
+                deaths += 1;
+                s.confirm();
+            }
+            if s.boss_up() {
+                saw_boss = true;
+            }
+            if s.combo() >= 2 {
+                saw_combo = true;
+            }
+            let input = arena_input(&s);
+            s.set_input(input);
+            s.tick(1.0 / 60.0);
+        }
+        assert!(
+            s.won() && !s.dead(),
+            "clear minions then boss, won={} dead={} hp={} kills={} foes={} boss_up={} boss_hp={} deaths={deaths}",
+            s.won(),
+            s.dead(),
+            s.hp(),
+            s.kills(),
+            s.foes_left(),
+            s.boss_up(),
+            s.boss_hp(),
+        );
+        assert!(saw_boss, "boss must enter after the minions fall");
+        assert!(saw_combo, "two hits inside the combo window");
+        assert!(s.kills() >= 4, "3 minions + boss, kills {}", s.kills());
+        assert!(deaths < 8, "too many retries: {deaths}");
+        assert_eq!(s.phase(), GamePhase::Complete);
+        assert!(s.hits() >= 4);
+        s.confirm();
+        assert_eq!(s.phase(), GamePhase::Playing);
+        assert_eq!(s.hp(), action::PLAYER_HP);
+        assert_eq!(s.foes_left(), 3);
+        assert!(!s.boss_up());
+        assert!(s.take_events("nonexistent").is_empty());
+    }
+
+    #[test]
+    fn action_rejects_other_genre() {
+        let crest = include_str!("../tests/fixtures/crest_isle_world.json");
+        let err = ActionSession::from_json(crest).unwrap_err();
+        assert!(err.contains("action_arena"));
+        let err = ActionSession::from_json(RING).unwrap_err();
+        assert!(err.contains("action_arena"));
+    }
+
+    #[test]
+    fn fight_session_kos_and_retries() {
+        let mut s = FightSession::from_json(RING).expect("fixture");
+        assert_eq!(s.genre_id(), "fight_hitstun");
+        assert_eq!(s.phase(), GamePhase::Title);
+        assert_eq!(s.hp(), fight::PLAYER_HP);
+        assert_eq!(s.opp_hp(), fight::OPP_HP);
+        s.confirm();
+        assert_eq!(s.phase(), GamePhase::Playing);
+        for _ in 0..900 {
+            if s.done() {
+                break;
+            }
+            let v = serde_json::from_str::<serde_json::Value>(&s.dump().unwrap()).unwrap();
+            let px = v["player"]["position"][0].as_f64().unwrap() as f32;
+            let ox = v["props"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| {
+                    p["name"].as_str() == Some("opponent") && p["enabled"].as_bool() != Some(false)
+                })
+                .and_then(|p| p["position"][0].as_f64())
+                .unwrap_or(f64::from(px) + 2.0) as f32;
+            let dist = (ox - px).abs();
+            s.set_input(WalkInput {
+                lx: if ox > px { 1.0 } else { -1.0 },
+                lz: 0.0,
+                jump: false,
+                attack: dist < 1.7,
+                dodge: false,
+            });
+            s.tick(1.0 / 60.0);
+        }
+        assert!(
+            s.won() && s.done() && !s.ko(),
+            "won={} done={} ko={} hp={} opp={} hits={} combo={}",
+            s.won(),
+            s.done(),
+            s.ko(),
+            s.hp(),
+            s.opp_hp(),
+            s.hits(),
+            s.combo(),
+        );
+        assert!(s.hits() >= fight::OPP_HP);
+        assert_eq!(s.phase(), GamePhase::Complete);
+        s.confirm();
+        assert_eq!(s.phase(), GamePhase::Playing);
+        assert!(!s.done());
+        assert_eq!(s.opp_hp(), fight::OPP_HP);
+        assert!(s.take_events("nonexistent").is_empty());
+    }
+
+    #[test]
+    fn fight_rejects_other_genre() {
+        let err = FightSession::from_json(ARENA).unwrap_err();
+        assert!(err.contains("fight_hitstun"));
     }
 }
