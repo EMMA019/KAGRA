@@ -41,6 +41,7 @@ pub mod novel;
 pub mod physics;
 pub mod platformer;
 pub mod playback;
+pub mod playtest;
 pub mod puzzle;
 pub mod puzzle_board;
 pub mod race;

@@ -17,6 +17,8 @@ description: >-
 2. **Resolve assets via contracts.** Prefer `kagra.contracts.resolve_asset` / MCP `kagra_resolve_asset` (aliases: Emma, walk, dance).
 3. **Close the loop.** After visual changes, run a verify scenario or MCP `kagra_render` / `kagra_verify`.
 4. **One EventLoop per process on Windows.** Always run GPU scenes in a **subprocess** (`kagra.verify`).
+5. **Repro playtest issues first.** `python scripts/repro_issue.py <issue or block>`
+   before editing a 「直してここ」 report, then attach before/after screenshots.
 
 ## Commands
 

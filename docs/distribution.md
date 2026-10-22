@@ -185,6 +185,17 @@ python scripts/package_android.py --game examples/platformer_minimal.py --releas
 `ANDROID_KEYSTORE_FILE` に鍵のパスを直接渡しても Gradle は署名する。
 base64 は Actions 用。
 
+## 直してここ
+
+デバッグ APK、ブラウザプレビュー、Windows の zip では、プレイ中に
+3 本指の長押し（タッチ）か F12（キーボード）で一時停止する。メモ（日本語）
+と直近約 10 秒の状態から、トークンなしで GitHub の playtest issue 下書きを
+開く。スクリーンショットはギャラリーかダウンロードに保存し、issue に貼る。
+リリース用のストアビルド（`KAGRA_PLAYTEST=0`、Android release）では出ない。
+
+再現は `python scripts/repro_issue.py <issue 番号またはブロック>`。
+直す前と直した後のスクリーンショットを残す。
+
 ## itch.io に上げる（手動）
 
 アカウントは無料。自動アップロードはしない（butler の API キーも置かない）。

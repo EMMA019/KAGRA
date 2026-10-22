@@ -708,3 +708,266 @@ pub unsafe extern "C" fn kagra_shared_take_audio_cues(buf: *mut c_char, buflen: 
     }
     write_cstr(&json, buf, buflen)
 }
+
+/// Debug / preview playtest overlay. `on` is 0/1. Release shells leave this off.
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_set_playtest_enabled(
+    ptr: *mut SharedSession,
+    on: c_int,
+) -> c_int {
+    match session(ptr) {
+        Some(s) => {
+            s.set_playtest_enabled(on != 0);
+            0
+        }
+        None => -1,
+    }
+}
+
+/// When non-zero, the host draws the panel (IME). The game frame stays clear.
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_set_playtest_external_chrome(
+    ptr: *mut SharedSession,
+    on: c_int,
+) -> c_int {
+    match session(ptr) {
+        Some(s) => {
+            s.set_playtest_external_chrome(on != 0);
+            0
+        }
+        None => -1,
+    }
+}
+
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。`label` と `lang` は NUL 終端か NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_set_playtest_device(
+    ptr: *mut SharedSession,
+    label: *const c_char,
+    lang: *const c_char,
+) -> c_int {
+    let label = if label.is_null() {
+        ""
+    } else {
+        CStr::from_ptr(label).to_str().unwrap_or("")
+    };
+    let lang = if lang.is_null() {
+        ""
+    } else {
+        CStr::from_ptr(lang).to_str().unwrap_or("")
+    };
+    match session(ptr) {
+        Some(s) => {
+            s.set_playtest_device(label, lang);
+            0
+        }
+        None => -1,
+    }
+}
+
+/// Gesture pointer. Does not drive the game. Returns 1 when the event is consumed.
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_playtest_pointer(
+    ptr: *mut SharedSession,
+    id: c_uint,
+    x: c_float,
+    y: c_float,
+    phase: c_uint,
+    pressure: c_float,
+) -> c_int {
+    let Some(ph) = PointerPhase::from_u8(phase as u8) else {
+        set_err("bad pointer phase");
+        return -1;
+    };
+    match session(ptr) {
+        Some(s) => {
+            if s.playtest_pointer(PointerEvent {
+                id,
+                x,
+                y,
+                phase: ph,
+                pressure,
+            }) {
+                1
+            } else {
+                0
+            }
+        }
+        None => -1,
+    }
+}
+
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。`name` は NUL 終端。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_push_key(
+    ptr: *mut SharedSession,
+    name: *const c_char,
+    down: c_int,
+) -> c_int {
+    if name.is_null() {
+        set_err("null key");
+        return -1;
+    }
+    let name = CStr::from_ptr(name).to_string_lossy();
+    match session(ptr) {
+        Some(s) => {
+            if s.push_key(&name, down != 0) {
+                1
+            } else {
+                0
+            }
+        }
+        None => -1,
+    }
+}
+
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。`note` は NUL 終端か NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_playtest_set_note(
+    ptr: *mut SharedSession,
+    note: *const c_char,
+) -> c_int {
+    let note = if note.is_null() {
+        ""
+    } else {
+        CStr::from_ptr(note).to_str().unwrap_or("")
+    };
+    match session(ptr) {
+        Some(s) => {
+            s.playtest_set_note(note);
+            0
+        }
+        None => -1,
+    }
+}
+
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。`text` は NUL 終端か NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_playtest_push_text(
+    ptr: *mut SharedSession,
+    text: *const c_char,
+) -> c_int {
+    let text = if text.is_null() {
+        ""
+    } else {
+        CStr::from_ptr(text).to_str().unwrap_or("")
+    };
+    match session(ptr) {
+        Some(s) => {
+            s.playtest_push_text(text);
+            0
+        }
+        None => -1,
+    }
+}
+
+/// Path of the screenshot the host saved. Refreshes the on-screen instruction.
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。`path` は NUL 終端か NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_playtest_set_shot_path(
+    ptr: *mut SharedSession,
+    path: *const c_char,
+) -> c_int {
+    let path = if path.is_null() {
+        ""
+    } else {
+        CStr::from_ptr(path).to_str().unwrap_or("")
+    };
+    match session(ptr) {
+        Some(s) => {
+            s.playtest_set_shot_path(path);
+            0
+        }
+        None => -1,
+    }
+}
+
+/// `send` / `copy` / `close` / `backspace`.
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。`action` は NUL 終端。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_playtest_action(
+    ptr: *mut SharedSession,
+    action: *const c_char,
+) -> c_int {
+    if action.is_null() {
+        set_err("null action");
+        return -1;
+    }
+    let action = CStr::from_ptr(action).to_string_lossy();
+    match session(ptr) {
+        Some(s) => {
+            s.playtest_action(&action);
+            0
+        }
+        None => -1,
+    }
+}
+
+/// 1 when the overlay is holding or open (host should drop game input).
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_playtest_blocks_input(ptr: *mut SharedSession) -> c_int {
+    match session(ptr) {
+        Some(s) => {
+            if s.playtest_blocks_input() {
+                1
+            } else {
+                0
+            }
+        }
+        None => -1,
+    }
+}
+
+/// Small JSON. Clears the one-shot `shot` flag.
+///
+/// # Safety
+/// `buf` は NULL か `buflen` バイト以上。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_playtest_state_json(
+    ptr: *mut SharedSession,
+    buf: *mut c_char,
+    buflen: c_uint,
+) -> c_int {
+    let Some(s) = session(ptr) else {
+        return -1;
+    };
+    let json = s.playtest_state_json();
+    write_cstr(&json, buf, buflen)
+}
+
+/// URL / paste block after 送る or コピー. `{}` until then.
+///
+/// # Safety
+/// `buf` は NULL か `buflen` バイト以上。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_playtest_packet_json(
+    ptr: *mut SharedSession,
+    buf: *mut c_char,
+    buflen: c_uint,
+) -> c_int {
+    let Some(s) = session(ptr) else {
+        return -1;
+    };
+    let json = s.playtest_packet_json();
+    write_cstr(&json, buf, buflen)
+}
