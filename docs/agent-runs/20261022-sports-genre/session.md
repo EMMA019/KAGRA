@@ -15,15 +15,15 @@ Expose `sports.rs` as a `GenreSession`, with a 1v1 example (score to win, result
 
 ## Verify
 
-After merging `origin/master` (other genre sessions landed in parallel; shared files kept both sides):
+After merging `origin/master` (other genre sessions, including survival, landed in parallel; shared files kept both sides):
 
-- `cargo test -p kagra-shared --lib --locked` — 469 passed
+- `cargo test -p kagra-shared --lib --locked` — 474 passed
 - `cargo clippy -p kagra-shared --all-targets --locked -- -D warnings` — clean
 - `cargo clippy -p kagra-shared --all-targets --features render --locked -- -D warnings` — clean
 - `cargo clippy -p kagra-shared --features python --locked -- -D warnings` — clean
 - `cargo fmt -p kagra-shared -- --check` — clean
-- `python tools/gen_api_index.py --check` — 70 entries
-- `pytest tests -m "not golden"` — 672 passed, 10 skipped
+- `python tools/gen_api_index.py --check` — 71 entries
+- `pytest tests -m "not golden"` — 674 passed, 10 skipped
 - `python examples/sports_minimal.py --headless` — won 2-0, rematch phase playing, score 0 (lavapipe)
 - `python -m kagra.verify examples/verify_scenarios/sports_smoke.json` — ok, offscreen not skipped
 - `sports_goal_smoke` still ok

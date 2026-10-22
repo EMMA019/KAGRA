@@ -1067,6 +1067,62 @@ def test_sports_session_scores_and_rematches():
     assert session.done is False
 
 
+def test_survival_fixture_is_camp_with_glb():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/survival_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["genre"] == "survival"
+    assert data["player"]["on_ground"] is True
+    assert data["player"]["gltf"] == "knight"
+    assert data["player"]["name"] == "player"
+    trees = [p for p in data["props"] if p.get("name") == "tree"]
+    assert len(trees) >= 4
+    assert any(p.get("gltf") == "stylized_tree" for p in trees)
+    assert any(p.get("gltf") == "stylized_pine" for p in data["props"])
+    foods = [p for p in data["props"] if p.get("name") == "food"]
+    assert len(foods) >= 4
+    assert any("Mushroom" in (p.get("gltf") or "") for p in foods)
+    fire = next(p for p in data["props"] if p.get("name") == "campfire")
+    shelter = next(p for p in data["props"] if p.get("name") == "shelter")
+    assert fire.get("enabled") is False
+    assert "Bonfire" in (fire.get("gltf") or "")
+    assert shelter.get("enabled") is False
+    assert shelter.get("gltf") == "gazebo"
+    assert any(p.get("gltf") == "rock" for p in data["props"])
+    assert len(data["lights"]) == 4
+
+
+def test_survival_session_survives_three_days():
+    try:
+        from kagra.kagra_shared import SurvivalSession
+    except ImportError:
+        try:
+            from kagra_shared import SurvivalSession
+        except ImportError:
+            pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/survival_world.json"
+    session = SurvivalSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "survival"
+    assert session.phase == "title"
+    assert session.days_need == 3
+    session.confirm()
+    assert session.phase == "playing"
+    for _ in range(7000):
+        if session.won or session.dead:
+            break
+        lx, lz, jump, attack, dodge = session.demo_input()
+        session.set_input(lx, lz, jump, attack, dodge)
+        session.tick(1.0 / 60.0)
+    assert session.won and not session.dead
+    assert session.fire and session.shelter
+    assert session.day > 3
+    assert session.phase == "complete"
+    assert session.status == "survived 3 days"
+    assert "-" in session.status or session.status.startswith("survived")
+    assert "\u2014" not in session.status
+
+
 
 def test_rpg_village_fixture_uses_kaykit_and_hero():
     import json
