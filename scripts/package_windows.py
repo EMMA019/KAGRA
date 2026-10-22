@@ -18,6 +18,7 @@ import os
 import shutil
 import subprocess
 import sys
+import sysconfig
 import zipfile
 from pathlib import Path
 
@@ -72,12 +73,14 @@ def main(argv: list[str] | None = None) -> int:
         print("stage-only: no .exe")
         return 0
 
-    try:
-        import kagra  # noqa: F401
-        import kagra.kagra_shared  # noqa: F401
-    except ImportError as exc:
+    # このスクリプトはリポジトリを sys.path の先頭に入れる。そこにある kagra/
+    # は通常パッケージなので、site-packages の kagra.kagra_shared を隠す。
+    # 拡張の有無はリポジトリの外で調べる。
+    native_error = _native_module_error()
+    if native_error:
         print(
-            f"native module missing ({exc}). Install the wheel first:\n"
+            "native module missing "
+            f"({native_error}). Install the wheel first:\n"
             "  maturin build --release --out dist/wheel\n"
             "  pip install dist/wheel/*.whl",
             file=sys.stderr,
@@ -132,11 +135,68 @@ def _pyinstaller(repo: Path, manifest, stage: Path, out: Path) -> Path:
         "kagra",
         "--collect-all",
         "kagra",
-        str(repo / "scripts" / "frozen_launch.py"),
     ]
+    for site in _site_paths():
+        cmd.extend(["--paths", site])
+    cmd.append(str(repo / "scripts" / "frozen_launch.py"))
+    # 作業ディレクトリがリポジトリだと、解析中の import kagra が
+    # ソースツリーを掴んで拡張モジュールを落とす。
+    py_cwd = out / "pyi-cwd"
+    py_cwd.mkdir(parents=True, exist_ok=True)
     print(" ".join(cmd))
-    subprocess.run(cmd, check=True, cwd=repo)
+    subprocess.run(cmd, check=True, cwd=py_cwd, env=_env_without_repo())
     return dist / manifest.slug
+
+
+def _native_module_error() -> str | None:
+    proc = subprocess.run(
+        [sys.executable, "-c", "import kagra.kagra_shared"],
+        cwd=_probe_cwd(),
+        env=_env_without_repo(),
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode == 0:
+        return None
+    return (proc.stderr or proc.stdout or "import failed").strip()
+
+
+def _probe_cwd() -> Path:
+    for key in ("TEMP", "TMP", "TMPDIR"):
+        raw = os.environ.get(key, "").strip()
+        if raw:
+            path = Path(raw)
+            if path.is_dir():
+                return path
+    return Path("/tmp")
+
+
+def _env_without_repo() -> dict[str, str]:
+    env = os.environ.copy()
+    kept: list[str] = []
+    for item in env.get("PYTHONPATH", "").split(os.pathsep):
+        if not item:
+            continue
+        try:
+            if Path(item).resolve() == ROOT:
+                continue
+        except OSError:
+            pass
+        kept.append(item)
+    if kept:
+        env["PYTHONPATH"] = os.pathsep.join(kept)
+    else:
+        env.pop("PYTHONPATH", None)
+    return env
+
+
+def _site_paths() -> list[str]:
+    found: list[str] = []
+    for key in ("purelib", "platlib"):
+        path = sysconfig.get_path(key)
+        if path and path not in found:
+            found.append(path)
+    return found
 
 
 def _zip_dir(folder: Path, dest: Path) -> None:
