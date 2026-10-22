@@ -7,6 +7,8 @@
 
 use crate::collectathon::WalkInput;
 use crate::game::GamePhase;
+use crate::novel;
+use crate::platformer;
 use crate::puzzle;
 use crate::world_doc::WorldEvent;
 use crate::world_play::WorldPlay;
@@ -185,6 +187,195 @@ impl PuzzlePadSession {
     }
 }
 
+/// Side-scrolling platformer (`box_hop`). Implements [`GenreSession`].
+///
+/// Jump, land, fall, checkpoint, and goal stay in `platformer.rs` / `WorldPlay`.
+/// This wrapper is the host surface (Python, and later Android FFI / Wasm).
+#[derive(Clone, Debug)]
+pub struct PlatformerSession {
+    inner: WorldPlay,
+}
+
+impl GenreSession for PlatformerSession {
+    fn genre_id(&self) -> &'static str {
+        platformer::GAME_ID
+    }
+
+    fn from_json(json: &str) -> Result<Self, GenreSessionError> {
+        let inner = WorldPlay::from_json(json)?;
+        if !platformer::is_platformer(&inner.doc) {
+            return Err(format!(
+                "WorldDoc.genre must be {:?}, got {:?}",
+                platformer::GAME_ID,
+                inner.doc.genre
+            ));
+        }
+        Ok(Self { inner })
+    }
+
+    fn set_input(&mut self, input: WalkInput) {
+        self.inner.input = input.clamped();
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.inner.tick(dt);
+    }
+
+    fn dump(&self) -> Result<String, GenreSessionError> {
+        self.inner.doc.to_json()
+    }
+
+    fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        self.inner.take_events(name)
+    }
+
+    fn confirm(&mut self) {
+        self.inner.confirm();
+    }
+
+    fn emit_event(
+        &mut self,
+        name: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), GenreSessionError> {
+        self.inner.emit_event(name, data);
+        Ok(())
+    }
+
+    fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        self.inner.start_timer(name, seconds, on_done)
+    }
+
+    fn step_interact(&mut self) {
+        self.inner.step_interact();
+    }
+
+    fn phase(&self) -> GamePhase {
+        self.inner.game.phase
+    }
+}
+
+impl PlatformerSession {
+    pub fn dead(&self) -> bool {
+        self.inner.platform.dead
+    }
+
+    pub fn won(&self) -> bool {
+        self.inner.platform.won
+    }
+
+    pub fn landed(&self) -> u32 {
+        self.inner.platform.landed
+    }
+}
+
+/// Visual novel (`novel_pages`). Script, tap-to-advance, and HUD text stay in Rust.
+#[derive(Clone, Debug)]
+pub struct NovelSession {
+    inner: WorldPlay,
+}
+
+impl GenreSession for NovelSession {
+    fn genre_id(&self) -> &'static str {
+        novel::GAME_ID
+    }
+
+    fn from_json(json: &str) -> Result<Self, GenreSessionError> {
+        let inner = WorldPlay::from_json(json)?;
+        if !novel::is_novel(&inner.doc) {
+            return Err(format!(
+                "WorldDoc.genre must be {:?}, got {:?}",
+                novel::GAME_ID,
+                inner.doc.genre
+            ));
+        }
+        Ok(Self { inner })
+    }
+
+    fn set_input(&mut self, input: WalkInput) {
+        self.inner.input = input.clamped();
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.inner.tick(dt);
+    }
+
+    fn dump(&self) -> Result<String, GenreSessionError> {
+        self.inner.doc.to_json()
+    }
+
+    fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        self.inner.take_events(name)
+    }
+
+    fn confirm(&mut self) {
+        self.inner.confirm();
+    }
+
+    fn emit_event(
+        &mut self,
+        name: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), GenreSessionError> {
+        self.inner.emit_event(name, data);
+        Ok(())
+    }
+
+    fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        self.inner.start_timer(name, seconds, on_done)
+    }
+
+    fn step_interact(&mut self) {
+        self.inner.step_interact();
+    }
+
+    fn phase(&self) -> GamePhase {
+        self.inner.game.phase
+    }
+}
+
+impl NovelSession {
+    pub fn page(&self) -> u32 {
+        self.inner.novel.page
+    }
+
+    pub fn choice(&self) -> u32 {
+        self.inner.novel.choice
+    }
+
+    pub fn done(&self) -> bool {
+        self.inner.novel.done
+    }
+
+    pub fn flag(&self) -> Option<String> {
+        self.inner.novel.flag.clone()
+    }
+
+    pub fn speaker(&self) -> &'static str {
+        novel::speaker()
+    }
+
+    pub fn body(&self) -> &'static str {
+        novel::body(&self.inner.novel)
+    }
+
+    pub fn choice_label(&self, index: u32) -> &'static str {
+        novel::choice_label(index)
+    }
+
+    /// Tap in screen pixels. Title and result confirm; play advances or picks.
+    pub fn pointer(&mut self, x: f32, y: f32, width: u32, height: u32) {
+        match self.phase() {
+            GamePhase::Title | GamePhase::Complete => self.confirm(),
+            GamePhase::Playing => novel::pointer(&mut self.inner.novel, x, y, width, height),
+        }
+    }
+
+    pub fn hud_json(&self, width: u32, height: u32) -> String {
+        novel::hud_json(&self.inner.novel, self.phase(), width, height)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -250,5 +441,148 @@ mod tests {
         assert!(s.take_events("win").len() == 1);
         let err = PuzzlePadSession::from_json(r#"{"version":1,"genre":"puzzle"}"#).unwrap_err();
         assert!(err.contains("puzzle_pad"));
+    }
+
+    const HOP: &str = include_str!("../tests/fixtures/platformer_world.json");
+
+    fn hop_value(s: &PlatformerSession) -> serde_json::Value {
+        serde_json::from_str(&s.dump().expect("dump")).expect("json")
+    }
+
+    fn hop_pos(s: &PlatformerSession) -> [f32; 3] {
+        let v = hop_value(s);
+        let p = &v["player"]["position"];
+        [
+            p[0].as_f64().unwrap() as f32,
+            p[1].as_f64().unwrap() as f32,
+            p[2].as_f64().unwrap() as f32,
+        ]
+    }
+
+    fn hop_on_ground(s: &PlatformerSession) -> bool {
+        hop_value(s)["player"]["on_ground"]
+            .as_bool()
+            .unwrap_or(false)
+    }
+
+    /// Right edges of every platform except the goal (rightmost) slab.
+    fn hop_jump_edges(s: &PlatformerSession) -> Vec<f32> {
+        let v = hop_value(s);
+        let mut edges = Vec::new();
+        for p in v["props"].as_array().expect("props") {
+            if p["name"].as_str() == Some("platform") {
+                let x = p["position"][0].as_f64().unwrap() as f32;
+                let sx = p["scale"][0].as_f64().unwrap() as f32;
+                edges.push(x + 0.5 * sx.abs());
+            }
+        }
+        edges.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        edges.pop();
+        edges
+    }
+
+    fn hop_drive(s: &mut PlatformerSession, edges: &[f32]) {
+        if s.dead() {
+            s.confirm();
+        }
+        let pos = hop_pos(s);
+        let jump = hop_on_ground(s)
+            && edges
+                .iter()
+                .any(|edge| pos[0] > edge - 0.85 && pos[0] < edge - 0.12);
+        s.set_input(WalkInput {
+            lx: 1.0,
+            lz: 0.0,
+            jump,
+            attack: false,
+            dodge: false,
+        });
+        s.tick(1.0 / 60.0);
+    }
+
+    #[test]
+    fn platformer_session_side_scroll_to_goal() {
+        let mut s = PlatformerSession::from_json(HOP).expect("fixture");
+        assert_eq!(s.genre_id(), "box_hop");
+        assert_eq!(s.phase(), GamePhase::Title);
+        let dump = s.dump().expect("dump");
+        assert!(dump.contains("knight"));
+        assert!(dump.contains("crate.glb"));
+        assert!(dump.contains("chest"));
+        assert!(dump.contains("well"));
+        let edges = hop_jump_edges(&s);
+        assert_eq!(
+            edges.len(),
+            3,
+            "three gaps before the goal slab, got {edges:?}"
+        );
+        s.confirm();
+        assert_eq!(s.phase(), GamePhase::Playing);
+        for _ in 0..30 {
+            hop_drive(&mut s, &edges);
+        }
+        let pos = hop_pos(&s);
+        assert!(
+            pos[0] > -9.2,
+            "D / +lx must run toward +X (screen right), pos={pos:?}"
+        );
+        assert!(pos[2].abs() < 0.25, "lane stays on Z=0, pos={pos:?}");
+        for _ in 0..900 {
+            if s.won() {
+                break;
+            }
+            hop_drive(&mut s, &edges);
+        }
+        let pos = hop_pos(&s);
+        assert!(
+            s.won() && !s.dead(),
+            "scripted jumps should reach the chest, won={} dead={} landed={} pos={pos:?}",
+            s.won(),
+            s.dead(),
+            s.landed(),
+        );
+        assert_eq!(s.phase(), GamePhase::Complete);
+        assert!(s.landed() >= 1);
+        assert!(s.take_events("nonexistent").is_empty());
+    }
+
+    #[test]
+    fn platformer_rejects_other_genre() {
+        let crest = include_str!("../tests/fixtures/crest_isle_world.json");
+        let err = PlatformerSession::from_json(crest).unwrap_err();
+        assert!(err.contains("box_hop"));
+    }
+    const NOVEL: &str = include_str!("../tests/fixtures/novel_pages_world.json");
+
+    #[test]
+    fn novel_session_contract() {
+        let mut s = NovelSession::from_json(NOVEL).expect("fixture");
+        assert_eq!(s.genre_id(), "novel_pages");
+        assert_eq!(s.phase(), GamePhase::Title);
+        assert_eq!(s.speaker(), "ユキ");
+        s.pointer(10.0, 10.0, 960, 540);
+        assert_eq!(s.phase(), GamePhase::Playing);
+        assert!(s.hud_json(960, 540).contains("雨"));
+        s.pointer(20.0, 20.0, 960, 540);
+        s.tick(1.0 / 60.0);
+        s.pointer(20.0, 20.0, 960, 540);
+        s.tick(1.0 / 60.0);
+        assert_eq!(s.page(), novel::CHOICE_PAGE);
+        assert!(s.body().contains('?'));
+        // Left choice button (same rects as the HUD).
+        s.pointer(960.0 * 0.31, 540.0 * 0.70, 960, 540);
+        s.tick(1.0 / 60.0);
+        assert!(s.done());
+        assert_eq!(s.flag().as_deref(), Some(novel::FLAG_STAY));
+        assert_eq!(s.phase(), GamePhase::Complete);
+        let dump = s.dump().expect("dump");
+        assert!(dump.contains("stay"));
+        assert!(s.take_events("nonexistent").is_empty());
+    }
+
+    #[test]
+    fn novel_session_rejects_other_genres() {
+        let err = NovelSession::from_json(ROOM).unwrap_err();
+        assert!(err.contains("novel_pages"));
     }
 }

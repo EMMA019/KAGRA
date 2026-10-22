@@ -793,3 +793,97 @@ def test_puzzle_pad_session_genre_contract():
             break
     assert session.solved and session.done
     assert session.phase == "complete"
+
+
+def test_novel_session_genre_contract():
+    try:
+        from kagra_shared import NovelSession
+    except ImportError:
+        pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/novel_world.json"
+    session = NovelSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "novel_pages"
+    assert session.phase == "title"
+    assert session.speaker == "ユキ"
+    session.confirm()
+    assert session.phase == "playing"
+    hud = session.hud_json(960, 540)
+    assert "雨" in hud and "ユキ" in hud
+    session.pointer(20.0, 20.0, 960, 540)
+    session.tick(1.0 / 60.0)
+    session.pointer(20.0, 20.0, 960, 540)
+    session.tick(1.0 / 60.0)
+    assert session.page == 2
+    session.pointer(960 * 0.31, 540 * 0.70, 960, 540)
+    session.tick(1.0 / 60.0)
+    assert session.done
+    assert session.flag == "stay"
+    assert session.phase == "complete"
+
+
+def test_platformer_fixture_is_side_stage_with_glb():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/platformer_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["genre"] == "box_hop"
+    assert data["player"]["id"] == "walker:player"
+    assert data["player"]["on_ground"] is True
+    assert data["player"].get("gltf") == "knight"
+    plats = [p for p in data["props"] if p.get("name") == "platform"]
+    assert len(plats) >= 3
+    assert all(p.get("gltf") == "crate.glb" for p in plats)
+    xs = [p["position"][0] for p in plats]
+    zs = [p["position"][2] for p in plats]
+    assert max(xs) - min(xs) > 12
+    assert max(zs) - min(zs) < 1.0
+    goal = next(p for p in data["props"] if p.get("name") == "goal")
+    assert goal.get("gltf") == "chest"
+    checkpoint = next(p for p in data["props"] if p.get("name") == "checkpoint")
+    assert checkpoint.get("gltf") == "well"
+    assert any(p.get("gltf") == "rock" for p in data["props"])
+    assert any(p.get("gltf") == "stylized_tree" for p in data["props"])
+    assert data.get("heightfield") in (None, {})
+    assert data.get("ground") is False
+
+
+def test_platformer_session_reaches_goal():
+    import json
+
+    try:
+        from kagra.kagra_shared import PlatformerSession
+    except ImportError:
+        try:
+            from kagra_shared import PlatformerSession
+        except ImportError:
+            pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/platformer_world.json"
+    session = PlatformerSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "box_hop"
+    assert session.phase == "title"
+    session.confirm()
+    assert session.phase == "playing"
+    world = json.loads(session.dump())
+    edges = []
+    for prop in world["props"]:
+        if prop.get("name") != "platform":
+            continue
+        edges.append(prop["position"][0] + 0.5 * abs(prop["scale"][0]))
+    edges.sort()
+    edges.pop()
+
+    for _ in range(900):
+        if session.won:
+            break
+        if session.dead and session.phase != "playing":
+            session.confirm()
+        world = json.loads(session.dump())
+        player = world["player"]
+        x = player["position"][0]
+        on_ground = bool(player.get("on_ground"))
+        jump = on_ground and any((edge - 0.85) < x < (edge - 0.12) for edge in edges)
+        session.set_input(1.0, 0.0, jump, False, False)
+        session.tick(1.0 / 60.0)
+    assert session.won and not session.dead
+    assert session.phase == "complete"
+    assert session.landed >= 1

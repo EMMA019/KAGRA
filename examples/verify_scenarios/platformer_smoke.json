@@ -1,0 +1,27 @@
+{
+  "name": "platformer_smoke",
+  "notes": "box_hop GenreSession side-scroller. Knight, chest goal, well checkpoint, crate.glb slabs along X, camera on +Z. Jump/land/goal stay in Rust. HUD is Python (ASCII). No Rapier, no VRM.",
+  "expect_world": {
+    "path": "kagra-shared/tests/fixtures/platformer_world.json",
+    "player.on_ground": true,
+    "query": [
+      {"type": "walker", "name": "player", "count": 1},
+      {"type": "prop", "name": "platform", "min_count": 3},
+      {"type": "prop", "name": "checkpoint", "count": 1},
+      {"type": "prop", "name": "goal", "count": 1},
+      {"type": "prop", "name": "tree", "count": 1},
+      {"type": "prop", "name": "pine", "count": 1},
+      {"type": "prop", "name": "rock", "count": 1}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "kagra-shared/tests/fixtures/platformer_world.json",
+    "out": "scratch/platformer_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200,
+    "pixels": [
+      {"x": 40, "y": 30, "w": 240, "h": 110, "not_solid": true}
+    ]
+  }
+}
