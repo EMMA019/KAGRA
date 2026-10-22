@@ -98,6 +98,7 @@ python examples/bunny_garden_minimal.py             # VRM 会話: 好感度・�
 python examples/torneko_minimal.py --seed 12345     # ローグライク: seed ダンジョン・ターン・在庫
 python examples/flight_minimal.py                   # 島の上空: ピッチ / バンク / 親子の機体、リング
 python examples/backyard_brawl_minimal.py           # 裏庭 3v3 旗取り（KayKit / Quaternius glTF）
+python examples/chess_minimal.py                    # スタジオ 3D チェス（PolyHaven 彫刻駒 + PBR 大理石/黒檀）
 ```
 
 旧 pip デモの脚本: [`old/examples/`](old/examples/) — RendererV2 専用。

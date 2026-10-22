@@ -200,6 +200,8 @@ pub struct Instance {
     /// sRGB の RGBA（0..255）。
     pub color: [u8; 4],
     pub material: Material,
+    pub metallic: f32,
+    pub roughness: f32,
 }
 
 impl Instance {
@@ -208,14 +210,39 @@ impl Instance {
             model,
             color,
             material: Material::Solid,
+            metallic: 0.0,
+            roughness: 0.42,
         }
     }
 
     pub fn with_material(model: Mat4, color: [u8; 4], material: Material) -> Self {
+        let (metallic, roughness) = match material {
+            Material::Metal => (1.0, 0.12),
+            Material::Grass | Material::Road => (0.0, 0.85),
+            _ => (0.0, 0.42),
+        };
         Self {
             model,
             color,
             material,
+            metallic,
+            roughness,
+        }
+    }
+
+    pub fn with_pbr(
+        model: Mat4,
+        color: [u8; 4],
+        material: Material,
+        metallic: f32,
+        roughness: f32,
+    ) -> Self {
+        Self {
+            model,
+            color,
+            material,
+            metallic: metallic.clamp(0.0, 1.0),
+            roughness: roughness.clamp(0.04, 1.0),
         }
     }
 }
@@ -532,15 +559,31 @@ impl SceneBuilder {
     }
 
     pub fn push_material(&mut self, mesh: MeshId, model: Mat4, color: [u8; 4], material: Material) {
+        let inst = Instance::with_material(model, color, material);
+        self.push_instance(mesh, inst);
+    }
+
+    pub fn push_pbr(
+        &mut self,
+        mesh: MeshId,
+        model: Mat4,
+        color: [u8; 4],
+        material: Material,
+        metallic: f32,
+        roughness: f32,
+    ) {
+        let inst = Instance::with_pbr(model, color, material, metallic, roughness);
+        self.push_instance(mesh, inst);
+    }
+
+    fn push_instance(&mut self, mesh: MeshId, inst: Instance) {
         if let Some((_, local)) = self.bounds.iter().find(|(m, _)| *m == mesh) {
-            if !self.frustum.intersects(&local.transformed(model)) {
+            if !self.frustum.intersects(&local.transformed(inst.model)) {
                 self.culled += 1;
                 return;
             }
         }
-        let inst = Instance::with_material(model, color, material);
-        // Same mesh + material = one draw. WebGL2 instance vertex buffers
-        // (locations 2..7); renderer slices the buffer (no base_instance).
+        let material = inst.material;
         match self
             .batches
             .iter_mut()

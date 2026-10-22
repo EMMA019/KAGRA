@@ -149,6 +149,13 @@ _ALIASES: dict[str, list[str]] = {
     "stylized_pine": ["assets/library/quaternius/cubeworldkit/Environment/glTF/Tree_2.gltf"],
     "rock": ["assets/models/quaternius/stylized-nature-megakit/Rock Medium.glb"],
     "chest": ["assets/library/quaternius/cubeworldkit/Environment/glTF/Chest_Closed.gltf"],
+    "chess_set": ["assets/library/polyhaven/props/chess_set/chess_set_1k.gltf"],
+    "chess_king": ["assets/library/polyhaven/props/chess_set/chess_set_1k.gltf"],
+    "chess_queen": ["assets/library/polyhaven/props/chess_set/chess_set_1k.gltf"],
+    "chess_rook": ["assets/library/polyhaven/props/chess_set/chess_set_1k.gltf"],
+    "chess_bishop": ["assets/library/polyhaven/props/chess_set/chess_set_1k.gltf"],
+    "chess_knight": ["assets/library/polyhaven/props/chess_set/chess_set_1k.gltf"],
+    "chess_pawn": ["assets/library/polyhaven/props/chess_set/chess_set_1k.gltf"],
 }
 
 

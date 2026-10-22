@@ -32,10 +32,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 use crate::collectathon::open_world_height;
 use crate::gltf_load::{
     is_tpose_humanoid_spec, is_walk_skinned_spec, is_walk_vrm_spec, mesh_from_embedded_gltf,
-    mesh_from_glb, mesh_from_gltf_json, sample_skinned_look, skinned_from_embedded_gltf,
-    skinned_from_glb, skinned_from_gltf_json, skinned_parts_from_embedded_gltf,
-    skinned_parts_from_glb, skinned_parts_from_gltf_json, skinned_tpose_humanoid, unit_cube_gltf,
-    walk_skinned_gltf, walk_skinned_vrm, WalkerPose,
+    mesh_from_glb, mesh_from_gltf_json, mesh_index_from_gltf_json, sample_skinned_look,
+    skinned_from_embedded_gltf, skinned_from_glb, skinned_from_gltf_json,
+    skinned_parts_from_embedded_gltf, skinned_parts_from_glb, skinned_parts_from_gltf_json,
+    skinned_tpose_humanoid, unit_cube_gltf, walk_skinned_gltf, walk_skinned_vrm, WalkerPose,
 };
 use crate::scene3d::{
     primitives, Camera, LocalLight, Material, MeshData, MeshId, Scene3D, SceneBuilder, Vertex3,
@@ -689,7 +689,20 @@ impl WorldDoc {
             } else {
                 color_u8(prop.color)
             };
-            b.push_material(mesh, model, col, mat);
+            let (metallic, roughness) = if is_coin_prop(prop) && prop.metallic < 0.01 {
+                (1.0, 0.12)
+            } else {
+                // Default roughness in WorldProp is 1.0 when omitted in JSON;
+                // map default 1.0 on non-vegetation props to a natural satin 0.38
+                // unless explicitly set to another value.
+                let r = if (prop.roughness - 1.0).abs() < 1e-4 && !veg {
+                    0.38
+                } else {
+                    prop.roughness
+                };
+                (prop.metallic, r)
+            };
+            b.push_pbr(mesh, model, col, mat, metallic, roughness);
         }
 
         self.push_vista(&mut b, &camera);
@@ -1640,7 +1653,26 @@ fn nearest_sample(samples: &[[f32; 3]], x: f32, z: f32) -> f32 {
 }
 
 fn existing_asset_path(spec: &str) -> Option<PathBuf> {
-    crate::assets::resolve_asset(spec)
+    let base = spec.split('#').next().unwrap_or(spec);
+    crate::assets::resolve_asset(base)
+}
+
+fn split_mesh_selector(spec: &str) -> (&str, Option<usize>) {
+    if let Some((base, frag)) = spec.split_once('#') {
+        if let Ok(idx) = frag.trim().parse::<usize>() {
+            return (base.trim(), Some(idx));
+        }
+    }
+    match spec.trim().to_ascii_lowercase().as_str() {
+        "chess_rook" => ("chess_set", Some(0)),
+        "chess_pawn" => ("chess_set", Some(1)),
+        "chess_bishop" => ("chess_set", Some(2)),
+        "chess_queen" => ("chess_set", Some(3)),
+        "chess_king" => ("chess_set", Some(4)),
+        "chess_knight" => ("chess_set", Some(5)),
+        "chess_board" => ("chess_set", Some(6)),
+        _ => (spec.trim(), None),
+    }
 }
 
 fn walker_tpose_mesh(
@@ -1742,7 +1774,8 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
     ) {
         return mesh_from_embedded_gltf(&unit_cube_gltf()).ok();
     }
-    if let Some(path) = existing_asset_path(spec) {
+    let (base_spec, mesh_sel) = split_mesh_selector(spec);
+    if let Some(path) = existing_asset_path(base_spec) {
         let p_lower = path
             .extension()
             .and_then(|e| e.to_str())
@@ -1751,6 +1784,12 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
         if p_lower == "gltf" {
             let json = std::fs::read_to_string(&path).ok()?;
             let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+            if let Some(idx) = mesh_sel {
+                return mesh_index_from_gltf_json(&json, idx, |uri| {
+                    std::fs::read(base.join(uri)).map_err(|e| e.to_string())
+                })
+                .ok();
+            }
             return mesh_from_gltf_json(&json, |uri| {
                 std::fs::read(base.join(uri)).map_err(|e| e.to_string())
             })

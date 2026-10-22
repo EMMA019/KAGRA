@@ -259,7 +259,7 @@ fn shadow_factor(world: vec3<f32>) -> f32 {
             );
         }
     }
-    return mix(0.42, 1.0, s / 9.0);
+    return mix(0.28, 1.0, s / 9.0);
 }
 
 // Two scrolling procedural normals (fbm gradients). env.z = seconds.
@@ -361,8 +361,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let ndotv = max(dot(n, v), 0.0);
         let ndoth = max(dot(n, h), 0.0);
         let vdoth = max(dot(v, h), 0.0);
-        let metallic = 1.0;
-        let rough = 0.12;
+        let metallic = select(clamp(in.mtoon4.x, 0.0, 1.0), 1.0, in.mtoon4.x <= 1e-4 && in.mtoon4.y <= 1e-4);
+        let rough = select(clamp(in.mtoon4.y, 0.04, 1.0), 0.12, in.mtoon4.y <= 1e-4);
         let f0 = mix(vec3<f32>(0.04), albedo, metallic);
         let f = f0 + (1.0 - f0) * pow(1.0 - vdoth, 5.0);
         let spec = ggx_d(ndoth, rough) * smith_g(ndotv, ndotl, rough) * f
@@ -372,7 +372,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         lit += local_metal(n, in.world, v, f0, rough);
         // Metals have no Lambert; SH * f0 is the thin diffuse IBL so coins
         // pick up sky/ground in shadow. GGX locals stay.
-        lit += f0 * env_irradiance(n);
+        let r = reflect(-v, n);
+        lit += f0 * env_irradiance(r) * (1.0 - rough * 0.65);
     } else if (mat_id == 6) {
         // Water: two scrolling normals + Fresnel + SH reflection.
         // Not a Water Renderer / V2. No SSR, no physics sim, no caustics.
@@ -392,9 +393,26 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // Cheap depth fade: looking down is more transmissive (no scene-depth prepass).
         alpha = mix(0.92, 0.34, ndotv) * in.color.a;
     } else {
+        let rough = select(clamp(in.mtoon4.y, 0.04, 1.0), 0.42, in.mtoon4.y <= 1e-4);
+        let metallic = clamp(in.mtoon4.x, 0.0, 1.0);
+        let v = normalize(g.camera_pos.xyz - in.world);
+        let ndotv = max(dot(n, v), 0.0);
+        let f0 = mix(vec3<f32>(0.04), albedo, metallic);
+        let fresnel = f0 + (1.0 - f0) * pow(1.0 - ndotv, 5.0);
+        let gloss = max(0.0, 1.0 - rough);
+        let h = normalize(v + ldir);
+        let ndoth = max(dot(n, h), 0.0);
+        let sun_spec = ggx_d(ndoth, rough) * smith_g(ndotv, ndl, rough) * fresnel
+            / max(4.0 * ndotv * max(ndl, 1e-3), 1e-4);
         lit = albedo * (ambient + (1.0 - ambient) * ndl * sh);
         lit += albedo * local_lit(n, in.world);
         lit += albedo * env_irradiance(n);
+        if (gloss > 0.08) {
+            let r = reflect(-v, n);
+            lit += sun_spec * ndl * sh * gloss;
+            lit += local_metal(n, in.world, v, f0, rough) * gloss;
+            lit += env_irradiance(r) * fresnel * gloss * gloss * 1.35;
+        }
     }
 
     let dist = length(in.world - g.camera_pos.xyz);

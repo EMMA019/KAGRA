@@ -291,6 +291,24 @@ pub fn mesh_from_gltf_json(
     static_mesh_from_doc(&doc, &blobs)
 }
 
+/// Extract a single mesh by index (untransformed by scene node translation) from a glTF JSON.
+pub fn mesh_index_from_gltf_json(
+    json: &str,
+    mesh_index: usize,
+    resolve: impl FnMut(&str) -> Result<Vec<u8>, String>,
+) -> Result<MeshData, String> {
+    let (doc, blobs) = parse_gltf(json, resolve, None)?;
+    let mesh = doc
+        .meshes
+        .get(mesh_index)
+        .ok_or_else(|| format!("mesh index {mesh_index} out of range"))?;
+    let prim = mesh
+        .primitives
+        .first()
+        .ok_or_else(|| format!("mesh {mesh_index} has no primitives"))?;
+    static_mesh_from_prim(&doc, &blobs, prim)
+}
+
 /// data URI only. Unit tests and offscreen.
 pub fn mesh_from_embedded_gltf(json: &str) -> Result<MeshData, String> {
     mesh_from_gltf_json(json, |_| {

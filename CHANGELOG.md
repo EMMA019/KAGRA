@@ -10,7 +10,10 @@
   Multi-primitive static `.glb`/`.gltf` merge material `baseColorFactor` palettes
   and node transforms; KayKit characters filter unskinned attachment meshes and
   pick `Walking_*`/`Running_*` clips.
-  Samples: `examples/flight_minimal.py`, `examples/backyard_brawl_minimal.py`.
+  PBR specular + Fresnel environment reflections + CPU mipmaps on `Material::Solid`,
+  plus sub-mesh selector (`chess_king`, `chess_queen`, ...) for PolyHaven `chess_set_1k.gltf`.
+  Samples: `examples/flight_minimal.py`, `examples/backyard_brawl_minimal.py`,
+  `examples/chess_minimal.py`.
 
 - Dump picture fields: ``sky`` (clear+fog), ``ground`` (auto grass plane;
   indoor rooms set false), ``WorldProp.uv_scale`` (CPU-tiled albedo).

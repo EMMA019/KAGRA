@@ -73,7 +73,8 @@ pytest tests -m "not golden"                                       # pure-python
 at `old/examples/vrm_orb_rush.py`. The current reference for the agent loop is
 the Python game master: `examples/bunny_garden_minimal.py` /
 `examples/torneko_minimal.py` / `examples/bar_sim_minimal.py` /
-`examples/flight_minimal.py` / `examples/backyard_brawl_minimal.py`
+`examples/flight_minimal.py` / `examples/backyard_brawl_minimal.py` /
+`examples/chess_minimal.py`
 (game logic in Python, world is dump data, `kagra.gameloop` / `kagra.ui2d` /
 `kagra.audio`). Archived RendererV2 APIs (`texture_from_fn` / `Walk` / `Prop` / `kagra_core`)
 live under `old/` and are **not** on `import kagra`. New games start on the

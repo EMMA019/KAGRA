@@ -105,6 +105,10 @@ pub fn resolve_alias(name: &str) -> Vec<&'static str> {
         "chest" => {
             vec!["assets/library/quaternius/cubeworldkit/Environment/glTF/Chest_Closed.gltf"]
         }
+        "chess_set" | "chess_rook" | "chess_pawn" | "chess_bishop" | "chess_queen"
+        | "chess_king" | "chess_knight" | "chess_board" => {
+            vec!["assets/library/polyhaven/props/chess_set/chess_set_1k.gltf"]
+        }
         _ => Vec::new(),
     }
 }
