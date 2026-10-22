@@ -804,3 +804,92 @@ def test_platformer_session_reaches_goal():
     assert session.won and not session.dead
     assert session.phase == "complete"
     assert session.landed >= 1
+
+
+def test_race_fixture_is_three_lap_oval_with_glb():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/race_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["genre"] == "race_drive"
+    assert data["player"]["on_ground"] is True
+    car = next(p for p in data["props"] if p.get("name") == "car")
+    ghost = next(p for p in data["props"] if p.get("name") == "ghost")
+    assert "car_sedan" in (car.get("gltf") or "")
+    assert "car_taxi" in (ghost.get("gltf") or "")
+    assert ghost.get("enabled") is False
+    roads = [p for p in data["props"] if p.get("name") == "road"]
+    assert len(roads) >= 8
+    assert any("road_straight" in (p.get("gltf") or "") for p in roads)
+    assert sum(1 for p in data["props"] if p.get("name") == "waypoint") >= 8
+    laps = next(p for p in data["props"] if p.get("name") == "laps")
+    assert int(laps["scale"][0]) == 3
+    assert any(t.get("name") == "lap" for t in data.get("timers") or [])
+    assert any(p.get("gltf") == "stylized_tree" for p in data["props"])
+    assert any(p.get("gltf") == "rock" for p in data["props"])
+    assert data.get("heightfield") in (None, {})
+
+
+def test_race_session_three_laps_and_ghost():
+    import json
+    import math
+
+    try:
+        from kagra.kagra_shared import RaceSession
+    except ImportError:
+        try:
+            from kagra_shared import RaceSession
+        except ImportError:
+            pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/race_world.json"
+    session = RaceSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "race_drive"
+    assert session.phase == "title"
+    assert session.laps_need == 3
+    session.confirm()
+    assert session.phase == "playing"
+    world = json.loads(session.dump())
+    wps = []
+    for prop in world["props"]:
+        if prop.get("name") != "waypoint":
+            continue
+        pos = prop["position"]
+        wps.append((str(prop.get("id") or ""), float(pos[0]), float(pos[2])))
+    wps.sort()
+    wps = [(x, z) for _, x, z in wps]
+
+    def wrap(a: float) -> float:
+        return (a + math.pi) % (2.0 * math.pi) - math.pi
+
+    def steer(x: float, z: float, yaw: float) -> tuple[float, float]:
+        nearest = 0
+        best = 1.0e9
+        for i, (wx, wz) in enumerate(wps):
+            d = (wx - x) * (wx - x) + (wz - z) * (wz - z)
+            if d < best:
+                best = d
+                nearest = i
+        ahead = 2 if best < 2.2 * 2.2 else 1
+        tx, tz = wps[(nearest + ahead) % len(wps)]
+        err = wrap(math.atan2(tx - x, tz - z) - yaw)
+        lx = max(-1.0, min(1.0, -err * 2.4))
+        lz = 0.62 if abs(lx) > 0.55 else 1.0
+        return lx, lz
+
+    for _ in range(4200):
+        if session.won:
+            break
+        world = json.loads(session.dump())
+        player = world["player"]
+        pos = player["position"]
+        if session.laps >= 1 and session.lap_time < 0.45:
+            lx, lz = 0.0, 0.15
+        else:
+            lx, lz = steer(float(pos[0]), float(pos[2]), float(player.get("yaw") or 0.0))
+        session.set_input(lx, lz, False, False, False)
+        session.tick(1.0 / 60.0)
+    assert session.won and session.done
+    assert session.laps >= 3
+    assert session.best_lap > 0.5
+    assert session.ghost
+    assert session.phase == "complete"

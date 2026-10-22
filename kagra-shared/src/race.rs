@@ -6,10 +6,18 @@
 //! play -> result reuses `WorldPlay` / `GamePhase`. Chase camera follows the
 //! car. Capsule/box, not VRM, not Rapier. Overlay count on shared wgpu 30.
 //! No drifting physics, net, fighting, novel, or new ECS.
+//!
+//! A dump with `waypoint` props (4+) drives the bicycle model in `vehicle.rs`
+//! on a `road::RoadPath`, held on the ribbon by the same road bounds
+//! `driving.rs` uses. `laps` scale.x is the lap count (default [`LAP_NEED`]).
+//! Each finish stores a lap time; the best lap is replayed on a `ghost` prop.
 
 use crate::collectathon::WalkInput;
+use crate::driving::practical_top_speed;
 use crate::game::GamePhase;
+use crate::road::RoadPath;
 use crate::scene::{DrawList, Quad};
+use crate::vehicle::{DriveInput, Truck, TruckSpec};
 use crate::world_doc::{WorldDoc, WorldProp, WorldWalker};
 use glam::Vec3;
 
@@ -26,6 +34,19 @@ pub const CAR_HALF_H: f32 = 0.22;
 pub const CAM_BACK: f32 = 11.0;
 pub const CAM_UP: f32 = 4.8;
 pub const CAM_LOOK: f32 = 0.7;
+/// Half-width of a waypoint course (m). Matches a small oval, not `driving::ROAD_WIDTH`.
+const COURSE_HALF: f32 = 2.35;
+const GHOST_DT: f32 = 1.0 / 25.0;
+const GHOST_CAP: usize = 4000;
+
+/// One sample of the car while a lap is open. Replayed as the ghost.
+#[derive(Clone, Copy, Debug)]
+struct GhostSample {
+    t: f32,
+    x: f32,
+    z: f32,
+    yaw: f32,
+}
 
 /// Live race around a dump. Pose / speed stay here; finish, split, flag, and
 /// the car in the dump are the query/dump source of truth.
@@ -35,12 +56,24 @@ pub struct RaceGame {
     pub yaw: f32,
     pub x: f32,
     pub z: f32,
+    /// Front-wheel angle (radians, right positive). Vehicle courses only.
+    pub steer: f32,
     pub laps: u32,
+    /// Laps required to win. Dump prop `laps` scale.x, else [`LAP_NEED`].
+    pub laps_need: u32,
+    /// Seconds on the current lap.
+    pub lap_time: f32,
+    /// Best completed lap. 0 until the first finish.
+    pub best_lap: f32,
+    /// Seconds since the green flag.
+    pub race_time: f32,
     pub armed: bool,
     pub in_finish: bool,
     pub in_split: bool,
     pub won: bool,
     pub done: bool,
+    recording: Vec<GhostSample>,
+    best_line: Vec<GhostSample>,
 }
 
 impl Default for RaceGame {
@@ -50,12 +83,19 @@ impl Default for RaceGame {
             yaw: 0.0,
             x: 0.0,
             z: 0.0,
+            steer: 0.0,
             laps: 0,
+            laps_need: LAP_NEED,
+            lap_time: 0.0,
+            best_lap: 0.0,
+            race_time: 0.0,
             armed: false,
             in_finish: false,
             in_split: false,
             won: false,
             done: false,
+            recording: Vec::new(),
+            best_line: Vec::new(),
         }
     }
 }
@@ -67,8 +107,13 @@ impl RaceGame {
         g
     }
 
+    pub fn has_ghost(&self) -> bool {
+        !self.best_line.is_empty()
+    }
+
     fn rebind(&mut self, doc: &WorldDoc) {
         *self = Self::default();
+        self.laps_need = laps_need_of(doc);
         if let Some(w) = player_ref(doc) {
             self.x = w.position[0];
             self.z = w.position[2];
@@ -211,18 +256,110 @@ pub fn place_chase_camera(doc: &mut WorldDoc) {
     }
 }
 
-/// Steer + throttle kinematic body. Caller may have walked; this pose wins.
+/// Steer + throttle. Caller may have walked; this pose wins.
+///
+/// Waypoint courses use [`Truck`] on a [`RoadPath`]. Other dumps keep the
+/// original kinematic body so the 1-lap box track stays the same.
 pub fn tick(doc: &mut WorldDoc, game: &mut RaceGame, input: WalkInput, dt: f32) {
     if game.done {
         place_chase_camera(doc);
         return;
     }
     let input = input.clamped();
-    drive(doc, game, input, dt);
+    game.race_time += dt;
+    game.lap_time += dt;
+    if course_points(doc).len() >= 4 {
+        drive_vehicle(doc, game, input, dt);
+    } else {
+        drive(doc, game, input, dt);
+    }
     sync_car(doc, game);
     write_pose(doc, game);
+    record_sample(game);
     register_lap(doc, game);
+    sync_ghost(doc, game);
+    sync_lap_clock(doc, game);
     place_chase_camera(doc);
+}
+
+fn laps_need_of(doc: &WorldDoc) -> u32 {
+    doc.props
+        .iter()
+        .find(|p| p.name == "laps")
+        .map(|p| (p.scale[0].round() as u32).max(1))
+        .unwrap_or(LAP_NEED)
+}
+
+fn course_points(doc: &WorldDoc) -> Vec<Vec3> {
+    let mut props: Vec<&WorldProp> = doc.props.iter().filter(|p| p.name == "waypoint").collect();
+    props.sort_by(|a, b| a.id.cmp(&b.id));
+    let mut pts: Vec<Vec3> = props
+        .into_iter()
+        .map(|p| Vec3::new(p.position[0], 0.0, p.position[2]))
+        .collect();
+    if pts.len() >= 2 {
+        let first = pts[0];
+        if pts.last().is_some_and(|p| p.distance(first) > 0.25) {
+            pts.push(first);
+        }
+    }
+    pts
+}
+
+fn arcade_spec() -> TruckSpec {
+    let mut spec = TruckSpec {
+        wheelbase: 2.05,
+        max_steer: 40f32.to_radians(),
+        steer_rate: 0.10,
+        accel: 11.0,
+        brake: 16.0,
+        drag: 0.09,
+        rolling: 0.6,
+        max_speed: 16.0,
+        max_reverse: 3.0,
+        allow_reverse: true,
+        size: Vec3::new(1.7, 1.3, 3.4),
+    };
+    spec.max_speed = practical_top_speed(&spec).min(spec.max_speed);
+    spec
+}
+
+/// Bicycle model + road ribbon. `lx` is steer (right positive), `lz` is
+/// throttle / brake, same signs as the kinematic body.
+fn drive_vehicle(doc: &WorldDoc, game: &mut RaceGame, input: WalkInput, dt: f32) {
+    let pts = course_points(doc);
+    if pts.len() < 3 {
+        drive(doc, game, input, dt);
+        return;
+    }
+    let path = RoadPath::from_waypoints(&pts, 8);
+    let mut truck = Truck {
+        spec: arcade_spec(),
+        pos: Vec3::new(game.x, 0.0, game.z),
+        heading: game.yaw,
+        speed: game.speed,
+        steer_angle: game.steer,
+    };
+    truck.update(
+        DriveInput {
+            steer: input.lx,
+            throttle: input.lz.max(0.0),
+            brake: (-input.lz).max(0.0),
+        },
+        dt,
+    );
+    let nearest = path.nearest(truck.pos);
+    crate::collide::apply_road_bounds(&mut truck, nearest.pos, nearest.right, COURSE_HALF);
+    let (mut x, mut z) = push_walls(doc, truck.pos.x, truck.pos.z);
+    let half = doc.half.max(4.0);
+    let pad = 2.2;
+    x = x.clamp(-half + pad, half - pad);
+    z = z.clamp(-half + pad, half - pad);
+    game.x = x;
+    game.z = z;
+    game.yaw = truck.heading;
+    game.speed = truck.speed;
+    game.steer = truck.steer_angle;
 }
 
 fn drive(doc: &WorldDoc, game: &mut RaceGame, input: WalkInput, dt: f32) {
@@ -327,7 +464,8 @@ fn register_lap(doc: &mut WorldDoc, game: &mut RaceGame) {
                 *c = [240, 196, 72];
             }
         }
-        if game.laps >= LAP_NEED {
+        commit_lap(game);
+        if game.laps >= game.laps_need.max(1) {
             game.won = true;
             game.done = true;
             set_player_name(doc, "finish");
@@ -339,6 +477,85 @@ fn register_lap(doc: &mut WorldDoc, game: &mut RaceGame) {
     if game.laps > 0 {
         doc.coins = game.laps;
     }
+}
+
+fn commit_lap(game: &mut RaceGame) {
+    let t = game.lap_time.max(0.0);
+    if t > 0.05 && !game.recording.is_empty() && (game.best_lap <= 0.0 || t < game.best_lap) {
+        game.best_lap = t;
+        game.best_line = std::mem::take(&mut game.recording);
+    } else {
+        game.recording.clear();
+    }
+    game.lap_time = 0.0;
+}
+
+fn record_sample(game: &mut RaceGame) {
+    if game.recording.len() >= GHOST_CAP {
+        return;
+    }
+    if let Some(prev) = game.recording.last() {
+        if game.lap_time - prev.t < GHOST_DT {
+            return;
+        }
+    }
+    game.recording.push(GhostSample {
+        t: game.lap_time,
+        x: game.x,
+        z: game.z,
+        yaw: game.yaw,
+    });
+}
+
+fn ghost_pose(line: &[GhostSample], t: f32) -> Option<(f32, f32, f32)> {
+    let first = *line.first()?;
+    if t <= first.t {
+        return Some((first.x, first.z, first.yaw));
+    }
+    let last = *line.last().unwrap_or(&first);
+    if t >= last.t {
+        return Some((last.x, last.z, last.yaw));
+    }
+    let mut lo = 0usize;
+    let mut hi = line.len() - 1;
+    while lo + 1 < hi {
+        let mid = (lo + hi) / 2;
+        if line[mid].t <= t {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    let a = line[lo];
+    let b = line[hi];
+    let span = (b.t - a.t).max(1e-4);
+    let u = ((t - a.t) / span).clamp(0.0, 1.0);
+    let yaw = a.yaw + crate::vehicle::wrap_angle(b.yaw - a.yaw) * u;
+    Some((a.x + (b.x - a.x) * u, a.z + (b.z - a.z) * u, yaw))
+}
+
+fn sync_ghost(doc: &mut WorldDoc, game: &RaceGame) {
+    let Some((x, z, yaw)) = ghost_pose(&game.best_line, game.lap_time) else {
+        if let Some(g) = doc.props.iter_mut().find(|p| p.name == "ghost") {
+            g.enabled = false;
+        }
+        return;
+    };
+    let y = doc.height_at(x, z) + CAR_HALF_H + 0.08;
+    if let Some(g) = doc.props.iter_mut().find(|p| p.name == "ghost") {
+        g.position = [x, y, z];
+        g.yaw = yaw;
+        g.enabled = true;
+    }
+}
+
+fn sync_lap_clock(doc: &mut WorldDoc, game: &RaceGame) {
+    let Some(timer) = doc.timers.iter_mut().find(|t| t.name == "lap") else {
+        return;
+    };
+    timer.seconds = game.best_lap;
+    timer.remaining = game.lap_time;
+    timer.active = false;
 }
 
 pub fn build_hud(game: &RaceGame, phase: GamePhase, width: u32, height: u32) -> DrawList {
@@ -369,7 +586,7 @@ pub fn build_hud(game: &RaceGame, phase: GamePhase, width: u32, height: u32) -> 
         GamePhase::Playing => {
             let pip = 18.0 * scale;
             let gap = 6.0 * scale;
-            let need = LAP_NEED.max(1);
+            let need = game.laps_need.max(1);
             for i in 0..need {
                 let filled = i < game.laps;
                 let color = if filled {
@@ -397,7 +614,7 @@ pub fn build_hud(game: &RaceGame, phase: GamePhase, width: u32, height: u32) -> 
         }
         GamePhase::Complete => {
             quads.push(Quad::new(0.0, h * 0.22, w, h * 0.36, [12, 16, 18, 210]));
-            let bar = (game.laps.max(1) as f32 / LAP_NEED.max(1) as f32).clamp(0.15, 1.0);
+            let bar = (game.laps.max(1) as f32 / game.laps_need.max(1) as f32).clamp(0.15, 1.0);
             quads.push(Quad::new(
                 w * 0.22,
                 h * 0.40,
