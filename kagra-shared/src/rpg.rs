@@ -350,6 +350,7 @@ fn tiny_prop(
         pitch: 0.0,
         roll: 0.0,
         local: false,
+        ..Default::default()
     }
 }
 
@@ -535,6 +536,7 @@ fn ensure_enemy(doc: &mut WorldDoc) {
             pitch: 0.0,
             roll: 0.0,
             local: false,
+            ..Default::default()
         });
     }
     if doc.props.iter().any(|p| p.id == ID_HP) {
@@ -571,6 +573,7 @@ fn ensure_enemy(doc: &mut WorldDoc) {
             pitch: 0.0,
             roll: 0.0,
             local: false,
+            ..Default::default()
         },
     );
 }
@@ -1158,6 +1161,7 @@ fn ensure_foe_hp(doc: &mut WorldDoc) {
             pitch: 0.0,
             roll: 0.0,
             local: false,
+            ..Default::default()
         },
     );
 }

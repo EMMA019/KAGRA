@@ -539,6 +539,8 @@ impl WorldPlay {
             return;
         }
         if self.is_fps() {
+            self.vy = 0.0;
+            fps::pin_player_capsule(&mut self.doc);
             fps::place_eye_camera(&mut self.doc, self.look_yaw, self.look_pitch);
             fps::tick(
                 &mut self.doc,
@@ -552,7 +554,7 @@ impl WorldPlay {
             self.input.jump = false;
             self.input.attack = false;
             self.input.dodge = false;
-            if self.fps.won {
+            if self.fps.won || self.fps.lost {
                 self.game.phase = GamePhase::Complete;
                 self.game.score = self.fps.kills * 250 + self.fps.hits * 20;
             }

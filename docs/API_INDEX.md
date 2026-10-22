@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **70**
+エントリ数: **73**
 
 棚の**手前**は shared wgpu 30（WorldDoc / WorldPlay / gameloop）。
 棚の**奥**は再エクスポートの余り。旧 RendererV2 API は `old/`。
@@ -19,6 +19,7 @@
 | `Brain` | `class Brain  (from kagra.brain)` |
 | `brain` | `export brain  (from kagra.brain)` |
 | `BrainError` | `class BrainError  (from kagra.brain)` |
+| `CardSession` | `class CardSession  (from kagra.kagra_shared)` |
 | `choice_menu` | `export choice_menu  (from kagra.ui2d)` |
 | `debug_trace` | `export debug_trace  (from kagra.trace)` |
 | `debug_trace_summary` | `export debug_trace_summary  (from kagra.trace)` |
@@ -27,6 +28,7 @@
 | `FightSession` | `class FightSession  (from kagra.kagra_shared)` |
 | `find_path` | `export find_path  (from kagra.path)` |
 | `FishCookSession` | `class FishCookSession  (from kagra.kagra_shared)` |
+| `FpsSession` | `class FpsSession  (from kagra.kagra_shared)` |
 | `get_lang` | `export get_lang  (from kagra.i18n)` |
 | `image` | `export image  (from kagra.ui2d)` |
 | `island_height` | `export island_height  (from kagra.land)` |
@@ -73,6 +75,7 @@
 | `ShopSession` | `class ShopSession  (from kagra.kagra_shared)` |
 | `SlotStore` | `class SlotStore  (from kagra.save)` |
 | `sound` | `export sound  (from kagra.audio)` |
+| `SportsSession` | `class SportsSession  (from kagra.kagra_shared)` |
 | `StealthSession` | `class StealthSession  (from kagra.kagra_shared)` |
 | `SurvivalSession` | `class SurvivalSession  (from kagra.kagra_shared)` |
 | `t` | `export t  (from kagra.i18n)` |

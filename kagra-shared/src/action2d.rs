@@ -558,6 +558,7 @@ fn ensure_markers(doc: &mut WorldDoc) {
             pitch: 0.0,
             roll: 0.0,
             local: false,
+            ..Default::default()
         },
     );
     ensure_shot(doc);
@@ -613,6 +614,7 @@ fn ensure_shot(doc: &mut WorldDoc) {
             pitch: 0.0,
             roll: 0.0,
             local: false,
+            ..Default::default()
         },
     );
 }
@@ -654,6 +656,7 @@ fn tiny_prop(
         pitch: 0.0,
         roll: 0.0,
         local: false,
+        ..Default::default()
     }
 }
 

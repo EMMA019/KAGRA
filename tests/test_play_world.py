@@ -1015,6 +1015,132 @@ def test_race_session_three_laps_and_ghost():
     assert session.phase == "complete"
 
 
+def test_card_fixture_is_a_table():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/card_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["genre"] == "card"
+    assert data["player"]["on_ground"] is True
+    assert data["player"].get("gltf") == "knight"
+    decks = [p for p in data["props"] if p.get("name") == "deck"]
+    assert len(decks) == 2
+    assert all(p.get("gltf") == "crate.glb" for p in decks)
+    foes = [p for p in data["props"] if p.get("name") == "foe"]
+    assert len(foes) == 1 and foes[0].get("gltf") == "chest"
+    assert data.get("ground") is False
+    text = (ROOT / "examples/card_minimal.py").read_text(encoding="utf-8")
+    assert "\u2014" not in text
+    assert "CardSession" in text
+    assert "feed_pointer" in text
+
+
+def test_card_session_duel_round_trip_and_rematch():
+    import json
+
+    try:
+        from kagra_shared import CardSession
+    except ImportError:
+        try:
+            from kagra.kagra_shared import CardSession
+        except ImportError:
+            pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/card_world.json"
+    session = CardSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "card"
+    assert session.phase == "title"
+    assert "カード" in session.status()
+    session.confirm()
+    assert session.phase == "playing"
+    assert session.you_hand == 4
+    assert session.foe_hand == 3
+    assert session.mana == 1
+    view = json.loads(session.view_json())
+    assert "hand" not in view["foe"]
+    assert view["foe"]["hand_n"] == 3
+    assert view["you"]["hand"]
+    dump = session.dump()
+    restored = CardSession.from_json(dump)
+    assert restored.phase == "playing"
+    assert restored.you_life == session.you_life
+    assert restored.foe_hand == session.foe_hand
+    guard = 0
+    while session.phase == "playing" and guard < 80:
+        guard += 1
+        for _ in range(8):
+            played = False
+            for index in range(session.you_hand - 1, -1, -1):
+                if session.play(index):
+                    played = True
+                    break
+            if not played:
+                break
+        if session.phase != "playing":
+            break
+        for index in range(session.you_board):
+            session.attack(index, -1)
+        if session.phase == "playing":
+            assert session.end_turn()
+    assert session.phase == "complete"
+    assert session.winner in (0, 1)
+    session.confirm()
+    assert session.phase == "playing"
+    assert session.you_life == 20
+    assert session.foe_life == 20
+
+
+def test_sports_fixture_is_1v1_with_kaykit():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/sports_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["genre"] == "sports_goal"
+    assert data["player"]["on_ground"] is True
+    assert data["player"]["gltf"] == "knight"
+    rogue = next(w for w in data["walkers"] if w.get("name") == "opponent")
+    assert rogue.get("gltf") == "rogue"
+    assert any(p.get("name") == "ball" and p.get("model") == "sphere" for p in data["props"])
+    assert any(p.get("name") == "goal" for p in data["props"])
+    assert any(p.get("name") == "net" for p in data["props"])
+    win = next(p for p in data["props"] if p.get("name") == "win")
+    assert int(win["scale"][0]) == 2
+    clock = next(t for t in data["timers"] if t.get("name") == "match")
+    assert clock["seconds"] == 45.0
+    assert any(p.get("gltf") == "stylized_tree" for p in data["props"])
+    assert any(p.get("gltf") == "rock" for p in data["props"])
+
+
+def test_sports_session_scores_and_rematches():
+    try:
+        from kagra.kagra_shared import SportsSession
+    except ImportError:
+        try:
+            from kagra_shared import SportsSession
+        except ImportError:
+            pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/sports_world.json"
+    session = SportsSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "sports_goal"
+    assert session.phase == "title"
+    assert session.match_mode is True
+    assert session.score_to_win == 2
+    session.confirm()
+    assert session.phase == "playing"
+    for _ in range(900):
+        if session.won:
+            break
+        session.set_input(0.0, 1.0, False, True, False)
+        session.tick(1.0 / 60.0)
+    assert session.won and session.done
+    assert session.player_score >= 2
+    assert session.opp_score == 0
+    assert session.phase == "complete"
+    session.confirm()
+    assert session.phase == "playing"
+    assert session.player_score == 0
+    assert session.done is False
+
+
 def test_survival_fixture_is_camp_with_glb():
     import json
 
@@ -1069,6 +1195,7 @@ def test_survival_session_survives_three_days():
     assert session.status == "survived 3 days"
     assert "-" in session.status or session.status.startswith("survived")
     assert "\u2014" not in session.status
+
 
 
 def test_rpg_village_fixture_uses_kaykit_and_hero():
@@ -1402,3 +1529,83 @@ def test_stealth_session_grabs_key_and_escapes():
     assert session.phase == "playing"
     assert not session.has_key
     assert session.alert < 0.01
+
+
+def test_fps_fixture_is_three_wave_arena_with_glb():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/fps_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["genre"] == "fps_range"
+    assert data["player"]["on_ground"] is True
+    assert data["player"].get("gltf") == "knight"
+    enemies = [w for w in data["walkers"] if w.get("name") == "enemy"]
+    reserves = [w for w in data["walkers"] if w.get("name") == "reserve"]
+    assert len(enemies) == 2
+    assert len(reserves) >= 4
+    ids = " ".join(w.get("id") or "" for w in data["walkers"])
+    assert ":1:" in ids and ":2:" in ids and ":3:" in ids
+    gltfs = {w.get("gltf") for w in data["walkers"]}
+    assert {"knight", "rogue", "mage", "barbarian"} <= gltfs
+    assert any(p.get("gltf") == "crate.glb" for p in data["props"])
+    assert any(p.get("gltf") == "stylized_tree" for p in data["props"])
+    assert any(p.get("gltf") == "rock" for p in data["props"])
+    assert data.get("heightfield") in (None, {})
+
+
+def test_fps_session_clears_waves():
+    import json
+    import math
+
+    try:
+        from kagra.kagra_shared import FpsSession
+    except ImportError:
+        try:
+            from kagra_shared import FpsSession
+        except ImportError:
+            pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/fps_world.json"
+    session = FpsSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "fps_range"
+    assert session.phase == "title"
+    assert session.hp == session.hp_max
+    assert session.ammo == session.mag
+    assert session.waves == 3
+    session.confirm()
+    assert session.phase == "playing"
+
+    def wrap(a: float) -> float:
+        return (a + math.pi) % (2.0 * math.pi) - math.pi
+
+    for _ in range(2400):
+        if session.won or session.lost:
+            break
+        world = json.loads(session.dump())
+        player = world["player"]["position"]
+        px, pz = float(player[0]), float(player[2])
+        best = None
+        for walker in world["walkers"]:
+            if walker.get("name") != "enemy":
+                continue
+            pos = walker["position"]
+            d = (pos[0] - px) ** 2 + (pos[2] - pz) ** 2
+            if best is None or d < best[0]:
+                best = (d, float(pos[0]), float(pos[2]))
+        if best is None:
+            session.set_input(0.0, 0.0, False, False, False)
+        else:
+            d, x, z = best
+            err = wrap(math.atan2(x - px, z - pz) - float(session.look_yaw))
+            session.add_look(err, -float(session.look_pitch))
+            lz = -1.0 if math.sqrt(d) < 3.4 else 0.0
+            dodge = int(session.ammo) == 0
+            attack = int(session.ammo) > 0 and not session.reloading
+            session.set_input(0.0, lz, False, attack, dodge)
+        session.tick(1.0 / 60.0)
+    assert session.won and not session.lost
+    assert session.kills >= 7
+    assert session.phase == "complete"
+    session.confirm()
+    assert session.phase == "playing"
+    assert session.hp == session.hp_max
+    assert session.wave == 1

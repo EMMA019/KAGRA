@@ -4,13 +4,15 @@
 //! - `world_doc` / `world_play` — 既存の世界データ + マルチジャンル tick
 //! - `render` / `measure` — 描画と HUD 計測
 //! - `physics` — Rapier（feature）
-//! - `<genre>` — `GenreSession` 実装ごとの薄いラッパ（例: `puzzle`, `platformer`, `novel`, `race`, `action`, `fight`, `rhythm`, `td`, `rpg`, `shop`, `fishcook`, `stealth`, `survival`）
+//! - `<genre>` — `GenreSession` 実装ごとの薄いラッパ（例: `puzzle`, `card`, `platformer`, `novel`, `race`, `fps`, `sports`, `action`, `fight`, `rhythm`, `td`, `rpg`, `shop`, `fishcook`, `stealth`, `survival`）
 //! - `netplay` — ロックステップ入力同期（ソケットは Python 側）
 
 mod action;
+mod card;
 mod common;
 mod fight;
 mod fishcook;
+mod fps;
 mod measure;
 mod netplay;
 mod novel;
@@ -21,6 +23,7 @@ mod render;
 mod rhythm;
 mod rpg;
 mod shop;
+mod sports;
 mod stealth;
 mod survival;
 mod td;
@@ -33,8 +36,10 @@ mod physics;
 use pyo3::prelude::*;
 
 use action::PyActionSession;
+use card::PyCardSession;
 use fight::PyFightSession;
 use fishcook::PyFishCookSession;
+use fps::PyFpsSession;
 use measure::measure_text_py;
 use netplay::PyLockstep;
 use novel::PyNovelSession;
@@ -45,6 +50,7 @@ use render::render_world_doc_py;
 use rhythm::PyRhythmSession;
 use rpg::PyRpgSession;
 use shop::PyShopSession;
+use sports::PySportsSession;
 use stealth::PyStealthSession;
 use survival::PySurvivalSession;
 use td::PyTdSession;
@@ -60,9 +66,12 @@ fn kagra_shared(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyWorldPlay>()?;
     m.add_class::<PyPuzzlePadSession>()?;
     m.add_class::<PyPuzzleSession>()?;
+    m.add_class::<PyCardSession>()?;
     m.add_class::<PyNovelSession>()?;
     m.add_class::<PyPlatformerSession>()?;
     m.add_class::<PyRaceSession>()?;
+    m.add_class::<PyFpsSession>()?;
+    m.add_class::<PySportsSession>()?;
     m.add_class::<PyActionSession>()?;
     m.add_class::<PyFightSession>()?;
     m.add_class::<PyLockstep>()?;

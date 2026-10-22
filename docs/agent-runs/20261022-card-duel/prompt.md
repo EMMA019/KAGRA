@@ -1,0 +1,7 @@
+KAGRA (Rust kagra-shared + Python). Read AGENTS.md ('how to add a genre'), kagra-shared/src/genre_session.rs, the existing session bindings and the smooth UI/HUD code on master first.
+
+Goal (Phase 2-3): add a card game genre. Core rules (deck, shuffle with seed, draw, hand, mana/cost, play, simple opponent AI, win/lose) as a new Rust module exposed as a CardSession GenreSession. Add reusable card UI pieces (fanned hand layout, drag-to-play, flip animation, tweens, card faces with text/art) that other card games can reuse. Deliver: Rust module + py binding, examples/card_minimal.py (a short 1v1 duel vs AI, about 20-card decks, result and rematch; touch drag plus mouse), examples/verify_scenarios/card_smoke.json, HUD/card text ASCII or Japanese without missing glyphs. Design the state so it serializes cleanly (dump/from_json), since online turn-based play comes later.
+
+Other agents work in parallel (rapier physics, FPS): keep shared-file edits small and additive; before finishing, merge latest master into your branch (no force-push) and resolve conflicts.
+
+Done when cargo test -p kagra-shared --lib --locked, clippy -D warnings (default and render), pytest tests -m "not golden" and new plus existing verify scenarios pass (demo_live, physics_stack known failures; ignore). Render a real headless screenshot with lavapipe and save as artifact. Open a PR against master with a short Japanese summary. Do not merge.
