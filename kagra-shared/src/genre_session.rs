@@ -19,6 +19,7 @@ use crate::td;
 use crate::world_doc::WorldEvent;
 use crate::world_play::WorldPlay;
 
+pub use crate::fishcook::FishCookSession;
 pub use crate::puzzle_board::PuzzleSession;
 pub use crate::rhythm_chart::RhythmSession;
 
@@ -1194,6 +1195,59 @@ impl FightSession {
     }
 }
 
+/// Cast, reel, cook, and sell (`fishcook`). Rules stay in `fishcook` /
+/// `fish` / `cook` / `shop`. Not the one-shot `fish_cast` or `cook_stove` loops.
+impl GenreSession for FishCookSession {
+    fn genre_id(&self) -> &'static str {
+        crate::fishcook::GAME_ID
+    }
+
+    fn from_json(json: &str) -> Result<Self, GenreSessionError> {
+        FishCookSession::open(json)
+    }
+
+    fn set_input(&mut self, input: WalkInput) {
+        self.apply_input(input);
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.step(dt);
+    }
+
+    fn dump(&self) -> Result<String, GenreSessionError> {
+        self.world_json()
+    }
+
+    fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        self.drain_events(name)
+    }
+
+    fn confirm(&mut self) {
+        self.confirm_action();
+    }
+
+    fn emit_event(
+        &mut self,
+        name: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), GenreSessionError> {
+        self.record_event(name, data);
+        Ok(())
+    }
+
+    fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        self.begin_timer(name, seconds, on_done)
+    }
+
+    fn step_interact(&mut self) {
+        self.use_nearby();
+    }
+
+    fn phase(&self) -> GamePhase {
+        self.current_phase()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1997,5 +2051,36 @@ mod tests {
     fn fight_rejects_other_genre() {
         let err = FightSession::from_json(ARENA).unwrap_err();
         assert!(err.contains("fight_hitstun"));
+    }
+
+    const FISHCOOK: &str = include_str!("../tests/fixtures/fishcook_world.json");
+
+    #[test]
+    fn fishcook_session_sells_until_the_day_goal() {
+        let mut s = FishCookSession::from_json(FISHCOOK).expect("fixture");
+        assert_eq!(s.genre_id(), "fishcook");
+        assert_eq!(s.phase(), GamePhase::Title);
+        let dump = s.dump().expect("dump");
+        assert!(dump.contains("knight"));
+        assert!(dump.contains("gazebo"));
+        assert!(dump.contains("mill"));
+        s.confirm();
+        assert_eq!(s.phase(), GamePhase::Playing);
+        crate::fishcook::drive_day(&mut s, &mut |session, input| {
+            session.set_input(input);
+            session.tick(1.0 / 60.0);
+        });
+        assert!(s.won());
+        assert!(s.done());
+        assert_eq!(s.phase(), GamePhase::Complete);
+        assert_eq!(s.coins(), s.goal());
+        assert!(s.hud_json(640, 360).contains("DAY END"));
+        assert!(s.hud_json(640, 360).contains("goal met"));
+        let sold = s.take_events("sold");
+        assert_eq!(sold.len(), 1);
+        assert!(sold[0].count >= 2);
+        assert!(s.take_events("nonexistent").is_empty());
+        let err = FishCookSession::from_json(ROOM).unwrap_err();
+        assert!(err.contains("fishcook"));
     }
 }

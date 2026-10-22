@@ -36,6 +36,7 @@ try:
     from kagra.kagra_shared import (
         ActionSession,
         FightSession,
+        FishCookSession,
         NovelSession,
         PlatformerSession,
         PuzzlePadSession,
@@ -54,6 +55,7 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
         from kagra_shared import (  # type: ignore[no-redef]
             ActionSession,
             FightSession,
+            FishCookSession,
             NovelSession,
             PlatformerSession,
             PuzzlePadSession,
@@ -81,6 +83,7 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
         RpgSession = None  # type: ignore[assignment]
         ShopSession = None  # type: ignore[assignment]
         TdSession = None  # type: ignore[assignment]
+        FishCookSession = None  # type: ignore[assignment]
 
         def render_world_doc(*_a, **_k):  # type: ignore[misc]
             raise ImportError(
@@ -108,6 +111,7 @@ __all__ = [
     "AssetKind",
     "Brain",
     "BrainError",
+    "FishCookSession",
     "KagraContractError",
     "KairiBrain",
     "NovelSession",
