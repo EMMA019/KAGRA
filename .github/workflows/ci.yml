@@ -132,8 +132,12 @@ jobs:
 
       # ランナーに Android SDK は入っているが sdkmanager は PATH に無い。
       # この action が cmdline-tools を配置して PATH を通す。
+      # Google dropped the legacy `tools` package; v3's default still
+      # asked for it (`Failed to find package 'tools'`).
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: "platform-tools"
 
       # AGP は未インストールの platform / NDK を自動取得しないので明示する。
       - name: Install Android SDK packages

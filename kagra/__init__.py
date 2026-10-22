@@ -79,32 +79,30 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
             WorldPlay,
             render_world_doc,
         )
-    except ImportError:  # pragma: no cover
-        WorldDoc = None  # type: ignore[assignment]
-        WorldPlay = None  # type: ignore[assignment]
-        ActionSession = None  # type: ignore[assignment]
-        FightSession = None  # type: ignore[assignment]
-        PuzzlePadSession = None  # type: ignore[assignment]
-        PuzzleSession = None  # type: ignore[assignment]
-        NovelSession = None  # type: ignore[assignment]
-        PlatformerSession = None  # type: ignore[assignment]
-        RaceSession = None  # type: ignore[assignment]
-        CardSession = None  # type: ignore[assignment]
-        FpsSession = None  # type: ignore[assignment]
-        RhythmSession = None  # type: ignore[assignment]
-        RpgSession = None  # type: ignore[assignment]
-        ShopSession = None  # type: ignore[assignment]
-        SportsSession = None  # type: ignore[assignment]
-        StealthSession = None  # type: ignore[assignment]
-        SurvivalSession = None  # type: ignore[assignment]
-        TdSession = None  # type: ignore[assignment]
-        FishCookSession = None  # type: ignore[assignment]
-
-        def render_world_doc(*_a, **_k):  # type: ignore[misc]
-            raise ImportError(
-                "kagra_shared not installed: `maturin develop --release` "
-                "(root pyproject) or `cd kagra-shared && maturin develop --release`"
-            )
+    except ImportError:
+        # python-unit CI is extension-free. Dump JSON still works.
+        from kagra.world_fallback import (
+            ActionSession,
+            CardSession,
+            FightSession,
+            FishCookSession,
+            FpsSession,
+            NovelSession,
+            PlatformerSession,
+            PuzzlePadSession,
+            PuzzleSession,
+            RaceSession,
+            RhythmSession,
+            RpgSession,
+            ShopSession,
+            SportsSession,
+            StealthSession,
+            SurvivalSession,
+            TdSession,
+            WorldDoc,
+            WorldPlay,
+            render_world_doc,
+        )
 
 
 # Names that stay on disk (kagra.play / kagra.world3d / …) but must not

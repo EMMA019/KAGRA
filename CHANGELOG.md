@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Master CI: extension-free ``WorldDoc`` / ``WorldPlay`` / GenreSession
+  names (``kagra.world_fallback``; dump + genre check only, ``tick``
+  still needs the wheel). Android SDK setup no longer asks for the
+  removed ``tools`` package.
+
 - Flight pose on a free `WorldDoc`: `WorldProp.pitch` / `roll` (nose up / bank)
   and `local: true` parent TRS (up to 4 links). `parent` without `local` stays
   a link so existing world-space positions do not move. `model: "ring"` is an
