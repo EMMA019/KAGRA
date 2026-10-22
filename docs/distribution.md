@@ -94,8 +94,8 @@ Actions の **Run workflow** で `game` にパスを入れる。zip は artifact
 ## Android
 
 既存のシェル（`mobile/android`、JNI、`scripts/build_android_native.sh`）を
-`--game` で切り替える。デバッグ APK は Android SDK の debug keystore で
-署名される。自分で keystore を作らなくても実機に入る。
+`--game` で切り替える。デバッグ APK はリポジトリの
+`mobile/android/app/debug.keystore` で署名される。自分で keystore を作らなくても実機に入る。
 
 ```bash
 # cargo-ndk と ANDROID_NDK_HOME（NDK r29 / 29.0.14206865、16 KB ページ）
