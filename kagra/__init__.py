@@ -34,6 +34,8 @@ from kagra.world_expect import eval_world_expect
 
 try:
     from kagra.kagra_shared import (
+        ActionSession,
+        FightSession,
         NovelSession,
         PlatformerSession,
         PuzzlePadSession,
@@ -48,6 +50,8 @@ try:
 except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
     try:
         from kagra_shared import (  # type: ignore[no-redef]
+            ActionSession,
+            FightSession,
             NovelSession,
             PlatformerSession,
             PuzzlePadSession,
@@ -62,6 +66,8 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
     except ImportError:  # pragma: no cover
         WorldDoc = None  # type: ignore[assignment]
         WorldPlay = None  # type: ignore[assignment]
+        ActionSession = None  # type: ignore[assignment]
+        FightSession = None  # type: ignore[assignment]
         PuzzlePadSession = None  # type: ignore[assignment]
         PuzzleSession = None  # type: ignore[assignment]
         NovelSession = None  # type: ignore[assignment]
@@ -92,6 +98,7 @@ _PUBLIC_OFF = {
 }
 
 __all__ = [
+    "ActionSession",
     "AssetKind",
     "Brain",
     "BrainError",
@@ -118,6 +125,7 @@ __all__ = [
     "debug_trace_summary",
     "draw_world",
     "eval_world_expect",
+    "FightSession",
     "find_path",
     "get_lang",
     "image",

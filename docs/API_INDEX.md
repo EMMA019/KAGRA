@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **63**
+エントリ数: **65**
 
 棚の**手前**は shared wgpu 30（WorldDoc / WorldPlay / gameloop）。
 棚の**奥**は再エクスポートの余り。旧 RendererV2 API は `old/`。
@@ -11,6 +11,7 @@
 
 | Name | Signature |
 |---|---|
+| `ActionSession` | `class ActionSession  (from kagra.kagra_shared)` |
 | `add_table` | `export add_table  (from kagra.i18n)` |
 | `annotate` | `export annotate  (from kagra.annotate)` |
 | `AssetKind` | `class AssetKind  (from kagra.contracts)` |
@@ -23,6 +24,7 @@
 | `debug_trace_summary` | `export debug_trace_summary  (from kagra.trace)` |
 | `draw_world` | `export draw_world  (from kagra.gameloop)` |
 | `eval_world_expect` | `export eval_world_expect  (from kagra.world_expect)` |
+| `FightSession` | `class FightSession  (from kagra.kagra_shared)` |
 | `find_path` | `export find_path  (from kagra.path)` |
 | `get_lang` | `export get_lang  (from kagra.i18n)` |
 | `image` | `export image  (from kagra.ui2d)` |
