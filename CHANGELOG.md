@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Flight pose on a free `WorldDoc`: `WorldProp.pitch` / `roll` (nose up / bank)
+  and `local: true` parent TRS (up to 4 links). `parent` without `local` stays
+  a link so existing world-space positions do not move. `model: "ring"` is an
+  XY torus (hole along +Z). `render_rgba` / `rgba_to_ppm` let `kagra.gameloop.run`
+  present a frame without PNG compression when `Scene._frame_rgba` is set.
+  Multi-primitive static `.glb`/`.gltf` merge material `baseColorFactor` palettes
+  and node transforms; KayKit characters filter unskinned attachment meshes and
+  pick `Walking_*`/`Running_*` clips.
+  PBR specular + Fresnel environment reflections + CPU mipmaps on `Material::Solid`,
+  plus sub-mesh selector (`chess_king`, `chess_queen`, ...) for PolyHaven `chess_set_1k.gltf`.
+  Samples: `examples/flight_minimal.py`, `examples/backyard_brawl_minimal.py`,
+  `examples/chess_minimal.py`.
+
 - Dump picture fields: ``sky`` (clear+fog), ``ground`` (auto grass plane;
   indoor rooms set false), ``WorldProp.uv_scale`` (CPU-tiled albedo).
   ``expect_offscreen.pixels`` checks region mean / not_solid (not golden).

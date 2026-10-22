@@ -1,0 +1,4 @@
+biplane.glb is an original multi-material glTF made for KAGRA (CC0).
+It is not a Quaternius, KayKit, or Poly Haven pack file.
+Materials: Red_Paint, Ivory_Wing, Navy_Metal, Glass_Canopy, Brass_Gold, Dark_Tire.
+Alias: biplane / airplane / plane_glb via kagra.contracts.resolve_asset.

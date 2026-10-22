@@ -406,6 +406,7 @@ impl Renderer {
             label: Some("kagra-shared albedo sampler"),
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -982,7 +983,12 @@ impl Renderer {
                                 None => ([0.55, 0.50, 0.52, 0.85], [0.0; 4], [0.0; 4], [0.0; 4]),
                             }
                         } else {
-                            ([0.0; 4], [0.0; 4], [0.0; 4], [0.0; 4])
+                            (
+                                [0.0; 4],
+                                [0.0; 4],
+                                [0.0; 4],
+                                [inst.metallic, inst.roughness, 0.0, 0.0],
+                            )
                         };
                     raw.push(InstanceRaw {
                         model: inst.model.to_cols_array_2d(),
@@ -1672,6 +1678,17 @@ fn create_albedo_texture(
 ) -> wgpu::Texture {
     let width = width.max(1);
     let height = height.max(1);
+    let expected = (width as usize) * (height as usize) * 4;
+    let can_mip = width >= 4
+        && height >= 4
+        && width.is_power_of_two()
+        && height.is_power_of_two()
+        && rgba.len() >= expected;
+    let mip_level_count = if can_mip {
+        (width.min(height).ilog2() + 1).min(6)
+    } else {
+        1
+    };
     let tex = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("kagra-shared albedo"),
         size: wgpu::Extent3d {
@@ -1679,14 +1696,13 @@ fn create_albedo_texture(
             height,
             depth_or_array_layers: 1,
         },
-        mip_level_count: 1,
+        mip_level_count,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba8UnormSrgb,
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    let expected = (width as usize) * (height as usize) * 4;
     let data = if rgba.len() >= expected {
         &rgba[..expected]
     } else {
@@ -1711,6 +1727,54 @@ fn create_albedo_texture(
             depth_or_array_layers: 1,
         },
     );
+    if mip_level_count > 1 {
+        let mut prev = data.to_vec();
+        let mut pw = width;
+        let mut ph = height;
+        for level in 1..mip_level_count {
+            let nw = (pw / 2).max(1);
+            let nh = (ph / 2).max(1);
+            let mut next = vec![0u8; (nw * nh * 4) as usize];
+            for y in 0..nh {
+                for x in 0..nw {
+                    let i00 = ((2 * y * pw + 2 * x) * 4) as usize;
+                    let i10 = ((2 * y * pw + (2 * x + 1)) * 4) as usize;
+                    let i01 = (((2 * y + 1) * pw + 2 * x) * 4) as usize;
+                    let i11 = (((2 * y + 1) * pw + (2 * x + 1)) * 4) as usize;
+                    let di = ((y * nw + x) * 4) as usize;
+                    for c in 0..4 {
+                        let sum = prev[i00 + c] as u32
+                            + prev[i10 + c] as u32
+                            + prev[i01 + c] as u32
+                            + prev[i11 + c] as u32;
+                        next[di + c] = ((sum + 2) / 4) as u8;
+                    }
+                }
+            }
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &tex,
+                    mip_level: level,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &next,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * nw),
+                    rows_per_image: Some(nh),
+                },
+                wgpu::Extent3d {
+                    width: nw,
+                    height: nh,
+                    depth_or_array_layers: 1,
+                },
+            );
+            prev = next;
+            pw = nw;
+            ph = nh;
+        }
+    }
     tex
 }
 

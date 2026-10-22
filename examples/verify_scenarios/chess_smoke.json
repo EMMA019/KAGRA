@@ -1,0 +1,27 @@
+{
+  "name": "chess_smoke",
+  "notes": "Studio 3D chess using bundled PolyHaven sculpted piece meshes and PBR glossy marble/ebony/brass materials.",
+  "script": "examples/chess_minimal.py",
+  "env": {"KAGRA_CHESS_HEADLESS": "1"},
+  "timeout_sec": 180,
+  "expect_files": ["scratch/chess.png", "scratch/chess_world.json"],
+  "min_file_bytes": 500,
+  "expect_world": {
+    "path": "scratch/chess_world.json",
+    "query": [
+      {"type": "prop", "name": "piece_w_K", "count": 1},
+      {"type": "prop", "name": "piece_b_K", "count": 1},
+      {"type": "prop", "name": "tile", "count": 64}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "scratch/chess_world.json",
+    "out": "scratch/chess_shared.png",
+    "width": 480,
+    "height": 270,
+    "min_bytes": 500,
+    "pixels": [
+      {"x": 80, "y": 40, "w": 320, "h": 190, "not_solid": true}
+    ]
+  }
+}

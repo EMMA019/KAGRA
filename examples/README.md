@@ -8,7 +8,13 @@ python examples/python_game_minimal.py    # 接着 API（岸で J → cast）
 python examples/bunny_garden_minimal.py   # 会話 / 好感度
 python examples/torneko_minimal.py --seed 12345
 python examples/bar_sim_minimal.py        # Bar 経営シム
+python examples/flight_minimal.py         # 島の上を飛ぶ（pitch / roll / 親子 + 村）
+python examples/backyard_brawl_minimal.py # 裏庭 3v3 旗取り（KayKit / Quaternius .glb）
+python examples/chess_minimal.py          # スタジオ 3D チェス（PolyHaven 彫刻駒 + PBR 大理石/黒檀）
 python -m kagra.verify examples/verify_scenarios/bar_sim_smoke.json
+python -m kagra.verify examples/verify_scenarios/flight_smoke.json
+python -m kagra.verify examples/verify_scenarios/backyard_brawl_smoke.json
+python -m kagra.verify examples/verify_scenarios/chess_smoke.json
 ```
 
 旧 VRM / RendererV2 デモは [`old/examples/`](../old/examples/) にあります。

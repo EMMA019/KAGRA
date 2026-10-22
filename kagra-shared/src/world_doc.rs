@@ -32,15 +32,15 @@ use std::sync::{Arc, Mutex, OnceLock};
 use crate::collectathon::open_world_height;
 use crate::gltf_load::{
     is_tpose_humanoid_spec, is_walk_skinned_spec, is_walk_vrm_spec, mesh_from_embedded_gltf,
-    mesh_from_glb, mesh_from_gltf_json, sample_skinned_look, skinned_from_embedded_gltf,
-    skinned_from_glb, skinned_from_gltf_json, skinned_parts_from_embedded_gltf,
-    skinned_parts_from_glb, skinned_parts_from_gltf_json, skinned_tpose_humanoid, unit_cube_gltf,
-    walk_skinned_gltf, walk_skinned_vrm, WalkerPose,
+    mesh_from_glb, mesh_from_gltf_json, mesh_index_from_gltf_json, sample_skinned_look,
+    skinned_from_embedded_gltf, skinned_from_glb, skinned_from_gltf_json,
+    skinned_parts_from_embedded_gltf, skinned_parts_from_glb, skinned_parts_from_gltf_json,
+    skinned_tpose_humanoid, unit_cube_gltf, walk_skinned_gltf, walk_skinned_vrm, WalkerPose,
 };
 use crate::scene3d::{
     primitives, Camera, LocalLight, Material, MeshData, MeshId, Scene3D, SceneBuilder, Vertex3,
 };
-use glam::{Mat4, Quat, Vec3};
+use glam::{EulerRot, Mat4, Quat, Vec3};
 use serde::{Deserialize, Serialize};
 
 /// `docs/schemas/world.json` の version。他は拒否する。
@@ -53,7 +53,8 @@ const MESH_PLANE: MeshId = MeshId(3);
 pub(crate) const MESH_HEIGHTFIELD: MeshId = MeshId(4);
 pub(crate) const MESH_QUAD: MeshId = MeshId(5);
 const MESH_CONE: MeshId = MeshId(6);
-pub(crate) const MESH_GLTF_BASE: u32 = 7;
+const MESH_TORUS: MeshId = MeshId(7);
+pub(crate) const MESH_GLTF_BASE: u32 = 8;
 
 /// Persistent world. JSON source of truth. Not a draw list.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -169,7 +170,8 @@ fn default_gravity() -> f32 {
     9.8
 }
 
-/// Prop record. Parent is a string id (one level; n-level TRS is later).
+/// Prop record. `position` / `yaw` / `pitch` / `roll` are world-space unless
+/// `local` is set, in which case they are parent-space (up to 4 links).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct WorldProp {
     pub id: String,
@@ -181,6 +183,12 @@ pub struct WorldProp {
     pub position: [f32; 3],
     #[serde(default)]
     pub yaw: f32,
+    /// Nose up (radians). Applied as intrinsic Y, then X, then Z with `roll`.
+    #[serde(default, skip_serializing_if = "is_zero_f32")]
+    pub pitch: f32,
+    /// Bank (radians). Positive lifts the local +X side.
+    #[serde(default, skip_serializing_if = "is_zero_f32")]
+    pub roll: f32,
     #[serde(default)]
     pub model: String,
     #[serde(default)]
@@ -191,6 +199,11 @@ pub struct WorldProp {
     pub enabled: bool,
     #[serde(default)]
     pub parent: Option<String>,
+    /// When true, `position` / `yaw` / `pitch` / `roll` / `scale` are in the
+    /// parent prop's space (`parent` * local). Crest coins leave this false:
+    /// `parent` stays a link and `position` stays world-space.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub local: bool,
     #[serde(default)]
     pub color: Option<[u32; 3]>,
     /// 0..1. Coins dump 1.0. Default 0 (Lambert).
@@ -264,6 +277,27 @@ fn default_true() -> bool {
 
 fn default_roughness() -> f32 {
     1.0
+}
+
+fn is_zero_f32(v: &f32) -> bool {
+    *v == 0.0
+}
+
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
+/// Yaw, then pitch (nose up), then roll. Positive yaw turns +Z toward +X.
+pub(crate) fn prop_rotation(prop: &WorldProp) -> Quat {
+    Quat::from_euler(EulerRot::YXZ, prop.yaw, -prop.pitch, prop.roll)
+}
+
+fn prop_local_matrix(prop: &WorldProp) -> Mat4 {
+    Mat4::from_scale_rotation_translation(
+        Vec3::from_array(prop.scale),
+        prop_rotation(prop),
+        Vec3::from_array(prop.position),
+    )
 }
 
 /// Walker record (`walker:player`).
@@ -521,6 +555,54 @@ impl WorldDoc {
         ids
     }
 
+    /// World matrix per prop id. `local: true` multiplies up to 4 parents.
+    /// A disabled prop still contributes a transform so it can be a hinge.
+    fn prop_world_mats(&self) -> HashMap<String, Mat4> {
+        let mut memo = HashMap::new();
+        let mut stack = Vec::new();
+        for prop in &self.props {
+            self.prop_world_mat(&prop.id, 0, &mut stack, &mut memo);
+        }
+        memo
+    }
+
+    fn prop_world_mat(
+        &self,
+        id: &str,
+        depth: u32,
+        stack: &mut Vec<String>,
+        memo: &mut HashMap<String, Mat4>,
+    ) -> Mat4 {
+        if let Some(ready) = memo.get(id) {
+            return *ready;
+        }
+        let Some(prop) = self.props.iter().find(|p| p.id == id) else {
+            return Mat4::IDENTITY;
+        };
+        let local = prop_local_matrix(prop);
+        let world = if prop.local && depth < 4 {
+            match prop
+                .parent
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                Some(_) if stack.iter().any(|seen| seen == id) => local,
+                Some(parent) => {
+                    stack.push(id.to_string());
+                    let parent_m = self.prop_world_mat(parent, depth + 1, stack, memo);
+                    stack.pop();
+                    parent_m * local
+                }
+                None => local,
+            }
+        } else {
+            local
+        };
+        memo.insert(id.to_string(), world);
+        world
+    }
+
     /// One-frame draw list. Heightfield + glTF/box/sphere/capsule + sprite/quad.
     /// Empty lights get default key+fill (max 4 slots). Capsules/props get a
     /// ground contact blob. Does not mutate this document. GPU upload uses `compile_meshes`.
@@ -532,6 +614,13 @@ impl WorldDoc {
         let (gltf_ids, walker_gltf_ids) = self.gltf_mesh_ids();
         let tex_ids = self.texture_mesh_ids();
 
+        let sky = self.sky.unwrap_or([130, 165, 205, 255]);
+        b.push_material(
+            MESH_SPHERE,
+            Mat4::from_scale_rotation_translation(Vec3::splat(360.0), Quat::IDENTITY, camera.eye),
+            sky,
+            Material::Sky,
+        );
         if self.heightfield.is_some() {
             b.push_material(
                 MESH_HEIGHTFIELD,
@@ -570,40 +659,57 @@ impl WorldDoc {
         }
 
         let lod_r = self.vegetation_lod_radius();
+        let worlds = self.prop_world_mats();
         for prop in &self.props {
             if !prop.enabled {
                 continue;
             }
-            let pos = Vec3::from_array(prop.position);
+            let model = worlds.get(&prop.id).copied().unwrap_or(Mat4::IDENTITY);
+            let pos = model.transform_point3(Vec3::ZERO);
             let scale = Vec3::from_array(prop.scale);
             let mat = material_for_prop(prop);
             let veg = is_vegetation_prop(prop);
             let cheap = veg && camera.eye.distance(pos) > lod_r;
             if cheap {
                 let h = scale.y.abs().max(scale.x.abs()).max(0.4);
-                let model = Mat4::from_scale_rotation_translation(
+                let billboard = Mat4::from_scale_rotation_translation(
                     Vec3::new(h * 0.7, h, 1.0),
                     Quat::from_rotation_y(billboard_yaw(camera.eye, pos)),
                     pos,
                 );
-                b.push_material(MESH_QUAD, model, color_u8(prop.color), mat);
+                b.push_material(MESH_QUAD, billboard, color_u8(prop.color), mat);
                 continue;
             }
             let mesh = mesh_for_prop(prop, &gltf_ids, &tex_ids);
-            let model =
-                Mat4::from_scale_rotation_translation(scale, Quat::from_rotation_y(prop.yaw), pos);
-            let col = if prop
+            let has_tex = prop
                 .texture
                 .as_deref()
                 .map(str::trim)
                 .is_some_and(|s| !s.is_empty())
-                && prop.color.is_none()
-            {
+                || prop
+                    .gltf
+                    .as_deref()
+                    .map(str::trim)
+                    .is_some_and(|s| !s.is_empty());
+            let col = if has_tex && prop.color.is_none() {
                 [255, 255, 255, 255]
             } else {
                 color_u8(prop.color)
             };
-            b.push_material(mesh, model, col, mat);
+            let (metallic, roughness) = if is_coin_prop(prop) && prop.metallic < 0.01 {
+                (1.0, 0.12)
+            } else {
+                // Default roughness in WorldProp is 1.0 when omitted in JSON;
+                // map default 1.0 on non-vegetation props to a natural satin 0.38
+                // unless explicitly set to another value.
+                let r = if (prop.roughness - 1.0).abs() < 1e-4 && !veg {
+                    0.38
+                } else {
+                    prop.roughness
+                };
+                (prop.metallic, r)
+            };
+            b.push_pbr(mesh, model, col, mat, metallic, roughness);
         }
 
         self.push_vista(&mut b, &camera);
@@ -680,7 +786,7 @@ impl WorldDoc {
                             continue;
                         }
                     }
-                    b.push_material(mesh, model, col, mat);
+                    b.push_pbr(mesh, model, col, mat, 0.08, 0.30);
                 }
                 continue;
             }
@@ -846,22 +952,67 @@ impl WorldDoc {
             {
                 continue;
             }
+            if prop.local
+                || !prop.gltf.is_none() && prop.name == "plane"
+                || prop.model.eq_ignore_ascii_case("torus")
+                || prop.model.eq_ignore_ascii_case("ring")
+                || prop.name.eq_ignore_ascii_case("cloud")
+                || prop.name.eq_ignore_ascii_case("ring")
+                || prop.name.eq_ignore_ascii_case("plane")
+                || prop.name.eq_ignore_ascii_case("tile")
+                || prop.name.eq_ignore_ascii_case("studio_floor")
+                || prop.name.eq_ignore_ascii_case("board_frame")
+                || prop.name.eq_ignore_ascii_case("brass_trim")
+                || prop.name.eq_ignore_ascii_case("backdrop")
+                || prop.name.eq_ignore_ascii_case("lane")
+                || prop.name.eq_ignore_ascii_case("marker")
+            {
+                continue;
+            }
             let pos = Vec3::from_array(prop.position);
+            let ground_y = self.height_at(pos.x, pos.z);
+            if (pos.y - ground_y) > 2.5 && !prop.name.starts_with("piece_") {
+                continue;
+            }
             let sx = prop.scale[0].abs().max(0.2);
             let sz = prop.scale[2].abs().max(0.2);
+            let is_chess_piece = prop.name.starts_with("piece_");
+            if is_chess_piece {
+                // Tight ambient-occlusion ring under the piece base + soft directional cast shadow on the board tile
+                self.push_contact_blob_alpha(b, pos.x, 0.033, pos.z, 0.23, 168);
+                self.push_contact_blob_alpha(b, pos.x - 0.055, 0.0318, pos.z - 0.045, 0.25, 118);
+                continue;
+            }
             let radius = (sx.max(sz) * 0.7).clamp(0.28, 2.4);
-            self.push_contact_blob(b, pos.x, pos.z, radius);
+            let by = self.height_at(pos.x, pos.z) + 0.03;
+            self.push_contact_blob_at(b, pos.x, by, pos.z, radius);
         }
     }
 
     fn push_contact_blob(&self, b: &mut SceneBuilder, x: f32, z: f32, radius: f32) {
         let y = self.height_at(x, z) + 0.03;
+        self.push_contact_blob_at(b, x, y, z, radius);
+    }
+
+    fn push_contact_blob_at(&self, b: &mut SceneBuilder, x: f32, y: f32, z: f32, radius: f32) {
+        self.push_contact_blob_alpha(b, x, y, z, radius, 135);
+    }
+
+    fn push_contact_blob_alpha(
+        &self,
+        b: &mut SceneBuilder,
+        x: f32,
+        y: f32,
+        z: f32,
+        radius: f32,
+        alpha: u8,
+    ) {
         let model = Mat4::from_scale_rotation_translation(
             Vec3::new(radius * 2.0, 1.0, radius * 2.0),
             Quat::IDENTITY,
             Vec3::new(x, y, z),
         );
-        b.push_material(MESH_PLANE, model, [18, 14, 12, 120], Material::Solid);
+        b.push_material(MESH_PLANE, model, [12, 10, 14, alpha], Material::Solid);
     }
 
     fn draw_light(&self) -> (Vec3, f32) {
@@ -904,6 +1055,7 @@ impl WorldDoc {
         out.push((MESH_HEIGHTFIELD, self.heightfield_mesh()));
         let cone_segs = self.vegetation_lod_cells();
         out.push((MESH_CONE, primitives::cone_mesh(0.5, 1.0, cone_segs)));
+        out.push((MESH_TORUS, primitives::torus_mesh(0.5, 0.075, 48, 20)));
         for (i, slot) in self.gltf_slots().into_iter().enumerate() {
             let mesh = match &slot {
                 GltfSlot::Rest(spec) => gltf_mesh_for(spec),
@@ -1377,7 +1529,11 @@ fn walker_gltf_spec(w: &WorldWalker) -> Option<&str> {
         return None;
     }
     let lower = m.to_ascii_lowercase();
-    if lower.ends_with(".gltf") || lower.ends_with(".glb") || lower.ends_with(".vrm") {
+    if lower.ends_with(".gltf")
+        || lower.ends_with(".glb")
+        || lower.ends_with(".vrm")
+        || !crate::assets::resolve_alias(m).is_empty()
+    {
         return Some(m);
     }
     None
@@ -1474,6 +1630,7 @@ fn mesh_for_prop(
         "cylinder" | "capsule" => MESH_CAPSULE,
         "plane" | "water" => MESH_PLANE,
         "sprite" | "quad" => MESH_QUAD,
+        "torus" | "ring" => MESH_TORUS,
         _ => MESH_BOX,
     }
 }
@@ -1540,7 +1697,26 @@ fn nearest_sample(samples: &[[f32; 3]], x: f32, z: f32) -> f32 {
 }
 
 fn existing_asset_path(spec: &str) -> Option<PathBuf> {
-    crate::assets::resolve_asset(spec)
+    let base = spec.split('#').next().unwrap_or(spec);
+    crate::assets::resolve_asset(base)
+}
+
+fn split_mesh_selector(spec: &str) -> (&str, Option<usize>) {
+    if let Some((base, frag)) = spec.split_once('#') {
+        if let Ok(idx) = frag.trim().parse::<usize>() {
+            return (base.trim(), Some(idx));
+        }
+    }
+    match spec.trim().to_ascii_lowercase().as_str() {
+        "chess_rook" => ("chess_set", Some(0)),
+        "chess_pawn" => ("chess_set", Some(1)),
+        "chess_bishop" => ("chess_set", Some(2)),
+        "chess_queen" => ("chess_set", Some(3)),
+        "chess_king" => ("chess_set", Some(4)),
+        "chess_knight" => ("chess_set", Some(5)),
+        "chess_board" => ("chess_set", Some(6)),
+        _ => (spec.trim(), None),
+    }
 }
 
 fn walker_tpose_mesh(
@@ -1584,7 +1760,12 @@ fn probe_walker_asset(spec: &str) -> Result<(), String> {
     let path = existing_asset_path(spec)
         .ok_or_else(|| format!("{spec}: missing (repo root / KAGRA_ROOT / window.exe dir)"))?;
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or(spec);
-    if lower.ends_with(".gltf") {
+    let p_lower = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    if p_lower == "gltf" {
         let json = std::fs::read_to_string(&path).map_err(|e| format!("{name}: {e}"))?;
         skinned_from_gltf_json(&json, |uri| {
             let base = path.parent().unwrap_or(Path::new("."));
@@ -1599,7 +1780,7 @@ fn probe_walker_asset(spec: &str) -> Result<(), String> {
             .map(|_| ())
             .map_err(|_| format!("{name}: {e}"))
         })
-    } else if lower.ends_with(".glb") || lower.ends_with(".vrm") {
+    } else if p_lower == "glb" || p_lower == "vrm" {
         let bytes = std::fs::read(&path).map_err(|e| format!("{name}: {e}"))?;
         skinned_from_glb(&bytes).map(|_| ()).or_else(|e| {
             mesh_from_glb(&bytes)
@@ -1637,16 +1818,28 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
     ) {
         return mesh_from_embedded_gltf(&unit_cube_gltf()).ok();
     }
-    if let Some(path) = existing_asset_path(spec) {
-        if lower.ends_with(".gltf") {
+    let (base_spec, mesh_sel) = split_mesh_selector(spec);
+    if let Some(path) = existing_asset_path(base_spec) {
+        let p_lower = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .unwrap_or_default();
+        if p_lower == "gltf" {
             let json = std::fs::read_to_string(&path).ok()?;
             let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+            if let Some(idx) = mesh_sel {
+                return mesh_index_from_gltf_json(&json, idx, |uri| {
+                    std::fs::read(base.join(uri)).map_err(|e| e.to_string())
+                })
+                .ok();
+            }
             return mesh_from_gltf_json(&json, |uri| {
                 std::fs::read(base.join(uri)).map_err(|e| e.to_string())
             })
             .ok();
         }
-        if lower.ends_with(".glb") || lower.ends_with(".vrm") {
+        if p_lower == "glb" || p_lower == "vrm" {
             let bytes = std::fs::read(&path).ok()?;
             return mesh_from_glb(&bytes).ok();
         }
@@ -1754,7 +1947,12 @@ fn load_skinned_parts_uncached(spec: &str) -> Option<Vec<crate::gltf_load::Skinn
             .map(|s| vec![s]);
     }
     if let Some(path) = existing_asset_path(spec) {
-        if lower.ends_with(".gltf") {
+        let p_lower = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .unwrap_or_default();
+        if p_lower == "gltf" {
             if let Ok(json) = std::fs::read_to_string(&path) {
                 let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
                 if let Ok(parts) = skinned_parts_from_gltf_json(&json, |uri| {
@@ -1766,7 +1964,7 @@ fn load_skinned_parts_uncached(spec: &str) -> Option<Vec<crate::gltf_load::Skinn
                 }
             }
         }
-        if lower.ends_with(".glb") || lower.ends_with(".vrm") {
+        if p_lower == "glb" || p_lower == "vrm" {
             if let Ok(bytes) = std::fs::read(&path) {
                 if let Ok(parts) = skinned_parts_from_glb(&bytes) {
                     if !parts.is_empty() {
@@ -1801,8 +1999,8 @@ fn color_u8(rgb: Option<[u32; 3]>) -> [u8; 4] {
 pub fn compile_meshes() -> Vec<(MeshId, crate::scene3d::MeshData)> {
     vec![
         (MESH_BOX, primitives::box_mesh(Vec3::ONE)),
-        (MESH_SPHERE, primitives::cylinder_mesh(0.5, 1.0, 12)),
-        (MESH_CAPSULE, primitives::cylinder_mesh(0.5, 1.0, 12)),
+        (MESH_SPHERE, primitives::sphere_mesh(0.5, 24)),
+        (MESH_CAPSULE, primitives::cylinder_mesh(0.5, 1.0, 20)),
         (MESH_PLANE, primitives::plane_mesh(1.0, 1.0)),
         (MESH_QUAD, primitives::quad_mesh(1.0, 1.0)),
     ]
@@ -1899,6 +2097,107 @@ mod tests {
         let json = doc.to_json().unwrap();
         assert!(!json.contains("mesh_id"), "GPU mesh ids must not dump");
         assert!(!json.contains("batches"));
+    }
+
+    fn instance_pos(m: Mat4) -> Vec3 {
+        m.transform_point3(Vec3::ZERO)
+    }
+
+    #[test]
+    fn pitch_and_local_parent_compose_without_moving_world_coins() {
+        let crest = WorldDoc::from_json(CREST_ISLE_DUMP).unwrap();
+        let scene = crest.compile_scene(1.0);
+        let coin = crest.props.iter().find(|p| p.name == "coin").unwrap();
+        assert!(!coin.local, "existing parent links stay world-space");
+        assert!(
+            scene
+                .batches
+                .iter()
+                .flat_map(|b| b.instances.iter())
+                .any(|i| {
+                    instance_pos(i.model).distance(Vec3::from_array(coin.position)) < 0.05
+                }),
+            "coin parent must not offset a world-space position"
+        );
+
+        let doc = WorldDoc::from_json(
+            r#"{
+                "version": 1,
+                "ground": false,
+                "props": [
+                    {"id":"root","type":"prop","name":"root","position":[0,10,0],
+                     "pitch":1.5707963,"model":"box","enabled":false},
+                    {"id":"nose","type":"prop","name":"nose","parent":"root","local":true,
+                     "position":[0,0,2],"model":"box","scale":[1,1,1]},
+                    {"id":"tip","type":"prop","name":"tip","parent":"nose","local":true,
+                     "position":[0,0,1],"model":"box","scale":[0.1,0.1,0.1]},
+                    {"id":"gate","type":"prop","name":"ring","model":"ring",
+                     "position":[4,10,0],"scale":[6,6,6]}
+                ]
+            }"#,
+        )
+        .unwrap();
+        assert!((doc.props[0].pitch - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+        let again = WorldDoc::from_json(&doc.to_json().unwrap()).unwrap();
+        assert!((again.props[0].pitch - doc.props[0].pitch).abs() < 1e-5);
+        assert!(again.props[1].local);
+        let worlds = doc.prop_world_mats();
+        let nose = instance_pos(worlds["nose"]);
+        assert!(
+            nose.distance(Vec3::new(0.0, 12.0, 0.0)) < 0.08,
+            "nose-up parent should lift a +Z child, got {nose:?}"
+        );
+        let tip = instance_pos(worlds["tip"]);
+        assert!(
+            tip.distance(Vec3::new(0.0, 13.0, 0.0)) < 0.12,
+            "second local link should keep climbing, got {tip:?}"
+        );
+        let scene = doc.compile_scene(1.0);
+        assert!(
+            scene.batches.iter().any(|b| b.mesh == MESH_TORUS),
+            "model ring compiles to the torus slot"
+        );
+        assert!(
+            !scene.batches.iter().any(|b| {
+                b.mesh == MESH_BOX
+                    && instance_pos(b.instances[0].model).distance(Vec3::new(0.0, 10.0, 0.0)) < 0.2
+            }),
+            "disabled root hinge is not drawn"
+        );
+        let ids: Vec<u32> = {
+            let mut v: Vec<u32> = doc.compile_meshes().iter().map(|(id, _)| id.0).collect();
+            v.sort_unstable();
+            v
+        };
+        assert!(
+            ids.windows(2).all(|w| w[1] == w[0] + 1),
+            "compile mesh ids must stay dense, got {ids:?}"
+        );
+        assert_eq!(*ids.last().unwrap(), MESH_TORUS.0);
+    }
+
+    #[test]
+    fn village_multi_material_glb_and_kaykit_walker_load() {
+        let doc = WorldDoc::from_json(
+            r#"{
+                "version": 1,
+                "ground": false,
+                "walkers": [
+                    {"id":"w:k","type":"walker","name":"knight","gltf":"knight","clip":0.3,"anim_blend":1.0}
+                ],
+                "props": [
+                    {"id":"p:inn","type":"prop","name":"inn","gltf":"inn","position":[0,0,0]}
+                ]
+            }"#,
+        )
+        .unwrap();
+        let meshes = doc.compile_meshes();
+        assert!(
+            meshes
+                .iter()
+                .any(|(id, m)| id.0 >= MESH_GLTF_BASE && m.albedo.is_some()),
+            "multi-prim village glb and kaykit character must compile with albedo"
+        );
     }
 
     #[test]

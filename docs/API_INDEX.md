@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **54**
+エントリ数: **56**
 
 棚の**手前**は shared wgpu 30（WorldDoc / WorldPlay / gameloop）。
 棚の**奥**は再エクスポートの余り。旧 RendererV2 API は `old/`。
@@ -46,9 +46,11 @@
 | `play_se` | `export play_se  (from kagra.audio)` |
 | `play_wav` | `export play_wav  (from kagra.audio)` |
 | `pressed` | `export pressed  (from kagra.gameloop)` |
+| `render_rgba` | `export render_rgba  (from kagra.gameloop)` |
 | `render_world_doc` | `export render_world_doc  (from kagra.kagra_shared)` |
 | `resolve_asset` | `export resolve_asset  (from kagra.contracts)` |
 | `rgba_to_png` | `export rgba_to_png  (from kagra.gameloop)` |
+| `rgba_to_ppm` | `export rgba_to_ppm  (from kagra.gameloop)` |
 | `run` | `export run  (from kagra.gameloop)` |
 | `run_scenario` | `export run_scenario  (from kagra.verify)` |
 | `run_scenario_path` | `export run_scenario_path  (from kagra.verify)` |
@@ -77,10 +79,11 @@
 - 新しいゲームは Front だけ。世界は `WorldDoc` JSON、プレイは `WorldPlay` / `kagra.gameloop`。`Walk` / `Prop` / `World3D` / `kagra_core` は `old/`（`import kagra` に出ない）。
 - ジャンルは `WorldDoc.genre`（`crest_isle` / `town_gate` / `fish_cast` / …）。無指定は自由世界。prop 名（`door` / `dock` / `stove`）は景色でありジャンルを起動しない。
 - テクスチャは `WorldProp.texture`（PNG パス）+ `uv_scale`（CPU タイル）。室内は dump `sky` / `ground: false`。HUD 画像は `kagra.ui2d.image` → `draw_world(..., hud=)`。
+- プロペラや機体は `pitch` / `roll` と `local: true`（親の空間、4 段まで）。`local` 無しの `parent` はリンクだけで position はワールドのまま。リングは `model: "ring"`（穴は +Z）。窓の毎フレームは `render_rgba` → `Scene._frame_rgba`（PPM）。見本は `examples/flight_minimal.py`。
 - 絵の検証は `expect_offscreen.pixels`（領域の平均色 / not_solid）。golden PNG は使わない。新ジャンルを `WorldPlay` に足さない。
 - dump JSON の共有オフスクリーン: `python -m kagra.render_world dump.json out.png`（または `kagra.verify` の `expect_offscreen`）。wgpu 30。アダプタ無しはスキップ。
 - dump JSON の共有デスクトップ窓: `python -m kagra.play_world dump.json`。Crest collectathon は `genre: crest_isle`。新しいゲームは RendererV2 で始めない。
-- 参照ゲーム: `examples/bunny_garden_minimal.py` / `examples/torneko_minimal.py` / `examples/bar_sim_minimal.py`。
+- 参照ゲーム: `examples/bunny_garden_minimal.py` / `examples/torneko_minimal.py` / `examples/bar_sim_minimal.py` / `examples/flight_minimal.py` / `examples/backyard_brawl_minimal.py` / `examples/chess_minimal.py`。
 - セーブは `save_data` / `load_data` / `SlotStore`。検証は `eval_world_expect` / `kagra.verify`。
 - 音は `tone` / `se` / `play_wav` / `play_se`。3D は `set_listener` + `play_se(..., x=, y=, z=)`。
 - エージェントの目: `kagra.annotate(sx, sy)` はプレビュークリックを JSONL に残す。`kagra.debug_trace` は接地浮き。

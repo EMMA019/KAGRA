@@ -200,6 +200,8 @@ pub struct Instance {
     /// sRGB の RGBA（0..255）。
     pub color: [u8; 4],
     pub material: Material,
+    pub metallic: f32,
+    pub roughness: f32,
 }
 
 impl Instance {
@@ -208,14 +210,39 @@ impl Instance {
             model,
             color,
             material: Material::Solid,
+            metallic: 0.0,
+            roughness: 0.42,
         }
     }
 
     pub fn with_material(model: Mat4, color: [u8; 4], material: Material) -> Self {
+        let (metallic, roughness) = match material {
+            Material::Metal => (1.0, 0.12),
+            Material::Grass | Material::Road => (0.0, 0.85),
+            _ => (0.0, 0.42),
+        };
         Self {
             model,
             color,
             material,
+            metallic,
+            roughness,
+        }
+    }
+
+    pub fn with_pbr(
+        model: Mat4,
+        color: [u8; 4],
+        material: Material,
+        metallic: f32,
+        roughness: f32,
+    ) -> Self {
+        Self {
+            model,
+            color,
+            material,
+            metallic: metallic.clamp(0.0, 1.0),
+            roughness: roughness.clamp(0.04, 1.0),
         }
     }
 }
@@ -532,15 +559,31 @@ impl SceneBuilder {
     }
 
     pub fn push_material(&mut self, mesh: MeshId, model: Mat4, color: [u8; 4], material: Material) {
+        let inst = Instance::with_material(model, color, material);
+        self.push_instance(mesh, inst);
+    }
+
+    pub fn push_pbr(
+        &mut self,
+        mesh: MeshId,
+        model: Mat4,
+        color: [u8; 4],
+        material: Material,
+        metallic: f32,
+        roughness: f32,
+    ) {
+        let inst = Instance::with_pbr(model, color, material, metallic, roughness);
+        self.push_instance(mesh, inst);
+    }
+
+    fn push_instance(&mut self, mesh: MeshId, inst: Instance) {
         if let Some((_, local)) = self.bounds.iter().find(|(m, _)| *m == mesh) {
-            if !self.frustum.intersects(&local.transformed(model)) {
+            if !self.frustum.intersects(&local.transformed(inst.model)) {
                 self.culled += 1;
                 return;
             }
         }
-        let inst = Instance::with_material(model, color, material);
-        // Same mesh + material = one draw. WebGL2 instance vertex buffers
-        // (locations 2..7); renderer slices the buffer (no base_instance).
+        let material = inst.material;
         match self
             .batches
             .iter_mut()
@@ -818,6 +861,82 @@ pub mod primitives {
             let _ = bot_c;
             mesh.indices.extend_from_slice(&[top_c, t0, t1]);
             mesh.indices.extend_from_slice(&[bot_c, b1, b0]);
+        }
+        mesh
+    }
+
+    /// Ring in the XY plane (hole along +Z) so a `yaw` of 0 faces a +Z flight path.
+    /// Major radius 0.5, minor radius given. Origin is the ring center.
+    pub fn torus_mesh(major: f32, minor: f32, major_seg: u32, minor_seg: u32) -> MeshData {
+        let major_seg = major_seg.max(8);
+        let minor_seg = minor_seg.max(6);
+        let mut mesh = MeshData::default();
+        for i in 0..major_seg {
+            let u0 = i as f32 / major_seg as f32 * std::f32::consts::TAU;
+            let u1 = (i + 1) as f32 / major_seg as f32 * std::f32::consts::TAU;
+            for j in 0..minor_seg {
+                let v0 = j as f32 / minor_seg as f32 * std::f32::consts::TAU;
+                let v1 = (j + 1) as f32 / minor_seg as f32 * std::f32::consts::TAU;
+                let ring = |u: f32, v: f32| -> (Vec3, Vec3) {
+                    let (su, cu) = u.sin_cos();
+                    let (sv, cv) = v.sin_cos();
+                    let n = Vec3::new(cu * cv, su * cv, sv);
+                    let pos = Vec3::new(major * cu, major * su, 0.0) + n * minor;
+                    (pos, n)
+                };
+                let (p00, n00) = ring(u0, v0);
+                let (p10, n10) = ring(u1, v0);
+                let (p11, n11) = ring(u1, v1);
+                let (p01, n01) = ring(u0, v1);
+                let base = mesh.vertices.len() as u32;
+                mesh.vertices.push(Vertex3::new(p00, n00));
+                mesh.vertices.push(Vertex3::new(p10, n10));
+                mesh.vertices.push(Vertex3::new(p11, n11));
+                mesh.vertices.push(Vertex3::new(p01, n01));
+                mesh.indices.extend_from_slice(&[
+                    base,
+                    base + 1,
+                    base + 2,
+                    base,
+                    base + 2,
+                    base + 3,
+                ]);
+            }
+        }
+        mesh
+    }
+
+    /// 外側から見る球体メッシュ（反時計回りカリング対応）。
+    pub fn sphere_mesh(radius: f32, segments: u32) -> MeshData {
+        let segments = segments.max(8);
+        let rings = segments / 2;
+        let mut mesh = MeshData::default();
+        for y in 0..=rings {
+            let v = y as f32 / rings as f32;
+            let pitch = std::f32::consts::PI * (v - 0.5);
+            let (sp, cp) = pitch.sin_cos();
+            for x in 0..=segments {
+                let u = x as f32 / segments as f32;
+                let yaw = u * std::f32::consts::TAU;
+                let (sy, cy) = yaw.sin_cos();
+                let dir = Vec3::new(cy * cp, sp, sy * cp);
+                mesh.vertices
+                    .push(Vertex3::with_uv(dir * radius, dir, [u, 1.0 - v]));
+            }
+        }
+        let stride = segments + 1;
+        for y in 0..rings {
+            for x in 0..segments {
+                let i = y * stride + x;
+                mesh.indices.extend_from_slice(&[
+                    i,
+                    i + 1,
+                    i + stride,
+                    i + 1,
+                    i + stride + 1,
+                    i + stride,
+                ]);
+            }
         }
         mesh
     }
