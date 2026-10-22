@@ -635,6 +635,7 @@ fn sample_skinned_inner(
         matcap: skin.rest.matcap.clone(),
         normal: skin.rest.normal.clone(),
         mtoon: skin.rest.mtoon,
+        ..MeshData::default()
     };
     let rest_pos = morphed_rest(skin, &pose.expression, pose.morph);
     for (i, v) in skin.rest.vertices.iter().enumerate() {
@@ -920,6 +921,7 @@ fn static_mesh_from_prim(
         matcap: matcap_tex_index(doc, prim).and_then(|ti| texture_by_index(doc, blobs, ti)),
         normal: normal_tex_index(doc, prim).and_then(|ti| texture_by_index(doc, blobs, ti)),
         mtoon: load_mtoon(doc, prim),
+        ..MeshData::default()
     };
     if mesh.vertices.is_empty() {
         return Err("empty mesh".into());

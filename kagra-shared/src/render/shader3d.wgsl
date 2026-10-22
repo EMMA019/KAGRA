@@ -22,6 +22,8 @@ struct Globals {
     light_dir: array<vec4<f32>, 4>,
     // Directional sun ortho. Same family, not a cascade / V2 umbra.
     light_view_proj: mat4x4<f32>,
+    // x = shadow radius. 1 = the historical 3x3 PCF. Larger = a wider tent.
+    shadow: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;
@@ -31,6 +33,12 @@ struct Globals {
 @group(1) @binding(3) var matcap_samp: sampler;
 @group(1) @binding(4) var normal_tex: texture_2d<f32>;
 @group(1) @binding(5) var normal_samp: sampler;
+// ORM is linear: G = roughness, B = metallic. Emissive map is a color.
+// Defaults are unused until the instance flags in mtoon2 say to sample.
+@group(1) @binding(6) var orm_tex: texture_2d<f32>;
+@group(1) @binding(7) var orm_samp: sampler;
+@group(1) @binding(8) var emissive_tex: texture_2d<f32>;
+@group(1) @binding(9) var emissive_samp: sampler;
 @group(2) @binding(0) var shadow_tex: texture_depth_2d;
 @group(2) @binding(1) var shadow_samp: sampler_comparison;
 
@@ -239,8 +247,9 @@ fn env_irradiance(n: vec3<f32>) -> vec3<f32> {
     return (sh0 + shy * n.y + shx * n.x) * g.env.x;
 }
 
-// One directional map, 3x3 PCF. Depth compare (WebGL2 sampler2DShadow).
+// One directional map. Depth compare (WebGL2 sampler2DShadow).
 // Contact blob stays; this is the sun umbra on ground / capsule / human.
+// shadow.x <= 1 keeps the historical 3x3 kernel. Larger radii use a 5x5 tent.
 fn shadow_factor(world: vec3<f32>) -> f32 {
     let sc = g.light_view_proj * vec4<f32>(world, 1.0);
     let ndc = sc.xyz / sc.w;
@@ -251,18 +260,57 @@ fn shadow_factor(world: vec3<f32>) -> f32 {
     }
     let texel = 1.0 / 2048.0;
     let d = depth - 0.0015;
-    var s = 0.0;
-    for (var y = -1; y <= 1; y++) {
-        for (var x = -1; x <= 1; x++) {
-            s += textureSampleCompare(
+    let radius = max(g.shadow.x, 0.0);
+    if (radius <= 1.01) {
+        var s = 0.0;
+        for (var y = -1; y <= 1; y++) {
+            for (var x = -1; x <= 1; x++) {
+                s += textureSampleCompare(
+                    shadow_tex,
+                    shadow_samp,
+                    uv + vec2<f32>(f32(x), f32(y)) * texel,
+                    d,
+                );
+            }
+        }
+        return mix(0.28, 1.0, s / 9.0);
+    }
+    var acc = 0.0;
+    var wsum = 0.0;
+    let step = texel * radius;
+    for (var y = -2; y <= 2; y++) {
+        for (var x = -2; x <= 2; x++) {
+            let w = 1.0 / (1.0 + abs(f32(x)) + abs(f32(y)));
+            acc += w * textureSampleCompare(
                 shadow_tex,
                 shadow_samp,
-                uv + vec2<f32>(f32(x), f32(y)) * texel,
+                uv + vec2<f32>(f32(x), f32(y)) * step,
                 d,
             );
+            wsum += w;
         }
     }
-    return mix(0.28, 1.0, s / 9.0);
+    return mix(0.28, 1.0, acc / max(wsum, 1e-4));
+}
+
+// mtoon2.x/y/z = sample roughness / metal / emissive map. mtoon4.z = emissive strength.
+// mtoon3.rgb = emissive color (0 = use albedo). Non-toon only; toon keeps those slots.
+fn pbr_metal_rough(in: VsOut, orm: vec4<f32>, metallic_in: f32, rough_in: f32) -> vec2<f32> {
+    let use_r = step(0.5, in.mtoon2.x);
+    let use_m = step(0.5, in.mtoon2.y);
+    let metallic = mix(metallic_in, clamp(orm.b, 0.0, 1.0), use_m);
+    let rough = mix(rough_in, clamp(orm.g, 0.04, 1.0), use_r);
+    return vec2<f32>(metallic, rough);
+}
+
+fn emissive_rgb(in: VsOut, albedo: vec3<f32>, em_map: vec3<f32>) -> vec3<f32> {
+    let strength = max(in.mtoon4.z, 0.0);
+    var col = in.mtoon3.rgb;
+    let use_alb = step(dot(col, col), 1e-8);
+    col = mix(col, albedo, use_alb);
+    let use_map = step(0.5, in.mtoon2.z);
+    col = mix(col, col * em_map, use_map);
+    return col * strength;
 }
 
 // Two scrolling procedural normals (fbm gradients). env.z = seconds.
@@ -299,6 +347,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
 
     let tex = textureSample(albedo_tex, albedo_samp, in.uv);
+    let orm = textureSample(orm_tex, orm_samp, in.uv);
+    let em_map = textureSample(emissive_tex, emissive_samp, in.uv).rgb;
     if (tex.a < 0.5) {
         discard;
     }
@@ -365,8 +415,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let ndotv = max(dot(n, v), 0.0);
         let ndoth = max(dot(n, h), 0.0);
         let vdoth = max(dot(v, h), 0.0);
-        let metallic = select(clamp(in.mtoon4.x, 0.0, 1.0), 1.0, in.mtoon4.x <= 1e-4 && in.mtoon4.y <= 1e-4);
-        let rough = select(clamp(in.mtoon4.y, 0.04, 1.0), 0.12, in.mtoon4.y <= 1e-4);
+        let metallic_in = select(clamp(in.mtoon4.x, 0.0, 1.0), 1.0, in.mtoon4.x <= 1e-4 && in.mtoon4.y <= 1e-4);
+        let rough_in = select(clamp(in.mtoon4.y, 0.04, 1.0), 0.12, in.mtoon4.y <= 1e-4);
+        let mr = pbr_metal_rough(in, orm, metallic_in, rough_in);
+        let metallic = mr.x;
+        let rough = mr.y;
         let f0 = mix(vec3<f32>(0.04), albedo, metallic);
         let f = f0 + (1.0 - f0) * pow(1.0 - vdoth, 5.0);
         let spec = ggx_d(ndoth, rough) * smith_g(ndotv, ndotl, rough) * f
@@ -412,8 +465,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             }
             return vec4<f32>(vec3<f32>(0.008, 0.010, 0.018), ao);
         }
-        let rough = select(clamp(in.mtoon4.y, 0.04, 1.0), 0.42, in.mtoon4.y <= 1e-4);
-        let metallic = clamp(in.mtoon4.x, 0.0, 1.0);
+        let rough_in = select(clamp(in.mtoon4.y, 0.04, 1.0), 0.42, in.mtoon4.y <= 1e-4);
+        let metallic_in = clamp(in.mtoon4.x, 0.0, 1.0);
+        let mr = pbr_metal_rough(in, orm, metallic_in, rough_in);
+        let rough = mr.y;
+        let metallic = mr.x;
         let v = normalize(g.camera_pos.xyz - in.world);
         let ndotv = max(dot(n, v), 0.0);
         let f0 = mix(vec3<f32>(0.04), albedo, metallic);
@@ -441,6 +497,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             let outer = smoothstep(10.5, 3.2, r_dist);
             lit = lit * mix(0.08, 1.15, outer) + vec3<f32>(0.09, 0.13, 0.22) * spot * spot;
         }
+    }
+
+    if (mat_id != 5) {
+        lit += emissive_rgb(in, albedo, em_map);
     }
 
     let dist = length(in.world - g.camera_pos.xyz);
