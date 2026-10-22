@@ -686,7 +686,176 @@ fn static_mesh_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<MeshData, S
     if doc.meshes.is_empty() || doc.meshes[0].primitives.is_empty() {
         return Err("gltf has no mesh primitives".into());
     }
-    static_mesh_from_prim(doc, blobs, &doc.meshes[0].primitives[0])
+    let nodes: Vec<NodeRest> = doc.nodes.iter().map(node_rest).collect();
+    let locals: Vec<NodeLocal> = nodes
+        .iter()
+        .map(|n| NodeLocal {
+            translation: n.translation,
+            rotation: n.rotation,
+            scale: n.scale,
+        })
+        .collect();
+    let world = global_pose(&nodes, &locals);
+    let mut mesh_world = vec![Mat4::IDENTITY; doc.meshes.len()];
+    for (ni, n) in doc.nodes.iter().enumerate() {
+        if let Some(mi) = n.mesh {
+            if mi < mesh_world.len() && ni < world.len() {
+                mesh_world[mi] = world[ni];
+            }
+        }
+    }
+    let mut parts: Vec<(MeshData, [u8; 4])> = Vec::new();
+    let mut last_err = None;
+    for (mi, m) in doc.meshes.iter().enumerate() {
+        let mw = mesh_world.get(mi).copied().unwrap_or(Mat4::IDENTITY);
+        let apply_mw = (mw - Mat4::IDENTITY).abs_diff_eq(Mat4::ZERO, 1e-5);
+        for prim in &m.primitives {
+            match static_mesh_from_prim(doc, blobs, prim) {
+                Ok(mut pm) => {
+                    if !apply_mw {
+                        for v in &mut pm.vertices {
+                            let p = mw.transform_point3(Vec3::from_array(v.pos));
+                            let n = mw
+                                .transform_vector3(Vec3::from_array(v.normal))
+                                .normalize_or(Vec3::Y);
+                            v.pos = p.to_array();
+                            v.normal = n.to_array();
+                        }
+                    }
+                    let col = prim_base_color_u8(doc, prim);
+                    parts.push((pm, col));
+                }
+                Err(e) => last_err = Some(e),
+            }
+        }
+    }
+    if parts.is_empty() {
+        return Err(last_err.unwrap_or_else(|| "gltf has no mesh primitives".into()));
+    }
+    if parts.len() == 1 {
+        let (pm, col) = parts.pop().unwrap();
+        if pm.albedo.is_some() || col == [230, 230, 235, 255] {
+            return Ok(pm);
+        }
+        return Ok(merge_colored_parts(vec![(pm, col)]));
+    }
+    let any_tex = parts.iter().any(|(m, _)| m.albedo.is_some());
+    if !any_tex {
+        return Ok(merge_colored_parts(parts));
+    }
+    Ok(merge_textured_parts(parts))
+}
+
+fn merge_textured_parts(parts: Vec<(MeshData, [u8; 4])>) -> MeshData {
+    let first_tex = parts.iter().find_map(|(m, _)| m.albedo.as_ref());
+    let Some(first_tex) = first_tex else {
+        return merge_colored_parts(parts);
+    };
+    let same_ptr = parts.iter().all(|(m, _)| {
+        m.albedo
+            .as_ref()
+            .is_some_and(|a| Arc::ptr_eq(&a.rgba, &first_tex.rgba))
+    });
+    if same_ptr {
+        let mut iter = parts.into_iter();
+        let mut out = iter.next().unwrap().0;
+        for (pm, _) in iter {
+            let base = out.vertices.len() as u32;
+            out.vertices.extend(pm.vertices);
+            out.indices.extend(pm.indices.into_iter().map(|i| base + i));
+        }
+        return out;
+    }
+    let tile_w = first_tex.width.max(1);
+    let tile_h = first_tex.height.max(1);
+    let count = parts.len() as u32;
+    let atlas_w = tile_w * count;
+    let mut atlas_rgba = vec![255u8; (atlas_w * tile_h * 4) as usize];
+    let mut out = MeshData::default();
+    for (idx, (mut pm, col)) in parts.into_iter().enumerate() {
+        let x_off = (idx as u32) * tile_w;
+        if let Some(alb) = &pm.albedo {
+            for y in 0..tile_h {
+                let sy = (y * alb.height / tile_h).min(alb.height.saturating_sub(1));
+                for x in 0..tile_w {
+                    let sx = (x * alb.width / tile_w).min(alb.width.saturating_sub(1));
+                    let si = ((sy * alb.width + sx) * 4) as usize;
+                    let di = ((y * atlas_w + (x_off + x)) * 4) as usize;
+                    if si + 4 <= alb.rgba.len() && di + 4 <= atlas_rgba.len() {
+                        atlas_rgba[di..di + 4].copy_from_slice(&alb.rgba[si..si + 4]);
+                    }
+                }
+            }
+        } else {
+            for y in 0..tile_h {
+                for x in 0..tile_w {
+                    let di = ((y * atlas_w + (x_off + x)) * 4) as usize;
+                    atlas_rgba[di..di + 4].copy_from_slice(&col);
+                }
+            }
+        }
+        let inv_n = 1.0 / (count as f32);
+        let u_base = (idx as f32) * inv_n;
+        for v in &mut pm.vertices {
+            let u = v.uv[0].rem_euclid(1.0);
+            let vv = v.uv[1].rem_euclid(1.0);
+            v.uv = [u_base + u * inv_n, vv];
+        }
+        let base = out.vertices.len() as u32;
+        out.vertices.extend(pm.vertices);
+        out.indices.extend(pm.indices.into_iter().map(|i| base + i));
+    }
+    out.albedo = Some(AlbedoRgba {
+        width: atlas_w,
+        height: tile_h,
+        rgba: Arc::from(atlas_rgba),
+    });
+    out
+}
+
+fn prim_base_color_u8(doc: &GltfFile, prim: &Primitive) -> [u8; 4] {
+    if let Some(mi) = prim.material {
+        if let Some(mat) = doc.materials.get(mi) {
+            if let Some(arr) = mat
+                .pointer("/pbrMetallicRoughness/baseColorFactor")
+                .and_then(|v| v.as_array())
+            {
+                if arr.len() >= 3 {
+                    let srgb = |lin: f64| -> u8 {
+                        let c = lin.clamp(0.0, 1.0).powf(1.0 / 2.2);
+                        (c * 255.0).round().clamp(0.0, 255.0) as u8
+                    };
+                    let r = srgb(arr[0].as_f64().unwrap_or(1.0));
+                    let g = srgb(arr[1].as_f64().unwrap_or(1.0));
+                    let b = srgb(arr[2].as_f64().unwrap_or(1.0));
+                    return [r, g, b, 255];
+                }
+            }
+        }
+    }
+    [230, 230, 235, 255]
+}
+
+fn merge_colored_parts(parts: Vec<(MeshData, [u8; 4])>) -> MeshData {
+    let n = parts.len().max(1) as u32;
+    let mut rgba = Vec::with_capacity((n as usize) * 4);
+    let mut out = MeshData::default();
+    for (idx, (mut pm, col)) in parts.into_iter().enumerate() {
+        rgba.extend_from_slice(&col);
+        let u = (idx as f32 + 0.5) / (n as f32);
+        for v in &mut pm.vertices {
+            v.uv = [u, 0.5];
+        }
+        let base = out.vertices.len() as u32;
+        out.vertices.extend(pm.vertices);
+        out.indices.extend(pm.indices.into_iter().map(|i| base + i));
+    }
+    out.albedo = Some(AlbedoRgba {
+        width: n,
+        height: 1,
+        rgba: Arc::from(rgba),
+    });
+    out
 }
 
 fn static_mesh_from_prim(
@@ -750,8 +919,16 @@ fn skinned_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<SkinnedMesh, St
 fn skinned_parts_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<Vec<SkinnedMesh>, String> {
     let mut parts = Vec::new();
     let mut last_err = None;
+    let has_any_joints = doc
+        .meshes
+        .iter()
+        .flat_map(|m| m.primitives.iter())
+        .any(|p| p.attributes.joints.is_some());
     for (mesh_idx, mesh) in doc.meshes.iter().enumerate() {
         for prim in &mesh.primitives {
+            if has_any_joints && prim.attributes.joints.is_none() {
+                continue;
+            }
             match skinned_from_prim(doc, blobs, prim, mesh_idx) {
                 Ok(s) => parts.push(s),
                 Err(e) => last_err = Some(e),
@@ -934,6 +1111,21 @@ fn pick_clip(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<Option<AnimClip>, Stri
         .animations
         .iter()
         .find(|a| a.name.eq_ignore_ascii_case("walk"))
+        .or_else(|| {
+            doc.animations
+                .iter()
+                .find(|a| a.name.to_ascii_lowercase().starts_with("walking"))
+        })
+        .or_else(|| {
+            doc.animations
+                .iter()
+                .find(|a| a.name.to_ascii_lowercase().starts_with("running"))
+        })
+        .or_else(|| {
+            doc.animations
+                .iter()
+                .find(|a| a.name.eq_ignore_ascii_case("run"))
+        })
         .unwrap_or(&doc.animations[0]);
     let mut channels = Vec::new();
     let mut duration = 0.0f32;

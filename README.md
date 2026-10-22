@@ -96,6 +96,7 @@ python examples/bunny_garden_minimal.py             # VRM talk: affection, days,
 python examples/torneko_minimal.py --seed 12345     # roguelike: seeded dungeon, turns, inventory
 python examples/bar_sim_minimal.py                  # bar sim: stock, guests, ledger (ESC saves)
 python examples/flight_minimal.py                   # fly the island: pitch / roll / parented airframe, rings
+python examples/backyard_brawl_minimal.py           # 3v3 backyard capture-the-flag (KayKit / Quaternius glTF)
 ```
 
 Old pip demo scripts: [`old/examples/`](old/examples/) — RendererV2 only.

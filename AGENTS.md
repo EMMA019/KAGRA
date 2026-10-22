@@ -13,7 +13,11 @@ a game **without a human looking at the screen**.
    `kagra_api_search`) first. The index is generated from the AST:
    `python tools/gen_api_index.py --check` must stay clean.
 2. **Resolve assets via contracts.** Use `kagra.contracts.resolve_asset`
-   (or MCP `kagra_resolve_asset`). Aliases: `Emma`, `walk`, `dance`.
+ (or MCP `kagra_resolve_asset`). Aliases: `Emma`, `walk`, `dance`,
+ `knight`, `rogue`, `mage`, `barbarian`, `raccoon`, `wolf`,
+ `inn`, `house`, `tower`, `mill`, `gazebo`, `well`,
+ `stylized_tree`, `stylized_pine`, `rock`, `chest`.
+ Prefer bundled `.glb`/`.gltf` characters and buildings over plain `box` primitives.
 3. **Close the loop.** After any visual change, run a verify scenario or
    MCP `kagra_render` / `kagra_verify`. Never claim "done" without it.
 4. **One EventLoop per process on Windows.** Always run GPU scenes in a
@@ -69,7 +73,7 @@ pytest tests -m "not golden"                                       # pure-python
 at `old/examples/vrm_orb_rush.py`. The current reference for the agent loop is
 the Python game master: `examples/bunny_garden_minimal.py` /
 `examples/torneko_minimal.py` / `examples/bar_sim_minimal.py` /
-`examples/flight_minimal.py`
+`examples/flight_minimal.py` / `examples/backyard_brawl_minimal.py`
 (game logic in Python, world is dump data, `kagra.gameloop` / `kagra.ui2d` /
 `kagra.audio`). Archived RendererV2 APIs (`texture_from_fn` / `Walk` / `Prop` / `kagra_core`)
 live under `old/` and are **not** on `import kagra`. New games start on the

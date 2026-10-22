@@ -1,0 +1,28 @@
+{
+  "name": "backyard_brawl_smoke",
+  "notes": "3v3 backyard capture-the-flag with bundled KayKit / Quaternius glTF characters and buildings on a free WorldDoc.",
+  "script": "examples/backyard_brawl_minimal.py",
+  "env": {"KAGRA_BRAWL_HEADLESS": "1"},
+  "timeout_sec": 180,
+  "expect_files": ["scratch/backyard.png", "scratch/backyard_world.json"],
+  "min_file_bytes": 500,
+  "expect_world": {
+    "path": "scratch/backyard_world.json",
+    "query": [
+      {"type": "prop", "name": "inn", "count": 1},
+      {"type": "prop", "name": "bat", "count": 1},
+      {"type": "walker", "min_count": 6}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "scratch/backyard_world.json",
+    "out": "scratch/backyard_shared.png",
+    "width": 480,
+    "height": 270,
+    "min_bytes": 500,
+    "pixels": [
+      {"x": 40, "y": 4, "w": 400, "h": 28, "mean_min": [45, 75, 110]},
+      {"x": 40, "y": 50, "w": 400, "h": 180, "not_solid": true}
+    ]
+  }
+}

@@ -7,7 +7,10 @@
   a link so existing world-space positions do not move. `model: "ring"` is an
   XY torus (hole along +Z). `render_rgba` / `rgba_to_ppm` let `kagra.gameloop.run`
   present a frame without PNG compression when `Scene._frame_rgba` is set.
-  Sample: `examples/flight_minimal.py`.
+  Multi-primitive static `.glb`/`.gltf` merge material `baseColorFactor` palettes
+  and node transforms; KayKit characters filter unskinned attachment meshes and
+  pick `Walking_*`/`Running_*` clips.
+  Samples: `examples/flight_minimal.py`, `examples/backyard_brawl_minimal.py`.
 
 - Dump picture fields: ``sky`` (clear+fog), ``ground`` (auto grass plane;
   indoor rooms set false), ``WorldProp.uv_scale`` (CPU-tiled albedo).

@@ -674,13 +674,17 @@ impl WorldDoc {
                 continue;
             }
             let mesh = mesh_for_prop(prop, &gltf_ids, &tex_ids);
-            let col = if prop
+            let has_tex = prop
                 .texture
                 .as_deref()
                 .map(str::trim)
                 .is_some_and(|s| !s.is_empty())
-                && prop.color.is_none()
-            {
+                || prop
+                    .gltf
+                    .as_deref()
+                    .map(str::trim)
+                    .is_some_and(|s| !s.is_empty());
+            let col = if has_tex && prop.color.is_none() {
                 [255, 255, 255, 255]
             } else {
                 color_u8(prop.color)
@@ -1468,7 +1472,11 @@ fn walker_gltf_spec(w: &WorldWalker) -> Option<&str> {
         return None;
     }
     let lower = m.to_ascii_lowercase();
-    if lower.ends_with(".gltf") || lower.ends_with(".glb") || lower.ends_with(".vrm") {
+    if lower.ends_with(".gltf")
+        || lower.ends_with(".glb")
+        || lower.ends_with(".vrm")
+        || !crate::assets::resolve_alias(m).is_empty()
+    {
         return Some(m);
     }
     None
@@ -1676,7 +1684,12 @@ fn probe_walker_asset(spec: &str) -> Result<(), String> {
     let path = existing_asset_path(spec)
         .ok_or_else(|| format!("{spec}: missing (repo root / KAGRA_ROOT / window.exe dir)"))?;
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or(spec);
-    if lower.ends_with(".gltf") {
+    let p_lower = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    if p_lower == "gltf" {
         let json = std::fs::read_to_string(&path).map_err(|e| format!("{name}: {e}"))?;
         skinned_from_gltf_json(&json, |uri| {
             let base = path.parent().unwrap_or(Path::new("."));
@@ -1691,7 +1704,7 @@ fn probe_walker_asset(spec: &str) -> Result<(), String> {
             .map(|_| ())
             .map_err(|_| format!("{name}: {e}"))
         })
-    } else if lower.ends_with(".glb") || lower.ends_with(".vrm") {
+    } else if p_lower == "glb" || p_lower == "vrm" {
         let bytes = std::fs::read(&path).map_err(|e| format!("{name}: {e}"))?;
         skinned_from_glb(&bytes).map(|_| ()).or_else(|e| {
             mesh_from_glb(&bytes)
@@ -1730,7 +1743,12 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
         return mesh_from_embedded_gltf(&unit_cube_gltf()).ok();
     }
     if let Some(path) = existing_asset_path(spec) {
-        if lower.ends_with(".gltf") {
+        let p_lower = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .unwrap_or_default();
+        if p_lower == "gltf" {
             let json = std::fs::read_to_string(&path).ok()?;
             let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
             return mesh_from_gltf_json(&json, |uri| {
@@ -1738,7 +1756,7 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
             })
             .ok();
         }
-        if lower.ends_with(".glb") || lower.ends_with(".vrm") {
+        if p_lower == "glb" || p_lower == "vrm" {
             let bytes = std::fs::read(&path).ok()?;
             return mesh_from_glb(&bytes).ok();
         }
@@ -1846,7 +1864,12 @@ fn load_skinned_parts_uncached(spec: &str) -> Option<Vec<crate::gltf_load::Skinn
             .map(|s| vec![s]);
     }
     if let Some(path) = existing_asset_path(spec) {
-        if lower.ends_with(".gltf") {
+        let p_lower = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .unwrap_or_default();
+        if p_lower == "gltf" {
             if let Ok(json) = std::fs::read_to_string(&path) {
                 let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
                 if let Ok(parts) = skinned_parts_from_gltf_json(&json, |uri| {
@@ -1858,7 +1881,7 @@ fn load_skinned_parts_uncached(spec: &str) -> Option<Vec<crate::gltf_load::Skinn
                 }
             }
         }
-        if lower.ends_with(".glb") || lower.ends_with(".vrm") {
+        if p_lower == "glb" || p_lower == "vrm" {
             if let Ok(bytes) = std::fs::read(&path) {
                 if let Ok(parts) = skinned_parts_from_glb(&bytes) {
                     if !parts.is_empty() {
@@ -2068,6 +2091,30 @@ mod tests {
             "compile mesh ids must stay dense, got {ids:?}"
         );
         assert_eq!(*ids.last().unwrap(), MESH_TORUS.0);
+    }
+
+    #[test]
+    fn village_multi_material_glb_and_kaykit_walker_load() {
+        let doc = WorldDoc::from_json(
+            r#"{
+                "version": 1,
+                "ground": false,
+                "walkers": [
+                    {"id":"w:k","type":"walker","name":"knight","gltf":"knight","clip":0.3,"anim_blend":1.0}
+                ],
+                "props": [
+                    {"id":"p:inn","type":"prop","name":"inn","gltf":"inn","position":[0,0,0]}
+                ]
+            }"#,
+        )
+        .unwrap();
+        let meshes = doc.compile_meshes();
+        assert!(
+            meshes
+                .iter()
+                .any(|(id, m)| id.0 >= MESH_GLTF_BASE && m.albedo.is_some()),
+            "multi-prim village glb and kaykit character must compile with albedo"
+        );
     }
 
     #[test]

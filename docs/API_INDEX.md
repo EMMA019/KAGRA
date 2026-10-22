@@ -83,7 +83,7 @@
 - 絵の検証は `expect_offscreen.pixels`（領域の平均色 / not_solid）。golden PNG は使わない。新ジャンルを `WorldPlay` に足さない。
 - dump JSON の共有オフスクリーン: `python -m kagra.render_world dump.json out.png`（または `kagra.verify` の `expect_offscreen`）。wgpu 30。アダプタ無しはスキップ。
 - dump JSON の共有デスクトップ窓: `python -m kagra.play_world dump.json`。Crest collectathon は `genre: crest_isle`。新しいゲームは RendererV2 で始めない。
-- 参照ゲーム: `examples/bunny_garden_minimal.py` / `examples/torneko_minimal.py` / `examples/bar_sim_minimal.py` / `examples/flight_minimal.py`。
+- 参照ゲーム: `examples/bunny_garden_minimal.py` / `examples/torneko_minimal.py` / `examples/bar_sim_minimal.py` / `examples/flight_minimal.py` / `examples/backyard_brawl_minimal.py`。
 - セーブは `save_data` / `load_data` / `SlotStore`。検証は `eval_world_expect` / `kagra.verify`。
 - 音は `tone` / `se` / `play_wav` / `play_se`。3D は `set_listener` + `play_se(..., x=, y=, z=)`。
 - エージェントの目: `kagra.annotate(sx, sy)` はプレビュークリックを JSONL に残す。`kagra.debug_trace` は接地浮き。
