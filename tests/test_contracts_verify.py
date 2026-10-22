@@ -564,3 +564,20 @@ def test_load_sports_scenario_is_world_and_offscreen():
     assert sc.expect_world["player.on_ground"] is True
     assert sc.expect_offscreen["out"].endswith("sports_shared.png")
     assert sc.expect_offscreen["pixels"]
+
+
+def test_mainline_verify_scripts_exist():
+    """Every mainline scenario script path points at a file in the repo."""
+    folder = ROOT / "examples" / "verify_scenarios"
+    missing: list[str] = []
+    for path in sorted(folder.glob("*.json")):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        script = data.get("script")
+        if not script:
+            continue
+        target = Path(script)
+        if not target.is_absolute():
+            target = ROOT / script
+        if not target.is_file():
+            missing.append(f"{path.name}: {script}")
+    assert not missing, "verify script missing:\n" + "\n".join(missing)
