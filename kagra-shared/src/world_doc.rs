@@ -737,9 +737,13 @@ impl WorldDoc {
             // drawn at walker pose. `model: capsule` must not win when `gltf`
             // is set. Capsule + head remains the fallback only if no glTF spec.
             // Action genre: name "hurt" / "dead" is dump-visible and tinted here.
+            // Action boss waits off-stage until minions fall (`name == "wait"`).
+            if walk.name == "wait" {
+                continue;
+            }
             let pos = Vec3::from_array(walk.position);
             let yaw = Quat::from_rotation_y(walk.yaw);
-            let dead = walk.name == "dead";
+            let dead = walk.name == "dead" || walk.name == "ko";
             let hurt = walk.name == "hurt";
             let body_col = if dead {
                 [70, 74, 82, 255]

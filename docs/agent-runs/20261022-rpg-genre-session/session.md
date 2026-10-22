@@ -22,3 +22,4 @@ Expose `rpg.rs` (`town_gate`) and `shop.rs` (`shop_buy`) as GenreSessions. Villa
 - `pytest tests -m "not golden"` — 660 passed, 10 skipped
 - Headless lavapipe: `examples/rpg_minimal.py --headless` talks, buys, fights, levels to 2 (gold 16), retries to level 1 / gold 20. Screenshot shows 村人 / 店で薬を買え。魔物を倒せ。 / 話す and the KayKit village.
 - `rpg_smoke` and `rpg_town_smoke` ok. Other current smokes ok except `demo_live_smoke` (script missing) and `physics_stack_smoke` (png only when the physics feature is built).
+- Merged `origin/master` (rhythm, then action/fight) and kept both sides of the shared session files.
