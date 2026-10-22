@@ -8,4 +8,4 @@
 
 Hitboxes, HP, combos, minion chase, boss dash, and the 1v1 fight loop stay in Rust. Python draws input and the ASCII HUD.
 
-`cargo test -p kagra-shared --lib --locked` 424 passed. Clippy `-D warnings` clean for default and `render`. `pytest tests -m "not golden"` passed. Verify scenarios passed except `demo_live`, `physics_stack`, and `rpg_town` (already failing on master).
+After merging `origin/master` (rhythm and tower defense): `cargo test -p kagra-shared --lib --locked` 436 passed. Clippy `-D warnings` clean for default and `render`. `pytest tests -m "not golden"` passed. Verify scenarios passed except `demo_live`, `physics_stack`, and `rpg_town` (already failing on master). Lavapipe screenshot: `scratch/action.png`.

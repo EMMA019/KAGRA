@@ -11,4 +11,6 @@ The first scripted driver stopped inside attack range without turning (wish unde
 
 Shared edits stayed additive: `py/mod.rs`, `lib.rs` re-export, `kagra/__init__.py`, `FRONT_NAMES`, `tests/test_play_world.py`, and a 5-line skip in the walker draw loop.
 
+Merged `origin/master` (rhythm and tower-defense sessions) before the PR. `genre_session.rs` was rebuilt from master's file plus the action and fight adapters, so `ActionSession`, `FightSession`, `RhythmSession`, and `TdSession` all stay registered.
+
 A single-process verify loop reused the cached offscreen renderer and reported `update_mesh: N out of range` on later scenes. One process per scenario (what `python -m kagra.verify` does) is clean.

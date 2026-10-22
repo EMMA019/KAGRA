@@ -120,7 +120,7 @@ impl WorldPlay {
             doc.coins = fps::MAG;
         }
         if td::is_td(&doc) {
-            doc.coins = td::START;
+            doc.coins = td::starting_coins(&doc);
         }
         let look_yaw = look_yaw_from_doc(&doc);
         let action = ActionGame::from_doc(&doc);
@@ -359,7 +359,7 @@ impl WorldPlay {
             self.doc.coins = fps::MAG;
         }
         if td::is_td(&self.doc) {
-            self.doc.coins = td::START;
+            self.doc.coins = td::starting_coins(&self.doc);
         }
     }
 

@@ -13,10 +13,12 @@ use crate::novel;
 use crate::platformer;
 use crate::puzzle;
 use crate::race;
+use crate::td;
 use crate::world_doc::WorldEvent;
 use crate::world_play::WorldPlay;
 
 pub use crate::puzzle_board::PuzzleSession;
+pub use crate::rhythm_chart::RhythmSession;
 
 /// Session errors (JSON parse, wrong `WorldDoc.genre`, serialize).
 pub type GenreSessionError = String;
@@ -379,6 +381,140 @@ impl NovelSession {
     }
 }
 
+/// Tower defense (`td_lane`). Path, waves, gold, lives, and placement stay in Rust.
+#[derive(Clone, Debug)]
+pub struct TdSession {
+    inner: WorldPlay,
+}
+
+impl GenreSession for TdSession {
+    fn genre_id(&self) -> &'static str {
+        td::GAME_ID
+    }
+
+    fn from_json(json: &str) -> Result<Self, GenreSessionError> {
+        let inner = WorldPlay::from_json(json)?;
+        if !td::is_td(&inner.doc) {
+            return Err(format!(
+                "WorldDoc.genre must be {:?}, got {:?}",
+                td::GAME_ID,
+                inner.doc.genre
+            ));
+        }
+        Ok(Self { inner })
+    }
+
+    fn set_input(&mut self, input: WalkInput) {
+        self.inner.input = input.clamped();
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.inner.tick(dt);
+    }
+
+    fn dump(&self) -> Result<String, GenreSessionError> {
+        self.inner.doc.to_json()
+    }
+
+    fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        self.inner.take_events(name)
+    }
+
+    fn confirm(&mut self) {
+        self.inner.confirm();
+    }
+
+    fn emit_event(
+        &mut self,
+        name: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), GenreSessionError> {
+        self.inner.emit_event(name, data);
+        Ok(())
+    }
+
+    fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        self.inner.start_timer(name, seconds, on_done)
+    }
+
+    fn step_interact(&mut self) {
+        self.inner.step_interact();
+    }
+
+    fn phase(&self) -> GamePhase {
+        self.inner.game.phase
+    }
+}
+
+impl TdSession {
+    pub fn gold(&self) -> u32 {
+        self.inner.td.coins
+    }
+
+    pub fn lives(&self) -> u32 {
+        self.inner.td.lives
+    }
+
+    pub fn wave(&self) -> u32 {
+        self.inner.td.wave_number()
+    }
+
+    pub fn waves(&self) -> u32 {
+        self.inner.td.wave_count()
+    }
+
+    pub fn selected(&self) -> u8 {
+        self.inner.td.selected
+    }
+
+    pub fn kills(&self) -> u32 {
+        self.inner.td.kills
+    }
+
+    pub fn leaks(&self) -> u32 {
+        self.inner.td.leaks
+    }
+
+    pub fn won(&self) -> bool {
+        self.inner.td.won
+    }
+
+    pub fn done(&self) -> bool {
+        self.inner.td.done
+    }
+
+    /// 0 arrow, 1 cannon, 2 mage.
+    pub fn select_tower(&mut self, kind: u8) {
+        self.inner.td.select(kind);
+    }
+
+    /// Screen tap or mouse click. Title / result confirms (start or retry).
+    /// Play selects a tower button or places the selected type on a slot.
+    pub fn pointer(&mut self, x: f32, y: f32, width: u32, height: u32) {
+        match self.phase() {
+            GamePhase::Title | GamePhase::Complete => self.confirm(),
+            GamePhase::Playing => {
+                td::pointer_play(&mut self.inner.doc, &mut self.inner.td, x, y, width, height);
+            }
+        }
+    }
+
+    pub fn world_to_screen(
+        &self,
+        x: f32,
+        y: f32,
+        z: f32,
+        width: u32,
+        height: u32,
+    ) -> Option<(f32, f32)> {
+        td::world_to_screen(&self.inner.doc, [x, y, z], width, height)
+    }
+
+    pub fn hud_json(&self, width: u32, height: u32) -> String {
+        td::hud_json(&self.inner.td, self.phase(), width, height)
+    }
+}
+
 /// Racing (`race_drive`). Implements [`GenreSession`].
 ///
 /// Steer, throttle, laps, the lap clock, and the best-lap ghost stay in
@@ -483,6 +619,59 @@ impl RaceSession {
 
     pub fn ghost(&self) -> bool {
         self.inner.race.has_ghost()
+    }
+}
+
+/// 4-lane chart (`rhythm`). Timing, judgement, combo, and score stay in
+/// `rhythm_chart`. `rhythm_beat` (one marker, `WorldPlay`) is a different genre.
+impl GenreSession for RhythmSession {
+    fn genre_id(&self) -> &'static str {
+        crate::rhythm_chart::GAME_ID
+    }
+
+    fn from_json(json: &str) -> Result<Self, GenreSessionError> {
+        RhythmSession::open(json)
+    }
+
+    fn set_input(&mut self, input: WalkInput) {
+        self.apply_input(input);
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.step(dt);
+    }
+
+    fn dump(&self) -> Result<String, GenreSessionError> {
+        self.world_json()
+    }
+
+    fn take_events(&mut self, name: &str) -> Vec<WorldEvent> {
+        self.drain_events(name)
+    }
+
+    fn confirm(&mut self) {
+        self.confirm_action();
+    }
+
+    fn emit_event(
+        &mut self,
+        name: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), GenreSessionError> {
+        self.record_event(name, data);
+        Ok(())
+    }
+
+    fn start_timer(&mut self, name: &str, seconds: f32, on_done: Option<&str>) -> String {
+        self.begin_timer(name, seconds, on_done)
+    }
+
+    fn step_interact(&mut self) {
+        self.use_nearby();
+    }
+
+    fn phase(&self) -> GamePhase {
+        self.current_phase()
     }
 }
 
@@ -935,6 +1124,48 @@ mod tests {
         assert!(err.contains("novel_pages"));
     }
 
+    const TD: &str = include_str!("../tests/fixtures/td_world.json");
+
+    #[test]
+    fn td_session_places_from_a_tap() {
+        let mut s = TdSession::from_json(TD).expect("fixture");
+        assert_eq!(s.genre_id(), "td_lane");
+        assert_eq!(s.phase(), GamePhase::Title);
+        assert_eq!(s.waves(), 5);
+        assert_eq!(s.lives(), td::WAVE_LIVES);
+        assert_eq!(s.gold(), td::WAVE_GOLD);
+        s.pointer(20.0, 20.0, 960, 540);
+        assert_eq!(s.phase(), GamePhase::Playing);
+        let hud = s.hud_json(960, 540);
+        assert!(hud.contains("wave 1/5"));
+        assert!(hud.is_ascii());
+        let dump = s.dump().expect("dump");
+        let world: serde_json::Value = serde_json::from_str(&dump).unwrap();
+        let slot = world["props"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["id"] == "prop:slot-a")
+            .unwrap();
+        let x = slot["position"][0].as_f64().unwrap() as f32;
+        let z = slot["position"][2].as_f64().unwrap() as f32;
+        let (sx, sy) = s
+            .world_to_screen(x, 0.0, z, 960, 540)
+            .expect("slot on screen");
+        s.pointer(sx, sy, 960, 540);
+        assert!(s.gold() < td::WAVE_GOLD);
+        assert!(s.dump().unwrap().contains("gazebo"));
+        s.select_tower(2);
+        assert_eq!(s.selected(), 2);
+        assert!(s.take_events("nonexistent").is_empty());
+    }
+
+    #[test]
+    fn td_session_rejects_other_genres() {
+        let err = TdSession::from_json(ROOM).unwrap_err();
+        assert!(err.contains("td_lane"));
+    }
+
     const RACE: &str = include_str!("../tests/fixtures/race_world.json");
 
     fn race_value(s: &RaceSession) -> serde_json::Value {
@@ -1067,6 +1298,35 @@ mod tests {
         let crest = include_str!("../tests/fixtures/crest_isle_world.json");
         let err = RaceSession::from_json(crest).unwrap_err();
         assert!(err.contains("race_drive"));
+    }
+
+    #[test]
+    fn rhythm_session_auto_clears_chart() {
+        let mut s = RhythmSession::from_json(r#"{"version":1,"genre":"rhythm"}"#).expect("open");
+        assert_eq!(s.genre_id(), "rhythm");
+        assert_eq!(s.phase(), GamePhase::Title);
+        assert!(s.lane_count() == 4);
+        s.confirm();
+        assert_eq!(s.phase(), GamePhase::Playing);
+        s.set_auto(true);
+        for _ in 0..900 {
+            if s.phase() == GamePhase::Complete {
+                break;
+            }
+            s.tick(1.0 / 60.0);
+        }
+        assert_eq!(s.phase(), GamePhase::Complete);
+        assert_eq!(s.miss_count(), 0);
+        assert_eq!(s.perfect_count(), s.note_count());
+        assert!(s.score() >= 300);
+        let dump = s.dump().expect("dump");
+        assert!(dump.contains("clear"));
+        assert!(dump.contains("crate.glb"));
+        assert!(s.take_events("clear").len() == 1);
+        let err =
+            RhythmSession::from_json(include_str!("../tests/fixtures/rhythm_beat_world.json"))
+                .unwrap_err();
+        assert!(err.contains("rhythm_beat"));
     }
 
     const ARENA: &str = include_str!("../tests/fixtures/action_world.json");

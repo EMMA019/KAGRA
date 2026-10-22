@@ -821,6 +821,43 @@ def test_novel_session_genre_contract():
     assert session.phase == "complete"
 
 
+def test_td_session_tap_places_and_hud_is_ascii():
+    import json
+
+    try:
+        from kagra.kagra_shared import TdSession
+    except ImportError:
+        try:
+            from kagra_shared import TdSession
+        except ImportError:
+            pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/td_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["genre"] == "td_lane"
+    creeps = [p for p in data["props"] if p.get("name") == "creep"]
+    assert len(creeps) >= 15
+    assert {p.get("gltf") for p in creeps} >= {"raccoon", "wolf"}
+    assert any(p.get("name") == "slot" and p.get("gltf") == "crate.glb" for p in data["props"])
+    session = TdSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "td_lane"
+    assert session.phase == "title"
+    assert session.waves == 5
+    assert session.lives == 15
+    session.pointer(8.0, 8.0, 960, 540)
+    assert session.phase == "playing"
+    hud = session.hud_json(960, 540)
+    assert hud.isascii()
+    assert "wave 1/5" in hud and "gold" in hud and "lives" in hud
+    assert "\u2014" not in hud
+    world = json.loads(session.dump())
+    slot = next(p for p in world["props"] if p["id"] == "prop:slot-a")
+    screen = session.world_to_screen(float(slot["position"][0]), 0.0, float(slot["position"][2]), 960, 540)
+    assert screen is not None
+    session.pointer(float(screen[0]), float(screen[1]), 960, 540)
+    assert session.gold < 80
+    assert "gazebo" in session.dump()
+
+
 def test_platformer_fixture_is_side_stage_with_glb():
     import json
 
@@ -1048,3 +1085,76 @@ def test_action_session_clears_minions_then_boss():
     assert session.phase == "playing"
     assert session.foes_left == 3
     assert session.hp == session.hp_max
+
+
+def test_rhythm_fixture_is_four_lane_chart_not_beat():
+    import json
+
+    path = ROOT / "kagra-shared/tests/fixtures/rhythm_world.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["genre"] == "rhythm"
+    assert data["genre"] != "rhythm_beat"
+    assert data["player"]["on_ground"] is True
+    assert data["player"]["name"] == "player"
+    assert data["player"].get("gltf") == "knight"
+    lanes = [p for p in data["props"] if p.get("name") == "lane"]
+    notes = [p for p in data["props"] if p.get("name") == "note"]
+    receptors = [p for p in data["props"] if p.get("name") == "receptor"]
+    assert len(lanes) == 4
+    assert len(notes) == 6
+    assert all(p.get("gltf") == "crate.glb" for p in notes)
+    assert len(receptors) == 4
+    assert all(p.get("gltf") == "chest" for p in receptors)
+    assert any(p.get("gltf") == "inn" for p in data["props"])
+    crates = [p for p in data["props"] if p.get("name") == "crate"]
+    assert len(crates) == 1
+    assert crates[0].get("gltf") == "crate.glb"
+    flags = [p for p in data["props"] if p.get("name") == "flag"]
+    assert len(flags) == 1
+    assert flags[0].get("enabled") is False
+    slots = sorted(int(lit["slot"]) for lit in data["lights"])
+    assert slots == [0, 1, 2, 3]
+    assert data.get("coins", 0) == 0
+    text = (ROOT / "examples/rhythm_minimal.py").read_text(encoding="utf-8")
+    assert "\u2014" not in text
+    assert "\u2013" not in text
+    assert "D F J K" in text
+
+
+def test_rhythm_session_judges_and_clears():
+    try:
+        from kagra.kagra_shared import RhythmSession
+    except ImportError:
+        try:
+            from kagra_shared import RhythmSession
+        except ImportError:
+            pytest.skip("kagra_shared not built")
+    path = ROOT / "kagra-shared/tests/fixtures/rhythm_world.json"
+    session = RhythmSession.from_json(path.read_text(encoding="utf-8"))
+    assert session.genre_id == "rhythm"
+    assert session.phase == "title"
+    assert session.lane_count == 4
+    assert session.bpm == 120.0
+    session.press_lane(0)
+    session.tick(1.0)
+    assert session.phase == "title"
+    assert session.song_time == 0.0
+    session.confirm()
+    assert session.phase == "playing"
+    session.tick(0.8)
+    assert session.press_lane(0) == "perfect"
+    assert session.perfect_count == 1
+    assert session.combo == 1
+    assert session.score == 300
+    session.set_auto(True)
+    for _ in range(900):
+        if session.phase == "complete":
+            break
+        session.tick(1.0 / 60.0)
+    assert session.phase == "complete"
+    assert session.miss_count == 0
+    assert session.perfect_count == session.note_count
+    assert session.rank == "S"
+    session.pointer(10.0, 10.0, 320.0, 180.0)
+    assert session.phase == "title"
+    assert session.score == 0
