@@ -12,7 +12,12 @@ set(SHARED_LIB ${SHARED_LIB_DIR}/libkagra_shared.so)
 
 if(EXISTS ${SHARED_LIB})
   add_library(kagra_shared SHARED IMPORTED)
-  set_target_properties(kagra_shared PROPERTIES IMPORTED_LOCATION ${SHARED_LIB})
+  # パッケージしたゲームも dev.kagra.shell（素の assembleDebug）もここを使う。
+  # SONAME を明示しないとリンカが IMPORTED_LOCATION の絶対パスを DT_NEEDED に書く。
+  set_target_properties(kagra_shared PROPERTIES
+    IMPORTED_LOCATION "${SHARED_LIB}"
+    IMPORTED_NO_SONAME FALSE
+    IMPORTED_SONAME "libkagra_shared.so")
   # cpp → main → src → app → android → mobile → repo root
   get_filename_component(KAGRA_REPO "${CMAKE_SOURCE_DIR}/../../../../../.." ABSOLUTE)
   set(KAGRA_INCLUDE "${KAGRA_REPO}/kagra-shared/include")

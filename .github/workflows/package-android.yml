@@ -102,9 +102,9 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: python scripts/package_android.py --game "$KAGRA_GAME" --out dist/android --release --skip-native
 
-      # 16 KB ページ（Android 15+ / Pixel 10）。LOAD p_align < 16384 か
-      # zipalign -P 16 の失敗でジョブを落とす。
-      - name: Check 16 KB page alignment
+      # 16 KB ページ（Android 15+ / Pixel 10）と、DT_NEEDED に絶対パスが無いこと。
+      # llvm-readelf -l / -d と zipalign -P 16 の失敗でジョブを落とす。
+      - name: Check 16 KB alignment and DT_NEEDED
         run: |
           set -eu
           if [ -z "${ANDROID_HOME:-}" ] && [ -n "${ANDROID_SDK_ROOT:-}" ]; then

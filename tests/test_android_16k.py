@@ -72,17 +72,21 @@ def test_cargo_android_targets_pass_page_size_flags():
         assert f"[target.{target}]" in text
     assert text.count("link-arg=-Wl,-z,max-page-size=16384") >= 2
     assert text.count("link-arg=-Wl,-z,common-page-size=16384") >= 2
+    assert text.count("link-arg=-Wl,-soname,libkagra_shared.so") >= 2
 
 
 def test_package_android_workflow_checks_load_and_zipalign():
     workflow = (ROOT / ".github/workflows/package-android.yml").read_text(encoding="utf-8")
     assert "scripts/check_android_16k.py" in workflow
+    assert "DT_NEEDED" in workflow
     script = (ROOT / "scripts" / "check_android_16k.py").read_text(encoding="utf-8")
     assert "llvm-readelf" in script
+    assert '"-d"' in script
     assert '"-c", "-P", "16", "-v", "4"' in script
     cmake = (ROOT / "mobile/android/app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
     assert "-Wl,-z,max-page-size=16384" in cmake
     assert "-Wl,-z,common-page-size=16384" in cmake
+    assert 'IMPORTED_SONAME "libkagra_shared.so"' in cmake
     native = (ROOT / "mobile/android/app/src/main/java/dev/kagra/shell/KagraNative.kt").read_text(
         encoding="utf-8"
     )
@@ -91,3 +95,56 @@ def test_package_android_workflow_checks_load_and_zipalign():
         encoding="utf-8"
     )
     assert "KagraNative.loadError" in activity
+
+
+_READELF_D = """
+Dynamic section at offset 0x2a8 contains 6 entries:
+  Tag                Type                 Name/Value
+  0x0000000000000001 (NEEDED)             Shared library: [liblog.so]
+  0x0000000000000001 (NEEDED)             Shared library: [libc++_shared.so]
+  0x0000000000000001 (NEEDED)             Shared library: [libc.so]
+  0x000000000000000e (SONAME)             Library soname: [libkagra_shared.so]
+"""
+
+_READELF_D_PATH = """
+  0x0000000000000001 (NEEDED)             Shared library: [liblog.so]
+  0x0000000000000001 (NEEDED)             Shared library: [/home/runner/work/KAGRA/KAGRA/mobile/android/app/src/main/cpp/../jniLibs/arm64-v8a/libkagra_shared.so]
+  0x000000000000000e (SONAME)             Library soname: [libkagra_jni.so]
+"""
+
+
+def test_needed_without_path_is_accepted():
+    mod = _checker()
+    assert mod.needed_entries(_READELF_D) == ["liblog.so", "libc++_shared.so", "libc.so"]
+    assert mod.dynamic_errors("libkagra_shared.so", _READELF_D, filename="libkagra_shared.so") == []
+
+
+def test_needed_absolute_path_is_rejected():
+    mod = _checker()
+    errors = mod.dynamic_errors(
+        "lib/arm64-v8a/libkagra_jni.so",
+        _READELF_D_PATH,
+        filename="libkagra_jni.so",
+    )
+    assert len(errors) == 1
+    assert "/home/runner/work/KAGRA/KAGRA/" in errors[0]
+    assert "DT_NEEDED" in errors[0]
+
+
+def test_shared_library_without_soname_is_rejected():
+    mod = _checker()
+    text = "  0x0000000000000001 (NEEDED)             Shared library: [libc.so]\n"
+    errors = mod.dynamic_errors("libkagra_shared.so", text, filename="libkagra_shared.so")
+    assert len(errors) == 1
+    assert "SONAME" in errors[0]
+
+
+def test_debug_keystore_is_pinned():
+    keystore = ROOT / "mobile/android/app/debug.keystore"
+    assert keystore.is_file()
+    assert keystore.stat().st_size > 0
+    gradle = (ROOT / "mobile/android/app/build.gradle.kts").read_text(encoding="utf-8")
+    assert "androiddebugkey" in gradle
+    assert 'storePassword = "android"' in gradle
+    assert 'keyPassword = "android"' in gradle
+    assert 'storeFile = file("debug.keystore")' in gradle
