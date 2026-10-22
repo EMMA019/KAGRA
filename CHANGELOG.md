@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- README lead is the first-recall line (give an AI a body) plus the
+  agent loop. Sing-and-dance is the archived pip demo, not the product.
+
 - CI: `python-unit` はネイティブ拡張が本当に無いときだけ `WorldDoc` /
   `WorldPlay` の実体チェックをスキップする（切った名前と annotate / brain は
   検査したまま）。ホイールを入れた `build` ジョブが両方の `from_json` を断言する。

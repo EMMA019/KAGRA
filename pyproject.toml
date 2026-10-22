@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "kagra"
 version = "0.2.0"
-description = "Python game engine — AI agents build games on a shared wgpu 30 runtime"
+description = "Python game engine for giving an AI a body — agents build and verify games headless"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }

@@ -1,6 +1,11 @@
 # KAGRA
 
-An engine where an **AI agent builds a game — headless, no human watching the screen**.
+**If you give an AI a body in Python, it's KAGRA.**
+
+An AI-agent game engine: search the API, write a scene, verify it
+**without a human looking at the screen**. The body is a VRM when you
+want one. The world is dump JSON. Play is one loop. Singing and dancing
+is the old two-command smoke — not the product.
 
 [日本語 README](README.ja.md)
 
@@ -13,152 +18,46 @@ python -m kagra.play_world                    # Crest Isle collectathon — wgpu
 python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json  # headless close-the-loop
 ```
 
-That's the mainline: a **shared wgpu 30 runtime** where the world is data
-(`World.dump()` JSON), play is one loop (title → play → result), and an AI
-agent searches the API, writes a scene, and verifies it headlessly. The
-old `pip install kagra` demo (VRM singing and dancing) still exists — see
-[The pip demo](#the-pip-demo-old-renderer-kagra-core).
+That is the mainline: a **shared wgpu 30 runtime**. An agent (or a human)
+searches signatures, writes Python game logic, and closes the loop with
+`kagra.verify`. The old `pip install kagra` demo (VRM singing and dancing
+on RendererV2) is archived — see [The pip demo](#the-pip-demo-old-renderer).
 
-## The mainline
+## Let an agent build the game
 
-- **World is data** — `World.dump()` / `WorldDoc` is a stable JSON schema
-  (`docs/schemas/world.json`). `world.query` / `dump` / `load` read the world
-  without a screenshot. The same JSON drives the desktop window, wasm, Android,
-  iOS, and offscreen rendering.
-- **Play is one loop** — `WorldPlay` ticks title → play → result (WASD,
-  pickups, finish) on `python -m kagra.play_world`. Genre code (fishing,
-  cooking, RPG) lives in the game, not the engine.
-- **Adhesive API** — `prop.interact` (examine / talk / use → on_use event),
-  `doc.timers` (wait; emits on_done at 0), `doc.events` (happenings;
-  emit → take for many systems), `walker.anim` / `walker.expression`
-  (state → animation / expression). The dump is the bus — no callback soup.
-- **Picture** — HDR frame + threshold bloom, FXAA, IBL, PCF shadows, water
-  (Fresnel + IBL reflection), LOD / GPU instancing, ACES tonemap. Full MToon
-  (2-step shade, rim, outline, matcap/normal), VRM 0/1 expression presets,
-  SpringBone with colliders, VRMC_node_constraint, firstPerson annotations.
-- **Mobile / Wasm** — the same shared runtime builds to wasm / Android / iOS
-  (Crest Isle capsule collectathon; driving demo). `kagra-core` (the pip demo)
-  is a separate renderer — do not merge the two.
+This loop is the engine. Rules live in [`AGENTS.md`](AGENTS.md). Cursor
+loads the same rules from `.cursor/skills/`.
 
-## Let your AI agent build the game
+1. **API index** — [`docs/API_INDEX.md`](docs/API_INDEX.md) is generated
+   from the AST. Search; do not invent names
+2. **Assets** — `kagra.contracts.resolve_asset` (or MCP `kagra_resolve_asset`).
+   Aliases: `Emma`, `walk`, `knight`, `inn`, `chest`, …
+3. **Headless verify** — `python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json`
+4. **MCP** — `tools/mcp_kagra/server.py`: `kagra_api_search` / `kagra_env` /
+   `kagra_resolve_asset` / `kagra_verify` / `kagra_render`
+5. **Eyes** — `kagra.annotate` (click → numbers) and `kagra.debug_trace`
+   (foot vs terrain). Not a human editor
+6. **Build logs** — [`docs/agent-runs/`](docs/agent-runs/README.md)
 
-KAGRA's development loop is designed for AI coding agents, not just humans:
+Paste this:
 
-- **[AGENTS.md](AGENTS.md)** — rules for any agent (Claude Code, Cursor, Windsurf, ...)
-- **API index** — [`docs/API_INDEX.md`](docs/API_INDEX.md), generated from the AST, so agents search instead of guessing signatures
-- **Agent eyes** — `kagra.annotate` (click → numbers) and `kagra.debug_trace` (foot vs terrain JSONL)
-- **Headless verify** — `python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json` (world assertions + shared wgpu 30 offscreen smoke)
-- **MCP server** — `tools/mcp_kagra/server.py`: `kagra_api_search` / `kagra_env` / `kagra_resolve_asset` / `kagra_verify` / `kagra_render`
-- **Build logs** — [`docs/agent-runs/`](docs/agent-runs/README.md): agent-built games (Heart Catch, Switch Room, Dodge Room) and engine slices (adhesive API, HDR + bloom, FXAA, full MToon, expressions, VRM rest)
-
-## Where the engine sits
-
-[docs/ROADMAP.ja.md](docs/ROADMAP.ja.md): **100% = an agent ships a normal indie game with no human looking at the screen.** Now ~40% — M0–M2 closed, collectathon is the first M3 genre, the adhesive API and the picture base are in. Old "63%" is archived. Do not call this 80% yet.
-
-## Map
-
-The longer index is [`docs/AGENT.md`](docs/AGENT.md). Rust `GenreSession` games (rules in Rust, Python is the shell):
-
-| Genre | Run |
-|---|---|
-| collectathon | `python -m kagra.play_world` |
-| action | `python examples/action_minimal.py` |
-| card | `python examples/card_minimal.py` |
-| fight / versus | `python examples/versus_local.py` |
-| fishcook | `python examples/fishcook_minimal.py` |
-| fps | `python examples/fps_minimal.py` |
-| novel | `python examples/novel_minimal.py` |
-| platformer (Box Hop) | `python examples/platformer_minimal.py` |
-| puzzle | `python examples/puzzle_minimal.py` |
-| puzzle_pad | `python examples/puzzle_pad_minimal.py` |
-| race | `python examples/race_minimal.py` |
-| rhythm | `python examples/rhythm_minimal.py` |
-| rpg | `python examples/rpg_minimal.py` |
-| shop | `python -m kagra.play_world kagra-shared/tests/fixtures/shop_buy_world.json` |
-| sports | `python examples/sports_minimal.py` |
-| stealth | `python examples/stealth_minimal.py` |
-| survival | `python examples/survival_minimal.py` |
-| td | `python examples/td_minimal.py` |
-
-Python game master (logic stays in Python, free `WorldDoc`): `examples/bunny_garden_minimal.py`, `torneko_minimal.py`, `bar_sim_minimal.py`, `flight_minimal.py`, `backyard_brawl_minimal.py`, `chess_minimal.py`, `physics_minimal.py`, `python_game_minimal.py`.
-
-WorldPlay ids that are a fixture only (`python -m kagra.play_world kagra-shared/tests/fixtures/<id>_world.json`): `action_side`, `sprite_card`, `sim_meter`, `fish_cast`, `rhythm_beat`, `cook_stove`, `survival_meter`, `box_hop`.
-
-| System | Where |
-|---|---|
-| Physics | `examples/physics_minimal.py`, `kagra/rigid.py` — Rapier `PhysicsWorld` when the wheel is built with the `physics` feature |
-| FPS | `examples/fps_minimal.py` (`FpsSession`: look, hitscan, ammo) |
-| Card | `examples/card_minimal.py` (`CardSession`) |
-| Versus / netplay | [`docs/netplay.md`](docs/netplay.md) — `examples/versus_local.py`, `examples/versus_online.py`, `server/netplay_relay.py` |
-| Distribution | [`docs/distribution.md`](docs/distribution.md) — one manifest, Windows zip and Android APK |
-| Audio | `kagra/audio.py` (BGM fade, effects, groups, mute, positional `play_se`), `kagra-shared/src/mixer.rs` |
-| Flow | `kagra/flow.py` (`save_dir`), `kagra-shared/src/flow.rs` (title → play → pause → result, volume, high score) |
-
-## The pip demo (old engine — archived under `old/`)
-
-The original "Python 数行で VRM が歌って踊る" demo (0.1.4, PyPI) runs on the
-**old engine** (`kagra-core`, wgpu 0.19 / RendererV2). It is **past history**:
-source, examples and docs moved to [`old/`](old/README.md) so it never mixes
-with the new shared wgpu 30 mainline. `import kagra` still works (the compiled
-extension stays in `kagra/`), and the old demos run from `old/`:
-
-```bash
-# old engine (archived). New games must NOT start here.
-python -m kagra                                  # sing & dance (0.19 pip demo)
-python old/examples/vrm_orb_rush.py              # reference game (RendererV2)
-python old/examples/vrm_open_world.py            # leftover VRM Crest Isle (RendererV2)
-cd old/kagra-core && maturin develop --release   # rebuild the old extension (pip demo)
+```
+Using KAGRA on the shared wgpu 30 mainline (WorldDoc / WorldPlay /
+kagra.gameloop), make a short 3D game. Public APIs only. Search
+docs/API_INDEX.md first. Do not use RendererV2 or old/examples.
+Verify with python -m kagra.verify. Log the run under docs/agent-runs/.
 ```
 
-## Samples
+Recipe: [docs/recipes/agent-game.md](docs/recipes/agent-game.md).
+Longer map: [`docs/AGENT.md`](docs/AGENT.md).
 
-Clone the repo for these. The mainline first:
+New games are Python. Rust ticks the world and draws. Do not add a genre
+module to `WorldPlay`. Set `WorldDoc.genre` explicitly. Prop names are
+scenery.
 
-```bash
-python -m kagra.play_world                # official Crest play: title → play → result (capsule, WASD)
-python -m kagra.play_world kagra-shared/tests/fixtures/emma_walker_world.json  # VRoid Emma walk (wgpu 30)
-python -m kagra.play_world kagra-shared/tests/fixtures/crest_emma_world.json  # VRM Crest Isle collectathon (title→play→result, Emma)
-python -m kagra.play_world kagra-shared/tests/fixtures/interact_fish_world.json  # adhesive-API demo (J at the shore → cast → 3s → bite)
-python -m kagra.render_world kagra-shared/tests/fixtures/crest_isle_world.json scratch/crest.png  # offscreen render (bloom on)
-python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json        # headless verify (world + offscreen)
-python -m kagra.verify examples/verify_scenarios/interact_fish_smoke.json       # adhesive-API verify
-# Crest Isle mobile (kagra-shared; not VRM — Kenney-style capsule)
-./scripts/build_wasm.sh && python -m http.server -d kagra-shared/www 8000
-# → http://localhost:8000/crest.html
-./scripts/build_android_native.sh && cd mobile/android && gradle :app:assembleDebug
-```
+## Write a game in Python
 
-Python game-master games (game logic is Python-only):
-
-```bash
-python examples/bunny_garden_minimal.py             # VRM talk: affection, days, save (ESC / × saves)
-python examples/torneko_minimal.py --seed 12345     # roguelike: seeded dungeon, turns, inventory
-python examples/bar_sim_minimal.py                  # bar sim: stock, guests, ledger (ESC saves)
-python examples/flight_minimal.py                   # fly the island: pitch / roll / parented airframe, rings
-python examples/backyard_brawl_minimal.py           # 3v3 backyard capture-the-flag (KayKit / Quaternius glTF)
-python examples/chess_minimal.py                    # studio 3D chess (PolyHaven sculpted pieces + PBR gloss)
-```
-
-Old pip demo scripts: [`old/examples/`](old/examples/) — RendererV2 only.
-Legacy 2D / tilemap / editor demos: [`old/examples/archive/`](old/examples/archive/).
-
-## Build a game in Python (game logic is Python-only)
-
-0.19's `kagra.run(start_scene)` shape, revived on the shared wgpu 30 runtime:
-**the game logic is all Python** — Rust (`kagra_shared`) only ticks the world
-and renders. That is the shape an agent should copy for a new genre.
-
-```bash
-cd kagra-shared && maturin develop --release && cd ..   # once: build kagra_shared
-python examples/python_game_minimal.py                  # window: WASD + J at the shore
-python examples/python_game_minimal.py --headless scratch/hello.png  # CI / verify: PNG out
-python examples/bunny_garden_minimal.py                 # first genre game: talk to Emma (VRM), affection, days, save
-python examples/bunny_garden_minimal.py --headless scratch/bunny.png --days 3  # headless verify
-python examples/torneko_minimal.py --seed 12345         # roguelike: seeded dungeon, turns, inventory, save
-python examples/torneko_minimal.py --headless scratch/torneko.png --turns 800  # deterministic verify (same seed → same PNG)
-```
-
-The pattern (from [`examples/python_game_minimal.py`](examples/python_game_minimal.py)):
+Game logic is all Python. `kagra_shared` only ticks the world and renders.
 
 ```python
 import json
@@ -182,18 +81,117 @@ class MyGame(Scene):
             self.play.start_timer("cast", 3.0, "bite")
 
     def draw(self):
-        self._canvas_png = draw_world(self.world, self.width, self.height)  # shared render
+        self._canvas_png = draw_world(self.world, self.width, self.height)
 
 run(MyGame())
 ```
 
-The Python bridge (`kagra.WorldDoc` / `kagra.WorldPlay` / `kagra.render_world_doc`)
-re-exports from `kagra_shared`; see `kagra/gameloop.py` for `Scene` / `run` /
-`draw_world` / `pressed` / `was_pressed` (tkinter, stdlib only). Genre logic
-(enemy AI, turns, item identification) stays in Python — the dump JSON is the
-world, the events are the bus.
+Copy [`examples/python_game_minimal.py`](examples/python_game_minimal.py)
+or a Python game-master sample (bunny garden, torneko, bar sim, flight,
+backyard CTF, chess, physics).
 
-## Agent / from source
+```bash
+cd kagra-shared && maturin develop --release && cd ..   # once: build kagra_shared
+python examples/python_game_minimal.py --headless scratch/hello.png
+python examples/bar_sim_minimal.py --headless scratch/bar.png --days 3 --seed 1
+```
+
+`kagra.WorldDoc` / `kagra.WorldPlay` / `kagra.render_world_doc` re-export
+from `kagra_shared`. `kagra.gameloop` is stdlib + tkinter (no torch).
+
+## The mainline
+
+- **World is data** — `World.dump()` / `WorldDoc` (`docs/schemas/world.json`).
+  `world.query` / `dump` / `load` read the world without a screenshot. The
+  same JSON drives the desktop window, wasm, Android, iOS, and offscreen
+- **Play is one loop** — `WorldPlay` ticks title → play → result. Genre
+  code lives in the game, not the engine
+- **Adhesive API** — `prop.interact`, `doc.timers`, `doc.events`,
+  `walker.anim` / `walker.expression`. The dump is the bus
+- **Picture** — fields on the dump (`sky`, `ground`, `WorldProp.texture`,
+  `uv_scale`). Verify with `expect_offscreen.pixels` (region mean /
+  not_solid), not a golden PNG. HDR / bloom / FXAA / IBL / PCF / water /
+  LOD live on the shared runtime
+- **Two renderers** — `kagra-core` (the pip demo) is archived under
+  `old/`. Do not merge it with `kagra-shared`
+
+## Where the engine sits
+
+[docs/ROADMAP.ja.md](docs/ROADMAP.ja.md): **100% = an agent ships a
+normal indie game with no human looking at the screen.** Now ~40%.
+M0–M2 closed. Do not call this 80%, and do not call the picture
+three.js-class.
+
+## Map
+
+Rust `GenreSession` games (rules in Rust, Python is the shell):
+
+| Genre | Run |
+|---|---|
+| collectathon | `python -m kagra.play_world` |
+| action | `python examples/action_minimal.py` |
+| card | `python examples/card_minimal.py` |
+| fight / versus | `python examples/versus_local.py` |
+| fishcook | `python examples/fishcook_minimal.py` |
+| fps | `python examples/fps_minimal.py` |
+| novel | `python examples/novel_minimal.py` |
+| platformer (Box Hop) | `python examples/platformer_minimal.py` |
+| puzzle | `python examples/puzzle_minimal.py` |
+| puzzle_pad | `python examples/puzzle_pad_minimal.py` |
+| race | `python examples/race_minimal.py` |
+| rhythm | `python examples/rhythm_minimal.py` |
+| rpg | `python examples/rpg_minimal.py` |
+| shop | `python -m kagra.play_world kagra-shared/tests/fixtures/shop_buy_world.json` |
+| sports | `python examples/sports_minimal.py` |
+| stealth | `python examples/stealth_minimal.py` |
+| survival | `python examples/survival_minimal.py` |
+| td | `python examples/td_minimal.py` |
+
+Python game master (logic stays in Python, free `WorldDoc`):
+`examples/bunny_garden_minimal.py`, `torneko_minimal.py`,
+`bar_sim_minimal.py`, `flight_minimal.py`, `backyard_brawl_minimal.py`,
+`chess_minimal.py`, `physics_minimal.py`, `python_game_minimal.py`.
+
+WorldPlay ids that are a fixture only
+(`python -m kagra.play_world kagra-shared/tests/fixtures/<id>_world.json`):
+`action_side`, `sprite_card`, `sim_meter`, `fish_cast`, `rhythm_beat`,
+`cook_stove`, `survival_meter`, `box_hop`.
+
+| System | Where |
+|---|---|
+| Physics | `examples/physics_minimal.py`, `kagra/rigid.py` — Rapier `PhysicsWorld` when the wheel is built with the `physics` feature |
+| FPS | `examples/fps_minimal.py` (`FpsSession`: look, hitscan, ammo) |
+| Card | `examples/card_minimal.py` (`CardSession`) |
+| Versus / netplay | [`docs/netplay.md`](docs/netplay.md) — `examples/versus_local.py`, `examples/versus_online.py`, `server/netplay_relay.py` |
+| Distribution | [`docs/distribution.md`](docs/distribution.md) — one manifest, Windows zip and Android APK |
+| Audio | `kagra/audio.py` (BGM fade, effects, groups, mute, positional `play_se`), `kagra-shared/src/mixer.rs` |
+| Flow | `kagra/flow.py` (`save_dir`), `kagra-shared/src/flow.rs` (title → play → pause → result, volume, high score) |
+
+```bash
+python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json
+python -m kagra.verify examples/verify_scenarios/bar_sim_smoke.json
+python -m kagra.render_world kagra-shared/tests/fixtures/crest_isle_world.json scratch/crest.png
+```
+
+Wasm / Android (Crest Isle capsule, not VRM):
+
+```bash
+./scripts/build_wasm.sh && python -m http.server -d kagra-shared/www 8000
+./scripts/build_android_native.sh && cd mobile/android && gradle :app:assembleDebug
+```
+
+## The pip demo (old renderer)
+
+PyPI **0.1.4** is the original “Python 数行で VRM が歌って踊る” demo
+(`kagra-core`, wgpu 0.19 / RendererV2). Source, examples, and docs live
+under [`old/`](old/README.md). New games must not start there.
+
+```bash
+python -m kagra                                  # sing & dance (archived 0.19 path)
+python old/examples/vrm_orb_rush.py              # old reference game
+```
+
+## From source
 
 ```bash
 git clone https://github.com/EMMA019/KAGRA.git
@@ -204,15 +202,19 @@ maturin develop
 python -m kagra.verify examples/verify_scenarios/blank_smoke.json
 ```
 
-MCP (Cursor): `.cursor/mcp.json` → `kagra_api_search` / `kagra_verify` / `kagra_render`.
+MCP (Cursor): `.cursor/mcp.json` → `kagra_api_search` / `kagra_verify` /
+`kagra_render`.
+
+Windows: one EventLoop per process. GPU scenes run in a subprocess —
+that is what `kagra.verify` does.
 
 ## License
 
 MIT — [LICENSE](LICENSE).
 
-Sample VRM downloaded by the pip demo is Alicia Solid (ニコニ立体ちゃん) © Dwango,
-used under [their terms](https://3d.nicovideo.jp/alicia/rule.html). Credit the
-character if you post screenshots.
+Sample VRM downloaded by the pip demo is Alicia Solid (ニコニ立体ちゃん)
+© Dwango, used under [their terms](https://3d.nicovideo.jp/alicia/rule.html).
+Credit the character if you post screenshots.
 
-KAGRA is named after the Kamioka Gravitational Wave Detector. Solid, precise,
-and built for fun.
+KAGRA is named after the Kamioka Gravitational Wave Detector. Solid,
+precise, and built for fun.

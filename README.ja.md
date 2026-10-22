@@ -1,6 +1,10 @@
 # KAGRA
 
-**AI エージェントが、画面を見ずにゲームを作る**エンジン。
+**Python で AI に体を与えるなら KAGRA。**
+
+AI エージェント向けのゲームエンジンです。API を検索し、シーンを書き、
+**人間が画面を見ずに検証する。** 体が要るときは VRM。世界は dump JSON。
+プレイは 1 本のループ。歌って踊るのは昔の 2 コマンド煙 — 製品ではない。
 
 [English README](README.md)
 
@@ -13,153 +17,46 @@ python -m kagra.play_world                    # Crest Isle collectathon — wgpu
 python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json  # ヘッドレスでループを閉じる
 ```
 
-これが本線です。**shared wgpu 30 ランタイム**で、世界はデータ（`World.dump()` JSON）、
-プレイは 1 本のループ（タイトル → プレイ → 結果）、AI エージェントは API を検索し、
-シーンを書き、**画面を見ずにヘッドレスで検証**します。昔の `pip install kagra`
-デモ（VRM が歌って踊る）は [pip デモ](#pip-デモ旧レンダラー-kagra-core) として
-今も残っています。
+これが本線です。**shared wgpu 30 ランタイム。** エージェント（人間でも）
+はシグネチャを検索し、Python でゲームロジックを書き、`kagra.verify` で
+閉じます。昔の `pip install kagra` デモ（RendererV2 で VRM が歌って踊る）
+はアーカイブ — [pip デモ](#pip-デモ旧レンダラー) を見てください。
 
-## 本線
+## エージェントにゲームを作らせる
 
-- **世界はデータ** — `World.dump()` / `WorldDoc` は安定した JSON スキーマ
-  （`docs/schemas/world.json`）。`world.query` / `dump` / `load` でスクショなしに
-  世界を読む。同じ JSON がデスクトップ窓・wasm・Android・iOS・オフスクリーン描画を
-  駆動します。
-- **プレイは 1 本のループ** — `WorldPlay` がタイトル → プレイ → 結果（WASD、
-  拾う、終わる）を進めます。ジャンルコード（釣り・料理・RPG）はエンジンではなく
-  ゲーム側に置きます。
-- **接着 API** — `prop.interact`（調べる/話す/使う → on_use イベント）、
-  `doc.timers`（待つ。0 で on_done イベント）、`doc.events`（出来事。emit →
-  take で複数システムが読む）、`walker.anim` / `walker.expression`（状態 → アニメ /
-  表情）。dump 自体がバスです。
-- **絵** — HDR フレーム + 閾値ブルーム、FXAA、IBL、PCF 影、水面（Fresnel + IBL
-  反射）、LOD / GPU インスタンス、ACES トーンマップ。完全 MToon（影 2 段階・リム・
-  アウトライン・matcap/normal）、VRM 0/1 表情プリセット、SpringBone コリジョン、
-  VRMC_node_constraint、firstPerson 注釈。
-- **Mobile / Wasm** — 同じ共有ランタイムが wasm / Android / iOS にビルドされます
-  （Crest Isle カプセル collectathon、運転デモ）。`kagra-core`（pip デモ）は別
-  レンダラ。統合しません。
+このループがエンジンです。規則は [`AGENTS.md`](AGENTS.md)。Cursor は
+`.cursor/skills/` から同じ規則を拾います。
 
-## AI エージェントにゲームを作らせる
+1. **API 索引** — [`docs/API_INDEX.md`](docs/API_INDEX.md) は AST から生成。
+   名前を発明しない
+2. **アセット** — `kagra.contracts.resolve_asset`（MCP は `kagra_resolve_asset`）。
+   別名: `Emma` / `walk` / `knight` / `inn` / `chest` …
+3. **ヘッドレス検証** — `python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json`
+4. **MCP** — `tools/mcp_kagra/server.py`: `kagra_api_search` / `kagra_env` /
+   `kagra_resolve_asset` / `kagra_verify` / `kagra_render`
+5. **目** — `kagra.annotate`（クリックを数値に）と `kagra.debug_trace`
+   （足と地形）。人間用エディタではない
+6. **ビルドログ** — [`docs/agent-runs/`](docs/agent-runs/README.md)
 
-KAGRA の開発ループは人間だけでなく AI コーディングエージェント用に設計されています:
+これを貼る:
 
-- **[AGENTS.md](AGENTS.md)** — どのエージェントでも使える行動規範
-- **API 索引** — [`docs/API_INDEX.md`](docs/API_INDEX.md) は AST から生成。エージェントは推測ではなく検索する
-- **エージェントの目** — `kagra.annotate`（クリックを数値に）と `kagra.debug_trace`（足と地形の JSONL）
-- **ヘッドレス検証** — `python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json`（世界アサーション + shared wgpu 30 オフスクリーン煙）
-- **MCP サーバー** — `tools/mcp_kagra/server.py`: `kagra_api_search` / `kagra_env` / `kagra_resolve_asset` / `kagra_verify` / `kagra_render`
-- **ビルドログ** — [`docs/agent-runs/`](docs/agent-runs/README.md): エージェント製ゲーム（Heart Catch、Switch Room、Dodge Room）+ エンジンスライス（接着 API、HDR+ブルーム、FXAA、完全 MToon、表情、VRM 残り）
-
-## エンジンが今どこまでか
-
-[docs/ROADMAP.ja.md](docs/ROADMAP.ja.md): **100% は画面を見ずにインディーを出荷できること。**
-今約 40% — M0–M2 閉じた、collectathon が最初の M3 ジャンル、接着 API 4本と絵の
-土台が載った。旧「63%」はアーカイブ。80% とはまだ言わない。
-
-## 索引
-
-詳しい表は [`docs/AGENT.md`](docs/AGENT.md)。Rust の `GenreSession`（ルールは Rust、Python は殻）:
-
-| ジャンル | 起動 |
-|---|---|
-| collectathon | `python -m kagra.play_world` |
-| action | `python examples/action_minimal.py` |
-| card | `python examples/card_minimal.py` |
-| fight / versus | `python examples/versus_local.py` |
-| fishcook | `python examples/fishcook_minimal.py` |
-| fps | `python examples/fps_minimal.py` |
-| novel | `python examples/novel_minimal.py` |
-| platformer（Box Hop） | `python examples/platformer_minimal.py` |
-| puzzle | `python examples/puzzle_minimal.py` |
-| puzzle_pad | `python examples/puzzle_pad_minimal.py` |
-| race | `python examples/race_minimal.py` |
-| rhythm | `python examples/rhythm_minimal.py` |
-| rpg | `python examples/rpg_minimal.py` |
-| shop | `python -m kagra.play_world kagra-shared/tests/fixtures/shop_buy_world.json` |
-| sports | `python examples/sports_minimal.py` |
-| stealth | `python examples/stealth_minimal.py` |
-| survival | `python examples/survival_minimal.py` |
-| td | `python examples/td_minimal.py` |
-
-Python ゲームマスター（ロジックは Python、自由な `WorldDoc`）: `examples/bunny_garden_minimal.py`、`torneko_minimal.py`、`bar_sim_minimal.py`、`flight_minimal.py`、`backyard_brawl_minimal.py`、`chess_minimal.py`、`physics_minimal.py`、`python_game_minimal.py`。
-
-例ファイルが無く、フィクスチャだけのもの（`python -m kagra.play_world kagra-shared/tests/fixtures/<id>_world.json`）: `action_side`、`sprite_card`、`sim_meter`、`fish_cast`、`rhythm_beat`、`cook_stove`、`survival_meter`、`box_hop`。
-
-| 仕組み | 場所 |
-|---|---|
-| 物理 | `examples/physics_minimal.py`、`kagra/rigid.py` — ホイールを `physics` feature でビルドしたときの Rapier `PhysicsWorld` |
-| FPS | `examples/fps_minimal.py`（`FpsSession`: 視点、ヒットスキャン、弾） |
-| カード | `examples/card_minimal.py`（`CardSession`） |
-| 対戦 / netplay | [`docs/netplay.md`](docs/netplay.md) — `examples/versus_local.py`、`examples/versus_online.py`、`server/netplay_relay.py` |
-| 配布 | [`docs/distribution.md`](docs/distribution.md) — 同じマニフェストから Windows zip と Android APK |
-| 音 | `kagra/audio.py`（BGM フェード、効果音、グループ、ミュート、定位 `play_se`）、`kagra-shared/src/mixer.rs` |
-| フロー | `kagra/flow.py`（`save_dir`）、`kagra-shared/src/flow.rs`（タイトル → プレイ → ポーズ → 結果、音量、ハイスコア） |
-
-## pip デモ（旧エンジン — `old/` にアーカイブ）
-
-元祖「Python 数行で VRM が歌って踊る」デモ（0.1.4、PyPI）は**旧エンジン**
-（`kagra-core`、wgpu 0.19 / RendererV2）で動きます。**これは過去のもの**:
-ソース・examples・docs は [`old/`](old/README.md) に移し、新本線
-（shared wgpu 30）と混ざらないようにしました。`import kagra` は引き続き
-動きます（コンパイル済み拡張は `kagra/` に残置）。旧デモは `old/` から:
-
-```bash
-# 旧エンジン（アーカイブ）。新しいゲームはここから始めない。
-python -m kagra                                  # 歌って踊る（0.19 pip デモ）
-python old/examples/vrm_orb_rush.py              # 参照ゲーム（RendererV2）
-python old/examples/vrm_open_world.py            # 残置 VRM Crest Isle（RendererV2）
-cd old/kagra-core && maturin develop --release   # 旧拡張の再ビルド（pip デモ用）
+```
+KAGRA の shared wgpu 30 本線（WorldDoc / WorldPlay / kagra.gameloop）で
+短い 3D ゲームを作って。公開 API だけ。先に docs/API_INDEX.md を検索。
+RendererV2 と old/examples は使わない。python -m kagra.verify で閉じて。
+ログは docs/agent-runs/ に残して。
 ```
 
-## サンプル
+レシピ: [docs/recipes/agent-game.md](docs/recipes/agent-game.md)。
+長い索引: [`docs/AGENT.md`](docs/AGENT.md)。
 
-リポジトリを clone してください。まず本線:
+新しいゲームは Python。Rust は世界の tick と描画だけ。`WorldPlay` に
+ジャンルモジュールを足さない。`WorldDoc.genre` は明示する。Prop 名は
+景色です。
 
-```bash
-python -m kagra.play_world                # 公式 Crest play: タイトル→プレイ→結果（カプセル、WASD）
-python -m kagra.play_world kagra-shared/tests/fixtures/emma_walker_world.json  # VRoid Emma 歩き（wgpu 30）
-python -m kagra.play_world kagra-shared/tests/fixtures/crest_emma_world.json  # VRM Crest Isle collectathon（タイトル→プレイ→結果、Emma）
-python -m kagra.play_world kagra-shared/tests/fixtures/interact_fish_world.json  # 接着 API デモ（水辺で J → cast → 3秒 → bite）
-python -m kagra.render_world kagra-shared/tests/fixtures/crest_isle_world.json scratch/crest.png  # オフスクリーン描画（bloom 付き）
-python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json        # ヘッドレス検証（世界 + オフスクリーン）
-python -m kagra.verify examples/verify_scenarios/interact_fish_smoke.json       # 接着 API の検証
-# Crest Isle モバイル（kagra-shared。VRM ではない。Kenney 風カプセル）
-./scripts/build_wasm.sh && python -m http.server -d kagra-shared/www 8000
-# → http://localhost:8000/crest.html
-./scripts/build_android_native.sh && cd mobile/android && gradle :app:assembleDebug
-```
+## Python でゲームを書く
 
-Python ゲームマスターのゲーム（ロジックは Python のみ）:
-
-```bash
-python examples/bunny_garden_minimal.py             # VRM 会話: 好感度・日程・セーブ（ESC / × でセーブ）
-python examples/torneko_minimal.py --seed 12345     # ローグライク: seed ダンジョン・ターン・在庫
-python examples/flight_minimal.py                   # 島の上空: ピッチ / バンク / 親子の機体、リング
-python examples/backyard_brawl_minimal.py           # 裏庭 3v3 旗取り（KayKit / Quaternius glTF）
-python examples/chess_minimal.py                    # スタジオ 3D チェス（PolyHaven 彫刻駒 + PBR 大理石/黒檀）
-```
-
-旧 pip デモの脚本: [`old/examples/`](old/examples/) — RendererV2 専用。
-レガシー 2D / タイルマップ / エディタ: [`old/examples/archive/`](old/examples/archive/)。
-
-## Python でゲームを作る（ゲームロジックはパイソンのみ）
-
-0.19 の `kagra.run(start_scene)` の形を、shared wgpu 30 の上で復活させたもの:
-**ゲームロジックは全部 Python** — Rust（`kagra_shared`）は世界の tick と描画だけ。
-新しいジャンルを作るときはこの形をコピーする。
-
-```bash
-cd kagra-shared && maturin develop --release && cd ..   # 最初の一度: kagra_shared をビルド
-python examples/python_game_minimal.py                  # 窓: WASD + 水辺で J
-python examples/python_game_minimal.py --headless scratch/hello.png  # CI / verify: PNG 出力
-python examples/bunny_garden_minimal.py                 # 1 本目ジャンル: Emma と会話・好感度・日程・セーブ
-python examples/bunny_garden_minimal.py --headless scratch/bunny.png --days 3  # ヘッドレス verify
-python examples/torneko_minimal.py --seed 12345         # ローグライク: seed 決定論ダンジョン・ターン・在庫・セーブ
-python examples/torneko_minimal.py --headless scratch/torneko.png --turns 800  # 決定論 verify（同 seed → 同 PNG）
-```
-
-パターン（[`examples/python_game_minimal.py`](examples/python_game_minimal.py) より）:
+ゲームロジックは全部 Python。`kagra_shared` は世界の tick と描画だけ。
 
 ```python
 import json
@@ -183,18 +80,117 @@ class MyGame(Scene):
             self.play.start_timer("cast", 3.0, "bite")
 
     def draw(self):
-        self._canvas_png = draw_world(self.world, self.width, self.height)  # shared 描画
+        self._canvas_png = draw_world(self.world, self.width, self.height)
 
 run(MyGame())
 ```
 
-Python 橋渡し（`kagra.WorldDoc` / `kagra.WorldPlay` / `kagra.render_world_doc`）は
-`kagra_shared` からの再エクスポート。`kagra/gameloop.py` に `Scene` / `run` /
-`draw_world` / `pressed` / `was_pressed`（tkinter、標準ライブラリのみ）。
-ジャンルロジック（敵 AI・ターン・識別）は Python に書く — dump JSON が世界で、
-イベントがバス。
+[`examples/python_game_minimal.py`](examples/python_game_minimal.py) か、
+Python ゲームマスター（bunny garden / torneko / bar sim / flight / 旗取り /
+chess / physics）をコピーする。
 
-## エージェント / ソースから
+```bash
+cd kagra-shared && maturin develop --release && cd ..   # 最初の一度: kagra_shared をビルド
+python examples/python_game_minimal.py --headless scratch/hello.png
+python examples/bar_sim_minimal.py --headless scratch/bar.png --days 3 --seed 1
+```
+
+`kagra.WorldDoc` / `kagra.WorldPlay` / `kagra.render_world_doc` は
+`kagra_shared` からの再エクスポート。`kagra.gameloop` は標準ライブラリ +
+tkinter（torch はコアに入れない）。
+
+## 本線
+
+- **世界はデータ** — `World.dump()` / `WorldDoc`（`docs/schemas/world.json`）。
+  `world.query` / `dump` / `load` でスクショなしに世界を読む。同じ JSON が
+  デスクトップ窓・wasm・Android・iOS・オフスクリーンを駆動する
+- **プレイは 1 本のループ** — `WorldPlay` がタイトル → プレイ → 結果。
+  ジャンルコードはエンジンではなくゲーム側
+- **接着 API** — `prop.interact` / `doc.timers` / `doc.events` /
+  `walker.anim` / `walker.expression`。dump 自体がバス
+- **絵** — dump のフィールド（`sky` / `ground` / `WorldProp.texture` /
+  `uv_scale`）。検証は `expect_offscreen.pixels`（領域平均 / not_solid）。
+  ゴールデン PNG ではない。HDR / bloom / FXAA / IBL / PCF / 水面 / LOD は
+  共有ランタイム側
+- **レンダラは二つ** — `kagra-core`（pip デモ）は `old/` にアーカイブ。
+  `kagra-shared` と統合しない
+
+## エンジンが今どこまでか
+
+[docs/ROADMAP.ja.md](docs/ROADMAP.ja.md): **100% は画面を見ずにインディーを
+出荷できること。** 今約 40%。M0–M2 は閉じた。80% とは言わない。絵を
+three.js 級とも言わない。
+
+## 索引
+
+Rust の `GenreSession`（ルールは Rust、Python は殻）:
+
+| ジャンル | 起動 |
+|---|---|
+| collectathon | `python -m kagra.play_world` |
+| action | `python examples/action_minimal.py` |
+| card | `python examples/card_minimal.py` |
+| fight / versus | `python examples/versus_local.py` |
+| fishcook | `python examples/fishcook_minimal.py` |
+| fps | `python examples/fps_minimal.py` |
+| novel | `python examples/novel_minimal.py` |
+| platformer（Box Hop） | `python examples/platformer_minimal.py` |
+| puzzle | `python examples/puzzle_minimal.py` |
+| puzzle_pad | `python examples/puzzle_pad_minimal.py` |
+| race | `python examples/race_minimal.py` |
+| rhythm | `python examples/rhythm_minimal.py` |
+| rpg | `python examples/rpg_minimal.py` |
+| shop | `python -m kagra.play_world kagra-shared/tests/fixtures/shop_buy_world.json` |
+| sports | `python examples/sports_minimal.py` |
+| stealth | `python examples/stealth_minimal.py` |
+| survival | `python examples/survival_minimal.py` |
+| td | `python examples/td_minimal.py` |
+
+Python ゲームマスター（ロジックは Python、自由な `WorldDoc`）:
+`examples/bunny_garden_minimal.py`、`torneko_minimal.py`、
+`bar_sim_minimal.py`、`flight_minimal.py`、`backyard_brawl_minimal.py`、
+`chess_minimal.py`、`physics_minimal.py`、`python_game_minimal.py`。
+
+フィクスチャだけのもの
+（`python -m kagra.play_world kagra-shared/tests/fixtures/<id>_world.json`）:
+`action_side`、`sprite_card`、`sim_meter`、`fish_cast`、`rhythm_beat`、
+`cook_stove`、`survival_meter`、`box_hop`。
+
+| 仕組み | 場所 |
+|---|---|
+| 物理 | `examples/physics_minimal.py`、`kagra/rigid.py` — ホイールを `physics` feature でビルドしたときの Rapier `PhysicsWorld` |
+| FPS | `examples/fps_minimal.py`（`FpsSession`: 視点、ヒットスキャン、弾） |
+| カード | `examples/card_minimal.py`（`CardSession`） |
+| 対戦 / netplay | [`docs/netplay.md`](docs/netplay.md) — `examples/versus_local.py`、`examples/versus_online.py`、`server/netplay_relay.py` |
+| 配布 | [`docs/distribution.md`](docs/distribution.md) — 同じマニフェストから Windows zip と Android APK |
+| 音 | `kagra/audio.py`（BGM フェード、効果音、グループ、ミュート、定位 `play_se`）、`kagra-shared/src/mixer.rs` |
+| フロー | `kagra/flow.py`（`save_dir`）、`kagra-shared/src/flow.rs`（タイトル → プレイ → ポーズ → 結果、音量、ハイスコア） |
+
+```bash
+python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json
+python -m kagra.verify examples/verify_scenarios/bar_sim_smoke.json
+python -m kagra.render_world kagra-shared/tests/fixtures/crest_isle_world.json scratch/crest.png
+```
+
+Wasm / Android（Crest Isle カプセル。VRM ではない）:
+
+```bash
+./scripts/build_wasm.sh && python -m http.server -d kagra-shared/www 8000
+./scripts/build_android_native.sh && cd mobile/android && gradle :app:assembleDebug
+```
+
+## pip デモ（旧レンダラー）
+
+PyPI の **0.1.4** は元祖「Python 数行で VRM が歌って踊る」デモ
+（`kagra-core`、wgpu 0.19 / RendererV2）。ソース・examples・docs は
+[`old/`](old/README.md) にあります。新しいゲームはそこから始めない。
+
+```bash
+python -m kagra                                  # 歌って踊る（アーカイブの 0.19）
+python old/examples/vrm_orb_rush.py              # 旧参照ゲーム
+```
+
+## ソースから
 
 ```bash
 git clone https://github.com/EMMA019/KAGRA.git
@@ -205,13 +201,17 @@ maturin develop
 python -m kagra.verify examples/verify_scenarios/blank_smoke.json
 ```
 
-MCP（Cursor）: `.cursor/mcp.json` → `kagra_api_search` / `kagra_verify` / `kagra_render`。
+MCP（Cursor）: `.cursor/mcp.json` → `kagra_api_search` / `kagra_verify` /
+`kagra_render`。
+
+Windows はプロセスあたり EventLoop 一つ。GPU シーンはサブプロセス —
+それが `kagra.verify` の仕事です。
 
 ## ライセンス
 
 MIT — [LICENSE](LICENSE)。
 
-pip デモが取得するサンプル VRM は Alicia Solid（ニコニ立体ちゃん）© Dwango です。
+pip デモが取得するサンプル VRM は Alicia Solid（ニコニ立体ちゃん）© Dwango。
 [利用規約](https://3d.nicovideo.jp/alicia/rule.html) に従い、スクリーンショットを
 出すときはクレジットしてください。
 
