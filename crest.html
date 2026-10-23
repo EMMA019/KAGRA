@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Crest Isle — KAGRA mobile</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Sans+JP:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #142018;
+      --paper: #f3f6e8;
+      --gold: #e8b03a;
+      --teal: #2a8f7c;
+      --glass: rgba(14, 22, 16, 0.55);
+      --line: rgba(243, 246, 232, 0.28);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: "IBM Plex Sans JP", sans-serif;
+      color: var(--paper);
+      background: #0c1410;
+      overflow: hidden;
+    }
+    #app {
+      position: relative;
+      width: 100vw;
+      height: 100dvh;
+      background:
+        radial-gradient(120% 80% at 70% 0%, rgba(232, 176, 58, 0.16), transparent 55%),
+        radial-gradient(90% 70% at 8% 90%, rgba(42, 143, 124, 0.18), transparent 50%),
+        #0c1410;
+    }
+    #stage { position: absolute; inset: 0; }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #6aa0c8;
+      touch-action: none;
+    }
+    #touch {
+      position: absolute;
+      inset: auto 0 0 0;
+      height: min(40%, 260px);
+      display: none;
+      pointer-events: none;
+      gap: 12px;
+      padding: 10px;
+      padding-bottom: max(10px, env(safe-area-inset-bottom));
+    }
+    #touch.visible { display: flex; }
+    #touch div {
+      border-radius: 22px;
+      pointer-events: auto;
+      border: 1px solid var(--line);
+      background: rgba(14, 22, 16, 0.35);
+      backdrop-filter: blur(6px);
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: 16px;
+      font: 600 12px/1 "IBM Plex Sans JP", sans-serif;
+      letter-spacing: 0.04em;
+      color: rgba(243, 246, 232, 0.55);
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #pad-stick { flex: 1.4; }
+    #pad-jump { flex: 0.7; }
+    #touch div.on {
+      background: rgba(232, 176, 58, 0.28);
+      color: var(--paper);
+    }
+    #hud {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      display: none;
+      padding: max(16px, env(safe-area-inset-top)) 18px 0;
+    }
+    #hud.visible { display: block; }
+    #objective {
+      display: inline-flex;
+      flex-direction: column;
+      gap: 6px;
+      max-width: min(420px, 86vw);
+      padding: 14px 16px;
+      border-radius: 4px 16px 16px 4px;
+      border-left: 4px solid var(--gold);
+      background: var(--glass);
+      backdrop-filter: blur(8px);
+    }
+    #objective .label {
+      font-family: "Bebas Neue", sans-serif;
+      font-size: 13px;
+      letter-spacing: 0.18em;
+      color: var(--gold);
+    }
+    #objective .text { font-size: 18px; font-weight: 700; }
+    #meters {
+      position: absolute;
+      right: 18px;
+      top: max(16px, env(safe-area-inset-top));
+      text-align: right;
+    }
+    #meters .time {
+      font-family: "Bebas Neue", sans-serif;
+      font-size: clamp(36px, 8vw, 56px);
+      line-height: 1;
+    }
+    #meters .sub { margin-top: 4px; font-size: 12px; opacity: 0.7; }
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: stretch;
+      background: linear-gradient(120deg, rgba(12,20,16,.82), rgba(12,20,16,.35) 48%, rgba(12,20,16,.78));
+      pointer-events: auto;
+    }
+    .overlay.visible { display: flex; }
+    .overlay-inner {
+      margin: auto;
+      width: min(520px, 92vw);
+      padding: clamp(28px, 5vw, 48px);
+    }
+    .brand {
+      font-family: "Bebas Neue", sans-serif;
+      font-size: clamp(64px, 16vw, 104px);
+      line-height: 0.9;
+      margin: 0 0 12px;
+      background: linear-gradient(180deg, #fff6e8, var(--gold));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .tag { font-size: 15px; line-height: 1.55; opacity: 0.88; max-width: 32em; }
+    .cta {
+      border: 0;
+      border-radius: 999px;
+      padding: 14px 26px;
+      font: 700 15px/1 "IBM Plex Sans JP", sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #f0c06a, var(--gold));
+      cursor: pointer;
+    }
+    .meta { margin-top: 22px; font-size: 12px; opacity: 0.55; }
+    .note {
+      margin-top: 10px;
+      font-size: 12px;
+      opacity: 0.7;
+      max-width: 36em;
+    }
+    .score-row { display: flex; gap: 28px; margin: 8px 0 28px; }
+    .score-row strong { font-family: "Bebas Neue", sans-serif; font-size: 42px; font-weight: 400; }
+    #boot {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: #0c1410;
+      z-index: 5;
+      font-size: 14px;
+      letter-spacing: 0.08em;
+    }
+    #boot.err { color: #ff9d7a; padding: 24px; text-align: center; white-space: pre-wrap; }
+    a.haul { color: var(--gold); }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="stage">
+      <canvas id="c"></canvas>
+      <div id="touch">
+        <div id="pad-stick">WALK</div>
+        <div id="pad-jump">JUMP</div>
+      </div>
+    </div>
+    <div id="hud">
+      <div id="objective">
+        <div class="label">CRESTS</div>
+        <div class="text" id="objectiveText">6 つの紋章を集める</div>
+      </div>
+      <div id="meters">
+        <div class="time" id="timeText">0:00</div>
+        <div class="sub" id="countText">0 / 6 · coin 0</div>
+      </div>
+    </div>
+    <div class="overlay visible" id="title">
+      <div class="overlay-inner">
+        <h1 class="brand">CREST<br>ISLE</h1>
+        <p class="tag">草原・海・山の半島で紋章を集める。プレイヤーは Kenney 風カプセル。<strong>VRM ではない</strong>（Python の Alicia はデスクトップ専用）。</p>
+        <button class="cta" id="startBtn" type="button">島を歩く</button>
+        <p class="note">左スティックで走る、右でジャンプ。WASD + Space。デスクトップ本編は <code>python examples/vrm_open_world.py</code>。</p>
+        <p class="meta" id="titleMeta"><a class="haul" href="./play.html">LUMEN</a> · <a class="haul" href="./corridor.html">Corridor Haul（運転デモ）</a></p>
+      </div>
+    </div>
+    <div class="overlay" id="complete">
+      <div class="overlay-inner">
+        <h1 class="brand">CRESTS</h1>
+        <p class="tag">紋章が揃った。峰の旗まで取るとボーナス。</p>
+        <div class="score-row">
+          <div><span>TIME</span><strong id="finishTime">0:00</strong></div>
+          <div><span>SCORE</span><strong id="finishScore">0</strong></div>
+          <div><span>BEST</span><strong id="finishBest">—</strong></div>
+        </div>
+        <button class="cta" id="againBtn" type="button">もう一度歩く</button>
+      </div>
+    </div>
+    <div id="boot">CREST ISLE — loading</div>
+  </div>
+  <script src="playtest.js"></script>
+  <script type="module">
+    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js";
+
+    const boot = document.getElementById("boot");
+    const title = document.getElementById("title");
+    const complete = document.getElementById("complete");
+    const hud = document.getElementById("hud");
+    const touch = document.getElementById("touch");
+
+    const fmt = (s) => {
+      const t = Math.max(0, s | 0);
+      const m = (t / 60) | 0;
+      return `${m}:${(t % 60).toString().padStart(2, "0")}`;
+    };
+
+    let session;
+    try {
+      await init();
+      session = new WasmSession();
+      session.setScene(2);
+      window.kagra = session;
+    } catch (e) {
+      boot.className = "err";
+      boot.textContent = `failed to load wasm:\n${e}\n\nBuild with: ./scripts/build_wasm.sh`;
+      throw e;
+    }
+
+    const canvas = document.getElementById("c");
+    const dpr = () => Math.min(window.devicePixelRatio || 1, 2);
+    const sizeCanvas = () => {
+      const scale = dpr();
+      canvas.width = Math.max(1, Math.round(canvas.clientWidth * scale));
+      canvas.height = Math.max(1, Math.round(canvas.clientHeight * scale));
+      session.createSurface(canvas.width, canvas.height);
+      return scale;
+    };
+    let scale = sizeCanvas();
+    if (window.kagraPlaytest) window.kagraPlaytest.attach(session, canvas);
+
+    let rendering = false;
+    if (session.renderSupported()) {
+      try {
+        await session.attachCanvas(canvas);
+        rendering = session.hasRenderer();
+      } catch (e) {
+        boot.className = "err";
+        boot.textContent = `renderer unavailable:\n${e}`;
+        throw e;
+      }
+    } else {
+      boot.className = "err";
+      boot.textContent = "this wasm was built without the render feature";
+      throw new Error("no render");
+    }
+    boot.style.display = "none";
+    document.getElementById("titleMeta").textContent =
+      `WASD + Space ・ 左スティック / 右ジャンプ  ·  ${sharedVersion()}  ·  not VRM`;
+
+    const setPhaseUi = (phase) => {
+      title.classList.toggle("visible", phase === "title");
+      complete.classList.toggle("visible", phase === "complete");
+      const playing = phase === "playing";
+      hud.classList.toggle("visible", playing);
+      touch.classList.toggle("visible", playing);
+    };
+
+    const beginRun = () => {
+      session.startGame();
+      setPhaseUi("playing");
+    };
+    document.getElementById("startBtn").addEventListener("click", beginRun);
+    document.getElementById("againBtn").addEventListener("click", beginRun);
+
+    const stickEl = document.getElementById("pad-stick");
+    const jumpEl = document.getElementById("pad-jump");
+    const touchState = { lx: 0, lz: 0, jump: false };
+    const held = new Set();
+    const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+    const onStick = (e) => {
+      const r = stickEl.getBoundingClientRect();
+      touchState.lx = clamp(((e.clientX - r.left) / r.width) * 2 - 1, -1, 1);
+      touchState.lz = clamp(-(((e.clientY - r.top) / r.height) * 2 - 1), -1, 1);
+      stickEl.classList.add("on");
+    };
+    const bindPad = (el, move, release) => {
+      el.addEventListener("pointerdown", (e) => {
+        try { el.setPointerCapture(e.pointerId); } catch {}
+        move(e);
+      });
+      el.addEventListener("pointermove", (e) => { if (e.buttons) move(e); });
+      const up = () => { release(); el.classList.remove("on"); };
+      el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);
+    };
+    bindPad(stickEl, onStick, () => { touchState.lx = 0; touchState.lz = 0; });
+    bindPad(jumpEl, () => { touchState.jump = true; jumpEl.classList.add("on"); }, () => { touchState.jump = false; });
+
+    window.addEventListener("keydown", (e) => {
+      held.add(e.key);
+      if (e.key === " " || e.key.startsWith("Arrow")) e.preventDefault();
+      if (e.key === "Enter" || e.key === " ") {
+        const st = JSON.parse(session.statsJson());
+        if (st.game_phase === "title" || st.game_phase === "complete") beginRun();
+      }
+    });
+    window.addEventListener("keyup", (e) => held.delete(e.key));
+    window.addEventListener("resize", () => { scale = sizeCanvas(); });
+
+    const keyWalk = () => {
+      const l = held.has("ArrowLeft") || held.has("a") || held.has("A");
+      const r = held.has("ArrowRight") || held.has("d") || held.has("D");
+      const u = held.has("ArrowUp") || held.has("w") || held.has("W");
+      const d = held.has("ArrowDown") || held.has("s") || held.has("S");
+      return {
+        lx: (r ? 1 : 0) - (l ? 1 : 0),
+        lz: (u ? 1 : 0) - (d ? 1 : 0),
+        jump: held.has(" ") || held.has("j") || held.has("J"),
+      };
+    };
+
+    let lastPhase = "title";
+    const loop = () => {
+      const k = keyWalk();
+      session.setWalk(
+        clamp(k.lx + touchState.lx, -1, 1),
+        clamp(k.lz + touchState.lz, -1, 1),
+        k.jump || touchState.jump,
+      );
+      session.requestFrame();
+      if (rendering) {
+        try { session.render(); } catch (e) {
+          rendering = false;
+          boot.style.display = "grid";
+          boot.className = "err";
+          boot.textContent = `render failed: ${e}`;
+        }
+      }
+      let st;
+      try { st = JSON.parse(session.statsJson()); } catch { st = {}; }
+      const phase = st.game_phase || "title";
+      if (phase !== lastPhase) {
+        setPhaseUi(phase);
+        lastPhase = phase;
+      }
+      if (phase === "playing") {
+        const need = st.star_need || 6;
+        document.getElementById("objectiveText").textContent =
+          `${st.stars || 0} / ${need} 紋章 · 峰の旗まで`;
+        document.getElementById("timeText").textContent = fmt(st.game_time_s || 0);
+        document.getElementById("countText").textContent =
+          `${st.stars || 0} / ${need} · coin ${st.coins || 0}`;
+      }
+      if (phase === "complete") {
+        document.getElementById("finishTime").textContent = fmt(st.game_time_s || 0);
+        document.getElementById("finishScore").textContent = String(st.game_score || 0);
+        const best = st.game_best_s;
+        document.getElementById("finishBest").textContent = best != null ? String(best | 0) : "—";
+      }
+      requestAnimationFrame(loop);
+    };
+    setPhaseUi("title");
+    loop();
+  </script>
+</body>
+</html>
