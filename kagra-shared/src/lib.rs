@@ -38,6 +38,7 @@ pub mod mission;
 pub mod mixamo;
 pub mod mixer;
 pub mod morph;
+pub mod neon_cat;
 pub mod neon_run;
 pub mod netplay;
 pub mod novel;

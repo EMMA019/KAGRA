@@ -47,7 +47,7 @@ use mixer::{
     cues_json_py, mixer_state_py, play_bgm_py, play_sfx_py, save_dir_py, set_group_volume_py,
     set_mute_py, set_save_dir_py, stop_bgm_py,
 };
-use neon::PyNeonRun;
+use neon::{PyNeonCat, PyNeonRun};
 use netplay::PyLockstep;
 use novel::PyNovelSession;
 use platformer::PyPlatformerSession;
@@ -71,6 +71,7 @@ use physics::PyPhysicsWorld;
 fn kagra_shared(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyWorldDoc>()?;
     m.add_class::<PyNeonRun>()?;
+    m.add_class::<PyNeonCat>()?;
     m.add_class::<PyWorldPlay>()?;
     m.add_class::<PyPuzzlePadSession>()?;
     m.add_class::<PyPuzzleSession>()?;

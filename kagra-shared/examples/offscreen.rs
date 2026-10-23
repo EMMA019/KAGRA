@@ -12,6 +12,7 @@
 //! cargo run -p kagra-shared --features render --example offscreen -- 640 360 world.png world path/to/dump.json
 //! cargo run -p kagra-shared --features render --example offscreen -- 1280 720 overlay.png playtest
 //! cargo run -p kagra-shared --features render --example offscreen -- 390 844 lumen.png neon
+//! cargo run -p kagra-shared --features render --example offscreen -- 1280 720 cat.png cat play
 //! ```
 //!
 //! `python -m kagra.render_world dump.json out.png` shells to this example (or an
@@ -41,6 +42,7 @@ fn main() -> Result<(), String> {
     let world = mode == "world";
     let flow = mode == "flow";
     let neon = mode == "neon";
+    let cat = mode == "cat";
 
     if mode == "playtest" {
         return render_playtest(width, height, &out);
@@ -113,6 +115,40 @@ fn main() -> Result<(), String> {
             session.request_frame();
         }
         println!("lumen frames={frames} boost={boost}");
+    } else if cat {
+        let which = args.next().unwrap_or_else(|| "play".into());
+        let frames: u32 =
+            args.next()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(match which.as_str() {
+                    "title" => 90,
+                    "crash" => 220,
+                    _ => 160,
+                });
+        session.load_game_json(include_str!("../tests/fixtures/neon_cat_world.json"))?;
+        if which != "title" {
+            session.start_game();
+        }
+        for _ in 0..frames {
+            match which.as_str() {
+                "crash" => session.set_play_input(1.0, 0.0, false, false, false),
+                "play" => {
+                    let steer = session.cat.as_ref().map(|run| run.script_steer());
+                    if let Some((lx, jump)) = steer {
+                        session.set_play_input(lx, 0.0, jump, false, false);
+                    }
+                }
+                _ => {}
+            }
+            session.request_frame();
+        }
+        let phase = session
+            .cat
+            .as_ref()
+            .map(|run| run.phase_name())
+            .unwrap_or("missing");
+        let score = session.cat.as_ref().map(|run| run.score()).unwrap_or(0);
+        println!("neon cat {which} frames={frames} phase={phase} score={score}");
     } else if flow {
         let which = args.next().unwrap_or_else(|| "title".into());
         let json = include_str!("../tests/fixtures/platformer_world.json");

@@ -1,0 +1,18 @@
+{
+  "title": "Neon Cat",
+  "icon": "games/icons/neon_cat.png",
+  "version": "0.1.0",
+  "entry": "examples/neon_cat_minimal.py",
+  "world": "kagra-shared/tests/fixtures/neon_cat_world.json",
+  "bundle_assets": [
+    "assets/audio",
+    "assets/models/kenney/cube-pets/animal-cat.glb",
+    "assets/models/kenney/cube-pets/Textures/colormap.png",
+    "assets/models/kenney/platformer-kit/crate.glb",
+    "assets/models/kenney/platformer-kit/barrel.glb",
+    "assets/models/kenney/platformer-kit/Textures/colormap.png",
+    "assets/models/kenney/racing-kit/overheadRound.glb",
+    "assets/models/kenney/racing-kit/barrierRed.glb",
+    "assets/models/quaternius/modular-dungeons-pack/Arch.glb"
+  ]
+}

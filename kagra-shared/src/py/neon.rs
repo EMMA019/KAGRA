@@ -86,3 +86,100 @@ impl PyNeonRun {
         self.inner.hud_json(width, height)
     }
 }
+
+/// `NeonCat` — ground runner. Not a WorldPlay genre.
+#[pyclass(name = "NeonCat")]
+pub struct PyNeonCat {
+    inner: crate::neon_cat::NeonCat,
+}
+
+#[pymethods]
+impl PyNeonCat {
+    #[staticmethod]
+    fn from_json(json: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: crate::neon_cat::NeonCat::from_json(json).map_err(pyerr)?,
+        })
+    }
+
+    #[getter]
+    fn phase(&self) -> &'static str {
+        self.inner.phase_name()
+    }
+
+    #[getter]
+    fn flow_phase(&self) -> &'static str {
+        self.inner.phase_name()
+    }
+
+    #[getter]
+    fn score(&self) -> u32 {
+        self.inner.score()
+    }
+
+    #[getter]
+    fn best_score(&self) -> u32 {
+        self.inner.best_score()
+    }
+
+    #[getter]
+    fn rings(&self) -> u32 {
+        self.inner.rings()
+    }
+
+    #[getter]
+    fn alive(&self) -> bool {
+        self.inner.alive
+    }
+
+    #[getter]
+    fn x(&self) -> f32 {
+        self.inner.x()
+    }
+
+    #[getter]
+    fn y(&self) -> f32 {
+        self.inner.y()
+    }
+
+    #[getter]
+    fn z(&self) -> f32 {
+        self.inner.z()
+    }
+
+    fn set_input(&mut self, lx: f32, lz: f32, jump: bool) {
+        self.inner.set_steer(lx, lz, jump);
+    }
+
+    fn tick(&mut self, dt: f32) {
+        self.inner.tick(dt);
+    }
+
+    fn confirm(&mut self) {
+        self.inner.confirm();
+    }
+
+    fn flow_key(&mut self, key: &str) -> bool {
+        self.inner.on_key(key, true)
+    }
+
+    fn flow_pointer(&mut self, x: f32, y: f32, width: u32, height: u32) -> bool {
+        self.inner.pointer(x, y, width, height)
+    }
+
+    fn dump(&self) -> PyResult<String> {
+        Ok(self.inner.dump_json())
+    }
+
+    fn state_json(&self) -> String {
+        self.inner.state_json()
+    }
+
+    fn take_feel(&mut self) -> String {
+        self.inner.take_feel_json()
+    }
+
+    fn hud_json(&self, width: u32, height: u32) -> String {
+        self.inner.hud_json(width, height)
+    }
+}

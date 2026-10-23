@@ -2241,6 +2241,7 @@ impl Renderer {
                 anim_blend,
                 overlay_bones,
                 overlay_weight,
+                anim,
                 ..
             } = slot
             else {
@@ -2268,6 +2269,7 @@ impl Renderer {
                     anim_blend,
                     overlay_bones,
                     overlay_weight,
+                    anim,
                 };
                 crate::gltf_load::sample_skinned_cloth_pose(
                     skin,

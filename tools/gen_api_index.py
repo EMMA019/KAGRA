@@ -185,6 +185,7 @@ FRONT_NAMES = {
     "TdSession",
     "Emitter",
     "Juice",
+    "NeonCat",
     "NeonRun",
     "Trail",
     "WorldDoc",

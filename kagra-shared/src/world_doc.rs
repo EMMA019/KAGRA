@@ -1535,6 +1535,7 @@ impl WorldDoc {
                     anim_blend,
                     overlay_bones,
                     overlay_weight,
+                    anim,
                     ..
                 } => gltf_skinned_mesh_for(
                     spec,
@@ -1549,6 +1550,7 @@ impl WorldDoc {
                         anim_blend: *anim_blend,
                         overlay_bones: overlay_bones.clone(),
                         overlay_weight: *overlay_weight,
+                        anim: anim.clone(),
                     },
                 )
                 .or_else(|| {
@@ -1679,6 +1681,7 @@ impl WorldDoc {
                         anim_blend: walk.anim_blend,
                         overlay_bones: walk.overlay_bones.clone(),
                         overlay_weight: walk.overlay_weight,
+                        anim: walk.anim.clone(),
                     });
                 }
             }
@@ -2011,6 +2014,7 @@ pub(crate) enum GltfSlot {
         anim_blend: f32,
         overlay_bones: HashMap<String, [f32; 4]>,
         overlay_weight: f32,
+        anim: String,
     },
 }
 

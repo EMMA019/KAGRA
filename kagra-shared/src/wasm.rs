@@ -183,6 +183,14 @@ impl WasmSession {
                 .map(|neon| neon.state_json())
                 .unwrap_or_else(|| "{}".into());
         }
+        if self.inner.kind == crate::session::SceneKind::NeonCat {
+            return self
+                .inner
+                .cat
+                .as_ref()
+                .map(|cat| cat.state_json())
+                .unwrap_or_else(|| "{}".into());
+        }
         if self.inner.kind == crate::session::SceneKind::Collectathon {
             serde_json::to_string(&self.inner.isle.game).unwrap_or_else(|_| "{}".into())
         } else {

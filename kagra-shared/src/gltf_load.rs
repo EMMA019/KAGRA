@@ -187,7 +187,6 @@ struct GltfNode {
     #[serde(default)]
     matrix: Option<[f32; 16]>,
     #[serde(default)]
-    #[allow(dead_code)]
     mesh: Option<usize>,
     #[serde(default)]
     #[allow(dead_code)]
@@ -258,6 +257,12 @@ pub struct SkinnedMesh {
     pub nodes: Vec<NodeRest>,
     pub skin_joints: Vec<usize>,
     pub clip: Option<AnimClip>,
+    /// Node that instances this mesh. Set for rigid (no-skin) parts so a
+    /// Kenney-style limb hierarchy can play `run` / `jump` on the walker.
+    pub mesh_node: Option<usize>,
+    /// Every LINEAR/STEP clip. Used when `WalkerPose.anim` names one.
+    /// Empty on skinned files; those keep the single Walk clip above.
+    pub extra_clips: Vec<AnimClip>,
     /// VRM 0/1 humanoid bone name -> node index. Empty when extras are absent.
     pub humanoid: HashMap<String, usize>,
     /// glTF メッシュインデックス（firstPerson の by_mesh 注釈参照用）。
@@ -486,6 +491,9 @@ pub struct WalkerPose {
     pub overlay_bones: std::collections::HashMap<String, [f32; 4]>,
     /// overlay のブレンド係数 0..1。
     pub overlay_weight: f32,
+    /// Clip name. Empty, `idle`, and `walk` keep the Walk clip.
+    /// `run` / `jump` select that clip when the file stored it.
+    pub anim: String,
 }
 
 impl WalkerPose {
@@ -619,6 +627,9 @@ fn sample_skinned_inner(
     pose: &WalkerPose,
     cloth: Option<(&mut crate::spring::SpringState, f32)>,
 ) -> MeshData {
+    if skin.skin_joints.is_empty() && skin.mesh_node.is_some() {
+        return sample_rigid_part(skin, pose);
+    }
     if skin.skin_joints.is_empty()
         || skin.joints.len() != skin.rest.vertices.len()
         || skin.weights.len() != skin.rest.vertices.len()
@@ -1441,6 +1452,12 @@ fn skinned_from_prim(
     };
     let nodes = doc.nodes.iter().map(node_rest).collect::<Vec<_>>();
     let clip = pick_clip(doc, blobs)?;
+    let mesh_node = doc.nodes.iter().position(|n| n.mesh == Some(mesh_index));
+    let extra_clips = if skin_joints.is_empty() {
+        all_clips(doc, blobs)?
+    } else {
+        Vec::new()
+    };
     let mut skin = SkinnedMesh {
         rest,
         joints,
@@ -1449,6 +1466,8 @@ fn skinned_from_prim(
         nodes,
         skin_joints,
         clip,
+        mesh_node,
+        extra_clips,
         mesh_index,
         humanoid: parse_humanoid(doc),
         springs: {
@@ -1587,6 +1606,24 @@ fn pick_clip(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<Option<AnimClip>, Stri
                 .find(|a| a.name.eq_ignore_ascii_case("run"))
         })
         .unwrap_or(&doc.animations[0]);
+    clip_from_anim(doc, blobs, anim)
+}
+
+fn all_clips(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<Vec<AnimClip>, String> {
+    let mut out = Vec::new();
+    for anim in &doc.animations {
+        if let Some(clip) = clip_from_anim(doc, blobs, anim)? {
+            out.push(clip);
+        }
+    }
+    Ok(out)
+}
+
+fn clip_from_anim(
+    doc: &GltfFile,
+    blobs: &[Vec<u8>],
+    anim: &GltfAnimation,
+) -> Result<Option<AnimClip>, String> {
     let mut channels = Vec::new();
     let mut duration = 0.0f32;
     for ch in &anim.channels {
@@ -1637,6 +1674,21 @@ fn pick_clip(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<Option<AnimClip>, Stri
         duration,
         channels,
     }))
+}
+
+fn selected_clip<'a>(skin: &'a SkinnedMesh, pose: &WalkerPose) -> Option<&'a AnimClip> {
+    let want = pose.anim.trim();
+    if !want.is_empty() && !want.eq_ignore_ascii_case("idle") && !want.eq_ignore_ascii_case("walk")
+    {
+        if let Some(clip) = skin
+            .extra_clips
+            .iter()
+            .find(|clip| clip.name.eq_ignore_ascii_case(want))
+        {
+            return Some(clip);
+        }
+    }
+    skin.clip.as_ref()
 }
 
 fn rest_locals(skin: &SkinnedMesh) -> Vec<NodeLocal> {
@@ -1806,6 +1858,44 @@ pub fn step_springs(
 }
 
 fn sample_locals(skin: &SkinnedMesh, t: f32) -> Vec<NodeLocal> {
+    sample_locals_clip(skin, skin.clip.as_ref(), t)
+}
+
+fn sample_rigid_part(skin: &SkinnedMesh, pose: &WalkerPose) -> MeshData {
+    let node = skin.mesh_node.unwrap_or(0);
+    let locals = match pose.clip {
+        Some(tt) if pose.anim_blend > 1e-5 => {
+            let posed = sample_locals_clip(skin, selected_clip(skin, pose), tt);
+            let blend = pose.anim_blend.clamp(0.0, 1.0);
+            if blend >= 1.0 - 1e-5 {
+                posed
+            } else {
+                blend_locals(&rest_locals(skin), &posed, blend)
+            }
+        }
+        _ => rest_locals(skin),
+    };
+    let globals = global_pose(&skin.nodes, &locals);
+    let mw = globals.get(node).copied().unwrap_or(Mat4::IDENTITY);
+    let mut out = skin.rest.clone();
+    let flip = if mw.determinant() < 0.0 { -1.0 } else { 1.0 };
+    for v in &mut out.vertices {
+        let p = mw.transform_point3(Vec3::from_array(v.pos));
+        let n = mw
+            .transform_vector3(Vec3::from_array(v.normal))
+            .normalize_or(Vec3::Y);
+        v.pos = p.to_array();
+        v.normal = n.to_array();
+        let t = Vec3::new(v.tangent[0], v.tangent[1], v.tangent[2]);
+        if t.length_squared() > 1e-8 {
+            let tn = mw.transform_vector3(t).normalize_or(Vec3::ZERO);
+            v.tangent = [tn.x, tn.y, tn.z, v.tangent[3] * flip];
+        }
+    }
+    out
+}
+
+fn sample_locals_clip(skin: &SkinnedMesh, clip: Option<&AnimClip>, t: f32) -> Vec<NodeLocal> {
     let mut locals: Vec<NodeLocal> = skin
         .nodes
         .iter()
@@ -1815,7 +1905,7 @@ fn sample_locals(skin: &SkinnedMesh, t: f32) -> Vec<NodeLocal> {
             scale: n.scale,
         })
         .collect();
-    let Some(clip) = &skin.clip else {
+    let Some(clip) = clip else {
         return locals;
     };
     let t = if clip.duration > 1e-6 {
@@ -3527,6 +3617,8 @@ mod tests {
             nodes: vec![],
             skin_joints: vec![],
             clip: None,
+            mesh_node: None,
+            extra_clips: vec![],
             mesh_index: 1,
             humanoid: Default::default(),
             springs: Default::default(),
@@ -4108,5 +4200,116 @@ mod tests {
             "VRM0 outline width clamped, got {}",
             shade.outline_width
         );
+    }
+
+    #[test]
+    fn rigid_run_clip_moves_the_mesh_node() {
+        let json = rigid_two_clip_gltf();
+        let parts = skinned_parts_from_embedded_gltf(&json).expect("rigid");
+        assert_eq!(parts.len(), 1);
+        let part = &parts[0];
+        assert!(part.skin_joints.is_empty());
+        assert!(part.extra_clips.iter().any(|c| c.name == "run"));
+        let rest = sample_skinned_pose(part, &WalkerPose::default());
+        let run = WalkerPose {
+            clip: Some(0.5),
+            anim: "run".into(),
+            anim_blend: 1.0,
+            ..WalkerPose::default()
+        };
+        let moved = sample_skinned_pose(part, &run);
+        let dx = moved.vertices[0].pos[0] - rest.vertices[0].pos[0];
+        assert!(
+            (dx - 2.0).abs() < 0.05,
+            "run clip at t=0.5 should translate +2 on x, dx={dx}"
+        );
+        let walk = WalkerPose {
+            clip: Some(0.5),
+            anim_blend: 1.0,
+            ..WalkerPose::default()
+        };
+        let walked = sample_skinned_pose(part, &walk);
+        let dy = walked.vertices[0].pos[1] - rest.vertices[0].pos[1];
+        assert!(
+            (dy - 1.0).abs() < 0.05,
+            "default walk clip at t=0.5 should translate +1 on y, dy={dy}"
+        );
+    }
+
+    fn rigid_two_clip_gltf() -> String {
+        // One triangle on node 1. Walk lifts Y. Run slides X.
+        let mut bin = Vec::new();
+        let pos: [f32; 9] = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        let nrm: [f32; 9] = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0];
+        let idx: [u16; 3] = [0, 1, 2];
+        let times: [f32; 2] = [0.0, 1.0];
+        let walk_v: [f32; 6] = [0.0, 0.0, 0.0, 0.0, 2.0, 0.0];
+        let run_v: [f32; 6] = [0.0, 0.0, 0.0, 4.0, 0.0, 0.0];
+        let mut push = |bytes: &[u8]| {
+            let off = bin.len();
+            bin.extend_from_slice(bytes);
+            (off, bytes.len())
+        };
+        let (p_off, p_len) = push(&bytemuck_f32(&pos));
+        let (n_off, n_len) = push(&bytemuck_f32(&nrm));
+        let mut idx_bytes = Vec::new();
+        for i in idx {
+            idx_bytes.extend_from_slice(&i.to_le_bytes());
+        }
+        let (i_off, i_len) = push(&idx_bytes);
+        let (t_off, t_len) = push(&bytemuck_f32(&times));
+        let (w_off, w_len) = push(&bytemuck_f32(&walk_v));
+        let (r_off, r_len) = push(&bytemuck_f32(&run_v));
+        let b64 = base64_encode(&bin);
+        format!(
+            r#"{{
+  "asset": {{"version": "2.0"}},
+  "buffers": [{{"byteLength": {blen}, "uri": "data:application/octet-stream;base64,{b64}"}}],
+  "bufferViews": [
+    {{"buffer": 0, "byteOffset": {p_off}, "byteLength": {p_len}}},
+    {{"buffer": 0, "byteOffset": {n_off}, "byteLength": {n_len}}},
+    {{"buffer": 0, "byteOffset": {i_off}, "byteLength": {i_len}}},
+    {{"buffer": 0, "byteOffset": {t_off}, "byteLength": {t_len}}},
+    {{"buffer": 0, "byteOffset": {w_off}, "byteLength": {w_len}}},
+    {{"buffer": 0, "byteOffset": {r_off}, "byteLength": {r_len}}}
+  ],
+  "accessors": [
+    {{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"}},
+    {{"bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC3"}},
+    {{"bufferView": 2, "componentType": 5123, "count": 3, "type": "SCALAR"}},
+    {{"bufferView": 3, "componentType": 5126, "count": 2, "type": "SCALAR"}},
+    {{"bufferView": 4, "componentType": 5126, "count": 2, "type": "VEC3"}},
+    {{"bufferView": 5, "componentType": 5126, "count": 2, "type": "VEC3"}}
+  ],
+  "meshes": [{{"primitives": [{{"attributes": {{"POSITION": 0, "NORMAL": 1}}, "indices": 2}}]}}],
+  "nodes": [
+    {{"name": "root", "children": [1]}},
+    {{"name": "part", "mesh": 0}}
+  ],
+  "scenes": [{{"nodes": [0]}}],
+  "scene": 0,
+  "animations": [
+    {{
+      "name": "walk",
+      "channels": [{{"sampler": 0, "target": {{"node": 1, "path": "translation"}}}}],
+      "samplers": [{{"input": 3, "output": 4, "interpolation": "LINEAR"}}]
+    }},
+    {{
+      "name": "run",
+      "channels": [{{"sampler": 0, "target": {{"node": 1, "path": "translation"}}}}],
+      "samplers": [{{"input": 3, "output": 5, "interpolation": "LINEAR"}}]
+    }}
+  ]
+}}"#,
+            blen = bin.len(),
+        )
+    }
+
+    fn bytemuck_f32(values: &[f32]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(values.len() * 4);
+        for v in values {
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+        out
     }
 }
