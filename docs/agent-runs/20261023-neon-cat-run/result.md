@@ -18,3 +18,7 @@ Lumen first.
 
 The attached reference image was not in the checkout when the shots were
 taken, so the PR shows the lavapipe frames on their own.
+
+Title card: a touch on 「はじめる」 calls `startGame`. The sim is title
+under that card (no CRASH column, cat back at the start). Chrome on
+lavapipe, mobile viewport, is the check for the tap.

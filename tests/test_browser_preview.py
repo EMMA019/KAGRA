@@ -67,6 +67,11 @@ def test_preview_links_every_browser_genre(tmp_path: Path):
     assert "setPlayInput" in play
     assert "data-orient" in play
     assert '"neon_run"' in play
+    assert "startGame" in play
+    assert "showTitle" in play
+    assert "setExternalMenu" in play
+    assert "pointer-events: none" in play
+    assert 'z-index: 4' in play
     assert (tmp_path / "site" / ".nojekyll").is_file()
     knight = (
         tmp_path

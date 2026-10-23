@@ -37,6 +37,23 @@ The tunnel grid and rails stay emissive boxes. No CC0 pack is an infinite
 synthwave shader. Cat, arch, hoop, crate, barrel, and barrier are glTF.
 A missing file omits the prop (the cat falls back to the engine capsule).
 
+## Title tap on the preview
+
+The catalog page (`scripts/preview_site/play.html`) kept the HTML card on
+「はじめる」 because it read `statsJson().game_phase`. That field stays the
+demo phase for a sidecar, so the card never followed Neon Cat. The card also
+listened for `click` only, while `touch-action: none` and a document
+`touchmove` preventDefault drop the click on Chrome Android. A tap that did
+reach the canvas started a run; the cat crashed, and the CRASH / RETRY /
+TITLE column showed through the translucent card.
+
+The page now reads `gameJson().phase` (`play` / `result`), puts the card at
+`z-index: 4` above the canvas, and starts the run from `pointerup` via
+`startGame` (no center hit-test that can land on TITLE). `showTitle` runs
+when that card is the title, and it puts the cat back at the start.
+`setExternalMenu` skips the in-canvas column. `stats().game_phase` maps the
+sidecar phase so other hosts see `playing` / `complete`.
+
 ## Checks
 
 - `cargo test -p kagra-shared --lib neon_cat::` — steer, jump, ring, glTF, session swap with Lumen

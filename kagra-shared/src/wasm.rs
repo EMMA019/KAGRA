@@ -285,6 +285,12 @@ impl WasmSession {
         self.inner.set_playtest_external_chrome(on);
     }
 
+    /// HTML owns the title and result card. Hides the in-canvas flow column.
+    #[wasm_bindgen(js_name = setExternalMenu)]
+    pub fn set_external_menu(&mut self, on: bool) {
+        self.inner.set_external_menu(on);
+    }
+
     #[wasm_bindgen(js_name = setPlaytestDevice)]
     pub fn set_playtest_device(&mut self, label: &str, lang: &str) {
         self.inner.set_playtest_device(label, lang);

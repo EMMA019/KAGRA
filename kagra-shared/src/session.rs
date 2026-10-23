@@ -134,6 +134,8 @@ pub struct SharedSession {
     /// World draws need `compile_meshes`, not the driving/isle list from attach.
     #[cfg(feature = "render")]
     world_meshes: bool,
+    /// HTML title / result card is the menu. Skip the in-canvas flow column.
+    external_menu: bool,
 }
 
 impl Default for SharedSession {
@@ -171,7 +173,18 @@ impl Default for SharedSession {
             isle_mesh_ids: None,
             #[cfg(feature = "render")]
             world_meshes: false,
+            external_menu: false,
         }
+    }
+}
+
+/// Neon Run / Neon Cat use `title` / `play` / `pause` / `result`.
+/// `FrameStats` only has the demo phases, which the preview page reads.
+fn flow_stats_phase(name: Option<&str>) -> GamePhase {
+    match name.unwrap_or("title") {
+        "play" | "pause" => GamePhase::Playing,
+        "result" => GamePhase::Complete,
+        _ => GamePhase::Title,
     }
 }
 
@@ -702,7 +715,11 @@ impl SharedSession {
             } else {
                 GAME_TITLE
             },
-            game_phase: if packaged {
+            game_phase: if self.kind == SceneKind::Neon {
+                flow_stats_phase(self.neon.as_ref().map(|neon| neon.phase_name()))
+            } else if self.kind == SceneKind::NeonCat {
+                flow_stats_phase(self.cat.as_ref().map(|cat| cat.phase_name()))
+            } else if packaged {
                 play.map(|p| p.game.phase).unwrap_or(self.game.phase)
             } else if isle {
                 self.isle.game.phase
@@ -769,7 +786,7 @@ impl SharedSession {
             SceneKind::NeonCat => self
                 .cat
                 .as_ref()
-                .map(|cat| cat.hud(self.width, self.height))
+                .map(|cat| cat.paint_hud(self.width, self.height, !self.external_menu))
                 .unwrap_or_default(),
         };
         self.playtest.append_hud(&mut list, self.width, self.height);
@@ -785,6 +802,12 @@ impl SharedSession {
 
     pub fn set_playtest_external_chrome(&mut self, on: bool) {
         self.playtest.set_external_chrome(on);
+    }
+
+    /// The host draws title and result. Neon Cat then skips the in-canvas
+    /// CRASH / RETRY / TITLE column so it cannot show through the page.
+    pub fn set_external_menu(&mut self, on: bool) {
+        self.external_menu = on;
     }
 
     pub fn set_playtest_device(&mut self, label: &str, lang: &str) {

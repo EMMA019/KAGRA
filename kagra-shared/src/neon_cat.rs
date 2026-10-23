@@ -331,9 +331,23 @@ impl NeonCat {
 
     pub fn show_title(&mut self) {
         self.flow.show_title();
+        self.reset_motion();
         self.alive = true;
         self.score = 0;
         self.score_acc = 0.0;
+        self.rings = 0;
+        self.attract = 0.0;
+        self.time = 0.0;
+        self.anim_t = 0.05;
+        self.jump_held = false;
+        self.key_left = false;
+        self.key_right = false;
+        self.key_jump = false;
+        self.pad_x = 0.0;
+        self.pad_up = 0.0;
+        self.got.clear();
+        self.sparks.clear();
+        self.rebuild();
     }
 
     pub fn pointer(&mut self, x: f32, y: f32, width: u32, height: u32) -> bool {
@@ -937,13 +951,22 @@ impl NeonCat {
     }
 
     pub fn hud(&self, width: u32, height: u32) -> DrawList {
+        self.paint_hud(width, height, true)
+    }
+
+    /// `menu` draws the in-canvas title / result column. The browser page
+    /// owns that chrome and passes `false` so a CRASH panel cannot sit
+    /// under the HTML card.
+    pub fn paint_hud(&self, width: u32, height: u32, menu: bool) -> DrawList {
         let mut list = DrawList {
             clear: [0, 0, 0, 0],
             quads: Vec::new(),
             texts: Vec::new(),
             images: Vec::new(),
         };
-        self.flow.paint(&mut list, width, height);
+        if menu {
+            self.flow.paint(&mut list, width, height);
+        }
         if self.flow.phase == FlowPhase::Play || self.hitstop > 0.0 {
             list.quads
                 .push(Quad::new(12.0, 10.0, 168.0, 36.0, [8, 4, 20, 160]));
@@ -1244,5 +1267,60 @@ mod tests {
             .unwrap();
         assert_eq!(session.kind, SceneKind::Neon);
         assert!(session.cat.is_none());
+    }
+
+    #[test]
+    fn title_clears_a_crash_and_start_runs() {
+        let phase = |session: &SharedSession| {
+            let value: serde_json::Value = serde_json::from_str(&session.stats_json()).unwrap();
+            value["game_phase"].as_str().unwrap().to_string()
+        };
+        let mut session = SharedSession::default();
+        session
+            .load_game_json(r#"{"version":1,"genre":"neon_cat"}"#)
+            .unwrap();
+        session.show_title();
+        assert_eq!(phase(&session), "title");
+        assert!(session.cat.as_ref().unwrap().z().abs() < 0.01);
+        session.start_game();
+        assert_eq!(phase(&session), "playing");
+        for _ in 0..60 * 6 {
+            session.set_play_input(0.0, 0.0, false, false, false);
+            session.request_frame();
+            if session.cat.as_ref().unwrap().phase_name() == "result" {
+                break;
+            }
+        }
+        assert_eq!(session.cat.as_ref().unwrap().phase_name(), "result");
+        assert_eq!(phase(&session), "complete");
+        let crashed = session.draw_list();
+        assert!(
+            crashed.texts.iter().any(|text| text.text == "CRASH"),
+            "the result column is the panel under the old title card"
+        );
+        session.show_title();
+        assert_eq!(phase(&session), "title");
+        assert!(
+            session.cat.as_ref().unwrap().z().abs() < 0.01,
+            "title puts the cat back at the start, not the crash arch"
+        );
+        let titled = session.draw_list();
+        assert!(titled.texts.iter().all(|text| text.text != "CRASH"));
+        session.set_external_menu(true);
+        let hosted = session.draw_list();
+        assert!(
+            hosted
+                .texts
+                .iter()
+                .all(|text| text.text != "CRASH" && text.text != "START" && text.text != "TITLE"),
+            "the HTML card owns the menu"
+        );
+        session.start_game();
+        let z0 = session.cat.as_ref().unwrap().z();
+        for _ in 0..30 {
+            session.request_frame();
+        }
+        assert_eq!(phase(&session), "playing");
+        assert!(session.cat.as_ref().unwrap().z() > z0 + 1.0);
     }
 }
