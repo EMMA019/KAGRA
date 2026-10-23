@@ -849,8 +849,8 @@ impl Renderer {
                 depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: Default::default(),
                 bias: wgpu::DepthBiasState {
-                    constant: 2,
-                    slope_scale: 2.0,
+                    constant: 4,
+                    slope_scale: 3.0,
                     clamp: 0.0,
                 },
             }),
@@ -1213,7 +1213,9 @@ impl Renderer {
                         };
                     raw.push(InstanceRaw {
                         model: inst.model.to_cols_array_2d(),
-                        color: to_linear(inst.color, self.format),
+                        // 3D shaders consume linear. An unorm swapchain must not
+                        // skip the decode (that path is for HUD bytes only).
+                        color: to_linear(inst.color, wgpu::TextureFormat::Rgba8UnormSrgb),
                         material: inst.material as u8 as f32,
                         _pad: [0.0; 3],
                         mtoon,
@@ -1238,7 +1240,10 @@ impl Renderer {
             self.upload_globals(scene);
         }
 
-        let clear = to_linear(world.map(|s| s.clear).unwrap_or(hud.clear), self.format);
+        let clear = to_linear(
+            world.map(|s| s.clear).unwrap_or(hud.clear),
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+        );
         let frame = match &self.target {
             Target::Surface { surface, .. } => {
                 use wgpu::CurrentSurfaceTexture as Cst;
@@ -1403,9 +1408,16 @@ impl Renderer {
             }
         }
         // Pass 2: Bloom（extract/blur → composite で exposure + ACES → target）。
-        let (exposure, tonemap) = match world {
-            Some(scene) => (scene.exposure.max(0.0), scene.tonemap),
-            None => (1.0, true),
+        // The 8-bit path already applied exposure and ACES in the mesh shader
+        // (see Globals.shadow.y). Composite still does LUT, vignette, and the
+        // sRGB encode. Running ACES again would crush the neon.
+        let (exposure, tonemap) = if self.bloom.is_hdr() {
+            match world {
+                Some(scene) => (scene.exposure.max(0.0), scene.tonemap),
+                None => (1.0, true),
+            }
+        } else {
+            (1.0, false)
         };
         if !direct {
             self.bloom.apply(
@@ -1524,7 +1536,7 @@ impl Renderer {
                 scene.light_dir.z,
                 scene.ambient.clamp(0.0, 1.0),
             ],
-            fog_color: to_linear(scene.fog_color, self.format),
+            fog_color: to_linear(scene.fog_color, wgpu::TextureFormat::Rgba8UnormSrgb),
             fog_range: [scene.fog_start, scene.fog_end, 0.0, 0.0],
             camera_pos: [cam.eye.x, cam.eye.y, cam.eye.z, 0.0],
             env: [
@@ -1537,7 +1549,17 @@ impl Renderer {
             light_col,
             light_dir,
             light_view_proj: crate::scene3d::scene_shadow_view_proj(scene).to_cols_array_2d(),
-            shadow: [scene.shadow_softness.max(0.0), 0.0, 0.0, 0.0],
+            shadow: {
+                let ldr = !self.bloom.is_hdr();
+                let direct = self.bloom.frame_format() == self.format;
+                let encode = ldr && direct && !self.format.is_srgb();
+                [
+                    scene.shadow_softness.max(0.0),
+                    if ldr { 1.0 } else { 0.0 },
+                    if encode { 1.0 } else { 0.0 },
+                    0.0,
+                ]
+            },
             hemi_sky: [scene.hemi_sky[0], scene.hemi_sky[1], scene.hemi_sky[2], 0.0],
             hemi_ground: [
                 scene.hemi_ground[0],
@@ -2077,6 +2099,9 @@ async fn request_device(
         wgpu::Limits::default()
     };
 
+    // wgpu 30 treats depth32float comparison filtering as core, so there is
+    // no DEPTH32FLOAT_FILTERABLE feature to request. A linear comparison
+    // sampler is valid on WebGPU and WebGL2.
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("kagra-shared"),

@@ -23,6 +23,10 @@ struct Globals {
     // Directional sun ortho. Same family, not a cascade / V2 umbra.
     light_view_proj: mat4x4<f32>,
     // x = shadow radius. 1 = the historical 3x3 PCF. Larger = a wider tent.
+    // y > 0.5: the color target is 8-bit, so exposure and ACES run here.
+    //   WebGPU cannot sample an Rgba16Float frame (it comes back white), and
+    //   storing HDR into unorm clamps neon to pure white before the composite.
+    // z > 0.5: this pass writes the swapchain directly, so encode sRGB here.
     shadow: vec4<f32>,
     // Hemisphere colors. Defaults match the old hardcoded studio SH.
     hemi_sky: vec4<f32>,
@@ -279,7 +283,7 @@ fn env_specular(dir: vec3<f32>, rough: f32) -> vec3<f32> {
 // One directional map. Depth compare (WebGL2 sampler2DShadow).
 // Contact blob stays; this is the sun umbra on ground / capsule / human.
 // shadow.x <= 1 keeps the historical 3x3 kernel. Larger radii use a 5x5 tent.
-fn shadow_factor(world: vec3<f32>) -> f32 {
+fn shadow_factor(world: vec3<f32>, nrm: vec3<f32>) -> f32 {
     let sc = g.light_view_proj * vec4<f32>(world, 1.0);
     let ndc = sc.xyz / sc.w;
     let uv = vec2<f32>(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
@@ -292,7 +296,12 @@ fn shadow_factor(world: vec3<f32>) -> f32 {
         (uv.x >= 0.0) & (uv.x <= 1.0) & (uv.y >= 0.0) & (uv.y <= 1.0) & (depth >= 0.0) & (depth <= 1.0),
     );
     let texel = 1.0 / 2048.0;
-    let d = depth - 0.0015;
+    // Slope-scaled bias. A flat 0.0015 at a grazing phone compare smears
+    // into black streaks along the track.
+    let nlen = length(nrm);
+    let nsafe = select(vec3<f32>(0.0, 1.0, 0.0), nrm / max(nlen, 1e-4), nlen > 1e-4);
+    let slope = clamp(1.0 - abs(dot(nsafe, normalize(g.light.xyz))), 0.0, 1.0);
+    let d = depth - (0.0022 + slope * 0.008);
     let radius = max(g.shadow.x, 0.0);
     var lit = 1.0;
     if (radius <= 1.01) {
@@ -352,6 +361,32 @@ fn emissive_rgb(in: VsOut, albedo: vec3<f32>, em_map: vec3<f32>) -> vec3<f32> {
     return col * strength;
 }
 
+// Narkowicz ACES, same fit as bloom.wgsl. Only the 8-bit frame uses it here.
+fn aces_tonemap(x: vec3<f32>) -> vec3<f32> {
+    return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let cut = c <= vec3<f32>(0.0031308);
+    let lo = c * 12.92;
+    let hi = 1.055 * pow(max(c, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.4)) - 0.055;
+    return select(hi, lo, cut);
+}
+
+fn present_rgb(rgb: vec3<f32>) -> vec3<f32> {
+    if (g.shadow.y <= 0.5) {
+        return rgb;
+    }
+    var c = rgb * max(g.env.y, 0.0);
+    if (g.env.w > 0.5) {
+        c = aces_tonemap(c);
+    }
+    if (g.shadow.z > 0.5) {
+        c = linear_to_srgb(max(c, vec3<f32>(0.0)));
+    }
+    return c;
+}
+
 // Two scrolling procedural normals (fbm gradients). env.z = seconds.
 // No normal-map texture, no SSR, no storage buffer.
 fn water_normal(world: vec3<f32>, geo_n: vec3<f32>) -> vec3<f32> {
@@ -387,7 +422,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let cap_uv = reflect(-cap_view, n_toon).xy * 0.5 + vec2<f32>(0.5, 0.5);
     let matcap = textureSample(matcap_tex, matcap_samp, cap_uv).rgb;
     // Called before the sky return so the compare stays uniform on WebGPU.
-    let sh = shadow_factor(in.world);
+    let sh = shadow_factor(in.world, in.normal);
 
     // スカイ: in.color.rgb を基準に天頂〜地平〜足元のスタジオグラデーション。
     // Linear HDR; exposure + ACES are applied by the bloom composite pass.
@@ -395,10 +430,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let dir = normalize(in.world - g.camera_pos.xyz);
         let t = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
         let base = in.color.rgb;
-        let zenith = base * vec3<f32>(0.68, 0.80, 1.05);
-        let horizon = mix(base * 1.45, vec3<f32>(0.78, 0.86, 0.96), clamp(dot(base, vec3<f32>(0.333)), 0.0, 1.0) * 0.65);
-        let col = mix(horizon, zenith, smoothstep(0.32, 0.88, t));
-        return vec4<f32>(col, 1.0);
+        let day_mix = clamp(dot(base, vec3<f32>(0.333)), 0.0, 1.0) * 0.65;
+        let day_horizon = mix(base * 1.45, vec3<f32>(0.78, 0.86, 0.96), day_mix);
+        let day_zenith = base * vec3<f32>(0.68, 0.80, 1.05);
+        // Dark skies (Lumen) get a magenta horizon. Day skies stay on the old curve.
+        let night = 1.0 - smoothstep(0.05, 0.22, day_mix);
+        let horizon = mix(day_horizon, vec3<f32>(0.50, 0.12, 0.46), night);
+        let zenith = mix(day_zenith, vec3<f32>(0.03, 0.04, 0.12), night * 0.45);
+        let col = mix(horizon, zenith, smoothstep(0.18, 0.82, t));
+        return vec4<f32>(present_rgb(col), 1.0);
     }
 
     if (tex.a < 0.5) {
@@ -506,7 +546,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             if (ao < 0.03) {
                 discard;
             }
-            return vec4<f32>(vec3<f32>(0.008, 0.010, 0.018), ao);
+            return vec4<f32>(present_rgb(vec3<f32>(0.008, 0.010, 0.018)), ao);
         }
         let rough_in = select(clamp(in.mtoon4.y, 0.04, 1.0), 0.42, in.mtoon4.y <= 1e-4);
         let metallic_in = clamp(in.mtoon4.x, 0.0, 1.0);
@@ -554,5 +594,5 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Linear HDR. exposure + ACES are applied by the bloom composite pass,
     // which also adds the bloom spill before tonemapping.
     let rgb = mix(lit, g.fog_color.rgb, fog);
-    return vec4<f32>(rgb, alpha);
+    return vec4<f32>(present_rgb(rgb), alpha);
 }

@@ -18,22 +18,32 @@
       position: absolute;
       right: max(16px, env(safe-area-inset-right));
       bottom: max(18px, env(safe-area-inset-bottom));
-      width: 88px;
-      height: 88px;
-      border-radius: 50%;
-      border: 1px solid rgba(255, 80, 190, 0.7);
-      background: radial-gradient(circle at 40% 35%, rgba(255, 120, 210, 0.45), rgba(20, 0, 24, 0.35));
-      color: #fff;
+      width: 64px;
+      height: 64px;
+      border-radius: 18px;
+      border: 1px solid rgba(140, 255, 255, 0.45);
+      background: rgba(8, 6, 22, 0.38);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow:
+        inset 0 0 16px rgba(80, 240, 255, 0.38),
+        0 0 18px rgba(255, 60, 180, 0.28);
+      color: rgba(230, 255, 255, 0.92);
       font-family: Syne, sans-serif;
-      letter-spacing: 0.12em;
-      font-size: 13px;
+      letter-spacing: 0.14em;
+      font-size: 11px;
       display: none;
       place-items: center;
       user-select: none;
       -webkit-user-select: none;
     }
     #boost.on { display: grid; }
-    #boost.held { background: radial-gradient(circle at 40% 35%, rgba(140, 255, 255, 0.7), rgba(255, 40, 170, 0.4)); }
+    #boost.held {
+      background: rgba(18, 6, 28, 0.5);
+      box-shadow:
+        inset 0 0 22px rgba(140, 255, 255, 0.72),
+        0 0 24px rgba(255, 40, 170, 0.55);
+    }
     #links {
       position: absolute;
       left: max(12px, env(safe-area-inset-left));
@@ -93,6 +103,7 @@
     const params = new URLSearchParams(location.search);
     const requestedBackend = (params.get("backend") || "auto").toLowerCase();
     const boostEl = document.getElementById("boost");
+    const linksEl = document.getElementById("links");
     const BEST_KEY = "lumen-best";
     const held = new Set();
     const pointers = new Map();
@@ -461,6 +472,10 @@
       try { st = JSON.parse(session.gameJson()); } catch (_) {}
       const playing = st.phase === "play";
       boostEl.classList.toggle("on", playing);
+      // Title only. `hidden` alone was staying off while the score HUD was already in play.
+      const showLinks = st.phase === "title";
+      linksEl.hidden = !showLinks;
+      linksEl.style.display = showLinks ? "" : "none";
       if (!playing) boostHeld = false;
       if (typeof st.best === "number" && st.best > savedBest) {
         savedBest = st.best;

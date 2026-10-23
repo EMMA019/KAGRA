@@ -287,6 +287,11 @@ impl BloomPass {
         self.frame_format
     }
 
+    /// False on WebGPU, where the frame is 8-bit and bloom extract is forced off.
+    pub(super) fn is_hdr(&self) -> bool {
+        self.hdr
+    }
+
     pub fn set_params(&mut self, threshold: f32, intensity: f32) {
         self.threshold = threshold.clamp(0.0, 2.0);
         // LDR frames clamp at 1, so a threshold extract would bloom the whole
