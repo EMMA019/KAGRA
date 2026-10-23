@@ -54,6 +54,11 @@ when that card is the title, and it puts the cat back at the start.
 `setExternalMenu` skips the in-canvas column. `stats().game_phase` maps the
 sidecar phase so other hosts see `playing` / `complete`.
 
+Preview's Pages wait treated a cancelled `kagra-pages` run as fatal.
+GitHub cancels the previous pending deploy in that group. The wait now
+skips `completed cancelled` and follows the run that finishes. The live
+`/pr/165/` tree already had this page before that job went red.
+
 ## Checks
 
 - `cargo test -p kagra-shared --lib neon_cat::` — steer, jump, ring, glTF, session swap with Lumen

@@ -137,6 +137,8 @@ def test_pages_and_previews_share_one_tree():
     assert "bash scripts/build_wasm.sh" in preview_yml
     assert "kagra-pages" in preview_yml
     assert "github.event.pull_request.merged == false" in preview_yml
+    assert "completed cancelled" in preview_yml
+    assert "was superseded" in preview_yml
     deploy_yml = (ROOT / ".github/workflows/pages-deploy.yml").read_text(encoding="utf-8")
     assert "site/play.html" in deploy_yml
     assert "site/pkg/kagra_shared_bg.wasm" in deploy_yml
