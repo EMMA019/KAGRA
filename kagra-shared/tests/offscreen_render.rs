@@ -573,3 +573,36 @@ fn emissive_prop_is_brighter_than_the_same_prop() {
         "emissive should lift the frame {dark_l} -> {glow_l}"
     );
 }
+
+/// A prefiltered studio strip must move a shiny metal sphere off the SH.
+#[test]
+fn studio_env_changes_a_metal_sphere() {
+    let _guard = GPU.lock().unwrap_or_else(|e| e.into_inner());
+    let Ok(mut renderer) = pollster::block_on(Renderer::new_offscreen(W, H)) else {
+        eprintln!("no GPU adapter; skipping env test");
+        return;
+    };
+    let doc = |env: &str| {
+        kagra_shared::world_doc::WorldDoc::from_json(&format!(
+            r#"{{"version":1,"sky":[12,14,18,255],"ibl":1.0,"exposure":1.0,"tonemap":true,"bloom":0.0,"vignette":0.0,"lut":"off","fxaa":false,"ground":false,"hemi_sky":[0.25,0.45,0.95],"hemi_ground":[0.72,0.28,0.10]{env},"cameras":[{{"id":"c","type":"camera","position":[0.0,0.35,2.6],"target":[0.0,0.15,0.0],"fov":46.0}}],"props":[{{"id":"ball","type":"prop","model":"sphere","name":"coin","position":[0.0,0.15,0.0],"scale":[1.15,1.15,1.15],"color":[210,214,224],"metallic":1.0,"roughness":0.06}}]}}"#
+        ))
+        .unwrap_or_else(|e| panic!("env doc: {e}"))
+    };
+    let sh = renderer.render_world_doc(&doc("")).expect("sh frame");
+    let ibl = renderer
+        .render_world_doc(&doc(r#","env_map":"preset:studio""#))
+        .expect("env frame");
+    let mut total = 0u64;
+    let n = (sh.len().min(ibl.len()) / 4) as u64;
+    for i in 0..n as usize {
+        let o = i * 4;
+        total += (sh[o] as i32 - ibl[o] as i32).unsigned_abs() as u64;
+        total += (sh[o + 1] as i32 - ibl[o + 1] as i32).unsigned_abs() as u64;
+        total += (sh[o + 2] as i32 - ibl[o + 2] as i32).unsigned_abs() as u64;
+    }
+    let mean = total as f32 / (n as f32 * 3.0);
+    assert!(
+        mean > 0.35,
+        "studio env should move the metal sphere, mean_abs={mean}"
+    );
+}

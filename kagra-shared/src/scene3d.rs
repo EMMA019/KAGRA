@@ -489,6 +489,12 @@ pub struct Scene3D {
     pub tonemap: bool,
     /// Directional shadow radius. 1 = the historical 3×3 PCF. Larger = a wider tent.
     pub shadow_softness: f32,
+    /// Hemisphere sky color. Default is the studio blue that the SH used to hardcode.
+    pub hemi_sky: [f32; 3],
+    /// Hemisphere ground color. Default is the studio warm ground.
+    pub hemi_ground: [f32; 3],
+    /// 64×64 linear RGBA prefiltered lat-long (4 roughness rows). None = SH specular.
+    pub env_pixels: Option<Vec<u8>>,
     pub batches: Vec<Batch>,
 }
 
@@ -507,6 +513,9 @@ impl Default for Scene3D {
             exposure: 1.0,
             tonemap: true,
             shadow_softness: 1.0,
+            hemi_sky: [0.48, 0.56, 0.78],
+            hemi_ground: [0.42, 0.30, 0.18],
+            env_pixels: None,
             batches: Vec::new(),
         }
     }

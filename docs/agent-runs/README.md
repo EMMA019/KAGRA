@@ -101,3 +101,4 @@
 - `20261022-playtest-overlay/` — プレイ中の「直してここ」。F12 / 3 本指長押しで dump と約 10 秒の入力を playtest issue に渡す。`scripts/repro_issue.py` がヘッドレスで再生する。
 - `20261022-mobile-web-quality/` — 電話ブラウザ向けの絵。ポスト（ブルーム / ACES / ビネット / LUT）、`Juice`、CPU パーティクル。Box Hop に載せた。Android は保留。
 - `20261022-emissive-pbr-shadows/` — エミッシブ（ブルーム源）、ラフネス/メタルマップ、広い PCF。Box Hop の井戸が光り、箱は split。画像 IBL は次。
+- `20261022-image-ibl-hemisphere/` — 半球光（`hemi_sky` / `hemi_ground`）と 64×64 の事前フィルタ環境（`preset:studio` か PNG）。省略時は従来の SH。Box Hop に載せた。

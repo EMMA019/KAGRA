@@ -79,6 +79,24 @@
       "type": ["number", "null"],
       "description": "Directional shadow radius. Omit = 1, the historical 3x3 PCF. About 2.5 to 4 uses a wider 5x5 tent."
     },
+    "hemi_sky": {
+      "type": ["array", "null"],
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "type": "number" },
+      "description": "Hemisphere sky, linear. Omit = studio blue (0.48, 0.56, 0.78), the SH the shader used to hardcode."
+    },
+    "hemi_ground": {
+      "type": ["array", "null"],
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "type": "number" },
+      "description": "Hemisphere ground, linear. Omit = studio warm (0.42, 0.30, 0.18)."
+    },
+    "env_map": {
+      "type": ["string", "null"],
+      "description": "Prefiltered specular. preset:studio bakes a lat-long from the hemisphere. A PNG path is an equirect, blurred into 4 roughness rows (64x64 texture_2d). Omit = SH specular, so an old dump does not change."
+    },
     "sky": {
       "type": ["array", "null"],
       "minItems": 4,
