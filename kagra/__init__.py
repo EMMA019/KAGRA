@@ -40,6 +40,7 @@ from kagra.gameloop import (
 from kagra.i18n import add_table, get_lang, set_lang, t
 from kagra.juice import Juice, apply_look, apply_post, ease
 from kagra.particles import Emitter, Trail
+from kagra.strokes import fat_line, point_cloud
 from kagra.land import island_height, open_world_height, overworld_height
 from kagra.path import find_path, move_range
 from kagra.flow import save_dir
@@ -151,6 +152,8 @@ __all__ = [
     "Juice",
     "NeonRun",
     "Trail",
+    "fat_line",
+    "point_cloud",
     "KagraContractError",
     "CardSession",
     "KairiBrain",

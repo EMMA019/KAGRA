@@ -23,7 +23,7 @@ The shared picture path is `WorldDoc` → `compile_scene` → `Renderer` (`kagra
 | Hitstop | have, as of this wave. `Juice.hitstop` returns a shorter dt for the sim. Feel clocks keep running. | Time.timeScale punch, usually game code | P0 | done (S) |
 | Squash / stretch | have, as of this wave. `Juice.squash` / `stretch` write `WorldWalker.scale`. The sim ignores it. | A tween on `transform.localScale` | P0 | done (S) |
 | Tween / easing | have. `Juice.tween` plus `ease()` (`out_cubic`, `out_back`, `out_bounce`, `out_elastic`, …). `kagra.motion` still has the older smooth/linear helper. | DOTween / AnimationCurve | P0 | done (S) |
-| Particles | partial, as of this wave. `kagra.Emitter` is a CPU list drawn as sphere props (cap 48). No GPU particles, no trails. | Particle System / VFX Graph | P0 for sparks, P2 for trails | S done; M for a ribbon trail |
+| Particles | partial. `kagra.Emitter` is still a CPU list of sphere props (cap 48). Dump `points` is a GPU camera-facing sprite cloud (cap 2048). | Particle System / VFX Graph | P0 for sparks | S for the sprite cloud |
 | Trails | have, as of this wave. `kagra.Trail` is a ribbon of quads along recent positions. CPU, capped, draw-only. | Trail Renderer | P2 | done (S) |
 | Sprite / skeletal animation | partial. CPU-skinned glTF/VRM, clip time, morph weight, locomotion blend, overlay bones. Sprites are quads. No sprite-sheet player on the 3D path. | Animator + SpriteRenderer | P1 | M |
 | Art-direction presets | have, as of this wave. `apply_post` is still grade-only. `apply_look(world, "pastel"\|"night")` sets sky, lights, exposure, hemisphere, and the LUT together. | Volume profile / URP renderer asset | P1 | done (S) |
@@ -66,8 +66,8 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 | AnimationMixer | partial | P2 | M | `mixer.rs` plus walker `anim` / `clip` / `anim_blend`. No three.js-style action crossfade graph for arbitrary clips. |
 | glTF loader | have | — | — | glTF / GLB / VRM through `gltf_load`. Factors, emissiveStrength, alpha mode, double sided, vertex color, texture transform, samplers. Skin and MToon extras stay. |
 | Sprites | have | — | — | `sprite` / `quad` props, billboards for far vegetation. |
-| Points | missing | P3 | M | Sparks are spheres, not `THREE.Points`. |
-| Lines | missing | P3 | S | No line primitive. |
+| Points | partial | P3 | S | Dump `points` is a camera-facing quad cloud (cap 2048). CPU sparks stay spheres. |
+| Lines | partial | P3 | S | Dump `lines` is a pixel-width fat line (cap 2048 segments). CPU `Trail` quads remain. |
 | Raycasting | partial | P2 | M | Genre interact uses reach, not a general raycaster. `kagra.annotate` records a preview click. |
 | Cameras | partial | P1 | S | Dump camera (eye, target, fov). Chase cameras live in genre code. No OrbitControls. |
 | Text | have | — | — | HUD `TextQuad` (PixelMplus, ab_glyph). Not a world-space `TextGeometry`. |
@@ -76,6 +76,15 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 | WebGPU backend | partial | P3 | L | wgpu can target WebGPU on desktop. The wasm build keeps WebGL2 limits (no storage buffers, no base instance). A WebGPU-only path is parked. |
 
 ## This wave
+
+Shipped on the wasm-safe path. A dump can carry GPU point sprites and fat lines. Omitted `points` and `lines` draw nothing, so an old dump is unchanged. `Emitter` and `Trail` stay CPU props.
+
+- `points`: each position is a camera-facing quad. `size` is the radius in meters (omit = 0.06). WebGPU point-list is one pixel, so it is not used.
+- `lines`: each polyline is one instanced quad per segment, expanded in clip space. `width` is pixels (omit = 3). The idea is three.js Line2; the WGSL is original.
+- One draw for every cloud, one draw for every stroke. No storage buffers, no base instance. Caps are 2048 points and 2048 segments. They write the emissive mask so the 8-bit bloom can see them, and they depth-test without writing depth.
+- Neon Run samples a short ribbon behind the ship (`lines` id `ribbon`, `points` id `ribbon-dots`). The stacked quads named `trail` stay gone.
+
+## Previous wave
 
 Shipped on the wasm-safe path. An 8-bit swapchain (phone WebGPU, `rgba8unorm`) always draws 3D into a separate `Rgba8Unorm` frame and runs the post graph. FXAA is the minimum. The frame is never `Rgba16Float` on that path.
 

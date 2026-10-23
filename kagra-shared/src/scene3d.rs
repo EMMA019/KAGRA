@@ -697,6 +697,10 @@ pub struct Scene3D {
     pub hemi_ground: [f32; 3],
     /// 64×64 linear RGBA prefiltered lat-long (4 roughness rows). None = SH specular.
     pub env_pixels: Option<Vec<u8>>,
+    /// Camera-facing point sprites. The renderer draws them after the meshes.
+    pub points: Vec<crate::strokes::PointCloud>,
+    /// Screen-space fat lines. The renderer draws them after the meshes.
+    pub lines: Vec<crate::strokes::FatLine>,
     pub batches: Vec<Batch>,
 }
 
@@ -720,6 +724,8 @@ impl Default for Scene3D {
             hemi_sky: [0.48, 0.56, 0.78],
             hemi_ground: [0.42, 0.30, 0.18],
             env_pixels: None,
+            points: Vec::new(),
+            lines: Vec::new(),
             batches: Vec::new(),
         }
     }
