@@ -35,7 +35,7 @@ kagra = "kagra.cli:main"
 facetrack = ["mediapipe", "opencv-python"]
 stream = ["pyvirtualcam"]
 mic = ["sounddevice"]
-dev = ["pytest>=7.0", "hypothesis==6.170.8"]
+dev = ["pytest>=7.0", "hypothesis==6.168.5"]
 mcp = ["mcp>=1.1"]
 agent = ["mcp>=1.1", "pytest>=7.0"]
 # Desktop and CI asset checks. Not imported by the wheel.

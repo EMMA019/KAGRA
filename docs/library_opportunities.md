@@ -114,7 +114,7 @@ Effort **S** for the model and one test that a bad key fails. Do not add pydanti
 
 Property tests in `tests/test_hypothesis_sim.py` cover the pure sim. `screen_right` is a unit vector and `screen_left` is its negation. A camera that looks toward -Z has `screen_right.x > 0`. A camera that looks toward +Z has `screen_right.x < 0`. `wish_world(+lx)` moves toward screen-right, and `wish_world(+lz)` moves into the frame. `jump_vy` returns the jump, the water scale (0.42), or nothing. `CharacterController.apply` sets `landed` on the frame ground returns and not on the next grounded frame. `EventBus.once` runs on the first emit only.
 
-The modules load through `tests/conftest.py::load_kagra_submodule`, so the test does not import the Rust extension. Hypothesis is pinned in the `dev` extra and installed by the `python-unit` job. `importorskip` still skips the file where the package is absent. A `from_json` round-trip stays on the Rust parser.
+The modules load through `tests/conftest.py::load_kagra_submodule`, so the test does not import the Rust extension. Hypothesis 6.168.5 is pinned in the `dev` extra and installed by the `python-unit` job. That is the newest release that still installs on Python 3.10. `importorskip` still skips the file where the package is absent. A `from_json` round-trip stays on the Rust parser.
 
 Desktop and CI only. Hypothesis is not in the wheel.
 
