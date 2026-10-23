@@ -225,6 +225,9 @@ pub struct NeonRun {
     just_orbs: u32,
     just_crash: bool,
     just_near: bool,
+    /// Crash holds the result until this clock ends. Shake keeps moving.
+    pending_finish: bool,
+    feel: crate::juice::Juice,
     trail: VecDeque<[f32; 3]>,
     sparks: Vec<Spark>,
     doc: WorldDoc,
@@ -288,6 +291,8 @@ impl NeonRun {
             just_orbs: 0,
             just_crash: false,
             just_near: false,
+            pending_finish: false,
+            feel: crate::juice::Juice::default(),
             trail: VecDeque::new(),
             sparks: Vec::new(),
             doc: WorldDoc::default(),
@@ -387,11 +392,12 @@ impl NeonRun {
 
     fn chase_eye(&self) -> [f32; 3] {
         let shake = (self.time * 47.0).sin() * self.shake;
+        let [ox, oy, oz] = self.feel.camera_offset();
         let back = CAM_BACK + self.boost_vis * 2.6;
         [
-            self.cam_x + shake,
-            self.cam_y + CAM_LIFT + shake * 0.35,
-            self.z - back,
+            self.cam_x + shake + ox,
+            self.cam_y + CAM_LIFT + shake * 0.35 + oy,
+            self.z - back + oz,
         ]
     }
 
@@ -523,6 +529,8 @@ impl NeonRun {
         self.time = 0.0;
         self.sparks.clear();
         self.trail.clear();
+        self.pending_finish = false;
+        self.feel = crate::juice::Juice::default();
         self.flow.enter_play();
         self.rebuild();
     }
@@ -548,6 +556,20 @@ impl NeonRun {
         self.just_orbs = 0;
         self.just_crash = false;
         self.just_near = false;
+        let sim_dt = self.feel.tick(dt);
+        if self.pending_finish {
+            if dt > 0.0 {
+                self.tick_sparks(dt);
+                self.decay_shake(dt);
+                self.tick_boost_vis(dt);
+            }
+            if sim_dt > 0.0 {
+                self.pending_finish = false;
+                self.flow.finish(self.score, self.orbs, "CRASH");
+            }
+            self.rebuild();
+            return;
+        }
         if dt <= 0.0 {
             self.rebuild();
             return;
@@ -676,10 +698,12 @@ impl NeonRun {
         self.alive = false;
         self.just_crash = true;
         self.shake = 0.42;
+        self.pending_finish = true;
+        self.feel.hitstop(0.12);
+        self.feel.shake(0.42, 0.36, 47.0);
         self.burst(self.x, self.y, self.z, 22, [255, 64, 140], 4.8, 0.18);
         self.burst(self.x, self.y, self.z, 12, [120, 240, 255], 3.6, 0.16);
         crate::mixer::cue_sfx("fire");
-        self.flow.finish(self.score, self.orbs, "CRASH");
     }
 
     fn push_trail(&mut self) {
@@ -1671,6 +1695,43 @@ mod tests {
             run.tick(1.0 / 60.0);
         }
         assert!(!run.alive, "walls still end a run after the grace");
+        assert_eq!(run.phase_name(), "result");
+    }
+
+    #[test]
+    fn crash_holds_play_until_the_hitstop_ends() {
+        let mut run = NeonRun::from_json(r#"{"version":1,"genre":"neon_run"}"#).unwrap();
+        run.confirm();
+        let mut held_z: Option<f64> = None;
+        let mut prev_eye: Option<[f32; 3]> = None;
+        let mut saw_hold = false;
+        let mut eye_moved = false;
+        for _ in 0..500 {
+            run.set_steer(1.0, 0.0, false);
+            run.tick(1.0 / 60.0);
+            if !run.alive && run.phase_name() == "play" {
+                let state: serde_json::Value = serde_json::from_str(&run.state_json()).unwrap();
+                let z = state["z"].as_f64().unwrap();
+                if let Some(prev) = held_z {
+                    assert!((z - prev).abs() < 1e-3, "hitstop moved z {prev} -> {z}");
+                }
+                held_z = Some(z);
+                let eye = run.document().cameras[0].position;
+                if let Some(prev) = prev_eye {
+                    let d = (eye[0] - prev[0]).abs() + (eye[1] - prev[1]).abs();
+                    if d > 1e-4 {
+                        eye_moved = true;
+                    }
+                }
+                prev_eye = Some(eye);
+                saw_hold = true;
+            }
+            if run.phase_name() == "result" {
+                break;
+            }
+        }
+        assert!(saw_hold, "crash should hold play for the hit-stop");
+        assert!(eye_moved, "crash shake should move the chase camera");
         assert_eq!(run.phase_name(), "result");
     }
 
