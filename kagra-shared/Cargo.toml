@@ -84,6 +84,7 @@ rodio = { version = "0.20", optional = true, default-features = false, features 
 
 # 剛体物理（Phase 1）。wasm32 は simd 無し（parry3d simd は target 非依存にしない）。
 rapier3d = { version = "0.35", optional = true, default-features = false, features = ["dim3", "f32", "std"] }
+ktx2 = { version = "0.5", default-features = false }
 # CPU scopes. Default features stay off the HTTP viewer. Wasm still links the
 # crate; puffin_http is not a dependency.
 puffin = "0.19"

@@ -12,7 +12,7 @@ Wasm and Android mean the shared runtime (`kagra-shared`, `wasm32` CI, Android A
 |---|---|---|---|---|
 | 1 | [puffin](#puffin) | Frame scopes for the profiler step. Headless dumps still need the budget object. | S | wasm and Android if `puffin_http` stays off |
 | 2 | [zune-jpeg + image-webp](#zune-jpeg-and-image-webp) | JPEG and WebP inside a GLB. Both decode through `image` (`jpeg` and `webp`). | S | wasm and Android (pure Rust, no rayon) |
-| 3 | [ktx2](#ktx2-and-basis-universal) read-only | Phone texture memory. Pre-encoded ETC2 / ASTC / BC, feature-detected. | M loader, L pipeline | wasm and Android. No basis-universal encoder in the engine |
+| 3 | [ktx2](#ktx2-and-basis-universal) read-only | Phone texture memory. The loader is in. The bake pipeline that writes the files is not. | L pipeline | wasm and Android. No basis-universal encoder in the engine |
 | 4 | [trimesh + pygltflib](#trimesh-and-pygltflib) | Agents can reject a bad GLB before a lavapipe shot. | S | desktop and CI only |
 | 5 | [pydantic + hypothesis](#pydantic) | World JSON stops silently ignoring bad fields. Sim tests get property checks. | S validator, M hypothesis | desktop and CI only |
 
@@ -29,6 +29,7 @@ Direct dependencies of `kagra-shared` (`kagra-shared/Cargo.toml`, locked in `Car
 | `bytemuck` 1 | runtime | Pod vertex and uniform types. |
 | `png` 0.17.16 | runtime | PNG decode and the screenshot encoder. |
 | `image` 0.25 | runtime | JPEG (`zune-jpeg`) and WebP (`image-webp`). Default features off, so rayon stays out. |
+| `ktx2` 0.5.0 | runtime | Read-only KTX2 container. Pre-encoded ETC2 / ASTC / BC color blocks. No Basis transcoder. |
 | `serde` / `serde_json` 1 | runtime | World dumps and playtest JSON. |
 | `flate2` 1.1.9 | runtime | Playtest zlib. `rust_backend` only, so libz stays out. |
 | `once_cell` 1.19 | runtime | Embedded font cache. |
@@ -90,11 +91,11 @@ Effort **S**. The WebP path is a magic-byte branch plus a 1×1 lossless fixture 
 
 ### ktx2 and basis-universal
 
-Phone bandwidth. A read-only `ktx2` loader uploads pre-encoded **ETC2**, **ASTC**, or **BC** when `adapter.features()` contains the matching `TEXTURE_COMPRESSION_*` bit. Chrome on lavapipe advertises those three; a Pixel must be feature-detected, and a device without the format keeps the RGBA8 PNG path. Uncompressed fallback stays the default. `KAGRA_QUALITY=0` does not need a second code path if the dump simply omits compressed textures.
+The read-only loader is `kagra-shared/src/ktx_image.rs` (`ktx2` 0.5, default features off). It uploads pre-encoded **ETC2**, **ASTC**, or **BC** color blocks when `adapter.features()` contains the matching `TEXTURE_COMPRESSION_*` bit. Chrome on lavapipe advertises those three; a Pixel must be feature-detected, and a device without the format keeps the RGBA path. A non-identity `baseColorFactor` also stays on that path. `KAGRA_QUALITY=0` does not need a second code path if the dump simply omits compressed textures.
 
 **basis-universal does not belong in the engine.** The encoder is a C++/transcode stack, it bloats the wasm build, and CI would have to keep it off `wasm32` and Android anyway. Artists or a desktop tool can encode ahead of time. The runtime only parses KTX2.
 
-Effort **M** for the loader once a fixture exists, **L** for the bake pipeline that produces the files. The `ktx2` crate is pure Rust and is fine on wasm and Android. Do not enable a transcoder feature.
+The loader is in. The bake pipeline that writes the files is still effort **L** and is not in this tree. Do not enable a transcoder feature.
 
 ### trimesh and pygltflib
 

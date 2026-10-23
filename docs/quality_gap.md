@@ -77,6 +77,15 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 
 ## This wave
 
+Shipped on the wasm-safe path. A glTF base color may be a pre-encoded KTX2. PNG, JPEG, and WebP stay the RGBA path. Omitted images keep the previous picture.
+
+- `ktx2` 0.5 parses the container. Level 0 of a 2D ETC2, ASTC, or BC color block is stored on the mesh. Basis Universal (`VK_FORMAT_UNDEFINED`), supercompression, arrays, cubemaps, 3D images, BC4/BC5/BC6, and ASTC HDR are rejected. There is no transcoder.
+- The device requests `TEXTURE_COMPRESSION_BC`, `TEXTURE_COMPRESSION_ETC2`, and `TEXTURE_COMPRESSION_ASTC` only when `adapter.features()` already contains that bit. A missing bit, or a non-identity `baseColorFactor`, keeps the RGBA albedo (a 1×1 factor bake when the block cannot be multiplied in place).
+- The copy row pitch is padded to 256 bytes. Mips above 0 are not uploaded. Normal, ORM, and emissive images stay RGBA.
+- Timestamp queries stay off on wasm. On other targets they are requested only when the adapter already lists both timestamp features, together with any compression bits above.
+
+## Previous wave
+
 Shipped on the wasm-safe path. The picture does not change. A headless dump can carry a `profile` object; `to_json` still omits it.
 
 - Draws, triangles, and texture bytes (shadow map, env strip, authored images) come from `compile_scene`. No editor.

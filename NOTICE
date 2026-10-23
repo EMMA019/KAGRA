@@ -24,6 +24,14 @@ image-webp (pulled by image's webp feature)
   MIT OR Apache-2.0
   Lossless and lossy WebP decode for glTF images. No encoder in the runtime.
 
+ktx2 0.5
+  https://github.com/BVE-Reborn/ktx2
+  Apache-2.0
+  Reads a KTX2 container. The runtime uploads pre-encoded ETC2, ASTC, and
+  BC color blocks when the adapter lists the matching compression feature.
+  Basis Universal and supercompression are rejected. There is no encoder
+  and no transcoder.
+
 The Narkowicz ACES fit in bloom.wgsl and shader3d.wgsl is the public
 approximation published by Krzysztof Narkowicz (2016), used widely
 including by three.js (MIT). No three.js source is copied in this tree.

@@ -181,6 +181,9 @@ pub struct MeshData {
     pub vertices: Vec<Vertex3>,
     pub indices: Vec<u32>,
     pub albedo: Option<AlbedoRgba>,
+    /// Pre-encoded KTX2 base color. Used when the device has the matching
+    /// compression feature. An RGBA `albedo` is the fallback.
+    pub albedo_ktx: Option<crate::ktx_image::KtxImage>,
     /// MToon matcap (SphereAdd). Present for hair with a matcap texture.
     pub matcap: Option<AlbedoRgba>,
     /// MToon / glTF normal map (RGBA, blue channel is the bump).

@@ -800,6 +800,10 @@ fn static_mesh_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<MeshData, S
     }
     if parts.len() == 1 {
         let (pm, col) = parts.pop().unwrap();
+        // A compressed base color cannot be rebaked into a 1×1 tint strip.
+        if pm.albedo_ktx.is_some() {
+            return Ok(pm);
+        }
         // A factor-only material has ORM and a tint, and no baseColor texture.
         // Keep the tint. An ORM texture with its own albedo is left alone.
         if pm.albedo.is_none() && col != [230, 230, 235, 255] {
@@ -1165,6 +1169,7 @@ fn static_mesh_from_prim(
         vertices,
         indices,
         albedo: load_base_color(doc, blobs, prim),
+        albedo_ktx: load_base_color_ktx(doc, blobs, prim),
         matcap: matcap_tex_index(doc, prim).and_then(|ti| texture_by_index(doc, blobs, ti)),
         normal,
         mtoon,
@@ -2418,6 +2423,31 @@ fn scale_unorm(byte: u8, factor: f32) -> u8 {
     (((byte as f32 / 255.0) * factor).clamp(0.0, 1.0) * 255.0 + 0.5) as u8
 }
 
+/// Identity `baseColorFactor` plus a KTX2 image. A non-identity factor
+/// stays on the RGBA path, because block data cannot be multiplied in place.
+fn load_base_color_ktx(
+    doc: &GltfFile,
+    blobs: &[Vec<u8>],
+    prim: &Primitive,
+) -> Option<crate::ktx_image::KtxImage> {
+    let factor = base_color_factor(doc, prim);
+    let identity = (factor[0] - 1.0).abs() < 1e-4
+        && (factor[1] - 1.0).abs() < 1e-4
+        && (factor[2] - 1.0).abs() < 1e-4
+        && (factor[3] - 1.0).abs() < 1e-4;
+    if !identity {
+        return None;
+    }
+    let tex = base_color_tex_index(doc, prim)?;
+    let src = doc.textures.get(tex)?.source?;
+    let img = doc.images.get(src)?;
+    let bytes = image_bytes(doc, blobs, img).ok()?;
+    if !crate::ktx_image::is_ktx2(&bytes) {
+        return None;
+    }
+    crate::ktx_image::parse_ktx2(&bytes).ok()
+}
+
 fn load_base_color(doc: &GltfFile, blobs: &[Vec<u8>], prim: &Primitive) -> Option<AlbedoRgba> {
     let factor = base_color_factor(doc, prim);
     let baked = base_color_tex_index(doc, prim).and_then(|tex| {
@@ -3221,6 +3251,49 @@ mod tests {
             "webp texel {:?}",
             &img.rgba[..4]
         );
+    }
+
+    fn ktx2_data_uri() -> String {
+        let bytes = crate::ktx_image::write_uncompressed_ktx2(
+            ktx2::Format::BC1_RGBA_SRGB_BLOCK,
+            4,
+            4,
+            &[0x00, 0xF8, 0x00, 0x00, 0, 0, 0, 0],
+        )
+        .expect("bc1");
+        base64_encode(&bytes)
+    }
+
+    fn cube_with_base_color(factor: &str, b64: &str) -> String {
+        let cube = unit_cube_gltf();
+        let with = cube.replacen("\"mode\": 4", "\"mode\": 4, \"material\": 0", 1);
+        let trimmed = with.trim_end().trim_end_matches('}');
+        format!(
+            "{trimmed}, \"materials\": [{{\"pbrMetallicRoughness\": {{\"baseColorFactor\": {factor}, \"baseColorTexture\": {{\"index\": 0}}}}}}], \"textures\": [{{\"source\": 0}}], \"images\": [{{\"mimeType\": \"image/ktx2\", \"uri\": \"data:image/ktx2;base64,{b64}\"}}]}}"
+        )
+    }
+
+    /// Identity factor keeps the block bytes. They are not decoded to RGBA.
+    #[test]
+    fn ktx2_base_color_stays_compressed() {
+        let json = cube_with_base_color("[1, 1, 1, 1]", &ktx2_data_uri());
+        let mesh = mesh_from_gltf_json(&json, |_| Err("external".into())).expect("ktx2 mesh");
+        assert!(mesh.albedo.is_none(), "ktx2 is not an RGBA albedo");
+        let ktx = mesh.albedo_ktx.expect("compressed base color");
+        assert_eq!(ktx.vk_format, ktx2::Format::BC1_RGBA_SRGB_BLOCK.value());
+        assert_eq!((ktx.width, ktx.height), (4, 4));
+        assert_eq!(ktx.level0.len(), 8);
+    }
+
+    /// A tint cannot multiply block bytes, so the 1×1 factor path stays.
+    #[test]
+    fn ktx2_non_identity_factor_stays_rgba() {
+        let json = cube_with_base_color("[1, 0, 0, 1]", &ktx2_data_uri());
+        let mesh = mesh_from_gltf_json(&json, |_| Err("external".into())).expect("tinted");
+        assert!(mesh.albedo_ktx.is_none());
+        let img = mesh.albedo.expect("1x1 factor");
+        assert_eq!((img.width, img.height), (1, 1));
+        assert_eq!(&img.rgba[..4], &[255, 0, 0, 255]);
     }
 
     #[test]
