@@ -89,7 +89,9 @@
     import init, { WasmSession } from "./pkg/kagra_shared.js";
 
     const boot = document.getElementById("boot");
-    const canvas = document.getElementById("c");
+    let canvas = document.getElementById("c");
+    const params = new URLSearchParams(location.search);
+    const requestedBackend = (params.get("backend") || "auto").toLowerCase();
     const boostEl = document.getElementById("boost");
     const BEST_KEY = "lumen-best";
     const held = new Set();
@@ -103,8 +105,31 @@
 
     const fail = (msg) => {
       boot.className = "err";
-      boot.innerHTML = `<div><h1>LUMEN</h1><p>${msg}</p></div>`;
+      boot.style.display = "grid";
+      boot.replaceChildren();
+      const wrap = document.createElement("div");
+      const h = document.createElement("h1");
+      h.textContent = "LUMEN";
+      const p = document.createElement("p");
+      p.textContent = String(msg);
+      wrap.append(h, p);
+      boot.append(wrap);
     };
+
+    // wgpu 30 reads adapter.limits even when requestAdapter() resolves to null,
+    // which throws and leaves the canvas black. Hide a broken WebGPU so the
+    // WebGL2 backend can start, then drop HDR inside the renderer if needed.
+    try {
+      if (navigator.gpu && navigator.gpu.requestAdapter) {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+          Object.defineProperty(Navigator.prototype, "gpu", {
+            configurable: true,
+            get() { return undefined; },
+          });
+        }
+      }
+    } catch (_) {}
 
     try {
       await init();
@@ -140,18 +165,97 @@
         session.createSurface(w, h);
       }
     };
-    sizeCanvas();
+
+    // WebGPU canvas that presents black (or a solid white clear) cannot be
+    // retargeted to WebGL2. Swap the element, then attach again.
+    const canvasIsBlank = (el) => {
+      const w = 48, h = 48;
+      const probe = document.createElement("canvas");
+      probe.width = w;
+      probe.height = h;
+      const ctx = probe.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return false;
+      try {
+        ctx.drawImage(el, 0, 0, w, h);
+      } catch (e) {
+        console.warn("kagra: frame readback failed", e);
+        return false;
+      }
+      const data = ctx.getImageData(0, 0, w, h).data;
+      let max = 0, min = 255;
+      for (let i = 0; i < data.length; i += 16) {
+        max = Math.max(max, data[i], data[i + 1], data[i + 2]);
+        min = Math.min(min, data[i], data[i + 1], data[i + 2]);
+      }
+      console.warn(`kagra: frame sample max=${max} min=${min} backend=${activeBackend}`);
+      return max < 12 || min > 248;
+    };
+
+    let activeBackend = requestedBackend === "webgl" || requestedBackend === "webgl2"
+      ? "gl"
+      : requestedBackend;
+    let inputBound = null;
+    const bindCanvas = (el) => {
+      if (inputBound === el) return;
+      inputBound = el;
+      el.addEventListener("pointerdown", (e) => {
+        if (e.target !== el) return;
+        ensureAudio();
+        el.setPointerCapture?.(e.pointerId);
+        const [x, y] = canvasPos(e);
+        pointers.set(e.pointerId, { x, y });
+        session.pushPointer(e.pointerId, x, y, 0, e.pressure || 0.5);
+      });
+      el.addEventListener("pointermove", (e) => {
+        if (!pointers.has(e.pointerId)) return;
+        const [x, y] = canvasPos(e);
+        pointers.set(e.pointerId, { x, y });
+        session.pushPointer(e.pointerId, x, y, 1, e.pressure || 0.5);
+      });
+      const endPointer = (e, phase) => {
+        if (!pointers.has(e.pointerId)) return;
+        const [x, y] = canvasPos(e);
+        pointers.delete(e.pointerId);
+        session.pushPointer(e.pointerId, x, y, phase, 0);
+      };
+      el.addEventListener("pointerup", (e) => endPointer(e, 2));
+      el.addEventListener("pointercancel", (e) => endPointer(e, 3));
+    };
+
+    const attachBackend = async (backend) => {
+      activeBackend = backend;
+      session.setGraphicsBackend(backend);
+      sizeCanvas();
+      await session.attachCanvas(canvas);
+      // createSurface before attach only stores the size. Apply it again in
+      // case layout moved while the adapter request was in flight.
+      sizeCanvas();
+    };
     if (window.kagraPlaytest) window.kagraPlaytest.attach(session, canvas);
 
     if (!session.renderSupported()) {
       fail("this wasm was built without the render feature");
       throw new Error("no render");
     }
+    const startBackend = activeBackend === "gl" || activeBackend === "webgpu" ? activeBackend : "auto";
     try {
-      await session.attachCanvas(canvas);
+      await attachBackend(startBackend);
     } catch (e) {
-      fail(`renderer unavailable:\n${e}`);
-      throw e;
+      if (startBackend === "gl") {
+        fail(`renderer unavailable:\n${e}`);
+        throw e;
+      }
+      console.warn("kagra: WebGPU attach failed, trying WebGL2", e);
+      const next = document.createElement("canvas");
+      next.id = "c";
+      canvas.replaceWith(next);
+      canvas = next;
+      try {
+        await attachBackend("gl");
+      } catch (e2) {
+        fail(`renderer unavailable:\n${e2}`);
+        throw e2;
+      }
     }
 
     let best = 0;
@@ -253,28 +357,7 @@
       return [clamp((sx / n) * 2.15), clamp((sy / n) * 2.15)];
     };
 
-    canvas.addEventListener("pointerdown", (e) => {
-      if (e.target !== canvas) return;
-      ensureAudio();
-      canvas.setPointerCapture?.(e.pointerId);
-      const [x, y] = canvasPos(e);
-      pointers.set(e.pointerId, { x, y });
-      session.pushPointer(e.pointerId, x, y, 0, e.pressure || 0.5);
-    });
-    canvas.addEventListener("pointermove", (e) => {
-      if (!pointers.has(e.pointerId)) return;
-      const [x, y] = canvasPos(e);
-      pointers.set(e.pointerId, { x, y });
-      session.pushPointer(e.pointerId, x, y, 1, e.pressure || 0.5);
-    });
-    const endPointer = (e, phase) => {
-      if (!pointers.has(e.pointerId)) return;
-      const [x, y] = canvasPos(e);
-      pointers.delete(e.pointerId);
-      session.pushPointer(e.pointerId, x, y, phase, 0);
-    };
-    canvas.addEventListener("pointerup", (e) => endPointer(e, 2));
-    canvas.addEventListener("pointercancel", (e) => endPointer(e, 3));
+    bindCanvas(canvas);
 
     const boostDown = (e) => {
       e.preventDefault();
@@ -309,7 +392,10 @@
     const keyBoost = () => held.has("Shift") || held.has(" ") || held.has("k") || held.has("K");
 
     let savedBest = best;
+    let presented = 0;
+    let recovering = false;
     const loop = () => {
+      if (recovering) return;
       sizeCanvas();
       const [lx, ly] = steerFromPointers();
       let padX = 0, padY = 0, padBoost = false;
@@ -326,7 +412,27 @@
       session.requestFrame();
       try { session.render(); }
       catch (e) {
-        fail(`render failed: ${e}`);
+        const detail = e && e.stack ? e.stack : e;
+        fail(`render failed:\n${detail}`);
+        return;
+      }
+      presented += 1;
+      // The HTML title hides as soon as attach succeeds. A WebGPU canvas can
+      // still present solid black. One readback, then a fresh WebGL2 canvas.
+      if (presented === 8 && activeBackend !== "gl" && requestedBackend !== "webgpu" && canvasIsBlank(canvas)) {
+        recovering = true;
+        console.warn("kagra: blank WebGPU frame, falling back to WebGL2");
+        const next = document.createElement("canvas");
+        next.id = "c";
+        canvas.replaceWith(next);
+        canvas = next;
+        attachBackend("gl").then(() => {
+          bindCanvas(canvas);
+          recovering = false;
+          requestAnimationFrame(loop);
+        }).catch((e) => {
+          fail(`WebGL2 fallback failed:\n${e}`);
+        });
         return;
       }
       pumpAudio();

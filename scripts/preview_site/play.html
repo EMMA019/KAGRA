@@ -158,8 +158,10 @@
     const overlay = document.getElementById("overlay");
     const pads = document.getElementById("pads");
     const hud = document.getElementById("hud");
-    const canvas = document.getElementById("c");
+    let canvas = document.getElementById("c");
     const params = new URLSearchParams(location.search);
+    const requestedBackend = (params.get("backend") || "auto").toLowerCase();
+    let activeBackend = requestedBackend === "webgl" || requestedBackend === "webgl2" ? "gl" : requestedBackend;
     const slug = (params.get("game") || "neon_run").trim() || "neon_run";
 
     const fail = (text) => {
@@ -181,6 +183,17 @@
 
     let session;
     let bundle;
+    try {
+      if (navigator.gpu && navigator.gpu.requestAdapter) {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+          Object.defineProperty(Navigator.prototype, "gpu", {
+            configurable: true,
+            get() { return undefined; },
+          });
+        }
+      }
+    } catch (_) {}
     try {
       await init();
       session = new WasmSession();
@@ -235,13 +248,52 @@
     window.visualViewport?.addEventListener("resize", fit);
     screen.orientation?.addEventListener?.("change", () => setTimeout(fit, 60));
 
-    let rendering = false;
-    try {
+    const canvasIsBlank = (el) => {
+      const probe = document.createElement("canvas");
+      probe.width = 48;
+      probe.height = 48;
+      const ctx = probe.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return false;
+      try { ctx.drawImage(el, 0, 0, 48, 48); }
+      catch (e) { console.warn("kagra: frame readback failed", e); return false; }
+      const data = ctx.getImageData(0, 0, 48, 48).data;
+      let max = 0, min = 255;
+      for (let i = 0; i < data.length; i += 16) {
+        max = Math.max(max, data[i], data[i + 1], data[i + 2]);
+        min = Math.min(min, data[i], data[i + 1], data[i + 2]);
+      }
+      console.warn(`kagra: frame sample max=${max} min=${min} backend=${activeBackend}`);
+      return max < 12 || min > 248;
+    };
+    const attachBackend = async (backend) => {
+      activeBackend = backend;
+      session.setGraphicsBackend(backend);
+      fit();
       await session.attachCanvas(canvas);
+      fit();
+    };
+    let rendering = false;
+    const startBackend = activeBackend === "gl" || activeBackend === "webgpu" ? activeBackend : "auto";
+    try {
+      await attachBackend(startBackend);
       rendering = session.hasRenderer();
     } catch (err) {
-      fail(`描画を開始できません。\n${err}\n\nWebGL2 か WebGPU が必要です。`);
-      throw err;
+      if (startBackend === "gl") {
+        fail(`描画を開始できません。\n${err}\n\nWebGL2 か WebGPU が必要です。`);
+        throw err;
+      }
+      console.warn("kagra: WebGPU attach failed, trying WebGL2", err);
+      const next = document.createElement("canvas");
+      next.id = "c";
+      canvas.replaceWith(next);
+      canvas = next;
+      try {
+        await attachBackend("gl");
+        rendering = session.hasRenderer();
+      } catch (err2) {
+        fail(`描画を開始できません。\n${err2}\n\nWebGL2 か WebGPU が必要です。`);
+        throw err2;
+      }
     }
     boot.style.display = "none";
 
@@ -339,8 +391,10 @@
       return [(e.clientX - r.left) * sx, (e.clientY - r.top) * sy];
     };
     const phaseOf = (type) => (type === "pointerdown" ? 0 : type === "pointermove" ? 1 : type === "pointerup" ? 2 : 3);
+    const appEl = document.getElementById("app");
     for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel"]) {
-      canvas.addEventListener(type, (e) => {
+      appEl.addEventListener(type, (e) => {
+        if (e.target !== canvas) return;
         if (type === "pointerdown") {
           try { canvas.setPointerCapture(e.pointerId); } catch {}
         }
@@ -378,7 +432,10 @@
     document.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
     showPhase("title");
 
+    let presented = 0;
+    let recovering = false;
     const loop = () => {
+      if (recovering) return;
       const k = keyAxis();
       const jump = state.jump || held.has(" ") || held.has("Spacebar");
       session.setPlayInput(
@@ -393,7 +450,26 @@
         try { session.render(); }
         catch (err) {
           rendering = false;
-          fail(`描画が止まりました。\n${err}`);
+          const detail = err && err.stack ? err.stack : err;
+          fail(`描画が止まりました。\n${detail}`);
+        }
+        presented += 1;
+        if (presented === 8 && activeBackend !== "gl" && requestedBackend !== "webgpu" && canvasIsBlank(canvas)) {
+          recovering = true;
+          rendering = false;
+          console.warn("kagra: blank WebGPU frame, falling back to WebGL2");
+          const next = document.createElement("canvas");
+          next.id = "c";
+          canvas.replaceWith(next);
+          canvas = next;
+          attachBackend("gl").then(() => {
+            rendering = true;
+            recovering = false;
+            requestAnimationFrame(loop);
+          }).catch((err) => {
+            fail(`WebGL2 fallback failed:\n${err}`);
+          });
+          return;
         }
       }
       try {

@@ -818,6 +818,8 @@ impl SharedSession {
             cone: renderer.upload_mesh(cone),
             cylinder: renderer.upload_mesh(cylinder),
         });
+        // A second attach (WebGL2 fallback) must upload into the new device.
+        self.world_meshes = false;
         self.renderer = Some(renderer);
     }
 

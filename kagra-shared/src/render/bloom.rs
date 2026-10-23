@@ -9,7 +9,30 @@
 //! No full-frame blur: toon outlines stay crisp (same rule as V2).
 //! The LUT is `texture_2d` (no `texture_3d`) so WebGL2 can bind it.
 
-pub(super) const BLOOM_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+/// Preferred linear HDR frame. Needs a filterable, blendable float target
+/// (`EXT_color_buffer_float` on WebGL2). Missing that, the pass uses
+/// [`LDR_FRAME_FORMAT`] and bloom stays off.
+pub(super) const HDR_FRAME_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+
+/// 8-bit linear frame. Clamps values above 1, so bloom has no headroom.
+pub(super) const LDR_FRAME_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+
+/// True when `format` can be a linear HDR color target that bloom can sample.
+pub(super) fn format_supports_hdr_frame(
+    usages: wgpu::TextureUsages,
+    flags: wgpu::TextureFormatFeatureFlags,
+) -> bool {
+    usages.contains(wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING)
+        && flags.contains(
+            wgpu::TextureFormatFeatureFlags::FILTERABLE
+                | wgpu::TextureFormatFeatureFlags::BLENDABLE,
+        )
+}
+
+pub(super) fn hdr_frame_supported(adapter: &wgpu::Adapter) -> bool {
+    let info = adapter.get_texture_format_features(HDR_FRAME_FORMAT);
+    format_supports_hdr_frame(info.allowed_usages, info.flags)
+}
 
 /// Soft-knee extraction weight (shared with V2 for unit-test parity).
 #[cfg_attr(not(test), allow(dead_code))]
@@ -62,8 +85,16 @@ pub(super) struct BloomPass {
     composite_tex: wgpu::Texture,
     composite_view: wgpu::TextureView,
     fxaa_pipeline: wgpu::RenderPipeline,
+    blit_pipeline: wgpu::RenderPipeline,
     fxaa_params: (wgpu::Buffer, wgpu::BindGroup),
     fxaa_enabled: bool,
+    /// False when the device cannot render+filter+blend a float color target.
+    /// Bloom intensity is forced to 0; the frame format is [`LDR_FRAME_FORMAT`].
+    hdr: bool,
+    frame_format: wgpu::TextureFormat,
+    /// True when the composite target is not an sRGB format, so the shader
+    /// applies the OETF. WebGPU canvases are 8-bit unorm.
+    encode_srgb: bool,
 }
 
 impl BloomPass {
@@ -72,7 +103,13 @@ impl BloomPass {
         format: wgpu::TextureFormat,
         width: u32,
         height: u32,
+        hdr: bool,
     ) -> Self {
+        let frame_format = if hdr {
+            HDR_FRAME_FORMAT
+        } else {
+            LDR_FRAME_FORMAT
+        };
         let tex_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Bloom Tex BGL"),
             entries: &[
@@ -130,7 +167,7 @@ impl BloomPass {
             &shader,
             "fs_extract",
             &extract_layout,
-            BLOOM_FORMAT,
+            frame_format,
             "Bloom Extract",
         );
         let blur_pipeline = make_fs_pipeline(
@@ -138,7 +175,7 @@ impl BloomPass {
             &shader,
             "fs_blur",
             &extract_layout,
-            BLOOM_FORMAT,
+            frame_format,
             "Bloom Blur",
         );
         let composite_pipeline = make_fs_pipeline(
@@ -164,9 +201,9 @@ impl BloomPass {
             ..Default::default()
         });
         let (half_w, half_h) = half_size(width, height);
-        let (half_a, half_a_view) = make_bloom_tex(device, half_w, half_h, "Bloom A");
-        let (half_b, half_b_view) = make_bloom_tex(device, half_w, half_h, "Bloom B");
-        let frame_tex = make_frame_tex(device, width, height);
+        let (half_a, half_a_view) = make_bloom_tex(device, frame_format, half_w, half_h, "Bloom A");
+        let (half_b, half_b_view) = make_bloom_tex(device, frame_format, half_w, half_h, "Bloom B");
+        let frame_tex = make_frame_tex(device, frame_format, width, height);
         let frame_view = frame_tex.create_view(&Default::default());
 
         // FXAA: composite（sRGB）を読んで最終ターゲットへ。HUD はその後。
@@ -179,6 +216,14 @@ impl BloomPass {
             bind_group_layouts: &[Some(&tex_bgl), Some(&params_bgl)],
             immediate_size: 0,
         });
+        let blit_pipeline = make_fs_pipeline(
+            device,
+            &fxaa_shader,
+            "fs_blit",
+            &fxaa_layout,
+            format,
+            "FXAA Blit",
+        );
         let fxaa_pipeline = make_fs_pipeline(
             device,
             &fxaa_shader,
@@ -224,8 +269,12 @@ impl BloomPass {
             composite_tex,
             composite_view,
             fxaa_pipeline,
+            blit_pipeline,
             fxaa_params,
             fxaa_enabled: true,
+            hdr,
+            frame_format,
+            encode_srgb: !format.is_srgb(),
         }
     }
 
@@ -234,9 +283,15 @@ impl BloomPass {
         &self.frame_view
     }
 
+    pub(super) fn frame_format(&self) -> wgpu::TextureFormat {
+        self.frame_format
+    }
+
     pub fn set_params(&mut self, threshold: f32, intensity: f32) {
         self.threshold = threshold.clamp(0.0, 2.0);
-        self.intensity = intensity.max(0.0);
+        // LDR frames clamp at 1, so a threshold extract would bloom the whole
+        // image. Leave the composite path (exposure, ACES, LUT, vignette).
+        self.intensity = if self.hdr { intensity.max(0.0) } else { 0.0 };
     }
 
     /// One write for the dump-driven post stack. LUT bytes upload in `apply`.
@@ -267,11 +322,13 @@ impl BloomPass {
     }
 
     pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
-        self.frame_tex = make_frame_tex(device, width, height);
+        self.frame_tex = make_frame_tex(device, self.frame_format, width, height);
         self.frame_view = self.frame_tex.create_view(&Default::default());
         let (half_w, half_h) = half_size(width, height);
-        let (half_a, half_a_view) = make_bloom_tex(device, half_w, half_h, "Bloom A");
-        let (half_b, half_b_view) = make_bloom_tex(device, half_w, half_h, "Bloom B");
+        let (half_a, half_a_view) =
+            make_bloom_tex(device, self.frame_format, half_w, half_h, "Bloom A");
+        let (half_b, half_b_view) =
+            make_bloom_tex(device, self.frame_format, half_w, half_h, "Bloom B");
         self.half_a = half_a;
         self.half_a_view = half_a_view;
         self.half_b = half_b;
@@ -303,7 +360,7 @@ impl BloomPass {
         exposure: f32,
         tonemap: bool,
     ) {
-        let (target_texture, target_view) = target;
+        let (_target_texture, target_view) = target;
         if self.lut_loaded != self.lut_desired {
             write_lut(queue, &self.lut_tex, &self.lut_desired);
             self.lut_loaded.clone_from(&self.lut_desired);
@@ -390,7 +447,7 @@ impl BloomPass {
                 if tonemap { 1.0 } else { 0.0 },
                 self.vignette,
                 self.lut_strength,
-                0.0,
+                if self.encode_srgb { 1.0 } else { 0.0 },
                 0.0,
                 0.0,
             ],
@@ -423,24 +480,20 @@ impl BloomPass {
                 "FXAA",
             );
         } else {
-            encoder.copy_texture_to_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &self.composite_tex,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::TexelCopyTextureInfo {
-                    texture: target_texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::Extent3d {
-                    width: self.width,
-                    height: self.height,
-                    depth_or_array_layers: 1,
-                },
+            // WebGL2 canvases reject COPY_DST, so this is a draw, not a copy.
+            let blit_bg = bind_tex(
+                device,
+                &self.tex_bgl,
+                &self.composite_view,
+                &self.sampler,
+                "Blit Src",
+            );
+            fullscreen(
+                encoder,
+                &self.blit_pipeline,
+                target_view,
+                &[&blit_bg, &self.fxaa_params.1],
+                "Bloom Blit",
             );
         }
     }
@@ -451,7 +504,12 @@ fn half_size(w: u32, h: u32) -> (u32, u32) {
 }
 
 /// Linear HDR frame the 3D pass draws into. Tonemap happens in composite.
-fn make_frame_tex(device: &wgpu::Device, w: u32, h: u32) -> wgpu::Texture {
+fn make_frame_tex(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    w: u32,
+    h: u32,
+) -> wgpu::Texture {
     device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Bloom Frame"),
         size: wgpu::Extent3d {
@@ -462,7 +520,7 @@ fn make_frame_tex(device: &wgpu::Device, w: u32, h: u32) -> wgpu::Texture {
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: BLOOM_FORMAT,
+        format,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     })
@@ -495,6 +553,7 @@ fn make_composite_tex(
 
 fn make_bloom_tex(
     device: &wgpu::Device,
+    format: wgpu::TextureFormat,
     w: u32,
     h: u32,
     label: &str,
@@ -509,7 +568,7 @@ fn make_bloom_tex(
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: BLOOM_FORMAT,
+        format,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });

@@ -83,8 +83,16 @@ rodio = { version = "0.20", optional = true, default-features = false, features 
 rapier3d = { version = "0.35", optional = true, default-features = false, features = ["dim3", "f32", "std"] }
 
 # ブラウザでは WebGPU を優先し、無ければ WebGL2 に落ちる。
+# `webgl` は default に入らない。ここへ明示しないと wasm から GL が外れ、
+# WebGPU アダプタが無い電話は真っ黒のままになる。
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wgpu = { version = "30", optional = true, features = ["webgpu", "webgl"] }
+wgpu = { version = "30", optional = true, default-features = false, features = [
+    "std",
+    "parking_lot",
+    "wgsl",
+    "webgpu",
+    "webgl",
+] }
 
 [dev-dependencies]
 pollster = "0.3"
