@@ -41,6 +41,7 @@ use crate::scene3d::{
     primitives, Camera, Instance, LocalLight, Material, MeshData, MeshId, Scene3D, SceneBuilder,
     Vertex3,
 };
+use crate::strokes::{FatLine, PointCloud};
 use glam::{EulerRot, Mat4, Quat, Vec3};
 use serde::{Deserialize, Serialize};
 
@@ -215,6 +216,14 @@ pub struct WorldDoc {
     /// `name` is `fixed` / `revolute` / `spherical`. Anchors are body-local.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub joints: Vec<WorldJoint>,
+    /// Camera-facing point sprites. One instanced draw. Empty omits the key.
+    /// Not physics, and not the CPU `Emitter` props.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub points: Vec<PointCloud>,
+    /// Screen-space fat lines, pixel width. One instanced draw. Empty omits
+    /// the key. Not the CPU `Trail` quads.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lines: Vec<FatLine>,
 }
 
 /// Generic countdown. Dump-visible: a fishing dump shows `cast` counting down,
@@ -1342,6 +1351,8 @@ impl WorldDoc {
             hemi_sky: self.hemi_sky_color(),
             hemi_ground: self.hemi_ground_color(),
             env_pixels: self.baked_env(),
+            points: self.points.clone(),
+            lines: self.lines.clone(),
             batches: b.finish(),
         }
     }

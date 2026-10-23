@@ -60,6 +60,12 @@ simple-easing 1.1.1
   into this tree. kagra/juice.py keeps the same curve names in pure
   Python so tests do not import the extension.
 
+Point sprites follow the idea of three.js Points, and fat lines follow
+Line2 (MIT, https://github.com/mrdoob/three.js): a camera-facing quad
+per point, and a clip-space quad per segment whose width is in pixels.
+The WGSL in strokes.wgsl is original. No three.js source is copied.
+WebGPU point-list stays unused (it is one pixel). No storage buffers.
+
 puffin 0.19
   https://github.com/emilk/puffin
   MIT OR Apache-2.0

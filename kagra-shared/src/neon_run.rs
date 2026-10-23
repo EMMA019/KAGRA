@@ -9,7 +9,7 @@
 //! Glow is dump `emissive` (the shared HDR add). Reflections are
 //! `hemi_sky` / `hemi_ground` plus `env_map: preset:studio`.
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::sync::{Mutex, OnceLock};
 
 use serde_json::json;
@@ -222,6 +222,9 @@ pub struct NeonRun {
     pending_finish: bool,
     feel: crate::juice::Juice,
     sparks: Vec<Spark>,
+    /// Samples behind the ship. Drawn as a fat line plus a few point sprites,
+    /// not the old stacked quads named "trail".
+    ribbon: VecDeque<[f32; 3]>,
     doc: WorldDoc,
     /// Dump `quality`, copied onto every rebuild. None keeps the historical
     /// neon picture (one cascade, no SSAO). Gameplay does not read it.
@@ -286,6 +289,7 @@ impl NeonRun {
             pending_finish: false,
             feel: crate::juice::Juice::default(),
             sparks: Vec::new(),
+            ribbon: VecDeque::new(),
             doc: WorldDoc::default(),
             picture_quality: None,
         }
@@ -519,6 +523,7 @@ impl NeonRun {
         self.passed = -1;
         self.time = 0.0;
         self.sparks.clear();
+        self.ribbon.clear();
         self.pending_finish = false;
         self.feel = crate::juice::Juice::default();
         self.flow.enter_play();
@@ -744,7 +749,46 @@ impl NeonRun {
         ((self.seed >> 8) & 0x00ff_ffff) as f32 / 16_777_216.0
     }
 
+    fn note_ribbon(&mut self) {
+        let p = [self.x, self.y - 0.05, self.z - 0.35];
+        if let Some(prev) = self.ribbon.back() {
+            let dx = p[0] - prev[0];
+            let dy = p[1] - prev[1];
+            let dz = p[2] - prev[2];
+            if dx * dx + dy * dy + dz * dz < 0.12 * 0.12 {
+                return;
+            }
+        }
+        self.ribbon.push_back(p);
+        while self.ribbon.len() > 32 {
+            self.ribbon.pop_front();
+        }
+    }
+
+    fn push_ribbon(&self, doc: &mut WorldDoc) {
+        if self.ribbon.len() < 2 {
+            return;
+        }
+        doc.lines.push(crate::strokes::FatLine {
+            id: "ribbon".into(),
+            points: self.ribbon.iter().copied().collect(),
+            color: [90, 240, 255, 210],
+            width: 4.0,
+        });
+        let positions: Vec<[f32; 3]> = self.ribbon.iter().step_by(4).copied().collect();
+        if positions.is_empty() {
+            return;
+        }
+        doc.points.push(crate::strokes::PointCloud {
+            id: "ribbon-dots".into(),
+            positions,
+            color: [255, 70, 190, 230],
+            size: 0.05,
+        });
+    }
+
     fn rebuild(&mut self) {
+        self.note_ribbon();
         let mut doc = WorldDoc {
             version: 1,
             genre: Some(GAME_ID.into()),
@@ -825,6 +869,7 @@ impl NeonRun {
         self.push_ship(&mut doc);
         self.push_speed_lines(&mut doc);
         self.push_spark_props(&mut doc);
+        self.push_ribbon(&mut doc);
         self.doc = doc;
     }
 
@@ -1580,6 +1625,20 @@ mod tests {
         assert!(
             run.document().props.iter().all(|p| p.name != "trail"),
             "the staircase ribbon is gone"
+        );
+        let ribbon = run
+            .document()
+            .lines
+            .iter()
+            .find(|line| line.id == "ribbon")
+            .expect("gpu fat-line ribbon");
+        assert!(ribbon.points.len() >= 8, "ribbon {}", ribbon.points.len());
+        assert!(
+            run.document()
+                .points
+                .iter()
+                .any(|cloud| cloud.id == "ribbon-dots" && !cloud.positions.is_empty()),
+            "gpu point sprites along the ribbon"
         );
         run.set_steer(1.0, 0.0, false);
         for _ in 0..180 {

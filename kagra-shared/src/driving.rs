@@ -321,6 +321,8 @@ impl DrivingScene {
             hemi_sky: [0.48, 0.56, 0.78],
             hemi_ground: [0.42, 0.30, 0.18],
             env_pixels: None,
+            points: Vec::new(),
+            lines: Vec::new(),
             batches: b.finish(),
         }
     }
