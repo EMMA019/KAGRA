@@ -122,6 +122,17 @@ pub struct WorldDoc {
     /// Larger values (about 2.5–4) use a wider tent so penumbras soften.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow_softness: Option<f32>,
+    /// Hemisphere sky, linear 0..1. None = the studio blue `(0.48, 0.56, 0.78)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hemi_sky: Option<[f32; 3]>,
+    /// Hemisphere ground, linear 0..1. None = the studio warm `(0.42, 0.30, 0.18)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hemi_ground: Option<[f32; 3]>,
+    /// Prefiltered env. `preset:studio` bakes a lat-long from the hemisphere.
+    /// A PNG path is sampled as an equirect and blurred into roughness rows.
+    /// None = the SH specular, so an old dump does not change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env_map: Option<String>,
     /// Generic countdowns. WorldPlay::tick_timers advances `remaining`; on 0 it
     /// emits `on_done` as an event and flips `active` false. Cooking wait,
     /// fishing cast→bite, cooldowns all map onto this. Genre code stays out.
@@ -659,6 +670,38 @@ impl WorldDoc {
         self.shadow_softness.unwrap_or(1.0).clamp(0.25, 8.0)
     }
 
+    /// Studio blue when the dump omits `hemi_sky`.
+    pub fn hemi_sky_color(&self) -> [f32; 3] {
+        self.hemi_sky
+            .unwrap_or([0.48, 0.56, 0.78])
+            .map(|c| c.clamp(0.0, 4.0))
+    }
+
+    /// Studio warm ground when the dump omits `hemi_ground`.
+    pub fn hemi_ground_color(&self) -> [f32; 3] {
+        self.hemi_ground
+            .unwrap_or([0.42, 0.30, 0.18])
+            .map(|c| c.clamp(0.0, 4.0))
+    }
+
+    /// 64×64 prefiltered strip, or None when `env_map` is omitted.
+    pub fn baked_env(&self) -> Option<Vec<u8>> {
+        let spec = self
+            .env_map
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())?;
+        Some(bake_env_strip(
+            self.hemi_sky_color(),
+            self.hemi_ground_color(),
+            if spec == "preset:studio" {
+                None
+            } else {
+                load_png_albedo(spec)
+            },
+        ))
+    }
+
     /// Probe walker `gltf` paths. Missing/parse failures are dump-visible;
     /// `compile_scene` still draws a skinned tpose, never a silent capsule.
     pub fn refresh_asset_status(&mut self) {
@@ -981,6 +1024,9 @@ impl WorldDoc {
             exposure: self.exposure.unwrap_or(1.0),
             tonemap: self.tonemap.unwrap_or(true),
             shadow_softness: self.shadow_softness(),
+            hemi_sky: self.hemi_sky_color(),
+            hemi_ground: self.hemi_ground_color(),
+            env_pixels: self.baked_env(),
             batches: b.finish(),
         }
     }
@@ -1948,6 +1994,125 @@ fn preset_orm(spec: &str) -> Option<crate::scene3d::AlbedoRgba> {
         height: n,
         rgba: rgba.into(),
     })
+}
+
+/// 64×64 linear RGBA. Four roughness rows (16 px tall) of a lat-long.
+/// `image` replaces the sharp row when a PNG equirect was loaded.
+pub fn bake_env_strip(
+    sky: [f32; 3],
+    ground: [f32; 3],
+    image: Option<crate::scene3d::AlbedoRgba>,
+) -> Vec<u8> {
+    const W: u32 = 64;
+    const ROW: u32 = 16;
+    const LEVELS: u32 = 4;
+    let mut rows = Vec::with_capacity(LEVELS as usize);
+    rows.push(equirect_row(sky, ground, image.as_ref(), W, ROW));
+    for level in 1..LEVELS {
+        let prev = rows.last().expect("row");
+        rows.push(blur_wrap(prev, W, ROW, level));
+    }
+    let mut rgba = vec![0u8; (W * ROW * LEVELS * 4) as usize];
+    for (i, row) in rows.iter().enumerate() {
+        let dst = i * row.len();
+        rgba[dst..dst + row.len()].copy_from_slice(row);
+    }
+    rgba
+}
+
+fn equirect_row(
+    sky: [f32; 3],
+    ground: [f32; 3],
+    image: Option<&crate::scene3d::AlbedoRgba>,
+    w: u32,
+    h: u32,
+) -> Vec<u8> {
+    let sun = Vec3::new(-0.4, 1.0, 0.3).normalize();
+    let mut rgba = vec![0u8; (w * h * 4) as usize];
+    for y in 0..h {
+        for x in 0..w {
+            let u = (x as f32 + 0.5) / w as f32;
+            let v = (y as f32 + 0.5) / h as f32;
+            let col = if let Some(img) = image {
+                sample_equirect(img, u, v)
+            } else {
+                let theta = (u - 0.5) * std::f32::consts::TAU;
+                let phi = v * std::f32::consts::PI;
+                let dir = Vec3::new(phi.sin() * theta.cos(), phi.cos(), phi.sin() * theta.sin());
+                let t = smoothstep(-0.15, 0.35, dir.y);
+                let mut col = [
+                    ground[0] + (sky[0] - ground[0]) * t,
+                    ground[1] + (sky[1] - ground[1]) * t,
+                    ground[2] + (sky[2] - ground[2]) * t,
+                ];
+                let sun_d = dir.dot(sun).max(0.0);
+                let disk = sun_d.powf(40.0);
+                col[0] += disk * 1.4;
+                col[1] += disk * 1.25;
+                col[2] += disk * 0.9;
+                col
+            };
+            let i = ((y * w + x) * 4) as usize;
+            rgba[i] = to_unorm(col[0]);
+            rgba[i + 1] = to_unorm(col[1]);
+            rgba[i + 2] = to_unorm(col[2]);
+            rgba[i + 3] = 255;
+        }
+    }
+    rgba
+}
+
+fn sample_equirect(img: &crate::scene3d::AlbedoRgba, u: f32, v: f32) -> [f32; 3] {
+    let w = img.width.max(1) as f32;
+    let h = img.height.max(1) as f32;
+    let x = (u.clamp(0.0, 0.999) * w) as usize;
+    let y = (v.clamp(0.0, 0.999) * h) as usize;
+    let i = (y * img.width as usize + x) * 4;
+    if i + 2 >= img.rgba.len() {
+        return [0.5, 0.5, 0.5];
+    }
+    [
+        img.rgba[i] as f32 / 255.0,
+        img.rgba[i + 1] as f32 / 255.0,
+        img.rgba[i + 2] as f32 / 255.0,
+    ]
+}
+
+fn blur_wrap(src: &[u8], w: u32, h: u32, radius: u32) -> Vec<u8> {
+    let r = radius as i32;
+    let mut out = vec![0u8; src.len()];
+    for y in 0..h as i32 {
+        for x in 0..w as i32 {
+            let mut acc = [0u32; 3];
+            let mut n = 0u32;
+            for oy in -r..=r {
+                for ox in -r..=r {
+                    let sx = (x + ox).rem_euclid(w as i32) as u32;
+                    let sy = (y + oy).clamp(0, h as i32 - 1) as u32;
+                    let i = ((sy * w + sx) * 4) as usize;
+                    acc[0] += src[i] as u32;
+                    acc[1] += src[i + 1] as u32;
+                    acc[2] += src[i + 2] as u32;
+                    n += 1;
+                }
+            }
+            let i = ((y as u32 * w + x as u32) * 4) as usize;
+            out[i] = (acc[0] / n) as u8;
+            out[i + 1] = (acc[1] / n) as u8;
+            out[i + 2] = (acc[2] / n) as u8;
+            out[i + 3] = 255;
+        }
+    }
+    out
+}
+
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+fn to_unorm(v: f32) -> u8 {
+    (v.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
 fn preset_emissive(spec: &str) -> Option<crate::scene3d::AlbedoRgba> {
@@ -2928,8 +3093,14 @@ mod tests {
         assert_eq!(doc.lut_mix(), 0.0);
         assert!(doc.fxaa_enabled());
         assert!((doc.shadow_softness() - 1.0).abs() < 1e-6);
-        assert!(!doc.to_json().unwrap().contains("\"bloom\""));
-        assert!(!doc.to_json().unwrap().contains("\"shadow_softness\""));
+        assert!(doc.baked_env().is_none(), "omit env_map and stay on the SH");
+        assert_eq!(doc.hemi_sky_color(), [0.48, 0.56, 0.78]);
+        assert_eq!(doc.hemi_ground_color(), [0.42, 0.30, 0.18]);
+        let legacy = doc.to_json().unwrap();
+        assert!(!legacy.contains("\"bloom\""));
+        assert!(!legacy.contains("\"shadow_softness\""));
+        assert!(!legacy.contains("\"hemi_sky\""));
+        assert!(!legacy.contains("\"env_map\""));
         let on = WorldDoc::from_json(
             r#"{"version":1,"bloom":0.4,"bloom_threshold":0.7,"vignette":0.0,"lut":"warm","lut_strength":0.5,"fxaa":false}"#,
         )
@@ -2978,6 +3149,56 @@ mod tests {
         assert!(
             right_b < 20,
             "split right should be dielectric, B={right_b}"
+        );
+    }
+
+    #[test]
+    fn studio_env_zenith_is_bluer_than_the_nadir() {
+        let doc = WorldDoc::from_json(
+            r#"{"version":1,"hemi_sky":[0.20,0.45,0.95],"hemi_ground":[0.55,0.22,0.08],"env_map":"preset:studio"}"#,
+        )
+        .unwrap();
+        let px = doc.baked_env().expect("strip");
+        assert_eq!(px.len(), 64 * 64 * 4);
+        let scene = doc.compile_scene(1.0);
+        assert!(scene
+            .env_pixels
+            .as_ref()
+            .is_some_and(|p| p.len() == px.len()));
+        assert!((scene.hemi_sky[2] - 0.95).abs() < 1e-5);
+        // First roughness row: y=0 is the zenith texel, y=15 is the nadir.
+        let zen = 32 * 4;
+        let nad = (15 * 64 + 32) * 4;
+        assert!(
+            px[zen + 2] > px[zen] + 40,
+            "zenith should be blue, rgb={},{},{}",
+            px[zen],
+            px[zen + 1],
+            px[zen + 2]
+        );
+        assert!(
+            px[nad] > px[nad + 2] + 40,
+            "nadir should be warm, rgb={},{},{}",
+            px[nad],
+            px[nad + 1],
+            px[nad + 2]
+        );
+        // The sun disk is a few texels wide. Row 3 blurs it, so the peak drops.
+        let mut peak = 0usize;
+        let mut peak_l = 0u32;
+        for i in 0..(16 * 64) {
+            let o = i * 4;
+            let l = px[o] as u32 + px[o + 1] as u32 + px[o + 2] as u32;
+            if l > peak_l {
+                peak_l = l;
+                peak = i;
+            }
+        }
+        let blurred = (peak + 3 * 16 * 64) * 4;
+        let blur_l = px[blurred] as u32 + px[blurred + 1] as u32 + px[blurred + 2] as u32;
+        assert!(
+            peak_l > blur_l + 20,
+            "roughness row 3 should blur the sun, {peak_l} -> {blur_l}"
         );
     }
 

@@ -45,6 +45,9 @@ struct Globals {
     light_view_proj: [[f32; 4]; 4],
     /// x = shadow radius. 1 = historical 3×3 PCF.
     shadow: [f32; 4],
+    hemi_sky: [f32; 4],
+    /// w > 0.5 samples the prefiltered env strip.
+    hemi_ground: [f32; 4],
 }
 
 /// インスタンスごとの頂点属性（location 2..7, 9..11）。
@@ -136,6 +139,8 @@ pub struct Renderer {
     _flat_view: wgpu::TextureView,
     _orm_default: wgpu::Texture,
     _orm_view: wgpu::TextureView,
+    env_tex: wgpu::Texture,
+    env_bind: wgpu::BindGroup,
     /// Seconds for shader env.z (water scroll). Frame accum, not Instant (wasm).
     elapsed: f32,
     /// Threshold bloom: linear-HDR frame → extract/blur → composite → target.
@@ -558,12 +563,62 @@ impl Renderer {
             ],
         });
 
+        let env_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("kagra-shared env layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let env_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("kagra-shared env sampler"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+        let env_px = vec![128u8; 64 * 64 * 4];
+        let env_tex = create_linear_texture(&device, &queue, 64, 64, &env_px);
+        let env_view = env_tex.create_view(&Default::default());
+        let env_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("kagra-shared env bind"),
+            layout: &env_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&env_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&env_sampler),
+                },
+            ],
+        });
+
         let layout3d = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("kagra-shared 3d layout"),
             bind_group_layouts: &[
                 Some(&globals_layout),
                 Some(&albedo_layout),
                 Some(&shadow_layout),
+                Some(&env_layout),
             ],
             immediate_size: 0,
         });
@@ -812,6 +867,8 @@ impl Renderer {
             _flat_view: flat_view,
             _orm_default: orm_default,
             _orm_view: orm_view,
+            env_tex,
+            env_bind,
             elapsed: 0.0,
             bloom,
             text: crate::font::TextRaster::new(),
@@ -1245,6 +1302,7 @@ impl Renderer {
             if !draws.is_empty() {
                 pass.set_bind_group(0, &self.globals_bind, &[]);
                 pass.set_bind_group(2, &self.shadow_bind, &[]);
+                pass.set_bind_group(3, &self.env_bind, &[]);
                 // 空を先に。深度を書かないので、このあと地面が上に乗る。
                 pass.set_pipeline(&self.pipeline_sky);
                 for (mesh, offset, count, is_sky, _cast) in &draws {
@@ -1435,7 +1493,37 @@ impl Renderer {
             light_dir,
             light_view_proj: crate::scene3d::scene_shadow_view_proj(scene).to_cols_array_2d(),
             shadow: [scene.shadow_softness.max(0.0), 0.0, 0.0, 0.0],
+            hemi_sky: [scene.hemi_sky[0], scene.hemi_sky[1], scene.hemi_sky[2], 0.0],
+            hemi_ground: [
+                scene.hemi_ground[0],
+                scene.hemi_ground[1],
+                scene.hemi_ground[2],
+                if scene.env_pixels.is_some() { 1.0 } else { 0.0 },
+            ],
         };
+        if let Some(px) = &scene.env_pixels {
+            if px.len() >= 64 * 64 * 4 {
+                self.queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &self.env_tex,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &px[..64 * 64 * 4],
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(256),
+                        rows_per_image: Some(64),
+                    },
+                    wgpu::Extent3d {
+                        width: 64,
+                        height: 64,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+        }
         self.queue
             .write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&g));
         self.elapsed += 1.0 / 60.0;
@@ -2157,6 +2245,9 @@ mod tests {
         assert!(src.contains("orm_tex"), "roughness / metal map");
         assert!(src.contains("emissive_rgb"), "authored emissive");
         assert!(src.contains("radius <= 1.01"), "legacy 3x3 shadow kernel");
+        assert!(src.contains("fn env_specular"), "prefiltered env");
+        assert!(src.contains("textureSampleLevel"), "explicit lod, WebGL2");
+        assert!(src.contains("hemi_sky"), "authorable hemisphere");
         assert!(!src.contains("var<storage"), "WebGL2: no storage buffers");
         // MToon 完全移植でインスタンススロットは 2..=12（mtoon2/3/4）まで使う。
         assert!(
@@ -2168,8 +2259,8 @@ mod tests {
     #[test]
     fn globals_env_is_16_aligned() {
         assert_eq!(std::mem::size_of::<Globals>() % 16, 0);
-        // view_proj 64 + 5 vec4 + 3*4 lights 64*3 + light_view_proj 64 + shadow vec4
-        assert_eq!(std::mem::size_of::<Globals>(), 416);
+        // previous 416 + hemi sky/ground
+        assert_eq!(std::mem::size_of::<Globals>(), 448);
         assert_eq!(crate::scene3d::SHADOW_MAP_SIZE, 2048);
     }
 }

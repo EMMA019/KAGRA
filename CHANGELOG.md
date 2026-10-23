@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Image IBL and an authorable hemisphere on the shared renderer.
+  Dump `hemi_sky` / `hemi_ground` feed the L1 SH (omit them and the studio
+  pair stays). `env_map` is `preset:studio` or a PNG equirect, baked to a
+  64×64 lat-long with 4 roughness rows (`texture_2d`, no cubemap). Specular
+  on metal, water, and solid gloss samples that strip. Omit `env_map` and
+  specular stays the SH, so an old dump does not change. Box Hop uses a
+  cooler sky, a warmer ground, and the studio env.
+
 - Authored bloom sources, roughness/metal maps, and a wider sun shadow.
   Dump `emissive` / `emissive_color` / `emissive_map` add an unlit HDR term
   the bloom pass can extract. `roughness_map` and `metalness_map` are a PNG

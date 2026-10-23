@@ -1,0 +1,1 @@
+#136 merged. Start wave 2 from latest master as a new PR: emissive bloom sources, roughness/metalness maps, softer shadows; then image IBL/PMREM-style env + hemisphere light (separate PR if large). Apply to Box Hop with before/after screenshots, keep CI green with gh run watch in this same run, no force-push. Report PR URLs.

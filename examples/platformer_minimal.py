@@ -5,7 +5,8 @@ L/R pads) move the knight left and right. SPACE / the JUMP pad hops.
 
 Phone picture (on unless `KAGRA_QUALITY=0`): bloom + punch LUT + a stronger
 vignette, landing squash, a short hitstop, a CPU spark burst, a glowing
-well, worn crate maps, and a wider sun shadow.
+well, split crate maps, a wider sun shadow, and a studio hemisphere plus
+prefiltered env.
 
     python examples/platformer_minimal.py
     python examples/platformer_minimal.py --headless scratch/platformer.png
@@ -215,6 +216,7 @@ class PlatformPlay(Scene):
         picture.setdefault("props", []).extend(self.sparks.props())
         apply_post(picture, "mobile")
         _apply_wave2(picture)
+        _apply_ibl(picture)
         return picture
 
     def draw(self) -> None:
@@ -366,6 +368,18 @@ def _apply_wave2(picture: dict) -> None:
             prop["emissive_color"] = [1.0, 0.48, 0.08]
 
 
+def _apply_ibl(picture: dict) -> None:
+    """Authorable sky/ground ambient and a prefiltered studio lat-long.
+
+    Omitted on the IBL before frame, which keeps the fixed studio SH.
+    """
+    # Cooler sky bounce, warmer ground. The sky clear stays put, so the
+    # pair is the lit platforms and the metal sheen, not a recolored backdrop.
+    picture["hemi_sky"] = [0.28, 0.55, 1.70]
+    picture["hemi_ground"] = [1.25, 0.48, 0.10]
+    picture["env_map"] = "preset:studio"
+
+
 def _mean_abs(a: bytes, b: bytes) -> float:
     n = min(len(a), len(b)) // 4
     if n == 0:
@@ -401,7 +415,38 @@ def write_compare(out_dir: Path) -> None:
     )
 
 
+def write_ibl_compare(out_dir: Path) -> None:
+    """Wave-2 picture vs the same pose with hemisphere + studio env."""
+    from kagra.gameloop import last_draw_was_fallback, render_rgba, rgba_to_png
+
+    world = _landed_dump()
+    before_world = _juicy_picture(world, wave2=True)
+    after_world = _juicy_picture(world, wave2=True)
+    _apply_ibl(after_world)
+    width, height = 640, 360
+    before = render_rgba(before_world, width, height)
+    after = render_rgba(after_world, width, height)
+    if last_draw_was_fallback():
+        raise SystemExit("no GPU adapter; IBL shots were not written")
+    # The clear color is unchanged, so a full-frame mean sits under the
+    # wave-2 guard. The platforms still have to move.
+    if _mean_abs(before, after) < 0.75:
+        raise SystemExit("IBL before/after frames are almost identical")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "box_hop_ibl_before.png").write_bytes(rgba_to_png(before, width, height))
+    (out_dir / "box_hop_ibl_after.png").write_bytes(rgba_to_png(after, width, height))
+    print(
+        f"wrote {out_dir / 'box_hop_ibl_before.png'} and {out_dir / 'box_hop_ibl_after.png'} "
+        f"mean_abs={_mean_abs(before, after):.2f}"
+    )
+
+
 def main() -> None:
+    if "--compare-ibl" in sys.argv:
+        idx = sys.argv.index("--compare-ibl")
+        out = Path(sys.argv[idx + 1]) if len(sys.argv) > idx + 1 else Path("docs/screenshots")
+        write_ibl_compare(out)
+        return
     if "--compare" in sys.argv:
         idx = sys.argv.index("--compare")
         out = Path(sys.argv[idx + 1]) if len(sys.argv) > idx + 1 else Path("docs/screenshots")

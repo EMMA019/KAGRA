@@ -17,7 +17,7 @@ The shared picture path is `WorldDoc` → `compile_scene` → `Renderer` (`kagra
 | Vignette | have, as of this wave. Strength is a uniform. Omit = 1, the curve that already shipped. 0 turns it off. | URP Vignette | P0 | done (S) |
 | FXAA | have. On by default. Dump `fxaa: false` skips it. SMAA is not implemented. | URP FXAA (SMAA is the higher option) | P1 | S for a SMAA pass later |
 | Directional light + shadows | partial. One sun, one 2048 depth map, WebGL2 `sampler2DShadow`. Omit `shadow_softness` and the kernel stays 3×3. A wider tent is opt-in. No cascades, no contact-hardening. | URP main light + shadow cascades | P1 | M |
-| IBL / ambient from an env map | partial. Procedural L1 spherical harmonics (`env_irradiance`). No cubemap, no PMREM, no HDR file. | URP environment lighting + reflection probe | P1 | L |
+| IBL / ambient from an env map | partial. Authorable hemisphere (`hemi_sky` / `hemi_ground`) drives the L1 SH. `env_map` bakes a 64×64 prefiltered lat-long (4 roughness rows, `texture_2d`). No cubemap, no HDR file. Omit `env_map` and specular stays the SH. | URP environment lighting + reflection probe | P1 | done (M) |
 | Fog | have. Linear distance fog. Color follows `sky`. | URP linear / exponential fog | P2 | S to add an exponential mode |
 | Screen shake | have, as of this wave. `kagra.Juice.shake` offsets camera 0 on a fresh dump. Deterministic, no GPU. | Cinemachine impulse (the 80% bar does not include Cinemachine) | P0 | done (S) |
 | Hitstop | have, as of this wave. `Juice.hitstop` returns a shorter dt for the sim. Feel clocks keep running. | Time.timeScale punch, usually game code | P0 | done (S) |
@@ -42,10 +42,10 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 | Directional light | have | — | — | Sun direction comes from light slot 0 (position or direction) plus ambient. |
 | Point light | partial | P2 | S | Up to 4 slots. Inverse-square-ish attenuation. No cookie, no shadow. |
 | Spot light | partial | P2 | S | Same 4 slots, `kind: "spot"`, a power cone. No shadow. |
-| Hemisphere light | missing | P2 | S | The SH ambient is a stand-in, not a `HemisphereLight` with authorable sky/ground colors. |
+| Hemisphere light | partial | P2 | S | Dump `hemi_sky` / `hemi_ground` feed the SH. Omit them and the studio pair stays. Not a separate light object. |
 | Area / rect light | missing | P3 | L | Parked. Too heavy for the phone target. |
-| IBL | partial | P1 | L | L1 SH, studio sky vs warm ground, scaled by dump `ibl` (default 0.35). |
-| PMREM / env maps | missing | P1 | L | No prefiltered cubemap, no equirect upload, no `scene.environment`. |
+| IBL | partial | P1 | M | L1 SH from the hemisphere, scaled by dump `ibl` (default 0.35). Specular can sample `env_map`. |
+| PMREM / env maps | partial | P1 | M | `preset:studio` or a PNG equirect, baked on the CPU to 64×64, 4 roughness rows, `texture_2d` + `textureSampleLevel`. Not a cubemap and not an HDR file. |
 | Fog | have | — | — | Linear fog. Start 48, end 220 in `compile_scene`. Color is the sky clear. |
 | Tone mapping | have | — | — | ACES in the composite. Exposure is a dump field (default 1). |
 | Color space | partial | P2 | M | Frame is linear HDR. Composite writes the surface format (sRGB targets encode on store). There is no author-facing linear/sRGB switch and no display-P3. |
@@ -75,6 +75,14 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 
 ## This wave
 
+Shipped on the wasm-safe path. Omitted fields keep the previous picture (studio SH, no env strip):
+
+- `hemi_sky` / `hemi_ground`. Linear colors for the L1 SH. Omit them and the hardcoded studio pair stays (`0.48, 0.56, 0.78` / `0.42, 0.30, 0.18`).
+- `env_map`. `preset:studio` bakes a lat-long from those colors plus a sun disk. A PNG path is sampled as an equirect. Four roughness rows, 64×64, group 3, `textureSampleLevel`. Specular on metal, water, and solid gloss uses it. Omit it and specular returns the SH.
+- Box Hop adds a cooler sky, a warmer ground, and `preset:studio` on top of the emissive / ORM / soft-shadow picture. `KAGRA_QUALITY=0` skips it.
+
+## Previous wave
+
 Shipped on the wasm-safe path. Omitted fields keep the previous picture (`shadow_softness` 1, emissive 0, no maps):
 
 - `emissive`, `emissive_color`, `emissive_map` (`preset:core` or a PNG). Added after lighting, before fog, so bloom extracts an authored source.
@@ -82,7 +90,7 @@ Shipped on the wasm-safe path. Omitted fields keep the previous picture (`shadow
 - `shadow_softness`. 1 is the old 3×3 kernel. Larger is a wider tent (still one 2048 map, still `sampler2DShadow`).
 - Box Hop: the well is an authored glow, the crates use `preset:split`, the sun shadow radius is 4.5. `KAGRA_QUALITY=0` skips it.
 
-## Previous wave
+## Earlier wave
 
 Shipped on the wasm-safe path, all of it toggleable:
 
@@ -95,6 +103,5 @@ Shipped on the wasm-safe path, all of it toggleable:
 
 ## Next waves
 
-1. **IBL that comes from an image, plus a hemisphere light.** Replace the fixed studio SH with a small prefiltered env (PMREM-style, still `texture_2d` faces or a low mip chain) and authorable sky/ground ambient. This is the "metal reads as metal outdoors" wave. glTF-authored ORM (not only dump maps) can land here too.
-2. **Trails, prop LOD, frustum bounds on dumps, one art-direction bundle.** A ribbon of quads for jump trails. Register mesh bounds so `compile_scene` culls. A `pastel` / `night` preset that sets sky, lights, exposure, and LUT together.
-3. **Parked.** SSAO, DOF, area lights, SMAA, custom shader graphs, WebGPU-only features, VRM-on-Wasm, Android. Contact-hardening shadows need a depth read, which this wave skipped so WebGL2 stays on the comparison sampler.
+1. **Trails, prop LOD, frustum bounds on dumps, one art-direction bundle.** A ribbon of quads for jump trails. Register mesh bounds so `compile_scene` culls. A `pastel` / `night` preset that sets sky, lights, exposure, and LUT together. glTF-authored ORM (reading the file, not only dump maps) can land here too.
+2. **Parked.** SSAO, DOF, area lights, SMAA, custom shader graphs, WebGPU-only features, VRM-on-Wasm, Android. Contact-hardening shadows need a depth read, which the soft-shadow wave skipped so WebGL2 stays on the comparison sampler. A real cubemap PMREM and HDR env files stay parked with that.

@@ -24,6 +24,10 @@ struct Globals {
     light_view_proj: mat4x4<f32>,
     // x = shadow radius. 1 = the historical 3x3 PCF. Larger = a wider tent.
     shadow: vec4<f32>,
+    // Hemisphere colors. Defaults match the old hardcoded studio SH.
+    hemi_sky: vec4<f32>,
+    // rgb = ground. w > 0.5 samples the prefiltered env strip (group 3).
+    hemi_ground: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;
@@ -41,6 +45,9 @@ struct Globals {
 @group(1) @binding(9) var emissive_samp: sampler;
 @group(2) @binding(0) var shadow_tex: texture_depth_2d;
 @group(2) @binding(1) var shadow_samp: sampler_comparison;
+// Prefiltered lat-long, 4 roughness rows. Sampled only when hemi_ground.w > 0.5.
+@group(3) @binding(0) var env_tex: texture_2d<f32>;
+@group(3) @binding(1) var env_samp: sampler;
 
 struct VsIn {
     @location(0) pos: vec3<f32>,
@@ -233,18 +240,40 @@ fn local_metal(n: vec3<f32>, world: vec3<f32>, v: vec3<f32>, f0: vec3<f32>, roug
 }
 
 
-// Tiny SH L1 / hemisphere. Studio zenith vs warm ground (V2 studio_equirect idea).
-// No 4K HDR, no cubemap texture, no storage buffer.
+// Tiny SH L1 / hemisphere. Colors come from the dump (the old studio pair when omitted).
+// No 4K HDR, no cubemap, no storage buffer.
 fn env_irradiance(n: vec3<f32>) -> vec3<f32> {
     if (g.env.x < 1e-4) {
         return vec3<f32>(0.0);
     }
-    let sky = vec3<f32>(0.48, 0.56, 0.78);
-    let ground = vec3<f32>(0.42, 0.30, 0.18);
+    let sky = g.hemi_sky.rgb;
+    let ground = g.hemi_ground.rgb;
     let sh0 = mix(ground, sky, 0.55);
     let shy = (sky - ground) * 0.5;
     let shx = vec3<f32>(0.06, 0.04, 0.02);
     return (sh0 + shy * n.y + shx * n.x) * g.env.x;
+}
+
+// Specular IBL. The sample always runs (textureSampleLevel, uniform flow).
+// hemi_ground.w <= 0.5 mixes back to the SH, so an old dump is unchanged.
+// The strip is 64×64: 4 roughness rows of a lat-long (PMREM-style, texture_2d).
+fn env_specular(dir: vec3<f32>, rough: f32) -> vec3<f32> {
+    let sh = env_irradiance(dir);
+    let safe = select(vec3<f32>(0.0, 1.0, 0.0), dir, dot(dir, dir) > 1e-6);
+    let n = normalize(safe);
+    let u = atan2(n.z, n.x) * 0.15915494 + 0.5;
+    let v = acos(clamp(n.y, -1.0, 1.0)) * 0.31830988;
+    let level = clamp(rough, 0.0, 1.0) * 3.0;
+    let row = min(floor(level), 3.0);
+    let fy = level - row;
+    // Stay inside the 16px row. v=1 is the last texel, not the next row.
+    let local = (v * 15.0 + 0.5) / 64.0;
+    let v0 = row * 0.25 + local;
+    let v1 = min(row + 1.0, 3.0) * 0.25 + local;
+    let a = textureSampleLevel(env_tex, env_samp, vec2<f32>(u, v0), 0.0).rgb;
+    let b = textureSampleLevel(env_tex, env_samp, vec2<f32>(u, v1), 0.0).rgb;
+    let sampled = mix(a, b, fy) * g.env.x;
+    return mix(sh, sampled, step(0.5, g.hemi_ground.w));
 }
 
 // One directional map. Depth compare (WebGL2 sampler2DShadow).
@@ -431,7 +460,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         lit += local_metal(n, in.world, v, f0, rough, sh) * 1.35;
         let r = reflect(-v, n);
         let studio_spec = pow(max(r.y * 0.65 + 0.35, 0.0), 6.0) * (1.0 - rough);
-        lit += f0 * env_irradiance(r) * (1.2 - rough * 0.5);
+        lit += f0 * env_specular(r, rough) * (1.2 - rough * 0.5);
         lit += mix(f0, vec3<f32>(1.0, 0.98, 0.94), 0.55) * (studio_spec * 0.48 + fresnel_edge * 0.36);
     } else if (mat_id == 6) {
         // Water: two scrolling normals + Fresnel + SH reflection.
@@ -446,7 +475,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let spec_sun = pow(max(dot(nw, normalize(v + ldir)), 0.0), 96.0);
         lit = body * (ambient * 0.85 + (1.0 - ambient) * max(dot(nw, ldir), 0.0) * 0.35 * sh);
         lit += body * local_lit(nw, in.world, sh) * 0.25;
-        lit += env_irradiance(r) * mix(0.22, 1.05, fresnel);
+        lit += env_specular(r, 0.08) * mix(0.22, 1.05, fresnel);
         lit += env_irradiance(nw) * body * 0.20;
         lit += vec3<f32>(0.95, 0.97, 1.0) * spec_sun * 0.55 * sh;
         // Cheap depth fade: looking down is more transmissive (no scene-depth prepass).
@@ -482,12 +511,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         lit = albedo * (ambient + (1.0 - ambient) * ndl * sh);
         lit += albedo * local_lit(n, in.world, sh);
         lit += albedo * env_irradiance(n);
+        let r = reflect(-v, n);
+        let env_spec = env_specular(r, rough);
         if (gloss > 0.08) {
-            let r = reflect(-v, n);
             let studio_spec = pow(max(r.y * 0.65 + 0.35, 0.0), 8.0) * gloss;
             lit += sun_spec * ndl * sh * gloss * 1.4;
             lit += local_metal(n, in.world, v, f0, rough, sh) * gloss * 1.3;
-            lit += env_irradiance(r) * fresnel * gloss * gloss * 1.5;
+            lit += env_spec * fresnel * gloss * gloss * 1.5;
             lit += vec3<f32>(1.0, 0.98, 0.95) * (studio_spec * 0.22 + pow(1.0 - ndotv, 4.0) * gloss * 0.18);
         }
         // Studio tabletop / cyclorama radial gradient (active on studio floor y < -0.12 when ibl < 0.30)
