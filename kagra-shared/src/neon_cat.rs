@@ -67,6 +67,8 @@ const CHASE_ROLL: f32 = 0.07;
 
 const OBS_Z0: f32 = 26.0;
 const OBS_GAP: f32 = 14.0;
+/// Seconds of reaction time an obstacle is drawn before the cat reaches it.
+const LEAD_SECS: f32 = 2.5;
 const RING_Z0: f32 = 14.0;
 const RING_GAP: f32 = 17.0;
 const GATE_Z0: f32 = 10.0;
@@ -778,6 +780,16 @@ impl NeonCat {
         }
     }
 
+    /// Obstacles drawn ahead. At least `LEAD_SECS` of travel, never fewer than 4.
+    fn obstacle_lead_count(&self) -> i32 {
+        ((self.speed() * LEAD_SECS / OBS_GAP).ceil() as i32 + 1).max(4)
+    }
+
+    /// Tunnel floor/walls reach past the farthest drawn obstacle.
+    fn tunnel_reach(&self) -> f32 {
+        (self.speed() * LEAD_SECS + OBS_GAP * 2.0).max(44.0)
+    }
+
     fn speed(&self) -> f32 {
         (SPEED0 + self.time * SPEED_RAMP).min(SPEED_CAP)
     }
@@ -906,6 +918,19 @@ impl NeonCat {
             s.x += s.vx * dt;
             s.y += s.vy * dt;
             s.z += s.vz * dt;
+            // Settle on the floor instead of sinking through it.
+            let floor = s.size * 0.5;
+            if s.y < floor {
+                s.y = floor;
+                s.vy = -s.vy * 0.25;
+                s.vx *= 0.6;
+                s.vz *= 0.6;
+            }
+            let (x, y, z) = (s.x, s.y, s.z);
+            if spark_inside_obstacle(&self.spawned, x, y, z) {
+                self.sparks.remove(i);
+                continue;
+            }
             i += 1;
         }
     }
@@ -1016,7 +1041,7 @@ impl NeonCat {
 
     fn push_tunnel(&self, doc: &mut WorldDoc) {
         let z0 = self.z - 6.0;
-        let z1 = self.z + 44.0;
+        let z1 = self.z + self.tunnel_reach();
         let zmid = (z0 + z1) * 0.5;
         let depth = z1 - z0;
         let tile = 1.6;
@@ -1206,7 +1231,7 @@ impl NeonCat {
     fn push_obstacles(&self, doc: &mut WorldDoc) -> HashSet<i32> {
         let mut spawned = HashSet::new();
         let i0 = near_index(self.z, OBS_Z0, OBS_GAP).saturating_sub(1);
-        for i in i0..i0 + 6 {
+        for i in i0..i0 + 2 + self.obstacle_lead_count() {
             if i < 0 {
                 continue;
             }
@@ -1274,7 +1299,7 @@ impl NeonCat {
             ));
         }
         let i0 = near_index(self.z, OBS_Z0, OBS_GAP).saturating_sub(1);
-        for i in i0..i0 + 6 {
+        for i in i0..i0 + 2 + self.obstacle_lead_count() {
             if i < 0 {
                 continue;
             }
@@ -1486,6 +1511,20 @@ fn shaped(
         hit_hz: hz,
         hit_top: (skin_max[1] - skin_min[1]) * HIT_TOP,
     }
+}
+
+/// A spark inside a drawn obstacle's mesh box would glow through it.
+fn spark_inside_obstacle(spawned: &HashSet<i32>, x: f32, y: f32, z: f32) -> bool {
+    let i0 = near_index(z, OBS_Z0, OBS_GAP).saturating_sub(1);
+    (i0..i0 + 3).any(|i| {
+        if !spawned.contains(&i) {
+            return false;
+        }
+        let o = obstacle_shape(i);
+        let hx = (o.hit_hx + 0.08).max(0.1);
+        let hz = (o.hit_hz + 0.08).max(0.1);
+        (x - o.hit_cx).abs() <= hx && (z - o.hit_cz).abs() <= hz && y <= o.hit_top + 0.05
+    })
 }
 
 fn feet_hit(shape: &ObstacleShape, x: f32, y: f32, z: f32) -> bool {
@@ -1874,6 +1913,40 @@ mod tests {
                 }
             }
             assert!(!run.alive, "dt {dt}: a lane crate at the cap must kill");
+        }
+    }
+
+    #[test]
+    fn obstacles_show_early_enough_at_the_cap_and_fog_keeps_them() {
+        let mut run = NeonCat::fresh();
+        run.confirm();
+        run.time = 1000.0;
+        run.z = 500.0;
+        run.rebuild();
+        let far = run
+            .spawned
+            .iter()
+            .map(|&i| obstacle_shape(i).hit_cz)
+            .fold(f32::MIN, f32::max);
+        let lead = (far - run.z) / run.speed();
+        assert!(lead >= 1.2, "only {lead:.2}s of warning at the cap");
+        assert!(
+            far - run.z < run.doc.fog_end.unwrap(),
+            "fog hides the farthest"
+        );
+    }
+
+    #[test]
+    fn sparks_stay_above_the_floor_and_out_of_crates() {
+        let mut run = NeonCat::fresh();
+        run.rebuild();
+        run.burst(0.0, 0.2, 5.0, 30, [255, 255, 255], 5.0, 0.12);
+        for _ in 0..40 {
+            run.tick_sparks(1.0 / 60.0);
+            for s in &run.sparks {
+                assert!(s.y >= s.size * 0.5 - 1e-4, "spark under floor at {}", s.y);
+                assert!(!spark_inside_obstacle(&run.spawned, s.x, s.y, s.z));
+            }
         }
     }
 
