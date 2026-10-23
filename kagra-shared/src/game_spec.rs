@@ -38,6 +38,8 @@ pub struct GameSpec {
     pub placements: Vec<Placement>,
     /// Runner-kit section (used when `kind` is `runner`).
     pub runner: RunnerKit,
+    /// Touch scheme and its thresholds.
+    pub input: InputSpec,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,6 +47,56 @@ pub struct GameSpec {
 pub enum GameKind {
     #[default]
     Runner,
+}
+
+/// How touches become movement.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InputScheme {
+    /// Hold and drag sideways to steer; flick up/down to jump/roll.
+    #[default]
+    Drag,
+    /// One swipe = one lane (with a cooldown), up/down as in drag.
+    Swipe,
+}
+
+/// Touch input. Distances are fractions of the short screen side.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct InputSpec {
+    pub scheme: InputScheme,
+    /// Drag: finger travel that moves the cat one lane.
+    pub drag_lane_frac: f32,
+    /// Drag: smoothing time constant of the cat following the finger.
+    pub drag_smooth_secs: f32,
+    /// Drag: on release, ease to the nearest lane centre.
+    pub drag_snap: bool,
+    /// Flick: vertical travel that counts as a jump/roll flick.
+    pub flick_dist: f32,
+    /// Flick: max angle from vertical, degrees.
+    pub flick_angle_deg: f32,
+    /// Swipe scheme: lateral travel for one lane.
+    pub swipe_dist: f32,
+    /// Swipe scheme: no second lateral swipe in the same touch for this long.
+    pub swipe_cooldown_secs: f32,
+    /// Jump/roll presses wait this long for the cat to act on them.
+    pub buffer_secs: f32,
+}
+
+impl Default for InputSpec {
+    fn default() -> Self {
+        Self {
+            scheme: InputScheme::Drag,
+            drag_lane_frac: 0.18,
+            drag_smooth_secs: 0.05,
+            drag_snap: true,
+            flick_dist: 0.07,
+            flick_angle_deg: 30.0,
+            swipe_dist: 0.09,
+            swipe_cooldown_secs: 0.3,
+            buffer_secs: 0.15,
+        }
+    }
 }
 
 /// Runner kit: forward scroll, lanes, and spawn-ahead.
@@ -284,6 +336,7 @@ impl Default for GameSpec {
             items: Vec::new(),
             placements: Vec::new(),
             runner: RunnerKit::default(),
+            input: InputSpec::default(),
         }
     }
 }

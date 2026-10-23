@@ -117,8 +117,6 @@ pub struct SharedSession {
     pub neon: Option<crate::neon_run::NeonRun>,
     /// `"genre": "neon_cat"`. Kept off WorldPlay on purpose.
     pub cat: Option<crate::neon_cat::NeonCat>,
-    /// 4-way swipes for games that take them (Neon Cat).
-    pub swipes: crate::gesture::SwipeRecognizer,
     pointers: Vec<PointerEvent>,
     pending_keys: Vec<KeyEvent>,
     /// このフレームで新しく触れた座標。`poll_pointers` の意味を変えずに
@@ -163,7 +161,6 @@ impl Default for SharedSession {
             world: None,
             neon: None,
             cat: None,
-            swipes: crate::gesture::SwipeRecognizer::default(),
             pointers: Vec::new(),
             pending_keys: Vec::new(),
             pending_taps: Vec::new(),
@@ -289,14 +286,11 @@ impl SharedSession {
             }
         }
         if self.kind == SceneKind::NeonCat {
-            // Frame clock: the speed threshold assumes about 60 Hz events.
+            // Frame clock: flick and swipe speeds assume about 60 Hz events.
             let t = self.frame as f32 / 60.0;
-            if let Some(crate::gesture::Gesture::Swipe(dir)) =
-                self.swipes.push(ev, self.width, self.height, t)
-            {
-                if let Some(cat) = self.cat.as_mut() {
-                    cat.swipe(dir);
-                }
+            let (w, h) = (self.width, self.height);
+            if let Some(cat) = self.cat.as_mut() {
+                cat.touch(ev, w, h, t);
             }
         }
         if self.kind == SceneKind::NeonCat && matches!(ev.phase, PointerPhase::Begin) {
@@ -482,7 +476,7 @@ impl SharedSession {
                 if cat.phase_name() == "play" {
                     // A finger on the screen is a swipe, not a stick or a
                     // jump zone (Android shells send both).
-                    if self.swipes.active() {
+                    if cat.touch_active() {
                         cat.set_steer(0.0, 0.0, false);
                     } else {
                         cat.set_steer(lx, lz, jump);

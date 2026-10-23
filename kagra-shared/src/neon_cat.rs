@@ -25,7 +25,8 @@ use crate::world_doc::{WorldCamera, WorldDoc, WorldLight, WorldProp, WorldWalker
 
 pub const GAME_ID: &str = "neon_cat";
 
-use crate::gesture::{InputBuffer, Swipe};
+use crate::game_spec::InputScheme;
+use crate::gesture::{DragEvent, DragFlick, Gesture, InputBuffer, Swipe, SwipeRecognizer};
 
 /// How long a swipe waits for the cat to be able to act on it.
 pub const SWIPE_BUFFER_SECS: f32 = 0.15;
@@ -74,6 +75,12 @@ pub struct NeonCat {
     swipes: InputBuffer<Swipe>,
     /// Lane a left/right swipe is heading to (world x).
     lane_target: Option<f32>,
+    /// Touch recognisers; `spec.input.scheme` picks which one runs.
+    drag: DragFlick,
+    swiper: SwipeRecognizer,
+    /// Drag scheme: cat x when the finger went down, and where it follows now.
+    drag_base: f32,
+    drag_target: Option<f32>,
 }
 
 pub fn is_cat_dump(json: &str) -> bool {
@@ -186,7 +193,16 @@ impl NeonCat {
             doc: WorldDoc::default(),
             swipes: InputBuffer::new(SWIPE_BUFFER_SECS),
             lane_target: None,
+            drag: DragFlick::default(),
+            swiper: SwipeRecognizer::default(),
+            drag_base: 0.0,
+            drag_target: None,
         };
+        run.drag.flick_dist = run.spec.input.flick_dist;
+        run.drag.flick_angle_deg = run.spec.input.flick_angle_deg;
+        run.swiper.min_dist = run.spec.input.swipe_dist;
+        run.swiper.cooldown = run.spec.input.swipe_cooldown_secs;
+        run.swipes.window = run.spec.input.buffer_secs;
         run.snap_chase();
         run
     }
@@ -516,6 +532,7 @@ impl NeonCat {
         self.time = 0.0;
         self.swipes.clear();
         self.lane_target = None;
+        self.drag_target = None;
         self.flow.enter_play();
         self.rebuild();
     }
@@ -544,6 +561,65 @@ impl NeonCat {
         }
     }
 
+    /// Outermost lane centre (world |x|).
+    fn lane_max(&self) -> f32 {
+        let l = &self.spec.runner.lanes;
+        (l.limit / l.width.max(0.1)).floor() * l.width.max(0.1)
+    }
+
+    /// A finger is on the screen (hosts drop their stick/jump zones).
+    pub fn touch_active(&self) -> bool {
+        self.drag.active() || self.swiper.active()
+    }
+
+    /// One pointer event in surface pixels; `t` is any seconds clock.
+    /// `spec.input.scheme` decides drag-to-steer or swipe-per-lane.
+    pub fn touch(&mut self, ev: crate::input::PointerEvent, w: u32, h: u32, t: f32) {
+        match self.spec.input.scheme {
+            InputScheme::Swipe => {
+                if let Some(Gesture::Swipe(dir)) = self.swiper.push(ev, w, h, t) {
+                    self.swipe(dir);
+                }
+            }
+            InputScheme::Drag => {
+                for e in self.drag.push(ev, w, h, t) {
+                    self.drag_event(e);
+                }
+            }
+        }
+    }
+
+    /// Drag scheme. The cat's x follows the finger's horizontal travel:
+    /// `input.drag_lane_frac` of the short side is one lane.
+    pub fn drag_event(&mut self, e: DragEvent) {
+        let playing = matches!(self.flow.phase, FlowPhase::Play) && self.core.stats.alive;
+        match e {
+            DragEvent::Start => {
+                self.drag_base = self.lane_target.unwrap_or(self.x);
+                self.lane_target = None;
+                self.drag_target = playing.then_some(self.drag_base);
+            }
+            DragEvent::Drag(dx) if playing => {
+                let w = self.spec.runner.lanes.width.max(0.1);
+                let lanes = dx / self.spec.input.drag_lane_frac.max(0.01);
+                // Screen-right is world -X on this camera.
+                let m = self.lane_max();
+                self.drag_target = Some((self.drag_base - lanes * w).clamp(-m, m));
+            }
+            DragEvent::Drag(_) => {}
+            DragEvent::Flick(dir) => self.swipe(dir),
+            DragEvent::Release => {
+                if let Some(t) = self.drag_target.take() {
+                    if self.spec.input.drag_snap && playing {
+                        let w = self.spec.runner.lanes.width.max(0.1);
+                        let m = self.lane_max();
+                        self.lane_target = Some(((t / w).round() * w).clamp(-m, m));
+                    }
+                }
+            }
+        }
+    }
+
     /// One recognised swipe. Left/right move one lane, up jumps (buffered),
     /// down fast-falls in the air. Taps and swipes outside play do nothing.
     pub fn swipe(&mut self, dir: Swipe) {
@@ -557,7 +633,8 @@ impl NeonCat {
                 let from = self.lane_target.unwrap_or((self.x / w).round() * w);
                 // Screen-left is world +X on this camera.
                 let step = if dir == Swipe::Left { w } else { -w };
-                self.lane_target = Some((from + step).clamp(-lanes.limit, lanes.limit));
+                let m = (lanes.limit / w).floor() * w;
+                self.lane_target = Some((from + step).clamp(-m, m));
             }
             Swipe::Up => self.swipes.press(Swipe::Up, self.time),
             Swipe::Down => {
@@ -582,6 +659,18 @@ impl NeonCat {
         let steer = -ax;
         let response = 1.0 - (-dt * 8.0).exp();
         self.vx += (steer * self.spec.runner.lanes.steer - self.vx) * response;
+        if let Some(t) = self.drag_target {
+            let k = 1.0 - (-dt / self.spec.input.drag_smooth_secs.max(1e-3)).exp();
+            self.vx = (t - self.x) * k / dt.max(1e-4);
+        } else if let Some(t) = self.lane_target {
+            // Ease into the lane centre without overshoot, capped at steer speed.
+            let held = (self.key_right as i32 - self.key_left as i32) as f32 + self.pad_x;
+            if held.abs() < 0.2 {
+                let k = 1.0 - (-dt / 0.06).exp();
+                let cap = self.spec.runner.lanes.steer * 1.5;
+                self.vx = ((t - self.x) * k / dt.max(1e-4)).clamp(-cap, cap);
+            }
+        }
         let grounded = self.y <= 0.001 && self.vy <= 0.0;
         if let Some(t) = self.lane_target {
             let held = (self.key_right as i32 - self.key_left as i32) as f32 + self.pad_x;

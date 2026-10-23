@@ -180,13 +180,15 @@
     const requestedBackend = (params.get("backend") || "auto").toLowerCase();
     let activeBackend = requestedBackend === "webgl" || requestedBackend === "webgl2" ? "gl" : requestedBackend;
     const slug = (params.get("game") || "neon_run").trim() || "neon_run";
-    if (slug === "neon_cat") {
-      // Neon Cat only steers and jumps. A dead アクション button just confuses.
-      const actBtn = document.getElementById("act");
-      if (actBtn) actBtn.style.display = "none";
+    // Swipe games (Neon Cat kit) read gestures in the engine: no pads at all.
+    let swipeMode = false;
+    const applySwipeMode = () => {
+      swipeMode = typeof session?.usesSwipe === "function" && session.usesSwipe();
+      if (!swipeMode) return;
+      pads.classList.remove("visible");
       const blurbEl = document.getElementById("blurb");
-      if (blurbEl) blurbEl.textContent = "タップではじめる。左が移動、右下ジャンプ。";
-    }
+      if (blurbEl) blurbEl.textContent = "タップではじめる。指を置いたまま左右にドラッグで移動、上フリックでジャンプ、下フリックで急降下。";
+    };
 
     const fail = (text) => {
       boot.className = "err";
@@ -269,6 +271,7 @@
         }
       })();
       session.loadGame(payload);
+      applySwipeMode();
       if (session.setExternalMenu) session.setExternalMenu(true);
       session.showTitle();
       if (params.get("debug") === "1" && session.setDebug) session.setDebug(true);
@@ -353,7 +356,7 @@
       phase = next || "title";
       const playing = phase === "playing";
       overlay.classList.toggle("visible", !playing);
-      pads.classList.toggle("visible", playing);
+      pads.classList.toggle("visible", playing && !swipeMode);
       hud.classList.toggle("visible", playing);
       document.documentElement.dataset.menu = playing ? "0" : "1";
       if (!playing && phase !== "complete") session.showTitle();

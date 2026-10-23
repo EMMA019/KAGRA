@@ -166,6 +166,21 @@ def _neon_obstacles() -> list[EntityKind]:
 
 
 @dataclass
+class InputSpec:
+    """Touch scheme (mirrors Rust ``InputSpec``). Distances are short-side fractions."""
+
+    scheme: str = "drag"  # "drag" (hold and drag to steer) or "swipe" (one lane per swipe)
+    drag_lane_frac: float = 0.18
+    drag_smooth_secs: float = 0.05
+    drag_snap: bool = True
+    flick_dist: float = 0.07
+    flick_angle_deg: float = 30.0
+    swipe_dist: float = 0.09
+    swipe_cooldown_secs: float = 0.3
+    buffer_secs: float = 0.15
+
+
+@dataclass
 class GameSpec:
     kind: str = "runner"
     id: str = "neon_cat"
@@ -181,6 +196,7 @@ class GameSpec:
     items: list[ItemSpec] = field(default_factory=list)
     placements: list[Placement] = field(default_factory=list)
     runner: RunnerKit = field(default_factory=RunnerKit)
+    input: InputSpec = field(default_factory=InputSpec)
 
     @classmethod
     def from_overrides(cls, overrides: dict | None = None) -> GameSpec:
@@ -192,6 +208,8 @@ class GameSpec:
         return cls.from_overrides(json.loads(Path(path).read_text(encoding="utf-8")))
 
     def to_dict(self) -> dict:
+        if self.input.scheme not in ("drag", "swipe"):
+            raise ValueError(f"input scheme {self.input.scheme!r} not in ('drag', 'swipe')")
         if self.kind not in KINDS:
             raise ValueError(f"game kind {self.kind!r} not in {KINDS}")
         if not self.obstacles or all(o.weight <= 0 for o in self.obstacles):
