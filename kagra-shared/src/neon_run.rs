@@ -41,8 +41,9 @@ const SHIP_GLB: &str = "assets/models/kenney/space-kit/craft_speederC.glb";
 const SHIP_YAW: f32 = std::f32::consts::PI;
 /// About 0.78× the old 0.46 hull, so the next ring stays in frame.
 const SHIP_SCALE: f32 = 0.36;
-/// Corridor ribs. Low so a rib crossing the lens is not a white bar.
-const RIB_EMISSIVE: f32 = 0.4;
+/// Side posts only. A top beam, even a thin one, stacks into cyan and
+/// pink bars across the upper half of a portrait frame.
+const RIB_EMISSIVE: f32 = 0.12;
 /// Lays the XY trail quad onto the ground plane. A chase camera looking
 /// along +Z then sees a ribbon instead of an edge.
 const TRAIL_PITCH: f32 = -std::f32::consts::FRAC_PI_2;
@@ -818,58 +819,44 @@ impl NeonRun {
         let origin = (self.z / 7.0).floor() * 7.0;
         for i in 0..10 {
             let z = origin + i as f32 * 7.0;
-            // The nearest rib used to cross the lens and read as white bars.
-            if z < self.z + 6.0 {
+            // The nearest rib used to cross the lens and read as a bar.
+            if z < self.z + 14.0 {
                 continue;
             }
             let cyan = (i & 1) == 0;
             let col = if cyan { [40, 220, 255] } else { [255, 50, 180] };
-            // Ribs stay dim so the nearest ones do not read as white bars.
             let gain = RIB_EMISSIVE;
-            let w = 6.6;
-            let h = 4.5;
-            doc.props.push(beam(
-                &format!("rib-t-{i}"),
-                [0.0, h * 0.5, z],
-                [w, 0.07, 0.1],
-                col,
-                gain,
-            ));
-            doc.props.push(beam(
-                &format!("rib-b-{i}"),
-                [0.0, -h * 0.5, z],
-                [w, 0.07, 0.1],
-                col,
-                gain,
-            ));
+            let w = 8.2;
             doc.props.push(beam(
                 &format!("rib-l-{i}"),
-                [-w * 0.5, 0.0, z],
-                [0.07, h, 0.1],
+                [-w * 0.5, 1.4, z],
+                [0.02, 2.2, 0.04],
                 col,
                 gain,
             ));
             doc.props.push(beam(
                 &format!("rib-r-{i}"),
-                [w * 0.5, 0.0, z],
-                [0.07, h, 0.1],
+                [w * 0.5, 1.4, z],
+                [0.02, 2.2, 0.04],
                 col,
                 gain,
             ));
         }
+        // Short rails in front of the camera. A 70 m beam centered ahead
+        // runs back through the near plane and can fill a band of the frame.
         doc.props.push(beam(
             "rail-l",
-            [-2.7, -1.55, self.z + 18.0],
-            [0.06, 0.05, 70.0],
+            [-3.4, -2.15, self.z + 28.0],
+            [0.035, 0.02, 32.0],
             [80, 255, 240],
-            0.65,
+            0.22,
         ));
         doc.props.push(beam(
             "rail-r",
-            [2.7, -1.55, self.z + 18.0],
-            [0.06, 0.05, 70.0],
+            [3.4, -2.15, self.z + 28.0],
+            [0.035, 0.02, 32.0],
             [255, 60, 180],
-            0.65,
+            0.22,
         ));
     }
 
@@ -903,9 +890,9 @@ impl NeonRun {
             doc.props.push(beam(
                 &format!("grid-x-{i}"),
                 [0.0, -2.30, z],
-                [14.0, 0.015, 0.05],
+                [14.0, 0.012, 0.04],
                 col,
-                0.85,
+                0.26,
             ));
         }
         for k in -4..=4 {
@@ -917,9 +904,9 @@ impl NeonRun {
             doc.props.push(beam(
                 &format!("grid-z-{k}"),
                 [k as f32 * 1.7, -2.29, self.z + 18.0],
-                [0.03, 0.012, 64.0],
+                [0.025, 0.01, 40.0],
                 col,
-                if k == 0 { 0.35 } else { 0.55 },
+                if k == 0 { 0.18 } else { 0.28 },
             ));
         }
     }
@@ -1016,11 +1003,13 @@ impl NeonRun {
                 0.35,
             );
             if attach_glb(&mut prop, kit.path) {
-                prop.color = Some([255, 150, 185]);
-                prop.roughness = 0.55;
-                prop.metallic = 0.08;
-                prop.emissive = Some(0.4);
-                prop.emissive_color = Some([1.0, 0.22, 0.5]);
+                // Pink multiply so the rock base color lands in the neon palette
+                // without washing the lighting out.
+                prop.color = Some([255, 128, 168]);
+                prop.roughness = 0.62;
+                prop.metallic = 0.06;
+                prop.emissive = Some(0.18);
+                prop.emissive_color = Some([1.0, 0.28, 0.55]);
             } else {
                 prop.color = Some([220, 70, 140]);
                 prop.emissive = Some(0.7);
@@ -1126,12 +1115,13 @@ impl NeonRun {
                 SHIP_YAW,
                 nose,
                 bank,
-                [255, 255, 255],
-                0.15,
+                // Cool multiply on the Kenney base colors (red metal, gray, dark).
+                [176, 220, 255],
+                0.12,
             );
             prop.gltf = Some(SHIP_GLB.into());
             prop.emissive_map = None;
-            prop.emissive_color = Some([0.25, 0.75, 1.0]);
+            prop.emissive_color = Some([0.20, 0.62, 1.0]);
             prop.metallic = 0.22;
             prop.roughness = 0.72;
             doc.props.push(prop);
@@ -1259,7 +1249,9 @@ impl NeonRun {
                 "trail",
                 [
                     (a[0] + b[0]) * 0.5,
-                    (a[1] + b[1]) * 0.5 - 0.2,
+                    // Stagger each segment off the shared plane so the
+                    // depth-writing ribbon does not z-fight itself.
+                    (a[1] + b[1]) * 0.5 - 0.2 + i as f32 * 0.008,
                     (a[2] + b[2]) * 0.5,
                 ],
                 [width, length.max(0.08), 1.0],
@@ -1558,6 +1550,13 @@ mod tests {
             "engine glow is emissive"
         );
         assert_eq!(run.document().contact_blobs, Some(false));
+        assert!(
+            run.document()
+                .props
+                .iter()
+                .all(|p| { !(p.name == "rib" && p.scale[0] > 1.0 && p.position[1] > 0.5) }),
+            "no ceiling beam across the portrait frame"
+        );
         let scene_fog = run.document().compile_scene(9.0 / 16.0);
         assert!((scene_fog.fog_start - 36.0).abs() < 1e-3);
         assert_eq!(run.document().env_map.as_deref(), Some("preset:studio"));

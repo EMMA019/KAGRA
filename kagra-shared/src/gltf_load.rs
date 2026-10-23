@@ -2042,8 +2042,10 @@ fn orm_factors(doc: &GltfFile, prim: &Primitive) -> (f32, f32) {
     (metal.clamp(0.0, 1.0), rough.clamp(0.0, 1.0))
 }
 
-/// 1×1 ORM from authored factors. Absent keys stay scalar so a default of
-/// metal 1 / rough 1 is not baked onto every untextured mesh.
+/// 1×1 ORM from authored factors. Absent keys stay scalar. The glTF
+/// defaults (metal 1, rough 1) are also left scalar: Kenney writes that
+/// pair on every base-color material, and sampling it replaces the dump's
+/// metallic / roughness, so the mesh lights as a flat white metal.
 fn authored_factor_orm(doc: &GltfFile, prim: &Primitive) -> Option<AlbedoRgba> {
     let mi = prim.material?;
     let mat = doc.materials.get(mi)?;
@@ -2059,6 +2061,9 @@ fn authored_factor_orm(doc: &GltfFile, prim: &Primitive) -> Option<AlbedoRgba> {
         .get("roughnessFactor")
         .and_then(|v| v.as_f64())
         .unwrap_or(1.0);
+    if (metal - 1.0).abs() < 1e-3 && (rough - 1.0).abs() < 1e-3 {
+        return None;
+    }
     let g = (rough.clamp(0.0, 1.0) * 255.0).round() as u8;
     let b = (metal.clamp(0.0, 1.0) * 255.0).round() as u8;
     Some(AlbedoRgba {
@@ -2626,16 +2631,49 @@ mod tests {
     #[test]
     fn authored_metal_rough_factors_become_a_scalar_orm() {
         let cube = unit_cube_gltf();
+        let mut defaults = cube.replacen("\"mode\": 4", "\"mode\": 4, \"material\": 0", 1);
+        let trimmed = defaults.trim_end().trim_end_matches('}').to_string();
+        defaults = format!(
+            "{trimmed}, \"materials\": [{{\"pbrMetallicRoughness\": {{\"metallicFactor\": 1.0, \"roughnessFactor\": 1.0}}}}]}}"
+        );
+        let mesh = mesh_from_gltf_json(&defaults, |_| Err("external".into())).expect("defaults");
+        assert!(
+            mesh.orm.is_none(),
+            "metal 1 / rough 1 is the glTF default and must not override the dump"
+        );
         let mut with = cube.replacen("\"mode\": 4", "\"mode\": 4, \"material\": 0", 1);
         let trimmed = with.trim_end().trim_end_matches('}').to_string();
         with = format!(
-            "{trimmed}, \"materials\": [{{\"pbrMetallicRoughness\": {{\"metallicFactor\": 1.0, \"roughnessFactor\": 1.0}}}}]}}"
+            "{trimmed}, \"materials\": [{{\"pbrMetallicRoughness\": {{\"metallicFactor\": 0.25, \"roughnessFactor\": 0.40}}}}]}}"
         );
         let mesh = mesh_from_gltf_json(&with, |_| Err("external".into())).expect("factor orm");
         assert!(mesh.orm_rough && mesh.orm_metal);
         let img = mesh.orm.expect("orm");
-        assert_eq!(img.rgba[1], 255, "roughnessFactor 1");
-        assert_eq!(img.rgba[2], 255, "metallicFactor 1");
+        assert_eq!(img.rgba[1], 102, "roughnessFactor 0.40");
+        assert_eq!(img.rgba[2], 64, "metallicFactor 0.25");
+    }
+
+    #[test]
+    fn kenney_speeder_keeps_base_color_and_skips_default_metal() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../assets/models/kenney/space-kit/craft_speederC.glb"
+        );
+        let bytes = std::fs::read(path).expect("speeder glb");
+        let mesh = mesh_from_glb(&bytes).expect("mesh");
+        assert!(
+            mesh.orm.is_none(),
+            "Kenney metal 1 / rough 1 must leave lighting to the instance"
+        );
+        let alb = mesh.albedo.expect("baseColorFactor atlas");
+        let mut spread = 0i32;
+        for px in alb.rgba.chunks(4) {
+            spread = spread.max((px[0] as i32 - px[2] as i32).abs());
+        }
+        assert!(
+            spread > 40,
+            "palette should separate red metal from dark hull, spread {spread}"
+        );
     }
 
     #[test]
