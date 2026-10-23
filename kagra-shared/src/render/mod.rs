@@ -2411,6 +2411,10 @@ impl Renderer {
                 anim_blend,
                 overlay_bones,
                 overlay_weight,
+                clip_name,
+                fade_from,
+                fade_from_clip,
+                fade_from_weight,
                 ..
             } = slot
             else {
@@ -2438,6 +2442,10 @@ impl Renderer {
                     anim_blend,
                     overlay_bones,
                     overlay_weight,
+                    clip_name,
+                    fade_from,
+                    fade_from_clip,
+                    fade_from_weight,
                 };
                 crate::gltf_load::sample_skinned_cloth_pose(
                     skin,
