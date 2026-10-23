@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Fail unless Android native libraries are 16 KB page aligned.
+"""Fail unless Android native libraries are 16 KB aligned and relocatable.
 
 For each ``.so`` in an APK (or a loose ``.so`` / directory):
 
 * ``llvm-readelf -l`` — every LOAD ``p_align`` must be >= 16384
+* ``llvm-readelf -d`` — no ``DT_NEEDED`` entry contains ``/`` (an absolute
+  link path). ``libkagra_shared.so`` must also advertise SONAME
+  ``libkagra_shared.so``.
 * ``zipalign -c -P 16 -v 4`` — the APK stores those libraries uncompressed
   on a 16 KB zip boundary (skipped with ``--elf-only``)
 
@@ -17,6 +20,7 @@ import argparse
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -25,7 +29,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE_ALIGN = 16384
+SHARED_SONAME = "libkagra_shared.so"
 _NDK_PIN = re.compile(r'^NDK_VERSION="(\d+\.\d+\.\d+)"', re.M)
+_NEEDED_RE = re.compile(r"\(NEEDED\)\s+Shared library:\s+\[([^\]]*)\]")
+_SONAME_RE = re.compile(r"\(SONAME\)\s+Library soname:\s+\[([^\]]*)\]")
 
 
 def pinned_ndk_version() -> str:
@@ -49,6 +56,116 @@ def load_aligns_from_readelf(text: str) -> list[int]:
         except ValueError as exc:
             raise ValueError(f"LOAD alignment is not an integer: {raw.strip()}") from exc
     return aligns
+
+
+def needed_entries(text: str) -> list[str]:
+    """Library names from ``llvm-readelf -d`` ``DT_NEEDED`` rows."""
+    return _NEEDED_RE.findall(text)
+
+
+def soname_entries(text: str) -> list[str]:
+    return _SONAME_RE.findall(text)
+
+
+def dynamic_errors(label: str, text: str, *, filename: str) -> list[str]:
+    """Reject DT_NEEDED paths and a missing SONAME on libkagra_shared.so."""
+    errors: list[str] = []
+    seen: set[str] = set()
+    parsed = needed_entries(text)
+    for name in parsed:
+        if "/" in name or "\\" in name:
+            msg = f"{label}: DT_NEEDED contains a path: {name}"
+            if msg not in seen:
+                seen.add(msg)
+                errors.append(msg)
+    # A wrapped or non-matching (NEEDED) line can hide a path when another
+    # entry parsed cleanly. Any slash on a NEEDED line still fails the build.
+    for raw in text.splitlines():
+        if "(NEEDED)" not in raw or ("/" not in raw and "\\" not in raw):
+            continue
+        found = _NEEDED_RE.findall(raw)
+        if found and all(name in parsed for name in found):
+            continue
+        msg = f"{label}: DT_NEEDED contains a path: {raw.strip()}"
+        if msg not in seen:
+            seen.add(msg)
+            errors.append(msg)
+    if filename == SHARED_SONAME:
+        sonames = soname_entries(text)
+        if sonames != [SHARED_SONAME]:
+            shown = ", ".join(sonames) if sonames else "(none)"
+            errors.append(f"{label}: SONAME is {shown}, expected {SHARED_SONAME}")
+    return errors
+
+
+def elf_dynamic(data: bytes) -> tuple[str | None, list[str]]:
+    """Read SONAME and DT_NEEDED strings from an ELF64 image.
+
+    This does not trust llvm-readelf's text layout. A slash in any DT_NEEDED
+    string is the Pixel 10 dlopen failure, even if readelf wraps the line.
+    """
+    if len(data) < 64 or data[:4] != b"\x7fELF":
+        raise ValueError("not an ELF file")
+    if data[4] != 2 or data[5] != 1:
+        raise ValueError(f"expected ELF64 little-endian, class={data[4]} data={data[5]}")
+    e_phoff = struct.unpack_from("<Q", data, 32)[0]
+    e_phentsize, e_phnum = struct.unpack_from("<HH", data, 54)
+    if e_phentsize < 56 or e_phnum == 0:
+        raise ValueError("ELF program headers missing")
+    loads: list[tuple[int, int, int]] = []
+    dynamic: tuple[int, int] | None = None
+    for index in range(e_phnum):
+        off = e_phoff + index * e_phentsize
+        if off + 56 > len(data):
+            raise ValueError("ELF program header truncated")
+        p_type, _flags, p_offset, p_vaddr, _paddr, p_filesz, _memsz, _align = struct.unpack_from(
+            "<IIQQQQQQ", data, off
+        )
+        if p_type == 1:  # PT_LOAD
+            loads.append((p_vaddr, p_offset, p_filesz))
+        elif p_type == 2:  # PT_DYNAMIC
+            dynamic = (p_offset, p_filesz)
+    if dynamic is None:
+        raise ValueError("ELF has no PT_DYNAMIC")
+
+    def vaddr_to_off(vaddr: int) -> int:
+        for va, file_off, filesz in loads:
+            if va <= vaddr < va + filesz:
+                return file_off + (vaddr - va)
+        raise ValueError(f"virtual address {vaddr:#x} is not in a LOAD segment")
+
+    dyn_off, dyn_sz = dynamic
+    strtab: int | None = None
+    needed_offs: list[int] = []
+    soname_off: int | None = None
+    for cursor in range(0, dyn_sz, 16):
+        at = dyn_off + cursor
+        if at + 16 > len(data):
+            raise ValueError("PT_DYNAMIC truncated")
+        tag, val = struct.unpack_from("<qQ", data, at)
+        if tag == 0:
+            break
+        if tag == 5:  # DT_STRTAB
+            strtab = val
+        elif tag == 1:  # DT_NEEDED
+            needed_offs.append(val)
+        elif tag == 14:  # DT_SONAME
+            soname_off = val
+    if strtab is None:
+        raise ValueError("ELF dynamic section has no DT_STRTAB")
+    str_off = vaddr_to_off(strtab)
+
+    def cstr(rel: int) -> str:
+        start = str_off + rel
+        if start < 0 or start >= len(data):
+            raise ValueError(f"dynamic string offset {rel:#x} is outside the file")
+        end = data.find(b"\x00", start)
+        if end < 0:
+            raise ValueError("dynamic string is not NUL-terminated")
+        return data[start:end].decode("utf-8", "replace")
+
+    soname = cstr(soname_off) if soname_off is not None else None
+    return soname, [cstr(off) for off in needed_offs]
 
 
 def alignment_errors(label: str, aligns: list[int]) -> list[str]:
@@ -184,22 +301,61 @@ def _extract_apk_libs(apk: Path, dest: Path) -> list[Path]:
     return sorted(extracted)
 
 
+def _readelf(readelf: Path, mode: str, path: Path) -> subprocess.CompletedProcess[str]:
+    cmd = [str(readelf), mode, "--wide", str(path)]
+    print("+", " ".join(cmd), flush=True)
+    return subprocess.run(cmd, check=False, capture_output=True, text=True)
+
+
+def _dynamic_string_errors(label: str, filename: str, soname: str | None, needed: list[str]) -> list[str]:
+    errors: list[str] = []
+    for name in needed:
+        if "/" in name or "\\" in name:
+            errors.append(f"{label}: DT_NEEDED contains a path: {name}")
+    if filename == SHARED_SONAME and soname != SHARED_SONAME:
+        shown = soname if soname else "(none)"
+        errors.append(f"{label}: SONAME is {shown}, expected {SHARED_SONAME}")
+    return errors
+
+
 def check_elf(path: Path, readelf: Path, label: str | None = None) -> list[str]:
     label = label or str(path)
-    cmd = [str(readelf), "-l", "--wide", str(path)]
-    print("+", " ".join(cmd), flush=True)
-    proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout).strip()
-        return [f"{label}: llvm-readelf -l failed ({proc.returncode}): {detail}"]
+    errors: list[str] = []
     try:
-        aligns = load_aligns_from_readelf(proc.stdout)
+        soname, needed = elf_dynamic(path.read_bytes())
     except ValueError as exc:
-        return [f"{label}: {exc}"]
-    errors = alignment_errors(label, aligns)
+        errors.append(f"{label}: {exc}")
+    else:
+        errors.extend(_dynamic_string_errors(label, path.name, soname, needed))
+        if not errors:
+            shown = ", ".join(needed) or "(none)"
+            print(f"{label}: ELF SONAME {soname or '(none)'}; DT_NEEDED {shown}")
+
+    load = _readelf(readelf, "-l", path)
+    if load.returncode != 0:
+        detail = (load.stderr or load.stdout).strip()
+        errors.append(f"{label}: llvm-readelf -l failed ({load.returncode}): {detail}")
+        return errors
+    try:
+        aligns = load_aligns_from_readelf(load.stdout)
+    except ValueError as exc:
+        errors.append(f"{label}: {exc}")
+        return errors
+    errors.extend(alignment_errors(label, aligns))
     if not errors:
         shown = ", ".join(f"{align:#x}" for align in aligns)
         print(f"{label}: LOAD p_align {shown}")
+
+    dynamic = _readelf(readelf, "-d", path)
+    if dynamic.returncode != 0:
+        detail = (dynamic.stderr or dynamic.stdout).strip()
+        errors.append(f"{label}: llvm-readelf -d failed ({dynamic.returncode}): {detail}")
+        return errors
+    dyn_errors = dynamic_errors(label, dynamic.stdout, filename=path.name)
+    if not dyn_errors:
+        needed = ", ".join(needed_entries(dynamic.stdout)) or "(none)"
+        print(f"{label}: DT_NEEDED {needed}")
+    errors.extend(dyn_errors)
     return errors
 
 
@@ -268,7 +424,7 @@ def main(argv: list[str] | None = None) -> int:
         for error in errors:
             print(error, file=sys.stderr)
         return 1
-    print(f"16 KB alignment OK ({PAGE_ALIGN})")
+    print(f"16 KB alignment OK ({PAGE_ALIGN}); DT_NEEDED has no paths")
     return 0
 
 

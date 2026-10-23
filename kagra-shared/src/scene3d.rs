@@ -134,6 +134,12 @@ pub struct MeshData {
     pub normal: Option<AlbedoRgba>,
     /// Present when the glTF/VRM primitive authored MToon shade.
     pub mtoon: Option<MtoonShade>,
+    /// Linear ORM image. G = roughness, B = metallic. Flags say which channel wins.
+    pub orm: Option<AlbedoRgba>,
+    pub orm_rough: bool,
+    pub orm_metal: bool,
+    /// Emissive color map (sRGB bytes). Strength stays on the instance.
+    pub emissive_map: Option<AlbedoRgba>,
 }
 
 impl MeshData {
@@ -202,6 +208,11 @@ pub struct Instance {
     pub material: Material,
     pub metallic: f32,
     pub roughness: f32,
+    /// Unlit HDR add, multiplied by `emissive_color` (or albedo when that is black).
+    /// 0 keeps the old picture. Bloom extracts whatever this pushes over the threshold.
+    pub emissive: f32,
+    /// Linear 0..1. All zero means "use the shaded albedo".
+    pub emissive_color: [f32; 3],
 }
 
 impl Instance {
@@ -212,6 +223,8 @@ impl Instance {
             material: Material::Solid,
             metallic: 0.0,
             roughness: 0.42,
+            emissive: 0.0,
+            emissive_color: [0.0; 3],
         }
     }
 
@@ -227,6 +240,8 @@ impl Instance {
             material,
             metallic,
             roughness,
+            emissive: 0.0,
+            emissive_color: [0.0; 3],
         }
     }
 
@@ -243,6 +258,8 @@ impl Instance {
             material,
             metallic: metallic.clamp(0.0, 1.0),
             roughness: roughness.clamp(0.04, 1.0),
+            emissive: 0.0,
+            emissive_color: [0.0; 3],
         }
     }
 }
@@ -470,6 +487,14 @@ pub struct Scene3D {
     pub exposure: f32,
     /// ACES tonemap. Default on so outdoor dumps are not key+fill-flat.
     pub tonemap: bool,
+    /// Directional shadow radius. 1 = the historical 3×3 PCF. Larger = a wider tent.
+    pub shadow_softness: f32,
+    /// Hemisphere sky color. Default is the studio blue that the SH used to hardcode.
+    pub hemi_sky: [f32; 3],
+    /// Hemisphere ground color. Default is the studio warm ground.
+    pub hemi_ground: [f32; 3],
+    /// 64×64 linear RGBA prefiltered lat-long (4 roughness rows). None = SH specular.
+    pub env_pixels: Option<Vec<u8>>,
     pub batches: Vec<Batch>,
 }
 
@@ -487,6 +512,10 @@ impl Default for Scene3D {
             ibl: 0.35,
             exposure: 1.0,
             tonemap: true,
+            shadow_softness: 1.0,
+            hemi_sky: [0.48, 0.56, 0.78],
+            hemi_ground: [0.42, 0.30, 0.18],
+            env_pixels: None,
             batches: Vec::new(),
         }
     }
@@ -576,7 +605,7 @@ impl SceneBuilder {
         self.push_instance(mesh, inst);
     }
 
-    fn push_instance(&mut self, mesh: MeshId, inst: Instance) {
+    pub fn push_instance(&mut self, mesh: MeshId, inst: Instance) {
         if let Some((_, local)) = self.bounds.iter().find(|(m, _)| *m == mesh) {
             if !self.frustum.intersects(&local.transformed(inst.model)) {
                 self.culled += 1;
@@ -703,10 +732,7 @@ pub mod primitives {
                 Vertex3::with_uv(Vec3::new(-w, 0.0, -d), n, [0.0, 1.0]),
             ],
             indices: vec![0, 1, 2, 0, 2, 3],
-            albedo: None,
-            matcap: None,
-            normal: None,
-            mtoon: None,
+            ..MeshData::default()
         }
     }
 
@@ -728,10 +754,7 @@ pub mod primitives {
                 Vertex3::with_uv(Vec3::new(-hx, hy, 0.0), bn, [1.0, 0.0]),
             ],
             indices: vec![0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6],
-            albedo: None,
-            matcap: None,
-            normal: None,
-            mtoon: None,
+            ..MeshData::default()
         }
     }
 

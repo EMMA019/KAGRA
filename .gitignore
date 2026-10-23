@@ -98,6 +98,9 @@ scratch/
 !docs/media/
 !docs/media/**/*.png
 !docs/media/**/*.mp4
+# Phone-quality before/after shots referenced from docs/quality_gap.md
+!docs/screenshots/
+!docs/screenshots/**/*.png
 *.wav
 !assets/cute_song_trial.wav
 !assets/bar/**/*.wav

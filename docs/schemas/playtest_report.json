@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kagra.dev/schemas/playtest_report.json",
+  "title": "KAGRA playtest report",
+  "description": "GenreSession dump plus the input log since the oldest checkpoint inside about 10 seconds. Encoded as a KAGRA-PLAYTEST-1 zlib+base64 block when it does not fit in a GitHub issue URL.",
+  "type": "object",
+  "required": ["v", "note", "captured_t", "dump_t", "dump", "inputs"],
+  "properties": {
+    "v": { "const": 1 },
+    "note": { "type": "string", "maxLength": 400 },
+    "captured_t": { "type": "number" },
+    "dump_t": { "type": "number" },
+    "build": {
+      "type": "object",
+      "properties": {
+        "kagra_shared": { "type": "string" },
+        "git": { "type": "string" },
+        "profile": { "type": "string" },
+        "os": { "type": "string" },
+        "arch": { "type": "string" }
+      }
+    },
+    "device": {
+      "type": "object",
+      "properties": {
+        "label": { "type": "string" },
+        "lang": { "type": "string" },
+        "width": { "type": "integer" },
+        "height": { "type": "integer" }
+      }
+    },
+    "genre": { "type": "string" },
+    "dump": { "type": "object" },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["t", "kind"],
+        "properties": {
+          "seq": { "type": "integer" },
+          "t": { "type": "number" },
+          "dt": { "type": "number" },
+          "kind": { "enum": ["walk", "pointer", "key", "confirm"] }
+        }
+      }
+    }
+  }
+}

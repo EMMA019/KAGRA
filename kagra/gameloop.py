@@ -117,6 +117,8 @@ def render_rgba(
     w, h = int(width), int(height)
     if _ks is None:
         raise ImportError(_missing_shared_message())
+    if _hud_hook is not None:
+        hud = _hud_hook(hud)
     hud_json = json.dumps(hud) if hud else None
     try:
         return _ks.render_world_doc(json.dumps(world), w, h, hud_json)
@@ -215,13 +217,53 @@ _mouse: dict[str, Any] = {
     "just": set(),      # このフレーム押されたボタン
 }
 
+_hud_hook = None
+_before_draw = None
+_input_blocked = False
+
+
+def set_hud_hook(fn) -> None:
+    """``render_rgba`` が HUD を渡す前に呼ぶ。ゲームの dict は書き換えない。"""
+    global _hud_hook
+    _hud_hook = fn
+
+
+def set_before_draw(fn) -> None:
+    """``draw`` の直前。``fn(scene, dt)``。"""
+    global _before_draw
+    _before_draw = fn
+
+
+def restore_hud_hook() -> None:
+    global _hud_hook, _before_draw, _input_blocked
+    _hud_hook = None
+    _before_draw = None
+    _input_blocked = False
+
+
+def set_input_blocked(on: bool) -> None:
+    global _input_blocked
+    _input_blocked = bool(on)
+
+
+def release_all_keys() -> None:
+    """パネルを開いた瞬間に歩きが残らないようにする。"""
+    _down.clear()
+    _just.clear()
+    _mouse["buttons"].clear()
+    _mouse["just"].clear()
+
 
 def _on_mouse_motion(event) -> None:
+    if _input_blocked:
+        return
     _mouse["x"] = int(getattr(event, "x", 0))
     _mouse["y"] = int(getattr(event, "y", 0))
 
 
 def _on_mouse_down(event) -> None:
+    if _input_blocked:
+        return
     btn = int(getattr(event, "num", 1))
     if btn in (1, 2, 3):
         _mouse["buttons"].add(btn)
@@ -229,6 +271,8 @@ def _on_mouse_down(event) -> None:
 
 
 def _on_mouse_up(event) -> None:
+    if _input_blocked:
+        return
     btn = int(getattr(event, "num", 1))
     _mouse["buttons"].discard(btn)
 
@@ -261,6 +305,8 @@ _KEYMAP = {
 
 
 def _on_key_down(event) -> None:
+    if _input_blocked:
+        return
     name = _KEYMAP.get(str(getattr(event, "keysym", "")).lower())
     if name:
         _down.add(name)
@@ -268,6 +314,8 @@ def _on_key_down(event) -> None:
 
 
 def _on_key_up(event) -> None:
+    if _input_blocked:
+        return
     name = _KEYMAP.get(str(getattr(event, "keysym", "")).lower())
     if name:
         _down.discard(name)
@@ -375,6 +423,8 @@ def run(
         last = now
         scene.clock += dt
         scene.update(dt)
+        if _before_draw is not None:
+            _before_draw(scene, dt)
         # フレーム間に入力されたキー/クリックを update が確実に見るため、
         # クリアは update の後（前だと毎回消えて入力が永遠に届かない）。
         _just.clear()
@@ -395,7 +445,22 @@ def run(
         root.after(frame_ms, _tick)
 
     root.after(frame_ms, _tick)
-    root.mainloop()
+    attached = False
+    try:
+        import kagra.playtest as playtest
+
+        if playtest.enabled():
+            playtest.attach_tk(scene, root, label)
+            attached = True
+    except Exception as exc:
+        import sys
+
+        print(f"[kagra] playtest overlay skipped: {exc}", file=sys.stderr)
+    try:
+        root.mainloop()
+    finally:
+        if attached:
+            playtest.detach_tk()
 
 
 def time_monotonic() -> float:

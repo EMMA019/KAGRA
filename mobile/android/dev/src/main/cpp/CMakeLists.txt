@@ -19,8 +19,13 @@ set(SHARED_LIB_DIR ${CMAKE_SOURCE_DIR}/../../../../app/src/main/jniLibs/${ANDROI
 set(SHARED_LIB ${SHARED_LIB_DIR}/libkagra_shared.so)
 
 if(EXISTS ${SHARED_LIB})
+  # Do not target_link_libraries() the imported .so. NDK CMake passes
+  # IMPORTED_LOCATION to lld, which writes that absolute path into DT_NEEDED.
   add_library(kagra_shared SHARED IMPORTED)
-  set_target_properties(kagra_shared PROPERTIES IMPORTED_LOCATION ${SHARED_LIB})
+  set_target_properties(kagra_shared PROPERTIES
+    IMPORTED_LOCATION "${SHARED_LIB}"
+    IMPORTED_NO_SONAME FALSE
+    IMPORTED_SONAME "libkagra_shared.so")
   get_filename_component(KAGRA_REPO "${CMAKE_SOURCE_DIR}/../../../../../.." ABSOLUTE)
   set(KAGRA_INCLUDE "${KAGRA_REPO}/kagra-shared/include")
   if(NOT EXISTS "${KAGRA_INCLUDE}/kagra_shared.h")
@@ -28,7 +33,11 @@ if(EXISTS ${SHARED_LIB})
   endif()
   target_include_directories(kagra_jni PRIVATE "${KAGRA_INCLUDE}")
   target_compile_definitions(kagra_jni PRIVATE KAGRA_HAS_SHARED=1)
-  target_link_libraries(kagra_jni kagra_shared ${log-lib} android)
+  target_link_libraries(kagra_jni
+    "-Wl,-L${SHARED_LIB_DIR}"
+    "-Wl,-l:libkagra_shared.so"
+    ${log-lib}
+    android)
 else()
   message(WARNING "libkagra_shared.so not found for ${ANDROID_ABI}; building JNI stub only")
   target_compile_definitions(kagra_jni PRIVATE KAGRA_HAS_SHARED=0)

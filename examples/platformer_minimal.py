@@ -3,20 +3,29 @@
 Platforms run along X. The chase camera sits on +Z, so A/D (and the on-screen
 L/R pads) move the knight left and right. SPACE / the JUMP pad hops.
 
+Phone picture (on unless `KAGRA_QUALITY=0`): bloom + punch LUT + a stronger
+vignette, landing squash, a short hitstop, a CPU spark burst, a glowing
+well, split crate maps, a wider sun shadow, a studio hemisphere, a
+jump trail, and a night art-direction pass.
+
     python examples/platformer_minimal.py
     python examples/platformer_minimal.py --headless scratch/platformer.png
+    python examples/platformer_minimal.py --compare docs/screenshots
 
 HUD text is ASCII (hyphen, not an em dash).
 """
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import kagra  # noqa: E402
+from kagra.juice import Juice, apply_look, apply_post  # noqa: E402
+from kagra.particles import Emitter, Trail  # noqa: E402
 from kagra.gameloop import (  # noqa: E402
     Scene,
     draw_world,
@@ -77,6 +86,12 @@ class PlatformPlay(Scene):
         self._edges = _jump_edges(self.world)
         self._scripted = False
         self._touch = (False, False, False)
+        self.quality = os.environ.get("KAGRA_QUALITY", "1") != "0"
+        self.juice = Juice()
+        self.sparks = Emitter(max_count=28, seed=4)
+        self.trail = Trail(max_points=8, width=0.28)
+        self._was_ground = True
+        self._was_dead = False
 
     def _flow(self) -> str:
         phase = getattr(self.session, "flow_phase", None)
@@ -138,9 +153,75 @@ class PlatformPlay(Scene):
                     jump = True
                 lx = max(-1.0, min(1.0, lx))
                 self._touch = (touch_l, touch_r, touch_j)
+        dt_sim = self.juice.tick(dt) if self.quality else dt
         self.session.set_input(lx, 0.0, jump, False, False)
-        self.session.tick(dt)
+        self.session.tick(dt_sim)
         self.world = json.loads(self.session.dump())
+        self._feel(dt)
+
+    def _feel(self, dt: float) -> None:
+        player = self.world.get("player") or {}
+        grounded = bool(player.get("on_ground"))
+        dead = bool(getattr(self.session, "dead", False)) or player.get("name") == "dead"
+        if self.quality:
+            pos = player.get("position") or [0.0, 1.0, 0.0]
+            feet = (float(pos[0]), float(pos[1]) - 0.15, float(pos[2]))
+            if self._was_ground and not grounded and not dead:
+                self.juice.stretch(0.16, 0.14)
+                self.sparks.burst(
+                    feet,
+                    count=8,
+                    color=(255, 244, 210),
+                    speed=1.4,
+                    life=0.32,
+                    size=0.14,
+                    upward=2.4,
+                    gravity=-6.0,
+                )
+            if grounded and not self._was_ground and not dead:
+                self.juice.squash(0.28, 0.18)
+                self.juice.shake(0.07, 0.16)
+                self.juice.hitstop(0.04)
+                self.sparks.burst(
+                    feet,
+                    count=12,
+                    color=(214, 196, 160),
+                    speed=1.8,
+                    life=0.4,
+                    size=0.16,
+                    upward=1.1,
+                    gravity=-9.0,
+                )
+            if dead and not self._was_dead:
+                self.juice.shake(0.22, 0.32)
+                self.juice.hitstop(0.07)
+                self.sparks.burst(
+                    feet,
+                    count=16,
+                    color=(255, 120, 80),
+                    speed=2.6,
+                    life=0.5,
+                    size=0.18,
+                    upward=2.0,
+                    gravity=-7.0,
+                )
+            self.sparks.tick(dt)
+            self.trail.push(feet)
+        self._was_ground = grounded
+        self._was_dead = dead
+
+    def _picture(self) -> dict:
+        if not self.quality:
+            return self.world
+        picture = json.loads(json.dumps(self.world))
+        self.juice.apply_world(picture)
+        picture.setdefault("props", []).extend(self.sparks.props())
+        picture.setdefault("props", []).extend(self.trail.props())
+        apply_post(picture, "mobile")
+        _apply_wave2(picture)
+        _apply_ibl(picture)
+        _apply_wave3(picture)
+        return picture
 
     def draw(self) -> None:
         if hasattr(self.session, "hud_json"):
@@ -152,7 +233,7 @@ class PlatformPlay(Scene):
         left, right, pad = _touch_layout(self.width, self.height)
         touch_l, touch_r, touch_j = self._touch
         if self._flow() != "play":
-            self._canvas_png = draw_world(self.world, self.width, self.height, hud=hud)
+            self._canvas_png = draw_world(self._picture(), self.width, self.height, hud=hud)
             return
 
         def pad_color(active: bool, base: list[int]) -> list[int]:
@@ -221,10 +302,230 @@ class PlatformPlay(Scene):
                 },
             ]
         )
-        self._canvas_png = draw_world(self.world, self.width, self.height, hud=hud)
+        self._canvas_png = draw_world(self._picture(), self.width, self.height, hud=hud)
+
+
+def _landed_dump() -> dict:
+    """Script a hop and return the dump on the landing frame. Quality stays off
+    so hitstop does not change the pose used for the before/after pair."""
+    scene = PlatformPlay()
+    scene.quality = False
+    scene.session.confirm()
+    scene._scripted = True
+    scene.update(1.0 / 60.0)
+    air = False
+    landed = None
+    for _ in range(240):
+        scene.update(1.0 / 60.0)
+        player = scene.world.get("player") or {}
+        grounded = bool(player.get("on_ground"))
+        if not grounded:
+            air = True
+        elif air:
+            landed = json.loads(json.dumps(scene.world))
+            break
+    if landed is None:
+        landed = json.loads(json.dumps(scene.world))
+    return landed
+
+
+def _juicy_picture(world: dict, wave2: bool = True) -> dict:
+    feel = Juice()
+    feel.squash(0.34, 0.22)
+    feel.shake(0.10, 0.28, frequency=18.0)
+    feel.tick(0.075)
+    sparks = Emitter(max_count=18, seed=3)
+    pos = (world.get("player") or {}).get("position") or [0.0, 1.0, 0.0]
+    sparks.burst(
+        (float(pos[0]), float(pos[1]) - 0.1, float(pos[2])),
+        count=14,
+        color=(255, 236, 170),
+        speed=1.6,
+        life=0.55,
+        size=0.22,
+        gravity=-3.0,
+        upward=2.2,
+    )
+    sparks.tick(0.08)
+    picture = json.loads(json.dumps(world))
+    feel.apply_world(picture)
+    picture.setdefault("props", []).extend(sparks.props())
+    apply_post(picture, "mobile")
+    if wave2:
+        _apply_wave2(picture)
+    return picture
+
+
+def _apply_wave2(picture: dict) -> None:
+    """Authored glow, a worn metal/rough map on the crates, softer sun shadows.
+
+    Omitted on the before frame so the pair shows this wave.
+    """
+    picture["shadow_softness"] = 4.5
+    for prop in picture.get("props") or []:
+        if prop.get("gltf") == "crate.glb":
+            # Shared crate mesh, so every platform picks up the split.
+            prop["roughness_map"] = "preset:split"
+            prop["metalness_map"] = "preset:split"
+        if prop.get("name") == "checkpoint":
+            prop["emissive"] = 6.5
+            prop["emissive_color"] = [1.0, 0.48, 0.08]
+
+
+def _apply_ibl(picture: dict) -> None:
+    """Authorable sky/ground ambient and a prefiltered studio lat-long.
+
+    Omitted on the IBL before frame, which keeps the fixed studio SH.
+    """
+    # Cooler sky bounce, warmer ground. The sky clear stays put, so the
+    # pair is the lit platforms and the metal sheen, not a recolored backdrop.
+    picture["hemi_sky"] = [0.28, 0.55, 1.70]
+    picture["hemi_ground"] = [1.25, 0.48, 0.10]
+    picture["env_map"] = "preset:studio"
+
+
+def _apply_wave3(picture: dict) -> None:
+    """Night bundle, frustum cull, and distant-prop billboards.
+
+    The jump trail is appended by the caller. Omitted on the before frame.
+    """
+    apply_look(picture, "night")
+    picture["cull"] = True
+    picture["prop_lod"] = 48.0
+
+
+def _mean_abs(a: bytes, b: bytes) -> float:
+    n = min(len(a), len(b)) // 4
+    if n == 0:
+        return 0.0
+    total = 0
+    for i in range(n):
+        o = i * 4
+        total += abs(a[o] - b[o]) + abs(a[o + 1] - b[o + 1]) + abs(a[o + 2] - b[o + 2])
+    return total / (n * 3)
+
+
+def write_compare(out_dir: Path) -> None:
+    from kagra.gameloop import last_draw_was_fallback, render_rgba, rgba_to_png
+
+    world = _landed_dump()
+    before_world = _juicy_picture(world, wave2=False)
+    juicy = _juicy_picture(world, wave2=True)
+    width, height = 640, 360
+    before = render_rgba(before_world, width, height)
+    after = render_rgba(juicy, width, height)
+    if last_draw_was_fallback():
+        raise SystemExit("no GPU adapter; compare shots were not written")
+    if _mean_abs(before, after) < 1.0:
+        raise SystemExit("before/after frames are almost identical")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    before_png = rgba_to_png(before, width, height)
+    after_png = rgba_to_png(after, width, height)
+    (out_dir / "box_hop_before.png").write_bytes(before_png)
+    (out_dir / "box_hop_after.png").write_bytes(after_png)
+    print(
+        f"wrote {out_dir / 'box_hop_before.png'} and {out_dir / 'box_hop_after.png'} "
+        f"mean_abs={_mean_abs(before, after):.2f}"
+    )
+
+
+def write_ibl_compare(out_dir: Path) -> None:
+    """Wave-2 picture vs the same pose with hemisphere + studio env."""
+    from kagra.gameloop import last_draw_was_fallback, render_rgba, rgba_to_png
+
+    world = _landed_dump()
+    before_world = _juicy_picture(world, wave2=True)
+    after_world = _juicy_picture(world, wave2=True)
+    _apply_ibl(after_world)
+    width, height = 640, 360
+    before = render_rgba(before_world, width, height)
+    after = render_rgba(after_world, width, height)
+    if last_draw_was_fallback():
+        raise SystemExit("no GPU adapter; IBL shots were not written")
+    # The clear color is unchanged, so a full-frame mean sits under the
+    # wave-2 guard. The platforms still have to move.
+    if _mean_abs(before, after) < 0.75:
+        raise SystemExit("IBL before/after frames are almost identical")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "box_hop_ibl_before.png").write_bytes(rgba_to_png(before, width, height))
+    (out_dir / "box_hop_ibl_after.png").write_bytes(rgba_to_png(after, width, height))
+    print(
+        f"wrote {out_dir / 'box_hop_ibl_before.png'} and {out_dir / 'box_hop_ibl_after.png'} "
+        f"mean_abs={_mean_abs(before, after):.2f}"
+    )
+
+
+def _hop_samples() -> tuple[dict, list[tuple[float, float, float]]]:
+    """Landed dump plus the positions along the hop. Quality stays off."""
+    scene = PlatformPlay()
+    scene.quality = False
+    scene.session.confirm()
+    scene._scripted = True
+    scene.update(1.0 / 60.0)
+    points: list[tuple[float, float, float]] = []
+    air = False
+    landed = None
+    for _ in range(240):
+        scene.update(1.0 / 60.0)
+        player = scene.world.get("player") or {}
+        pos = player.get("position") or [0.0, 1.0, 0.0]
+        points.append((float(pos[0]), float(pos[1]) - 0.05, float(pos[2])))
+        grounded = bool(player.get("on_ground"))
+        if not grounded:
+            air = True
+        elif air:
+            landed = json.loads(json.dumps(scene.world))
+            break
+    if landed is None:
+        landed = json.loads(json.dumps(scene.world))
+    return landed, points[-12:]
+
+
+def write_wave3_compare(out_dir: Path) -> None:
+    """Day picture vs night plus the hop trail. Cull and prop LOD are on."""
+    from kagra.gameloop import last_draw_was_fallback, render_rgba, rgba_to_png
+
+    world, points = _hop_samples()
+    ribbon = Trail(max_points=12, width=0.34)
+    for point in points:
+        ribbon.push(point)
+    before_world = _juicy_picture(world, wave2=True)
+    _apply_ibl(before_world)
+    after_world = json.loads(json.dumps(before_world))
+    after_world.setdefault("props", []).extend(ribbon.props())
+    _apply_wave3(after_world)
+    width, height = 640, 360
+    before = render_rgba(before_world, width, height)
+    after = render_rgba(after_world, width, height)
+    if last_draw_was_fallback():
+        raise SystemExit("no GPU adapter; wave 3 shots were not written")
+    if _mean_abs(before, after) < 1.0:
+        raise SystemExit("wave 3 before/after frames are almost identical")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "box_hop_wave3_before.png").write_bytes(rgba_to_png(before, width, height))
+    (out_dir / "box_hop_wave3_after.png").write_bytes(rgba_to_png(after, width, height))
+    print(
+        f"wrote {out_dir / 'box_hop_wave3_before.png'} and {out_dir / 'box_hop_wave3_after.png'} "
+        f"mean_abs={_mean_abs(before, after):.2f}"
+    )
 
 
 def main() -> None:
+    if "--compare-wave3" in sys.argv:
+        idx = sys.argv.index("--compare-wave3")
+        out = Path(sys.argv[idx + 1]) if len(sys.argv) > idx + 1 else Path("docs/screenshots")
+        write_wave3_compare(out)
+        return
+    if "--compare-ibl" in sys.argv:
+        idx = sys.argv.index("--compare-ibl")
+        out = Path(sys.argv[idx + 1]) if len(sys.argv) > idx + 1 else Path("docs/screenshots")
+        write_ibl_compare(out)
+        return
+    if "--compare" in sys.argv:
+        idx = sys.argv.index("--compare")
+        out = Path(sys.argv[idx + 1]) if len(sys.argv) > idx + 1 else Path("docs/screenshots")
+        write_compare(out)
+        return
     headless = "--headless" in sys.argv
     scene = PlatformPlay()
     if headless:

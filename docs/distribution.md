@@ -94,8 +94,8 @@ Actions の **Run workflow** で `game` にパスを入れる。zip は artifact
 ## Android
 
 既存のシェル（`mobile/android`、JNI、`scripts/build_android_native.sh`）を
-`--game` で切り替える。デバッグ APK は Android SDK の debug keystore で
-署名される。自分で keystore を作らなくても実機に入る。
+`--game` で切り替える。デバッグ APK はリポジトリの
+`mobile/android/app/debug.keystore` で署名される。自分で keystore を作らなくても実機に入る。
 
 ```bash
 # cargo-ndk と ANDROID_NDK_HOME（NDK r29 / 29.0.14206865、16 KB ページ）
@@ -122,17 +122,28 @@ NDK r29・cargo-ndk・Gradle 8.7・AGP 8.5.2・platform 35 を入れて debug AP
 
 16 KB ページ（Android 15 以降、Pixel 10 など）では、各 `.so` の ELF LOAD の
 `p_align` が 16384 以上で、APK 内では非圧縮かつ 16 KB zip アラインである必要がある。
-Rust は `.cargo/config.toml` の Android ターゲットへ
-`-Wl,-z,max-page-size=16384` と `common-page-size` を渡す。JNI も同じリンカ引数。
+Rust は `.cargo/config.toml` の Android ターゲットと
+`kagra-shared/build.rs` の `cargo:rustc-cdylib-link-arg` で
+`-Wl,-z,max-page-size=16384`、`common-page-size`、
+`-Wl,-soname,libkagra_shared.so` を渡す。JNI は同じページサイズで、
+`IMPORTED_SONAME` を `libkagra_shared.so` にしたうえで、絶対パスではなく
+`-Wl,-L<jniLibs> -Wl,-l:libkagra_shared.so` でリンクする。
+`IMPORTED_LOCATION` をそのまま渡すと `libkagra_jni.so` の `DT_NEEDED` が
+CI の絶対パスになり、実機の `dlopen` が失敗する。
 `libc++_shared.so` は NDK r28+ のプリビルドを使う（`c++_shared`）。
 パッケージは `useLegacyPackaging = false` で、AGP 8.5.1 以降が `zipalign -P 16` する。
-CI は `llvm-readelf -l` と `zipalign -c -P 16 -v 4` で落とす。手元では:
+CI は `llvm-readelf -l`、`llvm-readelf -d`（`DT_NEEDED` に `/` が無いこと）、
+`zipalign -c -P 16 -v 4` で落とす。手元では:
 
 ```bash
 python scripts/check_android_16k.py dist/android/platformer-debug.apk
 ```
 
 ネイティブのロードに失敗したときは、画面に `UnsatisfiedLinkError` の全文が出る。
+
+デバッグ APK は `mobile/android/app/debug.keystore`（alias `androiddebugkey`、
+パスワード `android`）で署名する。公開のデバッグ鍵なので、CI が変わっても
+同じ `applicationId` の上にインストールできる。リリース鍵はリポジトリに置かない。
 
 実機確認:
 
@@ -184,6 +195,17 @@ python scripts/package_android.py --game examples/platformer_minimal.py --releas
 
 `ANDROID_KEYSTORE_FILE` に鍵のパスを直接渡しても Gradle は署名する。
 base64 は Actions 用。
+
+## 直してここ
+
+デバッグ APK、ブラウザプレビュー、Windows の zip では、プレイ中に
+3 本指の長押し（タッチ）か F12（キーボード）で一時停止する。メモ（日本語）
+と直近約 10 秒の状態から、トークンなしで GitHub の playtest issue 下書きを
+開く。スクリーンショットはギャラリーかダウンロードに保存し、issue に貼る。
+リリース用のストアビルド（`KAGRA_PLAYTEST=0`、Android release）では出ない。
+
+再現は `python scripts/repro_issue.py <issue 番号またはブロック>`。
+直す前と直した後のスクリーンショットを残す。
 
 ## itch.io に上げる（手動）
 

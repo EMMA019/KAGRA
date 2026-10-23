@@ -16,8 +16,9 @@ impl WasmSession {
     #[wasm_bindgen(constructor)]
     pub fn new() -> WasmSession {
         let mut inner = SharedSession::default();
-        // ブラウザデモはタイトルから。
+        // ブラウザデモはタイトルから。Wasm はプレビューなので直してここを出す。
         inner.show_title();
+        inner.set_playtest_enabled(true);
         WasmSession { inner }
     }
 
@@ -221,6 +222,66 @@ impl WasmSession {
     #[wasm_bindgen(js_name = renderSupported)]
     pub fn render_supported(&self) -> bool {
         cfg!(feature = "render")
+    }
+
+    #[wasm_bindgen(js_name = setPlaytestEnabled)]
+    pub fn set_playtest_enabled(&mut self, on: bool) {
+        self.inner.set_playtest_enabled(on);
+    }
+
+    #[wasm_bindgen(js_name = setPlaytestExternalChrome)]
+    pub fn set_playtest_external_chrome(&mut self, on: bool) {
+        self.inner.set_playtest_external_chrome(on);
+    }
+
+    #[wasm_bindgen(js_name = setPlaytestDevice)]
+    pub fn set_playtest_device(&mut self, label: &str, lang: &str) {
+        self.inner.set_playtest_device(label, lang);
+    }
+
+    /// Gesture-only pointer. Does not start the game.
+    #[wasm_bindgen(js_name = playtestPointer)]
+    pub fn playtest_pointer(&mut self, id: u32, x: f32, y: f32, phase: u8, pressure: f32) -> bool {
+        if let Some(ph) = PointerPhase::from_u8(phase) {
+            self.inner.playtest_pointer(PointerEvent {
+                id,
+                x,
+                y,
+                phase: ph,
+                pressure,
+            })
+        } else {
+            false
+        }
+    }
+
+    #[wasm_bindgen(js_name = pushKey)]
+    pub fn push_key(&mut self, name: &str, down: bool) -> bool {
+        self.inner.push_key(name, down)
+    }
+
+    #[wasm_bindgen(js_name = setPlaytestNote)]
+    pub fn set_playtest_note(&mut self, note: &str) {
+        self.inner.playtest_set_note(note);
+    }
+
+    pub fn set_playtest_shot_path(&mut self, path: &str) {
+        self.inner.playtest_set_shot_path(path);
+    }
+
+    #[wasm_bindgen(js_name = playtestAction)]
+    pub fn playtest_action(&mut self, action: &str) {
+        self.inner.playtest_action(action);
+    }
+
+    #[wasm_bindgen(js_name = playtestStateJson)]
+    pub fn playtest_state_json(&mut self) -> String {
+        self.inner.playtest_state_json()
+    }
+
+    #[wasm_bindgen(js_name = playtestPacketJson)]
+    pub fn playtest_packet_json(&self) -> String {
+        self.inner.playtest_packet_json()
     }
 }
 

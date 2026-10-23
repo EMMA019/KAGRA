@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+- Trails, prop LOD, frustum bounds, art-direction bundles, and glTF ORM.
+  `cull: true` registers mesh bounds and drops props outside the camera.
+  `prop_lod` turns a distant non-vegetation prop into one billboard.
+  Omit either and the old picture stays (every prop, full meshes).
+  glTF `metallicRoughnessTexture` is linear ORM with factors baked in;
+  a dump map still replaces it, and toon primitives skip it.
+  `kagra.Trail` is a ribbon of emissive quads.
+  `apply_look(world, "pastel"|"night")` sets sky, lights, exposure,
+  hemisphere, and the LUT. Box Hop draws the hop trail under the night bundle.
+
+- Image IBL and an authorable hemisphere on the shared renderer.
+  Dump `hemi_sky` / `hemi_ground` feed the L1 SH (omit them and the studio
+  pair stays). `env_map` is `preset:studio` or a PNG equirect, baked to a
+  64×64 lat-long with 4 roughness rows (`texture_2d`, no cubemap). Specular
+  on metal, water, and solid gloss samples that strip. Omit `env_map` and
+  specular stays the SH, so an old dump does not change. Box Hop uses a
+  cooler sky, a warmer ground, and the studio env.
+
+- Authored bloom sources, roughness/metal maps, and a wider sun shadow.
+  Dump `emissive` / `emissive_color` / `emissive_map` add an unlit HDR term
+  the bloom pass can extract. `roughness_map` and `metalness_map` are a PNG
+  or `preset:worn` / `preset:split` / `preset:brushed` (linear ORM, G and B).
+  `shadow_softness` omitted stays the 3×3 PCF; about 3 uses a 5×5 tent.
+  Box Hop glows the well, splits the crates between shiny metal and rough dielectric, and softens the sun.
+
+- Phone-web picture on the shared renderer: dump `bloom`, `bloom_threshold`,
+  `vignette`, `lut` (`off` / `warm` / `punch` / `cool`), `lut_strength`, `fxaa`.
+  Omit them and the old picture stays (bloom off, vignette 1, no LUT, FXAA on).
+  The LUT is a 16³ strip in a `texture_2d` so WebGL2 can sample it.
+  `kagra.Juice` is shake, hitstop, squash/stretch, and easing.
+  `kagra.Emitter` is a capped CPU spark list drawn as sphere props.
+  Box Hop uses the mobile preset (`KAGRA_QUALITY=0` turns it off).
+  Gap table: `docs/quality_gap.md`.
+
 - CI: `python-unit` はネイティブ拡張が本当に無いときだけ `WorldDoc` /
   `WorldPlay` の実体チェックをスキップする（切った名前と annotate / brain は
   検査したまま）。ホイールを入れた `build` ジョブが両方の `from_json` を断言する。

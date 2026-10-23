@@ -98,3 +98,8 @@
 - `20261022-rpg-genre-session/` — `town_gate` / `shop_buy` を GenreSession に。村（会話・ターン戦闘・店・レベル）は既存 RPG に足す。見本 `examples/rpg_minimal.py`。
 - `20261022-fishcook/` — 釣り（テンションリール）→ 調理 → 売却の一日。`FishCookSession`。`fish_cast` / `cook_stove` のワンショットは WorldPlay のまま。
 - `20261022-card-duel/` — カード対戦。`CardSession`（山札・seed・マナ・AI・勝敗）。扇とドラッグは `kagra.card_ui`。WorldPlay には足さない。見本 `examples/card_minimal.py`。
+- `20261022-playtest-overlay/` — プレイ中の「直してここ」。F12 / 3 本指長押しで dump と約 10 秒の入力を playtest issue に渡す。`scripts/repro_issue.py` がヘッドレスで再生する。
+- `20261022-mobile-web-quality/` — 電話ブラウザ向けの絵。ポスト（ブルーム / ACES / ビネット / LUT）、`Juice`、CPU パーティクル。Box Hop に載せた。Android は保留。
+- `20261022-emissive-pbr-shadows/` — エミッシブ（ブルーム源）、ラフネス/メタルマップ、広い PCF。Box Hop の井戸が光り、箱は split。画像 IBL は次。
+- `20261022-image-ibl-hemisphere/` — 半球光（`hemi_sky` / `hemi_ground`）と 64×64 の事前フィルタ環境（`preset:studio` か PNG）。省略時は従来の SH。Box Hop に載せた。
+- `20261023-trails-lod-look/` — 軌跡、prop LOD、視錐台カリング、pastel/night、glTF の ORM。省略時は全 prop をフルメッシュのまま。Box Hop は夜と軌跡。

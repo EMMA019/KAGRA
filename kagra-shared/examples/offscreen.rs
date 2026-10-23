@@ -10,6 +10,7 @@
 //! cargo run -p kagra-shared --features render --example offscreen -- 960 540 isle.png isle
 //! cargo run -p kagra-shared --features render --example offscreen -- 640 360 world.png world
 //! cargo run -p kagra-shared --features render --example offscreen -- 640 360 world.png world path/to/dump.json
+//! cargo run -p kagra-shared --features render --example offscreen -- 1280 720 overlay.png playtest
 //! ```
 //!
 //! `python -m kagra.render_world dump.json out.png` shells to this example (or an
@@ -38,6 +39,10 @@ fn main() -> Result<(), String> {
     let isle = mode == "isle";
     let world = mode == "world";
     let flow = mode == "flow";
+
+    if mode == "playtest" {
+        return render_playtest(width, height, &out);
+    }
 
     if world {
         let dump_arg = args.next();
@@ -169,6 +174,53 @@ fn main() -> Result<(), String> {
         pixels.len()
     );
     Ok(())
+}
+
+fn render_playtest(width: u32, height: u32, out: &PathBuf) -> Result<(), String> {
+    let json = include_str!("../tests/fixtures/platformer_world.json");
+    let mut session = SharedSession::default();
+    session.create_surface(width, height);
+    session.set_playtest_enabled(true);
+    session.load_game_json(json)?;
+    if let Some(play) = session.world.as_mut() {
+        play.confirm();
+    }
+    session.set_play_input(0.0, 1.0, false, false, false);
+    for _ in 0..30 {
+        session.request_frame();
+    }
+    let renderer = pollster::block_on(Renderer::new_offscreen(width, height))?;
+    session.attach_renderer(renderer);
+    session.render()?;
+    let game = session.render_readback()?;
+    let before = game_shot_path(out);
+    write_png(&before, width, height, &game)?;
+    session.playtest_set_note("直してここ");
+    session.open_playtest();
+    session.render()?;
+    let overlay = session.render_readback()?;
+    write_png(out, width, height, &overlay)?;
+    println!(
+        "playtest overlay {} and game frame {} ({}x{})",
+        out.display(),
+        before.display(),
+        width,
+        height
+    );
+    Ok(())
+}
+
+fn game_shot_path(out: &std::path::Path) -> PathBuf {
+    let stem = out
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("playtest");
+    let ext = out.extension().and_then(|s| s.to_str()).unwrap_or("png");
+    let name = format!("{stem}_game.{ext}");
+    match out.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir.join(name),
+        _ => PathBuf::from(name),
+    }
 }
 
 fn write_png(path: &PathBuf, width: u32, height: u32, rgba: &[u8]) -> Result<(), String> {

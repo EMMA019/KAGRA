@@ -38,7 +38,8 @@ use crate::gltf_load::{
     skinned_tpose_humanoid, unit_cube_gltf, walk_skinned_gltf, walk_skinned_vrm, WalkerPose,
 };
 use crate::scene3d::{
-    primitives, Camera, LocalLight, Material, MeshData, MeshId, Scene3D, SceneBuilder, Vertex3,
+    primitives, Camera, Instance, LocalLight, Material, MeshData, MeshId, Scene3D, SceneBuilder,
+    Vertex3,
 };
 use glam::{EulerRot, Mat4, Quat, Vec3};
 use serde::{Deserialize, Serialize};
@@ -96,6 +97,50 @@ pub struct WorldDoc {
     /// ACES tonemap. None = on.
     #[serde(default)]
     pub tonemap: Option<bool>,
+    /// Bloom intensity on the offscreen dump path. None = 0 so an old dump
+    /// stays unbloomed. The desktop window example sets its own default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bloom: Option<f32>,
+    /// Bloom extract threshold. None = 0.85.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bloom_threshold: Option<f32>,
+    /// Vignette strength. None = 1 (the historical composite curve). 0 = off.
+    /// Values above 1 darken the corners a second time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vignette: Option<f32>,
+    /// Color-grade LUT preset: `off` / `warm` / `punch` / `cool`. None = off.
+    /// Unknown names bake an identity strip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lut: Option<String>,
+    /// Mix toward the LUT after ACES, 0..1. None = 1 when a preset is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lut_strength: Option<f32>,
+    /// FXAA on the composite. None = on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fxaa: Option<bool>,
+    /// Directional shadow radius. None = 1, the historical 3×3 PCF.
+    /// Larger values (about 2.5–4) use a wider tent so penumbras soften.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_softness: Option<f32>,
+    /// Hemisphere sky, linear 0..1. None = the studio blue `(0.48, 0.56, 0.78)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hemi_sky: Option<[f32; 3]>,
+    /// Hemisphere ground, linear 0..1. None = the studio warm `(0.42, 0.30, 0.18)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hemi_ground: Option<[f32; 3]>,
+    /// Prefiltered env. `preset:studio` bakes a lat-long from the hemisphere.
+    /// A PNG path is sampled as an equirect and blurred into roughness rows.
+    /// None = the SH specular, so an old dump does not change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env_map: Option<String>,
+    /// Register mesh bounds and drop props outside the camera. None / false
+    /// draws every prop, which a tight dump camera used to rely on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cull: Option<bool>,
+    /// Distance where a non-vegetation prop becomes one billboard quad.
+    /// None = full meshes. Vegetation keeps its own `lod_radius`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prop_lod: Option<f32>,
     /// Generic countdowns. WorldPlay::tick_timers advances `remaining`; on 0 it
     /// emits `on_done` as an event and flips `active` false. Cooking wait,
     /// fishing cast→bite, cooldowns all map onto this. Genre code stays out.
@@ -216,6 +261,23 @@ pub struct WorldProp {
     /// 0..1. Coins dump 0.12. Default 1 (dielectric).
     #[serde(default = "default_roughness")]
     pub roughness: f32,
+    /// Unlit HDR add so a lamp or a coin can bloom on purpose. None = 0.
+    /// The color is `emissive_color`, or the albedo when that is omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emissive: Option<f32>,
+    /// Linear 0..1 RGB. None = use the albedo as the glow color.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emissive_color: Option<[f32; 3]>,
+    /// PNG path or `preset:worn` / `preset:split` / `preset:brushed`.
+    /// G channel replaces the roughness scalar. None = scalar only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roughness_map: Option<String>,
+    /// PNG path or the same presets. B channel replaces the metallic scalar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metalness_map: Option<String>,
+    /// PNG path or `preset:core`. Multiplies the emissive color. Strength is `emissive`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emissive_map: Option<String>,
     /// Interaction metadata (talk / use / examine). None = plain scenery.
     /// `on_use` emits an event when the player presses J/attack in reach.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -413,6 +475,10 @@ pub struct WorldWalker {
     /// `overlay_bones` のブレンド係数 0..1（0 = 無効、1 = 目標回転へ完全スラープ）。
     #[serde(default)]
     pub overlay_weight: f32,
+    /// Draw scale. None = (1, 1, 1). Squash/stretch writes this on the picture
+    /// dump; the walker sim does not read it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<[f32; 3]>,
 }
 
 fn default_idle_anim() -> String {
@@ -570,6 +636,80 @@ impl WorldDoc {
         serde_json::to_string_pretty(&out).map_err(|e| e.to_string())
     }
 
+    /// Bloom intensity for `render_world_doc`. None in the dump means off.
+    pub fn bloom_intensity(&self) -> f32 {
+        self.bloom.unwrap_or(0.0).max(0.0)
+    }
+
+    /// Bloom extract threshold. None = 0.85.
+    pub fn bloom_threshold(&self) -> f32 {
+        self.bloom_threshold.unwrap_or(0.85).clamp(0.0, 2.0)
+    }
+
+    /// Vignette mix. None = 1, the curve that shipped with the bloom composite.
+    pub fn vignette_strength(&self) -> f32 {
+        self.vignette.unwrap_or(1.0).clamp(0.0, 2.0)
+    }
+
+    /// LUT preset name. Empty / missing / `off` skip the grade.
+    pub fn lut_preset(&self) -> &str {
+        match self.lut.as_deref().map(str::trim) {
+            None | Some("") | Some("off") => "off",
+            Some(name) => name,
+        }
+    }
+
+    /// 0 when the preset is off, otherwise `lut_strength` or 1.
+    pub fn lut_mix(&self) -> f32 {
+        if self.lut_preset() == "off" {
+            0.0
+        } else {
+            self.lut_strength.unwrap_or(1.0).clamp(0.0, 1.0)
+        }
+    }
+
+    /// FXAA. None = on.
+    pub fn fxaa_enabled(&self) -> bool {
+        self.fxaa.unwrap_or(true)
+    }
+
+    /// Shadow kernel radius. None = 1 (the 3×3 PCF that already shipped).
+    pub fn shadow_softness(&self) -> f32 {
+        self.shadow_softness.unwrap_or(1.0).clamp(0.25, 8.0)
+    }
+
+    /// Studio blue when the dump omits `hemi_sky`.
+    pub fn hemi_sky_color(&self) -> [f32; 3] {
+        self.hemi_sky
+            .unwrap_or([0.48, 0.56, 0.78])
+            .map(|c| c.clamp(0.0, 4.0))
+    }
+
+    /// Studio warm ground when the dump omits `hemi_ground`.
+    pub fn hemi_ground_color(&self) -> [f32; 3] {
+        self.hemi_ground
+            .unwrap_or([0.42, 0.30, 0.18])
+            .map(|c| c.clamp(0.0, 4.0))
+    }
+
+    /// 64×64 prefiltered strip, or None when `env_map` is omitted.
+    pub fn baked_env(&self) -> Option<Vec<u8>> {
+        let spec = self
+            .env_map
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())?;
+        Some(bake_env_strip(
+            self.hemi_sky_color(),
+            self.hemi_ground_color(),
+            if spec == "preset:studio" {
+                None
+            } else {
+                load_png_albedo(spec)
+            },
+        ))
+    }
+
     /// Probe walker `gltf` paths. Missing/parse failures are dump-visible;
     /// `compile_scene` still draws a skinned tpose, never a silent capsule.
     pub fn refresh_asset_status(&mut self) {
@@ -663,8 +803,15 @@ impl WorldDoc {
     pub fn compile_scene(&self, aspect: f32) -> Scene3D {
         let camera = self.draw_camera();
         let mut b = SceneBuilder::new(&camera, aspect.max(1e-3));
-        // Do not register bounds: a dump camera can be tight, and compile must
-        // still emit the document's objects (unregistered meshes are never culled).
+        // Opt-in. An omitted `cull` stays unregistered so every prop still draws.
+        if self.cull == Some(true) {
+            for (id, mesh) in self.compile_meshes() {
+                let bounds = mesh.bounds();
+                if !bounds.is_empty() {
+                    b.register(id, bounds);
+                }
+            }
+        }
         let (gltf_ids, walker_gltf_ids) = self.gltf_mesh_ids();
         let tex_ids = self.texture_mesh_ids();
 
@@ -713,6 +860,7 @@ impl WorldDoc {
         }
 
         let lod_r = self.vegetation_lod_radius();
+        let prop_lod = self.prop_lod.filter(|r| *r > 0.0);
         let worlds = self.prop_world_mats();
         for prop in &self.props {
             if !prop.enabled {
@@ -733,6 +881,18 @@ impl WorldDoc {
                 );
                 b.push_material(MESH_QUAD, billboard, color_u8(prop.color), mat);
                 continue;
+            }
+            if let Some(radius) = prop_lod {
+                if !veg && camera.eye.distance(pos) > radius {
+                    let h = scale.y.abs().max(scale.x.abs()).max(0.35);
+                    let card = Mat4::from_scale_rotation_translation(
+                        Vec3::new(h * 0.7, h, 1.0),
+                        Quat::from_rotation_y(billboard_yaw(camera.eye, pos)),
+                        pos,
+                    );
+                    b.push_material(MESH_QUAD, card, color_u8(prop.color), Material::Solid);
+                    continue;
+                }
             }
             let mesh = mesh_for_prop(prop, &gltf_ids, &tex_ids);
             let has_tex = prop
@@ -763,7 +923,12 @@ impl WorldDoc {
                 };
                 (prop.metallic, r)
             };
-            b.push_pbr(mesh, model, col, mat, metallic, roughness);
+            let mut inst = Instance::with_pbr(model, col, mat, metallic, roughness);
+            inst.emissive = prop.emissive.unwrap_or(0.0).max(0.0);
+            if let Some(c) = prop.emissive_color {
+                inst.emissive_color = c;
+            }
+            b.push_instance(mesh, inst);
         }
 
         self.push_vista(&mut b, &camera);
@@ -797,6 +962,7 @@ impl WorldDoc {
             }
             let pos = Vec3::from_array(walk.position);
             let yaw = Quat::from_rotation_y(walk.yaw);
+            let sc = Vec3::from_array(walk.scale.unwrap_or([1.0, 1.0, 1.0]));
             let dead = walk.name == "dead" || walk.name == "ko";
             let hurt = walk.name == "hurt";
             let body_col = if dead {
@@ -807,7 +973,7 @@ impl WorldDoc {
                 [62, 176, 184, 255]
             };
             if let Some(meshes) = walker_gltf_ids.get(&walk.id) {
-                let model = Mat4::from_scale_rotation_translation(Vec3::ONE, yaw, pos);
+                let model = Mat4::from_scale_rotation_translation(sc, yaw, pos);
                 let col = if walker_gltf_spec(walk)
                     .map(walker_spec_has_albedo)
                     .unwrap_or(false)
@@ -849,13 +1015,17 @@ impl WorldDoc {
                 continue;
             }
             let body_h = if dead { 0.28 } else { 0.95 };
-            let body =
-                Mat4::from_scale_rotation_translation(Vec3::new(0.56, body_h, 0.56), yaw, pos);
-            b.push(MESH_CAPSULE, body, body_col);
-            let head = Mat4::from_scale_rotation_translation(
-                Vec3::new(0.38, 0.32, 0.38),
+            let body = Mat4::from_scale_rotation_translation(
+                Vec3::new(0.56 * sc.x, body_h * sc.y, 0.56 * sc.z),
                 yaw,
-                pos + Vec3::Y * (if dead { 0.18 } else { 0.62 }),
+                pos,
+            );
+            b.push(MESH_CAPSULE, body, body_col);
+            let head_lift = if dead { 0.18 } else { 0.62 };
+            let head = Mat4::from_scale_rotation_translation(
+                Vec3::new(0.38 * sc.x, 0.32 * sc.y, 0.38 * sc.z),
+                yaw,
+                pos + Vec3::Y * head_lift * sc.y,
             );
             let head_col = if dead {
                 [90, 86, 82, 255]
@@ -881,6 +1051,10 @@ impl WorldDoc {
             ibl: self.ibl.unwrap_or(0.35),
             exposure: self.exposure.unwrap_or(1.0),
             tonemap: self.tonemap.unwrap_or(true),
+            shadow_softness: self.shadow_softness(),
+            hemi_sky: self.hemi_sky_color(),
+            hemi_ground: self.hemi_ground_color(),
+            env_pixels: self.baked_env(),
             batches: b.finish(),
         }
     }
@@ -1116,7 +1290,10 @@ impl WorldDoc {
         out.push((MESH_TORUS, primitives::torus_mesh(0.5, 0.075, 48, 20)));
         for (i, slot) in self.gltf_slots().into_iter().enumerate() {
             let mesh = match &slot {
-                GltfSlot::Rest(spec) => gltf_mesh_for(spec),
+                GltfSlot::Rest(spec) => gltf_mesh_for(spec).map(|mut mesh| {
+                    self.attach_surface_maps(&mut mesh, spec);
+                    mesh
+                }),
                 GltfSlot::Skinned {
                     spec,
                     part,
@@ -1219,6 +1396,17 @@ impl WorldDoc {
             let tex = prop_texture_path(prop).unwrap_or("");
             parts.push(format!("t:{}:{tex}", prop.id));
         }
+        for prop in &self.props {
+            if prop_has_maps(prop) {
+                parts.push(format!(
+                    "map:{}:{}:{}:{}",
+                    prop.id,
+                    prop.roughness_map.as_deref().unwrap_or(""),
+                    prop.metalness_map.as_deref().unwrap_or(""),
+                    prop.emissive_map.as_deref().unwrap_or(""),
+                ));
+            }
+        }
         parts.push(format!("lod:{}", self.vegetation_lod_cells()));
         parts.join("|")
     }
@@ -1289,8 +1477,29 @@ impl WorldDoc {
     fn textured_props(&self) -> Vec<&WorldProp> {
         self.props
             .iter()
-            .filter(|p| p.enabled && prop_texture_path(p).is_some())
+            .filter(|p| {
+                if !p.enabled {
+                    return false;
+                }
+                if prop_texture_path(p).is_some() {
+                    return true;
+                }
+                // Maps on a glTF ride that mesh. A bare primitive needs its own slot.
+                prop_gltf_spec(p).is_none() && prop_has_maps(p)
+            })
             .collect()
+    }
+
+    fn attach_surface_maps(&self, mesh: &mut MeshData, spec: &str) {
+        let Some(prop) = self.props.iter().find(|p| {
+            p.enabled
+                && prop_texture_path(p).is_none()
+                && prop_gltf_spec(p) == Some(spec)
+                && prop_has_maps(p)
+        }) else {
+            return;
+        };
+        apply_surface_maps(mesh, prop);
     }
 
     fn texture_mesh_ids(&self) -> HashMap<String, MeshId> {
@@ -1622,6 +1831,23 @@ fn prop_texture_path(prop: &WorldProp) -> Option<&str> {
         .filter(|s| !s.is_empty())
 }
 
+fn prop_gltf_spec(prop: &WorldProp) -> Option<&str> {
+    prop.gltf
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+fn map_spec(value: &Option<String>) -> Option<&str> {
+    value.as_deref().map(str::trim).filter(|s| !s.is_empty())
+}
+
+fn prop_has_maps(prop: &WorldProp) -> bool {
+    map_spec(&prop.roughness_map).is_some()
+        || map_spec(&prop.metalness_map).is_some()
+        || map_spec(&prop.emissive_map).is_some()
+}
+
 /// Load a PNG as albedo. Repo-relative paths resolve from cwd or the crate parent.
 pub fn load_png_albedo(path: &str) -> Option<crate::scene3d::AlbedoRgba> {
     let spec = path.trim();
@@ -1642,16 +1868,307 @@ pub fn load_png_albedo(path: &str) -> Option<crate::scene3d::AlbedoRgba> {
 }
 
 fn textured_prop_mesh(prop: &WorldProp) -> Option<MeshData> {
-    let path = prop_texture_path(prop)?;
-    let albedo = load_png_albedo(path)?;
+    let albedo = prop_texture_path(prop).and_then(load_png_albedo);
+    if albedo.is_none() && !prop_has_maps(prop) {
+        return None;
+    }
     let mut mesh = match prop.model.to_ascii_lowercase().as_str() {
         "plane" | "water" => primitives::plane_mesh(1.0, 1.0),
         "sprite" | "quad" => primitives::quad_mesh(1.0, 1.0),
         "sphere" | "cylinder" | "capsule" => primitives::cylinder_mesh(0.5, 1.0, 12),
         _ => primitives::box_mesh(Vec3::ONE),
     };
-    mesh.albedo = Some(tile_albedo(albedo, prop.uv_scale));
+    if let Some(albedo) = albedo {
+        mesh.albedo = Some(tile_albedo(albedo, prop.uv_scale));
+    }
+    apply_surface_maps(&mut mesh, prop);
     Some(mesh)
+}
+
+fn apply_surface_maps(mesh: &mut MeshData, prop: &WorldProp) {
+    if let Some(orm) = build_orm(map_spec(&prop.roughness_map), map_spec(&prop.metalness_map)) {
+        mesh.orm_rough = orm.rough;
+        mesh.orm_metal = orm.metal;
+        mesh.orm = Some(orm.image);
+    }
+    if let Some(spec) = map_spec(&prop.emissive_map) {
+        mesh.emissive_map = load_surface_image(spec);
+    }
+}
+
+struct OrmImage {
+    image: crate::scene3d::AlbedoRgba,
+    rough: bool,
+    metal: bool,
+}
+
+fn build_orm(rough: Option<&str>, metal: Option<&str>) -> Option<OrmImage> {
+    if rough.is_none() && metal.is_none() {
+        return None;
+    }
+    if let (Some(r), m) = (rough, metal) {
+        if let Some(preset) = preset_orm(r) {
+            let same = m.is_none() || m == Some(r);
+            if same {
+                return Some(OrmImage {
+                    image: preset,
+                    rough: true,
+                    metal: true,
+                });
+            }
+        }
+    }
+    if rough.is_none() {
+        if let Some(m) = metal.and_then(preset_orm) {
+            return Some(OrmImage {
+                image: m,
+                rough: true,
+                metal: true,
+            });
+        }
+    }
+    let rough_img = rough.and_then(load_surface_image);
+    let metal_img = metal.and_then(load_surface_image);
+    if rough_img.is_none() && metal_img.is_none() {
+        return None;
+    }
+    let (w, h) = match (&rough_img, &metal_img) {
+        (Some(a), _) => (a.width, a.height),
+        (_, Some(a)) => (a.width, a.height),
+        _ => (1, 1),
+    };
+    let mut rgba = vec![0u8; (w as usize) * (h as usize) * 4];
+    for i in 0..(w as usize * h as usize) {
+        let g = rough_img
+            .as_ref()
+            .map(|img| sample_luma(img, i))
+            .unwrap_or(255);
+        let b = metal_img
+            .as_ref()
+            .map(|img| sample_luma(img, i))
+            .unwrap_or(0);
+        let o = i * 4;
+        rgba[o] = 255;
+        rgba[o + 1] = g;
+        rgba[o + 2] = b;
+        rgba[o + 3] = 255;
+    }
+    Some(OrmImage {
+        image: crate::scene3d::AlbedoRgba {
+            width: w,
+            height: h,
+            rgba: rgba.into(),
+        },
+        rough: rough_img.is_some(),
+        metal: metal_img.is_some(),
+    })
+}
+
+fn sample_luma(img: &crate::scene3d::AlbedoRgba, index: usize) -> u8 {
+    let n = (img.width as usize)
+        .saturating_mul(img.height as usize)
+        .max(1);
+    let i = (index % n) * 4;
+    if i + 2 >= img.rgba.len() {
+        return 128;
+    }
+    let r = img.rgba[i] as u32;
+    let g = img.rgba[i + 1] as u32;
+    let b = img.rgba[i + 2] as u32;
+    ((r * 3 + g * 6 + b) / 10) as u8
+}
+
+fn load_surface_image(spec: &str) -> Option<crate::scene3d::AlbedoRgba> {
+    if let Some(img) = preset_orm(spec).or_else(|| preset_emissive(spec)) {
+        return Some(img);
+    }
+    load_png_albedo(spec)
+}
+
+/// `preset:worn` / `preset:split` / `preset:brushed`. Linear bytes (ORM is Unorm).
+fn preset_orm(spec: &str) -> Option<crate::scene3d::AlbedoRgba> {
+    let name = spec.strip_prefix("preset:")?;
+    let n = 64u32;
+    let mut rgba = vec![0u8; (n * n * 4) as usize];
+    for y in 0..n {
+        for x in 0..n {
+            let u = x as f32 / (n - 1) as f32;
+            let band = (u * 6.0).sin() * 0.5 + 0.5;
+            let pit = if (x * 13 + y * 7) % 17 == 0 { 1.0 } else { 0.0 };
+            let (rough, metal) = match name {
+                "split" => {
+                    if u < 0.5 {
+                        (0.12, 1.0)
+                    } else {
+                        (0.92, 0.0)
+                    }
+                }
+                "brushed" => (0.18 + 0.55 * ((u * 18.0).sin() * 0.5 + 0.5), 1.0),
+                "worn" => (
+                    (0.22 + 0.62 * band + 0.18 * pit).clamp(0.04, 1.0),
+                    (0.04 + 0.62 * (1.0 - band) * (1.0 - pit * 0.4)).clamp(0.0, 1.0),
+                ),
+                _ => return None,
+            };
+            let i = ((y * n + x) * 4) as usize;
+            rgba[i] = 255;
+            rgba[i + 1] = (rough.clamp(0.0, 1.0) * 255.0).round() as u8;
+            rgba[i + 2] = (metal.clamp(0.0, 1.0) * 255.0).round() as u8;
+            rgba[i + 3] = 255;
+        }
+    }
+    Some(crate::scene3d::AlbedoRgba {
+        width: n,
+        height: n,
+        rgba: rgba.into(),
+    })
+}
+
+/// 64×64 linear RGBA. Four roughness rows (16 px tall) of a lat-long.
+/// `image` replaces the sharp row when a PNG equirect was loaded.
+pub fn bake_env_strip(
+    sky: [f32; 3],
+    ground: [f32; 3],
+    image: Option<crate::scene3d::AlbedoRgba>,
+) -> Vec<u8> {
+    const W: u32 = 64;
+    const ROW: u32 = 16;
+    const LEVELS: u32 = 4;
+    let mut rows = Vec::with_capacity(LEVELS as usize);
+    rows.push(equirect_row(sky, ground, image.as_ref(), W, ROW));
+    for level in 1..LEVELS {
+        let prev = rows.last().expect("row");
+        rows.push(blur_wrap(prev, W, ROW, level));
+    }
+    let mut rgba = vec![0u8; (W * ROW * LEVELS * 4) as usize];
+    for (i, row) in rows.iter().enumerate() {
+        let dst = i * row.len();
+        rgba[dst..dst + row.len()].copy_from_slice(row);
+    }
+    rgba
+}
+
+fn equirect_row(
+    sky: [f32; 3],
+    ground: [f32; 3],
+    image: Option<&crate::scene3d::AlbedoRgba>,
+    w: u32,
+    h: u32,
+) -> Vec<u8> {
+    let sun = Vec3::new(-0.4, 1.0, 0.3).normalize();
+    let mut rgba = vec![0u8; (w * h * 4) as usize];
+    for y in 0..h {
+        for x in 0..w {
+            let u = (x as f32 + 0.5) / w as f32;
+            let v = (y as f32 + 0.5) / h as f32;
+            let col = if let Some(img) = image {
+                sample_equirect(img, u, v)
+            } else {
+                let theta = (u - 0.5) * std::f32::consts::TAU;
+                let phi = v * std::f32::consts::PI;
+                let dir = Vec3::new(phi.sin() * theta.cos(), phi.cos(), phi.sin() * theta.sin());
+                let t = smoothstep(-0.15, 0.35, dir.y);
+                let mut col = [
+                    ground[0] + (sky[0] - ground[0]) * t,
+                    ground[1] + (sky[1] - ground[1]) * t,
+                    ground[2] + (sky[2] - ground[2]) * t,
+                ];
+                let sun_d = dir.dot(sun).max(0.0);
+                let disk = sun_d.powf(40.0);
+                col[0] += disk * 1.4;
+                col[1] += disk * 1.25;
+                col[2] += disk * 0.9;
+                col
+            };
+            let i = ((y * w + x) * 4) as usize;
+            rgba[i] = to_unorm(col[0]);
+            rgba[i + 1] = to_unorm(col[1]);
+            rgba[i + 2] = to_unorm(col[2]);
+            rgba[i + 3] = 255;
+        }
+    }
+    rgba
+}
+
+fn sample_equirect(img: &crate::scene3d::AlbedoRgba, u: f32, v: f32) -> [f32; 3] {
+    let w = img.width.max(1) as f32;
+    let h = img.height.max(1) as f32;
+    let x = (u.clamp(0.0, 0.999) * w) as usize;
+    let y = (v.clamp(0.0, 0.999) * h) as usize;
+    let i = (y * img.width as usize + x) * 4;
+    if i + 2 >= img.rgba.len() {
+        return [0.5, 0.5, 0.5];
+    }
+    [
+        img.rgba[i] as f32 / 255.0,
+        img.rgba[i + 1] as f32 / 255.0,
+        img.rgba[i + 2] as f32 / 255.0,
+    ]
+}
+
+fn blur_wrap(src: &[u8], w: u32, h: u32, radius: u32) -> Vec<u8> {
+    let r = radius as i32;
+    let mut out = vec![0u8; src.len()];
+    for y in 0..h as i32 {
+        for x in 0..w as i32 {
+            let mut acc = [0u32; 3];
+            let mut n = 0u32;
+            for oy in -r..=r {
+                for ox in -r..=r {
+                    let sx = (x + ox).rem_euclid(w as i32) as u32;
+                    let sy = (y + oy).clamp(0, h as i32 - 1) as u32;
+                    let i = ((sy * w + sx) * 4) as usize;
+                    acc[0] += src[i] as u32;
+                    acc[1] += src[i + 1] as u32;
+                    acc[2] += src[i + 2] as u32;
+                    n += 1;
+                }
+            }
+            let i = ((y as u32 * w + x as u32) * 4) as usize;
+            out[i] = (acc[0] / n) as u8;
+            out[i + 1] = (acc[1] / n) as u8;
+            out[i + 2] = (acc[2] / n) as u8;
+            out[i + 3] = 255;
+        }
+    }
+    out
+}
+
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+fn to_unorm(v: f32) -> u8 {
+    (v.clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
+fn preset_emissive(spec: &str) -> Option<crate::scene3d::AlbedoRgba> {
+    let name = spec.strip_prefix("preset:")?;
+    if name != "core" {
+        return None;
+    }
+    let n = 64u32;
+    let mut rgba = vec![0u8; (n * n * 4) as usize];
+    for y in 0..n {
+        for x in 0..n {
+            let u = x as f32 / (n - 1) as f32 - 0.5;
+            let v = y as f32 / (n - 1) as f32 - 0.5;
+            let d = (u * u + v * v).sqrt();
+            let glow = (1.0 - d * 2.2).clamp(0.0, 1.0);
+            let byte = (glow * 255.0).round() as u8;
+            let i = ((y * n + x) * 4) as usize;
+            rgba[i] = byte;
+            rgba[i + 1] = byte;
+            rgba[i + 2] = byte;
+            rgba[i + 3] = 255;
+        }
+    }
+    Some(crate::scene3d::AlbedoRgba {
+        width: n,
+        height: n,
+        rgba: rgba.into(),
+    })
 }
 
 fn tile_albedo(
@@ -2599,6 +3116,220 @@ mod tests {
         let s = off.compile_scene(1.0);
         assert!(!s.tonemap);
         assert_eq!(s.ibl, 0.0);
+    }
+
+    #[test]
+    fn post_fields_default_to_the_legacy_picture() {
+        let doc = WorldDoc::from_json(r#"{"version":1}"#).unwrap();
+        assert_eq!(doc.bloom_intensity(), 0.0);
+        assert!((doc.bloom_threshold() - 0.85).abs() < 1e-6);
+        assert!((doc.vignette_strength() - 1.0).abs() < 1e-6);
+        assert_eq!(doc.lut_preset(), "off");
+        assert_eq!(doc.lut_mix(), 0.0);
+        assert!(doc.fxaa_enabled());
+        assert!((doc.shadow_softness() - 1.0).abs() < 1e-6);
+        assert!(doc.baked_env().is_none(), "omit env_map and stay on the SH");
+        assert_eq!(doc.hemi_sky_color(), [0.48, 0.56, 0.78]);
+        assert_eq!(doc.hemi_ground_color(), [0.42, 0.30, 0.18]);
+        assert!(doc.cull.is_none());
+        assert!(doc.prop_lod.is_none());
+        let legacy = doc.to_json().unwrap();
+        assert!(!legacy.contains("\"bloom\""));
+        assert!(!legacy.contains("\"shadow_softness\""));
+        assert!(!legacy.contains("\"hemi_sky\""));
+        assert!(!legacy.contains("\"env_map\""));
+        assert!(!legacy.contains("\"cull\""));
+        assert!(!legacy.contains("\"prop_lod\""));
+        let on = WorldDoc::from_json(
+            r#"{"version":1,"bloom":0.4,"bloom_threshold":0.7,"vignette":0.0,"lut":"warm","lut_strength":0.5,"fxaa":false}"#,
+        )
+        .unwrap();
+        assert!((on.bloom_intensity() - 0.4).abs() < 1e-6);
+        assert!((on.bloom_threshold() - 0.7).abs() < 1e-6);
+        assert_eq!(on.vignette_strength(), 0.0);
+        assert_eq!(on.lut_preset(), "warm");
+        assert!((on.lut_mix() - 0.5).abs() < 1e-6);
+        assert!(!on.fxaa_enabled());
+    }
+
+    #[test]
+    fn emissive_and_orm_reach_the_picture() {
+        let doc = WorldDoc::from_json(
+            r#"{"version":1,"ground":false,"shadow_softness":3.0,"props":[{"id":"lamp","type":"prop","model":"box","position":[0.0,1.0,0.0],"emissive":2.5,"emissive_color":[1.0,0.4,0.1],"roughness_map":"preset:split","metalness_map":"preset:split"}]}"#,
+        )
+        .unwrap();
+        assert!((doc.shadow_softness() - 3.0).abs() < 1e-6);
+        let scene = doc.compile_scene(1.0);
+        assert!((scene.shadow_softness - 3.0).abs() < 1e-6);
+        let lamp = scene
+            .batches
+            .iter()
+            .find(|b| b.mesh.0 >= MESH_GLTF_BASE)
+            .expect("mapped box");
+        let inst = &lamp.instances[0];
+        assert!(
+            (inst.emissive - 2.5).abs() < 1e-4,
+            "emissive {}",
+            inst.emissive
+        );
+        assert!((inst.emissive_color[0] - 1.0).abs() < 1e-4);
+        let meshes = doc.compile_meshes();
+        let mapped = meshes
+            .iter()
+            .find(|(id, m)| id.0 >= MESH_GLTF_BASE && m.orm.is_some())
+            .expect("orm mesh");
+        assert!(mapped.1.orm_rough && mapped.1.orm_metal);
+        let img = mapped.1.orm.as_ref().unwrap();
+        let left_b = img.rgba[2];
+        let right_g = img.rgba[(63 * 4 + 1) as usize];
+        let right_b = img.rgba[(63 * 4 + 2) as usize];
+        assert!(left_b > 200, "split left should be metal, B={left_b}");
+        assert!(right_g > 200, "split right should be rough, G={right_g}");
+        assert!(
+            right_b < 20,
+            "split right should be dielectric, B={right_b}"
+        );
+    }
+
+    #[test]
+    fn studio_env_zenith_is_bluer_than_the_nadir() {
+        let doc = WorldDoc::from_json(
+            r#"{"version":1,"hemi_sky":[0.20,0.45,0.95],"hemi_ground":[0.55,0.22,0.08],"env_map":"preset:studio"}"#,
+        )
+        .unwrap();
+        let px = doc.baked_env().expect("strip");
+        assert_eq!(px.len(), 64 * 64 * 4);
+        let scene = doc.compile_scene(1.0);
+        assert!(scene
+            .env_pixels
+            .as_ref()
+            .is_some_and(|p| p.len() == px.len()));
+        assert!((scene.hemi_sky[2] - 0.95).abs() < 1e-5);
+        // First roughness row: y=0 is the zenith texel, y=15 is the nadir.
+        let zen = 32 * 4;
+        let nad = (15 * 64 + 32) * 4;
+        assert!(
+            px[zen + 2] > px[zen] + 40,
+            "zenith should be blue, rgb={},{},{}",
+            px[zen],
+            px[zen + 1],
+            px[zen + 2]
+        );
+        assert!(
+            px[nad] > px[nad + 2] + 40,
+            "nadir should be warm, rgb={},{},{}",
+            px[nad],
+            px[nad + 1],
+            px[nad + 2]
+        );
+        // The sun disk is a few texels wide. Row 3 blurs it, so the peak drops.
+        let mut peak = 0usize;
+        let mut peak_l = 0u32;
+        for i in 0..(16 * 64) {
+            let o = i * 4;
+            let l = px[o] as u32 + px[o + 1] as u32 + px[o + 2] as u32;
+            if l > peak_l {
+                peak_l = l;
+                peak = i;
+            }
+        }
+        let blurred = (peak + 3 * 16 * 64) * 4;
+        let blur_l = px[blurred] as u32 + px[blurred + 1] as u32 + px[blurred + 2] as u32;
+        assert!(
+            peak_l > blur_l + 20,
+            "roughness row 3 should blur the sun, {peak_l} -> {blur_l}"
+        );
+    }
+
+    #[test]
+    fn walker_scale_reaches_the_capsule() {
+        let plain = WorldDoc::from_json(
+            r#"{"version":1,"ground":false,"player":{"id":"p","type":"walker","position":[0.0,1.0,0.0]}}"#,
+        )
+        .unwrap();
+        let scene = plain.compile_scene(1.0);
+        let body = scene
+            .batches
+            .iter()
+            .find(|b| b.mesh == MESH_CAPSULE)
+            .expect("capsule");
+        let sy = body.instances[0].model.y_axis.length();
+        assert!((sy - 0.95).abs() < 1e-3, "default height {sy}");
+        let squashed = WorldDoc::from_json(
+            r#"{"version":1,"ground":false,"player":{"id":"p","type":"walker","position":[0.0,1.0,0.0],"scale":[2.0,0.5,2.0]}}"#,
+        )
+        .unwrap();
+        let scene = squashed.compile_scene(1.0);
+        let body = scene
+            .batches
+            .iter()
+            .find(|b| b.mesh == MESH_CAPSULE)
+            .expect("squashed capsule");
+        let sy = body.instances[0].model.y_axis.length();
+        let sx = body.instances[0].model.x_axis.length();
+        assert!((sy - 0.475).abs() < 1e-3, "squashed height {sy}");
+        assert!((sx - 1.12).abs() < 1e-3, "squashed width {sx}");
+    }
+
+    #[test]
+    fn cull_drops_a_box_behind_the_camera() {
+        let doc = |cull: &str| {
+            WorldDoc::from_json(&format!(
+                r#"{{"version":1,"ground":false,{cull}"cameras":[{{"id":"c","type":"camera","position":[0.0,2.0,6.0],"target":[0.0,1.0,0.0],"fov":50.0}}],"props":[{{"id":"front","type":"prop","model":"box","position":[0.0,1.0,0.0]}},{{"id":"back","type":"prop","model":"box","position":[0.0,1.0,40.0]}}]}}"#
+            ))
+            .unwrap()
+        };
+        let boxes = |scene: Scene3D| {
+            scene
+                .batches
+                .iter()
+                .filter(|b| b.mesh == MESH_BOX)
+                .map(|b| b.instances.len())
+                .sum::<usize>()
+        };
+        let open = doc("");
+        let closed = doc(r#""cull":true,"#);
+        assert_eq!(
+            boxes(open.compile_scene(1.0)),
+            2,
+            "omit cull and both boxes draw"
+        );
+        assert_eq!(
+            boxes(closed.compile_scene(1.0)),
+            1,
+            "the box behind the camera drops"
+        );
+    }
+
+    #[test]
+    fn prop_lod_turns_a_far_box_into_a_quad() {
+        let doc = WorldDoc::from_json(
+            r#"{"version":1,"ground":false,"prop_lod":4.0,"cameras":[{"id":"c","type":"camera","position":[0.0,2.0,0.0],"target":[0.0,1.0,-1.0],"fov":50.0}],"props":[{"id":"near","type":"prop","model":"box","position":[0.0,1.0,-2.0]},{"id":"far","type":"prop","model":"box","position":[0.0,1.0,-40.0]}]}"#,
+        )
+        .unwrap();
+        let scene = doc.compile_scene(1.0);
+        let n = |id: MeshId| {
+            scene
+                .batches
+                .iter()
+                .filter(|b| b.mesh == id)
+                .map(|b| b.instances.len())
+                .sum::<usize>()
+        };
+        assert_eq!(n(MESH_BOX), 1, "the near box stays a box");
+        assert!(n(MESH_QUAD) >= 1, "the far box becomes a billboard");
+        let full = WorldDoc::from_json(
+            r#"{"version":1,"ground":false,"cameras":[{"id":"c","type":"camera","position":[0.0,2.0,0.0],"target":[0.0,1.0,-1.0],"fov":50.0}],"props":[{"id":"near","type":"prop","model":"box","position":[0.0,1.0,-2.0]},{"id":"far","type":"prop","model":"box","position":[0.0,1.0,-40.0]}]}"#,
+        )
+        .unwrap();
+        let scene = full.compile_scene(1.0);
+        let boxes = scene
+            .batches
+            .iter()
+            .filter(|b| b.mesh == MESH_BOX)
+            .map(|b| b.instances.len())
+            .sum::<usize>();
+        assert_eq!(boxes, 2, "omit prop_lod and both boxes stay boxes");
     }
 
     #[test]

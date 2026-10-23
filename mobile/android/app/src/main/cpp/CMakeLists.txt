@@ -11,8 +11,15 @@ set(SHARED_LIB_DIR ${CMAKE_SOURCE_DIR}/../jniLibs/${ANDROID_ABI})
 set(SHARED_LIB ${SHARED_LIB_DIR}/libkagra_shared.so)
 
 if(EXISTS ${SHARED_LIB})
+  # IMPORTED_* records the SONAME for anything that inspects the target.
+  # Do not target_link_libraries() this target: NDK CMake passes
+  # IMPORTED_LOCATION through to lld, and lld writes that absolute path into
+  # DT_NEEDED when it does not use the SONAME (Pixel 10 then dlopens the CI path).
   add_library(kagra_shared SHARED IMPORTED)
-  set_target_properties(kagra_shared PROPERTIES IMPORTED_LOCATION ${SHARED_LIB})
+  set_target_properties(kagra_shared PROPERTIES
+    IMPORTED_LOCATION "${SHARED_LIB}"
+    IMPORTED_NO_SONAME FALSE
+    IMPORTED_SONAME "libkagra_shared.so")
   # cpp → main → src → app → android → mobile → repo root
   get_filename_component(KAGRA_REPO "${CMAKE_SOURCE_DIR}/../../../../../.." ABSOLUTE)
   set(KAGRA_INCLUDE "${KAGRA_REPO}/kagra-shared/include")
@@ -21,7 +28,14 @@ if(EXISTS ${SHARED_LIB})
   endif()
   target_include_directories(kagra_jni PRIVATE "${KAGRA_INCLUDE}")
   target_compile_definitions(kagra_jni PRIVATE KAGRA_HAS_SHARED=1)
-  target_link_libraries(kagra_jni kagra_shared ${log-lib} android)
+  # -l:filename keeps DT_NEEDED as libkagra_shared.so. -Wl, so CMake does not
+  # rewrite -l into the absolute path it just found on disk.
+  # Packaged games and dev.kagra.shell (plain assembleDebug) both use this file.
+  target_link_libraries(kagra_jni
+    "-Wl,-L${SHARED_LIB_DIR}"
+    "-Wl,-l:libkagra_shared.so"
+    ${log-lib}
+    android)
 else()
   message(WARNING "libkagra_shared.so not found for ${ANDROID_ABI}; building JNI stub only")
   target_compile_definitions(kagra_jni PRIVATE KAGRA_HAS_SHARED=0)

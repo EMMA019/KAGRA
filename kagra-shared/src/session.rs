@@ -7,6 +7,7 @@ use crate::collectathon::{
 use crate::driving::DrivingScene;
 use crate::game::{DemoGame, GamePhase, GAME_ID, GAME_TITLE};
 use crate::input::{KeyEvent, PointerEvent, PointerPhase, VirtualPad};
+use crate::playtest::Playtest;
 use crate::save::{SaveGame, Settings};
 use crate::scene::{DemoScene, DrawList};
 use crate::ui::{PauseMenu, UiAction, UiMode};
@@ -113,6 +114,8 @@ pub struct SharedSession {
     /// このフレームで新しく触れた座標。`poll_pointers` の意味を変えずに
     /// 「押した瞬間」をシーンへ渡すための別キュー。
     pending_taps: Vec<(f32, f32)>,
+    /// Debug / preview handoff. Off until a host enables it.
+    playtest: Playtest,
     #[cfg(feature = "render")]
     renderer: Option<crate::render::Renderer>,
     /// 運転シーンのメッシュを載せたときのハンドル。
@@ -149,6 +152,7 @@ impl Default for SharedSession {
             pointers: Vec::new(),
             pending_keys: Vec::new(),
             pending_taps: Vec::new(),
+            playtest: Playtest::new(false),
             #[cfg(feature = "render")]
             renderer: None,
             #[cfg(feature = "render")]
@@ -186,6 +190,7 @@ impl SharedSession {
         crate::world_doc::clear_runtime_asset_cache();
         let mut play = WorldPlay::from_json(json)?;
         play.load_progress();
+        let dump = play.doc.to_json().unwrap_or_else(|_| json.to_string());
         self.world = Some(play);
         self.kind = SceneKind::World;
         self.paused = false;
@@ -193,6 +198,7 @@ impl SharedSession {
         {
             self.world_meshes = false;
         }
+        self.playtest.snapshot_loaded(&dump);
         Ok(())
     }
 
@@ -211,11 +217,17 @@ impl SharedSession {
     }
 
     pub fn push_pointer(&mut self, ev: PointerEvent) {
+        self.playtest.set_viewport(self.width, self.height);
+        if self.playtest.on_pointer(ev) {
+            return;
+        }
+        self.playtest.record_pointer(ev);
         if self.kind == SceneKind::World && matches!(ev.phase, PointerPhase::Begin) {
             if let Some(play) = self.world.as_mut() {
                 let handled = play.apply_flow_pointer(ev.x, ev.y, self.width, self.height);
                 if !handled && !play.game.is_playing() {
                     play.confirm();
+                    self.playtest.record_confirm();
                 }
             }
         }
@@ -322,6 +334,10 @@ impl SharedSession {
 
     /// パッケージした `WorldPlay` への歩き。攻撃と回避は 0/1。
     pub fn set_play_input(&mut self, lx: f32, lz: f32, jump: bool, attack: bool, dodge: bool) {
+        if self.playtest.blocks_sim() {
+            return;
+        }
+        self.playtest.note_walk(lx, lz, jump, attack, dodge);
         if self.kind == SceneKind::Collectathon {
             self.set_walk(lx, lz, jump);
             return;
@@ -349,10 +365,14 @@ impl SharedSession {
     /// Crest Isle の歩き。`lx`/`lz` は -1..1、`jump` は今フレーム跳ぶか。
     /// `World` のときは攻撃なしの `set_play_input` になる。
     pub fn set_walk(&mut self, lx: f32, lz: f32, jump: bool) {
+        if self.playtest.blocks_sim() {
+            return;
+        }
         if self.kind == SceneKind::World {
             self.set_play_input(lx, lz, jump, false, false);
             return;
         }
+        self.playtest.note_walk(lx, lz, jump, false, false);
         if self.kind != SceneKind::Collectathon {
             return;
         }
@@ -434,6 +454,11 @@ impl SharedSession {
     }
 
     pub fn request_frame(&mut self) -> FrameStats {
+        self.playtest.set_viewport(self.width, self.height);
+        self.playtest.advance(crate::scene::FIXED_DT);
+        if self.playtest.blocks_sim() {
+            return self.stats();
+        }
         if !self.paused {
             self.frame = self.frame.saturating_add(1);
             let taps = std::mem::take(&mut self.pending_taps);
@@ -451,6 +476,7 @@ impl SharedSession {
                         self.isle.update();
                     }
                     let _ = taps;
+                    self.playtest.commit_walk(crate::scene::FIXED_DT);
                 }
                 SceneKind::Demo2D => {
                     let pad = self.pad.stick();
@@ -463,10 +489,23 @@ impl SharedSession {
                             play.tick(crate::scene::FIXED_DT);
                         }
                     }
+                    self.playtest.commit_walk(crate::scene::FIXED_DT);
                 }
             }
         }
+        if self.playtest.wants_snapshot() {
+            self.capture_playtest_dump();
+        }
         self.stats()
+    }
+
+    fn capture_playtest_dump(&mut self) {
+        if !self.playtest.wants_snapshot() {
+            return;
+        }
+        let dump = self.world.as_ref().and_then(|play| play.doc.to_json().ok());
+        let dump = dump.unwrap_or_else(|| self.stats_json());
+        self.playtest.snapshot_dump(&dump);
     }
 
     fn stats(&self) -> FrameStats {
@@ -577,7 +616,7 @@ impl SharedSession {
     /// 現在の状態から 2D の描画内容を作る。GPU に触らないので単体テスト可能。
     /// 運転シーンでは HUD になる。
     pub fn draw_list(&self) -> DrawList {
-        match self.kind {
+        let mut list = match self.kind {
             SceneKind::Driving => self.driving.build_hud(self.width, self.height, self.paused),
             SceneKind::Collectathon => self.isle.build_hud(self.width, self.height, self.paused),
             SceneKind::Demo2D => self
@@ -589,7 +628,73 @@ impl SharedSession {
                 .as_ref()
                 .map(|play| play.build_hud(self.width, self.height))
                 .unwrap_or_default(),
+        };
+        self.playtest.append_hud(&mut list, self.width, self.height);
+        list
+    }
+
+    pub fn set_playtest_enabled(&mut self, on: bool) {
+        self.playtest.set_enabled(on);
+        if on {
+            self.capture_playtest_dump();
         }
+    }
+
+    pub fn set_playtest_external_chrome(&mut self, on: bool) {
+        self.playtest.set_external_chrome(on);
+    }
+
+    pub fn set_playtest_device(&mut self, label: &str, lang: &str) {
+        self.playtest.set_device(label, lang);
+    }
+
+    pub fn playtest_pointer(&mut self, ev: PointerEvent) -> bool {
+        self.playtest.set_viewport(self.width, self.height);
+        self.playtest.on_pointer(ev)
+    }
+
+    pub fn push_key(&mut self, name: &str, down: bool) -> bool {
+        self.playtest.on_key(name, down)
+    }
+
+    pub fn playtest_set_note(&mut self, note: &str) {
+        self.playtest.set_note(note);
+    }
+
+    pub fn playtest_push_text(&mut self, text: &str) {
+        self.playtest.push_text(text);
+    }
+
+    pub fn playtest_action(&mut self, name: &str) {
+        self.playtest.action(name);
+    }
+
+    pub fn playtest_open(&self) -> bool {
+        self.playtest.is_open()
+    }
+
+    pub fn playtest_blocks_input(&self) -> bool {
+        self.playtest.blocks_sim()
+    }
+
+    /// Clears the one-shot screenshot flag. Hosts read this between
+    /// `request_frame` and `render` so the saved frame is the game.
+    pub fn playtest_state_json(&mut self) -> String {
+        self.playtest.set_viewport(self.width, self.height);
+        self.playtest.state_json()
+    }
+
+    pub fn playtest_packet_json(&self) -> String {
+        self.playtest.packet_json()
+    }
+
+    pub fn playtest_set_shot_path(&mut self, path: &str) {
+        self.playtest.set_shot_path(path);
+    }
+
+    pub fn open_playtest(&mut self) -> bool {
+        self.playtest.set_viewport(self.width, self.height);
+        self.playtest.try_open()
     }
 
     pub fn stats_json(&self) -> String {
@@ -1058,5 +1163,55 @@ mod tests {
             .unwrap()
             .position;
         assert_eq!(held, start);
+    }
+
+    #[test]
+    fn playtest_f12_and_three_fingers_freeze_the_frame() {
+        let mut s = demo2d();
+        s.create_surface(800, 600);
+        s.set_playtest_enabled(true);
+        s.set_pad(1.0, 0.0);
+        s.request_frame();
+        let frame = s.frame;
+        assert!(s.push_key("F12", true));
+        assert!(s.playtest_open());
+        s.request_frame();
+        assert_eq!(s.frame, frame);
+        assert!(s.push_key("Escape", true) || s.playtest_open());
+        s.playtest_action("close");
+        assert!(!s.playtest_open());
+
+        s.request_frame();
+        let frame = s.frame;
+        for id in 0..3u32 {
+            s.push_pointer(PointerEvent {
+                id,
+                x: 70.0 + id as f32 * 30.0,
+                y: 80.0,
+                phase: PointerPhase::Begin,
+                pressure: 1.0,
+            });
+        }
+        assert!(s.playtest_blocks_input());
+        for _ in 0..40 {
+            s.request_frame();
+        }
+        assert!(s.playtest_open());
+        assert_eq!(s.frame, frame);
+        let state = s.playtest_state_json();
+        assert!(state.contains("\"shot\":true") || state.contains("\"open\":true"));
+    }
+
+    #[test]
+    fn playtest_load_checkpoints_the_world_not_the_empty_stats() {
+        let mut s = SharedSession::default();
+        s.set_playtest_enabled(true);
+        s.load_game_json(include_str!("../tests/fixtures/platformer_world.json"))
+            .unwrap();
+        assert!(s.open_playtest());
+        let report = s.playtest.report_value();
+        assert_eq!(report["dump"]["version"], 1);
+        assert_eq!(report["dump"]["genre"], "box_hop");
+        assert_eq!(report["dump_t"], 0.0);
     }
 }

@@ -51,6 +51,60 @@
       "type": ["boolean", "null"],
       "description": "ACES tonemap. Omit = on. Globals.env.w. Reinhard is not used; ACES matches kagra-core V2."
     },
+    "bloom": {
+      "type": ["number", "null"],
+      "description": "Bloom intensity on render_world_doc. Omit = 0. The desktop window example keeps its own default."
+    },
+    "bloom_threshold": {
+      "type": ["number", "null"],
+      "description": "Bloom extract threshold. Omit = 0.85."
+    },
+    "vignette": {
+      "type": ["number", "null"],
+      "description": "Vignette strength. Omit = 1 (the historical curve). 0 = off. Above 1 darkens the corners further."
+    },
+    "lut": {
+      "type": ["string", "null"],
+      "description": "Display LUT preset after ACES: off, warm, punch, cool. Omit = off. A 16^3 strip, texture_2d, WebGL2 safe."
+    },
+    "lut_strength": {
+      "type": ["number", "null"],
+      "description": "Mix toward the LUT, 0..1. Omit = 1 when lut is set."
+    },
+    "fxaa": {
+      "type": ["boolean", "null"],
+      "description": "FXAA on the composite. Omit = on."
+    },
+    "shadow_softness": {
+      "type": ["number", "null"],
+      "description": "Directional shadow radius. Omit = 1, the historical 3x3 PCF. About 2.5 to 4 uses a wider 5x5 tent."
+    },
+    "hemi_sky": {
+      "type": ["array", "null"],
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "type": "number" },
+      "description": "Hemisphere sky, linear. Omit = studio blue (0.48, 0.56, 0.78), the SH the shader used to hardcode."
+    },
+    "hemi_ground": {
+      "type": ["array", "null"],
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "type": "number" },
+      "description": "Hemisphere ground, linear. Omit = studio warm (0.42, 0.30, 0.18)."
+    },
+    "env_map": {
+      "type": ["string", "null"],
+      "description": "Prefiltered specular. preset:studio bakes a lat-long from the hemisphere. A PNG path is an equirect, blurred into 4 roughness rows (64x64 texture_2d). Omit = SH specular, so an old dump does not change."
+    },
+    "cull": {
+      "type": ["boolean", "null"],
+      "description": "Register mesh bounds and drop props outside the camera. Omit = draw every prop."
+    },
+    "prop_lod": {
+      "type": ["number", "null"],
+      "description": "Distance where a non-vegetation prop becomes one billboard quad. Omit = full meshes. Vegetation keeps heightfield.lod_radius."
+    },
     "sky": {
       "type": ["array", "null"],
       "minItems": 4,
@@ -150,6 +204,29 @@
           "minimum": 0,
           "maximum": 1,
           "description": "Coins dump 0.12 (GGX). Default 1."
+        },
+        "emissive": {
+          "type": ["number", "null"],
+          "description": "Unlit HDR add so bloom can come from this prop. Omit = 0. Color is emissive_color, or the albedo when that is omitted."
+        },
+        "emissive_color": {
+          "type": ["array", "null"],
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "type": "number" },
+          "description": "Linear 0..1 RGB glow. Omit = use the albedo."
+        },
+        "roughness_map": {
+          "type": ["string", "null"],
+          "description": "PNG path or preset:worn / preset:split / preset:brushed. G channel replaces the roughness scalar. Presets also write metallic."
+        },
+        "metalness_map": {
+          "type": ["string", "null"],
+          "description": "PNG path or the same presets. B channel replaces the metallic scalar."
+        },
+        "emissive_map": {
+          "type": ["string", "null"],
+          "description": "PNG path or preset:core. Multiplies the emissive color. Strength stays on emissive."
         },
         "interact": {
           "$ref": "#/$defs/interact",
@@ -276,6 +353,13 @@
         "expression": {
           "type": "string",
           "description": "Selected VRM expression preset: blink (auto) / smile / angry / sad / joy / aa / ih / ou / ee / oh / custom. Dump-visible; games flip it via events / interact."
+        },
+        "scale": {
+          "type": ["array", "null"],
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "type": "number" },
+          "description": "Draw scale. Omit = (1, 1, 1). Squash and stretch write this on the picture dump. The walker sim does not read it."
         }
       }
     },

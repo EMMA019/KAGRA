@@ -9,11 +9,16 @@ command -v cargo >/dev/null || { echo "cargo required"; exit 1; }
 
 FEATURES="${KAGRA_ANDROID_FEATURES:-render}"
 
-# 16 KB ELF alignment is set in .cargo/config.toml for every Android target:
+# 16 KB ELF alignment and SONAME are set in two places that both reach rustc:
+#   .cargo/config.toml  target.<android>.rustflags
+#   kagra-shared/build.rs  cargo:rustc-cdylib-link-arg (not dropped when
+#   RUSTFLAGS replaces config rustflags)
 #   -C link-arg=-Wl,-z,max-page-size=16384
 #   -C link-arg=-Wl,-z,common-page-size=16384
-# cargo-ndk only injects max-page-size for NDK r27 and older, so the config
-# is what aligns libkagra_shared.so on NDK r28+ as well.
+#   -C link-arg=-Wl,-soname,libkagra_shared.so
+# cargo-ndk only injects max-page-size for NDK r27 and older. JNI must still
+# link with -Wl,-l:libkagra_shared.so (see app/src/main/cpp/CMakeLists.txt).
+# Linking the IMPORTED_LOCATION path writes that CI path into DT_NEEDED.
 # https://developer.android.com/guide/practices/page-sizes
 
 # cargo-ndk 推奨: cargo install cargo-ndk

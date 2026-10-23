@@ -1,0 +1,27 @@
+name: Playtest
+description: 遊んでいる途中で「直してここ」。画面のメモと再現データ。
+title: "[playtest] "
+labels: ["playtest"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ゲーム内の「直してここ」から開いた下書きです。スクリーンショットをこの issue に貼ってください。トークンは入りません。
+  - type: textarea
+    id: note
+    attributes:
+      label: メモ
+      description: どこを直すか。日本語で書けます。
+      placeholder: 直してここ
+  - type: textarea
+    id: build
+    attributes:
+      label: ビルド
+      description: バージョン、git、OS、画面サイズ。
+  - type: textarea
+    id: repro
+    attributes:
+      label: 再現データ
+      description: |
+        URL に入りきったときは短い JSON。大きいときは KAGRA-PLAYTEST-1 で始まるブロックをそのまま貼る。
+      render: text

@@ -1,10 +1,13 @@
 //! Threshold bloom post-process, ported from kagra-core (wgpu 0.19) bloom.rs.
 //! The 3D pass draws into `frame_tex` as **linear HDR** (Rgba16Float, no
 //! tonemap); bright pixels are extracted at half resolution, blurred H+V, and
-//! `fs_composite` adds them back while applying exposure + ACES + sRGB encode
-//! to the final target. HUD is drawn after composite, so UI colors are
-//! unaffected. Inactive → composite still runs with intensity 0 (plain frame).
+//! `fs_composite` adds them back while applying exposure + ACES + optional
+//! 16³ strip LUT + vignette, then sRGB encode to the final target. HUD is
+//! drawn after composite, so UI colors are unaffected. Inactive → composite
+//! still runs with intensity 0 (plain frame). Vignette 1 matches the curve
+//! that shipped with this pass; 0 turns it off. LUT mix 0 skips the sample.
 //! No full-frame blur: toon outlines stay crisp (same rule as V2).
+//! The LUT is `texture_2d` (no `texture_3d`) so WebGL2 can bind it.
 
 pub(super) const BLOOM_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
@@ -37,7 +40,17 @@ pub(super) struct BloomPass {
     blur_h_params: (wgpu::Buffer, wgpu::BindGroup),
     blur_v_params: (wgpu::Buffer, wgpu::BindGroup),
     composite_params: (wgpu::Buffer, wgpu::BindGroup),
+    /// Group 2 of the composite pass: bloom texture + 16³ strip LUT.
+    composite_tex_bgl: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
+    /// Vignette strength. 1 = the historical curve. 0 = off.
+    vignette: f32,
+    /// Mix toward the display LUT after ACES. 0 skips the sample.
+    lut_strength: f32,
+    lut_desired: String,
+    lut_loaded: String,
+    lut_tex: wgpu::Texture,
+    lut_view: wgpu::TextureView,
     half_a: wgpu::Texture,
     half_a_view: wgpu::TextureView,
     half_b: wgpu::Texture,
@@ -103,9 +116,13 @@ impl BloomPass {
             bind_group_layouts: &[Some(&tex_bgl), Some(&params_bgl)],
             immediate_size: 0,
         });
+        let composite_tex_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Bloom Composite Tex BGL"),
+            entries: &[tex_entry(0), samp_entry(1), tex_entry(2), samp_entry(3)],
+        });
         let composite_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Bloom Composite Layout"),
-            bind_group_layouts: &[Some(&tex_bgl), Some(&params_bgl), Some(&tex_bgl)],
+            bind_group_layouts: &[Some(&tex_bgl), Some(&params_bgl), Some(&composite_tex_bgl)],
             immediate_size: 0,
         });
         let extract_pipeline = make_fs_pipeline(
@@ -132,10 +149,11 @@ impl BloomPass {
             format,
             "Bloom Composite",
         );
-        let extract_params = make_params(device, &params_bgl, "Bloom Extract Params");
-        let blur_h_params = make_params(device, &params_bgl, "Bloom BlurH Params");
-        let blur_v_params = make_params(device, &params_bgl, "Bloom BlurV Params");
-        let composite_params = make_params(device, &params_bgl, "Bloom Composite Params");
+        // 32 bytes: grade vec4 + LUT mix. Extract/blur share the same struct.
+        let extract_params = make_params_sized(device, &params_bgl, "Bloom Extract Params", 32);
+        let blur_h_params = make_params_sized(device, &params_bgl, "Bloom BlurH Params", 32);
+        let blur_v_params = make_params_sized(device, &params_bgl, "Bloom BlurV Params", 32);
+        let composite_params = make_params_sized(device, &params_bgl, "Bloom Composite Params", 32);
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Bloom Sampler"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -172,6 +190,7 @@ impl BloomPass {
         let fxaa_params = make_params(device, &params_bgl, "FXAA Params");
         let composite_tex = make_composite_tex(device, format, width, height);
         let composite_view = composite_tex.create_view(&Default::default());
+        let (lut_tex, lut_view) = make_lut_tex(device);
 
         Self {
             width,
@@ -188,7 +207,14 @@ impl BloomPass {
             blur_h_params,
             blur_v_params,
             composite_params,
+            composite_tex_bgl,
             sampler,
+            vignette: 1.0,
+            lut_strength: 0.0,
+            lut_desired: "off".into(),
+            lut_loaded: String::new(),
+            lut_tex,
+            lut_view,
             half_a,
             half_a_view,
             half_b,
@@ -211,6 +237,29 @@ impl BloomPass {
     pub fn set_params(&mut self, threshold: f32, intensity: f32) {
         self.threshold = threshold.clamp(0.0, 2.0);
         self.intensity = intensity.max(0.0);
+    }
+
+    /// One write for the dump-driven post stack. LUT bytes upload in `apply`.
+    pub fn set_grade(
+        &mut self,
+        threshold: f32,
+        intensity: f32,
+        vignette: f32,
+        fxaa: bool,
+        lut: &str,
+        lut_strength: f32,
+    ) {
+        self.set_params(threshold, intensity);
+        self.vignette = vignette.clamp(0.0, 2.0);
+        self.fxaa_enabled = fxaa;
+        let name = lut.trim();
+        let name = if name.is_empty() { "off" } else { name };
+        self.lut_desired = name.to_string();
+        self.lut_strength = if name == "off" {
+            0.0
+        } else {
+            lut_strength.clamp(0.0, 1.0)
+        };
     }
 
     pub fn is_active(&self) -> bool {
@@ -255,6 +304,10 @@ impl BloomPass {
         tonemap: bool,
     ) {
         let (target_texture, target_view) = target;
+        if self.lut_loaded != self.lut_desired {
+            write_lut(queue, &self.lut_tex, &self.lut_desired);
+            self.lut_loaded.clone_from(&self.lut_desired);
+        }
         let src_bg = bind_tex(
             device,
             &self.tex_bgl,
@@ -282,7 +335,7 @@ impl BloomPass {
             write_params(
                 queue,
                 &self.extract_params.0,
-                [self.threshold, knee, 0.0, 0.0],
+                &[self.threshold, knee, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             );
             fullscreen(
                 encoder,
@@ -294,7 +347,11 @@ impl BloomPass {
 
             let inv_w = 1.0 / self.half_w.max(1) as f32;
             let inv_h = 1.0 / self.half_h.max(1) as f32;
-            write_params(queue, &self.blur_h_params.0, [inv_w, 0.0, 0.0, 0.0]);
+            write_params(
+                queue,
+                &self.blur_h_params.0,
+                &[inv_w, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            );
             fullscreen(
                 encoder,
                 &self.blur_pipeline,
@@ -302,7 +359,11 @@ impl BloomPass {
                 &[&a_bg, &self.blur_h_params.1],
                 "Bloom Blur H",
             );
-            write_params(queue, &self.blur_v_params.0, [0.0, inv_h, 0.0, 0.0]);
+            write_params(
+                queue,
+                &self.blur_v_params.0,
+                &[0.0, inv_h, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            );
             fullscreen(
                 encoder,
                 &self.blur_pipeline,
@@ -312,21 +373,25 @@ impl BloomPass {
             );
         }
 
-        // composite → composite_tex（sRGB）。
-        let a_bg = bind_tex(
+        // composite → composite_tex（sRGB）。exposure → ACES → LUT → vignette.
+        let grade_bg = bind_grade(
             device,
-            &self.tex_bgl,
+            &self.composite_tex_bgl,
             &self.half_a_view,
+            &self.lut_view,
             &self.sampler,
-            "Bloom A",
         );
         write_params(
             queue,
             &self.composite_params.0,
-            [
+            &[
                 self.intensity,
                 exposure.max(0.0),
                 if tonemap { 1.0 } else { 0.0 },
+                self.vignette,
+                self.lut_strength,
+                0.0,
+                0.0,
                 0.0,
             ],
         );
@@ -334,14 +399,14 @@ impl BloomPass {
             encoder,
             &self.composite_pipeline,
             &self.composite_view,
-            &[&src_bg, &self.composite_params.1, &a_bg],
+            &[&src_bg, &self.composite_params.1, &grade_bg],
             "Bloom Composite",
         );
 
         // FXAA or plain copy → 最終ターゲット。
         let inv_w = 1.0 / self.width.max(1) as f32;
         let inv_h = 1.0 / self.height.max(1) as f32;
-        write_params(queue, &self.fxaa_params.0, [inv_w, inv_h, 0.0, 0.0]);
+        write_params(queue, &self.fxaa_params.0, &[inv_w, inv_h, 0.0, 0.0]);
         if self.fxaa_enabled {
             let fxaa_bg = bind_tex(
                 device,
@@ -452,6 +517,104 @@ fn make_bloom_tex(
     (tex, view)
 }
 
+fn tex_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            multisampled: false,
+            view_dimension: wgpu::TextureViewDimension::D2,
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+        },
+        count: None,
+    }
+}
+
+fn samp_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+        count: None,
+    }
+}
+
+fn make_lut_tex(device: &wgpu::Device) -> (wgpu::Texture, wgpu::TextureView) {
+    let n = crate::grade::LUT_SIZE;
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Grade LUT"),
+        size: wgpu::Extent3d {
+            width: n * n,
+            height: n,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let view = tex.create_view(&Default::default());
+    (tex, view)
+}
+
+fn write_lut(queue: &wgpu::Queue, tex: &wgpu::Texture, preset: &str) {
+    let rgba = crate::grade::bake_lut_strip(preset);
+    let n = crate::grade::LUT_SIZE;
+    let width = n * n;
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: tex,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &rgba,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * width),
+            rows_per_image: Some(n),
+        },
+        wgpu::Extent3d {
+            width,
+            height: n,
+            depth_or_array_layers: 1,
+        },
+    );
+}
+
+fn bind_grade(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    bloom: &wgpu::TextureView,
+    lut: &wgpu::TextureView,
+    sampler: &wgpu::Sampler,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Bloom Grade"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(bloom),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(lut),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+        ],
+    })
+}
+
 fn bind_tex(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
@@ -480,9 +643,18 @@ fn make_params(
     layout: &wgpu::BindGroupLayout,
     label: &str,
 ) -> (wgpu::Buffer, wgpu::BindGroup) {
+    make_params_sized(device, layout, label, 16)
+}
+
+fn make_params_sized(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    label: &str,
+    size: u64,
+) -> (wgpu::Buffer, wgpu::BindGroup) {
     let buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
-        size: 16,
+        size,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -497,8 +669,8 @@ fn make_params(
     (buf, bg)
 }
 
-fn write_params(queue: &wgpu::Queue, buf: &wgpu::Buffer, v: [f32; 4]) {
-    queue.write_buffer(buf, 0, bytemuck::cast_slice(&v));
+fn write_params(queue: &wgpu::Queue, buf: &wgpu::Buffer, v: &[f32]) {
+    queue.write_buffer(buf, 0, bytemuck::cast_slice(v));
 }
 
 fn fullscreen(

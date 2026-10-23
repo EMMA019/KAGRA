@@ -4,7 +4,9 @@
 //! stay put (WebGL2-friendly: no storage buffers, no joint palette).
 //!
 //! Optional `pbrMetallicRoughness.baseColorTexture` (or VRM0 `_MainTex`) is decoded
-//! into `MeshData.albedo`. VRM 0 materialProperties / VRM 1 VRMC_materials_mtoon shadeColor + shadingToony land on MeshData.mtoon. Morph targets (POSITION deltas) plus VRM 0 blendShapeMaster / VRM 1 VRMC_vrm expressions apply one named shape onto CPU-skinned Vertex3. VRM 0 firstPerson / VRM 1 VRMC_vrm.lookAt yaw/pitch the head (eyes if present) with Mixamo rest+roll, not raw bind*delta. Does not pull the heavy `gltf` crate. External .bin uses
+//! into `MeshData.albedo`. `metallicRoughnessTexture` becomes linear ORM (G roughness,
+//! B metallic), multiplied by the factors. Dump maps still replace that image later.
+//! Toon primitives skip ORM so MToon slots stay the shade record. VRM 0 materialProperties / VRM 1 VRMC_materials_mtoon shadeColor + shadingToony land on MeshData.mtoon. Morph targets (POSITION deltas) plus VRM 0 blendShapeMaster / VRM 1 VRMC_vrm expressions apply one named shape onto CPU-skinned Vertex3. VRM 0 firstPerson / VRM 1 VRMC_vrm.lookAt yaw/pitch the head (eyes if present) with Mixamo rest+roll, not raw bind*delta. Does not pull the heavy `gltf` crate. External .bin uses
 //! `resolve_buffer`. `.vrm` is GLB plus VRM 0/1 humanoid extras.
 
 use std::collections::HashMap;
@@ -635,6 +637,7 @@ fn sample_skinned_inner(
         matcap: skin.rest.matcap.clone(),
         normal: skin.rest.normal.clone(),
         mtoon: skin.rest.mtoon,
+        ..MeshData::default()
     };
     let rest_pos = morphed_rest(skin, &pose.expression, pose.morph);
     for (i, v) in skin.rest.vertices.iter().enumerate() {
@@ -752,7 +755,7 @@ fn static_mesh_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<MeshData, S
     }
     if parts.len() == 1 {
         let (pm, col) = parts.pop().unwrap();
-        if pm.albedo.is_some() || col == [230, 230, 235, 255] {
+        if pm.albedo.is_some() || pm.orm.is_some() || col == [230, 230, 235, 255] {
             return Ok(pm);
         }
         return Ok(merge_colored_parts(vec![(pm, col)]));
@@ -775,6 +778,13 @@ fn merge_textured_parts(parts: Vec<(MeshData, [u8; 4])>) -> MeshData {
             .is_some_and(|a| Arc::ptr_eq(&a.rgba, &first_tex.rgba))
     });
     if same_ptr {
+        let borrowed = parts.iter().find_map(|(m, _)| {
+            m.orm
+                .as_ref()
+                .map(|img| (img.width, img.height, img.rgba.clone()))
+        });
+        let any_rough = parts.iter().any(|(m, _)| m.orm_rough);
+        let any_metal = parts.iter().any(|(m, _)| m.orm_metal);
         let mut iter = parts.into_iter();
         let mut out = iter.next().unwrap().0;
         for (pm, _) in iter {
@@ -782,13 +792,36 @@ fn merge_textured_parts(parts: Vec<(MeshData, [u8; 4])>) -> MeshData {
             out.vertices.extend(pm.vertices);
             out.indices.extend(pm.indices.into_iter().map(|i| base + i));
         }
+        if out.orm.is_none() {
+            if let Some((width, height, rgba)) = borrowed {
+                out.orm = Some(AlbedoRgba {
+                    width,
+                    height,
+                    rgba,
+                });
+                out.orm_rough = any_rough;
+                out.orm_metal = any_metal;
+            }
+        }
         return out;
     }
+    let any_orm = parts.iter().any(|(m, _)| m.orm.is_some());
     let tile_w = first_tex.width.max(1);
     let tile_h = first_tex.height.max(1);
     let count = parts.len() as u32;
     let atlas_w = tile_w * count;
     let mut atlas_rgba = vec![255u8; (atlas_w * tile_h * 4) as usize];
+    let mut orm_atlas = if any_orm {
+        let mut px = vec![0u8; (atlas_w * tile_h * 4) as usize];
+        for chunk in px.as_chunks_mut::<4>().0 {
+            chunk[0] = 255;
+            chunk[1] = 255;
+            chunk[3] = 255;
+        }
+        px
+    } else {
+        Vec::new()
+    };
     let mut out = MeshData::default();
     for (idx, (mut pm, col)) in parts.into_iter().enumerate() {
         let x_off = (idx as u32) * tile_w;
@@ -812,6 +845,22 @@ fn merge_textured_parts(parts: Vec<(MeshData, [u8; 4])>) -> MeshData {
                 }
             }
         }
+        if any_orm {
+            if let Some(orm) = &pm.orm {
+                let x_off = (idx as u32) * tile_w;
+                for y in 0..tile_h {
+                    let sy = (y * orm.height / tile_h).min(orm.height.saturating_sub(1));
+                    for x in 0..tile_w {
+                        let sx = (x * orm.width / tile_w).min(orm.width.saturating_sub(1));
+                        let si = ((sy * orm.width + sx) * 4) as usize;
+                        let di = ((y * atlas_w + (x_off + x)) * 4) as usize;
+                        if si + 4 <= orm.rgba.len() && di + 4 <= orm_atlas.len() {
+                            orm_atlas[di..di + 4].copy_from_slice(&orm.rgba[si..si + 4]);
+                        }
+                    }
+                }
+            }
+        }
         let inv_n = 1.0 / (count as f32);
         let u_base = (idx as f32) * inv_n;
         for v in &mut pm.vertices {
@@ -828,6 +877,15 @@ fn merge_textured_parts(parts: Vec<(MeshData, [u8; 4])>) -> MeshData {
         height: tile_h,
         rgba: Arc::from(atlas_rgba),
     });
+    if any_orm {
+        out.orm = Some(AlbedoRgba {
+            width: atlas_w,
+            height: tile_h,
+            rgba: Arc::from(orm_atlas),
+        });
+        out.orm_rough = true;
+        out.orm_metal = true;
+    }
     out
 }
 
@@ -856,10 +914,16 @@ fn prim_base_color_u8(doc: &GltfFile, prim: &Primitive) -> [u8; 4] {
 
 fn merge_colored_parts(parts: Vec<(MeshData, [u8; 4])>) -> MeshData {
     let n = parts.len().max(1) as u32;
+    let any_orm = parts.iter().any(|(m, _)| m.orm.is_some());
     let mut rgba = Vec::with_capacity((n as usize) * 4);
+    let mut orm_px = Vec::new();
     let mut out = MeshData::default();
     for (idx, (mut pm, col)) in parts.into_iter().enumerate() {
         rgba.extend_from_slice(&col);
+        if any_orm {
+            let (g, b) = orm_center(&pm);
+            orm_px.extend_from_slice(&[255, g, b, 255]);
+        }
         let u = (idx as f32 + 0.5) / (n as f32);
         for v in &mut pm.vertices {
             v.uv = [u, 0.5];
@@ -873,7 +937,31 @@ fn merge_colored_parts(parts: Vec<(MeshData, [u8; 4])>) -> MeshData {
         height: 1,
         rgba: Arc::from(rgba),
     });
+    if any_orm {
+        out.orm = Some(AlbedoRgba {
+            width: n,
+            height: 1,
+            rgba: Arc::from(orm_px),
+        });
+        out.orm_rough = true;
+        out.orm_metal = true;
+    }
     out
+}
+
+fn orm_center(mesh: &MeshData) -> (u8, u8) {
+    let Some(img) = &mesh.orm else {
+        return (255, 0);
+    };
+    let x = img.width / 2;
+    let y = img.height / 2;
+    let x = x.min(img.width.saturating_sub(1));
+    let y = y.min(img.height.saturating_sub(1));
+    let i = ((y * img.width + x) * 4) as usize;
+    (
+        img.rgba.get(i + 1).copied().unwrap_or(255),
+        img.rgba.get(i + 2).copied().unwrap_or(0),
+    )
 }
 
 fn static_mesh_from_prim(
@@ -908,6 +996,15 @@ fn static_mesh_from_prim(
         Some(i) => read_indices(doc, blobs, i)?,
         None => (0..positions.len() as u32).collect(),
     };
+    let mtoon = load_mtoon(doc, prim);
+    // Toon keeps the shade record in the instance slots. ORM flags share that
+    // packing on non-toon materials only.
+    let orm = if mtoon.is_some() {
+        None
+    } else {
+        load_orm(doc, blobs, prim)
+    };
+    let has_orm = orm.is_some();
     let mesh = MeshData {
         vertices: positions
             .into_iter()
@@ -919,7 +1016,11 @@ fn static_mesh_from_prim(
         albedo: load_base_color(doc, blobs, prim),
         matcap: matcap_tex_index(doc, prim).and_then(|ti| texture_by_index(doc, blobs, ti)),
         normal: normal_tex_index(doc, prim).and_then(|ti| texture_by_index(doc, blobs, ti)),
-        mtoon: load_mtoon(doc, prim),
+        mtoon,
+        orm,
+        orm_rough: has_orm,
+        orm_metal: has_orm,
+        ..MeshData::default()
     };
     if mesh.vertices.is_empty() {
         return Err("empty mesh".into());
@@ -1910,6 +2011,52 @@ fn load_mtoon(doc: &GltfFile, prim: &Primitive) -> Option<MtoonShade> {
     found.then_some(shade)
 }
 
+fn orm_tex_index(doc: &GltfFile, prim: &Primitive) -> Option<usize> {
+    let mi = prim.material?;
+    let mat = doc.materials.get(mi)?;
+    mat.pointer("/pbrMetallicRoughness/metallicRoughnessTexture/index")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize)
+}
+
+fn orm_factors(doc: &GltfFile, prim: &Primitive) -> (f32, f32) {
+    let Some(mi) = prim.material else {
+        return (1.0, 1.0);
+    };
+    let Some(mat) = doc.materials.get(mi) else {
+        return (1.0, 1.0);
+    };
+    let metal = mat
+        .pointer("/pbrMetallicRoughness/metallicFactor")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1.0) as f32;
+    let rough = mat
+        .pointer("/pbrMetallicRoughness/roughnessFactor")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1.0) as f32;
+    (metal.clamp(0.0, 1.0), rough.clamp(0.0, 1.0))
+}
+
+/// Linear ORM. Factors are baked in so the shader sample is the final value.
+fn load_orm(doc: &GltfFile, blobs: &[Vec<u8>], prim: &Primitive) -> Option<AlbedoRgba> {
+    let tex = orm_tex_index(doc, prim)?;
+    let mut img = texture_by_index(doc, blobs, tex)?;
+    let (metal, rough) = orm_factors(doc, prim);
+    if (metal - 1.0).abs() > 1e-4 || (rough - 1.0).abs() > 1e-4 {
+        let mut px = img.rgba.to_vec();
+        for chunk in px.as_chunks_mut::<4>().0 {
+            chunk[1] = scale_unorm(chunk[1], rough);
+            chunk[2] = scale_unorm(chunk[2], metal);
+        }
+        img.rgba = Arc::from(px);
+    }
+    Some(img)
+}
+
+fn scale_unorm(byte: u8, factor: f32) -> u8 {
+    (((byte as f32 / 255.0) * factor).clamp(0.0, 1.0) * 255.0 + 0.5) as u8
+}
+
 fn load_base_color(doc: &GltfFile, blobs: &[Vec<u8>], prim: &Primitive) -> Option<AlbedoRgba> {
     let tex = base_color_tex_index(doc, prim)?;
     let src = doc.textures.get(tex)?.source?;
@@ -2417,6 +2564,32 @@ mod tests {
         let b = mesh.bounds();
         assert!((b.min + Vec3::splat(0.5)).length() < 1e-3);
         assert!((b.max - Vec3::splat(0.5)).length() < 1e-3);
+    }
+
+    #[test]
+    fn metallic_roughness_texture_lands_on_orm() {
+        let cube = unit_cube_gltf();
+        let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPguqPxHwAEEAIOusqDKwAAAABJRU5ErkJggg==";
+        let mut with = cube.replacen("\"mode\": 4", "\"mode\": 4, \"material\": 0", 1);
+        assert!(with.ends_with('}') || with.trim_end().ends_with('}'));
+        let trimmed = with.trim_end().trim_end_matches('}').to_string();
+        with = format!(
+            "{trimmed}, \"materials\": [{{\"pbrMetallicRoughness\": {{\"metallicFactor\": 0.5, \"roughnessFactor\": 1.0, \"metallicRoughnessTexture\": {{\"index\": 0}}}}}}], \"textures\": [{{\"source\": 0}}], \"images\": [{{\"uri\": \"data:image/png;base64,{png}\"}}]}}"
+        );
+        let mesh = mesh_from_gltf_json(&with, |_| Err("external".into())).expect("orm mesh");
+        assert!(mesh.orm_rough && mesh.orm_metal);
+        let img = mesh.orm.expect("orm image");
+        assert!(img.rgba[1] > 180, "roughness stays high, G={}", img.rgba[1]);
+        assert!(
+            img.rgba[2] < 80,
+            "metallicFactor 0.5 halves the metal texel, B={}",
+            img.rgba[2]
+        );
+        let plain = mesh_from_gltf_json(&cube, |_| Err("external".into())).expect("plain");
+        assert!(
+            plain.orm.is_none(),
+            "a cube without the texture stays scalar"
+        );
     }
 
     #[test]
