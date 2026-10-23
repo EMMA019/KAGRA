@@ -105,6 +105,8 @@ struct GpuMesh {
     has_normal: bool,
     emissive: f32,
     emissive_color: [f32; 3],
+    clearcoat: f32,
+    clearcoat_roughness: f32,
     _sampler: Option<wgpu::Sampler>,
     /// Authored image bytes (albedo, matcap, normal, ORM, emissive).
     tex_bytes: u64,
@@ -833,7 +835,7 @@ impl Renderer {
                 shader_location: 6,
             },
             wgpu::VertexAttribute {
-                format: wgpu::VertexFormat::Float32,
+                format: wgpu::VertexFormat::Float32x4,
                 offset: 80,
                 shader_location: 7,
             },
@@ -1395,6 +1397,8 @@ impl Renderer {
             has_normal: tex_ok(&mesh.normal),
             emissive: mesh.emissive,
             emissive_color: mesh.emissive_color,
+            clearcoat: mesh.clearcoat,
+            clearcoat_roughness: mesh.clearcoat_roughness,
             _sampler: sampler,
             tex_bytes: image_bytes(&mesh.albedo)
                 + image_bytes(&mesh.matcap)
@@ -1586,12 +1590,19 @@ impl Renderer {
                             )
                         };
                     let alpha_cut = gpu.map(|g| g.alpha_cut).unwrap_or(0.0);
+                    let (coat, coat_rough) = if inst.clearcoat > 0.0 {
+                        (inst.clearcoat, inst.clearcoat_roughness)
+                    } else {
+                        gpu.map(|g| (g.clearcoat, g.clearcoat_roughness))
+                            .unwrap_or((0.0, 0.0))
+                    };
                     raw.push(InstanceRaw {
                         model: inst.model.to_cols_array_2d(),
                         // Author bytes are sRGB. Lighting stays linear on every target.
                         color: color_space::srgb_u8_to_linear(inst.color),
                         material: inst.material as u8 as f32,
-                        _pad: [0.0; 3],
+                        // location 7: material id, clearcoat, clearcoat roughness.
+                        _pad: [coat, coat_rough, 0.0],
                         mtoon,
                         mtoon2,
                         mtoon3,
@@ -1623,15 +1634,15 @@ impl Renderer {
         }
 
         let clear_bytes = world.map(|s| s.clear).unwrap_or(hud.clear);
-        let (exposure, tonemap) = match world {
-            Some(scene) => (scene.exposure.max(0.0), scene.tonemap),
-            None => (1.0, true),
+        let (exposure, tonemap, tonemap_code) = match world {
+            Some(scene) => (scene.exposure.max(0.0), scene.tonemap, scene.tonemap_code),
+            None => (1.0, true, 0.0),
         };
         // 3D clear is linear in the HDR frame. The direct unorm fallback has no
         // composite, so that clear is graded here with the same OETF as present_rgb.
         // HUD-only direct stores the code; composite (or an sRGB target) encodes once.
         let clear = if world.is_some() && present_in_shader {
-            color_space::grade_authored(clear_bytes, exposure, tonemap)
+            color_space::grade_curve(clear_bytes, exposure, tonemap, tonemap_code)
         } else if present_in_shader {
             color_space::display_u8(clear_bytes, false)
         } else {
@@ -1880,6 +1891,7 @@ impl Renderer {
                 (target_texture, &view),
                 exposure,
                 tonemap,
+                tonemap_code,
                 None,
                 true,
             );
@@ -1906,6 +1918,7 @@ impl Renderer {
                 (target_texture, &view),
                 exposure,
                 tonemap,
+                tonemap_code,
                 if taa { Some(0.0) } else { None },
                 !taa,
             );
@@ -2195,9 +2208,18 @@ impl Renderer {
                     0.0
                 },
                 depth_span,
-                0.0,
+                if scene.sky_atmosphere { 1.0 } else { 0.0 },
             ],
-            hemi_sky: [scene.hemi_sky[0], scene.hemi_sky[1], scene.hemi_sky[2], 0.0],
+            hemi_sky: [
+                scene.hemi_sky[0],
+                scene.hemi_sky[1],
+                scene.hemi_sky[2],
+                if scene.tonemap {
+                    scene.tonemap_code
+                } else {
+                    0.0
+                },
+            ],
             hemi_ground: [
                 scene.hemi_ground[0],
                 scene.hemi_ground[1],
@@ -3639,6 +3661,14 @@ mod tests {
     /// Empty scene, bloom off, FXAA off, vignette off. The center pixel is the
     /// clear color after one grade.
     fn grade_clear(format: wgpu::TextureFormat, tonemap: bool) -> Option<Vec<u8>> {
+        grade_clear_curve(format, tonemap, 0.0)
+    }
+
+    fn grade_clear_curve(
+        format: wgpu::TextureFormat,
+        tonemap: bool,
+        curve: f32,
+    ) -> Option<Vec<u8>> {
         let mut renderer =
             pollster::block_on(Renderer::new_offscreen_format(64, 64, format)).ok()?;
         renderer.set_fxaa(false);
@@ -3646,6 +3676,7 @@ mod tests {
         let scene = crate::scene3d::Scene3D {
             clear: [128, 64, 32, 255],
             tonemap,
+            tonemap_code: curve,
             exposure: 1.0,
             ibl: 0.0,
             batches: Vec::new(),
@@ -3713,6 +3744,151 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn offscreen_agx_and_neutral_match_the_cpu_curve() {
+        let author = [128u8, 64, 32, 255];
+        for (curve, name) in [(1.0f32, "agx"), (2.0, "neutral")] {
+            let expect = color_space::reference_curve(author, 1.0, true, curve);
+            for format in [
+                wgpu::TextureFormat::Rgba8UnormSrgb,
+                wgpu::TextureFormat::Rgba8Unorm,
+            ] {
+                let Some(rgba) = grade_clear_curve(format, true, curve) else {
+                    eprintln!("no GPU adapter; skipping {name}");
+                    return;
+                };
+                let got = pixel_of(&rgba, 64, 32, 32);
+                write_shot(&format!("clear-{name}.png"), 64, 64, &rgba);
+                assert_rgb_near(got, expect, 3);
+            }
+        }
+    }
+
+    fn mean_channel_delta(a: &[u8], b: &[u8]) -> f32 {
+        let n = (a.len().min(b.len()) / 4).max(1);
+        let mut acc = 0i64;
+        for i in 0..n {
+            for c in 0..3 {
+                acc += (a[i * 4 + c] as i32 - b[i * 4 + c] as i32).abs() as i64;
+            }
+        }
+        acc as f32 / (n as f32 * 3.0)
+    }
+
+    #[test]
+    fn offscreen_clearcoat_and_atmosphere_change_the_picture() {
+        let mut renderer = match pollster::block_on(Renderer::new_offscreen_format(
+            96,
+            96,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+        )) {
+            Ok(r) => r,
+            Err(_) => {
+                eprintln!("no GPU adapter; skipping coat and sky");
+                return;
+            }
+        };
+        renderer.set_fxaa(false);
+        renderer.bloom.set_grade(0.85, 0.0, 0.0, false, "off", 0.0);
+        let sphere = crate::scene3d::primitives::sphere_mesh(1.0, 12);
+        let id = renderer.upload_mesh(&sphere);
+        let cam = crate::scene3d::Camera {
+            eye: glam::Vec3::new(0.0, 0.15, 3.1),
+            target: glam::Vec3::ZERO,
+            ..Default::default()
+        };
+        let bare = crate::scene3d::Instance::with_pbr(
+            glam::Mat4::IDENTITY,
+            [36, 42, 56, 255],
+            crate::scene3d::Material::Solid,
+            0.0,
+            1.0,
+        );
+        let mut coat = bare;
+        coat.clearcoat = 1.0;
+        coat.clearcoat_roughness = 0.05;
+        let paint = |renderer: &mut Renderer, inst: crate::scene3d::Instance| {
+            let scene = crate::scene3d::Scene3D {
+                camera: cam,
+                clear: [8, 10, 16, 255],
+                light_dir: glam::Vec3::new(0.1, 0.25, 1.0).normalize(),
+                ambient: 0.05,
+                ibl: 1.0,
+                tonemap: true,
+                exposure: 1.15,
+                fog_start: 40.0,
+                fog_end: 120.0,
+                batches: vec![crate::scene3d::Batch {
+                    mesh: id,
+                    instances: vec![inst],
+                }],
+                ..Default::default()
+            };
+            renderer
+                .render_frame(Some(&scene), &crate::scene::DrawList::default())
+                .expect("coat frame");
+            renderer.read_rgba().expect("coat read")
+        };
+        let dull = paint(&mut renderer, bare);
+        let shiny = paint(&mut renderer, coat);
+        write_shot("clearcoat-off.png", 96, 96, &dull);
+        write_shot("clearcoat-on.png", 96, 96, &shiny);
+        let coat_delta = mean_channel_delta(&dull, &shiny);
+        assert!(
+            coat_delta > 1.5,
+            "clearcoat should move the sphere, mean delta {coat_delta}"
+        );
+
+        let sky_cam = crate::scene3d::Camera {
+            eye: glam::Vec3::ZERO,
+            target: glam::Vec3::new(0.15, 0.02, 1.0),
+            up: glam::Vec3::Y,
+            ..Default::default()
+        };
+        let sky_model = glam::Mat4::from_scale_rotation_translation(
+            glam::Vec3::splat(40.0),
+            glam::Quat::IDENTITY,
+            sky_cam.eye,
+        );
+        let sky_inst = crate::scene3d::Instance::with_material(
+            sky_model,
+            [130, 165, 205, 255],
+            crate::scene3d::Material::Sky,
+        );
+        let sky = |renderer: &mut Renderer, atmosphere: bool| {
+            let scene = crate::scene3d::Scene3D {
+                camera: sky_cam,
+                clear: [130, 165, 205, 255],
+                light_dir: glam::Vec3::new(0.2, 0.45, 0.15).normalize(),
+                ambient: 0.4,
+                ibl: 0.0,
+                tonemap: true,
+                exposure: 1.0,
+                fog_start: 500.0,
+                fog_end: 800.0,
+                sky_atmosphere: atmosphere,
+                batches: vec![crate::scene3d::Batch {
+                    mesh: id,
+                    instances: vec![sky_inst],
+                }],
+                ..Default::default()
+            };
+            renderer
+                .render_frame(Some(&scene), &crate::scene::DrawList::default())
+                .expect("sky frame");
+            renderer.read_rgba().expect("sky read")
+        };
+        let gradient = sky(&mut renderer, false);
+        let air = sky(&mut renderer, true);
+        write_shot("sky-gradient.png", 96, 96, &gradient);
+        write_shot("sky-atmosphere.png", 96, 96, &air);
+        let sky_delta = mean_channel_delta(&gradient, &air);
+        assert!(
+            sky_delta > 2.0,
+            "atmosphere should replace the studio gradient, mean delta {sky_delta}"
+        );
     }
 
     #[test]
@@ -4203,6 +4379,8 @@ mod tests {
                 ..Default::default()
             },
             tonemap: true,
+            tonemap_code: 0.0,
+            sky_atmosphere: false,
             exposure: 1.15,
             ibl: 0.55,
             batches: vec![crate::scene3d::Batch {

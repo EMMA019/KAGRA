@@ -97,6 +97,13 @@ pub struct WorldDoc {
     /// ACES tonemap. None = on.
     #[serde(default)]
     pub tonemap: Option<bool>,
+    /// `"aces"`, `"agx"`, or `"neutral"`. None and unknown names stay on ACES.
+    /// Ignored while `tonemap` is false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tonemap_curve: Option<String>,
+    /// Procedural Rayleigh / Mie sky on the sky sphere. None = the studio gradient.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sky_atmosphere: Option<bool>,
     /// Picture tier. None keeps the historical picture (`KAGRA_QUALITY=high`
     /// still fills omitted SSAO / TAA / cascades / PCSS, and does not turn
     /// bloom on). `low` / `0` / `off` forces SSAO, TAA, DOF, motion, extra
@@ -374,6 +381,12 @@ pub struct WorldProp {
     /// Linear 0..1 RGB. None = use the albedo as the glow color.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub emissive_color: Option<[f32; 3]>,
+    /// 0..1 clearcoat lobe. 0 keeps the mesh extension, or no coat.
+    #[serde(default, skip_serializing_if = "is_zero_f32")]
+    pub clearcoat: f32,
+    /// Clearcoat roughness. 0 in the shader means 0.1 when a coat is on.
+    #[serde(default, skip_serializing_if = "is_zero_f32")]
+    pub clearcoat_roughness: f32,
     /// PNG path or `preset:worn` / `preset:split` / `preset:brushed`.
     /// G channel replaces the roughness scalar. None = scalar only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -793,6 +806,21 @@ pub struct WorldHeightfield {
 }
 
 impl WorldDoc {
+    /// 0 = ACES, 1 = AgX, 2 = Khronos PBR Neutral.
+    pub fn tonemap_code(&self) -> f32 {
+        match self
+            .tonemap_curve
+            .as_deref()
+            .map(str::trim)
+            .map(|s| s.to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("agx") => 1.0,
+            Some("neutral") => 2.0,
+            _ => 0.0,
+        }
+    }
+
     /// True when `genre` is exactly `id`. Missing genre is never a match.
     pub fn genre_is(&self, id: &str) -> bool {
         self.genre.as_deref() == Some(id)
@@ -1211,6 +1239,8 @@ impl WorldDoc {
                 inst.emissive_color = c;
             }
             inst.emissive_authored = prop.emissive.is_some() || prop.emissive_color.is_some();
+            inst.clearcoat = prop.clearcoat.clamp(0.0, 1.0);
+            inst.clearcoat_roughness = prop.clearcoat_roughness.clamp(0.0, 1.0);
             b.push_instance(mesh, inst);
         }
 
@@ -1336,6 +1366,8 @@ impl WorldDoc {
             ibl: self.ibl.unwrap_or(0.35),
             exposure: self.exposure.unwrap_or(1.0),
             tonemap: self.tonemap.unwrap_or(true),
+            tonemap_code: self.tonemap_code(),
+            sky_atmosphere: self.sky_atmosphere.unwrap_or(false),
             shadow_softness: self.shadow_softness(),
             shadow_cascades: self.shadow_cascade_count(),
             shadow_pcss: self.shadow_pcss_enabled(),
@@ -3403,6 +3435,32 @@ mod tests {
         let s = off.compile_scene(1.0);
         assert!(!s.tonemap);
         assert_eq!(s.ibl, 0.0);
+    }
+
+    #[test]
+    fn tonemap_curve_clearcoat_and_sky_reach_the_scene() {
+        let doc: WorldDoc = serde_json::from_str(
+            r#"{"version":1,"tonemap_curve":"agx","sky_atmosphere":true,"ground":false,"props":[{"id":"car","type":"prop","model":"box","position":[0.0,1.0,0.0],"clearcoat":0.8,"clearcoat_roughness":0.15}]}"#,
+        )
+        .unwrap();
+        let scene = doc.compile_scene(1.0);
+        assert!((scene.tonemap_code - 1.0).abs() < 1e-5);
+        assert!(scene.sky_atmosphere);
+        let coat = scene
+            .batches
+            .iter()
+            .flat_map(|b| &b.instances)
+            .find(|i| i.clearcoat > 0.0)
+            .expect("coated box");
+        assert!((coat.clearcoat - 0.8).abs() < 1e-4);
+        assert!((coat.clearcoat_roughness - 0.15).abs() < 1e-4);
+        let neutral: WorldDoc =
+            serde_json::from_str(r#"{"version":1,"tonemap_curve":"Neutral"}"#).unwrap();
+        assert!((neutral.compile_scene(1.0).tonemap_code - 2.0).abs() < 1e-5);
+        let aces: WorldDoc =
+            serde_json::from_str(r#"{"version":1,"tonemap_curve":"film"}"#).unwrap();
+        assert_eq!(aces.compile_scene(1.0).tonemap_code, 0.0);
+        assert!(!aces.compile_scene(1.0).sky_atmosphere);
     }
 
     #[test]

@@ -77,6 +77,43 @@ fn aces_tonemap(x: vec3<f32>) -> vec3<f32> {
     return saturate((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14));
 }
 
+// AgX-style. Inset and outset are Troy Sobotka's published AgX base
+// (column vectors). Log range and the smoothstep are original. Not three.js.
+fn agx_tonemap(color: vec3<f32>) -> vec3<f32> {
+    let inset = mat3x3<f32>(
+        vec3<f32>(0.85662715, 0.09512124, 0.048251606),
+        vec3<f32>(0.13731897, 0.761242, 0.10143904),
+        vec3<f32>(0.11189821, 0.07679942, 0.81130236),
+    );
+    let outset = mat3x3<f32>(
+        vec3<f32>(1.1271006, -0.11060664, -0.016493939),
+        vec3<f32>(-0.14132977, 1.1578238, -0.016493939),
+        vec3<f32>(-0.14132977, -0.11060664, 1.2519364),
+    );
+    let c = inset * max(color, vec3<f32>(0.0));
+    let y = (log2(max(c, vec3<f32>(1e-10))) + vec3<f32>(12.47393)) / (4.026069 + 12.47393);
+    let t = clamp(y, vec3<f32>(0.0), vec3<f32>(1.0));
+    let s = t * t * (vec3<f32>(3.0) - 2.0 * t);
+    return saturate(outset * s);
+}
+
+// Khronos PBR Neutral. Constants from the tone-mapping spec.
+fn neutral_tonemap(color: vec3<f32>) -> vec3<f32> {
+    let start = 0.76;
+    let x = min(color.r, min(color.g, color.b));
+    let offset = select(0.04, x - 6.25 * x * x, x < 0.08);
+    var c = color - vec3<f32>(offset);
+    let peak = max(c.r, max(c.g, c.b));
+    if (peak < start) {
+        return max(c, vec3<f32>(0.0));
+    }
+    let d = 1.0 - start;
+    let new_peak = 1.0 - d * d / (peak + d - start);
+    c = c * (new_peak / max(peak, 1e-6));
+    let g = 1.0 - 1.0 / (0.15 * (peak - new_peak) + 1.0);
+    return saturate(mix(c, vec3<f32>(new_peak), g));
+}
+
 // 16³ strip, 16 slices across. Manual slice lerp so linear filtering stays
 // inside one slice (WebGL2 texture_2d, no texture_3d).
 fn sample_lut(color: vec3<f32>) -> vec3<f32> {
@@ -101,9 +138,10 @@ fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
     return select(hi, lo, cut);
 }
 
-// params.v.x = bloom intensity, v.y = exposure, v.z = ACES on (>0.5),
+// params.v.x = bloom intensity, v.y = exposure, v.z = tonemap on (>0.5),
 // v.w = vignette (1 = the historical curve, 0 = off).
-// params.extra.x = LUT mix after ACES. 0 skips the sample.
+// params.extra.x = LUT mix after the curve. 0 skips the sample.
+// params.extra.z selects the curve when v.z is on: 0 ACES, 1 AgX, 2 Neutral.
 // params.extra.y > 0.5 encodes sRGB in the shader. WebGPU canvases are unorm
 // (no sRGB format), so the hardware will not apply the OETF. sRGB targets
 // leave this at 0 and encode on write.
@@ -117,7 +155,13 @@ fn fs_composite(in: VO) -> @location(0) vec4<f32> {
     var c = sharp.rgb + bloom_rgb * params.v.x;
     c = c * max(params.v.y, 0.0);
     if (params.v.z > 0.5) {
-        c = aces_tonemap(c);
+        if (params.extra.z > 1.5) {
+            c = neutral_tonemap(c);
+        } else if (params.extra.z > 0.5) {
+            c = agx_tonemap(c);
+        } else {
+            c = aces_tonemap(c);
+        }
     }
     let lut_mix = clamp(params.extra.x, 0.0, 1.0);
     if (lut_mix > 1e-4) {

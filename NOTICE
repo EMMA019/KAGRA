@@ -36,6 +36,16 @@ The Narkowicz ACES fit in bloom.wgsl and shader3d.wgsl is the public
 approximation published by Krzysztof Narkowicz (2016), used widely
 including by three.js (MIT). No three.js source is copied in this tree.
 
+The AgX inset and outset matrices in color_space.rs, bloom.wgsl, and
+shader3d.wgsl are Troy Sobotka's AgX base
+(https://github.com/sobotka/AgX, public domain). The log2 / smoothstep
+between those matrices is original. Not a copy of three.js AgXToneMapping.
+
+Khronos PBR Neutral in the same files follows the published curve
+(https://github.com/KhronosGroup/ToneMapping, Apache-2.0). The
+implementation is original. The sky atmosphere is a short Rayleigh / Mie
+mix written here. No three.js Sky shader is copied.
+
 The post pass graph (kagra-shared/src/render/post.rs, post.wgsl) follows
 the shape of three.js EffectComposer / ShaderPass and the ideas in
 SSAOShader, BokehPass, and the Karis neighborhood clamp used by TAA

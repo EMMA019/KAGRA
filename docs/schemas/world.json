@@ -73,7 +73,16 @@
     },
     "tonemap": {
       "type": ["boolean", "null"],
-      "description": "ACES tonemap. Omit = on. Globals.env.w. Reinhard is not used; ACES matches kagra-core V2."
+      "description": "Tonemap on. Omit = on. Globals.env.w. The curve is tonemap_curve."
+    },
+    "tonemap_curve": {
+      "type": ["string", "null"],
+      "enum": ["aces", "agx", "neutral", null],
+      "description": "Display curve when tonemap is on. Omit or an unknown name = ACES. agx is the AgX inset/outset with a smoothstep. neutral is Khronos PBR Neutral."
+    },
+    "sky_atmosphere": {
+      "type": ["boolean", "null"],
+      "description": "Procedural Rayleigh / Mie sky on the sky sphere. Omit = the studio gradient."
     },
     "quality": {
       "type": ["string", "null"],
@@ -274,6 +283,18 @@
           "maxItems": 3,
           "items": { "type": "number" },
           "description": "Linear 0..1 RGB glow. Omit = use the albedo."
+        },
+        "clearcoat": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Second GGX lobe, F0 0.04. 0 keeps a glTF KHR_materials_clearcoat factor, or no coat."
+        },
+        "clearcoat_roughness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Clearcoat roughness. 0 in the shader means 0.1 when a coat is on."
         },
         "roughness_map": {
           "type": ["string", "null"],
