@@ -105,4 +105,5 @@
 - `20261022-neon-lumen/` — Lumen。ネオンのエンドレスフライヤー。`NeonRun`（WorldPlay のジャンルではない）。光は `emissive`、夜の絵は `apply_look(world, "night")`、軌跡は `kagra.Trail`。`play.html` が Pages の既定。
 - `20261023-trails-lod-look/` — 軌跡、prop LOD、視錐台カリング、pastel/night、glTF の ORM。省略時は全 prop をフルメッシュのまま。Box Hop は夜と軌跡。
 - `20261023-neon-webgpu-picture/` — 電話の 8bit スワップチェーンでもグレード / FXAA / ミップブルーム。Lumen の階段トレイルは外す。`pictureStatus`。
+- `20261023-juice-easing/` — ゲーム非依存の `juice`（simple-easing）。Lumen のクラッシュがヒットストップしてからリザルト。階段トレイルは戻さない。
 - `20261023-ui-polish/` — 9 スライス、ドロップシャドウ、スタイル付きボタン。文字は ab_glyph を 2 倍でラスタライズして 0.5px のカバレッジにする。
