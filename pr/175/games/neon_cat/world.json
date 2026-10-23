@@ -1,0 +1,193 @@
+{
+ "version": 1,
+ "genre": "neon_cat",
+ "game": {
+  "kind": "runner",
+  "id": "neon_cat",
+  "title": "NEON CAT",
+  "seed": 11,
+  "player": {
+   "glb": "assets/models/kenney/cube-pets/animal-cat.glb",
+   "scale": 0.5,
+   "foot": 0.3,
+   "tint": [
+    226,
+    206,
+    255
+   ]
+  },
+  "obstacles": [
+   {
+    "name": "CRATE",
+    "glb": "assets/models/kenney/platformer-kit/crate.glb",
+    "scale": [
+     1.15,
+     1.15,
+     1.15
+    ],
+    "mesh_min": [
+     -0.25,
+     0.0,
+     -0.25
+    ],
+    "mesh_max": [
+     0.25,
+     0.5,
+     0.25
+    ],
+    "weight": 1
+   },
+   {
+    "name": "BARREL",
+    "glb": "assets/models/kenney/platformer-kit/barrel.glb",
+    "scale": [
+     1.2,
+     1.2,
+     1.2
+    ],
+    "mesh_min": [
+     -0.258813,
+     0.0,
+     -0.258813
+    ],
+    "mesh_max": [
+     0.258813,
+     0.47619,
+     0.258813
+    ],
+    "weight": 1
+   },
+   {
+    "name": "BARRIER",
+    "glb": "assets/models/kenney/racing-kit/barrierRed.glb",
+    "scale": [
+     4.4,
+     3.8,
+     3.4
+    ],
+    "mesh_min": [
+     0.0,
+     0.0,
+     -0.123
+    ],
+    "mesh_max": [
+     0.25,
+     0.1312,
+     0.0
+    ],
+    "weight": 1
+   }
+  ],
+  "hit_inset": 0.06,
+  "hit_top": 0.82,
+  "camera": {
+   "chase_back": 5.9,
+   "chase_lift": 2.35,
+   "chase_look": 13.0,
+   "chase_look_y": 1.12,
+   "fov": 50.0,
+   "fov_fast": 58.0,
+   "roll": 0.07,
+   "classic_back": 7.4,
+   "classic_lift": 1.72,
+   "classic_fov": 50.0
+  },
+  "style": {
+   "sky": [
+    4,
+    2,
+    12,
+    255
+   ],
+   "edge_a": [
+    40,
+    255,
+    255,
+    255
+   ],
+   "edge_b": [
+    255,
+    42,
+    180,
+    255
+   ],
+   "fill_a": [
+    0.1,
+    0.55,
+    0.65
+   ],
+   "fill_b": [
+    0.6,
+    0.1,
+    0.42
+   ],
+   "fill_emissive": 0.35,
+   "obstacle_color": [
+    36,
+    26,
+    54
+   ]
+  },
+  "hud_top": 96.0,
+  "items": [],
+  "placements": [],
+  "runner": {
+   "speed": {
+    "start": 10.5,
+    "ramp": 0.22,
+    "cap": 20.0,
+    "max_step": 0.08
+   },
+   "jump": {
+    "gravity": -22.0,
+    "velocity": 7.1,
+    "grace_secs": 1.6
+   },
+   "lanes": {
+    "count": 3,
+    "width": 1.2,
+    "limit": 2.15,
+    "steer": 5.6
+   },
+   "obstacle_track": {
+    "z0": 26.0,
+    "gap": 14.0,
+    "amp": 1.2,
+    "freq": 0.85
+   },
+   "rings": {
+    "glb": "assets/models/kenney/racing-kit/overheadRound.glb",
+    "track": {
+     "z0": 14.0,
+     "gap": 17.0,
+     "amp": 0.95,
+     "freq": 1.2
+    },
+    "score": 100
+   },
+   "gates": {
+    "glb": "assets/models/quaternius/modular-dungeons-pack/Arch.glb",
+    "z0": 10.0,
+    "gap": 24.0,
+    "scale_x": 2.15
+   },
+   "draw": {
+    "lead_secs": 2.5,
+    "min_obstacles_ahead": 5,
+    "fog_start": 38.0,
+    "fog_end": 110.0
+   }
+  },
+  "input": {
+   "scheme": "drag",
+   "drag_lane_frac": 0.18,
+   "drag_smooth_secs": 0.05,
+   "drag_snap": true,
+   "flick_dist": 0.07,
+   "flick_angle_deg": 30.0,
+   "swipe_dist": 0.09,
+   "swipe_cooldown_secs": 0.3,
+   "buffer_secs": 0.15
+  }
+ }
+}

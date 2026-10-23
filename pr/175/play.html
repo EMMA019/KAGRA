@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="ja" data-orient="portrait">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="robots" content="noindex" />
+  <title>KAGRA</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #10141c;
+      color: #f4f1ea;
+      font-family: system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif;
+      overflow: hidden;
+      touch-action: none;
+      overscroll-behavior: none;
+    }
+    #app { position: fixed; inset: 0; }
+    canvas {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #6f93b4;
+      touch-action: none;
+    }
+    #boot, #overlay {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+      background: rgba(12, 16, 24, 0.72);
+    }
+    #boot { z-index: 5; }
+    #boot.err { color: #ffb4a2; text-align: center; white-space: pre-wrap; }
+    #overlay { display: none; z-index: 4; pointer-events: none; }
+    #overlay.visible { display: grid; pointer-events: auto; }
+    #overlay button, #overlay a.btn {
+      touch-action: manipulation;
+      pointer-events: auto;
+      cursor: pointer;
+    }
+    html[data-menu="1"] canvas { pointer-events: none; }
+    .card {
+      width: min(440px, 100%);
+      text-align: center;
+    }
+    h1 { margin: 0 0 8px; font-size: clamp(32px, 8vw, 48px); letter-spacing: 0.04em; }
+    p { margin: 0 0 14px; line-height: 1.5; }
+    button, a.btn {
+      display: inline-block;
+      border: 0;
+      border-radius: 999px;
+      padding: 14px 22px;
+      background: #f0c36a;
+      color: #1a1408;
+      font: 700 16px/1 system-ui, sans-serif;
+      text-decoration: none;
+    }
+    .hint { opacity: 0.8; font-size: 13px; }
+    #death {
+      color: #ff6b9a;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      opacity: 1;
+    }
+    #hud {
+      position: absolute;
+      left: max(10px, env(safe-area-inset-left));
+      top: max(8px, env(safe-area-inset-top));
+      z-index: 2;
+      display: none;
+      gap: 8px;
+      align-items: center;
+      pointer-events: none;
+    }
+    #hud.visible { display: flex; }
+    #hud a {
+      pointer-events: auto;
+      color: #f4f1ea;
+      background: rgba(10, 14, 20, 0.45);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      text-decoration: none;
+    }
+    #pads { position: absolute; inset: 0; z-index: 2; pointer-events: none; display: none; }
+    #pads.visible { display: block; }
+    .pad {
+      position: absolute;
+      touch-action: none;
+      pointer-events: auto;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      background: rgba(10, 14, 20, 0.28);
+      color: rgba(255, 255, 255, 0.86);
+      font: 600 12px/1.2 system-ui, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .pad.on { background: rgba(240, 195, 106, 0.38); }
+    #stick { border-radius: 28%; }
+    #jump, #act { border-radius: 999px; }
+    html[data-orient="portrait"] #stick {
+      left: max(12px, env(safe-area-inset-left));
+      bottom: max(16px, env(safe-area-inset-bottom));
+      width: min(44vw, 210px);
+      height: min(44vw, 210px);
+    }
+    html[data-orient="portrait"] #jump {
+      right: max(16px, env(safe-area-inset-right));
+      bottom: max(18px, env(safe-area-inset-bottom));
+      width: min(24vw, 112px);
+      height: min(24vw, 112px);
+    }
+    html[data-orient="portrait"] #act {
+      right: max(22px, env(safe-area-inset-right));
+      bottom: calc(max(18px, env(safe-area-inset-bottom)) + min(24vw, 112px) + 14px);
+      width: min(20vw, 92px);
+      height: min(20vw, 92px);
+    }
+    html[data-orient="landscape"] #stick {
+      left: max(16px, env(safe-area-inset-left));
+      bottom: max(12px, env(safe-area-inset-bottom));
+      width: min(36vh, 190px);
+      height: min(36vh, 190px);
+    }
+    html[data-orient="landscape"] #jump {
+      right: max(16px, env(safe-area-inset-right));
+      bottom: max(14px, env(safe-area-inset-bottom));
+      width: min(24vh, 108px);
+      height: min(24vh, 108px);
+    }
+    html[data-orient="landscape"] #act {
+      right: calc(max(16px, env(safe-area-inset-right)) + min(24vh, 108px) + 14px);
+      bottom: max(20px, env(safe-area-inset-bottom));
+      width: min(20vh, 88px);
+      height: min(20vh, 88px);
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <canvas id="c"></canvas>
+    <div id="hud"><a id="home" href="./index.html">一覧</a><span id="phaseLabel"></span></div>
+    <div id="pads">
+      <div id="stick" class="pad">移動</div>
+      <div id="act" class="pad">アクション</div>
+      <div id="jump" class="pad">ジャンプ</div>
+    </div>
+    <div id="overlay">
+      <div class="card">
+        <h1 id="title">KAGRA</h1>
+        <p id="blurb" class="hint">タップではじめる。左が移動、右下ジャンプ、右上アクション。</p>
+        <p id="death" class="hint" hidden></p>
+        <p><button id="start" type="button">はじめる</button></p>
+        <p class="hint">WASD / 矢印、Space ジャンプ、J アクション。縦でも横でも同じ配置です。</p>
+        <p><a class="btn" href="./index.html">ジャンル一覧</a></p>
+      </div>
+    </div>
+    <div id="boot">読み込み中…</div>
+  </div>
+  <script type="module">
+    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js";
+
+    const boot = document.getElementById("boot");
+    const overlay = document.getElementById("overlay");
+    const pads = document.getElementById("pads");
+    const hud = document.getElementById("hud");
+    let canvas = document.getElementById("c");
+    const params = new URLSearchParams(location.search);
+    const requestedBackend = (params.get("backend") || "auto").toLowerCase();
+    let activeBackend = requestedBackend === "webgl" || requestedBackend === "webgl2" ? "gl" : requestedBackend;
+    const slug = (params.get("game") || "neon_run").trim() || "neon_run";
+    // Swipe games (Neon Cat kit) read gestures in the engine: no pads at all.
+    let swipeMode = false;
+    const applySwipeMode = () => {
+      swipeMode = typeof session?.usesSwipe === "function" && session.usesSwipe();
+      if (!swipeMode) return;
+      pads.classList.remove("visible");
+      const blurbEl = document.getElementById("blurb");
+      if (blurbEl) blurbEl.textContent = "タップではじめる。指を置いたまま左右にドラッグで移動、上フリックでジャンプ、下フリックで急降下。";
+    };
+
+    const fail = (text) => {
+      boot.className = "err";
+      boot.style.display = "grid";
+      boot.textContent = text;
+    };
+
+    const orient = () => {
+      document.documentElement.dataset.orient =
+        window.innerHeight >= window.innerWidth ? "portrait" : "landscape";
+    };
+    orient();
+
+    const fileUrl = (baseHref, rel) => {
+      const prefix = baseHref.endsWith("/") ? baseHref : baseHref + "/";
+      return prefix + rel.split("/").map(encodeURIComponent).join("/");
+    };
+
+    let session;
+    let bundle;
+    try {
+      if (navigator.gpu && navigator.gpu.requestAdapter) {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+          Object.defineProperty(Navigator.prototype, "gpu", {
+            configurable: true,
+            get() { return undefined; },
+          });
+        }
+      }
+    } catch (_) {}
+    try {
+      await init();
+      session = new WasmSession();
+      const site = new URL("./", document.baseURI).href;
+      const bundleRes = await fetch(fileUrl(site, `games/${slug}/bundle.json`));
+      if (!bundleRes.ok) throw new Error(`bundle.json ${bundleRes.status}`);
+      bundle = await bundleRes.json();
+      document.title = bundle.title || slug;
+      document.getElementById("title").textContent = bundle.title || slug;
+      const files = Array.isArray(bundle.files) ? bundle.files : [];
+      session.clearMount();
+      let done = 0;
+      const queue = files.slice();
+      const workers = Array.from({ length: Math.min(4, queue.length) }, async () => {
+        while (queue.length) {
+          const item = queue.shift();
+          const path = typeof item === "string" ? item : item.path;
+          const url = typeof item === "string" ? item : item.url;
+          const res = await fetch(fileUrl(site, url));
+          if (!res.ok) throw new Error(`${url} ${res.status}`);
+          const bytes = new Uint8Array(await res.arrayBuffer());
+          session.mountFile(path, bytes);
+          done += 1;
+          boot.textContent = `読み込み ${done} / ${files.length}`;
+        }
+      });
+      await Promise.all(workers);
+      const worldFile = files.find((item) => (item.path || item) === (bundle.world || "world.json"));
+      const worldUrl = worldFile ? (worldFile.url || worldFile) : `games/${slug}/world.json`;
+      const worldRes = await fetch(fileUrl(site, worldUrl));
+      if (!worldRes.ok) throw new Error(`${worldUrl} ${worldRes.status}`);
+      let worldText = await worldRes.text();
+      let asked = (params.get("quality") || "").toLowerCase();
+      let payload = (() => {
+        try {
+          const world = JSON.parse(worldText);
+          if (asked === "low" || asked === "mobile" || asked === "high") {
+            world.quality = asked;
+          } else if (slug === "neon_cat" && (world.quality == null || world.quality === "")) {
+            world.quality = "mobile";
+          }
+          if (slug === "neon_cat") {
+            const cam = (params.get("cam") || "").toLowerCase();
+            if (cam === "classic" || cam === "chase") world.cam = cam;
+          }
+          return JSON.stringify(world);
+        } catch (_) {
+          return worldText;
+        }
+      })();
+      session.loadGame(payload);
+      applySwipeMode();
+      if (session.setExternalMenu) session.setExternalMenu(true);
+      session.showTitle();
+      if (params.get("debug") === "1" && session.setDebug) session.setDebug(true);
+    } catch (err) {
+      fail(`起動できませんでした。\n${err}\n\nwasm が無いときは ./scripts/build_wasm.sh のあと、このページを出してください。`);
+      throw err;
+    }
+
+    const fit = () => {
+      orient();
+      const scale = Math.min(window.devicePixelRatio || 1, 2);
+      const w = Math.max(1, Math.round(canvas.clientWidth * scale));
+      const h = Math.max(1, Math.round(canvas.clientHeight * scale));
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+        session.createSurface(w, h);
+      }
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    window.addEventListener("orientationchange", () => setTimeout(fit, 60));
+    window.visualViewport?.addEventListener("resize", fit);
+    screen.orientation?.addEventListener?.("change", () => setTimeout(fit, 60));
+
+    const canvasIsBlank = (el) => {
+      const probe = document.createElement("canvas");
+      probe.width = 48;
+      probe.height = 48;
+      const ctx = probe.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return false;
+      try { ctx.drawImage(el, 0, 0, 48, 48); }
+      catch (e) { console.warn("kagra: frame readback failed", e); return false; }
+      const data = ctx.getImageData(0, 0, 48, 48).data;
+      let max = 0, min = 255;
+      for (let i = 0; i < data.length; i += 16) {
+        max = Math.max(max, data[i], data[i + 1], data[i + 2]);
+        min = Math.min(min, data[i], data[i + 1], data[i + 2]);
+      }
+      console.warn(`kagra: frame sample max=${max} min=${min} backend=${activeBackend}`);
+      return max < 12 || min > 248;
+    };
+    const attachBackend = async (backend) => {
+      activeBackend = backend;
+      session.setGraphicsBackend(backend);
+      fit();
+      await session.attachCanvas(canvas);
+      fit();
+    };
+    let rendering = false;
+    const startBackend = activeBackend === "gl" || activeBackend === "webgpu" ? activeBackend : "auto";
+    try {
+      await attachBackend(startBackend);
+      rendering = session.hasRenderer();
+    } catch (err) {
+      if (startBackend === "gl") {
+        fail(`描画を開始できません。\n${err}\n\nWebGL2 か WebGPU が必要です。`);
+        throw err;
+      }
+      console.warn("kagra: WebGPU attach failed, trying WebGL2", err);
+      const next = document.createElement("canvas");
+      next.id = "c";
+      canvas.replaceWith(next);
+      canvas = next;
+      try {
+        await attachBackend("gl");
+        rendering = session.hasRenderer();
+      } catch (err2) {
+        fail(`描画を開始できません。\n${err2}\n\nWebGL2 か WebGPU が必要です。`);
+        throw err2;
+      }
+    }
+    boot.style.display = "none";
+
+    const state = { lx: 0, lz: 0, jump: false, attack: false };
+    const held = new Set();
+    const clamp = (v) => Math.max(-1, Math.min(1, v));
+    let phase = "title";
+    globalThis.kagraPreview = session;
+
+    const showPhase = (next) => {
+      phase = next || "title";
+      const playing = phase === "playing";
+      overlay.classList.toggle("visible", !playing);
+      pads.classList.toggle("visible", playing && !swipeMode);
+      hud.classList.toggle("visible", playing);
+      document.documentElement.dataset.menu = playing ? "0" : "1";
+      if (!playing && phase !== "complete") session.showTitle();
+      const label = playing ? "プレイ中" : phase === "complete" ? "リザルト" : "タイトル";
+      document.getElementById("phaseLabel").textContent =
+        `${bundle.title || slug} · ${label} · ${sharedVersion()}`;
+      document.getElementById("start").textContent = phase === "complete" ? "もう一度" : "はじめる";
+      const death = document.getElementById("death");
+      let reason = "";
+      try { reason = JSON.parse(session.gameJson()).death || ""; } catch {}
+      if (phase === "complete" && reason) {
+        death.hidden = false;
+        death.textContent = `HIT ${reason}`;
+      } else {
+        death.hidden = true;
+        death.textContent = "";
+      }
+    };
+
+    const readPhase = () => {
+      let statsPhase = "title";
+      let flow = "";
+      try { statsPhase = JSON.parse(session.statsJson()).game_phase || "title"; } catch {}
+      try { flow = JSON.parse(session.gameJson()).phase || ""; } catch {}
+      if (flow === "play" || flow === "pause") return "playing";
+      if (flow === "result") return "complete";
+      if (flow === "playing" || flow === "complete") return flow;
+      if (statsPhase === "playing" || statsPhase === "complete") return statsPhase;
+      return flow === "title" ? "title" : (statsPhase || "title");
+    };
+
+    let startLock = 0;
+    const confirmGame = () => {
+      if (phase === "playing") return;
+      const now = performance.now();
+      if (now - startLock < 350) return;
+      startLock = now;
+      session.startGame();
+    };
+    const stopOverlayEvent = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    const startBtn = document.getElementById("start");
+    startBtn.addEventListener("pointerdown", stopOverlayEvent);
+    startBtn.addEventListener("pointerup", (e) => {
+      stopOverlayEvent(e);
+      confirmGame();
+    });
+    startBtn.addEventListener("click", (e) => {
+      stopOverlayEvent(e);
+      confirmGame();
+    });
+    const catalog = overlay.querySelector("a.btn");
+    const openCatalog = (e) => {
+      stopOverlayEvent(e);
+      const href = catalog.getAttribute("href") || "./index.html";
+      if (location.href !== new URL(href, location.href).href) location.href = href;
+    };
+    catalog.addEventListener("pointerdown", stopOverlayEvent);
+    catalog.addEventListener("pointerup", openCatalog);
+    catalog.addEventListener("click", openCatalog);
+    overlay.addEventListener("pointerup", (e) => {
+      if (e.target.closest("a, button")) return;
+      if (phase !== "playing") confirmGame();
+    });
+
+    const bindHold = (el, setDown) => {
+      const ids = new Set();
+      const down = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try { el.setPointerCapture(e.pointerId); } catch {}
+        ids.add(e.pointerId);
+        setDown(true);
+        el.classList.add("on");
+      };
+      const up = (e) => {
+        ids.delete(e.pointerId);
+        if (ids.size === 0) {
+          setDown(false);
+          el.classList.remove("on");
+        }
+      };
+      el.addEventListener("pointerdown", down);
+      el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);
+      el.addEventListener("lostpointercapture", up);
+    };
+    const stick = document.getElementById("stick");
+    const stickIds = new Set();
+    const applyStick = (e) => {
+      const r = stick.getBoundingClientRect();
+      const dx = (e.clientX - (r.left + r.width / 2)) / (r.width / 2);
+      const dy = (e.clientY - (r.top + r.height / 2)) / (r.height / 2);
+      state.lx = clamp(dx);
+      state.lz = clamp(-dy);
+      stick.classList.add("on");
+    };
+    stick.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try { stick.setPointerCapture(e.pointerId); } catch {}
+      stickIds.add(e.pointerId);
+      applyStick(e);
+    });
+    stick.addEventListener("pointermove", (e) => {
+      if (stickIds.has(e.pointerId)) applyStick(e);
+    });
+    const endStick = (e) => {
+      stickIds.delete(e.pointerId);
+      if (stickIds.size === 0) {
+        state.lx = 0;
+        state.lz = 0;
+        stick.classList.remove("on");
+      }
+    };
+    stick.addEventListener("pointerup", endStick);
+    stick.addEventListener("pointercancel", endStick);
+    bindHold(document.getElementById("jump"), (on) => { state.jump = on; });
+    bindHold(document.getElementById("act"), (on) => { state.attack = on; });
+
+    const toBuf = (e) => {
+      const r = canvas.getBoundingClientRect();
+      const sx = canvas.width / Math.max(1, r.width);
+      const sy = canvas.height / Math.max(1, r.height);
+      return [(e.clientX - r.left) * sx, (e.clientY - r.top) * sy];
+    };
+    const phaseOf = (type) => (type === "pointerdown" ? 0 : type === "pointermove" ? 1 : type === "pointerup" ? 2 : 3);
+    const appEl = document.getElementById("app");
+    for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel"]) {
+      appEl.addEventListener(type, (e) => {
+        if (overlay.classList.contains("visible")) return;
+        if (e.target !== canvas) return;
+        if (type === "pointerdown") {
+          try { canvas.setPointerCapture(e.pointerId); } catch {}
+        }
+        const [x, y] = toBuf(e);
+        session.pushPointer(e.pointerId + 20, x, y, phaseOf(type), e.pressure || 1);
+      });
+    }
+
+    window.addEventListener("keydown", (e) => {
+      held.add(e.key);
+      if (e.key === " " || e.key.startsWith("Arrow")) e.preventDefault();
+      if ((e.key === "Enter" || e.key === " ") && phase !== "playing") confirmGame();
+    });
+    window.addEventListener("keyup", (e) => held.delete(e.key));
+    window.addEventListener("blur", () => {
+      held.clear();
+      state.lx = 0;
+      state.lz = 0;
+      state.jump = false;
+      state.attack = false;
+    });
+
+    const keyAxis = () => {
+      const l = held.has("ArrowLeft") || held.has("a") || held.has("A");
+      const r = held.has("ArrowRight") || held.has("d") || held.has("D");
+      const u = held.has("ArrowUp") || held.has("w") || held.has("W");
+      const d = held.has("ArrowDown") || held.has("s") || held.has("S");
+      return {
+        lx: (r ? 1 : 0) - (l ? 1 : 0),
+        lz: (u ? 1 : 0) - (d ? 1 : 0),
+        attack: held.has("j") || held.has("J") || held.has("k") || held.has("K"),
+      };
+    };
+
+    document.addEventListener("touchmove", (e) => {
+      if (e.target.closest("#overlay button, #overlay a")) return;
+      e.preventDefault();
+    }, { passive: false });
+    showPhase("title");
+
+    let presented = 0;
+    let recovering = false;
+    const loop = () => {
+      if (recovering) return;
+      const k = keyAxis();
+      const jump = state.jump || held.has(" ") || held.has("Spacebar");
+      session.setPlayInput(
+        clamp(state.lx + k.lx),
+        clamp(state.lz + k.lz),
+        jump,
+        state.attack || k.attack,
+        false,
+      );
+      session.requestFrame();
+      if (rendering) {
+        try { session.render(); }
+        catch (err) {
+          rendering = false;
+          const detail = err && err.stack ? err.stack : err;
+          fail(`描画が止まりました。\n${detail}`);
+        }
+        presented += 1;
+        if (presented === 8 && activeBackend !== "gl" && requestedBackend !== "webgpu" && canvasIsBlank(canvas)) {
+          recovering = true;
+          rendering = false;
+          console.warn("kagra: blank WebGPU frame, falling back to WebGL2");
+          const next = document.createElement("canvas");
+          next.id = "c";
+          canvas.replaceWith(next);
+          canvas = next;
+          attachBackend("gl").then(() => {
+            rendering = true;
+            recovering = false;
+            requestAnimationFrame(loop);
+          }).catch((err) => {
+            fail(`WebGL2 fallback failed:\n${err}`);
+          });
+          return;
+        }
+      }
+      try {
+        const next = readPhase();
+        if (next !== phase) showPhase(next);
+      } catch {}
+      requestAnimationFrame(loop);
+    };
+    loop();
+  </script>
+</body>
+</html>
