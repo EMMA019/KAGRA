@@ -133,6 +133,7 @@
     const boostEl = document.getElementById("boost");
     const gradeEl = document.getElementById("grade");
     const linksEl = document.getElementById("links");
+    const DEBUG_LINKS = params.get("debug") === "1";
     const BEST_KEY = "lumen-best";
     const held = new Set();
     const pointers = new Map();
@@ -520,8 +521,8 @@
       try { st = JSON.parse(session.gameJson()); } catch (_) {}
       const playing = st.phase === "play";
       boostEl.classList.toggle("on", playing);
-      // Title only. `hidden` alone was staying off while the score HUD was already in play.
-      const showLinks = st.phase === "title";
+      // Dev links (Corridor/Crest): title screen with ?debug=1 only. Hidden on the game page.
+      const showLinks = DEBUG_LINKS && st.phase === "title";
       linksEl.hidden = !showLinks;
       linksEl.style.display = showLinks ? "" : "none";
       if (!playing) boostHeld = false;
