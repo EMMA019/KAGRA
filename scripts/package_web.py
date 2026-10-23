@@ -7,6 +7,9 @@
 The default page is ``play.html`` (Lumen). Corridor Haul stays at
 ``corridor.html``. ``world.json`` is the manifest's dump, which wasm loads
 with ``loadGameJson``. Audio clips from ``bundle_assets`` land in ``audio/``.
+GLB and glTF files keep their repo-relative paths and are listed in
+``assets.json`` so ``play.html`` can ``mountFile`` them before the first frame.
+A model that fails to fetch is omitted; the sim draws the primitive instead.
 
 GitHub Pages (``.github/workflows/pages.yml``) commits this folder to the
 ``gh-pages`` root on push to master and leaves ``pr/`` in place. The live
@@ -15,6 +18,7 @@ site is the full tree, deployed by ``pages-deploy.yml``.
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import subprocess
 import sys
@@ -27,6 +31,7 @@ if str(ROOT) not in sys.path:
 from kagra.distribute import ManifestError, manifest_for_game  # noqa: E402
 
 _AUDIO = {".wav", ".ogg", ".mp3"}
+_MODEL = {".glb", ".gltf", ".bin", ".png", ".jpg", ".jpeg", ".webp"}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -108,14 +113,34 @@ def stage_web(repo: Path, manifest, dest: Path, *, include_wasm: bool) -> list[s
         rels.append("world.json")
     audio = dest / "audio"
     audio.mkdir()
+    mounted: list[str] = []
     for rel in manifest.bundle_assets:
         src = repo / rel
         files = [src] if src.is_file() else list(src.rglob("*")) if src.is_dir() else []
         for path in files:
-            if path.suffix.lower() not in _AUDIO or not path.is_file():
+            if not path.is_file():
                 continue
-            shutil.copy2(path, audio / path.name)
-            rels.append(f"audio/{path.name}")
+            suffix = path.suffix.lower()
+            if suffix in _AUDIO:
+                shutil.copy2(path, audio / path.name)
+                rels.append(f"audio/{path.name}")
+                continue
+            if suffix not in _MODEL:
+                continue
+            try:
+                repo_rel = path.resolve().relative_to(repo.resolve()).as_posix()
+            except ValueError:
+                continue
+            target = dest / repo_rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target)
+            rels.append(repo_rel)
+            mounted.append(repo_rel)
+    (dest / "assets.json").write_text(
+        json.dumps(sorted(set(mounted)), indent=2) + "\n",
+        encoding="utf-8",
+    )
+    rels.append("assets.json")
     note = (
         f"{manifest.title}\n"
         "Open play.html over http (a file:// page cannot load wasm).\n"
@@ -123,6 +148,8 @@ def stage_web(repo: Path, manifest, dest: Path, *, include_wasm: bool) -> list[s
         "Keyboard: WASD or arrows, Shift or Space boosts, P pauses, Enter starts.\n"
         "Touch: drag to steer, BOOST button, tap the title to start.\n"
         "Sound clips are the CC0 tones in assets/audio/LICENSE.txt.\n"
+        "Ship and obstacles are Kenney Space Kit GLBs (CC0). See assets.json.\n"
+        "If a model fails to load, the game draws a sphere or a box instead.\n"
     )
     (dest / "README.txt").write_text(note, encoding="utf-8")
     rels.append("README.txt")

@@ -258,6 +258,26 @@
       }
     }
 
+    // Mount before loadGameJson. The first sim frame bakes GLBs; a later
+    // mount would leave the primitive fallback in the mesh cache.
+    const mountAssets = async () => {
+      let list = [];
+      try {
+        const res = await fetch("./assets.json");
+        if (res.ok) list = await res.json();
+      } catch (_) {}
+      if (!Array.isArray(list)) return;
+      await Promise.all(list.map(async (path) => {
+        if (typeof path !== "string" || !path || path.includes("..")) return;
+        const url = "./" + path.split("/").map((part) => encodeURIComponent(part)).join("/");
+        try {
+          const res = await fetch(url);
+          if (!res.ok) return;
+          session.mountFile(path, new Uint8Array(await res.arrayBuffer()));
+        } catch (_) {}
+      }));
+    };
+
     let best = 0;
     try { best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0; } catch (_) {}
     let world = { version: 1, genre: "neon_run" };
@@ -267,6 +287,7 @@
     } catch (_) {}
     world.best = Math.max(Number(world.best) || 0, best);
     try {
+      await mountAssets();
       session.loadGameJson(JSON.stringify(world));
     } catch (e) {
       fail(`loadGameJson failed:\n${e}`);
