@@ -23,7 +23,7 @@ One ``dump()`` per tick. Aim, the listener, and the next gate come from
 the dump's ``sim`` object. Wasm does not JSON-round-trip the world:
 ``render`` draws the document, and ``gameJson`` is only the small status
 blob. Phone picture (on unless ``KAGRA_QUALITY=0``): the Rust dump's grade
-(exposure, bloom, fog, cyan gates, the horizontal trail). Juice and
+(exposure, bloom, fog, cyan gates). Juice and
 sparks sit on top. The shared ``night`` preset is brighter and is not
 applied, so the window matches wasm. The wasm / Android build runs the
 same Rust sim from ``games/neon_run_minimal.json``.

@@ -191,6 +191,12 @@ pub struct Renderer {
     /// the device exposes timestamp queries.
     last_profile: crate::profile::FrameProfile,
     timestamps: Option<TimestampClock>,
+    /// Adapter backend name (`webgpu`, `gl`, `vulkan`, …).
+    backend_name: String,
+    /// Dump `quality` from the last world draw. Empty until a dump arrives.
+    picture_tier: String,
+    /// One line for the page: tier, backend, fxaa, ssao, cascades, path.
+    picture_line: String,
 }
 
 #[derive(Clone, Debug)]
@@ -272,6 +278,7 @@ impl Renderer {
         let (width, height) = (config.width, config.height);
         note_surface(&adapter, &config);
         let hdr = hdr_for_adapter(&adapter);
+        let backend = adapter.get_info().backend.to_str().to_string();
         Ok(Self::assemble(
             device,
             queue,
@@ -280,6 +287,7 @@ impl Renderer {
             height,
             Target::Surface { surface, config },
             hdr,
+            backend,
         ))
     }
 
@@ -303,6 +311,7 @@ impl Renderer {
         );
         let texture = create_offscreen_texture(&device, format, width, height);
         let hdr = hdr_for_adapter(&adapter);
+        let backend = adapter.get_info().backend.to_str().to_string();
         Ok(Self::assemble(
             device,
             queue,
@@ -311,9 +320,36 @@ impl Renderer {
             height,
             Target::Offscreen { texture },
             hdr,
+            backend,
         ))
     }
 
+    /// Phone WebGPU canvas: an 8-bit frame and an 8-bit target, even when the
+    /// adapter can filter `Rgba16Float`. Tests use this to lock the direct path.
+    #[cfg(test)]
+    async fn new_ldr_unorm(width: u32, height: u32) -> Result<Self, String> {
+        let instance = new_instance().await;
+        let (adapter, device, queue) = request_device(&instance, None).await?;
+        let (width, height) = (
+            width.clamp(1, MAX_TEXTURE_SIDE),
+            height.clamp(1, MAX_TEXTURE_SIDE),
+        );
+        let format = wgpu::TextureFormat::Rgba8Unorm;
+        let texture = create_offscreen_texture(&device, format, width, height);
+        let backend = adapter.get_info().backend.to_str().to_string();
+        Ok(Self::assemble(
+            device,
+            queue,
+            format,
+            width,
+            height,
+            Target::Offscreen { texture },
+            false,
+            backend,
+        ))
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn assemble(
         device: wgpu::Device,
         queue: wgpu::Queue,
@@ -322,6 +358,7 @@ impl Renderer {
         height: u32,
         target: Target,
         hdr: bool,
+        backend: String,
     ) -> Self {
         if !hdr {
             note_ldr_fallback();
@@ -840,12 +877,14 @@ impl Renderer {
         ];
 
         // 3D は線形フレームへ（トーンは bloom composite が適用）。
-        // 浮動小数ターゲットが描けない端末は 8bit に落とし、ブルームは止める。
-        let hdr_target = [Some(wgpu::ColorTargetState {
+        // 2 枚目はエミッシブマスク。8bit ブルームが読む。HDR 抽出は無視する。
+        // フォーマットはフレームと揃える（WebGL2 の MRT は混在に弱い）。
+        let scene_target = wgpu::ColorTargetState {
             format: frame_format,
             blend: Some(wgpu::BlendState::ALPHA_BLENDING),
             write_mask: wgpu::ColorWrites::ALL,
-        })];
+        };
+        let hdr_target = [Some(scene_target.clone()), Some(scene_target)];
 
         let pipeline3d = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("kagra-shared 3d pipeline"),
@@ -1177,6 +1216,9 @@ impl Renderer {
             mesh_key: String::new(),
             last_profile: crate::profile::FrameProfile::default(),
             timestamps,
+            backend_name: backend,
+            picture_tier: String::new(),
+            picture_line: String::new(),
         };
         me.upload_screen();
         me
@@ -1473,11 +1515,13 @@ impl Renderer {
         }
 
         // Frame format == swapchain means Chrome's WebGPU samples an
-        // Rgba16Float target as white. The 3D pass normally draws straight
-        // at the surface. When SSAO is on, it draws a separate Rgba8Unorm
-        // instead (that sample is not white) and the composite grades it.
+        // Rgba16Float target as white, and drawing 3D straight at that
+        // surface skips FXAA. Any 3D frame on that path draws a separate
+        // Rgba8Unorm and always runs the post graph (grade, 8-bit bloom,
+        // FXAA). SSAO joins only when the radius is on.
         let direct = self.bloom.frame_format() == self.format;
-        let direct_post = direct && world.is_some() && self.post.ssao_enabled();
+        let want_ssao = world.is_some() && self.post.ssao_enabled();
+        let direct_post = direct && world.is_some();
         let present_in_shader =
             color_space::present_in_fragment(direct && !direct_post, self.format.is_srgb());
         let mut unjittered_vp = glam::Mat4::IDENTITY;
@@ -1569,7 +1613,7 @@ impl Renderer {
                 self.queue
                     .write_buffer(&self.inst_buf, 0, bytemuck::cast_slice(&raw));
             }
-            let depth_span = if direct_post {
+            let depth_span = if direct && want_ssao {
                 post::AO_DEPTH_SPAN
             } else {
                 0.0
@@ -1625,11 +1669,11 @@ impl Renderer {
         let view = target_texture.create_view(&Default::default());
         // 3D は線形 HDR フレームへ。Bloom が最終ターゲットへ合成し、HUD は
         // その後に重ねる（トーン後の色を保つ）。
-        // When the frame format matches the swapchain and SSAO is off, draw
-        // straight into the surface. Sampling that surface comes back white
-        // on Chrome's WebGPU. A separate Rgba8Unorm frame is safe to sample,
-        // so the SSAO path uses it and grades in the composite.
+        // A 3D frame always lands in the offscreen target. Sampling the
+        // swapchain itself comes back white on Chrome's WebGPU. HUD-only
+        // frames still clear the swapchain directly.
         let frame_view = self.bloom.frame_view();
+        let emit_view = self.bloom.emit_view();
 
         let mut encoder = self
             .device
@@ -1646,28 +1690,40 @@ impl Renderer {
             let pcss = world.is_some_and(|s| s.shadow_pcss) && !direct;
             self.encode_cascades(&mut encoder, &draws, cascade_count, pcss);
         }
-        // Pass 1: 3D（スカイ + メッシュ）→ 線形 HDR フレーム。クリアは常時。
+        // Pass 1: 3D（スカイ + メッシュ）→ 線形フレーム + エミッシブマスク。
         {
+            let color_view = if direct && world.is_none() {
+                &view
+            } else {
+                frame_view
+            };
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("kagra-shared 3d pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: if direct && !direct_post {
-                        &view
-                    } else {
-                        frame_view
-                    },
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: clear[0] as f64,
-                            g: clear[1] as f64,
-                            b: clear[2] as f64,
-                            a: clear[3] as f64,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
+                color_attachments: &[
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: color_view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: clear[0] as f64,
+                                g: clear[1] as f64,
+                                b: clear[2] as f64,
+                                a: clear[3] as f64,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: emit_view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                ],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth,
                     depth_ops: Some(wgpu::Operations {
@@ -1748,8 +1804,8 @@ impl Renderer {
         // Depth color for SSAO / DOF / motion. The color target blends, so
         // device depth cannot live in its alpha. Load the depth buffer the
         // color pass just wrote; do not clear it. HDR stores meters. The
-        // direct SSAO path stores eye/32 in this unorm target.
-        if drew_scene && self.post.needs_depth() && (!direct || direct_post) {
+        // direct SSAO path stores eye/AO_DEPTH_SPAN in this unorm target.
+        if drew_scene && self.post.needs_depth() && (!direct || want_ssao) {
             let depth_far = world.map(|s| s.camera.far).unwrap_or(1000.0).max(1.0) as f64;
             let depth_color = self.post.scene_depth_view();
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1800,11 +1856,11 @@ impl Renderer {
             }
         }
         // Pass 2: optional SSAO / DOF / motion, then bloom grade, then TAA or FXAA.
-        // Direct + SSAO runs the half-res AO and the grade (FXAA, no TAA, no
-        // PCSS, no DOF). Bloom intensity is already 0 on an unorm frame.
-        // Direct without SSAO already graded in present_rgb.
+        // The 8-bit path always grades here (FXAA when the dump leaves it on,
+        // which is the default). SSAO runs only when the radius is on.
+        // No TAA, no PCSS, no DOF. 8-bit bloom is the luma/emissive mip chain.
         if direct_post {
-            if drew_scene {
+            if drew_scene && want_ssao {
                 let near = world.map(|s| s.camera.near).unwrap_or(0.1);
                 let far = world.map(|s| s.camera.far).unwrap_or(1000.0);
                 self.post.apply_ssao_only(
@@ -1921,7 +1977,27 @@ impl Renderer {
             triangles,
             texture_bytes: self.texture_bytes(),
         };
+        let cascades = world.map(|s| s.shadow_cascades.clamp(1, 3)).unwrap_or(1);
+        self.picture_line = picture_line(
+            &self.picture_tier,
+            &self.backend_name,
+            self.bloom.fxaa_enabled(),
+            self.bloom.is_active(),
+            self.post.ssao_radius(),
+            cascades,
+            direct,
+            direct_post,
+        );
         Ok(())
+    }
+
+    /// One line the page can print: tier, backend, and which passes ran.
+    pub fn picture_status(&self) -> String {
+        if self.picture_line.is_empty() {
+            format!("pending {}", self.backend_name)
+        } else {
+            self.picture_line.clone()
+        }
     }
 
     fn reconfigure(&mut self) {
@@ -2411,6 +2487,10 @@ impl Renderer {
     }
 
     fn apply_dump_post(&mut self, doc: &crate::world_doc::WorldDoc) {
+        self.picture_tier = match doc.quality.as_deref().map(str::trim) {
+            Some(q) if !q.is_empty() => q.to_string(),
+            _ => "legacy".to_string(),
+        };
         self.post.set(
             doc.ssao_radius(),
             doc.taa_enabled(),
@@ -3317,6 +3397,33 @@ fn quad_vertices(q: &crate::scene::Quad, format: wgpu::TextureFormat) -> [Vertex
     })
 }
 
+/// `{tier} {backend} fxaa={0|1} bloom={0|1} ssao={n:.0} c{cascades} {post|swap|hdr}`
+#[allow(clippy::too_many_arguments)]
+fn picture_line(
+    tier: &str,
+    backend: &str,
+    fxaa: bool,
+    bloom: bool,
+    ssao: f32,
+    cascades: u32,
+    direct: bool,
+    direct_post: bool,
+) -> String {
+    let path = if direct_post {
+        "post"
+    } else if direct {
+        "swap"
+    } else {
+        "hdr"
+    };
+    format!(
+        "{tier} {backend} fxaa={} bloom={} ssao={:.0} c{cascades} {path}",
+        u8::from(fxaa),
+        u8::from(bloom),
+        ssao,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3794,6 +3901,75 @@ mod tests {
         assert!(
             changed > 40,
             "mobile SSAO and cascades should move the neon frame, changed {changed}"
+        );
+    }
+
+    #[test]
+    fn neon_phone_unorm_runs_post_and_bloom() {
+        let Some(mut renderer) = pollster::block_on(Renderer::new_ldr_unorm(320, 180)).ok() else {
+            eprintln!("no GPU adapter; skipping phone unorm neon");
+            return;
+        };
+        let mobile = crate::neon_run::NeonRun::from_json(
+            r#"{"version":1,"genre":"neon_run","quality":"mobile"}"#,
+        )
+        .expect("mobile");
+        let frame = renderer
+            .render_world_doc(mobile.document())
+            .expect("render phone");
+        let status = renderer.picture_status();
+        assert!(status.contains(" fxaa=1 "), "{status}");
+        assert!(status.contains(" bloom=1 "), "{status}");
+        assert!(status.ends_with(" post"), "{status}");
+        if crate::world_doc::heavy_post_allowed() {
+            assert!(status.contains(" ssao=4 "), "{status}");
+            assert!(status.contains(" c2 "), "{status}");
+        }
+        let pixels = (frame.len() / 4) as u32;
+        let mut white = 0u32;
+        for px in frame.chunks(4) {
+            let s = px[0] as u32 + px[1] as u32 + px[2] as u32;
+            if s > 740 {
+                white += 1;
+            }
+        }
+        assert!(
+            white * 10 < pixels,
+            "phone frame clipped white {white}/{pixels}"
+        );
+        write_shot("neon-phone-unorm.png", 320, 180, &frame);
+        let mut quiet = mobile.document().clone();
+        quiet.bloom = Some(0.0);
+        let off = renderer.render_world_doc(&quiet).expect("bloom off");
+        write_shot("neon-phone-unorm-nobloom.png", 320, 180, &off);
+        let mut changed = 0u32;
+        for (a, b) in frame.chunks(4).zip(off.chunks(4)) {
+            let da = (a[0] as i32 - b[0] as i32).abs()
+                + (a[1] as i32 - b[1] as i32).abs()
+                + (a[2] as i32 - b[2] as i32).abs();
+            if da >= 12 {
+                changed += 1;
+            }
+        }
+        assert!(
+            changed > 8,
+            "8-bit bloom should move the neon frame, changed {changed} status {status}"
+        );
+    }
+
+    #[test]
+    fn picture_line_names_the_phone_path() {
+        assert_eq!(
+            super::picture_line("mobile", "webgpu", true, true, 4.0, 2, true, true),
+            "mobile webgpu fxaa=1 bloom=1 ssao=4 c2 post"
+        );
+        assert_eq!(
+            super::picture_line("legacy", "gl", false, false, 0.0, 1, true, false),
+            "legacy gl fxaa=0 bloom=0 ssao=0 c1 swap"
+        );
+        assert_eq!(
+            super::picture_line("high", "vulkan", true, true, 8.2, 3, false, false),
+            "high vulkan fxaa=1 bloom=1 ssao=8 c3 hdr"
         );
     }
 

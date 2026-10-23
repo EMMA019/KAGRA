@@ -505,12 +505,15 @@ pub fn cascade_halves(count: u32) -> [f32; 3] {
     if n == 1 {
         return [SHADOW_ORTHO_HALF; 3];
     }
-    // Tight ring, the historical 24 m map, then a far ring. Concentric and
-    // snapped per ring so the umbra does not crawl.
-    let table = [8.0_f32, SHADOW_ORTHO_HALF, 80.0];
-    // n is 2 or 3 here, so the last ring is 24 m or 80 m.
-    let last = (n as usize) - 1;
-    [table[0], table[1], table[last]]
+    // Tight contact ring, then a wider ring. Count 2 used to stop at the
+    // historical 24 m map, which left a chase camera's next gate (about 40 m
+    // ahead) fully lit. The second tile now matches the 80 m far ring so the
+    // ship, the rocks, and the rings in frame can receive the sun. Count 3
+    // keeps the 24 m middle tile. Same 2048 map, snapped per ring.
+    if n == 2 {
+        return [8.0, 80.0, 80.0];
+    }
+    [8.0, SHADOW_ORTHO_HALF, 80.0]
 }
 
 /// One view-projection per cascade. Slot 0 matches [`scene_shadow_view_proj`]
@@ -1250,6 +1253,11 @@ mod tests {
         );
         let halves = cascade_halves(3);
         assert!(halves[0] < halves[1] && halves[1] < halves[2]);
+        let two = cascade_halves(2);
+        assert!(
+            two[0] < 16.0 && two[1] >= 64.0 && (two[1] - two[2]).abs() < 1e-4,
+            "count 2 must reach the next gate, got {two:?}"
+        );
         let (x2, _, w2, _) = cascade_viewport(1, 3);
         assert!(x2 > 0.0 && w2 < SHADOW_MAP_SIZE as f32);
         let three = scene_cascade_view_projs(&scene, 3);

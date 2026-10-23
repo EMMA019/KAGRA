@@ -77,6 +77,16 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 
 ## This wave
 
+Shipped on the wasm-safe path. An 8-bit swapchain (phone WebGPU, `rgba8unorm`) always draws 3D into a separate `Rgba8Unorm` frame and runs the post graph. FXAA is the minimum. The frame is never `Rgba16Float` on that path.
+
+- Bloom stays on. A threshold above 1 (Neon uses 1.45) folds into the top of the 0..1 luma range. A second render target, same format as the frame, carries emissive strength. Extract takes the max of the soft-knee luma weight and that mask, then a 5-level mip chain (Karis on the first hop, additive tent upsample). The HDR path is unchanged: half-res separable blur, intensity 0 still contributes nothing.
+- SSAO on that path still uses the half-res pass. Unorm depth spans 96 m so the next gate is not sky. TAA, DOF, motion, and PCSS stay off. No optional WebGPU features.
+- Two cascades reach 8 m and 80 m in the same 2048 map, so the gate ahead of the ship can land in the map. Count 1 stays 24 m. Count 3 stays 8 / 24 / 80.
+- Neon Run no longer emits the stacked quad ribbon (`trail`). Speed lines and sparks stay. Rock emissive is 0.06 so the Kenney normals read.
+- `pictureStatus()` and the `#grade` line on `play.html` print `{tier} {backend} fxaa= bloom= ssao= cN post|swap|hdr`, and the console adds `ask=` for the backend the page requested.
+
+## Previous wave
+
 Shipped on the wasm-safe path. A dump can name a picture tier. Omitted `quality` keeps the previous picture, including env `KAGRA_QUALITY=high` filling only omitted SSAO, TAA, cascades, and PCSS.
 
 - `quality=low` / `0` / `off` forces SSAO, TAA, DOF, motion, extra cascades, and PCSS off, even when those fields are set. Authored bloom, tonemap, and FXAA stay.
@@ -84,7 +94,6 @@ Shipped on the wasm-safe path. A dump can name a picture tier. Omitted `quality`
 - `quality=high` fills omitted fields: SSAO 8, TAA, 3 cascades, PCSS, bloom 0.35. Env high still does not turn bloom on by itself.
 - `KAGRA_QUALITY=0` / `off` / `low` still forces the floor ahead of the dump tier.
 - The web demo (`play.html`, Neon Run only) defaults to `mobile`. `?quality=low|mobile|high` overrides that scene. Other genres are unchanged. Neon Run's authored bloom, grade, and motion stay; the tier only fills the omitted passes.
-- Browser WebGPU still cannot sample `Rgba16Float`, so bloom extract stays off there. When SSAO is on, the 3D pass draws a separate `Rgba8Unorm` and the composite runs half-res SSAO plus FXAA. Depth is packed into 32 m so an 8-bit target can reconstruct meters. TAA, DOF, motion, and PCSS stay off on that path. Cascades already use the nearest depth compare.
 
 ## Previous wave
 
