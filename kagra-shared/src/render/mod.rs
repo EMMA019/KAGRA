@@ -111,6 +111,87 @@ struct GpuMesh {
     _sampler: Option<wgpu::Sampler>,
     /// Authored image bytes (albedo, matcap, normal, ORM, emissive).
     tex_bytes: u64,
+    /// GPU skin resources once a walker slot goes GPU-skinned.
+    skin: Option<GpuSkin>,
+    /// True while vbuf holds rest vertices and the palette drives the pose.
+    skin_on_gpu: bool,
+}
+
+/// Joint palette uniform + per-vertex lanes for one GPU-skinned mesh.
+#[derive(Debug)]
+struct GpuSkin {
+    palette: wgpu::Buffer,
+    _lanes: wgpu::Texture,
+    width: u32,
+}
+
+/// `Skin` in shader3d.wgsl: info vec4 + 64 mat4.
+const SKIN_UNIFORM_BYTES: u64 = 16 + 64 * crate::gltf_load::MAX_GPU_JOINTS as u64;
+
+/// Width of the skin-lane texture (WebGL2 guarantees 2048).
+const SKIN_TEX_WIDTH: u32 = 1024;
+
+/// Pack the `Skin` uniform: info = (on, lane width, joint count, 0), then the
+/// palette padded with identity. `None` when the palette is over the cap.
+fn skin_uniform_bytes(palette: &[glam::Mat4], on: bool, width: u32) -> Option<Vec<u8>> {
+    if palette.len() > crate::gltf_load::MAX_GPU_JOINTS {
+        return None;
+    }
+    let mut f: Vec<f32> = Vec::with_capacity(SKIN_UNIFORM_BYTES as usize / 4);
+    f.extend_from_slice(&[
+        if on { 1.0 } else { 0.0 },
+        width as f32,
+        palette.len() as f32,
+        0.0,
+    ]);
+    for j in 0..crate::gltf_load::MAX_GPU_JOINTS {
+        let m = palette.get(j).copied().unwrap_or(glam::Mat4::IDENTITY);
+        f.extend_from_slice(&m.to_cols_array());
+    }
+    Some(bytemuck::cast_slice(&f).to_vec())
+}
+
+fn create_skin_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    lanes: &[[f32; 4]],
+) -> wgpu::Texture {
+    let n = lanes.len().max(1) as u32;
+    let width = n.min(SKIN_TEX_WIDTH);
+    let height = n.div_ceil(width);
+    let mut data = vec![[0.0f32; 4]; (width * height) as usize];
+    data[..lanes.len()].copy_from_slice(lanes);
+    let size = wgpu::Extent3d {
+        width,
+        height,
+        depth_or_array_layers: 1,
+    };
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("kagra-shared skin lanes"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba32Float,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &tex,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        bytemuck::cast_slice(&data),
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(width * 16),
+            rows_per_image: Some(height),
+        },
+        size,
+    );
+    tex
 }
 
 #[derive(Debug)]
@@ -169,6 +250,11 @@ pub struct Renderer {
     albedo_layout: wgpu::BindGroupLayout,
     /// Kept alive for the default 1×1 bind group. Per-mesh samplers live on `GpuMesh`.
     _albedo_sampler: wgpu::Sampler,
+    /// Zero palette (info.x = 0 = not skinned) + 1x1 skin lanes for every
+    /// mesh that is not GPU-skinned.
+    default_skin_buf: wgpu::Buffer,
+    _default_skin_tex: wgpu::Texture,
+    default_skin_view: wgpu::TextureView,
     default_albedo_bind: wgpu::BindGroup,
     _white_albedo: wgpu::Texture,
     _white_view: wgpu::TextureView,
@@ -577,6 +663,27 @@ impl Renderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // 10 = joint palette (GPU skinning), 11 = per-vertex skin lanes.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 10,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 11,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         let albedo_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -598,6 +705,14 @@ impl Renderer {
         let flat_view = flat_normal.create_view(&Default::default());
         let orm_default = create_linear_texture(&device, &queue, 1, 1, &[255, 255, 0, 255]);
         let orm_view = orm_default.create_view(&Default::default());
+        let default_skin_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("kagra-shared default skin palette"),
+            size: SKIN_UNIFORM_BYTES,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let default_skin_tex = create_skin_texture(&device, &queue, &[[0.0; 4]]);
+        let default_skin_view = default_skin_tex.create_view(&Default::default());
         let default_albedo_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("kagra-shared default tex"),
             layout: &albedo_layout,
@@ -641,6 +756,14 @@ impl Renderer {
                 wgpu::BindGroupEntry {
                     binding: 9,
                     resource: wgpu::BindingResource::Sampler(&albedo_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: default_skin_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 11,
+                    resource: wgpu::BindingResource::TextureView(&default_skin_view),
                 },
             ],
         });
@@ -795,7 +918,8 @@ impl Renderer {
         });
         let layout_shadow = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("kagra-shared shadow layout"),
-            bind_group_layouts: &[Some(&globals_layout)],
+            // Group 1 carries the joint palette so skinned casters pose too.
+            bind_group_layouts: &[Some(&globals_layout), Some(&albedo_layout)],
             immediate_size: 0,
         });
 
@@ -1206,6 +1330,9 @@ impl Renderer {
             albedo_layout,
             _albedo_sampler: albedo_sampler,
             default_albedo_bind,
+            default_skin_buf,
+            _default_skin_tex: default_skin_tex,
+            default_skin_view,
             _white_albedo: white_albedo,
             _white_view: white_view,
             _black_view: black_view,
@@ -1350,6 +1477,14 @@ impl Renderer {
                             binding: 9,
                             resource: wgpu::BindingResource::Sampler(&sampler),
                         },
+                        wgpu::BindGroupEntry {
+                            binding: 10,
+                            resource: self.default_skin_buf.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 11,
+                            resource: wgpu::BindingResource::TextureView(&self.default_skin_view),
+                        },
                     ],
                 });
                 (
@@ -1411,6 +1546,8 @@ impl Renderer {
                 + image_bytes(&mesh.normal)
                 + image_bytes(&mesh.orm)
                 + image_bytes(&mesh.emissive_map),
+            skin: None,
+            skin_on_gpu: false,
         });
         MeshId(self.meshes.len() as u32 - 1)
     }
@@ -2143,6 +2280,11 @@ impl Renderer {
                     (false, false) => &self.pipeline_shadow[index as usize],
                 };
                 pass.set_pipeline(pipeline);
+                pass.set_bind_group(
+                    1,
+                    m.albedo_bind.as_ref().unwrap_or(&self.default_albedo_bind),
+                    &[],
+                );
                 pass.set_vertex_buffer(0, m.vbuf.slice(..));
                 pass.set_vertex_buffer(1, self.inst_buf.slice(*offset..));
                 pass.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);
@@ -2393,6 +2535,105 @@ impl Renderer {
         Ok(())
     }
 
+    /// Create the palette + lane texture for mesh `i` and rebuild its
+    /// material bind group around them (textures stay the same).
+    fn attach_gpu_skin(&mut self, i: usize, lanes: &[[f32; 4]]) {
+        let tex = create_skin_texture(&self.device, &self.queue, lanes);
+        let width = tex.width();
+        let palette = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("kagra-shared skin palette"),
+            size: SKIN_UNIFORM_BYTES,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let lane_view = tex.create_view(&Default::default());
+        let m = &self.meshes[i];
+        let view = |t: &Option<wgpu::Texture>, fallback: &wgpu::TextureView| {
+            t.as_ref()
+                .map(|t| t.create_view(&Default::default()))
+                .unwrap_or_else(|| fallback.clone())
+        };
+        let alb = view(&m._albedo_tex, &self._white_view);
+        let mc = view(&m._matcap_tex, &self._black_view);
+        let nm = view(&m._normal_tex, &self._flat_view);
+        let orm = view(&m._orm_tex, &self._orm_view);
+        let em = view(&m._emissive_tex, &self._black_view);
+        let sampler = m._sampler.as_ref().unwrap_or(&self._albedo_sampler);
+        let views = [&alb, &mc, &nm, &orm, &em];
+        let mut entries: Vec<wgpu::BindGroupEntry> = Vec::with_capacity(12);
+        for (k, v) in views.iter().enumerate() {
+            entries.push(wgpu::BindGroupEntry {
+                binding: (k * 2) as u32,
+                resource: wgpu::BindingResource::TextureView(v),
+            });
+            entries.push(wgpu::BindGroupEntry {
+                binding: (k * 2 + 1) as u32,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            });
+        }
+        entries.push(wgpu::BindGroupEntry {
+            binding: 10,
+            resource: palette.as_entire_binding(),
+        });
+        entries.push(wgpu::BindGroupEntry {
+            binding: 11,
+            resource: wgpu::BindingResource::TextureView(&lane_view),
+        });
+        let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("kagra-shared skinned mesh tex"),
+            layout: &self.albedo_layout,
+            entries: &entries,
+        });
+        let m = &mut self.meshes[i];
+        m.albedo_bind = Some(bind);
+        m.skin = Some(GpuSkin {
+            palette,
+            _lanes: tex,
+            width,
+        });
+    }
+
+    /// GPU-skin one walker slot: rest vertices stay in vbuf, the joint palette
+    /// poses them in the vertex shader. Returns false (caller CPU-skins) on the
+    /// low tier, with morph weight or spring cloth, or over `MAX_GPU_JOINTS`.
+    fn gpu_skin_slot(
+        &mut self,
+        i: usize,
+        skin: &crate::gltf_load::SkinnedMesh,
+        pose: &crate::gltf_load::WalkerPose,
+    ) -> Result<bool, String> {
+        if i >= self.meshes.len() {
+            return Ok(false);
+        }
+        let want = self.picture_tier != "low" && crate::gltf_load::gpu_skin_pose_ok(skin, pose);
+        if want && self.meshes[i].skin.is_none() {
+            if let Some(lanes) = crate::gltf_load::gpu_skin_stream(skin) {
+                self.attach_gpu_skin(i, &lanes);
+            }
+        }
+        let Some(gs) = self.meshes[i].skin.as_ref() else {
+            return Ok(false);
+        };
+        if !want {
+            if self.meshes[i].skin_on_gpu {
+                let off = skin_uniform_bytes(&[], false, gs.width).unwrap_or_default();
+                self.queue.write_buffer(&gs.palette, 0, &off);
+                self.meshes[i].skin_on_gpu = false;
+            }
+            return Ok(false);
+        }
+        let palette = crate::gltf_load::joint_palette(skin, pose);
+        let Some(bytes) = skin_uniform_bytes(&palette, true, gs.width) else {
+            return Ok(false);
+        };
+        self.queue.write_buffer(&gs.palette, 0, &bytes);
+        if !self.meshes[i].skin_on_gpu {
+            self.update_mesh(MeshId(i as u32), &skin.rest)?;
+            self.meshes[i].skin_on_gpu = true;
+        }
+        Ok(true)
+    }
+
     /// Re-skin walker glTF slots after a live tick. Primitive / heightfield stay.
     /// SpringBone 布シミュ（`self.cloth`、spec ごと）を 1 ステップ進めてから
     /// スキンするので、フレームを跨いで布が実際に揺れる。
@@ -2426,27 +2667,31 @@ impl Renderer {
             let Some(skin) = parts.get(part) else {
                 continue;
             };
+            let pose = crate::gltf_load::WalkerPose {
+                clip: if clip > 0.0 { Some(clip) } else { None },
+                hair,
+                expression,
+                morph,
+                look_yaw,
+                look_pitch,
+                anim_blend,
+                overlay_bones,
+                overlay_weight,
+                clip_name,
+                fade_from,
+                fade_from_clip,
+                fade_from_weight,
+            };
+            let id = crate::scene3d::MeshId(crate::world_doc::MESH_GLTF_BASE + i as u32);
+            if self.gpu_skin_slot(id.0 as usize, skin, &pose)? {
+                continue;
+            }
             let mesh = {
                 let sim = self
                     .cloth
                     .entry(spec.clone())
                     .or_insert_with(|| skin.springs.clone());
                 sim.wind = doc.wind;
-                let pose = crate::gltf_load::WalkerPose {
-                    clip: if clip > 0.0 { Some(clip) } else { None },
-                    hair,
-                    expression,
-                    morph,
-                    look_yaw,
-                    look_pitch,
-                    anim_blend,
-                    overlay_bones,
-                    overlay_weight,
-                    clip_name,
-                    fade_from,
-                    fade_from_clip,
-                    fade_from_weight,
-                };
                 crate::gltf_load::sample_skinned_cloth_pose(
                     skin,
                     &pose,
@@ -2454,7 +2699,6 @@ impl Renderer {
                     crate::scene::FIXED_DT,
                 )
             };
-            let id = crate::scene3d::MeshId(crate::world_doc::MESH_GLTF_BASE + i as u32);
             self.update_mesh(id, &mesh)?;
         }
         Ok(())
@@ -4854,6 +5098,110 @@ mod tests {
             .render_frame(Some(&scene), &crate::scene::DrawList::default())
             .ok()?;
         renderer.read_rgba().ok()
+    }
+
+    #[test]
+    fn skin_uniform_packs_info_and_pads_identity() {
+        let pal = [glam::Mat4::from_translation(glam::Vec3::new(1.0, 2.0, 3.0))];
+        let bytes = skin_uniform_bytes(&pal, true, 8).unwrap();
+        assert_eq!(bytes.len() as u64, SKIN_UNIFORM_BYTES);
+        let f: &[f32] = bytemuck::cast_slice(&bytes);
+        assert_eq!(&f[..4], &[1.0, 8.0, 1.0, 0.0]);
+        assert_eq!(
+            &f[4 + 12..4 + 15],
+            &[1.0, 2.0, 3.0],
+            "column 3 = translation"
+        );
+        assert_eq!(&f[20..36], &glam::Mat4::IDENTITY.to_cols_array(), "padding");
+        let too_many = vec![glam::Mat4::IDENTITY; crate::gltf_load::MAX_GPU_JOINTS + 1];
+        assert!(skin_uniform_bytes(&too_many, true, 1).is_none());
+        let off = skin_uniform_bytes(&[], false, 1).unwrap();
+        assert_eq!(bytemuck::cast_slice::<u8, f32>(&off)[0], 0.0);
+    }
+
+    fn render_walk_skin(gpu: bool, low: bool) -> Option<Vec<u8>> {
+        let skin =
+            crate::gltf_load::skinned_from_embedded_gltf(&crate::gltf_load::walk_skinned_gltf())
+                .ok()?;
+        let pose = crate::gltf_load::WalkerPose {
+            clip: Some(0.37),
+            anim_blend: 1.0,
+            ..Default::default()
+        };
+        let mut r = pollster::block_on(Renderer::new_offscreen_format(
+            64,
+            64,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+        ))
+        .ok()?;
+        r.set_fxaa(false);
+        if low {
+            r.picture_tier = "low".into();
+        }
+        let id = if gpu {
+            let id = r.upload_mesh(&skin.rest);
+            let on = r.gpu_skin_slot(id.0 as usize, &skin, &pose).ok()?;
+            assert_eq!(on, !low, "low tier stays on the CPU path");
+            if low {
+                r.update_mesh(id, &crate::gltf_load::sample_skinned_pose(&skin, &pose))
+                    .ok()?;
+            }
+            id
+        } else {
+            r.upload_mesh(&crate::gltf_load::sample_skinned_pose(&skin, &pose))
+        };
+        let scene = crate::scene3d::Scene3D {
+            clear: [0, 0, 0, 255],
+            tonemap: false,
+            exposure: 1.0,
+            ibl: 0.0,
+            ambient: 1.0,
+            batches: vec![crate::scene3d::Batch {
+                mesh: id,
+                instances: vec![crate::scene3d::Instance::with_pbr(
+                    glam::Mat4::from_translation(glam::Vec3::new(0.0, -0.5, 2.5)),
+                    [255, 255, 255, 255],
+                    crate::scene3d::Material::Solid,
+                    0.0,
+                    1.0,
+                )],
+            }],
+            ..Default::default()
+        };
+        r.render_frame(Some(&scene), &crate::scene::DrawList::default())
+            .ok()?;
+        r.read_rgba().ok()
+    }
+
+    #[test]
+    fn gpu_skinning_matches_cpu_skinning() {
+        let (Some(cpu), Some(gpu), Some(low)) = (
+            render_walk_skin(false, false),
+            render_walk_skin(true, false),
+            render_walk_skin(true, true),
+        ) else {
+            eprintln!("no GPU adapter; skipping GPU skin picture");
+            return;
+        };
+        write_shot("skin-cpu.png", 64, 64, &cpu);
+        write_shot("skin-gpu.png", 64, 64, &gpu);
+        let lit = cpu.chunks(4).filter(|p| p[0] > 8 || p[1] > 8).count();
+        if lit == 0 {
+            eprintln!("blank adapter picture; skipping GPU skin compare");
+            return;
+        }
+        let diff = |a: &[u8], b: &[u8]| {
+            a.chunks(4)
+                .zip(b.chunks(4))
+                .filter(|(x, y)| (0..3).any(|k| (x[k] as i32 - y[k] as i32).abs() > 24))
+                .count()
+        };
+        assert!(
+            diff(&cpu, &gpu) <= 6,
+            "gpu vs cpu differ in {} px",
+            diff(&cpu, &gpu)
+        );
+        assert!(diff(&cpu, &low) <= 6, "low tier CPU path");
     }
 
     /// `KAGRA_GLTF_SAMPLE=/path/model.glb` renders a Khronos sample. The file

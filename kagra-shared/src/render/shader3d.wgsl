@@ -56,6 +56,17 @@ struct Globals {
 @group(1) @binding(7) var orm_samp: sampler;
 @group(1) @binding(8) var emissive_tex: texture_2d<f32>;
 @group(1) @binding(9) var emissive_samp: sampler;
+// GPU skinning. info.x = 1 when this mesh is GPU-skinned, info.y = width of
+// skin_tex. joints = global(joint) * inverseBind, capped at 64 (4 KiB uniform,
+// fits WebGL2 / phone limits). skin_tex holds one RGBA32F texel per vertex:
+// lane = joint index + weight (fract). It is a texture, not a vertex attribute,
+// because all 16 WebGL2 attribute slots are taken.
+struct Skin {
+    info: vec4<f32>,
+    joints: array<mat4x4<f32>, 64>,
+};
+@group(1) @binding(10) var<uniform> skin: Skin;
+@group(1) @binding(11) var skin_tex: texture_2d<f32>;
 @group(2) @binding(0) var shadow_tex: texture_depth_2d;
 @group(2) @binding(1) var shadow_samp: sampler_comparison;
 // Device z of the sun map, for the PCSS blocker search. Unused while cascade.y is off.
@@ -85,7 +96,51 @@ struct VsIn {
     @location(13) vcolor: vec4<f32>,
     @location(14) tangent: vec4<f32>,
     @location(15) alpha_cut: f32,
+    @builtin(vertex_index) vid: u32,
 };
+
+const IDENTITY4 = mat4x4<f32>(
+    vec4<f32>(1.0, 0.0, 0.0, 0.0),
+    vec4<f32>(0.0, 1.0, 0.0, 0.0),
+    vec4<f32>(0.0, 0.0, 1.0, 0.0),
+    vec4<f32>(0.0, 0.0, 0.0, 1.0),
+);
+
+// Linear blend skinning matrix for this vertex (identity when not skinned).
+fn skin_matrix(vid: u32) -> mat4x4<f32> {
+    if (skin.info.x < 0.5) {
+        return IDENTITY4;
+    }
+    let w = max(u32(skin.info.y), 1u);
+    let lanes = textureLoad(skin_tex, vec2<i32>(i32(vid % w), i32(vid / w)), 0);
+    var m = mat4x4<f32>(vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0));
+    var wsum = 0.0;
+    for (var k = 0; k < 4; k++) {
+        let j = floor(lanes[k]);
+        let wt = lanes[k] - j;
+        m = m + skin.joints[min(u32(j), 63u)] * wt;
+        wsum = wsum + wt;
+    }
+    if (wsum < 1e-5) {
+        return IDENTITY4;
+    }
+    return m * (1.0 / wsum);
+}
+
+struct Skinned {
+    pos: vec3<f32>,
+    normal: vec3<f32>,
+    tangent: vec3<f32>,
+};
+
+fn skinned(in: VsIn) -> Skinned {
+    let m = skin_matrix(in.vid);
+    var o: Skinned;
+    o.pos = (m * vec4<f32>(in.pos, 1.0)).xyz;
+    o.normal = (m * vec4<f32>(in.normal, 0.0)).xyz;
+    o.tangent = (m * vec4<f32>(in.tangent.xyz, 0.0)).xyz;
+    return o;
+}
 
 struct VsOut {
     @builtin(position) clip: vec4<f32>,
@@ -106,8 +161,9 @@ struct VsOut {
 
 @vertex
 fn vs_main(in: VsIn) -> VsOut {
+    let sk = skinned(in);
     let model = mat4x4<f32>(in.m0, in.m1, in.m2, in.m3);
-    let world = model * vec4<f32>(in.pos, 1.0);
+    let world = model * vec4<f32>(sk.pos, 1.0);
 
     var out: VsOut;
     out.clip = g.view_proj * world;
@@ -119,7 +175,7 @@ fn vs_main(in: VsIn) -> VsOut {
         out.clip.z = max(out.clip.z - 0.0016 * out.clip.w, 0.0);
     }
     out.color = in.color;
-    out.normal = mat3x3<f32>(in.m0.xyz, in.m1.xyz, in.m2.xyz) * in.normal;
+    out.normal = mat3x3<f32>(in.m0.xyz, in.m1.xyz, in.m2.xyz) * sk.normal;
     out.world = world.xyz;
     out.material = in.material;
     out.uv = in.uv;
@@ -130,7 +186,7 @@ fn vs_main(in: VsIn) -> VsOut {
     out.vcolor = in.vcolor;
     let axes = mat3x3<f32>(in.m0.xyz, in.m1.xyz, in.m2.xyz);
     let flip = select(1.0, -1.0, determinant(axes) < 0.0);
-    out.tangent = vec4<f32>(axes * in.tangent.xyz, in.tangent.w * flip);
+    out.tangent = vec4<f32>(axes * sk.tangent, in.tangent.w * flip);
     out.alpha_cut = in.alpha_cut;
     return out;
 }
@@ -139,9 +195,10 @@ fn vs_main(in: VsIn) -> VsOut {
 // 単色で塗る。カリングは Front（裏面だけ見える）。
 @vertex
 fn vs_outline(in: VsIn) -> VsOut {
+    let sk = skinned(in);
     let model = mat4x4<f32>(in.m0, in.m1, in.m2, in.m3);
-    let world_pos = model * vec4<f32>(in.pos, 1.0);
-    let world_n = normalize(mat3x3<f32>(in.m0.xyz, in.m1.xyz, in.m2.xyz) * in.normal);
+    let world_pos = model * vec4<f32>(sk.pos, 1.0);
+    let world_n = normalize(mat3x3<f32>(in.m0.xyz, in.m1.xyz, in.m2.xyz) * sk.normal);
     let world = world_pos + vec4<f32>(world_n * max(in.mtoon3.w, 0.0), 0.0);
 
     var out: VsOut;
@@ -276,7 +333,7 @@ fn shadow_clip(in: VsIn, vp: mat4x4<f32>) -> vec4<f32> {
         return vec4<f32>(0.0, 0.0, -2.0, 1.0);
     }
     let model = mat4x4<f32>(in.m0, in.m1, in.m2, in.m3);
-    let world = model * vec4<f32>(in.pos, 1.0);
+    let world = model * vec4<f32>(skinned(in).pos, 1.0);
     return vp * world;
 }
 
