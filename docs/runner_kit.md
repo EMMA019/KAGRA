@@ -48,9 +48,19 @@ Both sides reject unknown keys, so a typo fails loudly.
 section next to `runner` and a new `GameKind` variant; the core does not
 change.
 
-Step 1 scope: the core is a split of the data. The sim code (collision,
-juice, flow) still lives in `neon_cat.rs`. Step 2 should move it into a
-shared module behind a small `Kit` trait (`tick`, `spawn`, `camera_target`).
+Shared sim code lives in `kagra-shared/src/game_core/`:
+
+- `juice`: `Spring1`, `JuiceShake`, `Juice` (shake, hitstop, landing bump,
+  seeded spark pool)
+- `collide`: `Hitbox::place` / `feet_hit` from an entity row
+- `run`: `RunStats` (score, pickups, death) and the HUD score panel
+
+`game_core::tick_frame(kit, dt)` is the fixed-order frame driver. It
+handles the dt clamp, substeps, hitstop and its hand-off to the result
+screen, title attract, and spark and juice decay. A kit implements `Kit`,
+which needs `substeps`, `step`, `attract`, `follow`, `blocks_spark` and
+`rebuild`. `neon_cat.rs` is now only the runner kit: lanes, forward scroll,
+spawn-ahead and drawing.
 
 ## A second kit: a top-down arena dodger
 

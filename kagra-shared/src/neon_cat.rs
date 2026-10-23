@@ -18,117 +18,20 @@ use std::sync::{Mutex, OnceLock};
 use serde_json::json;
 
 use crate::flow::{FlowAction, FlowPhase, GameFlow};
-use crate::game_spec::{EntityKind, GameSpec};
-use crate::scene::{DrawList, Quad, TextAlign, TextQuad};
+use crate::game_core::{self, Core, Hitbox, Juice, JuiceShake, Kit, Spring1};
+use crate::game_spec::GameSpec;
+use crate::scene::DrawList;
 use crate::world_doc::{WorldCamera, WorldDoc, WorldLight, WorldProp, WorldWalker};
 
 pub const GAME_ID: &str = "neon_cat";
-
-#[derive(Clone, Debug)]
-struct Spark {
-    x: f32,
-    y: f32,
-    z: f32,
-    vx: f32,
-    vy: f32,
-    vz: f32,
-    life: f32,
-    max_life: f32,
-    size: f32,
-    color: [u32; 3],
-}
-
-/// Critically damped scalar. `omega` is radians per second.
-#[derive(Clone, Copy, Debug)]
-struct Spring1 {
-    pos: f32,
-    vel: f32,
-}
-
-impl Default for Spring1 {
-    fn default() -> Self {
-        Self { pos: 0.0, vel: 0.0 }
-    }
-}
-
-impl Spring1 {
-    fn snap(&mut self, target: f32) {
-        self.pos = target;
-        self.vel = 0.0;
-    }
-
-    fn step(&mut self, target: f32, omega: f32, dt: f32) {
-        let omega = omega.max(0.01);
-        let exp = (-omega * dt).exp();
-        let change = self.pos - target;
-        let temp = (self.vel + omega * change) * dt;
-        self.pos = target + (change + temp) * exp;
-        self.vel = (self.vel - omega * temp) * exp;
-    }
-}
-
-/// Same clock as `kagra.juice.Juice.camera_offset`. Amplitude decays with
-/// the square of the time still left. Three sines, meters.
-#[derive(Clone, Copy, Debug)]
-struct JuiceShake {
-    t: f32,
-    dur: f32,
-    amp: f32,
-    freq: f32,
-}
-
-impl Default for JuiceShake {
-    fn default() -> Self {
-        Self {
-            t: 0.0,
-            dur: 0.0,
-            amp: 0.0,
-            freq: 28.0,
-        }
-    }
-}
-
-impl JuiceShake {
-    /// `kagra.juice.Juice.shake` defaults are 0.08 m and 0.18 s at 28 Hz.
-    fn shake(&mut self, amplitude: f32, duration: f32) {
-        self.amp = amplitude.max(0.0);
-        self.dur = duration.max(1e-4);
-        self.freq = 28.0;
-        self.t = 0.0;
-    }
-
-    fn tick(&mut self, dt: f32) {
-        if self.dur > 0.0 && self.t < self.dur {
-            self.t += dt;
-        }
-    }
-
-    fn offset(&self) -> [f32; 3] {
-        if self.dur <= 1e-6 || self.t >= self.dur {
-            return [0.0, 0.0, 0.0];
-        }
-        let u = 1.0 - (self.t / self.dur);
-        let amp = self.amp * u * u;
-        let phase = self.t * self.freq;
-        [
-            (phase * 17.0).sin() * amp,
-            (phase * 23.0).sin() * amp * 0.55,
-            (phase * 11.0).sin() * amp * 0.25,
-        ]
-    }
-}
 
 #[derive(Debug)]
 pub struct NeonCat {
     /// Everything tunable. Loaded from the world dump's `"game"` key.
     spec: std::sync::Arc<GameSpec>,
     pub flow: GameFlow,
-    pub score: u32,
-    score_acc: f32,
-    pub rings: u32,
-    pub alive: bool,
-    /// `CRATE` / `BARREL` / `BARRIER` after a hit. Empty while alive.
-    death: String,
+    /// Score, death, and juice (shared core).
+    core: Core,
     debug: bool,
     /// Dump `quality` (`low` / `mobile` / `high`). The page sets this.
     quality: Option<String>,
@@ -150,11 +53,6 @@ pub struct NeonCat {
     key_jump: bool,
     anim_t: f32,
     time: f32,
-    shake: f32,
-    hitstop: f32,
-    land_squash: f32,
-    /// Landing bump. Same offset as `Juice.camera_offset`.
-    land: JuiceShake,
     cam_x: f32,
     eye_x: Spring1,
     eye_y: Spring1,
@@ -162,12 +60,7 @@ pub struct NeonCat {
     bank: Spring1,
     fov_spring: Spring1,
     attract: f32,
-    seed: u32,
     got: HashSet<i32>,
-    just_rings: u32,
-    just_crash: bool,
-    just_jump: bool,
-    sparks: Vec<Spark>,
     doc: WorldDoc,
 }
 
@@ -248,11 +141,10 @@ impl NeonCat {
         let mut run = Self {
             spec: std::sync::Arc::new(spec),
             flow,
-            score: 0,
-            score_acc: 0.0,
-            rings: 0,
-            alive: true,
-            death: String::new(),
+            core: Core {
+                juice: Juice::seeded(seed),
+                ..Core::default()
+            },
             debug: false,
             quality: None,
             classic: false,
@@ -271,10 +163,6 @@ impl NeonCat {
             key_jump: false,
             anim_t: 0.05,
             time: 0.0,
-            shake: 0.0,
-            hitstop: 0.0,
-            land_squash: 0.0,
-            land: JuiceShake::default(),
             cam_x: 0.0,
             eye_x: Spring1::default(),
             eye_y: Spring1::default(),
@@ -282,12 +170,7 @@ impl NeonCat {
             bank: Spring1::default(),
             fov_spring: Spring1::default(),
             attract: 0.0,
-            seed,
             got: HashSet::new(),
-            just_rings: 0,
-            just_crash: false,
-            just_jump: false,
-            sparks: Vec::new(),
             doc: WorldDoc::default(),
         };
         run.snap_chase();
@@ -300,11 +183,11 @@ impl NeonCat {
     }
 
     pub fn score(&self) -> u32 {
-        self.score
+        self.core.stats.score
     }
 
     pub fn rings(&self) -> u32 {
-        self.rings
+        self.core.stats.rings
     }
 
     pub fn best_score(&self) -> u32 {
@@ -316,7 +199,7 @@ impl NeonCat {
     }
 
     pub fn death(&self) -> &str {
-        &self.death
+        &self.core.stats.death
     }
 
     /// `?debug=1` draws the kill boxes. They are not colliders.
@@ -326,7 +209,7 @@ impl NeonCat {
     }
 
     pub fn playing(&self) -> bool {
-        self.flow.phase == FlowPhase::Play && self.alive
+        self.flow.phase == FlowPhase::Play && self.core.stats.alive
     }
 
     pub fn x(&self) -> f32 {
@@ -356,16 +239,16 @@ impl NeonCat {
 
     pub fn take_feel_json(&mut self) -> String {
         let body = json!({
-            "crash": self.just_crash,
-            "rings": self.just_rings,
-            "jump": self.just_jump,
+            "crash": self.core.stats.just_crash,
+            "rings": self.core.stats.just_rings,
+            "jump": self.core.stats.just_jump,
             "x": self.x,
             "y": self.y,
             "z": self.z,
         });
-        self.just_crash = false;
-        self.just_rings = 0;
-        self.just_jump = false;
+        self.core.stats.just_crash = false;
+        self.core.stats.just_rings = 0;
+        self.core.stats.just_jump = false;
         body.to_string()
     }
 
@@ -386,11 +269,11 @@ impl NeonCat {
         let (ox, oz, oh) = (ahead.hit_cx, ahead.hit_cz, ahead.hit_top);
         json!({
             "phase": self.flow.phase.name(),
-            "score": self.score,
+            "score": self.core.stats.score,
             "best": self.flow.best_score,
-            "rings": self.rings,
-            "alive": self.alive,
-            "death": self.death,
+            "rings": self.core.stats.rings,
+            "alive": self.core.stats.alive,
+            "death": self.core.stats.death,
             "x": self.x,
             "y": self.y,
             "z": self.z,
@@ -439,7 +322,7 @@ impl NeonCat {
 
     fn chase_eye(&self) -> [f32; 3] {
         if self.classic {
-            let shake = (self.time * 53.0).sin() * self.shake;
+            let shake = (self.time * 53.0).sin() * self.core.juice.shake;
             return [
                 self.cam_x + shake,
                 self.spec.camera.classic_lift + self.y * 0.35 + shake * 0.25,
@@ -457,8 +340,8 @@ impl NeonCat {
     /// Crash shake plus the landing juice offset. Added to the eye and the
     /// look target so the bump translates the rig.
     fn view_bump(&self) -> [f32; 3] {
-        let shake = (self.time * 53.0).sin() * self.shake;
-        let land = self.land.offset();
+        let shake = (self.time * 53.0).sin() * self.core.juice.shake;
+        let land = self.core.juice.land.offset();
         [land[0] + shake, land[1] + shake * 0.25, land[2]]
     }
 
@@ -534,11 +417,11 @@ impl NeonCat {
     pub fn show_title(&mut self) {
         self.flow.show_title();
         self.reset_motion();
-        self.alive = true;
-        self.death.clear();
-        self.score = 0;
-        self.score_acc = 0.0;
-        self.rings = 0;
+        self.core.stats.alive = true;
+        self.core.stats.death.clear();
+        self.core.stats.score = 0;
+        self.core.stats.score_acc = 0.0;
+        self.core.stats.rings = 0;
         self.attract = 0.0;
         self.time = 0.0;
         self.anim_t = 0.05;
@@ -549,7 +432,7 @@ impl NeonCat {
         self.pad_x = 0.0;
         self.pad_up = 0.0;
         self.got.clear();
-        self.sparks.clear();
+        self.core.juice.sparks.clear();
         self.rebuild();
     }
 
@@ -605,13 +488,13 @@ impl NeonCat {
 
     fn start_run(&mut self) {
         self.reset_motion();
-        self.score = 0;
-        self.score_acc = 0.0;
-        self.rings = 0;
-        self.alive = true;
-        self.death.clear();
+        self.core.stats.score = 0;
+        self.core.stats.score_acc = 0.0;
+        self.core.stats.rings = 0;
+        self.core.stats.alive = true;
+        self.core.stats.death.clear();
         self.got.clear();
-        self.sparks.clear();
+        self.core.juice.sparks.clear();
         self.time = 0.0;
         self.flow.enter_play();
         self.rebuild();
@@ -624,9 +507,9 @@ impl NeonCat {
         self.vx = 0.0;
         self.vy = 0.0;
         self.yaw = 0.0;
-        self.hitstop = 0.0;
-        self.shake = 0.0;
-        self.land = JuiceShake::default();
+        self.core.juice.hitstop = 0.0;
+        self.core.juice.shake = 0.0;
+        self.core.juice.land = JuiceShake::default();
         self.cam_x = 0.0;
         self.snap_chase();
     }
@@ -637,63 +520,7 @@ impl NeonCat {
     }
 
     pub fn tick(&mut self, dt: f32) {
-        let dt = dt.clamp(0.0, 0.05);
-        if dt > 0.0 {
-            crate::mixer::tick(dt);
-        }
-        self.just_rings = 0;
-        self.just_crash = false;
-        self.just_jump = false;
-        if dt <= 0.0 {
-            self.rebuild();
-            return;
-        }
-        if self.hitstop > 0.0 {
-            self.hitstop = (self.hitstop - dt).max(0.0);
-            self.tick_sparks(dt);
-            self.decay_feel(dt);
-            self.anim_t += dt * 0.35;
-            if self.hitstop == 0.0 && !self.alive && self.flow.phase == FlowPhase::Play {
-                let line = format!("HIT {}", self.death);
-                self.flow.finish(self.score, self.rings, &line);
-            }
-            self.rebuild();
-            return;
-        }
-        if self.flow.phase == FlowPhase::Title {
-            self.attract += dt;
-            self.z = self.attract * 8.0;
-            self.x = (self.attract * 0.7).sin() * 0.65;
-            self.y = 0.0;
-            self.anim_t += dt;
-            self.smooth_cam(dt);
-            self.tick_sparks(dt);
-            self.decay_feel(dt);
-            self.rebuild();
-            return;
-        }
-        if self.flow.phase != FlowPhase::Play || !self.alive {
-            self.tick_sparks(dt);
-            self.decay_feel(dt);
-            self.rebuild();
-            return;
-        }
-        // Substep so one step never moves further than self.spec.runner.speed.max_step. At the
-        // speed cap a 50 ms frame moves 1 m, which skipped a 0.4 m crate.
-        let steps = ((self.speed() * dt) / self.spec.runner.speed.max_step)
-            .ceil()
-            .max(1.0) as u32;
-        let h = dt / steps as f32;
-        for _ in 0..steps {
-            self.play_step(h);
-            if !self.alive {
-                break;
-            }
-        }
-        self.smooth_cam(dt);
-        self.tick_sparks(dt);
-        self.decay_feel(dt);
-        self.rebuild();
+        game_core::tick_frame(self, dt);
     }
 
     fn play_step(&mut self, dt: f32) {
@@ -708,23 +535,23 @@ impl NeonCat {
         if grounded && want_jump {
             self.vy = self.spec.runner.jump.velocity;
             self.y = 0.02;
-            self.just_jump = true;
+            self.core.stats.just_jump = true;
             crate::mixer::cue_sfx("jump");
         }
         self.vy += self.spec.runner.jump.gravity * dt;
         self.y += self.vy * dt;
         if self.y <= 0.0 {
             if self.vy < -1.5 {
-                self.land_squash = 0.12;
+                self.core.juice.land_squash = 0.12;
                 if !self.classic {
                     // Same defaults as `kagra.juice.Juice.shake`.
-                    self.land.shake(0.08, 0.18);
+                    self.core.juice.land.shake(0.08, 0.18);
                 }
             }
             self.y = 0.0;
             self.vy = 0.0;
         }
-        self.land_squash = (self.land_squash - dt).max(0.0);
+        self.core.juice.land_squash = (self.core.juice.land_squash - dt).max(0.0);
         self.x += self.vx * dt;
         if self.x.abs() > self.spec.runner.lanes.limit {
             self.x = self.x.signum() * self.spec.runner.lanes.limit;
@@ -737,19 +564,14 @@ impl NeonCat {
         self.yaw += (self.vx * 0.14 - self.yaw) * response;
         let speed = self.speed();
         self.z += speed * dt;
-        self.score_acc += speed * dt * 2.2;
-        let whole = self.score_acc.floor();
-        if whole >= 1.0 {
-            self.score += whole as u32;
-            self.score_acc -= whole;
-        }
+        self.core.stats.add_points(speed * dt * 2.2);
         self.anim_t += dt * if self.y > 0.05 { 0.7 } else { 1.15 };
         // Grace covers the spawn stretch. The rail is not a kill plane,
         // so steering into it during grace cannot strand the cat outside.
         if self.time >= self.spec.runner.jump.grace_secs {
             self.touch_obstacles();
         }
-        if self.alive {
+        if self.core.stats.alive {
             self.collect_rings();
         }
     }
@@ -810,7 +632,7 @@ impl NeonCat {
                 continue;
             }
             let shape = obstacle_shape(&self.spec, i);
-            if feet_hit(&shape, self.x, self.y, self.z) {
+            if shape.feet_hit(self.x, self.y, self.z) {
                 self.crash(&shape.kind);
                 return;
             }
@@ -834,99 +656,27 @@ impl NeonCat {
                 continue;
             }
             self.got.insert(i);
-            self.rings += 1;
-            self.just_rings += 1;
-            self.score += self.spec.runner.rings.score;
-            self.shake = self.shake.max(0.06);
+            self.core.stats.pickup(self.spec.runner.rings.score);
+            self.core.juice.shake = self.core.juice.shake.max(0.06);
             self.burst(self.x, self.y + 0.6, self.z, 14, [80, 255, 255], 3.4, 0.12);
             crate::mixer::cue_sfx("card");
         }
     }
 
     fn crash(&mut self, reason: &str) {
-        if !self.alive {
+        if !self.core.stats.die(reason) {
             return;
         }
-        self.alive = false;
-        self.death = reason.to_string();
-        self.just_crash = true;
-        self.shake = 0.46;
-        self.hitstop = 0.11;
+        self.core.juice.hit(0.46, 0.11);
         self.vy = 0.0;
         self.burst(self.x, self.y + 0.4, self.z, 18, [255, 60, 170], 4.6, 0.16);
         self.burst(self.x, self.y + 0.5, self.z, 10, [90, 240, 255], 3.2, 0.12);
         crate::mixer::cue_sfx("fire");
     }
 
-    fn decay_shake(&mut self, dt: f32) {
-        self.shake = (self.shake - dt * 0.85).max(0.0);
-    }
-
-    fn decay_feel(&mut self, dt: f32) {
-        self.decay_shake(dt);
-        self.land.tick(dt);
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn burst(&mut self, x: f32, y: f32, z: f32, n: u32, color: [u32; 3], speed: f32, size: f32) {
-        for _ in 0..n {
-            if self.sparks.len() >= 36 {
-                self.sparks.remove(0);
-            }
-            let ang = self.rng() * std::f32::consts::TAU;
-            let rad = self.rng();
-            let spd = speed * (0.4 + self.rng());
-            let vy = 1.1 + self.rng() * speed * 0.4;
-            let max_life = 0.28 + self.rng() * 0.28;
-            let spark_size = size * (0.7 + self.rng() * 0.6);
-            self.sparks.push(Spark {
-                x,
-                y,
-                z,
-                vx: ang.cos() * spd * rad,
-                vy,
-                vz: ang.sin() * spd * rad - 1.5,
-                life: 0.0,
-                max_life,
-                size: spark_size,
-                color,
-            });
-        }
-    }
-
-    fn tick_sparks(&mut self, dt: f32) {
-        let mut i = 0;
-        while i < self.sparks.len() {
-            let s = &mut self.sparks[i];
-            s.life += dt;
-            if s.life >= s.max_life {
-                self.sparks.remove(i);
-                continue;
-            }
-            s.vy -= 9.0 * dt;
-            s.x += s.vx * dt;
-            s.y += s.vy * dt;
-            s.z += s.vz * dt;
-            // Settle on the floor instead of sinking through it.
-            let floor = s.size * 0.5;
-            if s.y < floor {
-                s.y = floor;
-                s.vy = -s.vy * 0.25;
-                s.vx *= 0.6;
-                s.vz *= 0.6;
-            }
-            let (x, y, z) = (s.x, s.y, s.z);
-            if spark_inside_obstacle(&self.spec, &self.spawned, x, y, z) {
-                self.sparks.remove(i);
-                continue;
-            }
-            i += 1;
-        }
-    }
-
-    fn rng(&mut self) -> f32 {
-        self.seed = self.seed.wrapping_mul(1664525).wrapping_add(1013904223);
-        ((self.seed >> 8) & 0x00ff_ffff) as f32 / 16_777_216.0
+        self.core.juice.burst(x, y, z, n, color, speed, size);
     }
 
     fn rebuild(&mut self) {
@@ -1371,7 +1121,7 @@ impl NeonCat {
         let mut stretch = 1.0;
         if self.y > 0.15 {
             stretch = 1.14;
-        } else if self.land_squash > 0.0 {
+        } else if self.core.juice.land_squash > 0.0 {
             stretch = 0.78;
         }
         let mut cat = WorldWalker {
@@ -1409,7 +1159,7 @@ impl NeonCat {
     /// Sparks are short fading streaks along their velocity, to match the
     /// thin line art (not glowing balls).
     fn push_sparks(&self, doc: &mut WorldDoc) {
-        for (i, s) in self.sparks.iter().enumerate() {
+        for (i, s) in self.core.juice.sparks.iter().enumerate() {
             let fade = 1.0 - (s.life / s.max_life).clamp(0.0, 1.0);
             let k = 0.035;
             let tail = [s.x - s.vx * k, (s.y - s.vy * k).max(0.03), s.z - s.vz * k];
@@ -1446,93 +1196,80 @@ impl NeonCat {
         if menu {
             self.flow.paint(&mut list, width, height);
         }
-        if self.flow.phase == FlowPhase::Play || self.hitstop > 0.0 {
-            list.quads.push(Quad::new(
-                12.0,
-                self.spec.hud_top,
-                168.0,
-                36.0,
-                [8, 4, 20, 160],
-            ));
-            label(
-                &mut list,
-                &format!("SCORE {}", self.score),
-                22.0,
-                self.spec.hud_top + 6.0,
-                16.0,
-                [180, 245, 255, 255],
-                TextAlign::Left,
-            );
+        if self.flow.phase == FlowPhase::Play || self.core.juice.hitstop > 0.0 {
+            self.core.stats.paint_score(&mut list, self.spec.hud_top);
         }
         list
     }
 }
 
-struct ObstacleShape {
-    kind: String,
-    path: String,
-    /// Prop origin. Scale is about this point, then the mesh is translated.
-    origin: [f32; 3],
-    scale: [f32; 3],
-    /// World AABB of the baked mesh.
-    skin_min: [f32; 3],
-    skin_max: [f32; 3],
-    hit_cx: f32,
-    hit_cz: f32,
-    hit_hx: f32,
-    hit_hz: f32,
-    /// Feet at or above this clear the obstacle.
-    hit_top: f32,
+impl Kit for NeonCat {
+    fn core(&self) -> &Core {
+        &self.core
+    }
+
+    fn core_mut(&mut self) -> &mut Core {
+        &mut self.core
+    }
+
+    fn flow(&self) -> &GameFlow {
+        &self.flow
+    }
+
+    fn flow_mut(&mut self) -> &mut GameFlow {
+        &mut self.flow
+    }
+
+    /// One substep never moves further than `speed.max_step`. At the cap a
+    /// 50 ms frame moves 1 m, which skipped a 0.4 m crate.
+    fn substeps(&self, dt: f32) -> u32 {
+        ((self.speed() * dt) / self.spec.runner.speed.max_step)
+            .ceil()
+            .max(1.0) as u32
+    }
+
+    fn step(&mut self, dt: f32) {
+        self.play_step(dt);
+    }
+
+    fn attract(&mut self, dt: f32) {
+        self.attract += dt;
+        self.z = self.attract * 8.0;
+        self.x = (self.attract * 0.7).sin() * 0.65;
+        self.y = 0.0;
+        self.anim_t += dt;
+    }
+
+    fn hitstop_frame(&mut self, dt: f32) {
+        self.anim_t += dt * 0.35;
+    }
+
+    fn follow(&mut self, dt: f32) {
+        self.smooth_cam(dt);
+    }
+
+    fn blocks_spark(&self, x: f32, y: f32, z: f32) -> bool {
+        spark_inside_obstacle(&self.spec, &self.spawned, x, y, z)
+    }
+
+    fn rebuild(&mut self) {
+        NeonCat::rebuild(self);
+    }
 }
+
+type ObstacleShape = Hitbox;
 
 /// Local AABB after the glTF node bake (`mesh.bounds()`), times the prop
 /// scale. Y stays on the floor. XZ is centered on `(obs_x, obs_z)`.
 /// The kill box is inset so it sits inside that mesh.
 fn obstacle_shape(s: &GameSpec, index: i32) -> ObstacleShape {
     let kind = s.obstacle_kind(index);
-    shaped(
+    Hitbox::place(
         s,
         kind,
         s.runner.obstacle_track.x(index),
         s.runner.obstacle_track.z(index),
     )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn shaped(s: &GameSpec, kind: &EntityKind, anchor_x: f32, anchor_z: f32) -> ObstacleShape {
-    let scale = kind.scale;
-    let local_min = kind.mesh_min;
-    let local_max = kind.mesh_max;
-    let origin = [
-        anchor_x - scale[0] * (local_min[0] + local_max[0]) * 0.5,
-        -scale[1] * local_min[1],
-        anchor_z - scale[2] * (local_min[2] + local_max[2]) * 0.5,
-    ];
-    let skin_min = [
-        origin[0] + scale[0] * local_min[0],
-        origin[1] + scale[1] * local_min[1],
-        origin[2] + scale[2] * local_min[2],
-    ];
-    let skin_max = [
-        origin[0] + scale[0] * local_max[0],
-        origin[1] + scale[1] * local_max[1],
-        origin[2] + scale[2] * local_max[2],
-    ];
-    let hx = ((skin_max[0] - skin_min[0]) * 0.5 - s.hit_inset).max(0.05);
-    let hz = ((skin_max[2] - skin_min[2]) * 0.5 - s.hit_inset).max(0.05);
-    ObstacleShape {
-        kind: kind.name.clone(),
-        path: kind.glb.clone(),
-        origin,
-        scale,
-        skin_min,
-        skin_max,
-        hit_cx: anchor_x,
-        hit_cz: anchor_z,
-        hit_hx: hx,
-        hit_hz: hz,
-        hit_top: (skin_max[1] - skin_min[1]) * s.hit_top,
-    }
 }
 
 /// A spark inside a drawn obstacle's mesh box would glow through it.
@@ -1543,17 +1280,8 @@ fn spark_inside_obstacle(s: &GameSpec, spawned: &HashSet<i32>, x: f32, y: f32, z
         if !spawned.contains(&i) {
             return false;
         }
-        let o = obstacle_shape(s, i);
-        let hx = (o.hit_hx + 0.08).max(0.1);
-        let hz = (o.hit_hz + 0.08).max(0.1);
-        (x - o.hit_cx).abs() <= hx && (z - o.hit_cz).abs() <= hz && y <= o.hit_top + 0.05
+        obstacle_shape(s, i).contains_padded(x, y, z, 0.08)
     })
-}
-
-fn feet_hit(shape: &ObstacleShape, x: f32, y: f32, z: f32) -> bool {
-    (x - shape.hit_cx).abs() <= shape.hit_hx
-        && (z - shape.hit_cz).abs() <= shape.hit_hz
-        && y < shape.hit_top
 }
 
 fn push_aabb_cage(doc: &mut WorldDoc, id: &str, min: [f32; 3], max: [f32; 3], color: [u32; 3]) {
@@ -1873,19 +1601,6 @@ fn light(
     }
 }
 
-fn label(
-    list: &mut DrawList,
-    text: &str,
-    x: f32,
-    y: f32,
-    size: f32,
-    color: [u8; 4],
-    align: TextAlign,
-) {
-    list.texts
-        .push(TextQuad::new(text, x, y, size, color).aligned(align));
-}
-
 fn splice_json_key(body: &str, key: &str, value: &serde_json::Value) -> String {
     let pretty = serde_json::to_string_pretty(value).unwrap_or_else(|_| "null".into());
     let mut block = format!("\n  \"{key}\": ");
@@ -1928,11 +1643,14 @@ mod tests {
                 run.set_steer(0.0, 0.0, false);
                 run.x = shape.hit_cx;
                 run.tick(dt);
-                if !run.alive {
+                if !run.core.stats.alive {
                     break;
                 }
             }
-            assert!(!run.alive, "dt {dt}: a lane crate at the cap must kill");
+            assert!(
+                !run.core.stats.alive,
+                "dt {dt}: a lane crate at the cap must kill"
+            );
         }
     }
 
@@ -1962,8 +1680,10 @@ mod tests {
         run.rebuild();
         run.burst(0.0, 0.2, 5.0, 30, [255, 255, 255], 5.0, 0.12);
         for _ in 0..40 {
-            run.tick_sparks(1.0 / 60.0);
-            for s in &run.sparks {
+            let mut juice = std::mem::take(&mut run.core.juice);
+            juice.tick_sparks(1.0 / 60.0, |x, y, z| run.blocks_spark(x, y, z));
+            run.core.juice = juice;
+            for s in &run.core.juice.sparks {
                 assert!(s.y >= s.size * 0.5 - 1e-4, "spark under floor at {}", s.y);
                 assert!(!spark_inside_obstacle(&run.spawned, s.x, s.y, s.z));
             }
@@ -1984,7 +1704,7 @@ mod tests {
     fn golden_run(run: &mut NeonCat, steer_rate: f32, jump_every: u32) -> (u32, u32, u32, String) {
         run.confirm();
         let mut frame = 0u32;
-        while run.alive && frame < 60 * 180 {
+        while run.core.stats.alive && frame < 60 * 180 {
             run.set_steer(
                 (frame as f32 * steer_rate).sin(),
                 0.0,
@@ -2060,7 +1780,7 @@ mod tests {
             let mut run = NeonCat::fresh();
             run.confirm();
             let mut frames = 0;
-            while run.alive && frames < 60 * 120 {
+            while run.core.stats.alive && frames < 60 * 120 {
                 run.set_steer(((frames as f32) * 0.013).sin(), 0.0, frames % 47 == 0);
                 run.tick(1.0 / 60.0);
                 frames += 1;
@@ -2203,7 +1923,7 @@ mod tests {
             }
         }
         assert!(
-            run.alive,
+            run.core.stats.alive,
             "a timed jump should clear the crate at z {}",
             obs_z(0)
         );
@@ -2214,11 +1934,14 @@ mod tests {
         for _ in 0..60 * 8 {
             crash.set_steer(0.0, 0.0, false);
             crash.tick(1.0 / 60.0);
-            if !crash.alive {
+            if !crash.core.stats.alive {
                 break;
             }
         }
-        assert!(!crash.alive, "staying on the ground hits the crate");
+        assert!(
+            !crash.core.stats.alive,
+            "staying on the ground hits the crate"
+        );
         for _ in 0..20 {
             crash.tick(1.0 / 60.0);
         }
@@ -2426,23 +2149,21 @@ mod tests {
 
         // 0.40 is outside the crate mesh (half ~0.29) and inside the old pad.
         let crate_shape = obstacle_shape(0);
-        assert!(!feet_hit(&crate_shape, obs_x(0) + 0.40, 0.0, obs_z(0)));
-        assert!(feet_hit(&crate_shape, obs_x(0), 0.0, obs_z(0)));
-        assert!(!feet_hit(
-            &crate_shape,
-            obs_x(0),
-            crate_shape.hit_top,
-            obs_z(0)
-        ));
+        assert!(!crate_shape.feet_hit(obs_x(0) + 0.40, 0.0, obs_z(0)));
+        assert!(crate_shape.feet_hit(obs_x(0), 0.0, obs_z(0)));
+        assert!(!crate_shape.feet_hit(obs_x(0), crate_shape.hit_top, obs_z(0)));
 
         let mut graze = place_on(0, obs_x(0) + 0.40, 0.0);
         graze.tick(1.0 / 60.0);
-        assert!(graze.alive, "a point beside the crate is not a hit");
+        assert!(
+            graze.core.stats.alive,
+            "a point beside the crate is not a hit"
+        );
         assert!(graze.death().is_empty());
 
         let mut hit = place_on(0, obs_x(0), 0.0);
         hit.tick(1.0 / 60.0);
-        assert!(!hit.alive);
+        assert!(!hit.core.stats.alive);
         assert_eq!(hit.death(), "CRATE");
         for _ in 0..12 {
             hit.tick(1.0 / 60.0);
@@ -2459,7 +2180,7 @@ mod tests {
 
         let mut jumped = place_on(0, obs_x(0), crate_shape.hit_top + 0.05);
         jumped.tick(1.0 / 60.0);
-        assert!(jumped.alive, "feet above the crate clear it");
+        assert!(jumped.core.stats.alive, "feet above the crate clear it");
     }
 
     #[test]
@@ -2471,7 +2192,7 @@ mod tests {
         spawn.time = 0.2;
         spawn.tick(1.0 / 60.0);
         assert!(
-            spawn.alive,
+            spawn.core.stats.alive,
             "grace skips the obstacle under the spawn stretch"
         );
 
@@ -2481,7 +2202,10 @@ mod tests {
         for _ in 0..60 * 4 {
             rail.tick(1.0 / 60.0);
         }
-        assert!(rail.alive, "full steer used to die on the empty wall");
+        assert!(
+            rail.core.stats.alive,
+            "full steer used to die on the empty wall"
+        );
         assert!(rail.x().abs() <= LANE_LIMIT + 1e-3, "x {}", rail.x());
         assert_eq!(rail.phase_name(), "play");
         assert!(rail.death().is_empty());
@@ -2493,7 +2217,7 @@ mod tests {
         arch.z = gate_z(0);
         arch.tick(1.0 / 60.0);
         assert!(
-            arch.alive,
+            arch.core.stats.alive,
             "the arch pillar and the old wall plane are not a collider"
         );
         assert!(arch.death().is_empty());
@@ -2531,7 +2255,7 @@ mod tests {
         let mut run = place_on(0, obs_x(0), 0.0);
         run.spawned.clear();
         run.touch_obstacles();
-        assert!(run.alive, "no drawn mesh, no kill");
+        assert!(run.core.stats.alive, "no drawn mesh, no kill");
         assert!(run.death().is_empty());
     }
 
@@ -2714,7 +2438,7 @@ mod tests {
         run.vy = -6.0;
         run.tick(1.0 / 60.0);
         assert_eq!(run.y(), 0.0);
-        let bump = run.land.offset();
+        let bump = run.core.juice.land.offset();
         let energy = bump[0].abs() + bump[1].abs() + bump[2].abs();
         assert!(
             energy > 1e-3,
@@ -2734,7 +2458,7 @@ mod tests {
         classic.vy = -6.0;
         classic.tick(1.0 / 60.0);
         classic.tick(1.0 / 60.0);
-        let still = classic.land.offset();
+        let still = classic.core.juice.land.offset();
         assert!(
             still.iter().all(|v| v.abs() < 1e-6),
             "classic keeps the old camera, got {still:?}"
@@ -2758,7 +2482,7 @@ mod tests {
             "z {} never reached the approach",
             run.z()
         );
-        assert!(run.alive);
+        assert!(run.core.stats.alive);
         let shape = obstacle_shape(0);
         let obs = portrait_ndc(&run, [shape.hit_cx, shape.hit_top * 0.45, shape.hit_cz]);
         assert!(
