@@ -9,18 +9,20 @@
 //! → exposure / ACES / LUT → TAA (or FXAA) → vignette. Omitted dump fields
 //! leave every one of these off, and the historical bloom composite is the
 //! picture that already shipped. Dump `quality` and `KAGRA_QUALITY` fill or
-//! force the passes in `WorldDoc`. The direct unorm path runs SSAO plus the
-//! grade when SSAO is on, and skips TAA, DOF, motion, and PCSS.
+//! force the passes in `WorldDoc`. An 8-bit swapchain always runs the grade
+//! and FXAA (or a blit) for a 3D world, plus the luma/emissive mip bloom.
+//! SSAO joins only when the radius is on. TAA, DOF, motion, and PCSS stay
+//! off on that path.
 
 use glam::Mat4;
 
 const AO_BIAS: f32 = 0.05;
 const AO_INTENSITY: f32 = 1.85;
 const AO_RANGE: f32 = 2.0;
-/// Unorm depth stores `eye / span` in 0..1. 32 m covers contact occlusion;
-/// an 8-bit step is about 0.13 m, inside the AO range. HDR passes 0 and
-/// stores meters.
-pub(super) const AO_DEPTH_SPAN: f32 = 32.0;
+/// Unorm depth stores `eye / span` in 0..1. 96 m reaches a chase camera's
+/// next gate (the old 32 m span treated that ring as sky). An 8-bit step is
+/// about 0.38 m, still inside the 2 m AO range. HDR passes 0 and stores meters.
+pub(super) const AO_DEPTH_SPAN: f32 = 96.0;
 const DOF_MAX_PX: f32 = 14.0;
 const TAA_BLEND: f32 = 0.85;
 
@@ -394,6 +396,10 @@ impl PostGraph {
 
     pub fn ssao_enabled(&self) -> bool {
         self.ssao.enabled
+    }
+
+    pub fn ssao_radius(&self) -> f32 {
+        self.ssao_radius
     }
 
     pub fn needs_depth(&self) -> bool {

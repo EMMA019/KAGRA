@@ -9,7 +9,7 @@
 //! Glow is dump `emissive` (the shared HDR add). Reflections are
 //! `hemi_sky` / `hemi_ground` plus `env_map: preset:studio`.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
 
 use serde_json::json;
@@ -44,13 +44,6 @@ const SHIP_SCALE: f32 = 0.36;
 /// Side posts only. A top beam, even a thin one, stacks into cyan and
 /// pink bars across the upper half of a portrait frame.
 const RIB_EMISSIVE: f32 = 0.12;
-/// Lays the XY trail quad onto the ground plane. A chase camera looking
-/// along +Z then sees a ribbon instead of an edge.
-const TRAIL_PITCH: f32 = -std::f32::consts::FRAC_PI_2;
-/// Ribbon width at the tail and at the ship. The old host trail used a
-/// 0.40 Z-to-Y fold and read as floor dashes.
-const TRAIL_WIDTH_TAIL: f32 = 0.5;
-const TRAIL_WIDTH_HEAD: f32 = 1.4;
 /// Bottom-origin mesh, so this lifts the visual center onto the ship.
 const SHIP_CENTER_Y: f32 = 0.30;
 /// Chase camera sits behind the ship. Boost eases this back a little more.
@@ -225,7 +218,6 @@ pub struct NeonRun {
     just_orbs: u32,
     just_crash: bool,
     just_near: bool,
-    trail: VecDeque<[f32; 3]>,
     sparks: Vec<Spark>,
     doc: WorldDoc,
     /// Dump `quality`, copied onto every rebuild. None keeps the historical
@@ -288,7 +280,6 @@ impl NeonRun {
             just_orbs: 0,
             just_crash: false,
             just_near: false,
-            trail: VecDeque::new(),
             sparks: Vec::new(),
             doc: WorldDoc::default(),
             picture_quality: None,
@@ -522,7 +513,6 @@ impl NeonRun {
         self.passed = -1;
         self.time = 0.0;
         self.sparks.clear();
-        self.trail.clear();
         self.flow.enter_play();
         self.rebuild();
     }
@@ -559,7 +549,6 @@ impl NeonRun {
             self.y = (self.attract * 0.42).cos() * 0.38;
             self.smooth_cam(dt);
             self.tick_sparks(dt);
-            self.push_trail();
             self.decay_shake(dt);
             self.tick_boost_vis(dt);
             self.rebuild();
@@ -608,9 +597,6 @@ impl NeonRun {
         }
         self.smooth_cam(dt);
         self.tick_sparks(dt);
-        if self.alive {
-            self.push_trail();
-        }
         self.decay_shake(dt);
         self.tick_boost_vis(dt);
         self.rebuild();
@@ -680,13 +666,6 @@ impl NeonRun {
         self.burst(self.x, self.y, self.z, 12, [120, 240, 255], 3.6, 0.16);
         crate::mixer::cue_sfx("fire");
         self.flow.finish(self.score, self.orbs, "CRASH");
-    }
-
-    fn push_trail(&mut self) {
-        self.trail.push_back([self.x, self.y, self.z - 0.9]);
-        while self.trail.len() > 22 {
-            self.trail.pop_front();
-        }
     }
 
     fn decay_shake(&mut self, dt: f32) {
@@ -820,7 +799,6 @@ impl NeonRun {
         self.push_islands(&mut doc);
         self.push_stars(&mut doc);
         self.push_ship(&mut doc);
-        self.push_trail_props(&mut doc);
         self.push_speed_lines(&mut doc);
         self.push_spark_props(&mut doc);
         self.doc = doc;
@@ -1014,12 +992,13 @@ impl NeonRun {
                 0.35,
             );
             if attach_glb(&mut prop, kit.path) {
-                // Pink multiply so the rock base color lands in the neon palette
-                // without washing the lighting out.
+                // Pink multiply so the rock base color lands in the neon palette.
+                // A stronger emissive add flattened the Kenney normals, so the
+                // sun term (and the shadow on it) can still shape the rock.
                 prop.color = Some([255, 128, 168]);
                 prop.roughness = 0.62;
                 prop.metallic = 0.06;
-                prop.emissive = Some(0.18);
+                prop.emissive = Some(0.06);
                 prop.emissive_color = Some([1.0, 0.28, 0.55]);
             } else {
                 prop.color = Some([220, 70, 140]);
@@ -1229,53 +1208,6 @@ impl NeonRun {
             engine.roughness = 0.25;
             engine.metallic = 0.05;
             doc.props.push(engine);
-        }
-    }
-
-    fn push_trail_props(&self, doc: &mut WorldDoc) {
-        // Horizontal ribbon. The quad stands in XY facing ±Z; `TRAIL_PITCH`
-        // lays local +Y along world +Z so a chase camera sees a surface,
-        // not an edge. The old host trail folded Z onto Y by 0.40 and was
-        // edge-on. Width grows from `TRAIL_WIDTH_TAIL` toward the ship.
-        // Magenta tail, cyan head.
-        let pts: Vec<[f32; 3]> = self.trail.iter().copied().collect();
-        if pts.len() < 2 {
-            return;
-        }
-        let segments = pts.len() - 1;
-        for i in 0..segments {
-            let (a, b) = (pts[i], pts[i + 1]);
-            let (dx, dy, dz) = (b[0] - a[0], b[1] - a[1], b[2] - a[2]);
-            let length = (dx * dx + dy * dy + dz * dz).sqrt();
-            if length < 0.05 {
-                continue;
-            }
-            let fade = (i + 1) as f32 / segments as f32;
-            let width = TRAIL_WIDTH_TAIL + (TRAIL_WIDTH_HEAD - TRAIL_WIDTH_TAIL) * fade;
-            // Dark albedo so the lights do not wash the ribbon out. The gradient
-            // lives on the emissive color: magenta tail, cyan head.
-            let mut prop = glow(
-                &format!("trail-{i}"),
-                "quad",
-                "trail",
-                [
-                    (a[0] + b[0]) * 0.5,
-                    // Stagger each segment off the shared plane so the
-                    // depth-writing ribbon does not z-fight itself.
-                    (a[1] + b[1]) * 0.5 - 0.2 + i as f32 * 0.008,
-                    (a[2] + b[2]) * 0.5,
-                ],
-                [width, length.max(0.08), 1.0],
-                dx.atan2(dz),
-                TRAIL_PITCH,
-                0.0,
-                [40, 16, 36],
-                0.5 + 0.45 * fade,
-            );
-            prop.roughness = 0.98;
-            prop.metallic = 0.0;
-            prop.emissive_color = Some([1.0 - 0.75 * fade, 0.12 + 0.75 * fade, 0.55 + 0.45 * fade]);
-            doc.props.push(prop);
         }
     }
 
@@ -1622,14 +1554,8 @@ mod tests {
         assert!(run.score() >= 100, "score {}", run.score());
         assert!(run.alive);
         assert!(
-            run.document().props.iter().any(|p| {
-                p.name == "trail"
-                    && p.model == "quad"
-                    && p.pitch < -1.4
-                    && p.scale[0] > 0.4
-                    && p.emissive.unwrap_or(0.0) > 0.7
-            }),
-            "ribbon is a wide horizontal surface behind the ship"
+            run.document().props.iter().all(|p| p.name != "trail"),
+            "the staircase ribbon is gone"
         );
         run.set_steer(1.0, 0.0, false);
         for _ in 0..180 {

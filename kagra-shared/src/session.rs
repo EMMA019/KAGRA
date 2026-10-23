@@ -833,6 +833,14 @@ impl SharedSession {
         self.renderer.is_some()
     }
 
+    /// Tier, backend, and which post passes ran. `pending` before the first 3D frame.
+    pub fn picture_status(&self) -> String {
+        self.renderer
+            .as_ref()
+            .map(|r| r.picture_status())
+            .unwrap_or_else(|| "pending".into())
+    }
+
     /// 現在のシーンを 1 枚描く。レンダラ未接続ならエラー。
     pub fn render(&mut self) -> Result<(), String> {
         if self.kind == SceneKind::Neon {
