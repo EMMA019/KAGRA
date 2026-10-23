@@ -4,5 +4,14 @@
   "version": "0.1.0",
   "entry": "examples/neon_run_minimal.py",
   "world": "kagra-shared/tests/fixtures/neon_run_world.json",
-  "bundle_assets": ["assets/audio"]
+  "bundle_assets": [
+    "assets/audio",
+    "assets/models/kenney/space-kit/craft_speederC.glb",
+    "assets/models/kenney/space-kit/meteor.glb",
+    "assets/models/kenney/space-kit/meteor_detailed.glb",
+    "assets/models/kenney/space-kit/rock_largeA.glb",
+    "assets/models/kenney/space-kit/turret_single.glb",
+    "assets/models/kenney/space-kit/rock_crystals.glb",
+    "assets/models/kenney/space-kit/satelliteDish.glb"
+  ]
 }

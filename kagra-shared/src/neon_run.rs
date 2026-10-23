@@ -1,11 +1,16 @@
 //! Lumen — endless neon flyer. Not a WorldPlay genre.
 //!
+//! The ship, gate obstacles, crystal pickups, and side dishes are Kenney
+//! Space Kit GLBs when the file is mounted or on disk. A missing file keeps
+//! the sphere / box primitive. Ribs, rails, rings, and stars stay procedural.
+//!
 //! Phone and desktop wasm load a dump with `"genre": "neon_run"` and this
 //! session ticks it. Python calls the same type for the window build.
 //! Glow is dump `emissive` (the shared HDR add). Reflections are
 //! `hemi_sky` / `hemi_ground` plus `env_map: preset:studio`.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
+use std::sync::{Mutex, OnceLock};
 
 use serde_json::json;
 
@@ -15,11 +20,61 @@ use crate::world_doc::{WorldCamera, WorldDoc, WorldLight, WorldProp};
 
 pub const GAME_ID: &str = "neon_run";
 
-const HOLE_R: f32 = 1.15;
-const GATE_GAP: f32 = 26.0;
-const GATE0: f32 = 34.0;
-const WALL_X: f32 = 2.35;
-const WALL_Y: f32 = 1.72;
+/// First seconds ignore a miss and hold the ship inside the corridor.
+const GRACE_SECS: f32 = 2.4;
+/// Pass radius. The old hole was 1.15 the whole run.
+const HOLE_R_EARLY: f32 = 1.46;
+const HOLE_R_LATE: f32 = 1.28;
+const GATE0: f32 = 50.0;
+const WALL_X: f32 = 2.58;
+const WALL_Y: f32 = 1.90;
+/// Cruise at t=0. The previous start was 22, so this is about 35% slower.
+const SPEED0: f32 = 14.3;
+/// Units per second added to cruise. The previous ramp was 0.62.
+const SPEED_RAMP: f32 = 0.32;
+const SPEED_CAP: f32 = 46.0;
+
+/// Kenney Space Kit, CC0. See `assets/models/kenney/space-kit/LICENSE.txt`.
+const SHIP_GLB: &str = "assets/models/kenney/space-kit/craft_speederC.glb";
+/// The mesh is heavier toward local +Z (the tail). Yaw π puts that tail
+/// toward the chase camera, which looks along world +Z.
+const SHIP_YAW: f32 = std::f32::consts::PI;
+const SHIP_SCALE: f32 = 0.46;
+/// Bottom-origin mesh, so this lifts the visual center onto the ship.
+const SHIP_CENTER_Y: f32 = 0.30;
+
+struct KitMesh {
+    path: &'static str,
+    center_y: f32,
+    radius: f32,
+}
+
+const OBSTACLE_KITS: &[KitMesh] = &[
+    KitMesh {
+        path: "assets/models/kenney/space-kit/meteor.glb",
+        center_y: 0.37,
+        radius: 0.43,
+    },
+    KitMesh {
+        path: "assets/models/kenney/space-kit/meteor_detailed.glb",
+        center_y: 0.37,
+        radius: 0.43,
+    },
+    KitMesh {
+        path: "assets/models/kenney/space-kit/rock_largeA.glb",
+        center_y: 0.25,
+        radius: 0.46,
+    },
+    KitMesh {
+        path: "assets/models/kenney/space-kit/turret_single.glb",
+        center_y: 0.28,
+        radius: 0.35,
+    },
+];
+const PICKUP_GLB: &str = "assets/models/kenney/space-kit/rock_crystals.glb";
+const PICKUP_CENTER_Y: f32 = 0.17;
+const DISH_GLB: &str = "assets/models/kenney/space-kit/satelliteDish.glb";
+const DISH_CENTER_Y: f32 = 0.31;
 
 pub fn is_neon_dump(json: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(json)
@@ -40,11 +95,73 @@ pub fn hole_center(index: i32) -> (f32, f32) {
         (0.15, 0.85),
         (-0.35, -0.75),
     ];
-    P[index.rem_euclid(5) as usize]
+    let (x, y) = P[index.rem_euclid(5) as usize];
+    // The first rings stay near the middle. The full weave arrives later.
+    let t = (index as f32 / 10.0).clamp(0.0, 1.0);
+    let k = 0.22 + 0.78 * t * t;
+    (x * k, y * k)
+}
+
+pub fn hole_r(index: i32) -> f32 {
+    let t = (index.max(0) as f32 / 12.0).clamp(0.0, 1.0);
+    HOLE_R_EARLY + (HOLE_R_LATE - HOLE_R_EARLY) * t
+}
+
+/// Gap from gate `index - 1` to gate `index`. Early gaps are wide; the late
+/// run tightens past the old constant 26.
+pub fn gate_gap(index: i32) -> f32 {
+    if index <= 0 {
+        return 0.0;
+    }
+    let t = ((index - 1) as f32 / 9.0).clamp(0.0, 1.0);
+    44.0 + (23.0 - 44.0) * t
 }
 
 pub fn gate_z(index: i32) -> f32 {
-    GATE0 + index as f32 * GATE_GAP
+    if index <= 0 {
+        return GATE0 + index as f32 * 44.0;
+    }
+    let mut z = GATE0;
+    let n = index.min(4_000);
+    for i in 1..=n {
+        z += gate_gap(i);
+    }
+    z
+}
+
+/// True when `path` is a mounted or on-disk GLB that parses.
+/// A miss is not cached, so a wasm page can mount the file after boot.
+fn glb_ready(path: &str) -> bool {
+    static OK: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    let cache = OK.get_or_init(|| Mutex::new(HashSet::new()));
+    if let Ok(guard) = cache.lock() {
+        if guard.contains(path) {
+            return true;
+        }
+    }
+    let Some(file) = crate::assets::resolve_asset(path) else {
+        return false;
+    };
+    let Ok(bytes) = crate::assets::read_bytes(&file) else {
+        return false;
+    };
+    if crate::gltf_load::mesh_from_glb(&bytes).is_err() {
+        return false;
+    }
+    if let Ok(mut guard) = cache.lock() {
+        guard.insert(path.to_string());
+    }
+    true
+}
+
+fn attach_glb(prop: &mut WorldProp, path: &str) -> bool {
+    if !glb_ready(path) {
+        return false;
+    }
+    prop.gltf = Some(path.to_string());
+    prop.color = Some([255, 255, 255]);
+    prop.emissive_map = None;
+    true
 }
 
 #[derive(Clone, Debug)]
@@ -370,11 +487,21 @@ impl NeonRun {
         // +ax is D / stick-right. The chase camera looks along +Z, so
         // screen-right is world -X (right-handed look-at). +Y stays up.
         let steer_x = -ax;
+        let grace = self.time < GRACE_SECS;
+        let auth = if grace { 0.55 } else { 1.0 };
         let response = 1.0 - (-dt * 7.0).exp();
-        self.vx += (steer_x * 6.4 - self.vx) * response;
-        self.vy += (ay * 5.2 - self.vy) * response;
+        self.vx += (steer_x * 6.4 * auth - self.vx) * response;
+        self.vy += (ay * 5.2 * auth - self.vy) * response;
         self.x += self.vx * dt;
         self.y += self.vy * dt;
+        if grace {
+            // Open the hold as the grace runs out so the walls don't snap.
+            let hold = (1.0 - self.time / GRACE_SECS).clamp(0.0, 1.0);
+            let limit_x = (WALL_X - 0.40 - hold * 0.85).max(0.8);
+            let limit_y = (WALL_Y - 0.30 - hold * 0.60).max(0.55);
+            self.x = self.x.clamp(-limit_x, limit_x);
+            self.y = self.y.clamp(-limit_y, limit_y);
+        }
         let speed = self.speed();
         self.z += speed * dt;
         self.score_acc += speed * dt * 2.0;
@@ -383,7 +510,7 @@ impl NeonRun {
             self.score += whole as u32;
             self.score_acc -= whole;
         }
-        if self.x.abs() > WALL_X || self.y.abs() > WALL_Y {
+        if !grace && (self.x.abs() > WALL_X || self.y.abs() > WALL_Y) {
             self.crash();
         } else {
             self.cross_gates();
@@ -398,7 +525,7 @@ impl NeonRun {
     }
 
     fn speed(&self) -> f32 {
-        let base = (22.0 + self.time * 0.62).min(46.0);
+        let base = (SPEED0 + self.time * SPEED_RAMP).min(SPEED_CAP);
         if self.boost > 0.0 {
             base + 9.0
         } else {
@@ -422,21 +549,27 @@ impl NeonRun {
                 break;
             }
             let (hx, hy) = hole_center(next);
+            let hole = hole_r(next);
             let d = (self.x - hx).hypot(self.y - hy);
-            if d > HOLE_R {
+            if d > hole {
+                // A miss in the opening seconds is a free pass, not a crash.
+                if self.time < GRACE_SECS {
+                    self.passed = next;
+                    continue;
+                }
                 self.crash();
                 break;
             }
             self.passed = next;
             self.score += 100;
-            if d <= 0.55 {
+            if d <= hole * 0.40 {
                 self.score += 80;
                 self.orbs += 1;
                 self.just_orbs += 1;
                 self.burst(hx, hy, gz, 14, [255, 244, 180], 3.2);
                 crate::mixer::cue_sfx("card");
                 self.shake = self.shake.max(0.08);
-            } else if d >= 0.82 {
+            } else if d >= hole * 0.72 {
                 self.score += 40;
                 self.just_near = true;
                 self.shake = self.shake.max(0.05);
@@ -671,24 +804,27 @@ impl NeonRun {
             } else {
                 [60, 240, 255]
             };
+            // Torus major 0.5, tube 0.075. Scale so the visual hole matches the pass radius.
+            let ring = hole_r(index) / 0.425;
             doc.props.push(glow(
                 &format!("ring-{index}"),
                 "ring",
                 "gate",
                 [hx, hy, z],
-                [3.35, 3.35, 3.35],
+                [ring, ring, ring],
                 0.0,
                 0.0,
                 0.0,
                 col,
                 4.2,
             ));
+            let inner = ring * 0.76;
             doc.props.push(glow(
                 &format!("ring-b-{index}"),
                 "ring",
                 "gate",
                 [hx, hy, z + 0.55],
-                [2.55, 2.55, 2.55],
+                [inner, inner, inner],
                 0.0,
                 0.0,
                 0.0,
@@ -699,20 +835,59 @@ impl NeonRun {
                 },
                 3.6,
             ));
+            self.push_obstacles(doc, index, hx, hy, z);
             if index > self.passed {
-                doc.props.push(glow(
+                let spin = self.time * 1.4;
+                let s = 0.62;
+                let mut orb = glow(
                     &format!("orb-{index}"),
                     "sphere",
                     "orb",
-                    [hx, hy, z],
-                    [0.42, 0.42, 0.42],
-                    0.0,
+                    [hx, hy - PICKUP_CENTER_Y * s, z],
+                    [s, s, s],
+                    spin,
                     0.0,
                     0.0,
                     [255, 236, 170],
-                    6.0,
-                ));
+                    4.8,
+                );
+                if attach_glb(&mut orb, PICKUP_GLB) {
+                    orb.metallic = 0.2;
+                    orb.roughness = 0.28;
+                }
+                doc.props.push(orb);
             }
+        }
+    }
+
+    fn push_obstacles(&self, doc: &mut WorldDoc, index: i32, hx: f32, hy: f32, z: f32) {
+        let hole = hole_r(index);
+        let late = (index as f32 / 10.0).clamp(0.0, 1.0);
+        let scale = 1.22 + 0.48 * late;
+        let count = if index < 5 { 4 } else { 8 };
+        for k in 0..count {
+            let ang = k as f32 * std::f32::consts::TAU / count as f32 + index as f32 * 0.17;
+            let kit = &OBSTACLE_KITS[(index.rem_euclid(16) as usize + k) % OBSTACLE_KITS.len()];
+            let dist = hole + kit.radius * scale + 0.18;
+            let ox = hx + ang.cos() * dist;
+            let oy = hy + ang.sin() * dist * 0.72;
+            let mut prop = glow(
+                &format!("obs-{index}-{k}"),
+                "sphere",
+                "obstacle",
+                [ox, oy - kit.center_y * scale, z],
+                [scale, scale, scale],
+                ang,
+                0.15,
+                0.2 * k as f32,
+                [200, 120, 90],
+                0.35,
+            );
+            if attach_glb(&mut prop, kit.path) {
+                prop.roughness = 0.72;
+                prop.metallic = 0.08;
+            }
+            doc.props.push(prop);
         }
     }
 
@@ -724,18 +899,30 @@ impl NeonRun {
             let side = if i % 2 == 0 { 1.0 } else { -1.0 };
             let x = side * (6.2 + (i.rem_euclid(3) as f32) * 0.8);
             let y = ((i.rem_euclid(5) as f32) - 2.0) * 0.7;
-            doc.props.push(glow(
+            let dish = 2.7;
+            let mut isle = glow(
                 &format!("isle-{i}"),
                 "box",
                 "island",
-                [x, y, z],
-                [2.4, 0.45, 1.6],
-                0.2,
+                [x, y - DISH_CENTER_Y * dish + 0.15, z],
+                [dish, dish, dish],
+                if side > 0.0 { 0.5 } else { -0.5 },
                 0.0,
-                0.15,
+                0.0,
                 [18, 10, 28],
-                0.0,
-            ));
+                0.15,
+            );
+            if !attach_glb(&mut isle, DISH_GLB) {
+                isle.position = [x, y, z];
+                isle.scale = [2.4, 0.45, 1.6];
+                isle.yaw = 0.2;
+                isle.roll = 0.15;
+                isle.emissive = None;
+            } else {
+                isle.roughness = 0.4;
+                isle.metallic = 0.55;
+            }
+            doc.props.push(isle);
             doc.props.push(glow(
                 &format!("isle-rim-{i}"),
                 "box",
@@ -786,6 +973,26 @@ impl NeonRun {
         let bank = (-self.vx * 0.14).clamp(-0.6, 0.6);
         let nose = (self.vy * -0.08).clamp(-0.35, 0.35);
         let (x, y, z) = (self.x, self.y, self.z);
+        if glb_ready(SHIP_GLB) {
+            let mut prop = glow(
+                "ship-core",
+                "sphere",
+                "ship-core",
+                [x, y - SHIP_CENTER_Y * SHIP_SCALE, z],
+                [SHIP_SCALE, SHIP_SCALE, SHIP_SCALE],
+                SHIP_YAW,
+                nose,
+                bank,
+                [255, 255, 255],
+                1.25,
+            );
+            prop.gltf = Some(SHIP_GLB.into());
+            prop.emissive_map = None;
+            prop.metallic = 0.45;
+            prop.roughness = 0.32;
+            doc.props.push(prop);
+            return;
+        }
         doc.props.push(glow(
             "ship-core",
             "sphere",
@@ -933,6 +1140,17 @@ impl NeonRun {
                 [140, 240, 255, 255],
                 TextAlign::Left,
             );
+            if self.alive && self.time < GRACE_SECS {
+                label(
+                    &mut list,
+                    "EASY START",
+                    w * 0.5,
+                    h * 0.18,
+                    18.0,
+                    [255, 220, 255, 230],
+                    TextAlign::Center,
+                );
+            }
         }
         if self.flow.phase == FlowPhase::Result {
             list.quads.push(Quad::new(0.0, 0.0, w, h, [8, 0, 16, 150]));
@@ -1078,7 +1296,22 @@ mod tests {
         assert!(scene.env_pixels.is_some(), "studio env strip");
         run.confirm();
         assert_eq!(run.phase_name(), "play");
-        for _ in 0..140 {
+        let ship = run
+            .document()
+            .props
+            .iter()
+            .find(|p| p.name == "ship-core")
+            .expect("ship");
+        assert_eq!(ship.gltf.as_deref(), Some(SHIP_GLB));
+        assert_eq!(ship.model, "sphere", "missing glb still names a primitive");
+        assert!(
+            run.document()
+                .props
+                .iter()
+                .any(|p| p.name == "obstacle" && p.gltf.as_deref() == Some(OBSTACLE_KITS[0].path)),
+            "gate obstacles are glb meshes"
+        );
+        for _ in 0..300 {
             run.tick(1.0 / 60.0);
         }
         assert!(run.score() >= 100, "score {}", run.score());
@@ -1097,6 +1330,39 @@ mod tests {
         assert_eq!(run.phase_name(), "result");
         assert!(run.best_score() >= run.score() || run.flow.best_score >= 1 || run.score > 0);
         assert!(run.flow.best_score >= run.score || run.score == run.flow.score);
+    }
+
+    #[test]
+    fn opening_is_slower_and_a_grace_miss_does_not_crash() {
+        let early = gate_gap(1);
+        let late = gate_gap(14);
+        assert!(early > 40.0, "early gap {early}");
+        assert!(late < 26.0, "late gap {late}");
+        assert!(early > late);
+        assert!(gate_z(0) > 40.0);
+        assert!(hole_r(0) > 1.4);
+        assert!(hole_r(20) < hole_r(0));
+        assert!(hole_center(0).0.abs() < 0.05);
+
+        let mut run = NeonRun::from_json(r#"{"version":1,"genre":"neon_run"}"#).unwrap();
+        run.confirm();
+        run.set_steer(1.0, 0.0, false);
+        for _ in 0..60 {
+            run.tick(1.0 / 60.0);
+        }
+        assert!(run.alive, "grace holds the ship");
+        let state: serde_json::Value = serde_json::from_str(&run.state_json()).unwrap();
+        let z = state["z"].as_f64().unwrap();
+        assert!(z > 13.0 && z < 17.0, "start speed z={z}");
+        assert!(!glb_ready(
+            "assets/models/kenney/space-kit/missing-lumen.glb"
+        ));
+        for _ in 0..240 {
+            run.set_steer(1.0, 0.0, false);
+            run.tick(1.0 / 60.0);
+        }
+        assert!(!run.alive, "walls still end a run after the grace");
+        assert_eq!(run.phase_name(), "result");
     }
 
     #[test]

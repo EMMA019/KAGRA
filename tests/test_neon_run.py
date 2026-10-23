@@ -74,6 +74,15 @@ def test_package_web_stages_lumen_without_wasm(tmp_path):
     page = (out / "play.html").read_text(encoding="utf-8")
     assert "loadGameJson" in page
     assert "setPlayInput" in page
+    assert "mountFile" in page
+    assert "assets.json" in page
+    listed = json.loads((out / "assets.json").read_text(encoding="utf-8"))
+    ship = "assets/models/kenney/space-kit/craft_speederC.glb"
+    meteor = "assets/models/kenney/space-kit/meteor.glb"
+    assert ship in listed
+    assert meteor in listed
+    assert (out / ship).is_file()
+    assert (out / meteor).is_file()
 
 
 def test_lumen_manifest_is_packaged():
@@ -86,3 +95,5 @@ def test_lumen_manifest_is_packaged():
     dump = json.loads((ROOT / manifest.world).read_text(encoding="utf-8"))
     assert dump["genre"] == "neon_run"
     assert dump["version"] == 1
+    assert "assets/models/kenney/space-kit/craft_speederC.glb" in manifest.bundle_assets
+    assert "assets/models/kenney/space-kit/turret_single.glb" in manifest.bundle_assets

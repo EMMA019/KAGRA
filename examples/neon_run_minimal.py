@@ -1,8 +1,11 @@
 """Lumen — neon endless flyer.
 
-Procedural geometry only (boxes, spheres, rings). Sound is synthesized
-``kagra.audio`` tones plus the repo's existing CC0 clips in ``assets/audio``
-(see ``assets/audio/LICENSE.txt``). No new third-party meshes.
+The ship, the rocks and turrets around each gate, the crystal pickups, and
+the side dishes are Kenney Space Kit GLBs (CC0). License:
+``assets/models/kenney/space-kit/LICENSE.txt``. The neon ribs, rails, rings,
+and stars stay procedural. A missing GLB falls back to a sphere or a box.
+Sound is synthesized ``kagra.audio`` tones plus the repo's CC0 clips in
+``assets/audio`` (see ``assets/audio/LICENSE.txt``).
 
     python examples/neon_run_minimal.py
     python examples/neon_run_minimal.py --headless scratch/neon_run.png
