@@ -12,8 +12,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::scene3d::{AlbedoRgba, MeshData, MtoonShade, Vertex3};
-use glam::{Mat4, Quat, Vec3};
+use crate::scene3d::{AlbedoRgba, MeshData, MtoonShade, TexSampler, TexWrap, Vertex3};
+use glam::{Mat4, Quat, Vec2, Vec3};
 use serde::Deserialize;
 
 const WALK_SKINNED_GLTF: &str = include_str!("../tests/fixtures/walk_skinned.gltf");
@@ -30,6 +30,8 @@ struct GltfFile {
     materials: Vec<serde_json::Value>,
     #[serde(default)]
     textures: Vec<GltfTexture>,
+    #[serde(default)]
+    samplers: Vec<GltfTexSampler>,
     #[serde(default)]
     images: Vec<GltfImage>,
     #[serde(default)]
@@ -79,6 +81,8 @@ struct Accessor {
     count: usize,
     #[serde(rename = "type")]
     type_name: String,
+    #[serde(default)]
+    normalized: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -121,6 +125,12 @@ struct Attributes {
     #[serde(rename = "TEXCOORD_0")]
     #[serde(default)]
     texcoord: Option<usize>,
+    #[serde(rename = "COLOR_0")]
+    #[serde(default)]
+    color: Option<usize>,
+    #[serde(rename = "TANGENT")]
+    #[serde(default)]
+    tangent: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -128,6 +138,22 @@ struct Attributes {
 struct GltfTexture {
     #[serde(default)]
     source: Option<usize>,
+    #[serde(default)]
+    sampler: Option<usize>,
+}
+
+/// Texture sampler. Not the animation `GltfSampler`.
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct GltfTexSampler {
+    #[serde(default)]
+    mag_filter: Option<u32>,
+    #[serde(default)]
+    min_filter: Option<u32>,
+    #[serde(default)]
+    wrap_s: Option<u32>,
+    #[serde(default)]
+    wrap_t: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -630,23 +656,19 @@ fn sample_skinned_inner(
         let ibm = skin.inverse_bind.get(j).copied().unwrap_or(Mat4::IDENTITY);
         joint_mats[j] = g * ibm;
     }
-    let mut out = MeshData {
-        vertices: Vec::with_capacity(skin.rest.vertices.len()),
-        indices: skin.rest.indices.clone(),
-        albedo: skin.rest.albedo.clone(),
-        matcap: skin.rest.matcap.clone(),
-        normal: skin.rest.normal.clone(),
-        mtoon: skin.rest.mtoon,
-        ..MeshData::default()
-    };
+    let mut out = skin.rest.clone();
+    out.vertices.clear();
+    out.vertices.reserve(skin.rest.vertices.len());
     let rest_pos = morphed_rest(skin, &pose.expression, pose.morph);
     for (i, v) in skin.rest.vertices.iter().enumerate() {
         let p = rest_pos.get(i).copied().unwrap_or(Vec3::from_array(v.pos));
         let n = Vec3::from_array(v.normal);
+        let t = Vec3::new(v.tangent[0], v.tangent[1], v.tangent[2]);
         let js = skin.joints[i];
         let ws = skin.weights[i];
         let mut sp = Vec3::ZERO;
         let mut sn = Vec3::ZERO;
+        let mut st = Vec3::ZERO;
         let mut wsum = 0.0f32;
         for k in 0..4 {
             let w = ws[k];
@@ -659,14 +681,28 @@ fn sample_skinned_inner(
                 .unwrap_or(Mat4::IDENTITY);
             sp += w * jm.transform_point3(p);
             sn += w * jm.transform_vector3(n);
+            st += w * jm.transform_vector3(t);
             wsum += w;
         }
         if wsum < 1e-8 {
             sp = p;
             sn = n;
+            st = t;
         }
-        out.vertices
-            .push(Vertex3::with_uv(sp, sn.normalize_or(Vec3::Y), v.uv));
+        let sn = sn.normalize_or(Vec3::Y);
+        let tangent = if st.length_squared() > 1e-8 {
+            let tn = st.normalize();
+            [tn.x, tn.y, tn.z, v.tangent[3]]
+        } else {
+            [0.0, 0.0, 0.0, v.tangent[3]]
+        };
+        out.vertices.push(Vertex3 {
+            pos: sp.to_array(),
+            normal: sn.to_array(),
+            uv: v.uv,
+            color: v.color,
+            tangent,
+        });
     }
     out
 }
@@ -734,6 +770,7 @@ fn static_mesh_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<MeshData, S
             match static_mesh_from_prim(doc, blobs, prim) {
                 Ok(mut pm) => {
                     if !apply_mw {
+                        let flip = if mw.determinant() < 0.0 { -1.0 } else { 1.0 };
                         for v in &mut pm.vertices {
                             let p = mw.transform_point3(Vec3::from_array(v.pos));
                             let n = mw
@@ -741,6 +778,11 @@ fn static_mesh_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<MeshData, S
                                 .normalize_or(Vec3::Y);
                             v.pos = p.to_array();
                             v.normal = n.to_array();
+                            let t = Vec3::new(v.tangent[0], v.tangent[1], v.tangent[2]);
+                            if t.length_squared() > 1e-8 {
+                                let tn = mw.transform_vector3(t).normalize_or(Vec3::ZERO);
+                                v.tangent = [tn.x, tn.y, tn.z, v.tangent[3] * flip];
+                            }
                         }
                     }
                     let col = prim_base_color_u8(doc, prim);
@@ -768,6 +810,7 @@ fn static_mesh_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<MeshData, S
 }
 
 fn merge_textured_parts(parts: Vec<(MeshData, [u8; 4])>) -> MeshData {
+    let surface = part_surface(&parts);
     let first_tex = parts.iter().find_map(|(m, _)| m.albedo.as_ref());
     let Some(first_tex) = first_tex else {
         return merge_colored_parts(parts);
@@ -803,6 +846,7 @@ fn merge_textured_parts(parts: Vec<(MeshData, [u8; 4])>) -> MeshData {
                 out.orm_metal = any_metal;
             }
         }
+        stamp_surface(&mut out, surface);
         return out;
     }
     let any_orm = parts.iter().any(|(m, _)| m.orm.is_some());
@@ -886,6 +930,7 @@ fn merge_textured_parts(parts: Vec<(MeshData, [u8; 4])>) -> MeshData {
         out.orm_rough = true;
         out.orm_metal = true;
     }
+    stamp_surface(&mut out, surface);
     out
 }
 
@@ -897,14 +942,15 @@ fn prim_base_color_u8(doc: &GltfFile, prim: &Primitive) -> [u8; 4] {
                 .and_then(|v| v.as_array())
             {
                 if arr.len() >= 3 {
-                    let srgb = |lin: f64| -> u8 {
-                        let c = lin.clamp(0.0, 1.0).powf(1.0 / 2.2);
-                        (c * 255.0).round().clamp(0.0, 255.0) as u8
+                    let r = linear_to_srgb_u8(arr[0].as_f64().unwrap_or(1.0) as f32);
+                    let g = linear_to_srgb_u8(arr[1].as_f64().unwrap_or(1.0) as f32);
+                    let b = linear_to_srgb_u8(arr[2].as_f64().unwrap_or(1.0) as f32);
+                    let a = if arr.len() >= 4 {
+                        (arr[3].as_f64().unwrap_or(1.0).clamp(0.0, 1.0) * 255.0).round() as u8
+                    } else {
+                        255
                     };
-                    let r = srgb(arr[0].as_f64().unwrap_or(1.0));
-                    let g = srgb(arr[1].as_f64().unwrap_or(1.0));
-                    let b = srgb(arr[2].as_f64().unwrap_or(1.0));
-                    return [r, g, b, 255];
+                    return [r, g, b, a];
                 }
             }
         }
@@ -913,6 +959,7 @@ fn prim_base_color_u8(doc: &GltfFile, prim: &Primitive) -> [u8; 4] {
 }
 
 fn merge_colored_parts(parts: Vec<(MeshData, [u8; 4])>) -> MeshData {
+    let surface = part_surface(&parts);
     let n = parts.len().max(1) as u32;
     let any_orm = parts.iter().any(|(m, _)| m.orm.is_some());
     let mut rgba = Vec::with_capacity((n as usize) * 4);
@@ -946,7 +993,62 @@ fn merge_colored_parts(parts: Vec<(MeshData, [u8; 4])>) -> MeshData {
         out.orm_rough = true;
         out.orm_metal = true;
     }
+    stamp_surface(&mut out, surface);
     out
+}
+
+struct PartSurface {
+    alpha_cut: f32,
+    double_sided: bool,
+    sampler: TexSampler,
+    emissive: f32,
+    emissive_color: [f32; 3],
+    emissive_map: Option<AlbedoRgba>,
+}
+
+fn part_surface(parts: &[(MeshData, [u8; 4])]) -> PartSurface {
+    let alpha_cut = parts
+        .iter()
+        .find(|(m, _)| m.alpha_cut != 0.0)
+        .map(|(m, _)| m.alpha_cut)
+        .unwrap_or(0.0);
+    let double_sided = parts.iter().any(|(m, _)| m.double_sided);
+    let sampler = parts
+        .iter()
+        .find(|(m, _)| m.sampler != TexSampler::default())
+        .map(|(m, _)| m.sampler)
+        .unwrap_or_default();
+    let src = parts
+        .iter()
+        .find(|(m, _)| m.emissive > 0.0 || m.emissive_map.is_some());
+    let (emissive, emissive_color, emissive_map) = src
+        .map(|(m, _)| (m.emissive, m.emissive_color, m.emissive_map.clone()))
+        .unwrap_or((0.0, [0.0; 3], None));
+    PartSurface {
+        alpha_cut,
+        double_sided,
+        sampler,
+        emissive,
+        emissive_color,
+        emissive_map,
+    }
+}
+
+fn stamp_surface(out: &mut MeshData, surface: PartSurface) {
+    if out.alpha_cut == 0.0 {
+        out.alpha_cut = surface.alpha_cut;
+    }
+    out.double_sided = out.double_sided || surface.double_sided;
+    if out.sampler == TexSampler::default() {
+        out.sampler = surface.sampler;
+    }
+    if out.emissive <= 0.0 {
+        out.emissive = surface.emissive;
+        out.emissive_color = surface.emissive_color;
+    }
+    if out.emissive_map.is_none() {
+        out.emissive_map = surface.emissive_map;
+    }
 }
 
 fn orm_center(mesh: &MeshData) -> (u8, u8) {
@@ -982,7 +1084,7 @@ fn static_mesh_from_prim(
     if positions.len() != normals.len() {
         return Err("POSITION/NORMAL count mismatch".into());
     }
-    let uvs = match prim.attributes.texcoord {
+    let mut uvs = match prim.attributes.texcoord {
         Some(i) => {
             let uv = read_uv(doc, blobs, i)?;
             if uv.len() != positions.len() {
@@ -992,9 +1094,33 @@ fn static_mesh_from_prim(
         }
         None => vec![[0.0, 0.0]; positions.len()],
     };
+    if let Some(xf) = texture_transform(doc, prim) {
+        for uv in &mut uvs {
+            *uv = apply_uv_transform(*uv, xf);
+        }
+    }
+    let colors = match prim.attributes.color {
+        Some(i) => {
+            let c = read_colors(doc, blobs, i)?;
+            if c.len() != positions.len() {
+                return Err("POSITION/COLOR_0 count mismatch".into());
+            }
+            c
+        }
+        None => vec![[1.0, 1.0, 1.0, 1.0]; positions.len()],
+    };
     let indices = match prim.indices {
         Some(i) => read_indices(doc, blobs, i)?,
         None => (0..positions.len() as u32).collect(),
+    };
+    let authored_tangent = if let Some(i) = prim.attributes.tangent {
+        let t = read_tangents(doc, blobs, i)?;
+        if t.len() != positions.len() {
+            return Err("POSITION/TANGENT count mismatch".into());
+        }
+        Some(t)
+    } else {
+        None
     };
     let mtoon = load_mtoon(doc, prim);
     // Toon keeps the shade record in the instance slots. ORM flags share that
@@ -1005,27 +1131,232 @@ fn static_mesh_from_prim(
         load_orm(doc, blobs, prim)
     };
     let has_orm = orm.is_some();
+    let normal = normal_tex_index(doc, prim).and_then(|ti| texture_by_index(doc, blobs, ti));
+    let (emissive_map, emissive, emissive_color) = if mtoon.is_some() {
+        (None, 0.0, [0.0; 3])
+    } else {
+        load_emissive(doc, blobs, prim)
+    };
+    let mut vertices: Vec<Vertex3> = positions
+        .into_iter()
+        .zip(normals)
+        .zip(uvs)
+        .zip(colors)
+        .enumerate()
+        .map(|(i, (((p, n), uv), color))| {
+            let mut v = Vertex3::with_uv(p, n.normalize_or(Vec3::Y), uv);
+            v.color = color;
+            if let Some(t) = authored_tangent.as_ref() {
+                v.tangent = t[i];
+            }
+            v
+        })
+        .collect();
+    if normal.is_some() && authored_tangent.is_none() {
+        generate_tangents(&mut vertices, &indices);
+    }
+    let (alpha_cut, double_sided, sampler) = material_state(doc, prim);
     let mesh = MeshData {
-        vertices: positions
-            .into_iter()
-            .zip(normals)
-            .zip(uvs)
-            .map(|((p, n), uv)| Vertex3::with_uv(p, n.normalize_or(Vec3::Y), uv))
-            .collect(),
+        vertices,
         indices,
         albedo: load_base_color(doc, blobs, prim),
         matcap: matcap_tex_index(doc, prim).and_then(|ti| texture_by_index(doc, blobs, ti)),
-        normal: normal_tex_index(doc, prim).and_then(|ti| texture_by_index(doc, blobs, ti)),
+        normal,
         mtoon,
         orm,
         orm_rough: has_orm,
         orm_metal: has_orm,
-        ..MeshData::default()
+        emissive_map,
+        alpha_cut,
+        double_sided,
+        sampler,
+        emissive,
+        emissive_color,
     };
     if mesh.vertices.is_empty() {
         return Err("empty mesh".into());
     }
     Ok(mesh)
+}
+
+#[derive(Clone, Copy)]
+struct UvXform {
+    offset: [f32; 2],
+    rotation: f32,
+    scale: [f32; 2],
+}
+
+/// KHR_texture_transform: `uv' = R * (uv * scale) + offset`.
+fn apply_uv_transform(uv: [f32; 2], xf: UvXform) -> [f32; 2] {
+    let x = uv[0] * xf.scale[0];
+    let y = uv[1] * xf.scale[1];
+    let c = xf.rotation.cos();
+    let s = xf.rotation.sin();
+    [c * x + s * y + xf.offset[0], -s * x + c * y + xf.offset[1]]
+}
+
+fn texture_transform(doc: &GltfFile, prim: &Primitive) -> Option<UvXform> {
+    let mi = prim.material?;
+    let mat = doc.materials.get(mi)?;
+    const PATHS: [&str; 4] = [
+        "/pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform",
+        "/normalTexture/extensions/KHR_texture_transform",
+        "/pbrMetallicRoughness/metallicRoughnessTexture/extensions/KHR_texture_transform",
+        "/emissiveTexture/extensions/KHR_texture_transform",
+    ];
+    let node = PATHS.iter().find_map(|p| mat.pointer(p))?;
+    let tex_coord = node
+        .pointer("/texCoord")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    if tex_coord != 0 {
+        return None;
+    }
+    let offset = json_f32x2(node, "/offset").unwrap_or([0.0, 0.0]);
+    let scale = json_f32x2(node, "/scale").unwrap_or([1.0, 1.0]);
+    let rotation = node
+        .pointer("/rotation")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0) as f32;
+    Some(UvXform {
+        offset,
+        rotation,
+        scale,
+    })
+}
+
+fn json_f32x2(node: &serde_json::Value, pointer: &str) -> Option<[f32; 2]> {
+    let arr = node.pointer(pointer)?.as_array()?;
+    if arr.len() < 2 {
+        return None;
+    }
+    Some([
+        arr[0].as_f64().unwrap_or(0.0) as f32,
+        arr[1].as_f64().unwrap_or(0.0) as f32,
+    ])
+}
+
+/// Lengyel tangents from the UVs that sample the normal map. Handedness is glTF `w`.
+fn generate_tangents(verts: &mut [Vertex3], indices: &[u32]) {
+    let mut tan = vec![Vec3::ZERO; verts.len()];
+    let mut bit = vec![Vec3::ZERO; verts.len()];
+    for tri in indices.as_chunks::<3>().0 {
+        let (i0, i1, i2) = (tri[0] as usize, tri[1] as usize, tri[2] as usize);
+        if i0 >= verts.len() || i1 >= verts.len() || i2 >= verts.len() {
+            continue;
+        }
+        let p0 = Vec3::from_array(verts[i0].pos);
+        let p1 = Vec3::from_array(verts[i1].pos);
+        let p2 = Vec3::from_array(verts[i2].pos);
+        let w0 = Vec2::from(verts[i0].uv);
+        let w1 = Vec2::from(verts[i1].uv);
+        let w2 = Vec2::from(verts[i2].uv);
+        let e1 = p1 - p0;
+        let e2 = p2 - p0;
+        let x1 = w1.x - w0.x;
+        let x2 = w2.x - w0.x;
+        let y1 = w1.y - w0.y;
+        let y2 = w2.y - w0.y;
+        let det = x1 * y2 - x2 * y1;
+        if det.abs() < 1e-12 {
+            continue;
+        }
+        let r = 1.0 / det;
+        let t = (e1 * y2 - e2 * y1) * r;
+        let b = (e2 * x1 - e1 * x2) * r;
+        tan[i0] += t;
+        tan[i1] += t;
+        tan[i2] += t;
+        bit[i0] += b;
+        bit[i1] += b;
+        bit[i2] += b;
+    }
+    for (i, v) in verts.iter_mut().enumerate() {
+        let n = Vec3::from_array(v.normal).normalize_or(Vec3::Y);
+        let mut t = tan[i] - n * n.dot(tan[i]);
+        if t.length_squared() < 1e-12 {
+            v.tangent = [0.0, 0.0, 0.0, 1.0];
+            continue;
+        }
+        t = t.normalize();
+        let w = if n.cross(t).dot(bit[i]) < 0.0 {
+            -1.0
+        } else {
+            1.0
+        };
+        v.tangent = [t.x, t.y, t.z, w];
+    }
+}
+
+fn material_state(doc: &GltfFile, prim: &Primitive) -> (f32, bool, TexSampler) {
+    let Some(mi) = prim.material else {
+        return (0.0, false, TexSampler::default());
+    };
+    let Some(mat) = doc.materials.get(mi) else {
+        return (0.0, false, TexSampler::default());
+    };
+    let mode = mat
+        .pointer("/alphaMode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("OPAQUE");
+    let alpha_cut = match mode {
+        "MASK" => {
+            let cut = mat
+                .pointer("/alphaCutoff")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.5) as f32;
+            cut.max(1.0e-4)
+        }
+        "BLEND" => -2.0,
+        _ => -1.0,
+    };
+    let double_sided = mat
+        .pointer("/doubleSided")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    (alpha_cut, double_sided, sampler_for_material(doc, prim))
+}
+
+fn sampler_for_material(doc: &GltfFile, prim: &Primitive) -> TexSampler {
+    let tex = base_color_tex_index(doc, prim)
+        .or_else(|| orm_tex_index(doc, prim))
+        .or_else(|| normal_tex_index(doc, prim))
+        .or_else(|| emissive_tex_index(doc, prim));
+    let Some(ti) = tex else {
+        return TexSampler::default();
+    };
+    let Some(texture) = doc.textures.get(ti) else {
+        return TexSampler::gltf_default();
+    };
+    let Some(si) = texture.sampler else {
+        return TexSampler::gltf_default();
+    };
+    let Some(s) = doc.samplers.get(si) else {
+        return TexSampler::gltf_default();
+    };
+    let code = s.min_filter.unwrap_or(9987);
+    let (min_nearest, mip_nearest) = match code {
+        9728 | 9984 => (true, true),
+        9986 => (true, false),
+        9729 | 9985 => (false, true),
+        _ => (false, false),
+    };
+    TexSampler {
+        wrap_u: wrap_mode(s.wrap_s.unwrap_or(10497)),
+        wrap_v: wrap_mode(s.wrap_t.unwrap_or(10497)),
+        mag_nearest: s.mag_filter.unwrap_or(9729) == 9728,
+        min_nearest,
+        mip_nearest,
+        anisotropy: 4,
+    }
+}
+
+fn wrap_mode(code: u32) -> TexWrap {
+    match code {
+        33648 => TexWrap::Mirror,
+        33071 => TexWrap::Clamp,
+        _ => TexWrap::Repeat,
+    }
 }
 
 fn skinned_from_doc(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<SkinnedMesh, String> {
@@ -2037,11 +2368,30 @@ fn orm_factors(doc: &GltfFile, prim: &Primitive) -> (f32, f32) {
     (metal.clamp(0.0, 1.0), rough.clamp(0.0, 1.0))
 }
 
-/// Linear ORM. Factors are baked in so the shader sample is the final value.
+/// Linear ORM. An authored factor with no texture emits a 1x1 so it beats
+/// the dump scalars. Omitted factors stay `None` (the spec default of 1
+/// would turn every textured prop into metal). No material stays scalar.
 fn load_orm(doc: &GltfFile, blobs: &[Vec<u8>], prim: &Primitive) -> Option<AlbedoRgba> {
-    let tex = orm_tex_index(doc, prim)?;
-    let mut img = texture_by_index(doc, blobs, tex)?;
+    let mi = prim.material?;
+    let mat = doc.materials.get(mi)?;
     let (metal, rough) = orm_factors(doc, prim);
+    let authored = mat
+        .pointer("/pbrMetallicRoughness/metallicFactor")
+        .is_some()
+        || mat
+            .pointer("/pbrMetallicRoughness/roughnessFactor")
+            .is_some();
+    let Some(tex) = orm_tex_index(doc, prim) else {
+        if !authored {
+            return None;
+        }
+        return Some(solid_rgba(
+            1,
+            1,
+            [255, scale_unorm(255, rough), scale_unorm(255, metal), 255],
+        ));
+    };
+    let mut img = texture_by_index(doc, blobs, tex)?;
     if (metal - 1.0).abs() > 1e-4 || (rough - 1.0).abs() > 1e-4 {
         let mut px = img.rgba.to_vec();
         for chunk in px.as_chunks_mut::<4>().0 {
@@ -2058,11 +2408,175 @@ fn scale_unorm(byte: u8, factor: f32) -> u8 {
 }
 
 fn load_base_color(doc: &GltfFile, blobs: &[Vec<u8>], prim: &Primitive) -> Option<AlbedoRgba> {
-    let tex = base_color_tex_index(doc, prim)?;
-    let src = doc.textures.get(tex)?.source?;
-    let img = doc.images.get(src)?;
-    let bytes = image_bytes(doc, blobs, img).ok()?;
-    decode_png(&bytes).ok()
+    let factor = base_color_factor(doc, prim);
+    let baked = base_color_tex_index(doc, prim).and_then(|tex| {
+        let src = doc.textures.get(tex)?.source?;
+        let img = doc.images.get(src)?;
+        let bytes = image_bytes(doc, blobs, img).ok()?;
+        let mut image = decode_raster(&bytes).ok()?;
+        bake_srgb_factor(&mut image, factor);
+        Some(image)
+    });
+    if baked.is_some() {
+        return baked;
+    }
+    let identity = (factor[0] - 1.0).abs() < 1e-4
+        && (factor[1] - 1.0).abs() < 1e-4
+        && (factor[2] - 1.0).abs() < 1e-4
+        && (factor[3] - 1.0).abs() < 1e-4;
+    if identity {
+        return None;
+    }
+    Some(solid_rgba(
+        1,
+        1,
+        [
+            linear_to_srgb_u8(factor[0]),
+            linear_to_srgb_u8(factor[1]),
+            linear_to_srgb_u8(factor[2]),
+            scale_unorm(255, factor[3]),
+        ],
+    ))
+}
+
+fn base_color_factor(doc: &GltfFile, prim: &Primitive) -> [f32; 4] {
+    let Some(mi) = prim.material else {
+        return [1.0, 1.0, 1.0, 1.0];
+    };
+    let Some(mat) = doc.materials.get(mi) else {
+        return [1.0, 1.0, 1.0, 1.0];
+    };
+    let Some(arr) = mat
+        .pointer("/pbrMetallicRoughness/baseColorFactor")
+        .and_then(|v| v.as_array())
+    else {
+        return [1.0, 1.0, 1.0, 1.0];
+    };
+    if arr.len() < 3 {
+        return [1.0, 1.0, 1.0, 1.0];
+    }
+    [
+        arr[0].as_f64().unwrap_or(1.0).clamp(0.0, 1.0) as f32,
+        arr[1].as_f64().unwrap_or(1.0).clamp(0.0, 1.0) as f32,
+        arr[2].as_f64().unwrap_or(1.0).clamp(0.0, 1.0) as f32,
+        arr.get(3)
+            .and_then(|v| v.as_f64())
+            .unwrap_or(1.0)
+            .clamp(0.0, 1.0) as f32,
+    ]
+}
+
+fn bake_srgb_factor(img: &mut AlbedoRgba, factor: [f32; 4]) {
+    if (factor[0] - 1.0).abs() < 1e-4
+        && (factor[1] - 1.0).abs() < 1e-4
+        && (factor[2] - 1.0).abs() < 1e-4
+        && (factor[3] - 1.0).abs() < 1e-4
+    {
+        return;
+    }
+    let mut px = img.rgba.to_vec();
+    for c in px.as_chunks_mut::<4>().0 {
+        c[0] = linear_to_srgb_u8(srgb_u8_to_linear(c[0]) * factor[0]);
+        c[1] = linear_to_srgb_u8(srgb_u8_to_linear(c[1]) * factor[1]);
+        c[2] = linear_to_srgb_u8(srgb_u8_to_linear(c[2]) * factor[2]);
+        c[3] = scale_unorm(c[3], factor[3]);
+    }
+    img.rgba = Arc::from(px);
+}
+
+fn load_emissive(
+    doc: &GltfFile,
+    blobs: &[Vec<u8>],
+    prim: &Primitive,
+) -> (Option<AlbedoRgba>, f32, [f32; 3]) {
+    let Some(mi) = prim.material else {
+        return (None, 0.0, [0.0; 3]);
+    };
+    let Some(mat) = doc.materials.get(mi) else {
+        return (None, 0.0, [0.0; 3]);
+    };
+    let factor = mat
+        .pointer("/emissiveFactor")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            [
+                arr.first().and_then(|v| v.as_f64()).unwrap_or(0.0).max(0.0) as f32,
+                arr.get(1).and_then(|v| v.as_f64()).unwrap_or(0.0).max(0.0) as f32,
+                arr.get(2).and_then(|v| v.as_f64()).unwrap_or(0.0).max(0.0) as f32,
+            ]
+        })
+        .unwrap_or([0.0; 3]);
+    let strength = mat
+        .pointer("/extensions/KHR_materials_emissive_strength/emissiveStrength")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1.0)
+        .max(0.0) as f32;
+    let map = emissive_tex_index(doc, prim).and_then(|ti| texture_by_index(doc, blobs, ti));
+    if let Some(mut img) = map {
+        bake_srgb_factor(&mut img, [factor[0], factor[1], factor[2], 1.0]);
+        return (Some(img), strength, [1.0, 1.0, 1.0]);
+    }
+    if factor == [0.0, 0.0, 0.0] {
+        return (None, 0.0, [0.0; 3]);
+    }
+    (
+        Some(solid_rgba(
+            1,
+            1,
+            [
+                linear_to_srgb_u8(factor[0].clamp(0.0, 1.0)),
+                linear_to_srgb_u8(factor[1].clamp(0.0, 1.0)),
+                linear_to_srgb_u8(factor[2].clamp(0.0, 1.0)),
+                255,
+            ],
+        )),
+        strength,
+        [1.0, 1.0, 1.0],
+    )
+}
+
+fn emissive_tex_index(doc: &GltfFile, prim: &Primitive) -> Option<usize> {
+    let mi = prim.material?;
+    let mat = doc.materials.get(mi)?;
+    mat.pointer("/emissiveTexture/index")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize)
+}
+
+fn solid_rgba(width: u32, height: u32, px: [u8; 4]) -> AlbedoRgba {
+    let n = (width.max(1) * height.max(1)) as usize;
+    let mut rgba = Vec::with_capacity(n * 4);
+    for _ in 0..n {
+        rgba.extend_from_slice(&px);
+    }
+    AlbedoRgba {
+        width: width.max(1),
+        height: height.max(1),
+        rgba: Arc::from(rgba),
+    }
+}
+
+fn srgb_u8_to_linear(byte: u8) -> f32 {
+    let e = byte as f32 / 255.0;
+    if e <= 0.04045 {
+        e / 12.92
+    } else {
+        ((e + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn linear_to_srgb_u8(linear: f32) -> u8 {
+    let c = if linear.is_finite() {
+        linear.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let e = if c <= 0.0031308 {
+        c * 12.92
+    } else {
+        1.055 * c.powf(1.0 / 2.4) - 0.055
+    };
+    (e * 255.0).round().clamp(0.0, 255.0) as u8
 }
 
 fn base_color_tex_index(doc: &GltfFile, prim: &Primitive) -> Option<usize> {
@@ -2096,7 +2610,30 @@ fn texture_by_index(doc: &GltfFile, blobs: &[Vec<u8>], tex: usize) -> Option<Alb
     let src = doc.textures.get(tex)?.source?;
     let img = doc.images.get(src)?;
     let bytes = image_bytes(doc, blobs, img).ok()?;
-    decode_png(&bytes).ok()
+    decode_raster(&bytes).ok()
+}
+
+/// PNG stays on the `png` crate. JPEG is the other glTF image the samples use.
+fn decode_raster(bytes: &[u8]) -> Result<AlbedoRgba, String> {
+    if bytes.starts_with(b"\x89PNG") {
+        return decode_png(bytes);
+    }
+    if bytes.len() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF {
+        return decode_jpeg(bytes);
+    }
+    decode_png(bytes)
+}
+
+fn decode_jpeg(bytes: &[u8]) -> Result<AlbedoRgba, String> {
+    let img = image::load_from_memory_with_format(bytes, image::ImageFormat::Jpeg)
+        .map_err(|e| e.to_string())?;
+    let rgba = img.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    Ok(AlbedoRgba {
+        width,
+        height,
+        rgba: Arc::from(rgba.into_raw()),
+    })
 }
 
 /// MToon matcap texture index: VRM 1 matcapTexture / VRM 0 _SphereAdd.
@@ -2210,6 +2747,83 @@ pub(crate) fn decode_png(bytes: &[u8]) -> Result<AlbedoRgba, String> {
         height: h,
         rgba: Arc::from(rgba),
     })
+}
+
+fn read_colors(
+    doc: &GltfFile,
+    blobs: &[Vec<u8>],
+    accessor: usize,
+) -> Result<Vec<[f32; 4]>, String> {
+    let acc = doc
+        .accessors
+        .get(accessor)
+        .ok_or_else(|| format!("missing accessor {accessor}"))?;
+    let ncomp = match acc.type_name.as_str() {
+        "VEC3" => 3,
+        "VEC4" => 4,
+        other => return Err(format!("COLOR_0 must be VEC3 or VEC4, got {other}")),
+    };
+    if acc.component_type == 5126 {
+        let f = read_f32_components(doc, blobs, accessor, ncomp)?;
+        let mut out = Vec::with_capacity(acc.count);
+        for chunk in f.chunks(ncomp) {
+            let a = if ncomp == 4 { chunk[3] } else { 1.0 };
+            out.push([chunk[0], chunk[1], chunk[2], a]);
+        }
+        return Ok(out);
+    }
+    let denom = match acc.component_type {
+        5121 => 255.0,
+        5123 => 65535.0,
+        other => return Err(format!("unsupported COLOR_0 componentType {other}")),
+    };
+    let elem = if acc.component_type == 5121 { 1 } else { 2 };
+    let view_idx = acc
+        .buffer_view
+        .ok_or_else(|| "accessor has no bufferView".to_string())?;
+    let view = &doc.buffer_views[view_idx];
+    let blob = blobs
+        .get(view.buffer)
+        .ok_or_else(|| format!("missing buffer {}", view.buffer))?;
+    let start = view.byte_offset + acc.byte_offset;
+    let stride = view.byte_stride.unwrap_or(elem * ncomp);
+    let mut out = Vec::with_capacity(acc.count);
+    for i in 0..acc.count {
+        let off = start + i * stride;
+        let s = blob
+            .get(off..off + elem * ncomp)
+            .ok_or_else(|| "COLOR_0 out of range".to_string())?;
+        let mut c = [0.0f32; 4];
+        for k in 0..ncomp {
+            let raw = if elem == 1 {
+                s[k] as f32
+            } else {
+                u16::from_le_bytes(s[k * 2..k * 2 + 2].try_into().unwrap()) as f32
+            };
+            c[k] = if acc.normalized { raw / denom } else { raw };
+        }
+        if ncomp == 3 {
+            c[3] = 1.0;
+        }
+        out.push(c);
+    }
+    Ok(out)
+}
+
+fn read_tangents(
+    doc: &GltfFile,
+    blobs: &[Vec<u8>],
+    accessor: usize,
+) -> Result<Vec<[f32; 4]>, String> {
+    let acc = doc
+        .accessors
+        .get(accessor)
+        .ok_or_else(|| format!("missing accessor {accessor}"))?;
+    if acc.type_name != "VEC4" || acc.component_type != 5126 {
+        return Err("TANGENT must be FLOAT VEC4".into());
+    }
+    let f = read_f32_components(doc, blobs, accessor, 4)?;
+    Ok(f.as_chunks::<4>().0.to_vec())
 }
 
 fn read_uv(doc: &GltfFile, blobs: &[Vec<u8>], accessor: usize) -> Result<Vec<[f32; 2]>, String> {
@@ -2588,8 +3202,131 @@ mod tests {
         let plain = mesh_from_gltf_json(&cube, |_| Err("external".into())).expect("plain");
         assert!(
             plain.orm.is_none(),
-            "a cube without the texture stays scalar"
+            "a cube without a material stays scalar"
         );
+    }
+
+    #[test]
+    fn pbr_factors_alpha_uv_color_and_sampler() {
+        let json = triangle_pbr_gltf();
+        let mesh = mesh_from_gltf_json(&json, |_| Err("external".into())).expect("pbr");
+        let expected_r = linear_to_srgb_u8(0.5);
+        let alb = mesh.albedo.expect("factor baked to 1x1");
+        assert_eq!(alb.rgba[0], expected_r, "linear 0.5 encodes near 188");
+        assert_eq!(alb.rgba[1], 0);
+        assert!(expected_r > 180 && expected_r < 200);
+        let orm = mesh.orm.expect("factor-only orm");
+        assert_eq!(orm.rgba[2], 0, "metallicFactor 0");
+        assert!(
+            (orm.rgba[1] as i32 - 64).abs() <= 1,
+            "roughness 0.25 → ~64, got {}",
+            orm.rgba[1]
+        );
+        assert!((mesh.emissive - 3.0).abs() < 1e-4);
+        assert_eq!(mesh.emissive_color, [1.0, 1.0, 1.0]);
+        let em = mesh.emissive_map.expect("emissive factor");
+        assert_eq!(em.rgba[1], 255);
+        assert!((mesh.alpha_cut - 0.3).abs() < 1e-4);
+        assert!(mesh.double_sided);
+        assert_eq!(mesh.sampler.wrap_u, TexWrap::Repeat);
+        assert!(mesh.sampler.mag_nearest);
+        let uv = mesh.vertices[0].uv;
+        assert!(
+            (uv[0] - 0.25).abs() < 1e-4,
+            "scale 2 * 0 + offset 0.25, got {uv:?}"
+        );
+        assert!((uv[1] - 0.5).abs() < 1e-4, "uv {uv:?}");
+        let col = mesh.vertices[0].color;
+        assert!(
+            (col[0] - 128.0 / 255.0).abs() < 1e-4,
+            "COLOR_0 is linear, got {col:?}"
+        );
+        assert!(mesh.vertices[0].tangent[0].abs() + mesh.vertices[0].tangent[1].abs() > 0.1);
+        let opaque =
+            mesh_from_gltf_json(&triangle_alpha("OPAQUE", 0.5), |_| Err("x".into())).unwrap();
+        assert!((opaque.alpha_cut + 1.0).abs() < 1e-4);
+        let blend =
+            mesh_from_gltf_json(&triangle_alpha("BLEND", 0.5), |_| Err("x".into())).unwrap();
+        assert!(blend.alpha_cut <= -1.5);
+    }
+
+    fn triangle_alpha(mode: &str, cutoff: f32) -> String {
+        let mut json = triangle_pbr_gltf();
+        json = json.replacen("MASK", mode, 1);
+        json.replacen("0.3", &format!("{cutoff}"), 1)
+    }
+
+    fn triangle_pbr_gltf() -> String {
+        // 3 verts. POSITION, NORMAL, TEXCOORD_0, COLOR_0 (u8 normalized), indices.
+        let mut bin = Vec::new();
+        let pos = [[0.0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+        let nrm = [0.0f32, 0.0, 1.0];
+        let uvs = [[0.0f32, 0.0], [1.0, 0.0], [0.0, 1.0]];
+        for p in pos {
+            for c in p {
+                bin.extend_from_slice(&c.to_le_bytes());
+            }
+        }
+        let nrm_off = bin.len();
+        for _ in 0..3 {
+            for c in nrm {
+                bin.extend_from_slice(&c.to_le_bytes());
+            }
+        }
+        let uv_off = bin.len();
+        for uv in uvs {
+            bin.extend_from_slice(&uv[0].to_le_bytes());
+            bin.extend_from_slice(&uv[1].to_le_bytes());
+        }
+        let col_off = bin.len();
+        bin.extend_from_slice(&[128, 255, 0, 255, 128, 255, 0, 255, 128, 255, 0, 255]);
+        let idx_off = bin.len();
+        bin.extend_from_slice(&0u16.to_le_bytes());
+        bin.extend_from_slice(&1u16.to_le_bytes());
+        bin.extend_from_slice(&2u16.to_le_bytes());
+        let b64 = base64_encode(&bin);
+        format!(
+            r#"{{
+  "asset": {{"version": "2.0"}},
+  "buffers": [{{"byteLength": {blen}, "uri": "data:application/octet-stream;base64,{b64}"}}],
+  "bufferViews": [
+    {{"buffer": 0, "byteOffset": 0, "byteLength": {nrm_off}}},
+    {{"buffer": 0, "byteOffset": {nrm_off}, "byteLength": {uv_len}}},
+    {{"buffer": 0, "byteOffset": {uv_off}, "byteLength": 24}},
+    {{"buffer": 0, "byteOffset": {col_off}, "byteLength": 12}},
+    {{"buffer": 0, "byteOffset": {idx_off}, "byteLength": 6}}
+  ],
+  "accessors": [
+    {{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"}},
+    {{"bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC3"}},
+    {{"bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC2"}},
+    {{"bufferView": 3, "componentType": 5121, "count": 3, "type": "VEC4", "normalized": true}},
+    {{"bufferView": 4, "componentType": 5123, "count": 3, "type": "SCALAR"}}
+  ],
+  "samplers": [{{"magFilter": 9728, "minFilter": 9986, "wrapS": 10497, "wrapT": 33071}}],
+  "materials": [{{
+    "pbrMetallicRoughness": {{
+      "baseColorFactor": [0.5, 0.0, 0.0, 1.0],
+      "metallicFactor": 0.0,
+      "roughnessFactor": 0.25
+    }},
+    "emissiveFactor": [0.0, 1.0, 0.0],
+    "alphaMode": "MASK",
+    "alphaCutoff": 0.3,
+    "doubleSided": true,
+    "extensions": {{"KHR_materials_emissive_strength": {{"emissiveStrength": 3.0}}}},
+    "normalTexture": {{
+      "index": 0,
+      "extensions": {{"KHR_texture_transform": {{"offset": [0.25, 0.5], "scale": [2.0, 1.0]}}}}
+    }}
+  }}],
+  "textures": [{{"source": 0, "sampler": 0}}],
+  "images": [{{"uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPguqPxHwAEEAIOusqDKwAAAABJRU5ErkJggg=="}}],
+  "meshes": [{{"primitives": [{{"attributes": {{"POSITION": 0, "NORMAL": 1, "TEXCOORD_0": 2, "COLOR_0": 3}}, "indices": 4, "mode": 4, "material": 0}}]}}]
+}}"#,
+            blen = bin.len(),
+            uv_len = uv_off - nrm_off,
+        )
     }
 
     #[test]
@@ -3129,6 +3866,8 @@ mod tests {
                 joints: None,
                 weights: None,
                 texcoord: None,
+                color: None,
+                tangent: None,
             },
             indices: None,
             mode: None,
@@ -3187,6 +3926,8 @@ mod tests {
                 joints: None,
                 weights: None,
                 texcoord: None,
+                color: None,
+                tangent: None,
             },
             indices: None,
             mode: None,

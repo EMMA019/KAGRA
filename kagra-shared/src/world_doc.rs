@@ -1014,6 +1014,7 @@ impl WorldDoc {
             if let Some(c) = prop.emissive_color {
                 inst.emissive_color = c;
             }
+            inst.emissive_authored = prop.emissive.is_some() || prop.emissive_color.is_some();
             b.push_instance(mesh, inst);
         }
 
