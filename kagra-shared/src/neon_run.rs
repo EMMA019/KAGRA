@@ -39,9 +39,24 @@ const SHIP_GLB: &str = "assets/models/kenney/space-kit/craft_speederC.glb";
 /// The mesh is heavier toward local +Z (the tail). Yaw π puts that tail
 /// toward the chase camera, which looks along world +Z.
 const SHIP_YAW: f32 = std::f32::consts::PI;
-const SHIP_SCALE: f32 = 0.46;
+/// About 0.78× the old 0.46 hull, so the next ring stays in frame.
+const SHIP_SCALE: f32 = 0.36;
+/// Side posts only. A top beam, even a thin one, stacks into cyan and
+/// pink bars across the upper half of a portrait frame.
+const RIB_EMISSIVE: f32 = 0.12;
+/// Lays the XY trail quad onto the ground plane. A chase camera looking
+/// along +Z then sees a ribbon instead of an edge.
+const TRAIL_PITCH: f32 = -std::f32::consts::FRAC_PI_2;
+/// Ribbon width at the tail and at the ship. The old host trail used a
+/// 0.40 Z-to-Y fold and read as floor dashes.
+const TRAIL_WIDTH_TAIL: f32 = 0.5;
+const TRAIL_WIDTH_HEAD: f32 = 1.4;
 /// Bottom-origin mesh, so this lifts the visual center onto the ship.
 const SHIP_CENTER_Y: f32 = 0.30;
+/// Chase camera sits behind the ship. Boost eases this back a little more.
+const CAM_BACK: f32 = 11.4;
+const CAM_LIFT: f32 = 1.62;
+const CAM_FOV: f32 = 50.0;
 
 struct KitMesh {
     path: &'static str,
@@ -198,6 +213,8 @@ pub struct NeonRun {
     key_up: bool,
     key_down: bool,
     boost: f32,
+    /// 0..1 eased while boost is held, for FOV, camera, and speed lines.
+    boost_vis: f32,
     passed: i32,
     attract: f32,
     time: f32,
@@ -251,6 +268,7 @@ impl NeonRun {
             key_up: false,
             key_down: false,
             boost: 0.0,
+            boost_vis: 0.0,
             passed: -1,
             attract: 0.0,
             time: 0.0,
@@ -293,8 +311,44 @@ impl NeonRun {
         &self.doc
     }
 
+    /// World dump plus a flat `sim` object.
+    ///
+    /// Call this once per tick. `sim` carries phase, the ship, the next gate,
+    /// and the chase camera's forward, so a host does not also parse
+    /// `state_json` or round-trip the dump through JSON to edit a copy.
+    /// Wasm `render` draws `document()` directly and does not call this.
+    /// `state_json` stays for the page's small `gameJson` status blob.
     pub fn dump_json(&self) -> String {
-        self.doc.to_json().unwrap_or_else(|_| "{}".into())
+        let body = self.doc.to_json().unwrap_or_else(|_| "{}".into());
+        splice_json_key(&body, "sim", &self.sim_value())
+    }
+
+    fn sim_value(&self) -> serde_json::Value {
+        let next = self.passed + 1;
+        let (hx, hy) = hole_center(next);
+        json!({
+            "phase": self.flow.phase.name(),
+            "alive": self.alive,
+            "x": self.x,
+            "y": self.y,
+            "z": self.z,
+            "next_x": hx,
+            "next_y": hy,
+            "next_z": gate_z(next),
+            "cam_forward": self.cam_forward(),
+        })
+    }
+
+    /// Unit forward of the chase camera (target − eye). Listener aim uses this
+    /// instead of a hard-coded world +Z.
+    fn cam_forward(&self) -> [f32; 3] {
+        let fwd =
+            glam::Vec3::from_array(self.chase_target()) - glam::Vec3::from_array(self.chase_eye());
+        if fwd.length_squared() > 1e-8 {
+            fwd.normalize().to_array()
+        } else {
+            [0.0, 0.0, 1.0]
+        }
     }
 
     /// `{orbs, crash, near}` for one frame, then cleared.
@@ -312,10 +366,33 @@ impl NeonRun {
 
     /// Chase cam looks along +Z, so this is about world -X.
     fn screen_right(&self) -> glam::Vec3 {
-        crate::scene3d::screen_right(
-            glam::Vec3::new(self.cam_x, self.cam_y + 1.28, self.z - 8.6),
-            glam::Vec3::new(self.x, self.y + 0.25, self.z + 12.0),
-        )
+        let eye = self.chase_eye();
+        let target = self.chase_target();
+        crate::scene3d::screen_right(glam::Vec3::from_array(eye), glam::Vec3::from_array(target))
+    }
+
+    fn chase_target(&self) -> [f32; 3] {
+        [self.x, self.y + 0.35, self.z + 16.0]
+    }
+
+    fn chase_eye(&self) -> [f32; 3] {
+        let shake = (self.time * 47.0).sin() * self.shake;
+        let back = CAM_BACK + self.boost_vis * 2.6;
+        [
+            self.cam_x + shake,
+            self.cam_y + CAM_LIFT + shake * 0.35,
+            self.z - back,
+        ]
+    }
+
+    fn chase_fov(&self) -> f32 {
+        CAM_FOV + self.boost_vis * 8.0
+    }
+
+    fn tick_boost_vis(&mut self, dt: f32) {
+        let target = if self.boost > 0.02 { 1.0 } else { 0.0 };
+        let k = 1.0 - (-dt * 6.0).exp();
+        self.boost_vis += (target - self.boost_vis) * k;
     }
 
     pub fn state_json(&self) -> String {
@@ -336,6 +413,7 @@ impl NeonRun {
             "next_x": hx,
             "next_y": hy,
             "next_z": gate_z(next),
+            "cam_forward": self.cam_forward(),
         })
         .to_string()
     }
@@ -446,6 +524,7 @@ impl NeonRun {
         self.vx = 0.0;
         self.vy = 0.0;
         self.boost = 0.0;
+        self.boost_vis = 0.0;
         self.cam_x = 0.0;
         self.cam_y = 0.0;
     }
@@ -472,12 +551,14 @@ impl NeonRun {
             self.tick_sparks(dt);
             self.push_trail();
             self.decay_shake(dt);
+            self.tick_boost_vis(dt);
             self.rebuild();
             return;
         }
         if self.flow.phase != FlowPhase::Play || !self.alive {
             self.tick_sparks(dt);
             self.decay_shake(dt);
+            self.tick_boost_vis(dt);
             self.rebuild();
             return;
         }
@@ -521,6 +602,7 @@ impl NeonRun {
             self.push_trail();
         }
         self.decay_shake(dt);
+        self.tick_boost_vis(dt);
         self.rebuild();
     }
 
@@ -566,7 +648,7 @@ impl NeonRun {
                 self.score += 80;
                 self.orbs += 1;
                 self.just_orbs += 1;
-                self.burst(hx, hy, gz, 14, [255, 244, 180], 3.2);
+                self.burst(hx, hy, gz, 20, [255, 244, 180], 4.8, 0.18);
                 crate::mixer::cue_sfx("card");
                 self.shake = self.shake.max(0.08);
             } else if d >= hole * 0.72 {
@@ -584,15 +666,15 @@ impl NeonRun {
         self.alive = false;
         self.just_crash = true;
         self.shake = 0.42;
-        self.burst(self.x, self.y, self.z, 22, [255, 64, 140], 4.4);
-        self.burst(self.x, self.y, self.z, 10, [120, 240, 255], 3.0);
+        self.burst(self.x, self.y, self.z, 22, [255, 64, 140], 4.8, 0.18);
+        self.burst(self.x, self.y, self.z, 12, [120, 240, 255], 3.6, 0.16);
         crate::mixer::cue_sfx("fire");
         self.flow.finish(self.score, self.orbs, "CRASH");
     }
 
     fn push_trail(&mut self) {
-        self.trail.push_back([self.x, self.y, self.z - 0.45]);
-        while self.trail.len() > 16 {
+        self.trail.push_back([self.x, self.y, self.z - 0.9]);
+        while self.trail.len() > 22 {
             self.trail.pop_front();
         }
     }
@@ -617,17 +699,18 @@ impl NeonRun {
         self.sparks = next;
     }
 
-    fn burst(&mut self, x: f32, y: f32, z: f32, n: u32, color: [u32; 3], speed: f32) {
+    #[allow(clippy::too_many_arguments)]
+    fn burst(&mut self, x: f32, y: f32, z: f32, n: u32, color: [u32; 3], speed: f32, size: f32) {
         for _ in 0..n {
-            if self.sparks.len() >= 32 {
+            if self.sparks.len() >= 64 {
                 self.sparks.remove(0);
             }
             let ang = self.rng() * std::f32::consts::TAU;
             let rad = self.rng();
             let spd = speed * (0.35 + self.rng());
             let vy = 0.8 + self.rng() * speed * 0.45;
-            let max_life = 0.28 + self.rng() * 0.28;
-            let size = 0.08 + self.rng() * 0.1;
+            let max_life = 0.34 + self.rng() * 0.32;
+            let size = size * (0.65 + self.rng() * 0.7);
             self.sparks.push(Spark {
                 x,
                 y,
@@ -654,40 +737,38 @@ impl NeonRun {
             genre: Some(GAME_ID.into()),
             half: 64.0,
             ground: Some(false),
-            // Same night bundle as `apply_look(world, "night")`. The Python
-            // window calls that helper (it also scales light intensity).
-            sky: Some([10, 16, 36, 255]),
-            hemi_sky: Some([0.12, 0.18, 0.42]),
-            hemi_ground: Some([0.05, 0.05, 0.08]),
+            contact_blobs: Some(false),
+            // Night grade kept under the bloom. The shared "night" preset is
+            // brighter on purpose and is not applied here.
+            sky: Some([22, 12, 52, 255]),
+            hemi_sky: Some([0.16, 0.14, 0.42]),
+            hemi_ground: Some([0.08, 0.04, 0.10]),
             env_map: Some("preset:studio".into()),
-            shadow_softness: Some(3.0),
-            bloom: Some(0.72),
-            bloom_threshold: Some(0.42),
-            vignette: Some(1.35),
+            shadow_softness: Some(1.0),
+            bloom: Some(0.14),
+            bloom_threshold: Some(1.45),
+            vignette: Some(0.55),
             lut: Some("cool".into()),
-            lut_strength: Some(0.85),
+            lut_strength: Some(0.22),
             fxaa: Some(true),
-            exposure: Some(1.25),
-            ibl: Some(0.55),
+            exposure: Some(0.88),
+            ibl: Some(0.28),
             tonemap: Some(true),
             cull: Some(true),
             prop_lod: Some(80.0),
+            fog_start: Some(36.0),
+            fog_end: Some(130.0),
             ..WorldDoc::default()
         };
-        let shake = (self.time * 47.0).sin() * self.shake;
-        let eye = [
-            self.cam_x + shake,
-            self.cam_y + 1.28 + shake * 0.35,
-            self.z - 8.6,
-        ];
-        let target = [self.x, self.y + 0.25, self.z + 12.0];
+        let eye = self.chase_eye();
+        let target = self.chase_target();
         doc.cameras.push(WorldCamera {
             id: "camera:main".into(),
             kind: "camera".into(),
             name: "chase".into(),
             position: eye,
             target,
-            fov: 58.0,
+            fov: self.chase_fov(),
         });
         // Slot 0 is the sun shadow. It must sit behind the camera: a spot
         // parked on the eye puts the shadow frustum through the ribs and
@@ -697,9 +778,9 @@ impl NeonRun {
             "key",
             [eye[0] - 1.5, eye[1] + 7.5, eye[2] - 5.0],
             [0.12, -0.82, 0.5],
-            [0.75, 0.85, 1.0],
-            1.15,
-            42.0,
+            [0.72, 0.82, 1.0],
+            1.05,
+            48.0,
             true,
         ));
         doc.lights.push(light(
@@ -707,9 +788,9 @@ impl NeonRun {
             "ship",
             [self.x, self.y, self.z],
             [0.0, 0.0, 0.0],
-            [0.45, 0.95, 1.0],
-            6.0,
-            11.0,
+            [0.35, 0.90, 1.0],
+            1.55,
+            9.0,
             false,
         ));
         doc.lights.push(light(
@@ -717,73 +798,117 @@ impl NeonRun {
             "rim",
             [self.x, self.y + 1.2, self.z + 6.0],
             [0.0, 0.0, 0.0],
-            [1.0, 0.25, 0.7],
-            4.5,
-            14.0,
+            [1.0, 0.28, 0.65],
+            1.15,
+            13.0,
             false,
         ));
         self.push_tunnel(&mut doc);
+        self.push_floor(&mut doc);
         self.push_gates(&mut doc);
         self.push_islands(&mut doc);
         self.push_stars(&mut doc);
         self.push_ship(&mut doc);
         self.push_trail_props(&mut doc);
+        self.push_speed_lines(&mut doc);
         self.push_spark_props(&mut doc);
         self.doc = doc;
     }
 
     fn push_tunnel(&self, doc: &mut WorldDoc) {
         let origin = (self.z / 7.0).floor() * 7.0;
-        for i in -1..12 {
+        for i in 0..10 {
             let z = origin + i as f32 * 7.0;
+            // The nearest rib used to cross the lens and read as a bar.
+            if z < self.z + 14.0 {
+                continue;
+            }
             let cyan = (i & 1) == 0;
-            let col = if cyan { [40, 230, 255] } else { [255, 40, 170] };
-            let gain = 3.4;
-            let w = 6.6;
-            let h = 4.5;
-            doc.props.push(beam(
-                &format!("rib-t-{i}"),
-                [0.0, h * 0.5, z],
-                [w, 0.07, 0.1],
-                col,
-                gain,
-            ));
-            doc.props.push(beam(
-                &format!("rib-b-{i}"),
-                [0.0, -h * 0.5, z],
-                [w, 0.07, 0.1],
-                col,
-                gain,
-            ));
+            let col = if cyan { [40, 220, 255] } else { [255, 50, 180] };
+            let gain = RIB_EMISSIVE;
+            let w = 8.2;
             doc.props.push(beam(
                 &format!("rib-l-{i}"),
-                [-w * 0.5, 0.0, z],
-                [0.07, h, 0.1],
+                [-w * 0.5, 1.4, z],
+                [0.02, 2.2, 0.04],
                 col,
                 gain,
             ));
             doc.props.push(beam(
                 &format!("rib-r-{i}"),
-                [w * 0.5, 0.0, z],
-                [0.07, h, 0.1],
+                [w * 0.5, 1.4, z],
+                [0.02, 2.2, 0.04],
                 col,
                 gain,
             ));
         }
+        // Short rails in front of the camera. A 70 m beam centered ahead
+        // runs back through the near plane and can fill a band of the frame.
         doc.props.push(beam(
             "rail-l",
-            [-2.7, -1.55, self.z + 18.0],
-            [0.06, 0.05, 70.0],
+            [-3.4, -2.15, self.z + 28.0],
+            [0.035, 0.02, 32.0],
             [80, 255, 240],
-            2.8,
+            0.22,
         ));
         doc.props.push(beam(
             "rail-r",
-            [2.7, -1.55, self.z + 18.0],
-            [0.06, 0.05, 70.0],
+            [3.4, -2.15, self.z + 28.0],
+            [0.035, 0.02, 32.0],
             [255, 60, 180],
-            2.8,
+            0.22,
         ));
+    }
+
+    fn push_floor(&self, doc: &mut WorldDoc) {
+        let mut floor = glow(
+            "floor",
+            "plane",
+            "floor",
+            [0.0, -2.42, self.z + 20.0],
+            [18.0, 1.0, 90.0],
+            0.0,
+            0.0,
+            0.0,
+            [10, 6, 22],
+            0.04,
+        );
+        floor.roughness = 0.32;
+        floor.metallic = 0.42;
+        doc.props.push(floor);
+        let origin = (self.z / 4.0).floor() * 4.0;
+        for i in 0..18 {
+            let z = origin + i as f32 * 4.0;
+            if z < self.z - 4.0 {
+                continue;
+            }
+            let col = if i % 2 == 0 {
+                [40, 220, 255]
+            } else {
+                [255, 50, 180]
+            };
+            doc.props.push(beam(
+                &format!("grid-x-{i}"),
+                [0.0, -2.30, z],
+                [14.0, 0.012, 0.04],
+                col,
+                0.26,
+            ));
+        }
+        for k in -4..=4 {
+            let col = if k % 2 == 0 {
+                [40, 220, 255]
+            } else {
+                [255, 50, 180]
+            };
+            doc.props.push(beam(
+                &format!("grid-z-{k}"),
+                [k as f32 * 1.7, -2.29, self.z + 18.0],
+                [0.025, 0.01, 40.0],
+                col,
+                if k == 0 { 0.18 } else { 0.28 },
+            ));
+        }
     }
 
     fn push_gates(&self, doc: &mut WorldDoc) {
@@ -798,12 +923,8 @@ impl NeonRun {
                 continue;
             }
             let (hx, hy) = hole_center(index);
-            let magenta = (index & 1) == 0;
-            let col = if magenta {
-                [255, 50, 190]
-            } else {
-                [60, 240, 255]
-            };
+            // Pass rings stay cyan. Hazards (rocks, turrets) carry the pink.
+            let col = [40, 230, 255];
             // Torus major 0.5, tube 0.075. Scale so the visual hole matches the pass radius.
             let ring = hole_r(index) / 0.425;
             doc.props.push(glow(
@@ -816,7 +937,7 @@ impl NeonRun {
                 0.0,
                 0.0,
                 col,
-                4.2,
+                0.9,
             ));
             let inner = ring * 0.76;
             doc.props.push(glow(
@@ -828,12 +949,8 @@ impl NeonRun {
                 0.0,
                 0.0,
                 0.0,
-                if magenta {
-                    [120, 255, 255]
-                } else {
-                    [255, 180, 255]
-                },
-                3.6,
+                [180, 255, 255],
+                0.7,
             ));
             self.push_obstacles(doc, index, hx, hy, z);
             if index > self.passed {
@@ -849,11 +966,13 @@ impl NeonRun {
                     0.0,
                     0.0,
                     [255, 236, 170],
-                    4.8,
+                    1.6,
                 );
                 if attach_glb(&mut orb, PICKUP_GLB) {
-                    orb.metallic = 0.2;
-                    orb.roughness = 0.28;
+                    orb.metallic = 0.1;
+                    orb.roughness = 0.35;
+                    orb.emissive = Some(1.7);
+                    orb.emissive_color = Some([1.0, 0.82, 0.35]);
                 }
                 doc.props.push(orb);
             }
@@ -884,8 +1003,17 @@ impl NeonRun {
                 0.35,
             );
             if attach_glb(&mut prop, kit.path) {
-                prop.roughness = 0.72;
-                prop.metallic = 0.08;
+                // Pink multiply so the rock base color lands in the neon palette
+                // without washing the lighting out.
+                prop.color = Some([255, 128, 168]);
+                prop.roughness = 0.62;
+                prop.metallic = 0.06;
+                prop.emissive = Some(0.18);
+                prop.emissive_color = Some([1.0, 0.28, 0.55]);
+            } else {
+                prop.color = Some([220, 70, 140]);
+                prop.emissive = Some(0.7);
+                prop.emissive_color = Some([1.0, 0.3, 0.6]);
             }
             doc.props.push(prop);
         }
@@ -919,8 +1047,10 @@ impl NeonRun {
                 isle.roll = 0.15;
                 isle.emissive = None;
             } else {
-                isle.roughness = 0.4;
-                isle.metallic = 0.55;
+                isle.roughness = 0.48;
+                isle.metallic = 0.35;
+                isle.emissive = Some(0.28);
+                isle.emissive_color = Some([0.45, 0.75, 1.0]);
             }
             doc.props.push(isle);
             doc.props.push(glow(
@@ -937,34 +1067,36 @@ impl NeonRun {
                 } else {
                     [70, 240, 255]
                 },
-                3.8,
+                1.05,
             ));
         }
     }
 
     fn push_stars(&self, doc: &mut WorldDoc) {
-        for i in 0..20 {
-            let z = self.z + ((i * 19) % 78) as f32 - 8.0;
+        for i in 0..64 {
+            let z = self.z + ((i * 17) % 140) as f32 - 12.0;
             let ang = i as f32 * 2.399;
-            let rad = 7.5 + (i % 4) as f32 * 1.3;
+            let rad = 8.5 + (i % 8) as f32 * 1.35;
+            let size = 0.09 + (i % 5) as f32 * 0.035;
             let col = if i % 3 == 0 {
-                [255, 80, 190]
+                [255, 110, 210]
             } else if i % 3 == 1 {
-                [90, 240, 255]
+                [150, 250, 255]
             } else {
-                [255, 230, 180]
+                [255, 240, 210]
             };
+            let y = ang.sin().abs() * rad * 0.55 + 1.6;
             doc.props.push(glow(
                 &format!("star-{i}"),
                 "sphere",
                 "star",
-                [ang.cos() * rad, ang.sin() * rad * 0.55, z],
-                [0.16, 0.16, 0.16],
+                [ang.cos() * rad, y, z],
+                [size, size, size],
                 0.0,
                 0.0,
                 0.0,
                 col,
-                4.5,
+                2.1 + (i % 3) as f32 * 0.25,
             ));
         }
     }
@@ -983,14 +1115,17 @@ impl NeonRun {
                 SHIP_YAW,
                 nose,
                 bank,
-                [255, 255, 255],
-                1.25,
+                // Cool multiply on the Kenney base colors (red metal, gray, dark).
+                [176, 220, 255],
+                0.12,
             );
             prop.gltf = Some(SHIP_GLB.into());
             prop.emissive_map = None;
-            prop.metallic = 0.45;
-            prop.roughness = 0.32;
+            prop.emissive_color = Some([0.20, 0.62, 1.0]);
+            prop.metallic = 0.22;
+            prop.roughness = 0.72;
             doc.props.push(prop);
+            self.push_ship_lights(doc, "prop:ship-core");
             return;
         }
         doc.props.push(glow(
@@ -1043,49 +1178,126 @@ impl NeonRun {
         ));
     }
 
+    /// Cyan canopy toward the nose, pink engines toward the chase camera.
+    /// Local offsets live in the hull's space (yaw π already applied).
+    fn push_ship_lights(&self, doc: &mut WorldDoc, parent: &str) {
+        let mut canopy = glow(
+            "cockpit",
+            "sphere",
+            "cockpit",
+            [0.0, 0.52, -0.2],
+            [0.55, 0.28, 0.42],
+            0.0,
+            0.0,
+            0.0,
+            [140, 255, 255],
+            2.6,
+        );
+        canopy.parent = Some(parent.into());
+        canopy.local = true;
+        canopy.emissive_color = Some([0.15, 0.95, 1.0]);
+        canopy.roughness = 0.2;
+        canopy.metallic = 0.05;
+        doc.props.push(canopy);
+        for (i, side) in [-1.0_f32, 1.0].into_iter().enumerate() {
+            let mut engine = glow(
+                &format!("engine-{i}"),
+                "sphere",
+                "engine",
+                [side * 0.55, 0.22, 1.25],
+                [0.38, 0.38, 0.55],
+                0.0,
+                0.0,
+                0.0,
+                [255, 70, 180],
+                1.7,
+            );
+            engine.parent = Some(parent.into());
+            engine.local = true;
+            engine.emissive_color = Some([1.0, 0.18, 0.55]);
+            engine.roughness = 0.25;
+            engine.metallic = 0.05;
+            doc.props.push(engine);
+        }
+    }
+
     fn push_trail_props(&self, doc: &mut WorldDoc) {
-        // Wasm has no Python. These quads match `kagra.Trail`: face +Z, skip
-        // XY shorter than 5 cm, warm emissive. Z flight is folded into Y so
-        // a straight run still emits a ribbon. The window drops these and
-        // draws `Trail` itself.
-        const FOLD: f32 = 0.40;
-        const WIDTH: f32 = 0.40;
+        // Horizontal ribbon. The quad stands in XY facing ±Z; `TRAIL_PITCH`
+        // lays local +Y along world +Z so a chase camera sees a surface,
+        // not an edge. The old host trail folded Z onto Y by 0.40 and was
+        // edge-on. Width grows from `TRAIL_WIDTH_TAIL` toward the ship.
+        // Magenta tail, cyan head.
         let pts: Vec<[f32; 3]> = self.trail.iter().copied().collect();
         if pts.len() < 2 {
             return;
         }
-        let hz = pts[pts.len() - 1][2];
-        let folded: Vec<[f32; 3]> = pts
-            .iter()
-            .map(|p| [p[0], p[1] - (hz - p[2]) * FOLD, p[2]])
-            .collect();
-        let segments = folded.len() - 1;
+        let segments = pts.len() - 1;
         for i in 0..segments {
-            let (a, b) = (folded[i], folded[i + 1]);
-            let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
-            let length = dx.hypot(dy);
+            let (a, b) = (pts[i], pts[i + 1]);
+            let (dx, dy, dz) = (b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+            let length = (dx * dx + dy * dy + dz * dz).sqrt();
             if length < 0.05 {
                 continue;
             }
             let fade = (i + 1) as f32 / segments as f32;
+            let width = TRAIL_WIDTH_TAIL + (TRAIL_WIDTH_HEAD - TRAIL_WIDTH_TAIL) * fade;
+            // Dark albedo so the lights do not wash the ribbon out. The gradient
+            // lives on the emissive color: magenta tail, cyan head.
             let mut prop = glow(
                 &format!("trail-{i}"),
                 "quad",
                 "trail",
                 [
                     (a[0] + b[0]) * 0.5,
-                    (a[1] + b[1]) * 0.5,
+                    // Stagger each segment off the shared plane so the
+                    // depth-writing ribbon does not z-fight itself.
+                    (a[1] + b[1]) * 0.5 - 0.2 + i as f32 * 0.008,
                     (a[2] + b[2]) * 0.5,
                 ],
-                [length.max(0.08), WIDTH * (0.45 + 0.55 * fade), 1.0],
+                [width, length.max(0.08), 1.0],
+                dx.atan2(dz),
+                TRAIL_PITCH,
                 0.0,
-                0.0,
-                dy.atan2(dx),
-                [255, 186, 255],
-                1.2 + 3.4 * fade,
+                [40, 16, 36],
+                0.5 + 0.45 * fade,
             );
-            prop.emissive_color = Some([1.0, 0.78, 0.35]);
+            prop.roughness = 0.98;
+            prop.metallic = 0.0;
+            prop.emissive_color = Some([1.0 - 0.75 * fade, 0.12 + 0.75 * fade, 0.55 + 0.45 * fade]);
             doc.props.push(prop);
+        }
+    }
+
+    fn push_speed_lines(&self, doc: &mut WorldDoc) {
+        let k = self.boost_vis;
+        if k < 0.08 {
+            return;
+        }
+        for i in 0..12 {
+            let ang = i as f32 * std::f32::consts::TAU / 12.0 + self.time * 2.4;
+            let rad = 0.85 + (i % 3) as f32 * 0.28;
+            let len = 1.1 + 2.4 * k;
+            let col = if i % 2 == 0 {
+                [80, 240, 255]
+            } else {
+                [255, 70, 190]
+            };
+            doc.props.push(glow(
+                &format!("streak-{i}"),
+                "box",
+                "streak",
+                [
+                    self.x + ang.cos() * rad,
+                    self.y + ang.sin() * rad * 0.62,
+                    self.z - 0.8 - (i % 4) as f32 * 0.35,
+                ],
+                [0.02, 0.02, len],
+                0.0,
+                0.0,
+                0.0,
+                col,
+                0.5 + 1.3 * k,
+            ));
         }
     }
 
@@ -1103,13 +1315,24 @@ impl NeonRun {
                 0.0,
                 0.0,
                 s.color,
-                3.5 * fade + 0.4,
+                2.2 * fade + 0.55,
             ));
         }
     }
 
     pub fn hud_json(&self, width: u32, height: u32) -> String {
-        crate::flow::draw_list_json(&self.hud(width, height))
+        let mut value: serde_json::Value =
+            serde_json::from_str(&crate::flow::draw_list_json(&self.hud(width, height)))
+                .unwrap_or_else(|_| json!({"quads": [], "texts": []}));
+        if let Some(obj) = value.as_object_mut() {
+            let pause = self
+                .flow
+                .button_rect(FlowAction::Pause, width, height)
+                .map(|rect| json!({"x": rect[0], "y": rect[1], "w": rect[2], "h": rect[3]}))
+                .unwrap_or(serde_json::Value::Null);
+            obj.insert("pause".into(), pause);
+        }
+        value.to_string()
     }
 
     pub fn hud(&self, width: u32, height: u32) -> DrawList {
@@ -1122,24 +1345,43 @@ impl NeonRun {
         let w = width.max(1) as f32;
         let h = height.max(1) as f32;
         if self.flow.phase == FlowPhase::Play {
+            list.quads
+                .push(Quad::new(12.0, 8.0, 196.0, 46.0, [6, 4, 16, 150]));
             label(
                 &mut list,
                 &format!("SCORE {}", self.score),
                 22.0,
-                18.0,
+                14.0,
                 16.0,
-                [236, 248, 255, 255],
+                [150, 245, 255, 255],
                 TextAlign::Left,
             );
             label(
                 &mut list,
                 &format!("{} m   {} ORBS", self.z.max(0.0) as u32, self.orbs),
                 22.0,
-                40.0,
+                36.0,
                 12.0,
-                [140, 240, 255, 255],
+                [120, 210, 230, 230],
                 TextAlign::Left,
             );
+            if self.boost_vis > 0.08 {
+                let k = self.boost_vis;
+                for i in 0..7 {
+                    let y = h * (0.18 + i as f32 * 0.09);
+                    let len = 28.0 + 84.0 * k;
+                    let a = (90.0 + 120.0 * k) as u8;
+                    list.quads
+                        .push(Quad::new(6.0, y, len, 1.4, [80, 240, 255, a]));
+                    list.quads.push(Quad::new(
+                        w - 6.0 - len,
+                        y + 14.0,
+                        len,
+                        1.4,
+                        [255, 70, 190, a],
+                    ));
+                }
+            }
             if self.alive && self.time < GRACE_SECS {
                 label(
                     &mut list,
@@ -1261,10 +1503,31 @@ fn glow(
     }
 }
 
+/// Insert `key` after the opening brace. `from_json` ignores unknown keys,
+/// same as the coordinate note on `WorldDoc::to_json`.
+fn splice_json_key(body: &str, key: &str, value: &serde_json::Value) -> String {
+    let pretty = serde_json::to_string_pretty(value).unwrap_or_else(|_| "null".into());
+    let mut block = format!("\n  \"{key}\": ");
+    for (i, line) in pretty.lines().enumerate() {
+        if i == 0 {
+            block.push_str(line);
+        } else {
+            block.push('\n');
+            block.push_str("  ");
+            block.push_str(line);
+        }
+    }
+    let Some(rest) = body.strip_prefix('{') else {
+        return body.to_string();
+    };
+    format!("{{{block},{rest}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::session::{SceneKind, SharedSession};
+    use crate::world_doc::WorldDoc;
 
     #[test]
     fn straight_flight_scores_and_a_wall_ends_the_run() {
@@ -1272,12 +1535,30 @@ mod tests {
         assert_eq!(run.phase_name(), "title");
         run.tick(1.0 / 60.0);
         assert!(
+            run.document().props.iter().any(|p| {
+                p.name == "ship-core"
+                    && p.emissive.unwrap_or(0.0) > 0.05
+                    && p.emissive.unwrap_or(0.0) < 0.5
+            }),
+            "hull emissive stays under the bloom"
+        );
+        assert!(
             run.document()
                 .props
                 .iter()
-                .any(|p| p.name == "ship-core" && p.emissive.unwrap_or(0.0) > 1.0),
-            "ship is emissive"
+                .any(|p| p.name == "engine" && p.emissive.unwrap_or(0.0) > 1.0),
+            "engine glow is emissive"
         );
+        assert_eq!(run.document().contact_blobs, Some(false));
+        assert!(
+            run.document()
+                .props
+                .iter()
+                .all(|p| { !(p.name == "rib" && p.scale[0] > 1.0 && p.position[1] > 0.5) }),
+            "no ceiling beam across the portrait frame"
+        );
+        let scene_fog = run.document().compile_scene(9.0 / 16.0);
+        assert!((scene_fog.fog_start - 36.0).abs() < 1e-3);
         assert_eq!(run.document().env_map.as_deref(), Some("preset:studio"));
         assert!(run.document().hemi_sky.is_some());
         assert!(run.document().baked_env().is_some());
@@ -1303,7 +1584,19 @@ mod tests {
             .find(|p| p.name == "ship-core")
             .expect("ship");
         assert_eq!(ship.gltf.as_deref(), Some(SHIP_GLB));
+        assert!((ship.scale[0] - SHIP_SCALE).abs() < 1e-4);
         assert_eq!(ship.model, "sphere", "missing glb still names a primitive");
+        let ring = run
+            .document()
+            .props
+            .iter()
+            .find(|p| p.name == "gate" && p.id.contains("ring-") && !p.id.contains("ring-b"))
+            .expect("cyan gate");
+        let col = ring.color.expect("ring color");
+        assert!(
+            col[2] > 200 && col[0] < 80,
+            "pass rings are cyan, got {col:?}"
+        );
         assert!(
             run.document()
                 .props
@@ -1318,9 +1611,13 @@ mod tests {
         assert!(run.alive);
         assert!(
             run.document().props.iter().any(|p| {
-                p.name == "trail" && p.model == "quad" && p.emissive.unwrap_or(0.0) > 1.0
+                p.name == "trail"
+                    && p.model == "quad"
+                    && p.pitch < -1.4
+                    && p.scale[0] > 0.4
+                    && p.emissive.unwrap_or(0.0) > 0.7
             }),
-            "wasm ribbon matches kagra.Trail"
+            "ribbon is a wide horizontal surface behind the ship"
         );
         run.set_steer(1.0, 0.0, false);
         for _ in 0..180 {
@@ -1380,5 +1677,88 @@ mod tests {
             session.request_frame();
         }
         assert_eq!(session.neon.as_ref().unwrap().phase_name(), "play");
+    }
+
+    #[test]
+    fn one_dump_carries_sim_and_hud_names_the_pause_rect() {
+        let mut run = NeonRun::from_json(r#"{"version":1,"genre":"neon_run"}"#).unwrap();
+        let title: serde_json::Value = serde_json::from_str(&run.hud_json(1280, 720)).unwrap();
+        assert!(title["pause"].is_null());
+        run.confirm();
+        run.tick(1.0 / 60.0);
+        let dump: serde_json::Value = serde_json::from_str(&run.dump_json()).unwrap();
+        assert!(
+            WorldDoc::from_json(&run.dump_json()).is_ok(),
+            "sim is ignored by from_json"
+        );
+        let sim = &dump["sim"];
+        let state: serde_json::Value = serde_json::from_str(&run.state_json()).unwrap();
+        assert_eq!(sim["phase"], "play");
+        assert_eq!(sim["alive"], true);
+        for key in ["x", "y", "z", "next_x", "next_y", "next_z"] {
+            let a = sim[key].as_f64().unwrap();
+            let b = state[key].as_f64().unwrap();
+            assert!((a - b).abs() < 1e-4, "{key} dump {a} state {b}");
+        }
+        let fwd = sim["cam_forward"].as_array().unwrap();
+        let len = fwd
+            .iter()
+            .map(|v| v.as_f64().unwrap())
+            .map(|v| v * v)
+            .sum::<f64>()
+            .sqrt();
+        assert!((len - 1.0).abs() < 1e-3, "cam forward {fwd:?}");
+        assert!(fwd[2].as_f64().unwrap() > 0.9, "chase looks along +Z");
+        let hud: serde_json::Value = serde_json::from_str(&run.hud_json(1280, 720)).unwrap();
+        let pause = &hud["pause"];
+        let rect = [
+            pause["x"].as_f64().unwrap() as f32,
+            pause["y"].as_f64().unwrap() as f32,
+            pause["w"].as_f64().unwrap() as f32,
+            pause["h"].as_f64().unwrap() as f32,
+        ];
+        assert!(rect[2] > 20.0 && rect[3] > 10.0, "{rect:?}");
+        assert_eq!(
+            run.flow
+                .hit(rect[0] + rect[2] * 0.5, rect[1] + rect[3] * 0.5, 1280, 720),
+            Some(FlowAction::Pause)
+        );
+        if std::env::var_os("KAGRA_BENCH").is_some() {
+            let frames = 80;
+            let dump_once = std::time::Instant::now();
+            for _ in 0..frames {
+                let _ = run.dump_json();
+            }
+            let dump_once = dump_once.elapsed();
+            let both = std::time::Instant::now();
+            for _ in 0..frames {
+                let _ = run.doc.to_json();
+                let _ = run.state_json();
+            }
+            let both = both.elapsed();
+            // Host side of the old picture path: parse the dump, then serialize
+            // it again. The new path parses once and deep-copies in Python.
+            let text = run.dump_json();
+            let round = std::time::Instant::now();
+            for _ in 0..frames {
+                let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+                let _ = serde_json::to_string(&value);
+            }
+            let round = round.elapsed();
+            let parse = std::time::Instant::now();
+            for _ in 0..frames {
+                let _: serde_json::Value = serde_json::from_str(&text).unwrap();
+            }
+            let parse = parse.elapsed();
+            let cloned = std::time::Instant::now();
+            for _ in 0..frames {
+                let _ = run.document().clone();
+            }
+            let cloned = cloned.elapsed();
+            eprintln!(
+                "neon json {frames} frames bytes {} dump {dump_once:?} dump+state {both:?} parse {parse:?} parse+reserialize {round:?} doc_clone {cloned:?}",
+                text.len()
+            );
+        }
     }
 }

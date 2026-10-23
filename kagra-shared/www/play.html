@@ -13,35 +13,56 @@
     html, body { height: 100%; margin: 0; background: #07010f; color: #f6f0ff; }
     body { font-family: "IBM Plex Sans", sans-serif; overflow: hidden; touch-action: none; }
     #app { position: relative; width: 100vw; height: 100vh; height: 100dvh; }
-    canvas { display: block; width: 100%; height: 100%; background: #07010f; touch-action: none; }
+    canvas {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #07010f;
+      touch-action: none;
+    }
     #boost {
       position: absolute;
+      z-index: 4;
       right: max(16px, env(safe-area-inset-right));
       bottom: max(18px, env(safe-area-inset-bottom));
-      width: 88px;
-      height: 88px;
-      border-radius: 50%;
-      border: 1px solid rgba(255, 80, 190, 0.7);
-      background: radial-gradient(circle at 40% 35%, rgba(255, 120, 210, 0.45), rgba(20, 0, 24, 0.35));
-      color: #fff;
+      width: 64px;
+      height: 64px;
+      border-radius: 18px;
+      border: 1px solid rgba(140, 255, 255, 0.45);
+      background: rgba(8, 6, 22, 0.38);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow:
+        inset 0 0 16px rgba(80, 240, 255, 0.38),
+        0 0 18px rgba(255, 60, 180, 0.28);
+      color: rgba(230, 255, 255, 0.92);
       font-family: Syne, sans-serif;
-      letter-spacing: 0.12em;
-      font-size: 13px;
+      letter-spacing: 0.14em;
+      font-size: 11px;
       display: none;
       place-items: center;
       user-select: none;
       -webkit-user-select: none;
     }
     #boost.on { display: grid; }
-    #boost.held { background: radial-gradient(circle at 40% 35%, rgba(140, 255, 255, 0.7), rgba(255, 40, 170, 0.4)); }
+    #boost.held {
+      background: rgba(18, 6, 28, 0.5);
+      box-shadow:
+        inset 0 0 22px rgba(140, 255, 255, 0.72),
+        0 0 24px rgba(255, 40, 170, 0.55);
+    }
     #links {
       position: absolute;
+      z-index: 4;
       left: max(12px, env(safe-area-inset-left));
       bottom: max(12px, env(safe-area-inset-bottom));
       font-size: 12px;
       opacity: 0.72;
-      z-index: 2;
     }
+    #links[hidden] { display: none !important; }
     #links a { color: #9af6ff; margin-right: 10px; }
     #boot {
       position: absolute;
@@ -73,7 +94,7 @@
   <div id="app">
     <canvas id="c"></canvas>
     <button id="boost" type="button">BOOST</button>
-    <div id="links">
+    <div id="links" hidden>
       <a href="./corridor.html">Corridor</a>
       <a href="./crest.html">Crest</a>
     </div>
@@ -93,6 +114,7 @@
     const params = new URLSearchParams(location.search);
     const requestedBackend = (params.get("backend") || "auto").toLowerCase();
     const boostEl = document.getElementById("boost");
+    const linksEl = document.getElementById("links");
     const BEST_KEY = "lumen-best";
     const held = new Set();
     const pointers = new Map();
@@ -461,6 +483,10 @@
       try { st = JSON.parse(session.gameJson()); } catch (_) {}
       const playing = st.phase === "play";
       boostEl.classList.toggle("on", playing);
+      // Title only. `hidden` alone was staying off while the score HUD was already in play.
+      const showLinks = st.phase === "title";
+      linksEl.hidden = !showLinks;
+      linksEl.style.display = showLinks ? "" : "none";
       if (!playing) boostHeld = false;
       if (typeof st.best === "number" && st.best > savedBest) {
         savedBest = st.best;

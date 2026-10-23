@@ -152,7 +152,8 @@ def draw_world(
 
     Scene.draw() 内で呼び、結果を run() の窓が表示する（または保存する）。
     窓だけ速くしたいときは ``render_rgba`` を ``Scene._frame_rgba`` に置く。
-    ``run`` はそれを PPM のまま PhotoImage に渡す。
+    読み出す公開 API は ``Scene.frame()``。``run`` は RGBA を PPM のまま
+    PhotoImage に渡す。
     """
     rgba = render_rgba(world, width, height, hud)
     return rgba_to_png(rgba, int(width), int(height))
@@ -196,6 +197,14 @@ class Scene:
 
     def draw(self) -> None:
         """毎フレーム呼ばれる。draw_world(self.world, w, h) で描画指示。"""
+
+    def frame(self) -> bytes | None:
+        """Last RGBA8 frame from ``draw()``, or None before the first draw.
+
+        ``run`` still reads ``_frame_rgba`` so a game can assign the bytes
+        directly. Hosts and screenshot tools should call this.
+        """
+        return self._frame_rgba
 
     def quit(self) -> None:
         self.running = False

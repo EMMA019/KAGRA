@@ -15,6 +15,8 @@ Packing device depth into the color alpha failed. The 3D pipeline is `ALPHA_BLEN
 
 The fix is a depth prepass (`fs_depth`) after the color pass. It loads the existing depth buffer, does not write depth, and outputs linear eye depth in meters into its own target (the HDR frame format). Sky is the far plane. Cutout holes discard after the albedo sample. SSAO compares that eye depth against the local depth plane so a flat floor does not occlude itself. DOF reads the eye depth directly. Motion converts it back to device z for the unproject. The color pipeline blend is unchanged.
 
+Master later disabled the float frame on browser WebGPU (`#152`). The merge keeps that path: when the frame format is the swapchain, `direct` is true and this graph does not run, so the phone does not sample `Rgba16Float`. The shadow compare sampler stays nearest. `shadow.z` / `shadow.w` are still near and far for the HDR depth prepass only.
+
 ## Checks
 
 Lavapipe (`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json`):

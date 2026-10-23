@@ -82,7 +82,7 @@ Shipped on the wasm-safe path. Omitted fields keep the previous picture (no SSAO
 - Pass graph in `render/post.rs`: SSAO, DOF, camera motion, then the existing bloom grade, then TAA or FXAA, then vignette when TAA is on. Each pass is one fullscreen WGSL entry. No storage buffers.
 - Dump fields `ssao`, `taa`, `dof_focus`, `dof_aperture`, `motion_blur`. A depth prepass writes linear eye meters into its own target. The color pipeline stays alpha-blended, so depth does not ride in the color alpha.
 - `KAGRA_QUALITY=0` / `off` / `low` forces the new passes off. `high` / `2` enables SSAO radius 8 and TAA when those fields are omitted. DOF and motion stay opt-in.
-- The direct unorm path (frame format equals the swapchain) still skips bloom and these passes.
+- The direct unorm path (frame format equals the swapchain) still skips bloom and these passes. Browser WebGPU takes that path, so the phone frame does not sample `Rgba16Float` and does not pay for SSAO, TAA, DOF, or motion. The shadow compare sampler stays nearest (`depth32float-filterable` is not requested).
 
 ## Previous wave
 

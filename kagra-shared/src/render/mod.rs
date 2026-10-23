@@ -566,13 +566,18 @@ impl Renderer {
         });
 
         let (shadow_tex, shadow_view) = create_shadow_map(&device);
+        // Nearest compare. depth32float linear filtering is the WebGPU
+        // feature `depth32float-filterable`, which wgpu 30 does not expose.
+        // A linear compare sampler is valid on lavapipe and invalid on
+        // Pixel-class WebGPU, where the taps come back as black/white bands.
+        // The shader PCF (textureSampleCompareLevel) is the soft edge.
         let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("kagra-shared shadow compare"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
             compare: Some(wgpu::CompareFunction::LessEqual),
             ..Default::default()
         });
@@ -903,10 +908,14 @@ impl Renderer {
                 depth_write_enabled: Some(true),
                 depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: Default::default(),
+                // depth32float: 1 constant unit is ~2^-23. 8192 units is
+                // about 0.001 of the depth range, which is the bias a 24-bit
+                // map gets from a constant of 2. Clamp so a steep caster
+                // cannot shove its shadow off the receiver.
                 bias: wgpu::DepthBiasState {
-                    constant: 2,
-                    slope_scale: 2.0,
-                    clamp: 0.0,
+                    constant: 8192,
+                    slope_scale: 1.5,
+                    clamp: 0.008,
                 },
             }),
             multisample: wgpu::MultisampleState::default(),
@@ -1286,6 +1295,7 @@ impl Renderer {
                         };
                     raw.push(InstanceRaw {
                         model: inst.model.to_cols_array_2d(),
+                        // Author bytes are sRGB. Lighting stays linear on every target.
                         color: color_space::srgb_u8_to_linear(inst.color),
                         material: inst.material as u8 as f32,
                         _pad: [0.0; 3],
@@ -1492,6 +1502,8 @@ impl Renderer {
         // Depth color for SSAO / DOF / motion. The HDR color target blends, so
         // device depth cannot live in its alpha. Load the depth buffer the
         // color pass just wrote; do not clear it. Far = camera far (meters).
+        // `direct` is the unorm WebGPU path, which does not sample a float
+        // frame and does not run this pass.
         if !direct && drew_scene && self.post.needs_depth() {
             let depth_far = world.map(|s| s.camera.far).unwrap_or(1000.0).max(1.0) as f64;
             let depth_color = self.post.scene_depth_view();
@@ -1543,6 +1555,7 @@ impl Renderer {
             }
         }
         // Pass 2: optional SSAO / DOF / motion, then bloom grade, then TAA or FXAA.
+        // The direct unorm path already graded in present_rgb and skips this.
         if !direct {
             if drew_scene && self.post.scene_active() {
                 let near = world.map(|s| s.camera.near).unwrap_or(0.1);
@@ -2268,6 +2281,9 @@ async fn request_device(
         wgpu::Limits::default()
     };
 
+    // wgpu 30 has no DEPTH32FLOAT_FILTERABLE feature. Comparison itself is
+    // core; linear filtering of that compare is not. The shadow sampler
+    // stays nearest so mobile WebGPU does not reject the draw.
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("kagra-shared"),
@@ -2283,6 +2299,33 @@ async fn request_device(
         note_renderer(&format!("kagra: wgpu error: {err}"));
     }));
     Ok((adapter, device, queue))
+}
+
+/// WebGPU `GPUQueue.writeTexture` rejects a `bytesPerRow` that is not a
+/// multiple of 256. Native wgpu pads internally; the browser backend does not.
+fn webgpu_row_pitch(row_bytes: u32) -> u32 {
+    const ALIGN: u32 = 256;
+    row_bytes.div_ceil(ALIGN) * ALIGN
+}
+
+fn pad_rows_to_256(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let width = width.max(1);
+    let height = height.max(1);
+    let row = (4 * width) as usize;
+    let pitch = webgpu_row_pitch(row as u32) as usize;
+    if pitch == row && rgba.len() >= row * height as usize {
+        return rgba[..row * height as usize].to_vec();
+    }
+    let mut staged = vec![0u8; pitch * height as usize];
+    for y in 0..height as usize {
+        let src = y * row;
+        let dst = y * pitch;
+        let n = row.min(rgba.len().saturating_sub(src));
+        if n > 0 {
+            staged[dst..dst + n].copy_from_slice(&rgba[src..src + n]);
+        }
+    }
+    staged
 }
 
 fn create_albedo_texture(
@@ -2359,6 +2402,11 @@ fn create_rgba_texture(
     } else {
         rgba
     };
+    // WebGPU writeTexture requires bytesPerRow to be a multiple of 256.
+    // wgpu-core pads this itself; the wasm backend forwards the number
+    // straight through, so a 4×1 Kenney palette (16 bytes/row) is rejected
+    // and the sample comes back opaque white. Pad every row.
+    let staged = pad_rows_to_256(data, width, height);
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
             texture: &tex,
@@ -2366,10 +2414,10 @@ fn create_rgba_texture(
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,
         },
-        data,
+        &staged,
         wgpu::TexelCopyBufferLayout {
             offset: 0,
-            bytes_per_row: Some(4 * width),
+            bytes_per_row: Some(webgpu_row_pitch(4 * width)),
             rows_per_image: Some(height),
         },
         wgpu::Extent3d {
@@ -2387,6 +2435,7 @@ fn create_rgba_texture(
             let nw = (pw / 2).max(1);
             let nh = (ph / 2).max(1);
             let next = color_space::box_downsample(&prev, pw, ph, srgb);
+            let staged = pad_rows_to_256(&next, nw, nh);
             queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
                     texture: &tex,
@@ -2394,10 +2443,10 @@ fn create_rgba_texture(
                     origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,
                 },
-                &next,
+                &staged,
                 wgpu::TexelCopyBufferLayout {
                     offset: 0,
-                    bytes_per_row: Some(4 * nw),
+                    bytes_per_row: Some(webgpu_row_pitch(4 * nw)),
                     rows_per_image: Some(nh),
                 },
                 wgpu::Extent3d {
@@ -2568,6 +2617,20 @@ mod tests {
     }
 
     #[test]
+    fn webgpu_texture_rows_are_256_aligned() {
+        assert_eq!(webgpu_row_pitch(4), 256);
+        assert_eq!(webgpu_row_pitch(16), 256);
+        assert_eq!(webgpu_row_pitch(256), 256);
+        assert_eq!(webgpu_row_pitch(260), 512);
+        let tight = [1u8, 2, 3, 4, 5, 6, 7, 8];
+        let padded = pad_rows_to_256(&tight, 1, 2);
+        assert_eq!(padded.len(), 512);
+        assert_eq!(&padded[0..4], &[1, 2, 3, 4]);
+        assert_eq!(&padded[256..260], &[5, 6, 7, 8]);
+        assert!(padded[4..256].iter().all(|b| *b == 0));
+    }
+
+    #[test]
     fn surface_format_skips_float_canvas() {
         let webgpu = [
             wgpu::TextureFormat::Bgra8Unorm,
@@ -2626,6 +2689,14 @@ mod tests {
         assert!(src.contains("water_normal"), "scrolling procedural waves");
         assert!(src.contains("fn shadow_factor"), "directional PCF");
         assert!(src.contains("textureSampleCompare"), "depth compare PCF");
+        assert!(
+            src.contains("textureSampleCompareLevel"),
+            "PCF must be explicit-LOD so a loop is valid WebGPU"
+        );
+        assert!(
+            src.contains("in.mtoon4.z > 0.30"),
+            "emissive ribbons skip the shadow map and get a clip bias"
+        );
         assert!(src.contains("fn vs_shadow"), "shadow pass");
         assert!(src.contains("2048.0"), "PCF texel matches SHADOW_MAP_SIZE");
         assert!(src.contains("orm_tex"), "roughness / metal map");
