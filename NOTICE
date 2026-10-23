@@ -1,0 +1,17 @@
+KAGRA
+Copyright (c) 2026 Emma Saka
+Licensed under the MIT License. See LICENSE.
+
+Third-party code and libraries
+------------------------------
+
+palette 0.7 (dev-dependency, tests only)
+  https://github.com/Ogeon/palette
+  MIT OR Apache-2.0
+  Used as an independent check of the IEC 61966-2-1 sRGB transfer. The
+  runtime curve lives in kagra-shared/src/render/color_space.rs and the
+  WGSL shaders so the wasm and Android builds do not link this crate.
+
+The Narkowicz ACES fit in bloom.wgsl and shader3d.wgsl is the public
+approximation published by Krzysztof Narkowicz (2016), used widely
+including by three.js (MIT). No three.js source is copied in this tree.
