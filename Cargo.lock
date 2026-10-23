@@ -1085,6 +1085,7 @@ dependencies = [
  "rodio",
  "serde",
  "serde_json",
+ "simple-easing",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -2280,6 +2281,12 @@ name = "simd-adler32"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
+
+[[package]]
+name = "simple-easing"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99968bca2a24946625e54935909e9c1c314066a1005f5a302a5e4bfc83b0239a"
 
 [[package]]
 name = "slab"

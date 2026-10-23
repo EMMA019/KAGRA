@@ -31,6 +31,7 @@ pub mod gltf_load;
 pub mod grade;
 pub mod hot;
 pub mod input;
+pub mod juice;
 pub mod ktx_image;
 pub mod lookat;
 pub mod map;
