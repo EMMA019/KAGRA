@@ -1,0 +1,27 @@
+{
+  "name": "neon_run_smoke",
+  "notes": "Lumen neon flyer. Scripted aim through the rings. The shared picture is a gradient tunnel, not a flat color. WorldPlay has no neon genre.",
+  "script": "examples/neon_run_minimal.py",
+  "env": {"KAGRA_NEON_HEADLESS": "1"},
+  "timeout_sec": 180,
+  "expect_files": ["scratch/neon_run.png", "scratch/neon_run_world.json"],
+  "min_file_bytes": 200,
+  "expect_world": {
+    "path": "scratch/neon_run_world.json",
+    "query": [
+      {"type": "prop", "name": "ship-core", "count": 1},
+      {"type": "prop", "name": "gate", "min_count": 1},
+      {"type": "prop", "name": "streak", "min_count": 1}
+    ]
+  },
+  "expect_offscreen": {
+    "world": "scratch/neon_run_world.json",
+    "out": "scratch/neon_run_shared.png",
+    "width": 320,
+    "height": 180,
+    "min_bytes": 200,
+    "pixels": [
+      {"x": 40, "y": 40, "w": 240, "h": 100, "not_solid": true, "mean_min": [12, 6, 22]}
+    ]
+  }
+}

@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#07010f" />
+  <title>LUMEN — KAGRA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; background: #07010f; color: #f6f0ff; }
+    body { font-family: "IBM Plex Sans", sans-serif; overflow: hidden; touch-action: none; }
+    #app { position: relative; width: 100vw; height: 100vh; height: 100dvh; }
+    canvas { display: block; width: 100%; height: 100%; background: #07010f; touch-action: none; }
+    #boost {
+      position: absolute;
+      right: max(16px, env(safe-area-inset-right));
+      bottom: max(18px, env(safe-area-inset-bottom));
+      width: 88px;
+      height: 88px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 80, 190, 0.7);
+      background: radial-gradient(circle at 40% 35%, rgba(255, 120, 210, 0.45), rgba(20, 0, 24, 0.35));
+      color: #fff;
+      font-family: Syne, sans-serif;
+      letter-spacing: 0.12em;
+      font-size: 13px;
+      display: none;
+      place-items: center;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #boost.on { display: grid; }
+    #boost.held { background: radial-gradient(circle at 40% 35%, rgba(140, 255, 255, 0.7), rgba(255, 40, 170, 0.4)); }
+    #links {
+      position: absolute;
+      left: max(12px, env(safe-area-inset-left));
+      bottom: max(12px, env(safe-area-inset-bottom));
+      font-size: 12px;
+      opacity: 0.72;
+      z-index: 2;
+    }
+    #links a { color: #9af6ff; margin-right: 10px; }
+    #boot {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(80% 50% at 50% 20%, rgba(255, 40, 160, 0.28), transparent 60%),
+        #07010f;
+      z-index: 5;
+    }
+    #boot h1 {
+      font-family: Syne, sans-serif;
+      font-weight: 800;
+      font-size: clamp(64px, 16vw, 120px);
+      letter-spacing: 0.08em;
+      margin: 0;
+      background: linear-gradient(180deg, #fff 0%, #7ef0ff 42%, #ff4db8 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    #boot p { text-align: center; letter-spacing: 0.22em; font-size: 12px; opacity: 0.75; }
+    #boot.err { color: #ffb4c8; padding: 24px; text-align: center; white-space: pre-wrap; }
+    #boot.err h1 { font-size: 28px; color: #ffb4c8; background: none; -webkit-text-fill-color: #ffb4c8; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <canvas id="c"></canvas>
+    <button id="boost" type="button">BOOST</button>
+    <div id="links">
+      <a href="./corridor.html">Corridor</a>
+      <a href="./crest.html">Crest</a>
+    </div>
+    <div id="boot">
+      <div>
+        <h1>LUMEN</h1>
+        <p>NEON RUN</p>
+      </div>
+    </div>
+  </div>
+  <script src="playtest.js"></script>
+  <script type="module">
+    import init, { WasmSession } from "./pkg/kagra_shared.js";
+
+    const boot = document.getElementById("boot");
+    const canvas = document.getElementById("c");
+    const boostEl = document.getElementById("boost");
+    const BEST_KEY = "lumen-best";
+    const held = new Set();
+    const pointers = new Map();
+    let boostHeld = false;
+    let session;
+    let audioCtx;
+    const buffers = {};
+    let bgmNode = null;
+    let bgmName = "";
+
+    const fail = (msg) => {
+      boot.className = "err";
+      boot.innerHTML = `<div><h1>LUMEN</h1><p>${msg}</p></div>`;
+    };
+
+    try {
+      await init();
+      session = new WasmSession();
+      window.kagra = session;
+    } catch (e) {
+      fail(`wasm failed to load\n${e}\n\n./scripts/build_wasm.sh\npython -m http.server -d kagra-shared/www 8000`);
+      throw e;
+    }
+
+    const backing = () => {
+      const cssW = Math.max(1, canvas.clientWidth);
+      const cssH = Math.max(1, canvas.clientHeight);
+      const narrow = Math.min(cssW, cssH) < 900;
+      const cap = narrow ? 1.25 : 1.5;
+      const scale = Math.min(window.devicePixelRatio || 1, cap);
+      let w = Math.round(cssW * scale);
+      let h = Math.round(cssH * scale);
+      const long = Math.max(w, h);
+      if (long > 1280) {
+        const k = 1280 / long;
+        w = Math.max(1, Math.round(w * k));
+        h = Math.max(1, Math.round(h * k));
+      }
+      return [w, h];
+    };
+
+    const sizeCanvas = () => {
+      const [w, h] = backing();
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+        session.createSurface(w, h);
+      }
+    };
+    sizeCanvas();
+    if (window.kagraPlaytest) window.kagraPlaytest.attach(session, canvas);
+
+    if (!session.renderSupported()) {
+      fail("this wasm was built without the render feature");
+      throw new Error("no render");
+    }
+    try {
+      await session.attachCanvas(canvas);
+    } catch (e) {
+      fail(`renderer unavailable:\n${e}`);
+      throw e;
+    }
+
+    let best = 0;
+    try { best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0; } catch (_) {}
+    let world = { version: 1, genre: "neon_run" };
+    try {
+      const res = await fetch("./world.json");
+      if (res.ok) world = await res.json();
+    } catch (_) {}
+    world.best = Math.max(Number(world.best) || 0, best);
+    try {
+      session.loadGameJson(JSON.stringify(world));
+    } catch (e) {
+      fail(`loadGameJson failed:\n${e}`);
+      throw e;
+    }
+    boot.style.display = "none";
+
+    const ensureAudio = () => {
+      if (!audioCtx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        audioCtx = new AC();
+      }
+      if (audioCtx.state === "suspended") audioCtx.resume();
+    };
+
+    const loadClip = async (name) => {
+      if (buffers[name] || !audioCtx) return;
+      try {
+        const res = await fetch(`./audio/${name}.wav`);
+        if (!res.ok) return;
+        const data = await res.arrayBuffer();
+        buffers[name] = await audioCtx.decodeAudioData(data);
+      } catch (_) {}
+    };
+
+    const playShot = (name, gain) => {
+      const buf = buffers[name];
+      if (!buf || !audioCtx || gain <= 0) return;
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      const g = audioCtx.createGain();
+      g.gain.value = Math.max(0, Math.min(1, gain));
+      src.connect(g).connect(audioCtx.destination);
+      src.start();
+    };
+
+    const syncBgm = (cues) => {
+      const name = cues.bgm_name || "";
+      const gain = (cues.muted ? 0 : 1) * (cues.master || 0) * (cues.bgm || 0) * (cues.bgm_gain || 0);
+      if (!name || gain <= 0.001) {
+        if (bgmNode) { try { bgmNode.stop(); } catch (_) {} bgmNode = null; bgmName = ""; }
+        return;
+      }
+      if (!buffers[name]) return;
+      if (bgmName !== name || !bgmNode) {
+        if (bgmNode) { try { bgmNode.stop(); } catch (_) {} }
+        const src = audioCtx.createBufferSource();
+        src.buffer = buffers[name];
+        src.loop = true;
+        const g = audioCtx.createGain();
+        g.gain.value = gain;
+        src.connect(g).connect(audioCtx.destination);
+        src.start();
+        bgmNode = src;
+        bgmNode._gain = g;
+        bgmName = name;
+      } else if (bgmNode._gain) {
+        bgmNode._gain.gain.value = gain;
+      }
+    };
+
+    const pumpAudio = () => {
+      if (!audioCtx) return;
+      let cues;
+      try { cues = JSON.parse(session.audioCuesJson()); } catch (_) { return; }
+      const shotGain = (cues.muted ? 0 : 1) * (cues.master || 0) * (cues.sfx || 0);
+      for (const name of cues.oneshots || []) playShot(name, shotGain);
+      syncBgm(cues);
+    };
+
+    const canvasPos = (e) => {
+      const r = canvas.getBoundingClientRect();
+      const x = (e.clientX - r.left) * (canvas.width / Math.max(1, r.width));
+      const y = (e.clientY - r.top) * (canvas.height / Math.max(1, r.height));
+      return [x, y];
+    };
+
+    const steerFromPointers = () => {
+      if (pointers.size === 0) return [0, 0];
+      let sx = 0, sy = 0, n = 0;
+      for (const p of pointers.values()) {
+        sx += p.x / canvas.width - 0.5;
+        sy += 0.5 - p.y / canvas.height;
+        n += 1;
+      }
+      const clamp = (v) => Math.max(-1, Math.min(1, v));
+      return [clamp((sx / n) * 2.15), clamp((sy / n) * 2.15)];
+    };
+
+    canvas.addEventListener("pointerdown", (e) => {
+      if (e.target !== canvas) return;
+      ensureAudio();
+      canvas.setPointerCapture?.(e.pointerId);
+      const [x, y] = canvasPos(e);
+      pointers.set(e.pointerId, { x, y });
+      session.pushPointer(e.pointerId, x, y, 0, e.pressure || 0.5);
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      if (!pointers.has(e.pointerId)) return;
+      const [x, y] = canvasPos(e);
+      pointers.set(e.pointerId, { x, y });
+      session.pushPointer(e.pointerId, x, y, 1, e.pressure || 0.5);
+    });
+    const endPointer = (e, phase) => {
+      if (!pointers.has(e.pointerId)) return;
+      const [x, y] = canvasPos(e);
+      pointers.delete(e.pointerId);
+      session.pushPointer(e.pointerId, x, y, phase, 0);
+    };
+    canvas.addEventListener("pointerup", (e) => endPointer(e, 2));
+    canvas.addEventListener("pointercancel", (e) => endPointer(e, 3));
+
+    const boostDown = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      ensureAudio();
+      boostHeld = true;
+      boostEl.classList.add("held");
+    };
+    const boostUp = (e) => {
+      e.preventDefault();
+      boostHeld = false;
+      boostEl.classList.remove("held");
+    };
+    boostEl.addEventListener("pointerdown", boostDown);
+    boostEl.addEventListener("pointerup", boostUp);
+    boostEl.addEventListener("pointercancel", boostUp);
+
+    window.addEventListener("keydown", (e) => {
+      ensureAudio();
+      held.add(e.key);
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) e.preventDefault();
+      const name = e.key === " " ? "space" : e.key;
+      session.pushKey(name, true);
+    });
+    window.addEventListener("keyup", (e) => {
+      held.delete(e.key);
+      const name = e.key === " " ? "space" : e.key;
+      session.pushKey(name, false);
+    });
+    window.addEventListener("resize", sizeCanvas);
+
+    const keyBoost = () => held.has("Shift") || held.has(" ") || held.has("k") || held.has("K");
+
+    let savedBest = best;
+    const loop = () => {
+      sizeCanvas();
+      const [lx, ly] = steerFromPointers();
+      let padX = 0, padY = 0, padBoost = false;
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      for (const pad of pads) {
+        if (!pad) continue;
+        padX += pad.axes[0] || 0;
+        padY += -(pad.axes[1] || 0);
+        if (pad.buttons[0] && pad.buttons[0].pressed) padBoost = true;
+      }
+      const steerX = Math.max(-1, Math.min(1, lx + padX));
+      const steerY = Math.max(-1, Math.min(1, ly + padY));
+      session.setPlayInput(steerX, steerY, boostHeld || keyBoost() || padBoost, false, false);
+      session.requestFrame();
+      try { session.render(); }
+      catch (e) {
+        fail(`render failed: ${e}`);
+        return;
+      }
+      pumpAudio();
+      let st = {};
+      try { st = JSON.parse(session.gameJson()); } catch (_) {}
+      const playing = st.phase === "play";
+      boostEl.classList.toggle("on", playing);
+      if (!playing) boostHeld = false;
+      if (typeof st.best === "number" && st.best > savedBest) {
+        savedBest = st.best;
+        try { localStorage.setItem(BEST_KEY, String(savedBest)); } catch (_) {}
+      }
+      requestAnimationFrame(loop);
+    };
+
+    ensureAudio();
+    await Promise.all(["bgm", "card", "fire", "jump"].map(loadClip));
+    loop();
+  </script>
+</body>
+</html>

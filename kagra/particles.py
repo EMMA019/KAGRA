@@ -32,10 +32,19 @@ class _Part:
 class Emitter:
     """A burst list. ``burst`` spawns, ``tick`` integrates, ``props`` is dump props."""
 
-    def __init__(self, max_count: int = 48, *, seed: int = 1, enabled: bool = True, name: str = "spark"):
+    def __init__(
+        self,
+        max_count: int = 48,
+        *,
+        seed: int = 1,
+        enabled: bool = True,
+        name: str = "spark",
+        emissive: float = 0.0,
+    ):
         self.max_count = max(0, int(max_count))
         self.enabled = bool(enabled)
         self.name = str(name)
+        self.emissive = max(0.0, float(emissive))
         self._rng = random.Random(int(seed))
         self._parts: list[_Part] = []
 
@@ -117,21 +126,22 @@ class Emitter:
             age = 0.0 if p.max_life <= 0.0 else p.life / p.max_life
             fade = max(0.0, 1.0 - age)
             s = max(0.03, p.size * (0.45 + 0.55 * fade))
-            out.append(
-                {
-                    "id": f"prop:{self.name}-{i}",
-                    "type": "prop",
-                    "name": self.name,
-                    "position": [p.x, p.y, p.z],
-                    "yaw": 0.0,
-                    "model": "sphere",
-                    "scale": [s, s, s],
-                    "enabled": True,
-                    "color": [p.r, p.g, p.b],
-                    "metallic": 0.0,
-                    "roughness": 0.4,
-                    "collider": "none",
-                    "is_static": True,
-                }
-            )
+            item = {
+                "id": f"prop:{self.name}-{i}",
+                "type": "prop",
+                "name": self.name,
+                "position": [p.x, p.y, p.z],
+                "yaw": 0.0,
+                "model": "sphere",
+                "scale": [s, s, s],
+                "enabled": True,
+                "color": [p.r, p.g, p.b],
+                "metallic": 0.0,
+                "roughness": 0.4,
+                "collider": "none",
+                "is_static": True,
+            }
+            if self.emissive > 0.0:
+                item["emissive"] = self.emissive * (0.35 + 0.65 * fade)
+            out.append(item)
         return out

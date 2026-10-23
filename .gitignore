@@ -50,6 +50,8 @@ build/
 .ruff_cache/
 # wasm-bindgen / wasm-pack が生成する JS グルーと .wasm
 kagra-shared/www/pkg/
+kagra-shared/www/audio/
+kagra-shared/www/world.json
 
 # scripts/package_android.py が書くゲーム別のシェル設定
 mobile/android/kagra.game.properties

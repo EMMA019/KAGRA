@@ -149,6 +149,14 @@ POST_PRESETS = {
         "lut_strength": 0.9,
         "fxaa": True,
     },
+    "neon": {
+        "bloom": 0.95,
+        "bloom_threshold": 0.32,
+        "vignette": 1.05,
+        "lut": "punch",
+        "lut_strength": 0.45,
+        "fxaa": True,
+    },
 }
 
 

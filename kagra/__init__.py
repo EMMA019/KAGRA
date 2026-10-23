@@ -39,6 +39,7 @@ from kagra.gameloop import (
 from kagra.i18n import add_table, get_lang, set_lang, t
 from kagra.juice import Juice, apply_post, ease
 from kagra.particles import Emitter
+from kagra.trails import Trail
 from kagra.land import island_height, open_world_height, overworld_height
 from kagra.path import find_path, move_range
 from kagra.flow import save_dir
@@ -55,6 +56,7 @@ try:
         FightSession,
         FishCookSession,
         FpsSession,
+        NeonRun,
         NovelSession,
         PlatformerSession,
         PuzzlePadSession,
@@ -79,6 +81,7 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
             FightSession,
             FishCookSession,
             FpsSession,
+            NeonRun,
             NovelSession,
             PlatformerSession,
             PuzzlePadSession,
@@ -102,6 +105,7 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
         FightSession = None  # type: ignore[assignment]
         PuzzlePadSession = None  # type: ignore[assignment]
         PuzzleSession = None  # type: ignore[assignment]
+        NeonRun = None  # type: ignore[assignment]
         NovelSession = None  # type: ignore[assignment]
         PlatformerSession = None  # type: ignore[assignment]
         RaceSession = None  # type: ignore[assignment]
@@ -145,6 +149,8 @@ __all__ = [
     "Emitter",
     "FishCookSession",
     "Juice",
+    "NeonRun",
+    "Trail",
     "KagraContractError",
     "CardSession",
     "KairiBrain",

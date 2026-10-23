@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Lumen (`games/neon_run_minimal.json`): a neon endless flyer. The sim is
+  `NeonRun` in the shared crate (wasm, Android, and the Python window share
+  it) and is not a WorldPlay genre. Glow uses dump `emissive` /
+  `emissive_map` (`preset:core` on the ship). Reflections use `hemi_sky`,
+  `hemi_ground`, `env_map: preset:studio`, and `shadow_softness`.
+  `kagra.Trail` is a tapered emissive ribbon. `Emitter` can set `emissive`.
+  The phone page is `kagra-shared/www/play.html` (GitHub Pages default).
+  Corridor Haul moved to `corridor.html`. `scripts/package_web.py` stages
+  the site. Art is procedural. Sound clips stay the CC0 tones in
+  `assets/audio`.
+
 - Image IBL and an authorable hemisphere on the shared renderer.
   Dump `hemi_sky` / `hemi_ground` feed the L1 SH (omit them and the studio
   pair stays). `env_map` is `preset:studio` or a PNG equirect, baked to a
