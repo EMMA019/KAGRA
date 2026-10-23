@@ -11,7 +11,7 @@ Wasm and Android mean the shared runtime (`kagra-shared`, `wasm32` CI, Android A
 | Rank | Library | Why first | Effort | Where it runs |
 |---|---|---|---|---|
 | 1 | [puffin](#puffin) | Frame scopes for the profiler step. Headless dumps still need the budget object. | S | wasm and Android if `puffin_http` stays off |
-| 2 | [zune-jpeg + image-webp](#zune-jpeg-and-image-webp) | JPEG and WebP inside a GLB. JPEG is in via `image`'s `jpeg` feature. WebP is the follow-up. | S | wasm and Android (pure Rust, no rayon) |
+| 2 | [zune-jpeg + image-webp](#zune-jpeg-and-image-webp) | JPEG and WebP inside a GLB. Both decode through `image` (`jpeg` and `webp`). | S | wasm and Android (pure Rust, no rayon) |
 | 3 | [ktx2](#ktx2-and-basis-universal) read-only | Phone texture memory. Pre-encoded ETC2 / ASTC / BC, feature-detected. | M loader, L pipeline | wasm and Android. No basis-universal encoder in the engine |
 | 4 | [trimesh + pygltflib](#trimesh-and-pygltflib) | Agents can reject a bad GLB before a lavapipe shot. | S | desktop and CI only |
 | 5 | [pydantic + hypothesis](#pydantic) | World JSON stops silently ignoring bad fields. Sim tests get property checks. | S validator, M hypothesis | desktop and CI only |
@@ -40,6 +40,8 @@ Direct dependencies of `kagra-shared` (`kagra-shared/Cargo.toml`, locked in `Car
 | `wasm-bindgen`, `js-sys`, `web-sys` | `wasm` | Browser entry. |
 | `palette` 0.7.7 | **dev-dependency** | sRGB oracle in `color_space.rs` tests. The runtime curve and the Narkowicz ACES fit stay in `color_space.rs` and the WGSL shaders. `NOTICE` already records this. Do not link `palette` into wasm or Android. |
 | `winit` 0.29.15 | dev, `not(wasm32)` | The `window` example only. |
+| `puffin` 0.19.1 | runtime | CPU scopes on `render_frame` and `WorldPlay::tick`. `puffin_http` is not linked. |
+| `notify` 6.1.1 | desktop only | World dump and material watch in the `window` example. Not linked on wasm or Android. |
 
 Hand-rolled stand-ins that a new crate would replace:
 
@@ -74,7 +76,7 @@ No import of `numpy`, `PIL`, `trimesh`, `pygltflib`, `pydantic`, `hypothesis`, `
 
 ### puffin
 
-CPU scopes (frame, tick, upload, shadow pass) that a desktop viewer can read. The headless contract stays a dump object: cpu ms, gpu ms when `TIMESTAMP_QUERY` is real, draws, triangles, texture bytes, and budget warnings. `puffin` does not replace that JSON. It is the instrumentation inside the process.
+Linked as `puffin` 0.19. Scopes sit on `render_frame` and `WorldPlay::tick`. The headless contract stays a dump object: cpu ms, gpu ms when `TIMESTAMP_QUERY` is real, draws, triangles, texture bytes, and budget warnings. `puffin` does not replace that JSON. It is the instrumentation inside the process.
 
 `puffin` itself is pure Rust and builds for `wasm32` and Android. Leave `puffin_http` (the viewer socket server) off those targets, the same way `rodio` is a desktop feature. Do not request timestamp queries on wasm: that can fail device creation. GPU time stays `None` when the adapter lacks `TIMESTAMP_QUERY` and `TIMESTAMP_QUERY_INSIDE_ENCODERS`.
 

@@ -84,6 +84,14 @@ rodio = { version = "0.20", optional = true, default-features = false, features 
 
 # 剛体物理（Phase 1）。wasm32 は simd 無し（parry3d simd は target 非依存にしない）。
 rapier3d = { version = "0.35", optional = true, default-features = false, features = ["dim3", "f32", "std"] }
+# CPU scopes. Default features stay off the HTTP viewer. Wasm still links the
+# crate; puffin_http is not a dependency.
+puffin = "0.19"
+
+# Desktop file watch for world JSON and material images. Wasm and Android
+# do not link it.
+[target.'cfg(not(any(target_arch = "wasm32", target_os = "android")))'.dependencies]
+notify = "6.1.1"
 
 # ブラウザでは WebGPU を優先し、無ければ WebGL2 に落ちる。
 # `webgl` は default に入らない。ここへ明示しないと wasm から GL が外れ、

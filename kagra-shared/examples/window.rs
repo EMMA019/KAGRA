@@ -168,6 +168,12 @@ fn main() -> Result<(), String> {
     let height = size.height.max(1);
     let mut renderer = pollster::block_on(Renderer::new_for_window(window.clone(), width, height))?;
     renderer.upload_world_meshes(&play.doc)?;
+    let mut dump_watch = kagra_shared::hot::DumpWatch::open(&args.dump, &play.doc)
+        .map_err(|e| {
+            eprintln!("hot reload off: {e}");
+            e
+        })
+        .ok();
     // Threshold bloom: sun / water / metal highlights glow, toon outlines stay
     // crisp (same default as kagra-core set_bloom(0.85, 0.35)).
     renderer.set_bloom(0.85, 0.35);
@@ -410,6 +416,38 @@ fn main() -> Result<(), String> {
                     if playtest.packet_seq() != last_packet {
                         last_packet = playtest.packet_seq();
                         handoff_playtest(&playtest);
+                    }
+                    if let Some(watch) = dump_watch.as_mut() {
+                        match watch.poll() {
+                            Some(kagra_shared::hot::ReloadKind::Dump) => {
+                                match std::fs::read_to_string(&args.dump)
+                                    .ok()
+                                    .and_then(|text| kagra_shared::WorldDoc::from_json(&text).ok())
+                                {
+                                    Some(doc) => {
+                                        // Replacing the document does not rebuild genre
+                                        // session state. The live sim keeps its phase.
+                                        play.doc = doc;
+                                        renderer.clear_meshes();
+                                        if let Err(e) = renderer.upload_world_meshes(&play.doc) {
+                                            eprintln!("reload meshes: {e}");
+                                        } else {
+                                            eprintln!("reloaded {}", args.dump.display());
+                                        }
+                                    }
+                                    None => eprintln!("reload skipped: {}", args.dump.display()),
+                                }
+                            }
+                            Some(kagra_shared::hot::ReloadKind::Material) => {
+                                renderer.clear_meshes();
+                                if let Err(e) = renderer.upload_world_meshes(&play.doc) {
+                                    eprintln!("reload material: {e}");
+                                } else {
+                                    eprintln!("reloaded materials");
+                                }
+                            }
+                            None => {}
+                        }
                     }
                     if let Err(e) = renderer.update_world_gltf(&play.doc) {
                         eprintln!("skin: {e}");
