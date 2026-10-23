@@ -1,0 +1,3 @@
+# Desktop and CI only. Not part of the maturin wheel, wasm, or the Android APK.
+trimesh==5.1.1
+pygltflib==1.16.5
