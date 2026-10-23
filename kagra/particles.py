@@ -135,3 +135,78 @@ class Emitter:
                 }
             )
         return out
+
+
+class Trail:
+    """A ribbon of quads along recent positions.
+
+    Draw-only props (``model: quad``, facing +Z). The sim should not keep
+    them. ``enabled`` False emits nothing. Points closer than 4 cm are skipped.
+    """
+
+    def __init__(
+        self,
+        max_points: int = 10,
+        width: float = 0.22,
+        color: tuple[int, int, int] = (255, 214, 140),
+        *,
+        enabled: bool = True,
+        name: str = "trail",
+    ):
+        self.max_points = max(2, int(max_points))
+        self.width = max(0.04, float(width))
+        self.color = (int(color[0]), int(color[1]), int(color[2]))
+        self.enabled = bool(enabled)
+        self.name = str(name)
+        self._pts: list[tuple[float, float, float]] = []
+
+    def clear(self) -> None:
+        self._pts.clear()
+
+    def __len__(self) -> int:
+        return len(self._pts)
+
+    def push(self, position: tuple[float, float, float]) -> None:
+        if not self.enabled:
+            return
+        x, y, z = float(position[0]), float(position[1]), float(position[2])
+        if self._pts:
+            px, py, pz = self._pts[-1]
+            if (x - px) ** 2 + (y - py) ** 2 + (z - pz) ** 2 < 0.04**2:
+                return
+        self._pts.append((x, y, z))
+        if len(self._pts) > self.max_points:
+            del self._pts[0]
+
+    def props(self) -> list[dict]:
+        """Quads between samples. Empty until there are two points."""
+        if not self.enabled or len(self._pts) < 2:
+            return []
+        out: list[dict] = []
+        segments = len(self._pts) - 1
+        for i in range(segments):
+            ax, ay, az = self._pts[i]
+            bx, by, bz = self._pts[i + 1]
+            dx, dy = bx - ax, by - ay
+            length = math.hypot(dx, dy)
+            if length < 0.05:
+                continue
+            fade = (i + 1) / segments
+            out.append(
+                {
+                    "id": f"prop:{self.name}-{i}",
+                    "type": "prop",
+                    "name": self.name,
+                    "model": "quad",
+                    "position": [(ax + bx) * 0.5, (ay + by) * 0.5, (az + bz) * 0.5],
+                    "roll": math.atan2(dy, dx),
+                    "scale": [max(length, 0.08), self.width * (0.45 + 0.55 * fade), 1.0],
+                    "color": [self.color[0], self.color[1], self.color[2]],
+                    "emissive": 1.2 + 3.4 * fade,
+                    "emissive_color": [1.0, 0.78, 0.35],
+                    "collider": "none",
+                    "is_static": True,
+                    "enabled": True,
+                }
+            )
+        return out

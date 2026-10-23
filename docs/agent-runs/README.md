@@ -102,3 +102,4 @@
 - `20261022-mobile-web-quality/` — 電話ブラウザ向けの絵。ポスト（ブルーム / ACES / ビネット / LUT）、`Juice`、CPU パーティクル。Box Hop に載せた。Android は保留。
 - `20261022-emissive-pbr-shadows/` — エミッシブ（ブルーム源）、ラフネス/メタルマップ、広い PCF。Box Hop の井戸が光り、箱は split。画像 IBL は次。
 - `20261022-image-ibl-hemisphere/` — 半球光（`hemi_sky` / `hemi_ground`）と 64×64 の事前フィルタ環境（`preset:studio` か PNG）。省略時は従来の SH。Box Hop に載せた。
+- `20261023-trails-lod-look/` — 軌跡、prop LOD、視錐台カリング、pastel/night、glTF の ORM。省略時は全 prop をフルメッシュのまま。Box Hop は夜と軌跡。

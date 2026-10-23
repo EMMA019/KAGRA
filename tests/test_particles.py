@@ -35,3 +35,22 @@ def test_disabled_emits_nothing():
     assert em.burst((0.0, 0.0, 0.0), count=5) == 0
     em.tick(0.1)
     assert em.props() == []
+
+
+def test_trail_is_a_ribbon_of_quads():
+    trail = particles.Trail(max_points=4, width=0.2)
+    assert trail.props() == []
+    trail.push((0.0, 1.0, 0.0))
+    trail.push((0.01, 1.0, 0.0))
+    assert len(trail) == 1
+    trail.push((1.0, 1.4, 0.0))
+    props = trail.props()
+    assert len(props) == 1
+    assert props[0]["model"] == "quad"
+    assert props[0]["scale"][0] > 0.5
+    assert props[0]["emissive"] > 0.0
+    assert props[0]["collider"] == "none"
+    off = particles.Trail(enabled=False)
+    off.push((0.0, 0.0, 0.0))
+    off.push((1.0, 0.0, 0.0))
+    assert off.props() == []
