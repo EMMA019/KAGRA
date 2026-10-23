@@ -10,6 +10,7 @@
 use super::{obstacle_shape, NeonCat};
 use crate::flow::FlowPhase;
 use crate::gesture::Swipe;
+use crate::input::{PointerEvent, PointerPhase};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::time::Instant;
@@ -64,6 +65,7 @@ pub fn measure(world: &str, opts: &MeasureOpts) -> Result<Value, String> {
         "game": NeonCat::from_json(world)?.spec().id.clone(),
         "dt": r3(DT),
         "feel": feel,
+        "touch": touch(world)?,
         "logic": logic(world)?,
         "bot": bot(world, opts)?,
         "course": course(world, opts, apex, switch_s)?,
@@ -199,6 +201,138 @@ fn feel(world: &str) -> Result<Value, String> {
             "frames": sw,
             "secs": r3(sw as f32 * DT),
         },
+    }))
+}
+
+/// A 1080 x 2340 portrait phone; the short side is 1080 px.
+const PHONE: (u32, u32) = (1080, 2340);
+
+struct Finger<'a> {
+    g: &'a mut NeonCat,
+    f: u32,
+}
+
+impl Finger<'_> {
+    fn ev(&mut self, phase: PointerPhase, x: f32, y: f32) {
+        let ev = PointerEvent {
+            id: 1,
+            x,
+            y,
+            phase,
+            pressure: 0.5,
+        };
+        self.g.touch(ev, PHONE.0, PHONE.1, self.f as f32 * DT);
+    }
+    fn tick(&mut self) {
+        self.g.tick(DT);
+        self.f += 1;
+    }
+}
+
+/// The touch schemes end to end: pointer events in, cat motion out.
+fn touch(world: &str) -> Result<Value, String> {
+    let side = PHONE.0.min(PHONE.1) as f32;
+    let (cx, cy) = (PHONE.0 as f32 * 0.5, PHONE.1 as f32 * 0.6);
+    // Slow drag of exactly one lane of finger travel, held, then released.
+    let mut g = fresh(world)?;
+    let w = g.spec.runner.lanes.width;
+    let lane_px = g.spec.input.drag_lane_frac * side;
+    let x0 = g.x;
+    let mut f = Finger { g: &mut g, f: 0 };
+    f.ev(PointerPhase::Begin, cx, cy);
+    for i in 1..=45 {
+        f.ev(PointerPhase::Move, cx + lane_px * i as f32 / 45.0, cy);
+        f.tick();
+    }
+    for _ in 0..30 {
+        f.tick();
+    }
+    let held_lanes = (f.g.x - x0).abs() / w;
+    let mut jumped = f.g.y > 0.0;
+    f.ev(PointerPhase::End, cx + lane_px, cy);
+    for _ in 0..60 {
+        f.tick();
+    }
+    let drag_lanes = (f.g.x - x0).abs() / w;
+    // Jittery resting finger: +-2 % of the short side every frame.
+    let mut g = fresh(world)?;
+    let x0 = g.x;
+    let mut rng = Lcg(99);
+    let mut f = Finger { g: &mut g, f: 0 };
+    f.ev(PointerPhase::Begin, cx, cy);
+    let mut wobble = 0.0f32;
+    for _ in 0..120 {
+        let jx = (rng.next() - 0.5) * 2.0 * 0.02 * side;
+        let jy = (rng.next() - 0.5) * 2.0 * 0.02 * side;
+        f.ev(PointerPhase::Move, cx + jx, cy + jy);
+        f.tick();
+        wobble = wobble.max((f.g.x - x0).abs() / w);
+        jumped |= f.g.y > 0.0;
+    }
+    f.ev(PointerPhase::End, cx, cy);
+    for _ in 0..60 {
+        f.tick();
+    }
+    let jitter_lanes = (f.g.x - x0).abs() / w;
+    let jitter_jumped = jumped;
+    // Quick up-flick: 3 frames, 30 px each.
+    let mut g = fresh(world)?;
+    let mut f = Finger { g: &mut g, f: 0 };
+    f.ev(PointerPhase::Begin, cx, cy);
+    let mut flick_lat = 0;
+    for i in 1..=30u32 {
+        if i <= 3 {
+            f.ev(PointerPhase::Move, cx, cy - 30.0 * i as f32);
+        }
+        f.tick();
+        if f.g.y > 0.0 {
+            flick_lat = i;
+            break;
+        }
+    }
+    f.ev(PointerPhase::End, cx, cy - 90.0);
+    // A 45 degree stroke is not a flick.
+    let mut g = fresh(world)?;
+    let mut f = Finger { g: &mut g, f: 0 };
+    f.ev(PointerPhase::Begin, cx, cy);
+    let mut diag_jump = false;
+    for i in 1..=8 {
+        f.ev(
+            PointerPhase::Move,
+            cx + 25.0 * i as f32,
+            cy - 25.0 * i as f32,
+        );
+        f.tick();
+        diag_jump |= f.g.y > 0.0;
+    }
+    f.ev(PointerPhase::End, cx + 200.0, cy - 200.0);
+    // Swipe scheme: one long stroke (3 lanes of travel) moves one lane.
+    let mut doc: Value = serde_json::from_str(world).map_err(|e| e.to_string())?;
+    doc["game"]["input"]["scheme"] = json!("swipe");
+    let mut g = fresh(&doc.to_string())?;
+    let x0 = g.x;
+    let px = g.spec.input.swipe_dist * side;
+    let mut f = Finger { g: &mut g, f: 0 };
+    f.ev(PointerPhase::Begin, cx, cy);
+    for i in 1..=12 {
+        f.ev(PointerPhase::Move, cx + px * 3.0 * i as f32 / 12.0, cy);
+        f.tick();
+    }
+    f.ev(PointerPhase::End, cx + px * 3.0, cy);
+    for _ in 0..60 {
+        f.tick();
+    }
+    let swipe_lanes = (f.g.x - x0).abs() / w;
+    Ok(json!({
+        "phone_px": [PHONE.0, PHONE.1],
+        "drag_one_lane_held_lanes": r3(held_lanes),
+        "drag_one_lane_released_lanes": r3(drag_lanes),
+        "jitter_max_wobble_lanes": r3(wobble),
+        "jitter_final_lanes": r3(jitter_lanes),
+        "jitter_jumped": jitter_jumped,
+        "flick_up_latency_frames": flick_lat,
+        "diagonal_45_jumped": diag_jump,
+        "swipe_scheme_long_stroke_lanes": r3(swipe_lanes),
     }))
 }
 
@@ -533,6 +667,22 @@ mod tests {
         assert!(sw["lane_latency_frames"].as_u64().unwrap() <= 2, "{sw}");
         assert!(sw["lane_frames"].as_u64().unwrap() > 0, "{sw}");
         assert_eq!(sw["jump_buffered_on_landing"], true, "{sw}");
+        let t = &r["touch"];
+        let lanes = |k: &str| t[k].as_f64().unwrap();
+        assert!((lanes("drag_one_lane_held_lanes") - 1.0).abs() < 0.1, "{t}");
+        assert!(
+            (lanes("drag_one_lane_released_lanes") - 1.0).abs() < 0.05,
+            "{t}"
+        );
+        assert!(lanes("jitter_max_wobble_lanes") < 0.25, "{t}");
+        assert!(lanes("jitter_final_lanes") < 0.05, "{t}");
+        assert_eq!(t["jitter_jumped"], false, "{t}");
+        assert_eq!(t["diagonal_45_jumped"], false, "{t}");
+        assert!(t["flick_up_latency_frames"].as_u64().unwrap() <= 4, "{t}");
+        assert!(
+            (lanes("swipe_scheme_long_stroke_lanes") - 1.0).abs() < 0.05,
+            "{t}"
+        );
         assert_eq!(r["logic"]["pass"], true, "{}", r["logic"]);
         assert_eq!(
             r["course"]["unavoidable"].as_array().unwrap().len(),

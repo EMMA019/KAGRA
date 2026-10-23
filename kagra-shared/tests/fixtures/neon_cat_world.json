@@ -177,6 +177,17 @@
     "fog_start": 38.0,
     "fog_end": 110.0
    }
+  },
+  "input": {
+   "scheme": "drag",
+   "drag_lane_frac": 0.18,
+   "drag_smooth_secs": 0.05,
+   "drag_snap": true,
+   "flick_dist": 0.07,
+   "flick_angle_deg": 30.0,
+   "swipe_dist": 0.09,
+   "swipe_cooldown_secs": 0.3,
+   "buffer_secs": 0.15
   }
  }
 }

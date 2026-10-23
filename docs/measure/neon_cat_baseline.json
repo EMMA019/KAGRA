@@ -72,9 +72,9 @@
       "buffer_s": 0.15000000596046448,
       "jump_buffered_on_landing": true,
       "jump_latency_frames": 1,
-      "lane_frames": 20,
-      "lane_latency_frames": 2,
-      "lane_secs": 0.333
+      "lane_frames": 17,
+      "lane_latency_frames": 1,
+      "lane_secs": 0.283
     }
   },
   "game": "neon_cat",
@@ -94,7 +94,21 @@
     "props_max": 238.0,
     "props_p95": 237.0,
     "tick_ms_p50": 0.064,
-    "tick_ms_p95": 0.085
+    "tick_ms_p95": 0.083
+  },
+  "touch": {
+    "diagonal_45_jumped": false,
+    "drag_one_lane_held_lanes": 1.0,
+    "drag_one_lane_released_lanes": 1.0,
+    "flick_up_latency_frames": 3,
+    "jitter_final_lanes": 0.014,
+    "jitter_jumped": false,
+    "jitter_max_wobble_lanes": 0.062,
+    "phone_px": [
+      1080,
+      2340
+    ],
+    "swipe_scheme_long_stroke_lanes": 1.017
   },
   "version": 1
 }
