@@ -1,0 +1,37 @@
+{
+  "slug": "neon_run",
+  "title": "Lumen",
+  "version": "0.1.0",
+  "genre": "neon_run",
+  "world": "world.json",
+  "files": [
+    {
+      "path": "world.json",
+      "url": "games/neon_run/world.json"
+    },
+    {
+      "path": "kagra_game.json",
+      "url": "games/neon_run/kagra_game.json"
+    },
+    {
+      "path": "assets/audio/LICENSE.txt",
+      "url": "assets/audio/LICENSE.txt"
+    },
+    {
+      "path": "assets/audio/bgm.wav",
+      "url": "assets/audio/bgm.wav"
+    },
+    {
+      "path": "assets/audio/card.wav",
+      "url": "assets/audio/card.wav"
+    },
+    {
+      "path": "assets/audio/fire.wav",
+      "url": "assets/audio/fire.wav"
+    },
+    {
+      "path": "assets/audio/jump.wav",
+      "url": "assets/audio/jump.wav"
+    }
+  ]
+}

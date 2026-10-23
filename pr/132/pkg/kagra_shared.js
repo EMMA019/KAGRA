@@ -96,6 +96,22 @@ export class WasmSession {
         return ret;
     }
     /**
+     * Mixer cues for the page to play (wasm has no speakers of its own).
+     * @returns {string}
+     */
+    audioCuesJson() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.wasmsession_audioCuesJson(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * 音声レベル JSON（engine / wind / brake）。再生はブラウザ側。
      * @returns {string}
      */
@@ -153,6 +169,18 @@ export class WasmSession {
         const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.wasmsession_loadGame(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * ジャンル dump。`"genre": "neon_run"` は Lumen を起動する。
+     * @param {string} json
+     */
+    loadGameJson(json) {
+        const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmsession_loadGameJson(this.__wbg_ptr, ptr0, len0);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }
@@ -342,7 +370,7 @@ export class WasmSession {
         wasm.wasmsession_setPad(this.__wbg_ptr, x, y);
     }
     /**
-     * Packaged WorldPlay. Sticks are -1..1. Buttons are held, not edges.
+     * Packaged play. Sticks are -1..1. Lumen uses `lx`/`lz` to steer and `jump` to boost.
      * @param {number} lx
      * @param {number} lz
      * @param {boolean} jump
@@ -2377,7 +2405,7 @@ function __wbg_get_imports() {
             arg0.writeTexture(arg1, getArrayU8FromWasm0(arg2, arg3), arg4, arg5);
         }, arguments); },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 2719, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 2718, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_42bf64e63cc180fa___convert__closures_____invoke___wasm_bindgen_42bf64e63cc180fa___JsValue__core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_42bf64e63cc180fa___JsError___true_);
             return ret;
         },

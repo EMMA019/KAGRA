@@ -160,7 +160,7 @@
     const hud = document.getElementById("hud");
     const canvas = document.getElementById("c");
     const params = new URLSearchParams(location.search);
-    const slug = (params.get("game") || "").trim();
+    const slug = (params.get("game") || "neon_run").trim() || "neon_run";
 
     const fail = (text) => {
       boot.className = "err";
@@ -173,11 +173,6 @@
         window.innerHeight >= window.innerWidth ? "portrait" : "landscape";
     };
     orient();
-
-    if (!slug) {
-      fail("game が指定されていません。\n一覧から選んでください。");
-      throw new Error("missing game");
-    }
 
     const fileUrl = (baseHref, rel) => {
       const prefix = baseHref.endsWith("/") ? baseHref : baseHref + "/";

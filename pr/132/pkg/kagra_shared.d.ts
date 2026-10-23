@@ -20,6 +20,10 @@ export class WasmSession {
      */
     attachCanvas(canvas: HTMLCanvasElement): Promise<void>;
     /**
+     * Mixer cues for the page to play (wasm has no speakers of its own).
+     */
+    audioCuesJson(): string;
+    /**
      * 音声レベル JSON（engine / wind / brake）。再生はブラウザ側。
      */
     audioJson(): string;
@@ -37,6 +41,10 @@ export class WasmSession {
      * World dump JSON. The scene waits on the title until a tap confirms.
      */
     loadGame(json: string): void;
+    /**
+     * ジャンル dump。`"genre": "neon_run"` は Lumen を起動する。
+     */
+    loadGameJson(json: string): void;
     /**
      * セーブ JSON を読み込んで状態を復元する。
      */
@@ -78,7 +86,7 @@ export class WasmSession {
     setJump(held: boolean): void;
     setPad(x: number, y: number): void;
     /**
-     * Packaged WorldPlay. Sticks are -1..1. Buttons are held, not edges.
+     * Packaged play. Sticks are -1..1. Lumen uses `lx`/`lz` to steer and `jump` to boost.
      */
     setPlayInput(lx: number, lz: number, jump: boolean, attack: boolean, dodge: boolean): void;
     setPlaytestDevice(label: string, lang: string): void;
@@ -127,6 +135,57 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly kagra_net_hello: (a: number, b: number, c: number, d: number) => number;
+    readonly kagra_net_ingest: (a: number, b: number) => number;
+    readonly kagra_net_input_axis: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly kagra_net_lockstep_free: (a: number) => void;
+    readonly kagra_net_lockstep_new: (a: number, b: number) => number;
+    readonly kagra_net_ready: (a: number, b: number) => number;
+    readonly kagra_net_submit_local: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+    readonly __wbg_wasmsession_free: (a: number, b: number) => void;
+    readonly sharedVersion: () => [number, number];
+    readonly wasm_start: () => void;
+    readonly wasmsession_attachCanvas: (a: number, b: any) => any;
+    readonly wasmsession_audioCuesJson: (a: number) => [number, number];
+    readonly wasmsession_audioJson: (a: number) => [number, number];
+    readonly wasmsession_clearMount: (a: number) => void;
+    readonly wasmsession_createSurface: (a: number, b: number, c: number) => void;
+    readonly wasmsession_gameJson: (a: number) => [number, number];
+    readonly wasmsession_hasRenderer: (a: number) => number;
+    readonly wasmsession_loadGame: (a: number, b: number, c: number) => [number, number];
+    readonly wasmsession_loadJson: (a: number, b: number, c: number) => [number, number];
+    readonly wasmsession_mountFile: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly wasmsession_new: () => number;
+    readonly wasmsession_pause: (a: number) => void;
+    readonly wasmsession_playtestAction: (a: number, b: number, c: number) => void;
+    readonly wasmsession_playtestPacketJson: (a: number) => [number, number];
+    readonly wasmsession_playtestPointer: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly wasmsession_playtestStateJson: (a: number) => [number, number];
+    readonly wasmsession_pushKey: (a: number, b: number, c: number, d: number) => number;
+    readonly wasmsession_pushPointer: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly wasmsession_render: (a: number) => [number, number];
+    readonly wasmsession_renderSupported: (a: number) => number;
+    readonly wasmsession_requestFrame: (a: number) => number;
+    readonly wasmsession_resume: (a: number) => void;
+    readonly wasmsession_saveJson: (a: number) => [number, number, number, number];
+    readonly wasmsession_setAssetRoot: (a: number, b: number, c: number) => void;
+    readonly wasmsession_setDrive: (a: number, b: number, c: number, d: number) => void;
+    readonly wasmsession_setJump: (a: number, b: number) => void;
+    readonly wasmsession_setPad: (a: number, b: number, c: number) => void;
+    readonly wasmsession_setPlayInput: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly wasmsession_setPlaytestDevice: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly wasmsession_setPlaytestEnabled: (a: number, b: number) => void;
+    readonly wasmsession_setPlaytestExternalChrome: (a: number, b: number) => void;
+    readonly wasmsession_setPlaytestNote: (a: number, b: number, c: number) => void;
+    readonly wasmsession_setScene: (a: number, b: number) => void;
+    readonly wasmsession_setSettings: (a: number, b: number, c: number, d: number) => void;
+    readonly wasmsession_setWalk: (a: number, b: number, c: number, d: number) => void;
+    readonly wasmsession_set_playtest_shot_path: (a: number, b: number, c: number) => void;
+    readonly wasmsession_showTitle: (a: number) => void;
+    readonly wasmsession_speedKmh: (a: number) => number;
+    readonly wasmsession_startGame: (a: number) => void;
+    readonly wasmsession_statsJson: (a: number) => [number, number];
+    readonly wasmsession_loadGameJson: (a: number, b: number, c: number) => [number, number];
     readonly __wbg_wasmlockstep_free: (a: number, b: number) => void;
     readonly kagra_shared_attach_android_surface: (a: number, b: number, c: number, d: number) => number;
     readonly kagra_shared_attach_ios_view: (a: number, b: number, c: number, d: number) => number;
@@ -179,55 +238,6 @@ export interface InitOutput {
     readonly wasmlockstep_new: (a: number, b: number) => [number, number, number];
     readonly wasmlockstep_ready: (a: number, b: number) => number;
     readonly wasmlockstep_submitLocal: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
-    readonly kagra_net_hello: (a: number, b: number, c: number, d: number) => number;
-    readonly kagra_net_ingest: (a: number, b: number) => number;
-    readonly kagra_net_input_axis: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
-    readonly kagra_net_lockstep_free: (a: number) => void;
-    readonly kagra_net_lockstep_new: (a: number, b: number) => number;
-    readonly kagra_net_ready: (a: number, b: number) => number;
-    readonly kagra_net_submit_local: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
-    readonly __wbg_wasmsession_free: (a: number, b: number) => void;
-    readonly sharedVersion: () => [number, number];
-    readonly wasm_start: () => void;
-    readonly wasmsession_attachCanvas: (a: number, b: any) => any;
-    readonly wasmsession_audioJson: (a: number) => [number, number];
-    readonly wasmsession_clearMount: (a: number) => void;
-    readonly wasmsession_createSurface: (a: number, b: number, c: number) => void;
-    readonly wasmsession_gameJson: (a: number) => [number, number];
-    readonly wasmsession_hasRenderer: (a: number) => number;
-    readonly wasmsession_loadGame: (a: number, b: number, c: number) => [number, number];
-    readonly wasmsession_loadJson: (a: number, b: number, c: number) => [number, number];
-    readonly wasmsession_mountFile: (a: number, b: number, c: number, d: number, e: number) => void;
-    readonly wasmsession_new: () => number;
-    readonly wasmsession_pause: (a: number) => void;
-    readonly wasmsession_playtestAction: (a: number, b: number, c: number) => void;
-    readonly wasmsession_playtestPacketJson: (a: number) => [number, number];
-    readonly wasmsession_playtestPointer: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
-    readonly wasmsession_playtestStateJson: (a: number) => [number, number];
-    readonly wasmsession_pushKey: (a: number, b: number, c: number, d: number) => number;
-    readonly wasmsession_pushPointer: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-    readonly wasmsession_render: (a: number) => [number, number];
-    readonly wasmsession_renderSupported: (a: number) => number;
-    readonly wasmsession_requestFrame: (a: number) => number;
-    readonly wasmsession_resume: (a: number) => void;
-    readonly wasmsession_saveJson: (a: number) => [number, number, number, number];
-    readonly wasmsession_setAssetRoot: (a: number, b: number, c: number) => void;
-    readonly wasmsession_setDrive: (a: number, b: number, c: number, d: number) => void;
-    readonly wasmsession_setJump: (a: number, b: number) => void;
-    readonly wasmsession_setPad: (a: number, b: number, c: number) => void;
-    readonly wasmsession_setPlayInput: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-    readonly wasmsession_setPlaytestDevice: (a: number, b: number, c: number, d: number, e: number) => void;
-    readonly wasmsession_setPlaytestEnabled: (a: number, b: number) => void;
-    readonly wasmsession_setPlaytestExternalChrome: (a: number, b: number) => void;
-    readonly wasmsession_setPlaytestNote: (a: number, b: number, c: number) => void;
-    readonly wasmsession_setScene: (a: number, b: number) => void;
-    readonly wasmsession_setSettings: (a: number, b: number, c: number, d: number) => void;
-    readonly wasmsession_setWalk: (a: number, b: number, c: number, d: number) => void;
-    readonly wasmsession_set_playtest_shot_path: (a: number, b: number, c: number) => void;
-    readonly wasmsession_showTitle: (a: number) => void;
-    readonly wasmsession_speedKmh: (a: number) => number;
-    readonly wasmsession_startGame: (a: number) => void;
-    readonly wasmsession_statsJson: (a: number) => [number, number];
     readonly wasm_bindgen_42bf64e63cc180fa___convert__closures_____invoke___wasm_bindgen_42bf64e63cc180fa___JsValue__core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_42bf64e63cc180fa___JsError___true_: (a: number, b: number, c: any) => [number, number];
     readonly wasm_bindgen_42bf64e63cc180fa___convert__closures_____invoke___wasm_bindgen_42bf64e63cc180fa___sys__JsOption_wgpu_426165c770c61972___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_42bf64e63cc180fa___JsError___true_: (a: number, b: number, c: any) => [number, number];
     readonly wasm_bindgen_42bf64e63cc180fa___convert__closures_____invoke___wasm_bindgen_42bf64e63cc180fa___sys__JsOption_wgpu_426165c770c61972___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_42bf64e63cc180fa___JsError___true__2: (a: number, b: number, c: any) => [number, number];

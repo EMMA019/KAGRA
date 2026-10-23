@@ -1,15 +1,15 @@
 {
   "games": [
     {
-      "slug": "platformer",
-      "title": "Box Hop",
+      "slug": "neon_run",
+      "title": "Lumen",
       "version": "0.1.0",
       "browser": true,
-      "genre": "box_hop",
-      "entry": "examples/platformer_minimal.py",
-      "world": "kagra-shared/tests/fixtures/platformer_world.json",
-      "href": "play.html?game=platformer",
-      "icon": "games/platformer/icon.png"
+      "genre": "neon_run",
+      "entry": "examples/neon_run_minimal.py",
+      "world": "kagra-shared/tests/fixtures/neon_run_world.json",
+      "href": "play.html?game=neon_run",
+      "icon": "games/neon_run/icon.png"
     },
     {
       "slug": "action",
@@ -32,6 +32,17 @@
       "world": "kagra-shared/tests/fixtures/bar_room_world.json",
       "href": "play.html?game=bar_sim",
       "icon": "games/bar_sim/icon.png"
+    },
+    {
+      "slug": "platformer",
+      "title": "Box Hop",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "box_hop",
+      "entry": "examples/platformer_minimal.py",
+      "world": "kagra-shared/tests/fixtures/platformer_world.json",
+      "href": "play.html?game=platformer",
+      "icon": "games/platformer/icon.png"
     },
     {
       "slug": "card",
