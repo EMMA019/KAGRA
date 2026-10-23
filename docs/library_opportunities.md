@@ -106,9 +106,11 @@ Both are CPython packages. They do not import into the wasm module or the Androi
 
 ### pydantic
 
-`WorldDoc::from_json` ignores unknown fields. A pydantic model generated from `docs/schemas/world.json` (or hand-written next to it) fails the agent's edit when a dump field is misspelled. That is a desktop and CI check. The Rust parser stays the runtime.
+`WorldDoc::from_json` ignores unknown fields. `tools/check_world_json.py` builds a pydantic 2 model from `docs/schemas/world.json` with `extra='forbid'` and reports a path plus a close-match suggestion (`props[0].positon: unknown field; did you mean position?`). A bad type says what the schema wanted (`coins: expected integer, got str`). A missing required field says so (`version: missing required field`). That is a desktop and CI check. The Rust parser stays the runtime.
 
-Effort **S** for the model and one test that a bad key fails. Do not add pydantic to the phone package.
+The model is generated from the schema, so a new dump field is checked once `docs/schemas/world.json` lists it. JSON integers still fill `number` fields. Integer fields reject strings. Null is allowed only where the schema type includes null. An object with no `properties` (event `data`) keeps arbitrary keys. Dumps the schema has not caught up with (`wind`, `is_static`, a null `player`, a null `color`) fail this checker on purpose.
+
+It lives in the `validate` extra and `tools/requirements-world.txt`. CI job `world-json-checks` installs that file and runs `tests/test_world_json.py`. The `python-unit` job does not install pydantic, so that test skips there. pydantic is not in the wheel. `kagra/` and `examples/` do not import it.
 
 ### hypothesis
 
