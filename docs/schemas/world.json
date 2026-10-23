@@ -111,6 +111,16 @@
       "type": ["number", "null"],
       "description": "Directional shadow radius. Omit = 1, the historical 3x3 PCF. About 2.5 to 4 uses a wider 5x5 tent."
     },
+    "shadow_cascades": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "maximum": 3,
+      "description": "Cascades packed into the one 2048 sun map. Omit = 1, the historical full map (24 m). 2 or 3 use concentric rings (8 / 24 / 80 m) as tiles. KAGRA_QUALITY=high or 2 selects 3 when omitted. 0 / off / low forces 1."
+    },
+    "shadow_pcss": {
+      "type": ["boolean", "null"],
+      "description": "Contact-hardening blocker search. Omit = off. The compare sampler stays the lighting path. High quality turns it on. KAGRA_QUALITY=0 / off / low forces it off. WebGL2 reads a color copy of device z because a comparison depth cannot be sampled as a value."
+    },
     "hemi_sky": {
       "type": ["array", "null"],
       "minItems": 3,
