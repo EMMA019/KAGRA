@@ -986,6 +986,7 @@ impl NeonCat {
             0.4,
             false,
         ));
+        push_mesh_anchors(&mut doc);
         self.push_tunnel(&mut doc);
         self.push_gates(&mut doc);
         self.push_rings(&mut doc);
@@ -1543,6 +1544,35 @@ fn push_aabb_cage(doc: &mut WorldDoc, id: &str, min: [f32; 3], max: [f32; 3], co
     }
 }
 
+/// Every static GLB the run can show, in a fixed order.
+const ANCHOR_GLBS: [&str; 5] = [GATE_GLB, RING_GLB, CRATE_GLB, BARREL_GLB, BARRIER_GLB];
+
+/// Pin the renderer's glTF slot table.
+///
+/// `WorldDoc::gltf_slots` lists unique specs in prop order, and the renderer
+/// re-parses and re-uploads every mesh whenever that list changes. Obstacle
+/// kinds scroll in and out of the window, so without anchors the table
+/// changed every few seconds and the page froze while it rebuilt. One tiny
+/// buried prop per GLB, first in the list, keeps the key constant.
+fn push_mesh_anchors(doc: &mut WorldDoc) {
+    for (i, path) in ANCHOR_GLBS.iter().enumerate() {
+        if let Some(prop) = glb_prop(
+            &format!("anchor:{i}"),
+            "anchor",
+            path,
+            [0.0, -60.0, -60.0],
+            [1e-4, 1e-4, 1e-4],
+            0.0,
+            0.0,
+            [0, 0, 0],
+            0.0,
+            [0.0, 0.0, 0.0],
+        ) {
+            doc.props.push(prop);
+        }
+    }
+}
+
 /// True when `path` is a mounted or on-disk GLB that parses.
 /// A miss is not cached, so a wasm page can mount the file after boot.
 fn obstacle_drawable(path: &str) -> bool {
@@ -1802,6 +1832,27 @@ fn splice_json_key(body: &str, key: &str, value: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn gpu_mesh_key_stays_put_through_a_long_run() {
+        let mut run = NeonCat::fresh();
+        run.rebuild();
+        let first = run.document().gpu_mesh_key();
+        run.confirm();
+        for frame in 0..6000 {
+            run.set_steer(((frame as f32) * 0.01).sin(), 0.0, frame % 90 == 0);
+            run.tick(1.0 / 60.0);
+            if !run.playing() {
+                run.confirm();
+            }
+            assert_eq!(
+                run.document().gpu_mesh_key(),
+                first,
+                "frame {frame}: a changed key re-uploads every mesh (the hitch)"
+            );
+        }
+    }
+
     use super::*;
     use crate::session::{SceneKind, SharedSession};
 
