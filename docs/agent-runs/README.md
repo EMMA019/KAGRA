@@ -104,4 +104,5 @@
 - `20261022-image-ibl-hemisphere/` — 半球光（`hemi_sky` / `hemi_ground`）と 64×64 の事前フィルタ環境（`preset:studio` か PNG）。省略時は従来の SH。Box Hop に載せた。
 - `20261022-neon-lumen/` — Lumen。ネオンのエンドレスフライヤー。`NeonRun`（WorldPlay のジャンルではない）。光は `emissive`、夜の絵は `apply_look(world, "night")`、軌跡は `kagra.Trail`。`play.html` が Pages の既定。
 - `20261023-trails-lod-look/` — 軌跡、prop LOD、視錐台カリング、pastel/night、glTF の ORM。省略時は全 prop をフルメッシュのまま。Box Hop は夜と軌跡。
-- `20261023-juice-easing/` — ゲーム非依存の `juice`（simple-easing）。Lumen のクラッシュがヒットストップしてからリザルト。
+- `20261023-neon-webgpu-picture/` — 電話の 8bit スワップチェーンでもグレード / FXAA / ミップブルーム。Lumen の階段トレイルは外す。`pictureStatus`。
+- `20261023-juice-easing/` — ゲーム非依存の `juice`（simple-easing）。Lumen のクラッシュがヒットストップしてからリザルト。階段トレイルは戻さない。

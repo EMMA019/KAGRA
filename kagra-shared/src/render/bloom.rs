@@ -11,11 +11,22 @@
 
 /// Preferred linear HDR frame. Needs a filterable, blendable float target
 /// (`EXT_color_buffer_float` on WebGL2). Missing that, the pass uses
-/// [`LDR_FRAME_FORMAT`] and bloom stays off.
+/// [`LDR_FRAME_FORMAT`] and an 8-bit mip-chain bloom.
 pub(super) const HDR_FRAME_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
-/// 8-bit linear frame. Clamps values above 1, so bloom has no headroom.
+/// 8-bit linear frame. Values above 1 clamp, so bloom uses a luma threshold
+/// in 0..1 plus the emissive mask instead of an HDR headroom test.
 pub(super) const LDR_FRAME_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+
+/// Authored thresholds above 1 are HDR headroom (Neon uses 1.45). On an
+/// 8-bit frame that bar is folded into the top of the 0..1 luma range.
+pub(super) fn ldr_luma_threshold(threshold: f32) -> f32 {
+    if threshold <= 1.0 {
+        threshold.clamp(0.0, 1.0)
+    } else {
+        (0.70 + 0.15 * (threshold - 1.0)).clamp(0.5, 0.92)
+    }
+}
 
 /// True when `format` can be a linear HDR color target that bloom can sample.
 pub(super) fn format_supports_hdr_frame(
@@ -89,13 +100,34 @@ pub(super) struct BloomPass {
     fxaa_params: (wgpu::Buffer, wgpu::BindGroup),
     fxaa_enabled: bool,
     /// False when the device cannot render+filter+blend a float color target.
-    /// Bloom intensity is forced to 0; the frame format is [`LDR_FRAME_FORMAT`].
+    /// The frame format is then [`LDR_FRAME_FORMAT`] and bloom is the mip chain.
     hdr: bool,
     frame_format: wgpu::TextureFormat,
     /// True when the composite target is not an sRGB format, so the shader
     /// applies the OETF. WebGPU canvases are 8-bit unorm.
     encode_srgb: bool,
+    /// Emissive mask, same format as the frame so the 3D MRT stays uniform.
+    emit_tex: wgpu::Texture,
+    emit_view: wgpu::TextureView,
+    ldr_bgl: wgpu::BindGroupLayout,
+    ldr_extract: wgpu::RenderPipeline,
+    ldr_down: wgpu::RenderPipeline,
+    ldr_up: wgpu::RenderPipeline,
+    mips: Vec<LdrMip>,
+    /// One uniform buffer per LDR draw. Reusing one buffer before submit
+    /// would leave every pass with the last write.
+    ldr_params: Vec<(wgpu::Buffer, wgpu::BindGroup)>,
 }
+
+#[derive(Debug)]
+struct LdrMip {
+    _tex: wgpu::Texture,
+    view: wgpu::TextureView,
+    w: u32,
+    h: u32,
+}
+
+const LDR_MIPS: usize = 5;
 
 impl BloomPass {
     pub fn new(
@@ -236,6 +268,57 @@ impl BloomPass {
         let composite_tex = make_composite_tex(device, format, width, height);
         let composite_view = composite_tex.create_view(&Default::default());
         let (lut_tex, lut_view) = make_lut_tex(device);
+        let (emit_tex, emit_view) = make_emit_tex(device, frame_format, width, height);
+        let ldr_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Bloom LDR"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("bloom_ldr.wgsl").into()),
+        });
+        let ldr_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Bloom LDR Tex"),
+            entries: &[tex_entry(0), samp_entry(1), tex_entry(2), samp_entry(3)],
+        });
+        let ldr_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Bloom LDR Layout"),
+            bind_group_layouts: &[Some(&ldr_bgl), Some(&params_bgl)],
+            immediate_size: 0,
+        });
+        let ldr_extract = make_fs_pipeline(
+            device,
+            &ldr_shader,
+            "fs_extract",
+            &ldr_layout,
+            LDR_FRAME_FORMAT,
+            "Bloom LDR Extract",
+        );
+        let ldr_down = make_fs_pipeline(
+            device,
+            &ldr_shader,
+            "fs_down",
+            &ldr_layout,
+            LDR_FRAME_FORMAT,
+            "Bloom LDR Down",
+        );
+        let ldr_up = make_fs_pipeline_blend(
+            device,
+            &ldr_shader,
+            "fs_up",
+            &ldr_layout,
+            LDR_FRAME_FORMAT,
+            "Bloom LDR Up",
+            Some(wgpu::BlendState {
+                color: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::One,
+                    dst_factor: wgpu::BlendFactor::One,
+                    operation: wgpu::BlendOperation::Add,
+                },
+                alpha: wgpu::BlendComponent::REPLACE,
+            }),
+        );
+        let mips = make_mips(device, width, height);
+        let ldr_steps = 1 + (LDR_MIPS - 1) + (LDR_MIPS - 1);
+        let ldr_params = (0..ldr_steps)
+            .map(|i| make_params_sized(device, &params_bgl, &format!("Bloom LDR Params {i}"), 32))
+            .collect();
 
         Self {
             width,
@@ -275,6 +358,14 @@ impl BloomPass {
             hdr,
             frame_format,
             encode_srgb: !format.is_srgb(),
+            emit_tex,
+            emit_view,
+            ldr_bgl,
+            ldr_extract,
+            ldr_down,
+            ldr_up,
+            mips,
+            ldr_params,
         }
     }
 
@@ -295,11 +386,16 @@ impl BloomPass {
         self.frame_format
     }
 
+    /// Emissive mask written by the 3D pass (second color target).
+    pub fn emit_view(&self) -> &wgpu::TextureView {
+        &self.emit_view
+    }
+
     pub fn set_params(&mut self, threshold: f32, intensity: f32) {
         self.threshold = threshold.clamp(0.0, 2.0);
-        // LDR frames clamp at 1, so a threshold extract would bloom the whole
-        // image. Leave the composite path (exposure, ACES, LUT, vignette).
-        self.intensity = if self.hdr { intensity.max(0.0) } else { 0.0 };
+        // 8-bit frames keep the intensity. The mip chain thresholds luma in
+        // 0..1 and adds the emissive mask, so a value above 1 is not required.
+        self.intensity = intensity.max(0.0);
     }
 
     /// One write for the dump-driven post stack. LUT bytes upload in `apply`.
@@ -346,6 +442,10 @@ impl BloomPass {
         let format = self.composite_tex.format();
         self.composite_tex = make_composite_tex(device, format, width, height);
         self.composite_view = self.composite_tex.create_view(&Default::default());
+        let (emit_tex, emit_view) = make_emit_tex(device, self.frame_format, width, height);
+        self.emit_tex = emit_tex;
+        self.emit_view = emit_view;
+        self.mips = make_mips(device, width, height);
         self.width = width;
         self.height = height;
     }
@@ -353,6 +453,10 @@ impl BloomPass {
     /// Edge smoothing on the composite output. Default on.
     pub fn set_fxaa(&mut self, enabled: bool) {
         self.fxaa_enabled = enabled;
+    }
+
+    pub(super) fn fxaa_enabled(&self) -> bool {
+        self.fxaa_enabled
     }
 
     /// `frame_tex`(linear HDR 3D)→ 最終 sRGB ターゲットへ。アクティブなら
@@ -386,7 +490,7 @@ impl BloomPass {
             &self.sampler,
             "Bloom Src",
         );
-        if self.is_active() {
+        if self.is_active() && self.hdr {
             let a_bg = bind_tex(
                 device,
                 &self.tex_bgl,
@@ -442,13 +546,20 @@ impl BloomPass {
                 &[&b_bg, &self.blur_v_params.1],
                 "Bloom Blur V",
             );
+        } else if self.is_active() {
+            self.run_ldr_mips(device, queue, encoder);
         }
 
         // composite → composite_tex（sRGB）。exposure → ACES → LUT → vignette.
+        let bloom_view = if self.hdr || !self.is_active() {
+            &self.half_a_view
+        } else {
+            &self.mips[0].view
+        };
         let grade_bg = bind_grade(
             device,
             &self.composite_tex_bgl,
-            &self.half_a_view,
+            bloom_view,
             &self.lut_view,
             &self.sampler,
         );
@@ -515,6 +626,111 @@ impl BloomPass {
             );
         }
     }
+
+    /// Half-res extract, then a 5-level downsample / additive upsample.
+    /// Each draw has its own uniform buffer so a later `write_buffer` cannot
+    /// rewrite an earlier pass before submit.
+    fn run_ldr_mips(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        let knee = (self.threshold * 0.12).clamp(0.04, 0.2);
+        let threshold = ldr_luma_threshold(self.threshold);
+        let mut slot = 0usize;
+        write_params(
+            queue,
+            &self.ldr_params[slot].0,
+            &[threshold, knee, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        );
+        let extract_bg = bind_ldr(
+            device,
+            &self.ldr_bgl,
+            &self.frame_view,
+            &self.emit_view,
+            &self.sampler,
+            "Bloom LDR Extract",
+        );
+        fullscreen(
+            encoder,
+            &self.ldr_extract,
+            &self.mips[0].view,
+            &[&extract_bg, &self.ldr_params[slot].1],
+            "Bloom LDR Extract",
+        );
+        slot += 1;
+        for i in 0..LDR_MIPS - 1 {
+            let src = &self.mips[i];
+            let dst = &self.mips[i + 1];
+            let karis = if i == 0 { 1.0 } else { 0.0 };
+            write_params(
+                queue,
+                &self.ldr_params[slot].0,
+                &[
+                    1.0 / src.w.max(1) as f32,
+                    1.0 / src.h.max(1) as f32,
+                    karis,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                ],
+            );
+            let bg = bind_ldr(
+                device,
+                &self.ldr_bgl,
+                &src.view,
+                &self.emit_view,
+                &self.sampler,
+                "Bloom LDR Down",
+            );
+            fullscreen(
+                encoder,
+                &self.ldr_down,
+                &dst.view,
+                &[&bg, &self.ldr_params[slot].1],
+                "Bloom LDR Down",
+            );
+            slot += 1;
+        }
+        for i in (0..LDR_MIPS - 1).rev() {
+            let src = &self.mips[i + 1];
+            let dst = &self.mips[i];
+            write_params(
+                queue,
+                &self.ldr_params[slot].0,
+                &[
+                    1.0 / src.w.max(1) as f32,
+                    1.0 / src.h.max(1) as f32,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                ],
+            );
+            let bg = bind_ldr(
+                device,
+                &self.ldr_bgl,
+                &src.view,
+                &self.emit_view,
+                &self.sampler,
+                "Bloom LDR Up",
+            );
+            fullscreen_load(
+                encoder,
+                &self.ldr_up,
+                &dst.view,
+                &[&bg, &self.ldr_params[slot].1],
+                "Bloom LDR Up",
+            );
+            slot += 1;
+        }
+        debug_assert_eq!(slot, self.ldr_params.len());
+    }
 }
 
 fn half_size(w: u32, h: u32) -> (u32, u32) {
@@ -567,6 +783,34 @@ fn make_composite_tex(
             | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     })
+}
+
+fn make_emit_tex(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    w: u32,
+    h: u32,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    make_bloom_tex(device, format, w.max(1), h.max(1), "Bloom Emit")
+}
+
+fn make_mips(device: &wgpu::Device, width: u32, height: u32) -> Vec<LdrMip> {
+    let mut w = (width / 2).max(1);
+    let mut h = (height / 2).max(1);
+    let mut out = Vec::with_capacity(LDR_MIPS);
+    for i in 0..LDR_MIPS {
+        let label = format!("Bloom LDR {i}");
+        let (tex, view) = make_bloom_tex(device, LDR_FRAME_FORMAT, w, h, &label);
+        out.push(LdrMip {
+            _tex: tex,
+            view,
+            w,
+            h,
+        });
+        w = (w / 2).max(1);
+        h = (h / 2).max(1);
+    }
+    out
 }
 
 fn make_bloom_tex(
@@ -692,6 +936,38 @@ fn bind_grade(
     })
 }
 
+fn bind_ldr(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    src: &wgpu::TextureView,
+    emit: &wgpu::TextureView,
+    sampler: &wgpu::Sampler,
+    label: &str,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some(label),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(src),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(emit),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+        ],
+    })
+}
+
 fn bind_tex(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
@@ -780,6 +1056,36 @@ fn fullscreen(
     rp.draw(0..3, 0..1);
 }
 
+fn fullscreen_load(
+    encoder: &mut wgpu::CommandEncoder,
+    pipeline: &wgpu::RenderPipeline,
+    target: &wgpu::TextureView,
+    groups: &[&wgpu::BindGroup],
+    label: &str,
+) {
+    let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some(label),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: target,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
+    rp.set_pipeline(pipeline);
+    for (i, g) in groups.iter().enumerate() {
+        rp.set_bind_group(i as u32, *g, &[]);
+    }
+    rp.draw(0..3, 0..1);
+}
+
 fn make_fs_pipeline(
     device: &wgpu::Device,
     shader: &wgpu::ShaderModule,
@@ -815,6 +1121,42 @@ fn make_fs_pipeline(
     })
 }
 
+fn make_fs_pipeline_blend(
+    device: &wgpu::Device,
+    shader: &wgpu::ShaderModule,
+    fs: &str,
+    layout: &wgpu::PipelineLayout,
+    format: wgpu::TextureFormat,
+    label: &str,
+    blend: Option<wgpu::BlendState>,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(label),
+        layout: Some(layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some(fs),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::extract_weight;
@@ -835,5 +1177,14 @@ mod tests {
     fn just_under_threshold_is_soft_not_full() {
         let w = extract_weight(0.82, 0.85, 0.08);
         assert!(w < 0.15);
+    }
+
+    #[test]
+    fn ldr_threshold_folds_hdr_headroom_into_the_top_of_the_range() {
+        let neon = super::ldr_luma_threshold(1.45);
+        assert!((neon - 0.7675).abs() < 1e-4, "{neon}");
+        assert!((super::ldr_luma_threshold(0.85) - 0.85).abs() < 1e-6);
+        assert!(super::ldr_luma_threshold(4.0) <= 0.92);
+        assert!(super::ldr_luma_threshold(0.0) >= 0.0);
     }
 }
