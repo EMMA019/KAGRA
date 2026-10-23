@@ -35,7 +35,9 @@ const BARRIER_GLB: &str = "assets/models/kenney/racing-kit/barrierRed.glb";
 /// 412×915 frame, in the lower third.
 const CAT_SCALE: f32 = 0.50;
 /// sRGB multiply so the light Kenney body reads as a dark violet.
-const CAT_TINT: [u32; 3] = [188, 156, 236];
+const CAT_TINT: [u32; 3] = [226, 206, 255];
+/// Obstacle fill glow. Under bloom threshold; see `push_obstacles`.
+const OBS_FILL_EMISSIVE: f32 = 0.35;
 const CAT_FOOT: f32 = 0.30;
 /// Slide along the magenta rail. The rail, the arch, and the floor are
 /// scenery. Only a crate, barrel, or barrier ends the run.
@@ -1016,7 +1018,7 @@ impl NeonCat {
             [self.x + 0.22, self.y + 0.62, self.z - 0.12],
             [0.0, 0.0, 0.0],
             [1.0, 0.25, 0.75],
-            1.4,
+            2.0,
             0.42,
             false,
         ));
@@ -1026,7 +1028,7 @@ impl NeonCat {
             [self.x - 0.24, self.y + 0.55, self.z + 0.08],
             [0.0, 0.0, 0.0],
             [0.3, 0.9, 1.0],
-            1.1,
+            1.8,
             0.4,
             false,
         ));
@@ -1274,10 +1276,19 @@ impl NeonCat {
                 shape.scale,
                 0.0,
                 0.0,
-                [28, 20, 42],
+                [36, 26, 54],
                 0.0,
                 [0.04, 0.02, 0.06],
             ) {
+                // Dim neon fill in the edge hue so a crate reads against the
+                // black tunnel. Low enough that bloom (threshold 1.4) skips it.
+                let cyan = i.rem_euclid(2) == 0;
+                obstacle.emissive = Some(OBS_FILL_EMISSIVE);
+                obstacle.emissive_color = Some(if cyan {
+                    [0.10, 0.55, 0.65]
+                } else {
+                    [0.60, 0.10, 0.42]
+                });
                 obstacle.roughness = 0.94;
                 obstacle.metallic = 0.04;
                 doc.props.push(obstacle);
@@ -1301,7 +1312,7 @@ impl NeonCat {
                         shape.skin_max[2] + proud,
                     ],
                     col,
-                    1.7,
+                    2.6,
                 );
                 spawned.insert(i);
             }
@@ -1384,19 +1395,22 @@ impl NeonCat {
         doc.player = Some(cat);
     }
 
+    /// Sparks are short fading streaks along their velocity, to match the
+    /// thin line art (not glowing balls).
     fn push_sparks(&self, doc: &mut WorldDoc) {
         for (i, s) in self.sparks.iter().enumerate() {
             let fade = 1.0 - (s.life / s.max_life).clamp(0.0, 1.0);
-            let size = (s.size * (0.45 + 0.55 * fade)).max(0.04);
-            doc.props.push(glow(
+            let k = 0.035;
+            let tail = [s.x - s.vx * k, (s.y - s.vy * k).max(0.03), s.z - s.vz * k];
+            let a = (255.0 * fade) as u8;
+            let c = [s.color[0] as u8, s.color[1] as u8, s.color[2] as u8, a];
+            stroke(
+                doc,
                 &format!("spark-{i}"),
-                "sphere",
-                "spark",
-                [s.x, s.y, s.z],
-                [size, size, size],
-                s.color,
-                2.0 * fade + 0.4,
-            ));
+                vec![tail, [s.x, s.y, s.z]],
+                c,
+                1.3,
+            );
         }
     }
 
@@ -1982,6 +1996,22 @@ mod tests {
             inner > LANE_LIMIT + 0.2,
             "pillar at {inner} inside the lane"
         );
+    }
+
+    #[test]
+    fn fixed_dt_runs_are_deterministic() {
+        let play = || {
+            let mut run = NeonCat::fresh();
+            run.confirm();
+            let mut frames = 0;
+            while run.alive && frames < 60 * 120 {
+                run.set_steer(((frames as f32) * 0.013).sin(), 0.0, frames % 47 == 0);
+                run.tick(1.0 / 60.0);
+                frames += 1;
+            }
+            (run.score(), run.rings(), frames, run.death().to_string())
+        };
+        assert_eq!(play(), play());
     }
 
     #[test]
@@ -2669,7 +2699,7 @@ mod tests {
             .find(|prop| prop.id == "prop:obs-0")
             .expect("crate");
         assert!(obs.color.unwrap()[0] < 48);
-        assert!(obs.emissive.unwrap_or(1.0) < 0.05);
+        assert!(obs.emissive.unwrap_or(1.0) <= OBS_FILL_EMISSIVE);
         assert!(doc.lines.iter().any(|line| line.id.starts_with("edge-0")));
         assert!(doc.lines.iter().any(|line| line.id.starts_with("arch-out")));
         assert!(doc.lines.iter().any(|line| line.id.starts_with("fl-")));
