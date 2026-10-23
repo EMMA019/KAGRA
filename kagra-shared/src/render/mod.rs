@@ -103,6 +103,7 @@ struct GpuMesh {
     alpha_cut: f32,
     double_sided: bool,
     has_normal: bool,
+    normal_scale: f32,
     emissive: f32,
     emissive_color: [f32; 3],
     clearcoat: f32,
@@ -1399,6 +1400,7 @@ impl Renderer {
             alpha_cut: mesh.alpha_cut,
             double_sided: mesh.double_sided,
             has_normal: tex_ok(&mesh.normal),
+            normal_scale: mesh.normal_scale.unwrap_or(1.0),
             emissive: mesh.emissive,
             emissive_color: mesh.emissive_color,
             clearcoat: mesh.clearcoat,
@@ -1542,6 +1544,7 @@ impl Renderer {
         // スライス位置でずらす。
         // (mesh, byte_offset, instance_count, is_sky, casts_shadow)
         let mut draws: Vec<(usize, u64, u32, bool, bool)> = Vec::new();
+        let low_tier = self.picture_tier == "low";
         if let Some(scene) = world {
             let mut raw: Vec<InstanceRaw> = Vec::with_capacity(scene.instance_count());
             for batch in &scene.batches {
@@ -1582,17 +1585,16 @@ impl Renderer {
                             } else {
                                 (inst.emissive_color, inst.emissive)
                             };
-                            let has_n = gpu.is_some_and(|g| g.has_normal);
+                            // w = normal-map scale (0 = no map). The low tier skips the map.
+                            let n_w = match gpu {
+                                Some(g) if g.has_normal && !low_tier => g.normal_scale,
+                                _ => 0.0,
+                            };
                             (
                                 [0.0; 4],
                                 [use_r, use_m, use_e, 0.0],
                                 [em_color[0], em_color[1], em_color[2], 0.0],
-                                [
-                                    inst.metallic,
-                                    inst.roughness,
-                                    em_strength,
-                                    if has_n { 1.0 } else { 0.0 },
-                                ],
+                                [inst.metallic, inst.roughness, em_strength, n_w],
                             )
                         };
                     let alpha_cut = gpu.map(|g| g.alpha_cut).unwrap_or(0.0);

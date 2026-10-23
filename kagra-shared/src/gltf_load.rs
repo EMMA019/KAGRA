@@ -1153,6 +1153,7 @@ fn static_mesh_from_prim(
     };
     let has_orm = orm.is_some();
     let normal = normal_tex_index(doc, prim).and_then(|ti| texture_by_index(doc, blobs, ti));
+    let normal_scale = normal.as_ref().and_then(|_| normal_tex_scale(doc, prim));
     let (emissive_map, emissive, emissive_color) = if mtoon.is_some() {
         (None, 0.0, [0.0; 3])
     } else {
@@ -1189,6 +1190,7 @@ fn static_mesh_from_prim(
         albedo_ktx: load_base_color_ktx(doc, blobs, prim),
         matcap: matcap_tex_index(doc, prim).and_then(|ti| texture_by_index(doc, blobs, ti)),
         normal,
+        normal_scale,
         mtoon,
         orm,
         orm_rough: has_orm,
@@ -2757,6 +2759,13 @@ fn matcap_tex_index(doc: &GltfFile, prim: &Primitive) -> Option<usize> {
         .map(|n| n as usize)
 }
 
+/// glTF `normalTexture.scale`. Missing or non-finite = `None` (1.0).
+fn normal_tex_scale(doc: &GltfFile, prim: &Primitive) -> Option<f32> {
+    let mat = doc.materials.get(prim.material?)?;
+    let s = mat.pointer("/normalTexture/scale")?.as_f64()? as f32;
+    s.is_finite().then_some(s)
+}
+
 /// Normal map texture index: glTF normalTexture / VRM 0 _BumpMap.
 fn normal_tex_index(doc: &GltfFile, prim: &Primitive) -> Option<usize> {
     if let Some(mi) = prim.material {
@@ -3413,6 +3422,7 @@ mod tests {
             "COLOR_0 is linear, got {col:?}"
         );
         assert!(mesh.vertices[0].tangent[0].abs() + mesh.vertices[0].tangent[1].abs() > 0.1);
+        assert_eq!(mesh.normal_scale, Some(0.5), "normalTexture.scale");
         let opaque =
             mesh_from_gltf_json(&triangle_alpha("OPAQUE", 0.5), |_| Err("x".into())).unwrap();
         assert!((opaque.alpha_cut + 1.0).abs() < 1e-4);
@@ -3488,6 +3498,7 @@ mod tests {
     "extensions": {{"KHR_materials_emissive_strength": {{"emissiveStrength": 3.0}}}},
     "normalTexture": {{
       "index": 0,
+      "scale": 0.5,
       "extensions": {{"KHR_texture_transform": {{"offset": [0.25, 0.5], "scale": [2.0, 1.0]}}}}
     }}
   }}],
@@ -4163,5 +4174,41 @@ mod tests {
             "VRM0 outline width clamped, got {}",
             shade.outline_width
         );
+    }
+    #[test]
+    fn generated_tangents_follow_u_and_handedness() {
+        // Quad in XY, normal +Z, u along +X, v along +Y.
+        let mk = |p: [f32; 3], uv: [f32; 2]| Vertex3::with_uv(Vec3::from_array(p), Vec3::Z, uv);
+        let mut v = vec![
+            mk([0.0, 0.0, 0.0], [0.0, 0.0]),
+            mk([1.0, 0.0, 0.0], [1.0, 0.0]),
+            mk([1.0, 1.0, 0.0], [1.0, 1.0]),
+            mk([0.0, 1.0, 0.0], [0.0, 1.0]),
+        ];
+        let idx = [0u32, 1, 2, 0, 2, 3];
+        generate_tangents(&mut v, &idx);
+        for vx in &v {
+            let t = vx.tangent;
+            assert!(
+                (t[0] - 1.0).abs() < 1e-5 && t[1].abs() < 1e-5 && t[2].abs() < 1e-5,
+                "{t:?}"
+            );
+            assert_eq!(t[3], 1.0, "right-handed");
+        }
+        // Mirrored U flips the tangent and the handedness sign.
+        for vx in v.iter_mut() {
+            vx.uv[0] = 1.0 - vx.uv[0];
+        }
+        generate_tangents(&mut v, &idx);
+        for vx in &v {
+            assert!((vx.tangent[0] + 1.0).abs() < 1e-5, "{:?}", vx.tangent);
+            assert_eq!(vx.tangent[3], -1.0, "mirrored");
+        }
+        // Degenerate UVs leave a zero tangent (shader keeps the vertex normal).
+        for vx in v.iter_mut() {
+            vx.uv = [0.5, 0.5];
+        }
+        generate_tangents(&mut v, &idx);
+        assert_eq!(v[0].tangent, [0.0, 0.0, 0.0, 1.0]);
     }
 }
