@@ -62,7 +62,7 @@ Python (`pyproject.toml`): no runtime third-party packages. The wheel is maturin
 
 `tools/requirements-osm.txt` is optional and only for `tools/osm_bake.py`: `osmnx`, `geopandas`, `shapely`, `networkx`. That script imports `networkx`. Game code under `kagra/` and `examples/` does not.
 
-No import of `numpy`, `PIL`, `trimesh`, `pygltflib`, `pydantic`, `hypothesis`, `noise`, or `opensimplex` exists in the tree.
+`kagra/` and `examples/` do not import `numpy`, `PIL`, `trimesh`, `pygltflib`, `pydantic`, `hypothesis`, `noise`, or `opensimplex`. `tools/check_gltf_asset.py` is the desktop/CI exception for trimesh and pygltflib.
 
 ## Archived engine (do not copy forward)
 
@@ -100,9 +100,9 @@ Effort **M** for the loader once a fixture exists, **L** for the bake pipeline t
 
 Desktop and CI checks an agent can run before `kagra.verify`: triangle count, bounds, missing images, metallic/roughness factors left at the glTF default, and a non-PNG texture that the runtime cannot decode. `pygltflib` reads the JSON and the chunks. `trimesh` checks the mesh (watertight, degenerate faces, vertex count).
 
-Both are CPython packages. They do not import into the wasm module or the Android APK. Put them in a tools extra (`tools/requirements-assets.txt` or a `pyproject` optional extra), not in the wheel's required dependencies.
+Both are CPython packages. They do not import into the wasm module or the Android APK. They live in the `assets` extra and `tools/requirements-assets.txt`, not in the wheel.
 
-Effort **S** for a script under `tools/` plus a pytest that runs on one bundled `.glb`.
+`tools/check_gltf_asset.py` reports triangle count, finite bounds, missing image URIs, and a metallic/roughness pair left at (1, 1). The default pair is a note. A missing image is an error. CI job `gltf-asset-checks` installs the extra and runs `tests/test_gltf_asset_check.py`. The `python-unit` job does not install the packages, so that test skips there.
 
 ### pydantic
 
