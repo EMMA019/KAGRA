@@ -91,6 +91,21 @@ complete. `?debug=1` calls `setDebug` and draws a cage on the mesh
 skin (the inset kill box would sit inside the crate) plus the lane
 limits.
 
+## Preview was still the previous wasm
+
+The Pages tree for `/pr/165/` after `9e27b10` was last modified
+2026-10-23 19:29Z and does not contain `setDebug` or `HIT `. The wasm
+still has the string `unsupported index componentType` and the result
+word `CRASH`. GitHub Actions did not start a workflow for that commit,
+so Emma's phone was still on the build where a failed glTF load leaves
+the collider in place.
+
+`gltf_mesh_for` also treated any file named `crate.glb` as the embedded
+unit cube, including the Kenney path. A bare `crate.glb` stays that
+alias. A path loads the file. If `mesh_from_glb` fails, the obstacle is
+not spawned and the miss is logged once. Portrait `412/915` with
+`quality` `mobile` and `low` keeps each obstacle in the compiled scene.
+
 ## Checks
 
 - `cargo test -p kagra-shared --lib neon_cat::` — steer, jump, ring, glTF, session swap with Lumen

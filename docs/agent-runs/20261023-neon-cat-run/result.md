@@ -26,3 +26,11 @@ lavapipe, mobile viewport, is the check for the tap.
 Deaths: the side plane is a clamp, not a kill. Crates and barrels load
 (UNSIGNED_BYTE indices). The kill box is inside the mesh. The result
 names the prop (`HIT CRATE`). `?debug=1` draws the mesh cage.
+
+The `/pr/165/` wasm Emma played was still the build before that commit
+(`unsupported index componentType`, result word `CRASH`, no `setDebug`).
+A path ending in `crate.glb` was also drawn as the embedded unit cube.
+A bare `crate.glb` stays that alias. A real path loads the file. A mesh
+that fails to load is not spawned. Portrait `412×915` on the 8-bit
+path shows the Kenney crate at `quality=mobile` (`ssao=4 c2 post`) and
+`quality=low` (`ssao=0 c1 post`).

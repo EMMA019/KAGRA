@@ -2586,6 +2586,20 @@ fn existing_asset_path(spec: &str) -> Option<PathBuf> {
     crate::assets::resolve_asset(base)
 }
 
+/// Bare `crate.glb` / `cube` is the embedded unit cube (Crest, puzzles).
+/// A path such as `assets/.../crate.glb` is a real file and must not take
+/// that alias, or the sim collides with a mesh the screen never shows.
+fn bare_primitive_alias(spec: &str) -> bool {
+    let spec = spec.trim();
+    if spec.contains('/') || spec.contains('\\') {
+        return false;
+    }
+    matches!(
+        spec.to_ascii_lowercase().as_str(),
+        "cube.glb" | "cube.gltf" | "crate.glb" | "crate.gltf" | "cube"
+    )
+}
+
 fn split_mesh_selector(spec: &str) -> (&str, Option<usize>) {
     if let Some((base, frag)) = spec.split_once('#') {
         if let Ok(idx) = frag.trim().parse::<usize>() {
@@ -2631,15 +2645,7 @@ fn probe_walker_asset(spec: &str) -> Result<(), String> {
     {
         return Ok(());
     }
-    let lower = spec.to_ascii_lowercase();
-    let stem = Path::new(&lower)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(lower.as_str());
-    if matches!(
-        stem,
-        "cube.glb" | "cube.gltf" | "crate.glb" | "crate.gltf" | "cube"
-    ) {
+    if bare_primitive_alias(spec) {
         return Ok(());
     }
     let path = existing_asset_path(spec)
@@ -2686,21 +2692,13 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
     if spec.starts_with('{') {
         return mesh_from_embedded_gltf(spec).ok();
     }
-    let lower = spec.to_ascii_lowercase();
-    let stem = Path::new(&lower)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(lower.as_str());
     if is_walk_skinned_spec(spec) {
         return mesh_from_embedded_gltf(&walk_skinned_gltf()).ok();
     }
     if is_walk_vrm_spec(spec) {
         return mesh_from_glb(&walk_skinned_vrm()).ok();
     }
-    if matches!(
-        stem,
-        "cube.glb" | "cube.gltf" | "crate.glb" | "crate.gltf" | "cube"
-    ) {
+    if bare_primitive_alias(spec) {
         return mesh_from_embedded_gltf(&unit_cube_gltf()).ok();
     }
     let (base_spec, mesh_sel) = split_mesh_selector(spec);
@@ -2825,15 +2823,7 @@ fn load_skinned_parts_uncached(spec: &str) -> Option<Vec<crate::gltf_load::Skinn
     if is_tpose_humanoid_spec(spec) {
         return skinned_tpose_humanoid().ok().map(|s| vec![s]);
     }
-    let lower = spec.to_ascii_lowercase();
-    let stem = Path::new(&lower)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(lower.as_str());
-    if matches!(
-        stem,
-        "cube.glb" | "cube.gltf" | "crate.glb" | "crate.gltf" | "cube"
-    ) {
+    if bare_primitive_alias(spec) {
         return skinned_from_embedded_gltf(&unit_cube_gltf())
             .ok()
             .map(|s| vec![s]);
@@ -2866,6 +2856,11 @@ fn load_skinned_parts_uncached(spec: &str) -> Option<Vec<crate::gltf_load::Skinn
             }
         }
     }
+    let lower = spec.to_ascii_lowercase();
+    let stem = Path::new(&lower)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(lower.as_str());
     if is_emma_vrm_stem(stem)
         || lower.ends_with(".vrm")
         || lower.ends_with(".gltf")

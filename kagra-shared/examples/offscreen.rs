@@ -43,6 +43,7 @@ fn main() -> Result<(), String> {
     let flow = mode == "flow";
     let neon = mode == "neon";
     let cat = mode == "cat";
+    let mut phone_unorm = false;
 
     if mode == "playtest" {
         return render_playtest(width, height, &out);
@@ -127,7 +128,15 @@ fn main() -> Result<(), String> {
                     "debug" => 130,
                     _ => 160,
                 });
-        session.load_game_json(include_str!("../tests/fixtures/neon_cat_world.json"))?;
+        let quality = args
+            .next()
+            .filter(|s| matches!(s.as_str(), "low" | "mobile" | "high"));
+        let mut world = include_str!("../tests/fixtures/neon_cat_world.json").to_string();
+        if let Some(tier) = quality.as_deref() {
+            world = world.replacen('{', &format!("{{\"quality\":\"{tier}\","), 1);
+            phone_unorm = true;
+        }
+        session.load_game_json(&world)?;
         if which == "debug" {
             session.set_debug(true);
         }
@@ -161,7 +170,12 @@ fn main() -> Result<(), String> {
             .map(|run| run.death().to_string())
             .unwrap_or_default();
         println!(
-            "neon cat {which} frames={frames} phase={phase} score={score} x={x:.2} death={death}"
+            "neon cat {which} frames={frames} phase={phase} score={score} x={x:.2} death={death} quality={}",
+            session
+                .cat
+                .as_ref()
+                .and_then(|run| run.document().quality.clone())
+                .unwrap_or_else(|| "legacy".into())
         );
     } else if flow {
         let which = args.next().unwrap_or_else(|| "title".into());
@@ -241,9 +255,16 @@ fn main() -> Result<(), String> {
         );
     }
 
-    let renderer = pollster::block_on(Renderer::new_offscreen(width, height))?;
+    let renderer = if phone_unorm {
+        pollster::block_on(Renderer::new_phone_offscreen(width, height))?
+    } else {
+        pollster::block_on(Renderer::new_offscreen(width, height))?
+    };
     session.attach_renderer(renderer);
     session.render()?;
+    if cat {
+        println!("picture {}", session.picture_status());
+    }
 
     let pixels = session.render_readback()?;
     write_png(&out, width, height, &pixels)?;

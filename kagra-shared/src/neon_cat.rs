@@ -77,6 +77,10 @@ pub struct NeonCat {
     /// `CRATE` / `BARREL` / `BARRIER` after a hit. Empty while alive.
     death: String,
     debug: bool,
+    /// Dump `quality` (`low` / `mobile` / `high`). The page sets this.
+    quality: Option<String>,
+    /// Obstacle indices whose glTF was actually added to the dump.
+    spawned: HashSet<i32>,
     x: f32,
     y: f32,
     z: f32,
@@ -164,6 +168,12 @@ impl NeonCat {
         if let Some(best) = value.get("best").and_then(|v| v.as_u64()) {
             run.flow.best_score = run.flow.best_score.max(best as u32);
         }
+        if let Some(q) = value.get("quality").and_then(|v| v.as_str()) {
+            let q = q.trim();
+            if matches!(q, "low" | "0" | "off" | "mobile" | "high" | "2") {
+                run.quality = Some(q.to_string());
+            }
+        }
         run.rebuild();
         Ok(run)
     }
@@ -180,6 +190,8 @@ impl NeonCat {
             alive: true,
             death: String::new(),
             debug: false,
+            quality: None,
+            spawned: HashSet::new(),
             x: 0.0,
             y: 0.0,
             z: 0.0,
@@ -568,6 +580,9 @@ impl NeonCat {
             if i < 0 {
                 continue;
             }
+            if !self.spawned.contains(&i) {
+                continue;
+            }
             let shape = obstacle_shape(i);
             if feet_hit(&shape, self.x, self.y, self.z) {
                 self.crash(shape.kind);
@@ -682,6 +697,7 @@ impl NeonCat {
             vignette: Some(0.42),
             lut: Some("cool".into()),
             lut_strength: Some(0.2),
+            quality: self.quality.clone(),
             fxaa: Some(true),
             exposure: Some(1.05),
             ibl: Some(0.34),
@@ -734,7 +750,7 @@ impl NeonCat {
         self.push_tunnel(&mut doc);
         self.push_gates(&mut doc);
         self.push_rings(&mut doc);
-        self.push_obstacles(&mut doc);
+        self.spawned = self.push_obstacles(&mut doc);
         if self.debug {
             self.push_hitboxes(&mut doc);
         }
@@ -895,7 +911,8 @@ impl NeonCat {
         }
     }
 
-    fn push_obstacles(&self, doc: &mut WorldDoc) {
+    fn push_obstacles(&self, doc: &mut WorldDoc) -> HashSet<i32> {
+        let mut spawned = HashSet::new();
         let i0 = near_index(self.z, OBS_Z0, OBS_GAP).saturating_sub(1);
         for i in i0..i0 + 6 {
             if i < 0 {
@@ -903,6 +920,9 @@ impl NeonCat {
             }
             let shape = obstacle_shape(i);
             if shape.origin[2] < self.z - 2.0 {
+                continue;
+            }
+            if !obstacle_drawable(shape.path) {
                 continue;
             }
             if let Some(obstacle) = glb_prop(
@@ -918,8 +938,10 @@ impl NeonCat {
                 [0.7, 0.85, 1.0],
             ) {
                 doc.props.push(obstacle);
+                spawned.insert(i);
             }
         }
+        spawned
     }
 
     fn push_hitboxes(&self, doc: &mut WorldDoc) {
@@ -1221,6 +1243,30 @@ fn push_aabb_cage(doc: &mut WorldDoc, id: &str, min: [f32; 3], max: [f32; 3], co
 
 /// True when `path` is a mounted or on-disk GLB that parses.
 /// A miss is not cached, so a wasm page can mount the file after boot.
+fn obstacle_drawable(path: &str) -> bool {
+    if glb_ready(path) {
+        true
+    } else {
+        note_missing_mesh(path);
+        false
+    }
+}
+
+fn note_missing_mesh(path: &str) {
+    static SEEN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    let seen = SEEN.get_or_init(|| Mutex::new(HashSet::new()));
+    if let Ok(mut guard) = seen.lock() {
+        if !guard.insert(path.to_string()) {
+            return;
+        }
+    }
+    let msg = format!("neon cat: obstacle mesh failed to load, not spawning {path}");
+    #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+    web_sys::console::warn_1(&msg.into());
+    #[cfg(not(all(target_arch = "wasm32", feature = "wasm")))]
+    eprintln!("{msg}");
+}
+
 fn glb_ready(path: &str) -> bool {
     static OK: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
     let cache = OK.get_or_init(|| Mutex::new(HashSet::new()));
@@ -1720,5 +1766,96 @@ mod tests {
             .props
             .iter()
             .all(|prop| prop.name != "hitbox"));
+    }
+
+    #[test]
+    fn a_missing_mesh_is_not_a_collider() {
+        assert!(!obstacle_drawable(
+            "assets/models/kenney/platformer-kit/not-a-real-obstacle.glb"
+        ));
+        let mut run = place_on(0, obs_x(0), 0.0);
+        run.spawned.clear();
+        run.touch_obstacles();
+        assert!(run.alive, "no drawn mesh, no kill");
+        assert!(run.death().is_empty());
+    }
+
+    #[test]
+    fn every_collider_has_a_drawn_mesh_on_phone_tiers() {
+        let aspect = 412.0 / 915.0;
+        for quality in ["mobile", "low"] {
+            let json = format!(r#"{{"version":1,"genre":"neon_cat","quality":"{quality}"}}"#);
+            let mut run = NeonCat::from_json(&json).unwrap();
+            run.confirm();
+            run.z = obs_z(0) - 8.0;
+            run.rebuild();
+            assert_eq!(run.document().quality.as_deref(), Some(quality));
+            let doc = run.document();
+            if quality == "mobile" {
+                assert_eq!(doc.ssao_radius(), 4.0);
+                assert_eq!(doc.shadow_cascade_count(), 2);
+            } else {
+                assert_eq!(doc.ssao_radius(), 0.0);
+                assert_eq!(doc.shadow_cascade_count(), 1);
+            }
+            let scene = doc.compile_scene(aspect);
+            let compiled = doc.compile_meshes();
+            for index in 0..3 {
+                let shape = obstacle_shape(index);
+                assert!(
+                    run.spawned.contains(&index),
+                    "{} was not spawned",
+                    shape.kind
+                );
+                let prop = doc
+                    .props
+                    .iter()
+                    .find(|prop| prop.id == format!("prop:obs-{index}"))
+                    .unwrap_or_else(|| panic!("{} missing from the dump", shape.kind));
+                assert_eq!(prop.gltf.as_deref(), Some(shape.path));
+                let file = crate::assets::resolve_asset(shape.path).unwrap();
+                let bytes = crate::assets::read_bytes(&file).unwrap();
+                let loaded = crate::gltf_load::mesh_from_glb(&bytes).unwrap();
+                assert!(
+                    loaded.indices.len() > 36,
+                    "{} compiled as the unit-cube alias",
+                    shape.kind
+                );
+                assert!(
+                    loaded.alpha_cut < 0.0,
+                    "{} alpha_cut {} would discard the mesh",
+                    shape.kind,
+                    loaded.alpha_cut
+                );
+                if shape.kind != "BARRIER" {
+                    assert!(
+                        loaded.albedo.is_some(),
+                        "{} colormap did not decode",
+                        shape.kind
+                    );
+                }
+                let (id, mesh) = compiled
+                    .iter()
+                    .find(|(_, mesh)| {
+                        mesh.indices.len() == loaded.indices.len()
+                            && mesh.vertices.len() == loaded.vertices.len()
+                    })
+                    .unwrap_or_else(|| panic!("{} is not a compiled mesh", shape.kind));
+                assert!(
+                    mesh.alpha_cut < 0.0,
+                    "drawn {} alpha_cut {}",
+                    shape.kind,
+                    mesh.alpha_cut
+                );
+                assert!(
+                    scene
+                        .batches
+                        .iter()
+                        .any(|batch| batch.mesh == *id && !batch.instances.is_empty()),
+                    "{} was culled at portrait aspect on {quality}",
+                    shape.kind
+                );
+            }
+        }
     }
 }

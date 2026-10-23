@@ -242,7 +242,22 @@
       const worldUrl = worldFile ? (worldFile.url || worldFile) : `games/${slug}/world.json`;
       const worldRes = await fetch(fileUrl(site, worldUrl));
       if (!worldRes.ok) throw new Error(`${worldUrl} ${worldRes.status}`);
-      session.loadGame(await worldRes.text());
+      let worldText = await worldRes.text();
+      let asked = (params.get("quality") || "").toLowerCase();
+      let payload = (() => {
+        try {
+          const world = JSON.parse(worldText);
+          if (asked === "low" || asked === "mobile" || asked === "high") {
+            world.quality = asked;
+          } else if (slug === "neon_cat" && (world.quality == null || world.quality === "")) {
+            world.quality = "mobile";
+          }
+          return JSON.stringify(world);
+        } catch (_) {
+          return worldText;
+        }
+      })();
+      session.loadGame(payload);
       if (session.setExternalMenu) session.setExternalMenu(true);
       session.showTitle();
       if (params.get("debug") === "1" && session.setDebug) session.setDebug(true);
