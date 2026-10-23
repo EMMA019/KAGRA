@@ -11,12 +11,13 @@ wasm の WorldPlay に載せる。
 
 | 置き場所 | URL |
 |---|---|
-| `master` | `https://emma019.github.io/KAGRA/` |
-| pull request `N` | `https://emma019.github.io/KAGRA/pr/N/` |
+| `master`（安定版・Lumen） | `https://emma019.github.io/KAGRA/play.html` |
+| pull request `N`（一覧） | `https://emma019.github.io/KAGRA/pr/N/` |
 
-先頭はジャンル一覧。`world` がある例はすべてリンクする。着地は Lumen
+安定版の `play.html` は Lumen を開く（`world.json` の genre は `neon_run`）。
+PR の先頭はジャンル一覧。`world` がある例はすべてリンクする。着地は Lumen
 （`play.html?game=neon_run`）。クエリが無い `play.html` も Lumen を開く。
-Box Hop は一覧に残る。
+Box Hop は一覧に残る。PR の一覧は `/pr/N/` にだけ置き、安定版のルートは置き換えない。
 `world` が無い例（チェス、飛行など）は一覧に名前だけ出て、ブラウザでは進まない。
 ルールは Python 側のまま。
 
@@ -47,17 +48,26 @@ python -m http.server -d dist/preview 8000
 ## 配信
 
 Settings → Pages → Source は **GitHub Actions**。`gh-pages` はサイトの中身を
-置く枝（`/` と `pr/<number>/` が同じ木に並ぶ）で、それ自体は配信しない。
+置く枝で、それ自体は配信しない。`/` と `pr/<number>/` は同じ木に並ぶ。
+
+安定版は `https://emma019.github.io/KAGRA/play.html`。
+[pages.yml](../.github/workflows/pages.yml) が Lumen
+（`examples/neon_run_minimal.py`）をルートへ置く。`play.html` は
+`world.json` を読み、genre は `neon_run`。この差し替えは `pr/` を残す。
+
+PR のプレビューは `/pr/<number>/` だけを更新する。ルートに安定版
+（`play.html` と `world.json` と wasm）がまだ無いときだけ、同じジョブが
+Lumen をルートへ足す。プレビューのカタログでルートを置き換えない。
 
 `github-pages` 環境は `master` だけを許可する。PR のジョブから
-`actions/deploy-pages` を直接呼ぶと、その方針で止まる。Preview は木を
-`gh-pages` に載せたあと `repository_dispatch`（`kagra-pages`）を送る。
+`actions/deploy-pages` を直接呼ぶと、その方針で止まる。Preview と Pages は
+木を `gh-pages` に載せたあと `repository_dispatch`（`kagra-pages`）を送る。
 `master` の [pages-deploy.yml](../.github/workflows/pages-deploy.yml) が
-木全体を artifact にして Pages へ出す。PR のスクリプトはそこでは走らない。
+木全体を artifact にして Pages へ出す。`play.html` と wasm が無い木は
+出さない（空の配信で Lumen を消さない）。PR のスクリプトはそこでは走らない。
 
-`master` に Preview 自体が乗るまで、安定版の
-`https://emma019.github.io/KAGRA/play.html` は置かれない。電話で開くのは
-`/pr/<number>/play.html`。
+`dist/web` だけを Pages の artifact にすると `/pr/` が消える。配信は常に
+`gh-pages` の木全体。
 
 `crest.html`（Crest Isle）と運転デモは今までどおり `kagra-shared/www/`。
 

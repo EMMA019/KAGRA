@@ -1,19 +1,17 @@
-# ブラウザ版を GitHub Pages に出す。有料サービスも秘密も使わない。
-# master → /    PR → /pr/<number>/    close でそのディレクトリを消す。
-# 手順は docs/preview.md。
+# PR プレビューだけを gh-pages の pr/<number>/ に載せる。
+# ルートの play.html（安定版 Lumen）は Pages ワークフローが持つ。ここは消さない。
+# 配信は pages-deploy.yml。手順は docs/preview.md。
 
 name: Preview
 
 on:
-  push:
-    branches: [master, main]
   pull_request:
     types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
     inputs:
       pr:
-        description: "PR number to publish under /pr/<number>/ (empty on master updates /)"
-        required: false
+        description: "PR number to publish under /pr/<number>/"
+        required: true
         type: string
 
 permissions:
@@ -60,24 +58,17 @@ jobs:
           owner=$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
           repo="${GITHUB_REPOSITORY#*/}"
           base="https://${owner}.github.io/${repo}"
-          dest=""
           event="${{ github.event_name }}"
           if [ "$event" = "pull_request" ]; then
             dest="pr/${{ github.event.number }}"
-          elif [ "$event" = "workflow_dispatch" ]; then
-            pr="${{ github.event.inputs.pr }}"
-            if [ -n "$pr" ]; then
-              dest="pr/${pr}"
-            elif [ "${{ github.ref }}" != "refs/heads/master" ] && [ "${{ github.ref }}" != "refs/heads/main" ]; then
-              echo "Set the pr input, or run this from master." >&2
-              exit 1
-            fi
-          fi
-          if [ -n "$dest" ]; then
-            url="${base}/${dest}/"
           else
-            url="${base}/"
+            dest="pr/${{ github.event.inputs.pr }}"
           fi
+          case "$dest" in
+            pr/[0-9]*) ;;
+            *) echo "preview dest must be pr/<number>, got ${dest}" >&2; exit 1 ;;
+          esac
+          url="${base}/${dest}/"
           echo "dest=${dest}" >> "$GITHUB_ENV"
           echo "url=${url}" >> "$GITHUB_ENV"
           echo "preview ${url}"
@@ -92,6 +83,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: python scripts/publish_preview_pages.py --src dist/preview --dest "${dest}"
+
+      - name: Stage stable Lumen without rebuilding wasm
+        run: |
+          set -eu
+          python scripts/package_web.py --game examples/neon_run_minimal.py --skip-wasm --out dist/web
+          test -f kagra-shared/www/pkg/kagra_shared_bg.wasm
+          rm -rf dist/web/pkg
+          cp -a kagra-shared/www/pkg dist/web/pkg
+
+      - name: Seed the stable root when Lumen is not already there
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scripts/publish_preview_pages.py --src dist/web --dest "" --only-if-missing
 
       - name: Ask master to deploy Pages
         env:
@@ -163,6 +168,10 @@ jobs:
           html="${url}play.html?game=neon_run"
           neon="${url}games/neon_run/world.json"
           wasm="${url}pkg/kagra_shared_bg.wasm"
+          root="${url%${dest}/}"
+          root_html="${root}play.html"
+          root_world="${root}world.json"
+          root_wasm="${root}pkg/kagra_shared_bg.wasm"
           found=""
           for i in $(seq 1 40); do
             if [ -z "$found" ]; then
@@ -204,20 +213,32 @@ jobs:
           : > /tmp/kagra-play.html
           : > /tmp/kagra.wasm
           : > /tmp/kagra-neon.json
-          for i in $(seq 1 15); do
-            code=$(curl -fsS -o /tmp/kagra-catalog.json -w "%{http_code}" "$probe" || true)
-            hcode=$(curl -fsS -o /tmp/kagra-play.html -w "%{http_code}" "$html" || true)
-            wcode=$(curl -fsS -o /tmp/kagra.wasm -w "%{http_code}" "$wasm" || true)
-            ncode=$(curl -fsS -o /tmp/kagra-neon.json -w "%{http_code}" "$neon" || true)
+          : > /tmp/kagra-root.html
+          : > /tmp/kagra-root.json
+          : > /tmp/kagra-root.wasm
+          for i in $(seq 1 30); do
+            code=$(curl -fsS -H 'Cache-Control: no-cache' -o /tmp/kagra-catalog.json -w "%{http_code}" "$probe" || true)
+            hcode=$(curl -fsS -H 'Cache-Control: no-cache' -o /tmp/kagra-play.html -w "%{http_code}" "$html" || true)
+            wcode=$(curl -fsS -H 'Cache-Control: no-cache' -o /tmp/kagra.wasm -w "%{http_code}" "$wasm" || true)
+            ncode=$(curl -fsS -H 'Cache-Control: no-cache' -o /tmp/kagra-neon.json -w "%{http_code}" "$neon" || true)
+            rcode=$(curl -fsS -H 'Cache-Control: no-cache' -o /tmp/kagra-root.html -w "%{http_code}" "$root_html" || true)
+            rwcode=$(curl -fsS -H 'Cache-Control: no-cache' -o /tmp/kagra-root.json -w "%{http_code}" "$root_world" || true)
+            rwasm=$(curl -fsS -H 'Cache-Control: no-cache' -o /tmp/kagra-root.wasm -w "%{http_code}" "$root_wasm" || true)
             wsize=$(wc -c < /tmp/kagra.wasm)
-            echo "try ${i} catalog=${code} play=${hcode} wasm=${wcode} neon=${ncode} wasm_bytes=${wsize}"
+            rsize=$(wc -c < /tmp/kagra-root.wasm)
+            echo "try ${i} catalog=${code} play=${hcode} wasm=${wcode} neon=${ncode} wasm_bytes=${wsize} root=${rcode} world=${rwcode} root_wasm=${rwasm} root_wasm_bytes=${rsize}"
             if [ "$code" = "200" ] && [ "$hcode" = "200" ] && [ "$wcode" = "200" ] && [ "$ncode" = "200" ] \
               && grep -q platformer /tmp/kagra-catalog.json \
               && grep -q neon_run /tmp/kagra-catalog.json \
               && grep -q neon_run /tmp/kagra-neon.json \
               && grep -q 'data-orient="portrait"' /tmp/kagra-play.html \
               && grep -q 'neon_run' /tmp/kagra-play.html \
-              && [ "$wsize" -gt 1000000 ]; then
+              && [ "$wsize" -gt 1000000 ] \
+              && [ "$rcode" = "200" ] && [ "$rwcode" = "200" ] && [ "$rwasm" = "200" ] \
+              && grep -q loadGameJson /tmp/kagra-root.html \
+              && grep -q neon_run /tmp/kagra-root.html \
+              && grep -q neon_run /tmp/kagra-root.json \
+              && [ "$rsize" -gt 1000000 ]; then
               exit 0
             fi
             sleep 10

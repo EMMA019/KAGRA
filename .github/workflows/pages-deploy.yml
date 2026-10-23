@@ -40,6 +40,14 @@ jobs:
       - name: Drop git metadata
         run: rm -rf site/.git
 
+      - name: Require the stable root
+        run: |
+          set -eu
+          test -f site/play.html
+          test -f site/pkg/kagra_shared_bg.wasm
+          # pr/ may be absent. A root-only tree is still the stable site.
+          # Refusing a tree with no play.html stops an empty deploy from wiping Lumen.
+
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

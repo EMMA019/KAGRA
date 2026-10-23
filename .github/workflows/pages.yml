@@ -1,8 +1,7 @@
-# GitHub Pages. Lumen (play.html) is the default page.
-# Corridor Haul stays at corridor.html. Crest Isle stays at crest.html.
-#
-# Push to master and workflow_dispatch only. Pull requests do not deploy,
-# so a missing Pages environment cannot fail review CI.
+# 安定版は gh-pages のルート。Lumen の play.html が既定（world.json は neon_run）。
+# pr/<number>/ は Preview が足す。ここはルートだけ差し替え、pr/ は残す。
+# 配信そのものは pages-deploy.yml が木全体を artifact にする。
+# dist/web だけを Pages に上げると /pr/ が消える。
 
 name: Pages
 
@@ -12,19 +11,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
-  group: pages
+  group: kagra-pages-root
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  publish:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -46,11 +40,16 @@ jobs:
       - name: Stage Lumen
         run: python scripts/package_web.py --game examples/neon_run_minimal.py --build-wasm --out dist/web
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist/web
+      - name: Publish the stable root, keeping PR previews
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scripts/publish_preview_pages.py --src dist/web --dest ""
 
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Ask master to deploy the full tree
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          payload='{"event_type":"kagra-pages","client_payload":{"dest":""}}'
+          printf '%s' "$payload" | gh api --method POST "/repos/${GITHUB_REPOSITORY}/dispatches" --input -
