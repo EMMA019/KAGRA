@@ -9,7 +9,7 @@ Decisions:
 - Each ring is texel-snapped. Count above 1 snaps to the 1024 tile, not the full 2048.
 - The three matrices go in one globals upload (`light_view_proj`, `cascade1`, `cascade2`). Cascade count is `cascade.x` and PCSS is `cascade.y`. `shadow.z` / `shadow.w` stay camera near / far for the depth prepass.
 - PCSS cannot read a comparison depth on WebGL2, so each cascade pass can also write device z to an `Rgba16Float` color target. The lighting shader samples it only while `cascade.y` is on, with `textureSampleLevel` and a nearest sampler. The texture is always allocated so the bind group does not change.
-- The shadow depth bias matches the WebGPU path: constant 8192, slope 1.5, clamp 0.008, on the culled and double-sided pipelines.
+- The shadow depth bias matches the WebGPU path: constant 8192, slope 1.5, clamp 0.008, on the culled and double-sided pipelines. The receiver offset is `0.04 + slope * 0.07` and the depth subtract is `0.0016 + slope * 0.0045`. Emissive ribbons stay out of the shadow map.
 - `KAGRA_QUALITY` helpers match the post-pass branch (`heavy_post_allowed`, `quality_is_high`) so a merge can share them. Quality 0 forces one cascade and PCSS off even when the dump asks. High fills omitted fields only.
 
 Lavapipe: a caster at z = -36 is outside the 24 m map. Count 1 leaves that floor lit. Count 3 darkens 28 pixels by about 190. PCSS darkens 44. The near floor stays put. Shots: `cascade-one.png`, `cascade-three.png`, `cascade-pcss.png`.
