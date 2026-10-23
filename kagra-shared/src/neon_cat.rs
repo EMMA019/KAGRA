@@ -18,67 +18,11 @@ use std::sync::{Mutex, OnceLock};
 use serde_json::json;
 
 use crate::flow::{FlowAction, FlowPhase, GameFlow};
+use crate::game_spec::{EntityKind, GameSpec};
 use crate::scene::{DrawList, Quad, TextAlign, TextQuad};
 use crate::world_doc::{WorldCamera, WorldDoc, WorldLight, WorldProp, WorldWalker};
 
 pub const GAME_ID: &str = "neon_cat";
-
-const CAT_GLB: &str = "assets/models/kenney/cube-pets/animal-cat.glb";
-const GATE_GLB: &str = "assets/models/quaternius/modular-dungeons-pack/Arch.glb";
-const RING_GLB: &str = "assets/models/kenney/racing-kit/overheadRound.glb";
-const CRATE_GLB: &str = "assets/models/kenney/platformer-kit/crate.glb";
-const BARREL_GLB: &str = "assets/models/kenney/platformer-kit/barrel.glb";
-const BARRIER_GLB: &str = "assets/models/kenney/racing-kit/barrierRed.glb";
-
-/// Model-space feet sit near y = -0.3. The body is about 1.7 units tall,
-/// so this scale is ~0.7 m. On the chase rig that is about 15% of a
-/// 412×915 frame, in the lower third.
-const CAT_SCALE: f32 = 0.50;
-/// sRGB multiply so the light Kenney body reads as a dark violet.
-const CAT_TINT: [u32; 3] = [226, 206, 255];
-/// Obstacle fill glow. Under bloom threshold; see `push_obstacles`.
-const OBS_FILL_EMISSIVE: f32 = 0.35;
-const CAT_FOOT: f32 = 0.30;
-/// Slide along the magenta rail. The rail, the arch, and the floor are
-/// scenery. Only a crate, barrel, or barrier ends the run.
-const LANE_LIMIT: f32 = 2.15;
-/// Arch x scale. See `push_gates`.
-const GATE_SCALE_X: f32 = 2.15;
-/// Pull the kill box in from the measured mesh so a graze survives.
-const HIT_INSET: f32 = 0.06;
-const HIT_TOP: f32 = 0.82;
-const SPEED0: f32 = 10.5;
-const SPEED_RAMP: f32 = 0.22;
-const SPEED_CAP: f32 = 20.0;
-/// Longest z move per sim substep. Under half the thinnest hitbox depth.
-const MAX_STEP_Z: f32 = 0.08;
-const GRAVITY: f32 = -22.0;
-const JUMP_V: f32 = 7.1;
-const GRACE_SECS: f32 = 1.6;
-const CAM_BACK: f32 = 7.4;
-const CAM_LIFT: f32 = 1.72;
-const CAM_FOV: f32 = 50.0;
-/// Pulled back so the cat stays in the lower third at about 15% of the
-/// portrait frame, with the next obstacle still in view.
-const CHASE_BACK: f32 = 5.9;
-const CHASE_LIFT: f32 = 2.35;
-const CHASE_LOOK: f32 = 13.0;
-const CHASE_LOOK_Y: f32 = 1.12;
-const CHASE_FOV: f32 = 50.0;
-const CHASE_FOV_FAST: f32 = 58.0;
-/// Full-steer Dutch angle. Visual only: the stick stays world −X.
-const CHASE_ROLL: f32 = 0.07;
-
-const OBS_Z0: f32 = 26.0;
-const OBS_GAP: f32 = 14.0;
-/// Score panel top. Clears the page's 一覧 / title bar on phones.
-const HUD_TOP: f32 = 96.0;
-/// Seconds of reaction time an obstacle is drawn before the cat reaches it.
-const LEAD_SECS: f32 = 2.5;
-const RING_Z0: f32 = 14.0;
-const RING_GAP: f32 = 17.0;
-const GATE_Z0: f32 = 10.0;
-const GATE_GAP: f32 = 24.0;
 
 #[derive(Clone, Debug)]
 struct Spark {
@@ -176,6 +120,8 @@ impl JuiceShake {
 
 #[derive(Debug)]
 pub struct NeonCat {
+    /// Everything tunable. Loaded from the world dump's `"game"` key.
+    spec: std::sync::Arc<GameSpec>,
     pub flow: GameFlow,
     pub score: u32,
     score_acc: f32,
@@ -236,27 +182,11 @@ pub fn is_cat_dump(json: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn obs_z(index: i32) -> f32 {
-    OBS_Z0 + index as f32 * OBS_GAP
-}
-
-fn obs_x(index: i32) -> f32 {
-    (index as f32 * 0.85).sin() * 1.2
-}
-
-fn ring_z(index: i32) -> f32 {
-    RING_Z0 + index as f32 * RING_GAP
-}
-
-fn ring_x(index: i32) -> f32 {
+fn ring_x(s: &GameSpec, index: i32) -> f32 {
     if index <= 0 {
         return 0.0;
     }
-    (index as f32 * 1.2).sin() * 0.95
-}
-
-fn gate_z(index: i32) -> f32 {
-    GATE_Z0 + index as f32 * GATE_GAP
+    s.runner.rings.track.x(index)
 }
 
 fn near_index(z: f32, origin: f32, gap: f32) -> i32 {
@@ -264,7 +194,7 @@ fn near_index(z: f32, origin: f32, gap: f32) -> i32 {
 }
 
 /// Index of the next marker that is still in front of `z`.
-fn next_ahead(z: f32, origin: f32, gap: f32, at: fn(i32) -> f32) -> i32 {
+fn next_ahead(z: f32, origin: f32, gap: f32, at: impl Fn(i32) -> f32) -> i32 {
     let mut i = near_index(z, origin, gap).max(0);
     if at(i) < z + 0.35 {
         i += 1;
@@ -276,7 +206,11 @@ impl NeonCat {
     pub fn from_json(json: &str) -> Result<Self, String> {
         let value: serde_json::Value =
             serde_json::from_str(json).map_err(|e| format!("neon cat dump: {e}"))?;
-        let mut run = Self::fresh();
+        let spec = match value.get("game") {
+            Some(runner) => GameSpec::from_value(runner)?,
+            None => GameSpec::default(),
+        };
+        let mut run = Self::with_spec(spec);
         if let Some(best) = value.get("best").and_then(|v| v.as_u64()) {
             run.flow.best_score = best as u32;
         }
@@ -301,11 +235,18 @@ impl NeonCat {
         Ok(run)
     }
 
+    #[cfg(test)]
     fn fresh() -> Self {
+        Self::with_spec(GameSpec::default())
+    }
+
+    fn with_spec(spec: GameSpec) -> Self {
         let mut flow = GameFlow::new(GAME_ID);
-        flow.title = "NEON CAT".into();
+        flow.title = spec.title.clone();
         flow.tagline = "RUN  ·  JUMP".into();
+        let seed = spec.seed;
         let mut run = Self {
+            spec: std::sync::Arc::new(spec),
             flow,
             score: 0,
             score_acc: 0.0,
@@ -341,7 +282,7 @@ impl NeonCat {
             bank: Spring1::default(),
             fov_spring: Spring1::default(),
             attract: 0.0,
-            seed: 11,
+            seed,
             got: HashSet::new(),
             just_rings: 0,
             just_crash: false,
@@ -351,6 +292,11 @@ impl NeonCat {
         };
         run.snap_chase();
         run
+    }
+
+    /// The loaded runner spec.
+    pub fn spec(&self) -> &GameSpec {
+        &self.spec
     }
 
     pub fn score(&self) -> u32 {
@@ -424,9 +370,19 @@ impl NeonCat {
     }
 
     fn sim_value(&self) -> serde_json::Value {
-        let oi = next_ahead(self.z, OBS_Z0, OBS_GAP, obs_z);
-        let ri = next_ahead(self.z, RING_Z0, RING_GAP, ring_z);
-        let ahead = obstacle_shape(oi);
+        let oi = next_ahead(
+            self.z,
+            self.spec.runner.obstacle_track.z0,
+            self.spec.runner.obstacle_track.gap,
+            |i| self.spec.runner.obstacle_track.z(i),
+        );
+        let ri = next_ahead(
+            self.z,
+            self.spec.runner.rings.track.z0,
+            self.spec.runner.rings.track.gap,
+            |i| self.spec.runner.rings.track.z(i),
+        );
+        let ahead = obstacle_shape(&self.spec, oi);
         let (ox, oz, oh) = (ahead.hit_cx, ahead.hit_cz, ahead.hit_top);
         json!({
             "phase": self.flow.phase.name(),
@@ -440,8 +396,8 @@ impl NeonCat {
             "z": self.z,
             "screen_right": self.screen_right().to_array(),
             "screen_left": (-self.screen_right()).to_array(),
-            "next_ring_x": ring_x(ri),
-            "next_ring_z": ring_z(ri),
+            "next_ring_x": ring_x(&self.spec, ri),
+            "next_ring_z": self.spec.runner.rings.track.z(ri),
             "next_obs_x": ox,
             "next_obs_z": oz,
             "next_obs_h": oh,
@@ -476,8 +432,8 @@ impl NeonCat {
         let bump = self.view_bump();
         [
             self.look_x.pos + bump[0],
-            CHASE_LOOK_Y + self.y * 0.15 + bump[1],
-            self.z + CHASE_LOOK + bump[2],
+            self.spec.camera.chase_look_y + self.y * 0.15 + bump[1],
+            self.z + self.spec.camera.chase_look + bump[2],
         ]
     }
 
@@ -486,15 +442,15 @@ impl NeonCat {
             let shake = (self.time * 53.0).sin() * self.shake;
             return [
                 self.cam_x + shake,
-                CAM_LIFT + self.y * 0.35 + shake * 0.25,
-                self.z - CAM_BACK,
+                self.spec.camera.classic_lift + self.y * 0.35 + shake * 0.25,
+                self.z - self.spec.camera.classic_back,
             ];
         }
         let bump = self.view_bump();
         [
             self.eye_x.pos + bump[0],
             self.eye_y.pos + bump[1],
-            self.z - CHASE_BACK + bump[2],
+            self.z - self.spec.camera.chase_back + bump[2],
         ]
     }
 
@@ -508,7 +464,7 @@ impl NeonCat {
 
     fn chase_fov(&self) -> f32 {
         if self.classic {
-            CAM_FOV
+            self.spec.camera.classic_fov
         } else {
             self.fov_spring.pos
         }
@@ -523,14 +479,14 @@ impl NeonCat {
     }
 
     fn fov_for_speed(&self) -> f32 {
-        let span = (SPEED_CAP - SPEED0).max(0.01);
-        let t = ((self.speed() - SPEED0) / span).clamp(0.0, 1.0);
-        CHASE_FOV + t * (CHASE_FOV_FAST - CHASE_FOV)
+        let span = (self.spec.runner.speed.cap - self.spec.runner.speed.start).max(0.01);
+        let t = ((self.speed() - self.spec.runner.speed.start) / span).clamp(0.0, 1.0);
+        self.spec.camera.fov + t * (self.spec.camera.fov_fast - self.spec.camera.fov)
     }
 
     fn snap_chase(&mut self) {
         self.eye_x.snap(self.x);
-        self.eye_y.snap(CHASE_LIFT + self.y * 0.42);
+        self.eye_y.snap(self.spec.camera.chase_lift + self.y * 0.42);
         self.look_x.snap(self.x * 0.9);
         self.bank.snap(0.0);
         self.fov_spring.snap(self.fov_for_speed());
@@ -540,11 +496,21 @@ impl NeonCat {
     /// Screen-right steer toward the next ring, and jump when the next
     /// obstacle is close and lined up. `+lx` is world −X on this camera.
     pub fn script_steer(&self) -> (f32, bool) {
-        let ri = next_ahead(self.z, RING_Z0, RING_GAP, ring_z);
-        let dx = ring_x(ri) - self.x;
+        let ri = next_ahead(
+            self.z,
+            self.spec.runner.rings.track.z0,
+            self.spec.runner.rings.track.gap,
+            |i| self.spec.runner.rings.track.z(i),
+        );
+        let dx = ring_x(&self.spec, ri) - self.x;
         let lx = (-dx * 1.4).clamp(-1.0, 1.0);
-        let oi = next_ahead(self.z, OBS_Z0, OBS_GAP, obs_z);
-        let ahead_obs = obstacle_shape(oi);
+        let oi = next_ahead(
+            self.z,
+            self.spec.runner.obstacle_track.z0,
+            self.spec.runner.obstacle_track.gap,
+            |i| self.spec.runner.obstacle_track.z(i),
+        );
+        let ahead_obs = obstacle_shape(&self.spec, oi);
         let (ox, oz) = (ahead_obs.hit_cx, ahead_obs.hit_cz);
         let ahead = oz - self.z;
         let jump = (0.15..2.5).contains(&ahead) && (self.x - ox).abs() < 0.95;
@@ -712,9 +678,11 @@ impl NeonCat {
             self.rebuild();
             return;
         }
-        // Substep so one step never moves further than MAX_STEP_Z. At the
+        // Substep so one step never moves further than self.spec.runner.speed.max_step. At the
         // speed cap a 50 ms frame moves 1 m, which skipped a 0.4 m crate.
-        let steps = ((self.speed() * dt) / MAX_STEP_Z).ceil().max(1.0) as u32;
+        let steps = ((self.speed() * dt) / self.spec.runner.speed.max_step)
+            .ceil()
+            .max(1.0) as u32;
         let h = dt / steps as f32;
         for _ in 0..steps {
             self.play_step(h);
@@ -734,16 +702,16 @@ impl NeonCat {
         // +ax is screen-right. This camera looks along +Z, so that is world -X.
         let steer = -ax;
         let response = 1.0 - (-dt * 8.0).exp();
-        self.vx += (steer * 5.6 - self.vx) * response;
+        self.vx += (steer * self.spec.runner.lanes.steer - self.vx) * response;
         let grounded = self.y <= 0.001 && self.vy <= 0.0;
         let want_jump = self.jump_held || self.key_jump || self.pad_up > 0.55;
         if grounded && want_jump {
-            self.vy = JUMP_V;
+            self.vy = self.spec.runner.jump.velocity;
             self.y = 0.02;
             self.just_jump = true;
             crate::mixer::cue_sfx("jump");
         }
-        self.vy += GRAVITY * dt;
+        self.vy += self.spec.runner.jump.gravity * dt;
         self.y += self.vy * dt;
         if self.y <= 0.0 {
             if self.vy < -1.5 {
@@ -758,8 +726,8 @@ impl NeonCat {
         }
         self.land_squash = (self.land_squash - dt).max(0.0);
         self.x += self.vx * dt;
-        if self.x.abs() > LANE_LIMIT {
-            self.x = self.x.signum() * LANE_LIMIT;
+        if self.x.abs() > self.spec.runner.lanes.limit {
+            self.x = self.x.signum() * self.spec.runner.lanes.limit;
             if self.x.is_sign_positive() {
                 self.vx = self.vx.min(0.0);
             } else {
@@ -778,7 +746,7 @@ impl NeonCat {
         self.anim_t += dt * if self.y > 0.05 { 0.7 } else { 1.15 };
         // Grace covers the spawn stretch. The rail is not a kill plane,
         // so steering into it during grace cannot strand the cat outside.
-        if self.time >= GRACE_SECS {
+        if self.time >= self.spec.runner.jump.grace_secs {
             self.touch_obstacles();
         }
         if self.alive {
@@ -786,18 +754,23 @@ impl NeonCat {
         }
     }
 
-    /// Obstacles drawn ahead. At least `LEAD_SECS` of travel, never fewer than 4.
+    /// Obstacles drawn ahead. At least `self.spec.runner.draw.lead_secs` of travel, never fewer than 4.
     fn obstacle_lead_count(&self) -> i32 {
-        ((self.speed() * LEAD_SECS / OBS_GAP).ceil() as i32 + 1).max(5)
+        ((self.speed() * self.spec.runner.draw.lead_secs / self.spec.runner.obstacle_track.gap)
+            .ceil() as i32
+            + 1)
+        .max(self.spec.runner.draw.min_obstacles_ahead)
     }
 
     /// Tunnel floor/walls reach past the farthest drawn obstacle.
     fn tunnel_reach(&self) -> f32 {
-        (self.speed() * LEAD_SECS + OBS_GAP * 2.0).max(44.0)
+        (self.speed() * self.spec.runner.draw.lead_secs + self.spec.runner.obstacle_track.gap * 2.0)
+            .max(44.0)
     }
 
     fn speed(&self) -> f32 {
-        (SPEED0 + self.time * SPEED_RAMP).min(SPEED_CAP)
+        (self.spec.runner.speed.start + self.time * self.spec.runner.speed.ramp)
+            .min(self.spec.runner.speed.cap)
     }
 
     fn smooth_cam(&mut self, dt: f32) {
@@ -806,15 +779,15 @@ impl NeonCat {
             self.cam_x += (self.x * 0.72 - self.cam_x) * k;
             return;
         }
-        let want_y = CHASE_LIFT + self.y * 0.42;
+        let want_y = self.spec.camera.chase_lift + self.y * 0.42;
         // Held steer keeps the bank after the rail zeros vx. A bare
         // lateral velocity still banks, which is what the tests set.
         let steer = if self.axis_x().abs() > 0.2 {
             -self.axis_x()
         } else {
-            (self.vx / 5.6).clamp(-1.0, 1.0)
+            (self.vx / self.spec.runner.lanes.steer).clamp(-1.0, 1.0)
         };
-        let want_roll = steer * CHASE_ROLL;
+        let want_roll = steer * self.spec.camera.roll;
         self.eye_x.step(self.x, 12.0, dt);
         self.eye_y.step(want_y, 8.0, dt);
         self.look_x.step(self.x * 0.9, 8.0, dt);
@@ -823,7 +796,12 @@ impl NeonCat {
     }
 
     fn touch_obstacles(&mut self) {
-        let i0 = near_index(self.z, OBS_Z0, OBS_GAP).saturating_sub(1);
+        let i0 = near_index(
+            self.z,
+            self.spec.runner.obstacle_track.z0,
+            self.spec.runner.obstacle_track.gap,
+        )
+        .saturating_sub(1);
         for i in i0..i0 + 3 {
             if i < 0 {
                 continue;
@@ -831,29 +809,34 @@ impl NeonCat {
             if !self.spawned.contains(&i) {
                 continue;
             }
-            let shape = obstacle_shape(i);
+            let shape = obstacle_shape(&self.spec, i);
             if feet_hit(&shape, self.x, self.y, self.z) {
-                self.crash(shape.kind);
+                self.crash(&shape.kind);
                 return;
             }
         }
     }
 
     fn collect_rings(&mut self) {
-        let i0 = near_index(self.z, RING_Z0, RING_GAP).saturating_sub(1);
+        let i0 = near_index(
+            self.z,
+            self.spec.runner.rings.track.z0,
+            self.spec.runner.rings.track.gap,
+        )
+        .saturating_sub(1);
         for i in i0..i0 + 3 {
             if i < 0 || self.got.contains(&i) {
                 continue;
             }
-            let dx = self.x - ring_x(i);
-            let dz = self.z - ring_z(i);
+            let dx = self.x - ring_x(&self.spec, i);
+            let dz = self.z - self.spec.runner.rings.track.z(i);
             if dx * dx + dz * dz > 1.15 * 1.15 {
                 continue;
             }
             self.got.insert(i);
             self.rings += 1;
             self.just_rings += 1;
-            self.score += 100;
+            self.score += self.spec.runner.rings.score;
             self.shake = self.shake.max(0.06);
             self.burst(self.x, self.y + 0.6, self.z, 14, [80, 255, 255], 3.4, 0.12);
             crate::mixer::cue_sfx("card");
@@ -933,7 +916,7 @@ impl NeonCat {
                 s.vz *= 0.6;
             }
             let (x, y, z) = (s.x, s.y, s.z);
-            if spark_inside_obstacle(&self.spawned, x, y, z) {
+            if spark_inside_obstacle(&self.spec, &self.spawned, x, y, z) {
                 self.sparks.remove(i);
                 continue;
             }
@@ -953,7 +936,7 @@ impl NeonCat {
             half: 48.0,
             ground: Some(false),
             contact_blobs: Some(false),
-            sky: Some([4, 2, 12, 255]),
+            sky: Some(self.spec.style.sky),
             hemi_sky: Some([0.035, 0.028, 0.07]),
             hemi_ground: Some([0.012, 0.008, 0.02]),
             env_map: Some("preset:studio".into()),
@@ -971,8 +954,8 @@ impl NeonCat {
             ibl: Some(0.06),
             tonemap: Some(true),
             cull: Some(true),
-            fog_start: Some(38.0),
-            fog_end: Some(110.0),
+            fog_start: Some(self.spec.runner.draw.fog_start),
+            fog_end: Some(self.spec.runner.draw.fog_end),
             ..WorldDoc::default()
         };
         let eye = self.chase_eye();
@@ -1032,7 +1015,7 @@ impl NeonCat {
             0.4,
             false,
         ));
-        push_mesh_anchors(&mut doc);
+        push_mesh_anchors(&self.spec, &mut doc);
         self.push_tunnel(&mut doc);
         self.push_gates(&mut doc);
         self.push_rings(&mut doc);
@@ -1187,12 +1170,17 @@ impl NeonCat {
     }
 
     fn push_gates(&self, doc: &mut WorldDoc) {
-        let i0 = near_index(self.z, GATE_Z0, GATE_GAP).saturating_sub(1);
+        let i0 = near_index(
+            self.z,
+            self.spec.runner.gates.z0,
+            self.spec.runner.gates.gap,
+        )
+        .saturating_sub(1);
         for i in i0..i0 + 5 {
             if i < 0 {
                 continue;
             }
-            let z = gate_z(i);
+            let z = self.spec.runner.gates.z(i);
             if z < self.z + 3.0 {
                 continue;
             }
@@ -1202,12 +1190,12 @@ impl NeonCat {
             if let Some(mut gate) = glb_prop(
                 &format!("gate-{i}"),
                 "gate",
-                GATE_GLB,
+                &self.spec.runner.gates.glb,
                 [0.0, 0.0, z],
                 // Opening is |x| < 1.12 at scale 1. 2.15 puts the pillars at
                 // |x| > 2.41, outside the lane clamp plus the cat, and they
                 // hide behind the walls. The arch stays pure decor.
-                [GATE_SCALE_X, 0.68, 0.36],
+                [self.spec.runner.gates.scale_x, 0.68, 0.36],
                 0.0,
                 0.0,
                 [8, 5, 14],
@@ -1224,22 +1212,27 @@ impl NeonCat {
 
     fn push_rings(&self, doc: &mut WorldDoc) {
         let scale = 1.12;
-        let i0 = near_index(self.z, RING_Z0, RING_GAP).saturating_sub(1);
+        let i0 = near_index(
+            self.z,
+            self.spec.runner.rings.track.z0,
+            self.spec.runner.rings.track.gap,
+        )
+        .saturating_sub(1);
         for i in i0..i0 + 5 {
             if i < 0 || self.got.contains(&i) {
                 continue;
             }
-            let z = ring_z(i);
+            let z = self.spec.runner.rings.track.z(i);
             if z < self.z - 1.5 {
                 continue;
             }
             // Mesh center sits about +0.5 x and +0.47 y in the file.
-            let x = ring_x(i) - 0.50 * scale;
+            let x = ring_x(&self.spec, i) - 0.50 * scale;
             let y = 0.05;
             if let Some(mut ring) = glb_prop(
                 &format!("ring-{i}"),
                 "ring",
-                RING_GLB,
+                &self.spec.runner.rings.glb,
                 [x, y, z + 0.16 * scale],
                 [scale, scale, scale],
                 0.0,
@@ -1256,47 +1249,52 @@ impl NeonCat {
 
     fn push_obstacles(&self, doc: &mut WorldDoc) -> HashSet<i32> {
         let mut spawned = HashSet::new();
-        let i0 = near_index(self.z, OBS_Z0, OBS_GAP).saturating_sub(1);
+        let i0 = near_index(
+            self.z,
+            self.spec.runner.obstacle_track.z0,
+            self.spec.runner.obstacle_track.gap,
+        )
+        .saturating_sub(1);
         for i in i0..i0 + 2 + self.obstacle_lead_count() {
             if i < 0 {
                 continue;
             }
-            let shape = obstacle_shape(i);
+            let shape = obstacle_shape(&self.spec, i);
             if shape.origin[2] < self.z - 2.0 {
                 continue;
             }
-            if !obstacle_drawable(shape.path) {
+            if !obstacle_drawable(&shape.path) {
                 continue;
             }
             if let Some(mut obstacle) = glb_prop(
                 &format!("obs-{i}"),
                 "obstacle",
-                shape.path,
+                &shape.path,
                 shape.origin,
                 shape.scale,
                 0.0,
                 0.0,
-                [36, 26, 54],
+                self.spec.style.obstacle_color,
                 0.0,
                 [0.04, 0.02, 0.06],
             ) {
                 // Dim neon fill in the edge hue so a crate reads against the
                 // black tunnel. Low enough that bloom (threshold 1.4) skips it.
                 let cyan = i.rem_euclid(2) == 0;
-                obstacle.emissive = Some(OBS_FILL_EMISSIVE);
+                obstacle.emissive = Some(self.spec.style.fill_emissive);
                 obstacle.emissive_color = Some(if cyan {
-                    [0.10, 0.55, 0.65]
+                    self.spec.style.fill_a
                 } else {
-                    [0.60, 0.10, 0.42]
+                    self.spec.style.fill_b
                 });
                 obstacle.roughness = 0.94;
                 obstacle.metallic = 0.04;
                 doc.props.push(obstacle);
                 let proud = 0.045;
                 let col = if i.rem_euclid(2) == 0 {
-                    [40, 255, 255, 255]
+                    self.spec.style.edge_a
                 } else {
-                    [255, 42, 180, 255]
+                    self.spec.style.edge_b
                 };
                 push_neon_box(
                     doc,
@@ -1327,18 +1325,23 @@ impl NeonCat {
                 &format!("lane-lim-{side}"),
                 "box",
                 "hitbox",
-                [side * LANE_LIMIT, 0.2, z],
+                [side * self.spec.runner.lanes.limit, 0.2, z],
                 [0.03, 0.55, 36.0],
                 [255, 210, 40],
                 2.2,
             ));
         }
-        let i0 = near_index(self.z, OBS_Z0, OBS_GAP).saturating_sub(1);
+        let i0 = near_index(
+            self.z,
+            self.spec.runner.obstacle_track.z0,
+            self.spec.runner.obstacle_track.gap,
+        )
+        .saturating_sub(1);
         for i in i0..i0 + 2 + self.obstacle_lead_count() {
             if i < 0 {
                 continue;
             }
-            let shape = obstacle_shape(i);
+            let shape = obstacle_shape(&self.spec, i);
             if shape.origin[2] < self.z - 2.0 {
                 continue;
             }
@@ -1375,7 +1378,11 @@ impl NeonCat {
             id: "walker:cat".into(),
             kind: "walker".into(),
             name: "cat".into(),
-            position: [self.x, self.y + CAT_FOOT * CAT_SCALE, self.z],
+            position: [
+                self.x,
+                self.y + self.spec.player.foot * self.spec.player.scale,
+                self.z,
+            ],
             yaw: self.yaw,
             on_ground: self.y <= 0.02,
             model: String::new(),
@@ -1383,13 +1390,17 @@ impl NeonCat {
             clip: self.anim_t,
             anim: "run".into(),
             anim_blend: 1.0,
-            scale: Some([CAT_SCALE, CAT_SCALE * stretch, CAT_SCALE]),
-            color: Some(CAT_TINT),
+            scale: Some([
+                self.spec.player.scale,
+                self.spec.player.scale * stretch,
+                self.spec.player.scale,
+            ]),
+            color: Some(self.spec.player.tint),
             roughness: Some(0.9),
             ..WorldWalker::default()
         };
-        if glb_ready(CAT_GLB) {
-            cat.gltf = Some(CAT_GLB.into());
+        if glb_ready(&self.spec.player.glb) {
+            cat.gltf = Some(self.spec.player.glb.clone());
         }
         doc.walkers.push(cat.clone());
         doc.player = Some(cat);
@@ -1436,13 +1447,18 @@ impl NeonCat {
             self.flow.paint(&mut list, width, height);
         }
         if self.flow.phase == FlowPhase::Play || self.hitstop > 0.0 {
-            list.quads
-                .push(Quad::new(12.0, HUD_TOP, 168.0, 36.0, [8, 4, 20, 160]));
+            list.quads.push(Quad::new(
+                12.0,
+                self.spec.hud_top,
+                168.0,
+                36.0,
+                [8, 4, 20, 160],
+            ));
             label(
                 &mut list,
                 &format!("SCORE {}", self.score),
                 22.0,
-                HUD_TOP + 6.0,
+                self.spec.hud_top + 6.0,
                 16.0,
                 [180, 245, 255, 255],
                 TextAlign::Left,
@@ -1453,8 +1469,8 @@ impl NeonCat {
 }
 
 struct ObstacleShape {
-    kind: &'static str,
-    path: &'static str,
+    kind: String,
+    path: String,
     /// Prop origin. Scale is about this point, then the mesh is translated.
     origin: [f32; 3],
     scale: [f32; 3],
@@ -1472,53 +1488,21 @@ struct ObstacleShape {
 /// Local AABB after the glTF node bake (`mesh.bounds()`), times the prop
 /// scale. Y stays on the floor. XZ is centered on `(obs_x, obs_z)`.
 /// The kill box is inset so it sits inside that mesh.
-fn obstacle_shape(index: i32) -> ObstacleShape {
-    let anchor_x = obs_x(index);
-    let anchor_z = obs_z(index);
-    match index.rem_euclid(3) {
-        // crate.glb: [-0.25, 0, -0.25] .. [0.25, 0.5, 0.25]
-        0 => shaped(
-            "CRATE",
-            CRATE_GLB,
-            anchor_x,
-            anchor_z,
-            [1.15, 1.15, 1.15],
-            [-0.25, 0.0, -0.25],
-            [0.25, 0.5, 0.25],
-        ),
-        // barrel.glb accessor max is 0.258813 / 0.476190
-        1 => shaped(
-            "BARREL",
-            BARREL_GLB,
-            anchor_x,
-            anchor_z,
-            [1.2, 1.2, 1.2],
-            [-0.258813, 0.0, -0.258813],
-            [0.258813, 0.476190, 0.258813],
-        ),
-        // barrierRed.glb: [0, 0, -0.123] .. [0.25, 0.1312, 0]
-        _ => shaped(
-            "BARRIER",
-            BARRIER_GLB,
-            anchor_x,
-            anchor_z,
-            [4.4, 3.8, 3.4],
-            [0.0, 0.0, -0.123],
-            [0.25, 0.1312, 0.0],
-        ),
-    }
+fn obstacle_shape(s: &GameSpec, index: i32) -> ObstacleShape {
+    let kind = s.obstacle_kind(index);
+    shaped(
+        s,
+        kind,
+        s.runner.obstacle_track.x(index),
+        s.runner.obstacle_track.z(index),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn shaped(
-    kind: &'static str,
-    path: &'static str,
-    anchor_x: f32,
-    anchor_z: f32,
-    scale: [f32; 3],
-    local_min: [f32; 3],
-    local_max: [f32; 3],
-) -> ObstacleShape {
+fn shaped(s: &GameSpec, kind: &EntityKind, anchor_x: f32, anchor_z: f32) -> ObstacleShape {
+    let scale = kind.scale;
+    let local_min = kind.mesh_min;
+    let local_max = kind.mesh_max;
     let origin = [
         anchor_x - scale[0] * (local_min[0] + local_max[0]) * 0.5,
         -scale[1] * local_min[1],
@@ -1534,11 +1518,11 @@ fn shaped(
         origin[1] + scale[1] * local_max[1],
         origin[2] + scale[2] * local_max[2],
     ];
-    let hx = ((skin_max[0] - skin_min[0]) * 0.5 - HIT_INSET).max(0.05);
-    let hz = ((skin_max[2] - skin_min[2]) * 0.5 - HIT_INSET).max(0.05);
+    let hx = ((skin_max[0] - skin_min[0]) * 0.5 - s.hit_inset).max(0.05);
+    let hz = ((skin_max[2] - skin_min[2]) * 0.5 - s.hit_inset).max(0.05);
     ObstacleShape {
-        kind,
-        path,
+        kind: kind.name.clone(),
+        path: kind.glb.clone(),
         origin,
         scale,
         skin_min,
@@ -1547,18 +1531,19 @@ fn shaped(
         hit_cz: anchor_z,
         hit_hx: hx,
         hit_hz: hz,
-        hit_top: (skin_max[1] - skin_min[1]) * HIT_TOP,
+        hit_top: (skin_max[1] - skin_min[1]) * s.hit_top,
     }
 }
 
 /// A spark inside a drawn obstacle's mesh box would glow through it.
-fn spark_inside_obstacle(spawned: &HashSet<i32>, x: f32, y: f32, z: f32) -> bool {
-    let i0 = near_index(z, OBS_Z0, OBS_GAP).saturating_sub(1);
+fn spark_inside_obstacle(s: &GameSpec, spawned: &HashSet<i32>, x: f32, y: f32, z: f32) -> bool {
+    let i0 =
+        near_index(z, s.runner.obstacle_track.z0, s.runner.obstacle_track.gap).saturating_sub(1);
     (i0..i0 + 3).any(|i| {
         if !spawned.contains(&i) {
             return false;
         }
-        let o = obstacle_shape(i);
+        let o = obstacle_shape(s, i);
         let hx = (o.hit_hx + 0.08).max(0.1);
         let hz = (o.hit_hz + 0.08).max(0.1);
         (x - o.hit_cx).abs() <= hx && (z - o.hit_cz).abs() <= hz && y <= o.hit_top + 0.05
@@ -1636,9 +1621,6 @@ fn push_aabb_cage(doc: &mut WorldDoc, id: &str, min: [f32; 3], max: [f32; 3], co
     }
 }
 
-/// Every static GLB the run can show, in a fixed order.
-const ANCHOR_GLBS: [&str; 5] = [GATE_GLB, RING_GLB, CRATE_GLB, BARREL_GLB, BARRIER_GLB];
-
 /// Pin the renderer's glTF slot table.
 ///
 /// `WorldDoc::gltf_slots` lists unique specs in prop order, and the renderer
@@ -1646,8 +1628,8 @@ const ANCHOR_GLBS: [&str; 5] = [GATE_GLB, RING_GLB, CRATE_GLB, BARREL_GLB, BARRI
 /// kinds scroll in and out of the window, so without anchors the table
 /// changed every few seconds and the page froze while it rebuilt. One tiny
 /// buried prop per GLB, first in the list, keeps the key constant.
-fn push_mesh_anchors(doc: &mut WorldDoc) {
-    for (i, path) in ANCHOR_GLBS.iter().enumerate() {
+fn push_mesh_anchors(s: &GameSpec, doc: &mut WorldDoc) {
+    for (i, path) in s.static_glbs().into_iter().enumerate() {
         if let Some(prop) = glb_prop(
             &format!("anchor:{i}"),
             "anchor",
@@ -1998,6 +1980,80 @@ mod tests {
         );
     }
 
+    /// Fixed-input runs. Returns (score, rings, death frame, death reason).
+    fn golden_run(run: &mut NeonCat, steer_rate: f32, jump_every: u32) -> (u32, u32, u32, String) {
+        run.confirm();
+        let mut frame = 0u32;
+        while run.alive && frame < 60 * 180 {
+            run.set_steer(
+                (frame as f32 * steer_rate).sin(),
+                0.0,
+                frame.is_multiple_of(jump_every),
+            );
+            run.tick(1.0 / 60.0);
+            frame += 1;
+        }
+        (run.score(), run.rings(), frame, run.death().to_string())
+    }
+
+    #[test]
+    fn golden_runs_match_the_pre_port_numbers() {
+        // Recorded on master ffd6ee7, before constants moved into GameSpec.
+        type Golden = (u32, u32, u32, &'static str);
+        let cases: [(f32, u32, Golden); 4] = [
+            (0.013, 47, (4252, 13, 4642, "BARREL")),
+            (0.031, 23, (3004, 15, 2667, "BARRIER")),
+            (0.0, 1000, (156, 1, 144, "CRATE")),
+            (0.007, 11, (657, 2, 1010, "BARREL")),
+        ];
+        // The Python-baked spec must be Neon Cat exactly, and must play the same.
+        let baked = include_str!("../tests/fixtures/neon_cat_world.json");
+        let loaded = NeonCat::from_json(baked).unwrap();
+        assert_eq!(loaded.spec(), &GameSpec::default());
+        for doc in [r#"{"version":1,"genre":"neon_cat"}"#, baked] {
+            for (rate, every, want) in cases {
+                let mut run = NeonCat::from_json(doc).unwrap();
+                let (score, rings, frame, death) = golden_run(&mut run, rate, every);
+                assert_eq!(
+                    (score, rings, frame, death.as_str()),
+                    want,
+                    "steer {rate} jump/{every}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn second_game_is_just_a_spec() {
+        let doc = include_str!("../tests/fixtures/meteor_cat_world.json");
+        let play = || {
+            let mut run = NeonCat::from_json(doc).unwrap();
+            let out = golden_run(&mut run, 0.013, 47);
+            (out, run.spec().clone())
+        };
+        let ((score, _, frame, death), spec) = play();
+        assert_eq!(spec.id, "meteor_cat");
+        assert_eq!(spec.runner.speed.cap, 24.0);
+        assert!(
+            ["METEOR", "CRYSTALS", "ROCK"].contains(&death.as_str()),
+            "{death}"
+        );
+        assert!(score > 0 && frame > 60);
+        assert_eq!(play().0, play().0, "fixed inputs replay exactly");
+    }
+
+    #[test]
+    fn spec_changes_reach_the_sim() {
+        let doc =
+            r#"{"game":{"runner":{"speed":{"start":14.0,"cap":14.0},"rings":{"score":250}}}}"#;
+        let mut run = NeonCat::from_json(doc).unwrap();
+        run.confirm();
+        run.tick(1.0 / 60.0);
+        assert_eq!(run.speed(), 14.0);
+        assert_eq!(run.spec().runner.rings.score, 250);
+        assert!(NeonCat::from_json(r#"{"game":{"obstacles":[]}}"#).is_err());
+    }
+
     #[test]
     fn fixed_dt_runs_are_deterministic() {
         let play = || {
@@ -2035,6 +2091,79 @@ mod tests {
     }
 
     use super::*;
+
+    // Pre-port names for the default spec, so the tests read as before.
+    fn spec() -> GameSpec {
+        GameSpec::default()
+    }
+    fn obstacle_shape(index: i32) -> ObstacleShape {
+        super::obstacle_shape(&spec(), index)
+    }
+    fn spark_inside_obstacle(spawned: &HashSet<i32>, x: f32, y: f32, z: f32) -> bool {
+        super::spark_inside_obstacle(&spec(), spawned, x, y, z)
+    }
+    fn obs_z(index: i32) -> f32 {
+        spec().runner.obstacle_track.z(index)
+    }
+    fn obs_x(index: i32) -> f32 {
+        spec().runner.obstacle_track.x(index)
+    }
+    fn gate_z(index: i32) -> f32 {
+        spec().runner.gates.z(index)
+    }
+    const SPEED_CAP: f32 = 20.0;
+    const LANE_LIMIT: f32 = 2.15;
+    const GATE_SCALE_X: f32 = 2.15;
+    const GRACE_SECS: f32 = 1.6;
+    const CHASE_BACK: f32 = 5.9;
+    const CHASE_LIFT: f32 = 2.35;
+    const CHASE_LOOK: f32 = 13.0;
+    const CHASE_FOV: f32 = 50.0;
+    const CHASE_FOV_FAST: f32 = 58.0;
+    const CAM_BACK: f32 = 7.4;
+    const CAM_LIFT: f32 = 1.72;
+    const CAM_FOV: f32 = 50.0;
+    const OBS_FILL_EMISSIVE: f32 = 0.35;
+    const CAT_SCALE: f32 = 0.50;
+    const CAT_TINT: [u32; 3] = [226, 206, 255];
+    const CAT_GLB: &str = "assets/models/kenney/cube-pets/animal-cat.glb";
+    const GATE_GLB: &str = "assets/models/quaternius/modular-dungeons-pack/Arch.glb";
+    const RING_GLB: &str = "assets/models/kenney/racing-kit/overheadRound.glb";
+
+    #[test]
+    fn test_shims_match_the_default_spec() {
+        let s = spec();
+        assert_eq!(s.runner.speed.cap, SPEED_CAP);
+        assert_eq!(s.runner.lanes.limit, LANE_LIMIT);
+        assert_eq!(s.runner.gates.scale_x, GATE_SCALE_X);
+        assert_eq!(s.runner.jump.grace_secs, GRACE_SECS);
+        assert_eq!(
+            [
+                s.camera.chase_back,
+                s.camera.chase_lift,
+                s.camera.chase_look
+            ],
+            [CHASE_BACK, CHASE_LIFT, CHASE_LOOK]
+        );
+        assert_eq!(
+            [s.camera.fov, s.camera.fov_fast],
+            [CHASE_FOV, CHASE_FOV_FAST]
+        );
+        assert_eq!(
+            [
+                s.camera.classic_back,
+                s.camera.classic_lift,
+                s.camera.classic_fov
+            ],
+            [CAM_BACK, CAM_LIFT, CAM_FOV]
+        );
+        assert_eq!(s.style.fill_emissive, OBS_FILL_EMISSIVE);
+        assert_eq!((s.player.scale, s.player.tint), (CAT_SCALE, CAT_TINT));
+        assert_eq!(
+            [&s.player.glb, &s.runner.gates.glb, &s.runner.rings.glb],
+            [CAT_GLB, GATE_GLB, RING_GLB]
+        );
+    }
     use crate::session::{SceneKind, SharedSession};
 
     #[test]
@@ -2236,7 +2365,7 @@ mod tests {
     fn hitboxes_sit_inside_the_glb_and_a_graze_lives() {
         for index in 0..3 {
             let shape = obstacle_shape(index);
-            let file = crate::assets::resolve_asset(shape.path)
+            let file = crate::assets::resolve_asset(&shape.path)
                 .unwrap_or_else(|| panic!("missing {}", shape.path));
             let bytes = crate::assets::read_bytes(&file).unwrap();
             let bounds = crate::gltf_load::mesh_from_glb(&bytes).unwrap().bounds();
@@ -2438,8 +2567,8 @@ mod tests {
                     .iter()
                     .find(|prop| prop.id == format!("prop:obs-{index}"))
                     .unwrap_or_else(|| panic!("{} missing from the dump", shape.kind));
-                assert_eq!(prop.gltf.as_deref(), Some(shape.path));
-                let file = crate::assets::resolve_asset(shape.path).unwrap();
+                assert_eq!(prop.gltf.as_deref(), Some(shape.path.as_str()));
+                let file = crate::assets::resolve_asset(&shape.path).unwrap();
                 let bytes = crate::assets::read_bytes(&file).unwrap();
                 let loaded = crate::gltf_load::mesh_from_glb(&bytes).unwrap();
                 assert!(
