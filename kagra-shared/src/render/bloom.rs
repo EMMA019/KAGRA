@@ -283,6 +283,14 @@ impl BloomPass {
         &self.frame_view
     }
 
+    pub(super) fn composite_view(&self) -> &wgpu::TextureView {
+        &self.composite_view
+    }
+
+    pub(super) fn vignette(&self) -> f32 {
+        self.vignette
+    }
+
     pub(super) fn frame_format(&self) -> wgpu::TextureFormat {
         self.frame_format
     }
@@ -351,6 +359,9 @@ impl BloomPass {
     /// extract/blur を走らせ、composite(sharp + bloom*intensity → exposure →
     /// ACES → sRGB)を composite_tex に書く。その後 FXAA が composite_tex を
     /// 最終ターゲットへ（無効時はコピー）。HUD はこの後に別パスで重ねる。
+    /// `vignette_override` replaces the dump vignette (TAA draws it later).
+    /// `to_target` false stops after the composite so TAA can present.
+    #[allow(clippy::too_many_arguments)]
     pub fn apply(
         &mut self,
         device: &wgpu::Device,
@@ -359,8 +370,11 @@ impl BloomPass {
         target: (&wgpu::Texture, &wgpu::TextureView),
         exposure: f32,
         tonemap: bool,
+        vignette_override: Option<f32>,
+        to_target: bool,
     ) {
         let (_target_texture, target_view) = target;
+        let vignette = vignette_override.unwrap_or(self.vignette);
         if self.lut_loaded != self.lut_desired {
             write_lut(queue, &self.lut_tex, &self.lut_desired);
             self.lut_loaded.clone_from(&self.lut_desired);
@@ -445,7 +459,7 @@ impl BloomPass {
                 self.intensity,
                 exposure.max(0.0),
                 if tonemap { 1.0 } else { 0.0 },
-                self.vignette,
+                vignette,
                 self.lut_strength,
                 if self.encode_srgb { 1.0 } else { 0.0 },
                 0.0,
@@ -460,6 +474,10 @@ impl BloomPass {
             "Bloom Composite",
         );
 
+        // TAA presents itself. Stopping here leaves the grade in composite_tex.
+        if !to_target {
+            return;
+        }
         // FXAA or plain copy → 最終ターゲット。
         let inv_w = 1.0 / self.width.max(1) as f32;
         let inv_h = 1.0 / self.height.max(1) as f32;

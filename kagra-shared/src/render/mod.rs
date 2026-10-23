@@ -10,6 +10,7 @@
 
 mod bloom;
 mod color_space;
+mod post;
 mod target;
 
 pub use target::SurfaceSource;
@@ -18,6 +19,7 @@ use crate::scene::{DrawList, ImageQuad};
 use crate::scene3d::{MeshData, MeshId, Scene3D};
 use crate::world_doc::load_png_albedo;
 use bloom::BloomPass;
+use post::PostGraph;
 
 const MAX_TEXTURE_SIDE: u32 = 8192;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -46,6 +48,7 @@ struct Globals {
     light_view_proj: [[f32; 4]; 4],
     /// x = shadow radius. 1 = historical 3×3 PCF.
     /// y > 0.5: this pass writes an unorm swapchain, so `present_rgb` grades it.
+    /// z = camera near, w = camera far (depth prepass only).
     shadow: [f32; 4],
     hemi_sky: [f32; 4],
     /// w > 0.5 samples the prefiltered env strip.
@@ -118,6 +121,8 @@ pub struct Renderer {
     vbuf_capacity: usize,
 
     pipeline3d: wgpu::RenderPipeline,
+    /// Color target of linear eye depth. Drawn only when a post pass samples it.
+    pipeline_depth: wgpu::RenderPipeline,
     /// 天球用。深度は書いて読まず、裏面カリングもしない。
     pipeline_sky: wgpu::RenderPipeline,
     /// MToon アウトライン（backface push-out、カリング Front）。
@@ -147,6 +152,8 @@ pub struct Renderer {
     elapsed: f32,
     /// Threshold bloom: linear-HDR frame → extract/blur → composite → target.
     bloom: BloomPass,
+    /// SSAO / DOF / motion / TAA. Off unless a dump or `set_post` enables them.
+    post: PostGraph,
     /// TextQuad → カバレッジ Quad のキャッシュ。GPU 状態を持たない。
     text: crate::font::TextRaster,
     /// walker glTF spec → SpringBone 布シミュ（フレーム跨ぎで保持）。
@@ -779,6 +786,42 @@ impl Renderer {
             cache: None,
         });
 
+        let depth_color_target = [Some(wgpu::ColorTargetState {
+            format: frame_format,
+            blend: None,
+            write_mask: wgpu::ColorWrites::ALL,
+        })];
+        let pipeline_depth = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("kagra-shared depth prepass"),
+            layout: Some(&layout3d),
+            vertex: wgpu::VertexState {
+                module: &shader3d,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &vertex_buffers,
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader3d,
+                entry_point: Some("fs_depth"),
+                compilation_options: Default::default(),
+                targets: &depth_color_target,
+            }),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
         let pipeline_sky = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("kagra-shared sky pipeline"),
             layout: Some(&layout3d),
@@ -875,6 +918,7 @@ impl Renderer {
         let inst_buf = create_instance_buffer(&device, inst_capacity);
         let depth = create_depth_view(&device, width, height);
         let bloom = BloomPass::new(&device, format, width, height, hdr);
+        let post = PostGraph::new(&device, format, bloom.frame_format(), width, height);
 
         let me = Self {
             device,
@@ -890,6 +934,7 @@ impl Renderer {
             vbuf,
             vbuf_capacity,
             pipeline3d,
+            pipeline_depth,
             pipeline_sky,
             pipeline_outline,
             pipeline_shadow,
@@ -914,6 +959,7 @@ impl Renderer {
             env_bind,
             elapsed: 0.0,
             bloom,
+            post,
             text: crate::font::TextRaster::new(),
             cloth: std::collections::HashMap::new(),
             mesh_key: String::new(),
@@ -1134,6 +1180,12 @@ impl Renderer {
         self.bloom.set_fxaa(enabled);
     }
 
+    /// SSAO radius in pixels (0 = off), TAA, optional DOF `(focus, aperture)`,
+    /// and a camera-motion shutter in 0..1. Off leaves the bloom composite alone.
+    pub fn set_post(&mut self, ssao: f32, taa: bool, dof: Option<(f32, f32)>, motion: f32) {
+        self.post.set(ssao, taa, dof, motion);
+    }
+
     fn upload_screen(&self) {
         let data = [self.width as f32, self.height as f32, 0.0, 0.0];
         self.queue
@@ -1160,6 +1212,7 @@ impl Renderer {
         }
         self.depth = create_depth_view(&self.device, width, height);
         self.bloom.resize(&self.device, width, height);
+        self.post.resize(&self.device, width, height);
         self.upload_screen();
     }
 
@@ -1182,6 +1235,8 @@ impl Renderer {
         // cannot run. Unorm surfaces then encode in the fragment shader.
         let direct = self.bloom.frame_format() == self.format;
         let present_in_shader = color_space::present_in_fragment(direct, self.format.is_srgb());
+        let mut unjittered_vp = glam::Mat4::IDENTITY;
+        let mut drew_scene = false;
 
         // 3D のインスタンスを 1 本のバッファに連結し、バッチごとの開始位置を覚える。
         // base instance は GLES に無いので、描画時は毎回 0.. で数え、バッファの
@@ -1253,7 +1308,8 @@ impl Renderer {
                 self.queue
                     .write_buffer(&self.inst_buf, 0, bytemuck::cast_slice(&raw));
             }
-            self.upload_globals(scene, present_in_shader);
+            unjittered_vp = self.upload_globals(scene, present_in_shader);
+            drew_scene = true;
         }
 
         let clear_bytes = world.map(|s| s.clear).unwrap_or(hud.clear);
@@ -1433,8 +1489,76 @@ impl Renderer {
                 }
             }
         }
-        // Pass 2: HDR frame → exposure → ACES → LUT → vignette → one OETF.
+        // Depth color for SSAO / DOF / motion. The HDR color target blends, so
+        // device depth cannot live in its alpha. Load the depth buffer the
+        // color pass just wrote; do not clear it. Far = camera far (meters).
+        if !direct && drew_scene && self.post.needs_depth() {
+            let depth_far = world.map(|s| s.camera.far).unwrap_or(1000.0).max(1.0) as f64;
+            let depth_color = self.post.scene_depth_view();
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("kagra-shared depth color"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: depth_color,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: depth_far,
+                            g: depth_far,
+                            b: depth_far,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            if !draws.is_empty() {
+                pass.set_pipeline(&self.pipeline_depth);
+                pass.set_bind_group(0, &self.globals_bind, &[]);
+                pass.set_bind_group(2, &self.shadow_bind, &[]);
+                pass.set_bind_group(3, &self.env_bind, &[]);
+                for (mesh, offset, count, _is_sky, _cast) in &draws {
+                    let m = &self.meshes[*mesh];
+                    pass.set_bind_group(
+                        1,
+                        m.albedo_bind.as_ref().unwrap_or(&self.default_albedo_bind),
+                        &[],
+                    );
+                    pass.set_vertex_buffer(0, m.vbuf.slice(..));
+                    pass.set_vertex_buffer(1, self.inst_buf.slice(*offset..));
+                    pass.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..m.index_count, 0, 0..*count);
+                }
+            }
+        }
+        // Pass 2: optional SSAO / DOF / motion, then bloom grade, then TAA or FXAA.
         if !direct {
+            if drew_scene && self.post.scene_active() {
+                let near = world.map(|s| s.camera.near).unwrap_or(0.1);
+                let far = world.map(|s| s.camera.far).unwrap_or(1000.0);
+                self.post.apply_scene(
+                    &self.device,
+                    &self.queue,
+                    &mut encoder,
+                    self.bloom.frame_view(),
+                    unjittered_vp,
+                    near,
+                    far,
+                );
+            }
+            let taa = drew_scene && self.post.taa_enabled();
+            let vig = self.bloom.vignette();
             self.bloom.apply(
                 &self.device,
                 &self.queue,
@@ -1442,7 +1566,19 @@ impl Renderer {
                 (target_texture, &view),
                 exposure,
                 tonemap,
+                if taa { Some(0.0) } else { None },
+                !taa,
             );
+            if taa {
+                self.post.apply_display(
+                    &self.device,
+                    &self.queue,
+                    &mut encoder,
+                    self.bloom.composite_view(),
+                    &view,
+                    vig,
+                );
+            }
         }
         // Pass 3: HUD → 最終ターゲット（トーン後の色をそのまま重ねる）。
         if !vertices.is_empty() {
@@ -1475,6 +1611,9 @@ impl Renderer {
             pass.draw(0..vertices.len() as u32, 0..1);
         }
         self.queue.submit(Some(encoder.finish()));
+        if drew_scene {
+            self.post.store_view(unjittered_vp);
+        }
         if let Some(f) = frame {
             self.queue.present(f);
         }
@@ -1518,7 +1657,7 @@ impl Renderer {
         self.inst_capacity = cap;
     }
 
-    fn upload_globals(&mut self, scene: &Scene3D, present_in_shader: bool) {
+    fn upload_globals(&mut self, scene: &Scene3D, present_in_shader: bool) -> glam::Mat4 {
         let cam = &scene.camera;
         let mut light_pos = [[0.0f32; 4]; 4];
         let mut light_col = [[0.0f32; 4]; 4];
@@ -1543,8 +1682,17 @@ impl Renderer {
                 if lit.spot { 1.0 } else { 0.0 },
             ];
         }
+        let view = cam.view();
+        let proj = cam.projection(self.aspect());
+        let unjittered = proj * view;
+        let vp = if !present_in_shader && self.post.taa_enabled() {
+            let j = post::ndc_jitter(self.post.sample_index(), self.width, self.height);
+            post::apply_projection_jitter(proj, j) * view
+        } else {
+            unjittered
+        };
         let g = Globals {
-            view_proj: cam.view_projection(self.aspect()).to_cols_array_2d(),
+            view_proj: vp.to_cols_array_2d(),
             light: [
                 scene.light_dir.x,
                 scene.light_dir.y,
@@ -1567,8 +1715,8 @@ impl Renderer {
             shadow: [
                 scene.shadow_softness.max(0.0),
                 if present_in_shader { 1.0 } else { 0.0 },
-                0.0,
-                0.0,
+                cam.near.max(1e-3),
+                cam.far.max(cam.near + 0.01),
             ],
             hemi_sky: [scene.hemi_sky[0], scene.hemi_sky[1], scene.hemi_sky[2], 0.0],
             hemi_ground: [
@@ -1604,6 +1752,7 @@ impl Renderer {
         self.queue
             .write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&g));
         self.elapsed += 1.0 / 60.0;
+        unjittered
     }
 
     /// オフスクリーンの内容を RGBA8 で読み出す。
@@ -1830,6 +1979,7 @@ impl Renderer {
         // Wasm and the desktop window draw here. Omitted post fields keep
         // whatever the host already set (the window example's set_bloom).
         self.apply_dump_grade(doc);
+        self.apply_dump_post(doc);
         let scene = doc.compile_scene(self.aspect());
         self.render_frame(Some(&scene), hud)
     }
@@ -1852,6 +2002,15 @@ impl Renderer {
             doc.fxaa_enabled(),
             doc.lut_preset(),
             doc.lut_mix(),
+        );
+    }
+
+    fn apply_dump_post(&mut self, doc: &crate::world_doc::WorldDoc) {
+        self.post.set(
+            doc.ssao_radius(),
+            doc.taa_enabled(),
+            doc.dof(),
+            doc.motion_shutter(),
         );
     }
 
@@ -2678,6 +2837,235 @@ mod tests {
                 let expect = [*byte, *byte, *byte, 255];
                 assert_rgb_near(got, expect, 1);
             }
+        }
+    }
+
+    fn solid_box(pos: [f32; 3], scale: [f32; 3], color: [u8; 4]) -> crate::scene3d::Instance {
+        let model = glam::Mat4::from_scale_rotation_translation(
+            glam::Vec3::from(scale),
+            glam::Quat::IDENTITY,
+            glam::Vec3::from(pos),
+        );
+        crate::scene3d::Instance::with_pbr(model, color, crate::scene3d::Material::Solid, 0.0, 1.0)
+    }
+
+    fn graded(renderer: &mut Renderer) {
+        renderer.set_fxaa(false);
+        renderer.bloom.set_grade(0.85, 0.0, 0.0, false, "off", 0.0);
+    }
+
+    fn draw_boxes(renderer: &mut Renderer, instances: Vec<crate::scene3d::Instance>) -> Vec<u8> {
+        let mesh = crate::scene3d::primitives::box_mesh(glam::Vec3::ONE);
+        let id = renderer.upload_mesh(&mesh);
+        let scene = crate::scene3d::Scene3D {
+            clear: [40, 80, 160, 255],
+            ambient: 1.0,
+            ibl: 0.0,
+            tonemap: false,
+            exposure: 1.0,
+            fog_start: 500.0,
+            fog_end: 800.0,
+            batches: vec![crate::scene3d::Batch {
+                mesh: id,
+                instances,
+            }],
+            ..Default::default()
+        };
+        renderer
+            .render_frame(Some(&scene), &crate::scene::DrawList::default())
+            .expect("render");
+        renderer.read_rgba().expect("readback")
+    }
+
+    fn channel_sum(px: [u8; 4]) -> i32 {
+        px[0] as i32 + px[1] as i32 + px[2] as i32
+    }
+
+    #[test]
+    fn offscreen_ssao_darkens_contact_and_keeps_the_clear() {
+        let Some(mut renderer) = pollster::block_on(Renderer::new_offscreen(192, 192)).ok() else {
+            eprintln!("no GPU adapter; skipping ssao");
+            return;
+        };
+        graded(&mut renderer);
+        let boxes = vec![
+            solid_box([0.0, 0.5, 0.0], [1.0, 1.0, 1.0], [255, 255, 255, 255]),
+            solid_box([0.0, -0.05, 0.0], [8.0, 0.1, 8.0], [220, 220, 220, 255]),
+        ];
+        renderer.set_post(0.0, false, None, 0.0);
+        let off = draw_boxes(&mut renderer, boxes.clone());
+        renderer.set_post(24.0, false, None, 0.0);
+        let on = draw_boxes(&mut renderer, boxes);
+        write_shot("post-ssao-off.png", 192, 192, &off);
+        write_shot("post-ssao-on.png", 192, 192, &on);
+        assert_rgb_near(pixel_of(&on, 192, 2, 2), pixel_of(&off, 192, 2, 2), 6);
+        let mut dropped = 0u32;
+        let mut held = 0u32;
+        for y in 0..192 {
+            for x in 0..192 {
+                let a = channel_sum(pixel_of(&off, 192, x, y));
+                let b = channel_sum(pixel_of(&on, 192, x, y));
+                if a - b >= 18 {
+                    dropped += 1;
+                }
+                if a > 600 && (a - b).abs() <= 15 {
+                    held += 1;
+                }
+            }
+        }
+        assert!(
+            dropped > 30,
+            "ssao should darken the cube/floor contact, dropped {dropped}"
+        );
+        assert!(
+            held > 20,
+            "open surfaces should stay bright, held {held} dropped {dropped}"
+        );
+    }
+
+    #[test]
+    fn offscreen_dof_blurs_the_far_box() {
+        let Some(mut renderer) = pollster::block_on(Renderer::new_offscreen(160, 160)).ok() else {
+            eprintln!("no GPU adapter; skipping dof");
+            return;
+        };
+        graded(&mut renderer);
+        let boxes = vec![
+            solid_box([-0.7, 0.45, 2.4], [0.7, 0.9, 0.7], [220, 30, 30, 255]),
+            solid_box([1.3, 0.45, -4.0], [1.2, 1.2, 1.2], [30, 40, 220, 255]),
+        ];
+        renderer.set_post(0.0, false, None, 0.0);
+        let sharp = draw_boxes(&mut renderer, boxes.clone());
+        renderer.set_post(0.0, false, Some((4.2, 2.2)), 0.0);
+        let blurred = draw_boxes(&mut renderer, boxes);
+        write_shot("post-dof-sharp.png", 160, 160, &sharp);
+        write_shot("post-dof-blur.png", 160, 160, &blurred);
+        let mut near_diff = 0i64;
+        let mut near_n = 0i64;
+        let mut far_diff = 0i64;
+        let mut far_n = 0i64;
+        for i in (0..sharp.len()).step_by(4) {
+            let s = [sharp[i], sharp[i + 1], sharp[i + 2], sharp[i + 3]];
+            let b = [blurred[i], blurred[i + 1], blurred[i + 2], blurred[i + 3]];
+            let d = (s[0] as i64 - b[0] as i64).abs()
+                + (s[1] as i64 - b[1] as i64).abs()
+                + (s[2] as i64 - b[2] as i64).abs();
+            // Clear is (40, 80, 160). That blue is not the far box (30, 40, 220).
+            if s[0] > 180 && s[1] < 50 && s[2] < 50 {
+                near_diff += d;
+                near_n += 1;
+            }
+            if s[2] > 180 && s[0] < 50 && s[1] < 70 {
+                far_diff += d;
+                far_n += 1;
+            }
+        }
+        assert!(near_n > 8, "near red box missing ({near_n})");
+        assert!(far_n > 8, "far blue box missing ({far_n})");
+        let near_m = near_diff as f32 / near_n as f32;
+        let far_m = far_diff as f32 / far_n as f32;
+        assert!(
+            far_m > near_m + 4.0 && far_m > 8.0,
+            "far box should blur more than the focus plane: far {far_m} near {near_m}"
+        );
+    }
+
+    #[test]
+    fn offscreen_motion_blur_is_quiet_until_the_camera_moves() {
+        let Some(mut renderer) = pollster::block_on(Renderer::new_offscreen(128, 128)).ok() else {
+            eprintln!("no GPU adapter; skipping motion");
+            return;
+        };
+        graded(&mut renderer);
+        let boxes = vec![solid_box(
+            [0.0, 0.5, 0.0],
+            [1.0, 1.0, 1.0],
+            [240, 220, 40, 255],
+        )];
+        renderer.set_post(0.0, false, None, 0.0);
+        let still = draw_boxes(&mut renderer, boxes.clone());
+        renderer.set_post(0.0, false, None, 1.0);
+        let held = draw_boxes(&mut renderer, boxes.clone());
+        let mut worst = 0i32;
+        for i in (0..still.len()).step_by(4) {
+            for c in 0..3 {
+                worst = worst.max((still[i + c] as i32 - held[i + c] as i32).abs());
+            }
+        }
+        assert!(
+            worst <= 6,
+            "a still camera should not smear, max channel delta {worst}"
+        );
+        let mesh = crate::scene3d::primitives::box_mesh(glam::Vec3::ONE);
+        let id = renderer.upload_mesh(&mesh);
+        let mut moved = crate::scene3d::Scene3D {
+            clear: [40, 80, 160, 255],
+            ambient: 1.0,
+            ibl: 0.0,
+            tonemap: false,
+            exposure: 1.0,
+            fog_start: 500.0,
+            fog_end: 800.0,
+            camera: crate::scene3d::Camera {
+                eye: glam::Vec3::new(1.6, 2.0, 6.0),
+                ..Default::default()
+            },
+            batches: vec![crate::scene3d::Batch {
+                mesh: id,
+                instances: boxes.clone(),
+            }],
+            ..Default::default()
+        };
+        renderer
+            .render_frame(Some(&moved), &crate::scene::DrawList::default())
+            .unwrap();
+        let blur = renderer.read_rgba().unwrap();
+        renderer.set_post(0.0, false, None, 0.0);
+        moved.camera.eye = glam::Vec3::new(1.6, 2.0, 6.0);
+        renderer
+            .render_frame(Some(&moved), &crate::scene::DrawList::default())
+            .unwrap();
+        let sharp = renderer.read_rgba().unwrap();
+        write_shot("post-motion-blur.png", 128, 128, &blur);
+        write_shot("post-motion-sharp.png", 128, 128, &sharp);
+        let mut changed = 0u32;
+        for i in (0..blur.len()).step_by(4) {
+            let d = (blur[i] as i32 - sharp[i] as i32).abs()
+                + (blur[i + 1] as i32 - sharp[i + 1] as i32).abs()
+                + (blur[i + 2] as i32 - sharp[i + 2] as i32).abs();
+            if d > 24 {
+                changed += 1;
+            }
+        }
+        assert!(
+            changed > 20,
+            "moving the camera should smear, changed {changed}"
+        );
+    }
+
+    #[test]
+    fn offscreen_taa_keeps_a_flat_center() {
+        let Some(mut renderer) = pollster::block_on(Renderer::new_offscreen(96, 96)).ok() else {
+            eprintln!("no GPU adapter; skipping taa");
+            return;
+        };
+        graded(&mut renderer);
+        let boxes = vec![solid_box(
+            [0.0, 0.0, 0.0],
+            [6.0, 6.0, 6.0],
+            [200, 180, 40, 255],
+        )];
+        renderer.set_post(0.0, false, None, 0.0);
+        let plain = draw_boxes(&mut renderer, boxes.clone());
+        let center = pixel_of(&plain, 96, 48, 48);
+        renderer.set_post(0.0, true, None, 0.0);
+        for frame in 0..4 {
+            let rgba = draw_boxes(&mut renderer, boxes.clone());
+            if frame == 3 {
+                write_shot("post-taa.png", 96, 96, &rgba);
+            }
+            let got = pixel_of(&rgba, 96, 48, 48);
+            assert_rgb_near(got, center, 10);
         }
     }
 }

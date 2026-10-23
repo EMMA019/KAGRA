@@ -25,6 +25,8 @@ struct Globals {
     // x = shadow radius. 1 = the historical 3x3 PCF. Larger = a wider tent.
     // y > 0.5: this pass writes the swapchain (composite cannot sample the
     // frame). present_rgb applies exposure, ACES, and one sRGB OETF.
+    // z = camera near, w = camera far. The depth prepass turns device z into
+    // linear eye meters. Shading does not read z or w.
     shadow: vec4<f32>,
     // Hemisphere colors. Defaults match the old hardcoded studio SH.
     hemi_sky: vec4<f32>,
@@ -149,6 +151,23 @@ fn present_rgb(rgb: vec3<f32>) -> vec3<f32> {
 @fragment
 fn fs_outline(in: VsOut) -> @location(0) vec4<f32> {
     return vec4<f32>(present_rgb(in.color.rgb), 1.0);
+}
+
+// Linear eye depth in meters for SSAO / DOF / motion. The color target stays
+// ALPHA_BLENDING, so device depth cannot ride in the color alpha. Sky is the
+// far plane. Cutout holes discard after the albedo sample (WebGPU).
+@fragment
+fn fs_depth(in: VsOut) -> @location(0) vec4<f32> {
+    let tex = textureSample(albedo_tex, albedo_samp, in.uv);
+    let sky = abs(in.material - 3.0) < 0.5;
+    if (!sky && tex.a < 0.5) {
+        discard;
+    }
+    let near = max(g.shadow.z, 1e-3);
+    let far = max(g.shadow.w, near + 0.01);
+    let device_z = select(in.clip.z, 1.0, sky);
+    let eye = (near * far) / max(far - device_z * (far - near), 1e-4);
+    return vec4<f32>(eye, eye, eye, 1.0);
 }
 
 @vertex

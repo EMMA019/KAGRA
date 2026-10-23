@@ -115,9 +115,26 @@ pub struct WorldDoc {
     /// Mix toward the LUT after ACES, 0..1. None = 1 when a preset is set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lut_strength: Option<f32>,
-    /// FXAA on the composite. None = on.
+    /// FXAA on the composite. None = on. Ignored while `taa` is on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fxaa: Option<bool>,
+    /// Half-resolution SSAO radius in pixels. None = off (high quality tier
+    /// uses 8). `KAGRA_QUALITY=0` forces 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssao: Option<f32>,
+    /// Temporal AA. None = off, except `KAGRA_QUALITY=high`, which turns it on.
+    /// Replaces FXAA for that frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub taa: Option<bool>,
+    /// DOF focus distance from the camera, in world units. Needs `dof_aperture`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dof_focus: Option<f32>,
+    /// DOF aperture. None or 0 = off. Larger blurs pixels away from `dof_focus`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dof_aperture: Option<f32>,
+    /// Camera motion-blur shutter, 0..1. None or 0 = off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motion_blur: Option<f32>,
     /// Directional shadow radius. None = 1, the historical 3×3 PCF.
     /// Larger values (about 2.5–4) use a wider tent so penumbras soften.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -217,6 +234,25 @@ fn event_type() -> String {
 
 fn default_gravity() -> f32 {
     9.8
+}
+
+/// `KAGRA_QUALITY=0`, `off`, or `low` keeps SSAO / TAA / DOF / motion off
+/// so a phone can stay on the bloom + FXAA path.
+fn heavy_post_allowed() -> bool {
+    heavy_post_allowed_value(std::env::var("KAGRA_QUALITY").ok().as_deref())
+}
+
+fn heavy_post_allowed_value(quality: Option<&str>) -> bool {
+    !matches!(quality, Some("0") | Some("off") | Some("low"))
+}
+
+/// `high` or `2` enables SSAO and TAA when the dump leaves them unset.
+fn quality_is_high() -> bool {
+    quality_is_high_value(std::env::var("KAGRA_QUALITY").ok().as_deref())
+}
+
+fn quality_is_high_value(quality: Option<&str>) -> bool {
+    matches!(quality, Some("high") | Some("2"))
 }
 
 /// Prop record. `position` / `yaw` / `pitch` / `roll` are world-space unless
@@ -757,6 +793,53 @@ impl WorldDoc {
     /// FXAA. None = on.
     pub fn fxaa_enabled(&self) -> bool {
         self.fxaa.unwrap_or(true)
+    }
+
+    /// SSAO radius in pixels. None = off, unless the high tier is on.
+    /// `KAGRA_QUALITY=0` / `off` / `low` forces it off.
+    pub fn ssao_radius(&self) -> f32 {
+        if !heavy_post_allowed() {
+            return 0.0;
+        }
+        match self.ssao {
+            Some(r) => r.clamp(0.0, 64.0),
+            None if quality_is_high() => 8.0,
+            None => 0.0,
+        }
+    }
+
+    /// TAA. None = off, unless the high tier is on. Quality 0 forces it off.
+    pub fn taa_enabled(&self) -> bool {
+        if !heavy_post_allowed() {
+            return false;
+        }
+        match self.taa {
+            Some(v) => v,
+            None => quality_is_high(),
+        }
+    }
+
+    /// `(focus, aperture)` when DOF should run.
+    pub fn dof(&self) -> Option<(f32, f32)> {
+        if !heavy_post_allowed() {
+            return None;
+        }
+        let aperture = self.dof_aperture.unwrap_or(0.0);
+        if aperture <= 1e-4 {
+            return None;
+        }
+        Some((
+            self.dof_focus.unwrap_or(8.0).max(0.05),
+            aperture.clamp(0.0, 8.0),
+        ))
+    }
+
+    /// Camera shutter. None = 0.
+    pub fn motion_shutter(&self) -> f32 {
+        if !heavy_post_allowed() {
+            return 0.0;
+        }
+        self.motion_blur.unwrap_or(0.0).clamp(0.0, 1.0)
     }
 
     /// Shadow kernel radius. None = 1 (the 3×3 PCF that already shipped).
@@ -3213,6 +3296,12 @@ mod tests {
         assert_eq!(doc.lut_preset(), "off");
         assert_eq!(doc.lut_mix(), 0.0);
         assert!(doc.fxaa_enabled());
+        if super::heavy_post_allowed() && !super::quality_is_high() {
+            assert_eq!(doc.ssao_radius(), 0.0);
+            assert!(!doc.taa_enabled());
+        }
+        assert!(doc.dof().is_none());
+        assert_eq!(doc.motion_shutter(), 0.0);
         assert!((doc.shadow_softness() - 1.0).abs() < 1e-6);
         assert!(doc.baked_env().is_none(), "omit env_map and stay on the SH");
         assert_eq!(doc.hemi_sky_color(), [0.48, 0.56, 0.78]);
@@ -3221,6 +3310,10 @@ mod tests {
         assert!(doc.prop_lod.is_none());
         let legacy = doc.to_json().unwrap();
         assert!(!legacy.contains("\"bloom\""));
+        assert!(!legacy.contains("\"ssao\""));
+        assert!(!legacy.contains("\"taa\""));
+        assert!(!legacy.contains("\"dof_focus\""));
+        assert!(!legacy.contains("\"motion_blur\""));
         assert!(!legacy.contains("\"shadow_softness\""));
         assert!(!legacy.contains("\"hemi_sky\""));
         assert!(!legacy.contains("\"env_map\""));
@@ -3236,6 +3329,34 @@ mod tests {
         assert_eq!(on.lut_preset(), "warm");
         assert!((on.lut_mix() - 0.5).abs() < 1e-6);
         assert!(!on.fxaa_enabled());
+        let post = WorldDoc::from_json(
+            r#"{"version":1,"ssao":12.0,"taa":true,"dof_focus":4.0,"dof_aperture":0.35,"motion_blur":0.5}"#,
+        )
+        .unwrap();
+        if super::heavy_post_allowed() {
+            assert!((post.ssao_radius() - 12.0).abs() < 1e-6);
+            assert!(post.taa_enabled());
+            assert_eq!(post.dof(), Some((4.0, 0.35)));
+            assert!((post.motion_shutter() - 0.5).abs() < 1e-6);
+        } else {
+            assert_eq!(post.ssao_radius(), 0.0);
+            assert!(!post.taa_enabled());
+            assert!(post.dof().is_none());
+            assert_eq!(post.motion_shutter(), 0.0);
+        }
+    }
+
+    #[test]
+    fn quality_tier_gates_heavy_post() {
+        assert!(super::heavy_post_allowed_value(None));
+        assert!(super::heavy_post_allowed_value(Some("1")));
+        assert!(!super::heavy_post_allowed_value(Some("0")));
+        assert!(!super::heavy_post_allowed_value(Some("off")));
+        assert!(!super::heavy_post_allowed_value(Some("low")));
+        assert!(super::quality_is_high_value(Some("high")));
+        assert!(super::quality_is_high_value(Some("2")));
+        assert!(!super::quality_is_high_value(None));
+        assert!(!super::quality_is_high_value(Some("1")));
     }
 
     #[test]

@@ -1,0 +1,3 @@
+#146 is merged. Retarget or rebase #149 onto master by merging (no force-push), watch its CI until green, and report when it's ready. Then continue with the remaining items in order: the post-process pass graph (SSAO, TAA, then DOF/motion blur), cascaded shadows, the profiler plus hot reload, and KTX2/meshopt. Use separate PRs, each green.
+
+Quality wave context (earlier in the same task): post-process pass graph modeled on three.js EffectComposer. Order SSAO/GTAO, DOF, motion blur, bloom, tonemap/LUT, TAA or FXAA, vignette. Each pass switchable. TAA and half-res SSAO first, then DOF and camera motion blur. KAGRA_QUALITY so mobile keeps 60fps. Credit three.js MIT. Do not move rendering to three.js.

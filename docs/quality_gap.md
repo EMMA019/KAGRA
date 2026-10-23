@@ -1,6 +1,6 @@
 # Quality gap: phone web vs Unity URP and three.js
 
-Target is a KAGRA game in a phone browser (wasm / WebGL2) that makes someone say 「おっ」— closer to a small Unity mobile game than to an ungraded real-time view. Android is parked. SSAO, DOF, area lights, and a WebGPU-only path stay off this target: they cost too much on a phone GPU, and the 80% bar already leaves GI bake / HDRP / VRM-on-Wasm out.
+Target is a KAGRA game in a phone browser (wasm / WebGL2) that makes someone say 「おっ」— closer to a small Unity mobile game than to an ungraded real-time view. Android is parked. Area lights and a WebGPU-only path stay off this target: they cost too much on a phone GPU, and the 80% bar already leaves GI bake / HDRP / VRM-on-Wasm out. SSAO, TAA, DOF, and camera motion blur are opt-in passes. `KAGRA_QUALITY=0` / `off` / `low` forces them off so a phone keeps the historical frame.
 
 Status words: **have** (usable on the shared wgpu 30 path), **partial** (a cheaper or narrower version), **missing**. Priority is for that 「おっ」 on a phone, not for matching a desktop engine. Effort is S (one subsystem), M (a pass plus a dump field and tests), L (a new asset pipeline or a port that touches the loader and the shader).
 
@@ -49,10 +49,12 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 | Fog | have | — | — | Linear fog. Start 48, end 220 in `compile_scene`. Color is the sky clear. |
 | Tone mapping | have | — | — | ACES in the composite. Exposure is a dump field (default 1). |
 | Color space | have, as of this wave. Base color and emissive are `Rgba8UnormSrgb` (the sampler decodes on WebGPU and WebGL2). Normal and ORM are `Rgba8Unorm`. Author u8 colors decode before lighting, whatever the swapchain is. One OETF after ACES and the LUT. No display-P3. | P2 | done (M) |
-| EffectComposer | partial | P0 | — | A fixed stack, not a user pass list: linear HDR → bloom extract → exposure → ACES → LUT → vignette → one sRGB OETF → FXAA → HUD. |
+| EffectComposer | partial | P0 | — | Switchable passes, not a user shader list. Order: optional half-res SSAO → DOF → camera motion → bloom extract → exposure → ACES → LUT → vignette → one sRGB OETF → TAA or FXAA → HUD. Omit the new fields and those passes stay off. |
 | Bloom pass | have | — | — | See the Unity row. Half resolution, one blur, intensity 0 skips the extract. |
-| SSAO | missing | P3 | L | Outside the 80% bar. A phone web view should not pay for it. |
-| DOF | missing | P3 | L | Same. A full-resolution blur fights the "cheap on mobile" rule. |
+| SSAO | partial | P2 | done (M) | Half resolution, 8 taps, bilateral blur, linear eye depth. Dump `ssao` is the radius in pixels. Omit it and the pass stays off. `KAGRA_QUALITY=high` uses radius 8 when the field is absent. Quality 0 forces it off. |
+| DOF | partial | P2 | done (M) | Disk gather, 14 px cap. Dump `dof_focus` (meters) and `dof_aperture`. Omit the aperture and the pass stays off. The high tier does not force it. |
+| TAA | partial | P2 | done (M) | Halton jitter, history, Karis 3×3 clamp. Dump `taa: true` replaces FXAA. The first frame copies the current color. `KAGRA_QUALITY=high` turns it on when the field is absent. |
+| Motion blur | partial | P2 | done (S) | Camera only, 8 taps. Dump `motion_blur` is a 0..1 shutter. A still camera is a copy. Object motion vectors are not stored. |
 | Outline pass | partial | P2 | M | MToon draws an inverted-hull outline in the mesh pass. There is no screen-space outline. |
 | FXAA | have | — | — | On the composited color. |
 | SMAA | missing | P2 | M | FXAA is the phone choice. SMAA can wait. |
@@ -74,6 +76,15 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 | WebGPU backend | partial | P3 | L | wgpu can target WebGPU on desktop. The wasm build keeps WebGL2 limits (no storage buffers, no base instance). A WebGPU-only path is parked. |
 
 ## This wave
+
+Shipped on the wasm-safe path. Omitted fields keep the previous picture (no SSAO, no DOF, no motion blur, FXAA on, vignette inside the composite):
+
+- Pass graph in `render/post.rs`: SSAO, DOF, camera motion, then the existing bloom grade, then TAA or FXAA, then vignette when TAA is on. Each pass is one fullscreen WGSL entry. No storage buffers.
+- Dump fields `ssao`, `taa`, `dof_focus`, `dof_aperture`, `motion_blur`. A depth prepass writes linear eye meters into its own target. The color pipeline stays alpha-blended, so depth does not ride in the color alpha.
+- `KAGRA_QUALITY=0` / `off` / `low` forces the new passes off. `high` / `2` enables SSAO radius 8 and TAA when those fields are omitted. DOF and motion stay opt-in.
+- The direct unorm path (frame format equals the swapchain) still skips bloom and these passes.
+
+## Previous wave
 
 Shipped on the wasm-safe path. The picture on an sRGB offscreen target stays the one that already decoded author colors. An unorm target (WebGPU canvases, and the direct 8-bit fallback) now decodes before lighting and encodes once at the end.
 
@@ -122,4 +133,4 @@ Shipped on the wasm-safe path, all of it toggleable:
 
 ## Next waves
 
-1. **Parked.** SSAO, DOF, area lights, SMAA, custom shader graphs, WebGPU-only features, VRM-on-Wasm, Android. Contact-hardening shadows need a depth read, which the soft-shadow wave skipped so WebGL2 stays on the comparison sampler. A real cubemap PMREM and HDR env files stay parked with that. Character LOD stays parked with that.
+1. **Parked.** Area lights, SMAA, custom shader graphs, WebGPU-only features, VRM-on-Wasm, Android. Cascades are the next shadow step (one map today). Contact-hardening still needs a comparison-sampler read that stays on WebGL2. A real cubemap PMREM and HDR env files stay parked with that. Character LOD stays parked with that.
