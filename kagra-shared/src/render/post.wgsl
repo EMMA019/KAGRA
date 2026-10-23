@@ -54,21 +54,26 @@ fn device_z(eye: f32, near: f32, far: f32) -> f32 {
     return clamp(far * (eye - near) / max(eye * (far - near), 1e-4), 0.0, 1.0);
 }
 
-// Half-resolution SSAO. t_src.r is linear eye depth in meters from the depth
-// prepass. A neighbor closer than the local depth plane darkens; a flat
-// floor does not occlude itself. Sky (near the far plane) stays open.
-// Alpha of the AO buffer keeps that eye depth for the bilateral blur.
+// Half-resolution SSAO. t_src.r is linear eye depth. HDR stores meters.
+// An unorm depth stores eye/span in 0..1 (params.m0.x > 1) because meters
+// above 1 would clamp. Samples are taken first, then scaled, so the sample
+// stays in uniform control flow. Sky on the packed path is a stored value
+// near 1. Alpha keeps meters on HDR and the packed value on unorm.
 @fragment
 fn fs_ssao(in: VO) -> @location(0) vec4<f32> {
-    let z = textureSample(t_src, s_src, in.uv).r;
+    let texel = params.extra.zw;
+    let stored = textureSample(t_src, s_src, in.uv).r;
+    let zx_s = textureSample(t_src, s_src, in.uv + vec2<f32>(texel.x, 0.0)).r;
+    let zy_s = textureSample(t_src, s_src, in.uv + vec2<f32>(0.0, texel.y)).r;
+    let span = params.m0.x;
+    let z = select(stored, stored * span, span > 1.0);
+    let zx = select(zx_s, zx_s * span, span > 1.0);
+    let zy = select(zy_s, zy_s * span, span > 1.0);
     let radius = max(params.v.x, 0.0);
     let bias = max(params.v.y, 1e-4);
     let intensity = params.v.z;
     let range = max(params.v.w, bias);
     let far = max(params.extra.y, 1.0);
-    let texel = params.extra.zw;
-    let zx = textureSample(t_src, s_src, in.uv + vec2<f32>(texel.x, 0.0)).r;
-    let zy = textureSample(t_src, s_src, in.uv + vec2<f32>(0.0, texel.y)).r;
     let gx = zx - z;
     let gy = zy - z;
     let rot = hash21(in.uv) * 6.2831853;
@@ -77,17 +82,21 @@ fn fs_ssao(in: VO) -> @location(0) vec4<f32> {
         let a = rot + f32(i) * 2.3999632;
         let t = (f32(i) + 0.5) / 8.0;
         let off = vec2<f32>(cos(a), sin(a)) * radius * mix(0.35, 1.0, t);
-        let seye = textureSample(t_src, s_src, in.uv + off * texel).r;
+        let seye_s = textureSample(t_src, s_src, in.uv + off * texel).r;
+        let seye = select(seye_s, seye_s * span, span > 1.0);
         let predicted = z + dot(vec2<f32>(gx, gy), off);
         let closer = predicted - seye;
         let near_w = smoothstep(bias, bias + range * 0.35, closer);
         let far_w = 1.0 - smoothstep(range, range * 1.75, closer);
         occ = occ + near_w * far_w;
     }
-    let sky = select(0.0, 1.0, z > far * 0.98);
+    let sky_hdr = select(0.0, 1.0, z > far * 0.98);
+    let sky_norm = select(0.0, 1.0, stored > 0.98);
+    let sky = select(sky_hdr, sky_norm, span > 1.0);
     let ao = clamp(1.0 - occ / 8.0 * intensity, 0.2, 1.0);
     let ao_out = mix(ao, 1.0, sky);
-    return vec4<f32>(vec3<f32>(ao_out), z);
+    let alpha_out = select(z, stored, span > 1.0);
+    return vec4<f32>(vec3<f32>(ao_out), alpha_out);
 }
 
 @fragment
@@ -100,8 +109,11 @@ fn fs_ao_blur(in: VO) -> @location(0) vec4<f32> {
         let o = dir * f32(i);
         let a = textureSample(t_src, s_src, in.uv + o);
         let b = textureSample(t_src, s_src, in.uv - o);
-        let wa = exp(-abs(a.a - src.a) * 1.5) * exp(-f32(i) * 0.4);
-        let wb = exp(-abs(b.a - src.a) * 1.5) * exp(-f32(i) * 0.4);
+        // v.z is the depth span. 0 stores meters in alpha (scale 1). A packed
+        // unorm alpha is eye/span, so the same meter weight needs *span.
+        let depth_scale = max(params.v.z, 1.0);
+        let wa = exp(-abs(a.a - src.a) * depth_scale * 1.5) * exp(-f32(i) * 0.4);
+        let wb = exp(-abs(b.a - src.a) * depth_scale * 1.5) * exp(-f32(i) * 0.4);
         sum = sum + a.rgb * wa + b.rgb * wb;
         wsum = wsum + wa + wb;
     }

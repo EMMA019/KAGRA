@@ -75,9 +75,14 @@
       "type": ["boolean", "null"],
       "description": "ACES tonemap. Omit = on. Globals.env.w. Reinhard is not used; ACES matches kagra-core V2."
     },
+    "quality": {
+      "type": ["string", "null"],
+      "enum": ["low", "mobile", "high", "0", "off", "2", null],
+      "description": "Picture tier. Omit = historical picture (KAGRA_QUALITY=high still fills omitted SSAO, TAA, cascades, and PCSS, and does not turn bloom on). low / 0 / off forces SSAO, TAA, DOF, motion, extra cascades, and PCSS off even when those fields are set. mobile fills omitted fields with SSAO radius 4, TAA off (FXAA stays), 2 cascades, PCSS off, and bloom 0.22. high fills SSAO 8, TAA, 3 cascades, PCSS, and bloom 0.35. An explicit field wins over mobile and high. KAGRA_QUALITY=0 / off / low still forces the floor."
+    },
     "bloom": {
       "type": ["number", "null"],
-      "description": "Bloom intensity on render_world_doc. Omit = 0. The desktop window example keeps its own default."
+      "description": "Bloom intensity on render_world_doc. Omit = 0, unless quality is mobile (0.22) or high (0.35). Env KAGRA_QUALITY=high does not turn bloom on. The desktop window example keeps its own default until a dump sets a grade field."
     },
     "bloom_threshold": {
       "type": ["number", "null"],

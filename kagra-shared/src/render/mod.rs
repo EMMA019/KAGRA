@@ -54,6 +54,7 @@ struct Globals {
     /// z = camera near, w = camera far (depth prepass only).
     shadow: [f32; 4],
     /// x = cascade count (1, 2, or 3). y > 0.5 enables the PCSS blocker search.
+    /// z > 1 stores eye/z in the depth color for unorm SSAO. w is unused.
     cascade: [f32; 4],
     hemi_sky: [f32; 4],
     /// w > 0.5 samples the prefiltered env strip.
@@ -1471,11 +1472,14 @@ impl Renderer {
                 .write_buffer(&self.vbuf, 0, bytemuck::cast_slice(&vertices));
         }
 
-        // Frame format == swapchain means Chrome's WebGPU samples that target
-        // as white, so the 3D pass draws straight at the surface and composite
-        // cannot run. Unorm surfaces then encode in the fragment shader.
+        // Frame format == swapchain means Chrome's WebGPU samples an
+        // Rgba16Float target as white. The 3D pass normally draws straight
+        // at the surface. When SSAO is on, it draws a separate Rgba8Unorm
+        // instead (that sample is not white) and the composite grades it.
         let direct = self.bloom.frame_format() == self.format;
-        let present_in_shader = color_space::present_in_fragment(direct, self.format.is_srgb());
+        let direct_post = direct && world.is_some() && self.post.ssao_enabled();
+        let present_in_shader =
+            color_space::present_in_fragment(direct && !direct_post, self.format.is_srgb());
         let mut unjittered_vp = glam::Mat4::IDENTITY;
         let mut drew_scene = false;
 
@@ -1565,7 +1569,12 @@ impl Renderer {
                 self.queue
                     .write_buffer(&self.inst_buf, 0, bytemuck::cast_slice(&raw));
             }
-            unjittered_vp = self.upload_globals(scene, present_in_shader);
+            let depth_span = if direct_post {
+                post::AO_DEPTH_SPAN
+            } else {
+                0.0
+            };
+            unjittered_vp = self.upload_globals(scene, present_in_shader, depth_span, direct);
             drew_scene = true;
         }
 
@@ -1616,9 +1625,10 @@ impl Renderer {
         let view = target_texture.create_view(&Default::default());
         // 3D は線形 HDR フレームへ。Bloom が最終ターゲットへ合成し、HUD は
         // その後に重ねる（トーン後の色を保つ）。
-        // When the frame format matches the swapchain (WebGPU 8-bit, bloom
-        // off), sample-from-attachment comes back white on Chrome's WebGPU.
-        // Draw straight into the surface instead.
+        // When the frame format matches the swapchain and SSAO is off, draw
+        // straight into the surface. Sampling that surface comes back white
+        // on Chrome's WebGPU. A separate Rgba8Unorm frame is safe to sample,
+        // so the SSAO path uses it and grades in the composite.
         let frame_view = self.bloom.frame_view();
 
         let mut encoder = self
@@ -1632,7 +1642,8 @@ impl Renderer {
         }
         if !draws.is_empty() {
             let cascade_count = world.map(|s| s.shadow_cascades.clamp(1, 3)).unwrap_or(1);
-            let pcss = world.is_some_and(|s| s.shadow_pcss);
+            // PCSS raw is Rgba16Float. The direct unorm path does not sample it.
+            let pcss = world.is_some_and(|s| s.shadow_pcss) && !direct;
             self.encode_cascades(&mut encoder, &draws, cascade_count, pcss);
         }
         // Pass 1: 3D（スカイ + メッシュ）→ 線形 HDR フレーム。クリアは常時。
@@ -1640,7 +1651,11 @@ impl Renderer {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("kagra-shared 3d pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: if direct { &view } else { frame_view },
+                    view: if direct && !direct_post {
+                        &view
+                    } else {
+                        frame_view
+                    },
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -1730,12 +1745,11 @@ impl Renderer {
                 }
             }
         }
-        // Depth color for SSAO / DOF / motion. The HDR color target blends, so
+        // Depth color for SSAO / DOF / motion. The color target blends, so
         // device depth cannot live in its alpha. Load the depth buffer the
-        // color pass just wrote; do not clear it. Far = camera far (meters).
-        // `direct` is the unorm WebGPU path, which does not sample a float
-        // frame and does not run this pass.
-        if !direct && drew_scene && self.post.needs_depth() {
+        // color pass just wrote; do not clear it. HDR stores meters. The
+        // direct SSAO path stores eye/32 in this unorm target.
+        if drew_scene && self.post.needs_depth() && (!direct || direct_post) {
             let depth_far = world.map(|s| s.camera.far).unwrap_or(1000.0).max(1.0) as f64;
             let depth_color = self.post.scene_depth_view();
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1786,8 +1800,34 @@ impl Renderer {
             }
         }
         // Pass 2: optional SSAO / DOF / motion, then bloom grade, then TAA or FXAA.
-        // The direct unorm path already graded in present_rgb and skips this.
-        if !direct {
+        // Direct + SSAO runs the half-res AO and the grade (FXAA, no TAA, no
+        // PCSS, no DOF). Bloom intensity is already 0 on an unorm frame.
+        // Direct without SSAO already graded in present_rgb.
+        if direct_post {
+            if drew_scene {
+                let near = world.map(|s| s.camera.near).unwrap_or(0.1);
+                let far = world.map(|s| s.camera.far).unwrap_or(1000.0);
+                self.post.apply_ssao_only(
+                    &self.device,
+                    &self.queue,
+                    &mut encoder,
+                    self.bloom.frame_view(),
+                    near,
+                    far,
+                    post::AO_DEPTH_SPAN,
+                );
+            }
+            self.bloom.apply(
+                &self.device,
+                &self.queue,
+                &mut encoder,
+                (target_texture, &view),
+                exposure,
+                tonemap,
+                None,
+                true,
+            );
+        } else if !direct {
             if drew_scene && self.post.scene_active() {
                 let near = world.map(|s| s.camera.near).unwrap_or(0.1);
                 let far = world.map(|s| s.camera.far).unwrap_or(1000.0);
@@ -2000,7 +2040,13 @@ impl Renderer {
         }
     }
 
-    fn upload_globals(&mut self, scene: &Scene3D, present_in_shader: bool) -> glam::Mat4 {
+    fn upload_globals(
+        &mut self,
+        scene: &Scene3D,
+        present_in_shader: bool,
+        depth_span: f32,
+        direct: bool,
+    ) -> glam::Mat4 {
         let cam = &scene.camera;
         let mut light_pos = [[0.0f32; 4]; 4];
         let mut light_col = [[0.0f32; 4]; 4];
@@ -2028,7 +2074,7 @@ impl Renderer {
         let view = cam.view();
         let proj = cam.projection(self.aspect());
         let unjittered = proj * view;
-        let vp = if !present_in_shader && self.post.taa_enabled() {
+        let vp = if !direct && !present_in_shader && self.post.taa_enabled() {
             let j = post::ndc_jitter(self.post.sample_index(), self.width, self.height);
             post::apply_projection_jitter(proj, j) * view
         } else {
@@ -2067,8 +2113,12 @@ impl Renderer {
             ],
             cascade: [
                 cascade_count as f32,
-                if scene.shadow_pcss { 1.0 } else { 0.0 },
-                0.0,
+                if scene.shadow_pcss && !direct {
+                    1.0
+                } else {
+                    0.0
+                },
+                depth_span,
                 0.0,
             ],
             hemi_sky: [scene.hemi_sky[0], scene.hemi_sky[1], scene.hemi_sky[2], 0.0],
@@ -2339,12 +2389,14 @@ impl Renderer {
 
     /// Live windows keep their own bloom until a dump actually sets a post field.
     fn apply_dump_grade(&mut self, doc: &crate::world_doc::WorldDoc) {
+        let filled_bloom = doc.bloom.is_none() && doc.bloom_intensity() > 1e-4;
         if doc.bloom.is_none()
             && doc.bloom_threshold.is_none()
             && doc.vignette.is_none()
             && doc.lut.is_none()
             && doc.lut_strength.is_none()
             && doc.fxaa.is_none()
+            && !filled_bloom
         {
             return;
         }
@@ -3655,6 +3707,93 @@ mod tests {
         assert!(
             held > 20,
             "open surfaces should stay bright, held {held} dropped {dropped}"
+        );
+    }
+
+    #[test]
+    fn unorm_ssao_darkens_contact_without_a_float_target() {
+        let Some(mut renderer) = pollster::block_on(Renderer::new_offscreen_format(
+            192,
+            192,
+            wgpu::TextureFormat::Rgba8Unorm,
+        ))
+        .ok() else {
+            eprintln!("no GPU adapter; skipping unorm ssao");
+            return;
+        };
+        graded(&mut renderer);
+        let boxes = vec![
+            solid_box([0.0, 0.5, 0.0], [1.0, 1.0, 1.0], [255, 255, 255, 255]),
+            solid_box([0.0, -0.05, 0.0], [8.0, 0.1, 8.0], [220, 220, 220, 255]),
+        ];
+        renderer.set_post(0.5, false, None, 0.0);
+        let soft = draw_boxes(&mut renderer, boxes.clone());
+        renderer.set_post(24.0, false, None, 0.0);
+        let hard = draw_boxes(&mut renderer, boxes);
+        write_shot("post-ssao-unorm-soft.png", 192, 192, &soft);
+        write_shot("post-ssao-unorm-hard.png", 192, 192, &hard);
+        let clear = pixel_of(&hard, 192, 2, 2);
+        assert!(
+            channel_sum(clear) < 500,
+            "unorm SSAO clear clipped {clear:?}"
+        );
+        let mut dropped = 0u32;
+        for y in 0..192 {
+            for x in 0..192 {
+                let a = channel_sum(pixel_of(&soft, 192, x, y));
+                let b = channel_sum(pixel_of(&hard, 192, x, y));
+                if a - b >= 12 {
+                    dropped += 1;
+                }
+            }
+        }
+        assert!(
+            dropped > 20,
+            "unorm SSAO should darken contact, dropped {dropped}"
+        );
+    }
+
+    #[test]
+    fn neon_mobile_tier_changes_the_lavapipe_picture() {
+        let Some(mut renderer) = pollster::block_on(Renderer::new_offscreen(480, 270)).ok() else {
+            eprintln!("no GPU adapter; skipping neon quality shots");
+            return;
+        };
+        let low = crate::neon_run::NeonRun::from_json(
+            r#"{"version":1,"genre":"neon_run","quality":"low"}"#,
+        )
+        .expect("low");
+        let mobile = crate::neon_run::NeonRun::from_json(
+            r#"{"version":1,"genre":"neon_run","quality":"mobile"}"#,
+        )
+        .expect("mobile");
+        let before = renderer
+            .render_world_doc(low.document())
+            .expect("render low");
+        let after = renderer
+            .render_world_doc(mobile.document())
+            .expect("render mobile");
+        write_shot("neon-quality-low.png", 480, 270, &before);
+        write_shot("neon-quality-mobile.png", 480, 270, &after);
+        if !crate::world_doc::heavy_post_allowed() {
+            return;
+        }
+        assert_eq!(low.document().shadow_cascade_count(), 1);
+        assert_eq!(mobile.document().ssao_radius(), 4.0);
+        assert_eq!(mobile.document().shadow_cascade_count(), 2);
+        let mut changed = 0u32;
+        for y in 0..270 {
+            for x in 0..480 {
+                let a = channel_sum(pixel_of(&before, 480, x, y));
+                let b = channel_sum(pixel_of(&after, 480, x, y));
+                if (a - b).abs() >= 8 {
+                    changed += 1;
+                }
+            }
+        }
+        assert!(
+            changed > 40,
+            "mobile SSAO and cascades should move the neon frame, changed {changed}"
         );
     }
 
