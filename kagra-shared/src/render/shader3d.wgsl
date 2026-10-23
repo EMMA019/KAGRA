@@ -610,8 +610,11 @@ fn pbr_metal_rough(in: VsOut, orm: vec4<f32>, metallic_in: f32, rough_in: f32) -
 
 // glTF normal maps are OpenGL Y-up (do not flip green). A zero tangent keeps
 // the geometric normal, with the old half-blend as a last resort.
-fn normal_from_map(geo: vec3<f32>, tangent: vec4<f32>, nmap: vec3<f32>) -> vec3<f32> {
-    let mapped = nmap * 2.0 - 1.0;
+// `scale` is glTF normalTexture.scale on tangent X/Y, like three.js
+// normalmap_pars_fragment `mapN.xy *= normalScale` (three.js, MIT License).
+fn normal_from_map(geo: vec3<f32>, tangent: vec4<f32>, nmap: vec3<f32>, scale: f32) -> vec3<f32> {
+    var mapped = nmap * 2.0 - 1.0;
+    mapped = vec3<f32>(mapped.xy * scale, mapped.z);
     if (length(tangent.xyz) < 0.1) {
         return normalize(geo + mapped * 0.5);
     }
@@ -631,7 +634,7 @@ fn emissive_rgb(in: VsOut, albedo: vec3<f32>, em_map: vec3<f32>) -> vec3<f32> {
 }
 
 // Two scrolling procedural normals (fbm gradients). env.z = seconds.
-// No normal-map texture, no SSR, no storage buffer.
+// Water uses no normal-map texture, no SSR, no storage buffer.
 fn water_normal(world: vec3<f32>, geo_n: vec3<f32>) -> vec3<f32> {
     let t = g.env.z;
     let xz = world.xz;
@@ -659,8 +662,9 @@ fn fs_main(in: VsOut) -> FragOut {
     let em_map = textureSample(emissive_tex, emissive_samp, in.uv).rgb;
     let nmap = textureSample(normal_tex, normal_samp, in.uv).rgb;
     let n_geo = normalize(in.normal);
-    let n_mapped = normal_from_map(n_geo, in.tangent, nmap);
-    let n = select(n_geo, n_mapped, in.mtoon4.w > 0.5);
+    // mtoon4.w = normal-map scale; 0 = no map (or low tier) -> vertex normal.
+    let n_mapped = normal_from_map(n_geo, in.tangent, nmap, in.mtoon4.w);
+    let n = select(n_geo, n_mapped, abs(in.mtoon4.w) > 1e-4);
     let n_toon = n;
     let cap_view = normalize(g.camera_pos.xyz - in.world);
     let cap_uv = reflect(-cap_view, n_toon).xy * 0.5 + vec2<f32>(0.5, 0.5);

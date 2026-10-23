@@ -9,6 +9,7 @@
 
 pub mod action;
 pub mod action2d;
+pub mod anim_mixer;
 pub mod assets;
 pub mod audio;
 pub mod card;

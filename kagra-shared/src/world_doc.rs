@@ -603,6 +603,18 @@ pub struct WorldWalker {
     /// `overlay_bones` のブレンド係数 0..1（0 = 無効、1 = 目標回転へ完全スラープ）。
     #[serde(default)]
     pub overlay_weight: f32,
+    /// glTF clip to play by name ("Run", "Jump"). None = Walk / first clip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clip_name: Option<String>,
+    /// Crossfade source clip name. See `anim_mixer::AnimMixer`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fade_from: Option<String>,
+    /// Seconds into `fade_from`.
+    #[serde(default, skip_serializing_if = "is_zero_f32")]
+    pub fade_from_clip: f32,
+    /// Weight of `fade_from` 0..1 (1 = old clip only, 0 = done).
+    #[serde(default, skip_serializing_if = "is_zero_f32")]
+    pub fade_from_weight: f32,
     /// Draw scale. None = (1, 1, 1). Squash/stretch writes this on the picture
     /// dump; the walker sim does not read it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1680,6 +1692,10 @@ impl WorldDoc {
                     overlay_bones,
                     overlay_weight,
                     anim,
+                    clip_name,
+                    fade_from,
+                    fade_from_clip,
+                    fade_from_weight,
                     ..
                 } => gltf_skinned_mesh_for(
                     spec,
@@ -1695,6 +1711,10 @@ impl WorldDoc {
                         overlay_bones: overlay_bones.clone(),
                         overlay_weight: *overlay_weight,
                         anim: anim.clone(),
+                        clip_name: clip_name.clone(),
+                        fade_from: fade_from.clone(),
+                        fade_from_clip: *fade_from_clip,
+                        fade_from_weight: *fade_from_weight,
                     },
                 )
                 .or_else(|| {
@@ -1826,6 +1846,10 @@ impl WorldDoc {
                         overlay_bones: walk.overlay_bones.clone(),
                         overlay_weight: walk.overlay_weight,
                         anim: walk.anim.clone(),
+                        clip_name: walk.clip_name.clone(),
+                        fade_from: walk.fade_from.clone(),
+                        fade_from_clip: walk.fade_from_clip,
+                        fade_from_weight: walk.fade_from_weight,
                     });
                 }
             }
@@ -2143,6 +2167,7 @@ fn push_tree(
     );
 }
 
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum GltfSlot {
     Rest(String),
     Skinned {
@@ -2159,6 +2184,10 @@ pub(crate) enum GltfSlot {
         overlay_bones: HashMap<String, [f32; 4]>,
         overlay_weight: f32,
         anim: String,
+        clip_name: Option<String>,
+        fade_from: Option<String>,
+        fade_from_clip: f32,
+        fade_from_weight: f32,
     },
 }
 

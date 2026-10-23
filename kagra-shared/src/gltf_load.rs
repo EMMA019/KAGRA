@@ -263,6 +263,8 @@ pub struct SkinnedMesh {
     /// Every LINEAR/STEP clip. Used when `WalkerPose.anim` names one.
     /// Empty on skinned files; those keep the single Walk clip above.
     pub extra_clips: Vec<AnimClip>,
+    /// Every glTF animation in file order (`clip` is the default pick among them).
+    pub clips: Vec<AnimClip>,
     /// VRM 0/1 humanoid bone name -> node index. Empty when extras are absent.
     pub humanoid: HashMap<String, usize>,
     /// glTF メッシュインデックス（firstPerson の by_mesh 注釈参照用）。
@@ -291,7 +293,7 @@ pub struct NodeRest {
     pub scale: Vec3,
 }
 
-/// One animation clip (Walk / first clip). LINEAR / STEP only.
+/// One glTF animation clip. LINEAR / STEP only.
 #[derive(Clone, Debug)]
 pub struct AnimClip {
     pub name: String,
@@ -494,6 +496,13 @@ pub struct WalkerPose {
     /// Clip name. Empty, `idle`, and `walk` keep the Walk clip.
     /// `run` / `jump` select that clip when the file stored it.
     pub anim: String,
+    /// glTF clip to play by name. None / unknown = default (Walk / first) clip.
+    pub clip_name: Option<String>,
+    /// Crossfade source clip (by name) and its time in seconds.
+    pub fade_from: Option<String>,
+    pub fade_from_clip: f32,
+    /// Weight of `fade_from` (1 = all old clip, 0 = all `clip_name`).
+    pub fade_from_weight: f32,
 }
 
 impl WalkerPose {
@@ -622,6 +631,23 @@ pub fn sample_skinned_cloth_pose(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Current clip at `t`, crossfaded from `pose.fade_from` (three.js
+/// AnimationMixer crossFadeTo idea: per-bone lerp/slerp by fade weight;
+/// three.js, MIT License).
+fn sample_pose_clip_locals(skin: &SkinnedMesh, pose: &WalkerPose, t: f32) -> Vec<NodeLocal> {
+    let cur = sample_clip_locals(skin, resolve_clip(skin, pose.clip_name.as_deref()), t);
+    let w = pose.fade_from_weight.clamp(0.0, 1.0);
+    let Some(from) = pose.fade_from.as_deref().and_then(|n| find_clip(skin, n)) else {
+        return cur;
+    };
+    if w <= 1e-5 {
+        return cur;
+    }
+    let old = sample_clip_locals(skin, Some(from), pose.fade_from_clip);
+    // blend_locals(a, b, k) = a -> b by k; old weight w means k = 1 - w toward cur.
+    blend_locals(&old, &cur, 1.0 - w)
+}
+
 fn sample_skinned_inner(
     skin: &SkinnedMesh,
     pose: &WalkerPose,
@@ -638,7 +664,7 @@ fn sample_skinned_inner(
     }
     let mut locals = match pose.clip {
         Some(tt) => {
-            let clip = sample_locals(skin, tt);
+            let clip = sample_pose_clip_locals(skin, pose, tt);
             let blend = pose.anim_blend.clamp(0.0, 1.0);
             if blend >= 1.0 - 1e-5 {
                 clip
@@ -1164,6 +1190,7 @@ fn static_mesh_from_prim(
     };
     let has_orm = orm.is_some();
     let normal = normal_tex_index(doc, prim).and_then(|ti| texture_by_index(doc, blobs, ti));
+    let normal_scale = normal.as_ref().and_then(|_| normal_tex_scale(doc, prim));
     let (emissive_map, emissive, emissive_color) = if mtoon.is_some() {
         (None, 0.0, [0.0; 3])
     } else {
@@ -1200,6 +1227,7 @@ fn static_mesh_from_prim(
         albedo_ktx: load_base_color_ktx(doc, blobs, prim),
         matcap: matcap_tex_index(doc, prim).and_then(|ti| texture_by_index(doc, blobs, ti)),
         normal,
+        normal_scale,
         mtoon,
         orm,
         orm_rough: has_orm,
@@ -1477,6 +1505,7 @@ fn skinned_from_prim(
     } else {
         Vec::new()
     };
+    let clips = all_clips(doc, blobs)?;
     let mut skin = SkinnedMesh {
         rest,
         joints,
@@ -1487,6 +1516,7 @@ fn skinned_from_prim(
         clip,
         mesh_node,
         extra_clips,
+        clips,
         mesh_index,
         humanoid: parse_humanoid(doc),
         springs: {
@@ -1625,20 +1655,24 @@ fn pick_clip(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<Option<AnimClip>, Stri
                 .find(|a| a.name.eq_ignore_ascii_case("run"))
         })
         .unwrap_or(&doc.animations[0]);
-    clip_from_anim(doc, blobs, anim)
+    load_clip(doc, blobs, anim)
 }
 
+/// Every animation that has at least one TRS channel, in file order.
 fn all_clips(doc: &GltfFile, blobs: &[Vec<u8>]) -> Result<Vec<AnimClip>, String> {
     let mut out = Vec::new();
-    for anim in &doc.animations {
-        if let Some(clip) = clip_from_anim(doc, blobs, anim)? {
-            out.push(clip);
+    for (i, anim) in doc.animations.iter().enumerate() {
+        if let Some(mut c) = load_clip(doc, blobs, anim)? {
+            if anim.name.is_empty() {
+                c.name = format!("clip{i}");
+            }
+            out.push(c);
         }
     }
     Ok(out)
 }
 
-fn clip_from_anim(
+fn load_clip(
     doc: &GltfFile,
     blobs: &[Vec<u8>],
     anim: &GltfAnimation,
@@ -1696,6 +1730,9 @@ fn clip_from_anim(
 }
 
 fn selected_clip<'a>(skin: &'a SkinnedMesh, pose: &WalkerPose) -> Option<&'a AnimClip> {
+    if let Some(hit) = pose.clip_name.as_deref().and_then(|n| find_clip(skin, n)) {
+        return Some(hit);
+    }
     let want = pose.anim.trim();
     if !want.is_empty() && !want.eq_ignore_ascii_case("idle") && !want.eq_ignore_ascii_case("walk")
     {
@@ -1877,14 +1914,14 @@ pub fn step_springs(
 }
 
 fn sample_locals(skin: &SkinnedMesh, t: f32) -> Vec<NodeLocal> {
-    sample_locals_clip(skin, skin.clip.as_ref(), t)
+    sample_clip_locals(skin, skin.clip.as_ref(), t)
 }
 
 fn sample_rigid_part(skin: &SkinnedMesh, pose: &WalkerPose) -> MeshData {
     let node = skin.mesh_node.unwrap_or(0);
     let locals = match pose.clip {
         Some(tt) if pose.anim_blend > 1e-5 => {
-            let posed = sample_locals_clip(skin, selected_clip(skin, pose), tt);
+            let posed = sample_clip_locals(skin, selected_clip(skin, pose), tt);
             let blend = pose.anim_blend.clamp(0.0, 1.0);
             if blend >= 1.0 - 1e-5 {
                 posed
@@ -1914,7 +1951,30 @@ fn sample_rigid_part(skin: &SkinnedMesh, pose: &WalkerPose) -> MeshData {
     out
 }
 
-fn sample_locals_clip(skin: &SkinnedMesh, clip: Option<&AnimClip>, t: f32) -> Vec<NodeLocal> {
+/// Clip by name (case-insensitive) among `clips`, else the default `clip`
+/// when the name matches it. `None` when nothing matches.
+pub fn find_clip<'a>(skin: &'a SkinnedMesh, name: &str) -> Option<&'a AnimClip> {
+    skin.clips
+        .iter()
+        .find(|c| c.name.eq_ignore_ascii_case(name))
+        .or_else(|| {
+            skin.clip
+                .as_ref()
+                .filter(|c| c.name.eq_ignore_ascii_case(name))
+        })
+}
+
+/// Clip names a game can pass to `clip_name` / `AnimMixer::play`.
+pub fn clip_names(skin: &SkinnedMesh) -> Vec<String> {
+    skin.clips.iter().map(|c| c.name.clone()).collect()
+}
+
+/// Named clip, or the default clip when `name` is `None` / unknown.
+fn resolve_clip<'a>(skin: &'a SkinnedMesh, name: Option<&str>) -> Option<&'a AnimClip> {
+    name.and_then(|n| find_clip(skin, n)).or(skin.clip.as_ref())
+}
+
+fn sample_clip_locals(skin: &SkinnedMesh, clip: Option<&AnimClip>, t: f32) -> Vec<NodeLocal> {
     let mut locals: Vec<NodeLocal> = skin
         .nodes
         .iter()
@@ -2847,6 +2907,13 @@ fn matcap_tex_index(doc: &GltfFile, prim: &Primitive) -> Option<usize> {
         .map(|n| n as usize)
 }
 
+/// glTF `normalTexture.scale`. Missing or non-finite = `None` (1.0).
+fn normal_tex_scale(doc: &GltfFile, prim: &Primitive) -> Option<f32> {
+    let mat = doc.materials.get(prim.material?)?;
+    let s = mat.pointer("/normalTexture/scale")?.as_f64()? as f32;
+    s.is_finite().then_some(s)
+}
+
 /// Normal map texture index: glTF normalTexture / VRM 0 _BumpMap.
 fn normal_tex_index(doc: &GltfFile, prim: &Primitive) -> Option<usize> {
     if let Some(mi) = prim.material {
@@ -3510,6 +3577,7 @@ mod tests {
             "COLOR_0 is linear, got {col:?}"
         );
         assert!(mesh.vertices[0].tangent[0].abs() + mesh.vertices[0].tangent[1].abs() > 0.1);
+        assert_eq!(mesh.normal_scale, Some(0.5), "normalTexture.scale");
         let opaque =
             mesh_from_gltf_json(&triangle_alpha("OPAQUE", 0.5), |_| Err("x".into())).unwrap();
         assert!((opaque.alpha_cut + 1.0).abs() < 1e-4);
@@ -3585,6 +3653,7 @@ mod tests {
     "extensions": {{"KHR_materials_emissive_strength": {{"emissiveStrength": 3.0}}}},
     "normalTexture": {{
       "index": 0,
+      "scale": 0.5,
       "extensions": {{"KHR_texture_transform": {{"offset": [0.25, 0.5], "scale": [2.0, 1.0]}}}}
     }}
   }}],
@@ -3681,6 +3750,7 @@ mod tests {
             clip: None,
             mesh_node: None,
             extra_clips: vec![],
+            clips: vec![],
             mesh_index: 1,
             humanoid: Default::default(),
             springs: Default::default(),
@@ -4373,5 +4443,120 @@ mod tests {
             out.extend_from_slice(&v.to_le_bytes());
         }
         out
+    }
+
+    #[test]
+    fn generated_tangents_follow_u_and_handedness() {
+        // Quad in XY, normal +Z, u along +X, v along +Y.
+        let mk = |p: [f32; 3], uv: [f32; 2]| Vertex3::with_uv(Vec3::from_array(p), Vec3::Z, uv);
+        let mut v = vec![
+            mk([0.0, 0.0, 0.0], [0.0, 0.0]),
+            mk([1.0, 0.0, 0.0], [1.0, 0.0]),
+            mk([1.0, 1.0, 0.0], [1.0, 1.0]),
+            mk([0.0, 1.0, 0.0], [0.0, 1.0]),
+        ];
+        let idx = [0u32, 1, 2, 0, 2, 3];
+        generate_tangents(&mut v, &idx);
+        for vx in &v {
+            let t = vx.tangent;
+            assert!(
+                (t[0] - 1.0).abs() < 1e-5 && t[1].abs() < 1e-5 && t[2].abs() < 1e-5,
+                "{t:?}"
+            );
+            assert_eq!(t[3], 1.0, "right-handed");
+        }
+        // Mirrored U flips the tangent and the handedness sign.
+        for vx in v.iter_mut() {
+            vx.uv[0] = 1.0 - vx.uv[0];
+        }
+        generate_tangents(&mut v, &idx);
+        for vx in &v {
+            assert!((vx.tangent[0] + 1.0).abs() < 1e-5, "{:?}", vx.tangent);
+            assert_eq!(vx.tangent[3], -1.0, "mirrored");
+        }
+        // Degenerate UVs leave a zero tangent (shader keeps the vertex normal).
+        for vx in v.iter_mut() {
+            vx.uv = [0.5, 0.5];
+        }
+        generate_tangents(&mut v, &idx);
+        assert_eq!(v[0].tangent, [0.0, 0.0, 0.0, 1.0]);
+    }
+    fn two_clip_skin() -> SkinnedMesh {
+        let mut skin = skinned_from_embedded_gltf(&walk_skinned_gltf()).expect("skin");
+        assert_eq!(
+            clip_names(&skin),
+            vec![skin.clip.as_ref().unwrap().name.clone()]
+        );
+        // "Wave": hold joint 1 at a fixed 90 degree twist about X.
+        let q = Quat::from_rotation_x(std::f32::consts::FRAC_PI_2);
+        skin.clips.push(AnimClip {
+            name: "Wave".into(),
+            duration: 1.0,
+            channels: vec![AnimChannel {
+                node: skin.skin_joints[1],
+                path: ChannelPath::Rotation,
+                times: vec![0.0, 1.0],
+                values: [q.to_array(), q.to_array()].concat(),
+                step: false,
+            }],
+        });
+        skin
+    }
+
+    fn pos_sum(m: &MeshData) -> Vec3 {
+        m.vertices.iter().map(|v| Vec3::from_array(v.pos)).sum()
+    }
+
+    #[test]
+    fn named_clip_sampling_picks_the_clip() {
+        let skin = two_clip_skin();
+        assert!(find_clip(&skin, "wave").is_some(), "case-insensitive");
+        assert!(find_clip(&skin, "nope").is_none());
+        let pose = |name: Option<&str>| WalkerPose {
+            clip: Some(0.5),
+            anim_blend: 1.0,
+            clip_name: name.map(str::to_string),
+            ..WalkerPose::default()
+        };
+        let walk = pos_sum(&sample_skinned_pose(&skin, &pose(None)));
+        let wave = pos_sum(&sample_skinned_pose(&skin, &pose(Some("Wave"))));
+        let unknown = pos_sum(&sample_skinned_pose(&skin, &pose(Some("nope"))));
+        assert!((walk - wave).length() > 1e-3, "Wave differs from Walk");
+        assert!(
+            (walk - unknown).length() < 1e-5,
+            "unknown falls back to default"
+        );
+    }
+
+    #[test]
+    fn crossfade_weight_blends_between_clips() {
+        let skin = two_clip_skin();
+        let walk_name = skin.clip.as_ref().unwrap().name.clone();
+        let pose = |w: f32| WalkerPose {
+            clip: Some(0.5),
+            anim_blend: 1.0,
+            clip_name: Some("Wave".into()),
+            fade_from: Some(walk_name.clone()),
+            fade_from_clip: 0.5,
+            fade_from_weight: w,
+            ..WalkerPose::default()
+        };
+        let a = pos_sum(&sample_skinned_pose(&skin, &pose(1.0)));
+        let b = pos_sum(&sample_skinned_pose(&skin, &pose(0.0)));
+        let mid = pos_sum(&sample_skinned_pose(&skin, &pose(0.5)));
+        let walk = pos_sum(&sample_skinned_pose(
+            &skin,
+            &WalkerPose {
+                clip: Some(0.5),
+                anim_blend: 1.0,
+                ..WalkerPose::default()
+            },
+        ));
+        assert!((a - walk).length() < 1e-4, "weight 1 = old clip");
+        assert!((a - b).length() > 1e-3);
+        assert!(
+            (mid - a).length() > 1e-4 && (mid - b).length() > 1e-4,
+            "mid is between"
+        );
     }
 }

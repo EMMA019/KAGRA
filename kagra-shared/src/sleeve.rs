@@ -343,6 +343,7 @@ mod tests {
             clip: None,
             mesh_node: None,
             extra_clips: vec![],
+            clips: vec![],
             mesh_index: 0,
             humanoid: [
                 ("hips", 0),
