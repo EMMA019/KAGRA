@@ -3,6 +3,7 @@
 export const memory: WebAssembly.Memory;
 export const __wbg_wasmsession_free: (a: number, b: number) => void;
 export const sharedVersion: () => [number, number];
+export const synthWav: (a: number, b: number) => [number, number];
 export const wasm_start: () => void;
 export const wasmsession_attachCanvas: (a: number, b: any) => any;
 export const wasmsession_audioCuesJson: (a: number) => [number, number];

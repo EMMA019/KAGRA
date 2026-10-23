@@ -592,6 +592,22 @@ export function sharedVersion() {
     }
 }
 
+/**
+ * Procedural SFX as a mono 16-bit WAV. Empty when `name` is not a preset.
+ * Bundled clips stay on the mixer; this is the synth (`jump`, `hit`, `coin`,
+ * `explode`, …) so the page can play a cue without a file.
+ * @param {string} name
+ * @returns {Uint8Array}
+ */
+export function synthWav(name) {
+    const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.synthWav(ptr0, len0);
+    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v2;
+}
+
 export function wasm_start() {
     wasm.wasm_start();
 }

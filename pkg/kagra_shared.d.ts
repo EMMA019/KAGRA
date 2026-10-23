@@ -143,6 +143,13 @@ export function netHello(room: string, name: string): string;
 
 export function sharedVersion(): string;
 
+/**
+ * Procedural SFX as a mono 16-bit WAV. Empty when `name` is not a preset.
+ * Bundled clips stay on the mixer; this is the synth (`jump`, `hit`, `coin`,
+ * `explode`, …) so the page can play a cue without a file.
+ */
+export function synthWav(name: string): Uint8Array;
+
 export function wasm_start(): void;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -151,6 +158,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_wasmsession_free: (a: number, b: number) => void;
     readonly sharedVersion: () => [number, number];
+    readonly synthWav: (a: number, b: number) => [number, number];
     readonly wasm_start: () => void;
     readonly wasmsession_attachCanvas: (a: number, b: any) => any;
     readonly wasmsession_audioCuesJson: (a: number) => [number, number];
