@@ -7,11 +7,22 @@
   it) and is not a WorldPlay genre. Glow uses dump `emissive` /
   `emissive_map` (`preset:core` on the ship). Reflections use `hemi_sky`,
   `hemi_ground`, `env_map: preset:studio`, and `shadow_softness`.
-  `kagra.Trail` is a tapered emissive ribbon. `Emitter` can set `emissive`.
-  The phone page is `kagra-shared/www/play.html` (GitHub Pages default).
-  Corridor Haul moved to `corridor.html`. `scripts/package_web.py` stages
-  the site. Art is procedural. Sound clips stay the CC0 tones in
-  `assets/audio`.
+  The window picture calls `apply_look(world, "night")`, draws `kagra.Trail`
+  (the shared emissive quad ribbon), and sets `cull` plus `prop_lod`.
+  `Emitter` can set `emissive`. The phone page is
+  `kagra-shared/www/play.html` (GitHub Pages default). Corridor Haul moved
+  to `corridor.html`. `scripts/package_web.py` stages the site. Art is
+  procedural. Sound clips stay the CC0 tones in `assets/audio`.
+
+- Trails, prop LOD, frustum bounds, art-direction bundles, and glTF ORM.
+  `cull: true` registers mesh bounds and drops props outside the camera.
+  `prop_lod` turns a distant non-vegetation prop into one billboard.
+  Omit either and the old picture stays (every prop, full meshes).
+  glTF `metallicRoughnessTexture` is linear ORM with factors baked in;
+  a dump map still replaces it, and toon primitives skip it.
+  `kagra.Trail` is a ribbon of emissive quads.
+  `apply_look(world, "pastel"|"night")` sets sky, lights, exposure,
+  hemisphere, and the LUT. Box Hop draws the hop trail under the night bundle.
 
 - Image IBL and an authorable hemisphere on the shared renderer.
   Dump `hemi_sky` / `hemi_ground` feed the L1 SH (omit them and the studio

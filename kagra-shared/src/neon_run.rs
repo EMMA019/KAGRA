@@ -508,20 +508,24 @@ impl NeonRun {
             genre: Some(GAME_ID.into()),
             half: 64.0,
             ground: Some(false),
-            sky: Some([32, 6, 58, 255]),
-            hemi_sky: Some([0.20, 0.72, 1.45]),
-            hemi_ground: Some([1.05, 0.10, 0.48]),
+            // Same night bundle as `apply_look(world, "night")`. The Python
+            // window calls that helper (it also scales light intensity).
+            sky: Some([10, 16, 36, 255]),
+            hemi_sky: Some([0.12, 0.18, 0.42]),
+            hemi_ground: Some([0.05, 0.05, 0.08]),
             env_map: Some("preset:studio".into()),
             shadow_softness: Some(3.0),
-            bloom: Some(0.95),
-            bloom_threshold: Some(0.32),
-            vignette: Some(1.05),
-            lut: Some("punch".into()),
-            lut_strength: Some(0.45),
+            bloom: Some(0.72),
+            bloom_threshold: Some(0.42),
+            vignette: Some(1.35),
+            lut: Some("cool".into()),
+            lut_strength: Some(0.85),
             fxaa: Some(true),
-            exposure: Some(1.18),
-            ibl: Some(0.95),
+            exposure: Some(1.25),
+            ibl: Some(0.55),
             tonemap: Some(true),
+            cull: Some(true),
+            prop_lod: Some(80.0),
             ..WorldDoc::default()
         };
         let shake = (self.time * 47.0).sin() * self.shake;
@@ -820,26 +824,48 @@ impl NeonRun {
     }
 
     fn push_trail_props(&self, doc: &mut WorldDoc) {
-        let n = self.trail.len();
-        for (i, p) in self.trail.iter().enumerate() {
-            let t = if n <= 1 {
-                1.0
-            } else {
-                i as f32 / (n - 1) as f32
-            };
-            let s = 0.06 + 0.16 * t;
-            doc.props.push(glow(
-                &format!("wake-{i}"),
-                "sphere",
-                "wake",
-                *p,
-                [s, s, s * 1.8],
+        // Wasm has no Python. These quads match `kagra.Trail`: face +Z, skip
+        // XY shorter than 5 cm, warm emissive. Z flight is folded into Y so
+        // a straight run still emits a ribbon. The window drops these and
+        // draws `Trail` itself.
+        const FOLD: f32 = 0.40;
+        const WIDTH: f32 = 0.40;
+        let pts: Vec<[f32; 3]> = self.trail.iter().copied().collect();
+        if pts.len() < 2 {
+            return;
+        }
+        let hz = pts[pts.len() - 1][2];
+        let folded: Vec<[f32; 3]> = pts
+            .iter()
+            .map(|p| [p[0], p[1] - (hz - p[2]) * FOLD, p[2]])
+            .collect();
+        let segments = folded.len() - 1;
+        for i in 0..segments {
+            let (a, b) = (folded[i], folded[i + 1]);
+            let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+            let length = dx.hypot(dy);
+            if length < 0.05 {
+                continue;
+            }
+            let fade = (i + 1) as f32 / segments as f32;
+            let mut prop = glow(
+                &format!("trail-{i}"),
+                "quad",
+                "trail",
+                [
+                    (a[0] + b[0]) * 0.5,
+                    (a[1] + b[1]) * 0.5,
+                    (a[2] + b[2]) * 0.5,
+                ],
+                [length.max(0.08), WIDTH * (0.45 + 0.55 * fade), 1.0],
                 0.0,
                 0.0,
-                0.0,
-                [120, 255, 255],
-                2.2 + 2.4 * t,
-            ));
+                dy.atan2(dx),
+                [255, 186, 255],
+                1.2 + 3.4 * fade,
+            );
+            prop.emissive_color = Some([1.0, 0.78, 0.35]);
+            doc.props.push(prop);
         }
     }
 
@@ -1033,7 +1059,9 @@ mod tests {
                 .any(|i| i.emissive > 1.0 && i.material != crate::scene3d::Material::Sky),
             "glow is the shared emissive term"
         );
-        assert!((scene.hemi_sky[2] - 1.45).abs() < 1e-4);
+        assert!((scene.hemi_sky[2] - 0.42).abs() < 1e-4);
+        assert_eq!(run.document().cull, Some(true));
+        assert_eq!(run.document().prop_lod, Some(80.0));
         assert!(scene.env_pixels.is_some(), "studio env strip");
         run.confirm();
         assert_eq!(run.phase_name(), "play");
@@ -1042,6 +1070,12 @@ mod tests {
         }
         assert!(run.score() >= 100, "score {}", run.score());
         assert!(run.alive);
+        assert!(
+            run.document().props.iter().any(|p| {
+                p.name == "trail" && p.model == "quad" && p.emissive.unwrap_or(0.0) > 1.0
+            }),
+            "wasm ribbon matches kagra.Trail"
+        );
         run.set_steer(1.0, 0.0, false);
         for _ in 0..180 {
             run.tick(1.0 / 60.0);

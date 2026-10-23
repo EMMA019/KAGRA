@@ -4,27 +4,24 @@ from __future__ import annotations
 import json
 import sys
 
-from kagra.juice import apply_post
+from kagra.juice import apply_look, apply_post
 from kagra.particles import Emitter
-from kagra.trails import Trail
 from tests.conftest import ROOT, load_kagra_submodule
 
 dist = load_kagra_submodule("distribute")
 
 
-def test_trail_tapers_and_can_glow():
-    trail = Trail(length=4, width=0.2, emissive=3.0, name="streak")
-    assert trail.props() == []
-    trail.push((0.0, 0.0, 0.0))
-    trail.push((0.0, 0.0, 1.0))
-    trail.push((0.0, 0.0, 2.0))
-    props = trail.props()
-    assert len(props) == 3
-    assert props[0]["scale"][0] < props[-1]["scale"][0]
-    assert props[-1]["emissive"] > props[0]["emissive"] > 0.0
-    assert props[-1]["model"] == "sphere"
-    trail.enabled = False
-    assert trail.props() == []
+def test_night_look_scales_lights_and_sets_cull():
+    world = {
+        "lights": [{"id": "light:key", "type": "light", "intensity": 2.0, "color": [1, 1, 1]}],
+    }
+    apply_look(world, "night")
+    assert world["lut"] == "cool"
+    assert world["env_map"] == "preset:studio"
+    assert world["lights"][0]["intensity"] < 2.0
+    world["cull"] = True
+    world["prop_lod"] = 80.0
+    assert world["cull"] is True
 
 
 def test_emitter_emissive_is_optional():

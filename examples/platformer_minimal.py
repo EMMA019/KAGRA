@@ -5,8 +5,8 @@ L/R pads) move the knight left and right. SPACE / the JUMP pad hops.
 
 Phone picture (on unless `KAGRA_QUALITY=0`): bloom + punch LUT + a stronger
 vignette, landing squash, a short hitstop, a CPU spark burst, a glowing
-well, split crate maps, a wider sun shadow, and a studio hemisphere plus
-prefiltered env.
+well, split crate maps, a wider sun shadow, a studio hemisphere, a
+jump trail, and a night art-direction pass.
 
     python examples/platformer_minimal.py
     python examples/platformer_minimal.py --headless scratch/platformer.png
@@ -24,8 +24,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import kagra  # noqa: E402
-from kagra.juice import Juice, apply_post  # noqa: E402
-from kagra.particles import Emitter  # noqa: E402
+from kagra.juice import Juice, apply_look, apply_post  # noqa: E402
+from kagra.particles import Emitter, Trail  # noqa: E402
 from kagra.gameloop import (  # noqa: E402
     Scene,
     draw_world,
@@ -89,6 +89,7 @@ class PlatformPlay(Scene):
         self.quality = os.environ.get("KAGRA_QUALITY", "1") != "0"
         self.juice = Juice()
         self.sparks = Emitter(max_count=28, seed=4)
+        self.trail = Trail(max_points=8, width=0.28)
         self._was_ground = True
         self._was_dead = False
 
@@ -205,6 +206,7 @@ class PlatformPlay(Scene):
                     gravity=-7.0,
                 )
             self.sparks.tick(dt)
+            self.trail.push(feet)
         self._was_ground = grounded
         self._was_dead = dead
 
@@ -214,9 +216,11 @@ class PlatformPlay(Scene):
         picture = json.loads(json.dumps(self.world))
         self.juice.apply_world(picture)
         picture.setdefault("props", []).extend(self.sparks.props())
+        picture.setdefault("props", []).extend(self.trail.props())
         apply_post(picture, "mobile")
         _apply_wave2(picture)
         _apply_ibl(picture)
+        _apply_wave3(picture)
         return picture
 
     def draw(self) -> None:
@@ -380,6 +384,16 @@ def _apply_ibl(picture: dict) -> None:
     picture["env_map"] = "preset:studio"
 
 
+def _apply_wave3(picture: dict) -> None:
+    """Night bundle, frustum cull, and distant-prop billboards.
+
+    The jump trail is appended by the caller. Omitted on the before frame.
+    """
+    apply_look(picture, "night")
+    picture["cull"] = True
+    picture["prop_lod"] = 48.0
+
+
 def _mean_abs(a: bytes, b: bytes) -> float:
     n = min(len(a), len(b)) // 4
     if n == 0:
@@ -441,7 +455,67 @@ def write_ibl_compare(out_dir: Path) -> None:
     )
 
 
+def _hop_samples() -> tuple[dict, list[tuple[float, float, float]]]:
+    """Landed dump plus the positions along the hop. Quality stays off."""
+    scene = PlatformPlay()
+    scene.quality = False
+    scene.session.confirm()
+    scene._scripted = True
+    scene.update(1.0 / 60.0)
+    points: list[tuple[float, float, float]] = []
+    air = False
+    landed = None
+    for _ in range(240):
+        scene.update(1.0 / 60.0)
+        player = scene.world.get("player") or {}
+        pos = player.get("position") or [0.0, 1.0, 0.0]
+        points.append((float(pos[0]), float(pos[1]) - 0.05, float(pos[2])))
+        grounded = bool(player.get("on_ground"))
+        if not grounded:
+            air = True
+        elif air:
+            landed = json.loads(json.dumps(scene.world))
+            break
+    if landed is None:
+        landed = json.loads(json.dumps(scene.world))
+    return landed, points[-12:]
+
+
+def write_wave3_compare(out_dir: Path) -> None:
+    """Day picture vs night plus the hop trail. Cull and prop LOD are on."""
+    from kagra.gameloop import last_draw_was_fallback, render_rgba, rgba_to_png
+
+    world, points = _hop_samples()
+    ribbon = Trail(max_points=12, width=0.34)
+    for point in points:
+        ribbon.push(point)
+    before_world = _juicy_picture(world, wave2=True)
+    _apply_ibl(before_world)
+    after_world = json.loads(json.dumps(before_world))
+    after_world.setdefault("props", []).extend(ribbon.props())
+    _apply_wave3(after_world)
+    width, height = 640, 360
+    before = render_rgba(before_world, width, height)
+    after = render_rgba(after_world, width, height)
+    if last_draw_was_fallback():
+        raise SystemExit("no GPU adapter; wave 3 shots were not written")
+    if _mean_abs(before, after) < 1.0:
+        raise SystemExit("wave 3 before/after frames are almost identical")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "box_hop_wave3_before.png").write_bytes(rgba_to_png(before, width, height))
+    (out_dir / "box_hop_wave3_after.png").write_bytes(rgba_to_png(after, width, height))
+    print(
+        f"wrote {out_dir / 'box_hop_wave3_before.png'} and {out_dir / 'box_hop_wave3_after.png'} "
+        f"mean_abs={_mean_abs(before, after):.2f}"
+    )
+
+
 def main() -> None:
+    if "--compare-wave3" in sys.argv:
+        idx = sys.argv.index("--compare-wave3")
+        out = Path(sys.argv[idx + 1]) if len(sys.argv) > idx + 1 else Path("docs/screenshots")
+        write_wave3_compare(out)
+        return
     if "--compare-ibl" in sys.argv:
         idx = sys.argv.index("--compare-ibl")
         out = Path(sys.argv[idx + 1]) if len(sys.argv) > idx + 1 else Path("docs/screenshots")

@@ -97,6 +97,14 @@
       "type": ["string", "null"],
       "description": "Prefiltered specular. preset:studio bakes a lat-long from the hemisphere. A PNG path is an equirect, blurred into 4 roughness rows (64x64 texture_2d). Omit = SH specular, so an old dump does not change."
     },
+    "cull": {
+      "type": ["boolean", "null"],
+      "description": "Register mesh bounds and drop props outside the camera. Omit = draw every prop."
+    },
+    "prop_lod": {
+      "type": ["number", "null"],
+      "description": "Distance where a non-vegetation prop becomes one billboard quad. Omit = full meshes. Vegetation keeps heightfield.lod_radius."
+    },
     "sky": {
       "type": ["array", "null"],
       "minItems": 4,

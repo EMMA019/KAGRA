@@ -12,16 +12,18 @@ WASD or arrows steer. Shift or Space boosts. Drag on the window (or a
 phone) aims the ship. P pauses. Fly through the glowing rings. Hitting
 the wall or missing a ring ends the run.
 
-Phone picture (on unless ``KAGRA_QUALITY=0``): bloom, punch LUT, vignette,
-FXAA, juice, sparks, and a trail. Glow is dump ``emissive``. Reflections
-are ``hemi_sky`` / ``hemi_ground`` and ``env_map: preset:studio``. The wasm
-/ Android build runs the same Rust sim from ``games/neon_run_minimal.json``.
+Phone picture (on unless ``KAGRA_QUALITY=0``): ``apply_look(world, "night")``,
+``cull``, ``prop_lod``, juice, sparks, and ``kagra.Trail`` (emissive quad
+ribbon). Glow is dump ``emissive``. Reflections are the night hemisphere
+and ``env_map: preset:studio``. The wasm / Android build runs the same
+Rust sim from ``games/neon_run_minimal.json``.
 """
 from __future__ import annotations
 
 import json
 import os
 import sys
+from collections import deque
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -41,9 +43,8 @@ from kagra.gameloop import (  # noqa: E402
     run,
     was_pressed,
 )
-from kagra.juice import Juice, apply_post  # noqa: E402
-from kagra.particles import Emitter  # noqa: E402
-from kagra.trails import Trail  # noqa: E402
+from kagra.juice import Juice, apply_look  # noqa: E402
+from kagra.particles import Emitter, Trail  # noqa: E402
 
 DUMP = Path(__file__).resolve().parents[1] / "kagra-shared/tests/fixtures/neon_run_world.json"
 W, H = 1280, 720
@@ -68,7 +69,10 @@ class Lumen(Scene):
         self.quality = os.environ.get("KAGRA_QUALITY", "1") != "0"
         self.juice = Juice()
         self.sparks = Emitter(max_count=28, seed=7, name="burst", emissive=4.2)
-        self.trail = Trail(length=12, width=0.14, color=(255, 210, 255), emissive=4.8, name="streak")
+        self.trail = Trail(max_points=16, width=0.40, color=(255, 186, 255), name="trail")
+        # Real samples. Trail measures length in XY and faces +Z, so the
+        # forward step is folded into Y when the ribbon is rebuilt.
+        self._path: deque[tuple[float, float, float]] = deque(maxlen=16)
         self._music = False
         self._scripted = False
 
@@ -153,8 +157,10 @@ class Lumen(Scene):
         feel = json.loads(self.session.take_feel())
         ship = self._ship()
         if self._flow() == "play":
-            self.trail.push((ship[0], ship[1], ship[2] - 0.7))
+            self._path.append(ship)
+            self._rebuild_trail()
         else:
+            self._path.clear()
             self.trail.clear()
         if int(feel.get("orbs") or 0) > 0:
             self.juice.squash(0.28, 0.16)
@@ -171,6 +177,15 @@ class Lumen(Scene):
             se("hit")
         self.sparks.tick(dt)
 
+    def _rebuild_trail(self) -> None:
+        """Feed ``kagra.Trail``. Quads face the camera, so Z motion is folded into Y."""
+        self.trail.clear()
+        if len(self._path) < 2:
+            return
+        _hx, _hy, hz = self._path[-1]
+        for x, y, z in self._path:
+            self.trail.push((x, y - (hz - z) * 0.40, z))
+
     def _picture(self) -> dict:
         picture = json.loads(json.dumps(self.world))
         if not self.quality:
@@ -178,14 +193,22 @@ class Lumen(Scene):
                 picture.pop(key, None)
             return picture
         self.juice.apply_world(picture)
+        kept = [
+            prop
+            for prop in (picture.get("props") or [])
+            if prop.get("name") not in {"trail", "wake"}
+        ]
+        picture["props"] = kept
         sx, sy, sz = self.juice.scale()
-        for prop in picture.get("props") or []:
+        for prop in picture["props"]:
             if str(prop.get("name", "")).startswith("ship"):
                 sc = prop.get("scale") or [1, 1, 1]
                 prop["scale"] = [float(sc[0]) * sx, float(sc[1]) * sy, float(sc[2]) * sz]
-        picture.setdefault("props", []).extend(self.sparks.props())
+        picture["props"].extend(self.sparks.props())
+        apply_look(picture, "night")
+        picture["cull"] = True
+        picture["prop_lod"] = 80.0
         picture["props"].extend(self.trail.props())
-        apply_post(picture, "neon")
         return picture
 
     def draw(self) -> None:

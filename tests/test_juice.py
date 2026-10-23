@@ -112,3 +112,17 @@ def test_apply_post_presets():
     juice.apply_post(world, "off")
     assert world["vignette"] == 0.0
     assert world["fxaa"] is False
+
+
+def test_apply_look_night_and_pastel():
+    world = {"lights": [{"id": "light:0", "intensity": 1.0, "color": [1.0, 1.0, 1.0]}]}
+    juice.apply_look(world, "night")
+    assert world["sky"][2] < 80
+    assert world["lut"] == "cool"
+    assert world["hemi_sky"][2] > world["hemi_ground"][2]
+    assert world["lights"][0]["intensity"] < 1.0
+    assert world["lights"][0]["color"][2] > world["lights"][0]["color"][0]
+    day = {}
+    juice.apply_look(day, "pastel")
+    assert day["lut"] == "warm"
+    assert day["sky"][0] > 150

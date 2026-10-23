@@ -173,6 +173,79 @@ def apply_post(world: dict, preset: str = "mobile", **overrides: Any) -> dict:
     return world
 
 
+# Sky, lights, exposure, hemisphere, and the post stack together.
+# ``apply_post`` stays grade-only. These are the art-direction bundles.
+LOOK_PRESETS = {
+    "pastel": {
+        "sky": [186, 214, 236, 255],
+        "exposure": 1.08,
+        "lut": "warm",
+        "lut_strength": 0.65,
+        "bloom": 0.55,
+        "bloom_threshold": 0.62,
+        "vignette": 1.05,
+        "fxaa": True,
+        "hemi_sky": [0.72, 0.84, 1.05],
+        "hemi_ground": [0.95, 0.72, 0.62],
+        "env_map": "preset:studio",
+        "light_color": [1.0, 0.90, 0.82],
+        "light_scale": 0.92,
+    },
+    "night": {
+        "sky": [10, 16, 36, 255],
+        "exposure": 1.25,
+        "lut": "cool",
+        "lut_strength": 0.85,
+        "bloom": 0.72,
+        "bloom_threshold": 0.42,
+        "vignette": 1.35,
+        "fxaa": True,
+        "hemi_sky": [0.12, 0.18, 0.42],
+        "hemi_ground": [0.05, 0.05, 0.08],
+        "ibl": 0.55,
+        "env_map": "preset:studio",
+        "light_color": [0.55, 0.68, 1.0],
+        "light_scale": 0.42,
+    },
+}
+
+
+def apply_look(world: dict, preset: str = "pastel", **overrides: Any) -> dict:
+    """Art direction: sky, lights, exposure, hemisphere, and the post stack.
+
+    Unknown names use ``pastel``. Existing light intensities are scaled, not
+    replaced, so a dump that authored slots keeps those slots.
+    """
+    spec = dict(LOOK_PRESETS.get(str(preset), LOOK_PRESETS["pastel"]))
+    spec.update(overrides)
+    apply_post(
+        world,
+        "mobile",
+        bloom=spec["bloom"],
+        bloom_threshold=spec["bloom_threshold"],
+        vignette=spec["vignette"],
+        lut=spec["lut"],
+        lut_strength=spec["lut_strength"],
+        fxaa=spec["fxaa"],
+    )
+    world["sky"] = [int(c) for c in spec["sky"]]
+    world["exposure"] = float(spec["exposure"])
+    world["hemi_sky"] = [float(c) for c in spec["hemi_sky"]]
+    world["hemi_ground"] = [float(c) for c in spec["hemi_ground"]]
+    if "ibl" in spec:
+        world["ibl"] = float(spec["ibl"])
+    if spec.get("env_map"):
+        world["env_map"] = str(spec["env_map"])
+    scale = float(spec.get("light_scale", 1.0))
+    color = spec.get("light_color")
+    for lit in world.get("lights") or []:
+        if color is not None:
+            lit["color"] = [float(c) for c in color]
+        if "intensity" in lit:
+            lit["intensity"] = float(lit["intensity"]) * scale
+    return world
+
+
 class Tween:
     """One attribute, ``duration`` seconds, named ease."""
 

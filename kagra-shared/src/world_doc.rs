@@ -133,6 +133,14 @@ pub struct WorldDoc {
     /// None = the SH specular, so an old dump does not change.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub env_map: Option<String>,
+    /// Register mesh bounds and drop props outside the camera. None / false
+    /// draws every prop, which a tight dump camera used to rely on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cull: Option<bool>,
+    /// Distance where a non-vegetation prop becomes one billboard quad.
+    /// None = full meshes. Vegetation keeps its own `lod_radius`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prop_lod: Option<f32>,
     /// Generic countdowns. WorldPlay::tick_timers advances `remaining`; on 0 it
     /// emits `on_done` as an event and flips `active` false. Cooking wait,
     /// fishing cast→bite, cooldowns all map onto this. Genre code stays out.
@@ -795,8 +803,15 @@ impl WorldDoc {
     pub fn compile_scene(&self, aspect: f32) -> Scene3D {
         let camera = self.draw_camera();
         let mut b = SceneBuilder::new(&camera, aspect.max(1e-3));
-        // Do not register bounds: a dump camera can be tight, and compile must
-        // still emit the document's objects (unregistered meshes are never culled).
+        // Opt-in. An omitted `cull` stays unregistered so every prop still draws.
+        if self.cull == Some(true) {
+            for (id, mesh) in self.compile_meshes() {
+                let bounds = mesh.bounds();
+                if !bounds.is_empty() {
+                    b.register(id, bounds);
+                }
+            }
+        }
         let (gltf_ids, walker_gltf_ids) = self.gltf_mesh_ids();
         let tex_ids = self.texture_mesh_ids();
 
@@ -845,6 +860,7 @@ impl WorldDoc {
         }
 
         let lod_r = self.vegetation_lod_radius();
+        let prop_lod = self.prop_lod.filter(|r| *r > 0.0);
         let worlds = self.prop_world_mats();
         for prop in &self.props {
             if !prop.enabled {
@@ -865,6 +881,18 @@ impl WorldDoc {
                 );
                 b.push_material(MESH_QUAD, billboard, color_u8(prop.color), mat);
                 continue;
+            }
+            if let Some(radius) = prop_lod {
+                if !veg && camera.eye.distance(pos) > radius {
+                    let h = scale.y.abs().max(scale.x.abs()).max(0.35);
+                    let card = Mat4::from_scale_rotation_translation(
+                        Vec3::new(h * 0.7, h, 1.0),
+                        Quat::from_rotation_y(billboard_yaw(camera.eye, pos)),
+                        pos,
+                    );
+                    b.push_material(MESH_QUAD, card, color_u8(prop.color), Material::Solid);
+                    continue;
+                }
             }
             let mesh = mesh_for_prop(prop, &gltf_ids, &tex_ids);
             let has_tex = prop
@@ -3096,11 +3124,15 @@ mod tests {
         assert!(doc.baked_env().is_none(), "omit env_map and stay on the SH");
         assert_eq!(doc.hemi_sky_color(), [0.48, 0.56, 0.78]);
         assert_eq!(doc.hemi_ground_color(), [0.42, 0.30, 0.18]);
+        assert!(doc.cull.is_none());
+        assert!(doc.prop_lod.is_none());
         let legacy = doc.to_json().unwrap();
         assert!(!legacy.contains("\"bloom\""));
         assert!(!legacy.contains("\"shadow_softness\""));
         assert!(!legacy.contains("\"hemi_sky\""));
         assert!(!legacy.contains("\"env_map\""));
+        assert!(!legacy.contains("\"cull\""));
+        assert!(!legacy.contains("\"prop_lod\""));
         let on = WorldDoc::from_json(
             r#"{"version":1,"bloom":0.4,"bloom_threshold":0.7,"vignette":0.0,"lut":"warm","lut_strength":0.5,"fxaa":false}"#,
         )
@@ -3230,6 +3262,67 @@ mod tests {
         let sx = body.instances[0].model.x_axis.length();
         assert!((sy - 0.475).abs() < 1e-3, "squashed height {sy}");
         assert!((sx - 1.12).abs() < 1e-3, "squashed width {sx}");
+    }
+
+    #[test]
+    fn cull_drops_a_box_behind_the_camera() {
+        let doc = |cull: &str| {
+            WorldDoc::from_json(&format!(
+                r#"{{"version":1,"ground":false,{cull}"cameras":[{{"id":"c","type":"camera","position":[0.0,2.0,6.0],"target":[0.0,1.0,0.0],"fov":50.0}}],"props":[{{"id":"front","type":"prop","model":"box","position":[0.0,1.0,0.0]}},{{"id":"back","type":"prop","model":"box","position":[0.0,1.0,40.0]}}]}}"#
+            ))
+            .unwrap()
+        };
+        let boxes = |scene: Scene3D| {
+            scene
+                .batches
+                .iter()
+                .filter(|b| b.mesh == MESH_BOX)
+                .map(|b| b.instances.len())
+                .sum::<usize>()
+        };
+        let open = doc("");
+        let closed = doc(r#""cull":true,"#);
+        assert_eq!(
+            boxes(open.compile_scene(1.0)),
+            2,
+            "omit cull and both boxes draw"
+        );
+        assert_eq!(
+            boxes(closed.compile_scene(1.0)),
+            1,
+            "the box behind the camera drops"
+        );
+    }
+
+    #[test]
+    fn prop_lod_turns_a_far_box_into_a_quad() {
+        let doc = WorldDoc::from_json(
+            r#"{"version":1,"ground":false,"prop_lod":4.0,"cameras":[{"id":"c","type":"camera","position":[0.0,2.0,0.0],"target":[0.0,1.0,-1.0],"fov":50.0}],"props":[{"id":"near","type":"prop","model":"box","position":[0.0,1.0,-2.0]},{"id":"far","type":"prop","model":"box","position":[0.0,1.0,-40.0]}]}"#,
+        )
+        .unwrap();
+        let scene = doc.compile_scene(1.0);
+        let n = |id: MeshId| {
+            scene
+                .batches
+                .iter()
+                .filter(|b| b.mesh == id)
+                .map(|b| b.instances.len())
+                .sum::<usize>()
+        };
+        assert_eq!(n(MESH_BOX), 1, "the near box stays a box");
+        assert!(n(MESH_QUAD) >= 1, "the far box becomes a billboard");
+        let full = WorldDoc::from_json(
+            r#"{"version":1,"ground":false,"cameras":[{"id":"c","type":"camera","position":[0.0,2.0,0.0],"target":[0.0,1.0,-1.0],"fov":50.0}],"props":[{"id":"near","type":"prop","model":"box","position":[0.0,1.0,-2.0]},{"id":"far","type":"prop","model":"box","position":[0.0,1.0,-40.0]}]}"#,
+        )
+        .unwrap();
+        let scene = full.compile_scene(1.0);
+        let boxes = scene
+            .batches
+            .iter()
+            .filter(|b| b.mesh == MESH_BOX)
+            .map(|b| b.instances.len())
+            .sum::<usize>();
+        assert_eq!(boxes, 2, "omit prop_lod and both boxes stay boxes");
     }
 
     #[test]
