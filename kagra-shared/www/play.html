@@ -307,6 +307,18 @@
       const res = await fetch("./world.json");
       if (res.ok) world = await res.json();
     } catch (_) {}
+    // Neon Run is the web demo. ?quality=low|mobile|high is an A/B switch.
+    // Other genres keep the picture the dump authored. A missing query on
+    // this demo is the phone preset (SSAO radius 4, FXAA, 2 cascades).
+    const asked = (params.get("quality") || "").toLowerCase();
+    const neonDemo = !world.genre || world.genre === "neon_run";
+    if (neonDemo) {
+      if (asked === "low" || asked === "mobile" || asked === "high") {
+        world.quality = asked;
+      } else if (world.quality == null || world.quality === "") {
+        world.quality = "mobile";
+      }
+    }
     world.best = Math.max(Number(world.best) || 0, best);
     try {
       await mountAssets();

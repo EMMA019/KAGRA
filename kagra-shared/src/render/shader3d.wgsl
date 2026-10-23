@@ -26,14 +26,16 @@ struct Globals {
     cascade1: mat4x4<f32>,
     cascade2: mat4x4<f32>,
     // x = shadow radius. 1 = the historical 3x3 PCF. Larger = a wider tent.
-    // y > 0.5: this pass writes an unorm swapchain (composite cannot sample
-    // the frame). present_rgb applies exposure, ACES, and one sRGB OETF.
-    // WebGPU cannot sample an Rgba16Float frame, and storing HDR into unorm
-    // would clamp neon to white before that grade. On that path the post
-    // graph does not run. z = camera near, w = camera far, for the HDR depth
-    // prepass only. Shading does not read z or w.
+    // y > 0.5: this pass writes the unorm swapchain. present_rgb applies
+    // exposure, ACES, and one sRGB OETF. A separate Rgba8Unorm frame (y = 0)
+    // is the WebGPU path when SSAO is on: composite grades that frame once.
+    // Sampling Rgba16Float stays off. z = camera near, w = camera far.
+    // Shading does not read z or w.
     shadow: vec4<f32>,
     // x = cascade count (1, 2, or 3). y > 0.5 enables the PCSS blocker search.
+    // The direct unorm path forces y to 0 so it never samples the Rgba16Float
+    // raw target. z > 1 stores eye/z in 0..1 for SSAO on an 8-bit depth color.
+    // z <= 1 stores linear eye meters. w is unused.
     cascade: vec4<f32>,
     // Hemisphere colors. Defaults match the old hardcoded studio SH.
     hemi_sky: vec4<f32>,
@@ -200,7 +202,12 @@ fn fs_depth(in: VsOut) -> @location(0) vec4<f32> {
     let far = max(g.shadow.w, near + 0.01);
     let device_z = select(in.clip.z, 1.0, sky);
     let eye = (near * far) / max(far - device_z * (far - near), 1e-4);
-    return vec4<f32>(eye, eye, eye, 1.0);
+    // cascade.z is a uniform. span > 1 packs meters into 0..1 for an unorm
+    // target. HDR leaves it at 0 and stores meters. Both select arms run;
+    // the divisor stays at least 1.
+    let span = g.cascade.z;
+    let stored = select(eye, clamp(eye / max(span, 1.0), 0.0, 1.0), span > 1.0);
+    return vec4<f32>(stored, stored, stored, 1.0);
 }
 
 fn shadow_clip(in: VsIn, vp: mat4x4<f32>) -> vec4<f32> {

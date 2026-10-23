@@ -61,6 +61,13 @@ def test_missing_version():
     assert "version: missing required field" in errors
 
 
+def test_quality_tier_is_a_known_string():
+    assert _checker().check_world({"version": 1, "quality": "mobile"}) == []
+    assert _checker().check_world({"version": 1, "quality": None}) == []
+    errors = _checker().check_world({"version": 1, "quality": "ultra"})
+    assert any(line.startswith("quality:") for line in errors)
+
+
 def test_checker_does_not_import_the_extension():
     assert "kagra.kagra_shared" not in sys.modules
     assert _checker().check_world({"version": 1}) == []

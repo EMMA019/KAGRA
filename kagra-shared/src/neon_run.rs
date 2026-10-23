@@ -228,6 +228,9 @@ pub struct NeonRun {
     trail: VecDeque<[f32; 3]>,
     sparks: Vec<Spark>,
     doc: WorldDoc,
+    /// Dump `quality`, copied onto every rebuild. None keeps the historical
+    /// neon picture (one cascade, no SSAO). Gameplay does not read it.
+    picture_quality: Option<String>,
 }
 
 impl NeonRun {
@@ -241,6 +244,12 @@ impl NeonRun {
         run.load_progress();
         if let Some(best) = value.get("best").and_then(|v| v.as_u64()) {
             run.flow.best_score = run.flow.best_score.max(best as u32);
+        }
+        if let Some(q) = value.get("quality").and_then(|v| v.as_str()) {
+            let q = q.trim();
+            if !q.is_empty() {
+                run.picture_quality = Some(q.to_string());
+            }
         }
         run.rebuild();
         Ok(run)
@@ -282,6 +291,7 @@ impl NeonRun {
             trail: VecDeque::new(),
             sparks: Vec::new(),
             doc: WorldDoc::default(),
+            picture_quality: None,
         }
     }
 
@@ -760,6 +770,7 @@ impl NeonRun {
             fog_end: Some(130.0),
             ..WorldDoc::default()
         };
+        doc.quality = self.picture_quality.clone();
         let eye = self.chase_eye();
         let target = self.chase_target();
         doc.cameras.push(WorldCamera {
@@ -1526,8 +1537,9 @@ fn splice_json_key(body: &str, key: &str, value: &serde_json::Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::profile::FrameProfile;
     use crate::session::{SceneKind, SharedSession};
-    use crate::world_doc::WorldDoc;
+    use crate::world_doc::{self, WorldDoc};
 
     #[test]
     fn straight_flight_scores_and_a_wall_ends_the_run() {
@@ -1758,6 +1770,52 @@ mod tests {
             eprintln!(
                 "neon json {frames} frames bytes {} dump {dump_once:?} dump+state {both:?} parse {parse:?} parse+reserialize {round:?} doc_clone {cloned:?}",
                 text.len()
+            );
+        }
+    }
+
+    #[test]
+    fn picture_quality_survives_rebuild_without_replacing_the_grade() {
+        let plain = NeonRun::from_json(r#"{"version":1,"genre":"neon_run"}"#).unwrap();
+        assert!(plain.document().quality.is_none());
+        assert!((plain.document().bloom_intensity() - 0.14).abs() < 1e-6);
+        if world_doc::heavy_post_allowed() && !world_doc::quality_is_high() {
+            assert_eq!(plain.document().shadow_cascade_count(), 1);
+            assert_eq!(plain.document().ssao_radius(), 0.0);
+        }
+        let mobile =
+            NeonRun::from_json(r#"{"version":1,"genre":"neon_run","quality":"mobile"}"#).unwrap();
+        let doc = mobile.document();
+        assert_eq!(doc.quality.as_deref(), Some("mobile"));
+        assert!((doc.bloom.unwrap() - 0.14).abs() < 1e-6);
+        assert!(doc.fxaa_enabled());
+        assert_eq!(doc.tonemap, Some(true));
+        if world_doc::heavy_post_allowed() {
+            assert!((doc.ssao_radius() - 4.0).abs() < 1e-6);
+            assert!(!doc.taa_enabled());
+            assert_eq!(doc.shadow_cascade_count(), 2);
+            assert!(!doc.shadow_pcss_enabled());
+        }
+        let low = FrameProfile::from_world(
+            NeonRun::from_json(r#"{"version":1,"genre":"neon_run","quality":"low"}"#)
+                .unwrap()
+                .document(),
+        );
+        let phone = FrameProfile::from_world(doc);
+        assert_eq!(low.draws, phone.draws);
+        assert_eq!(low.triangles, phone.triangles);
+        assert_eq!(low.texture_bytes, phone.texture_bytes);
+        assert!(
+            phone.draws <= crate::profile::BUDGET_DRAWS,
+            "draws {}",
+            phone.draws
+        );
+        assert!(phone.texture_bytes <= crate::profile::BUDGET_TEXTURE_BYTES);
+        let tri_warn = phone.warnings().iter().any(|w| w.contains("triangles"));
+        if tri_warn {
+            eprintln!(
+                "neon already has {} triangles; the mobile tier did not add any",
+                phone.triangles
             );
         }
     }
