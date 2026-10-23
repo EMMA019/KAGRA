@@ -1,0 +1,7 @@
+{
+  "title": "Fish Talk",
+  "version": "0.1.0",
+  "slug": "python_game",
+  "entry": "examples/python_game_minimal.py",
+  "world": "kagra-shared/tests/fixtures/interact_fish_world.json"
+}
