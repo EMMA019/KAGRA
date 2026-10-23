@@ -46,6 +46,8 @@ const HIT_TOP: f32 = 0.82;
 const SPEED0: f32 = 10.5;
 const SPEED_RAMP: f32 = 0.22;
 const SPEED_CAP: f32 = 20.0;
+/// Longest z move per sim substep. Under half the thinnest hitbox depth.
+const MAX_STEP_Z: f32 = 0.08;
 const GRAVITY: f32 = -22.0;
 const JUMP_V: f32 = 7.1;
 const GRACE_SECS: f32 = 1.6;
@@ -702,6 +704,23 @@ impl NeonCat {
             self.rebuild();
             return;
         }
+        // Substep so one step never moves further than MAX_STEP_Z. At the
+        // speed cap a 50 ms frame moves 1 m, which skipped a 0.4 m crate.
+        let steps = ((self.speed() * dt) / MAX_STEP_Z).ceil().max(1.0) as u32;
+        let h = dt / steps as f32;
+        for _ in 0..steps {
+            self.play_step(h);
+            if !self.alive {
+                break;
+            }
+        }
+        self.smooth_cam(dt);
+        self.tick_sparks(dt);
+        self.decay_feel(dt);
+        self.rebuild();
+    }
+
+    fn play_step(&mut self, dt: f32) {
         self.time += dt;
         let ax = self.axis_x();
         // +ax is screen-right. This camera looks along +Z, so that is world -X.
@@ -757,10 +776,6 @@ impl NeonCat {
         if self.alive {
             self.collect_rings();
         }
-        self.smooth_cam(dt);
-        self.tick_sparks(dt);
-        self.decay_feel(dt);
-        self.rebuild();
     }
 
     fn speed(&self) -> f32 {
@@ -1832,6 +1847,35 @@ fn splice_json_key(body: &str, key: &str, value: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn crate_still_kills_at_top_speed_with_a_long_frame() {
+        for &dt in &[0.05_f32, 0.2] {
+            let mut run = NeonCat::fresh();
+            run.rebuild();
+            run.confirm();
+            run.time = 1000.0;
+            assert_eq!(run.speed(), SPEED_CAP);
+            let i = 30;
+            assert_eq!(obstacle_shape(i).kind, "CRATE");
+            let shape = obstacle_shape(i);
+            run.x = shape.hit_cx;
+            run.z = shape.hit_cz - 0.6;
+            run.y = 0.0;
+            run.vx = 0.0;
+            run.rebuild();
+            assert!(run.spawned.contains(&i));
+            for _ in 0..4 {
+                run.set_steer(0.0, 0.0, false);
+                run.x = shape.hit_cx;
+                run.tick(dt);
+                if !run.alive {
+                    break;
+                }
+            }
+            assert!(!run.alive, "dt {dt}: a lane crate at the cap must kill");
+        }
+    }
 
     #[test]
     fn gpu_mesh_key_stays_put_through_a_long_run() {
