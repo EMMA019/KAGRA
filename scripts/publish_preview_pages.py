@@ -75,13 +75,52 @@ def _copy_into(src: Path, dest: Path) -> None:
             shutil.copy2(child, target)
 
 
-def publish(src: Path, dest: str, *, delete: bool, repo: str, token: str) -> None:
+def stable_root_present(work: Path) -> bool:
+    """True when gh-pages root is the stable Lumen shell, not a preview catalog.
+
+    The catalog also has ``play.html`` and wasm. The stable page adds
+    ``world.json`` (genre ``neon_run``) next to that wasm.
+    """
+    return (
+        (work / "play.html").is_file()
+        and (work / "world.json").is_file()
+        and (work / "pkg" / "kagra_shared_bg.wasm").is_file()
+    )
+
+
+def skip_root_seed(work: Path, dest: str, only_if_missing: bool) -> bool:
+    """True when a root publish must not replace the stable shell.
+
+    ``pr/<number>`` updates never use this. An empty dest keeps ``pr/`` either way.
+    A catalog sitting at ``/`` (no ``world.json``) is not stable, so the seed
+    replaces it and leaves ``pr/`` in place.
+    """
     dest = safe_dest(dest)
+    if only_if_missing and dest:
+        raise SystemExit("--only-if-missing only applies to the site root")
+    return bool(only_if_missing and stable_root_present(work))
+
+
+def publish(
+    src: Path,
+    dest: str,
+    *,
+    delete: bool,
+    repo: str,
+    token: str,
+    only_if_missing: bool = False,
+) -> None:
+    dest = safe_dest(dest)
+    if only_if_missing and dest:
+        raise SystemExit("--only-if-missing only applies to the site root")
     remote = f"https://github.com/{repo}.git"
     for attempt in range(6):
         with tempfile.TemporaryDirectory(prefix="kagra-pages-") as tmp:
             work = Path(tmp) / "site"
             _clone(work, remote, token)
+            if skip_root_seed(work, dest, only_if_missing):
+                print("gh-pages root already has the stable play.html")
+                return
             if delete:
                 delete_tree(work, dest)
             else:
@@ -204,6 +243,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--src", default="dist/preview")
     parser.add_argument("--dest", default="", help="empty for /, or pr/<number>")
     parser.add_argument("--delete", action="store_true")
+    parser.add_argument(
+        "--only-if-missing",
+        action="store_true",
+        help="root publish: do nothing when play.html, world.json, and wasm are already on gh-pages",
+    )
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", ""))
     args = parser.parse_args(argv)
     token = os.environ.get("GITHUB_TOKEN", "").strip()
@@ -217,7 +261,14 @@ def main(argv: list[str] | None = None) -> int:
     if not args.delete and not src.is_dir():
         print(f"missing preview dir: {src}", file=sys.stderr)
         return 2
-    publish(src, args.dest, delete=args.delete, repo=args.repo, token=token)
+    publish(
+        src,
+        args.dest,
+        delete=args.delete,
+        repo=args.repo,
+        token=token,
+        only_if_missing=args.only_if_missing,
+    )
     return 0
 
 

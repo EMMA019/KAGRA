@@ -8,8 +8,9 @@ The default page is ``play.html`` (Lumen). Corridor Haul stays at
 ``corridor.html``. ``world.json`` is the manifest's dump, which wasm loads
 with ``loadGameJson``. Audio clips from ``bundle_assets`` land in ``audio/``.
 
-GitHub Pages (``.github/workflows/pages.yml``) publishes this folder on
-push to master. It does not run on pull requests.
+GitHub Pages (``.github/workflows/pages.yml``) commits this folder to the
+``gh-pages`` root on push to master and leaves ``pr/`` in place. The live
+site is the full tree, deployed by ``pages-deploy.yml``.
 """
 from __future__ import annotations
 

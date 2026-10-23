@@ -105,6 +105,37 @@ def test_root_publish_keeps_other_prs(tmp_path: Path):
     assert (work / "pr" / "4" / "keep.txt").is_file()
 
 
+def test_root_seed_skips_only_a_stable_root(tmp_path: Path):
+    work = tmp_path / "gh-pages"
+    work.mkdir()
+    with pytest.raises(SystemExit):
+        pages.skip_root_seed(work, "pr/12", True)
+    assert pages.skip_root_seed(work, "", False) is False
+    (work / "play.html").write_text("catalog", encoding="utf-8")
+    (work / "pkg").mkdir()
+    (work / "pkg" / "kagra_shared_bg.wasm").write_bytes(b"\0asm")
+    assert pages.skip_root_seed(work, "", True) is False
+    (work / "world.json").write_text('{"genre":"neon_run"}', encoding="utf-8")
+    assert pages.skip_root_seed(work, "", True) is True
+
+
+def test_pages_and_previews_share_one_tree():
+    pages_yml = (ROOT / ".github/workflows/pages.yml").read_text(encoding="utf-8")
+    assert "publish_preview_pages.py" in pages_yml
+    assert "kagra-pages" in pages_yml
+    assert "actions/deploy-pages" not in pages_yml
+    assert "actions/upload-pages-artifact" not in pages_yml
+    preview_yml = (ROOT / ".github/workflows/preview.yml").read_text(encoding="utf-8")
+    assert "branches: [master, main]" not in preview_yml
+    assert "--only-if-missing" in preview_yml
+    assert "dist/web/pkg" in preview_yml
+    assert "bash scripts/build_wasm.sh" in preview_yml
+    assert "kagra-pages" in preview_yml
+    deploy_yml = (ROOT / ".github/workflows/pages-deploy.yml").read_text(encoding="utf-8")
+    assert "site/play.html" in deploy_yml
+    assert "site/pkg/kagra_shared_bg.wasm" in deploy_yml
+
+
 def test_dest_rejects_escape():
     assert pages.safe_dest("") == ""
     assert pages.safe_dest("pr/12") == "pr/12"
