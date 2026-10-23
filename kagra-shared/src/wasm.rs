@@ -84,6 +84,12 @@ impl WasmSession {
         self.inner.set_walk(lx, lz, jump);
     }
 
+    /// Packaged play. Lumen uses `lx`/`lz` to steer and `jump` to boost.
+    #[wasm_bindgen(js_name = setPlayInput)]
+    pub fn set_play_input(&mut self, lx: f32, lz: f32, jump: bool, attack: bool, dodge: bool) {
+        self.inner.set_play_input(lx, lz, jump, attack, dodge);
+    }
+
     #[wasm_bindgen(js_name = setJump)]
     pub fn set_jump(&mut self, held: bool) {
         self.inner.set_jump(held);
@@ -150,11 +156,33 @@ impl WasmSession {
     /// ゲーム状態 JSON（phase / time / score / objective）。
     #[wasm_bindgen(js_name = gameJson)]
     pub fn game_json(&self) -> String {
+        if self.inner.kind == crate::session::SceneKind::Neon {
+            return self
+                .inner
+                .neon
+                .as_ref()
+                .map(|neon| neon.state_json())
+                .unwrap_or_else(|| "{}".into());
+        }
         if self.inner.kind == crate::session::SceneKind::Collectathon {
             serde_json::to_string(&self.inner.isle.game).unwrap_or_else(|_| "{}".into())
         } else {
             serde_json::to_string(&self.inner.game).unwrap_or_else(|_| "{}".into())
         }
+    }
+
+    /// ジャンル dump。`"genre": "neon_run"` は Lumen を起動する。
+    #[wasm_bindgen(js_name = loadGameJson)]
+    pub fn load_game_json(&mut self, json: &str) -> Result<(), JsValue> {
+        self.inner
+            .load_game_json(json)
+            .map_err(|e| JsValue::from_str(&e))
+    }
+
+    /// Mixer cues for the page to play (wasm has no speakers of its own).
+    #[wasm_bindgen(js_name = audioCuesJson)]
+    pub fn audio_cues_json(&self) -> String {
+        crate::mixer::cues_json()
     }
 
     /// canvas を描画先にする。WebGPU / WebGL2 のどちらかが使えれば成功する。

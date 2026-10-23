@@ -15,6 +15,7 @@ mod fishcook;
 mod fps;
 mod measure;
 mod mixer;
+mod neon;
 mod netplay;
 mod novel;
 mod platformer;
@@ -46,6 +47,7 @@ use mixer::{
     cues_json_py, mixer_state_py, play_bgm_py, play_sfx_py, save_dir_py, set_group_volume_py,
     set_mute_py, set_save_dir_py, stop_bgm_py,
 };
+use neon::PyNeonRun;
 use netplay::PyLockstep;
 use novel::PyNovelSession;
 use platformer::PyPlatformerSession;
@@ -68,6 +70,7 @@ use physics::PyPhysicsWorld;
 #[pymodule]
 fn kagra_shared(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyWorldDoc>()?;
+    m.add_class::<PyNeonRun>()?;
     m.add_class::<PyWorldPlay>()?;
     m.add_class::<PyPuzzlePadSession>()?;
     m.add_class::<PyPuzzleSession>()?;

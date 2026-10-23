@@ -91,6 +91,8 @@ pub enum SceneKind {
     Collectathon,
     /// パッケージしたジャンル例。`WorldPlay` が dump JSON を進める。
     World,
+    /// Lumen flyer. Not a WorldPlay genre — `neon_run` owns the tick.
+    Neon,
 }
 
 #[derive(Debug)]
@@ -109,6 +111,8 @@ pub struct SharedSession {
     pub settings: Settings,
     /// `load_game_json` で入ったジャンル dump。`kind == World` のときだけ進む。
     pub world: Option<WorldPlay>,
+    /// `"genre": "neon_run"`. Kept off WorldPlay on purpose.
+    pub neon: Option<crate::neon_run::NeonRun>,
     pointers: Vec<PointerEvent>,
     pending_keys: Vec<KeyEvent>,
     /// このフレームで新しく触れた座標。`poll_pointers` の意味を変えずに
@@ -149,6 +153,7 @@ impl Default for SharedSession {
             },
             settings: Settings::default(),
             world: None,
+            neon: None,
             pointers: Vec::new(),
             pending_keys: Vec::new(),
             pending_taps: Vec::new(),
@@ -187,6 +192,20 @@ impl SharedSession {
 
     /// ジャンル dump を読み、シーンを `World` にする。タイトルのまま待つ。
     pub fn load_game_json(&mut self, json: &str) -> Result<(), String> {
+        if crate::neon_run::is_neon_dump(json) {
+            let run = crate::neon_run::NeonRun::from_json(json)?;
+            let dump = run.dump_json();
+            self.neon = Some(run);
+            self.world = None;
+            self.kind = SceneKind::Neon;
+            self.paused = false;
+            #[cfg(feature = "render")]
+            {
+                self.world_meshes = false;
+            }
+            self.playtest.snapshot_loaded(&dump);
+            return Ok(());
+        }
         let mut play = WorldPlay::from_json(json)?;
         play.load_progress();
         let dump = play.doc.to_json().unwrap_or_else(|_| json.to_string());
@@ -221,6 +240,14 @@ impl SharedSession {
             return;
         }
         self.playtest.record_pointer(ev);
+        if self.kind == SceneKind::Neon && matches!(ev.phase, PointerPhase::Begin) {
+            if let Some(neon) = self.neon.as_mut() {
+                let handled = neon.pointer(ev.x, ev.y, self.width, self.height);
+                if !handled && !neon.playing() && neon.phase_name() != "pause" {
+                    neon.confirm();
+                }
+            }
+        }
         if self.kind == SceneKind::World && matches!(ev.phase, PointerPhase::Begin) {
             if let Some(play) = self.world.as_mut() {
                 let handled = play.apply_flow_pointer(ev.x, ev.y, self.width, self.height);
@@ -233,6 +260,7 @@ impl SharedSession {
         if matches!(ev.phase, PointerPhase::Begin) {
             let isle_phase = self.isle.game.phase;
             match (self.kind, self.game.phase, isle_phase) {
+                (SceneKind::Neon, _, _) => {}
                 (SceneKind::Driving, GamePhase::Title | GamePhase::Complete, _)
                 | (SceneKind::Collectathon, _, GamePhase::Title | GamePhase::Complete) => {
                     self.start_game();
@@ -270,6 +298,13 @@ impl SharedSession {
 
     /// タイトル画面へ。デモの起動時用。
     pub fn show_title(&mut self) {
+        if self.kind == SceneKind::Neon {
+            if let Some(neon) = self.neon.as_mut() {
+                neon.show_title();
+            }
+            self.paused = false;
+            return;
+        }
         if self.kind == SceneKind::Collectathon {
             self.isle.show_title();
             self.paused = false;
@@ -288,8 +323,22 @@ impl SharedSession {
 
     /// 配送ラン、または Crest Isle を最初から開始する。
     pub fn start_game(&mut self) {
+        if self.kind == SceneKind::Neon {
+            if let Some(neon) = self.neon.as_mut() {
+                neon.confirm();
+            }
+            self.paused = false;
+            return;
+        }
         if self.kind == SceneKind::Collectathon {
             self.isle.start();
+            self.paused = false;
+            return;
+        }
+        if self.kind == SceneKind::World {
+            if let Some(play) = self.world.as_mut() {
+                play.confirm();
+            }
             self.paused = false;
             return;
         }
@@ -314,6 +363,11 @@ impl SharedSession {
     pub fn set_pad(&mut self, x: f32, y: f32) {
         self.pad.set_stick(x, y);
         self.pending_keys.extend(self.pad.drain_key_events());
+        if self.kind == SceneKind::Neon {
+            // Virtual pad +y is down the screen. Up climbs.
+            self.set_play_input(x, -y, false, false, false);
+            return;
+        }
         if self.kind == SceneKind::Collectathon {
             // 画面座標 +y 下。上（負の y）が島の奥（+Z を向いたカメラの前）。
             let jump = self.isle.input.jump;
@@ -337,6 +391,14 @@ impl SharedSession {
             return;
         }
         self.playtest.note_walk(lx, lz, jump, attack, dodge);
+        if self.kind == SceneKind::Neon {
+            if let Some(neon) = self.neon.as_mut() {
+                if neon.phase_name() == "play" {
+                    neon.set_steer(lx, lz, jump);
+                }
+            }
+            return;
+        }
         if self.kind == SceneKind::Collectathon {
             self.set_walk(lx, lz, jump);
             return;
@@ -490,6 +552,12 @@ impl SharedSession {
                     }
                     self.playtest.commit_walk(crate::scene::FIXED_DT);
                 }
+                SceneKind::Neon => {
+                    let _ = taps;
+                    if let Some(neon) = self.neon.as_mut() {
+                        neon.tick(crate::scene::FIXED_DT);
+                    }
+                }
             }
         }
         if self.playtest.wants_snapshot() {
@@ -502,7 +570,11 @@ impl SharedSession {
         if !self.playtest.wants_snapshot() {
             return;
         }
-        let dump = self.world.as_ref().and_then(|play| play.doc.to_json().ok());
+        let dump = if self.kind == SceneKind::Neon {
+            self.neon.as_ref().map(|neon| neon.dump_json())
+        } else {
+            self.world.as_ref().and_then(|play| play.doc.to_json().ok())
+        };
         let dump = dump.unwrap_or_else(|| self.stats_json());
         self.playtest.snapshot_dump(&dump);
     }
@@ -627,6 +699,11 @@ impl SharedSession {
                 .as_ref()
                 .map(|play| play.build_hud(self.width, self.height))
                 .unwrap_or_default(),
+            SceneKind::Neon => self
+                .neon
+                .as_ref()
+                .map(|neon| neon.hud(self.width, self.height))
+                .unwrap_or_default(),
         };
         self.playtest.append_hud(&mut list, self.width, self.height);
         list
@@ -653,7 +730,15 @@ impl SharedSession {
     }
 
     pub fn push_key(&mut self, name: &str, down: bool) -> bool {
-        self.playtest.on_key(name, down)
+        if self.playtest.on_key(name, down) {
+            return true;
+        }
+        if self.kind == SceneKind::Neon {
+            if let Some(neon) = self.neon.as_mut() {
+                return neon.on_key(name, down);
+            }
+        }
+        false
     }
 
     pub fn playtest_set_note(&mut self, note: &str) {
@@ -746,6 +831,27 @@ impl SharedSession {
 
     /// 現在のシーンを 1 枚描く。レンダラ未接続ならエラー。
     pub fn render(&mut self) -> Result<(), String> {
+        if self.kind == SceneKind::Neon {
+            let hud = self.draw_list();
+            let doc = self.neon.as_ref().map(|neon| neon.document().clone());
+            let mut renderer = self.renderer.take();
+            let result = match (renderer.as_mut(), doc.as_ref()) {
+                (Some(r), Some(doc)) => {
+                    if !self.world_meshes {
+                        r.clear_meshes();
+                    }
+                    let drawn = r.draw_world_doc_with_hud(doc, &hud);
+                    if drawn.is_ok() {
+                        self.world_meshes = true;
+                    }
+                    drawn
+                }
+                (None, _) => Err("no renderer attached".into()),
+                (Some(_), None) => Err("no neon run".into()),
+            };
+            self.renderer = renderer;
+            return result;
+        }
         if self.kind == SceneKind::World {
             let hud = self.draw_list();
             let mut renderer = self.renderer.take();
