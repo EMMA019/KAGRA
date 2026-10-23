@@ -11,7 +11,7 @@ Wasm and Android mean the shared runtime (`kagra-shared`, `wasm32` CI, Android A
 | Rank | Library | Why first | Effort | Where it runs |
 |---|---|---|---|---|
 | 1 | [puffin](#puffin) | Frame scopes for the profiler step. Headless dumps still need the budget object. | S | wasm and Android if `puffin_http` stays off |
-| 2 | [zune-jpeg + image-webp](#zune-jpeg-and-image-webp) | GLB and alias textures are PNG-only today. JPEG and WebP bytes fail decode. | S | wasm and Android (pure Rust, no rayon) |
+| 2 | [zune-jpeg + image-webp](#zune-jpeg-and-image-webp) | JPEG and WebP inside a GLB. JPEG is in via `image`'s `jpeg` feature. WebP is the follow-up. | S | wasm and Android (pure Rust, no rayon) |
 | 3 | [ktx2](#ktx2-and-basis-universal) read-only | Phone texture memory. Pre-encoded ETC2 / ASTC / BC, feature-detected. | M loader, L pipeline | wasm and Android. No basis-universal encoder in the engine |
 | 4 | [trimesh + pygltflib](#trimesh-and-pygltflib) | Agents can reject a bad GLB before a lavapipe shot. | S | desktop and CI only |
 | 5 | [pydantic + hypothesis](#pydantic) | World JSON stops silently ignoring bad fields. Sim tests get property checks. | S validator, M hypothesis | desktop and CI only |
@@ -27,7 +27,8 @@ Direct dependencies of `kagra-shared` (`kagra-shared/Cargo.toml`, locked in `Car
 | `ab_glyph` 0.2.32 | runtime | HUD glyphs. PixelMplus + Public Sans, rasterized to quads (`font.rs`). GPU-free, so wasm and Android match CI. |
 | `glam` 0.33.3 | runtime | Matrices and vectors. `default-features = false`, `std` on. |
 | `bytemuck` 1 | runtime | Pod vertex and uniform types. |
-| `png` 0.17.16 | runtime | The only image decoder and the screenshot encoder. |
+| `png` 0.17.16 | runtime | PNG decode and the screenshot encoder. |
+| `image` 0.25 | runtime | JPEG (`zune-jpeg`) and WebP (`image-webp`). Default features off, so rayon stays out. |
 | `serde` / `serde_json` 1 | runtime | World dumps and playtest JSON. |
 | `flate2` 1.1.9 | runtime | Playtest zlib. `rust_backend` only, so libz stays out. |
 | `once_cell` 1.19 | runtime | Embedded font cache. |
@@ -42,7 +43,7 @@ Direct dependencies of `kagra-shared` (`kagra-shared/Cargo.toml`, locked in `Car
 
 Hand-rolled stand-ins that a new crate would replace:
 
-- Image decode is `decode_png` in `gltf_load.rs`. Asset kinds list `.jpg`, `.jpeg`, and `.webp` (`assets.rs`), and those bytes still go through the PNG decoder.
+- Image decode is `decode_raster` in `gltf_load.rs`. PNG uses the `png` crate. JPEG and WebP use `image` with the `jpeg` and `webp` features.
 - Water and grass normals are a WGSL `hash21` / `fbm` in `shader3d.wgsl`. `island_height` / `overworld_height` are closed-form bumps, not a noise crate.
 - Audio levels live in `mixer.rs` with no `rodio` types. `playback.rs` opens `rodio` only behind the `playback` feature.
 - glTF mesh decode is `gltf_load.rs`. There is no `meshopt` decoder.
@@ -67,7 +68,7 @@ No import of `numpy`, `PIL`, `trimesh`, `pygltflib`, `pydantic`, `hypothesis`, `
 
 ## Open PRs that change this list
 
-Unmerged #149 (`cursor/gltf-pbr-2c16`) adds `image` 0.25 with `default-features = false` and feature `jpeg`, so a GLB JPEG can decode without rayon's default `image` features. WebP is still undecoded there. The pair below is the follow-up that covers both formats without pulling the whole `image` crate.
+`#149` added `image` 0.25 with `default-features = false` and feature `jpeg` (that feature is `zune-jpeg`). WebP is the same crate's `webp` feature, which is `image-webp`. Default features stay off so rayon does not return. PNG stays on the `png` crate.
 
 ## Candidates
 
@@ -81,11 +82,9 @@ Effort **S**. Pin the version in `Cargo.lock`. Add a `NOTICE` line.
 
 ### zune-jpeg and image-webp
 
-A GLB or a `Texture` alias can embed JPEG or WebP. Today `decode_png` returns an error and the mesh falls back to a flat color. `zune-jpeg` and `image-webp` are pure Rust decoders with no rayon and no C toolchain. Both build for wasm and Android. Keep PNG on the `png` crate.
+A GLB or a `Texture` alias can embed JPEG or WebP. `decode_raster` sends PNG to the `png` crate, JPEG to `image`/`zune-jpeg`, and a `RIFF`/`WEBP` header to `image`/`image-webp`. Both image features are pure Rust, with no rayon and no C toolchain, and they build for wasm and Android.
 
-Effort **S**: one decode branch in `gltf_load.rs`, a fixture JPEG and a fixture WebP, and a lavapipe shot that the albedo is not the clear color. `NOTICE` for both crates.
-
-`#149`'s `image` jpeg feature is a narrower step (JPEG only). Prefer this pair when that PR lands so WebP is covered and the `image` default feature set never comes back.
+Effort **S**. The WebP path is a magic-byte branch plus a 1×1 lossless fixture in the glTF loader tests. A lavapipe shot is optional once the CPU decode asserts the albedo texels.
 
 ### ktx2 and basis-universal
 
