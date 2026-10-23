@@ -93,6 +93,8 @@ pub enum SceneKind {
     World,
     /// Lumen flyer. Not a WorldPlay genre — `neon_run` owns the tick.
     Neon,
+    /// Neon Cat runner. Not a WorldPlay genre — `neon_cat` owns the tick.
+    NeonCat,
 }
 
 #[derive(Debug)]
@@ -113,6 +115,8 @@ pub struct SharedSession {
     pub world: Option<WorldPlay>,
     /// `"genre": "neon_run"`. Kept off WorldPlay on purpose.
     pub neon: Option<crate::neon_run::NeonRun>,
+    /// `"genre": "neon_cat"`. Kept off WorldPlay on purpose.
+    pub cat: Option<crate::neon_cat::NeonCat>,
     pointers: Vec<PointerEvent>,
     pending_keys: Vec<KeyEvent>,
     /// このフレームで新しく触れた座標。`poll_pointers` の意味を変えずに
@@ -130,6 +134,8 @@ pub struct SharedSession {
     /// World draws need `compile_meshes`, not the driving/isle list from attach.
     #[cfg(feature = "render")]
     world_meshes: bool,
+    /// HTML title / result card is the menu. Skip the in-canvas flow column.
+    external_menu: bool,
 }
 
 impl Default for SharedSession {
@@ -154,6 +160,7 @@ impl Default for SharedSession {
             settings: Settings::default(),
             world: None,
             neon: None,
+            cat: None,
             pointers: Vec::new(),
             pending_keys: Vec::new(),
             pending_taps: Vec::new(),
@@ -166,7 +173,18 @@ impl Default for SharedSession {
             isle_mesh_ids: None,
             #[cfg(feature = "render")]
             world_meshes: false,
+            external_menu: false,
         }
+    }
+}
+
+/// Neon Run / Neon Cat use `title` / `play` / `pause` / `result`.
+/// `FrameStats` only has the demo phases, which the preview page reads.
+fn flow_stats_phase(name: Option<&str>) -> GamePhase {
+    match name.unwrap_or("title") {
+        "play" | "pause" => GamePhase::Playing,
+        "result" => GamePhase::Complete,
+        _ => GamePhase::Title,
     }
 }
 
@@ -193,10 +211,26 @@ impl SharedSession {
     /// ジャンル dump を読み、シーンを `World` にする。タイトルのまま待つ。
     pub fn load_game_json(&mut self, json: &str) -> Result<(), String> {
         crate::world_doc::clear_runtime_asset_cache();
+        if crate::neon_cat::is_cat_dump(json) {
+            let run = crate::neon_cat::NeonCat::from_json(json)?;
+            let dump = run.dump_json();
+            self.cat = Some(run);
+            self.neon = None;
+            self.world = None;
+            self.kind = SceneKind::NeonCat;
+            self.paused = false;
+            #[cfg(feature = "render")]
+            {
+                self.world_meshes = false;
+            }
+            self.playtest.snapshot_loaded(&dump);
+            return Ok(());
+        }
         if crate::neon_run::is_neon_dump(json) {
             let run = crate::neon_run::NeonRun::from_json(json)?;
             let dump = run.dump_json();
             self.neon = Some(run);
+            self.cat = None;
             self.world = None;
             self.kind = SceneKind::Neon;
             self.paused = false;
@@ -208,6 +242,7 @@ impl SharedSession {
             return Ok(());
         }
         self.neon = None;
+        self.cat = None;
         let mut play = WorldPlay::from_json(json)?;
         play.load_progress();
         let dump = play.doc.to_json().unwrap_or_else(|_| json.to_string());
@@ -250,6 +285,14 @@ impl SharedSession {
                 }
             }
         }
+        if self.kind == SceneKind::NeonCat && matches!(ev.phase, PointerPhase::Begin) {
+            if let Some(cat) = self.cat.as_mut() {
+                let handled = cat.pointer(ev.x, ev.y, self.width, self.height);
+                if !handled && !cat.playing() && cat.phase_name() != "pause" {
+                    cat.confirm();
+                }
+            }
+        }
         if self.kind == SceneKind::World && matches!(ev.phase, PointerPhase::Begin) {
             if let Some(play) = self.world.as_mut() {
                 let handled = play.apply_flow_pointer(ev.x, ev.y, self.width, self.height);
@@ -262,7 +305,7 @@ impl SharedSession {
         if matches!(ev.phase, PointerPhase::Begin) {
             let isle_phase = self.isle.game.phase;
             match (self.kind, self.game.phase, isle_phase) {
-                (SceneKind::Neon, _, _) => {}
+                (SceneKind::Neon | SceneKind::NeonCat, _, _) => {}
                 (SceneKind::Driving, GamePhase::Title | GamePhase::Complete, _)
                 | (SceneKind::Collectathon, _, GamePhase::Title | GamePhase::Complete) => {
                     self.start_game();
@@ -307,6 +350,13 @@ impl SharedSession {
             self.paused = false;
             return;
         }
+        if self.kind == SceneKind::NeonCat {
+            if let Some(cat) = self.cat.as_mut() {
+                cat.show_title();
+            }
+            self.paused = false;
+            return;
+        }
         if self.kind == SceneKind::Collectathon {
             self.isle.show_title();
             self.paused = false;
@@ -328,6 +378,13 @@ impl SharedSession {
         if self.kind == SceneKind::Neon {
             if let Some(neon) = self.neon.as_mut() {
                 neon.confirm();
+            }
+            self.paused = false;
+            return;
+        }
+        if self.kind == SceneKind::NeonCat {
+            if let Some(cat) = self.cat.as_mut() {
+                cat.confirm();
             }
             self.paused = false;
             return;
@@ -365,8 +422,8 @@ impl SharedSession {
     pub fn set_pad(&mut self, x: f32, y: f32) {
         self.pad.set_stick(x, y);
         self.pending_keys.extend(self.pad.drain_key_events());
-        if self.kind == SceneKind::Neon {
-            // Virtual pad +y is down the screen. Up climbs.
+        if self.kind == SceneKind::Neon || self.kind == SceneKind::NeonCat {
+            // Virtual pad +y is down the screen. Up climbs / jumps.
             self.set_play_input(x, -y, false, false, false);
             return;
         }
@@ -397,6 +454,14 @@ impl SharedSession {
             if let Some(neon) = self.neon.as_mut() {
                 if neon.phase_name() == "play" {
                     neon.set_steer(lx, lz, jump);
+                }
+            }
+            return;
+        }
+        if self.kind == SceneKind::NeonCat {
+            if let Some(cat) = self.cat.as_mut() {
+                if cat.phase_name() == "play" {
+                    cat.set_steer(lx, lz, jump);
                 }
             }
             return;
@@ -560,6 +625,12 @@ impl SharedSession {
                         neon.tick(crate::scene::FIXED_DT);
                     }
                 }
+                SceneKind::NeonCat => {
+                    let _ = taps;
+                    if let Some(cat) = self.cat.as_mut() {
+                        cat.tick(crate::scene::FIXED_DT);
+                    }
+                }
             }
         }
         if self.playtest.wants_snapshot() {
@@ -574,6 +645,8 @@ impl SharedSession {
         }
         let dump = if self.kind == SceneKind::Neon {
             self.neon.as_ref().map(|neon| neon.dump_json())
+        } else if self.kind == SceneKind::NeonCat {
+            self.cat.as_ref().map(|cat| cat.dump_json())
         } else {
             self.world.as_ref().and_then(|play| play.doc.to_json().ok())
         };
@@ -642,7 +715,11 @@ impl SharedSession {
             } else {
                 GAME_TITLE
             },
-            game_phase: if packaged {
+            game_phase: if self.kind == SceneKind::Neon {
+                flow_stats_phase(self.neon.as_ref().map(|neon| neon.phase_name()))
+            } else if self.kind == SceneKind::NeonCat {
+                flow_stats_phase(self.cat.as_ref().map(|cat| cat.phase_name()))
+            } else if packaged {
                 play.map(|p| p.game.phase).unwrap_or(self.game.phase)
             } else if isle {
                 self.isle.game.phase
@@ -706,6 +783,11 @@ impl SharedSession {
                 .as_ref()
                 .map(|neon| neon.hud(self.width, self.height))
                 .unwrap_or_default(),
+            SceneKind::NeonCat => self
+                .cat
+                .as_ref()
+                .map(|cat| cat.paint_hud(self.width, self.height, !self.external_menu))
+                .unwrap_or_default(),
         };
         self.playtest.append_hud(&mut list, self.width, self.height);
         list
@@ -720,6 +802,19 @@ impl SharedSession {
 
     pub fn set_playtest_external_chrome(&mut self, on: bool) {
         self.playtest.set_external_chrome(on);
+    }
+
+    /// The host draws title and result. Neon Cat then skips the in-canvas
+    /// CRASH / RETRY / TITLE column so it cannot show through the page.
+    pub fn set_external_menu(&mut self, on: bool) {
+        self.external_menu = on;
+    }
+
+    /// Neon Cat `?debug=1`. Draws kill boxes. Other scenes ignore it.
+    pub fn set_debug(&mut self, on: bool) {
+        if let Some(cat) = self.cat.as_mut() {
+            cat.set_debug(on);
+        }
     }
 
     pub fn set_playtest_device(&mut self, label: &str, lang: &str) {
@@ -738,6 +833,11 @@ impl SharedSession {
         if self.kind == SceneKind::Neon {
             if let Some(neon) = self.neon.as_mut() {
                 return neon.on_key(name, down);
+            }
+        }
+        if self.kind == SceneKind::NeonCat {
+            if let Some(cat) = self.cat.as_mut() {
+                return cat.on_key(name, down);
             }
         }
         false
@@ -843,9 +943,17 @@ impl SharedSession {
 
     /// 現在のシーンを 1 枚描く。レンダラ未接続ならエラー。
     pub fn render(&mut self) -> Result<(), String> {
-        if self.kind == SceneKind::Neon {
+        if matches!(self.kind, SceneKind::Neon | SceneKind::NeonCat) {
             let hud = self.draw_list();
-            let doc = self.neon.as_ref().map(|neon| neon.document().clone());
+            let doc = match self.kind {
+                SceneKind::NeonCat => self.cat.as_ref().map(|cat| cat.document().clone()),
+                _ => self.neon.as_ref().map(|neon| neon.document().clone()),
+            };
+            let missing = if self.kind == SceneKind::NeonCat {
+                "no neon cat"
+            } else {
+                "no neon run"
+            };
             let mut renderer = self.renderer.take();
             let result = match (renderer.as_mut(), doc.as_ref()) {
                 (Some(r), Some(doc)) => {
@@ -859,7 +967,7 @@ impl SharedSession {
                     drawn
                 }
                 (None, _) => Err("no renderer attached".into()),
-                (Some(_), None) => Err("no neon run".into()),
+                (Some(_), None) => Err(missing.into()),
             };
             self.renderer = renderer;
             return result;

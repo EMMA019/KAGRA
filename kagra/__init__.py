@@ -69,6 +69,7 @@ try:
         FightSession,
         FishCookSession,
         FpsSession,
+        NeonCat,
         NeonRun,
         NovelSession,
         PlatformerSession,
@@ -94,6 +95,7 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
             FightSession,
             FishCookSession,
             FpsSession,
+            NeonCat,
             NeonRun,
             NovelSession,
             PlatformerSession,
@@ -118,6 +120,7 @@ except ImportError:  # pragma: no cover — `cd kagra-shared && maturin develop`
         FightSession = None  # type: ignore[assignment]
         PuzzlePadSession = None  # type: ignore[assignment]
         PuzzleSession = None  # type: ignore[assignment]
+        NeonCat = None  # type: ignore[assignment]
         NeonRun = None  # type: ignore[assignment]
         NovelSession = None  # type: ignore[assignment]
         PlatformerSession = None  # type: ignore[assignment]
@@ -162,6 +165,7 @@ __all__ = [
     "Emitter",
     "FishCookSession",
     "Juice",
+    "NeonCat",
     "NeonRun",
     "Trail",
     "fat_line",

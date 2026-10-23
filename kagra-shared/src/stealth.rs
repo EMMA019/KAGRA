@@ -211,6 +211,7 @@ pub fn place_room_camera(doc: &mut WorldDoc) {
         position: eye,
         target,
         fov: 48.0,
+        roll: 0.0,
     });
 }
 

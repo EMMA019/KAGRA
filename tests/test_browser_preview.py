@@ -67,6 +67,18 @@ def test_preview_links_every_browser_genre(tmp_path: Path):
     assert "setPlayInput" in play
     assert "data-orient" in play
     assert '"neon_run"' in play
+    assert "startGame" in play
+    assert "showTitle" in play
+    assert "setExternalMenu" in play
+    assert "setDebug" in play
+    assert 'id="death"' in play
+    assert 'params.get("debug")' in play
+    assert 'params.get("quality")' in play
+    assert 'world.quality = "mobile"' in play
+    assert 'params.get("cam")' in play
+    assert 'world.cam = cam' in play
+    assert "pointer-events: none" in play
+    assert 'z-index: 4' in play
     assert (tmp_path / "site" / ".nojekyll").is_file()
     knight = (
         tmp_path
@@ -132,6 +144,8 @@ def test_pages_and_previews_share_one_tree():
     assert "bash scripts/build_wasm.sh" in preview_yml
     assert "kagra-pages" in preview_yml
     assert "github.event.pull_request.merged == false" in preview_yml
+    assert "completed cancelled" in preview_yml
+    assert "was superseded" in preview_yml
     deploy_yml = (ROOT / ".github/workflows/pages-deploy.yml").read_text(encoding="utf-8")
     assert "site/play.html" in deploy_yml
     assert "site/pkg/kagra_shared_bg.wasm" in deploy_yml

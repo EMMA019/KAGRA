@@ -165,6 +165,7 @@ pub fn place_stage_camera(doc: &mut WorldDoc) {
             position: eye,
             target,
             fov,
+            roll: 0.0,
         });
     }
 }

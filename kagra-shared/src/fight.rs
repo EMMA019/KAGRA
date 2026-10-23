@@ -235,6 +235,7 @@ pub fn place_dual_camera(doc: &mut WorldDoc) {
             position: eye,
             target,
             fov,
+            roll: 0.0,
         });
     }
 }

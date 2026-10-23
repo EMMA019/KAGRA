@@ -492,6 +492,19 @@
           "maxItems": 3,
           "items": { "type": "number" },
           "description": "Draw scale. Omit = (1, 1, 1). Squash and stretch write this on the picture dump. The walker sim does not read it."
+        },
+        "color": {
+          "type": ["array", "null"],
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "type": "integer", "minimum": 0, "maximum": 255 },
+          "description": "sRGB multiply, including a textured glTF. Omit keeps the albedo (or the capsule tint). Dead / hurt still win."
+        },
+        "roughness": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "PBR roughness. Omit keeps 0.30."
         }
       }
     },
@@ -531,6 +544,10 @@
         "position": { "$ref": "#/$defs/vec3" },
         "target": { "$ref": "#/$defs/vec3" },
         "fov": { "type": "number" },
+        "roll": {
+          "type": "number",
+          "description": "Dutch angle in radians around the look axis. 0 keeps world up. Omitted from dumps when flat. from_json defaults it to 0."
+        },
         "screen_right": {
           "$ref": "#/$defs/vec3",
           "description": "Derived. World-space unit vector toward the right edge of this camera's frame (forward × up). Present on to_json dumps; from_json ignores it."

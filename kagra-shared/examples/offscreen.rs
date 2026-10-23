@@ -12,6 +12,7 @@
 //! cargo run -p kagra-shared --features render --example offscreen -- 640 360 world.png world path/to/dump.json
 //! cargo run -p kagra-shared --features render --example offscreen -- 1280 720 overlay.png playtest
 //! cargo run -p kagra-shared --features render --example offscreen -- 390 844 lumen.png neon
+//! cargo run -p kagra-shared --features render --example offscreen -- 1280 720 cat.png cat play
 //! ```
 //!
 //! `python -m kagra.render_world dump.json out.png` shells to this example (or an
@@ -41,6 +42,8 @@ fn main() -> Result<(), String> {
     let world = mode == "world";
     let flow = mode == "flow";
     let neon = mode == "neon";
+    let cat = mode == "cat";
+    let mut phone_unorm = false;
 
     if mode == "playtest" {
         return render_playtest(width, height, &out);
@@ -113,6 +116,80 @@ fn main() -> Result<(), String> {
             session.request_frame();
         }
         println!("lumen frames={frames} boost={boost}");
+    } else if cat {
+        let which = args.next().unwrap_or_else(|| "play".into());
+        let frames: u32 =
+            args.next()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(match which.as_str() {
+                    "title" => 90,
+                    "crash" => 220,
+                    "flat" => 200,
+                    "debug" => 130,
+                    _ => 160,
+                });
+        let mut quality: Option<String> = None;
+        let mut classic = false;
+        for arg in args.by_ref() {
+            match arg.as_str() {
+                "low" | "mobile" | "high" => quality = Some(arg),
+                "classic" => classic = true,
+                _ => {}
+            }
+        }
+        let mut world = include_str!("../tests/fixtures/neon_cat_world.json").to_string();
+        if quality.is_some() || classic {
+            let mut head = String::from("{");
+            if let Some(tier) = quality.as_deref() {
+                head.push_str(&format!("\"quality\":\"{tier}\","));
+                phone_unorm = true;
+            }
+            if classic {
+                head.push_str("\"cam\":\"classic\",");
+            }
+            world = world.replacen('{', &head, 1);
+        }
+        session.load_game_json(&world)?;
+        if which == "debug" {
+            session.set_debug(true);
+        }
+        if which != "title" {
+            session.start_game();
+        }
+        for _ in 0..frames {
+            match which.as_str() {
+                "crash" => session.set_play_input(1.0, 0.0, false, false, false),
+                "flat" | "debug" => session.set_play_input(0.0, 0.0, false, false, false),
+                "play" => {
+                    let steer = session.cat.as_ref().map(|run| run.script_steer());
+                    if let Some((lx, jump)) = steer {
+                        session.set_play_input(lx, 0.0, jump, false, false);
+                    }
+                }
+                _ => {}
+            }
+            session.request_frame();
+        }
+        let phase = session
+            .cat
+            .as_ref()
+            .map(|run| run.phase_name())
+            .unwrap_or("missing");
+        let score = session.cat.as_ref().map(|run| run.score()).unwrap_or(0);
+        let x = session.cat.as_ref().map(|run| run.x()).unwrap_or(0.0);
+        let death = session
+            .cat
+            .as_ref()
+            .map(|run| run.death().to_string())
+            .unwrap_or_default();
+        println!(
+            "neon cat {which} frames={frames} phase={phase} score={score} x={x:.2} death={death} quality={}",
+            session
+                .cat
+                .as_ref()
+                .and_then(|run| run.document().quality.clone())
+                .unwrap_or_else(|| "legacy".into())
+        );
     } else if flow {
         let which = args.next().unwrap_or_else(|| "title".into());
         let json = include_str!("../tests/fixtures/platformer_world.json");
@@ -191,9 +268,16 @@ fn main() -> Result<(), String> {
         );
     }
 
-    let renderer = pollster::block_on(Renderer::new_offscreen(width, height))?;
+    let renderer = if phone_unorm {
+        pollster::block_on(Renderer::new_phone_offscreen(width, height))?
+    } else {
+        pollster::block_on(Renderer::new_offscreen(width, height))?
+    };
     session.attach_renderer(renderer);
     session.render()?;
+    if cat {
+        println!("picture {}", session.picture_status());
+    }
 
     let pixels = session.render_readback()?;
     write_png(&out, width, height, &pixels)?;

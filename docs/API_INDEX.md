@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **96**
+エントリ数: **97**
 
 棚の**手前**は shared wgpu 30（WorldDoc / WorldPlay / gameloop）。
 棚の**奥**は再エクスポートの余り。旧 RendererV2 API は `old/`。
@@ -48,6 +48,7 @@
 | `mouse_down` | `export mouse_down  (from kagra.gameloop)` |
 | `mouse_pos` | `export mouse_pos  (from kagra.gameloop)` |
 | `move_range` | `export move_range  (from kagra.path)` |
+| `NeonCat` | `class NeonCat  (from kagra.kagra_shared)` |
 | `NeonRun` | `class NeonRun  (from kagra.kagra_shared)` |
 | `NovelSession` | `class NovelSession  (from kagra.kagra_shared)` |
 | `open_world_height` | `export open_world_height  (from kagra.land)` |

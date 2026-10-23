@@ -85,6 +85,8 @@ scratch/
 !assets/bar/**/*.png
 !assets/bar/**/*.json
 *.jpg
+# Kenney colormap PNGs embedded into GLBs. Kept loose so fetch can re-embed.
+!assets/models/**/*.png
 # Relic Run (and future example) CC0 textures / Kenney colormap
 !examples/assets/
 !examples/assets/**/

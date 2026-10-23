@@ -379,6 +379,7 @@ pub fn place_eye_camera(doc: &mut WorldDoc, look_yaw: f32, look_pitch: f32) {
             position: origin.to_array(),
             target: target.to_array(),
             fov,
+            roll: 0.0,
         });
     }
 }

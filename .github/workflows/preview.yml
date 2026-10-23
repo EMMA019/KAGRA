@@ -177,14 +177,20 @@ jobs:
           found=""
           for i in $(seq 1 40); do
             if [ -z "$found" ]; then
-              found=$(gh run list --workflow pages-deploy.yml --limit 10 \
+              # Newest first. GitHub keeps one pending kagra-pages run and
+              # cancels the previous pending one. That cancellation is not a
+              # failed tree: skip it and wait for a run that finishes.
+              found=$(gh run list --workflow pages-deploy.yml --limit 20 \
                 --json databaseId,createdAt,headBranch,status,conclusion \
-                --jq '.[] | "\(.createdAt) \(.databaseId) \(.headBranch)"' \
-                | while read -r created id branch; do
+                --jq '.[] | "\(.createdAt) \(.databaseId) \(.headBranch) \(.status) \(.conclusion // "")"' \
+                | while read -r created id branch status conclusion; do
                     [ "$branch" = "master" ] || continue
                     epoch=$(date -u -d "$created" +%s)
                     # Runner clocks can sit a little ahead of the API timestamp.
                     if [ "$epoch" -ge $((dispatch_epoch - 180)) ]; then
+                      if [ "$status" = "completed" ] && [ "$conclusion" = "cancelled" ]; then
+                        continue
+                      fi
                       echo "$id"
                       break
                     fi
@@ -195,6 +201,10 @@ jobs:
               echo "pages-deploy ${found} ${status}"
               case "$status" in
                 "completed success") break ;;
+                "completed cancelled")
+                  echo "pages-deploy ${found} was superseded; waiting for the next one"
+                  found=""
+                  ;;
                 completed*)
                   echo "Pages deploy failed: ${status}" >&2
                   gh run view "$found" --log-failed || true

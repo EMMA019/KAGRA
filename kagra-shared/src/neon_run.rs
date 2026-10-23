@@ -827,6 +827,7 @@ impl NeonRun {
             position: eye,
             target,
             fov: self.chase_fov(),
+            roll: 0.0,
         });
         // Slot 0 is the sun shadow. It must sit behind the camera: a spot
         // parked on the eye puts the shadow frustum through the ribs and

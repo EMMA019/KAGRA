@@ -387,6 +387,30 @@ impl Renderer {
         Self::new_offscreen_format(width, height, wgpu::TextureFormat::Rgba8UnormSrgb).await
     }
 
+    /// Phone WebGPU canvas: an 8-bit frame and an 8-bit target, even when the
+    /// adapter can filter `Rgba16Float`.
+    pub async fn new_phone_offscreen(width: u32, height: u32) -> Result<Self, String> {
+        let instance = new_instance().await;
+        let (adapter, device, queue) = request_device(&instance, None).await?;
+        let (width, height) = (
+            width.clamp(1, MAX_TEXTURE_SIDE),
+            height.clamp(1, MAX_TEXTURE_SIDE),
+        );
+        let format = wgpu::TextureFormat::Rgba8Unorm;
+        let texture = create_offscreen_texture(&device, format, width, height);
+        let backend = adapter.get_info().backend.to_str().to_string();
+        Ok(Self::assemble(
+            device,
+            queue,
+            format,
+            width,
+            height,
+            Target::Offscreen { texture },
+            false,
+            backend,
+        ))
+    }
+
     /// Offscreen target of an explicit format. sRGB encodes on store. Unorm
     /// encodes in the composite shader. Tests use both to lock one OETF.
     async fn new_offscreen_format(
@@ -2652,6 +2676,7 @@ impl Renderer {
                 anim_blend,
                 overlay_bones,
                 overlay_weight,
+                anim,
                 clip_name,
                 fade_from,
                 fade_from_clip,
@@ -2677,6 +2702,7 @@ impl Renderer {
                 anim_blend,
                 overlay_bones,
                 overlay_weight,
+                anim,
                 clip_name,
                 fade_from,
                 fade_from_clip,
@@ -4751,6 +4777,7 @@ mod tests {
             position: [0.0, 0.2, 3.2],
             target: [0.0, 0.0, 0.0],
             fov: 50.0,
+            roll: 0.0,
         });
         doc.lines.push(crate::strokes::FatLine {
             id: "bar".into(),

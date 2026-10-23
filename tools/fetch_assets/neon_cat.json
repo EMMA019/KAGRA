@@ -1,0 +1,84 @@
+{
+  "packs": [
+    {
+      "id": "kenney-cube-pets",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "credit": "Kenney — Cube Pets",
+      "source_url": "https://kenney.nl/assets/cube-pets",
+      "download_url": "https://kenney.nl/media/pages/assets/cube-pets/44e58e945f-1774520254/kenney_cube-pets_1.0.zip",
+      "license_file": "License.txt",
+      "dest": "assets/models/kenney/cube-pets",
+      "files": [
+        {
+          "zip": "Models/GLB format/animal-cat.glb",
+          "out": "animal-cat.glb",
+          "embed_images": true
+        },
+        {
+          "zip": "Models/GLB format/Textures/colormap.png",
+          "out": "Textures/colormap.png"
+        }
+      ]
+    },
+    {
+      "id": "kenney-platformer-kit",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "credit": "Kenney — Platformer Kit",
+      "source_url": "https://kenney.nl/assets/platformer-kit",
+      "download_url": "https://kenney.nl/media/pages/assets/platformer-kit/1585cf62b4-1775122253/kenney_platformer-kit.zip",
+      "license_file": "License.txt",
+      "dest": "assets/models/kenney/platformer-kit",
+      "files": [
+        {
+          "zip": "Models/GLB format/crate.glb",
+          "out": "crate.glb",
+          "embed_images": true
+        },
+        {
+          "zip": "Models/GLB format/barrel.glb",
+          "out": "barrel.glb",
+          "embed_images": true
+        },
+        {
+          "zip": "Models/GLB format/Textures/colormap.png",
+          "out": "Textures/colormap.png"
+        }
+      ]
+    },
+    {
+      "id": "kenney-racing-kit",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "credit": "Kenney — Racing Kit",
+      "source_url": "https://kenney.nl/assets/racing-kit",
+      "download_url": "https://kenney.nl/media/pages/assets/racing-kit/933b8fd9fd-1677580949/kenney_racing-kit.zip",
+      "license_file": "License.txt",
+      "dest": "assets/models/kenney/racing-kit",
+      "files": [
+        {
+          "zip": "Models/GLTF format/overheadRound.glb",
+          "out": "overheadRound.glb",
+          "seat_origin": true
+        },
+        {
+          "zip": "Models/GLTF format/barrierRed.glb",
+          "out": "barrierRed.glb",
+          "seat_origin": true
+        }
+      ]
+    },
+    {
+      "id": "quaternius-modular-dungeons",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "credit": "Quaternius — Modular Dungeons",
+      "source_url": "https://quaternius.com/",
+      "dest": "assets/models/quaternius/modular-dungeons-pack",
+      "files": [
+        {"out": "Arch.glb", "check_only": true}
+      ]
+    }
+  ]
+}

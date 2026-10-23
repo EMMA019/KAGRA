@@ -619,6 +619,13 @@ pub struct WorldWalker {
     /// dump; the walker sim does not read it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scale: Option<[f32; 3]>,
+    /// sRGB multiply, including a textured glTF. None keeps the albedo
+    /// (or the capsule tint). Dead / hurt still win.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<[u32; 3]>,
+    /// PBR roughness. None keeps the historical 0.30 satin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roughness: Option<f32>,
 }
 
 fn default_idle_anim() -> String {
@@ -678,6 +685,10 @@ pub struct WorldCamera {
     pub target: [f32; 3],
     #[serde(default = "default_fov")]
     pub fov: f32,
+    /// Dutch angle around the look axis, radians. Zero keeps world up.
+    /// Omitted from dumps when it is flat. Steering does not read this.
+    #[serde(default)]
+    pub roll: f32,
 }
 
 /// One sentence an agent can read without guessing which world axis is which
@@ -693,8 +704,34 @@ struct WorldCameraDump<'a> {
     position: [f32; 3],
     target: [f32; 3],
     fov: f32,
+    #[serde(skip_serializing_if = "roll_is_flat")]
+    roll: f32,
     screen_right: [f32; 3],
     screen_left: [f32; 3],
+}
+
+fn roll_is_flat(roll: &f32) -> bool {
+    roll.abs() < 1e-5
+}
+
+/// World up, spun around the look axis. `roll` 0 is exactly +Y.
+fn rolled_up(eye: Vec3, target: Vec3, roll: f32) -> Vec3 {
+    if roll.abs() < 1e-6 {
+        return Vec3::Y;
+    }
+    let mut forward = target - eye;
+    if forward.length_squared() < 1e-8 {
+        return Vec3::Y;
+    }
+    forward = forward.normalize();
+    let up = Vec3::Y;
+    let (sin, cos) = roll.sin_cos();
+    let spun = up * cos + forward.cross(up) * sin + forward * forward.dot(up) * (1.0 - cos);
+    if spun.length_squared() < 1e-8 {
+        Vec3::Y
+    } else {
+        spun.normalize()
+    }
 }
 
 fn json_axis(v: f32) -> f32 {
@@ -712,10 +749,9 @@ fn json_vec3(v: Vec3) -> [f32; 3] {
 
 impl Serialize for WorldCamera {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let right = crate::scene3d::screen_right(
-            Vec3::from_array(self.position),
-            Vec3::from_array(self.target),
-        );
+        let eye = Vec3::from_array(self.position);
+        let target = Vec3::from_array(self.target);
+        let right = crate::scene3d::screen_basis(eye, target, rolled_up(eye, target, self.roll)).1;
         WorldCameraDump {
             id: &self.id,
             kind: &self.kind,
@@ -723,6 +759,7 @@ impl Serialize for WorldCamera {
             position: self.position,
             target: self.target,
             fov: self.fov,
+            roll: self.roll,
             screen_right: json_vec3(right),
             screen_left: json_vec3(-right),
         }
@@ -1303,22 +1340,26 @@ impl WorldDoc {
                 [70, 74, 82, 255]
             } else if hurt {
                 [220, 64, 64, 255]
+            } else if let Some(tint) = walk.color {
+                [
+                    tint[0].min(255) as u8,
+                    tint[1].min(255) as u8,
+                    tint[2].min(255) as u8,
+                    255,
+                ]
             } else {
                 [62, 176, 184, 255]
             };
+            let walker_rough = walk.roughness.unwrap_or(0.30).clamp(0.04, 1.0);
             if let Some(meshes) = walker_gltf_ids.get(&walk.id) {
                 let model = Mat4::from_scale_rotation_translation(sc, yaw, pos);
-                let col = if walker_gltf_spec(walk)
+                let col = if dead || hurt || walk.color.is_some() {
+                    body_col
+                } else if walker_gltf_spec(walk)
                     .map(walker_spec_has_albedo)
                     .unwrap_or(false)
                 {
-                    if dead {
-                        [70, 74, 82, 255]
-                    } else if hurt {
-                        [220, 64, 64, 255]
-                    } else {
-                        [255, 255, 255, 255]
-                    }
+                    [255, 255, 255, 255]
                 } else {
                     body_col
                 };
@@ -1344,7 +1385,7 @@ impl WorldDoc {
                             continue;
                         }
                     }
-                    b.push_pbr(mesh, model, col, mat, 0.08, 0.30);
+                    b.push_pbr(mesh, model, col, mat, 0.08, walker_rough);
                 }
                 continue;
             }
@@ -1403,10 +1444,12 @@ impl WorldDoc {
 
     fn draw_camera(&self) -> Camera {
         if let Some(cam) = self.cameras.first() {
+            let eye = Vec3::from_array(cam.position);
+            let target = Vec3::from_array(cam.target);
             return Camera {
-                eye: Vec3::from_array(cam.position),
-                target: Vec3::from_array(cam.target),
-                up: Vec3::Y,
+                eye,
+                target,
+                up: rolled_up(eye, target, cam.roll),
                 fov_y: cam.fov.to_radians(),
                 near: 0.2,
                 far: 400.0,
@@ -1648,6 +1691,7 @@ impl WorldDoc {
                     anim_blend,
                     overlay_bones,
                     overlay_weight,
+                    anim,
                     clip_name,
                     fade_from,
                     fade_from_clip,
@@ -1666,6 +1710,7 @@ impl WorldDoc {
                         anim_blend: *anim_blend,
                         overlay_bones: overlay_bones.clone(),
                         overlay_weight: *overlay_weight,
+                        anim: anim.clone(),
                         clip_name: clip_name.clone(),
                         fade_from: fade_from.clone(),
                         fade_from_clip: *fade_from_clip,
@@ -1800,6 +1845,7 @@ impl WorldDoc {
                         anim_blend: walk.anim_blend,
                         overlay_bones: walk.overlay_bones.clone(),
                         overlay_weight: walk.overlay_weight,
+                        anim: walk.anim.clone(),
                         clip_name: walk.clip_name.clone(),
                         fade_from: walk.fade_from.clone(),
                         fade_from_clip: walk.fade_from_clip,
@@ -2121,6 +2167,7 @@ fn push_tree(
     );
 }
 
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum GltfSlot {
     Rest(String),
     Skinned {
@@ -2136,6 +2183,7 @@ pub(crate) enum GltfSlot {
         anim_blend: f32,
         overlay_bones: HashMap<String, [f32; 4]>,
         overlay_weight: f32,
+        anim: String,
         clip_name: Option<String>,
         fade_from: Option<String>,
         fade_from_clip: f32,
@@ -2653,6 +2701,20 @@ fn existing_asset_path(spec: &str) -> Option<PathBuf> {
     crate::assets::resolve_asset(base)
 }
 
+/// Bare `crate.glb` / `cube` is the embedded unit cube (Crest, puzzles).
+/// A path such as `assets/.../crate.glb` is a real file and must not take
+/// that alias, or the sim collides with a mesh the screen never shows.
+fn bare_primitive_alias(spec: &str) -> bool {
+    let spec = spec.trim();
+    if spec.contains('/') || spec.contains('\\') {
+        return false;
+    }
+    matches!(
+        spec.to_ascii_lowercase().as_str(),
+        "cube.glb" | "cube.gltf" | "crate.glb" | "crate.gltf" | "cube"
+    )
+}
+
 fn split_mesh_selector(spec: &str) -> (&str, Option<usize>) {
     if let Some((base, frag)) = spec.split_once('#') {
         if let Ok(idx) = frag.trim().parse::<usize>() {
@@ -2698,15 +2760,7 @@ fn probe_walker_asset(spec: &str) -> Result<(), String> {
     {
         return Ok(());
     }
-    let lower = spec.to_ascii_lowercase();
-    let stem = Path::new(&lower)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(lower.as_str());
-    if matches!(
-        stem,
-        "cube.glb" | "cube.gltf" | "crate.glb" | "crate.gltf" | "cube"
-    ) {
+    if bare_primitive_alias(spec) {
         return Ok(());
     }
     let path = existing_asset_path(spec)
@@ -2753,21 +2807,13 @@ fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
     if spec.starts_with('{') {
         return mesh_from_embedded_gltf(spec).ok();
     }
-    let lower = spec.to_ascii_lowercase();
-    let stem = Path::new(&lower)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(lower.as_str());
     if is_walk_skinned_spec(spec) {
         return mesh_from_embedded_gltf(&walk_skinned_gltf()).ok();
     }
     if is_walk_vrm_spec(spec) {
         return mesh_from_glb(&walk_skinned_vrm()).ok();
     }
-    if matches!(
-        stem,
-        "cube.glb" | "cube.gltf" | "crate.glb" | "crate.gltf" | "cube"
-    ) {
+    if bare_primitive_alias(spec) {
         return mesh_from_embedded_gltf(&unit_cube_gltf()).ok();
     }
     let (base_spec, mesh_sel) = split_mesh_selector(spec);
@@ -2892,15 +2938,7 @@ fn load_skinned_parts_uncached(spec: &str) -> Option<Vec<crate::gltf_load::Skinn
     if is_tpose_humanoid_spec(spec) {
         return skinned_tpose_humanoid().ok().map(|s| vec![s]);
     }
-    let lower = spec.to_ascii_lowercase();
-    let stem = Path::new(&lower)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(lower.as_str());
-    if matches!(
-        stem,
-        "cube.glb" | "cube.gltf" | "crate.glb" | "crate.gltf" | "cube"
-    ) {
+    if bare_primitive_alias(spec) {
         return skinned_from_embedded_gltf(&unit_cube_gltf())
             .ok()
             .map(|s| vec![s]);
@@ -2933,6 +2971,11 @@ fn load_skinned_parts_uncached(spec: &str) -> Option<Vec<crate::gltf_load::Skinn
             }
         }
     }
+    let lower = spec.to_ascii_lowercase();
+    let stem = Path::new(&lower)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(lower.as_str());
     if is_emma_vrm_stem(stem)
         || lower.ends_with(".vrm")
         || lower.ends_with(".gltf")
@@ -4441,6 +4484,7 @@ mod tests {
                 position: [0.0, 4.0, 8.0],
                 target: [0.0, 1.0, 0.0],
                 fov: 54.0,
+                roll: 0.0,
             }],
             heightfield: Some(WorldHeightfield {
                 fn_name: Some("open_world_height".into()),
@@ -4505,6 +4549,7 @@ mod tests {
                 position: [0.0, 4.0, 0.0],
                 target: [0.0, 1.0, 0.0],
                 fov: 54.0,
+                roll: 0.0,
             }],
             heightfield: Some(WorldHeightfield {
                 lod_radius: Some(10.0),

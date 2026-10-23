@@ -183,6 +183,14 @@ impl WasmSession {
                 .map(|neon| neon.state_json())
                 .unwrap_or_else(|| "{}".into());
         }
+        if self.inner.kind == crate::session::SceneKind::NeonCat {
+            return self
+                .inner
+                .cat
+                .as_ref()
+                .map(|cat| cat.state_json())
+                .unwrap_or_else(|| "{}".into());
+        }
         if self.inner.kind == crate::session::SceneKind::Collectathon {
             serde_json::to_string(&self.inner.isle.game).unwrap_or_else(|_| "{}".into())
         } else {
@@ -275,6 +283,18 @@ impl WasmSession {
     #[wasm_bindgen(js_name = setPlaytestExternalChrome)]
     pub fn set_playtest_external_chrome(&mut self, on: bool) {
         self.inner.set_playtest_external_chrome(on);
+    }
+
+    /// HTML owns the title and result card. Hides the in-canvas flow column.
+    #[wasm_bindgen(js_name = setExternalMenu)]
+    pub fn set_external_menu(&mut self, on: bool) {
+        self.inner.set_external_menu(on);
+    }
+
+    /// Neon Cat hitbox cages. The page turns this on for `?debug=1`.
+    #[wasm_bindgen(js_name = setDebug)]
+    pub fn set_debug(&mut self, on: bool) {
+        self.inner.set_debug(on);
     }
 
     #[wasm_bindgen(js_name = setPlaytestDevice)]

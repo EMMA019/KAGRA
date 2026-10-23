@@ -130,6 +130,7 @@ pub fn place_stall_camera(doc: &mut WorldDoc) {
             position: eye,
             target,
             fov,
+            roll: 0.0,
         });
     }
 }

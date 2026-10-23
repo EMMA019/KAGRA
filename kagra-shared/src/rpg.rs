@@ -619,6 +619,7 @@ fn ensure_indoor_lights(doc: &mut WorldDoc) {
             position: [0.0, 5.1, -12.2],
             target: [0.0, 1.25, 0.0],
             fov: 54.0,
+            roll: 0.0,
         });
     }
 }
