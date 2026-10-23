@@ -26,14 +26,16 @@ struct Globals {
     cascade1: mat4x4<f32>,
     cascade2: mat4x4<f32>,
     // x = shadow radius. 1 = the historical 3x3 PCF. Larger = a wider tent.
-    // y > 0.5: this pass writes an unorm swapchain (composite cannot sample
-    // the frame). present_rgb applies exposure, ACES, and one sRGB OETF.
-    // WebGPU cannot sample an Rgba16Float frame, and storing HDR into unorm
-    // would clamp neon to white before that grade. On that path the post
-    // graph does not run. z = camera near, w = camera far, for the HDR depth
-    // prepass only. Shading does not read z or w.
+    // y > 0.5: this pass writes the unorm swapchain. present_rgb applies
+    // exposure, ACES, and one sRGB OETF. A separate Rgba8Unorm frame (y = 0)
+    // is the WebGPU path when SSAO is on: composite grades that frame once.
+    // Sampling Rgba16Float stays off. z = camera near, w = camera far.
+    // Shading does not read z or w.
     shadow: vec4<f32>,
     // x = cascade count (1, 2, or 3). y > 0.5 enables the PCSS blocker search.
+    // The direct unorm path forces y to 0 so it never samples the Rgba16Float
+    // raw target. z > 1 stores eye/z in 0..1 for SSAO on an 8-bit depth color.
+    // z <= 1 stores linear eye meters. w is unused.
     cascade: vec4<f32>,
     // Hemisphere colors. Defaults match the old hardcoded studio SH.
     hemi_sky: vec4<f32>,
@@ -181,9 +183,22 @@ fn present_rgb(rgb: vec3<f32>) -> vec3<f32> {
     return linear_to_srgb(max(c, vec3<f32>(0.0)));
 }
 
+// location 1 is the emissive mask for 8-bit bloom. HDR extract ignores it.
+struct FragOut {
+    @location(0) color: vec4<f32>,
+    @location(1) emit: vec4<f32>,
+}
+
+fn frag(color: vec4<f32>, emit: f32) -> FragOut {
+    var out: FragOut;
+    out.color = color;
+    out.emit = vec4<f32>(saturate(emit), 0.0, 0.0, 1.0);
+    return out;
+}
+
 @fragment
-fn fs_outline(in: VsOut) -> @location(0) vec4<f32> {
-    return vec4<f32>(present_rgb(in.color.rgb), 1.0);
+fn fs_outline(in: VsOut) -> FragOut {
+    return frag(vec4<f32>(present_rgb(in.color.rgb), 1.0), 0.0);
 }
 
 // Linear eye depth in meters for SSAO / DOF / motion. The color target stays
@@ -200,7 +215,12 @@ fn fs_depth(in: VsOut) -> @location(0) vec4<f32> {
     let far = max(g.shadow.w, near + 0.01);
     let device_z = select(in.clip.z, 1.0, sky);
     let eye = (near * far) / max(far - device_z * (far - near), 1e-4);
-    return vec4<f32>(eye, eye, eye, 1.0);
+    // cascade.z is a uniform. span > 1 packs meters into 0..1 for an unorm
+    // target. HDR leaves it at 0 and stores meters. Both select arms run;
+    // the divisor stays at least 1.
+    let span = g.cascade.z;
+    let stored = select(eye, clamp(eye / max(span, 1.0), 0.0, 1.0), span > 1.0);
+    return vec4<f32>(stored, stored, stored, 1.0);
 }
 
 fn shadow_clip(in: VsIn, vp: mat4x4<f32>) -> vec4<f32> {
@@ -581,7 +601,7 @@ fn water_normal(world: vec3<f32>, geo_n: vec3<f32>) -> vec3<f32> {
 }
 
 @fragment
-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+fn fs_main(in: VsOut) -> FragOut {
     let mat_id = i32(in.material + 0.5);
     var alpha = in.color.a * in.vcolor.a;
 
@@ -622,7 +642,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             smoothstep(-0.20, 0.55, dir.y),
         );
         let col = mix(day_col, night_col, night);
-        return vec4<f32>(present_rgb(col), 1.0);
+        return frag(vec4<f32>(present_rgb(col), 1.0), 0.0);
     }
 
     // 0 = legacy cutout. >0 = MASK. -1 = OPAQUE. <= -1.5 = BLEND (no discard).
@@ -733,7 +753,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             if (ao < 0.03) {
                 discard;
             }
-            return vec4<f32>(present_rgb(vec3<f32>(0.008, 0.010, 0.018)), ao);
+            return frag(vec4<f32>(present_rgb(vec3<f32>(0.008, 0.010, 0.018)), ao), 0.0);
         }
         let rough_in = select(clamp(in.mtoon4.y, 0.04, 1.0), 0.42, in.mtoon4.y <= 1e-4);
         let metallic_in = clamp(in.mtoon4.x, 0.0, 1.0);
@@ -770,8 +790,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         }
     }
 
+    var emit_strength = 0.0;
     if (mat_id != 5) {
-        lit += emissive_rgb(in, albedo, em_map);
+        let em = emissive_rgb(in, albedo, em_map);
+        lit += em;
+        emit_strength = saturate(max(em.r, max(em.g, em.b)));
     }
 
     let dist = length(in.world - g.camera_pos.xyz);
@@ -784,5 +807,5 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     if (cut <= -1.5 && mat_id != 6) {
         alpha = in.color.a * tex.a * in.vcolor.a;
     }
-    return vec4<f32>(present_rgb(rgb), alpha);
+    return frag(vec4<f32>(present_rgb(rgb), alpha), emit_strength * (1.0 - fog));
 }

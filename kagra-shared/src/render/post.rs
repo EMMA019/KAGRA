@@ -8,14 +8,21 @@
 //! Order when a pass is on: half-res SSAO → DOF → camera motion blur → bloom
 //! → exposure / ACES / LUT → TAA (or FXAA) → vignette. Omitted dump fields
 //! leave every one of these off, and the historical bloom composite is the
-//! picture that already shipped. `KAGRA_QUALITY=0` / `off` / `low` forces
-//! them off. `high` / `2` turns SSAO and TAA on when the dump does not say.
+//! picture that already shipped. Dump `quality` and `KAGRA_QUALITY` fill or
+//! force the passes in `WorldDoc`. An 8-bit swapchain always runs the grade
+//! and FXAA (or a blit) for a 3D world, plus the luma/emissive mip bloom.
+//! SSAO joins only when the radius is on. TAA, DOF, motion, and PCSS stay
+//! off on that path.
 
 use glam::Mat4;
 
 const AO_BIAS: f32 = 0.05;
 const AO_INTENSITY: f32 = 1.85;
 const AO_RANGE: f32 = 2.0;
+/// Unorm depth stores `eye / span` in 0..1. 96 m reaches a chase camera's
+/// next gate (the old 32 m span treated that ring as sky). An 8-bit step is
+/// about 0.38 m, still inside the 2 m AO range. HDR passes 0 and stores meters.
+pub(super) const AO_DEPTH_SPAN: f32 = 96.0;
 const DOF_MAX_PX: f32 = 14.0;
 const TAA_BLEND: f32 = 0.85;
 
@@ -387,6 +394,14 @@ impl PostGraph {
         }
     }
 
+    pub fn ssao_enabled(&self) -> bool {
+        self.ssao.enabled
+    }
+
+    pub fn ssao_radius(&self) -> f32 {
+        self.ssao_radius
+    }
+
     pub fn needs_depth(&self) -> bool {
         self.ssao.enabled || self.dof.enabled || self.motion.enabled
     }
@@ -427,7 +442,7 @@ impl PostGraph {
     ) {
         let mut in_scratch = false;
         if self.ssao.enabled {
-            self.run_ssao(device, queue, encoder, frame, near, far);
+            self.run_ssao(device, queue, encoder, frame, near, far, 0.0);
             in_scratch = true;
         }
         if self.dof.enabled {
@@ -455,6 +470,26 @@ impl PostGraph {
         if in_scratch {
             self.run_copy(device, queue, encoder, frame);
         }
+    }
+
+    /// SSAO only, then copy the darkened color back onto `frame`. DOF, motion,
+    /// and TAA stay off. `depth_span` > 1 reads packed unorm depth.
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_ssao_only(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        frame: &wgpu::TextureView,
+        near: f32,
+        far: f32,
+        depth_span: f32,
+    ) {
+        if !self.ssao.enabled {
+            return;
+        }
+        self.run_ssao(device, queue, encoder, frame, near, far, depth_span);
+        self.run_copy(device, queue, encoder, frame);
     }
 
     /// TAA then vignette. `src` is bloom's graded composite. `target` is the swapchain.
@@ -515,6 +550,7 @@ impl PostGraph {
         frame: &wgpu::TextureView,
         near: f32,
         far: f32,
+        depth_span: f32,
     ) {
         let mut p = PostParams::zeroed();
         p.v = [self.ssao_radius, AO_BIAS, AO_INTENSITY, AO_RANGE];
@@ -524,6 +560,7 @@ impl PostGraph {
             1.0 / self.width as f32,
             1.0 / self.height as f32,
         ];
+        p.m0[0] = depth_span;
         write_params(queue, self.ssao.params(), &p);
         let depth = self.depth_view.clone();
         let src = bind_tex(device, &self.tex_bgl, &depth, &self.sampler, "SSAO Depth");
@@ -531,6 +568,7 @@ impl PostGraph {
 
         let mut bh = PostParams::zeroed();
         bh.v[0] = 1.0 / self.half_w as f32;
+        bh.v[2] = depth_span;
         write_params(queue, self.ao_blur_h.params(), &bh);
         let a = bind_tex(
             device,
@@ -543,6 +581,7 @@ impl PostGraph {
 
         let mut bv = PostParams::zeroed();
         bv.v[1] = 1.0 / self.half_h as f32;
+        bv.v[2] = depth_span;
         write_params(queue, self.ao_blur_v.params(), &bv);
         let b = bind_tex(
             device,

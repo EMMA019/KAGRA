@@ -9,7 +9,7 @@
 //! Glow is dump `emissive` (the shared HDR add). Reflections are
 //! `hemi_sky` / `hemi_ground` plus `env_map: preset:studio`.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
 
 use serde_json::json;
@@ -44,13 +44,6 @@ const SHIP_SCALE: f32 = 0.36;
 /// Side posts only. A top beam, even a thin one, stacks into cyan and
 /// pink bars across the upper half of a portrait frame.
 const RIB_EMISSIVE: f32 = 0.12;
-/// Lays the XY trail quad onto the ground plane. A chase camera looking
-/// along +Z then sees a ribbon instead of an edge.
-const TRAIL_PITCH: f32 = -std::f32::consts::FRAC_PI_2;
-/// Ribbon width at the tail and at the ship. The old host trail used a
-/// 0.40 Z-to-Y fold and read as floor dashes.
-const TRAIL_WIDTH_TAIL: f32 = 0.5;
-const TRAIL_WIDTH_HEAD: f32 = 1.4;
 /// Bottom-origin mesh, so this lifts the visual center onto the ship.
 const SHIP_CENTER_Y: f32 = 0.30;
 /// Chase camera sits behind the ship. Boost eases this back a little more.
@@ -225,9 +218,11 @@ pub struct NeonRun {
     just_orbs: u32,
     just_crash: bool,
     just_near: bool,
-    trail: VecDeque<[f32; 3]>,
     sparks: Vec<Spark>,
     doc: WorldDoc,
+    /// Dump `quality`, copied onto every rebuild. None keeps the historical
+    /// neon picture (one cascade, no SSAO). Gameplay does not read it.
+    picture_quality: Option<String>,
 }
 
 impl NeonRun {
@@ -241,6 +236,12 @@ impl NeonRun {
         run.load_progress();
         if let Some(best) = value.get("best").and_then(|v| v.as_u64()) {
             run.flow.best_score = run.flow.best_score.max(best as u32);
+        }
+        if let Some(q) = value.get("quality").and_then(|v| v.as_str()) {
+            let q = q.trim();
+            if !q.is_empty() {
+                run.picture_quality = Some(q.to_string());
+            }
         }
         run.rebuild();
         Ok(run)
@@ -279,9 +280,9 @@ impl NeonRun {
             just_orbs: 0,
             just_crash: false,
             just_near: false,
-            trail: VecDeque::new(),
             sparks: Vec::new(),
             doc: WorldDoc::default(),
+            picture_quality: None,
         }
     }
 
@@ -512,7 +513,6 @@ impl NeonRun {
         self.passed = -1;
         self.time = 0.0;
         self.sparks.clear();
-        self.trail.clear();
         self.flow.enter_play();
         self.rebuild();
     }
@@ -549,7 +549,6 @@ impl NeonRun {
             self.y = (self.attract * 0.42).cos() * 0.38;
             self.smooth_cam(dt);
             self.tick_sparks(dt);
-            self.push_trail();
             self.decay_shake(dt);
             self.tick_boost_vis(dt);
             self.rebuild();
@@ -598,9 +597,6 @@ impl NeonRun {
         }
         self.smooth_cam(dt);
         self.tick_sparks(dt);
-        if self.alive {
-            self.push_trail();
-        }
         self.decay_shake(dt);
         self.tick_boost_vis(dt);
         self.rebuild();
@@ -670,13 +666,6 @@ impl NeonRun {
         self.burst(self.x, self.y, self.z, 12, [120, 240, 255], 3.6, 0.16);
         crate::mixer::cue_sfx("fire");
         self.flow.finish(self.score, self.orbs, "CRASH");
-    }
-
-    fn push_trail(&mut self) {
-        self.trail.push_back([self.x, self.y, self.z - 0.9]);
-        while self.trail.len() > 22 {
-            self.trail.pop_front();
-        }
     }
 
     fn decay_shake(&mut self, dt: f32) {
@@ -760,6 +749,7 @@ impl NeonRun {
             fog_end: Some(130.0),
             ..WorldDoc::default()
         };
+        doc.quality = self.picture_quality.clone();
         let eye = self.chase_eye();
         let target = self.chase_target();
         doc.cameras.push(WorldCamera {
@@ -809,7 +799,6 @@ impl NeonRun {
         self.push_islands(&mut doc);
         self.push_stars(&mut doc);
         self.push_ship(&mut doc);
-        self.push_trail_props(&mut doc);
         self.push_speed_lines(&mut doc);
         self.push_spark_props(&mut doc);
         self.doc = doc;
@@ -1003,12 +992,13 @@ impl NeonRun {
                 0.35,
             );
             if attach_glb(&mut prop, kit.path) {
-                // Pink multiply so the rock base color lands in the neon palette
-                // without washing the lighting out.
+                // Pink multiply so the rock base color lands in the neon palette.
+                // A stronger emissive add flattened the Kenney normals, so the
+                // sun term (and the shadow on it) can still shape the rock.
                 prop.color = Some([255, 128, 168]);
                 prop.roughness = 0.62;
                 prop.metallic = 0.06;
-                prop.emissive = Some(0.18);
+                prop.emissive = Some(0.06);
                 prop.emissive_color = Some([1.0, 0.28, 0.55]);
             } else {
                 prop.color = Some([220, 70, 140]);
@@ -1218,53 +1208,6 @@ impl NeonRun {
             engine.roughness = 0.25;
             engine.metallic = 0.05;
             doc.props.push(engine);
-        }
-    }
-
-    fn push_trail_props(&self, doc: &mut WorldDoc) {
-        // Horizontal ribbon. The quad stands in XY facing ±Z; `TRAIL_PITCH`
-        // lays local +Y along world +Z so a chase camera sees a surface,
-        // not an edge. The old host trail folded Z onto Y by 0.40 and was
-        // edge-on. Width grows from `TRAIL_WIDTH_TAIL` toward the ship.
-        // Magenta tail, cyan head.
-        let pts: Vec<[f32; 3]> = self.trail.iter().copied().collect();
-        if pts.len() < 2 {
-            return;
-        }
-        let segments = pts.len() - 1;
-        for i in 0..segments {
-            let (a, b) = (pts[i], pts[i + 1]);
-            let (dx, dy, dz) = (b[0] - a[0], b[1] - a[1], b[2] - a[2]);
-            let length = (dx * dx + dy * dy + dz * dz).sqrt();
-            if length < 0.05 {
-                continue;
-            }
-            let fade = (i + 1) as f32 / segments as f32;
-            let width = TRAIL_WIDTH_TAIL + (TRAIL_WIDTH_HEAD - TRAIL_WIDTH_TAIL) * fade;
-            // Dark albedo so the lights do not wash the ribbon out. The gradient
-            // lives on the emissive color: magenta tail, cyan head.
-            let mut prop = glow(
-                &format!("trail-{i}"),
-                "quad",
-                "trail",
-                [
-                    (a[0] + b[0]) * 0.5,
-                    // Stagger each segment off the shared plane so the
-                    // depth-writing ribbon does not z-fight itself.
-                    (a[1] + b[1]) * 0.5 - 0.2 + i as f32 * 0.008,
-                    (a[2] + b[2]) * 0.5,
-                ],
-                [width, length.max(0.08), 1.0],
-                dx.atan2(dz),
-                TRAIL_PITCH,
-                0.0,
-                [40, 16, 36],
-                0.5 + 0.45 * fade,
-            );
-            prop.roughness = 0.98;
-            prop.metallic = 0.0;
-            prop.emissive_color = Some([1.0 - 0.75 * fade, 0.12 + 0.75 * fade, 0.55 + 0.45 * fade]);
-            doc.props.push(prop);
         }
     }
 
@@ -1526,8 +1469,9 @@ fn splice_json_key(body: &str, key: &str, value: &serde_json::Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::profile::FrameProfile;
     use crate::session::{SceneKind, SharedSession};
-    use crate::world_doc::WorldDoc;
+    use crate::world_doc::{self, WorldDoc};
 
     #[test]
     fn straight_flight_scores_and_a_wall_ends_the_run() {
@@ -1610,14 +1554,8 @@ mod tests {
         assert!(run.score() >= 100, "score {}", run.score());
         assert!(run.alive);
         assert!(
-            run.document().props.iter().any(|p| {
-                p.name == "trail"
-                    && p.model == "quad"
-                    && p.pitch < -1.4
-                    && p.scale[0] > 0.4
-                    && p.emissive.unwrap_or(0.0) > 0.7
-            }),
-            "ribbon is a wide horizontal surface behind the ship"
+            run.document().props.iter().all(|p| p.name != "trail"),
+            "the staircase ribbon is gone"
         );
         run.set_steer(1.0, 0.0, false);
         for _ in 0..180 {
@@ -1758,6 +1696,52 @@ mod tests {
             eprintln!(
                 "neon json {frames} frames bytes {} dump {dump_once:?} dump+state {both:?} parse {parse:?} parse+reserialize {round:?} doc_clone {cloned:?}",
                 text.len()
+            );
+        }
+    }
+
+    #[test]
+    fn picture_quality_survives_rebuild_without_replacing_the_grade() {
+        let plain = NeonRun::from_json(r#"{"version":1,"genre":"neon_run"}"#).unwrap();
+        assert!(plain.document().quality.is_none());
+        assert!((plain.document().bloom_intensity() - 0.14).abs() < 1e-6);
+        if world_doc::heavy_post_allowed() && !world_doc::quality_is_high() {
+            assert_eq!(plain.document().shadow_cascade_count(), 1);
+            assert_eq!(plain.document().ssao_radius(), 0.0);
+        }
+        let mobile =
+            NeonRun::from_json(r#"{"version":1,"genre":"neon_run","quality":"mobile"}"#).unwrap();
+        let doc = mobile.document();
+        assert_eq!(doc.quality.as_deref(), Some("mobile"));
+        assert!((doc.bloom.unwrap() - 0.14).abs() < 1e-6);
+        assert!(doc.fxaa_enabled());
+        assert_eq!(doc.tonemap, Some(true));
+        if world_doc::heavy_post_allowed() {
+            assert!((doc.ssao_radius() - 4.0).abs() < 1e-6);
+            assert!(!doc.taa_enabled());
+            assert_eq!(doc.shadow_cascade_count(), 2);
+            assert!(!doc.shadow_pcss_enabled());
+        }
+        let low = FrameProfile::from_world(
+            NeonRun::from_json(r#"{"version":1,"genre":"neon_run","quality":"low"}"#)
+                .unwrap()
+                .document(),
+        );
+        let phone = FrameProfile::from_world(doc);
+        assert_eq!(low.draws, phone.draws);
+        assert_eq!(low.triangles, phone.triangles);
+        assert_eq!(low.texture_bytes, phone.texture_bytes);
+        assert!(
+            phone.draws <= crate::profile::BUDGET_DRAWS,
+            "draws {}",
+            phone.draws
+        );
+        assert!(phone.texture_bytes <= crate::profile::BUDGET_TEXTURE_BYTES);
+        let tri_warn = phone.warnings().iter().any(|w| w.contains("triangles"));
+        if tri_warn {
+            eprintln!(
+                "neon already has {} triangles; the mobile tier did not add any",
+                phone.triangles
             );
         }
     }

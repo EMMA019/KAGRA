@@ -97,8 +97,18 @@ pub struct WorldDoc {
     /// ACES tonemap. None = on.
     #[serde(default)]
     pub tonemap: Option<bool>,
+    /// Picture tier. None keeps the historical picture (`KAGRA_QUALITY=high`
+    /// still fills omitted SSAO / TAA / cascades / PCSS, and does not turn
+    /// bloom on). `low` / `0` / `off` forces SSAO, TAA, DOF, motion, extra
+    /// cascades, and PCSS off. `mobile` and `high` fill only omitted fields.
+    /// An explicit field wins. `KAGRA_QUALITY=0` / `off` / `low` still forces
+    /// that floor, ahead of this string.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<String>,
     /// Bloom intensity on the offscreen dump path. None = 0 so an old dump
-    /// stays unbloomed. The desktop window example sets its own default.
+    /// stays unbloomed, unless `quality` is `mobile` (0.22) or `high` (0.35).
+    /// The desktop window example sets its own default. Env `high` does not
+    /// turn bloom on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bloom: Option<f32>,
     /// Bloom extract threshold. None = 0.85.
@@ -118,12 +128,14 @@ pub struct WorldDoc {
     /// FXAA on the composite. None = on. Ignored while `taa` is on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fxaa: Option<bool>,
-    /// Half-resolution SSAO radius in pixels. None = off (high quality tier
-    /// uses 8). `KAGRA_QUALITY=0` forces 0.
+    /// Half-resolution SSAO radius in pixels. None = off, unless `quality` is
+    /// `mobile` (4) or `high` (8), or env `KAGRA_QUALITY=high` (8).
+    /// `quality=low` and `KAGRA_QUALITY=0` / `off` / `low` force 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssao: Option<f32>,
-    /// Temporal AA. None = off, except `KAGRA_QUALITY=high`, which turns it on.
-    /// Replaces FXAA for that frame.
+    /// Temporal AA. None = off. `quality=high` and `KAGRA_QUALITY=high` turn it
+    /// on when this is omitted. `quality=mobile` keeps FXAA. `quality=low` and
+    /// `KAGRA_QUALITY=0` / `off` / `low` force it off. Replaces FXAA when on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub taa: Option<bool>,
     /// DOF focus distance from the camera, in world units. Needs `dof_aperture`.
@@ -140,12 +152,14 @@ pub struct WorldDoc {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow_softness: Option<f32>,
     /// Cascade count packed into the one 2048 map. None = 1 (the historical
-    /// full map). 2 or 3 use tighter rings. `KAGRA_QUALITY=high` or `2`
-    /// selects 3 when this is omitted. `0` / `off` / `low` forces 1.
+    /// full map). `quality=mobile` fills 2, `quality=high` and
+    /// `KAGRA_QUALITY=high` / `2` fill 3. An explicit count wins. `quality=low`
+    /// and env `0` / `off` / `low` force 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow_cascades: Option<u32>,
-    /// Contact-hardening blocker search. None = off. The high tier turns it
-    /// on. `KAGRA_QUALITY=0` / `off` / `low` forces it off.
+    /// Contact-hardening blocker search. None = off. `quality=high` and env
+    /// `high` turn it on when this is omitted. `quality=mobile` leaves it off.
+    /// `quality=low` and `KAGRA_QUALITY=0` / `off` / `low` force it off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow_pcss: Option<bool>,
     /// Hemisphere sky, linear 0..1. None = the studio blue `(0.48, 0.56, 0.78)`.
@@ -257,7 +271,8 @@ fn default_gravity() -> f32 {
 
 /// `KAGRA_QUALITY=0`, `off`, or `low` keeps SSAO / TAA / DOF / motion off
 /// so a phone can stay on the bloom + FXAA path.
-fn heavy_post_allowed() -> bool {
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn heavy_post_allowed() -> bool {
     heavy_post_allowed_value(std::env::var("KAGRA_QUALITY").ok().as_deref())
 }
 
@@ -266,12 +281,48 @@ fn heavy_post_allowed_value(quality: Option<&str>) -> bool {
 }
 
 /// `high` or `2` enables SSAO and TAA when the dump leaves them unset.
-fn quality_is_high() -> bool {
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn quality_is_high() -> bool {
     quality_is_high_value(std::env::var("KAGRA_QUALITY").ok().as_deref())
 }
 
 fn quality_is_high_value(quality: Option<&str>) -> bool {
     matches!(quality, Some("high") | Some("2"))
+}
+
+/// Resolved picture. Env `0` / `off` / `low` is [`PictureTier::Low`] even when
+/// the dump asks for mobile or high. A dump tier wins over env high.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PictureTier {
+    Low,
+    Mobile,
+    High,
+    /// `quality` omitted and the env is not high. Historical accessors.
+    Legacy,
+}
+
+fn authored_tier(dump_quality: Option<&str>) -> Option<PictureTier> {
+    match dump_quality.map(str::trim).filter(|s| !s.is_empty()) {
+        Some("low" | "0" | "off") => Some(PictureTier::Low),
+        Some("mobile") => Some(PictureTier::Mobile),
+        Some("high" | "2") => Some(PictureTier::High),
+        _ => None,
+    }
+}
+
+fn picture_tier_value(dump_quality: Option<&str>, env_quality: Option<&str>) -> PictureTier {
+    if !heavy_post_allowed_value(env_quality) {
+        return PictureTier::Low;
+    }
+    match authored_tier(dump_quality) {
+        Some(tier) => tier,
+        None if quality_is_high_value(env_quality) => PictureTier::High,
+        None => PictureTier::Legacy,
+    }
+}
+
+fn picture_tier(dump_quality: Option<&str>) -> PictureTier {
+    picture_tier_value(dump_quality, std::env::var("KAGRA_QUALITY").ok().as_deref())
 }
 
 /// Prop record. `position` / `yaw` / `pitch` / `roll` are world-space unless
@@ -789,9 +840,23 @@ impl WorldDoc {
         ))
     }
 
-    /// Bloom intensity for `render_world_doc`. None in the dump means off.
+    /// Bloom intensity for `render_world_doc`. None stays off, except a dump
+    /// tier of `mobile` (0.22) or `high` (0.35) while heavy post is allowed.
+    /// Env high does not turn bloom on. An authored value is kept, including
+    /// under the low floor.
     pub fn bloom_intensity(&self) -> f32 {
-        self.bloom.unwrap_or(0.0).max(0.0)
+        if let Some(v) = self.bloom {
+            return v.max(0.0);
+        }
+        let env = std::env::var("KAGRA_QUALITY").ok();
+        if !heavy_post_allowed_value(env.as_deref()) {
+            return 0.0;
+        }
+        match authored_tier(self.quality.as_deref()) {
+            Some(PictureTier::Mobile) => 0.22,
+            Some(PictureTier::High) => 0.35,
+            _ => 0.0,
+        }
     }
 
     /// Bloom extract threshold. None = 0.85.
@@ -826,33 +891,29 @@ impl WorldDoc {
         self.fxaa.unwrap_or(true)
     }
 
-    /// SSAO radius in pixels. None = off, unless the high tier is on.
-    /// `KAGRA_QUALITY=0` / `off` / `low` forces it off.
+    /// SSAO radius in pixels. Omitted fields follow the tier. Low forces 0.
     pub fn ssao_radius(&self) -> f32 {
-        if !heavy_post_allowed() {
-            return 0.0;
-        }
-        match self.ssao {
-            Some(r) => r.clamp(0.0, 64.0),
-            None if quality_is_high() => 8.0,
-            None => 0.0,
+        let authored = self.ssao.map(|r| r.clamp(0.0, 64.0));
+        match picture_tier(self.quality.as_deref()) {
+            PictureTier::Low => 0.0,
+            PictureTier::Mobile => authored.unwrap_or(4.0),
+            PictureTier::High => authored.unwrap_or(8.0),
+            PictureTier::Legacy => authored.unwrap_or(0.0),
         }
     }
 
-    /// TAA. None = off, unless the high tier is on. Quality 0 forces it off.
+    /// TAA. Mobile keeps it off unless the dump sets it. Low forces it off.
     pub fn taa_enabled(&self) -> bool {
-        if !heavy_post_allowed() {
-            return false;
-        }
-        match self.taa {
-            Some(v) => v,
-            None => quality_is_high(),
+        match picture_tier(self.quality.as_deref()) {
+            PictureTier::Low => false,
+            PictureTier::Mobile | PictureTier::Legacy => self.taa.unwrap_or(false),
+            PictureTier::High => self.taa.unwrap_or(true),
         }
     }
 
-    /// `(focus, aperture)` when DOF should run.
+    /// `(focus, aperture)` when DOF should run. Tiers do not turn it on.
     pub fn dof(&self) -> Option<(f32, f32)> {
-        if !heavy_post_allowed() {
+        if matches!(picture_tier(self.quality.as_deref()), PictureTier::Low) {
             return None;
         }
         let aperture = self.dof_aperture.unwrap_or(0.0);
@@ -865,9 +926,9 @@ impl WorldDoc {
         ))
     }
 
-    /// Camera shutter. None = 0.
+    /// Camera shutter. None = 0. Tiers do not turn it on. Low forces 0.
     pub fn motion_shutter(&self) -> f32 {
-        if !heavy_post_allowed() {
+        if matches!(picture_tier(self.quality.as_deref()), PictureTier::Low) {
             return 0.0;
         }
         self.motion_blur.unwrap_or(0.0).clamp(0.0, 1.0)
@@ -878,27 +939,24 @@ impl WorldDoc {
         self.shadow_softness.unwrap_or(1.0).clamp(0.25, 8.0)
     }
 
-    /// Cascades in the one sun map. None = 1, unless the high tier asks for 3.
-    /// Quality 0 / off / low stays on the historical full map.
+    /// Cascades in the one sun map. Mobile fills 2, high fills 3. Low forces 1.
     pub fn shadow_cascade_count(&self) -> u32 {
-        if !heavy_post_allowed() {
-            return 1;
-        }
-        match self.shadow_cascades {
-            Some(n) => n.clamp(1, 3),
-            None if quality_is_high() => 3,
-            None => 1,
+        let authored = self.shadow_cascades.map(|n| n.clamp(1, 3));
+        match picture_tier(self.quality.as_deref()) {
+            PictureTier::Low => 1,
+            PictureTier::Mobile => authored.unwrap_or(2),
+            PictureTier::High => authored.unwrap_or(3),
+            PictureTier::Legacy => authored.unwrap_or(1),
         }
     }
 
-    /// PCSS blocker search. None = off, unless the high tier is on.
+    /// PCSS blocker search. High fills it on. Mobile and legacy leave it off.
+    /// Low forces it off.
     pub fn shadow_pcss_enabled(&self) -> bool {
-        if !heavy_post_allowed() {
-            return false;
-        }
-        match self.shadow_pcss {
-            Some(on) => on,
-            None => quality_is_high(),
+        match picture_tier(self.quality.as_deref()) {
+            PictureTier::Low => false,
+            PictureTier::Mobile | PictureTier::Legacy => self.shadow_pcss.unwrap_or(false),
+            PictureTier::High => self.shadow_pcss.unwrap_or(true),
         }
     }
 
@@ -3381,6 +3439,7 @@ mod tests {
         assert!(!legacy.contains("\"shadow_softness\""));
         assert!(!legacy.contains("\"shadow_cascades\""));
         assert!(!legacy.contains("\"shadow_pcss\""));
+        assert!(!legacy.contains("\"quality\""));
         if super::heavy_post_allowed() && !super::quality_is_high() {
             assert_eq!(doc.shadow_cascade_count(), 1);
             assert!(!doc.shadow_pcss_enabled());
@@ -3427,6 +3486,93 @@ mod tests {
         assert!(super::quality_is_high_value(Some("2")));
         assert!(!super::quality_is_high_value(None));
         assert!(!super::quality_is_high_value(Some("1")));
+    }
+
+    #[test]
+    fn picture_tier_resolves_dump_ahead_of_env_high() {
+        assert_eq!(
+            super::picture_tier_value(None, None),
+            super::PictureTier::Legacy
+        );
+        assert_eq!(
+            super::picture_tier_value(None, Some("high")),
+            super::PictureTier::High
+        );
+        assert_eq!(
+            super::picture_tier_value(Some("mobile"), Some("high")),
+            super::PictureTier::Mobile
+        );
+        assert_eq!(
+            super::picture_tier_value(Some(" high "), None),
+            super::PictureTier::High
+        );
+        assert_eq!(
+            super::picture_tier_value(Some("low"), Some("high")),
+            super::PictureTier::Low
+        );
+        assert_eq!(
+            super::picture_tier_value(Some("mobile"), Some("0")),
+            super::PictureTier::Low
+        );
+        assert_eq!(
+            super::picture_tier_value(Some("nope"), None),
+            super::PictureTier::Legacy
+        );
+        assert_eq!(
+            super::picture_tier_value(Some("2"), Some("1")),
+            super::PictureTier::High
+        );
+    }
+
+    #[test]
+    fn quality_dump_tiers_fill_omitted_fields() {
+        let mobile = WorldDoc::from_json(r#"{"version":1,"quality":"mobile"}"#).unwrap();
+        let high = WorldDoc::from_json(r#"{"version":1,"quality":"high"}"#).unwrap();
+        let low = WorldDoc::from_json(
+            r#"{"version":1,"quality":"low","ssao":12.0,"taa":true,"shadow_cascades":3,"shadow_pcss":true,"dof_focus":4.0,"dof_aperture":0.35,"motion_blur":0.5,"bloom":0.4}"#,
+        )
+        .unwrap();
+        let explicit = WorldDoc::from_json(
+            r#"{"version":1,"quality":"mobile","ssao":1.5,"taa":true,"shadow_cascades":1,"shadow_pcss":true,"bloom":0.05}"#,
+        )
+        .unwrap();
+        assert!((low.bloom_intensity() - 0.4).abs() < 1e-6);
+        assert_eq!(low.ssao_radius(), 0.0);
+        assert!(!low.taa_enabled());
+        assert!(low.dof().is_none());
+        assert_eq!(low.motion_shutter(), 0.0);
+        assert_eq!(low.shadow_cascade_count(), 1);
+        assert!(!low.shadow_pcss_enabled());
+        if super::heavy_post_allowed() {
+            assert!((mobile.ssao_radius() - 4.0).abs() < 1e-6);
+            assert!(!mobile.taa_enabled());
+            assert_eq!(mobile.shadow_cascade_count(), 2);
+            assert!(!mobile.shadow_pcss_enabled());
+            assert!((mobile.bloom_intensity() - 0.22).abs() < 1e-6);
+            assert!(mobile.dof().is_none());
+            assert!((high.ssao_radius() - 8.0).abs() < 1e-6);
+            assert!(high.taa_enabled());
+            assert_eq!(high.shadow_cascade_count(), 3);
+            assert!(high.shadow_pcss_enabled());
+            assert!((high.bloom_intensity() - 0.35).abs() < 1e-6);
+            assert!(high.dof().is_none());
+            assert!((explicit.ssao_radius() - 1.5).abs() < 1e-6);
+            assert!(explicit.taa_enabled());
+            assert_eq!(explicit.shadow_cascade_count(), 1);
+            assert!(explicit.shadow_pcss_enabled());
+            assert!((explicit.bloom_intensity() - 0.05).abs() < 1e-6);
+        } else {
+            assert_eq!(mobile.ssao_radius(), 0.0);
+            assert_eq!(mobile.shadow_cascade_count(), 1);
+            assert_eq!(mobile.bloom_intensity(), 0.0);
+            assert_eq!(high.ssao_radius(), 0.0);
+            assert!(!high.taa_enabled());
+            assert_eq!(high.shadow_cascade_count(), 1);
+            assert!(!high.shadow_pcss_enabled());
+            assert_eq!(high.bloom_intensity(), 0.0);
+        }
+        let again = mobile.to_json().unwrap();
+        assert!(again.contains("\"quality\": \"mobile\""));
     }
 
     #[test]

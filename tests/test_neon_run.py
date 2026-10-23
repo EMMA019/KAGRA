@@ -73,6 +73,9 @@ def test_package_web_stages_lumen_without_wasm(tmp_path):
     assert (out / "audio" / "card.wav").is_file()
     page = (out / "play.html").read_text(encoding="utf-8")
     assert "loadGameJson" in page
+    assert 'params.get("quality")' in page
+    assert 'id="grade"' in page
+    assert "pictureStatus" in page
     assert "setPlayInput" in page
     assert "mountFile" in page
     assert "assets.json" in page

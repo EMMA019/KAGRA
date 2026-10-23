@@ -254,6 +254,14 @@ impl WasmSession {
         self.inner.render().map_err(|e| JsValue::from_str(&e))
     }
 
+    /// `mobile webgpu fxaa=1 bloom=1 ssao=4 c2 post` after a 3D frame.
+    /// `pending` until the first present. The page prints this on screen.
+    #[cfg(feature = "render")]
+    #[wasm_bindgen(js_name = pictureStatus)]
+    pub fn picture_status(&self) -> String {
+        self.inner.picture_status()
+    }
+
     /// 描画先が接続済みか。
     #[cfg(feature = "render")]
     #[wasm_bindgen(js_name = hasRenderer)]
