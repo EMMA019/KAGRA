@@ -325,3 +325,30 @@ def test_revolute_joint_and_unknown_kind(ks):
     dist = (bob[0] ** 2 + (bob[1] - 3.15) ** 2 + bob[2] ** 2) ** 0.5
     assert abs(dist - 1.70) < 0.25, f"revolute holds, dist={dist} bob={bob}"
     assert bob[1] > 0.9
+
+
+def test_character_controller_slides_on_a_wall(ks):
+    if ks is None or not hasattr(ks.PhysicsWorld, "move_character"):
+        pytest.skip("no kinematic character controller")
+    w = _world(half=8.0)
+    w["props"] = [
+        {
+            "id": "prop:wall",
+            "type": "prop",
+            "name": "wall",
+            "model": "box",
+            "position": [1.7, 1.0, 0.0],
+            "scale": [1.0, 2.0, 1.0],
+            "enabled": True,
+            "is_static": True,
+        }
+    ]
+    w["player"] = {"id": "walker:player", "position": [0.0, 1.0, 0.0]}
+    phys = rigid.PhysicsWorld(w)
+    phys.step(1 / 60)
+    blocked = phys.move_character("walker:player", [3.0, -0.2, 0.0], 1 / 60)
+    assert blocked is not None
+    assert blocked["translation"][0] < 1.4
+    assert blocked["position"][0] < 1.5
+    assert blocked["grounded"] is True
+    assert phys.move_character("prop:wall", [1.0, 0.0, 0.0], 1 / 60) is None

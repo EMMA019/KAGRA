@@ -9,7 +9,7 @@
 //! Glow is dump `emissive` (the shared HDR add). Reflections are
 //! `hemi_sky` / `hemi_ground` plus `env_map: preset:studio`.
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::sync::{Mutex, OnceLock};
 
 use serde_json::json;
@@ -218,7 +218,13 @@ pub struct NeonRun {
     just_orbs: u32,
     just_crash: bool,
     just_near: bool,
+    /// Crash holds the result until this clock ends. Shake keeps moving.
+    pending_finish: bool,
+    feel: crate::juice::Juice,
     sparks: Vec<Spark>,
+    /// Samples behind the ship. Drawn as a fat line plus a few point sprites,
+    /// not the old stacked quads named "trail".
+    ribbon: VecDeque<[f32; 3]>,
     doc: WorldDoc,
     /// Dump `quality`, copied onto every rebuild. None keeps the historical
     /// neon picture (one cascade, no SSAO). Gameplay does not read it.
@@ -280,7 +286,10 @@ impl NeonRun {
             just_orbs: 0,
             just_crash: false,
             just_near: false,
+            pending_finish: false,
+            feel: crate::juice::Juice::default(),
             sparks: Vec::new(),
+            ribbon: VecDeque::new(),
             doc: WorldDoc::default(),
             picture_quality: None,
         }
@@ -378,11 +387,12 @@ impl NeonRun {
 
     fn chase_eye(&self) -> [f32; 3] {
         let shake = (self.time * 47.0).sin() * self.shake;
+        let [ox, oy, oz] = self.feel.camera_offset();
         let back = CAM_BACK + self.boost_vis * 2.6;
         [
-            self.cam_x + shake,
-            self.cam_y + CAM_LIFT + shake * 0.35,
-            self.z - back,
+            self.cam_x + shake + ox,
+            self.cam_y + CAM_LIFT + shake * 0.35 + oy,
+            self.z - back + oz,
         ]
     }
 
@@ -513,6 +523,9 @@ impl NeonRun {
         self.passed = -1;
         self.time = 0.0;
         self.sparks.clear();
+        self.ribbon.clear();
+        self.pending_finish = false;
+        self.feel = crate::juice::Juice::default();
         self.flow.enter_play();
         self.rebuild();
     }
@@ -538,6 +551,20 @@ impl NeonRun {
         self.just_orbs = 0;
         self.just_crash = false;
         self.just_near = false;
+        let sim_dt = self.feel.tick(dt);
+        if self.pending_finish {
+            if dt > 0.0 {
+                self.tick_sparks(dt);
+                self.decay_shake(dt);
+                self.tick_boost_vis(dt);
+            }
+            if sim_dt > 0.0 {
+                self.pending_finish = false;
+                self.flow.finish(self.score, self.orbs, "CRASH");
+            }
+            self.rebuild();
+            return;
+        }
         if dt <= 0.0 {
             self.rebuild();
             return;
@@ -662,10 +689,12 @@ impl NeonRun {
         self.alive = false;
         self.just_crash = true;
         self.shake = 0.42;
+        self.pending_finish = true;
+        self.feel.hitstop(0.12);
+        self.feel.shake(0.42, 0.36, 47.0);
         self.burst(self.x, self.y, self.z, 22, [255, 64, 140], 4.8, 0.18);
         self.burst(self.x, self.y, self.z, 12, [120, 240, 255], 3.6, 0.16);
         crate::mixer::cue_sfx("fire");
-        self.flow.finish(self.score, self.orbs, "CRASH");
     }
 
     fn decay_shake(&mut self, dt: f32) {
@@ -720,7 +749,46 @@ impl NeonRun {
         ((self.seed >> 8) & 0x00ff_ffff) as f32 / 16_777_216.0
     }
 
+    fn note_ribbon(&mut self) {
+        let p = [self.x, self.y - 0.05, self.z - 0.35];
+        if let Some(prev) = self.ribbon.back() {
+            let dx = p[0] - prev[0];
+            let dy = p[1] - prev[1];
+            let dz = p[2] - prev[2];
+            if dx * dx + dy * dy + dz * dz < 0.12 * 0.12 {
+                return;
+            }
+        }
+        self.ribbon.push_back(p);
+        while self.ribbon.len() > 32 {
+            self.ribbon.pop_front();
+        }
+    }
+
+    fn push_ribbon(&self, doc: &mut WorldDoc) {
+        if self.ribbon.len() < 2 {
+            return;
+        }
+        doc.lines.push(crate::strokes::FatLine {
+            id: "ribbon".into(),
+            points: self.ribbon.iter().copied().collect(),
+            color: [90, 240, 255, 210],
+            width: 4.0,
+        });
+        let positions: Vec<[f32; 3]> = self.ribbon.iter().step_by(4).copied().collect();
+        if positions.is_empty() {
+            return;
+        }
+        doc.points.push(crate::strokes::PointCloud {
+            id: "ribbon-dots".into(),
+            positions,
+            color: [255, 70, 190, 230],
+            size: 0.05,
+        });
+    }
+
     fn rebuild(&mut self) {
+        self.note_ribbon();
         let mut doc = WorldDoc {
             version: 1,
             genre: Some(GAME_ID.into()),
@@ -802,6 +870,7 @@ impl NeonRun {
         self.push_ship(&mut doc);
         self.push_speed_lines(&mut doc);
         self.push_spark_props(&mut doc);
+        self.push_ribbon(&mut doc);
         self.doc = doc;
     }
 
@@ -1558,6 +1627,20 @@ mod tests {
             run.document().props.iter().all(|p| p.name != "trail"),
             "the staircase ribbon is gone"
         );
+        let ribbon = run
+            .document()
+            .lines
+            .iter()
+            .find(|line| line.id == "ribbon")
+            .expect("gpu fat-line ribbon");
+        assert!(ribbon.points.len() >= 8, "ribbon {}", ribbon.points.len());
+        assert!(
+            run.document()
+                .points
+                .iter()
+                .any(|cloud| cloud.id == "ribbon-dots" && !cloud.positions.is_empty()),
+            "gpu point sprites along the ribbon"
+        );
         run.set_steer(1.0, 0.0, false);
         for _ in 0..180 {
             run.tick(1.0 / 60.0);
@@ -1598,6 +1681,43 @@ mod tests {
             run.tick(1.0 / 60.0);
         }
         assert!(!run.alive, "walls still end a run after the grace");
+        assert_eq!(run.phase_name(), "result");
+    }
+
+    #[test]
+    fn crash_holds_play_until_the_hitstop_ends() {
+        let mut run = NeonRun::from_json(r#"{"version":1,"genre":"neon_run"}"#).unwrap();
+        run.confirm();
+        let mut held_z: Option<f64> = None;
+        let mut prev_eye: Option<[f32; 3]> = None;
+        let mut saw_hold = false;
+        let mut eye_moved = false;
+        for _ in 0..500 {
+            run.set_steer(1.0, 0.0, false);
+            run.tick(1.0 / 60.0);
+            if !run.alive && run.phase_name() == "play" {
+                let state: serde_json::Value = serde_json::from_str(&run.state_json()).unwrap();
+                let z = state["z"].as_f64().unwrap();
+                if let Some(prev) = held_z {
+                    assert!((z - prev).abs() < 1e-3, "hitstop moved z {prev} -> {z}");
+                }
+                held_z = Some(z);
+                let eye = run.document().cameras[0].position;
+                if let Some(prev) = prev_eye {
+                    let d = (eye[0] - prev[0]).abs() + (eye[1] - prev[1]).abs();
+                    if d > 1e-4 {
+                        eye_moved = true;
+                    }
+                }
+                prev_eye = Some(eye);
+                saw_hold = true;
+            }
+            if run.phase_name() == "result" {
+                break;
+            }
+        }
+        assert!(saw_hold, "crash should hold play for the hit-stop");
+        assert!(eye_moved, "crash shake should move the chase camera");
         assert_eq!(run.phase_name(), "result");
     }
 

@@ -84,6 +84,20 @@ impl PyPhysicsWorld {
         self.inner.set_walker_position(id, p)
     }
 
+    /// Rapier kinematic character move. `desired` is this tick's translation
+    /// (the game integrates gravity). Returns
+    /// `(position, applied, grounded, sliding)` or None for a non-kinematic id.
+    fn move_character(
+        &mut self,
+        id: &str,
+        desired: [f32; 3],
+        dt: f32,
+    ) -> Option<([f32; 3], [f32; 3], bool, bool)> {
+        self.inner
+            .move_character(id, desired, dt)
+            .map(|m| (m.position, m.translation, m.grounded, m.sliding))
+    }
+
     fn set_velocity(&mut self, id: &str, v: [f32; 3]) -> bool {
         self.inner.set_velocity(id, v)
     }

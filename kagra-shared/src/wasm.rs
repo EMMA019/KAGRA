@@ -353,6 +353,14 @@ pub fn shared_version() -> String {
     KAGRA_SHARED_VERSION.to_string()
 }
 
+/// Procedural SFX as a mono 16-bit WAV. Empty when `name` is not a preset.
+/// Bundled clips stay on the mixer; this is the synth (`jump`, `hit`, `coin`,
+/// `explode`, …) so the page can play a cue without a file.
+#[wasm_bindgen(js_name = synthWav)]
+pub fn synth_wav(name: &str) -> Vec<u8> {
+    crate::sfx::synth_wav(name).unwrap_or_default()
+}
+
 #[wasm_bindgen(start)]
 pub fn wasm_start() {
     // ブラウザ console に一度だけ出す（web-sys feature）

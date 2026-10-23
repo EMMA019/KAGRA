@@ -27,6 +27,30 @@ def test_wrap_text_explicit_newline():
     assert lines == ["あ", "い"]
 
 
+def test_nine_slice_has_a_shadow_and_a_stretched_center():
+    panel = ui2d.nine_slice(0, 0, 100, 40, slice_px=8)
+    quads = panel["quads"]
+    assert quads[0]["color"][3] == 90
+    assert quads[0]["x"] == 3 and quads[0]["y"] == 4
+    center = [q for q in quads if q["w"] == 84 and q["h"] == 24]
+    assert len(center) == 1
+    assert center[0]["color"][3] == 220
+    corners = [q for q in quads if q["w"] == 8 and q["h"] == 8]
+    assert len(corners) == 4
+
+
+def test_styled_button_centers_the_label_and_press_drops_the_shadow():
+    idle = ui2d.styled_button("GO", 10, 20, 80, 28)
+    pressed = ui2d.styled_button("GO", 10, 20, 80, 28, pressed=True)
+    label = idle["texts"][0]
+    assert label["text"] == "GO"
+    assert label["align"] == "center"
+    assert label["x"] == 50
+    assert any(q["color"][3] == 90 for q in idle["quads"])
+    assert all(q["color"][3] != 90 or q["color"][:3] != [0, 0, 0] for q in pressed["quads"])
+    assert pressed["texts"][0]["y"] > label["y"]
+
+
 def test_panel_two_quads():
     p = ui2d.panel(10, 10, 100, 40)
     assert len(p["quads"]) == 2  # 枠 + 中身

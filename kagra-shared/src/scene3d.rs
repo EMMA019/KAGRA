@@ -206,6 +206,11 @@ pub struct MeshData {
     pub emissive: f32,
     /// Linear. White when the factor is already baked into `emissive_map`.
     pub emissive_color: [f32; 3],
+    /// `KHR_materials_clearcoat` factor. 0 leaves the base lobe. A dump
+    /// `clearcoat` above 0 replaces this at draw time.
+    pub clearcoat: f32,
+    /// Clearcoat roughness from the same extension. 0 in the shader means 0.1.
+    pub clearcoat_roughness: f32,
 }
 
 impl MeshData {
@@ -281,6 +286,10 @@ pub struct Instance {
     pub emissive_color: [f32; 3],
     /// Dump set `emissive` or `emissive_color`. Otherwise the mesh glTF value is used.
     pub emissive_authored: bool,
+    /// 0..1 clearcoat lobe. 0 leaves the base lighting.
+    pub clearcoat: f32,
+    /// Clearcoat roughness. 0 in the shader means 0.1.
+    pub clearcoat_roughness: f32,
 }
 
 impl Instance {
@@ -294,6 +303,8 @@ impl Instance {
             emissive: 0.0,
             emissive_color: [0.0; 3],
             emissive_authored: false,
+            clearcoat: 0.0,
+            clearcoat_roughness: 0.0,
         }
     }
 
@@ -312,6 +323,8 @@ impl Instance {
             emissive: 0.0,
             emissive_color: [0.0; 3],
             emissive_authored: false,
+            clearcoat: 0.0,
+            clearcoat_roughness: 0.0,
         }
     }
 
@@ -331,6 +344,8 @@ impl Instance {
             emissive: 0.0,
             emissive_color: [0.0; 3],
             emissive_authored: false,
+            clearcoat: 0.0,
+            clearcoat_roughness: 0.0,
         }
     }
 }
@@ -685,6 +700,10 @@ pub struct Scene3D {
     pub exposure: f32,
     /// ACES tonemap. Default on so outdoor dumps are not key+fill-flat.
     pub tonemap: bool,
+    /// 0 ACES, 1 AgX, 2 Neutral. Ignored while `tonemap` is false.
+    pub tonemap_code: f32,
+    /// Procedural atmosphere on the sky sphere. False keeps the studio gradient.
+    pub sky_atmosphere: bool,
     /// Directional shadow radius. 1 = the historical 3×3 PCF. Larger = a wider tent.
     pub shadow_softness: f32,
     /// 1 = the historical single map. 2 or 3 pack extra rings into the same map.
@@ -697,6 +716,10 @@ pub struct Scene3D {
     pub hemi_ground: [f32; 3],
     /// 64×64 linear RGBA prefiltered lat-long (4 roughness rows). None = SH specular.
     pub env_pixels: Option<Vec<u8>>,
+    /// Camera-facing point sprites. The renderer draws them after the meshes.
+    pub points: Vec<crate::strokes::PointCloud>,
+    /// Screen-space fat lines. The renderer draws them after the meshes.
+    pub lines: Vec<crate::strokes::FatLine>,
     pub batches: Vec<Batch>,
 }
 
@@ -714,12 +737,16 @@ impl Default for Scene3D {
             ibl: 0.35,
             exposure: 1.0,
             tonemap: true,
+            tonemap_code: 0.0,
+            sky_atmosphere: false,
             shadow_softness: 1.0,
             shadow_cascades: 1,
             shadow_pcss: false,
             hemi_sky: [0.48, 0.56, 0.78],
             hemi_ground: [0.42, 0.30, 0.18],
             env_pixels: None,
+            points: Vec::new(),
+            lines: Vec::new(),
             batches: Vec::new(),
         }
     }

@@ -11,6 +11,9 @@
 //! - `joints[]`: `fixed` / `revolute` / `spherical` (anchors are body-local).
 //! - Walkers stay kinematic capsules. The game owns their positions
 //!   (`sync_walkers`). `sync` does not overwrite them.
+//! - `move_character` is Rapier's `KinematicCharacterController`: slide,
+//!   snap to ground, and a short autostep. It does not integrate gravity.
+//!   The caller passes the desired translation for this tick.
 //! - `take_events("collision")` is start/stop. `take_events("contact")` is the
 //!   first frame a contact force crosses the threshold.
 //!
@@ -21,6 +24,7 @@
 use std::collections::HashMap;
 
 use glam::{EulerRot, Vec3};
+use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 use rapier3d::prelude::*;
 
 use crate::world_doc::{prop_rotation, WorldDoc, WorldEvent, WorldJoint, WorldProp};
@@ -29,6 +33,18 @@ use crate::world_doc::{prop_rotation, WorldDoc, WorldEvent, WorldJoint, WorldPro
 pub const PHYSICS_DT: f32 = 1.0 / 120.0;
 
 const MAX_EVENTS: usize = 256;
+
+/// Result of one `KinematicCharacterController` move.
+///
+/// `translation` is the motion that was applied. `position` is the capsule
+/// origin after that motion. Gravity is not applied here.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CharacterMove {
+    pub position: [f32; 3],
+    pub translation: [f32; 3],
+    pub grounded: bool,
+    pub sliding: bool,
+}
 
 /// Ray hit. `id` is a prop / walker id, or `"ground"` for the heightfield.
 #[derive(Clone, Debug, PartialEq)]
@@ -686,6 +702,93 @@ impl PhysicsWorld {
             normal: hit.normal.to_array(),
         })
     }
+
+    /// Slide a kinematic capsule (walker or kinematic prop) by `desired`.
+    ///
+    /// `desired` is the translation for this tick, including any gravity the
+    /// game already integrated. The controller slides on walls, snaps to the
+    /// ground, and steps over obstacles shorter than 0.35 m. The body's own
+    /// collider is excluded. Returns None when `id` is not kinematic.
+    pub fn move_character(
+        &mut self,
+        id: &str,
+        desired: [f32; 3],
+        dt: f32,
+    ) -> Option<CharacterMove> {
+        if !self.kinematic.contains_key(id) && !self.kinematic_props.contains_key(id) {
+            return None;
+        }
+        let &body = self.bodies.get(id)?;
+        self.refresh_broad_phase();
+        let collider = self
+            .collider_ids
+            .iter()
+            .find(|(_, name)| name.as_str() == id)
+            .map(|(handle, _)| *handle)?;
+        let (pose, shape) = {
+            let rb = self.inner.bodies.get(body)?;
+            let pose = *rb.position();
+            let shape = self.inner.colliders.get(collider)?.shared_shape().clone();
+            (pose, shape)
+        };
+        let filter = QueryFilter {
+            exclude_rigid_body: Some(body),
+            ..QueryFilter::default()
+        };
+        let queries = self.inner.broad_phase.as_query_pipeline(
+            self.inner.narrow_phase.query_dispatcher(),
+            &self.inner.bodies,
+            &self.inner.colliders,
+            filter,
+        );
+        let controller = KinematicCharacterController {
+            slide: true,
+            autostep: Some(CharacterAutostep {
+                max_height: CharacterLength::Absolute(0.35),
+                min_width: CharacterLength::Absolute(0.2),
+                include_dynamic_bodies: false,
+            }),
+            max_slope_climb_angle: 50.0_f32.to_radians(),
+            snap_to_ground: Some(CharacterLength::Absolute(0.3)),
+            ..KinematicCharacterController::default()
+        };
+        let movement = controller.move_shape(
+            dt.clamp(1.0 / 240.0, 0.05),
+            &queries,
+            &*shape,
+            &pose,
+            Vec3::from_array(desired),
+            |_| {},
+        );
+        let delta = Vec3::from_array(movement.translation.to_array());
+        let next = Vec3::from_array(pose.translation.to_array()) + delta;
+        if let Some(rb) = self.inner.bodies.get_mut(body) {
+            rb.set_translation(next, true);
+            rb.set_next_kinematic_translation(next);
+        }
+        Some(CharacterMove {
+            position: next.to_array(),
+            translation: delta.to_array(),
+            grounded: movement.grounded,
+            sliding: movement.is_sliding_down_slope,
+        })
+    }
+
+    fn refresh_broad_phase(&mut self) {
+        self.inner
+            .bodies
+            .propagate_modified_body_positions_to_colliders(&mut self.inner.colliders);
+        let modified: Vec<ColliderHandle> = self.inner.colliders.iter().map(|(h, _)| h).collect();
+        let mut events = Vec::new();
+        self.inner.broad_phase.update(
+            &self.inner.integration_parameters,
+            &self.inner.colliders,
+            &self.inner.bodies,
+            &modified,
+            &[],
+            &mut events,
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1282,6 +1385,78 @@ mod tests {
         assert!(
             (dist - 1.2).abs() < 0.2 && p[1] > 1.0,
             "spherical joint holds, dist={dist} p={p:?}"
+        );
+    }
+
+    fn player_doc(props: Vec<WorldProp>) -> WorldDoc {
+        WorldDoc {
+            version: crate::world_doc::WORLD_DUMP_VERSION,
+            half: 8.0,
+            floor_y: 0.0,
+            player: Some(crate::world_doc::WorldWalker {
+                id: "walker:player".into(),
+                position: [0.0, 1.0, 0.0],
+                ..Default::default()
+            }),
+            props,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn character_controller_slides_on_a_wall_and_stands_on_the_ground() {
+        let doc = player_doc(vec![prop(
+            "prop:wall",
+            "box",
+            [1.7, 1.0, 0.0],
+            [1.0, 2.0, 1.0],
+            true,
+        )]);
+        let mut world = PhysicsWorld::from_doc(&doc);
+        world.step(1.0 / 60.0);
+        let blocked = world
+            .move_character("walker:player", [3.0, -0.2, 0.0], 1.0 / 60.0)
+            .expect("walker");
+        assert!(
+            blocked.translation[0] < 1.4,
+            "the wall stops the capsule, dx={}",
+            blocked.translation[0]
+        );
+        assert!(
+            blocked.position[0] < 1.5,
+            "capsule stays in front of the wall, x={}",
+            blocked.position[0]
+        );
+        assert!(blocked.grounded, "snap keeps the capsule on the floor");
+        assert!(world
+            .move_character("prop:wall", [1.0, 0.0, 0.0], 0.016)
+            .is_none());
+    }
+
+    #[test]
+    fn character_controller_steps_onto_a_low_block() {
+        let doc = player_doc(vec![prop(
+            "prop:curb",
+            "box",
+            [1.2, 0.12, 0.0],
+            [1.2, 0.24, 1.2],
+            true,
+        )]);
+        let mut world = PhysicsWorld::from_doc(&doc);
+        world.step(1.0 / 60.0);
+        let mut y = 1.0;
+        let mut x = 0.0;
+        for _ in 0..8 {
+            let step = world
+                .move_character("walker:player", [0.22, -0.05, 0.0], 1.0 / 60.0)
+                .expect("walker");
+            x = step.position[0];
+            y = step.position[1];
+        }
+        assert!(x > 0.8, "walked toward the curb, x={x}");
+        assert!(
+            y > 1.05,
+            "autostep lifts the capsule onto the curb, y={y} x={x}"
         );
     }
 }

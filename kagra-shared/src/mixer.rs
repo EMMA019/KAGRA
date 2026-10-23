@@ -268,6 +268,15 @@ pub fn clip_wav(name: &str) -> Option<&'static [u8]> {
     }
 }
 
+/// Bundled clip, or a procedural preset (`hit`, `coin`, `explode`, …).
+/// A bundled name never falls through to the synth.
+pub fn sfx_wav(name: &str) -> Option<Vec<u8>> {
+    if let Some(bytes) = clip_wav(name) {
+        return Some(bytes.to_vec());
+    }
+    crate::sfx::synth_wav(name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

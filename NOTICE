@@ -36,6 +36,16 @@ The Narkowicz ACES fit in bloom.wgsl and shader3d.wgsl is the public
 approximation published by Krzysztof Narkowicz (2016), used widely
 including by three.js (MIT). No three.js source is copied in this tree.
 
+The AgX inset and outset matrices in color_space.rs, bloom.wgsl, and
+shader3d.wgsl are Troy Sobotka's AgX base
+(https://github.com/sobotka/AgX, public domain). The log2 / smoothstep
+between those matrices is original. Not a copy of three.js AgXToneMapping.
+
+Khronos PBR Neutral in the same files follows the published curve
+(https://github.com/KhronosGroup/ToneMapping, Apache-2.0). The
+implementation is original. The sky atmosphere is a short Rayleigh / Mie
+mix written here. No three.js Sky shader is copied.
+
 The post pass graph (kagra-shared/src/render/post.rs, post.wgsl) follows
 the shape of three.js EffectComposer / ShaderPass and the ideas in
 SSAOShader, BokehPass, and the Karis neighborhood clamp used by TAA
@@ -52,6 +62,31 @@ The 8-bit bloom mip chain follows three.js UnrealBloomPass (MIT,
 https://github.com/mrdoob/three.js): a luma high-pass, then downsample
 and additive upsample. The WGSL in bloom_ldr.wgsl is original. No
 three.js source is copied.
+
+The procedural SFX in kagra-shared/src/sfx.rs follow the shape of sfxr
+(Tomas Pettersson / DrPetter, MIT, http://www.drpetter.se/project_sfxr.html):
+a waveform, a pitch slide, and a decay. The oscillator and the preset
+numbers are original. No sfxr source is copied. Wasm calls `synthWav`.
+
+rapier3d 0.35
+  https://github.com/dimforge/rapier
+  Apache-2.0
+  Rigid bodies, and `KinematicCharacterController` for
+  `PhysicsWorld::move_character` (slide, snap, autostep). The wasm
+  build keeps parry's default SIMD off. No Rapier source is copied.
+
+simple-easing 1.1.1
+  https://gitlab.com/chpio/simple-easing
+  MIT OR Apache-2.0
+  Named easing curves for kagra_shared::juice. No source is copied
+  into this tree. kagra/juice.py keeps the same curve names in pure
+  Python so tests do not import the extension.
+
+Point sprites follow the idea of three.js Points, and fat lines follow
+Line2 (MIT, https://github.com/mrdoob/three.js): a camera-facing quad
+per point, and a clip-space quad per segment whose width is in pixels.
+The WGSL in strokes.wgsl is original. No three.js source is copied.
+WebGPU point-list stays unused (it is one pixel). No storage buffers.
 
 puffin 0.19
   https://github.com/emilk/puffin

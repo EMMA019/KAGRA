@@ -40,12 +40,25 @@ from kagra.gameloop import (
 from kagra.i18n import add_table, get_lang, set_lang, t
 from kagra.juice import Juice, apply_look, apply_post, ease
 from kagra.particles import Emitter, Trail
+from kagra.strokes import fat_line, point_cloud
 from kagra.land import island_height, open_world_height, overworld_height
 from kagra.path import find_path, move_range
 from kagra.flow import save_dir
 from kagra.save import SlotStore, load_data, save_data
 from kagra.trace import debug_trace, debug_trace_summary
-from kagra.ui2d import bar, choice_menu, image, list_lines, merge, message, paged_menu, panel, scroll_window
+from kagra.ui2d import (
+    bar,
+    choice_menu,
+    image,
+    list_lines,
+    merge,
+    message,
+    nine_slice,
+    paged_menu,
+    panel,
+    scroll_window,
+    styled_button,
+)
 from kagra.verify import load_scenario, run_scenario, run_scenario_path
 from kagra.world_expect import eval_world_expect
 
@@ -155,6 +168,8 @@ __all__ = [
     "NeonCat",
     "NeonRun",
     "Trail",
+    "fat_line",
+    "point_cloud",
     "KagraContractError",
     "CardSession",
     "KairiBrain",
@@ -204,6 +219,7 @@ __all__ = [
     "mouse_down",
     "mouse_pos",
     "move_range",
+    "nine_slice",
     "open_world_height",
     "overworld_height",
     "paged_menu",
@@ -234,6 +250,7 @@ __all__ = [
     "set_mute",
     "sound",
     "stop_bgm",
+    "styled_button",
     "t",
     "tone",
     "was_pressed",

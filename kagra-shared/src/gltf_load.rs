@@ -1024,6 +1024,8 @@ struct PartSurface {
     emissive: f32,
     emissive_color: [f32; 3],
     emissive_map: Option<AlbedoRgba>,
+    clearcoat: f32,
+    clearcoat_roughness: f32,
 }
 
 fn part_surface(parts: &[(MeshData, [u8; 4])]) -> PartSurface {
@@ -1044,6 +1046,10 @@ fn part_surface(parts: &[(MeshData, [u8; 4])]) -> PartSurface {
     let (emissive, emissive_color, emissive_map) = src
         .map(|(m, _)| (m.emissive, m.emissive_color, m.emissive_map.clone()))
         .unwrap_or((0.0, [0.0; 3], None));
+    let coat = parts.iter().find(|(m, _)| m.clearcoat > 0.0);
+    let (clearcoat, clearcoat_roughness) = coat
+        .map(|(m, _)| (m.clearcoat, m.clearcoat_roughness))
+        .unwrap_or((0.0, 0.0));
     PartSurface {
         alpha_cut,
         double_sided,
@@ -1051,6 +1057,8 @@ fn part_surface(parts: &[(MeshData, [u8; 4])]) -> PartSurface {
         emissive,
         emissive_color,
         emissive_map,
+        clearcoat,
+        clearcoat_roughness,
     }
 }
 
@@ -1068,6 +1076,10 @@ fn stamp_surface(out: &mut MeshData, surface: PartSurface) {
     }
     if out.emissive_map.is_none() {
         out.emissive_map = surface.emissive_map;
+    }
+    if out.clearcoat <= 0.0 {
+        out.clearcoat = surface.clearcoat;
+        out.clearcoat_roughness = surface.clearcoat_roughness;
     }
 }
 
@@ -1157,6 +1169,11 @@ fn static_mesh_from_prim(
     } else {
         load_emissive(doc, blobs, prim)
     };
+    let (clearcoat, clearcoat_roughness) = if mtoon.is_some() {
+        (0.0, 0.0)
+    } else {
+        load_clearcoat(doc, prim)
+    };
     let mut vertices: Vec<Vertex3> = positions
         .into_iter()
         .zip(normals)
@@ -1193,6 +1210,8 @@ fn static_mesh_from_prim(
         sampler,
         emissive,
         emissive_color,
+        clearcoat,
+        clearcoat_roughness,
     };
     if mesh.vertices.is_empty() {
         return Err("empty mesh".into());
@@ -2615,6 +2634,27 @@ fn bake_srgb_factor(img: &mut AlbedoRgba, factor: [f32; 4]) {
     img.rgba = Arc::from(px);
 }
 
+fn load_clearcoat(doc: &GltfFile, prim: &Primitive) -> (f32, f32) {
+    let Some(mi) = prim.material else {
+        return (0.0, 0.0);
+    };
+    let Some(mat) = doc.materials.get(mi) else {
+        return (0.0, 0.0);
+    };
+    let Some(node) = mat.pointer("/extensions/KHR_materials_clearcoat") else {
+        return (0.0, 0.0);
+    };
+    let factor = node
+        .pointer("/clearcoatFactor")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0) as f32;
+    let rough = node
+        .pointer("/clearcoatRoughnessFactor")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0) as f32;
+    (factor.clamp(0.0, 1.0), rough.clamp(0.0, 1.0))
+}
+
 fn load_emissive(
     doc: &GltfFile,
     blobs: &[Vec<u8>],
@@ -3391,6 +3431,21 @@ mod tests {
         let img = mesh.albedo.expect("1x1 factor");
         assert_eq!((img.width, img.height), (1, 1));
         assert_eq!(&img.rgba[..4], &[255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn clearcoat_extension_lands_on_the_mesh() {
+        let cube = unit_cube_gltf();
+        let mut with = cube.replacen("\"mode\": 4", "\"mode\": 4, \"material\": 0", 1);
+        let trimmed = with.trim_end().trim_end_matches('}').to_string();
+        with = format!(
+            "{trimmed}, \"materials\": [{{\"extensions\": {{\"KHR_materials_clearcoat\": {{\"clearcoatFactor\": 0.75, \"clearcoatRoughnessFactor\": 0.2}}}}}}]}}"
+        );
+        let mesh = mesh_from_gltf_json(&with, |_| Err("external".into())).expect("coat");
+        assert!((mesh.clearcoat - 0.75).abs() < 1e-4);
+        assert!((mesh.clearcoat_roughness - 0.2).abs() < 1e-4);
+        let plain = mesh_from_gltf_json(&cube, |_| Err("external".into())).expect("plain");
+        assert_eq!(plain.clearcoat, 0.0);
     }
 
     #[test]

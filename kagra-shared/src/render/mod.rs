@@ -105,6 +105,8 @@ struct GpuMesh {
     has_normal: bool,
     emissive: f32,
     emissive_color: [f32; 3],
+    clearcoat: f32,
+    clearcoat_roughness: f32,
     _sampler: Option<wgpu::Sampler>,
     /// Authored image bytes (albedo, matcap, normal, ORM, emissive).
     tex_bytes: u64,
@@ -197,6 +199,8 @@ pub struct Renderer {
     picture_tier: String,
     /// One line for the page: tier, backend, fxaa, ssao, cascades, path.
     picture_line: String,
+    /// Instanced point sprites and fat lines. Absent dumps draw nothing.
+    strokes: StrokeGpu,
 }
 
 #[derive(Clone, Debug)]
@@ -857,7 +861,7 @@ impl Renderer {
                 shader_location: 6,
             },
             wgpu::VertexAttribute {
-                format: wgpu::VertexFormat::Float32,
+                format: wgpu::VertexFormat::Float32x4,
                 offset: 80,
                 shader_location: 7,
             },
@@ -1188,6 +1192,7 @@ impl Renderer {
         let bloom = BloomPass::new(&device, format, width, height, hdr);
         let timestamps = create_timestamps(&device);
         let post = PostGraph::new(&device, format, bloom.frame_format(), width, height);
+        let strokes = create_stroke_gpu(&device, &queue, frame_format);
 
         let me = Self {
             device,
@@ -1243,6 +1248,7 @@ impl Renderer {
             backend_name: backend,
             picture_tier: String::new(),
             picture_line: String::new(),
+            strokes,
         };
         me.upload_screen();
         me
@@ -1419,6 +1425,8 @@ impl Renderer {
             has_normal: tex_ok(&mesh.normal),
             emissive: mesh.emissive,
             emissive_color: mesh.emissive_color,
+            clearcoat: mesh.clearcoat,
+            clearcoat_roughness: mesh.clearcoat_roughness,
             _sampler: sampler,
             tex_bytes: image_bytes(&mesh.albedo)
                 + image_bytes(&mesh.matcap)
@@ -1550,6 +1558,8 @@ impl Renderer {
             color_space::present_in_fragment(direct && !direct_post, self.format.is_srgb());
         let mut unjittered_vp = glam::Mat4::IDENTITY;
         let mut drew_scene = false;
+        let mut stroke_points = 0u32;
+        let mut stroke_lines = 0u32;
 
         // 3D のインスタンスを 1 本のバッファに連結し、バッチごとの開始位置を覚える。
         // base instance は GLES に無いので、描画時は毎回 0.. で数え、バッファの
@@ -1610,12 +1620,19 @@ impl Renderer {
                             )
                         };
                     let alpha_cut = gpu.map(|g| g.alpha_cut).unwrap_or(0.0);
+                    let (coat, coat_rough) = if inst.clearcoat > 0.0 {
+                        (inst.clearcoat, inst.clearcoat_roughness)
+                    } else {
+                        gpu.map(|g| (g.clearcoat, g.clearcoat_roughness))
+                            .unwrap_or((0.0, 0.0))
+                    };
                     raw.push(InstanceRaw {
                         model: inst.model.to_cols_array_2d(),
                         // Author bytes are sRGB. Lighting stays linear on every target.
                         color: color_space::srgb_u8_to_linear(inst.color),
                         material: inst.material as u8 as f32,
-                        _pad: [0.0; 3],
+                        // location 7: material id, clearcoat, clearcoat roughness.
+                        _pad: [coat, coat_rough, 0.0],
                         mtoon,
                         mtoon2,
                         mtoon3,
@@ -1643,19 +1660,24 @@ impl Renderer {
                 0.0
             };
             unjittered_vp = self.upload_globals(scene, present_in_shader, depth_span, direct);
+            let (points, lines) =
+                self.strokes
+                    .prepare(&self.device, &self.queue, scene, self.width, self.height);
+            stroke_points = points;
+            stroke_lines = lines;
             drew_scene = true;
         }
 
         let clear_bytes = world.map(|s| s.clear).unwrap_or(hud.clear);
-        let (exposure, tonemap) = match world {
-            Some(scene) => (scene.exposure.max(0.0), scene.tonemap),
-            None => (1.0, true),
+        let (exposure, tonemap, tonemap_code) = match world {
+            Some(scene) => (scene.exposure.max(0.0), scene.tonemap, scene.tonemap_code),
+            None => (1.0, true, 0.0),
         };
         // 3D clear is linear in the HDR frame. The direct unorm fallback has no
         // composite, so that clear is graded here with the same OETF as present_rgb.
         // HUD-only direct stores the code; composite (or an sRGB target) encodes once.
         let clear = if world.is_some() && present_in_shader {
-            color_space::grade_authored(clear_bytes, exposure, tonemap)
+            color_space::grade_curve(clear_bytes, exposure, tonemap, tonemap_code)
         } else if present_in_shader {
             color_space::display_u8(clear_bytes, false)
         } else {
@@ -1824,6 +1846,7 @@ impl Renderer {
                     pass.draw_indexed(0..m.index_count, 0, 0..*count);
                 }
             }
+            self.strokes.draw(&mut pass, stroke_points, stroke_lines);
         }
         // Depth color for SSAO / DOF / motion. The color target blends, so
         // device depth cannot live in its alpha. Load the depth buffer the
@@ -1904,6 +1927,7 @@ impl Renderer {
                 (target_texture, &view),
                 exposure,
                 tonemap,
+                tonemap_code,
                 None,
                 true,
             );
@@ -1930,6 +1954,7 @@ impl Renderer {
                 (target_texture, &view),
                 exposure,
                 tonemap,
+                tonemap_code,
                 if taa { Some(0.0) } else { None },
                 !taa,
             );
@@ -1993,7 +2018,15 @@ impl Renderer {
         if let Some(f) = frame {
             self.queue.present(f);
         }
-        let (draws, triangles) = draw_counts(&self.meshes, &draws);
+        let (mut draws, mut triangles) = draw_counts(&self.meshes, &draws);
+        if stroke_points > 0 {
+            draws = draws.saturating_add(1);
+            triangles = triangles.saturating_add(stroke_points.saturating_mul(2));
+        }
+        if stroke_lines > 0 {
+            draws = draws.saturating_add(1);
+            triangles = triangles.saturating_add(stroke_lines.saturating_mul(2));
+        }
         self.last_profile = crate::profile::FrameProfile {
             cpu_ms,
             gpu_ms,
@@ -2219,9 +2252,18 @@ impl Renderer {
                     0.0
                 },
                 depth_span,
-                0.0,
+                if scene.sky_atmosphere { 1.0 } else { 0.0 },
             ],
-            hemi_sky: [scene.hemi_sky[0], scene.hemi_sky[1], scene.hemi_sky[2], 0.0],
+            hemi_sky: [
+                scene.hemi_sky[0],
+                scene.hemi_sky[1],
+                scene.hemi_sky[2],
+                if scene.tonemap {
+                    scene.tonemap_code
+                } else {
+                    0.0
+                },
+            ],
             hemi_ground: [
                 scene.hemi_ground[0],
                 scene.hemi_ground[1],
@@ -2760,6 +2802,360 @@ async fn new_instance() -> wgpu::Instance {
 
 fn image_bytes(img: &Option<crate::scene3d::AlbedoRgba>) -> u64 {
     img.as_ref().map(|a| a.rgba.len() as u64).unwrap_or(0)
+}
+
+const POINT_CORNERS: [[f32; 2]; 6] = [
+    [-1.0, -1.0],
+    [1.0, -1.0],
+    [1.0, 1.0],
+    [-1.0, -1.0],
+    [1.0, 1.0],
+    [-1.0, 1.0],
+];
+
+const LINE_CORNERS: [[f32; 2]; 6] = [
+    [0.0, -1.0],
+    [1.0, -1.0],
+    [1.0, 1.0],
+    [0.0, -1.0],
+    [1.0, 1.0],
+    [0.0, 1.0],
+];
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct StrokeView {
+    view_proj: [[f32; 4]; 4],
+    cam_right: [f32; 4],
+    cam_up: [f32; 4],
+    viewport: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct PointRaw {
+    pos: [f32; 4],
+    color: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct LineRaw {
+    a: [f32; 4],
+    b: [f32; 4],
+    color: [f32; 4],
+}
+
+#[derive(Debug)]
+struct StrokeGpu {
+    pipeline_points: wgpu::RenderPipeline,
+    pipeline_lines: wgpu::RenderPipeline,
+    stroke_buf: wgpu::Buffer,
+    stroke_bind: wgpu::BindGroup,
+    point_corner_buf: wgpu::Buffer,
+    line_corner_buf: wgpu::Buffer,
+    point_inst_buf: wgpu::Buffer,
+    point_inst_capacity: usize,
+    line_inst_buf: wgpu::Buffer,
+    line_inst_capacity: usize,
+}
+
+fn instance_buf(device: &wgpu::Device, label: &str, stride: usize, count: usize) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: (stride * count.max(1)) as u64,
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
+}
+
+fn create_stroke_gpu(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    frame_format: wgpu::TextureFormat,
+) -> StrokeGpu {
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("kagra-shared strokes"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("strokes.wgsl").into()),
+    });
+    let bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("kagra-shared stroke layout"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+    });
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("kagra-shared stroke pipeline layout"),
+        bind_group_layouts: &[Some(&bind_layout)],
+        immediate_size: 0,
+    });
+    let stroke_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("kagra-shared stroke view"),
+        size: std::mem::size_of::<StrokeView>() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let stroke_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("kagra-shared stroke bind"),
+        layout: &bind_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: stroke_buf.as_entire_binding(),
+        }],
+    });
+    let add = wgpu::BlendState {
+        color: wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::One,
+            dst_factor: wgpu::BlendFactor::One,
+            operation: wgpu::BlendOperation::Add,
+        },
+        alpha: wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::One,
+            dst_factor: wgpu::BlendFactor::One,
+            operation: wgpu::BlendOperation::Add,
+        },
+    };
+    let target = wgpu::ColorTargetState {
+        format: frame_format,
+        blend: Some(add),
+        write_mask: wgpu::ColorWrites::ALL,
+    };
+    let targets = [Some(target.clone()), Some(target)];
+    let depth = wgpu::DepthStencilState {
+        format: DEPTH_FORMAT,
+        depth_write_enabled: Some(false),
+        depth_compare: Some(wgpu::CompareFunction::LessEqual),
+        stencil: Default::default(),
+        bias: Default::default(),
+    };
+    let corner_attr = [wgpu::VertexAttribute {
+        format: wgpu::VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let point_attr = [
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Float32x4,
+            offset: 0,
+            shader_location: 1,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Float32x4,
+            offset: 16,
+            shader_location: 2,
+        },
+    ];
+    let line_attr = [
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Float32x4,
+            offset: 0,
+            shader_location: 1,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Float32x4,
+            offset: 16,
+            shader_location: 2,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Float32x4,
+            offset: 32,
+            shader_location: 3,
+        },
+    ];
+    let point_buffers = [
+        Some(wgpu::VertexBufferLayout {
+            array_stride: 8,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &corner_attr,
+        }),
+        Some(wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<PointRaw>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &point_attr,
+        }),
+    ];
+    let line_buffers = [
+        Some(wgpu::VertexBufferLayout {
+            array_stride: 8,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &corner_attr,
+        }),
+        Some(wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<LineRaw>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &line_attr,
+        }),
+    ];
+    let pipeline_points = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("kagra-shared points"),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_point"),
+            compilation_options: Default::default(),
+            buffers: &point_buffers,
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_point"),
+            compilation_options: Default::default(),
+            targets: &targets,
+        }),
+        primitive: wgpu::PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: Some(depth.clone()),
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    });
+    let pipeline_lines = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("kagra-shared fat lines"),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_line"),
+            compilation_options: Default::default(),
+            buffers: &line_buffers,
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_line"),
+            compilation_options: Default::default(),
+            targets: &targets,
+        }),
+        primitive: wgpu::PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: Some(depth),
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    });
+    let point_inst_capacity = 64;
+    let line_inst_capacity = 64;
+    StrokeGpu {
+        pipeline_points,
+        pipeline_lines,
+        stroke_buf,
+        stroke_bind,
+        point_corner_buf: create_init_buffer(
+            device,
+            queue,
+            "kagra-shared point corners",
+            bytemuck::cast_slice(&POINT_CORNERS),
+            wgpu::BufferUsages::VERTEX,
+        ),
+        line_corner_buf: create_init_buffer(
+            device,
+            queue,
+            "kagra-shared line corners",
+            bytemuck::cast_slice(&LINE_CORNERS),
+            wgpu::BufferUsages::VERTEX,
+        ),
+        point_inst_buf: instance_buf(
+            device,
+            "kagra-shared point instances",
+            32,
+            point_inst_capacity,
+        ),
+        point_inst_capacity,
+        line_inst_buf: instance_buf(
+            device,
+            "kagra-shared line instances",
+            48,
+            line_inst_capacity,
+        ),
+        line_inst_capacity,
+    }
+}
+
+impl StrokeGpu {
+    fn prepare(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        scene: &crate::scene3d::Scene3D,
+        width: u32,
+        height: u32,
+    ) -> (u32, u32) {
+        let cam = &scene.camera;
+        let (forward, right, up) = crate::scene3d::screen_basis(cam.eye, cam.target, cam.up);
+        let ahead = |p: [f32; 3]| (glam::Vec3::from_array(p) - cam.eye).dot(forward) > cam.near;
+        let points: Vec<PointRaw> = crate::strokes::collect_points(&scene.points)
+            .into_iter()
+            .filter(|p| ahead(p.position))
+            .map(|p| PointRaw {
+                pos: [p.position[0], p.position[1], p.position[2], p.size],
+                color: color_space::srgb_u8_to_linear(p.color),
+            })
+            .collect();
+        let lines: Vec<LineRaw> = crate::strokes::collect_segments(&scene.lines)
+            .into_iter()
+            .filter(|s| ahead(s.start) && ahead(s.end))
+            .map(|s| LineRaw {
+                a: [s.start[0], s.start[1], s.start[2], s.width],
+                b: [s.end[0], s.end[1], s.end[2], 0.0],
+                color: color_space::srgb_u8_to_linear(s.color),
+            })
+            .collect();
+        if points.is_empty() && lines.is_empty() {
+            return (0, 0);
+        }
+        let aspect = width.max(1) as f32 / height.max(1) as f32;
+        let view = StrokeView {
+            view_proj: cam.view_projection(aspect).to_cols_array_2d(),
+            cam_right: [right.x, right.y, right.z, 0.0],
+            cam_up: [up.x, up.y, up.z, 0.0],
+            viewport: [width.max(1) as f32, height.max(1) as f32, 0.0, 0.0],
+        };
+        queue.write_buffer(&self.stroke_buf, 0, bytemuck::bytes_of(&view));
+        if !points.is_empty() {
+            if points.len() > self.point_inst_capacity {
+                let cap = points.len().next_power_of_two();
+                self.point_inst_buf = instance_buf(device, "kagra-shared point instances", 32, cap);
+                self.point_inst_capacity = cap;
+            }
+            queue.write_buffer(&self.point_inst_buf, 0, bytemuck::cast_slice(&points));
+        }
+        if !lines.is_empty() {
+            if lines.len() > self.line_inst_capacity {
+                let cap = lines.len().next_power_of_two();
+                self.line_inst_buf = instance_buf(device, "kagra-shared line instances", 48, cap);
+                self.line_inst_capacity = cap;
+            }
+            queue.write_buffer(&self.line_inst_buf, 0, bytemuck::cast_slice(&lines));
+        }
+        (points.len() as u32, lines.len() as u32)
+    }
+
+    fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, n_points: u32, n_lines: u32) {
+        if n_points == 0 && n_lines == 0 {
+            return;
+        }
+        pass.set_bind_group(0, &self.stroke_bind, &[]);
+        if n_points > 0 {
+            pass.set_pipeline(&self.pipeline_points);
+            pass.set_vertex_buffer(0, self.point_corner_buf.slice(..));
+            pass.set_vertex_buffer(1, self.point_inst_buf.slice(..));
+            pass.draw(0..6, 0..n_points);
+        }
+        if n_lines > 0 {
+            pass.set_pipeline(&self.pipeline_lines);
+            pass.set_vertex_buffer(0, self.line_corner_buf.slice(..));
+            pass.set_vertex_buffer(1, self.line_inst_buf.slice(..));
+            pass.draw(0..6, 0..n_lines);
+        }
+    }
 }
 
 fn draw_counts(meshes: &[GpuMesh], draws: &[(usize, u64, u32, bool, bool)]) -> (u32, u32) {
@@ -3665,6 +4061,14 @@ mod tests {
     /// Empty scene, bloom off, FXAA off, vignette off. The center pixel is the
     /// clear color after one grade.
     fn grade_clear(format: wgpu::TextureFormat, tonemap: bool) -> Option<Vec<u8>> {
+        grade_clear_curve(format, tonemap, 0.0)
+    }
+
+    fn grade_clear_curve(
+        format: wgpu::TextureFormat,
+        tonemap: bool,
+        curve: f32,
+    ) -> Option<Vec<u8>> {
         let mut renderer =
             pollster::block_on(Renderer::new_offscreen_format(64, 64, format)).ok()?;
         renderer.set_fxaa(false);
@@ -3672,6 +4076,7 @@ mod tests {
         let scene = crate::scene3d::Scene3D {
             clear: [128, 64, 32, 255],
             tonemap,
+            tonemap_code: curve,
             exposure: 1.0,
             ibl: 0.0,
             batches: Vec::new(),
@@ -3742,6 +4147,151 @@ mod tests {
     }
 
     #[test]
+    fn offscreen_agx_and_neutral_match_the_cpu_curve() {
+        let author = [128u8, 64, 32, 255];
+        for (curve, name) in [(1.0f32, "agx"), (2.0, "neutral")] {
+            let expect = color_space::reference_curve(author, 1.0, true, curve);
+            for format in [
+                wgpu::TextureFormat::Rgba8UnormSrgb,
+                wgpu::TextureFormat::Rgba8Unorm,
+            ] {
+                let Some(rgba) = grade_clear_curve(format, true, curve) else {
+                    eprintln!("no GPU adapter; skipping {name}");
+                    return;
+                };
+                let got = pixel_of(&rgba, 64, 32, 32);
+                write_shot(&format!("clear-{name}.png"), 64, 64, &rgba);
+                assert_rgb_near(got, expect, 3);
+            }
+        }
+    }
+
+    fn mean_channel_delta(a: &[u8], b: &[u8]) -> f32 {
+        let n = (a.len().min(b.len()) / 4).max(1);
+        let mut acc = 0i64;
+        for i in 0..n {
+            for c in 0..3 {
+                acc += (a[i * 4 + c] as i32 - b[i * 4 + c] as i32).abs() as i64;
+            }
+        }
+        acc as f32 / (n as f32 * 3.0)
+    }
+
+    #[test]
+    fn offscreen_clearcoat_and_atmosphere_change_the_picture() {
+        let mut renderer = match pollster::block_on(Renderer::new_offscreen_format(
+            96,
+            96,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+        )) {
+            Ok(r) => r,
+            Err(_) => {
+                eprintln!("no GPU adapter; skipping coat and sky");
+                return;
+            }
+        };
+        renderer.set_fxaa(false);
+        renderer.bloom.set_grade(0.85, 0.0, 0.0, false, "off", 0.0);
+        let sphere = crate::scene3d::primitives::sphere_mesh(1.0, 12);
+        let id = renderer.upload_mesh(&sphere);
+        let cam = crate::scene3d::Camera {
+            eye: glam::Vec3::new(0.0, 0.15, 3.1),
+            target: glam::Vec3::ZERO,
+            ..Default::default()
+        };
+        let bare = crate::scene3d::Instance::with_pbr(
+            glam::Mat4::IDENTITY,
+            [36, 42, 56, 255],
+            crate::scene3d::Material::Solid,
+            0.0,
+            1.0,
+        );
+        let mut coat = bare;
+        coat.clearcoat = 1.0;
+        coat.clearcoat_roughness = 0.05;
+        let paint = |renderer: &mut Renderer, inst: crate::scene3d::Instance| {
+            let scene = crate::scene3d::Scene3D {
+                camera: cam,
+                clear: [8, 10, 16, 255],
+                light_dir: glam::Vec3::new(0.1, 0.25, 1.0).normalize(),
+                ambient: 0.05,
+                ibl: 1.0,
+                tonemap: true,
+                exposure: 1.15,
+                fog_start: 40.0,
+                fog_end: 120.0,
+                batches: vec![crate::scene3d::Batch {
+                    mesh: id,
+                    instances: vec![inst],
+                }],
+                ..Default::default()
+            };
+            renderer
+                .render_frame(Some(&scene), &crate::scene::DrawList::default())
+                .expect("coat frame");
+            renderer.read_rgba().expect("coat read")
+        };
+        let dull = paint(&mut renderer, bare);
+        let shiny = paint(&mut renderer, coat);
+        write_shot("clearcoat-off.png", 96, 96, &dull);
+        write_shot("clearcoat-on.png", 96, 96, &shiny);
+        let coat_delta = mean_channel_delta(&dull, &shiny);
+        assert!(
+            coat_delta > 1.5,
+            "clearcoat should move the sphere, mean delta {coat_delta}"
+        );
+
+        let sky_cam = crate::scene3d::Camera {
+            eye: glam::Vec3::ZERO,
+            target: glam::Vec3::new(0.15, 0.02, 1.0),
+            up: glam::Vec3::Y,
+            ..Default::default()
+        };
+        let sky_model = glam::Mat4::from_scale_rotation_translation(
+            glam::Vec3::splat(40.0),
+            glam::Quat::IDENTITY,
+            sky_cam.eye,
+        );
+        let sky_inst = crate::scene3d::Instance::with_material(
+            sky_model,
+            [130, 165, 205, 255],
+            crate::scene3d::Material::Sky,
+        );
+        let sky = |renderer: &mut Renderer, atmosphere: bool| {
+            let scene = crate::scene3d::Scene3D {
+                camera: sky_cam,
+                clear: [130, 165, 205, 255],
+                light_dir: glam::Vec3::new(0.2, 0.45, 0.15).normalize(),
+                ambient: 0.4,
+                ibl: 0.0,
+                tonemap: true,
+                exposure: 1.0,
+                fog_start: 500.0,
+                fog_end: 800.0,
+                sky_atmosphere: atmosphere,
+                batches: vec![crate::scene3d::Batch {
+                    mesh: id,
+                    instances: vec![sky_inst],
+                }],
+                ..Default::default()
+            };
+            renderer
+                .render_frame(Some(&scene), &crate::scene::DrawList::default())
+                .expect("sky frame");
+            renderer.read_rgba().expect("sky read")
+        };
+        let gradient = sky(&mut renderer, false);
+        let air = sky(&mut renderer, true);
+        write_shot("sky-gradient.png", 96, 96, &gradient);
+        write_shot("sky-atmosphere.png", 96, 96, &air);
+        let sky_delta = mean_channel_delta(&gradient, &air);
+        assert!(
+            sky_delta > 2.0,
+            "atmosphere should replace the studio gradient, mean delta {sky_delta}"
+        );
+    }
+
+    #[test]
     fn offscreen_hud_ramp_is_one_encode() {
         for (format, name) in [
             (wgpu::TextureFormat::Rgba8UnormSrgb, "srgb"),
@@ -3799,6 +4349,19 @@ mod tests {
 
     fn channel_sum(px: [u8; 4]) -> i32 {
         px[0] as i32 + px[1] as i32 + px[2] as i32
+    }
+
+    fn changed_pixels(a: &[u8], b: &[u8]) -> u32 {
+        let mut changed = 0u32;
+        for (px, qy) in a.chunks(4).zip(b.chunks(4)) {
+            let da = (px[0] as i32 - qy[0] as i32).abs()
+                + (px[1] as i32 - qy[1] as i32).abs()
+                + (px[2] as i32 - qy[2] as i32).abs();
+            if da >= 12 {
+                changed += 1;
+            }
+        }
+        changed
     }
 
     #[test]
@@ -3927,6 +4490,113 @@ mod tests {
         assert!(
             changed > 40,
             "mobile SSAO and cascades should move the neon frame, changed {changed}"
+        );
+    }
+
+    #[test]
+    fn stroke_shader_expands_quads_without_storage() {
+        let src = include_str!("strokes.wgsl");
+        assert!(src.contains("fn vs_point"));
+        assert!(src.contains("fn vs_line"));
+        assert!(!src.contains("var<storage"));
+    }
+
+    #[test]
+    fn fat_line_and_points_change_the_frame() {
+        let Some(mut renderer) = pollster::block_on(Renderer::new_offscreen(160, 90)).ok() else {
+            eprintln!("no GPU adapter; skipping strokes");
+            return;
+        };
+        let mut doc = crate::world_doc::WorldDoc {
+            version: 1,
+            ground: Some(false),
+            sky: Some([8, 8, 16, 255]),
+            bloom: Some(0.0),
+            tonemap: Some(false),
+            exposure: Some(1.0),
+            ..Default::default()
+        };
+        doc.cameras.push(crate::world_doc::WorldCamera {
+            id: "cam".into(),
+            kind: "camera".into(),
+            name: "main".into(),
+            position: [0.0, 0.2, 3.2],
+            target: [0.0, 0.0, 0.0],
+            fov: 50.0,
+            roll: 0.0,
+        });
+        doc.lines.push(crate::strokes::FatLine {
+            id: "bar".into(),
+            points: vec![[-1.4, 0.0, 0.0], [1.4, 0.0, 0.0]],
+            color: [255, 255, 255, 255],
+            width: 10.0,
+        });
+        doc.points.push(crate::strokes::PointCloud {
+            id: "dot".into(),
+            positions: vec![[0.0, 0.45, 0.0]],
+            color: [255, 40, 180, 255],
+            size: 0.22,
+        });
+        let on = renderer.render_world_doc(&doc).expect("strokes");
+        write_shot("strokes-on.png", 160, 90, &on);
+        let mut quiet = doc.clone();
+        quiet.lines.clear();
+        quiet.points.clear();
+        let off = renderer.render_world_doc(&quiet).expect("quiet");
+        write_shot("strokes-off.png", 160, 90, &off);
+        let changed = changed_pixels(&on, &off);
+        assert!(
+            changed > 20,
+            "strokes should move the frame, changed {changed}"
+        );
+        let Some(mut phone) = pollster::block_on(Renderer::new_ldr_unorm(160, 90)).ok() else {
+            eprintln!("no unorm adapter; skipping phone strokes");
+            return;
+        };
+        let phone_on = phone.render_world_doc(&doc).expect("phone strokes");
+        let status = phone.picture_status();
+        assert!(status.ends_with(" post"), "{status}");
+        let phone_off = phone.render_world_doc(&quiet).expect("phone quiet");
+        write_shot("strokes-phone.png", 160, 90, &phone_on);
+        let phone_changed = changed_pixels(&phone_on, &phone_off);
+        assert!(
+            phone_changed > 20,
+            "8-bit path should still draw strokes, changed {phone_changed} {status}"
+        );
+    }
+
+    #[test]
+    fn neon_ribbon_draws_on_the_phone_path() {
+        let Some(mut renderer) = pollster::block_on(Renderer::new_ldr_unorm(320, 180)).ok() else {
+            eprintln!("no unorm adapter; skipping neon ribbon");
+            return;
+        };
+        let mut run = crate::neon_run::NeonRun::from_json(r#"{"version":1,"genre":"neon_run"}"#)
+            .expect("neon");
+        run.confirm();
+        for _ in 0..90 {
+            run.tick(1.0 / 60.0);
+        }
+        assert!(run.document().props.iter().all(|p| p.name != "trail"));
+        assert!(run
+            .document()
+            .lines
+            .iter()
+            .any(|line| line.id == "ribbon" && line.points.len() >= 4));
+        let on = renderer
+            .render_world_doc(run.document())
+            .expect("ribbon frame");
+        write_shot("neon-ribbon.png", 320, 180, &on);
+        let status = renderer.picture_status();
+        assert!(status.ends_with(" post"), "{status}");
+        let mut quiet = run.document().clone();
+        quiet.lines.clear();
+        quiet.points.clear();
+        let off = renderer.render_world_doc(&quiet).expect("no ribbon");
+        let changed = changed_pixels(&on, &off);
+        assert!(
+            changed > 8,
+            "the fat-line ribbon should move the phone frame, changed {changed}"
         );
     }
 
@@ -4229,6 +4899,8 @@ mod tests {
                 ..Default::default()
             },
             tonemap: true,
+            tonemap_code: 0.0,
+            sky_atmosphere: false,
             exposure: 1.15,
             ibl: 0.55,
             batches: vec![crate::scene3d::Batch {

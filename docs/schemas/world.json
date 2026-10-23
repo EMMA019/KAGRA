@@ -73,7 +73,16 @@
     },
     "tonemap": {
       "type": ["boolean", "null"],
-      "description": "ACES tonemap. Omit = on. Globals.env.w. Reinhard is not used; ACES matches kagra-core V2."
+      "description": "Tonemap on. Omit = on. Globals.env.w. The curve is tonemap_curve."
+    },
+    "tonemap_curve": {
+      "type": ["string", "null"],
+      "enum": ["aces", "agx", "neutral", null],
+      "description": "Display curve when tonemap is on. Omit or an unknown name = ACES. agx is the AgX inset/outset with a smoothstep. neutral is Khronos PBR Neutral."
+    },
+    "sky_atmosphere": {
+      "type": ["boolean", "null"],
+      "description": "Procedural Rayleigh / Mie sky on the sky sphere. Omit = the studio gradient."
     },
     "quality": {
       "type": ["string", "null"],
@@ -189,6 +198,16 @@
       "type": "array",
       "description": "Rapier impulse joints (physics feature). name is fixed / revolute / spherical. Anchors are body-local. Omit when empty.",
       "items": { "$ref": "#/$defs/joint" }
+    },
+    "points": {
+      "type": "array",
+      "description": "GPU point sprites. Each position is a camera-facing quad (WebGPU point-list is 1px). size is the radius in meters. color is sRGB. Omit when empty. Not the CPU Emitter props.",
+      "items": { "$ref": "#/$defs/point_cloud" }
+    },
+    "lines": {
+      "type": "array",
+      "description": "GPU fat lines. Each polyline is screen-space quads. width is pixels. color is sRGB. Omit when empty. Not the CPU Trail quads.",
+      "items": { "$ref": "#/$defs/fat_line" }
     }
   },
   "$defs": {
@@ -275,6 +294,18 @@
           "items": { "type": "number" },
           "description": "Linear 0..1 RGB glow. Omit = use the albedo."
         },
+        "clearcoat": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Second GGX lobe, F0 0.04. 0 keeps a glTF KHR_materials_clearcoat factor, or no coat."
+        },
+        "clearcoat_roughness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Clearcoat roughness. 0 in the shader means 0.1 when a coat is on."
+        },
         "roughness_map": {
           "type": ["string", "null"],
           "description": "PNG path or preset:worn / preset:split / preset:brushed. G channel replaces the roughness scalar. Presets also write metallic."
@@ -307,6 +338,48 @@
           "type": "number",
           "minimum": 0,
           "description": "Dynamic mass in kg. Omit or 0 = collider density."
+        }
+      }
+    },
+    "point_cloud": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "positions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/vec3" }
+        },
+        "color": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "type": "integer", "minimum": 0, "maximum": 255 },
+          "description": "sRGB r, g, b and opacity. Omit = white."
+        },
+        "size": {
+          "type": "number",
+          "description": "Billboard radius in meters. Omit = 0.06."
+        }
+      }
+    },
+    "fat_line": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "points": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/vec3" }
+        },
+        "color": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "type": "integer", "minimum": 0, "maximum": 255 },
+          "description": "sRGB r, g, b and opacity. Omit = white."
+        },
+        "width": {
+          "type": "number",
+          "description": "Screen-space width in pixels. Omit = 3."
         }
       }
     },
