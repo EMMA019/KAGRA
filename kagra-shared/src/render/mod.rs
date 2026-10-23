@@ -1186,26 +1186,15 @@ impl Renderer {
             a.as_ref()
                 .is_some_and(|alb| alb.width > 0 && alb.height > 0 && !alb.rgba.is_empty())
         };
-        let has_any = tex_ok(&mesh.albedo)
+        let has_any = mesh.albedo_ktx.is_some()
+            || tex_ok(&mesh.albedo)
             || tex_ok(&mesh.matcap)
             || tex_ok(&mesh.normal)
             || tex_ok(&mesh.orm)
             || tex_ok(&mesh.emissive_map);
         let (albedo_bind, albedo_tex, matcap_tex, normal_tex, orm_tex, emissive_tex, sampler) =
             if has_any {
-                let alb_tex = mesh
-                    .albedo
-                    .as_ref()
-                    .filter(|_| tex_ok(&mesh.albedo))
-                    .map(|alb| {
-                        create_albedo_texture(
-                            &self.device,
-                            &self.queue,
-                            alb.width,
-                            alb.height,
-                            &alb.rgba,
-                        )
-                    });
+                let alb_tex = upload_albedo(&self.device, &self.queue, mesh);
                 let mc_tex = mesh
                     .matcap
                     .as_ref()
@@ -2572,9 +2561,22 @@ async fn request_device(
     // wgpu 30 has no DEPTH32FLOAT_FILTERABLE feature. Comparison itself is
     // core; linear filtering of that compare is not. The shadow sampler
     // stays nearest so mobile WebGPU does not reject the draw.
+    // Compression bits are requested only when this adapter already lists
+    // them. A missing bit leaves KTX2 on the RGBA fallback.
+    let mut required_features = wgpu::Features::empty();
+    for bit in [
+        wgpu::Features::TEXTURE_COMPRESSION_BC,
+        wgpu::Features::TEXTURE_COMPRESSION_ETC2,
+        wgpu::Features::TEXTURE_COMPRESSION_ASTC,
+    ] {
+        if adapter.features().contains(bit) {
+            required_features |= bit;
+        }
+    }
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("kagra-shared"),
+            required_features,
             required_limits: limits.using_resolution(adapter.limits()),
             ..Default::default()
         })
@@ -2670,6 +2672,143 @@ fn pad_rows_to_256(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
         }
     }
     staged
+}
+
+fn upload_albedo(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    mesh: &crate::scene3d::MeshData,
+) -> Option<wgpu::Texture> {
+    if let Some(ktx) = &mesh.albedo_ktx {
+        if let Some(tex) = create_ktx_texture(device, queue, ktx) {
+            return Some(tex);
+        }
+    }
+    let alb = mesh.albedo.as_ref()?;
+    if alb.width == 0 || alb.height == 0 || alb.rgba.is_empty() {
+        return None;
+    }
+    Some(create_albedo_texture(
+        device, queue, alb.width, alb.height, &alb.rgba,
+    ))
+}
+
+fn wgpu_color_format(vk_format: u32) -> Option<wgpu::TextureFormat> {
+    let format = ktx2::Format::new(vk_format)?;
+    use ktx2::Format as F;
+    use wgpu::AstcBlock::*;
+    use wgpu::AstcChannel::{Unorm, UnormSrgb};
+    use wgpu::TextureFormat as W;
+    let astc = |block, channel| W::Astc { block, channel };
+    Some(match format {
+        F::BC1_RGB_UNORM_BLOCK | F::BC1_RGBA_UNORM_BLOCK => W::Bc1RgbaUnorm,
+        F::BC1_RGB_SRGB_BLOCK | F::BC1_RGBA_SRGB_BLOCK => W::Bc1RgbaUnormSrgb,
+        F::BC2_UNORM_BLOCK => W::Bc2RgbaUnorm,
+        F::BC2_SRGB_BLOCK => W::Bc2RgbaUnormSrgb,
+        F::BC3_UNORM_BLOCK => W::Bc3RgbaUnorm,
+        F::BC3_SRGB_BLOCK => W::Bc3RgbaUnormSrgb,
+        F::BC7_UNORM_BLOCK => W::Bc7RgbaUnorm,
+        F::BC7_SRGB_BLOCK => W::Bc7RgbaUnormSrgb,
+        F::ETC2_R8G8B8_UNORM_BLOCK => W::Etc2Rgb8Unorm,
+        F::ETC2_R8G8B8_SRGB_BLOCK => W::Etc2Rgb8UnormSrgb,
+        F::ETC2_R8G8B8A1_UNORM_BLOCK => W::Etc2Rgb8A1Unorm,
+        F::ETC2_R8G8B8A1_SRGB_BLOCK => W::Etc2Rgb8A1UnormSrgb,
+        F::ETC2_R8G8B8A8_UNORM_BLOCK => W::Etc2Rgba8Unorm,
+        F::ETC2_R8G8B8A8_SRGB_BLOCK => W::Etc2Rgba8UnormSrgb,
+        F::ASTC_4x4_UNORM_BLOCK => astc(B4x4, Unorm),
+        F::ASTC_4x4_SRGB_BLOCK => astc(B4x4, UnormSrgb),
+        F::ASTC_5x4_UNORM_BLOCK => astc(B5x4, Unorm),
+        F::ASTC_5x4_SRGB_BLOCK => astc(B5x4, UnormSrgb),
+        F::ASTC_5x5_UNORM_BLOCK => astc(B5x5, Unorm),
+        F::ASTC_5x5_SRGB_BLOCK => astc(B5x5, UnormSrgb),
+        F::ASTC_6x5_UNORM_BLOCK => astc(B6x5, Unorm),
+        F::ASTC_6x5_SRGB_BLOCK => astc(B6x5, UnormSrgb),
+        F::ASTC_6x6_UNORM_BLOCK => astc(B6x6, Unorm),
+        F::ASTC_6x6_SRGB_BLOCK => astc(B6x6, UnormSrgb),
+        F::ASTC_8x5_UNORM_BLOCK => astc(B8x5, Unorm),
+        F::ASTC_8x5_SRGB_BLOCK => astc(B8x5, UnormSrgb),
+        F::ASTC_8x6_UNORM_BLOCK => astc(B8x6, Unorm),
+        F::ASTC_8x6_SRGB_BLOCK => astc(B8x6, UnormSrgb),
+        F::ASTC_8x8_UNORM_BLOCK => astc(B8x8, Unorm),
+        F::ASTC_8x8_SRGB_BLOCK => astc(B8x8, UnormSrgb),
+        F::ASTC_10x5_UNORM_BLOCK => astc(B10x5, Unorm),
+        F::ASTC_10x5_SRGB_BLOCK => astc(B10x5, UnormSrgb),
+        F::ASTC_10x6_UNORM_BLOCK => astc(B10x6, Unorm),
+        F::ASTC_10x6_SRGB_BLOCK => astc(B10x6, UnormSrgb),
+        F::ASTC_10x8_UNORM_BLOCK => astc(B10x8, Unorm),
+        F::ASTC_10x8_SRGB_BLOCK => astc(B10x8, UnormSrgb),
+        F::ASTC_10x10_UNORM_BLOCK => astc(B10x10, Unorm),
+        F::ASTC_10x10_SRGB_BLOCK => astc(B10x10, UnormSrgb),
+        F::ASTC_12x10_UNORM_BLOCK => astc(B12x10, Unorm),
+        F::ASTC_12x10_SRGB_BLOCK => astc(B12x10, UnormSrgb),
+        F::ASTC_12x12_UNORM_BLOCK => astc(B12x12, Unorm),
+        F::ASTC_12x12_SRGB_BLOCK => astc(B12x12, UnormSrgb),
+        _ => return None,
+    })
+}
+
+fn create_ktx_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    ktx: &crate::ktx_image::KtxImage,
+) -> Option<wgpu::Texture> {
+    let format = wgpu_color_format(ktx.vk_format)?;
+    if !device.features().contains(format.required_features()) {
+        return None;
+    }
+    let (bw, bh) = format.block_dimensions();
+    let block = format.block_copy_size(None)?;
+    if !ktx.width.is_multiple_of(bw) || !ktx.height.is_multiple_of(bh) {
+        return None;
+    }
+    let blocks_x = ktx.width / bw;
+    let blocks_y = ktx.height / bh;
+    let row = blocks_x * block;
+    let pitch = webgpu_row_pitch(row);
+    let need = (row as usize) * (blocks_y as usize);
+    if ktx.level0.len() < need {
+        return None;
+    }
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("kagra-shared ktx2"),
+        size: wgpu::Extent3d {
+            width: ktx.width,
+            height: ktx.height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let mut staged = vec![0u8; pitch as usize * blocks_y as usize];
+    for y in 0..blocks_y as usize {
+        let src = y * row as usize;
+        let dst = y * pitch as usize;
+        staged[dst..dst + row as usize].copy_from_slice(&ktx.level0[src..src + row as usize]);
+    }
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &tex,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &staged,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(pitch),
+            rows_per_image: Some(blocks_y),
+        },
+        wgpu::Extent3d {
+            width: ktx.width,
+            height: ktx.height,
+            depth_or_array_layers: 1,
+        },
+    );
+    Some(tex)
 }
 
 fn create_albedo_texture(
@@ -3749,5 +3888,67 @@ mod tests {
             "PCSS frame looks blank, mean {pcss_mean}"
         );
         assert!(pcss_dark > 4, "PCSS should still shade, dark {pcss_dark}");
+    }
+
+    /// A 4×4 BC1 sRGB block stays red when the adapter advertised BC.
+    /// Devices without the feature keep the white fallback and skip the color check.
+    #[test]
+    fn offscreen_bc1_ktx2_is_red_when_the_adapter_has_bc() {
+        let Some(mut renderer) = pollster::block_on(Renderer::new_offscreen(64, 64)).ok() else {
+            eprintln!("no GPU adapter; skipping ktx2");
+            return;
+        };
+        let bc = wgpu::TextureFormat::Bc1RgbaUnormSrgb.required_features();
+        if !renderer.device.features().contains(bc) {
+            eprintln!("adapter has no BC; skipping ktx2 color check");
+            return;
+        }
+        let bytes = crate::ktx_image::write_uncompressed_ktx2(
+            ktx2::Format::BC1_RGBA_SRGB_BLOCK,
+            4,
+            4,
+            &[0x00, 0xF8, 0x00, 0x00, 0, 0, 0, 0],
+        )
+        .unwrap();
+        let ktx = crate::ktx_image::parse_ktx2(&bytes).unwrap();
+        let mut mesh = crate::scene3d::primitives::box_mesh(glam::Vec3::ONE);
+        mesh.albedo_ktx = Some(ktx);
+        let id = renderer.upload_mesh(&mesh);
+        graded(&mut renderer);
+        let scene = crate::scene3d::Scene3D {
+            clear: [8, 8, 16, 255],
+            camera: crate::scene3d::Camera {
+                eye: glam::Vec3::new(0.0, 0.4, 2.4),
+                target: glam::Vec3::ZERO,
+                ..Default::default()
+            },
+            ambient: 1.0,
+            ibl: 0.0,
+            tonemap: false,
+            exposure: 1.0,
+            fog_start: 400.0,
+            fog_end: 800.0,
+            batches: vec![crate::scene3d::Batch {
+                mesh: id,
+                instances: vec![solid_box(
+                    [0.0, 0.0, 0.0],
+                    [1.0, 1.0, 1.0],
+                    [255, 255, 255, 255],
+                )],
+            }],
+            ..Default::default()
+        };
+        let rgba = renderer
+            .render_frame(Some(&scene), &crate::scene::DrawList::default())
+            .and_then(|_| renderer.read_rgba())
+            .expect("ktx2 frame");
+        write_shot("ktx2-bc1.png", 64, 64, &rgba);
+        let mut red = 0u32;
+        for px in rgba.as_chunks::<4>().0 {
+            if px[0] > 140 && px[0] > px[1] + 40 && px[0] > px[2] + 40 {
+                red += 1;
+            }
+        }
+        assert!(red > 20, "BC1 red block did not cover the box ({red} px)");
     }
 }
