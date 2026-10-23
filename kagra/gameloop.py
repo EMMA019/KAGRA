@@ -16,6 +16,8 @@ tick（WorldPlay）と描画（render_world_doc）を担う。
 
         def update(self, dt):
             # 入力を見て世界を進める（ゲームロジックはここ）
+            # +lx (D) is screen-right, +lz (W) is into the frame. Not world +X.
+            # kagra.axes.screen_right / the dump's screen_right say which way.
             if pressed("w"):
                 self.play.set_input(0.0, 1.0, False, False, False)
             else:
@@ -38,6 +40,8 @@ import json
 import struct
 import zlib
 from typing import Any
+
+from kagra.axes import annotate_dump
 
 try:
     import kagra_shared as _ks
@@ -115,6 +119,8 @@ def render_rgba(
     frame; other render errors raise.
     """
     w, h = int(width), int(height)
+    if isinstance(world, dict):
+        annotate_dump(world)
     if _ks is None:
         raise ImportError(_missing_shared_message())
     if _hud_hook is not None:

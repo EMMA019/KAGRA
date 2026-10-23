@@ -301,8 +301,9 @@ impl Camera {
         glam::camera::rh::view::look_at_mat4(self.eye, self.target, self.up)
     }
 
-    /// wgpu の NDC は y が上で奥行きが 0..1 なので、glam の `directx` 系を使う。
-    /// `opengl` 系は奥行きが -1..1 になるので合わない。
+    /// wgpu NDC: +x is right, +y is up, depth 0..1. Use glam's DirectX RH
+    /// projection (OpenGL's depth is -1..1). +x in view space is screen-right;
+    /// the readback does not mirror X.
     pub fn projection(&self, aspect: f32) -> Mat4 {
         glam::camera::rh::proj::directx::perspective(
             self.fov_y,
@@ -315,6 +316,80 @@ impl Camera {
     pub fn view_projection(&self, aspect: f32) -> Mat4 {
         self.projection(aspect) * self.view()
     }
+}
+
+/// Right-handed view basis. `screen_right` is `forward × up` (the same side
+/// `look_at_rh` puts on the right of the frame).
+///
+/// World +X is that direction only when the camera looks toward -Z. The
+/// default camera (`eye` (0, 2, 6), target origin) does. A chase camera
+/// looking along +Z has `screen_right = -X`.
+pub fn screen_basis(eye: Vec3, target: Vec3, up: Vec3) -> (Vec3, Vec3, Vec3) {
+    let mut forward = target - eye;
+    if forward.length_squared() < 1e-12 {
+        forward = Vec3::NEG_Z;
+    } else {
+        forward = forward.normalize();
+    }
+    let mut up = if up.length_squared() < 1e-12 {
+        Vec3::Y
+    } else {
+        up.normalize()
+    };
+    let mut right = forward.cross(up);
+    if right.length_squared() < 1e-8 {
+        let fallback = if forward.y.abs() < 0.9 {
+            Vec3::Y
+        } else {
+            Vec3::X
+        };
+        up = fallback;
+        right = forward.cross(up);
+    }
+    right = right.normalize();
+    let up = right.cross(forward);
+    (forward, right, up)
+}
+
+/// World-space unit vector toward the right edge of the frame.
+pub fn screen_right(eye: Vec3, target: Vec3) -> Vec3 {
+    screen_basis(eye, target, Vec3::Y).1
+}
+
+/// World-space unit vector toward the left edge of the frame.
+pub fn screen_left(eye: Vec3, target: Vec3) -> Vec3 {
+    -screen_right(eye, target)
+}
+
+/// [`screen_right`] for dump arrays. `+X` is right only when `target.z < eye.z`
+/// (the camera looks toward -Z).
+pub fn screen_right_xyz(eye: [f32; 3], target: [f32; 3]) -> [f32; 3] {
+    screen_right(Vec3::from_array(eye), Vec3::from_array(target)).to_array()
+}
+
+/// [`screen_left`] for dump arrays.
+pub fn screen_left_xyz(eye: [f32; 3], target: [f32; 3]) -> [f32; 3] {
+    let right = screen_right_xyz(eye, target);
+    [-right[0], -right[1], -right[2]]
+}
+
+/// Stick into a world XZ wish. `+lx` is screen-right, `+lz` is into the frame
+/// (the camera's forward, flattened). This is not "D means world +X".
+pub fn wish_world_xz(lx: f32, lz: f32, eye: Vec3, target: Vec3) -> Vec3 {
+    let (forward, right, _) = screen_basis(eye, target, Vec3::Y);
+    let flat_fwd = Vec3::new(forward.x, 0.0, forward.z);
+    let flat_right = Vec3::new(right.x, 0.0, right.z);
+    let fwd = if flat_fwd.length_squared() < 1e-8 {
+        Vec3::NEG_Z
+    } else {
+        flat_fwd.normalize()
+    };
+    let right = if flat_right.length_squared() < 1e-8 {
+        Vec3::X
+    } else {
+        flat_right.normalize()
+    };
+    right * lx + fwd * lz
 }
 
 /// One directional map. 2048 matches `shader3d.wgsl` PCF texel (WebGL2 max).
@@ -1033,6 +1108,38 @@ mod tests {
             map,
         );
         assert!((a.x - b.x).abs() < 1e-5 && (a.z - b.z).abs() < 1e-5);
+    }
+
+    #[test]
+    fn default_camera_puts_plus_x_on_screen_right() {
+        let c = Camera::default();
+        let right = screen_right(c.eye, c.target);
+        assert!(
+            right.x > 0.99 && right.y.abs() < 1e-4 && right.z.abs() < 1e-4,
+            "default camera (looking -Z) screen_right={right}"
+        );
+        let vp = c.view_projection(16.0 / 9.0);
+        let plus = vp * Vec3::new(1.5, 0.0, 0.0).extend(1.0);
+        let minus = vp * Vec3::new(-1.5, 0.0, 0.0).extend(1.0);
+        let plus_x = plus.x / plus.w;
+        let minus_x = minus.x / minus.w;
+        assert!(
+            plus_x > 0.05 && minus_x < -0.05 && plus_x > minus_x,
+            "+X must be NDC-right of -X, ndc {plus_x} vs {minus_x}"
+        );
+    }
+
+    #[test]
+    fn looking_plus_z_puts_plus_x_on_screen_left() {
+        let eye = Vec3::new(0.0, 2.0, -6.0);
+        let target = Vec3::ZERO;
+        let right = screen_right(eye, target);
+        assert!(right.x < -0.99, "chase along +Z screen_right={right}");
+        let wish = wish_world_xz(1.0, 0.0, eye, target);
+        assert!(
+            wish.dot(right) > 0.9,
+            "+lx must follow screen_right, wish={wish} right={right}"
+        );
     }
 
     #[test]

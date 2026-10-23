@@ -78,10 +78,24 @@ Result: `examples/vrm_dodge_room.py`
 | Mesh retain | `upload_mesh_3d` once, `draw_mesh_id` each frame — or `world.bake` / `world.draw` |
 | Art / SE | `kagra.texture_from_fn` / `kagra.tone` / `kagra.sound` / `kagra.draw_billboard` |
 | 3D SE | `set_listener(x,y,z, fx,fy,fz)` then `play_se(path, x=, y=, z=)` / `play_loop` |
+| Screen sides | `kagra.screen_right(eye, target)` / `screen_left` / `wish_world(lx, lz, eye, target)`. `D` / `+lx` is screen-right. World +X is that side only when the camera looks toward -Z |
 | Score | `kagra.save_json` / `kagra.load_json` |
 | One-shot pose | `ActionController(avatar)` then `action.play("clap")` — `ActionController.names()` |
 | Locomotion blend | `avatar.set_locomotion(speed)` idle/walk/run. Local Mixamo: `bind_locomotion()` (not the `walk` alias). `play_upper("idle")` for spine/arms while legs walk |
 | N VRM | same-path `kagra.avatar(path)` shares GPU. `vrm_gpu_stats()`. Example: `vrm_multi_avatar.py` |
+
+## Coordinate system
+
+Right-handed, Y up. The framebuffer is not mirrored. Put a prop at world
++X and the default camera (eye `(0, 2, 6)`, looking at the origin) shows
+it on the **right**. A chase camera looking along +Z shows world +X on
+the **left** (`screen_right = -X`). Do not treat "+Z forward, +X right"
+as one rule.
+
+`D` / `ArrowRight` / `+lx` moves toward screen-right. Read
+`coordinates.note` and each camera's `screen_right` / `screen_left` on
+the world dump instead of guessing from the sign of X. HUD pixels start
+at the top-left (+x right, +y down). glTF/VRM bind poses face -Z.
 
 ## Close the loop
 

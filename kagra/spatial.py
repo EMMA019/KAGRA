@@ -49,8 +49,9 @@ def spatial_mix(
     """Inverse-distance gain + equal-power stereo pan.
 
     Returns ``(gain, pan, left, right)``. ``pan`` is -1 (left) … +1 (right).
-    Listener right is ``up × forward`` so look +Z makes world +X the right
-    speaker (Crest Isle sea at -X is the left speaker). No HRTF.
+    Listener right is ``forward × up``, the same side ``look_at_rh`` puts on
+    the right of the picture. Looking along +Z, world -X is the right speaker
+    and world +X is the left speaker. No HRTF.
     """
     ref_d = max(1e-4, float(ref_distance))
     max_d = max(ref_d, float(max_distance))
@@ -64,7 +65,7 @@ def spatial_mix(
     if dist > 1e-6 and gain > 0.0:
         fwd = _norm((fx, fy, fz))
         up = _norm((ux, uy, uz))
-        right = _norm(_cross(up, fwd))
+        right = _norm(_cross(fwd, up))
         direction = _norm(to)
         pan = max(-1.0, min(1.0, _dot(direction, right)))
     angle = (pan + 1.0) * (math.pi * 0.25)

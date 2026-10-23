@@ -7,6 +7,7 @@ The archived RendererV2 / ``kagra_core`` demo is under ``old/``.
 from __future__ import annotations
 
 from kagra.annotate import annotate
+from kagra.axes import annotate_dump, screen_basis, screen_left, screen_right, wish_world
 from kagra.audio import (
     mixer_state,
     play_bgm,
@@ -173,6 +174,7 @@ __all__ = [
     "WorldPlay",
     "add_table",
     "annotate",
+    "annotate_dump",
     "apply_look",
     "apply_post",
     "bar",
@@ -217,6 +219,9 @@ __all__ = [
     "run_scenario_path",
     "save_data",
     "save_dir",
+    "screen_basis",
+    "screen_left",
+    "screen_right",
     "scroll_window",
     "se",
     "set_group_volume",
@@ -228,4 +233,5 @@ __all__ = [
     "t",
     "tone",
     "was_pressed",
+    "wish_world",
 ]

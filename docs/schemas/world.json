@@ -33,6 +33,18 @@
       "type": "array",
       "items": { "$ref": "#/$defs/camera" }
     },
+    "coordinates": {
+      "type": "object",
+      "description": "Derived by WorldDoc::to_json / kagra.annotate_dump. from_json ignores it. Right-handed, Y up. World +X is screen-right only when the camera looks toward -Z.",
+      "properties": {
+        "handedness": { "const": "right" },
+        "up": { "$ref": "#/$defs/vec3" },
+        "note": {
+          "type": "string",
+          "description": "States that D / ArrowRight / +lx means screen-right, and that a chase camera looking along +Z has screen_right = -X."
+        }
+      }
+    },
     "heightfield": {
       "oneOf": [
         { "type": "null" },
@@ -398,7 +410,15 @@
         "name": { "type": "string" },
         "position": { "$ref": "#/$defs/vec3" },
         "target": { "$ref": "#/$defs/vec3" },
-        "fov": { "type": "number" }
+        "fov": { "type": "number" },
+        "screen_right": {
+          "$ref": "#/$defs/vec3",
+          "description": "Derived. World-space unit vector toward the right edge of this camera's frame (forward × up). Present on to_json dumps; from_json ignores it."
+        },
+        "screen_left": {
+          "$ref": "#/$defs/vec3",
+          "description": "Derived. Opposite of screen_right. Present on to_json dumps; from_json ignores it."
+        }
       }
     },
     "terrain_tile": {

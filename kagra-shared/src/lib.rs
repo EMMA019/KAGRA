@@ -107,6 +107,7 @@ pub use road::{LodLevel, RoadChunk, RoadFrame, RoadPath, RoadStreamer};
 pub use save::{SaveGame, Settings};
 pub use scene::{DemoScene, DrawList, Quad, TextAlign, TextQuad};
 pub use scene3d::{
+    screen_basis, screen_left, screen_left_xyz, screen_right, screen_right_xyz, wish_world_xz,
     Aabb, AlbedoRgba, Camera, Frustum, Instance, LocalLight, Material, MeshData, MeshId,
     RenderStats, Scene3D, Vertex3,
 };

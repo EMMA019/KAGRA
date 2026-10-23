@@ -88,6 +88,15 @@ def forward_vector(yaw: float, pitch: float, roll: float) -> tuple[float, float,
     return (m[0][2], m[1][2], m[2][2])
 
 
+def roll_from_keys(right: bool, left: bool) -> float:
+    """D / Right is positive roll.
+
+    Positive roll yaws the nose toward screen-right. At yaw 0 the chase
+    camera looks along +Z, and screen-right is world -X.
+    """
+    return (1.0 if right else 0.0) - (1.0 if left else 0.0)
+
+
 def step_flight(
     state: dict[str, Any], dt: float, stick_pitch: float, stick_roll: float, fast: bool
 ) -> bool:
@@ -349,8 +358,9 @@ class FlightGame(Scene):
         stick_pitch = (1.0 if pressed("w") or pressed("up") else 0.0) - (
             1.0 if pressed("s") or pressed("down") else 0.0
         )
-        stick_roll = (1.0 if pressed("a") or pressed("left") else 0.0) - (
-            1.0 if pressed("d") or pressed("right") else 0.0
+        stick_roll = roll_from_keys(
+            pressed("d") or pressed("right"),
+            pressed("a") or pressed("left"),
         )
         if step_flight(self.state, dt, stick_pitch, stick_roll, pressed("shift")):
             se("coin")

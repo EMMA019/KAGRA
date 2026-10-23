@@ -46,7 +46,8 @@ pub const STAR_XZ: [(f32, f32); 8] = [
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct WalkInput {
-    /// カメラ基準。+x 右、+z 前（画面の上）。
+    /// Camera-relative. `+lx` is screen-right, `+lz` is into the frame.
+    /// Not world +X: a chase camera looking along +Z has screen-right = -X.
     pub lx: f32,
     pub lz: f32,
     pub jump: bool,

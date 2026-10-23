@@ -112,12 +112,12 @@ def test_spatial_mix_distance_attenuation():
 
 
 def test_spatial_mix_panning_direction():
-    # 前 +Z、音源 +X（右）→ pan は +1（右スピーカー）
-    _, pan, left, right = audio.spatial_mix(0, 0, 0, 0, 0, 1, 5, 0, 0)
+    # Looking along +Z, screen-right is world -X (same as look_at_rh).
+    _, pan, left, right = audio.spatial_mix(0, 0, 0, 0, 0, 1, -5, 0, 0)
     assert pan > 0.9
     assert right > left
-    # 音源 -X（左）→ pan は -1
-    _, pan2, left2, right2 = audio.spatial_mix(0, 0, 0, 0, 0, 1, -5, 0, 0)
+    # Looking along +Z, screen-left is world +X.
+    _, pan2, left2, right2 = audio.spatial_mix(0, 0, 0, 0, 0, 1, 5, 0, 0)
     assert pan2 < -0.9
     assert left2 > right2
 
@@ -143,5 +143,5 @@ def test_spatialize_makes_stereo_with_pan():
 
 def test_play_se_respects_listener():
     audio.set_listener(0, 0, 0, 0, 0, 1)
-    audio.play_se("ok", x=3, y=0, z=0, volume=0.5)  # 右から、鳴らして例外なし
+    audio.play_se("ok", x=3, y=0, z=0, volume=0.5)  # +Z 向きなら画面の左。例外なし
     audio.play_se("ok", x=100, y=0, z=0, max_distance=48.0)  # 遠すぎ → 無音（例外なし）

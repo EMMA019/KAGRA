@@ -62,8 +62,8 @@ fn vnorm(v: [f32; 3]) -> [f32; 3] {
     }
 }
 
-/// `pan` -1 = left speaker, +1 = right. Listener right = up × forward
-/// so look +Z makes world +X the right speaker.
+/// `pan` -1 = left speaker, +1 = right. Listener right = forward × up,
+/// matching `look_at_rh`. Looking along +Z, world -X is the right speaker.
 pub fn spatial_mix(
     listener: &Listener,
     source: [f32; 3],
@@ -83,7 +83,7 @@ pub fn spatial_mix(
     if dist > 1e-6 && gain > 0.0 {
         let fwd = vnorm(listener.forward);
         let up = vnorm(listener.up);
-        let right = vnorm(vcross(up, fwd));
+        let right = vnorm(vcross(fwd, up));
         let dir = vnorm(to);
         pan = vdot(dir, right).clamp(-1.0, 1.0);
     }
@@ -491,7 +491,8 @@ mod tests {
 
     #[test]
     fn right_source_pans_right() {
-        let mix = spatial_mix(&look_z(), [4.0, 0.0, 0.0], 4.0, 48.0);
+        // Looking +Z, screen-right is world -X.
+        let mix = spatial_mix(&look_z(), [-4.0, 0.0, 0.0], 4.0, 48.0);
         assert!(mix.pan > 0.9, "pan={}", mix.pan);
         assert!(mix.right > mix.left);
         assert!(mix.left < 0.05);
@@ -499,7 +500,8 @@ mod tests {
 
     #[test]
     fn left_source_pans_left() {
-        let mix = spatial_mix(&look_z(), [-8.0, 0.0, 0.0], 4.0, 48.0);
+        // Looking +Z, screen-left is world +X.
+        let mix = spatial_mix(&look_z(), [8.0, 0.0, 0.0], 4.0, 48.0);
         assert!(mix.pan < -0.9, "pan={}", mix.pan);
         assert!(mix.left > mix.right);
         assert!((mix.gain - 0.5).abs() < 1e-5);
