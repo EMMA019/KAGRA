@@ -111,7 +111,10 @@ fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
 fn fs_composite(in: VO) -> @location(0) vec4<f32> {
     let sharp = textureSample(t_src, s_src, in.uv);
     let bloom = textureSample(t_bloom, s_bloom, in.uv);
-    var c = sharp.rgb + bloom.rgb * params.v.x;
+    // Intensity 0 must ignore the bloom target. NaN * 0 is NaN, and the
+    // half-res textures are undefined until extract runs.
+    let bloom_rgb = select(vec3<f32>(0.0), bloom.rgb, params.v.x > 1e-4);
+    var c = sharp.rgb + bloom_rgb * params.v.x;
     c = c * max(params.v.y, 0.0);
     if (params.v.z > 0.5) {
         c = aces_tonemap(c);
