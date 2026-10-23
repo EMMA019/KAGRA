@@ -43,6 +43,8 @@ struct Globals {
     light_col: [[f32; 4]; 4],
     light_dir: [[f32; 4]; 4],
     light_view_proj: [[f32; 4]; 4],
+    /// x = shadow radius. 1 = historical 3×3 PCF.
+    shadow: [f32; 4],
 }
 
 /// インスタンスごとの頂点属性（location 2..7, 9..11）。
@@ -72,6 +74,11 @@ struct GpuMesh {
     _albedo_tex: Option<wgpu::Texture>,
     _matcap_tex: Option<wgpu::Texture>,
     _normal_tex: Option<wgpu::Texture>,
+    _orm_tex: Option<wgpu::Texture>,
+    _emissive_tex: Option<wgpu::Texture>,
+    sample_rough: bool,
+    sample_metal: bool,
+    sample_emissive: bool,
     mtoon: [f32; 4],
     mtoon2: [f32; 4],
     mtoon3: [f32; 4],
@@ -127,6 +134,8 @@ pub struct Renderer {
     _white_view: wgpu::TextureView,
     _black_view: wgpu::TextureView,
     _flat_view: wgpu::TextureView,
+    _orm_default: wgpu::Texture,
+    _orm_view: wgpu::TextureView,
     /// Seconds for shader env.z (water scroll). Frame accum, not Instant (wasm).
     elapsed: f32,
     /// Threshold bloom: linear-HDR frame → extract/blur → composite → target.
@@ -402,6 +411,39 @@ impl Renderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // 6/7 linear ORM, 8/9 emissive. Defaults until an instance flag samples them.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 8,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 9,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
             ],
         });
         let albedo_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -420,6 +462,8 @@ impl Renderer {
         let black_view = black_matcap.create_view(&Default::default());
         let flat_normal = create_albedo_texture(&device, &queue, 1, 1, &[128, 128, 255, 255]);
         let flat_view = flat_normal.create_view(&Default::default());
+        let orm_default = create_linear_texture(&device, &queue, 1, 1, &[255, 255, 0, 255]);
+        let orm_view = orm_default.create_view(&Default::default());
         let default_albedo_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("kagra-shared default tex"),
             layout: &albedo_layout,
@@ -446,6 +490,22 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 5,
+                    resource: wgpu::BindingResource::Sampler(&albedo_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(&orm_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: wgpu::BindingResource::Sampler(&albedo_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: wgpu::BindingResource::TextureView(&black_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 9,
                     resource: wgpu::BindingResource::Sampler(&albedo_sampler),
                 },
             ],
@@ -750,6 +810,8 @@ impl Renderer {
             _white_view: white_view,
             _black_view: black_view,
             _flat_view: flat_view,
+            _orm_default: orm_default,
+            _orm_view: orm_view,
             elapsed: 0.0,
             bloom,
             text: crate::font::TextRaster::new(),
@@ -779,8 +841,12 @@ impl Renderer {
             a.as_ref()
                 .is_some_and(|alb| alb.width > 0 && alb.height > 0 && !alb.rgba.is_empty())
         };
-        let has_any = tex_ok(&mesh.albedo) || tex_ok(&mesh.matcap) || tex_ok(&mesh.normal);
-        let (albedo_bind, albedo_tex, matcap_tex, normal_tex) = if has_any {
+        let has_any = tex_ok(&mesh.albedo)
+            || tex_ok(&mesh.matcap)
+            || tex_ok(&mesh.normal)
+            || tex_ok(&mesh.orm)
+            || tex_ok(&mesh.emissive_map);
+        let (albedo_bind, albedo_tex, matcap_tex, normal_tex, orm_tex, emissive_tex) = if has_any {
             let alb_tex = mesh
                 .albedo
                 .as_ref()
@@ -820,6 +886,24 @@ impl Renderer {
                 .as_ref()
                 .map(|t| t.create_view(&Default::default()))
                 .unwrap_or_else(|| self._flat_view.clone());
+            let orm_tex = mesh.orm.as_ref().filter(|_| tex_ok(&mesh.orm)).map(|a| {
+                create_linear_texture(&self.device, &self.queue, a.width, a.height, &a.rgba)
+            });
+            let em_tex = mesh
+                .emissive_map
+                .as_ref()
+                .filter(|_| tex_ok(&mesh.emissive_map))
+                .map(|a| {
+                    create_albedo_texture(&self.device, &self.queue, a.width, a.height, &a.rgba)
+                });
+            let orm_view = orm_tex
+                .as_ref()
+                .map(|t| t.create_view(&Default::default()))
+                .unwrap_or_else(|| self._orm_view.clone());
+            let em_view = em_tex
+                .as_ref()
+                .map(|t| t.create_view(&Default::default()))
+                .unwrap_or_else(|| self._black_view.clone());
             let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("kagra-shared mesh tex"),
                 layout: &self.albedo_layout,
@@ -848,11 +932,27 @@ impl Renderer {
                         binding: 5,
                         resource: wgpu::BindingResource::Sampler(&self.albedo_sampler),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 6,
+                        resource: wgpu::BindingResource::TextureView(&orm_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 7,
+                        resource: wgpu::BindingResource::Sampler(&self.albedo_sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 8,
+                        resource: wgpu::BindingResource::TextureView(&em_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 9,
+                        resource: wgpu::BindingResource::Sampler(&self.albedo_sampler),
+                    },
                 ],
             });
-            (Some(bind), alb_tex, mc_tex, nm_tex)
+            (Some(bind), alb_tex, mc_tex, nm_tex, orm_tex, em_tex)
         } else {
-            (None, None, None, None)
+            (None, None, None, None, None, None)
         };
         let mtoon = mesh
             .mtoon
@@ -878,6 +978,11 @@ impl Renderer {
             _albedo_tex: albedo_tex,
             _matcap_tex: matcap_tex,
             _normal_tex: normal_tex,
+            _orm_tex: orm_tex,
+            _emissive_tex: emissive_tex,
+            sample_rough: mesh.orm_rough && tex_ok(&mesh.orm),
+            sample_metal: mesh.orm_metal && tex_ok(&mesh.orm),
+            sample_emissive: tex_ok(&mesh.emissive_map),
             mtoon,
             mtoon2,
             mtoon3,
@@ -988,18 +1093,32 @@ impl Renderer {
                 let is_sky = mat0 == crate::scene3d::Material::Sky;
                 let casts_shadow = !is_sky && mat0 != crate::scene3d::Material::Water;
                 for inst in &batch.instances {
+                    let gpu = self.meshes.get(mesh);
                     let (mtoon, mtoon2, mtoon3, mtoon4) =
                         if inst.material == crate::scene3d::Material::Toon {
-                            match self.meshes.get(mesh) {
+                            match gpu {
                                 Some(g) => (g.mtoon, g.mtoon2, g.mtoon3, g.mtoon4),
                                 None => ([0.55, 0.50, 0.52, 0.85], [0.0; 4], [0.0; 4], [0.0; 4]),
                             }
                         } else {
+                            let (use_r, use_m, use_e) = match gpu {
+                                Some(g) => (
+                                    if g.sample_rough { 1.0 } else { 0.0 },
+                                    if g.sample_metal { 1.0 } else { 0.0 },
+                                    if g.sample_emissive { 1.0 } else { 0.0 },
+                                ),
+                                None => (0.0, 0.0, 0.0),
+                            };
                             (
                                 [0.0; 4],
-                                [0.0; 4],
-                                [0.0; 4],
-                                [inst.metallic, inst.roughness, 0.0, 0.0],
+                                [use_r, use_m, use_e, 0.0],
+                                [
+                                    inst.emissive_color[0],
+                                    inst.emissive_color[1],
+                                    inst.emissive_color[2],
+                                    0.0,
+                                ],
+                                [inst.metallic, inst.roughness, inst.emissive, 0.0],
                             )
                         };
                     raw.push(InstanceRaw {
@@ -1315,6 +1434,7 @@ impl Renderer {
             light_col,
             light_dir,
             light_view_proj: crate::scene3d::scene_shadow_view_proj(scene).to_cols_array_2d(),
+            shadow: [scene.shadow_softness.max(0.0), 0.0, 0.0, 0.0],
         };
         self.queue
             .write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&g));
@@ -1703,6 +1823,41 @@ fn create_albedo_texture(
     height: u32,
     rgba: &[u8],
 ) -> wgpu::Texture {
+    create_rgba_texture(
+        device,
+        queue,
+        width,
+        height,
+        rgba,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    )
+}
+
+fn create_linear_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+) -> wgpu::Texture {
+    create_rgba_texture(
+        device,
+        queue,
+        width,
+        height,
+        rgba,
+        wgpu::TextureFormat::Rgba8Unorm,
+    )
+}
+
+fn create_rgba_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+    format: wgpu::TextureFormat,
+) -> wgpu::Texture {
     let width = width.max(1);
     let height = height.max(1);
     let expected = (width as usize) * (height as usize) * 4;
@@ -1726,7 +1881,7 @@ fn create_albedo_texture(
         mip_level_count,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        format,
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
@@ -1999,6 +2154,9 @@ mod tests {
         assert!(src.contains("textureSampleCompare"), "depth compare PCF");
         assert!(src.contains("fn vs_shadow"), "shadow pass");
         assert!(src.contains("2048.0"), "PCF texel matches SHADOW_MAP_SIZE");
+        assert!(src.contains("orm_tex"), "roughness / metal map");
+        assert!(src.contains("emissive_rgb"), "authored emissive");
+        assert!(src.contains("radius <= 1.01"), "legacy 3x3 shadow kernel");
         assert!(!src.contains("var<storage"), "WebGL2: no storage buffers");
         // MToon 完全移植でインスタンススロットは 2..=12（mtoon2/3/4）まで使う。
         assert!(
@@ -2010,8 +2168,8 @@ mod tests {
     #[test]
     fn globals_env_is_16_aligned() {
         assert_eq!(std::mem::size_of::<Globals>() % 16, 0);
-        // view_proj 64 + 5 vec4 + 3*4 lights 64*3 + light_view_proj 64
-        assert_eq!(std::mem::size_of::<Globals>(), 400);
+        // view_proj 64 + 5 vec4 + 3*4 lights 64*3 + light_view_proj 64 + shadow vec4
+        assert_eq!(std::mem::size_of::<Globals>(), 416);
         assert_eq!(crate::scene3d::SHADOW_MAP_SIZE, 2048);
     }
 }

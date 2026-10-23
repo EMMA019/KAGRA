@@ -4,7 +4,8 @@ Platforms run along X. The chase camera sits on +Z, so A/D (and the on-screen
 L/R pads) move the knight left and right. SPACE / the JUMP pad hops.
 
 Phone picture (on unless `KAGRA_QUALITY=0`): bloom + punch LUT + a stronger
-vignette, landing squash, a short hitstop, and a CPU spark burst.
+vignette, landing squash, a short hitstop, a CPU spark burst, a glowing
+well, worn crate maps, and a wider sun shadow.
 
     python examples/platformer_minimal.py
     python examples/platformer_minimal.py --headless scratch/platformer.png
@@ -213,6 +214,7 @@ class PlatformPlay(Scene):
         self.juice.apply_world(picture)
         picture.setdefault("props", []).extend(self.sparks.props())
         apply_post(picture, "mobile")
+        _apply_wave2(picture)
         return picture
 
     def draw(self) -> None:
@@ -321,7 +323,7 @@ def _landed_dump() -> dict:
     return landed
 
 
-def _juicy_picture(world: dict) -> dict:
+def _juicy_picture(world: dict, wave2: bool = True) -> dict:
     feel = Juice()
     feel.squash(0.34, 0.22)
     feel.shake(0.10, 0.28, frequency=18.0)
@@ -343,7 +345,25 @@ def _juicy_picture(world: dict) -> dict:
     feel.apply_world(picture)
     picture.setdefault("props", []).extend(sparks.props())
     apply_post(picture, "mobile")
+    if wave2:
+        _apply_wave2(picture)
     return picture
+
+
+def _apply_wave2(picture: dict) -> None:
+    """Authored glow, a worn metal/rough map on the crates, softer sun shadows.
+
+    Omitted on the before frame so the pair shows this wave.
+    """
+    picture["shadow_softness"] = 4.5
+    for prop in picture.get("props") or []:
+        if prop.get("gltf") == "crate.glb":
+            # Shared crate mesh, so every platform picks up the split.
+            prop["roughness_map"] = "preset:split"
+            prop["metalness_map"] = "preset:split"
+        if prop.get("name") == "checkpoint":
+            prop["emissive"] = 6.5
+            prop["emissive_color"] = [1.0, 0.48, 0.08]
 
 
 def _mean_abs(a: bytes, b: bytes) -> float:
@@ -361,9 +381,10 @@ def write_compare(out_dir: Path) -> None:
     from kagra.gameloop import last_draw_was_fallback, render_rgba, rgba_to_png
 
     world = _landed_dump()
-    juicy = _juicy_picture(world)
+    before_world = _juicy_picture(world, wave2=False)
+    juicy = _juicy_picture(world, wave2=True)
     width, height = 640, 360
-    before = render_rgba(world, width, height)
+    before = render_rgba(before_world, width, height)
     after = render_rgba(juicy, width, height)
     if last_draw_was_fallback():
         raise SystemExit("no GPU adapter; compare shots were not written")

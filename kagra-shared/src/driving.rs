@@ -315,6 +315,7 @@ impl DrivingScene {
             ibl: 0.35,
             exposure: 1.0,
             tonemap: true,
+            shadow_softness: 1.0,
             batches: b.finish(),
         }
     }

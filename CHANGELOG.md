@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Authored bloom sources, roughness/metal maps, and a wider sun shadow.
+  Dump `emissive` / `emissive_color` / `emissive_map` add an unlit HDR term
+  the bloom pass can extract. `roughness_map` and `metalness_map` are a PNG
+  or `preset:worn` / `preset:split` / `preset:brushed` (linear ORM, G and B).
+  `shadow_softness` omitted stays the 3×3 PCF; about 3 uses a 5×5 tent.
+  Box Hop glows the well, splits the crates between shiny metal and rough dielectric, and softens the sun.
+
 - Phone-web picture on the shared renderer: dump `bloom`, `bloom_threshold`,
   `vignette`, `lut` (`off` / `warm` / `punch` / `cool`), `lut_strength`, `fxaa`.
   Omit them and the old picture stays (bloom off, vignette 1, no LUT, FXAA on).

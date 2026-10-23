@@ -547,3 +547,29 @@ fn warm_lut_lifts_red_and_drops_blue() {
         "warm LUT should drop blue {plain_b} -> {warm_b}"
     );
 }
+
+/// An authored emissive scalar must light a dark prop and spill through bloom.
+#[test]
+fn emissive_prop_is_brighter_than_the_same_prop() {
+    let _guard = GPU.lock().unwrap_or_else(|e| e.into_inner());
+    let Ok(mut renderer) = pollster::block_on(Renderer::new_offscreen(W, H)) else {
+        eprintln!("no GPU adapter; skipping emissive test");
+        return;
+    };
+    let doc = |extra: &str| {
+        kagra_shared::world_doc::WorldDoc::from_json(&format!(
+            r#"{{"version":1,"sky":[18,20,26,255],"ibl":0.05,"exposure":1.0,"tonemap":true,"bloom":0.9,"bloom_threshold":0.45,"vignette":0.0,"lut":"off","fxaa":false,"ground":false,"cameras":[{{"id":"c","type":"camera","position":[0.0,1.4,4.2],"target":[0.0,0.8,0.0],"fov":48.0}}],"props":[{{"id":"lamp","type":"prop","model":"sphere","position":[0.0,0.8,0.0],"scale":[0.7,0.7,0.7],"color":[28,22,18]{extra}}}]}}"#
+        ))
+        .unwrap_or_else(|e| panic!("lamp doc: {e}"))
+    };
+    let off = doc("");
+    let on = doc(r#","emissive":4.0,"emissive_color":[1.0,0.42,0.08]"#);
+    let dark = renderer.render_world_doc(&off).expect("dark frame");
+    let glow = renderer.render_world_doc(&on).expect("glow frame");
+    let dark_l = channel_mean(&dark, 0) + channel_mean(&dark, 1);
+    let glow_l = channel_mean(&glow, 0) + channel_mean(&glow, 1);
+    assert!(
+        glow_l > dark_l + 1.5,
+        "emissive should lift the frame {dark_l} -> {glow_l}"
+    );
+}

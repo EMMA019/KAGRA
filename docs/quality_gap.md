@@ -16,7 +16,7 @@ The shared picture path is `WorldDoc` → `compile_scene` → `Renderer` (`kagra
 | Color grading LUT | have, as of this wave. 16³ strip in a 256×16 `texture_2d` (no `texture_3d`). Presets `off` / `warm` / `punch` / `cool`. `lut_strength` mixes after ACES. | URP Color Lookup / LDR LUT | P0 | done (S) |
 | Vignette | have, as of this wave. Strength is a uniform. Omit = 1, the curve that already shipped. 0 turns it off. | URP Vignette | P0 | done (S) |
 | FXAA | have. On by default. Dump `fxaa: false` skips it. SMAA is not implemented. | URP FXAA (SMAA is the higher option) | P1 | S for a SMAA pass later |
-| Directional light + shadows | partial. One sun, one 2048 depth map, 3×3 PCF, WebGL2 `sampler2DShadow`. No cascades, no contact-hardening. | URP main light + shadow cascades | P1 | M |
+| Directional light + shadows | partial. One sun, one 2048 depth map, WebGL2 `sampler2DShadow`. Omit `shadow_softness` and the kernel stays 3×3. A wider tent is opt-in. No cascades, no contact-hardening. | URP main light + shadow cascades | P1 | M |
 | IBL / ambient from an env map | partial. Procedural L1 spherical harmonics (`env_irradiance`). No cubemap, no PMREM, no HDR file. | URP environment lighting + reflection probe | P1 | L |
 | Fog | have. Linear distance fog. Color follows `sky`. | URP linear / exponential fog | P2 | S to add an exponential mode |
 | Screen shake | have, as of this wave. `kagra.Juice.shake` offsets camera 0 on a fresh dump. Deterministic, no GPU. | Cinemachine impulse (the 80% bar does not include Cinemachine) | P0 | done (S) |
@@ -37,8 +37,8 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 | MeshStandard / MeshPhysical | partial | P1 | L | GGX + Smith + Fresnel on solid and on the metal material. Metallic and roughness are scalars on the instance. No clearcoat, sheen, transmission, or iridescence. |
 | Albedo textures | have | — | — | PNG albedo on props (`texture`, `uv_scale`). glTF baseColor. Sampler stays clamp; tiling is a CPU repeat. |
 | Normal maps | partial | P1 | M | MToon and glTF normals sample `normal_tex`. Solid/PBR props do not. Water uses a procedural normal. |
-| Roughness / metalness maps | missing | P1 | M | Roughness and metallic are per-instance floats, not textures. |
-| Shadows, PCF | partial | P1 | M | One directional map, 3×3 PCF, constant bias. Percentage-closer soft / VSM is absent. Local lights do not cast. |
+| Roughness / metalness maps | partial | P1 | M | Dump `roughness_map` / `metalness_map`: PNG or `preset:worn` / `split` / `brushed`. Linear ORM, G and B. glTF ORM textures are not read from the file yet. |
+| Shadows, PCF | partial | P1 | M | One directional map. Omit `shadow_softness` and it stays 3×3 PCF. About 3 is a 5×5 tent. No cascades, no local-light shadows. |
 | Directional light | have | — | — | Sun direction comes from light slot 0 (position or direction) plus ambient. |
 | Point light | partial | P2 | S | Up to 4 slots. Inverse-square-ish attenuation. No cookie, no shadow. |
 | Spot light | partial | P2 | S | Same 4 slots, `kind: "spot"`, a power cone. No shadow. |
@@ -75,6 +75,15 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 
 ## This wave
 
+Shipped on the wasm-safe path. Omitted fields keep the previous picture (`shadow_softness` 1, emissive 0, no maps):
+
+- `emissive`, `emissive_color`, `emissive_map` (`preset:core` or a PNG). Added after lighting, before fog, so bloom extracts an authored source.
+- `roughness_map` / `metalness_map`. Presets bake a 64² ORM. A PNG fills one channel and leaves the scalar for the other.
+- `shadow_softness`. 1 is the old 3×3 kernel. Larger is a wider tent (still one 2048 map, still `sampler2DShadow`).
+- Box Hop: the well is an authored glow, the crates use `preset:split`, the sun shadow radius is 4.5. `KAGRA_QUALITY=0` skips it.
+
+## Previous wave
+
 Shipped on the wasm-safe path, all of it toggleable:
 
 - Post stack fields on the dump: `bloom`, `bloom_threshold`, `vignette`, `lut`, `lut_strength`, `fxaa`. Omitted fields keep the previous picture.
@@ -86,7 +95,6 @@ Shipped on the wasm-safe path, all of it toggleable:
 
 ## Next waves
 
-1. **Emissive + authored bloom sources, roughness/metal maps, softer shadows.** Bloom currently wakes up on whatever already exceeds the threshold (sky, spec). An emissive scalar (and later a map) lets a lamp or a coin glow on purpose. Roughness maps and a wider PCF (or a small contact-hardening kernel) are the next lighting step that still fits WebGL2.
-2. **IBL that comes from an image, plus a hemisphere light.** Replace the fixed studio SH with a small prefiltered env (PMREM-style, still `texture_2d` faces or a low mip chain) and authorable sky/ground ambient. This is the "metal reads as metal outdoors" wave.
-3. **Trails, prop LOD, frustum bounds on dumps, one art-direction bundle.** A ribbon of quads for jump trails. Register mesh bounds so `compile_scene` culls. A `pastel` / `night` preset that sets sky, lights, exposure, and LUT together.
-4. **Parked.** SSAO, DOF, area lights, SMAA, custom shader graphs, WebGPU-only features, VRM-on-Wasm, Android.
+1. **IBL that comes from an image, plus a hemisphere light.** Replace the fixed studio SH with a small prefiltered env (PMREM-style, still `texture_2d` faces or a low mip chain) and authorable sky/ground ambient. This is the "metal reads as metal outdoors" wave. glTF-authored ORM (not only dump maps) can land here too.
+2. **Trails, prop LOD, frustum bounds on dumps, one art-direction bundle.** A ribbon of quads for jump trails. Register mesh bounds so `compile_scene` culls. A `pastel` / `night` preset that sets sky, lights, exposure, and LUT together.
+3. **Parked.** SSAO, DOF, area lights, SMAA, custom shader graphs, WebGPU-only features, VRM-on-Wasm, Android. Contact-hardening shadows need a depth read, which this wave skipped so WebGL2 stays on the comparison sampler.

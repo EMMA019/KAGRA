@@ -75,6 +75,10 @@
       "type": ["boolean", "null"],
       "description": "FXAA on the composite. Omit = on."
     },
+    "shadow_softness": {
+      "type": ["number", "null"],
+      "description": "Directional shadow radius. Omit = 1, the historical 3x3 PCF. About 2.5 to 4 uses a wider 5x5 tent."
+    },
     "sky": {
       "type": ["array", "null"],
       "minItems": 4,
@@ -174,6 +178,29 @@
           "minimum": 0,
           "maximum": 1,
           "description": "Coins dump 0.12 (GGX). Default 1."
+        },
+        "emissive": {
+          "type": ["number", "null"],
+          "description": "Unlit HDR add so bloom can come from this prop. Omit = 0. Color is emissive_color, or the albedo when that is omitted."
+        },
+        "emissive_color": {
+          "type": ["array", "null"],
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "type": "number" },
+          "description": "Linear 0..1 RGB glow. Omit = use the albedo."
+        },
+        "roughness_map": {
+          "type": ["string", "null"],
+          "description": "PNG path or preset:worn / preset:split / preset:brushed. G channel replaces the roughness scalar. Presets also write metallic."
+        },
+        "metalness_map": {
+          "type": ["string", "null"],
+          "description": "PNG path or the same presets. B channel replaces the metallic scalar."
+        },
+        "emissive_map": {
+          "type": ["string", "null"],
+          "description": "PNG path or preset:core. Multiplies the emissive color. Strength stays on emissive."
         },
         "interact": {
           "$ref": "#/$defs/interact",

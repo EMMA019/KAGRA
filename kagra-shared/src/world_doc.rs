@@ -38,7 +38,8 @@ use crate::gltf_load::{
     skinned_tpose_humanoid, unit_cube_gltf, walk_skinned_gltf, walk_skinned_vrm, WalkerPose,
 };
 use crate::scene3d::{
-    primitives, Camera, LocalLight, Material, MeshData, MeshId, Scene3D, SceneBuilder, Vertex3,
+    primitives, Camera, Instance, LocalLight, Material, MeshData, MeshId, Scene3D, SceneBuilder,
+    Vertex3,
 };
 use glam::{EulerRot, Mat4, Quat, Vec3};
 use serde::{Deserialize, Serialize};
@@ -117,6 +118,10 @@ pub struct WorldDoc {
     /// FXAA on the composite. None = on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fxaa: Option<bool>,
+    /// Directional shadow radius. None = 1, the historical 3×3 PCF.
+    /// Larger values (about 2.5–4) use a wider tent so penumbras soften.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_softness: Option<f32>,
     /// Generic countdowns. WorldPlay::tick_timers advances `remaining`; on 0 it
     /// emits `on_done` as an event and flips `active` false. Cooking wait,
     /// fishing cast→bite, cooldowns all map onto this. Genre code stays out.
@@ -237,6 +242,23 @@ pub struct WorldProp {
     /// 0..1. Coins dump 0.12. Default 1 (dielectric).
     #[serde(default = "default_roughness")]
     pub roughness: f32,
+    /// Unlit HDR add so a lamp or a coin can bloom on purpose. None = 0.
+    /// The color is `emissive_color`, or the albedo when that is omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emissive: Option<f32>,
+    /// Linear 0..1 RGB. None = use the albedo as the glow color.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emissive_color: Option<[f32; 3]>,
+    /// PNG path or `preset:worn` / `preset:split` / `preset:brushed`.
+    /// G channel replaces the roughness scalar. None = scalar only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roughness_map: Option<String>,
+    /// PNG path or the same presets. B channel replaces the metallic scalar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metalness_map: Option<String>,
+    /// PNG path or `preset:core`. Multiplies the emissive color. Strength is `emissive`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emissive_map: Option<String>,
     /// Interaction metadata (talk / use / examine). None = plain scenery.
     /// `on_use` emits an event when the player presses J/attack in reach.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -632,6 +654,11 @@ impl WorldDoc {
         self.fxaa.unwrap_or(true)
     }
 
+    /// Shadow kernel radius. None = 1 (the 3×3 PCF that already shipped).
+    pub fn shadow_softness(&self) -> f32 {
+        self.shadow_softness.unwrap_or(1.0).clamp(0.25, 8.0)
+    }
+
     /// Probe walker `gltf` paths. Missing/parse failures are dump-visible;
     /// `compile_scene` still draws a skinned tpose, never a silent capsule.
     pub fn refresh_asset_status(&mut self) {
@@ -825,7 +852,12 @@ impl WorldDoc {
                 };
                 (prop.metallic, r)
             };
-            b.push_pbr(mesh, model, col, mat, metallic, roughness);
+            let mut inst = Instance::with_pbr(model, col, mat, metallic, roughness);
+            inst.emissive = prop.emissive.unwrap_or(0.0).max(0.0);
+            if let Some(c) = prop.emissive_color {
+                inst.emissive_color = c;
+            }
+            b.push_instance(mesh, inst);
         }
 
         self.push_vista(&mut b, &camera);
@@ -948,6 +980,7 @@ impl WorldDoc {
             ibl: self.ibl.unwrap_or(0.35),
             exposure: self.exposure.unwrap_or(1.0),
             tonemap: self.tonemap.unwrap_or(true),
+            shadow_softness: self.shadow_softness(),
             batches: b.finish(),
         }
     }
@@ -1183,7 +1216,10 @@ impl WorldDoc {
         out.push((MESH_TORUS, primitives::torus_mesh(0.5, 0.075, 48, 20)));
         for (i, slot) in self.gltf_slots().into_iter().enumerate() {
             let mesh = match &slot {
-                GltfSlot::Rest(spec) => gltf_mesh_for(spec),
+                GltfSlot::Rest(spec) => gltf_mesh_for(spec).map(|mut mesh| {
+                    self.attach_surface_maps(&mut mesh, spec);
+                    mesh
+                }),
                 GltfSlot::Skinned {
                     spec,
                     part,
@@ -1286,6 +1322,17 @@ impl WorldDoc {
             let tex = prop_texture_path(prop).unwrap_or("");
             parts.push(format!("t:{}:{tex}", prop.id));
         }
+        for prop in &self.props {
+            if prop_has_maps(prop) {
+                parts.push(format!(
+                    "map:{}:{}:{}:{}",
+                    prop.id,
+                    prop.roughness_map.as_deref().unwrap_or(""),
+                    prop.metalness_map.as_deref().unwrap_or(""),
+                    prop.emissive_map.as_deref().unwrap_or(""),
+                ));
+            }
+        }
         parts.push(format!("lod:{}", self.vegetation_lod_cells()));
         parts.join("|")
     }
@@ -1356,8 +1403,29 @@ impl WorldDoc {
     fn textured_props(&self) -> Vec<&WorldProp> {
         self.props
             .iter()
-            .filter(|p| p.enabled && prop_texture_path(p).is_some())
+            .filter(|p| {
+                if !p.enabled {
+                    return false;
+                }
+                if prop_texture_path(p).is_some() {
+                    return true;
+                }
+                // Maps on a glTF ride that mesh. A bare primitive needs its own slot.
+                prop_gltf_spec(p).is_none() && prop_has_maps(p)
+            })
             .collect()
+    }
+
+    fn attach_surface_maps(&self, mesh: &mut MeshData, spec: &str) {
+        let Some(prop) = self.props.iter().find(|p| {
+            p.enabled
+                && prop_texture_path(p).is_none()
+                && prop_gltf_spec(p) == Some(spec)
+                && prop_has_maps(p)
+        }) else {
+            return;
+        };
+        apply_surface_maps(mesh, prop);
     }
 
     fn texture_mesh_ids(&self) -> HashMap<String, MeshId> {
@@ -1689,6 +1757,23 @@ fn prop_texture_path(prop: &WorldProp) -> Option<&str> {
         .filter(|s| !s.is_empty())
 }
 
+fn prop_gltf_spec(prop: &WorldProp) -> Option<&str> {
+    prop.gltf
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+fn map_spec(value: &Option<String>) -> Option<&str> {
+    value.as_deref().map(str::trim).filter(|s| !s.is_empty())
+}
+
+fn prop_has_maps(prop: &WorldProp) -> bool {
+    map_spec(&prop.roughness_map).is_some()
+        || map_spec(&prop.metalness_map).is_some()
+        || map_spec(&prop.emissive_map).is_some()
+}
+
 /// Load a PNG as albedo. Repo-relative paths resolve from cwd or the crate parent.
 pub fn load_png_albedo(path: &str) -> Option<crate::scene3d::AlbedoRgba> {
     let spec = path.trim();
@@ -1709,16 +1794,188 @@ pub fn load_png_albedo(path: &str) -> Option<crate::scene3d::AlbedoRgba> {
 }
 
 fn textured_prop_mesh(prop: &WorldProp) -> Option<MeshData> {
-    let path = prop_texture_path(prop)?;
-    let albedo = load_png_albedo(path)?;
+    let albedo = prop_texture_path(prop).and_then(load_png_albedo);
+    if albedo.is_none() && !prop_has_maps(prop) {
+        return None;
+    }
     let mut mesh = match prop.model.to_ascii_lowercase().as_str() {
         "plane" | "water" => primitives::plane_mesh(1.0, 1.0),
         "sprite" | "quad" => primitives::quad_mesh(1.0, 1.0),
         "sphere" | "cylinder" | "capsule" => primitives::cylinder_mesh(0.5, 1.0, 12),
         _ => primitives::box_mesh(Vec3::ONE),
     };
-    mesh.albedo = Some(tile_albedo(albedo, prop.uv_scale));
+    if let Some(albedo) = albedo {
+        mesh.albedo = Some(tile_albedo(albedo, prop.uv_scale));
+    }
+    apply_surface_maps(&mut mesh, prop);
     Some(mesh)
+}
+
+fn apply_surface_maps(mesh: &mut MeshData, prop: &WorldProp) {
+    if let Some(orm) = build_orm(map_spec(&prop.roughness_map), map_spec(&prop.metalness_map)) {
+        mesh.orm_rough = orm.rough;
+        mesh.orm_metal = orm.metal;
+        mesh.orm = Some(orm.image);
+    }
+    if let Some(spec) = map_spec(&prop.emissive_map) {
+        mesh.emissive_map = load_surface_image(spec);
+    }
+}
+
+struct OrmImage {
+    image: crate::scene3d::AlbedoRgba,
+    rough: bool,
+    metal: bool,
+}
+
+fn build_orm(rough: Option<&str>, metal: Option<&str>) -> Option<OrmImage> {
+    if rough.is_none() && metal.is_none() {
+        return None;
+    }
+    if let (Some(r), m) = (rough, metal) {
+        if let Some(preset) = preset_orm(r) {
+            let same = m.is_none() || m == Some(r);
+            if same {
+                return Some(OrmImage {
+                    image: preset,
+                    rough: true,
+                    metal: true,
+                });
+            }
+        }
+    }
+    if rough.is_none() {
+        if let Some(m) = metal.and_then(preset_orm) {
+            return Some(OrmImage {
+                image: m,
+                rough: true,
+                metal: true,
+            });
+        }
+    }
+    let rough_img = rough.and_then(load_surface_image);
+    let metal_img = metal.and_then(load_surface_image);
+    if rough_img.is_none() && metal_img.is_none() {
+        return None;
+    }
+    let (w, h) = match (&rough_img, &metal_img) {
+        (Some(a), _) => (a.width, a.height),
+        (_, Some(a)) => (a.width, a.height),
+        _ => (1, 1),
+    };
+    let mut rgba = vec![0u8; (w as usize) * (h as usize) * 4];
+    for i in 0..(w as usize * h as usize) {
+        let g = rough_img
+            .as_ref()
+            .map(|img| sample_luma(img, i))
+            .unwrap_or(255);
+        let b = metal_img
+            .as_ref()
+            .map(|img| sample_luma(img, i))
+            .unwrap_or(0);
+        let o = i * 4;
+        rgba[o] = 255;
+        rgba[o + 1] = g;
+        rgba[o + 2] = b;
+        rgba[o + 3] = 255;
+    }
+    Some(OrmImage {
+        image: crate::scene3d::AlbedoRgba {
+            width: w,
+            height: h,
+            rgba: rgba.into(),
+        },
+        rough: rough_img.is_some(),
+        metal: metal_img.is_some(),
+    })
+}
+
+fn sample_luma(img: &crate::scene3d::AlbedoRgba, index: usize) -> u8 {
+    let n = (img.width as usize)
+        .saturating_mul(img.height as usize)
+        .max(1);
+    let i = (index % n) * 4;
+    if i + 2 >= img.rgba.len() {
+        return 128;
+    }
+    let r = img.rgba[i] as u32;
+    let g = img.rgba[i + 1] as u32;
+    let b = img.rgba[i + 2] as u32;
+    ((r * 3 + g * 6 + b) / 10) as u8
+}
+
+fn load_surface_image(spec: &str) -> Option<crate::scene3d::AlbedoRgba> {
+    if let Some(img) = preset_orm(spec).or_else(|| preset_emissive(spec)) {
+        return Some(img);
+    }
+    load_png_albedo(spec)
+}
+
+/// `preset:worn` / `preset:split` / `preset:brushed`. Linear bytes (ORM is Unorm).
+fn preset_orm(spec: &str) -> Option<crate::scene3d::AlbedoRgba> {
+    let name = spec.strip_prefix("preset:")?;
+    let n = 64u32;
+    let mut rgba = vec![0u8; (n * n * 4) as usize];
+    for y in 0..n {
+        for x in 0..n {
+            let u = x as f32 / (n - 1) as f32;
+            let band = (u * 6.0).sin() * 0.5 + 0.5;
+            let pit = if (x * 13 + y * 7) % 17 == 0 { 1.0 } else { 0.0 };
+            let (rough, metal) = match name {
+                "split" => {
+                    if u < 0.5 {
+                        (0.12, 1.0)
+                    } else {
+                        (0.92, 0.0)
+                    }
+                }
+                "brushed" => (0.18 + 0.55 * ((u * 18.0).sin() * 0.5 + 0.5), 1.0),
+                "worn" => (
+                    (0.22 + 0.62 * band + 0.18 * pit).clamp(0.04, 1.0),
+                    (0.04 + 0.62 * (1.0 - band) * (1.0 - pit * 0.4)).clamp(0.0, 1.0),
+                ),
+                _ => return None,
+            };
+            let i = ((y * n + x) * 4) as usize;
+            rgba[i] = 255;
+            rgba[i + 1] = (rough.clamp(0.0, 1.0) * 255.0).round() as u8;
+            rgba[i + 2] = (metal.clamp(0.0, 1.0) * 255.0).round() as u8;
+            rgba[i + 3] = 255;
+        }
+    }
+    Some(crate::scene3d::AlbedoRgba {
+        width: n,
+        height: n,
+        rgba: rgba.into(),
+    })
+}
+
+fn preset_emissive(spec: &str) -> Option<crate::scene3d::AlbedoRgba> {
+    let name = spec.strip_prefix("preset:")?;
+    if name != "core" {
+        return None;
+    }
+    let n = 64u32;
+    let mut rgba = vec![0u8; (n * n * 4) as usize];
+    for y in 0..n {
+        for x in 0..n {
+            let u = x as f32 / (n - 1) as f32 - 0.5;
+            let v = y as f32 / (n - 1) as f32 - 0.5;
+            let d = (u * u + v * v).sqrt();
+            let glow = (1.0 - d * 2.2).clamp(0.0, 1.0);
+            let byte = (glow * 255.0).round() as u8;
+            let i = ((y * n + x) * 4) as usize;
+            rgba[i] = byte;
+            rgba[i + 1] = byte;
+            rgba[i + 2] = byte;
+            rgba[i + 3] = 255;
+        }
+    }
+    Some(crate::scene3d::AlbedoRgba {
+        width: n,
+        height: n,
+        rgba: rgba.into(),
+    })
 }
 
 fn tile_albedo(
@@ -2670,7 +2927,9 @@ mod tests {
         assert_eq!(doc.lut_preset(), "off");
         assert_eq!(doc.lut_mix(), 0.0);
         assert!(doc.fxaa_enabled());
+        assert!((doc.shadow_softness() - 1.0).abs() < 1e-6);
         assert!(!doc.to_json().unwrap().contains("\"bloom\""));
+        assert!(!doc.to_json().unwrap().contains("\"shadow_softness\""));
         let on = WorldDoc::from_json(
             r#"{"version":1,"bloom":0.4,"bloom_threshold":0.7,"vignette":0.0,"lut":"warm","lut_strength":0.5,"fxaa":false}"#,
         )
@@ -2681,6 +2940,45 @@ mod tests {
         assert_eq!(on.lut_preset(), "warm");
         assert!((on.lut_mix() - 0.5).abs() < 1e-6);
         assert!(!on.fxaa_enabled());
+    }
+
+    #[test]
+    fn emissive_and_orm_reach_the_picture() {
+        let doc = WorldDoc::from_json(
+            r#"{"version":1,"ground":false,"shadow_softness":3.0,"props":[{"id":"lamp","type":"prop","model":"box","position":[0.0,1.0,0.0],"emissive":2.5,"emissive_color":[1.0,0.4,0.1],"roughness_map":"preset:split","metalness_map":"preset:split"}]}"#,
+        )
+        .unwrap();
+        assert!((doc.shadow_softness() - 3.0).abs() < 1e-6);
+        let scene = doc.compile_scene(1.0);
+        assert!((scene.shadow_softness - 3.0).abs() < 1e-6);
+        let lamp = scene
+            .batches
+            .iter()
+            .find(|b| b.mesh.0 >= MESH_GLTF_BASE)
+            .expect("mapped box");
+        let inst = &lamp.instances[0];
+        assert!(
+            (inst.emissive - 2.5).abs() < 1e-4,
+            "emissive {}",
+            inst.emissive
+        );
+        assert!((inst.emissive_color[0] - 1.0).abs() < 1e-4);
+        let meshes = doc.compile_meshes();
+        let mapped = meshes
+            .iter()
+            .find(|(id, m)| id.0 >= MESH_GLTF_BASE && m.orm.is_some())
+            .expect("orm mesh");
+        assert!(mapped.1.orm_rough && mapped.1.orm_metal);
+        let img = mapped.1.orm.as_ref().unwrap();
+        let left_b = img.rgba[2];
+        let right_g = img.rgba[(63 * 4 + 1) as usize];
+        let right_b = img.rgba[(63 * 4 + 2) as usize];
+        assert!(left_b > 200, "split left should be metal, B={left_b}");
+        assert!(right_g > 200, "split right should be rough, G={right_g}");
+        assert!(
+            right_b < 20,
+            "split right should be dielectric, B={right_b}"
+        );
     }
 
     #[test]
