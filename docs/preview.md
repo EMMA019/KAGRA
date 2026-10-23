@@ -22,7 +22,9 @@ Box Hop は一覧に残る。PR の一覧は `/pr/N/` にだけ置き、安定�
 ルールは Python 側のまま。
 
 PR を開くたびに、プレビューの URL と QR 画像を PR コメントへ書く。同じコメントを
-更新する。PR を閉じると `/pr/N/` を消す。
+更新する。マージせず閉じた PR は `/pr/N/` を消す。マージしたプレビューは残す。
+master の Pages がルートを差し替える前に消して配信すると、古い `play.html`
+（`assets.json` も GLB も無い）がライブに出て、`pr/` も一緒に消える。
 
 電話のブラウザで開く。操作は Android のパッケージと同じ。
 
@@ -63,8 +65,10 @@ Lumen をルートへ足す。プレビューのカタログでルートを置�
 `actions/deploy-pages` を直接呼ぶと、その方針で止まる。Preview と Pages は
 木を `gh-pages` に載せたあと `repository_dispatch`（`kagra-pages`）を送る。
 `master` の [pages-deploy.yml](../.github/workflows/pages-deploy.yml) が
-木全体を artifact にして Pages へ出す。`play.html` と wasm が無い木は
-出さない（空の配信で Lumen を消さない）。PR のスクリプトはそこでは走らない。
+木全体を artifact にして Pages へ出す。`play.html` と wasm が無い木、
+`assets.json` が無い木、`play.html` がそれを読まない木、一覧のファイルが
+欠けた木は出さない（空の配信で Lumen を消さない。GLB を載せたあとに古い
+ルートで上書きしない）。PR のスクリプトはそこでは走らない。
 
 `dist/web` だけを Pages の artifact にすると `/pr/` が消える。配信は常に
 `gh-pages` の木全体。

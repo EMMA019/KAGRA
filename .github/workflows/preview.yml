@@ -1,6 +1,8 @@
 # PR プレビューだけを gh-pages の pr/<number>/ に載せる。
 # ルートの play.html（安定版 Lumen）は Pages ワークフローが持つ。ここは消さない。
-# 配信は pages-deploy.yml。手順は docs/preview.md。
+# マージで閉じた /pr/<number>/ も残す。先に消して配信すると、Pages が
+# 新しいルートを置く前の木（古い play.html、pr/ なし）がライブに出る。
+# マージせず閉じたときだけ消す。配信は pages-deploy.yml。手順は docs/preview.md。
 
 name: Preview
 
@@ -247,7 +249,10 @@ jobs:
           exit 1
 
   cleanup:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    # Merged PRs keep /pr/<number>/. Deleting it here also dispatches Pages
+    # Deploy while pages.yml is still building, so the live site gets the
+    # previous root (no assets.json, no GLBs) and an empty pr/.
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
