@@ -70,6 +70,23 @@ fn main() -> Result<(), String> {
         renderer.set_fxaa(fxaa);
         let pixels = renderer.render_world_doc(&doc)?;
         write_png(&out, width, height, &pixels)?;
+        let profile = renderer.frame_profile();
+        if let Ok(dump) = doc.to_json() {
+            let report = kagra_shared::splice_profile(&dump, &profile);
+            let mut report_path = out.clone();
+            report_path.set_extension("profile.json");
+            if let Some(parent) = report_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(e) = std::fs::write(&report_path, report) {
+                eprintln!("profile dump: {e}");
+            } else {
+                println!("wrote {}", report_path.display());
+            }
+        }
+        for warning in profile.warnings() {
+            eprintln!("profile: {warning}");
+        }
         println!(
             "wrote {} ({}x{}, {} bytes) from WorldDoc {} compile_scene",
             out.display(),

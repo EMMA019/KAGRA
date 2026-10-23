@@ -38,6 +38,8 @@ mic = ["sounddevice"]
 dev = ["pytest>=7.0"]
 mcp = ["mcp>=1.1"]
 agent = ["mcp>=1.1", "pytest>=7.0"]
+# Desktop and CI asset checks. Not imported by the wheel.
+assets = ["trimesh==5.1.1", "pygltflib==1.16.5"]
 
 [tool.maturin]
 manifest-path = "kagra-shared/Cargo.toml"

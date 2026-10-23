@@ -60,6 +60,25 @@ jobs:
       - name: Run pure Python unit tests
         run: pytest tests -m "not golden"
 
+  # trimesh / pygltflib stay out of the wheel and out of python-unit.
+  # That job skips tests/test_gltf_asset_check.py via importorskip.
+  gltf-asset-checks:
+    name: glTF asset checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install asset checkers
+        run: pip install "pytest>=7.0" -r tools/requirements-assets.txt
+
+      - name: Check bundled and synthetic glTF
+        run: pytest tests/test_gltf_asset_check.py -m "not golden"
+
   # モバイル / Wasm 共有コア。GPU も Python も不要なので毎 push で回す。
   shared-lib:
     name: kagra-shared (fmt / clippy / test / wasm)

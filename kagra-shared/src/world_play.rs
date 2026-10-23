@@ -577,6 +577,8 @@ impl WorldPlay {
 
     /// Advance walker + chase camera + pickups. `dt` is seconds (clamped).
     pub fn tick(&mut self, dt: f32) {
+        puffin::GlobalProfiler::lock().new_frame();
+        puffin::profile_function!();
         let dt = dt.clamp(0.0, 0.05);
         if dt > 0.0 {
             crate::mixer::tick(dt);

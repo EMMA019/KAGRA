@@ -41,6 +41,8 @@ Direct dependencies of `kagra-shared` (`kagra-shared/Cargo.toml`, locked in `Car
 | `wasm-bindgen`, `js-sys`, `web-sys` | `wasm` | Browser entry. |
 | `palette` 0.7.7 | **dev-dependency** | sRGB oracle in `color_space.rs` tests. The runtime curve and the Narkowicz ACES fit stay in `color_space.rs` and the WGSL shaders. `NOTICE` already records this. Do not link `palette` into wasm or Android. |
 | `winit` 0.29.15 | dev, `not(wasm32)` | The `window` example only. |
+| `puffin` 0.19.1 | runtime | CPU scopes on `render_frame` and `WorldPlay::tick`. `puffin_http` is not linked. |
+| `notify` 6.1.1 | desktop only | World dump and material watch in the `window` example. Not linked on wasm or Android. |
 
 Hand-rolled stand-ins that a new crate would replace:
 
@@ -61,7 +63,7 @@ Python (`pyproject.toml`): no runtime third-party packages. The wheel is maturin
 
 `tools/requirements-osm.txt` is optional and only for `tools/osm_bake.py`: `osmnx`, `geopandas`, `shapely`, `networkx`. That script imports `networkx`. Game code under `kagra/` and `examples/` does not.
 
-No import of `numpy`, `PIL`, `trimesh`, `pygltflib`, `pydantic`, `hypothesis`, `noise`, or `opensimplex` exists in the tree.
+`kagra/` and `examples/` do not import `numpy`, `PIL`, `trimesh`, `pygltflib`, `pydantic`, `hypothesis`, `noise`, or `opensimplex`. `tools/check_gltf_asset.py` is the desktop/CI exception for trimesh and pygltflib.
 
 ## Archived engine (do not copy forward)
 
@@ -75,7 +77,7 @@ No import of `numpy`, `PIL`, `trimesh`, `pygltflib`, `pydantic`, `hypothesis`, `
 
 ### puffin
 
-CPU scopes (frame, tick, upload, shadow pass) that a desktop viewer can read. The headless contract stays a dump object: cpu ms, gpu ms when `TIMESTAMP_QUERY` is real, draws, triangles, texture bytes, and budget warnings. `puffin` does not replace that JSON. It is the instrumentation inside the process.
+Linked as `puffin` 0.19. Scopes sit on `render_frame` and `WorldPlay::tick`. The headless contract stays a dump object: cpu ms, gpu ms when `TIMESTAMP_QUERY` is real, draws, triangles, texture bytes, and budget warnings. `puffin` does not replace that JSON. It is the instrumentation inside the process.
 
 `puffin` itself is pure Rust and builds for `wasm32` and Android. Leave `puffin_http` (the viewer socket server) off those targets, the same way `rodio` is a desktop feature. Do not request timestamp queries on wasm: that can fail device creation. GPU time stays `None` when the adapter lacks `TIMESTAMP_QUERY` and `TIMESTAMP_QUERY_INSIDE_ENCODERS`.
 
@@ -99,9 +101,9 @@ The loader is in. The bake pipeline that writes the files is still effort **L** 
 
 Desktop and CI checks an agent can run before `kagra.verify`: triangle count, bounds, missing images, metallic/roughness factors left at the glTF default, and a non-PNG texture that the runtime cannot decode. `pygltflib` reads the JSON and the chunks. `trimesh` checks the mesh (watertight, degenerate faces, vertex count).
 
-Both are CPython packages. They do not import into the wasm module or the Android APK. Put them in a tools extra (`tools/requirements-assets.txt` or a `pyproject` optional extra), not in the wheel's required dependencies.
+Both are CPython packages. They do not import into the wasm module or the Android APK. They live in the `assets` extra and `tools/requirements-assets.txt`, not in the wheel.
 
-Effort **S** for a script under `tools/` plus a pytest that runs on one bundled `.glb`.
+`tools/check_gltf_asset.py` reports triangle count, finite bounds, missing image URIs, and a metallic/roughness pair left at (1, 1). The default pair is a note. A missing image is an error. CI job `gltf-asset-checks` installs the extra and runs `tests/test_gltf_asset_check.py`. The `python-unit` job does not install the packages, so that test skips there.
 
 ### pydantic
 

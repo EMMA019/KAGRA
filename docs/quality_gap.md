@@ -82,6 +82,16 @@ Shipped on the wasm-safe path. A glTF base color may be a pre-encoded KTX2. PNG,
 - `ktx2` 0.5 parses the container. Level 0 of a 2D ETC2, ASTC, or BC color block is stored on the mesh. Basis Universal (`VK_FORMAT_UNDEFINED`), supercompression, arrays, cubemaps, 3D images, BC4/BC5/BC6, and ASTC HDR are rejected. There is no transcoder.
 - The device requests `TEXTURE_COMPRESSION_BC`, `TEXTURE_COMPRESSION_ETC2`, and `TEXTURE_COMPRESSION_ASTC` only when `adapter.features()` already contains that bit. A missing bit, or a non-identity `baseColorFactor`, keeps the RGBA albedo (a 1×1 factor bake when the block cannot be multiplied in place).
 - The copy row pitch is padded to 256 bytes. Mips above 0 are not uploaded. Normal, ORM, and emissive images stay RGBA.
+- Timestamp queries stay off on wasm. On other targets they are requested only when the adapter already lists both timestamp features, together with any compression bits above.
+
+## Previous wave
+
+Shipped on the wasm-safe path. The picture does not change. A headless dump can carry a `profile` object; `to_json` still omits it.
+
+- Draws, triangles, and texture bytes (shadow map, env strip, authored images) come from `compile_scene`. No editor.
+- `puffin` scopes the frame and the sim tick. The HTTP viewer is not linked. CPU milliseconds are filled when a desktop or Android frame actually draws. GPU milliseconds are filled when the device exposes timestamp queries. Wasm leaves both times empty and does not request timestamp queries.
+- Warnings fire over a phone budget: 16.7 ms, 200 draws, 100k triangles, 48 MB of textures. A warning does not fail the render.
+- The desktop window watches the dump JSON and material files (`notify`). A dump change reloads the document. A PNG change reuploads meshes. Wasm and Android do not link the watcher.
 
 ## Previous wave
 
