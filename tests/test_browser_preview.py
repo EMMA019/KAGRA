@@ -132,6 +132,16 @@ def test_dev_shell_is_a_separate_debug_app():
     assert "MainActivity.kt" not in gradle
     preview_yml = (ROOT / ".github/workflows/preview.yml").read_text(encoding="utf-8")
     assert "bash scripts/build_wasm.sh" in preview_yml
+    assert "kagra-pages" in preview_yml
+    assert "build_type" not in preview_yml
+    assert "Deploy from a branch" not in preview_yml
+    deploy_yml = (ROOT / ".github/workflows/pages-deploy.yml").read_text(encoding="utf-8")
+    assert "actions/upload-pages-artifact" in deploy_yml
+    assert "actions/deploy-pages" in deploy_yml
+    assert "ref: gh-pages" in deploy_yml
+    assert "name: github-pages" in deploy_yml
+    assert "id-token: write" in deploy_yml
+    assert "kagra-pages" in deploy_yml
 
 
 def test_pages_remote_keeps_the_token_out_of_logs():

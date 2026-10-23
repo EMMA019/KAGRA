@@ -36,11 +36,26 @@ PR を開くたびに、プレビューの URL と QR 画像を PR コメント�
 ```bash
 rustup target add wasm32-unknown-unknown
 cargo install wasm-bindgen-cli --version 0.2.127
-./scripts/build_wasm.sh
+bash scripts/build_wasm.sh
 python scripts/build_browser_preview.py --out dist/preview --require-pkg
 python -m http.server -d dist/preview 8000
 # http://localhost:8000/  と  http://localhost:8000/play.html?game=platformer
 ```
+
+## 配信
+
+Settings → Pages → Source は **GitHub Actions**。`gh-pages` はサイトの中身を
+置く枝（`/` と `pr/<number>/` が同じ木に並ぶ）で、それ自体は配信しない。
+
+`github-pages` 環境は `master` だけを許可する。PR のジョブから
+`actions/deploy-pages` を直接呼ぶと、その方針で止まる。Preview は木を
+`gh-pages` に載せたあと `repository_dispatch`（`kagra-pages`）を送る。
+`master` の [pages-deploy.yml](../.github/workflows/pages-deploy.yml) が
+木全体を artifact にして Pages へ出す。PR のスクリプトはそこでは走らない。
+
+`master` に Preview 自体が乗るまで、安定版の
+`https://emma019.github.io/KAGRA/play.html` は置かれない。電話で開くのは
+`/pr/<number>/play.html`。
 
 `crest.html`（Crest Isle）と運転デモは今までどおり `kagra-shared/www/`。
 

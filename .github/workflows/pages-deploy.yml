@@ -1,0 +1,50 @@
+# gh-pages にあるサイト全体を GitHub Pages に出す。
+# github-pages 環境は master だけを許可するので、このファイルは master で動く。
+# Preview は repository_dispatch (kagra-pages) でここを起こす。
+# 中身のビルドはしない。PR のスクリプトは実行しない。
+
+name: Pages Deploy
+
+on:
+  repository_dispatch:
+    types: [kagra-pages]
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - .github/workflows/pages-deploy.yml
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: kagra-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout the full site
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: site
+
+      - name: Drop git metadata
+        run: rm -rf site/.git
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

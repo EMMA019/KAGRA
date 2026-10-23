@@ -19,7 +19,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  pages: write
+  actions: read
 
 concurrency:
   group: preview-${{ github.event.pull_request.number || github.ref }}
@@ -93,29 +93,17 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: python scripts/publish_preview_pages.py --src dist/preview --dest "${dest}"
 
-      - name: Point GitHub Pages at gh-pages
-        continue-on-error: true
+      - name: Ask master to deploy Pages
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set +e
-          body='{"build_type":"legacy","source":{"branch":"gh-pages","path":"/"}}'
-          ok=1
-          for i in 1 2 3 4 5; do
-            echo "pages config attempt ${i}"
-            echo "$body" | gh api --method POST "/repos/${GITHUB_REPOSITORY}/pages" --input -
-            post=$?
-            echo "$body" | gh api --method PUT "/repos/${GITHUB_REPOSITORY}/pages" --input -
-            put=$?
-            gh api --method POST "/repos/${GITHUB_REPOSITORY}/pages/builds"
-            if [ "$post" = "0" ] || [ "$put" = "0" ]; then
-              ok=0
-              break
-            fi
-            sleep 10
-          done
-          gh api "/repos/${GITHUB_REPOSITORY}/pages" || true
-          exit "$ok"
+          set -eu
+          # github-pages 環境は master だけ通す。deploy-pages は
+          # pages-deploy.yml（master）が行う。ここは木を渡しただけ。
+          before=$(date -u +%s)
+          echo "dispatch_epoch=${before}" >> "$GITHUB_ENV"
+          payload=$(printf '{"event_type":"kagra-pages","client_payload":{"dest":"%s","url":"%s"}}' "$dest" "$url")
+          printf '%s' "$payload" | gh api --method POST "/repos/${GITHUB_REPOSITORY}/dispatches" --input -
 
       - name: Comment on the PR
         if: github.event_name == 'pull_request'
@@ -165,21 +153,67 @@ jobs:
             }
 
       - name: Wait until Pages serves the preview
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
           probe="${url}catalog.json"
-          for i in $(seq 1 6); do
-            code=$(curl -fsS -o /tmp/kagra-catalog.json -w "%{http_code}" "$probe" || true)
-            echo "try ${i} ${probe} -> ${code}"
-            if [ "$code" = "200" ] && grep -q platformer /tmp/kagra-catalog.json; then
-              exit 0
+          html="${url}play.html?game=platformer"
+          wasm="${url}pkg/kagra_shared_bg.wasm"
+          found=""
+          for i in $(seq 1 40); do
+            if [ -z "$found" ]; then
+              found=$(gh run list --workflow pages-deploy.yml --limit 10 \
+                --json databaseId,createdAt,headBranch,status,conclusion \
+                --jq '.[] | "\(.createdAt) \(.databaseId) \(.headBranch)"' \
+                | while read -r created id branch; do
+                    [ "$branch" = "master" ] || continue
+                    epoch=$(date -u -d "$created" +%s)
+                    if [ "$epoch" -ge "$dispatch_epoch" ]; then
+                      echo "$id"
+                      break
+                    fi
+                  done || true)
+            fi
+            if [ -n "$found" ]; then
+              status=$(gh run view "$found" --json status,conclusion --jq '.status + " " + (.conclusion // "")')
+              echo "pages-deploy ${found} ${status}"
+              case "$status" in
+                "completed success") break ;;
+                completed*)
+                  echo "Pages deploy failed: ${status}" >&2
+                  gh run view "$found" --log-failed || true
+                  exit 1
+                  ;;
+              esac
+            else
+              echo "try ${i}: pages-deploy run not visible yet"
             fi
             sleep 20
           done
-          echo "Pages did not serve ${probe}" >&2
-          echo "Settings → Pages → Build and deployment → Source: Deploy from a branch." >&2
-          echo "Branch: gh-pages. Folder: / (root). Save." >&2
-          echo "GITHUB_TOKEN cannot create that site. A repo admin has to turn Pages on once." >&2
+          if [ -z "$found" ]; then
+            echo "pages-deploy.yml on master did not start." >&2
+            echo "The github-pages environment accepts master only, so Preview dispatches that workflow." >&2
+            exit 1
+          fi
+          : > /tmp/kagra-catalog.json
+          : > /tmp/kagra-play.html
+          : > /tmp/kagra.wasm
+          for i in $(seq 1 15); do
+            code=$(curl -fsS -o /tmp/kagra-catalog.json -w "%{http_code}" "$probe" || true)
+            hcode=$(curl -fsS -o /tmp/kagra-play.html -w "%{http_code}" "$html" || true)
+            wcode=$(curl -fsS -o /tmp/kagra.wasm -w "%{http_code}" "$wasm" || true)
+            wsize=$(wc -c < /tmp/kagra.wasm)
+            echo "try ${i} catalog=${code} play=${hcode} wasm=${wcode} wasm_bytes=${wsize}"
+            if [ "$code" = "200" ] && [ "$hcode" = "200" ] && [ "$wcode" = "200" ] \
+              && grep -q platformer /tmp/kagra-catalog.json \
+              && ! grep -q "<!DOCTYPE html>" /tmp/kagra-play.html \
+              && [ "$wsize" -gt 1000000 ]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Pages did not serve ${html}" >&2
           exit 1
 
   cleanup:
@@ -199,6 +233,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: python scripts/publish_preview_pages.py --delete --dest "pr/${{ github.event.number }}"
+
+      - name: Ask master to deploy Pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          payload='{"event_type":"kagra-pages","client_payload":{"dest":"pr/${{ github.event.number }}","delete":true}}'
+          printf '%s' "$payload" | gh api --method POST "/repos/${GITHUB_REPOSITORY}/dispatches" --input -
 
       - name: Note that the preview was removed
         uses: actions/github-script@v7
