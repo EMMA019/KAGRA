@@ -13,9 +13,19 @@
     html, body { height: 100%; margin: 0; background: #07010f; color: #f6f0ff; }
     body { font-family: "IBM Plex Sans", sans-serif; overflow: hidden; touch-action: none; }
     #app { position: relative; width: 100vw; height: 100vh; height: 100dvh; }
-    canvas { display: block; width: 100%; height: 100%; background: #07010f; touch-action: none; }
+    canvas {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #07010f;
+      touch-action: none;
+    }
     #boost {
       position: absolute;
+      z-index: 4;
       right: max(16px, env(safe-area-inset-right));
       bottom: max(18px, env(safe-area-inset-bottom));
       width: 64px;
@@ -46,12 +56,13 @@
     }
     #links {
       position: absolute;
+      z-index: 4;
       left: max(12px, env(safe-area-inset-left));
       bottom: max(12px, env(safe-area-inset-bottom));
       font-size: 12px;
       opacity: 0.72;
-      z-index: 2;
     }
+    #links[hidden] { display: none !important; }
     #links a { color: #9af6ff; margin-right: 10px; }
     #boot {
       position: absolute;
@@ -83,7 +94,7 @@
   <div id="app">
     <canvas id="c"></canvas>
     <button id="boost" type="button">BOOST</button>
-    <div id="links">
+    <div id="links" hidden>
       <a href="./corridor.html">Corridor</a>
       <a href="./crest.html">Crest</a>
     </div>
