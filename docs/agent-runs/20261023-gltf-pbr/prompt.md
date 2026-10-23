@@ -1,0 +1,1 @@
+Full glTF PBR import: pbrMetallicRoughness factors and textures, emissiveFactor / emissiveStrength, KHR_texture_transform, alphaMode / alphaCutoff / doubleSided, vertex colors, and texture samplers (wrap, filter, mipmaps, anisotropy). Verify with Khronos sample models (DamagedHelmet, MetalRoughSpheres) using screenshot tests.

@@ -42,6 +42,9 @@ ab_glyph = "0.2"
 glam = { version = "0.33", default-features = false, features = ["std"] }
 bytemuck = { version = "1", features = ["derive"] }
 png = "0.17"
+# glTF samples store color and data images as JPEG (DamagedHelmet).
+# Default features pull rayon, which we do not want on wasm.
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
 # kagra-core（0.19）とは独立に現行世代を使う。古い wgpu の WebGPU バックエンドは
 # 今のブラウザが外した limit（maxInterStageShaderComponents）を要求して

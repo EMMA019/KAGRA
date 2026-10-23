@@ -34,10 +34,10 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 
 | Feature | Status | Priority | Effort | What KAGRA does today |
 |---|---|---|---|---|
-| MeshStandard / MeshPhysical | partial | P1 | L | GGX + Smith + Fresnel on solid and on the metal material. Metallic and roughness are scalars on the instance. No clearcoat, sheen, transmission, or iridescence. |
-| Albedo textures | have | — | — | PNG albedo and emissive are sRGB. Color mips average in linear, then re-encode. Sampler stays clamp; tiling is a CPU repeat. |
-| Normal maps | partial | P1 | M | Sampled as linear unorm (a flat 128 stays 0.5). MToon and glTF normals use `normal_tex`. Solid/PBR lighting still uses the geometric normal. Water uses a procedural normal. |
-| Roughness / metalness maps | partial | P1 | M | Dump maps, plus glTF `metallicRoughnessTexture` (factors baked into the image). Dump maps still replace the file. Toon primitives skip ORM. |
+| MeshStandard / MeshPhysical | partial | P1 | L | GGX + Smith + Fresnel on solid and on the metal material. glTF factors, vertex color, and a tangent-space normal feed that lighting. No clearcoat, sheen, transmission, or iridescence. |
+| Albedo textures | have | — | — | PNG albedo and emissive are sRGB. Color mips average in linear, then re-encode, down to 1×1. A glTF sampler sets wrap, filter, and anisotropy. Procedural meshes stay clamp. |
+| Normal maps | have | — | — | Sampled as linear unorm (a flat 128 stays 0.5). When `mtoon4.w` is set, lighting uses a TBN from glTF `TANGENT` or generated tangents. Water keeps its procedural normal. |
+| Roughness / metalness maps | partial | P1 | M | Dump maps, plus glTF `metallicRoughnessTexture`. A material with factors and no texture still emits a 1×1 ORM, so the file beats the dump scalars. Dump maps still replace the image. Toon primitives skip ORM. |
 | Shadows, PCF | partial | P1 | M | One directional map. Omit `shadow_softness` and it stays 3×3 PCF. About 3 is a 5×5 tent. No cascades, no local-light shadows. |
 | Directional light | have | — | — | Sun direction comes from light slot 0 (position or direction) plus ambient. |
 | Point light | partial | P2 | S | Up to 4 slots. Inverse-square-ish attenuation. No cookie, no shadow. |
@@ -64,7 +64,7 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 | Skinned animation | partial | P1 | M | glTF / VRM skinning is CPU, then uploaded. Clips, locomotion blend, overlay bones. |
 | Morph targets | partial | P2 | M | One dump weight (`morph`) drives blink / viseme on the walker. Not a general morph-target mixer. |
 | AnimationMixer | partial | P2 | M | `mixer.rs` plus walker `anim` / `clip` / `anim_blend`. No three.js-style action crossfade graph for arbitrary clips. |
-| glTF loader | have | — | — | glTF / GLB / VRM through `gltf_load`. Materials, skin, MToon extras. |
+| glTF loader | have | — | — | glTF / GLB / VRM through `gltf_load`. Factors, emissiveStrength, alpha mode, double sided, vertex color, texture transform, samplers. Skin and MToon extras stay. |
 | Sprites | have | — | — | `sprite` / `quad` props, billboards for far vegetation. |
 | Points | missing | P3 | M | Sparks are spheres, not `THREE.Points`. |
 | Lines | missing | P3 | S | No line primitive. |
@@ -82,7 +82,20 @@ Shipped on the wasm-safe path. Omitted fields keep the previous picture (no SSAO
 - Pass graph in `render/post.rs`: SSAO, DOF, camera motion, then the existing bloom grade, then TAA or FXAA, then vignette when TAA is on. Each pass is one fullscreen WGSL entry. No storage buffers.
 - Dump fields `ssao`, `taa`, `dof_focus`, `dof_aperture`, `motion_blur`. A depth prepass writes linear eye meters into its own target. The color pipeline stays alpha-blended, so depth does not ride in the color alpha.
 - `KAGRA_QUALITY=0` / `off` / `low` forces the new passes off. `high` / `2` enables SSAO radius 8 and TAA when those fields are omitted. DOF and motion stay opt-in.
-- The direct unorm path (frame format equals the swapchain) still skips bloom and these passes. Browser WebGPU takes that path, so the phone frame does not sample `Rgba16Float` and does not pay for SSAO, TAA, DOF, or motion. The shadow compare sampler stays nearest (`depth32float-filterable` is not requested).
+- The direct unorm path (frame format equals the swapchain) still skips bloom and these passes. Browser WebGPU takes that path, so the phone frame does not sample `Rgba16Float` and does not pay for SSAO, TAA, DOF, or motion. The shadow compare sampler stays nearest (`depth32float-filterable` is not requested). `shadow.z` / `shadow.w` stay camera near / far for that depth prepass.
+
+## Previous wave
+
+Shipped on the wasm-safe path. A glTF material now reaches the shared PBR shader instead of stopping at a tinted texture.
+
+- `baseColorFactor` is multiplied in linear light and stored back as sRGB (a 1×1 texel when the material has no texture). `COLOR_0` stays linear and multiplies the albedo.
+- `metallicFactor` / `roughnessFactor` bake into the ORM. A file that writes a factor other than the pair (1, 1) and has no texture gets a 1×1, so that factor beats the dump scalars. Omitted factors stay on the dump. The written pair metal 1 / rough 1 also stays on the dump: Kenney stores that glTF default on every base-color material, and a 1×1 of it would replace the dump lighting. A real `metallicRoughnessTexture` is still sampled, with non-default factors baked into the texels.
+- `emissiveFactor` bakes into the emissive map. `KHR_materials_emissive_strength` is the instance strength (it can be above 1). A dump `emissive` still wins when it is set.
+- `alphaMode` is OPAQUE / MASK / BLEND. Procedural meshes keep the old `tex.a < 0.5` cutout. `doubleSided` draws with cull off, including the shadow pass.
+- `KHR_texture_transform` on the base color, normal, ORM, or emissive texture rewrites `TEXCOORD_0` (`uv' = R * (uv * scale) + offset`).
+- The base-color sampler sets wrap, mag/min, mip filter, and anisotropy 4 when every filter is linear. Mip chains are complete to 1×1, including sizes that are not powers of two.
+- A normal map builds a TBN. Missing `TANGENT` is filled with Lengyel tangents. The shader does not flip the green channel.
+- JPEG images (DamagedHelmet) decode through the `image` crate with default features off, so rayon stays out of the wasm build. PNG stays on the `png` crate.
 
 ## Previous wave
 

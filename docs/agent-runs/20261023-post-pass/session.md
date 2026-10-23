@@ -17,6 +17,8 @@ The fix is a depth prepass (`fs_depth`) after the color pass. It loads the exist
 
 Master later disabled the float frame on browser WebGPU (`#152`). The merge keeps that path: when the frame format is the swapchain, `direct` is true and this graph does not run, so the phone does not sample `Rgba16Float`. The shadow compare sampler stays nearest. `shadow.z` / `shadow.w` are still near and far for the HDR depth prepass only.
 
+`#149` then landed glTF PBR on master. This merge keeps that double-sided color pipeline and the depth prepass as two pipelines. The double-sided shadow pipeline uses the same depth32float bias as the culled shadow pipeline (constant 8192, slope 1.5, clamp 0.008).
+
 ## Checks
 
 Lavapipe (`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json`):
