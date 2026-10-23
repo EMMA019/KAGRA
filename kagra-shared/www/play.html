@@ -64,6 +64,22 @@
     }
     #links[hidden] { display: none !important; }
     #links a { color: #9af6ff; margin-right: 10px; }
+    #grade {
+      position: absolute;
+      z-index: 4;
+      left: max(8px, env(safe-area-inset-left));
+      top: max(8px, env(safe-area-inset-top));
+      max-width: 70vw;
+      padding: 3px 6px;
+      border-radius: 6px;
+      background: rgba(8, 6, 22, 0.45);
+      color: rgba(230, 255, 255, 0.86);
+      font-size: 11px;
+      letter-spacing: 0.03em;
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
     #boot {
       position: absolute;
       inset: 0;
@@ -93,6 +109,7 @@
 <body>
   <div id="app">
     <canvas id="c"></canvas>
+    <div id="grade"></div>
     <button id="boost" type="button">BOOST</button>
     <div id="links" hidden>
       <a href="./corridor.html">Corridor</a>
@@ -114,6 +131,7 @@
     const params = new URLSearchParams(location.search);
     const requestedBackend = (params.get("backend") || "auto").toLowerCase();
     const boostEl = document.getElementById("boost");
+    const gradeEl = document.getElementById("grade");
     const linksEl = document.getElementById("links");
     const BEST_KEY = "lumen-best";
     const held = new Set();
@@ -489,6 +507,13 @@
           fail(`WebGL2 fallback failed:\n${e}`);
         });
         return;
+      }
+      if (session.pictureStatus) {
+        const line = session.pictureStatus();
+        if (gradeEl.textContent !== line) {
+          gradeEl.textContent = line;
+          console.log(`kagra: ${line} ask=${activeBackend}`);
+        }
       }
       pumpAudio();
       let st = {};
