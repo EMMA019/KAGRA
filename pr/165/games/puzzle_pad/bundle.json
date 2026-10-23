@@ -1,0 +1,37 @@
+{
+  "slug": "puzzle_pad",
+  "title": "Puzzle Pad",
+  "version": "0.1.0",
+  "genre": "puzzle_pad",
+  "world": "world.json",
+  "files": [
+    {
+      "path": "world.json",
+      "url": "games/puzzle_pad/world.json"
+    },
+    {
+      "path": "kagra_game.json",
+      "url": "games/puzzle_pad/kagra_game.json"
+    },
+    {
+      "path": "assets/audio/bgm.wav",
+      "url": "assets/audio/bgm.wav"
+    },
+    {
+      "path": "assets/audio/card.wav",
+      "url": "assets/audio/card.wav"
+    },
+    {
+      "path": "assets/audio/fire.wav",
+      "url": "assets/audio/fire.wav"
+    },
+    {
+      "path": "assets/audio/jump.wav",
+      "url": "assets/audio/jump.wav"
+    },
+    {
+      "path": "assets/models/kenney/platformer-kit/crate.glb",
+      "url": "assets/models/kenney/platformer-kit/crate.glb"
+    }
+  ]
+}
