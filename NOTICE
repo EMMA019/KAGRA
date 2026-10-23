@@ -22,3 +22,9 @@ image 0.25 (jpeg feature only; default features off so rayon stays out)
 The Narkowicz ACES fit in bloom.wgsl and shader3d.wgsl is the public
 approximation published by Krzysztof Narkowicz (2016), used widely
 including by three.js (MIT). No three.js source is copied in this tree.
+
+The post pass graph (kagra-shared/src/render/post.rs, post.wgsl) follows
+the shape of three.js EffectComposer / ShaderPass and the ideas in
+SSAOShader, BokehPass, and the Karis neighborhood clamp used by TAA
+examples (three.js, MIT, https://github.com/mrdoob/three.js). The WGSL
+is original. No three.js source is copied.
