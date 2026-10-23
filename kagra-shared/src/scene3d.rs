@@ -14,13 +14,19 @@ use std::sync::Arc;
 
 use glam::{Mat4, Vec3, Vec4, Vec4Swizzles};
 
-/// 位置 + 法線 + UV。box / plane / quad / cylinder は 0..1。未指定は [0,0]（1x1 白）。
+/// 位置 + 法線 + UV + 頂点色 + 接線。
+///
+/// `color` はリニア（glTF COLOR_0）。手続きメッシュは白。
+/// `tangent` は xyz + 向き（glTF TANGENT の w）。長さ 0 は接線なし。
+/// box / plane / quad / cylinder の UV は 0..1。未指定は [0,0]（1x1 白）。
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex3 {
     pub pos: [f32; 3],
     pub normal: [f32; 3],
     pub uv: [f32; 2],
+    pub color: [f32; 4],
+    pub tangent: [f32; 4],
 }
 
 impl Vertex3 {
@@ -33,6 +39,53 @@ impl Vertex3 {
             pos: pos.to_array(),
             normal: normal.to_array(),
             uv,
+            color: [1.0, 1.0, 1.0, 1.0],
+            tangent: [0.0, 0.0, 0.0, 1.0],
+        }
+    }
+}
+
+/// glTF サンプラのラップ。手続きメッシュは `Clamp`（従来の見た目）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum TexWrap {
+    #[default]
+    Clamp,
+    Repeat,
+    Mirror,
+}
+
+/// GPU に依存しないテクスチャサンプラ。baseColor のサンプラがメッシュ全体に勝つ。
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TexSampler {
+    pub wrap_u: TexWrap,
+    pub wrap_v: TexWrap,
+    pub mag_nearest: bool,
+    pub min_nearest: bool,
+    pub mip_nearest: bool,
+    /// 1 は異方性なし。アップロード時にデバイス上限で切る。
+    pub anisotropy: u8,
+}
+
+impl Default for TexSampler {
+    fn default() -> Self {
+        Self {
+            wrap_u: TexWrap::Clamp,
+            wrap_v: TexWrap::Clamp,
+            mag_nearest: false,
+            min_nearest: false,
+            mip_nearest: false,
+            anisotropy: 4,
+        }
+    }
+}
+
+impl TexSampler {
+    /// glTF がサンプラを省略したときの規定（REPEAT + リニアミップ）。
+    pub fn gltf_default() -> Self {
+        Self {
+            wrap_u: TexWrap::Repeat,
+            wrap_v: TexWrap::Repeat,
+            ..Self::default()
         }
     }
 }
@@ -140,6 +193,16 @@ pub struct MeshData {
     pub orm_metal: bool,
     /// Emissive color map (sRGB bytes). Strength stays on the instance.
     pub emissive_map: Option<AlbedoRgba>,
+    /// Shader alpha sentinel.
+    /// 0 = discard when `tex.a < 0.5` (procedural meshes).
+    /// `> 0` = MASK cutoff. `-1` = OPAQUE (no discard). `<= -1.5` = BLEND.
+    pub alpha_cut: f32,
+    pub double_sided: bool,
+    pub sampler: TexSampler,
+    /// glTF emissiveStrength. The dump wins when it sets `emissive`.
+    pub emissive: f32,
+    /// Linear. White when the factor is already baked into `emissive_map`.
+    pub emissive_color: [f32; 3],
 }
 
 impl MeshData {
@@ -213,6 +276,8 @@ pub struct Instance {
     pub emissive: f32,
     /// Linear 0..1. All zero means "use the shaded albedo".
     pub emissive_color: [f32; 3],
+    /// Dump set `emissive` or `emissive_color`. Otherwise the mesh glTF value is used.
+    pub emissive_authored: bool,
 }
 
 impl Instance {
@@ -225,6 +290,7 @@ impl Instance {
             roughness: 0.42,
             emissive: 0.0,
             emissive_color: [0.0; 3],
+            emissive_authored: false,
         }
     }
 
@@ -242,6 +308,7 @@ impl Instance {
             roughness,
             emissive: 0.0,
             emissive_color: [0.0; 3],
+            emissive_authored: false,
         }
     }
 
@@ -260,6 +327,7 @@ impl Instance {
             roughness: roughness.clamp(0.04, 1.0),
             emissive: 0.0,
             emissive_color: [0.0; 3],
+            emissive_authored: false,
         }
     }
 }
@@ -1320,7 +1388,7 @@ mod tests {
 
     #[test]
     fn vertex3_uv_keeps_compatible_stride() {
-        assert_eq!(std::mem::size_of::<Vertex3>(), 32);
+        assert_eq!(std::mem::size_of::<Vertex3>(), 64);
         let cap = primitives::cylinder_mesh(0.5, 1.0, 12);
         assert!(
             cap.vertices.iter().any(|v| v.uv[0] > 0.0 && v.uv[1] > 0.0),

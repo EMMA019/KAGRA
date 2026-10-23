@@ -371,6 +371,8 @@ mod tests {
             pos: [0.24, 1.3, 0.06],
             normal: [0.0; 3],
             uv: [0.0; 2],
+            color: [1.0, 1.0, 1.0, 1.0],
+            tangent: [0.0, 0.0, 0.0, 1.0],
         });
         skin.joints.push([1, 0, 0, 0]);
         skin.weights.push([1.0, 0.0, 0.0, 0.0]);

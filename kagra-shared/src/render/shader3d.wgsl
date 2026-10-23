@@ -67,6 +67,11 @@ struct VsIn {
     @location(10) mtoon2: vec4<f32>,
     @location(11) mtoon3: vec4<f32>,
     @location(12) mtoon4: vec4<f32>,
+    // 13 and 14 are vertex streams. 15 is the alpha sentinel.
+    // Together with 0..12 this is 16 attributes, the WebGL2 minimum.
+    @location(13) vcolor: vec4<f32>,
+    @location(14) tangent: vec4<f32>,
+    @location(15) alpha_cut: f32,
 };
 
 struct VsOut {
@@ -80,6 +85,9 @@ struct VsOut {
     @location(6) mtoon2: vec4<f32>,
     @location(7) mtoon3: vec4<f32>,
     @location(8) mtoon4: vec4<f32>,
+    @location(9) vcolor: vec4<f32>,
+    @location(10) tangent: vec4<f32>,
+    @location(11) alpha_cut: f32,
 };
 
 @vertex
@@ -105,6 +113,11 @@ fn vs_main(in: VsIn) -> VsOut {
     out.mtoon2 = in.mtoon2;
     out.mtoon3 = in.mtoon3;
     out.mtoon4 = in.mtoon4;
+    out.vcolor = in.vcolor;
+    let axes = mat3x3<f32>(in.m0.xyz, in.m1.xyz, in.m2.xyz);
+    let flip = select(1.0, -1.0, determinant(axes) < 0.0);
+    out.tangent = vec4<f32>(axes * in.tangent.xyz, in.tangent.w * flip);
+    out.alpha_cut = in.alpha_cut;
     return out;
 }
 
@@ -128,6 +141,9 @@ fn vs_outline(in: VsIn) -> VsOut {
     out.mtoon2 = in.mtoon2;
     out.mtoon3 = in.mtoon3;
     out.mtoon4 = in.mtoon4;
+    out.vcolor = in.vcolor;
+    out.tangent = in.tangent;
+    out.alpha_cut = in.alpha_cut;
     return out;
 }
 
@@ -390,6 +406,18 @@ fn pbr_metal_rough(in: VsOut, orm: vec4<f32>, metallic_in: f32, rough_in: f32) -
     return vec2<f32>(metallic, rough);
 }
 
+// glTF normal maps are OpenGL Y-up (do not flip green). A zero tangent keeps
+// the geometric normal, with the old half-blend as a last resort.
+fn normal_from_map(geo: vec3<f32>, tangent: vec4<f32>, nmap: vec3<f32>) -> vec3<f32> {
+    let mapped = nmap * 2.0 - 1.0;
+    if (length(tangent.xyz) < 0.1) {
+        return normalize(geo + mapped * 0.5);
+    }
+    let t = normalize(tangent.xyz);
+    let b = normalize(cross(geo, t)) * tangent.w;
+    return normalize(mat3x3<f32>(t, b, geo) * mapped);
+}
+
 fn emissive_rgb(in: VsOut, albedo: vec3<f32>, em_map: vec3<f32>) -> vec3<f32> {
     let strength = max(in.mtoon4.z, 0.0);
     var col = in.mtoon3.rgb;
@@ -419,7 +447,7 @@ fn water_normal(world: vec3<f32>, geo_n: vec3<f32>) -> vec3<f32> {
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let mat_id = i32(in.material + 0.5);
-    var alpha = in.color.a;
+    var alpha = in.color.a * in.vcolor.a;
 
     // WebGPU rejects textureSample after a non-uniform return or inside a
     // fragment `if` (derivatives must be uniform). Sample every map first,
@@ -429,8 +457,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let em_map = textureSample(emissive_tex, emissive_samp, in.uv).rgb;
     let nmap = textureSample(normal_tex, normal_samp, in.uv).rgb;
     let n_geo = normalize(in.normal);
-    let n_mapped = normalize(n_geo + (nmap * 2.0 - 1.0) * 0.5);
-    let n_toon = normalize(mix(n_geo, n_mapped, step(0.5, in.mtoon4.w)));
+    let n_mapped = normal_from_map(n_geo, in.tangent, nmap);
+    let n = select(n_geo, n_mapped, in.mtoon4.w > 0.5);
+    let n_toon = n;
     let cap_view = normalize(g.camera_pos.xyz - in.world);
     let cap_uv = reflect(-cap_view, n_toon).xy * 0.5 + vec2<f32>(0.5, 0.5);
     let matcap = textureSample(matcap_tex, matcap_samp, cap_uv).rgb;
@@ -460,10 +489,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         return vec4<f32>(present_rgb(col), 1.0);
     }
 
-    if (tex.a < 0.5) {
+    // 0 = legacy cutout. >0 = MASK. -1 = OPAQUE. <= -1.5 = BLEND (no discard).
+    let cut = in.alpha_cut;
+    if (cut > 0.0 && tex.a < cut) {
+        discard;
+    } else if (cut == 0.0 && tex.a < 0.5) {
         discard;
     }
-    var albedo = in.color.rgb * tex.rgb;
+    var albedo = in.color.rgb * tex.rgb * in.vcolor.rgb;
     if (mat_id == 1) {
         // アスファルト: 細かいノイズ + 薄い轍。
         let gn = fbm(in.world.xz * 0.35);
@@ -484,7 +517,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         }
     }
 
-    let n = normalize(in.normal);
     let ldir = normalize(g.light.xyz);
     let ndl = max(dot(n, ldir), 0.0);
     let ambient = g.light.w;
@@ -613,5 +645,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Linear HDR. exposure + ACES are applied by the bloom composite pass,
     // which also adds the bloom spill before tonemapping.
     let rgb = mix(lit, g.fog_color.rgb, fog);
+    if (cut <= -1.5 && mat_id != 6) {
+        alpha = in.color.a * tex.a * in.vcolor.a;
+    }
     return vec4<f32>(present_rgb(rgb), alpha);
 }

@@ -68,6 +68,9 @@ struct InstanceRaw {
     mtoon3: [f32; 4],
     /// Location 12: x = shadingShift, y = rimLift.
     mtoon4: [f32; 4],
+    /// Location 15. 0 = legacy cutout, >0 = MASK, -1 = OPAQUE, <= -1.5 = BLEND.
+    alpha_cut: f32,
+    _pad_cut: [f32; 3],
 }
 
 #[derive(Debug)]
@@ -88,6 +91,12 @@ struct GpuMesh {
     mtoon2: [f32; 4],
     mtoon3: [f32; 4],
     mtoon4: [f32; 4],
+    alpha_cut: f32,
+    double_sided: bool,
+    has_normal: bool,
+    emissive: f32,
+    emissive_color: [f32; 3],
+    _sampler: Option<wgpu::Sampler>,
 }
 
 #[derive(Debug)]
@@ -118,12 +127,15 @@ pub struct Renderer {
     vbuf_capacity: usize,
 
     pipeline3d: wgpu::RenderPipeline,
+    /// glTF doubleSided. Same shader, cull disabled.
+    pipeline_nocull: wgpu::RenderPipeline,
     /// 天球用。深度は書いて読まず、裏面カリングもしない。
     pipeline_sky: wgpu::RenderPipeline,
     /// MToon アウトライン（backface push-out、カリング Front）。
     pipeline_outline: wgpu::RenderPipeline,
     /// Depth-only sun map. Not a cascade, not RendererV2.
     pipeline_shadow: wgpu::RenderPipeline,
+    pipeline_shadow_nocull: wgpu::RenderPipeline,
     globals_buf: wgpu::Buffer,
     globals_bind: wgpu::BindGroup,
     _shadow_tex: wgpu::Texture,
@@ -133,7 +145,8 @@ pub struct Renderer {
     inst_capacity: usize,
     meshes: Vec<GpuMesh>,
     albedo_layout: wgpu::BindGroupLayout,
-    albedo_sampler: wgpu::Sampler,
+    /// Kept alive for the default 1×1 bind group. Per-mesh samplers live on `GpuMesh`.
+    _albedo_sampler: wgpu::Sampler,
     default_albedo_bind: wgpu::BindGroup,
     _white_albedo: wgpu::Texture,
     _white_view: wgpu::TextureView,
@@ -679,7 +692,14 @@ impl Renderer {
         // attributes 参照が文の終わりで死ぬ。
         // UV is location 8 so instance locations 2..7 stay put (WebGL2 / no base_instance).
         // Location 9 is MToon shade+toony at offset 96 (16-byte aligned).
-        let mesh_attrs = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 8 => Float32x2];
+        // 13 = linear vertex color, 14 = tangent. Offsets follow Vertex3 (64 bytes).
+        let mesh_attrs = wgpu::vertex_attr_array![
+            0 => Float32x3,
+            1 => Float32x3,
+            8 => Float32x2,
+            13 => Float32x4,
+            14 => Float32x4,
+        ];
         let inst_attrs = [
             wgpu::VertexAttribute {
                 format: wgpu::VertexFormat::Float32x4,
@@ -731,6 +751,11 @@ impl Renderer {
                 offset: 144,
                 shader_location: 12,
             },
+            wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32,
+                offset: 160,
+                shader_location: 15,
+            },
         ];
         let vertex_buffers = [
             Some(wgpu::VertexBufferLayout {
@@ -770,6 +795,37 @@ impl Renderer {
             }),
             primitive: wgpu::PrimitiveState {
                 cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        let pipeline_nocull = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("kagra-shared 3d pipeline nocull"),
+            layout: Some(&layout3d),
+            vertex: wgpu::VertexState {
+                module: &shader3d,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &vertex_buffers,
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader3d,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &hdr_target,
+            }),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: None,
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
@@ -880,6 +936,37 @@ impl Renderer {
             cache: None,
         });
 
+        let pipeline_shadow_nocull =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("kagra-shared shadow pipeline nocull"),
+                layout: Some(&layout_shadow),
+                vertex: wgpu::VertexState {
+                    module: &shader3d,
+                    entry_point: Some("vs_shadow"),
+                    compilation_options: Default::default(),
+                    buffers: &vertex_buffers,
+                },
+                fragment: None,
+                primitive: wgpu::PrimitiveState {
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
+                    stencil: Default::default(),
+                    bias: wgpu::DepthBiasState {
+                        constant: 2,
+                        slope_scale: 2.0,
+                        clamp: 0.0,
+                    },
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
+            });
+
         let inst_capacity = 256;
         let inst_buf = create_instance_buffer(&device, inst_capacity);
         let depth = create_depth_view(&device, width, height);
@@ -899,9 +986,11 @@ impl Renderer {
             vbuf,
             vbuf_capacity,
             pipeline3d,
+            pipeline_nocull,
             pipeline_sky,
             pipeline_outline,
             pipeline_shadow,
+            pipeline_shadow_nocull,
             globals_buf,
             globals_bind,
             _shadow_tex: shadow_tex,
@@ -911,7 +1000,7 @@ impl Renderer {
             inst_capacity,
             meshes: Vec::new(),
             albedo_layout,
-            albedo_sampler,
+            _albedo_sampler: albedo_sampler,
             default_albedo_bind,
             _white_albedo: white_albedo,
             _white_view: white_view,
@@ -957,114 +1046,124 @@ impl Renderer {
             || tex_ok(&mesh.normal)
             || tex_ok(&mesh.orm)
             || tex_ok(&mesh.emissive_map);
-        let (albedo_bind, albedo_tex, matcap_tex, normal_tex, orm_tex, emissive_tex) = if has_any {
-            let alb_tex = mesh
-                .albedo
-                .as_ref()
-                .filter(|_| tex_ok(&mesh.albedo))
-                .map(|alb| {
-                    create_albedo_texture(
-                        &self.device,
-                        &self.queue,
-                        alb.width,
-                        alb.height,
-                        &alb.rgba,
-                    )
-                });
-            let mc_tex = mesh
-                .matcap
-                .as_ref()
-                .filter(|_| tex_ok(&mesh.matcap))
-                .map(|a| {
-                    create_albedo_texture(&self.device, &self.queue, a.width, a.height, &a.rgba)
-                });
-            let nm_tex = mesh
-                .normal
-                .as_ref()
-                .filter(|_| tex_ok(&mesh.normal))
-                .map(|a| {
+        let (albedo_bind, albedo_tex, matcap_tex, normal_tex, orm_tex, emissive_tex, sampler) =
+            if has_any {
+                let alb_tex = mesh
+                    .albedo
+                    .as_ref()
+                    .filter(|_| tex_ok(&mesh.albedo))
+                    .map(|alb| {
+                        create_albedo_texture(
+                            &self.device,
+                            &self.queue,
+                            alb.width,
+                            alb.height,
+                            &alb.rgba,
+                        )
+                    });
+                let mc_tex = mesh
+                    .matcap
+                    .as_ref()
+                    .filter(|_| tex_ok(&mesh.matcap))
+                    .map(|a| {
+                        create_albedo_texture(&self.device, &self.queue, a.width, a.height, &a.rgba)
+                    });
+                let nm_tex = mesh
+                    .normal
+                    .as_ref()
+                    .filter(|_| tex_ok(&mesh.normal))
+                    .map(|a| {
+                        create_linear_texture(&self.device, &self.queue, a.width, a.height, &a.rgba)
+                    });
+                let alb_view = alb_tex
+                    .as_ref()
+                    .map(|t| t.create_view(&Default::default()))
+                    .unwrap_or_else(|| self._white_view.clone());
+                let mc_view = mc_tex
+                    .as_ref()
+                    .map(|t| t.create_view(&Default::default()))
+                    .unwrap_or_else(|| self._black_view.clone());
+                let nm_view = nm_tex
+                    .as_ref()
+                    .map(|t| t.create_view(&Default::default()))
+                    .unwrap_or_else(|| self._flat_view.clone());
+                let orm_tex = mesh.orm.as_ref().filter(|_| tex_ok(&mesh.orm)).map(|a| {
                     create_linear_texture(&self.device, &self.queue, a.width, a.height, &a.rgba)
                 });
-            let alb_view = alb_tex
-                .as_ref()
-                .map(|t| t.create_view(&Default::default()))
-                .unwrap_or_else(|| self._white_view.clone());
-            let mc_view = mc_tex
-                .as_ref()
-                .map(|t| t.create_view(&Default::default()))
-                .unwrap_or_else(|| self._black_view.clone());
-            let nm_view = nm_tex
-                .as_ref()
-                .map(|t| t.create_view(&Default::default()))
-                .unwrap_or_else(|| self._flat_view.clone());
-            let orm_tex = mesh.orm.as_ref().filter(|_| tex_ok(&mesh.orm)).map(|a| {
-                create_linear_texture(&self.device, &self.queue, a.width, a.height, &a.rgba)
-            });
-            let em_tex = mesh
-                .emissive_map
-                .as_ref()
-                .filter(|_| tex_ok(&mesh.emissive_map))
-                .map(|a| {
-                    create_albedo_texture(&self.device, &self.queue, a.width, a.height, &a.rgba)
+                let em_tex = mesh
+                    .emissive_map
+                    .as_ref()
+                    .filter(|_| tex_ok(&mesh.emissive_map))
+                    .map(|a| {
+                        create_albedo_texture(&self.device, &self.queue, a.width, a.height, &a.rgba)
+                    });
+                let orm_view = orm_tex
+                    .as_ref()
+                    .map(|t| t.create_view(&Default::default()))
+                    .unwrap_or_else(|| self._orm_view.clone());
+                let em_view = em_tex
+                    .as_ref()
+                    .map(|t| t.create_view(&Default::default()))
+                    .unwrap_or_else(|| self._black_view.clone());
+                let sampler = mesh_sampler(&self.device, &mesh.sampler);
+                let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("kagra-shared mesh tex"),
+                    layout: &self.albedo_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(&alb_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(&sampler),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::TextureView(&mc_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: wgpu::BindingResource::Sampler(&sampler),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: wgpu::BindingResource::TextureView(&nm_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 5,
+                            resource: wgpu::BindingResource::Sampler(&sampler),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 6,
+                            resource: wgpu::BindingResource::TextureView(&orm_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 7,
+                            resource: wgpu::BindingResource::Sampler(&sampler),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 8,
+                            resource: wgpu::BindingResource::TextureView(&em_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 9,
+                            resource: wgpu::BindingResource::Sampler(&sampler),
+                        },
+                    ],
                 });
-            let orm_view = orm_tex
-                .as_ref()
-                .map(|t| t.create_view(&Default::default()))
-                .unwrap_or_else(|| self._orm_view.clone());
-            let em_view = em_tex
-                .as_ref()
-                .map(|t| t.create_view(&Default::default()))
-                .unwrap_or_else(|| self._black_view.clone());
-            let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("kagra-shared mesh tex"),
-                layout: &self.albedo_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&alb_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&self.albedo_sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::TextureView(&mc_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::Sampler(&self.albedo_sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 4,
-                        resource: wgpu::BindingResource::TextureView(&nm_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 5,
-                        resource: wgpu::BindingResource::Sampler(&self.albedo_sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 6,
-                        resource: wgpu::BindingResource::TextureView(&orm_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 7,
-                        resource: wgpu::BindingResource::Sampler(&self.albedo_sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 8,
-                        resource: wgpu::BindingResource::TextureView(&em_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 9,
-                        resource: wgpu::BindingResource::Sampler(&self.albedo_sampler),
-                    },
-                ],
-            });
-            (Some(bind), alb_tex, mc_tex, nm_tex, orm_tex, em_tex)
-        } else {
-            (None, None, None, None, None, None)
-        };
+                (
+                    Some(bind),
+                    alb_tex,
+                    mc_tex,
+                    nm_tex,
+                    orm_tex,
+                    em_tex,
+                    Some(sampler),
+                )
+            } else {
+                (None, None, None, None, None, None, None)
+            };
         let mtoon = mesh
             .mtoon
             .map(crate::scene3d::MtoonShade::gpu)
@@ -1098,6 +1197,12 @@ impl Renderer {
             mtoon2,
             mtoon3,
             mtoon4,
+            alpha_cut: mesh.alpha_cut,
+            double_sided: mesh.double_sided,
+            has_normal: tex_ok(&mesh.normal),
+            emissive: mesh.emissive,
+            emissive_color: mesh.emissive_color,
+            _sampler: sampler,
         });
         MeshId(self.meshes.len() as u32 - 1)
     }
@@ -1226,18 +1331,31 @@ impl Renderer {
                                 ),
                                 None => (0.0, 0.0, 0.0),
                             };
+                            let (em_color, em_strength) = if inst.emissive_authored {
+                                (inst.emissive_color, inst.emissive)
+                            } else if let Some(g) = gpu {
+                                if g.emissive > 0.0 || g.emissive_color != [0.0; 3] {
+                                    (g.emissive_color, g.emissive)
+                                } else {
+                                    (inst.emissive_color, inst.emissive)
+                                }
+                            } else {
+                                (inst.emissive_color, inst.emissive)
+                            };
+                            let has_n = gpu.is_some_and(|g| g.has_normal);
                             (
                                 [0.0; 4],
                                 [use_r, use_m, use_e, 0.0],
+                                [em_color[0], em_color[1], em_color[2], 0.0],
                                 [
-                                    inst.emissive_color[0],
-                                    inst.emissive_color[1],
-                                    inst.emissive_color[2],
-                                    0.0,
+                                    inst.metallic,
+                                    inst.roughness,
+                                    em_strength,
+                                    if has_n { 1.0 } else { 0.0 },
                                 ],
-                                [inst.metallic, inst.roughness, inst.emissive, 0.0],
                             )
                         };
+                    let alpha_cut = gpu.map(|g| g.alpha_cut).unwrap_or(0.0);
                     raw.push(InstanceRaw {
                         model: inst.model.to_cols_array_2d(),
                         // Author bytes are sRGB. Lighting stays linear on every target.
@@ -1248,6 +1366,8 @@ impl Renderer {
                         mtoon2,
                         mtoon3,
                         mtoon4,
+                        alpha_cut,
+                        _pad_cut: [0.0; 3],
                     });
                 }
                 draws.push((
@@ -1339,13 +1459,17 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            pass.set_pipeline(&self.pipeline_shadow);
             pass.set_bind_group(0, &self.globals_bind, &[]);
             for (mesh, offset, count, _is_sky, casts) in &draws {
                 if !*casts {
                     continue;
                 }
                 let m = &self.meshes[*mesh];
+                pass.set_pipeline(if m.double_sided {
+                    &self.pipeline_shadow_nocull
+                } else {
+                    &self.pipeline_shadow
+                });
                 pass.set_vertex_buffer(0, m.vbuf.slice(..));
                 pass.set_vertex_buffer(1, self.inst_buf.slice(*offset..));
                 pass.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);
@@ -1404,12 +1528,16 @@ impl Renderer {
                     pass.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);
                     pass.draw_indexed(0..m.index_count, 0, 0..*count);
                 }
-                pass.set_pipeline(&self.pipeline3d);
                 for (mesh, offset, count, is_sky, _cast) in &draws {
                     if *is_sky {
                         continue;
                     }
                     let m = &self.meshes[*mesh];
+                    pass.set_pipeline(if m.double_sided {
+                        &self.pipeline_nocull
+                    } else {
+                        &self.pipeline3d
+                    });
                     pass.set_bind_group(
                         1,
                         m.albedo_bind.as_ref().unwrap_or(&self.default_albedo_bind),
@@ -2140,6 +2268,62 @@ async fn request_device(
     Ok((adapter, device, queue))
 }
 
+fn complete_mip_count(width: u32, height: u32) -> u32 {
+    let mut w = width.max(1);
+    let mut h = height.max(1);
+    let mut count = 1u32;
+    while w > 1 || h > 1 {
+        w = (w / 2).max(1);
+        h = (h / 2).max(1);
+        count += 1;
+        if count >= 16 {
+            break;
+        }
+    }
+    count
+}
+
+fn address_mode(wrap: crate::scene3d::TexWrap) -> wgpu::AddressMode {
+    match wrap {
+        crate::scene3d::TexWrap::Clamp => wgpu::AddressMode::ClampToEdge,
+        crate::scene3d::TexWrap::Repeat => wgpu::AddressMode::Repeat,
+        crate::scene3d::TexWrap::Mirror => wgpu::AddressMode::MirrorRepeat,
+    }
+}
+
+fn mesh_sampler(device: &wgpu::Device, desc: &crate::scene3d::TexSampler) -> wgpu::Sampler {
+    // Anisotropic filtering requires every filter to be linear. wgpu 30 has no
+    // sampler-anisotropy limit; backends may ignore the clamp.
+    let aniso = if desc.mag_nearest || desc.min_nearest || desc.mip_nearest {
+        1
+    } else {
+        (desc.anisotropy as u16).max(1)
+    };
+    device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("kagra-shared mesh sampler"),
+        address_mode_u: address_mode(desc.wrap_u),
+        address_mode_v: address_mode(desc.wrap_v),
+        address_mode_w: wgpu::AddressMode::ClampToEdge,
+        mag_filter: if desc.mag_nearest {
+            wgpu::FilterMode::Nearest
+        } else {
+            wgpu::FilterMode::Linear
+        },
+        min_filter: if desc.min_nearest {
+            wgpu::FilterMode::Nearest
+        } else {
+            wgpu::FilterMode::Linear
+        },
+        mipmap_filter: if desc.mip_nearest {
+            wgpu::MipmapFilterMode::Nearest
+        } else {
+            wgpu::MipmapFilterMode::Linear
+        },
+        anisotropy_clamp: aniso,
+        ..Default::default()
+    })
+}
+
 /// WebGPU `GPUQueue.writeTexture` rejects a `bytesPerRow` that is not a
 /// multiple of 256. Native wgpu pads internally; the browser backend does not.
 fn webgpu_row_pitch(row_bytes: u32) -> u32 {
@@ -2212,13 +2396,8 @@ fn create_rgba_texture(
     let width = width.max(1);
     let height = height.max(1);
     let expected = (width as usize) * (height as usize) * 4;
-    let can_mip = width >= 4
-        && height >= 4
-        && width.is_power_of_two()
-        && height.is_power_of_two()
-        && rgba.len() >= expected;
-    let mip_level_count = if can_mip {
-        (width.min(height).ilog2() + 1).min(6)
+    let mip_level_count = if rgba.len() >= expected {
+        complete_mip_count(width, height)
     } else {
         1
     };
@@ -2588,6 +2767,10 @@ mod tests {
             src.contains("@location(12) mtoon4"),
             "MToon instance slots wired up to 12"
         );
+        assert!(src.contains("@location(13) vcolor"), "vertex color");
+        assert!(src.contains("@location(14) tangent"), "tangent");
+        assert!(src.contains("@location(15) alpha_cut"), "alpha mode");
+        assert!(src.contains("fn normal_from_map"), "tangent-space normal");
     }
 
     #[test]
@@ -2748,5 +2931,126 @@ mod tests {
                 assert_rgb_near(got, expect, 1);
             }
         }
+    }
+
+    /// A factor-only red glTF cube. The center pixel has to be the material,
+    /// not the blue clear, so the bake reached the albedo.
+    #[test]
+    fn offscreen_gltf_base_color_factor_beats_the_clear() {
+        let Some(rgba) = render_factor_cube() else {
+            eprintln!("no GPU adapter; skipping glTF factor cube");
+            return;
+        };
+        write_shot("gltf-factor-cube.png", 64, 64, &rgba);
+        let got = pixel_of(&rgba, 64, 32, 32);
+        assert!(
+            got[0] > got[2] + 20 && got[0] > got[1] + 20,
+            "center should be the red baseColorFactor, got {got:?}"
+        );
+    }
+
+    fn render_factor_cube() -> Option<Vec<u8>> {
+        let cube = crate::gltf_load::unit_cube_gltf();
+        let with_mat = cube.replacen("\"mode\": 4", "\"mode\": 4, \"material\": 0", 1);
+        let trimmed = with_mat.trim_end().trim_end_matches('}');
+        let json = format!(
+            "{trimmed}, \"materials\": [{{\"alphaMode\": \"OPAQUE\", \"doubleSided\": false, \"pbrMetallicRoughness\": {{\"baseColorFactor\": [1.0, 0.0, 0.0, 1.0], \"metallicFactor\": 0.0, \"roughnessFactor\": 1.0}}}}]}}"
+        );
+        let mesh = crate::gltf_load::mesh_from_embedded_gltf(&json).ok()?;
+        assert!((mesh.alpha_cut + 1.0).abs() < 1e-3);
+        let mut renderer = pollster::block_on(Renderer::new_offscreen_format(
+            64,
+            64,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+        ))
+        .ok()?;
+        renderer.set_fxaa(false);
+        renderer.bloom.set_grade(0.85, 0.0, 0.0, false, "off", 0.0);
+        let id = renderer.upload_mesh(&mesh);
+        let scene = crate::scene3d::Scene3D {
+            clear: [40, 80, 160, 255],
+            tonemap: false,
+            exposure: 1.0,
+            ibl: 0.0,
+            ambient: 1.0,
+            batches: vec![crate::scene3d::Batch {
+                mesh: id,
+                instances: vec![crate::scene3d::Instance::with_pbr(
+                    glam::Mat4::IDENTITY,
+                    [255, 255, 255, 255],
+                    crate::scene3d::Material::Solid,
+                    0.0,
+                    1.0,
+                )],
+            }],
+            ..Default::default()
+        };
+        renderer
+            .render_frame(Some(&scene), &crate::scene::DrawList::default())
+            .ok()?;
+        renderer.read_rgba().ok()
+    }
+
+    /// `KAGRA_GLTF_SAMPLE=/path/model.glb` renders a Khronos sample. The file
+    /// stays out of the tree (DamagedHelmet is CC-BY-NC). Unset skips.
+    #[test]
+    fn offscreen_gltf_sample_model_when_present() {
+        let Ok(path) = std::env::var("KAGRA_GLTF_SAMPLE") else {
+            return;
+        };
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let mesh =
+            crate::gltf_load::mesh_from_glb(&bytes).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let bounds = mesh.bounds();
+        let center = (bounds.min + bounds.max) * 0.5;
+        let extent = (bounds.max - bounds.min).max_element().max(0.25);
+        let mut renderer = pollster::block_on(Renderer::new_offscreen(384, 384))
+            .unwrap_or_else(|e| panic!("offscreen: {e}"));
+        renderer.set_fxaa(false);
+        let id = renderer.upload_mesh(&mesh);
+        let eye = center + glam::Vec3::new(extent * 0.35, extent * 0.45, extent * 1.8);
+        let scene = crate::scene3d::Scene3D {
+            clear: [18, 22, 32, 255],
+            camera: crate::scene3d::Camera {
+                eye,
+                target: center,
+                ..Default::default()
+            },
+            tonemap: true,
+            exposure: 1.15,
+            ibl: 0.55,
+            batches: vec![crate::scene3d::Batch {
+                mesh: id,
+                instances: vec![crate::scene3d::Instance::with_pbr(
+                    glam::Mat4::IDENTITY,
+                    [255, 255, 255, 255],
+                    crate::scene3d::Material::Solid,
+                    0.0,
+                    0.5,
+                )],
+            }],
+            ..Default::default()
+        };
+        renderer
+            .render_frame(Some(&scene), &crate::scene::DrawList::default())
+            .expect("render");
+        let rgba = renderer.read_rgba().expect("readback");
+        let name = std::path::Path::new(&path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("gltf-sample");
+        write_shot(&format!("{name}.png"), 384, 384, &rgba);
+        let clear = [18u8, 22, 32];
+        let mut hit = 0u32;
+        for px in rgba.as_chunks::<4>().0 {
+            if (px[0] as i32 - clear[0] as i32).abs()
+                + (px[1] as i32 - clear[1] as i32).abs()
+                + (px[2] as i32 - clear[2] as i32).abs()
+                > 40
+            {
+                hit += 1;
+            }
+        }
+        assert!(hit > 400, "{name} did not cover the frame ({hit} px)");
     }
 }
