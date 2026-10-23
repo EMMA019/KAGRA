@@ -1749,8 +1749,32 @@ impl Renderer {
             // 静的 dump（glTF スロット無し）では実質 no-op。
             self.update_world_gltf(doc)?;
         }
+        // Wasm and the desktop window draw here. Omitted post fields keep
+        // whatever the host already set (the window example's set_bloom).
+        self.apply_dump_grade(doc);
         let scene = doc.compile_scene(self.aspect());
         self.render_frame(Some(&scene), hud)
+    }
+
+    /// Live windows keep their own bloom until a dump actually sets a post field.
+    fn apply_dump_grade(&mut self, doc: &crate::world_doc::WorldDoc) {
+        if doc.bloom.is_none()
+            && doc.bloom_threshold.is_none()
+            && doc.vignette.is_none()
+            && doc.lut.is_none()
+            && doc.lut_strength.is_none()
+            && doc.fxaa.is_none()
+        {
+            return;
+        }
+        self.bloom.set_grade(
+            doc.bloom_threshold(),
+            doc.bloom_intensity(),
+            doc.vignette_strength(),
+            doc.fxaa_enabled(),
+            doc.lut_preset(),
+            doc.lut_mix(),
+        );
     }
 
     /// Draw a compiled `WorldDoc` into the offscreen target and read RGBA8.

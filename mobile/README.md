@@ -3,7 +3,7 @@
 共有コアは **`kagra-shared`**（C ABI + wasm-bindgen）。Python `kagra-core` とは別クレート。
 wgpu の 3D + 2D レンダラを内蔵しているので、Android / iOS / Web で**同じコードが同じ絵を描く**。
 既定のシーンは **Crest Isle**（草原・海・山の収集。Kenney 風カプセル。**VRM ではない**）。
-運転デモ（Corridor Haul）は `set_scene(0)` / `kagra-shared/www/index.html` に残してある。
+ブラウザの既定は Lumen（`kagra-shared/www/play.html`）。運転デモ（Corridor Haul）は `set_scene(0)` / `kagra-shared/www/corridor.html` に残してある。
 
 ## 構成
 
@@ -60,8 +60,9 @@ WebGPU が無いブラウザでも WebGL2 バックエンドで動く。
 PR は `/pr/<番号>/`。操作と KAGRA Dev（一度入れたあとケーブル不要）は
 [docs/preview.md](../docs/preview.md)。
 
+- Lumen: `http://localhost:8000/play.html` — WASD / ドラッグ、Shift か BOOST
 - Crest Isle: `http://localhost:8000/crest.html` — 左スティックで歩き、右でジャンプ
-- Corridor Haul: `http://localhost:8000` — 矢印 / WASD、または画面下のパッド
+- Corridor Haul: `http://localhost:8000/corridor.html` — 矢印 / WASD、または画面下のパッド
 
 `wasm-pack` は使わない。0.13 系は cargo へ `--out-dir` を渡すが、cargo 側が
 これを `--artifact-dir` に改名して nightly 限定にしたため、stable では通らない。
@@ -188,7 +189,7 @@ has_renderer / detach_surface
 ## デモゲーム: Corridor Haul
 
 - `game.rs` がタイトル → 配送 → 完了のループとタイマー／スコアを持つ。
-- Web: [`kagra-shared/www/index.html`](../kagra-shared/www/index.html)。`./scripts/build_wasm.sh` のあと
+- Web: [`kagra-shared/www/corridor.html`](../kagra-shared/www/corridor.html)。`./scripts/build_wasm.sh` のあと
   `python -m http.server -d kagra-shared/www 8000`。
 - Wasm API: `showTitle` / `startGame` / `gameJson`。緑ビーコンで積載、橙で配達。
 

@@ -18,8 +18,12 @@ ls -la "$WASM"
 # `--out-dir` を渡すため（cargo 側が `--artifact-dir` に改名し nightly 限定にした）。
 if command -v wasm-bindgen >/dev/null; then
   wasm-bindgen --target web --out-dir "$OUT" --out-name kagra_shared "$WASM"
+  mkdir -p kagra-shared/www/audio
+  cp -f assets/audio/*.wav kagra-shared/www/audio/
+  cp -f kagra-shared/tests/fixtures/neon_run_world.json kagra-shared/www/world.json
   echo "bindings -> $OUT"
   echo "serve it:  python -m http.server -d kagra-shared/www 8000"
+  echo "Lumen:     http://localhost:8000/play.html"
 else
   echo "wasm-bindgen not found. install the CLI matching the crate version:"
   echo "  cargo install wasm-bindgen-cli --version \"\$(cargo pkgid wasm-bindgen | sed 's/.*[@#]//')\""

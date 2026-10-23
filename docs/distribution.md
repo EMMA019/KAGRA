@@ -207,6 +207,31 @@ base64 は Actions 用。
 再現は `python scripts/repro_issue.py <issue 番号またはブロック>`。
 直す前と直した後のスクリーンショットを残す。
 
+## Web
+
+ブラウザ用のフォルダは `scripts/package_web.py` が作る。既定のゲームは
+Lumen（`examples/neon_run_minimal.py` / `games/neon_run_minimal.json`）。
+開くページは `play.html`。Corridor Haul は `corridor.html`、Crest Isle は
+`crest.html` のまま。
+
+```bash
+python scripts/package_web.py --game examples/neon_run_minimal.py --build-wasm
+python -m http.server -d dist/web 8000
+# http://localhost:8000/play.html
+```
+
+wasm をすでに `./scripts/build_wasm.sh` で作ってあるときは `--build-wasm` を
+外す。レイアウトだけ見るときは `--skip-wasm`。`world.json` はマニフェストの
+dump で、ページは `loadGameJson` に渡す。音は `bundle_assets` の wav
+（`assets/audio/LICENSE.txt`、CC0）。
+
+GitHub Pages は `.github/workflows/pages.yml`。master への push と
+手動起動だけ。pull request では回さない。公開される先頭は `play.html`
+（`index.html` がそこへ送る）。
+
+キーボードは WASD / 矢印、Shift か Space でブースト、P でポーズ、Enter で
+開始。タッチはドラッグで舵、BOOST、タイトルをタップして開始。
+
 ## itch.io に上げる（手動）
 
 アカウントは無料。自動アップロードはしない（butler の API キーも置かない）。

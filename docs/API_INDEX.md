@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **86**
+エントリ数: **87**
 
 棚の**手前**は shared wgpu 30（WorldDoc / WorldPlay / gameloop）。
 棚の**奥**は再エクスポートの余り。旧 RendererV2 API は `old/`。
@@ -14,6 +14,7 @@
 | `ActionSession` | `class ActionSession  (from kagra.kagra_shared)` |
 | `add_table` | `export add_table  (from kagra.i18n)` |
 | `annotate` | `export annotate  (from kagra.annotate)` |
+| `apply_look` | `export apply_look  (from kagra.juice)` |
 | `apply_post` | `export apply_post  (from kagra.juice)` |
 | `AssetKind` | `class AssetKind  (from kagra.contracts)` |
 | `bar` | `export bar  (from kagra.ui2d)` |
@@ -47,6 +48,7 @@
 | `mouse_down` | `export mouse_down  (from kagra.gameloop)` |
 | `mouse_pos` | `export mouse_pos  (from kagra.gameloop)` |
 | `move_range` | `export move_range  (from kagra.path)` |
+| `NeonRun` | `class NeonRun  (from kagra.kagra_shared)` |
 | `NovelSession` | `class NovelSession  (from kagra.kagra_shared)` |
 | `open_world_height` | `export open_world_height  (from kagra.land)` |
 | `OpenAIBrain` | `class OpenAIBrain  (from kagra.brain)` |
@@ -85,6 +87,7 @@
 | `t` | `export t  (from kagra.i18n)` |
 | `TdSession` | `class TdSession  (from kagra.kagra_shared)` |
 | `tone` | `export tone  (from kagra.audio)` |
+| `Trail` | `class Trail  (from kagra.particles)` |
 | `was_pressed` | `export was_pressed  (from kagra.gameloop)` |
 | `WorldDoc` | `class WorldDoc  (from kagra.kagra_shared)` |
 | `WorldPlay` | `class WorldPlay  (from kagra.kagra_shared)` |
@@ -93,7 +96,6 @@
 
 | Name | Signature |
 |---|---|
-| `apply_look` | `export apply_look  (from kagra.juice)` |
 | `mixer_state` | `export mixer_state  (from kagra.audio)` |
 | `play_bgm` | `export play_bgm  (from kagra.audio)` |
 | `play_sfx` | `export play_sfx  (from kagra.audio)` |
@@ -101,7 +103,6 @@
 | `set_group_volume` | `export set_group_volume  (from kagra.audio)` |
 | `set_mute` | `export set_mute  (from kagra.audio)` |
 | `stop_bgm` | `export stop_bgm  (from kagra.audio)` |
-| `Trail` | `class Trail  (from kagra.particles)` |
 
 ## Agent notes
 
@@ -111,7 +112,7 @@
 - テクスチャは `WorldProp.texture`（PNG パス）+ `uv_scale`（CPU タイル）。室内は dump `sky` / `ground: false`。HUD 画像は `kagra.ui2d.image` → `draw_world(..., hud=)`。
 - プロペラや機体は `pitch` / `roll` と `local: true`（親の空間、4 段まで）。`local` 無しの `parent` はリンクだけで position はワールドのまま。リングは `model: "ring"`（穴は +Z）。窓の毎フレームは `render_rgba` → `Scene._frame_rgba`（PPM）。見本は `examples/flight_minimal.py`。
 - 絵の検証は `expect_offscreen.pixels`（領域の平均色 / not_solid）。golden PNG は使わない。新ジャンルを `WorldPlay` に足さない。
-- 電話の絵: dump `bloom` / `bloom_threshold` / `vignette` / `lut`（`off` `warm` `punch` `cool`）/ `lut_strength` / `fxaa`。省略すると旧来の絵（bloom 0、vignette 1、LUT なし、FXAA あり）。`Juice` は shake / hitstop / squash / tween。`Emitter` は CPU の火花を sphere prop にする。`apply_post(world, "mobile")` が電話プリセット。
+- 電話の絵: dump `bloom` / `bloom_threshold` / `vignette` / `lut`（`off` `warm` `punch` `cool`）/ `lut_strength` / `fxaa`。省略すると旧来の絵（bloom 0、vignette 1、LUT なし、FXAA あり）。`Juice` は shake / hitstop / squash / tween。`Emitter` は CPU の火花を sphere prop にする（`emissive` で光らせられる）。`Trail` はエミッシブな quad のリボン。`apply_post(world, "mobile")` が電話プリセット、`"neon"` はブルーム強め。`apply_look(world, "night"|"pastel")` が空・ライト・露出・半球・LUT をまとめる。`cull: true` と `prop_lod` は遠い prop を落とす／看板にする（省略時は全部フルメッシュ）。prop `emissive` / `emissive_color` / `emissive_map`、`hemi_sky` / `hemi_ground`、`env_map`（`preset:studio` か PNG）は共有レンダラの絵。
 - dump JSON の共有オフスクリーン: `python -m kagra.render_world dump.json out.png`（または `kagra.verify` の `expect_offscreen`）。wgpu 30。アダプタ無しはスキップ。
 - dump JSON の共有デスクトップ窓: `python -m kagra.play_world dump.json`。Crest collectathon は `genre: crest_isle`。新しいゲームは RendererV2 で始めない。
 - 参照ゲーム: `examples/bunny_garden_minimal.py` / `examples/torneko_minimal.py` / `examples/bar_sim_minimal.py` / `examples/flight_minimal.py` / `examples/backyard_brawl_minimal.py` / `examples/chess_minimal.py`。

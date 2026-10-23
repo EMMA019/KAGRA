@@ -105,6 +105,10 @@ pub struct GameFlow {
     pub game_id: String,
     /// Result line: GOAL / FELL. Empty on other screens.
     pub subtitle: String,
+    /// Title banner. Box Hop keeps "BOX HOP".
+    pub title: String,
+    /// Second title line. Box Hop keeps "はじめる".
+    pub tagline: String,
 }
 
 impl GameFlow {
@@ -117,6 +121,8 @@ impl GameFlow {
             settings: VolumeSettings::default(),
             game_id: game_id.into(),
             subtitle: String::new(),
+            title: "BOX HOP".into(),
+            tagline: "はじめる".into(),
         }
     }
 
@@ -229,24 +235,26 @@ impl GameFlow {
                     h * 0.28,
                     [16, 28, 48, 230],
                 ));
+                let banner = if self.title.is_empty() {
+                    "BOX HOP"
+                } else {
+                    self.title.as_str()
+                };
+                let tag = if self.tagline.is_empty() {
+                    "はじめる"
+                } else {
+                    self.tagline.as_str()
+                };
                 text(
                     list,
-                    "BOX HOP",
+                    banner,
                     w * 0.5,
                     h * 0.30,
                     28.0,
                     white,
                     TextAlign::Center,
                 );
-                text(
-                    list,
-                    "はじめる",
-                    w * 0.5,
-                    h * 0.40,
-                    18.0,
-                    gold,
-                    TextAlign::Center,
-                );
+                text(list, tag, w * 0.5, h * 0.40, 18.0, gold, TextAlign::Center);
                 text(
                     list,
                     &format!("BEST {}", self.best_score),
