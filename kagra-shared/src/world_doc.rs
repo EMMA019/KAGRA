@@ -732,6 +732,18 @@ impl WorldDoc {
         Ok(insert_coordinate_note(&body))
     }
 
+    /// World dump plus a `profile` object (draws, triangles, texture bytes,
+    /// budget warnings). CPU and GPU times stay empty until a renderer
+    /// measured a frame and [`crate::profile::splice_profile`] is called
+    /// with that profile instead.
+    pub fn to_json_with_profile(&self) -> Result<String, String> {
+        let dump = self.to_json()?;
+        Ok(crate::profile::splice_profile(
+            &dump,
+            &crate::profile::FrameProfile::from_world(self),
+        ))
+    }
+
     /// Bloom intensity for `render_world_doc`. None in the dump means off.
     pub fn bloom_intensity(&self) -> f32 {
         self.bloom.unwrap_or(0.0).max(0.0)

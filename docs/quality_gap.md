@@ -75,6 +75,15 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 
 ## This wave
 
+Shipped on the wasm-safe path. The picture does not change. A headless dump can carry a `profile` object; `to_json` still omits it.
+
+- Draws, triangles, and texture bytes (shadow map, env strip, authored images) come from `compile_scene`. No editor.
+- `puffin` scopes the frame and the sim tick. The HTTP viewer is not linked. CPU milliseconds are filled when a desktop or Android frame actually draws. GPU milliseconds are filled when the device exposes timestamp queries. Wasm leaves both times empty and does not request timestamp queries.
+- Warnings fire over a phone budget: 16.7 ms, 200 draws, 100k triangles, 48 MB of textures. A warning does not fail the render.
+- The desktop window watches the dump JSON and material files (`notify`). A dump change reloads the document. A PNG change reuploads meshes. Wasm and Android do not link the watcher.
+
+## Previous wave
+
 Shipped on the wasm-safe path. A glTF material now reaches the shared PBR shader instead of stopping at a tinted texture.
 
 - `baseColorFactor` is multiplied in linear light and stored back as sRGB (a 1×1 texel when the material has no texture). `COLOR_0` stays linear and multiplies the albedo.

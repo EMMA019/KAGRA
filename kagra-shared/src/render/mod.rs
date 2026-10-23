@@ -97,6 +97,8 @@ struct GpuMesh {
     emissive: f32,
     emissive_color: [f32; 3],
     _sampler: Option<wgpu::Sampler>,
+    /// Authored image bytes (albedo, matcap, normal, ORM, emissive).
+    tex_bytes: u64,
 }
 
 #[derive(Debug)]
@@ -166,6 +168,17 @@ pub struct Renderer {
     cloth: std::collections::HashMap<String, crate::spring::SpringState>,
     /// Which `WorldDoc` mesh table is on the GPU. A new dump reuploads.
     mesh_key: String,
+    /// Last `render_frame`. CPU time is filled off wasm. GPU time only when
+    /// the device exposes timestamp queries.
+    last_profile: crate::profile::FrameProfile,
+    timestamps: Option<TimestampClock>,
+}
+
+#[derive(Clone, Debug)]
+struct TimestampClock {
+    query: wgpu::QuerySet,
+    resolve: wgpu::Buffer,
+    staging: wgpu::Buffer,
 }
 
 impl Renderer {
@@ -971,6 +984,7 @@ impl Renderer {
         let inst_buf = create_instance_buffer(&device, inst_capacity);
         let depth = create_depth_view(&device, width, height);
         let bloom = BloomPass::new(&device, format, width, height, hdr);
+        let timestamps = create_timestamps(&device);
 
         let me = Self {
             device,
@@ -1015,6 +1029,8 @@ impl Renderer {
             text: crate::font::TextRaster::new(),
             cloth: std::collections::HashMap::new(),
             mesh_key: String::new(),
+            last_profile: crate::profile::FrameProfile::default(),
+            timestamps,
         };
         me.upload_screen();
         me
@@ -1203,12 +1219,30 @@ impl Renderer {
             emissive: mesh.emissive,
             emissive_color: mesh.emissive_color,
             _sampler: sampler,
+            tex_bytes: image_bytes(&mesh.albedo)
+                + image_bytes(&mesh.matcap)
+                + image_bytes(&mesh.normal)
+                + image_bytes(&mesh.orm)
+                + image_bytes(&mesh.emissive_map),
         });
         MeshId(self.meshes.len() as u32 - 1)
     }
 
     pub fn mesh_count(&self) -> usize {
         self.meshes.len()
+    }
+
+    /// Profile of the last `render_frame`. Empty until a frame has been drawn.
+    pub fn frame_profile(&self) -> crate::profile::FrameProfile {
+        self.last_profile.clone()
+    }
+
+    fn texture_bytes(&self) -> u64 {
+        let meshes: u64 = self.meshes.iter().map(|m| m.tex_bytes).sum();
+        let shadow = (crate::scene3d::SHADOW_MAP_SIZE as u64)
+            .saturating_mul(crate::scene3d::SHADOW_MAP_SIZE as u64)
+            * 4;
+        meshes + shadow + 64 * 64 * 4
     }
 
     /// Drop uploaded meshes so the next world draw can upload `compile_meshes`.
@@ -1284,6 +1318,11 @@ impl Renderer {
 
     /// 3D を描いてから HUD を重ね、1 枚として present する。
     pub fn render_frame(&mut self, world: Option<&Scene3D>, hud: &DrawList) -> Result<(), String> {
+        puffin::GlobalProfiler::lock().new_frame();
+        puffin::profile_function!();
+        // Instant::now can panic on wasm32 before a time source exists.
+        #[cfg(not(target_arch = "wasm32"))]
+        let cpu_start = std::time::Instant::now();
         let vertices = self.build_vertices(hud);
         self.ensure_vertex_capacity(vertices.len());
         if !vertices.is_empty() {
@@ -1443,6 +1482,10 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("kagra-shared frame"),
             });
+        let clock = self.timestamps.clone();
+        if let Some(ts) = &clock {
+            encoder.write_timestamp(&ts.query, 0);
+        }
         if !draws.is_empty() {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("kagra-shared shadow"),
@@ -1613,10 +1656,30 @@ impl Renderer {
             pass.set_vertex_buffer(0, self.vbuf.slice(..));
             pass.draw(0..vertices.len() as u32, 0..1);
         }
+        if let Some(ts) = &clock {
+            encoder.write_timestamp(&ts.query, 1);
+            encoder.resolve_query_set(&ts.query, 0..2, &ts.resolve, 0);
+            encoder.copy_buffer_to_buffer(&ts.resolve, 0, &ts.staging, 0, 16);
+        }
         self.queue.submit(Some(encoder.finish()));
+        #[cfg(not(target_arch = "wasm32"))]
+        let cpu_ms = Some(cpu_start.elapsed().as_secs_f32() * 1000.0);
+        #[cfg(target_arch = "wasm32")]
+        let cpu_ms = None;
+        let gpu_ms = clock
+            .as_ref()
+            .and_then(|ts| read_gpu_ms(&self.device, &self.queue, &ts.staging));
         if let Some(f) = frame {
             self.queue.present(f);
         }
+        let (draws, triangles) = draw_counts(&self.meshes, &draws);
+        self.last_profile = crate::profile::FrameProfile {
+            cpu_ms,
+            gpu_ms,
+            draws,
+            triangles,
+            texture_bytes: self.texture_bytes(),
+        };
         Ok(())
     }
 
@@ -2227,6 +2290,96 @@ async fn new_instance() -> wgpu::Instance {
     wgpu::Instance::new(desc)
 }
 
+fn image_bytes(img: &Option<crate::scene3d::AlbedoRgba>) -> u64 {
+    img.as_ref().map(|a| a.rgba.len() as u64).unwrap_or(0)
+}
+
+fn draw_counts(meshes: &[GpuMesh], draws: &[(usize, u64, u32, bool, bool)]) -> (u32, u32) {
+    let mut draw_count = 0u32;
+    let mut triangles = 0u32;
+    for (mesh, _, n, _, _) in draws {
+        draw_count += 1;
+        let idx = meshes.get(*mesh).map(|m| m.index_count).unwrap_or(0);
+        triangles = triangles.saturating_add(idx / 3 * *n);
+    }
+    (draw_count, triangles)
+}
+
+fn create_timestamps(device: &wgpu::Device) -> Option<TimestampClock> {
+    let want = wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
+    if !device.features().contains(want) {
+        return None;
+    }
+    let query = device.create_query_set(&wgpu::QuerySetDescriptor {
+        label: Some("kagra-shared timestamps"),
+        ty: wgpu::QueryType::Timestamp,
+        count: 2,
+    });
+    let resolve = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("kagra-shared timestamp resolve"),
+        size: 256,
+        usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+    let staging = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("kagra-shared timestamp read"),
+        size: 256,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    Some(TimestampClock {
+        query,
+        resolve,
+        staging,
+    })
+}
+
+fn read_gpu_ms(device: &wgpu::Device, queue: &wgpu::Queue, staging: &wgpu::Buffer) -> Option<f32> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    staging
+        .slice(..)
+        .map_async(wgpu::MapMode::Read, move |res| {
+            let _ = tx.send(res);
+        });
+    if device.poll(wgpu::PollType::wait_indefinitely()).is_err() {
+        return None;
+    }
+    if !matches!(rx.recv(), Ok(Ok(()))) {
+        return None;
+    }
+    let view = match staging.slice(..).get_mapped_range() {
+        Ok(view) => view,
+        Err(_) => {
+            staging.unmap();
+            return None;
+        }
+    };
+    let ms = if view.len() < 16 {
+        None
+    } else {
+        let t0 = u64::from_le_bytes([
+            view[0], view[1], view[2], view[3], view[4], view[5], view[6], view[7],
+        ]);
+        let t1 = u64::from_le_bytes([
+            view[8], view[9], view[10], view[11], view[12], view[13], view[14], view[15],
+        ]);
+        if t1 <= t0 {
+            None
+        } else {
+            let period = queue.get_timestamp_period();
+            let ms = (t1 - t0) as f32 * period / 1_000_000.0;
+            if ms.is_finite() && (0.0..10_000.0).contains(&ms) {
+                Some(ms)
+            } else {
+                None
+            }
+        }
+    };
+    drop(view);
+    staging.unmap();
+    ms
+}
+
 async fn request_device(
     instance: &wgpu::Instance,
     surface: Option<&wgpu::Surface<'static>>,
@@ -2251,9 +2404,20 @@ async fn request_device(
     // wgpu 30 has no DEPTH32FLOAT_FILTERABLE feature. Comparison itself is
     // core; linear filtering of that compare is not. The shadow sampler
     // stays nearest so mobile WebGPU does not reject the draw.
+    let want_ts = wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
+    // Wasm stays on the WebGL2 feature set. A timestamp query there is not
+    // part of the phone path, and requesting it can fail device creation.
+    let required_features = if cfg!(target_arch = "wasm32") {
+        wgpu::Features::empty()
+    } else if adapter.features().contains(want_ts) {
+        want_ts
+    } else {
+        wgpu::Features::empty()
+    };
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("kagra-shared"),
+            required_features,
             required_limits: limits.using_resolution(adapter.limits()),
             ..Default::default()
         })
@@ -3052,5 +3216,30 @@ mod tests {
             }
         }
         assert!(hit > 400, "{name} did not cover the frame ({hit} px)");
+    }
+
+    #[test]
+    fn offscreen_frame_profile_counts_the_box() {
+        let Some(mut renderer) = pollster::block_on(Renderer::new_offscreen(64, 64)).ok() else {
+            eprintln!("no GPU adapter; skipping frame profile");
+            return;
+        };
+        let doc = crate::world_doc::WorldDoc::from_json(
+            r#"{"version":1,"ground":false,"props":[{"id":"b","type":"prop","model":"box","position":[0.0,1.0,0.0]}]}"#,
+        )
+        .unwrap();
+        if renderer.render_world_doc(&doc).is_err() {
+            eprintln!("frame profile draw failed");
+            return;
+        }
+        let profile = renderer.frame_profile();
+        assert!(profile.draws >= 1, "draws {}", profile.draws);
+        assert!(profile.triangles >= 12, "tris {}", profile.triangles);
+        assert!(profile.cpu_ms.is_some());
+        assert!(profile.texture_bytes > 1024);
+        let dump = doc.to_json().unwrap();
+        let spliced = crate::profile::splice_profile(&dump, &profile);
+        assert!(spliced.contains("\"cpu_ms\""));
+        assert!(spliced.contains("\"warnings\""));
     }
 }

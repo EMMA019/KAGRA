@@ -33,6 +33,18 @@
       "type": "array",
       "items": { "$ref": "#/$defs/camera" }
     },
+    "profile": {
+      "type": "object",
+      "description": "Derived by WorldDoc::to_json_with_profile or splice_profile after a rendered frame. to_json omits it. from_json ignores it. warnings lists phone-budget misses (16.7 ms, 200 draws, 100000 triangles, 48 MB textures).",
+      "properties": {
+        "cpu_ms": { "type": ["number", "null"] },
+        "gpu_ms": { "type": ["number", "null"] },
+        "draws": { "type": "integer" },
+        "triangles": { "type": "integer" },
+        "texture_bytes": { "type": "integer" },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      }
+    },
     "coordinates": {
       "type": "object",
       "description": "Derived by WorldDoc::to_json / kagra.annotate_dump. from_json ignores it. Right-handed, Y up. World +X is screen-right only when the camera looks toward -Z.",

@@ -39,6 +39,8 @@ Direct dependencies of `kagra-shared` (`kagra-shared/Cargo.toml`, locked in `Car
 | `wasm-bindgen`, `js-sys`, `web-sys` | `wasm` | Browser entry. |
 | `palette` 0.7.7 | **dev-dependency** | sRGB oracle in `color_space.rs` tests. The runtime curve and the Narkowicz ACES fit stay in `color_space.rs` and the WGSL shaders. `NOTICE` already records this. Do not link `palette` into wasm or Android. |
 | `winit` 0.29.15 | dev, `not(wasm32)` | The `window` example only. |
+| `puffin` 0.19.1 | runtime | CPU scopes on `render_frame` and `WorldPlay::tick`. `puffin_http` is not linked. |
+| `notify` 6.1.1 | desktop only | World dump and material watch in the `window` example. Not linked on wasm or Android. |
 
 Hand-rolled stand-ins that a new crate would replace:
 
@@ -73,7 +75,7 @@ Unmerged #149 (`cursor/gltf-pbr-2c16`) adds `image` 0.25 with `default-features 
 
 ### puffin
 
-CPU scopes (frame, tick, upload, shadow pass) that a desktop viewer can read. The headless contract stays a dump object: cpu ms, gpu ms when `TIMESTAMP_QUERY` is real, draws, triangles, texture bytes, and budget warnings. `puffin` does not replace that JSON. It is the instrumentation inside the process.
+Linked as `puffin` 0.19. Scopes sit on `render_frame` and `WorldPlay::tick`. The headless contract stays a dump object: cpu ms, gpu ms when `TIMESTAMP_QUERY` is real, draws, triangles, texture bytes, and budget warnings. `puffin` does not replace that JSON. It is the instrumentation inside the process.
 
 `puffin` itself is pure Rust and builds for `wasm32` and Android. Leave `puffin_http` (the viewer socket server) off those targets, the same way `rodio` is a desktop feature. Do not request timestamp queries on wasm: that can fail device creation. GPU time stays `None` when the adapter lacks `TIMESTAMP_QUERY` and `TIMESTAMP_QUERY_INSIDE_ENCODERS`.
 

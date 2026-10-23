@@ -22,3 +22,14 @@ image 0.25 (jpeg feature only; default features off so rayon stays out)
 The Narkowicz ACES fit in bloom.wgsl and shader3d.wgsl is the public
 approximation published by Krzysztof Narkowicz (2016), used widely
 including by three.js (MIT). No three.js source is copied in this tree.
+
+puffin 0.19
+  https://github.com/emilk/puffin
+  MIT OR Apache-2.0
+  CPU scopes for a frame and a sim tick. The puffin_http viewer is not
+  a dependency. Timestamp queries stay off wasm.
+
+notify 6 (desktop only; not linked on wasm or Android)
+  https://github.com/notify-rs/notify
+  MIT OR Apache-2.0
+  Watches a world dump and its material files so the desktop window can reload them.
