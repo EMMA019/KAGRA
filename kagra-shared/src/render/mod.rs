@@ -861,8 +861,8 @@ impl Renderer {
                 depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: Default::default(),
                 bias: wgpu::DepthBiasState {
-                    constant: 2,
-                    slope_scale: 2.0,
+                    constant: 4,
+                    slope_scale: 3.0,
                     clamp: 0.0,
                 },
             }),
@@ -1231,6 +1231,7 @@ impl Renderer {
                         };
                     raw.push(InstanceRaw {
                         model: inst.model.to_cols_array_2d(),
+                        // Author bytes are sRGB. Lighting stays linear on every target.
                         color: color_space::srgb_u8_to_linear(inst.color),
                         material: inst.material as u8 as f32,
                         _pad: [0.0; 3],
@@ -1434,6 +1435,7 @@ impl Renderer {
             }
         }
         // Pass 2: HDR frame → exposure → ACES → LUT → vignette → one OETF.
+        // The direct unorm path already graded in present_rgb and skips this.
         if !direct {
             self.bloom.apply(
                 &self.device,
@@ -2109,6 +2111,9 @@ async fn request_device(
         wgpu::Limits::default()
     };
 
+    // wgpu 30 treats depth32float comparison filtering as core, so there is
+    // no DEPTH32FLOAT_FILTERABLE feature to request. A linear comparison
+    // sampler is valid on WebGPU and WebGL2.
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("kagra-shared"),
