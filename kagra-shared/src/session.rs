@@ -810,6 +810,13 @@ impl SharedSession {
         self.external_menu = on;
     }
 
+    /// Neon Cat `?debug=1`. Draws kill boxes. Other scenes ignore it.
+    pub fn set_debug(&mut self, on: bool) {
+        if let Some(cat) = self.cat.as_mut() {
+            cat.set_debug(on);
+        }
+    }
+
     pub fn set_playtest_device(&mut self, label: &str, lang: &str) {
         self.playtest.set_device(label, lang);
     }

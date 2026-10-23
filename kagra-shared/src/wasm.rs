@@ -291,6 +291,12 @@ impl WasmSession {
         self.inner.set_external_menu(on);
     }
 
+    /// Neon Cat hitbox cages. The page turns this on for `?debug=1`.
+    #[wasm_bindgen(js_name = setDebug)]
+    pub fn set_debug(&mut self, on: bool) {
+        self.inner.set_debug(on);
+    }
+
     #[wasm_bindgen(js_name = setPlaytestDevice)]
     pub fn set_playtest_device(&mut self, label: &str, lang: &str) {
         self.inner.set_playtest_device(label, lang);

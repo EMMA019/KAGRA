@@ -3212,6 +3212,13 @@ fn read_indices(doc: &GltfFile, blobs: &[Vec<u8>], accessor: usize) -> Result<Ve
     let start = view.byte_offset + acc.byte_offset;
     let mut out = Vec::with_capacity(acc.count);
     match acc.component_type {
+        // UNSIGNED_BYTE. Kenney packs small props (crate, barrel, cat legs) this way.
+        5121 => {
+            for i in 0..acc.count {
+                let off = start + i;
+                out.push(blob[off] as u32);
+            }
+        }
         5123 => {
             for i in 0..acc.count {
                 let off = start + i * 2;

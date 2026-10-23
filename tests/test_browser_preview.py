@@ -70,6 +70,9 @@ def test_preview_links_every_browser_genre(tmp_path: Path):
     assert "startGame" in play
     assert "showTitle" in play
     assert "setExternalMenu" in play
+    assert "setDebug" in play
+    assert 'id="death"' in play
+    assert 'params.get("debug")' in play
     assert "pointer-events: none" in play
     assert 'z-index: 4' in play
     assert (tmp_path / "site" / ".nojekyll").is_file()

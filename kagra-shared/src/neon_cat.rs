@@ -30,7 +30,12 @@ const BARRIER_GLB: &str = "assets/models/kenney/racing-kit/barrierRed.glb";
 /// Model-space feet sit near y = -0.3. This scale keeps the cat under the arch.
 const CAT_SCALE: f32 = 0.58;
 const CAT_FOOT: f32 = 0.30;
-const WALL_X: f32 = 2.05;
+/// Slide along the magenta rail. The rail, the arch, and the floor are
+/// scenery. Only a crate, barrel, or barrier ends the run.
+const LANE_LIMIT: f32 = 2.15;
+/// Pull the kill box in from the measured mesh so a graze survives.
+const HIT_INSET: f32 = 0.06;
+const HIT_TOP: f32 = 0.82;
 const SPEED0: f32 = 10.5;
 const SPEED_RAMP: f32 = 0.22;
 const SPEED_CAP: f32 = 20.0;
@@ -69,6 +74,9 @@ pub struct NeonCat {
     score_acc: f32,
     pub rings: u32,
     pub alive: bool,
+    /// `CRATE` / `BARREL` / `BARRIER` after a hit. Empty while alive.
+    death: String,
+    debug: bool,
     x: f32,
     y: f32,
     z: f32,
@@ -170,6 +178,8 @@ impl NeonCat {
             score_acc: 0.0,
             rings: 0,
             alive: true,
+            death: String::new(),
+            debug: false,
             x: 0.0,
             y: 0.0,
             z: 0.0,
@@ -213,6 +223,16 @@ impl NeonCat {
 
     pub fn phase_name(&self) -> &'static str {
         self.flow.phase.name()
+    }
+
+    pub fn death(&self) -> &str {
+        &self.death
+    }
+
+    /// `?debug=1` draws the kill boxes. They are not colliders.
+    pub fn set_debug(&mut self, on: bool) {
+        self.debug = on;
+        self.rebuild();
     }
 
     pub fn playing(&self) -> bool {
@@ -262,13 +282,15 @@ impl NeonCat {
     fn sim_value(&self) -> serde_json::Value {
         let oi = next_ahead(self.z, OBS_Z0, OBS_GAP, obs_z);
         let ri = next_ahead(self.z, RING_Z0, RING_GAP, ring_z);
-        let (ox, oz, oh) = obstacle_hit(oi);
+        let ahead = obstacle_shape(oi);
+        let (ox, oz, oh) = (ahead.hit_cx, ahead.hit_cz, ahead.hit_top);
         json!({
             "phase": self.flow.phase.name(),
             "score": self.score,
             "best": self.flow.best_score,
             "rings": self.rings,
             "alive": self.alive,
+            "death": self.death,
             "x": self.x,
             "y": self.y,
             "z": self.z,
@@ -309,7 +331,8 @@ impl NeonCat {
         let dx = ring_x(ri) - self.x;
         let lx = (-dx * 1.4).clamp(-1.0, 1.0);
         let oi = next_ahead(self.z, OBS_Z0, OBS_GAP, obs_z);
-        let (ox, oz, _) = obstacle_hit(oi);
+        let ahead_obs = obstacle_shape(oi);
+        let (ox, oz) = (ahead_obs.hit_cx, ahead_obs.hit_cz);
         let ahead = oz - self.z;
         let jump = (0.15..2.5).contains(&ahead) && (self.x - ox).abs() < 0.95;
         (lx, jump)
@@ -333,6 +356,7 @@ impl NeonCat {
         self.flow.show_title();
         self.reset_motion();
         self.alive = true;
+        self.death.clear();
         self.score = 0;
         self.score_acc = 0.0;
         self.rings = 0;
@@ -406,6 +430,7 @@ impl NeonCat {
         self.score_acc = 0.0;
         self.rings = 0;
         self.alive = true;
+        self.death.clear();
         self.got.clear();
         self.sparks.clear();
         self.time = 0.0;
@@ -448,7 +473,8 @@ impl NeonCat {
             self.decay_shake(dt);
             self.anim_t += dt * 0.35;
             if self.hitstop == 0.0 && !self.alive && self.flow.phase == FlowPhase::Play {
-                self.flow.finish(self.score, self.rings, "CRASH");
+                let line = format!("HIT {}", self.death);
+                self.flow.finish(self.score, self.rings, &line);
             }
             self.rebuild();
             return;
@@ -495,6 +521,14 @@ impl NeonCat {
         }
         self.land_squash = (self.land_squash - dt).max(0.0);
         self.x += self.vx * dt;
+        if self.x.abs() > LANE_LIMIT {
+            self.x = self.x.signum() * LANE_LIMIT;
+            if self.x.is_sign_positive() {
+                self.vx = self.vx.min(0.0);
+            } else {
+                self.vx = self.vx.max(0.0);
+            }
+        }
         self.yaw += (self.vx * 0.14 - self.yaw) * response;
         let speed = self.speed();
         self.z += speed * dt;
@@ -505,10 +539,9 @@ impl NeonCat {
             self.score_acc -= whole;
         }
         self.anim_t += dt * if self.y > 0.05 { 0.7 } else { 1.15 };
-        let grace = self.time < GRACE_SECS;
-        if !grace && self.x.abs() > WALL_X {
-            self.crash();
-        } else if !grace {
+        // Grace covers the spawn stretch. The rail is not a kill plane,
+        // so steering into it during grace cannot strand the cat outside.
+        if self.time >= GRACE_SECS {
             self.touch_obstacles();
         }
         if self.alive {
@@ -535,16 +568,9 @@ impl NeonCat {
             if i < 0 {
                 continue;
             }
-            let (ox, oz, height) = obstacle_hit(i);
-            let half = obstacle_half(i);
-            if (self.z - oz).abs() > half.1 + 0.25 {
-                continue;
-            }
-            if (self.x - ox).abs() > half.0 + 0.22 {
-                continue;
-            }
-            if self.y < height * 0.72 {
-                self.crash();
+            let shape = obstacle_shape(i);
+            if feet_hit(&shape, self.x, self.y, self.z) {
+                self.crash(shape.kind);
                 return;
             }
         }
@@ -571,11 +597,12 @@ impl NeonCat {
         }
     }
 
-    fn crash(&mut self) {
+    fn crash(&mut self, reason: &str) {
         if !self.alive {
             return;
         }
         self.alive = false;
+        self.death = reason.to_string();
         self.just_crash = true;
         self.shake = 0.46;
         self.hitstop = 0.11;
@@ -708,6 +735,9 @@ impl NeonCat {
         self.push_gates(&mut doc);
         self.push_rings(&mut doc);
         self.push_obstacles(&mut doc);
+        if self.debug {
+            self.push_hitboxes(&mut doc);
+        }
         self.push_cat(&mut doc);
         self.push_sparks(&mut doc);
         self.doc = doc;
@@ -871,25 +901,16 @@ impl NeonCat {
             if i < 0 {
                 continue;
             }
-            let z = obs_z(i);
-            if z < self.z - 2.0 {
+            let shape = obstacle_shape(i);
+            if shape.origin[2] < self.z - 2.0 {
                 continue;
             }
-            let kind = i.rem_euclid(3);
-            let (path, scale, ox) = match kind {
-                0 => (CRATE_GLB, [1.15, 1.15, 1.15], obs_x(i)),
-                1 => (BARREL_GLB, [1.2, 1.2, 1.2], obs_x(i)),
-                _ => {
-                    let sx = 4.4;
-                    (BARRIER_GLB, [sx, 3.8, 3.4], obs_x(i) - 0.125 * sx)
-                }
-            };
             if let Some(obstacle) = glb_prop(
                 &format!("obs-{i}"),
                 "obstacle",
-                path,
-                [ox, 0.0, z],
-                scale,
+                shape.path,
+                shape.origin,
+                shape.scale,
                 0.0,
                 0.0,
                 [255, 255, 255],
@@ -898,6 +919,50 @@ impl NeonCat {
             ) {
                 doc.props.push(obstacle);
             }
+        }
+    }
+
+    fn push_hitboxes(&self, doc: &mut WorldDoc) {
+        let z = self.z + 18.0;
+        for side in [-1.0_f32, 1.0] {
+            doc.props.push(glow(
+                &format!("lane-lim-{side}"),
+                "box",
+                "hitbox",
+                [side * LANE_LIMIT, 0.2, z],
+                [0.03, 0.55, 36.0],
+                [255, 210, 40],
+                2.2,
+            ));
+        }
+        let i0 = near_index(self.z, OBS_Z0, OBS_GAP).saturating_sub(1);
+        for i in i0..i0 + 6 {
+            if i < 0 {
+                continue;
+            }
+            let shape = obstacle_shape(i);
+            if shape.origin[2] < self.z - 2.0 {
+                continue;
+            }
+            // The kill box is inset inside the mesh, so a cage on that box
+            // disappears into the crate. Draw the skin a little proud, in
+            // cyan, so the phone overlay shows which prop can kill.
+            let proud = 0.1;
+            push_aabb_cage(
+                doc,
+                &format!("hit-{i}"),
+                [
+                    shape.skin_min[0] - proud,
+                    shape.skin_min[1],
+                    shape.skin_min[2] - proud,
+                ],
+                [
+                    shape.skin_max[0] + proud,
+                    shape.skin_max[1] + proud,
+                    shape.skin_max[2] + proud,
+                ],
+                [60, 255, 255],
+            );
         }
     }
 
@@ -984,22 +1049,173 @@ impl NeonCat {
     }
 }
 
-/// Half extents in x and z, and the height a jump must clear.
-fn obstacle_hit(index: i32) -> (f32, f32, f32) {
-    let kind = index.rem_euclid(3);
-    let height = match kind {
-        0 => 0.50 * 1.15,
-        1 => 0.48 * 1.2,
-        _ => 0.131 * 3.8,
-    };
-    (obs_x(index), obs_z(index), height)
+struct ObstacleShape {
+    kind: &'static str,
+    path: &'static str,
+    /// Prop origin. Scale is about this point, then the mesh is translated.
+    origin: [f32; 3],
+    scale: [f32; 3],
+    /// World AABB of the baked mesh.
+    skin_min: [f32; 3],
+    skin_max: [f32; 3],
+    hit_cx: f32,
+    hit_cz: f32,
+    hit_hx: f32,
+    hit_hz: f32,
+    /// Feet at or above this clear the obstacle.
+    hit_top: f32,
 }
 
-fn obstacle_half(index: i32) -> (f32, f32) {
+/// Local AABB after the glTF node bake (`mesh.bounds()`), times the prop
+/// scale. Y stays on the floor. XZ is centered on `(obs_x, obs_z)`.
+/// The kill box is inset so it sits inside that mesh.
+fn obstacle_shape(index: i32) -> ObstacleShape {
+    let anchor_x = obs_x(index);
+    let anchor_z = obs_z(index);
     match index.rem_euclid(3) {
-        0 => (0.25 * 1.15, 0.25 * 1.15),
-        1 => (0.26 * 1.2, 0.26 * 1.2),
-        _ => (0.125 * 4.4, 0.06 * 3.4),
+        // crate.glb: [-0.25, 0, -0.25] .. [0.25, 0.5, 0.25]
+        0 => shaped(
+            "CRATE",
+            CRATE_GLB,
+            anchor_x,
+            anchor_z,
+            [1.15, 1.15, 1.15],
+            [-0.25, 0.0, -0.25],
+            [0.25, 0.5, 0.25],
+        ),
+        // barrel.glb accessor max is 0.258813 / 0.476190
+        1 => shaped(
+            "BARREL",
+            BARREL_GLB,
+            anchor_x,
+            anchor_z,
+            [1.2, 1.2, 1.2],
+            [-0.258813, 0.0, -0.258813],
+            [0.258813, 0.476190, 0.258813],
+        ),
+        // barrierRed.glb: [0, 0, -0.123] .. [0.25, 0.1312, 0]
+        _ => shaped(
+            "BARRIER",
+            BARRIER_GLB,
+            anchor_x,
+            anchor_z,
+            [4.4, 3.8, 3.4],
+            [0.0, 0.0, -0.123],
+            [0.25, 0.1312, 0.0],
+        ),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn shaped(
+    kind: &'static str,
+    path: &'static str,
+    anchor_x: f32,
+    anchor_z: f32,
+    scale: [f32; 3],
+    local_min: [f32; 3],
+    local_max: [f32; 3],
+) -> ObstacleShape {
+    let origin = [
+        anchor_x - scale[0] * (local_min[0] + local_max[0]) * 0.5,
+        -scale[1] * local_min[1],
+        anchor_z - scale[2] * (local_min[2] + local_max[2]) * 0.5,
+    ];
+    let skin_min = [
+        origin[0] + scale[0] * local_min[0],
+        origin[1] + scale[1] * local_min[1],
+        origin[2] + scale[2] * local_min[2],
+    ];
+    let skin_max = [
+        origin[0] + scale[0] * local_max[0],
+        origin[1] + scale[1] * local_max[1],
+        origin[2] + scale[2] * local_max[2],
+    ];
+    let hx = ((skin_max[0] - skin_min[0]) * 0.5 - HIT_INSET).max(0.05);
+    let hz = ((skin_max[2] - skin_min[2]) * 0.5 - HIT_INSET).max(0.05);
+    ObstacleShape {
+        kind,
+        path,
+        origin,
+        scale,
+        skin_min,
+        skin_max,
+        hit_cx: anchor_x,
+        hit_cz: anchor_z,
+        hit_hx: hx,
+        hit_hz: hz,
+        hit_top: (skin_max[1] - skin_min[1]) * HIT_TOP,
+    }
+}
+
+fn feet_hit(shape: &ObstacleShape, x: f32, y: f32, z: f32) -> bool {
+    (x - shape.hit_cx).abs() <= shape.hit_hx
+        && (z - shape.hit_cz).abs() <= shape.hit_hz
+        && y < shape.hit_top
+}
+
+fn push_aabb_cage(doc: &mut WorldDoc, id: &str, min: [f32; 3], max: [f32; 3], color: [u32; 3]) {
+    let t = 0.07;
+    let cx = (min[0] + max[0]) * 0.5;
+    let cy = (min[1] + max[1]) * 0.5;
+    let cz = (min[2] + max[2]) * 0.5;
+    let sx = (max[0] - min[0]).max(t);
+    let sy = (max[1] - min[1]).max(t);
+    let sz = (max[2] - min[2]).max(t);
+    let corners = [
+        (min[0], min[2]),
+        (min[0], max[2]),
+        (max[0], min[2]),
+        (max[0], max[2]),
+    ];
+    for (i, (x, z)) in corners.iter().enumerate() {
+        doc.props.push(glow(
+            &format!("{id}-v{i}"),
+            "box",
+            "hitbox",
+            [*x, cy, *z],
+            [t, sy, t],
+            color,
+            2.6,
+        ));
+    }
+    for (j, y) in [min[1], max[1]].iter().enumerate() {
+        doc.props.push(glow(
+            &format!("{id}-xa{j}"),
+            "box",
+            "hitbox",
+            [cx, *y, min[2]],
+            [sx, t, t],
+            color,
+            2.6,
+        ));
+        doc.props.push(glow(
+            &format!("{id}-xb{j}"),
+            "box",
+            "hitbox",
+            [cx, *y, max[2]],
+            [sx, t, t],
+            color,
+            2.6,
+        ));
+        doc.props.push(glow(
+            &format!("{id}-za{j}"),
+            "box",
+            "hitbox",
+            [min[0], *y, cz],
+            [t, t, sz],
+            color,
+            2.6,
+        ));
+        doc.props.push(glow(
+            &format!("{id}-zb{j}"),
+            "box",
+            "hitbox",
+            [max[0], *y, cz],
+            [t, t, sz],
+            color,
+            2.6,
+        ));
     }
 }
 
@@ -1295,9 +1511,15 @@ mod tests {
         assert_eq!(phase(&session), "complete");
         let crashed = session.draw_list();
         assert!(
-            crashed.texts.iter().any(|text| text.text == "CRASH"),
-            "the result column is the panel under the old title card"
+            crashed.texts.iter().any(|text| text.text == "HIT CRATE"),
+            "the result names the obstacle, got {:?}",
+            crashed
+                .texts
+                .iter()
+                .map(|text| &text.text)
+                .collect::<Vec<_>>()
         );
+        assert_eq!(session.cat.as_ref().unwrap().death(), "CRATE");
         session.show_title();
         assert_eq!(phase(&session), "title");
         assert!(
@@ -1322,5 +1544,181 @@ mod tests {
         }
         assert_eq!(phase(&session), "playing");
         assert!(session.cat.as_ref().unwrap().z() > z0 + 1.0);
+    }
+
+    fn place_on(index: i32, x: f32, y: f32) -> NeonCat {
+        let mut run = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        run.confirm();
+        run.time = GRACE_SECS + 0.05;
+        run.x = x;
+        run.y = y;
+        // One tick advances z by ~0.18. Start behind the anchor so the
+        // thin barrier (half ~0.15) is still under the feet.
+        run.z = obs_z(index) - 0.12;
+        run.vx = 0.0;
+        run.vy = 0.0;
+        run
+    }
+
+    #[test]
+    fn hitboxes_sit_inside_the_glb_and_a_graze_lives() {
+        for index in 0..3 {
+            let shape = obstacle_shape(index);
+            let file = crate::assets::resolve_asset(shape.path)
+                .unwrap_or_else(|| panic!("missing {}", shape.path));
+            let bytes = crate::assets::read_bytes(&file).unwrap();
+            let bounds = crate::gltf_load::mesh_from_glb(&bytes).unwrap().bounds();
+            let vmin = [
+                shape.origin[0] + shape.scale[0] * bounds.min.x,
+                shape.origin[1] + shape.scale[1] * bounds.min.y,
+                shape.origin[2] + shape.scale[2] * bounds.min.z,
+            ];
+            let vmax = [
+                shape.origin[0] + shape.scale[0] * bounds.max.x,
+                shape.origin[1] + shape.scale[1] * bounds.max.y,
+                shape.origin[2] + shape.scale[2] * bounds.max.z,
+            ];
+            let hmin = [
+                shape.hit_cx - shape.hit_hx,
+                0.0,
+                shape.hit_cz - shape.hit_hz,
+            ];
+            let hmax = [
+                shape.hit_cx + shape.hit_hx,
+                shape.hit_top,
+                shape.hit_cz + shape.hit_hz,
+            ];
+            for axis in 0..3 {
+                assert!(
+                    hmin[axis] >= vmin[axis] - 1e-3,
+                    "{} axis {axis} hit {} under mesh {}",
+                    shape.kind,
+                    hmin[axis],
+                    vmin[axis]
+                );
+                assert!(
+                    hmax[axis] <= vmax[axis] + 1e-3,
+                    "{} axis {axis} hit {} past mesh {}",
+                    shape.kind,
+                    hmax[axis],
+                    vmax[axis]
+                );
+            }
+            assert!(
+                hmax[0] - hmin[0] < (vmax[0] - vmin[0]) - 0.08,
+                "{} x hit should be inset",
+                shape.kind
+            );
+            assert!(
+                hmax[2] - hmin[2] < (vmax[2] - vmin[2]) - 0.08,
+                "{} z hit should be inset",
+                shape.kind
+            );
+            assert!(
+                hmax[1] < vmax[1] - 0.02,
+                "{} top {} should sit under the mesh {}",
+                shape.kind,
+                hmax[1],
+                vmax[1]
+            );
+        }
+
+        // 0.40 is outside the crate mesh (half ~0.29) and inside the old pad.
+        let crate_shape = obstacle_shape(0);
+        assert!(!feet_hit(&crate_shape, obs_x(0) + 0.40, 0.0, obs_z(0)));
+        assert!(feet_hit(&crate_shape, obs_x(0), 0.0, obs_z(0)));
+        assert!(!feet_hit(
+            &crate_shape,
+            obs_x(0),
+            crate_shape.hit_top,
+            obs_z(0)
+        ));
+
+        let mut graze = place_on(0, obs_x(0) + 0.40, 0.0);
+        graze.tick(1.0 / 60.0);
+        assert!(graze.alive, "a point beside the crate is not a hit");
+        assert!(graze.death().is_empty());
+
+        let mut hit = place_on(0, obs_x(0), 0.0);
+        hit.tick(1.0 / 60.0);
+        assert!(!hit.alive);
+        assert_eq!(hit.death(), "CRATE");
+        for _ in 0..12 {
+            hit.tick(1.0 / 60.0);
+        }
+        assert_eq!(hit.phase_name(), "result");
+        assert_eq!(hit.flow.subtitle, "HIT CRATE");
+
+        let mut barrel = place_on(1, obs_x(1), 0.0);
+        barrel.tick(1.0 / 60.0);
+        assert_eq!(barrel.death(), "BARREL");
+        let mut barrier = place_on(2, obs_x(2), 0.0);
+        barrier.tick(1.0 / 60.0);
+        assert_eq!(barrier.death(), "BARRIER");
+
+        let mut jumped = place_on(0, obs_x(0), crate_shape.hit_top + 0.05);
+        jumped.tick(1.0 / 60.0);
+        assert!(jumped.alive, "feet above the crate clear it");
+    }
+
+    #[test]
+    fn grace_and_the_rail_and_the_arch_do_not_kill() {
+        let mut spawn = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        spawn.confirm();
+        spawn.x = obs_x(0);
+        spawn.z = obs_z(0);
+        spawn.time = 0.2;
+        spawn.tick(1.0 / 60.0);
+        assert!(
+            spawn.alive,
+            "grace skips the obstacle under the spawn stretch"
+        );
+
+        let mut rail = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        rail.confirm();
+        rail.set_steer(1.0, 0.0, false);
+        for _ in 0..60 * 4 {
+            rail.tick(1.0 / 60.0);
+        }
+        assert!(rail.alive, "full steer used to die on the empty wall");
+        assert!(rail.x().abs() <= LANE_LIMIT + 1e-3, "x {}", rail.x());
+        assert_eq!(rail.phase_name(), "play");
+        assert!(rail.death().is_empty());
+
+        let mut arch = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        arch.confirm();
+        arch.time = GRACE_SECS + 0.2;
+        arch.x = 2.05;
+        arch.z = gate_z(0);
+        arch.tick(1.0 / 60.0);
+        assert!(
+            arch.alive,
+            "the arch pillar and the old wall plane are not a collider"
+        );
+        assert!(arch.death().is_empty());
+    }
+
+    #[test]
+    fn debug_overlay_draws_hitboxes() {
+        let mut run = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        assert!(run
+            .document()
+            .props
+            .iter()
+            .all(|prop| prop.name != "hitbox"));
+        run.set_debug(true);
+        assert!(run
+            .document()
+            .props
+            .iter()
+            .any(|prop| prop.name == "hitbox"));
+        let state: serde_json::Value = serde_json::from_str(&run.state_json()).unwrap();
+        assert_eq!(state["death"], "");
+        run.set_debug(false);
+        assert!(run
+            .document()
+            .props
+            .iter()
+            .all(|prop| prop.name != "hitbox"));
     }
 }

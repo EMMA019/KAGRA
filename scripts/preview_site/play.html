@@ -64,6 +64,13 @@
       text-decoration: none;
     }
     .hint { opacity: 0.8; font-size: 13px; }
+    #death {
+      color: #ff6b9a;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      opacity: 1;
+    }
     #hud {
       position: absolute;
       left: max(10px, env(safe-area-inset-left));
@@ -153,6 +160,7 @@
       <div class="card">
         <h1 id="title">KAGRA</h1>
         <p id="blurb" class="hint">タップではじめる。左が移動、右下ジャンプ、右上アクション。</p>
+        <p id="death" class="hint" hidden></p>
         <p><button id="start" type="button">はじめる</button></p>
         <p class="hint">WASD / 矢印、Space ジャンプ、J アクション。縦でも横でも同じ配置です。</p>
         <p><a class="btn" href="./index.html">ジャンル一覧</a></p>
@@ -237,6 +245,7 @@
       session.loadGame(await worldRes.text());
       if (session.setExternalMenu) session.setExternalMenu(true);
       session.showTitle();
+      if (params.get("debug") === "1" && session.setDebug) session.setDebug(true);
     } catch (err) {
       fail(`起動できませんでした。\n${err}\n\nwasm が無いときは ./scripts/build_wasm.sh のあと、このページを出してください。`);
       throw err;
@@ -326,6 +335,16 @@
       document.getElementById("phaseLabel").textContent =
         `${bundle.title || slug} · ${label} · ${sharedVersion()}`;
       document.getElementById("start").textContent = phase === "complete" ? "もう一度" : "はじめる";
+      const death = document.getElementById("death");
+      let reason = "";
+      try { reason = JSON.parse(session.gameJson()).death || ""; } catch {}
+      if (phase === "complete" && reason) {
+        death.hidden = false;
+        death.textContent = `HIT ${reason}`;
+      } else {
+        death.hidden = true;
+        death.textContent = "";
+      }
     };
 
     const readPhase = () => {

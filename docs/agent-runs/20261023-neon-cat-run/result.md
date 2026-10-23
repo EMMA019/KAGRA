@@ -22,3 +22,7 @@ taken, so the PR shows the lavapipe frames on their own.
 Title card: a touch on 「はじめる」 calls `startGame`. The sim is title
 under that card (no CRASH column, cat back at the start). Chrome on
 lavapipe, mobile viewport, is the check for the tap.
+
+Deaths: the side plane is a clamp, not a kill. Crates and barrels load
+(UNSIGNED_BYTE indices). The kill box is inside the mesh. The result
+names the prop (`HIT CRATE`). `?debug=1` draws the mesh cage.

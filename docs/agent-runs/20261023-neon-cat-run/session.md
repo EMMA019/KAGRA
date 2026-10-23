@@ -59,6 +59,38 @@ GitHub cancels the previous pending deploy in that group. The wait now
 skips `completed cancelled` and follows the run that finishes. The live
 `/pr/165/` tree already had this page before that job went red.
 
+## Unexplained deaths
+
+Two kills were not obstacles.
+
+The rail check used `|x| > 2.05` after a 1.6s grace. Full steer during
+grace carries the cat to about x = 8. The first frame after grace then
+dies in empty space. The arch pillars are visual only (`|x|` about
+1.08–2.36). That wall plane sits inside a pillar, so a brush of the
+arch looked like a death with nothing to hit. The floor grid, the
+hoops, and the arches are not colliders. Spawn obstacles start at
+z = 26, after grace.
+
+`crate.glb` and `barrel.glb` use glTF index componentType 5121
+(UNSIGNED_BYTE). The loader rejected that, `glb_ready` failed, and
+those props were omitted. The sim still killed on them, so the crate
+and the barrel were invisible hit volumes. The old volume was also the
+mesh plus 0.22 in x and 0.25 in z. The barrier mesh was not centered
+in z, so the padded box closed the gap beside a side barrier.
+
+The lane now clamps to ±2.15 (the rail is at ±2.35) and does not kill.
+The kill box is the baked mesh AABB, inset 6cm on x/z and cut at 82%
+of the height. Feet are a point. A jump still clears it (apex about
+1.15, crate top about 0.58). `read_indices` accepts UNSIGNED_BYTE, so
+the crate, the barrel, and the cat's legs load. The barrier is placed
+so its mesh center sits on the anchor.
+
+`state_json.death` is `CRATE` / `BARREL` / `BARRIER`. The result line
+is `HIT CRATE`. The HTML card shows the same when the phase is
+complete. `?debug=1` calls `setDebug` and draws a cage on the mesh
+skin (the inset kill box would sit inside the crate) plus the lane
+limits.
+
 ## Checks
 
 - `cargo test -p kagra-shared --lib neon_cat::` — steer, jump, ring, glTF, session swap with Lumen

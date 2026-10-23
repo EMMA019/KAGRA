@@ -123,15 +123,21 @@ fn main() -> Result<(), String> {
                 .unwrap_or(match which.as_str() {
                     "title" => 90,
                     "crash" => 220,
+                    "flat" => 200,
+                    "debug" => 130,
                     _ => 160,
                 });
         session.load_game_json(include_str!("../tests/fixtures/neon_cat_world.json"))?;
+        if which == "debug" {
+            session.set_debug(true);
+        }
         if which != "title" {
             session.start_game();
         }
         for _ in 0..frames {
             match which.as_str() {
                 "crash" => session.set_play_input(1.0, 0.0, false, false, false),
+                "flat" | "debug" => session.set_play_input(0.0, 0.0, false, false, false),
                 "play" => {
                     let steer = session.cat.as_ref().map(|run| run.script_steer());
                     if let Some((lx, jump)) = steer {
@@ -148,7 +154,15 @@ fn main() -> Result<(), String> {
             .map(|run| run.phase_name())
             .unwrap_or("missing");
         let score = session.cat.as_ref().map(|run| run.score()).unwrap_or(0);
-        println!("neon cat {which} frames={frames} phase={phase} score={score}");
+        let x = session.cat.as_ref().map(|run| run.x()).unwrap_or(0.0);
+        let death = session
+            .cat
+            .as_ref()
+            .map(|run| run.death().to_string())
+            .unwrap_or_default();
+        println!(
+            "neon cat {which} frames={frames} phase={phase} score={score} x={x:.2} death={death}"
+        );
     } else if flow {
         let which = args.next().unwrap_or_else(|| "title".into());
         let json = include_str!("../tests/fixtures/platformer_world.json");
