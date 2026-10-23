@@ -284,12 +284,17 @@ fn shadow_factor(world: vec3<f32>) -> f32 {
     let ndc = sc.xyz / sc.w;
     let uv = vec2<f32>(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
     let depth = ndc.z;
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || depth < 0.0 || depth > 1.0) {
-        return 1.0;
-    }
+    // No early return: textureSampleCompare must stay in uniform control flow.
+    // Out-of-frustum fragments still sample, then the mask restores full light.
+    let inside = select(
+        0.0,
+        1.0,
+        (uv.x >= 0.0) & (uv.x <= 1.0) & (uv.y >= 0.0) & (uv.y <= 1.0) & (depth >= 0.0) & (depth <= 1.0),
+    );
     let texel = 1.0 / 2048.0;
     let d = depth - 0.0015;
     let radius = max(g.shadow.x, 0.0);
+    var lit = 1.0;
     if (radius <= 1.01) {
         var s = 0.0;
         for (var y = -1; y <= 1; y++) {
@@ -302,24 +307,29 @@ fn shadow_factor(world: vec3<f32>) -> f32 {
                 );
             }
         }
-        return mix(0.28, 1.0, s / 9.0);
-    }
-    var acc = 0.0;
-    var wsum = 0.0;
-    let step = texel * radius;
-    for (var y = -2; y <= 2; y++) {
-        for (var x = -2; x <= 2; x++) {
-            let w = 1.0 / (1.0 + abs(f32(x)) + abs(f32(y)));
-            acc += w * textureSampleCompare(
-                shadow_tex,
-                shadow_samp,
-                uv + vec2<f32>(f32(x), f32(y)) * step,
-                d,
-            );
-            wsum += w;
+        lit = mix(0.28, 1.0, s / 9.0);
+    } else {
+        var acc = 0.0;
+        var wsum = 0.0;
+        let step = texel * radius;
+        for (var y = -2; y <= 2; y++) {
+            for (var x = -2; x <= 2; x++) {
+                let w = 1.0 / (1.0 + abs(f32(x)) + abs(f32(y)));
+                acc += w * textureSampleCompare(
+                    shadow_tex,
+                    shadow_samp,
+                    uv + vec2<f32>(f32(x), f32(y)) * step,
+                    d,
+                );
+                wsum += w;
+            }
         }
+        lit = mix(0.28, 1.0, acc / max(wsum, 1e-4));
     }
-    return mix(0.28, 1.0, acc / max(wsum, 1e-4));
+    // A compare outside the map (or a zero w) is NaN on some WebGPU devices.
+    // NaN * 0 is still NaN, so an out-of-frustum mix would blank the fragment.
+    let lit_ok = select(1.0, lit, lit == lit);
+    return mix(1.0, lit_ok, inside);
 }
 
 // mtoon2.x/y/z = sample roughness / metal / emissive map. mtoon4.z = emissive strength.
@@ -363,6 +373,22 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let mat_id = i32(in.material + 0.5);
     var alpha = in.color.a;
 
+    // WebGPU rejects textureSample after a non-uniform return or inside a
+    // fragment `if` (derivatives must be uniform). Sample every map first,
+    // then branch. Sky pixels pay for the samples and ignore them.
+    let tex = textureSample(albedo_tex, albedo_samp, in.uv);
+    let orm = textureSample(orm_tex, orm_samp, in.uv);
+    let em_map = textureSample(emissive_tex, emissive_samp, in.uv).rgb;
+    let nmap = textureSample(normal_tex, normal_samp, in.uv).rgb;
+    let n_geo = normalize(in.normal);
+    let n_mapped = normalize(n_geo + (nmap * 2.0 - 1.0) * 0.5);
+    let n_toon = normalize(mix(n_geo, n_mapped, step(0.5, in.mtoon4.w)));
+    let cap_view = normalize(g.camera_pos.xyz - in.world);
+    let cap_uv = reflect(-cap_view, n_toon).xy * 0.5 + vec2<f32>(0.5, 0.5);
+    let matcap = textureSample(matcap_tex, matcap_samp, cap_uv).rgb;
+    // Called before the sky return so the compare stays uniform on WebGPU.
+    let sh = shadow_factor(in.world);
+
     // スカイ: in.color.rgb を基準に天頂〜地平〜足元のスタジオグラデーション。
     // Linear HDR; exposure + ACES are applied by the bloom composite pass.
     if (mat_id == 3) {
@@ -375,9 +401,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         return vec4<f32>(col, 1.0);
     }
 
-    let tex = textureSample(albedo_tex, albedo_samp, in.uv);
-    let orm = textureSample(orm_tex, orm_samp, in.uv);
-    let em_map = textureSample(emissive_tex, emissive_samp, in.uv).rgb;
     if (tex.a < 0.5) {
         discard;
     }
@@ -406,17 +429,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let ldir = normalize(g.light.xyz);
     let ndl = max(dot(n, ldir), 0.0);
     let ambient = g.light.w;
-    let sh = shadow_factor(in.world);
     var lit: vec3<f32>;
     if (mat_id == 5) {
         // MToon: half-Lambert + shadeShift + toony（影 2 段階）、
         // リム（色 + fresnel power + lift）、matcap（反射 UV）、normal マップ。
         let shift = in.mtoon4.x;
-        var n2 = n;
-        if (in.mtoon4.w > 0.5) {
-            let tn = textureSample(normal_tex, normal_samp, in.uv).rgb * 2.0 - 1.0;
-            n2 = normalize(n2 + tn * 0.5);
-        }
+        let n2 = n_toon;
         let half_l = (dot(n2, ldir) * sh) * 0.5 + 0.5;
         let toony = in.mtoon.a;
         let shade_t =
@@ -429,11 +447,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             in.mtoon2.w,
         );
         lit += in.mtoon2.rgb * (fresnel + in.mtoon4.y);
-        if (in.mtoon4.z > 0.5) {
-            let r = reflect(-view_dir, n2);
-            let muv = r.xy * 0.5 + vec2<f32>(0.5, 0.5);
-            lit += textureSample(matcap_tex, matcap_samp, muv).rgb;
-        }
+        lit += matcap * step(0.5, in.mtoon4.z);
         // V2 toon IBL is irr * albedo * 0.35. Keep face from white-masking.
         lit += albedo * env_irradiance(n2) * 0.35;
     } else if (mat_id == 4) {

@@ -94,9 +94,19 @@ fn sample_lut(color: vec3<f32>) -> vec3<f32> {
     return mix(a, b, fz);
 }
 
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let cut = c <= vec3<f32>(0.0031308);
+    let lo = c * 12.92;
+    let hi = 1.055 * pow(max(c, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.4)) - 0.055;
+    return select(hi, lo, cut);
+}
+
 // params.v.x = bloom intensity, v.y = exposure, v.z = ACES on (>0.5),
 // v.w = vignette (1 = the historical curve, 0 = off).
 // params.extra.x = LUT mix after ACES. 0 skips the sample.
+// params.extra.y > 0.5 encodes sRGB in the shader. WebGPU canvases are unorm
+// (no sRGB format), so the hardware will not apply the OETF. sRGB targets
+// leave this at 0 and encode on write.
 @fragment
 fn fs_composite(in: VO) -> @location(0) vec4<f32> {
     let sharp = textureSample(t_src, s_src, in.uv);
@@ -118,6 +128,9 @@ fn fs_composite(in: VO) -> @location(0) vec4<f32> {
         c = mix(c, c * vig, v);
     } else {
         c = c * vig * mix(1.0, vig, v - 1.0);
+    }
+    if (params.extra.y > 0.5) {
+        c = linear_to_srgb(max(c, vec3<f32>(0.0)));
     }
     return vec4<f32>(c, sharp.a);
 }

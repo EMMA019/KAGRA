@@ -160,7 +160,7 @@ impl Renderer {
         width: u32,
         height: u32,
     ) -> Result<Self, String> {
-        let instance = new_instance();
+        let instance = new_instance().await;
         let surface = source.create(&instance)?;
         Self::from_surface(instance, surface, width, height).await
     }
@@ -198,15 +198,33 @@ impl Renderer {
         let mut config = surface
             .get_default_config(&adapter, width.max(1), height.max(1))
             .ok_or("surface is not supported by this adapter")?;
-        config.usage = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST;
         let caps = surface.get_capabilities(&adapter);
-        if let Some(srgb) = caps.formats.iter().copied().find(|f| f.is_srgb()) {
-            config.format = srgb;
+        // 8-bit only. An fp16 canvas is an HDR surface: Chrome tone-maps it and
+        // a 0..1 picture collapses to black on a phone. WebGPU also has no
+        // sRGB canvas format, so prefer sRGB when a backend offers it and
+        // encode in the shader otherwise.
+        config.format =
+            choose_surface_format(&caps.formats).ok_or("surface advertises no color format")?;
+        if caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::Opaque) {
+            // PreMultiplied + a clear alpha of 0 composites as "nothing" and
+            // the page looks black even though the pass ran.
+            config.alpha_mode = wgpu::CompositeAlphaMode::Opaque;
+        }
+        // WebGL2 canvases only allow RENDER_ATTACHMENT. Asking for COPY_DST
+        // makes configure fail, and the next get_current_texture aborts.
+        config.usage = wgpu::TextureUsages::RENDER_ATTACHMENT;
+        if caps.usages.contains(wgpu::TextureUsages::COPY_DST) {
+            config.usage |= wgpu::TextureUsages::COPY_DST;
         }
         surface.configure(&device, &config);
+        // Do not call get_current_texture here. On WebGPU the canvas allows one
+        // current texture per task; acquiring it and dropping it makes every
+        // later present Lost, which is a black canvas with no exception.
 
         let format = config.format;
         let (width, height) = (config.width, config.height);
+        note_surface(&adapter, &config);
+        let hdr = hdr_for_adapter(&adapter);
         Ok(Self::assemble(
             device,
             queue,
@@ -214,19 +232,21 @@ impl Renderer {
             width,
             height,
             Target::Surface { surface, config },
+            hdr,
         ))
     }
 
     /// 画面なし。テストやスクリーンショット用。
     pub async fn new_offscreen(width: u32, height: u32) -> Result<Self, String> {
-        let instance = new_instance();
-        let (_adapter, device, queue) = request_device(&instance, None).await?;
+        let instance = new_instance().await;
+        let (adapter, device, queue) = request_device(&instance, None).await?;
         let format = wgpu::TextureFormat::Rgba8UnormSrgb;
         let (width, height) = (
             width.clamp(1, MAX_TEXTURE_SIDE),
             height.clamp(1, MAX_TEXTURE_SIDE),
         );
         let texture = create_offscreen_texture(&device, format, width, height);
+        let hdr = hdr_for_adapter(&adapter);
         Ok(Self::assemble(
             device,
             queue,
@@ -234,6 +254,7 @@ impl Renderer {
             width,
             height,
             Target::Offscreen { texture },
+            hdr,
         ))
     }
 
@@ -244,7 +265,16 @@ impl Renderer {
         width: u32,
         height: u32,
         target: Target,
+        hdr: bool,
     ) -> Self {
+        if !hdr {
+            note_ldr_fallback();
+        }
+        let frame_format = if hdr {
+            bloom::HDR_FRAME_FORMAT
+        } else {
+            bloom::LDR_FRAME_FORMAT
+        };
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("kagra-shared 2d"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
@@ -698,9 +728,10 @@ impl Renderer {
             }),
         ];
 
-        // 3D は線形 HDR フレームへ（トーンは bloom composite が適用）。
+        // 3D は線形フレームへ（トーンは bloom composite が適用）。
+        // 浮動小数ターゲットが描けない端末は 8bit に落とし、ブルームは止める。
         let hdr_target = [Some(wgpu::ColorTargetState {
-            format: bloom::BLOOM_FORMAT,
+            format: frame_format,
             blend: Some(wgpu::BlendState::ALPHA_BLENDING),
             write_mask: wgpu::ColorWrites::ALL,
         })];
@@ -831,7 +862,7 @@ impl Renderer {
         let inst_capacity = 256;
         let inst_buf = create_instance_buffer(&device, inst_capacity);
         let depth = create_depth_view(&device, width, height);
-        let bloom = BloomPass::new(&device, format, width, height);
+        let bloom = BloomPass::new(&device, format, width, height, hdr);
 
         let me = Self {
             device,
@@ -883,15 +914,17 @@ impl Renderer {
     pub fn upload_mesh(&mut self, mesh: &MeshData) -> MeshId {
         let vbuf = create_init_buffer(
             &self.device,
+            &self.queue,
             "kagra-shared mesh vertices",
             bytemuck::cast_slice(&mesh.vertices),
             wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         );
         let ibuf = create_init_buffer(
             &self.device,
+            &self.queue,
             "kagra-shared mesh indices",
             bytemuck::cast_slice(&mesh.indices),
-            wgpu::BufferUsages::INDEX,
+            wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
         );
         // albedo / matcap / normal を 1 つの bind group に（無いスロットはデフォルト）。
         let tex_ok = |a: &Option<crate::scene3d::AlbedoRgba>| -> bool {
@@ -1214,6 +1247,12 @@ impl Renderer {
                     Cst::Success(f) | Cst::Suboptimal(f) => Some(f),
                     Cst::Outdated | Cst::Lost => {
                         // 回転・リサイズ直後。再構成して次フレームに任せる。
+                        // A configure the browser rejected stays Lost forever
+                        // and presents black, so say so once.
+                        note_once(&format!(
+                            "kagra: surface lost (format {:?}, {}x{})",
+                            self.format, self.width, self.height
+                        ));
                         self.reconfigure();
                         return Ok(());
                     }
@@ -1232,7 +1271,11 @@ impl Renderer {
         let view = target_texture.create_view(&Default::default());
         // 3D は線形 HDR フレームへ。Bloom が最終ターゲットへ合成し、HUD は
         // その後に重ねる（トーン後の色を保つ）。
+        // When the frame format matches the swapchain (WebGPU 8-bit, bloom
+        // off), sample-from-attachment comes back white on Chrome's WebGPU.
+        // Draw straight into the surface instead.
         let frame_view = self.bloom.frame_view();
+        let direct = self.bloom.frame_format() == self.format;
 
         let mut encoder = self
             .device
@@ -1273,7 +1316,7 @@ impl Renderer {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("kagra-shared 3d pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: frame_view,
+                    view: if direct { &view } else { frame_view },
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -1364,14 +1407,16 @@ impl Renderer {
             Some(scene) => (scene.exposure.max(0.0), scene.tonemap),
             None => (1.0, true),
         };
-        self.bloom.apply(
-            &self.device,
-            &self.queue,
-            &mut encoder,
-            (target_texture, &view),
-            exposure,
-            tonemap,
-        );
+        if !direct {
+            self.bloom.apply(
+                &self.device,
+                &self.queue,
+                &mut encoder,
+                (target_texture, &view),
+                exposure,
+                tonemap,
+            );
+        }
         // Pass 3: HUD → 最終ターゲット（トーン後の色をそのまま重ねる）。
         if !vertices.is_empty() {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1633,6 +1678,7 @@ impl Renderer {
         if need > self.meshes[i].vbuf.size() {
             self.meshes[i].vbuf = create_init_buffer(
                 &self.device,
+                &self.queue,
                 "kagra-shared mesh vertices",
                 vbytes,
                 wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
@@ -1889,10 +1935,124 @@ fn blit_hud_images(rgba: &mut [u8], width: u32, height: u32, images: &[ImageQuad
     }
 }
 
-fn new_instance() -> wgpu::Instance {
+fn note_once(msg: &str) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static ONCE: AtomicBool = AtomicBool::new(false);
+    if ONCE.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    note_renderer(msg);
+}
+
+fn note_renderer(msg: &str) {
+    #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+    web_sys::console::warn_1(&msg.into());
+    #[cfg(not(all(target_arch = "wasm32", feature = "wasm")))]
+    eprintln!("{msg}");
+}
+
+fn note_ldr_fallback() {
+    note_renderer("kagra: HDR bloom disabled, drawing an 8-bit frame");
+}
+
+fn note_surface(adapter: &wgpu::Adapter, config: &wgpu::SurfaceConfiguration) {
+    let info = adapter.get_info();
+    note_renderer(&format!(
+        "kagra: backend {} ({}) surface {:?} alpha {:?} {}x{}",
+        info.backend.to_str(),
+        info.name,
+        config.format,
+        config.alpha_mode,
+        config.width,
+        config.height
+    ));
+}
+
+/// 8-bit swapchain. Skip fp16 even when the backend lists it: that format is
+/// an HDR canvas, and a tonemapped game frame presents as black on a phone.
+fn choose_surface_format(formats: &[wgpu::TextureFormat]) -> Option<wgpu::TextureFormat> {
+    let ldr = |f: &wgpu::TextureFormat| {
+        matches!(
+            f,
+            wgpu::TextureFormat::Rgba8UnormSrgb
+                | wgpu::TextureFormat::Bgra8UnormSrgb
+                | wgpu::TextureFormat::Rgba8Unorm
+                | wgpu::TextureFormat::Bgra8Unorm
+        )
+    };
+    formats
+        .iter()
+        .copied()
+        .find(|f| f.is_srgb() && ldr(f))
+        .or_else(|| formats.iter().copied().find(ldr))
+        .or_else(|| formats.first().copied())
+}
+
+/// WebGPU's `get_texture_format_features` reports the spec guarantee, not what
+/// sampling an Rgba16Float target actually returns. Chrome's WebGPU (SwiftShader
+/// and some phone GPUs) samples that target as white and the whole frame clips.
+/// Bloom stays off there; WebGL2 still uses the float target when the
+/// extension is real.
+fn hdr_for_adapter(adapter: &wgpu::Adapter) -> bool {
+    // WebGPU reports Rgba16Float as guaranteed-filterable. Sampling that
+    // target comes back white on Chrome's WebGPU (SwiftShader and some
+    // phone GPUs) and the tonemap clips the whole frame. WebGL2 still
+    // uses the float target when the extension is actually there.
+    if adapter.get_info().backend == wgpu::Backend::BrowserWebGpu {
+        return false;
+    }
+    bloom::hdr_frame_supported(adapter)
+}
+
+/// Which browser backend `new_instance` should build. The page sets this
+/// before `attachCanvas` (`?backend=gl`, or after a blank WebGPU frame).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum GraphicsBackend {
+    Auto = 0,
+    WebGpu = 1,
+    Gl = 2,
+}
+
+static GRAPHICS_BACKEND: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+pub fn set_graphics_backend(backend: GraphicsBackend) {
+    GRAPHICS_BACKEND.store(backend as u8, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn parse_graphics_backend(name: &str) -> GraphicsBackend {
+    match name.trim().to_ascii_lowercase().as_str() {
+        "gl" | "webgl" | "webgl2" => GraphicsBackend::Gl,
+        "webgpu" | "gpu" => GraphicsBackend::WebGpu,
+        _ => GraphicsBackend::Auto,
+    }
+}
+
+fn graphics_backend() -> GraphicsBackend {
+    match GRAPHICS_BACKEND.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => GraphicsBackend::WebGpu,
+        2 => GraphicsBackend::Gl,
+        _ => GraphicsBackend::Auto,
+    }
+}
+
+async fn new_instance() -> wgpu::Instance {
     // サーフェスごとに display handle を渡すので、インスタンス側には持たせない。
     let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
-    desc.backends = wgpu::Backends::all();
+    let prefer = graphics_backend();
+    desc.backends = match prefer {
+        GraphicsBackend::Gl => wgpu::Backends::GL,
+        GraphicsBackend::WebGpu => wgpu::Backends::BROWSER_WEBGPU,
+        GraphicsBackend::Auto => wgpu::Backends::all(),
+    };
+    // wgpu 30 locks the backend at instance creation. If `navigator.gpu`
+    // exists it picks WebGPU and never falls through, then reports
+    // "gl support not compiled in" when `requestAdapter()` is null.
+    // Detecting a real adapter first lets WebGL2 start.
+    #[cfg(target_arch = "wasm32")]
+    if prefer == GraphicsBackend::Auto {
+        return wgpu::util::new_instance_with_webgpu_detection(desc).await;
+    }
     wgpu::Instance::new(desc)
 }
 
@@ -1925,6 +2085,12 @@ async fn request_device(
         })
         .await
         .map_err(|e| e.to_string())?;
+    // Validation errors on wasm otherwise become an uncatchable abort, and
+    // the page stays black. Log them; the blank-frame check can still fall
+    // back to the other backend.
+    device.on_uncaptured_error(std::sync::Arc::new(|err: wgpu::Error| {
+        note_renderer(&format!("kagra: wgpu error: {err}"));
+    }));
     Ok((adapter, device, queue))
 }
 
@@ -2163,12 +2329,19 @@ fn create_depth_view(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Te
 }
 
 /// 中身入りのバッファを作る。`wgpu::util` に頼らずに済ませる。
+///
+/// `mapped_at_creation` is avoided on purpose. Chrome's WebGPU (Pixel / Dawn)
+/// rejects even a 768-byte mesh with "size is too large when mappedAtCreation
+/// == true", and the unwrap in wgpu then kills the frame. `write_buffer` is
+/// the path those devices accept.
 fn create_init_buffer(
     device: &wgpu::Device,
+    queue: &wgpu::Queue,
     label: &str,
     data: &[u8],
     usage: wgpu::BufferUsages,
 ) -> wgpu::Buffer {
+    let usage = usage | wgpu::BufferUsages::COPY_DST;
     // サイズ 0 のバッファは作れないので、空なら最小サイズを空のまま置く。
     if data.is_empty() {
         return device.create_buffer(&wgpu::BufferDescriptor {
@@ -2178,17 +2351,21 @@ fn create_init_buffer(
             mapped_at_creation: false,
         });
     }
+    // WebGPU requires the size (and the write) to be a multiple of 4.
+    let size = (data.len() as u64).div_ceil(4) * 4;
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
-        size: data.len() as wgpu::BufferAddress,
+        size,
         usage,
-        mapped_at_creation: true,
+        mapped_at_creation: false,
     });
-    buffer
-        .get_mapped_range_mut(..)
-        .expect("freshly mapped buffer")
-        .copy_from_slice(data);
-    buffer.unmap();
+    if data.len() as u64 == size {
+        queue.write_buffer(&buffer, 0, data);
+    } else {
+        let mut padded = vec![0u8; size as usize];
+        padded[..data.len()].copy_from_slice(data);
+        queue.write_buffer(&buffer, 0, &padded);
+    }
     buffer
 }
 
@@ -2231,6 +2408,36 @@ fn quad_vertices(q: &crate::scene::Quad, format: wgpu::TextureFormat) -> [Vertex
 mod tests {
     use super::*;
 
+    fn has_implicit_sample(src: &str) -> bool {
+        src.match_indices("textureSample").any(|(i, _)| {
+            let rest = &src[i..];
+            !rest.starts_with("textureSampleLevel") && !rest.starts_with("textureSampleCompare")
+        })
+    }
+
+    #[test]
+    fn surface_format_skips_float_canvas() {
+        let webgpu = [
+            wgpu::TextureFormat::Bgra8Unorm,
+            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu::TextureFormat::Rgba16Float,
+        ];
+        assert_eq!(
+            choose_surface_format(&webgpu),
+            Some(wgpu::TextureFormat::Bgra8Unorm)
+        );
+        let gl = [
+            wgpu::TextureFormat::Rgba16Float,
+            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+        ];
+        assert_eq!(
+            choose_surface_format(&gl),
+            Some(wgpu::TextureFormat::Rgba8UnormSrgb)
+        );
+        assert_eq!(parse_graphics_backend("webgl2"), GraphicsBackend::Gl);
+    }
+
     #[test]
     fn srgb_conversion_endpoints() {
         let black = to_linear([0, 0, 0, 255], wgpu::TextureFormat::Rgba8UnormSrgb);
@@ -2271,6 +2478,32 @@ mod tests {
         assert!(src.contains("radius <= 1.01"), "legacy 3x3 shadow kernel");
         assert!(src.contains("fn env_specular"), "prefiltered env");
         assert!(src.contains("textureSampleLevel"), "explicit lod, WebGL2");
+        let fs = src.split("fn fs_main").nth(1).expect("fs_main");
+        let sky = fs.find("mat_id == 3").expect("sky branch");
+        assert!(
+            !has_implicit_sample(&fs[sky..]),
+            "textureSample after a non-uniform branch is rejected by WebGPU"
+        );
+        let shadow_call = fs.find("shadow_factor(").expect("shadow call");
+        assert!(
+            shadow_call < sky,
+            "textureSampleCompare must run before the sky return"
+        );
+        assert!(
+            src.contains("lit == lit"),
+            "NaN shadow compare must not blank the fragment"
+        );
+        assert!(
+            composite.contains("linear_to_srgb"),
+            "unorm swapchains encode sRGB in the shader"
+        );
+        let fxaa = include_str!("fxaa.wgsl");
+        let fx = fxaa.split("fn fs_main").nth(1).expect("fxaa fs");
+        let early = fx.find("l_range <").expect("fxaa early out");
+        assert!(
+            !has_implicit_sample(&fx[early..]),
+            "FXAA textureSample must stay above the contrast return"
+        );
         assert!(src.contains("hemi_sky"), "authorable hemisphere");
         assert!(!src.contains("var<storage"), "WebGL2: no storage buffers");
         // MToon 完全移植でインスタンススロットは 2..=12（mtoon2/3/4）まで使う。
@@ -2278,6 +2511,26 @@ mod tests {
             src.contains("@location(12) mtoon4"),
             "MToon instance slots wired up to 12"
         );
+    }
+
+    #[test]
+    fn hdr_frame_requires_filter_and_blend() {
+        let need = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
+        let ok = wgpu::TextureFormatFeatureFlags::FILTERABLE
+            | wgpu::TextureFormatFeatureFlags::BLENDABLE;
+        assert!(bloom::format_supports_hdr_frame(need, ok));
+        assert!(!bloom::format_supports_hdr_frame(
+            wgpu::TextureUsages::TEXTURE_BINDING,
+            ok
+        ));
+        assert!(!bloom::format_supports_hdr_frame(
+            need,
+            wgpu::TextureFormatFeatureFlags::FILTERABLE
+        ));
+        assert!(!bloom::format_supports_hdr_frame(
+            need,
+            wgpu::TextureFormatFeatureFlags::BLENDABLE
+        ));
     }
 
     #[test]

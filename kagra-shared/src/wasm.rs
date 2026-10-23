@@ -204,9 +204,22 @@ impl WasmSession {
         crate::mixer::cues_json()
     }
 
+    /// `"auto"` (default), `"webgpu"`, or `"gl"` / `"webgl2"`. Call before
+    /// `attachCanvas`. `?backend=gl` on the page forces WebGL2; a blank
+    /// WebGPU frame does the same with a fresh canvas.
+    #[cfg(feature = "render")]
+    #[wasm_bindgen(js_name = setGraphicsBackend)]
+    pub fn set_graphics_backend(&self, name: &str) {
+        let _ = self;
+        crate::render::set_graphics_backend(crate::render::parse_graphics_backend(name));
+    }
+
     /// canvas を描画先にする。WebGPU / WebGL2 のどちらかが使えれば成功する。
     ///
     /// アダプタ取得が非同期なので JS からは `await session.attachCanvas(canvas)`。
+    /// `createSurface` before this only stores the size. The canvas's own
+    /// width/height is what the swapchain is configured with, and
+    /// `attach_renderer` applies it again so a pre-attach resize is not lost.
     #[cfg(feature = "render")]
     #[wasm_bindgen(js_name = attachCanvas)]
     pub async fn attach_canvas(
@@ -317,6 +330,9 @@ pub fn wasm_start() {
     // ブラウザ console に一度だけ出す（web-sys feature）
     #[cfg(feature = "wasm")]
     {
+        std::panic::set_hook(Box::new(|info| {
+            web_sys::console::error_1(&format!("kagra panic: {info}").into());
+        }));
         web_sys::console::log_1(
             &format!("kagra-shared wasm {} ready", KAGRA_SHARED_VERSION).into(),
         );
