@@ -40,6 +40,8 @@ const CAT_FOOT: f32 = 0.30;
 /// Slide along the magenta rail. The rail, the arch, and the floor are
 /// scenery. Only a crate, barrel, or barrier ends the run.
 const LANE_LIMIT: f32 = 2.15;
+/// Arch x scale. See `push_gates`.
+const GATE_SCALE_X: f32 = 2.15;
 /// Pull the kill box in from the measured mesh so a graze survives.
 const HIT_INSET: f32 = 0.06;
 const HIT_TOP: f32 = 0.82;
@@ -784,7 +786,7 @@ impl NeonCat {
 
     /// Obstacles drawn ahead. At least `LEAD_SECS` of travel, never fewer than 4.
     fn obstacle_lead_count(&self) -> i32 {
-        ((self.speed() * LEAD_SECS / OBS_GAP).ceil() as i32 + 1).max(4)
+        ((self.speed() * LEAD_SECS / OBS_GAP).ceil() as i32 + 1).max(5)
     }
 
     /// Tunnel floor/walls reach past the farthest drawn obstacle.
@@ -1200,7 +1202,10 @@ impl NeonCat {
                 "gate",
                 GATE_GLB,
                 [0.0, 0.0, z],
-                [1.04, 0.68, 0.36],
+                // Opening is |x| < 1.12 at scale 1. 2.15 puts the pillars at
+                // |x| > 2.41, outside the lane clamp plus the cat, and they
+                // hide behind the walls. The arch stays pure decor.
+                [GATE_SCALE_X, 0.68, 0.36],
                 0.0,
                 0.0,
                 [8, 5, 14],
@@ -1757,14 +1762,14 @@ fn push_arch_frame(doc: &mut WorldDoc, index: i32, z: f32) {
     stroke(
         doc,
         &format!("arch-out-{index}"),
-        arch_polyline(z, 2.2, 1.48, 1.28, 10),
+        arch_polyline(z, 2.62, 1.48, 1.28, 10),
         [255, 48, 186, 255],
         2.4,
     );
     stroke(
         doc,
         &format!("arch-in-{index}"),
-        arch_polyline(z + 0.02, 1.9, 1.36, 1.02, 10),
+        arch_polyline(z + 0.02, 2.45, 1.36, 1.02, 10),
         [196, 90, 255, 240],
         1.5,
     );
@@ -1967,6 +1972,16 @@ mod tests {
                 assert!(!spark_inside_obstacle(&run.spawned, s.x, s.y, s.z));
             }
         }
+    }
+
+    #[test]
+    fn arch_pillars_sit_outside_the_lane() {
+        // Arch.glb inner opening half-width at scale 1.
+        let inner = 1.12 * GATE_SCALE_X;
+        assert!(
+            inner > LANE_LIMIT + 0.2,
+            "pillar at {inner} inside the lane"
+        );
     }
 
     #[test]

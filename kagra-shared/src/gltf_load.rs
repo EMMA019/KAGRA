@@ -648,20 +648,54 @@ fn sample_pose_clip_locals(skin: &SkinnedMesh, pose: &WalkerPose, t: f32) -> Vec
     blend_locals(&old, &cur, 1.0 - w)
 }
 
-fn sample_skinned_inner(
-    skin: &SkinnedMesh,
-    pose: &WalkerPose,
-    cloth: Option<(&mut crate::spring::SpringState, f32)>,
-) -> MeshData {
-    if skin.skin_joints.is_empty() && skin.mesh_node.is_some() {
-        return sample_rigid_part(skin, pose);
-    }
+/// Joints a GPU-skinned mesh may use. 64 mat4 = 4 KiB of uniform, well under
+/// the WebGL2 / phone 16 KiB uniform-block minimum.
+pub const MAX_GPU_JOINTS: usize = 64;
+
+/// Per-vertex GPU skin stream: lane k = joint index + weight (weight in
+/// [0, 1), stored as the fractional part). One RGBA32F texel per vertex, so it
+/// needs no extra vertex attribute (all 16 WebGL2 slots are taken).
+/// `None` when the mesh is unskinned or uses more than `MAX_GPU_JOINTS` joints.
+pub fn gpu_skin_stream(skin: &SkinnedMesh) -> Option<Vec<[f32; 4]>> {
     if skin.skin_joints.is_empty()
+        || skin.skin_joints.len() > MAX_GPU_JOINTS
         || skin.joints.len() != skin.rest.vertices.len()
         || skin.weights.len() != skin.rest.vertices.len()
     {
-        return skin.rest.clone();
+        return None;
     }
+    let mut out = Vec::with_capacity(skin.joints.len());
+    for (js, ws) in skin.joints.iter().zip(&skin.weights) {
+        let mut lane = [0.0f32; 4];
+        for k in 0..4 {
+            let j = js[k] as usize;
+            let w = ws[k].clamp(0.0, 0.9999);
+            if j >= MAX_GPU_JOINTS {
+                if w > 1e-8 {
+                    return None;
+                }
+                continue;
+            }
+            lane[k] = j as f32 + w;
+        }
+        out.push(lane);
+    }
+    Some(out)
+}
+
+/// Decode one `gpu_skin_stream` lane (mirror of the WGSL `skin_matrix`).
+pub fn unpack_skin_lane(v: f32) -> (usize, f32) {
+    let j = v.floor();
+    (j as usize, v - j)
+}
+
+/// True when this pose can be drawn by the GPU skin path: no morph weight and
+/// no spring-bone cloth (both stay on the CPU).
+pub fn gpu_skin_pose_ok(skin: &SkinnedMesh, pose: &WalkerPose) -> bool {
+    pose.morph.abs() < 1e-8 && skin.springs.is_empty()
+}
+
+fn posed_locals(skin: &SkinnedMesh, pose: &WalkerPose) -> Vec<NodeLocal> {
     let mut locals = match pose.clip {
         Some(tt) => {
             let clip = sample_pose_clip_locals(skin, pose, tt);
@@ -679,6 +713,43 @@ fn sample_skinned_inner(
     apply_look(skin, &mut locals, pose.look_yaw, pose.look_pitch);
     apply_hair(skin, &mut locals, pose.hair);
     apply_overlay(skin, &mut locals, pose);
+    locals
+}
+
+fn palette_from_locals(skin: &SkinnedMesh, locals: &[NodeLocal]) -> Vec<Mat4> {
+    let globals = global_pose(&skin.nodes, locals);
+    skin.skin_joints
+        .iter()
+        .enumerate()
+        .map(|(j, &node)| {
+            let g = globals.get(node).copied().unwrap_or(Mat4::IDENTITY);
+            let ibm = skin.inverse_bind.get(j).copied().unwrap_or(Mat4::IDENTITY);
+            g * ibm
+        })
+        .collect()
+}
+
+/// Joint palette (`global(joint) * inverseBind`) for `pose`, no cloth.
+/// This is what the GPU path uploads; the CPU path skins with the same mats.
+pub fn joint_palette(skin: &SkinnedMesh, pose: &WalkerPose) -> Vec<Mat4> {
+    palette_from_locals(skin, &posed_locals(skin, pose))
+}
+
+fn sample_skinned_inner(
+    skin: &SkinnedMesh,
+    pose: &WalkerPose,
+    cloth: Option<(&mut crate::spring::SpringState, f32)>,
+) -> MeshData {
+    if skin.skin_joints.is_empty() && skin.mesh_node.is_some() {
+        return sample_rigid_part(skin, pose);
+    }
+    if skin.skin_joints.is_empty()
+        || skin.joints.len() != skin.rest.vertices.len()
+        || skin.weights.len() != skin.rest.vertices.len()
+    {
+        return skin.rest.clone();
+    }
+    let mut locals = posed_locals(skin, pose);
     if let Some((sim, dt)) = cloth {
         let parents = node_parents(&skin.nodes);
         let pose_globals = global_pose(&skin.nodes, &locals);
@@ -689,13 +760,7 @@ fn sample_skinned_inner(
             }
         }
     }
-    let globals = global_pose(&skin.nodes, &locals);
-    let mut joint_mats = vec![Mat4::IDENTITY; skin.skin_joints.len()];
-    for (j, &node) in skin.skin_joints.iter().enumerate() {
-        let g = globals.get(node).copied().unwrap_or(Mat4::IDENTITY);
-        let ibm = skin.inverse_bind.get(j).copied().unwrap_or(Mat4::IDENTITY);
-        joint_mats[j] = g * ibm;
-    }
+    let joint_mats = palette_from_locals(skin, &locals);
     let mut out = skin.rest.clone();
     out.vertices.clear();
     out.vertices.reserve(skin.rest.vertices.len());
@@ -4558,5 +4623,63 @@ mod tests {
             (mid - a).length() > 1e-4 && (mid - b).length() > 1e-4,
             "mid is between"
         );
+    }
+    #[test]
+    fn joint_palette_matches_cpu_skinning() {
+        let skin = skinned_from_embedded_gltf(&walk_skinned_gltf()).expect("skin");
+        let pose = WalkerPose {
+            clip: Some(0.37),
+            anim_blend: 1.0,
+            ..WalkerPose::default()
+        };
+        let pal = joint_palette(&skin, &pose);
+        assert_eq!(pal.len(), skin.skin_joints.len());
+        let stream = gpu_skin_stream(&skin).expect("2 joints fit");
+        let cpu = sample_skinned_pose(&skin, &pose);
+        for (i, v) in skin.rest.vertices.iter().enumerate() {
+            // Same math as shader3d.wgsl skin_matrix.
+            let mut m = Mat4::ZERO;
+            let mut wsum = 0.0;
+            for lane in stream[i] {
+                let (j, w) = unpack_skin_lane(lane);
+                m += pal[j] * w;
+                wsum += w;
+            }
+            let p = (m * (1.0 / wsum)).transform_point3(Vec3::from_array(v.pos));
+            let c = Vec3::from_array(cpu.vertices[i].pos);
+            assert!((p - c).length() < 1e-3, "vertex {i}: gpu {p} cpu {c}");
+        }
+    }
+
+    #[test]
+    fn rest_pose_palette_is_identity() {
+        let skin = skinned_from_embedded_gltf(&walk_skinned_gltf()).expect("skin");
+        for m in joint_palette(&skin, &WalkerPose::default()) {
+            assert!(m.abs_diff_eq(Mat4::IDENTITY, 1e-4), "{m}");
+        }
+    }
+
+    #[test]
+    fn gpu_skin_stream_packs_and_caps() {
+        let mut skin = skinned_from_embedded_gltf(&walk_skinned_gltf()).expect("skin");
+        let s = gpu_skin_stream(&skin).unwrap();
+        for (lanes, (js, ws)) in s.iter().zip(skin.joints.iter().zip(&skin.weights)) {
+            for k in 0..4 {
+                let (j, w) = unpack_skin_lane(lanes[k]);
+                if ws[k] > 1e-6 {
+                    assert_eq!(j, js[k] as usize);
+                    assert!((w - ws[k].min(0.9999)).abs() < 1e-4);
+                }
+            }
+        }
+        skin.skin_joints = (0..MAX_GPU_JOINTS + 1).collect();
+        assert!(
+            gpu_skin_stream(&skin).is_none(),
+            "over the cap stays on CPU"
+        );
+        let mut pose = WalkerPose::default();
+        assert!(gpu_skin_pose_ok(&skin, &pose));
+        pose.morph = 0.5;
+        assert!(!gpu_skin_pose_ok(&skin, &pose), "morphs stay on CPU");
     }
 }
