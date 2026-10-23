@@ -45,8 +45,23 @@ jobs:
           set -eu
           test -f site/play.html
           test -f site/pkg/kagra_shared_bg.wasm
+          test -f site/assets.json
+          grep -q assets.json site/play.html
           # pr/ may be absent. A root-only tree is still the stable site.
           # Refusing a tree with no play.html stops an empty deploy from wiping Lumen.
+          # Refusing a tree whose play.html does not mount assets.json stops the
+          # pre-GLB root from replacing a deploy that already shipped the models.
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("site")
+          listed = json.loads((root / "assets.json").read_text(encoding="utf-8"))
+          if not isinstance(listed, list) or not listed:
+              raise SystemExit("assets.json must list the GLBs play.html mounts")
+          missing = [path for path in listed if not isinstance(path, str) or not (root / path).is_file()]
+          if missing:
+              raise SystemExit("assets.json entries missing from the tree: " + ", ".join(map(str, missing)))
+          PY
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
