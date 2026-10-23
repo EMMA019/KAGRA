@@ -30,6 +30,7 @@ pub mod game;
 pub mod game_core;
 pub mod game_spec;
 pub mod genre_session;
+pub mod gesture;
 pub mod gltf_load;
 pub mod grade;
 pub mod hot;
