@@ -193,6 +193,14 @@ impl NeonRun {
         body.to_string()
     }
 
+    /// Chase cam looks along +Z, so this is about world -X.
+    fn screen_right(&self) -> glam::Vec3 {
+        crate::scene3d::screen_right(
+            glam::Vec3::new(self.cam_x, self.cam_y + 1.28, self.z - 8.6),
+            glam::Vec3::new(self.x, self.y + 0.25, self.z + 12.0),
+        )
+    }
+
     pub fn state_json(&self) -> String {
         let next = self.passed + 1;
         let (hx, hy) = hole_center(next);
@@ -206,6 +214,8 @@ impl NeonRun {
             "y": self.y,
             "z": self.z,
             "distance": self.z.max(0.0) as u32,
+            "screen_right": self.screen_right().to_array(),
+            "screen_left": (-self.screen_right()).to_array(),
             "next_x": hx,
             "next_y": hy,
             "next_z": gate_z(next),
@@ -357,8 +367,11 @@ impl NeonRun {
         self.time += dt;
         self.boost = (self.boost - dt).max(0.0);
         let (ax, ay) = self.axis();
+        // +ax is D / stick-right. The chase camera looks along +Z, so
+        // screen-right is world -X (right-handed look-at). +Y stays up.
+        let steer_x = -ax;
         let response = 1.0 - (-dt * 7.0).exp();
-        self.vx += (ax * 6.4 - self.vx) * response;
+        self.vx += (steer_x * 6.4 - self.vx) * response;
         self.vy += (ay * 5.2 - self.vy) * response;
         self.x += self.vx * dt;
         self.y += self.vy * dt;

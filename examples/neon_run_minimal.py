@@ -114,7 +114,8 @@ class Lumen(Scene):
             return 0.0, 0.0, False
         dx = float(state["next_x"]) - float(state["x"])
         dy = float(state["next_y"]) - float(state["y"])
-        return _clamp(dx * 1.6), _clamp(dy * 1.6), False
+        # +lx is screen-right. The chase camera looks along +Z, so that is world -X.
+        return _clamp(-dx * 1.6), _clamp(dy * 1.6), False
 
     def update(self, dt: float) -> None:
         if not self._scripted:

@@ -606,3 +606,52 @@ fn studio_env_changes_a_metal_sphere() {
         "studio env should move the metal sphere, mean_abs={mean}"
     );
 }
+
+/// A box at world +X, default camera (eye +Z looking at the origin), must sit
+/// on the right half of the readback. This is the picture, not the chase-cam
+/// convention where looking along +Z puts +X on the left.
+#[test]
+fn plus_x_box_is_on_the_right_of_the_frame() {
+    let _guard = GPU.lock().unwrap_or_else(|e| e.into_inner());
+    let doc = kagra_shared::WorldDoc::from_json(
+        r#"{"version":1,"ground":false,"sky":[8,10,16,255],"ibl":0.0,"exposure":1.0,"tonemap":false,"bloom":0.0,"vignette":0.0,"fxaa":false,"cameras":[{"id":"c","type":"camera","position":[0.0,2.0,6.0],"target":[0.0,0.0,0.0],"fov":50.0}],"lights":[{"id":"l","type":"light","slot":0,"position":[0.0,4.0,2.0],"intensity":2.0,"radius":30.0,"color":[1.0,1.0,1.0]}],"props":[{"id":"plus","type":"prop","model":"box","name":"plusx","position":[1.6,0.0,0.0],"scale":[0.7,0.7,0.7],"color":[230,24,24],"emissive":3.0,"emissive_color":[1.0,0.05,0.05]},{"id":"minus","type":"prop","model":"box","name":"minusx","position":[-1.6,0.0,0.0],"scale":[0.7,0.7,0.7],"color":[24,48,230],"emissive":3.0,"emissive_color":[0.05,0.15,1.0]}]}"#,
+    )
+    .expect("screen-right world");
+    let Ok(rgba) = kagra_shared::render_world_doc(&doc, W, H) else {
+        eprintln!("no GPU adapter; skipping +X screen-right pixel test");
+        return;
+    };
+    let red = color_centroid(&rgba, W, H, |p| {
+        let (r, g, b) = (p[0] as i32, p[1] as i32, p[2] as i32);
+        r > 120 && r > b + 35 && r > g + 20
+    });
+    let blue = color_centroid(&rgba, W, H, |p| {
+        let (r, b) = (p[0] as i32, p[2] as i32);
+        b > 120 && b > r + 35
+    });
+    let (Some(red), Some(blue)) = (red, blue) else {
+        panic!("could not find the +X (red) and -X (blue) boxes");
+    };
+    assert!(
+        red > blue + 4.0 && red > W as f32 * 0.5 && blue < W as f32 * 0.5,
+        "+X box must be on the right of the frame, red_x={red} blue_x={blue} width={W}"
+    );
+}
+
+fn color_centroid(rgba: &[u8], w: u32, h: u32, pred: impl Fn([u8; 4]) -> bool) -> Option<f32> {
+    let mut n = 0u32;
+    let mut sum = 0u32;
+    for y in 0..h {
+        for x in 0..w {
+            if pred(pixel(rgba, w, x, y)) {
+                n += 1;
+                sum += x;
+            }
+        }
+    }
+    if n < 6 {
+        None
+    } else {
+        Some(sum as f32 / n as f32)
+    }
+}

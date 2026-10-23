@@ -34,6 +34,28 @@
 
 Rust errors surface as `[CODE] message` (see `KaguraError::code`).
 
+## Coordinate system
+
+Right-handed, Y up. View is `look_at_rh`; projection NDC is +x right, +y up.
+Screenshot readback copies rows in order and does not flip X.
+
+World +X is the right side of the frame only when the camera looks toward
+-Z. The default camera (eye `(0, 2, 6)`, target the origin) does. A chase
+camera looking along +Z — the usual "forward is +Z" setup — has
+`screen_right = -X`. `D`, `ArrowRight`, and `+lx` move toward that
+`screen_right` vector, not toward world +X.
+
+`WorldDoc::to_json` writes `coordinates` (`handedness`, `up`, `note`) and,
+on every camera, `screen_right` / `screen_left` (world-space unit vectors).
+`from_json` ignores those derived fields. Python `kagra.annotate_dump`
+writes the same keys, and `render_rgba` stamps them onto the world dict
+before it serializes. Helpers: `kagra.screen_right` / `screen_left` /
+`screen_basis` / `wish_world`, and Rust `scene3d::screen_right_xyz` /
+`wish_world_xz`.
+
+2D HUD pixels start at the top-left (+x right, +y down). glTF/VRM bind
+poses face -Z (model right hand is +X). Walker yaw 0 moves toward +Z.
+
 ## Genres
 
 Rust `GenreSession` (rules in Rust, Python is the shell). Smoke JSON is under `examples/verify_scenarios/`.

@@ -19,8 +19,9 @@ def test_closer_is_louder_than_far():
 
 
 def test_right_source_pans_right():
+    # Looking along +Z, screen-right is world -X (same as look_at_rh).
     gain, pan, left, right = sp.spatial_mix(
-        0, 0, 0, 0, 0, 1, 4, 0, 0, ref_distance=4, max_distance=48,
+        0, 0, 0, 0, 0, 1, -4, 0, 0, ref_distance=4, max_distance=48,
     )
     assert pan > 0.9
     assert right > left
@@ -29,8 +30,9 @@ def test_right_source_pans_right():
 
 
 def test_left_source_pans_left():
+    # Looking along +Z, screen-left is world +X.
     gain, pan, left, right = sp.spatial_mix(
-        0, 0, 0, 0, 0, 1, -8, 0, 0, ref_distance=4, max_distance=48,
+        0, 0, 0, 0, 0, 1, 8, 0, 0, ref_distance=4, max_distance=48,
     )
     assert pan < -0.9
     assert left > right
@@ -58,15 +60,15 @@ def test_coincident_is_full_and_centered():
 
 
 def test_circling_changes_left_right():
-    """Walk a circle in XZ: pan sweeps -1 → 0 → +1 → 0."""
+    """Circle in XZ while looking +Z: back, +X (left), front, -X (right)."""
     pans = []
     for ang in (math.pi, math.pi * 0.5, 0.0, -math.pi * 0.5):
         x = 4.0 * math.sin(ang)
         z = 4.0 * math.cos(ang)
         _g, pan, _l, _r = sp.spatial_mix(0, 0, 0, 0, 0, 1, x, 0, z)
         pans.append(pan)
-    # +Z front, +X right, -Z back, -X left
+    # +Z front, +X screen-left, -Z back, -X screen-right (looking +Z).
     assert abs(pans[0]) < 0.05  # behind, no HRTF rear
-    assert pans[1] > 0.9
+    assert pans[1] < -0.9
     assert abs(pans[2]) < 0.05
-    assert pans[3] < -0.9
+    assert pans[3] > 0.9

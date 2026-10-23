@@ -12,7 +12,7 @@ AVAudioEngine / Web Audio が担当するので、ここでは触らない。
     se("coin")          # プリセット SE（キャッシュ済み）
     play_wav(tone(880, 0.08, wave="sine"))   # 任意トーン
     set_listener(0, 0, 0, 0, 0, 1)           # 聞き手を置く（前 = +Z）
-    play_se("coin", x=5, y=0, z=0)           # 右から聞こえる（距離減衰 + パン）
+    play_se("coin", x=-5, y=0, z=0)          # 画面の右（+Z を見ると world -X）
 """
 from __future__ import annotations
 

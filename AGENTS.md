@@ -46,6 +46,33 @@ a game **without a human looking at the screen**.
    before/after screenshots. The overlay is debug / preview only
    (3-finger long-press or F12). It does not embed a token.
 
+## Coordinate system
+
+Right-handed, Y up. The framebuffer is not mirrored: NDC +x is the right
+edge, and screenshot readback does not flip X.
+
+World +X is screen-right **only when the camera looks toward -Z**. The
+default camera (eye `(0, 2, 6)`, target origin) does that, so a prop at
++X appears on the right of the frame and +Y is up. A chase camera that
+looks along +Z (behind a yaw-0 actor; move-forward is +Z) has
+`screen_right = -X` and `screen_left = +X`. Treating "+Z forward, +X
+right" as one rule is the mix-up that reverses left and right.
+
+`D`, `ArrowRight`, and `+lx` mean **screen-right**, not world +X. `A` /
+`ArrowLeft` / `-lx` mean screen-left. `W` / `+lz` moves into the frame.
+Use `kagra.screen_right(eye, target)`, `kagra.screen_left(...)`, and
+`kagra.wish_world(lx, lz, eye, target)` (Rust: `screen_right_xyz` /
+`wish_world_xz`) instead of hard-coding ±X.
+
+Every world dump names the sides. `coordinates.note` states this rule,
+and each camera carries `screen_right` and `screen_left` as world-space
+unit vectors. Read those fields. Do not infer the side from the sign of X.
+
+2D HUD pixels start at the top-left: +x is right, +y is down.
+glTF / VRM bind poses face -Z (the model's right hand is +X). A walker
+at yaw 0 moves toward +Z, so that bind-pose front points along -Z.
+Do not add π to every mesh yaw to "fix" it.
+
 ## Commands
 
 ```bash

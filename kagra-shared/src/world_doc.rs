@@ -522,7 +522,10 @@ fn light_type() -> String {
 }
 
 /// Camera record (`camera:main`). `fov` is degrees, matching Python `fov_deg`.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+///
+/// Dumps also write `screen_right` / `screen_left` (world-space unit vectors).
+/// Those are derived from position→target; they are not stored.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 pub struct WorldCamera {
     pub id: String,
     #[serde(rename = "type", default = "camera_type")]
@@ -537,8 +540,82 @@ pub struct WorldCamera {
     pub fov: f32,
 }
 
+/// One sentence an agent can read without guessing which world axis is which
+/// side of the frame. Kept in the dump next to each camera's vectors.
+pub const COORDINATE_NOTE: &str = "Right-handed, Y up. World +X is screen-right only when the camera looks toward -Z. The default camera sits at (0, 2, 6) looking at the origin, so +X is the right side of the frame and +Y is up. A chase camera looking along +Z (behind a yaw-0 actor; move-forward is +Z) has screen_right = -X and screen_left = +X. D, ArrowRight, and +lx mean screen-right, not world +X. Each camera's screen_right and screen_left are world-space unit vectors. 2D HUD pixels start at the top-left; +x is right and +y is down. glTF/VRM bind poses face -Z (the model's right hand is +X).";
+
+#[derive(Serialize)]
+struct WorldCameraDump<'a> {
+    id: &'a str,
+    #[serde(rename = "type")]
+    kind: &'a str,
+    name: &'a str,
+    position: [f32; 3],
+    target: [f32; 3],
+    fov: f32,
+    screen_right: [f32; 3],
+    screen_left: [f32; 3],
+}
+
+fn json_axis(v: f32) -> f32 {
+    if v == 0.0 {
+        0.0
+    } else {
+        v
+    }
+}
+
+fn json_vec3(v: Vec3) -> [f32; 3] {
+    let a = v.to_array();
+    [json_axis(a[0]), json_axis(a[1]), json_axis(a[2])]
+}
+
+impl Serialize for WorldCamera {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let right = crate::scene3d::screen_right(
+            Vec3::from_array(self.position),
+            Vec3::from_array(self.target),
+        );
+        WorldCameraDump {
+            id: &self.id,
+            kind: &self.kind,
+            name: &self.name,
+            position: self.position,
+            target: self.target,
+            fov: self.fov,
+            screen_right: json_vec3(right),
+            screen_left: json_vec3(-right),
+        }
+        .serialize(serializer)
+    }
+}
+
 fn camera_type() -> String {
     "camera".into()
+}
+
+/// Put `coordinates` at the top of a pretty-printed dump without re-encoding
+/// the rest of the document.
+fn insert_coordinate_note(body: &str) -> String {
+    let coords = serde_json::json!({
+        "handedness": "right",
+        "up": [0.0, 1.0, 0.0],
+        "note": COORDINATE_NOTE,
+    });
+    let pretty = serde_json::to_string_pretty(&coords).unwrap_or_else(|_| "{}".into());
+    let mut block = String::from("\n  \"coordinates\": ");
+    for (i, line) in pretty.lines().enumerate() {
+        if i == 0 {
+            block.push_str(line);
+        } else {
+            block.push_str("\n  ");
+            block.push_str(line);
+        }
+    }
+    let Some(rest) = body.strip_prefix('{') else {
+        return body.to_string();
+    };
+    format!("{{{block},{rest}")
 }
 
 fn default_fov() -> f32 {
@@ -628,12 +705,21 @@ impl WorldDoc {
     }
 
     /// Emit world dump JSON. GPU mesh ids / draw batches are not written.
+    ///
+    /// Each camera gains `screen_right` / `screen_left`, and the document
+    /// gains a `coordinates` note, so a reader does not have to guess which
+    /// world axis is which side of the frame. Both are derived; `from_json`
+    /// ignores them.
     pub fn to_json(&self) -> Result<String, String> {
         let mut out = self.clone();
         if out.version == 0 {
             out.version = WORLD_DUMP_VERSION;
         }
-        serde_json::to_string_pretty(&out).map_err(|e| e.to_string())
+        // Serialize the struct directly so f32 text stays the same as before.
+        // `coordinates` is spliced in afterwards; a trip through `Value` would
+        // reprint every float.
+        let body = serde_json::to_string_pretty(&out).map_err(|e| e.to_string())?;
+        Ok(insert_coordinate_note(&body))
     }
 
     /// Bloom intensity for `render_world_doc`. None in the dump means off.

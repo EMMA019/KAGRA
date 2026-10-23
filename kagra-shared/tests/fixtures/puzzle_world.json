@@ -1,4 +1,13 @@
 {
+  "coordinates": {
+    "handedness": "right",
+    "note": "Right-handed, Y up. World +X is screen-right only when the camera looks toward -Z. The default camera sits at (0, 2, 6) looking at the origin, so +X is the right side of the frame and +Y is up. A chase camera looking along +Z (behind a yaw-0 actor; move-forward is +Z) has screen_right = -X and screen_left = +X. D, ArrowRight, and +lx mean screen-right, not world +X. Each camera's screen_right and screen_left are world-space unit vectors. 2D HUD pixels start at the top-left; +x is right and +y is down. glTF/VRM bind poses face -Z (the model's right hand is +X).",
+    "up": [
+      0.0,
+      1.0,
+      0.0
+    ]
+  },
   "version": 1,
   "genre": "puzzle",
   "half": 8.0,
@@ -517,7 +526,17 @@
         0.25,
         0.0
       ],
-      "fov": 40.0
+      "fov": 40.0,
+      "screen_right": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "screen_left": [
+        -1.0,
+        0.0,
+        0.0
+      ]
     }
   ],
   "heightfield": null,

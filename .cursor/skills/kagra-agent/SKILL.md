@@ -20,6 +20,17 @@ description: >-
 5. **Repro playtest issues first.** `python scripts/repro_issue.py <issue or block>`
    before editing a 「直してここ」 report, then attach before/after screenshots.
 
+## Coordinate system
+
+Right-handed, Y up. The picture is not mirrored. World +X is screen-right
+only when the camera looks toward -Z (the default camera: eye `(0, 2, 6)`,
+target origin). A chase camera looking along +Z has `screen_right = -X`.
+`D` / `ArrowRight` / `+lx` means screen-right, not world +X.
+Call `kagra.screen_right(eye, target)` / `kagra.wish_world(lx, lz, eye, target)`.
+World dumps include `coordinates.note` plus each camera's `screen_right` and
+`screen_left`. Read those. HUD pixels are top-left, +x right, +y down.
+glTF/VRM bind faces -Z; yaw 0 walks toward +Z.
+
 ## Commands
 
 ```bash
