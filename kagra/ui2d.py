@@ -44,6 +44,8 @@ __all__ = [
     "scroll_window",
     "paged_menu",
     "image",
+    "nine_slice",
+    "styled_button",
 ]
 
 _WHITE = [255, 255, 255, 255]
@@ -445,3 +447,91 @@ def paged_menu(
     out["_page"] = page
     out["_pages"] = pages
     return out
+
+
+def _box(x: float, y: float, w: float, h: float, color) -> dict[str, Any] | None:
+    if w <= 0.0 or h <= 0.0:
+        return None
+    return {"x": float(x), "y": float(y), "w": float(w), "h": float(h), "color": list(color)}
+
+
+def nine_slice(
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    slice_px: float = 8.0,
+    fill=(18, 16, 32, 220),
+    border=(120, 220, 230, 255),
+    *,
+    shadow: tuple[float, float, int] = (3.0, 4.0, 90),
+) -> dict[str, Any]:
+    """Nine quads. Corners stay ``slice_px``; the edges and center stretch.
+
+    ``shadow`` is ``(dx, dy, alpha)``. Alpha 0 skips the drop shadow.
+    The rim uses ``border`` and the center uses ``fill``. Games can call
+    this without knowing which scene they are in.
+    """
+    w = float(w)
+    h = float(h)
+    s = max(0.0, float(slice_px))
+    s = min(s, w * 0.5, h * 0.5)
+    quads: list[dict[str, Any]] = []
+    dx, dy, alpha = shadow
+    if int(alpha) > 0:
+        shade = _box(x + float(dx), y + float(dy), w, h, [0, 0, 0, int(alpha)])
+        if shade is not None:
+            quads.append(shade)
+    rim = list(border)
+    core = list(fill)
+    for piece in (
+        _box(x, y, s, s, rim),
+        _box(x + w - s, y, s, s, rim),
+        _box(x, y + h - s, s, s, rim),
+        _box(x + w - s, y + h - s, s, s, rim),
+        _box(x + s, y, w - 2.0 * s, s, rim),
+        _box(x + s, y + h - s, w - 2.0 * s, s, rim),
+        _box(x, y + s, s, h - 2.0 * s, rim),
+        _box(x + w - s, y + s, s, h - 2.0 * s, rim),
+        _box(x + s, y + s, w - 2.0 * s, h - 2.0 * s, core),
+    ):
+        if piece is not None:
+            quads.append(piece)
+    return {"quads": quads, "texts": []}
+
+
+def styled_button(
+    label: str,
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    *,
+    pressed: bool = False,
+    size: float = 14.0,
+) -> dict[str, Any]:
+    """Rounded-feel 9-slice button with a drop shadow and a centered label.
+
+    ``pressed`` drops the shadow and shifts the face down.
+    """
+    shift = 2.0 if pressed else 0.0
+    shadow = (0.0, 0.0, 0) if pressed else (3.0, 4.0, 90)
+    body = nine_slice(
+        x,
+        y + shift,
+        w,
+        h,
+        slice_px=min(8.0, h * 0.35),
+        fill=(24, 18, 40, 230) if not pressed else (40, 28, 64, 240),
+        border=(140, 255, 255, 255) if not pressed else (255, 120, 190, 255),
+        shadow=shadow,
+    )
+    text = {
+        "text": str(label),
+        "x": float(x) + float(w) * 0.5,
+        "y": float(y) + shift + max(0.0, (float(h) - float(size)) * 0.5),
+        "size": float(size),
+        "align": "center",
+        "color": [245, 255, 255, 255],
+    }
+    return merge(body, {"texts": [text]})

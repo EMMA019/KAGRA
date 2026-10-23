@@ -3,9 +3,10 @@
 //!
 //! 埋め込みフォントは PixelMplus（M+ FONT LICENSE、自由に使用・再配布可、
 //! JIS 第1・2水準の漢字 + Latin-1 収録）: `assets/PixelMplus10-Regular.ttf`。
-//! グリフは `ab_glyph`（純 Rust）でラスタライズし、カバレッジ画素を 1px の
-//! `Quad` に展開する。テクスチャ / シェーダーの追加は不要で、既存の
-//! 2D HUD パスがそのまま文字を描く。
+//! グリフは `ab_glyph`（純 Rust）で表示サイズの 2 倍にラスタライズし、
+//! カバレッジ画素を 0.5px の `Quad` に展開する。1px 四方の画素文字より
+//! 縁が細い。テクスチャ / シェーダーの追加は不要で、既存の 2D HUD パスが
+//! そのまま文字を描く。
 
 use std::collections::HashMap;
 
@@ -13,6 +14,10 @@ use ab_glyph::{Font as _, ScaleFont}; // as_scaled(Font) / glyph_id・h_advance(
 use once_cell::sync::Lazy;
 
 use crate::scene::{Quad, TextAlign, TextQuad};
+
+/// Raster scale. Quads are `1 / TEXT_SUPERSAMPLE` pixels so edges are finer
+/// than the old 1px coverage stamps. Still ab_glyph coverage, not an SDF.
+const TEXT_SUPERSAMPLE: u32 = 2;
 
 /// 埋め込みフォント（M+ ライセンス: 日本語フォールバック）。
 pub const DEFAULT_FONT_BYTES: &[u8] = include_bytes!("../assets/PixelMplus10-Regular.ttf");
@@ -117,7 +122,7 @@ impl TextRaster {
         max_w
     }
 
-    /// TextQuad を Quad の列に展開する。点灯画素 1 つ = 1px の Quad。
+    /// TextQuad を Quad の列に展開する。点灯画素 1 つ = 0.5px の Quad。
     pub fn text_quads(&mut self, tq: &TextQuad) -> Vec<Quad> {
         let size = tq.size.max(1.0);
         let scaled = UI_FONT.as_scaled(size);
@@ -136,8 +141,18 @@ impl TextRaster {
             for ch in line.chars() {
                 let advance = char_advance(ch, size);
                 if ch != ' ' {
-                    if let Some(cov) = self.coverage(ch, size.round() as u32) {
-                        out.extend(coverage_quads(cov, col.round(), line_base_y, tq.color));
+                    let raster_px = (size.round() as u32)
+                        .saturating_mul(TEXT_SUPERSAMPLE)
+                        .max(TEXT_SUPERSAMPLE);
+                    if let Some(cov) = self.coverage(ch, raster_px) {
+                        let step = 1.0 / TEXT_SUPERSAMPLE as f32;
+                        out.extend(coverage_quads(
+                            cov,
+                            col.round(),
+                            line_base_y,
+                            tq.color,
+                            step,
+                        ));
                     }
                 }
                 col += advance;
@@ -148,7 +163,7 @@ impl TextRaster {
     }
 }
 
-fn coverage_quads(cov: &Coverage, x: f32, y: f32, color: [u8; 4]) -> Vec<Quad> {
+fn coverage_quads(cov: &Coverage, x: f32, y: f32, color: [u8; 4], step: f32) -> Vec<Quad> {
     let mut out = Vec::with_capacity(cov.pixels.len());
     for py in 0..cov.h {
         for px in 0..cov.w {
@@ -161,10 +176,10 @@ fn coverage_quads(cov: &Coverage, x: f32, y: f32, color: [u8; 4]) -> Vec<Quad> {
                 continue;
             }
             out.push(Quad::new(
-                x + cov.dx + px as f32,
-                y + cov.dy + py as f32,
-                1.0,
-                1.0,
+                x + (cov.dx + px as f32) * step,
+                y + (cov.dy + py as f32) * step,
+                step,
+                step,
                 [color[0], color[1], color[2], alpha],
             ));
         }
@@ -216,8 +231,8 @@ mod tests {
         let qs = r.text_quads(&TextQuad::new("A", 0.0, 0.0, 16.0, [255, 255, 255, 255]));
         assert!(!qs.is_empty(), "A must produce pixel quads");
         for q in &qs {
-            assert_eq!(q.w, 1.0);
-            assert_eq!(q.h, 1.0);
+            assert!((q.w - 0.5).abs() < 1e-4, "coverage quads are half a pixel");
+            assert!((q.h - 0.5).abs() < 1e-4);
         }
     }
 

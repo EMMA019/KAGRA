@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **94**
+エントリ数: **96**
 
 棚の**手前**は shared wgpu 30（WorldDoc / WorldPlay / gameloop）。
 棚の**奥**は再エクスポートの余り。旧 RendererV2 API は `old/`。
@@ -99,6 +99,7 @@
 | `annotate_dump` | `export annotate_dump  (from kagra.axes)` |
 | `fat_line` | `export fat_line  (from kagra.strokes)` |
 | `mixer_state` | `export mixer_state  (from kagra.audio)` |
+| `nine_slice` | `export nine_slice  (from kagra.ui2d)` |
 | `play_bgm` | `export play_bgm  (from kagra.audio)` |
 | `play_sfx` | `export play_sfx  (from kagra.audio)` |
 | `point_cloud` | `export point_cloud  (from kagra.strokes)` |
@@ -109,6 +110,7 @@
 | `set_group_volume` | `export set_group_volume  (from kagra.audio)` |
 | `set_mute` | `export set_mute  (from kagra.audio)` |
 | `stop_bgm` | `export stop_bgm  (from kagra.audio)` |
+| `styled_button` | `export styled_button  (from kagra.ui2d)` |
 | `wish_world` | `export wish_world  (from kagra.axes)` |
 
 ## Agent notes
