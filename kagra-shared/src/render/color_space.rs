@@ -64,14 +64,72 @@ pub(super) fn aces_narkowicz(x: f32) -> f32 {
     (n / d).clamp(0.0, 1.0)
 }
 
-/// Exposure, optional ACES, then the sRGB OETF. Matches `present_rgb` and the
-/// composite shader for a flat clear (no bloom, no LUT, vignette 0).
-pub(super) fn grade_authored(color: [u8; 4], exposure: f32, tonemap: bool) -> [f32; 4] {
+fn mul3(m: [[f32; 3]; 3], v: [f32; 3]) -> [f32; 3] {
+    [
+        m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2],
+        m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2],
+        m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2],
+    ]
+}
+
+/// AgX-style curve: published inset, log2, a smoothstep, published outset.
+/// The matrices are Troy Sobotka's AgX base. The curve between them is original
+/// and matches `agx_tonemap` in the shaders. Not a copy of three.js.
+pub(super) fn agx_rgb(rgb: [f32; 3]) -> [f32; 3] {
+    const INSET: [[f32; 3]; 3] = [
+        [0.85662715, 0.09512124, 0.048251606],
+        [0.13731897, 0.761242, 0.10143904],
+        [0.11189821, 0.07679942, 0.81130236],
+    ];
+    const OUTSET: [[f32; 3]; 3] = [
+        [1.1271006, -0.11060664, -0.016493939],
+        [-0.14132977, 1.1578238, -0.016493939],
+        [-0.14132977, -0.11060664, 1.2519364],
+    ];
+    let c = mul3(INSET, rgb.map(|x| x.max(0.0)));
+    let mapped = c.map(|x| {
+        let y = (x.max(1e-10).log2() + 12.47393) / (4.026069 + 12.47393);
+        let t = y.clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
+    });
+    mul3(OUTSET, mapped).map(|x| x.clamp(0.0, 1.0))
+}
+
+/// Khronos PBR Neutral. Same constants as `neutral_tonemap` in the shaders.
+pub(super) fn neutral_rgb(mut color: [f32; 3]) -> [f32; 3] {
+    const START: f32 = 0.76;
+    const DESAT: f32 = 0.15;
+    let x = color[0].min(color[1]).min(color[2]);
+    let offset = if x < 0.08 { x - 6.25 * x * x } else { 0.04 };
+    color = color.map(|c| c - offset);
+    let peak = color[0].max(color[1]).max(color[2]);
+    if peak < START {
+        return color.map(|c| c.max(0.0));
+    }
+    let d = 1.0 - START;
+    let new_peak = 1.0 - d * d / (peak + d - START);
+    let scale = new_peak / peak.max(1e-6);
+    color = color.map(|c| c * scale);
+    let g = 1.0 - 1.0 / (DESAT * (peak - new_peak) + 1.0);
+    color
+        .map(|c| c + (new_peak - c) * g)
+        .map(|c| c.clamp(0.0, 1.0))
+}
+
+/// Exposure, optional curve, then the sRGB OETF. `curve` is 0 ACES, 1 AgX, 2 Neutral.
+/// Matches `present_rgb` and the composite shader for a flat clear (no bloom, no LUT, vignette 0).
+pub(super) fn grade_curve(color: [u8; 4], exposure: f32, tonemap: bool, curve: f32) -> [f32; 4] {
     let lin = srgb_u8_to_linear(color);
     let e = exposure.max(0.0);
     let mut rgb = [lin[0] * e, lin[1] * e, lin[2] * e];
     if tonemap {
-        rgb = rgb.map(aces_narkowicz);
+        rgb = if curve > 1.5 {
+            neutral_rgb(rgb)
+        } else if curve > 0.5 {
+            agx_rgb(rgb)
+        } else {
+            rgb.map(aces_narkowicz)
+        };
     }
     [
         linear_channel_to_srgb(rgb[0]),
@@ -81,15 +139,26 @@ pub(super) fn grade_authored(color: [u8; 4], exposure: f32, tonemap: bool) -> [f
     ]
 }
 
+/// Exposure, optional ACES, then the sRGB OETF.
+#[allow(dead_code)]
+pub(super) fn grade_authored(color: [u8; 4], exposure: f32, tonemap: bool) -> [f32; 4] {
+    grade_curve(color, exposure, tonemap, 0.0)
+}
+
 #[cfg(test)]
-pub(super) fn reference_byte(color: [u8; 4], exposure: f32, tonemap: bool) -> [u8; 4] {
-    let g = grade_authored(color, exposure, tonemap);
+pub(super) fn reference_curve(color: [u8; 4], exposure: f32, tonemap: bool, curve: f32) -> [u8; 4] {
+    let g = grade_curve(color, exposure, tonemap, curve);
     [
         (g[0].clamp(0.0, 1.0) * 255.0).round() as u8,
         (g[1].clamp(0.0, 1.0) * 255.0).round() as u8,
         (g[2].clamp(0.0, 1.0) * 255.0).round() as u8,
         color[3],
     ]
+}
+
+#[cfg(test)]
+pub(super) fn reference_byte(color: [u8; 4], exposure: f32, tonemap: bool) -> [u8; 4] {
+    reference_curve(color, exposure, tonemap, 0.0)
 }
 
 /// True when the 3D pass writes the swapchain and the hardware will not encode.
@@ -216,5 +285,24 @@ mod tests {
         assert_eq!(color[3], 255);
         let data = box_downsample(&[128, 128, 255, 255, 128, 128, 255, 255], 2, 1, false);
         assert_eq!(&data[..4], &[128, 128, 255, 255]);
+    }
+
+    #[test]
+    fn agx_and_neutral_stay_in_range_and_leave_aces() {
+        let hot = [4.0, 0.15, 0.05];
+        let aces = hot.map(aces_narkowicz);
+        let agx = agx_rgb(hot);
+        let neutral = neutral_rgb(hot);
+        for c in agx.into_iter().chain(neutral) {
+            assert!((0.0..=1.0).contains(&c), "{c}");
+        }
+        assert!((agx[0] - aces[0]).abs() > 0.02, "agx {agx:?} aces {aces:?}");
+        assert!(neutral[0] <= 1.0);
+        let dim = neutral_rgb([0.2, 0.1, 0.05]);
+        assert!(
+            (dim[0] - 0.2).abs() < 0.08,
+            "neutral should barely move a dark color {dim:?}"
+        );
+        assert!(agx_rgb([0.0, 0.0, 0.0]).iter().all(|c| *c < 0.05));
     }
 }

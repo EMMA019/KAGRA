@@ -474,6 +474,7 @@ impl BloomPass {
         target: (&wgpu::Texture, &wgpu::TextureView),
         exposure: f32,
         tonemap: bool,
+        tonemap_code: f32,
         vignette_override: Option<f32>,
         to_target: bool,
     ) {
@@ -573,7 +574,7 @@ impl BloomPass {
                 vignette,
                 self.lut_strength,
                 if self.encode_srgb { 1.0 } else { 0.0 },
-                0.0,
+                if tonemap { tonemap_code } else { 0.0 },
                 0.0,
             ],
         );

@@ -315,6 +315,8 @@ impl DrivingScene {
             ibl: 0.35,
             exposure: 1.0,
             tonemap: true,
+            tonemap_code: 0.0,
+            sky_atmosphere: false,
             shadow_softness: 1.0,
             shadow_cascades: 1,
             shadow_pcss: false,
