@@ -2624,7 +2624,8 @@ fn texture_by_index(doc: &GltfFile, blobs: &[Vec<u8>], tex: usize) -> Option<Alb
     decode_raster(&bytes).ok()
 }
 
-/// PNG stays on the `png` crate. JPEG is the other glTF image the samples use.
+/// PNG stays on the `png` crate. JPEG and WebP go through `image` with
+/// default features off (`zune-jpeg` and `image-webp`, no rayon).
 fn decode_raster(bytes: &[u8]) -> Result<AlbedoRgba, String> {
     if bytes.starts_with(b"\x89PNG") {
         return decode_png(bytes);
@@ -2632,12 +2633,22 @@ fn decode_raster(bytes: &[u8]) -> Result<AlbedoRgba, String> {
     if bytes.len() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF {
         return decode_jpeg(bytes);
     }
+    if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        return decode_webp(bytes);
+    }
     decode_png(bytes)
 }
 
 fn decode_jpeg(bytes: &[u8]) -> Result<AlbedoRgba, String> {
-    let img = image::load_from_memory_with_format(bytes, image::ImageFormat::Jpeg)
-        .map_err(|e| e.to_string())?;
+    decode_image_format(bytes, image::ImageFormat::Jpeg)
+}
+
+fn decode_webp(bytes: &[u8]) -> Result<AlbedoRgba, String> {
+    decode_image_format(bytes, image::ImageFormat::WebP)
+}
+
+fn decode_image_format(bytes: &[u8], format: image::ImageFormat) -> Result<AlbedoRgba, String> {
+    let img = image::load_from_memory_with_format(bytes, format).map_err(|e| e.to_string())?;
     let rgba = img.to_rgba8();
     let (width, height) = rgba.dimensions();
     Ok(AlbedoRgba {
@@ -3189,6 +3200,27 @@ mod tests {
         let b = mesh.bounds();
         assert!((b.min + Vec3::splat(0.5)).length() < 1e-3);
         assert!((b.max - Vec3::splat(0.5)).length() < 1e-3);
+    }
+
+    /// 1×1 lossless WebP (Pillow). The albedo texel is the image, not a fallback.
+    #[test]
+    fn webp_base_color_decodes() {
+        let webp = "UklGRh4AAABXRUJQVlA4TBEAAAAvAAAAAAdQhXLXo/+BiOh/AAA=";
+        let cube = unit_cube_gltf();
+        let with = cube.replacen("\"mode\": 4", "\"mode\": 4, \"material\": 0", 1);
+        let trimmed = with.trim_end().trim_end_matches('}');
+        let json = format!(
+            "{trimmed}, \"materials\": [{{\"pbrMetallicRoughness\": {{\"baseColorTexture\": {{\"index\": 0}}}}}}], \"textures\": [{{\"source\": 0}}], \"images\": [{{\"mimeType\": \"image/webp\", \"uri\": \"data:image/webp;base64,{webp}\"}}]}}"
+        );
+        let mesh = mesh_from_gltf_json(&json, |_| Err("external".into())).expect("webp mesh");
+        let img = mesh.albedo.expect("webp albedo");
+        assert_eq!(img.width, 1);
+        assert_eq!(img.height, 1);
+        assert!(
+            img.rgba[0] > 200 && img.rgba[1] < 30 && img.rgba[2] < 50,
+            "webp texel {:?}",
+            &img.rgba[..4]
+        );
     }
 
     #[test]

@@ -12,12 +12,17 @@ palette 0.7 (dev-dependency, tests only)
   runtime curve lives in kagra-shared/src/render/color_space.rs and the
   WGSL shaders so the wasm and Android builds do not link this crate.
 
-image 0.25 (jpeg feature only; default features off so rayon stays out)
+image 0.25 (jpeg and webp features only; default features off so rayon stays out)
   https://github.com/image-rs/image
   MIT OR Apache-2.0
-  Decodes glTF JPEG images (color, normal, ORM, emissive). PNG stays
-  on the png crate. The wasm and Android builds use this pure-Rust
-  decoder.
+  Decodes glTF JPEG (via zune-jpeg) and WebP (via image-webp). PNG stays
+  on the png crate. The wasm and Android builds use these pure-Rust
+  decoders.
+
+image-webp (pulled by image's webp feature)
+  https://github.com/image-rs/image-webp
+  MIT OR Apache-2.0
+  Lossless and lossy WebP decode for glTF images. No encoder in the runtime.
 
 The Narkowicz ACES fit in bloom.wgsl and shader3d.wgsl is the public
 approximation published by Krzysztof Narkowicz (2016), used widely

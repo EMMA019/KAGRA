@@ -84,7 +84,7 @@ Shipped on the wasm-safe path. A glTF material now reaches the shared PBR shader
 - `KHR_texture_transform` on the base color, normal, ORM, or emissive texture rewrites `TEXCOORD_0` (`uv' = R * (uv * scale) + offset`).
 - The base-color sampler sets wrap, mag/min, mip filter, and anisotropy 4 when every filter is linear. Mip chains are complete to 1×1, including sizes that are not powers of two.
 - A normal map builds a TBN. Missing `TANGENT` is filled with Lengyel tangents. The shader does not flip the green channel.
-- JPEG images (DamagedHelmet) decode through the `image` crate with default features off, so rayon stays out of the wasm build. PNG stays on the `png` crate.
+- JPEG and WebP images decode through the `image` crate (`jpeg` and `webp` features, default features off) so rayon stays out of the wasm build. PNG stays on the `png` crate.
 
 ## Previous wave
 
