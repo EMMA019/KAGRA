@@ -115,7 +115,7 @@
 - 新しいゲームは Front だけ。世界は `WorldDoc` JSON、プレイは `WorldPlay` / `kagra.gameloop`。`Walk` / `Prop` / `World3D` / `kagra_core` は `old/`（`import kagra` に出ない）。
 - ジャンルは `WorldDoc.genre`（`crest_isle` / `town_gate` / `fish_cast` / `fishcook` / …）。無指定は自由世界。prop 名（`door` / `dock` / `stove`）は景色でありジャンルを起動しない。
 - テクスチャは `WorldProp.texture`（PNG パス）+ `uv_scale`（CPU タイル）。室内は dump `sky` / `ground: false`。HUD 画像は `kagra.ui2d.image` → `draw_world(..., hud=)`。
-- プロペラや機体は `pitch` / `roll` と `local: true`（親の空間、4 段まで）。`local` 無しの `parent` はリンクだけで position はワールドのまま。リングは `model: "ring"`（穴は +Z）。窓の毎フレームは `render_rgba` → `Scene._frame_rgba`（PPM）。見本は `examples/flight_minimal.py`。
+- プロペラや機体は `pitch` / `roll` と `local: true`（親の空間、4 段まで）。`local` 無しの `parent` はリンクだけで position はワールドのまま。リングは `model: "ring"`（穴は +Z）。窓の毎フレームは `render_rgba` → `Scene.frame()`（中身は `_frame_rgba` の RGBA）。見本は `examples/flight_minimal.py`。
 - 絵の検証は `expect_offscreen.pixels`（領域の平均色 / not_solid）。golden PNG は使わない。新ジャンルを `WorldPlay` に足さない。
 - 電話の絵: dump `bloom` / `bloom_threshold` / `vignette` / `lut`（`off` `warm` `punch` `cool`）/ `lut_strength` / `fxaa`。省略すると旧来の絵（bloom 0、vignette 1、LUT なし、FXAA あり）。`Juice` は shake / hitstop / squash / tween。`Emitter` は CPU の火花を sphere prop にする（`emissive` で光らせられる）。`Trail` はエミッシブな quad のリボン。`apply_post(world, "mobile")` が電話プリセット、`"neon"` はブルーム強め。`apply_look(world, "night"|"pastel")` が空・ライト・露出・半球・LUT をまとめる。`cull: true` と `prop_lod` は遠い prop を落とす／看板にする（省略時は全部フルメッシュ）。prop `emissive` / `emissive_color` / `emissive_map`、`hemi_sky` / `hemi_ground`、`env_map`（`preset:studio` か PNG）は共有レンダラの絵。
 - dump JSON の共有オフスクリーン: `python -m kagra.render_world dump.json out.png`（または `kagra.verify` の `expect_offscreen`）。wgpu 30。アダプタ無しはスキップ。

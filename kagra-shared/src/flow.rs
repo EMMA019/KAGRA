@@ -220,6 +220,17 @@ impl GameFlow {
             .map(|b| b.action)
     }
 
+    /// HUD-pixel rect `[x, y, w, h]` of one button, top-left origin.
+    ///
+    /// Hosts use this (via `hud_json`'s `pause` field) instead of guessing a
+    /// corner of the frame. `None` when this phase does not draw `action`.
+    pub fn button_rect(&self, action: FlowAction, width: u32, height: u32) -> Option<[f32; 4]> {
+        buttons(self.phase, width, height)
+            .into_iter()
+            .find(|button| button.action == action)
+            .map(|button| [button.quad.x, button.quad.y, button.quad.w, button.quad.h])
+    }
+
     pub fn paint(&self, list: &mut DrawList, width: u32, height: u32) {
         let w = width.max(1) as f32;
         let h = height.max(1) as f32;
