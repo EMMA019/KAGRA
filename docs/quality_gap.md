@@ -16,7 +16,7 @@ The shared picture path is `WorldDoc` → `compile_scene` → `Renderer` (`kagra
 | Color grading LUT | have, as of this wave. 16³ strip in a 256×16 `texture_2d` (no `texture_3d`). Presets `off` / `warm` / `punch` / `cool`. `lut_strength` mixes after ACES. | URP Color Lookup / LDR LUT | P0 | done (S) |
 | Vignette | have, as of this wave. Strength is a uniform. Omit = 1, the curve that already shipped. 0 turns it off. | URP Vignette | P0 | done (S) |
 | FXAA | have. On by default. Dump `fxaa: false` skips it. SMAA is not implemented. | URP FXAA (SMAA is the higher option) | P1 | S for a SMAA pass later |
-| Directional light + shadows | partial. One sun, one 2048 depth map, WebGL2 `sampler2DShadow`. Omit `shadow_softness` and the kernel stays 3×3. A wider tent is opt-in. No cascades, no contact-hardening. | URP main light + shadow cascades | P1 | M |
+| Directional light + shadows | partial. One sun, one 2048 depth map, WebGL2 `sampler2DShadow`. Omit `shadow_cascades` and it stays one full map (24 m, 3×3 PCF). 2 or 3 pack concentric rings (8 / 24 / 80 m) into tiles of that map. `shadow_pcss` is an opt-in blocker search. No local-light shadows. | URP main light + shadow cascades | P1 | M |
 | IBL / ambient from an env map | partial. Authorable hemisphere (`hemi_sky` / `hemi_ground`) drives the L1 SH. `env_map` bakes a 64×64 prefiltered lat-long (4 roughness rows, `texture_2d`). No cubemap, no HDR file. Omit `env_map` and specular stays the SH. | URP environment lighting + reflection probe | P1 | done (M) |
 | Fog | have. Linear distance fog. Color follows `sky`. | URP linear / exponential fog | P2 | S to add an exponential mode |
 | Screen shake | have, as of this wave. `kagra.Juice.shake` offsets camera 0 on a fresh dump. Deterministic, no GPU. | Cinemachine impulse (the 80% bar does not include Cinemachine) | P0 | done (S) |
@@ -38,7 +38,7 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 | Albedo textures | have | — | — | PNG albedo and emissive are sRGB. Color mips average in linear, then re-encode, down to 1×1. A glTF sampler sets wrap, filter, and anisotropy. Procedural meshes stay clamp. |
 | Normal maps | have | — | — | Sampled as linear unorm (a flat 128 stays 0.5). When `mtoon4.w` is set, lighting uses a TBN from glTF `TANGENT` or generated tangents. Water keeps its procedural normal. |
 | Roughness / metalness maps | partial | P1 | M | Dump maps, plus glTF `metallicRoughnessTexture`. A material with factors and no texture still emits a 1×1 ORM, so the file beats the dump scalars. Dump maps still replace the image. Toon primitives skip ORM. |
-| Shadows, PCF | partial | P1 | M | One directional map. Omit `shadow_softness` and it stays 3×3 PCF. About 3 is a 5×5 tent. No cascades, no local-light shadows. |
+| Shadows, PCF | partial | P1 | M | One directional map. Omit `shadow_softness` and it stays 3×3 PCF. About 3 is a 5×5 tent. `shadow_cascades` 2 or 3 tile that map. `shadow_pcss` hardens the penumbra. No local-light shadows. |
 | Directional light | have | — | — | Sun direction comes from light slot 0 (position or direction) plus ambient. |
 | Point light | partial | P2 | S | Up to 4 slots. Inverse-square-ish attenuation. No cookie, no shadow. |
 | Spot light | partial | P2 | S | Same 4 slots, `kind: "spot"`, a power cone. No shadow. |
@@ -71,11 +71,20 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 | Raycasting | partial | P2 | M | Genre interact uses reach, not a general raycaster. `kagra.annotate` records a preview click. |
 | Cameras | partial | P1 | S | Dump camera (eye, target, fov). Chase cameras live in genre code. No OrbitControls. |
 | Text | have | — | — | HUD `TextQuad` (PixelMplus, ab_glyph). Not a world-space `TextGeometry`. |
-| Render targets | partial | P1 | M | HDR frame, shadow map, bloom halves, composite. Games cannot allocate their own target or bind a custom shader. |
+| Render targets | partial | P1 | M | HDR frame, shadow map, an opt-in raw-depth copy for PCSS, bloom halves, composite. Games cannot allocate their own target or bind a custom shader. |
 | Custom shaders | missing | P2 | L | Materials are the built-in ids (solid, road, grass, sky, metal, toon, water). |
 | WebGPU backend | partial | P3 | L | wgpu can target WebGPU on desktop. The wasm build keeps WebGL2 limits (no storage buffers, no base instance). A WebGPU-only path is parked. |
 
 ## This wave
+
+Shipped on the wasm-safe path. Omitted fields keep the previous picture (one 2048 map, 3×3 or the wider tent, no blocker search):
+
+- `shadow_cascades`. 1 is the historical full map, centered on the camera target, ortho half 24 m. 2 or 3 pack concentric rings (8 m, 24 m, 80 m) into tiles of that same map. No texture array, so the phone allocation stays one depth texture.
+- `shadow_pcss`. A blocker search, then a 3×3 compare whose radius follows the average blocker depth. WebGL2 cannot read a comparison depth, so the sun pass also writes device z to an `Rgba16Float` target. The lighting shader samples that only while the flag is on. The raw target is nearest-sampled (`textureSampleLevel`), so `float32-filterable` stays off.
+- `KAGRA_QUALITY=high` or `2` selects 3 cascades and PCSS when those fields are omitted. `0` / `off` / `low` forces the historical map. An explicit dump wins over the high tier.
+- `shadow.z` / `shadow.w` stay camera near / far for the depth prepass. Cascade count and the PCSS flag live in `cascade.x` / `cascade.y`.
+
+## Previous wave
 
 Shipped on the wasm-safe path. Omitted fields keep the previous picture (no SSAO, no DOF, no motion blur, FXAA on, vignette inside the composite):
 
@@ -146,4 +155,4 @@ Shipped on the wasm-safe path, all of it toggleable:
 
 ## Next waves
 
-1. **Parked.** Area lights, SMAA, custom shader graphs, WebGPU-only features, VRM-on-Wasm, Android. Cascades are the next shadow step (one map today). Contact-hardening still needs a comparison-sampler read that stays on WebGL2. A real cubemap PMREM and HDR env files stay parked with that. Character LOD stays parked with that.
+1. **Parked.** Area lights, SMAA, custom shader graphs, WebGPU-only features, VRM-on-Wasm, Android. A real cubemap PMREM and HDR env files stay parked. Character LOD stays parked with that. Local-light shadows stay parked.

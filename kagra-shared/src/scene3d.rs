@@ -495,6 +495,55 @@ pub fn directional_shadow_view_proj(light_dir: Vec3, focus: Vec3, half: f32) -> 
     proj * view
 }
 
+/// Ortho half-extents for up to three cascades. Count 1 repeats the historical
+/// 24 m map so an omitted dump does not change the shadow.
+pub fn cascade_halves(count: u32) -> [f32; 3] {
+    let n = count.clamp(1, 3);
+    if n == 1 {
+        return [SHADOW_ORTHO_HALF; 3];
+    }
+    // Tight ring, the historical 24 m map, then a far ring. Concentric and
+    // snapped per ring so the umbra does not crawl.
+    let table = [8.0_f32, SHADOW_ORTHO_HALF, 80.0];
+    // n is 2 or 3 here, so the last ring is 24 m or 80 m.
+    let last = (n as usize) - 1;
+    [table[0], table[1], table[last]]
+}
+
+/// One view-projection per cascade. Slot 0 matches [`scene_shadow_view_proj`]
+/// when `count` is 1.
+pub fn scene_cascade_view_projs(scene: &Scene3D, count: u32) -> [Mat4; 3] {
+    let n = count.clamp(1, 3);
+    let halves = cascade_halves(n);
+    let t = scene.camera.target;
+    // Count 1 snaps to the full 2048 map. Extra rings render into 1024 tiles,
+    // so the snap grid matches the texel those tiles actually draw.
+    let map = if n <= 1 {
+        SHADOW_MAP_SIZE as f32
+    } else {
+        (SHADOW_MAP_SIZE / 2) as f32
+    };
+    let mut out = [Mat4::IDENTITY; 3];
+    for i in 0..3 {
+        let focus = snap_shadow_center_xz(Vec3::new(t.x, t.y.max(1.0), t.z), halves[i], map);
+        out[i] = directional_shadow_view_proj(scene.light_dir, focus, halves[i]);
+    }
+    out
+}
+
+/// Pixel rect of cascade `index` inside the 2048 map. Count 1 uses the full map.
+pub fn cascade_viewport(index: u32, count: u32) -> (f32, f32, f32, f32) {
+    let size = SHADOW_MAP_SIZE as f32;
+    if count <= 1 {
+        return (0.0, 0.0, size, size);
+    }
+    let tile = size * 0.5;
+    let i = index.min(2);
+    let col = (i % 2) as f32;
+    let row = (i / 2) as f32;
+    (col * tile, row * tile, tile, tile)
+}
+
 /// 軸並行境界箱。
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Aabb {
@@ -632,6 +681,10 @@ pub struct Scene3D {
     pub tonemap: bool,
     /// Directional shadow radius. 1 = the historical 3×3 PCF. Larger = a wider tent.
     pub shadow_softness: f32,
+    /// 1 = the historical single map. 2 or 3 pack extra rings into the same map.
+    pub shadow_cascades: u32,
+    /// Contact-hardening (blocker search). Off unless a dump or the high tier asks.
+    pub shadow_pcss: bool,
     /// Hemisphere sky color. Default is the studio blue that the SH used to hardcode.
     pub hemi_sky: [f32; 3],
     /// Hemisphere ground color. Default is the studio warm ground.
@@ -656,6 +709,8 @@ impl Default for Scene3D {
             exposure: 1.0,
             tonemap: true,
             shadow_softness: 1.0,
+            shadow_cascades: 1,
+            shadow_pcss: false,
             hemi_sky: [0.48, 0.56, 0.78],
             hemi_ground: [0.42, 0.30, 0.18],
             env_pixels: None,
@@ -1176,6 +1231,26 @@ mod tests {
             map,
         );
         assert!((a.x - b.x).abs() < 1e-5 && (a.z - b.z).abs() < 1e-5);
+    }
+
+    #[test]
+    fn one_cascade_matches_the_historical_map() {
+        let scene = Scene3D::default();
+        let one = scene_cascade_view_projs(&scene, 1);
+        let historical = scene_shadow_view_proj(&scene);
+        assert_eq!(one[0].to_cols_array(), historical.to_cols_array());
+        assert_eq!(one[1].to_cols_array(), one[0].to_cols_array());
+        let (x, y, w, h) = cascade_viewport(0, 1);
+        assert_eq!(
+            (x, y, w, h),
+            (0.0, 0.0, SHADOW_MAP_SIZE as f32, SHADOW_MAP_SIZE as f32)
+        );
+        let halves = cascade_halves(3);
+        assert!(halves[0] < halves[1] && halves[1] < halves[2]);
+        let (x2, _, w2, _) = cascade_viewport(1, 3);
+        assert!(x2 > 0.0 && w2 < SHADOW_MAP_SIZE as f32);
+        let three = scene_cascade_view_projs(&scene, 3);
+        assert_ne!(three[0].to_cols_array(), three[2].to_cols_array());
     }
 
     #[test]

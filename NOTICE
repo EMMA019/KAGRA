@@ -28,3 +28,8 @@ the shape of three.js EffectComposer / ShaderPass and the ideas in
 SSAOShader, BokehPass, and the Karis neighborhood clamp used by TAA
 examples (three.js, MIT, https://github.com/mrdoob/three.js). The WGSL
 is original. No three.js source is copied.
+
+Cascade selection follows the parallel-split idea used by three.js
+CSM (MIT, https://github.com/mrdoob/three.js). The rings here are fixed
+concentric extents (8 / 24 / 80 m) packed into one 2048 map, not
+three.js frustum-slice practical splits. No three.js source is copied.

@@ -139,6 +139,15 @@ pub struct WorldDoc {
     /// Larger values (about 2.5–4) use a wider tent so penumbras soften.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow_softness: Option<f32>,
+    /// Cascade count packed into the one 2048 map. None = 1 (the historical
+    /// full map). 2 or 3 use tighter rings. `KAGRA_QUALITY=high` or `2`
+    /// selects 3 when this is omitted. `0` / `off` / `low` forces 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_cascades: Option<u32>,
+    /// Contact-hardening blocker search. None = off. The high tier turns it
+    /// on. `KAGRA_QUALITY=0` / `off` / `low` forces it off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_pcss: Option<bool>,
     /// Hemisphere sky, linear 0..1. None = the studio blue `(0.48, 0.56, 0.78)`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hemi_sky: Option<[f32; 3]>,
@@ -857,6 +866,30 @@ impl WorldDoc {
         self.shadow_softness.unwrap_or(1.0).clamp(0.25, 8.0)
     }
 
+    /// Cascades in the one sun map. None = 1, unless the high tier asks for 3.
+    /// Quality 0 / off / low stays on the historical full map.
+    pub fn shadow_cascade_count(&self) -> u32 {
+        if !heavy_post_allowed() {
+            return 1;
+        }
+        match self.shadow_cascades {
+            Some(n) => n.clamp(1, 3),
+            None if quality_is_high() => 3,
+            None => 1,
+        }
+    }
+
+    /// PCSS blocker search. None = off, unless the high tier is on.
+    pub fn shadow_pcss_enabled(&self) -> bool {
+        if !heavy_post_allowed() {
+            return false;
+        }
+        match self.shadow_pcss {
+            Some(on) => on,
+            None => quality_is_high(),
+        }
+    }
+
     /// Studio blue when the dump omits `hemi_sky`.
     pub fn hemi_sky_color(&self) -> [f32; 3] {
         self.hemi_sky
@@ -1234,6 +1267,8 @@ impl WorldDoc {
             exposure: self.exposure.unwrap_or(1.0),
             tonemap: self.tonemap.unwrap_or(true),
             shadow_softness: self.shadow_softness(),
+            shadow_cascades: self.shadow_cascade_count(),
+            shadow_pcss: self.shadow_pcss_enabled(),
             hemi_sky: self.hemi_sky_color(),
             hemi_ground: self.hemi_ground_color(),
             env_pixels: self.baked_env(),
@@ -3328,6 +3363,12 @@ mod tests {
         assert!(!legacy.contains("\"dof_focus\""));
         assert!(!legacy.contains("\"motion_blur\""));
         assert!(!legacy.contains("\"shadow_softness\""));
+        assert!(!legacy.contains("\"shadow_cascades\""));
+        assert!(!legacy.contains("\"shadow_pcss\""));
+        if super::heavy_post_allowed() && !super::quality_is_high() {
+            assert_eq!(doc.shadow_cascade_count(), 1);
+            assert!(!doc.shadow_pcss_enabled());
+        }
         assert!(!legacy.contains("\"hemi_sky\""));
         assert!(!legacy.contains("\"env_map\""));
         assert!(!legacy.contains("\"cull\""));
@@ -3370,6 +3411,26 @@ mod tests {
         assert!(super::quality_is_high_value(Some("2")));
         assert!(!super::quality_is_high_value(None));
         assert!(!super::quality_is_high_value(Some("1")));
+    }
+
+    #[test]
+    fn shadow_cascades_follow_the_dump() {
+        let doc =
+            WorldDoc::from_json(r#"{"version":1,"shadow_cascades":3,"shadow_pcss":true}"#).unwrap();
+        if super::heavy_post_allowed() {
+            assert_eq!(doc.shadow_cascade_count(), 3);
+            assert!(doc.shadow_pcss_enabled());
+            let scene = doc.compile_scene(1.0);
+            assert_eq!(scene.shadow_cascades, 3);
+            assert!(scene.shadow_pcss);
+        } else {
+            assert_eq!(doc.shadow_cascade_count(), 1);
+            assert!(!doc.shadow_pcss_enabled());
+        }
+        let one = WorldDoc::from_json(r#"{"version":1,"shadow_cascades":1,"shadow_pcss":false}"#)
+            .unwrap();
+        assert_eq!(one.shadow_cascade_count(), 1);
+        assert!(!one.shadow_pcss_enabled());
     }
 
     #[test]
