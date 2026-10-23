@@ -2,7 +2,7 @@
 
 このファイルは `tools/gen_api_index.py` により自動生成されます。手編集しないでください。
 
-エントリ数: **94**
+エントリ数: **96**
 
 棚の**手前**は shared wgpu 30（WorldDoc / WorldPlay / gameloop）。
 棚の**奥**は再エクスポートの余り。旧 RendererV2 API は `old/`。
@@ -99,6 +99,7 @@
 | `annotate_dump` | `export annotate_dump  (from kagra.axes)` |
 | `fat_line` | `export fat_line  (from kagra.strokes)` |
 | `mixer_state` | `export mixer_state  (from kagra.audio)` |
+| `nine_slice` | `export nine_slice  (from kagra.ui2d)` |
 | `play_bgm` | `export play_bgm  (from kagra.audio)` |
 | `play_sfx` | `export play_sfx  (from kagra.audio)` |
 | `point_cloud` | `export point_cloud  (from kagra.strokes)` |
@@ -109,6 +110,7 @@
 | `set_group_volume` | `export set_group_volume  (from kagra.audio)` |
 | `set_mute` | `export set_mute  (from kagra.audio)` |
 | `stop_bgm` | `export stop_bgm  (from kagra.audio)` |
+| `styled_button` | `export styled_button  (from kagra.ui2d)` |
 | `wish_world` | `export wish_world  (from kagra.axes)` |
 
 ## Agent notes
@@ -119,7 +121,7 @@
 - テクスチャは `WorldProp.texture`（PNG パス）+ `uv_scale`（CPU タイル）。室内は dump `sky` / `ground: false`。HUD 画像は `kagra.ui2d.image` → `draw_world(..., hud=)`。
 - プロペラや機体は `pitch` / `roll` と `local: true`（親の空間、4 段まで）。`local` 無しの `parent` はリンクだけで position はワールドのまま。リングは `model: "ring"`（穴は +Z）。窓の毎フレームは `render_rgba` → `Scene.frame()`（中身は `_frame_rgba` の RGBA）。見本は `examples/flight_minimal.py`。
 - 絵の検証は `expect_offscreen.pixels`（領域の平均色 / not_solid）。golden PNG は使わない。新ジャンルを `WorldPlay` に足さない。
-- 電話の絵: dump `bloom` / `bloom_threshold` / `vignette` / `lut`（`off` `warm` `punch` `cool`）/ `lut_strength` / `fxaa` / `ssao`（半径px、省略はオフ）/ `taa` / `dof_focus` / `dof_aperture` / `motion_blur`。省略すると旧来の絵（bloom 0、vignette 1、LUT なし、FXAA あり、SSAO/TAA/DOF/モーションなし）。`KAGRA_QUALITY=0` / `off` / `low` は重いパスを切る。`high` / `2` は未指定の SSAO（半径 8）と TAA を入れる。DOF とモーションは high でも自動では入らない。dump `quality`（`low` / `mobile` / `high`、別名 `0` / `off` / `2`）を書くとその段が env の high より勝つ。省略は今までどおり。`mobile` は未指定を SSAO 半径 4、TAA オフ（FXAA）、カスケード 2、PCSS オフ、bloom 0.22 で埋める。`high` は未指定を SSAO 8、TAA、カスケード 3、PCSS、bloom 0.35 で埋める。明示したフィールドが勝つ。env の high だけでは bloom は付かない。`quality=low` は重いパスを切る。8bit スワップチェーンは 3D があるとき常にグレードと FXAA（またはコピー）を通し、輝度とエミッシブマスクのミップブルームを足す。`Juice` は shake / hitstop / squash / tween。`Emitter` は CPU の火花を sphere prop にする（`emissive` で光らせられる）。`Trail` はエミッシブな quad のリボン。`point_cloud` と `fat_line` は dump の `points` / `lines`（GPU のカメラ向きの点と、ピクセル幅の線）。`apply_post(world, "mobile")` が電話プリセット、`"neon"` はブルーム強め。`apply_look(world, "night"|"pastel")` が空・ライト・露出・半球・LUT をまとめる。`cull: true` と `prop_lod` は遠い prop を落とす／看板にする（省略時は全部フルメッシュ）。prop `emissive` / `emissive_color` / `emissive_map`、`hemi_sky` / `hemi_ground`、`env_map`（`preset:studio` か PNG）は共有レンダラの絵。`shadow_cascades` は 1 枚の 2048 マップ（省略時）。2 か 3 は同じマップをタイルに分ける。`shadow_pcss` は省略時オフ。`KAGRA_QUALITY=high` または `2` は省略時に 3 段と PCSS。`0` / `off` / `low` は 1 段のまま。`WorldDoc::to_json_with_profile` が draws / triangles / texture bytes と電話予算の warning を足す（`to_json` 自体は変えない）。デスクトップの window 例は dump JSON とマテリアルファイルを `notify` で見ている。
+- 電話の絵: dump `bloom` / `bloom_threshold` / `vignette` / `lut`（`off` `warm` `punch` `cool`）/ `lut_strength` / `fxaa` / `ssao`（半径px、省略はオフ）/ `taa` / `dof_focus` / `dof_aperture` / `motion_blur`。省略すると旧来の絵（bloom 0、vignette 1、LUT なし、FXAA あり、SSAO/TAA/DOF/モーションなし）。`KAGRA_QUALITY=0` / `off` / `low` は重いパスを切る。`high` / `2` は未指定の SSAO（半径 8）と TAA を入れる。DOF とモーションは high でも自動では入らない。dump `quality`（`low` / `mobile` / `high`、別名 `0` / `off` / `2`）を書くとその段が env の high より勝つ。省略は今までどおり。`mobile` は未指定を SSAO 半径 4、TAA オフ（FXAA）、カスケード 2、PCSS オフ、bloom 0.22 で埋める。`high` は未指定を SSAO 8、TAA、カスケード 3、PCSS、bloom 0.35 で埋める。明示したフィールドが勝つ。env の high だけでは bloom は付かない。`quality=low` は重いパスを切る。8bit スワップチェーンは 3D があるとき常にグレードと FXAA（またはコピー）を通し、輝度とエミッシブマスクのミップブルームを足す。`Juice` は shake / hitstop / squash / tween。`Emitter` は CPU の火花を sphere prop にする（`emissive` で光らせられる）。`Trail` はエミッシブな quad のリボン。`point_cloud` と `fat_line` は dump の `points` / `lines`（GPU のカメラ向きの点と、ピクセル幅の線）。`apply_post(world, "mobile")` が電話プリセット、`"neon"` はブルーム強め。`apply_look(world, "night"|"pastel")` が空・ライト・露出・半球・LUT をまとめる。`cull: true` と `prop_lod` は遠い prop を落とす／看板にする（省略時は全部フルメッシュ）。dump `tonemap_curve`（`aces` / `agx` / `neutral`、省略は ACES）と `sky_atmosphere`（省略はスタジオグラデーション）。prop `clearcoat` / `clearcoat_roughness` は第二の GGX。prop `emissive` / `emissive_color` / `emissive_map`、`hemi_sky` / `hemi_ground`、`env_map`（`preset:studio` か PNG）は共有レンダラの絵。`shadow_cascades` は 1 枚の 2048 マップ（省略時）。2 か 3 は同じマップをタイルに分ける。`shadow_pcss` は省略時オフ。`KAGRA_QUALITY=high` または `2` は省略時に 3 段と PCSS。`0` / `off` / `low` は 1 段のまま。`WorldDoc::to_json_with_profile` が draws / triangles / texture bytes と電話予算の warning を足す（`to_json` 自体は変えない）。デスクトップの window 例は dump JSON とマテリアルファイルを `notify` で見ている。
 - dump JSON の共有オフスクリーン: `python -m kagra.render_world dump.json out.png`（または `kagra.verify` の `expect_offscreen`）。wgpu 30。アダプタ無しはスキップ。
 - dump JSON の共有デスクトップ窓: `python -m kagra.play_world dump.json`。Crest collectathon は `genre: crest_isle`。新しいゲームは RendererV2 で始めない。
 - 参照ゲーム: `examples/bunny_garden_minimal.py` / `examples/torneko_minimal.py` / `examples/bar_sim_minimal.py` / `examples/flight_minimal.py` / `examples/backyard_brawl_minimal.py` / `examples/chess_minimal.py`。

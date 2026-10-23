@@ -73,7 +73,8 @@ struct VsIn {
     @location(4) m2: vec4<f32>,
     @location(5) m3: vec4<f32>,
     @location(6) color: vec4<f32>,
-    @location(7) material: f32,
+    // x = material id. y = clearcoat. z = clearcoat roughness. w unused.
+    @location(7) material: vec4<f32>,
     @location(8) uv: vec2<f32>,
     @location(9) mtoon: vec4<f32>,
     @location(10) mtoon2: vec4<f32>,
@@ -91,7 +92,8 @@ struct VsOut {
     @location(0) color: vec4<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) world: vec3<f32>,
-    @location(3) material: f32,
+    // x = material id. y = clearcoat. z = clearcoat roughness.
+    @location(3) material: vec4<f32>,
     @location(4) uv: vec2<f32>,
     @location(5) mtoon: vec4<f32>,
     @location(6) mtoon2: vec4<f32>,
@@ -165,6 +167,50 @@ fn aces_tonemap(x: vec3<f32>) -> vec3<f32> {
     return saturate((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14));
 }
 
+fn agx_tonemap(color: vec3<f32>) -> vec3<f32> {
+    let inset = mat3x3<f32>(
+        vec3<f32>(0.85662715, 0.09512124, 0.048251606),
+        vec3<f32>(0.13731897, 0.761242, 0.10143904),
+        vec3<f32>(0.11189821, 0.07679942, 0.81130236),
+    );
+    let outset = mat3x3<f32>(
+        vec3<f32>(1.1271006, -0.11060664, -0.016493939),
+        vec3<f32>(-0.14132977, 1.1578238, -0.016493939),
+        vec3<f32>(-0.14132977, -0.11060664, 1.2519364),
+    );
+    let c = inset * max(color, vec3<f32>(0.0));
+    let y = (log2(max(c, vec3<f32>(1e-10))) + vec3<f32>(12.47393)) / (4.026069 + 12.47393);
+    let t = clamp(y, vec3<f32>(0.0), vec3<f32>(1.0));
+    let s = t * t * (vec3<f32>(3.0) - 2.0 * t);
+    return saturate(outset * s);
+}
+
+fn neutral_tonemap(color: vec3<f32>) -> vec3<f32> {
+    let start = 0.76;
+    let x = min(color.r, min(color.g, color.b));
+    let offset = select(0.04, x - 6.25 * x * x, x < 0.08);
+    var c = color - vec3<f32>(offset);
+    let peak = max(c.r, max(c.g, c.b));
+    if (peak < start) {
+        return max(c, vec3<f32>(0.0));
+    }
+    let d = 1.0 - start;
+    let new_peak = 1.0 - d * d / (peak + d - start);
+    c = c * (new_peak / max(peak, 1e-6));
+    let g = 1.0 - 1.0 / (0.15 * (peak - new_peak) + 1.0);
+    return saturate(mix(c, vec3<f32>(new_peak), g));
+}
+
+fn apply_curve(c: vec3<f32>) -> vec3<f32> {
+    if (g.hemi_sky.w > 1.5) {
+        return neutral_tonemap(c);
+    }
+    if (g.hemi_sky.w > 0.5) {
+        return agx_tonemap(c);
+    }
+    return aces_tonemap(c);
+}
+
 fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
     let cut = c <= vec3<f32>(0.0031308);
     let lo = c * 12.92;
@@ -178,7 +224,7 @@ fn present_rgb(rgb: vec3<f32>) -> vec3<f32> {
     }
     var c = rgb * max(g.env.y, 0.0);
     if (g.env.w > 0.5) {
-        c = aces_tonemap(c);
+        c = apply_curve(c);
     }
     return linear_to_srgb(max(c, vec3<f32>(0.0)));
 }
@@ -207,7 +253,7 @@ fn fs_outline(in: VsOut) -> FragOut {
 @fragment
 fn fs_depth(in: VsOut) -> @location(0) vec4<f32> {
     let tex = textureSample(albedo_tex, albedo_samp, in.uv);
-    let sky = abs(in.material - 3.0) < 0.5;
+    let sky = abs(in.material.x - 3.0) < 0.5;
     if (!sky && tex.a < 0.5) {
         discard;
     }
@@ -602,7 +648,7 @@ fn water_normal(world: vec3<f32>, geo_n: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VsOut) -> FragOut {
-    let mat_id = i32(in.material + 0.5);
+    let mat_id = i32(in.material.x + 0.5);
     var alpha = in.color.a * in.vcolor.a;
 
     // WebGPU rejects textureSample after a non-uniform return or inside a
@@ -641,7 +687,20 @@ fn fs_main(in: VsOut) -> FragOut {
             vec3<f32>(0.012, 0.016, 0.05),
             smoothstep(-0.20, 0.55, dir.y),
         );
-        let col = mix(day_col, night_col, night);
+        var col = mix(day_col, night_col, night);
+        // Opt-in atmosphere. Omitted sky_model keeps the gradient above.
+        // The shape is a Rayleigh / Mie mix. Not three.js Sky source.
+        if (g.cascade.w > 0.5) {
+            let sun = normalize(-g.light.xyz);
+            let up = dir.y;
+            let cos_s = clamp(dot(dir, sun), 0.0, 1.0);
+            let rayleigh = vec3<f32>(0.22, 0.42, 0.95) * (1.0 - exp(-1.4 / max(up + 0.2, 0.08)));
+            let mie = vec3<f32>(1.0, 0.82, 0.55) * pow(cos_s, 12.0) * 0.45;
+            let horizon = vec3<f32>(0.95, 0.62, 0.38) * pow(1.0 - abs(up), 8.0);
+            let ground = vec3<f32>(0.04, 0.035, 0.03);
+            let air = rayleigh + mie + horizon;
+            col = mix(ground, air, smoothstep(-0.2, 0.08, up));
+        }
         return frag(vec4<f32>(present_rgb(col), 1.0), 0.0);
     }
 
@@ -788,6 +847,22 @@ fn fs_main(in: VsOut) -> FragOut {
             let outer = smoothstep(10.5, 3.2, r_dist);
             lit = lit * mix(0.08, 1.15, outer) + vec3<f32>(0.09, 0.13, 0.22) * spot * spot;
         }
+    }
+
+    // Clearcoat: a second GGX lobe, F0 0.04, on top of the base. 0 leaves the picture.
+    let coat = clamp(in.material.y, 0.0, 1.0);
+    if (coat > 0.02 && mat_id != 3) {
+        let vcoat = normalize(g.camera_pos.xyz - in.world);
+        let rough_c = clamp(select(in.material.z, 0.1, in.material.z < 0.02), 0.04, 1.0);
+        let hcoat = normalize(vcoat + ldir);
+        let ndotv_c = max(dot(n, vcoat), 0.0);
+        let ndoth_c = max(dot(n, hcoat), 0.0);
+        let fcoat = 0.04 + 0.96 * pow(1.0 - max(dot(vcoat, hcoat), 0.0), 5.0);
+        let spec_c = ggx_d(ndoth_c, rough_c) * smith_g(ndotv_c, ndl, rough_c) * fcoat
+            / max(4.0 * ndotv_c * max(ndl, 1e-3), 1e-4);
+        lit += vec3<f32>(spec_c) * ndl * sh * coat;
+        let rc = reflect(-vcoat, n);
+        lit += env_specular(rc, rough_c) * fcoat * coat * 0.65;
     }
 
     var emit_strength = 0.0;

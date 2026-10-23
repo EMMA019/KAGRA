@@ -1,0 +1,1 @@
+Continue the picture wave after GPU points and fat lines: AgX and Khronos PBR Neutral tonemapping, a clearcoat lobe, and a procedural sky. Keep wasm and Android green. No optional WebGPU features. Verify on lavapipe.
