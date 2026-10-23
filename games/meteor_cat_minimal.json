@@ -1,0 +1,65 @@
+{
+  "title": "Meteor Cat",
+  "icon": "games/icons/neon_cat.png",
+  "version": "0.1.0",
+  "entry": "examples/meteor_cat_minimal.py",
+  "world": "kagra-shared/tests/fixtures/meteor_cat_world.json",
+  "game": {
+    "id": "meteor_cat",
+    "title": "METEOR CAT",
+    "obstacles": [
+      "METEOR",
+      {
+        "name": "CRYSTALS",
+        "weight": 2
+      },
+      "ROCK"
+    ],
+    "style": {
+      "sky": [
+        10,
+        3,
+        4,
+        255
+      ],
+      "edge_a": [
+        255,
+        150,
+        40,
+        255
+      ],
+      "edge_b": [
+        170,
+        80,
+        255,
+        255
+      ],
+      "fill_a": [
+        0.65,
+        0.3,
+        0.05
+      ],
+      "fill_b": [
+        0.35,
+        0.1,
+        0.6
+      ]
+    },
+    "runner": {
+      "speed": {
+        "start": 12,
+        "cap": 24
+      }
+    }
+  },
+  "bundle_assets": [
+    "assets/audio",
+    "assets/models/kenney/cube-pets/animal-cat.glb",
+    "assets/models/kenney/cube-pets/Textures/colormap.png",
+    "assets/models/kenney/space-kit/meteor.glb",
+    "assets/models/kenney/space-kit/rock_crystals.glb",
+    "assets/models/kenney/space-kit/rock_largeA.glb",
+    "assets/models/kenney/racing-kit/overheadRound.glb",
+    "assets/models/quaternius/modular-dungeons-pack/Arch.glb"
+  ]
+}

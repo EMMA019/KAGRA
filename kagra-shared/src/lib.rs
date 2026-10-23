@@ -27,6 +27,7 @@ pub mod flow;
 pub mod font;
 pub mod fps;
 pub mod game;
+pub mod game_spec;
 pub mod genre_session;
 pub mod gltf_load;
 pub mod grade;

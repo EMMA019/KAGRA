@@ -14,5 +14,6 @@
     "assets/models/kenney/racing-kit/overheadRound.glb",
     "assets/models/kenney/racing-kit/barrierRed.glb",
     "assets/models/quaternius/modular-dungeons-pack/Arch.glb"
-  ]
+  ],
+  "game": {}
 }
