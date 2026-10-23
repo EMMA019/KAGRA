@@ -352,9 +352,11 @@
     let phase = "title";
     globalThis.kagraPreview = session;
 
+    let cancelCanvasPointers = () => {};
     const showPhase = (next) => {
       phase = next || "title";
       const playing = phase === "playing";
+      if (!playing) cancelCanvasPointers();
       overlay.classList.toggle("visible", !playing);
       pads.classList.toggle("visible", playing && !swipeMode);
       hud.classList.toggle("visible", playing);
@@ -487,16 +489,33 @@
     };
     const phaseOf = (type) => (type === "pointerdown" ? 0 : type === "pointermove" ? 1 : type === "pointerup" ? 2 : 3);
     const appEl = document.getElementById("app");
-    for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel"]) {
-      appEl.addEventListener(type, (e) => {
-        if (overlay.classList.contains("visible")) return;
-        if (e.target !== canvas) return;
+    // Fingers the game has seen go down. Their up/cancel always reaches the
+    // game, even under the result overlay; otherwise a stale finger blocks
+    // every later drag (Pixel: drag died after ~3 retries).
+    const canvasIds = new Map();
+    const endPointer = (id, phase) => {
+      const last = canvasIds.get(id);
+      if (!last) return;
+      canvasIds.delete(id);
+      session.pushPointer(id + 20, last[0], last[1], phase, 0);
+    };
+    cancelCanvasPointers = () => { for (const id of [...canvasIds.keys()]) endPointer(id, 3); };
+    for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel", "lostpointercapture"]) {
+      const target = type === "pointerdown" || type === "pointermove" ? appEl : window;
+      target.addEventListener(type, (e) => {
+        if (type !== "pointerdown" && type !== "pointermove") {
+          endPointer(e.pointerId, type === "pointerup" ? 2 : 3);
+          return;
+        }
+        if (type === "pointermove" && !canvasIds.has(e.pointerId)) return;
         if (type === "pointerdown") {
+          if (overlay.classList.contains("visible") || e.target !== canvas) return;
           try { canvas.setPointerCapture(e.pointerId); } catch {}
         }
         const [x, y] = toBuf(e);
+        canvasIds.set(e.pointerId, [x, y]);
         session.pushPointer(e.pointerId + 20, x, y, phaseOf(type), e.pressure || 1);
-      });
+      }, true);
     }
 
     window.addEventListener("keydown", (e) => {
