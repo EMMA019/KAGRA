@@ -129,7 +129,7 @@ impl PyNeonCat {
 
     #[getter]
     fn alive(&self) -> bool {
-        self.inner.alive
+        self.inner.alive()
     }
 
     #[getter]

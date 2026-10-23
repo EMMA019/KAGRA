@@ -198,6 +198,10 @@ impl NeonCat {
         self.flow.phase.name()
     }
 
+    pub fn alive(&self) -> bool {
+        self.core.stats.alive
+    }
+
     pub fn death(&self) -> &str {
         &self.core.stats.death
     }
