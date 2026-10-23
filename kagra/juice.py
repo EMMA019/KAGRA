@@ -1,5 +1,10 @@
 """Screen juice for phone games. Pure Python, no GPU.
 
+The Rust twin is ``kagra_shared::juice`` (``simple-easing``). The same
+names (``out_cubic``, ``hitstop``, ``shake``, ``squash``, ``tick``) are
+the contract both sides keep. This module stays importable without the
+extension.
+
 ``Juice`` owns shake, hitstop, squash/stretch, and a small easer set.
 ``apply_post`` writes the dump fields the shared renderer already understands
 (bloom, vignette, LUT, FXAA). Omit those fields and the picture stays the
