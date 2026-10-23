@@ -11,6 +11,7 @@
 //! cargo run -p kagra-shared --features render --example offscreen -- 640 360 world.png world
 //! cargo run -p kagra-shared --features render --example offscreen -- 640 360 world.png world path/to/dump.json
 //! cargo run -p kagra-shared --features render --example offscreen -- 1280 720 overlay.png playtest
+//! cargo run -p kagra-shared --features render --example offscreen -- 390 844 lumen.png neon
 //! ```
 //!
 //! `python -m kagra.render_world dump.json out.png` shells to this example (or an
@@ -39,6 +40,7 @@ fn main() -> Result<(), String> {
     let isle = mode == "isle";
     let world = mode == "world";
     let flow = mode == "flow";
+    let neon = mode == "neon";
 
     if mode == "playtest" {
         return render_playtest(width, height, &out);
@@ -82,7 +84,19 @@ fn main() -> Result<(), String> {
     let mut session = SharedSession::default();
     session.create_surface(width, height);
 
-    if flow {
+    if neon {
+        let frames: u32 = args.next().and_then(|s| s.parse().ok()).unwrap_or(100);
+        let boost = args.next().as_deref() == Some("boost");
+        session.load_game_json(include_str!("../tests/fixtures/neon_run_world.json"))?;
+        session.push_key("space", true);
+        for _i in 0..frames {
+            if boost {
+                session.set_play_input(0.0, 0.0, true, false, false);
+            }
+            session.request_frame();
+        }
+        println!("lumen frames={frames} boost={boost}");
+    } else if flow {
         let which = args.next().unwrap_or_else(|| "title".into());
         let json = include_str!("../tests/fixtures/platformer_world.json");
         session.load_game_json(json)?;

@@ -78,7 +78,7 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 Shipped on the wasm-safe path. A glTF material now reaches the shared PBR shader instead of stopping at a tinted texture.
 
 - `baseColorFactor` is multiplied in linear light and stored back as sRGB (a 1×1 texel when the material has no texture). `COLOR_0` stays linear and multiplies the albedo.
-- `metallicFactor` / `roughnessFactor` bake into the ORM. A file that writes either factor and has no texture gets a 1×1, so the factor beats the dump scalars. Omitted factors stay on the dump (the spec default of 1 would make every prop metal). No material still leaves the dump scalars.
+- `metallicFactor` / `roughnessFactor` bake into the ORM. A file that writes a factor other than the pair (1, 1) and has no texture gets a 1×1, so that factor beats the dump scalars. Omitted factors stay on the dump. The written pair metal 1 / rough 1 also stays on the dump: Kenney stores that glTF default on every base-color material, and a 1×1 of it would replace the dump lighting. A real `metallicRoughnessTexture` is still sampled, with non-default factors baked into the texels.
 - `emissiveFactor` bakes into the emissive map. `KHR_materials_emissive_strength` is the instance strength (it can be above 1). A dump `emissive` still wins when it is set.
 - `alphaMode` is OPAQUE / MASK / BLEND. Procedural meshes keep the old `tex.a < 0.5` cutout. `doubleSided` draws with cull off, including the shadow pass.
 - `KHR_texture_transform` on the base color, normal, ORM, or emissive texture rewrites `TEXCOORD_0` (`uv' = R * (uv * scale) + offset`).

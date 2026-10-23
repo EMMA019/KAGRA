@@ -161,6 +161,16 @@ pub struct WorldDoc {
     /// Indoor rooms dump `false` and place their own floor.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ground: Option<bool>,
+    /// Soft contact discs under props. None = on. A flying scene sets false
+    /// so coplanar discs do not z-fight into black streaks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_blobs: Option<bool>,
+    /// Fog start in meters. None = 48.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fog_start: Option<f32>,
+    /// Fog end in meters. None = 220.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fog_end: Option<f32>,
     /// Rapier joints (`physics` feature). Empty dumps omit the key.
     /// `name` is `fixed` / `revolute` / `spherical`. Anchors are body-local.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1122,7 +1132,9 @@ impl WorldDoc {
             b.push(MESH_BOX, head, head_col);
         }
 
-        self.push_contact_blobs(&mut b, hide_local, local_id);
+        if self.contact_blobs != Some(false) {
+            self.push_contact_blobs(&mut b, hide_local, local_id);
+        }
 
         let (light_dir, ambient, local_lights) = self.draw_lights();
         let sky = self.sky.unwrap_or([130, 165, 205, 255]);
@@ -1133,8 +1145,8 @@ impl WorldDoc {
             ambient,
             local_lights,
             fog_color: sky,
-            fog_start: 48.0,
-            fog_end: 220.0,
+            fog_start: self.fog_start.unwrap_or(48.0),
+            fog_end: self.fog_end.unwrap_or(220.0),
             ibl: self.ibl.unwrap_or(0.35),
             exposure: self.exposure.unwrap_or(1.0),
             tonemap: self.tonemap.unwrap_or(true),
