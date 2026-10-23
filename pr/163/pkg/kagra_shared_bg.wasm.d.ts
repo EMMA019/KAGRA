@@ -1,13 +1,6 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
-export const kagra_net_hello: (a: number, b: number, c: number, d: number) => number;
-export const kagra_net_ingest: (a: number, b: number) => number;
-export const kagra_net_input_axis: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
-export const kagra_net_lockstep_free: (a: number) => void;
-export const kagra_net_lockstep_new: (a: number, b: number) => number;
-export const kagra_net_ready: (a: number, b: number) => number;
-export const kagra_net_submit_local: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
 export const kagra_shared_attach_android_surface: (a: number, b: number, c: number, d: number) => number;
 export const kagra_shared_attach_ios_view: (a: number, b: number, c: number, d: number) => number;
 export const kagra_shared_attach_offscreen: (a: number, b: number, c: number) => number;
@@ -52,6 +45,13 @@ export const kagra_shared_set_walk: (a: number, b: number, c: number, d: number)
 export const kagra_shared_stats_json: (a: number, b: number, c: number) => number;
 export const kagra_shared_take_audio_cues: (a: number, b: number) => number;
 export const kagra_shared_version: () => number;
+export const kagra_net_hello: (a: number, b: number, c: number, d: number) => number;
+export const kagra_net_ingest: (a: number, b: number) => number;
+export const kagra_net_input_axis: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+export const kagra_net_lockstep_free: (a: number) => void;
+export const kagra_net_lockstep_new: (a: number, b: number) => number;
+export const kagra_net_ready: (a: number, b: number) => number;
+export const kagra_net_submit_local: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
 export const __wbg_wasmsession_free: (a: number, b: number) => void;
 export const sharedVersion: () => [number, number];
 export const wasm_start: () => void;
@@ -67,6 +67,7 @@ export const wasmsession_loadJson: (a: number, b: number, c: number) => [number,
 export const wasmsession_mountFile: (a: number, b: number, c: number, d: number, e: number) => void;
 export const wasmsession_new: () => number;
 export const wasmsession_pause: (a: number) => void;
+export const wasmsession_pictureStatus: (a: number) => [number, number];
 export const wasmsession_playtestAction: (a: number, b: number, c: number) => void;
 export const wasmsession_playtestPacketJson: (a: number) => [number, number];
 export const wasmsession_playtestPointer: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
