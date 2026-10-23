@@ -125,6 +125,33 @@ offset is added to the eye and the look target.
 omitted from dumps. Portrait 412×915 keeps the next crate inside the
 frame, including when the cat is on the rail.
 
+## Art direction
+
+The chase frame was a pink wash: bloom 0.42 at threshold 0.85, exposure
+1.05, fog from 16 m, and the dungeon arch emissive at 1.7. The grid was
+thick boxes, so the lines bloomed into haze. The Kenney crate kept its
+wood albedo. A cyan point light on the cat painted the white streak.
+
+The grade is now exposure 0.70, bloom 0.16, threshold 1.4, fog 38–110,
+IBL 0.06, LUT off, sky near black. Floor, walls, and ceiling are matte
+near-black. The grid, rails, wall wireframe, arch, and obstacle cages
+are `FatLine` strokes (they write the emissive mask, so 8-bit bloom
+hits the lines and not the stone). The arch mesh stays the Quaternius
+GLB, tinted almost black, with the neon polyline in front of it. The
+hoop albedo is dark and the cyan emissive is 0.72. Obstacle meshes are
+dark; the cage is cyan or magenta.
+
+The cat scale is 0.50 (was 0.58). The chase eye is 5.9 m back and 2.35 m
+up, looking 13 m ahead, so the mesh span is about 15% of a 412×915
+frame and the center sits in the lower third. `WorldWalker.color` and
+`roughness` tint a textured glTF (dead / hurt still win). The cat is
+sRGB (188, 156, 236) at roughness 0.9. Point lights stay inside a 1.6 m
+radius so they rim the body and leave the floor black.
+
+Lavapipe 412×915, 8-bit path: `quality=mobile` is `ssao=4 c2 post`,
+`quality=high` is `ssao=8 c3 post`. Both disable HDR bloom because the
+offscreen example asks for the phone frame when a tier is set.
+
 ## Checks
 
 - `cargo test -p kagra-shared --lib neon_cat::` — steer, jump, ring, glTF, session swap with Lumen

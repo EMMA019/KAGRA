@@ -3,7 +3,7 @@
 The cat, the dungeon arches, the racing hoops, and the low obstacles are
 CC0 glTF. Credits live next to the files (``assets/models/**/CREDITS.md``)
 and the collect step is ``tools/fetch_assets.py`` (see ``docs/assets.md``).
-The floor grid and magenta rails stay emissive scenery.
+The floor grid, wall wireframe, and magenta rails are emissive fat lines.
 
     python examples/neon_cat_minimal.py
     python examples/neon_cat_minimal.py --headless scratch/neon_cat.png

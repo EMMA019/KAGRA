@@ -35,8 +35,16 @@ that fails to load is not spawned. Portrait `412×915` on the 8-bit
 path shows the Kenney crate at `quality=mobile` (`ssao=4 c2 post`) and
 `quality=low` (`ssao=0 c1 post`).
 
-The default camera is a damped third person: 4.85 m behind, 2.15 m up,
-looking 10.5 m down the tunnel. FOV opens from 50° to 58° with speed.
-Steering banks the rig by at most ~0.07 rad. Landing uses
+The default camera is a damped third person: 5.9 m behind, 2.35 m up,
+looking 13 m down the tunnel, so the cat is about 15% of a 412×915
+frame and sits in the lower third. FOV opens from 50° to 58° with
+speed. Steering banks the rig by at most ~0.07 rad. Landing uses
 `Juice.shake(0.08, 0.18)`. `?cam=classic` keeps the previous chase.
-Portrait 412×915 at `quality=mobile` on the 8-bit path is the check.
+
+The picture is a dark navy tunnel. Exposure 0.70, bloom 0.16 at
+threshold 1.4, fog from 38 m. The floor checker is near-black. Grid,
+rails, and wall wireframe are fat lines. The arch is the dark
+Quaternius mesh plus a neon outline. Hoops are cyan. Obstacles are a
+dark body with a cyan or magenta edge cage. The cat tint is a dark
+violet at roughness 0.9. Portrait 412×915 on the 8-bit path is the
+check for `quality=mobile` and `quality=high`.

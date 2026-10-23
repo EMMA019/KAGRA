@@ -607,6 +607,13 @@ pub struct WorldWalker {
     /// dump; the walker sim does not read it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scale: Option<[f32; 3]>,
+    /// sRGB multiply, including a textured glTF. None keeps the albedo
+    /// (or the capsule tint). Dead / hurt still win.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<[u32; 3]>,
+    /// PBR roughness. None keeps the historical 0.30 satin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roughness: Option<f32>,
 }
 
 fn default_idle_anim() -> String {
@@ -1321,22 +1328,26 @@ impl WorldDoc {
                 [70, 74, 82, 255]
             } else if hurt {
                 [220, 64, 64, 255]
+            } else if let Some(tint) = walk.color {
+                [
+                    tint[0].min(255) as u8,
+                    tint[1].min(255) as u8,
+                    tint[2].min(255) as u8,
+                    255,
+                ]
             } else {
                 [62, 176, 184, 255]
             };
+            let walker_rough = walk.roughness.unwrap_or(0.30).clamp(0.04, 1.0);
             if let Some(meshes) = walker_gltf_ids.get(&walk.id) {
                 let model = Mat4::from_scale_rotation_translation(sc, yaw, pos);
-                let col = if walker_gltf_spec(walk)
+                let col = if dead || hurt || walk.color.is_some() {
+                    body_col
+                } else if walker_gltf_spec(walk)
                     .map(walker_spec_has_albedo)
                     .unwrap_or(false)
                 {
-                    if dead {
-                        [70, 74, 82, 255]
-                    } else if hurt {
-                        [220, 64, 64, 255]
-                    } else {
-                        [255, 255, 255, 255]
-                    }
+                    [255, 255, 255, 255]
                 } else {
                     body_col
                 };
@@ -1362,7 +1373,7 @@ impl WorldDoc {
                             continue;
                         }
                     }
-                    b.push_pbr(mesh, model, col, mat, 0.08, 0.30);
+                    b.push_pbr(mesh, model, col, mat, 0.08, walker_rough);
                 }
                 continue;
             }

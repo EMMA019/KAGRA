@@ -1,10 +1,11 @@
 //! Neon Cat Run. Not a WorldPlay genre.
 //!
 //! The cat, the arches, the rings, and the low obstacles are CC0 glTF.
-//! See `docs/assets.md` and each pack's `CREDITS.md`. The tunnel grid and
-//! the magenta rails stay emissive scenery: no CC0 pack is an infinite
-//! synthwave shader. A missing GLB leaves the engine fallback (a capsule
-//! for the cat, no prop for the rest). It does not invent a box cat.
+//! See `docs/assets.md` and each pack's `CREDITS.md`. The tunnel grid,
+//! the wall wireframe, and the magenta rails are screen-space fat lines:
+//! no CC0 pack is an infinite synthwave shader. A missing GLB leaves the
+//! engine fallback (a capsule for the cat, no prop for the rest). It does
+//! not invent a box cat.
 //!
 //! The chase camera looks along +Z. Screen-right is world -X.
 //! `D` / `+lx` steer that way. Space, the jump button, and stick-up jump.
@@ -29,8 +30,12 @@ const CRATE_GLB: &str = "assets/models/kenney/platformer-kit/crate.glb";
 const BARREL_GLB: &str = "assets/models/kenney/platformer-kit/barrel.glb";
 const BARRIER_GLB: &str = "assets/models/kenney/racing-kit/barrierRed.glb";
 
-/// Model-space feet sit near y = -0.3. This scale keeps the cat under the arch.
-const CAT_SCALE: f32 = 0.58;
+/// Model-space feet sit near y = -0.3. The body is about 1.7 units tall,
+/// so this scale is ~0.7 m. On the chase rig that is about 15% of a
+/// 412×915 frame, in the lower third.
+const CAT_SCALE: f32 = 0.50;
+/// sRGB multiply so the light Kenney body reads as a dark violet.
+const CAT_TINT: [u32; 3] = [188, 156, 236];
 const CAT_FOOT: f32 = 0.30;
 /// Slide along the magenta rail. The rail, the arch, and the floor are
 /// scenery. Only a crate, barrel, or barrier ends the run.
@@ -47,12 +52,12 @@ const GRACE_SECS: f32 = 1.6;
 const CAM_BACK: f32 = 7.4;
 const CAM_LIFT: f32 = 1.72;
 const CAM_FOV: f32 = 50.0;
-/// Closer and a little higher than the classic rig, so the tunnel has depth
-/// and the cat still sits in the lower half of a 412×915 frame.
-const CHASE_BACK: f32 = 4.85;
-const CHASE_LIFT: f32 = 2.15;
-const CHASE_LOOK: f32 = 10.5;
-const CHASE_LOOK_Y: f32 = 0.62;
+/// Pulled back so the cat stays in the lower third at about 15% of the
+/// portrait frame, with the next obstacle still in view.
+const CHASE_BACK: f32 = 5.9;
+const CHASE_LIFT: f32 = 2.35;
+const CHASE_LOOK: f32 = 13.0;
+const CHASE_LOOK_Y: f32 = 1.12;
 const CHASE_FOV: f32 = 50.0;
 const CHASE_FOV_FAST: f32 = 58.0;
 /// Full-steer Dutch angle. Visual only: the stick stays world −X.
@@ -902,24 +907,26 @@ impl NeonCat {
             half: 48.0,
             ground: Some(false),
             contact_blobs: Some(false),
-            sky: Some([10, 4, 28, 255]),
-            hemi_sky: Some([0.22, 0.12, 0.48]),
-            hemi_ground: Some([0.10, 0.02, 0.16]),
+            sky: Some([4, 2, 12, 255]),
+            hemi_sky: Some([0.035, 0.028, 0.07]),
+            hemi_ground: Some([0.012, 0.008, 0.02]),
             env_map: Some("preset:studio".into()),
             shadow_softness: Some(1.0),
-            bloom: Some(0.42),
-            bloom_threshold: Some(0.85),
-            vignette: Some(0.42),
-            lut: Some("cool".into()),
-            lut_strength: Some(0.2),
+            // Thin lines carry the glow. A low intensity and a high
+            // threshold keep the stone, the wood, and the sky from hazing.
+            bloom: Some(0.16),
+            bloom_threshold: Some(1.4),
+            vignette: Some(0.28),
+            lut: Some("off".into()),
+            lut_strength: Some(0.0),
             quality: self.quality.clone(),
             fxaa: Some(true),
-            exposure: Some(1.05),
-            ibl: Some(0.34),
+            exposure: Some(0.70),
+            ibl: Some(0.06),
             tonemap: Some(true),
             cull: Some(true),
-            fog_start: Some(16.0),
-            fog_end: Some(62.0),
+            fog_start: Some(38.0),
+            fog_end: Some(110.0),
             ..WorldDoc::default()
         };
         let eye = self.chase_eye();
@@ -940,31 +947,43 @@ impl NeonCat {
         doc.lights.push(light(
             0,
             "key",
-            [eye[0] - 2.0, eye[1] + 6.0, eye[2] - 4.0],
-            [0.15, -0.8, 0.55],
-            [0.65, 0.55, 1.0],
-            1.15,
-            42.0,
+            [eye[0] - 1.2, eye[1] + 5.5, eye[2] - 3.0],
+            [0.12, -0.78, 0.55],
+            [0.32, 0.28, 0.48],
+            0.42,
+            36.0,
             true,
         ));
+        // Tight lights on the cat. The floor albedo is near black, so they
+        // do not paint a streak. Radius stays under 1.6 m.
         doc.lights.push(light(
             1,
-            "cyan",
-            [self.x, self.y + 1.2, self.z + 2.0],
+            "fill",
+            [self.x, self.y + 0.46, self.z - 0.28],
             [0.0, 0.0, 0.0],
-            [0.35, 0.95, 1.0],
-            1.7,
-            8.0,
+            [0.85, 0.62, 1.0],
+            2.2,
+            0.48,
             false,
         ));
         doc.lights.push(light(
             2,
             "rim",
-            [self.x, self.y + 1.4, self.z + 8.0],
+            [self.x + 0.22, self.y + 0.62, self.z - 0.12],
             [0.0, 0.0, 0.0],
-            [1.0, 0.25, 0.7],
-            1.35,
-            14.0,
+            [1.0, 0.25, 0.75],
+            1.4,
+            0.42,
+            false,
+        ));
+        doc.lights.push(light(
+            3,
+            "edge",
+            [self.x - 0.24, self.y + 0.55, self.z + 0.08],
+            [0.0, 0.0, 0.0],
+            [0.3, 0.9, 1.0],
+            1.1,
+            0.4,
             false,
         ));
         self.push_tunnel(&mut doc);
@@ -980,96 +999,126 @@ impl NeonCat {
     }
 
     fn push_tunnel(&self, doc: &mut WorldDoc) {
-        let z = self.z + 22.0;
-        doc.props.push(beam(
-            "floor",
-            [0.0, -0.04, z],
-            [6.4, 0.06, 70.0],
-            [12, 8, 36],
-            0.05,
-        ));
-        for k in -3..=3 {
-            let col = if k % 2 == 0 {
-                [40, 210, 255]
-            } else {
-                [255, 40, 180]
-            };
-            doc.props.push(beam(
-                &format!("lane-{k}"),
-                [k as f32 * 0.7, 0.02, z],
-                [0.035, 0.02, 64.0],
-                col,
-                0.85,
-            ));
-        }
-        let origin = (self.z / 2.0).floor() * 2.0;
-        for i in 0..22 {
-            let gz = origin + i as f32 * 2.0;
-            if gz < self.z - 2.0 {
-                continue;
-            }
-            let col = if i % 2 == 0 {
-                [50, 140, 255]
-            } else {
-                [180, 40, 220]
-            };
-            doc.props.push(beam(
-                &format!("grid-{i}"),
-                [0.0, 0.025, gz],
-                [5.6, 0.015, 0.04],
-                col,
-                0.7,
-            ));
-        }
-        for side in [-1.0_f32, 1.0] {
-            let name = if side < 0.0 { "wall-l" } else { "wall-r" };
-            doc.props.push(beam(
-                name,
-                [side * 2.7, 1.35, z],
-                [0.08, 2.8, 70.0],
-                [18, 10, 48],
-                0.08,
-            ));
-            doc.props.push(beam(
-                &format!("rail-{name}"),
-                [side * 2.35, 0.08, z],
-                [0.06, 0.07, 64.0],
-                [255, 30, 170],
-                2.2,
-            ));
-            let line0 = (self.z / 4.0).floor() * 4.0;
-            for i in 0..14 {
-                let gz = line0 + i as f32 * 4.0;
-                if gz < self.z - 1.0 {
-                    continue;
-                }
-                doc.props.push(beam(
-                    &format!("wgrid-{name}-{i}"),
-                    [side * 2.66, 1.35, gz],
-                    [0.025, 2.5, 0.03],
-                    [50, 170, 255],
-                    0.95,
+        let z0 = self.z - 6.0;
+        let z1 = self.z + 44.0;
+        let zmid = (z0 + z1) * 0.5;
+        let depth = z1 - z0;
+        let tile = 1.6;
+        let x0 = -3.2;
+        let iz0 = (z0 / tile).floor() as i32;
+        let iz1 = (z1 / tile).ceil() as i32;
+        for ix in 0..4 {
+            for iz in iz0..iz1 {
+                let even = (ix + iz).rem_euclid(2) == 0;
+                let col = if even { [6, 4, 12] } else { [14, 9, 24] };
+                let x = x0 + (ix as f32 + 0.5) * tile;
+                let z = (iz as f32 + 0.5) * tile;
+                doc.props.push(matte(
+                    &format!("tile-{ix}-{iz}"),
+                    [x, -0.01, z],
+                    [tile * 0.995, 0.03, tile * 0.995],
+                    col,
                 ));
             }
         }
-        let rib0 = (self.z / 4.0).floor() * 4.0;
-        for i in 0..12 {
-            let rz = rib0 + i as f32 * 4.0;
-            if rz < self.z + 6.0 {
-                continue;
-            }
-            let col = if i % 2 == 0 {
-                [255, 40, 180]
-            } else {
-                [60, 200, 255]
-            };
-            doc.props.push(beam(
-                &format!("rib-{i}"),
-                [0.0, 2.55, rz],
-                [5.4, 0.04, 0.05],
-                col,
-                1.15,
+        for (name, side) in [("wall-l", -1.0_f32), ("wall-r", 1.0)] {
+            doc.props.push(matte(
+                name,
+                [side * 2.78, 3.45, zmid],
+                [0.05, 6.9, depth],
+                [4, 3, 10],
             ));
+        }
+        doc.props.push(matte(
+            "ceiling",
+            [0.0, 6.95, zmid],
+            [5.7, 0.05, depth],
+            [3, 2, 8],
+        ));
+        self.push_grid_lines(doc, z0, z1);
+    }
+
+    /// Screen-space strokes. A long line is chopped so a segment behind the
+    /// camera does not drop the rest of the rail.
+    fn push_grid_lines(&self, doc: &mut WorldDoc, z0: f32, z1: f32) {
+        let mag = [255, 46, 176, 255];
+        let vio = [176, 72, 255, 245];
+        let wall = [118, 86, 255, 210];
+        let wall_dim = [64, 150, 255, 180];
+        for (i, x) in [-2.4_f32, -1.6, -0.8, 0.0, 0.8, 1.6, 2.4]
+            .into_iter()
+            .enumerate()
+        {
+            let col = if i % 2 == 0 { mag } else { vio };
+            stroke(
+                doc,
+                &format!("fl-{i}"),
+                run_z(x, 0.045, z0, z1, 8.0),
+                col,
+                2.0,
+            );
+        }
+        let step = 0.7;
+        let i0 = (z0 / step).floor() as i32;
+        let i1 = (z1 / step).ceil() as i32;
+        for i in i0..i1 {
+            let z = i as f32 * step;
+            let col = if i.rem_euclid(2) == 0 { vio } else { mag };
+            stroke(
+                doc,
+                &format!("fc-{i}"),
+                vec![[-2.4, 0.045, z], [2.4, 0.045, z]],
+                col,
+                2.0,
+            );
+        }
+        for (name, x) in [("rail-l", -2.32_f32), ("rail-r", 2.32)] {
+            stroke(
+                doc,
+                name,
+                run_z(x, 0.08, z0, z1, 8.0),
+                [255, 20, 154, 255],
+                3.4,
+            );
+        }
+        for (side, x) in [("l", -2.68_f32), ("r", 2.68)] {
+            for (k, y) in [0.05_f32, 1.4, 2.8, 4.2, 5.6, 6.85].into_iter().enumerate() {
+                let col = if k % 2 == 0 { wall } else { wall_dim };
+                stroke(
+                    doc,
+                    &format!("wh-{side}-{k}"),
+                    run_z(x, y, z0, z1, 8.0),
+                    col,
+                    1.25,
+                );
+            }
+            let vz = 4.0;
+            let j0 = (z0 / vz).floor() as i32;
+            let j1 = (z1 / vz).ceil() as i32;
+            for j in j0..j1 {
+                let z = j as f32 * vz;
+                stroke(
+                    doc,
+                    &format!("wv-{side}-{j}"),
+                    vec![[x, 0.05, z], [x, 6.85, z]],
+                    wall_dim,
+                    1.15,
+                );
+            }
+        }
+        let rib = 4.0;
+        let r0 = (z0 / rib).floor() as i32;
+        let r1 = (z1 / rib).ceil() as i32;
+        for i in r0..r1 {
+            let z = i as f32 * rib;
+            let col = if i.rem_euclid(2) == 0 { mag } else { wall };
+            stroke(
+                doc,
+                &format!("rib-{i}"),
+                vec![[-2.4, 6.9, z], [2.4, 6.9, z]],
+                col,
+                1.2,
+            );
         }
     }
 
@@ -1083,25 +1132,31 @@ impl NeonCat {
             if z < self.z + 3.0 {
                 continue;
             }
-            if let Some(gate) = glb_prop(
+            // Dark stone. The neon read is the outline, not a glowing block.
+            // Baked arch is about 4.1 wide and 4.0 tall; this scale fits the
+            // tunnel and leaves the opening dark.
+            if let Some(mut gate) = glb_prop(
                 &format!("gate-{i}"),
                 "gate",
                 GATE_GLB,
                 [0.0, 0.0, z],
-                [1.15, 1.15, 1.15],
+                [1.04, 0.68, 0.36],
                 0.0,
                 0.0,
-                [255, 50, 190],
-                1.7,
-                [1.0, 0.15, 0.65],
+                [8, 5, 14],
+                0.0,
+                [0.02, 0.01, 0.04],
             ) {
+                gate.roughness = 0.96;
+                gate.metallic = 0.0;
                 doc.props.push(gate);
             }
+            push_arch_frame(doc, i, z - 0.42);
         }
     }
 
     fn push_rings(&self, doc: &mut WorldDoc) {
-        let scale = 1.65;
+        let scale = 1.12;
         let i0 = near_index(self.z, RING_Z0, RING_GAP).saturating_sub(1);
         for i in i0..i0 + 5 {
             if i < 0 || self.got.contains(&i) {
@@ -1114,7 +1169,7 @@ impl NeonCat {
             // Mesh center sits about +0.5 x and +0.47 y in the file.
             let x = ring_x(i) - 0.50 * scale;
             let y = 0.05;
-            if let Some(ring) = glb_prop(
+            if let Some(mut ring) = glb_prop(
                 &format!("ring-{i}"),
                 "ring",
                 RING_GLB,
@@ -1122,10 +1177,11 @@ impl NeonCat {
                 [scale, scale, scale],
                 0.0,
                 0.0,
-                [70, 255, 255],
-                2.1,
-                [0.25, 1.0, 1.0],
+                [14, 32, 40],
+                0.72,
+                [0.1, 0.95, 1.0],
             ) {
+                ring.roughness = 0.45;
                 doc.props.push(ring);
             }
         }
@@ -1145,7 +1201,7 @@ impl NeonCat {
             if !obstacle_drawable(shape.path) {
                 continue;
             }
-            if let Some(obstacle) = glb_prop(
+            if let Some(mut obstacle) = glb_prop(
                 &format!("obs-{i}"),
                 "obstacle",
                 shape.path,
@@ -1153,11 +1209,35 @@ impl NeonCat {
                 shape.scale,
                 0.0,
                 0.0,
-                [255, 255, 255],
-                0.25,
-                [0.7, 0.85, 1.0],
+                [28, 20, 42],
+                0.0,
+                [0.04, 0.02, 0.06],
             ) {
+                obstacle.roughness = 0.94;
+                obstacle.metallic = 0.04;
                 doc.props.push(obstacle);
+                let proud = 0.045;
+                let col = if i.rem_euclid(2) == 0 {
+                    [40, 255, 255, 255]
+                } else {
+                    [255, 42, 180, 255]
+                };
+                push_neon_box(
+                    doc,
+                    &format!("edge-{i}"),
+                    [
+                        shape.skin_min[0] - proud,
+                        shape.skin_min[1],
+                        shape.skin_min[2] - proud,
+                    ],
+                    [
+                        shape.skin_max[0] + proud,
+                        shape.skin_max[1] + proud,
+                        shape.skin_max[2] + proud,
+                    ],
+                    col,
+                    1.7,
+                );
                 spawned.insert(i);
             }
         }
@@ -1228,6 +1308,8 @@ impl NeonCat {
             anim: "run".into(),
             anim_blend: 1.0,
             scale: Some([CAT_SCALE, CAT_SCALE * stretch, CAT_SCALE]),
+            color: Some(CAT_TINT),
+            roughness: Some(0.9),
             ..WorldWalker::default()
         };
         if glb_ready(CAT_GLB) {
@@ -1539,8 +1621,100 @@ fn glb_prop(
     Some(prop)
 }
 
-fn beam(id: &str, pos: [f32; 3], scale: [f32; 3], color: [u32; 3], emissive: f32) -> WorldProp {
-    glow(id, "box", "grid", pos, scale, color, emissive)
+fn matte(id: &str, pos: [f32; 3], scale: [f32; 3], color: [u32; 3]) -> WorldProp {
+    let mut prop = glow(id, "box", "grid", pos, scale, color, 0.0);
+    prop.roughness = 0.96;
+    prop.metallic = 0.0;
+    prop
+}
+
+fn stroke(doc: &mut WorldDoc, id: &str, points: Vec<[f32; 3]>, color: [u8; 4], width: f32) {
+    doc.lines.push(crate::strokes::FatLine {
+        id: id.into(),
+        points,
+        color,
+        width,
+    });
+}
+
+fn run_z(x: f32, y: f32, z0: f32, z1: f32, step: f32) -> Vec<[f32; 3]> {
+    let mut pts = Vec::new();
+    let mut z = z0;
+    let step = step.max(0.5);
+    while z < z1 - 0.05 {
+        pts.push([x, y, z]);
+        z += step;
+    }
+    pts.push([x, y, z1]);
+    pts
+}
+
+/// Outer and inner neon arch. The stone mesh stays dark inside the pair.
+fn push_arch_frame(doc: &mut WorldDoc, index: i32, z: f32) {
+    stroke(
+        doc,
+        &format!("arch-out-{index}"),
+        arch_polyline(z, 2.2, 1.48, 1.28, 10),
+        [255, 48, 186, 255],
+        2.4,
+    );
+    stroke(
+        doc,
+        &format!("arch-in-{index}"),
+        arch_polyline(z + 0.02, 1.9, 1.36, 1.02, 10),
+        [196, 90, 255, 240],
+        1.5,
+    );
+}
+
+fn arch_polyline(z: f32, half_w: f32, spring_y: f32, rise: f32, steps: i32) -> Vec<[f32; 3]> {
+    let mut pts = Vec::with_capacity(steps as usize + 3);
+    pts.push([-half_w, 0.05, z]);
+    let steps = steps.max(2);
+    for i in 0..=steps {
+        let t = i as f32 / steps as f32;
+        let ang = std::f32::consts::PI * (1.0 - t);
+        pts.push([half_w * ang.cos(), spring_y + rise * ang.sin(), z]);
+    }
+    pts.push([half_w, 0.05, z]);
+    pts
+}
+
+fn push_neon_box(
+    doc: &mut WorldDoc,
+    id: &str,
+    min: [f32; 3],
+    max: [f32; 3],
+    color: [u8; 4],
+    width: f32,
+) {
+    let c = [
+        [min[0], min[1], min[2]],
+        [max[0], min[1], min[2]],
+        [max[0], min[1], max[2]],
+        [min[0], min[1], max[2]],
+        [min[0], max[1], min[2]],
+        [max[0], max[1], min[2]],
+        [max[0], max[1], max[2]],
+        [min[0], max[1], max[2]],
+    ];
+    let edges = [
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 0),
+        (4, 5),
+        (5, 6),
+        (6, 7),
+        (7, 4),
+        (0, 4),
+        (1, 5),
+        (2, 6),
+        (3, 7),
+    ];
+    for (n, (a, b)) in edges.iter().enumerate() {
+        stroke(doc, &format!("{id}-{n}"), vec![c[*a], c[*b]], color, width);
+    }
 }
 
 fn glow(
@@ -2238,7 +2412,7 @@ mod tests {
         );
         let cat = portrait_ndc(&run, [run.x(), run.y() + 0.45, run.z()]);
         assert!(
-            cat.y < -0.15 && cat.y > -0.9,
+            cat.y < -0.2 && cat.y > -0.98,
             "the cat stays in the lower frame, ndc {:?}",
             cat
         );
@@ -2254,6 +2428,89 @@ mod tests {
             edged.x.abs() < 0.85,
             "a rail-side cat should still see the center crate, ndc {:?}",
             edged
+        );
+    }
+
+    #[test]
+    fn portrait_cat_is_a_small_dark_figure() {
+        let mut run =
+            NeonCat::from_json(r#"{"version":1,"genre":"neon_cat","quality":"mobile"}"#).unwrap();
+        run.confirm();
+        let doc = run.document();
+        assert!(
+            doc.exposure.unwrap() < 0.85,
+            "exposure {}",
+            doc.exposure.unwrap()
+        );
+        assert!(doc.bloom.unwrap() < 0.25, "bloom {}", doc.bloom.unwrap());
+        assert!(
+            doc.bloom_threshold.unwrap() > 1.1,
+            "threshold {}",
+            doc.bloom_threshold.unwrap()
+        );
+        assert!(doc.fog_start.unwrap() > 28.0);
+        assert!(doc.lines.len() > 24, "grid lines {}", doc.lines.len());
+        assert!(
+            doc.lines.len() < crate::strokes::MAX_SEGMENTS,
+            "segment budget"
+        );
+        let gate = doc
+            .props
+            .iter()
+            .find(|prop| prop.name == "gate")
+            .expect("gate");
+        assert!(gate.emissive.unwrap_or(1.0) < 0.05);
+        assert!(gate.color.unwrap()[0] < 40);
+        let obs = doc
+            .props
+            .iter()
+            .find(|prop| prop.id == "prop:obs-0")
+            .expect("crate");
+        assert!(obs.color.unwrap()[0] < 48);
+        assert!(obs.emissive.unwrap_or(1.0) < 0.05);
+        assert!(doc.lines.iter().any(|line| line.id.starts_with("edge-0")));
+        assert!(doc.lines.iter().any(|line| line.id.starts_with("arch-out")));
+        assert!(doc.lines.iter().any(|line| line.id.starts_with("fl-")));
+        let cat = doc.walkers.first().expect("cat");
+        assert_eq!(cat.color, Some(CAT_TINT));
+        assert!(cat.scale.unwrap()[0] < 0.58);
+        assert!(cat.roughness.unwrap() > 0.8);
+        for light in &doc.lights {
+            if light.kind == "point" {
+                assert!(
+                    light.radius < 1.6,
+                    "point lights stay on the cat, {} r {} i {}",
+                    light.name,
+                    light.radius,
+                    light.intensity
+                );
+            }
+        }
+        let scene = doc.compile_scene(412.0 / 915.0);
+        let tint = [CAT_TINT[0] as u8, CAT_TINT[1] as u8, CAT_TINT[2] as u8, 255];
+        assert!(
+            scene
+                .batches
+                .iter()
+                .any(|batch| batch.instances.iter().any(|inst| inst.color == tint)),
+            "the cat tint has to reach the textured draw"
+        );
+
+        let feet = portrait_ndc(&run, [0.0, 0.02, 0.0]);
+        let head = portrait_ndc(&run, [0.0, 1.70 * CAT_SCALE, 0.0]);
+        let fraction = (head.y - feet.y).abs() * 0.5;
+        assert!(
+            (0.11..0.19).contains(&fraction),
+            "cat should be about 15% of the portrait frame, fraction {fraction} feet {} head {}",
+            feet.y,
+            head.y
+        );
+        assert!(feet.y > -0.98, "feet cropped, ndc {}", feet.y);
+        assert!(head.y < -0.28, "head left the lower third, ndc {}", head.y);
+        let mid = (feet.y + head.y) * 0.5;
+        assert!(
+            mid < -0.33,
+            "cat center ndc {mid} should sit in the lower third"
         );
     }
 }
