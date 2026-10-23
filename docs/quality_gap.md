@@ -35,8 +35,8 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 | Feature | Status | Priority | Effort | What KAGRA does today |
 |---|---|---|---|---|
 | MeshStandard / MeshPhysical | partial | P1 | L | GGX + Smith + Fresnel on solid and on the metal material. Metallic and roughness are scalars on the instance. No clearcoat, sheen, transmission, or iridescence. |
-| Albedo textures | have | — | — | PNG albedo on props (`texture`, `uv_scale`). glTF baseColor. Sampler stays clamp; tiling is a CPU repeat. |
-| Normal maps | partial | P1 | M | MToon and glTF normals sample `normal_tex`. Solid/PBR props do not. Water uses a procedural normal. |
+| Albedo textures | have | — | — | PNG albedo and emissive are sRGB. Color mips average in linear, then re-encode. Sampler stays clamp; tiling is a CPU repeat. |
+| Normal maps | partial | P1 | M | Sampled as linear unorm (a flat 128 stays 0.5). MToon and glTF normals use `normal_tex`. Solid/PBR lighting still uses the geometric normal. Water uses a procedural normal. |
 | Roughness / metalness maps | partial | P1 | M | Dump maps, plus glTF `metallicRoughnessTexture` (factors baked into the image). Dump maps still replace the file. Toon primitives skip ORM. |
 | Shadows, PCF | partial | P1 | M | One directional map. Omit `shadow_softness` and it stays 3×3 PCF. About 3 is a 5×5 tent. No cascades, no local-light shadows. |
 | Directional light | have | — | — | Sun direction comes from light slot 0 (position or direction) plus ambient. |
@@ -48,8 +48,8 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 | PMREM / env maps | partial | P1 | M | `preset:studio` or a PNG equirect, baked on the CPU to 64×64, 4 roughness rows, `texture_2d` + `textureSampleLevel`. Not a cubemap and not an HDR file. |
 | Fog | have | — | — | Linear fog. Start 48, end 220 in `compile_scene`. Color is the sky clear. |
 | Tone mapping | have | — | — | ACES in the composite. Exposure is a dump field (default 1). |
-| Color space | partial | P2 | M | Frame is linear HDR. Composite writes the surface format (sRGB targets encode on store). There is no author-facing linear/sRGB switch and no display-P3. |
-| EffectComposer | partial | P0 | — | A fixed stack, not a user pass list: HDR → bloom → exposure → ACES → LUT → vignette → FXAA → HUD. |
+| Color space | have, as of this wave. Base color and emissive are `Rgba8UnormSrgb` (the sampler decodes on WebGPU and WebGL2). Normal and ORM are `Rgba8Unorm`. Author u8 colors decode before lighting, whatever the swapchain is. One OETF after ACES and the LUT. No display-P3. | P2 | done (M) |
+| EffectComposer | partial | P0 | — | A fixed stack, not a user pass list: linear HDR → bloom extract → exposure → ACES → LUT → vignette → one sRGB OETF → FXAA → HUD. |
 | Bloom pass | have | — | — | See the Unity row. Half resolution, one blur, intensity 0 skips the extract. |
 | SSAO | missing | P3 | L | Outside the 80% bar. A phone web view should not pay for it. |
 | DOF | missing | P3 | L | Same. A full-resolution blur fights the "cheap on mobile" rule. |
@@ -74,6 +74,15 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 | WebGPU backend | partial | P3 | L | wgpu can target WebGPU on desktop. The wasm build keeps WebGL2 limits (no storage buffers, no base instance). A WebGPU-only path is parked. |
 
 ## This wave
+
+Shipped on the wasm-safe path. The picture on an sRGB offscreen target stays the one that already decoded author colors. An unorm target (WebGPU canvases, and the direct 8-bit fallback) now decodes before lighting and encodes once at the end.
+
+- Base color, emissive, and matcap stay `Rgba8UnormSrgb`. Normal maps and the default flat normal are `Rgba8Unorm`, same as ORM. Color mips average in linear light.
+- Instance color, fog, and the 3D clear always enter the frame as linear. HUD bytes stay display-referred: linear on an sRGB target, the code itself on unorm.
+- Bloom still thresholds the HDR frame before ACES. The LUT stays after ACES. The OETF is one step, after the vignette. FXAA reads that encoded image.
+- When the frame format matches the swapchain, composite cannot sample it. `present_rgb` applies exposure, ACES, and the OETF in the fragment shader, and the clear is graded with the same function. Bloom and the LUT stay off on that fallback.
+
+## Previous wave
 
 Shipped on the wasm-safe path. Omitted fields keep the previous picture (every prop draws, full meshes, no trail, day grade):
 

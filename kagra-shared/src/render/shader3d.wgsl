@@ -23,6 +23,8 @@ struct Globals {
     // Directional sun ortho. Same family, not a cascade / V2 umbra.
     light_view_proj: mat4x4<f32>,
     // x = shadow radius. 1 = the historical 3x3 PCF. Larger = a wider tent.
+    // y > 0.5: this pass writes the swapchain (composite cannot sample the
+    // frame). present_rgb applies exposure, ACES, and one sRGB OETF.
     shadow: vec4<f32>,
     // Hemisphere colors. Defaults match the old hardcoded studio SH.
     hemi_sky: vec4<f32>,
@@ -120,9 +122,33 @@ fn vs_outline(in: VsIn) -> VsOut {
     return out;
 }
 
+// Narkowicz ACES, same constants as bloom.wgsl. Only when this pass writes
+// the swapchain (g.shadow.y > 0.5). Composite owns the grade otherwise.
+fn aces_tonemap(x: vec3<f32>) -> vec3<f32> {
+    return saturate((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14));
+}
+
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let cut = c <= vec3<f32>(0.0031308);
+    let lo = c * 12.92;
+    let hi = 1.055 * pow(max(c, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.4)) - 0.055;
+    return select(hi, lo, cut);
+}
+
+fn present_rgb(rgb: vec3<f32>) -> vec3<f32> {
+    if (g.shadow.y <= 0.5) {
+        return rgb;
+    }
+    var c = rgb * max(g.env.y, 0.0);
+    if (g.env.w > 0.5) {
+        c = aces_tonemap(c);
+    }
+    return linear_to_srgb(max(c, vec3<f32>(0.0)));
+}
+
 @fragment
 fn fs_outline(in: VsOut) -> @location(0) vec4<f32> {
-    return vec4<f32>(in.color.rgb, 1.0);
+    return vec4<f32>(present_rgb(in.color.rgb), 1.0);
 }
 
 @vertex
@@ -398,7 +424,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let zenith = base * vec3<f32>(0.68, 0.80, 1.05);
         let horizon = mix(base * 1.45, vec3<f32>(0.78, 0.86, 0.96), clamp(dot(base, vec3<f32>(0.333)), 0.0, 1.0) * 0.65);
         let col = mix(horizon, zenith, smoothstep(0.32, 0.88, t));
-        return vec4<f32>(col, 1.0);
+        return vec4<f32>(present_rgb(col), 1.0);
     }
 
     if (tex.a < 0.5) {
@@ -506,7 +532,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             if (ao < 0.03) {
                 discard;
             }
-            return vec4<f32>(vec3<f32>(0.008, 0.010, 0.018), ao);
+            return vec4<f32>(present_rgb(vec3<f32>(0.008, 0.010, 0.018)), ao);
         }
         let rough_in = select(clamp(in.mtoon4.y, 0.04, 1.0), 0.42, in.mtoon4.y <= 1e-4);
         let metallic_in = clamp(in.mtoon4.x, 0.0, 1.0);
@@ -554,5 +580,5 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Linear HDR. exposure + ACES are applied by the bloom composite pass,
     // which also adds the bloom spill before tonemapping.
     let rgb = mix(lit, g.fog_color.rgb, fog);
-    return vec4<f32>(rgb, alpha);
+    return vec4<f32>(present_rgb(rgb), alpha);
 }

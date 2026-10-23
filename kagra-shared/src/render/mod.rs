@@ -9,6 +9,7 @@
 //! 頂点バッファで渡し、base instance には頼らない（GLES に無いため）。
 
 mod bloom;
+mod color_space;
 mod target;
 
 pub use target::SurfaceSource;
@@ -44,6 +45,7 @@ struct Globals {
     light_dir: [[f32; 4]; 4],
     light_view_proj: [[f32; 4]; 4],
     /// x = shadow radius. 1 = historical 3×3 PCF.
+    /// y > 0.5: this pass writes an unorm swapchain, so `present_rgb` grades it.
     shadow: [f32; 4],
     hemi_sky: [f32; 4],
     /// w > 0.5 samples the prefiltered env strip.
@@ -238,9 +240,18 @@ impl Renderer {
 
     /// 画面なし。テストやスクリーンショット用。
     pub async fn new_offscreen(width: u32, height: u32) -> Result<Self, String> {
+        Self::new_offscreen_format(width, height, wgpu::TextureFormat::Rgba8UnormSrgb).await
+    }
+
+    /// Offscreen target of an explicit format. sRGB encodes on store. Unorm
+    /// encodes in the composite shader. Tests use both to lock one OETF.
+    async fn new_offscreen_format(
+        width: u32,
+        height: u32,
+        format: wgpu::TextureFormat,
+    ) -> Result<Self, String> {
         let instance = new_instance().await;
         let (adapter, device, queue) = request_device(&instance, None).await?;
-        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
         let (width, height) = (
             width.clamp(1, MAX_TEXTURE_SIDE),
             height.clamp(1, MAX_TEXTURE_SIDE),
@@ -495,7 +506,8 @@ impl Renderer {
         let white_view = white_albedo.create_view(&Default::default());
         let black_matcap = create_albedo_texture(&device, &queue, 1, 1, &[0, 0, 0, 255]);
         let black_view = black_matcap.create_view(&Default::default());
-        let flat_normal = create_albedo_texture(&device, &queue, 1, 1, &[128, 128, 255, 255]);
+        // Flat tangent normal is data (128 → 0.5). An sRGB decode would tilt it.
+        let flat_normal = create_linear_texture(&device, &queue, 1, 1, &[128, 128, 255, 255]);
         let flat_view = flat_normal.create_view(&Default::default());
         let orm_default = create_linear_texture(&device, &queue, 1, 1, &[255, 255, 0, 255]);
         let orm_view = orm_default.create_view(&Default::default());
@@ -962,7 +974,7 @@ impl Renderer {
                 .as_ref()
                 .filter(|_| tex_ok(&mesh.normal))
                 .map(|a| {
-                    create_albedo_texture(&self.device, &self.queue, a.width, a.height, &a.rgba)
+                    create_linear_texture(&self.device, &self.queue, a.width, a.height, &a.rgba)
                 });
             let alb_view = alb_tex
                 .as_ref()
@@ -1165,6 +1177,12 @@ impl Renderer {
                 .write_buffer(&self.vbuf, 0, bytemuck::cast_slice(&vertices));
         }
 
+        // Frame format == swapchain means Chrome's WebGPU samples that target
+        // as white, so the 3D pass draws straight at the surface and composite
+        // cannot run. Unorm surfaces then encode in the fragment shader.
+        let direct = self.bloom.frame_format() == self.format;
+        let present_in_shader = color_space::present_in_fragment(direct, self.format.is_srgb());
+
         // 3D のインスタンスを 1 本のバッファに連結し、バッチごとの開始位置を覚える。
         // base instance は GLES に無いので、描画時は毎回 0.. で数え、バッファの
         // スライス位置でずらす。
@@ -1213,7 +1231,7 @@ impl Renderer {
                         };
                     raw.push(InstanceRaw {
                         model: inst.model.to_cols_array_2d(),
-                        color: to_linear(inst.color, self.format),
+                        color: color_space::srgb_u8_to_linear(inst.color),
                         material: inst.material as u8 as f32,
                         _pad: [0.0; 3],
                         mtoon,
@@ -1235,10 +1253,24 @@ impl Renderer {
                 self.queue
                     .write_buffer(&self.inst_buf, 0, bytemuck::cast_slice(&raw));
             }
-            self.upload_globals(scene);
+            self.upload_globals(scene, present_in_shader);
         }
 
-        let clear = to_linear(world.map(|s| s.clear).unwrap_or(hud.clear), self.format);
+        let clear_bytes = world.map(|s| s.clear).unwrap_or(hud.clear);
+        let (exposure, tonemap) = match world {
+            Some(scene) => (scene.exposure.max(0.0), scene.tonemap),
+            None => (1.0, true),
+        };
+        // 3D clear is linear in the HDR frame. The direct unorm fallback has no
+        // composite, so that clear is graded here with the same OETF as present_rgb.
+        // HUD-only direct stores the code; composite (or an sRGB target) encodes once.
+        let clear = if world.is_some() && present_in_shader {
+            color_space::grade_authored(clear_bytes, exposure, tonemap)
+        } else if present_in_shader {
+            color_space::display_u8(clear_bytes, false)
+        } else {
+            color_space::srgb_u8_to_linear(clear_bytes)
+        };
         let frame = match &self.target {
             Target::Surface { surface, .. } => {
                 use wgpu::CurrentSurfaceTexture as Cst;
@@ -1275,7 +1307,6 @@ impl Renderer {
         // off), sample-from-attachment comes back white on Chrome's WebGPU.
         // Draw straight into the surface instead.
         let frame_view = self.bloom.frame_view();
-        let direct = self.bloom.frame_format() == self.format;
 
         let mut encoder = self
             .device
@@ -1402,11 +1433,7 @@ impl Renderer {
                 }
             }
         }
-        // Pass 2: Bloom（extract/blur → composite で exposure + ACES → target）。
-        let (exposure, tonemap) = match world {
-            Some(scene) => (scene.exposure.max(0.0), scene.tonemap),
-            None => (1.0, true),
-        };
+        // Pass 2: HDR frame → exposure → ACES → LUT → vignette → one OETF.
         if !direct {
             self.bloom.apply(
                 &self.device,
@@ -1491,7 +1518,7 @@ impl Renderer {
         self.inst_capacity = cap;
     }
 
-    fn upload_globals(&mut self, scene: &Scene3D) {
+    fn upload_globals(&mut self, scene: &Scene3D, present_in_shader: bool) {
         let cam = &scene.camera;
         let mut light_pos = [[0.0f32; 4]; 4];
         let mut light_col = [[0.0f32; 4]; 4];
@@ -1524,7 +1551,7 @@ impl Renderer {
                 scene.light_dir.z,
                 scene.ambient.clamp(0.0, 1.0),
             ],
-            fog_color: to_linear(scene.fog_color, self.format),
+            fog_color: color_space::srgb_u8_to_linear(scene.fog_color),
             fog_range: [scene.fog_start, scene.fog_end, 0.0, 0.0],
             camera_pos: [cam.eye.x, cam.eye.y, cam.eye.z, 0.0],
             env: [
@@ -1537,7 +1564,12 @@ impl Renderer {
             light_col,
             light_dir,
             light_view_proj: crate::scene3d::scene_shadow_view_proj(scene).to_cols_array_2d(),
-            shadow: [scene.shadow_softness.max(0.0), 0.0, 0.0, 0.0],
+            shadow: [
+                scene.shadow_softness.max(0.0),
+                if present_in_shader { 1.0 } else { 0.0 },
+                0.0,
+                0.0,
+            ],
             hemi_sky: [scene.hemi_sky[0], scene.hemi_sky[1], scene.hemi_sky[2], 0.0],
             hemi_ground: [
                 scene.hemi_ground[0],
@@ -2188,29 +2220,14 @@ fn create_rgba_texture(
         },
     );
     if mip_level_count > 1 {
+        let srgb = format.is_srgb();
         let mut prev = data.to_vec();
         let mut pw = width;
         let mut ph = height;
         for level in 1..mip_level_count {
             let nw = (pw / 2).max(1);
             let nh = (ph / 2).max(1);
-            let mut next = vec![0u8; (nw * nh * 4) as usize];
-            for y in 0..nh {
-                for x in 0..nw {
-                    let i00 = ((2 * y * pw + 2 * x) * 4) as usize;
-                    let i10 = ((2 * y * pw + (2 * x + 1)) * 4) as usize;
-                    let i01 = (((2 * y + 1) * pw + 2 * x) * 4) as usize;
-                    let i11 = (((2 * y + 1) * pw + (2 * x + 1)) * 4) as usize;
-                    let di = ((y * nw + x) * 4) as usize;
-                    for c in 0..4 {
-                        let sum = prev[i00 + c] as u32
-                            + prev[i10 + c] as u32
-                            + prev[i01 + c] as u32
-                            + prev[i11 + c] as u32;
-                        next[di + c] = ((sum + 2) / 4) as u8;
-                    }
-                }
-            }
+            let next = color_space::box_downsample(&prev, pw, ph, srgb);
             queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
                     texture: &tex,
@@ -2369,33 +2386,9 @@ fn create_init_buffer(
     buffer
 }
 
-/// sRGB のターゲットへはリニア値を書く必要がある。シーンの色は sRGB の
-/// u8 なので、フォーマットに応じて変換する。
-fn to_linear(color: [u8; 4], format: wgpu::TextureFormat) -> [f32; 4] {
-    let f = |v: u8| v as f32 / 255.0;
-    let a = f(color[3]);
-    if format.is_srgb() {
-        let srgb_to_linear = |c: f32| {
-            if c <= 0.04045 {
-                c / 12.92
-            } else {
-                ((c + 0.055) / 1.055).powf(2.4)
-            }
-        };
-        [
-            srgb_to_linear(f(color[0])),
-            srgb_to_linear(f(color[1])),
-            srgb_to_linear(f(color[2])),
-            a,
-        ]
-    } else {
-        [f(color[0]), f(color[1]), f(color[2]), a]
-    }
-}
-
 /// 1 つの Quad → 三角形 2 つ分の頂点（左上原点、y 下向き）。
 fn quad_vertices(q: &crate::scene::Quad, format: wgpu::TextureFormat) -> [Vertex; 6] {
-    let color = to_linear(q.color, format);
+    let color = color_space::display_u8(q.color, format.is_srgb());
     let (l, t, r, b) = (q.x, q.y, q.x + q.w, q.y + q.h);
     let corners = [[l, t], [r, t], [r, b], [l, t], [r, b], [l, b]];
     std::array::from_fn(|i| Vertex {
@@ -2440,12 +2433,15 @@ mod tests {
 
     #[test]
     fn srgb_conversion_endpoints() {
-        let black = to_linear([0, 0, 0, 255], wgpu::TextureFormat::Rgba8UnormSrgb);
+        let black = color_space::srgb_u8_to_linear([0, 0, 0, 255]);
         assert_eq!(black[0], 0.0);
-        let white = to_linear([255, 255, 255, 255], wgpu::TextureFormat::Rgba8UnormSrgb);
+        let white = color_space::srgb_u8_to_linear([255, 255, 255, 255]);
         assert!((white[0] - 1.0).abs() < 1e-5);
-        let plain = to_linear([128, 0, 0, 255], wgpu::TextureFormat::Rgba8Unorm);
+        // HUD on an unorm target keeps the code. Lighting always decodes.
+        let plain = color_space::display_u8([128, 0, 0, 255], false);
         assert!((plain[0] - 128.0 / 255.0).abs() < 1e-6);
+        let lit = color_space::srgb_u8_to_linear([128, 0, 0, 255]);
+        assert!(lit[0] < 0.25, "author 128 is linear ~0.216, got {}", lit[0]);
     }
 
     #[test]
@@ -2497,6 +2493,18 @@ mod tests {
             composite.contains("linear_to_srgb"),
             "unorm swapchains encode sRGB in the shader"
         );
+        assert!(
+            composite.contains("params.v.x > 1e-4"),
+            "bloom intensity 0 must not add an undefined sample"
+        );
+        assert!(
+            src.contains("fn present_rgb"),
+            "direct unorm path grades in the fragment shader"
+        );
+        assert!(
+            src.contains("g.shadow.y"),
+            "present flag rides the unused shadow.y"
+        );
         let fxaa = include_str!("fxaa.wgsl");
         let fx = fxaa.split("fn fs_main").nth(1).expect("fxaa fs");
         let early = fx.find("l_range <").expect("fxaa early out");
@@ -2539,5 +2547,137 @@ mod tests {
         // previous 416 + hemi sky/ground
         assert_eq!(std::mem::size_of::<Globals>(), 448);
         assert_eq!(crate::scene3d::SHADOW_MAP_SIZE, 2048);
+    }
+
+    fn pixel_of(rgba: &[u8], w: u32, x: u32, y: u32) -> [u8; 4] {
+        let i = ((y * w + x) * 4) as usize;
+        [rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]]
+    }
+
+    fn assert_rgb_near(got: [u8; 4], expect: [u8; 4], tol: i32) {
+        for i in 0..3 {
+            let d = (got[i] as i32 - expect[i] as i32).abs();
+            assert!(
+                d <= tol,
+                "channel {i} got {got:?} expect {expect:?} (tol {tol})"
+            );
+        }
+    }
+
+    fn write_shot(name: &str, w: u32, h: u32, rgba: &[u8]) {
+        let Ok(dir) = std::env::var("KAGRA_COLOR_SHOT") else {
+            return;
+        };
+        let path = std::path::Path::new(&dir).join(name);
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let Ok(file) = std::fs::File::create(&path) else {
+            return;
+        };
+        let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), w, h);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        if let Ok(mut writer) = encoder.write_header() {
+            let _ = writer.write_image_data(rgba);
+        }
+    }
+
+    /// Empty scene, bloom off, FXAA off, vignette off. The center pixel is the
+    /// clear color after one grade.
+    fn grade_clear(format: wgpu::TextureFormat, tonemap: bool) -> Option<Vec<u8>> {
+        let mut renderer =
+            pollster::block_on(Renderer::new_offscreen_format(64, 64, format)).ok()?;
+        renderer.set_fxaa(false);
+        renderer.bloom.set_grade(0.85, 0.0, 0.0, false, "off", 0.0);
+        let scene = crate::scene3d::Scene3D {
+            clear: [128, 64, 32, 255],
+            tonemap,
+            exposure: 1.0,
+            ibl: 0.0,
+            batches: Vec::new(),
+            ..Default::default()
+        };
+        renderer
+            .render_frame(Some(&scene), &crate::scene::DrawList::default())
+            .ok()?;
+        renderer.read_rgba().ok()
+    }
+
+    fn hud_ramp(format: wgpu::TextureFormat) -> Option<Vec<u8>> {
+        let mut renderer =
+            pollster::block_on(Renderer::new_offscreen_format(80, 16, format)).ok()?;
+        renderer.set_fxaa(false);
+        renderer.bloom.set_grade(0.85, 0.0, 0.0, false, "off", 0.0);
+        let mut hud = crate::scene::DrawList::default();
+        for (i, byte) in [0u8, 64, 128, 192, 255].iter().enumerate() {
+            hud.quads.push(crate::scene::Quad::new(
+                i as f32 * 16.0,
+                0.0,
+                16.0,
+                16.0,
+                [*byte, *byte, *byte, 255],
+            ));
+        }
+        renderer.render_frame(None, &hud).ok()?;
+        renderer.read_rgba().ok()
+    }
+
+    #[test]
+    fn offscreen_clear_matches_reference_on_srgb_and_unorm() {
+        let author = [128u8, 64, 32, 255];
+        let plain = color_space::reference_byte(author, 1.0, false);
+        let graded = color_space::reference_byte(author, 1.0, true);
+        let cases = [
+            (
+                wgpu::TextureFormat::Rgba8UnormSrgb,
+                false,
+                plain,
+                "srgb-plain",
+            ),
+            (
+                wgpu::TextureFormat::Rgba8UnormSrgb,
+                true,
+                graded,
+                "srgb-aces",
+            ),
+            (wgpu::TextureFormat::Rgba8Unorm, false, plain, "unorm-plain"),
+            (wgpu::TextureFormat::Rgba8Unorm, true, graded, "unorm-aces"),
+        ];
+        for (format, tonemap, expect, name) in cases {
+            let Some(rgba) = grade_clear(format, tonemap) else {
+                eprintln!("no GPU adapter; skipping linear reference {name}");
+                return;
+            };
+            let got = pixel_of(&rgba, 64, 32, 32);
+            write_shot(&format!("clear-{name}.png"), 64, 64, &rgba);
+            assert_rgb_near(got, expect, 3);
+            assert_eq!(got[3], 255, "{name} alpha");
+            if !tonemap {
+                assert!(
+                    (got[0] as i32 - 188).abs() > 20,
+                    "{name} looks like a missing sRGB decode: {got:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn offscreen_hud_ramp_is_one_encode() {
+        for (format, name) in [
+            (wgpu::TextureFormat::Rgba8UnormSrgb, "srgb"),
+            (wgpu::TextureFormat::Rgba8Unorm, "unorm"),
+        ] {
+            let Some(rgba) = hud_ramp(format) else {
+                eprintln!("no GPU adapter; skipping HUD ramp {name}");
+                return;
+            };
+            write_shot(&format!("hud-ramp-{name}.png"), 80, 16, &rgba);
+            for (i, byte) in [0u8, 64, 128, 192, 255].iter().enumerate() {
+                let got = pixel_of(&rgba, 80, i as u32 * 16 + 8, 8);
+                let expect = [*byte, *byte, *byte, 255];
+                assert_rgb_near(got, expect, 1);
+            }
+        }
     }
 }
