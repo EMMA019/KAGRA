@@ -31,6 +31,8 @@ from kagra.distribute import (  # noqa: E402
 )
 
 PLAY_HTML = Path(__file__).resolve().parent / "preview_site" / "play.html"
+# Opening the preview with no ?game= loads this slug. Box Hop stays in the list.
+LANDING_SLUG = "neon_run"
 
 
 def pages_base(owner: str, repo: str) -> str:
@@ -52,7 +54,7 @@ def build_preview(repo: Path, out: Path, pkg: Path | None, *, require_pkg: bool)
     for path in sorted((repo / "games").glob("*.json")):
         manifest = load_manifest(path, repo)
         games.append(_stage_one(repo, out, manifest))
-    games.sort(key=lambda g: (not g["browser"], g["slug"] != "platformer", g["title"]))
+    games.sort(key=lambda g: (not g["browser"], g["slug"] != LANDING_SLUG, g["title"]))
     catalog = {"games": games}
     (out / "catalog.json").write_text(
         json.dumps(catalog, ensure_ascii=False, indent=2) + "\n",
@@ -180,7 +182,9 @@ def render_index(games: list[dict]) -> str:
 
     playable = [g for g in games if g.get("browser")]
     quiet = [g for g in games if not g.get("browser")]
-    featured = next((g for g in playable if g["slug"] == "platformer"), None)
+    featured = next((g for g in playable if g["slug"] == LANDING_SLUG), None)
+    if featured is None and playable:
+        featured = playable[0]
     feature_html = ""
     if featured is not None:
         feature_html = (

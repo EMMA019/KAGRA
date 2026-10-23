@@ -120,6 +120,8 @@ jobs:
               "",
               `プレビュー: ${url}`,
               "",
+              `Lumen: ${url}play.html?game=neon_run`,
+              "",
               `Box Hop: ${url}play.html?game=platformer`,
               "",
               `![QR](${url}qr.png)`,
@@ -158,7 +160,8 @@ jobs:
         run: |
           set -eu
           probe="${url}catalog.json"
-          html="${url}play.html?game=platformer"
+          html="${url}play.html?game=neon_run"
+          neon="${url}games/neon_run/world.json"
           wasm="${url}pkg/kagra_shared_bg.wasm"
           found=""
           for i in $(seq 1 40); do
@@ -200,15 +203,20 @@ jobs:
           : > /tmp/kagra-catalog.json
           : > /tmp/kagra-play.html
           : > /tmp/kagra.wasm
+          : > /tmp/kagra-neon.json
           for i in $(seq 1 15); do
             code=$(curl -fsS -o /tmp/kagra-catalog.json -w "%{http_code}" "$probe" || true)
             hcode=$(curl -fsS -o /tmp/kagra-play.html -w "%{http_code}" "$html" || true)
             wcode=$(curl -fsS -o /tmp/kagra.wasm -w "%{http_code}" "$wasm" || true)
+            ncode=$(curl -fsS -o /tmp/kagra-neon.json -w "%{http_code}" "$neon" || true)
             wsize=$(wc -c < /tmp/kagra.wasm)
-            echo "try ${i} catalog=${code} play=${hcode} wasm=${wcode} wasm_bytes=${wsize}"
-            if [ "$code" = "200" ] && [ "$hcode" = "200" ] && [ "$wcode" = "200" ] \
+            echo "try ${i} catalog=${code} play=${hcode} wasm=${wcode} neon=${ncode} wasm_bytes=${wsize}"
+            if [ "$code" = "200" ] && [ "$hcode" = "200" ] && [ "$wcode" = "200" ] && [ "$ncode" = "200" ] \
               && grep -q platformer /tmp/kagra-catalog.json \
+              && grep -q neon_run /tmp/kagra-catalog.json \
+              && grep -q neon_run /tmp/kagra-neon.json \
               && grep -q 'data-orient="portrait"' /tmp/kagra-play.html \
+              && grep -q 'neon_run' /tmp/kagra-play.html \
               && [ "$wsize" -gt 1000000 ]; then
               exit 0
             fi

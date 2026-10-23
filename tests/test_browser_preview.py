@@ -35,6 +35,10 @@ def test_preview_links_every_browser_genre(tmp_path: Path):
     assert games["platformer"]["browser"] is True
     assert games["platformer"]["title"] == "Box Hop"
     assert games["platformer"]["href"] == "play.html?game=platformer"
+    assert games["neon_run"]["browser"] is True
+    assert games["neon_run"]["title"] == "Lumen"
+    assert games["neon_run"]["href"] == "play.html?game=neon_run"
+    assert catalog["games"][0]["slug"] == "neon_run"
     shipped = list((ROOT / "games").glob("*.json"))
     assert len(games) == len(shipped)
     for path in shipped:
@@ -56,10 +60,13 @@ def test_preview_links_every_browser_genre(tmp_path: Path):
     index = (tmp_path / "site" / "index.html").read_text(encoding="utf-8")
     assert "play.html?game=platformer" in index
     assert "Box Hop" in index
+    assert 'href="play.html?game=neon_run"' in index
+    assert index.index("play.html?game=neon_run") < index.index("play.html?game=platformer")
     assert "play.html?game=chess" not in index
     play = (tmp_path / "site" / "play.html").read_text(encoding="utf-8")
     assert "setPlayInput" in play
     assert "data-orient" in play
+    assert '"neon_run"' in play
     assert (tmp_path / "site" / ".nojekyll").is_file()
     knight = (
         tmp_path

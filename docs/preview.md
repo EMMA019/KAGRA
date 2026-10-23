@@ -14,7 +14,9 @@ wasm の WorldPlay に載せる。
 | `master` | `https://emma019.github.io/KAGRA/` |
 | pull request `N` | `https://emma019.github.io/KAGRA/pr/N/` |
 
-先頭はジャンル一覧。`world` がある例はすべてリンクする。Box Hop は一番上。
+先頭はジャンル一覧。`world` がある例はすべてリンクする。着地は Lumen
+（`play.html?game=neon_run`）。クエリが無い `play.html` も Lumen を開く。
+Box Hop は一覧に残る。
 `world` が無い例（チェス、飛行など）は一覧に名前だけ出て、ブラウザでは進まない。
 ルールは Python 側のまま。
 
