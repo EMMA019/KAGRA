@@ -96,6 +96,9 @@ wgpu = { version = "30", optional = true, default-features = false, features = [
 
 [dev-dependencies]
 pollster = "0.3"
+# Oracle for the sRGB transfer in render tests. Not linked into the wasm/Android
+# runtime (the shader and `color_space.rs` carry the same IEC curve).
+palette = { version = "0.7.6", default-features = false, features = ["std"] }
 
 # Desktop WorldDoc window only (example `window`). Same winit 0.29 *line* as
 # kagra-core, but a separate process + wgpu 30 via raw-window-handle.

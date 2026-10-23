@@ -23,10 +23,10 @@ struct Globals {
     // Directional sun ortho. Same family, not a cascade / V2 umbra.
     light_view_proj: mat4x4<f32>,
     // x = shadow radius. 1 = the historical 3x3 PCF. Larger = a wider tent.
-    // y > 0.5: the color target is 8-bit, so exposure and ACES run here.
-    //   WebGPU cannot sample an Rgba16Float frame (it comes back white), and
-    //   storing HDR into unorm clamps neon to pure white before the composite.
-    // z > 0.5: this pass writes the swapchain directly, so encode sRGB here.
+    // y > 0.5: this pass writes an unorm swapchain (composite cannot sample
+    // the frame). present_rgb applies exposure, ACES, and one sRGB OETF.
+    // WebGPU cannot sample an Rgba16Float frame, and storing HDR into unorm
+    // would clamp neon to white before that grade.
     shadow: vec4<f32>,
     // Hemisphere colors. Defaults match the old hardcoded studio SH.
     hemi_sky: vec4<f32>,
@@ -124,9 +124,33 @@ fn vs_outline(in: VsIn) -> VsOut {
     return out;
 }
 
+// Narkowicz ACES, same constants as bloom.wgsl. Only when this pass writes
+// the swapchain (g.shadow.y > 0.5). Composite owns the grade otherwise.
+fn aces_tonemap(x: vec3<f32>) -> vec3<f32> {
+    return saturate((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14));
+}
+
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let cut = c <= vec3<f32>(0.0031308);
+    let lo = c * 12.92;
+    let hi = 1.055 * pow(max(c, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.4)) - 0.055;
+    return select(hi, lo, cut);
+}
+
+fn present_rgb(rgb: vec3<f32>) -> vec3<f32> {
+    if (g.shadow.y <= 0.5) {
+        return rgb;
+    }
+    var c = rgb * max(g.env.y, 0.0);
+    if (g.env.w > 0.5) {
+        c = aces_tonemap(c);
+    }
+    return linear_to_srgb(max(c, vec3<f32>(0.0)));
+}
+
 @fragment
 fn fs_outline(in: VsOut) -> @location(0) vec4<f32> {
-    return vec4<f32>(in.color.rgb, 1.0);
+    return vec4<f32>(present_rgb(in.color.rgb), 1.0);
 }
 
 @vertex
@@ -359,32 +383,6 @@ fn emissive_rgb(in: VsOut, albedo: vec3<f32>, em_map: vec3<f32>) -> vec3<f32> {
     let use_map = step(0.5, in.mtoon2.z);
     col = mix(col, col * em_map, use_map);
     return col * strength;
-}
-
-// Narkowicz ACES, same fit as bloom.wgsl. Only the 8-bit frame uses it here.
-fn aces_tonemap(x: vec3<f32>) -> vec3<f32> {
-    return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), vec3<f32>(0.0), vec3<f32>(1.0));
-}
-
-fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
-    let cut = c <= vec3<f32>(0.0031308);
-    let lo = c * 12.92;
-    let hi = 1.055 * pow(max(c, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.4)) - 0.055;
-    return select(hi, lo, cut);
-}
-
-fn present_rgb(rgb: vec3<f32>) -> vec3<f32> {
-    if (g.shadow.y <= 0.5) {
-        return rgb;
-    }
-    var c = rgb * max(g.env.y, 0.0);
-    if (g.env.w > 0.5) {
-        c = aces_tonemap(c);
-    }
-    if (g.shadow.z > 0.5) {
-        c = linear_to_srgb(max(c, vec3<f32>(0.0)));
-    }
-    return c;
 }
 
 // Two scrolling procedural normals (fbm gradients). env.z = seconds.
