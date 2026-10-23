@@ -88,6 +88,10 @@ export class WasmSession {
     saveJson(): string;
     setAssetRoot(root: string): void;
     /**
+     * Neon Cat hitbox cages. The page turns this on for `?debug=1`.
+     */
+    setDebug(on: boolean): void;
+    /**
      * 連続値のドライバ入力。`steer` は -1..1、`throttle` と `brake` は 0..1。
      */
     setDrive(steer: number, throttle: number, brake: number): void;
@@ -147,6 +151,13 @@ export function netHello(room: string, name: string): string;
 
 export function sharedVersion(): string;
 
+/**
+ * Procedural SFX as a mono 16-bit WAV. Empty when `name` is not a preset.
+ * Bundled clips stay on the mixer; this is the synth (`jump`, `hit`, `coin`,
+ * `explode`, …) so the page can play a cue without a file.
+ */
+export function synthWav(name: string): Uint8Array;
+
 export function wasm_start(): void;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -197,9 +208,18 @@ export interface InitOutput {
     readonly kagra_shared_stats_json: (a: number, b: number, c: number) => number;
     readonly kagra_shared_take_audio_cues: (a: number, b: number) => number;
     readonly kagra_shared_version: () => number;
+    readonly __wbg_wasmlockstep_free: (a: number, b: number) => void;
     readonly __wbg_wasmsession_free: (a: number, b: number) => void;
+    readonly netDecode: (a: number, b: number) => [number, number, number, number];
+    readonly netDt: (a: number, b: number) => number;
+    readonly netHello: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly sharedVersion: () => [number, number];
+    readonly synthWav: (a: number, b: number) => [number, number];
     readonly wasm_start: () => void;
+    readonly wasmlockstep_ingest: (a: number, b: number, c: number) => [number, number];
+    readonly wasmlockstep_new: (a: number, b: number) => [number, number, number];
+    readonly wasmlockstep_ready: (a: number, b: number) => number;
+    readonly wasmlockstep_submitLocal: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly wasmsession_attachCanvas: (a: number, b: any) => any;
     readonly wasmsession_audioCuesJson: (a: number) => [number, number];
     readonly wasmsession_audioJson: (a: number) => [number, number];
@@ -225,6 +245,7 @@ export interface InitOutput {
     readonly wasmsession_resume: (a: number) => void;
     readonly wasmsession_saveJson: (a: number) => [number, number, number, number];
     readonly wasmsession_setAssetRoot: (a: number, b: number, c: number) => void;
+    readonly wasmsession_setDebug: (a: number, b: number) => void;
     readonly wasmsession_setDrive: (a: number, b: number, c: number, d: number) => void;
     readonly wasmsession_setExternalMenu: (a: number, b: number) => void;
     readonly wasmsession_setGraphicsBackend: (a: number, b: number, c: number) => void;
@@ -251,14 +272,6 @@ export interface InitOutput {
     readonly kagra_net_lockstep_new: (a: number, b: number) => number;
     readonly kagra_net_ready: (a: number, b: number) => number;
     readonly kagra_net_submit_local: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
-    readonly __wbg_wasmlockstep_free: (a: number, b: number) => void;
-    readonly netDecode: (a: number, b: number) => [number, number, number, number];
-    readonly netDt: (a: number, b: number) => number;
-    readonly netHello: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly wasmlockstep_ingest: (a: number, b: number, c: number) => [number, number];
-    readonly wasmlockstep_new: (a: number, b: number) => [number, number, number];
-    readonly wasmlockstep_ready: (a: number, b: number) => number;
-    readonly wasmlockstep_submitLocal: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly wasm_bindgen_42bf64e63cc180fa___convert__closures_____invoke___wasm_bindgen_42bf64e63cc180fa___JsValue__core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_42bf64e63cc180fa___JsError___true_: (a: number, b: number, c: any) => [number, number];
     readonly wasm_bindgen_42bf64e63cc180fa___convert__closures_____invoke___wasm_bindgen_42bf64e63cc180fa___sys__JsOption_wgpu_51a115929c565234___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_42bf64e63cc180fa___JsError___true_: (a: number, b: number, c: any) => [number, number];
     readonly wasm_bindgen_42bf64e63cc180fa___convert__closures_____invoke___wasm_bindgen_42bf64e63cc180fa___sys__JsOption_wgpu_51a115929c565234___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_42bf64e63cc180fa___JsError___true__3: (a: number, b: number, c: any) => [number, number];
