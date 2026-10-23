@@ -12,16 +12,32 @@ palette 0.7 (dev-dependency, tests only)
   runtime curve lives in kagra-shared/src/render/color_space.rs and the
   WGSL shaders so the wasm and Android builds do not link this crate.
 
-image 0.25 (jpeg feature only; default features off so rayon stays out)
+image 0.25 (jpeg and webp features only; default features off so rayon stays out)
   https://github.com/image-rs/image
   MIT OR Apache-2.0
-  Decodes glTF JPEG images (color, normal, ORM, emissive). PNG stays
-  on the png crate. The wasm and Android builds use this pure-Rust
-  decoder.
+  Decodes glTF JPEG (via zune-jpeg) and WebP (via image-webp). PNG stays
+  on the png crate. The wasm and Android builds use these pure-Rust
+  decoders.
+
+image-webp (pulled by image's webp feature)
+  https://github.com/image-rs/image-webp
+  MIT OR Apache-2.0
+  Lossless and lossy WebP decode for glTF images. No encoder in the runtime.
 
 The Narkowicz ACES fit in bloom.wgsl and shader3d.wgsl is the public
 approximation published by Krzysztof Narkowicz (2016), used widely
 including by three.js (MIT). No three.js source is copied in this tree.
+
+The post pass graph (kagra-shared/src/render/post.rs, post.wgsl) follows
+the shape of three.js EffectComposer / ShaderPass and the ideas in
+SSAOShader, BokehPass, and the Karis neighborhood clamp used by TAA
+examples (three.js, MIT, https://github.com/mrdoob/three.js). The WGSL
+is original. No three.js source is copied.
+
+Cascade selection follows the parallel-split idea used by three.js
+CSM (MIT, https://github.com/mrdoob/three.js). The rings here are fixed
+concentric extents (8 / 24 / 80 m) packed into one 2048 map, not
+three.js frustum-slice practical splits. No three.js source is copied.
 
 puffin 0.19
   https://github.com/emilk/puffin

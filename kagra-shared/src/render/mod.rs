@@ -10,6 +10,7 @@
 
 mod bloom;
 mod color_space;
+mod post;
 mod target;
 
 pub use target::SurfaceSource;
@@ -18,6 +19,7 @@ use crate::scene::{DrawList, ImageQuad};
 use crate::scene3d::{MeshData, MeshId, Scene3D};
 use crate::world_doc::load_png_albedo;
 use bloom::BloomPass;
+use post::PostGraph;
 
 const MAX_TEXTURE_SIDE: u32 = 8192;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -44,9 +46,15 @@ struct Globals {
     light_col: [[f32; 4]; 4],
     light_dir: [[f32; 4]; 4],
     light_view_proj: [[f32; 4]; 4],
+    /// Cascades 1 and 2. Count 1 repeats the historical matrix in both slots.
+    cascade1: [[f32; 4]; 4],
+    cascade2: [[f32; 4]; 4],
     /// x = shadow radius. 1 = historical 3×3 PCF.
     /// y > 0.5: this pass writes an unorm swapchain, so `present_rgb` grades it.
+    /// z = camera near, w = camera far (depth prepass only).
     shadow: [f32; 4],
+    /// x = cascade count (1, 2, or 3). y > 0.5 enables the PCSS blocker search.
+    cascade: [f32; 4],
     hemi_sky: [f32; 4],
     /// w > 0.5 samples the prefiltered env strip.
     hemi_ground: [f32; 4],
@@ -129,19 +137,27 @@ pub struct Renderer {
     vbuf_capacity: usize,
 
     pipeline3d: wgpu::RenderPipeline,
+    /// Color target of linear eye depth. Drawn only when a post pass samples it.
+    pipeline_depth: wgpu::RenderPipeline,
     /// glTF doubleSided. Same shader, cull disabled.
     pipeline_nocull: wgpu::RenderPipeline,
     /// 天球用。深度は書いて読まず、裏面カリングもしない。
     pipeline_sky: wgpu::RenderPipeline,
     /// MToon アウトライン（backface push-out、カリング Front）。
     pipeline_outline: wgpu::RenderPipeline,
-    /// Depth-only sun map. Not a cascade, not RendererV2.
-    pipeline_shadow: wgpu::RenderPipeline,
-    pipeline_shadow_nocull: wgpu::RenderPipeline,
+    /// Depth-only sun map. One pipeline per cascade entry (`vs_shadow`, `_1`, `_2`).
+    pipeline_shadow: [wgpu::RenderPipeline; 3],
+    /// Double-sided casters. Same entries, cull off.
+    pipeline_shadow_nocull: [wgpu::RenderPipeline; 3],
+    /// Same draws, plus a color target so PCSS can read device z.
+    pipeline_shadow_pcss: [wgpu::RenderPipeline; 3],
+    pipeline_shadow_pcss_nocull: [wgpu::RenderPipeline; 3],
     globals_buf: wgpu::Buffer,
     globals_bind: wgpu::BindGroup,
     _shadow_tex: wgpu::Texture,
     shadow_view: wgpu::TextureView,
+    _shadow_raw: wgpu::Texture,
+    shadow_raw_view: wgpu::TextureView,
     shadow_bind: wgpu::BindGroup,
     inst_buf: wgpu::Buffer,
     inst_capacity: usize,
@@ -162,6 +178,8 @@ pub struct Renderer {
     elapsed: f32,
     /// Threshold bloom: linear-HDR frame → extract/blur → composite → target.
     bloom: BloomPass,
+    /// SSAO / DOF / motion / TAA. Off unless a dump or `set_post` enables them.
+    post: PostGraph,
     /// TextQuad → カバレッジ Quad のキャッシュ。GPU 状態を持たない。
     text: crate::font::TextRaster,
     /// walker glTF spec → SpringBone 布シミュ（フレーム跨ぎで保持）。
@@ -585,6 +603,7 @@ impl Renderer {
         });
 
         let (shadow_tex, shadow_view) = create_shadow_map(&device);
+        let (shadow_raw, shadow_raw_view) = create_shadow_raw(&device);
         // Nearest compare. depth32float linear filtering is the WebGPU
         // feature `depth32float-filterable`, which wgpu 30 does not expose.
         // A linear compare sampler is valid on lavapipe and invalid on
@@ -598,6 +617,18 @@ impl Renderer {
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
             compare: Some(wgpu::CompareFunction::LessEqual),
+            ..Default::default()
+        });
+        // Nearest. A linear sample of this Rgba16Float copy is
+        // `float32-filterable`, which the phone WebGPU path does not require.
+        // PCSS is opt-in and reads explicit LOD 0.
+        let shadow_raw_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("kagra-shared shadow raw"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
         let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -619,6 +650,22 @@ impl Renderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
             ],
         });
         let shadow_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -632,6 +679,14 @@ impl Renderer {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&shadow_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&shadow_raw_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&shadow_raw_sampler),
                 },
             ],
         });
@@ -853,6 +908,42 @@ impl Renderer {
             cache: None,
         });
 
+        let depth_color_target = [Some(wgpu::ColorTargetState {
+            format: frame_format,
+            blend: None,
+            write_mask: wgpu::ColorWrites::ALL,
+        })];
+        let pipeline_depth = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("kagra-shared depth prepass"),
+            layout: Some(&layout3d),
+            vertex: wgpu::VertexState {
+                module: &shader3d,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &vertex_buffers,
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader3d,
+                entry_point: Some("fs_depth"),
+                compilation_options: Default::default(),
+                targets: &depth_color_target,
+            }),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
         let pipeline_sky = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("kagra-shared sky pipeline"),
             layout: Some(&layout3d),
@@ -915,76 +1006,124 @@ impl Renderer {
             cache: None,
         });
 
-        let pipeline_shadow = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("kagra-shared shadow pipeline"),
-            layout: Some(&layout_shadow),
-            vertex: wgpu::VertexState {
+        let raw_target = [Some(wgpu::ColorTargetState {
+            format: wgpu::TextureFormat::Rgba16Float,
+            blend: None,
+            write_mask: wgpu::ColorWrites::ALL,
+        })];
+        let shadow_depth = wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Less),
+            stencil: Default::default(),
+            // depth32float: 1 constant unit is ~2^-23. 8192 units is
+            // about 0.001 of the depth range, which is the bias a 24-bit
+            // map gets from a constant of 2. Clamp so a steep caster
+            // cannot shove its shadow off the receiver.
+            bias: wgpu::DepthBiasState {
+                constant: 8192,
+                slope_scale: 1.5,
+                clamp: 0.008,
+            },
+        };
+        let shadow_vs = ["vs_shadow", "vs_shadow_1", "vs_shadow_2"];
+        let mut depth_only = Vec::with_capacity(3);
+        let mut depth_nocull = Vec::with_capacity(3);
+        let mut with_raw = Vec::with_capacity(3);
+        let mut raw_nocull = Vec::with_capacity(3);
+        for entry in shadow_vs {
+            let vertex = wgpu::VertexState {
                 module: &shader3d,
-                entry_point: Some("vs_shadow"),
+                entry_point: Some(entry),
                 compilation_options: Default::default(),
                 buffers: &vertex_buffers,
-            },
-            fragment: None,
-            primitive: wgpu::PrimitiveState {
+            };
+            let culled = wgpu::PrimitiveState {
                 cull_mode: Some(wgpu::Face::Back),
                 ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: Default::default(),
-                // depth32float: 1 constant unit is ~2^-23. 8192 units is
-                // about 0.001 of the depth range, which is the bias a 24-bit
-                // map gets from a constant of 2. Clamp so a steep caster
-                // cannot shove its shadow off the receiver.
-                bias: wgpu::DepthBiasState {
-                    constant: 8192,
-                    slope_scale: 1.5,
-                    clamp: 0.008,
-                },
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-
-        let pipeline_shadow_nocull =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("kagra-shared shadow pipeline nocull"),
-                layout: Some(&layout_shadow),
-                vertex: wgpu::VertexState {
-                    module: &shader3d,
-                    entry_point: Some("vs_shadow"),
-                    compilation_options: Default::default(),
-                    buffers: &vertex_buffers,
-                },
-                fragment: None,
-                primitive: wgpu::PrimitiveState {
-                    cull_mode: None,
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: DEPTH_FORMAT,
-                    depth_write_enabled: Some(true),
-                    depth_compare: Some(wgpu::CompareFunction::Less),
-                    stencil: Default::default(),
-                    bias: wgpu::DepthBiasState {
-                        constant: 2,
-                        slope_scale: 2.0,
-                        clamp: 0.0,
-                    },
+            };
+            let open = wgpu::PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            };
+            let raw_fs = wgpu::FragmentState {
+                module: &shader3d,
+                entry_point: Some("fs_shadow_depth"),
+                compilation_options: Default::default(),
+                targets: &raw_target,
+            };
+            depth_only.push(
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("kagra-shared shadow pipeline"),
+                    layout: Some(&layout_shadow),
+                    vertex: vertex.clone(),
+                    fragment: None,
+                    primitive: culled,
+                    depth_stencil: Some(shadow_depth.clone()),
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview_mask: None,
+                    cache: None,
                 }),
-                multisample: wgpu::MultisampleState::default(),
-                multiview_mask: None,
-                cache: None,
-            });
+            );
+            depth_nocull.push(
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("kagra-shared shadow pipeline nocull"),
+                    layout: Some(&layout_shadow),
+                    vertex: vertex.clone(),
+                    fragment: None,
+                    primitive: open,
+                    depth_stencil: Some(shadow_depth.clone()),
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview_mask: None,
+                    cache: None,
+                }),
+            );
+            with_raw.push(
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("kagra-shared shadow raw pipeline"),
+                    layout: Some(&layout_shadow),
+                    vertex: vertex.clone(),
+                    fragment: Some(raw_fs.clone()),
+                    primitive: culled,
+                    depth_stencil: Some(shadow_depth.clone()),
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview_mask: None,
+                    cache: None,
+                }),
+            );
+            raw_nocull.push(
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("kagra-shared shadow raw pipeline nocull"),
+                    layout: Some(&layout_shadow),
+                    vertex,
+                    fragment: Some(raw_fs),
+                    primitive: open,
+                    depth_stencil: Some(shadow_depth.clone()),
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview_mask: None,
+                    cache: None,
+                }),
+            );
+        }
+        let pipeline_shadow: [wgpu::RenderPipeline; 3] = depth_only
+            .try_into()
+            .unwrap_or_else(|_| unreachable!("three shadow pipelines"));
+        let pipeline_shadow_nocull: [wgpu::RenderPipeline; 3] = depth_nocull
+            .try_into()
+            .unwrap_or_else(|_| unreachable!("three nocull shadow pipelines"));
+        let pipeline_shadow_pcss: [wgpu::RenderPipeline; 3] = with_raw
+            .try_into()
+            .unwrap_or_else(|_| unreachable!("three pcss pipelines"));
+        let pipeline_shadow_pcss_nocull: [wgpu::RenderPipeline; 3] = raw_nocull
+            .try_into()
+            .unwrap_or_else(|_| unreachable!("three nocull pcss pipelines"));
 
         let inst_capacity = 256;
         let inst_buf = create_instance_buffer(&device, inst_capacity);
         let depth = create_depth_view(&device, width, height);
         let bloom = BloomPass::new(&device, format, width, height, hdr);
         let timestamps = create_timestamps(&device);
+        let post = PostGraph::new(&device, format, bloom.frame_format(), width, height);
 
         let me = Self {
             device,
@@ -1000,15 +1139,20 @@ impl Renderer {
             vbuf,
             vbuf_capacity,
             pipeline3d,
+            pipeline_depth,
             pipeline_nocull,
             pipeline_sky,
             pipeline_outline,
             pipeline_shadow,
             pipeline_shadow_nocull,
+            pipeline_shadow_pcss,
+            pipeline_shadow_pcss_nocull,
             globals_buf,
             globals_bind,
             _shadow_tex: shadow_tex,
             shadow_view,
+            _shadow_raw: shadow_raw,
+            shadow_raw_view,
             shadow_bind,
             inst_buf,
             inst_capacity,
@@ -1026,6 +1170,7 @@ impl Renderer {
             env_bind,
             elapsed: 0.0,
             bloom,
+            post,
             text: crate::font::TextRaster::new(),
             cloth: std::collections::HashMap::new(),
             mesh_key: String::new(),
@@ -1282,6 +1427,12 @@ impl Renderer {
         self.bloom.set_fxaa(enabled);
     }
 
+    /// SSAO radius in pixels (0 = off), TAA, optional DOF `(focus, aperture)`,
+    /// and a camera-motion shutter in 0..1. Off leaves the bloom composite alone.
+    pub fn set_post(&mut self, ssao: f32, taa: bool, dof: Option<(f32, f32)>, motion: f32) {
+        self.post.set(ssao, taa, dof, motion);
+    }
+
     fn upload_screen(&self) {
         let data = [self.width as f32, self.height as f32, 0.0, 0.0];
         self.queue
@@ -1308,6 +1459,7 @@ impl Renderer {
         }
         self.depth = create_depth_view(&self.device, width, height);
         self.bloom.resize(&self.device, width, height);
+        self.post.resize(&self.device, width, height);
         self.upload_screen();
     }
 
@@ -1335,6 +1487,8 @@ impl Renderer {
         // cannot run. Unorm surfaces then encode in the fragment shader.
         let direct = self.bloom.frame_format() == self.format;
         let present_in_shader = color_space::present_in_fragment(direct, self.format.is_srgb());
+        let mut unjittered_vp = glam::Mat4::IDENTITY;
+        let mut drew_scene = false;
 
         // 3D のインスタンスを 1 本のバッファに連結し、バッチごとの開始位置を覚える。
         // base instance は GLES に無いので、描画時は毎回 0.. で数え、バッファの
@@ -1422,7 +1576,8 @@ impl Renderer {
                 self.queue
                     .write_buffer(&self.inst_buf, 0, bytemuck::cast_slice(&raw));
             }
-            self.upload_globals(scene, present_in_shader);
+            unjittered_vp = self.upload_globals(scene, present_in_shader);
+            drew_scene = true;
         }
 
         let clear_bytes = world.map(|s| s.clear).unwrap_or(hud.clear);
@@ -1487,37 +1642,9 @@ impl Renderer {
             encoder.write_timestamp(&ts.query, 0);
         }
         if !draws.is_empty() {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("kagra-shared shadow"),
-                color_attachments: &[],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.shadow_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_bind_group(0, &self.globals_bind, &[]);
-            for (mesh, offset, count, _is_sky, casts) in &draws {
-                if !*casts {
-                    continue;
-                }
-                let m = &self.meshes[*mesh];
-                pass.set_pipeline(if m.double_sided {
-                    &self.pipeline_shadow_nocull
-                } else {
-                    &self.pipeline_shadow
-                });
-                pass.set_vertex_buffer(0, m.vbuf.slice(..));
-                pass.set_vertex_buffer(1, self.inst_buf.slice(*offset..));
-                pass.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..m.index_count, 0, 0..*count);
-            }
+            let cascade_count = world.map(|s| s.shadow_cascades.clamp(1, 3)).unwrap_or(1);
+            let pcss = world.is_some_and(|s| s.shadow_pcss);
+            self.encode_cascades(&mut encoder, &draws, cascade_count, pcss);
         }
         // Pass 1: 3D（スカイ + メッシュ）→ 線形 HDR フレーム。クリアは常時。
         {
@@ -1614,9 +1741,79 @@ impl Renderer {
                 }
             }
         }
-        // Pass 2: HDR frame → exposure → ACES → LUT → vignette → one OETF.
+        // Depth color for SSAO / DOF / motion. The HDR color target blends, so
+        // device depth cannot live in its alpha. Load the depth buffer the
+        // color pass just wrote; do not clear it. Far = camera far (meters).
+        // `direct` is the unorm WebGPU path, which does not sample a float
+        // frame and does not run this pass.
+        if !direct && drew_scene && self.post.needs_depth() {
+            let depth_far = world.map(|s| s.camera.far).unwrap_or(1000.0).max(1.0) as f64;
+            let depth_color = self.post.scene_depth_view();
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("kagra-shared depth color"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: depth_color,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: depth_far,
+                            g: depth_far,
+                            b: depth_far,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            if !draws.is_empty() {
+                pass.set_pipeline(&self.pipeline_depth);
+                pass.set_bind_group(0, &self.globals_bind, &[]);
+                pass.set_bind_group(2, &self.shadow_bind, &[]);
+                pass.set_bind_group(3, &self.env_bind, &[]);
+                for (mesh, offset, count, _is_sky, _cast) in &draws {
+                    let m = &self.meshes[*mesh];
+                    pass.set_bind_group(
+                        1,
+                        m.albedo_bind.as_ref().unwrap_or(&self.default_albedo_bind),
+                        &[],
+                    );
+                    pass.set_vertex_buffer(0, m.vbuf.slice(..));
+                    pass.set_vertex_buffer(1, self.inst_buf.slice(*offset..));
+                    pass.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..m.index_count, 0, 0..*count);
+                }
+            }
+        }
+        // Pass 2: optional SSAO / DOF / motion, then bloom grade, then TAA or FXAA.
         // The direct unorm path already graded in present_rgb and skips this.
         if !direct {
+            if drew_scene && self.post.scene_active() {
+                let near = world.map(|s| s.camera.near).unwrap_or(0.1);
+                let far = world.map(|s| s.camera.far).unwrap_or(1000.0);
+                self.post.apply_scene(
+                    &self.device,
+                    &self.queue,
+                    &mut encoder,
+                    self.bloom.frame_view(),
+                    unjittered_vp,
+                    near,
+                    far,
+                );
+            }
+            let taa = drew_scene && self.post.taa_enabled();
+            let vig = self.bloom.vignette();
             self.bloom.apply(
                 &self.device,
                 &self.queue,
@@ -1624,7 +1821,19 @@ impl Renderer {
                 (target_texture, &view),
                 exposure,
                 tonemap,
+                if taa { Some(0.0) } else { None },
+                !taa,
             );
+            if taa {
+                self.post.apply_display(
+                    &self.device,
+                    &self.queue,
+                    &mut encoder,
+                    self.bloom.composite_view(),
+                    &view,
+                    vig,
+                );
+            }
         }
         // Pass 3: HUD → 最終ターゲット（トーン後の色をそのまま重ねる）。
         if !vertices.is_empty() {
@@ -1669,6 +1878,9 @@ impl Renderer {
         let gpu_ms = clock
             .as_ref()
             .and_then(|ts| read_gpu_ms(&self.device, &self.queue, &ts.staging));
+        if drew_scene {
+            self.post.store_view(unjittered_vp);
+        }
         if let Some(f) = frame {
             self.queue.present(f);
         }
@@ -1720,7 +1932,86 @@ impl Renderer {
         self.inst_capacity = cap;
     }
 
-    fn upload_globals(&mut self, scene: &Scene3D, present_in_shader: bool) {
+    /// One shadow pass per cascade. The first pass clears the whole 2048 map
+    /// (a viewport does not scissor the clear). Later passes load and draw
+    /// into their tile. Count 1 keeps the full-map viewport.
+    fn encode_cascades(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        draws: &[(usize, u64, u32, bool, bool)],
+        count: u32,
+        pcss: bool,
+    ) {
+        let count = count.clamp(1, 3);
+        for index in 0..count {
+            let (vx, vy, vw, vh) = crate::scene3d::cascade_viewport(index, count);
+            let load_depth = if index == 0 {
+                wgpu::LoadOp::Clear(1.0)
+            } else {
+                wgpu::LoadOp::Load
+            };
+            let load_color = if index == 0 {
+                wgpu::LoadOp::Clear(wgpu::Color {
+                    r: 1.0,
+                    g: 1.0,
+                    b: 1.0,
+                    a: 1.0,
+                })
+            } else {
+                wgpu::LoadOp::Load
+            };
+            let color = [Some(wgpu::RenderPassColorAttachment {
+                view: &self.shadow_raw_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: load_color,
+                    store: wgpu::StoreOp::Store,
+                },
+            })];
+            let empty: &[Option<wgpu::RenderPassColorAttachment>] = &[];
+            let colors: &[Option<wgpu::RenderPassColorAttachment>] =
+                if pcss { &color } else { empty };
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("kagra-shared shadow"),
+                color_attachments: colors,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.shadow_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: load_depth,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            if count > 1 {
+                pass.set_viewport(vx, vy, vw, vh, 0.0, 1.0);
+            }
+            pass.set_bind_group(0, &self.globals_bind, &[]);
+            for (mesh, offset, n, _is_sky, casts) in draws {
+                if !*casts {
+                    continue;
+                }
+                let m = &self.meshes[*mesh];
+                let pipeline = match (pcss, m.double_sided) {
+                    (true, true) => &self.pipeline_shadow_pcss_nocull[index as usize],
+                    (true, false) => &self.pipeline_shadow_pcss[index as usize],
+                    (false, true) => &self.pipeline_shadow_nocull[index as usize],
+                    (false, false) => &self.pipeline_shadow[index as usize],
+                };
+                pass.set_pipeline(pipeline);
+                pass.set_vertex_buffer(0, m.vbuf.slice(..));
+                pass.set_vertex_buffer(1, self.inst_buf.slice(*offset..));
+                pass.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..m.index_count, 0, 0..*n);
+            }
+        }
+    }
+
+    fn upload_globals(&mut self, scene: &Scene3D, present_in_shader: bool) -> glam::Mat4 {
         let cam = &scene.camera;
         let mut light_pos = [[0.0f32; 4]; 4];
         let mut light_col = [[0.0f32; 4]; 4];
@@ -1745,8 +2036,19 @@ impl Renderer {
                 if lit.spot { 1.0 } else { 0.0 },
             ];
         }
+        let view = cam.view();
+        let proj = cam.projection(self.aspect());
+        let unjittered = proj * view;
+        let vp = if !present_in_shader && self.post.taa_enabled() {
+            let j = post::ndc_jitter(self.post.sample_index(), self.width, self.height);
+            post::apply_projection_jitter(proj, j) * view
+        } else {
+            unjittered
+        };
+        let cascade_count = scene.shadow_cascades.clamp(1, 3);
+        let vps = crate::scene3d::scene_cascade_view_projs(scene, cascade_count);
         let g = Globals {
-            view_proj: cam.view_projection(self.aspect()).to_cols_array_2d(),
+            view_proj: vp.to_cols_array_2d(),
             light: [
                 scene.light_dir.x,
                 scene.light_dir.y,
@@ -1765,10 +2067,18 @@ impl Renderer {
             light_pos,
             light_col,
             light_dir,
-            light_view_proj: crate::scene3d::scene_shadow_view_proj(scene).to_cols_array_2d(),
+            light_view_proj: vps[0].to_cols_array_2d(),
+            cascade1: vps[1].to_cols_array_2d(),
+            cascade2: vps[2].to_cols_array_2d(),
             shadow: [
                 scene.shadow_softness.max(0.0),
                 if present_in_shader { 1.0 } else { 0.0 },
+                cam.near.max(1e-3),
+                cam.far.max(cam.near + 0.01),
+            ],
+            cascade: [
+                cascade_count as f32,
+                if scene.shadow_pcss { 1.0 } else { 0.0 },
                 0.0,
                 0.0,
             ],
@@ -1806,6 +2116,7 @@ impl Renderer {
         self.queue
             .write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&g));
         self.elapsed += 1.0 / 60.0;
+        unjittered
     }
 
     /// オフスクリーンの内容を RGBA8 で読み出す。
@@ -2032,6 +2343,7 @@ impl Renderer {
         // Wasm and the desktop window draw here. Omitted post fields keep
         // whatever the host already set (the window example's set_bloom).
         self.apply_dump_grade(doc);
+        self.apply_dump_post(doc);
         let scene = doc.compile_scene(self.aspect());
         self.render_frame(Some(&scene), hud)
     }
@@ -2054,6 +2366,15 @@ impl Renderer {
             doc.fxaa_enabled(),
             doc.lut_preset(),
             doc.lut_mix(),
+        );
+    }
+
+    fn apply_dump_post(&mut self, doc: &crate::world_doc::WorldDoc) {
+        self.post.set(
+            doc.ssao_radius(),
+            doc.taa_enabled(),
+            doc.dof(),
+            doc.motion_shutter(),
         );
     }
 
@@ -2717,6 +3038,29 @@ fn create_shadow_map(device: &wgpu::Device) -> (wgpu::Texture, wgpu::TextureView
     (texture, view)
 }
 
+/// Device z for the PCSS blocker search. Always allocated so the shadow bind
+/// group stays valid when the dump leaves PCSS off. The lighting shader only
+/// samples it while `shadow.w` is on.
+fn create_shadow_raw(device: &wgpu::Device) -> (wgpu::Texture, wgpu::TextureView) {
+    let size = crate::scene3d::SHADOW_MAP_SIZE.max(1);
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("kagra-shared shadow raw"),
+        size: wgpu::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba16Float,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&Default::default());
+    (texture, view)
+}
+
 fn create_depth_view(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("kagra-shared depth"),
@@ -2913,10 +3257,10 @@ mod tests {
             src.contains("fn present_rgb"),
             "direct unorm path grades in the fragment shader"
         );
-        assert!(
-            src.contains("g.shadow.y"),
-            "present flag rides the unused shadow.y"
-        );
+        assert!(src.contains("g.shadow.y"), "present flag rides shadow.y");
+        assert!(src.contains("fn vs_shadow_1"), "cascade 1 entry");
+        assert!(src.contains("shadow_raw"), "PCSS raw depth");
+        assert!(src.contains("g.cascade.x"), "cascade count uniform");
         let fxaa = include_str!("fxaa.wgsl");
         let fx = fxaa.split("fn fs_main").nth(1).expect("fxaa fs");
         let early = fx.find("l_range <").expect("fxaa early out");
@@ -2960,8 +3304,8 @@ mod tests {
     #[test]
     fn globals_env_is_16_aligned() {
         assert_eq!(std::mem::size_of::<Globals>() % 16, 0);
-        // previous 416 + hemi sky/ground
-        assert_eq!(std::mem::size_of::<Globals>(), 448);
+        // 448 + two cascade matrices + the cascade vec4
+        assert_eq!(std::mem::size_of::<Globals>(), 592);
         assert_eq!(crate::scene3d::SHADOW_MAP_SIZE, 2048);
     }
 
@@ -3094,6 +3438,235 @@ mod tests {
                 let expect = [*byte, *byte, *byte, 255];
                 assert_rgb_near(got, expect, 1);
             }
+        }
+    }
+
+    fn solid_box(pos: [f32; 3], scale: [f32; 3], color: [u8; 4]) -> crate::scene3d::Instance {
+        let model = glam::Mat4::from_scale_rotation_translation(
+            glam::Vec3::from(scale),
+            glam::Quat::IDENTITY,
+            glam::Vec3::from(pos),
+        );
+        crate::scene3d::Instance::with_pbr(model, color, crate::scene3d::Material::Solid, 0.0, 1.0)
+    }
+
+    fn graded(renderer: &mut Renderer) {
+        renderer.set_fxaa(false);
+        renderer.bloom.set_grade(0.85, 0.0, 0.0, false, "off", 0.0);
+    }
+
+    fn draw_boxes(renderer: &mut Renderer, instances: Vec<crate::scene3d::Instance>) -> Vec<u8> {
+        let mesh = crate::scene3d::primitives::box_mesh(glam::Vec3::ONE);
+        let id = renderer.upload_mesh(&mesh);
+        let scene = crate::scene3d::Scene3D {
+            clear: [40, 80, 160, 255],
+            ambient: 1.0,
+            ibl: 0.0,
+            tonemap: false,
+            exposure: 1.0,
+            fog_start: 500.0,
+            fog_end: 800.0,
+            batches: vec![crate::scene3d::Batch {
+                mesh: id,
+                instances,
+            }],
+            ..Default::default()
+        };
+        renderer
+            .render_frame(Some(&scene), &crate::scene::DrawList::default())
+            .expect("render");
+        renderer.read_rgba().expect("readback")
+    }
+
+    fn channel_sum(px: [u8; 4]) -> i32 {
+        px[0] as i32 + px[1] as i32 + px[2] as i32
+    }
+
+    #[test]
+    fn offscreen_ssao_darkens_contact_and_keeps_the_clear() {
+        let Some(mut renderer) = pollster::block_on(Renderer::new_offscreen(192, 192)).ok() else {
+            eprintln!("no GPU adapter; skipping ssao");
+            return;
+        };
+        graded(&mut renderer);
+        let boxes = vec![
+            solid_box([0.0, 0.5, 0.0], [1.0, 1.0, 1.0], [255, 255, 255, 255]),
+            solid_box([0.0, -0.05, 0.0], [8.0, 0.1, 8.0], [220, 220, 220, 255]),
+        ];
+        renderer.set_post(0.0, false, None, 0.0);
+        let off = draw_boxes(&mut renderer, boxes.clone());
+        renderer.set_post(24.0, false, None, 0.0);
+        let on = draw_boxes(&mut renderer, boxes);
+        write_shot("post-ssao-off.png", 192, 192, &off);
+        write_shot("post-ssao-on.png", 192, 192, &on);
+        assert_rgb_near(pixel_of(&on, 192, 2, 2), pixel_of(&off, 192, 2, 2), 6);
+        let mut dropped = 0u32;
+        let mut held = 0u32;
+        for y in 0..192 {
+            for x in 0..192 {
+                let a = channel_sum(pixel_of(&off, 192, x, y));
+                let b = channel_sum(pixel_of(&on, 192, x, y));
+                if a - b >= 18 {
+                    dropped += 1;
+                }
+                if a > 600 && (a - b).abs() <= 15 {
+                    held += 1;
+                }
+            }
+        }
+        assert!(
+            dropped > 30,
+            "ssao should darken the cube/floor contact, dropped {dropped}"
+        );
+        assert!(
+            held > 20,
+            "open surfaces should stay bright, held {held} dropped {dropped}"
+        );
+    }
+
+    #[test]
+    fn offscreen_dof_blurs_the_far_box() {
+        let Some(mut renderer) = pollster::block_on(Renderer::new_offscreen(160, 160)).ok() else {
+            eprintln!("no GPU adapter; skipping dof");
+            return;
+        };
+        graded(&mut renderer);
+        let boxes = vec![
+            solid_box([-0.7, 0.45, 2.4], [0.7, 0.9, 0.7], [220, 30, 30, 255]),
+            solid_box([1.3, 0.45, -4.0], [1.2, 1.2, 1.2], [30, 40, 220, 255]),
+        ];
+        renderer.set_post(0.0, false, None, 0.0);
+        let sharp = draw_boxes(&mut renderer, boxes.clone());
+        renderer.set_post(0.0, false, Some((4.2, 2.2)), 0.0);
+        let blurred = draw_boxes(&mut renderer, boxes);
+        write_shot("post-dof-sharp.png", 160, 160, &sharp);
+        write_shot("post-dof-blur.png", 160, 160, &blurred);
+        let mut near_diff = 0i64;
+        let mut near_n = 0i64;
+        let mut far_diff = 0i64;
+        let mut far_n = 0i64;
+        for i in (0..sharp.len()).step_by(4) {
+            let s = [sharp[i], sharp[i + 1], sharp[i + 2], sharp[i + 3]];
+            let b = [blurred[i], blurred[i + 1], blurred[i + 2], blurred[i + 3]];
+            let d = (s[0] as i64 - b[0] as i64).abs()
+                + (s[1] as i64 - b[1] as i64).abs()
+                + (s[2] as i64 - b[2] as i64).abs();
+            // Clear is (40, 80, 160). That blue is not the far box (30, 40, 220).
+            if s[0] > 180 && s[1] < 50 && s[2] < 50 {
+                near_diff += d;
+                near_n += 1;
+            }
+            if s[2] > 180 && s[0] < 50 && s[1] < 70 {
+                far_diff += d;
+                far_n += 1;
+            }
+        }
+        assert!(near_n > 8, "near red box missing ({near_n})");
+        assert!(far_n > 8, "far blue box missing ({far_n})");
+        let near_m = near_diff as f32 / near_n as f32;
+        let far_m = far_diff as f32 / far_n as f32;
+        assert!(
+            far_m > near_m + 4.0 && far_m > 8.0,
+            "far box should blur more than the focus plane: far {far_m} near {near_m}"
+        );
+    }
+
+    #[test]
+    fn offscreen_motion_blur_is_quiet_until_the_camera_moves() {
+        let Some(mut renderer) = pollster::block_on(Renderer::new_offscreen(128, 128)).ok() else {
+            eprintln!("no GPU adapter; skipping motion");
+            return;
+        };
+        graded(&mut renderer);
+        let boxes = vec![solid_box(
+            [0.0, 0.5, 0.0],
+            [1.0, 1.0, 1.0],
+            [240, 220, 40, 255],
+        )];
+        renderer.set_post(0.0, false, None, 0.0);
+        let still = draw_boxes(&mut renderer, boxes.clone());
+        renderer.set_post(0.0, false, None, 1.0);
+        let held = draw_boxes(&mut renderer, boxes.clone());
+        let mut worst = 0i32;
+        for i in (0..still.len()).step_by(4) {
+            for c in 0..3 {
+                worst = worst.max((still[i + c] as i32 - held[i + c] as i32).abs());
+            }
+        }
+        assert!(
+            worst <= 6,
+            "a still camera should not smear, max channel delta {worst}"
+        );
+        let mesh = crate::scene3d::primitives::box_mesh(glam::Vec3::ONE);
+        let id = renderer.upload_mesh(&mesh);
+        let mut moved = crate::scene3d::Scene3D {
+            clear: [40, 80, 160, 255],
+            ambient: 1.0,
+            ibl: 0.0,
+            tonemap: false,
+            exposure: 1.0,
+            fog_start: 500.0,
+            fog_end: 800.0,
+            camera: crate::scene3d::Camera {
+                eye: glam::Vec3::new(1.6, 2.0, 6.0),
+                ..Default::default()
+            },
+            batches: vec![crate::scene3d::Batch {
+                mesh: id,
+                instances: boxes.clone(),
+            }],
+            ..Default::default()
+        };
+        renderer
+            .render_frame(Some(&moved), &crate::scene::DrawList::default())
+            .unwrap();
+        let blur = renderer.read_rgba().unwrap();
+        renderer.set_post(0.0, false, None, 0.0);
+        moved.camera.eye = glam::Vec3::new(1.6, 2.0, 6.0);
+        renderer
+            .render_frame(Some(&moved), &crate::scene::DrawList::default())
+            .unwrap();
+        let sharp = renderer.read_rgba().unwrap();
+        write_shot("post-motion-blur.png", 128, 128, &blur);
+        write_shot("post-motion-sharp.png", 128, 128, &sharp);
+        let mut changed = 0u32;
+        for i in (0..blur.len()).step_by(4) {
+            let d = (blur[i] as i32 - sharp[i] as i32).abs()
+                + (blur[i + 1] as i32 - sharp[i + 1] as i32).abs()
+                + (blur[i + 2] as i32 - sharp[i + 2] as i32).abs();
+            if d > 24 {
+                changed += 1;
+            }
+        }
+        assert!(
+            changed > 20,
+            "moving the camera should smear, changed {changed}"
+        );
+    }
+
+    #[test]
+    fn offscreen_taa_keeps_a_flat_center() {
+        let Some(mut renderer) = pollster::block_on(Renderer::new_offscreen(96, 96)).ok() else {
+            eprintln!("no GPU adapter; skipping taa");
+            return;
+        };
+        graded(&mut renderer);
+        let boxes = vec![solid_box(
+            [0.0, 0.0, 0.0],
+            [6.0, 6.0, 6.0],
+            [200, 180, 40, 255],
+        )];
+        renderer.set_post(0.0, false, None, 0.0);
+        let plain = draw_boxes(&mut renderer, boxes.clone());
+        let center = pixel_of(&plain, 96, 48, 48);
+        renderer.set_post(0.0, true, None, 0.0);
+        for frame in 0..4 {
+            let rgba = draw_boxes(&mut renderer, boxes.clone());
+            if frame == 3 {
+                write_shot("post-taa.png", 96, 96, &rgba);
+            }
+            let got = pixel_of(&rgba, 96, 48, 48);
+            assert_rgb_near(got, center, 10);
         }
     }
 
@@ -3241,5 +3814,129 @@ mod tests {
         let spliced = crate::profile::splice_profile(&dump, &profile);
         assert!(spliced.contains("\"cpu_ms\""));
         assert!(spliced.contains("\"warnings\""));
+    }
+
+    /// A caster outside the historical 24 m map stays lit at cascade count 1
+    /// and darkens the floor once three rings are packed into the same map.
+    #[test]
+    fn offscreen_cascades_shadow_a_far_caster() {
+        let Some(mut renderer) = pollster::block_on(Renderer::new_offscreen(192, 108)).ok() else {
+            eprintln!("no GPU adapter; skipping cascade shadow");
+            return;
+        };
+        renderer.set_fxaa(false);
+        renderer.bloom.set_grade(0.85, 0.0, 0.0, false, "off", 0.0);
+        let mesh = renderer.upload_mesh(&crate::scene3d::primitives::box_mesh(glam::Vec3::ONE));
+        let paint = |renderer: &mut Renderer, cascades: u32, pcss: bool| -> Option<Vec<u8>> {
+            let cam = crate::scene3d::Camera {
+                eye: glam::Vec3::new(0.0, 8.0, 16.0),
+                target: glam::Vec3::ZERO,
+                fov_y: 60f32.to_radians(),
+                ..Default::default()
+            };
+            let mut b = crate::scene3d::SceneBuilder::new(&cam, 192.0 / 108.0);
+            let floor = glam::Mat4::from_scale_rotation_translation(
+                glam::Vec3::new(50.0, 0.15, 90.0),
+                glam::Quat::IDENTITY,
+                glam::Vec3::new(0.0, 0.0, -28.0),
+            );
+            b.push(mesh, floor, [220, 220, 220, 255]);
+            let caster = glam::Mat4::from_scale_rotation_translation(
+                glam::Vec3::new(10.0, 12.0, 10.0),
+                glam::Quat::IDENTITY,
+                glam::Vec3::new(0.0, 6.0, -36.0),
+            );
+            b.push(mesh, caster, [180, 40, 40, 255]);
+            let scene = crate::scene3d::Scene3D {
+                camera: cam,
+                clear: [40, 80, 160, 255],
+                ambient: 0.15,
+                ibl: 0.0,
+                tonemap: false,
+                exposure: 1.0,
+                fog_start: 400.0,
+                fog_end: 800.0,
+                shadow_cascades: cascades,
+                shadow_pcss: pcss,
+                batches: b.finish(),
+                ..Default::default()
+            };
+            renderer
+                .render_frame(Some(&scene), &crate::scene::DrawList::default())
+                .ok()?;
+            renderer.read_rgba().ok()
+        };
+        let Some(one) = paint(&mut renderer, 1, false) else {
+            eprintln!("cascade frame failed");
+            return;
+        };
+        let Some(three) = paint(&mut renderer, 3, false) else {
+            eprintln!("cascade frame failed");
+            return;
+        };
+        let Some(pcss) = paint(&mut renderer, 3, true) else {
+            eprintln!("cascade frame failed");
+            return;
+        };
+        write_shot("cascade-one.png", 192, 108, &one);
+        write_shot("cascade-three.png", 192, 108, &three);
+        write_shot("cascade-pcss.png", 192, 108, &pcss);
+        let lum = |px: [u8; 4]| px[0] as i32 + px[1] as i32 + px[2] as i32;
+        let mut darkened = 0u32;
+        let mut stable = 0u32;
+        let mut sum = 0i64;
+        let n = (192 * 108) as i64;
+        for i in 0..n as usize {
+            let a = [one[i * 4], one[i * 4 + 1], one[i * 4 + 2], one[i * 4 + 3]];
+            let b = [
+                three[i * 4],
+                three[i * 4 + 1],
+                three[i * 4 + 2],
+                three[i * 4 + 3],
+            ];
+            let da = lum(a);
+            let db = lum(b);
+            sum += db as i64;
+            if da - db > 30 {
+                darkened += 1;
+            }
+            if da > 280 && (da - db).abs() < 12 {
+                stable += 1;
+            }
+        }
+        let mean = sum / n;
+        assert!(
+            darkened > 8,
+            "three cascades should shade the far floor, darkened {darkened} mean {mean}"
+        );
+        assert!(
+            stable > 20,
+            "the near floor should stay the single-map picture, stable {stable}"
+        );
+        assert!(
+            mean > 40 && mean < 700,
+            "cascade frame looks blank, mean {mean}"
+        );
+        let mut pcss_sum = 0i64;
+        let mut pcss_dark = 0u32;
+        for i in 0..n as usize {
+            let a = [one[i * 4], one[i * 4 + 1], one[i * 4 + 2], one[i * 4 + 3]];
+            let c = [
+                pcss[i * 4],
+                pcss[i * 4 + 1],
+                pcss[i * 4 + 2],
+                pcss[i * 4 + 3],
+            ];
+            pcss_sum += lum(c) as i64;
+            if lum(a) - lum(c) > 20 {
+                pcss_dark += 1;
+            }
+        }
+        let pcss_mean = pcss_sum / n;
+        assert!(
+            pcss_mean > 40 && pcss_mean < 700,
+            "PCSS frame looks blank, mean {pcss_mean}"
+        );
+        assert!(pcss_dark > 4, "PCSS should still shade, dark {pcss_dark}");
     }
 }

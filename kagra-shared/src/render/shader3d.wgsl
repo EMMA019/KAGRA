@@ -20,14 +20,21 @@ struct Globals {
     light_pos: array<vec4<f32>, 4>,
     light_col: array<vec4<f32>, 4>,
     light_dir: array<vec4<f32>, 4>,
-    // Directional sun ortho. Same family, not a cascade / V2 umbra.
+    // Cascade 0. Count 1 is this matrix alone, over the full 2048 map.
     light_view_proj: mat4x4<f32>,
+    // Cascades 1 and 2. Packed into tiles of the same map when cascade.x > 1.5.
+    cascade1: mat4x4<f32>,
+    cascade2: mat4x4<f32>,
     // x = shadow radius. 1 = the historical 3x3 PCF. Larger = a wider tent.
     // y > 0.5: this pass writes an unorm swapchain (composite cannot sample
     // the frame). present_rgb applies exposure, ACES, and one sRGB OETF.
     // WebGPU cannot sample an Rgba16Float frame, and storing HDR into unorm
-    // would clamp neon to white before that grade.
+    // would clamp neon to white before that grade. On that path the post
+    // graph does not run. z = camera near, w = camera far, for the HDR depth
+    // prepass only. Shading does not read z or w.
     shadow: vec4<f32>,
+    // x = cascade count (1, 2, or 3). y > 0.5 enables the PCSS blocker search.
+    cascade: vec4<f32>,
     // Hemisphere colors. Defaults match the old hardcoded studio SH.
     hemi_sky: vec4<f32>,
     // rgb = ground. w > 0.5 samples the prefiltered env strip (group 3).
@@ -49,6 +56,9 @@ struct Globals {
 @group(1) @binding(9) var emissive_samp: sampler;
 @group(2) @binding(0) var shadow_tex: texture_depth_2d;
 @group(2) @binding(1) var shadow_samp: sampler_comparison;
+// Device z of the sun map, for the PCSS blocker search. Unused while cascade.y is off.
+@group(2) @binding(2) var shadow_raw: texture_2d<f32>;
+@group(2) @binding(3) var shadow_raw_samp: sampler;
 // Prefiltered lat-long, 4 roughness rows. Sampled only when hemi_ground.w > 0.5.
 @group(3) @binding(0) var env_tex: texture_2d<f32>;
 @group(3) @binding(1) var env_samp: sampler;
@@ -176,8 +186,24 @@ fn fs_outline(in: VsOut) -> @location(0) vec4<f32> {
     return vec4<f32>(present_rgb(in.color.rgb), 1.0);
 }
 
-@vertex
-fn vs_shadow(in: VsIn) -> @builtin(position) vec4<f32> {
+// Linear eye depth in meters for SSAO / DOF / motion. The color target stays
+// ALPHA_BLENDING, so device depth cannot ride in the color alpha. Sky is the
+// far plane. Cutout holes discard after the albedo sample (WebGPU).
+@fragment
+fn fs_depth(in: VsOut) -> @location(0) vec4<f32> {
+    let tex = textureSample(albedo_tex, albedo_samp, in.uv);
+    let sky = abs(in.material - 3.0) < 0.5;
+    if (!sky && tex.a < 0.5) {
+        discard;
+    }
+    let near = max(g.shadow.z, 1e-3);
+    let far = max(g.shadow.w, near + 0.01);
+    let device_z = select(in.clip.z, 1.0, sky);
+    let eye = (near * far) / max(far - device_z * (far - near), 1e-4);
+    return vec4<f32>(eye, eye, eye, 1.0);
+}
+
+fn shadow_clip(in: VsIn, vp: mat4x4<f32>) -> vec4<f32> {
     // Contact blobs (alpha) and emissive ribbons / rings / rails. A torus
     // or a 70 m rail in the shadow map is what streaks the track.
     if (in.color.a < 0.72 || in.mtoon4.z > 0.30) {
@@ -185,7 +211,28 @@ fn vs_shadow(in: VsIn) -> @builtin(position) vec4<f32> {
     }
     let model = mat4x4<f32>(in.m0, in.m1, in.m2, in.m3);
     let world = model * vec4<f32>(in.pos, 1.0);
-    return g.light_view_proj * world;
+    return vp * world;
+}
+
+@vertex
+fn vs_shadow(in: VsIn) -> @builtin(position) vec4<f32> {
+    return shadow_clip(in, g.light_view_proj);
+}
+
+@vertex
+fn vs_shadow_1(in: VsIn) -> @builtin(position) vec4<f32> {
+    return shadow_clip(in, g.cascade1);
+}
+
+@vertex
+fn vs_shadow_2(in: VsIn) -> @builtin(position) vec4<f32> {
+    return shadow_clip(in, g.cascade2);
+}
+
+@fragment
+fn fs_shadow_depth(@builtin(position) clip: vec4<f32>) -> @location(0) vec4<f32> {
+    let d = clip.z;
+    return vec4<f32>(d, d, d, 1.0);
 }
 
 fn hash21(p: vec2<f32>) -> f32 {
@@ -329,34 +376,36 @@ fn env_specular(dir: vec3<f32>, rough: f32) -> vec3<f32> {
     return mix(sh, sampled, step(0.5, g.hemi_ground.w));
 }
 
-// One directional map. Depth compare (WebGL2 sampler2DShadow / WebGPU
+// Directional sun. Depth compare (WebGL2 sampler2DShadow / WebGPU
 // texture_depth_2d). The sampler is nearest: linear filtering of
 // depth32float is the optional `depth32float-filterable` feature, which
-// wgpu 30 cannot request. Mobile WebGPU (Pixel) then returns banded 0/1
-// garbage — the black/white smear on the track. PCF is this loop, at LOD 0
-// (`textureSampleCompareLevel`) so the taps stay valid inside the loop.
+// wgpu 30 cannot request. PCF uses `textureSampleCompareLevel` so the taps
+// stay valid inside the loop.
 // shadow.x <= 1 keeps the historical 3x3 kernel. Larger radii use a 5x5 tent.
-fn shadow_factor(world: vec3<f32>, nrm: vec3<f32>) -> f32 {
+// shadow.z <= 1.5 samples the full 2048 map. 2 or 3 cascades use tiles of it.
+fn shadow_slope(nrm: vec3<f32>) -> f32 {
     let nlen = length(nrm);
     let nsafe = select(vec3<f32>(0.0, 1.0, 0.0), nrm / max(nlen, 1e-4), nlen > 1e-4);
-    let slope = clamp(1.0 - abs(dot(nsafe, normalize(g.light.xyz))), 0.0, 1.0);
-    // Normal offset in world units. Polygon offset on depth32float is about
-    // 2^-23 per constant unit, so the pipeline's constant bias barely moves
-    // the map on WebGPU. Push the receiver off the caster before projecting.
-    let origin = world + nsafe * (0.04 + slope * 0.07);
-    let sc = g.light_view_proj * vec4<f32>(origin, 1.0);
-    let ndc = sc.xyz / sc.w;
-    let uv = vec2<f32>(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
-    let depth = ndc.z;
-    // No early return: the compare must stay in uniform control flow.
-    // Out-of-frustum fragments still sample, then the mask restores full light.
-    let inside = select(
-        0.0,
-        1.0,
-        (uv.x >= 0.0) & (uv.x <= 1.0) & (uv.y >= 0.0) & (uv.y <= 1.0) & (depth >= 0.0) & (depth <= 1.0),
-    );
+    return clamp(1.0 - abs(dot(nsafe, normalize(g.light.xyz))), 0.0, 1.0);
+}
+
+fn shadow_receiver(world: vec3<f32>, nrm: vec3<f32>) -> vec3<f32> {
+    let nlen = length(nrm);
+    let nsafe = select(vec3<f32>(0.0, 1.0, 0.0), nrm / max(nlen, 1e-4), nlen > 1e-4);
+    let slope = shadow_slope(nrm);
+    return world + nsafe * (0.04 + slope * 0.07);
+}
+
+fn shadow_bias(depth: f32, nrm: vec3<f32>) -> f32 {
+    // depth32float polygon offset barely moves the map. The receiver is also
+    // pushed along its normal. This subtract stays small so a flat floor
+    // keeps contact.
+    let slope = shadow_slope(nrm);
+    return depth - (0.0016 + slope * 0.0045);
+}
+
+fn pcf_lit(uv: vec2<f32>, d: f32) -> f32 {
     let texel = 1.0 / 2048.0;
-    let d = depth - (0.0016 + slope * 0.0045);
     let radius = max(g.shadow.x, 0.0);
     var lit = 1.0;
     if (radius <= 1.01) {
@@ -392,8 +441,95 @@ fn shadow_factor(world: vec3<f32>, nrm: vec3<f32>) -> f32 {
     }
     // A compare outside the map (or a zero w) is NaN on some WebGPU devices.
     // NaN * 0 is still NaN, so an out-of-frustum mix would blank the fragment.
-    let lit_ok = select(1.0, lit, lit == lit);
-    return mix(1.0, lit_ok, inside);
+    return select(1.0, lit, lit == lit);
+}
+
+// Blocker search on the raw depth, then a 3x3 compare. shadow.w selects it.
+fn pcss_lit(uv: vec2<f32>, d: f32) -> f32 {
+    let texel = 1.0 / 2048.0;
+    let search = texel * 8.0;
+    var blockers = 0.0;
+    var bsum = 0.0;
+    for (var i = 0u; i < 8u; i = i + 1u) {
+        let a = f32(i) * 2.3999632;
+        let o = vec2<f32>(cos(a), sin(a)) * search * mix(0.35, 1.0, f32(i) / 7.0);
+        let z = textureSampleLevel(shadow_raw, shadow_raw_samp, uv + o, 0.0).r;
+        let hit = select(0.0, 1.0, z < d);
+        blockers = blockers + hit;
+        bsum = bsum + z * hit;
+    }
+    let avg = bsum / max(blockers, 1.0);
+    let pen = select(1.0, clamp((d - avg) * 80.0, 1.0, 8.0), blockers > 0.5);
+    var s = 0.0;
+    for (var y = -1; y <= 1; y++) {
+        for (var x = -1; x <= 1; x++) {
+            s += textureSampleCompareLevel(
+                shadow_tex,
+                shadow_samp,
+                uv + vec2<f32>(f32(x), f32(y)) * texel * pen,
+                d,
+            );
+        }
+    }
+    let lit = mix(0.28, 1.0, s / 9.0);
+    return select(1.0, lit, lit == lit);
+}
+
+fn shade_uv(uv: vec2<f32>, d: f32) -> f32 {
+    if (g.cascade.y > 0.5) {
+        return pcss_lit(uv, d);
+    }
+    return pcf_lit(uv, d);
+}
+
+fn project_shadow(vp: mat4x4<f32>, world: vec3<f32>) -> vec4<f32> {
+    let sc = vp * vec4<f32>(world, 1.0);
+    let w = select(sc.w, 1e-4, abs(sc.w) < 1e-4);
+    let ndc = sc.xyz / w;
+    let uv = vec2<f32>(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
+    let inside = select(
+        0.0,
+        1.0,
+        (uv.x >= 0.0) & (uv.x <= 1.0) & (uv.y >= 0.0) & (uv.y <= 1.0) & (ndc.z >= 0.0) & (ndc.z <= 1.0),
+    );
+    return vec4<f32>(uv, ndc.z, inside);
+}
+
+fn tile_uv(uv: vec2<f32>, index: i32) -> vec2<f32> {
+    let clamped = clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0));
+    let origin = vec2<f32>(f32(index % 2), f32(index / 2)) * 0.5;
+    return origin + clamped * 0.5;
+}
+
+fn shadow_single(world: vec3<f32>, nrm: vec3<f32>) -> f32 {
+    let p = project_shadow(g.light_view_proj, shadow_receiver(world, nrm));
+    let lit = shade_uv(p.xy, shadow_bias(p.z, nrm));
+    return mix(1.0, lit, p.w);
+}
+
+fn shadow_cascades(world: vec3<f32>, nrm: vec3<f32>) -> f32 {
+    let origin = shadow_receiver(world, nrm);
+    let a = project_shadow(g.light_view_proj, origin);
+    let b = project_shadow(g.cascade1, origin);
+    let c = project_shadow(g.cascade2, origin);
+    let la = shade_uv(tile_uv(a.xy, 0), shadow_bias(a.z, nrm));
+    let lb = shade_uv(tile_uv(b.xy, 1), shadow_bias(b.z, nrm));
+    let lc = shade_uv(tile_uv(c.xy, 2), shadow_bias(c.z, nrm));
+    let use2 = select(0.0, 1.0, g.cascade.x >= 2.5);
+    let w0 = a.w;
+    let w1 = b.w * (1.0 - w0);
+    let w2 = c.w * use2 * (1.0 - max(w0, b.w));
+    let lit = la * w0 + lb * w1 + lc * w2;
+    let covered = max(w0, max(w1, w2));
+    return mix(1.0, select(1.0, lit, covered > 0.0), covered);
+}
+
+fn shadow_factor(world: vec3<f32>, nrm: vec3<f32>) -> f32 {
+    // Count is a uniform. One cascade keeps the full-map kernel.
+    if (g.cascade.x <= 1.5) {
+        return shadow_single(world, nrm);
+    }
+    return shadow_cascades(world, nrm);
 }
 
 // mtoon2.x/y/z = sample roughness / metal / emissive map. mtoon4.z = emissive strength.

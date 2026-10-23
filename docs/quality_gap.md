@@ -1,6 +1,6 @@
 # Quality gap: phone web vs Unity URP and three.js
 
-Target is a KAGRA game in a phone browser (wasm / WebGL2) that makes someone say 「おっ」— closer to a small Unity mobile game than to an ungraded real-time view. Android is parked. SSAO, DOF, area lights, and a WebGPU-only path stay off this target: they cost too much on a phone GPU, and the 80% bar already leaves GI bake / HDRP / VRM-on-Wasm out.
+Target is a KAGRA game in a phone browser (wasm / WebGL2) that makes someone say 「おっ」— closer to a small Unity mobile game than to an ungraded real-time view. Android is parked. Area lights and a WebGPU-only path stay off this target: they cost too much on a phone GPU, and the 80% bar already leaves GI bake / HDRP / VRM-on-Wasm out. SSAO, TAA, DOF, and camera motion blur are opt-in passes. `KAGRA_QUALITY=0` / `off` / `low` forces them off so a phone keeps the historical frame.
 
 Status words: **have** (usable on the shared wgpu 30 path), **partial** (a cheaper or narrower version), **missing**. Priority is for that 「おっ」 on a phone, not for matching a desktop engine. Effort is S (one subsystem), M (a pass plus a dump field and tests), L (a new asset pipeline or a port that touches the loader and the shader).
 
@@ -16,7 +16,7 @@ The shared picture path is `WorldDoc` → `compile_scene` → `Renderer` (`kagra
 | Color grading LUT | have, as of this wave. 16³ strip in a 256×16 `texture_2d` (no `texture_3d`). Presets `off` / `warm` / `punch` / `cool`. `lut_strength` mixes after ACES. | URP Color Lookup / LDR LUT | P0 | done (S) |
 | Vignette | have, as of this wave. Strength is a uniform. Omit = 1, the curve that already shipped. 0 turns it off. | URP Vignette | P0 | done (S) |
 | FXAA | have. On by default. Dump `fxaa: false` skips it. SMAA is not implemented. | URP FXAA (SMAA is the higher option) | P1 | S for a SMAA pass later |
-| Directional light + shadows | partial. One sun, one 2048 depth map, WebGL2 `sampler2DShadow`. Omit `shadow_softness` and the kernel stays 3×3. A wider tent is opt-in. No cascades, no contact-hardening. | URP main light + shadow cascades | P1 | M |
+| Directional light + shadows | partial. One sun, one 2048 depth map, WebGL2 `sampler2DShadow`. Omit `shadow_cascades` and it stays one full map (24 m, 3×3 PCF). 2 or 3 pack concentric rings (8 / 24 / 80 m) into tiles of that map. `shadow_pcss` is an opt-in blocker search. No local-light shadows. | URP main light + shadow cascades | P1 | M |
 | IBL / ambient from an env map | partial. Authorable hemisphere (`hemi_sky` / `hemi_ground`) drives the L1 SH. `env_map` bakes a 64×64 prefiltered lat-long (4 roughness rows, `texture_2d`). No cubemap, no HDR file. Omit `env_map` and specular stays the SH. | URP environment lighting + reflection probe | P1 | done (M) |
 | Fog | have. Linear distance fog. Color follows `sky`. | URP linear / exponential fog | P2 | S to add an exponential mode |
 | Screen shake | have, as of this wave. `kagra.Juice.shake` offsets camera 0 on a fresh dump. Deterministic, no GPU. | Cinemachine impulse (the 80% bar does not include Cinemachine) | P0 | done (S) |
@@ -38,7 +38,7 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 | Albedo textures | have | — | — | PNG albedo and emissive are sRGB. Color mips average in linear, then re-encode, down to 1×1. A glTF sampler sets wrap, filter, and anisotropy. Procedural meshes stay clamp. |
 | Normal maps | have | — | — | Sampled as linear unorm (a flat 128 stays 0.5). When `mtoon4.w` is set, lighting uses a TBN from glTF `TANGENT` or generated tangents. Water keeps its procedural normal. |
 | Roughness / metalness maps | partial | P1 | M | Dump maps, plus glTF `metallicRoughnessTexture`. A material with factors and no texture still emits a 1×1 ORM, so the file beats the dump scalars. Dump maps still replace the image. Toon primitives skip ORM. |
-| Shadows, PCF | partial | P1 | M | One directional map. Omit `shadow_softness` and it stays 3×3 PCF. About 3 is a 5×5 tent. No cascades, no local-light shadows. |
+| Shadows, PCF | partial | P1 | M | One directional map. Omit `shadow_softness` and it stays 3×3 PCF. About 3 is a 5×5 tent. `shadow_cascades` 2 or 3 tile that map. `shadow_pcss` hardens the penumbra. No local-light shadows. |
 | Directional light | have | — | — | Sun direction comes from light slot 0 (position or direction) plus ambient. |
 | Point light | partial | P2 | S | Up to 4 slots. Inverse-square-ish attenuation. No cookie, no shadow. |
 | Spot light | partial | P2 | S | Same 4 slots, `kind: "spot"`, a power cone. No shadow. |
@@ -49,10 +49,12 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 | Fog | have | — | — | Linear fog. Start 48, end 220 in `compile_scene`. Color is the sky clear. |
 | Tone mapping | have | — | — | ACES in the composite. Exposure is a dump field (default 1). |
 | Color space | have, as of this wave. Base color and emissive are `Rgba8UnormSrgb` (the sampler decodes on WebGPU and WebGL2). Normal and ORM are `Rgba8Unorm`. Author u8 colors decode before lighting, whatever the swapchain is. One OETF after ACES and the LUT. No display-P3. | P2 | done (M) |
-| EffectComposer | partial | P0 | — | A fixed stack, not a user pass list: linear HDR → bloom extract → exposure → ACES → LUT → vignette → one sRGB OETF → FXAA → HUD. |
+| EffectComposer | partial | P0 | — | Switchable passes, not a user shader list. Order: optional half-res SSAO → DOF → camera motion → bloom extract → exposure → ACES → LUT → vignette → one sRGB OETF → TAA or FXAA → HUD. Omit the new fields and those passes stay off. |
 | Bloom pass | have | — | — | See the Unity row. Half resolution, one blur, intensity 0 skips the extract. |
-| SSAO | missing | P3 | L | Outside the 80% bar. A phone web view should not pay for it. |
-| DOF | missing | P3 | L | Same. A full-resolution blur fights the "cheap on mobile" rule. |
+| SSAO | partial | P2 | done (M) | Half resolution, 8 taps, bilateral blur, linear eye depth. Dump `ssao` is the radius in pixels. Omit it and the pass stays off. `KAGRA_QUALITY=high` uses radius 8 when the field is absent. Quality 0 forces it off. |
+| DOF | partial | P2 | done (M) | Disk gather, 14 px cap. Dump `dof_focus` (meters) and `dof_aperture`. Omit the aperture and the pass stays off. The high tier does not force it. |
+| TAA | partial | P2 | done (M) | Halton jitter, history, Karis 3×3 clamp. Dump `taa: true` replaces FXAA. The first frame copies the current color. `KAGRA_QUALITY=high` turns it on when the field is absent. |
+| Motion blur | partial | P2 | done (S) | Camera only, 8 taps. Dump `motion_blur` is a 0..1 shutter. A still camera is a copy. Object motion vectors are not stored. |
 | Outline pass | partial | P2 | M | MToon draws an inverted-hull outline in the mesh pass. There is no screen-space outline. |
 | FXAA | have | — | — | On the composited color. |
 | SMAA | missing | P2 | M | FXAA is the phone choice. SMAA can wait. |
@@ -69,7 +71,7 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 | Raycasting | partial | P2 | M | Genre interact uses reach, not a general raycaster. `kagra.annotate` records a preview click. |
 | Cameras | partial | P1 | S | Dump camera (eye, target, fov). Chase cameras live in genre code. No OrbitControls. |
 | Text | have | — | — | HUD `TextQuad` (PixelMplus, ab_glyph). Not a world-space `TextGeometry`. |
-| Render targets | partial | P1 | M | HDR frame, shadow map, bloom halves, composite. Games cannot allocate their own target or bind a custom shader. |
+| Render targets | partial | P1 | M | HDR frame, shadow map, an opt-in raw-depth copy for PCSS, bloom halves, composite. Games cannot allocate their own target or bind a custom shader. |
 | Custom shaders | missing | P2 | L | Materials are the built-in ids (solid, road, grass, sky, metal, toon, water). |
 | WebGPU backend | partial | P3 | L | wgpu can target WebGPU on desktop. The wasm build keeps WebGL2 limits (no storage buffers, no base instance). A WebGPU-only path is parked. |
 
@@ -84,6 +86,24 @@ Shipped on the wasm-safe path. The picture does not change. A headless dump can 
 
 ## Previous wave
 
+Shipped on the wasm-safe path. Omitted fields keep the previous picture (one 2048 map, 3×3 or the wider tent, no blocker search):
+
+- `shadow_cascades`. 1 is the historical full map, centered on the camera target, ortho half 24 m. 2 or 3 pack concentric rings (8 m, 24 m, 80 m) into tiles of that same map. No texture array, so the phone allocation stays one depth texture.
+- `shadow_pcss`. A blocker search, then a 3×3 compare whose radius follows the average blocker depth. WebGL2 cannot read a comparison depth, so the sun pass also writes device z to an `Rgba16Float` target. The lighting shader samples that only while the flag is on. The raw target is nearest-sampled (`textureSampleLevel`), so `float32-filterable` stays off.
+- `KAGRA_QUALITY=high` or `2` selects 3 cascades and PCSS when those fields are omitted. `0` / `off` / `low` forces the historical map. An explicit dump wins over the high tier.
+- `shadow.z` / `shadow.w` stay camera near / far for the depth prepass. Cascade count and the PCSS flag live in `cascade.x` / `cascade.y`.
+
+## Previous wave
+
+Shipped on the wasm-safe path. Omitted fields keep the previous picture (no SSAO, no DOF, no motion blur, FXAA on, vignette inside the composite):
+
+- Pass graph in `render/post.rs`: SSAO, DOF, camera motion, then the existing bloom grade, then TAA or FXAA, then vignette when TAA is on. Each pass is one fullscreen WGSL entry. No storage buffers.
+- Dump fields `ssao`, `taa`, `dof_focus`, `dof_aperture`, `motion_blur`. A depth prepass writes linear eye meters into its own target. The color pipeline stays alpha-blended, so depth does not ride in the color alpha.
+- `KAGRA_QUALITY=0` / `off` / `low` forces the new passes off. `high` / `2` enables SSAO radius 8 and TAA when those fields are omitted. DOF and motion stay opt-in.
+- The direct unorm path (frame format equals the swapchain) still skips bloom and these passes. Browser WebGPU takes that path, so the phone frame does not sample `Rgba16Float` and does not pay for SSAO, TAA, DOF, or motion. The shadow compare sampler stays nearest (`depth32float-filterable` is not requested). `shadow.z` / `shadow.w` stay camera near / far for that depth prepass.
+
+## Previous wave
+
 Shipped on the wasm-safe path. A glTF material now reaches the shared PBR shader instead of stopping at a tinted texture.
 
 - `baseColorFactor` is multiplied in linear light and stored back as sRGB (a 1×1 texel when the material has no texture). `COLOR_0` stays linear and multiplies the albedo.
@@ -93,7 +113,7 @@ Shipped on the wasm-safe path. A glTF material now reaches the shared PBR shader
 - `KHR_texture_transform` on the base color, normal, ORM, or emissive texture rewrites `TEXCOORD_0` (`uv' = R * (uv * scale) + offset`).
 - The base-color sampler sets wrap, mag/min, mip filter, and anisotropy 4 when every filter is linear. Mip chains are complete to 1×1, including sizes that are not powers of two.
 - A normal map builds a TBN. Missing `TANGENT` is filled with Lengyel tangents. The shader does not flip the green channel.
-- JPEG images (DamagedHelmet) decode through the `image` crate with default features off, so rayon stays out of the wasm build. PNG stays on the `png` crate.
+- JPEG and WebP images decode through the `image` crate (`jpeg` and `webp` features, default features off) so rayon stays out of the wasm build. PNG stays on the `png` crate.
 
 ## Previous wave
 
@@ -144,4 +164,4 @@ Shipped on the wasm-safe path, all of it toggleable:
 
 ## Next waves
 
-1. **Parked.** SSAO, DOF, area lights, SMAA, custom shader graphs, WebGPU-only features, VRM-on-Wasm, Android. Contact-hardening shadows need a depth read, which the soft-shadow wave skipped so WebGL2 stays on the comparison sampler. A real cubemap PMREM and HDR env files stay parked with that. Character LOD stays parked with that.
+1. **Parked.** Area lights, SMAA, custom shader graphs, WebGPU-only features, VRM-on-Wasm, Android. A real cubemap PMREM and HDR env files stay parked. Character LOD stays parked with that. Local-light shadows stay parked.

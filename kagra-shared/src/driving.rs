@@ -316,6 +316,8 @@ impl DrivingScene {
             exposure: 1.0,
             tonemap: true,
             shadow_softness: 1.0,
+            shadow_cascades: 1,
+            shadow_pcss: false,
             hemi_sky: [0.48, 0.56, 0.78],
             hemi_ground: [0.42, 0.30, 0.18],
             env_pixels: None,
