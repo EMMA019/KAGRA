@@ -1,7 +1,0 @@
-{
-  "title": "Sports Pitch",
-  "version": "0.1.0",
-  "slug": "sports",
-  "entry": "examples/sports_minimal.py",
-  "world": "kagra-shared/tests/fixtures/sports_world.json"
-}
