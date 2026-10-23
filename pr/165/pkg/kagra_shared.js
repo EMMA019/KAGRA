@@ -377,6 +377,13 @@ export class WasmSession {
         wasm.wasmsession_setDrive(this.__wbg_ptr, steer, throttle, brake);
     }
     /**
+     * HTML owns the title and result card. Hides the in-canvas flow column.
+     * @param {boolean} on
+     */
+    setExternalMenu(on) {
+        wasm.wasmsession_setExternalMenu(this.__wbg_ptr, on);
+    }
+    /**
      * `"auto"` (default), `"webgpu"`, or `"gl"` / `"webgl2"`. Call before
      * `attachCanvas`. `?backend=gl` on the page forces WebGL2; a blank
      * WebGPU frame does the same with a fresh canvas.

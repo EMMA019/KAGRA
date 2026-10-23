@@ -20,6 +20,9 @@
     }
     #app { position: fixed; inset: 0; }
     canvas {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
       display: block;
       width: 100%;
       height: 100%;
@@ -36,8 +39,14 @@
     }
     #boot { z-index: 5; }
     #boot.err { color: #ffb4a2; text-align: center; white-space: pre-wrap; }
-    #overlay { display: none; }
-    #overlay.visible { display: grid; }
+    #overlay { display: none; z-index: 4; pointer-events: none; }
+    #overlay.visible { display: grid; pointer-events: auto; }
+    #overlay button, #overlay a.btn {
+      touch-action: manipulation;
+      pointer-events: auto;
+      cursor: pointer;
+    }
+    html[data-menu="1"] canvas { pointer-events: none; }
     .card {
       width: min(440px, 100%);
       text-align: center;
@@ -226,6 +235,8 @@
       const worldRes = await fetch(fileUrl(site, worldUrl));
       if (!worldRes.ok) throw new Error(`${worldUrl} ${worldRes.status}`);
       session.loadGame(await worldRes.text());
+      if (session.setExternalMenu) session.setExternalMenu(true);
+      session.showTitle();
     } catch (err) {
       fail(`起動できませんでした。\n${err}\n\nwasm が無いときは ./scripts/build_wasm.sh のあと、このページを出してください。`);
       throw err;
@@ -301,6 +312,7 @@
     const held = new Set();
     const clamp = (v) => Math.max(-1, Math.min(1, v));
     let phase = "title";
+    globalThis.kagraPreview = session;
 
     const showPhase = (next) => {
       phase = next || "title";
@@ -308,23 +320,58 @@
       overlay.classList.toggle("visible", !playing);
       pads.classList.toggle("visible", playing);
       hud.classList.toggle("visible", playing);
+      document.documentElement.dataset.menu = playing ? "0" : "1";
+      if (!playing && phase !== "complete") session.showTitle();
       const label = playing ? "プレイ中" : phase === "complete" ? "リザルト" : "タイトル";
       document.getElementById("phaseLabel").textContent =
         `${bundle.title || slug} · ${label} · ${sharedVersion()}`;
       document.getElementById("start").textContent = phase === "complete" ? "もう一度" : "はじめる";
     };
 
-    const confirmGame = () => {
-      const x = canvas.width * 0.5;
-      const y = canvas.height * 0.5;
-      session.pushPointer(9, x, y, 0, 1);
-      session.pushPointer(9, x, y, 2, 0);
+    const readPhase = () => {
+      let statsPhase = "title";
+      let flow = "";
+      try { statsPhase = JSON.parse(session.statsJson()).game_phase || "title"; } catch {}
+      try { flow = JSON.parse(session.gameJson()).phase || ""; } catch {}
+      if (flow === "play" || flow === "pause") return "playing";
+      if (flow === "result") return "complete";
+      if (flow === "playing" || flow === "complete") return flow;
+      if (statsPhase === "playing" || statsPhase === "complete") return statsPhase;
+      return flow === "title" ? "title" : (statsPhase || "title");
     };
-    document.getElementById("start").addEventListener("click", (e) => {
+
+    let startLock = 0;
+    const confirmGame = () => {
+      if (phase === "playing") return;
+      const now = performance.now();
+      if (now - startLock < 350) return;
+      startLock = now;
+      session.startGame();
+    };
+    const stopOverlayEvent = (e) => {
+      e.preventDefault();
       e.stopPropagation();
+    };
+    const startBtn = document.getElementById("start");
+    startBtn.addEventListener("pointerdown", stopOverlayEvent);
+    startBtn.addEventListener("pointerup", (e) => {
+      stopOverlayEvent(e);
       confirmGame();
     });
-    overlay.addEventListener("pointerdown", (e) => {
+    startBtn.addEventListener("click", (e) => {
+      stopOverlayEvent(e);
+      confirmGame();
+    });
+    const catalog = overlay.querySelector("a.btn");
+    const openCatalog = (e) => {
+      stopOverlayEvent(e);
+      const href = catalog.getAttribute("href") || "./index.html";
+      if (location.href !== new URL(href, location.href).href) location.href = href;
+    };
+    catalog.addEventListener("pointerdown", stopOverlayEvent);
+    catalog.addEventListener("pointerup", openCatalog);
+    catalog.addEventListener("click", openCatalog);
+    overlay.addEventListener("pointerup", (e) => {
       if (e.target.closest("a, button")) return;
       if (phase !== "playing") confirmGame();
     });
@@ -394,6 +441,7 @@
     const appEl = document.getElementById("app");
     for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel"]) {
       appEl.addEventListener(type, (e) => {
+        if (overlay.classList.contains("visible")) return;
         if (e.target !== canvas) return;
         if (type === "pointerdown") {
           try { canvas.setPointerCapture(e.pointerId); } catch {}
@@ -429,7 +477,10 @@
       };
     };
 
-    document.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
+    document.addEventListener("touchmove", (e) => {
+      if (e.target.closest("#overlay button, #overlay a")) return;
+      e.preventDefault();
+    }, { passive: false });
     showPhase("title");
 
     let presented = 0;
@@ -473,8 +524,7 @@
         }
       }
       try {
-        const st = JSON.parse(session.statsJson());
-        const next = st.game_phase || "title";
+        const next = readPhase();
         if (next !== phase) showPhase(next);
       } catch {}
       requestAnimationFrame(loop);

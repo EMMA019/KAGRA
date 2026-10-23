@@ -92,6 +92,10 @@ export class WasmSession {
      */
     setDrive(steer: number, throttle: number, brake: number): void;
     /**
+     * HTML owns the title and result card. Hides the in-canvas flow column.
+     */
+    setExternalMenu(on: boolean): void;
+    /**
      * `"auto"` (default), `"webgpu"`, or `"gl"` / `"webgl2"`. Call before
      * `attachCanvas`. `?backend=gl` on the page forces WebGL2; a blank
      * WebGPU frame does the same with a fresh canvas.
@@ -149,21 +153,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly __wbg_wasmlockstep_free: (a: number, b: number) => void;
-    readonly netDecode: (a: number, b: number) => [number, number, number, number];
-    readonly netDt: (a: number, b: number) => number;
-    readonly netHello: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly wasmlockstep_ingest: (a: number, b: number, c: number) => [number, number];
-    readonly wasmlockstep_new: (a: number, b: number) => [number, number, number];
-    readonly wasmlockstep_ready: (a: number, b: number) => number;
-    readonly wasmlockstep_submitLocal: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
-    readonly kagra_net_hello: (a: number, b: number, c: number, d: number) => number;
-    readonly kagra_net_ingest: (a: number, b: number) => number;
-    readonly kagra_net_input_axis: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
-    readonly kagra_net_lockstep_free: (a: number) => void;
-    readonly kagra_net_lockstep_new: (a: number, b: number) => number;
-    readonly kagra_net_ready: (a: number, b: number) => number;
-    readonly kagra_net_submit_local: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly kagra_shared_attach_android_surface: (a: number, b: number, c: number, d: number) => number;
     readonly kagra_shared_attach_ios_view: (a: number, b: number, c: number, d: number) => number;
     readonly kagra_shared_attach_offscreen: (a: number, b: number, c: number) => number;
@@ -237,6 +226,7 @@ export interface InitOutput {
     readonly wasmsession_saveJson: (a: number) => [number, number, number, number];
     readonly wasmsession_setAssetRoot: (a: number, b: number, c: number) => void;
     readonly wasmsession_setDrive: (a: number, b: number, c: number, d: number) => void;
+    readonly wasmsession_setExternalMenu: (a: number, b: number) => void;
     readonly wasmsession_setGraphicsBackend: (a: number, b: number, c: number) => void;
     readonly wasmsession_setJump: (a: number, b: number) => void;
     readonly wasmsession_setPad: (a: number, b: number, c: number) => void;
@@ -254,6 +244,21 @@ export interface InitOutput {
     readonly wasmsession_startGame: (a: number) => void;
     readonly wasmsession_statsJson: (a: number) => [number, number];
     readonly wasmsession_loadGameJson: (a: number, b: number, c: number) => [number, number];
+    readonly kagra_net_hello: (a: number, b: number, c: number, d: number) => number;
+    readonly kagra_net_ingest: (a: number, b: number) => number;
+    readonly kagra_net_input_axis: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly kagra_net_lockstep_free: (a: number) => void;
+    readonly kagra_net_lockstep_new: (a: number, b: number) => number;
+    readonly kagra_net_ready: (a: number, b: number) => number;
+    readonly kagra_net_submit_local: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+    readonly __wbg_wasmlockstep_free: (a: number, b: number) => void;
+    readonly netDecode: (a: number, b: number) => [number, number, number, number];
+    readonly netDt: (a: number, b: number) => number;
+    readonly netHello: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly wasmlockstep_ingest: (a: number, b: number, c: number) => [number, number];
+    readonly wasmlockstep_new: (a: number, b: number) => [number, number, number];
+    readonly wasmlockstep_ready: (a: number, b: number) => number;
+    readonly wasmlockstep_submitLocal: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly wasm_bindgen_42bf64e63cc180fa___convert__closures_____invoke___wasm_bindgen_42bf64e63cc180fa___JsValue__core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_42bf64e63cc180fa___JsError___true_: (a: number, b: number, c: any) => [number, number];
     readonly wasm_bindgen_42bf64e63cc180fa___convert__closures_____invoke___wasm_bindgen_42bf64e63cc180fa___sys__JsOption_wgpu_51a115929c565234___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_42bf64e63cc180fa___JsError___true_: (a: number, b: number, c: any) => [number, number];
     readonly wasm_bindgen_42bf64e63cc180fa___convert__closures_____invoke___wasm_bindgen_42bf64e63cc180fa___sys__JsOption_wgpu_51a115929c565234___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_42bf64e63cc180fa___JsError___true__3: (a: number, b: number, c: any) => [number, number];
