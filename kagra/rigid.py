@@ -11,6 +11,7 @@
 - `joints`: `fixed` / `revolute` / `spherical`（アンカーは各剛体のローカル）
 - `apply_impulse` / `apply_force` / `raycast` / `take_events`
 - walker（player / walkers）はキネマティックカプセル。`sync` は上書きしない
+- `move_character` は Rapier の `KinematicCharacterController`（壁スライド、接地スナップ、0.35 m までの段差）。重力はゲーム側。WorldPlay の歩行は置き換えない
 - 地形は高さ場コライダー（`height_at` をサンプリング）
 - 決定論: `enhanced-determinism`（同入力 → 同結果）
 
@@ -162,6 +163,30 @@ class PhysicsWorld:
         for raw in self._inner.take_events(name):
             out.append(json.loads(raw))
         return out
+
+    def move_character(
+        self,
+        prop_id: str,
+        desired: list[float],
+        dt: float,
+    ) -> dict[str, Any] | None:
+        """Slide a kinematic capsule by this tick's translation.
+
+        ``desired`` already includes gravity. Returns
+        ``position``, ``translation``, ``grounded``, and ``sliding``,
+        or None when ``prop_id`` is not a walker or kinematic prop.
+        Call ``step`` once first so the broad phase has the static world.
+        """
+        hit = self._inner.move_character(prop_id, _vec3(desired), float(dt))
+        if hit is None:
+            return None
+        position, translation, grounded, sliding = hit
+        return {
+            "position": list(position),
+            "translation": list(translation),
+            "grounded": bool(grounded),
+            "sliding": bool(sliding),
+        }
 
     def raycast(
         self,

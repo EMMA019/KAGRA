@@ -53,6 +53,18 @@ https://github.com/mrdoob/three.js): a luma high-pass, then downsample
 and additive upsample. The WGSL in bloom_ldr.wgsl is original. No
 three.js source is copied.
 
+The procedural SFX in kagra-shared/src/sfx.rs follow the shape of sfxr
+(Tomas Pettersson / DrPetter, MIT, http://www.drpetter.se/project_sfxr.html):
+a waveform, a pitch slide, and a decay. The oscillator and the preset
+numbers are original. No sfxr source is copied. Wasm calls `synthWav`.
+
+rapier3d 0.35
+  https://github.com/dimforge/rapier
+  Apache-2.0
+  Rigid bodies, and `KinematicCharacterController` for
+  `PhysicsWorld::move_character` (slide, snap, autostep). The wasm
+  build keeps parry's default SIMD off. No Rapier source is copied.
+
 simple-easing 1.1.1
   https://gitlab.com/chpio/simple-easing
   MIT OR Apache-2.0
