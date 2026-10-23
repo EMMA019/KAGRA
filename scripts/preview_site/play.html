@@ -180,6 +180,13 @@
     const requestedBackend = (params.get("backend") || "auto").toLowerCase();
     let activeBackend = requestedBackend === "webgl" || requestedBackend === "webgl2" ? "gl" : requestedBackend;
     const slug = (params.get("game") || "neon_run").trim() || "neon_run";
+    if (slug === "neon_cat") {
+      // Neon Cat only steers and jumps. A dead アクション button just confuses.
+      const actBtn = document.getElementById("act");
+      if (actBtn) actBtn.style.display = "none";
+      const blurbEl = document.getElementById("blurb");
+      if (blurbEl) blurbEl.textContent = "タップではじめる。左が移動、右下ジャンプ。";
+    }
 
     const fail = (text) => {
       boot.className = "err";

@@ -67,6 +67,8 @@ const CHASE_ROLL: f32 = 0.07;
 
 const OBS_Z0: f32 = 26.0;
 const OBS_GAP: f32 = 14.0;
+/// Score panel top. Clears the page's 一覧 / title bar on phones.
+const HUD_TOP: f32 = 96.0;
 /// Seconds of reaction time an obstacle is drawn before the cat reaches it.
 const LEAD_SECS: f32 = 2.5;
 const RING_Z0: f32 = 14.0;
@@ -1076,6 +1078,23 @@ impl NeonCat {
             [5.7, 0.05, depth],
             [3, 2, 8],
         ));
+        // Close the far end in black so the open tunnel mouth does not read
+        // as a flat maroon panel, with a faint violet glow at the vanishing point.
+        doc.props.push(matte(
+            "end-cap",
+            [0.0, 3.45, z1],
+            [5.7, 6.9, 0.05],
+            [0, 0, 0],
+        ));
+        doc.props.push(glow(
+            "vanish",
+            "box",
+            "vanish",
+            [0.0, 2.2, z1 - 0.1],
+            [1.6, 0.04, 0.02],
+            [120, 60, 255],
+            0.6,
+        ));
         self.push_grid_lines(doc, z0, z1);
     }
 
@@ -1399,12 +1418,12 @@ impl NeonCat {
         }
         if self.flow.phase == FlowPhase::Play || self.hitstop > 0.0 {
             list.quads
-                .push(Quad::new(12.0, 10.0, 168.0, 36.0, [8, 4, 20, 160]));
+                .push(Quad::new(12.0, HUD_TOP, 168.0, 36.0, [8, 4, 20, 160]));
             label(
                 &mut list,
                 &format!("SCORE {}", self.score),
                 22.0,
-                16.0,
+                HUD_TOP + 6.0,
                 16.0,
                 [180, 245, 255, 255],
                 TextAlign::Left,
