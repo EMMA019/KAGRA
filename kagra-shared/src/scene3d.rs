@@ -188,6 +188,8 @@ pub struct MeshData {
     pub matcap: Option<AlbedoRgba>,
     /// MToon / glTF normal map (RGBA, blue channel is the bump).
     pub normal: Option<AlbedoRgba>,
+    /// glTF `normalTexture.scale` (scales tangent-space X/Y). `None` = 1.0.
+    pub normal_scale: Option<f32>,
     /// Present when the glTF/VRM primitive authored MToon shade.
     pub mtoon: Option<MtoonShade>,
     /// Linear ORM image. G = roughness, B = metallic. Flags say which channel wins.
