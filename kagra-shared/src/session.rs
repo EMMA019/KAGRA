@@ -192,6 +192,7 @@ impl SharedSession {
 
     /// ジャンル dump を読み、シーンを `World` にする。タイトルのまま待つ。
     pub fn load_game_json(&mut self, json: &str) -> Result<(), String> {
+        crate::world_doc::clear_runtime_asset_cache();
         if crate::neon_run::is_neon_dump(json) {
             let run = crate::neon_run::NeonRun::from_json(json)?;
             let dump = run.dump_json();
@@ -206,6 +207,7 @@ impl SharedSession {
             self.playtest.snapshot_loaded(&dump);
             return Ok(());
         }
+        self.neon = None;
         let mut play = WorldPlay::from_json(json)?;
         play.load_progress();
         let dump = play.doc.to_json().unwrap_or_else(|_| json.to_string());

@@ -1,0 +1,278 @@
+# ブラウザ版を GitHub Pages に出す。有料サービスも秘密も使わない。
+# master → /    PR → /pr/<number>/    close でそのディレクトリを消す。
+# 手順は docs/preview.md。
+
+name: Preview
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to publish under /pr/<number>/ (empty on master updates /)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --version 0.2.127
+
+      - name: Build wasm
+        run: bash scripts/build_wasm.sh
+
+      - name: Stage the browser preview
+        run: python scripts/build_browser_preview.py --out dist/preview --require-pkg
+
+      - name: Preview URL
+        run: |
+          set -eu
+          owner=$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          repo="${GITHUB_REPOSITORY#*/}"
+          base="https://${owner}.github.io/${repo}"
+          dest=""
+          event="${{ github.event_name }}"
+          if [ "$event" = "pull_request" ]; then
+            dest="pr/${{ github.event.number }}"
+          elif [ "$event" = "workflow_dispatch" ]; then
+            pr="${{ github.event.inputs.pr }}"
+            if [ -n "$pr" ]; then
+              dest="pr/${pr}"
+            elif [ "${{ github.ref }}" != "refs/heads/master" ] && [ "${{ github.ref }}" != "refs/heads/main" ]; then
+              echo "Set the pr input, or run this from master." >&2
+              exit 1
+            fi
+          fi
+          if [ -n "$dest" ]; then
+            url="${base}/${dest}/"
+          else
+            url="${base}/"
+          fi
+          echo "dest=${dest}" >> "$GITHUB_ENV"
+          echo "url=${url}" >> "$GITHUB_ENV"
+          echo "preview ${url}"
+
+      - name: QR code
+        run: |
+          python -m pip install segno
+          python -c "import os, segno; segno.make(os.environ['url']).save('dist/preview/qr.png', scale=8, border=2)"
+
+      - name: Publish gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scripts/publish_preview_pages.py --src dist/preview --dest "${dest}"
+
+      - name: Ask master to deploy Pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          # github-pages 環境は master だけ通す。deploy-pages は
+          # pages-deploy.yml（master）が行う。ここは木を渡しただけ。
+          before=$(date -u +%s)
+          echo "dispatch_epoch=${before}" >> "$GITHUB_ENV"
+          payload=$(printf '{"event_type":"kagra-pages","client_payload":{"dest":"%s","url":"%s"}}' "$dest" "$url")
+          printf '%s' "$payload" | gh api --method POST "/repos/${GITHUB_REPOSITORY}/dispatches" --input -
+
+      - name: Comment on the PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          PREVIEW_URL: ${{ env.url }}
+        with:
+          script: |
+            const marker = "<!-- kagra-preview -->";
+            const url = process.env.PREVIEW_URL;
+            const body = [
+              marker,
+              "## スマホで試す（ケーブル不要）",
+              "",
+              `プレビュー: ${url}`,
+              "",
+              `Lumen: ${url}play.html?game=neon_run`,
+              "",
+              `Box Hop: ${url}play.html?game=platformer`,
+              "",
+              `![QR](${url}qr.png)`,
+              "",
+              "左スティックで移動、右下でジャンプ、右上でアクション。縦横どちらでも操作できます。",
+              "",
+              "KAGRA Dev（Actions の artifact `kagra-dev-apk`）を一度入れると、master か PR 番号を選んで同じバンドルを読み直せます。",
+              "",
+            ].join("\n");
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Wait until Pages serves the preview
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          probe="${url}catalog.json"
+          html="${url}play.html?game=neon_run"
+          neon="${url}games/neon_run/world.json"
+          wasm="${url}pkg/kagra_shared_bg.wasm"
+          found=""
+          for i in $(seq 1 40); do
+            if [ -z "$found" ]; then
+              found=$(gh run list --workflow pages-deploy.yml --limit 10 \
+                --json databaseId,createdAt,headBranch,status,conclusion \
+                --jq '.[] | "\(.createdAt) \(.databaseId) \(.headBranch)"' \
+                | while read -r created id branch; do
+                    [ "$branch" = "master" ] || continue
+                    epoch=$(date -u -d "$created" +%s)
+                    # Runner clocks can sit a little ahead of the API timestamp.
+                    if [ "$epoch" -ge $((dispatch_epoch - 180)) ]; then
+                      echo "$id"
+                      break
+                    fi
+                  done || true)
+            fi
+            if [ -n "$found" ]; then
+              status=$(gh run view "$found" --json status,conclusion --jq '.status + " " + (.conclusion // "")')
+              echo "pages-deploy ${found} ${status}"
+              case "$status" in
+                "completed success") break ;;
+                completed*)
+                  echo "Pages deploy failed: ${status}" >&2
+                  gh run view "$found" --log-failed || true
+                  exit 1
+                  ;;
+              esac
+            else
+              echo "try ${i}: pages-deploy run not visible yet"
+            fi
+            sleep 20
+          done
+          if [ -z "$found" ]; then
+            echo "pages-deploy.yml on master did not start." >&2
+            echo "The github-pages environment accepts master only, so Preview dispatches that workflow." >&2
+            exit 1
+          fi
+          : > /tmp/kagra-catalog.json
+          : > /tmp/kagra-play.html
+          : > /tmp/kagra.wasm
+          : > /tmp/kagra-neon.json
+          for i in $(seq 1 15); do
+            code=$(curl -fsS -o /tmp/kagra-catalog.json -w "%{http_code}" "$probe" || true)
+            hcode=$(curl -fsS -o /tmp/kagra-play.html -w "%{http_code}" "$html" || true)
+            wcode=$(curl -fsS -o /tmp/kagra.wasm -w "%{http_code}" "$wasm" || true)
+            ncode=$(curl -fsS -o /tmp/kagra-neon.json -w "%{http_code}" "$neon" || true)
+            wsize=$(wc -c < /tmp/kagra.wasm)
+            echo "try ${i} catalog=${code} play=${hcode} wasm=${wcode} neon=${ncode} wasm_bytes=${wsize}"
+            if [ "$code" = "200" ] && [ "$hcode" = "200" ] && [ "$wcode" = "200" ] && [ "$ncode" = "200" ] \
+              && grep -q platformer /tmp/kagra-catalog.json \
+              && grep -q neon_run /tmp/kagra-catalog.json \
+              && grep -q neon_run /tmp/kagra-neon.json \
+              && grep -q 'data-orient="portrait"' /tmp/kagra-play.html \
+              && grep -q 'neon_run' /tmp/kagra-play.html \
+              && [ "$wsize" -gt 1000000 ]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Pages did not serve ${html}" >&2
+          exit 1
+
+  cleanup:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Remove the PR directory
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scripts/publish_preview_pages.py --delete --dest "pr/${{ github.event.number }}"
+
+      - name: Ask master to deploy Pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          payload='{"event_type":"kagra-pages","client_payload":{"dest":"pr/${{ github.event.number }}","delete":true}}'
+          printf '%s' "$payload" | gh api --method POST "/repos/${GITHUB_REPOSITORY}/dispatches" --input -
+
+      - name: Note that the preview was removed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = "<!-- kagra-preview -->";
+            const body = [
+              marker,
+              "この PR のプレビュー（/pr/${{ github.event.number }}/）はクローズに合わせて消しました。",
+              "",
+            ].join("\n");
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            }

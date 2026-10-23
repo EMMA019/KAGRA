@@ -56,6 +56,10 @@ python -m http.server -d kagra-shared/www 8000
 
 WebGPU が無いブラウザでも WebGL2 バックエンドで動く。
 
+ジャンル例を電話のブラウザで試すときは GitHub Pages に出す。`master` は `/`、
+PR は `/pr/<番号>/`。操作と KAGRA Dev（一度入れたあとケーブル不要）は
+[docs/preview.md](../docs/preview.md)。
+
 - Lumen: `http://localhost:8000/play.html` — WASD / ドラッグ、Shift か BOOST
 - Crest Isle: `http://localhost:8000/crest.html` — 左スティックで歩き、右でジャンプ
 - Corridor Haul: `http://localhost:8000/corridor.html` — 矢印 / WASD、または画面下のパッド

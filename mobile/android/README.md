@@ -33,3 +33,11 @@ python scripts/package_android.py --game examples/platformer_minimal.py
 itch.io への手動アップロードは [docs/distribution.md](../../docs/distribution.md)。
 
 運転デモに戻すときは `KagraNative.setScene(0)`。
+
+## KAGRA Dev
+
+`applicationId` は `dev.kagra.devshell`。ゲームは同梱しない。起動画面で master か
+PR 番号を選び、GitHub Pages のバンドル（world / assets / manifest）を落として
+WorldPlay する。再読込ボタンか、上のバーを下に引くと取り直す。デバッグ APK は
+Package Android の artifact `kagra-dev-apk`。手順は
+[docs/preview.md](../../docs/preview.md)。

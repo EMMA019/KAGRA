@@ -79,6 +79,19 @@ def test_package_android_workflow_checks_load_and_zipalign():
     workflow = (ROOT / ".github/workflows/package-android.yml").read_text(encoding="utf-8")
     assert "scripts/check_android_16k.py" in workflow
     assert "DT_NEEDED" in workflow
+    assert workflow.index("kagra-dev-debug.apk") < workflow.index(
+        "Check 16 KB alignment and DT_NEEDED"
+    )
+    dev_cmake = (ROOT / "mobile/android/dev/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8")
+    assert "-Wl,-z,max-page-size=16384" in dev_cmake
+    assert "-Wl,-z,common-page-size=16384" in dev_cmake
+    assert 'IMPORTED_SONAME "libkagra_shared.so"' in dev_cmake
+    assert "IMPORTED_NO_SONAME FALSE" in dev_cmake
+    assert "-Wl,-l:libkagra_shared.so" in dev_cmake
+    assert "target_link_libraries(kagra_jni kagra_shared" not in dev_cmake
+    dev_gradle = (ROOT / "mobile/android/dev/build.gradle.kts").read_text(encoding="utf-8")
+    assert "useLegacyPackaging = false" in dev_gradle
+    assert "29.0.14206865" in dev_gradle
     script = (ROOT / "scripts" / "check_android_16k.py").read_text(encoding="utf-8")
     assert "llvm-readelf" in script
     assert '"-d"' in script

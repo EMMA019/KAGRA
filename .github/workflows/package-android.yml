@@ -106,9 +106,33 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: python scripts/package_android.py --game "$KAGRA_GAME" --out dist/android --release --skip-native
 
+      # ゲーム APK とは別 applicationId。中身は同梱せず、Pages から落とす。
+      # 16 KB 検査はこの後。dist/android/*.apk に両方入った状態で見る。
+      - name: Bake the public Pages URL into KAGRA Dev
+        run: |
+          set -eu
+          owner=$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          repo="${GITHUB_REPOSITORY#*/}"
+          printf 'pages_base=https://%s.github.io/%s\n' "$owner" "$repo" > mobile/android/kagra.pages.properties
+
+      - name: Package KAGRA Dev (debug shell)
+        run: |
+          set -eu
+          if [ -z "${ANDROID_HOME:-}" ] && [ -n "${ANDROID_SDK_ROOT:-}" ]; then
+            export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          fi
+          if [ -z "${ANDROID_NDK_HOME:-}" ]; then
+            export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${KAGRA_ANDROID_NDK_VERSION}"
+          fi
+          test -d "$ANDROID_NDK_HOME"
+          cd mobile/android
+          gradle :dev:assembleDebug --no-daemon --stacktrace
+          mkdir -p ../../dist/android
+          cp dev/build/outputs/apk/debug/*.apk ../../dist/android/kagra-dev-debug.apk
+
       # 16 KB ページ（Android 15+ / Pixel 10）と、APK 内の全 .so の DT_NEEDED。
       # llvm-readelf -d と ELF 文字列の両方で、'/' を含む NEEDED があれば落とす。
-      # 対象は dist/android の全 APK（platformer-debug.apk を含む）。
+      # 対象は dist/android の全 APK（platformer-debug.apk と kagra-dev-debug.apk）。
       - name: Check 16 KB alignment and DT_NEEDED
         run: |
           set -eu
@@ -133,4 +157,11 @@ jobs:
         with:
           name: kagra-android-apk
           path: dist/android/*.apk
+          if-no-files-found: error
+
+      - name: Upload KAGRA Dev APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: kagra-dev-apk
+          path: dist/android/kagra-dev-debug.apk
           if-no-files-found: error

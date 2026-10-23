@@ -1,7 +1,9 @@
 //! アセット別名（Python `kagra.contracts` と揃える）。
 
+use std::collections::HashMap;
+use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 /// Filesystem root of a packaged game (Android `filesDir`, Windows bundle).
 ///
@@ -18,6 +20,91 @@ pub fn set_packaged_root(root: Option<PathBuf>) {
 
 fn packaged_root() -> Option<PathBuf> {
     PACKAGED_ROOT.lock().ok().and_then(|guard| guard.clone())
+}
+
+/// Bytes staged by the browser (or a test) under a repo-relative path.
+///
+/// Wasm has no game directory. The page fetches `world.json` and the staged
+/// assets, then [`mount_file`] so [`resolve_asset`] / [`read_bytes`] see them.
+static MOUNTED: LazyLock<Mutex<HashMap<String, Vec<u8>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// `assets/a/../b.png` and `assets\\b.png` become `assets/b.png`.
+pub fn normalize_mount_key(path: &str) -> String {
+    let path = path.replace('\\', "/");
+    let mut parts: Vec<&str> = Vec::new();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            other => parts.push(other),
+        }
+    }
+    parts.join("/")
+}
+
+/// Remember `bytes` at a repo-relative path. Empty or escaped keys are ignored.
+pub fn mount_file(path: &str, bytes: Vec<u8>) {
+    let key = normalize_mount_key(path);
+    if key.is_empty() {
+        return;
+    }
+    if let Ok(mut guard) = MOUNTED.lock() {
+        guard.insert(key, bytes);
+    }
+}
+
+pub fn unmount_file(path: &str) {
+    let key = normalize_mount_key(path);
+    if let Ok(mut guard) = MOUNTED.lock() {
+        guard.remove(&key);
+    }
+}
+
+pub fn clear_mount() {
+    if let Ok(mut guard) = MOUNTED.lock() {
+        guard.clear();
+    }
+}
+
+fn lookup_mounted(path: &Path) -> Option<Vec<u8>> {
+    let key = normalize_mount_key(&path.to_string_lossy());
+    if key.is_empty() {
+        return None;
+    }
+    MOUNTED.lock().ok()?.get(&key).cloned()
+}
+
+pub fn mounted_is_file(path: impl AsRef<Path>) -> bool {
+    let key = normalize_mount_key(&path.as_ref().to_string_lossy());
+    if key.is_empty() {
+        return false;
+    }
+    MOUNTED
+        .lock()
+        .ok()
+        .is_some_and(|guard| guard.contains_key(&key))
+}
+
+/// Mounted bytes, or a real file on disk.
+pub fn is_file(path: impl AsRef<Path>) -> bool {
+    let path = path.as_ref();
+    mounted_is_file(path) || path.is_file()
+}
+
+pub fn read_bytes(path: impl AsRef<Path>) -> io::Result<Vec<u8>> {
+    let path = path.as_ref();
+    if let Some(bytes) = lookup_mounted(path) {
+        return Ok(bytes);
+    }
+    std::fs::read(path)
+}
+
+pub fn read_to_string(path: impl AsRef<Path>) -> io::Result<String> {
+    let bytes = read_bytes(path)?;
+    String::from_utf8(bytes).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -213,6 +300,10 @@ pub fn resolve_asset(spec: &str) -> Option<PathBuf> {
         bases.push(cwd);
     }
     for name in &names {
+        let key = normalize_mount_key(name);
+        if !key.is_empty() && mounted_is_file(Path::new(&key)) {
+            return Some(PathBuf::from(key));
+        }
         let direct = PathBuf::from(name);
         if direct.is_file() {
             return Some(direct);
@@ -230,6 +321,17 @@ pub fn resolve_asset(spec: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mounted_bytes_resolve_without_a_disk_file() {
+        let rel = "assets/kagra_mount_probe.txt";
+        mount_file("assets/../assets/kagra_mount_probe.txt", b"probe".to_vec());
+        let path = resolve_asset(rel).expect("mounted alias path");
+        assert_eq!(read_bytes(&path).expect("bytes"), b"probe");
+        assert!(is_file(Path::new(rel)));
+        unmount_file(rel);
+        assert!(!mounted_is_file(Path::new(rel)));
+    }
 
     #[test]
     fn emma_alias() {

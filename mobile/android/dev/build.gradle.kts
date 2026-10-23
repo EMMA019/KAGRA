@@ -1,0 +1,101 @@
+import java.util.Properties
+
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+
+// CI writes this. A public Pages URL is not a secret. Empty falls back to this repo.
+val pagesProps = Properties()
+val pagesFile = rootProject.file("kagra.pages.properties")
+if (pagesFile.exists()) {
+    pagesFile.reader(Charsets.UTF_8).use { pagesProps.load(it) }
+}
+val pagesBase = (pagesProps.getProperty("pages_base") ?: "https://emma019.github.io/KAGRA")
+    .trim()
+    .replace("\\", "")
+    .replace("\"", "")
+
+// Share the shell sources without compiling MainActivity. AGP's public source
+// set has srcDir, but exclude/filter are not callable from this script.
+val sharedShell = layout.buildDirectory.dir("shared-shell")
+val syncSharedShell = tasks.register<Copy>("syncSharedShell") {
+    from("../app/src/main/java") {
+        include("dev/kagra/shell/KagraNative.kt")
+        include("dev/kagra/shell/AudioBus.kt")
+    }
+    into(sharedShell)
+}
+tasks.named("preBuild").configure { dependsOn(syncSharedShell) }
+
+android {
+    namespace = "dev.kagra.shell"
+    compileSdk = 35
+    // app モジュールと同じ NDK r29。libc++_shared.so を 16 KB アラインで同梱する。
+    ndkVersion = System.getenv("KAGRA_ANDROID_NDK_VERSION") ?: "29.0.14206865"
+
+    defaultConfig {
+        applicationId = "dev.kagra.devshell"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "0.1.0"
+        buildConfigField("String", "PAGES_BASE", "\"$pagesBase\"")
+
+        externalNativeBuild {
+            cmake {
+                cppFlags += "-std=c++17"
+                arguments += listOf("-DANDROID_STL=c++_shared")
+            }
+        }
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+        }
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
+    // 非圧縮の .so を 16 KB zip 境界に置く。ゲーム APK と同じ。
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+
+    sourceSets {
+        getByName("main") {
+            this.java.srcDir(sharedShell)
+            jniLibs.srcDir("../app/src/main/jniLibs")
+        }
+    }
+}
+
+dependencies {
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.activity:activity-ktx:1.9.2")
+}
