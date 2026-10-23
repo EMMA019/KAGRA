@@ -133,6 +133,7 @@ def test_dev_shell_is_a_separate_debug_app():
     preview_yml = (ROOT / ".github/workflows/preview.yml").read_text(encoding="utf-8")
     assert "bash scripts/build_wasm.sh" in preview_yml
     assert "kagra-pages" in preview_yml
+    assert 'data-orient="portrait"' in preview_yml
     assert "build_type" not in preview_yml
     assert "Deploy from a branch" not in preview_yml
     deploy_yml = (ROOT / ".github/workflows/pages-deploy.yml").read_text(encoding="utf-8")

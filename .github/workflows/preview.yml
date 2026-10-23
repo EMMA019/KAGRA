@@ -169,7 +169,8 @@ jobs:
                 | while read -r created id branch; do
                     [ "$branch" = "master" ] || continue
                     epoch=$(date -u -d "$created" +%s)
-                    if [ "$epoch" -ge "$dispatch_epoch" ]; then
+                    # Runner clocks can sit a little ahead of the API timestamp.
+                    if [ "$epoch" -ge $((dispatch_epoch - 180)) ]; then
                       echo "$id"
                       break
                     fi
@@ -207,7 +208,7 @@ jobs:
             echo "try ${i} catalog=${code} play=${hcode} wasm=${wcode} wasm_bytes=${wsize}"
             if [ "$code" = "200" ] && [ "$hcode" = "200" ] && [ "$wcode" = "200" ] \
               && grep -q platformer /tmp/kagra-catalog.json \
-              && ! grep -q "<!DOCTYPE html>" /tmp/kagra-play.html \
+              && grep -q 'data-orient="portrait"' /tmp/kagra-play.html \
               && [ "$wsize" -gt 1000000 ]; then
               exit 0
             fi
