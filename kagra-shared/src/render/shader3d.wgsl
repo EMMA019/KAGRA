@@ -89,6 +89,13 @@ fn vs_main(in: VsIn) -> VsOut {
 
     var out: VsOut;
     out.clip = g.view_proj * world;
+    // Glow quads (trail ribbon, grid, rails) sit on or just above the floor.
+    // They depth-write with alpha blending, so a coplanar compare flickers
+    // into black/white bands. Pull them toward the camera in clip space.
+    // DirectX/WebGPU z is 0 at the near plane.
+    if (in.mtoon4.z > 0.30) {
+        out.clip.z = max(out.clip.z - 0.0016 * out.clip.w, 0.0);
+    }
     out.color = in.color;
     out.normal = mat3x3<f32>(in.m0.xyz, in.m1.xyz, in.m2.xyz) * in.normal;
     out.world = world.xyz;
@@ -155,7 +162,9 @@ fn fs_outline(in: VsOut) -> @location(0) vec4<f32> {
 
 @vertex
 fn vs_shadow(in: VsIn) -> @builtin(position) vec4<f32> {
-    if (in.color.a < 0.72) {
+    // Contact blobs (alpha) and emissive ribbons / rings / rails. A torus
+    // or a 70 m rail in the shadow map is what streaks the track.
+    if (in.color.a < 0.72 || in.mtoon4.z > 0.30) {
         return vec4<f32>(0.0, 0.0, -2.0, 1.0);
     }
     let model = mat4x4<f32>(in.m0, in.m1, in.m2, in.m3);
@@ -304,15 +313,26 @@ fn env_specular(dir: vec3<f32>, rough: f32) -> vec3<f32> {
     return mix(sh, sampled, step(0.5, g.hemi_ground.w));
 }
 
-// One directional map. Depth compare (WebGL2 sampler2DShadow).
-// Contact blob stays; this is the sun umbra on ground / capsule / human.
+// One directional map. Depth compare (WebGL2 sampler2DShadow / WebGPU
+// texture_depth_2d). The sampler is nearest: linear filtering of
+// depth32float is the optional `depth32float-filterable` feature, which
+// wgpu 30 cannot request. Mobile WebGPU (Pixel) then returns banded 0/1
+// garbage — the black/white smear on the track. PCF is this loop, at LOD 0
+// (`textureSampleCompareLevel`) so the taps stay valid inside the loop.
 // shadow.x <= 1 keeps the historical 3x3 kernel. Larger radii use a 5x5 tent.
 fn shadow_factor(world: vec3<f32>, nrm: vec3<f32>) -> f32 {
-    let sc = g.light_view_proj * vec4<f32>(world, 1.0);
+    let nlen = length(nrm);
+    let nsafe = select(vec3<f32>(0.0, 1.0, 0.0), nrm / max(nlen, 1e-4), nlen > 1e-4);
+    let slope = clamp(1.0 - abs(dot(nsafe, normalize(g.light.xyz))), 0.0, 1.0);
+    // Normal offset in world units. Polygon offset on depth32float is about
+    // 2^-23 per constant unit, so the pipeline's constant bias barely moves
+    // the map on WebGPU. Push the receiver off the caster before projecting.
+    let origin = world + nsafe * (0.04 + slope * 0.07);
+    let sc = g.light_view_proj * vec4<f32>(origin, 1.0);
     let ndc = sc.xyz / sc.w;
     let uv = vec2<f32>(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
     let depth = ndc.z;
-    // No early return: textureSampleCompare must stay in uniform control flow.
+    // No early return: the compare must stay in uniform control flow.
     // Out-of-frustum fragments still sample, then the mask restores full light.
     let inside = select(
         0.0,
@@ -320,19 +340,14 @@ fn shadow_factor(world: vec3<f32>, nrm: vec3<f32>) -> f32 {
         (uv.x >= 0.0) & (uv.x <= 1.0) & (uv.y >= 0.0) & (uv.y <= 1.0) & (depth >= 0.0) & (depth <= 1.0),
     );
     let texel = 1.0 / 2048.0;
-    // Slope-scaled bias. A flat 0.0015 at a grazing phone compare smears
-    // into black streaks along the track.
-    let nlen = length(nrm);
-    let nsafe = select(vec3<f32>(0.0, 1.0, 0.0), nrm / max(nlen, 1e-4), nlen > 1e-4);
-    let slope = clamp(1.0 - abs(dot(nsafe, normalize(g.light.xyz))), 0.0, 1.0);
-    let d = depth - (0.0022 + slope * 0.008);
+    let d = depth - (0.0016 + slope * 0.0045);
     let radius = max(g.shadow.x, 0.0);
     var lit = 1.0;
     if (radius <= 1.01) {
         var s = 0.0;
         for (var y = -1; y <= 1; y++) {
             for (var x = -1; x <= 1; x++) {
-                s += textureSampleCompare(
+                s += textureSampleCompareLevel(
                     shadow_tex,
                     shadow_samp,
                     uv + vec2<f32>(f32(x), f32(y)) * texel,
@@ -348,7 +363,7 @@ fn shadow_factor(world: vec3<f32>, nrm: vec3<f32>) -> f32 {
         for (var y = -2; y <= 2; y++) {
             for (var x = -2; x <= 2; x++) {
                 let w = 1.0 / (1.0 + abs(f32(x)) + abs(f32(y)));
-                acc += w * textureSampleCompare(
+                acc += w * textureSampleCompareLevel(
                     shadow_tex,
                     shadow_samp,
                     uv + vec2<f32>(f32(x), f32(y)) * step,
@@ -431,11 +446,17 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let day_mix = clamp(dot(base, vec3<f32>(0.333)), 0.0, 1.0) * 0.65;
         let day_horizon = mix(base * 1.45, vec3<f32>(0.78, 0.86, 0.96), day_mix);
         let day_zenith = base * vec3<f32>(0.68, 0.80, 1.05);
-        // Dark skies (Lumen) get a magenta horizon. Day skies stay on the old curve.
+        let day_col = mix(day_horizon, day_zenith, smoothstep(0.18, 0.82, t));
+        // Dark skies (Lumen). A saturated magenta at dir.y == 0 sat on the
+        // phone's 8-bit present as a pink line across the middle of the frame.
+        // Keep a faint warm lift and fade it out well above the horizon.
         let night = 1.0 - smoothstep(0.05, 0.22, day_mix);
-        let horizon = mix(day_horizon, vec3<f32>(0.50, 0.12, 0.46), night);
-        let zenith = mix(day_zenith, vec3<f32>(0.03, 0.04, 0.12), night * 0.45);
-        let col = mix(horizon, zenith, smoothstep(0.18, 0.82, t));
+        let night_col = mix(
+            vec3<f32>(0.10, 0.035, 0.08),
+            vec3<f32>(0.012, 0.016, 0.05),
+            smoothstep(-0.20, 0.55, dir.y),
+        );
+        let col = mix(day_col, night_col, night);
         return vec4<f32>(present_rgb(col), 1.0);
     }
 
