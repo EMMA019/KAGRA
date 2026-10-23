@@ -66,6 +66,7 @@ pub mod sports;
 pub mod spring;
 pub mod sprite;
 pub mod stealth;
+pub mod strokes;
 pub mod survival;
 pub mod td;
 pub mod traffic;

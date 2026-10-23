@@ -107,3 +107,4 @@
 - `20261023-neon-webgpu-picture/` — 電話の 8bit スワップチェーンでもグレード / FXAA / ミップブルーム。Lumen の階段トレイルは外す。`pictureStatus`。
 - `20261023-agx-clearcoat-sky/` — AgX / Khronos Neutral、クリアコート、手続き空。`tonemap` はオンオフのまま。
 - `20261023-juice-easing/` — ゲーム非依存の `juice`（simple-easing）。Lumen のクラッシュがヒットストップしてからリザルト。階段トレイルは戻さない。
+- `20261023-gpu-points-lines/` — dump の `points` / `lines`。カメラ向きの点とピクセル幅の線。Lumen の軌跡はこれ（quad の階段は戻さない）。
