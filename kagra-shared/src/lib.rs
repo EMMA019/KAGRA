@@ -59,6 +59,7 @@ pub mod save;
 pub mod scene;
 pub mod scene3d;
 pub mod session;
+pub mod sfx;
 pub mod shop;
 pub mod sim;
 pub mod sleeve;

@@ -53,7 +53,7 @@ mod desktop {
         if !audible {
             return;
         }
-        let Some(bytes) = mixer::clip_wav(name) else {
+        let Some(bytes) = mixer::sfx_wav(name) else {
             return;
         };
         let Some(handle) = handle() else {
@@ -97,7 +97,7 @@ mod desktop {
             let key = format!("{name}:{looping}");
             if dev.bgm_key != key {
                 dev.bgm = None;
-                let Some(bytes) = mixer::clip_wav(&name) else {
+                let Some(bytes) = mixer::sfx_wav(&name) else {
                     return;
                 };
                 if let Ok(sink) = Sink::try_new(&dev.handle) {
