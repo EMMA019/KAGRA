@@ -11,11 +11,18 @@ Sound is synthesized ``kagra.audio`` tones plus the repo's CC0 clips in
     python examples/neon_run_minimal.py --headless scratch/neon_run.png
     python examples/neon_run_minimal.py --shots docs/screenshots
 
+``--shots`` writes title / play / crash and wins when ``--headless`` is
+also passed (a warning is printed). ``KAGRA_NEON_HEADLESS=1`` is the
+same path as ``--headless``.
+
 WASD or arrows steer. Shift or Space boosts. Drag on the window (or a
 phone) aims the ship. P pauses. Fly through the glowing rings. Hitting
 the wall or missing a ring ends the run.
 
-Phone picture (on unless ``KAGRA_QUALITY=0``): the Rust dump's grade
+One ``dump()`` per tick. Aim, the listener, and the next gate come from
+the dump's ``sim`` object. Wasm does not JSON-round-trip the world:
+``render`` draws the document, and ``gameJson`` is only the small status
+blob. Phone picture (on unless ``KAGRA_QUALITY=0``): the Rust dump's grade
 (exposure, bloom, fog, cyan gates, the horizontal trail). Juice and
 sparks sit on top. The shared ``night`` preset is brighter and is not
 applied, so the window matches wasm. The wasm / Android build runs the
@@ -28,9 +35,19 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
-import kagra  # noqa: E402
+try:
+    import kagra  # noqa: E402
+except ModuleNotFoundError as exc:  # pragma: no cover - checkout layout
+    if exc.name not in {None, "kagra"}:
+        raise
+    raise ImportError(
+        "Could not import kagra. Run Lumen from a checkout of this repo "
+        f"so {_ROOT} is on sys.path."
+    ) from exc
 from kagra.audio import play_bgm, play_se, se, set_listener, stop_bgm  # noqa: E402
 from kagra.audio import tick as audio_tick  # noqa: E402
 from kagra.gameloop import (  # noqa: E402
@@ -48,14 +65,38 @@ from kagra.gameloop import (  # noqa: E402
 from kagra.juice import Juice  # noqa: E402
 from kagra.particles import Emitter  # noqa: E402
 
-DUMP = Path(__file__).resolve().parents[1] / "kagra-shared/tests/fixtures/neon_run_world.json"
+DUMP = _ROOT / "kagra-shared/tests/fixtures/neon_run_world.json"
 W, H = 1280, 720
+# Screen-right gain toward the next gate. The chase camera looks along +Z,
+# so +lx is world -X. 1.6 reaches the hole without oscillating past it.
+AIM_GAIN = 1.6
+_ON = frozenset({"1", "true", "yes", "on"})
+
+
+def _truthy_env(name: str, *, default: bool = False, only_off: str | None = None) -> bool:
+    """Read a boolean env var.
+
+    With ``only_off``, every token except that one is on. Quality uses this
+    so ``KAGRA_QUALITY`` stays on unless the value is ``0``. Other flags are
+    on for ``1`` / ``true`` / ``yes`` / ``on``.
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    token = raw.strip().lower()
+    if only_off is not None:
+        return token != only_off
+    if token == "":
+        return default
+    return token in _ON
 
 
 def _session():
-    cls = kagra.NeonRun
+    cls = getattr(kagra, "NeonRun", None)
     if cls is None:
-        from kagra_shared import NeonRun as cls  # type: ignore[no-redef]
+        import kagra_shared
+
+        cls = kagra_shared.NeonRun
     return cls.from_json(DUMP.read_text(encoding="utf-8"))
 
 
@@ -68,11 +109,14 @@ class Lumen(Scene):
         super().__init__()
         self.session = _session()
         self.world = json.loads(self.session.dump())
-        self.quality = os.environ.get("KAGRA_QUALITY", "1") != "0"
+        self.quality = _truthy_env("KAGRA_QUALITY", default=True, only_off="0")
         self.juice = Juice()
         self.sparks = Emitter(max_count=48, seed=7, name="burst", emissive=1.6)
         self._music = False
         self._scripted = False
+        self._crash = False
+        self._pause: dict | None = None
+        self._pause_key: tuple | None = None
 
     def _flow(self) -> str:
         phase = getattr(self.session, "flow_phase", None)
@@ -91,29 +135,60 @@ class Lumen(Scene):
     def _steer(self) -> tuple[float, float, bool]:
         if self._scripted:
             return self._aim()
-        lx = (1.0 if pressed("d") or pressed("right") else 0.0) - (
-            1.0 if pressed("a") or pressed("left") else 0.0
-        )
-        ly = (1.0 if pressed("w") or pressed("up") else 0.0) - (
-            1.0 if pressed("s") or pressed("down") else 0.0
-        )
-        boost = pressed("shift") or pressed("space") or pressed("k")
+        axes: list[float] = []
+        for positive, negative in (
+            (("d", "right"), ("a", "left")),
+            (("w", "up"), ("s", "down")),
+        ):
+            axes.append(
+                (1.0 if any(pressed(key) for key in positive) else 0.0)
+                - (1.0 if any(pressed(key) for key in negative) else 0.0)
+            )
+        lx, ly = axes
+        boost = any(pressed(key) for key in ("shift", "space", "k"))
         if mouse_down() and self._flow() == "play":
             mx, my = mouse_pos()
-            # Top-right is the PAUSE button drawn by the sim.
-            if not (mx > self.width * 0.78 and my < self.height * 0.16):
+            if not self._pointer_on_pause(mx, my):
                 lx = _clamp(lx + (mx / max(1, self.width) - 0.5) * 2.1)
                 ly = _clamp(ly + (0.5 - my / max(1, self.height)) * 2.1)
         return _clamp(lx), _clamp(ly), boost
 
+    def _pointer_on_pause(self, mx: float, my: float) -> bool:
+        """True when the pointer is inside the sim's PAUSE button.
+
+        The rect is ``hud_json``'s ``pause`` field. It is cached until the
+        phase or the frame size changes, so a drag does not re-parse HUD.
+        """
+        key = (self.width, self.height, self._flow())
+        if self._pause_key != key:
+            hud = json.loads(self.session.hud_json(self.width, self.height))
+            pause = hud.get("pause")
+            self._pause = pause if isinstance(pause, dict) else None
+            self._pause_key = key
+        pause = self._pause
+        if not pause:
+            return False
+        try:
+            x = float(pause["x"])
+            y = float(pause["y"])
+            w = float(pause["w"])
+            h = float(pause["h"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        return x <= mx <= x + w and y <= my <= y + h
+
     def _aim(self) -> tuple[float, float, bool]:
-        state = json.loads(self.session.state_json())
-        if state.get("phase") != "play" or not state.get("alive", True):
+        # Scripted crash: hard screen-right, which is world -X on this camera.
+        if self._crash:
+            return 1.0, 0.0, False
+        sim = self.world.get("sim") if isinstance(self.world, dict) else None
+        if not isinstance(sim, dict):
             return 0.0, 0.0, False
-        dx = float(state["next_x"]) - float(state["x"])
-        dy = float(state["next_y"]) - float(state["y"])
-        # +lx is screen-right. The chase camera looks along +Z, so that is world -X.
-        return _clamp(-dx * 1.6), _clamp(dy * 1.6), False
+        if sim.get("phase") != "play" or not sim.get("alive", True):
+            return 0.0, 0.0, False
+        dx = float(sim["next_x"]) - float(sim["x"])
+        dy = float(sim["next_y"]) - float(sim["y"])
+        return _clamp(-dx * AIM_GAIN), _clamp(dy * AIM_GAIN), False
 
     def update(self, dt: float) -> None:
         if not self._scripted:
@@ -124,7 +199,7 @@ class Lumen(Scene):
         else:
             lx, ly, boost = self._steer()
         dt_sim = self.juice.tick(dt) if self.quality else dt
-        self.session.set_input(lx, ly, boost and flow == "play")
+        self.session.set_input(lx, ly, boost)
         self.session.tick(dt_sim)
         self.world = json.loads(self.session.dump())
         self._audio(dt)
@@ -141,7 +216,18 @@ class Lumen(Scene):
             self._music = False
         cam = (self.world.get("cameras") or [{}])[0]
         pos = cam.get("position") or [0, 0, 0]
-        set_listener(float(pos[0]), float(pos[1]), float(pos[2]), 0.0, 0.0, 1.0)
+        sim = self.world.get("sim") if isinstance(self.world, dict) else None
+        fwd = sim.get("cam_forward") if isinstance(sim, dict) else None
+        if not isinstance(fwd, (list, tuple)) or len(fwd) < 3:
+            fwd = (0.0, 0.0, 1.0)
+        set_listener(
+            float(pos[0]),
+            float(pos[1]),
+            float(pos[2]),
+            float(fwd[0]),
+            float(fwd[1]),
+            float(fwd[2]),
+        )
 
     def _ship(self) -> tuple[float, float, float]:
         for prop in self.world.get("props") or []:
@@ -159,7 +245,8 @@ class Lumen(Scene):
             self.juice.squash(0.28, 0.16)
             self.juice.shake(0.08, 0.14)
             self.sparks.burst(ship, count=26, color=(255, 236, 160), speed=5.2, life=0.45, size=0.28, upward=1.8)
-            se("coin")
+            # One coin. ``play_se`` is the CC0 sample in 3D. ``se("coin")``
+            # is a second synthesized coin and used to stack on top.
             play_se("coin", x=ship[0], y=ship[1], z=ship[2])
         if feel.get("near"):
             self.juice.shake(0.05, 0.1)
@@ -171,7 +258,11 @@ class Lumen(Scene):
         self.sparks.tick(dt)
 
     def _picture(self) -> dict:
-        picture = json.loads(json.dumps(self.world))
+        # Copy only the dicts this frame writes. Juice moves camera 0 and
+        # scales the ship; ``annotate_dump`` writes the camera side vectors;
+        # sparks append props. A full ``json`` round-trip or ``deepcopy``
+        # walked every rock and star for those few writes.
+        picture = self._picture_base()
         if not self.quality:
             for key in ("bloom", "bloom_threshold", "vignette", "lut", "lut_strength", "fxaa"):
                 picture.pop(key, None)
@@ -185,6 +276,33 @@ class Lumen(Scene):
         picture["props"].extend(self.sparks.props())
         return picture
 
+    def _picture_base(self) -> dict:
+        src = self.world if isinstance(self.world, dict) else {}
+        picture = dict(src)
+        picture["cameras"] = [
+            dict(cam) if isinstance(cam, dict) else cam for cam in (src.get("cameras") or [])
+        ]
+        props = []
+        for prop in src.get("props") or []:
+            if isinstance(prop, dict) and str(prop.get("name", "")).startswith("ship"):
+                copied = dict(prop)
+                scale = copied.get("scale")
+                if isinstance(scale, (list, tuple)):
+                    copied["scale"] = list(scale)
+                props.append(copied)
+            else:
+                props.append(prop)
+        picture["props"] = props
+        player = src.get("player")
+        if isinstance(player, dict):
+            picture["player"] = dict(player)
+        walkers = src.get("walkers")
+        if isinstance(walkers, list):
+            picture["walkers"] = [
+                dict(item) if isinstance(item, dict) else item for item in walkers
+            ]
+        return picture
+
     def draw(self) -> None:
         hud = json.loads(self.session.hud_json(self.width, self.height))
         self._frame_rgba = render_rgba(self._picture(), self.width, self.height, hud)
@@ -192,7 +310,7 @@ class Lumen(Scene):
 
 def _write(scene: Lumen, path: Path) -> None:
     scene.draw()
-    png = rgba_to_png(scene._frame_rgba or b"", scene.width, scene.height)
+    png = rgba_to_png(scene.frame() or b"", scene.width, scene.height)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(png)
     print(f"wrote {path} ({len(png)} bytes) phase={scene._flow()} score={scene.session.score}")
@@ -226,20 +344,17 @@ def shots(directory: Path) -> int:
     crash.session.confirm()
     for _ in range(120):
         crash.update(1.0 / 60.0)
-    crash._scripted = False
+    crash._crash = True
     for _ in range(90):
-        crash.session.set_input(1.0, 0.0, False)
-        crash.session.tick(1.0 / 60.0)
-        crash.world = json.loads(crash.session.dump())
-        crash._feel(1.0 / 60.0)
+        crash.update(1.0 / 60.0)
         if crash._flow() == "result":
             break
     _write(crash, directory / "neon_run_result.png")
     if crash.session.score < 40:
-        print("lumen result did not score")
+        print(f"lumen result score {crash.session.score} < 40")
         return 1
     if play.session.score < 50:
-        print("lumen did not score")
+        print(f"lumen play score {play.session.score} < 50")
         return 1
     return 0
 
@@ -255,21 +370,20 @@ def headless(out: str) -> int:
     world_path.write_text(json.dumps(scene._picture()), encoding="utf-8")
     print(json.dumps({"score": scene.session.score, "phase": scene._flow()}))
     if scene.session.score < 50:
-        print("lumen did not score")
+        print(f"lumen headless score {scene.session.score} < 50")
         return 1
     return 0
 
 
 def main() -> int:
-    if "--shots" in sys.argv:
+    shots_flag = "--shots" in sys.argv
+    headless_flag = "--headless" in sys.argv or _truthy_env("KAGRA_NEON_HEADLESS")
+    if shots_flag and headless_flag:
+        print("lumen: --shots wins over --headless", file=sys.stderr)
+    if shots_flag:
         idx = sys.argv.index("--shots")
         directory = Path(sys.argv[idx + 1] if len(sys.argv) > idx + 1 else "docs/screenshots")
         return shots(directory)
-    headless_flag = "--headless" in sys.argv or os.environ.get("KAGRA_NEON_HEADLESS", "").strip() in {
-        "1",
-        "true",
-        "yes",
-    }
     if headless_flag:
         out = "scratch/neon_run.png"
         if "--headless" in sys.argv:

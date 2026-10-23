@@ -41,6 +41,15 @@ const SHIP_GLB: &str = "assets/models/kenney/space-kit/craft_speederC.glb";
 const SHIP_YAW: f32 = std::f32::consts::PI;
 /// About 0.78× the old 0.46 hull, so the next ring stays in frame.
 const SHIP_SCALE: f32 = 0.36;
+/// Corridor ribs. Low so a rib crossing the lens is not a white bar.
+const RIB_EMISSIVE: f32 = 0.4;
+/// Lays the XY trail quad onto the ground plane. A chase camera looking
+/// along +Z then sees a ribbon instead of an edge.
+const TRAIL_PITCH: f32 = -std::f32::consts::FRAC_PI_2;
+/// Ribbon width at the tail and at the ship. The old host trail used a
+/// 0.40 Z-to-Y fold and read as floor dashes.
+const TRAIL_WIDTH_TAIL: f32 = 0.5;
+const TRAIL_WIDTH_HEAD: f32 = 1.4;
 /// Bottom-origin mesh, so this lifts the visual center onto the ship.
 const SHIP_CENTER_Y: f32 = 0.30;
 /// Chase camera sits behind the ship. Boost eases this back a little more.
@@ -301,8 +310,44 @@ impl NeonRun {
         &self.doc
     }
 
+    /// World dump plus a flat `sim` object.
+    ///
+    /// Call this once per tick. `sim` carries phase, the ship, the next gate,
+    /// and the chase camera's forward, so a host does not also parse
+    /// `state_json` or round-trip the dump through JSON to edit a copy.
+    /// Wasm `render` draws `document()` directly and does not call this.
+    /// `state_json` stays for the page's small `gameJson` status blob.
     pub fn dump_json(&self) -> String {
-        self.doc.to_json().unwrap_or_else(|_| "{}".into())
+        let body = self.doc.to_json().unwrap_or_else(|_| "{}".into());
+        splice_json_key(&body, "sim", &self.sim_value())
+    }
+
+    fn sim_value(&self) -> serde_json::Value {
+        let next = self.passed + 1;
+        let (hx, hy) = hole_center(next);
+        json!({
+            "phase": self.flow.phase.name(),
+            "alive": self.alive,
+            "x": self.x,
+            "y": self.y,
+            "z": self.z,
+            "next_x": hx,
+            "next_y": hy,
+            "next_z": gate_z(next),
+            "cam_forward": self.cam_forward(),
+        })
+    }
+
+    /// Unit forward of the chase camera (target − eye). Listener aim uses this
+    /// instead of a hard-coded world +Z.
+    fn cam_forward(&self) -> [f32; 3] {
+        let fwd =
+            glam::Vec3::from_array(self.chase_target()) - glam::Vec3::from_array(self.chase_eye());
+        if fwd.length_squared() > 1e-8 {
+            fwd.normalize().to_array()
+        } else {
+            [0.0, 0.0, 1.0]
+        }
     }
 
     /// `{orbs, crash, near}` for one frame, then cleared.
@@ -367,6 +412,7 @@ impl NeonRun {
             "next_x": hx,
             "next_y": hy,
             "next_z": gate_z(next),
+            "cam_forward": self.cam_forward(),
         })
         .to_string()
     }
@@ -778,7 +824,8 @@ impl NeonRun {
             }
             let cyan = (i & 1) == 0;
             let col = if cyan { [40, 220, 255] } else { [255, 50, 180] };
-            let gain = 0.4;
+            // Ribs stay dim so the nearest ones do not read as white bars.
+            let gain = RIB_EMISSIVE;
             let w = 6.6;
             let h = 4.5;
             doc.props.push(beam(
@@ -1185,9 +1232,11 @@ impl NeonRun {
     }
 
     fn push_trail_props(&self, doc: &mut WorldDoc) {
-        // Horizontal ribbon. The quad stands in XY facing ±Z; pitch −π/2
+        // Horizontal ribbon. The quad stands in XY facing ±Z; `TRAIL_PITCH`
         // lays local +Y along world +Z so a chase camera sees a surface,
-        // not an edge. Width grows toward the ship. Magenta tail, cyan head.
+        // not an edge. The old host trail folded Z onto Y by 0.40 and was
+        // edge-on. Width grows from `TRAIL_WIDTH_TAIL` toward the ship.
+        // Magenta tail, cyan head.
         let pts: Vec<[f32; 3]> = self.trail.iter().copied().collect();
         if pts.len() < 2 {
             return;
@@ -1201,7 +1250,7 @@ impl NeonRun {
                 continue;
             }
             let fade = (i + 1) as f32 / segments as f32;
-            let width = 0.5 + 0.9 * fade;
+            let width = TRAIL_WIDTH_TAIL + (TRAIL_WIDTH_HEAD - TRAIL_WIDTH_TAIL) * fade;
             // Dark albedo so the lights do not wash the ribbon out. The gradient
             // lives on the emissive color: magenta tail, cyan head.
             let mut prop = glow(
@@ -1215,7 +1264,7 @@ impl NeonRun {
                 ],
                 [width, length.max(0.08), 1.0],
                 dx.atan2(dz),
-                -std::f32::consts::FRAC_PI_2,
+                TRAIL_PITCH,
                 0.0,
                 [40, 16, 36],
                 0.5 + 0.45 * fade,
@@ -1280,7 +1329,18 @@ impl NeonRun {
     }
 
     pub fn hud_json(&self, width: u32, height: u32) -> String {
-        crate::flow::draw_list_json(&self.hud(width, height))
+        let mut value: serde_json::Value =
+            serde_json::from_str(&crate::flow::draw_list_json(&self.hud(width, height)))
+                .unwrap_or_else(|_| json!({"quads": [], "texts": []}));
+        if let Some(obj) = value.as_object_mut() {
+            let pause = self
+                .flow
+                .button_rect(FlowAction::Pause, width, height)
+                .map(|rect| json!({"x": rect[0], "y": rect[1], "w": rect[2], "h": rect[3]}))
+                .unwrap_or(serde_json::Value::Null);
+            obj.insert("pause".into(), pause);
+        }
+        value.to_string()
     }
 
     pub fn hud(&self, width: u32, height: u32) -> DrawList {
@@ -1451,10 +1511,31 @@ fn glow(
     }
 }
 
+/// Insert `key` after the opening brace. `from_json` ignores unknown keys,
+/// same as the coordinate note on `WorldDoc::to_json`.
+fn splice_json_key(body: &str, key: &str, value: &serde_json::Value) -> String {
+    let pretty = serde_json::to_string_pretty(value).unwrap_or_else(|_| "null".into());
+    let mut block = format!("\n  \"{key}\": ");
+    for (i, line) in pretty.lines().enumerate() {
+        if i == 0 {
+            block.push_str(line);
+        } else {
+            block.push('\n');
+            block.push_str("  ");
+            block.push_str(line);
+        }
+    }
+    let Some(rest) = body.strip_prefix('{') else {
+        return body.to_string();
+    };
+    format!("{{{block},{rest}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::session::{SceneKind, SharedSession};
+    use crate::world_doc::WorldDoc;
 
     #[test]
     fn straight_flight_scores_and_a_wall_ends_the_run() {
@@ -1597,5 +1678,88 @@ mod tests {
             session.request_frame();
         }
         assert_eq!(session.neon.as_ref().unwrap().phase_name(), "play");
+    }
+
+    #[test]
+    fn one_dump_carries_sim_and_hud_names_the_pause_rect() {
+        let mut run = NeonRun::from_json(r#"{"version":1,"genre":"neon_run"}"#).unwrap();
+        let title: serde_json::Value = serde_json::from_str(&run.hud_json(1280, 720)).unwrap();
+        assert!(title["pause"].is_null());
+        run.confirm();
+        run.tick(1.0 / 60.0);
+        let dump: serde_json::Value = serde_json::from_str(&run.dump_json()).unwrap();
+        assert!(
+            WorldDoc::from_json(&run.dump_json()).is_ok(),
+            "sim is ignored by from_json"
+        );
+        let sim = &dump["sim"];
+        let state: serde_json::Value = serde_json::from_str(&run.state_json()).unwrap();
+        assert_eq!(sim["phase"], "play");
+        assert_eq!(sim["alive"], true);
+        for key in ["x", "y", "z", "next_x", "next_y", "next_z"] {
+            let a = sim[key].as_f64().unwrap();
+            let b = state[key].as_f64().unwrap();
+            assert!((a - b).abs() < 1e-4, "{key} dump {a} state {b}");
+        }
+        let fwd = sim["cam_forward"].as_array().unwrap();
+        let len = fwd
+            .iter()
+            .map(|v| v.as_f64().unwrap())
+            .map(|v| v * v)
+            .sum::<f64>()
+            .sqrt();
+        assert!((len - 1.0).abs() < 1e-3, "cam forward {fwd:?}");
+        assert!(fwd[2].as_f64().unwrap() > 0.9, "chase looks along +Z");
+        let hud: serde_json::Value = serde_json::from_str(&run.hud_json(1280, 720)).unwrap();
+        let pause = &hud["pause"];
+        let rect = [
+            pause["x"].as_f64().unwrap() as f32,
+            pause["y"].as_f64().unwrap() as f32,
+            pause["w"].as_f64().unwrap() as f32,
+            pause["h"].as_f64().unwrap() as f32,
+        ];
+        assert!(rect[2] > 20.0 && rect[3] > 10.0, "{rect:?}");
+        assert_eq!(
+            run.flow
+                .hit(rect[0] + rect[2] * 0.5, rect[1] + rect[3] * 0.5, 1280, 720),
+            Some(FlowAction::Pause)
+        );
+        if std::env::var_os("KAGRA_BENCH").is_some() {
+            let frames = 80;
+            let dump_once = std::time::Instant::now();
+            for _ in 0..frames {
+                let _ = run.dump_json();
+            }
+            let dump_once = dump_once.elapsed();
+            let both = std::time::Instant::now();
+            for _ in 0..frames {
+                let _ = run.doc.to_json();
+                let _ = run.state_json();
+            }
+            let both = both.elapsed();
+            // Host side of the old picture path: parse the dump, then serialize
+            // it again. The new path parses once and deep-copies in Python.
+            let text = run.dump_json();
+            let round = std::time::Instant::now();
+            for _ in 0..frames {
+                let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+                let _ = serde_json::to_string(&value);
+            }
+            let round = round.elapsed();
+            let parse = std::time::Instant::now();
+            for _ in 0..frames {
+                let _: serde_json::Value = serde_json::from_str(&text).unwrap();
+            }
+            let parse = parse.elapsed();
+            let cloned = std::time::Instant::now();
+            for _ in 0..frames {
+                let _ = run.document().clone();
+            }
+            let cloned = cloned.elapsed();
+            eprintln!(
+                "neon json {frames} frames bytes {} dump {dump_once:?} dump+state {both:?} parse {parse:?} parse+reserialize {round:?} doc_clone {cloned:?}",
+                text.len()
+            );
+        }
     }
 }
