@@ -1,0 +1,1 @@
+#137 and #138 merged. Start wave 3 from master: trails, prop LOD, frustum bounds on dumps, pastel/night art-direction presets, glTF-authored roughness/metalness maps. Separate PRs if large, before/after screenshots, CI green via gh run watch in this run, no force-push. A showcase game agent is working in games/ in parallel; keep engine changes additive.

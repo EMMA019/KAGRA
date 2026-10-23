@@ -24,9 +24,9 @@ The shared picture path is `WorldDoc` → `compile_scene` → `Renderer` (`kagra
 | Squash / stretch | have, as of this wave. `Juice.squash` / `stretch` write `WorldWalker.scale`. The sim ignores it. | A tween on `transform.localScale` | P0 | done (S) |
 | Tween / easing | have. `Juice.tween` plus `ease()` (`out_cubic`, `out_back`, `out_bounce`, `out_elastic`, …). `kagra.motion` still has the older smooth/linear helper. | DOTween / AnimationCurve | P0 | done (S) |
 | Particles | partial, as of this wave. `kagra.Emitter` is a CPU list drawn as sphere props (cap 48). No GPU particles, no trails. | Particle System / VFX Graph | P0 for sparks, P2 for trails | S done; M for a ribbon trail |
-| Trails | missing. | Trail Renderer | P2 | M |
+| Trails | have, as of this wave. `kagra.Trail` is a ribbon of quads along recent positions. CPU, capped, draw-only. | Trail Renderer | P2 | done (S) |
 | Sprite / skeletal animation | partial. CPU-skinned glTF/VRM, clip time, morph weight, locomotion blend, overlay bones. Sprites are quads. No sprite-sheet player on the 3D path. | Animator + SpriteRenderer | P1 | M |
-| Art-direction presets | partial. `apply_post(world, "mobile"\|"legacy"\|"off")` covers grade. There is no toon/pastel/night bundle (lights + sky + LUT together). | Volume profile / URP renderer asset | P1 | S |
+| Art-direction presets | have, as of this wave. `apply_post` is still grade-only. `apply_look(world, "pastel"\|"night")` sets sky, lights, exposure, hemisphere, and the LUT together. | Volume profile / URP renderer asset | P1 | done (S) |
 
 ## three.js feature parity
 
@@ -37,7 +37,7 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 | MeshStandard / MeshPhysical | partial | P1 | L | GGX + Smith + Fresnel on solid and on the metal material. Metallic and roughness are scalars on the instance. No clearcoat, sheen, transmission, or iridescence. |
 | Albedo textures | have | — | — | PNG albedo on props (`texture`, `uv_scale`). glTF baseColor. Sampler stays clamp; tiling is a CPU repeat. |
 | Normal maps | partial | P1 | M | MToon and glTF normals sample `normal_tex`. Solid/PBR props do not. Water uses a procedural normal. |
-| Roughness / metalness maps | partial | P1 | M | Dump `roughness_map` / `metalness_map`: PNG or `preset:worn` / `split` / `brushed`. Linear ORM, G and B. glTF ORM textures are not read from the file yet. |
+| Roughness / metalness maps | partial | P1 | M | Dump maps, plus glTF `metallicRoughnessTexture` (factors baked into the image). Dump maps still replace the file. Toon primitives skip ORM. |
 | Shadows, PCF | partial | P1 | M | One directional map. Omit `shadow_softness` and it stays 3×3 PCF. About 3 is a 5×5 tent. No cascades, no local-light shadows. |
 | Directional light | have | — | — | Sun direction comes from light slot 0 (position or direction) plus ambient. |
 | Point light | partial | P2 | S | Up to 4 slots. Inverse-square-ish attenuation. No cookie, no shadow. |
@@ -57,8 +57,8 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 | FXAA | have | — | — | On the composited color. |
 | SMAA | missing | P2 | M | FXAA is the phone choice. SMAA can wait. |
 | Instancing | have | — | — | One instance vertex buffer per batch. No `baseInstance` (GLES does not have it). |
-| LOD | partial | P2 | M | Vegetation past a radius becomes one billboard quad. Props and characters do not LOD. |
-| Frustum culling | partial | P2 | M | `SceneBuilder` culls when a mesh has bounds. `WorldDoc::compile_scene` does not register bounds, so a dump draws every prop. |
+| LOD | partial | P2 | M | Vegetation past `lod_radius` is a billboard. `prop_lod` does the same for other props. Omit it and props stay full meshes. Characters do not LOD. |
+| Frustum culling | partial | P2 | S | `cull: true` registers mesh bounds so `compile_scene` drops props outside the camera. Omit it and every prop still draws. |
 | Skinned animation | partial | P1 | M | glTF / VRM skinning is CPU, then uploaded. Clips, locomotion blend, overlay bones. |
 | Morph targets | partial | P2 | M | One dump weight (`morph`) drives blink / viseme on the walker. Not a general morph-target mixer. |
 | AnimationMixer | partial | P2 | M | `mixer.rs` plus walker `anim` / `clip` / `anim_blend`. No three.js-style action crossfade graph for arbitrary clips. |
@@ -74,6 +74,16 @@ Same renderer. "Priority" is what a phone game needs in order to feel finished, 
 | WebGPU backend | partial | P3 | L | wgpu can target WebGPU on desktop. The wasm build keeps WebGL2 limits (no storage buffers, no base instance). A WebGPU-only path is parked. |
 
 ## This wave
+
+Shipped on the wasm-safe path. Omitted fields keep the previous picture (every prop draws, full meshes, no trail, day grade):
+
+- `cull: true` registers mesh bounds and drops props outside the camera.
+- `prop_lod` is the distance where a non-vegetation prop becomes one billboard. Vegetation still uses `lod_radius`.
+- glTF `metallicRoughnessTexture` becomes the linear ORM. Factors are baked into the texels. A dump `roughness_map` / `metalness_map` still replaces it. Toon primitives are left alone.
+- `kagra.Trail` is a ribbon of emissive quads. `apply_look(world, "pastel"|"night")` sets sky, lights, exposure, hemisphere, and the LUT.
+- Box Hop, with quality on, draws the hop trail and the night bundle, and turns cull and prop LOD on. `KAGRA_QUALITY=0` skips it.
+
+## Previous wave
 
 Shipped on the wasm-safe path. Omitted fields keep the previous picture (studio SH, no env strip):
 
@@ -103,5 +113,4 @@ Shipped on the wasm-safe path, all of it toggleable:
 
 ## Next waves
 
-1. **Trails, prop LOD, frustum bounds on dumps, one art-direction bundle.** A ribbon of quads for jump trails. Register mesh bounds so `compile_scene` culls. A `pastel` / `night` preset that sets sky, lights, exposure, and LUT together. glTF-authored ORM (reading the file, not only dump maps) can land here too.
-2. **Parked.** SSAO, DOF, area lights, SMAA, custom shader graphs, WebGPU-only features, VRM-on-Wasm, Android. Contact-hardening shadows need a depth read, which the soft-shadow wave skipped so WebGL2 stays on the comparison sampler. A real cubemap PMREM and HDR env files stay parked with that.
+1. **Parked.** SSAO, DOF, area lights, SMAA, custom shader graphs, WebGPU-only features, VRM-on-Wasm, Android. Contact-hardening shadows need a depth read, which the soft-shadow wave skipped so WebGL2 stays on the comparison sampler. A real cubemap PMREM and HDR env files stay parked with that. Character LOD stays parked with that.

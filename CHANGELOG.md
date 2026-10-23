@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Trails, prop LOD, frustum bounds, art-direction bundles, and glTF ORM.
+  `cull: true` registers mesh bounds and drops props outside the camera.
+  `prop_lod` turns a distant non-vegetation prop into one billboard.
+  Omit either and the old picture stays (every prop, full meshes).
+  glTF `metallicRoughnessTexture` is linear ORM with factors baked in;
+  a dump map still replaces it, and toon primitives skip it.
+  `kagra.Trail` is a ribbon of emissive quads.
+  `apply_look(world, "pastel"|"night")` sets sky, lights, exposure,
+  hemisphere, and the LUT. Box Hop draws the hop trail under the night bundle.
+
 - Image IBL and an authorable hemisphere on the shared renderer.
   Dump `hemi_sky` / `hemi_ground` feed the L1 SH (omit them and the studio
   pair stays). `env_map` is `preset:studio` or a PNG equirect, baked to a
