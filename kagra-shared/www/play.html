@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#07010f" />
   <title>LUMEN — KAGRA</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet" />
   <style>
     * { box-sizing: border-box; }
-    html, body { height: 100%; margin: 0; background: #07010f; color: #f6f0ff; }
+    html, body { height: 100%; margin: 0; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; background: #07010f; color: #f6f0ff; }
     body { font-family: "IBM Plex Sans", sans-serif; overflow: hidden; touch-action: none; }
     #app { position: relative; width: 100vw; height: 100vh; height: 100dvh; }
     canvas {
@@ -342,6 +342,8 @@
     try {
       await mountAssets();
       session.loadGameJson(JSON.stringify(world));
+      // Swipe games have no on-screen action button.
+      if (typeof session.usesSwipe === "function" && session.usesSwipe()) { boostEl.style.display = "none"; boostEl.setAttribute("aria-hidden", "true"); }
     } catch (e) {
       fail(`loadGameJson failed:\n${e}`);
       throw e;
@@ -419,8 +421,17 @@
       return [x, y];
     };
 
+    // Swipe games read gestures in the engine; touch position is not a stick.
+    const swipeGame = () => typeof session.usesSwipe === "function" && session.usesSwipe();
+    // No page scroll, pinch zoom, double-tap zoom or pull-to-refresh.
+    for (const t of ["touchstart", "touchmove", "touchend"]) {
+      document.addEventListener(t, (e) => { if (e.cancelable && (t !== "touchstart" || e.touches.length > 1 || e.target === canvas)) e.preventDefault(); }, { passive: false });
+    }
+    for (const t of ["gesturestart", "gesturechange", "dblclick", "contextmenu"]) {
+      document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
+    }
     const steerFromPointers = () => {
-      if (pointers.size === 0) return [0, 0];
+      if (pointers.size === 0 || swipeGame()) return [0, 0];
       let sx = 0, sy = 0, n = 0;
       for (const p of pointers.values()) {
         sx += p.x / canvas.width - 0.5;

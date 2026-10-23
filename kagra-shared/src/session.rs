@@ -117,6 +117,8 @@ pub struct SharedSession {
     pub neon: Option<crate::neon_run::NeonRun>,
     /// `"genre": "neon_cat"`. Kept off WorldPlay on purpose.
     pub cat: Option<crate::neon_cat::NeonCat>,
+    /// 4-way swipes for games that take them (Neon Cat).
+    pub swipes: crate::gesture::SwipeRecognizer,
     pointers: Vec<PointerEvent>,
     pending_keys: Vec<KeyEvent>,
     /// このフレームで新しく触れた座標。`poll_pointers` の意味を変えずに
@@ -161,6 +163,7 @@ impl Default for SharedSession {
             world: None,
             neon: None,
             cat: None,
+            swipes: crate::gesture::SwipeRecognizer::default(),
             pointers: Vec::new(),
             pending_keys: Vec::new(),
             pending_taps: Vec::new(),
@@ -285,6 +288,17 @@ impl SharedSession {
                 }
             }
         }
+        if self.kind == SceneKind::NeonCat {
+            // Frame clock: the speed threshold assumes about 60 Hz events.
+            let t = self.frame as f32 / 60.0;
+            if let Some(crate::gesture::Gesture::Swipe(dir)) =
+                self.swipes.push(ev, self.width, self.height, t)
+            {
+                if let Some(cat) = self.cat.as_mut() {
+                    cat.swipe(dir);
+                }
+            }
+        }
         if self.kind == SceneKind::NeonCat && matches!(ev.phase, PointerPhase::Begin) {
             if let Some(cat) = self.cat.as_mut() {
                 let handled = cat.pointer(ev.x, ev.y, self.width, self.height);
@@ -342,6 +356,11 @@ impl SharedSession {
     }
 
     /// タイトル画面へ。デモの起動時用。
+    /// Hosts drop their own touch steering and action buttons when true.
+    pub fn uses_swipe(&self) -> bool {
+        self.kind == SceneKind::NeonCat
+    }
+
     pub fn show_title(&mut self) {
         if self.kind == SceneKind::Neon {
             if let Some(neon) = self.neon.as_mut() {
@@ -461,7 +480,13 @@ impl SharedSession {
         if self.kind == SceneKind::NeonCat {
             if let Some(cat) = self.cat.as_mut() {
                 if cat.phase_name() == "play" {
-                    cat.set_steer(lx, lz, jump);
+                    // A finger on the screen is a swipe, not a stick or a
+                    // jump zone (Android shells send both).
+                    if self.swipes.active() {
+                        cat.set_steer(0.0, 0.0, false);
+                    } else {
+                        cat.set_steer(lx, lz, jump);
+                    }
                 }
             }
             return;
@@ -1029,6 +1054,44 @@ mod tests {
         let mut s = SharedSession::default();
         s.set_scene_kind(SceneKind::Demo2D);
         s
+    }
+
+    fn touch(s: &mut SharedSession, phase: PointerPhase, x: f32, y: f32) {
+        s.push_pointer(PointerEvent {
+            id: 7,
+            x,
+            y,
+            phase,
+            pressure: 0.5,
+        });
+    }
+
+    #[test]
+    fn neon_cat_swipes_move_and_jump_mid_touch() {
+        let mut s = SharedSession::default();
+        s.create_surface(400, 800);
+        s.load_game_json(include_str!("../tests/fixtures/neon_cat_world.json"))
+            .unwrap();
+        s.request_frame();
+        assert!(s.uses_swipe());
+        // Tap on the title starts the run.
+        touch(&mut s, PointerPhase::Begin, 200.0, 400.0);
+        touch(&mut s, PointerPhase::End, 200.0, 400.0);
+        s.request_frame();
+        assert_eq!(s.cat.as_ref().unwrap().phase_name(), "play");
+        // Swipe left and keep the finger down; then swipe up in the same touch.
+        touch(&mut s, PointerPhase::Begin, 200.0, 400.0);
+        touch(&mut s, PointerPhase::Move, 150.0, 400.0);
+        s.set_play_input(0.0, 0.0, false, false, false);
+        for _ in 0..30 {
+            s.request_frame();
+        }
+        let x = s.cat.as_ref().unwrap().x();
+        assert!(x > 0.5, "screen-left swipe moves world +x: {x}");
+        touch(&mut s, PointerPhase::Move, 150.0, 340.0);
+        s.request_frame();
+        assert!(s.cat.as_ref().unwrap().y() > 0.0);
+        touch(&mut s, PointerPhase::End, 150.0, 340.0);
     }
 
     #[test]

@@ -78,6 +78,12 @@ impl WasmSession {
         }
     }
 
+    /// True when the loaded game reads 4-way swipes from `pushPointer`.
+    #[wasm_bindgen(js_name = usesSwipe)]
+    pub fn uses_swipe(&self) -> bool {
+        self.inner.uses_swipe()
+    }
+
     #[wasm_bindgen(js_name = setPad)]
     pub fn set_pad(&mut self, x: f32, y: f32) {
         self.inner.set_pad(x, y);

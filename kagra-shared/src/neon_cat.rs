@@ -25,6 +25,14 @@ use crate::world_doc::{WorldCamera, WorldDoc, WorldLight, WorldProp, WorldWalker
 
 pub const GAME_ID: &str = "neon_cat";
 
+use crate::gesture::{InputBuffer, Swipe};
+
+/// How long a swipe waits for the cat to be able to act on it.
+pub const SWIPE_BUFFER_SECS: f32 = 0.15;
+
+#[path = "neon_cat_measure.rs"]
+pub mod measure;
+
 #[derive(Debug)]
 pub struct NeonCat {
     /// Everything tunable. Loaded from the world dump's `"game"` key.
@@ -62,6 +70,10 @@ pub struct NeonCat {
     attract: f32,
     got: HashSet<i32>,
     doc: WorldDoc,
+    /// Swipes wait here up to 0.15 s (jump just before landing).
+    swipes: InputBuffer<Swipe>,
+    /// Lane a left/right swipe is heading to (world x).
+    lane_target: Option<f32>,
 }
 
 pub fn is_cat_dump(json: &str) -> bool {
@@ -172,6 +184,8 @@ impl NeonCat {
             attract: 0.0,
             got: HashSet::new(),
             doc: WorldDoc::default(),
+            swipes: InputBuffer::new(SWIPE_BUFFER_SECS),
+            lane_target: None,
         };
         run.snap_chase();
         run
@@ -500,6 +514,8 @@ impl NeonCat {
         self.got.clear();
         self.core.juice.sparks.clear();
         self.time = 0.0;
+        self.swipes.clear();
+        self.lane_target = None;
         self.flow.enter_play();
         self.rebuild();
     }
@@ -520,7 +536,39 @@ impl NeonCat {
 
     fn axis_x(&self) -> f32 {
         let kx = (self.key_right as i32 - self.key_left as i32) as f32;
-        (kx + self.pad_x).clamp(-1.0, 1.0)
+        let held = (kx + self.pad_x).clamp(-1.0, 1.0);
+        match self.lane_target {
+            // Screen-right is world -X, so steer = -axis heads to the target.
+            Some(t) if held.abs() < 0.2 => ((self.x - t) * 3.0).clamp(-1.0, 1.0),
+            _ => held,
+        }
+    }
+
+    /// One recognised swipe. Left/right move one lane, up jumps (buffered),
+    /// down fast-falls in the air. Taps and swipes outside play do nothing.
+    pub fn swipe(&mut self, dir: Swipe) {
+        if !matches!(self.flow.phase, FlowPhase::Play) || !self.core.stats.alive {
+            return;
+        }
+        let lanes = &self.spec.runner.lanes;
+        let w = lanes.width.max(0.1);
+        match dir {
+            Swipe::Left | Swipe::Right => {
+                let from = self.lane_target.unwrap_or((self.x / w).round() * w);
+                // Screen-left is world +X on this camera.
+                let step = if dir == Swipe::Left { w } else { -w };
+                self.lane_target = Some((from + step).clamp(-lanes.limit, lanes.limit));
+            }
+            Swipe::Up => self.swipes.press(Swipe::Up, self.time),
+            Swipe::Down => {
+                if self.y > 0.05 {
+                    self.vy = self.vy.min(-self.spec.runner.jump.velocity * 1.2);
+                } else {
+                    // Roll arrives with the gameplay PR; keep it buffered.
+                    self.swipes.press(Swipe::Down, self.time);
+                }
+            }
+        }
     }
 
     pub fn tick(&mut self, dt: f32) {
@@ -535,8 +583,14 @@ impl NeonCat {
         let response = 1.0 - (-dt * 8.0).exp();
         self.vx += (steer * self.spec.runner.lanes.steer - self.vx) * response;
         let grounded = self.y <= 0.001 && self.vy <= 0.0;
+        if let Some(t) = self.lane_target {
+            let held = (self.key_right as i32 - self.key_left as i32) as f32 + self.pad_x;
+            if held.abs() >= 0.2 || (self.x - t).abs() < 0.02 {
+                self.lane_target = None;
+            }
+        }
         let want_jump = self.jump_held || self.key_jump || self.pad_up > 0.55;
-        if grounded && want_jump {
+        if grounded && (want_jump || self.swipes.take(Swipe::Up, self.time)) {
             self.vy = self.spec.runner.jump.velocity;
             self.y = 0.02;
             self.core.stats.just_jump = true;
