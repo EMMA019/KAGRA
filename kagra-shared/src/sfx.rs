@@ -182,12 +182,19 @@ fn wav_mono_i16(pcm: &[i16], rate: u32) -> Vec<u8> {
 mod tests {
     use super::*;
 
+    fn samples(pcm_wav: &[u8]) -> impl Iterator<Item = i16> + '_ {
+        pcm_wav[44..]
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .copied()
+            .map(i16::from_le_bytes)
+    }
+
     fn crossings(pcm_wav: &[u8]) -> usize {
-        let pcm = &pcm_wav[44..];
         let mut n = 0;
         let mut prev = 0i16;
-        for chunk in pcm.chunks_exact(2) {
-            let s = i16::from_le_bytes([chunk[0], chunk[1]]);
+        for s in samples(pcm_wav) {
             if prev.signum() != 0 && s.signum() != 0 && prev.signum() != s.signum() {
                 n += 1;
             }
@@ -219,11 +226,7 @@ mod tests {
             "noise should cross zero more often than a falling square"
         );
         assert!(boom.len() > hit.len() * 2);
-        let energy: i64 = jump[44..]
-            .chunks_exact(2)
-            .map(|c| i16::from_le_bytes([c[0], c[1]]) as i64)
-            .map(|s| s.abs())
-            .sum();
+        let energy: i64 = samples(&jump).map(|s| (s as i64).abs()).sum();
         assert!(energy > 10_000, "jump is not silence, energy={energy}");
     }
 }
