@@ -106,6 +106,25 @@ alias. A path loads the file. If `mesh_from_glb` fails, the obstacle is
 not spawned and the miss is logged once. Portrait `412/915` with
 `quality` `mobile` and `low` keeps each obstacle in the compiled scene.
 
+## Chase camera
+
+Emma asked for a more 3D camera on the same phone path. The default rig
+sits 4.85 m behind the cat and 2.15 m up, and looks 10.5 m down the
+tunnel. Eye X, eye Y, look X, Dutch roll, and FOV are critically damped
+springs. Look X tracks 0.9 of the cat so a portrait frame still holds
+the next crate when the cat is on the rail. The eye spring is quick
+enough that the cat stays in that frame while the stick is held. FOV moves from 50° at the start speed to 58° at the cap. Roll
+is at most about 0.07 rad and does not change the stick: `+lx` stays
+world −X. A landing with `vy < -1.5` calls the same shake as
+`kagra.juice.Juice.shake` (0.08 m, 0.18 s, 28 Hz, square decay). The
+offset is added to the eye and the look target.
+
+`cam: "classic"` (page `?cam=classic`) keeps the old eye (7.4 m back,
+1.72 m up, look 12 m ahead, FOV 50, no roll, no landing shake).
+`WorldCamera.roll` is the Dutch angle. Zero stays world up and is
+omitted from dumps. Portrait 412×915 keeps the next crate inside the
+frame, including when the cat is on the rail.
+
 ## Checks
 
 - `cargo test -p kagra-shared --lib neon_cat::` — steer, jump, ring, glTF, session swap with Lumen

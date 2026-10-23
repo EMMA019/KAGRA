@@ -1158,6 +1158,7 @@ fn room_camera() -> WorldCamera {
         position: EYE,
         target: TARGET,
         fov: FOV_DEG,
+        roll: 0.0,
     }
 }
 

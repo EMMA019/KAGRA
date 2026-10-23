@@ -34,3 +34,9 @@ A bare `crate.glb` stays that alias. A real path loads the file. A mesh
 that fails to load is not spawned. Portrait `412×915` on the 8-bit
 path shows the Kenney crate at `quality=mobile` (`ssao=4 c2 post`) and
 `quality=low` (`ssao=0 c1 post`).
+
+The default camera is a damped third person: 4.85 m behind, 2.15 m up,
+looking 10.5 m down the tunnel. FOV opens from 50° to 58° with speed.
+Steering banks the rig by at most ~0.07 rad. Landing uses
+`Juice.shake(0.08, 0.18)`. `?cam=classic` keeps the previous chase.
+Portrait 412×915 at `quality=mobile` on the 8-bit path is the check.

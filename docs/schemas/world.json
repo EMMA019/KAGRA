@@ -458,6 +458,10 @@
         "position": { "$ref": "#/$defs/vec3" },
         "target": { "$ref": "#/$defs/vec3" },
         "fov": { "type": "number" },
+        "roll": {
+          "type": "number",
+          "description": "Dutch angle in radians around the look axis. 0 keeps world up. Omitted from dumps when flat. from_json defaults it to 0."
+        },
         "screen_right": {
           "$ref": "#/$defs/vec3",
           "description": "Derived. World-space unit vector toward the right edge of this camera's frame (forward × up). Present on to_json dumps; from_json ignores it."

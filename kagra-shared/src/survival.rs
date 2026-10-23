@@ -161,6 +161,7 @@ pub fn place_chase_camera(doc: &mut WorldDoc) {
             position: eye,
             target,
             fov,
+            roll: 0.0,
         });
     }
 }
@@ -1096,6 +1097,7 @@ impl SurvivalSession {
                 position: eye,
                 target,
                 fov,
+                roll: 0.0,
             });
         }
     }

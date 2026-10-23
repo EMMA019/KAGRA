@@ -805,6 +805,7 @@ fn stage_camera() -> WorldCamera {
         position: [0.0, 3.55, 7.15],
         target: [0.0, 0.55, -0.4],
         fov: 42.0,
+        roll: 0.0,
     }
 }
 

@@ -1256,6 +1256,7 @@ impl WorldPlay {
                 position: eye.to_array(),
                 target: look.to_array(),
                 fov,
+                roll: 0.0,
             });
         }
         self.step_look();

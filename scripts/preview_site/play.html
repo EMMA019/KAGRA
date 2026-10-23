@@ -252,6 +252,10 @@
           } else if (slug === "neon_cat" && (world.quality == null || world.quality === "")) {
             world.quality = "mobile";
           }
+          if (slug === "neon_cat") {
+            const cam = (params.get("cam") || "").toLowerCase();
+            if (cam === "classic" || cam === "chase") world.cam = cam;
+          }
           return JSON.stringify(world);
         } catch (_) {
           return worldText;

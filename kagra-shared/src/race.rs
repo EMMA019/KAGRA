@@ -252,6 +252,7 @@ pub fn place_chase_camera(doc: &mut WorldDoc) {
             position: eye.to_array(),
             target: target.to_array(),
             fov,
+            roll: 0.0,
         });
     }
 }

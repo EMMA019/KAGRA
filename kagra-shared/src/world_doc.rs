@@ -644,6 +644,10 @@ pub struct WorldCamera {
     pub target: [f32; 3],
     #[serde(default = "default_fov")]
     pub fov: f32,
+    /// Dutch angle around the look axis, radians. Zero keeps world up.
+    /// Omitted from dumps when it is flat. Steering does not read this.
+    #[serde(default)]
+    pub roll: f32,
 }
 
 /// One sentence an agent can read without guessing which world axis is which
@@ -659,8 +663,34 @@ struct WorldCameraDump<'a> {
     position: [f32; 3],
     target: [f32; 3],
     fov: f32,
+    #[serde(skip_serializing_if = "roll_is_flat")]
+    roll: f32,
     screen_right: [f32; 3],
     screen_left: [f32; 3],
+}
+
+fn roll_is_flat(roll: &f32) -> bool {
+    roll.abs() < 1e-5
+}
+
+/// World up, spun around the look axis. `roll` 0 is exactly +Y.
+fn rolled_up(eye: Vec3, target: Vec3, roll: f32) -> Vec3 {
+    if roll.abs() < 1e-6 {
+        return Vec3::Y;
+    }
+    let mut forward = target - eye;
+    if forward.length_squared() < 1e-8 {
+        return Vec3::Y;
+    }
+    forward = forward.normalize();
+    let up = Vec3::Y;
+    let (sin, cos) = roll.sin_cos();
+    let spun = up * cos + forward.cross(up) * sin + forward * forward.dot(up) * (1.0 - cos);
+    if spun.length_squared() < 1e-8 {
+        Vec3::Y
+    } else {
+        spun.normalize()
+    }
 }
 
 fn json_axis(v: f32) -> f32 {
@@ -678,10 +708,9 @@ fn json_vec3(v: Vec3) -> [f32; 3] {
 
 impl Serialize for WorldCamera {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let right = crate::scene3d::screen_right(
-            Vec3::from_array(self.position),
-            Vec3::from_array(self.target),
-        );
+        let eye = Vec3::from_array(self.position);
+        let target = Vec3::from_array(self.target);
+        let right = crate::scene3d::screen_basis(eye, target, rolled_up(eye, target, self.roll)).1;
         WorldCameraDump {
             id: &self.id,
             kind: &self.kind,
@@ -689,6 +718,7 @@ impl Serialize for WorldCamera {
             position: self.position,
             target: self.target,
             fov: self.fov,
+            roll: self.roll,
             screen_right: json_vec3(right),
             screen_left: json_vec3(-right),
         }
@@ -1348,10 +1378,12 @@ impl WorldDoc {
 
     fn draw_camera(&self) -> Camera {
         if let Some(cam) = self.cameras.first() {
+            let eye = Vec3::from_array(cam.position);
+            let target = Vec3::from_array(cam.target);
             return Camera {
-                eye: Vec3::from_array(cam.position),
-                target: Vec3::from_array(cam.target),
-                up: Vec3::Y,
+                eye,
+                target,
+                up: rolled_up(eye, target, cam.roll),
                 fov_y: cam.fov.to_radians(),
                 near: 0.2,
                 far: 400.0,
@@ -4343,6 +4375,7 @@ mod tests {
                 position: [0.0, 4.0, 8.0],
                 target: [0.0, 1.0, 0.0],
                 fov: 54.0,
+                roll: 0.0,
             }],
             heightfield: Some(WorldHeightfield {
                 fn_name: Some("open_world_height".into()),
@@ -4407,6 +4440,7 @@ mod tests {
                 position: [0.0, 4.0, 0.0],
                 target: [0.0, 1.0, 0.0],
                 fov: 54.0,
+                roll: 0.0,
             }],
             heightfield: Some(WorldHeightfield {
                 lod_radius: Some(10.0),

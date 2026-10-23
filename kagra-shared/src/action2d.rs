@@ -223,6 +223,7 @@ pub fn place_side_camera(doc: &mut WorldDoc) {
             position: eye,
             target,
             fov,
+            roll: 0.0,
         });
     }
 }

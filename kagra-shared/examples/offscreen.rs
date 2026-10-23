@@ -128,13 +128,26 @@ fn main() -> Result<(), String> {
                     "debug" => 130,
                     _ => 160,
                 });
-        let quality = args
-            .next()
-            .filter(|s| matches!(s.as_str(), "low" | "mobile" | "high"));
+        let mut quality: Option<String> = None;
+        let mut classic = false;
+        for arg in args.by_ref() {
+            match arg.as_str() {
+                "low" | "mobile" | "high" => quality = Some(arg),
+                "classic" => classic = true,
+                _ => {}
+            }
+        }
         let mut world = include_str!("../tests/fixtures/neon_cat_world.json").to_string();
-        if let Some(tier) = quality.as_deref() {
-            world = world.replacen('{', &format!("{{\"quality\":\"{tier}\","), 1);
-            phone_unorm = true;
+        if quality.is_some() || classic {
+            let mut head = String::from("{");
+            if let Some(tier) = quality.as_deref() {
+                head.push_str(&format!("\"quality\":\"{tier}\","));
+                phone_unorm = true;
+            }
+            if classic {
+                head.push_str("\"cam\":\"classic\",");
+            }
+            world = world.replacen('{', &head, 1);
         }
         session.load_game_json(&world)?;
         if which == "debug" {

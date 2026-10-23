@@ -8,6 +8,8 @@
 //!
 //! The chase camera looks along +Z. Screen-right is world -X.
 //! `D` / `+lx` steer that way. Space, the jump button, and stick-up jump.
+//! The default rig is a damped third person behind and above the cat.
+//! `cam: "classic"` keeps the older fixed chase.
 
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
@@ -45,6 +47,16 @@ const GRACE_SECS: f32 = 1.6;
 const CAM_BACK: f32 = 7.4;
 const CAM_LIFT: f32 = 1.72;
 const CAM_FOV: f32 = 50.0;
+/// Closer and a little higher than the classic rig, so the tunnel has depth
+/// and the cat still sits in the lower half of a 412×915 frame.
+const CHASE_BACK: f32 = 4.85;
+const CHASE_LIFT: f32 = 2.15;
+const CHASE_LOOK: f32 = 10.5;
+const CHASE_LOOK_Y: f32 = 0.62;
+const CHASE_FOV: f32 = 50.0;
+const CHASE_FOV_FAST: f32 = 58.0;
+/// Full-steer Dutch angle. Visual only: the stick stays world −X.
+const CHASE_ROLL: f32 = 0.07;
 
 const OBS_Z0: f32 = 26.0;
 const OBS_GAP: f32 = 14.0;
@@ -67,6 +79,86 @@ struct Spark {
     color: [u32; 3],
 }
 
+/// Critically damped scalar. `omega` is radians per second.
+#[derive(Clone, Copy, Debug)]
+struct Spring1 {
+    pos: f32,
+    vel: f32,
+}
+
+impl Default for Spring1 {
+    fn default() -> Self {
+        Self { pos: 0.0, vel: 0.0 }
+    }
+}
+
+impl Spring1 {
+    fn snap(&mut self, target: f32) {
+        self.pos = target;
+        self.vel = 0.0;
+    }
+
+    fn step(&mut self, target: f32, omega: f32, dt: f32) {
+        let omega = omega.max(0.01);
+        let exp = (-omega * dt).exp();
+        let change = self.pos - target;
+        let temp = (self.vel + omega * change) * dt;
+        self.pos = target + (change + temp) * exp;
+        self.vel = (self.vel - omega * temp) * exp;
+    }
+}
+
+/// Same clock as `kagra.juice.Juice.camera_offset`. Amplitude decays with
+/// the square of the time still left. Three sines, meters.
+#[derive(Clone, Copy, Debug)]
+struct JuiceShake {
+    t: f32,
+    dur: f32,
+    amp: f32,
+    freq: f32,
+}
+
+impl Default for JuiceShake {
+    fn default() -> Self {
+        Self {
+            t: 0.0,
+            dur: 0.0,
+            amp: 0.0,
+            freq: 28.0,
+        }
+    }
+}
+
+impl JuiceShake {
+    /// `kagra.juice.Juice.shake` defaults are 0.08 m and 0.18 s at 28 Hz.
+    fn shake(&mut self, amplitude: f32, duration: f32) {
+        self.amp = amplitude.max(0.0);
+        self.dur = duration.max(1e-4);
+        self.freq = 28.0;
+        self.t = 0.0;
+    }
+
+    fn tick(&mut self, dt: f32) {
+        if self.dur > 0.0 && self.t < self.dur {
+            self.t += dt;
+        }
+    }
+
+    fn offset(&self) -> [f32; 3] {
+        if self.dur <= 1e-6 || self.t >= self.dur {
+            return [0.0, 0.0, 0.0];
+        }
+        let u = 1.0 - (self.t / self.dur);
+        let amp = self.amp * u * u;
+        let phase = self.t * self.freq;
+        [
+            (phase * 17.0).sin() * amp,
+            (phase * 23.0).sin() * amp * 0.55,
+            (phase * 11.0).sin() * amp * 0.25,
+        ]
+    }
+}
+
 #[derive(Debug)]
 pub struct NeonCat {
     pub flow: GameFlow,
@@ -79,6 +171,8 @@ pub struct NeonCat {
     debug: bool,
     /// Dump `quality` (`low` / `mobile` / `high`). The page sets this.
     quality: Option<String>,
+    /// `cam: "classic"` keeps the fixed chase. The default is the spring rig.
+    classic: bool,
     /// Obstacle indices whose glTF was actually added to the dump.
     spawned: HashSet<i32>,
     x: f32,
@@ -98,7 +192,14 @@ pub struct NeonCat {
     shake: f32,
     hitstop: f32,
     land_squash: f32,
+    /// Landing bump. Same offset as `Juice.camera_offset`.
+    land: JuiceShake,
     cam_x: f32,
+    eye_x: Spring1,
+    eye_y: Spring1,
+    look_x: Spring1,
+    bank: Spring1,
+    fov_spring: Spring1,
     attract: f32,
     seed: u32,
     got: HashSet<i32>,
@@ -174,6 +275,13 @@ impl NeonCat {
                 run.quality = Some(q.to_string());
             }
         }
+        if value
+            .get("cam")
+            .and_then(|v| v.as_str())
+            .is_some_and(|cam| cam.eq_ignore_ascii_case("classic"))
+        {
+            run.classic = true;
+        }
         run.rebuild();
         Ok(run)
     }
@@ -182,7 +290,7 @@ impl NeonCat {
         let mut flow = GameFlow::new(GAME_ID);
         flow.title = "NEON CAT".into();
         flow.tagline = "RUN  ·  JUMP".into();
-        Self {
+        let mut run = Self {
             flow,
             score: 0,
             score_acc: 0.0,
@@ -191,6 +299,7 @@ impl NeonCat {
             death: String::new(),
             debug: false,
             quality: None,
+            classic: false,
             spawned: HashSet::new(),
             x: 0.0,
             y: 0.0,
@@ -209,7 +318,13 @@ impl NeonCat {
             shake: 0.0,
             hitstop: 0.0,
             land_squash: 0.0,
+            land: JuiceShake::default(),
             cam_x: 0.0,
+            eye_x: Spring1::default(),
+            eye_y: Spring1::default(),
+            look_x: Spring1::default(),
+            bank: Spring1::default(),
+            fov_spring: Spring1::default(),
             attract: 0.0,
             seed: 11,
             got: HashSet::new(),
@@ -218,7 +333,9 @@ impl NeonCat {
             just_jump: false,
             sparks: Vec::new(),
             doc: WorldDoc::default(),
-        }
+        };
+        run.snap_chase();
+        run
     }
 
     pub fn score(&self) -> u32 {
@@ -313,8 +430,22 @@ impl NeonCat {
             "next_obs_x": ox,
             "next_obs_z": oz,
             "next_obs_h": oh,
-            "cam_forward": [0.0, 0.0, 1.0],
+            "cam_forward": self.cam_forward(),
+            "cam": if self.classic { "classic" } else { "chase" },
+            "fov": self.chase_fov(),
         })
+    }
+
+    fn cam_forward(&self) -> [f32; 3] {
+        let eye = self.chase_eye();
+        let target = self.chase_target();
+        let d = [target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]];
+        let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        if len < 1e-5 {
+            [0.0, 0.0, 1.0]
+        } else {
+            [d[0] / len, d[1] / len, d[2] / len]
+        }
     }
 
     fn screen_right(&self) -> glam::Vec3 {
@@ -324,16 +455,71 @@ impl NeonCat {
     }
 
     fn chase_target(&self) -> [f32; 3] {
-        [self.x * 0.35, 0.85, self.z + 12.0]
+        if self.classic {
+            return [self.x * 0.35, 0.85, self.z + 12.0];
+        }
+        let bump = self.view_bump();
+        [
+            self.look_x.pos + bump[0],
+            CHASE_LOOK_Y + self.y * 0.15 + bump[1],
+            self.z + CHASE_LOOK + bump[2],
+        ]
     }
 
     fn chase_eye(&self) -> [f32; 3] {
-        let shake = (self.time * 53.0).sin() * self.shake;
+        if self.classic {
+            let shake = (self.time * 53.0).sin() * self.shake;
+            return [
+                self.cam_x + shake,
+                CAM_LIFT + self.y * 0.35 + shake * 0.25,
+                self.z - CAM_BACK,
+            ];
+        }
+        let bump = self.view_bump();
         [
-            self.cam_x + shake,
-            CAM_LIFT + self.y * 0.35 + shake * 0.25,
-            self.z - CAM_BACK,
+            self.eye_x.pos + bump[0],
+            self.eye_y.pos + bump[1],
+            self.z - CHASE_BACK + bump[2],
         ]
+    }
+
+    /// Crash shake plus the landing juice offset. Added to the eye and the
+    /// look target so the bump translates the rig.
+    fn view_bump(&self) -> [f32; 3] {
+        let shake = (self.time * 53.0).sin() * self.shake;
+        let land = self.land.offset();
+        [land[0] + shake, land[1] + shake * 0.25, land[2]]
+    }
+
+    fn chase_fov(&self) -> f32 {
+        if self.classic {
+            CAM_FOV
+        } else {
+            self.fov_spring.pos
+        }
+    }
+
+    fn chase_roll(&self) -> f32 {
+        if self.classic {
+            0.0
+        } else {
+            self.bank.pos
+        }
+    }
+
+    fn fov_for_speed(&self) -> f32 {
+        let span = (SPEED_CAP - SPEED0).max(0.01);
+        let t = ((self.speed() - SPEED0) / span).clamp(0.0, 1.0);
+        CHASE_FOV + t * (CHASE_FOV_FAST - CHASE_FOV)
+    }
+
+    fn snap_chase(&mut self) {
+        self.eye_x.snap(self.x);
+        self.eye_y.snap(CHASE_LIFT + self.y * 0.42);
+        self.look_x.snap(self.x * 0.9);
+        self.bank.snap(0.0);
+        self.fov_spring.snap(self.fov_for_speed());
+        self.cam_x = self.x * 0.72;
     }
 
     /// Screen-right steer toward the next ring, and jump when the next
@@ -459,7 +645,9 @@ impl NeonCat {
         self.yaw = 0.0;
         self.hitstop = 0.0;
         self.shake = 0.0;
+        self.land = JuiceShake::default();
         self.cam_x = 0.0;
+        self.snap_chase();
     }
 
     fn axis_x(&self) -> f32 {
@@ -482,7 +670,7 @@ impl NeonCat {
         if self.hitstop > 0.0 {
             self.hitstop = (self.hitstop - dt).max(0.0);
             self.tick_sparks(dt);
-            self.decay_shake(dt);
+            self.decay_feel(dt);
             self.anim_t += dt * 0.35;
             if self.hitstop == 0.0 && !self.alive && self.flow.phase == FlowPhase::Play {
                 let line = format!("HIT {}", self.death);
@@ -499,12 +687,13 @@ impl NeonCat {
             self.anim_t += dt;
             self.smooth_cam(dt);
             self.tick_sparks(dt);
+            self.decay_feel(dt);
             self.rebuild();
             return;
         }
         if self.flow.phase != FlowPhase::Play || !self.alive {
             self.tick_sparks(dt);
-            self.decay_shake(dt);
+            self.decay_feel(dt);
             self.rebuild();
             return;
         }
@@ -527,6 +716,10 @@ impl NeonCat {
         if self.y <= 0.0 {
             if self.vy < -1.5 {
                 self.land_squash = 0.12;
+                if !self.classic {
+                    // Same defaults as `kagra.juice.Juice.shake`.
+                    self.land.shake(0.08, 0.18);
+                }
             }
             self.y = 0.0;
             self.vy = 0.0;
@@ -561,7 +754,7 @@ impl NeonCat {
         }
         self.smooth_cam(dt);
         self.tick_sparks(dt);
-        self.decay_shake(dt);
+        self.decay_feel(dt);
         self.rebuild();
     }
 
@@ -570,8 +763,25 @@ impl NeonCat {
     }
 
     fn smooth_cam(&mut self, dt: f32) {
-        let k = 1.0 - (-dt * 4.5).exp();
-        self.cam_x += (self.x * 0.72 - self.cam_x) * k;
+        if self.classic {
+            let k = 1.0 - (-dt * 4.5).exp();
+            self.cam_x += (self.x * 0.72 - self.cam_x) * k;
+            return;
+        }
+        let want_y = CHASE_LIFT + self.y * 0.42;
+        // Held steer keeps the bank after the rail zeros vx. A bare
+        // lateral velocity still banks, which is what the tests set.
+        let steer = if self.axis_x().abs() > 0.2 {
+            -self.axis_x()
+        } else {
+            (self.vx / 5.6).clamp(-1.0, 1.0)
+        };
+        let want_roll = steer * CHASE_ROLL;
+        self.eye_x.step(self.x, 12.0, dt);
+        self.eye_y.step(want_y, 8.0, dt);
+        self.look_x.step(self.x * 0.9, 8.0, dt);
+        self.bank.step(want_roll, 5.5, dt);
+        self.fov_spring.step(self.fov_for_speed(), 2.4, dt);
     }
 
     fn touch_obstacles(&mut self) {
@@ -629,6 +839,11 @@ impl NeonCat {
 
     fn decay_shake(&mut self, dt: f32) {
         self.shake = (self.shake - dt * 0.85).max(0.0);
+    }
+
+    fn decay_feel(&mut self, dt: f32) {
+        self.decay_shake(dt);
+        self.land.tick(dt);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -712,10 +927,15 @@ impl NeonCat {
         doc.cameras.push(WorldCamera {
             id: "camera:main".into(),
             kind: "camera".into(),
-            name: "chase".into(),
+            name: if self.classic {
+                "classic".into()
+            } else {
+                "chase".into()
+            },
             position: eye,
             target,
-            fov: CAM_FOV,
+            fov: self.chase_fov(),
+            roll: self.chase_roll(),
         });
         doc.lights.push(light(
             0,
@@ -1857,5 +2077,183 @@ mod tests {
                 );
             }
         }
+    }
+
+    fn portrait_ndc(run: &NeonCat, point: [f32; 3]) -> glam::Vec3 {
+        let aspect = 412.0 / 915.0;
+        let scene = run.document().compile_scene(aspect);
+        let clip = scene.camera.view_projection(aspect) * glam::Vec3::from_array(point).extend(1.0);
+        assert!(clip.w > 0.2, "point {point:?} is behind the camera");
+        clip.truncate() / clip.w
+    }
+
+    #[test]
+    fn chase_camera_springs_ahead_banks_and_opens_with_speed() {
+        let mut run = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        run.confirm();
+        let cam = &run.document().cameras[0];
+        assert_eq!(cam.name, "chase");
+        assert!((cam.position[2] - (0.0 - CHASE_BACK)).abs() < 1e-3);
+        assert!((cam.position[1] - CHASE_LIFT).abs() < 1e-3);
+        assert!((cam.target[2] - CHASE_LOOK).abs() < 1e-3);
+        assert!(cam.target[2] > cam.position[2] + 8.0);
+        assert!((cam.fov - CHASE_FOV).abs() < 1e-3);
+        assert!(cam.roll.abs() < 1e-5);
+
+        run.x = 1.4;
+        for _ in 0..18 {
+            run.smooth_cam(1.0 / 60.0);
+        }
+        run.rebuild();
+        let eye_x = run.document().cameras[0].position[0];
+        assert!(
+            (0.5..1.35).contains(&eye_x),
+            "spring should be following 1.4 but still lagging, eye x {eye_x}"
+        );
+
+        run.time = 36.0;
+        let before = run.document().cameras[0].fov;
+        for _ in 0..200 {
+            run.smooth_cam(1.0 / 60.0);
+        }
+        run.rebuild();
+        let opened = run.document().cameras[0].fov;
+        assert!(
+            opened > before + 4.0,
+            "fov {before} should widen with speed, got {opened}"
+        );
+        assert!(opened < CHASE_FOV_FAST + 0.2);
+
+        run.vx = -5.6;
+        for _ in 0..40 {
+            run.smooth_cam(1.0 / 60.0);
+        }
+        run.rebuild();
+        let roll = run.document().cameras[0].roll;
+        assert!(
+            roll < -0.02 && roll > -0.09,
+            "screen-right steer banks the rig, roll {roll}"
+        );
+        let scene = run.document().compile_scene(412.0 / 915.0);
+        assert!(
+            (scene.camera.up - glam::Vec3::Y).length() > 0.01,
+            "roll must tilt the camera up, got {:?}",
+            scene.camera.up
+        );
+        let fwd = run.cam_forward();
+        assert!(fwd[2] > 0.9, "the rig still looks down the tunnel, {fwd:?}");
+    }
+
+    #[test]
+    fn classic_cam_keeps_the_old_rig() {
+        let mut run =
+            NeonCat::from_json(r#"{"version":1,"genre":"neon_cat","cam":"classic"}"#).unwrap();
+        run.confirm();
+        run.z = 10.0;
+        run.y = 0.4;
+        run.rebuild();
+        let cam = &run.document().cameras[0];
+        assert_eq!(cam.name, "classic");
+        assert!((cam.position[2] - (10.0 - CAM_BACK)).abs() < 1e-3);
+        assert!((cam.position[1] - (CAM_LIFT + 0.4 * 0.35)).abs() < 1e-3);
+        assert!((cam.target[1] - 0.85).abs() < 1e-3);
+        assert!((cam.target[2] - 22.0).abs() < 1e-3);
+        assert!((cam.fov - CAM_FOV).abs() < 1e-4);
+        assert!(cam.roll.abs() < 1e-6);
+        run.vx = -5.6;
+        run.time = 40.0;
+        for _ in 0..30 {
+            run.smooth_cam(1.0 / 60.0);
+        }
+        run.rebuild();
+        let held = &run.document().cameras[0];
+        assert!((held.fov - CAM_FOV).abs() < 1e-4);
+        assert!(held.roll.abs() < 1e-6);
+    }
+
+    #[test]
+    fn landing_bump_uses_the_juice_shake() {
+        let mut run = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        run.confirm();
+        run.y = 0.05;
+        run.vy = -6.0;
+        run.tick(1.0 / 60.0);
+        assert_eq!(run.y(), 0.0);
+        let bump = run.land.offset();
+        let energy = bump[0].abs() + bump[1].abs() + bump[2].abs();
+        assert!(
+            energy > 1e-3,
+            "landing should start the juice offset, got {bump:?}"
+        );
+        let eye = run.document().cameras[0].position;
+        let target = run.document().cameras[0].target;
+        assert!(
+            (eye[0] - target[0] - (run.eye_x.pos - run.look_x.pos)).abs() < 1e-3,
+            "the bump translates the eye and the look target together"
+        );
+
+        let mut classic =
+            NeonCat::from_json(r#"{"version":1,"genre":"neon_cat","cam":"classic"}"#).unwrap();
+        classic.confirm();
+        classic.y = 0.05;
+        classic.vy = -6.0;
+        classic.tick(1.0 / 60.0);
+        classic.tick(1.0 / 60.0);
+        let still = classic.land.offset();
+        assert!(
+            still.iter().all(|v| v.abs() < 1e-6),
+            "classic keeps the old camera, got {still:?}"
+        );
+    }
+
+    #[test]
+    fn portrait_phone_keeps_the_next_obstacle_in_frame() {
+        let mut run =
+            NeonCat::from_json(r#"{"version":1,"genre":"neon_cat","quality":"mobile"}"#).unwrap();
+        run.confirm();
+        for _ in 0..60 * 6 {
+            run.set_steer(0.0, 0.0, false);
+            run.tick(1.0 / 60.0);
+            if (obs_z(0) - run.z() - 8.0).abs() < 0.35 {
+                break;
+            }
+        }
+        assert!(
+            (obs_z(0) - run.z() - 8.0).abs() < 1.0,
+            "z {} never reached the approach",
+            run.z()
+        );
+        assert!(run.alive);
+        let shape = obstacle_shape(0);
+        let obs = portrait_ndc(&run, [shape.hit_cx, shape.hit_top * 0.45, shape.hit_cz]);
+        assert!(
+            obs.x.abs() < 0.55,
+            "center crate should stay readable, ndc {:?}",
+            obs
+        );
+        assert!(
+            obs.y > -0.45 && obs.y < 0.45,
+            "crate should sit in the tunnel ahead, ndc {:?}",
+            obs
+        );
+        let cat = portrait_ndc(&run, [run.x(), run.y() + 0.45, run.z()]);
+        assert!(
+            cat.y < -0.15 && cat.y > -0.9,
+            "the cat stays in the lower frame, ndc {:?}",
+            cat
+        );
+
+        run.x = -LANE_LIMIT;
+        run.vx = -5.6;
+        for _ in 0..24 {
+            run.smooth_cam(1.0 / 60.0);
+        }
+        run.rebuild();
+        let edged = portrait_ndc(&run, [shape.hit_cx, shape.hit_top * 0.45, shape.hit_cz]);
+        assert!(
+            edged.x.abs() < 0.85,
+            "a rail-side cat should still see the center crate, ndc {:?}",
+            edged
+        );
     }
 }

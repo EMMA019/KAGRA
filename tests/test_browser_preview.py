@@ -75,6 +75,8 @@ def test_preview_links_every_browser_genre(tmp_path: Path):
     assert 'params.get("debug")' in play
     assert 'params.get("quality")' in play
     assert 'world.quality = "mobile"' in play
+    assert 'params.get("cam")' in play
+    assert 'world.cam = cam' in play
     assert "pointer-events: none" in play
     assert 'z-index: 4' in play
     assert (tmp_path / "site" / ".nojekyll").is_file()
