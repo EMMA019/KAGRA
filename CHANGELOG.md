@@ -16,6 +16,16 @@
   (`docs/media/neon_cat/`); store text and the AI-use statement are in
   `docs/publishing/`. Rewarded ads need an engine effect and are not offered yet.
 
+- Neon Cat: fix the stutter that came with the night look. The textured wall panels
+  were listed for the GPU in a different set and order every time the cat crossed a
+  12 m segment, so the renderer dropped and re-uploaded every mesh (textures
+  included) about once a second. The ring now lists the same panels in the same
+  order on every frame (`the_gpu_mesh_key_never_changes_while_the_cat_runs`). The
+  `mobile` tier also draws a 30 m wall ring, no emissive map, no ripples and 36
+  rain streaks (was 56). New `?fx=low|mid|high` and a render-scale step-down
+  (2 -> 1.5 -> 1.25 -> 1) when frames run over 26 ms for 2.5 s (`?adapt=0` = off).
+  `examples/fx_cost.rs` times the render per frame.
+
 - Neon Cat: a night street, sound, and goals (`atmosphere`, `audio`, `missions` in
   the game spec). Rain with ripples, neon signs and a procedural concrete wall
   (`tools/gen_assets/cat_wall.py`) on the neon base look; three picture tiers

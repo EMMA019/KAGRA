@@ -572,7 +572,7 @@ class RainSpec:
 
     enabled: bool = True
     count_low: int = 24
-    count_mobile: int = 56
+    count_mobile: int = 36
     count_high: int = 96
     reach: float = 26.0
     behind: float = 5.0

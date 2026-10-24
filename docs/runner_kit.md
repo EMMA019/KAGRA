@@ -142,12 +142,12 @@ golden runs replay) has them **off**, as does Meteor Cat's `atmosphere` and `mis
 Write only what you change; every other field keeps its default.
 
 `atmosphere` is the Stray-style night street on top of the neon base look. No daytime colour and no city backdrop. The picture tier
-(`quality`: `low` | `mobile` | `high`; the phone page picks `mobile` for Neon Cat, `?quality=low|mobile|high` overrides it) decides how much
+(`quality`: `low` | `mobile` | `high`; the phone page picks `mobile` for Neon Cat, `?quality=low|mobile|high` overrides it; `?fx=low|mid|high` sets only how much night is drawn; `?adapt=0` turns off the page's render-scale step-down) decides how much
 is drawn. A missing texture falls back to the plain dark wall.
 
 | Field | Default | What it does |
 |---|---|---|
-| `rain` `{enabled, count_low 24, count_mobile 56, count_high 96, reach 26, behind 5, fall_speed 11, length 0.9, slant 0.12, width 1.1, color [170,205,255,125], splash}` | on | slanted streaks that fall past the camera; `splash` adds ripples on the street |
+| `rain` `{enabled, count_low 24, count_mobile 36, count_high 96, reach 26, behind 5, fall_speed 11, length 0.9, slant 0.12, width 1.1, color [170,205,255,125], splash}` | on | slanted streaks that fall past the camera; `splash` adds ripples on the street |
 | `signs` `{enabled, cell 4, density_low 0.2, density_mobile 0.4, density_high 0.55, palette, rows [3.5, 4.9], size 1.7, line_width 2.4, glow 1.6, flicker 0.3}` | on | neon signs on the walls: a dark plate and glowing glyph strokes, placed by a seeded hash per `cell` metres, one colour from `palette` (1 to 16 RGB triples) |
 | `wall` `{enabled, texture_low "", texture_mobile concrete_wall_s.png, texture_high concrete_wall.png, tint, segment 12, reach 48}` | on | concrete on both walls, tiled in `segment`-metre panels out to `reach`. An empty path means that tier keeps the plain wall (`low` does by default) |
 

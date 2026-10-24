@@ -146,3 +146,18 @@ def test_wall_texture_is_a_png_with_power_of_two_free_ratio():
         assert data[:8] == b"\x89PNG\r\n\x1a\n"
         width, height = struct.unpack(">II", data[16:24])
         assert (width, height) == size
+
+
+def test_page_passes_fx_and_steps_the_render_scale_down_when_frames_run_long():
+    src = PLAY.read_text(encoding="utf-8")
+    # ?fx= reaches the dump as `fx` (the sim reads low / mid / high).
+    assert 'params.get("fx")' in src and "world.fx = fx" in src
+    # The render-scale ladder starts at the old cap of 2 and ends at 1.
+    assert "const SCALE_STEPS = [2, 1.5, 1.25, 1];" in src
+    assert "SCALE_STEPS[scaleStep]" in src
+    # Over 26 ms for a while steps down; ?adapt=0 turns it off.
+    assert "avgGap < 26" in src and 'params.get("adapt") !== "0"' in src
+
+
+def test_the_mobile_rain_default_matches_the_rust_spec():
+    assert GameSpec().atmosphere.rain.count_mobile == 36

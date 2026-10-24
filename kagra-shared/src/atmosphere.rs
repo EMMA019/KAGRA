@@ -68,9 +68,27 @@ pub fn push_effects(doc: &mut WorldDoc, view: &View) {
     }
 }
 
-/// The number of wall slots per side for `wall`. Fixed by the spec.
+/// How far ahead the textured wall reaches on `tier`. A phone draws a
+/// shorter ring: each panel is a draw call of its own, and the far ones sit
+/// in the dark anyway.
+pub fn wall_reach(wall: &WallSpec, tier: Tier) -> f32 {
+    match tier {
+        Tier::Mobile => wall.reach.min(MOBILE_WALL_REACH),
+        _ => wall.reach,
+    }
+}
+
+/// The wall ring a phone draws reaches this far ahead of the cat.
+const MOBILE_WALL_REACH: f32 = 30.0;
+
+/// The number of wall slots per side at the full (`high`) reach. Fixed by
+/// the spec.
 pub fn wall_slots(wall: &WallSpec) -> i32 {
-    (((wall.reach + 6.0) / wall.segment).ceil() as i32) + 2
+    slots_for(wall, wall.reach)
+}
+
+fn slots_for(wall: &WallSpec, reach: f32) -> i32 {
+    (((reach + 6.0) / wall.segment).ceil() as i32) + 2
 }
 
 // ------------------------------------------------------------------- hashing
@@ -135,12 +153,17 @@ pub fn wall_props(view: &View, z0: f32, z1: f32) -> Option<Vec<WorldProp>> {
             ..WorldProp::default()
         });
     }
-    let slots = wall_slots(wall);
+    // Every slot is drawn on every frame, in slot order. The renderer keys
+    // its mesh upload by the list of textured prop ids, in order: a list that
+    // grows, shrinks or rotates as the cat crosses a segment makes it drop
+    // and re-upload every mesh (a hitch of 100 ms and more on a phone). Slot
+    // `s` shows the one segment of the window `first..first + slots` that
+    // wraps onto it.
+    let slots = slots_for(wall, wall_reach(wall, view.tier));
     let first = ((view.z - 6.0) / wall.segment).floor() as i32;
-    let last = ((view.z + wall.reach) / wall.segment).floor() as i32;
     let repeat = (wall.segment / 8.0).round().max(1.0);
-    for seg in first..=last.min(first + slots - 1) {
-        let slot = seg.rem_euclid(slots);
+    for slot in 0..slots {
+        let seg = first + (slot - first).rem_euclid(slots);
         let zc = (seg as f32 + 0.5) * wall.segment;
         for (side, sx) in [("l", -1.0_f32), ("r", 1.0)] {
             out.push(WorldProp {
@@ -160,7 +183,8 @@ pub fn wall_props(view: &View, z0: f32, z1: f32) -> Option<Vec<WorldProp>> {
                 // neon strokes and the tight lights do the rest.
                 emissive: Some(0.34),
                 emissive_color: Some([0.30, 0.26, 0.55]),
-                emissive_map: Some(tex.to_string()),
+                // The second texture lookup per pixel is for desktop only.
+                emissive_map: (view.tier == Tier::High).then(|| tex.to_string()),
                 roughness: 0.96,
                 metallic: 0.0,
                 collider: Some("none".into()),
@@ -184,7 +208,9 @@ fn push_rain(doc: &mut WorldDoc, rain: &RainSpec, view: &View) {
     let span = rain.reach + rain.behind;
     let origin = view.z - rain.behind;
     let fall_secs = WALL_H / rain.fall_speed;
-    let ripple_secs = if rain.splash { 0.3 } else { 0.0 };
+    // Ripples are 9-segment loops: desktop only.
+    let splash = rain.splash && view.tier == Tier::High;
+    let ripple_secs = if splash { 0.3 } else { 0.0 };
     let cycle = fall_secs + ripple_secs;
     for k in 0..n as i32 {
         let x = -RAIN_HALF_W + 2.0 * RAIN_HALF_W * unit(hash(k, 2));
@@ -204,7 +230,7 @@ fn push_rain(doc: &mut WorldDoc, rain: &RainSpec, view: &View) {
                 rain.color,
                 rain.width,
             );
-        } else if k % 2 == 0 {
+        } else if splash && k % 2 == 0 {
             let age = (phase - fall_secs) / ripple_secs;
             let rx = 0.05 + 0.32 * age;
             let pts: Vec<[f32; 3]> = (0..=8)
