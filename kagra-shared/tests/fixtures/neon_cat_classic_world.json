@@ -430,7 +430,7 @@
    "rain": {
     "enabled": true,
     "count_low": 24,
-    "count_mobile": 56,
+    "count_mobile": 36,
     "count_high": 96,
     "reach": 26.0,
     "behind": 5.0,

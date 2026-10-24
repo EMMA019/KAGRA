@@ -58,6 +58,9 @@ pub struct NeonCat {
     debug: bool,
     /// Dump `quality` (`low` / `mobile` / `high`). The page sets this.
     quality: Option<String>,
+    /// Dump `fx` (`low` / `mid` / `high`): the atmosphere's tier on its own,
+    /// whatever the picture `quality` is. The page sets it from `?fx=`.
+    fx_tier_override: Option<crate::neon_fx_spec::Tier>,
     /// `cam: "classic"` keeps the fixed chase. The default is the spring rig.
     classic: bool,
     /// Obstacle indices whose glTF was actually added to the dump.
@@ -233,6 +236,10 @@ impl NeonCat {
                 run.quality = Some(q.to_string());
             }
         }
+        run.fx_tier_override = value
+            .get("fx")
+            .and_then(|v| v.as_str())
+            .and_then(crate::neon_fx_spec::Tier::from_fx);
         if value
             .get("cam")
             .and_then(|v| v.as_str())
@@ -250,10 +257,16 @@ impl NeonCat {
         crate::neon_fx_spec::Tier::from_quality(self.quality.as_deref())
     }
 
+    /// How much atmosphere to draw: `fx` if the dump has it, else the
+    /// picture tier.
+    fn fx_tier(&self) -> crate::neon_fx_spec::Tier {
+        self.fx_tier_override.unwrap_or_else(|| self.tier())
+    }
+
     /// Once per load: which wall texture this tier uses (only if the file is
     /// there, so a missing PNG leaves the plain wall rather than a white one).
     fn resolve_fx(&mut self) {
-        let path = self.spec.atmosphere.wall.texture(self.tier());
+        let path = self.spec.atmosphere.wall.texture(self.fx_tier());
         self.fx_state.wall_texture =
             (!path.is_empty() && crate::world_doc::texture_exists(path)).then(|| path.to_string());
     }
@@ -285,6 +298,7 @@ impl NeonCat {
             },
             debug: false,
             quality: None,
+            fx_tier_override: None,
             classic: false,
             spawned: HashSet::new(),
             x: 0.0,
@@ -2845,7 +2859,7 @@ impl NeonCat {
     fn atmosphere_view(&self) -> atmosphere::View<'_> {
         atmosphere::View {
             spec: &self.spec.atmosphere,
-            tier: self.tier(),
+            tier: self.fx_tier(),
             wall_texture: self.fx_state.wall_texture.as_deref(),
             time: if self.flow.phase == FlowPhase::Title {
                 self.attract
@@ -7948,6 +7962,94 @@ mod fx_tests {
             seen.len() as i32 <= 2 * slots,
             "{} ids over a long run",
             seen.len()
+        );
+    }
+
+    #[test]
+    fn the_gpu_mesh_key_never_changes_while_the_cat_runs() {
+        // A new key makes the renderer drop every mesh and upload them all
+        // again (decode, tile and upload each wall texture): a hitch of
+        // 100 ms and more on a phone. The textured wall ring has to keep the
+        // same ids in the same order on every frame, at every tier.
+        for q in [None, Some("mobile"), Some("low")] {
+            let mut run = with_quality(q);
+            run.tick(1.0 / 60.0);
+            let mut last = run.document().gpu_mesh_key();
+            let mut changes = 0;
+            for _ in 0..1500 {
+                run.z += 0.19;
+                run.tick(1.0 / 60.0);
+                let key = run.document().gpu_mesh_key();
+                if key != last {
+                    changes += 1;
+                    last = key;
+                }
+            }
+            assert_eq!(
+                changes, 0,
+                "quality {q:?}: the mesh key changed {changes} times"
+            );
+        }
+    }
+
+    #[test]
+    fn phones_draw_a_lighter_night_and_fx_overrides_the_tier() {
+        let count = |run: &NeonCat, pre: &str| {
+            run.document()
+                .props
+                .iter()
+                .filter(|p| p.id.starts_with(pre))
+                .count()
+        };
+        let lines = |run: &NeonCat, pre: &str| {
+            run.document()
+                .lines
+                .iter()
+                .filter(|l| l.id.starts_with(pre))
+                .count()
+        };
+        let high = with_quality(None);
+        let mobile = with_quality(Some("mobile"));
+        // Fewer wall panels, one texture lookup less, no ripples, less rain.
+        assert!(count(&mobile, "prop:wtex-") < count(&high, "prop:wtex-"));
+        assert!(mobile
+            .document()
+            .props
+            .iter()
+            .filter(|p| p.id.starts_with("prop:wtex-"))
+            .all(|p| p.emissive_map.is_none() && p.texture.is_some()));
+        assert!(high
+            .document()
+            .props
+            .iter()
+            .filter(|p| p.id.starts_with("prop:wtex-"))
+            .all(|p| p.emissive_map.is_some()));
+        assert_eq!(lines(&mobile, "rp-"), 0);
+        assert!(lines(&mobile, "rn-") < lines(&high, "rn-"));
+        // `fx` moves the atmosphere alone: a mobile picture with high fx
+        // draws the high wall, a high picture with low fx draws none.
+        let with_fx = |q: Option<&str>, fx: &str| {
+            let mut v: serde_json::Value =
+                serde_json::from_str(include_str!("../tests/fixtures/neon_cat_world.json"))
+                    .unwrap();
+            if let Some(q) = q {
+                v["quality"] = q.into();
+            }
+            v["fx"] = fx.into();
+            NeonCat::from_json(&v.to_string()).unwrap()
+        };
+        let m_high = with_fx(Some("mobile"), "high");
+        assert_eq!(m_high.document().quality.as_deref(), Some("mobile"));
+        assert_eq!(count(&m_high, "prop:wtex-"), count(&high, "prop:wtex-"));
+        assert_eq!(count(&with_fx(None, "low"), "prop:wtex-"), 0);
+        assert_eq!(
+            count(&with_fx(None, "mid"), "prop:wtex-"),
+            count(&mobile, "prop:wtex-")
+        );
+        // A word it does not know is ignored.
+        assert_eq!(
+            count(&with_fx(Some("mobile"), "ultra"), "prop:wtex-"),
+            count(&mobile, "prop:wtex-")
         );
     }
 

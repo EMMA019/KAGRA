@@ -597,6 +597,10 @@
             world.quality = "mobile";
           }
           if (slug === "neon_cat") {
+            // ?fx=low|mid|high sets how much night (rain, signs, walls) is
+            // drawn, on its own. Without it the picture quality decides.
+            const fx = (params.get("fx") || "").toLowerCase();
+            if (fx === "low" || fx === "mid" || fx === "high") world.fx = fx;
             const cam = (params.get("cam") || "").toLowerCase();
             if (cam === "classic" || cam === "chase") world.cam = cam;
           }
@@ -623,9 +627,13 @@
       throw err;
     }
 
+    // Render-scale ladder. Starts at the usual cap of 2 and steps down when
+    // frames run long (see `adapt` in the loop); ?adapt=0 turns that off.
+    const SCALE_STEPS = [2, 1.5, 1.25, 1];
+    let scaleStep = 0;
     const fit = () => {
       orient();
-      const scale = Math.min(window.devicePixelRatio || 1, 2);
+      const scale = Math.min(window.devicePixelRatio || 1, SCALE_STEPS[scaleStep]);
       const w = Math.max(1, Math.round(canvas.clientWidth * scale));
       const h = Math.max(1, Math.round(canvas.clientHeight * scale));
       if (canvas.width !== w || canvas.height !== h) {
@@ -1074,8 +1082,31 @@
 
     let presented = 0;
     let recovering = false;
+    // Dynamic quality: a running average of the frame gap. Over 26 ms
+    // (under about 38 fps) for 2.5 s drops one rung of the render scale;
+    // pauses (a hidden tab, a long hitch) are not counted.
+    const adaptOn = params.get("adapt") !== "0";
+    let lastT = 0;
+    let avgGap = 16.7;
+    let gapFrames = 0;
+    let lastStep = 0;
+    const adapt = (now) => {
+      const gap = lastT ? now - lastT : 0;
+      lastT = now;
+      if (!adaptOn || gap <= 0 || gap > 250) return;
+      avgGap += (gap - avgGap) * 0.05;
+      gapFrames += 1;
+      if (gapFrames < 90 || avgGap < 26 || now - lastStep < 2500) return;
+      if (scaleStep >= SCALE_STEPS.length - 1) return;
+      scaleStep += 1;
+      lastStep = now;
+      avgGap = 16.7;
+      console.warn(`kagra: slow frames, render scale cap ${SCALE_STEPS[scaleStep]}`);
+      fit();
+    };
     const loop = () => {
       if (recovering) return;
+      adapt(performance.now());
       const k = keyAxis();
       const jump = state.jump || held.has(" ") || held.has("Spacebar");
       session.setPlayInput(
