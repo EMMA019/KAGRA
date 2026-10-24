@@ -4,8 +4,9 @@
     "clear_secs": 90.0,
     "collisions": 11,
     "death_causes": {
-      "BARREL": 10,
-      "BARRIER": 1
+      "BARREL": 8,
+      "BARRIER": 1,
+      "CRATE": 2
     },
     "death_z": [
       375.753,
@@ -14,16 +15,16 @@
       1047.754,
       1047.754,
       557.866,
-      711.77,
-      711.77,
+      571.836,
+      571.836,
       375.753,
       375.753,
-      375.822
+      375.753
     ],
-    "rings_mean": 63.8,
+    "rings_mean": 62.9,
     "runs": 20,
-    "score_mean": 8766.1,
-    "survival_mean_s": 64.213,
+    "score_mean": 8645.4,
+    "survival_mean_s": 63.503,
     "survival_median_s": 62.633
   },
   "course": {
@@ -93,8 +94,8 @@
     "note": "wall clock; sim tick + dump rebuild only, no GPU",
     "props_max": 238.0,
     "props_p95": 237.0,
-    "tick_ms_p50": 0.069,
-    "tick_ms_p95": 0.088
+    "tick_ms_p50": 0.064,
+    "tick_ms_p95": 0.078
   },
   "touch": {
     "diagonal_45_jumped": false,
