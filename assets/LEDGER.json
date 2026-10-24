@@ -1,0 +1,1077 @@
+{
+ "schema": 1,
+ "private_dir": "assets-private/",
+ "doc": "docs/asset_ledger.md",
+ "exempt_paths": [
+  "docs/**",
+  "tests/**",
+  "kagra-shared/tests/**"
+ ],
+ "extra_required_paths": [
+  "kagra-shared/assets/maps/*.json"
+ ],
+ "packs": [
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/models/kenney/cube-pets/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "",
+   "verified": "checked",
+   "id": "kenney-cube-pets",
+   "name": "Kenney Cube Pets",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets/cube-pets",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-24",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/kenney/cube-pets/**"
+   ],
+   "verified_how": "In-repo License.txt from the official zip says CC0; manifest tools/fetch_assets/neon_cat.json agrees; kenney.nl publishes all assets as CC0."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/models/kenney/platformer-kit/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "",
+   "verified": "checked",
+   "id": "kenney-platformer-kit",
+   "name": "Kenney Platformer Kit",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets/platformer-kit",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-24",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/kenney/platformer-kit/**"
+   ],
+   "verified_how": "In-repo License.txt from the official zip says CC0; manifest tools/fetch_assets/neon_cat.json agrees; kenney.nl publishes all assets as CC0."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/models/kenney/racing-kit/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "",
+   "verified": "checked",
+   "id": "kenney-racing-kit",
+   "name": "Kenney Racing Kit",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets/racing-kit",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-24",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/kenney/racing-kit/**"
+   ],
+   "verified_how": "In-repo License.txt from the official zip says CC0; manifest tools/fetch_assets/neon_cat.json agrees; kenney.nl publishes all assets as CC0."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/models/kenney/space-kit/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "",
+   "verified": "checked",
+   "id": "kenney-space-kit",
+   "name": "Kenney Space Kit",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets/space-kit",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-23",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/kenney/space-kit/**"
+   ],
+   "verified_how": "In-repo License.txt from the official zip says CC0; manifest tools/fetch_assets/neon_cat.json agrees; kenney.nl publishes all assets as CC0."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/models/KENNEY_LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Which of the three kits each file came from is not recorded. All three are CC0.",
+   "verified": "checked",
+   "id": "kenney-loose-models",
+   "name": "Kenney props (ball, bat, block, coin, diamond, flag, grass, heart, plaza, tree)",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-08-29",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/ball.glb",
+    "assets/models/bat.glb",
+    "assets/models/block.glb",
+    "assets/models/coin.glb",
+    "assets/models/diamond.glb",
+    "assets/models/flag.glb",
+    "assets/models/grass.glb",
+    "assets/models/heart.glb",
+    "assets/models/plaza.glb",
+    "assets/models/tree.glb"
+   ],
+   "verified_how": "assets/models/KENNEY_LICENSE.txt says these are Kenney CC0 models from Nature Kit, Platformer Kit and Mini Golf Kit."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "old/examples/assets/open_world/kenney/castle/License.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "",
+   "verified": "checked",
+   "id": "kenney-old-open-world-castle",
+   "name": "Kenney Castle Kit 2.0 (old/examples open_world)",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets/castle-kit",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-08-30",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "old/examples/assets/open_world/kenney/castle/**"
+   ],
+   "verified_how": "In-repo License.txt from the official zip says CC0."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "old/examples/assets/open_world/kenney/dungeon/License.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "",
+   "verified": "checked",
+   "id": "kenney-old-open-world-dungeon",
+   "name": "Kenney Dungeon Kit (old/examples open_world)",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-08-30",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "old/examples/assets/open_world/kenney/dungeon/**"
+   ],
+   "verified_how": "In-repo License.txt from the official zip says CC0."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "old/examples/assets/open_world/kenney/forest/License.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "",
+   "verified": "checked",
+   "id": "kenney-old-open-world-forest",
+   "name": "Kenney Forest kit (old/examples open_world)",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-08-30",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "old/examples/assets/open_world/kenney/forest/**"
+   ],
+   "verified_how": "In-repo License.txt from the official zip says CC0."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "old/examples/assets/open_world/kenney/nature/License.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "",
+   "verified": "checked",
+   "id": "kenney-old-open-world-nature",
+   "name": "Kenney Nature Kit 2.1 (old/examples open_world)",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets/nature-kit",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-08-30",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "old/examples/assets/open_world/kenney/nature/**"
+   ],
+   "verified_how": "In-repo License.txt from the official zip says CC0."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "old/examples/assets/open_world/kenney/town/License.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "",
+   "verified": "checked",
+   "id": "kenney-old-open-world-town",
+   "name": "Kenney Fantasy Town Kit 2.0 (old/examples open_world)",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets/fantasy-town-kit",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-08-30",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "old/examples/assets/open_world/kenney/town/**"
+   ],
+   "verified_how": "In-repo License.txt from the official zip says CC0."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "old/examples/assets/relic_run/kenney/Kenney_Mini_Forest_License.txt",
+    "old/examples/assets/relic_run/kenney/Kenney_Nature_Kit_License.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "",
+   "verified": "checked",
+   "id": "kenney-old-relic-run",
+   "name": "Kenney Mini Forest 1.0 and Nature Kit 2.1 (old/examples relic_run)",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets/mini-forest",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-08-30",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "old/examples/assets/relic_run/kenney/**"
+   ],
+   "verified_how": "Two in-repo License.txt files from the official zips say CC0; old/examples/assets/relic_run/LICENSE.md lists the zips."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/library/kaykit/adventurers/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "",
+   "verified": "checked",
+   "id": "kaykit-adventurers",
+   "name": "KayKit Adventurers Character Pack 1.0",
+   "source": "kaykit",
+   "author": "Kay Lousberg (www.kaylousberg.com)",
+   "url": "https://kaylousberg.itch.io/kaykit-adventurers",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-08-29",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/library/kaykit/adventurers/**"
+   ],
+   "verified_how": "In-repo LICENSE.txt from the official zip says CC0 and names Kay Lousberg."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/library/kaykit/city-builder-bits/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "",
+   "verified": "checked",
+   "id": "kaykit-city-builder-bits",
+   "name": "KayKit City Builder Bits 1.0",
+   "source": "kaykit",
+   "author": "Kay Lousberg (www.kaylousberg.com)",
+   "url": "https://kaylousberg.itch.io/city-builder-bits",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-08-29",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/library/kaykit/city-builder-bits/**"
+   ],
+   "verified_how": "In-repo LICENSE.txt from the official zip says CC0 and names Kay Lousberg."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "CC0 needs no credit; authors are listed as courtesy. Only the .gltf and .bin are committed (textures were not).",
+   "verified": "checked",
+   "id": "polyhaven-props",
+   "name": "Poly Haven props (31 models)",
+   "source": "polyhaven",
+   "author": "Poly Haven contributors (per model, see credits)",
+   "url": "https://polyhaven.com/models",
+   "license": "cc0",
+   "license_url": "https://polyhaven.com/license",
+   "obtained": "2026-08-29",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/library/polyhaven/props/**"
+   ],
+   "verified_how": "Poly Haven publishes every asset as CC0 (https://polyhaven.com/license). Author per model read from https://api.polyhaven.com/info/<id> on 2026-10-24 for all 31 ids.",
+   "credits": {
+    "Barrel_01": "Jorge Camacho",
+    "Barrel_02": "Jorge Camacho",
+    "Camera_01": "Rajil Jose Macatangay",
+    "CashRegister_01": "Joe Seabuhr",
+    "CheeseBox_01": "Gabriel Radić",
+    "Drill_01": "Fernando Quinn",
+    "GreenChair_01": "Kirill Sannikov",
+    "Lantern_01": "Rajil Jose Macatangay",
+    "Megaphone_01": "Ethan Simon-Law",
+    "Ottoman_01": "Caspian Fortune",
+    "SchoolChair_01": "Ethan Place",
+    "Sofa_01": "Kirill Sannikov",
+    "Television_01": "Gabriel Radić",
+    "Ukulele_01": "Joseph Burgan",
+    "WetFloorSign_01": "Fran Calvente",
+    "WoodenTable_01": "Ethan Place",
+    "WoodenTable_02": "Fran Calvente",
+    "alarm_clock_01": "James Ray Cock, Yann Kervran",
+    "american_football": "Riley Queen",
+    "barrel_03": "Serhii Khromov",
+    "baseball_01": "Rico Cilliers",
+    "baseball_bat": "Enrique Martín",
+    "boombox": "Thomas Paul Mouilleron",
+    "brass_goblets": "Tina",
+    "brass_pan_01": "Rico Cilliers",
+    "brass_pot_01": "Rico Cilliers",
+    "can_rusted": "Rahul Chaudhary",
+    "cardboard_box_01": "Rahul Chaudhary",
+    "carved_wooden_elephant": "Greg Zaal",
+    "cassette_player": "Oday Abuzaeed",
+    "chess_set": "Riley Queen"
+   }
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/library/quaternius/cyberpunkgamekit/License.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Quaternius changed to its own Asset License (QAL v1.0, 2026-08-28), which forbids redistributing assets as stand-alone files and applies the terms in force on the download date. These files were committed 2026-08-29; the CC0 facts hold only if they were downloaded before the change. The exact download date is not recorded.",
+   "verified": "checked",
+   "id": "quaternius-library-cyberpunkgamekit",
+   "name": "Quaternius Cyberpunk Game Kit (July 2022)",
+   "source": "quaternius",
+   "author": "Quaternius",
+   "url": "https://quaternius.com/packs/cyberpunkgamekit.html",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-08-29",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/library/quaternius/cyberpunkgamekit/**"
+   ],
+   "verified_how": "In-repo License.txt plus the pack page, which links the CC0 1.0 dedication (checked 2026-10-24). The on-disk License.txt heading names another pack (Ultimate Platformer Pack) but the terms are CC0."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Quaternius changed to its own Asset License (QAL v1.0, 2026-08-28), which forbids redistributing assets as stand-alone files and applies the terms in force on the download date. These files were committed 2026-08-29; the CC0 facts hold only if they were downloaded before the change. The exact download date is not recorded.",
+   "verified": "checked",
+   "id": "quaternius-library-cubeworldkit",
+   "name": "Quaternius Cube World Kit (Aug 2023)",
+   "source": "quaternius",
+   "author": "Quaternius",
+   "url": "https://quaternius.com/packs/cubeworldkit.html",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-08-29",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/library/quaternius/cubeworldkit/**"
+   ],
+   "verified_how": "No License.txt in the repo; the pack page links the CC0 1.0 dedication (checked 2026-10-24)."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/models/quaternius/stylized-nature-megakit/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Quaternius changed to its own Asset License (QAL v1.0, 2026-08-28), which forbids redistributing assets as stand-alone files and applies the terms in force on the download date. These files were committed 2026-08-29; the CC0 facts hold only if they were downloaded before the change. The exact download date is not recorded.",
+   "verified": "checked",
+   "id": "quaternius-models-stylized-nature-megakit",
+   "name": "Quaternius Stylized Nature MegaKit",
+   "source": "quaternius",
+   "author": "Quaternius",
+   "url": "https://quaternius.com/packs/stylizednaturemegakit.html",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "before 2026-08-26 (prior batch, see QUATERNIUS_LICENSES.md)",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/quaternius/stylized-nature-megakit/**"
+   ],
+   "verified_how": "In-repo License.txt / assets/models/QUATERNIUS_LICENSES.md (batch 2026-08-26) record CC0 1.0 and the official source."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/models/quaternius/medieval-village-pack/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Quaternius changed to its own Asset License (QAL v1.0, 2026-08-28), which forbids redistributing assets as stand-alone files and applies the terms in force on the download date. These files were committed 2026-08-29; the CC0 facts hold only if they were downloaded before the change. The exact download date is not recorded.",
+   "verified": "checked",
+   "id": "quaternius-models-medieval-village-pack",
+   "name": "Quaternius Medieval Village Pack",
+   "source": "quaternius",
+   "author": "Quaternius",
+   "url": "https://quaternius.com/packs/medievalvillagemegakit.html",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "before 2026-08-26 (prior batch, see QUATERNIUS_LICENSES.md)",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/quaternius/medieval-village-pack/**"
+   ],
+   "verified_how": "In-repo License.txt / assets/models/QUATERNIUS_LICENSES.md (batch 2026-08-26) record CC0 1.0 and the official source."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/models/quaternius/modular-dungeons-pack/LICENSE.txt",
+    "assets/models/quaternius/modular-dungeons-pack/CREDITS.md"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Quaternius changed to its own Asset License (QAL v1.0, 2026-08-28), which forbids redistributing assets as stand-alone files and applies the terms in force on the download date. These files were committed 2026-08-29; the CC0 facts hold only if they were downloaded before the change. The exact download date is not recorded.",
+   "verified": "checked",
+   "id": "quaternius-models-modular-dungeons-pack",
+   "name": "Quaternius Modular Dungeons Pack",
+   "source": "quaternius",
+   "author": "Quaternius",
+   "url": "https://quaternius.com/",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "before 2026-08-26 (prior batch, see QUATERNIUS_LICENSES.md)",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/quaternius/modular-dungeons-pack/**"
+   ],
+   "verified_how": "In-repo License.txt / assets/models/QUATERNIUS_LICENSES.md (batch 2026-08-26) record CC0 1.0 and the official source."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/models/quaternius/buildings/License.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Quaternius changed to its own Asset License (QAL v1.0, 2026-08-28), which forbids redistributing assets as stand-alone files and applies the terms in force on the download date. These files were committed 2026-08-29; the CC0 facts hold only if they were downloaded before the change. The exact download date is not recorded. Only License.txt and Preview images are committed for the FBX batch; the FBX files are not.",
+   "verified": "checked",
+   "id": "quaternius-models-fbx-batch-2026-08-26",
+   "name": "Quaternius FBX batch 2026-08-26 (buildings, cars, farmanimal, farmbuildings, medievalweapons, modularstreets)",
+   "source": "quaternius",
+   "author": "Quaternius",
+   "url": "https://quaternius.com/",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-08-26 (batch) or earlier",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/quaternius/buildings/**",
+    "assets/models/quaternius/cars/**",
+    "assets/models/quaternius/farmanimal/**",
+    "assets/models/quaternius/farmbuildings/**",
+    "assets/models/quaternius/medievalweapons/**",
+    "assets/models/quaternius/modularstreets/**"
+   ],
+   "verified_how": "In-repo License.txt / assets/models/QUATERNIUS_LICENSES.md (batch 2026-08-26) record CC0 1.0 and the official source."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/models/BIPLANE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "",
+   "verified": "checked",
+   "id": "project-biplane",
+   "name": "KAGRA biplane.glb",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-22",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/biplane.glb"
+   ],
+   "verified_how": "assets/models/BIPLANE.txt: original model made for KAGRA, CC0."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/audio/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "",
+   "verified": "checked",
+   "id": "project-audio-synth",
+   "name": "KAGRA synthesized tones (jump, fire, card, bgm)",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-22",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/audio/*.wav"
+   ],
+   "verified_how": "assets/audio/LICENSE.txt: original synthesized tones, CC0."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Same generator as the bar textures; no separate license file.",
+   "verified": "checked",
+   "id": "project-bar-se",
+   "name": "KAGRA Bar door, glass and register sounds",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-09-12",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/bar/se/*.wav"
+   ],
+   "verified_how": "Generated by tools/gen_assets/bar.py (synthesized)."
+  },
+  {
+   "license_spdx": null,
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Project-owned, covered by the repo MIT license. Despite the manifest wording 'AI / procedural', the generator is deterministic code, not an image service.",
+   "verified": "checked",
+   "id": "project-bar-textures",
+   "name": "KAGRA Bar textures, portraits and logo",
+   "source": "project",
+   "author": "KAGRA project (procedural)",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "custom",
+   "license_url": "https://github.com/EMMA019/KAGRA/blob/master/LICENSE",
+   "obtained": "2026-09-12",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game"
+   ],
+   "paths": [
+    "assets/bar/tex/**"
+   ],
+   "verified_how": "tools/gen_assets/bar.py draws every texture (wood, wall, logo, bottles, portraits) as pixels in plain Python with no input images or network access; assets/bar/manifest.json says 'Not third-party art'."
+  },
+  {
+   "license_spdx": null,
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Project-owned; covered by the repo MIT license.",
+   "verified": "checked",
+   "id": "project-data",
+   "name": "KAGRA package data (unit_cube.glb, synthetic_dance.bvh)",
+   "source": "project",
+   "author": "KAGRA project (generated)",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "custom",
+   "license_url": "https://github.com/EMMA019/KAGRA/blob/master/LICENSE",
+   "obtained": "2026-08-22",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game"
+   ],
+   "paths": [
+    "kagra/data/*"
+   ],
+   "verified_how": "Both are named synthetic/unit and loaded by kagra/contracts.py as built-in fixtures; no third-party source in git history."
+  },
+  {
+   "license_spdx": null,
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Confirm who or what made the 24 genre icons.",
+   "verified": "owner_confirmation_needed",
+   "id": "project-icons",
+   "name": "KAGRA genre icons",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "custom",
+   "license_url": "https://github.com/EMMA019/KAGRA/blob/master/LICENSE",
+   "obtained": "2026-10-22",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game"
+   ],
+   "paths": [
+    "games/icons/*.png"
+   ],
+   "verified_how": "Committed with the Neon Cat Run and packaging commits; the tool or artist that made them is not recorded in the repo."
+  },
+  {
+   "license_spdx": null,
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Provenance unknown. The file name suggests a trial plan of a music generator or a sample; trial plans often forbid commercial use. Owner to say where it came from, or replace it with a CC0 track.",
+   "verified": "owner_confirmation_needed",
+   "id": "unknown-demo-song",
+   "name": "cute_song_trial.wav (live-demo song)",
+   "source": "unknown",
+   "author": "unknown",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "custom",
+   "license_url": "https://github.com/EMMA019/KAGRA/blob/master/LICENSE",
+   "obtained": "2026-08-23",
+   "allowed_uses": [
+    "personal"
+   ],
+   "paths": [
+    "assets/cute_song_trial.wav"
+   ],
+   "verified_how": "Committed 2026-08-23 as 'Ship the live-demo song'. No source, author or license is recorded anywhere in the repo."
+  },
+  {
+   "license_spdx": null,
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Provenance unknown. Owner to name the text-to-motion service and its terms, or replace it with a CC0 clip.",
+   "verified": "owner_confirmation_needed",
+   "id": "unknown-vrma-dance",
+   "name": "coolHeadbangWalk.vrma (dance clip)",
+   "source": "unknown",
+   "author": "unknown (generator tag: text-to-motion)",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "custom",
+   "license_url": "https://github.com/EMMA019/KAGRA/blob/master/LICENSE",
+   "obtained": "2026-08-23",
+   "allowed_uses": [
+    "personal"
+   ],
+   "paths": [
+    "assets/coolHeadbangWalk.vrma"
+   ],
+   "verified_how": "The glTF header says generator 'text-to-motion' (an AI motion service). No service name, plan or license is recorded."
+  },
+  {
+   "license_spdx": null,
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Confirm the recordings contain only project-owned or CC0 material (audio especially).",
+   "verified": "owner_confirmation_needed",
+   "id": "project-demo-videos",
+   "name": "Old example screen recordings (dance.mp4, game 154555.mp4)",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "custom",
+   "license_url": "https://github.com/EMMA019/KAGRA/blob/master/LICENSE",
+   "obtained": "2026-08-30",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game"
+   ],
+   "paths": [
+    "old/examples/media/*.mp4"
+   ],
+   "verified_how": "Screen captures of KAGRA examples. Contents were not inspected, so whether they include other people's music or art is not confirmed."
+  },
+  {
+   "license_spdx": null,
+   "license_evidence": [
+    "kagra-shared/assets/PixelMplus-LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": true,
+   "attribution_text": "PixelMplus10 font: Copyright (C) 2013 itouhiro, Copyright (C) 2002-2013 M+ FONTS PROJECT (M+ FONT LICENSE).",
+   "redistributable_in_public_repo": true,
+   "notes": "Keep the copyright notice with redistributions.",
+   "verified": "checked",
+   "id": "font-pixelmplus",
+   "name": "PixelMplus10-Regular",
+   "source": "itouhiro / M+ FONTS PROJECT",
+   "author": "itouhiro; M+ FONTS PROJECT",
+   "url": "http://itouhiro.hatenablog.com/entry/20130602/font",
+   "license": "custom",
+   "license_url": "https://mplusfonts.github.io/",
+   "obtained": "2026-08-29",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game"
+   ],
+   "paths": [
+    "kagra-shared/assets/PixelMplus10-Regular.ttf"
+   ],
+   "verified_how": "Bundled PixelMplus-LICENSE.txt names the M+ FONT LICENSE, a permissive free license (use, modify and redistribute, commercial use allowed)."
+  },
+  {
+   "license_spdx": null,
+   "license_evidence": [
+    "kagra-shared/assets/PublicSans-LICENSE.md"
+   ],
+   "receipt_ref": null,
+   "attribution_required": true,
+   "attribution_text": "Public Sans font: SIL Open Font License 1.1 (original Libre Franklin) plus CC0 modifications by the US General Services Administration.",
+   "redistributable_in_public_repo": true,
+   "notes": "The OFL text was missing from the repo before this ledger.",
+   "verified": "checked",
+   "id": "font-publicsans",
+   "name": "Public Sans Bold",
+   "source": "USWDS (GSA)",
+   "author": "USWDS / GSA; original Libre Franklin by Impallari Type",
+   "url": "https://github.com/uswds/public-sans",
+   "license": "custom",
+   "license_url": "https://github.com/uswds/public-sans/blob/master/LICENSE.md",
+   "obtained": "2026-10-22",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game"
+   ],
+   "paths": [
+    "kagra-shared/assets/PublicSans-Bold.ttf"
+   ],
+   "verified_how": "Upstream LICENSE.md fetched 2026-10-24: OFL 1.1 for the original, CC0 for GSA changes. The OFL requires the license text to travel with the font; this PR adds it as PublicSans-LICENSE.md."
+  },
+  {
+   "license_spdx": "ODbL-1.0",
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": true,
+   "attribution_text": "Map data: © OpenStreetMap contributors, available under the Open Database License (ODbL 1.0).",
+   "redistributable_in_public_repo": true,
+   "notes": "ODbL requires the credit above and share-alike for adapted databases. Owner may want to review the share-alike effect.",
+   "verified": "checked",
+   "id": "map-shibuya-osm",
+   "name": "Shibuya demo street map (from OpenStreetMap)",
+   "source": "openstreetmap",
+   "author": "OpenStreetMap contributors",
+   "url": "https://www.openstreetmap.org/copyright",
+   "license": "custom",
+   "license_url": "https://opendatacommons.org/licenses/odbl/1-0/",
+   "obtained": "2026-08-14",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game"
+   ],
+   "paths": [
+    "kagra-shared/assets/maps/shibuya_demo.kagra.json"
+   ],
+   "verified_how": "The file's meta says tool osm_bake.py with origin lon/lat 139.7015, 35.659 (Shibuya), so it is derived from OpenStreetMap."
+  },
+  {
+   "license_spdx": null,
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Confirm demo_city was hand-made and not baked from OpenStreetMap.",
+   "verified": "owner_confirmation_needed",
+   "id": "map-demo-city",
+   "name": "Demo city map",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "custom",
+   "license_url": "https://github.com/EMMA019/KAGRA/blob/master/LICENSE",
+   "obtained": "2026-08-14",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game"
+   ],
+   "paths": [
+    "kagra-shared/assets/maps/demo_city.kagra.json"
+   ],
+   "verified_how": "No origin or tool recorded in the file (unlike shibuya_demo)."
+  },
+  {
+   "license_spdx": null,
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": false,
+   "notes": "Any future Mixamo file goes under assets-private/ only.",
+   "verified": "checked",
+   "id": "private-mixamo",
+   "name": "Adobe Mixamo characters and animations (not committed)",
+   "source": "mixamo",
+   "author": "Adobe",
+   "url": "https://www.mixamo.com/",
+   "license": "custom",
+   "license_url": "https://helpx.adobe.com/creative-cloud/faq/mixamo-faq.html",
+   "obtained": "not committed",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game"
+   ],
+   "paths": [
+    "assets-private/mixamo/**"
+   ],
+   "verified_how": "Adobe's Mixamo terms allow use in games but not redistribution of the files as stand-alone assets. The repo holds no Mixamo binary (tests/fixtures/synthetic_mixamo_hang.json is hand-made data)."
+  }
+ ]
+}

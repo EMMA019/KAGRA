@@ -6,7 +6,8 @@ hero out of boxes. Collect it, check it, then reference the path.
 
 ## License
 
-Only **CC0** and **CC-BY**. Record the source URL, the license, and the
+Every committed asset is recorded in `assets/LEDGER.json` (see `docs/asset_ledger.md`: ledger, CI license check,
+import checks, and the private-assets design). Only **CC0** and **CC-BY**. Record the source URL, the license, and the
 credit line next to the files. CC-BY must keep that credit. Do not download
 paid packs, ShareAlike, non-commercial, or "free for personal use" files.
 

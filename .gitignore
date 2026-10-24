@@ -133,3 +133,5 @@ examples/*.mp4
 
 # torneko headless runner stray save (--seed フラグのパース残り)
 --seed*
+
+assets-private/
