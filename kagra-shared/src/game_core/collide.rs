@@ -66,6 +66,36 @@ impl Hitbox {
             && y < self.hit_top
     }
 
+    /// The feet moved from (x0, z0) to (x1, z1) this substep: does that
+    /// segment touch the box in x AND z (slab test)? Catches a side entry,
+    /// not only a front one.
+    /// `half_w` is the runner's own body half-width in x.
+    pub fn sweep_hit(&self, x0: f32, z0: f32, x1: f32, z1: f32, y: f32, half_w: f32) -> bool {
+        if y >= self.hit_top {
+            return false;
+        }
+        let (mut lo, mut hi) = (0.0f32, 1.0f32);
+        for (a, b, c, h) in [
+            (x0, x1, self.hit_cx, self.hit_hx + half_w),
+            (z0, z1, self.hit_cz, self.hit_hz),
+        ] {
+            let d = b - a;
+            if d.abs() < 1e-6 {
+                if (a - c).abs() > h {
+                    return false;
+                }
+            } else {
+                let (t0, t1) = ((c - h - a) / d, (c + h - a) / d);
+                lo = lo.max(t0.min(t1));
+                hi = hi.min(t0.max(t1));
+                if lo > hi {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
     /// Point inside the box grown by `pad` (sparks, pickups).
     pub fn contains_padded(&self, x: f32, y: f32, z: f32, pad: f32) -> bool {
         let hx = (self.hit_hx + pad).max(0.1);

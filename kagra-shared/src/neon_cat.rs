@@ -533,6 +533,8 @@ impl NeonCat {
         self.swipes.clear();
         self.lane_target = None;
         self.drag_target = None;
+        self.drag.reset();
+        self.swiper.reset();
         self.flow.enter_play();
         self.rebuild();
     }
@@ -661,7 +663,9 @@ impl NeonCat {
         self.vx += (steer * self.spec.runner.lanes.steer - self.vx) * response;
         if let Some(t) = self.drag_target {
             let k = 1.0 - (-dt / self.spec.input.drag_smooth_secs.max(1e-3)).exp();
-            self.vx = (t - self.x) * k / dt.max(1e-4);
+            // Capped so a fast drag still reads as motion, not a teleport.
+            let cap = self.spec.runner.lanes.steer * 3.0;
+            self.vx = ((t - self.x) * k / dt.max(1e-4)).clamp(-cap, cap);
         } else if let Some(t) = self.lane_target {
             // Ease into the lane centre without overshoot, capped at steer speed.
             let held = (self.key_right as i32 - self.key_left as i32) as f32 + self.pad_x;
@@ -699,6 +703,7 @@ impl NeonCat {
             self.vy = 0.0;
         }
         self.core.juice.land_squash = (self.core.juice.land_squash - dt).max(0.0);
+        let (x0, z0) = (self.x, self.z);
         self.x += self.vx * dt;
         if self.x.abs() > self.spec.runner.lanes.limit {
             self.x = self.x.signum() * self.spec.runner.lanes.limit;
@@ -716,7 +721,7 @@ impl NeonCat {
         // Grace covers the spawn stretch. The rail is not a kill plane,
         // so steering into it during grace cannot strand the cat outside.
         if self.time >= self.spec.runner.jump.grace_secs {
-            self.touch_obstacles();
+            self.touch_obstacles_swept(x0, z0);
         }
         if self.core.stats.alive {
             self.collect_rings();
@@ -764,7 +769,13 @@ impl NeonCat {
         self.fov_spring.step(self.fov_for_speed(), 2.4, dt);
     }
 
+    #[cfg(test)]
     fn touch_obstacles(&mut self) {
+        self.touch_obstacles_swept(self.x, self.z);
+    }
+
+    /// Full x/z sweep of this substep's feet path against nearby boxes.
+    fn touch_obstacles_swept(&mut self, x0: f32, z0: f32) {
         let i0 = near_index(
             self.z,
             self.spec.runner.obstacle_track.z0,
@@ -779,7 +790,7 @@ impl NeonCat {
                 continue;
             }
             let shape = obstacle_shape(&self.spec, i);
-            if shape.feet_hit(self.x, self.y, self.z) {
+            if shape.sweep_hit(x0, z0, self.x, self.z, self.y, CAT_HALF_W) {
                 self.crash(&shape.kind);
                 return;
             }
@@ -816,6 +827,8 @@ impl NeonCat {
         }
         self.core.juice.hit(0.46, 0.11);
         self.vy = 0.0;
+        self.drag_target = None;
+        self.lane_target = None;
         self.burst(self.x, self.y + 0.4, self.z, 18, [255, 60, 170], 4.6, 0.16);
         self.burst(self.x, self.y + 0.5, self.z, 10, [90, 240, 255], 3.2, 0.12);
         crate::mixer::cue_sfx("fire");
@@ -1370,7 +1383,12 @@ impl Kit for NeonCat {
     /// One substep never moves further than `speed.max_step`. At the cap a
     /// 50 ms frame moves 1 m, which skipped a 0.4 m crate.
     fn substeps(&self, dt: f32) -> u32 {
-        ((self.speed() * dt) / self.spec.runner.speed.max_step)
+        // Sized by the larger of forward and sideways travel.
+        let lateral = self
+            .vx
+            .abs()
+            .max(self.spec.runner.lanes.steer * 3.0 * self.drag_target.is_some() as u8 as f32);
+        ((self.speed().max(lateral) * dt) / self.spec.runner.speed.max_step)
             .ceil()
             .max(1.0) as u32
     }
@@ -1405,6 +1423,10 @@ impl Kit for NeonCat {
 }
 
 type ObstacleShape = Hitbox;
+
+/// The cat's body half-width. Feet were a point, so a side touch let the
+/// body sink into a crate before it counted.
+const CAT_HALF_W: f32 = 0.1;
 
 /// Local AABB after the glTF node bake (`mesh.bounds()`), times the prop
 /// scale. Y stays on the floor. XZ is centered on `(obs_x, obs_z)`.
@@ -1866,10 +1888,12 @@ mod tests {
     #[test]
     fn golden_runs_match_the_pre_port_numbers() {
         // Recorded on master ffd6ee7, before constants moved into GameSpec.
+        // Run 2 re-recorded when the cat got a body half-width (CAT_HALF_W):
+        // it used to slide past a barrier edge with its body inside it.
         type Golden = (u32, u32, u32, &'static str);
         let cases: [(f32, u32, Golden); 4] = [
             (0.013, 47, (4252, 13, 4642, "BARREL")),
-            (0.031, 23, (3004, 15, 2667, "BARRIER")),
+            (0.031, 23, (1080, 5, 1240, "BARRIER")),
             (0.0, 1000, (156, 1, 144, "CRATE")),
             (0.007, 11, (657, 2, 1010, "BARREL")),
         ];
@@ -2093,6 +2117,120 @@ mod tests {
             crash.tick(1.0 / 60.0);
         }
         assert_eq!(crash.phase_name(), "result");
+    }
+
+    fn pev(id: u32, phase: crate::input::PointerPhase, x: f32) -> crate::input::PointerEvent {
+        crate::input::PointerEvent {
+            id,
+            x,
+            y: 1600.0,
+            phase,
+            pressure: 0.5,
+        }
+    }
+
+    #[test]
+    fn drag_keeps_working_over_five_retries_with_lost_pointerups() {
+        use crate::input::PointerPhase as P;
+        let mut run = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        run.confirm();
+        for attempt in 0..5u32 {
+            let id = attempt + 1;
+            for _ in 0..30 {
+                run.tick(1.0 / 60.0);
+            }
+            let x0 = run.x();
+            // Drag one lane screen-right (world -X) and hold.
+            run.touch(pev(id, P::Begin, 540.0), 1080, 2340, attempt as f32 * 100.0);
+            for f in 1..=12 {
+                let x = 540.0 + 194.4 * (f as f32 / 12.0);
+                run.touch(
+                    pev(id, P::Move, x),
+                    1080,
+                    2340,
+                    attempt as f32 * 100.0 + f as f32 / 60.0,
+                );
+                run.tick(1.0 / 60.0);
+            }
+            for _ in 0..20 {
+                run.tick(1.0 / 60.0);
+            }
+            assert!(
+                x0 - run.x() > 0.9,
+                "run {attempt}: a 1-lane drag moved {:.2} m",
+                x0 - run.x()
+            );
+            // The pointerup is lost (result overlay swallowed it): die, retry.
+            for _ in 0..60 * 30 {
+                run.tick(1.0 / 60.0);
+                if run.phase_name() == "result" {
+                    break;
+                }
+            }
+            assert_eq!(run.phase_name(), "result", "run {attempt} should end");
+            run.confirm();
+            for _ in 0..5 {
+                run.tick(1.0 / 60.0);
+                if run.phase_name() != "play" {
+                    run.confirm();
+                }
+            }
+            assert!(!run.touch_active(), "retry clears stale fingers");
+        }
+    }
+
+    #[test]
+    fn sideways_drag_into_a_crate_beside_the_cat_kills() {
+        // Every frame offset: the cat drags from the next lane across the
+        // crate while their z ranges overlap. Swept x/z must catch it.
+        let box0 = obstacle_shape(0);
+        let mut kills = 0;
+        for lead in 0..24 {
+            for top_speed in [false, true] {
+                let mut run = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+                run.confirm();
+                run.time = 10.0;
+                if top_speed {
+                    run.time = 1e4;
+                }
+                let w = run.spec.runner.lanes.width;
+                run.x = box0.hit_cx + w;
+                run.z = box0.hit_cz - box0.hit_hz - run.speed() * lead as f32 / 120.0;
+                run.drag_target = Some(box0.hit_cx - w);
+                let mut path_hits = false;
+                for _ in 0..40 {
+                    let (x0, z0) = (run.x, run.z);
+                    run.tick(1.0 / 60.0);
+                    if !run.core.stats.alive {
+                        break;
+                    }
+                    path_hits |= box0.sweep_hit(x0, z0, run.x, run.z, 0.0, CAT_HALF_W);
+                }
+                assert!(
+                    !path_hits,
+                    "lead {lead}: path crossed the box but the cat lived"
+                );
+                if !run.core.stats.alive {
+                    assert_eq!(run.death(), "CRATE");
+                    kills += 1;
+                }
+            }
+        }
+        assert!(kills > 4, "side entries should kill, got {kills}");
+    }
+
+    #[test]
+    fn swept_hitbox_catches_side_entry_and_tunnelling() {
+        let b = obstacle_shape(0);
+        let (cx, cz) = (b.hit_cx, b.hit_cz);
+        // Sideways only, z already overlapping.
+        assert!(b.sweep_hit(cx + 1.2, cz, cx - 1.2, cz, 0.0, 0.0));
+        // Diagonal across the box in one big step.
+        assert!(b.sweep_hit(cx + 1.0, cz - 1.0, cx - 1.0, cz + 1.0, 0.0, 0.0));
+        // Beside, never inside.
+        assert!(!b.sweep_hit(cx + 1.2, cz - 1.0, cx + 1.2, cz + 1.0, 0.0, 0.0));
+        // Over the top.
+        assert!(!b.sweep_hit(cx + 1.2, cz, cx - 1.2, cz, b.hit_top + 0.1, 0.0));
     }
 
     #[test]

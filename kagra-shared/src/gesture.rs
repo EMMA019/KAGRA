@@ -70,6 +70,11 @@ impl Default for SwipeRecognizer {
 }
 
 impl SwipeRecognizer {
+    /// Forget every finger (retry, result screen, lost pointer capture).
+    pub fn reset(&mut self) {
+        self.tracks.clear();
+    }
+
     /// Any finger currently down.
     pub fn active(&self) -> bool {
         !self.tracks.is_empty()
@@ -205,7 +210,18 @@ impl Default for DragFlick {
     }
 }
 
+/// A finger with no events for this long is treated as lifted.
+pub const STALE_SECS: f32 = 1.5;
+
 impl DragFlick {
+    /// Forget every finger and the primary. A host that loses a pointerup
+    /// (overlay on top, capture lost) must not leave a stale primary that
+    /// blocks every later drag.
+    pub fn reset(&mut self) {
+        self.tracks.clear();
+        self.primary = None;
+    }
+
     pub fn active(&self) -> bool {
         !self.tracks.is_empty()
     }
@@ -215,6 +231,8 @@ impl DragFlick {
         let mut out = Vec::new();
         match ev.phase {
             PointerPhase::Begin => {
+                // Tracks silent for STALE_SECS lost their End somewhere.
+                self.tracks.retain(|_, tr| t - tr.lt < STALE_SECS);
                 self.tracks.insert(
                     ev.id,
                     DragTrack {
@@ -229,7 +247,13 @@ impl DragFlick {
                         ey: ev.y,
                     },
                 );
-                if self.primary.is_none() {
+                // A primary whose track is gone, or a Begin reusing the
+                // primary's id, means its End was lost: take over.
+                let stale = match self.primary {
+                    Some(p) => p == ev.id || !self.tracks.contains_key(&p),
+                    None => true,
+                };
+                if stale {
                     self.primary = Some(ev.id);
                     out.push(DragEvent::Start);
                 }
