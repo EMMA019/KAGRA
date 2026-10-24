@@ -4,6 +4,14 @@
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--dump-world") {
+        let g = kagra_shared::hop_beat::HopBeat::new(kagra_shared::hop_beat::HopSpec::default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&g.world_value()).unwrap()
+        );
+        return;
+    }
     let write = args.iter().any(|a| a == "--write");
     let spec = match args.iter().find(|a| !a.starts_with("--")) {
         Some(path) => {

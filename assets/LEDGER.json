@@ -894,6 +894,69 @@
     "assets/textures/neon_cat/*.png"
    ],
    "verified_how": "Drawn by tools/gen_assets/cat_wall.py from hash noise, panel seams and tie holes (no photos, no input images); --check rebuilds both PNGs and compares bytes."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/audio/hop_beat/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Original procedural music (no samples, no AI model). Rebuild: tools/music/render_all.py --seed 1 (kit lives outside the repo until imported). mp3 = shipping format; ogg optional.",
+   "verified": "owner_confirmed",
+   "id": "project-hop-beat-music",
+   "name": "HOP-BEAT music (procedural loop + stingers)",
+   "source": "project",
+   "author": "KAGRA project (Emma)",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-25",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/audio/hop_beat/hop_beat_*.mp3",
+    "assets/audio/hop_beat/hop_beat_beatgrid.json"
+   ],
+   "verified_how": "Synthesised from oscillator/noise maths by the KAGRA music kit (seeded, deterministic); no third-party material. The owner listened to it and confirmed the CC0 dedication in assets/audio/hop_beat/LICENSE.txt on 2026-10-25 (Emma's chat confirmation).",
+   "verified_on": "2026-10-25",
+   "verified_source": "Emma's chat confirmation"
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "verified": "checked",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-25",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "notes": "",
+   "id": "project-hop-beat-sfx",
+   "name": "HOP-BEAT effects (hop, land, perfect, good, combo, hit, fall)",
+   "paths": [
+    "assets/audio/hop_beat/*.wav"
+   ],
+   "verified_how": "Synthesised by tools/gen_assets/hop_audio.py from sine, triangle, saw and noise maths (no samples, no input audio); the script's --check rebuilds every file and compares bytes."
   }
  ]
 }

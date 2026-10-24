@@ -37,6 +37,10 @@ pub const SFX_CUES: [&str; 10] = [
     "hop", "land", "perfect", "good", "combo", "hit", "fall", "gameover", "revive", "newbest",
 ];
 
+/// Cues that are long music stingers (mp3 from the music pack); the rest are
+/// short generated effects (wav).
+pub const STINGERS: [&str; 3] = ["gameover", "revive", "newbest"];
+
 pub fn is_hop_dump(json: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(json)
         .ok()
@@ -299,7 +303,7 @@ impl Default for HopAudio {
             bgm_volume: 0.7,
             sfx_volume: 1.0,
             bgm: BgmSpec {
-                file: format!("{AUDIO_DIR}/loop_120.wav"),
+                file: format!("{AUDIO_DIR}/hop_beat_loop.mp3"),
                 volume: 0.8,
                 fade_secs: 0.3,
             },
@@ -309,7 +313,11 @@ impl Default for HopAudio {
                     (
                         n.to_string(),
                         SfxSpec {
-                            file: format!("{AUDIO_DIR}/{n}.wav"),
+                            file: if STINGERS.contains(n) {
+                                format!("{AUDIO_DIR}/hop_beat_{n}.mp3")
+                            } else {
+                                format!("{AUDIO_DIR}/{n}.wav")
+                            },
                             volume: if *n == "land" { 0.5 } else { 0.9 },
                             rate: 1.0,
                         },
@@ -935,6 +943,7 @@ pub struct HopBeat {
     ground_t: f32,
     /// Skip building the picture (the measure harness plays thousands of frames).
     headless: bool,
+    touches: u32,
     /// Clears in a row without damage.
     streak: u32,
     y: f32,
@@ -1026,6 +1035,7 @@ impl HopBeat {
             recent_hop: None,
             ground_t: f32::MIN,
             headless: false,
+            touches: 0,
             streak: 0,
             y: 0.0,
             y_vis_off: 0.0,
@@ -1161,8 +1171,54 @@ impl HopBeat {
     }
 
     /// The one button. `true` on touch down / key down, `false` on release.
+    /// Direct-into-play: the next run waits for the first tap instead of
+    /// starting at once.
+    pub fn set_direct(&mut self, on: bool) {
+        self.spec.play.direct = on;
+    }
+
     pub fn set_headless(&mut self, on: bool) {
         self.headless = on;
+    }
+
+    /// A finger went down / came up. Several fingers count as one held button.
+    pub fn touch_begin(&mut self) {
+        self.touches += 1;
+        self.set_hold(true);
+    }
+
+    pub fn touch_end(&mut self) {
+        self.touches = self.touches.saturating_sub(1);
+        if self.touches == 0 {
+            self.set_hold(false);
+        }
+    }
+
+    /// Raw pointer for the session: menus and confirm outside play, the one
+    /// button during it.
+    pub fn pointer_event(
+        &mut self,
+        phase: crate::input::PointerPhase,
+        x: f32,
+        y: f32,
+        w: u32,
+        h: u32,
+    ) {
+        use crate::input::PointerPhase as P;
+        match (self.flow.phase, phase) {
+            (FlowPhase::Play, P::Begin) => self.touch_begin(),
+            (FlowPhase::Play, P::End | P::Cancel) => self.touch_end(),
+            (FlowPhase::Title | FlowPhase::Result, P::Begin) => {
+                if !self.pointer(x, y, w, h) {
+                    self.confirm();
+                }
+            }
+            (FlowPhase::Pause, P::Begin) => {
+                self.pointer(x, y, w, h);
+            }
+            (_, P::End | P::Cancel) => self.touch_end(),
+            _ => {}
+        }
     }
 
     pub fn hold_down(&self) -> bool {
@@ -1737,6 +1793,15 @@ impl HopBeat {
         }
     }
 
+    /// The baked world file for this spec: `{"version", "genre", "game"}`.
+    pub fn world_value(&self) -> serde_json::Value {
+        // Via a string so f32 fields print as 0.3, not 0.30000001192092896.
+        let game: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&self.spec).unwrap_or_default())
+                .unwrap_or_default();
+        json!({"version": 1, "genre": GAME_ID, "game": game})
+    }
+
     pub fn state_json(&self) -> String {
         self.state_value().to_string()
     }
@@ -1779,6 +1844,10 @@ impl HopBeat {
             "direct": self.spec.play.direct,
             "invulnerable": self.invuln > 0.0,
             "song_t": self.song_t,
+            // Where the music file should be right now (the inverse of the
+            // clock sync), so a page that restarts the source can seek to it.
+            "music_t": (self.song_t - self.clock_base + self.latency_secs()).max(0.0),
+            "music_loop_secs": self.spec.music.loop_bars as f32 * self.spec.music.beats_per_bar as f32 * self.spec.beat_secs(),
             "beat": beat,
             "bpm": self.spec.music.bpm,
             "latency_ms": self.latency_user_ms + self.spec.music.offset_ms,
@@ -2416,6 +2485,20 @@ mod tests {
         let samples =
             s.music.loop_bars as f32 * s.music.beats_per_bar as f32 * s.beat_secs() * 44_100.0;
         assert!((samples - 2_688_000.0).abs() < 1.0, "{samples}");
+    }
+
+    #[test]
+    fn baked_fixture_is_the_default_world() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/hop_beat_world.json"
+        );
+        let text = std::fs::read_to_string(path)
+            .expect("fixture (cargo run --example hop_measure -- --dump-world)");
+        let want: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(want, HopBeat::new(HopSpec::default()).world_value());
+        assert!(is_hop_dump(&text));
+        HopBeat::from_json(&text).unwrap();
     }
 
     #[test]

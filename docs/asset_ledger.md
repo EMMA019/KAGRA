@@ -20,8 +20,9 @@ each asset came from and under which license. `CREDITS.md` is generated from it.
 `license_evidence` (license files in the repo), `obtained`, `receipt_ref`
 (an opaque id such as an order number, never a file), `attribution_required`,
 `attribution_text`, `redistributable_in_public_repo`, `allowed_uses`, `paths`
-(globs), `credits` (per-asset authors), `verified` (`checked` or
-`owner_confirmation_needed`), `verified_how`, `notes`.
+(globs), `credits` (per-asset authors), `verified` (`checked`, `owner_confirmed`
+or `owner_confirmation_needed`; the owner's confirmation also records `verified_on` and
+`verified_source`), `verified_how`, `notes`.
 
 Rules the check enforces:
 

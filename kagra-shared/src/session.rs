@@ -95,6 +95,8 @@ pub enum SceneKind {
     Neon,
     /// Neon Cat runner. Not a WorldPlay genre — `neon_cat` owns the tick.
     NeonCat,
+    /// HOP-BEAT. A standalone `Kit`; `hop_beat` owns the tick.
+    HopBeat,
 }
 
 #[derive(Debug)]
@@ -117,6 +119,8 @@ pub struct SharedSession {
     pub neon: Option<crate::neon_run::NeonRun>,
     /// `"genre": "neon_cat"`. Kept off WorldPlay on purpose.
     pub cat: Option<crate::neon_cat::NeonCat>,
+    /// `"genre": "hop_beat"`.
+    pub hop: Option<crate::hop_beat::HopBeat>,
     pointers: Vec<PointerEvent>,
     pending_keys: Vec<KeyEvent>,
     /// このフレームで新しく触れた座標。`poll_pointers` の意味を変えずに
@@ -161,6 +165,7 @@ impl Default for SharedSession {
             world: None,
             neon: None,
             cat: None,
+            hop: None,
             pointers: Vec::new(),
             pending_keys: Vec::new(),
             pending_taps: Vec::new(),
@@ -215,9 +220,26 @@ impl SharedSession {
             let run = crate::neon_cat::NeonCat::from_json(json)?;
             let dump = run.dump_json();
             self.cat = Some(run);
+            self.hop = None;
             self.neon = None;
             self.world = None;
             self.kind = SceneKind::NeonCat;
+            self.paused = false;
+            #[cfg(feature = "render")]
+            {
+                self.world_meshes = false;
+            }
+            self.playtest.snapshot_loaded(&dump);
+            return Ok(());
+        }
+        if crate::hop_beat::is_hop_dump(json) {
+            let run = crate::hop_beat::HopBeat::from_json(json)?;
+            let dump = run.dump_json();
+            self.hop = Some(run);
+            self.cat = None;
+            self.neon = None;
+            self.world = None;
+            self.kind = SceneKind::HopBeat;
             self.paused = false;
             #[cfg(feature = "render")]
             {
@@ -230,6 +252,7 @@ impl SharedSession {
             let run = crate::neon_run::NeonRun::from_json(json)?;
             let dump = run.dump_json();
             self.neon = Some(run);
+            self.hop = None;
             self.cat = None;
             self.world = None;
             self.kind = SceneKind::Neon;
@@ -243,6 +266,7 @@ impl SharedSession {
         }
         self.neon = None;
         self.cat = None;
+        self.hop = None;
         let mut play = WorldPlay::from_json(json)?;
         play.load_progress();
         let dump = play.doc.to_json().unwrap_or_else(|_| json.to_string());
@@ -301,6 +325,12 @@ impl SharedSession {
                 }
             }
         }
+        if self.kind == SceneKind::HopBeat {
+            if let Some(hop) = self.hop.as_mut() {
+                let (w, h) = (self.width, self.height);
+                hop.pointer_event(ev.phase, ev.x, ev.y, w, h);
+            }
+        }
         if self.kind == SceneKind::World && matches!(ev.phase, PointerPhase::Begin) {
             if let Some(play) = self.world.as_mut() {
                 let handled = play.apply_flow_pointer(ev.x, ev.y, self.width, self.height);
@@ -352,7 +382,8 @@ impl SharedSession {
     /// タイトル画面へ。デモの起動時用。
     /// Hosts drop their own touch steering and action buttons when true.
     pub fn uses_swipe(&self) -> bool {
-        self.kind == SceneKind::NeonCat
+        // HOP-BEAT is one button on the whole canvas: no pads either.
+        matches!(self.kind, SceneKind::NeonCat | SceneKind::HopBeat)
     }
 
     pub fn show_title(&mut self) {
@@ -366,6 +397,13 @@ impl SharedSession {
         if self.kind == SceneKind::NeonCat {
             if let Some(cat) = self.cat.as_mut() {
                 cat.show_title();
+            }
+            self.paused = false;
+            return;
+        }
+        if self.kind == SceneKind::HopBeat {
+            if let Some(hop) = self.hop.as_mut() {
+                hop.show_title();
             }
             self.paused = false;
             return;
@@ -398,6 +436,13 @@ impl SharedSession {
         if self.kind == SceneKind::NeonCat {
             if let Some(cat) = self.cat.as_mut() {
                 cat.confirm();
+            }
+            self.paused = false;
+            return;
+        }
+        if self.kind == SceneKind::HopBeat {
+            if let Some(hop) = self.hop.as_mut() {
+                hop.confirm();
             }
             self.paused = false;
             return;
@@ -435,6 +480,9 @@ impl SharedSession {
     pub fn set_pad(&mut self, x: f32, y: f32) {
         self.pad.set_stick(x, y);
         self.pending_keys.extend(self.pad.drain_key_events());
+        if self.kind == SceneKind::HopBeat {
+            return; // one button: pointer and keys only
+        }
         if self.kind == SceneKind::Neon || self.kind == SceneKind::NeonCat {
             // Virtual pad +y is down the screen. Up climbs / jumps.
             self.set_play_input(x, -y, false, false, false);
@@ -463,6 +511,9 @@ impl SharedSession {
             return;
         }
         self.playtest.note_walk(lx, lz, jump, attack, dodge);
+        if self.kind == SceneKind::HopBeat {
+            return; // one button: pointer and keys only
+        }
         if self.kind == SceneKind::Neon {
             if let Some(neon) = self.neon.as_mut() {
                 if neon.phase_name() == "play" {
@@ -650,6 +701,12 @@ impl SharedSession {
                         cat.tick(crate::scene::FIXED_DT);
                     }
                 }
+                SceneKind::HopBeat => {
+                    let _ = taps;
+                    if let Some(hop) = self.hop.as_mut() {
+                        hop.tick(crate::scene::FIXED_DT);
+                    }
+                }
             }
         }
         if self.playtest.wants_snapshot() {
@@ -666,6 +723,8 @@ impl SharedSession {
             self.neon.as_ref().map(|neon| neon.dump_json())
         } else if self.kind == SceneKind::NeonCat {
             self.cat.as_ref().map(|cat| cat.dump_json())
+        } else if self.kind == SceneKind::HopBeat {
+            self.hop.as_ref().map(|hop| hop.dump_json())
         } else {
             self.world.as_ref().and_then(|play| play.doc.to_json().ok())
         };
@@ -738,6 +797,8 @@ impl SharedSession {
                 flow_stats_phase(self.neon.as_ref().map(|neon| neon.phase_name()))
             } else if self.kind == SceneKind::NeonCat {
                 flow_stats_phase(self.cat.as_ref().map(|cat| cat.phase_name()))
+            } else if self.kind == SceneKind::HopBeat {
+                flow_stats_phase(self.hop.as_ref().map(|hop| hop.phase_name()))
             } else if packaged {
                 play.map(|p| p.game.phase).unwrap_or(self.game.phase)
             } else if isle {
@@ -807,6 +868,11 @@ impl SharedSession {
                 .as_ref()
                 .map(|cat| cat.paint_hud(self.width, self.height, !self.external_menu))
                 .unwrap_or_default(),
+            SceneKind::HopBeat => self
+                .hop
+                .as_ref()
+                .map(|hop| hop.hud(self.width, self.height, !self.external_menu))
+                .unwrap_or_default(),
         };
         self.playtest.append_hud(&mut list, self.width, self.height);
         list
@@ -859,7 +925,45 @@ impl SharedSession {
                 return cat.on_key(name, down);
             }
         }
+        if self.kind == SceneKind::HopBeat {
+            if let Some(hop) = self.hop.as_mut() {
+                return hop.on_key(name, down);
+            }
+        }
         false
+    }
+
+    /// HOP-BEAT: the audio clock (seconds of music heard), or NaN for none.
+    pub fn set_music_clock(&mut self, secs: f32) {
+        if let Some(hop) = self.hop.as_mut() {
+            hop.set_music_clock(Some(secs));
+        }
+    }
+
+    /// HOP-BEAT: the player's latency setting in ms.
+    pub fn set_latency_ms(&mut self, ms: f32) {
+        if let Some(hop) = self.hop.as_mut() {
+            hop.set_latency_ms(ms);
+        }
+    }
+
+    /// HOP-BEAT: land in the run itself (the first tap starts the music).
+    pub fn set_direct_play(&mut self, on: bool) {
+        if let Some(hop) = self.hop.as_mut() {
+            hop.set_direct(on);
+        }
+    }
+
+    /// Continue after game over (what a rewarded ad buys). False when the
+    /// game has no continue or it is used up.
+    pub fn revive(&mut self) -> bool {
+        match self.hop.as_mut() {
+            Some(hop) if self.kind == SceneKind::HopBeat => {
+                self.paused = false;
+                hop.revive()
+            }
+            _ => false,
+        }
     }
 
     pub fn playtest_set_note(&mut self, note: &str) {
@@ -962,14 +1066,20 @@ impl SharedSession {
 
     /// 現在のシーンを 1 枚描く。レンダラ未接続ならエラー。
     pub fn render(&mut self) -> Result<(), String> {
-        if matches!(self.kind, SceneKind::Neon | SceneKind::NeonCat) {
+        if matches!(
+            self.kind,
+            SceneKind::Neon | SceneKind::NeonCat | SceneKind::HopBeat
+        ) {
             let hud = self.draw_list();
             let doc = match self.kind {
                 SceneKind::NeonCat => self.cat.as_ref().map(|cat| cat.document().clone()),
+                SceneKind::HopBeat => self.hop.as_ref().map(|hop| hop.document().clone()),
                 _ => self.neon.as_ref().map(|neon| neon.document().clone()),
             };
             let missing = if self.kind == SceneKind::NeonCat {
                 "no neon cat"
+            } else if self.kind == SceneKind::HopBeat {
+                "no hop beat"
             } else {
                 "no neon run"
             };

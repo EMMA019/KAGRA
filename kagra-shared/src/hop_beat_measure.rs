@@ -147,24 +147,6 @@ pub fn play(spec: &HopSpec, bot: Bot, seed: u32, max_secs: f32) -> BotRun {
         }
         g.tick(dt);
         if g.lives() < lives {
-            if std::env::var("HOP_DEBUG").is_ok() {
-                let hx = g.hero_x();
-                let near: Vec<_> = g
-                    .course()
-                    .obst
-                    .iter()
-                    .filter(|o| (o.start - hx).abs() < 8.0)
-                    .map(|o| (o.kind, o.hop, o.take_beat, o.start, o.end, o.fate))
-                    .collect();
-                eprintln!(
-                    "LOSS t={:.3} x={:.2} y={:.2} near={:?} death={}",
-                    g.song_t(),
-                    hx,
-                    g.hero_y(),
-                    near,
-                    g.death()
-                );
-            }
             lives_lost += lives - g.lives();
             lives = g.lives();
         }

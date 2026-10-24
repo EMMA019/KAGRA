@@ -197,6 +197,14 @@ impl WasmSession {
                 .map(|cat| cat.state_json())
                 .unwrap_or_else(|| "{}".into());
         }
+        if self.inner.kind == crate::session::SceneKind::HopBeat {
+            return self
+                .inner
+                .hop
+                .as_ref()
+                .map(|hop| hop.state_json())
+                .unwrap_or_else(|| "{}".into());
+        }
         if self.inner.kind == crate::session::SceneKind::Collectathon {
             serde_json::to_string(&self.inner.isle.game).unwrap_or_else(|_| "{}".into())
         } else {
@@ -210,6 +218,29 @@ impl WasmSession {
         self.inner
             .load_game_json(json)
             .map_err(|e| JsValue::from_str(&e))
+    }
+
+    /// HOP-BEAT: seconds of music heard so far (the audio clock). NaN = none.
+    #[wasm_bindgen(js_name = setMusicClock)]
+    pub fn set_music_clock(&mut self, secs: f32) {
+        self.inner.set_music_clock(secs);
+    }
+
+    /// HOP-BEAT: the player's latency setting, ms.
+    #[wasm_bindgen(js_name = setLatencyMs)]
+    pub fn set_latency_ms(&mut self, ms: f32) {
+        self.inner.set_latency_ms(ms);
+    }
+
+    /// HOP-BEAT: skip the title card; the first tap starts the music.
+    #[wasm_bindgen(js_name = setDirectPlay)]
+    pub fn set_direct_play(&mut self, on: bool) {
+        self.inner.set_direct_play(on);
+    }
+
+    /// Continue after game over. True when it worked.
+    pub fn revive(&mut self) -> bool {
+        self.inner.revive()
     }
 
     /// Mixer cues for the page to play (wasm has no speakers of its own).
