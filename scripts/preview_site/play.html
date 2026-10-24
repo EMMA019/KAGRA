@@ -239,17 +239,17 @@
 <body>
   <div id="app">
     <canvas id="c"></canvas>
-    <div id="hud"><a id="home" href="./index.html">一覧</a><span id="phaseLabel"></span></div>
+    <div id="hud"><a id="home" href="./index.html" data-i18n="home" data-portal="hide">一覧</a><span id="phaseLabel"></span></div>
     <div id="pads">
-      <div id="stick" class="pad">移動</div>
-      <div id="act" class="pad">アクション</div>
-      <div id="jump" class="pad">ジャンプ</div>
+      <div id="stick" class="pad" data-i18n="pad.move">移動</div>
+      <div id="act" class="pad" data-i18n="pad.act">アクション</div>
+      <div id="jump" class="pad" data-i18n="pad.jump">ジャンプ</div>
     </div>
     <div id="overlay">
       <div class="card">
         <h1 id="title">KAGRA</h1>
         <h2 id="gameover" hidden>GAME OVER</h2>
-        <p id="blurb" class="hint">タップではじめる。左が移動、右下ジャンプ、右上アクション。</p>
+        <p id="blurb" class="hint" data-i18n="blurb">タップではじめる。左が移動、右下ジャンプ、右上アクション。</p>
         <p id="death" class="hint" hidden></p>
         <div class="panel goals" id="goalsTitle" hidden></div>
         <div id="result" hidden>
@@ -262,14 +262,16 @@
             <div id="rows"></div>
           </div>
         </div>
-        <p><button id="start" type="button">はじめる</button></p>
-        <p><button id="sound" type="button" hidden>サウンド: ON</button></p>
-        <p class="hint" id="keys">WASD / 矢印、Space ジャンプ、J アクション。縦でも横でも同じ配置です。</p>
-        <p id="catalogRow"><a class="btn" href="./index.html">ジャンル一覧</a></p>
+        <p><button id="start" type="button" data-i18n="start">はじめる</button></p>
+        <p><button id="sound" type="button" hidden data-i18n="sound.on">サウンド: ON</button></p>
+        <p class="hint" id="keys" data-i18n="keys">WASD / 矢印、Space ジャンプ、J アクション。縦でも横でも同じ配置です。</p>
+        <p id="catalogRow" data-portal="hide"><a class="btn" href="./index.html" data-i18n="catalog">ジャンル一覧</a></p>
       </div>
     </div>
-    <div id="boot">読み込み中…</div>
+    <div id="boot" data-i18n="boot">読み込み中…</div>
   </div>
+  <script src="./i18n.js"></script>
+  <script src="./portal.js"></script>
   <script type="module">
     import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js";
 
@@ -279,9 +281,13 @@
     const hud = document.getElementById("hud");
     let canvas = document.getElementById("c");
     const params = new URLSearchParams(location.search);
-    const requestedBackend = (params.get("backend") || "auto").toLowerCase();
+    const t = globalThis.kagraT || ((k) => k);
+    // ?debug=1 and ?backend= are development tools: they need ?dev=1 as well.
+    const dev = params.get("dev") === "1";
+    const requestedBackend = (dev ? (params.get("backend") || "auto") : "auto").toLowerCase();
     let activeBackend = requestedBackend === "webgl" || requestedBackend === "webgl2" ? "gl" : requestedBackend;
-    const slug = (params.get("game") || "neon_run").trim() || "neon_run";
+    const metaGame = document.querySelector('meta[name="kagra-game"]')?.content || "";
+    const slug = (metaGame || params.get("game") || "neon_run").trim() || "neon_run";
     // Swipe games (Neon Cat kit) read gestures in the engine: no pads at all.
     let swipeMode = false;
     const applySwipeMode = () => {
@@ -295,7 +301,7 @@
       document.getElementById("keys")?.remove();
       document.getElementById("start").classList.add("styled");
       const blurbEl = document.getElementById("blurb");
-      if (blurbEl) blurbEl.textContent = "タップではじめる。指を置いたまま左右にドラッグで移動、上フリックでジャンプ、下フリックで急降下。";
+      if (blurbEl) blurbEl.textContent = t("blurb.swipe");
     };
 
     const fail = (text) => {
@@ -483,9 +489,9 @@
     // Missions and the best score for the title and result cards. Mission
     // wording comes from the spec; the three stock kinds get Japanese text.
     const GOAL_TEXT = {
-      coins: (n) => `コインを${n}枚あつめる`,
-      gates: (n) => `ゲートを${n}回くぐる`,
-      perch: (n) => `高いところに${n}回のる`,
+      coins: (n) => t("goal.coins", { n }),
+      gates: (n) => t("goal.gates", { n }),
+      perch: (n) => t("goal.perch", { n }),
     };
     const GOAL_STOCK = { coins: "COINS", gates: "GATES", perch: "PERCH" };
     const goalText = (m) => {
@@ -500,11 +506,11 @@
       if (el.hidden) return;
       const head = document.createElement("h3");
       const title = document.createElement("span");
-      title.textContent = list.length ? heading : "ベストスコア";
+      title.textContent = list.length ? heading : t("best.title");
       head.appendChild(title);
       if (hasBest) {
         const em = document.createElement("em");
-        em.textContent = `ベスト ${Number(best)}`;
+        em.textContent = t("best", { n: Number(best) });
         head.appendChild(em);
       }
       el.appendChild(head);
@@ -544,6 +550,8 @@
     let session;
     let bundle;
     let audioSpec = null;
+    let portalHost = null; // portal.js: ads and gameplay events for a web-game portal
+    let portalPage = null;
     try {
       if (navigator.gpu && navigator.gpu.requestAdapter) {
         const adapter = await navigator.gpu.requestAdapter();
@@ -562,6 +570,9 @@
       const bundleRes = await fetch(fileUrl(site, `games/${slug}/bundle.json`));
       if (!bundleRes.ok) throw new Error(`bundle.json ${bundleRes.status}`);
       bundle = await bundleRes.json();
+      portalHost = globalThis.KagraPortal.fromPage(window, document, bundle.platform && bundle.platform.ads);
+      portalHost.loadingStart();
+      portalHost.init();
       document.title = bundle.title || slug;
       document.getElementById("title").textContent = bundle.title || slug;
       const files = Array.isArray(bundle.files) ? bundle.files : [];
@@ -578,7 +589,7 @@
           const bytes = new Uint8Array(await res.arrayBuffer());
           session.mountFile(path, bytes);
           done += 1;
-          boot.textContent = `読み込み ${done} / ${files.length}`;
+          boot.textContent = t("boot.progress", { done, total: files.length });
         }
       });
       await Promise.all(workers);
@@ -621,9 +632,9 @@
       applySwipeMode();
       if (session.setExternalMenu) session.setExternalMenu(true);
       session.showTitle();
-      if (params.get("debug") === "1" && session.setDebug) session.setDebug(true);
+      if (dev && params.get("debug") === "1" && session.setDebug) session.setDebug(true);
     } catch (err) {
-      fail(`起動できませんでした。\n${err}\n\nwasm が無いときは ./scripts/build_wasm.sh のあと、このページを出してください。`);
+      fail(t("err.start", { err }));
       throw err;
     }
 
@@ -679,7 +690,7 @@
       rendering = session.hasRenderer();
     } catch (err) {
       if (startBackend === "gl") {
-        fail(`描画を開始できません。\n${err}\n\nWebGL2 か WebGPU が必要です。`);
+        fail(t("err.render", { err }));
         throw err;
       }
       console.warn("kagra: WebGPU attach failed, trying WebGL2", err);
@@ -691,11 +702,12 @@
         await attachBackend("gl");
         rendering = session.hasRenderer();
       } catch (err2) {
-        fail(`描画を開始できません。\n${err2}\n\nWebGL2 か WebGPU が必要です。`);
+        fail(t("err.render", { err: err2 }));
         throw err2;
       }
     }
     boot.style.display = "none";
+    portalHost.loadingFinished();
 
     // ---- Sound. Built only when the spec has `audio` (Neon Cat kit); other
     // games stay silent as before. The browser opens the output on the first
@@ -722,7 +734,7 @@
     const paintSound = () => {
       if (!audio || !audio.usable) { soundBtn.hidden = true; return; }
       soundBtn.hidden = false;
-      soundBtn.textContent = audio.muted ? "サウンド: OFF" : "サウンド: ON";
+      soundBtn.textContent = audio.muted ? t("sound.off") : t("sound.on");
       soundBtn.setAttribute("aria-pressed", audio.muted ? "true" : "false");
     };
     const toggleSound = () => {
@@ -736,7 +748,7 @@
       for (const type of ["pointerdown", "pointerup", "touchend", "click", "keydown"]) {
         window.addEventListener(type, () => audio.unlock(), { capture: true, passive: true });
       }
-      document.addEventListener("visibilitychange", () => audio.hidden(document.hidden));
+      document.addEventListener("visibilitychange", () => audio.hidden(document.hidden || portalPage.blocked()));
       soundBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
       soundBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); toggleSound(); });
       window.addEventListener("keydown", (e) => { if (e.key === "m" || e.key === "M") toggleSound(); });
@@ -748,6 +760,9 @@
     const clamp = (v) => Math.max(-1, Math.min(1, v));
     let phase = "title";
     globalThis.kagraPreview = session;
+    portalPage = globalThis.KagraPortal.bindPage({
+      win: window, doc: document, host: portalHost, session, audio, t, getPhase: () => phase,
+    });
 
     let boardDone = false;
     let resultAt = 0;
@@ -755,7 +770,7 @@
     // ---- Local ranking. Device only (localStorage), no network. The sim hands
     // over `result` = {key, columns, top_n, sort, run}; nothing here is Neon Cat
     // specific, so another kit with the same `hud.result.board` gets the same list.
-    const COLUMN_LABEL = { time: "生存", gates: "ゲート", coins: "コイン", score: "スコア" };
+    const COLUMN_LABEL = { time: t("col.time"), gates: t("col.gates"), coins: t("col.coins"), score: t("col.score") };
     const fmtTime = (t) => {
       const m = Math.floor(t / 60);
       const sec = (t - m * 60).toFixed(1).padStart(m ? 4 : 1, "0");
@@ -855,15 +870,16 @@
       if (phase === "complete") resultAt = performance.now();
       const playing = phase === "playing";
       if (!playing) cancelCanvasPointers();
+      portalPage.phase(phase);
       overlay.classList.toggle("visible", !playing);
       pads.classList.toggle("visible", playing && !swipeMode);
       hud.classList.toggle("visible", playing);
       document.documentElement.dataset.menu = playing ? "0" : "1";
       if (!playing && phase !== "complete") session.showTitle();
-      const label = playing ? "プレイ中" : phase === "complete" ? "リザルト" : "タイトル";
+      const label = playing ? t("phase.playing") : phase === "complete" ? t("phase.result") : t("phase.title");
       document.getElementById("phaseLabel").textContent =
         `${bundle.title || slug} · ${label} · ${sharedVersion()}`;
-      document.getElementById("start").textContent = phase === "complete" ? "もう一度" : "はじめる";
+      document.getElementById("start").textContent = phase === "complete" ? t("retry") : t("start");
       const death = document.getElementById("death");
       const resultBox = document.getElementById("result");
       const gameover = document.getElementById("gameover");
@@ -873,7 +889,9 @@
       if (phase === "complete" && reason) {
         death.hidden = false;
         // The sim's own wording (hud.result.deaths in the spec); the raw name is the fallback.
-        death.textContent = swipeMode ? (sim.death_text || reason) : `HIT ${reason}`;
+        death.textContent = swipeMode
+          ? (globalThis.KagraI18n.create(globalThis.kagraLang).tryT(`death.${reason}`) || sim.death_text || reason)
+          : t("hit", { reason });
       } else {
         death.hidden = true;
         death.textContent = "";
@@ -890,12 +908,12 @@
       const runGoals = document.getElementById("runGoals");
       const bestNow = Math.max(Number(sim.best) || 0, loadBest(slug));
       if (swipeMode && phase === "title") {
-        renderGoals(goalsTitle, sim.missions, bestNow, "ミッション");
+        renderGoals(goalsTitle, sim.missions, bestNow, t("missions"));
       } else {
         goalsTitle.hidden = true;
       }
       if (showResult) {
-        renderGoals(runGoals, sim.result.missions || sim.missions, Math.max(bestNow, Number(sim.score) || 0), "ミッション");
+        renderGoals(runGoals, sim.result.missions || sim.missions, Math.max(bestNow, Number(sim.score) || 0), t("missions"));
         if (!boardDone) saveBest(slug, Math.max(Number(sim.best) || 0, Number(sim.result?.run?.score) || 0));
       } else {
         runGoals.hidden = true;
@@ -926,7 +944,8 @@
       if (phase === "complete" && now - resultAt < 500) return;
       if (now - startLock < 350) return;
       startLock = now;
-      session.startGame();
+      const from = phase;
+      portalPage.start(from, () => session.startGame());
     };
     const startBtn = document.getElementById("start");
     startBtn.addEventListener("pointerdown", stopOverlayEvent);
@@ -1125,7 +1144,7 @@
         catch (err) {
           rendering = false;
           const detail = err && err.stack ? err.stack : err;
-          fail(`描画が止まりました。\n${detail}`);
+          fail(t("err.stopped", { err: detail }));
         }
         presented += 1;
         if (presented === 8 && activeBackend !== "gl" && requestedBackend !== "webgpu" && canvasIsBlank(canvas)) {
@@ -1141,7 +1160,7 @@
             recovering = false;
             requestAnimationFrame(loop);
           }).catch((err) => {
-            fail(`WebGL2 fallback failed:\n${err}`);
+            fail(t("err.fallback", { err }));
           });
           return;
         }

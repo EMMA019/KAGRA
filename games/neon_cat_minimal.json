@@ -23,5 +23,12 @@
     "assets/models/kenney/space-kit/terrain_ramp.glb",
     "assets/models/kenney/space-kit/structure_closed.glb"
   ],
+  "platform": {
+    "ads": {
+      "commercial_on": ["retry"],
+      "rewarded": [],
+      "min_interval_secs": 90
+    }
+  },
   "game": {}
 }

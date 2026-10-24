@@ -46,3 +46,5 @@ python -m kagra
 ```
 
 From-source installs (contributors) still use `maturin develop`.
+
+Web-game portals (CrazyGames, GameMonetize, ...): see `docs/publishing/web_portals.md`.

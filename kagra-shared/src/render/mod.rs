@@ -20,6 +20,7 @@ use crate::scene3d::{MeshData, MeshId, Scene3D};
 use crate::world_doc::load_png_albedo;
 use bloom::BloomPass;
 use post::PostGraph;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const MAX_TEXTURE_SIDE: u32 = 8192;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -1216,7 +1217,7 @@ impl Renderer {
             bias: wgpu::DepthBiasState {
                 constant: 8192,
                 slope_scale: 1.5,
-                clamp: 0.008,
+                clamp: shadow_bias_clamp(),
             },
         };
         let shadow_vs = ["vs_shadow", "vs_shadow_1", "vs_shadow_2"];
@@ -3560,7 +3561,38 @@ async fn request_device(
     device.on_uncaptured_error(std::sync::Arc::new(|err: wgpu::Error| {
         note_renderer(&format!("kagra: wgpu error: {err}"));
     }));
+    note_depth_bias_clamp(
+        adapter
+            .get_downlevel_capabilities()
+            .flags
+            .contains(wgpu::DownlevelFlags::DEPTH_BIAS_CLAMP),
+    );
     Ok((adapter, device, queue))
+}
+
+/// Whether the adapter can clamp the depth bias. WebGL2 only has it with
+/// `EXT_polygon_offset_clamp`; without it a pipeline that asks for a clamp is
+/// invalid, every frame that draws with it logs a validation error, and on
+/// the wasm GL backend each such frame also leaked about 2 MB until the wasm
+/// heap ran out and `render()` trapped.
+static DEPTH_BIAS_CLAMP_OK: AtomicBool = AtomicBool::new(true);
+
+fn note_depth_bias_clamp(ok: bool) {
+    DEPTH_BIAS_CLAMP_OK.store(ok, Ordering::Relaxed);
+}
+
+/// Shadow depth-bias clamp for the adapter in use: 0.008, or 0 (no clamp)
+/// when the adapter cannot clamp.
+fn shadow_bias_clamp() -> f32 {
+    clamp_for(DEPTH_BIAS_CLAMP_OK.load(Ordering::Relaxed))
+}
+
+fn clamp_for(supported: bool) -> f32 {
+    if supported {
+        0.008
+    } else {
+        0.0
+    }
 }
 
 fn complete_mip_count(width: u32, height: u32) -> u32 {
@@ -4128,6 +4160,16 @@ mod tests {
         assert_eq!(&padded[0..4], &[1, 2, 3, 4]);
         assert_eq!(&padded[256..260], &[5, 6, 7, 8]);
         assert!(padded[4..256].iter().all(|b| *b == 0));
+    }
+
+    /// A pipeline that asks for a depth-bias clamp is invalid on an adapter
+    /// without DEPTH_BIAS_CLAMP (WebGL2 without EXT_polygon_offset_clamp).
+    /// On the wasm GL backend every frame that used it logged an error and
+    /// leaked ~2 MB, until `render()` ran out of heap and trapped.
+    #[test]
+    fn shadow_bias_clamp_follows_adapter_support() {
+        assert_eq!(clamp_for(true), 0.008);
+        assert_eq!(clamp_for(false), 0.0);
     }
 
     #[test]
