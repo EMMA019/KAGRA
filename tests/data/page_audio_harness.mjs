@@ -1,12 +1,19 @@
 // Runs the <kagra-audio> and <kagra-goals> blocks of scripts/preview_site/play.html
 // under node with a fake AudioContext. Prints one JSON object of results.
 import fs from "node:fs";
+import { createRequire } from "node:module";
 
 const html = fs.readFileSync(process.argv[2], "utf8");
 const block = (name) => html.match(new RegExp(`// <${name}>([\\s\\S]*?)// </${name}>`))[1];
-const { createAudio, goalText } = new Function(
+const require = createRequire(import.meta.url);
+const I18n = require("../../scripts/preview_site/i18n.js");
+// The goal block calls the page's `t`; build the page's blocks once per language.
+const load = (lang) => new Function(
+  "t",
   `${block("kagra-audio")}\n${block("kagra-goals")}\nreturn { createAudio, goalText };`,
-)();
+)(I18n.create(lang).t);
+const { createAudio, goalText } = load("ja");
+const en = load("en");
 
 class FakeParam {
   constructor() { this.value = 1; this.targets = []; }
@@ -156,5 +163,10 @@ out.goal_text = [
   goalText({ kind: "gates", label: "GATES", target: 5 }),
   goalText({ kind: "perch", label: "PERCH", target: 1 }),
   goalText({ kind: "coins", label: "TUNA", target: 3 }),
+];
+out.goal_text_en = [
+  en.goalText({ kind: "coins", label: "COINS", target: 40 }),
+  en.goalText({ kind: "gates", label: "GATES", target: 5 }),
+  en.goalText({ kind: "perch", label: "PERCH", target: 1 }),
 ];
 console.log(JSON.stringify(out));

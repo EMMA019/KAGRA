@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Web-portal prep (nothing submitted anywhere): `scripts/preview_site/portal.js` is a
+  host shim with a no-op default and CrazyGames / GameMonetize adapters
+  (`?portal=` or the `kagra-portal` build flag; the default build makes no
+  external request). It sends gameplay start/stop, asks for midgame ads at the
+  breaks `platform.ads` allows, and mutes, pauses and blocks input during ads.
+  The page also pauses on blur / tab hide, blocks scroll gestures, has an
+  English / Japanese string table (`i18n.js`, `?lang=`), and keeps `?debug=1`
+  and `?backend=` behind `?dev=1`. `platform.ads` lives in the game manifest
+  (`kagra/platform_spec.py`), not in the Rust spec. `scripts/package_portal.py`
+  builds a single-game zip and checks a 5 MB / 8 MB budget (`--wasm-opt`
+  optional). Cover art comes from `tools/gen_assets/cover_art.py`
+  (`docs/media/neon_cat/`); store text and the AI-use statement are in
+  `docs/publishing/`. Rewarded ads need an engine effect and are not offered yet.
+
 - Neon Cat: fix the stutter that came with the night look. The textured wall panels
   were listed for the GPU in a different set and order every time the cat crossed a
   12 m segment, so the renderer dropped and re-uploaded every mesh (textures
