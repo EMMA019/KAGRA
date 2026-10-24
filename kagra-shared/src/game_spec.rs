@@ -110,6 +110,66 @@ pub struct RunnerKit {
     pub rings: RingSpec,
     pub gates: GateSpec,
     pub draw: DrawSpec,
+    /// Optional pacing script over distance. Empty = one uniform stream.
+    pub sections: Vec<Section>,
+}
+
+/// What a stretch of track is for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SectionKind {
+    /// Gentle start: few obstacles.
+    Intro,
+    /// Introduces a mechanic at low pressure.
+    Learn,
+    /// Full density.
+    Challenge,
+    /// No obstacles; rings only. Lets the player breathe.
+    Rest,
+    /// Payoff after a challenge. No obstacles.
+    Reward,
+}
+
+impl SectionKind {
+    /// Share of obstacle slots kept when `density` is not set.
+    pub fn default_density(self) -> f32 {
+        match self {
+            SectionKind::Intro => 0.35,
+            SectionKind::Learn => 0.7,
+            SectionKind::Challenge => 1.0,
+            SectionKind::Rest | SectionKind::Reward => 0.0,
+        }
+    }
+}
+
+/// One stretch of the course, in metres of travel. The list repeats.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Section {
+    pub kind: SectionKind,
+    /// Length along z in metres.
+    pub length: f32,
+    /// Declared difficulty 0..=5, checked by the placement validator.
+    pub level: u8,
+    /// Fraction of obstacle slots kept (0..=1). `None` = the kind's default.
+    pub density: Option<f32>,
+}
+
+impl Default for Section {
+    fn default() -> Self {
+        Self {
+            kind: SectionKind::Challenge,
+            length: 120.0,
+            level: 3,
+            density: None,
+        }
+    }
+}
+
+impl Section {
+    pub fn density(&self) -> f32 {
+        self.density.unwrap_or_else(|| self.kind.default_density())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -290,6 +350,7 @@ impl Default for RunnerKit {
             rings: RingSpec::default(),
             gates: GateSpec::default(),
             draw: DrawSpec::default(),
+            sections: Vec::new(),
         }
     }
 }
@@ -519,10 +580,54 @@ impl GameSpec {
         {
             return Err("game spec: gaps must be > 0".into());
         }
+        for (i, s) in self.runner.sections.iter().enumerate() {
+            if s.length <= 0.0 || !s.length.is_finite() {
+                return Err(format!("game spec: section {i} length must be > 0"));
+            }
+            if s.level > 5 {
+                return Err(format!("game spec: section {i} level must be 0..=5"));
+            }
+            if let Some(d) = s.density {
+                if !(0.0..=1.0).contains(&d) {
+                    return Err(format!("game spec: section {i} density must be 0..=1"));
+                }
+            }
+        }
         if self.runner.speed.max_step <= 0.0 || self.runner.speed.cap < self.runner.speed.start {
             return Err("game spec: bad speed curve".into());
         }
         Ok(())
+    }
+
+    /// The section covering distance `z`, with its index. Sections repeat.
+    pub fn section_at(&self, z: f32) -> Option<(usize, &Section)> {
+        let list = &self.runner.sections;
+        let total: f32 = list.iter().map(|s| s.length).sum();
+        if list.is_empty() || total <= 0.0 {
+            return None;
+        }
+        let mut d = (z - self.runner.obstacle_track.z0 + total).rem_euclid(total);
+        for (i, s) in list.iter().enumerate() {
+            if d < s.length {
+                return Some((i, s));
+            }
+            d -= s.length;
+        }
+        list.last().map(|s| (list.len() - 1, s))
+    }
+
+    /// Does obstacle slot `index` exist? Always true without sections.
+    /// Otherwise a deterministic per-index hash keeps `density` of the slots.
+    pub fn obstacle_active(&self, index: i32) -> bool {
+        let Some((_, s)) = self.section_at(self.runner.obstacle_track.z(index)) else {
+            return true;
+        };
+        let d = s.density();
+        if d >= 1.0 {
+            return true;
+        }
+        let h = (index as u32).wrapping_mul(2_654_435_761) >> 16;
+        (h as f32 / 65536.0) < d
     }
 
     /// Obstacle kind at `index`. A fixed cycle where each kind appears
@@ -577,6 +682,32 @@ mod tests {
         let spec = GameSpec::from_json(ok).unwrap();
         assert_eq!(spec.items[0].effect, ItemEffect::Magnet);
         assert!(GameSpec::from_json(r#"{"items":[{"effect":"laser"}]}"#).is_err());
+    }
+
+    #[test]
+    fn sections_validate_and_repeat() {
+        let mut v = serde_json::to_value(GameSpec::default()).unwrap();
+        v["runner"]["sections"] = serde_json::json!([
+            {"kind": "challenge", "length": 100.0, "level": 3},
+            {"kind": "rest", "length": 50.0, "level": 0}]);
+        let s = GameSpec::from_value(&v).unwrap();
+        let z0 = s.runner.obstacle_track.z0;
+        assert_eq!(s.section_at(z0 + 10.0).unwrap().0, 0);
+        assert_eq!(s.section_at(z0 + 120.0).unwrap().0, 1);
+        assert_eq!(s.section_at(z0 + 160.0).unwrap().0, 0, "the list repeats");
+        for bad in [
+            serde_json::json!([{"length": 0.0}]),
+            serde_json::json!([{"level": 6}]),
+            serde_json::json!([{"density": 1.5}]),
+            serde_json::json!([{"kind": "boss"}]),
+        ] {
+            v["runner"]["sections"] = bad;
+            assert!(GameSpec::from_value(&v).is_err());
+        }
+        assert!(
+            GameSpec::default().obstacle_active(3),
+            "no sections: all active"
+        );
     }
 
     #[test]

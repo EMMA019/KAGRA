@@ -176,7 +176,8 @@
     "min_obstacles_ahead": 5,
     "fog_start": 38.0,
     "fog_end": 110.0
-   }
+   },
+   "sections": []
   },
   "input": {
    "scheme": "drag",

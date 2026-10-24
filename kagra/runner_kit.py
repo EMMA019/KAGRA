@@ -62,6 +62,29 @@ class DrawSpec:
     fog_end: float = 110.0
 
 
+SECTION_KINDS = ("intro", "learn", "challenge", "rest", "reward")
+# Share of obstacle slots kept when ``density`` is None (mirrors the engine).
+SECTION_DENSITY = {"intro": 0.35, "learn": 0.7, "challenge": 1.0, "rest": 0.0, "reward": 0.0}
+
+
+@dataclass
+class Section:
+    """A stretch of track in metres; the list repeats. See docs/runner_kit.md."""
+
+    kind: str = "challenge"
+    length: float = 120.0
+    level: int = 3
+    density: float | None = None
+
+    def __post_init__(self):
+        if self.kind not in SECTION_KINDS:
+            raise ValueError(f"section kind {self.kind!r} not in {SECTION_KINDS}")
+        if self.length <= 0 or not 0 <= self.level <= 5:
+            raise ValueError("section needs length > 0 and level 0..5")
+        if self.density is not None and not 0 <= self.density <= 1:
+            raise ValueError("section density must be 0..1")
+
+
 @dataclass
 class RunnerKit:
     speed: SpeedCurve = field(default_factory=SpeedCurve)
@@ -71,3 +94,5 @@ class RunnerKit:
     rings: RingSpec = field(default_factory=RingSpec)
     gates: GateSpec = field(default_factory=GateSpec)
     draw: DrawSpec = field(default_factory=DrawSpec)
+    # Optional pacing script (intro/learn/challenge/rest/reward). Empty = uniform.
+    sections: list = field(default_factory=list)

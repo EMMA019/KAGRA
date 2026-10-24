@@ -58,3 +58,31 @@ def test_item_vocabulary_matches_rust_and_is_closed():
 def test_spec_needs_a_spawnable_obstacle():
     with pytest.raises(ValueError):
         GameSpec.from_overrides({"obstacles": [{"name": "CRATE", "weight": 0}]}).to_dict()
+
+
+SECTIONED = [
+    {"kind": "intro", "length": 140, "level": 1},
+    {"kind": "learn", "length": 200, "level": 2},
+    {"kind": "challenge", "length": 260, "level": 3},
+    {"kind": "rest", "length": 150, "level": 0},
+    {"kind": "challenge", "length": 300, "level": 3},
+    {"kind": "reward", "length": 120, "level": 0},
+]
+
+
+def test_sectioned_fixture_matches_the_python_spec():
+    spec = GameSpec.from_overrides({"runner": {"sections": SECTIONED}})
+    baked = json.loads((ROOT / "kagra-shared/tests/fixtures/neon_cat_sectioned_world.json").read_text())
+    assert baked == spec.world()
+
+
+def test_sections_are_validated():
+    from kagra.runner_kit import SECTION_DENSITY, SECTION_KINDS
+
+    assert set(SECTION_DENSITY) == set(SECTION_KINDS)
+    rust = (ROOT / "kagra-shared/src/game_spec.rs").read_text(encoding="utf-8")
+    for kind in SECTION_KINDS:
+        assert kind.capitalize() in rust, kind
+    for bad in ({"kind": "boss"}, {"length": 0}, {"level": 6}, {"density": 1.5}):
+        with pytest.raises(ValueError):
+            GameSpec.from_overrides({"runner": {"sections": [bad]}})

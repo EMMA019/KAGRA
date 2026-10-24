@@ -15,5 +15,14 @@ fn main() {
     }
     opts.perf = !args.iter().any(|a| a == "--no-perf");
     let report = measure(&world, &opts).unwrap_or_else(|e| panic!("{e}"));
+    if args.iter().any(|a| a == "--check") {
+        // Placement validator only: print issues, exit 1 on any error.
+        let p = &report["course"]["placement"];
+        println!("{}", serde_json::to_string_pretty(p).unwrap());
+        if p["ok"] != true {
+            std::process::exit(1);
+        }
+        return;
+    }
     println!("{}", serde_json::to_string_pretty(&report).unwrap());
 }

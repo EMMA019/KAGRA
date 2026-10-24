@@ -21,7 +21,7 @@ import typing
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
 
-from kagra.runner_kit import RunnerKit
+from kagra.runner_kit import RunnerKit, Section
 
 ROOT = Path(__file__).resolve().parents[1]
 KINDS = ("runner",)
@@ -259,6 +259,8 @@ def _build(cls: type, data: dict, base: object | None = None) -> object:
             kwargs[name] = [ItemSpec(**v) if isinstance(v, dict) else ItemSpec(v) for v in value]
         elif cls is GameSpec and name == "placements":
             kwargs[name] = [Placement(**v) for v in value]
+        elif cls is RunnerKit and name == "sections":
+            kwargs[name] = [Section(**v) for v in value]
         elif is_dataclass(current) and isinstance(value, dict):
             kwargs[name] = _build(type(current), value, current)
         else:
