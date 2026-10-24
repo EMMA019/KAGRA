@@ -1,0 +1,69 @@
+{
+  "slug": "fishcook",
+  "title": "Fish Cook",
+  "version": "0.1.0",
+  "genre": "fishcook",
+  "world": "world.json",
+  "files": [
+    {
+      "path": "world.json",
+      "url": "games/fishcook/world.json"
+    },
+    {
+      "path": "kagra_game.json",
+      "url": "games/fishcook/kagra_game.json"
+    },
+    {
+      "path": "assets/audio/bgm.wav",
+      "url": "assets/audio/bgm.wav"
+    },
+    {
+      "path": "assets/audio/card.wav",
+      "url": "assets/audio/card.wav"
+    },
+    {
+      "path": "assets/audio/fire.wav",
+      "url": "assets/audio/fire.wav"
+    },
+    {
+      "path": "assets/audio/jump.wav",
+      "url": "assets/audio/jump.wav"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/characters/Knight.glb",
+      "url": "assets/library/kaykit/adventurers/characters/Knight.glb"
+    },
+    {
+      "path": "assets/library/quaternius/cubeworldkit/Environment/glTF/Chest_Closed.gltf",
+      "url": "assets/library/quaternius/cubeworldkit/Environment/glTF/Chest_Closed.gltf"
+    },
+    {
+      "path": "assets/library/quaternius/cubeworldkit/Environment/glTF/Tree_1.gltf",
+      "url": "assets/library/quaternius/cubeworldkit/Environment/glTF/Tree_1.gltf"
+    },
+    {
+      "path": "assets/library/quaternius/cubeworldkit/Environment/glTF/Tree_2.gltf",
+      "url": "assets/library/quaternius/cubeworldkit/Environment/glTF/Tree_2.gltf"
+    },
+    {
+      "path": "assets/models/kenney/platformer-kit/crate.glb",
+      "url": "assets/models/kenney/platformer-kit/crate.glb"
+    },
+    {
+      "path": "assets/models/quaternius/medieval-village-pack/Fantasy Inn.glb",
+      "url": "assets/models/quaternius/medieval-village-pack/Fantasy Inn.glb"
+    },
+    {
+      "path": "assets/models/quaternius/medieval-village-pack/Gazebo.glb",
+      "url": "assets/models/quaternius/medieval-village-pack/Gazebo.glb"
+    },
+    {
+      "path": "assets/models/quaternius/medieval-village-pack/Mill.glb",
+      "url": "assets/models/quaternius/medieval-village-pack/Mill.glb"
+    },
+    {
+      "path": "assets/models/quaternius/stylized-nature-megakit/Rock Medium.glb",
+      "url": "assets/models/quaternius/stylized-nature-megakit/Rock Medium.glb"
+    }
+  ]
+}
