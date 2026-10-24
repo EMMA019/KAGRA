@@ -25,6 +25,7 @@ use crate::world_doc::{WorldCamera, WorldDoc, WorldLight, WorldProp, WorldWalker
 
 pub const GAME_ID: &str = "neon_cat";
 
+use crate::game_core::feel::{self, FeelParams};
 use crate::game_spec::InputScheme;
 use crate::gesture::{DragEvent, DragFlick, Gesture, InputBuffer, Swipe, SwipeRecognizer};
 
@@ -81,6 +82,10 @@ pub struct NeonCat {
     /// Drag scheme: cat x when the finger went down, and where it follows now.
     drag_base: f32,
     drag_target: Option<f32>,
+    /// Resolved `spec.feel`.
+    feel: FeelParams,
+    /// Eased lane hop in flight: (from, to, elapsed, duration).
+    hop: Option<(f32, f32, f32, f32)>,
 }
 
 pub fn is_cat_dump(json: &str) -> bool {
@@ -214,12 +219,20 @@ impl NeonCat {
             swiper: SwipeRecognizer::default(),
             drag_base: 0.0,
             drag_target: None,
+            feel: feel::resolve(&GameSpec::default().feel).expect("default feel"),
+            hop: None,
         };
+        if let Ok(p) = feel::resolve(&run.spec.feel) {
+            run.feel = p;
+        }
         run.drag.flick_dist = run.spec.input.flick_dist;
         run.drag.flick_angle_deg = run.spec.input.flick_angle_deg;
         run.swiper.min_dist = run.spec.input.swipe_dist;
         run.swiper.cooldown = run.spec.input.swipe_cooldown_secs;
-        run.swipes.window = run.spec.input.buffer_secs;
+        run.swipes.window = run
+            .feel
+            .jump_buffer_secs
+            .unwrap_or(run.spec.input.buffer_secs);
         run.snap_chase();
         run
     }
@@ -500,6 +513,24 @@ impl NeonCat {
     pub fn on_key(&mut self, name: &str, down: bool) -> bool {
         let key = name.to_ascii_lowercase();
         match key.as_str() {
+            "a" | "arrowleft" | "left" if self.feel.key_lanes => {
+                if down {
+                    self.swipe(Swipe::Left);
+                }
+                return true;
+            }
+            "d" | "arrowright" | "right" if self.feel.key_lanes => {
+                if down {
+                    self.swipe(Swipe::Right);
+                }
+                return true;
+            }
+            "s" | "arrowdown" | "down" if self.feel.key_lanes => {
+                if down {
+                    self.swipe(Swipe::Down);
+                }
+                return true;
+            }
             "a" | "arrowleft" | "left" => {
                 self.key_left = down;
                 return true;
@@ -552,6 +583,7 @@ impl NeonCat {
         self.swipes.clear();
         self.lane_target = None;
         self.drag_target = None;
+        self.hop = None;
         self.drag.reset();
         self.swiper.reset();
         self.flow.enter_play();
@@ -660,7 +692,9 @@ impl NeonCat {
             Swipe::Up => self.swipes.press(Swipe::Up, self.time),
             Swipe::Down => {
                 if self.y > 0.05 {
-                    self.vy = self.vy.min(-self.spec.runner.jump.velocity * 1.2);
+                    self.vy = self
+                        .vy
+                        .min(-self.spec.runner.jump.velocity * self.feel.velocity_scale * 1.2);
                 } else {
                     // Roll arrives with the gameplay PR; keep it buffered.
                     self.swipes.press(Swipe::Down, self.time);
@@ -689,33 +723,60 @@ impl NeonCat {
             // Ease into the lane centre without overshoot, capped at steer speed.
             let held = (self.key_right as i32 - self.key_left as i32) as f32 + self.pad_x;
             if held.abs() < 0.2 {
-                let k = 1.0 - (-dt / 0.06).exp();
-                let cap = self.spec.runner.lanes.steer * 1.5;
-                self.vx = ((t - self.x) * k / dt.max(1e-4)).clamp(-cap, cap);
+                if let Some(per_lane) = self.feel.lane_hop_secs {
+                    // Eased hop: duration scales with the distance in lanes.
+                    let w = self.spec.runner.lanes.width.max(0.1);
+                    let (from, to, el, dur) = match self.hop {
+                        Some(h) if h.1 == t => h,
+                        _ => (self.x, t, 0.0, per_lane * ((t - self.x).abs() / w).max(0.5)),
+                    };
+                    let el = (el + dt).min(dur);
+                    let nx = from + (to - from) * feel::ease_out(el / dur);
+                    self.vx = (nx - self.x) / dt.max(1e-4);
+                    self.hop = if el >= dur {
+                        None
+                    } else {
+                        Some((from, to, el, dur))
+                    };
+                } else {
+                    let k = 1.0 - (-dt / 0.06).exp();
+                    let cap = self.spec.runner.lanes.steer * 1.5;
+                    self.vx = ((t - self.x) * k / dt.max(1e-4)).clamp(-cap, cap);
+                }
             }
         }
         let grounded = self.y <= 0.001 && self.vy <= 0.0;
         if let Some(t) = self.lane_target {
             let held = (self.key_right as i32 - self.key_left as i32) as f32 + self.pad_x;
-            if held.abs() >= 0.2 || (self.x - t).abs() < 0.02 {
+            if held.abs() >= 0.2 {
                 self.lane_target = None;
+                self.hop = None;
+            } else if (self.x - t).abs() < 0.02 {
+                // Arrived: land on the centre and stop, no drift.
+                self.x = t;
+                self.vx = 0.0;
+                self.lane_target = None;
+                self.hop = None;
             }
         }
         let want_jump = self.jump_held || self.key_jump || self.pad_up > 0.55;
         if grounded && (want_jump || self.swipes.take(Swipe::Up, self.time)) {
-            self.vy = self.spec.runner.jump.velocity;
+            self.vy = self.spec.runner.jump.velocity * self.feel.velocity_scale;
             self.y = 0.02;
             self.core.stats.just_jump = true;
-            crate::mixer::cue_sfx("jump");
+            self.sfx("jump");
         }
-        self.vy += self.spec.runner.jump.gravity * dt;
+        self.vy += self.spec.runner.jump.gravity * self.feel.gravity_scale * dt;
         self.y += self.vy * dt;
         if self.y <= 0.0 {
             if self.vy < -1.5 {
-                self.core.juice.land_squash = 0.12;
+                self.core.juice.land_squash = self.feel.land_squash_secs;
                 if !self.classic {
                     // Same defaults as `kagra.juice.Juice.shake`.
-                    self.core.juice.land.shake(0.08, 0.18);
+                    let (a, d) = self.feel.land_shake;
+                    if a > 0.0 {
+                        self.core.juice.land.shake(a, d);
+                    }
                 }
             }
             self.y = 0.0;
@@ -781,10 +842,14 @@ impl NeonCat {
             (self.vx / self.spec.runner.lanes.steer).clamp(-1.0, 1.0)
         };
         let want_roll = steer * self.spec.camera.roll;
-        self.eye_x.step(self.x, 12.0, dt);
-        self.eye_y.step(want_y, 8.0, dt);
-        self.look_x.step(self.x * 0.9, 8.0, dt);
-        self.bank.step(want_roll, 5.5, dt);
+        let f = &self.feel;
+        let (follow, lift, look, bank) = (f.cam_follow, f.cam_lift, f.cam_look, f.cam_bank);
+        // Look-ahead leads the aim toward where the cat is heading.
+        let lead = if f.look_ahead { self.vx * 0.06 } else { 0.0 };
+        self.eye_x.step(self.x, follow, dt);
+        self.eye_y.step(want_y, lift, dt);
+        self.look_x.step(self.x * 0.9 + lead, look, dt);
+        self.bank.step(want_roll, bank, dt);
         self.fov_spring.step(self.fov_for_speed(), 2.4, dt);
     }
 
@@ -836,7 +901,7 @@ impl NeonCat {
             self.core.stats.pickup(self.spec.runner.rings.score);
             self.core.juice.shake = self.core.juice.shake.max(0.06);
             self.burst(self.x, self.y + 0.6, self.z, 14, [80, 255, 255], 3.4, 0.12);
-            crate::mixer::cue_sfx("card");
+            self.sfx("card");
         }
     }
 
@@ -844,18 +909,28 @@ impl NeonCat {
         if !self.core.stats.die(reason) {
             return;
         }
-        self.core.juice.hit(0.46, 0.11);
+        self.core
+            .juice
+            .hit(self.feel.hit_shake, self.feel.hit_stop_secs);
         self.vy = 0.0;
         self.drag_target = None;
         self.lane_target = None;
+        self.hop = None;
         self.burst(self.x, self.y + 0.4, self.z, 18, [255, 60, 170], 4.6, 0.16);
         self.burst(self.x, self.y + 0.5, self.z, 10, [90, 240, 255], 3.2, 0.12);
-        crate::mixer::cue_sfx("fire");
+        self.sfx("fire");
     }
 
     #[allow(clippy::too_many_arguments)]
     fn burst(&mut self, x: f32, y: f32, z: f32, n: u32, color: [u32; 3], speed: f32, size: f32) {
+        let n = (n as f32 * self.feel.particles).round() as u32;
         self.core.juice.burst(x, y, z, n, color, speed, size);
+    }
+
+    fn sfx(&self, name: &str) {
+        if self.feel.sfx {
+            crate::mixer::cue_sfx(name);
+        }
     }
 
     fn rebuild(&mut self) {

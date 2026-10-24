@@ -24,6 +24,14 @@ before and after a tuning or preset change. Sim frames are 1/60 s.
 
 `neon_cat_baseline.json` is the Neon Cat reference (20 runs).
 
+## Feel presets (`spec.feel`)
+
+`runner_measure WORLD.json 20 --feel classic|snappy_runner|arcade_punchy|chill` overrides the preset.
+Swipe/key lane change, before → after (classic → snappy_runner): 17 frames / 0.283 s → 8 frames / 0.133 s
+(eased cubic-out hop, 0.17 s nominal per lane, arrival within 2 cm). Swipe-scheme long stroke 1.117 → 1.0 lanes,
+post-jitter drift 0.014 → 0.0 lanes (snap on arrival). Jump, drag, bot and perf numbers are unchanged.
+Spec example: `{"feel":{"preset":"snappy_runner","movement":{"jump":"forgiving"},"camera":{"look_ahead":true},"feedback":{"hit_stop":"light"}}}`.
+
 ## Sections and the placement validator
 
 `runner.sections` is an optional pacing script over distance (the list repeats):

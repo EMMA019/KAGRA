@@ -197,6 +197,9 @@ class GameSpec:
     placements: list[Placement] = field(default_factory=list)
     runner: RunnerKit = field(default_factory=RunnerKit)
     input: InputSpec = field(default_factory=InputSpec)
+    # Declarative feel presets, e.g. {"preset": "snappy_runner", "movement": {"jump": "forgiving"}}.
+    # Resolved and validated by the engine (kagra-shared game_core::feel).
+    feel: dict = field(default_factory=dict)
 
     @classmethod
     def from_overrides(cls, overrides: dict | None = None) -> GameSpec:

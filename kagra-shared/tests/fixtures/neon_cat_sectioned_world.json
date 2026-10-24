@@ -226,6 +226,7 @@
    "swipe_dist": 0.09,
    "swipe_cooldown_secs": 0.3,
    "buffer_secs": 0.15
-  }
+  },
+  "feel": {}
  }
 }

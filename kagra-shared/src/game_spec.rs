@@ -40,6 +40,8 @@ pub struct GameSpec {
     pub runner: RunnerKit,
     /// Touch scheme and its thresholds.
     pub input: InputSpec,
+    /// Declarative feel presets (see `game_core::feel`).
+    pub feel: crate::game_core::feel::FeelSpec,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -398,6 +400,7 @@ impl Default for GameSpec {
             placements: Vec::new(),
             runner: RunnerKit::default(),
             input: InputSpec::default(),
+            feel: Default::default(),
         }
     }
 }
@@ -568,6 +571,7 @@ impl GameSpec {
     }
 
     pub fn validate(&self) -> Result<(), String> {
+        crate::game_core::feel::resolve(&self.feel)?;
         if self.obstacles.is_empty() {
             return Err("game spec: obstacles is empty".into());
         }
