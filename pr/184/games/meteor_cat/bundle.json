@@ -1,0 +1,69 @@
+{
+  "slug": "meteor_cat",
+  "title": "Meteor Cat",
+  "version": "0.1.0",
+  "genre": "neon_cat",
+  "world": "world.json",
+  "files": [
+    {
+      "path": "world.json",
+      "url": "games/meteor_cat/world.json"
+    },
+    {
+      "path": "kagra_game.json",
+      "url": "games/meteor_cat/kagra_game.json"
+    },
+    {
+      "path": "assets/audio/LICENSE.txt",
+      "url": "assets/audio/LICENSE.txt"
+    },
+    {
+      "path": "assets/audio/bgm.wav",
+      "url": "assets/audio/bgm.wav"
+    },
+    {
+      "path": "assets/audio/card.wav",
+      "url": "assets/audio/card.wav"
+    },
+    {
+      "path": "assets/audio/fire.wav",
+      "url": "assets/audio/fire.wav"
+    },
+    {
+      "path": "assets/audio/jump.wav",
+      "url": "assets/audio/jump.wav"
+    },
+    {
+      "path": "assets/models/coin.glb",
+      "url": "assets/models/coin.glb"
+    },
+    {
+      "path": "assets/models/kenney/cube-pets/Textures/colormap.png",
+      "url": "assets/models/kenney/cube-pets/Textures/colormap.png"
+    },
+    {
+      "path": "assets/models/kenney/cube-pets/animal-cat.glb",
+      "url": "assets/models/kenney/cube-pets/animal-cat.glb"
+    },
+    {
+      "path": "assets/models/kenney/racing-kit/overheadRound.glb",
+      "url": "assets/models/kenney/racing-kit/overheadRound.glb"
+    },
+    {
+      "path": "assets/models/kenney/space-kit/meteor.glb",
+      "url": "assets/models/kenney/space-kit/meteor.glb"
+    },
+    {
+      "path": "assets/models/kenney/space-kit/rock_crystals.glb",
+      "url": "assets/models/kenney/space-kit/rock_crystals.glb"
+    },
+    {
+      "path": "assets/models/kenney/space-kit/rock_largeA.glb",
+      "url": "assets/models/kenney/space-kit/rock_largeA.glb"
+    },
+    {
+      "path": "assets/models/quaternius/modular-dungeons-pack/Arch.glb",
+      "url": "assets/models/quaternius/modular-dungeons-pack/Arch.glb"
+    }
+  ]
+}
