@@ -72,6 +72,7 @@ CLASSIC = {
     "obstacles": [{"name": n, "weight": 1} for n in ("CRATE", "BARREL", "BARRIER")],
     "runner": {"sections": [], "obstacle_track": {"gap": 14.0}, "score": {"per_gate": 0}},
     "lives": {"count": 1},
+    "items": [],
 }
 
 
@@ -139,11 +140,14 @@ def test_hud_result_spec_merges_death_lines_and_validates_the_board():
 
 def test_lives_rim_and_eyes_are_specced_and_validated():
     spec = GameSpec()
-    assert spec.lives.count == 9 and spec.lives.invuln_secs > 0
+    assert spec.lives.count == 3 and spec.lives.invuln_secs > 0
     assert spec.player.eyes.enabled and spec.player.rim.radius < 1.6
     world = spec.world()["game"]
-    assert world["lives"]["count"] == 9
+    assert world["lives"]["count"] == 3
     assert world["player"]["eyes"]["glow"] > 1.0
+    eyes = world["player"]["eyes"]
+    assert eyes["ears"] and eyes["collar"] and eyes["tail_tip"], "marks that read from behind"
+    assert GameSpec.from_overrides({"player": {"eyes": {"enabled": False}}}).player.eyes.ears
     for bad in ({"count": 0}, {"count": 10}, {"invuln_secs": -1}, {"blink_hz": 99}):
         with pytest.raises(ValueError):
             GameSpec.from_overrides({"lives": bad})
@@ -153,5 +157,28 @@ def test_lives_rim_and_eyes_are_specced_and_validated():
 
 def test_lives_fields_match_rust():
     rust = (ROOT / "kagra-shared/src/game_spec.rs").read_text(encoding="utf-8")
+    for name in tuple(GameSpec().player.eyes.__dataclass_fields__):
+        assert re.search(rf"pub struct EyesSpec \{{.*?pub {name}:", rust, re.S), name
     for name in ("count", "invuln_secs", "blink_hz"):
         assert re.search(rf"pub struct LivesSpec \{{.*?pub {name}:", rust, re.S), name
+
+
+def test_items_are_placed_by_rules_and_validated():
+    spec = GameSpec()
+    assert {i.effect for i in spec.items} == set(ITEM_EFFECTS)
+    assert spec.item_rules.rest_every >= 1 and spec.item_rules.boost_speed > 1
+    world = spec.world()["game"]
+    assert [i["effect"] for i in world["items"]][0] in ITEM_EFFECTS
+    assert world["item_rules"]["magnet_radius"] > 1
+    for bad in ({"radius": 0.0}, {"magnet_radius": 0.5}, {"boost_speed": 3.0}, {"jump_scale": 0.5}):
+        with pytest.raises(ValueError):
+            GameSpec.from_overrides({"item_rules": bad})
+    assert GameSpec.from_overrides({"items": []}).items == []
+    assert GameSpec.from_overrides({"items": [{"effect": "boost", "duration": 2.0}]}).items[0].duration == 2.0
+
+
+def test_item_rule_fields_match_rust():
+    rust = (ROOT / "kagra-shared/src/game_spec.rs").read_text(encoding="utf-8")
+    body = re.search(r"pub struct ItemRules \{(.*?)\n\}", rust, re.S).group(1)
+    names = re.findall(r"pub (\w+):", body)
+    assert names == list(GameSpec().item_rules.__dataclass_fields__)

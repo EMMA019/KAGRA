@@ -60,7 +60,7 @@ and dimmed HUD for this long before the result), `deaths` (obstacle name -> the 
 run, highlights it in the list, and a tab per column re-sorts. The sim reports `result` (key, config, this run's values) and
 `death_text` in its state, so another kit gets the same card by filling the same fields.
 
-`lives` `{count 9, invuln_secs 1.6, blink_hz 10}` is the nine lives. A hit costs one, plays a short shake, spark burst and thin red
+`lives` `{count 3, invuln_secs 1.6, blink_hz 10}` is the three lives (set `count` up to 9 for more). A hit costs one, plays a short shake, spark burst and thin red
 screen edges, and the cat blinks and cannot be hit again for `invuln_secs` (so a ramp or wall cannot take two lives in one touch).
 The last life ends the run exactly as before, with the same crash beat. The HUD shows one paw per life under the score (the one
 just lost pops red; a spec with `count` 1 draws no row). `count` is 1..=9. Hits are taken at the single crash point, so every
@@ -68,8 +68,19 @@ behavior is covered. The measurement harness always runs with one life (`NeonCat
 need a hit to equal a death; `GameSpec::legacy()` and the classic fixture use one life too, so the golden runs are unchanged.
 `player.rim` `{left, right, intensity, radius, side, height}` are two coloured point lights (screen-left magenta, screen-right
 cyan) that sit just outside the cat's flanks so its side faces catch an edge; they must be outside the body, and the radius stays
-under 1.6 m so they never paint the floor. `player.eyes` `{enabled, color, glow, size, spread, height, forward}` are two small
-unlit emissive boxes on the face (model units, so they follow the scale and pose; they bloom above glow 1).
+under 1.6 m so they never paint the floor. `player.eyes` holds the cat's glow marks, each with its own switch (model units, so they
+follow the scale and pose; all bloom above glow 1). The chase camera only sees the cat's back, so besides the two eyes
+`{enabled, color, glow, size, spread, height, forward}` there are ear-tip glints `{ears, ear_x, ear_y, ear_z}` (cyan), a neon collar
+`{collar, collar_color, collar_y}` (three thin strips across the back and flanks) and a tail-tip glint
+`{tail_tip, tail_color, tail_x, tail_y, tail_z}` (magenta), which read from behind.
+
+`items` `[{effect, duration?, weight}]` and `item_rules` `{rest_every 3, reward_every 2, hover, radius, magnet_radius, boost_speed,
+jump_scale}` are the pick-ups. `effect` is one of `magnet` (coins fly in, 8 s), `boost` (1.5x speed and nothing hurts, 3.5 s),
+`superjump` (jump 1.5x as high, 10 s), `double` (score gain doubles, 10 s) and `meow` (+1 life, or +100 score when full). Orbs sit
+only in free slots of Rest and Reward sections (every `rest_every` / `reward_every` free slot, half a gap past the slot so they
+never touch the coin line), the kind picked by weight from a hash of the slot. Running effects show as a label and draining bar
+under the paws, a ring on the floor under the cat, and a toast with the name. `GameSpec::legacy()` and the classic fixture have no
+items, so the golden runs and the measurement harness are unchanged.
 
 `style.codes` is the colour language, one neon colour per thing to do, used for the obstacle edge and its glow:
 `jump_over` amber (low, hop), `roll_under` pink (high or hanging), `solid` red (go round), `cat_gap` violet (roll through),

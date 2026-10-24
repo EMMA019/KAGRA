@@ -2,7 +2,7 @@
 
 Core sections (any kit): identity + seed, ``player``, entity tables
 (``obstacles``: glb + hitbox + weight), hit tuning, ``camera``, neon
-``style``, HUD, reserved ``items`` / ``placements``. A genre kit adds one
+``style``, HUD, ``items`` (pick-ups), reserved ``placements``. A genre kit adds one
 section (``runner`` today, see ``kagra.runner_kit``). Mirrors
 ``kagra-shared/src/game_spec.rs``; every default is Neon Cat.
 
@@ -26,7 +26,7 @@ from kagra.runner_kit import BEHAVIORS, RunnerKit, Section
 ROOT = Path(__file__).resolve().parents[1]
 KINDS = ("runner",)
 #: Closed item vocabulary. A new effect needs engine code, so specs can't add one.
-ITEM_EFFECTS = ("shield", "magnet", "slowmo", "double", "boost")
+ITEM_EFFECTS = ("magnet", "boost", "superjump", "double", "meow")
 PART_ROLES = ("solid", "ride", "ramp", "decor")
 
 _K = "assets/models/kenney"
@@ -113,7 +113,7 @@ class LivesSpec:
     """Nine lives: a hit costs one and the cat is safe (blinking) for
     ``invuln_secs``. ``count`` 1 is the old one-hit rule."""
 
-    count: int = 9
+    count: int = 3
     invuln_secs: float = 1.6
     blink_hz: float = 10.0
 
@@ -140,7 +140,7 @@ class RimSpec:
 
 @dataclass
 class EyesSpec:
-    """Two unlit glowing boxes on the face; offsets in model units."""
+    """Glow marks: eyes on the face, ear glints, a collar and a tail tip (the last three read from behind); offsets in model units."""
 
     enabled: bool = True
     color: list[float] = field(default_factory=lambda: [0.35, 1.0, 0.95])
@@ -149,6 +149,18 @@ class EyesSpec:
     spread: float = 0.24
     height: float = 0.92
     forward: float = 0.64
+    ears: bool = True
+    ear_x: float = 0.4
+    ear_y: float = 1.5
+    ear_z: float = 0.05
+    collar: bool = True
+    collar_color: list[float] = field(default_factory=lambda: [1.0, 0.25, 0.75])
+    collar_y: float = 0.95
+    tail_tip: bool = True
+    tail_color: list[float] = field(default_factory=lambda: [1.0, 0.25, 0.75])
+    tail_x: float = 0.0
+    tail_y: float = 1.62
+    tail_z: float = -0.6
 
 
 @dataclass
@@ -264,7 +276,7 @@ class Style:
 
 @dataclass
 class ItemSpec:
-    """Reserved: parsed and validated, not simulated yet."""
+    """A pick-up. ``duration`` 0 = the effect's default seconds (``meow`` is instant)."""
 
     effect: str
     glb: str = ""
@@ -283,6 +295,31 @@ class Placement:
     z: float
     lane: int
     kind: str
+
+
+@dataclass
+class ItemRules:
+    """Where pick-ups appear (free slots of rest and reward sections) and how strong they are."""
+
+    rest_every: int = 3
+    reward_every: int = 2
+    hover: float = 0.7
+    radius: float = 0.85
+    magnet_radius: float = 3.2
+    boost_speed: float = 1.5
+    jump_scale: float = 1.5
+
+    def __post_init__(self) -> None:
+        if not 0.2 <= self.radius <= 3.0 or not 0.0 <= self.hover <= 3.0:
+            raise ValueError("item_rules radius 0.2..=3, hover 0..=3")
+        if not 1.0 <= self.magnet_radius <= 12.0:
+            raise ValueError("item_rules.magnet_radius must be 1..=12")
+        if not 1.0 <= self.boost_speed <= 2.5 or not 1.0 <= self.jump_scale <= 2.5:
+            raise ValueError("item_rules boost_speed and jump_scale must be 1..=2.5")
+
+
+def _default_items() -> list[ItemSpec]:
+    return [ItemSpec(e, weight=w) for e, w in (("magnet", 3), ("double", 3), ("superjump", 2), ("boost", 2), ("meow", 1))]
 
 
 def _neon_obstacles() -> list[EntityKind]:
@@ -389,7 +426,8 @@ class GameSpec:
     hud_top: float = 96.0
     hud: HudSpec = field(default_factory=HudSpec)
     lives: LivesSpec = field(default_factory=LivesSpec)
-    items: list[ItemSpec] = field(default_factory=list)
+    items: list[ItemSpec] = field(default_factory=_default_items)
+    item_rules: ItemRules = field(default_factory=ItemRules)
     placements: list[Placement] = field(default_factory=list)
     runner: RunnerKit = field(default_factory=RunnerKit)
     input: InputSpec = field(default_factory=InputSpec)

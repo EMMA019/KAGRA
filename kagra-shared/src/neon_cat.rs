@@ -19,7 +19,7 @@ use serde_json::json;
 
 use crate::flow::{FlowAction, FlowPhase, GameFlow};
 use crate::game_core::{self, Core, Hitbox, Juice, JuiceShake, Kit, Spring1};
-use crate::game_spec::{Behavior, GameSpec, PartRole, SectionKind};
+use crate::game_spec::{Behavior, GameSpec, ItemEffect, PartRole, SectionKind};
 use crate::scene::{DrawList, Quad, TextAlign, TextQuad};
 use crate::world_doc::{WorldCamera, WorldDoc, WorldLight, WorldProp, WorldWalker};
 
@@ -36,6 +36,10 @@ use crate::gesture::{DragEvent, DragFlick, Gesture, InputBuffer, Swipe, SwipeRec
 pub const SWIPE_BUFFER_SECS: f32 = 0.15;
 /// `hurt_t` value that means no recent hit.
 const HURT_IDLE: f32 = 99.0;
+const FX_MAGNET: usize = 0;
+const FX_BOOST: usize = 1;
+const FX_JUMP: usize = 2;
+const FX_DOUBLE: usize = 3;
 
 #[path = "neon_cat_measure.rs"]
 pub mod measure;
@@ -115,6 +119,13 @@ pub struct NeonCat {
     invuln: f32,
     /// Seconds since the last hit (drives the paw pop and the edge flash).
     hurt_t: f32,
+    /// Seconds left of each timed pick-up: magnet, boost, super jump, 2x.
+    fx: [f32; 4],
+    /// Pick-up slots taken this run.
+    got_items: HashSet<i32>,
+    /// A line of text over the play view for a moment (a pick-up's name).
+    toast: String,
+    toast_t: f32,
     got_coins: HashSet<i32>,
 }
 
@@ -271,6 +282,10 @@ impl NeonCat {
             lives: 0,
             invuln: 0.0,
             hurt_t: HURT_IDLE,
+            fx: [0.0; 4],
+            got_items: HashSet::new(),
+            toast: String::new(),
+            toast_t: 0.0,
             got_coins: HashSet::new(),
         };
         run.lives = run.spec.lives.count;
@@ -429,6 +444,13 @@ impl NeonCat {
             "coins": self.coins,
             "gates": self.gates,
             "lives": self.lives,
+            "fx": {
+                "magnet": self.fx[FX_MAGNET],
+                "boost": self.fx[FX_BOOST],
+                "superjump": self.fx[FX_JUMP],
+                "double": self.fx[FX_DOUBLE],
+            },
+            "toast": if self.toast_t > 0.0 { self.toast.as_str() } else { "" },
             "lives_max": self.spec.lives.count,
             "invulnerable": self.invuln > 0.0,
             "rolling": self.rolling > 0.0,
@@ -699,6 +721,10 @@ impl NeonCat {
         self.lives = self.spec.lives.count;
         self.invuln = 0.0;
         self.hurt_t = HURT_IDLE;
+        self.fx = [0.0; 4];
+        self.got_items.clear();
+        self.toast.clear();
+        self.toast_t = 0.0;
         self.rolling = 0.0;
         self.recover = 0.0;
         self.pose = [1.0; 3];
@@ -916,7 +942,22 @@ impl NeonCat {
         game_core::tick_frame(self, dt);
     }
 
+    /// One sim step. A 2x pick-up doubles whatever the step scored, whichever
+    /// rule scored it (distance, coin, ring, gate).
     fn play_step(&mut self, dt: f32) {
+        let before = self.core.stats.score;
+        self.play_step_inner(dt);
+        if self.fx[FX_DOUBLE] > 0.0 && self.core.stats.alive {
+            let gained = self.core.stats.score.saturating_sub(before);
+            self.core.stats.score += gained;
+        }
+        for t in &mut self.fx {
+            *t = (*t - dt).max(0.0);
+        }
+        self.toast_t = (self.toast_t - dt).max(0.0);
+    }
+
+    fn play_step_inner(&mut self, dt: f32) {
         self.time += dt;
         self.invuln = (self.invuln - dt).max(0.0);
         self.hurt_t = (self.hurt_t + dt).min(HURT_IDLE);
@@ -992,7 +1033,12 @@ impl NeonCat {
         }
         let want_jump = self.jump_held || self.key_jump || self.pad_up > 0.55;
         if grounded && (want_jump || self.swipes.take(Swipe::Up, self.time)) {
-            self.vy = self.spec.runner.jump.velocity * self.feel.velocity_scale;
+            let boost = if self.fx[FX_JUMP] > 0.0 {
+                self.spec.item_rules.jump_scale
+            } else {
+                1.0
+            };
+            self.vy = self.spec.runner.jump.velocity * self.feel.velocity_scale * boost;
             self.y = g0 + 0.02;
             self.rolling = 0.0;
             self.recover = 0.0;
@@ -1061,6 +1107,7 @@ impl NeonCat {
             self.ground = g1;
             self.collect_rings();
             self.collect_coins();
+            self.collect_items();
         }
     }
 
@@ -1178,8 +1225,13 @@ impl NeonCat {
     }
 
     fn speed(&self) -> f32 {
-        (self.spec.runner.speed.start + self.time * self.spec.runner.speed.ramp)
-            .min(self.spec.runner.speed.cap)
+        let base = (self.spec.runner.speed.start + self.time * self.spec.runner.speed.ramp)
+            .min(self.spec.runner.speed.cap);
+        if self.fx[FX_BOOST] > 0.0 {
+            base * self.spec.item_rules.boost_speed
+        } else {
+            base
+        }
     }
 
     fn smooth_cam(&mut self, dt: f32) {
@@ -1281,6 +1333,8 @@ impl NeonCat {
         if !c.enabled {
             return;
         }
+        let magnet = self.fx[FX_MAGNET] > 0.0;
+        let reach = self.spec.item_rules.magnet_radius;
         let (score, pad) = (c.score, 0.55);
         let track = &self.spec.runner.obstacle_track;
         let i0 = near_index(self.z, track.z0, track.gap).saturating_sub(1);
@@ -1295,10 +1349,14 @@ impl NeonCat {
                 if self.got_coins.contains(&id) {
                     continue;
                 }
-                if (self.x - p[0]).abs() < pad
+                let near = (self.x - p[0]).abs() < pad
                     && (self.z - p[2]).abs() < pad
-                    && (mid - p[1]).abs() < 0.75
-                {
+                    && (mid - p[1]).abs() < 0.75;
+                let pulled = magnet && {
+                    let (dx, dy, dz) = (self.x - p[0], mid - p[1], self.z - p[2]);
+                    dx * dx + dy * dy + dz * dz < reach * reach
+                };
+                if near || pulled {
                     taken.push((id, p));
                 }
             }
@@ -1309,6 +1367,151 @@ impl NeonCat {
             self.core.stats.score += score;
             self.burst(p[0], p[1], p[2], 4, [255, 214, 90], 2.0, 0.07);
             self.sfx("coin");
+        }
+    }
+
+    /// Take the pick-ups the cat touches this step.
+    fn collect_items(&mut self) {
+        let r = self.spec.item_rules.radius;
+        let track = &self.spec.runner.obstacle_track;
+        let i0 = near_index(self.z, track.z0, track.gap).saturating_sub(1);
+        let mid = self.y + self.body_height() * 0.5;
+        let mut hit = Vec::new();
+        for i in i0..i0 + 3 {
+            if i < 0 || self.got_items.contains(&i) {
+                continue;
+            }
+            if let Some((effect, p)) = item_at(&self.spec, i) {
+                if (self.x - p[0]).abs() < r
+                    && (self.z - p[2]).abs() < r
+                    && (mid - p[1]).abs() < r + 0.3
+                {
+                    hit.push((i, effect, p));
+                }
+            }
+        }
+        for (i, effect, p) in hit {
+            self.got_items.insert(i);
+            self.take_item(effect, p);
+        }
+    }
+
+    fn take_item(&mut self, effect: ItemEffect, at: [f32; 3]) {
+        let secs = self
+            .spec
+            .items
+            .iter()
+            .find(|it| it.effect == effect)
+            .map(|it| it.secs())
+            .unwrap_or_else(|| effect.default_secs());
+        let c = effect_color(effect);
+        let color = [c[0] as u32, c[1] as u32, c[2] as u32];
+        match effect {
+            ItemEffect::Magnet => self.fx[FX_MAGNET] = secs,
+            ItemEffect::Boost => self.fx[FX_BOOST] = secs,
+            ItemEffect::Superjump => self.fx[FX_JUMP] = secs,
+            ItemEffect::Double => self.fx[FX_DOUBLE] = secs,
+            ItemEffect::Meow => {
+                if self.lives < self.spec.lives.count {
+                    self.lives += 1;
+                    self.toast = "MEOW  +1 LIFE".into();
+                } else {
+                    self.core.stats.score += 100;
+                    self.toast = "MEOW  +100".into();
+                }
+                self.toast_t = 1.4;
+                self.burst(self.x, self.y + 0.5, self.z, 16, color, 3.4, 0.12);
+                self.sfx("meow");
+                return;
+            }
+        }
+        self.toast = effect_label(effect).into();
+        self.toast_t = 1.4;
+        self.burst(at[0], at[1], at[2], 14, color, 3.0, 0.11);
+        self.sfx("coin");
+    }
+
+    /// Glowing pick-ups ahead of the cat: a bobbing orb in the effect's colour
+    /// inside a slow ring.
+    fn push_items(&self, doc: &mut WorldDoc) {
+        let track = &self.spec.runner.obstacle_track;
+        let i0 = near_index(self.z, track.z0, track.gap).saturating_sub(1);
+        let reach = self.z + 6.0 + self.obstacle_lead_count() as f32 * track.gap;
+        for i in i0..i0 + 2 + self.obstacle_lead_count() {
+            if i < 0 || self.got_items.contains(&i) {
+                continue;
+            }
+            let Some((effect, p)) = item_at(&self.spec, i) else {
+                continue;
+            };
+            if p[2] < self.z - 1.0 || p[2] > reach {
+                continue;
+            }
+            let c = effect_color(effect);
+            let col = [
+                (c[0] * 0.5 + 128.0).min(255.0) as u32,
+                (c[1] * 0.5 + 128.0).min(255.0) as u32,
+                (c[2] * 0.5 + 128.0).min(255.0) as u32,
+            ];
+            let lin = [c[0] / 255.0, c[1] / 255.0, c[2] / 255.0];
+            let bob = (self.time * 3.0 + i as f32).sin() * 0.06;
+            let mut orb = glow(
+                &format!("item-{i}"),
+                "sphere",
+                "item",
+                [p[0], p[1] + bob, p[2]],
+                [0.34, 0.34, 0.34],
+                col,
+                2.2,
+            );
+            orb.emissive_color = Some(lin);
+            doc.props.push(orb);
+            let mut ring = glow(
+                &format!("item-ring-{i}"),
+                "torus",
+                "item_ring",
+                [p[0], p[1] + bob, p[2]],
+                [0.9, 0.9, 0.9],
+                col,
+                1.4,
+            );
+            ring.emissive_color = Some(lin);
+            ring.yaw = self.time * 1.6 + i as f32;
+            ring.pitch = 1.2;
+            doc.props.push(ring);
+        }
+    }
+
+    /// A ring on the ground under the cat for each effect that is running.
+    fn push_auras(&self, doc: &mut WorldDoc) {
+        let effects = [
+            (FX_MAGNET, ItemEffect::Magnet, 1.5),
+            (FX_BOOST, ItemEffect::Boost, 1.15),
+            (FX_JUMP, ItemEffect::Superjump, 1.3),
+            (FX_DOUBLE, ItemEffect::Double, 1.0),
+        ];
+        for (slot, effect, size) in effects {
+            if self.fx[slot] <= 0.0 {
+                continue;
+            }
+            // Flicker in the last second so the end is not a surprise.
+            if self.fx[slot] < 1.0 && (self.fx[slot] * 8.0).floor() as i64 % 2 == 0 {
+                continue;
+            }
+            let c = effect_color(effect);
+            let lin = [c[0] / 255.0, c[1] / 255.0, c[2] / 255.0];
+            let mut ring = glow(
+                &format!("aura-{slot}"),
+                "torus",
+                "aura",
+                [self.x, self.ground + 0.03, self.z],
+                [size, size * 0.4, size],
+                [c[0] as u32, c[1] as u32, c[2] as u32],
+                1.6,
+            );
+            ring.emissive_color = Some(lin);
+            ring.yaw = self.time * 2.0;
+            doc.props.push(ring);
         }
     }
 
@@ -1367,7 +1570,7 @@ impl NeonCat {
 
     fn crash(&mut self, reason: &str) {
         if self.core.stats.alive {
-            if self.invuln > 0.0 {
+            if self.invuln > 0.0 || self.fx[FX_BOOST] > 0.0 {
                 return;
             }
             if self.lives > 1 {
@@ -1502,11 +1705,13 @@ impl NeonCat {
         self.push_gates(&mut doc);
         self.push_rings(&mut doc);
         self.push_coins(&mut doc);
+        self.push_items(&mut doc);
         self.spawned = self.push_obstacles(&mut doc);
         if self.debug {
             self.push_hitboxes(&mut doc);
         }
         self.push_cat(&mut doc);
+        self.push_auras(&mut doc);
         self.push_sparks(&mut doc);
         self.doc = doc;
     }
@@ -1909,38 +2114,96 @@ impl NeonCat {
         }
     }
 
-    /// Two unlit boxes on the face. Offsets are model units, so they follow
+    /// The cat's glow marks (eyes, ear glints, collar, tail tip). Offsets are model units, so they follow
     /// the scale and the crouch / stretch pose. Feet are at `self.y`.
     fn push_eyes(&self, doc: &mut WorldDoc) {
         let e = &self.spec.player.eyes;
-        if !e.enabled {
-            return;
-        }
         let sc = self.spec.player.scale;
         let (sin, cos) = self.yaw.sin_cos();
+        // Model-space offset (sideways, up, forward) to the world.
+        let at = |x: f32, y: f32, z: f32| {
+            let lx = x * sc * self.pose[0];
+            let lz = z * sc * self.pose[2];
+            [
+                self.x + lx * cos + lz * sin,
+                self.y + y * sc * self.pose[1],
+                self.z - lx * sin + lz * cos,
+            ]
+        };
+        let mut put = |mut p: WorldProp, color: [f32; 3]| {
+            p.emissive_color = Some(color);
+            p.yaw = self.yaw;
+            doc.props.push(p);
+        };
         for (i, side) in [-1.0f32, 1.0].into_iter().enumerate() {
-            let lx = side * e.spread * sc * self.pose[0];
-            let lz = e.forward * sc * self.pose[2];
-            let mut eye = glow(
-                &format!("cat-eye-{i}"),
+            if e.enabled {
+                let eye = glow(
+                    &format!("cat-eye-{i}"),
+                    "box",
+                    "cat_eye",
+                    at(side * e.spread, e.height, e.forward),
+                    [
+                        e.size * sc * self.pose[0],
+                        e.size * 1.3 * sc * self.pose[1],
+                        e.size * 0.4 * sc * self.pose[2],
+                    ],
+                    [255, 255, 255],
+                    e.glow,
+                );
+                put(eye, e.color);
+            }
+            if e.ears {
+                // A glint on each ear tip, which shows over the back.
+                let k = e.size * 0.8 * sc;
+                let ear = glow(
+                    &format!("cat-ear-{i}"),
+                    "box",
+                    "cat_ear",
+                    at(side * e.ear_x, e.ear_y, e.ear_z),
+                    [k * self.pose[0], k * self.pose[1], k * self.pose[2]],
+                    [255, 255, 255],
+                    e.glow,
+                );
+                put(ear, e.color);
+            }
+        }
+        if e.collar {
+            // Four thin strips just outside the body block (half 0.625).
+            let (h, t) = (0.64f32, 0.05f32);
+            let strips = [
+                ("back", 0.0, -h, h * 2.0, t),
+                ("left", -h, 0.0, t, h * 2.0),
+                ("right", h, 0.0, t, h * 2.0),
+            ];
+            for (name, x, z, w, d) in strips {
+                let strip = glow(
+                    &format!("cat-collar-{name}"),
+                    "box",
+                    "cat_collar",
+                    at(x, e.collar_y, z),
+                    [
+                        w * sc * self.pose[0],
+                        0.07 * sc * self.pose[1],
+                        d * sc * self.pose[2],
+                    ],
+                    [255, 255, 255],
+                    e.glow * 0.8,
+                );
+                put(strip, e.collar_color);
+            }
+        }
+        if e.tail_tip {
+            let k = 0.16 * sc;
+            let tip = glow(
+                "cat-tail-tip",
                 "box",
-                "cat_eye",
-                [
-                    self.x + lx * cos + lz * sin,
-                    self.y + e.height * sc * self.pose[1],
-                    self.z - lx * sin + lz * cos,
-                ],
-                [
-                    e.size * sc * self.pose[0],
-                    e.size * 1.3 * sc * self.pose[1],
-                    e.size * 0.4 * sc * self.pose[2],
-                ],
+                "cat_tail",
+                at(e.tail_x, e.tail_y, e.tail_z),
+                [k * self.pose[0], k * 1.4 * self.pose[1], k * self.pose[2]],
                 [255, 255, 255],
                 e.glow,
             );
-            eye.emissive_color = Some(e.color);
-            eye.yaw = self.yaw;
-            doc.props.push(eye);
+            put(tip, e.tail_color);
         }
     }
 
@@ -2089,7 +2352,7 @@ impl NeonCat {
             )
             .aligned(TextAlign::Left),
         );
-        // Nine lives: a paw each, under the score. The one just lost pops red.
+        // Lives: a paw each, under the score. The one just lost pops red.
         let max = self.spec.lives.count;
         if max > 1 {
             let r = 6.5 * ui;
@@ -2112,6 +2375,66 @@ impl NeonCat {
                     paw_icon(list, cx, y0, r, fade([70, 60, 100, 130], keep));
                 }
             }
+        }
+        // Running pick-ups: a label and a draining bar each, under the paws.
+        let mut row_y = top + sh + 6.0 * ui + if max > 1 { 20.0 * ui } else { 0.0 };
+        let fx_rows = [
+            (FX_MAGNET, ItemEffect::Magnet),
+            (FX_BOOST, ItemEffect::Boost),
+            (FX_JUMP, ItemEffect::Superjump),
+            (FX_DOUBLE, ItemEffect::Double),
+        ];
+        for (slot, effect) in fx_rows {
+            let left = self.fx[slot];
+            if left <= 0.0 {
+                continue;
+            }
+            let full = self
+                .spec
+                .items
+                .iter()
+                .find(|i| i.effect == effect)
+                .map(|i| i.secs())
+                .unwrap_or_else(|| effect.default_secs())
+                .max(0.1);
+            let c = effect_color(effect);
+            let col = [c[0] as u8, c[1] as u8, c[2] as u8, 255];
+            let x0 = m + 12.0 * ui + shake;
+            list.texts.push(
+                TextQuad::new(effect_label(effect), x0, row_y, 11.0 * ui, fade(col, keep))
+                    .aligned(TextAlign::Left),
+            );
+            let bw = 96.0 * ui;
+            list.quads.push(Quad::new(
+                x0,
+                row_y + 13.0 * ui,
+                bw,
+                4.0 * ui,
+                fade([20, 14, 40, 180], keep),
+            ));
+            list.quads.push(Quad::new(
+                x0,
+                row_y + 13.0 * ui,
+                bw * (left / full).clamp(0.0, 1.0),
+                4.0 * ui,
+                fade(col, keep),
+            ));
+            row_y += 22.0 * ui;
+        }
+        // A pick-up's name over the view for a moment.
+        if self.toast_t > 0.0 && !dead {
+            let a = (self.toast_t / 0.4).clamp(0.0, 1.0);
+            let rise = (1.4 - self.toast_t).min(0.4) * 30.0 * ui;
+            list.texts.push(
+                TextQuad::new(
+                    &self.toast,
+                    w * 0.5,
+                    h * 0.30 - rise,
+                    26.0 * ui,
+                    [255, 245, 215, (a * 255.0) as u8],
+                )
+                .aligned(TextAlign::Center),
+            );
         }
         if self.spec.runner.coins.enabled {
             let (cw, ch) = (112.0 * ui, 40.0 * ui);
@@ -2247,6 +2570,78 @@ fn spark_inside_obstacle(s: &GameSpec, spawned: &HashSet<i32>, x: f32, y: f32, z
 /// Coin positions `[x, y, z]` that belong to slot `index`. The shape follows
 /// what the slot asks: an arc over a hop, a low line under a beam, a line
 /// along a train top, and a weave through rest and reward stretches.
+/// The pick-up of obstacle slot `index`, if any: only free slots of rest and
+/// reward sections carry one, every n-th by the spec, halfway to the next slot
+/// so it never sits in the coin line. Which one is a weighted hash of the slot.
+pub(crate) fn item_at(s: &GameSpec, index: i32) -> Option<(ItemEffect, [f32; 3])> {
+    if index < 0 || s.items.is_empty() || s.obstacle_active(index) {
+        return None;
+    }
+    let t = &s.runner.obstacle_track;
+    let z = t.z(index);
+    let (_, sec) = s.section_at(z)?;
+    let every = match sec.kind {
+        SectionKind::Rest => s.item_rules.rest_every,
+        SectionKind::Reward => s.item_rules.reward_every,
+        _ => return None,
+    };
+    if every == 0 {
+        return None;
+    }
+    // Count free slots from the start of this section so the rhythm restarts there.
+    let mut h = (index as u32).wrapping_add(0x9e37_79b9);
+    h = (h ^ (h >> 16)).wrapping_mul(0x85eb_ca6b);
+    h = (h ^ (h >> 13)).wrapping_mul(0xc2b2_ae35);
+    h ^= h >> 16;
+    let start = {
+        let mut i = index;
+        while i > 0
+            && !s.obstacle_active(i - 1)
+            && s.section_at(t.z(i - 1)).map(|(k, _)| k) == s.section_at(z).map(|(k, _)| k)
+        {
+            i -= 1;
+        }
+        i
+    };
+    if (index - start) as u32 % every != every - 1 {
+        return None;
+    }
+    let total: u32 = s.items.iter().map(|i| i.weight).sum();
+    if total == 0 {
+        return None;
+    }
+    let mut pick = h % total;
+    let mut effect = s.items[0].effect;
+    for it in &s.items {
+        if pick < it.weight {
+            effect = it.effect;
+            break;
+        }
+        pick -= it.weight;
+    }
+    Some((effect, [t.x(index), s.item_rules.hover, z + t.gap * 0.5]))
+}
+
+fn effect_color(effect: ItemEffect) -> [f32; 3] {
+    match effect {
+        ItemEffect::Magnet => [255.0, 70.0, 120.0],
+        ItemEffect::Boost => [255.0, 160.0, 40.0],
+        ItemEffect::Superjump => [90.0, 255.0, 140.0],
+        ItemEffect::Double => [255.0, 220.0, 60.0],
+        ItemEffect::Meow => [215.0, 150.0, 255.0],
+    }
+}
+
+fn effect_label(effect: ItemEffect) -> &'static str {
+    match effect {
+        ItemEffect::Magnet => "MAGNET",
+        ItemEffect::Boost => "BOOST",
+        ItemEffect::Superjump => "HIGH JUMP",
+        ItemEffect::Double => "2X SCORE",
+        ItemEffect::Meow => "MEOW",
+    }
+}
+
 /// Ids are `index * 32 + k`, so a line never exceeds 32 coins.
 pub(crate) fn coin_line(s: &GameSpec, index: i32) -> Vec<[f32; 3]> {
     let c = &s.runner.coins;
@@ -4048,7 +4443,7 @@ mod tests {
     #[test]
     fn retry_starts_every_counter_from_zero() {
         let mut run = full_lives();
-        assert_eq!(run.lives, 9);
+        assert_eq!(run.lives, 3);
         // Collect a coin and a ring, run past some gates, then crash.
         let spec = run.spec.clone();
         let line = coin_line(&spec, 0);
@@ -4065,13 +4460,13 @@ mod tests {
         run.tick(1.0 / 60.0);
         assert!(run.gates >= 3, "gates {}", run.gates);
         assert!(run.core.stats.score > 0);
-        // Three hits cost three lives; the run goes on.
-        for _ in 0..3 {
+        // Two hits cost two lives; the run goes on.
+        for _ in 0..2 {
             run.invuln = 0.0;
             run.crash("CRATE");
             assert!(run.core.stats.alive);
         }
-        assert_eq!(run.lives, 6);
+        assert_eq!(run.lives, 1);
         assert!(run.invuln > 0.0);
         run.invuln = 0.0;
         run.lives = 1;
@@ -4113,10 +4508,10 @@ mod tests {
             assert_eq!(run.dying, 0.0, "crash timer");
             assert_eq!(run.pose, [1.0; 3]);
             assert_eq!(run.lives, run.spec.lives.count, "every life is back");
-            assert_eq!(run.lives, 9);
+            assert_eq!(run.lives, 3);
             assert_eq!(run.invuln, 0.0, "no leftover protection");
             assert!(run.hurt_t > 10.0, "no leftover hurt flash");
-            assert_eq!(run.sim_value()["lives"], 9);
+            assert_eq!(run.sim_value()["lives"], 3);
             // The collected coin is back in the world and the sim json shows it.
             let v = run.sim_value();
             assert_eq!(v["coins"], 0);
@@ -4142,15 +4537,15 @@ mod tests {
     fn a_hit_costs_a_life_then_protects_then_the_last_one_ends_the_run() {
         let mut run = full_lives();
         let fx = run.spec.lives.clone();
-        assert_eq!((fx.count, run.lives), (9, 9));
+        assert_eq!((fx.count, run.lives), (3, 3));
         run.crash("CRATE");
         assert!(run.core.stats.alive, "a hit is survivable");
-        assert_eq!(run.lives, 8);
+        assert_eq!(run.lives, 2);
         assert!((run.invuln - fx.invuln_secs).abs() < 1e-6);
         // Protected: the same obstacle cannot hit again.
         run.crash("CRATE");
         run.crash("BARREL");
-        assert_eq!(run.lives, 8, "protected");
+        assert_eq!(run.lives, 2, "protected");
         // Protection runs out with play time.
         let mut frames = 0;
         while run.invuln > 0.0 && frames < 600 {
@@ -4163,7 +4558,7 @@ mod tests {
         );
         assert_eq!(run.invuln, 0.0);
         run.crash("CRATE");
-        assert_eq!(run.lives, 7);
+        assert_eq!(run.lives, 1);
         // Down to the last life: the next hit is the end.
         run.invuln = 0.0;
         run.lives = 1;
@@ -4195,7 +4590,7 @@ mod tests {
             run.tick(1.0 / 60.0);
         }
         assert!(run.core.stats.alive);
-        assert_eq!(run.lives, 8, "one box, one life, however long it overlaps");
+        assert_eq!(run.lives, 2, "one box, one life, however long it overlaps");
     }
 
     #[test]
@@ -4204,7 +4599,7 @@ mod tests {
         let paws = |l: &DrawList| l.quads.len();
         let nine = hud_of(&run, 824, 1800);
         run.crash("CRATE");
-        // Right after the hit: eight filled paws, one popping, plus edge flashes.
+        // Right after the hit: two filled paws, one popping, plus edge flashes.
         let hit = hud_of(&run, 824, 1800);
         assert!(paws(&hit) > 0);
         let bright = |l: &DrawList| {
@@ -4288,6 +4683,293 @@ mod tests {
         assert!(lights[0].position[0] > run.x && lights[1].position[0] < run.x);
         assert_eq!(lights[0].color, Some(rim.left));
         assert_eq!(lights[1].color, Some(rim.right));
+    }
+
+    /// First slot of the shipped course that carries `effect`.
+    fn item_slot(spec: &GameSpec, effect: ItemEffect) -> (i32, [f32; 3]) {
+        (0..400)
+            .find_map(|i| {
+                item_at(spec, i)
+                    .filter(|(e, _)| *e == effect)
+                    .map(|(_, p)| (i, p))
+            })
+            .unwrap_or_else(|| panic!("no {effect:?} in 400 slots"))
+    }
+
+    /// The cat on its way into a pick-up.
+    fn at_item(run: &mut NeonCat, i: i32, p: [f32; 3]) {
+        run.got_items.remove(&i);
+        run.x = p[0];
+        run.y = 0.0;
+        run.vy = 0.0;
+        run.z = p[2] - 0.3;
+        run.rebuild();
+        run.tick(1.0 / 60.0);
+        run.tick(1.0 / 60.0);
+    }
+
+    #[test]
+    fn items_sit_in_free_rest_and_reward_slots_only_clear_of_the_coin_line() {
+        let spec = full().spec.clone();
+        let mut kinds = std::collections::BTreeSet::new();
+        let mut count = 0;
+        for i in 0..400 {
+            let z = spec.runner.obstacle_track.z(i);
+            let sec = spec.section_at(z).unwrap().1.kind;
+            match item_at(&spec, i) {
+                None => {}
+                Some((e, p)) => {
+                    count += 1;
+                    kinds.insert(format!("{e:?}"));
+                    assert!(!spec.obstacle_active(i), "slot {i} has an obstacle");
+                    assert!(
+                        matches!(sec, SectionKind::Rest | SectionKind::Reward),
+                        "slot {i} in {sec:?}"
+                    );
+                    let line = coin_line(&spec, i);
+                    let last = line.iter().map(|c| c[2]).fold(f32::MIN, f32::max);
+                    assert!(p[2] > last + 1.0, "item {} behind coins {}", p[2], last);
+                    assert_eq!(item_at(&spec, i).unwrap().0, e, "deterministic");
+                }
+            }
+        }
+        assert!(count >= 4, "{count} items on the first 400 slots");
+        assert!(kinds.len() >= 4, "{kinds:?}");
+        // No items in the old course.
+        let legacy = GameSpec::legacy();
+        assert!((0..200).all(|i| item_at(&legacy, i).is_none()));
+    }
+
+    #[test]
+    fn magnet_boost_superjump_and_double_each_do_their_one_thing() {
+        let spec = full().spec.clone();
+        let secs = |e: ItemEffect| spec.items.iter().find(|i| i.effect == e).unwrap().secs();
+        // Magnet: coins beyond the normal reach fly in.
+        let mut run = full_lives();
+        let (i, p) = item_slot(&spec, ItemEffect::Magnet);
+        at_item(&mut run, i, p);
+        assert!(
+            run.fx[FX_MAGNET] > secs(ItemEffect::Magnet) - 0.2,
+            "{:?}",
+            run.fx
+        );
+        assert!(run.got_items.contains(&i));
+        let before = run.coins;
+        let j = i + 1;
+        let line = coin_line(&spec, j);
+        assert!(!line.is_empty());
+        run.x = line[0][0] + 1.6;
+        run.z = line[0][2] - 1.5;
+        run.rebuild();
+        run.tick(1.0 / 60.0);
+        assert!(
+            run.coins > before,
+            "the magnet pulled a coin from beside the lane"
+        );
+        let plain = {
+            let mut r = full_lives();
+            r.x = line[0][0] + 1.6;
+            r.z = line[0][2] - 1.5;
+            r.rebuild();
+            r.tick(1.0 / 60.0);
+            r.coins
+        };
+        assert_eq!(plain, 0, "without the magnet it stays");
+        // Boost: faster, and a hit does nothing.
+        let mut run = full_lives();
+        let base = run.speed();
+        let (i, p) = item_slot(&spec, ItemEffect::Boost);
+        at_item(&mut run, i, p);
+        assert!(run.speed() > base * 1.3, "{} vs {}", run.speed(), base);
+        let lives = run.lives;
+        run.crash("CRATE");
+        assert!(
+            run.core.stats.alive && run.lives == lives,
+            "nothing hurts a boosting cat"
+        );
+        run.fx[FX_BOOST] = 0.0;
+        run.invuln = 0.0;
+        run.crash("CRATE");
+        assert_eq!(run.lives, lives - 1);
+        // Super jump: a much higher arc.
+        let apex = |boosted: bool| {
+            let mut r = full_lives();
+            if boosted {
+                r.fx[FX_JUMP] = 5.0;
+            }
+            r.rebuild();
+            r.on_key("w", true);
+            let mut top = 0.0f32;
+            for _ in 0..180 {
+                r.tick(1.0 / 60.0);
+                top = top.max(r.y);
+                r.on_key("w", false);
+            }
+            top
+        };
+        let (low, high) = (apex(false), apex(true));
+        assert!(high > low * 1.8, "apex {low} -> {high}");
+        // 2x: a coin pays twice.
+        let pay = |on: bool| {
+            let mut r = full_lives();
+            if on {
+                r.fx[FX_DOUBLE] = 5.0;
+            }
+            let line = coin_line(&spec, 0);
+            r.x = line[0][0];
+            r.y = (line[0][1] - 0.3).max(0.0);
+            r.z = line[0][2] - 0.05;
+            r.rebuild();
+            let s0 = r.core.stats.score;
+            r.tick(1.0 / 60.0);
+            r.core.stats.score - s0
+        };
+        let (one, two) = (pay(false), pay(true));
+        assert!(
+            one >= spec.runner.coins.score && two >= 2 * one - 2,
+            "{one} -> {two}"
+        );
+    }
+
+    #[test]
+    fn effects_run_out_and_a_retry_clears_them() {
+        let mut run = full_lives();
+        run.fx = [1.0, 1.0, 1.0, 1.0];
+        let mut frames = 0;
+        while run.fx.iter().any(|&t| t > 0.0) && frames < 200 {
+            run.tick(1.0 / 60.0);
+            frames += 1;
+        }
+        assert!((55..80).contains(&frames), "{frames} frames");
+        let spec = run.spec.clone();
+        let (i, p) = item_slot(&spec, ItemEffect::Double);
+        at_item(&mut run, i, p);
+        assert_eq!(
+            run.sim_value()["fx"]["double"].as_f64().map(|v| v > 5.0),
+            Some(true)
+        );
+        assert!(run.sim_value()["toast"].as_str().unwrap().contains("2X"));
+        run.lives = 1;
+        run.invuln = 0.0;
+        run.fx[FX_BOOST] = 0.0;
+        run.crash("CRATE");
+        for _ in 0..90 {
+            run.tick(1.0 / 60.0);
+        }
+        run.apply_action(FlowAction::Retry);
+        assert_eq!(run.fx, [0.0; 4]);
+        assert!(run.got_items.is_empty());
+        assert_eq!(run.sim_value()["toast"], "");
+    }
+
+    #[test]
+    fn meow_gives_a_life_back_or_score_when_full() {
+        let spec = full().spec.clone();
+        let (i, p) = item_slot(&spec, ItemEffect::Meow);
+        let mut run = full_lives();
+        run.lives = 2;
+        at_item(&mut run, i, p);
+        assert_eq!(run.lives, 3);
+        assert!(run.sim_value()["toast"].as_str().unwrap().contains("LIFE"));
+        let mut run = full_lives();
+        let s0 = run.core.stats.score;
+        at_item(&mut run, i, p);
+        assert_eq!(run.lives, 3, "never above the row");
+        assert!(run.core.stats.score >= s0 + 100);
+    }
+
+    #[test]
+    fn running_effects_show_in_the_hud_and_the_world() {
+        let mut run = full_lives();
+        run.rebuild();
+        let calm = hud_of(&run, 824, 1800);
+        assert!(!calm.texts.iter().any(|t| t.text == "MAGNET"));
+        run.fx[FX_MAGNET] = 4.0;
+        run.fx[FX_DOUBLE] = 2.0;
+        run.toast = "MAGNET".into();
+        run.toast_t = 1.0;
+        run.rebuild();
+        let hud = hud_of(&run, 824, 1800);
+        assert!(
+            hud.texts.iter().filter(|t| t.text == "MAGNET").count() >= 2,
+            "row and toast"
+        );
+        assert!(hud.texts.iter().any(|t| t.text == "2X SCORE"));
+        assert!(run.doc.props.iter().any(|p| p.id == "prop:aura-0"));
+        // Items ahead glow in their own colour.
+        let spec = run.spec.clone();
+        let (i, p) = item_slot(&spec, ItemEffect::Boost);
+        run.x = p[0];
+        run.z = p[2] - 8.0;
+        run.rebuild();
+        let orb = run
+            .doc
+            .props
+            .iter()
+            .find(|q| q.id == format!("prop:item-{i}"))
+            .expect("orb in the dump");
+        assert!(orb.emissive.unwrap() > 1.0);
+    }
+
+    #[test]
+    fn ear_collar_and_tail_glints_show_from_behind() {
+        let run = full_lives();
+        let ears: Vec<_> = run
+            .doc
+            .props
+            .iter()
+            .filter(|p| p.name == "cat_ear")
+            .collect();
+        assert_eq!(ears.len(), 2);
+        let eyes_y = run
+            .doc
+            .props
+            .iter()
+            .find(|p| p.name == "cat_eye")
+            .unwrap()
+            .position[1];
+        assert!(
+            ears.iter().all(|e| e.position[1] > eyes_y + 0.2),
+            "above the face"
+        );
+        assert!(ears.iter().all(|e| e.emissive.unwrap() > 1.0));
+        assert!(ears[0].position[0] != ears[1].position[0]);
+        // A collar band across the back and a tail tip, behind and above the body.
+        let p = |n: &str| {
+            run.doc
+                .props
+                .iter()
+                .filter(|q| q.name == n)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(p("cat_collar").len(), 3);
+        let back = run
+            .doc
+            .props
+            .iter()
+            .find(|q| q.id.ends_with("collar-back"))
+            .unwrap();
+        assert!(back.position[2] < run.z, "the strip is behind the origin");
+        let tail = p("cat_tail");
+        assert_eq!(tail.len(), 1);
+        assert!(tail[0].position[2] < run.z && tail[0].position[1] > 1.5 * run.spec.player.scale);
+        assert!(tail[0].emissive.unwrap() > 1.0);
+        // Each mark has its own switch, and the eyes can be off without losing them.
+        let mut spec = (*run.spec).clone();
+        spec.player.eyes.enabled = false;
+        spec.player.eyes.collar = false;
+        let mut r2 = NeonCat::with_spec(spec);
+        r2.confirm();
+        r2.rebuild();
+        assert!(r2
+            .doc
+            .props
+            .iter()
+            .all(|q| q.name != "cat_eye" && q.name != "cat_collar"));
+        assert_eq!(
+            r2.doc.props.iter().filter(|q| q.name == "cat_ear").count(),
+            2
+        );
     }
 
     #[test]
