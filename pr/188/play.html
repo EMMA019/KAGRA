@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="ja" data-orient="portrait">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="robots" content="noindex" />
+  <title>KAGRA</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #10141c;
+      color: #f4f1ea;
+      font-family: system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif;
+      overflow: hidden;
+      touch-action: none;
+      overscroll-behavior: none;
+    }
+    #app { position: fixed; inset: 0; }
+    canvas {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #6f93b4;
+      touch-action: none;
+    }
+    #boot, #overlay {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+      background: rgba(12, 16, 24, 0.72);
+    }
+    #boot { z-index: 5; }
+    #boot.err { color: #ffb4a2; text-align: center; white-space: pre-wrap; }
+    #overlay { display: none; z-index: 4; pointer-events: none; }
+    #overlay.visible { display: grid; pointer-events: auto; }
+    #overlay button, #overlay a.btn {
+      touch-action: manipulation;
+      pointer-events: auto;
+      cursor: pointer;
+    }
+    html[data-menu="1"] canvas { pointer-events: none; }
+    .card {
+      width: min(440px, 100%);
+      text-align: center;
+    }
+    h1 { margin: 0 0 8px; font-size: clamp(32px, 8vw, 48px); letter-spacing: 0.04em; }
+    p { margin: 0 0 14px; line-height: 1.5; }
+    button, a.btn {
+      display: inline-block;
+      border: 0;
+      border-radius: 999px;
+      padding: 14px 22px;
+      background: #f0c36a;
+      color: #1a1408;
+      font: 700 16px/1 system-ui, sans-serif;
+      text-decoration: none;
+    }
+    .hint { opacity: 0.8; font-size: 13px; }
+    #death {
+      color: #ff6b9a;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      opacity: 1;
+    }
+    #hud {
+      position: absolute;
+      left: max(10px, env(safe-area-inset-left));
+      top: max(8px, env(safe-area-inset-top));
+      z-index: 2;
+      display: none;
+      gap: 8px;
+      align-items: center;
+      pointer-events: none;
+    }
+    #hud.visible { display: flex; }
+    #hud a {
+      pointer-events: auto;
+      color: #f4f1ea;
+      background: rgba(10, 14, 20, 0.45);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      text-decoration: none;
+    }
+    #pads { position: absolute; inset: 0; z-index: 2; pointer-events: none; display: none; }
+    #pads.visible { display: block; }
+    .pad {
+      position: absolute;
+      touch-action: none;
+      pointer-events: auto;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      background: rgba(10, 14, 20, 0.28);
+      color: rgba(255, 255, 255, 0.86);
+      font: 600 12px/1.2 system-ui, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .pad.on { background: rgba(240, 195, 106, 0.38); }
+    #stick { border-radius: 28%; }
+    #jump, #act { border-radius: 999px; }
+    html[data-orient="portrait"] #stick {
+      left: max(12px, env(safe-area-inset-left));
+      bottom: max(16px, env(safe-area-inset-bottom));
+      width: min(44vw, 210px);
+      height: min(44vw, 210px);
+    }
+    html[data-orient="portrait"] #jump {
+      right: max(16px, env(safe-area-inset-right));
+      bottom: max(18px, env(safe-area-inset-bottom));
+      width: min(24vw, 112px);
+      height: min(24vw, 112px);
+    }
+    html[data-orient="portrait"] #act {
+      right: max(22px, env(safe-area-inset-right));
+      bottom: calc(max(18px, env(safe-area-inset-bottom)) + min(24vw, 112px) + 14px);
+      width: min(20vw, 92px);
+      height: min(20vw, 92px);
+    }
+    html[data-orient="landscape"] #stick {
+      left: max(16px, env(safe-area-inset-left));
+      bottom: max(12px, env(safe-area-inset-bottom));
+      width: min(36vh, 190px);
+      height: min(36vh, 190px);
+    }
+    html[data-orient="landscape"] #jump {
+      right: max(16px, env(safe-area-inset-right));
+      bottom: max(14px, env(safe-area-inset-bottom));
+      width: min(24vh, 108px);
+      height: min(24vh, 108px);
+    }
+    html[data-orient="landscape"] #act {
+      right: calc(max(16px, env(safe-area-inset-right)) + min(24vh, 108px) + 14px);
+      bottom: max(20px, env(safe-area-inset-bottom));
+      width: min(20vh, 88px);
+      height: min(20vh, 88px);
+    }
+    /* Swipe games (Neon Cat kit): a styled game-over card. The 9-slice look of
+       the in-canvas HUD, drawn with a notched border so it needs no images. */
+    html[data-swipe="1"] #hud { display: none !important; }
+    html[data-swipe="1"] #overlay {
+      background: radial-gradient(ellipse at 50% 40%, rgba(40, 14, 52, 0.62), rgba(6, 4, 14, 0.9) 78%);
+      overflow-y: auto;
+      align-items: start;
+    }
+    html[data-swipe="1"] .card { margin: auto; padding: 8px 0 18px; }
+    .panel {
+      --cut: 8px;
+      background: linear-gradient(180deg, rgba(30, 22, 52, 0.94), rgba(14, 10, 32, 0.94));
+      border: 3px solid #5ad2e6;
+      box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.45), inset 0 2px 0 rgba(255, 255, 255, 0.08);
+      clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% calc(100% - var(--cut)),
+                         calc(100% - var(--cut)) 100%, var(--cut) 100%, 0 calc(100% - var(--cut)), 0 var(--cut));
+      padding: 12px 14px;
+      margin: 0 0 14px;
+    }
+    .styled {
+      border: 3px solid #8cffff;
+      border-radius: 0;
+      background: #181228;
+      color: #f5ffff;
+      padding: 15px 30px;
+      font-size: 18px;
+      letter-spacing: 0.06em;
+      clip-path: polygon(7px 0, calc(100% - 7px) 0, 100% 7px, 100% calc(100% - 7px),
+                         calc(100% - 7px) 100%, 7px 100%, 0 calc(100% - 7px), 0 7px);
+      box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.5);
+      min-width: 220px;
+    }
+    .styled:active { background: #281c40; border-color: #ff78be; transform: translateY(2px); }
+    #gameover {
+      margin: 0 0 4px;
+      font-size: clamp(30px, 9vw, 44px);
+      letter-spacing: 0.12em;
+      color: #ff4f9a;
+      text-shadow: 0 0 18px rgba(255, 60, 150, 0.55), 3px 3px 0 rgba(0, 0, 0, 0.5);
+    }
+    html[data-swipe="1"] #death { margin: 0 0 14px; font-size: 16px; letter-spacing: 0.03em; color: #ffd0e2; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; text-align: center; }
+    .stats b { display: block; font-size: clamp(18px, 5.6vw, 24px); font-variant-numeric: tabular-nums; color: #bff8ff; }
+    .stats span { font-size: 11px; opacity: 0.7; letter-spacing: 0.08em; }
+    .stats .big b { color: #ffe08a; }
+    .newbest { display: inline-block; margin: 0 0 8px; padding: 3px 10px; font-size: 12px; font-weight: 800;
+      letter-spacing: 0.16em; color: #1a1408; background: #f0c36a; }
+    .tabs { display: flex; gap: 6px; justify-content: center; margin: 0 0 8px; }
+    .tabs button { padding: 6px 12px; font-size: 12px; border-radius: 999px; background: rgba(255,255,255,0.08);
+      color: #dff; border: 1px solid rgba(140, 255, 255, 0.35); }
+    .tabs button.on { background: #8cffff; color: #08121a; }
+    table.rank { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; }
+    table.rank th { font-size: 11px; font-weight: 600; opacity: 0.65; padding: 2px 4px 6px; letter-spacing: 0.06em; }
+    table.rank td { padding: 6px 4px; text-align: center; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+    table.rank td:first-child, table.rank th:first-child { text-align: left; width: 2.2em; opacity: 0.8; }
+    table.rank tr.me td { background: rgba(240, 195, 106, 0.22); color: #ffe9b0; font-weight: 700; border-top-color: transparent; }
+    table.rank tr.me td:first-child { opacity: 1; }
+    table.rank tr.gap td { padding: 0; line-height: 1; height: 14px; opacity: 0.5; border-top: 0; }
+    table.rank td.sorted { color: #bff8ff; }
+    table.rank tr.me td.sorted { color: #fff3c9; }
+    html[data-swipe="1"][data-orient="landscape"] .card { width: min(760px, 100%); }
+    html[data-swipe="1"][data-orient="landscape"] #result { display: grid; grid-template-columns: 1fr 1.3fr; gap: 12px; align-items: start; }
+    html[data-swipe="1"][data-orient="landscape"] #result .panel { margin: 0; }
+    html[data-swipe="1"][data-orient="landscape"] .stats { grid-template-columns: repeat(2, 1fr) !important; }
+    html[data-swipe="1"][data-orient="landscape"] #gameover { font-size: 28px; }
+    html[data-swipe="1"][data-orient="landscape"] table.rank td { padding: 3px 4px; }
+    html[data-swipe="1"][data-orient="landscape"] #death { margin-bottom: 8px; }
+    .empty { opacity: 0.6; font-size: 13px; margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <canvas id="c"></canvas>
+    <div id="hud"><a id="home" href="./index.html">一覧</a><span id="phaseLabel"></span></div>
+    <div id="pads">
+      <div id="stick" class="pad">移動</div>
+      <div id="act" class="pad">アクション</div>
+      <div id="jump" class="pad">ジャンプ</div>
+    </div>
+    <div id="overlay">
+      <div class="card">
+        <h1 id="title">KAGRA</h1>
+        <h2 id="gameover" hidden>GAME OVER</h2>
+        <p id="blurb" class="hint">タップではじめる。左が移動、右下ジャンプ、右上アクション。</p>
+        <p id="death" class="hint" hidden></p>
+        <div id="result" hidden>
+          <div class="panel stats" id="runStats"></div>
+          <div class="panel" id="boardBox">
+            <div class="tabs" id="tabs"></div>
+            <div id="rows"></div>
+          </div>
+        </div>
+        <p><button id="start" type="button">はじめる</button></p>
+        <p class="hint" id="keys">WASD / 矢印、Space ジャンプ、J アクション。縦でも横でも同じ配置です。</p>
+        <p id="catalogRow"><a class="btn" href="./index.html">ジャンル一覧</a></p>
+      </div>
+    </div>
+    <div id="boot">読み込み中…</div>
+  </div>
+  <script type="module">
+    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js";
+
+    const boot = document.getElementById("boot");
+    const overlay = document.getElementById("overlay");
+    const pads = document.getElementById("pads");
+    const hud = document.getElementById("hud");
+    let canvas = document.getElementById("c");
+    const params = new URLSearchParams(location.search);
+    const requestedBackend = (params.get("backend") || "auto").toLowerCase();
+    let activeBackend = requestedBackend === "webgl" || requestedBackend === "webgl2" ? "gl" : requestedBackend;
+    const slug = (params.get("game") || "neon_run").trim() || "neon_run";
+    // Swipe games (Neon Cat kit) read gestures in the engine: no pads at all.
+    let swipeMode = false;
+    const applySwipeMode = () => {
+      swipeMode = typeof session?.usesSwipe === "function" && session.usesSwipe();
+      if (!swipeMode) return;
+      pads.classList.remove("visible");
+      // This kit owns its game-over card: retry and the ranking only. The
+      // other-genre link and the keyboard hint do not belong on it.
+      document.documentElement.dataset.swipe = "1";
+      document.getElementById("catalogRow")?.remove();
+      document.getElementById("keys")?.remove();
+      document.getElementById("start").classList.add("styled");
+      const blurbEl = document.getElementById("blurb");
+      if (blurbEl) blurbEl.textContent = "タップではじめる。指を置いたまま左右にドラッグで移動、上フリックでジャンプ、下フリックで急降下。";
+    };
+
+    const fail = (text) => {
+      boot.className = "err";
+      boot.style.display = "grid";
+      boot.textContent = text;
+    };
+
+    const orient = () => {
+      document.documentElement.dataset.orient =
+        window.innerHeight >= window.innerWidth ? "portrait" : "landscape";
+    };
+    orient();
+
+    const fileUrl = (baseHref, rel) => {
+      const prefix = baseHref.endsWith("/") ? baseHref : baseHref + "/";
+      return prefix + rel.split("/").map(encodeURIComponent).join("/");
+    };
+
+    let session;
+    let bundle;
+    try {
+      if (navigator.gpu && navigator.gpu.requestAdapter) {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+          Object.defineProperty(Navigator.prototype, "gpu", {
+            configurable: true,
+            get() { return undefined; },
+          });
+        }
+      }
+    } catch (_) {}
+    try {
+      await init();
+      session = new WasmSession();
+      const site = new URL("./", document.baseURI).href;
+      const bundleRes = await fetch(fileUrl(site, `games/${slug}/bundle.json`));
+      if (!bundleRes.ok) throw new Error(`bundle.json ${bundleRes.status}`);
+      bundle = await bundleRes.json();
+      document.title = bundle.title || slug;
+      document.getElementById("title").textContent = bundle.title || slug;
+      const files = Array.isArray(bundle.files) ? bundle.files : [];
+      session.clearMount();
+      let done = 0;
+      const queue = files.slice();
+      const workers = Array.from({ length: Math.min(4, queue.length) }, async () => {
+        while (queue.length) {
+          const item = queue.shift();
+          const path = typeof item === "string" ? item : item.path;
+          const url = typeof item === "string" ? item : item.url;
+          const res = await fetch(fileUrl(site, url));
+          if (!res.ok) throw new Error(`${url} ${res.status}`);
+          const bytes = new Uint8Array(await res.arrayBuffer());
+          session.mountFile(path, bytes);
+          done += 1;
+          boot.textContent = `読み込み ${done} / ${files.length}`;
+        }
+      });
+      await Promise.all(workers);
+      const worldFile = files.find((item) => (item.path || item) === (bundle.world || "world.json"));
+      const worldUrl = worldFile ? (worldFile.url || worldFile) : `games/${slug}/world.json`;
+      const worldRes = await fetch(fileUrl(site, worldUrl));
+      if (!worldRes.ok) throw new Error(`${worldUrl} ${worldRes.status}`);
+      let worldText = await worldRes.text();
+      let asked = (params.get("quality") || "").toLowerCase();
+      let payload = (() => {
+        try {
+          const world = JSON.parse(worldText);
+          if (asked === "low" || asked === "mobile" || asked === "high") {
+            world.quality = asked;
+          } else if (slug === "neon_cat" && (world.quality == null || world.quality === "")) {
+            world.quality = "mobile";
+          }
+          if (slug === "neon_cat") {
+            const cam = (params.get("cam") || "").toLowerCase();
+            if (cam === "classic" || cam === "chase") world.cam = cam;
+          }
+          return JSON.stringify(world);
+        } catch (_) {
+          return worldText;
+        }
+      })();
+      session.loadGame(payload);
+      applySwipeMode();
+      if (session.setExternalMenu) session.setExternalMenu(true);
+      session.showTitle();
+      if (params.get("debug") === "1" && session.setDebug) session.setDebug(true);
+    } catch (err) {
+      fail(`起動できませんでした。\n${err}\n\nwasm が無いときは ./scripts/build_wasm.sh のあと、このページを出してください。`);
+      throw err;
+    }
+
+    const fit = () => {
+      orient();
+      const scale = Math.min(window.devicePixelRatio || 1, 2);
+      const w = Math.max(1, Math.round(canvas.clientWidth * scale));
+      const h = Math.max(1, Math.round(canvas.clientHeight * scale));
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+        session.createSurface(w, h);
+      }
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    window.addEventListener("orientationchange", () => setTimeout(fit, 60));
+    window.visualViewport?.addEventListener("resize", fit);
+    screen.orientation?.addEventListener?.("change", () => setTimeout(fit, 60));
+
+    const canvasIsBlank = (el) => {
+      const probe = document.createElement("canvas");
+      probe.width = 48;
+      probe.height = 48;
+      const ctx = probe.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return false;
+      try { ctx.drawImage(el, 0, 0, 48, 48); }
+      catch (e) { console.warn("kagra: frame readback failed", e); return false; }
+      const data = ctx.getImageData(0, 0, 48, 48).data;
+      let max = 0, min = 255;
+      for (let i = 0; i < data.length; i += 16) {
+        max = Math.max(max, data[i], data[i + 1], data[i + 2]);
+        min = Math.min(min, data[i], data[i + 1], data[i + 2]);
+      }
+      console.warn(`kagra: frame sample max=${max} min=${min} backend=${activeBackend}`);
+      return max < 12 || min > 248;
+    };
+    const attachBackend = async (backend) => {
+      activeBackend = backend;
+      session.setGraphicsBackend(backend);
+      fit();
+      await session.attachCanvas(canvas);
+      fit();
+    };
+    let rendering = false;
+    const startBackend = activeBackend === "gl" || activeBackend === "webgpu" ? activeBackend : "auto";
+    try {
+      await attachBackend(startBackend);
+      rendering = session.hasRenderer();
+    } catch (err) {
+      if (startBackend === "gl") {
+        fail(`描画を開始できません。\n${err}\n\nWebGL2 か WebGPU が必要です。`);
+        throw err;
+      }
+      console.warn("kagra: WebGPU attach failed, trying WebGL2", err);
+      const next = document.createElement("canvas");
+      next.id = "c";
+      canvas.replaceWith(next);
+      canvas = next;
+      try {
+        await attachBackend("gl");
+        rendering = session.hasRenderer();
+      } catch (err2) {
+        fail(`描画を開始できません。\n${err2}\n\nWebGL2 か WebGPU が必要です。`);
+        throw err2;
+      }
+    }
+    boot.style.display = "none";
+
+    const state = { lx: 0, lz: 0, jump: false, attack: false };
+    const held = new Set();
+    const clamp = (v) => Math.max(-1, Math.min(1, v));
+    let phase = "title";
+    globalThis.kagraPreview = session;
+
+    let boardDone = false;
+    let resultAt = 0;
+
+    // ---- Local ranking. Device only (localStorage), no network. The sim hands
+    // over `result` = {key, columns, top_n, sort, run}; nothing here is Neon Cat
+    // specific, so another kit with the same `hud.result.board` gets the same list.
+    const COLUMN_LABEL = { time: "生存", gates: "ゲート", coins: "コイン", score: "スコア" };
+    const fmtTime = (t) => {
+      const m = Math.floor(t / 60);
+      const sec = (t - m * 60).toFixed(1).padStart(m ? 4 : 1, "0");
+      return m ? `${m}:${sec}` : `${sec}s`;
+    };
+    const fmtCell = (col, v) => (col === "time" ? fmtTime(v) : String(v));
+    const boardKey = (key) => `kagra.board.v1.${key}`;
+    const loadBoard = (key) => {
+      try {
+        const rows = JSON.parse(localStorage.getItem(boardKey(key)) || "[]");
+        return Array.isArray(rows) ? rows.filter((r) => r && typeof r === "object") : [];
+      } catch { return []; }
+    };
+    const rankOrder = (rows, col) =>
+      rows.slice().sort((a, b) => (b[col] - a[col]) || (b.score - a.score) || (a.at - b.at));
+    // Keep the union of the top N of every column, so a long survivor is not
+    // dropped just because its score is low.
+    const prune = (rows, columns, n) => {
+      const keep = new Set();
+      for (const col of columns) rankOrder(rows, col).slice(0, n).forEach((r) => keep.add(r.id));
+      return rows.filter((r) => keep.has(r.id));
+    };
+    const showBoard = (res) => {
+      const columns = Array.isArray(res.columns) && res.columns.length ? res.columns : ["score"];
+      const n = Math.max(1, res.top_n | 0 || 5);
+      const run = { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, at: Date.now() };
+      for (const c of columns) run[c] = Number(res.run?.[c]) || 0;
+      run.score = Number(res.run?.score) || 0;
+      // Rank against everything saved plus this run; only the top N of each
+      // column is kept on the device, so a weak run is shown but not stored.
+      const rows = loadBoard(res.key).concat(run);
+      try { localStorage.setItem(boardKey(res.key), JSON.stringify(prune(rows, columns, n))); } catch {}
+      let sort = columns.includes(res.sort) ? res.sort : columns[0];
+      const stats = document.getElementById("runStats");
+      const tabs = document.getElementById("tabs");
+      const box = document.getElementById("rows");
+      const best = rankOrder(rows, "score")[0] === run && rows.length > 1;
+      stats.innerHTML = "";
+      for (const c of columns) {
+        const cell = document.createElement("div");
+        if (c === "score") cell.className = "big";
+        cell.innerHTML = `<b></b><span></span>`;
+        cell.querySelector("b").textContent = fmtCell(c, run[c]);
+        cell.querySelector("span").textContent = COLUMN_LABEL[c] || c;
+        stats.appendChild(cell);
+      }
+      stats.style.gridTemplateColumns = `repeat(${columns.length}, 1fr)`;
+      const draw = () => {
+        tabs.innerHTML = "";
+        if (columns.length > 1) {
+          for (const c of columns) {
+            const b = document.createElement("button");
+            b.type = "button";
+            b.textContent = COLUMN_LABEL[c] || c;
+            b.className = c === sort ? "on" : "";
+            const pick = (e) => { e.preventDefault(); e.stopPropagation(); sort = c; draw(); };
+            b.addEventListener("pointerdown", stopOverlayEvent);
+            b.addEventListener("pointerup", pick);
+            tabs.appendChild(b);
+          }
+        }
+        const ordered = rankOrder(rows, sort);
+        const top = ordered.slice(0, n);
+        const table = document.createElement("table");
+        table.className = "rank";
+        const head = `<tr><th>#</th>${columns.map((c) => `<th>${COLUMN_LABEL[c] || c}</th>`).join("")}</tr>`;
+        const line = (r, rank, extra) =>
+          `<tr class="${extra}"><td>${rank}</td>${columns
+            .map((c) => `<td class="${c === sort ? "sorted" : ""}">${fmtCell(c, r[c] || 0)}</td>`)
+            .join("")}</tr>`;
+        let html = head;
+        top.forEach((r, i) => { html += line(r, i + 1, r.id === run.id ? "me" : ""); });
+        const at = ordered.findIndex((r) => r.id === run.id);
+        if (at >= n) {
+          html += `<tr class="gap"><td colspan="${columns.length + 1}">⋮</td></tr>` + line(run, at + 1, "me");
+        }
+        table.innerHTML = html;
+        box.innerHTML = "";
+        if (best) {
+          const tag = document.createElement("div");
+          tag.className = "newbest";
+          tag.textContent = "NEW BEST!";
+          box.appendChild(tag);
+        }
+        box.appendChild(table);
+      };
+      draw();
+    };
+
+    const stopOverlayEvent = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    let cancelCanvasPointers = () => {};
+    const showPhase = (next) => {
+      phase = next || "title";
+      if (phase === "complete") resultAt = performance.now();
+      const playing = phase === "playing";
+      if (!playing) cancelCanvasPointers();
+      overlay.classList.toggle("visible", !playing);
+      pads.classList.toggle("visible", playing && !swipeMode);
+      hud.classList.toggle("visible", playing);
+      document.documentElement.dataset.menu = playing ? "0" : "1";
+      if (!playing && phase !== "complete") session.showTitle();
+      const label = playing ? "プレイ中" : phase === "complete" ? "リザルト" : "タイトル";
+      document.getElementById("phaseLabel").textContent =
+        `${bundle.title || slug} · ${label} · ${sharedVersion()}`;
+      document.getElementById("start").textContent = phase === "complete" ? "もう一度" : "はじめる";
+      const death = document.getElementById("death");
+      const resultBox = document.getElementById("result");
+      const gameover = document.getElementById("gameover");
+      let sim = {};
+      try { sim = JSON.parse(session.gameJson()); } catch {}
+      const reason = sim.death || "";
+      if (phase === "complete" && reason) {
+        death.hidden = false;
+        // The sim's own wording (hud.result.deaths in the spec); the raw name is the fallback.
+        death.textContent = swipeMode ? (sim.death_text || reason) : `HIT ${reason}`;
+      } else {
+        death.hidden = true;
+        death.textContent = "";
+      }
+      if (phase === "playing") boardDone = false;
+      const showResult = swipeMode && phase === "complete" && sim.result;
+      if (swipeMode) {
+        gameover.hidden = phase !== "complete";
+        document.getElementById("title").hidden = phase === "complete";
+        document.getElementById("blurb").hidden = phase === "complete";
+      }
+      resultBox.hidden = !showResult;
+      if (showResult && !boardDone) {
+        boardDone = true;
+        showBoard(sim.result);
+      }
+    };
+
+    const readPhase = () => {
+      let statsPhase = "title";
+      let flow = "";
+      try { statsPhase = JSON.parse(session.statsJson()).game_phase || "title"; } catch {}
+      try { flow = JSON.parse(session.gameJson()).phase || ""; } catch {}
+      if (flow === "play" || flow === "pause") return "playing";
+      if (flow === "result") return "complete";
+      if (flow === "playing" || flow === "complete") return flow;
+      if (statsPhase === "playing" || statsPhase === "complete") return statsPhase;
+      return flow === "title" ? "title" : (statsPhase || "title");
+    };
+
+    let startLock = 0;
+    const confirmGame = () => {
+      if (phase === "playing") return;
+      const now = performance.now();
+      // A thumb still down from the crash must not skip the result.
+      if (phase === "complete" && now - resultAt < 500) return;
+      if (now - startLock < 350) return;
+      startLock = now;
+      session.startGame();
+    };
+    const startBtn = document.getElementById("start");
+    startBtn.addEventListener("pointerdown", stopOverlayEvent);
+    startBtn.addEventListener("pointerup", (e) => {
+      stopOverlayEvent(e);
+      confirmGame();
+    });
+    startBtn.addEventListener("click", (e) => {
+      stopOverlayEvent(e);
+      confirmGame();
+    });
+    const catalog = overlay.querySelector("a.btn");
+    if (catalog) {
+      const openCatalog = (e) => {
+        stopOverlayEvent(e);
+        const href = catalog.getAttribute("href") || "./index.html";
+        if (location.href !== new URL(href, location.href).href) location.href = href;
+      };
+      catalog.addEventListener("pointerdown", stopOverlayEvent);
+      catalog.addEventListener("pointerup", openCatalog);
+      catalog.addEventListener("click", openCatalog);
+    }
+    overlay.addEventListener("pointerup", (e) => {
+      if (e.target.closest("a, button, .panel")) return;
+      if (phase !== "playing") confirmGame();
+    });
+
+    const bindHold = (el, setDown) => {
+      const ids = new Set();
+      const down = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try { el.setPointerCapture(e.pointerId); } catch {}
+        ids.add(e.pointerId);
+        setDown(true);
+        el.classList.add("on");
+      };
+      const up = (e) => {
+        ids.delete(e.pointerId);
+        if (ids.size === 0) {
+          setDown(false);
+          el.classList.remove("on");
+        }
+      };
+      el.addEventListener("pointerdown", down);
+      el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);
+      el.addEventListener("lostpointercapture", up);
+    };
+    const stick = document.getElementById("stick");
+    const stickIds = new Set();
+    const applyStick = (e) => {
+      const r = stick.getBoundingClientRect();
+      const dx = (e.clientX - (r.left + r.width / 2)) / (r.width / 2);
+      const dy = (e.clientY - (r.top + r.height / 2)) / (r.height / 2);
+      state.lx = clamp(dx);
+      state.lz = clamp(-dy);
+      stick.classList.add("on");
+    };
+    stick.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try { stick.setPointerCapture(e.pointerId); } catch {}
+      stickIds.add(e.pointerId);
+      applyStick(e);
+    });
+    stick.addEventListener("pointermove", (e) => {
+      if (stickIds.has(e.pointerId)) applyStick(e);
+    });
+    const endStick = (e) => {
+      stickIds.delete(e.pointerId);
+      if (stickIds.size === 0) {
+        state.lx = 0;
+        state.lz = 0;
+        stick.classList.remove("on");
+      }
+    };
+    stick.addEventListener("pointerup", endStick);
+    stick.addEventListener("pointercancel", endStick);
+    bindHold(document.getElementById("jump"), (on) => { state.jump = on; });
+    bindHold(document.getElementById("act"), (on) => { state.attack = on; });
+
+    const toBuf = (e) => {
+      const r = canvas.getBoundingClientRect();
+      const sx = canvas.width / Math.max(1, r.width);
+      const sy = canvas.height / Math.max(1, r.height);
+      return [(e.clientX - r.left) * sx, (e.clientY - r.top) * sy];
+    };
+    const phaseOf = (type) => (type === "pointerdown" ? 0 : type === "pointermove" ? 1 : type === "pointerup" ? 2 : 3);
+    const appEl = document.getElementById("app");
+    // Fingers the game has seen go down. Their up/cancel always reaches the
+    // game, even under the result overlay; otherwise a stale finger blocks
+    // every later drag (Pixel: drag died after ~3 retries).
+    const canvasIds = new Map();
+    const endPointer = (id, phase) => {
+      const last = canvasIds.get(id);
+      if (!last) return;
+      canvasIds.delete(id);
+      session.pushPointer(id + 20, last[0], last[1], phase, 0);
+    };
+    cancelCanvasPointers = () => { for (const id of [...canvasIds.keys()]) endPointer(id, 3); };
+    for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel", "lostpointercapture"]) {
+      const target = type === "pointerdown" || type === "pointermove" ? appEl : window;
+      target.addEventListener(type, (e) => {
+        if (type !== "pointerdown" && type !== "pointermove") {
+          endPointer(e.pointerId, type === "pointerup" ? 2 : 3);
+          return;
+        }
+        if (type === "pointermove" && !canvasIds.has(e.pointerId)) return;
+        if (type === "pointerdown") {
+          if (overlay.classList.contains("visible") || e.target !== canvas) return;
+          try { canvas.setPointerCapture(e.pointerId); } catch {}
+        }
+        const [x, y] = toBuf(e);
+        canvasIds.set(e.pointerId, [x, y]);
+        session.pushPointer(e.pointerId + 20, x, y, phaseOf(type), e.pressure || 1);
+      }, true);
+    }
+
+    window.addEventListener("keydown", (e) => {
+      held.add(e.key);
+      if (e.key === " " || e.key.startsWith("Arrow")) e.preventDefault();
+      if ((e.key === "Enter" || e.key === " ") && phase !== "playing") confirmGame();
+    });
+    window.addEventListener("keyup", (e) => held.delete(e.key));
+    window.addEventListener("blur", () => {
+      held.clear();
+      state.lx = 0;
+      state.lz = 0;
+      state.jump = false;
+      state.attack = false;
+    });
+
+    const keyAxis = () => {
+      const l = held.has("ArrowLeft") || held.has("a") || held.has("A");
+      const r = held.has("ArrowRight") || held.has("d") || held.has("D");
+      const u = held.has("ArrowUp") || held.has("w") || held.has("W");
+      const d = held.has("ArrowDown") || held.has("s") || held.has("S");
+      return {
+        lx: (r ? 1 : 0) - (l ? 1 : 0),
+        lz: (u ? 1 : 0) - (d ? 1 : 0),
+        attack: held.has("j") || held.has("J") || held.has("k") || held.has("K"),
+      };
+    };
+
+    document.addEventListener("touchmove", (e) => {
+      if (e.target.closest("#overlay button, #overlay a")) return;
+      // A tall result card scrolls; everything else stays put.
+      if (swipeMode && overlay.classList.contains("visible") && overlay.scrollHeight > overlay.clientHeight) return;
+      e.preventDefault();
+    }, { passive: false });
+    showPhase("title");
+
+    let presented = 0;
+    let recovering = false;
+    const loop = () => {
+      if (recovering) return;
+      const k = keyAxis();
+      const jump = state.jump || held.has(" ") || held.has("Spacebar");
+      session.setPlayInput(
+        clamp(state.lx + k.lx),
+        clamp(state.lz + k.lz),
+        jump,
+        state.attack || k.attack,
+        false,
+      );
+      session.requestFrame();
+      if (rendering) {
+        try { session.render(); }
+        catch (err) {
+          rendering = false;
+          const detail = err && err.stack ? err.stack : err;
+          fail(`描画が止まりました。\n${detail}`);
+        }
+        presented += 1;
+        if (presented === 8 && activeBackend !== "gl" && requestedBackend !== "webgpu" && canvasIsBlank(canvas)) {
+          recovering = true;
+          rendering = false;
+          console.warn("kagra: blank WebGPU frame, falling back to WebGL2");
+          const next = document.createElement("canvas");
+          next.id = "c";
+          canvas.replaceWith(next);
+          canvas = next;
+          attachBackend("gl").then(() => {
+            rendering = true;
+            recovering = false;
+            requestAnimationFrame(loop);
+          }).catch((err) => {
+            fail(`WebGL2 fallback failed:\n${err}`);
+          });
+          return;
+        }
+      }
+      try {
+        const next = readPhase();
+        if (next !== phase) showPhase(next);
+      } catch {}
+      requestAnimationFrame(loop);
+    };
+    loop();
+  </script>
+</body>
+</html>
