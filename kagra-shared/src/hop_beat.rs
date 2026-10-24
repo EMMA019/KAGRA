@@ -33,8 +33,9 @@ const AHEAD_M: f32 = 44.0;
 /// How much stays drawn behind the hero.
 const BEHIND_M: f32 = 14.0;
 
-pub const SFX_CUES: [&str; 10] = [
-    "hop", "land", "perfect", "good", "combo", "hit", "fall", "gameover", "revive", "newbest",
+pub const SFX_CUES: [&str; 11] = [
+    "hop", "land", "perfect", "good", "combo", "hit", "fall", "stomp", "gameover", "revive",
+    "newbest",
 ];
 
 /// Cues that are long music stingers (mp3 from the music pack); the rest are
@@ -146,12 +147,15 @@ impl Default for HopArc {
 #[serde(deny_unknown_fields)]
 pub struct Item {
     pub beat: f32,
-    /// `gap` or `block`.
+    /// `gap`, `block` or `enemy`.
     pub kind: String,
     /// Width in beats.
     pub beats: f32,
     /// `tap` or `hold`: the hop this obstacle is written for.
     pub hop: String,
+    /// For `kind: "enemy"`: the id of an entry of `enemies.types`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub enemy: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -161,6 +165,13 @@ pub struct Phrase {
     pub level: u32,
     pub bars: u32,
     pub items: Vec<Item>,
+    /// How often it is picked among the phrases of its level (1..=16).
+    #[serde(default = "one_weight")]
+    pub weight: u32,
+}
+
+fn one_weight() -> u32 {
+    1
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -259,6 +270,106 @@ pub struct PlaySpec {
     pub direct: bool,
 }
 
+/// One kind of enemy. It lives on the beat grid: it stands where the phrase
+/// puts it, or steps `step_m` toward the hero on every `1 / steps_per_beat`
+/// of a beat, so the hop that clears it is still a rhythm action.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct EnemyType {
+    /// Name used by phrase items (`enemy`).
+    pub id: String,
+    /// Phrases that use it must be at least this level.
+    pub unlock_level: u32,
+    /// The hurt band above the slab (metres). `y_lo` 0 = it stands on the slab;
+    /// above 0 it hovers, and a hop that reaches the band hurts.
+    pub y_lo: f32,
+    pub y_hi: f32,
+    /// Coming down on it (within `enemies.stomp_depth` of its top) squashes
+    /// it for a bonus and a bounce. Only for enemies on the slab.
+    pub stompable: bool,
+    /// Metres it moves toward the hero at each step; 0 = stays put.
+    pub step_m: f32,
+    /// 1 = a step on every beat, 2 = on every half beat.
+    pub steps_per_beat: u32,
+    /// Steps it has walked when the hero reaches it: it appears that many steps out.
+    pub walk_steps: u32,
+    /// Picture: `slime`, `beetle` or `bat`.
+    pub look: String,
+    pub color: [u32; 3],
+}
+
+impl Default for EnemyType {
+    fn default() -> Self {
+        Self {
+            id: "slime".into(),
+            unlock_level: 0,
+            y_lo: 0.0,
+            y_hi: 0.45,
+            stompable: true,
+            step_m: 0.0,
+            steps_per_beat: 1,
+            walk_steps: 0,
+            look: "slime".into(),
+            color: [120, 240, 150],
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct EnemySpec {
+    pub types: Vec<EnemyType>,
+    /// How tall the hero is where a hovering enemy is concerned (metres).
+    pub body_h: f32,
+    /// A stomp counts when the hero's feet are this close under the enemy's top.
+    pub stomp_depth: f32,
+    pub stomp_score: u32,
+    /// How high the bounce after a stomp goes (metres above the line from the stomp to the landing).
+    pub bounce_height: f32,
+    /// Beats a bounce can run past the hop's landing; the phrase check keeps
+    /// the next press at least this far away from a stompable enemy.
+    pub bounce_beats: f32,
+    /// Free beats kept between an enemy's hop and the hops before and after it.
+    pub rest_beats: f32,
+}
+
+impl Default for EnemySpec {
+    fn default() -> Self {
+        Self {
+            types: vec![
+                EnemyType::default(),
+                EnemyType {
+                    id: "beetle".into(),
+                    unlock_level: 1,
+                    y_hi: 0.5,
+                    step_m: 1.0,
+                    steps_per_beat: 2,
+                    walk_steps: 8,
+                    look: "beetle".into(),
+                    color: [255, 170, 80],
+                    ..EnemyType::default()
+                },
+                EnemyType {
+                    id: "bat".into(),
+                    unlock_level: 2,
+                    y_lo: 1.45,
+                    y_hi: 2.1,
+                    stompable: false,
+                    look: "bat".into(),
+                    color: [190, 130, 255],
+                    ..EnemyType::default()
+                },
+            ],
+            body_h: 0.45,
+            stomp_depth: 0.3,
+            stomp_score: 150,
+            bounce_height: 0.7,
+            bounce_beats: 0.5,
+            rest_beats: 0.5,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LookSpec {
@@ -340,6 +451,7 @@ pub struct HopSpec {
     pub lives: LivesSpec,
     pub revive: ReviveSpec,
     pub play: PlaySpec,
+    pub enemies: EnemySpec,
     pub look: LookSpec,
     pub audio: HopAudio,
 }
@@ -356,6 +468,7 @@ impl Default for HopSpec {
             lives: LivesSpec::default(),
             revive: ReviveSpec::default(),
             play: PlaySpec::default(),
+            enemies: EnemySpec::default(),
             look: LookSpec::default(),
             audio: HopAudio::default(),
         }
@@ -465,11 +578,82 @@ impl HopSpec {
             finite_in(&format!("audio.sfx.{n}.volume"), s.volume, 0.0, 1.0)?;
             finite_in(&format!("audio.sfx.{n}.rate"), s.rate, 0.25, 4.0)?;
         }
+        self.validate_enemies()?;
         let problems = self.course_problems();
         if let Some(first) = problems.first() {
             return Err(format!("hop spec: {first} ({} problem(s))", problems.len()));
         }
         Ok(())
+    }
+
+    fn validate_enemies(&self) -> Result<(), String> {
+        let e = &self.enemies;
+        finite_in("enemies.body_h", e.body_h, 0.1, 2.0)?;
+        finite_in("enemies.stomp_depth", e.stomp_depth, 0.05, 1.0)?;
+        finite_in("enemies.bounce_height", e.bounce_height, 0.0, 3.0)?;
+        finite_in("enemies.bounce_beats", e.bounce_beats, 0.0, 4.0)?;
+        finite_in("enemies.rest_beats", e.rest_beats, 0.0, 4.0)?;
+        if e.types.len() > 8 {
+            return Err("hop spec: enemies.types holds at most 8 kinds".into());
+        }
+        for (i, t) in e.types.iter().enumerate() {
+            let n = format!("enemies.types[{i}]");
+            if t.id.is_empty()
+                || t.id.len() > 16
+                || !t
+                    .id
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+            {
+                return Err(format!("hop spec: {n}.id is 1..=16 of a-z 0-9 _"));
+            }
+            if e.types[..i].iter().any(|o| o.id == t.id) {
+                return Err(format!("hop spec: {n}.id {:?} is used twice", t.id));
+            }
+            if t.unlock_level > 20 {
+                return Err(format!("hop spec: {n}.unlock_level must be 0..=20"));
+            }
+            finite_in(&format!("{n}.y_lo"), t.y_lo, 0.0, 4.0)?;
+            finite_in(&format!("{n}.y_hi"), t.y_hi, 0.05, 4.0)?;
+            if t.y_hi <= t.y_lo {
+                return Err(format!("hop spec: {n}.y_hi must be above y_lo"));
+            }
+            if t.stompable && t.y_lo > 0.0 {
+                return Err(format!(
+                    "hop spec: {n}: only an enemy on the slab can be stomped"
+                ));
+            }
+            finite_in(&format!("{n}.step_m"), t.step_m, 0.0, 4.0)?;
+            if !(1..=4).contains(&t.steps_per_beat) || t.walk_steps > 16 {
+                return Err(format!(
+                    "hop spec: {n}.steps_per_beat 1..=4, walk_steps 0..=16"
+                ));
+            }
+            if t.step_m * t.walk_steps as f32 > MAX_WALK_M {
+                return Err(format!(
+                    "hop spec: {n}: step_m * walk_steps must be at most {MAX_WALK_M} m"
+                ));
+            }
+            if !["slime", "beetle", "bat"].contains(&t.look.as_str()) {
+                return Err(format!("hop spec: {n}.look is slime|beetle|bat"));
+            }
+            if t.color.iter().any(|c| *c > 255) {
+                return Err(format!("hop spec: {n}.color is 0..=255 per channel"));
+            }
+        }
+        Ok(())
+    }
+
+    /// How long a bounce that starts at song time `t` lasts: it comes down on
+    /// the next half beat at least 0.2 s away.
+    pub fn bounce_secs(&self, t: f32) -> f32 {
+        let half = self.beat_secs() * 0.5;
+        (((t + 0.2) / half).ceil() * half - t).max(0.2)
+    }
+
+    /// Index of the enemy type called `id`.
+    pub fn enemy_index(&self, id: &str) -> Option<usize> {
+        self.enemies.types.iter().position(|t| t.id == id)
     }
 
     /// The phrases in use: the spec's, or the built-in set.
@@ -478,6 +662,15 @@ impl HopSpec {
             builtin_phrases()
         } else {
             self.course.phrases.clone()
+        }
+    }
+
+    /// Does the player have to press for this one? A hovering enemy is only
+    /// something to stay clear of.
+    pub fn needs_press(&self, o: &Obst) -> bool {
+        match o.kind {
+            Kind::Enemy => o.y_lo <= 0.0,
+            _ => true,
         }
     }
 
@@ -494,96 +687,355 @@ impl HopSpec {
                 out.push(format!("phrase {pi}: bars must be 1..=16"));
                 continue;
             }
+            if !(1..=16).contains(&p.weight) {
+                out.push(format!("phrase {pi}: weight must be 1..=16"));
+            }
+            let end = p.bars as f32 * bpb;
             let mut free_from = 0.0_f32;
+            let mut prev_enemy = false;
+            let mut sound = true;
             for (ii, it) in p.items.iter().enumerate() {
                 let where_ = format!("phrase {pi} item {ii}");
                 let Some((kind, hop)) = parse_item(it) else {
-                    out.push(format!("{where_}: kind gap|block and hop tap|hold"));
+                    out.push(format!("{where_}: kind gap|block|enemy and hop tap|hold"));
+                    sound = false;
                     continue;
                 };
                 if !(0.1..=4.0).contains(&it.beats) || it.beat < 0.0 {
                     out.push(format!("{where_}: bad beat or width"));
+                    sound = false;
                     continue;
                 }
-                let air = self.arc(hop).air_beats;
-                if it.beat + 0.001 < free_from {
-                    out.push(format!("{where_}: starts before the last hop lands"));
+                let mut ety = None;
+                if kind == Kind::Enemy {
+                    match self.enemy_index(&it.enemy) {
+                        None => {
+                            out.push(format!("{where_}: unknown enemy {:?}", it.enemy));
+                            sound = false;
+                            continue;
+                        }
+                        Some(i) => {
+                            if p.level < self.enemies.types[i].unlock_level {
+                                out.push(format!(
+                                    "{where_}: {} is unlocked at level {} but the phrase is level {}",
+                                    it.enemy, self.enemies.types[i].unlock_level, p.level
+                                ));
+                            }
+                            ety = Some(i);
+                        }
+                    }
+                } else if !it.enemy.is_empty() {
+                    out.push(format!("{where_}: only kind enemy names an enemy"));
                 }
-                free_from = it.beat + air;
-                if free_from > p.bars as f32 * bpb + 0.001 {
+                let probe = self.probe(kind, hop, it.beats, it.beat, ety);
+                let air = self.arc(hop).air_beats;
+                if !self.needs_press(&probe) {
+                    // A flyer: the hops around it must stay clear (the sequence check),
+                    // and it must be inside the phrase.
+                    if it.beat + air > end + 0.001 {
+                        out.push(format!("{where_}: runs past the phrase end"));
+                    }
+                    continue;
+                }
+                let is_enemy = kind == Kind::Enemy;
+                let rest = if is_enemy || prev_enemy {
+                    self.enemies.rest_beats
+                } else {
+                    0.0
+                };
+                if it.beat + 0.001 < free_from + rest {
+                    out.push(format!(
+                        "{where_}: starts before the last hop lands{}",
+                        if rest > 0.0 { " (plus rest_beats)" } else { "" }
+                    ));
+                }
+                let bounce = if ety.is_some_and(|i| self.enemies.types[i].stompable) {
+                    self.enemies.bounce_beats
+                } else {
+                    0.0
+                };
+                free_from = it.beat + air + bounce;
+                prev_enemy = is_enemy;
+                if free_from > end + 0.001 {
                     out.push(format!("{where_}: lands after the phrase ends"));
                 }
-                let (lo, hi) = self.window_secs(kind, hop, it.beats);
+                let (lo, hi) = self.window_secs_obst(&probe);
                 let width_ms = (hi - lo).max(0.0) * 1000.0;
                 if width_ms < self.course.min_window_ms {
                     out.push(format!(
-                        "{where_}: only {width_ms:.0} ms of timing window (gap too wide for a {} hop?)",
+                        "{where_}: only {width_ms:.0} ms of timing window (too wide or too fast for a {} hop?)",
                         if hop == Hop::Tap { "tap" } else { "hold" }
                     ));
                 }
+            }
+            if sound {
+                out.extend(self.sequence_problems(pi, p));
             }
         }
         out
     }
 
-    /// The press times (relative to the ideal, seconds) that clear an
-    /// obstacle written for `hop`, found by playing the hop out.
+    /// The obstacles of a phrase laid at `base` beats, as the course lays them.
+    pub fn phrase_obstacles(&self, p: &Phrase, base: f32) -> Vec<Obst> {
+        p.items
+            .iter()
+            .filter_map(|it| {
+                let (kind, hop) = parse_item(it)?;
+                let ety = if kind == Kind::Enemy {
+                    Some(self.enemy_index(&it.enemy)?)
+                } else {
+                    None
+                };
+                Some(self.probe(kind, hop, it.beats, base + it.beat, ety))
+            })
+            .collect()
+    }
+
+    /// Plays the whole phrase with a bot that presses every ideal `off`
+    /// seconds early or late (a negative `off` is early). True = no damage.
+    /// A stomp counts as a clear; the bounce is left out because the phrase
+    /// rules keep the next press clear of it.
+    pub fn sequence_survives(&self, obst: &[Obst], off: f32) -> bool {
+        let bs = self.beat_secs();
+        let v = self.speed();
+        let hw = self.hero.half_width;
+        let mut presses: Vec<(f32, Hop)> = obst
+            .iter()
+            .filter(|o| self.needs_press(o))
+            .map(|o| (o.take_beat * bs + off, o.hop))
+            .collect();
+        presses.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let (Some(first), Some(last)) = (
+            obst.iter().map(|o| o.take_beat).reduce(f32::min),
+            obst.iter().map(|o| o.take_beat).reduce(f32::max),
+        ) else {
+            return true;
+        };
+        let mut gone = vec![false; obst.len()];
+        // (start, land, start height) of a bounce in progress.
+        let mut bounce: Option<(f32, f32, f32)> = None;
+        let mut t = (first - 3.0) * bs;
+        let t_end = (last + 5.0) * bs;
+        while t <= t_end {
+            let x = t * v;
+            let mut y = 0.0;
+            let mut airborne = false;
+            let mut desc = false;
+            for (pt, hop) in presses.iter().rev() {
+                if *pt > t {
+                    continue;
+                }
+                let arc = self.arc(*hop);
+                let air = arc.air_beats * bs;
+                if t - pt < air {
+                    y = arc_y(arc.height, air, t - pt);
+                    airborne = true;
+                    desc = t - pt > air * 0.5;
+                }
+                break;
+            }
+            if let Some((t0, land, y0)) = bounce {
+                if t >= land {
+                    bounce = None;
+                } else {
+                    let u = (t - t0) / (land - t0);
+                    y = bounce_y(y0, self.enemies.bounce_height, u);
+                    airborne = true;
+                    desc = bounce_dy(y0, self.enemies.bounce_height, u) < 0.0;
+                }
+            }
+            for (i, o) in obst.iter().enumerate() {
+                if gone[i] {
+                    continue;
+                }
+                if o.kind == Kind::Gap {
+                    if !airborne
+                        && x > o.start + self.hero.edge_tol
+                        && x < o.end - self.hero.edge_tol
+                    {
+                        return false;
+                    }
+                    continue;
+                }
+                match self.touch(o, t, x, y, desc, hw) {
+                    Touch::Hit => return false,
+                    Touch::Stomp => {
+                        gone[i] = true;
+                        let land = t + self.bounce_secs(t);
+                        // No press can be taken while bouncing.
+                        if presses.iter().any(|(pt, _)| *pt > t && *pt < land) {
+                            return false;
+                        }
+                        bounce = Some((t, land, y));
+                    }
+                    Touch::None => {}
+                }
+            }
+            t += 0.004;
+        }
+        true
+    }
+
+    /// Every press within the Perfect window of its ideal beat (`judge.perfect_ms`,
+    /// at most 100 ms) must get through the whole phrase untouched: the per-item
+    /// window alone can sit off centre, and a walker or a flyer next to a gap
+    /// only shows up when the hops are played one after the other.
+    fn sequence_problems(&self, pi: usize, p: &Phrase) -> Vec<String> {
+        let base = 4.0 * self.music.beats_per_bar as f32;
+        let obst = self.phrase_obstacles(p, base);
+        let half = (self.judge.perfect_ms * 0.001).min(0.1);
+        let mut out = Vec::new();
+        let n = (half / 0.005).ceil() as i32;
+        for k in -n..=n {
+            let off = (k as f32 * 0.005).clamp(-half, half);
+            if !self.sequence_survives(&obst, off) {
+                out.push(format!(
+                    "phrase {pi}: a bot pressing {:.0} ms {} the ideal beat takes damage",
+                    off.abs() * 1000.0,
+                    if off < 0.0 { "before" } else { "after" }
+                ));
+                break;
+            }
+        }
+        out
+    }
+
+    /// The obstacle for an item at `take_beat` (the beat of the ideal press),
+    /// centred under the arc of `hop`, exactly as the course lays it.
+    pub fn probe(
+        &self,
+        kind: Kind,
+        hop: Hop,
+        width_beats: f32,
+        take_beat: f32,
+        ety: Option<usize>,
+    ) -> Obst {
+        let bl = self.hero.beat_len_m;
+        let center = take_beat + self.arc(hop).air_beats * 0.5;
+        let mut o = Obst::new(
+            kind,
+            (center - width_beats * 0.5) * bl,
+            (center + width_beats * 0.5) * bl,
+            take_beat,
+            hop,
+            self.course.block_height,
+        );
+        if let (Kind::Enemy, Some(i)) = (kind, ety) {
+            if let Some(et) = self.enemies.types.get(i) {
+                o.ety = i;
+                o.y_lo = et.y_lo;
+                o.height = et.y_hi;
+            }
+        }
+        o
+    }
+
+    /// How far (metres) the enemy stands from its meeting spot at song time
+    /// `t`, or None if it has not appeared yet. Positive = still ahead.
+    pub fn enemy_dx(&self, o: &Obst, t: f32) -> Option<f32> {
+        let Some(et) = self.enemies.types.get(o.ety) else {
+            return Some(0.0);
+        };
+        if et.step_m <= 0.0 {
+            return Some(0.0);
+        }
+        let spb = et.steps_per_beat.max(1) as f32;
+        let k = (t / self.beat_secs() * spb).floor() as i64;
+        let meet = ((o.start + o.end) * 0.5 / self.hero.beat_len_m * spb).floor() as i64;
+        if k < meet - et.walk_steps as i64 {
+            None
+        } else {
+            Some(et.step_m * (meet - k) as f32)
+        }
+    }
+
+    /// What the hero at (`x`, `y`) touches of `o` at song time `t`.
+    pub fn touch(&self, o: &Obst, t: f32, x: f32, y: f32, descending: bool, hw: f32) -> Touch {
+        match o.kind {
+            Kind::Gap => Touch::None,
+            Kind::Block => {
+                if hits_block(o, x, y, hw) {
+                    Touch::Hit
+                } else {
+                    Touch::None
+                }
+            }
+            Kind::Enemy => {
+                let Some(dx) = self.enemy_dx(o, t) else {
+                    return Touch::None;
+                };
+                if !(x > o.start + dx - hw && x < o.end + dx + hw) {
+                    return Touch::None;
+                }
+                if !(y + self.enemies.body_h > o.y_lo && y < o.height) {
+                    return Touch::None;
+                }
+                let stompable = self.enemies.types.get(o.ety).is_some_and(|t| t.stompable);
+                if stompable && descending && y >= o.height - self.enemies.stomp_depth {
+                    Touch::Stomp
+                } else {
+                    Touch::Hit
+                }
+            }
+        }
+    }
+
+    /// The unbroken stretch of press times (relative to the ideal, seconds)
+    /// around the ideal one that clear an obstacle written for `hop`, found by
+    /// playing the hop out. (0, 0) if even the ideal press fails.
     pub fn window_secs(&self, kind: Kind, hop: Hop, width_beats: f32) -> (f32, f32) {
+        self.window_secs_obst(&self.probe(kind, hop, width_beats, 0.0, None))
+    }
+
+    /// Same, for a laid obstacle (an enemy's window depends on where on the
+    /// beat grid it stands, so pass the real one).
+    pub fn window_secs_obst(&self, o: &Obst) -> (f32, f32) {
         let bs = self.beat_secs();
         let step = 0.002;
-        let mut lo = f32::MAX;
-        let mut hi = f32::MIN;
-        let mut off = -2.0 * bs;
-        while off <= 2.0 * bs {
-            if self.clears(kind, hop, width_beats, off) {
-                lo = lo.min(off);
-                hi = hi.max(off);
-            }
-            off += step;
+        if !self.clears_obst(o, 0.0) {
+            return (0.0, 0.0);
         }
-        if lo > hi {
-            (0.0, 0.0)
-        } else {
-            (lo, hi)
+        // The unbroken stretch of good presses around the ideal one.
+        let (mut lo, mut hi) = (0.0_f32, 0.0_f32);
+        while lo > -2.0 * bs && self.clears_obst(o, lo - step) {
+            lo -= step;
         }
+        while hi < 2.0 * bs && self.clears_obst(o, hi + step) {
+            hi += step;
+        }
+        (lo, hi)
     }
 
     /// Does a hop of `hop` pressed `off` seconds from the ideal clear this
     /// obstacle? Uses the same support and hit tests as the sim.
     pub fn clears(&self, kind: Kind, hop: Hop, width_beats: f32, off: f32) -> bool {
+        self.clears_obst(&self.probe(kind, hop, width_beats, 0.0, None), off)
+    }
+
+    pub fn clears_obst(&self, o: &Obst, off: f32) -> bool {
         let bs = self.beat_secs();
         let v = self.speed();
-        let arc = self.arc(hop);
+        let arc = self.arc(o.hop);
         let air = arc.air_beats * bs;
-        // The ideal press is at t = 0; the obstacle is centred on the arc.
-        let center = air * 0.5 * v;
-        let w = width_beats * self.hero.beat_len_m;
-        let obst = Obst::new(
-            kind,
-            center - w / 2.0,
-            center + w / 2.0,
-            0.0,
-            hop,
-            self.course.block_height,
-        );
-        let take = off;
+        let take = o.take_beat * bs + off;
         let hw = self.hero.half_width;
         let mut t = take - 3.0 * bs;
         while t <= take + air + 3.0 * bs {
             let x = t * v;
-            let y = if t < take {
-                0.0
-            } else if t < take + air {
-                arc_y(arc.height, air, t - take)
+            let el = t - take;
+            let airborne = el >= 0.0 && el < air;
+            let y = if airborne {
+                arc_y(arc.height, air, el)
             } else {
                 0.0
             };
-            let airborne = t >= take && t < take + air;
-            if !airborne && !supported(std::slice::from_ref(&obst), x, self.hero.edge_tol) {
+            if !airborne && !supported(std::slice::from_ref(o), x, self.hero.edge_tol) {
                 return false;
             }
-            if hits_block(&obst, x, y, hw) {
-                return false;
+            match self.touch(o, t, x, y, airborne && el > air * 0.5, hw) {
+                Touch::Hit => return false,
+                Touch::Stomp => return true,
+                Touch::None => {}
             }
             t += 0.004;
         }
@@ -591,11 +1043,23 @@ impl HopSpec {
     }
 }
 
+/// What the hero touches of an obstacle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Touch {
+    None,
+    Hit,
+    Stomp,
+}
+
+/// The farthest an enemy may stand from its meeting spot (steps x metres).
+const MAX_WALK_M: f32 = 12.0;
+
 /// `kind` and `hop` of an item, or None if either word is wrong.
 pub fn parse_item(it: &Item) -> Option<(Kind, Hop)> {
     let kind = match it.kind.as_str() {
         "gap" => Kind::Gap,
         "block" => Kind::Block,
+        "enemy" => Kind::Enemy,
         _ => return None,
     };
     let hop = match it.hop.as_str() {
@@ -612,17 +1076,39 @@ fn item(beat: f32, kind: &str, beats: f32, hop: &str) -> Item {
         kind: kind.into(),
         beats,
         hop: hop.into(),
+        enemy: String::new(),
     }
 }
 
-/// The phrase set the game ships with: five levels, one to three bars each.
+/// An enemy of type `id` whose ideal hop is pressed at `beat`.
+fn foe(beat: f32, id: &str, beats: f32) -> Item {
+    Item {
+        enemy: id.into(),
+        ..item(beat, "enemy", beats, "tap")
+    }
+}
+
+/// The phrase set the game ships with: five levels, one to three bars each,
+/// with enemies introduced one kind per level.
 pub fn builtin_phrases() -> Vec<Phrase> {
-    let p = |level, bars, items| Phrase { level, bars, items };
-    vec![
+    let p = |level, bars, items| Phrase {
+        level,
+        bars,
+        items,
+        weight: 1,
+    };
+    // Enemies arrive one kind per level: slime (0), beetle (1), bat (2), then mixes.
+    let mut phrases = vec![
         p(
             0,
             2,
             vec![item(1.0, "gap", 0.5, "tap"), item(3.0, "gap", 0.5, "tap")],
+        ),
+        p(0, 2, vec![foe(1.0, "slime", 0.2), foe(3.0, "slime", 0.2)]),
+        p(
+            0,
+            2,
+            vec![item(1.0, "gap", 0.5, "tap"), foe(3.0, "slime", 0.2)],
         ),
         p(
             0,
@@ -651,6 +1137,12 @@ pub fn builtin_phrases() -> Vec<Phrase> {
                 item(2.0, "gap", 0.5, "tap"),
             ],
         ),
+        p(1, 2, vec![foe(1.0, "beetle", 0.25), foe(3.0, "slime", 0.2)]),
+        p(
+            1,
+            2,
+            vec![foe(1.0, "beetle", 0.25), item(3.0, "gap", 0.5, "tap")],
+        ),
         p(
             2,
             2,
@@ -658,6 +1150,17 @@ pub fn builtin_phrases() -> Vec<Phrase> {
                 item(0.5, "gap", 0.5, "tap"),
                 item(1.5, "block", 0.2, "tap"),
                 item(2.5, "gap", 0.5, "tap"),
+            ],
+        ),
+        // A bat hovers over these: a hold-hop would fly into it, so tap.
+        p(2, 2, vec![foe(1.0, "slime", 0.2), foe(1.0, "bat", 0.9)]),
+        p(
+            2,
+            2,
+            vec![
+                item(1.0, "gap", 0.5, "tap"),
+                foe(1.0, "bat", 0.9),
+                foe(3.0, "beetle", 0.25),
             ],
         ),
         p(
@@ -673,6 +1176,44 @@ pub fn builtin_phrases() -> Vec<Phrase> {
                 item(1.0, "block", 0.2, "tap"),
                 item(2.0, "gap", 0.5, "tap"),
                 item(3.0, "block", 0.2, "tap"),
+            ],
+        ),
+        p(
+            3,
+            3,
+            vec![
+                foe(0.5, "slime", 0.2),
+                foe(2.5, "slime", 0.2),
+                foe(4.5, "beetle", 0.25),
+            ],
+        ),
+        p(
+            3,
+            2,
+            vec![
+                foe(1.0, "beetle", 0.25),
+                item(3.0, "gap", 0.5, "tap"),
+                item(4.0, "gap", 0.5, "tap"),
+            ],
+        ),
+        p(
+            3,
+            2,
+            vec![
+                foe(1.0, "slime", 0.2),
+                foe(1.0, "bat", 0.9),
+                foe(3.0, "slime", 0.2),
+                foe(3.0, "bat", 0.9),
+            ],
+        ),
+        p(
+            3,
+            2,
+            vec![
+                foe(0.5, "slime", 0.2),
+                foe(2.5, "beetle", 0.25),
+                foe(4.5, "slime", 0.2),
+                item(6.5, "gap", 0.5, "tap"),
             ],
         ),
         p(
@@ -698,6 +1239,36 @@ pub fn builtin_phrases() -> Vec<Phrase> {
         ),
         p(
             4,
+            3,
+            vec![
+                foe(1.0, "beetle", 0.25),
+                foe(3.0, "slime", 0.2),
+                item(5.0, "gap", 0.5, "tap"),
+                foe(7.0, "beetle", 0.25),
+            ],
+        ),
+        p(
+            4,
+            3,
+            vec![
+                item(0.0, "gap", 1.5, "hold"),
+                foe(3.0, "slime", 0.2),
+                foe(3.0, "bat", 0.9),
+                item(5.0, "gap", 1.5, "hold"),
+            ],
+        ),
+        p(
+            4,
+            2,
+            vec![
+                foe(0.5, "beetle", 0.25),
+                foe(2.5, "slime", 0.2),
+                foe(4.5, "beetle", 0.25),
+                foe(6.5, "slime", 0.2),
+            ],
+        ),
+        p(
+            4,
             2,
             vec![
                 item(0.0, "gap", 1.5, "hold"),
@@ -708,7 +1279,15 @@ pub fn builtin_phrases() -> Vec<Phrase> {
                 item(7.0, "block", 0.2, "tap"),
             ],
         ),
-    ]
+    ];
+    // Enemy phrases come up more often than the plain ones (a slime in the
+    // first bars, then a heavier mix as the run goes on).
+    for ph in phrases.iter_mut() {
+        if ph.items.iter().any(|it| it.kind == "enemy") {
+            ph.weight = 3;
+        }
+    }
+    phrases
 }
 
 // -------------------------------------------------------------- course ----
@@ -717,6 +1296,8 @@ pub fn builtin_phrases() -> Vec<Phrase> {
 pub enum Kind {
     Gap,
     Block,
+    /// A creature from `enemies.types`.
+    Enemy,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -740,8 +1321,15 @@ pub struct Obst {
     /// Absolute beat of the ideal press.
     pub take_beat: f32,
     pub hop: Hop,
+    /// Block and enemy: the top of the hurt band.
     pub height: f32,
     pub fate: Fate,
+    /// Enemy: index into `enemies.types` (`usize::MAX` = none) and the bottom
+    /// of its hurt band.
+    pub ety: usize,
+    pub y_lo: f32,
+    /// Song time the hero stomped it.
+    pub stomped_t: Option<f32>,
 }
 
 impl Obst {
@@ -754,11 +1342,23 @@ impl Obst {
             hop,
             height,
             fate: Fate::Pending,
+            ety: usize::MAX,
+            y_lo: 0.0,
+            stomped_t: None,
         }
     }
 }
 
 /// Height of a hop `el` seconds after takeoff.
+/// Height `u` (0..1) of the way through a bounce that starts `y0` above the slab.
+fn bounce_y(y0: f32, peak: f32, u: f32) -> f32 {
+    (y0 * (1.0 - u) + 4.0 * peak * u * (1.0 - u)).max(0.0)
+}
+
+fn bounce_dy(y0: f32, peak: f32, u: f32) -> f32 {
+    -y0 + 4.0 * peak * (1.0 - 2.0 * u)
+}
+
 fn arc_y(height: f32, air: f32, el: f32) -> f32 {
     let u = el / air;
     if (0.0..1.0).contains(&u) {
@@ -849,25 +1449,33 @@ impl Course {
             if pool.len() > 1 {
                 pool.retain(|&i| i != self.last);
             }
-            let pick = pool[(self.rand() as usize) % pool.len()];
+            let total: u32 = pool.iter().map(|&i| self.phrases[i].weight.max(1)).sum();
+            let mut roll = self.rand() % total.max(1);
+            let mut pick = pool[0];
+            for &i in &pool {
+                let w = self.phrases[i].weight.max(1);
+                if roll < w {
+                    pick = i;
+                    break;
+                }
+                roll -= w;
+            }
             self.last = pick;
             let p = self.phrases[pick].clone();
             for it in &p.items {
                 let Some((kind, hop)) = parse_item(it) else {
                     continue;
                 };
-                let air = spec.arc(hop).air_beats;
-                let take = self.gen_beat + it.beat;
-                let center = take + air * 0.5;
-                let (s, e) = (center - it.beats * 0.5, center + it.beats * 0.5);
-                self.obst.push(Obst::new(
-                    kind,
-                    s * spec.hero.beat_len_m,
-                    e * spec.hero.beat_len_m,
-                    take,
-                    hop,
-                    spec.course.block_height,
-                ));
+                let ety = if kind == Kind::Enemy {
+                    spec.enemy_index(&it.enemy)
+                } else {
+                    None
+                };
+                if kind == Kind::Enemy && ety.is_none() {
+                    continue;
+                }
+                self.obst
+                    .push(spec.probe(kind, hop, it.beats, self.gen_beat + it.beat, ety));
             }
             self.gen_beat += p.bars as f32 * bpb;
             self.bars_laid += p.bars;
@@ -899,6 +1507,14 @@ enum Air {
     Fall {
         vy: f32,
     },
+    /// The hop after a stomp: a parabola from where the hero was to the slab,
+    /// timed to come down on a half beat.
+    Bounce {
+        t0: f32,
+        dur: f32,
+        y0: f32,
+        id: u32,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -906,6 +1522,7 @@ pub enum Grade {
     Perfect,
     Good,
     Ok,
+    Stomp,
 }
 
 impl Grade {
@@ -914,6 +1531,7 @@ impl Grade {
             Grade::Perfect => "perfect",
             Grade::Good => "good",
             Grade::Ok => "ok",
+            Grade::Stomp => "stomp",
         }
     }
 }
@@ -943,6 +1561,8 @@ pub struct HopBeat {
     ground_t: f32,
     /// Skip building the picture (the measure harness plays thousands of frames).
     headless: bool,
+    /// Draw every model as primitives (a dev switch; also what a missing glb does).
+    models_off: bool,
     touches: u32,
     /// Clears in a row without damage.
     streak: u32,
@@ -964,6 +1584,7 @@ pub struct HopBeat {
     combo: u32,
     max_combo: u32,
     perfects: u32,
+    stomps: u32,
     goods: u32,
     oks: u32,
     cleared: u32,
@@ -1035,6 +1656,7 @@ impl HopBeat {
             recent_hop: None,
             ground_t: f32::MIN,
             headless: false,
+            models_off: false,
             touches: 0,
             streak: 0,
             y: 0.0,
@@ -1054,6 +1676,7 @@ impl HopBeat {
             combo: 0,
             max_combo: 0,
             perfects: 0,
+            stomps: 0,
             goods: 0,
             oks: 0,
             cleared: 0,
@@ -1122,6 +1745,9 @@ impl HopBeat {
     pub fn set_sfx(&mut self, on: bool) {
         self.sfx = on;
     }
+    pub fn stomps(&self) -> u32 {
+        self.stomps
+    }
     pub fn counts(&self) -> (u32, u32, u32, u32) {
         (self.cleared, self.perfects, self.goods, self.oks)
     }
@@ -1179,6 +1805,11 @@ impl HopBeat {
 
     pub fn set_headless(&mut self, on: bool) {
         self.headless = on;
+    }
+
+    /// Force the primitive picture (the fallback a missing glb gets).
+    pub fn set_models_off(&mut self, off: bool) {
+        self.models_off = off;
     }
 
     /// A finger went down / came up. Several fingers count as one held button.
@@ -1311,6 +1942,7 @@ impl HopBeat {
         fresh.latency_user_ms = keep.1;
         fresh.picture_quality = keep.2;
         fresh.sfx = self.sfx;
+        fresh.models_off = self.models_off;
         fresh.down = self.down;
         *self = fresh;
         self.flow.enter_play();
@@ -1466,6 +2098,7 @@ impl HopBeat {
                 self.combo = 0;
                 j.score_ok
             }
+            Grade::Stomp => 0,
         };
         self.max_combo = self.max_combo.max(self.combo);
         self.cleared += 1;
@@ -1482,7 +2115,7 @@ impl HopBeat {
             Grade::Perfect if self.combo > 0 && self.combo.is_multiple_of(4) => "combo",
             Grade::Perfect => "perfect",
             Grade::Good => "good",
-            Grade::Ok => "land",
+            Grade::Ok | Grade::Stomp => "land",
         });
         let hx = self.hero_x();
         if grade == Grade::Perfect {
@@ -1610,6 +2243,21 @@ impl HopBeat {
                     self.y = arc_y(arc.height, air, el);
                 }
             }
+            Air::Bounce { t0, dur, y0, id } => {
+                let u = (self.song_t - t0) / dur;
+                if u >= 1.0 {
+                    self.y = 0.0;
+                    if supported(&self.course.obst, x, hero.edge_tol) || self.invuln > 0.0 {
+                        self.ground_t = t0 + dur;
+                        self.air = Air::Ground;
+                        self.land(id);
+                    } else {
+                        self.air = Air::Fall { vy: 0.0 };
+                    }
+                } else {
+                    self.y = bounce_y(y0, self.spec.enemies.bounce_height, u);
+                }
+            }
             Air::Fall { vy } => {
                 let vy = vy - hero.fall_gravity * dt;
                 self.y += vy * dt;
@@ -1637,7 +2285,10 @@ impl HopBeat {
         // ---- obstacles
         let hw = hero.half_width;
         let y = self.y;
-        let mut hit_block = false;
+        let desc = self.descending();
+        let t_now = self.song_t;
+        let mut hit: Vec<usize> = Vec::new();
+        let mut stomped: Vec<usize> = Vec::new();
         let mut resolved: Vec<usize> = Vec::new();
         for (i, o) in self.course.obst.iter().enumerate() {
             if o.fate != Fate::Pending {
@@ -1646,29 +2297,34 @@ impl HopBeat {
             if o.start > x + 20.0 {
                 break;
             }
-            if hits_block(o, x, y, hw) {
-                hit_block = true;
+            match self.spec.touch(o, t_now, x, y, desc, hw) {
+                Touch::Hit => hit.push(i),
+                Touch::Stomp => stomped.push(i),
+                Touch::None => {}
             }
             if x > o.end + hw {
                 resolved.push(i);
             }
         }
-        if hit_block {
-            if self.invuln > 0.0 {
-                // ghosting through: those blocks do not count
-                for o in self.course.obst.iter_mut() {
-                    if o.fate == Fate::Pending && hits_block(o, x, y, hw) {
-                        o.fate = Fate::Skipped;
-                    }
-                }
-            } else {
-                self.lose_life("block");
-                for o in self.course.obst.iter_mut() {
-                    if o.fate == Fate::Pending && hits_block(o, x, y, hw) {
-                        o.fate = Fate::Skipped;
-                    }
-                }
+        if !hit.is_empty() {
+            let enemy_hit = hit.iter().any(|&i| self.course.obst[i].kind == Kind::Enemy);
+            // While ghosting (after a hit or a revive) they pass through.
+            if self.invuln <= 0.0 {
+                self.lose_life(if enemy_hit { "enemy" } else { "block" });
             }
+            for &i in &hit {
+                self.course.obst[i].fate = Fate::Skipped;
+            }
+            stomped.retain(|i| !hit.contains(i));
+        }
+        if self.invuln > 0.0 {
+            for &i in &stomped {
+                self.course.obst[i].fate = Fate::Skipped;
+            }
+            stomped.clear();
+        }
+        if !stomped.is_empty() && self.core.stats.alive {
+            self.stomp(&stomped);
         }
         for i in resolved {
             if self.course.obst[i].fate != Fate::Pending {
@@ -1676,6 +2332,10 @@ impl HopBeat {
             }
             self.course.obst[i].fate = Fate::Cleared;
             let o = self.course.obst[i].clone();
+            if !self.spec.needs_press(&o) {
+                // A flyer passed underneath: nothing to judge.
+                continue;
+            }
             if self.invuln > 0.0 && !matches!(self.air, Air::Hop { .. }) {
                 continue;
             }
@@ -1705,6 +2365,64 @@ impl HopBeat {
                 self.core.juice.burst(hx - 0.2, 0.05, 0.0, 1, c, 0.6, 0.05);
             }
         }
+    }
+
+    /// Is the hero coming down (a stomp only counts from above)?
+    fn descending(&self) -> bool {
+        match self.air {
+            Air::Hop { t0, hop, .. } => {
+                let air = self.spec.arc(hop).air_beats * self.spec.beat_secs();
+                self.song_t - t0 > air * 0.5
+            }
+            Air::Bounce { t0, dur, y0, .. } => {
+                let u = (self.song_t - t0) / dur;
+                bounce_dy(y0, self.spec.enemies.bounce_height, u) < 0.0
+            }
+            _ => false,
+        }
+    }
+
+    /// Landed on top of enemies: squash them, score, and bounce to the next half beat.
+    fn stomp(&mut self, which: &[usize]) {
+        let bonus = self.spec.enemies.stomp_score;
+        let j = self.spec.judge.clone();
+        let (px, py) = (self.hero_x(), self.y);
+        for &i in which {
+            self.course.obst[i].fate = Fate::Cleared;
+            self.course.obst[i].stomped_t = Some(self.song_t);
+            self.combo += 1;
+            self.stomps += 1;
+            self.cleared += 1;
+            self.streak += 1;
+            let pts = bonus + j.combo_bonus * self.combo.min(j.combo_cap);
+            self.core.stats.pickup(pts);
+        }
+        self.max_combo = self.max_combo.max(self.combo);
+        let every = j.regain_clears;
+        if every > 0 && self.streak.is_multiple_of(every) && self.lives < self.spec.lives.count {
+            self.lives += 1;
+            self.cue("combo");
+        }
+        self.last_grade = Some((Grade::Stomp, 0.0, 0.0));
+        self.grade_age = 0.0;
+        self.cue("stomp");
+        let c = self.spec.look.accent;
+        self.core.juice.burst(px, py, 0.0, 9, c, 3.0, 0.1);
+        self.core.juice.shake = self.core.juice.shake.max(0.12);
+        let id = match self.air {
+            Air::Hop { id, .. } | Air::Bounce { id, .. } => id,
+            _ => self.hop_id,
+        };
+        self.last_cleared_hop = id as i64;
+        self.stray_check = None;
+        let dur = self.spec.bounce_secs(self.song_t);
+        self.air = Air::Bounce {
+            t0: self.song_t,
+            dur,
+            y0: self.y,
+            id,
+        };
+        self.buffer = 0.0;
     }
 
     /// The hop (kind, press time, id) in the air around song time `t`.
@@ -1835,11 +2553,12 @@ impl HopBeat {
             "max_combo": self.max_combo,
             "cleared": self.cleared,
             "perfect": self.perfects,
+            "stomps": self.stomps,
             "good": self.goods,
             "ok": self.oks,
             "alive": self.core.stats.alive,
             "death": self.core.stats.death,
-            "death_text": "",
+            "death_text": if self.core.stats.death == "enemy" { "You ran into an enemy (hop over it, or land on its head)" } else { "" },
             "armed": self.armed,
             "direct": self.spec.play.direct,
             "invulnerable": self.invuln > 0.0,
@@ -1942,6 +2661,7 @@ impl HopBeat {
                         Grade::Perfect => ("PERFECT", [255, 236, 150, a]),
                         Grade::Good => ("GOOD", [glow[0], glow[1], glow[2], a]),
                         Grade::Ok => ("OK", [200, 200, 220, a]),
+                        Grade::Stomp => ("STOMP!", [accent[0], accent[1], accent[2], a]),
                     };
                     txt(
                         &mut list,
@@ -1952,7 +2672,7 @@ impl HopBeat {
                         c,
                         TextAlign::Center,
                     );
-                    if g != Grade::Perfect {
+                    if matches!(g, Grade::Good | Grade::Ok) {
                         let side = if err < 0.0 { "EARLY" } else { "LATE" };
                         txt(
                             &mut list,
@@ -2094,6 +2814,9 @@ const TRACK_HALF: f32 = 1.7;
 /// file is missing or does not parse the picture falls back to primitives.
 const BUNNY_GLB: &str = "assets/models/hop_beat/hop_bunny.glb";
 const POST_GLB: &str = "assets/models/hop_beat/hop_post.glb";
+const SLIME_GLB: &str = "assets/models/hop_beat/hop_slime.glb";
+const BEETLE_GLB: &str = "assets/models/hop_beat/hop_beetle.glb";
+const BAT_GLB: &str = "assets/models/hop_beat/hop_bat.glb";
 /// Skyline variants: (tower, lit windows), unit footprint 3 x 3 m, base on y = 0.
 const TOWER_GLBS: [(&str, &str); 3] = [
     (
@@ -2256,12 +2979,15 @@ impl HopBeat {
         // The renderer rebuilds its glTF slot table whenever the list of distinct
         // models changes. One tiny buried prop per model, first in the list, keeps
         // the table constant while towers and posts scroll in and out.
-        let mut models: Vec<&str> = vec![BUNNY_GLB, POST_GLB];
+        let mut models: Vec<&str> = vec![BUNNY_GLB, POST_GLB, SLIME_GLB, BEETLE_GLB, BAT_GLB];
         for (tower, windows) in TOWER_GLBS {
             models.push(tower);
             models.push(windows);
         }
-        let models: Vec<&str> = models.into_iter().filter(|m| glb_ready(m)).collect();
+        let models: Vec<&str> = models
+            .into_iter()
+            .filter(|m| !self.models_off && glb_ready(m))
+            .collect();
         for (i, m) in models.iter().enumerate() {
             doc.props.push(glb_prop(
                 &format!("anchor-{i}"),
@@ -2387,6 +3113,8 @@ impl HopBeat {
                 0.2,
             ));
         }
+        // ---- enemies
+        self.push_enemies(&mut doc, &models, lo, hi);
         // ---- lanterns: speed cue, pulse with the beat
         let step = 2.0 * bl;
         let mut z = (lo / step).ceil() * step;
@@ -2513,6 +3241,222 @@ impl HopBeat {
             ));
         }
         self.doc = doc;
+    }
+
+    /// The creatures on the slab. They are drawn exactly where the sim tests
+    /// them (`enemy_dx`), with a little hop on every step so the walk reads as
+    /// a rhythm; a stomped one is squashed flat for a moment, then gone.
+    fn push_enemies(&self, doc: &mut WorldDoc, models: &[&str], lo: f32, hi: f32) {
+        let bs = self.spec.beat_secs();
+        let pulse = self.beat_flash;
+        for o in self.course.obst.iter() {
+            if o.kind != Kind::Enemy || o.end + MAX_WALK_M < lo || o.start - 1.0 > hi {
+                continue;
+            }
+            let Some(et) = self.spec.enemies.types.get(o.ety) else {
+                continue;
+            };
+            let squash_age = o.stomped_t.map(|t| self.song_t - t);
+            if squash_age.is_some_and(|a| a > 0.35) {
+                continue;
+            }
+            if o.fate == Fate::Skipped && o.end < self.hero_x() - 2.0 {
+                continue;
+            }
+            let Some(dx) = self.spec.enemy_dx(o, self.song_t) else {
+                continue;
+            };
+            let center = (o.start + o.end) * 0.5 + dx;
+            let stepping = et.step_m > 0.0;
+            // Where in its step: a hop of 0.14 m over the first half of each step.
+            let phase = if stepping {
+                (self.song_t / bs * et.steps_per_beat as f32).fract()
+            } else {
+                0.0
+            };
+            let hop = if stepping && o.stomped_t.is_none() {
+                0.14 * (phase * 2.0)
+                    .min(1.0)
+                    .mul_add(std::f32::consts::PI, 0.0)
+                    .sin()
+                    .max(0.0)
+            } else {
+                0.0
+            };
+            // Appears over its first step instead of popping.
+            let appear = if stepping {
+                let first = self
+                    .spec
+                    .enemy_dx(o, self.song_t - bs / et.steps_per_beat as f32);
+                if first.is_none() {
+                    (phase * 2.0).min(1.0)
+                } else {
+                    1.0
+                }
+            } else {
+                1.0
+            };
+            let mut k = [1.0_f32, 1.0, 1.0];
+            if let Some(a) = squash_age {
+                let u = (a / 0.35).clamp(0.0, 1.0);
+                k = [1.0 + 0.5 * (1.0 - u), 0.18, 1.0 + 0.5 * (1.0 - u)];
+            } else if et.look == "slime" {
+                k = [1.0 + 0.08 * pulse, 1.0 - 0.12 * pulse, 1.0 + 0.08 * pulse];
+            }
+            k = k.map(|v| v * appear.max(0.05));
+            let live = o.fate == Fate::Pending;
+            let em = if squash_age.is_some() {
+                1.2
+            } else if live {
+                0.45 + 0.4 * pulse
+            } else {
+                0.2
+            };
+            let linear = et.color.map(|v| (v as f32 / 255.0).powf(2.2));
+            let id = format!("enemy-{}-{}", (o.take_beat * 100.0).round() as i64, o.ety);
+            let bob = if et.y_lo > 0.0 {
+                0.06 * (self.anim_t * 5.0 + o.take_beat).sin()
+            } else {
+                0.0
+            };
+            let y = o.y_lo + hop + bob;
+            let glb = match et.look.as_str() {
+                "slime" => SLIME_GLB,
+                "beetle" => BEETLE_GLB,
+                _ => BAT_GLB,
+            };
+            if et.y_lo > 0.0 {
+                // A blob on the slab says where the flyer is.
+                doc.props.push(prop(
+                    &format!("{id}-shadow"),
+                    "sphere",
+                    "shadow",
+                    [0.0, 0.015, center],
+                    [(o.end - o.start).max(0.8), 0.012, 0.7],
+                    et.color.map(|v| v / 6),
+                    0.4,
+                    1.0,
+                    0.0,
+                ));
+            }
+            if models.contains(&glb) {
+                let mut p = glb_prop(
+                    &id,
+                    glb,
+                    "enemy",
+                    [0.0, y, center],
+                    k,
+                    [255, 255, 255],
+                    em,
+                    Some(linear),
+                );
+                if et.look == "bat" {
+                    p.roll = 0.22 * (self.anim_t * 13.0 + o.take_beat).sin();
+                }
+                doc.props.push(p);
+                continue;
+            }
+            // Primitive fallback: the same silhouette from a few shapes.
+            let c = et.color;
+            let dark = c.map(|v| v / 3);
+            let mut add =
+                |name: &str, kind: &str, pos: [f32; 3], size: [f32; 3], col: [u32; 3], e: f32| {
+                    doc.props.push(prop(
+                        &format!("{id}-{name}"),
+                        kind,
+                        "enemy",
+                        [pos[0] * k[0], y + pos[1] * k[1], center + pos[2] * k[2]],
+                        [size[0] * k[0], size[1] * k[1], size[2] * k[2]],
+                        col,
+                        e,
+                        0.4,
+                        0.0,
+                    ));
+                };
+            match et.look.as_str() {
+                "slime" => {
+                    add("body", "sphere", [0.0, 0.25, 0.0], [0.8, 0.5, 0.76], c, em);
+                    add(
+                        "eye-l",
+                        "sphere",
+                        [-0.15, 0.28, -0.3],
+                        [0.16, 0.18, 0.1],
+                        [255, 255, 255],
+                        0.5,
+                    );
+                    add(
+                        "eye-r",
+                        "sphere",
+                        [0.15, 0.28, -0.3],
+                        [0.16, 0.18, 0.1],
+                        [255, 255, 255],
+                        0.5,
+                    );
+                }
+                "beetle" => {
+                    add("body", "sphere", [0.0, 0.3, 0.06], [0.72, 0.52, 0.8], c, em);
+                    add(
+                        "head",
+                        "sphere",
+                        [0.0, 0.22, -0.36],
+                        [0.36, 0.32, 0.3],
+                        dark,
+                        0.2,
+                    );
+                    add(
+                        "eye-l",
+                        "sphere",
+                        [-0.09, 0.28, -0.5],
+                        [0.1, 0.12, 0.07],
+                        [255, 255, 255],
+                        0.5,
+                    );
+                    add(
+                        "eye-r",
+                        "sphere",
+                        [0.09, 0.28, -0.5],
+                        [0.1, 0.12, 0.07],
+                        [255, 255, 255],
+                        0.5,
+                    );
+                }
+                _ => {
+                    add("body", "sphere", [0.0, 0.34, 0.0], [0.44, 0.5, 0.4], c, em);
+                    add(
+                        "wing-l",
+                        "box",
+                        [-0.5, 0.34, 0.0],
+                        [0.7, 0.06, 0.45],
+                        dark,
+                        em * 0.6,
+                    );
+                    add(
+                        "wing-r",
+                        "box",
+                        [0.5, 0.34, 0.0],
+                        [0.7, 0.06, 0.45],
+                        dark,
+                        em * 0.6,
+                    );
+                    add(
+                        "eye-l",
+                        "sphere",
+                        [-0.08, 0.42, -0.16],
+                        [0.09, 0.1, 0.06],
+                        [255, 232, 96],
+                        1.2,
+                    );
+                    add(
+                        "eye-r",
+                        "sphere",
+                        [0.08, 0.42, -0.16],
+                        [0.09, 0.1, 0.06],
+                        [255, 232, 96],
+                        1.2,
+                    );
+                }
+            }
+        }
     }
 
     fn push_hero(&self, doc: &mut WorldDoc, hx: f32, glb: bool) {
@@ -2887,7 +3831,13 @@ mod tests {
 
     #[test]
     fn the_models_load_are_the_right_size_and_the_picture_uses_them() {
-        let mut files = vec![BUNNY_GLB.to_string(), POST_GLB.to_string()];
+        let mut files = vec![
+            BUNNY_GLB.to_string(),
+            POST_GLB.to_string(),
+            SLIME_GLB.to_string(),
+            BEETLE_GLB.to_string(),
+            BAT_GLB.to_string(),
+        ];
         for (t, w) in TOWER_GLBS {
             files.push(t.to_string());
             files.push(w.to_string());
@@ -2933,6 +3883,265 @@ mod tests {
             g.tick(1.0 / 60.0);
             assert_eq!(specs(g.document()), first);
         }
+    }
+
+    fn item(beat: f32, kind: &str, beats: f32, hop: &str, enemy: &str) -> Item {
+        Item {
+            beat,
+            kind: kind.into(),
+            beats,
+            hop: hop.into(),
+            enemy: enemy.into(),
+        }
+    }
+
+    /// One phrase, every enemy unlocked at level 0, no rest bars.
+    fn enemy_spec(items: Vec<Item>) -> HopSpec {
+        let mut s = HopSpec::default();
+        s.course.phrases = vec![Phrase {
+            level: 0,
+            bars: 4,
+            items,
+            weight: 1,
+        }];
+        s.course.rest_every_bars = 1000;
+        for t in s.enemies.types.iter_mut() {
+            t.unlock_level = 0;
+        }
+        s
+    }
+
+    /// Plays `spec` and presses `off` seconds from every ideal press (holding for
+    /// a hold hop), until `secs` after the first obstacle's ideal press.
+    fn drive(spec: HopSpec, off: f32, secs: f32) -> HopBeat {
+        let mut c = Course::new(&spec);
+        c.ensure(&spec, 200.0);
+        let bs = spec.beat_secs();
+        let presses: Vec<(f32, f32)> = c
+            .obst
+            .iter()
+            .filter(|o| spec.needs_press(o))
+            .map(|o| {
+                let air = spec.arc(o.hop).air_beats * bs;
+                let hold = if o.hop == Hop::Hold { air * 0.9 } else { 0.05 };
+                (o.take_beat * bs + off, hold)
+            })
+            .collect();
+        let end = c.obst.first().map(|o| o.take_beat * bs).unwrap_or(0.0) + secs;
+        let mut g = HopBeat::new(spec);
+        g.set_sfx(false);
+        g.set_headless(true);
+        g.confirm();
+        while g.song_t() < end && g.phase_name() == "play" {
+            let t = g.song_t();
+            g.set_hold(presses.iter().any(|(p, h)| t >= *p && t < p + h));
+            g.tick(1.0 / 60.0);
+        }
+        g
+    }
+
+    #[test]
+    fn a_slime_is_stomped_by_an_early_press_and_hurts_a_late_one() {
+        let spec = enemy_spec(vec![item(4.0, "enemy", 0.2, "tap", "slime")]);
+        let ideal = drive(spec.clone(), 0.0, 2.0);
+        assert_eq!(
+            (ideal.lives(), ideal.stomps()),
+            (3, 0),
+            "ideal press clears it"
+        );
+        let early = drive(spec.clone(), -0.2, 2.0);
+        assert_eq!(
+            (early.lives(), early.stomps()),
+            (3, 1),
+            "early press lands on it"
+        );
+        assert!(
+            early.score() >= spec.enemies.stomp_score,
+            "{}",
+            early.score()
+        );
+        assert_eq!(early.state_value()["stomps"], 1);
+        let late = drive(spec, 0.25, 2.0);
+        assert_eq!(late.lives(), 2, "a late press runs into its side");
+    }
+
+    #[test]
+    fn the_stomp_bounce_lands_back_on_the_half_beat_grid() {
+        let spec = HopSpec::default();
+        let half = spec.beat_secs() * 0.5;
+        for i in 0..40 {
+            let t = 10.0 + i as f32 * 0.0137;
+            let d = spec.bounce_secs(t);
+            assert!(d >= 0.2 - 1e-5 && d < 0.2 + half + 1e-5, "{d}");
+            let landing = (t + d) / half;
+            assert!((landing - landing.round()).abs() < 1e-3, "{landing}");
+        }
+    }
+
+    #[test]
+    fn a_bat_punishes_a_hold_hop_and_leaves_a_tap_hop_alone() {
+        let flyer = |hop: &str| {
+            enemy_spec(vec![
+                item(4.0, "enemy", 0.2, hop, "slime"),
+                item(4.0, "enemy", 0.9, hop, "bat"),
+            ])
+        };
+        // the slime is under the bat: a tap hop clears both, a hold hop climbs into the bat
+        let tap = drive(flyer("tap"), 0.0, 2.0);
+        assert_eq!(tap.lives(), 3);
+        let hold = drive(flyer("hold"), 0.0, 3.0);
+        assert!(hold.lives() < 3, "a hold hop must hit a bat");
+    }
+
+    #[test]
+    fn a_flyer_alone_asks_for_no_press() {
+        let spec = enemy_spec(vec![item(4.0, "enemy", 1.0, "tap", "bat")]);
+        let mut c = Course::new(&spec);
+        c.ensure(&spec, 100.0);
+        assert!(!spec.needs_press(&c.obst[0]));
+        let g = drive(spec, 0.0, 2.0);
+        assert_eq!(g.lives(), 3);
+        assert_eq!(g.state_value()["perfect"].as_u64().unwrap_or(0), 0);
+    }
+
+    #[test]
+    fn a_walker_moves_on_the_half_beat_grid() {
+        let spec = HopSpec::default();
+        let bs = spec.beat_secs();
+        let i = spec.enemy_index("beetle").unwrap();
+        let o = spec.probe(Kind::Enemy, Hop::Tap, 0.25, 20.0, Some(i));
+        let et = &spec.enemies.types[i];
+        let meet_t = (o.start + o.end) * 0.5 / spec.speed();
+        let step = bs / et.steps_per_beat as f32;
+        // standing still inside a step, one step_m further on after it
+        let a = spec.enemy_dx(&o, meet_t + 0.01).unwrap();
+        let b = spec.enemy_dx(&o, meet_t + step * 0.4).unwrap();
+        assert_eq!(a, b);
+        let before = spec.enemy_dx(&o, meet_t - step * 1.01).unwrap();
+        assert!((before - a - et.step_m).abs() < 1e-4 || a.abs() < 1e-4 + et.step_m);
+        // not there yet before its walk starts
+        assert!(spec
+            .enemy_dx(&o, meet_t - step * (et.walk_steps as f32 + 2.0))
+            .is_none());
+        // a slime never moves
+        let s = spec.probe(Kind::Enemy, Hop::Tap, 0.2, 20.0, spec.enemy_index("slime"));
+        assert_eq!(spec.enemy_dx(&s, meet_t - 1.0), Some(0.0));
+    }
+
+    #[test]
+    fn enemies_arrive_one_kind_at_a_time_in_the_built_in_course() {
+        let spec = HopSpec::default();
+        spec.validate().unwrap();
+        for et in &spec.enemies.types {
+            let first = builtin_phrases()
+                .iter()
+                .filter(|p| p.items.iter().any(|i| i.enemy == et.id))
+                .map(|p| p.level)
+                .min()
+                .unwrap_or_else(|| panic!("{} is never used", et.id));
+            assert_eq!(first, et.unlock_level, "{} appears at level {first}", et.id);
+        }
+        let mut levels: Vec<u32> = spec.enemies.types.iter().map(|t| t.unlock_level).collect();
+        levels.dedup();
+        assert_eq!(
+            levels.len(),
+            spec.enemies.types.len(),
+            "one new kind per level"
+        );
+        // and the spec's own check lets all of it through
+        assert_eq!(spec.course_problems(), Vec::<String>::new());
+        // a long run gets all three, weighted towards the early kinds
+        let mut c = Course::new(&spec);
+        c.ensure(&spec, 3000.0);
+        for i in 0..3 {
+            assert!(c.obst.iter().any(|o| o.ety == i), "type {i} never laid");
+        }
+    }
+
+    #[test]
+    fn the_checker_rejects_impossible_enemy_patterns() {
+        let bad = |items: Vec<Item>| enemy_spec(items).course_problems();
+        // fine: one slime
+        assert_eq!(
+            bad(vec![item(4.0, "enemy", 0.2, "tap", "slime")]),
+            Vec::<String>::new()
+        );
+        // too tight: a second slime before the first bounce is over
+        assert!(!bad(vec![
+            item(4.0, "enemy", 0.2, "tap", "slime"),
+            item(5.0, "enemy", 0.2, "tap", "slime")
+        ])
+        .is_empty());
+        // a hold hop cannot be made under a bat
+        assert!(!bad(vec![
+            item(2.0, "gap", 1.0, "hold", ""),
+            item(2.0, "enemy", 0.9, "hold", "bat")
+        ])
+        .is_empty());
+        // too wide to clear with a tap hop at the perfect window
+        assert!(!bad(vec![item(4.0, "enemy", 1.6, "tap", "slime")]).is_empty());
+        // unknown enemy id, an enemy named on a gap, a locked enemy
+        assert!(!bad(vec![item(4.0, "enemy", 0.2, "tap", "ghost")]).is_empty());
+        assert!(!bad(vec![item(4.0, "gap", 1.0, "tap", "slime")]).is_empty());
+        let mut locked = enemy_spec(vec![item(4.0, "enemy", 0.25, "tap", "beetle")]);
+        locked.enemies.types[1].unlock_level = 3;
+        assert!(!locked.course_problems().is_empty());
+        // no rest after a walker
+        assert!(!bad(vec![
+            item(4.0, "enemy", 0.25, "tap", "beetle"),
+            item(5.5, "gap", 1.0, "tap", "")
+        ])
+        .is_empty());
+    }
+
+    #[test]
+    fn enemy_specs_are_read_from_json_and_refused_when_wrong() {
+        let ok = json!({"enemies": {"types": [
+            {"id": "ghost", "look": "bat", "y_lo": 1.4, "y_hi": 2.0, "stompable": false}
+        ], "stomp_score": 200}, "course": {"phrases": [
+            {"level": 0, "bars": 2, "items": [
+                {"beat": 1.0, "kind": "enemy", "beats": 0.9, "hop": "tap", "enemy": "ghost"}]}]}});
+        let s = HopSpec::from_value(&ok).unwrap();
+        assert_eq!(s.enemies.types.len(), 1);
+        assert_eq!(s.enemies.stomp_score, 200);
+        for bad in [
+            json!({"enemies": {"types": [{"id": "x", "bogus": 1}]}}),
+            json!({"enemies": {"types": [{"id": "x"}, {"id": "x"}]}}),
+            json!({"enemies": {"types": [{"id": "X!"}]}}),
+            json!({"enemies": {"types": [{"id": "x", "y_lo": 1.0, "y_hi": 2.0}]}}),
+            json!({"enemies": {"types": [{"id": "x", "look": "dragon"}]}}),
+            json!({"enemies": {"types": [{"id": "x", "step_m": 3.0, "walk_steps": 8}]}}),
+            json!({"enemies": {"body_h": 0.0}}),
+            json!({"enemies": {"types": []}, "course": {"phrases": [
+                {"level": 0, "bars": 2, "items": [
+                    {"beat": 2.0, "kind": "enemy", "beats": 0.2, "hop": "tap", "enemy": "slime"}]}]}}),
+        ] {
+            assert!(HopSpec::from_value(&bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn enemies_are_drawn_from_models_and_from_primitives_alike() {
+        let enemy_props = |off: bool| {
+            let mut g = HopBeat::new(enemy_spec(vec![item(3.0, "enemy", 0.2, "tap", "slime")]));
+            g.set_sfx(false);
+            g.set_models_off(off);
+            g.confirm();
+            run(&mut g, 2.0);
+            g.document()
+                .props
+                .iter()
+                .filter(|p| p.id.contains("enemy-"))
+                .map(|p| (p.id.clone(), p.gltf.is_some()))
+                .collect::<Vec<_>>()
+        };
+        let with = enemy_props(false);
+        assert!(with.iter().any(|(_, glb)| *glb), "{with:?}");
+        let without = enemy_props(true);
+        assert!(
+            !without.is_empty() && without.iter().all(|(_, glb)| !*glb),
+            "{without:?}"
+        );
     }
 
     #[test]

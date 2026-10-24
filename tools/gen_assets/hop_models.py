@@ -5,6 +5,10 @@
     hop_windows_{a,b,c}.glb the lit window panels of each tower (a separate mesh,
                         so the page can give them a glow the tower does not get)
     hop_post.glb        a roadside lamp post (the lamp bulb itself is drawn by the game)
+    hop_slime.glb       enemy: a stompable slime, feet on y=0, facing -z (toward the hero)
+    hop_beetle.glb      enemy: a walking beetle, same frame
+    hop_bat.glb         enemy: a hovering bat, bottom of the wings on y=0 (the game lifts it to
+                        its flight height), same frame
 
     python3 tools/gen_assets/hop_models.py          # write all
     python3 tools/gen_assets/hop_models.py --check  # exit 1 on drift
@@ -65,6 +69,74 @@ def bunny():
         inner = sph((sx * 0.11, 0.98, 0.245), 0.035, 0.19, 0.02, 8, 6)
         parts.append((CREAM, _tilt_x(ear, 0.80, 0.26, 0.28)))
         parts.append((PINK, _tilt_x(inner, 0.80, 0.26, 0.28)))
+    return parts
+
+
+SLIME = (96, 226, 140)
+SLIME_HI = (190, 255, 205)
+SHELL = (255, 150, 60)
+SHELL_DK = (150, 70, 40)
+BAT = (170, 118, 250)
+BAT_DK = (120, 80, 210)
+YELLOW = (255, 232, 96)
+
+
+def slime():
+    """0.8 m wide, 0.54 m tall: a dome with a glossy highlight, two eyes and a tuft."""
+    sph = pm._sphere
+    parts = [
+        (SLIME, sph((0, 0.25, 0.0), 0.40, 0.25, 0.38, 16, 8)),
+        (SLIME, sph((0, 0.06, 0.0), 0.43, 0.06, 0.41, 16, 4)),  # the wobbly skirt
+        (SLIME_HI, sph((0.14, 0.40, 0.12), 0.09, 0.05, 0.07, 8, 5)),  # shine
+        (SLIME, sph((0, 0.49, 0.02), 0.06, 0.05, 0.06, 8, 5)),  # tuft
+        (WHITE, sph((-0.15, 0.26, -0.30), 0.09, 0.10, 0.06, 10, 6)),  # eyes
+        (WHITE, sph((0.15, 0.26, -0.30), 0.09, 0.10, 0.06, 10, 6)),
+        (INK, sph((-0.15, 0.25, -0.35), 0.04, 0.05, 0.03, 8, 5)),
+        (INK, sph((0.15, 0.25, -0.35), 0.04, 0.05, 0.03, 8, 5)),
+    ]
+    return parts
+
+
+def beetle():
+    """0.8 m long, 0.55 m tall: a round orange shell with spots, a dark head, six legs."""
+    sph = pm._sphere
+    parts = [
+        (SHELL, sph((0, 0.30, 0.06), 0.36, 0.26, 0.40, 16, 8)),
+        (SHELL_DK, pm._box((0, 0.545, 0.06), (0.05, 0.02, 0.56))),  # seam down the back
+        (INK, sph((-0.17, 0.46, 0.20), 0.07, 0.03, 0.07, 8, 4)),  # spots
+        (INK, sph((0.17, 0.46, 0.20), 0.07, 0.03, 0.07, 8, 4)),
+        (INK, sph((-0.18, 0.46, -0.06), 0.06, 0.03, 0.06, 8, 4)),
+        (INK, sph((0.18, 0.46, -0.06), 0.06, 0.03, 0.06, 8, 4)),
+        (SHELL_DK, sph((0, 0.22, -0.36), 0.20, 0.17, 0.17, 12, 6)),  # head
+        (WHITE, sph((-0.09, 0.28, -0.50), 0.055, 0.065, 0.04, 8, 5)),  # eyes
+        (WHITE, sph((0.09, 0.28, -0.50), 0.055, 0.065, 0.04, 8, 5)),
+        (INK, sph((-0.09, 0.28, -0.54), 0.025, 0.035, 0.02, 6, 4)),
+        (INK, sph((0.09, 0.28, -0.54), 0.025, 0.035, 0.02, 6, 4)),
+    ]
+    for sx in (-1.0, 1.0):
+        for z in (-0.18, 0.06, 0.30):
+            parts.append((SHELL_DK, pm._box((sx * 0.37, 0.07, z), (0.16, 0.12, 0.09))))
+        feeler = pm._box((sx * 0.10, 0.50, -0.50), (0.04, 0.04, 0.22))
+        parts.append((SHELL_DK, _tilt_x(feeler, 0.50, -0.50, -0.5)))
+    return parts
+
+
+def bat():
+    """1.4 m across, 0.66 m tall: a round body, two flat wings with a tip each, ears, yellow eyes."""
+    sph = pm._sphere
+    parts = [
+        (BAT, sph((0, 0.30, 0.0), 0.22, 0.26, 0.20, 12, 7)),
+        (BAT, sph((0, 0.50, 0.0), 0.17, 0.15, 0.16, 12, 6)),  # head
+        (WHITE, sph((-0.075, 0.52, -0.14), 0.05, 0.06, 0.04, 8, 5)),
+        (WHITE, sph((0.075, 0.52, -0.14), 0.05, 0.06, 0.04, 8, 5)),
+        (YELLOW, sph((-0.075, 0.52, -0.17), 0.028, 0.04, 0.02, 6, 4)),
+        (YELLOW, sph((0.075, 0.52, -0.17), 0.028, 0.04, 0.02, 6, 4)),
+        (INK, sph((0, 0.44, -0.16), 0.03, 0.02, 0.02, 6, 4)),
+    ]
+    for sx in (-1.0, 1.0):
+        parts.append((BAT_DK, sph((sx * 0.46, 0.34, 0.02), 0.30, 0.035, 0.24, 12, 4)))  # wing
+        parts.append((BAT_DK, sph((sx * 0.68, 0.28, 0.04), 0.20, 0.030, 0.16, 10, 4)))  # tip
+        parts.append((BAT, pm._cone((sx * 0.10, 0.68, 0.0), 0.06, 0.16, 8)))  # ear
     return parts
 
 
@@ -141,6 +213,9 @@ def build() -> dict[Path, bytes]:
         win = _windows(t["w"], t["h"], t["d"], t["cols"], t["rows"], i)
         out[OUT / f"hop_windows_{k}.glb"] = pm.write_glb(OUT / f"hop_windows_{k}.glb", win, f"hop_windows_{k}")
     out[OUT / "hop_post.glb"] = pm.write_glb(OUT / "hop_post.glb", post(), "hop_post")
+    for name, shape in (("slime", slime), ("beetle", beetle), ("bat", bat)):
+        path = OUT / f"hop_{name}.glb"
+        out[path] = pm.write_glb(path, shape(), f"hop_{name}")
     return out
 
 

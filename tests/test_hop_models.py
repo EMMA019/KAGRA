@@ -16,7 +16,7 @@ _spec.loader.exec_module(hm)
 def test_generator_is_deterministic_and_matches_the_committed_files():
     a, b = hm.build(), hm.build()
     assert a == b
-    assert len(a) == 8
+    assert len(a) == 11
     for path, data in a.items():
         assert path.is_file(), path
         assert path.read_bytes() == data, f"{path.name} drifted: run tools/gen_assets/hop_models.py"
@@ -35,7 +35,7 @@ def test_every_glb_is_valid_and_small():
         assert doc["meshes"], path.name
         assert len(data) < 200_000, path.name
         total += len(data)
-    assert total < 600_000
+    assert total < 900_000
 
 
 def test_the_glbs_are_in_the_manifest_bundle_and_the_ledger():
@@ -45,3 +45,17 @@ def test_the_glbs_are_in_the_manifest_bundle_and_the_ledger():
     entry = next(p for p in ledger["packs"] if p["id"] == "project-hop-beat-models")
     assert entry["license"] == "cc0" and entry["redistributable_in_public_repo"] is True
     assert "assets/models/hop_beat/*.glb" in entry["paths"]
+
+
+def test_the_three_enemy_models_exist_stand_on_the_ground_and_are_small():
+    built = {p.name: d for p, d in hm.build().items()}
+    for name in ("hop_slime.glb", "hop_beetle.glb", "hop_bat.glb"):
+        data = built[name]
+        n = struct.unpack("<I", data[12:16])[0]
+        doc = json.loads(data[20:20 + n])
+        for acc in doc["accessors"]:
+            if acc.get("type") == "VEC3" and "min" in acc and "max" in acc and acc["max"][1] > 0.1:
+                lo, hi = acc["min"], acc["max"]
+                assert lo[1] > -0.05, f"{name} sinks below its base"
+                # a bat's wingspan is the widest; none is wider than the 3 m beat
+                assert hi[1] - lo[1] < 1.4 and hi[0] - lo[0] < 2.0 and hi[2] - lo[2] < 2.0, name

@@ -59,6 +59,11 @@
           "file": "assets/audio/hop_beat/hop_beat_revive.mp3",
           "rate": 1.0,
           "volume": 0.9
+        },
+        "stomp": {
+          "file": "assets/audio/hop_beat/stomp.wav",
+          "rate": 1.0,
+          "volume": 0.9
         }
       },
       "sfx_volume": 1.0
@@ -70,6 +75,64 @@
       "ramp_bars": 40,
       "rest_every_bars": 8,
       "seed": 7
+    },
+    "enemies": {
+      "body_h": 0.45,
+      "bounce_beats": 0.5,
+      "bounce_height": 0.7,
+      "rest_beats": 0.5,
+      "stomp_depth": 0.3,
+      "stomp_score": 150,
+      "types": [
+        {
+          "color": [
+            120,
+            240,
+            150
+          ],
+          "id": "slime",
+          "look": "slime",
+          "step_m": 0.0,
+          "steps_per_beat": 1,
+          "stompable": true,
+          "unlock_level": 0,
+          "walk_steps": 0,
+          "y_hi": 0.45,
+          "y_lo": 0.0
+        },
+        {
+          "color": [
+            255,
+            170,
+            80
+          ],
+          "id": "beetle",
+          "look": "beetle",
+          "step_m": 1.0,
+          "steps_per_beat": 2,
+          "stompable": true,
+          "unlock_level": 1,
+          "walk_steps": 8,
+          "y_hi": 0.5,
+          "y_lo": 0.0
+        },
+        {
+          "color": [
+            190,
+            130,
+            255
+          ],
+          "id": "bat",
+          "look": "bat",
+          "step_m": 0.0,
+          "steps_per_beat": 1,
+          "stompable": false,
+          "unlock_level": 2,
+          "walk_steps": 0,
+          "y_hi": 2.1,
+          "y_lo": 1.45
+        }
+      ]
     },
     "hero": {
       "beat_len_m": 3.0,

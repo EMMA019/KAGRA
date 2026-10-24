@@ -103,11 +103,44 @@ AI サービスを呼び出すことはありません。スクリプトとロ�
 
 ## Models
 
-The bunny, the three rooftop towers (with lit-window panels) and the lamp post are
+The bunny, the three enemies (slime, beetle, bat), the three rooftop towers (with lit-window panels) and the lamp post are
 `assets/models/hop_beat/*.glb`, written by `python3 tools/gen_assets/hop_models.py`
-(plain Python, CC0, no input meshes; `--check` fails on drift). They add about 0.38 MB
+(plain Python, CC0, no input meshes; `--check` fails on drift). They add about 0.64 MB
 raw to the bundle and are listed in the asset ledger as `project-hop-beat-models`.
 
 Every model is optional. If a file is missing or does not parse, the page logs one
 warning and HOP-BEAT draws that part with its primitives (ball hero, box towers, box
 posts). A model the bundle could not fetch does not stop the game from starting.
+
+## Enemies
+
+Three creatures, all defined in the spec (`enemies.types`, `course.phrases[].items[].enemy`,
+`course.phrases[].weight`), none hard-coded. They stand and move on the beat grid, so
+getting past one is still a rhythm action, and the one button is unchanged.
+
+| Kind | Unlocks | Behaviour | What the player does |
+|---|---|---|---|
+| slime | level 0 (bars 0-8) | sits on the track | tap over it, or land on it |
+| beetle | level 1 (bars 8-16) | walks towards you one step on every half beat | the same, but its walk shifts where it is when you land |
+| bat | level 2 (bars 16-24) | hovers at head height above a spot where a hold hop climbs | tap: a tap hop stays under it. A hold hop flies into it |
+
+- Landing on a slime or beetle from above is a **stomp**: +150, a short bounce that
+  comes down on the next half beat, a "STOMP!" and the `stomp` cue. It does not need
+  a perfect press; an early one stomps, a late one runs into its side and costs a life.
+- Running into a side, or climbing into a bat, costs a life (death reason `enemy`).
+- Falling into a gap stays a plain fail. Blocks are as before.
+- A bat needs no press of its own and is not judged. It is only there to punish a hold.
+- The checker (`HopSpec::course_problems`, run on every spec load and in `hop_measure`)
+  plays every phrase with the hero at +-`judge.perfect_ms` (capped at 100 ms) around each
+  ideal press and refuses a phrase where any offset takes damage, an unknown or still
+  locked enemy, a stompable enemy without `rest_beats` and `bounce_beats` of room, or an
+  item that runs past the end of the phrase. `kagra/hop_beat.py` mirrors the spec and the
+  rules that need no simulation (`phrase_problems`).
+- Measured, `docs/measure/hop_beat_baseline.json`: the perfect bot loses no life over 150 s
+  on 8 seeds; the 25 ms human bot loses about one; the idle, hold-all and spam bots all
+  die. Enemy windows are wide (about 350-420 ms for a tap over a slime), so enemy phrases
+  are easier than gaps and the course gets denser per bar only slowly: about 0.6
+  obstacles per bar at the start, about 1.7 late.
+- The sounds are the existing effects plus `stomp.wav` (original, from `hop_audio.py`).
+  Each enemy model falls back to primitives (a dome, a shell, two wings) if its glb is missing.
+

@@ -1,6 +1,6 @@
-"""HOP-BEAT's seven short effects (CC0-1.0, synthesized here, no input audio).
+"""HOP-BEAT's eight short effects (CC0-1.0, synthesized here, no input audio).
 
-hop, land, perfect, good, combo, hit, fall: 22.05 kHz mono 16-bit WAV in
+hop, land, perfect, good, combo, hit, fall, stomp: 22.05 kHz mono 16-bit WAV in
 `assets/audio/hop_beat/`. They are pitched to A minor to sit under the music
 pack (hop_beat_loop.mp3, hop_beat_{gameover,newbest,revive}.mp3, which are
 committed as built and described in assets/LEDGER.json).
@@ -76,7 +76,27 @@ def fall(rng):
     return t, 0.5
 
 
-SHOTS = {"hop": hop, "land": land, "perfect": perfect, "good": good, "combo": combo, "hit": hit, "fall": fall}
+def stomp(rng):
+    """Landing on an enemy: a wet squish, then a springy boing up to the bounce."""
+    out = [0.0] * int(0.34 * c.RATE)
+    squish = c.lowpass(c.noise(0.07, rng, release=0.05, decay=30), 1100)
+    _place(out, squish, 0.0, 0.7)
+    _place(out, c.tone(c.hz(64), 0.07, wave_="sine", slide=-0.5, release=0.04, decay=20), 0.0, 0.6)
+    _place(out, c.tone(c.hz(69), 0.2, wave_="tri", slide=1.8, release=0.1, decay=9), 0.05)
+    _place(out, c.tone(c.hz(81), 0.14, wave_="sine", slide=1.2, release=0.07, decay=12), 0.09, 0.35)
+    return out, 0.6
+
+
+SHOTS = {
+    "hop": hop,
+    "land": land,
+    "perfect": perfect,
+    "good": good,
+    "combo": combo,
+    "hit": hit,
+    "fall": fall,
+    "stomp": stomp,
+}
 
 
 def render(name: str) -> bytes:

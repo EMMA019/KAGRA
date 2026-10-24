@@ -6,7 +6,7 @@
 //! `docs/measure/hop_beat_baseline.json` is the committed copy and a test
 //! keeps the two in step.
 
-use crate::hop_beat::{Course, Fate, Hop, HopBeat, HopSpec, Kind};
+use crate::hop_beat::{Course, Fate, Hop, HopBeat, HopSpec, Kind, Obst};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 
@@ -44,6 +44,7 @@ pub struct BotRun {
     pub perfects: u32,
     pub goods: u32,
     pub oks: u32,
+    pub stomps: u32,
     pub max_combo: u32,
     /// Lives lost before the run ended (or the time cap).
     pub lives_lost: u32,
@@ -106,14 +107,15 @@ pub fn play(spec: &HopSpec, bot: Bot, seed: u32, max_secs: f32) -> BotRun {
                     _ => (0.0, 0.0),
                 };
                 for o in g.course().obst.iter() {
-                    if o.fate != Fate::Pending {
+                    if o.fate != Fate::Pending || !spec.needs_press(o) {
+                        // A flyer is only something to stay clear of.
                         continue;
                     }
                     let ideal = o.take_beat * bs;
                     if ideal > now + 2.5 {
                         break;
                     }
-                    let key = (o.start * 1000.0) as u32 ^ ((o.kind == Kind::Gap) as u32) << 31;
+                    let key = (o.take_beat * 1000.0) as u32 ^ ((o.kind == Kind::Gap) as u32) << 31;
                     if !planned.insert(key) {
                         continue;
                     }
@@ -159,12 +161,35 @@ pub fn play(spec: &HopSpec, bot: Bot, seed: u32, max_secs: f32) -> BotRun {
         perfects,
         goods,
         oks,
+        stomps: g.stomps(),
         max_combo: g.max_combo(),
         lives_lost,
         seconds,
         bars: seconds / (bs * spec.music.beats_per_bar as f32),
         died: !g.playing(),
     }
+}
+
+/// Timing window of a laid obstacle in ms. Walkers depend on where on the beat
+/// grid they stand, so the cache key holds the fraction of the beat.
+type WindowCache = Vec<((u8, u8, usize, u32, u32), f32)>;
+
+fn window_ms(spec: &HopSpec, cache: &mut WindowCache, o: &Obst) -> f32 {
+    let width_beats = (o.end - o.start) / spec.hero.beat_len_m;
+    let key = (
+        o.kind as u8,
+        o.hop as u8,
+        o.ety,
+        (width_beats * 1000.0) as u32,
+        ((o.take_beat.fract() * 1000.0).round()) as u32,
+    );
+    if let Some((_, w)) = cache.iter().find(|(k, _)| *k == key) {
+        return *w;
+    }
+    let (lo, hi) = spec.window_secs_obst(o);
+    let w = (hi - lo) * 1000.0;
+    cache.push((key, w));
+    w
 }
 
 /// What the placement check found.
@@ -195,24 +220,13 @@ pub fn check_placement(spec: &HopSpec, bars: u32) -> PlacementReport {
         min_gap_ms: f32::MAX,
         ..PlacementReport::default()
     };
-    let mut cache: Vec<((bool, bool, u32), f32)> = Vec::new();
+    let mut cache: WindowCache = Vec::new();
     let mut prev_free = f32::MIN;
     for (i, o) in c.obst.iter().enumerate() {
-        let width_beats = (o.end - o.start) / spec.hero.beat_len_m;
-        let key = (
-            o.kind == Kind::Gap,
-            o.hop == Hop::Tap,
-            (width_beats * 1000.0) as u32,
-        );
-        let w = match cache.iter().find(|(k, _)| *k == key) {
-            Some((_, w)) => *w,
-            None => {
-                let (lo, hi) = spec.window_secs(o.kind, o.hop, width_beats);
-                let w = (hi - lo) * 1000.0;
-                cache.push((key, w));
-                w
-            }
-        };
+        if !spec.needs_press(o) {
+            continue;
+        }
+        let w = window_ms(spec, &mut cache, o);
         rep.min_window_ms = rep.min_window_ms.min(w);
         if w < spec.course.min_window_ms {
             rep.course_problems.push(format!(
@@ -231,6 +245,9 @@ pub fn check_placement(spec: &HopSpec, bars: u32) -> PlacementReport {
             }
         }
         prev_free = o.take_beat + spec.arc(o.hop).air_beats;
+        if o.kind == Kind::Enemy && spec.enemies.types.get(o.ety).is_some_and(|t| t.stompable) {
+            prev_free += spec.enemies.bounce_beats;
+        }
     }
     if rep.obstacles == 0 {
         rep.min_window_ms = 0.0;
@@ -251,6 +268,9 @@ pub struct CurvePoint {
     pub min_window_ms: f32,
     /// Share of each beat taken up by hops in the air (0..1).
     pub busy: f32,
+    /// Share of the bucket's obstacles that are enemies, and which kinds.
+    pub enemy_share: f32,
+    pub enemy_kinds: Vec<String>,
 }
 
 pub fn difficulty_curve(spec: &HopSpec, bars: u32, bucket: u32) -> Vec<CurvePoint> {
@@ -258,6 +278,7 @@ pub fn difficulty_curve(spec: &HopSpec, bars: u32, bucket: u32) -> Vec<CurvePoin
     let mut c = Course::new(spec);
     c.ensure(spec, bars as f32 * bpb + 8.0);
     let mut out = Vec::new();
+    let mut cache: WindowCache = Vec::new();
     let mut from = 0;
     while from < bars {
         let to = (from + bucket).min(bars);
@@ -271,15 +292,22 @@ pub fn difficulty_curve(spec: &HopSpec, bars: u32, bucket: u32) -> Vec<CurvePoin
         let mut wins = Vec::new();
         let mut air = 0.0;
         for o in &items {
-            let wb = (o.end - o.start) / spec.hero.beat_len_m;
-            let (a, b) = spec.window_secs(o.kind, o.hop, wb);
-            wins.push((b - a) * 1000.0);
+            if !spec.needs_press(o) {
+                continue;
+            }
+            wins.push(window_ms(spec, &mut cache, o));
             air += spec.arc(o.hop).air_beats;
         }
+        let mut kinds: Vec<String> = items
+            .iter()
+            .filter_map(|o| spec.enemies.types.get(o.ety).map(|t| t.id.clone()))
+            .collect();
+        kinds.sort();
+        kinds.dedup();
         let mean = if wins.is_empty() {
             0.0
         } else {
-            wins.iter().sum::<f32>() / n
+            wins.iter().sum::<f32>() / wins.len() as f32
         };
         let minw = wins.iter().cloned().fold(f32::MAX, f32::min);
         out.push(CurvePoint {
@@ -299,6 +327,12 @@ pub fn difficulty_curve(spec: &HopSpec, bars: u32, bucket: u32) -> Vec<CurvePoin
             mean_window_ms: mean,
             min_window_ms: if wins.is_empty() { 0.0 } else { minw },
             busy: air / (hi - lo).max(1.0),
+            enemy_share: if n > 0.0 {
+                items.iter().filter(|o| o.kind == Kind::Enemy).count() as f32 / n
+            } else {
+                0.0
+            },
+            enemy_kinds: kinds,
         });
         from = to;
     }
@@ -319,6 +353,7 @@ fn stat(runs: &[BotRun]) -> Value {
         "mean_score": r2(mean(&|r| r.score as f32)),
         "mean_cleared": r2(mean(&|r| r.cleared as f32)),
         "mean_perfects": r2(mean(&|r| r.perfects as f32)),
+        "mean_stomps": r2(mean(&|r| r.stomps as f32)),
         "mean_max_combo": r2(mean(&|r| r.max_combo as f32)),
         "mean_lives_lost": r2(mean(&|r| r.lives_lost as f32)),
         "median_seconds": r2(secs[secs.len() / 2]),
@@ -366,6 +401,8 @@ pub fn report(spec: &HopSpec) -> Value {
                 "mean_window_ms": r2(p.mean_window_ms),
                 "min_window_ms": r2(p.min_window_ms),
                 "busy": r2(p.busy),
+                "enemy_share": r2(p.enemy_share),
+                "enemy_kinds": p.enemy_kinds,
             })
         })
         .collect();
@@ -467,7 +504,9 @@ mod tests {
                 hop: "tap".into(),
                 beat: 1.0,
                 beats: 3.5,
+                enemy: String::new(),
             }],
+            weight: 1,
         }];
         assert!(!s.course_problems().is_empty());
         assert!(s.validate().is_err());

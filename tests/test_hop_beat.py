@@ -52,6 +52,62 @@ def test_out_of_range_values_are_refused(over):
         hb.game_from_overrides(over)
 
 
+def test_default_enemies_are_the_three_staged_kinds():
+    en = hb.default_game()["enemies"]
+    ids = [t["id"] for t in en["types"]]
+    assert ids == ["slime", "beetle", "bat"]
+    assert [t["unlock_level"] for t in en["types"]] == [0, 1, 2], "one new kind per level"
+    slime, beetle, bat = en["types"]
+    assert slime["stompable"] and beetle["stompable"] and not bat["stompable"]
+    assert bat["y_lo"] > 1.0, "a bat hovers where a hold hop climbs"
+    assert beetle["step_m"] * beetle["walk_steps"] <= hb.MAX_WALK_M
+    assert "stomp" in hb.SFX_CUES and "stomp" in hb.default_game()["audio"]["sfx"]
+    assert (ROOT / hb.AUDIO_DIR / "stomp.wav").is_file()
+
+
+def test_enemy_types_merge_over_the_slime_defaults_and_reject_nonsense():
+    g = hb.game_from_overrides({"enemies": {"types": [{"id": "ghost", "look": "bat", "y_lo": 1.4,
+                                                       "y_hi": 2.0, "stompable": False}]}})
+    assert g["enemies"]["types"][0]["step_m"] == 0.0 and g["enemies"]["types"][0]["color"] == [120, 240, 150]
+    for bad in (
+        {"types": [{"id": "x", "bogus": 1}]},
+        {"types": [{"id": "x"}, {"id": "x"}]},
+        {"types": [{"id": "Bad Id"}]},
+        {"types": [{"id": "x", "y_lo": 1.0, "y_hi": 2.0}]},  # stompable but airborne
+        {"types": [{"id": "x", "look": "dragon"}]},
+        {"types": [{"id": "x", "step_m": 3.0, "walk_steps": 8}]},
+        {"types": [{"id": f"t{i}"} for i in range(9)]},
+        {"body_h": 0.0},
+    ):
+        with pytest.raises(ValueError):
+            hb.game_from_overrides({"enemies": bad})
+
+
+def test_phrases_may_name_enemies_and_the_static_placement_rules_hold():
+    def phrase(items, level=0):
+        return {"level": level, "bars": 4, "items": items}
+
+    def foe(beat, enemy, beats=0.2, hop="tap"):
+        return {"beat": beat, "kind": "enemy", "beats": beats, "hop": hop, "enemy": enemy}
+
+    ok = hb.game_from_overrides({"course": {"phrases": [phrase([foe(1, "slime"), foe(3, "slime")])]}})
+    assert hb.phrase_problems(ok) == []
+    with pytest.raises(ValueError, match="weight"):
+        hb.game_from_overrides({"course": {"phrases": [{**phrase([foe(1, "slime")]), "weight": 99}]}})
+    g = hb.default_game()
+    assert hb.phrase_problems(g, [phrase([foe(1, "ghost")])])
+    assert hb.phrase_problems(g, [phrase([foe(1, "beetle", 0.25)], level=0)]), "beetle unlocks at level 1"
+    assert hb.phrase_problems(g, [phrase([foe(1, "slime"), foe(2, "slime")])]), "no room to land and bounce"
+    assert hb.phrase_problems(g, [phrase([foe(1, "slime"), {"beat": 3, "kind": "gap", "beats": 0.5, "hop": "tap", "enemy": "slime"}])])
+    assert hb.phrase_problems(g, [phrase([foe(1, "slime"), foe(3, "slime")])]) == []
+    # a hovering bat needs no press, so it may share a beat with the slime below it
+    assert hb.phrase_problems(g, [phrase([foe(1, "slime"), foe(1, "bat", 0.9)], level=2)]) == []
+
+
+def test_the_built_in_phrase_set_lives_in_rust_so_the_fixture_leaves_it_empty():
+    assert hb.default_game()["course"]["phrases"] == []
+
+
 def test_music_pack_matches_the_spec():
     grid = json.loads(GRID.read_text(encoding="utf-8"))
     game = hb.default_game()
