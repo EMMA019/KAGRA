@@ -46,6 +46,9 @@
         "cap": 24
       }
     },
+    "deck_rules": {
+      "stair_entry": false
+    },
     "items": [
       {
         "effect": "magnet",

@@ -173,6 +173,23 @@ impl Hitbox {
         }
     }
 
+    /// A cat that moves sideways from `x0` into the foot of this ramp's wedge
+    /// at height `y`, where the slope is already more than `tol` above its
+    /// feet, has hit its side. A ride up from the front (it is in the ramp's
+    /// width already) and a step in at the very toe are not hits.
+    pub fn ramp_side_hit(&self, x0: f32, x1: f32, z1: f32, y: f32, tol: f32) -> bool {
+        if self.role != PartRole::Ramp {
+            return false;
+        }
+        let hw = (self.skin_max[0] - self.skin_min[0]) * 0.5;
+        let inside = |x: f32| (x - self.hit_cx).abs() <= hw;
+        if inside(x0) || !inside(x1) {
+            return false;
+        }
+        let t = (z1 - self.skin_min[2]) / self.ramp_run.max(1e-3);
+        (0.0..=1.0).contains(&t) && self.skin_max[1] * t - y > tol
+    }
+
     /// Feet at `(x, y, z)` inside the kill box.
     pub fn feet_hit(&self, x: f32, y: f32, z: f32) -> bool {
         self.kills()

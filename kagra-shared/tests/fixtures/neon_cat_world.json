@@ -731,6 +731,25 @@
    "coins_per_step": 3,
    "ramp_len": 1.4
   },
+  "deck_rules": {
+   "enabled": true,
+   "rest_every": 3,
+   "reward_every": 2,
+   "other_every": 8,
+   "lanes": [
+    -1,
+    0,
+    1
+   ],
+   "length": 7.0,
+   "height": 2.0,
+   "half_width": 0.6,
+   "stair_entry": true,
+   "stair_len": 4.0,
+   "land_score": 60,
+   "run_score": 60,
+   "coins": 6
+  },
   "chaser": {
    "enabled": false,
    "secs": 10.0,

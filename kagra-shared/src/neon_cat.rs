@@ -22,6 +22,7 @@ use crate::flow::{FlowAction, FlowPhase, GameFlow};
 use crate::game_core::{self, Core, Hitbox, Juice, JuiceShake, Kit, Spring1};
 use crate::game_spec::{
     Behavior, GameSpec, ItemEffect, ItemIcon, MischiefKind, PartRole, PerchKind, SectionKind,
+    STAIR_END_FRAC,
 };
 use crate::neon_missions::Counts;
 use crate::scene::{DrawList, Quad, TextAlign, TextQuad};
@@ -147,6 +148,8 @@ pub struct NeonCat {
     pop_sum: u32,
     /// Route slots the cat has landed on, and reached the top of.
     perch_landed: HashSet<i32>,
+    /// Slots whose deck the cat has landed on (once each).
+    deck_landed: HashSet<i32>,
     perch_routed: HashSet<i32>,
     /// Fraction of a point owed for time on a ledge.
     perch_acc: f32,
@@ -358,6 +361,7 @@ impl NeonCat {
             pop_t: 0.0,
             pop_sum: 0,
             perch_landed: HashSet::new(),
+            deck_landed: HashSet::new(),
             perch_routed: HashSet::new(),
             perch_acc: 0.0,
             step_off: 0.0,
@@ -533,6 +537,7 @@ impl NeonCat {
                 "double": self.fx[FX_DOUBLE],
             },
             "perch": { "landed": self.perch_landed.len(), "routes": self.perch_routed.len(), "on": self.on_perch },
+            "decks": { "landed": self.deck_landed.len() },
             "robot": { "secs": self.robot_t, "fleeing": self.robot_flee > 0.0 },
             "mischief": { "knocked": self.knocks, "streak": if self.streak_t > 0.0 { self.streak } else { 0 } },
             "toast": if self.toast_t > 0.0 { self.toast.as_str() } else { "" },
@@ -757,7 +762,47 @@ impl NeonCat {
                 }
             }
         }
-        (lx, jump, roll)
+        (self.keep_off_steps(lx), jump, roll)
+    }
+
+    /// A player does not steer into the side of a raised step: hold the stick
+    /// back while a taller-than-first step column is the way the stick points.
+    fn keep_off_steps(&self, lx: f32) -> f32 {
+        if self.spec.perch_route.is_empty() {
+            return lx;
+        }
+        let track = &self.spec.runner.obstacle_track;
+        let i0 = near_index(self.z, track.z0, track.gap).saturating_sub(1);
+        let up = self.spec.perch_rules.step_up + 0.02;
+        let rl = self.spec.perch_rules.ramp_len;
+        let mut lx = lx;
+        for i in i0..i0 + 3 {
+            let Some(steps) = ledges_at(&self.spec, i) else {
+                continue;
+            };
+            for b in steps.iter().filter(|b| !b.deck && b.top > up) {
+                if self.z < b.z0 - rl - 4.0 || self.z >= b.z1 {
+                    continue;
+                }
+                // Outside the column on one side: never point at it, and
+                // keep a hand off its wall (the stick has noise).
+                let (lo, hi) = (b.x - b.half_width, b.x + b.half_width);
+                if self.x >= hi {
+                    lx = if self.x < hi + 0.3 {
+                        lx.min(-0.4)
+                    } else {
+                        lx.min(0.0)
+                    };
+                } else if self.x <= lo {
+                    lx = if self.x > lo - 0.3 {
+                        lx.max(0.4)
+                    } else {
+                        lx.max(0.0)
+                    };
+                }
+            }
+        }
+        lx
     }
 
     /// `lx` is screen-right. `lz` above 0.55 (stick up) is a jump.
@@ -804,6 +849,7 @@ impl NeonCat {
         self.pop_t = 0.0;
         self.pop_sum = 0;
         self.perch_landed.clear();
+        self.deck_landed.clear();
         self.perch_routed.clear();
         self.perch_acc = 0.0;
         self.step_off = 0.0;
@@ -1389,12 +1435,17 @@ impl NeonCat {
         let i0 = near_index(z, track.z0, track.gap).saturating_sub(1);
         let mut best = 0.0f32;
         for i in i0..i0 + 3 {
-            let Some(steps) = perch_route_at(&self.spec, i) else {
+            let Some(steps) = ledges_at(&self.spec, i) else {
                 continue;
             };
             for (n, b) in steps.iter().enumerate() {
                 let prev = if n == 0 { 0.0 } else { steps[n - 1].top };
-                if b.top <= prev || (x - b.x).abs() > b.half_width || z < b.z0 - rl || z >= b.z0 {
+                if !b.ramp
+                    || b.top <= prev
+                    || (x - b.x).abs() > b.half_width
+                    || z < b.z0 - rl
+                    || z >= b.z0
+                {
                     continue;
                 }
                 let u = (z - (b.z0 - rl)) / rl;
@@ -1408,7 +1459,7 @@ impl NeonCat {
     /// the step and its top. A ledge more than `step_up` above the feet is
     /// walked through (a jump gets onto it), one within reach is stepped onto.
     fn perch_support(&self, x: f32, z: f32) -> Option<(i32, usize, f32)> {
-        if self.spec.perch_route.is_empty() {
+        if !has_ledges(&self.spec) {
             return None;
         }
         let track = &self.spec.runner.obstacle_track;
@@ -1416,7 +1467,7 @@ impl NeonCat {
         let up = self.spec.perch_rules.step_up;
         let mut best: Option<(i32, usize, f32)> = None;
         for i in i0..i0 + 3 {
-            let Some(steps) = perch_route_at(&self.spec, i) else {
+            let Some(steps) = ledges_at(&self.spec, i) else {
                 continue;
             };
             for (n, b) in steps.iter().enumerate() {
@@ -1439,7 +1490,7 @@ impl NeonCat {
     fn flat_end(&self, steps: &[PerchBox], n: usize) -> f32 {
         let b = &steps[n];
         match steps.get(n + 1) {
-            Some(next) if next.top > b.top => b.z1 - self.spec.perch_rules.ramp_len,
+            Some(next) if next.ramp && next.top > b.top => b.z1 - self.spec.perch_rules.ramp_len,
             _ => b.z1,
         }
     }
@@ -1460,12 +1511,12 @@ impl NeonCat {
         let i1 = near_index(self.z + reach, track.z0, track.gap) + 1;
         let mut best: Option<(f32, f32, f32, i32)> = None;
         for i in i0..=i1 {
-            let Some(steps) = perch_route_at(&self.spec, i) else {
+            let Some(steps) = ledges_at(&self.spec, i) else {
                 continue;
             };
             for (n, b) in steps.iter().enumerate() {
                 let end = self.flat_end(&steps, n);
-                let rl = if n == 0 || steps[n - 1].top < b.top {
+                let rl = if b.ramp && (n == 0 || steps[n - 1].top < b.top) {
                     self.spec.perch_rules.ramp_len
                 } else {
                     0.0
@@ -1486,8 +1537,9 @@ impl NeonCat {
 
     /// Height of the route in one slot at `(x, z)`: the flat tops and the
     /// slopes up to them, 0 beside it.
-    fn route_profile(&self, steps: &[PerchBox], x: f32, z: f32) -> f32 {
+    fn route_profile(&self, steps: &[PerchBox], x: f32, y: f32, z: f32) -> f32 {
         let rl = self.spec.perch_rules.ramp_len;
+        let up = self.spec.perch_rules.step_up;
         let mut h = 0.0f32;
         for (n, b) in steps.iter().enumerate() {
             if (x - b.x).abs() > b.half_width {
@@ -1495,8 +1547,12 @@ impl NeonCat {
             }
             let prev = if n == 0 { 0.0 } else { steps[n - 1].top };
             if z >= b.z0 && z < b.z1 {
-                h = h.max(b.top);
-            } else if rl > 0.0 && b.top > prev && z >= b.z0 - rl && z < b.z0 {
+                // A deck over the head is passed through, like a route's ledge
+                // that is out of reach.
+                if y >= b.top - up || !b.deck {
+                    h = h.max(b.top);
+                }
+            } else if rl > 0.0 && b.ramp && b.top > prev && z >= b.z0 - rl && z < b.z0 {
                 h = h.max(prev + (b.top - prev) * (z - (b.z0 - rl)) / rl);
             }
         }
@@ -1507,7 +1563,7 @@ impl NeonCat {
     /// slope or short of its far end.
     fn perch_arc_lands(&self, y0: f32, vy: f32, step: (f32, f32, f32, i32)) -> bool {
         let g = self.spec.runner.jump.gravity * self.feel.gravity_scale;
-        let Some(steps) = perch_route_at(&self.spec, step.3) else {
+        let Some(steps) = ledges_at(&self.spec, step.3) else {
             return false;
         };
         if g >= 0.0 {
@@ -1523,7 +1579,7 @@ impl NeonCat {
             y += vy * dt;
             z += v * dt;
             // A margin: an arc that merely skims the step is not a landing.
-            if y <= self.route_profile(&steps, self.x, z) - 0.03 {
+            if y <= self.route_profile(&steps, self.x, y, z) - 0.03 {
                 return z >= step.0 && z < step.1 - 0.2;
             }
             if y < 0.0 {
@@ -1537,7 +1593,7 @@ impl NeonCat {
     /// arc would clear the first ledge ahead and a slightly lower hop comes
     /// down on it (a late jump at running speed). Never lower than clears it.
     fn perch_hop(&self, y0: f32, vy: f32) -> f32 {
-        if self.spec.perch_route.is_empty() {
+        if !has_ledges(&self.spec) {
             return vy;
         }
         let Some(step) = self.perch_target(y0, vy) else {
@@ -1571,7 +1627,7 @@ impl NeonCat {
     /// there is no ledge below, or when no firm pull could make it.
     fn perch_fall_pull(&self, dt: f32) -> f32 {
         const MAX_PULL: f32 = 6.0;
-        if self.spec.perch_route.is_empty() || self.vy >= 0.0 {
+        if !has_ledges(&self.spec) || self.vy >= 0.0 {
             return 1.0;
         }
         let g = self.spec.runner.jump.gravity * self.feel.gravity_scale;
@@ -1583,11 +1639,18 @@ impl NeonCat {
         let i0 = near_index(self.z, track.z0, track.gap).saturating_sub(1);
         let mut pull = 1.0f32;
         for i in i0..i0 + 3 {
-            let Some(steps) = perch_route_at(&self.spec, i) else {
+            let Some(steps) = ledges_at(&self.spec, i) else {
                 continue;
             };
             for (n, b) in steps.iter().enumerate() {
                 let end = self.flat_end(&steps, n);
+                // A deck pulls a cat down only over its first half: one that
+                // jumps off the far half is let fly on.
+                let end = if b.deck {
+                    b.z0 + (b.z1 - b.z0) * 0.5
+                } else {
+                    end
+                };
                 if (self.x - b.x).abs() > b.half_width
                     || self.z < b.z0
                     || self.z >= end
@@ -1618,8 +1681,35 @@ impl NeonCat {
             return;
         }
         self.on_perch = true;
-        let rules = self.spec.perch_rules.clone();
+        let deck = ledges_at(&self.spec, slot)
+            .and_then(|v| v.get(step).map(|b| b.deck))
+            .unwrap_or(false);
         let c = self.spec.style.codes.rideable;
+        if deck {
+            let rules = self.spec.deck_rules.clone();
+            self.perch_acc += rules.run_score as f32 * dt;
+            let whole = self.perch_acc.floor();
+            self.perch_acc -= whole;
+            self.core.stats.score += whole as u32;
+            if self.deck_landed.insert(slot) {
+                self.core.stats.score += rules.land_score;
+                self.toast = "UPPER COURSE".into();
+                self.toast_t = 1.2;
+                self.toast_c = c;
+                self.burst(
+                    self.x,
+                    top + 0.1,
+                    self.z,
+                    10,
+                    [c[0] as u32, c[1] as u32, c[2] as u32],
+                    2.8,
+                    0.08,
+                );
+                self.sfx("perch");
+            }
+            return;
+        }
+        let rules = self.spec.perch_rules.clone();
         self.perch_acc += rules.run_score as f32 * dt;
         let whole = self.perch_acc.floor();
         self.perch_acc -= whole;
@@ -1787,13 +1877,58 @@ impl NeonCat {
                 continue;
             }
             let h = self.body_height();
+            let tol = self.spec.runner.body.step_tol;
             for part in obstacle_parts(&self.spec, i) {
-                if part.sweep_hit_body(x0, z0, self.x, self.z, self.y, h, CAT_HALF_W) {
+                if part.sweep_hit_body(x0, z0, self.x, self.z, self.y, h, CAT_HALF_W)
+                    || part.ramp_side_hit(x0, self.x, self.z, self.y, tol)
+                {
                     self.crash(&part.kind);
                     return;
                 }
             }
         }
+        if self.stair_side_hit(x0) {
+            self.crash("STAIRS");
+        }
+    }
+
+    /// The cat has moved sideways into the foot of the stair lane's slope or
+    /// the side of a step that stands higher above its feet than a step up
+    /// reaches. Running up the slope from the front, and a lane switch onto
+    /// it where it is still within `step_up` of the feet (the first step from
+    /// the street), carry the cat up as before; a deck is never a wall.
+    fn stair_side_hit(&self, x0: f32) -> bool {
+        if self.spec.perch_route.is_empty() {
+            return false;
+        }
+        let track = &self.spec.runner.obstacle_track;
+        let i0 = near_index(self.z, track.z0, track.gap).saturating_sub(1);
+        let up = self.spec.perch_rules.step_up + 0.02;
+        let rl = self.spec.perch_rules.ramp_len;
+        for i in i0..i0 + 3 {
+            let Some(steps) = ledges_at(&self.spec, i) else {
+                continue;
+            };
+            for (n, b) in steps.iter().enumerate() {
+                if b.deck || (self.x - b.x).abs() > b.half_width || (x0 - b.x).abs() <= b.half_width
+                {
+                    continue;
+                }
+                let prev = if n == 0 { 0.0 } else { steps[n - 1].top };
+                let h = if self.z >= b.z0 && self.z < b.z1 {
+                    b.top
+                } else if rl > 0.0 && b.ramp && b.top > prev && self.z >= b.z0 - rl && self.z < b.z0
+                {
+                    prev + (b.top - prev) * (self.z - (b.z0 - rl)) / rl
+                } else {
+                    continue;
+                };
+                if h - self.y > up {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// Each stone arch the cat has passed counts once and pays its bonus.
@@ -2492,7 +2627,7 @@ impl NeonCat {
     /// Ledges ahead: a dark body with a lit top so the landing reads, in the
     /// colour the spec gives to things you can ride.
     fn push_perches(&self, doc: &mut WorldDoc) {
-        if self.spec.perch_route.is_empty() {
+        if !has_ledges(&self.spec) {
             return;
         }
         let track = &self.spec.runner.obstacle_track;
@@ -2506,7 +2641,7 @@ impl NeonCat {
             c[2] as f32 / 255.0,
         ];
         for i in i0..i0 + 2 + self.obstacle_lead_count() {
-            let Some(steps) = perch_route_at(&self.spec, i) else {
+            let Some(steps) = ledges_at(&self.spec, i) else {
                 continue;
             };
             for (n, b) in steps.iter().enumerate() {
@@ -2539,8 +2674,30 @@ impl NeonCat {
                     }
                     doc.props.push(q);
                 };
-                match b.kind {
-                    PerchKind::AcUnit => {
+                match (b.deck, b.kind) {
+                    (true, _) => {
+                        // A slab with a glowing underside, so it reads from the
+                        // street below; nothing stands under it.
+                        add(
+                            "slab",
+                            "box",
+                            [b.x, b.top - 0.1, zc],
+                            [w * 0.96, 0.2, len * 0.98],
+                            [44, 40, 66],
+                            0.0,
+                            0.0,
+                        );
+                        add(
+                            "under",
+                            "box",
+                            [b.x, b.top - 0.215, zc],
+                            [w * 0.7, 0.03, len * 0.9],
+                            col,
+                            1.3,
+                            0.0,
+                        );
+                    }
+                    (false, PerchKind::AcUnit) => {
                         add(
                             "body",
                             "box",
@@ -2562,7 +2719,7 @@ impl NeonCat {
                             );
                         }
                     }
-                    PerchKind::Pipe => {
+                    (false, PerchKind::Pipe) => {
                         let r = (w * 0.5).min(0.5);
                         add(
                             "body",
@@ -2585,7 +2742,7 @@ impl NeonCat {
                             );
                         }
                     }
-                    PerchKind::Sign => {
+                    (false, PerchKind::Sign) => {
                         add(
                             "board",
                             "box",
@@ -2633,7 +2790,7 @@ impl NeonCat {
                 // street for the first), so a cat that runs into the lane climbs it.
                 let rl = self.spec.perch_rules.ramp_len;
                 let prev = if n == 0 { 0.0 } else { steps[n - 1].top };
-                if rl > 0.0 && b.top > prev {
+                if rl > 0.0 && b.ramp && b.top > prev {
                     let rise = b.top - prev;
                     let slant = (rise * rise + rl * rl).sqrt();
                     let ang = (rise / rl).atan();
@@ -3823,7 +3980,7 @@ fn free_slot(s: &GameSpec, index: i32) -> Option<(SectionKind, u32, u32)> {
     Some((sec.kind, (index - i) as u32, h))
 }
 
-/// One ledge of a perch route in world terms.
+/// One ledge of a perch route, or one deck, in world terms.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct PerchBox {
     pub kind: PerchKind,
@@ -3832,6 +3989,27 @@ pub(crate) struct PerchBox {
     pub z0: f32,
     pub z1: f32,
     pub top: f32,
+    /// A slope leads up to this ledge (route steps; a deck has none).
+    pub ramp: bool,
+    /// A raised deck of the upper course: a flat top, open underneath.
+    pub deck: bool,
+}
+
+/// Where a route's first step starts in slot `index`: centred on the slot, or
+/// pulled back so the stair deck after it ends early in the slot.
+fn route_start(s: &GameSpec, index: i32) -> f32 {
+    let t = &s.runner.obstacle_track;
+    let len = s.perch_route.len() as f32 * s.perch_rules.step_len;
+    if stair_deck_on(s) {
+        t.z(index) + t.gap * STAIR_END_FRAC - len - s.deck_rules.stair_len
+    } else {
+        t.z(index) - len * 0.5
+    }
+}
+
+/// Whether the stair lane carries on up to a deck.
+fn stair_deck_on(s: &GameSpec) -> bool {
+    s.deck_rules.enabled && s.deck_rules.stair_entry && !s.perch_route.is_empty()
 }
 
 /// The steps of the perch route standing in a free slot (None when the slot
@@ -3854,8 +4032,7 @@ pub(crate) fn perch_route_at(s: &GameSpec, index: i32) -> Option<Vec<PerchBox>> 
     let side = if (h >> 1) & 1 == 0 { -1.0 } else { 1.0 };
     let reach = (s.runner.lanes.limit - r.half_width + 0.1).max(0.0);
     let x = (t.x(index) + side * r.side).clamp(-reach, reach);
-    let len = s.perch_route.len() as f32 * r.step_len;
-    let start = t.z(index) - len * 0.5;
+    let start = route_start(s, index);
     Some(
         s.perch_route
             .iter()
@@ -3867,9 +4044,74 @@ pub(crate) fn perch_route_at(s: &GameSpec, index: i32) -> Option<Vec<PerchBox>> 
                 z0: start + n as f32 * r.step_len,
                 z1: start + (n + 1) as f32 * r.step_len,
                 top: step.top(),
+                ramp: true,
+                deck: false,
             })
             .collect(),
     )
+}
+
+/// The deck that carries on from the route in slot `index`, if the spec has one.
+fn stair_deck(s: &GameSpec, route: &[PerchBox]) -> Option<PerchBox> {
+    let last = route.last()?;
+    if !stair_deck_on(s) {
+        return None;
+    }
+    let d = &s.deck_rules;
+    Some(PerchBox {
+        kind: PerchKind::Sign,
+        x: last.x,
+        half_width: last.half_width,
+        z0: last.z1,
+        z1: last.z1 + d.stair_len,
+        top: d.height,
+        ramp: true,
+        deck: true,
+    })
+}
+
+/// The lone deck in a free slot with no route: over one lane, centred on the
+/// slot, picked like a route (every n-th free slot of its section).
+pub(crate) fn deck_at(s: &GameSpec, index: i32) -> Option<PerchBox> {
+    let d = &s.deck_rules;
+    if !d.enabled || d.lanes.is_empty() {
+        return None;
+    }
+    let (kind, ordinal, h) = free_slot(s, index)?;
+    let every = d.every(kind);
+    if every == 0 || ordinal % every != every - 1 || perch_route_at(s, index).is_some() {
+        return None;
+    }
+    let lane = d.lanes[((h >> 5) as usize) % d.lanes.len()];
+    let t = &s.runner.obstacle_track;
+    let z = t.z(index);
+    Some(PerchBox {
+        kind: PerchKind::Sign,
+        x: lane as f32 * s.runner.lanes.width,
+        half_width: d.half_width,
+        z0: z - d.length * 0.5,
+        z1: z + d.length * 0.5,
+        top: d.height,
+        ramp: false,
+        deck: true,
+    })
+}
+
+/// Everything the cat can stand on in slot `index` besides the street: the
+/// stair lane (with its deck) or a lone deck.
+pub(crate) fn ledges_at(s: &GameSpec, index: i32) -> Option<Vec<PerchBox>> {
+    if let Some(mut route) = perch_route_at(s, index) {
+        if let Some(d) = stair_deck(s, &route) {
+            route.push(d);
+        }
+        return Some(route);
+    }
+    deck_at(s, index).map(|d| vec![d])
+}
+
+/// Whether the course has anything to stand on above the street.
+fn has_ledges(s: &GameSpec) -> bool {
+    !s.perch_route.is_empty() || s.deck_rules.enabled
 }
 
 /// A knockable prop standing in a free slot, off to one side of the track.
@@ -3878,8 +4120,8 @@ pub(crate) fn mischief_at(s: &GameSpec, index: i32) -> Option<(MischiefKind, [f3
         return None;
     }
     let (kind, ordinal, h) = free_slot(s, index)?;
-    // A route has the slot's side: the prop makes way.
-    if perch_route_at(s, index).is_some() {
+    // A route or a deck has the slot: the prop makes way.
+    if ledges_at(s, index).is_some() {
         return None;
     }
     let r = &s.mischief_rules;
@@ -3981,6 +4223,16 @@ fn mischief_label(kind: MischiefKind) -> &'static str {
 pub(crate) fn item_at(s: &GameSpec, index: i32) -> Option<(ItemEffect, [f32; 3])> {
     if s.items.is_empty() {
         return None;
+    }
+    // A high-jump orb lies in the lane of every lone deck, halfway back from it.
+    if s.items.iter().any(|i| i.effect == ItemEffect::Superjump) {
+        if let Some(d) = deck_at(s, index + 1) {
+            let t = &s.runner.obstacle_track;
+            return Some((
+                ItemEffect::Superjump,
+                [d.x, s.item_rules.hover, t.z(index) + t.gap * 0.5],
+            ));
+        }
     }
     let (kind, ordinal, h) = free_slot(s, index)?;
     let every = match kind {
@@ -4165,9 +4417,13 @@ pub(crate) fn coin_line(s: &GameSpec, index: i32) -> Vec<[f32; 3]> {
         let cx = t.x(index);
         let mut line = strip(n, &|u| cx + weave * (u * 0.9).sin(), &|_| 0.3);
         // Coins along the top of each ledge of a route in this slot.
-        if let Some(steps) = perch_route_at(s, index) {
-            let per = s.perch_rules.coins_per_step;
+        if let Some(steps) = ledges_at(s, index) {
             for b in &steps {
+                let per = if b.deck {
+                    s.deck_rules.coins
+                } else {
+                    s.perch_rules.coins_per_step
+                };
                 for k in 0..per {
                     let f = (k as f32 + 0.5) / per as f32;
                     line.push([b.x, b.top + 0.6, b.z0 + (b.z1 - b.z0) * f]);
@@ -6590,6 +6846,7 @@ mod tests {
         let spec = run.spec.clone();
         let rules = spec.item_rules.clone();
         let line = (0..40)
+            .filter(|&j| ledges_at(&spec, j).is_none())
             .map(|j| coin_line(&spec, j))
             .find(|l| !l.is_empty())
             .expect("a coin line");
@@ -7008,7 +7265,7 @@ mod tests {
         assert!(train.iter().all(|c| c[1] > 0.8), "along the roof");
         // Rest stretches are the long calm lines.
         let calm = (0..200)
-            .filter(|&i| !spec.obstacle_active(i) && perch_route_at(&spec, i).is_none())
+            .filter(|&i| !spec.obstacle_active(i) && ledges_at(&spec, i).is_none())
             .map(|i| coin_line(&spec, i).len())
             .max()
             .unwrap();
@@ -7271,7 +7528,15 @@ mod tests {
         let (i, steps) = route_slot(&spec);
         let line = coin_line(&spec, i);
         let up = line.iter().filter(|c| c[1] > 0.8).count();
-        assert_eq!(up, steps.len() * spec.perch_rules.coins_per_step as usize);
+        let deck = if stair_deck_on(&spec) {
+            spec.deck_rules.coins as usize
+        } else {
+            0
+        };
+        assert_eq!(
+            up,
+            steps.len() * spec.perch_rules.coins_per_step as usize + deck
+        );
         assert!(line.len() <= 32);
     }
 
@@ -7303,7 +7568,7 @@ mod tests {
             assert_eq!(r.ground_at(w[0].x, w[1].z0 + 0.2), w[1].top);
         }
         // Past the last step it is the street again, and beside the ledge too.
-        let last = steps.last().unwrap();
+        let last = ledges_at(&spec, i).unwrap().pop().unwrap();
         put(&mut r, last.x, last.top, last.z1 + 0.2);
         assert_eq!(r.ground_at(last.x, last.z1 + 0.2), 0.0);
         put(&mut r, b0.x + b0.half_width + 0.3, b0.top, b0.z0 + 0.3);
@@ -7361,7 +7626,7 @@ mod tests {
                     let stood = steps_stood_on(speed, lead, ramp);
                     assert_eq!(
                         stood,
-                        vec![0, 1, 2],
+                        vec![0, 1, 2, 3],
                         "ramp {ramp} speed {speed} lead {lead}: {stood:?}"
                     );
                 }

@@ -1566,6 +1566,7 @@ mod tests {
         w["game"]["runner"]["obstacle_track"]["gap"] = json!(gap);
         // A route does not fit a slot this tight, and it is not what this is about.
         w["game"]["perch_route"] = json!([]);
+        w["game"]["deck_rules"] = json!({"enabled": false});
         let list: Vec<Value> = w["game"]["obstacles"]
             .as_array()
             .unwrap()
