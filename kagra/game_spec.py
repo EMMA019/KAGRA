@@ -598,7 +598,9 @@ SFX_CUES = (
 )
 AUDIO_DIR = "assets/audio/neon_cat"
 AUDIO_EXTS = (".wav", ".ogg", ".mp3")
-MISSION_KINDS = ("coins", "gates", "perch")
+MISSION_KINDS = ("coins", "gates", "perch", "passes")
+# Goals that need a ledge to stand on; the course only offers them with the stair lane or the decks.
+LEDGE_MISSIONS = ("perch",)
 
 
 def _plain_path(p: str) -> bool:
@@ -769,9 +771,9 @@ class AudioSpec:
 
 @dataclass
 class MissionSpec:
-    kind: str = "coins"  # coins | gates | perch
+    kind: str = "coins"  # coins | gates | perch | passes
     target: int = 1
-    label: str = ""  # HUD wording; empty uses COINS / GATES / PERCH
+    label: str = ""  # HUD wording; empty uses COINS / GATES / PERCH / PASSED
 
     def __post_init__(self) -> None:
         if self.kind not in MISSION_KINDS:
@@ -783,7 +785,12 @@ class MissionSpec:
 
 
 def _default_missions() -> list:
-    return [MissionSpec("coins", 40), MissionSpec("gates", 5), MissionSpec("perch", 1)]
+    return [
+        MissionSpec("coins", 40),
+        MissionSpec("gates", 5),
+        MissionSpec("perch", 1),
+        MissionSpec("passes", 30),
+    ]
 
 
 @dataclass
@@ -791,15 +798,24 @@ class MissionsSpec:
     """Small per-run goals shown on the HUD and the result card. ``bonus`` 0 leaves scores comparable."""
 
     enabled: bool = True
-    list: list = field(default_factory=_default_missions)
+    list: list = field(default_factory=_default_missions)  # the pool, in order
+    draw: int = 3  # goals shown per run, from the front of the pool (0 = all)
     bonus: int = 0
     hud: bool = True
 
     def __post_init__(self) -> None:
         if len(self.list) > 5:
             raise ValueError("missions.list has at most 5 goals")
+        if not 0 <= self.draw <= 5:
+            raise ValueError("missions.draw must be 0..=5")
         if not 0 <= self.bonus <= 100_000:
             raise ValueError("missions.bonus must be 0..=100000")
+
+    def active(self, perch: bool = False, decks: bool = False) -> list:
+        """The goals a course really shows: the pool without a perch while the
+        stair lane and the decks are off, cut to ``draw`` (Rust ``MissionsSpec::active``)."""
+        goals = [m for m in self.list if m.kind not in LEDGE_MISSIONS or perch or decks]
+        return goals[: self.draw] if self.draw else goals
 
 
 @dataclass

@@ -546,8 +546,9 @@
       coins: (n) => t("goal.coins", { n }),
       gates: (n) => t("goal.gates", { n }),
       perch: (n) => t("goal.perch", { n }),
+      passes: (n) => t("goal.passes", { n }),
     };
-    const GOAL_STOCK = { coins: "COINS", gates: "GATES", perch: "PERCH" };
+    const GOAL_STOCK = { coins: "COINS", gates: "GATES", perch: "PERCH", passes: "PASSED" };
     const goalText = (m) => {
       const stock = GOAL_STOCK[m.kind] === m.label && GOAL_TEXT[m.kind];
       return stock ? stock(m.target) : `${m.label} ${m.target}`;

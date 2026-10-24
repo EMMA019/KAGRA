@@ -751,8 +751,14 @@
      "kind": "perch",
      "target": 1,
      "label": ""
+    },
+    {
+     "kind": "passes",
+     "target": 30,
+     "label": ""
     }
    ],
+   "draw": 3,
    "bonus": 0,
    "hud": true
   }
