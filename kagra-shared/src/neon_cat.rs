@@ -12,14 +12,16 @@
 //! The default rig is a damped third person behind and above the cat.
 //! `cam: "classic"` keeps the older fixed chase.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 
 use serde_json::json;
 
 use crate::flow::{FlowAction, FlowPhase, GameFlow};
 use crate::game_core::{self, Core, Hitbox, Juice, JuiceShake, Kit, Spring1};
-use crate::game_spec::{Behavior, GameSpec, ItemEffect, PartRole, SectionKind};
+use crate::game_spec::{
+    Behavior, GameSpec, ItemEffect, ItemIcon, MischiefKind, PartRole, SectionKind,
+};
 use crate::scene::{DrawList, Quad, TextAlign, TextQuad};
 use crate::world_doc::{WorldCamera, WorldDoc, WorldLight, WorldProp, WorldWalker};
 
@@ -123,10 +125,21 @@ pub struct NeonCat {
     fx: [f32; 4],
     /// Pick-up slots taken this run.
     got_items: HashSet<i32>,
+    /// Knocked-over props by slot: play time of the knock and which way it flew.
+    knocked: HashMap<i32, (f32, f32)>,
+    streak: u32,
+    streak_t: f32,
+    knocks: u32,
     /// A line of text over the play view for a moment (a pick-up's name).
     toast: String,
     toast_t: f32,
+    toast_c: [u8; 3],
     got_coins: HashSet<i32>,
+    /// Coins the magnet has taken hold of: position and speed on the way in.
+    pulls: HashMap<i32, ([f32; 3], f32)>,
+    /// A score pop under the coin chip: seconds left and the running sum.
+    pop_t: f32,
+    pop_sum: u32,
 }
 
 pub fn is_cat_dump(json: &str) -> bool {
@@ -284,9 +297,17 @@ impl NeonCat {
             hurt_t: HURT_IDLE,
             fx: [0.0; 4],
             got_items: HashSet::new(),
+            knocked: HashMap::new(),
+            streak: 0,
+            streak_t: 0.0,
+            knocks: 0,
             toast: String::new(),
             toast_t: 0.0,
+            toast_c: [255, 245, 215],
             got_coins: HashSet::new(),
+            pulls: HashMap::new(),
+            pop_t: 0.0,
+            pop_sum: 0,
         };
         run.lives = run.spec.lives.count;
         if let Ok(p) = feel::resolve(&run.spec.feel) {
@@ -450,6 +471,7 @@ impl NeonCat {
                 "superjump": self.fx[FX_JUMP],
                 "double": self.fx[FX_DOUBLE],
             },
+            "mischief": { "knocked": self.knocks, "streak": if self.streak_t > 0.0 { self.streak } else { 0 } },
             "toast": if self.toast_t > 0.0 { self.toast.as_str() } else { "" },
             "lives_max": self.spec.lives.count,
             "invulnerable": self.invuln > 0.0,
@@ -715,6 +737,9 @@ impl NeonCat {
         stats.rings = 0;
         self.got.clear();
         self.got_coins.clear();
+        self.pulls.clear();
+        self.pop_t = 0.0;
+        self.pop_sum = 0;
         self.coins = 0;
         self.gates = 0;
         self.dying = 0.0;
@@ -723,8 +748,13 @@ impl NeonCat {
         self.hurt_t = HURT_IDLE;
         self.fx = [0.0; 4];
         self.got_items.clear();
+        self.knocked.clear();
+        self.streak = 0;
+        self.streak_t = 0.0;
+        self.knocks = 0;
         self.toast.clear();
         self.toast_t = 0.0;
+        self.toast_c = [255, 245, 215];
         self.rolling = 0.0;
         self.recover = 0.0;
         self.pose = [1.0; 3];
@@ -955,6 +985,11 @@ impl NeonCat {
             *t = (*t - dt).max(0.0);
         }
         self.toast_t = (self.toast_t - dt).max(0.0);
+        self.streak_t = (self.streak_t - dt).max(0.0);
+        self.pop_t = (self.pop_t - dt).max(0.0);
+        if self.pop_t <= 0.0 {
+            self.pop_sum = 0;
+        }
     }
 
     fn play_step_inner(&mut self, dt: f32) {
@@ -1106,8 +1141,9 @@ impl NeonCat {
             }
             self.ground = g1;
             self.collect_rings();
-            self.collect_coins();
+            self.collect_coins(dt);
             self.collect_items();
+            self.collect_mischief();
         }
     }
 
@@ -1328,18 +1364,19 @@ impl NeonCat {
     }
 
     /// Coins within reach of the paws (a body-sized box), by `index * 32 + k`.
-    fn collect_coins(&mut self) {
+    fn collect_coins(&mut self, dt: f32) {
         let c = &self.spec.runner.coins;
         if !c.enabled {
             return;
         }
         let magnet = self.fx[FX_MAGNET] > 0.0;
-        let reach = self.spec.item_rules.magnet_radius;
+        let rules = self.spec.item_rules.clone();
         let (score, pad) = (c.score, 0.55);
         let track = &self.spec.runner.obstacle_track;
         let i0 = near_index(self.z, track.z0, track.gap).saturating_sub(1);
         let mid = self.y + self.body_height() * 0.5;
         let mut taken = Vec::new();
+        let mut grabbed = Vec::new();
         for i in i0..i0 + 3 {
             if i < 0 {
                 continue;
@@ -1352,21 +1389,172 @@ impl NeonCat {
                 let near = (self.x - p[0]).abs() < pad
                     && (self.z - p[2]).abs() < pad
                     && (mid - p[1]).abs() < 0.75;
-                let pulled = magnet && {
-                    let (dx, dy, dz) = (self.x - p[0], mid - p[1], self.z - p[2]);
-                    dx * dx + dy * dy + dz * dz < reach * reach
-                };
-                if near || pulled {
+                if near {
                     taken.push((id, p));
+                    continue;
+                }
+                // The field is a ball with a longer reach ahead of the cat.
+                let in_field = magnet && {
+                    let (dx, dy, dz) = (p[0] - self.x, p[1] - mid, p[2] - self.z);
+                    let k = if dz > 0.0 {
+                        rules.magnet_radius / (rules.magnet_radius + rules.magnet_lead)
+                    } else {
+                        1.0
+                    };
+                    dx * dx + dy * dy + (dz * k) * (dz * k)
+                        < rules.magnet_radius * rules.magnet_radius
+                };
+                if in_field {
+                    grabbed.push((id, p));
                 }
             }
         }
         for (id, p) in taken {
             self.got_coins.insert(id);
-            self.coins += 1;
-            self.core.stats.score += score;
-            self.burst(p[0], p[1], p[2], 4, [255, 214, 90], 2.0, 0.07);
-            self.sfx("coin");
+            self.coin_landed(p, score);
+        }
+        for (id, p) in grabbed {
+            self.got_coins.insert(id);
+            self.pulls.insert(id, (p, rules.pull_speed));
+        }
+        // Pulled coins accelerate toward the cat and land when they reach it.
+        let target = [self.x, mid, self.z];
+        let ids: Vec<i32> = self.pulls.keys().copied().collect();
+        for id in ids {
+            let (mut p, mut v) = self.pulls[&id];
+            let d = [target[0] - p[0], target[1] - p[1], target[2] - p[2]];
+            let dist = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+            v += rules.pull_accel * dt;
+            let step = v * dt;
+            if dist <= step + 0.4 {
+                self.pulls.remove(&id);
+                self.coin_landed(target, score);
+            } else {
+                for k in 0..3 {
+                    p[k] += d[k] / dist * step;
+                }
+                self.pulls.insert(id, (p, v));
+            }
+        }
+    }
+
+    /// One coin has arrived: count it, spark, and add to the score pop.
+    fn coin_landed(&mut self, at: [f32; 3], score: u32) {
+        self.coins += 1;
+        self.core.stats.score += score;
+        self.pop_sum += score;
+        self.pop_t = 0.6;
+        self.burst(at[0], at[1], at[2], 4, [255, 214, 90], 2.0, 0.07);
+        self.sfx("coin");
+    }
+
+    /// Knock over the props the cat runs into (jumping clears them).
+    fn collect_mischief(&mut self) {
+        let r = self.spec.mischief_rules.radius;
+        let track = &self.spec.runner.obstacle_track;
+        let i0 = near_index(self.z, track.z0, track.gap).saturating_sub(1);
+        let mut hit = Vec::new();
+        for i in i0..i0 + 3 {
+            if i < 0 || self.knocked.contains_key(&i) {
+                continue;
+            }
+            if let Some((kind, p)) = mischief_at(&self.spec, i) {
+                let (_, h) = mischief_shape(kind);
+                if (self.x - p[0]).abs() < r && (self.z - p[2]).abs() < 0.6 && self.y < h * 0.8 {
+                    hit.push((i, kind, p));
+                }
+            }
+        }
+        for (i, kind, p) in hit {
+            let rules = self.spec.mischief_rules.clone();
+            self.streak = if self.streak_t > 0.0 {
+                self.streak + 1
+            } else {
+                1
+            };
+            self.streak_t = rules.streak_secs;
+            self.knocks += 1;
+            let step = self.streak.min(rules.streak_cap) - 1;
+            self.core.stats.score += rules.score + rules.streak_bonus * step;
+            let dir = if p[0] >= self.x { 1.0 } else { -1.0 };
+            self.knocked.insert(i, (self.time, dir));
+            self.toast = if self.streak > 1 {
+                format!("{} x{}", mischief_label(kind), self.streak)
+            } else {
+                mischief_label(kind).to_string()
+            };
+            self.toast_t = 1.1;
+            let c = mischief_color(kind);
+            self.toast_c = [255, 245, 215];
+            self.burst(
+                p[0],
+                p[1] + 0.3,
+                p[2],
+                10,
+                [c[0] as u32, c[1] as u32, c[2] as u32],
+                3.0,
+                0.09,
+            );
+            self.sfx("knock");
+        }
+    }
+
+    /// The props ahead, standing or flying: a fixed arc from the knock time.
+    fn push_mischief(&self, doc: &mut WorldDoc) {
+        let track = &self.spec.runner.obstacle_track;
+        let i0 = near_index(self.z, track.z0, track.gap).saturating_sub(1);
+        let reach = self.z + 6.0 + self.obstacle_lead_count() as f32 * track.gap;
+        for i in i0..i0 + 2 + self.obstacle_lead_count() {
+            if i < 0 {
+                continue;
+            }
+            let Some((kind, p)) = mischief_at(&self.spec, i) else {
+                continue;
+            };
+            if p[2] < self.z - 4.0 || p[2] > reach {
+                continue;
+            }
+            let (parts, _) = mischief_shape(kind);
+            let c = mischief_color(kind);
+            let (mut pos, mut tilt, mut spin) = (p, 0.0f32, 0.0f32);
+            if let Some(&(t0, d)) = self.knocked.get(&i) {
+                let age = (self.time - t0).clamp(0.0, 0.8);
+                let land = 0.8;
+                pos[0] += d * 2.6 * age;
+                pos[1] += 3.0 * age - 0.5 * 7.5 * age * age;
+                pos[2] += 2.0 * age;
+                pos[1] = pos[1].max(p[1] + 0.12 * (age / land));
+                tilt = d * (age / land) * std::f32::consts::FRAC_PI_2;
+                spin = d * age * 5.0;
+            }
+            for (n, part) in parts.iter().enumerate() {
+                // The part's offset along the prop's own up axis, tipped by `tilt`.
+                let off = [tilt.sin() * part.dy, tilt.cos() * part.dy];
+                let col = [c[0] as u32, c[1] as u32, c[2] as u32];
+                let mut q = glow(
+                    &format!("mis-{i}-{n}"),
+                    part.model,
+                    "mischief",
+                    [pos[0] + off[0], pos[1] + off[1], pos[2]],
+                    part.scale,
+                    if part.light {
+                        [
+                            (c[0] as u32 + 255) / 2,
+                            (c[1] as u32 + 255) / 2,
+                            (c[2] as u32 + 255) / 2,
+                        ]
+                    } else {
+                        col
+                    },
+                    0.7,
+                );
+                q.roll = -tilt;
+                q.yaw = spin;
+                if part.model == "torus" {
+                    q.pitch = 1.2;
+                }
+                doc.props.push(q);
+            }
         }
     }
 
@@ -1396,6 +1584,18 @@ impl NeonCat {
         }
     }
 
+    /// The colour of an effect in this spec: orb, toast, label and floor ring.
+    fn item_color(&self, effect: ItemEffect) -> [f32; 3] {
+        let c = self
+            .spec
+            .items
+            .iter()
+            .find(|it| it.effect == effect)
+            .map(|it| it.rgb())
+            .unwrap_or_else(|| effect.default_color());
+        [c[0] as f32, c[1] as f32, c[2] as f32]
+    }
+
     fn take_item(&mut self, effect: ItemEffect, at: [f32; 3]) {
         let secs = self
             .spec
@@ -1404,8 +1604,9 @@ impl NeonCat {
             .find(|it| it.effect == effect)
             .map(|it| it.secs())
             .unwrap_or_else(|| effect.default_secs());
-        let c = effect_color(effect);
+        let c = self.item_color(effect);
         let color = [c[0] as u32, c[1] as u32, c[2] as u32];
+        self.toast_c = [c[0] as u8, c[1] as u8, c[2] as u8];
         match effect {
             ItemEffect::Magnet => self.fx[FX_MAGNET] = secs,
             ItemEffect::Boost => self.fx[FX_BOOST] = secs,
@@ -1447,33 +1648,59 @@ impl NeonCat {
             if p[2] < self.z - 1.0 || p[2] > reach {
                 continue;
             }
-            let c = effect_color(effect);
-            let col = [
-                (c[0] * 0.5 + 128.0).min(255.0) as u32,
-                (c[1] * 0.5 + 128.0).min(255.0) as u32,
-                (c[2] * 0.5 + 128.0).min(255.0) as u32,
-            ];
+            let c = self.item_color(effect);
+            let col = [c[0] as u32, c[1] as u32, c[2] as u32];
             let lin = [c[0] / 255.0, c[1] / 255.0, c[2] / 255.0];
-            let bob = (self.time * 3.0 + i as f32).sin() * 0.06;
-            let mut orb = glow(
-                &format!("item-{i}"),
-                "sphere",
-                "item",
-                [p[0], p[1] + bob, p[2]],
-                [0.34, 0.34, 0.34],
-                col,
-                2.2,
-            );
-            orb.emissive_color = Some(lin);
-            doc.props.push(orb);
+            let icon = self
+                .spec
+                .items
+                .iter()
+                .find(|it| it.effect == effect)
+                .map(|it| it.shape())
+                .unwrap_or_else(|| effect.default_icon());
+            let bob = (self.time * 3.0 + i as f32).sin() * 0.07;
+            // A slow sway rather than a full turn, so the picture is never edge-on.
+            let sway = (self.time * 1.7 + i as f32 * 0.9).sin() * 0.9;
+            let (sin, cos) = sway.sin_cos();
+            for (n, part) in icon_parts(icon).iter().enumerate() {
+                let mut q = glow(
+                    &format!("item-{i}-{n}"),
+                    part.model,
+                    "item",
+                    [
+                        p[0] + part.at[0] * cos,
+                        p[1] + bob + part.at[1],
+                        p[2] - part.at[0] * sin,
+                    ],
+                    part.scale,
+                    if part.pale {
+                        [(col[0] + 255) / 2, (col[1] + 255) / 2, (col[2] + 255) / 2]
+                    } else {
+                        col
+                    },
+                    2.4,
+                );
+                q.emissive_color = Some(if part.pale {
+                    [
+                        (lin[0] + 1.0) / 2.0,
+                        (lin[1] + 1.0) / 2.0,
+                        (lin[2] + 1.0) / 2.0,
+                    ]
+                } else {
+                    lin
+                });
+                q.yaw = sway;
+                q.roll = part.roll;
+                doc.props.push(q);
+            }
             let mut ring = glow(
                 &format!("item-ring-{i}"),
                 "torus",
                 "item_ring",
                 [p[0], p[1] + bob, p[2]],
-                [0.9, 0.9, 0.9],
+                [1.05, 1.05, 1.05],
                 col,
-                1.4,
+                1.2,
             );
             ring.emissive_color = Some(lin);
             ring.yaw = self.time * 1.6 + i as f32;
@@ -1494,11 +1721,13 @@ impl NeonCat {
             if self.fx[slot] <= 0.0 {
                 continue;
             }
-            // Flicker in the last second so the end is not a surprise.
-            if self.fx[slot] < 1.0 && (self.fx[slot] * 8.0).floor() as i64 % 2 == 0 {
+            // Blink for the last stretch so the end is not a surprise.
+            if self.fx[slot] < self.spec.item_rules.warn_secs
+                && (self.fx[slot] * 8.0).floor() as i64 % 2 == 0
+            {
                 continue;
             }
-            let c = effect_color(effect);
+            let c = self.item_color(effect);
             let lin = [c[0] / 255.0, c[1] / 255.0, c[2] / 255.0];
             let mut ring = glow(
                 &format!("aura-{slot}"),
@@ -1512,6 +1741,25 @@ impl NeonCat {
             ring.emissive_color = Some(lin);
             ring.yaw = self.time * 2.0;
             doc.props.push(ring);
+            if slot == FX_MAGNET {
+                // Rings sweeping in from the edge of the field toward the cat.
+                let rad = self.spec.item_rules.magnet_radius;
+                for n in 0..2 {
+                    let phase = (self.time * 0.9 + n as f32 * 0.5).fract();
+                    let r = rad * (1.0 - 0.75 * phase);
+                    let mut f = glow(
+                        &format!("field-{n}"),
+                        "torus",
+                        "magnet_field",
+                        [self.x, self.ground + 0.06 + 0.5 * phase, self.z],
+                        [r * 2.0, r * 0.3, r * 2.0],
+                        [c[0] as u32, c[1] as u32, c[2] as u32],
+                        0.2 + 1.6 * phase,
+                    );
+                    f.emissive_color = Some(lin);
+                    doc.props.push(f);
+                }
+            }
         }
     }
 
@@ -1553,6 +1801,51 @@ impl NeonCat {
                     coin.roughness = 0.35;
                     doc.props.push(coin);
                 }
+            }
+        }
+        // Coins on their way to the cat: faster spin and a short streak behind.
+        let mid = self.y + self.body_height() * 0.5;
+        let mut ids: Vec<_> = self.pulls.keys().copied().collect();
+        ids.sort_unstable();
+        for id in ids {
+            let (p, v) = self.pulls[&id];
+            let d = [self.x - p[0], mid - p[1], self.z - p[2]];
+            let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(1e-3);
+            let u = [d[0] / len, d[1] / len, d[2] / len];
+            if let Some(mut coin) = glb_prop(
+                &format!("pull-{id}"),
+                "coin",
+                &c.glb,
+                [p[0], p[1] - 0.2, p[2]],
+                [1.0, 1.0, 1.0],
+                self.time * 12.0 + id as f32,
+                0.0,
+                [255, 205, 70],
+                0.0,
+                [1.0, 0.72, 0.18],
+            ) {
+                coin.emissive = Some(1.2);
+                doc.props.push(coin);
+            }
+            // The faster it goes the longer the streak.
+            let tail = (v * 0.025).clamp(0.15, 0.7);
+            for n in 1..=3 {
+                let f = n as f32 / 3.0;
+                let mut s = glow(
+                    &format!("pull-{id}-t{n}"),
+                    "box",
+                    "coin_trail",
+                    [
+                        p[0] - u[0] * tail * f,
+                        p[1] - u[1] * tail * f,
+                        p[2] - u[2] * tail * f,
+                    ],
+                    [0.1 * (1.0 - f * 0.6); 3],
+                    [255, 214, 90],
+                    2.2 * (1.0 - f * 0.7),
+                );
+                s.emissive_color = Some([1.0, 0.8, 0.3]);
+                doc.props.push(s);
             }
         }
     }
@@ -1706,6 +1999,7 @@ impl NeonCat {
         self.push_rings(&mut doc);
         self.push_coins(&mut doc);
         self.push_items(&mut doc);
+        self.push_mischief(&mut doc);
         self.spawned = self.push_obstacles(&mut doc);
         if self.debug {
             self.push_hitboxes(&mut doc);
@@ -2397,8 +2691,15 @@ impl NeonCat {
                 .map(|i| i.secs())
                 .unwrap_or_else(|| effect.default_secs())
                 .max(0.1);
-            let c = effect_color(effect);
-            let col = [c[0] as u8, c[1] as u8, c[2] as u8, 255];
+            let c = self.item_color(effect);
+            let warn = left < self.spec.item_rules.warn_secs;
+            let on = !warn || (left * 6.0).floor() as i64 % 2 == 1;
+            let col = [
+                c[0] as u8,
+                c[1] as u8,
+                c[2] as u8,
+                if on { 255 } else { 90 },
+            ];
             let x0 = m + 12.0 * ui + shake;
             list.texts.push(
                 TextQuad::new(effect_label(effect), x0, row_y, 11.0 * ui, fade(col, keep))
@@ -2431,13 +2732,31 @@ impl NeonCat {
                     w * 0.5,
                     h * 0.30 - rise,
                     26.0 * ui,
-                    [255, 245, 215, (a * 255.0) as u8],
+                    [
+                        self.toast_c[0],
+                        self.toast_c[1],
+                        self.toast_c[2],
+                        (a * 255.0) as u8,
+                    ],
                 )
                 .aligned(TextAlign::Center),
             );
         }
         if self.spec.runner.coins.enabled {
             let (cw, ch) = (112.0 * ui, 40.0 * ui);
+            if self.pop_t > 0.0 && !dead {
+                let a = (self.pop_t / 0.3).clamp(0.0, 1.0);
+                list.texts.push(
+                    TextQuad::new(
+                        &format!("+{}", self.pop_sum),
+                        w - m - cw * 0.5 + shake,
+                        top + ch + 6.0 * ui + (0.6 - self.pop_t) * 18.0 * ui,
+                        15.0 * ui,
+                        [255, 224, 110, (a * 255.0) as u8],
+                    )
+                    .aligned(TextAlign::Center),
+                );
+            }
             counter_chip(
                 list,
                 w - m - cw + shake,
@@ -2573,39 +2892,146 @@ fn spark_inside_obstacle(s: &GameSpec, spawned: &HashSet<i32>, x: f32, y: f32, z
 /// The pick-up of obstacle slot `index`, if any: only free slots of rest and
 /// reward sections carry one, every n-th by the spec, halfway to the next slot
 /// so it never sits in the coin line. Which one is a weighted hash of the slot.
-pub(crate) fn item_at(s: &GameSpec, index: i32) -> Option<(ItemEffect, [f32; 3])> {
-    if index < 0 || s.items.is_empty() || s.obstacle_active(index) {
+/// Where a slot sits in its section: the section kind, how many free slots
+/// came before it in the same section, and a well-mixed hash of the slot.
+fn free_slot(s: &GameSpec, index: i32) -> Option<(SectionKind, u32, u32)> {
+    if index < 0 || s.obstacle_active(index) {
         return None;
     }
     let t = &s.runner.obstacle_track;
     let z = t.z(index);
     let (_, sec) = s.section_at(z)?;
-    let every = match sec.kind {
-        SectionKind::Rest => s.item_rules.rest_every,
-        SectionKind::Reward => s.item_rules.reward_every,
-        _ => return None,
-    };
-    if every == 0 {
-        return None;
-    }
-    // Count free slots from the start of this section so the rhythm restarts there.
     let mut h = (index as u32).wrapping_add(0x9e37_79b9);
     h = (h ^ (h >> 16)).wrapping_mul(0x85eb_ca6b);
     h = (h ^ (h >> 13)).wrapping_mul(0xc2b2_ae35);
     h ^= h >> 16;
-    let start = {
-        let mut i = index;
-        while i > 0
-            && !s.obstacle_active(i - 1)
-            && s.section_at(t.z(i - 1)).map(|(k, _)| k) == s.section_at(z).map(|(k, _)| k)
-        {
-            i -= 1;
-        }
-        i
-    };
-    if (index - start) as u32 % every != every - 1 {
+    let mut i = index;
+    while i > 0
+        && !s.obstacle_active(i - 1)
+        && s.section_at(t.z(i - 1)).map(|(k, _)| k) == s.section_at(z).map(|(k, _)| k)
+    {
+        i -= 1;
+    }
+    Some((sec.kind, (index - i) as u32, h))
+}
+
+/// A knockable prop standing in a free slot, off to one side of the track.
+pub(crate) fn mischief_at(s: &GameSpec, index: i32) -> Option<(MischiefKind, [f32; 3])> {
+    if s.mischief.is_empty() {
         return None;
     }
+    let (kind, ordinal, h) = free_slot(s, index)?;
+    let r = &s.mischief_rules;
+    let every = match kind {
+        SectionKind::Rest => r.rest_every,
+        SectionKind::Reward => r.reward_every,
+        _ => r.other_every,
+    };
+    if every == 0 || ordinal % every != every - 1 {
+        return None;
+    }
+    let total: u32 = s.mischief.iter().map(|m| m.weight).sum();
+    if total == 0 {
+        return None;
+    }
+    let mut pick = (h >> 4) % total;
+    let mut which = s.mischief[0].kind;
+    for m in &s.mischief {
+        if pick < m.weight {
+            which = m.kind;
+            break;
+        }
+        pick -= m.weight;
+    }
+    let t = &s.runner.obstacle_track;
+    let side = if h & 1 == 0 { -1.0 } else { 1.0 };
+    let lim = s.runner.lanes.limit - 0.15;
+    Some((
+        which,
+        [
+            (t.x(index) + side * r.side).clamp(-lim, lim),
+            0.0,
+            t.z(index),
+        ],
+    ))
+}
+
+struct MischiefPart {
+    model: &'static str,
+    /// Offset along the prop's own up axis.
+    dy: f32,
+    scale: [f32; 3],
+    /// Drawn in a paler shade of the prop's colour.
+    light: bool,
+}
+
+/// The shapes of a prop (all from primitives) and its height.
+fn mischief_shape(kind: MischiefKind) -> (Vec<MischiefPart>, f32) {
+    let part = |model, dy, scale, light| MischiefPart {
+        model,
+        dy,
+        scale,
+        light,
+    };
+    match kind {
+        MischiefKind::Vase => (
+            vec![
+                part("sphere", 0.30, [0.46, 0.56, 0.46], false),
+                part("cylinder", 0.64, [0.22, 0.28, 0.22], true),
+            ],
+            0.78,
+        ),
+        MischiefKind::Bottle => (
+            vec![
+                part("cylinder", 0.24, [0.22, 0.46, 0.22], false),
+                part("cylinder", 0.56, [0.1, 0.22, 0.1], true),
+            ],
+            0.68,
+        ),
+        MischiefKind::Can => (vec![part("cylinder", 0.2, [0.3, 0.4, 0.3], false)], 0.4),
+        MischiefKind::Yarn => (
+            vec![
+                part("sphere", 0.21, [0.42, 0.42, 0.42], false),
+                part("torus", 0.21, [0.5, 0.5, 0.5], true),
+            ],
+            0.42,
+        ),
+    }
+}
+
+fn mischief_color(kind: MischiefKind) -> [f32; 3] {
+    match kind {
+        MischiefKind::Vase => [90.0, 210.0, 225.0],
+        MischiefKind::Bottle => [120.0, 235.0, 150.0],
+        MischiefKind::Can => [255.0, 170.0, 90.0],
+        MischiefKind::Yarn => [255.0, 110.0, 190.0],
+    }
+}
+
+fn mischief_label(kind: MischiefKind) -> &'static str {
+    match kind {
+        MischiefKind::Vase => "CRASH",
+        MischiefKind::Bottle => "CLINK",
+        MischiefKind::Can => "CLANG",
+        MischiefKind::Yarn => "BOING",
+    }
+}
+
+pub(crate) fn item_at(s: &GameSpec, index: i32) -> Option<(ItemEffect, [f32; 3])> {
+    if s.items.is_empty() {
+        return None;
+    }
+    let (kind, ordinal, h) = free_slot(s, index)?;
+    let every = match kind {
+        SectionKind::Rest => s.item_rules.rest_every,
+        SectionKind::Reward => s.item_rules.reward_every,
+        _ => return None,
+    };
+    if every == 0 || ordinal % every != every - 1 {
+        return None;
+    }
+    let t = &s.runner.obstacle_track;
+    let z = t.z(index);
     let total: u32 = s.items.iter().map(|i| i.weight).sum();
     if total == 0 {
         return None;
@@ -2622,13 +3048,75 @@ pub(crate) fn item_at(s: &GameSpec, index: i32) -> Option<(ItemEffect, [f32; 3])
     Some((effect, [t.x(index), s.item_rules.hover, z + t.gap * 0.5]))
 }
 
-fn effect_color(effect: ItemEffect) -> [f32; 3] {
-    match effect {
-        ItemEffect::Magnet => [255.0, 70.0, 120.0],
-        ItemEffect::Boost => [255.0, 160.0, 40.0],
-        ItemEffect::Superjump => [90.0, 255.0, 140.0],
-        ItemEffect::Double => [255.0, 220.0, 60.0],
-        ItemEffect::Meow => [215.0, 150.0, 255.0],
+struct IconPart {
+    model: &'static str,
+    /// Centre in the icon's plane: sideways, then up.
+    at: [f32; 2],
+    scale: [f32; 3],
+    /// Turn in the picture's plane, radians (positive lifts the right end).
+    roll: f32,
+    /// A paler shade of the item colour.
+    pale: bool,
+}
+
+/// An orb's picture as a few thick primitives, about 0.7 m across.
+fn icon_parts(icon: ItemIcon) -> Vec<IconPart> {
+    const Q: f32 = std::f32::consts::FRAC_PI_4;
+    let bar = |x: f32, y: f32, w: f32, h: f32, roll: f32, pale: bool| IconPart {
+        model: "box",
+        at: [x, y],
+        scale: [w, h, 0.13],
+        roll,
+        pale,
+    };
+    let ball = |x: f32, y: f32| IconPart {
+        model: "sphere",
+        at: [x, y],
+        scale: [0.32, 0.32, 0.2],
+        roll: 0.0,
+        pale: false,
+    };
+    match icon {
+        ItemIcon::Horseshoe => vec![
+            bar(-0.22, -0.02, 0.15, 0.5, 0.0, false),
+            bar(0.22, -0.02, 0.15, 0.5, 0.0, false),
+            bar(0.0, -0.28, 0.59, 0.15, 0.0, false),
+            bar(-0.22, 0.27, 0.17, 0.13, 0.0, true),
+            bar(0.22, 0.27, 0.17, 0.13, 0.0, true),
+        ],
+        ItemIcon::Chevron => {
+            let mut v = Vec::new();
+            for cx in [-0.2f32, 0.15] {
+                v.push(bar(cx, 0.13, 0.4, 0.12, -Q, false));
+                v.push(bar(cx, -0.13, 0.4, 0.12, Q, false));
+            }
+            v
+        }
+        ItemIcon::Arrow => vec![
+            bar(0.0, -0.12, 0.15, 0.46, 0.0, false),
+            bar(-0.14, 0.2, 0.4, 0.12, Q, false),
+            bar(0.14, 0.2, 0.4, 0.12, -Q, false),
+        ],
+        ItemIcon::TwoX => vec![
+            bar(-0.24, 0.27, 0.26, 0.08, 0.0, false),
+            bar(-0.13, 0.14, 0.08, 0.22, 0.0, false),
+            bar(-0.24, 0.0, 0.26, 0.08, 0.0, false),
+            bar(-0.35, -0.14, 0.08, 0.22, 0.0, false),
+            bar(-0.24, -0.27, 0.26, 0.08, 0.0, false),
+            bar(0.24, 0.0, 0.5, 0.09, Q, true),
+            bar(0.24, 0.0, 0.5, 0.09, -Q, true),
+        ],
+        ItemIcon::Heart => vec![
+            ball(-0.14, 0.1),
+            ball(0.14, 0.1),
+            IconPart {
+                model: "cone",
+                at: [0.0, -0.1],
+                scale: [0.44, 0.4, 0.2],
+                roll: std::f32::consts::PI,
+                pale: false,
+            },
+        ],
     }
 }
 
@@ -4762,10 +5250,16 @@ mod tests {
         run.z = line[0][2] - 1.5;
         run.rebuild();
         run.tick(1.0 / 60.0);
+        assert_eq!(run.coins, before, "it flies in, it does not snap");
+        assert!(!run.pulls.is_empty(), "the coin was taken hold of");
+        for _ in 0..60 {
+            run.tick(1.0 / 60.0);
+        }
         assert!(
             run.coins > before,
             "the magnet pulled a coin from beside the lane"
         );
+        assert!(run.pulls.is_empty());
         let plain = {
             let mut r = full_lives();
             r.x = line[0][0] + 1.6;
@@ -4862,6 +5356,172 @@ mod tests {
         assert_eq!(run.sim_value()["toast"], "");
     }
 
+    /// Slots of the shipped course that carry a prop, with the prop.
+    fn prop_slots(spec: &GameSpec, n: i32) -> Vec<(i32, MischiefKind, [f32; 3])> {
+        (0..n)
+            .filter_map(|i| mischief_at(spec, i).map(|(k, p)| (i, k, p)))
+            .collect()
+    }
+
+    fn at_prop(run: &mut NeonCat, p: [f32; 3], y: f32) {
+        run.x = p[0];
+        run.y = y;
+        run.vy = 0.0;
+        run.z = p[2] - 0.3;
+        run.rebuild();
+        run.tick(1.0 / 60.0);
+        run.tick(1.0 / 60.0);
+    }
+
+    #[test]
+    fn props_stand_beside_the_track_in_free_slots_and_never_in_the_old_course() {
+        let spec = full().spec.clone();
+        let list = prop_slots(&spec, 400);
+        assert!(list.len() >= 12, "{} props", list.len());
+        let kinds: std::collections::BTreeSet<_> = list.iter().map(|(_, k, _)| *k as u32).collect();
+        assert_eq!(kinds.len(), 4, "all four kinds show up");
+        let lim = spec.runner.lanes.limit;
+        for (i, _, p) in &list {
+            assert!(!spec.obstacle_active(*i), "slot {i} has an obstacle");
+            assert!(p[0].abs() <= lim, "inside the lanes: {}", p[0]);
+            let centre = spec.runner.obstacle_track.x(*i);
+            assert!((p[0] - centre).abs() > 0.3, "off the centre line");
+            assert_eq!(p[2], spec.runner.obstacle_track.z(*i));
+            // Never on the same spot as a pick-up.
+            assert!(item_at(&spec, *i)
+                .map(|(_, q)| (q[2] - p[2]).abs() > 5.0)
+                .unwrap_or(true));
+        }
+        // Rest sections are denser than the rest of the course.
+        let in_kind = |k: SectionKind| {
+            let all = (0..400).filter(|&i| {
+                !spec.obstacle_active(i)
+                    && spec
+                        .section_at(spec.runner.obstacle_track.z(i))
+                        .map(|(_, s)| s.kind)
+                        == Some(k)
+            });
+            let n = all.clone().count().max(1);
+            let m = all.filter(|&i| mischief_at(&spec, i).is_some()).count();
+            m as f32 / n as f32
+        };
+        assert!(in_kind(SectionKind::Rest) > in_kind(SectionKind::Challenge));
+        assert!(prop_slots(&GameSpec::legacy(), 200).is_empty());
+    }
+
+    #[test]
+    fn running_into_a_prop_knocks_it_over_once_and_pays() {
+        let mut run = full_lives();
+        let spec = run.spec.clone();
+        let (i, _, p) = prop_slots(&spec, 200)[0];
+        let rules = spec.mischief_rules.clone();
+        let s0 = run.core.stats.score;
+        at_prop(&mut run, p, 0.0);
+        assert!(run.knocked.contains_key(&i));
+        assert_eq!(run.knocks, 1);
+        assert!(run.core.stats.score >= s0 + rules.score);
+        assert!(["CRASH", "CLINK", "CLANG", "BOING"]
+            .contains(&run.sim_value()["toast"].as_str().unwrap()));
+        assert!(
+            run.core.stats.alive && run.lives == 3,
+            "knocking costs nothing"
+        );
+        // Each prop once.
+        let after = run.core.stats.score;
+        run.z = p[2] - 0.3;
+        run.tick(1.0 / 60.0);
+        assert_eq!(run.knocks, 1);
+        assert!(run.core.stats.score < after + rules.score);
+        // A jump clears it.
+        let mut hop = full_lives();
+        at_prop(&mut hop, [p[0], 0.0, p[2]], 2.0);
+        assert_eq!(hop.knocks, 0, "over the top");
+        // A retry puts them back.
+        run.lives = 1;
+        run.invuln = 0.0;
+        run.fx[FX_BOOST] = 0.0;
+        run.crash("CRATE");
+        for _ in 0..90 {
+            run.tick(1.0 / 60.0);
+        }
+        run.apply_action(FlowAction::Retry);
+        assert!(run.knocked.is_empty() && run.knocks == 0 && run.streak == 0);
+        assert_eq!(run.sim_value()["mischief"]["knocked"], 0);
+    }
+
+    #[test]
+    fn a_quick_second_knock_extends_the_streak_and_a_slow_one_does_not() {
+        let spec = full().spec.clone();
+        let list = prop_slots(&spec, 300);
+        let r = spec.mischief_rules.clone();
+        let (a, b) = (list[0].2, list[1].2);
+        let mut run = full_lives();
+        let s0 = run.core.stats.score;
+        at_prop(&mut run, a, 0.0);
+        let first = run.core.stats.score - s0;
+        assert_eq!(run.streak, 1);
+        let s1 = run.core.stats.score;
+        at_prop(&mut run, b, 0.0);
+        assert_eq!(run.streak, 2);
+        assert!(run.sim_value()["toast"].as_str().unwrap().ends_with("x2"));
+        assert!(run.core.stats.score - s1 >= r.score + r.streak_bonus);
+        assert!(first >= r.score);
+        // Let the streak run out, then knock the next one.
+        let mut slow = full_lives();
+        at_prop(&mut slow, a, 0.0);
+        for _ in 0..((r.streak_secs + 0.5) * 60.0) as i32 {
+            slow.tick(1.0 / 60.0);
+        }
+        assert_eq!(slow.sim_value()["mischief"]["streak"], 0);
+        at_prop(&mut slow, b, 0.0);
+        assert_eq!(slow.streak, 1, "starts over");
+    }
+
+    #[test]
+    fn a_knocked_prop_flies_aside_and_lies_down() {
+        let mut run = full_lives();
+        let spec = run.spec.clone();
+        let (i, _, p) = prop_slots(&spec, 200)[0];
+        let id = format!("prop:mis-{i}-0");
+        run.x = p[0];
+        run.z = p[2] - 4.0;
+        run.rebuild();
+        let before = run
+            .doc
+            .props
+            .iter()
+            .find(|q| q.id == id)
+            .expect("standing")
+            .clone();
+        assert!((before.position[0] - p[0]).abs() < 1e-4 && before.roll == 0.0);
+        at_prop(&mut run, p, 0.0);
+        for _ in 0..8 {
+            run.tick(1.0 / 60.0);
+        }
+        let mid = run.doc.props.iter().find(|q| q.id == id);
+        // Keep it in view: the cat is right beside it.
+        let mid = mid.expect("still in the dump").clone();
+        assert!(mid.position[1] > before.position[1] + 0.05, "in the air");
+        for _ in 0..90 {
+            run.tick(1.0 / 60.0);
+            run.x = p[0];
+            run.z = p[2] - 1.0;
+            run.invuln = 1.0;
+        }
+        run.rebuild();
+        let end = run
+            .doc
+            .props
+            .iter()
+            .find(|q| q.id == id)
+            .expect("lying")
+            .clone();
+        let side = end.position[0] - p[0];
+        assert!(side.abs() > 1.5, "flew {side} m aside");
+        assert!(end.position[1] < before.position[1] + 0.8, "back down");
+        assert!(end.roll.abs() > 1.2, "tipped over");
+    }
+
     #[test]
     fn meow_gives_a_life_back_or_score_when_full() {
         let spec = full().spec.clone();
@@ -4906,9 +5566,164 @@ mod tests {
             .doc
             .props
             .iter()
-            .find(|q| q.id == format!("prop:item-{i}"))
+            .find(|q| q.id == format!("prop:item-{i}-0"))
             .expect("orb in the dump");
         assert!(orb.emissive.unwrap() > 1.0);
+    }
+
+    #[test]
+    fn the_magnet_pulls_coins_in_with_a_speed_up_a_trail_a_pop_and_a_field() {
+        let mut run = full_lives();
+        let spec = run.spec.clone();
+        let rules = spec.item_rules.clone();
+        let line = (0..40)
+            .map(|j| coin_line(&spec, j))
+            .find(|l| !l.is_empty())
+            .expect("a coin line");
+        let c = line[0];
+        // The cat stands still enough: park it 3 m short of a coin, to the side.
+        run.fx[FX_MAGNET] = 5.0;
+        run.x = c[0] + 1.5;
+        run.z = c[2] - 2.6;
+        run.rebuild();
+        let start = run.coins;
+        let mid = |r: &NeonCat| r.y + r.body_height() * 0.5;
+        let d_of = |r: &NeonCat, p: [f32; 3]| {
+            let (dx, dy, dz) = (r.x - p[0], mid(r) - p[1], r.z - p[2]);
+            (dx * dx + dy * dy + dz * dz).sqrt()
+        };
+        run.tick(1.0 / 60.0);
+        let (id, &(_, v0)) = run.pulls.iter().next().expect("a coin is flying");
+        let id = *id;
+        assert!(run.pulls.contains_key(&id) && v0 >= rules.pull_speed);
+        // A trail and the spinning coin are in the world while it flies.
+        assert!(run.doc.props.iter().any(|p| p.name == "coin_trail"));
+        assert!(run
+            .doc
+            .props
+            .iter()
+            .any(|p| p.id == format!("prop:pull-{id}")));
+        // Field rings sized to the radius.
+        let rings: Vec<_> = run
+            .doc
+            .props
+            .iter()
+            .filter(|p| p.name == "magnet_field")
+            .collect();
+        assert_eq!(rings.len(), 2);
+        assert!(rings
+            .iter()
+            .all(|r| r.scale[0] <= rules.magnet_radius * 2.0 + 1e-3));
+        // Each frame it is faster, until it lands once and pays.
+        let mut last_v = v0;
+        let mut frames = 0;
+        while let Some(&(_, v)) = run.pulls.get(&id) {
+            assert!(v >= last_v, "ease-in: the speed only grows");
+            last_v = v;
+            run.tick(1.0 / 60.0);
+            frames += 1;
+            assert!(frames < 90, "it never arrived");
+        }
+        assert!(
+            frames >= 4,
+            "a visible flight, not a snap ({frames} frames)"
+        );
+        assert!(run.coins > start);
+        assert!(run.pop_t > 0.0 && run.pop_sum >= spec.runner.coins.score);
+        let hud = hud_of(&run, 824, 1800);
+        assert!(hud
+            .texts
+            .iter()
+            .any(|t| t.text == format!("+{}", run.pop_sum)));
+        for _ in 0..60 {
+            run.tick(1.0 / 60.0);
+        }
+        assert_eq!(run.pop_sum, 0, "the pop fades");
+        // Ahead of the cat the field reaches further than behind it.
+        let mut r = full_lives();
+        r.fx[FX_MAGNET] = 5.0;
+        let ahead = [
+            r.x,
+            r.y + r.body_height() * 0.5,
+            r.z + rules.magnet_radius + rules.magnet_lead * 0.5,
+        ];
+        assert!(
+            d_of(&r, ahead) > rules.magnet_radius,
+            "outside the plain ball"
+        );
+        let _ = ahead;
+    }
+
+    #[test]
+    fn the_last_seconds_of_an_effect_blink() {
+        let mut run = full_lives();
+        let warn = run.spec.item_rules.warn_secs;
+        run.fx[FX_MAGNET] = warn + 1.0;
+        run.rebuild();
+        let steady = hud_of(&run, 824, 1800);
+        let alpha = |h: &DrawList| {
+            h.texts
+                .iter()
+                .find(|t| t.text == "MAGNET")
+                .map(|t| t.color[3])
+        };
+        assert_eq!(alpha(&steady), Some(255));
+        let mut seen = std::collections::HashSet::new();
+        let mut auras = std::collections::HashSet::new();
+        for k in 0..40 {
+            run.fx[FX_MAGNET] = warn * (1.0 - k as f32 / 40.0) + 0.01;
+            run.rebuild();
+            seen.insert(alpha(&hud_of(&run, 824, 1800)));
+            auras.insert(run.doc.props.iter().any(|p| p.id == "prop:aura-0"));
+        }
+        assert!(seen.len() >= 2, "the label blinks: {seen:?}");
+        assert!(auras.len() == 2, "the aura blinks too");
+    }
+
+    #[test]
+    fn items_have_their_own_colour_shape_and_toast() {
+        let run = full_lives();
+        let spec = run.spec.clone();
+        let rgbs: Vec<_> = spec
+            .items
+            .iter()
+            .map(|i| (i.effect, i.rgb(), i.shape()))
+            .collect();
+        for (a, ca, sa) in &rgbs {
+            for (b, cb, sb) in &rgbs {
+                if a == b {
+                    continue;
+                }
+                let d: i32 = (0..3).map(|k| (ca[k] as i32 - cb[k] as i32).abs()).sum();
+                assert!(d >= 90, "{a:?} and {b:?} look alike");
+                assert_ne!(sa, sb, "{a:?} and {b:?} share a shape");
+            }
+        }
+        let mut shapes = rgbs.iter().map(|r| r.2).collect::<Vec<_>>();
+        shapes.dedup();
+        assert_eq!(shapes.len(), rgbs.len());
+        // Each icon is drawn from its own parts.
+        for a in ItemIcon::ALL {
+            for b in ItemIcon::ALL {
+                if a != b {
+                    let pa: Vec<_> = icon_parts(a)
+                        .iter()
+                        .map(|p| (p.model, p.at, p.roll))
+                        .collect();
+                    let pb: Vec<_> = icon_parts(b)
+                        .iter()
+                        .map(|p| (p.model, p.at, p.roll))
+                        .collect();
+                    assert_ne!(pa, pb);
+                }
+            }
+        }
+        // The toast, the chip and the aura use the same colour as the item.
+        for it in &spec.items {
+            let mut r = full_lives();
+            r.take_item(it.effect, [r.x, 0.5, r.z]);
+            assert_eq!(r.toast_c, it.rgb(), "{:?}", it.effect);
+        }
     }
 
     #[test]
@@ -4942,14 +5757,7 @@ mod tests {
                 .filter(|q| q.name == n)
                 .collect::<Vec<_>>()
         };
-        assert_eq!(p("cat_collar").len(), 3);
-        let back = run
-            .doc
-            .props
-            .iter()
-            .find(|q| q.id.ends_with("collar-back"))
-            .unwrap();
-        assert!(back.position[2] < run.z, "the strip is behind the origin");
+        assert!(p("cat_collar").is_empty(), "the collar is off by default");
         let tail = p("cat_tail");
         assert_eq!(tail.len(), 1);
         assert!(tail[0].position[2] < run.z && tail[0].position[1] > 1.5 * run.spec.player.scale);
@@ -4957,15 +5765,26 @@ mod tests {
         // Each mark has its own switch, and the eyes can be off without losing them.
         let mut spec = (*run.spec).clone();
         spec.player.eyes.enabled = false;
-        spec.player.eyes.collar = false;
+        spec.player.eyes.collar = true;
         let mut r2 = NeonCat::with_spec(spec);
         r2.confirm();
         r2.rebuild();
-        assert!(r2
+        assert!(r2.doc.props.iter().all(|q| q.name != "cat_eye"));
+        let back = r2
             .doc
             .props
             .iter()
-            .all(|q| q.name != "cat_eye" && q.name != "cat_collar"));
+            .find(|q| q.id.ends_with("collar-back"))
+            .expect("collar when asked for");
+        assert!(back.position[2] < r2.z, "the strip is behind the origin");
+        assert_eq!(
+            r2.doc
+                .props
+                .iter()
+                .filter(|q| q.name == "cat_collar")
+                .count(),
+            3
+        );
         assert_eq!(
             r2.doc.props.iter().filter(|q| q.name == "cat_ear").count(),
             2

@@ -2,7 +2,7 @@
   "bot": {
     "clear_rate": 0.45,
     "clear_secs": 90.0,
-    "coins_mean": 160.85,
+    "coins_mean": 160.65,
     "collisions": 11,
     "death_causes": {
       "BARRIER": 5,
@@ -10,11 +10,11 @@
     },
     "death_z": [
       421.88,
-      1339.802,
-      1339.802,
-      1339.802,
-      1339.802,
-      1051.872,
+      1339.792,
+      1339.792,
+      1339.792,
+      1339.792,
+      1051.863,
       511.783,
       511.783,
       421.88,
@@ -23,7 +23,7 @@
     ],
     "rings_mean": 70.0,
     "runs": 20,
-    "score_mean": 13710.4,
+    "score_mean": 13766.65,
     "survival_mean_s": 68.297,
     "survival_median_s": 75.5
   },
@@ -243,14 +243,14 @@
     "survives_grace": true
   },
   "perf": {
-    "draw_batches_est_max": 13.0,
-    "draw_batches_est_p95": 13.0,
+    "draw_batches_est_max": 14.0,
+    "draw_batches_est_p95": 14.0,
     "frames": 3599,
     "note": "wall clock; sim tick + dump rebuild only, no GPU",
-    "props_max": 384.0,
-    "props_p95": 369.0,
-    "tick_ms_p50": 0.091,
-    "tick_ms_p95": 0.134
+    "props_max": 385.0,
+    "props_p95": 366.0,
+    "tick_ms_p50": 0.09,
+    "tick_ms_p95": 0.124
   },
   "reachability": {
     "issues": [],

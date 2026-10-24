@@ -26,7 +26,7 @@
      0.9,
      1.0
     ],
-    "intensity": 2.6,
+    "intensity": 3.6,
     "radius": 0.55,
     "side": 0.5,
     "height": 0.5
@@ -47,7 +47,7 @@
     "ear_x": 0.4,
     "ear_y": 1.5,
     "ear_z": 0.05,
-    "collar": true,
+    "collar": false,
     "collar_color": [
      1.0,
      0.25,
@@ -604,41 +604,104 @@
     "effect": "magnet",
     "glb": "",
     "weight": 3,
-    "duration": 0.0
+    "duration": 0.0,
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "icon": null
    },
    {
     "effect": "double",
     "glb": "",
     "weight": 3,
-    "duration": 0.0
+    "duration": 0.0,
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "icon": null
    },
    {
     "effect": "superjump",
     "glb": "",
     "weight": 2,
-    "duration": 0.0
+    "duration": 0.0,
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "icon": null
    },
    {
     "effect": "boost",
     "glb": "",
     "weight": 2,
-    "duration": 0.0
+    "duration": 0.0,
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "icon": null
    },
    {
     "effect": "meow",
     "glb": "",
     "weight": 1,
-    "duration": 0.0
+    "duration": 0.0,
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "icon": null
    }
   ],
   "item_rules": {
    "rest_every": 3,
    "reward_every": 2,
    "hover": 0.7,
-   "radius": 0.85,
-   "magnet_radius": 3.2,
+   "radius": 1.1,
+   "magnet_radius": 4.0,
+   "magnet_lead": 4.0,
+   "pull_speed": 6.0,
+   "pull_accel": 70.0,
+   "warn_secs": 1.5,
    "boost_speed": 1.5,
    "jump_scale": 1.5
+  },
+  "mischief": [
+   {
+    "kind": "vase",
+    "weight": 2
+   },
+   {
+    "kind": "bottle",
+    "weight": 2
+   },
+   {
+    "kind": "can",
+    "weight": 2
+   },
+   {
+    "kind": "yarn",
+    "weight": 1
+   }
+  ],
+  "mischief_rules": {
+   "rest_every": 2,
+   "reward_every": 3,
+   "other_every": 5,
+   "side": 1.3,
+   "radius": 0.75,
+   "score": 25,
+   "streak_secs": 2.5,
+   "streak_bonus": 10,
+   "streak_cap": 6
   },
   "placements": [],
   "runner": {
