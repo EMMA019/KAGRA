@@ -61,7 +61,7 @@ impl Default for MeasureOpts {
 }
 
 fn fresh(world: &str) -> Result<NeonCat, String> {
-    let mut g = NeonCat::from_json(world)?;
+    let mut g = NeonCat::from_json(world)?.one_life();
     g.tick(DT);
     g.confirm();
     g.tick(DT);
@@ -631,7 +631,7 @@ fn course(
     switch_s: f32,
     reach: &Value,
 ) -> Result<Value, String> {
-    let g = NeonCat::from_json(world)?;
+    let g = NeonCat::from_json(world)?.one_life();
     let r = &g.spec.runner;
     let steer = r.lanes.steer.max(0.01);
     let mut walls: Vec<(i32, f32, Spans)> = Vec::new();
@@ -1084,7 +1084,7 @@ fn box_clearance(p: [f32; 3], min: [f32; 3], max: [f32; 3]) -> f32 {
 /// box of the neighbouring slots. `camera_inside` (error) when it is within
 /// `CAMERA_CLEAR` of a box; the near plane and the rig's own sway need room.
 fn camera_clip(world: &str) -> Result<Value, String> {
-    let g0 = NeonCat::from_json(world)?;
+    let g0 = NeonCat::from_json(world)?.one_life();
     let mut rows = Vec::new();
     let mut issues = Vec::new();
     let mut seen: BTreeSet<String> = BTreeSet::new();
@@ -1131,7 +1131,7 @@ pub const GAP_HALF_MIN_M: f32 = 0.35;
 /// centre the cat may be (the x margin, which also shows a neighbour's box
 /// leaking into the opening). `roll_window_tight` / `gap_narrow` are errors.
 fn roll_window(world: &str) -> Result<Value, String> {
-    let g0 = NeonCat::from_json(world)?;
+    let g0 = NeonCat::from_json(world)?.one_life();
     let cap = g0.spec.runner.speed.cap;
     let mut rows = Vec::new();
     let mut issues = Vec::new();
@@ -1317,7 +1317,7 @@ fn camera_probe(world: &str, i: i32, act: Act, lane: Option<f32>) -> Result<f32,
 /// stand / walk / jump / roll gets a cat past, against what its behavior
 /// promises. A kind that its own behavior cannot pass is an error.
 fn reachability(world: &str) -> Result<Value, String> {
-    let g = NeonCat::from_json(world)?;
+    let g = NeonCat::from_json(world)?.one_life();
     let mut rows = Vec::new();
     let mut issues = Vec::new();
     let mut seen: BTreeSet<String> = BTreeSet::new();
@@ -1717,7 +1717,7 @@ mod tests {
 
     #[test]
     fn rest_sections_spawn_nothing_and_the_bot_does_better() {
-        let g = NeonCat::from_json(SECTIONED).unwrap();
+        let g = NeonCat::from_json(SECTIONED).unwrap().one_life();
         let spec = g.spec();
         let (mut kept, mut empty_rest) = (0, 0);
         for i in 0..200 {
@@ -1732,7 +1732,7 @@ mod tests {
         }
         assert!(kept > 40 && empty_rest > 10, "{kept} {empty_rest}");
         // Deterministic.
-        let again = NeonCat::from_json(SECTIONED).unwrap();
+        let again = NeonCat::from_json(SECTIONED).unwrap().one_life();
         assert!((0..200).all(|i| g.spec().obstacle_active(i) == again.spec().obstacle_active(i)));
         let o = MeasureOpts {
             perf: false,

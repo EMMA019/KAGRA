@@ -34,6 +34,8 @@ pub struct GameSpec {
     pub hud_top: f32,
     /// In-play HUD look and the result screen (death wording, local ranking).
     pub hud: HudSpec,
+    /// How many hits the cat survives, and the grace after one.
+    pub lives: LivesSpec,
     /// Reserved. Power-ups with a fixed effect vocabulary. Not simulated yet.
     pub items: Vec<ItemSpec>,
     /// Reserved. Seeded chunk placement baked by Python. Not simulated yet.
@@ -462,6 +464,114 @@ pub struct PlayerSpec {
     pub foot: f32,
     /// sRGB multiply on the albedo.
     pub tint: [u32; 3],
+    /// The two coloured side lights that edge the cat against the dark.
+    pub rim: RimSpec,
+    /// Neon eyes on the face.
+    pub eyes: EyesSpec,
+}
+
+/// Nine lives: a hit costs one, the cat blinks and cannot be hit again for
+/// `invuln_secs`, and the last life ends the run as before. `count` 1 is the
+/// old one-hit rule (the geometry measurements run that way).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LivesSpec {
+    /// 1..=9 (the HUD paw row has nine slots).
+    pub count: u32,
+    /// Seconds without damage after a hit.
+    pub invuln_secs: f32,
+    /// Blinks per second while protected.
+    pub blink_hz: f32,
+}
+
+impl Default for LivesSpec {
+    fn default() -> Self {
+        Self {
+            count: 9,
+            invuln_secs: 1.6,
+            blink_hz: 10.0,
+        }
+    }
+}
+
+impl LivesSpec {
+    pub const MAX: u32 = 9;
+
+    fn validate(&self) -> Result<(), String> {
+        if !(1..=Self::MAX).contains(&self.count) {
+            return Err(format!("game spec: lives.count must be 1..={}", Self::MAX));
+        }
+        if !(0.0..=10.0).contains(&self.invuln_secs) || !self.invuln_secs.is_finite() {
+            return Err("game spec: lives.invuln_secs must be 0..=10".into());
+        }
+        if !(0.0..=30.0).contains(&self.blink_hz) || !self.blink_hz.is_finite() {
+            return Err("game spec: lives.blink_hz must be 0..=30".into());
+        }
+        Ok(())
+    }
+}
+
+/// Two point lights (screen-left, screen-right) just outside the cat's flanks so its side faces
+/// catch a coloured edge (linear RGB). They have to stay outside the body: a
+/// light inside a closed mesh lights nothing.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct RimSpec {
+    pub left: [f32; 3],
+    pub right: [f32; 3],
+    pub intensity: f32,
+    pub radius: f32,
+    /// Distance of each light from the cat's centre line, in metres.
+    pub side: f32,
+    /// Height above the feet.
+    pub height: f32,
+}
+
+impl Default for RimSpec {
+    fn default() -> Self {
+        Self {
+            left: [1.0, 0.25, 0.75],
+            right: [0.3, 0.9, 1.0],
+            intensity: 2.6,
+            radius: 0.55,
+            side: 0.5,
+            height: 0.5,
+        }
+    }
+}
+
+/// Glowing eyes: two small unlit boxes on the face. Offsets are in model
+/// units (like `foot`) and follow the cat's scale and pose.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct EyesSpec {
+    pub enabled: bool,
+    /// Linear RGB of the glow.
+    pub color: [f32; 3],
+    /// Emissive strength (bloom picks it up above ~1).
+    pub glow: f32,
+    /// Eye width in model units.
+    pub size: f32,
+    /// Half the gap between the eyes.
+    pub spread: f32,
+    /// Height above the feet.
+    pub height: f32,
+    /// Distance forward of the model origin (the face plane).
+    pub forward: f32,
+}
+
+impl Default for EyesSpec {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            color: [0.35, 1.0, 0.95],
+            glow: 2.4,
+            size: 0.13,
+            spread: 0.24,
+            height: 0.92,
+            forward: 0.64,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -940,6 +1050,7 @@ impl Default for GameSpec {
             style: Style::default(),
             hud_top: 96.0,
             hud: HudSpec::default(),
+            lives: LivesSpec::default(),
             items: Vec::new(),
             placements: Vec::new(),
             runner: RunnerKit::default(),
@@ -988,6 +1099,8 @@ impl Default for PlayerSpec {
             scale: 0.50,
             foot: 0.30,
             tint: [226, 206, 255],
+            rim: RimSpec::default(),
+            eyes: EyesSpec::default(),
         }
     }
 }
@@ -1134,6 +1247,7 @@ impl GameSpec {
             return Err("game spec: gaps must be > 0".into());
         }
         self.hud.validate()?;
+        self.lives.validate()?;
         for (i, s) in self.runner.sections.iter().enumerate() {
             if s.length <= 0.0 || !s.length.is_finite() {
                 return Err(format!("game spec: section {i} length must be > 0"));
@@ -1241,6 +1355,7 @@ impl GameSpec {
         s.runner.obstacle_track.gap = 14.0;
         // The recorded runs score distance and rings only.
         s.runner.score.per_gate = 0;
+        s.lives.count = 1;
         s
     }
 
