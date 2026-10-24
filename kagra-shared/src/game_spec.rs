@@ -1248,6 +1248,10 @@ pub struct PerchRules {
     pub route_bonus: u32,
     /// Coins per step, laid along the top.
     pub coins_per_step: u32,
+    /// Length of the slope in front of each rising step, from the top of the
+    /// step before (the street for the first). A cat that runs into the lane
+    /// climbs it without a jump. 0 = square risers (a jump or a glide onto it).
+    pub ramp_len: f32,
 }
 
 impl Default for PerchRules {
@@ -1259,11 +1263,12 @@ impl Default for PerchRules {
             side: 1.35,
             half_width: 0.7,
             step_len: 3.6,
-            step_up: 0.55,
+            step_up: 0.65,
             land_score: 30,
             run_score: 40,
             route_bonus: 120,
             coins_per_step: 3,
+            ramp_len: 1.4,
         }
     }
 }
@@ -1278,6 +1283,9 @@ impl PerchRules {
         }
         if self.coins_per_step > 6 {
             return Err("game spec: perch_rules coins_per_step 0..=6".into());
+        }
+        if !(0.0..=3.0).contains(&self.ramp_len) || self.ramp_len > self.step_len * 0.5 {
+            return Err("game spec: perch_rules ramp_len 0..=3 and at most half a step_len".into());
         }
         Ok(())
     }
