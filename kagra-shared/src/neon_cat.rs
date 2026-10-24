@@ -4849,6 +4849,71 @@ fn splice_json_key(body: &str, key: &str, value: &serde_json::Value) -> String {
     format!("{{{block},{rest}")
 }
 
+impl crate::kit_host::KitHost for NeonCat {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &'static str {
+        "neon cat"
+    }
+    fn phase_name(&self) -> &'static str {
+        NeonCat::phase_name(self)
+    }
+    fn playing(&self) -> bool {
+        NeonCat::playing(self)
+    }
+    fn document(&self) -> &WorldDoc {
+        NeonCat::document(self)
+    }
+    fn dump_json(&self) -> String {
+        NeonCat::dump_json(self)
+    }
+    fn state_json(&self) -> String {
+        NeonCat::state_json(self)
+    }
+    fn confirm(&mut self) {
+        NeonCat::confirm(self)
+    }
+    fn show_title(&mut self) {
+        NeonCat::show_title(self)
+    }
+    fn pointer(&mut self, x: f32, y: f32, width: u32, height: u32) -> bool {
+        NeonCat::pointer(self, x, y, width, height)
+    }
+    fn on_key(&mut self, name: &str, down: bool) -> bool {
+        NeonCat::on_key(self, name, down)
+    }
+    fn tick(&mut self, dt: f32) {
+        NeonCat::tick(self, dt)
+    }
+    fn hud(&self, width: u32, height: u32, menu: bool) -> DrawList {
+        self.paint_hud(width, height, menu)
+    }
+    fn walk(&mut self, lx: f32, lz: f32, jump: bool) {
+        if self.phase_name() == "play" {
+            // A finger on the screen is a swipe, not a stick or a jump zone
+            // (Android shells send both).
+            if self.touch_active() {
+                self.set_steer(0.0, 0.0, false);
+            } else {
+                self.set_steer(lx, lz, jump);
+            }
+        }
+    }
+    fn touch(&mut self, ev: crate::input::PointerEvent, w: u32, h: u32, t: f32) {
+        NeonCat::touch(self, ev, w, h, t)
+    }
+    fn uses_swipe(&self) -> bool {
+        true
+    }
+    fn set_debug(&mut self, on: bool) {
+        NeonCat::set_debug(self, on)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     /// The three-crate course the older tests were written against.
@@ -5355,15 +5420,15 @@ mod tests {
         session
             .load_game_json(r#"{"version":1,"genre":"neon_cat"}"#)
             .unwrap();
-        assert_eq!(session.kind, SceneKind::NeonCat);
-        assert!(session.cat.is_some());
-        assert!(session.neon.is_none());
+        assert_eq!(session.kind, SceneKind::Kit);
+        assert!(session.cat().is_some());
+        assert!(session.neon().is_none());
         assert!(session.world.is_none());
         session
             .load_game_json(r#"{"version":1,"genre":"neon_run"}"#)
             .unwrap();
-        assert_eq!(session.kind, SceneKind::Neon);
-        assert!(session.cat.is_none());
+        assert_eq!(session.kind, SceneKind::Kit);
+        assert!(session.cat().is_none());
     }
 
     #[test]
@@ -5378,17 +5443,17 @@ mod tests {
             .unwrap();
         session.show_title();
         assert_eq!(phase(&session), "title");
-        assert!(session.cat.as_ref().unwrap().z().abs() < 0.01);
+        assert!(session.cat().unwrap().z().abs() < 0.01);
         session.start_game();
         assert_eq!(phase(&session), "playing");
         for _ in 0..60 * 6 {
             session.set_play_input(0.0, 0.0, false, false, false);
             session.request_frame();
-            if session.cat.as_ref().unwrap().phase_name() == "result" {
+            if session.cat().unwrap().phase_name() == "result" {
                 break;
             }
         }
-        assert_eq!(session.cat.as_ref().unwrap().phase_name(), "result");
+        assert_eq!(session.cat().unwrap().phase_name(), "result");
         assert_eq!(phase(&session), "complete");
         let crashed = session.draw_list();
         assert!(
@@ -5400,11 +5465,11 @@ mod tests {
                 .map(|text| &text.text)
                 .collect::<Vec<_>>()
         );
-        assert_eq!(session.cat.as_ref().unwrap().death(), "CRATE");
+        assert_eq!(session.cat().unwrap().death(), "CRATE");
         session.show_title();
         assert_eq!(phase(&session), "title");
         assert!(
-            session.cat.as_ref().unwrap().z().abs() < 0.01,
+            session.cat().unwrap().z().abs() < 0.01,
             "title puts the cat back at the start, not the crash arch"
         );
         let titled = session.draw_list();
@@ -5419,12 +5484,12 @@ mod tests {
             "the HTML card owns the menu"
         );
         session.start_game();
-        let z0 = session.cat.as_ref().unwrap().z();
+        let z0 = session.cat().unwrap().z();
         for _ in 0..30 {
             session.request_frame();
         }
         assert_eq!(phase(&session), "playing");
-        assert!(session.cat.as_ref().unwrap().z() > z0 + 1.0);
+        assert!(session.cat().unwrap().z() > z0 + 1.0);
     }
 
     fn place_on(index: i32, x: f32, y: f32) -> NeonCat {

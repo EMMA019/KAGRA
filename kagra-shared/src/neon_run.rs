@@ -1536,6 +1536,56 @@ fn splice_json_key(body: &str, key: &str, value: &serde_json::Value) -> String {
     format!("{{{block},{rest}")
 }
 
+impl crate::kit_host::KitHost for NeonRun {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &'static str {
+        "neon run"
+    }
+    fn phase_name(&self) -> &'static str {
+        NeonRun::phase_name(self)
+    }
+    fn playing(&self) -> bool {
+        NeonRun::playing(self)
+    }
+    fn document(&self) -> &WorldDoc {
+        NeonRun::document(self)
+    }
+    fn dump_json(&self) -> String {
+        NeonRun::dump_json(self)
+    }
+    fn state_json(&self) -> String {
+        NeonRun::state_json(self)
+    }
+    fn confirm(&mut self) {
+        NeonRun::confirm(self)
+    }
+    fn show_title(&mut self) {
+        NeonRun::show_title(self)
+    }
+    fn pointer(&mut self, x: f32, y: f32, width: u32, height: u32) -> bool {
+        NeonRun::pointer(self, x, y, width, height)
+    }
+    fn on_key(&mut self, name: &str, down: bool) -> bool {
+        NeonRun::on_key(self, name, down)
+    }
+    fn tick(&mut self, dt: f32) {
+        NeonRun::tick(self, dt)
+    }
+    fn hud(&self, width: u32, height: u32, _menu: bool) -> DrawList {
+        NeonRun::hud(self, width, height)
+    }
+    fn walk(&mut self, lx: f32, lz: f32, jump: bool) {
+        if self.phase_name() == "play" {
+            self.set_steer(lx, lz, jump);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1727,15 +1777,15 @@ mod tests {
         session
             .load_game_json(r#"{"version":1,"genre":"neon_run","best":40}"#)
             .unwrap();
-        assert_eq!(session.kind, SceneKind::Neon);
+        assert_eq!(session.kind, SceneKind::Kit);
         assert!(session.world.is_none());
-        let neon = session.neon.as_ref().unwrap();
+        let neon = session.neon().unwrap();
         assert!(neon.best_score() >= 40);
         session.push_key("space", true);
         for _ in 0..30 {
             session.request_frame();
         }
-        assert_eq!(session.neon.as_ref().unwrap().phase_name(), "play");
+        assert_eq!(session.neon().unwrap().phase_name(), "play");
     }
 
     #[test]
