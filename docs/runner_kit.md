@@ -51,6 +51,15 @@ ignored; the body then stands back up over `recover_secs` (hitbox and pose toget
 plus `rings.score` and `coins.score` per pickup (the recorded legacy runs set `per_gate` to 0). `runner.coins` sets coin
 lines (score only). `runner.sections[].allow` limits which behaviors a section may spawn.
 
+`hud` (any game spec, not only runners) styles the in-play HUD and the game-over screen: `hud.scale`, `hud.panel`
+`{fill, border, coin, score, slice}` (a 9-slice panel for the score and a coin chip with a drawn coin icon, sized from the screen
+width so they are about 30 px tall numbers on a phone), and `hud.result`: `beat_secs` (the crash plays out with shake, a red flash
+and dimmed HUD for this long before the result), `deaths` (obstacle name -> the line shown, with `death_fallback`), and
+`hud.result.board` `{enabled, top_n, columns, sort}`: a local top-N list saved on the device (localStorage, key
+`kagra.board.v1.<id>:<seed>`, no network). Columns come from `time`, `gates`, `coins`, `score`; the result card shows the player's
+run, highlights it in the list, and a tab per column re-sorts. The sim reports `result` (key, config, this run's values) and
+`death_text` in its state, so another kit gets the same card by filling the same fields.
+
 `style.codes` is the colour language, one neon colour per thing to do, used for the obstacle edge and its glow:
 `jump_over` amber (low, hop), `roll_under` pink (high or hanging), `solid` red (go round), `cat_gap` violet (roll through),
 `rideable` blue (run on it), `pass_through` mint (gates and arches, never a threat). A kind may override with `color`.

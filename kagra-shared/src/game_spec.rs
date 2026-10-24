@@ -32,6 +32,8 @@ pub struct GameSpec {
     pub style: Style,
     /// HUD score panel top, in HUD pixels.
     pub hud_top: f32,
+    /// In-play HUD look and the result screen (death wording, local ranking).
+    pub hud: HudSpec,
     /// Reserved. Power-ups with a fixed effect vocabulary. Not simulated yet.
     pub items: Vec<ItemSpec>,
     /// Reserved. Seeded chunk placement baked by Python. Not simulated yet.
@@ -142,6 +144,149 @@ impl Default for ScoreSpec {
         Self {
             per_meter: 2.2,
             per_gate: 50,
+        }
+    }
+}
+
+/// The in-play HUD panels and what the result screen shows. Game-agnostic:
+/// another kit fills the same fields and gets the same panels and ranking.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct HudSpec {
+    /// Size multiplier on top of the screen-width scale.
+    pub scale: f32,
+    pub panel: PanelSpec,
+    pub result: ResultSpec,
+}
+
+impl Default for HudSpec {
+    fn default() -> Self {
+        Self {
+            scale: 1.0,
+            panel: PanelSpec::default(),
+            result: ResultSpec::default(),
+        }
+    }
+}
+
+/// A 9-slice panel: rim colour, fill colour, and the number colour of coins.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PanelSpec {
+    pub fill: [u8; 4],
+    pub border: [u8; 4],
+    /// Coin icon and coin count.
+    pub coin: [u8; 4],
+    /// Score number.
+    pub score: [u8; 4],
+    /// Rim and corner size in HUD units (before scaling).
+    pub slice: f32,
+}
+
+impl Default for PanelSpec {
+    fn default() -> Self {
+        Self {
+            fill: [14, 10, 32, 205],
+            border: [90, 210, 230, 255],
+            coin: [255, 205, 70, 255],
+            score: [190, 248, 255, 255],
+            slice: 3.0,
+        }
+    }
+}
+
+/// Columns the ranking can show. The sim reports each one by this name.
+pub const BOARD_COLUMNS: [&str; 4] = ["time", "gates", "coins", "score"];
+
+/// What the game-over screen shows.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ResultSpec {
+    /// Seconds the crash plays out (shake, flash, sparks) before the result.
+    pub beat_secs: f32,
+    pub board: BoardSpec,
+    /// Death reason (the obstacle name) -> the line shown to the player.
+    pub deaths: std::collections::BTreeMap<String, String>,
+    /// Line for a reason `deaths` does not name.
+    pub death_fallback: String,
+}
+
+impl Default for ResultSpec {
+    fn default() -> Self {
+        let deaths = [
+            ("CRATE", "木箱にぶつかった"),
+            ("BARREL", "樽にぶつかった"),
+            ("BARRIER", "バリケードにぶつかった"),
+            ("GENERATOR", "発電機にぶつかった"),
+            ("OVERPASS", "ひさしに頭をぶつけた（下フリックでころがる）"),
+            ("TRAIN", "電車にぶつかった"),
+            ("WALL", "壁にぶつかった（すき間は下フリックでくぐる）"),
+            ("METEOR", "隕石にぶつかった"),
+            ("CRYSTALS", "クリスタルにぶつかった"),
+            ("ROCK", "岩にぶつかった"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        Self {
+            beat_secs: 0.7,
+            board: BoardSpec::default(),
+            deaths,
+            death_fallback: "ぶつかった".into(),
+        }
+    }
+}
+
+/// The local top-N list. Saved on the device only.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct BoardSpec {
+    pub enabled: bool,
+    /// Rows kept and shown (1..=10).
+    pub top_n: u32,
+    /// Any of [`BOARD_COLUMNS`], in the order shown.
+    pub columns: Vec<String>,
+    /// Which column ranks the list first. One of `columns`.
+    pub sort: String,
+}
+
+impl HudSpec {
+    fn validate(&self) -> Result<(), String> {
+        let r = &self.result;
+        if !(self.scale > 0.0 && self.scale <= 4.0) {
+            return Err("game spec: hud.scale must be in (0, 4]".into());
+        }
+        if !(0.0..=3.0).contains(&r.beat_secs) {
+            return Err("game spec: hud.result.beat_secs must be 0..=3".into());
+        }
+        let b = &r.board;
+        if !(1..=10).contains(&b.top_n) {
+            return Err("game spec: hud.result.board.top_n must be 1..=10".into());
+        }
+        if b.columns.is_empty() {
+            return Err("game spec: hud.result.board.columns must not be empty".into());
+        }
+        for c in &b.columns {
+            if !BOARD_COLUMNS.contains(&c.as_str()) {
+                return Err(format!(
+                    "game spec: hud.result.board.columns: unknown {c:?} (use {BOARD_COLUMNS:?})"
+                ));
+            }
+        }
+        if !b.columns.contains(&b.sort) {
+            return Err("game spec: hud.result.board.sort must be one of its columns".into());
+        }
+        Ok(())
+    }
+}
+
+impl Default for BoardSpec {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            top_n: 5,
+            columns: BOARD_COLUMNS.iter().map(|c| c.to_string()).collect(),
+            sort: "score".into(),
         }
     }
 }
@@ -794,6 +939,7 @@ impl Default for GameSpec {
             camera: CameraSpec::default(),
             style: Style::default(),
             hud_top: 96.0,
+            hud: HudSpec::default(),
             items: Vec::new(),
             placements: Vec::new(),
             runner: RunnerKit::default(),
@@ -987,6 +1133,7 @@ impl GameSpec {
         {
             return Err("game spec: gaps must be > 0".into());
         }
+        self.hud.validate()?;
         for (i, s) in self.runner.sections.iter().enumerate() {
             if s.length <= 0.0 || !s.length.is_finite() {
                 return Err(format!("game spec: section {i} length must be > 0"));
@@ -1164,6 +1311,28 @@ impl GameSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hud_spec_rejects_a_bad_ranking() {
+        let bad = |f: &dyn Fn(&mut GameSpec)| {
+            let mut s = GameSpec::default();
+            f(&mut s);
+            s.validate().unwrap_err()
+        };
+        assert!(bad(&|s| s.hud.result.board.top_n = 0).contains("top_n"));
+        assert!(bad(&|s| s.hud.result.board.top_n = 11).contains("top_n"));
+        assert!(bad(&|s| s.hud.result.board.columns = vec![]).contains("columns"));
+        assert!(bad(&|s| s.hud.result.board.columns = vec!["kills".into()]).contains("kills"));
+        assert!(bad(&|s| {
+            s.hud.result.board.columns = vec!["time".into()];
+            s.hud.result.board.sort = "coins".into();
+        })
+        .contains("sort"));
+        assert!(bad(&|s| s.hud.scale = 0.0).contains("scale"));
+        let mut ok = GameSpec::default();
+        ok.hud.result.board.columns = vec!["score".into(), "coins".into()];
+        ok.validate().unwrap();
+    }
 
     #[test]
     fn empty_json_is_neon_cat() {

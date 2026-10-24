@@ -488,6 +488,63 @@
    }
   },
   "hud_top": 96.0,
+  "hud": {
+   "scale": 1.0,
+   "panel": {
+    "fill": [
+     14,
+     10,
+     32,
+     205
+    ],
+    "border": [
+     90,
+     210,
+     230,
+     255
+    ],
+    "coin": [
+     255,
+     205,
+     70,
+     255
+    ],
+    "score": [
+     190,
+     248,
+     255,
+     255
+    ],
+    "slice": 3.0
+   },
+   "result": {
+    "beat_secs": 0.7,
+    "board": {
+     "enabled": true,
+     "top_n": 5,
+     "columns": [
+      "time",
+      "gates",
+      "coins",
+      "score"
+     ],
+     "sort": "score"
+    },
+    "deaths": {
+     "CRATE": "\u6728\u7bb1\u306b\u3076\u3064\u304b\u3063\u305f",
+     "BARREL": "\u6a3d\u306b\u3076\u3064\u304b\u3063\u305f",
+     "BARRIER": "\u30d0\u30ea\u30b1\u30fc\u30c9\u306b\u3076\u3064\u304b\u3063\u305f",
+     "GENERATOR": "\u767a\u96fb\u6a5f\u306b\u3076\u3064\u304b\u3063\u305f",
+     "OVERPASS": "\u3072\u3055\u3057\u306b\u982d\u3092\u3076\u3064\u3051\u305f\uff08\u4e0b\u30d5\u30ea\u30c3\u30af\u3067\u3053\u308d\u304c\u308b\uff09",
+     "TRAIN": "\u96fb\u8eca\u306b\u3076\u3064\u304b\u3063\u305f",
+     "WALL": "\u58c1\u306b\u3076\u3064\u304b\u3063\u305f\uff08\u3059\u304d\u9593\u306f\u4e0b\u30d5\u30ea\u30c3\u30af\u3067\u304f\u3050\u308b\uff09",
+     "METEOR": "\u9695\u77f3\u306b\u3076\u3064\u304b\u3063\u305f",
+     "CRYSTALS": "\u30af\u30ea\u30b9\u30bf\u30eb\u306b\u3076\u3064\u304b\u3063\u305f",
+     "ROCK": "\u5ca9\u306b\u3076\u3064\u304b\u3063\u305f"
+    },
+    "death_fallback": "\u3076\u3064\u304b\u3063\u305f"
+   }
+  },
   "items": [],
   "placements": [],
   "runner": {

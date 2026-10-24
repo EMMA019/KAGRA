@@ -146,7 +146,7 @@
   "logic": {
     "collision_kills": true,
     "death_kind": "CRATE",
-    "death_to_result_frames": 7,
+    "death_to_result_frames": 42,
     "pass": true,
     "retry_resets": true,
     "survives_grace": true

@@ -145,6 +145,74 @@
       width: min(20vh, 88px);
       height: min(20vh, 88px);
     }
+    /* Swipe games (Neon Cat kit): a styled game-over card. The 9-slice look of
+       the in-canvas HUD, drawn with a notched border so it needs no images. */
+    html[data-swipe="1"] #hud { display: none !important; }
+    html[data-swipe="1"] #overlay {
+      background: radial-gradient(ellipse at 50% 40%, rgba(40, 14, 52, 0.62), rgba(6, 4, 14, 0.9) 78%);
+      overflow-y: auto;
+      align-items: start;
+    }
+    html[data-swipe="1"] .card { margin: auto; padding: 8px 0 18px; }
+    .panel {
+      --cut: 8px;
+      background: linear-gradient(180deg, rgba(30, 22, 52, 0.94), rgba(14, 10, 32, 0.94));
+      border: 3px solid #5ad2e6;
+      box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.45), inset 0 2px 0 rgba(255, 255, 255, 0.08);
+      clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% calc(100% - var(--cut)),
+                         calc(100% - var(--cut)) 100%, var(--cut) 100%, 0 calc(100% - var(--cut)), 0 var(--cut));
+      padding: 12px 14px;
+      margin: 0 0 14px;
+    }
+    .styled {
+      border: 3px solid #8cffff;
+      border-radius: 0;
+      background: #181228;
+      color: #f5ffff;
+      padding: 15px 30px;
+      font-size: 18px;
+      letter-spacing: 0.06em;
+      clip-path: polygon(7px 0, calc(100% - 7px) 0, 100% 7px, 100% calc(100% - 7px),
+                         calc(100% - 7px) 100%, 7px 100%, 0 calc(100% - 7px), 0 7px);
+      box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.5);
+      min-width: 220px;
+    }
+    .styled:active { background: #281c40; border-color: #ff78be; transform: translateY(2px); }
+    #gameover {
+      margin: 0 0 4px;
+      font-size: clamp(30px, 9vw, 44px);
+      letter-spacing: 0.12em;
+      color: #ff4f9a;
+      text-shadow: 0 0 18px rgba(255, 60, 150, 0.55), 3px 3px 0 rgba(0, 0, 0, 0.5);
+    }
+    html[data-swipe="1"] #death { margin: 0 0 14px; font-size: 16px; letter-spacing: 0.03em; color: #ffd0e2; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; text-align: center; }
+    .stats b { display: block; font-size: clamp(18px, 5.6vw, 24px); font-variant-numeric: tabular-nums; color: #bff8ff; }
+    .stats span { font-size: 11px; opacity: 0.7; letter-spacing: 0.08em; }
+    .stats .big b { color: #ffe08a; }
+    .newbest { display: inline-block; margin: 0 0 8px; padding: 3px 10px; font-size: 12px; font-weight: 800;
+      letter-spacing: 0.16em; color: #1a1408; background: #f0c36a; }
+    .tabs { display: flex; gap: 6px; justify-content: center; margin: 0 0 8px; }
+    .tabs button { padding: 6px 12px; font-size: 12px; border-radius: 999px; background: rgba(255,255,255,0.08);
+      color: #dff; border: 1px solid rgba(140, 255, 255, 0.35); }
+    .tabs button.on { background: #8cffff; color: #08121a; }
+    table.rank { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; }
+    table.rank th { font-size: 11px; font-weight: 600; opacity: 0.65; padding: 2px 4px 6px; letter-spacing: 0.06em; }
+    table.rank td { padding: 6px 4px; text-align: center; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+    table.rank td:first-child, table.rank th:first-child { text-align: left; width: 2.2em; opacity: 0.8; }
+    table.rank tr.me td { background: rgba(240, 195, 106, 0.22); color: #ffe9b0; font-weight: 700; border-top-color: transparent; }
+    table.rank tr.me td:first-child { opacity: 1; }
+    table.rank tr.gap td { padding: 0; line-height: 1; height: 14px; opacity: 0.5; border-top: 0; }
+    table.rank td.sorted { color: #bff8ff; }
+    table.rank tr.me td.sorted { color: #fff3c9; }
+    html[data-swipe="1"][data-orient="landscape"] .card { width: min(760px, 100%); }
+    html[data-swipe="1"][data-orient="landscape"] #result { display: grid; grid-template-columns: 1fr 1.3fr; gap: 12px; align-items: start; }
+    html[data-swipe="1"][data-orient="landscape"] #result .panel { margin: 0; }
+    html[data-swipe="1"][data-orient="landscape"] .stats { grid-template-columns: repeat(2, 1fr) !important; }
+    html[data-swipe="1"][data-orient="landscape"] #gameover { font-size: 28px; }
+    html[data-swipe="1"][data-orient="landscape"] table.rank td { padding: 3px 4px; }
+    html[data-swipe="1"][data-orient="landscape"] #death { margin-bottom: 8px; }
+    .empty { opacity: 0.6; font-size: 13px; margin: 6px 0; }
   </style>
 </head>
 <body>
@@ -159,11 +227,19 @@
     <div id="overlay">
       <div class="card">
         <h1 id="title">KAGRA</h1>
+        <h2 id="gameover" hidden>GAME OVER</h2>
         <p id="blurb" class="hint">タップではじめる。左が移動、右下ジャンプ、右上アクション。</p>
         <p id="death" class="hint" hidden></p>
+        <div id="result" hidden>
+          <div class="panel stats" id="runStats"></div>
+          <div class="panel" id="boardBox">
+            <div class="tabs" id="tabs"></div>
+            <div id="rows"></div>
+          </div>
+        </div>
         <p><button id="start" type="button">はじめる</button></p>
-        <p class="hint">WASD / 矢印、Space ジャンプ、J アクション。縦でも横でも同じ配置です。</p>
-        <p><a class="btn" href="./index.html">ジャンル一覧</a></p>
+        <p class="hint" id="keys">WASD / 矢印、Space ジャンプ、J アクション。縦でも横でも同じ配置です。</p>
+        <p id="catalogRow"><a class="btn" href="./index.html">ジャンル一覧</a></p>
       </div>
     </div>
     <div id="boot">読み込み中…</div>
@@ -186,6 +262,12 @@
       swipeMode = typeof session?.usesSwipe === "function" && session.usesSwipe();
       if (!swipeMode) return;
       pads.classList.remove("visible");
+      // This kit owns its game-over card: retry and the ranking only. The
+      // other-genre link and the keyboard hint do not belong on it.
+      document.documentElement.dataset.swipe = "1";
+      document.getElementById("catalogRow")?.remove();
+      document.getElementById("keys")?.remove();
+      document.getElementById("start").classList.add("styled");
       const blurbEl = document.getElementById("blurb");
       if (blurbEl) blurbEl.textContent = "タップではじめる。指を置いたまま左右にドラッグで移動、上フリックでジャンプ、下フリックで急降下。";
     };
@@ -352,9 +434,110 @@
     let phase = "title";
     globalThis.kagraPreview = session;
 
+    let boardDone = false;
+    let resultAt = 0;
+
+    // ---- Local ranking. Device only (localStorage), no network. The sim hands
+    // over `result` = {key, columns, top_n, sort, run}; nothing here is Neon Cat
+    // specific, so another kit with the same `hud.result.board` gets the same list.
+    const COLUMN_LABEL = { time: "生存", gates: "ゲート", coins: "コイン", score: "スコア" };
+    const fmtTime = (t) => {
+      const m = Math.floor(t / 60);
+      const sec = (t - m * 60).toFixed(1).padStart(m ? 4 : 1, "0");
+      return m ? `${m}:${sec}` : `${sec}s`;
+    };
+    const fmtCell = (col, v) => (col === "time" ? fmtTime(v) : String(v));
+    const boardKey = (key) => `kagra.board.v1.${key}`;
+    const loadBoard = (key) => {
+      try {
+        const rows = JSON.parse(localStorage.getItem(boardKey(key)) || "[]");
+        return Array.isArray(rows) ? rows.filter((r) => r && typeof r === "object") : [];
+      } catch { return []; }
+    };
+    const rankOrder = (rows, col) =>
+      rows.slice().sort((a, b) => (b[col] - a[col]) || (b.score - a.score) || (a.at - b.at));
+    // Keep the union of the top N of every column, so a long survivor is not
+    // dropped just because its score is low.
+    const prune = (rows, columns, n) => {
+      const keep = new Set();
+      for (const col of columns) rankOrder(rows, col).slice(0, n).forEach((r) => keep.add(r.id));
+      return rows.filter((r) => keep.has(r.id));
+    };
+    const showBoard = (res) => {
+      const columns = Array.isArray(res.columns) && res.columns.length ? res.columns : ["score"];
+      const n = Math.max(1, res.top_n | 0 || 5);
+      const run = { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, at: Date.now() };
+      for (const c of columns) run[c] = Number(res.run?.[c]) || 0;
+      run.score = Number(res.run?.score) || 0;
+      // Rank against everything saved plus this run; only the top N of each
+      // column is kept on the device, so a weak run is shown but not stored.
+      const rows = loadBoard(res.key).concat(run);
+      try { localStorage.setItem(boardKey(res.key), JSON.stringify(prune(rows, columns, n))); } catch {}
+      let sort = columns.includes(res.sort) ? res.sort : columns[0];
+      const stats = document.getElementById("runStats");
+      const tabs = document.getElementById("tabs");
+      const box = document.getElementById("rows");
+      const best = rankOrder(rows, "score")[0] === run && rows.length > 1;
+      stats.innerHTML = "";
+      for (const c of columns) {
+        const cell = document.createElement("div");
+        if (c === "score") cell.className = "big";
+        cell.innerHTML = `<b></b><span></span>`;
+        cell.querySelector("b").textContent = fmtCell(c, run[c]);
+        cell.querySelector("span").textContent = COLUMN_LABEL[c] || c;
+        stats.appendChild(cell);
+      }
+      stats.style.gridTemplateColumns = `repeat(${columns.length}, 1fr)`;
+      const draw = () => {
+        tabs.innerHTML = "";
+        if (columns.length > 1) {
+          for (const c of columns) {
+            const b = document.createElement("button");
+            b.type = "button";
+            b.textContent = COLUMN_LABEL[c] || c;
+            b.className = c === sort ? "on" : "";
+            const pick = (e) => { e.preventDefault(); e.stopPropagation(); sort = c; draw(); };
+            b.addEventListener("pointerdown", stopOverlayEvent);
+            b.addEventListener("pointerup", pick);
+            tabs.appendChild(b);
+          }
+        }
+        const ordered = rankOrder(rows, sort);
+        const top = ordered.slice(0, n);
+        const table = document.createElement("table");
+        table.className = "rank";
+        const head = `<tr><th>#</th>${columns.map((c) => `<th>${COLUMN_LABEL[c] || c}</th>`).join("")}</tr>`;
+        const line = (r, rank, extra) =>
+          `<tr class="${extra}"><td>${rank}</td>${columns
+            .map((c) => `<td class="${c === sort ? "sorted" : ""}">${fmtCell(c, r[c] || 0)}</td>`)
+            .join("")}</tr>`;
+        let html = head;
+        top.forEach((r, i) => { html += line(r, i + 1, r.id === run.id ? "me" : ""); });
+        const at = ordered.findIndex((r) => r.id === run.id);
+        if (at >= n) {
+          html += `<tr class="gap"><td colspan="${columns.length + 1}">⋮</td></tr>` + line(run, at + 1, "me");
+        }
+        table.innerHTML = html;
+        box.innerHTML = "";
+        if (best) {
+          const tag = document.createElement("div");
+          tag.className = "newbest";
+          tag.textContent = "NEW BEST!";
+          box.appendChild(tag);
+        }
+        box.appendChild(table);
+      };
+      draw();
+    };
+
+    const stopOverlayEvent = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
     let cancelCanvasPointers = () => {};
     const showPhase = (next) => {
       phase = next || "title";
+      if (phase === "complete") resultAt = performance.now();
       const playing = phase === "playing";
       if (!playing) cancelCanvasPointers();
       overlay.classList.toggle("visible", !playing);
@@ -367,14 +550,30 @@
         `${bundle.title || slug} · ${label} · ${sharedVersion()}`;
       document.getElementById("start").textContent = phase === "complete" ? "もう一度" : "はじめる";
       const death = document.getElementById("death");
-      let reason = "";
-      try { reason = JSON.parse(session.gameJson()).death || ""; } catch {}
+      const resultBox = document.getElementById("result");
+      const gameover = document.getElementById("gameover");
+      let sim = {};
+      try { sim = JSON.parse(session.gameJson()); } catch {}
+      const reason = sim.death || "";
       if (phase === "complete" && reason) {
         death.hidden = false;
-        death.textContent = `HIT ${reason}`;
+        // The sim's own wording (hud.result.deaths in the spec); the raw name is the fallback.
+        death.textContent = swipeMode ? (sim.death_text || reason) : `HIT ${reason}`;
       } else {
         death.hidden = true;
         death.textContent = "";
+      }
+      if (phase === "playing") boardDone = false;
+      const showResult = swipeMode && phase === "complete" && sim.result;
+      if (swipeMode) {
+        gameover.hidden = phase !== "complete";
+        document.getElementById("title").hidden = phase === "complete";
+        document.getElementById("blurb").hidden = phase === "complete";
+      }
+      resultBox.hidden = !showResult;
+      if (showResult && !boardDone) {
+        boardDone = true;
+        showBoard(sim.result);
       }
     };
 
@@ -394,13 +593,11 @@
     const confirmGame = () => {
       if (phase === "playing") return;
       const now = performance.now();
+      // A thumb still down from the crash must not skip the result.
+      if (phase === "complete" && now - resultAt < 500) return;
       if (now - startLock < 350) return;
       startLock = now;
       session.startGame();
-    };
-    const stopOverlayEvent = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
     };
     const startBtn = document.getElementById("start");
     startBtn.addEventListener("pointerdown", stopOverlayEvent);
@@ -413,16 +610,18 @@
       confirmGame();
     });
     const catalog = overlay.querySelector("a.btn");
-    const openCatalog = (e) => {
-      stopOverlayEvent(e);
-      const href = catalog.getAttribute("href") || "./index.html";
-      if (location.href !== new URL(href, location.href).href) location.href = href;
-    };
-    catalog.addEventListener("pointerdown", stopOverlayEvent);
-    catalog.addEventListener("pointerup", openCatalog);
-    catalog.addEventListener("click", openCatalog);
+    if (catalog) {
+      const openCatalog = (e) => {
+        stopOverlayEvent(e);
+        const href = catalog.getAttribute("href") || "./index.html";
+        if (location.href !== new URL(href, location.href).href) location.href = href;
+      };
+      catalog.addEventListener("pointerdown", stopOverlayEvent);
+      catalog.addEventListener("pointerup", openCatalog);
+      catalog.addEventListener("click", openCatalog);
+    }
     overlay.addEventListener("pointerup", (e) => {
-      if (e.target.closest("a, button")) return;
+      if (e.target.closest("a, button, .panel")) return;
       if (phase !== "playing") confirmGame();
     });
 
@@ -546,6 +745,8 @@
 
     document.addEventListener("touchmove", (e) => {
       if (e.target.closest("#overlay button, #overlay a")) return;
+      // A tall result card scrolls; everything else stays put.
+      if (swipeMode && overlay.classList.contains("visible") && overlay.scrollHeight > overlay.clientHeight) return;
       e.preventDefault();
     }, { passive: false });
     showPhase("title");

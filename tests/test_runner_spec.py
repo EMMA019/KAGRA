@@ -117,3 +117,20 @@ def test_colour_codes_merge_and_reject_unknown_names():
     assert set(codes) == {"jump_over", "roll_under", "solid", "cat_gap", "rideable", "pass_through"}
     with pytest.raises(ValueError):
         GameSpec.from_overrides({"style": {"codes": {"lava": [1, 2, 3]}}})
+
+
+def test_hud_result_spec_merges_death_lines_and_validates_the_board():
+    spec = GameSpec.from_overrides({"hud": {"result": {"deaths": {"CRATE": "ドン"}, "board": {"top_n": 3, "columns": ["score", "time"], "sort": "time"}}}})
+    r = spec.hud.result
+    assert r.deaths["CRATE"] == "ドン" and r.deaths["WALL"].startswith("壁")
+    assert (r.board.top_n, r.board.columns, r.board.sort) == (3, ["score", "time"], "time")
+    for bad in (
+        {"top_n": 0},
+        {"top_n": 11},
+        {"columns": []},
+        {"columns": ["kills"]},
+        {"columns": ["time"], "sort": "coins"},
+    ):
+        with pytest.raises(ValueError):
+            GameSpec.from_overrides({"hud": {"result": {"board": bad}}})
+    assert spec.world()["game"]["hud"]["result"]["board"]["sort"] == "time"
