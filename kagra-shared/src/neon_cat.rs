@@ -768,7 +768,7 @@ impl NeonCat {
     /// A player does not steer into the side of a raised step: hold the stick
     /// back while a taller-than-first step column is the way the stick points.
     fn keep_off_steps(&self, lx: f32) -> f32 {
-        if self.spec.perch_route.is_empty() {
+        if !perch_on(&self.spec) {
             return lx;
         }
         let track = &self.spec.runner.obstacle_track;
@@ -1428,7 +1428,7 @@ impl NeonCat {
     /// street for the first step) up to the front edge of the step.
     fn perch_ramp(&self, x: f32, z: f32) -> f32 {
         let rl = self.spec.perch_rules.ramp_len;
-        if rl <= 0.0 || self.spec.perch_route.is_empty() {
+        if rl <= 0.0 || !perch_on(&self.spec) {
             return 0.0;
         }
         let track = &self.spec.runner.obstacle_track;
@@ -1898,7 +1898,7 @@ impl NeonCat {
     /// it where it is still within `step_up` of the feet (the first step from
     /// the street), carry the cat up as before; a deck is never a wall.
     fn stair_side_hit(&self, x0: f32) -> bool {
-        if self.spec.perch_route.is_empty() {
+        if !perch_on(&self.spec) {
             return false;
         }
         let track = &self.spec.runner.obstacle_track;
@@ -4009,13 +4009,13 @@ fn route_start(s: &GameSpec, index: i32) -> f32 {
 
 /// Whether the stair lane carries on up to a deck.
 fn stair_deck_on(s: &GameSpec) -> bool {
-    s.deck_rules.enabled && s.deck_rules.stair_entry && !s.perch_route.is_empty()
+    s.deck_rules.enabled && s.deck_rules.stair_entry && perch_on(s)
 }
 
 /// The steps of the perch route standing in a free slot (None when the slot
 /// has no route): end to end along the track, off to one side by hash.
 pub(crate) fn perch_route_at(s: &GameSpec, index: i32) -> Option<Vec<PerchBox>> {
-    if s.perch_route.is_empty() {
+    if !perch_on(s) {
         return None;
     }
     let (kind, ordinal, h) = free_slot(s, index)?;
@@ -4072,6 +4072,11 @@ fn exit_clear(s: &GameSpec, index: i32, z_end: f32) -> bool {
         .map(|p| p.skin_min[2])
         .fold(f32::INFINITY, f32::min);
     front - land >= cap * DECK_EXIT_SECS
+}
+
+/// Whether the stair lane is on: the spec switch (off by default) and a route.
+pub(crate) fn perch_on(s: &GameSpec) -> bool {
+    s.perch_rules.enabled && !s.perch_route.is_empty()
 }
 
 /// The deck that carries on from the route in slot `index`, if the spec has one.
@@ -4140,7 +4145,7 @@ pub(crate) fn ledges_at(s: &GameSpec, index: i32) -> Option<Vec<PerchBox>> {
 
 /// Whether the course has anything to stand on above the street.
 fn has_ledges(s: &GameSpec) -> bool {
-    !s.perch_route.is_empty() || s.deck_rules.enabled
+    perch_on(s) || s.deck_rules.enabled
 }
 
 /// A knockable prop standing in a free slot, off to one side of the track.
@@ -5951,10 +5956,20 @@ mod tests {
         full_lives().one_life()
     }
 
-    /// The shipped course with all its lives.
+    /// The shipped course with the stair lane and the upper course switched
+    /// on. Both are off by default (hard to see on a phone) but keep their
+    /// full machinery, so the tests that exercise it turn them on here.
+    fn lively_json() -> String {
+        let mut doc: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/neon_cat_world.json")).unwrap();
+        doc["game"]["perch_rules"]["enabled"] = true.into();
+        doc["game"]["deck_rules"]["enabled"] = true.into();
+        doc.to_string()
+    }
+
+    /// The shipped course with all its lives (stair lane and decks on).
     fn full_lives() -> NeonCat {
-        let mut run =
-            NeonCat::from_json(include_str!("../tests/fixtures/neon_cat_world.json")).unwrap();
+        let mut run = NeonCat::from_json(&lively_json()).unwrap();
         run.confirm();
         run.time = GRACE_SECS + 0.2;
         run
@@ -7705,7 +7720,7 @@ mod tests {
     fn decks_stand_over_the_lanes_in_free_slots_and_an_orb_comes_before_each() {
         let spec = full().spec.clone();
         let d = spec.deck_rules.clone();
-        assert!(d.enabled, "on by default");
+        assert!(d.enabled, "switched on by the test helper");
         let lim = spec.runner.lanes.limit;
         let t = &spec.runner.obstacle_track;
         let (mut lone, mut stair) = (0, 0);
@@ -7929,9 +7944,9 @@ mod tests {
         assert!(run.alive(), "a jump over the wall is fine: {}", run.death());
     }
 
-    #[test]
-    fn a_train_ramp_kills_from_the_side_but_rides_up_from_the_front() {
-        let spec = full().spec.clone();
+    /// The wedge of a train ramp: its side kills, its toe and front ride up.
+    fn train_ramp_side_rules(mk: fn() -> NeonCat) {
+        let spec = mk().spec.clone();
         let i = slot_of(&spec, "TRAIN");
         let ramp = obstacle_parts(&spec, i)
             .into_iter()
@@ -7940,7 +7955,7 @@ mod tests {
         let hw = (ramp.skin_max[0] - ramp.skin_min[0]) * 0.5;
         let (x, steer) = beside(&spec, ramp.hit_cx, hw, 0.3);
         // Alongside the wedge where it is already tall: a side hit.
-        let mut run = full();
+        let mut run = mk();
         put(&mut run, x, 0.0, ramp.skin_min[2] + ramp.ramp_run * 0.8);
         run.set_steer(steer, 0.0, false);
         for _ in 0..30 {
@@ -7948,7 +7963,7 @@ mod tests {
         }
         assert!(!run.alive(), "the wedge's side is a hit");
         // At its very toe, stepping in is a ride-up, not a hit.
-        let mut run = full();
+        let mut run = mk();
         put(&mut run, x, 0.0, ramp.skin_min[2] + 0.02);
         run.set_steer(steer, 0.0, false);
         for _ in 0..4 {
@@ -7956,7 +7971,7 @@ mod tests {
         }
         assert!(run.alive(), "the toe: {}", run.death());
         // Jumping across the side of it clears the wedge.
-        let mut run = full();
+        let mut run = mk();
         put(
             &mut run,
             x,
@@ -7968,6 +7983,52 @@ mod tests {
             run.tick(1.0 / 60.0);
         }
         assert!(run.alive(), "over the side: {}", run.death());
+    }
+
+    #[test]
+    fn a_train_ramp_kills_from_the_side_but_rides_up_from_the_front() {
+        // With the stair lane and decks on, and on the default plain street.
+        train_ramp_side_rules(full);
+        train_ramp_side_rules(plain);
+    }
+
+    /// The shipped default: stair lane and decks off.
+    fn plain() -> NeonCat {
+        let mut run =
+            NeonCat::from_json(include_str!("../tests/fixtures/neon_cat_world.json")).unwrap();
+        run.confirm();
+        run.time = GRACE_SECS + 0.2;
+        run.one_life()
+    }
+
+    #[test]
+    fn the_stair_lane_and_the_upper_course_are_off_by_default_and_come_back_with_a_switch() {
+        let off = GameSpec::default();
+        assert!(!off.perch_rules.enabled && !off.deck_rules.enabled);
+        assert!(!has_ledges(&off) && !perch_on(&off));
+        assert!((0..400).all(|i| ledges_at(&off, i).is_none() && deck_at(&off, i).is_none()));
+        // The plain course has no steps, slopes or decks in its props and no
+        // Superjump orb standing in for a deck.
+        let mut run = plain();
+        for _ in 0..600 {
+            run.tick(1.0 / 60.0);
+        }
+        assert!(run
+            .doc
+            .props
+            .iter()
+            .all(|p| !p.id.contains("perch-") && !p.id.contains("deck")));
+        // Each switch alone brings back its own half; the validators pass for both.
+        let mut stairs = GameSpec::default();
+        stairs.perch_rules.enabled = true;
+        assert!(stairs.validate().is_ok());
+        assert!((0..400).any(|i| perch_route_at(&stairs, i).is_some()));
+        assert!((0..400).all(|i| deck_at(&stairs, i).is_none()));
+        let mut decks = GameSpec::default();
+        decks.deck_rules.enabled = true;
+        assert!(decks.validate().is_ok());
+        assert!((0..400).any(|i| deck_at(&decks, i).is_some()));
+        assert!((0..400).all(|i| perch_route_at(&decks, i).is_none()));
     }
 
     #[test]

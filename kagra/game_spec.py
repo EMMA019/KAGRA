@@ -410,6 +410,7 @@ def _default_perch_route() -> list[PerchStep]:
 class PerchRules:
     """Where perch routes stand (free slots, beside the track centre) and what running on them pays."""
 
+    enabled: bool = False  # off by default (hard to see on a phone); everything below stays for a re-enable
     rest_every: int = 4
     reward_every: int = 4
     other_every: int = 10
@@ -451,7 +452,7 @@ class DeckRules:
     never a hazard: the cat runs off an end or steps off a side onto the street.
     """
 
-    enabled: bool = True
+    enabled: bool = False  # off by default (hard to see on a phone)
     rest_every: int = 3  # one lone deck every n-th free slot of a rest section (0 = none)
     reward_every: int = 2
     other_every: int = 8

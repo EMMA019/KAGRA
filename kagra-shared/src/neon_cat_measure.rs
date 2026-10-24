@@ -1995,7 +1995,18 @@ mod tests {
             runs: 1,
             ..Default::default()
         };
+        // Off by default (hard to see on a phone): the report says so and
+        // checks nothing. The checks below run with both features switched on.
         let r = measure(SECTIONED, &o).unwrap();
+        assert_eq!(r["decks"]["enabled"], false);
+        assert_eq!(r["course"]["placement"]["ok"], true);
+        let lively = {
+            let mut w: Value = serde_json::from_str(SECTIONED).unwrap();
+            w["game"]["perch_rules"]["enabled"] = json!(true);
+            w["game"]["deck_rules"]["enabled"] = json!(true);
+            w.to_string()
+        };
+        let r = measure(&lively, &o).unwrap();
         let d = &r["decks"];
         assert_eq!(d["enabled"], true);
         assert!(d["lone_decks_in_400"].as_u64().unwrap() >= 8);
@@ -2009,7 +2020,7 @@ mod tests {
         let errs = codes(d["issues"].as_array().unwrap(), "error");
         assert!(errs.is_empty(), "{errs:?}");
         // A deck a plain jump reaches is a different game: flagged.
-        let mut w: Value = serde_json::from_str(SECTIONED).unwrap();
+        let mut w: Value = serde_json::from_str(&lively).unwrap();
         w["game"]["deck_rules"]["height"] = json!(1.0);
         w["game"]["deck_rules"]["stair_entry"] = json!(false);
         let r = measure(&w.to_string(), &o).unwrap();
@@ -2020,7 +2031,7 @@ mod tests {
         );
         assert_eq!(r["course"]["placement"]["ok"], false, "it feeds --check");
         // Off: the section is a one-liner and nothing is checked.
-        let mut w: Value = serde_json::from_str(SECTIONED).unwrap();
+        let mut w: Value = serde_json::from_str(&lively).unwrap();
         w["game"]["deck_rules"] = json!({"enabled": false});
         let r = measure(&w.to_string(), &o).unwrap();
         assert_eq!(r["decks"]["enabled"], false);

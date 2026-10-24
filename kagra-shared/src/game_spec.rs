@@ -1234,6 +1234,9 @@ pub fn default_perch_route() -> Vec<PerchStep> {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct PerchRules {
+    /// Off by default (hard to see on a phone): no stair lane, no raised
+    /// steps. The route, placement and validators below stay for a re-enable.
+    pub enabled: bool,
     /// One route every n-th free slot in a rest section (0 = none).
     pub rest_every: u32,
     /// The same for a reward section.
@@ -1266,6 +1269,7 @@ pub struct PerchRules {
 impl Default for PerchRules {
     fn default() -> Self {
         Self {
+            enabled: false,
             rest_every: 4,
             reward_every: 4,
             other_every: 10,
@@ -1316,7 +1320,8 @@ pub const STAIR_END_FRAC: f32 = 0.30;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DeckRules {
-    /// Off: no decks at all (the classic course).
+    /// Off by default (hard to see on a phone): no decks at all. The placement,
+    /// sim and validators stay for a re-enable.
     pub enabled: bool,
     /// One deck every n-th free slot in a rest section (0 = none). Slots with a
     /// stair route have the stair deck instead.
@@ -1349,7 +1354,7 @@ pub struct DeckRules {
 impl Default for DeckRules {
     fn default() -> Self {
         Self {
-            enabled: true,
+            enabled: false,
             rest_every: 3,
             reward_every: 2,
             other_every: 8,

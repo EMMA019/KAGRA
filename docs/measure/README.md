@@ -40,7 +40,8 @@ before and after a tuning or preset change. Sim frames are 1/60 s.
   the anchor the cat can be (`x_left_m`, `x_right_m`; a neighbour's box leaking into the opening
   shows here). Under 0.25 s is `roll_window_tight`; a cat gap with a half-width under 0.35 m is
   `gap_narrow` (both errors). Both sections feed `course.placement.issues` and `--check`.
-- `decks`: the upper course (`deck_rules`), played live for a lone deck and a stair deck at the start speed
+- `decks`: the upper course (`deck_rules`, off by default: the section then just says `enabled: false`; switch
+  `deck_rules` and `perch_rules` on in the world to check them), played live for a lone deck and a stair deck at the start speed
   and at the cap. A plain jump must not land (`deck_plain_reachable`), a high jump must land in a window of at
   least 0.75 m (`deck_window_tight`), the stair lane must climb up without a jump (`deck_stair_unreachable`),
   nothing may kill the cat on or under a deck (`deck_hurts`), the step off the end must come down in front of the

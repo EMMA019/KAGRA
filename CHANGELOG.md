@@ -2,7 +2,17 @@
 
 ## Unreleased
 
-- Neon Cat: an upper course. `deck_rules` puts short raised decks (2 m up, 7 m long, open
+- Neon Cat: the stair lane (perch steps, raised steps and slopes) and the new upper course
+  are **off by default** (`perch_rules.enabled`, `deck_rules.enabled`, both false) because
+  they were hard to see on a phone; the default course is the plain street again, as before
+  the perch routes. The code, validators (Rust + Python), JSON tunables and measure checks
+  stay, and each switch brings its half back; tests run both the on and the off paths. The
+  side-hit rule still applies to any ramp that exists (a train's wedge). Everything else
+  merged since stays (night atmosphere, fx tiers, GL fix, portal prep). Ideas to make them
+  easier to see before re-enabling: a higher or tilted camera over a deck, translucent deck
+  slabs, an emissive outline glow on edges, and side lighting that rakes across the steps.
+
+- Neon Cat: an upper course (off by default, see above). `deck_rules` puts short raised decks (2 m up, 7 m long, open
   underneath) over a lower lane in some free slots; only a Superjump gets up (an orb
   lies before each deck), a plain jump passes under. The stair lane now carries on up
   to a deck as a second way up, with no jump. The stair lane is rarer (every 4th free

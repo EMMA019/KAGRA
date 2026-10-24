@@ -237,6 +237,9 @@ def test_perch_route_and_chaser_match_rust_and_are_checked():
     assert [p.kind for p in spec.perch_route] == list(PERCH_KINDS)
     game = spec.world()["game"]
     assert len(game["perch_route"]) == 3
+    # The stair lane is off by default; the route stays for a re-enable.
+    assert game["perch_rules"]["enabled"] is False and PerchRules().enabled is False
+    assert re.search(r"impl Default for PerchRules \{.*?enabled: false,", rust, re.S)
     # The cleaning robot is off by default and a spec can turn it back on.
     assert game["chaser"]["enabled"] is False
     on = GameSpec.from_overrides({"chaser": {"enabled": True}}).world()["game"]["chaser"]
@@ -436,14 +439,18 @@ def test_deck_rules_match_rust_and_the_upper_course_is_checked():
     body = re.search(r"impl Default for DeckRules \{(.*?)\n\}\n", rust, re.S).group(1)
     rows = dict(re.findall(r"^\s+(\w+): (.+),$", body, re.M))
     d = GameSpec().deck_rules
-    assert rows["enabled"] == "true" and d.enabled is True and d.stair_entry is True
+    # Off by default (hard to see on a phone); the machinery stays for a re-enable.
+    assert rows["enabled"] == "false" and d.enabled is False and d.stair_entry is True
     assert rows["lanes"] == "vec![-1, 0, 1]" and d.lanes == [-1, 0, 1]
     for k in ("rest_every", "reward_every", "other_every", "land_score", "run_score", "coins"):
         assert int(rows[k]) == getattr(d, k), k
     for k in ("length", "height", "half_width", "stair_len"):
         assert float(rows[k]) == getattr(d, k), k
-    assert GameSpec().world()["game"]["deck_rules"]["enabled"] is True
+    assert GameSpec().world()["game"]["deck_rules"]["enabled"] is False
     assert GameSpec.from_overrides(CLASSIC).deck_rules.enabled is False
+    # Switched on, the default upper course (and the stair lane under it) passes the checks.
+    on = GameSpec.from_overrides({"deck_rules": {"enabled": True}, "perch_rules": {"enabled": True}})
+    assert on.to_dict() and on.deck_rules.enabled and on.perch_rules.enabled
     assert GameSpec.from_overrides({"deck_rules": {"lanes": [0], "height": 1.8}}).deck_rules.lanes == [0]
     # A high jump reaches the default height, a plain one does not (the deck is the upper course).
     jump = GameSpec().runner.jump
@@ -463,5 +470,7 @@ def test_deck_rules_match_rust_and_the_upper_course_is_checked():
         {"deck_rules": {"height": 2.4}},  # too far above the sign for a step
         {"deck_rules": {"stair_len": 7.0}},  # the stair lane and its deck outgrow a slot
     ):
+        # The checks only run for a deck that is switched on.
+        bad = {**bad, "deck_rules": {**bad["deck_rules"], "enabled": True}}
         with pytest.raises(ValueError):
             GameSpec.from_overrides(bad).to_dict()

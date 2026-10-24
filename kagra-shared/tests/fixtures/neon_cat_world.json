@@ -718,6 +718,7 @@
    }
   ],
   "perch_rules": {
+   "enabled": false,
    "rest_every": 4,
    "reward_every": 4,
    "other_every": 10,
@@ -732,7 +733,7 @@
    "ramp_len": 1.4
   },
   "deck_rules": {
-   "enabled": true,
+   "enabled": false,
    "rest_every": 3,
    "reward_every": 2,
    "other_every": 8,

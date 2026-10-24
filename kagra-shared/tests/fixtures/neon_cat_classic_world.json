@@ -312,6 +312,7 @@
   },
   "perch_route": [],
   "perch_rules": {
+   "enabled": false,
    "rest_every": 4,
    "reward_every": 4,
    "other_every": 10,

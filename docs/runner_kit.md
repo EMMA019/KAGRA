@@ -100,7 +100,7 @@ streak_secs 2.5, streak_bonus 10, streak_cap 6}` stand small props (`vase`, `bot
 flies aside and lies down, a label such as CRASH pops, and it pays `score`); a jump clears it, and a knock never hurts. Knocks within
 `streak_secs` of each other build a streak that adds `streak_bonus` each, up to `streak_cap`. The classic course has none.
 
-`perch_route` `[ac_unit | pipe | sign, ...]` (a name, or `{kind, height}`; default heights 0.6, 1.1, 1.6 m) and `perch_rules` `{rest_every 4,
+`perch_route` `[ac_unit | pipe | sign, ...]` (a name, or `{kind, height}`; default heights 0.6, 1.1, 1.6 m) and `perch_rules` `{enabled false, rest_every 4,
 reward_every 4, other_every 10, side 1.35, half_width 0.7, step_len 3.6, step_up 0.65, land_score 30, run_score 40, route_bonus 120,
 coins_per_step 3, ramp_len 1.4}` lay a staircase of ledges (an AC unit, a pipe, a sign) end to end along one side of a free slot, in the colour of
 `style.codes.rideable` with a lit top and edges. A prop makes way for a route in its slot. A straight slope of `ramp_len` metres
@@ -113,7 +113,9 @@ is passed through when the feet are below its top minus `step_up`, so a perch ha
 `land_score`, time on a ledge `run_score` per second, reaching the last step `route_bonus` (each once per route), and each step has
 `coins_per_step` coins along its top. `ramp_len` is 0..=3 and at most half a `step_len`. An empty `perch_route` (the classic course, `legacy()`) has none.
 
-`deck_rules` `{enabled true, rest_every 3, reward_every 2, other_every 8, lanes [-1, 0, 1], length 7, height 2, half_width 0.6,
+**The stair lane and the upper course are off by default** (`perch_rules.enabled false`, `deck_rules.enabled false`): on a phone the steps and decks were hard to see, so the default Neon Cat course is the plain street again. Nothing was removed: set `"perch_rules": {"enabled": true}` and/or `"deck_rules": {"enabled": true}` to bring each back with its placement, sim, side-hit rules, validators and measure checks (the stair deck needs both). The side-hit rule for a train's ramp stays on either way.
+
+`deck_rules` `{enabled false, rest_every 3, reward_every 2, other_every 8, lanes [-1, 0, 1], length 7, height 2, half_width 0.6,
 stair_entry true, stair_len 3, land_score 60, run_score 60, coins 6}` is the upper course (2階): a short raised deck directly above
 a lower lane, open underneath, in every n-th free slot of its section. The lane is picked from `lanes` by the slot's hash (lane
 numbers times `runner.lanes.width`). `height` must be above a plain jump (about 1.15 m + the body) and below the high jump's apex minus
@@ -123,7 +125,7 @@ within `perch_rules.step_up` of `height`), so a cat that took the stairs with no
 standing pays `run_score` per second, `coins` lie along the top. The deck ends in a drop: the spec refuses a deck whose step off the
 end, at the speed cap, would land on the next obstacle (`DECK_OBSTACLE_REACH` 2 m + `DECK_EXIT_MARGIN` 1 m), a height outside the
 high jump, a lane outside the rails, or a stair deck that does not fit its slot (Rust `validate_decks`, Python `_check_decks`).
-`enabled false` (and `GameSpec.legacy()`) builds nothing. The measure harness plays a lone deck and a stair deck at the start speed
+`enabled false` (the default, and `GameSpec.legacy()`) builds nothing and the checks are skipped. The measure harness plays a lone deck and a stair deck at the start speed
 and at the cap (`decks` in the report, `deck_*` codes in `course.placement.issues`).
 
 Side contact is a hit. A Ramp part (the wedge in front of a train) and the stair lane's slopes and risers kill the cat that runs
