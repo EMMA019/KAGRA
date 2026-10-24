@@ -12,6 +12,7 @@
 //! The default rig is a damped third person behind and above the cat.
 //! `cam: "classic"` keeps the older fixed chase.
 
+use crate::neon_fx_spec::MissionsSpec;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 
@@ -119,6 +120,9 @@ pub struct NeonCat {
     coins: u32,
     /// Stone arches run through this run.
     gates: u32,
+    /// Obstacles left behind this run (hit or not), and the next slot to check.
+    passes: u32,
+    passes_next: i32,
     /// Seconds since the crash, while it plays out (drives the flash and shake).
     dying: f32,
     /// Hits left. The run ends when the last one goes.
@@ -343,6 +347,8 @@ impl NeonCat {
             ground: 0.0,
             coins: 0,
             gates: 0,
+            passes: 0,
+            passes_next: 0,
             dying: 0.0,
             lives: 0,
             invuln: 0.0,
@@ -451,7 +457,7 @@ impl NeonCat {
             "columns": b.columns,
             "sort": b.sort,
             "run": run,
-            "missions": self.fx_state.missions.json(&self.spec.missions, self.mission_counts()),
+            "missions": self.fx_state.missions.json(&self.missions(), self.mission_counts()),
         })
     }
 
@@ -528,7 +534,7 @@ impl NeonCat {
             "rings": self.core.stats.rings,
             "coins": self.coins,
             "gates": self.gates,
-            "missions": self.fx_state.missions.json(&self.spec.missions, self.mission_counts()),
+            "missions": self.fx_state.missions.json(&self.missions(), self.mission_counts()),
             "lives": self.lives,
             "fx": {
                 "magnet": self.fx[FX_MAGNET],
@@ -859,6 +865,8 @@ impl NeonCat {
         self.robot_age = 0.0;
         self.coins = 0;
         self.gates = 0;
+        self.passes = 0;
+        self.passes_next = 0;
         self.fx_state.missions.reset();
         self.fx_state.banner_t = 0.0;
         self.fx_state.gameover_pending = false;
@@ -1120,15 +1128,24 @@ impl NeonCat {
             coins: self.coins,
             gates: self.gates,
             perches: self.perch_landed.len() as u32,
+            passes: self.passes,
         }
+    }
+
+    /// The goals this run shows: the pool without a perch while the stair
+    /// lane and the decks are off, cut to `missions.draw`.
+    fn missions(&self) -> MissionsSpec {
+        self.spec
+            .missions
+            .active(perch_on(&self.spec), self.spec.deck_rules.enabled)
     }
 
     /// Announce a finished mission once, with its bonus (0 unless set).
     fn update_missions(&mut self) {
         let counts = self.mission_counts();
-        let fresh = self.fx_state.missions.update(&self.spec.missions, counts);
+        let m = self.missions();
+        let fresh = self.fx_state.missions.update(&m, counts);
         for i in fresh {
-            let m = &self.spec.missions;
             // Its own banner: a pick-up's toast is not replaced.
             self.fx_state.banner = format!("MISSION  {}", m.list[i].text());
             self.fx_state.banner_t = 2.2;
@@ -1281,6 +1298,7 @@ impl NeonCat {
             .stats
             .add_points(speed * dt * self.spec.runner.score.per_meter);
         self.count_gates();
+        self.count_passes();
         self.anim_t += dt * if self.y > 0.05 { 0.7 } else { 1.15 };
         let target = self.pose_target();
         let k = 1.0 - (-dt * 22.0).exp();
@@ -1941,6 +1959,17 @@ impl NeonCat {
         while self.gates < passed {
             self.gates += 1;
             self.core.stats.score += self.spec.runner.score.per_gate;
+        }
+    }
+
+    /// Every obstacle the cat has left behind counts once, hit or not.
+    fn count_passes(&mut self) {
+        let track = self.spec.runner.obstacle_track.clone();
+        while track.z(self.passes_next) + 0.6 < self.z {
+            if self.spec.obstacle_active(self.passes_next) {
+                self.passes += 1;
+            }
+            self.passes_next += 1;
         }
     }
 
@@ -3798,7 +3827,7 @@ impl NeonCat {
     /// `COINS DONE` in green once finished.
     fn paint_missions(&self, list: &mut DrawList, at: [f32; 2], ui: f32, keep: f32) {
         use crate::hud_kit::fade;
-        let spec = &self.spec.missions;
+        let spec = &self.missions();
         if !spec.enabled || !spec.hud {
             return;
         }
@@ -5959,7 +5988,7 @@ mod tests {
     /// The shipped course with the stair lane and the upper course switched
     /// on. Both are off by default (hard to see on a phone) but keep their
     /// full machinery, so the tests that exercise it turn them on here.
-    fn lively_json() -> String {
+    pub(super) fn lively_json() -> String {
         let mut doc: serde_json::Value =
             serde_json::from_str(include_str!("../tests/fixtures/neon_cat_world.json")).unwrap();
         doc["game"]["perch_rules"]["enabled"] = true.into();
@@ -8765,7 +8794,7 @@ mod fx_tests {
         mixer::reset_mixer();
         let mut run = with_quality(None);
         let list = run.spec.missions.list.clone();
-        assert_eq!(list.len(), 3);
+        assert_eq!(list.len(), 4, "the pool");
         play(&mut run, 0.2);
         let m = run.sim_value()["missions"].clone();
         assert_eq!(m.as_array().unwrap().len(), 3);
@@ -8787,7 +8816,8 @@ mod fx_tests {
         run.tick(1.0 / 60.0);
         assert_eq!(cues().iter().filter(|c| *c == "mission").count(), n, "once");
         run.gates = list[1].target;
-        run.perch_landed.insert(3);
+        run.passes = 30;
+        run.passes_next = 1_000_000;
         run.tick(1.0 / 60.0);
         assert_eq!(run.fx_state.missions.completed(), 3);
         assert_eq!(run.result_json()["missions"][2]["done"], true);
@@ -8799,6 +8829,70 @@ mod fx_tests {
             .unwrap()
             .iter()
             .all(|x| x["done"] == false && x["value"] == 0));
+    }
+
+    fn mission_kinds(run: &NeonCat) -> Vec<String> {
+        run.sim_value()["missions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["kind"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn the_default_goals_can_all_be_cleared_on_the_plain_street() {
+        mixer::reset_mixer();
+        let mut run = with_quality(None);
+        assert!(!perch_on(&run.spec) && !run.spec.deck_rules.enabled);
+        play(&mut run, 0.2);
+        assert_eq!(mission_kinds(&run), ["coins", "gates", "passes"]);
+        assert!(!run
+            .hud(412, 915)
+            .texts
+            .iter()
+            .any(|t| t.text.contains("PERCH")));
+        // Running the street leaves obstacles behind, and they count.
+        run.passes = 0;
+        run.passes_next = 0;
+        run.z = run.spec.runner.obstacle_track.z(100);
+        run.count_passes();
+        assert!(run.passes >= 30, "100 slots behind: {}", run.passes);
+        run.start_run();
+        assert_eq!(run.passes, 0);
+    }
+
+    #[test]
+    fn a_perch_goal_comes_back_with_the_stair_lane_or_the_decks() {
+        mixer::reset_mixer();
+        let mut run = NeonCat::from_json(&super::tests::lively_json()).unwrap();
+        assert!(perch_on(&run.spec) && run.spec.deck_rules.enabled);
+        play(&mut run, 0.2);
+        assert_eq!(mission_kinds(&run), ["coins", "gates", "perch"]);
+        run.perch_landed.insert(3);
+        run.update_missions();
+        let m = run.sim_value()["missions"].clone();
+        assert_eq!(m[2]["done"], true, "{m}");
+        // Only the decks on: a ledge exists, so the goal stays in the pool.
+        let spec = MissionsSpec::default();
+        assert_eq!(spec.active(false, true).list.len(), 3);
+        assert!(spec
+            .active(false, true)
+            .list
+            .iter()
+            .any(|m| m.kind.name() == "perch"));
+        assert!(!spec
+            .active(false, false)
+            .list
+            .iter()
+            .any(|m| m.kind.name() == "perch"));
+        // draw 0 shows the whole pool that the course can offer.
+        let all = MissionsSpec {
+            draw: 0,
+            ..MissionsSpec::default()
+        };
+        assert_eq!(all.active(true, true).list.len(), 4);
+        assert_eq!(all.active(false, false).list.len(), 3);
     }
 
     #[test]
@@ -8845,7 +8939,7 @@ mod fx_tests {
                 .filter(|t| {
                     t.text.starts_with("COINS ")
                         || t.text.starts_with("GATES ")
-                        || t.text.starts_with("PERCH ")
+                        || t.text.starts_with("PASSED ")
                 })
                 .collect();
             assert_eq!(rows.len(), 3, "{w}x{h}");

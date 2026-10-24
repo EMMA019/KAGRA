@@ -163,10 +163,12 @@ out.goal_text = [
   goalText({ kind: "gates", label: "GATES", target: 5 }),
   goalText({ kind: "perch", label: "PERCH", target: 1 }),
   goalText({ kind: "coins", label: "TUNA", target: 3 }),
+  goalText({ kind: "passes", label: "PASSED", target: 30 }),
 ];
 out.goal_text_en = [
   en.goalText({ kind: "coins", label: "COINS", target: 40 }),
   en.goalText({ kind: "gates", label: "GATES", target: 5 }),
   en.goalText({ kind: "perch", label: "PERCH", target: 1 }),
+  en.goalText({ kind: "passes", label: "PASSED", target: 30 }),
 ];
 console.log(JSON.stringify(out));
