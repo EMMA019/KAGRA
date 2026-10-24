@@ -1720,7 +1720,7 @@ mod tests {
         let dump = s.world_json().unwrap();
         assert!(dump.contains("knight"));
         assert!(dump.contains("stylized_tree"));
-        assert!(dump.contains("Bonfire"));
+        assert!(dump.contains("bonfire"));
         assert!(dump.contains("gazebo"));
     }
 }

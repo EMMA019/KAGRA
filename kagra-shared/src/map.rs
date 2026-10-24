@@ -7,7 +7,7 @@ use glam::Vec3;
 use serde::Deserialize;
 
 /// 手書きの小さいグリッド（単体テスト・フォールバック用）。
-pub const DEMO_CITY_JSON: &str = include_str!("../assets/maps/demo_city.kagra.json");
+pub const DEMO_CITY_JSON: &str = include_str!("../assets/maps/demo_grid.kagra.json");
 /// OSMnx Bake の渋谷周辺（Corridor Haul 既定）。
 pub const SHIBUYA_DEMO_JSON: &str = include_str!("../assets/maps/shibuya_demo.kagra.json");
 

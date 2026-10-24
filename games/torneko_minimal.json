@@ -1,6 +1,6 @@
 {
   "title": "Torneko",
-  "icon": "games/icons/torneko.png",
+  "icon": "assets/icons/game_placeholder.png",
   "version": "0.1.0",
   "entry": "examples/torneko_minimal.py"
 }

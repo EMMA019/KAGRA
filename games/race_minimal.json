@@ -1,6 +1,6 @@
 {
   "title": "Race",
-  "icon": "games/icons/race.png",
+  "icon": "assets/icons/game_placeholder.png",
   "version": "0.1.0",
   "entry": "examples/race_minimal.py",
   "world": "kagra-shared/tests/fixtures/race_world.json"

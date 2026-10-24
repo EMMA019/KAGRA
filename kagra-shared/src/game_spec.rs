@@ -1668,7 +1668,7 @@ impl Default for RingSpec {
 impl Default for GateSpec {
     fn default() -> Self {
         Self {
-            glb: "assets/models/quaternius/modular-dungeons-pack/Arch.glb".into(),
+            glb: "assets/models/neon_cat/gate_arch.glb".into(),
             z0: 10.0,
             gap: 24.0,
             scale_x: 2.15,

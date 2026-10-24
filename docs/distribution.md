@@ -14,7 +14,7 @@ Windows と Android は同じマニフェストを読む。
 ```json
 {
   "title": "Box Hop",
-  "icon": "games/icons/platformer.png",
+  "icon": "assets/icons/game_placeholder.png",
   "version": "0.1.0",
   "entry": "examples/platformer_minimal.py",
   "world": "kagra-shared/tests/fixtures/platformer_world.json"

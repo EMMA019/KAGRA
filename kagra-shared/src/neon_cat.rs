@@ -4475,7 +4475,7 @@ mod tests {
     const CAT_SCALE: f32 = 0.50;
     const CAT_TINT: [u32; 3] = [226, 206, 255];
     const CAT_GLB: &str = "assets/models/kenney/cube-pets/animal-cat.glb";
-    const GATE_GLB: &str = "assets/models/quaternius/modular-dungeons-pack/Arch.glb";
+    const GATE_GLB: &str = "assets/models/neon_cat/gate_arch.glb";
     const RING_GLB: &str = "assets/models/kenney/racing-kit/overheadRound.glb";
 
     #[test]

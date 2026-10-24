@@ -2,8 +2,9 @@
 
 Free game 3D (not Kenney). CC0 unless noted.
 
-- quaternius/  stylized kits: cyberpunk (enemies), cubeworld (zombie), medieval buildings, platformer, junkfood, ships, rpg
 - kaykit/      adventurers (knight/mage/rogue/barbarian) + city-builder-bits
 - polyhaven/props/  photoreal small props (CC0)
 
-Engine aliases and first Quaternius batch stay in models/ and mixamo/.
+Quaternius files were removed (their licence changed and the download date was not recorded).
+The scenery aliases (house, tree, rock, ...) now point at original placeholders in
+`assets/models/placeholder/` (`tools/gen_assets/placeholder_models.py`).

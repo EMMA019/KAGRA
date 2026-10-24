@@ -1,6 +1,6 @@
 {
   "title": "Novel",
-  "icon": "games/icons/novel.png",
+  "icon": "assets/icons/game_placeholder.png",
   "version": "0.1.0",
   "entry": "examples/novel_minimal.py",
   "world": "kagra-shared/tests/fixtures/novel_world.json"

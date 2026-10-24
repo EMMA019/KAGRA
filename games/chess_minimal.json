@@ -1,6 +1,6 @@
 {
   "title": "Studio Chess",
-  "icon": "games/icons/chess.png",
+  "icon": "assets/icons/game_placeholder.png",
   "version": "0.1.0",
   "entry": "examples/chess_minimal.py",
   "bundle_assets": [

@@ -14,7 +14,7 @@ paid packs, ShareAlike, non-commercial, or "free for personal use" files.
 Places that publish those terms and a direct file:
 
 - Kenney — `https://kenney.nl/assets` (CC0 zip on the asset page)
-- Quaternius — pack pages and the CC0 kits already under `assets/models/quaternius`
+- Quaternius — not a source for this repo: its 2026-08-28 Asset License forbids redistributing the files as stand-alone assets. The earlier packs were removed.
 - Poly Pizza — filter to Public Domain (CC0) or CC-BY, and keep the model page URL
 - OpenGameArt — CC0 or CC-BY only, from the author's file
 

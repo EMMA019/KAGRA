@@ -137,18 +137,16 @@ _ALIASES: dict[str, list[str]] = {
     "rogue": ["assets/library/kaykit/adventurers/characters/Rogue.glb"],
     "mage": ["assets/library/kaykit/adventurers/characters/Mage.glb"],
     "barbarian": ["assets/library/kaykit/adventurers/characters/Barbarian.glb"],
-    "raccoon": ["assets/library/quaternius/cubeworldkit/Animals/glTF/Raccoon.gltf"],
-    "wolf": ["assets/library/quaternius/cubeworldkit/Animals/glTF/Wolf.gltf"],
-    "house": ["assets/models/quaternius/medieval-village-pack/Fantasy House.glb"],
-    "inn": ["assets/models/quaternius/medieval-village-pack/Fantasy Inn.glb"],
-    "tower": ["assets/models/quaternius/medieval-village-pack/Bell Tower.glb"],
-    "mill": ["assets/models/quaternius/medieval-village-pack/Mill.glb"],
-    "gazebo": ["assets/models/quaternius/medieval-village-pack/Gazebo.glb"],
-    "well": ["assets/models/quaternius/medieval-village-pack/Well.glb"],
-    "stylized_tree": ["assets/library/quaternius/cubeworldkit/Environment/glTF/Tree_1.gltf"],
-    "stylized_pine": ["assets/library/quaternius/cubeworldkit/Environment/glTF/Tree_2.gltf"],
-    "rock": ["assets/models/quaternius/stylized-nature-megakit/Rock Medium.glb"],
-    "chest": ["assets/library/quaternius/cubeworldkit/Environment/glTF/Chest_Closed.gltf"],
+    "house": ["assets/models/placeholder/house.glb"],
+    "inn": ["assets/models/placeholder/inn.glb"],
+    "tower": ["assets/models/placeholder/bell_tower.glb"],
+    "mill": ["assets/models/placeholder/mill.glb"],
+    "gazebo": ["assets/models/placeholder/gazebo.glb"],
+    "well": ["assets/models/placeholder/well.glb"],
+    "stylized_tree": ["assets/models/placeholder/tree.glb", "assets/models/tree.glb"],
+    "stylized_pine": ["assets/models/placeholder/pine.glb"],
+    "rock": ["assets/models/placeholder/rock.glb"],
+    "chest": ["assets/models/placeholder/chest.glb"],
     "biplane": ["assets/models/biplane.glb"],
     "chess_set": ["assets/library/polyhaven/props/chess_set/chess_set_1k.gltf"],
     "chess_king": ["assets/library/polyhaven/props/chess_set/chess_set_1k.gltf"],
@@ -194,7 +192,7 @@ def gltf_index(root: Path | None = None) -> dict[str, list[Path]]:
     """assets/library + assets/models の glTF をステム名（小文字）で索引。
 
     エージェントが「こんなアセット置いた」「木が欲しい」を名前で引けるように
-    する。コミット済みの kaykit / quaternius / polyhaven が対象。起動時に
+    する。コミット済みの kaykit / polyhaven が対象。起動時に
     rglob で走査し、結果はプロセス内キャッシュ。
     """
     root = root or project_root()

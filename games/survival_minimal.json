@@ -1,6 +1,6 @@
 {
   "title": "Survival",
-  "icon": "games/icons/survival.png",
+  "icon": "assets/icons/game_placeholder.png",
   "version": "0.1.0",
   "entry": "examples/survival_minimal.py",
   "world": "kagra-shared/tests/fixtures/survival_world.json"

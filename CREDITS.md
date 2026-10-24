@@ -26,22 +26,14 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 | [Adobe Mixamo characters and animations (not committed)](https://www.mixamo.com/) | Adobe | custom | not required | `assets-private/mixamo/**` |
 | [Shibuya demo street map (from OpenStreetMap)](https://www.openstreetmap.org/copyright) | OpenStreetMap contributors | ODbL-1.0 | required | `kagra-shared/assets/maps/shibuya_demo.kagra.json` |
 | [Poly Haven props (31 models)](https://polyhaven.com/models) | Poly Haven contributors (per model, see credits) | CC0-1.0 | not required | `assets/library/polyhaven/props/**` |
-| [Demo city map](https://github.com/EMMA019/KAGRA) | KAGRA project | custom | not required | `kagra-shared/assets/maps/demo_city.kagra.json` |
 | [KAGRA synthesized tones (jump, fire, card, bgm)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/audio/*.wav` |
 | [KAGRA Bar door, glass and register sounds](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/bar/se/*.wav` |
 | [KAGRA Bar textures, portraits and logo](https://github.com/EMMA019/KAGRA) | KAGRA project (procedural) | custom | not required | `assets/bar/tex/**` |
 | [KAGRA biplane.glb](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/models/biplane.glb` |
 | [KAGRA package data (unit_cube.glb, synthetic_dance.bvh)](https://github.com/EMMA019/KAGRA) | KAGRA project (generated) | custom | not required | `kagra/data/*` |
-| [Old example screen recordings (dance.mp4, game 154555.mp4)](https://github.com/EMMA019/KAGRA) | KAGRA project | custom | not required | `old/examples/media/*.mp4` |
-| [KAGRA genre icons](https://github.com/EMMA019/KAGRA) | KAGRA project | custom | not required | `games/icons/*.png` |
-| [Quaternius Cube World Kit (Aug 2023)](https://quaternius.com/packs/cubeworldkit.html) | Quaternius | CC0-1.0 | not required | `assets/library/quaternius/cubeworldkit/**` |
-| [Quaternius Cyberpunk Game Kit (July 2022)](https://quaternius.com/packs/cyberpunkgamekit.html) | Quaternius | CC0-1.0 | not required | `assets/library/quaternius/cyberpunkgamekit/**` |
-| [Quaternius FBX batch 2026-08-26 (buildings, cars, farmanimal, farmbuildings, medievalweapons, modularstreets)](https://quaternius.com/) | Quaternius | CC0-1.0 | not required | `assets/models/quaternius/buildings/**`, `assets/models/quaternius/cars/**` … |
-| [Quaternius Medieval Village Pack](https://quaternius.com/packs/medievalvillagemegakit.html) | Quaternius | CC0-1.0 | not required | `assets/models/quaternius/medieval-village-pack/**` |
-| [Quaternius Modular Dungeons Pack](https://quaternius.com/) | Quaternius | CC0-1.0 | not required | `assets/models/quaternius/modular-dungeons-pack/**` |
-| [Quaternius Stylized Nature MegaKit](https://quaternius.com/packs/stylizednaturemegakit.html) | Quaternius | CC0-1.0 | not required | `assets/models/quaternius/stylized-nature-megakit/**` |
-| [cute_song_trial.wav (live-demo song)](https://github.com/EMMA019/KAGRA) | unknown | custom | not required | `assets/cute_song_trial.wav` |
-| [coolHeadbangWalk.vrma (dance clip)](https://github.com/EMMA019/KAGRA) | unknown (generator tag: text-to-motion) | custom | not required | `assets/coolHeadbangWalk.vrma` |
+| [KAGRA demo road grid](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `kagra-shared/assets/maps/demo_grid.kagra.json` |
+| [KAGRA placeholder launcher icon](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/icons/*.png` |
+| [KAGRA placeholder models (scenery stand-ins and the Neon Cat gate arch)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/models/placeholder/*.glb`, `assets/models/neon_cat/gate_arch.glb` |
 
 ## Required attribution
 
@@ -82,11 +74,3 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 - carved_wooden_elephant: Greg Zaal
 - cassette_player: Oday Abuzaeed
 - chess_set: Riley Queen
-
-## Provenance not yet confirmed
-
-- `map-demo-city`: Confirm demo_city was hand-made and not baked from OpenStreetMap.
-- `project-demo-videos`: Confirm the recordings contain only project-owned or CC0 material (audio especially).
-- `project-icons`: Confirm who or what made the 24 genre icons.
-- `unknown-demo-song`: Provenance unknown. The file name suggests a trial plan of a music generator or a sample; trial plans often forbid commercial use. Owner to say where it came from, or replace it with a CC0 track.
-- `unknown-vrma-dance`: Provenance unknown. Owner to name the text-to-motion service and its terms, or replace it with a CC0 clip.

@@ -1,6 +1,6 @@
 {
   "title": "Fish Cook",
-  "icon": "games/icons/fishcook.png",
+  "icon": "assets/icons/game_placeholder.png",
   "version": "0.1.0",
   "entry": "examples/fishcook_minimal.py",
   "world": "kagra-shared/tests/fixtures/fishcook_world.json"

@@ -33,7 +33,7 @@ def test_game_manifest_bundles_the_glbs():
         "assets/models/kenney/platformer-kit/barrel.glb",
         "assets/models/kenney/racing-kit/overheadRound.glb",
         "assets/models/kenney/racing-kit/barrierRed.glb",
-        "assets/models/quaternius/modular-dungeons-pack/Arch.glb",
+        "assets/models/neon_cat/gate_arch.glb",
     ):
         assert rel in bundled
         assert (ROOT / rel).is_file()
