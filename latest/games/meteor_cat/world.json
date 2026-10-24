@@ -563,6 +563,178 @@
    "buffer_secs": 0.15,
    "reverse_guard_secs": 0.2
   },
-  "feel": {}
+  "feel": {},
+  "atmosphere": {
+   "enabled": false,
+   "rain": {
+    "enabled": true,
+    "count_low": 24,
+    "count_mobile": 56,
+    "count_high": 96,
+    "reach": 26.0,
+    "behind": 5.0,
+    "fall_speed": 11.0,
+    "length": 0.9,
+    "slant": 0.12,
+    "width": 1.1,
+    "color": [
+     170,
+     205,
+     255,
+     125
+    ],
+    "splash": true
+   },
+   "signs": {
+    "enabled": true,
+    "cell": 4.0,
+    "density_low": 0.2,
+    "density_mobile": 0.4,
+    "density_high": 0.55,
+    "palette": [
+     [
+      70,
+      235,
+      255
+     ],
+     [
+      60,
+      255,
+      170
+     ],
+     [
+      130,
+      110,
+      255
+     ],
+     [
+      255,
+      90,
+      200
+     ]
+    ],
+    "rows": [
+     3.5,
+     4.9
+    ],
+    "size": 1.7,
+    "line_width": 2.4,
+    "glow": 1.6,
+    "flicker": 0.3
+   },
+   "wall": {
+    "enabled": true,
+    "texture_low": "",
+    "texture_mobile": "assets/textures/neon_cat/concrete_wall_s.png",
+    "texture_high": "assets/textures/neon_cat/concrete_wall.png",
+    "tint": [
+     255,
+     255,
+     255
+    ],
+    "segment": 12.0,
+    "reach": 48.0
+   }
+  },
+  "audio": {
+   "enabled": true,
+   "master": 0.8,
+   "bgm_volume": 0.7,
+   "sfx_volume": 1.0,
+   "bgm": {
+    "file": "assets/audio/neon_cat/bgm.wav",
+    "volume": 0.55,
+    "fade_secs": 1.2
+   },
+   "sfx": {
+    "jump": {
+     "file": "assets/audio/neon_cat/jump.wav",
+     "volume": 0.9,
+     "rate": 1.0
+    },
+    "roll": {
+     "file": "assets/audio/neon_cat/roll.wav",
+     "volume": 0.5,
+     "rate": 1.0
+    },
+    "coin": {
+     "file": "assets/audio/neon_cat/coin.wav",
+     "volume": 0.6,
+     "rate": 1.0
+    },
+    "card": {
+     "file": "assets/audio/neon_cat/card.wav",
+     "volume": 0.6,
+     "rate": 1.0
+    },
+    "item": {
+     "file": "assets/audio/neon_cat/item.wav",
+     "volume": 0.9,
+     "rate": 1.0
+    },
+    "meow": {
+     "file": "assets/audio/neon_cat/meow.wav",
+     "volume": 0.9,
+     "rate": 1.0
+    },
+    "perch": {
+     "file": "assets/audio/neon_cat/perch.wav",
+     "volume": 0.9,
+     "rate": 1.0
+    },
+    "knock": {
+     "file": "assets/audio/neon_cat/knock.wav",
+     "volume": 0.8,
+     "rate": 1.0
+    },
+    "robot_on": {
+     "file": "assets/audio/neon_cat/robot_on.wav",
+     "volume": 0.9,
+     "rate": 1.0
+    },
+    "robot_off": {
+     "file": "assets/audio/neon_cat/robot_off.wav",
+     "volume": 0.9,
+     "rate": 1.0
+    },
+    "hit": {
+     "file": "assets/audio/neon_cat/hit.wav",
+     "volume": 0.9,
+     "rate": 1.0
+    },
+    "gameover": {
+     "file": "assets/audio/neon_cat/gameover.wav",
+     "volume": 0.9,
+     "rate": 1.0
+    },
+    "mission": {
+     "file": "assets/audio/neon_cat/mission.wav",
+     "volume": 0.9,
+     "rate": 1.0
+    }
+   }
+  },
+  "missions": {
+   "enabled": false,
+   "list": [
+    {
+     "kind": "coins",
+     "target": 40,
+     "label": ""
+    },
+    {
+     "kind": "gates",
+     "target": 5,
+     "label": ""
+    },
+    {
+     "kind": "perch",
+     "target": 1,
+     "label": ""
+    }
+   ],
+   "bonus": 0,
+   "hud": true
+  }
  }
 }

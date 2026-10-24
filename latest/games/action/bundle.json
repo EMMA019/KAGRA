@@ -30,6 +30,62 @@
       "url": "assets/audio/jump.wav"
     },
     {
+      "path": "assets/audio/neon_cat/bgm.wav",
+      "url": "assets/audio/neon_cat/bgm.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/card.wav",
+      "url": "assets/audio/neon_cat/card.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/coin.wav",
+      "url": "assets/audio/neon_cat/coin.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/gameover.wav",
+      "url": "assets/audio/neon_cat/gameover.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/hit.wav",
+      "url": "assets/audio/neon_cat/hit.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/item.wav",
+      "url": "assets/audio/neon_cat/item.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/jump.wav",
+      "url": "assets/audio/neon_cat/jump.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/knock.wav",
+      "url": "assets/audio/neon_cat/knock.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/meow.wav",
+      "url": "assets/audio/neon_cat/meow.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/mission.wav",
+      "url": "assets/audio/neon_cat/mission.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/perch.wav",
+      "url": "assets/audio/neon_cat/perch.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/robot_off.wav",
+      "url": "assets/audio/neon_cat/robot_off.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/robot_on.wav",
+      "url": "assets/audio/neon_cat/robot_on.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/roll.wav",
+      "url": "assets/audio/neon_cat/roll.wav"
+    },
+    {
       "path": "assets/library/kaykit/adventurers/characters/Barbarian.glb",
       "url": "assets/library/kaykit/adventurers/characters/Barbarian.glb"
     },
