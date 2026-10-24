@@ -39,6 +39,18 @@ impl Tier {
     }
 }
 
+impl Tier {
+    /// The page's `?fx=` word: `low`, `mid` (= `mobile`) or `high`.
+    pub fn from_fx(word: &str) -> Option<Self> {
+        match word.trim().to_ascii_lowercase().as_str() {
+            "low" => Some(Tier::Low),
+            "mid" | "mobile" => Some(Tier::Mobile),
+            "high" => Some(Tier::High),
+            _ => None,
+        }
+    }
+}
+
 /// Run-time state of the three sections (not part of the spec).
 #[derive(Clone, Debug, Default)]
 pub struct RunFx {
@@ -156,7 +168,7 @@ impl Default for RainSpec {
         Self {
             enabled: true,
             count_low: 24,
-            count_mobile: 56,
+            count_mobile: 36,
             count_high: 96,
             reach: 26.0,
             behind: 5.0,

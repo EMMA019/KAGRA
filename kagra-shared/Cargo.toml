@@ -124,6 +124,10 @@ name = "offscreen"
 required-features = ["render"]
 
 [[example]]
+name = "fx_cost"
+required-features = ["render"]
+
+[[example]]
 name = "window"
 required-features = ["render"]
 
