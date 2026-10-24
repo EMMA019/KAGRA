@@ -262,6 +262,73 @@ class InputSpec:
     reverse_guard_secs: float = 0.2  # an up flick this soon after a down flick is the finger coming back
 
 
+BOARD_COLUMNS = ("time", "gates", "coins", "score")
+
+
+@dataclass
+class PanelSpec:
+    """9-slice HUD panel colours (RGBA) and the rim size in HUD units."""
+
+    fill: list[int] = field(default_factory=lambda: [14, 10, 32, 205])
+    border: list[int] = field(default_factory=lambda: [90, 210, 230, 255])
+    coin: list[int] = field(default_factory=lambda: [255, 205, 70, 255])
+    score: list[int] = field(default_factory=lambda: [190, 248, 255, 255])
+    slice: float = 3.0
+
+
+@dataclass
+class BoardSpec:
+    """Local top-N ranking on the result screen (saved on the device only)."""
+
+    enabled: bool = True
+    top_n: int = 5
+    columns: list[str] = field(default_factory=lambda: list(BOARD_COLUMNS))
+    sort: str = "score"
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.top_n <= 10:
+            raise ValueError("hud.result.board.top_n must be 1..=10")
+        unknown = [c for c in self.columns if c not in BOARD_COLUMNS]
+        if unknown or not self.columns:
+            raise ValueError(f"hud.result.board.columns: use some of {BOARD_COLUMNS}, got {self.columns}")
+        if self.sort not in self.columns:
+            raise ValueError("hud.result.board.sort must be one of its columns")
+
+
+def _death_lines() -> dict[str, str]:
+    return {
+        "CRATE": "木箱にぶつかった",
+        "BARREL": "樽にぶつかった",
+        "BARRIER": "バリケードにぶつかった",
+        "GENERATOR": "発電機にぶつかった",
+        "OVERPASS": "ひさしに頭をぶつけた（下フリックでころがる）",
+        "TRAIN": "電車にぶつかった",
+        "WALL": "壁にぶつかった（すき間は下フリックでくぐる）",
+        "METEOR": "隕石にぶつかった",
+        "CRYSTALS": "クリスタルにぶつかった",
+        "ROCK": "岩にぶつかった",
+    }
+
+
+@dataclass
+class ResultSpec:
+    beat_secs: float = 0.7  # the crash plays out this long before the result
+    board: BoardSpec = field(default_factory=BoardSpec)
+    deaths: dict[str, str] = field(default_factory=_death_lines)  # obstacle name -> line
+    death_fallback: str = "ぶつかった"
+
+    def __post_init__(self) -> None:
+        # Overrides may reword only the obstacles they name.
+        self.deaths = {**_death_lines(), **self.deaths}
+
+
+@dataclass
+class HudSpec:
+    scale: float = 1.0
+    panel: PanelSpec = field(default_factory=PanelSpec)
+    result: ResultSpec = field(default_factory=ResultSpec)
+
+
 @dataclass
 class GameSpec:
     kind: str = "runner"
@@ -275,6 +342,7 @@ class GameSpec:
     camera: CameraSpec = field(default_factory=CameraSpec)
     style: Style = field(default_factory=Style)
     hud_top: float = 96.0
+    hud: HudSpec = field(default_factory=HudSpec)
     items: list[ItemSpec] = field(default_factory=list)
     placements: list[Placement] = field(default_factory=list)
     runner: RunnerKit = field(default_factory=RunnerKit)

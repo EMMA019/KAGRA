@@ -105,6 +105,8 @@ pub struct NeonCat {
     coins: u32,
     /// Stone arches run through this run.
     gates: u32,
+    /// Seconds since the crash, while it plays out (drives the flash and shake).
+    dying: f32,
     got_coins: HashSet<i32>,
 }
 
@@ -249,6 +251,7 @@ impl NeonCat {
             ground: 0.0,
             coins: 0,
             gates: 0,
+            dying: 0.0,
             got_coins: HashSet::new(),
         };
         if let Ok(p) = feel::resolve(&run.spec.feel) {
@@ -293,6 +296,43 @@ impl NeonCat {
 
     pub fn death(&self) -> &str {
         &self.core.stats.death
+    }
+
+    /// The line the result screen shows for the obstacle that ended the run.
+    pub fn death_text(&self) -> String {
+        let r = &self.spec.hud.result;
+        let d = &self.core.stats.death;
+        if d.is_empty() {
+            return String::new();
+        }
+        r.deaths.get(d).unwrap_or(&r.death_fallback).clone()
+    }
+
+    /// What the result screen needs to rank this run, and how: the ranking key
+    /// (game id and course seed), the columns and N, and this run's values.
+    pub fn result_json(&self) -> serde_json::Value {
+        let b = &self.spec.hud.result.board;
+        let values = |c: &str| -> serde_json::Value {
+            match c {
+                "time" => json!((self.time as f64 * 10.0).round() / 10.0),
+                "gates" => json!(self.gates),
+                "coins" => json!(self.coins),
+                _ => json!(self.core.stats.score),
+            }
+        };
+        let run: serde_json::Map<String, serde_json::Value> = crate::game_spec::BOARD_COLUMNS
+            .iter()
+            .map(|c| (c.to_string(), values(c)))
+            .collect();
+        json!({
+            "key": format!("{}:{}", self.spec.id, self.spec.seed),
+            "title": self.spec.title,
+            "enabled": b.enabled,
+            "top_n": b.top_n,
+            "columns": b.columns,
+            "sort": b.sort,
+            "run": run,
+        })
     }
 
     /// `?debug=1` draws the kill boxes. They are not colliders.
@@ -372,6 +412,9 @@ impl NeonCat {
             "ground": self.ground,
             "alive": self.core.stats.alive,
             "death": self.core.stats.death,
+            "death_text": self.death_text(),
+            "time": self.time,
+            "result": self.result_json(),
             "x": self.x,
             "y": self.y,
             "z": self.z,
@@ -629,6 +672,7 @@ impl NeonCat {
         self.got_coins.clear();
         self.coins = 0;
         self.gates = 0;
+        self.dying = 0.0;
         self.rolling = 0.0;
         self.recover = 0.0;
         self.pose = [1.0; 3];
@@ -1286,9 +1330,11 @@ impl NeonCat {
         if !self.core.stats.die(reason) {
             return;
         }
-        self.core
-            .juice
-            .hit(self.feel.hit_shake, self.feel.hit_stop_secs);
+        // The crash plays out (shake, flash, sparks) for `beat_secs` before the
+        // result card; the freeze is the longer of that and the feel's own.
+        let beat = self.feel.hit_stop_secs.max(self.spec.hud.result.beat_secs);
+        self.core.juice.hit(self.feel.hit_shake, beat);
+        self.dying = 0.0;
         self.vy = 0.0;
         self.drag_target = None;
         self.lane_target = None;
@@ -1842,27 +1888,112 @@ impl NeonCat {
         if menu {
             self.flow.paint(&mut list, width, height);
         }
-        if self.flow.phase == FlowPhase::Play || self.core.juice.hitstop > 0.0 {
-            self.core.stats.paint_score(&mut list, self.spec.hud_top);
-            if self.spec.runner.coins.enabled {
-                let top = self.spec.hud_top + 42.0;
-                list.quads
-                    .push(Quad::new(12.0, top, 168.0, 30.0, [8, 4, 20, 160]));
-                list.quads
-                    .push(Quad::new(22.0, top + 9.0, 12.0, 12.0, [255, 205, 70, 255]));
-                list.texts.push(
-                    TextQuad::new(
-                        &format!("x {}", self.coins),
-                        42.0,
-                        top + 5.0,
-                        16.0,
-                        [255, 226, 140, 255],
-                    )
-                    .aligned(TextAlign::Left),
-                );
-            }
+        let phase = self.flow.phase;
+        // The in-canvas result column has its own panels; only the host's card sits over the HUD.
+        if phase == FlowPhase::Play
+            || self.core.juice.hitstop > 0.0
+            || (phase == FlowPhase::Result && !menu)
+        {
+            self.paint_play_hud(&mut list, width, height);
         }
         list
+    }
+}
+
+impl NeonCat {
+    /// Score and coin panels, plus the crash flash. After a crash the panels
+    /// shake once, dim, and stay dimmed under the result card.
+    fn paint_play_hud(&self, list: &mut DrawList, width: u32, height: u32) {
+        use crate::hud_kit::{counter_chip, fade, nine_slice, ui_scale};
+        let hud = &self.spec.hud;
+        let ui = ui_scale(width, height, hud.scale);
+        let (w, h) = (width as f32, height as f32);
+        let beat = hud.result.beat_secs.max(0.05);
+        let dead = !self.core.stats.alive;
+        // 1 while playing, easing to 0.35 across the beat, then held.
+        let keep = if dead {
+            1.0 - 0.65 * (self.dying / beat).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        let shake = if dead {
+            (self.dying * 70.0).sin() * 7.0 * ui * (1.0 - self.dying / 0.3).max(0.0)
+        } else {
+            0.0
+        };
+        let flash = if dead {
+            (1.0 - self.dying / 0.4).max(0.0)
+        } else {
+            0.0
+        };
+        if flash > 0.0 {
+            list.quads.push(Quad::new(
+                0.0,
+                0.0,
+                w,
+                h,
+                [255, 40, 110, (flash * 120.0) as u8],
+            ));
+            // Red edges, heavier than the middle: the hit lands at the rim of the view.
+            let e = (14.0 * ui).max(8.0);
+            let edge = [255, 20, 70, (flash * 150.0) as u8];
+            list.quads.push(Quad::new(0.0, 0.0, w, e, edge));
+            list.quads.push(Quad::new(0.0, h - e, w, e, edge));
+            list.quads.push(Quad::new(0.0, e, e, h - 2.0 * e, edge));
+            list.quads.push(Quad::new(w - e, e, e, h - 2.0 * e, edge));
+        }
+        let top = self.spec.hud_top * ui * 0.5 + shake;
+        let m = 14.0 * ui;
+        let p = &hud.panel;
+        let (fill, border) = (fade(p.fill, keep), fade(p.border, keep));
+        // Score: small caption over a big number.
+        let (sw, sh) = (160.0 * ui, 56.0 * ui);
+        nine_slice(
+            list,
+            m + shake,
+            top,
+            sw,
+            sh,
+            p.slice * ui,
+            fill,
+            border,
+            (2.0 * ui, 3.0 * ui, 90),
+        );
+        list.texts.push(
+            TextQuad::new(
+                "SCORE",
+                m + 12.0 * ui + shake,
+                top + 6.0 * ui,
+                11.0 * ui,
+                fade([150, 200, 215, 255], keep),
+            )
+            .aligned(TextAlign::Left),
+        );
+        list.texts.push(
+            TextQuad::new(
+                &format!("{}", self.core.stats.score),
+                m + 12.0 * ui + shake,
+                top + 20.0 * ui,
+                30.0 * ui,
+                fade(p.score, keep),
+            )
+            .aligned(TextAlign::Left),
+        );
+        if self.spec.runner.coins.enabled {
+            let (cw, ch) = (112.0 * ui, 40.0 * ui);
+            counter_chip(
+                list,
+                w - m - cw + shake,
+                top,
+                cw,
+                ch,
+                ui,
+                fill,
+                border,
+                fade(p.coin, keep),
+                &format!("{}", self.coins),
+            );
+        }
     }
 }
 
@@ -1910,6 +2041,7 @@ impl Kit for NeonCat {
 
     fn hitstop_frame(&mut self, dt: f32) {
         self.anim_t += dt * 0.35;
+        self.dying += dt;
     }
 
     fn follow(&mut self, dt: f32) {
@@ -2727,7 +2859,7 @@ mod tests {
             !crash.core.stats.alive,
             "staying on the ground hits the crate"
         );
-        for _ in 0..20 {
+        for _ in 0..60 {
             crash.tick(1.0 / 60.0);
         }
         assert_eq!(crash.phase_name(), "result");
@@ -3064,7 +3196,7 @@ mod tests {
         hit.tick(1.0 / 60.0);
         assert!(!hit.core.stats.alive);
         assert_eq!(hit.death(), "CRATE");
-        for _ in 0..12 {
+        for _ in 0..60 {
             hit.tick(1.0 / 60.0);
         }
         assert_eq!(hit.phase_name(), "result");
@@ -3826,6 +3958,7 @@ mod tests {
             assert!(run.got.is_empty() && run.got_coins.is_empty());
             assert!(run.core.stats.alive && run.core.stats.death.is_empty());
             assert_eq!(run.rolling, 0.0);
+            assert_eq!(run.dying, 0.0, "crash timer");
             assert_eq!(run.pose, [1.0; 3]);
             // The collected coin is back in the world and the sim json shows it.
             let v = run.sim_value();
@@ -3958,5 +4091,143 @@ mod tests {
         bad.style.codes.solid = [255, 61, 70];
         bad.style.codes.jump_over = [255, 60, 71];
         assert!(bad.validate().is_err());
+    }
+
+    fn hud_of(run: &NeonCat, w: u32, h: u32) -> DrawList {
+        run.paint_hud(w, h, false)
+    }
+
+    #[test]
+    fn crash_plays_out_before_the_result_and_flashes() {
+        let mut run = full();
+        for _ in 0..10 {
+            run.tick(1.0 / 60.0);
+        }
+        let calm = hud_of(&run, 824, 1800);
+        assert!(
+            !calm.quads.iter().any(|q| q.w >= 824.0 && q.h >= 1800.0),
+            "no flash while alive"
+        );
+        run.crash("CRATE");
+        run.tick(1.0 / 60.0);
+        assert_eq!(
+            run.flow.phase,
+            FlowPhase::Play,
+            "the crash is still playing"
+        );
+        let hit = hud_of(&run, 824, 1800);
+        assert!(
+            hit.quads.iter().any(|q| q.w >= 824.0 && q.h >= 1800.0),
+            "full-screen flash on the hit"
+        );
+        let mut frames = 1;
+        while run.flow.phase == FlowPhase::Play && frames < 200 {
+            run.tick(1.0 / 60.0);
+            frames += 1;
+        }
+        let secs = frames as f32 / 60.0;
+        let beat = run.spec.hud.result.beat_secs;
+        assert!(
+            (beat - 0.05..beat + 0.1).contains(&secs),
+            "result after {secs}s, beat {beat}"
+        );
+        assert_eq!(run.flow.phase, FlowPhase::Result);
+        let after = hud_of(&run, 824, 1800);
+        assert!(!after.quads.iter().any(|q| q.w >= 824.0 && q.h >= 1800.0));
+        // The HUD stays on under the host's card, dimmed.
+        let alpha = |l: &DrawList| l.quads.iter().map(|q| q.color[3]).max().unwrap_or(0);
+        assert!(!after.quads.is_empty());
+        assert!(alpha(&after) < alpha(&calm), "dimmed under the result");
+        // The in-canvas menu column does not get the HUD on top.
+        assert!(run
+            .paint_hud(824, 1800, true)
+            .texts
+            .iter()
+            .all(|t| t.text != "SCORE"));
+    }
+
+    #[test]
+    fn hud_is_big_on_a_phone_and_inside_the_screen() {
+        let mut run = full();
+        run.coins = 12;
+        run.core.stats.score = 3456;
+        run.tick(1.0 / 60.0);
+        for (w, h) in [(412u32, 915u32), (824, 1800), (1080, 2340), (1800, 824)] {
+            let l = hud_of(&run, w, h);
+            let ui = crate::hud_kit::ui_scale(w, h, 1.0);
+            let score = l
+                .texts
+                .iter()
+                .find(|t| t.text == "3456")
+                .expect("score text");
+            // At least 26 CSS px on a 2x phone: 52 buffer px.
+            assert!(
+                score.size >= 13.0 * ui,
+                "{w}x{h}: score size {}",
+                score.size
+            );
+            assert!(l.texts.iter().any(|t| t.text == "12"), "coin count");
+            for q in &l.quads {
+                assert!(
+                    q.x >= -1.0
+                        && q.y >= -1.0
+                        && q.x + q.w <= w as f32 + 1.0
+                        && q.y + q.h <= h as f32 + 1.0,
+                    "{w}x{h}: {q:?} off screen"
+                );
+            }
+            // A panel behind the score and a coin icon: more than bare text.
+            assert!(l.quads.len() > 20, "{w}x{h}: panels and coin icon");
+        }
+        let small = hud_of(&run, 412, 915);
+        let big = hud_of(&run, 824, 1800);
+        let size = |l: &DrawList| l.texts.iter().find(|t| t.text == "3456").unwrap().size;
+        assert!(
+            (size(&big) / size(&small) - 2.0).abs() < 0.01,
+            "scales with the screen"
+        );
+    }
+
+    #[test]
+    fn death_lines_are_the_specs_and_fall_back() {
+        let mut run = full();
+        run.tick(1.0 / 60.0);
+        assert_eq!(run.death_text(), "");
+        run.crash("CRATE");
+        assert_eq!(run.death_text(), run.spec.hud.result.deaths["CRATE"]);
+        assert!(!run.death_text().contains("HIT"), "not the raw name");
+        assert_eq!(run.sim_value()["death_text"], run.death_text());
+        let mut spec = (*run.spec).clone();
+        spec.hud.result.deaths.clear();
+        spec.hud.result.death_fallback = "oops".into();
+        let mut other = NeonCat::with_spec(spec);
+        other.start_run();
+        other.tick(1.0 / 60.0);
+        other.crash("CRATE");
+        assert_eq!(other.death_text(), "oops");
+    }
+
+    #[test]
+    fn result_json_carries_the_ranking_config_and_this_run() {
+        let mut run = full();
+        run.tick(1.0 / 60.0);
+        run.time = 12.34;
+        run.coins = 7;
+        run.gates = 3;
+        run.core.stats.score = 900;
+        let r = run.result_json();
+        assert_eq!(r["key"], format!("{}:{}", run.spec.id, run.spec.seed));
+        assert_eq!(r["top_n"], 5);
+        assert_eq!(
+            r["columns"],
+            serde_json::json!(["time", "gates", "coins", "score"])
+        );
+        assert_eq!(r["sort"], "score");
+        assert_eq!(r["run"]["time"].as_f64(), Some(12.3));
+        assert_eq!(r["run"]["gates"], 3);
+        assert_eq!(r["run"]["coins"], 7);
+        assert_eq!(r["run"]["score"], 900);
+        assert_eq!(run.sim_value()["result"], r);
+        assert!((run.sim_value()["time"].as_f64().unwrap() - 12.34).abs() < 1e-3);
     }
 }

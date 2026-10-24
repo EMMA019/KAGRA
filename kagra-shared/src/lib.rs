@@ -34,6 +34,7 @@ pub mod gesture;
 pub mod gltf_load;
 pub mod grade;
 pub mod hot;
+pub mod hud_kit;
 pub mod input;
 pub mod juice;
 pub mod ktx_image;
