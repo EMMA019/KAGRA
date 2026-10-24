@@ -1287,6 +1287,7 @@ impl PerchRules {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ChaserSpec {
+    /// Off by default: a hit calls no robot unless the spec turns it on.
     pub enabled: bool,
     /// How long it keeps chasing, seconds.
     pub secs: f32,
@@ -1308,7 +1309,7 @@ pub struct ChaserSpec {
 impl Default for ChaserSpec {
     fn default() -> Self {
         Self {
-            enabled: true,
+            enabled: false,
             secs: 10.0,
             near_gap: 1.2,
             far_gap: 1.7,

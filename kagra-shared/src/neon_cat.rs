@@ -6913,9 +6913,58 @@ mod tests {
         assert!(classic.spec.perch_route.is_empty() && !classic.spec.chaser.enabled);
     }
 
+    /// The shipped course with the cleaning robot switched on by the spec
+    /// (it is off by default).
+    fn with_robot() -> NeonCat {
+        let mut run = full_lives();
+        std::sync::Arc::make_mut(&mut run.spec).chaser.enabled = true;
+        run
+    }
+
+    #[test]
+    fn the_robot_is_off_by_default_and_a_hit_just_costs_a_life() {
+        let mut run = full_lives();
+        assert!(!run.spec.chaser.enabled);
+        run.crash("CRATE");
+        assert!(run.core.stats.alive);
+        assert_eq!(run.lives, 2);
+        assert_eq!(run.robot_t, 0.0, "no robot after a hit");
+        assert_eq!(run.sim_value()["robot"]["secs"], 0.0);
+        // No ROBOT bar, and a second hit after the grace is a plain life too.
+        run.rebuild();
+        assert!(!hud_of(&run, 824, 1800)
+            .texts
+            .iter()
+            .any(|t| t.text == "ROBOT"));
+        run.invuln = 0.0;
+        run.crash("CRATE");
+        assert!(run.core.stats.alive && run.lives == 1);
+        // Meow still pays with no robot: a life back, or +100 when full.
+        run.take_item(ItemEffect::Meow, [run.x, 0.5, run.z]);
+        assert_eq!(run.lives, 2);
+        assert!(!run.sim_value()["toast"].as_str().unwrap().contains("SHOO"));
+        let mut full_row = full_lives();
+        let s0 = full_row.core.stats.score;
+        full_row.take_item(ItemEffect::Meow, [full_row.x, 0.5, full_row.z]);
+        assert!(full_row.core.stats.score >= s0 + 100);
+        assert!(!full_row.sim_value()["toast"]
+            .as_str()
+            .unwrap()
+            .contains("SHOO"));
+        // The spec can bring it back.
+        let mut on = with_robot();
+        on.crash("CRATE");
+        assert!(on.robot_t > 9.0);
+        on.rebuild();
+        assert!(hud_of(&on, 824, 1800)
+            .texts
+            .iter()
+            .any(|t| t.text == "ROBOT"));
+    }
+
     #[test]
     fn a_hit_calls_the_robot_and_a_second_one_while_it_is_there_is_fatal() {
-        let mut run = full_lives();
+        let mut run = with_robot();
         assert_eq!(run.robot_t, 0.0);
         run.crash("CRATE");
         assert!(run.core.stats.alive);
@@ -6944,7 +6993,7 @@ mod tests {
     #[test]
     fn the_robot_gives_up_a_meow_scares_it_and_a_ledge_wears_it_out_faster() {
         // Gives up: after its time the next hit is a plain one again.
-        let mut run = full_lives();
+        let mut run = with_robot();
         run.crash("CRATE");
         for _ in 0..800 {
             run.update_robot(1.0 / 60.0);
@@ -6954,7 +7003,7 @@ mod tests {
         run.crash("CRATE");
         assert!(run.core.stats.alive && run.lives == 1, "a plain hit");
         // A meow scares it off, pays, and the next hit is plain.
-        let mut run = full_lives();
+        let mut run = with_robot();
         run.crash("CRATE");
         let score = run.core.stats.score;
         run.take_item(ItemEffect::Meow, [run.x, 0.5, run.z]);
@@ -6970,7 +7019,7 @@ mod tests {
         assert_eq!(run.robot_t, 0.0, "gone");
         // Time on a ledge or under a boost drains it faster.
         let left = |perch: bool, boost: bool| {
-            let mut r = full_lives();
+            let mut r = with_robot();
             r.crash("CRATE");
             r.on_perch = perch;
             if boost {
@@ -6993,14 +7042,14 @@ mod tests {
 
     #[test]
     fn the_robot_is_inside_the_chase_camera_all_the_way_back() {
-        let mut run = full_lives();
+        let mut run = with_robot();
         run.crash("CRATE");
         let spec = run.spec.clone();
         let c = &spec.chaser;
         // From just called to just before it gives up, and across the lanes.
         for lane_x in [-2.1f32, 0.0, 2.1] {
             for used in [0.0f32, 0.5, 0.99] {
-                let mut r = full_lives();
+                let mut r = with_robot();
                 r.crash("CRATE");
                 r.x = lane_x;
                 r.robot_x = lane_x;
@@ -7043,7 +7092,7 @@ mod tests {
             .props
             .iter()
             .any(|p| p.id.contains("robot-beacon")));
-        let mut none = full_lives();
+        let mut none = with_robot();
         none.rebuild();
         assert!(!none
             .document()
