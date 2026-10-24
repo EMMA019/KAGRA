@@ -157,5 +157,14 @@
       "path": "assets/textures/neon_cat/concrete_wall_s.png",
       "url": "assets/textures/neon_cat/concrete_wall_s.png"
     }
-  ]
+  ],
+  "platform": {
+    "ads": {
+      "commercial_on": [
+        "retry"
+      ],
+      "rewarded": [],
+      "min_interval_secs": 90
+    }
+  }
 }
