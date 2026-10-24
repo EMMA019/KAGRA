@@ -498,8 +498,12 @@ impl AudioSpec {
 #[serde(default, deny_unknown_fields)]
 pub struct MissionsSpec {
     pub enabled: bool,
-    /// The goals of every run. At most 5.
+    /// The pool the run's goals are drawn from, in order. At most 5. A goal
+    /// the course cannot offer (a perch with the stair lane off) is skipped.
     pub list: Vec<MissionSpec>,
+    /// How many goals a run shows, drawn from the front of the pool after
+    /// the ones the course cannot offer are left out (0..=5; 0 = all).
+    pub draw: u32,
     /// Score added each time one is completed. 0 keeps scores comparable
     /// with runs that have no missions.
     pub bonus: u32,
@@ -515,8 +519,10 @@ pub enum MissionKind {
     Coins,
     /// Stone arches run through this run.
     Gates,
-    /// Different ledges landed on this run.
+    /// Different ledges landed on this run (needs the stair lane or decks).
     Perch,
+    /// Obstacles left behind this run, hit or not.
+    Passes,
 }
 
 impl MissionKind {
@@ -525,6 +531,16 @@ impl MissionKind {
             Self::Coins => "coins",
             Self::Gates => "gates",
             Self::Perch => "perch",
+            Self::Passes => "passes",
+        }
+    }
+
+    /// Whether the course can offer this goal: a perch needs a ledge to stand
+    /// on (the stair lane or the decks), everything else works on the street.
+    pub fn available(self, perch: bool, decks: bool) -> bool {
+        match self {
+            Self::Perch => perch || decks,
+            _ => true,
         }
     }
 
@@ -533,6 +549,7 @@ impl MissionKind {
             Self::Coins => "COINS",
             Self::Gates => "GATES",
             Self::Perch => "PERCH",
+            Self::Passes => "PASSED",
         }
     }
 }
@@ -543,7 +560,7 @@ pub struct MissionSpec {
     pub kind: MissionKind,
     /// How many to reach (1..=9999).
     pub target: u32,
-    /// HUD wording. Empty uses the kind's own (`COINS`, `GATES`, `PERCH`).
+    /// HUD wording. Empty uses the kind's own (`COINS`, `GATES`, `PERCH`, `PASSED`).
     pub label: String,
 }
 
@@ -580,7 +597,9 @@ impl Default for MissionsSpec {
                 m(MissionKind::Coins, 40),
                 m(MissionKind::Gates, 5),
                 m(MissionKind::Perch, 1),
+                m(MissionKind::Passes, 30),
             ],
+            draw: 3,
             bonus: 0,
             hud: true,
         }
@@ -591,6 +610,9 @@ impl MissionsSpec {
     pub fn validate(&self) -> Result<(), String> {
         if self.list.len() > 5 {
             return Err("game spec: missions.list has at most 5 goals".into());
+        }
+        if self.draw > 5 {
+            return Err("game spec: missions.draw must be 0..=5".into());
         }
         if self.bonus > 100_000 {
             return Err("game spec: missions.bonus must be 0..=100000".into());
@@ -604,6 +626,19 @@ impl MissionsSpec {
             }
         }
         Ok(())
+    }
+
+    /// The goals this course really shows: the pool without what the course
+    /// cannot offer (`perch`: the stair lane is on; `decks`: the upper
+    /// course is on), cut to `draw`. With the stair lane and decks off the
+    /// pool gives coins, gates and obstacles passed.
+    pub fn active(&self, perch: bool, decks: bool) -> MissionsSpec {
+        let mut m = self.clone();
+        m.list.retain(|g| g.kind.available(perch, decks));
+        if m.draw > 0 {
+            m.list.truncate(m.draw as usize);
+        }
+        m
     }
 
     /// Switched off, as `GameSpec::legacy()` wants it.

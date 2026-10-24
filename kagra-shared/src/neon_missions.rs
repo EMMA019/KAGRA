@@ -12,6 +12,7 @@ pub struct Counts {
     pub coins: u32,
     pub gates: u32,
     pub perches: u32,
+    pub passes: u32,
 }
 
 impl Counts {
@@ -20,6 +21,7 @@ impl Counts {
             MissionKind::Coins => self.coins,
             MissionKind::Gates => self.gates,
             MissionKind::Perch => self.perches,
+            MissionKind::Passes => self.passes,
         }
     }
 }
@@ -95,6 +97,7 @@ mod tests {
             coins: 40,
             gates: 2,
             perches: 1,
+            passes: 0,
         };
         assert_eq!(t.update(&spec, c), vec![0, 2]);
         assert!(t.update(&spec, c).is_empty(), "announced once");
@@ -114,6 +117,7 @@ mod tests {
             coins: 999,
             gates: 99,
             perches: 9,
+            passes: 99,
         };
         assert!(t.update(&spec, c).is_empty());
         assert_eq!(t.json(&spec, c), json!([]));
@@ -127,6 +131,7 @@ mod tests {
             coins: 100,
             gates: 1,
             perches: 0,
+            passes: 0,
         };
         t.update(&spec, c);
         let j = t.json(&spec, c);

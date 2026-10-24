@@ -331,7 +331,8 @@ def test_fx_defaults_are_on_for_neon_cat_and_cover_every_cue():
     g = GameSpec().to_dict()
     assert g["atmosphere"]["enabled"] and g["audio"]["enabled"] and g["missions"]["enabled"]
     assert set(g["audio"]["sfx"]) == set(SFX_CUES)
-    assert [m["kind"] for m in g["missions"]["list"]] == ["coins", "gates", "perch"]
+    assert [m["kind"] for m in g["missions"]["list"]] == ["coins", "gates", "perch", "passes"]
+    assert g["missions"]["draw"] == 3
     assert g["missions"]["bonus"] == 0, "missions must not change scores unless asked"
     # Every file the defaults name exists in the repo, so a fresh clone makes sound.
     for f in GameSpec().audio.files():
@@ -339,6 +340,27 @@ def test_fx_defaults_are_on_for_neon_cat_and_cover_every_cue():
     w = GameSpec().atmosphere.wall
     assert (ROOT / w.texture_high).is_file() and (ROOT / w.texture_mobile).is_file()
     assert w.texture_low == "", "the low tier keeps the plain wall"
+
+
+def test_default_missions_skip_a_perch_until_the_course_has_ledges():
+    from kagra.game_spec import MissionsSpec
+
+    spec = GameSpec()
+    assert spec.perch_rules.enabled is False and spec.deck_rules.enabled is False
+    kinds = lambda **kw: [m.kind for m in spec.missions.active(**kw)]
+    # Plain street: three goals that can all be cleared, no perch.
+    assert kinds() == ["coins", "gates", "passes"]
+    # Either upper-course switch brings the perch goal back (3 drawn from the pool).
+    assert kinds(perch=True) == ["coins", "gates", "perch"]
+    assert kinds(decks=True) == ["coins", "gates", "perch"]
+    # draw 0 shows every goal the course can offer.
+    every = MissionsSpec(draw=0)
+    assert [m.kind for m in every.active()] == ["coins", "gates", "passes"]
+    assert len(every.active(perch=True, decks=True)) == 4
+    with pytest.raises(ValueError):
+        MissionsSpec(draw=6)
+    # The Rust pool and draw count are the same table.
+    assert "draw: 3," in FX_RS and "m(MissionKind::Passes, 30)" in FX_RS
 
 
 def test_fx_numbers_match_the_rust_defaults():

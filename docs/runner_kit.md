@@ -200,12 +200,15 @@ until the first touch: the page opens the audio on the first tap, key or click a
 mutes and is remembered; `?mute=1` starts muted and `?audio=0` turns audio off for that visit. An iPhone's silent switch is
 respected by the system (the page asks for "playback" audio where Safari supports it).
 
-`missions` `{enabled, list [{kind, target, label}], bonus 0, hud}` are the goals for each run: `coins` (collect N), `gates` (pass N
-gates), `perch` (perch N times). The default is 40 coins, 5 gates, 1 perch (up to 5 goals; `label` overrides the text). Progress is
-counted from the run's own counters, shown on the title card, as a small HUD strip (`hud`) and on the result, with a banner and the
-`mission` cue when one is done. `bonus` is score added per finished goal and is **0** by default, so missions never change a score unless
-you ask. The high score is shown on the title and the result; the page keeps it in `localStorage` and passes it in as the world's
-`best`. The #181 ranking is unchanged.
+`missions` `{enabled, list [{kind, target, label}], draw 3, bonus 0, hud}` are the goals for each run: `coins` (collect N), `gates`
+(pass N gates), `passes` (leave N obstacles behind, hit or not) and `perch` (perch N times). `list` is the pool, in order (up to 5;
+`label` overrides the text), and a run shows the first `draw` goals the course can offer (0 = all of them). A perch needs a ledge, so
+it is left out of the pool unless `perch_rules.enabled` or `deck_rules.enabled` is true. The default pool is 40 coins, 5 gates,
+1 perch, 30 passes, so the plain street shows coins, gates and passes, and the stair lane or the decks swap the passes for the perch.
+Progress is counted from the run's own counters, shown on the title card, as a small HUD strip (`hud`) and on the result, with a
+banner and the `mission` cue when one is done. `bonus` is score added per finished goal and is **0** by default, so missions never
+change a score unless you ask. The high score is shown on the title and the result; the page keeps it in `localStorage` and passes it
+in as the world's ``best`. The #181 ranking is unchanged.
 
 ## Layers
 

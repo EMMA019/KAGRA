@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Neon Cat: the goal "perch up high once" is no longer offered on the plain street, where it could not be cleared (the stair lane
+  and the decks are off by default). `missions.list` is now a pool and the new `missions.draw` (default 3, 0 = all) says how many a run
+  shows. A perch goal is only drawn when `perch_rules.enabled` or `deck_rules.enabled` is true. The default pool gains a street goal,
+  `passes` ("get past 30 obstacles", counted whether or not one hit the cat; Japanese "しょうがい物を30個こえる"). Plain street: coins,
+  gates, passes; with the stair lane or decks on: coins, gates, perch. Rust and Python agree (`MissionsSpec::active` /
+  `MissionsSpec.active`); a spec that lists a perch goal with the course off simply skips it.
+
 - Neon Cat: the stair lane (perch steps, raised steps and slopes) and the new upper course
   are **off by default** (`perch_rules.enabled`, `deck_rules.enabled`, both false) because
   they were hard to see on a phone; the default course is the plain street again, as before
