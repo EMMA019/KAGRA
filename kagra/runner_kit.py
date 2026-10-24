@@ -67,6 +67,33 @@ SECTION_KINDS = ("intro", "learn", "challenge", "rest", "reward")
 SECTION_DENSITY = {"intro": 0.35, "learn": 0.7, "challenge": 1.0, "rest": 0.0, "reward": 0.0}
 
 
+BEHAVIORS = ("solid", "jump_over", "roll_under", "rideable", "cat_gap")
+
+
+@dataclass
+class BodySpec:
+    """The cat's body for collision (metres above the feet)."""
+
+    stand_height: float = 0.62
+    roll_height: float = 0.3
+    roll_secs: float = 0.55
+    step_tol: float = 0.18
+
+
+@dataclass
+class CoinSpec:
+    """Coin lines: arcs over hops, low lines through gaps, trails on tops,
+    weaving lines in rest/reward sections."""
+
+    enabled: bool = True
+    glb: str = "assets/models/coin.glb"
+    score: int = 10
+    per_line: int = 5
+    free_line: int = 8
+    spacing: float = 0.85
+    arc_height: float = 0.85
+
+
 @dataclass
 class Section:
     """A stretch of track in metres; the list repeats. See docs/runner_kit.md."""
@@ -75,8 +102,13 @@ class Section:
     length: float = 120.0
     level: int = 3
     density: float | None = None
+    # Obstacle behaviours this stretch may use; empty = all.
+    allow: list = field(default_factory=list)
 
     def __post_init__(self):
+        for b in self.allow:
+            if b not in BEHAVIORS:
+                raise ValueError(f"section allow {b!r} not in {BEHAVIORS}")
         if self.kind not in SECTION_KINDS:
             raise ValueError(f"section kind {self.kind!r} not in {SECTION_KINDS}")
         if self.length <= 0 or not 0 <= self.level <= 5:
@@ -95,4 +127,18 @@ class RunnerKit:
     gates: GateSpec = field(default_factory=GateSpec)
     draw: DrawSpec = field(default_factory=DrawSpec)
     # Optional pacing script (intro/learn/challenge/rest/reward). Empty = uniform.
-    sections: list = field(default_factory=list)
+    sections: list = field(default_factory=lambda: default_sections())
+    body: BodySpec = field(default_factory=BodySpec)
+    coins: CoinSpec = field(default_factory=CoinSpec)
+
+
+def default_sections() -> list:
+    """Neon Cat's pacing: teach hops, add rolls, mix everything, then breathe."""
+    return [
+        Section("intro", 140, 1, None, ["jump_over"]),
+        Section("learn", 200, 2, None, ["jump_over", "roll_under"]),
+        Section("challenge", 260, 3, None, []),
+        Section("rest", 150, 0, None, []),
+        Section("challenge", 300, 3, None, []),
+        Section("reward", 120, 0, None, []),
+    ]

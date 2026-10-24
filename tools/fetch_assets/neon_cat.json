@@ -77,7 +77,42 @@
       "source_url": "https://quaternius.com/",
       "dest": "assets/models/quaternius/modular-dungeons-pack",
       "files": [
-        {"out": "Arch.glb", "check_only": true}
+        {
+          "out": "Arch.glb",
+          "check_only": true
+        }
+      ]
+    },
+    {
+      "id": "kenney-space-kit",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "credit": "Kenney — Space Kit",
+      "source_url": "https://kenney.nl/assets/space-kit",
+      "download_url": "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip",
+      "license_file": "License.txt",
+      "dest": "assets/models/kenney/space-kit",
+      "files": [
+        {
+          "zip": "Models/GLTF format/machine_generatorLarge.glb",
+          "out": "machine_generatorLarge.glb"
+        },
+        {
+          "zip": "Models/GLTF format/hangar_smallA.glb",
+          "out": "hangar_smallA.glb"
+        },
+        {
+          "zip": "Models/GLTF format/monorail_trainBox.glb",
+          "out": "monorail_trainBox.glb"
+        },
+        {
+          "zip": "Models/GLTF format/terrain_ramp.glb",
+          "out": "terrain_ramp.glb"
+        },
+        {
+          "zip": "Models/GLTF format/structure_closed.glb",
+          "out": "structure_closed.glb"
+        }
       ]
     }
   ]

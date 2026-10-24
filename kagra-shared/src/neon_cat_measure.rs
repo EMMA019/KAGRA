@@ -7,9 +7,10 @@
 //! see what a preset or tuning change did. Everything except `perf` is
 //! a pure function of the world and the options.
 
-use super::{obstacle_shape, NeonCat};
+use super::{obstacle_anchor, obstacle_parts, obstacle_shape, NeonCat, CAT_HALF_W};
 use crate::flow::FlowPhase;
-use crate::game_spec::SectionKind;
+use crate::game_core::{collide, Hitbox};
+use crate::game_spec::{Behavior, PartRole, SectionKind};
 use crate::gesture::Swipe;
 use crate::input::{PointerEvent, PointerPhase};
 use serde_json::{json, Value};
@@ -33,6 +34,12 @@ pub struct MeasureOpts {
     pub rest_gap_secs: f32,
     /// Longest play without a rest before `missing_rest` is raised.
     pub max_no_rest_secs: f32,
+    /// Slack a back-to-back jump/roll/ride pair should leave a human, in
+    /// seconds. Under it the pair is flagged `combo_tight`; under zero it is
+    /// `combo_infeasible`.
+    pub combo_margin_secs: f32,
+    /// Shortest time an obstacle is readable before the cat reaches it.
+    pub min_reaction_secs: f32,
     /// Skip the wall-clock section (tests).
     pub perf: bool,
 }
@@ -46,6 +53,8 @@ impl Default for MeasureOpts {
             window_secs: 10.0,
             rest_gap_secs: 3.0,
             max_no_rest_secs: 45.0,
+            combo_margin_secs: 0.25,
+            min_reaction_secs: 0.8,
             perf: true,
         }
     }
@@ -67,6 +76,7 @@ pub fn measure(world: &str, opts: &MeasureOpts) -> Result<Value, String> {
     let feel = feel(world)?;
     let apex = feel["jump"]["apex_m"].as_f64().unwrap_or(0.0) as f32;
     let switch_s = feel["lane_switch"]["secs"].as_f64().unwrap_or(1.0) as f32;
+    let reach = reachability(world)?;
     let mut out = json!({
         "version": 1,
         "game": NeonCat::from_json(world)?.spec().id.clone(),
@@ -75,7 +85,9 @@ pub fn measure(world: &str, opts: &MeasureOpts) -> Result<Value, String> {
         "touch": touch(world)?,
         "logic": logic(world)?,
         "bot": bot(world, opts)?,
-        "course": course(world, opts, apex, switch_s)?,
+        "course": course(world, opts, apex, switch_s, &reach)?,
+        "reachability": reach,
+        "view": view(world, opts)?,
     });
     if opts.perf {
         out["perf"] = perf(world)?;
@@ -359,6 +371,13 @@ fn logic(world: &str) -> Result<Value, String> {
         .iter()
         .copied()
         .filter(|&i| obstacle_shape(&g.spec, i).hit_cz > g.z + 0.5)
+        .filter(|&i| {
+            // A plain floor-seated solid: the one kind that must kill head-on.
+            matches!(
+                g.spec.obstacle_kind(i).behavior,
+                Behavior::JumpOver | Behavior::Solid
+            )
+        })
         .min();
     let (mut hit, mut kind) = (false, String::new());
     if let Some(i) = target {
@@ -422,7 +441,7 @@ fn bot(world: &str, opts: &MeasureOpts) -> Result<Value, String> {
     let mut lives = Vec::new();
     let mut deaths: BTreeMap<String, u32> = BTreeMap::new();
     let mut death_z = Vec::new();
-    let (mut clears, mut score, mut rings) = (0u32, 0u64, 0u64);
+    let (mut clears, mut score, mut rings, mut coins) = (0u32, 0u64, 0u64, 0u64);
     let max_f = (opts.clear_secs / DT).ceil() as u32;
     for seed in 0..opts.runs {
         let mut rng = Lcg(seed as u64 * 7919 + 17);
@@ -430,17 +449,21 @@ fn bot(world: &str, opts: &MeasureOpts) -> Result<Value, String> {
         let noise = 0.05 + rng.next() * 0.2;
         let miss = rng.next() * 0.04;
         let mut g = fresh(world)?;
-        let mut q: VecDeque<(f32, bool)> = VecDeque::new();
+        let mut q: VecDeque<(f32, bool, bool)> = VecDeque::new();
         let mut f = 0u32;
         while f < max_f && g.alive() {
-            q.push_back(g.script_steer());
-            let (lx, j) = if q.len() > delay {
+            q.push_back(g.script_plan());
+            let (lx, j, roll) = if q.len() > delay {
                 q.pop_front().unwrap()
             } else {
-                (0.0, false)
+                (0.0, false, false)
             };
             let lx = (lx + (rng.next() - 0.5) * 2.0 * noise).clamp(-1.0, 1.0);
-            let j = j && rng.next() >= miss;
+            let miss_it = rng.next() < miss;
+            let j = j && !miss_it;
+            if roll && !miss_it {
+                g.swipe(Swipe::Down);
+            }
             g.set_steer(lx, 0.0, j);
             g.tick(DT);
             f += 1;
@@ -449,6 +472,7 @@ fn bot(world: &str, opts: &MeasureOpts) -> Result<Value, String> {
         lives.push(secs);
         score += g.score() as u64;
         rings += g.rings() as u64;
+        coins += g.coins as u64;
         if g.alive() {
             clears += 1;
         } else {
@@ -471,6 +495,7 @@ fn bot(world: &str, opts: &MeasureOpts) -> Result<Value, String> {
         "death_z": death_z,
         "score_mean": r3(score as f32 / n),
         "rings_mean": r3(rings as f32 / n),
+        "coins_mean": r3(coins as f32 / n),
     }))
 }
 
@@ -495,18 +520,6 @@ fn time_at(g: &NeonCat, z: f32) -> f32 {
 /// Free x intervals, `(min, max)`.
 type Spans = Vec<(f32, f32)>;
 
-/// Free x intervals beside an obstacle inside the rails.
-fn free_spans(cx: f32, hx: f32, limit: f32) -> Spans {
-    let mut v = Vec::new();
-    if cx - hx > -limit {
-        v.push((-limit, cx - hx));
-    }
-    if cx + hx < limit {
-        v.push((cx + hx, limit));
-    }
-    v
-}
-
 fn span_gap(a: &[(f32, f32)], b: &[(f32, f32)]) -> f32 {
     let mut best = f32::INFINITY;
     for &(a0, a1) in a {
@@ -524,22 +537,97 @@ fn span_gap(a: &[(f32, f32)], b: &[(f32, f32)]) -> f32 {
     best
 }
 
-/// Audit placements over `course_secs`: an obstacle the cat can neither
-/// jump nor pass beside, back-to-back walls with no time to change side,
-/// and windows whose difficulty jumps well above the one before.
-fn course(world: &str, opts: &MeasureOpts, apex: f32, switch_s: f32) -> Result<Value, String> {
-    let g = NeonCat::from_json(world)?;
+fn blocked_spans(parts: &[Hitbox], y: f32, h: f32) -> Spans {
+    collide::blocked_spans(parts, y, h, CAT_HALF_W)
+}
+
+fn free_between(blocked: &[(f32, f32)], limit: f32) -> Spans {
+    collide::free_between(blocked, limit)
+}
+
+/// What the cat can do about one obstacle, from its geometry alone.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Options {
+    walk: bool,
+    roll: bool,
+    jump: bool,
+    ride: bool,
+}
+
+fn speed_at(g: &NeonCat, t: f32) -> f32 {
+    let s = &g.spec.runner.speed;
+    (s.start + s.ramp * t).min(s.cap)
+}
+
+/// Passability of obstacle `i` at play time `t`, with the lane spans that
+/// walking uses.
+fn options_for(g: &NeonCat, index: i32, parts: &[Hitbox], t: f32, apex: f32) -> (Options, Spans) {
     let r = &g.spec.runner;
     let limit = r.lanes.limit;
+    let walk_spans = free_between(&blocked_spans(parts, 0.0, r.body.stand_height), limit);
+    let roll_spans = free_between(&blocked_spans(parts, 0.0, r.body.roll_height), limit);
+    let high = blocked_spans(parts, apex * 0.95, r.body.stand_height);
+    // Rolling or jumping is judged where the obstacle puts its opening or
+    // its ramp (the anchor): a free strip somewhere else is just walking.
+    let (ax, _) = obstacle_anchor(&g.spec, index);
+    let at = |spans: &[(f32, f32)]| spans.iter().any(|&(a, b)| a < ax && ax < b);
+    let front = parts
+        .iter()
+        .map(|p| p.skin_min[2])
+        .fold(f32::INFINITY, f32::min);
+    let back = parts.iter().map(|p| p.skin_max[2]).fold(0.0, f32::max);
+    // Airtime times speed, with margin, against the depth of the thing.
+    let air = 2.0 * r.jump.velocity / r.jump.gravity.abs();
+    let jump_len = air * speed_at(g, t) * 0.8;
+    let ramp = parts.iter().find(|p| p.role == PartRole::Ramp);
+    let top = parts.iter().find(|p| p.role == PartRole::Ride);
+    let ride = match (ramp, top) {
+        (Some(rp), Some(tp)) => {
+            let ramp_end = rp.skin_min[2] + rp.ramp_run;
+            rp.skin_max[1] >= tp.skin_max[1] - r.body.step_tol
+                && (ramp_end - tp.skin_min[2]).abs() < 0.3
+                && (rp.hit_cx - tp.hit_cx).abs() < 0.3
+        }
+        _ => false,
+    };
+    (
+        Options {
+            walk: !walk_spans.is_empty(),
+            roll: at(&roll_spans),
+            jump: !at(&high) && back - front <= jump_len,
+            ride,
+        },
+        walk_spans,
+    )
+}
+
+/// Audit placements over `course_secs`: an obstacle the cat has no way past,
+/// kinds whose geometry does not match their declared behavior, back-to-back
+/// walls with no time to change side, and windows whose difficulty jumps
+/// well above the one before.
+fn course(
+    world: &str,
+    opts: &MeasureOpts,
+    apex: f32,
+    switch_s: f32,
+    reach: &Value,
+) -> Result<Value, String> {
+    let g = NeonCat::from_json(world)?;
+    let r = &g.spec.runner;
     let steer = r.lanes.steer.max(0.01);
     let mut walls: Vec<(i32, f32, Spans)> = Vec::new();
     let mut unavoidable = Vec::new();
     let mut tight = Vec::new();
+    let mut geometry = Vec::new();
     let mut score_at: Vec<(f32, f32)> = Vec::new();
     let mut count = 0u32;
     let mut i = 0i32;
     let mut kinds: BTreeSet<String> = BTreeSet::new();
+    let mut behaviors: BTreeMap<String, u32> = BTreeMap::new();
+    let mut seen_kind: BTreeSet<String> = BTreeSet::new();
     let mut times: Vec<f32> = vec![0.0];
+    let mut combos = Combos::default();
+    let mut prev_move: Option<Move> = None;
     let mut sec_diff: Vec<f32> = vec![0.0; g.spec.runner.sections.len()];
     loop {
         if !g.spec.obstacle_active(i) {
@@ -549,22 +637,81 @@ fn course(world: &str, opts: &MeasureOpts, apex: f32, switch_s: f32) -> Result<V
             i += 1;
             continue;
         }
-        let o = obstacle_shape(&g.spec, i);
+        let parts = obstacle_parts(&g.spec, i);
+        let o = &parts[0];
+        let kind = g.spec.obstacle_kind(i);
         let t = time_at(&g, o.hit_cz);
         if t > opts.course_secs || i > 100_000 {
             break;
         }
         count += 1;
         times.push(t);
-        kinds.insert(o.kind.clone());
-        let jumpable = o.hit_top < apex * 0.95;
-        let spans = free_spans(o.hit_cx, o.hit_hx, limit);
-        let mut d = 1.0;
-        if !jumpable {
-            d += 1.0;
-            if spans.is_empty() {
-                unavoidable.push(json!({"index": i, "kind": o.kind, "t": r3(t), "why": "blocks every lane and is too tall to jump"}));
+        kinds.insert(kind.name.clone());
+        *behaviors
+            .entry(kind.behavior.name().to_string())
+            .or_default() += 1;
+        let (opt, spans) = options_for(&g, i, &parts, t, apex);
+        let depth = parts.iter().map(|p| p.skin_max[2]).fold(0.0, f32::max)
+            - parts
+                .iter()
+                .map(|p| p.skin_min[2])
+                .fold(f32::INFINITY, f32::min);
+        // Declared behavior against what the geometry allows. Once per kind.
+        if seen_kind.insert(kind.name.clone()) {
+            let name = &kind.name;
+            let bad = |why: &str| {
+                json!({"kind": name, "behavior": kind.behavior.name(), "why": why,
+                    "walk": opt.walk, "roll": opt.roll, "jump": opt.jump, "ride": opt.ride})
+            };
+            match kind.behavior {
+                Behavior::RollUnder | Behavior::CatGap => {
+                    if !opt.roll {
+                        geometry.push(json!({"severity": "error", "code": "behavior_unmet",
+                            "at": bad("a rolling cat does not fit through it")}));
+                    } else {
+                        if opt.walk || opt.jump {
+                            geometry.push(json!({"severity": "warn", "code": "behavior_leaks",
+                                "at": bad("it can be walked round or jumped, so rolling is optional")}));
+                        }
+                        let dist = r.body.roll_secs * speed_at(&g, 0.0);
+                        if dist < depth + 0.3 {
+                            geometry.push(json!({"severity": "error", "code": "roll_too_short",
+                                "at": bad("a roll ends before the cat is clear"),
+                                "roll_m": r3(dist), "depth_m": r3(depth)}));
+                        }
+                    }
+                }
+                Behavior::Rideable => {
+                    if !opt.ride {
+                        geometry.push(json!({"severity": "error", "code": "behavior_unmet",
+                            "at": bad("no ramp reaches the top, so it cannot be ridden")}));
+                    }
+                }
+                Behavior::Solid => {
+                    if opt.jump || opt.roll {
+                        geometry.push(json!({"severity": "warn", "code": "behavior_leaks",
+                            "at": bad("a solid can be jumped or rolled through")}));
+                    }
+                }
+                Behavior::JumpOver => {}
             }
+        }
+        let any = opt.walk || opt.roll || opt.jump || opt.ride;
+        let wall = !(opt.roll || opt.jump || opt.ride);
+        let mut d = match kind.behavior {
+            Behavior::JumpOver => 1.0,
+            Behavior::Solid => 2.0,
+            Behavior::RollUnder => 1.2,
+            Behavior::CatGap => 1.4,
+            Behavior::Rideable => 0.8,
+        };
+        if wall && kind.behavior == Behavior::JumpOver {
+            d += 1.0;
+        }
+        if !any {
+            unavoidable.push(json!({"index": i, "kind": kind.name, "t": r3(t), "why": "blocks every lane and cannot be jumped or rolled"}));
+        }
+        if wall {
             if let Some((pi, pt, prev)) = walls.last() {
                 let need = span_gap(prev, &spans) / steer;
                 let have = t - pt;
@@ -577,6 +724,11 @@ fn course(world: &str, opts: &MeasureOpts, apex: f32, switch_s: f32) -> Result<V
             }
             walls.push((i, t, spans));
         }
+        let mv = intended_move(&g, kind.behavior, &opt, &parts);
+        if let (Some(a), Some(b)) = (prev_move, mv) {
+            combos.add(&a, &b, i);
+        }
+        prev_move = mv;
         if let Some((k, _)) = g.spec.section_at(o.hit_cz) {
             sec_diff[k] += d;
         }
@@ -596,18 +748,343 @@ fn course(world: &str, opts: &MeasureOpts, apex: f32, switch_s: f32) -> Result<V
             spikes.push(json!({"window": k, "from": r3(win[k - 1]), "to": r3(win[k])}));
         }
     }
-    let issues = placement_issues(&g, opts, &times, &sec_diff, &unavoidable, &tight, &spikes);
+    let mut issues = placement_issues(&g, opts, &times, &sec_diff, &unavoidable, &tight, &spikes);
+    issues.extend(geometry);
+    issues.extend(combos.issues(opts.combo_margin_secs));
+    if let Some(list) = reach["issues"].as_array() {
+        issues.extend(list.iter().cloned());
+    }
     let errors = issues.iter().filter(|v| v["severity"] == "error").count();
     Ok(json!({
         "horizon_s": opts.course_secs,
         "placement": {"ok": errors == 0, "errors": errors, "issues": issues},
         "obstacles": count,
         "kinds": kinds,
+        "behaviors": behaviors,
         "unavoidable": unavoidable,
         "tight": tight,
         "difficulty_per_window": win.iter().map(|v| r3(*v)).collect::<Vec<_>>(),
         "spikes": spikes,
+        "combos": combos.summary(),
     }))
+}
+
+/// Where the camera puts the cat and how far ahead a 1 m obstacle reads,
+/// for a portrait phone and a landscape screen, at start speed and with the
+/// FOV opened for top speed.
+fn view(world: &str, opts: &MeasureOpts) -> Result<Value, String> {
+    let g = fresh(world)?;
+    let r = &g.spec.runner;
+    // The three lanes: their outer edges, not the rail beyond them.
+    let (limit, v0, vcap) = (r.lanes.width * 1.5, r.speed.start, r.speed.cap);
+    let cat_z = g.z();
+    let first = (0..64)
+        .find(|i| g.spec.obstacle_active(*i))
+        .map(|i| obstacle_parts(&g.spec, i)[0].hit_cz - cat_z);
+    let mut rows = Vec::new();
+    let mut issues = Vec::new();
+    for (screen, aspect) in [("portrait", 412.0 / 915.0), ("landscape", 16.0 / 9.0)] {
+        for (state, fov, speed) in [
+            ("start", g.spec.camera.fov, v0),
+            ("fast", g.spec.camera.fov_fast, vcap),
+        ] {
+            let mut scene = g.document().compile_scene(aspect);
+            scene.camera.fov_y = fov.to_radians();
+            let vp = scene.camera.view_projection(aspect);
+            let ndc = |p: [f32; 3]| {
+                let c = vp * glam::Vec3::from_array(p).extend(1.0);
+                (c.w > 0.05).then(|| c.truncate() / c.w)
+            };
+            let cat = ndc([0.0, 0.31, cat_z]).map(|n| (n.y + 1.0) / 2.0);
+            let lane = |d: f32| {
+                let a = ndc([limit, 0.0, cat_z + d]);
+                let b = ndc([-limit, 0.0, cat_z + d]);
+                match (a, b) {
+                    (Some(a), Some(b)) => a.x.abs().max(b.x.abs()),
+                    _ => f32::INFINITY,
+                }
+            };
+            // The farthest a 1 m obstacle is still tall enough to read:
+            // 4% of the frame height, and clear of the top HUD band.
+            let mut readable = 0.0f32;
+            let mut d = 2.0f32;
+            while d < 120.0 {
+                if let (Some(base), Some(top)) =
+                    (ndc([0.0, 0.0, cat_z + d]), ndc([0.0, 1.0, cat_z + d]))
+                {
+                    if (top.y - base.y) / 2.0 >= 0.04 && top.y < 0.7 {
+                        readable = d;
+                    }
+                }
+                d += 0.25;
+            }
+            let reaction = readable / speed.max(0.01);
+            let (lane_near, lane_far) = (lane(4.0), lane(readable.min(30.0)));
+            let cat_frac = cat.unwrap_or(f32::NAN);
+            rows.push(json!({
+                "screen": screen, "state": state, "fov": r3(fov),
+                "cat_from_bottom": r3(cat_frac),
+                "lane_edge_ndc_x_near": r3(lane_near),
+                "lane_edge_ndc_x_far": r3(lane_far),
+                "readable_m": r3(readable),
+                "reaction_s": r3(reaction),
+            }));
+            let at = json!({"screen": screen, "state": state});
+            if screen == "portrait" && cat_frac > 0.38 {
+                issues.push(json!({"severity": "warn", "code": "cat_too_high", "at": at, "cat_from_bottom": r3(cat_frac)}));
+            }
+            if lane_near > 1.0 || lane_far > 1.0 {
+                issues.push(json!({"severity": "warn", "code": "lanes_cropped", "at": at}));
+            }
+            if reaction < opts.min_reaction_secs {
+                issues.push(json!({"severity": "warn", "code": "short_reaction", "at": at, "reaction_s": r3(reaction)}));
+            }
+        }
+    }
+    Ok(json!({"first_obstacle_m": first.map(r3), "rows": rows, "issues": issues}))
+}
+
+/// What the cat does about an obstacle when it plays it as intended, with
+/// the moments that action pins down. Walking round something is a lane
+/// change, which the wall checks already cover.
+#[derive(Clone, Copy, Debug)]
+struct Move {
+    kind: MoveKind,
+    /// The latest moment the action must have started.
+    need_by: f32,
+    /// The earliest moment the cat is grounded and free again.
+    free_at: f32,
+    /// The cat could also walk round, so a bad combo is not forced.
+    walkable: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MoveKind {
+    Jump,
+    Roll,
+    Ride,
+}
+
+impl MoveKind {
+    fn name(self) -> &'static str {
+        match self {
+            MoveKind::Jump => "jump",
+            MoveKind::Roll => "roll",
+            MoveKind::Ride => "ride",
+        }
+    }
+}
+
+/// Times come from the real jump arc (not a fast fall) and the real roll,
+/// with the distance to each obstacle turned into seconds by the speed ramp.
+fn intended_move(g: &NeonCat, behavior: Behavior, opt: &Options, parts: &[Hitbox]) -> Option<Move> {
+    let r = &g.spec.runner;
+    let front = parts
+        .iter()
+        .map(|p| p.skin_min[2])
+        .fold(f32::INFINITY, f32::min);
+    let back = parts.iter().map(|p| p.skin_max[2]).fold(0.0, f32::max);
+    let (t_front, t_back) = (time_at(g, front), time_at(g, back));
+    let walkable = opt.walk;
+    let v = r.jump.velocity;
+    let grav = r.jump.gravity.abs().max(0.01);
+    match behavior {
+        Behavior::JumpOver if opt.jump => {
+            let h = parts
+                .iter()
+                .map(|p| p.hit_top)
+                .fold(0.0, f32::max)
+                .min(v * v / (2.0 * grav) - 0.01);
+            // Rising to the obstacle's top takes this long after takeoff.
+            let rise = (v - (v * v - 2.0 * grav * h).max(0.0).sqrt()) / grav;
+            let air = 2.0 * v / grav;
+            let take_off = t_front - rise;
+            Some(Move {
+                kind: MoveKind::Jump,
+                need_by: take_off,
+                free_at: take_off + air,
+                walkable,
+            })
+        }
+        Behavior::RollUnder | Behavior::CatGap if opt.roll => Some(Move {
+            kind: MoveKind::Roll,
+
+            need_by: t_front,
+            // A jump cancels a roll, and a roll can be restarted, so the
+            // cat is free as soon as it is past the back.
+            free_at: t_back,
+            walkable,
+        }),
+        Behavior::Rideable if opt.ride => {
+            let top = parts.iter().map(|p| p.skin_max[1]).fold(0.0, f32::max);
+            let fall = (2.0 * top / grav).sqrt();
+            Some(Move {
+                kind: MoveKind::Ride,
+                need_by: t_front,
+                free_at: t_back + fall,
+                walkable,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Back-to-back actions: the second one has to start before the first has
+/// let the cat go.
+#[derive(Default)]
+struct Combos {
+    rows: BTreeMap<String, (u32, f32, i32)>,
+    pairs: u32,
+}
+
+impl Combos {
+    fn add(&mut self, a: &Move, b: &Move, at: i32) {
+        let margin = b.need_by - a.free_at;
+        let key = format!(
+            "{}>{}{}",
+            a.kind.name(),
+            b.kind.name(),
+            if a.walkable { "~" } else { "" }
+        );
+        let e = self.rows.entry(key).or_insert((0, f32::INFINITY, at));
+        e.0 += 1;
+        if margin < e.1 {
+            e.1 = margin;
+            e.2 = at;
+        }
+        self.pairs += 1;
+    }
+
+    fn issues(&self, tight: f32) -> Vec<Value> {
+        let mut out = Vec::new();
+        for (k, (n, m, at)) in &self.rows {
+            let walkable = k.ends_with('~');
+            let row = json!({"pair": k.trim_end_matches('~'), "count": n, "min_margin_s": r3(*m), "at_obstacle": at});
+            if *m < 0.0 && !walkable {
+                out.push(json!({"severity": "error", "code": "combo_infeasible", "at": row}));
+            } else if *m < tight {
+                out.push(json!({"severity": "warn", "code": "combo_tight", "at": row}));
+            }
+        }
+        out
+    }
+
+    fn summary(&self) -> Value {
+        let rows: Vec<Value> = self
+            .rows
+            .iter()
+            .map(|(k, (n, m, at))| json!({"pair": k.trim_end_matches('~'), "walkable_first": k.ends_with('~'), "count": n, "min_margin_s": r3(*m), "at_obstacle": at}))
+            .collect();
+        json!({"pairs": self.pairs, "by_pair": rows})
+    }
+}
+
+/// How a probe tries to get past an obstacle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Act {
+    /// Hold the lane at the anchor and do nothing.
+    Stand,
+    /// Steer into the widest free span, no jump.
+    Walk,
+    Jump,
+    Roll,
+}
+
+/// Teleport a live run to just before obstacle `i`, act, and report whether
+/// the cat is still alive once past it. The same sim the player gets.
+fn probe(world: &str, i: i32, act: Act) -> Result<bool, String> {
+    let mut g = fresh(world)?;
+    let grace = g.spec().runner.jump.grace_secs;
+    g.time = grace + 0.2;
+    let parts = obstacle_parts(&g.spec, i);
+    let front = parts
+        .iter()
+        .map(|p| p.skin_min[2])
+        .fold(f32::INFINITY, f32::min);
+    let back = parts.iter().map(|p| p.skin_max[2]).fold(0.0, f32::max);
+    let (ax, _) = obstacle_anchor(&g.spec, i);
+    let limit = g.spec.runner.lanes.limit;
+    let free = free_between(
+        &blocked_spans(&parts, 0.0, g.spec.runner.body.stand_height),
+        limit,
+    );
+    let aim = match act {
+        Act::Walk => free
+            .iter()
+            .max_by(|a, b| (a.1 - a.0).partial_cmp(&(b.1 - b.0)).unwrap())
+            .map(|(a, b)| (a + b) * 0.5)
+            .unwrap_or(ax),
+        // A roll or a jump goes through the anchor (the gap, the ramp).
+        _ => ax,
+    };
+    g.x = aim;
+    g.y = 0.0;
+    g.vy = 0.0;
+    g.z = front - 7.0;
+    g.rebuild();
+    for _ in 0..(10.0 / DT) as u32 {
+        if !g.alive() {
+            return Ok(false);
+        }
+        if g.z > back + 1.5 {
+            return Ok(true);
+        }
+        let ahead = front - g.z;
+        let mut jump = false;
+        if act == Act::Jump && (0.0..1.0).contains(&ahead) {
+            jump = true;
+        }
+        if act == Act::Roll && (0.0..1.0).contains(&ahead) && g.rolling <= 0.0 {
+            g.swipe(Swipe::Down);
+        }
+        g.set_steer(0.0, 0.0, jump);
+        g.tick(DT);
+    }
+    Ok(g.alive())
+}
+
+/// Route reachability, on the live sim: for each obstacle kind, which of
+/// stand / walk / jump / roll gets a cat past, against what its behavior
+/// promises. A kind that its own behavior cannot pass is an error.
+fn reachability(world: &str) -> Result<Value, String> {
+    let g = NeonCat::from_json(world)?;
+    let mut rows = Vec::new();
+    let mut issues = Vec::new();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    for i in 0..4000 {
+        if !g.spec.obstacle_active(i) {
+            continue;
+        }
+        let kind = g.spec.obstacle_kind(i);
+        if !seen.insert(kind.name.clone()) {
+            continue;
+        }
+        let stand = probe(world, i, Act::Stand)?;
+        let walk = probe(world, i, Act::Walk)?;
+        let jump = probe(world, i, Act::Jump)?;
+        let roll = probe(world, i, Act::Roll)?;
+        let (want, ok) = match kind.behavior {
+            Behavior::JumpOver => ("jump", jump && !stand),
+            Behavior::Solid => ("walk", walk && !stand && !jump),
+            Behavior::RollUnder | Behavior::CatGap => ("roll", roll && !stand && !jump),
+            // Standing in the lane climbs the ramp and rides the roof.
+            Behavior::Rideable => ("ride", stand),
+        };
+        if !ok {
+            issues.push(json!({"severity": "error", "code": "unreachable", "at": {
+                "kind": kind.name, "behavior": kind.behavior.name(), "index": i,
+                "expected": want, "stand": stand, "walk": walk, "jump": jump, "roll": roll}}));
+        }
+        rows.push(json!({
+            "kind": kind.name, "behavior": kind.behavior.name(), "index": i,
+            "expected": want, "stand": stand, "walk": walk, "jump": jump, "roll": roll,
+            "ok": ok,
+        }));
+        if seen.len() >= g.spec.obstacles.len() {
+            break;
+        }
+    }
+    Ok(json!({"kinds": rows, "issues": issues}))
 }
 
 /// The validator proper. Severity `error` means a designer must fix it.
@@ -692,7 +1169,10 @@ fn perf(world: &str) -> Result<Value, String> {
         if !g.alive() {
             break;
         }
-        let (lx, j) = g.script_steer();
+        let (lx, j, roll) = g.script_plan();
+        if roll {
+            g.swipe(Swipe::Down);
+        }
         g.set_steer(lx, 0.0, j);
         let t0 = Instant::now();
         g.tick(DT);
@@ -786,7 +1266,9 @@ mod tests {
         );
     }
 
-    const SECTIONED: &str = include_str!("../tests/fixtures/neon_cat_sectioned_world.json");
+    // The default course is sectioned; the classic one is three crates, no pacing.
+    const CLASSIC: &str = include_str!("../tests/fixtures/neon_cat_classic_world.json");
+    const SECTIONED: &str = WORLD;
 
     fn issues(world: &str) -> Vec<Value> {
         let o = MeasureOpts {
@@ -808,6 +1290,68 @@ mod tests {
             .collect()
     }
 
+    fn tight_world(gap: f64, keep: &[&str]) -> String {
+        let mut w: Value = serde_json::from_str(WORLD).unwrap();
+        w["game"]["runner"]["sections"] = json!([]);
+        w["game"]["runner"]["obstacle_track"]["gap"] = json!(gap);
+        let list: Vec<Value> = w["game"]["obstacles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|k| keep.contains(&k["name"].as_str().unwrap()))
+            .cloned()
+            .collect();
+        w["game"]["obstacles"] = Value::Array(list);
+        w.to_string()
+    }
+
+    #[test]
+    fn back_to_back_actions_are_checked_against_the_real_airtime_and_roll() {
+        // A roll-under and a train a few metres apart: the cat cannot be
+        // through one and set for the other.
+        let errs = codes(&issues(&tight_world(5.0, &["OVERPASS", "TRAIN"])), "error");
+        assert!(errs.contains(&"combo_infeasible".to_string()), "{errs:?}");
+        // The shipped course leaves room for every pair it contains.
+        let errs = codes(&issues(WORLD), "error");
+        assert!(!errs.contains(&"combo_infeasible".to_string()), "{errs:?}");
+        // And a wide gap clears the same pair.
+        let wide = codes(&issues(&tight_world(30.0, &["OVERPASS", "TRAIN"])), "error");
+        assert!(!wide.contains(&"combo_infeasible".to_string()), "{wide:?}");
+    }
+
+    #[test]
+    fn combo_margins_follow_the_speed_ramp() {
+        let a = measure(WORLD, &opts()).unwrap();
+        let rows = a["course"]["combos"]["by_pair"].as_array().unwrap();
+        assert!(rows
+            .iter()
+            .any(|r| r["pair"] == "jump>roll" || r["pair"] == "roll>jump"));
+        // Jump then jump at the speed cap leaves the least slack.
+        let jj = rows.iter().find(|r| r["pair"] == "jump>jump").unwrap();
+        assert!(jj["min_margin_s"].as_f64().unwrap() > 0.0, "{jj}");
+    }
+
+    #[test]
+    fn camera_view_keeps_the_cat_low_and_the_lanes_in_frame() {
+        let r = measure(WORLD, &opts()).unwrap();
+        let rows = r["view"]["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 4);
+        for row in rows {
+            let low = row["cat_from_bottom"].as_f64().unwrap();
+            assert!(low > 0.1 && low < 0.3, "cat in the lower quarter: {row}");
+            assert!(
+                row["lane_edge_ndc_x_near"].as_f64().unwrap() <= 1.0,
+                "{row}"
+            );
+            assert!(row["reaction_s"].as_f64().unwrap() >= 0.8, "{row}");
+        }
+        assert!(
+            r["view"]["issues"].as_array().unwrap().is_empty(),
+            "{}",
+            r["view"]
+        );
+    }
+
     fn with_sections(sections: Value) -> String {
         let mut w: Value = serde_json::from_str(SECTIONED).unwrap();
         w["game"]["runner"]["sections"] = sections;
@@ -816,7 +1360,7 @@ mod tests {
 
     #[test]
     fn uniform_course_is_flagged_for_no_rest_and_sections_fix_it() {
-        assert_eq!(codes(&issues(WORLD), "error"), ["missing_rest"]);
+        assert_eq!(codes(&issues(CLASSIC), "error"), ["missing_rest"]);
         let errs = codes(&issues(SECTIONED), "error");
         assert!(errs.is_empty(), "{errs:?}");
     }
@@ -877,7 +1421,7 @@ mod tests {
             runs: 8,
             ..Default::default()
         };
-        let uni = bot(WORLD, &o).unwrap();
+        let uni = bot(CLASSIC, &o).unwrap();
         let sec = bot(SECTIONED, &o).unwrap();
         assert!(
             sec["survival_mean_s"].as_f64() >= uni["survival_mean_s"].as_f64(),
@@ -889,6 +1433,6 @@ mod tests {
     fn walls_without_side_time_are_flagged() {
         assert!(span_gap(&[(-2.0, -1.0)], &[(1.0, 2.0)]) > 1.9);
         assert_eq!(span_gap(&[(-2.0, 0.5)], &[(0.0, 2.0)]), 0.0);
-        assert!(free_spans(0.0, 3.0, 2.0).is_empty());
+        assert!(free_between(&[(-3.0, 3.0)], 2.0).is_empty());
     }
 }

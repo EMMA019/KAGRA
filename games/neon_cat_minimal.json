@@ -13,7 +13,13 @@
     "assets/models/kenney/platformer-kit/Textures/colormap.png",
     "assets/models/kenney/racing-kit/overheadRound.glb",
     "assets/models/kenney/racing-kit/barrierRed.glb",
-    "assets/models/quaternius/modular-dungeons-pack/Arch.glb"
+    "assets/models/quaternius/modular-dungeons-pack/Arch.glb",
+    "assets/models/coin.glb",
+    "assets/models/kenney/space-kit/machine_generatorLarge.glb",
+    "assets/models/kenney/space-kit/hangar_smallA.glb",
+    "assets/models/kenney/space-kit/monorail_trainBox.glb",
+    "assets/models/kenney/space-kit/terrain_ramp.glb",
+    "assets/models/kenney/space-kit/structure_closed.glb"
   ],
   "game": {}
 }

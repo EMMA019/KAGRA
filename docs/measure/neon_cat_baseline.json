@@ -1,70 +1,190 @@
 {
   "bot": {
-    "clear_rate": 0.45,
+    "clear_rate": 0.4,
     "clear_secs": 90.0,
-    "collisions": 11,
+    "coins_mean": 140.1,
+    "collisions": 12,
     "death_causes": {
-      "BARREL": 8,
-      "BARRIER": 1,
-      "CRATE": 2
+      "BARRIER": 5,
+      "CRATE": 7
     },
     "death_z": [
-      375.753,
-      711.77,
-      1047.754,
-      1047.754,
-      1047.754,
-      557.866,
-      571.836,
-      571.836,
-      375.753,
-      375.753,
-      375.753
+      445.886,
+      1579.891,
+      1047.821,
+      1047.821,
+      1047.821,
+      1047.821,
+      529.823,
+      529.823,
+      529.823,
+      445.886,
+      445.886,
+      445.886
     ],
-    "rings_mean": 62.9,
+    "rings_mean": 62.85,
     "runs": 20,
-    "score_mean": 8645.4,
-    "survival_mean_s": 63.503,
+    "score_mean": 10095.15,
+    "survival_mean_s": 64.828,
     "survival_median_s": 62.633
   },
   "course": {
+    "behaviors": {
+      "cat_gap": 8,
+      "jump_over": 66,
+      "rideable": 8,
+      "roll_under": 12,
+      "solid": 8
+    },
+    "combos": {
+      "by_pair": [
+        {
+          "at_obstacle": 104,
+          "count": 53,
+          "min_margin_s": 0.054,
+          "pair": "jump>jump",
+          "walkable_first": true
+        },
+        {
+          "at_obstacle": 107,
+          "count": 4,
+          "min_margin_s": 0.084,
+          "pair": "jump>roll",
+          "walkable_first": true
+        },
+        {
+          "at_obstacle": 62,
+          "count": 8,
+          "min_margin_s": 0.3,
+          "pair": "ride>roll",
+          "walkable_first": true
+        },
+        {
+          "at_obstacle": 102,
+          "count": 12,
+          "min_margin_s": 0.565,
+          "pair": "roll>jump",
+          "walkable_first": false
+        },
+        {
+          "at_obstacle": 61,
+          "count": 8,
+          "min_margin_s": 0.445,
+          "pair": "roll>ride",
+          "walkable_first": false
+        }
+      ],
+      "pairs": 85
+    },
     "difficulty_per_window": [
-      0.7,
-      1.0,
-      1.1,
-      1.3,
-      1.4,
-      1.5,
-      1.4,
-      1.4,
-      1.5,
-      1.4,
-      1.4,
-      1.4
+      0.3,
+      0.6,
+      0.86,
+      1.44,
+      0.42,
+      1.76,
+      0.52,
+      0.5,
+      1.34,
+      1.68,
+      0.4,
+      1.58
     ],
     "horizon_s": 120.0,
     "kinds": [
       "BARREL",
       "BARRIER",
-      "CRATE"
+      "CRATE",
+      "GENERATOR",
+      "OVERPASS",
+      "TRAIN",
+      "WALL"
     ],
-    "obstacles": 155,
+    "obstacles": 102,
     "placement": {
-      "errors": 1,
+      "errors": 0,
       "issues": [
         {
-          "code": "missing_rest",
-          "limit_s": 45.0,
-          "longest_empty_gap_s": 2.415,
-          "longest_without_rest_s": 120.0,
-          "needs_gap_s": 3.0,
-          "severity": "error",
-          "why": "no empty stretch long enough to breathe; add a rest section"
+          "at": {
+            "from": 0.86,
+            "to": 1.44,
+            "window": 3
+          },
+          "code": "difficulty_spike",
+          "severity": "warn"
+        },
+        {
+          "at": {
+            "from": 0.42,
+            "to": 1.76,
+            "window": 5
+          },
+          "code": "difficulty_spike",
+          "severity": "warn"
+        },
+        {
+          "at": {
+            "from": 0.5,
+            "to": 1.34,
+            "window": 8
+          },
+          "code": "difficulty_spike",
+          "severity": "warn"
+        },
+        {
+          "at": {
+            "from": 0.4,
+            "to": 1.58,
+            "window": 11
+          },
+          "code": "difficulty_spike",
+          "severity": "warn"
+        },
+        {
+          "at": {
+            "at_obstacle": 104,
+            "count": 53,
+            "min_margin_s": 0.054,
+            "pair": "jump>jump"
+          },
+          "code": "combo_tight",
+          "severity": "warn"
+        },
+        {
+          "at": {
+            "at_obstacle": 107,
+            "count": 4,
+            "min_margin_s": 0.084,
+            "pair": "jump>roll"
+          },
+          "code": "combo_tight",
+          "severity": "warn"
         }
       ],
-      "ok": false
+      "ok": true
     },
-    "spikes": [],
+    "spikes": [
+      {
+        "from": 0.86,
+        "to": 1.44,
+        "window": 3
+      },
+      {
+        "from": 0.42,
+        "to": 1.76,
+        "window": 5
+      },
+      {
+        "from": 0.5,
+        "to": 1.34,
+        "window": 8
+      },
+      {
+        "from": 0.4,
+        "to": 1.58,
+        "window": 11
+      }
+    ],
     "tight": [],
     "unavoidable": []
   },
@@ -103,14 +223,96 @@
     "survives_grace": true
   },
   "perf": {
-    "draw_batches_est_max": 6.0,
-    "draw_batches_est_p95": 6.0,
+    "draw_batches_est_max": 12.0,
+    "draw_batches_est_p95": 12.0,
     "frames": 3599,
     "note": "wall clock; sim tick + dump rebuild only, no GPU",
-    "props_max": 238.0,
-    "props_p95": 237.0,
-    "tick_ms_p50": 0.064,
-    "tick_ms_p95": 0.079
+    "props_max": 283.0,
+    "props_p95": 274.0,
+    "tick_ms_p50": 0.081,
+    "tick_ms_p95": 0.101
+  },
+  "reachability": {
+    "issues": [],
+    "kinds": [
+      {
+        "behavior": "jump_over",
+        "expected": "jump",
+        "index": 0,
+        "jump": true,
+        "kind": "CRATE",
+        "ok": true,
+        "roll": false,
+        "stand": false,
+        "walk": true
+      },
+      {
+        "behavior": "jump_over",
+        "expected": "jump",
+        "index": 2,
+        "jump": true,
+        "kind": "BARREL",
+        "ok": true,
+        "roll": false,
+        "stand": false,
+        "walk": true
+      },
+      {
+        "behavior": "jump_over",
+        "expected": "jump",
+        "index": 10,
+        "jump": true,
+        "kind": "BARRIER",
+        "ok": true,
+        "roll": false,
+        "stand": false,
+        "walk": true
+      },
+      {
+        "behavior": "roll_under",
+        "expected": "roll",
+        "index": 17,
+        "jump": false,
+        "kind": "OVERPASS",
+        "ok": true,
+        "roll": true,
+        "stand": false,
+        "walk": false
+      },
+      {
+        "behavior": "rideable",
+        "expected": "ride",
+        "index": 25,
+        "jump": true,
+        "kind": "TRAIN",
+        "ok": true,
+        "roll": true,
+        "stand": true,
+        "walk": true
+      },
+      {
+        "behavior": "cat_gap",
+        "expected": "roll",
+        "index": 26,
+        "jump": false,
+        "kind": "WALL",
+        "ok": true,
+        "roll": true,
+        "stand": false,
+        "walk": false
+      },
+      {
+        "behavior": "solid",
+        "expected": "walk",
+        "index": 32,
+        "jump": false,
+        "kind": "GENERATOR",
+        "ok": true,
+        "roll": false,
+        "stand": false,
+        "walk": true
+      }
+    ]
   },
   "touch": {
     "diagonal_45_jumped": false,
@@ -126,5 +328,51 @@
     ],
     "swipe_scheme_long_stroke_lanes": 1.0
   },
-  "version": 1
+  "version": 1,
+  "view": {
+    "first_obstacle_m": 25.825,
+    "issues": [],
+    "rows": [
+      {
+        "cat_from_bottom": 0.206,
+        "fov": 50.0,
+        "lane_edge_ndc_x_far": 0.321,
+        "lane_edge_ndc_x_near": 0.855,
+        "reaction_s": 1.976,
+        "readable_m": 20.75,
+        "screen": "portrait",
+        "state": "start"
+      },
+      {
+        "cat_from_bottom": 0.252,
+        "fov": 58.0,
+        "lane_edge_ndc_x_far": 0.32,
+        "lane_edge_ndc_x_near": 0.719,
+        "reaction_s": 0.825,
+        "readable_m": 16.5,
+        "screen": "portrait",
+        "state": "fast"
+      },
+      {
+        "cat_from_bottom": 0.206,
+        "fov": 50.0,
+        "lane_edge_ndc_x_far": 0.081,
+        "lane_edge_ndc_x_near": 0.216,
+        "reaction_s": 1.976,
+        "readable_m": 20.75,
+        "screen": "landscape",
+        "state": "start"
+      },
+      {
+        "cat_from_bottom": 0.252,
+        "fov": 58.0,
+        "lane_edge_ndc_x_far": 0.081,
+        "lane_edge_ndc_x_near": 0.182,
+        "reaction_s": 0.825,
+        "readable_m": 16.5,
+        "screen": "landscape",
+        "state": "fast"
+      }
+    ]
+  }
 }
