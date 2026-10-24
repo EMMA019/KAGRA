@@ -10,6 +10,7 @@
 //! The runner kit (`neon_cat.rs`) is the only kit today.
 
 pub mod collide;
+pub mod feel;
 pub mod juice;
 pub mod run;
 
