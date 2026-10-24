@@ -1,0 +1,57 @@
+{
+  "slug": "sports",
+  "title": "Sports Pitch",
+  "version": "0.1.0",
+  "genre": "sports_goal",
+  "world": "world.json",
+  "files": [
+    {
+      "path": "world.json",
+      "url": "games/sports/world.json"
+    },
+    {
+      "path": "kagra_game.json",
+      "url": "games/sports/kagra_game.json"
+    },
+    {
+      "path": "assets/audio/bgm.wav",
+      "url": "assets/audio/bgm.wav"
+    },
+    {
+      "path": "assets/audio/card.wav",
+      "url": "assets/audio/card.wav"
+    },
+    {
+      "path": "assets/audio/fire.wav",
+      "url": "assets/audio/fire.wav"
+    },
+    {
+      "path": "assets/audio/jump.wav",
+      "url": "assets/audio/jump.wav"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/characters/Knight.glb",
+      "url": "assets/library/kaykit/adventurers/characters/Knight.glb"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/characters/Rogue.glb",
+      "url": "assets/library/kaykit/adventurers/characters/Rogue.glb"
+    },
+    {
+      "path": "assets/models/placeholder/pine.glb",
+      "url": "assets/models/placeholder/pine.glb"
+    },
+    {
+      "path": "assets/models/placeholder/rock.glb",
+      "url": "assets/models/placeholder/rock.glb"
+    },
+    {
+      "path": "assets/models/placeholder/tree.glb",
+      "url": "assets/models/placeholder/tree.glb"
+    },
+    {
+      "path": "assets/models/placeholder/well.glb",
+      "url": "assets/models/placeholder/well.glb"
+    }
+  ]
+}
