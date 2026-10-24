@@ -136,6 +136,38 @@
     {
       "path": "assets/audio/neon_cat/roll.wav",
       "url": "assets/audio/neon_cat/roll.wav"
+    },
+    {
+      "path": "assets/models/hop_beat/hop_bunny.glb",
+      "url": "assets/models/hop_beat/hop_bunny.glb"
+    },
+    {
+      "path": "assets/models/hop_beat/hop_post.glb",
+      "url": "assets/models/hop_beat/hop_post.glb"
+    },
+    {
+      "path": "assets/models/hop_beat/hop_tower_a.glb",
+      "url": "assets/models/hop_beat/hop_tower_a.glb"
+    },
+    {
+      "path": "assets/models/hop_beat/hop_tower_b.glb",
+      "url": "assets/models/hop_beat/hop_tower_b.glb"
+    },
+    {
+      "path": "assets/models/hop_beat/hop_tower_c.glb",
+      "url": "assets/models/hop_beat/hop_tower_c.glb"
+    },
+    {
+      "path": "assets/models/hop_beat/hop_windows_a.glb",
+      "url": "assets/models/hop_beat/hop_windows_a.glb"
+    },
+    {
+      "path": "assets/models/hop_beat/hop_windows_b.glb",
+      "url": "assets/models/hop_beat/hop_windows_b.glb"
+    },
+    {
+      "path": "assets/models/hop_beat/hop_windows_c.glb",
+      "url": "assets/models/hop_beat/hop_windows_c.glb"
     }
   ],
   "platform": {
