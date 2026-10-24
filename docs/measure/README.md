@@ -32,6 +32,14 @@ before and after a tuning or preset change. Sim frames are 1/60 s.
   1 m obstacle is still 4 % of the frame tall (`readable_m`) and the time that gives at that speed
   (`reaction_s`). Warns `cat_too_high` (>0.38 in portrait), `lanes_cropped`, `short_reaction`
   (< `min_reaction_secs`, 0.8).
+- `camera_clip`: for one slot of every kind, the closest the chase eye (before the engine's own
+  obstacle guard) gets to any part box while the intended action is played from three lane
+  starts. Under `CAMERA_CLEAR` (0.3 m) is `camera_inside` (error).
+- `roll_window`: for every `roll_under` and `cat_gap` kind, at the speed cap: how long the roll
+  flick can come early or late and still pass (`window_s`, `early_m`, `late_m`) and how far off
+  the anchor the cat can be (`x_left_m`, `x_right_m`; a neighbour's box leaking into the opening
+  shows here). Under 0.25 s is `roll_window_tight`; a cat gap with a half-width under 0.35 m is
+  `gap_narrow` (both errors). Both sections feed `course.placement.issues` and `--check`.
 - `perf`: tick + dump rebuild wall clock p50/p95, enabled props, and an
   estimate of instanced draw batches (one per distinct mesh). No GPU time.
 

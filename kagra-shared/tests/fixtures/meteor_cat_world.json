@@ -133,7 +133,7 @@
     0.1,
     0.6
    ],
-   "fill_emissive": 0.35,
+   "fill_emissive": 0.8,
    "obstacle_color": [
     36,
     26,
@@ -195,7 +195,7 @@
    },
    "obstacle_track": {
     "z0": 26.0,
-    "gap": 14.0,
+    "gap": 18.0,
     "amp": 1.2,
     "freq": 0.85
    },
@@ -274,7 +274,13 @@
     "stand_height": 0.62,
     "roll_height": 0.3,
     "roll_secs": 0.55,
-    "step_tol": 0.18
+    "step_tol": 0.18,
+    "recover_secs": 0.2,
+    "crouch": [
+     1.05,
+     0.68,
+     1.2
+    ]
    },
    "coins": {
     "enabled": true,
@@ -284,6 +290,10 @@
     "free_line": 8,
     "spacing": 0.85,
     "arc_height": 0.85
+   },
+   "score": {
+    "per_meter": 2.2,
+    "per_gate": 50
    }
   },
   "input": {
@@ -295,7 +305,8 @@
    "flick_angle_deg": 30.0,
    "swipe_dist": 0.09,
    "swipe_cooldown_secs": 0.3,
-   "buffer_secs": 0.15
+   "buffer_secs": 0.15,
+   "reverse_guard_secs": 0.2
   },
   "feel": {}
  }

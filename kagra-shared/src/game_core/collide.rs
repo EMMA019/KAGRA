@@ -25,6 +25,8 @@ pub struct Hitbox {
     pub role: PartRole,
     /// Ramp only: incline length from `skin_min[2]`.
     pub ramp_run: f32,
+    /// Emissive strength of a decor part that shines (0 = ordinary fill).
+    pub glow: f32,
 }
 
 impl Hitbox {
@@ -45,6 +47,7 @@ impl Hitbox {
             [0.0; 3],
             kind.hit_y,
             role,
+            0.0,
             0.0,
             (anchor_x, anchor_z),
         )
@@ -69,6 +72,7 @@ impl Hitbox {
             part.hit_y,
             part.role,
             part.run,
+            part.glow,
             (anchor_x, anchor_z),
         )
     }
@@ -85,6 +89,7 @@ impl Hitbox {
         hit_y: Option<[f32; 2]>,
         role: PartRole,
         run: f32,
+        glow: f32,
         anchor: (f32, f32),
     ) -> Self {
         let (anchor_x, anchor_z) = (anchor.0 + offset[0], anchor.1 + offset[2]);
@@ -130,6 +135,7 @@ impl Hitbox {
             hit_y0: if floor_seated { 0.0 } else { y0 },
             role,
             ramp_run: run,
+            glow,
         }
     }
 

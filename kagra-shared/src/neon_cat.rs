@@ -23,6 +23,9 @@ use crate::game_spec::{Behavior, GameSpec, PartRole, SectionKind};
 use crate::scene::{DrawList, Quad, TextAlign, TextQuad};
 use crate::world_doc::{WorldCamera, WorldDoc, WorldLight, WorldProp, WorldWalker};
 
+/// How far the lens stays from any obstacle surface.
+pub const CAMERA_MARGIN: f32 = 0.25;
+
 pub const GAME_ID: &str = "neon_cat";
 
 use crate::game_core::feel::{self, FeelParams};
@@ -88,12 +91,20 @@ pub struct NeonCat {
     hop: Option<(f32, f32, f32, f32)>,
     /// Seconds of roll left. While > 0 the body is `roll_height` tall.
     rolling: f32,
+    /// Seconds of standing back up left after a roll.
+    recover: f32,
+    /// Smoothed pose scale `[x, y, z]` of the cat (crouch, stretch, squash).
+    pose: [f32; 3],
+    /// When the last down flick happened (for the reverse guard).
+    last_down: f32,
     /// A fast-fall asked for a roll on touchdown.
     roll_on_land: bool,
     /// Height of the surface under the feet (a train top or ramp), else 0.
     ground: f32,
     /// Coins picked up this run, and which ones (`index * 32 + k`).
     coins: u32,
+    /// Stone arches run through this run.
+    gates: u32,
     got_coins: HashSet<i32>,
 }
 
@@ -231,9 +242,13 @@ impl NeonCat {
             feel: feel::resolve(&GameSpec::default().feel).expect("default feel"),
             hop: None,
             rolling: 0.0,
+            recover: 0.0,
+            pose: [1.0; 3],
+            last_down: -10.0,
             roll_on_land: false,
             ground: 0.0,
             coins: 0,
+            gates: 0,
             got_coins: HashSet::new(),
         };
         if let Ok(p) = feel::resolve(&run.spec.feel) {
@@ -352,6 +367,7 @@ impl NeonCat {
             "best": self.flow.best_score,
             "rings": self.core.stats.rings,
             "coins": self.coins,
+            "gates": self.gates,
             "rolling": self.rolling > 0.0,
             "ground": self.ground,
             "alive": self.core.stats.alive,
@@ -402,7 +418,38 @@ impl NeonCat {
         ]
     }
 
-    fn chase_eye(&self) -> [f32; 3] {
+    /// The eye the rig asked for, then lifted out of any obstacle volume
+    /// (plus a margin), so the lens never sits inside a mesh and floods the
+    /// screen with its colour. A safety net for custom obstacle shapes.
+    pub fn chase_eye(&self) -> [f32; 3] {
+        let mut eye = self.raw_chase_eye();
+        if self.classic {
+            return eye;
+        }
+        let track = &self.spec.runner.obstacle_track;
+        let i0 = near_index(eye[2], track.z0, track.gap) - 1;
+        for i in i0..i0 + 4 {
+            if i < 0 || !self.spec.obstacle_active(i) {
+                continue;
+            }
+            for p in obstacle_parts(&self.spec, i) {
+                if matches!(p.role, PartRole::Decor) {
+                    continue;
+                }
+                let m = CAMERA_MARGIN;
+                let inside =
+                    (0..3).all(|a| eye[a] > p.skin_min[a] - m && eye[a] < p.skin_max[a] + m);
+                if inside {
+                    eye[1] = eye[1].max(p.skin_max[1] + m);
+                }
+            }
+        }
+        eye
+    }
+
+    /// The chase eye before the obstacle guard (the harness checks this one,
+    /// so a bad spec shows up instead of being hidden).
+    pub fn raw_chase_eye(&self) -> [f32; 3] {
         if self.classic {
             let shake = (self.time * 53.0).sin() * self.core.juice.shake;
             return [
@@ -556,29 +603,47 @@ impl NeonCat {
 
     pub fn show_title(&mut self) {
         self.flow.show_title();
-        self.reset_motion();
-        self.core.stats.alive = true;
-        self.core.stats.death.clear();
-        self.core.stats.score = 0;
-        self.core.stats.score_acc = 0.0;
-        self.core.stats.rings = 0;
+        self.reset_run();
         self.attract = 0.0;
-        self.time = 0.0;
-        self.anim_t = 0.05;
         self.jump_held = false;
         self.key_left = false;
         self.key_right = false;
         self.key_jump = false;
         self.pad_x = 0.0;
         self.pad_up = 0.0;
+        self.rebuild();
+    }
+
+    /// Everything that belongs to one run, back to its first-frame value.
+    /// Title and retry both go through here, so a counter cannot be left
+    /// behind by one of them.
+    fn reset_run(&mut self) {
+        self.reset_motion();
+        let stats = &mut self.core.stats;
+        stats.alive = true;
+        stats.death.clear();
+        stats.score = 0;
+        stats.score_acc = 0.0;
+        stats.rings = 0;
         self.got.clear();
         self.got_coins.clear();
         self.coins = 0;
+        self.gates = 0;
         self.rolling = 0.0;
+        self.recover = 0.0;
+        self.pose = [1.0; 3];
+        self.last_down = -10.0;
         self.roll_on_land = false;
         self.ground = 0.0;
         self.core.juice.sparks.clear();
-        self.rebuild();
+        self.time = 0.0;
+        self.anim_t = 0.05;
+        self.swipes.clear();
+        self.lane_target = None;
+        self.drag_target = None;
+        self.hop = None;
+        self.drag.reset();
+        self.swiper.reset();
     }
 
     pub fn pointer(&mut self, x: f32, y: f32, width: u32, height: u32) -> bool {
@@ -650,21 +715,7 @@ impl NeonCat {
     }
 
     fn start_run(&mut self) {
-        self.reset_motion();
-        self.core.stats.score = 0;
-        self.core.stats.score_acc = 0.0;
-        self.core.stats.rings = 0;
-        self.core.stats.alive = true;
-        self.core.stats.death.clear();
-        self.got.clear();
-        self.core.juice.sparks.clear();
-        self.time = 0.0;
-        self.swipes.clear();
-        self.lane_target = None;
-        self.drag_target = None;
-        self.hop = None;
-        self.drag.reset();
-        self.swiper.reset();
+        self.reset_run();
         self.flow.enter_play();
         self.rebuild();
     }
@@ -768,8 +819,14 @@ impl NeonCat {
                 let m = (lanes.limit / w).floor() * w;
                 self.lane_target = Some((from + step).clamp(-m, m));
             }
-            Swipe::Up => self.swipes.press(Swipe::Up, self.time),
+            Swipe::Up => {
+                // The finger coming back up after a down flick is not a jump.
+                if self.time - self.last_down >= self.spec.input.reverse_guard_secs {
+                    self.swipes.press(Swipe::Up, self.time);
+                }
+            }
             Swipe::Down => {
+                self.last_down = self.time;
                 if self.y > self.ground + 0.05 {
                     // Fast-fall, and roll the moment the paws touch down.
                     self.vy = self
@@ -830,7 +887,24 @@ impl NeonCat {
         let g0 = self.ground_at(self.x, self.z);
         self.ground = g0;
         let grounded = self.y <= g0 + 0.001 && self.vy <= 0.0;
+        let was_rolling = self.rolling > 0.0;
         self.rolling = (self.rolling - dt).max(0.0);
+        self.recover = (self.recover - dt).max(0.0);
+        if was_rolling && self.rolling <= 0.0 {
+            // Stand back up: the body and the pose rise together.
+            self.recover = self.spec.runner.body.recover_secs;
+            if grounded {
+                self.burst(
+                    self.x,
+                    self.y + 0.06,
+                    self.z - 0.1,
+                    5,
+                    [170, 210, 255],
+                    1.6,
+                    0.06,
+                );
+            }
+        }
         if let Some(t) = self.lane_target {
             let held = (self.key_right as i32 - self.key_left as i32) as f32 + self.pad_x;
             if held.abs() >= 0.2 {
@@ -849,12 +923,16 @@ impl NeonCat {
             self.vy = self.spec.runner.jump.velocity * self.feel.velocity_scale;
             self.y = g0 + 0.02;
             self.rolling = 0.0;
+            self.recover = 0.0;
             self.roll_on_land = false;
             self.core.stats.just_jump = true;
             self.sfx("jump");
         } else if grounded && (self.roll_on_land || self.swipes.take(Swipe::Down, self.time)) {
             self.roll_on_land = false;
-            self.start_roll();
+            // One roll at a time: a repeated press never stretches it.
+            if self.rolling <= 0.0 {
+                self.start_roll();
+            }
         }
         self.vy += self.spec.runner.jump.gravity * self.feel.gravity_scale * dt;
         self.y += self.vy * dt;
@@ -886,8 +964,16 @@ impl NeonCat {
         self.yaw += (self.vx * 0.14 - self.yaw) * response;
         let speed = self.speed();
         self.z += speed * dt;
-        self.core.stats.add_points(speed * dt * 2.2);
+        self.core
+            .stats
+            .add_points(speed * dt * self.spec.runner.score.per_meter);
+        self.count_gates();
         self.anim_t += dt * if self.y > 0.05 { 0.7 } else { 1.15 };
+        let target = self.pose_target();
+        let k = 1.0 - (-dt * 22.0).exp();
+        for (p, t) in self.pose.iter_mut().zip(target) {
+            *p += (t - *p) * k;
+        }
         // Grace covers the spawn stretch. The rail is not a kill plane,
         // so steering into it during grace cannot strand the cat outside.
         if self.time >= self.spec.runner.jump.grace_secs {
@@ -911,9 +997,48 @@ impl NeonCat {
         let b = &self.spec.runner.body;
         if self.rolling > 0.0 {
             b.roll_height
+        } else if self.recover > 0.0 && b.recover_secs > 0.0 {
+            let u = 1.0 - (self.recover / b.recover_secs).clamp(0.0, 1.0);
+            let e = u * u * (3.0 - 2.0 * u);
+            b.roll_height + (b.stand_height - b.roll_height) * e
         } else {
             b.stand_height
         }
+    }
+
+    /// Where the pose wants to be: crouched while rolling, rising during the
+    /// recovery, stretched on the way up and down, squashed on touchdown.
+    fn pose_target(&self) -> [f32; 3] {
+        let b = &self.spec.runner.body;
+        let crouch = if self.rolling > 0.0 {
+            1.0
+        } else if self.recover > 0.0 && b.recover_secs > 0.0 {
+            let k = (self.recover / b.recover_secs).clamp(0.0, 1.0);
+            k * k
+        } else {
+            0.0
+        };
+        let mut t = [
+            1.0 + (b.crouch[0] - 1.0) * crouch,
+            1.0 + (b.crouch[1] - 1.0) * crouch,
+            1.0 + (b.crouch[2] - 1.0) * crouch,
+        ];
+        if crouch <= 0.0 {
+            if self.y > self.ground + 0.15 {
+                let up = (self.vy
+                    / (self.spec.runner.jump.velocity * self.feel.velocity_scale).max(0.1))
+                .abs()
+                .clamp(0.0, 1.3);
+                let ys = 1.0 + 0.14 * up;
+                let xz = 1.0 / ys.sqrt();
+                t = [xz, ys, xz];
+            } else if self.core.juice.land_squash > 0.0 {
+                let k = (self.core.juice.land_squash / self.feel.land_squash_secs.max(1e-3))
+                    .clamp(0.0, 1.0);
+                t = [1.0 + 0.12 * k, 1.0 - 0.22 * k, 1.0 + 0.12 * k];
+            }
+        }
+        t
     }
 
     fn start_roll(&mut self) {
@@ -962,6 +1087,16 @@ impl NeonCat {
             .ceil() as i32
             + 1)
         .max(self.spec.runner.draw.min_obstacles_ahead)
+    }
+
+    /// Fog and line fade `(start, end)`. The far end never passes the first
+    /// obstacle that is not drawn yet, so nothing pops in at the horizon.
+    fn fog_range(&self) -> (f32, f32) {
+        let d = &self.spec.runner.draw;
+        let gap = self.spec.runner.obstacle_track.gap;
+        let undrawn = self.obstacle_lead_count() as f32 * gap - 6.0;
+        let end = d.fog_end.min(undrawn).max(20.0);
+        (d.fog_start.min(end * 0.4), end)
     }
 
     /// Tunnel floor/walls reach past the farthest drawn obstacle.
@@ -1028,6 +1163,19 @@ impl NeonCat {
                     return;
                 }
             }
+        }
+    }
+
+    /// Each stone arch the cat has passed counts once and pays its bonus.
+    fn count_gates(&mut self) {
+        let g = &self.spec.runner.gates;
+        if self.z < g.z0 {
+            return;
+        }
+        let passed = ((self.z - g.z0) / g.gap.max(0.1)).floor() as u32 + 1;
+        while self.gates < passed {
+            self.gates += 1;
+            self.core.stats.score += self.spec.runner.score.per_gate;
         }
     }
 
@@ -1163,6 +1311,7 @@ impl NeonCat {
     }
 
     fn rebuild(&mut self) {
+        let fog = self.fog_range();
         let mut doc = WorldDoc {
             version: 1,
             genre: Some(GAME_ID.into()),
@@ -1187,8 +1336,9 @@ impl NeonCat {
             ibl: Some(0.06),
             tonemap: Some(true),
             cull: Some(true),
-            fog_start: Some(self.spec.runner.draw.fog_start),
-            fog_end: Some(self.spec.runner.draw.fog_end),
+            fog_start: Some(fog.0),
+            fog_end: Some(fog.1),
+            line_fade: Some([fog.0, fog.1]),
             ..WorldDoc::default()
         };
         let eye = self.chase_eye();
@@ -1508,9 +1658,9 @@ impl NeonCat {
                 .edge_color(&self.spec.style.codes);
             let col = [rgb[0], rgb[1], rgb[2], 255];
             let fill = [
-                rgb[0] as f32 / 255.0 * 0.6,
-                rgb[1] as f32 / 255.0 * 0.6,
-                rgb[2] as f32 / 255.0 * 0.6,
+                rgb[0] as f32 / 255.0 * 0.8,
+                rgb[1] as f32 / 255.0 * 0.8,
+                rgb[2] as f32 / 255.0 * 0.8,
             ];
             for (k, shape) in parts.iter().enumerate() {
                 let Some(mut obstacle) = glb_prop(
@@ -1531,6 +1681,15 @@ impl NeonCat {
                 // black tunnel. Low enough that bloom (threshold 1.4) skips it.
                 obstacle.emissive = Some(self.spec.style.fill_emissive);
                 obstacle.emissive_color = Some(fill);
+                if shape.glow > 0.0 {
+                    // A lit opening: bright enough to bloom against the dark.
+                    obstacle.emissive = Some(shape.glow);
+                    obstacle.emissive_color = Some([
+                        rgb[0] as f32 / 255.0,
+                        rgb[1] as f32 / 255.0,
+                        rgb[2] as f32 / 255.0,
+                    ]);
+                }
                 obstacle.roughness = 0.94;
                 obstacle.metallic = 0.04;
                 doc.props.push(obstacle);
@@ -1611,17 +1770,6 @@ impl NeonCat {
     }
 
     fn push_cat(&mut self, doc: &mut WorldDoc) {
-        let mut stretch = 1.0;
-        let mut length = 1.0;
-        if self.rolling > 0.0 {
-            // Flattened and stretched, like a cat pouring under a gate.
-            stretch = self.spec.runner.body.roll_height / self.spec.runner.body.stand_height;
-            length = 1.35;
-        } else if self.y > self.ground + 0.15 {
-            stretch = 1.14;
-        } else if self.core.juice.land_squash > 0.0 {
-            stretch = 0.78;
-        }
         let mut cat = WorldWalker {
             id: "walker:cat".into(),
             kind: "walker".into(),
@@ -1639,9 +1787,9 @@ impl NeonCat {
             anim: "run".into(),
             anim_blend: 1.0,
             scale: Some([
-                self.spec.player.scale,
-                self.spec.player.scale * stretch,
-                self.spec.player.scale * length,
+                self.spec.player.scale * self.pose[0],
+                self.spec.player.scale * self.pose[1],
+                self.spec.player.scale * self.pose[2],
             ]),
             color: Some(self.spec.player.tint),
             roughness: Some(0.9),
@@ -2480,7 +2628,7 @@ mod tests {
     const CAM_BACK: f32 = 7.4;
     const CAM_LIFT: f32 = 1.72;
     const CAM_FOV: f32 = 50.0;
-    const OBS_FILL_EMISSIVE: f32 = 0.35;
+    const OBS_FILL_EMISSIVE: f32 = 0.8;
     const CAT_SCALE: f32 = 0.50;
     const CAT_TINT: [u32; 3] = [226, 206, 255];
     const CAT_GLB: &str = "assets/models/kenney/cube-pets/animal-cat.glb";
@@ -3396,7 +3544,100 @@ mod tests {
             "{} s roll is over",
             run.spec.runner.body.roll_secs
         );
+        // Standing back up takes `recover_secs`, then the body is full height.
+        let mid = run.body_height();
+        assert!(mid > run.spec.runner.body.roll_height && mid < run.spec.runner.body.stand_height);
+        for _ in 0..20 {
+            run.tick(1.0 / 60.0);
+        }
         assert_eq!(run.body_height(), run.spec.runner.body.stand_height);
+        assert!(
+            run.pose[1] > 0.97,
+            "pose is back to standing: {:?}",
+            run.pose
+        );
+    }
+
+    #[test]
+    fn fog_ends_before_the_first_obstacle_that_is_not_drawn_yet() {
+        let mut run = full();
+        for t in [0.0, 30.0, 200.0] {
+            run.time = t;
+            run.z = 0.0;
+            run.rebuild();
+            let (start, end) = run.fog_range();
+            let first_undrawn =
+                run.obstacle_lead_count() as f32 * run.spec.runner.obstacle_track.gap;
+            assert!(end < first_undrawn, "fog {end} vs {first_undrawn}");
+            assert!(start < end);
+            assert_eq!(run.doc.line_fade, Some([start, end]));
+        }
+    }
+
+    #[test]
+    fn the_overpass_is_a_sign_on_posts_and_the_gap_is_lit() {
+        let run = full();
+        let spec = run.spec();
+        let over = spec
+            .obstacles
+            .iter()
+            .find(|k| k.name == "OVERPASS")
+            .unwrap();
+        // One solid panel with 0.5 m under it, two posts that never kill.
+        assert_eq!(over.parts.len(), 3);
+        assert!(over.parts[0].offset[1] >= spec.runner.body.stand_height * 0.8);
+        assert!(over.parts[1..].iter().all(|p| p.role == PartRole::Decor));
+        let wall = spec.obstacles.iter().find(|k| k.name == "WALL").unwrap();
+        assert!(wall.parts.iter().any(|p| p.glow > 0.0));
+        // The eye stays above the panel's top by the camera margin.
+        let top = over.parts[0].offset[1] + over.parts[0].scale[1];
+        assert!(spec.camera.chase_lift - top >= CAMERA_MARGIN);
+    }
+
+    #[test]
+    fn held_or_repeated_down_never_stretches_a_roll() {
+        let mut run = full();
+        let secs = run.spec.runner.body.roll_secs;
+        run.swipe(Swipe::Down);
+        let mut t = 0.0;
+        let mut ended = None;
+        // A jittery finger fires a down flick every 0.1 s for a full second.
+        for i in 0..90 {
+            if i % 6 == 0 && t < 1.0 {
+                run.swipe(Swipe::Down);
+            }
+            run.tick(1.0 / 60.0);
+            t += 1.0 / 60.0;
+            if ended.is_none() && run.rolling <= 0.0 && t > 0.1 {
+                ended = Some(t);
+            }
+        }
+        // A fresh roll may begin after the first one ends, but no single roll
+        // runs longer than its spec: the first one ended on time.
+        let ended = ended.expect("the first roll ended");
+        assert!(ended <= secs + 0.1, "roll lasted {ended} s, spec {secs}");
+    }
+
+    #[test]
+    fn an_up_flick_right_after_a_down_flick_is_the_finger_coming_back() {
+        let mut run = full();
+        run.swipe(Swipe::Down);
+        run.tick(1.0 / 60.0);
+        run.swipe(Swipe::Up);
+        for _ in 0..10 {
+            run.tick(1.0 / 60.0);
+        }
+        assert!(run.y <= run.ground + 0.001, "no jump out of the roll");
+        assert!(run.rolling > 0.0);
+        // Later it is a jump again.
+        for _ in 0..40 {
+            run.tick(1.0 / 60.0);
+        }
+        run.swipe(Swipe::Up);
+        for _ in 0..8 {
+            run.tick(1.0 / 60.0);
+        }
+        assert!(run.y > 0.2);
     }
 
     #[test]
@@ -3531,6 +3772,109 @@ mod tests {
         run.z = line[0][2] - 0.2;
         run.tick(1.0 / 60.0);
         assert_eq!(run.coins, got, "each coin once");
+    }
+
+    #[test]
+    fn retry_starts_every_counter_from_zero() {
+        let mut run = full();
+        // Collect a coin and a ring, run past some gates, then crash.
+        let spec = run.spec.clone();
+        let line = coin_line(&spec, 0);
+        run.x = line[0][0];
+        run.y = (line[0][1] - 0.3).max(0.0);
+        run.z = line[0][2] - 0.2;
+        run.rebuild();
+        run.tick(1.0 / 60.0);
+        run.tick(1.0 / 60.0);
+        assert!(run.coins >= 1);
+        run.got.insert(3);
+        run.core.stats.rings = 2;
+        run.z = spec.runner.gates.z0 + spec.runner.gates.gap * 2.0 + 0.5;
+        run.tick(1.0 / 60.0);
+        assert!(run.gates >= 3, "gates {}", run.gates);
+        assert!(run.core.stats.score > 0);
+        run.crash("CRATE");
+        assert!(!run.core.stats.alive);
+        for _ in 0..90 {
+            run.tick(1.0 / 60.0);
+        }
+        assert_eq!(run.flow.phase, FlowPhase::Result);
+        // Retry through the on-screen action, then through the key.
+        for via_key in [false, true] {
+            if via_key {
+                run.got.insert(1);
+                run.coins = 4;
+                run.gates = 2;
+                run.crash("BARREL");
+                for _ in 0..90 {
+                    run.tick(1.0 / 60.0);
+                }
+                assert_eq!(run.flow.phase, FlowPhase::Result);
+            }
+            if via_key {
+                run.on_key("r", true);
+            } else {
+                run.apply_action(FlowAction::Retry);
+            }
+            assert_eq!(run.flow.phase, FlowPhase::Play);
+            assert_eq!(run.coins, 0, "coins");
+            assert_eq!(run.gates, 0, "gates");
+            assert_eq!(run.core.stats.score, 0, "score");
+            assert_eq!(run.core.stats.rings, 0, "rings");
+            assert_eq!(run.time, 0.0, "time");
+            assert_eq!(run.z, 0.0, "distance");
+            assert!(run.got.is_empty() && run.got_coins.is_empty());
+            assert!(run.core.stats.alive && run.core.stats.death.is_empty());
+            assert_eq!(run.rolling, 0.0);
+            assert_eq!(run.pose, [1.0; 3]);
+            // The collected coin is back in the world and the sim json shows it.
+            let v = run.sim_value();
+            assert_eq!(v["coins"], 0);
+            assert_eq!(v["gates"], 0);
+            // Collected pickups of the first run can be collected again.
+            run.time = GRACE_SECS + 0.2;
+            run.x = line[0][0];
+            run.y = (line[0][1] - 0.3).max(0.0);
+            run.z = line[0][2] - 0.2;
+            run.rebuild();
+            run.tick(1.0 / 60.0);
+            run.tick(1.0 / 60.0);
+            assert!(run.coins >= 1, "the same coin pays again after a retry");
+            run.crash("CRATE");
+            for _ in 0..90 {
+                run.tick(1.0 / 60.0);
+            }
+        }
+    }
+
+    #[test]
+    fn gates_pay_a_bonus_and_the_formula_is_the_specs() {
+        let mut run = full();
+        let g = run.spec.runner.gates.clone();
+        let per_gate = run.spec.runner.score.per_gate;
+        assert!(per_gate > 0);
+        run.z = g.z0 - 0.5;
+        run.rebuild();
+        run.tick(1.0 / 60.0);
+        assert_eq!(run.gates, 0);
+        let before = run.core.stats.score;
+        run.z = g.z0 + 0.2;
+        run.tick(1.0 / 60.0);
+        assert_eq!(run.gates, 1);
+        assert!(run.core.stats.score >= before + per_gate);
+        run.tick(1.0 / 60.0);
+        assert_eq!(run.gates, 1, "each gate once");
+        // Zero bonus and zero distance pay: the score stays put.
+        let mut spec = (*run.spec).clone();
+        spec.runner.score.per_gate = 0;
+        spec.runner.score.per_meter = 0.0;
+        let mut flat = NeonCat::with_spec(spec);
+        flat.confirm();
+        flat.time = GRACE_SECS + 0.2;
+        flat.z = g.z0 + 0.2;
+        flat.tick(1.0 / 60.0);
+        assert_eq!(flat.gates, 1);
+        assert_eq!(flat.core.stats.score, 0);
     }
 
     #[test]

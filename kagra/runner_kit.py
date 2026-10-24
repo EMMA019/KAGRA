@@ -78,6 +78,8 @@ class BodySpec:
     roll_height: float = 0.3
     roll_secs: float = 0.55
     step_tol: float = 0.18
+    recover_secs: float = 0.2  # standing back up after a roll: body and pose rise together
+    crouch: list[float] = field(default_factory=lambda: [1.05, 0.68, 1.2])  # pose scale at full crouch
 
 
 @dataclass
@@ -118,11 +120,19 @@ class Section:
 
 
 @dataclass
+class ScoreSpec:
+    """Score = per_meter * distance + per_gate * gates + ring and coin scores."""
+
+    per_meter: float = 2.2
+    per_gate: int = 50  # bonus for each stone arch the cat runs through
+
+
+@dataclass
 class RunnerKit:
     speed: SpeedCurve = field(default_factory=SpeedCurve)
     jump: JumpSpec = field(default_factory=JumpSpec)
     lanes: LaneSpec = field(default_factory=LaneSpec)
-    obstacle_track: Track = field(default_factory=lambda: Track(26.0, 14.0, 1.2, 0.85))
+    obstacle_track: Track = field(default_factory=lambda: Track(26.0, 18.0, 1.2, 0.85))
     rings: RingSpec = field(default_factory=RingSpec)
     gates: GateSpec = field(default_factory=GateSpec)
     draw: DrawSpec = field(default_factory=DrawSpec)
@@ -130,6 +140,7 @@ class RunnerKit:
     sections: list = field(default_factory=lambda: default_sections())
     body: BodySpec = field(default_factory=BodySpec)
     coins: CoinSpec = field(default_factory=CoinSpec)
+    score: ScoreSpec = field(default_factory=ScoreSpec)
 
 
 def default_sections() -> list:

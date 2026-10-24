@@ -27,6 +27,30 @@
     "survival_mean_s": 63.111,
     "survival_median_s": 62.633
   },
+  "camera_clip": {
+    "issues": [],
+    "kinds": [
+      {
+        "index": 0,
+        "kind": "CRATE",
+        "min_clearance_m": 2.061,
+        "ok": true
+      },
+      {
+        "index": 1,
+        "kind": "BARREL",
+        "min_clearance_m": 1.859,
+        "ok": true
+      },
+      {
+        "index": 2,
+        "kind": "BARRIER",
+        "min_clearance_m": 1.779,
+        "ok": true
+      }
+    ],
+    "min_required_m": 0.3
+  },
   "course": {
     "behaviors": {
       "jump_over": 155
@@ -164,6 +188,11 @@
         "walk": true
       }
     ]
+  },
+  "roll_window": {
+    "issues": [],
+    "kinds": [],
+    "speed": 20.0
   },
   "touch": {
     "diagonal_45_jumped": false,

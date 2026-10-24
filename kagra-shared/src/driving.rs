@@ -312,6 +312,7 @@ impl DrivingScene {
             fog_color: sky,
             fog_start: 140.0,
             fog_end: VIEW_AHEAD,
+            line_fade: [0.0, 0.0],
             ibl: 0.35,
             exposure: 1.0,
             tonemap: true,

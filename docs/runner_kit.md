@@ -41,7 +41,14 @@ Both sides reject unknown keys, so a typo fails loudly.
 Each obstacle kind has a `behavior`: `jump_over` (default, the old crate rule), `roll_under`, `solid`,
 `rideable` and `cat_gap`. A kind is a base mesh plus optional `parts` (a ramp, a lintel, wall sides), each with a role
 (`solid`, `ride`, `ramp`, `decor`), an offset and a model-space `hit_y` clip, so hollow shapes (a beam over a gap, a roof you can stand on)
-need no special engine code. Cat body: `runner.body` `{stand_height, roll_height, roll_secs, step_tol}`. `runner.coins` sets coin
+need no special engine code. A `decor` part with `glow > 0` is drawn emissive in the kind's colour (the lit opening of a cat gap). Default
+`OVERPASS` is a sign on two posts with 0.5 m under it, never a block: the lens sits 2.35 m up, and the harness fails any
+spec whose obstacle comes within `CAMERA_CLEAR` (0.3 m) of it. Cat body: `runner.body`
+`{stand_height, roll_height, roll_secs, step_tol, recover_secs, crouch}`: one roll lasts `roll_secs` and a press while rolling is
+ignored; the body then stands back up over `recover_secs` (hitbox and pose together); `crouch` is the pose scale at full crouch.
+`input.reverse_guard_secs` drops an up flick that comes that soon after a down flick (the finger returning).
+`runner.score` `{per_meter, per_gate}` is the score formula: `per_meter` x distance, `per_gate` for each stone arch passed,
+plus `rings.score` and `coins.score` per pickup (the recorded legacy runs set `per_gate` to 0). `runner.coins` sets coin
 lines (score only). `runner.sections[].allow` limits which behaviors a section may spawn.
 
 `style.codes` is the colour language, one neon colour per thing to do, used for the obstacle edge and its glow:
