@@ -97,7 +97,7 @@
           "stompable": true,
           "unlock_level": 0,
           "walk_steps": 0,
-          "y_hi": 0.45,
+          "y_hi": 0.38,
           "y_lo": 0.0
         },
         {
@@ -113,7 +113,7 @@
           "stompable": true,
           "unlock_level": 1,
           "walk_steps": 8,
-          "y_hi": 0.5,
+          "y_hi": 0.42,
           "y_lo": 0.0
         },
         {
@@ -129,8 +129,8 @@
           "stompable": false,
           "unlock_level": 2,
           "walk_steps": 0,
-          "y_hi": 2.1,
-          "y_lo": 1.45
+          "y_hi": 2.4,
+          "y_lo": 1.75
         }
       ]
     },

@@ -168,6 +168,15 @@ pub struct Phrase {
     /// How often it is picked among the phrases of its level (1..=16).
     #[serde(default = "one_weight")]
     pub weight: u32,
+    /// The first phrase laid when a level starts is picked among the `debut`
+    /// phrases of that level (if it has any), so a new enemy is introduced on
+    /// its own.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub debut: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 fn one_weight() -> u32 {
@@ -909,6 +918,11 @@ pub fn builtin_phrases() -> Vec<Phrase> {
         bars,
         items,
         weight: 1,
+        debut: false,
+    };
+    let debut = |mut ph: Phrase| {
+        ph.debut = true;
+        ph
     };
     // Enemies arrive one kind per level: slime (0), beetle (1), bat (2), then mixes.
     let mut phrases = vec![
@@ -917,11 +931,13 @@ pub fn builtin_phrases() -> Vec<Phrase> {
             2,
             vec![item(1.0, "gap", 0.5, "tap"), item(3.0, "gap", 0.5, "tap")],
         ),
-        p(0, 2, vec![foe(1.0, "slime", 0.2), foe(3.0, "slime", 0.2)]),
+        // The first slime comes on its own.
+        debut(p(0, 2, vec![foe(1.0, "slime", 0.12)])),
+        p(0, 2, vec![foe(1.0, "slime", 0.12), foe(3.0, "slime", 0.12)]),
         p(
             0,
             2,
-            vec![item(1.0, "gap", 0.5, "tap"), foe(3.0, "slime", 0.2)],
+            vec![item(1.0, "gap", 0.5, "tap"), foe(3.0, "slime", 0.12)],
         ),
         p(
             0,
@@ -950,11 +966,17 @@ pub fn builtin_phrases() -> Vec<Phrase> {
                 item(2.0, "gap", 0.5, "tap"),
             ],
         ),
-        p(1, 2, vec![foe(1.0, "beetle", 0.25), foe(3.0, "slime", 0.2)]),
+        // The first beetle comes on its own.
+        debut(p(1, 2, vec![foe(1.0, "beetle", 0.16)])),
         p(
             1,
             2,
-            vec![foe(1.0, "beetle", 0.25), item(3.0, "gap", 0.5, "tap")],
+            vec![foe(1.0, "beetle", 0.16), foe(3.0, "slime", 0.12)],
+        ),
+        p(
+            1,
+            2,
+            vec![foe(1.0, "beetle", 0.16), item(3.0, "gap", 0.5, "tap")],
         ),
         p(
             2,
@@ -965,15 +987,15 @@ pub fn builtin_phrases() -> Vec<Phrase> {
                 item(2.5, "gap", 0.5, "tap"),
             ],
         ),
-        // A bat hovers over these: a hold-hop would fly into it, so tap.
-        p(2, 2, vec![foe(1.0, "slime", 0.2), foe(1.0, "bat", 0.9)]),
+        // The first bat flies alone over a clear track: holding would hit it.
+        debut(p(2, 2, vec![foe(1.0, "bat", 0.9)])),
         p(
             2,
             2,
             vec![
                 item(1.0, "gap", 0.5, "tap"),
                 foe(1.0, "bat", 0.9),
-                foe(3.0, "beetle", 0.25),
+                foe(3.0, "beetle", 0.16),
             ],
         ),
         p(
@@ -995,16 +1017,16 @@ pub fn builtin_phrases() -> Vec<Phrase> {
             3,
             3,
             vec![
-                foe(0.5, "slime", 0.2),
-                foe(2.5, "slime", 0.2),
-                foe(4.5, "beetle", 0.25),
+                foe(0.5, "slime", 0.12),
+                foe(2.5, "slime", 0.12),
+                foe(4.5, "beetle", 0.16),
             ],
         ),
         p(
             3,
             2,
             vec![
-                foe(1.0, "beetle", 0.25),
+                foe(1.0, "beetle", 0.16),
                 item(3.0, "gap", 0.5, "tap"),
                 item(4.0, "gap", 0.5, "tap"),
             ],
@@ -1013,9 +1035,9 @@ pub fn builtin_phrases() -> Vec<Phrase> {
             3,
             2,
             vec![
-                foe(1.0, "slime", 0.2),
+                foe(1.0, "slime", 0.12),
                 foe(1.0, "bat", 0.9),
-                foe(3.0, "slime", 0.2),
+                foe(3.0, "slime", 0.12),
                 foe(3.0, "bat", 0.9),
             ],
         ),
@@ -1023,9 +1045,9 @@ pub fn builtin_phrases() -> Vec<Phrase> {
             3,
             2,
             vec![
-                foe(0.5, "slime", 0.2),
-                foe(2.5, "beetle", 0.25),
-                foe(4.5, "slime", 0.2),
+                foe(0.5, "slime", 0.12),
+                foe(2.5, "beetle", 0.16),
+                foe(4.5, "slime", 0.12),
                 item(6.5, "gap", 0.5, "tap"),
             ],
         ),
@@ -1054,10 +1076,10 @@ pub fn builtin_phrases() -> Vec<Phrase> {
             4,
             3,
             vec![
-                foe(1.0, "beetle", 0.25),
-                foe(3.0, "slime", 0.2),
+                foe(1.0, "beetle", 0.16),
+                foe(3.0, "slime", 0.12),
                 item(5.0, "gap", 0.5, "tap"),
-                foe(7.0, "beetle", 0.25),
+                foe(7.0, "beetle", 0.16),
             ],
         ),
         p(
@@ -1065,7 +1087,7 @@ pub fn builtin_phrases() -> Vec<Phrase> {
             3,
             vec![
                 item(0.0, "gap", 1.5, "hold"),
-                foe(3.0, "slime", 0.2),
+                foe(3.0, "slime", 0.12),
                 foe(3.0, "bat", 0.9),
                 item(5.0, "gap", 1.5, "hold"),
             ],
@@ -1074,10 +1096,10 @@ pub fn builtin_phrases() -> Vec<Phrase> {
             4,
             2,
             vec![
-                foe(0.5, "beetle", 0.25),
-                foe(2.5, "slime", 0.2),
-                foe(4.5, "beetle", 0.25),
-                foe(6.5, "slime", 0.2),
+                foe(0.5, "beetle", 0.16),
+                foe(2.5, "slime", 0.12),
+                foe(4.5, "beetle", 0.16),
+                foe(6.5, "slime", 0.12),
             ],
         ),
         p(
@@ -1208,6 +1230,8 @@ pub struct Course {
     bars_laid: u32,
     since_rest: u32,
     last: usize,
+    /// The level of the previous phrase (u32::MAX before the first).
+    lvl_seen: u32,
     pub obst: Vec<Obst>,
 }
 
@@ -1227,6 +1251,7 @@ impl Course {
             bars_laid: 0,
             since_rest: 0,
             last: usize::MAX,
+            lvl_seen: u32::MAX,
             obst: Vec::new(),
         }
     }
@@ -1258,6 +1283,17 @@ impl Course {
                 .collect();
             if pool.is_empty() {
                 pool = (0..self.phrases.len()).collect();
+            }
+            if lvl != self.lvl_seen {
+                self.lvl_seen = lvl;
+                let debuts: Vec<usize> = pool
+                    .iter()
+                    .copied()
+                    .filter(|&i| self.phrases[i].debut && self.phrases[i].level == lvl)
+                    .collect();
+                if !debuts.is_empty() {
+                    pool = debuts;
+                }
             }
             if pool.len() > 1 {
                 pool.retain(|&i| i != self.last);
@@ -3131,15 +3167,15 @@ impl HopBeat {
                 _ => BAT_GLB,
             };
             if et.y_lo > 0.0 {
-                // A blob on the slab says where the flyer is.
+                // A bright pulsing blob on the slab marks the flyer's lane: the track under it is safe to tap through.
                 doc.props.push(prop(
                     &format!("{id}-shadow"),
                     "sphere",
                     "shadow",
                     [0.0, 0.015, center],
-                    [(o.end - o.start).max(0.8), 0.012, 0.7],
-                    et.color.map(|v| v / 6),
-                    0.4,
+                    [(o.end - o.start).max(0.9) * (0.9 + 0.1 * pulse), 0.012, 0.8],
+                    et.color.map(|v| v / 2),
+                    0.9 + 0.5 * pulse,
                     1.0,
                     0.0,
                 ));
@@ -3708,6 +3744,7 @@ mod tests {
             bars: 4,
             items,
             weight: 1,
+            debut: false,
         }];
         s.course.rest_every_bars = 1000;
         for t in s.enemies.types.iter_mut() {
@@ -3796,6 +3833,93 @@ mod tests {
         assert_eq!(tap.lives(), 3);
         let hold = drive(flyer("hold"), 0.0, 3.0);
         assert!(hold.lives() < 3, "a hold hop must hit a bat");
+    }
+
+    #[test]
+    fn a_bat_over_a_slime_is_clearable_with_room_to_spare() {
+        // Emma's case: a slime under a bat reads as impossible. It is not, and the
+        // tap hop's head stays well clear of the bat.
+        let spec = HopSpec::default();
+        let bat = &spec.enemies.types[spec.enemy_index("bat").unwrap()];
+        let tap_peak = spec.arc(Hop::Tap).height + spec.enemies.body_h;
+        assert!(
+            bat.y_lo - tap_peak >= 0.3,
+            "only {:.2} m between a tap hop and the bat",
+            bat.y_lo - tap_peak
+        );
+        // every builtin phrase that stacks a bat over a ground enemy is cleared by a
+        // tap at every press offset inside the perfect window
+        let stacked: Vec<Phrase> = builtin_phrases()
+            .into_iter()
+            .filter(|p| {
+                p.items.iter().any(|a| {
+                    a.enemy == "bat"
+                        && p.items
+                            .iter()
+                            .any(|b| b.enemy != "bat" && b.kind == "enemy" && b.beat == a.beat)
+                })
+            })
+            .collect();
+        assert!(!stacked.is_empty());
+        for ph in &stacked {
+            assert!(ph.level >= 3, "stacked bats wait until level 3");
+            let items: Vec<Item> = ph.items.clone();
+            for off in [-0.065_f32, -0.04, 0.0, 0.04, 0.065] {
+                let mut s = enemy_spec(items.clone());
+                s.course.phrases = vec![Phrase {
+                    level: 0,
+                    ..ph.clone()
+                }];
+                assert!(s.course_problems().is_empty(), "{:?}", s.course_problems());
+                let g = drive(s, off, 5.0);
+                assert_eq!(g.lives(), 3, "offset {off}");
+            }
+        }
+    }
+
+    #[test]
+    fn enemies_arrive_in_the_stated_order_one_kind_at_a_time() {
+        let base = HopSpec::default();
+        let lead = (base.music.lead_in_bars) as f32;
+        let bpb = base.music.beats_per_bar as f32;
+        for seed in 0..40 {
+            let mut spec = base.clone();
+            spec.course.seed = seed;
+            let mut c = Course::new(&spec);
+            c.ensure(&spec, 200.0 * bpb);
+            let first = |id: &str| {
+                let i = spec.enemy_index(id).unwrap();
+                c.obst
+                    .iter()
+                    .find(|o| o.kind == Kind::Enemy && o.ety == i)
+                    .map(|o| o.take_beat / bpb - lead)
+            };
+            let slime = first("slime").unwrap();
+            let beetle = first("beetle").unwrap();
+            let bat = first("bat").unwrap();
+            assert!(slime < 4.0, "seed {seed}: first slime at bar {slime}");
+            assert!(
+                (8.0..12.0).contains(&beetle),
+                "seed {seed}: beetle at bar {beetle}"
+            );
+            assert!((16.0..20.0).contains(&bat), "seed {seed}: bat at bar {bat}");
+            // the first bat has the track to itself
+            let enemy_beats = |id: &str| -> Vec<f32> {
+                let i = spec.enemy_index(id).unwrap();
+                c.obst
+                    .iter()
+                    .filter(|o| o.kind == Kind::Enemy && o.ety == i)
+                    .map(|o| o.take_beat)
+                    .collect()
+            };
+            let first_bat = enemy_beats("bat")[0];
+            let crowd = c
+                .obst
+                .iter()
+                .filter(|o| (o.take_beat - first_bat).abs() < 1.5)
+                .count();
+            assert_eq!(crowd, 1, "seed {seed}: the first bat shares its stretch");
+        }
     }
 
     #[test]

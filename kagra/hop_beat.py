@@ -34,7 +34,7 @@ def default_enemy() -> dict[str, Any]:
         "id": "slime",
         "unlock_level": 0,
         "y_lo": 0.0,
-        "y_hi": 0.45,
+        "y_hi": 0.38,
         "stompable": True,
         "step_m": 0.0,
         "steps_per_beat": 1,
@@ -90,9 +90,9 @@ def default_game() -> dict[str, Any]:
         "enemies": {
             "types": [
                 default_enemy(),
-                {**default_enemy(), "id": "beetle", "unlock_level": 1, "y_hi": 0.5, "step_m": 1.0,
+                {**default_enemy(), "id": "beetle", "unlock_level": 1, "y_hi": 0.42, "step_m": 1.0,
                  "steps_per_beat": 2, "walk_steps": 8, "look": "beetle", "color": [255, 170, 80]},
-                {**default_enemy(), "id": "bat", "unlock_level": 2, "y_lo": 1.45, "y_hi": 2.1,
+                {**default_enemy(), "id": "bat", "unlock_level": 2, "y_lo": 1.75, "y_hi": 2.4,
                  "stompable": False, "look": "bat", "color": [190, 130, 255]},
             ],
             "body_h": 0.45,

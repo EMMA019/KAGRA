@@ -60,7 +60,7 @@ impl Default for EnemyType {
             id: "slime".into(),
             unlock_level: 0,
             y_lo: 0.0,
-            y_hi: 0.45,
+            y_hi: 0.38,
             stompable: true,
             step_m: 0.0,
             steps_per_beat: 1,
@@ -106,7 +106,7 @@ impl Default for EnemySpec {
                 EnemyType {
                     id: "beetle".into(),
                     unlock_level: 1,
-                    y_hi: 0.5,
+                    y_hi: 0.42,
                     step_m: 1.0,
                     steps_per_beat: 2,
                     walk_steps: 8,
@@ -117,8 +117,8 @@ impl Default for EnemySpec {
                 EnemyType {
                     id: "bat".into(),
                     unlock_level: 2,
-                    y_lo: 1.45,
-                    y_hi: 2.1,
+                    y_lo: 1.75,
+                    y_hi: 2.4,
                     stompable: false,
                     look: "bat".into(),
                     color: [190, 130, 255],
@@ -422,8 +422,8 @@ mod tests {
         let s = EnemySpec::default();
         assert_eq!(s.touch(0, 5.0, 5.6, &hero(2.0, 0.0, false)), Touch::None);
         assert_eq!(s.touch(0, 5.0, 5.6, &hero(5.2, 0.0, false)), Touch::Hit);
-        assert_eq!(s.touch(0, 5.0, 5.6, &hero(5.2, 0.4, true)), Touch::Stomp);
-        assert_eq!(s.touch(0, 5.0, 5.6, &hero(5.2, 0.4, false)), Touch::Hit);
+        assert_eq!(s.touch(0, 5.0, 5.6, &hero(5.2, 0.3, true)), Touch::Stomp);
+        assert_eq!(s.touch(0, 5.0, 5.6, &hero(5.2, 0.3, false)), Touch::Hit);
         assert_eq!(s.touch(0, 5.0, 5.6, &hero(5.2, 0.9, true)), Touch::None);
         // a bat: under it is safe, in its band is a hit, never a stomp
         assert_eq!(s.touch(2, 5.0, 5.6, &hero(5.2, 0.5, true)), Touch::None);

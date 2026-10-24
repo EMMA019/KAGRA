@@ -507,6 +507,7 @@ mod tests {
                 enemy: String::new(),
             }],
             weight: 1,
+            debut: false,
         }];
         assert!(!s.course_problems().is_empty());
         assert!(s.validate().is_err());

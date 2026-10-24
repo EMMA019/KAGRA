@@ -26,8 +26,8 @@ A kit supplies three things: **placement**, **response** and **clearability**.
   "body_h": 0.6, "stomp_depth": 0.3, "stomp_score": 150,
   "bounce_height": 0.7, "bounce_beats": 0.5, "rest_beats": 0.5,
   "types": [
-    {"id": "slime",  "look": "slime",  "unlock_level": 0, "y_hi": 0.45, "stompable": true},
-    {"id": "beetle", "look": "beetle", "unlock_level": 1, "y_hi": 0.5, "stompable": true,
+    {"id": "slime",  "look": "slime",  "unlock_level": 0, "y_hi": 0.38, "stompable": true},
+    {"id": "beetle", "look": "beetle", "unlock_level": 1, "y_hi": 0.42, "stompable": true,
      "step_m": 1.0, "steps_per_beat": 2, "walk_steps": 8},
     {"id": "bat",    "look": "bat",    "unlock_level": 2, "y_lo": 1.45, "y_hi": 2.1}
   ]
@@ -50,7 +50,7 @@ If the picture and the rules already exist, it is only a new entry. A quick red 
 new code and no new model:
 
 ```json
-{"id": "dasher", "look": "beetle", "unlock_level": 3, "y_hi": 0.5, "stompable": true,
+{"id": "dasher", "look": "beetle", "unlock_level": 3, "y_hi": 0.42, "stompable": true,
  "step_m": 0.75, "steps_per_beat": 4, "walk_steps": 12, "color": [255, 70, 70]}
 ```
 
