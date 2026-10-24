@@ -1,0 +1,366 @@
+{
+ "about": "Golden vectors for the shared run rules. Replayed by Rust (game_core/lives.rs, missions.rs) and Python (kagra/run_rules.py); both must agree. A state step may leave out `blink` where the invuln sits on a blink-cycle edge (f32 and f64 round differently there).",
+ "lives": [
+  {
+   "name": "three hits end the run",
+   "spec": {
+    "count": 3,
+    "invuln_secs": 1.6,
+    "blink_hz": 10.0
+   },
+   "steps": [
+    {
+     "op": "reset"
+    },
+    {
+     "op": "state",
+     "left": 3,
+     "invuln": 0.0,
+     "hurt_t": 99.0,
+     "protected": false,
+     "blink": true
+    },
+    {
+     "op": "hit",
+     "last_chance": false,
+     "expect": "absorbed"
+    },
+    {
+     "op": "state",
+     "left": 2,
+     "invuln": 1.6,
+     "hurt_t": 0.0,
+     "protected": true
+    },
+    {
+     "op": "tick",
+     "dt": 0.52
+    },
+    {
+     "op": "state",
+     "left": 2,
+     "invuln": 1.08,
+     "hurt_t": 0.52,
+     "protected": true,
+     "blink": false
+    },
+    {
+     "op": "tick",
+     "dt": 2.0
+    },
+    {
+     "op": "state",
+     "left": 2,
+     "invuln": 0.0,
+     "hurt_t": 2.52,
+     "protected": false,
+     "blink": true
+    },
+    {
+     "op": "hit",
+     "last_chance": false,
+     "expect": "absorbed"
+    },
+    {
+     "op": "state",
+     "left": 1,
+     "invuln": 1.6,
+     "hurt_t": 0.0,
+     "protected": true
+    },
+    {
+     "op": "hit",
+     "last_chance": false,
+     "expect": "fatal"
+    },
+    {
+     "op": "state",
+     "left": 0,
+     "invuln": 1.6,
+     "hurt_t": 0.0,
+     "protected": true
+    }
+   ]
+  },
+  {
+   "name": "a caught player has one life left, so the hit is fatal",
+   "spec": {
+    "count": 3,
+    "invuln_secs": 1.6,
+    "blink_hz": 10.0
+   },
+   "steps": [
+    {
+     "op": "reset"
+    },
+    {
+     "op": "hit",
+     "last_chance": true,
+     "expect": "fatal"
+    },
+    {
+     "op": "state",
+     "left": 0,
+     "invuln": 0.0,
+     "hurt_t": 99.0,
+     "protected": false,
+     "blink": true
+    }
+   ]
+  },
+  {
+   "name": "a life pick-up refills to the count and no further",
+   "spec": {
+    "count": 3,
+    "invuln_secs": 1.6,
+    "blink_hz": 10.0
+   },
+   "steps": [
+    {
+     "op": "reset"
+    },
+    {
+     "op": "regain",
+     "expect": false
+    },
+    {
+     "op": "hit",
+     "last_chance": false,
+     "expect": "absorbed"
+    },
+    {
+     "op": "regain",
+     "expect": true
+    },
+    {
+     "op": "state",
+     "left": 3,
+     "invuln": 1.6,
+     "hurt_t": 0.0,
+     "protected": true
+    },
+    {
+     "op": "regain",
+     "expect": false
+    }
+   ]
+  },
+  {
+   "name": "hurt_t is capped and a one-life spec never absorbs",
+   "spec": {
+    "count": 1,
+    "invuln_secs": 0.0,
+    "blink_hz": 0.0
+   },
+   "steps": [
+    {
+     "op": "reset"
+    },
+    {
+     "op": "tick",
+     "dt": 500.0
+    },
+    {
+     "op": "state",
+     "left": 1,
+     "invuln": 0.0,
+     "hurt_t": 99.0,
+     "protected": false,
+     "blink": true
+    },
+    {
+     "op": "hit",
+     "last_chance": false,
+     "expect": "fatal"
+    }
+   ]
+  }
+ ],
+ "missions": [
+  {
+   "name": "the default street pool",
+   "perch": false,
+   "decks": false,
+   "spec": null,
+   "steps": [
+    {
+     "counts": {},
+     "fresh": [],
+     "completed": 0
+    },
+    {
+     "counts": {
+      "coins": 40,
+      "gates": 2
+     },
+     "fresh": [
+      0
+     ],
+     "completed": 1
+    },
+    {
+     "counts": {
+      "coins": 55,
+      "gates": 2
+     },
+     "fresh": [],
+     "completed": 1
+    },
+    {
+     "counts": {
+      "coins": 55,
+      "gates": 5,
+      "passes": 29
+     },
+     "fresh": [
+      1
+     ],
+     "completed": 2
+    },
+    {
+     "counts": {
+      "coins": 55,
+      "gates": 5,
+      "passes": 30,
+      "perch": 9
+     },
+     "fresh": [
+      2
+     ],
+     "completed": 3,
+     "json": [
+      {
+       "kind": "coins",
+       "label": "COINS",
+       "target": 40,
+       "value": 40,
+       "done": true
+      },
+      {
+       "kind": "gates",
+       "label": "GATES",
+       "target": 5,
+       "value": 5,
+       "done": true
+      },
+      {
+       "kind": "passes",
+       "label": "PASSED",
+       "target": 30,
+       "value": 30,
+       "done": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "the stair lane brings the perch goal back in place of the passes",
+   "perch": true,
+   "decks": false,
+   "spec": null,
+   "steps": [
+    {
+     "counts": {
+      "passes": 99
+     },
+     "fresh": [],
+     "completed": 0
+    },
+    {
+     "counts": {
+      "passes": 99,
+      "perch": 1
+     },
+     "fresh": [
+      2
+     ],
+     "completed": 1
+    }
+   ]
+  },
+  {
+   "name": "a custom pool with labels and draw 0",
+   "perch": false,
+   "decks": false,
+   "spec": {
+    "enabled": true,
+    "draw": 0,
+    "bonus": 0,
+    "hud": true,
+    "list": [
+     {
+      "kind": "gates",
+      "target": 2,
+      "label": "ARCHES"
+     },
+     {
+      "kind": "perch",
+      "target": 1,
+      "label": ""
+     },
+     {
+      "kind": "coins",
+      "target": 3,
+      "label": ""
+     }
+    ]
+   },
+   "steps": [
+    {
+     "counts": {
+      "coins": 3
+     },
+     "fresh": [
+      1
+     ],
+     "completed": 1,
+     "json": [
+      {
+       "kind": "gates",
+       "label": "ARCHES",
+       "target": 2,
+       "value": 0,
+       "done": false
+      },
+      {
+       "kind": "coins",
+       "label": "COINS",
+       "target": 3,
+       "value": 3,
+       "done": true
+      }
+     ]
+    },
+    {
+     "counts": {
+      "coins": 3,
+      "gates": 2
+     },
+     "fresh": [
+      0
+     ],
+     "completed": 2
+    }
+   ]
+  },
+  {
+   "name": "switched off is silent",
+   "perch": false,
+   "decks": false,
+   "spec": {
+    "enabled": false
+   },
+   "steps": [
+    {
+     "counts": {
+      "coins": 999
+     },
+     "fresh": [],
+     "completed": 0,
+     "json": []
+    }
+   ]
+  }
+ ]
+}

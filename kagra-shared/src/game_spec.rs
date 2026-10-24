@@ -12,6 +12,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub use crate::game_core::lives::LivesSpec;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct GameSpec {
@@ -488,47 +490,6 @@ pub struct PlayerSpec {
     pub rim: RimSpec,
     /// Neon eyes on the face.
     pub eyes: EyesSpec,
-}
-
-/// Nine lives: a hit costs one, the cat blinks and cannot be hit again for
-/// `invuln_secs`, and the last life ends the run as before. `count` 1 is the
-/// old one-hit rule (the geometry measurements run that way).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct LivesSpec {
-    /// 1..=9 (the HUD paw row has nine slots). The default is 3.
-    pub count: u32,
-    /// Seconds without damage after a hit.
-    pub invuln_secs: f32,
-    /// Blinks per second while protected.
-    pub blink_hz: f32,
-}
-
-impl Default for LivesSpec {
-    fn default() -> Self {
-        Self {
-            count: 3,
-            invuln_secs: 1.6,
-            blink_hz: 10.0,
-        }
-    }
-}
-
-impl LivesSpec {
-    pub const MAX: u32 = 9;
-
-    fn validate(&self) -> Result<(), String> {
-        if !(1..=Self::MAX).contains(&self.count) {
-            return Err(format!("game spec: lives.count must be 1..={}", Self::MAX));
-        }
-        if !(0.0..=10.0).contains(&self.invuln_secs) || !self.invuln_secs.is_finite() {
-            return Err("game spec: lives.invuln_secs must be 0..=10".into());
-        }
-        if !(0.0..=30.0).contains(&self.blink_hz) || !self.blink_hz.is_finite() {
-            return Err("game spec: lives.blink_hz must be 0..=30".into());
-        }
-        Ok(())
-    }
 }
 
 /// Two point lights (screen-left, screen-right) just outside the cat's flanks so its side faces

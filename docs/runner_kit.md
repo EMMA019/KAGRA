@@ -228,6 +228,25 @@ Shared sim code lives in `kagra-shared/src/game_core/`:
   seeded spark pool)
 - `collide`: `Hitbox::place` / `feet_hit` from an entity row
 - `run`: `RunStats` (score, pickups, death) and the HUD score panel
+- `lives`: `LivesSpec` (the `lives` JSON section) and `Lives` (hits left, the
+  blink after one, `hit` -> `Absorbed` or `Fatal`, life pick-up, blink phase)
+- `missions`: `MissionsSpec` (the `missions` JSON section, pool + `draw`),
+  the `Counters` trait a kit implements to hand over its numbers, and
+  `Tracker` (announce each goal once, write the `[{kind,label,target,value,done}]`
+  the page reads)
+- `result`: `ResultState` (the game-over cue that waits for the freeze, the
+  banner, the BEST chip rule)
+
+`Core` carries `stats`, `juice`, `lives`, `missions` and `result`, so a new kit
+gets the 3 lives, the score, the mission strip and the game-over flow by
+filling in a `LivesSpec` / `MissionsSpec` and calling `lives.hit(..)`,
+`missions.update(..)` and `result.take_gameover(..)`; it only draws its own
+HUD. The BEST score itself is `GameFlow::best_score` (flow.rs). Python mirror:
+`kagra/run_rules.py`; both sides replay
+`kagra-shared/tests/fixtures/run_rules_vectors.json`. What stays in a kit:
+what a hit is (hitboxes), the sparks and sounds of it, the counters a goal
+reads (`neon_missions::Counts` for Neon Cat), the paw-row / mission-strip
+painting, and the pick-up effects.
 
 `game_core::tick_frame(kit, dt)` is the fixed-order frame driver. It
 handles the dt clamp, substeps, hitstop and its hand-off to the result
