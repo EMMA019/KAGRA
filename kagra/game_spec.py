@@ -410,9 +410,10 @@ def _default_perch_route() -> list[PerchStep]:
 class PerchRules:
     """Where perch routes stand (free slots, beside the track centre) and what running on them pays."""
 
-    rest_every: int = 2
-    reward_every: int = 2
-    other_every: int = 6
+    enabled: bool = False  # off by default (hard to see on a phone); everything below stays for a re-enable
+    rest_every: int = 4
+    reward_every: int = 4
+    other_every: int = 10
     side: float = 1.35
     half_width: float = 0.7
     step_len: float = 3.6
@@ -432,6 +433,48 @@ class PerchRules:
             raise ValueError("perch_rules coins_per_step 0..=6")
         if not 0.0 <= self.ramp_len <= 3.0 or self.ramp_len > self.step_len * 0.5:
             raise ValueError("perch_rules ramp_len 0..=3 and at most half a step_len")
+
+
+# Shared with Rust (kagra-shared/src/game_spec.rs): how far an obstacle's kill box
+# reaches in front of its slot's centre, the slack kept after a deck's exit
+# drop, and where the stair lane's deck ends in a slot (a fraction of the gap).
+DECK_OBSTACLE_REACH = 2.0
+DECK_EXIT_MARGIN = 1.0
+STAIR_END_FRAC = 0.30
+
+
+@dataclass
+class DeckRules:
+    """The upper course: short raised decks over the lower lanes, open underneath.
+
+    A high jump (the super-jump orb that lies before each lone deck) lands on one,
+    and the stair lane's top step goes on up to a deck of ``stair_len``. A deck is
+    never a hazard: the cat runs off an end or steps off a side onto the street.
+    """
+
+    enabled: bool = False  # off by default (hard to see on a phone)
+    rest_every: int = 3  # one lone deck every n-th free slot of a rest section (0 = none)
+    reward_every: int = 2
+    other_every: int = 8
+    lanes: list[int] = field(default_factory=lambda: [-1, 0, 1])  # lanes a deck can stand over
+    length: float = 7.0
+    height: float = 2.0
+    half_width: float = 0.6
+    stair_entry: bool = True
+    stair_len: float = 3.0
+    land_score: int = 60
+    run_score: int = 60
+    coins: int = 6
+
+    def __post_init__(self) -> None:
+        if not 0.8 <= self.height <= 2.6 or not 3.0 <= self.length <= 12.0:
+            raise ValueError("deck_rules height 0.8..=2.6, length 3..=12")
+        if not 0.4 <= self.half_width <= 1.2 or not 2.0 <= self.stair_len <= 8.0:
+            raise ValueError("deck_rules half_width 0.4..=1.2, stair_len 2..=8")
+        if not self.lanes or len(self.lanes) > 5 or any(abs(int(n)) > 2 for n in self.lanes):
+            raise ValueError("deck_rules lanes needs 1..=5 lanes in -2..=2")
+        if not 0 <= self.coins <= 12:
+            raise ValueError("deck_rules coins 0..=12")
 
 
 @dataclass
@@ -780,6 +823,7 @@ class GameSpec:
     mischief_rules: MischiefRules = field(default_factory=MischiefRules)
     perch_route: list[PerchStep] = field(default_factory=_default_perch_route)
     perch_rules: PerchRules = field(default_factory=PerchRules)
+    deck_rules: DeckRules = field(default_factory=DeckRules)
     chaser: ChaserSpec = field(default_factory=ChaserSpec)
     placements: list[Placement] = field(default_factory=list)
     runner: RunnerKit = field(default_factory=RunnerKit)
@@ -809,6 +853,7 @@ class GameSpec:
             raise ValueError("game spec needs an obstacle with weight > 0")
         self._check_item_colors()
         self._check_perch_route()
+        self._check_decks()
         return asdict(self)
 
     def _check_perch_route(self) -> None:
@@ -829,6 +874,34 @@ class GameSpec:
                 raise ValueError("a perch step is too high above the one before it")
         if len(self.perch_route) * r.step_len > self.runner.obstacle_track.gap - 3.0:
             raise ValueError("the perch route is longer than a slot")
+
+    def _check_decks(self) -> None:
+        """A high jump reaches a deck, the stair lane steps onto it, and a cat that
+        runs off an end lands before the next obstacle, even at the speed cap (same rules as Rust)."""
+        d = self.deck_rules
+        if not d.enabled:
+            return
+        jump = self.runner.jump
+        gap = self.runner.obstacle_track.gap
+        v = jump.velocity * self.item_rules.jump_scale
+        g = max(-jump.gravity, 1e-3)
+        if d.height > v * v / (2.0 * g) - 0.3:
+            raise ValueError(f"a deck {d.height:.2f} m high is out of reach of a high jump")
+        lanes = self.runner.lanes
+        if any(abs(n) * lanes.width + d.half_width > lanes.limit + 0.05 for n in d.lanes):
+            raise ValueError("a deck lane reaches past the rails")
+        fall = self.runner.speed.cap * (2.0 * d.height / g) ** 0.5
+        free = gap - DECK_OBSTACLE_REACH - DECK_EXIT_MARGIN - fall
+        if d.length * 0.5 > free:
+            raise ValueError("a cat that runs off the end of a deck would land on the next obstacle")
+        if self.perch_route and d.stair_entry:
+            if d.height - self.perch_route[-1].top() > self.perch_rules.step_up + 1e-4:
+                raise ValueError("the stair deck is too high above the last perch step")
+            block = len(self.perch_route) * self.perch_rules.step_len + d.stair_len
+            if block > gap - 3.0:
+                raise ValueError("the stair lane and its deck are longer than a slot")
+            if gap * STAIR_END_FRAC > free:
+                raise ValueError("a cat that runs off the stair deck would land on the next obstacle")
 
     def _check_item_colors(self) -> None:
         """Orb colours must tell apart (sum of channel differences >= 90), same test as Rust."""

@@ -88,6 +88,7 @@ CLASSIC = {
     "items": [],
     "mischief": [],
     "perch_route": [],
+    "deck_rules": {"enabled": False},
     "chaser": {"enabled": False},
     # Look, sound and goals are new; the classic runs predate them.
     "atmosphere": {"enabled": False},
@@ -224,18 +225,21 @@ def test_mischief_vocabulary_rules_and_fields_match_rust():
 
 
 def test_perch_route_and_chaser_match_rust_and_are_checked():
-    from kagra.game_spec import PERCH_KINDS, ChaserSpec, PerchRules
+    from kagra.game_spec import PERCH_KINDS, ChaserSpec, DeckRules, PerchRules
 
     rust = (ROOT / "kagra-shared/src/game_spec.rs").read_text(encoding="utf-8")
     body = re.search(r"pub enum PerchKind \{(.*?)\n\}", rust, re.S).group(1)
     assert tuple(re.sub(r"(?<!^)(?=[A-Z])", "_", v).lower() for v in re.findall(r"^\s+(\w+),", body, re.M)) == PERCH_KINDS
-    for cls, name in ((PerchRules, "PerchRules"), (ChaserSpec, "ChaserSpec")):
+    for cls, name in ((PerchRules, "PerchRules"), (DeckRules, "DeckRules"), (ChaserSpec, "ChaserSpec")):
         names = re.findall(r"pub (\w+):", re.search(rf"pub struct {name} \{{(.*?)\n\}}", rust, re.S).group(1))
         assert names == list(cls.__dataclass_fields__), name
     spec = GameSpec()
     assert [p.kind for p in spec.perch_route] == list(PERCH_KINDS)
     game = spec.world()["game"]
     assert len(game["perch_route"]) == 3
+    # The stair lane is off by default; the route stays for a re-enable.
+    assert game["perch_rules"]["enabled"] is False and PerchRules().enabled is False
+    assert re.search(r"impl Default for PerchRules \{.*?enabled: false,", rust, re.S)
     # The cleaning robot is off by default and a spec can turn it back on.
     assert game["chaser"]["enabled"] is False
     on = GameSpec.from_overrides({"chaser": {"enabled": True}}).world()["game"]["chaser"]
@@ -419,3 +423,54 @@ def test_meteor_cat_keeps_its_own_look():
     game = GameSpec.from_overrides(manifest["game"]).to_dict()
     assert game["atmosphere"]["enabled"] is False and game["missions"]["enabled"] is False
     assert game["audio"]["enabled"] is True
+
+
+def test_deck_rules_match_rust_and_the_upper_course_is_checked():
+    from kagra.game_spec import DECK_EXIT_MARGIN, DECK_OBSTACLE_REACH, STAIR_END_FRAC
+
+    rust = (ROOT / "kagra-shared/src/game_spec.rs").read_text(encoding="utf-8")
+    for name, value in (
+        ("DECK_OBSTACLE_REACH", DECK_OBSTACLE_REACH),
+        ("DECK_EXIT_MARGIN", DECK_EXIT_MARGIN),
+        ("STAIR_END_FRAC", STAIR_END_FRAC),
+    ):
+        assert float(re.search(rf"pub const {name}: f32 = ([\d.]+);", rust).group(1)) == value
+    # The Rust defaults, field by field.
+    body = re.search(r"impl Default for DeckRules \{(.*?)\n\}\n", rust, re.S).group(1)
+    rows = dict(re.findall(r"^\s+(\w+): (.+),$", body, re.M))
+    d = GameSpec().deck_rules
+    # Off by default (hard to see on a phone); the machinery stays for a re-enable.
+    assert rows["enabled"] == "false" and d.enabled is False and d.stair_entry is True
+    assert rows["lanes"] == "vec![-1, 0, 1]" and d.lanes == [-1, 0, 1]
+    for k in ("rest_every", "reward_every", "other_every", "land_score", "run_score", "coins"):
+        assert int(rows[k]) == getattr(d, k), k
+    for k in ("length", "height", "half_width", "stair_len"):
+        assert float(rows[k]) == getattr(d, k), k
+    assert GameSpec().world()["game"]["deck_rules"]["enabled"] is False
+    assert GameSpec.from_overrides(CLASSIC).deck_rules.enabled is False
+    # Switched on, the default upper course (and the stair lane under it) passes the checks.
+    on = GameSpec.from_overrides({"deck_rules": {"enabled": True}, "perch_rules": {"enabled": True}})
+    assert on.to_dict() and on.deck_rules.enabled and on.perch_rules.enabled
+    assert GameSpec.from_overrides({"deck_rules": {"lanes": [0], "height": 1.8}}).deck_rules.lanes == [0]
+    # A high jump reaches the default height, a plain one does not (the deck is the upper course).
+    jump = GameSpec().runner.jump
+    plain = jump.velocity**2 / (2 * -jump.gravity)
+    assert plain + GameSpec().perch_rules.step_up < d.height <= plain * 1.5**2 - 0.3
+    for bad in (
+        {"deck_rules": {"height": 2.6}},  # out of reach of a high jump
+        {"deck_rules": {"height": 0.5}},
+        {"deck_rules": {"length": 13.0}},
+        # A drop off the end of the deck would land on the next obstacle.
+        {"runner": {"obstacle_track": {"gap": 14.0}}, "deck_rules": {"length": 9.0, "stair_entry": False}},
+        {"deck_rules": {"lanes": []}},
+        {"deck_rules": {"lanes": [3]}},
+        {"deck_rules": {"lanes": [2]}},  # past the rails
+        {"deck_rules": {"half_width": 2.0}},
+        {"deck_rules": {"stair_len": 9.0}},
+        {"deck_rules": {"height": 2.4}},  # too far above the sign for a step
+        {"deck_rules": {"stair_len": 7.0}},  # the stair lane and its deck outgrow a slot
+    ):
+        # The checks only run for a deck that is switched on.
+        bad = {**bad, "deck_rules": {**bad["deck_rules"], "enabled": True}}
+        with pytest.raises(ValueError):
+            GameSpec.from_overrides(bad).to_dict()

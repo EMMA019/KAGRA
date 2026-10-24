@@ -2,7 +2,7 @@
   "bot": {
     "clear_rate": 0.45,
     "clear_secs": 90.0,
-    "coins_mean": 218.85,
+    "coins_mean": 160.65,
     "collisions": 11,
     "death_causes": {
       "BARRIER": 5,
@@ -23,7 +23,7 @@
     ],
     "rings_mean": 70.0,
     "runs": 20,
-    "score_mean": 15093.25,
+    "score_mean": 13766.65,
     "survival_mean_s": 68.297,
     "survival_median_s": 75.5
   },
@@ -207,6 +207,10 @@
     ],
     "tight": [],
     "unavoidable": []
+  },
+  "decks": {
+    "enabled": false,
+    "issues": []
   },
   "dt": 0.017,
   "feel": {

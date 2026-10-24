@@ -117,6 +117,10 @@
     "tight": [],
     "unavoidable": []
   },
+  "decks": {
+    "enabled": false,
+    "issues": []
+  },
   "dt": 0.017,
   "feel": {
     "jump": {

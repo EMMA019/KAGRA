@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- Neon Cat: the stair lane (perch steps, raised steps and slopes) and the new upper course
+  are **off by default** (`perch_rules.enabled`, `deck_rules.enabled`, both false) because
+  they were hard to see on a phone; the default course is the plain street again, as before
+  the perch routes. The code, validators (Rust + Python), JSON tunables and measure checks
+  stay, and each switch brings its half back; tests run both the on and the off paths. The
+  side-hit rule still applies to any ramp that exists (a train's wedge). Everything else
+  merged since stays (night atmosphere, fx tiers, GL fix, portal prep). Ideas to make them
+  easier to see before re-enabling: a higher or tilted camera over a deck, translucent deck
+  slabs, an emissive outline glow on edges, and side lighting that rakes across the steps.
+
+- Neon Cat: an upper course (off by default, see above). `deck_rules` puts short raised decks (2 m up, 7 m long, open
+  underneath) over a lower lane in some free slots; only a Superjump gets up (an orb
+  lies before each deck), a plain jump passes under. The stair lane now carries on up
+  to a deck as a second way up, with no jump. The stair lane is rarer (every 4th free
+  slot of a rest or reward section, was every 2nd), so there are fewer slopes. Running
+  into the side of a stair step, a stair slope or a train's ramp is now a hit; the front
+  ride-up, a jump across and the stair lane's first-step switch-in (#192) are not. Spec
+  checks (Rust `validate_decks` with a Python mirror `_check_decks`) refuse decks a plain
+  jump can reach, that a high jump cannot, or whose drop lands on the next obstacle; the
+  measure harness plays the decks live (`decks`, `deck_*` codes). A deck is only built
+  in a slot whose drop (at the speed cap) lands at least 0.15 s short of the next
+  obstacle's real front; otherwise the slot stays plain (a stair lane then has no deck).
+  The bot now keeps off step walls.
+
 - Web-portal prep (nothing submitted anywhere): `scripts/preview_site/portal.js` is a
   host shim with a no-op default and CrazyGames / GameMonetize adapters
   (`?portal=` or the `kagra-portal` build flag; the default build makes no

@@ -7,10 +7,13 @@
 //! see what a preset or tuning change did. Everything except `perf` is
 //! a pure function of the world and the options.
 
-use super::{obstacle_anchor, obstacle_parts, obstacle_shape, NeonCat, CAT_HALF_W};
+use super::{
+    ledges_at, obstacle_anchor, obstacle_parts, obstacle_shape, perch_route_at, NeonCat, PerchBox,
+    CAT_HALF_W, FX_BOOST, FX_JUMP,
+};
 use crate::flow::FlowPhase;
 use crate::game_core::{collide, Hitbox};
-use crate::game_spec::{Behavior, PartRole, SectionKind};
+use crate::game_spec::{Behavior, PartRole, SectionKind, DECK_OBSTACLE_REACH};
 use crate::gesture::Swipe;
 use crate::input::{PointerEvent, PointerPhase};
 use serde_json::{json, Value};
@@ -89,13 +92,14 @@ pub fn measure(world: &str, opts: &MeasureOpts) -> Result<Value, String> {
         "bot": bot(world, opts)?,
         "course": course(world, opts, apex, switch_s, &reach)?,
         "reachability": reach,
+        "decks": decks(world)?,
         "view": view(world, opts)?,
         "camera_clip": camera,
         "roll_window": window,
     });
     // Camera and roll-window findings count as placement issues, so `--check`
     // and the tests see one list.
-    for key in ["camera_clip", "roll_window"] {
+    for key in ["camera_clip", "roll_window", "decks"] {
         let extra = out[key]["issues"].as_array().cloned().unwrap_or_default();
         let place = &mut out["course"]["placement"];
         if let Some(list) = place["issues"].as_array_mut() {
@@ -112,6 +116,230 @@ pub fn measure(world: &str, opts: &MeasureOpts) -> Result<Value, String> {
         out["perf"] = perf(world)?;
     }
     Ok(out)
+}
+
+/// One live play at a deck: where the cat first stood on it, whether it
+/// lived, and where it came down on the street again.
+struct DeckPlay {
+    landed: bool,
+    alive: bool,
+    street: f32,
+}
+
+/// Play slot `i`'s deck at the current speed. `lead` is the distance before
+/// the deck's front at which a jump is pressed (`None`: no jump, a stair
+/// climb from `start_z`). The run ends back on the street or at the next
+/// obstacle.
+fn deck_play(
+    g: &mut NeonCat,
+    i: i32,
+    deck: &PerchBox,
+    x: f32,
+    start_z: f32,
+    jump: Option<(bool, f32)>,
+) -> DeckPlay {
+    g.start_run();
+    g.time = g.spec.runner.jump.grace_secs + 0.2;
+    g.x = x;
+    g.y = 0.0;
+    g.vy = 0.0;
+    g.z = jump.map_or(start_z, |(_, lead)| deck.z0 - lead);
+    g.rebuild();
+    if let Some((high, _)) = jump {
+        if high {
+            g.fx[FX_JUMP] = 20.0;
+        }
+        g.swipe(Swipe::Up);
+    }
+    let end = g.spec.runner.obstacle_track.z(i + 1) - DECK_OBSTACLE_REACH;
+    let mut street = f32::NAN;
+    for _ in 0..(12.0 / DT) as u32 {
+        // Judge the course at its own speed: a boost orb on the way would
+        // change the cap this reports against.
+        g.fx[FX_BOOST] = 0.0;
+        g.tick(DT);
+        if !g.alive() {
+            break;
+        }
+        if street.is_nan() && g.y < 0.01 && g.z > deck.z1 {
+            street = g.z;
+        }
+        if g.z > end || !street.is_nan() {
+            break;
+        }
+    }
+    DeckPlay {
+        landed: g.deck_landed.contains(&i),
+        alive: g.alive(),
+        street,
+    }
+}
+
+/// The upper course, played live: for a lone deck and a stair deck at the
+/// start speed and at the cap, a plain jump must pass under, a high jump
+/// must land in a window wide enough to hit, the stair lane must climb on up
+/// without a jump, and the step off the end must come down clear of the next
+/// obstacle with time to see it. Placement is audited over every slot.
+fn decks(world: &str) -> Result<Value, String> {
+    let g = NeonCat::from_json(world)?.one_life();
+    let spec = g.spec.clone();
+    let d = spec.deck_rules.clone();
+    if !d.enabled {
+        return Ok(json!({"enabled": false, "issues": []}));
+    }
+    let t = spec.runner.obstacle_track.clone();
+    let lim = spec.runner.lanes.limit;
+    let mut issues = Vec::new();
+    let (mut lone, mut stair) = (Vec::new(), Vec::new());
+    for i in 0..400 {
+        let all = ledges_at(&spec, i);
+        for b in all.iter().flatten().filter(|b| b.deck) {
+            let bad = |why: &str| json!({"severity": "error", "code": "deck_placement", "index": i, "why": why});
+            if spec.obstacle_active(i) {
+                issues.push(bad("a deck stands in a slot with an obstacle"));
+            }
+            if b.x.abs() > lim + 1e-3 {
+                issues.push(bad("a deck is centred past the rails"));
+            }
+            if b.z0 < t.z(i) - t.gap * 0.5 - 1e-3 || b.z1 > t.z(i) + t.gap * 0.5 + 1e-3 {
+                issues.push(bad("a deck runs out of its own slot"));
+            }
+            // Every deck, at the speed cap: the drop must land short of the
+            // next obstacle's real front with time to see it.
+            let cap = spec.runner.speed.cap;
+            let land = b.z1 + spec.deck_fall(cap, d.height);
+            if spec.obstacle_active(i + 1) {
+                let front = obstacle_parts(&spec, i + 1)
+                    .iter()
+                    .map(|p| p.skin_min[2])
+                    .fold(f32::INFINITY, f32::min);
+                let slack = front - land;
+                if slack < 0.0 {
+                    issues.push(json!({"severity": "error", "code": "deck_exit_blocked",
+                        "index": i, "why": "the step off the end lands on the next obstacle"}));
+                } else if slack / cap < 0.15 - 1e-4 {
+                    issues.push(json!({"severity": "warn", "code": "deck_exit_tight",
+                        "index": i, "slack_s": r3(slack / cap)}));
+                }
+            }
+            if perch_route_at(&spec, i).is_some() {
+                stair.push((i, *b));
+            } else {
+                lone.push((i, *b));
+            }
+        }
+    }
+    let speeds = [spec.runner.speed.start, spec.runner.speed.cap];
+    let mut rows = Vec::new();
+    for &speed in &speeds {
+        let mut g = fresh(world)?;
+        {
+            let sp = std::sync::Arc::make_mut(&mut g.spec);
+            sp.runner.speed.start = speed;
+            sp.runner.speed.ramp = 0.0;
+            sp.runner.speed.cap = speed;
+        }
+        let mut judge = |kind: &str, i: i32, b: &PerchBox, issues: &mut Vec<Value>| {
+            let front = if spec.obstacle_active(i + 1) {
+                obstacle_parts(&spec, i + 1)
+                    .iter()
+                    .map(|p| p.skin_min[2])
+                    .fold(f32::INFINITY, f32::min)
+            } else {
+                t.z(i + 1) - DECK_OBSTACLE_REACH
+            };
+            let mut row = json!({"kind": kind, "index": i, "speed": r3(speed), "x": r3(b.x)});
+            let mut slack = f32::INFINITY;
+            let mut fail = |code: &str, why: String| {
+                issues.push(json!({"severity": "error", "code": code, "index": i,
+                    "kind": kind, "speed": r3(speed), "why": why}));
+            };
+            if kind == "lone" {
+                let mut window = 0.0f32;
+                let mut plain = false;
+                let mut hurt = false;
+                for k in 0..=20 {
+                    let lead = 0.25 + k as f32 * 0.5;
+                    let p = deck_play(&mut g, i, b, b.x, 0.0, Some((true, lead)));
+                    hurt |= !p.alive;
+                    if p.landed {
+                        window += 0.5;
+                        slack = slack.min(front - p.street);
+                    }
+                    if k % 8 == 0 {
+                        let q = deck_play(&mut g, i, b, b.x, 0.0, Some((false, lead)));
+                        plain |= q.landed;
+                        hurt |= !q.alive;
+                    }
+                }
+                row["high_jump_window_m"] = json!(window);
+                row["plain_jump_lands"] = json!(plain);
+                if plain {
+                    fail(
+                        "deck_plain_reachable",
+                        "a plain jump gets onto the deck".into(),
+                    );
+                }
+                if window < 0.75 {
+                    fail(
+                        "deck_window_tight",
+                        format!("a high jump lands in a {window} m window (needs 0.75)"),
+                    );
+                }
+                if hurt {
+                    fail(
+                        "deck_hurts",
+                        "the cat dies jumping at or under the deck".into(),
+                    );
+                }
+            } else {
+                let steps = perch_route_at(&spec, i).unwrap_or_default();
+                let z = steps[0].z0 - spec.perch_rules.ramp_len - 1.0;
+                let p = deck_play(&mut g, i, b, b.x, z, None);
+                if !p.landed || !p.alive {
+                    fail(
+                        "deck_stair_unreachable",
+                        "the stair lane does not climb on up to its deck".into(),
+                    );
+                } else {
+                    slack = front - p.street;
+                }
+            }
+            if slack.is_finite() {
+                row["exit_slack_m"] = json!(r3(slack));
+                row["exit_slack_s"] = json!(r3(slack / speed));
+                if slack < 0.0 {
+                    fail(
+                        "deck_exit_blocked",
+                        "the step off the end lands on the next obstacle".into(),
+                    );
+                } else if slack / speed < 0.15 {
+                    issues.push(json!({"severity": "warn", "code": "deck_exit_tight",
+                        "index": i, "kind": kind, "speed": r3(speed),
+                        "slack_s": r3(slack / speed)}));
+                }
+            }
+            row
+        };
+        if let Some((i, b)) = lone.first() {
+            rows.push(judge("lone", *i, b, &mut issues));
+        }
+        if let Some((i, b)) = stair.first() {
+            rows.push(judge("stair", *i, b, &mut issues));
+        }
+    }
+    if lone.is_empty() && d.every(SectionKind::Rest) > 0 && !spec.runner.sections.is_empty() {
+        issues.push(json!({"severity": "warn", "code": "deck_none",
+            "why": "deck_rules is on but no free slot in 400 holds a lone deck"}));
+    }
+    Ok(json!({
+        "enabled": true,
+        "lone_decks_in_400": lone.len(),
+        "stair_decks_in_400": stair.len(),
+        "height_m": r3(d.height),
+        "rows": rows,
+        "issues": issues,
+    }))
 }
 
 /// Frames are sim ticks at [`DT`]. A latency of 1 means the press moves
@@ -1566,6 +1794,7 @@ mod tests {
         w["game"]["runner"]["obstacle_track"]["gap"] = json!(gap);
         // A route does not fit a slot this tight, and it is not what this is about.
         w["game"]["perch_route"] = json!([]);
+        w["game"]["deck_rules"] = json!({"enabled": false});
         let list: Vec<Value> = w["game"]["obstacles"]
             .as_array()
             .unwrap()
@@ -1757,5 +1986,54 @@ mod tests {
         assert!(span_gap(&[(-2.0, -1.0)], &[(1.0, 2.0)]) > 1.9);
         assert_eq!(span_gap(&[(-2.0, 0.5)], &[(0.0, 2.0)]), 0.0);
         assert!(free_between(&[(-3.0, 3.0)], 2.0).is_empty());
+    }
+
+    #[test]
+    fn the_upper_course_is_played_live_and_a_too_low_deck_is_caught() {
+        let o = MeasureOpts {
+            perf: false,
+            runs: 1,
+            ..Default::default()
+        };
+        // Off by default (hard to see on a phone): the report says so and
+        // checks nothing. The checks below run with both features switched on.
+        let r = measure(SECTIONED, &o).unwrap();
+        assert_eq!(r["decks"]["enabled"], false);
+        assert_eq!(r["course"]["placement"]["ok"], true);
+        let lively = {
+            let mut w: Value = serde_json::from_str(SECTIONED).unwrap();
+            w["game"]["perch_rules"]["enabled"] = json!(true);
+            w["game"]["deck_rules"]["enabled"] = json!(true);
+            w.to_string()
+        };
+        let r = measure(&lively, &o).unwrap();
+        let d = &r["decks"];
+        assert_eq!(d["enabled"], true);
+        assert!(d["lone_decks_in_400"].as_u64().unwrap() >= 8);
+        assert!(d["stair_decks_in_400"].as_u64().unwrap() >= 8);
+        let rows = d["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 4, "a lone and a stair deck at both speeds");
+        for row in rows.iter().filter(|r| r["kind"] == "lone") {
+            assert_eq!(row["plain_jump_lands"], false);
+            assert!(row["high_jump_window_m"].as_f64().unwrap() >= 0.75, "{row}");
+        }
+        let errs = codes(d["issues"].as_array().unwrap(), "error");
+        assert!(errs.is_empty(), "{errs:?}");
+        // A deck a plain jump reaches is a different game: flagged.
+        let mut w: Value = serde_json::from_str(&lively).unwrap();
+        w["game"]["deck_rules"]["height"] = json!(1.0);
+        w["game"]["deck_rules"]["stair_entry"] = json!(false);
+        let r = measure(&w.to_string(), &o).unwrap();
+        let errs = codes(r["decks"]["issues"].as_array().unwrap(), "error");
+        assert!(
+            errs.contains(&"deck_plain_reachable".to_string()),
+            "{errs:?}"
+        );
+        assert_eq!(r["course"]["placement"]["ok"], false, "it feeds --check");
+        // Off: the section is a one-liner and nothing is checked.
+        let mut w: Value = serde_json::from_str(&lively).unwrap();
+        w["game"]["deck_rules"] = json!({"enabled": false});
+        let r = measure(&w.to_string(), &o).unwrap();
+        assert_eq!(r["decks"]["enabled"], false);
     }
 }

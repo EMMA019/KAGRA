@@ -47,6 +47,9 @@ pub struct GameSpec {
     /// first (`perch_rules` places one in free slots; empty = none).
     pub perch_route: Vec<PerchStep>,
     pub perch_rules: PerchRules,
+    /// The upper course: short raised decks above the lower lanes, reached
+    /// by a high jump or by climbing the stair lane.
+    pub deck_rules: DeckRules,
     /// The cleaning robot that gives chase after a hit.
     pub chaser: ChaserSpec,
     /// Reserved. Seeded chunk placement baked by Python. Not simulated yet.
@@ -1231,6 +1234,9 @@ pub fn default_perch_route() -> Vec<PerchStep> {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct PerchRules {
+    /// Off by default (hard to see on a phone): no stair lane, no raised
+    /// steps. The route, placement and validators below stay for a re-enable.
+    pub enabled: bool,
     /// One route every n-th free slot in a rest section (0 = none).
     pub rest_every: u32,
     /// The same for a reward section.
@@ -1263,9 +1269,10 @@ pub struct PerchRules {
 impl Default for PerchRules {
     fn default() -> Self {
         Self {
-            rest_every: 2,
-            reward_every: 2,
-            other_every: 6,
+            enabled: false,
+            rest_every: 4,
+            reward_every: 4,
+            other_every: 10,
             side: 1.35,
             half_width: 0.7,
             step_len: 3.6,
@@ -1294,6 +1301,100 @@ impl PerchRules {
             return Err("game spec: perch_rules ramp_len 0..=3 and at most half a step_len".into());
         }
         Ok(())
+    }
+}
+
+/// How far in front of a slot's centre an obstacle's kill box reaches.
+pub const DECK_OBSTACLE_REACH: f32 = 2.0;
+/// Slack kept between where a cat that runs off a deck lands and the next obstacle.
+pub const DECK_EXIT_MARGIN: f32 = 1.0;
+/// Where the stair lane and its deck end in a slot, as a fraction of the gap
+/// past the slot's centre (so the drop off the end lands before the next slot).
+pub const STAIR_END_FRAC: f32 = 0.30;
+
+/// The upper course: short raised decks over the lower lanes. A deck is a
+/// flat top with no wall under it, so the cat runs beneath it as usual; a high
+/// jump (the super-jump orb) lands on it, and so does a climb up the stair
+/// lane. Nothing on a deck is a hazard, and its two ends are open: the cat runs
+/// off the end, or steps off a side, to the street.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DeckRules {
+    /// Off by default (hard to see on a phone): no decks at all. The placement,
+    /// sim and validators stay for a re-enable.
+    pub enabled: bool,
+    /// One deck every n-th free slot in a rest section (0 = none). Slots with a
+    /// stair route have the stair deck instead.
+    pub rest_every: u32,
+    /// The same for a reward section.
+    pub reward_every: u32,
+    /// The same for every other section.
+    pub other_every: u32,
+    /// Which lanes a deck can stand over (0 is the middle, 1 and -1 the
+    /// sides); a hash of the slot picks one.
+    pub lanes: Vec<i32>,
+    /// Length along the track, metres.
+    pub length: f32,
+    /// Height of the top above the street, metres.
+    pub height: f32,
+    /// Half the width of a deck.
+    pub half_width: f32,
+    /// The top step of the stair lane goes on up to a deck of `stair_len`.
+    pub stair_entry: bool,
+    /// Length of that deck.
+    pub stair_len: f32,
+    /// Score for the first landing on a deck.
+    pub land_score: u32,
+    /// Score per second spent on a deck.
+    pub run_score: u32,
+    /// Coins laid along the top of a deck.
+    pub coins: u32,
+}
+
+impl Default for DeckRules {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            rest_every: 3,
+            reward_every: 2,
+            other_every: 8,
+            lanes: vec![-1, 0, 1],
+            length: 7.0,
+            height: 2.0,
+            half_width: 0.6,
+            stair_entry: true,
+            stair_len: 3.0,
+            land_score: 60,
+            run_score: 60,
+            coins: 6,
+        }
+    }
+}
+
+impl DeckRules {
+    fn validate(&self) -> Result<(), String> {
+        if !(0.8..=2.6).contains(&self.height) || !(3.0..=12.0).contains(&self.length) {
+            return Err("game spec: deck_rules height 0.8..=2.6, length 3..=12".into());
+        }
+        if !(0.4..=1.2).contains(&self.half_width) || !(2.0..=8.0).contains(&self.stair_len) {
+            return Err("game spec: deck_rules half_width 0.4..=1.2, stair_len 2..=8".into());
+        }
+        if self.lanes.is_empty() || self.lanes.len() > 5 || self.lanes.iter().any(|l| l.abs() > 2) {
+            return Err("game spec: deck_rules lanes needs 1..=5 lanes in -2..=2".into());
+        }
+        if self.coins > 12 {
+            return Err("game spec: deck_rules coins 0..=12".into());
+        }
+        Ok(())
+    }
+
+    /// One deck every `every` free slots of a section of this kind.
+    pub fn every(&self, kind: SectionKind) -> u32 {
+        match kind {
+            SectionKind::Rest => self.rest_every,
+            SectionKind::Reward => self.reward_every,
+            _ => self.other_every,
+        }
     }
 }
 
@@ -1582,6 +1683,7 @@ impl Default for GameSpec {
             mischief_rules: MischiefRules::default(),
             perch_route: default_perch_route(),
             perch_rules: PerchRules::default(),
+            deck_rules: DeckRules::default(),
             chaser: ChaserSpec::default(),
             placements: Vec::new(),
             runner: RunnerKit::default(),
@@ -1766,6 +1868,70 @@ impl GameSpec {
         Ok(spec)
     }
 
+    /// Top of the arc of a jump with the high-jump orb.
+    pub fn deck_apex(&self) -> f32 {
+        let j = &self.runner.jump;
+        let v = j.velocity * self.item_rules.jump_scale;
+        v * v / (2.0 * -j.gravity).max(1e-3)
+    }
+
+    /// How far a cat running at `speed` is carried while it falls `height`.
+    pub fn deck_fall(&self, speed: f32, height: f32) -> f32 {
+        speed * (2.0 * height / (-self.runner.jump.gravity).max(1e-3)).sqrt()
+    }
+
+    /// The upper course has to be fair: a high jump reaches it, the stair lane
+    /// climbs onto it by a step up, and a cat that runs off an end lands on the
+    /// street before the next slot's obstacle, even at the speed cap.
+    fn validate_decks(&self) -> Result<(), String> {
+        let d = &self.deck_rules;
+        if !d.enabled {
+            return Ok(());
+        }
+        let gap = self.runner.obstacle_track.gap;
+        if d.height > self.deck_apex() - 0.3 {
+            return Err(format!(
+                "game spec: a deck {:.2} m high is out of reach of a high jump ({:.2} m)",
+                d.height,
+                self.deck_apex()
+            ));
+        }
+        let lanes = &self.runner.lanes;
+        if d.lanes
+            .iter()
+            .any(|l| l.abs() as f32 * lanes.width + d.half_width > lanes.limit + 0.05)
+        {
+            return Err("game spec: a deck lane reaches past the rails".into());
+        }
+        let fall = self.deck_fall(self.runner.speed.cap, d.height);
+        let free = gap - DECK_OBSTACLE_REACH - DECK_EXIT_MARGIN - fall;
+        if d.length * 0.5 > free {
+            return Err(format!(
+                "game spec: a cat that runs off the end of a deck would land on the next obstacle (deck half-length {:.1} m, room {free:.1} m)",
+                d.length * 0.5
+            ));
+        }
+        if let Some(last) = self.perch_route.last() {
+            if d.stair_entry {
+                if d.height - last.top() > self.perch_rules.step_up + 1e-4 {
+                    return Err(
+                        "game spec: the stair deck is too high above the last perch step".into(),
+                    );
+                }
+                let block = self.perch_route.len() as f32 * self.perch_rules.step_len + d.stair_len;
+                if block > gap - 3.0 {
+                    return Err(
+                        "game spec: the stair lane and its deck are longer than a slot".into(),
+                    );
+                }
+                if gap * STAIR_END_FRAC > free {
+                    return Err("game spec: a cat that runs off the stair deck would land on the next obstacle".into());
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// A route has to be climbable: the first step within reach of a plain
     /// jump, each step up no more than `step_up` above the one before, and
     /// the whole route inside a slot.
@@ -1860,8 +2026,10 @@ impl GameSpec {
         self.item_rules.validate()?;
         self.mischief_rules.validate()?;
         self.perch_rules.validate()?;
+        self.deck_rules.validate()?;
         self.chaser.validate()?;
         self.validate_perch_route()?;
+        self.validate_decks()?;
         if self
             .items
             .iter()
@@ -1984,6 +2152,7 @@ impl GameSpec {
         s.items = Vec::new();
         s.mischief = Vec::new();
         s.perch_route = Vec::new();
+        s.deck_rules.enabled = false;
         s.chaser.enabled = false;
         // Pure look, sound and goals: off, so the recorded runs and the
         // classic baseline see the same world dump as before.
