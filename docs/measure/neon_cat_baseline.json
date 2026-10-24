@@ -2,7 +2,7 @@
   "bot": {
     "clear_rate": 0.45,
     "clear_secs": 90.0,
-    "coins_mean": 218.85,
+    "coins_mean": 227.55,
     "collisions": 11,
     "death_causes": {
       "BARRIER": 5,
@@ -23,7 +23,7 @@
     ],
     "rings_mean": 70.0,
     "runs": 20,
-    "score_mean": 15093.25,
+    "score_mean": 15164.9,
     "survival_mean_s": 68.297,
     "survival_median_s": 75.5
   },
@@ -207,6 +207,51 @@
     ],
     "tight": [],
     "unavoidable": []
+  },
+  "decks": {
+    "enabled": true,
+    "height_m": 2.0,
+    "issues": [],
+    "lone_decks_in_400": 30,
+    "rows": [
+      {
+        "exit_slack_m": 7.816,
+        "exit_slack_s": 0.744,
+        "high_jump_window_m": 8.5,
+        "index": 36,
+        "kind": "lone",
+        "plain_jump_lands": false,
+        "speed": 10.5,
+        "x": 0.0
+      },
+      {
+        "exit_slack_m": 7.664,
+        "exit_slack_s": 0.73,
+        "index": 1,
+        "kind": "stair",
+        "speed": 10.5,
+        "x": 1.55
+      },
+      {
+        "exit_slack_m": 3.754,
+        "exit_slack_s": 0.188,
+        "high_jump_window_m": 10.5,
+        "index": 36,
+        "kind": "lone",
+        "plain_jump_lands": false,
+        "speed": 20.0,
+        "x": 0.0
+      },
+      {
+        "exit_slack_m": 3.49,
+        "exit_slack_s": 0.174,
+        "index": 1,
+        "kind": "stair",
+        "speed": 20.0,
+        "x": 1.55
+      }
+    ],
+    "stair_decks_in_400": 66
   },
   "dt": 0.017,
   "feel": {

@@ -410,9 +410,9 @@ def _default_perch_route() -> list[PerchStep]:
 class PerchRules:
     """Where perch routes stand (free slots, beside the track centre) and what running on them pays."""
 
-    rest_every: int = 2
-    reward_every: int = 2
-    other_every: int = 6
+    rest_every: int = 4
+    reward_every: int = 4
+    other_every: int = 10
     side: float = 1.35
     half_width: float = 0.7
     step_len: float = 3.6
@@ -439,7 +439,7 @@ class PerchRules:
 # drop, and where the stair lane's deck ends in a slot (a fraction of the gap).
 DECK_OBSTACLE_REACH = 2.0
 DECK_EXIT_MARGIN = 1.0
-STAIR_END_FRAC = 0.35
+STAIR_END_FRAC = 0.30
 
 
 @dataclass
@@ -460,7 +460,7 @@ class DeckRules:
     height: float = 2.0
     half_width: float = 0.6
     stair_entry: bool = True
-    stair_len: float = 4.0
+    stair_len: float = 3.0
     land_score: int = 60
     run_score: int = 60
     coins: int = 6

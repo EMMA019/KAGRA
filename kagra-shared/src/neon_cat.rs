@@ -4051,13 +4051,39 @@ pub(crate) fn perch_route_at(s: &GameSpec, index: i32) -> Option<Vec<PerchBox>> 
     )
 }
 
+/// Shortest time, at the speed cap, between a cat stepping off a deck's end
+/// coming down and the next slot's first obstacle.
+const DECK_EXIT_SECS: f32 = 0.15;
+
+/// A deck ending at `z_end` in slot `index` is only built when a cat running
+/// off its end at the speed cap lands on the street at least
+/// [`DECK_EXIT_SECS`] short of the next slot's obstacle (the real front of
+/// its parts, not a guess), so a drop never lands on or right in front of a
+/// train or a wall. The spec validator holds the slot-level rule; this is the
+/// per-slot one.
+fn exit_clear(s: &GameSpec, index: i32, z_end: f32) -> bool {
+    if !s.obstacle_active(index + 1) {
+        return true;
+    }
+    let cap = s.runner.speed.cap;
+    let land = z_end + s.deck_fall(cap, s.deck_rules.height);
+    let front = obstacle_parts(s, index + 1)
+        .iter()
+        .map(|p| p.skin_min[2])
+        .fold(f32::INFINITY, f32::min);
+    front - land >= cap * DECK_EXIT_SECS
+}
+
 /// The deck that carries on from the route in slot `index`, if the spec has one.
-fn stair_deck(s: &GameSpec, route: &[PerchBox]) -> Option<PerchBox> {
+fn stair_deck(s: &GameSpec, index: i32, route: &[PerchBox]) -> Option<PerchBox> {
     let last = route.last()?;
     if !stair_deck_on(s) {
         return None;
     }
     let d = &s.deck_rules;
+    if !exit_clear(s, index, last.z1 + d.stair_len) {
+        return None;
+    }
     Some(PerchBox {
         kind: PerchKind::Sign,
         x: last.x,
@@ -4085,6 +4111,9 @@ pub(crate) fn deck_at(s: &GameSpec, index: i32) -> Option<PerchBox> {
     let lane = d.lanes[((h >> 5) as usize) % d.lanes.len()];
     let t = &s.runner.obstacle_track;
     let z = t.z(index);
+    if !exit_clear(s, index, z + d.length * 0.5) {
+        return None;
+    }
     Some(PerchBox {
         kind: PerchKind::Sign,
         x: lane as f32 * s.runner.lanes.width,
@@ -4101,7 +4130,7 @@ pub(crate) fn deck_at(s: &GameSpec, index: i32) -> Option<PerchBox> {
 /// stair lane (with its deck) or a lone deck.
 pub(crate) fn ledges_at(s: &GameSpec, index: i32) -> Option<Vec<PerchBox>> {
     if let Some(mut route) = perch_route_at(s, index) {
-        if let Some(d) = stair_deck(s, &route) {
+        if let Some(d) = stair_deck(s, index, &route) {
             route.push(d);
         }
         return Some(route);
@@ -7477,8 +7506,12 @@ mod tests {
     /// First slot with a perch route.
     fn route_slot(spec: &GameSpec) -> (i32, Vec<PerchBox>) {
         (0..400)
-            .find_map(|i| perch_route_at(spec, i).map(|r| (i, r)))
-            .expect("a route in 400 slots")
+            .find_map(|i| {
+                let r = perch_route_at(spec, i)?;
+                let all = ledges_at(spec, i)?;
+                (all.len() == r.len() + usize::from(stair_deck_on(spec))).then_some((i, r))
+            })
+            .expect("a route (with its deck) in 400 slots")
     }
 
     /// The cat standing on the track at `(x, y, z)`.
@@ -7647,6 +7680,294 @@ mod tests {
                 assert!(stood.windows(2).all(|w| w[0] < w[1]), "{stood:?}");
             }
         }
+    }
+
+    /// First slot with a lone deck.
+    fn deck_slot(spec: &GameSpec) -> (i32, PerchBox) {
+        (0..400)
+            .find_map(|i| deck_at(spec, i).map(|d| (i, d)))
+            .expect("a deck in 400 slots")
+    }
+
+    /// A start `side` metres off a column's wall, inside the rails, and the
+    /// steer that heads into it (screen-right is world -X).
+    fn beside(spec: &GameSpec, x: f32, half_width: f32, side: f32) -> (f32, f32) {
+        let lim = spec.runner.lanes.limit - 0.1;
+        let right = x + half_width + side;
+        if right <= lim {
+            (right, 1.0)
+        } else {
+            (x - half_width - side, -1.0)
+        }
+    }
+
+    #[test]
+    fn decks_stand_over_the_lanes_in_free_slots_and_an_orb_comes_before_each() {
+        let spec = full().spec.clone();
+        let d = spec.deck_rules.clone();
+        assert!(d.enabled, "on by default");
+        let lim = spec.runner.lanes.limit;
+        let t = &spec.runner.obstacle_track;
+        let (mut lone, mut stair) = (0, 0);
+        for i in 0..400 {
+            if let Some(b) = deck_at(&spec, i) {
+                lone += 1;
+                assert!(!spec.obstacle_active(i), "slot {i} has an obstacle");
+                assert!(perch_route_at(&spec, i).is_none(), "slot {i}: a route too");
+                assert!(mischief_at(&spec, i).is_none(), "slot {i}: a prop under it");
+                assert_eq!(b.top, d.height);
+                assert!(b.deck && !b.ramp);
+                assert!(b.x.abs() + b.half_width <= lim + 1e-3, "inside the rails");
+                assert!(d
+                    .lanes
+                    .iter()
+                    .any(|&l| l as f32 * spec.runner.lanes.width == b.x));
+                assert!(b.z0 > t.z(i) - t.gap * 0.5 && b.z1 < t.z(i) + t.gap * 0.5);
+                assert!((b.z1 - b.z0 - d.length).abs() < 1e-3);
+                // The orb: a plain jump picks it up, in the deck's lane, before it.
+                let (e, p) = item_at(&spec, i - 1).expect("an orb before the deck");
+                assert_eq!(e, ItemEffect::Superjump);
+                assert_eq!(p[0], b.x);
+                assert!(p[1] <= 1.0 && p[2] < b.z0, "reachable and before the deck");
+            }
+            if let Some(r) = perch_route_at(&spec, i) {
+                let all = ledges_at(&spec, i).unwrap();
+                if all.len() == r.len() + 1 {
+                    stair += 1;
+                    let deck = all.last().unwrap();
+                    assert!(deck.deck && deck.z0 == r.last().unwrap().z1);
+                    assert!(deck.top - r.last().unwrap().top <= spec.perch_rules.step_up);
+                    assert!(deck.z1 < t.z(i) + t.gap * 0.5, "ends inside its slot");
+                    assert_eq!(all.len(), r.len() + 1);
+                } else {
+                    // No deck: it would have dropped its cat on the next obstacle.
+                    assert_eq!(all.len(), r.len());
+                    assert!(!exit_clear(&spec, i, t.z(i) + t.gap * STAIR_END_FRAC));
+                }
+            }
+        }
+        assert!(lone >= 8, "{lone} decks in 400 slots");
+        assert!(stair >= 8, "{stair} stair decks in 400 slots");
+        // Off: nothing is built, and the old course never had any.
+        let mut off = (*spec).clone();
+        off.deck_rules.enabled = false;
+        assert!((0..400).all(|i| deck_at(&off, i).is_none()));
+        assert!((0..400).all(|i| perch_route_at(&off, i)
+            .map(|r| ledges_at(&off, i).unwrap().len() == r.len())
+            .unwrap_or(true)));
+        let legacy = GameSpec::legacy();
+        assert!((0..400).all(|i| ledges_at(&legacy, i).is_none()));
+    }
+
+    /// Jump from `lead` metres before the deck, with the high jump on or off,
+    /// then run on. Returns the z the cat first stands on the deck (if it
+    /// does), whether it is alive, and where it ends up on the street again.
+    fn deck_jump(speed: f32, lead: f32, high: bool) -> (bool, bool, f32) {
+        let mut run = full();
+        {
+            let sp = std::sync::Arc::make_mut(&mut run.spec);
+            sp.runner.speed.start = speed;
+            sp.runner.speed.ramp = 0.0;
+            sp.runner.speed.cap = speed;
+        }
+        let spec = run.spec.clone();
+        let (i, b) = deck_slot(&spec);
+        run.time = GRACE_SECS + 0.2;
+        put(&mut run, b.x, 0.0, b.z0 - lead);
+        if high {
+            run.fx[FX_JUMP] = 20.0;
+        }
+        run.swipe(Swipe::Up);
+        let mut landed_z = f32::NAN;
+        let mut street = f32::NAN;
+        for _ in 0..600 {
+            run.tick(1.0 / 60.0);
+            if !run.alive() {
+                break;
+            }
+            if run.on_perch && (run.y - b.top).abs() < 0.03 && landed_z.is_nan() {
+                landed_z = run.z;
+            }
+            if run.y < 0.01 && run.z > b.z1 - 0.01 && street.is_nan() {
+                street = run.z;
+            }
+            if run.z > spec.runner.obstacle_track.z(i + 1) - crate::game_spec::DECK_OBSTACLE_REACH {
+                break;
+            }
+        }
+        (run.deck_landed.contains(&i), run.alive(), street)
+    }
+
+    #[test]
+    fn only_a_high_jump_gets_on_a_deck_and_a_plain_jump_passes_under_it() {
+        let spec = full().spec.clone();
+        let (i, b) = deck_slot(&spec);
+        let t = &spec.runner.obstacle_track;
+        let plain_apex = 7.1f32 * 7.1 / (2.0 * 22.0);
+        assert!(
+            plain_apex + spec.runner.body.stand_height < b.top,
+            "room to pass under"
+        );
+        let cap = spec.runner.speed.cap;
+        for speed in [spec.runner.speed.start, 14.0, cap] {
+            let (mut high_hits, mut high_dead) = (0, 0);
+            for k in 0..=40 {
+                let lead = 0.25 + k as f32 * 0.25;
+                // A plain jump never lands on it and is never hurt by it.
+                let (landed, alive, _) = deck_jump(speed, lead, false);
+                assert!(!landed && alive, "plain jump, speed {speed} lead {lead}");
+                let (landed, alive, street) = deck_jump(speed, lead, true);
+                assert!(alive, "high jump, speed {speed} lead {lead}");
+                if landed {
+                    high_hits += 1;
+                    // It steps off the end and lands before the next slot's obstacle.
+                    assert!(
+                        street < t.z(i + 1) - crate::game_spec::DECK_OBSTACLE_REACH,
+                        "speed {speed} lead {lead}: back on the street at {street}"
+                    );
+                    high_dead += 0;
+                }
+            }
+            // A window of at least a metre of timing, at every speed.
+            assert!(
+                high_hits as f32 * 0.25 >= 1.0,
+                "speed {speed}: {high_hits} landings of 41"
+            );
+            let _ = high_dead;
+        }
+    }
+
+    #[test]
+    fn the_stair_lane_climbs_on_up_to_a_deck_without_a_jump_at_any_speed() {
+        for speed in [10.5f32, 16.0, 20.0] {
+            let mut run = full();
+            {
+                let sp = std::sync::Arc::make_mut(&mut run.spec);
+                sp.runner.speed.start = speed;
+                sp.runner.speed.ramp = 0.0;
+                sp.runner.speed.cap = speed;
+            }
+            let spec = run.spec.clone();
+            let (i, steps) = route_slot(&spec);
+            let all = ledges_at(&spec, i).unwrap();
+            let deck = *all.last().unwrap();
+            assert!(deck.deck, "the default course has the stair deck");
+            run.time = GRACE_SECS + 0.2;
+            put(
+                &mut run,
+                steps[0].x,
+                0.0,
+                steps[0].z0 - spec.perch_rules.ramp_len - 1.0,
+            );
+            let mut on_deck = false;
+            let mut worst = 0.0f32;
+            let mut last = run.y;
+            for _ in 0..900 {
+                run.tick(1.0 / 60.0);
+                assert!(!run.core.stats.just_jump, "no jump was pressed");
+                assert!(run.alive(), "speed {speed}: {}", run.death());
+                worst = worst.max((run.y - last).abs());
+                last = run.y;
+                on_deck |= run.on_perch && (run.y - deck.top).abs() < 0.03;
+                if on_deck && run.y < 0.01 && run.z > deck.z1 {
+                    break;
+                }
+            }
+            assert!(on_deck, "speed {speed}: never reached the deck");
+            assert!(run.deck_landed.contains(&i));
+            assert!(
+                worst < 0.2,
+                "the last rise is a slope ({worst} m in one tick)"
+            );
+            // It dropped back to the street before the slot ended.
+            assert!(run.y < 0.01, "speed {speed}: still up at {}", run.y);
+        }
+    }
+
+    #[test]
+    fn running_into_a_step_wall_or_a_ramp_side_is_a_hit_but_the_front_and_the_first_step_are_not() {
+        let spec = full().spec.clone();
+        let (_, steps) = route_slot(&spec);
+        // The pipe (second step) is above what a cat steps onto: its flank kills.
+        let b1 = steps[1];
+        let (x, steer) = beside(&spec, b1.x, b1.half_width, 0.3);
+        let mut run = full();
+        put(&mut run, x, 0.0, b1.z0 + 1.0);
+        run.set_steer(steer, 0.0, false);
+        for _ in 0..30 {
+            run.tick(1.0 / 60.0);
+        }
+        assert_eq!(run.death(), "STAIRS", "the step wall is a hit");
+        // The slope in front of it is a wedge: from the side, past its toe, the same.
+        let rl = spec.perch_rules.ramp_len;
+        let mut run = full();
+        put(&mut run, x, 0.0, b1.z0 - rl * 0.3);
+        run.set_steer(steer, 0.0, false);
+        for _ in 0..30 {
+            run.tick(1.0 / 60.0);
+        }
+        assert_eq!(run.death(), "STAIRS", "the wedge's side is a hit");
+        // A lane change into the first step (the switch-in) is not.
+        let b0 = steps[0];
+        let (x0, steer0) = beside(&spec, b0.x, b0.half_width, 0.3);
+        for z in [b0.z0 - rl * 0.5, b0.z0 + 0.2, b0.z0 + 0.8] {
+            let mut run = full();
+            put(&mut run, x0, 0.0, z);
+            run.set_steer(steer0, 0.0, false);
+            for _ in 0..30 {
+                run.tick(1.0 / 60.0);
+            }
+            assert!(run.alive(), "switch-in at z {z}: {}", run.death());
+        }
+        // A cat already up on the step beside its second step steps across freely.
+        let mut run = full();
+        put(&mut run, x, steps[1].top, b1.z0 + 1.0);
+        run.set_steer(steer, 0.0, false);
+        for _ in 0..30 {
+            run.tick(1.0 / 60.0);
+        }
+        assert!(run.alive(), "a jump over the wall is fine: {}", run.death());
+    }
+
+    #[test]
+    fn a_train_ramp_kills_from_the_side_but_rides_up_from_the_front() {
+        let spec = full().spec.clone();
+        let i = slot_of(&spec, "TRAIN");
+        let ramp = obstacle_parts(&spec, i)
+            .into_iter()
+            .find(|p| p.role == crate::game_spec::PartRole::Ramp)
+            .expect("the train has a ramp");
+        let hw = (ramp.skin_max[0] - ramp.skin_min[0]) * 0.5;
+        let (x, steer) = beside(&spec, ramp.hit_cx, hw, 0.3);
+        // Alongside the wedge where it is already tall: a side hit.
+        let mut run = full();
+        put(&mut run, x, 0.0, ramp.skin_min[2] + ramp.ramp_run * 0.8);
+        run.set_steer(steer, 0.0, false);
+        for _ in 0..30 {
+            run.tick(1.0 / 60.0);
+        }
+        assert!(!run.alive(), "the wedge's side is a hit");
+        // At its very toe, stepping in is a ride-up, not a hit.
+        let mut run = full();
+        put(&mut run, x, 0.0, ramp.skin_min[2] + 0.02);
+        run.set_steer(steer, 0.0, false);
+        for _ in 0..4 {
+            run.tick(1.0 / 60.0);
+        }
+        assert!(run.alive(), "the toe: {}", run.death());
+        // Jumping across the side of it clears the wedge.
+        let mut run = full();
+        put(
+            &mut run,
+            x,
+            ramp.skin_max[1] + 0.3,
+            ramp.skin_min[2] + ramp.ramp_run * 0.8,
+        );
+        run.set_steer(steer, 0.0, false);
+        for _ in 0..4 {
+            run.tick(1.0 / 60.0);
+        }
+        assert!(run.alive(), "over the side: {}", run.death());
     }
 
     #[test]

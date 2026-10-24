@@ -40,6 +40,12 @@ before and after a tuning or preset change. Sim frames are 1/60 s.
   the anchor the cat can be (`x_left_m`, `x_right_m`; a neighbour's box leaking into the opening
   shows here). Under 0.25 s is `roll_window_tight`; a cat gap with a half-width under 0.35 m is
   `gap_narrow` (both errors). Both sections feed `course.placement.issues` and `--check`.
+- `decks`: the upper course (`deck_rules`), played live for a lone deck and a stair deck at the start speed
+  and at the cap. A plain jump must not land (`deck_plain_reachable`), a high jump must land in a window of at
+  least 0.75 m (`deck_window_tight`), the stair lane must climb up without a jump (`deck_stair_unreachable`),
+  nothing may kill the cat on or under a deck (`deck_hurts`), the step off the end must come down in front of the
+  next obstacle (`deck_exit_blocked`; `deck_exit_tight` warns under 0.15 s of room), and every deck must sit in a
+  free slot, centred inside the rails, inside its own slot (`deck_placement`). Errors feed `--check`.
 - `perf`: tick + dump rebuild wall clock p50/p95, enabled props, and an
   estimate of instanced draw batches (one per distinct mesh). No GPU time.
 

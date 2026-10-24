@@ -403,9 +403,9 @@
    }
   ],
   "perch_rules": {
-   "rest_every": 2,
-   "reward_every": 2,
-   "other_every": 6,
+   "rest_every": 4,
+   "reward_every": 4,
+   "other_every": 10,
    "side": 1.35,
    "half_width": 0.7,
    "step_len": 3.6,
@@ -430,7 +430,7 @@
    "height": 2.0,
    "half_width": 0.6,
    "stair_entry": false,
-   "stair_len": 4.0,
+   "stair_len": 3.0,
    "land_score": 60,
    "run_score": 60,
    "coins": 6

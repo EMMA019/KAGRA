@@ -1266,9 +1266,9 @@ pub struct PerchRules {
 impl Default for PerchRules {
     fn default() -> Self {
         Self {
-            rest_every: 2,
-            reward_every: 2,
-            other_every: 6,
+            rest_every: 4,
+            reward_every: 4,
+            other_every: 10,
             side: 1.35,
             half_width: 0.7,
             step_len: 3.6,
@@ -1306,7 +1306,7 @@ pub const DECK_OBSTACLE_REACH: f32 = 2.0;
 pub const DECK_EXIT_MARGIN: f32 = 1.0;
 /// Where the stair lane and its deck end in a slot, as a fraction of the gap
 /// past the slot's centre (so the drop off the end lands before the next slot).
-pub const STAIR_END_FRAC: f32 = 0.35;
+pub const STAIR_END_FRAC: f32 = 0.30;
 
 /// The upper course: short raised decks over the lower lanes. A deck is a
 /// flat top with no wall under it, so the cat runs beneath it as usual; a high
@@ -1358,7 +1358,7 @@ impl Default for DeckRules {
             height: 2.0,
             half_width: 0.6,
             stair_entry: true,
-            stair_len: 4.0,
+            stair_len: 3.0,
             land_score: 60,
             run_score: 60,
             coins: 6,

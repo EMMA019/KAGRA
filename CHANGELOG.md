@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Neon Cat: an upper course. `deck_rules` puts short raised decks (2 m up, 7 m long, open
+  underneath) over a lower lane in some free slots; only a Superjump gets up (an orb
+  lies before each deck), a plain jump passes under. The stair lane now carries on up
+  to a deck as a second way up, with no jump. The stair lane is rarer (every 4th free
+  slot of a rest or reward section, was every 2nd), so there are fewer slopes. Running
+  into the side of a stair step, a stair slope or a train's ramp is now a hit; the front
+  ride-up, a jump across and the stair lane's first-step switch-in (#192) are not. Spec
+  checks (Rust `validate_decks` with a Python mirror `_check_decks`) refuse decks a plain
+  jump can reach, that a high jump cannot, or whose drop lands on the next obstacle; the
+  measure harness plays the decks live (`decks`, `deck_*` codes). A deck is only built
+  in a slot whose drop (at the speed cap) lands at least 0.15 s short of the next
+  obstacle's real front; otherwise the slot stays plain (a stair lane then has no deck).
+  The bot now keeps off step walls.
+
 - Neon Cat: fix the stutter that came with the night look. The textured wall panels
   were listed for the GPU in a different set and order every time the cat crossed a
   12 m segment, so the renderer dropped and re-uploaded every mesh (textures
