@@ -30,7 +30,10 @@ from kagra.distribute import (  # noqa: E402
     load_manifest,
 )
 
-PLAY_HTML = Path(__file__).resolve().parent / "preview_site" / "play.html"
+SITE_DIR = Path(__file__).resolve().parent / "preview_site"
+PLAY_HTML = SITE_DIR / "play.html"
+# Classic scripts play.html loads next to itself: page strings and the portal shim.
+SITE_SCRIPTS = ("i18n.js", "portal.js")
 # Opening the preview with no ?game= loads this slug. Box Hop stays in the list.
 LANDING_SLUG = "neon_run"
 
@@ -62,6 +65,8 @@ def build_preview(repo: Path, out: Path, pkg: Path | None, *, require_pkg: bool)
     )
     (out / "index.html").write_text(render_index(games), encoding="utf-8")
     shutil.copyfile(PLAY_HTML, out / "play.html")
+    for name in SITE_SCRIPTS:
+        shutil.copyfile(SITE_DIR / name, out / name)
     (out / ".nojekyll").write_bytes(b"")
     if pkg is not None:
         js = pkg / "kagra_shared.js"
@@ -130,6 +135,8 @@ def _stage_one(repo: Path, out: Path, manifest) -> dict:
         "world": "world.json",
         "files": files,
     }
+    if manifest.platform:
+        bundle["platform"] = manifest.platform
     (dest / "bundle.json").write_text(
         json.dumps(bundle, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",

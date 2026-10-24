@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from kagra.contracts import AssetKind, resolve_asset
+from kagra.platform_spec import PlatformError, normalize_platform
 
 REQUIRED = ("title", "icon", "version", "entry")
 _VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
@@ -41,6 +42,7 @@ class GameManifest:
     bundle_assets: list[str] = field(default_factory=list)
     path: Path | None = None
     slug: str = ""
+    platform: dict = field(default_factory=dict)
 
     def version_code(self) -> int:
         return version_code(self.version)
@@ -121,6 +123,10 @@ def load_manifest(path: Path, repo: Path | None = None) -> GameManifest:
     app_id = str(raw.get("application_id") or application_id_for(slug)).strip()
     if not _APP_ID_RE.match(app_id):
         raise ManifestError(f"{path}: application_id is not a Java package: {app_id}")
+    try:
+        platform = normalize_platform(raw.get("platform"))
+    except PlatformError as exc:
+        raise ManifestError(f"{path}: {exc}") from exc
     _must_exist(repo / entry, "entry")
     _must_exist(repo / icon, "icon")
     if world:
@@ -135,6 +141,7 @@ def load_manifest(path: Path, repo: Path | None = None) -> GameManifest:
         bundle_assets=[_repo_relative(item, repo) for item in bundle],
         path=path,
         slug=slug,
+        platform=platform,
     )
 
 

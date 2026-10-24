@@ -72,6 +72,10 @@ def test_mission_wording(page):
     assert page["goal_text"] == ["コインを40枚あつめる", "ゲートを5回くぐる", "高いところに1回のる", "TUNA 3"]
 
 
+def test_mission_wording_in_english(page):
+    assert page["goal_text_en"] == ["Collect 40 coins", "Pass 5 gates", "Perch up high 1 time(s)"]
+
+
 def test_page_wires_audio_missions_and_best():
     html = PLAY.read_text(encoding="utf-8")
     assert "session.audioCuesJson()" in html
