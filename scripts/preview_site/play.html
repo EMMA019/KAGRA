@@ -234,6 +234,13 @@
     #resultLeft .panel { margin: 0 0 10px; }
     html[data-swipe="1"][data-orient="landscape"] #resultLeft .panel { margin: 0; }
     .empty { opacity: 0.6; font-size: 13px; margin: 6px 0; }
+    /* HOP-BEAT: the sync stepper and the Continue button. */
+    .sync { display: inline-flex; align-items: center; gap: 10px; margin: 0 0 4px; font-size: 13px; color: #dff; }
+    .sync button { margin: 0; min-width: 40px; padding: 6px 12px; font-size: 16px; border-radius: 999px;
+      background: rgba(255,255,255,0.08); color: #dff; border: 1px solid rgba(140, 255, 255, 0.35); }
+    .sync b { min-width: 4.5em; font-variant-numeric: tabular-nums; color: #ffe08a; }
+    .syncHelp { margin: 0 0 12px; font-size: 12px; opacity: 0.6; }
+    #revive { margin: 0 0 10px; border-color: #f0c36a; color: #ffe9b0; }
   </style>
 </head>
 <body>
@@ -262,7 +269,14 @@
             <div id="rows"></div>
           </div>
         </div>
+        <p><button id="revive" type="button" class="styled" hidden data-i18n="hop.continue">広告を見てつづける</button></p>
         <p><button id="start" type="button" data-i18n="start">はじめる</button></p>
+        <div id="syncRow" hidden>
+          <div class="sync"><span data-i18n="hop.sync">音ズレ補正</span>
+            <button id="syncMinus" type="button" aria-label="-10 ms">−</button><b id="syncVal">0 ms</b>
+            <button id="syncPlus" type="button" aria-label="+10 ms">+</button></div>
+          <p class="syncHelp" data-i18n="hop.sync.help">ビートより遅れて押しがちなら＋、早いなら−。</p>
+        </div>
         <p><button id="sound" type="button" hidden data-i18n="sound.on">サウンド: ON</button></p>
         <p class="hint" id="keys" data-i18n="keys">WASD / 矢印、Space ジャンプ、J アクション。縦でも横でも同じ配置です。</p>
         <p id="catalogRow" data-portal="hide"><a class="btn" href="./index.html" data-i18n="catalog">ジャンル一覧</a></p>
@@ -288,6 +302,17 @@
     let activeBackend = requestedBackend === "webgl" || requestedBackend === "webgl2" ? "gl" : requestedBackend;
     const metaGame = document.querySelector('meta[name="kagra-game"]')?.content || "";
     const slug = (metaGame || params.get("game") || "neon_run").trim() || "neon_run";
+    // HOP-BEAT: one button on the whole canvas, music-locked sim.
+    let hopMode = false;
+    let hopDirect = false;
+    // The player's audio offset, ms (+ = they hear the music late). Device-only.
+    const SYNC_KEY = "kagra.hop.sync.v1";
+    const SYNC_MAX = 300;
+    const loadSync = () => {
+      try { return Math.max(-SYNC_MAX, Math.min(SYNC_MAX, Math.round(Number(localStorage.getItem(SYNC_KEY)) || 0))); }
+      catch { return 0; }
+    };
+    let syncMs = 0;
     // Swipe games (Neon Cat kit) read gestures in the engine: no pads at all.
     let swipeMode = false;
     const applySwipeMode = () => {
@@ -301,7 +326,7 @@
       document.getElementById("keys")?.remove();
       document.getElementById("start").classList.add("styled");
       const blurbEl = document.getElementById("blurb");
-      if (blurbEl) blurbEl.textContent = t("blurb.swipe");
+      if (blurbEl) blurbEl.textContent = hopMode ? t("hop.blurb") : t("blurb.swipe");
     };
 
     const fail = (text) => {
@@ -342,6 +367,11 @@
       let bgmNode = null;
       let sfxNode = null;
       let bgmSource = null;
+      // Beat-synced games (HOP-BEAT): the page asks the sim where the music
+      // should be (`bgmPos`), starts the loop there, and reads the clock back
+      // with songClock(). bgmT0 is the context time of music position 0.
+      let bgmPos = null;
+      let bgmT0 = 0;
       let primed = false;
       const buffers = new Map();
       const lastShot = new Map();
@@ -353,7 +383,7 @@
         .filter((f) => typeof f === "string" && f);
       if (usable) {
         for (const f of files) {
-          if (!raw.has(f)) raw.set(f, Promise.resolve().then(() => deps.fetchBytes(f)).catch(() => null));
+          if (!raw.has(f)) raw.set(f, Promise.resolve().then(() => deps.fetchBytes(f)).catch((err) => { warn(`kagra: could not fetch ${f}`, String(err)); return null; }));
         }
       }
       const warn = (...a) => { if (deps.warn) deps.warn(...a); };
@@ -389,6 +419,9 @@
           }
           for (const [f, bytes] of raw) {
             bytes
+              // One more try if the early fetch was lost (a tab that was busy
+              // booting can have its in-flight requests cancelled).
+              .then((ab) => ab || Promise.resolve().then(() => deps.fetchBytes(f)).catch(() => null))
               .then((ab) => (ab ? decode(ab) : null))
               .then((buf) => { if (buf) buffers.set(f, buf); else warn(`kagra: no audio for ${f}`); })
               .catch((err) => warn(`kagra: could not decode ${f}`, err));
@@ -441,11 +474,21 @@
         if (!bgmSource) {
           const buf = buffers.get(bgm.file);
           if (!buf) return;
+          // A synced loop only starts on a running clock, so the seek is exact.
+          if (bgmPos && ctx.state !== "running") return;
           const src = ctx.createBufferSource();
           src.buffer = buf;
           src.loop = true;
           src.connect(bgmNode);
-          src.start(0);
+          if (bgmPos) {
+            let pos = Number(bgmPos());
+            if (!Number.isFinite(pos) || pos < 0) pos = 0;
+            const at = ctx.currentTime + 0.03;
+            src.start(at, pos % (buf.duration || 1));
+            bgmT0 = at - pos;
+          } else {
+            src.start(0);
+          }
           bgmSource = src;
         }
         const target = bgmVolume * Math.max(0, Math.min(1, gain));
@@ -468,6 +511,15 @@
         pump,
         get usable() { return usable; },
         get muted() { return muted; },
+        /** fn() -> where the music should be, seconds. Turns the synced start on. */
+        setBgmPos(fn) { bgmPos = typeof fn === "function" ? fn : null; },
+        /** Seconds of music being heard (unwrapped across loops), or NaN when
+         *  nothing is playing on a running clock. Output latency is taken off. */
+        songClock() {
+          if (!bgmSource || !ctx || ctx.state !== "running") return NaN;
+          const lat = Number(ctx.outputLatency || ctx.baseLatency || 0);
+          return ctx.currentTime - bgmT0 - (Number.isFinite(lat) ? lat : 0);
+        },
         setMuted(on) { muted = !!on; applyMute(); },
         // Tab hidden: stop the output; the tab back: carry on.
         hidden(on) {
@@ -479,6 +531,8 @@
         },
         get state() { return ctx ? ctx.state : "none"; },
         get loaded() { return buffers.size; },
+        /** name -> decoded seconds (a check that the loop is the whole file). */
+        get durations() { const o = {}; for (const [k, b] of buffers) o[k] = b.duration; return o; },
         get expected() { return raw.size; },
         files,
       };
@@ -616,6 +670,17 @@
             const cam = (params.get("cam") || "").toLowerCase();
             if (cam === "classic" || cam === "chase") world.cam = cam;
           }
+          if (world.genre === "hop_beat") {
+            hopMode = true;
+            const a = world.game && world.game.audio;
+            if (a && typeof a === "object" && params.get("audio") !== "0") audioSpec = a;
+            // Straight into the run: ?play=1, or a portal build (CrazyGames
+            // wants gameplay on load). ?play=0 keeps the title card.
+            const ask = params.get("play");
+            const direct = ask === "1" || (ask !== "0" && globalThis.KagraPortal.isPortalBuild(document));
+            hopDirect = direct;
+            if (direct) world.game.play = { ...(world.game.play || {}), direct: true };
+          }
           if (world.genre === "neon_cat") {
             // The device's best score goes in as the run's best, so the HUD's
             // BEST and the cards agree after a reload.
@@ -630,6 +695,7 @@
         }
       })();
       session.loadGame(payload);
+      if (hopMode) { syncMs = loadSync(); session.setLatencyMs(syncMs); }
       applySwipeMode();
       if (session.setExternalMenu) session.setExternalMenu(true);
       session.showTitle();
@@ -731,6 +797,11 @@
         })
       : null;
     globalThis.kagraAudio = audio;
+    // The music file and the sim share one clock: the loop starts where the
+    // sim says the song is, and the sim follows the audio clock back.
+    if (audio && hopMode) {
+      audio.setBgmPos(() => { try { return JSON.parse(session.gameJson()).music_t; } catch { return 0; } });
+    }
     const soundBtn = document.getElementById("sound");
     const paintSound = () => {
       if (!audio || !audio.usable) { soundBtn.hidden = true; return; }
@@ -771,7 +842,7 @@
     // ---- Local ranking. Device only (localStorage), no network. The sim hands
     // over `result` = {key, columns, top_n, sort, run}; nothing here is Neon Cat
     // specific, so another kit with the same `hud.result.board` gets the same list.
-    const COLUMN_LABEL = { time: t("col.time"), gates: t("col.gates"), coins: t("col.coins"), score: t("col.score") };
+    const COLUMN_LABEL = { time: t("col.time"), gates: t("col.gates"), coins: t("col.coins"), score: t("col.score"), combo: t("col.combo"), perfect: t("col.perfect") };
     const fmtTime = (t) => {
       const m = Math.floor(t / 60);
       const sec = (t - m * 60).toFixed(1).padStart(m ? 4 : 1, "0");
@@ -794,7 +865,9 @@
       for (const col of columns) rankOrder(rows, col).slice(0, n).forEach((r) => keep.add(r.id));
       return rows.filter((r) => keep.has(r.id));
     };
-    const showBoard = (res) => {
+    // preview: show this run's numbers only. It is not saved and the ranking
+    // stays hidden (a run that may still be continued by a rewarded ad).
+    const showBoard = (res, preview = false) => {
       const columns = Array.isArray(res.columns) && res.columns.length ? res.columns : ["score"];
       const n = Math.max(1, res.top_n | 0 || 5);
       const run = { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, at: Date.now() };
@@ -803,7 +876,9 @@
       // Rank against everything saved plus this run; only the top N of each
       // column is kept on the device, so a weak run is shown but not stored.
       const rows = loadBoard(res.key).concat(run);
-      try { localStorage.setItem(boardKey(res.key), JSON.stringify(prune(rows, columns, n))); } catch {}
+      if (!preview) {
+        try { localStorage.setItem(boardKey(res.key), JSON.stringify(prune(rows, columns, n))); } catch {}
+      }
       let sort = columns.includes(res.sort) ? res.sort : columns[0];
       const stats = document.getElementById("runStats");
       const tabs = document.getElementById("tabs");
@@ -819,6 +894,8 @@
         stats.appendChild(cell);
       }
       stats.style.gridTemplateColumns = `repeat(${columns.length}, 1fr)`;
+      document.getElementById("boardBox").hidden = preview;
+      if (preview) return;
       const draw = () => {
         tabs.innerHTML = "";
         if (columns.length > 1) {
@@ -866,6 +943,49 @@
       e.stopPropagation();
     };
     let cancelCanvasPointers = () => {};
+    // ---- HOP-BEAT: Continue (rewarded ad) and the audio-sync stepper.
+    // A run that can be continued is not saved until the player says no.
+    let pendingResult = null;
+    const mockAds = dev && params.get("ads") === "mock";
+    const reviveOffered = (res) =>
+      hopMode && !!res && res.can_revive === true &&
+      (mockAds || portalHost.canOfferRewarded("revive"));
+    const settleResult = () => {
+      const res = pendingResult;
+      pendingResult = null;
+      if (!res || boardDone) return;
+      boardDone = true;
+      showBoard(res);
+    };
+    const askRevive = async () => {
+      if (!hopMode || phase !== "complete" || portalPage.blocked()) return;
+      let ok = false;
+      if (mockAds) {
+        const adEl = document.getElementById("kagra-ad");
+        adEl.classList.add("visible");
+        await new Promise((r) => setTimeout(r, 900));
+        adEl.classList.remove("visible");
+        ok = true;
+      } else {
+        try { ok = !!(await portalHost.rewarded("revive")).rewarded; } catch { ok = false; }
+      }
+      if (ok && phase === "complete" && session.revive()) {
+        pendingResult = null;
+        audio && audio.unlock();
+        return;
+      }
+      // No ad, or no continue left: the result stands.
+      document.getElementById("revive").hidden = true;
+      settleResult();
+    };
+    const syncVal = document.getElementById("syncVal");
+    const paintSync = () => { syncVal.textContent = `${syncMs > 0 ? "+" : ""}${syncMs} ms`; };
+    const nudgeSync = (d) => {
+      syncMs = Math.max(-SYNC_MAX, Math.min(SYNC_MAX, syncMs + d));
+      try { localStorage.setItem(SYNC_KEY, String(syncMs)); } catch {}
+      session.setLatencyMs(syncMs);
+      paintSync();
+    };
     const showPhase = (next) => {
       phase = next || "title";
       if (phase === "complete") resultAt = performance.now();
@@ -899,6 +1019,10 @@
       }
       if (phase === "playing") boardDone = false;
       const showResult = swipeMode && phase === "complete" && sim.result;
+      const offer = showResult && reviveOffered(sim.result);
+      document.getElementById("revive").hidden = !offer;
+      document.getElementById("syncRow").hidden = !(hopMode && phase !== "playing");
+      paintSync();
       if (swipeMode) {
         gameover.hidden = phase !== "complete";
         document.getElementById("title").hidden = phase === "complete";
@@ -920,8 +1044,13 @@
         runGoals.hidden = true;
       }
       if (showResult && !boardDone) {
-        boardDone = true;
-        showBoard(sim.result);
+        if (offer) {
+          pendingResult = sim.result;
+          showBoard(sim.result, true);
+        } else {
+          boardDone = true;
+          showBoard(sim.result);
+        }
       }
     };
 
@@ -946,7 +1075,7 @@
       if (now - startLock < 350) return;
       startLock = now;
       const from = phase;
-      portalPage.start(from, () => session.startGame());
+      portalPage.start(from, () => { settleResult(); session.startGame(); });
     };
     const startBtn = document.getElementById("start");
     startBtn.addEventListener("pointerdown", stopOverlayEvent);
@@ -958,6 +1087,12 @@
       stopOverlayEvent(e);
       confirmGame();
     });
+    for (const [id, fn] of [["revive", askRevive], ["syncMinus", () => nudgeSync(-10)], ["syncPlus", () => nudgeSync(10)]]) {
+      const el = document.getElementById(id);
+      el.addEventListener("pointerdown", stopOverlayEvent);
+      el.addEventListener("pointerup", (e) => { stopOverlayEvent(e); fn(); });
+      el.addEventListener("click", (e) => { stopOverlayEvent(e); });
+    }
     const catalog = overlay.querySelector("a.btn");
     if (catalog) {
       const openCatalog = (e) => {
@@ -1066,14 +1201,21 @@
       }, true);
     }
 
+    // HOP-BEAT is one button: Space and a few friends, press and release.
+    const HOP_KEYS = new Set([" ", "ArrowUp", "w", "W", "j", "J", "z", "Z"]);
     window.addEventListener("keydown", (e) => {
       held.add(e.key);
+      if (hopMode && phase === "playing" && !e.repeat && HOP_KEYS.has(e.key)) session.pushKey("space", true);
       if (e.key === " " || e.key.startsWith("Arrow")) e.preventDefault();
       if ((e.key === "Enter" || e.key === " ") && phase !== "playing") confirmGame();
     });
-    window.addEventListener("keyup", (e) => held.delete(e.key));
+    window.addEventListener("keyup", (e) => {
+      held.delete(e.key);
+      if (hopMode && HOP_KEYS.has(e.key)) session.pushKey("space", false);
+    });
     window.addEventListener("blur", () => {
       held.clear();
+      if (hopMode) session.pushKey("space", false);
       state.lx = 0;
       state.lz = 0;
       state.jump = false;
@@ -1099,6 +1241,9 @@
       e.preventDefault();
     }, { passive: false });
     showPhase("title");
+    // Direct play: no title card. The run waits at TAP TO START, and that tap
+    // is also the browser's audio gesture.
+    if (hopDirect) session.startGame();
 
     let presented = 0;
     let recovering = false;
@@ -1124,6 +1269,23 @@
       console.warn(`kagra: slow frames, render scale cap ${SCALE_STEPS[scaleStep]}`);
       fit();
     };
+    // The sim steps at 60 Hz whatever the screen does (a 120 Hz phone would
+    // otherwise play double speed). A slightly early step is allowed so a
+    // steady 60 Hz does not stutter between zero and two steps.
+    const FIXED = 1 / 60;
+    let acc = 0;
+    let lastFrame = 0;
+    const stepSim = (now) => {
+      if (!hopMode) { session.requestFrame(); return; }
+      acc += lastFrame ? Math.min(0.1, (now - lastFrame) / 1000) : FIXED;
+      lastFrame = now;
+      let n = 0;
+      while (acc >= FIXED * 0.85 && n < 3) { acc -= FIXED; n += 1; }
+      if (acc > FIXED) acc = 0;
+      if (n === 0) return;
+      session.setMusicClock(audio ? audio.songClock() : NaN);
+      for (let i = 0; i < n; i += 1) session.requestFrame();
+    };
     const loop = () => {
       if (recovering) return;
       adapt(performance.now());
@@ -1136,7 +1298,7 @@
         state.attack || k.attack,
         false,
       );
-      session.requestFrame();
+      stepSim(performance.now());
       if (audio) {
         try { audio.pump(session.audioCuesJson()); } catch {}
       }

@@ -294,4 +294,5 @@ The session holds a `Box<dyn KitHost>` (`kagra-shared/src/kit_host.rs`). To plug
 3. Add one `(detect, load)` line to `kit_host::KITS`.
 
 The session, the wasm shell and the playtest hand-off need no other change. Tests that need the typed kit use
-`session.cat()` or add a small downcast helper next to `cat()`.
+`session.cat()` or add a small downcast helper next to `cat()` (`session.hop()` is HOP-BEAT's, with the audio-clock,
+latency, direct-play and revive hooks the page calls).

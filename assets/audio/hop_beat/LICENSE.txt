@@ -1,0 +1,14 @@
+HOP-BEAT music
+==============
+
+hop_beat_loop.(mp3|ogg), hop_beat_gameover.*, hop_beat_newbest.*, hop_beat_revive.*
+and hop_beat_beatgrid.json are original works, synthesised by the KAGRA procedural
+music kit (kagra_music) from oscillator and noise maths. They contain no samples,
+no recordings, no AI-model output and no third-party material. The composition
+(chords, melodies, rhythms) is original.
+
+They are dedicated to the public domain under the CC0 1.0 Universal dedication.
+
+https://creativecommons.org/publicdomain/zero/1.0/
+
+No attribution is required. Provenance and rebuild parameters: docs/provenance/hop_beat_music.json in the KAGRA repository

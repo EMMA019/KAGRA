@@ -1,0 +1,224 @@
+{
+  "bots": {
+    "hold_all": {
+      "died": 8,
+      "mean_bars": 9.87,
+      "mean_cleared": 0.0,
+      "mean_lives_lost": 3.0,
+      "mean_max_combo": 0.0,
+      "mean_perfects": 0.0,
+      "mean_score": 80.0,
+      "median_seconds": 21.58,
+      "runs": 8
+    },
+    "human_25ms_2pct": {
+      "died": 0,
+      "mean_bars": 78.75,
+      "mean_cleared": 115.13,
+      "mean_lives_lost": 1.0,
+      "mean_max_combo": 62.63,
+      "mean_perfects": 111.25,
+      "mean_score": 31877.0,
+      "median_seconds": 150.01,
+      "runs": 8
+    },
+    "human_55ms_6pct": {
+      "died": 8,
+      "mean_bars": 30.97,
+      "mean_cleared": 27.13,
+      "mean_lives_lost": 3.0,
+      "mean_max_combo": 10.63,
+      "mean_perfects": 20.63,
+      "mean_score": 4837.13,
+      "median_seconds": 63.53,
+      "runs": 8
+    },
+    "human_90ms_12pct": {
+      "died": 8,
+      "mean_bars": 18.71,
+      "mean_cleared": 11.88,
+      "mean_lives_lost": 3.0,
+      "mean_max_combo": 3.38,
+      "mean_perfects": 7.25,
+      "mean_score": 1452.25,
+      "median_seconds": 32.07,
+      "runs": 8
+    },
+    "idle": {
+      "died": 8,
+      "mean_bars": 9.87,
+      "mean_cleared": 0.0,
+      "mean_lives_lost": 3.0,
+      "mean_max_combo": 0.0,
+      "mean_perfects": 0.0,
+      "mean_score": 80.0,
+      "median_seconds": 21.58,
+      "runs": 8
+    },
+    "perfect": {
+      "died": 0,
+      "mean_bars": 78.75,
+      "mean_cleared": 117.5,
+      "mean_lives_lost": 0.0,
+      "mean_max_combo": 117.5,
+      "mean_perfects": 117.5,
+      "mean_score": 35182.0,
+      "median_seconds": 150.01,
+      "runs": 8
+    },
+    "spam": {
+      "died": 8,
+      "mean_bars": 28.02,
+      "mean_cleared": 24.38,
+      "mean_lives_lost": 3.0,
+      "mean_max_combo": 7.63,
+      "mean_perfects": 16.0,
+      "mean_score": 3386.13,
+      "median_seconds": 52.38,
+      "runs": 8
+    }
+  },
+  "bpm": 126.0,
+  "difficulty_curve": [
+    {
+      "bars": [
+        0,
+        8
+      ],
+      "busy": 0.19,
+      "gap_share": 0.6,
+      "hold_share": 0.2,
+      "mean_window_ms": 318.0,
+      "min_window_ms": 150.0,
+      "obstacles_per_bar": 0.63
+    },
+    {
+      "bars": [
+        8,
+        16
+      ],
+      "busy": 0.25,
+      "gap_share": 0.5,
+      "hold_share": 0.33,
+      "mean_window_ms": 330.0,
+      "min_window_ms": 150.0,
+      "obstacles_per_bar": 0.75
+    },
+    {
+      "bars": [
+        16,
+        24
+      ],
+      "busy": 0.34,
+      "gap_share": 0.75,
+      "hold_share": 0.38,
+      "mean_window_ms": 330.0,
+      "min_window_ms": 150.0,
+      "obstacles_per_bar": 1.0
+    },
+    {
+      "bars": [
+        24,
+        32
+      ],
+      "busy": 0.44,
+      "gap_share": 0.89,
+      "hold_share": 0.56,
+      "mean_window_ms": 381.11,
+      "min_window_ms": 150.0,
+      "obstacles_per_bar": 1.13
+    },
+    {
+      "bars": [
+        32,
+        40
+      ],
+      "busy": 0.5,
+      "gap_share": 0.77,
+      "hold_share": 0.23,
+      "mean_window_ms": 322.31,
+      "min_window_ms": 150.0,
+      "obstacles_per_bar": 1.63
+    },
+    {
+      "bars": [
+        40,
+        48
+      ],
+      "busy": 0.5,
+      "gap_share": 0.71,
+      "hold_share": 0.14,
+      "mean_window_ms": 292.86,
+      "min_window_ms": 150.0,
+      "obstacles_per_bar": 1.75
+    },
+    {
+      "bars": [
+        48,
+        56
+      ],
+      "busy": 0.69,
+      "gap_share": 0.71,
+      "hold_share": 0.29,
+      "mean_window_ms": 291.18,
+      "min_window_ms": 150.0,
+      "obstacles_per_bar": 2.13
+    },
+    {
+      "bars": [
+        56,
+        64
+      ],
+      "busy": 0.5,
+      "gap_share": 0.77,
+      "hold_share": 0.23,
+      "mean_window_ms": 322.31,
+      "min_window_ms": 150.0,
+      "obstacles_per_bar": 1.63
+    },
+    {
+      "bars": [
+        64,
+        72
+      ],
+      "busy": 0.5,
+      "gap_share": 0.91,
+      "hold_share": 0.45,
+      "mean_window_ms": 353.64,
+      "min_window_ms": 150.0,
+      "obstacles_per_bar": 1.38
+    },
+    {
+      "bars": [
+        72,
+        80
+      ],
+      "busy": 0.69,
+      "gap_share": 0.63,
+      "hold_share": 0.16,
+      "mean_window_ms": 276.32,
+      "min_window_ms": 150.0,
+      "obstacles_per_bar": 2.38
+    }
+  ],
+  "game": "hop_beat",
+  "placement": {
+    "bars_checked": 200,
+    "course_problems": [],
+    "min_gap_ms": 0.0,
+    "min_window_ms": 150.0,
+    "obstacles": 342,
+    "phrase_problems": []
+  },
+  "seeds": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "time_cap_secs": 150.0
+}

@@ -162,3 +162,10 @@ def test_mutating_a_real_pack_is_caught():
     led["packs"][0]["license"] = "unknown"
     errors, _ = al.check(led, al.tracked_files(), None)
     assert errors
+
+
+def test_owner_confirmed_is_accepted_and_not_a_warning():
+    pack = good_pack(verified="owner_confirmed", verified_how="Emma's chat confirmation")
+    errors, warnings = run(ledger(pack), ["assets/p1/a.ogg"])
+    assert errors == []
+    assert not has(warnings, "awaiting owner confirmation")

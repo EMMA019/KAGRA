@@ -8,9 +8,9 @@ leniently, so a bad value there never stops the game).
 It lives in the manifest layer, not in ``GameSpec`` / ``RunnerSpec``: an ad
 break is a page and portal matter, not a rule of the simulation, and putting it
 in the spec would change every baked fixture and the Rust mirror for no gain.
-If a rewarded slot ever needs an engine effect (an extra life, say), that effect
-is spec data and ``rewarded[].effect`` names it; until the engine has one the
-only valid effect is ``"none"``.
+A rewarded slot may name an engine effect in ``rewarded[].effect``: ``"none"`` (the
+page only gets the callback) or ``"revive"`` (the game offers Continue after game
+over and the page calls the session's ``revive()`` once the ad finished; HOP-BEAT).
 
     "platform": {
       "ads": {
@@ -26,7 +26,7 @@ from typing import Any
 
 COMMERCIAL_SLOTS = ("game_over", "retry")
 REWARDED_AT = ("game_over", "title")
-REWARDED_EFFECTS = ("none",)
+REWARDED_EFFECTS = ("none", "revive")
 MIN_INTERVAL_MAX = 3600
 
 DEFAULT_ADS: dict[str, Any] = {
@@ -84,8 +84,7 @@ def normalize_ads(raw: Any) -> dict[str, Any]:
         effect = item.get("effect", "none")
         if effect not in REWARDED_EFFECTS:
             raise PlatformError(
-                f"{where}.effect {effect!r} is not available; the engine has no reward "
-                f"effect yet (valid: {list(REWARDED_EFFECTS)})"
+                f"{where}.effect {effect!r} is not available (valid: {list(REWARDED_EFFECTS)})"
             )
         per_run = item.get("per_run", 1)
         if isinstance(per_run, bool) or not isinstance(per_run, int) or not 1 <= per_run <= 9:

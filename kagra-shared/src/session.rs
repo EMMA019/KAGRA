@@ -196,6 +196,15 @@ impl SharedSession {
         self.kit.as_mut()?.as_any_mut().downcast_mut()
     }
 
+    /// The loaded kit as HOP-BEAT, if it is one.
+    pub fn hop(&self) -> Option<&crate::hop_beat::HopBeat> {
+        self.kit.as_ref()?.as_any().downcast_ref()
+    }
+
+    pub fn hop_mut(&mut self) -> Option<&mut crate::hop_beat::HopBeat> {
+        self.kit.as_mut()?.as_any_mut().downcast_mut()
+    }
+
     /// The loaded kit as a Lumen run, if it is one.
     pub fn neon(&self) -> Option<&crate::neon_run::NeonRun> {
         self.kit.as_ref()?.as_any().downcast_ref()
@@ -795,6 +804,38 @@ impl SharedSession {
             }
         }
         false
+    }
+
+    /// HOP-BEAT: the audio clock (seconds of music heard), or NaN for none.
+    pub fn set_music_clock(&mut self, secs: f32) {
+        if let Some(hop) = self.hop_mut() {
+            hop.set_music_clock(Some(secs));
+        }
+    }
+
+    /// HOP-BEAT: the player's latency setting in ms.
+    pub fn set_latency_ms(&mut self, ms: f32) {
+        if let Some(hop) = self.hop_mut() {
+            hop.set_latency_ms(ms);
+        }
+    }
+
+    /// HOP-BEAT: land in the run itself (the first tap starts the music).
+    pub fn set_direct_play(&mut self, on: bool) {
+        if let Some(hop) = self.hop_mut() {
+            hop.set_direct(on);
+        }
+    }
+
+    /// Continue after game over (what a rewarded ad buys). False when the
+    /// game has no continue or it is used up.
+    pub fn revive(&mut self) -> bool {
+        let Some(hop) = self.hop_mut() else {
+            return false;
+        };
+        let ok = hop.revive();
+        self.paused = false;
+        ok
     }
 
     pub fn playtest_set_note(&mut self, note: &str) {

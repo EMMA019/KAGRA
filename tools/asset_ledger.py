@@ -29,7 +29,7 @@ CREDITS = ROOT / "CREDITS.md"
 MANIFEST_DIR = ROOT / "tools" / "fetch_assets"
 
 LICENSES = {"cc0", "cc-by", "standard-eula", "restricted", "custom"}
-VERIFIED = {"checked", "owner_confirmation_needed"}
+VERIFIED = {"checked", "owner_confirmed", "owner_confirmation_needed"}
 USES = {"personal", "commercial", "modify", "redistribute-in-game", "redistribute-standalone"}
 # License types that can never be committed to a public repo.
 NEVER_PUBLIC = {"standard-eula", "restricted"}
@@ -253,7 +253,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "unverified":
         for p in ledger["packs"]:
-            if p["verified"] != "checked":
+            if p["verified"] not in ("checked", "owner_confirmed"):
                 print(f"{p['id']}: {p.get('notes', '')}")
         return 0
     credits_text = CREDITS.read_text(encoding="utf-8") if CREDITS.is_file() else ""
