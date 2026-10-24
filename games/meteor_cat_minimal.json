@@ -72,7 +72,13 @@
         "effect": "meow",
         "weight": 1
       }
-    ]
+    ],
+    "atmosphere": {
+      "enabled": false
+    },
+    "missions": {
+      "enabled": false
+    }
   },
   "bundle_assets": [
     "assets/audio",

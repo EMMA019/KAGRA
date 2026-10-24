@@ -6,6 +6,8 @@
   "world": "kagra-shared/tests/fixtures/neon_cat_world.json",
   "bundle_assets": [
     "assets/audio",
+    "assets/textures/neon_cat/concrete_wall.png",
+    "assets/textures/neon_cat/concrete_wall_s.png",
     "assets/models/kenney/cube-pets/animal-cat.glb",
     "assets/models/kenney/cube-pets/Textures/colormap.png",
     "assets/models/kenney/platformer-kit/crate.glb",

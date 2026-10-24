@@ -543,6 +543,219 @@ class HudSpec:
     result: ResultSpec = field(default_factory=ResultSpec)
 
 
+# --- night look, sound and goals (mirrors kagra-shared/src/neon_fx_spec.rs) ---
+
+#: The sim's SFX cue names; ``AudioSpec.sfx`` keys are a subset.
+SFX_CUES = (
+    "jump", "roll", "coin", "card", "item", "meow", "perch",
+    "knock", "robot_on", "robot_off", "hit", "gameover", "mission",
+)
+AUDIO_DIR = "assets/audio/neon_cat"
+AUDIO_EXTS = (".wav", ".ogg", ".mp3")
+MISSION_KINDS = ("coins", "gates", "perch")
+
+
+def _plain_path(p: str) -> bool:
+    return not (p.startswith(("/", "\\")) or ".." in p or ":" in p)
+
+
+def _within(v: float, lo: float, hi: float) -> bool:
+    return lo <= v <= hi and v == v
+
+
+@dataclass
+class RainSpec:
+    """Rain streaks in the tunnel. Counts are per quality tier (low / mobile / high)."""
+
+    enabled: bool = True
+    count_low: int = 24
+    count_mobile: int = 56
+    count_high: int = 96
+    reach: float = 26.0
+    behind: float = 5.0
+    fall_speed: float = 11.0
+    length: float = 0.9
+    slant: float = 0.12
+    width: float = 1.1
+    color: list = field(default_factory=lambda: [170, 205, 255, 125])
+    splash: bool = True
+
+    def __post_init__(self) -> None:
+        if not all(0 <= n <= 400 for n in (self.count_low, self.count_mobile, self.count_high)):
+            raise ValueError("atmosphere.rain counts must be 0..=400")
+        if not (
+            _within(self.reach, 4, 80)
+            and _within(self.behind, 0, 20)
+            and _within(self.fall_speed, 1, 40)
+            and _within(self.length, 0.1, 4)
+            and _within(self.slant, -1, 1)
+            and _within(self.width, 0.3, 6)
+        ):
+            raise ValueError("atmosphere.rain values are out of range")
+
+
+@dataclass
+class SignsSpec:
+    """Neon signs on the tunnel walls: hash-placed one per ``cell`` metres of tunnel."""
+
+    enabled: bool = True
+    cell: float = 4.0
+    density_low: float = 0.2
+    density_mobile: float = 0.4
+    density_high: float = 0.55
+    palette: list = field(default_factory=lambda: [[70, 235, 255], [60, 255, 170], [130, 110, 255], [255, 90, 200]])
+    rows: list = field(default_factory=lambda: [3.5, 4.9])
+    size: float = 1.7
+    line_width: float = 2.4
+    glow: float = 1.6
+    flicker: float = 0.3
+
+    def __post_init__(self) -> None:
+        if not (
+            _within(self.cell, 2, 16)
+            and _within(self.size, 0.5, 2.4)
+            and _within(self.line_width, 0.5, 8)
+            and _within(self.glow, 0, 6)
+            and _within(self.flicker, 0, 1)
+            and all(_within(d, 0, 1) for d in (self.density_low, self.density_mobile, self.density_high))
+        ):
+            raise ValueError("atmosphere.signs values are out of range")
+        if self.enabled and not 1 <= len(self.palette) <= 16:
+            raise ValueError("atmosphere.signs.palette needs 1..=16 colours")
+        half = self.size * 0.3
+        if len(self.rows) > 6 or any(not _within(y, 1.0 + half, 6.8 - half) for y in self.rows):
+            raise ValueError("atmosphere.signs.rows must hold up to 6 heights inside the wall")
+
+
+@dataclass
+class WallSpec:
+    """Procedural concrete on the side walls. An empty texture path keeps the plain wall for that tier."""
+
+    enabled: bool = True
+    texture_low: str = ""
+    texture_mobile: str = "assets/textures/neon_cat/concrete_wall_s.png"
+    texture_high: str = "assets/textures/neon_cat/concrete_wall.png"
+    tint: list = field(default_factory=lambda: [255, 255, 255])
+    segment: float = 12.0
+    reach: float = 48.0
+
+    def __post_init__(self) -> None:
+        if not (_within(self.segment, 2, 20) and _within(self.reach, 8, 100)):
+            raise ValueError("atmosphere.wall.segment 2..=20 and reach 8..=100")
+        if -(-self.reach // self.segment) > 16:
+            raise ValueError("atmosphere.wall needs reach / segment <= 16")
+        for t in (self.texture_low, self.texture_mobile, self.texture_high):
+            if not _plain_path(t) or (t and not t.lower().endswith(".png")):
+                raise ValueError("atmosphere.wall textures are repo-relative PNG paths")
+
+
+@dataclass
+class AtmosphereSpec:
+    """Stray-like night: rain, neon signs and concrete walls on the neon base look. All switchable."""
+
+    enabled: bool = True
+    rain: RainSpec = field(default_factory=RainSpec)
+    signs: SignsSpec = field(default_factory=SignsSpec)
+    wall: WallSpec = field(default_factory=WallSpec)
+
+
+@dataclass
+class BgmSpec:
+    file: str = f"{AUDIO_DIR}/bgm.wav"
+    volume: float = 0.55
+    fade_secs: float = 1.2
+
+
+@dataclass
+class SfxSpec:
+    """One cue: a repo-relative .wav/.ogg/.mp3 (empty = silent), a gain and a playback rate."""
+
+    file: str = ""
+    volume: float = 1.0
+    rate: float = 1.0
+
+
+def _audio_path_ok(p: str) -> bool:
+    return not p or (_plain_path(p) and p.lower().endswith(AUDIO_EXTS))
+
+
+def _default_sfx() -> dict:
+    vol = {"coin": 0.6, "card": 0.6, "roll": 0.5, "knock": 0.8}
+    return {n: SfxSpec(f"{AUDIO_DIR}/{n}.wav", vol.get(n, 0.9)) for n in SFX_CUES}
+
+
+@dataclass
+class AudioSpec:
+    """BGM and SFX files plus volumes. The page plays them (Web Audio); a cue with no entry is silent."""
+
+    enabled: bool = True
+    master: float = 0.8
+    bgm_volume: float = 0.7
+    sfx_volume: float = 1.0
+    bgm: BgmSpec = field(default_factory=BgmSpec)
+    sfx: dict = field(default_factory=_default_sfx)
+
+    def __post_init__(self) -> None:
+        if not all(_within(v, 0, 1) for v in (self.master, self.bgm_volume, self.sfx_volume)):
+            raise ValueError("audio master, bgm_volume and sfx_volume must be 0..=1")
+        if not _within(self.bgm.volume, 0, 1) or not _within(self.bgm.fade_secs, 0, 10):
+            raise ValueError("audio.bgm volume 0..=1 and fade_secs 0..=10")
+        if not _audio_path_ok(self.bgm.file):
+            raise ValueError("audio.bgm.file must be a repo-relative .wav, .ogg or .mp3")
+        if len(self.sfx) > 32:
+            raise ValueError("audio.sfx has at most 32 cues")
+        for name, cue in self.sfx.items():
+            if not 1 <= len(name) <= 32:
+                raise ValueError("audio.sfx cue names are 1..=32 characters")
+            if not _within(cue.volume, 0, 1) or not _within(cue.rate, 0.25, 4):
+                raise ValueError(f"audio.sfx.{name} volume must be 0..=1 and rate 0.25..=4")
+            if not _audio_path_ok(cue.file):
+                raise ValueError(f"audio.sfx.{name}.file must be a repo-relative .wav, .ogg or .mp3")
+
+    def files(self) -> list[str]:
+        """Every audio file the spec names (for bundling), in cue order, no repeats."""
+        out: list[str] = []
+        for f in (self.bgm.file, *(c.file for _, c in sorted(self.sfx.items()))):
+            if f and f not in out:
+                out.append(f)
+        return out
+
+
+@dataclass
+class MissionSpec:
+    kind: str = "coins"  # coins | gates | perch
+    target: int = 1
+    label: str = ""  # HUD wording; empty uses COINS / GATES / PERCH
+
+    def __post_init__(self) -> None:
+        if self.kind not in MISSION_KINDS:
+            raise ValueError(f"mission kind {self.kind!r} not in {MISSION_KINDS}")
+        if not 1 <= self.target <= 9999:
+            raise ValueError("a mission target must be 1..=9999")
+        if len(self.label) > 16:
+            raise ValueError("a mission label has at most 16 characters")
+
+
+def _default_missions() -> list:
+    return [MissionSpec("coins", 40), MissionSpec("gates", 5), MissionSpec("perch", 1)]
+
+
+@dataclass
+class MissionsSpec:
+    """Small per-run goals shown on the HUD and the result card. ``bonus`` 0 leaves scores comparable."""
+
+    enabled: bool = True
+    list: list = field(default_factory=_default_missions)
+    bonus: int = 0
+    hud: bool = True
+
+    def __post_init__(self) -> None:
+        if len(self.list) > 5:
+            raise ValueError("missions.list has at most 5 goals")
+        if not 0 <= self.bonus <= 100_000:
+            raise ValueError("missions.bonus must be 0..=100000")
+
+
 @dataclass
 class GameSpec:
     kind: str = "runner"
@@ -571,6 +784,9 @@ class GameSpec:
     # Declarative feel presets, e.g. {"preset": "snappy_runner", "movement": {"jump": "forgiving"}}.
     # Resolved and validated by the engine (kagra-shared game_core::feel).
     feel: dict = field(default_factory=dict)
+    atmosphere: AtmosphereSpec = field(default_factory=AtmosphereSpec)
+    audio: AudioSpec = field(default_factory=AudioSpec)
+    missions: MissionsSpec = field(default_factory=MissionsSpec)
 
     @classmethod
     def from_overrides(cls, overrides: dict | None = None) -> GameSpec:
@@ -673,6 +889,10 @@ def _build(cls: type, data: dict, base: object | None = None) -> object:
             kwargs[name] = [PerchStep(**v) if isinstance(v, dict) else PerchStep(v) for v in value]
         elif cls is GameSpec and name == "placements":
             kwargs[name] = [Placement(**v) for v in value]
+        elif cls is AudioSpec and name == "sfx":
+            kwargs[name] = {k: SfxSpec(**v) if isinstance(v, dict) else SfxSpec(v) for k, v in value.items()}
+        elif cls is MissionsSpec and name == "list":
+            kwargs[name] = [MissionSpec(**v) for v in value]
         elif cls is RunnerKit and name == "sections":
             kwargs[name] = [Section(**v) for v in value]
         elif is_dataclass(current) and isinstance(value, dict):

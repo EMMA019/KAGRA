@@ -152,7 +152,7 @@ def _preview_assets(repo: Path, manifest) -> list[Path]:
     audio = repo / "assets" / "audio"
     if audio.is_dir():
         for child in audio.rglob("*"):
-            if child.is_file() and child.suffix.lower() in {".wav", ".ogg"}:
+            if child.is_file() and child.suffix.lower() in {".wav", ".ogg", ".mp3"}:
                 found.add(child.resolve())
     expanded: set[Path] = set()
     for path in found:

@@ -132,6 +132,59 @@ three-crate stream the golden tests replay.
 
 Models: `assets/models/kenney/space-kit/` (Kenney Space Kit, CC0), fetched by `tools/fetch_assets` with its record.
 
+## Night look, sound and goals (Neon Cat)
+
+Three more `game` sections, all plain JSON, all with `enabled`. Neon Cat has them **on**; `GameSpec::legacy()` (the classic course the
+golden runs replay) has them **off**, as does Meteor Cat's `atmosphere` and `missions`, so no recorded run or measurement baseline moves.
+Write only what you change; every other field keeps its default.
+
+`atmosphere` is the Stray-style night street on top of the neon base look. No daytime colour and no city backdrop. The picture tier
+(`quality`: `low` | `mobile` | `high`; the phone page picks `mobile` for Neon Cat, `?quality=low|mobile|high` overrides it) decides how much
+is drawn. A missing texture falls back to the plain dark wall.
+
+| Field | Default | What it does |
+|---|---|---|
+| `rain` `{enabled, count_low 24, count_mobile 56, count_high 96, reach 26, behind 5, fall_speed 11, length 0.9, slant 0.12, width 1.1, color [170,205,255,125], splash}` | on | slanted streaks that fall past the camera; `splash` adds ripples on the street |
+| `signs` `{enabled, cell 4, density_low 0.2, density_mobile 0.4, density_high 0.55, palette, rows [3.5, 4.9], size 1.7, line_width 2.4, glow 1.6, flicker 0.3}` | on | neon signs on the walls: a dark plate and glowing glyph strokes, placed by a seeded hash per `cell` metres, one colour from `palette` (1 to 16 RGB triples) |
+| `wall` `{enabled, texture_low "", texture_mobile concrete_wall_s.png, texture_high concrete_wall.png, tint, segment 12, reach 48}` | on | concrete on both walls, tiled in `segment`-metre panels out to `reach`. An empty path means that tier keeps the plain wall (`low` does by default) |
+
+The textures are made by `tools/gen_assets/cat_wall.py` (procedural, seeded, CC0; `--check` verifies the PNGs match the script). Point a
+tier at your own PNG (under `assets/`) and list it in `bundle_assets` so the page stages it.
+
+`audio` names the file for the music and for each effect. The page plays them with Web Audio (the sim only raises cue names), so one
+set of files works on desktop, Android and iPhone browsers.
+
+| Field | Default | What it does |
+|---|---|---|
+| `master` 0.8, `bgm_volume` 0.7, `sfx_volume` 1.0 | | the three volume knobs, 0 to 1 |
+| `bgm {file, volume 0.55, fade_secs 1.2}` | `assets/audio/neon_cat/bgm.wav` | the loop. The run starts and stops it, with the fade |
+| `sfx {cue: {file, volume, rate}}` | 13 cues | `rate` is the playback speed (0.25 to 4: it changes pitch). The table is replaced as a whole, so list every cue you want to hear; an empty `file` silences that one |
+
+The cue names: `jump`, `roll`, `coin`, `card`, `item`, `meow`, `perch`, `knock`, `robot_on`, `robot_off`, `hit`, `gameover`, `mission`.
+Files may be `.wav`, `.ogg` or `.mp3` (any asset-relative path; no `..`, no URL). Music gain is `master x bgm_volume x bgm.volume`
+and an effect's is `master x sfx_volume x cue.volume`.
+
+To use your own sound, drop the files under `assets/audio/<your-set>/` and point the cues at them:
+
+```json
+"audio": {"bgm": {"file": "assets/audio/mine/night.mp3", "volume": 0.5},
+          "sfx": {"coin": {"file": "assets/audio/mine/coin.ogg"}, "hit": {"file": "assets/audio/mine/hit.mp3"}}}
+```
+
+`build_browser_preview.py` stages everything under `assets/audio/` (`.wav`, `.ogg`, `.mp3`). Add a line to `assets/LEDGER.json` for
+each pack you add (`tools/asset_ledger.py check` fails on an unrecorded one) and run `tools/asset_ledger.py credits --write`.
+The shipped sounds are placeholders made by `tools/gen_assets/cat_audio.py` (synthesised, CC0). On a phone, browsers keep the page silent
+until the first touch: the page opens the audio on the first tap, key or click and then starts the loop. The sound button (key `M`)
+mutes and is remembered; `?mute=1` starts muted and `?audio=0` turns audio off for that visit. An iPhone's silent switch is
+respected by the system (the page asks for "playback" audio where Safari supports it).
+
+`missions` `{enabled, list [{kind, target, label}], bonus 0, hud}` are the goals for each run: `coins` (collect N), `gates` (pass N
+gates), `perch` (perch N times). The default is 40 coins, 5 gates, 1 perch (up to 5 goals; `label` overrides the text). Progress is
+counted from the run's own counters, shown on the title card, as a small HUD strip (`hud`) and on the result, with a banner and the
+`mission` cue when one is done. `bonus` is score added per finished goal and is **0** by default, so missions never change a score unless
+you ask. The high score is shown on the title and the result; the page keeps it in `localStorage` and passes it in as the world's
+`best`. The #181 ranking is unchanged.
+
 ## Layers
 
 | Layer | Python | Rust | Holds |

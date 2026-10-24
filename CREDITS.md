@@ -33,6 +33,8 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 | [KAGRA package data (unit_cube.glb, synthetic_dance.bvh)](https://github.com/EMMA019/KAGRA) | KAGRA project (generated) | custom | not required | `kagra/data/*` |
 | [KAGRA demo road grid](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `kagra-shared/assets/maps/demo_grid.kagra.json` |
 | [KAGRA placeholder launcher icon](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/icons/*.png` |
+| [Neon Cat placeholder sounds](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/audio/neon_cat/*.wav` |
+| [Neon Cat concrete wall texture](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/textures/neon_cat/*.png` |
 | [KAGRA placeholder models (scenery stand-ins and the Neon Cat gate arch)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/models/placeholder/*.glb`, `assets/models/neon_cat/gate_arch.glb` |
 
 ## Required attribution

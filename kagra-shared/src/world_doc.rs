@@ -2260,6 +2260,24 @@ fn prop_has_maps(prop: &WorldProp) -> bool {
         || map_spec(&prop.emissive_map).is_some()
 }
 
+/// Does `load_png_albedo(path)` have a file to read? (No decode.)
+pub fn texture_exists(path: &str) -> bool {
+    let spec = path.trim();
+    if spec.is_empty() {
+        return false;
+    }
+    [
+        PathBuf::from(spec),
+        PathBuf::from(".").join(spec),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join(spec),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(spec),
+    ]
+    .iter()
+    .any(crate::assets::is_file)
+}
+
 /// Load a PNG as albedo. Repo-relative paths resolve from cwd or the crate parent.
 pub fn load_png_albedo(path: &str) -> Option<crate::scene3d::AlbedoRgba> {
     let spec = path.trim();

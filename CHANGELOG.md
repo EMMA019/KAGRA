@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Neon Cat: a night street, sound, and goals (`atmosphere`, `audio`, `missions` in
+  the game spec). Rain with ripples, neon signs and a procedural concrete wall
+  (`tools/gen_assets/cat_wall.py`) on the neon base look; three picture tiers
+  (`low`, `mobile`, `high`) and a plain-wall fallback. The phone page plays BGM and
+  SFX with Web Audio from JSON-named `.wav`/`.ogg`/`.mp3` files (unlocked on the
+  first touch, mute button, volumes in JSON); placeholder sounds come from
+  `tools/gen_assets/cat_audio.py` (CC0). Three missions per run (40 coins, 5
+  gates, 1 perch) and a high score on the title and result. All three default on
+  for Neon Cat and off in `GameSpec::legacy()`; Meteor Cat keeps its own look
+  (`atmosphere` and `missions` off). Mission `bonus` is 0, so scores, the
+  ranking and the golden runs do not move. See `docs/runner_kit.md`.
+
 - Lumen (`games/neon_run_minimal.json`): a neon endless flyer. The sim is
   `NeonRun` in the shared crate (wasm, Android, and the Python window share
   it) and is not a WorldPlay genre. Glow uses dump `emissive` /
