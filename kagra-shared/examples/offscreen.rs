@@ -161,7 +161,7 @@ fn main() -> Result<(), String> {
                 "crash" => session.set_play_input(1.0, 0.0, false, false, false),
                 "flat" | "debug" => session.set_play_input(0.0, 0.0, false, false, false),
                 "play" => {
-                    let steer = session.cat.as_ref().map(|run| run.script_steer());
+                    let steer = session.cat().map(|run| run.script_steer());
                     if let Some((lx, jump)) = steer {
                         session.set_play_input(lx, 0.0, jump, false, false);
                     }
@@ -171,22 +171,19 @@ fn main() -> Result<(), String> {
             session.request_frame();
         }
         let phase = session
-            .cat
-            .as_ref()
+            .cat()
             .map(|run| run.phase_name())
             .unwrap_or("missing");
-        let score = session.cat.as_ref().map(|run| run.score()).unwrap_or(0);
-        let x = session.cat.as_ref().map(|run| run.x()).unwrap_or(0.0);
+        let score = session.cat().map(|run| run.score()).unwrap_or(0);
+        let x = session.cat().map(|run| run.x()).unwrap_or(0.0);
         let death = session
-            .cat
-            .as_ref()
+            .cat()
             .map(|run| run.death().to_string())
             .unwrap_or_default();
         println!(
             "neon cat {which} frames={frames} phase={phase} score={score} x={x:.2} death={death} quality={}",
             session
-                .cat
-                .as_ref()
+                .cat()
                 .and_then(|run| run.document().quality.clone())
                 .unwrap_or_else(|| "legacy".into())
         );

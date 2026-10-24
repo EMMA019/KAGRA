@@ -283,3 +283,15 @@ rings, death frame and death reason match the numbers recorded on master
 before the port. `second_game_is_just_a_spec` checks that Meteor Cat loads and
 replays exactly. `tests/test_runner_spec.py` checks that each baked world
 equals its manifest overrides.
+
+## Adding a kit to the session
+
+The session holds a `Box<dyn KitHost>` (`kagra-shared/src/kit_host.rs`). To plug a new kit in:
+
+1. Write the kit on `game_core` (`Core`, `Kit`, `tick_frame`) and give it `is_<name>_dump(json)` and `from_json`.
+2. `impl KitHost for YourKit`: phase name, document, dump/state JSON, confirm/title, pointer/key/walk, `tick`
+   (usually a call to `tick_frame`), `hud`. `touch`, `uses_swipe` and `set_debug` have defaults.
+3. Add one `(detect, load)` line to `kit_host::KITS`.
+
+The session, the wasm shell and the playtest hand-off need no other change. Tests that need the typed kit use
+`session.cat()` or add a small downcast helper next to `cat()`.
