@@ -20,7 +20,7 @@ use serde_json::json;
 use crate::flow::{FlowAction, FlowPhase, GameFlow};
 use crate::game_core::{self, Core, Hitbox, Juice, JuiceShake, Kit, Spring1};
 use crate::game_spec::{
-    Behavior, GameSpec, ItemEffect, ItemIcon, MischiefKind, PartRole, SectionKind,
+    Behavior, GameSpec, ItemEffect, ItemIcon, MischiefKind, PartRole, PerchKind, SectionKind,
 };
 use crate::scene::{DrawList, Quad, TextAlign, TextQuad};
 use crate::world_doc::{WorldCamera, WorldDoc, WorldLight, WorldProp, WorldWalker};
@@ -140,6 +140,19 @@ pub struct NeonCat {
     /// A score pop under the coin chip: seconds left and the running sum.
     pop_t: f32,
     pop_sum: u32,
+    /// Route slots the cat has landed on, and reached the top of.
+    perch_landed: HashSet<i32>,
+    perch_routed: HashSet<i32>,
+    /// Fraction of a point owed for time on a ledge.
+    perch_acc: f32,
+    /// Standing on a ledge right now.
+    on_perch: bool,
+    /// The cleaning robot: seconds of chase left (0 = none), seconds of
+    /// running away left after a meow, and its own sideways position.
+    robot_t: f32,
+    robot_flee: f32,
+    robot_age: f32,
+    robot_x: f32,
 }
 
 pub fn is_cat_dump(json: &str) -> bool {
@@ -308,6 +321,14 @@ impl NeonCat {
             pulls: HashMap::new(),
             pop_t: 0.0,
             pop_sum: 0,
+            perch_landed: HashSet::new(),
+            perch_routed: HashSet::new(),
+            perch_acc: 0.0,
+            on_perch: false,
+            robot_t: 0.0,
+            robot_flee: 0.0,
+            robot_age: 0.0,
+            robot_x: 0.0,
         };
         run.lives = run.spec.lives.count;
         if let Ok(p) = feel::resolve(&run.spec.feel) {
@@ -471,6 +492,8 @@ impl NeonCat {
                 "superjump": self.fx[FX_JUMP],
                 "double": self.fx[FX_DOUBLE],
             },
+            "perch": { "landed": self.perch_landed.len(), "routes": self.perch_routed.len(), "on": self.on_perch },
+            "robot": { "secs": self.robot_t, "fleeing": self.robot_flee > 0.0 },
             "mischief": { "knocked": self.knocks, "streak": if self.streak_t > 0.0 { self.streak } else { 0 } },
             "toast": if self.toast_t > 0.0 { self.toast.as_str() } else { "" },
             "lives_max": self.spec.lives.count,
@@ -740,6 +763,13 @@ impl NeonCat {
         self.pulls.clear();
         self.pop_t = 0.0;
         self.pop_sum = 0;
+        self.perch_landed.clear();
+        self.perch_routed.clear();
+        self.perch_acc = 0.0;
+        self.on_perch = false;
+        self.robot_t = 0.0;
+        self.robot_flee = 0.0;
+        self.robot_age = 0.0;
         self.coins = 0;
         self.gates = 0;
         self.dying = 0.0;
@@ -984,6 +1014,7 @@ impl NeonCat {
         for t in &mut self.fx {
             *t = (*t - dt).max(0.0);
         }
+        self.update_robot(dt);
         self.toast_t = (self.toast_t - dt).max(0.0);
         self.streak_t = (self.streak_t - dt).max(0.0);
         self.pop_t = (self.pop_t - dt).max(0.0);
@@ -1144,6 +1175,7 @@ impl NeonCat {
             self.collect_coins(dt);
             self.collect_items();
             self.collect_mischief();
+            self.track_perch(dt);
         }
     }
 
@@ -1213,8 +1245,9 @@ impl NeonCat {
 
     /// Height of the highest ramp or ride top under the feet at `(x, z)`.
     fn ground_at(&self, x: f32, z: f32) -> f32 {
+        let ledge = self.perch_support(x, z).map_or(0.0, |p| p.2);
         if !self.spec.has_rideables() {
-            return 0.0;
+            return ledge;
         }
         let i0 = near_index(
             z,
@@ -1233,7 +1266,135 @@ impl NeonCat {
                 }
             }
         }
+        best.max(ledge)
+    }
+
+    /// The perch ledge under `(x, z)` that can hold the cat: the route slot,
+    /// the step and its top. A ledge more than `step_up` above the feet is
+    /// walked through (a jump gets onto it), one within reach is stepped onto.
+    fn perch_support(&self, x: f32, z: f32) -> Option<(i32, usize, f32)> {
+        if self.spec.perch_route.is_empty() {
+            return None;
+        }
+        let track = &self.spec.runner.obstacle_track;
+        let i0 = near_index(z, track.z0, track.gap).saturating_sub(1);
+        let up = self.spec.perch_rules.step_up;
+        let mut best: Option<(i32, usize, f32)> = None;
+        for i in i0..i0 + 3 {
+            let Some(steps) = perch_route_at(&self.spec, i) else {
+                continue;
+            };
+            for (n, b) in steps.iter().enumerate() {
+                if (x - b.x).abs() <= b.half_width
+                    && z >= b.z0
+                    && z < b.z1
+                    && self.y >= b.top - up
+                    && best.is_none_or(|q| b.top > q.2)
+                {
+                    best = Some((i, n, b.top));
+                }
+            }
+        }
         best
+    }
+
+    /// Score and toast for landing on a route, time spent on a ledge and
+    /// reaching the top step.
+    fn track_perch(&mut self, dt: f32) {
+        self.on_perch = false;
+        let Some((slot, step, top)) = self.perch_support(self.x, self.z) else {
+            return;
+        };
+        if (self.y - top).abs() > 0.03 {
+            return;
+        }
+        self.on_perch = true;
+        let rules = self.spec.perch_rules.clone();
+        let c = self.spec.style.codes.rideable;
+        self.perch_acc += rules.run_score as f32 * dt;
+        let whole = self.perch_acc.floor();
+        self.perch_acc -= whole;
+        self.core.stats.score += whole as u32;
+        if self.perch_landed.insert(slot) {
+            self.core.stats.score += rules.land_score;
+            self.toast = "PERCH".into();
+            self.toast_t = 1.0;
+            self.toast_c = c;
+            self.burst(
+                self.x,
+                top + 0.1,
+                self.z,
+                8,
+                [c[0] as u32, c[1] as u32, c[2] as u32],
+                2.6,
+                0.08,
+            );
+            self.sfx("perch");
+        }
+        if step + 1 == self.spec.perch_route.len() && self.perch_routed.insert(slot) {
+            self.core.stats.score += rules.route_bonus;
+            self.toast = format!("ROUTE  +{}", rules.route_bonus);
+            self.toast_t = 1.4;
+            self.toast_c = [255, 245, 215];
+            self.burst(self.x, top + 0.2, self.z, 18, [255, 240, 150], 3.6, 0.1);
+            self.sfx("coin");
+        }
+    }
+
+    /// The robot's clock: it runs down faster on a ledge (or under a boost),
+    /// and a meow sends it away.
+    fn update_robot(&mut self, dt: f32) {
+        if self.robot_t <= 0.0 || !self.core.stats.alive {
+            return;
+        }
+        self.robot_age += dt;
+        if self.robot_flee > 0.0 {
+            self.robot_flee = (self.robot_flee - dt).max(0.0);
+            if self.robot_flee <= 0.0 {
+                self.robot_t = 0.0;
+            }
+            return;
+        }
+        let fast = self.on_perch || self.fx[FX_BOOST] > 0.0;
+        let k = if fast {
+            self.spec.chaser.perch_drain
+        } else {
+            1.0
+        };
+        self.robot_t = (self.robot_t - dt * k).max(0.0);
+        let follow = 1.0 - (-dt * 3.0).exp();
+        self.robot_x += (self.x - self.robot_x) * follow;
+        if self.robot_t <= 0.0 {
+            let (rx, rz) = (self.robot_x, self.z - self.spec.chaser.far_gap);
+            self.burst(rx, 0.3, rz, 8, [200, 210, 230], 2.0, 0.08);
+            self.sfx("robot_off");
+        }
+    }
+
+    /// A hit calls the robot (once). It starts behind the cat, in sight.
+    fn call_robot(&mut self) {
+        if !self.spec.chaser.enabled || self.robot_t > 0.0 {
+            return;
+        }
+        self.robot_t = self.spec.chaser.secs;
+        self.robot_flee = 0.0;
+        self.robot_age = 0.0;
+        self.robot_x = self.x;
+        self.sfx("robot_on");
+    }
+
+    /// How far behind the cat the robot is now: right on its tail when it is
+    /// called, falling back as its clock runs down, and gone fast after a meow.
+    fn robot_gap(&self) -> f32 {
+        let c = &self.spec.chaser;
+        let used = 1.0 - (self.robot_t / c.secs.max(0.1)).clamp(0.0, 1.0);
+        let gap = c.near_gap + (c.far_gap - c.near_gap) * used;
+        if self.robot_flee > 0.0 {
+            let t = (1.0 - self.robot_flee).max(0.0);
+            gap + t * t * 40.0
+        } else {
+            gap
+        }
     }
 
     /// Obstacles drawn ahead. At least `self.spec.runner.draw.lead_secs` of travel, never fewer than 4.
@@ -1621,6 +1782,11 @@ impl NeonCat {
                     self.toast = "MEOW  +100".into();
                 }
                 self.toast_t = 1.4;
+                if self.robot_t > 0.0 && self.robot_flee <= 0.0 {
+                    self.robot_flee = 1.0;
+                    self.core.stats.score += self.spec.chaser.scare_score;
+                    self.toast = format!("{}  SHOO!", self.toast.trim_end());
+                }
                 self.burst(self.x, self.y + 0.5, self.z, 16, color, 3.4, 0.12);
                 self.sfx("meow");
                 return;
@@ -1660,18 +1826,14 @@ impl NeonCat {
                 .unwrap_or_else(|| effect.default_icon());
             let bob = (self.time * 3.0 + i as f32).sin() * 0.07;
             // A slow sway rather than a full turn, so the picture is never edge-on.
-            let sway = (self.time * 1.7 + i as f32 * 0.9).sin() * 0.9;
-            let (sin, cos) = sway.sin_cos();
-            for (n, part) in icon_parts(icon).iter().enumerate() {
+            let sway = (self.time * 1.7 + i as f32 * 0.9).sin() * 0.75;
+            let centre = [p[0], p[1] + bob, p[2]];
+            for (n, part) in icon_props(icon, centre, sway).iter().enumerate() {
                 let mut q = glow(
                     &format!("item-{i}-{n}"),
                     part.model,
                     "item",
-                    [
-                        p[0] + part.at[0] * cos,
-                        p[1] + bob + part.at[1],
-                        p[2] - part.at[0] * sin,
-                    ],
+                    part.pos,
                     part.scale,
                     if part.pale {
                         [(col[0] + 255) / 2, (col[1] + 255) / 2, (col[2] + 255) / 2]
@@ -1689,7 +1851,7 @@ impl NeonCat {
                 } else {
                     lin
                 });
-                q.yaw = sway;
+                q.yaw = part.yaw;
                 q.roll = part.roll;
                 doc.props.push(q);
             }
@@ -1855,6 +2017,7 @@ impl NeonCat {
         self.lives = self.lives.saturating_sub(1);
         self.invuln = self.spec.lives.invuln_secs;
         self.hurt_t = 0.0;
+        self.call_robot();
         self.core.juice.hit(self.feel.hit_shake * 0.6, 0.07);
         self.burst(self.x, self.y + 0.4, self.z, 12, [255, 60, 170], 3.6, 0.14);
         self.burst(self.x, self.y + 0.5, self.z, 6, [90, 240, 255], 2.6, 0.1);
@@ -1865,6 +2028,10 @@ impl NeonCat {
         if self.core.stats.alive {
             if self.invuln > 0.0 || self.fx[FX_BOOST] > 0.0 {
                 return;
+            }
+            // A second hit with the robot on your tail: it has caught you.
+            if self.robot_t > 0.0 && self.robot_flee <= 0.0 {
+                self.lives = 1;
             }
             if self.lives > 1 {
                 self.hurt();
@@ -2000,6 +2167,8 @@ impl NeonCat {
         self.push_coins(&mut doc);
         self.push_items(&mut doc);
         self.push_mischief(&mut doc);
+        self.push_perches(&mut doc);
+        self.push_robot(&mut doc);
         self.spawned = self.push_obstacles(&mut doc);
         if self.debug {
             self.push_hitboxes(&mut doc);
@@ -2008,6 +2177,271 @@ impl NeonCat {
         self.push_auras(&mut doc);
         self.push_sparks(&mut doc);
         self.doc = doc;
+    }
+
+    /// Ledges ahead: a dark body with a lit top so the landing reads, in the
+    /// colour the spec gives to things you can ride.
+    fn push_perches(&self, doc: &mut WorldDoc) {
+        if self.spec.perch_route.is_empty() {
+            return;
+        }
+        let track = &self.spec.runner.obstacle_track;
+        let i0 = near_index(self.z, track.z0, track.gap).saturating_sub(1);
+        let reach = self.z + 6.0 + self.obstacle_lead_count() as f32 * track.gap;
+        let c = self.spec.style.codes.rideable;
+        let col = [c[0] as u32, c[1] as u32, c[2] as u32];
+        let lin = [
+            c[0] as f32 / 255.0,
+            c[1] as f32 / 255.0,
+            c[2] as f32 / 255.0,
+        ];
+        for i in i0..i0 + 2 + self.obstacle_lead_count() {
+            let Some(steps) = perch_route_at(&self.spec, i) else {
+                continue;
+            };
+            for (n, b) in steps.iter().enumerate() {
+                if b.z1 < self.z - 6.0 || b.z0 > reach {
+                    continue;
+                }
+                let id = format!("perch-{i}-{n}");
+                let len = b.z1 - b.z0;
+                let w = b.half_width * 2.0;
+                let zc = (b.z0 + b.z1) * 0.5;
+                let mut add = |part: &str,
+                               model: &str,
+                               pos: [f32; 3],
+                               scale: [f32; 3],
+                               color: [u32; 3],
+                               em: f32,
+                               pitch: f32| {
+                    let mut q = glow(
+                        &format!("{id}-{part}"),
+                        model,
+                        "perch",
+                        pos,
+                        scale,
+                        color,
+                        em,
+                    );
+                    q.pitch = pitch;
+                    if em > 0.0 {
+                        q.emissive_color = Some(lin);
+                    }
+                    doc.props.push(q);
+                };
+                match b.kind {
+                    PerchKind::AcUnit => {
+                        add(
+                            "body",
+                            "box",
+                            [b.x, b.top * 0.5, zc],
+                            [w * 0.92, b.top, len * 0.94],
+                            [58, 66, 86],
+                            0.0,
+                            0.0,
+                        );
+                        for (k, f) in [-0.25f32, 0.25].into_iter().enumerate() {
+                            add(
+                                &format!("fan{k}"),
+                                "cylinder",
+                                [b.x, b.top + 0.02, zc + len * f],
+                                [w * 0.6, 0.05, w * 0.6],
+                                [30, 34, 46],
+                                0.0,
+                                0.0,
+                            );
+                        }
+                    }
+                    PerchKind::Pipe => {
+                        let r = (w * 0.5).min(0.5);
+                        add(
+                            "body",
+                            "cylinder",
+                            [b.x, b.top - r, zc],
+                            [r * 2.0, len * 0.98, r * 2.0],
+                            [96, 104, 118],
+                            0.0,
+                            std::f32::consts::FRAC_PI_2,
+                        );
+                        for (k, f) in [-0.4f32, 0.4].into_iter().enumerate() {
+                            add(
+                                &format!("leg{k}"),
+                                "box",
+                                [b.x, (b.top - r * 2.0) * 0.5, zc + len * f],
+                                [0.16, b.top - r * 2.0, 0.16],
+                                [50, 56, 70],
+                                0.0,
+                                0.0,
+                            );
+                        }
+                    }
+                    PerchKind::Sign => {
+                        add(
+                            "board",
+                            "box",
+                            [b.x, b.top - 0.1, zc],
+                            [w * 0.92, 0.2, len * 0.94],
+                            [44, 40, 66],
+                            0.0,
+                            0.0,
+                        );
+                        for (k, f) in [-0.4f32, 0.4].into_iter().enumerate() {
+                            add(
+                                &format!("post{k}"),
+                                "box",
+                                [b.x, (b.top - 0.2) * 0.5, zc + len * f],
+                                [0.14, b.top - 0.2, 0.14],
+                                [50, 56, 70],
+                                0.0,
+                                0.0,
+                            );
+                        }
+                    }
+                }
+                // The lit top: a thin plate where the paws land, and its two edges.
+                add(
+                    "top",
+                    "box",
+                    [b.x, b.top + 0.012, zc],
+                    [w * 0.96, 0.025, len * 0.96],
+                    col,
+                    0.9,
+                    0.0,
+                );
+                for (k, sx) in [-1.0f32, 1.0].into_iter().enumerate() {
+                    add(
+                        &format!("edge{k}"),
+                        "box",
+                        [b.x + sx * (b.half_width - 0.02), b.top + 0.03, zc],
+                        [0.05, 0.05, len * 0.96],
+                        col,
+                        2.4,
+                        0.0,
+                    );
+                }
+            }
+        }
+    }
+
+    /// The cleaning robot behind the cat: a squat disc with a beacon, a lit
+    /// bumper ring and two spinning brushes. After a meow it speeds off to the side.
+    fn push_robot(&self, doc: &mut WorldDoc) {
+        if self.robot_t <= 0.0 || !self.core.stats.alive && self.robot_age == 0.0 {
+            return;
+        }
+        let c = self.spec.chaser.color;
+        let col = [c[0] as u32, c[1] as u32, c[2] as u32];
+        let lin = [
+            c[0] as f32 / 255.0,
+            c[1] as f32 / 255.0,
+            c[2] as f32 / 255.0,
+        ];
+        let fl = self.robot_flee;
+        let away = if fl > 0.0 { 1.0 - fl } else { 0.0 };
+        let side = if self.robot_x >= 0.0 { 1.0 } else { -1.0 };
+        let x = self.robot_x + side * away * away * 5.0;
+        let z = self.z - self.robot_gap();
+        let bob = (self.robot_age * 9.0).sin() * 0.012;
+        let yaw = away * away * 6.0;
+        let (sin, cos) = yaw.sin_cos();
+        // Parts are laid out around the centre and turned with the whole robot.
+        let mut add = |part: &str,
+                       model: &str,
+                       off: [f32; 3],
+                       scale: [f32; 3],
+                       color: [u32; 3],
+                       em: f32,
+                       spin: f32| {
+            let mut q = glow(
+                &format!("robot-{part}"),
+                model,
+                "robot",
+                [
+                    x + off[0] * cos + off[2] * sin,
+                    off[1] + bob,
+                    z - off[0] * sin + off[2] * cos,
+                ],
+                scale,
+                color,
+                em,
+            );
+            q.yaw = yaw + spin;
+            if em > 0.0 {
+                q.emissive_color = Some(lin);
+            }
+            doc.props.push(q);
+        };
+        add(
+            "base",
+            "cylinder",
+            [0.0, 0.18, 0.0],
+            [1.15, 0.26, 1.15],
+            [38, 44, 58],
+            0.0,
+            0.0,
+        );
+        add(
+            "dome",
+            "sphere",
+            [0.0, 0.36, 0.0],
+            [0.62, 0.34, 0.62],
+            [78, 88, 108],
+            0.0,
+            0.0,
+        );
+        add(
+            "ring",
+            "torus",
+            [0.0, 0.2, 0.0],
+            [1.24, 1.24, 1.24],
+            col,
+            1.6,
+            0.0,
+        );
+        add(
+            "tail",
+            "box",
+            [0.0, 0.3, -0.58],
+            [0.5, 0.07, 0.05],
+            col,
+            2.6,
+            0.0,
+        );
+        let lit = (self.robot_age * 5.0).floor() as i64 % 2 == 1;
+        add(
+            "beacon",
+            "sphere",
+            [0.0, 0.62, 0.0],
+            [0.17, 0.17, 0.17],
+            col,
+            if lit { 3.2 } else { 0.4 },
+            0.0,
+        );
+        for (k, sx) in [-1.0f32, 1.0].into_iter().enumerate() {
+            add(
+                &format!("brush{k}"),
+                "box",
+                [sx * 0.62, 0.07, 0.42],
+                [0.5, 0.03, 0.07],
+                [205, 208, 225],
+                0.0,
+                self.robot_age * 16.0 * sx,
+            );
+        }
+        // A pulse on the street so the danger reads from a distance.
+        let pulse = (self.robot_age * 4.0).fract();
+        let r = 1.5 + 0.9 * pulse;
+        let mut ring = glow(
+            "robot-pulse",
+            "torus",
+            "robot",
+            [x, 0.04, z],
+            [r * 2.0, 1.0, r * 2.0],
+            col,
+            0.9 * (1.0 - pulse),
+        );
+        ring.emissive_color = Some(lin);
+        doc.props.push(ring);
     }
 
     fn push_tunnel(&self, doc: &mut WorldDoc) {
@@ -2722,6 +3156,39 @@ impl NeonCat {
             ));
             row_y += 22.0 * ui;
         }
+        // The cleaning robot's clock, in its own colour.
+        if self.robot_t > 0.0 && !dead {
+            let full = self.spec.chaser.secs.max(0.1);
+            let c = self.spec.chaser.color;
+            let warn = self.robot_t < self.spec.item_rules.warn_secs && self.robot_flee <= 0.0;
+            let on = !warn || (self.robot_t * 6.0).floor() as i64 % 2 == 1;
+            let col = [c[0], c[1], c[2], if on { 255 } else { 90 }];
+            let x0 = m + 12.0 * ui + shake;
+            let label = if self.robot_flee > 0.0 {
+                "SHOO!"
+            } else {
+                "ROBOT"
+            };
+            list.texts.push(
+                TextQuad::new(label, x0, row_y, 11.0 * ui, fade(col, keep))
+                    .aligned(TextAlign::Left),
+            );
+            let bw = 96.0 * ui;
+            list.quads.push(Quad::new(
+                x0,
+                row_y + 13.0 * ui,
+                bw,
+                4.0 * ui,
+                fade([20, 14, 40, 180], keep),
+            ));
+            list.quads.push(Quad::new(
+                x0,
+                row_y + 13.0 * ui,
+                bw * (self.robot_t / full).clamp(0.0, 1.0),
+                4.0 * ui,
+                fade(col, keep),
+            ));
+        }
         // A pick-up's name over the view for a moment.
         if self.toast_t > 0.0 && !dead {
             let a = (self.toast_t / 0.4).clamp(0.0, 1.0);
@@ -2915,12 +3382,65 @@ fn free_slot(s: &GameSpec, index: i32) -> Option<(SectionKind, u32, u32)> {
     Some((sec.kind, (index - i) as u32, h))
 }
 
+/// One ledge of a perch route in world terms.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct PerchBox {
+    pub kind: PerchKind,
+    pub x: f32,
+    pub half_width: f32,
+    pub z0: f32,
+    pub z1: f32,
+    pub top: f32,
+}
+
+/// The steps of the perch route standing in a free slot (None when the slot
+/// has no route): end to end along the track, off to one side by hash.
+pub(crate) fn perch_route_at(s: &GameSpec, index: i32) -> Option<Vec<PerchBox>> {
+    if s.perch_route.is_empty() {
+        return None;
+    }
+    let (kind, ordinal, h) = free_slot(s, index)?;
+    let r = &s.perch_rules;
+    let every = match kind {
+        SectionKind::Rest => r.rest_every,
+        SectionKind::Reward => r.reward_every,
+        _ => r.other_every,
+    };
+    if every == 0 || ordinal % every != 0 {
+        return None;
+    }
+    let t = &s.runner.obstacle_track;
+    let side = if (h >> 1) & 1 == 0 { -1.0 } else { 1.0 };
+    let reach = (s.runner.lanes.limit - r.half_width + 0.1).max(0.0);
+    let x = (t.x(index) + side * r.side).clamp(-reach, reach);
+    let len = s.perch_route.len() as f32 * r.step_len;
+    let start = t.z(index) - len * 0.5;
+    Some(
+        s.perch_route
+            .iter()
+            .enumerate()
+            .map(|(n, step)| PerchBox {
+                kind: step.kind,
+                x,
+                half_width: r.half_width,
+                z0: start + n as f32 * r.step_len,
+                z1: start + (n + 1) as f32 * r.step_len,
+                top: step.top(),
+            })
+            .collect(),
+    )
+}
+
 /// A knockable prop standing in a free slot, off to one side of the track.
 pub(crate) fn mischief_at(s: &GameSpec, index: i32) -> Option<(MischiefKind, [f32; 3])> {
     if s.mischief.is_empty() {
         return None;
     }
     let (kind, ordinal, h) = free_slot(s, index)?;
+    // A route has the slot's side: the prop makes way.
+    if perch_route_at(s, index).is_some() {
+        return None;
+    }
     let r = &s.mischief_rules;
     let every = match kind {
         SectionKind::Rest => r.rest_every,
@@ -3053,10 +3573,48 @@ struct IconPart {
     /// Centre in the icon's plane: sideways, then up.
     at: [f32; 2],
     scale: [f32; 3],
-    /// Turn in the picture's plane, radians (positive lifts the right end).
+    /// Turn in the picture's plane, radians (positive lifts the right end,
+    /// right as the player sees it from the chase camera).
     roll: f32,
     /// A paler shade of the item colour.
     pale: bool,
+}
+
+/// One drawn piece of an icon, in world terms (what goes into the prop).
+struct IconProp {
+    model: &'static str,
+    pos: [f32; 3],
+    scale: [f32; 3],
+    yaw: f32,
+    roll: f32,
+    pale: bool,
+}
+
+/// An icon's pieces placed around `centre`, the picture swayed by `sway`
+/// about the vertical axis. The chase camera looks along +Z, so screen-right
+/// is world -X: the picture's right is mirrored into that, and a roll that
+/// lifts the picture's right end is a negative prop roll (which lifts +X).
+fn icon_props(icon: ItemIcon, centre: [f32; 3], sway: f32) -> Vec<IconProp> {
+    let (sin, cos) = sway.sin_cos();
+    icon_parts(icon)
+        .into_iter()
+        .map(|part| {
+            // Rotating (-x, y, 0) by `sway` about Y: +Z turns toward +X.
+            let x = -part.at[0];
+            IconProp {
+                model: part.model,
+                pos: [
+                    centre[0] + x * cos,
+                    centre[1] + part.at[1],
+                    centre[2] - x * sin,
+                ],
+                scale: part.scale,
+                yaw: sway,
+                roll: -part.roll,
+                pale: part.pale,
+            }
+        })
+        .collect()
 }
 
 /// An orb's picture as a few thick primitives, about 0.7 m across.
@@ -3065,7 +3623,7 @@ fn icon_parts(icon: ItemIcon) -> Vec<IconPart> {
     let bar = |x: f32, y: f32, w: f32, h: f32, roll: f32, pale: bool| IconPart {
         model: "box",
         at: [x, y],
-        scale: [w, h, 0.13],
+        scale: [w, h, 0.1],
         roll,
         pale,
     };
@@ -3078,11 +3636,11 @@ fn icon_parts(icon: ItemIcon) -> Vec<IconPart> {
     };
     match icon {
         ItemIcon::Horseshoe => vec![
-            bar(-0.22, -0.02, 0.15, 0.5, 0.0, false),
-            bar(0.22, -0.02, 0.15, 0.5, 0.0, false),
-            bar(0.0, -0.28, 0.59, 0.15, 0.0, false),
-            bar(-0.22, 0.27, 0.17, 0.13, 0.0, true),
-            bar(0.22, 0.27, 0.17, 0.13, 0.0, true),
+            bar(-0.28, -0.02, 0.14, 0.5, 0.0, false),
+            bar(0.28, -0.02, 0.14, 0.5, 0.0, false),
+            bar(0.0, -0.28, 0.7, 0.15, 0.0, false),
+            bar(-0.28, 0.27, 0.16, 0.13, 0.0, true),
+            bar(0.28, 0.27, 0.16, 0.13, 0.0, true),
         ],
         ItemIcon::Chevron => {
             let mut v = Vec::new();
@@ -3164,7 +3722,19 @@ pub(crate) fn coin_line(s: &GameSpec, index: i32) -> Vec<[f32; 3]> {
             _ => 0.0,
         };
         let cx = t.x(index);
-        return strip(n, &|u| cx + weave * (u * 0.9).sin(), &|_| 0.3);
+        let mut line = strip(n, &|u| cx + weave * (u * 0.9).sin(), &|_| 0.3);
+        // Coins along the top of each ledge of a route in this slot.
+        if let Some(steps) = perch_route_at(s, index) {
+            let per = s.perch_rules.coins_per_step;
+            for b in &steps {
+                for k in 0..per {
+                    let f = (k as f32 + 0.5) / per as f32;
+                    line.push([b.x, b.top + 0.6, b.z0 + (b.z1 - b.z0) * f]);
+                }
+            }
+            line.truncate(32);
+        }
+        return line;
     }
     let kind = s.obstacle_kind(index);
     let (ax, _) = obstacle_anchor(s, index);
@@ -4950,6 +5520,7 @@ mod tests {
         assert!(run.core.stats.score > 0);
         // Two hits cost two lives; the run goes on.
         for _ in 0..2 {
+            run.robot_t = 0.0; // the robot has its own tests
             run.invuln = 0.0;
             run.crash("CRATE");
             assert!(run.core.stats.alive);
@@ -5034,7 +5605,8 @@ mod tests {
         run.crash("CRATE");
         run.crash("BARREL");
         assert_eq!(run.lives, 2, "protected");
-        // Protection runs out with play time.
+        run.robot_t = 0.0; // this one is about lives, not the robot
+                           // Protection runs out with play time.
         let mut frames = 0;
         while run.invuln > 0.0 && frames < 600 {
             run.tick(1.0 / 60.0);
@@ -5635,6 +6207,7 @@ mod tests {
             .texts
             .iter()
             .any(|t| t.text == format!("+{}", run.pop_sum)));
+        run.fx[FX_MAGNET] = 0.0; // no new coin comes in while it fades
         for _ in 0..60 {
             run.tick(1.0 / 60.0);
         }
@@ -5723,6 +6296,167 @@ mod tests {
             let mut r = full_lives();
             r.take_item(it.effect, [r.x, 0.5, r.z]);
             assert_eq!(r.toast_c, it.rgb(), "{:?}", it.effect);
+        }
+    }
+
+    /// The icon as the player sees it from the chase camera: a grid of ink,
+    /// row 0 on top, column 0 on the left, plus a second grid for the pale parts.
+    fn icon_picture(icon: ItemIcon, sway: f32) -> (Vec<Vec<bool>>, Vec<Vec<bool>>) {
+        use glam::{Quat, Vec3};
+        const W: usize = 28;
+        const H: usize = 14;
+        let eye = Vec3::new(0.0, 1.0, -5.9);
+        let (_, right, up) = crate::scene3d::screen_basis(eye, Vec3::new(0.0, 1.0, 0.0), Vec3::Y);
+        let mut all = vec![vec![false; W]; H];
+        let mut pale = vec![vec![false; W]; H];
+        let centre = [0.0, 1.0, 0.0];
+        for part in icon_props(icon, centre, sway) {
+            let rot = crate::world_doc::prop_rotation(&WorldProp {
+                yaw: part.yaw,
+                roll: part.roll,
+                ..WorldProp::default()
+            });
+            let n = 48;
+            for a in 0..=n {
+                for b in 0..=n {
+                    for c in 0..=2 {
+                        let l = Vec3::new(
+                            a as f32 / n as f32 - 0.5,
+                            b as f32 / n as f32 - 0.5,
+                            c as f32 / 2.0 - 0.5,
+                        );
+                        // Primitive outlines: the cone narrows toward +Y, the sphere is round.
+                        let inside = match part.model {
+                            "cone" => (l.x * l.x + l.z * l.z).sqrt() <= (0.5 - l.y) * 0.5 + 1e-3,
+                            "sphere" => l.length() <= 0.5,
+                            _ => true,
+                        };
+                        if !inside {
+                            continue;
+                        }
+                        let w = rot * (l * Vec3::from(part.scale)) + Vec3::from(part.pos)
+                            - Vec3::from(centre);
+                        let (sx, sy) = (w.dot(right), w.dot(up));
+                        // 0.04 m per cell, centred.
+                        let col = (sx / 0.04 + W as f32 / 2.0).floor();
+                        let row = (H as f32 / 2.0 - sy / 0.04 * 0.5).floor();
+                        if col >= 0.0 && (col as usize) < W && row >= 0.0 && (row as usize) < H {
+                            all[row as usize][col as usize] = true;
+                            if part.pale {
+                                pale[row as usize][col as usize] = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let _ = Quat::IDENTITY;
+        (all, pale)
+    }
+
+    fn show(name: &str, g: &[Vec<bool>]) {
+        println!("{name}");
+        for r in g {
+            println!(
+                "  {}",
+                r.iter()
+                    .map(|&b| if b { '#' } else { '.' })
+                    .collect::<String>()
+            );
+        }
+    }
+
+    fn ink_cols(row: &[bool]) -> Vec<usize> {
+        row.iter()
+            .enumerate()
+            .filter(|(_, &b)| b)
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    #[test]
+    fn item_icons_read_the_right_way_round_from_the_chase_camera() {
+        use glam::Vec3;
+        // The chase camera looks along +Z: screen-right is world -X.
+        let (_, right, up) = crate::scene3d::screen_basis(
+            Vec3::new(0.0, 1.0, -5.9),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::Y,
+        );
+        assert!((right - Vec3::NEG_X).length() < 1e-4 && (up - Vec3::Y).length() < 1e-4);
+        for sway in [0.0f32, 0.75, -0.75] {
+            // Boost: two chevrons, tips on the right (the way the cat runs), open end on the left.
+            let (g, _) = icon_picture(ItemIcon::Chevron, sway);
+            show(&format!("chevron sway {sway}"), &g);
+            let ink: Vec<usize> = g.iter().flat_map(|r| ink_cols(r)).collect();
+            let (lo, hi) = (*ink.iter().min().unwrap(), *ink.iter().max().unwrap());
+            let rows_at = |c: usize| -> Vec<usize> { (0..g.len()).filter(|&r| g[r][c]).collect() };
+            let mid = (g.iter().position(|r| r.iter().any(|&b| b)).unwrap()
+                + g.iter().rposition(|r| r.iter().any(|&b| b)).unwrap())
+                as f32
+                / 2.0;
+            assert!(
+                rows_at(hi).iter().all(|&r| (r as f32 - mid).abs() <= 1.5),
+                "the tips are in the middle on the right (sway {sway})"
+            );
+            assert!(
+                rows_at(lo).iter().all(|&r| (r as f32 - mid).abs() >= 2.0),
+                "the open ends are top and bottom on the left (sway {sway})"
+            );
+            // Super jump: an arrow, head above its stem.
+            let (g, _) = icon_picture(ItemIcon::Arrow, sway);
+            show(&format!("arrow sway {sway}"), &g);
+            let widths: Vec<usize> = g.iter().map(|r| ink_cols(r).len()).collect();
+            let top = widths.iter().position(|&w| w > 0).unwrap();
+            let bottom = widths.iter().rposition(|&w| w > 0).unwrap();
+            let widest = widths.iter().copied().max().unwrap();
+            let widest_row = widths.iter().position(|&w| w == widest).unwrap();
+            assert!(widths[top] < widest && widths[bottom] < widest);
+            assert!(
+                widest_row - top < bottom - widest_row,
+                "the head is above the stem (sway {sway})"
+            );
+            // 2x: the 2 is on the left, the pale x on the right.
+            let (g, pale) = icon_picture(ItemIcon::TwoX, sway);
+            show(&format!("2x sway {sway}"), &g);
+            let mean = |grid: &[Vec<bool>], want: bool| {
+                let (mut sum, mut n) = (0.0, 0.0);
+                for r in 0..grid.len() {
+                    for c in 0..grid[r].len() {
+                        if g[r][c] && (pale[r][c] == want) {
+                            sum += c as f32;
+                            n += 1.0;
+                        }
+                    }
+                }
+                sum / n
+            };
+            assert!(
+                mean(&g, false) < mean(&g, true),
+                "the 2 is left of the x (sway {sway})"
+            );
+            // Magnet: a U that opens upward, pale tips on top.
+            let (g, pale) = icon_picture(ItemIcon::Horseshoe, sway);
+            show(&format!("horseshoe sway {sway}"), &g);
+            let top = g.iter().position(|r| r.iter().any(|&b| b)).unwrap();
+            let bottom = g.iter().rposition(|r| r.iter().any(|&b| b)).unwrap();
+            let runs = |row: &[bool]| {
+                let c = ink_cols(row);
+                1 + c.windows(2).filter(|w| w[1] > w[0] + 1).count()
+            };
+            assert_eq!(runs(&g[top]), 2, "two prongs at the top (sway {sway})");
+            assert_eq!(runs(&g[bottom]), 1, "joined at the bottom (sway {sway})");
+            assert!(pale[top].iter().any(|&b| b), "pale tips on top");
+            // Meow: a heart, two lobes on top and a point below.
+            let (g, _) = icon_picture(ItemIcon::Heart, sway);
+            show(&format!("heart sway {sway}"), &g);
+            let top = g.iter().position(|r| r.iter().any(|&b| b)).unwrap();
+            let bottom = g.iter().rposition(|r| r.iter().any(|&b| b)).unwrap();
+            assert_eq!(runs(&g[top]), 2, "two lobes (sway {sway})");
+            assert!(
+                ink_cols(&g[bottom]).len() < ink_cols(&g[(top + bottom) / 2]).len(),
+                "a point at the bottom (sway {sway})"
+            );
         }
     }
 
@@ -5833,7 +6567,7 @@ mod tests {
         assert!(train.iter().all(|c| c[1] > 0.8), "along the roof");
         // Rest stretches are the long calm lines.
         let calm = (0..200)
-            .filter(|&i| !spec.obstacle_active(i))
+            .filter(|&i| !spec.obstacle_active(i) && perch_route_at(&spec, i).is_none())
             .map(|i| coin_line(&spec, i).len())
             .max()
             .unwrap();
@@ -6040,5 +6774,299 @@ mod tests {
         assert_eq!(r["run"]["score"], 900);
         assert_eq!(run.sim_value()["result"], r);
         assert!((run.sim_value()["time"].as_f64().unwrap() - 12.34).abs() < 1e-3);
+    }
+
+    /// First slot with a perch route.
+    fn route_slot(spec: &GameSpec) -> (i32, Vec<PerchBox>) {
+        (0..400)
+            .find_map(|i| perch_route_at(spec, i).map(|r| (i, r)))
+            .expect("a route in 400 slots")
+    }
+
+    /// The cat standing on the track at `(x, y, z)`.
+    fn put(run: &mut NeonCat, x: f32, y: f32, z: f32) {
+        run.x = x;
+        run.y = y;
+        run.vy = 0.0;
+        run.z = z;
+        run.rebuild();
+    }
+
+    #[test]
+    fn perch_routes_stand_in_free_slots_end_to_end_and_the_props_make_way() {
+        let spec = full().spec.clone();
+        let mut n = 0;
+        for i in 0..400 {
+            let Some(steps) = perch_route_at(&spec, i) else {
+                continue;
+            };
+            n += 1;
+            assert!(!spec.obstacle_active(i), "slot {i} has an obstacle");
+            assert!(mischief_at(&spec, i).is_none(), "slot {i}: prop on a route");
+            assert_eq!(steps.len(), spec.perch_route.len());
+            let t = &spec.runner.obstacle_track;
+            for w in steps.windows(2) {
+                assert_eq!(w[0].z1, w[1].z0, "end to end");
+            }
+            assert!(steps[0].z0 > t.z(i) - t.gap * 0.5);
+            assert!(steps.last().unwrap().z1 < t.z(i) + t.gap * 0.5);
+            let lim = spec.runner.lanes.limit;
+            assert!(steps[0].x.abs() <= lim, "inside the rails");
+            assert_eq!(perch_route_at(&spec, i).unwrap()[0].x, steps[0].x);
+            // Heights are the spec's, rising step by step.
+            let tops: Vec<f32> = steps.iter().map(|b| b.top).collect();
+            assert!(tops.windows(2).all(|w| w[1] > w[0]), "{tops:?}");
+        }
+        assert!(n >= 8, "{n} routes in 400 slots");
+        // None in the old course, and none in a spec without a route.
+        let legacy = GameSpec::legacy();
+        assert!((0..200).all(|i| perch_route_at(&legacy, i).is_none()));
+        let mut bare = (*spec).clone();
+        bare.perch_route.clear();
+        assert!((0..200).all(|i| perch_route_at(&bare, i).is_none()));
+        // Props still stand where there is no route.
+        assert!((0..400).any(|i| mischief_at(&spec, i).is_some()));
+        // The route's coins lie along its top.
+        let (i, steps) = route_slot(&spec);
+        let line = coin_line(&spec, i);
+        let up = line.iter().filter(|c| c[1] > 0.8).count();
+        assert_eq!(up, steps.len() * spec.perch_rules.coins_per_step as usize);
+        assert!(line.len() <= 32);
+    }
+
+    #[test]
+    fn a_ledge_needs_a_jump_then_steps_up_and_ends_in_a_drop() {
+        let spec = full().spec.clone();
+        let (i, steps) = route_slot(&spec);
+        let up = spec.perch_rules.step_up;
+        let b0 = steps[0];
+        // On the street the first step is too high to walk onto.
+        let mut r = full_lives();
+        put(&mut r, b0.x, 0.0, b0.z0 + 0.3);
+        assert_eq!(r.ground_at(b0.x, b0.z0 + 0.3), 0.0, "walked through");
+        assert!(b0.top - up > 0.0, "the first step needs a jump");
+        // A cat above it lands on it.
+        put(&mut r, b0.x, b0.top - up + 0.01, b0.z0 + 0.3);
+        assert_eq!(r.ground_at(b0.x, b0.z0 + 0.3), b0.top);
+        // Each next step is within step_up of the one before.
+        for w in steps.windows(2) {
+            put(&mut r, w[0].x, w[0].top, w[1].z0 + 0.2);
+            assert_eq!(r.ground_at(w[0].x, w[1].z0 + 0.2), w[1].top);
+        }
+        // Past the last step it is the street again, and beside the ledge too.
+        let last = steps.last().unwrap();
+        put(&mut r, last.x, last.top, last.z1 + 0.2);
+        assert_eq!(r.ground_at(last.x, last.z1 + 0.2), 0.0);
+        put(&mut r, b0.x + b0.half_width + 0.3, b0.top, b0.z0 + 0.3);
+        assert_eq!(r.ground_at(b0.x + b0.half_width + 0.3, b0.z0 + 0.3), 0.0);
+        let _ = i;
+    }
+
+    #[test]
+    fn running_a_route_pays_the_landing_the_time_and_the_bonus_once() {
+        let spec = full_lives().spec.clone();
+        let (i, steps) = route_slot(&spec);
+        let mut run = full_lives();
+        run.invuln = 99.0;
+        let b0 = steps[0];
+        put(&mut run, b0.x, b0.top + 0.05, b0.z0 - 0.4);
+        let score0 = run.core.stats.score;
+        let mut seen = false;
+        let mut top_y: f32 = 0.0;
+        for _ in 0..240 {
+            run.tick(1.0 / 60.0);
+            seen |= run.on_perch;
+            top_y = top_y.max(run.y);
+            if run.z > steps.last().unwrap().z1 + 1.0 && run.y == 0.0 {
+                break;
+            }
+        }
+        assert!(seen, "stood on a ledge");
+        assert!(
+            top_y >= steps.last().unwrap().top - 0.01,
+            "climbed to the top"
+        );
+        assert_eq!(run.perch_landed.len(), 1);
+        assert!(run.perch_landed.contains(&i));
+        assert_eq!(run.perch_routed.len(), 1, "reached the last step");
+        let gained = run.core.stats.score - score0;
+        let r = &spec.perch_rules;
+        assert!(gained >= r.land_score + r.route_bonus, "gained {gained}");
+        assert_eq!(run.y, 0.0, "back on the street at the end of the route");
+        // A second pass over the same slot pays nothing for landing or the route.
+        let before = run.perch_landed.len();
+        run.perch_landed.insert(i);
+        run.z = b0.z0 - 0.4;
+        run.y = b0.top + 0.05;
+        run.x = b0.x;
+        for _ in 0..30 {
+            run.tick(1.0 / 60.0);
+        }
+        assert_eq!(run.perch_landed.len(), before);
+        assert_eq!(run.perch_routed.len(), 1);
+        assert_eq!(run.sim_value()["perch"]["routes"], 1);
+        // Classic and legacy have no ledges at all.
+        let classic = NeonCat::from_json(include_str!(
+            "../tests/fixtures/neon_cat_classic_world.json"
+        ))
+        .unwrap();
+        assert!(classic.spec.perch_route.is_empty() && !classic.spec.chaser.enabled);
+    }
+
+    #[test]
+    fn a_hit_calls_the_robot_and_a_second_one_while_it_is_there_is_fatal() {
+        let mut run = full_lives();
+        assert_eq!(run.robot_t, 0.0);
+        run.crash("CRATE");
+        assert!(run.core.stats.alive);
+        assert_eq!(run.lives, 2);
+        assert!(run.robot_t > 9.0, "robot called: {}", run.robot_t);
+        assert_eq!(run.sim_value()["robot"]["fleeing"], false);
+        run.invuln = 0.0;
+        run.crash("CRATE");
+        assert!(!run.core.stats.alive, "caught by the robot");
+        // One life: no robot at all, the run just ends.
+        let mut one = full();
+        one.crash("CRATE");
+        assert!(!one.core.stats.alive);
+        assert_eq!(one.robot_t, 0.0);
+        // The old course never calls it.
+        let mut classic = NeonCat::from_json(include_str!(
+            "../tests/fixtures/neon_cat_classic_world.json"
+        ))
+        .unwrap();
+        classic.lives = 3;
+        classic.confirm();
+        classic.crash("CRATE");
+        assert_eq!(classic.robot_t, 0.0);
+    }
+
+    #[test]
+    fn the_robot_gives_up_a_meow_scares_it_and_a_ledge_wears_it_out_faster() {
+        // Gives up: after its time the next hit is a plain one again.
+        let mut run = full_lives();
+        run.crash("CRATE");
+        for _ in 0..800 {
+            run.update_robot(1.0 / 60.0);
+        }
+        assert_eq!(run.robot_t, 0.0);
+        run.invuln = 0.0;
+        run.crash("CRATE");
+        assert!(run.core.stats.alive && run.lives == 1, "a plain hit");
+        // A meow scares it off, pays, and the next hit is plain.
+        let mut run = full_lives();
+        run.crash("CRATE");
+        let score = run.core.stats.score;
+        run.take_item(ItemEffect::Meow, [run.x, 0.5, run.z]);
+        assert!(run.robot_flee > 0.0);
+        assert_eq!(run.sim_value()["robot"]["fleeing"], true);
+        assert!(run.core.stats.score >= score + run.spec.chaser.scare_score);
+        run.invuln = 0.0;
+        run.crash("CRATE");
+        assert!(run.core.stats.alive, "the scared robot cannot catch");
+        for _ in 0..90 {
+            run.update_robot(1.0 / 60.0);
+        }
+        assert_eq!(run.robot_t, 0.0, "gone");
+        // Time on a ledge or under a boost drains it faster.
+        let left = |perch: bool, boost: bool| {
+            let mut r = full_lives();
+            r.crash("CRATE");
+            r.on_perch = perch;
+            if boost {
+                r.fx[FX_BOOST] = 5.0;
+            }
+            for _ in 0..60 {
+                r.update_robot(1.0 / 60.0);
+            }
+            r.robot_t
+        };
+        let plain = left(false, false);
+        assert!((plain - (r_secs() - 1.0)).abs() < 0.05, "{plain}");
+        assert!(left(true, false) < plain - 1.0);
+        assert!(left(false, true) < plain - 1.0);
+    }
+
+    fn r_secs() -> f32 {
+        full_lives().spec.chaser.secs
+    }
+
+    #[test]
+    fn the_robot_is_inside_the_chase_camera_all_the_way_back() {
+        let mut run = full_lives();
+        run.crash("CRATE");
+        let spec = run.spec.clone();
+        let c = &spec.chaser;
+        // From just called to just before it gives up, and across the lanes.
+        for lane_x in [-2.1f32, 0.0, 2.1] {
+            for used in [0.0f32, 0.5, 0.99] {
+                let mut r = full_lives();
+                r.crash("CRATE");
+                r.x = lane_x;
+                r.robot_x = lane_x;
+                r.robot_t = c.secs * (1.0 - used);
+                r.rebuild();
+                let cam = &r.document().cameras[0];
+                let at = [r.robot_x, 0.35, r.z - r.robot_gap()];
+                let f = norm(sub(cam.target, cam.position));
+                let right = norm(cross(f, [0.0, 1.0, 0.0]));
+                let up = cross(right, f);
+                let d = sub(at, cam.position);
+                let depth = dot(d, f);
+                assert!(depth > 0.5, "in front of the camera: {depth}");
+                let ty = (cam.fov.to_radians() * 0.5).tan();
+                let ny = dot(d, up) / depth / ty;
+                let nx = dot(d, right) / depth / ty; // times the aspect: x / (ty * aspect)
+                assert!(
+                    ny.abs() < 0.95,
+                    "robot off the screen vertically: ny {ny} (gap {})",
+                    r.robot_gap()
+                );
+                // A 16:9 screen has room for every lane. A 9:16 phone is the
+                // narrowest we play on: the middle lane must fit there too.
+                assert!(
+                    (nx * 9.0 / 16.0).abs() < 0.95,
+                    "off the side (16:9): nx {nx}"
+                );
+                if lane_x == 0.0 {
+                    assert!(
+                        (nx * 16.0 / 9.0).abs() < 0.95,
+                        "off the side (9:16): nx {nx}"
+                    );
+                }
+            }
+        }
+        // And the doc really draws it, with its light.
+        run.rebuild();
+        assert!(run
+            .document()
+            .props
+            .iter()
+            .any(|p| p.id.contains("robot-beacon")));
+        let mut none = full_lives();
+        none.rebuild();
+        assert!(!none
+            .document()
+            .props
+            .iter()
+            .any(|p| p.id.contains("robot-")));
+    }
+
+    fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+        [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+    }
+    fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+        a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+    }
+    fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
+    }
+    fn norm(a: [f32; 3]) -> [f32; 3] {
+        let l = dot(a, a).sqrt().max(1e-6);
+        [a[0] / l, a[1] / l, a[2] / l]
     }
 }

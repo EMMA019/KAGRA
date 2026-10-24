@@ -1564,6 +1564,8 @@ mod tests {
         let mut w: Value = serde_json::from_str(WORLD).unwrap();
         w["game"]["runner"]["sections"] = json!([]);
         w["game"]["runner"]["obstacle_track"]["gap"] = json!(gap);
+        // A route does not fit a slot this tight, and it is not what this is about.
+        w["game"]["perch_route"] = json!([]);
         let list: Vec<Value> = w["game"]["obstacles"]
             .as_array()
             .unwrap()

@@ -2,7 +2,7 @@
   "bot": {
     "clear_rate": 0.45,
     "clear_secs": 90.0,
-    "coins_mean": 160.65,
+    "coins_mean": 184.05,
     "collisions": 11,
     "death_causes": {
       "BARRIER": 5,
@@ -23,7 +23,7 @@
     ],
     "rings_mean": 70.0,
     "runs": 20,
-    "score_mean": 13766.65,
+    "score_mean": 14000.65,
     "survival_mean_s": 68.297,
     "survival_median_s": 75.5
   },
@@ -247,10 +247,10 @@
     "draw_batches_est_p95": 14.0,
     "frames": 3599,
     "note": "wall clock; sim tick + dump rebuild only, no GPU",
-    "props_max": 385.0,
-    "props_p95": 366.0,
-    "tick_ms_p50": 0.09,
-    "tick_ms_p95": 0.124
+    "props_max": 439.0,
+    "props_p95": 391.0,
+    "tick_ms_p50": 0.105,
+    "tick_ms_p95": 0.151
   },
   "reachability": {
     "issues": [],
