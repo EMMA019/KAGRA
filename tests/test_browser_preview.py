@@ -136,6 +136,10 @@ def test_pages_and_previews_share_one_tree():
     assert "publish_preview_pages.py" in pages_yml
     assert "kagra-pages" in pages_yml
     assert "actions/deploy-pages" not in pages_yml
+    # Master serves every game at latest/ next to the Lumen root: the Pages
+    # workflow runs package_web --build-wasm, which stages it (no workflow change).
+    assert "package_web.py --game examples/neon_run_minimal.py --build-wasm" in pages_yml
+    assert "--no-latest" not in pages_yml
     assert "actions/upload-pages-artifact" not in pages_yml
     preview_yml = (ROOT / ".github/workflows/preview.yml").read_text(encoding="utf-8")
     assert "branches: [master, main]" not in preview_yml
@@ -208,3 +212,37 @@ def test_pages_remote_keeps_the_token_out_of_logs():
     )
     with pytest.raises(SystemExit):
         pages.authed_remote("git@github.com:EMMA019/KAGRA.git", secret)
+
+
+def test_root_play_html_forwards_other_games_only_on_the_hosted_site():
+    root = (ROOT / "kagra-shared/www/play.html").read_text(encoding="utf-8")
+    assert 'location.replace("latest/play.html"' in root
+    # Only a hosted ?game=<slug> other than the Lumen demo is forwarded.
+    assert 'g !== "neon_run"' in root and "github" in root
+    # The legacy entries stay where they were.
+    assert (ROOT / "kagra-shared/www/corridor.html").is_file()
+    assert (ROOT / "kagra-shared/www/crest.html").is_file()
+
+
+def test_entry_pages_forward_to_latest(tmp_path: Path):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("write_entry_pages", ROOT / "scripts/write_entry_pages.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    catalog = preview.build_preview(ROOT, tmp_path / "web" / "latest", pkg=None, require_pkg=False)
+    assert any(g["slug"] == "neon_cat" for g in catalog["games"])
+    path = mod.write_entry(tmp_path / "web", "neon_cat")
+    text = path.read_text(encoding="utf-8")
+    assert path.name == "neon_cat.html"
+    assert "latest/play.html?game=neon_cat" in text
+    with pytest.raises(SystemExit):
+        mod.write_entry(tmp_path / "web", "../x")
+    with pytest.raises(SystemExit):
+        mod.write_entry(tmp_path / "web", "no_such_game")
+
+
+def test_package_web_stages_latest_with_the_wasm_build_only():
+    src = (ROOT / "scripts/package_web.py").read_text(encoding="utf-8")
+    assert "if args.build_wasm and not args.no_latest:" in src
+    assert 'LATEST_ENTRIES = ("neon_cat", "meteor_cat")' in src

@@ -11,6 +11,9 @@ GLB and glTF files keep their repo-relative paths and are listed in
 ``assets.json`` so ``play.html`` can ``mountFile`` them before the first frame.
 A model that fails to fetch is omitted; the sim draws the primitive instead.
 
+With ``--build-wasm`` it also stages every game's browser preview under
+``latest/`` (``--no-latest`` skips it); see ``stage_latest``.
+
 GitHub Pages (``.github/workflows/pages.yml``) commits this folder to the
 ``gh-pages`` root on push to master and leaves ``pr/`` in place. The live
 site is the full tree, deployed by ``pages-deploy.yml``.
@@ -48,6 +51,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="stage the page without pkg/ (layout check; the page will not boot)",
     )
+    parser.add_argument(
+        "--no-latest",
+        action="store_true",
+        help="with --build-wasm, do not also stage every game under latest/",
+    )
     args = parser.parse_args(argv)
     if args.build_wasm and args.skip_wasm:
         print("pass only one of --build-wasm and --skip-wasm", file=sys.stderr)
@@ -73,6 +81,8 @@ def main(argv: list[str] | None = None) -> int:
         print(exc, file=sys.stderr)
         return 2
     print(f"staged {len(rels)} files -> {out}")
+    if args.build_wasm and not args.no_latest:
+        stage_latest(out)
     print(f"play:  python -m http.server -d {out} 8000")
     print("open:  http://localhost:8000/play.html")
     return 0
@@ -154,6 +164,28 @@ def stage_web(repo: Path, manifest, dest: Path, *, include_wasm: bool) -> list[s
     (dest / "README.txt").write_text(note, encoding="utf-8")
     rels.append("README.txt")
     return rels
+
+
+LATEST_ENTRIES = ("neon_cat", "meteor_cat")
+
+
+def stage_latest(out: Path) -> None:
+    """Stage every game's browser preview at ``<out>/latest`` and short entry pages.
+
+    The root ``play.html`` is the Lumen demo. ``latest/play.html?game=neon_cat``
+    is the stable address of a game on the hosted site (the same page the PR
+    previews serve), and ``neon_cat.html`` / ``?game=<slug>`` on the root
+    forward to it. ``corridor.html`` and ``crest.html`` are untouched.
+    """
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import build_browser_preview
+    import write_entry_pages
+
+    pkg = ROOT / "kagra-shared" / "www" / "pkg"
+    build_browser_preview.build_preview(ROOT, out / "latest", pkg, require_pkg=True)
+    for slug in LATEST_ENTRIES:
+        write_entry_pages.write_entry(out, slug)
+    print(f"staged every game -> {out / 'latest'} and {', '.join(s + '.html' for s in LATEST_ENTRIES)}")
 
 
 if __name__ == "__main__":
