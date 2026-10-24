@@ -30,6 +30,58 @@
       "url": "assets/audio/fire.wav"
     },
     {
+      "path": "assets/audio/hop_beat/LICENSE.txt",
+      "url": "assets/audio/hop_beat/LICENSE.txt"
+    },
+    {
+      "path": "assets/audio/hop_beat/combo.wav",
+      "url": "assets/audio/hop_beat/combo.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/fall.wav",
+      "url": "assets/audio/hop_beat/fall.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/good.wav",
+      "url": "assets/audio/hop_beat/good.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/hit.wav",
+      "url": "assets/audio/hop_beat/hit.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop.wav",
+      "url": "assets/audio/hop_beat/hop.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_beatgrid.json",
+      "url": "assets/audio/hop_beat/hop_beat_beatgrid.json"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_gameover.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_gameover.mp3"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_loop.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_loop.mp3"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_newbest.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_newbest.mp3"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_revive.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_revive.mp3"
+    },
+    {
+      "path": "assets/audio/hop_beat/land.wav",
+      "url": "assets/audio/hop_beat/land.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/perfect.wav",
+      "url": "assets/audio/hop_beat/perfect.wav"
+    },
+    {
       "path": "assets/audio/jump.wav",
       "url": "assets/audio/jump.wav"
     },

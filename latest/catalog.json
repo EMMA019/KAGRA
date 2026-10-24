@@ -89,6 +89,17 @@
       "icon": "games/python_game/icon.png"
     },
     {
+      "slug": "hop_beat",
+      "title": "Hop Beat",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "hop_beat",
+      "entry": "examples/hop_beat_minimal.py",
+      "world": "kagra-shared/tests/fixtures/hop_beat_world.json",
+      "href": "play.html?game=hop_beat",
+      "icon": "games/hop_beat/icon.png"
+    },
+    {
       "slug": "meteor_cat",
       "title": "Meteor Cat",
       "version": "0.1.0",
