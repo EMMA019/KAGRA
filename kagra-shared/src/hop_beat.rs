@@ -270,105 +270,8 @@ pub struct PlaySpec {
     pub direct: bool,
 }
 
-/// One kind of enemy. It lives on the beat grid: it stands where the phrase
-/// puts it, or steps `step_m` toward the hero on every `1 / steps_per_beat`
-/// of a beat, so the hop that clears it is still a rhythm action.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct EnemyType {
-    /// Name used by phrase items (`enemy`).
-    pub id: String,
-    /// Phrases that use it must be at least this level.
-    pub unlock_level: u32,
-    /// The hurt band above the slab (metres). `y_lo` 0 = it stands on the slab;
-    /// above 0 it hovers, and a hop that reaches the band hurts.
-    pub y_lo: f32,
-    pub y_hi: f32,
-    /// Coming down on it (within `enemies.stomp_depth` of its top) squashes
-    /// it for a bonus and a bounce. Only for enemies on the slab.
-    pub stompable: bool,
-    /// Metres it moves toward the hero at each step; 0 = stays put.
-    pub step_m: f32,
-    /// 1 = a step on every beat, 2 = on every half beat.
-    pub steps_per_beat: u32,
-    /// Steps it has walked when the hero reaches it: it appears that many steps out.
-    pub walk_steps: u32,
-    /// Picture: `slime`, `beetle` or `bat`.
-    pub look: String,
-    pub color: [u32; 3],
-}
-
-impl Default for EnemyType {
-    fn default() -> Self {
-        Self {
-            id: "slime".into(),
-            unlock_level: 0,
-            y_lo: 0.0,
-            y_hi: 0.45,
-            stompable: true,
-            step_m: 0.0,
-            steps_per_beat: 1,
-            walk_steps: 0,
-            look: "slime".into(),
-            color: [120, 240, 150],
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct EnemySpec {
-    pub types: Vec<EnemyType>,
-    /// How tall the hero is where a hovering enemy is concerned (metres).
-    pub body_h: f32,
-    /// A stomp counts when the hero's feet are this close under the enemy's top.
-    pub stomp_depth: f32,
-    pub stomp_score: u32,
-    /// How high the bounce after a stomp goes (metres above the line from the stomp to the landing).
-    pub bounce_height: f32,
-    /// Beats a bounce can run past the hop's landing; the phrase check keeps
-    /// the next press at least this far away from a stompable enemy.
-    pub bounce_beats: f32,
-    /// Free beats kept between an enemy's hop and the hops before and after it.
-    pub rest_beats: f32,
-}
-
-impl Default for EnemySpec {
-    fn default() -> Self {
-        Self {
-            types: vec![
-                EnemyType::default(),
-                EnemyType {
-                    id: "beetle".into(),
-                    unlock_level: 1,
-                    y_hi: 0.5,
-                    step_m: 1.0,
-                    steps_per_beat: 2,
-                    walk_steps: 8,
-                    look: "beetle".into(),
-                    color: [255, 170, 80],
-                    ..EnemyType::default()
-                },
-                EnemyType {
-                    id: "bat".into(),
-                    unlock_level: 2,
-                    y_lo: 1.45,
-                    y_hi: 2.1,
-                    stompable: false,
-                    look: "bat".into(),
-                    color: [190, 130, 255],
-                    ..EnemyType::default()
-                },
-            ],
-            body_h: 0.45,
-            stomp_depth: 0.3,
-            stomp_score: 150,
-            bounce_height: 0.7,
-            bounce_beats: 0.5,
-            rest_beats: 0.5,
-        }
-    }
-}
+use crate::game_core::enemies::{self as foes, HeroBox, MAX_WALK_M};
+pub use crate::game_core::enemies::{EnemySpec, EnemyType, Touch};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -587,61 +490,8 @@ impl HopSpec {
     }
 
     fn validate_enemies(&self) -> Result<(), String> {
-        let e = &self.enemies;
-        finite_in("enemies.body_h", e.body_h, 0.1, 2.0)?;
-        finite_in("enemies.stomp_depth", e.stomp_depth, 0.05, 1.0)?;
-        finite_in("enemies.bounce_height", e.bounce_height, 0.0, 3.0)?;
-        finite_in("enemies.bounce_beats", e.bounce_beats, 0.0, 4.0)?;
-        finite_in("enemies.rest_beats", e.rest_beats, 0.0, 4.0)?;
-        if e.types.len() > 8 {
-            return Err("hop spec: enemies.types holds at most 8 kinds".into());
-        }
-        for (i, t) in e.types.iter().enumerate() {
-            let n = format!("enemies.types[{i}]");
-            if t.id.is_empty()
-                || t.id.len() > 16
-                || !t
-                    .id
-                    .chars()
-                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
-            {
-                return Err(format!("hop spec: {n}.id is 1..=16 of a-z 0-9 _"));
-            }
-            if e.types[..i].iter().any(|o| o.id == t.id) {
-                return Err(format!("hop spec: {n}.id {:?} is used twice", t.id));
-            }
-            if t.unlock_level > 20 {
-                return Err(format!("hop spec: {n}.unlock_level must be 0..=20"));
-            }
-            finite_in(&format!("{n}.y_lo"), t.y_lo, 0.0, 4.0)?;
-            finite_in(&format!("{n}.y_hi"), t.y_hi, 0.05, 4.0)?;
-            if t.y_hi <= t.y_lo {
-                return Err(format!("hop spec: {n}.y_hi must be above y_lo"));
-            }
-            if t.stompable && t.y_lo > 0.0 {
-                return Err(format!(
-                    "hop spec: {n}: only an enemy on the slab can be stomped"
-                ));
-            }
-            finite_in(&format!("{n}.step_m"), t.step_m, 0.0, 4.0)?;
-            if !(1..=4).contains(&t.steps_per_beat) || t.walk_steps > 16 {
-                return Err(format!(
-                    "hop spec: {n}.steps_per_beat 1..=4, walk_steps 0..=16"
-                ));
-            }
-            if t.step_m * t.walk_steps as f32 > MAX_WALK_M {
-                return Err(format!(
-                    "hop spec: {n}: step_m * walk_steps must be at most {MAX_WALK_M} m"
-                ));
-            }
-            if !["slime", "beetle", "bat"].contains(&t.look.as_str()) {
-                return Err(format!("hop spec: {n}.look is slime|beetle|bat"));
-            }
-            if t.color.iter().any(|c| *c > 255) {
-                return Err(format!("hop spec: {n}.color is 0..=255 per channel"));
-            }
-        }
-        Ok(())
+        self.enemies
+            .validate("hop spec", &["slime", "beetle", "bat"])
     }
 
     /// How long a bounce that starts at song time `t` lasts: it comes down on
@@ -653,7 +503,7 @@ impl HopSpec {
 
     /// Index of the enemy type called `id`.
     pub fn enemy_index(&self, id: &str) -> Option<usize> {
-        self.enemies.types.iter().position(|t| t.id == id)
+        self.enemies.index(id)
     }
 
     /// The phrases in use: the spec's, or the built-in set.
@@ -691,8 +541,7 @@ impl HopSpec {
                 out.push(format!("phrase {pi}: weight must be 1..=16"));
             }
             let end = p.bars as f32 * bpb;
-            let mut free_from = 0.0_f32;
-            let mut prev_enemy = false;
+            let mut slots: Vec<foes::Slot> = Vec::new();
             let mut sound = true;
             for (ii, it) in p.items.iter().enumerate() {
                 let where_ = format!("phrase {pi} item {ii}");
@@ -714,50 +563,22 @@ impl HopSpec {
                             sound = false;
                             continue;
                         }
-                        Some(i) => {
-                            if p.level < self.enemies.types[i].unlock_level {
-                                out.push(format!(
-                                    "{where_}: {} is unlocked at level {} but the phrase is level {}",
-                                    it.enemy, self.enemies.types[i].unlock_level, p.level
-                                ));
-                            }
-                            ety = Some(i);
-                        }
+                        Some(i) => ety = Some(i),
                     }
                 } else if !it.enemy.is_empty() {
                     out.push(format!("{where_}: only kind enemy names an enemy"));
                 }
                 let probe = self.probe(kind, hop, it.beats, it.beat, ety);
                 let air = self.arc(hop).air_beats;
+                slots.push(foes::Slot {
+                    item: ii,
+                    enemy: ety,
+                    at: it.beat,
+                    len: air,
+                });
                 if !self.needs_press(&probe) {
-                    // A flyer: the hops around it must stay clear (the sequence check),
-                    // and it must be inside the phrase.
-                    if it.beat + air > end + 0.001 {
-                        out.push(format!("{where_}: runs past the phrase end"));
-                    }
+                    // A flyer: the hops around it must stay clear (the sequence check).
                     continue;
-                }
-                let is_enemy = kind == Kind::Enemy;
-                let rest = if is_enemy || prev_enemy {
-                    self.enemies.rest_beats
-                } else {
-                    0.0
-                };
-                if it.beat + 0.001 < free_from + rest {
-                    out.push(format!(
-                        "{where_}: starts before the last hop lands{}",
-                        if rest > 0.0 { " (plus rest_beats)" } else { "" }
-                    ));
-                }
-                let bounce = if ety.is_some_and(|i| self.enemies.types[i].stompable) {
-                    self.enemies.bounce_beats
-                } else {
-                    0.0
-                };
-                free_from = it.beat + air + bounce;
-                prev_enemy = is_enemy;
-                if free_from > end + 0.001 {
-                    out.push(format!("{where_}: lands after the phrase ends"));
                 }
                 let (lo, hi) = self.window_secs_obst(&probe);
                 let width_ms = (hi - lo).max(0.0) * 1000.0;
@@ -768,6 +589,13 @@ impl HopSpec {
                     ));
                 }
             }
+            out.extend(foes::spacing_problems(
+                &self.enemies,
+                &format!("phrase {pi}"),
+                p.level,
+                end,
+                &slots,
+            ));
             if sound {
                 out.extend(self.sequence_problems(pi, p));
             }
@@ -885,17 +713,13 @@ impl HopSpec {
         let obst = self.phrase_obstacles(p, base);
         let half = (self.judge.perfect_ms * 0.001).min(0.1);
         let mut out = Vec::new();
-        let n = (half / 0.005).ceil() as i32;
-        for k in -n..=n {
-            let off = (k as f32 * 0.005).clamp(-half, half);
-            if !self.sequence_survives(&obst, off) {
-                out.push(format!(
-                    "phrase {pi}: a bot pressing {:.0} ms {} the ideal beat takes damage",
-                    off.abs() * 1000.0,
-                    if off < 0.0 { "before" } else { "after" }
-                ));
-                break;
-            }
+        let hook = PhraseRun { spec: self, obst };
+        if let Some(off) = foes::sweep(&hook, half, 0.005) {
+            out.push(format!(
+                "phrase {pi}: a bot pressing {:.0} ms {} the ideal beat takes damage",
+                off.abs() * 1000.0,
+                if off < 0.0 { "before" } else { "after" }
+            ));
         }
         out
     }
@@ -936,17 +760,10 @@ impl HopSpec {
         let Some(et) = self.enemies.types.get(o.ety) else {
             return Some(0.0);
         };
-        if et.step_m <= 0.0 {
-            return Some(0.0);
-        }
         let spb = et.steps_per_beat.max(1) as f32;
-        let k = (t / self.beat_secs() * spb).floor() as i64;
+        let now = (t / self.beat_secs() * spb).floor() as i64;
         let meet = ((o.start + o.end) * 0.5 / self.hero.beat_len_m * spb).floor() as i64;
-        if k < meet - et.walk_steps as i64 {
-            None
-        } else {
-            Some(et.step_m * (meet - k) as f32)
-        }
+        self.enemies.walk_dx(o.ety, now, meet)
     }
 
     /// What the hero at (`x`, `y`) touches of `o` at song time `t`.
@@ -964,18 +781,13 @@ impl HopSpec {
                 let Some(dx) = self.enemy_dx(o, t) else {
                     return Touch::None;
                 };
-                if !(x > o.start + dx - hw && x < o.end + dx + hw) {
-                    return Touch::None;
-                }
-                if !(y + self.enemies.body_h > o.y_lo && y < o.height) {
-                    return Touch::None;
-                }
-                let stompable = self.enemies.types.get(o.ety).is_some_and(|t| t.stompable);
-                if stompable && descending && y >= o.height - self.enemies.stomp_depth {
-                    Touch::Stomp
-                } else {
-                    Touch::Hit
-                }
+                let hero = HeroBox {
+                    x,
+                    y,
+                    half_width: hw,
+                    descending,
+                };
+                self.enemies.touch(o.ety, o.start + dx, o.end + dx, &hero)
             }
         }
     }
@@ -1043,16 +855,17 @@ impl HopSpec {
     }
 }
 
-/// What the hero touches of an obstacle.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Touch {
-    None,
-    Hit,
-    Stomp,
+/// A phrase played by the checker's bot: the kit's side of [`foes::Clearable`].
+struct PhraseRun<'a> {
+    spec: &'a HopSpec,
+    obst: Vec<Obst>,
 }
 
-/// The farthest an enemy may stand from its meeting spot (steps x metres).
-const MAX_WALK_M: f32 = 12.0;
+impl foes::Clearable for PhraseRun<'_> {
+    fn survives(&self, offset: f32) -> bool {
+        self.spec.sequence_survives(&self.obst, offset)
+    }
+}
 
 /// `kind` and `hop` of an item, or None if either word is wrong.
 pub fn parse_item(it: &Item) -> Option<(Kind, Hop)> {
@@ -1449,17 +1262,9 @@ impl Course {
             if pool.len() > 1 {
                 pool.retain(|&i| i != self.last);
             }
-            let total: u32 = pool.iter().map(|&i| self.phrases[i].weight.max(1)).sum();
-            let mut roll = self.rand() % total.max(1);
-            let mut pick = pool[0];
-            for &i in &pool {
-                let w = self.phrases[i].weight.max(1);
-                if roll < w {
-                    pick = i;
-                    break;
-                }
-                roll -= w;
-            }
+            let weights: Vec<u32> = pool.iter().map(|&i| self.phrases[i].weight).collect();
+            let roll = self.rand();
+            let pick = pool[foes::weighted_pick(&weights, roll)];
             self.last = pick;
             let p = self.phrases[pick].clone();
             for it in &p.items {
@@ -4092,6 +3897,24 @@ mod tests {
             item(5.5, "gap", 1.0, "tap", "")
         ])
         .is_empty());
+    }
+
+    #[test]
+    fn a_fourth_enemy_is_only_json() {
+        // a quick red beetle: four small steps a beat, no new code or model
+        let v = json!({"enemies": {"types": [
+            {"id": "slime"},
+            {"id": "dasher", "look": "beetle", "unlock_level": 0, "y_hi": 0.5, "step_m": 0.75,
+             "steps_per_beat": 4, "walk_steps": 12, "color": [255, 70, 70]}
+        ]}, "course": {"phrases": [
+            {"level": 0, "bars": 2, "items": [
+                {"beat": 1.0, "kind": "enemy", "beats": 0.2, "hop": "tap", "enemy": "dasher"},
+                {"beat": 3.0, "kind": "enemy", "beats": 0.2, "hop": "tap", "enemy": "slime"}]}]}});
+        let spec = HopSpec::from_value(&v).unwrap();
+        assert_eq!(spec.enemy_index("dasher"), Some(1));
+        assert_eq!(spec.course_problems(), Vec::<String>::new());
+        let g = drive(spec, 0.0, 2.0);
+        assert_eq!(g.lives(), 3, "the perfect press clears it");
     }
 
     #[test]

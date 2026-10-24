@@ -114,6 +114,8 @@ posts). A model the bundle could not fetch does not stop the game from starting.
 
 ## Enemies
 
+The enemy logic is a shared, genre-neutral module (`game_core::enemies`). See [enemy_kit.md](../enemy_kit.md) for the module boundary and how another kit plugs in.
+
 Three creatures, all defined in the spec (`enemies.types`, `course.phrases[].items[].enemy`,
 `course.phrases[].weight`), none hard-coded. They stand and move on the beat grid, so
 getting past one is still a rhythm action, and the one button is unchanged.
