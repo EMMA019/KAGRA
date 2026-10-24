@@ -122,6 +122,18 @@
       </div>
     </div>
   </div>
+  <script>
+    /* This root page is the Lumen (neon_run) demo. On the hosted site any other
+       ?game=<slug> (Neon Cat, Meteor Cat, ...) lives in the full browser preview
+       that Pages builds from master into latest/. Local and packaged copies have
+       no latest/, so they are left alone. */
+    (function () {
+      var g = new URLSearchParams(location.search).get("game");
+      if (g && g !== "neon_run" && /\.github\.io$/.test(location.hostname)) {
+        location.replace("latest/play.html" + location.search + location.hash);
+      }
+    })();
+  </script>
   <script src="playtest.js"></script>
   <script type="module">
     import init, { WasmSession } from "./pkg/kagra_shared.js";
