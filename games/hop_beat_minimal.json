@@ -5,7 +5,8 @@
   "entry": "examples/hop_beat_minimal.py",
   "world": "kagra-shared/tests/fixtures/hop_beat_world.json",
   "bundle_assets": [
-    "assets/audio/hop_beat"
+    "assets/audio/hop_beat",
+    "assets/models/hop_beat"
   ],
   "platform": {
     "ads": {

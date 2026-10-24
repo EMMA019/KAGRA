@@ -639,10 +639,18 @@
           const item = queue.shift();
           const path = typeof item === "string" ? item : item.path;
           const url = typeof item === "string" ? item : item.url;
-          const res = await fetch(fileUrl(site, url));
-          if (!res.ok) throw new Error(`${url} ${res.status}`);
-          const bytes = new Uint8Array(await res.arrayBuffer());
-          session.mountFile(path, bytes);
+          // A model is a nicety, not a requirement: games draw primitives without it.
+          const optional = /\.glb$/i.test(path);
+          let bytes = null;
+          try {
+            const res = await fetch(fileUrl(site, url));
+            if (!res.ok) throw new Error(`${url} ${res.status}`);
+            bytes = new Uint8Array(await res.arrayBuffer());
+          } catch (err) {
+            if (!optional) throw err;
+            console.warn("kagra: optional model not loaded", path, err);
+          }
+          if (bytes) session.mountFile(path, bytes);
           done += 1;
           boot.textContent = t("boot.progress", { done, total: files.length });
         }

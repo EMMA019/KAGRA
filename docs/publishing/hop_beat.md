@@ -100,3 +100,14 @@ AI サービスを呼び出すことはありません。スクリプトとロ�
   and the ad flow with a real SDK (the PR preview has no provider; use
   `?dev=1&ads=mock` to see the Continue button).
 - Preview videos or GIFs have not been made.
+
+## Models
+
+The bunny, the three rooftop towers (with lit-window panels) and the lamp post are
+`assets/models/hop_beat/*.glb`, written by `python3 tools/gen_assets/hop_models.py`
+(plain Python, CC0, no input meshes; `--check` fails on drift). They add about 0.38 MB
+raw to the bundle and are listed in the asset ledger as `project-hop-beat-models`.
+
+Every model is optional. If a file is missing or does not parse, the page logs one
+warning and HOP-BEAT draws that part with its primitives (ball hero, box towers, box
+posts). A model the bundle could not fetch does not stop the game from starting.

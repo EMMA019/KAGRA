@@ -957,6 +957,35 @@
     "assets/audio/hop_beat/*.wav"
    ],
    "verified_how": "Synthesised by tools/gen_assets/hop_audio.py from sine, triangle, saw and noise maths (no samples, no input audio); the script's --check rebuilds every file and compares bytes."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "verified": "checked",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-25",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "notes": "",
+   "id": "project-hop-beat-models",
+   "name": "HOP-BEAT models (bunny, rooftop towers, lit windows, lamp post)",
+   "paths": [
+    "assets/models/hop_beat/*.glb"
+   ],
+   "verified_how": "Written by tools/gen_assets/hop_models.py from flat-coloured primitives in plain Python (no input meshes, no network); the script's --check rebuilds every file and compares bytes. The bunny and the skyline are original shapes."
   }
  ]
 }

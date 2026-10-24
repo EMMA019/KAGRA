@@ -2090,6 +2090,81 @@ fn light(
 /// Track lateral half-width.
 const TRACK_HALF: f32 = 1.7;
 
+/// The models (`tools/gen_assets/hop_models.py`). Each one is optional: when a
+/// file is missing or does not parse the picture falls back to primitives.
+const BUNNY_GLB: &str = "assets/models/hop_beat/hop_bunny.glb";
+const POST_GLB: &str = "assets/models/hop_beat/hop_post.glb";
+/// Skyline variants: (tower, lit windows), unit footprint 3 x 3 m, base on y = 0.
+const TOWER_GLBS: [(&str, &str); 3] = [
+    (
+        "assets/models/hop_beat/hop_tower_a.glb",
+        "assets/models/hop_beat/hop_windows_a.glb",
+    ),
+    (
+        "assets/models/hop_beat/hop_tower_b.glb",
+        "assets/models/hop_beat/hop_windows_b.glb",
+    ),
+    (
+        "assets/models/hop_beat/hop_tower_c.glb",
+        "assets/models/hop_beat/hop_windows_c.glb",
+    ),
+];
+
+/// True when `path` is a mounted or on-disk GLB that parses. A miss is not
+/// cached, so a wasm page can mount the file after boot.
+fn glb_ready(path: &str) -> bool {
+    use std::collections::HashSet;
+    use std::sync::{Mutex, OnceLock};
+    static OK: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    static WARNED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    let ok = OK.get_or_init(|| Mutex::new(HashSet::new()));
+    if let Ok(guard) = ok.lock() {
+        if guard.contains(path) {
+            return true;
+        }
+    }
+    let parsed = crate::assets::resolve_asset(path)
+        .and_then(|file| crate::assets::read_bytes(&file).ok())
+        .map(|bytes| crate::gltf_load::mesh_from_glb(&bytes).is_ok())
+        .unwrap_or(false);
+    if parsed {
+        if let Ok(mut guard) = ok.lock() {
+            guard.insert(path.to_string());
+        }
+        return true;
+    }
+    // Say so once per file: a missing model is a quiet downgrade, not a crash.
+    let warned = WARNED.get_or_init(|| Mutex::new(HashSet::new()));
+    if let Ok(mut guard) = warned.lock() {
+        if guard.insert(path.to_string()) {
+            let msg = format!("hop beat: model {path} is not available, using primitives");
+            #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+            web_sys::console::warn_1(&msg.into());
+            #[cfg(not(all(target_arch = "wasm32", feature = "wasm")))]
+            eprintln!("{msg}");
+        }
+    }
+    false
+}
+
+/// A `prop` drawn from a GLB instead of a primitive.
+#[allow(clippy::too_many_arguments)]
+fn glb_prop(
+    id: &str,
+    path: &str,
+    name: &str,
+    pos: [f32; 3],
+    scale: [f32; 3],
+    color: [u32; 3],
+    emissive: f32,
+    emissive_color: Option<[f32; 3]>,
+) -> WorldProp {
+    let mut p = prop(id, "box", name, pos, scale, color, emissive, 0.6, 0.1);
+    p.gltf = Some(path.to_string());
+    p.emissive_color = emissive_color;
+    p
+}
+
 impl HopBeat {
     /// Where the camera looks from. The course runs along +Z.
     fn view_x(&self) -> f32 {
@@ -2177,6 +2252,29 @@ impl HopBeat {
             14.0,
             false,
         ));
+
+        // The renderer rebuilds its glTF slot table whenever the list of distinct
+        // models changes. One tiny buried prop per model, first in the list, keeps
+        // the table constant while towers and posts scroll in and out.
+        let mut models: Vec<&str> = vec![BUNNY_GLB, POST_GLB];
+        for (tower, windows) in TOWER_GLBS {
+            models.push(tower);
+            models.push(windows);
+        }
+        let models: Vec<&str> = models.into_iter().filter(|m| glb_ready(m)).collect();
+        for (i, m) in models.iter().enumerate() {
+            doc.props.push(glb_prop(
+                &format!("anchor-{i}"),
+                m,
+                "anchor",
+                [0.0, -60.0, -60.0],
+                [1e-4; 3],
+                [0, 0, 0],
+                0.0,
+                None,
+            ));
+        }
+        let have_post = models.contains(&POST_GLB);
 
         // ---- slabs between the gaps
         let lo = hx - BEHIND_M;
@@ -2297,17 +2395,30 @@ impl HopBeat {
             let k = (z / step) as i64;
             let on = (1.0 - ((z - hx).abs() / 6.0)).clamp(0.0, 1.0);
             for side in [-1.0_f32, 1.0] {
-                doc.props.push(prop(
-                    &format!("post-{n}"),
-                    "box",
-                    "post",
-                    [side * (TRACK_HALF + 0.9), 0.9, z],
-                    [0.22, 1.8, 0.22],
-                    mix(look.slab, [255, 255, 255], 0.1),
-                    0.0,
-                    0.5,
-                    0.2,
-                ));
+                if have_post {
+                    doc.props.push(glb_prop(
+                        &format!("post-{n}"),
+                        POST_GLB,
+                        "post",
+                        [side * (TRACK_HALF + 0.9), 0.0, z],
+                        [1.0; 3],
+                        [255, 255, 255],
+                        0.0,
+                        None,
+                    ));
+                } else {
+                    doc.props.push(prop(
+                        &format!("post-{n}"),
+                        "box",
+                        "post",
+                        [side * (TRACK_HALF + 0.9), 0.9, z],
+                        [0.22, 1.8, 0.22],
+                        mix(look.slab, [255, 255, 255], 0.1),
+                        0.0,
+                        0.5,
+                        0.2,
+                    ));
+                }
                 doc.props.push(prop(
                     &format!("lamp-{n}"),
                     "sphere",
@@ -2328,8 +2439,8 @@ impl HopBeat {
             "moon",
             "sphere",
             "moon",
-            [-16.0, 20.0, hx + 80.0],
-            [9.0, 9.0, 9.0],
+            [-12.0, 15.0, hx + 60.0],
+            [7.0, 7.0, 7.0],
             [255, 236, 200],
             1.1 + 0.4 * pulse,
             0.6,
@@ -2339,22 +2450,52 @@ impl HopBeat {
             let sx = if i % 2 == 0 { -1.0 } else { 1.0 };
             let off = 9.0 + ((i * 7) % 5) as f32 * 3.5;
             let hgt = 3.0 + ((i * 13) % 7) as f32 * 1.8;
-            let zz = (hx * 0.9 / 12.0).floor() * 12.0 + i as f32 * 8.0 - 20.0;
-            doc.props.push(prop(
-                &format!("tower-{i}"),
-                "box",
-                "tower",
-                [sx * off, hgt * 0.5 - 1.0, zz + hx * 0.1 % 12.0],
-                [3.0, hgt, 3.0],
-                mix([30, 26, 70], look.accent, ((i * 3) % 5) as f32 * 0.04),
-                0.15 + 0.2 * (((i + (beat as i32)) % 3) as f32 / 3.0),
-                0.7,
-                0.0,
-            ));
+            let zz = (hx * 0.9 / 12.0).floor() * 12.0 + i as f32 * 8.0 - 20.0 + hx * 0.1 % 12.0;
+            let lit = 0.15 + 0.2 * (((i + (beat as i32)) % 3) as f32 / 3.0);
+            let (tower, windows) = TOWER_GLBS[(i as usize) % TOWER_GLBS.len()];
+            if models.contains(&tower) && models.contains(&windows) {
+                // The model's own height, not a stretched box: the roof clutter keeps its shape.
+                let k = 1.0 + ((i * 5) % 3) as f32 * 0.15;
+                let tint = mix([255, 255, 255], look.accent, ((i * 3) % 5) as f32 * 0.05);
+                doc.props.push(glb_prop(
+                    &format!("tower-{i}"),
+                    tower,
+                    "tower",
+                    [sx * off, -1.0, zz],
+                    [1.0, k, 1.0],
+                    tint,
+                    0.0,
+                    None,
+                ));
+                let glow = if i % 3 == 0 { look.glow } else { look.accent };
+                let c = glow.map(|v| (v as f32 / 255.0).powf(2.2));
+                doc.props.push(glb_prop(
+                    &format!("windows-{i}"),
+                    windows,
+                    "windows",
+                    [sx * off, -1.0, zz],
+                    [1.0, k, 1.0],
+                    mix([255, 255, 255], glow, 0.7),
+                    0.7 + 1.6 * lit,
+                    Some(c),
+                ));
+            } else {
+                doc.props.push(prop(
+                    &format!("tower-{i}"),
+                    "box",
+                    "tower",
+                    [sx * off, hgt * 0.5 - 1.0, zz],
+                    [3.0, hgt, 3.0],
+                    mix([30, 26, 70], look.accent, ((i * 3) % 5) as f32 * 0.04),
+                    lit,
+                    0.7,
+                    0.0,
+                ));
+            }
         }
 
         // ---- hero
-        self.push_hero(&mut doc, hx);
+        self.push_hero(&mut doc, hx, models.contains(&BUNNY_GLB));
         // ---- sparks (kit x = track, kit z = lateral)
         for (i, sp) in self.core.juice.sparks.iter().enumerate() {
             let fade = 1.0 - (sp.life / sp.max_life).clamp(0.0, 1.0);
@@ -2374,7 +2515,7 @@ impl HopBeat {
         self.doc = doc;
     }
 
-    fn push_hero(&self, doc: &mut WorldDoc, hx: f32) {
+    fn push_hero(&self, doc: &mut WorldDoc, hx: f32, glb: bool) {
         let look = &self.spec.look;
         let title = self.flow.phase == FlowPhase::Title;
         let (mut y, mut squash, mut stretch) = (self.y + self.y_vis_off, self.land_squash, 0.0);
@@ -2420,6 +2561,29 @@ impl HopBeat {
                     0.0,
                 ));
             }
+        }
+        if glb {
+            // The model is 0.8 m tall with its feet on y = 0, like the ball below.
+            let flash = self.hit_flash.clamp(0.0, 1.0);
+            let beat = 0.12 * self.beat_flash;
+            let (em, col) = if flash > 0.2 {
+                (0.5 + 0.8 * flash, [1.0, 1.0, 1.0])
+            } else if blink {
+                (0.0, [1.0, 1.0, 1.0])
+            } else {
+                (beat, look.glow.map(|v| (v as f32 / 255.0).powf(2.2)))
+            };
+            doc.props.push(glb_prop(
+                "hero-body",
+                BUNNY_GLB,
+                "hero",
+                [0.0, gy, z],
+                [sx * 1.2, sy * 1.2, sx * 1.2],
+                [255, 255, 255],
+                em,
+                Some(col),
+            ));
+            return;
         }
         doc.props.push(prop(
             "hero-body",
@@ -2719,6 +2883,62 @@ mod tests {
             let _ = g.hud(w, h, true);
             let _ = g.hud(w, h, false);
         }
+    }
+
+    #[test]
+    fn the_models_load_are_the_right_size_and_the_picture_uses_them() {
+        let mut files = vec![BUNNY_GLB.to_string(), POST_GLB.to_string()];
+        for (t, w) in TOWER_GLBS {
+            files.push(t.to_string());
+            files.push(w.to_string());
+        }
+        for f in &files {
+            assert!(glb_ready(f), "{f} did not load");
+            let file = crate::assets::resolve_asset(f).unwrap();
+            let bytes = crate::assets::read_bytes(&file).unwrap();
+            assert!(bytes.len() < 200_000, "{f} is {} bytes", bytes.len());
+            let b = crate::gltf_load::mesh_from_glb(&bytes).unwrap().bounds();
+            assert!(b.min.y > -0.05, "{f} sinks below its base ({})", b.min.y);
+            if f == BUNNY_GLB {
+                // 1.0-1.3 m tall, feet on y = 0, much narrower than the track
+                assert!(b.max.y > 0.9 && b.max.y < 1.4, "bunny {}", b.max.y);
+                assert!(b.max.x - b.min.x < 1.0);
+            }
+        }
+        let mut g = fresh();
+        g.confirm();
+        run(&mut g, 3.0);
+        let d = g.document();
+        let has = |id: &str| d.props.iter().any(|p| p.id == id && p.gltf.is_some());
+        assert!(has("prop:hero-body"));
+        assert!(!d.props.iter().any(|p| p.id == "prop:hero-ear-0"));
+        assert!(d
+            .props
+            .iter()
+            .any(|p| p.name == "tower" && p.gltf.is_some()));
+        assert!(d
+            .props
+            .iter()
+            .any(|p| p.name == "windows" && p.gltf.is_some()));
+        assert!(d.props.iter().any(|p| p.name == "post" && p.gltf.is_some()));
+        // the slot table sees the same models on every frame
+        let specs = |d: &crate::world_doc::WorldDoc| {
+            let mut v: Vec<String> = d.props.iter().filter_map(|p| p.gltf.clone()).collect();
+            v.sort();
+            v.dedup();
+            v
+        };
+        let first = specs(d);
+        for _ in 0..600 {
+            g.tick(1.0 / 60.0);
+            assert_eq!(specs(g.document()), first);
+        }
+    }
+
+    #[test]
+    fn a_missing_model_is_not_ready_and_never_panics() {
+        assert!(!glb_ready("assets/models/hop_beat/does_not_exist.glb"));
+        assert!(!glb_ready(""));
     }
 
     #[test]
