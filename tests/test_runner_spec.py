@@ -246,6 +246,8 @@ def test_perch_route_and_chaser_match_rust_and_are_checked():
         {"perch_route": ["pipe"] * 7},
         {"perch_rules": {"step_len": 9.0}},
         {"perch_rules": {"half_width": 2.0}},
+        {"perch_rules": {"ramp_len": -0.5}},
+        {"perch_rules": {"ramp_len": 2.5}},  # more than half a step
         {"chaser": {"secs": 0.5}},
         {"chaser": {"near_gap": 4.0, "far_gap": 3.0}},
         {"chaser": {"far_gap": 2.6}},

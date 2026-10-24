@@ -145,6 +145,9 @@ pub struct NeonCat {
     perch_routed: HashSet<i32>,
     /// Fraction of a point owed for time on a ledge.
     perch_acc: f32,
+    /// How far below the true height the cat is drawn while it glides up onto
+    /// a ledge it ran or stepped into sideways; eases to 0 in a moment.
+    step_off: f32,
     /// Standing on a ledge right now.
     on_perch: bool,
     /// The cleaning robot: seconds of chase left (0 = none), seconds of
@@ -324,6 +327,7 @@ impl NeonCat {
             perch_landed: HashSet::new(),
             perch_routed: HashSet::new(),
             perch_acc: 0.0,
+            step_off: 0.0,
             on_perch: false,
             robot_t: 0.0,
             robot_flee: 0.0,
@@ -766,6 +770,7 @@ impl NeonCat {
         self.perch_landed.clear();
         self.perch_routed.clear();
         self.perch_acc = 0.0;
+        self.step_off = 0.0;
         self.on_perch = false;
         self.robot_t = 0.0;
         self.robot_flee = 0.0;
@@ -1137,6 +1142,16 @@ impl NeonCat {
             self.vy = 0.0;
         }
         self.core.juice.land_squash = (self.core.juice.land_squash - dt).max(0.0);
+        self.step_off = if self.y > self.ground + 0.05 {
+            0.0
+        } else {
+            let k = (self.step_off * (-dt * 11.0).exp()).min(self.step_off);
+            if k < 0.004 {
+                0.0
+            } else {
+                k
+            }
+        };
         let (x0, z0) = (self.x, self.z);
         self.x += self.vx * dt;
         if self.x.abs() > self.spec.runner.lanes.limit {
@@ -1169,6 +1184,14 @@ impl NeonCat {
             // Step up onto a ramp or a train top that came under the feet.
             let g1 = self.ground_at(self.x, self.z);
             if self.y < g1 && self.vy <= 0.0 {
+                // Running or stepping sideways into a ledge lifts the cat at
+                // once for the sim; it is drawn gliding up over a moment. The
+                // slope in front of a step is continuous and needs none.
+                let slope = self.perch_ramp(self.x, self.z);
+                let lift = g1 - self.y.max(slope);
+                if lift > 0.02 && self.vy > -1.0 {
+                    self.step_off = (self.step_off + lift).min(0.8);
+                }
                 self.y = g1;
                 self.vy = 0.0;
             } else if self.y < g1 && self.vy > 0.0 {
@@ -1180,6 +1203,10 @@ impl NeonCat {
                         self.vy = 0.0;
                         self.core.juice.land_squash = self.feel.land_squash_secs;
                     }
+                } else if self.perch_ramp(self.x, self.z) >= g1 - 1e-4 {
+                    // A low hop that meets the slope comes down on it.
+                    self.y = g1;
+                    self.vy = 0.0;
                 }
             }
             self.ground = g1;
@@ -1257,7 +1284,10 @@ impl NeonCat {
 
     /// Height of the highest ramp or ride top under the feet at `(x, z)`.
     fn ground_at(&self, x: f32, z: f32) -> f32 {
-        let ledge = self.perch_support(x, z).map_or(0.0, |p| p.2);
+        let ledge = self
+            .perch_support(x, z)
+            .map_or(0.0, |p| p.2)
+            .max(self.perch_ramp(x, z));
         if !self.spec.has_rideables() {
             return ledge;
         }
@@ -1279,6 +1309,33 @@ impl NeonCat {
             }
         }
         best.max(ledge)
+    }
+
+    /// Height of the slope in front of a rising route step at `(x, z)`, 0 off
+    /// one. The slope runs straight from the top of the step before (the
+    /// street for the first step) up to the front edge of the step.
+    fn perch_ramp(&self, x: f32, z: f32) -> f32 {
+        let rl = self.spec.perch_rules.ramp_len;
+        if rl <= 0.0 || self.spec.perch_route.is_empty() {
+            return 0.0;
+        }
+        let track = &self.spec.runner.obstacle_track;
+        let i0 = near_index(z, track.z0, track.gap).saturating_sub(1);
+        let mut best = 0.0f32;
+        for i in i0..i0 + 3 {
+            let Some(steps) = perch_route_at(&self.spec, i) else {
+                continue;
+            };
+            for (n, b) in steps.iter().enumerate() {
+                let prev = if n == 0 { 0.0 } else { steps[n - 1].top };
+                if b.top <= prev || (x - b.x).abs() > b.half_width || z < b.z0 - rl || z >= b.z0 {
+                    continue;
+                }
+                let u = (z - (b.z0 - rl)) / rl;
+                best = best.max(prev + (b.top - prev) * u);
+            }
+        }
+        best
     }
 
     /// The perch ledge under `(x, z)` that can hold the cat: the route slot,
@@ -1310,10 +1367,21 @@ impl NeonCat {
         best
     }
 
+    /// Where the flat top of step `n` ends: its far edge, or where the slope
+    /// up to the next step starts (a cat coming down there lands on that
+    /// slope, not on this step).
+    fn flat_end(&self, steps: &[PerchBox], n: usize) -> f32 {
+        let b = &steps[n];
+        match steps.get(n + 1) {
+            Some(next) if next.top > b.top => b.z1 - self.spec.perch_rules.ramp_len,
+            _ => b.z1,
+        }
+    }
+
     /// The first route step ahead that a jump with take-off speed `vy` from
     /// `y0` can get onto: it starts ahead of the feet and rises above them,
-    /// but not above the top of the arc. `(z0, z1, top)`.
-    fn perch_target(&self, y0: f32, vy: f32) -> Option<(f32, f32, f32)> {
+    /// but not above the top of the arc. `(landing start incl. slope, end of its flat top, top, slot)`.
+    fn perch_target(&self, y0: f32, vy: f32) -> Option<(f32, f32, f32, i32)> {
         let g = self.spec.runner.jump.gravity * self.feel.gravity_scale;
         let v = self.speed();
         if g >= 0.0 || v <= 0.1 {
@@ -1324,35 +1392,79 @@ impl NeonCat {
         let track = &self.spec.runner.obstacle_track;
         let i0 = near_index(self.z, track.z0, track.gap).saturating_sub(1);
         let i1 = near_index(self.z + reach, track.z0, track.gap) + 1;
-        let mut best: Option<(f32, f32, f32)> = None;
+        let mut best: Option<(f32, f32, f32, i32)> = None;
         for i in i0..=i1 {
             let Some(steps) = perch_route_at(&self.spec, i) else {
                 continue;
             };
-            for b in &steps {
+            for (n, b) in steps.iter().enumerate() {
+                let end = self.flat_end(&steps, n);
+                let rl = if n == 0 || steps[n - 1].top < b.top {
+                    self.spec.perch_rules.ramp_len
+                } else {
+                    0.0
+                };
                 if (self.x - b.x).abs() > b.half_width
-                    || b.z1 <= self.z
+                    || end <= self.z
                     || b.top <= y0 + 0.05
                     || b.top > apex - 0.1
-                    || best.is_some_and(|q| q.0 <= b.z0)
+                    || best.is_some_and(|q| q.0 <= b.z0 - rl)
                 {
                     continue;
                 }
-                best = Some((b.z0, b.z1, b.top));
+                best = Some((b.z0 - rl, end, b.top, i));
             }
         }
         best
     }
 
-    /// Whether the arc `(y0, vy)` comes down on `step` short of its far end.
-    fn perch_arc_lands(&self, y0: f32, vy: f32, step: (f32, f32, f32)) -> bool {
+    /// Height of the route in one slot at `(x, z)`: the flat tops and the
+    /// slopes up to them, 0 beside it.
+    fn route_profile(&self, steps: &[PerchBox], x: f32, z: f32) -> f32 {
+        let rl = self.spec.perch_rules.ramp_len;
+        let mut h = 0.0f32;
+        for (n, b) in steps.iter().enumerate() {
+            if (x - b.x).abs() > b.half_width {
+                continue;
+            }
+            let prev = if n == 0 { 0.0 } else { steps[n - 1].top };
+            if z >= b.z0 && z < b.z1 {
+                h = h.max(b.top);
+            } else if rl > 0.0 && b.top > prev && z >= b.z0 - rl && z < b.z0 {
+                h = h.max(prev + (b.top - prev) * (z - (b.z0 - rl)) / rl);
+            }
+        }
+        h
+    }
+
+    /// Whether the arc `(y0, vy)` first meets the route on `step`, on its
+    /// slope or short of its far end.
+    fn perch_arc_lands(&self, y0: f32, vy: f32, step: (f32, f32, f32, i32)) -> bool {
         let g = self.spec.runner.jump.gravity * self.feel.gravity_scale;
-        let disc = vy * vy - 2.0 * g * (y0 - step.2);
-        if g >= 0.0 || disc < 0.0 {
+        let Some(steps) = perch_route_at(&self.spec, step.3) else {
+            return false;
+        };
+        if g >= 0.0 {
             return false;
         }
-        let z = self.z + self.speed() * (vy + disc.sqrt()) / -g;
-        z >= step.0 && z < step.1 - 0.2
+        let v = self.speed();
+        // Step the arc the way `tick` does (60 Hz, semi-implicit), so an arc
+        // that only skims the step is judged as the sim will fly it.
+        let dt = 1.0 / 60.0;
+        let (mut y, mut vy, mut z) = (y0, vy, self.z);
+        for _ in 0..180 {
+            vy += g * dt;
+            y += vy * dt;
+            z += v * dt;
+            // A margin: an arc that merely skims the step is not a landing.
+            if y <= self.route_profile(&steps, self.x, z) - 0.03 {
+                return z >= step.0 && z < step.1 - 0.2;
+            }
+            if y < 0.0 {
+                return false;
+            }
+        }
+        false
     }
 
     /// Take-off speed for a jump from height `y0`: the full jump, unless that
@@ -1368,10 +1480,16 @@ impl NeonCat {
         if self.perch_arc_lands(y0, vy, step) {
             return vy;
         }
+        let g = self.spec.runner.jump.gravity * self.feel.gravity_scale;
+        // Never lower than clears the front of the step, unless a slope leads
+        // up to it: then a small hop that comes down on the slope is fine.
+        let floor = if self.spec.perch_rules.ramp_len > 0.0 {
+            2.5f32.min(vy)
+        } else {
+            (2.0 * -g * (step.2 - y0)).max(0.0).sqrt()
+        };
         let mut v = vy - 0.05;
-        while v * v
-            > 2.0 * -(self.spec.runner.jump.gravity * self.feel.gravity_scale) * (step.2 - y0)
-        {
+        while v > floor + 1e-3 {
             if self.perch_arc_lands(y0, v, step) {
                 return v;
             }
@@ -1402,16 +1520,17 @@ impl NeonCat {
             let Some(steps) = perch_route_at(&self.spec, i) else {
                 continue;
             };
-            for b in &steps {
+            for (n, b) in steps.iter().enumerate() {
+                let end = self.flat_end(&steps, n);
                 if (self.x - b.x).abs() > b.half_width
                     || self.z < b.z0
-                    || self.z >= b.z1
+                    || self.z >= end
                     || self.y <= b.top + 0.01
                 {
                     continue;
                 }
                 // Land by a little before the ledge ends, within this tick at the latest.
-                let t = ((b.z1 - 0.2 - self.z) / v).max(dt);
+                let t = ((end - 0.2 - self.z) / v).max(dt);
                 let need = 2.0 * (b.top - self.y - self.vy * t) / (t * t);
                 let k = need / g;
                 if k > 1.0 && k <= MAX_PULL {
@@ -2443,6 +2562,45 @@ impl NeonCat {
                         0.0,
                     );
                 }
+                // The slope up to this step: from the top of the step before (the
+                // street for the first), so a cat that runs into the lane climbs it.
+                let rl = self.spec.perch_rules.ramp_len;
+                let prev = if n == 0 { 0.0 } else { steps[n - 1].top };
+                if rl > 0.0 && b.top > prev {
+                    let rise = b.top - prev;
+                    let slant = (rise * rise + rl * rl).sqrt();
+                    let ang = (rise / rl).atan();
+                    let (zr, yr) = (b.z0 - rl * 0.5, prev + rise * 0.5);
+                    add(
+                        "ramp",
+                        "box",
+                        [b.x, yr - 0.04 * ang.cos(), zr],
+                        [w * 0.92, 0.08, slant],
+                        [58, 66, 86],
+                        0.0,
+                        ang,
+                    );
+                    add(
+                        "ramp-top",
+                        "box",
+                        [b.x, yr + 0.012, zr],
+                        [w * 0.96, 0.025, slant],
+                        col,
+                        0.9,
+                        ang,
+                    );
+                    for (k, sx) in [-1.0f32, 1.0].into_iter().enumerate() {
+                        add(
+                            &format!("ramp-edge{k}"),
+                            "box",
+                            [b.x + sx * (b.half_width - 0.02), yr + 0.03, zr],
+                            [0.05, 0.05, slant],
+                            col,
+                            2.4,
+                            ang,
+                        );
+                    }
+                }
             }
         }
     }
@@ -2937,7 +3095,7 @@ impl NeonCat {
             name: "cat".into(),
             position: [
                 self.x,
-                self.y + self.spec.player.foot * self.spec.player.scale,
+                self.y - self.step_off + self.spec.player.foot * self.spec.player.scale,
                 self.z,
             ],
             yaw: self.yaw,
@@ -6959,19 +7117,27 @@ mod tests {
     }
 
     #[test]
-    fn a_ledge_needs_a_jump_then_steps_up_and_ends_in_a_drop() {
+    fn a_ledge_is_stepped_onto_from_the_street_then_steps_up_and_ends_in_a_drop() {
         let spec = full().spec.clone();
         let (i, steps) = route_slot(&spec);
         let up = spec.perch_rules.step_up;
         let b0 = steps[0];
-        // On the street the first step is too high to walk onto.
+        // On the street the first step is low enough to step onto (the cat
+        // glides up it), so changing lanes into the route needs no jump.
         let mut r = full_lives();
         put(&mut r, b0.x, 0.0, b0.z0 + 0.3);
+        assert_eq!(r.ground_at(b0.x, b0.z0 + 0.3), b0.top, "stepped onto");
+        assert!(b0.top - up <= 0.0);
+        // A spec with a higher first riser (step_up 0.5) still walks through
+        // it from the street: that one takes a jump.
+        std::sync::Arc::make_mut(&mut r.spec).perch_rules.step_up = 0.5;
+        put(&mut r, b0.x, 0.0, b0.z0 + 0.3);
         assert_eq!(r.ground_at(b0.x, b0.z0 + 0.3), 0.0, "walked through");
-        assert!(b0.top - up > 0.0, "the first step needs a jump");
+        let up = 0.5;
         // A cat above it lands on it.
         put(&mut r, b0.x, b0.top - up + 0.01, b0.z0 + 0.3);
         assert_eq!(r.ground_at(b0.x, b0.z0 + 0.3), b0.top);
+        std::sync::Arc::make_mut(&mut r.spec).perch_rules.step_up = spec.perch_rules.step_up;
         // Each next step is within step_up of the one before.
         for w in steps.windows(2) {
             put(&mut r, w[0].x, w[0].top, w[1].z0 + 0.2);
@@ -6988,10 +7154,11 @@ mod tests {
 
     /// The route steps the cat stands on after one jump `lead` metres before
     /// the first step at `speed`, running on to the end of the route.
-    fn steps_stood_on(speed: f32, lead: f32) -> Vec<usize> {
+    fn steps_stood_on(speed: f32, lead: f32, ramp: f32) -> Vec<usize> {
         let mut run = full_lives();
         {
             let sp = std::sync::Arc::make_mut(&mut run.spec);
+            sp.perch_rules.ramp_len = ramp;
             sp.runner.speed.start = speed;
             sp.runner.speed.ramp = 0.0;
             sp.runner.speed.cap = speed;
@@ -6999,7 +7166,7 @@ mod tests {
         let (_, steps) = route_slot(&run.spec.clone());
         let b0 = steps[0];
         run.invuln = 999.0;
-        put(&mut run, b0.x, 0.0, b0.z0 - lead);
+        put(&mut run, b0.x, 0.0, b0.z0 - ramp - lead);
         run.swipe(Swipe::Up);
         let mut stood: Vec<usize> = Vec::new();
         for _ in 0..400 {
@@ -7025,33 +7192,159 @@ mod tests {
         // (Before, a late jump at running speed rose through the front of
         // the AC unit and came down on the pipe, so the first step never
         // paid a landing.)
-        for speed in [8.0f32, 10.5, 12.0, 14.0, 16.0, 18.0, 20.0] {
-            for lead4 in 0..=12 {
-                let lead = lead4 as f32 * 0.25;
-                let stood = steps_stood_on(speed, lead);
-                assert_eq!(stood, vec![0, 1, 2], "speed {speed} lead {lead}: {stood:?}");
+        // `lead` is measured from the foot of the structure: the front of the
+        // first step with square risers, the foot of its slope with a ramp.
+        for ramp in [0.0, GameSpec::default().perch_rules.ramp_len] {
+            for speed in [8.0f32, 10.5, 12.0, 14.0, 16.0, 18.0, 20.0] {
+                for lead4 in 0..=12 {
+                    // (At exactly 0 the cat already stands on the first step.)
+                    let lead = 0.05 + lead4 as f32 * 0.25;
+                    let stood = steps_stood_on(speed, lead, ramp);
+                    assert_eq!(
+                        stood,
+                        vec![0, 1, 2],
+                        "ramp {ramp} speed {speed} lead {lead}: {stood:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_jump_halfway_up_the_slope_still_ends_up_on_the_route_in_order() {
+        let ramp = GameSpec::default().perch_rules.ramp_len;
+        for speed in [8.0f32, 12.0, 20.0] {
+            for k in 1..=7 {
+                // Pressed anywhere on the slope: the run may skip the first step
+                // but reaches the last one, and never goes down a step.
+                let lead = ramp - ramp * k as f32 / 8.0;
+                let stood = steps_stood_on(speed, lead - ramp, ramp);
+                assert!(stood.contains(&2), "speed {speed} k {k}: {stood:?}");
+                assert!(stood.windows(2).all(|w| w[0] < w[1]), "{stood:?}");
             }
         }
     }
 
     #[test]
     fn a_late_jump_at_the_start_speed_lands_on_the_ac_unit_and_pays_the_perch() {
+        late_jump_lands_on_the_first_step(0.0);
+        // With the slope in front of the step, the jump is pressed where the
+        // slope leaves the street.
+        late_jump_lands_on_the_first_step(GameSpec::default().perch_rules.ramp_len);
+    }
+
+    /// Normal speed, the jump pressed at the front edge of the first step
+    /// (or of its slope, `ramp` metres further back).
+    fn late_jump_lands_on_the_first_step(ramp: f32) {
         let mut run = full_lives();
+        std::sync::Arc::make_mut(&mut run.spec).perch_rules.ramp_len = ramp;
         let (i, steps) = route_slot(&run.spec.clone());
         let b0 = steps[0];
         run.invuln = 999.0;
-        // Normal speed, the jump pressed at the front edge of the first step.
-        put(&mut run, b0.x, 0.0, b0.z0 - 0.05);
+        put(&mut run, b0.x, 0.0, b0.z0 - ramp - 0.05);
         let score0 = run.core.stats.score;
         run.swipe(Swipe::Up);
         let mut on_first = false;
-        for _ in 0..30 {
+        for _ in 0..60 {
             run.tick(1.0 / 60.0);
             on_first |= run.on_perch && (run.y - b0.top).abs() < 0.02 && run.z < b0.z1;
         }
         assert!(on_first, "never stood on the first step");
         assert!(run.perch_landed.contains(&i));
         assert!(run.core.stats.score >= score0 + run.spec.perch_rules.land_score);
+    }
+
+    #[test]
+    fn running_into_the_lane_climbs_the_slope_without_a_jump() {
+        let mut run = full_lives();
+        let (i, steps) = route_slot(&run.spec.clone());
+        let b0 = steps[0];
+        let ramp = run.spec.perch_rules.ramp_len;
+        assert!(ramp > 0.5, "the default spec has a slope");
+        run.invuln = 999.0;
+        put(&mut run, b0.x, 0.0, b0.z0 - ramp - 1.0);
+        let mut last = run.y;
+        let mut worst = 0.0f32;
+        let mut on_first = false;
+        for _ in 0..90 {
+            run.tick(1.0 / 60.0);
+            assert!(!run.core.stats.just_jump, "no jump was pressed");
+            worst = worst.max((run.y - last).abs());
+            last = run.y;
+            on_first |= run.on_perch && (run.y - b0.top).abs() < 0.01 && run.z < b0.z1;
+        }
+        assert!(on_first, "never stood on the first step");
+        assert!(run.perch_landed.contains(&i));
+        // Up the slope in small steps, not one jump of 0.6 m.
+        assert!(worst < 0.15, "rose {worst} m in one tick");
+        // The step to the pipe is a slope too.
+        let mut run = full_lives();
+        run.invuln = 999.0;
+        let rl = run.spec.perch_rules.ramp_len;
+        put(&mut run, b0.x, steps[0].top, steps[1].z0 - rl - 0.01);
+        let mut worst = 0.0f32;
+        let mut last = run.y;
+        for _ in 0..30 {
+            run.tick(1.0 / 60.0);
+            worst = worst.max((run.y - last).abs());
+            last = run.y;
+        }
+        assert!(
+            worst < 0.15 && run.y > steps[1].top - 0.01,
+            "{worst} {}",
+            run.y
+        );
+    }
+
+    #[test]
+    fn stepping_sideways_onto_a_step_glides_up_instead_of_popping() {
+        let mut run = full_lives();
+        let (_, steps) = route_slot(&run.spec.clone());
+        let b = steps[0];
+        run.invuln = 999.0;
+        // Beside the AC unit in the street, then into its lane.
+        put(&mut run, b.x + b.half_width + 0.3, 0.0, (b.z0 + b.z1) * 0.5);
+        run.tick(1.0 / 60.0);
+        run.x = b.x;
+        run.tick(1.0 / 60.0);
+        assert!((run.y - b.top).abs() < 0.01, "the sim stands on the step");
+        assert!(run.step_off > 0.3, "drawn low at first: {}", run.step_off);
+        let drawn = |r: &NeonCat| {
+            r.doc
+                .walkers
+                .iter()
+                .find(|w| w.id == "walker:cat")
+                .unwrap()
+                .position[1]
+        };
+        let low = drawn(&run);
+        for _ in 0..40 {
+            run.tick(1.0 / 60.0);
+        }
+        assert_eq!(run.step_off, 0.0);
+        assert!(drawn(&run) > low + 0.2);
+    }
+
+    #[test]
+    fn the_slope_is_drawn_rising_to_the_step_and_ramp_len_zero_removes_it() {
+        let mut run = full_lives();
+        let (i, steps) = route_slot(&run.spec.clone());
+        put(&mut run, steps[0].x, 0.0, steps[0].z0 - 6.0);
+        let slab = run
+            .doc
+            .props
+            .iter()
+            .find(|p| p.id == format!("prop:perch-{i}-0-ramp"))
+            .expect("a slope slab");
+        assert!(slab.pitch > 0.3 && slab.pitch < 0.6, "pitch {}", slab.pitch);
+        let rl = run.spec.perch_rules.ramp_len;
+        assert!((slab.position[2] - (steps[0].z0 - rl * 0.5)).abs() < 1e-4);
+        assert!((run.perch_ramp(steps[0].x, steps[0].z0 - 0.001) - steps[0].top).abs() < 0.01);
+        assert_eq!(run.perch_ramp(steps[0].x, steps[0].z0 - rl - 0.01), 0.0);
+        std::sync::Arc::make_mut(&mut run.spec).perch_rules.ramp_len = 0.0;
+        put(&mut run, steps[0].x, 0.0, steps[0].z0 - 6.0);
+        assert!(!run.doc.props.iter().any(|p| p.id.ends_with("-ramp")));
+        assert_eq!(run.perch_ramp(steps[0].x, steps[0].z0 - 0.5), 0.0);
     }
 
     #[test]
