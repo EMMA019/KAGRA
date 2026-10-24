@@ -416,11 +416,12 @@ class PerchRules:
     side: float = 1.35
     half_width: float = 0.7
     step_len: float = 3.6
-    step_up: float = 0.55
+    step_up: float = 0.65
     land_score: int = 30
     run_score: int = 40
     route_bonus: int = 120
     coins_per_step: int = 3
+    ramp_len: float = 1.4  # slope in front of each rising step; 0 = square risers
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.side <= 1.8 or not 0.4 <= self.half_width <= 1.2:
@@ -429,6 +430,8 @@ class PerchRules:
             raise ValueError("perch_rules step_len 1.5..=8, step_up 0.1..=1")
         if not 0 <= self.coins_per_step <= 6:
             raise ValueError("perch_rules coins_per_step 0..=6")
+        if not 0.0 <= self.ramp_len <= 3.0 or self.ramp_len > self.step_len * 0.5:
+            raise ValueError("perch_rules ramp_len 0..=3 and at most half a step_len")
 
 
 @dataclass

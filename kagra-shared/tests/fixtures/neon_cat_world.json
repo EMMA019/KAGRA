@@ -724,11 +724,12 @@
    "side": 1.35,
    "half_width": 0.7,
    "step_len": 3.6,
-   "step_up": 0.55,
+   "step_up": 0.65,
    "land_score": 30,
    "run_score": 40,
    "route_bonus": 120,
-   "coins_per_step": 3
+   "coins_per_step": 3,
+   "ramp_len": 1.4
   },
   "chaser": {
    "enabled": false,

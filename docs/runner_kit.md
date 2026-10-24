@@ -101,14 +101,17 @@ flies aside and lies down, a label such as CRASH pops, and it pays `score`); a j
 `streak_secs` of each other build a streak that adds `streak_bonus` each, up to `streak_cap`. The classic course has none.
 
 `perch_route` `[ac_unit | pipe | sign, ...]` (a name, or `{kind, height}`; default heights 0.6, 1.1, 1.6 m) and `perch_rules` `{rest_every 2,
-reward_every 2, other_every 6, side 1.35, half_width 0.7, step_len 3.6, step_up 0.55, land_score 30, run_score 40, route_bonus 120,
-coins_per_step 3}` lay a staircase of ledges (an AC unit, a pipe, a sign) end to end along one side of a free slot, in the colour of
-`style.codes.rideable` with a lit top and edges. A prop makes way for a route in its slot. The first step has to be higher than
-`step_up` so it takes a jump, and each next step at most `step_up` above the one before, so the cat walks up without another
-jump; both sides refuse a route a jump cannot reach, a step that is too high, more than 6 steps, or one longer than a slot. A ledge
+reward_every 2, other_every 6, side 1.35, half_width 0.7, step_len 3.6, step_up 0.65, land_score 30, run_score 40, route_bonus 120,
+coins_per_step 3, ramp_len 1.4}` lay a staircase of ledges (an AC unit, a pipe, a sign) end to end along one side of a free slot, in the colour of
+`style.codes.rideable` with a lit top and edges. A prop makes way for a route in its slot. A straight slope of `ramp_len` metres
+leads up to each rising step (0 = square risers), so a lane switch into the route needs no jump: the cat rides up the slope, or
+glides up a step it walks into from the side (a first step within `step_up` of the street is stepped onto; one higher takes a jump),
+and keeps running on top. A jump pressed anywhere before or on the slope still comes down on the first step (a late or early one
+at running speed gets a lower hop, a small hop that meets the slope lands on it). Each next step is at most `step_up` above the
+one before, so the cat walks up without another jump; both sides refuse a route a jump cannot reach, a step that is too high, more than 6 steps, or one longer than a slot. A ledge
 is passed through when the feet are below its top minus `step_up`, so a perch has no collider and cannot hurt. Landing pays
 `land_score`, time on a ledge `run_score` per second, reaching the last step `route_bonus` (each once per route), and each step has
-`coins_per_step` coins along its top. An empty `perch_route` (the classic course, `legacy()`) has none.
+`coins_per_step` coins along its top. `ramp_len` is 0..=3 and at most half a `step_len`. An empty `perch_route` (the classic course, `legacy()`) has none.
 
 `chaser` `{enabled, secs 10, near_gap 1.2, far_gap 1.7, perch_drain 2.5, scare_score 50, color}` is the cleaning robot, **off by default** (`enabled: false`; Neon Cat and Meteor Cat run without it and a hit just
 gives the usual `invuln_secs` of grace). Set `"chaser": {"enabled": true}` to bring it back. When enabled, a hit that
