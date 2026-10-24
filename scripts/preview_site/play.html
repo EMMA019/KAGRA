@@ -304,6 +304,7 @@
     const slug = (metaGame || params.get("game") || "neon_run").trim() || "neon_run";
     // HOP-BEAT: one button on the whole canvas, music-locked sim.
     let hopMode = false;
+    let hopDirect = false;
     // The player's audio offset, ms (+ = they hear the music late). Device-only.
     const SYNC_KEY = "kagra.hop.sync.v1";
     const SYNC_MAX = 300;
@@ -382,7 +383,7 @@
         .filter((f) => typeof f === "string" && f);
       if (usable) {
         for (const f of files) {
-          if (!raw.has(f)) raw.set(f, Promise.resolve().then(() => deps.fetchBytes(f)).catch(() => null));
+          if (!raw.has(f)) raw.set(f, Promise.resolve().then(() => deps.fetchBytes(f)).catch((err) => { warn(`kagra: could not fetch ${f}`, String(err)); return null; }));
         }
       }
       const warn = (...a) => { if (deps.warn) deps.warn(...a); };
@@ -418,6 +419,9 @@
           }
           for (const [f, bytes] of raw) {
             bytes
+              // One more try if the early fetch was lost (a tab that was busy
+              // booting can have its in-flight requests cancelled).
+              .then((ab) => ab || Promise.resolve().then(() => deps.fetchBytes(f)).catch(() => null))
               .then((ab) => (ab ? decode(ab) : null))
               .then((buf) => { if (buf) buffers.set(f, buf); else warn(`kagra: no audio for ${f}`); })
               .catch((err) => warn(`kagra: could not decode ${f}`, err));
@@ -527,6 +531,8 @@
         },
         get state() { return ctx ? ctx.state : "none"; },
         get loaded() { return buffers.size; },
+        /** name -> decoded seconds (a check that the loop is the whole file). */
+        get durations() { const o = {}; for (const [k, b] of buffers) o[k] = b.duration; return o; },
         get expected() { return raw.size; },
         files,
       };
@@ -671,6 +677,7 @@
             // wants gameplay on load). ?play=0 keeps the title card.
             const ask = params.get("play");
             const direct = ask === "1" || (ask !== "0" && globalThis.KagraPortal.isPortalBuild(document));
+            hopDirect = direct;
             if (direct) world.game.play = { ...(world.game.play || {}), direct: true };
           }
           if (world.genre === "neon_cat") {
@@ -1233,6 +1240,9 @@
       e.preventDefault();
     }, { passive: false });
     showPhase("title");
+    // Direct play: no title card. The run waits at TAP TO START, and that tap
+    // is also the browser's audio gesture.
+    if (hopDirect) session.startGame();
 
     let presented = 0;
     let recovering = false;

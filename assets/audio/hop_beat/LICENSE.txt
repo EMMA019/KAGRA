@@ -11,4 +11,4 @@ They are dedicated to the public domain under the CC0 1.0 Universal dedication.
 
 https://creativecommons.org/publicdomain/zero/1.0/
 
-No attribution is required. Provenance and rebuild parameters: hop_beat_provenance.json
+No attribution is required. Provenance and rebuild parameters: docs/provenance/hop_beat_music.json in the KAGRA repository
