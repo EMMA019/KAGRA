@@ -66,6 +66,9 @@ pub const KITS: &[(Detect, Load)] = &[
     (crate::neon_run::is_neon_dump, |json| {
         Ok(Box::new(crate::neon_run::NeonRun::from_json(json)?))
     }),
+    (crate::hop_beat::is_hop_dump, |json| {
+        Ok(Box::new(crate::hop_beat::HopBeat::from_json(json)?))
+    }),
 ];
 
 /// The kit that claims `json`, loaded. `None` when no kit does (a WorldPlay genre).

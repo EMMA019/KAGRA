@@ -42,6 +42,7 @@ def test_full_block_round_trips():
         ({"min_interval_secs": True}, "0 to"),
         ({"rewarded": [{"slot": "r", "at": "nowhere"}]}, "at"),
         ({"rewarded": [{"slot": "r", "effect": "extra_life"}]}, "effect"),
+        ({"rewarded": [{"slot": "r", "effect": "Revive"}]}, "effect"),
         ({"rewarded": [{"slot": "r", "per_run": 0}]}, "per_run"),
         ({"rewarded": [{"at": "title"}]}, "slot"),
     ],
@@ -49,6 +50,11 @@ def test_full_block_round_trips():
 def test_bad_ads_are_refused(raw, text):
     with pytest.raises(PlatformError, match=text):
         normalize_ads(raw)
+
+
+def test_revive_is_a_valid_reward_effect():
+    ads = normalize_ads({"rewarded": [{"slot": "revive", "at": "game_over", "effect": "revive"}]})
+    assert ads["rewarded"][0]["effect"] == "revive"
 
 
 def test_platform_block():

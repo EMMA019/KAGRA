@@ -1,0 +1,21 @@
+{
+  "title": "Hop Beat",
+  "icon": "assets/icons/game_placeholder.png",
+  "version": "0.1.0",
+  "entry": "examples/hop_beat_minimal.py",
+  "world": "kagra-shared/tests/fixtures/hop_beat_world.json",
+  "bundle_assets": [
+    "assets/audio/hop_beat",
+    "assets/models/hop_beat"
+  ],
+  "platform": {
+    "ads": {
+      "commercial_on": ["retry"],
+      "rewarded": [
+        {"slot": "revive", "at": "game_over", "effect": "revive", "per_run": 1}
+      ],
+      "min_interval_secs": 90
+    }
+  },
+  "game": {}
+}

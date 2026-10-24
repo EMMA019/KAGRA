@@ -2,7 +2,7 @@
 
 (The PyPI release guide is `docs/PUBLISHING.md`. This file is about web portals
 such as CrazyGames, GameMonetize and GameDistribution. The store copy for Neon
-Cat is `docs/publishing/neon_cat.md`.)
+Cat is `docs/publishing/neon_cat.md`; Hop Beat is `docs/publishing/hop_beat.md`.)
 
 Status: **prepared, not submitted.** The shim, the packager, the cover art and
 the store text are in the repo and tested with fake SDKs. Nothing has run on a
