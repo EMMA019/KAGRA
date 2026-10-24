@@ -109,11 +109,56 @@ def measure_glb(path: str | Path) -> tuple[list[float], list[float]]:
 
 
 @dataclass
+class LivesSpec:
+    """Nine lives: a hit costs one and the cat is safe (blinking) for
+    ``invuln_secs``. ``count`` 1 is the old one-hit rule."""
+
+    count: int = 9
+    invuln_secs: float = 1.6
+    blink_hz: float = 10.0
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.count <= 9:
+            raise ValueError("lives.count must be 1..=9")
+        if not 0.0 <= self.invuln_secs <= 10.0:
+            raise ValueError("lives.invuln_secs must be 0..=10")
+        if not 0.0 <= self.blink_hz <= 30.0:
+            raise ValueError("lives.blink_hz must be 0..=30")
+
+
+@dataclass
+class RimSpec:
+    """Two coloured point lights just outside the cat's flanks (linear RGB)."""
+
+    left: list[float] = field(default_factory=lambda: [1.0, 0.25, 0.75])
+    right: list[float] = field(default_factory=lambda: [0.3, 0.9, 1.0])
+    intensity: float = 2.6
+    radius: float = 0.55
+    side: float = 0.5
+    height: float = 0.5
+
+
+@dataclass
+class EyesSpec:
+    """Two unlit glowing boxes on the face; offsets in model units."""
+
+    enabled: bool = True
+    color: list[float] = field(default_factory=lambda: [0.35, 1.0, 0.95])
+    glow: float = 2.4
+    size: float = 0.13
+    spread: float = 0.24
+    height: float = 0.92
+    forward: float = 0.64
+
+
+@dataclass
 class PlayerSpec:
     glb: str = "assets/models/kenney/cube-pets/animal-cat.glb"
     scale: float = 0.50
     foot: float = 0.30
     tint: list[int] = field(default_factory=lambda: [226, 206, 255])
+    rim: RimSpec = field(default_factory=lambda: RimSpec())
+    eyes: EyesSpec = field(default_factory=lambda: EyesSpec())
 
 
 @dataclass
@@ -343,6 +388,7 @@ class GameSpec:
     style: Style = field(default_factory=Style)
     hud_top: float = 96.0
     hud: HudSpec = field(default_factory=HudSpec)
+    lives: LivesSpec = field(default_factory=LivesSpec)
     items: list[ItemSpec] = field(default_factory=list)
     placements: list[Placement] = field(default_factory=list)
     runner: RunnerKit = field(default_factory=RunnerKit)

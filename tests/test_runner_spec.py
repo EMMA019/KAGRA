@@ -71,6 +71,7 @@ def test_spec_needs_a_spawnable_obstacle():
 CLASSIC = {
     "obstacles": [{"name": n, "weight": 1} for n in ("CRATE", "BARREL", "BARRIER")],
     "runner": {"sections": [], "obstacle_track": {"gap": 14.0}, "score": {"per_gate": 0}},
+    "lives": {"count": 1},
 }
 
 
@@ -134,3 +135,23 @@ def test_hud_result_spec_merges_death_lines_and_validates_the_board():
         with pytest.raises(ValueError):
             GameSpec.from_overrides({"hud": {"result": {"board": bad}}})
     assert spec.world()["game"]["hud"]["result"]["board"]["sort"] == "time"
+
+
+def test_lives_rim_and_eyes_are_specced_and_validated():
+    spec = GameSpec()
+    assert spec.lives.count == 9 and spec.lives.invuln_secs > 0
+    assert spec.player.eyes.enabled and spec.player.rim.radius < 1.6
+    world = spec.world()["game"]
+    assert world["lives"]["count"] == 9
+    assert world["player"]["eyes"]["glow"] > 1.0
+    for bad in ({"count": 0}, {"count": 10}, {"invuln_secs": -1}, {"blink_hz": 99}):
+        with pytest.raises(ValueError):
+            GameSpec.from_overrides({"lives": bad})
+    with pytest.raises(Exception):
+        GameSpec.from_overrides({"player": {"eyes": {"nope": 1}}})
+
+
+def test_lives_fields_match_rust():
+    rust = (ROOT / "kagra-shared/src/game_spec.rs").read_text(encoding="utf-8")
+    for name in ("count", "invuln_secs", "blink_hz"):
+        assert re.search(rf"pub struct LivesSpec \{{.*?pub {name}:", rust, re.S), name

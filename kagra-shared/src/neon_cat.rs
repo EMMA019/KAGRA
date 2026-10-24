@@ -34,6 +34,8 @@ use crate::gesture::{DragEvent, DragFlick, Gesture, InputBuffer, Swipe, SwipeRec
 
 /// How long a swipe waits for the cat to be able to act on it.
 pub const SWIPE_BUFFER_SECS: f32 = 0.15;
+/// `hurt_t` value that means no recent hit.
+const HURT_IDLE: f32 = 99.0;
 
 #[path = "neon_cat_measure.rs"]
 pub mod measure;
@@ -107,6 +109,12 @@ pub struct NeonCat {
     gates: u32,
     /// Seconds since the crash, while it plays out (drives the flash and shake).
     dying: f32,
+    /// Hits left. The run ends when the last one goes.
+    lives: u32,
+    /// Seconds of protection left after a hit (the cat blinks).
+    invuln: f32,
+    /// Seconds since the last hit (drives the paw pop and the edge flash).
+    hurt_t: f32,
     got_coins: HashSet<i32>,
 }
 
@@ -191,6 +199,14 @@ impl NeonCat {
         Ok(run)
     }
 
+    /// One hit ends the run, as before lives. The geometry measurements
+    /// (reachability, fairness) depend on a hit being a death.
+    pub fn one_life(mut self) -> Self {
+        std::sync::Arc::make_mut(&mut self.spec).lives.count = 1;
+        self.lives = 1;
+        self
+    }
+
     #[cfg(test)]
     fn fresh() -> Self {
         Self::with_spec(GameSpec::legacy())
@@ -252,8 +268,12 @@ impl NeonCat {
             coins: 0,
             gates: 0,
             dying: 0.0,
+            lives: 0,
+            invuln: 0.0,
+            hurt_t: HURT_IDLE,
             got_coins: HashSet::new(),
         };
+        run.lives = run.spec.lives.count;
         if let Ok(p) = feel::resolve(&run.spec.feel) {
             run.feel = p;
         }
@@ -408,6 +428,9 @@ impl NeonCat {
             "rings": self.core.stats.rings,
             "coins": self.coins,
             "gates": self.gates,
+            "lives": self.lives,
+            "lives_max": self.spec.lives.count,
+            "invulnerable": self.invuln > 0.0,
             "rolling": self.rolling > 0.0,
             "ground": self.ground,
             "alive": self.core.stats.alive,
@@ -673,6 +696,9 @@ impl NeonCat {
         self.coins = 0;
         self.gates = 0;
         self.dying = 0.0;
+        self.lives = self.spec.lives.count;
+        self.invuln = 0.0;
+        self.hurt_t = HURT_IDLE;
         self.rolling = 0.0;
         self.recover = 0.0;
         self.pose = [1.0; 3];
@@ -892,6 +918,8 @@ impl NeonCat {
 
     fn play_step(&mut self, dt: f32) {
         self.time += dt;
+        self.invuln = (self.invuln - dt).max(0.0);
+        self.hurt_t = (self.hurt_t + dt).min(HURT_IDLE);
         let ax = self.axis_x();
         // +ax is screen-right. This camera looks along +Z, so that is world -X.
         let steer = -ax;
@@ -1326,7 +1354,28 @@ impl NeonCat {
         }
     }
 
+    /// A hit that does not end the run: one life, a blink of protection.
+    fn hurt(&mut self) {
+        self.lives = self.lives.saturating_sub(1);
+        self.invuln = self.spec.lives.invuln_secs;
+        self.hurt_t = 0.0;
+        self.core.juice.hit(self.feel.hit_shake * 0.6, 0.07);
+        self.burst(self.x, self.y + 0.4, self.z, 12, [255, 60, 170], 3.6, 0.14);
+        self.burst(self.x, self.y + 0.5, self.z, 6, [90, 240, 255], 2.6, 0.1);
+        self.sfx("fire");
+    }
+
     fn crash(&mut self, reason: &str) {
+        if self.core.stats.alive {
+            if self.invuln > 0.0 {
+                return;
+            }
+            if self.lives > 1 {
+                self.hurt();
+                return;
+            }
+            self.lives = 0;
+        }
         if !self.core.stats.die(reason) {
             return;
         }
@@ -1424,24 +1473,28 @@ impl NeonCat {
             0.48,
             false,
         ));
+        // Rim: one light each side, outside the cat's flanks (a light inside
+        // the mesh lights nothing). +x is screen-left on this camera.
+        let rim = &self.spec.player.rim;
+        let rim_y = self.y + rim.height;
         doc.lights.push(light(
             2,
             "rim",
-            [self.x + 0.22, self.y + 0.62, self.z - 0.12],
+            [self.x + rim.side, rim_y, self.z],
             [0.0, 0.0, 0.0],
-            [1.0, 0.25, 0.75],
-            2.0,
-            0.42,
+            rim.left,
+            rim.intensity,
+            rim.radius,
             false,
         ));
         doc.lights.push(light(
             3,
             "edge",
-            [self.x - 0.24, self.y + 0.55, self.z + 0.08],
+            [self.x - rim.side, rim_y, self.z],
             [0.0, 0.0, 0.0],
-            [0.3, 0.9, 1.0],
-            1.8,
-            0.4,
+            rim.right,
+            rim.intensity,
+            rim.radius,
             false,
         ));
         push_mesh_anchors(&self.spec, &mut doc);
@@ -1816,6 +1869,11 @@ impl NeonCat {
     }
 
     fn push_cat(&mut self, doc: &mut WorldDoc) {
+        // The blink: hidden on the off half of each cycle while protected.
+        let hz = self.spec.lives.blink_hz;
+        let shown =
+            self.invuln <= 0.0 || hz <= 0.0 || (self.invuln * hz * 2.0).floor() as i64 % 2 == 0;
+        let k = if shown { 1.0 } else { 0.001 };
         let mut cat = WorldWalker {
             id: "walker:cat".into(),
             kind: "walker".into(),
@@ -1833,9 +1891,9 @@ impl NeonCat {
             anim: "run".into(),
             anim_blend: 1.0,
             scale: Some([
-                self.spec.player.scale * self.pose[0],
-                self.spec.player.scale * self.pose[1],
-                self.spec.player.scale * self.pose[2],
+                self.spec.player.scale * self.pose[0] * k,
+                self.spec.player.scale * self.pose[1] * k,
+                self.spec.player.scale * self.pose[2] * k,
             ]),
             color: Some(self.spec.player.tint),
             roughness: Some(0.9),
@@ -1846,6 +1904,44 @@ impl NeonCat {
         }
         doc.walkers.push(cat.clone());
         doc.player = Some(cat);
+        if shown {
+            self.push_eyes(doc);
+        }
+    }
+
+    /// Two unlit boxes on the face. Offsets are model units, so they follow
+    /// the scale and the crouch / stretch pose. Feet are at `self.y`.
+    fn push_eyes(&self, doc: &mut WorldDoc) {
+        let e = &self.spec.player.eyes;
+        if !e.enabled {
+            return;
+        }
+        let sc = self.spec.player.scale;
+        let (sin, cos) = self.yaw.sin_cos();
+        for (i, side) in [-1.0f32, 1.0].into_iter().enumerate() {
+            let lx = side * e.spread * sc * self.pose[0];
+            let lz = e.forward * sc * self.pose[2];
+            let mut eye = glow(
+                &format!("cat-eye-{i}"),
+                "box",
+                "cat_eye",
+                [
+                    self.x + lx * cos + lz * sin,
+                    self.y + e.height * sc * self.pose[1],
+                    self.z - lx * sin + lz * cos,
+                ],
+                [
+                    e.size * sc * self.pose[0],
+                    e.size * 1.3 * sc * self.pose[1],
+                    e.size * 0.4 * sc * self.pose[2],
+                ],
+                [255, 255, 255],
+                e.glow,
+            );
+            eye.emissive_color = Some(e.color);
+            eye.yaw = self.yaw;
+            doc.props.push(eye);
+        }
     }
 
     /// Sparks are short fading streaks along their velocity, to match the
@@ -1904,7 +2000,7 @@ impl NeonCat {
     /// Score and coin panels, plus the crash flash. After a crash the panels
     /// shake once, dim, and stay dimmed under the result card.
     fn paint_play_hud(&self, list: &mut DrawList, width: u32, height: u32) {
-        use crate::hud_kit::{counter_chip, fade, nine_slice, ui_scale};
+        use crate::hud_kit::{counter_chip, fade, nine_slice, paw_icon, ui_scale};
         let hud = &self.spec.hud;
         let ui = ui_scale(width, height, hud.scale);
         let (w, h) = (width as f32, height as f32);
@@ -1937,6 +2033,20 @@ impl NeonCat {
             // Red edges, heavier than the middle: the hit lands at the rim of the view.
             let e = (14.0 * ui).max(8.0);
             let edge = [255, 20, 70, (flash * 150.0) as u8];
+            list.quads.push(Quad::new(0.0, 0.0, w, e, edge));
+            list.quads.push(Quad::new(0.0, h - e, w, e, edge));
+            list.quads.push(Quad::new(0.0, e, e, h - 2.0 * e, edge));
+            list.quads.push(Quad::new(w - e, e, e, h - 2.0 * e, edge));
+        }
+        // A hit that did not end the run: thin red edges, gone in a third of a second.
+        let hurt = if dead {
+            0.0
+        } else {
+            (1.0 - self.hurt_t / 0.35).max(0.0)
+        };
+        if hurt > 0.0 {
+            let e = (10.0 * ui).max(6.0);
+            let edge = [255, 20, 70, (hurt * 120.0) as u8];
             list.quads.push(Quad::new(0.0, 0.0, w, e, edge));
             list.quads.push(Quad::new(0.0, h - e, w, e, edge));
             list.quads.push(Quad::new(0.0, e, e, h - 2.0 * e, edge));
@@ -1979,6 +2089,30 @@ impl NeonCat {
             )
             .aligned(TextAlign::Left),
         );
+        // Nine lives: a paw each, under the score. The one just lost pops red.
+        let max = self.spec.lives.count;
+        if max > 1 {
+            let r = 6.5 * ui;
+            let step = 17.0 * ui;
+            let (x0, y0) = (m + 12.0 * ui + r + shake, top + sh + 6.0 * ui + r);
+            let pop = (1.0 - self.hurt_t / 0.6).clamp(0.0, 1.0);
+            for k in 0..max {
+                let cx = x0 + k as f32 * step;
+                if k < self.lives {
+                    paw_icon(list, cx, y0, r, fade([255, 150, 205, 255], keep));
+                } else if k == self.lives && pop > 0.0 && !dead {
+                    let c = [
+                        255,
+                        (60.0 + 90.0 * (1.0 - pop)) as u8,
+                        90,
+                        (pop * 255.0) as u8,
+                    ];
+                    paw_icon(list, cx, y0, r * (1.0 + 0.9 * pop), fade(c, keep));
+                } else {
+                    paw_icon(list, cx, y0, r, fade([70, 60, 100, 130], keep));
+                }
+            }
+        }
         if self.spec.runner.coins.enabled {
             let (cw, ch) = (112.0 * ui, 40.0 * ui);
             counter_chip(
@@ -2664,7 +2798,7 @@ mod tests {
     fn second_game_is_just_a_spec() {
         let doc = include_str!("../tests/fixtures/meteor_cat_world.json");
         let play = || {
-            let mut run = NeonCat::from_json(doc).unwrap();
+            let mut run = NeonCat::from_json(doc).unwrap().one_life();
             let out = golden_run(&mut run, 0.013, 47);
             (out, run.spec().clone())
         };
@@ -3048,7 +3182,7 @@ mod tests {
         };
         let mut session = SharedSession::default();
         session
-            .load_game_json(r#"{"version":1,"genre":"neon_cat"}"#)
+            .load_game_json(r#"{"version":1,"genre":"neon_cat","game":{"lives":{"count":1}}}"#)
             .unwrap();
         session.show_title();
         assert_eq!(phase(&session), "title");
@@ -3635,6 +3769,11 @@ mod tests {
     // ---- Subway mechanics (PR B1) ----
 
     fn full() -> NeonCat {
+        full_lives().one_life()
+    }
+
+    /// The shipped course with all its lives.
+    fn full_lives() -> NeonCat {
         let mut run =
             NeonCat::from_json(include_str!("../tests/fixtures/neon_cat_world.json")).unwrap();
         run.confirm();
@@ -3908,7 +4047,8 @@ mod tests {
 
     #[test]
     fn retry_starts_every_counter_from_zero() {
-        let mut run = full();
+        let mut run = full_lives();
+        assert_eq!(run.lives, 9);
         // Collect a coin and a ring, run past some gates, then crash.
         let spec = run.spec.clone();
         let line = coin_line(&spec, 0);
@@ -3925,8 +4065,19 @@ mod tests {
         run.tick(1.0 / 60.0);
         assert!(run.gates >= 3, "gates {}", run.gates);
         assert!(run.core.stats.score > 0);
+        // Three hits cost three lives; the run goes on.
+        for _ in 0..3 {
+            run.invuln = 0.0;
+            run.crash("CRATE");
+            assert!(run.core.stats.alive);
+        }
+        assert_eq!(run.lives, 6);
+        assert!(run.invuln > 0.0);
+        run.invuln = 0.0;
+        run.lives = 1;
         run.crash("CRATE");
         assert!(!run.core.stats.alive);
+        assert_eq!(run.lives, 0);
         for _ in 0..90 {
             run.tick(1.0 / 60.0);
         }
@@ -3937,6 +4088,7 @@ mod tests {
                 run.got.insert(1);
                 run.coins = 4;
                 run.gates = 2;
+                run.lives = 1;
                 run.crash("BARREL");
                 for _ in 0..90 {
                     run.tick(1.0 / 60.0);
@@ -3960,6 +4112,11 @@ mod tests {
             assert_eq!(run.rolling, 0.0);
             assert_eq!(run.dying, 0.0, "crash timer");
             assert_eq!(run.pose, [1.0; 3]);
+            assert_eq!(run.lives, run.spec.lives.count, "every life is back");
+            assert_eq!(run.lives, 9);
+            assert_eq!(run.invuln, 0.0, "no leftover protection");
+            assert!(run.hurt_t > 10.0, "no leftover hurt flash");
+            assert_eq!(run.sim_value()["lives"], 9);
             // The collected coin is back in the world and the sim json shows it.
             let v = run.sim_value();
             assert_eq!(v["coins"], 0);
@@ -3973,11 +4130,164 @@ mod tests {
             run.tick(1.0 / 60.0);
             run.tick(1.0 / 60.0);
             assert!(run.coins >= 1, "the same coin pays again after a retry");
+            run.lives = 1;
             run.crash("CRATE");
             for _ in 0..90 {
                 run.tick(1.0 / 60.0);
             }
         }
+    }
+
+    #[test]
+    fn a_hit_costs_a_life_then_protects_then_the_last_one_ends_the_run() {
+        let mut run = full_lives();
+        let fx = run.spec.lives.clone();
+        assert_eq!((fx.count, run.lives), (9, 9));
+        run.crash("CRATE");
+        assert!(run.core.stats.alive, "a hit is survivable");
+        assert_eq!(run.lives, 8);
+        assert!((run.invuln - fx.invuln_secs).abs() < 1e-6);
+        // Protected: the same obstacle cannot hit again.
+        run.crash("CRATE");
+        run.crash("BARREL");
+        assert_eq!(run.lives, 8, "protected");
+        // Protection runs out with play time.
+        let mut frames = 0;
+        while run.invuln > 0.0 && frames < 600 {
+            run.tick(1.0 / 60.0);
+            frames += 1;
+        }
+        assert!(
+            (frames as f32 / 60.0 - fx.invuln_secs).abs() < 0.2,
+            "{frames} frames"
+        );
+        assert_eq!(run.invuln, 0.0);
+        run.crash("CRATE");
+        assert_eq!(run.lives, 7);
+        // Down to the last life: the next hit is the end.
+        run.invuln = 0.0;
+        run.lives = 1;
+        run.crash("BARREL");
+        assert!(!run.core.stats.alive);
+        assert_eq!(run.core.stats.death, "BARREL");
+        assert_eq!(run.lives, 0);
+    }
+
+    #[test]
+    fn one_life_is_the_old_rule() {
+        let mut run = full();
+        assert_eq!(run.lives, 1);
+        run.crash("CRATE");
+        assert!(!run.core.stats.alive);
+    }
+
+    #[test]
+    fn a_real_obstacle_hit_costs_one_life_not_several() {
+        let mut run = full_lives();
+        let spec = run.spec.clone();
+        let i = slot_of(&spec, "CRATE");
+        let z = spec.runner.obstacle_track.z(i);
+        let (x, _) = (spec.runner.obstacle_track.x(i), 0.0);
+        run.x = x;
+        run.z = z - 1.2;
+        run.rebuild();
+        for _ in 0..120 {
+            run.tick(1.0 / 60.0);
+        }
+        assert!(run.core.stats.alive);
+        assert_eq!(run.lives, 8, "one box, one life, however long it overlaps");
+    }
+
+    #[test]
+    fn the_paw_row_shows_each_life_and_the_lost_one_pops() {
+        let mut run = full_lives();
+        let paws = |l: &DrawList| l.quads.len();
+        let nine = hud_of(&run, 824, 1800);
+        run.crash("CRATE");
+        // Right after the hit: eight filled paws, one popping, plus edge flashes.
+        let hit = hud_of(&run, 824, 1800);
+        assert!(paws(&hit) > 0);
+        let bright = |l: &DrawList| {
+            l.quads
+                .iter()
+                .filter(|q| {
+                    q.color[0] >= 250 && (140..=160).contains(&q.color[1]) && q.color[2] >= 200
+                })
+                .count()
+        };
+        assert!(bright(&nine) > bright(&hit), "a filled paw went out");
+        // Long after, the pop is over and the row stays one short.
+        run.hurt_t = 5.0;
+        let calm = hud_of(&run, 824, 1800);
+        assert!(bright(&calm) < bright(&nine));
+        // A one-life spec draws no row.
+        let one = full();
+        let one_row = hud_of(&one, 824, 1800);
+        assert!(bright(&one_row) == 0);
+    }
+
+    #[test]
+    fn the_cat_blinks_while_protected_and_wears_neon_eyes() {
+        let mut run = full_lives();
+        let eyes = |run: &NeonCat| run.doc.props.iter().filter(|p| p.name == "cat_eye").count();
+        assert_eq!(eyes(&run), 2);
+        let e = run.doc.props.iter().find(|p| p.name == "cat_eye").unwrap();
+        assert!(e.emissive.unwrap() > 1.0, "the eyes glow");
+        let sc = |run: &NeonCat| run.doc.walkers[0].scale.unwrap()[0];
+        let full_scale = sc(&run);
+        // Eyes sit on the cat, in front and above the feet.
+        let (a, b) = run
+            .doc
+            .props
+            .iter()
+            .filter(|p| p.name == "cat_eye")
+            .map(|p| p.position)
+            .fold(([0.0; 3], [0.0; 3]), |(_, last), p| (last, p));
+        assert!((a[1] - b[1]).abs() < 1e-5, "same height");
+        assert!(a[0] != b[0], "apart");
+        assert!(a[1] > run.y && a[1] < run.y + 1.0);
+        assert!(a[2] > run.z, "on the front of the face");
+        run.crash("CRATE");
+        let mut shown = 0;
+        let mut hidden = 0;
+        for _ in 0..40 {
+            run.tick(1.0 / 60.0);
+            if sc(&run) > full_scale * 0.5 {
+                shown += 1;
+                assert_eq!(eyes(&run), 2);
+            } else {
+                hidden += 1;
+                assert_eq!(eyes(&run), 0, "no eyes floating where the cat is not");
+            }
+        }
+        assert!(shown > 5 && hidden > 5, "blinks: {shown} on, {hidden} off");
+        run.invuln = 0.0;
+        run.rebuild();
+        assert!(sc(&run) > full_scale * 0.5 && eyes(&run) == 2);
+    }
+
+    #[test]
+    fn rim_lights_sit_outside_the_cat_and_stay_tight() {
+        let run = full_lives();
+        let rim = &run.spec.player.rim;
+        let lights: Vec<_> = run
+            .doc
+            .lights
+            .iter()
+            .filter(|l| l.name == "rim" || l.name == "edge")
+            .collect();
+        assert_eq!(lights.len(), 2);
+        let half_w = 0.625 * run.spec.player.scale; // the model half width
+        for l in &lights {
+            assert!(
+                (l.position[0] - run.x).abs() > half_w,
+                "a light inside the body lights nothing"
+            );
+            assert!(l.radius < 1.6 && l.intensity > 1.0);
+        }
+        assert!(lights[0].position[0] > run.x && lights[1].position[0] < run.x);
+        assert_eq!(lights[0].color, Some(rim.left));
+        assert_eq!(lights[1].color, Some(rim.right));
     }
 
     #[test]

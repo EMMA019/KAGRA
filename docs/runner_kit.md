@@ -60,6 +60,17 @@ and dimmed HUD for this long before the result), `deaths` (obstacle name -> the 
 run, highlights it in the list, and a tab per column re-sorts. The sim reports `result` (key, config, this run's values) and
 `death_text` in its state, so another kit gets the same card by filling the same fields.
 
+`lives` `{count 9, invuln_secs 1.6, blink_hz 10}` is the nine lives. A hit costs one, plays a short shake, spark burst and thin red
+screen edges, and the cat blinks and cannot be hit again for `invuln_secs` (so a ramp or wall cannot take two lives in one touch).
+The last life ends the run exactly as before, with the same crash beat. The HUD shows one paw per life under the score (the one
+just lost pops red; a spec with `count` 1 draws no row). `count` is 1..=9. Hits are taken at the single crash point, so every
+behavior is covered. The measurement harness always runs with one life (`NeonCat::one_life`), because reachability and fairness
+need a hit to equal a death; `GameSpec::legacy()` and the classic fixture use one life too, so the golden runs are unchanged.
+`player.rim` `{left, right, intensity, radius, side, height}` are two coloured point lights (screen-left magenta, screen-right
+cyan) that sit just outside the cat's flanks so its side faces catch an edge; they must be outside the body, and the radius stays
+under 1.6 m so they never paint the floor. `player.eyes` `{enabled, color, glow, size, spread, height, forward}` are two small
+unlit emissive boxes on the face (model units, so they follow the scale and pose; they bloom above glow 1).
+
 `style.codes` is the colour language, one neon colour per thing to do, used for the obstacle edge and its glow:
 `jump_over` amber (low, hop), `roll_under` pink (high or hanging), `solid` red (go round), `cat_gap` violet (roll through),
 `rideable` blue (run on it), `pass_through` mint (gates and arches, never a threat). A kind may override with `color`.

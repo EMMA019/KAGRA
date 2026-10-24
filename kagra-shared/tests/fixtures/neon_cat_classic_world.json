@@ -14,7 +14,36 @@
     226,
     206,
     255
-   ]
+   ],
+   "rim": {
+    "left": [
+     1.0,
+     0.25,
+     0.75
+    ],
+    "right": [
+     0.3,
+     0.9,
+     1.0
+    ],
+    "intensity": 2.6,
+    "radius": 0.55,
+    "side": 0.5,
+    "height": 0.5
+   },
+   "eyes": {
+    "enabled": true,
+    "color": [
+     0.35,
+     1.0,
+     0.95
+    ],
+    "glow": 2.4,
+    "size": 0.13,
+    "spread": 0.24,
+    "height": 0.92,
+    "forward": 0.64
+   }
   },
   "obstacles": [
    {
@@ -229,6 +258,11 @@
     },
     "death_fallback": "\u3076\u3064\u304b\u3063\u305f"
    }
+  },
+  "lives": {
+   "count": 1,
+   "invuln_secs": 1.6,
+   "blink_hz": 10.0
   },
   "items": [],
   "placements": [],

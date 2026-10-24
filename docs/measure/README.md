@@ -4,7 +4,7 @@
 cargo run --release -p kagra-shared --example runner_measure -- WORLD.json [RUNS] [--no-perf]
 ```
 
-Prints one JSON report for a runner world (`kagra.runner --bake` output).
+Prints one JSON report for a runner world (`kagra.runner --bake` output). The harness plays with one life (`lives.count` is forced to 1), because every check here treats a hit as a death.
 Everything except `perf` is deterministic, so two reports diff cleanly
 before and after a tuning or preset change. Sim frames are 1/60 s.
 

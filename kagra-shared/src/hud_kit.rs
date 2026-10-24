@@ -79,24 +79,34 @@ pub fn nine_slice(
     );
 }
 
+/// A filled circle from horizontal strips (round without a texture).
+fn disc(list: &mut DrawList, cx: f32, cy: f32, rad: f32, c: [u8; 4], n: i32) {
+    let step = rad / (n as f32 + 0.5);
+    for k in -n..=n {
+        let dy = k as f32 * step;
+        let half = (rad * rad - dy * dy).max(0.0).sqrt();
+        list.quads.push(Quad::new(
+            cx - half,
+            cy + dy - step * 0.5,
+            half * 2.0,
+            step + 0.3,
+            c,
+        ));
+    }
+}
+
+/// A paw print: one big pad and four toes. `(cx, cy)` is the centre of the print.
+pub fn paw_icon(list: &mut DrawList, cx: f32, cy: f32, r: f32, color: [u8; 4]) {
+    disc(list, cx, cy + r * 0.3, r * 0.58, color, 3);
+    for (dx, dy) in [(-0.74, -0.1), (-0.27, -0.58), (0.27, -0.58), (0.74, -0.1)] {
+        disc(list, cx + dx * r, cy + dy * r, r * 0.27, color, 2);
+    }
+}
+
 /// A coin: dark rim, bright face, a slot down the middle, a glint. Drawn from
 /// horizontal strips so it is round without a texture. `(cx, cy)` is the centre.
 pub fn coin_icon(list: &mut DrawList, cx: f32, cy: f32, r: f32, color: [u8; 4]) {
-    let disc = |list: &mut DrawList, rad: f32, c: [u8; 4]| {
-        const N: i32 = 7;
-        let step = rad / (N as f32 + 0.5);
-        for k in -N..=N {
-            let dy = k as f32 * step;
-            let half = (rad * rad - dy * dy).max(0.0).sqrt();
-            list.quads.push(Quad::new(
-                cx - half,
-                cy + dy - step * 0.5,
-                half * 2.0,
-                step + 0.3,
-                c,
-            ));
-        }
-    };
+    let disc = |list: &mut DrawList, rad: f32, c: [u8; 4]| disc(list, cx, cy, rad, c, 7);
     let dark = [
         (color[0] as f32 * 0.55) as u8,
         (color[1] as f32 * 0.45) as u8,
@@ -232,5 +242,27 @@ mod tests {
         }
         assert!(((x0 + x1) * 0.5 - 50.0).abs() < 0.2 && ((y0 + y1) * 0.5 - 50.0).abs() < 0.2);
         assert!((x1 - x0 - 20.0).abs() < 0.8 && (y1 - y0 - 20.0).abs() < 0.8);
+    }
+
+    #[test]
+    fn paw_is_centred_and_fits_its_cell() {
+        let mut l = empty();
+        paw_icon(&mut l, 50.0, 50.0, 10.0, [255, 150, 205, 255]);
+        let (mut x0, mut x1, mut y0, mut y1) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+        for q in &l.quads {
+            x0 = x0.min(q.x);
+            x1 = x1.max(q.x + q.w);
+            y0 = y0.min(q.y);
+            y1 = y1.max(q.y + q.h);
+        }
+        assert!(((x0 + x1) * 0.5 - 50.0).abs() < 0.6 && ((y0 + y1) * 0.5 - 50.0).abs() < 1.2);
+        // Wider than tall, and inside 2.2 radii so nine of them keep a gap.
+        assert!(
+            x1 - x0 < 22.0 && y1 - y0 < 19.0,
+            "{} x {}",
+            x1 - x0,
+            y1 - y0
+        );
+        assert!(l.quads.len() > 12, "pad plus four toes");
     }
 }
