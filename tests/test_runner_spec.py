@@ -89,6 +89,10 @@ CLASSIC = {
     "mischief": [],
     "perch_route": [],
     "chaser": {"enabled": False},
+    # Look, sound and goals are new; the classic runs predate them.
+    "atmosphere": {"enabled": False},
+    "audio": {"enabled": False},
+    "missions": {"enabled": False},
 }
 
 
@@ -301,3 +305,117 @@ def test_item_pull_fields_are_spec_values():
     for bad in ({"pull_speed": 0.0}, {"magnet_lead": 20.0}, {"warn_secs": 9.0}, {"pull_accel": -1.0}):
         with pytest.raises(ValueError):
             GameSpec.from_overrides({"item_rules": bad})
+
+
+# --- night look, sound, missions (neon_fx_spec.rs) ---------------------------
+
+FX_RS = (ROOT / "kagra-shared/src/neon_fx_spec.rs").read_text(encoding="utf-8")
+
+
+def test_sfx_cue_names_match_rust():
+    from kagra.game_spec import SFX_CUES
+
+    body = re.search(r"pub const SFX_CUES: \[&str; (\d+)\] = \[(.*?)\];", FX_RS, re.S)
+    names = tuple(re.findall(r'"(\w+)"', body.group(2)))
+    assert int(body.group(1)) == len(names) == len(SFX_CUES)
+    assert names == SFX_CUES
+
+
+def test_fx_defaults_are_on_for_neon_cat_and_cover_every_cue():
+    from kagra.game_spec import SFX_CUES
+
+    g = GameSpec().to_dict()
+    assert g["atmosphere"]["enabled"] and g["audio"]["enabled"] and g["missions"]["enabled"]
+    assert set(g["audio"]["sfx"]) == set(SFX_CUES)
+    assert [m["kind"] for m in g["missions"]["list"]] == ["coins", "gates", "perch"]
+    assert g["missions"]["bonus"] == 0, "missions must not change scores unless asked"
+    # Every file the defaults name exists in the repo, so a fresh clone makes sound.
+    for f in GameSpec().audio.files():
+        assert (ROOT / f).is_file(), f
+    w = GameSpec().atmosphere.wall
+    assert (ROOT / w.texture_high).is_file() and (ROOT / w.texture_mobile).is_file()
+    assert w.texture_low == "", "the low tier keeps the plain wall"
+
+
+def test_fx_numbers_match_the_rust_defaults():
+    """The Rust Default impls and the Python dataclasses are two copies of one table."""
+    g = GameSpec().to_dict()
+    rain = g["atmosphere"]["rain"]
+    for key, rust in (
+        ("count_low", r"count_low: (\d+)"),
+        ("count_mobile", r"count_mobile: (\d+)"),
+        ("count_high", r"count_high: (\d+)"),
+        ("reach", r"reach: ([\d.]+),\n\s+behind"),
+        ("fall_speed", r"fall_speed: ([\d.]+)"),
+        ("slant", r"slant: ([\d.]+)"),
+    ):
+        assert float(re.search(rust, FX_RS).group(1)) == rain[key], key
+    signs = g["atmosphere"]["signs"]
+    assert signs["cell"] == float(re.search(r"cell: ([\d.]+),\n\s+density_low", FX_RS).group(1))
+    assert signs["density_high"] == float(re.search(r"density_high: ([\d.]+)", FX_RS).group(1))
+    assert g["atmosphere"]["wall"]["segment"] == float(re.search(r"segment: ([\d.]+),\n\s+reach: 48", FX_RS).group(1))
+    audio = g["audio"]
+    assert audio["master"] == float(re.search(r"master: ([\d.]+),\n\s+bgm_volume", FX_RS).group(1))
+    assert audio["bgm"]["fade_secs"] == float(re.search(r"fade_secs: ([\d.]+)", FX_RS).group(1))
+    assert audio["bgm"]["file"] == "assets/audio/neon_cat/bgm.wav"
+    targets = re.findall(r"m\(MissionKind::\w+, (\d+)\)", FX_RS)
+    assert [m["target"] for m in g["missions"]["list"]] == [int(t) for t in targets]
+
+
+def test_fx_overrides_merge_by_field():
+    spec = GameSpec.from_overrides(
+        {
+            "atmosphere": {"rain": {"count_high": 10}, "signs": {"enabled": False}},
+            "audio": {"master": 0.3, "sfx": {"coin": {"file": "assets/audio/mine/coin.mp3", "volume": 0.5}}},
+            "missions": {"list": [{"kind": "gates", "target": 3, "label": "ARCHES"}], "bonus": 100},
+        }
+    )
+    g = spec.to_dict()
+    assert g["atmosphere"]["rain"]["count_high"] == 10 and g["atmosphere"]["rain"]["count_low"] == 24
+    assert g["atmosphere"]["signs"]["enabled"] is False and g["atmosphere"]["wall"]["enabled"] is True
+    # `sfx` replaces the table, like the Rust map: only the cues you list make sound.
+    assert list(g["audio"]["sfx"]) == ["coin"] and g["audio"]["sfx"]["coin"]["rate"] == 1.0
+    assert g["audio"]["master"] == 0.3 and g["audio"]["bgm"]["volume"] == 0.55
+    assert g["missions"]["list"] == [{"kind": "gates", "target": 3, "label": "ARCHES"}]
+    assert spec.audio.files() == ["assets/audio/neon_cat/bgm.wav", "assets/audio/mine/coin.mp3"]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"atmosphere": {"rain": {"count_high": 401}}},
+        {"atmosphere": {"rain": {"fall_speed": 0}}},
+        {"atmosphere": {"signs": {"palette": []}}},
+        {"atmosphere": {"signs": {"rows": [0.5]}}},
+        {"atmosphere": {"wall": {"segment": 2.0, "reach": 60.0}}},
+        {"atmosphere": {"wall": {"texture_high": "../secret.png"}}},
+        {"atmosphere": {"wall": {"texture_high": "assets/wall.jpg"}}},
+        {"audio": {"master": 1.5}},
+        {"audio": {"bgm": {"file": "assets/audio/bgm.flac"}}},
+        {"audio": {"bgm": {"file": "/etc/passwd.wav"}}},
+        {"audio": {"sfx": {"coin": {"file": "https://x/y.mp3"}}}},
+        {"audio": {"sfx": {"coin": {"file": "a.wav", "rate": 9}}}},
+        {"missions": {"list": [{"kind": "fish", "target": 1}]}},
+        {"missions": {"list": [{"kind": "coins", "target": 0}]}},
+        {"missions": {"list": [{"kind": "coins", "target": 1}] * 6}},
+        {"missions": {"list": [{"kind": "coins", "target": 1, "label": "x" * 17}]}},
+        {"missions": {"bonus": -1}},
+    ],
+)
+def test_fx_bad_values_are_rejected(bad):
+    with pytest.raises((ValueError, TypeError, KeyError)):
+        GameSpec.from_overrides(bad).to_dict()
+
+
+def test_fx_formats_and_silence_are_allowed():
+    for f in ("a.wav", "a.OGG", "dir/a.mp3", ""):
+        GameSpec.from_overrides({"audio": {"bgm": {"file": f}, "sfx": {"coin": {"file": f}}}}).to_dict()
+    GameSpec.from_overrides({"atmosphere": {"wall": {"texture_high": "", "texture_mobile": ""}}}).to_dict()
+    GameSpec.from_overrides({"missions": {"list": []}}).to_dict()
+
+
+def test_meteor_cat_keeps_its_own_look():
+    manifest = json.loads((ROOT / "games/meteor_cat_minimal.json").read_text(encoding="utf-8"))
+    game = GameSpec.from_overrides(manifest["game"]).to_dict()
+    assert game["atmosphere"]["enabled"] is False and game["missions"]["enabled"] is False
+    assert game["audio"]["enabled"] is True

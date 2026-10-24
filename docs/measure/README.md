@@ -45,6 +45,8 @@ before and after a tuning or preset change. Sim frames are 1/60 s.
 
 `neon_cat_baseline.json` is the Neon Cat reference (20 runs, the default sectioned course with seven obstacle kinds). `neon_cat_classic.json` is the old uniform 3-crate stream (`GameSpec::legacy()`).
 
+The night look, sound and missions (`atmosphere`, `audio`, `missions`) draw and count but never touch the course, the physics or the score (mission `bonus` is 0), so both baselines are meant to stay as recorded; `tests` and the harness run on the defaults to prove it.
+
 ## Feel presets (`spec.feel`)
 
 `runner_measure WORLD.json 20 --feel classic|snappy_runner|arcade_punchy|chill` overrides the preset.

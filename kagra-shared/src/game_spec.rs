@@ -57,6 +57,12 @@ pub struct GameSpec {
     pub input: InputSpec,
     /// Declarative feel presets (see `game_core::feel`).
     pub feel: crate::game_core::feel::FeelSpec,
+    /// Night rain, neon signs, concrete walls (`neon_fx_spec`).
+    pub atmosphere: crate::neon_fx_spec::AtmosphereSpec,
+    /// BGM and SFX files and volumes.
+    pub audio: crate::neon_fx_spec::AudioSpec,
+    /// Small per-run goals.
+    pub missions: crate::neon_fx_spec::MissionsSpec,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1581,6 +1587,9 @@ impl Default for GameSpec {
             runner: RunnerKit::default(),
             input: InputSpec::default(),
             feel: Default::default(),
+            atmosphere: Default::default(),
+            audio: Default::default(),
+            missions: Default::default(),
         }
     }
 }
@@ -1861,6 +1870,9 @@ impl GameSpec {
             return Err("game spec: item duration must be >= 0".into());
         }
         self.validate_item_colors()?;
+        self.atmosphere.validate()?;
+        self.audio.validate()?;
+        self.missions.validate()?;
         for (i, s) in self.runner.sections.iter().enumerate() {
             if s.length <= 0.0 || !s.length.is_finite() {
                 return Err(format!("game spec: section {i} length must be > 0"));
@@ -1973,6 +1985,11 @@ impl GameSpec {
         s.mischief = Vec::new();
         s.perch_route = Vec::new();
         s.chaser.enabled = false;
+        // Pure look, sound and goals: off, so the recorded runs and the
+        // classic baseline see the same world dump as before.
+        s.atmosphere = crate::neon_fx_spec::AtmosphereSpec::off();
+        s.audio = crate::neon_fx_spec::AudioSpec::off();
+        s.missions = crate::neon_fx_spec::MissionsSpec::off();
         s
     }
 

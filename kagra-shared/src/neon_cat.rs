@@ -17,11 +17,13 @@ use std::sync::{Mutex, OnceLock};
 
 use serde_json::json;
 
+use crate::atmosphere;
 use crate::flow::{FlowAction, FlowPhase, GameFlow};
 use crate::game_core::{self, Core, Hitbox, Juice, JuiceShake, Kit, Spring1};
 use crate::game_spec::{
     Behavior, GameSpec, ItemEffect, ItemIcon, MischiefKind, PartRole, PerchKind, SectionKind,
 };
+use crate::neon_missions::Counts;
 use crate::scene::{DrawList, Quad, TextAlign, TextQuad};
 use crate::world_doc::{WorldCamera, WorldDoc, WorldLight, WorldProp, WorldWalker};
 
@@ -156,6 +158,9 @@ pub struct NeonCat {
     robot_flee: f32,
     robot_age: f32,
     robot_x: f32,
+    /// Atmosphere wall texture, missions and the game-over cue
+    /// (`neon_fx_spec`, `neon_missions`).
+    fx_state: crate::neon_fx_spec::RunFx,
 }
 
 pub fn is_cat_dump(json: &str) -> bool {
@@ -235,8 +240,22 @@ impl NeonCat {
         {
             run.classic = true;
         }
+        run.resolve_fx();
         run.rebuild();
         Ok(run)
+    }
+
+    /// Picture tier from the dump's `quality` (absent = desktop = high).
+    fn tier(&self) -> crate::neon_fx_spec::Tier {
+        crate::neon_fx_spec::Tier::from_quality(self.quality.as_deref())
+    }
+
+    /// Once per load: which wall texture this tier uses (only if the file is
+    /// there, so a missing PNG leaves the plain wall rather than a white one).
+    fn resolve_fx(&mut self) {
+        let path = self.spec.atmosphere.wall.texture(self.tier());
+        self.fx_state.wall_texture =
+            (!path.is_empty() && crate::world_doc::texture_exists(path)).then(|| path.to_string());
     }
 
     /// One hit ends the run, as before lives. The geometry measurements
@@ -333,6 +352,7 @@ impl NeonCat {
             robot_flee: 0.0,
             robot_age: 0.0,
             robot_x: 0.0,
+            fx_state: Default::default(),
         };
         run.lives = run.spec.lives.count;
         if let Ok(p) = feel::resolve(&run.spec.feel) {
@@ -413,6 +433,7 @@ impl NeonCat {
             "columns": b.columns,
             "sort": b.sort,
             "run": run,
+            "missions": self.fx_state.missions.json(&self.spec.missions, self.mission_counts()),
         })
     }
 
@@ -489,6 +510,7 @@ impl NeonCat {
             "rings": self.core.stats.rings,
             "coins": self.coins,
             "gates": self.gates,
+            "missions": self.fx_state.missions.json(&self.spec.missions, self.mission_counts()),
             "lives": self.lives,
             "fx": {
                 "magnet": self.fx[FX_MAGNET],
@@ -777,6 +799,9 @@ impl NeonCat {
         self.robot_age = 0.0;
         self.coins = 0;
         self.gates = 0;
+        self.fx_state.missions.reset();
+        self.fx_state.banner_t = 0.0;
+        self.fx_state.gameover_pending = false;
         self.dying = 0.0;
         self.lives = self.spec.lives.count;
         self.invuln = 0.0;
@@ -1020,11 +1045,38 @@ impl NeonCat {
             *t = (*t - dt).max(0.0);
         }
         self.update_robot(dt);
+        self.update_missions();
         self.toast_t = (self.toast_t - dt).max(0.0);
+        self.fx_state.banner_t = (self.fx_state.banner_t - dt).max(0.0);
         self.streak_t = (self.streak_t - dt).max(0.0);
         self.pop_t = (self.pop_t - dt).max(0.0);
         if self.pop_t <= 0.0 {
             self.pop_sum = 0;
+        }
+    }
+
+    fn mission_counts(&self) -> Counts {
+        Counts {
+            coins: self.coins,
+            gates: self.gates,
+            perches: self.perch_landed.len() as u32,
+        }
+    }
+
+    /// Announce a finished mission once, with its bonus (0 unless set).
+    fn update_missions(&mut self) {
+        let counts = self.mission_counts();
+        let fresh = self.fx_state.missions.update(&self.spec.missions, counts);
+        for i in fresh {
+            let m = &self.spec.missions;
+            // Its own banner: a pick-up's toast is not replaced.
+            self.fx_state.banner = format!("MISSION  {}", m.list[i].text());
+            self.fx_state.banner_t = 2.2;
+            if m.bonus > 0 {
+                self.core.stats.score += m.bonus;
+                self.fx_state.banner = format!("{}  +{}", self.fx_state.banner, m.bonus);
+            }
+            self.sfx("mission");
         }
     }
 
@@ -2038,7 +2090,7 @@ impl NeonCat {
         self.toast = effect_label(effect).into();
         self.toast_t = 1.4;
         self.burst(at[0], at[1], at[2], 14, color, 3.0, 0.11);
-        self.sfx("coin");
+        self.sfx("item");
     }
 
     /// Glowing pick-ups ahead of the cat: a bobbing orb in the effect's colour
@@ -2264,7 +2316,7 @@ impl NeonCat {
         self.core.juice.hit(self.feel.hit_shake * 0.6, 0.07);
         self.burst(self.x, self.y + 0.4, self.z, 12, [255, 60, 170], 3.6, 0.14);
         self.burst(self.x, self.y + 0.5, self.z, 6, [90, 240, 255], 2.6, 0.1);
-        self.sfx("fire");
+        self.sfx("hit");
     }
 
     fn crash(&mut self, reason: &str) {
@@ -2296,7 +2348,8 @@ impl NeonCat {
         self.hop = None;
         self.burst(self.x, self.y + 0.4, self.z, 18, [255, 60, 170], 4.6, 0.16);
         self.burst(self.x, self.y + 0.5, self.z, 10, [90, 240, 255], 3.2, 0.12);
-        self.sfx("fire");
+        self.sfx("hit");
+        self.fx_state.gameover_pending = true;
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2749,13 +2802,18 @@ impl NeonCat {
                 ));
             }
         }
-        for (name, side) in [("wall-l", -1.0_f32), ("wall-r", 1.0)] {
-            doc.props.push(matte(
-                name,
-                [side * 2.78, 3.45, zmid],
-                [0.05, 6.9, depth],
-                [4, 3, 10],
-            ));
+        let view = self.atmosphere_view();
+        if let Some(walls) = atmosphere::wall_props(&view, z0, z1) {
+            doc.props.extend(walls);
+        } else {
+            for (name, side) in [("wall-l", -1.0_f32), ("wall-r", 1.0)] {
+                doc.props.push(matte(
+                    name,
+                    [side * 2.78, 3.45, zmid],
+                    [0.05, 6.9, depth],
+                    [4, 3, 10],
+                ));
+            }
         }
         doc.props.push(matte(
             "ceiling",
@@ -2781,6 +2839,22 @@ impl NeonCat {
             0.6,
         ));
         self.push_grid_lines(doc, z0, z1);
+        atmosphere::push_effects(doc, &view);
+    }
+
+    fn atmosphere_view(&self) -> atmosphere::View<'_> {
+        atmosphere::View {
+            spec: &self.spec.atmosphere,
+            tier: self.tier(),
+            wall_texture: self.fx_state.wall_texture.as_deref(),
+            time: if self.flow.phase == FlowPhase::Title {
+                self.attract
+            } else {
+                self.time
+            },
+            z: self.z,
+            seed: self.spec.seed,
+        }
     }
 
     /// Screen-space strokes. A long line is chopped so a segment behind the
@@ -3352,6 +3426,19 @@ impl NeonCat {
             )
             .aligned(TextAlign::Left),
         );
+        if self.spec.missions.enabled && self.spec.missions.hud {
+            // The best score so far, on the caption row.
+            list.texts.push(
+                TextQuad::new(
+                    &format!("BEST {}", self.flow.best_score.max(self.core.stats.score)),
+                    m + sw - 10.0 * ui + shake,
+                    top + 6.0 * ui,
+                    11.0 * ui,
+                    fade([255, 214, 120, 255], keep),
+                )
+                .aligned(TextAlign::Right),
+            );
+        }
         list.texts.push(
             TextQuad::new(
                 &format!("{}", self.core.stats.score),
@@ -3471,6 +3558,20 @@ impl NeonCat {
                 fade(col, keep),
             ));
         }
+        // A finished mission, under the pick-up toast.
+        if self.fx_state.banner_t > 0.0 && !dead {
+            let a = (self.fx_state.banner_t / 0.4).clamp(0.0, 1.0);
+            list.texts.push(
+                TextQuad::new(
+                    &self.fx_state.banner,
+                    w * 0.5,
+                    h * 0.30 + 34.0 * ui,
+                    18.0 * ui,
+                    [120, 255, 190, (a * 255.0) as u8],
+                )
+                .aligned(TextAlign::Center),
+            );
+        }
         // A pick-up's name over the view for a moment.
         if self.toast_t > 0.0 && !dead {
             let a = (self.toast_t / 0.4).clamp(0.0, 1.0);
@@ -3517,6 +3618,44 @@ impl NeonCat {
                 border,
                 fade(p.coin, keep),
                 &format!("{}", self.coins),
+            );
+        }
+        self.paint_missions(list, [w - m + shake, top + 40.0 * ui + 24.0 * ui], ui, keep);
+    }
+
+    /// The run's missions, right-aligned under the coin chip: `COINS 12/40`,
+    /// `COINS DONE` in green once finished.
+    fn paint_missions(&self, list: &mut DrawList, at: [f32; 2], ui: f32, keep: f32) {
+        use crate::hud_kit::fade;
+        let spec = &self.spec.missions;
+        if !spec.enabled || !spec.hud {
+            return;
+        }
+        let counts = self.mission_counts();
+        for (i, m) in spec.list.iter().enumerate() {
+            let done = self.fx_state.missions.is_done(i);
+            let (text, col) = if done {
+                (format!("{} DONE", m.text()), [120, 255, 190, 255])
+            } else {
+                (
+                    format!(
+                        "{} {}/{}",
+                        m.text(),
+                        counts.get(m.kind).min(m.target),
+                        m.target
+                    ),
+                    [190, 210, 235, 235],
+                )
+            };
+            list.texts.push(
+                TextQuad::new(
+                    &text,
+                    at[0],
+                    at[1] + i as f32 * 15.0 * ui,
+                    11.0 * ui,
+                    fade(col, keep),
+                )
+                .aligned(TextAlign::Right),
             );
         }
     }
@@ -3567,6 +3706,12 @@ impl Kit for NeonCat {
     fn hitstop_frame(&mut self, dt: f32) {
         self.anim_t += dt * 0.35;
         self.dying += dt;
+        // The result card opens on the frame the freeze ends: the jingle
+        // comes with it and the music fades out.
+        if self.fx_state.gameover_pending && self.core.juice.hitstop <= 0.0 {
+            self.fx_state.gameover_pending = false;
+            self.sfx("gameover");
+        }
     }
 
     fn follow(&mut self, dt: f32) {
@@ -7602,5 +7747,389 @@ mod tests {
     fn norm(a: [f32; 3]) -> [f32; 3] {
         let l = dot(a, a).sqrt().max(1e-6);
         [a[0] / l, a[1] / l, a[2] / l]
+    }
+}
+
+/// Atmosphere, audio cues and missions (`neon_fx_spec`).
+#[cfg(test)]
+mod fx_tests {
+    use super::*;
+    use crate::mixer;
+    use crate::neon_fx_spec::{AtmosphereSpec, MissionsSpec, Tier};
+
+    const FULL: &str = include_str!("../tests/fixtures/neon_cat_world.json");
+
+    fn with_quality(q: Option<&str>) -> NeonCat {
+        let mut v: serde_json::Value = serde_json::from_str(FULL).unwrap();
+        if let Some(q) = q {
+            v["quality"] = q.into();
+        }
+        let mut run = NeonCat::from_json(&v.to_string()).unwrap();
+        run.confirm();
+        run
+    }
+
+    fn play(run: &mut NeonCat, secs: f32) {
+        for _ in 0..(secs * 60.0) as u32 {
+            run.tick(1.0 / 60.0);
+        }
+    }
+
+    fn cues() -> Vec<String> {
+        mixer::with_mixer(|m| m.log().to_vec())
+    }
+
+    fn textured_walls(run: &NeonCat) -> Vec<String> {
+        run.document()
+            .props
+            .iter()
+            .filter(|p| p.id.starts_with("prop:wtex-") && p.texture.is_some())
+            .map(|p| p.texture.clone().unwrap())
+            .collect()
+    }
+
+    fn segments(run: &NeonCat) -> usize {
+        run.document()
+            .lines
+            .iter()
+            .map(|l| l.points.len().saturating_sub(1))
+            .sum()
+    }
+
+    #[test]
+    fn the_shipped_course_has_the_night_look_on_by_default() {
+        let run = with_quality(None);
+        let a = &run.spec.atmosphere;
+        assert!(a.enabled && a.rain.enabled && a.signs.enabled && a.wall.enabled);
+        assert!(run.spec.audio.enabled && run.spec.missions.enabled);
+        let d = run.document();
+        assert!(d.lines.iter().any(|l| l.id.starts_with("rn-")), "rain");
+        assert!(d.lines.iter().any(|l| l.id.starts_with("sg-")), "signs");
+        assert!(!textured_walls(&run).is_empty(), "concrete walls");
+        // No daytime colours: a dark sky and a dark hemisphere light, and the
+        // only backdrop is the black end cap.
+        let sky = d.sky.unwrap();
+        assert!(sky[..3].iter().all(|c| *c <= 40), "sky {sky:?}");
+        assert!(d.hemi_sky.unwrap().iter().all(|c| *c < 0.1));
+        assert!(!d
+            .props
+            .iter()
+            .any(|p| p.id.contains("skyline") || p.id.contains("city")));
+    }
+
+    #[test]
+    fn tiers_pick_their_wall_texture_and_low_has_none() {
+        let a = AtmosphereSpec::default();
+        let tex = |q| textured_walls(&with_quality(q));
+        let high = tex(None);
+        assert!(!high.is_empty() && high.iter().all(|t| *t == a.wall.texture_high));
+        assert_eq!(tex(Some("high")), high);
+        let mobile = tex(Some("mobile"));
+        assert!(!mobile.is_empty() && mobile.iter().all(|t| *t == a.wall.texture_mobile));
+        let low = with_quality(Some("low"));
+        assert!(textured_walls(&low).is_empty(), "low draws the plain wall");
+        assert!(
+            low.document().props.iter().any(|p| p.id == "prop:wall-l"),
+            "the plain wall is still there"
+        );
+        assert!(
+            low.document()
+                .props
+                .iter()
+                .all(|p| !p.id.starts_with("prop:sgp-")),
+            "no sign plates on low"
+        );
+        let n = |q| {
+            with_quality(q)
+                .document()
+                .lines
+                .iter()
+                .filter(|l| l.id.starts_with("rn-"))
+                .count()
+        };
+        assert!(n(Some("low")) < n(Some("mobile")) && n(Some("mobile")) < n(None));
+    }
+
+    #[test]
+    fn a_missing_texture_file_leaves_the_plain_wall() {
+        let mut v: serde_json::Value = serde_json::from_str(FULL).unwrap();
+        v["game"]["atmosphere"] = serde_json::json!({
+            "wall": { "texture_high": "assets/textures/neon_cat/nope.png" }
+        });
+        let run = NeonCat::from_json(&v.to_string()).unwrap();
+        assert!(textured_walls(&run).is_empty());
+        let plain: Vec<_> = run
+            .document()
+            .props
+            .iter()
+            .filter(|p| p.id == "prop:wall-l" || p.id == "prop:wall-r")
+            .collect();
+        assert_eq!(plain.len(), 2);
+        assert!(plain.iter().all(|p| p.texture.is_none()));
+    }
+
+    #[test]
+    fn everything_switches_off_in_json() {
+        let mut v: serde_json::Value = serde_json::from_str(FULL).unwrap();
+        v["game"]["atmosphere"] = serde_json::json!({ "enabled": false });
+        let run = NeonCat::from_json(&v.to_string()).unwrap();
+        let d = run.document();
+        assert!(textured_walls(&run).is_empty());
+        assert!(!d
+            .lines
+            .iter()
+            .any(|l| l.id.starts_with("rn-") || l.id.starts_with("sg-")));
+        let mut v: serde_json::Value = serde_json::from_str(FULL).unwrap();
+        v["game"]["atmosphere"] = serde_json::json!({
+            "rain": { "enabled": false }, "signs": { "enabled": false }, "wall": { "enabled": false }
+        });
+        let run = NeonCat::from_json(&v.to_string()).unwrap();
+        let d = run.document();
+        assert!(textured_walls(&run).is_empty());
+        assert!(!d
+            .lines
+            .iter()
+            .any(|l| l.id.starts_with("rn-") || l.id.starts_with("sg-")));
+    }
+
+    #[test]
+    fn legacy_spec_draws_exactly_the_old_tunnel() {
+        let mut run = NeonCat::with_spec(GameSpec::legacy());
+        run.confirm();
+        play(&mut run, 1.0);
+        let d = run.document();
+        assert!(textured_walls(&run).is_empty());
+        assert!(!d.lines.iter().any(|l| {
+            l.id.starts_with("rn-") || l.id.starts_with("rp-") || l.id.starts_with("sg-")
+        }));
+        assert!(!d.props.iter().any(|p| p.id.starts_with("prop:sgp-")));
+        assert!(run.sim_value()["missions"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_effects_never_crowd_the_stroke_budget() {
+        let mut run = with_quality(None);
+        let mut worst = 0;
+        for _ in 0..40 {
+            play(&mut run, 0.5);
+            worst = worst.max(segments(&run));
+            if !run.core.stats.alive {
+                run.start_run();
+            }
+        }
+        // `strokes::MAX_SEGMENTS` is 2048; past it the rest of the lines drop.
+        assert!(worst < 1700, "{worst} of 2048 stroke segments");
+    }
+
+    #[test]
+    fn wall_texture_ids_come_from_a_fixed_ring_as_the_cat_runs() {
+        // The renderer keys each textured prop's GPU upload by id and path.
+        // A ring that wraps by index keeps the key set small and fixed.
+        let mut run = with_quality(None);
+        let slots = crate::atmosphere::wall_slots(&run.spec.atmosphere.wall);
+        let mut seen = std::collections::BTreeSet::new();
+        for _ in 0..80 {
+            run.z += 3.1;
+            run.tick(1.0 / 60.0);
+            for p in &run.document().props {
+                if let Some(rest) = p.id.strip_prefix("prop:wtex-") {
+                    let (side, slot) = rest.split_once('-').unwrap();
+                    assert!(side == "l" || side == "r");
+                    assert!(slot.parse::<i32>().unwrap() < slots, "{}", p.id);
+                    assert_eq!(
+                        p.texture.as_deref(),
+                        Some("assets/textures/neon_cat/concrete_wall.png")
+                    );
+                    seen.insert(p.id.clone());
+                }
+            }
+        }
+        assert!(
+            seen.len() as i32 <= 2 * slots,
+            "{} ids over a long run",
+            seen.len()
+        );
+    }
+
+    #[test]
+    fn cues_use_the_shipped_names() {
+        mixer::reset_mixer();
+        let mut run = with_quality(None);
+        play(&mut run, 0.3);
+        run.lives = 1;
+        run.take_item(ItemEffect::Magnet, [run.x, 0.5, run.z]);
+        run.take_item(ItemEffect::Meow, [run.x, 0.5, run.z]);
+        run.crash("CRATE");
+        play(&mut run, 3.0);
+        assert_eq!(run.flow.phase, FlowPhase::Result);
+        let log = cues();
+        for want in ["item", "meow", "hit", "gameover"] {
+            assert!(log.iter().any(|c| c == want), "{want} in {log:?}");
+        }
+        assert!(!log.iter().any(|c| c == "fire"), "fire was renamed hit");
+        let spec = &run.spec.audio;
+        for c in log.iter().filter(|c| !c.starts_with("bgm:")) {
+            assert!(
+                spec.sfx.contains_key(c.as_str()),
+                "{c} has a file in the spec"
+            );
+        }
+        // The jingle comes once, after the hit.
+        let hit = log.iter().position(|c| c == "hit").unwrap();
+        let over = log.iter().position(|c| c == "gameover").unwrap();
+        assert!(over > hit);
+        assert_eq!(log.iter().filter(|c| *c == "gameover").count(), 1);
+    }
+
+    #[test]
+    fn music_follows_the_run_through_the_flow_and_the_spec_names_its_file() {
+        mixer::reset_mixer();
+        let mut run = with_quality(None);
+        assert!(cues().iter().any(|c| c == "bgm:bgm"), "plays on start");
+        assert!(!run.spec.audio.bgm.file.is_empty());
+        run.lives = 1;
+        run.crash("CRATE");
+        play(&mut run, 3.0);
+        assert_eq!(run.flow.phase, FlowPhase::Result);
+        let st = mixer::with_mixer(|m| m.state());
+        assert!(st.bgm_gain < 1.0 || st.bgm_name.is_empty(), "fades out");
+    }
+
+    #[test]
+    fn audio_off_in_json_is_a_page_switch_not_a_sim_change() {
+        // The sim keeps naming its cues (they are data); the page reads
+        // `audio.enabled` and plays nothing.
+        let mut v: serde_json::Value = serde_json::from_str(FULL).unwrap();
+        v["game"]["audio"] = serde_json::json!({ "enabled": false });
+        let run = NeonCat::from_json(&v.to_string()).unwrap();
+        assert!(!run.spec.audio.enabled);
+        let mut v: serde_json::Value = serde_json::from_str(FULL).unwrap();
+        v["game"]["audio"] = serde_json::json!({ "sfx": { "jump": { "file": "../x.wav" } } });
+        assert!(
+            NeonCat::from_json(&v.to_string()).is_err(),
+            "bad paths are rejected"
+        );
+    }
+
+    #[test]
+    fn missions_count_announce_once_and_restart_with_the_run() {
+        mixer::reset_mixer();
+        let mut run = with_quality(None);
+        let list = run.spec.missions.list.clone();
+        assert_eq!(list.len(), 3);
+        play(&mut run, 0.2);
+        let m = run.sim_value()["missions"].clone();
+        assert_eq!(m.as_array().unwrap().len(), 3);
+        assert!(m.as_array().unwrap().iter().all(|x| x["done"] == false));
+        run.coins = 40;
+        run.tick(1.0 / 60.0);
+        let m = run.sim_value()["missions"].clone();
+        assert_eq!(m[0]["done"], true);
+        assert_eq!(m[0]["value"], 40);
+        assert_eq!(m[1]["done"], false);
+        assert!(run.fx_state.banner.starts_with("MISSION"));
+        assert!(run
+            .hud(412, 915)
+            .texts
+            .iter()
+            .any(|t| t.text.starts_with("MISSION")));
+        let n = cues().iter().filter(|c| *c == "mission").count();
+        run.coins = 55;
+        run.tick(1.0 / 60.0);
+        assert_eq!(cues().iter().filter(|c| *c == "mission").count(), n, "once");
+        run.gates = list[1].target;
+        run.perch_landed.insert(3);
+        run.tick(1.0 / 60.0);
+        assert_eq!(run.fx_state.missions.completed(), 3);
+        assert_eq!(run.result_json()["missions"][2]["done"], true);
+        // A new run starts from zero.
+        run.start_run();
+        let m = run.sim_value()["missions"].clone();
+        assert!(m
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|x| x["done"] == false && x["value"] == 0));
+    }
+
+    #[test]
+    fn mission_bonus_is_zero_unless_asked_for() {
+        let mut run = with_quality(None);
+        assert_eq!(run.spec.missions.bonus, 0);
+        play(&mut run, 0.2);
+        let before = run.core.stats.score;
+        run.coins = 40;
+        run.tick(1.0 / 60.0);
+        let gained = run.core.stats.score - before;
+        assert!(gained < 50, "no bonus, just the run's own points: {gained}");
+        let mut spec = (*run.spec).clone();
+        spec.missions = MissionsSpec {
+            bonus: 500,
+            ..spec.missions
+        };
+        let mut run = NeonCat::with_spec(spec);
+        run.confirm();
+        play(&mut run, 0.2);
+        let before = run.core.stats.score;
+        run.coins = 40;
+        run.tick(1.0 / 60.0);
+        assert!(run.core.stats.score >= before + 500);
+        assert!(run.fx_state.banner.contains("+500"));
+    }
+
+    #[test]
+    fn best_score_and_missions_show_on_the_hud_and_stay_on_screen() {
+        let mut run = with_quality(None);
+        play(&mut run, 0.3);
+        run.flow.best_score = 4321;
+        for (w, h) in [(412, 915), (824, 1800), (1280, 720)] {
+            let l = run.hud(w, h);
+            let best = l
+                .texts
+                .iter()
+                .find(|t| t.text == "BEST 4321")
+                .expect("BEST chip");
+            assert!(best.x > 0.0 && best.x <= w as f32);
+            let rows: Vec<_> = l
+                .texts
+                .iter()
+                .filter(|t| {
+                    t.text.starts_with("COINS ")
+                        || t.text.starts_with("GATES ")
+                        || t.text.starts_with("PERCH ")
+                })
+                .collect();
+            assert_eq!(rows.len(), 3, "{w}x{h}");
+            for t in rows {
+                assert!(
+                    t.x <= w as f32 && t.y >= 0.0 && t.y + t.size <= h as f32,
+                    "{t:?}"
+                );
+            }
+        }
+        // The best follows a better run live.
+        run.core.stats.score = 9000;
+        assert!(run
+            .hud(412, 915)
+            .texts
+            .iter()
+            .any(|t| t.text == "BEST 9000"));
+        // Off: no chip and no rows.
+        let mut spec = (*run.spec).clone();
+        spec.missions = MissionsSpec::off();
+        let mut off = NeonCat::with_spec(spec);
+        off.confirm();
+        let l = off.hud(412, 915);
+        assert!(!l
+            .texts
+            .iter()
+            .any(|t| t.text.starts_with("BEST ") || t.text.starts_with("COINS ")));
+    }
+
+    #[test]
+    fn the_tier_follows_the_dump() {
+        assert_eq!(with_quality(None).tier(), Tier::High);
+        assert_eq!(with_quality(Some("mobile")).tier(), Tier::Mobile);
+        assert_eq!(with_quality(Some("low")).tier(), Tier::Low);
     }
 }

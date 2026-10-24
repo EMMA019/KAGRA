@@ -212,6 +212,27 @@
     html[data-swipe="1"][data-orient="landscape"] #gameover { font-size: 28px; }
     html[data-swipe="1"][data-orient="landscape"] table.rank td { padding: 3px 4px; }
     html[data-swipe="1"][data-orient="landscape"] #death { margin-bottom: 8px; }
+    .goals { text-align: left; padding: 10px 14px; }
+    .goals h3 { margin: 0 0 6px; display: flex; justify-content: space-between; align-items: baseline;
+      font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: #8cffff; }
+    .goals h3 em { font-style: normal; color: #ffe08a; font-size: 13px; font-variant-numeric: tabular-nums; }
+    .goals ul { list-style: none; margin: 0; padding: 0; }
+    .goals li { --p: 0%; display: flex; gap: 8px; align-items: center; padding: 5px 6px; font-size: 14px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      background: linear-gradient(90deg, rgba(90, 210, 230, 0.2) var(--p), transparent var(--p)); }
+    .goals li:first-child { border-top: 0; }
+    .goals li .chk { width: 1.2em; text-align: center; opacity: 0.55; }
+    .goals li .gl { flex: 1; }
+    .goals li .gv { font-variant-numeric: tabular-nums; opacity: 0.85; font-size: 13px; }
+    .goals li.done { color: #ffe9b0; }
+    .goals li.done .chk { opacity: 1; color: #ffe08a; }
+    #goalsTitle { margin: 0 0 14px; }
+    #sound { margin: 0; padding: 7px 16px; font-size: 13px; border-radius: 999px; background: rgba(255,255,255,0.08);
+      color: #dff; border: 1px solid rgba(140, 255, 255, 0.35); }
+    #sound[aria-pressed="true"] { opacity: 0.6; }
+    html[data-swipe="1"][data-orient="landscape"] #resultLeft { display: grid; gap: 10px; }
+    #resultLeft .panel { margin: 0 0 10px; }
+    html[data-swipe="1"][data-orient="landscape"] #resultLeft .panel { margin: 0; }
     .empty { opacity: 0.6; font-size: 13px; margin: 6px 0; }
   </style>
 </head>
@@ -230,14 +251,19 @@
         <h2 id="gameover" hidden>GAME OVER</h2>
         <p id="blurb" class="hint">タップではじめる。左が移動、右下ジャンプ、右上アクション。</p>
         <p id="death" class="hint" hidden></p>
+        <div class="panel goals" id="goalsTitle" hidden></div>
         <div id="result" hidden>
-          <div class="panel stats" id="runStats"></div>
+          <div id="resultLeft">
+            <div class="panel stats" id="runStats"></div>
+            <div class="panel goals" id="runGoals" hidden></div>
+          </div>
           <div class="panel" id="boardBox">
             <div class="tabs" id="tabs"></div>
             <div id="rows"></div>
           </div>
         </div>
         <p><button id="start" type="button">はじめる</button></p>
+        <p><button id="sound" type="button" hidden>サウンド: ON</button></p>
         <p class="hint" id="keys">WASD / 矢印、Space ジャンプ、J アクション。縦でも横でも同じ配置です。</p>
         <p id="catalogRow"><a class="btn" href="./index.html">ジャンル一覧</a></p>
       </div>
@@ -289,8 +315,235 @@
       return prefix + rel.split("/").map(encodeURIComponent).join("/");
     };
 
+    // <kagra-audio>
+    // Web Audio for the sim's cues. The sim only queues names (`audioCuesJson`
+    // = {bgm_name, bgm_gain, oneshots[]}); which file a name plays and how loud
+    // comes from `game.audio` in the spec. tests/test_neon_cat_page.py runs this
+    // block under node with a fake AudioContext.
+    const createAudio = (cfg, deps) => {
+      const num = (v, d) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+      const unit = (v, d) => Math.max(0, Math.min(1, num(v, d)));
+      const sfx = cfg && typeof cfg.sfx === "object" && cfg.sfx ? cfg.sfx : {};
+      const bgm = (cfg && cfg.bgm) || {};
+      const master = unit(cfg && cfg.master, 0.8);
+      const bgmVolume = unit(cfg && cfg.bgm_volume, 0.7) * unit(bgm.volume, 0.55);
+      const sfxVolume = unit(cfg && cfg.sfx_volume, 1);
+      const Ctor = deps.AudioContextCtor;
+      let usable = !!Ctor && !!cfg && cfg.enabled !== false;
+      let muted = !!deps.muted;
+      let ctx = null;
+      let masterNode = null;
+      let bgmNode = null;
+      let sfxNode = null;
+      let bgmSource = null;
+      let primed = false;
+      const buffers = new Map();
+      const lastShot = new Map();
+      const live = new Set();
+      // Fetching needs no gesture, so the bytes are on their way before the
+      // first tap. Decoding waits for the context.
+      const raw = new Map();
+      const files = [bgm.file, ...Object.values(sfx).map((c) => c && c.file)]
+        .filter((f) => typeof f === "string" && f);
+      if (usable) {
+        for (const f of files) {
+          if (!raw.has(f)) raw.set(f, Promise.resolve().then(() => deps.fetchBytes(f)).catch(() => null));
+        }
+      }
+      const warn = (...a) => { if (deps.warn) deps.warn(...a); };
+      const decode = (ab) => new Promise((ok, bad) => {
+        const p = ctx.decodeAudioData(ab.slice(0), ok, bad);
+        if (p && typeof p.catch === "function") p.catch(bad);
+      });
+      const applyMute = () => { if (masterNode) masterNode.gain.value = muted ? 0 : master; };
+      const unlock = () => {
+        if (!usable) return;
+        if (!ctx) {
+          try {
+            // iOS 17+: play through the ringer switch (a game is not a ringtone).
+            const nav = globalThis.navigator;
+            if (nav && nav.audioSession) nav.audioSession.type = "playback";
+          } catch {}
+          try {
+            ctx = new Ctor();
+            masterNode = ctx.createGain();
+            bgmNode = ctx.createGain();
+            sfxNode = ctx.createGain();
+            bgmNode.gain.value = 0;
+            sfxNode.gain.value = sfxVolume;
+            bgmNode.connect(masterNode);
+            sfxNode.connect(masterNode);
+            masterNode.connect(ctx.destination);
+            applyMute();
+          } catch (err) {
+            warn("kagra: audio unavailable", err);
+            usable = false;
+            ctx = null;
+            return;
+          }
+          for (const [f, bytes] of raw) {
+            bytes
+              .then((ab) => (ab ? decode(ab) : null))
+              .then((buf) => { if (buf) buffers.set(f, buf); else warn(`kagra: no audio for ${f}`); })
+              .catch((err) => warn(`kagra: could not decode ${f}`, err));
+          }
+        }
+        // iOS and Android only open the output inside a touch. resume() in the
+        // gesture, then a one-sample silent buffer to wake the route.
+        if (ctx.state !== "running" && typeof ctx.resume === "function") {
+          try { const r = ctx.resume(); if (r && r.catch) r.catch(() => {}); } catch {}
+        }
+        if (!primed) {
+          primed = true;
+          try {
+            const src = ctx.createBufferSource();
+            src.buffer = ctx.createBuffer(1, 1, 22050);
+            src.connect(ctx.destination);
+            src.start(0);
+          } catch {}
+        }
+      };
+      const playSfx = (name) => {
+        const cue = sfx[name];
+        if (!ctx || muted || !cue || !cue.file) return;
+        const buf = buffers.get(cue.file);
+        if (!buf) return;
+        const now = ctx.currentTime;
+        // The same cue twice inside 40 ms is one cue (a burst of coins).
+        if (now - (lastShot.get(name) ?? -1) < 0.04 || live.size >= 14) return;
+        lastShot.set(name, now);
+        const src = ctx.createBufferSource();
+        const g = ctx.createGain();
+        src.buffer = buf;
+        src.playbackRate.value = Math.max(0.25, Math.min(4, num(cue.rate, 1)));
+        g.gain.value = unit(cue.volume, 1);
+        src.connect(g);
+        g.connect(sfxNode);
+        live.add(src);
+        src.onended = () => live.delete(src);
+        src.start(0);
+      };
+      const stopBgm = () => {
+        if (!bgmSource) return;
+        try { bgmSource.stop(0); } catch {}
+        bgmSource = null;
+      };
+      const syncBgm = (name, gain) => {
+        if (!ctx) return;
+        const want = !!name && gain > 0.001 && !!bgm.file;
+        if (!want) { stopBgm(); return; }
+        if (!bgmSource) {
+          const buf = buffers.get(bgm.file);
+          if (!buf) return;
+          const src = ctx.createBufferSource();
+          src.buffer = buf;
+          src.loop = true;
+          src.connect(bgmNode);
+          src.start(0);
+          bgmSource = src;
+        }
+        const target = bgmVolume * Math.max(0, Math.min(1, gain));
+        if (typeof bgmNode.gain.setTargetAtTime === "function") {
+          bgmNode.gain.setTargetAtTime(target, ctx.currentTime, 0.04);
+        } else {
+          bgmNode.gain.value = target;
+        }
+      };
+      // Once per frame. Always drains the queue, even when muted.
+      const pump = (json) => {
+        let j;
+        try { j = typeof json === "string" ? JSON.parse(json) : json; } catch { return; }
+        if (!j || !ctx || !usable) return;
+        for (const name of Array.isArray(j.oneshots) ? j.oneshots : []) playSfx(String(name));
+        syncBgm(j.bgm_name, num(j.bgm_gain, 0));
+      };
+      return {
+        unlock,
+        pump,
+        get usable() { return usable; },
+        get muted() { return muted; },
+        setMuted(on) { muted = !!on; applyMute(); },
+        // Tab hidden: stop the output; the tab back: carry on.
+        hidden(on) {
+          if (!ctx) return;
+          try {
+            if (on && ctx.suspend) ctx.suspend();
+            else if (!on && ctx.resume) ctx.resume();
+          } catch {}
+        },
+        get state() { return ctx ? ctx.state : "none"; },
+        get loaded() { return buffers.size; },
+        get expected() { return raw.size; },
+        files,
+      };
+    };
+    // </kagra-audio>
+
+    // <kagra-goals>
+    // Missions and the best score for the title and result cards. Mission
+    // wording comes from the spec; the three stock kinds get Japanese text.
+    const GOAL_TEXT = {
+      coins: (n) => `コインを${n}枚あつめる`,
+      gates: (n) => `ゲートを${n}回くぐる`,
+      perch: (n) => `高いところに${n}回のる`,
+    };
+    const GOAL_STOCK = { coins: "COINS", gates: "GATES", perch: "PERCH" };
+    const goalText = (m) => {
+      const stock = GOAL_STOCK[m.kind] === m.label && GOAL_TEXT[m.kind];
+      return stock ? stock(m.target) : `${m.label} ${m.target}`;
+    };
+    const renderGoals = (el, missions, best, heading) => {
+      const list = Array.isArray(missions) ? missions : [];
+      const hasBest = Number(best) > 0;
+      el.hidden = list.length === 0 && !hasBest;
+      el.textContent = "";
+      if (el.hidden) return;
+      const head = document.createElement("h3");
+      const title = document.createElement("span");
+      title.textContent = list.length ? heading : "ベストスコア";
+      head.appendChild(title);
+      if (hasBest) {
+        const em = document.createElement("em");
+        em.textContent = `ベスト ${Number(best)}`;
+        head.appendChild(em);
+      }
+      el.appendChild(head);
+      if (!list.length) return;
+      const ul = document.createElement("ul");
+      for (const m of list) {
+        const li = document.createElement("li");
+        const target = Math.max(1, Number(m.target) || 1);
+        const value = Math.max(0, Math.min(target, Number(m.value) || 0));
+        li.style.setProperty("--p", `${Math.round((value / target) * 100)}%`);
+        if (m.done) li.className = "done";
+        const chk = document.createElement("span");
+        chk.className = "chk";
+        chk.textContent = m.done ? "✓" : "○";
+        const gl = document.createElement("span");
+        gl.className = "gl";
+        gl.textContent = goalText(m);
+        const gv = document.createElement("span");
+        gv.className = "gv";
+        gv.textContent = `${value} / ${target}`;
+        li.append(chk, gl, gv);
+        ul.appendChild(li);
+      }
+      el.appendChild(ul);
+    };
+    const bestKey = (slug) => `kagra.best.v1.${slug}`;
+    const loadBest = (slug) => {
+      try { return Math.max(0, Number(localStorage.getItem(bestKey(slug))) || 0); } catch { return 0; }
+    };
+    const saveBest = (slug, score) => {
+      const n = Math.max(0, Math.floor(Number(score) || 0));
+      if (n <= loadBest(slug)) return;
+      try { localStorage.setItem(bestKey(slug), String(n)); } catch {}
+    };
+    // </kagra-goals>
+
     let session;
     let bundle;
+    let audioSpec = null;
     try {
       if (navigator.gpu && navigator.gpu.requestAdapter) {
         const adapter = await navigator.gpu.requestAdapter();
@@ -346,6 +599,14 @@
           if (slug === "neon_cat") {
             const cam = (params.get("cam") || "").toLowerCase();
             if (cam === "classic" || cam === "chase") world.cam = cam;
+          }
+          if (world.genre === "neon_cat") {
+            // The device's best score goes in as the run's best, so the HUD's
+            // BEST and the cards agree after a reload.
+            const stored = loadBest(slug);
+            if (stored > 0) world.best = Math.max(Number(world.best) || 0, stored);
+            const a = world.game && world.game.audio;
+            if (a && typeof a === "object" && params.get("audio") !== "0") audioSpec = a;
           }
           return JSON.stringify(world);
         } catch (_) {
@@ -427,6 +688,52 @@
       }
     }
     boot.style.display = "none";
+
+    // ---- Sound. Built only when the spec has `audio` (Neon Cat kit); other
+    // games stay silent as before. The browser opens the output on the first
+    // touch, so every gesture below calls unlock().
+    const MUTE_KEY = "kagra.audio.muted";
+    const readMuted = () => { try { return localStorage.getItem(MUTE_KEY) === "1"; } catch { return false; } };
+    const audio = audioSpec
+      ? createAudio(audioSpec, {
+          AudioContextCtor: globalThis.AudioContext || globalThis.webkitAudioContext,
+          muted: params.get("mute") === "1" || readMuted(),
+          warn: (...a) => console.warn(...a),
+          fetchBytes: async (file) => {
+            const site = new URL("./", document.baseURI).href;
+            const item = (bundle.files || []).find((f) => (typeof f === "string" ? f : f.path) === file);
+            if (!item) throw new Error(`${file} is not in the bundle`);
+            const res = await fetch(fileUrl(site, typeof item === "string" ? item : item.url));
+            if (!res.ok) throw new Error(`${file} ${res.status}`);
+            return res.arrayBuffer();
+          },
+        })
+      : null;
+    globalThis.kagraAudio = audio;
+    const soundBtn = document.getElementById("sound");
+    const paintSound = () => {
+      if (!audio || !audio.usable) { soundBtn.hidden = true; return; }
+      soundBtn.hidden = false;
+      soundBtn.textContent = audio.muted ? "サウンド: OFF" : "サウンド: ON";
+      soundBtn.setAttribute("aria-pressed", audio.muted ? "true" : "false");
+    };
+    const toggleSound = () => {
+      if (!audio) return;
+      audio.unlock();
+      audio.setMuted(!audio.muted);
+      try { localStorage.setItem(MUTE_KEY, audio.muted ? "1" : "0"); } catch {}
+      paintSound();
+    };
+    if (audio) {
+      for (const type of ["pointerdown", "pointerup", "touchend", "click", "keydown"]) {
+        window.addEventListener(type, () => audio.unlock(), { capture: true, passive: true });
+      }
+      document.addEventListener("visibilitychange", () => audio.hidden(document.hidden));
+      soundBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+      soundBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); toggleSound(); });
+      window.addEventListener("keydown", (e) => { if (e.key === "m" || e.key === "M") toggleSound(); });
+      paintSound();
+    }
 
     const state = { lx: 0, lz: 0, jump: false, attack: false };
     const held = new Set();
@@ -571,6 +878,20 @@
         document.getElementById("blurb").hidden = phase === "complete";
       }
       resultBox.hidden = !showResult;
+      const goalsTitle = document.getElementById("goalsTitle");
+      const runGoals = document.getElementById("runGoals");
+      const bestNow = Math.max(Number(sim.best) || 0, loadBest(slug));
+      if (swipeMode && phase === "title") {
+        renderGoals(goalsTitle, sim.missions, bestNow, "ミッション");
+      } else {
+        goalsTitle.hidden = true;
+      }
+      if (showResult) {
+        renderGoals(runGoals, sim.result.missions || sim.missions, Math.max(bestNow, Number(sim.score) || 0), "ミッション");
+        if (!boardDone) saveBest(slug, Math.max(Number(sim.best) || 0, Number(sim.result?.run?.score) || 0));
+      } else {
+        runGoals.hidden = true;
+      }
       if (showResult && !boardDone) {
         boardDone = true;
         showBoard(sim.result);
@@ -765,6 +1086,9 @@
         false,
       );
       session.requestFrame();
+      if (audio) {
+        try { audio.pump(session.audioCuesJson()); } catch {}
+      }
       if (rendering) {
         try { session.render(); }
         catch (err) {
