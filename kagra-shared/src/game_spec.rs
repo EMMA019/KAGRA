@@ -40,6 +40,9 @@ pub struct GameSpec {
     /// `item_rules` in rest and reward sections.
     pub items: Vec<ItemSpec>,
     pub item_rules: ItemRules,
+    /// Knockable props (`mischief_rules` places them in free slots).
+    pub mischief: Vec<MischiefSpec>,
+    pub mischief_rules: MischiefRules,
     /// Reserved. Seeded chunk placement baked by Python. Not simulated yet.
     pub placements: Vec<Placement>,
     /// Runner-kit section (used when `kind` is `runner`).
@@ -534,7 +537,7 @@ impl Default for RimSpec {
         Self {
             left: [1.0, 0.25, 0.75],
             right: [0.3, 0.9, 1.0],
-            intensity: 2.6,
+            intensity: 3.6,
             radius: 0.55,
             side: 0.5,
             height: 0.5,
@@ -596,7 +599,7 @@ impl Default for EyesSpec {
             ear_x: 0.4,
             ear_y: 1.5,
             ear_z: 0.05,
-            collar: true,
+            collar: false,
             collar_color: [1.0, 0.25, 0.75],
             collar_y: 0.95,
             tail_tip: true,
@@ -855,7 +858,58 @@ pub enum ItemEffect {
     Meow,
 }
 
+/// The colour of a coin in the world and on the HUD chip.
+pub const COIN_COLOR: [u8; 3] = [255, 214, 90];
+
+/// The picture an orb shows, built from primitives. A closed set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ItemIcon {
+    /// A U shape with pale tips.
+    Horseshoe,
+    /// Two chevrons pointing ahead.
+    Chevron,
+    /// An arrow pointing up.
+    Arrow,
+    /// The letters 2 and x.
+    TwoX,
+    /// A heart.
+    Heart,
+}
+
+impl ItemIcon {
+    pub const ALL: [ItemIcon; 5] = [
+        ItemIcon::Horseshoe,
+        ItemIcon::Chevron,
+        ItemIcon::Arrow,
+        ItemIcon::TwoX,
+        ItemIcon::Heart,
+    ];
+}
+
 impl ItemEffect {
+    /// The orb colour when the spec leaves `color` at 0,0,0. Chosen to be far
+    /// from each other, from the coin yellow and from the obstacle codes.
+    pub fn default_color(self) -> [u8; 3] {
+        match self {
+            ItemEffect::Magnet => [255, 0, 128],
+            ItemEffect::Boost => [255, 110, 0],
+            ItemEffect::Superjump => [100, 255, 60],
+            ItemEffect::Double => [255, 240, 0],
+            ItemEffect::Meow => [255, 200, 235],
+        }
+    }
+
+    pub fn default_icon(self) -> ItemIcon {
+        match self {
+            ItemEffect::Magnet => ItemIcon::Horseshoe,
+            ItemEffect::Boost => ItemIcon::Chevron,
+            ItemEffect::Superjump => ItemIcon::Arrow,
+            ItemEffect::Double => ItemIcon::TwoX,
+            ItemEffect::Meow => ItemIcon::Heart,
+        }
+    }
+
     pub const ALL: [ItemEffect; 5] = [
         ItemEffect::Magnet,
         ItemEffect::Boost,
@@ -886,6 +940,12 @@ pub struct ItemSpec {
     pub weight: u32,
     #[serde(default)]
     pub duration: f32,
+    /// Orb, toast, label and floor-ring colour. 0,0,0 = the effect's own.
+    #[serde(default)]
+    pub color: [u8; 3],
+    /// The orb's picture. None = the effect's own.
+    #[serde(default)]
+    pub icon: Option<ItemIcon>,
 }
 
 fn one() -> u32 {
@@ -899,7 +959,22 @@ impl ItemSpec {
             glb: String::new(),
             weight,
             duration: 0.0,
+            color: [0; 3],
+            icon: None,
         }
+    }
+
+    /// The colour in use.
+    pub fn rgb(&self) -> [u8; 3] {
+        if self.color == [0; 3] {
+            self.effect.default_color()
+        } else {
+            self.color
+        }
+    }
+
+    pub fn shape(&self) -> ItemIcon {
+        self.icon.unwrap_or_else(|| self.effect.default_icon())
     }
 
     /// Seconds the effect lasts.
@@ -927,6 +1002,15 @@ pub struct ItemRules {
     pub radius: f32,
     /// A magnet reaches coins within this many metres (sideways and ahead).
     pub magnet_radius: f32,
+    /// The field also reaches this many metres further ahead of the cat, so
+    /// coins start flying before the cat is on top of them.
+    pub magnet_lead: f32,
+    /// A pulled coin starts at this speed (m/s) and speeds up by
+    /// `pull_accel` (m/s^2) until it lands on the cat.
+    pub pull_speed: f32,
+    pub pull_accel: f32,
+    /// An effect blinks (label, bar, rings) for this many seconds before it ends.
+    pub warn_secs: f32,
     /// Boost speed multiplier.
     pub boost_speed: f32,
     /// Super-jump launch speed multiplier.
@@ -939,8 +1023,12 @@ impl Default for ItemRules {
             rest_every: 3,
             reward_every: 2,
             hover: 0.7,
-            radius: 0.85,
-            magnet_radius: 3.2,
+            radius: 1.1,
+            magnet_radius: 4.0,
+            magnet_lead: 4.0,
+            pull_speed: 6.0,
+            pull_accel: 70.0,
+            warn_secs: 1.5,
             boost_speed: 1.5,
             jump_scale: 1.5,
         }
@@ -958,8 +1046,119 @@ impl ItemRules {
         if !(1.0..=2.5).contains(&self.boost_speed) || !(1.0..=2.5).contains(&self.jump_scale) {
             return Err("game spec: item_rules boost_speed and jump_scale must be 1..=2.5".into());
         }
+        if !(0.0..=10.0).contains(&self.magnet_lead)
+            || !(1.0..=40.0).contains(&self.pull_speed)
+            || !(0.0..=400.0).contains(&self.pull_accel)
+            || !(0.0..=5.0).contains(&self.warn_secs)
+        {
+            return Err(
+                "game spec: item_rules magnet_lead 0..=10, pull_speed 1..=40, pull_accel 0..=400, warn_secs 0..=5"
+                    .into(),
+            );
+        }
         Ok(())
     }
+}
+
+/// Fixed mischief vocabulary: things a cat knocks over. New kinds need art
+/// code, so the set is closed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MischiefKind {
+    /// A tall ceramic vase.
+    Vase,
+    /// A glass bottle.
+    Bottle,
+    /// A tin can.
+    Can,
+    /// A ball of yarn.
+    Yarn,
+}
+
+impl MischiefKind {
+    pub const ALL: [MischiefKind; 4] = [
+        MischiefKind::Vase,
+        MischiefKind::Bottle,
+        MischiefKind::Can,
+        MischiefKind::Yarn,
+    ];
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MischiefSpec {
+    pub kind: MischiefKind,
+    #[serde(default = "one")]
+    pub weight: u32,
+}
+
+impl MischiefSpec {
+    pub fn new(kind: MischiefKind, weight: u32) -> Self {
+        Self { kind, weight }
+    }
+}
+
+/// Where the knockable props stand (free slots, beside the track centre)
+/// and what knocking one is worth.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct MischiefRules {
+    /// One prop every n-th free slot in a rest section (0 = none).
+    pub rest_every: u32,
+    /// The same for a reward section.
+    pub reward_every: u32,
+    /// The same for every other section (intro, learn, challenge).
+    pub other_every: u32,
+    /// Sideways distance from the track centre, either side by hash.
+    pub side: f32,
+    /// Touch radius sideways in metres.
+    pub radius: f32,
+    /// Score for one knock.
+    pub score: u32,
+    /// A knock inside this many seconds of the last one extends the streak.
+    pub streak_secs: f32,
+    /// Extra score per streak step after the first.
+    pub streak_bonus: u32,
+    /// The streak stops growing here.
+    pub streak_cap: u32,
+}
+
+impl Default for MischiefRules {
+    fn default() -> Self {
+        Self {
+            rest_every: 2,
+            reward_every: 3,
+            other_every: 5,
+            side: 1.3,
+            radius: 0.75,
+            score: 25,
+            streak_secs: 2.5,
+            streak_bonus: 10,
+            streak_cap: 6,
+        }
+    }
+}
+
+impl MischiefRules {
+    fn validate(&self) -> Result<(), String> {
+        if !(0.0..=2.0).contains(&self.side) || !(0.2..=2.0).contains(&self.radius) {
+            return Err("game spec: mischief_rules side 0..=2, radius 0.2..=2".into());
+        }
+        if !(0.2..=10.0).contains(&self.streak_secs) || !(1..=20).contains(&self.streak_cap) {
+            return Err("game spec: mischief_rules streak_secs 0.2..=10, streak_cap 1..=20".into());
+        }
+        Ok(())
+    }
+}
+
+/// The default props: weights set how often each shows up.
+pub fn default_mischief() -> Vec<MischiefSpec> {
+    vec![
+        MischiefSpec::new(MischiefKind::Vase, 2),
+        MischiefSpec::new(MischiefKind::Bottle, 2),
+        MischiefSpec::new(MischiefKind::Can, 2),
+        MischiefSpec::new(MischiefKind::Yarn, 1),
+    ]
 }
 
 /// The default pick-up table: weights set how often each shows up.
@@ -1194,6 +1393,8 @@ impl Default for GameSpec {
             lives: LivesSpec::default(),
             items: default_items(),
             item_rules: ItemRules::default(),
+            mischief: default_mischief(),
+            mischief_rules: MischiefRules::default(),
             placements: Vec::new(),
             runner: RunnerKit::default(),
             input: InputSpec::default(),
@@ -1374,6 +1575,43 @@ impl GameSpec {
         Ok(spec)
     }
 
+    /// Orb colours must tell apart from each other, from the coin and from
+    /// the obstacle codes (the same sum-of-channels test as `style.codes`).
+    fn validate_item_colors(&self) -> Result<(), String> {
+        let dist = |a: [u8; 3], b: [u8; 3]| -> i32 {
+            (0..3).map(|k| (a[k] as i32 - b[k] as i32).abs()).sum()
+        };
+        let c = &self.style.codes;
+        let fixed = [
+            ("coin", COIN_COLOR),
+            ("jump_over", c.jump_over),
+            ("roll_under", c.roll_under),
+            ("solid", c.solid),
+            ("cat_gap", c.cat_gap),
+            ("rideable", c.rideable),
+            ("pass_through", c.pass_through),
+        ];
+        for (i, a) in self.items.iter().enumerate() {
+            for (name, f) in fixed {
+                if dist(a.rgb(), f) < 90 {
+                    return Err(format!(
+                        "game spec: item {:?} colour is too close to {name}",
+                        a.effect
+                    ));
+                }
+            }
+            for b in &self.items[i + 1..] {
+                if a.effect != b.effect && dist(a.rgb(), b.rgb()) < 90 {
+                    return Err(format!(
+                        "game spec: items {:?} and {:?} are too alike to tell apart",
+                        a.effect, b.effect
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         crate::game_core::feel::resolve(&self.feel)?;
         if self.obstacles.is_empty() {
@@ -1391,6 +1629,7 @@ impl GameSpec {
         self.hud.validate()?;
         self.lives.validate()?;
         self.item_rules.validate()?;
+        self.mischief_rules.validate()?;
         if self
             .items
             .iter()
@@ -1398,6 +1637,7 @@ impl GameSpec {
         {
             return Err("game spec: item duration must be >= 0".into());
         }
+        self.validate_item_colors()?;
         for (i, s) in self.runner.sections.iter().enumerate() {
             if s.length <= 0.0 || !s.length.is_finite() {
                 return Err(format!("game spec: section {i} length must be > 0"));
@@ -1507,6 +1747,7 @@ impl GameSpec {
         s.runner.score.per_gate = 0;
         s.lives.count = 1;
         s.items = Vec::new();
+        s.mischief = Vec::new();
         s
     }
 

@@ -7,7 +7,20 @@ from pathlib import Path
 
 import pytest
 
-from kagra.game_spec import BEHAVIORS, CATALOG, ITEM_EFFECTS, GameSpec, ItemSpec, measure_glb
+from kagra.game_spec import (
+    BEHAVIORS,
+    CATALOG,
+    COIN_COLOR,
+    ITEM_COLORS,
+    ITEM_DEFAULT_ICON,
+    ITEM_EFFECTS,
+    ITEM_ICONS,
+    MISCHIEF_KINDS,
+    GameSpec,
+    ItemSpec,
+    MischiefSpec,
+    measure_glb,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 GAMES = ("neon_cat_minimal", "meteor_cat_minimal")
@@ -73,6 +86,7 @@ CLASSIC = {
     "runner": {"sections": [], "obstacle_track": {"gap": 14.0}, "score": {"per_gate": 0}},
     "lives": {"count": 1},
     "items": [],
+    "mischief": [],
 }
 
 
@@ -146,7 +160,7 @@ def test_lives_rim_and_eyes_are_specced_and_validated():
     assert world["lives"]["count"] == 3
     assert world["player"]["eyes"]["glow"] > 1.0
     eyes = world["player"]["eyes"]
-    assert eyes["ears"] and eyes["collar"] and eyes["tail_tip"], "marks that read from behind"
+    assert eyes["ears"] and eyes["tail_tip"] and not eyes["collar"], "marks that read from behind"
     assert GameSpec.from_overrides({"player": {"eyes": {"enabled": False}}}).player.eyes.ears
     for bad in ({"count": 0}, {"count": 10}, {"invuln_secs": -1}, {"blink_hz": 99}):
         with pytest.raises(ValueError):
@@ -182,3 +196,69 @@ def test_item_rule_fields_match_rust():
     body = re.search(r"pub struct ItemRules \{(.*?)\n\}", rust, re.S).group(1)
     names = re.findall(r"pub (\w+):", body)
     assert names == list(GameSpec().item_rules.__dataclass_fields__)
+
+
+def test_mischief_vocabulary_rules_and_fields_match_rust():
+    rust = (ROOT / "kagra-shared/src/game_spec.rs").read_text(encoding="utf-8")
+    body = re.search(r"pub enum MischiefKind \{(.*?)\n\}", rust, re.S).group(1)
+    assert tuple(v.lower() for v in re.findall(r"^\s+(\w+),", body, re.M)) == MISCHIEF_KINDS
+    names = re.findall(r"pub (\w+):", re.search(r"pub struct MischiefRules \{(.*?)\n\}", rust, re.S).group(1))
+    assert names == list(GameSpec().mischief_rules.__dataclass_fields__)
+    spec = GameSpec()
+    assert {m.kind for m in spec.mischief} == set(MISCHIEF_KINDS)
+    assert GameSpec.from_overrides({"mischief": ["yarn"]}).mischief[0].kind == "yarn"
+    assert GameSpec.from_overrides({"mischief": []}).mischief == []
+    with pytest.raises(ValueError):
+        MischiefSpec("anvil")
+    for bad in ({"side": 3.0}, {"radius": 0.0}, {"streak_secs": 0.0}, {"streak_cap": 0}):
+        with pytest.raises(ValueError):
+            GameSpec.from_overrides({"mischief_rules": bad})
+    assert spec.world()["game"]["mischief_rules"]["score"] > 0
+    assert spec.item_rules.radius >= 1.0
+
+
+def _l1(a, b):
+    return sum(abs(x - y) for x, y in zip(a, b))
+
+
+def test_item_colours_and_icons_are_distinct_and_match_rust():
+    rust = (ROOT / "kagra-shared/src/game_spec.rs").read_text(encoding="utf-8")
+    body = re.search(r"pub enum ItemIcon \{(.*?)\n\}", rust, re.S).group(1)
+    names = tuple(re.sub(r"(?<!^)(?=[A-Z])", "_", v).lower() for v in re.findall(r"^\s+(\w+),", body, re.M))
+    assert names == ITEM_ICONS
+    spec = GameSpec()
+    codes = list(spec.style.codes.values())
+    cols = {i.effect: i.rgb() for i in spec.items}
+    assert len(set(ITEM_DEFAULT_ICON.values())) == len(ITEM_EFFECTS)
+    for a, ca in cols.items():
+        assert _l1(ca, COIN_COLOR) >= 90, f"{a} looks like a coin"
+        assert all(_l1(ca, c) >= 90 for c in codes), f"{a} looks like an obstacle code"
+        assert all(_l1(ca, cb) >= 90 for b, cb in cols.items() if b != a), f"{a} looks like another item"
+    for effect, color in ITEM_COLORS.items():
+        assert cols[effect] == color
+    body = re.search(r"pub struct ItemSpec \{(.*?)\n\}", rust, re.S).group(1)
+    assert re.findall(r"pub (\w+):", body) == ["effect", "glb", "weight", "duration", "color", "icon"]
+
+
+def test_too_close_item_colours_are_rejected():
+    # Two orbs the same colour, one near the coin, one near an obstacle code.
+    for items in (
+        [{"effect": "magnet", "color": [255, 0, 128]}, {"effect": "boost", "color": [255, 20, 128]}],
+        [{"effect": "boost", "color": [255, 214, 100]}],
+        [{"effect": "superjump", "color": list(GameSpec().style.codes["jump_over"])}],
+    ):
+        with pytest.raises(ValueError):
+            GameSpec.from_overrides({"items": items}).world()
+    ok = GameSpec.from_overrides({"items": [{"effect": "boost", "color": [0, 230, 255]}]})
+    assert ok.world()["game"]["items"][0]["color"] == [0, 230, 255]
+    with pytest.raises(ValueError):
+        ItemSpec("boost", icon="sword")
+
+
+def test_item_pull_fields_are_spec_values():
+    r = GameSpec().item_rules
+    assert r.radius >= 1.0 and r.magnet_radius >= 3.0 and r.magnet_lead > 0
+    assert r.pull_speed > 0 and r.pull_accel > 0 and 0 < r.warn_secs <= 5
+    for bad in ({"pull_speed": 0.0}, {"magnet_lead": 20.0}, {"warn_secs": 9.0}, {"pull_accel": -1.0}):
+        with pytest.raises(ValueError):
+            GameSpec.from_overrides({"item_rules": bad})

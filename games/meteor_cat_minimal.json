@@ -45,7 +45,34 @@
         "start": 12,
         "cap": 24
       }
-    }
+    },
+    "items": [
+      {
+        "effect": "magnet",
+        "weight": 3
+      },
+      {
+        "effect": "double",
+        "weight": 3
+      },
+      {
+        "effect": "superjump",
+        "weight": 2
+      },
+      {
+        "effect": "boost",
+        "weight": 2,
+        "color": [
+          0,
+          230,
+          255
+        ]
+      },
+      {
+        "effect": "meow",
+        "weight": 1
+      }
+    ]
   },
   "bundle_assets": [
     "assets/audio",

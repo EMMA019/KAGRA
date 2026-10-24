@@ -71,16 +71,34 @@ cyan) that sit just outside the cat's flanks so its side faces catch an edge; th
 under 1.6 m so they never paint the floor. `player.eyes` holds the cat's glow marks, each with its own switch (model units, so they
 follow the scale and pose; all bloom above glow 1). The chase camera only sees the cat's back, so besides the two eyes
 `{enabled, color, glow, size, spread, height, forward}` there are ear-tip glints `{ears, ear_x, ear_y, ear_z}` (cyan), a neon collar
-`{collar, collar_color, collar_y}` (three thin strips across the back and flanks) and a tail-tip glint
-`{tail_tip, tail_color, tail_x, tail_y, tail_z}` (magenta), which read from behind.
+`{collar, collar_color, collar_y}` (three thin strips across the back and flanks; off by default, it read as a white band) and a tail-tip glint
+`{tail_tip, tail_color, tail_x, tail_y, tail_z}` (magenta), which read from behind. `player.rim.intensity` is 3.6 so the flanks catch more light.
 
-`items` `[{effect, duration?, weight}]` and `item_rules` `{rest_every 3, reward_every 2, hover, radius, magnet_radius, boost_speed,
-jump_scale}` are the pick-ups. `effect` is one of `magnet` (coins fly in, 8 s), `boost` (1.5x speed and nothing hurts, 3.5 s),
-`superjump` (jump 1.5x as high, 10 s), `double` (score gain doubles, 10 s) and `meow` (+1 life, or +100 score when full). Orbs sit
-only in free slots of Rest and Reward sections (every `rest_every` / `reward_every` free slot, half a gap past the slot so they
-never touch the coin line), the kind picked by weight from a hash of the slot. Running effects show as a label and draining bar
-under the paws, a ring on the floor under the cat, and a toast with the name. `GameSpec::legacy()` and the classic fixture have no
-items, so the golden runs and the measurement harness are unchanged.
+`items` `[{effect, duration?, weight, color?, icon?}]` and `item_rules` `{rest_every 3, reward_every 2, hover, radius 1.1, magnet_radius 4,
+magnet_lead 4, pull_speed 6, pull_accel 70, warn_secs 1.5, boost_speed, jump_scale}` are the pick-ups. `effect` is one of `magnet` (coins fly
+in, 8 s), `boost` (1.5x speed and nothing hurts, 3.5 s), `superjump` (jump 1.5x as high, 10 s), `double` (score gain doubles, 10 s) and
+`meow` (+1 life, or +100 score when full). Orbs sit only in free slots of Rest and Reward sections (every `rest_every` / `reward_every`
+free slot, half a gap past the slot so they never touch the coin line), the kind picked by weight from a hash of the slot.
+
+Each kind has its own look: a `color` (0,0,0 means the effect's own: magnet magenta, boost orange, superjump green, double lemon, meow
+pale pink) and an `icon` (`horseshoe`, `chevron`, `arrow`, `two_x`, `heart`), built from primitives, bobbing and swaying in a spinning
+ring of the same colour. The same colour is used by the toast, the label and bar under the paws, and the floor ring. Both sides refuse a
+palette where two items, an item and the coin yellow (255,214,90), or an item and an obstacle code are closer than 90 in summed RGB
+channel difference (the same rule as `style.codes`); override `color` per game when its codes are close (Meteor Cat makes boost cyan
+because its jump_over is orange).
+
+The magnet does not snap: a coin inside the field (a ball of `magnet_radius`, stretched `magnet_lead` metres ahead of the cat so coins
+are taken before the cat reaches them) is taken hold of and flies to the cat starting at `pull_speed` m/s and gaining `pull_accel` m/s2,
+with a short streak behind it. When it lands it sparks and a "+N" pop (summing the coins landing in a row) shows under the coin chip.
+Two rings sweep in toward the cat inside the field's radius while the magnet is on. In the last `warn_secs` the label, bar, aura and
+rings blink. `radius` (1.1 m) is the pick-up reach for orbs. `GameSpec::legacy()` and the classic fixture have no items or props,
+so the golden runs and the measurement harness are unchanged.
+
+`mischief` `[{kind, weight}]` and `mischief_rules` `{rest_every 2, reward_every 3, other_every 5, side 1.3, radius 0.75, score 25,
+streak_secs 2.5, streak_bonus 10, streak_cap 6}` stand small props (`vase`, `bottle`, `can`, `yarn`) beside the lane in free slots
+(every Nth free slot of a Rest, Reward or other section, a hash picks the kind and the side). Running through one knocks it over (it
+flies aside and lies down, a label such as CRASH pops, and it pays `score`); a jump clears it, and a knock never hurts. Knocks within
+`streak_secs` of each other build a streak that adds `streak_bonus` each, up to `streak_cap`. The classic course has none.
 
 `style.codes` is the colour language, one neon colour per thing to do, used for the obstacle edge and its glow:
 `jump_over` amber (low, hop), `roll_under` pink (high or hanging), `solid` red (go round), `cat_gap` violet (roll through),

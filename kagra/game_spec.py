@@ -27,6 +27,17 @@ ROOT = Path(__file__).resolve().parents[1]
 KINDS = ("runner",)
 #: Closed item vocabulary. A new effect needs engine code, so specs can't add one.
 ITEM_EFFECTS = ("magnet", "boost", "superjump", "double", "meow")
+ITEM_ICONS = ("horseshoe", "chevron", "arrow", "two_x", "heart")
+COIN_COLOR = (255, 214, 90)
+ITEM_COLORS = {
+    "magnet": [255, 0, 128],
+    "boost": [255, 110, 0],
+    "superjump": [100, 255, 60],
+    "double": [255, 240, 0],
+    "meow": [255, 200, 235],
+}
+ITEM_DEFAULT_ICON = {"magnet": "horseshoe", "boost": "chevron", "superjump": "arrow", "double": "two_x", "meow": "heart"}
+MISCHIEF_KINDS = ("vase", "bottle", "can", "yarn")
 PART_ROLES = ("solid", "ride", "ramp", "decor")
 
 _K = "assets/models/kenney"
@@ -132,7 +143,7 @@ class RimSpec:
 
     left: list[float] = field(default_factory=lambda: [1.0, 0.25, 0.75])
     right: list[float] = field(default_factory=lambda: [0.3, 0.9, 1.0])
-    intensity: float = 2.6
+    intensity: float = 3.6
     radius: float = 0.55
     side: float = 0.5
     height: float = 0.5
@@ -153,7 +164,7 @@ class EyesSpec:
     ear_x: float = 0.4
     ear_y: float = 1.5
     ear_z: float = 0.05
-    collar: bool = True
+    collar: bool = False
     collar_color: list[float] = field(default_factory=lambda: [1.0, 0.25, 0.75])
     collar_y: float = 0.95
     tail_tip: bool = True
@@ -282,10 +293,18 @@ class ItemSpec:
     glb: str = ""
     weight: int = 1
     duration: float = 0.0
+    color: list[int] = field(default_factory=lambda: [0, 0, 0])
+    icon: str | None = None
 
     def __post_init__(self) -> None:
         if self.effect not in ITEM_EFFECTS:
             raise ValueError(f"item effect {self.effect!r} not in {ITEM_EFFECTS}")
+        if self.icon is not None and self.icon not in ITEM_ICONS:
+            raise ValueError(f"item icon {self.icon!r} not in {ITEM_ICONS}")
+
+    def rgb(self) -> list[int]:
+        """The colour in use (0,0,0 = the effect's own)."""
+        return list(self.color) if any(self.color) else list(ITEM_COLORS[self.effect])
 
 
 @dataclass
@@ -304,8 +323,12 @@ class ItemRules:
     rest_every: int = 3
     reward_every: int = 2
     hover: float = 0.7
-    radius: float = 0.85
-    magnet_radius: float = 3.2
+    radius: float = 1.1
+    magnet_radius: float = 4.0
+    magnet_lead: float = 4.0
+    pull_speed: float = 6.0
+    pull_accel: float = 70.0
+    warn_secs: float = 1.5
     boost_speed: float = 1.5
     jump_scale: float = 1.5
 
@@ -314,8 +337,52 @@ class ItemRules:
             raise ValueError("item_rules radius 0.2..=3, hover 0..=3")
         if not 1.0 <= self.magnet_radius <= 12.0:
             raise ValueError("item_rules.magnet_radius must be 1..=12")
+        if not (
+            0.0 <= self.magnet_lead <= 10.0
+            and 1.0 <= self.pull_speed <= 40.0
+            and 0.0 <= self.pull_accel <= 400.0
+            and 0.0 <= self.warn_secs <= 5.0
+        ):
+            raise ValueError("item_rules magnet_lead 0..=10, pull_speed 1..=40, pull_accel 0..=400, warn_secs 0..=5")
         if not 1.0 <= self.boost_speed <= 2.5 or not 1.0 <= self.jump_scale <= 2.5:
             raise ValueError("item_rules boost_speed and jump_scale must be 1..=2.5")
+
+
+@dataclass
+class MischiefSpec:
+    """A knockable prop kind."""
+
+    kind: str
+    weight: int = 1
+
+    def __post_init__(self) -> None:
+        if self.kind not in MISCHIEF_KINDS:
+            raise ValueError(f"mischief kind {self.kind!r} not in {MISCHIEF_KINDS}")
+
+
+@dataclass
+class MischiefRules:
+    """Where knockable props stand (free slots, beside the track centre) and what a knock pays."""
+
+    rest_every: int = 2
+    reward_every: int = 3
+    other_every: int = 5
+    side: float = 1.3
+    radius: float = 0.75
+    score: int = 25
+    streak_secs: float = 2.5
+    streak_bonus: int = 10
+    streak_cap: int = 6
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.side <= 2.0 or not 0.2 <= self.radius <= 2.0:
+            raise ValueError("mischief_rules side 0..=2, radius 0.2..=2")
+        if not 0.2 <= self.streak_secs <= 10.0 or not 1 <= self.streak_cap <= 20:
+            raise ValueError("mischief_rules streak_secs 0.2..=10, streak_cap 1..=20")
+
+
+def _default_mischief() -> list[MischiefSpec]:
+    return [MischiefSpec(k, w) for k, w in (("vase", 2), ("bottle", 2), ("can", 2), ("yarn", 1))]
 
 
 def _default_items() -> list[ItemSpec]:
@@ -428,6 +495,8 @@ class GameSpec:
     lives: LivesSpec = field(default_factory=LivesSpec)
     items: list[ItemSpec] = field(default_factory=_default_items)
     item_rules: ItemRules = field(default_factory=ItemRules)
+    mischief: list[MischiefSpec] = field(default_factory=_default_mischief)
+    mischief_rules: MischiefRules = field(default_factory=MischiefRules)
     placements: list[Placement] = field(default_factory=list)
     runner: RunnerKit = field(default_factory=RunnerKit)
     input: InputSpec = field(default_factory=InputSpec)
@@ -451,7 +520,23 @@ class GameSpec:
             raise ValueError(f"game kind {self.kind!r} not in {KINDS}")
         if not self.obstacles or all(o.weight <= 0 for o in self.obstacles):
             raise ValueError("game spec needs an obstacle with weight > 0")
+        self._check_item_colors()
         return asdict(self)
+
+    def _check_item_colors(self) -> None:
+        """Orb colours must tell apart (sum of channel differences >= 90), same test as Rust."""
+
+        def dist(a, b) -> int:
+            return sum(abs(int(x) - int(y)) for x, y in zip(a, b))
+
+        fixed = {"coin": COIN_COLOR, **{k: v for k, v in self.style.codes.items()}}
+        for i, a in enumerate(self.items):
+            for name, f in fixed.items():
+                if dist(a.rgb(), f) < 90:
+                    raise ValueError(f"item {a.effect} colour is too close to {name}")
+            for b in self.items[i + 1 :]:
+                if a.effect != b.effect and dist(a.rgb(), b.rgb()) < 90:
+                    raise ValueError(f"items {a.effect} and {b.effect} are too alike to tell apart")
 
     def world(self, **extra) -> dict:
         """World dump the Rust sim loads (``NeonCat.from_json``)."""
@@ -494,6 +579,8 @@ def _build(cls: type, data: dict, base: object | None = None) -> object:
             kwargs[name] = [_entity(v) for v in value]
         elif cls is GameSpec and name == "items":
             kwargs[name] = [ItemSpec(**v) if isinstance(v, dict) else ItemSpec(v) for v in value]
+        elif cls is GameSpec and name == "mischief":
+            kwargs[name] = [MischiefSpec(**v) if isinstance(v, dict) else MischiefSpec(v) for v in value]
         elif cls is GameSpec and name == "placements":
             kwargs[name] = [Placement(**v) for v in value]
         elif cls is RunnerKit and name == "sections":
