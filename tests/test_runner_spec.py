@@ -180,8 +180,9 @@ def test_lives_fields_match_rust():
     rust = (ROOT / "kagra-shared/src/game_spec.rs").read_text(encoding="utf-8")
     for name in tuple(GameSpec().player.eyes.__dataclass_fields__):
         assert re.search(rf"pub struct EyesSpec \{{.*?pub {name}:", rust, re.S), name
+    lives = (ROOT / "kagra-shared/src/game_core/lives.rs").read_text(encoding="utf-8")
     for name in ("count", "invuln_secs", "blink_hz"):
-        assert re.search(rf"pub struct LivesSpec \{{.*?pub {name}:", rust, re.S), name
+        assert re.search(rf"pub struct LivesSpec \{{.*?pub {name}:", lives, re.S), name
 
 
 def test_items_are_placed_by_rules_and_validated():
@@ -314,6 +315,7 @@ def test_item_pull_fields_are_spec_values():
 # --- night look, sound, missions (neon_fx_spec.rs) ---------------------------
 
 FX_RS = (ROOT / "kagra-shared/src/neon_fx_spec.rs").read_text(encoding="utf-8")
+MISSIONS_RS = (ROOT / "kagra-shared/src/game_core/missions.rs").read_text(encoding="utf-8")
 
 
 def test_sfx_cue_names_match_rust():
@@ -360,7 +362,7 @@ def test_default_missions_skip_a_perch_until_the_course_has_ledges():
     with pytest.raises(ValueError):
         MissionsSpec(draw=6)
     # The Rust pool and draw count are the same table.
-    assert "draw: 3," in FX_RS and "m(MissionKind::Passes, 30)" in FX_RS
+    assert "draw: 3," in MISSIONS_RS and "m(MissionKind::Passes, 30)" in MISSIONS_RS
 
 
 def test_fx_numbers_match_the_rust_defaults():
@@ -384,7 +386,7 @@ def test_fx_numbers_match_the_rust_defaults():
     assert audio["master"] == float(re.search(r"master: ([\d.]+),\n\s+bgm_volume", FX_RS).group(1))
     assert audio["bgm"]["fade_secs"] == float(re.search(r"fade_secs: ([\d.]+)", FX_RS).group(1))
     assert audio["bgm"]["file"] == "assets/audio/neon_cat/bgm.wav"
-    targets = re.findall(r"m\(MissionKind::\w+, (\d+)\)", FX_RS)
+    targets = re.findall(r"m\(MissionKind::\w+, (\d+)\)", MISSIONS_RS)
     assert [m["target"] for m in g["missions"]["list"]] == [int(t) for t in targets]
 
 

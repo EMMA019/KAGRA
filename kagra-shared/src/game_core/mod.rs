@@ -3,6 +3,9 @@
 //! - [`juice`]: springs, camera shake, hitstop, spark bursts.
 //! - [`collide`]: entity hitboxes from a spec row (glb AABB × scale, inset).
 //! - [`run`]: score / pickups / death, HUD score panel, result hand-off.
+//! - [`lives`], [`missions`], [`result`]: the run rules every kit shares
+//!   (lives and the blink after a hit, per-run goals, game-over and banner),
+//!   driven by the `lives` and `missions` sections of the GameSpec JSON.
 //! - [`Kit`] + [`tick_frame`]: the fixed-step frame driver. A kit supplies
 //!   one sim step; the core owns substepping, hitstop, title attract, and
 //!   juice decay in a fixed order so runs replay exactly.
@@ -12,12 +15,18 @@
 pub mod collide;
 pub mod feel;
 pub mod juice;
+pub mod lives;
+pub mod missions;
+pub mod result;
 pub mod run;
 
 use crate::flow::{FlowPhase, GameFlow};
 
 pub use collide::Hitbox;
 pub use juice::{Juice, JuiceShake, Spark, Spring1};
+pub use lives::{Hit, Lives, LivesSpec};
+pub use missions::{Counters, MissionKind, MissionSpec, MissionsSpec, Tracker};
+pub use result::ResultState;
 pub use run::RunStats;
 
 /// Shared per-run state every kit carries.
@@ -25,6 +34,12 @@ pub use run::RunStats;
 pub struct Core {
     pub stats: RunStats,
     pub juice: Juice,
+    /// Hits left and the blink after one ([`lives`]).
+    pub lives: Lives,
+    /// Which goals are done ([`missions`]).
+    pub missions: Tracker,
+    /// The game-over cue and the banner ([`result`]).
+    pub result: ResultState,
 }
 
 /// One genre's sim, driven by [`tick_frame`].

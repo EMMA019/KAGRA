@@ -20,6 +20,9 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+// The mission types live in the generic core; the old path keeps working.
+pub use crate::game_core::missions::{MissionKind, MissionSpec, MissionsSpec};
+
 /// Which picture tier the dump asked for. `quality` absent means desktop
 /// (`High`): the page sets `mobile` on phones and `low` on request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -51,17 +54,12 @@ impl Tier {
     }
 }
 
-/// Run-time state of the three sections (not part of the spec).
+/// Run-time state of the night-look sections (not part of the spec). The
+/// missions, banner and game-over state are in `game_core::Core`.
 #[derive(Clone, Debug, Default)]
 pub struct RunFx {
     /// The wall PNG this tier uses, if it exists. None = plain walls.
     pub wall_texture: Option<String>,
-    pub missions: crate::neon_missions::Tracker,
-    /// The crash has happened; the game-over cue waits for the result.
-    pub gameover_pending: bool,
-    /// The finished mission's banner and seconds left.
-    pub banner: String,
-    pub banner_t: f32,
 }
 
 // ---------------------------------------------------------------- atmosphere
@@ -489,164 +487,6 @@ impl AudioSpec {
             }
         }
         out
-    }
-}
-
-// ------------------------------------------------------------------ missions
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct MissionsSpec {
-    pub enabled: bool,
-    /// The pool the run's goals are drawn from, in order. At most 5. A goal
-    /// the course cannot offer (a perch with the stair lane off) is skipped.
-    pub list: Vec<MissionSpec>,
-    /// How many goals a run shows, drawn from the front of the pool after
-    /// the ones the course cannot offer are left out (0..=5; 0 = all).
-    pub draw: u32,
-    /// Score added each time one is completed. 0 keeps scores comparable
-    /// with runs that have no missions.
-    pub bonus: u32,
-    /// Draw the goals (and the best score) on the in-play HUD.
-    pub hud: bool,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum MissionKind {
-    /// Coins picked up this run.
-    #[default]
-    Coins,
-    /// Stone arches run through this run.
-    Gates,
-    /// Different ledges landed on this run (needs the stair lane or decks).
-    Perch,
-    /// Obstacles left behind this run, hit or not.
-    Passes,
-}
-
-impl MissionKind {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Coins => "coins",
-            Self::Gates => "gates",
-            Self::Perch => "perch",
-            Self::Passes => "passes",
-        }
-    }
-
-    /// Whether the course can offer this goal: a perch needs a ledge to stand
-    /// on (the stair lane or the decks), everything else works on the street.
-    pub fn available(self, perch: bool, decks: bool) -> bool {
-        match self {
-            Self::Perch => perch || decks,
-            _ => true,
-        }
-    }
-
-    pub fn default_label(self) -> &'static str {
-        match self {
-            Self::Coins => "COINS",
-            Self::Gates => "GATES",
-            Self::Perch => "PERCH",
-            Self::Passes => "PASSED",
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct MissionSpec {
-    pub kind: MissionKind,
-    /// How many to reach (1..=9999).
-    pub target: u32,
-    /// HUD wording. Empty uses the kind's own (`COINS`, `GATES`, `PERCH`, `PASSED`).
-    pub label: String,
-}
-
-impl Default for MissionSpec {
-    fn default() -> Self {
-        Self {
-            kind: MissionKind::Coins,
-            target: 1,
-            label: String::new(),
-        }
-    }
-}
-
-impl MissionSpec {
-    pub fn text(&self) -> &str {
-        if self.label.is_empty() {
-            self.kind.default_label()
-        } else {
-            &self.label
-        }
-    }
-}
-
-impl Default for MissionsSpec {
-    fn default() -> Self {
-        let m = |kind, target| MissionSpec {
-            kind,
-            target,
-            label: String::new(),
-        };
-        Self {
-            enabled: true,
-            list: vec![
-                m(MissionKind::Coins, 40),
-                m(MissionKind::Gates, 5),
-                m(MissionKind::Perch, 1),
-                m(MissionKind::Passes, 30),
-            ],
-            draw: 3,
-            bonus: 0,
-            hud: true,
-        }
-    }
-}
-
-impl MissionsSpec {
-    pub fn validate(&self) -> Result<(), String> {
-        if self.list.len() > 5 {
-            return Err("game spec: missions.list has at most 5 goals".into());
-        }
-        if self.draw > 5 {
-            return Err("game spec: missions.draw must be 0..=5".into());
-        }
-        if self.bonus > 100_000 {
-            return Err("game spec: missions.bonus must be 0..=100000".into());
-        }
-        for m in &self.list {
-            if !(1..=9999).contains(&m.target) {
-                return Err("game spec: a mission target must be 1..=9999".into());
-            }
-            if m.label.chars().count() > 16 {
-                return Err("game spec: a mission label has at most 16 characters".into());
-            }
-        }
-        Ok(())
-    }
-
-    /// The goals this course really shows: the pool without what the course
-    /// cannot offer (`perch`: the stair lane is on; `decks`: the upper
-    /// course is on), cut to `draw`. With the stair lane and decks off the
-    /// pool gives coins, gates and obstacles passed.
-    pub fn active(&self, perch: bool, decks: bool) -> MissionsSpec {
-        let mut m = self.clone();
-        m.list.retain(|g| g.kind.available(perch, decks));
-        if m.draw > 0 {
-            m.list.truncate(m.draw as usize);
-        }
-        m
-    }
-
-    /// Switched off, as `GameSpec::legacy()` wants it.
-    pub fn off() -> Self {
-        Self {
-            enabled: false,
-            ..Self::default()
-        }
     }
 }
 
