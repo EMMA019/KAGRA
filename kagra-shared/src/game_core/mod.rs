@@ -6,6 +6,8 @@
 //! - [`lives`], [`missions`], [`result`]: the run rules every kit shares
 //!   (lives and the blink after a hit, per-run goals, game-over and banner),
 //!   driven by the `lives` and `missions` sections of the GameSpec JSON.
+//! - [`items`]: the running pick-up effects (timers), the weighted draw of which
+//!   pick-up a slot holds, and the spec lookups for an effect's colour and length.
 //! - [`Kit`] + [`tick_frame`]: the fixed-step frame driver. A kit supplies
 //!   one sim step; the core owns substepping, hitstop, title attract, and
 //!   juice decay in a fixed order so runs replay exactly.
@@ -14,6 +16,7 @@
 
 pub mod collide;
 pub mod feel;
+pub mod items;
 pub mod juice;
 pub mod lives;
 pub mod missions;
@@ -23,6 +26,7 @@ pub mod run;
 use crate::flow::{FlowPhase, GameFlow};
 
 pub use collide::Hitbox;
+pub use items::{Effects, Timed};
 pub use juice::{Juice, JuiceShake, Spark, Spring1};
 pub use lives::{Hit, Lives, LivesSpec};
 pub use missions::{Counters, MissionKind, MissionSpec, MissionsSpec, Tracker};
@@ -40,6 +44,8 @@ pub struct Core {
     pub missions: Tracker,
     /// The game-over cue and the banner ([`result`]).
     pub result: ResultState,
+    /// Which timed pick-up effects are running ([`items`]).
+    pub effects: Effects,
 }
 
 /// One genre's sim, driven by [`tick_frame`].
