@@ -1,0 +1,109 @@
+{
+  "slug": "card",
+  "title": "Card Duel",
+  "version": "0.1.0",
+  "genre": "card",
+  "world": "world.json",
+  "files": [
+    {
+      "path": "world.json",
+      "url": "games/card/world.json"
+    },
+    {
+      "path": "kagra_game.json",
+      "url": "games/card/kagra_game.json"
+    },
+    {
+      "path": "assets/audio/LICENSE.txt",
+      "url": "assets/audio/LICENSE.txt"
+    },
+    {
+      "path": "assets/audio/bgm.wav",
+      "url": "assets/audio/bgm.wav"
+    },
+    {
+      "path": "assets/audio/card.wav",
+      "url": "assets/audio/card.wav"
+    },
+    {
+      "path": "assets/audio/fire.wav",
+      "url": "assets/audio/fire.wav"
+    },
+    {
+      "path": "assets/audio/jump.wav",
+      "url": "assets/audio/jump.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/LICENSE.txt",
+      "url": "assets/audio/neon_cat/LICENSE.txt"
+    },
+    {
+      "path": "assets/audio/neon_cat/bgm.wav",
+      "url": "assets/audio/neon_cat/bgm.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/card.wav",
+      "url": "assets/audio/neon_cat/card.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/coin.wav",
+      "url": "assets/audio/neon_cat/coin.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/gameover.wav",
+      "url": "assets/audio/neon_cat/gameover.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/hit.wav",
+      "url": "assets/audio/neon_cat/hit.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/item.wav",
+      "url": "assets/audio/neon_cat/item.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/jump.wav",
+      "url": "assets/audio/neon_cat/jump.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/knock.wav",
+      "url": "assets/audio/neon_cat/knock.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/meow.wav",
+      "url": "assets/audio/neon_cat/meow.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/mission.wav",
+      "url": "assets/audio/neon_cat/mission.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/perch.wav",
+      "url": "assets/audio/neon_cat/perch.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/robot_off.wav",
+      "url": "assets/audio/neon_cat/robot_off.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/robot_on.wav",
+      "url": "assets/audio/neon_cat/robot_on.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/roll.wav",
+      "url": "assets/audio/neon_cat/roll.wav"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/characters/Knight.glb",
+      "url": "assets/library/kaykit/adventurers/characters/Knight.glb"
+    },
+    {
+      "path": "assets/models/kenney/platformer-kit/crate.glb",
+      "url": "assets/models/kenney/platformer-kit/crate.glb"
+    },
+    {
+      "path": "assets/models/placeholder/chest.glb",
+      "url": "assets/models/placeholder/chest.glb"
+    }
+  ]
+}
