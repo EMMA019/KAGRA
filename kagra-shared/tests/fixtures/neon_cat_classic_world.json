@@ -42,7 +42,27 @@
     "size": 0.13,
     "spread": 0.24,
     "height": 0.92,
-    "forward": 0.64
+    "forward": 0.64,
+    "ears": true,
+    "ear_x": 0.4,
+    "ear_y": 1.5,
+    "ear_z": 0.05,
+    "collar": true,
+    "collar_color": [
+     1.0,
+     0.25,
+     0.75
+    ],
+    "collar_y": 0.95,
+    "tail_tip": true,
+    "tail_color": [
+     1.0,
+     0.25,
+     0.75
+    ],
+    "tail_x": 0.0,
+    "tail_y": 1.62,
+    "tail_z": -0.6
    }
   },
   "obstacles": [
@@ -265,6 +285,15 @@
    "blink_hz": 10.0
   },
   "items": [],
+  "item_rules": {
+   "rest_every": 3,
+   "reward_every": 2,
+   "hover": 0.7,
+   "radius": 0.85,
+   "magnet_radius": 3.2,
+   "boost_speed": 1.5,
+   "jump_scale": 1.5
+  },
   "placements": [],
   "runner": {
    "speed": {

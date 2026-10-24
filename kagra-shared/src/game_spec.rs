@@ -36,8 +36,10 @@ pub struct GameSpec {
     pub hud: HudSpec,
     /// How many hits the cat survives, and the grace after one.
     pub lives: LivesSpec,
-    /// Reserved. Power-ups with a fixed effect vocabulary. Not simulated yet.
+    /// Pick-ups with a fixed effect vocabulary (`ItemEffect`), placed by
+    /// `item_rules` in rest and reward sections.
     pub items: Vec<ItemSpec>,
+    pub item_rules: ItemRules,
     /// Reserved. Seeded chunk placement baked by Python. Not simulated yet.
     pub placements: Vec<Placement>,
     /// Runner-kit section (used when `kind` is `runner`).
@@ -476,7 +478,7 @@ pub struct PlayerSpec {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LivesSpec {
-    /// 1..=9 (the HUD paw row has nine slots).
+    /// 1..=9 (the HUD paw row has nine slots). The default is 3.
     pub count: u32,
     /// Seconds without damage after a hit.
     pub invuln_secs: f32,
@@ -487,7 +489,7 @@ pub struct LivesSpec {
 impl Default for LivesSpec {
     fn default() -> Self {
         Self {
-            count: 9,
+            count: 3,
             invuln_secs: 1.6,
             blink_hz: 10.0,
         }
@@ -540,7 +542,8 @@ impl Default for RimSpec {
     }
 }
 
-/// Glowing eyes: two small unlit boxes on the face. Offsets are in model
+/// The cat's glow marks: two eyes on the face, plus ear glints, a collar
+/// and a tail tip that read from behind. Each is its own switch. Offsets are in model
 /// units (like `foot`) and follow the cat's scale and pose.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -558,6 +561,25 @@ pub struct EyesSpec {
     pub height: f32,
     /// Distance forward of the model origin (the face plane).
     pub forward: f32,
+    /// Glints on the ear tips, so the cat reads from behind (the chase view).
+    pub ears: bool,
+    /// Ear glint offsets in model units: sideways from the middle, height
+    /// above the feet, and forward of the model origin.
+    pub ear_x: f32,
+    pub ear_y: f32,
+    pub ear_z: f32,
+    /// A neon band around the body at collar height (model units), seen
+    /// from behind as a bright line across the back and flanks.
+    pub collar: bool,
+    pub collar_color: [f32; 3],
+    pub collar_y: f32,
+    /// A glint on the tail tip: sideways, height above the feet, and
+    /// forward of the model origin (negative is behind the cat).
+    pub tail_tip: bool,
+    pub tail_color: [f32; 3],
+    pub tail_x: f32,
+    pub tail_y: f32,
+    pub tail_z: f32,
 }
 
 impl Default for EyesSpec {
@@ -570,6 +592,18 @@ impl Default for EyesSpec {
             spread: 0.24,
             height: 0.92,
             forward: 0.64,
+            ears: true,
+            ear_x: 0.4,
+            ear_y: 1.5,
+            ear_z: 0.05,
+            collar: true,
+            collar_color: [1.0, 0.25, 0.75],
+            collar_y: 0.95,
+            tail_tip: true,
+            tail_color: [1.0, 0.25, 0.75],
+            tail_x: 0.0,
+            tail_y: 1.62,
+            tail_z: -0.6,
         }
     }
 }
@@ -809,11 +843,37 @@ impl EntityKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ItemEffect {
-    Shield,
+    /// Coins within reach fly to the cat.
     Magnet,
-    Slowmo,
-    Double,
+    /// Faster and nothing can hurt the cat.
     Boost,
+    /// Jumps are much higher.
+    Superjump,
+    /// Everything scores twice.
+    Double,
+    /// Instant: one life back (score when the row is full).
+    Meow,
+}
+
+impl ItemEffect {
+    pub const ALL: [ItemEffect; 5] = [
+        ItemEffect::Magnet,
+        ItemEffect::Boost,
+        ItemEffect::Superjump,
+        ItemEffect::Double,
+        ItemEffect::Meow,
+    ];
+
+    /// Seconds an effect lasts when the spec leaves `duration` at 0.
+    pub fn default_secs(self) -> f32 {
+        match self {
+            ItemEffect::Magnet => 8.0,
+            ItemEffect::Boost => 3.5,
+            ItemEffect::Superjump => 10.0,
+            ItemEffect::Double => 10.0,
+            ItemEffect::Meow => 0.0,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -830,6 +890,87 @@ pub struct ItemSpec {
 
 fn one() -> u32 {
     1
+}
+
+impl ItemSpec {
+    pub fn new(effect: ItemEffect, weight: u32) -> Self {
+        Self {
+            effect,
+            glb: String::new(),
+            weight,
+            duration: 0.0,
+        }
+    }
+
+    /// Seconds the effect lasts.
+    pub fn secs(&self) -> f32 {
+        if self.duration > 0.0 {
+            self.duration
+        } else {
+            self.effect.default_secs()
+        }
+    }
+}
+
+/// Where pick-ups appear: in the free slots of rest and reward sections,
+/// halfway between two obstacle slots (clear of the coin line).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ItemRules {
+    /// One pick-up every n-th free slot in a rest section (0 = none).
+    pub rest_every: u32,
+    /// The same for a reward section.
+    pub reward_every: u32,
+    /// Height of the pick-up above the track.
+    pub hover: f32,
+    /// Pick-up radius in metres.
+    pub radius: f32,
+    /// A magnet reaches coins within this many metres (sideways and ahead).
+    pub magnet_radius: f32,
+    /// Boost speed multiplier.
+    pub boost_speed: f32,
+    /// Super-jump launch speed multiplier.
+    pub jump_scale: f32,
+}
+
+impl Default for ItemRules {
+    fn default() -> Self {
+        Self {
+            rest_every: 3,
+            reward_every: 2,
+            hover: 0.7,
+            radius: 0.85,
+            magnet_radius: 3.2,
+            boost_speed: 1.5,
+            jump_scale: 1.5,
+        }
+    }
+}
+
+impl ItemRules {
+    fn validate(&self) -> Result<(), String> {
+        if !(0.2..=3.0).contains(&self.radius) || !(0.0..=3.0).contains(&self.hover) {
+            return Err("game spec: item_rules radius 0.2..=3, hover 0..=3".into());
+        }
+        if !(1.0..=12.0).contains(&self.magnet_radius) {
+            return Err("game spec: item_rules.magnet_radius must be 1..=12".into());
+        }
+        if !(1.0..=2.5).contains(&self.boost_speed) || !(1.0..=2.5).contains(&self.jump_scale) {
+            return Err("game spec: item_rules boost_speed and jump_scale must be 1..=2.5".into());
+        }
+        Ok(())
+    }
+}
+
+/// The default pick-up table: weights set how often each shows up.
+pub fn default_items() -> Vec<ItemSpec> {
+    vec![
+        ItemSpec::new(ItemEffect::Magnet, 3),
+        ItemSpec::new(ItemEffect::Double, 3),
+        ItemSpec::new(ItemEffect::Superjump, 2),
+        ItemSpec::new(ItemEffect::Boost, 2),
+        ItemSpec::new(ItemEffect::Meow, 1),
+    ]
 }
 
 /// One baked spawn: what, which lane, how far.
@@ -1051,7 +1192,8 @@ impl Default for GameSpec {
             hud_top: 96.0,
             hud: HudSpec::default(),
             lives: LivesSpec::default(),
-            items: Vec::new(),
+            items: default_items(),
+            item_rules: ItemRules::default(),
             placements: Vec::new(),
             runner: RunnerKit::default(),
             input: InputSpec::default(),
@@ -1248,6 +1390,14 @@ impl GameSpec {
         }
         self.hud.validate()?;
         self.lives.validate()?;
+        self.item_rules.validate()?;
+        if self
+            .items
+            .iter()
+            .any(|i| i.duration < 0.0 || !i.duration.is_finite())
+        {
+            return Err("game spec: item duration must be >= 0".into());
+        }
         for (i, s) in self.runner.sections.iter().enumerate() {
             if s.length <= 0.0 || !s.length.is_finite() {
                 return Err(format!("game spec: section {i} length must be > 0"));
@@ -1356,6 +1506,7 @@ impl GameSpec {
         // The recorded runs score distance and rings only.
         s.runner.score.per_gate = 0;
         s.lives.count = 1;
+        s.items = Vec::new();
         s
     }
 
@@ -1464,7 +1615,7 @@ mod tests {
 
     #[test]
     fn items_use_the_fixed_vocabulary() {
-        let ok = r#"{"items":[{"effect":"magnet"},{"effect":"slowmo","duration":3}]}"#;
+        let ok = r#"{"items":[{"effect":"magnet"},{"effect":"double","duration":3}]}"#;
         let spec = GameSpec::from_json(ok).unwrap();
         assert_eq!(spec.items[0].effect, ItemEffect::Magnet);
         assert!(GameSpec::from_json(r#"{"items":[{"effect":"laser"}]}"#).is_err());
