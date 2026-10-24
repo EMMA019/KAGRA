@@ -87,6 +87,8 @@ CLASSIC = {
     "lives": {"count": 1},
     "items": [],
     "mischief": [],
+    "perch_route": [],
+    "chaser": {"enabled": False},
 }
 
 
@@ -215,6 +217,37 @@ def test_mischief_vocabulary_rules_and_fields_match_rust():
             GameSpec.from_overrides({"mischief_rules": bad})
     assert spec.world()["game"]["mischief_rules"]["score"] > 0
     assert spec.item_rules.radius >= 1.0
+
+
+def test_perch_route_and_chaser_match_rust_and_are_checked():
+    from kagra.game_spec import PERCH_KINDS, ChaserSpec, PerchRules
+
+    rust = (ROOT / "kagra-shared/src/game_spec.rs").read_text(encoding="utf-8")
+    body = re.search(r"pub enum PerchKind \{(.*?)\n\}", rust, re.S).group(1)
+    assert tuple(re.sub(r"(?<!^)(?=[A-Z])", "_", v).lower() for v in re.findall(r"^\s+(\w+),", body, re.M)) == PERCH_KINDS
+    for cls, name in ((PerchRules, "PerchRules"), (ChaserSpec, "ChaserSpec")):
+        names = re.findall(r"pub (\w+):", re.search(rf"pub struct {name} \{{(.*?)\n\}}", rust, re.S).group(1))
+        assert names == list(cls.__dataclass_fields__), name
+    spec = GameSpec()
+    assert [p.kind for p in spec.perch_route] == list(PERCH_KINDS)
+    game = spec.world()["game"]
+    assert len(game["perch_route"]) == 3 and game["chaser"]["enabled"]
+    # A route can be spelled with bare names or with heights.
+    assert GameSpec.from_overrides({"perch_route": ["pipe", {"kind": "sign", "height": 1.2}]}).perch_route[1].top() == 1.2
+    assert GameSpec.from_overrides({"perch_route": []}).perch_route == []
+    for bad in (
+        {"perch_route": ["unicorn"]},
+        {"perch_route": [{"kind": "sign", "height": 1.9}]},  # the first step is out of reach of a jump
+        {"perch_route": [{"kind": "ac_unit", "height": 0.6}, {"kind": "sign", "height": 1.9}]},  # a step too high
+        {"perch_route": ["pipe"] * 7},
+        {"perch_rules": {"step_len": 9.0}},
+        {"perch_rules": {"half_width": 2.0}},
+        {"chaser": {"secs": 0.5}},
+        {"chaser": {"near_gap": 4.0, "far_gap": 3.0}},
+        {"chaser": {"far_gap": 2.6}},
+    ):
+        with pytest.raises(ValueError):
+            GameSpec.from_overrides(bad).to_dict()
 
 
 def _l1(a, b):

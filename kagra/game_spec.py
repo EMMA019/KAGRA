@@ -38,6 +38,8 @@ ITEM_COLORS = {
 }
 ITEM_DEFAULT_ICON = {"magnet": "horseshoe", "boost": "chevron", "superjump": "arrow", "double": "two_x", "meow": "heart"}
 MISCHIEF_KINDS = ("vase", "bottle", "can", "yarn")
+PERCH_KINDS = ("ac_unit", "pipe", "sign")
+PERCH_HEIGHT = {"ac_unit": 0.6, "pipe": 1.1, "sign": 1.6}
 PART_ROLES = ("solid", "ride", "ramp", "decor")
 
 _K = "assets/models/kenney"
@@ -385,6 +387,69 @@ def _default_mischief() -> list[MischiefSpec]:
     return [MischiefSpec(k, w) for k, w in (("vase", 2), ("bottle", 2), ("can", 2), ("yarn", 1))]
 
 
+@dataclass
+class PerchStep:
+    """One ledge of a perch route. ``height`` 0 means the kind's own top height."""
+
+    kind: str
+    height: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.kind not in PERCH_KINDS:
+            raise ValueError(f"perch kind {self.kind!r} not in {PERCH_KINDS}")
+
+    def top(self) -> float:
+        return self.height if self.height > 0 else PERCH_HEIGHT[self.kind]
+
+
+def _default_perch_route() -> list[PerchStep]:
+    return [PerchStep(k) for k in PERCH_KINDS]
+
+
+@dataclass
+class PerchRules:
+    """Where perch routes stand (free slots, beside the track centre) and what running on them pays."""
+
+    rest_every: int = 2
+    reward_every: int = 2
+    other_every: int = 6
+    side: float = 1.35
+    half_width: float = 0.7
+    step_len: float = 3.6
+    step_up: float = 0.55
+    land_score: int = 30
+    run_score: int = 40
+    route_bonus: int = 120
+    coins_per_step: int = 3
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.side <= 1.8 or not 0.4 <= self.half_width <= 1.2:
+            raise ValueError("perch_rules side 0..=1.8, half_width 0.4..=1.2")
+        if not 1.5 <= self.step_len <= 8.0 or not 0.1 <= self.step_up <= 1.0:
+            raise ValueError("perch_rules step_len 1.5..=8, step_up 0.1..=1")
+        if not 0 <= self.coins_per_step <= 6:
+            raise ValueError("perch_rules coins_per_step 0..=6")
+
+
+@dataclass
+class ChaserSpec:
+    """The cleaning robot that gives chase after a hit (``far_gap`` stays near: past ~2 m it leaves the bottom of the screen)."""
+
+    enabled: bool = True
+    secs: float = 10.0
+    near_gap: float = 1.2
+    far_gap: float = 1.7
+    perch_drain: float = 2.5
+    scare_score: int = 50
+    color: list = field(default_factory=lambda: [255, 80, 40])
+
+    def __post_init__(self) -> None:
+        if not 2.0 <= self.secs <= 60.0 or not 1.0 <= self.perch_drain <= 3.0:
+            raise ValueError("chaser secs 2..=60, perch_drain 1..=3")
+        if not 0.8 <= self.near_gap <= self.far_gap or not self.far_gap <= 2.2:
+            raise ValueError("chaser near_gap 0.8.., far_gap near_gap..=2.2")
+
+
 def _default_items() -> list[ItemSpec]:
     return [ItemSpec(e, weight=w) for e, w in (("magnet", 3), ("double", 3), ("superjump", 2), ("boost", 2), ("meow", 1))]
 
@@ -497,6 +562,9 @@ class GameSpec:
     item_rules: ItemRules = field(default_factory=ItemRules)
     mischief: list[MischiefSpec] = field(default_factory=_default_mischief)
     mischief_rules: MischiefRules = field(default_factory=MischiefRules)
+    perch_route: list[PerchStep] = field(default_factory=_default_perch_route)
+    perch_rules: PerchRules = field(default_factory=PerchRules)
+    chaser: ChaserSpec = field(default_factory=ChaserSpec)
     placements: list[Placement] = field(default_factory=list)
     runner: RunnerKit = field(default_factory=RunnerKit)
     input: InputSpec = field(default_factory=InputSpec)
@@ -521,7 +589,27 @@ class GameSpec:
         if not self.obstacles or all(o.weight <= 0 for o in self.obstacles):
             raise ValueError("game spec needs an obstacle with weight > 0")
         self._check_item_colors()
+        self._check_perch_route()
         return asdict(self)
+
+    def _check_perch_route(self) -> None:
+        """A route has to be climbable and fit a slot (same rules as Rust)."""
+        r = self.perch_rules
+        if len(self.perch_route) > 6:
+            raise ValueError("perch_route has at most 6 steps")
+        if not self.perch_route:
+            return
+        jump = self.runner.jump
+        apex = jump.velocity**2 / (2.0 * max(-jump.gravity, 1e-3))
+        if any(not 0.2 <= p.top() <= 2.4 for p in self.perch_route):
+            raise ValueError("perch_route heights 0.2..=2.4")
+        if self.perch_route[0].top() > apex * 0.9 + r.step_up:
+            raise ValueError(f"the first perch step ({self.perch_route[0].top():.2f} m) is out of reach of a jump")
+        for a, b in zip(self.perch_route, self.perch_route[1:]):
+            if b.top() - a.top() > r.step_up + 1e-4:
+                raise ValueError("a perch step is too high above the one before it")
+        if len(self.perch_route) * r.step_len > self.runner.obstacle_track.gap - 3.0:
+            raise ValueError("the perch route is longer than a slot")
 
     def _check_item_colors(self) -> None:
         """Orb colours must tell apart (sum of channel differences >= 90), same test as Rust."""
@@ -581,6 +669,8 @@ def _build(cls: type, data: dict, base: object | None = None) -> object:
             kwargs[name] = [ItemSpec(**v) if isinstance(v, dict) else ItemSpec(v) for v in value]
         elif cls is GameSpec and name == "mischief":
             kwargs[name] = [MischiefSpec(**v) if isinstance(v, dict) else MischiefSpec(v) for v in value]
+        elif cls is GameSpec and name == "perch_route":
+            kwargs[name] = [PerchStep(**v) if isinstance(v, dict) else PerchStep(v) for v in value]
         elif cls is GameSpec and name == "placements":
             kwargs[name] = [Placement(**v) for v in value]
         elif cls is RunnerKit and name == "sections":

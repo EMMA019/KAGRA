@@ -100,6 +100,28 @@ streak_secs 2.5, streak_bonus 10, streak_cap 6}` stand small props (`vase`, `bot
 flies aside and lies down, a label such as CRASH pops, and it pays `score`); a jump clears it, and a knock never hurts. Knocks within
 `streak_secs` of each other build a streak that adds `streak_bonus` each, up to `streak_cap`. The classic course has none.
 
+`perch_route` `[ac_unit | pipe | sign, ...]` (a name, or `{kind, height}`; default heights 0.6, 1.1, 1.6 m) and `perch_rules` `{rest_every 2,
+reward_every 2, other_every 6, side 1.35, half_width 0.7, step_len 3.6, step_up 0.55, land_score 30, run_score 40, route_bonus 120,
+coins_per_step 3}` lay a staircase of ledges (an AC unit, a pipe, a sign) end to end along one side of a free slot, in the colour of
+`style.codes.rideable` with a lit top and edges. A prop makes way for a route in its slot. The first step has to be higher than
+`step_up` so it takes a jump, and each next step at most `step_up` above the one before, so the cat walks up without another
+jump; both sides refuse a route a jump cannot reach, a step that is too high, more than 6 steps, or one longer than a slot. A ledge
+is passed through when the feet are below its top minus `step_up`, so a perch has no collider and cannot hurt. Landing pays
+`land_score`, time on a ledge `run_score` per second, reaching the last step `route_bonus` (each once per route), and each step has
+`coins_per_step` coins along its top. An empty `perch_route` (the classic course, `legacy()`) has none.
+
+`chaser` `{enabled, secs 10, near_gap 1.2, far_gap 1.7, perch_drain 2.5, scare_score 50, color}` is the cleaning robot. A hit that
+does not end the run (so only with `lives.count` above 1) calls it. For `secs` it rolls behind the cat, a blinking beacon, a lit ring
+and a pulse on the street, a "ROBOT" bar in the HUD. While it is there a second hit is the end. It falls back from `near_gap` to
+`far_gap` as its time runs down and then gives up. Its time runs `perch_drain` times faster while the cat stands on a ledge or boosts
+(a cleaner cannot climb). A `meow` pick-up scares it away (`scare_score`). Its `far_gap` is capped at 2.2 m because the chase view is
+low and close; a unit test projects the robot through the real camera at both gaps and across the lanes.
+
+Item icons are checked as pictures. The chase camera looks along +Z, so screen-right is world -X; `icon_props` mirrors the picture
+into screen space, and the test `item_icons_read_the_right_way_round_from_the_chase_camera` rasterises every icon's primitives
+exactly as the camera sees them (at rest and swayed to either side) and asserts, for instance, that the boost chevron's tip points
+away from the cat and the `two_x` and `arrow` read the right way round (run it with `--nocapture` to see the pictures).
+
 `style.codes` is the colour language, one neon colour per thing to do, used for the obstacle edge and its glow:
 `jump_over` amber (low, hop), `roll_under` pink (high or hanging), `solid` red (go round), `cat_gap` violet (roll through),
 `rideable` blue (run on it), `pass_through` mint (gates and arches, never a threat). A kind may override with `color`.

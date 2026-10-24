@@ -43,6 +43,12 @@ pub struct GameSpec {
     /// Knockable props (`mischief_rules` places them in free slots).
     pub mischief: Vec<MischiefSpec>,
     pub mischief_rules: MischiefRules,
+    /// A route of ledges the cat can jump up onto and run along, bottom step
+    /// first (`perch_rules` places one in free slots; empty = none).
+    pub perch_route: Vec<PerchStep>,
+    pub perch_rules: PerchRules,
+    /// The cleaning robot that gives chase after a hit.
+    pub chaser: ChaserSpec,
     /// Reserved. Seeded chunk placement baked by Python. Not simulated yet.
     pub placements: Vec<Placement>,
     /// Runner-kit section (used when `kind` is `runner`).
@@ -1161,6 +1167,170 @@ pub fn default_mischief() -> Vec<MischiefSpec> {
     ]
 }
 
+/// The kinds of ledge a perch route is made of. The set is closed (each has
+/// its own art).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PerchKind {
+    /// An air-conditioning box with fans.
+    AcUnit,
+    /// A round pipe along a wall.
+    Pipe,
+    /// A shop sign on posts.
+    Sign,
+}
+
+impl PerchKind {
+    pub const ALL: [PerchKind; 3] = [PerchKind::AcUnit, PerchKind::Pipe, PerchKind::Sign];
+
+    /// Top height in metres when the spec leaves `height` at 0.
+    pub fn default_height(self) -> f32 {
+        match self {
+            PerchKind::AcUnit => 0.6,
+            PerchKind::Pipe => 1.1,
+            PerchKind::Sign => 1.6,
+        }
+    }
+}
+
+/// One step of a route. `height` is the top above the street, 0 = the kind's own.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PerchStep {
+    pub kind: PerchKind,
+    #[serde(default)]
+    pub height: f32,
+}
+
+impl PerchStep {
+    pub fn new(kind: PerchKind) -> Self {
+        Self { kind, height: 0.0 }
+    }
+
+    pub fn top(&self) -> f32 {
+        if self.height > 0.0 {
+            self.height
+        } else {
+            self.kind.default_height()
+        }
+    }
+}
+
+/// AC unit, then a pipe, then a sign: three steps up.
+pub fn default_perch_route() -> Vec<PerchStep> {
+    PerchKind::ALL.into_iter().map(PerchStep::new).collect()
+}
+
+/// Where perch routes stand and what running along one pays.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PerchRules {
+    /// One route every n-th free slot in a rest section (0 = none).
+    pub rest_every: u32,
+    /// The same for a reward section.
+    pub reward_every: u32,
+    /// The same for every other section.
+    pub other_every: u32,
+    /// Sideways distance of the route's centre from the track centre.
+    pub side: f32,
+    /// Half the width of a ledge.
+    pub half_width: f32,
+    /// Length of each step along the track, the steps touching end to end.
+    pub step_len: f32,
+    /// A ledge this much above the feet is stepped onto without a jump
+    /// (so the first step has to be higher than this to need one).
+    pub step_up: f32,
+    /// Score for the first landing on a route.
+    pub land_score: u32,
+    /// Score per second spent on a ledge.
+    pub run_score: u32,
+    /// Score for reaching the last step.
+    pub route_bonus: u32,
+    /// Coins per step, laid along the top.
+    pub coins_per_step: u32,
+}
+
+impl Default for PerchRules {
+    fn default() -> Self {
+        Self {
+            rest_every: 2,
+            reward_every: 2,
+            other_every: 6,
+            side: 1.35,
+            half_width: 0.7,
+            step_len: 3.6,
+            step_up: 0.55,
+            land_score: 30,
+            run_score: 40,
+            route_bonus: 120,
+            coins_per_step: 3,
+        }
+    }
+}
+
+impl PerchRules {
+    fn validate(&self) -> Result<(), String> {
+        if !(0.0..=1.8).contains(&self.side) || !(0.4..=1.2).contains(&self.half_width) {
+            return Err("game spec: perch_rules side 0..=1.8, half_width 0.4..=1.2".into());
+        }
+        if !(1.5..=8.0).contains(&self.step_len) || !(0.1..=1.0).contains(&self.step_up) {
+            return Err("game spec: perch_rules step_len 1.5..=8, step_up 0.1..=1".into());
+        }
+        if self.coins_per_step > 6 {
+            return Err("game spec: perch_rules coins_per_step 0..=6".into());
+        }
+        Ok(())
+    }
+}
+
+/// How the cleaning robot behaves once a hit has called it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ChaserSpec {
+    pub enabled: bool,
+    /// How long it keeps chasing, seconds.
+    pub secs: f32,
+    /// Distance behind the cat when it shows up, metres: right on its tail.
+    pub near_gap: f32,
+    /// Distance behind the cat when it gives up. The chase view is low and
+    /// close, so past about 2 m the robot slips off the bottom of the
+    /// screen (a test projects it through the real camera).
+    pub far_gap: f32,
+    /// Time runs this many times faster while the cat stands on a ledge
+    /// (a cleaner cannot climb).
+    pub perch_drain: f32,
+    /// Score for scaring it off with a meow.
+    pub scare_score: u32,
+    /// Its light and trim colour.
+    pub color: [u8; 3],
+}
+
+impl Default for ChaserSpec {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            secs: 10.0,
+            near_gap: 1.2,
+            far_gap: 1.7,
+            perch_drain: 2.5,
+            scare_score: 50,
+            color: [255, 80, 40],
+        }
+    }
+}
+
+impl ChaserSpec {
+    fn validate(&self) -> Result<(), String> {
+        if !(2.0..=60.0).contains(&self.secs) || !(1.0..=3.0).contains(&self.perch_drain) {
+            return Err("game spec: chaser secs 2..=60, perch_drain 1..=3".into());
+        }
+        if !(0.8..=2.2).contains(&self.far_gap) || !(0.8..=self.far_gap).contains(&self.near_gap) {
+            return Err("game spec: chaser near_gap 0.8..=far_gap, far_gap <= 2.2".into());
+        }
+        Ok(())
+    }
+}
+
 /// The default pick-up table: weights set how often each shows up.
 pub fn default_items() -> Vec<ItemSpec> {
     vec![
@@ -1395,6 +1565,9 @@ impl Default for GameSpec {
             item_rules: ItemRules::default(),
             mischief: default_mischief(),
             mischief_rules: MischiefRules::default(),
+            perch_route: default_perch_route(),
+            perch_rules: PerchRules::default(),
+            chaser: ChaserSpec::default(),
             placements: Vec::new(),
             runner: RunnerKit::default(),
             input: InputSpec::default(),
@@ -1575,6 +1748,44 @@ impl GameSpec {
         Ok(spec)
     }
 
+    /// A route has to be climbable: the first step within reach of a plain
+    /// jump, each step up no more than `step_up` above the one before, and
+    /// the whole route inside a slot.
+    fn validate_perch_route(&self) -> Result<(), String> {
+        let r = &self.perch_rules;
+        if self.perch_route.len() > 6 {
+            return Err("game spec: perch_route has at most 6 steps".into());
+        }
+        let Some(first) = self.perch_route.first() else {
+            return Ok(());
+        };
+        let apex = self.runner.jump.velocity * self.runner.jump.velocity
+            / (2.0 * -self.runner.jump.gravity).max(1e-3);
+        if self
+            .perch_route
+            .iter()
+            .any(|p| !(0.2..=2.4).contains(&p.top()))
+        {
+            return Err("game spec: perch_route heights 0.2..=2.4".into());
+        }
+        if first.top() > apex * 0.9 + r.step_up {
+            return Err(format!(
+                "game spec: the first perch step ({:.2} m) is out of reach of a jump ({apex:.2} m)",
+                first.top()
+            ));
+        }
+        for w in self.perch_route.windows(2) {
+            if w[1].top() - w[0].top() > r.step_up + 1e-4 {
+                return Err("game spec: a perch step is too high above the one before it".into());
+            }
+        }
+        let len = self.perch_route.len() as f32 * r.step_len;
+        if len > self.runner.obstacle_track.gap - 3.0 {
+            return Err("game spec: the perch route is longer than a slot".into());
+        }
+        Ok(())
+    }
+
     /// Orb colours must tell apart from each other, from the coin and from
     /// the obstacle codes (the same sum-of-channels test as `style.codes`).
     fn validate_item_colors(&self) -> Result<(), String> {
@@ -1630,6 +1841,9 @@ impl GameSpec {
         self.lives.validate()?;
         self.item_rules.validate()?;
         self.mischief_rules.validate()?;
+        self.perch_rules.validate()?;
+        self.chaser.validate()?;
+        self.validate_perch_route()?;
         if self
             .items
             .iter()
@@ -1748,6 +1962,8 @@ impl GameSpec {
         s.lives.count = 1;
         s.items = Vec::new();
         s.mischief = Vec::new();
+        s.perch_route = Vec::new();
+        s.chaser.enabled = false;
         s
     }
 
