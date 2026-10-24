@@ -231,7 +231,11 @@ def test_perch_route_and_chaser_match_rust_and_are_checked():
     spec = GameSpec()
     assert [p.kind for p in spec.perch_route] == list(PERCH_KINDS)
     game = spec.world()["game"]
-    assert len(game["perch_route"]) == 3 and game["chaser"]["enabled"]
+    assert len(game["perch_route"]) == 3
+    # The cleaning robot is off by default and a spec can turn it back on.
+    assert game["chaser"]["enabled"] is False
+    on = GameSpec.from_overrides({"chaser": {"enabled": True}}).world()["game"]["chaser"]
+    assert on["enabled"] is True and on["secs"] == 10.0
     # A route can be spelled with bare names or with heights.
     assert GameSpec.from_overrides({"perch_route": ["pipe", {"kind": "sign", "height": 1.2}]}).perch_route[1].top() == 1.2
     assert GameSpec.from_overrides({"perch_route": []}).perch_route == []

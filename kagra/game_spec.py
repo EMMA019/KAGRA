@@ -433,9 +433,9 @@ class PerchRules:
 
 @dataclass
 class ChaserSpec:
-    """The cleaning robot that gives chase after a hit (``far_gap`` stays near: past ~2 m it leaves the bottom of the screen)."""
+    """The cleaning robot that gives chase after a hit; off unless the spec sets ``enabled`` (``far_gap`` stays near: past ~2 m it leaves the bottom of the screen)."""
 
-    enabled: bool = True
+    enabled: bool = False
     secs: float = 10.0
     near_gap: float = 1.2
     far_gap: float = 1.7

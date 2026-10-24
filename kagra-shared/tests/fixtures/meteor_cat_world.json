@@ -416,7 +416,7 @@
    "coins_per_step": 3
   },
   "chaser": {
-   "enabled": true,
+   "enabled": false,
    "secs": 10.0,
    "near_gap": 1.2,
    "far_gap": 1.7,

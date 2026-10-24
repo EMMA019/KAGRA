@@ -110,11 +110,12 @@ is passed through when the feet are below its top minus `step_up`, so a perch ha
 `land_score`, time on a ledge `run_score` per second, reaching the last step `route_bonus` (each once per route), and each step has
 `coins_per_step` coins along its top. An empty `perch_route` (the classic course, `legacy()`) has none.
 
-`chaser` `{enabled, secs 10, near_gap 1.2, far_gap 1.7, perch_drain 2.5, scare_score 50, color}` is the cleaning robot. A hit that
+`chaser` `{enabled, secs 10, near_gap 1.2, far_gap 1.7, perch_drain 2.5, scare_score 50, color}` is the cleaning robot, **off by default** (`enabled: false`; Neon Cat and Meteor Cat run without it and a hit just
+gives the usual `invuln_secs` of grace). Set `"chaser": {"enabled": true}` to bring it back. When enabled, a hit that
 does not end the run (so only with `lives.count` above 1) calls it. For `secs` it rolls behind the cat, a blinking beacon, a lit ring
 and a pulse on the street, a "ROBOT" bar in the HUD. While it is there a second hit is the end. It falls back from `near_gap` to
 `far_gap` as its time runs down and then gives up. Its time runs `perch_drain` times faster while the cat stands on a ledge or boosts
-(a cleaner cannot climb). A `meow` pick-up scares it away (`scare_score`). Its `far_gap` is capped at 2.2 m because the chase view is
+(a cleaner cannot climb). A `meow` pick-up scares it away (`scare_score`); with no robot a meow is just +1 life, or +100 score when the lives are full. Its `far_gap` is capped at 2.2 m because the chase view is
 low and close; a unit test projects the robot through the real camera at both gaps and across the lanes.
 
 Item icons are checked as pictures. The chase camera looks along +Z, so screen-right is world -X; `icon_props` mirrors the picture
