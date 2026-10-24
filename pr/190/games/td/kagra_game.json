@@ -1,0 +1,7 @@
+{
+  "title": "Tower Defense",
+  "version": "0.1.0",
+  "slug": "td",
+  "entry": "examples/td_minimal.py",
+  "world": "kagra-shared/tests/fixtures/td_world.json"
+}
