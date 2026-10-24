@@ -19,8 +19,8 @@ use serde_json::json;
 
 use crate::flow::{FlowAction, FlowPhase, GameFlow};
 use crate::game_core::{self, Core, Hitbox, Juice, JuiceShake, Kit, Spring1};
-use crate::game_spec::GameSpec;
-use crate::scene::DrawList;
+use crate::game_spec::{Behavior, GameSpec, PartRole, SectionKind};
+use crate::scene::{DrawList, Quad, TextAlign, TextQuad};
 use crate::world_doc::{WorldCamera, WorldDoc, WorldLight, WorldProp, WorldWalker};
 
 pub const GAME_ID: &str = "neon_cat";
@@ -86,6 +86,15 @@ pub struct NeonCat {
     feel: FeelParams,
     /// Eased lane hop in flight: (from, to, elapsed, duration).
     hop: Option<(f32, f32, f32, f32)>,
+    /// Seconds of roll left. While > 0 the body is `roll_height` tall.
+    rolling: f32,
+    /// A fast-fall asked for a roll on touchdown.
+    roll_on_land: bool,
+    /// Height of the surface under the feet (a train top or ramp), else 0.
+    ground: f32,
+    /// Coins picked up this run, and which ones (`index * 32 + k`).
+    coins: u32,
+    got_coins: HashSet<i32>,
 }
 
 pub fn is_cat_dump(json: &str) -> bool {
@@ -171,7 +180,7 @@ impl NeonCat {
 
     #[cfg(test)]
     fn fresh() -> Self {
-        Self::with_spec(GameSpec::default())
+        Self::with_spec(GameSpec::legacy())
     }
 
     fn with_spec(spec: GameSpec) -> Self {
@@ -221,6 +230,11 @@ impl NeonCat {
             drag_target: None,
             feel: feel::resolve(&GameSpec::default().feel).expect("default feel"),
             hop: None,
+            rolling: 0.0,
+            roll_on_land: false,
+            ground: 0.0,
+            coins: 0,
+            got_coins: HashSet::new(),
         };
         if let Ok(p) = feel::resolve(&run.spec.feel) {
             run.feel = p;
@@ -337,6 +351,9 @@ impl NeonCat {
             "score": self.core.stats.score,
             "best": self.flow.best_score,
             "rings": self.core.stats.rings,
+            "coins": self.coins,
+            "rolling": self.rolling > 0.0,
+            "ground": self.ground,
             "alive": self.core.stats.alive,
             "death": self.core.stats.death,
             "x": self.x,
@@ -444,6 +461,14 @@ impl NeonCat {
     /// Screen-right steer toward the next ring, and jump when the next
     /// obstacle is close and lined up. `+lx` is world −X on this camera.
     pub fn script_steer(&self) -> (f32, bool) {
+        let (lx, jump, _) = self.script_plan();
+        (lx, jump)
+    }
+
+    /// `script_steer` plus a roll, and an answer for every obstacle kind:
+    /// hop crates, go around solids, roll under beams and through gaps, and
+    /// line up with a ramp to ride a train.
+    pub fn script_plan(&self) -> (f32, bool, bool) {
         let ri = next_ahead(
             self.z,
             self.spec.runner.rings.track.z0,
@@ -451,7 +476,7 @@ impl NeonCat {
             |i| self.spec.runner.rings.track.z(i),
         );
         let dx = ring_x(&self.spec, ri) - self.x;
-        let lx = (-dx * 1.4).clamp(-1.0, 1.0);
+        let mut lx = (-dx * 1.4).clamp(-1.0, 1.0);
         let oi = next_ahead_where(
             self.z,
             self.spec.runner.obstacle_track.z0,
@@ -459,11 +484,60 @@ impl NeonCat {
             |i| self.spec.runner.obstacle_track.z(i),
             |i| self.spec.obstacle_active(i),
         );
-        let ahead_obs = obstacle_shape(&self.spec, oi);
-        let (ox, oz) = (ahead_obs.hit_cx, ahead_obs.hit_cz);
-        let ahead = oz - self.z;
-        let jump = (0.15..2.5).contains(&ahead) && (self.x - ox).abs() < 0.95;
-        (lx, jump)
+        let parts = obstacle_parts(&self.spec, oi);
+        let kind = self.spec.obstacle_kind(oi);
+        let (ox, oz) = obstacle_anchor(&self.spec, oi);
+        let front = parts
+            .iter()
+            .map(|p| p.skin_min[2])
+            .fold(f32::INFINITY, f32::min);
+        let lim = self.spec.runner.lanes.limit;
+        let steer_to = |target: f32| (-(target - self.x) * 3.0).clamp(-1.0, 1.0);
+        let (mut jump, mut roll) = (false, false);
+        match kind.behavior {
+            Behavior::JumpOver => {
+                let base = &parts[0];
+                let ahead = base.hit_cz - self.z;
+                jump = (0.15..2.5).contains(&ahead) && (self.x - base.hit_cx).abs() < 0.95;
+            }
+            Behavior::Solid => {
+                if oz - self.z < 12.0 {
+                    let free = game_core::collide::free_between(
+                        &game_core::collide::blocked_spans(
+                            &parts,
+                            0.0,
+                            self.spec.runner.body.stand_height,
+                            CAT_HALF_W,
+                        ),
+                        lim,
+                    );
+                    // The free strip nearest the cat, held a hand from its edges.
+                    let near = free.iter().min_by(|a, b| {
+                        let d = |s: &&(f32, f32)| (self.x.clamp(s.0, s.1) - self.x).abs();
+                        d(a).partial_cmp(&d(b)).unwrap()
+                    });
+                    if let Some(&(lo, hi)) = near {
+                        let m = ((hi - lo) * 0.5).min(0.2);
+                        lx = steer_to(self.x.clamp(lo + m, hi - m));
+                    }
+                }
+            }
+            Behavior::RollUnder => {
+                roll = (0.0..1.6).contains(&(front - self.z)) && self.rolling <= 0.0;
+            }
+            Behavior::CatGap => {
+                if oz - self.z < 12.0 {
+                    lx = steer_to(ox);
+                }
+                roll = (0.0..1.6).contains(&(front - self.z)) && self.rolling <= 0.0;
+            }
+            Behavior::Rideable => {
+                if oz - self.z < 12.0 {
+                    lx = steer_to(ox);
+                }
+            }
+        }
+        (lx, jump, roll)
     }
 
     /// `lx` is screen-right. `lz` above 0.55 (stick up) is a jump.
@@ -498,6 +572,11 @@ impl NeonCat {
         self.pad_x = 0.0;
         self.pad_up = 0.0;
         self.got.clear();
+        self.got_coins.clear();
+        self.coins = 0;
+        self.rolling = 0.0;
+        self.roll_on_land = false;
+        self.ground = 0.0;
         self.core.juice.sparks.clear();
         self.rebuild();
     }
@@ -691,12 +770,15 @@ impl NeonCat {
             }
             Swipe::Up => self.swipes.press(Swipe::Up, self.time),
             Swipe::Down => {
-                if self.y > 0.05 {
+                if self.y > self.ground + 0.05 {
+                    // Fast-fall, and roll the moment the paws touch down.
                     self.vy = self
                         .vy
                         .min(-self.spec.runner.jump.velocity * self.feel.velocity_scale * 1.2);
+                    self.roll_on_land = true;
                 } else {
-                    // Roll arrives with the gameplay PR; keep it buffered.
+                    // On the ground: roll now (buffered a hair for a press
+                    // that lands just before the cat does).
                     self.swipes.press(Swipe::Down, self.time);
                 }
             }
@@ -745,7 +827,10 @@ impl NeonCat {
                 }
             }
         }
-        let grounded = self.y <= 0.001 && self.vy <= 0.0;
+        let g0 = self.ground_at(self.x, self.z);
+        self.ground = g0;
+        let grounded = self.y <= g0 + 0.001 && self.vy <= 0.0;
+        self.rolling = (self.rolling - dt).max(0.0);
         if let Some(t) = self.lane_target {
             let held = (self.key_right as i32 - self.key_left as i32) as f32 + self.pad_x;
             if held.abs() >= 0.2 {
@@ -762,13 +847,18 @@ impl NeonCat {
         let want_jump = self.jump_held || self.key_jump || self.pad_up > 0.55;
         if grounded && (want_jump || self.swipes.take(Swipe::Up, self.time)) {
             self.vy = self.spec.runner.jump.velocity * self.feel.velocity_scale;
-            self.y = 0.02;
+            self.y = g0 + 0.02;
+            self.rolling = 0.0;
+            self.roll_on_land = false;
             self.core.stats.just_jump = true;
             self.sfx("jump");
+        } else if grounded && (self.roll_on_land || self.swipes.take(Swipe::Down, self.time)) {
+            self.roll_on_land = false;
+            self.start_roll();
         }
         self.vy += self.spec.runner.jump.gravity * self.feel.gravity_scale * dt;
         self.y += self.vy * dt;
-        if self.y <= 0.0 {
+        if self.y <= g0 {
             if self.vy < -1.5 {
                 self.core.juice.land_squash = self.feel.land_squash_secs;
                 if !self.classic {
@@ -779,7 +869,7 @@ impl NeonCat {
                     }
                 }
             }
-            self.y = 0.0;
+            self.y = g0;
             self.vy = 0.0;
         }
         self.core.juice.land_squash = (self.core.juice.land_squash - dt).max(0.0);
@@ -804,8 +894,66 @@ impl NeonCat {
             self.touch_obstacles_swept(x0, z0);
         }
         if self.core.stats.alive {
+            // Step up onto a ramp or a train top that came under the feet.
+            let g1 = self.ground_at(self.x, self.z);
+            if self.y < g1 && self.vy <= 0.0 {
+                self.y = g1;
+                self.vy = 0.0;
+            }
+            self.ground = g1;
             self.collect_rings();
+            self.collect_coins();
         }
+    }
+
+    /// Standing height now: the low hitbox while rolling.
+    fn body_height(&self) -> f32 {
+        let b = &self.spec.runner.body;
+        if self.rolling > 0.0 {
+            b.roll_height
+        } else {
+            b.stand_height
+        }
+    }
+
+    fn start_roll(&mut self) {
+        self.rolling = self.spec.runner.body.roll_secs;
+        self.core.juice.shake = self.core.juice.shake.max(0.03);
+        self.burst(
+            self.x,
+            self.y + 0.08,
+            self.z - 0.2,
+            6,
+            [150, 200, 255],
+            2.2,
+            0.08,
+        );
+        self.sfx("roll");
+    }
+
+    /// Height of the highest ramp or ride top under the feet at `(x, z)`.
+    fn ground_at(&self, x: f32, z: f32) -> f32 {
+        if !self.spec.has_rideables() {
+            return 0.0;
+        }
+        let i0 = near_index(
+            z,
+            self.spec.runner.obstacle_track.z0,
+            self.spec.runner.obstacle_track.gap,
+        )
+        .saturating_sub(1);
+        let mut best = 0.0f32;
+        for i in i0..i0 + 3 {
+            if i < 0 || !self.spawned.contains(&i) {
+                continue;
+            }
+            for part in obstacle_parts(&self.spec, i) {
+                if matches!(part.role, PartRole::Ride | PartRole::Ramp) {
+                    best = best.max(part.support(x, z, CAT_HALF_W));
+                }
+            }
+        }
+        best
     }
 
     /// Obstacles drawn ahead. At least `self.spec.runner.draw.lead_secs` of travel, never fewer than 4.
@@ -873,10 +1021,12 @@ impl NeonCat {
             if !self.spawned.contains(&i) {
                 continue;
             }
-            let shape = obstacle_shape(&self.spec, i);
-            if shape.sweep_hit(x0, z0, self.x, self.z, self.y, CAT_HALF_W) {
-                self.crash(&shape.kind);
-                return;
+            let h = self.body_height();
+            for part in obstacle_parts(&self.spec, i) {
+                if part.sweep_hit_body(x0, z0, self.x, self.z, self.y, h, CAT_HALF_W) {
+                    self.crash(&part.kind);
+                    return;
+                }
             }
         }
     }
@@ -902,6 +1052,85 @@ impl NeonCat {
             self.core.juice.shake = self.core.juice.shake.max(0.06);
             self.burst(self.x, self.y + 0.6, self.z, 14, [80, 255, 255], 3.4, 0.12);
             self.sfx("card");
+        }
+    }
+
+    /// Coins within reach of the paws (a body-sized box), by `index * 32 + k`.
+    fn collect_coins(&mut self) {
+        let c = &self.spec.runner.coins;
+        if !c.enabled {
+            return;
+        }
+        let (score, pad) = (c.score, 0.55);
+        let track = &self.spec.runner.obstacle_track;
+        let i0 = near_index(self.z, track.z0, track.gap).saturating_sub(1);
+        let mid = self.y + self.body_height() * 0.5;
+        let mut taken = Vec::new();
+        for i in i0..i0 + 3 {
+            if i < 0 {
+                continue;
+            }
+            for (k, p) in coin_line(&self.spec, i).into_iter().enumerate() {
+                let id = i * 32 + k as i32;
+                if self.got_coins.contains(&id) {
+                    continue;
+                }
+                if (self.x - p[0]).abs() < pad
+                    && (self.z - p[2]).abs() < pad
+                    && (mid - p[1]).abs() < 0.75
+                {
+                    taken.push((id, p));
+                }
+            }
+        }
+        for (id, p) in taken {
+            self.got_coins.insert(id);
+            self.coins += 1;
+            self.core.stats.score += score;
+            self.burst(p[0], p[1], p[2], 4, [255, 214, 90], 2.0, 0.07);
+            self.sfx("coin");
+        }
+    }
+
+    fn push_coins(&self, doc: &mut WorldDoc) {
+        let c = &self.spec.runner.coins;
+        if !c.enabled || !glb_ready(&c.glb) {
+            return;
+        }
+        let track = &self.spec.runner.obstacle_track;
+        let i0 = near_index(self.z, track.z0, track.gap).saturating_sub(1);
+        // Same cap as obstacles: coins past the fog never reach the GPU.
+        let reach = self.z + 6.0 + self.obstacle_lead_count() as f32 * track.gap;
+        for i in i0..i0 + 2 + self.obstacle_lead_count() {
+            if i < 0 {
+                continue;
+            }
+            for (k, p) in coin_line(&self.spec, i).into_iter().enumerate() {
+                if self.got_coins.contains(&(i * 32 + k as i32))
+                    || p[2] < self.z - 1.0
+                    || p[2] > reach
+                {
+                    continue;
+                }
+                // Mesh is 0.4 square, base at y 0: centre it on the point.
+                if let Some(mut coin) = glb_prop(
+                    &format!("coin-{i}-{k}"),
+                    "coin",
+                    &c.glb,
+                    [p[0], p[1] - 0.2, p[2]],
+                    [1.0, 1.0, 1.0],
+                    self.time * 3.2 + k as f32 * 0.5,
+                    0.0,
+                    [255, 205, 70],
+                    0.0,
+                    [1.0, 0.72, 0.18],
+                ) {
+                    coin.emissive = Some(0.55);
+                    coin.metallic = 0.6;
+                    coin.roughness = 0.35;
+                    doc.props.push(coin);
+                }
+            }
         }
     }
 
@@ -1023,6 +1252,7 @@ impl NeonCat {
         self.push_tunnel(&mut doc);
         self.push_gates(&mut doc);
         self.push_rings(&mut doc);
+        self.push_coins(&mut doc);
         self.spawned = self.push_obstacles(&mut doc);
         if self.debug {
             self.push_hitboxes(&mut doc);
@@ -1210,7 +1440,7 @@ impl NeonCat {
                 gate.metallic = 0.0;
                 doc.props.push(gate);
             }
-            push_arch_frame(doc, i, z - 0.42);
+            push_arch_frame(doc, i, z - 0.42, self.spec.style.codes.pass_through);
         }
     }
 
@@ -1263,61 +1493,69 @@ impl NeonCat {
             if i < 0 || !self.spec.obstacle_active(i) {
                 continue;
             }
-            let shape = obstacle_shape(&self.spec, i);
-            if shape.origin[2] < self.z - 2.0 {
+            let parts = obstacle_parts(&self.spec, i);
+            if parts.iter().all(|p| p.skin_max[2] < self.z - 2.0) {
                 continue;
             }
-            if !obstacle_drawable(&shape.path) {
+            if parts.iter().any(|p| !obstacle_drawable(&p.path)) {
                 continue;
             }
-            if let Some(mut obstacle) = glb_prop(
-                &format!("obs-{i}"),
-                "obstacle",
-                &shape.path,
-                shape.origin,
-                shape.scale,
-                0.0,
-                0.0,
-                self.spec.style.obstacle_color,
-                0.0,
-                [0.04, 0.02, 0.06],
-            ) {
+            // One colour per thing to do (the spec's colour code), so the
+            // shape reads before the player has worked it out.
+            let rgb = self
+                .spec
+                .obstacle_kind(i)
+                .edge_color(&self.spec.style.codes);
+            let col = [rgb[0], rgb[1], rgb[2], 255];
+            let fill = [
+                rgb[0] as f32 / 255.0 * 0.6,
+                rgb[1] as f32 / 255.0 * 0.6,
+                rgb[2] as f32 / 255.0 * 0.6,
+            ];
+            for (k, shape) in parts.iter().enumerate() {
+                let Some(mut obstacle) = glb_prop(
+                    &part_id("obs", i, k),
+                    "obstacle",
+                    &shape.path,
+                    shape.origin,
+                    shape.scale,
+                    0.0,
+                    0.0,
+                    self.spec.style.obstacle_color,
+                    0.0,
+                    [0.04, 0.02, 0.06],
+                ) else {
+                    continue;
+                };
                 // Dim neon fill in the edge hue so a crate reads against the
                 // black tunnel. Low enough that bloom (threshold 1.4) skips it.
-                let cyan = i.rem_euclid(2) == 0;
                 obstacle.emissive = Some(self.spec.style.fill_emissive);
-                obstacle.emissive_color = Some(if cyan {
-                    self.spec.style.fill_a
-                } else {
-                    self.spec.style.fill_b
-                });
+                obstacle.emissive_color = Some(fill);
                 obstacle.roughness = 0.94;
                 obstacle.metallic = 0.04;
                 doc.props.push(obstacle);
-                let proud = 0.045;
-                let col = if i.rem_euclid(2) == 0 {
-                    self.spec.style.edge_a
-                } else {
-                    self.spec.style.edge_b
-                };
-                push_neon_box(
-                    doc,
-                    &format!("edge-{i}"),
-                    [
-                        shape.skin_min[0] - proud,
-                        shape.skin_min[1],
-                        shape.skin_min[2] - proud,
-                    ],
-                    [
-                        shape.skin_max[0] + proud,
-                        shape.skin_max[1] + proud,
-                        shape.skin_max[2] + proud,
-                    ],
-                    col,
-                    2.6,
-                );
-                spawned.insert(i);
+                // Ramps and decor are not dangerous: no neon edge.
+                if shape.kills() {
+                    let proud = 0.045;
+                    push_neon_box(
+                        doc,
+                        &part_id("edge", i, k),
+                        [
+                            shape.skin_min[0] - proud,
+                            shape.skin_min[1],
+                            shape.skin_min[2] - proud,
+                        ],
+                        [
+                            shape.skin_max[0] + proud,
+                            shape.skin_max[1] + proud,
+                            shape.skin_max[2] + proud,
+                        ],
+                        col,
+                        2.6,
+                    );
+                }
             }
+            spawned.insert(i);
         }
         spawned
     }
@@ -1345,35 +1583,41 @@ impl NeonCat {
             if i < 0 || !self.spec.obstacle_active(i) {
                 continue;
             }
-            let shape = obstacle_shape(&self.spec, i);
-            if shape.origin[2] < self.z - 2.0 {
-                continue;
+            for (k, shape) in obstacle_parts(&self.spec, i).iter().enumerate() {
+                if shape.skin_max[2] < self.z - 2.0 || !shape.kills() {
+                    continue;
+                }
+                // The kill box is inset inside the mesh, so a cage on that box
+                // disappears into the crate. Draw the skin a little proud, in
+                // cyan, so the phone overlay shows which prop can kill.
+                let proud = 0.1;
+                push_aabb_cage(
+                    doc,
+                    &part_id("hit", i, k),
+                    [
+                        shape.skin_min[0] - proud,
+                        shape.skin_min[1],
+                        shape.skin_min[2] - proud,
+                    ],
+                    [
+                        shape.skin_max[0] + proud,
+                        shape.skin_max[1] + proud,
+                        shape.skin_max[2] + proud,
+                    ],
+                    [60, 255, 255],
+                );
             }
-            // The kill box is inset inside the mesh, so a cage on that box
-            // disappears into the crate. Draw the skin a little proud, in
-            // cyan, so the phone overlay shows which prop can kill.
-            let proud = 0.1;
-            push_aabb_cage(
-                doc,
-                &format!("hit-{i}"),
-                [
-                    shape.skin_min[0] - proud,
-                    shape.skin_min[1],
-                    shape.skin_min[2] - proud,
-                ],
-                [
-                    shape.skin_max[0] + proud,
-                    shape.skin_max[1] + proud,
-                    shape.skin_max[2] + proud,
-                ],
-                [60, 255, 255],
-            );
         }
     }
 
     fn push_cat(&mut self, doc: &mut WorldDoc) {
         let mut stretch = 1.0;
-        if self.y > 0.15 {
+        let mut length = 1.0;
+        if self.rolling > 0.0 {
+            // Flattened and stretched, like a cat pouring under a gate.
+            stretch = self.spec.runner.body.roll_height / self.spec.runner.body.stand_height;
+            length = 1.35;
+        } else if self.y > self.ground + 0.15 {
             stretch = 1.14;
         } else if self.core.juice.land_squash > 0.0 {
             stretch = 0.78;
@@ -1388,7 +1632,7 @@ impl NeonCat {
                 self.z,
             ],
             yaw: self.yaw,
-            on_ground: self.y <= 0.02,
+            on_ground: self.y <= self.ground + 0.02,
             model: String::new(),
             gltf: None,
             clip: self.anim_t,
@@ -1397,7 +1641,7 @@ impl NeonCat {
             scale: Some([
                 self.spec.player.scale,
                 self.spec.player.scale * stretch,
-                self.spec.player.scale,
+                self.spec.player.scale * length,
             ]),
             color: Some(self.spec.player.tint),
             roughness: Some(0.9),
@@ -1452,6 +1696,23 @@ impl NeonCat {
         }
         if self.flow.phase == FlowPhase::Play || self.core.juice.hitstop > 0.0 {
             self.core.stats.paint_score(&mut list, self.spec.hud_top);
+            if self.spec.runner.coins.enabled {
+                let top = self.spec.hud_top + 42.0;
+                list.quads
+                    .push(Quad::new(12.0, top, 168.0, 30.0, [8, 4, 20, 160]));
+                list.quads
+                    .push(Quad::new(22.0, top + 9.0, 12.0, 12.0, [255, 205, 70, 255]));
+                list.texts.push(
+                    TextQuad::new(
+                        &format!("x {}", self.coins),
+                        42.0,
+                        top + 5.0,
+                        16.0,
+                        [255, 226, 140, 255],
+                    )
+                    .aligned(TextAlign::Left),
+                );
+            }
         }
         list
     }
@@ -1526,13 +1787,33 @@ const CAT_HALF_W: f32 = 0.1;
 /// scale. Y stays on the floor. XZ is centered on `(obs_x, obs_z)`.
 /// The kill box is inset so it sits inside that mesh.
 fn obstacle_shape(s: &GameSpec, index: i32) -> ObstacleShape {
+    obstacle_parts(s, index).swap_remove(0)
+}
+
+/// Where obstacle `index` is anchored. Lane-crossing kinds (a beam, a wall
+/// with one gap) stay centred so the wall always reaches the lane limit and
+/// cannot be walked around.
+fn obstacle_anchor(s: &GameSpec, index: i32) -> (f32, f32) {
+    let t = &s.runner.obstacle_track;
+    let x = match s.obstacle_kind(index).behavior {
+        Behavior::RollUnder | Behavior::CatGap => 0.0,
+        _ => t.x(index),
+    };
+    (x, t.z(index))
+}
+
+/// Every mesh of obstacle `index`: the base mesh first (if any), then parts.
+fn obstacle_parts(s: &GameSpec, index: i32) -> Vec<Hitbox> {
     let kind = s.obstacle_kind(index);
-    Hitbox::place(
-        s,
-        kind,
-        s.runner.obstacle_track.x(index),
-        s.runner.obstacle_track.z(index),
-    )
+    let (x, z) = obstacle_anchor(s, index);
+    let mut out = Vec::with_capacity(1 + kind.parts.len());
+    if !kind.glb.is_empty() {
+        out.push(Hitbox::place(s, kind, x, z));
+    }
+    for part in &kind.parts {
+        out.push(Hitbox::place_part(s, kind, part, x, z));
+    }
+    out
 }
 
 /// A spark inside a drawn obstacle's mesh box would glow through it.
@@ -1543,8 +1824,86 @@ fn spark_inside_obstacle(s: &GameSpec, spawned: &HashSet<i32>, x: f32, y: f32, z
         if !spawned.contains(&i) {
             return false;
         }
-        obstacle_shape(s, i).contains_padded(x, y, z, 0.08)
+        obstacle_parts(s, i)
+            .iter()
+            .any(|p| p.contains_padded(x, y, z, 0.08))
     })
+}
+
+/// Coin positions `[x, y, z]` that belong to slot `index`. The shape follows
+/// what the slot asks: an arc over a hop, a low line under a beam, a line
+/// along a train top, and a weave through rest and reward stretches.
+/// Ids are `index * 32 + k`, so a line never exceeds 32 coins.
+pub(crate) fn coin_line(s: &GameSpec, index: i32) -> Vec<[f32; 3]> {
+    let c = &s.runner.coins;
+    if !c.enabled || c.per_line == 0 || index < 0 {
+        return Vec::new();
+    }
+    let t = &s.runner.obstacle_track;
+    let lim = s.runner.lanes.limit - 0.2;
+    let z = t.z(index);
+    let sp = c.spacing;
+    let strip = |n: u32, x: &dyn Fn(f32) -> f32, y: &dyn Fn(f32) -> f32| -> Vec<[f32; 3]> {
+        let n = n.min(32);
+        (0..n)
+            .map(|k| {
+                let u = k as f32 - (n as f32 - 1.0) * 0.5;
+                let f = if n > 1 {
+                    k as f32 / (n as f32 - 1.0)
+                } else {
+                    0.5
+                };
+                [x(u).clamp(-lim, lim), y(f), z + u * sp]
+            })
+            .collect()
+    };
+    if !s.obstacle_active(index) {
+        let kind = s.section_at(z).map(|(_, sec)| sec.kind);
+        let calm = matches!(kind, Some(SectionKind::Rest | SectionKind::Reward));
+        let n = if calm { c.free_line } else { c.per_line };
+        let weave = match kind {
+            Some(SectionKind::Reward) => 0.9,
+            Some(SectionKind::Rest) => 0.4,
+            _ => 0.0,
+        };
+        let cx = t.x(index);
+        return strip(n, &|u| cx + weave * (u * 0.9).sin(), &|_| 0.3);
+    }
+    let kind = s.obstacle_kind(index);
+    let (ax, _) = obstacle_anchor(s, index);
+    let n = c.per_line;
+    match kind.behavior {
+        Behavior::Solid => Vec::new(),
+        Behavior::JumpOver => strip(n, &|_| ax, &|f| {
+            0.3 + c.arc_height * (f * std::f32::consts::PI).sin()
+        }),
+        Behavior::RollUnder => strip(n, &|_| ax, &|_| 0.2),
+        // Through the opening, below the lintel.
+        Behavior::CatGap => strip(n, &|_| ax, &|_| 0.2),
+        Behavior::Rideable => {
+            let top = obstacle_parts(s, index)
+                .iter()
+                .filter(|p| p.role == PartRole::Ride)
+                .map(|p| p.skin_max[1])
+                .fold(0.0, f32::max);
+            let len = obstacle_parts(s, index)
+                .iter()
+                .find(|p| p.role == PartRole::Ride)
+                .map(|p| (p.skin_max[2] - p.skin_min[2]).max(sp))
+                .unwrap_or(sp);
+            let m = ((len / sp) as u32).clamp(2, n + 2);
+            strip(m, &|_| ax, &|_| top + 0.3)
+        }
+    }
+}
+
+/// `obs-3` for the main mesh of slot 3, `obs-3-1` for its extra parts.
+fn part_id(prefix: &str, i: i32, k: usize) -> String {
+    if k == 0 {
+        format!("{prefix}-{i}")
+    } else {
+        format!("{prefix}-{i}-{k}")
+    }
 }
 
 fn push_aabb_cage(doc: &mut WorldDoc, id: &str, min: [f32; 3], max: [f32; 3], color: [u32; 3]) {
@@ -1745,19 +2104,21 @@ fn run_z(x: f32, y: f32, z0: f32, z1: f32, step: f32) -> Vec<[f32; 3]> {
 }
 
 /// Outer and inner neon arch. The stone mesh stays dark inside the pair.
-fn push_arch_frame(doc: &mut WorldDoc, index: i32, z: f32) {
+/// Coloured as the spec's pass-through code: a gate is never a threat.
+fn push_arch_frame(doc: &mut WorldDoc, index: i32, z: f32, rgb: [u8; 3]) {
     stroke(
         doc,
         &format!("arch-out-{index}"),
         arch_polyline(z, 2.62, 1.48, 1.28, 10),
-        [255, 48, 186, 255],
+        [rgb[0], rgb[1], rgb[2], 255],
         2.4,
     );
+    let soft = |c: u8| (c as f32 * 0.7) as u8;
     stroke(
         doc,
         &format!("arch-in-{index}"),
         arch_polyline(z + 0.02, 2.45, 1.36, 1.02, 10),
-        [196, 90, 255, 240],
+        [soft(rgb[0]), soft(rgb[1]), soft(rgb[2]), 240],
         1.5,
     );
 }
@@ -1884,6 +2245,8 @@ fn splice_json_key(body: &str, key: &str, value: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// The three-crate course the older tests were written against.
+    const CLASSIC: &str = include_str!("../tests/fixtures/neon_cat_classic_world.json");
 
     #[test]
     fn crate_still_kills_at_top_speed_with_a_long_frame() {
@@ -1982,20 +2345,29 @@ mod tests {
     #[test]
     fn golden_runs_match_the_pre_port_numbers() {
         // Recorded on master ffd6ee7, before constants moved into GameSpec.
+        // Scores re-recorded when coins arrived (10 each); frames, rings and
+        // deaths are unchanged, so the physics did not move.
         // Run 2 re-recorded when the cat got a body half-width (CAT_HALF_W):
         // it used to slide past a barrier edge with its body inside it.
         type Golden = (u32, u32, u32, &'static str);
         let cases: [(f32, u32, Golden); 4] = [
-            (0.013, 47, (4252, 13, 4642, "BARREL")),
-            (0.031, 23, (1080, 5, 1240, "BARRIER")),
-            (0.0, 1000, (156, 1, 144, "CRATE")),
-            (0.007, 11, (657, 2, 1010, "BARREL")),
+            (0.013, 47, (4582, 13, 4642, "BARREL")),
+            (0.031, 23, (1240, 5, 1240, "BARRIER")),
+            (0.0, 1000, (176, 1, 144, "CRATE")),
+            (0.007, 11, (717, 2, 1010, "BARREL")),
         ];
-        // The Python-baked spec must be Neon Cat exactly, and must play the same.
-        let baked = include_str!("../tests/fixtures/neon_cat_world.json");
+        // The Python-baked classic course (three crates, no sections) is the
+        // spec these numbers were recorded on, and must play the same.
+        let baked = include_str!("../tests/fixtures/neon_cat_classic_world.json");
         let loaded = NeonCat::from_json(baked).unwrap();
-        assert_eq!(loaded.spec(), &GameSpec::default());
-        for doc in [r#"{"version":1,"genre":"neon_cat"}"#, baked] {
+        assert_eq!(loaded.spec(), &GameSpec::legacy());
+        // The Python-baked default is the full Subway course.
+        let full = include_str!("../tests/fixtures/neon_cat_world.json");
+        assert_eq!(
+            NeonCat::from_json(full).unwrap().spec(),
+            &GameSpec::default()
+        );
+        for doc in [baked] {
             for (rate, every, want) in cases {
                 let mut run = NeonCat::from_json(doc).unwrap();
                 let (score, rings, frame, death) = golden_run(&mut run, rate, every);
@@ -2079,7 +2451,7 @@ mod tests {
 
     // Pre-port names for the default spec, so the tests read as before.
     fn spec() -> GameSpec {
-        GameSpec::default()
+        GameSpec::legacy()
     }
     fn obstacle_shape(index: i32) -> ObstacleShape {
         super::obstacle_shape(&spec(), index)
@@ -2153,7 +2525,7 @@ mod tests {
 
     #[test]
     fn screen_right_steer_moves_negative_x() {
-        let mut run = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        let mut run = NeonCat::from_json(CLASSIC).unwrap();
         run.confirm();
         let before = run.x();
         run.set_steer(1.0, 0.0, false);
@@ -2172,7 +2544,7 @@ mod tests {
 
     #[test]
     fn jump_clears_the_first_crate_and_a_miss_crashes() {
-        let mut run = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        let mut run = NeonCat::from_json(CLASSIC).unwrap();
         run.confirm();
         let mut jumped = false;
         for _ in 0..60 * 8 {
@@ -2194,7 +2566,7 @@ mod tests {
         );
         assert!(run.z() > obs_z(0));
 
-        let mut crash = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        let mut crash = NeonCat::from_json(CLASSIC).unwrap();
         crash.confirm();
         for _ in 0..60 * 8 {
             crash.set_steer(0.0, 0.0, false);
@@ -2226,7 +2598,7 @@ mod tests {
     #[test]
     fn drag_keeps_working_over_five_retries_with_lost_pointerups() {
         use crate::input::PointerPhase as P;
-        let mut run = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        let mut run = NeonCat::from_json(CLASSIC).unwrap();
         run.confirm();
         for attempt in 0..5u32 {
             let id = attempt + 1;
@@ -2281,7 +2653,7 @@ mod tests {
         let mut kills = 0;
         for lead in 0..24 {
             for top_speed in [false, true] {
-                let mut run = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+                let mut run = NeonCat::from_json(CLASSIC).unwrap();
                 run.confirm();
                 run.time = 10.0;
                 if top_speed {
@@ -2329,7 +2701,7 @@ mod tests {
 
     #[test]
     fn running_through_the_first_ring_scores() {
-        let mut run = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        let mut run = NeonCat::from_json(CLASSIC).unwrap();
         run.confirm();
         for _ in 0..60 * 4 {
             run.set_steer(0.0, 0.0, false);
@@ -2348,7 +2720,7 @@ mod tests {
 
     #[test]
     fn cat_and_gate_are_gltf() {
-        let run = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        let run = NeonCat::from_json(CLASSIC).unwrap();
         let cat = run.document().player.as_ref().unwrap();
         assert_eq!(cat.gltf.as_deref(), Some(CAT_GLB));
         assert_eq!(cat.anim, "run");
@@ -2450,7 +2822,7 @@ mod tests {
     }
 
     fn place_on(index: i32, x: f32, y: f32) -> NeonCat {
-        let mut run = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        let mut run = NeonCat::from_json(CLASSIC).unwrap();
         run.confirm();
         run.time = GRACE_SECS + 0.05;
         run.x = x;
@@ -2564,7 +2936,7 @@ mod tests {
 
     #[test]
     fn grace_and_the_rail_and_the_arch_do_not_kill() {
-        let mut spawn = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        let mut spawn = NeonCat::from_json(CLASSIC).unwrap();
         spawn.confirm();
         spawn.x = obs_x(0);
         spawn.z = obs_z(0);
@@ -2575,7 +2947,7 @@ mod tests {
             "grace skips the obstacle under the spawn stretch"
         );
 
-        let mut rail = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        let mut rail = NeonCat::from_json(CLASSIC).unwrap();
         rail.confirm();
         rail.set_steer(1.0, 0.0, false);
         for _ in 0..60 * 4 {
@@ -2589,7 +2961,7 @@ mod tests {
         assert_eq!(rail.phase_name(), "play");
         assert!(rail.death().is_empty());
 
-        let mut arch = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        let mut arch = NeonCat::from_json(CLASSIC).unwrap();
         arch.confirm();
         arch.time = GRACE_SECS + 0.2;
         arch.x = 2.05;
@@ -2604,7 +2976,7 @@ mod tests {
 
     #[test]
     fn debug_overlay_draws_hitboxes() {
-        let mut run = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        let mut run = NeonCat::from_json(CLASSIC).unwrap();
         assert!(run
             .document()
             .props
@@ -2642,7 +3014,9 @@ mod tests {
     fn every_collider_has_a_drawn_mesh_on_phone_tiers() {
         let aspect = 412.0 / 915.0;
         for quality in ["mobile", "low"] {
-            let json = format!(r#"{{"version":1,"genre":"neon_cat","quality":"{quality}"}}"#);
+            let mut world: serde_json::Value = serde_json::from_str(CLASSIC).unwrap();
+            world["quality"] = quality.into();
+            let json = world.to_string();
             let mut run = NeonCat::from_json(&json).unwrap();
             run.confirm();
             run.z = obs_z(0) - 8.0;
@@ -2727,7 +3101,7 @@ mod tests {
 
     #[test]
     fn chase_camera_springs_ahead_banks_and_opens_with_speed() {
-        let mut run = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        let mut run = NeonCat::from_json(CLASSIC).unwrap();
         run.confirm();
         let cam = &run.document().cameras[0];
         assert_eq!(cam.name, "chase");
@@ -2811,7 +3185,7 @@ mod tests {
 
     #[test]
     fn landing_bump_uses_the_juice_shake() {
-        let mut run = NeonCat::from_json(r#"{"version":1,"genre":"neon_cat"}"#).unwrap();
+        let mut run = NeonCat::from_json(CLASSIC).unwrap();
         run.confirm();
         run.y = 0.05;
         run.vy = -6.0;
@@ -2976,5 +3350,269 @@ mod tests {
             mid < -0.33,
             "cat center ndc {mid} should sit in the lower third"
         );
+    }
+
+    // ---- Subway mechanics (PR B1) ----
+
+    fn full() -> NeonCat {
+        let mut run =
+            NeonCat::from_json(include_str!("../tests/fixtures/neon_cat_world.json")).unwrap();
+        run.confirm();
+        run.time = GRACE_SECS + 0.2;
+        run
+    }
+
+    /// First slot whose kind is `name`.
+    fn slot_of(spec: &GameSpec, name: &str) -> i32 {
+        (0..4000)
+            .find(|&i| spec.obstacle_active(i) && spec.obstacle_kind(i).name == name)
+            .unwrap_or_else(|| panic!("no {name} in the course"))
+    }
+
+    fn start_before(run: &mut NeonCat, i: i32, x: f32) {
+        let front = obstacle_parts(&run.spec, i)
+            .iter()
+            .map(|p| p.skin_min[2])
+            .fold(f32::INFINITY, f32::min);
+        run.x = x;
+        run.y = 0.0;
+        run.vy = 0.0;
+        run.z = front - 3.0;
+        run.rebuild();
+    }
+
+    #[test]
+    fn roll_lowers_the_body_and_ends_on_time() {
+        let mut run = full();
+        run.swipe(Swipe::Down);
+        run.tick(1.0 / 60.0);
+        assert!(run.rolling > 0.0);
+        assert_eq!(run.body_height(), run.spec.runner.body.roll_height);
+        for _ in 0..40 {
+            run.tick(1.0 / 60.0);
+        }
+        assert_eq!(
+            run.rolling, 0.0,
+            "{} s roll is over",
+            run.spec.runner.body.roll_secs
+        );
+        assert_eq!(run.body_height(), run.spec.runner.body.stand_height);
+    }
+
+    #[test]
+    fn fast_fall_rolls_on_touchdown() {
+        let mut run = full();
+        run.swipe(Swipe::Up);
+        for _ in 0..8 {
+            run.tick(1.0 / 60.0);
+        }
+        assert!(run.y > 0.3);
+        run.swipe(Swipe::Down);
+        assert!(run.roll_on_land);
+        let mut rolled = false;
+        for _ in 0..60 {
+            run.tick(1.0 / 60.0);
+            rolled |= run.rolling > 0.0;
+        }
+        assert!(rolled && run.core.stats.alive);
+    }
+
+    #[test]
+    fn a_beam_kills_a_standing_cat_and_not_a_rolling_one() {
+        let spec = full().spec.clone();
+        let i = slot_of(&spec, "OVERPASS");
+        let mut stand = full();
+        start_before(&mut stand, i, 0.0);
+        for _ in 0..120 {
+            stand.tick(1.0 / 60.0);
+        }
+        assert_eq!(stand.death(), "OVERPASS");
+        let mut roll = full();
+        start_before(&mut roll, i, 0.0);
+        for f in 0..120 {
+            if f == 8 {
+                roll.swipe(Swipe::Down);
+            }
+            roll.tick(1.0 / 60.0);
+        }
+        assert!(roll.core.stats.alive, "{}", roll.death());
+        assert!(roll.z > obstacle_parts(&spec, i)[0].skin_max[2]);
+    }
+
+    #[test]
+    fn cat_gap_needs_a_roll_and_cannot_be_jumped_or_walked() {
+        let spec = full().spec.clone();
+        let i = slot_of(&spec, "WALL");
+        let mut jump = full();
+        start_before(&mut jump, i, 0.0);
+        for f in 0..120 {
+            jump.set_steer(0.0, 0.0, (20..30).contains(&f));
+            jump.tick(1.0 / 60.0);
+        }
+        assert_eq!(jump.death(), "WALL");
+        let mut side = full();
+        start_before(&mut side, i, 1.5);
+        for _ in 0..120 {
+            side.tick(1.0 / 60.0);
+        }
+        assert_eq!(side.death(), "WALL", "the wall reaches the rails");
+        let mut roll = full();
+        start_before(&mut roll, i, 0.0);
+        for f in 0..120 {
+            if f == 8 {
+                roll.swipe(Swipe::Down);
+            }
+            roll.tick(1.0 / 60.0);
+        }
+        assert!(roll.core.stats.alive, "{}", roll.death());
+    }
+
+    #[test]
+    fn a_ramp_lifts_the_cat_onto_a_train_and_it_drops_off_the_end() {
+        let spec = full().spec.clone();
+        let i = slot_of(&spec, "TRAIN");
+        let parts = obstacle_parts(&spec, i);
+        let top = parts[0].skin_max[1];
+        let mut run = full();
+        let (ax, _) = obstacle_anchor(&spec, i);
+        start_before(&mut run, i, ax);
+        let mut peak = 0.0f32;
+        for _ in 0..200 {
+            if run.z > parts[0].skin_max[2] + 6.0 {
+                break;
+            }
+            run.tick(1.0 / 60.0);
+            peak = peak.max(run.y);
+            if run.z > parts[0].skin_min[2] + 1.0 && run.z < parts[0].skin_max[2] - 0.5 {
+                assert!((run.y - top).abs() < 0.02, "riding at {} not {top}", run.y);
+            }
+        }
+        assert!(run.core.stats.alive, "{}", run.death());
+        assert!((peak - top).abs() < 0.05, "peak {peak}");
+        assert!(run.y < 0.01 && run.ground == 0.0, "back on the street");
+    }
+
+    #[test]
+    fn a_train_without_its_ramp_is_a_wall() {
+        let spec = full().spec.clone();
+        let i = slot_of(&spec, "TRAIN");
+        let parts = obstacle_parts(&spec, i);
+        let mut run = full();
+        // Alongside the car on the street, then a hard turn into its flank.
+        run.x = parts[0].hit_cx + parts[0].hit_hx + 0.4;
+        run.y = 0.0;
+        run.z = parts[0].skin_min[2] + 1.0;
+        run.rebuild();
+        run.set_steer(1.0, 0.0, false);
+        for _ in 0..30 {
+            run.tick(1.0 / 60.0);
+        }
+        assert_eq!(run.death(), "TRAIN", "the flank is a wall below the step");
+    }
+
+    #[test]
+    fn coins_score_without_counting_as_rings() {
+        let spec = full().spec.clone();
+        let line = coin_line(&spec, 0);
+        assert_eq!(line, coin_line(&spec, 0), "deterministic");
+        assert!(line.len() >= 3);
+        let mut run = full();
+        run.x = line[0][0];
+        run.y = (line[0][1] - 0.3).max(0.0);
+        run.z = line[0][2] - 0.2;
+        run.rebuild();
+        let before = run.core.stats.score;
+        run.tick(1.0 / 60.0);
+        run.tick(1.0 / 60.0);
+        assert!(run.coins >= 1);
+        assert_eq!(run.core.stats.rings, 0, "a coin is not a ring");
+        assert!(run.core.stats.score >= before + spec.runner.coins.score);
+        let got = run.coins;
+        run.z = line[0][2] - 0.2;
+        run.tick(1.0 / 60.0);
+        assert_eq!(run.coins, got, "each coin once");
+    }
+
+    #[test]
+    fn coin_lines_follow_the_obstacle_that_asks() {
+        let spec = full().spec.clone();
+        let arc = coin_line(&spec, slot_of(&spec, "CRATE"));
+        assert!(arc.iter().any(|c| c[1] > 0.9), "an arc over a hop");
+        let low = coin_line(&spec, slot_of(&spec, "OVERPASS"));
+        assert!(low.iter().all(|c| c[1] < 0.3), "a low line under a beam");
+        assert!(coin_line(&spec, slot_of(&spec, "GENERATOR")).is_empty());
+        let train = coin_line(&spec, slot_of(&spec, "TRAIN"));
+        assert!(train.iter().all(|c| c[1] > 0.8), "along the roof");
+        // Rest stretches are the long calm lines.
+        let calm = (0..200)
+            .filter(|&i| !spec.obstacle_active(i))
+            .map(|i| coin_line(&spec, i).len())
+            .max()
+            .unwrap();
+        assert_eq!(calm as u32, spec.runner.coins.free_line);
+    }
+
+    #[test]
+    fn sections_narrow_which_kinds_spawn() {
+        let spec = full().spec.clone();
+        for i in 0..400 {
+            if !spec.obstacle_active(i) {
+                continue;
+            }
+            let z = spec.runner.obstacle_track.z(i);
+            let (_, sec) = spec.section_at(z).unwrap();
+            if !sec.allow.is_empty() {
+                assert!(
+                    sec.allow.contains(&spec.obstacle_kind(i).behavior),
+                    "slot {i} {:?} in {:?}",
+                    spec.obstacle_kind(i).name,
+                    sec.kind
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn obstacle_edges_follow_the_colour_codes_and_gates_stay_friendly() {
+        let mut run = full();
+        let codes = run.spec.style.codes.clone();
+        let mut checked = std::collections::BTreeSet::new();
+        for name in ["CRATE", "GENERATOR", "OVERPASS", "TRAIN", "WALL"] {
+            let i = slot_of(&run.spec, name);
+            start_before(&mut run, i, 0.0);
+            let doc = run.document();
+            let kind = run.spec.obstacle_kind(i);
+            let want = kind.edge_color(&codes);
+            let own = format!("edge-{i}-");
+            let lines: Vec<_> = doc
+                .lines
+                .iter()
+                .filter(|l| l.id.starts_with(&own))
+                .collect();
+            assert!(!lines.is_empty(), "{name} has no edges");
+            for l in lines {
+                assert_eq!(l.color[..3], want, "{name}");
+            }
+            assert_ne!(want, codes.pass_through);
+            checked.insert(want);
+        }
+        assert_eq!(checked.len(), 5, "each behavior has its own colour");
+        let doc = run.document();
+        // The arch uses the pass-through code.
+        let arch = doc
+            .lines
+            .iter()
+            .find(|l| l.id.starts_with("arch-out-"))
+            .expect("arch");
+        assert_eq!(arch.color[..3], codes.pass_through);
+        // A kind can override its code.
+        let mut spec = (*run.spec).clone();
+        spec.obstacles[0].color = Some([1, 2, 3]);
+        assert_eq!(spec.obstacles[0].edge_color(&spec.style.codes), [1, 2, 3]);
+        // Colours too alike to tell apart are refused.
+        let mut bad = (*run.spec).clone();
+        bad.style.codes.solid = [255, 61, 70];
+        bad.style.codes.jump_over = [255, 60, 71];
+        assert!(bad.validate().is_err());
     }
 }

@@ -22,18 +22,6 @@
         4,
         255
       ],
-      "edge_a": [
-        255,
-        150,
-        40,
-        255
-      ],
-      "edge_b": [
-        170,
-        80,
-        255,
-        255
-      ],
       "fill_a": [
         0.65,
         0.3,
@@ -43,7 +31,14 @@
         0.35,
         0.1,
         0.6
-      ]
+      ],
+      "codes": {
+        "jump_over": [
+          255,
+          150,
+          40
+        ]
+      }
     },
     "runner": {
       "speed": {
@@ -60,6 +55,7 @@
     "assets/models/kenney/space-kit/rock_crystals.glb",
     "assets/models/kenney/space-kit/rock_largeA.glb",
     "assets/models/kenney/racing-kit/overheadRound.glb",
-    "assets/models/quaternius/modular-dungeons-pack/Arch.glb"
+    "assets/models/quaternius/modular-dungeons-pack/Arch.glb",
+    "assets/models/coin.glb"
   ]
 }

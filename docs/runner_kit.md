@@ -14,7 +14,7 @@ raise SystemExit(play("games/meteor_cat_minimal.json"))
 "game": {
   "id": "meteor_cat", "title": "METEOR CAT",
   "obstacles": ["METEOR", {"name": "CRYSTALS", "weight": 2}, "ROCK"],
-  "style": {"sky": [10, 3, 4, 255], "edge_a": [255, 150, 40, 255], "edge_b": [170, 80, 255, 255]},
+  "style": {"sky": [10, 3, 4, 255], "codes": {"jump_over": [255, 150, 40]}},
   "runner": {"speed": {"start": 12, "cap": 24}}
 }
 ```
@@ -35,6 +35,23 @@ Obstacles can be given three ways:
 - a full row `{name, glb, scale}`; the hitbox is measured from the GLB
 
 Both sides reject unknown keys, so a typo fails loudly.
+
+## Behaviors, colour codes and the course
+
+Each obstacle kind has a `behavior`: `jump_over` (default, the old crate rule), `roll_under`, `solid`,
+`rideable` and `cat_gap`. A kind is a base mesh plus optional `parts` (a ramp, a lintel, wall sides), each with a role
+(`solid`, `ride`, `ramp`, `decor`), an offset and a model-space `hit_y` clip, so hollow shapes (a beam over a gap, a roof you can stand on)
+need no special engine code. Cat body: `runner.body` `{stand_height, roll_height, roll_secs, step_tol}`. `runner.coins` sets coin
+lines (score only). `runner.sections[].allow` limits which behaviors a section may spawn.
+
+`style.codes` is the colour language, one neon colour per thing to do, used for the obstacle edge and its glow:
+`jump_over` amber (low, hop), `roll_under` pink (high or hanging), `solid` red (go round), `cat_gap` violet (roll through),
+`rideable` blue (run on it), `pass_through` mint (gates and arches, never a threat). A kind may override with `color`.
+`validate` rejects two codes that are too alike. Gameplay is by action (jump, roll, lane), not by name, so a skin can retheme the
+palette and labels without touching mechanics. The default course is generated, not hand-placed: `GameSpec::legacy()` is the old
+three-crate stream the golden tests replay.
+
+Models: `assets/models/kenney/space-kit/` (Kenney Space Kit, CC0), fetched by `tools/fetch_assets` with its record.
 
 ## Layers
 

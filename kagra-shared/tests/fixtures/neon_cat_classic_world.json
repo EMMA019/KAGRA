@@ -35,7 +35,11 @@
      0.5,
      0.25
     ],
-    "weight": 1
+    "weight": 1,
+    "behavior": "jump_over",
+    "parts": [],
+    "hit_y": null,
+    "color": null
    },
    {
     "name": "BARREL",
@@ -55,7 +59,11 @@
      0.47619,
      0.258813
     ],
-    "weight": 1
+    "weight": 1,
+    "behavior": "jump_over",
+    "parts": [],
+    "hit_y": null,
+    "color": null
    },
    {
     "name": "BARRIER",
@@ -75,7 +83,11 @@
      0.1312,
      0.0
     ],
-    "weight": 1
+    "weight": 1,
+    "behavior": "jump_over",
+    "parts": [],
+    "hit_y": null,
+    "color": null
    }
   ],
   "hit_inset": 0.06,
@@ -126,7 +138,39 @@
     36,
     26,
     54
-   ]
+   ],
+   "codes": {
+    "jump_over": [
+     255,
+     170,
+     40
+    ],
+    "roll_under": [
+     255,
+     48,
+     186
+    ],
+    "solid": [
+     255,
+     60,
+     70
+    ],
+    "cat_gap": [
+     176,
+     110,
+     255
+    ],
+    "rideable": [
+     60,
+     150,
+     255
+    ],
+    "pass_through": [
+     150,
+     255,
+     225
+    ]
+   }
   },
   "hud_top": 96.0,
   "items": [],
@@ -177,44 +221,22 @@
     "fog_start": 38.0,
     "fog_end": 110.0
    },
-   "sections": [
-    {
-     "kind": "intro",
-     "length": 140,
-     "level": 1,
-     "density": null
-    },
-    {
-     "kind": "learn",
-     "length": 200,
-     "level": 2,
-     "density": null
-    },
-    {
-     "kind": "challenge",
-     "length": 260,
-     "level": 3,
-     "density": null
-    },
-    {
-     "kind": "rest",
-     "length": 150,
-     "level": 0,
-     "density": null
-    },
-    {
-     "kind": "challenge",
-     "length": 300,
-     "level": 3,
-     "density": null
-    },
-    {
-     "kind": "reward",
-     "length": 120,
-     "level": 0,
-     "density": null
-    }
-   ]
+   "sections": [],
+   "body": {
+    "stand_height": 0.62,
+    "roll_height": 0.3,
+    "roll_secs": 0.55,
+    "step_tol": 0.18
+   },
+   "coins": {
+    "enabled": true,
+    "glb": "assets/models/coin.glb",
+    "score": 10,
+    "per_line": 5,
+    "free_line": 8,
+    "spacing": 0.85,
+    "arc_height": 0.85
+   }
   },
   "input": {
    "scheme": "drag",

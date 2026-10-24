@@ -19,10 +19,23 @@ before and after a tuning or preset change. Sim frames are 1/60 s.
 - `course`: obstacles that can be neither jumped nor passed, back-to-back
   walls with no time to change side (`unavoidable`/`tight`), per-window
   difficulty and `spikes` (a window 1.5× harder than the one before).
+  `course.combos` lists every back-to-back pair of intended actions (jump, roll, ride)
+  with the smallest slack in seconds. Time comes from the real jump arc (takeoff to land, no
+  fast fall: 2·v/g) and the real roll, and distance to time from the speed ramp. A pair that
+  leaves under 0 s and cannot be walked round is `combo_infeasible` (error); under
+  `combo_margin_secs` (0.25 s) is `combo_tight` (warn). Pairs marked `walkable_first` can be
+  walked round, so they only warn.
+- `reachability`: each obstacle kind is run against stand, walk, jump and roll probes and must
+  pass with exactly the action its `behavior` names.
+- `view`: for portrait 412×915 and landscape 16:9, at start FOV and at `fov_fast`: where the cat
+  sits (fraction up from the bottom), whether the three lane edges are in frame, how far ahead a
+  1 m obstacle is still 4 % of the frame tall (`readable_m`) and the time that gives at that speed
+  (`reaction_s`). Warns `cat_too_high` (>0.38 in portrait), `lanes_cropped`, `short_reaction`
+  (< `min_reaction_secs`, 0.8).
 - `perf`: tick + dump rebuild wall clock p50/p95, enabled props, and an
   estimate of instanced draw batches (one per distinct mesh). No GPU time.
 
-`neon_cat_baseline.json` is the Neon Cat reference (20 runs).
+`neon_cat_baseline.json` is the Neon Cat reference (20 runs, the default sectioned course with seven obstacle kinds). `neon_cat_classic.json` is the old uniform 3-crate stream (`GameSpec::legacy()`).
 
 ## Feel presets (`spec.feel`)
 
@@ -51,7 +64,15 @@ intro 0.35, learn 0.7, challenge 1.0, rest/reward 0. Rings keep running through 
 | `difficulty_spike` | warn | measured difficulty window ≥1.5× the previous one (rises out of a calm window are not spikes) |
 | `level_jump` | warn | declared level rises by more than 1 (3 after a rest/reward) between neighbouring sections |
 
-Finding on the shipped Neon Cat: the uniform stream has `missing_rest` (longest empty gap 2.4 s; docs/measure/neon_cat_baseline.json).
-`docs/measure/neon_cat_sectioned.json` is the same game with a six-section script (intro, learn, challenge, rest, challenge, reward):
-0 errors, 155 → 102 obstacles in 120 s, difficulty per 10 s window `[0.3, 0.6, 0.8, 1.3, 0.3, 1.5, …]` instead of a flat 1.4,
-bot clear 0.45 → 0.45, survival 63.5 s → 64.1 s. The default spec is unchanged (golden runs unchanged).
+Finding on the old uniform stream (`neon_cat_classic.json`): `missing_rest` (longest empty gap 2.4 s), 155 obstacles in 120 s,
+difficulty a flat 1.4 per window. The shipped default is the six-section script (intro, learn, challenge, rest, challenge, reward):
+0 errors, 102 obstacles in 120 s, difficulty per 10 s window `[0.3, 0.6, 0.86, 1.44, 0.42, 1.76, 0.52, 0.5, 1.34, 1.68, 0.4, 1.58]`,
+bot clear 0.4, survival 64.8 s. The golden runs use the classic stream.
+
+Findings of the new checks on the default course:
+- Camera: the cat sits 0.21 up from the bottom of a portrait frame at start speed and 0.25 at the speed cap (FOV 58), so it is already
+  in the lower quarter. All three lane edges are in frame 4 m ahead. A 1 m obstacle reads from 20.8 m at start (2.0 s) and 16.5 m at
+  the cap (0.83 s). `chase_back`, `chase_lift` and the FOV are left alone: pulling back would shrink the cat and the obstacles for
+  no gain in the lower-quarter or lane-visibility numbers.
+- Combos: jump → jump at the speed cap leaves 0.05 s of slack and jump → roll 0.08 s (both 14 m apart, first obstacle walkable), so they
+  warn `combo_tight`. Roll → jump has 0.57 s, roll → ride 0.45 s, ride → roll 0.30 s. No pair is infeasible.

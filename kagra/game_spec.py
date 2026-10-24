@@ -21,12 +21,13 @@ import typing
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
 
-from kagra.runner_kit import RunnerKit, Section
+from kagra.runner_kit import BEHAVIORS, RunnerKit, Section
 
 ROOT = Path(__file__).resolve().parents[1]
 KINDS = ("runner",)
 #: Closed item vocabulary. A new effect needs engine code, so specs can't add one.
 ITEM_EFFECTS = ("shield", "magnet", "slowmo", "double", "boost")
+PART_ROLES = ("solid", "ride", "ramp", "decor")
 
 _K = "assets/models/kenney"
 #: Bundled CC0 entities (hitboxes measured from the GLBs).
@@ -38,6 +39,24 @@ CATALOG: dict[str, dict] = {
     "BARRIER": {"name": "BARRIER", "glb": f"{_K}/racing-kit/barrierRed.glb",
                 "scale": [4.4, 3.8, 3.4], "mesh_min": [0.0, 0.0, -0.123],
                 "mesh_max": [0.25, 0.1312, 0.0]},
+    # Subway-style kinds (Kenney Space Kit). Ramps, lintels and wall sides are parts.
+    "GENERATOR": {"name": "GENERATOR", "glb": f"{_K}/space-kit/machine_generatorLarge.glb",
+                  "scale": [1.5, 3.0, 1.3], "behavior": "solid"},
+    "OVERPASS": {"name": "OVERPASS", "glb": f"{_K}/space-kit/hangar_smallA.glb",
+                 "scale": [2.2, 0.56, 0.9], "behavior": "roll_under", "hit_y": [0.9, 1.0],
+                 "parts": [{"glb": f"{_K}/space-kit/structure_closed.glb", "scale": [4.6, 1.0, 0.5],
+                            "offset": [0.0, 0.56, 0.0]}]},
+    "TRAIN": {"name": "TRAIN", "glb": f"{_K}/space-kit/monorail_trainBox.glb",
+              "scale": [2.4, 1.0, 4.4], "behavior": "rideable",
+              "parts": [{"glb": f"{_K}/space-kit/terrain_ramp.glb", "scale": [1.2, 1.552, 4.0],
+                         "offset": [0.0, 0.0, -2.2], "role": "ramp", "run": 2.0}]},
+    "WALL": {"name": "WALL", "glb": "", "behavior": "cat_gap",
+             "parts": [{"glb": f"{_K}/space-kit/structure_closed.glb", "scale": [2.2, 1.6, 0.8],
+                        "offset": [1.55, 0.0, 0.0]},
+                       {"glb": f"{_K}/space-kit/structure_closed.glb", "scale": [2.2, 1.6, 0.8],
+                        "offset": [-1.55, 0.0, 0.0]},
+                       {"glb": f"{_K}/space-kit/structure_closed.glb", "scale": [0.9, 1.15, 0.8],
+                        "offset": [0.0, 0.45, 0.0]}]},
     "METEOR": {"name": "METEOR", "glb": f"{_K}/space-kit/meteor.glb", "scale": [1.1] * 3},
     "CRYSTALS": {"name": "CRYSTALS", "glb": f"{_K}/space-kit/rock_crystals.glb",
                  "scale": [1.3] * 3},
@@ -95,9 +114,35 @@ class PlayerSpec:
 
 
 @dataclass
+class Part:
+    """One mesh of a multi-mesh obstacle (ramp, lintel, wall side).
+
+    ``offset``: mesh centre in x/z relative to the anchor, y = height of the
+    mesh's lowest point. ``hit_y``: model-space y range that is solid (a roof
+    slab of an open mesh); ``run``: a ramp's horizontal incline length.
+    """
+
+    glb: str
+    scale: list[float] = field(default_factory=lambda: [1.0, 1.0, 1.0])
+    mesh_min: list[float] | None = None
+    mesh_max: list[float] | None = None
+    offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+    role: str = "solid"  # solid | ride | ramp | decor
+    hit_y: list[float] | None = None
+    run: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.role not in PART_ROLES:
+            raise ValueError(f"part role {self.role!r} not in {PART_ROLES}")
+        if self.mesh_min is None or self.mesh_max is None:
+            self.mesh_min, self.mesh_max = measure_glb(ROOT / self.glb)
+
+
+@dataclass
 class EntityKind:
     """One entity table row. ``mesh_min`` / ``mesh_max`` (the hitbox) are
-    measured from the GLB when omitted."""
+    measured from the GLB when omitted. ``behavior`` says what the player
+    must do; ``parts`` are extra meshes (an empty ``glb`` = parts only)."""
 
     name: str
     glb: str
@@ -105,12 +150,22 @@ class EntityKind:
     mesh_min: list[float] | None = None
     mesh_max: list[float] | None = None
     weight: int = 1
+    behavior: str = "jump_over"
+    parts: list[Part] = field(default_factory=list)
+    hit_y: list[float] | None = None  # model-space solid y range of the base mesh
+    color: list[int] | None = None  # neon edge override; default is style.codes[behavior]
 
     def __post_init__(self) -> None:
         if isinstance(self.scale, (int, float)):
             self.scale = [float(self.scale)] * 3
+        if self.behavior not in BEHAVIORS:
+            raise ValueError(f"behavior {self.behavior!r} not in {BEHAVIORS}")
+        self.parts = [Part(**p) if isinstance(p, dict) else p for p in self.parts]
         if self.mesh_min is None or self.mesh_max is None:
-            self.mesh_min, self.mesh_max = measure_glb(ROOT / self.glb)
+            if self.glb:
+                self.mesh_min, self.mesh_max = measure_glb(ROOT / self.glb)
+            else:
+                self.mesh_min, self.mesh_max = [-0.5, 0.0, -0.5], [0.5, 1.0, 0.5]
 
 
 @dataclass
@@ -136,6 +191,26 @@ class Style:
     fill_b: list[float] = field(default_factory=lambda: [0.60, 0.10, 0.42])
     fill_emissive: float = 0.35
     obstacle_color: list[int] = field(default_factory=lambda: [36, 26, 54])
+    # One neon colour per thing the player has to do. ``edge_a/b`` and
+    # ``fill_a/b`` are older alternating tints that obstacles no longer use.
+    codes: dict[str, list[int]] = field(
+        default_factory=lambda: {
+            "jump_over": [255, 170, 40],  # low: hop it
+            "roll_under": [255, 48, 186],  # high / hanging: roll under
+            "solid": [255, 60, 70],  # a wall: go round
+            "cat_gap": [176, 110, 255],  # low opening in a wall: roll through
+            "rideable": [60, 150, 255],  # a roof: ramp up and run on it
+            "pass_through": [150, 255, 225],  # gates and arches: friendly
+        }
+    )
+
+    def __post_init__(self) -> None:
+        # Overrides may name only the codes they change.
+        base = Style.__dataclass_fields__["codes"].default_factory()
+        unknown = set(self.codes) - set(base)
+        if unknown:
+            raise ValueError(f"style.codes: unknown {sorted(unknown)}")
+        self.codes = {**base, **self.codes}
 
 
 @dataclass
@@ -162,7 +237,9 @@ class Placement:
 
 
 def _neon_obstacles() -> list[EntityKind]:
-    return [EntityKind(**CATALOG[n]) for n in ("CRATE", "BARREL", "BARRIER")]
+    rows = [("CRATE", 2), ("BARREL", 1), ("BARRIER", 2), ("GENERATOR", 1),
+            ("OVERPASS", 1), ("TRAIN", 1), ("WALL", 1)]
+    return [EntityKind(**{**CATALOG[n], "weight": w}) for n, w in rows]
 
 
 @dataclass

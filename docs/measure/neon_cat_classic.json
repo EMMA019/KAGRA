@@ -1,0 +1,229 @@
+{
+  "bot": {
+    "clear_rate": 0.45,
+    "clear_secs": 90.0,
+    "coins_mean": 108.7,
+    "collisions": 11,
+    "death_causes": {
+      "BARREL": 8,
+      "CRATE": 3
+    },
+    "death_z": [
+      375.753,
+      543.861,
+      1047.754,
+      1047.754,
+      1047.754,
+      571.836,
+      571.836,
+      571.836,
+      375.753,
+      375.753,
+      375.753
+    ],
+    "rings_mean": 62.4,
+    "runs": 20,
+    "score_mean": 9665.5,
+    "survival_mean_s": 63.111,
+    "survival_median_s": 62.633
+  },
+  "course": {
+    "behaviors": {
+      "jump_over": 155
+    },
+    "combos": {
+      "by_pair": [
+        {
+          "at_obstacle": 51,
+          "count": 154,
+          "min_margin_s": 0.039,
+          "pair": "jump>jump",
+          "walkable_first": true
+        }
+      ],
+      "pairs": 154
+    },
+    "difficulty_per_window": [
+      0.7,
+      1.0,
+      1.1,
+      1.3,
+      1.4,
+      1.5,
+      1.4,
+      1.4,
+      1.5,
+      1.4,
+      1.4,
+      1.4
+    ],
+    "horizon_s": 120.0,
+    "kinds": [
+      "BARREL",
+      "BARRIER",
+      "CRATE"
+    ],
+    "obstacles": 155,
+    "placement": {
+      "errors": 1,
+      "issues": [
+        {
+          "code": "missing_rest",
+          "limit_s": 45.0,
+          "longest_empty_gap_s": 2.415,
+          "longest_without_rest_s": 120.0,
+          "needs_gap_s": 3.0,
+          "severity": "error",
+          "why": "no empty stretch long enough to breathe; add a rest section"
+        },
+        {
+          "at": {
+            "at_obstacle": 51,
+            "count": 154,
+            "min_margin_s": 0.039,
+            "pair": "jump>jump"
+          },
+          "code": "combo_tight",
+          "severity": "warn"
+        }
+      ],
+      "ok": false
+    },
+    "spikes": [],
+    "tight": [],
+    "unavoidable": []
+  },
+  "dt": 0.017,
+  "feel": {
+    "jump": {
+      "airtime_s": 0.633,
+      "apex_analytic_m": 1.146,
+      "apex_m": 1.146,
+      "apex_to_land_s": 0.333,
+      "latency_frames": 1,
+      "time_to_apex_s": 0.317
+    },
+    "lane_switch": {
+      "frames": 20,
+      "latency_frames": 2,
+      "secs": 0.333,
+      "width_m": 1.2
+    },
+    "swipe": {
+      "buffer_s": 0.15000000596046448,
+      "jump_buffered_on_landing": true,
+      "jump_latency_frames": 1,
+      "lane_frames": 8,
+      "lane_latency_frames": 1,
+      "lane_secs": 0.133
+    }
+  },
+  "game": "neon_cat",
+  "logic": {
+    "collision_kills": true,
+    "death_kind": "CRATE",
+    "death_to_result_frames": 7,
+    "pass": true,
+    "retry_resets": true,
+    "survives_grace": true
+  },
+  "reachability": {
+    "issues": [],
+    "kinds": [
+      {
+        "behavior": "jump_over",
+        "expected": "jump",
+        "index": 0,
+        "jump": true,
+        "kind": "CRATE",
+        "ok": true,
+        "roll": false,
+        "stand": false,
+        "walk": true
+      },
+      {
+        "behavior": "jump_over",
+        "expected": "jump",
+        "index": 1,
+        "jump": true,
+        "kind": "BARREL",
+        "ok": true,
+        "roll": false,
+        "stand": false,
+        "walk": true
+      },
+      {
+        "behavior": "jump_over",
+        "expected": "jump",
+        "index": 2,
+        "jump": true,
+        "kind": "BARRIER",
+        "ok": true,
+        "roll": false,
+        "stand": false,
+        "walk": true
+      }
+    ]
+  },
+  "touch": {
+    "diagonal_45_jumped": false,
+    "drag_one_lane_held_lanes": 1.0,
+    "drag_one_lane_released_lanes": 1.0,
+    "flick_up_latency_frames": 3,
+    "jitter_final_lanes": 0.0,
+    "jitter_jumped": false,
+    "jitter_max_wobble_lanes": 0.062,
+    "phone_px": [
+      1080,
+      2340
+    ],
+    "swipe_scheme_long_stroke_lanes": 1.0
+  },
+  "version": 1,
+  "view": {
+    "first_obstacle_m": 25.825,
+    "issues": [],
+    "rows": [
+      {
+        "cat_from_bottom": 0.206,
+        "fov": 50.0,
+        "lane_edge_ndc_x_far": 0.321,
+        "lane_edge_ndc_x_near": 0.855,
+        "reaction_s": 1.976,
+        "readable_m": 20.75,
+        "screen": "portrait",
+        "state": "start"
+      },
+      {
+        "cat_from_bottom": 0.252,
+        "fov": 58.0,
+        "lane_edge_ndc_x_far": 0.32,
+        "lane_edge_ndc_x_near": 0.719,
+        "reaction_s": 0.825,
+        "readable_m": 16.5,
+        "screen": "portrait",
+        "state": "fast"
+      },
+      {
+        "cat_from_bottom": 0.206,
+        "fov": 50.0,
+        "lane_edge_ndc_x_far": 0.081,
+        "lane_edge_ndc_x_near": 0.216,
+        "reaction_s": 1.976,
+        "readable_m": 20.75,
+        "screen": "landscape",
+        "state": "start"
+      },
+      {
+        "cat_from_bottom": 0.252,
+        "fov": 58.0,
+        "lane_edge_ndc_x_far": 0.081,
+        "lane_edge_ndc_x_near": 0.182,
+        "reaction_s": 0.825,
+        "readable_m": 16.5,
+        "screen": "landscape",
+        "state": "fast"
+      }
+    ]
+  }
+}
