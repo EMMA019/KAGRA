@@ -403,9 +403,10 @@
    }
   ],
   "perch_rules": {
-   "rest_every": 2,
-   "reward_every": 2,
-   "other_every": 6,
+   "enabled": false,
+   "rest_every": 4,
+   "reward_every": 4,
+   "other_every": 10,
    "side": 1.35,
    "half_width": 0.7,
    "step_len": 3.6,
@@ -415,6 +416,25 @@
    "route_bonus": 120,
    "coins_per_step": 3,
    "ramp_len": 1.4
+  },
+  "deck_rules": {
+   "enabled": false,
+   "rest_every": 3,
+   "reward_every": 2,
+   "other_every": 8,
+   "lanes": [
+    -1,
+    0,
+    1
+   ],
+   "length": 7.0,
+   "height": 2.0,
+   "half_width": 0.6,
+   "stair_entry": false,
+   "stair_len": 3.0,
+   "land_score": 60,
+   "run_score": 60,
+   "coins": 6
   },
   "chaser": {
    "enabled": false,
