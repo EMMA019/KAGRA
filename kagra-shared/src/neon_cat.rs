@@ -1660,18 +1660,14 @@ impl NeonCat {
                 .unwrap_or_else(|| effect.default_icon());
             let bob = (self.time * 3.0 + i as f32).sin() * 0.07;
             // A slow sway rather than a full turn, so the picture is never edge-on.
-            let sway = (self.time * 1.7 + i as f32 * 0.9).sin() * 0.9;
-            let (sin, cos) = sway.sin_cos();
-            for (n, part) in icon_parts(icon).iter().enumerate() {
+            let sway = (self.time * 1.7 + i as f32 * 0.9).sin() * 0.75;
+            let centre = [p[0], p[1] + bob, p[2]];
+            for (n, part) in icon_props(icon, centre, sway).iter().enumerate() {
                 let mut q = glow(
                     &format!("item-{i}-{n}"),
                     part.model,
                     "item",
-                    [
-                        p[0] + part.at[0] * cos,
-                        p[1] + bob + part.at[1],
-                        p[2] - part.at[0] * sin,
-                    ],
+                    part.pos,
                     part.scale,
                     if part.pale {
                         [(col[0] + 255) / 2, (col[1] + 255) / 2, (col[2] + 255) / 2]
@@ -1689,7 +1685,7 @@ impl NeonCat {
                 } else {
                     lin
                 });
-                q.yaw = sway;
+                q.yaw = part.yaw;
                 q.roll = part.roll;
                 doc.props.push(q);
             }
@@ -3053,10 +3049,48 @@ struct IconPart {
     /// Centre in the icon's plane: sideways, then up.
     at: [f32; 2],
     scale: [f32; 3],
-    /// Turn in the picture's plane, radians (positive lifts the right end).
+    /// Turn in the picture's plane, radians (positive lifts the right end,
+    /// right as the player sees it from the chase camera).
     roll: f32,
     /// A paler shade of the item colour.
     pale: bool,
+}
+
+/// One drawn piece of an icon, in world terms (what goes into the prop).
+struct IconProp {
+    model: &'static str,
+    pos: [f32; 3],
+    scale: [f32; 3],
+    yaw: f32,
+    roll: f32,
+    pale: bool,
+}
+
+/// An icon's pieces placed around `centre`, the picture swayed by `sway`
+/// about the vertical axis. The chase camera looks along +Z, so screen-right
+/// is world -X: the picture's right is mirrored into that, and a roll that
+/// lifts the picture's right end is a negative prop roll (which lifts +X).
+fn icon_props(icon: ItemIcon, centre: [f32; 3], sway: f32) -> Vec<IconProp> {
+    let (sin, cos) = sway.sin_cos();
+    icon_parts(icon)
+        .into_iter()
+        .map(|part| {
+            // Rotating (-x, y, 0) by `sway` about Y: +Z turns toward +X.
+            let x = -part.at[0];
+            IconProp {
+                model: part.model,
+                pos: [
+                    centre[0] + x * cos,
+                    centre[1] + part.at[1],
+                    centre[2] - x * sin,
+                ],
+                scale: part.scale,
+                yaw: sway,
+                roll: -part.roll,
+                pale: part.pale,
+            }
+        })
+        .collect()
 }
 
 /// An orb's picture as a few thick primitives, about 0.7 m across.
@@ -3065,7 +3099,7 @@ fn icon_parts(icon: ItemIcon) -> Vec<IconPart> {
     let bar = |x: f32, y: f32, w: f32, h: f32, roll: f32, pale: bool| IconPart {
         model: "box",
         at: [x, y],
-        scale: [w, h, 0.13],
+        scale: [w, h, 0.1],
         roll,
         pale,
     };
@@ -3078,11 +3112,11 @@ fn icon_parts(icon: ItemIcon) -> Vec<IconPart> {
     };
     match icon {
         ItemIcon::Horseshoe => vec![
-            bar(-0.22, -0.02, 0.15, 0.5, 0.0, false),
-            bar(0.22, -0.02, 0.15, 0.5, 0.0, false),
-            bar(0.0, -0.28, 0.59, 0.15, 0.0, false),
-            bar(-0.22, 0.27, 0.17, 0.13, 0.0, true),
-            bar(0.22, 0.27, 0.17, 0.13, 0.0, true),
+            bar(-0.28, -0.02, 0.14, 0.5, 0.0, false),
+            bar(0.28, -0.02, 0.14, 0.5, 0.0, false),
+            bar(0.0, -0.28, 0.7, 0.15, 0.0, false),
+            bar(-0.28, 0.27, 0.16, 0.13, 0.0, true),
+            bar(0.28, 0.27, 0.16, 0.13, 0.0, true),
         ],
         ItemIcon::Chevron => {
             let mut v = Vec::new();
@@ -5723,6 +5757,167 @@ mod tests {
             let mut r = full_lives();
             r.take_item(it.effect, [r.x, 0.5, r.z]);
             assert_eq!(r.toast_c, it.rgb(), "{:?}", it.effect);
+        }
+    }
+
+    /// The icon as the player sees it from the chase camera: a grid of ink,
+    /// row 0 on top, column 0 on the left, plus a second grid for the pale parts.
+    fn icon_picture(icon: ItemIcon, sway: f32) -> (Vec<Vec<bool>>, Vec<Vec<bool>>) {
+        use glam::{Quat, Vec3};
+        const W: usize = 28;
+        const H: usize = 14;
+        let eye = Vec3::new(0.0, 1.0, -5.9);
+        let (_, right, up) = crate::scene3d::screen_basis(eye, Vec3::new(0.0, 1.0, 0.0), Vec3::Y);
+        let mut all = vec![vec![false; W]; H];
+        let mut pale = vec![vec![false; W]; H];
+        let centre = [0.0, 1.0, 0.0];
+        for part in icon_props(icon, centre, sway) {
+            let rot = crate::world_doc::prop_rotation(&WorldProp {
+                yaw: part.yaw,
+                roll: part.roll,
+                ..WorldProp::default()
+            });
+            let n = 48;
+            for a in 0..=n {
+                for b in 0..=n {
+                    for c in 0..=2 {
+                        let l = Vec3::new(
+                            a as f32 / n as f32 - 0.5,
+                            b as f32 / n as f32 - 0.5,
+                            c as f32 / 2.0 - 0.5,
+                        );
+                        // Primitive outlines: the cone narrows toward +Y, the sphere is round.
+                        let inside = match part.model {
+                            "cone" => (l.x * l.x + l.z * l.z).sqrt() <= (0.5 - l.y) * 0.5 + 1e-3,
+                            "sphere" => l.length() <= 0.5,
+                            _ => true,
+                        };
+                        if !inside {
+                            continue;
+                        }
+                        let w = rot * (l * Vec3::from(part.scale)) + Vec3::from(part.pos)
+                            - Vec3::from(centre);
+                        let (sx, sy) = (w.dot(right), w.dot(up));
+                        // 0.04 m per cell, centred.
+                        let col = (sx / 0.04 + W as f32 / 2.0).floor();
+                        let row = (H as f32 / 2.0 - sy / 0.04 * 0.5).floor();
+                        if col >= 0.0 && (col as usize) < W && row >= 0.0 && (row as usize) < H {
+                            all[row as usize][col as usize] = true;
+                            if part.pale {
+                                pale[row as usize][col as usize] = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let _ = Quat::IDENTITY;
+        (all, pale)
+    }
+
+    fn show(name: &str, g: &[Vec<bool>]) {
+        println!("{name}");
+        for r in g {
+            println!(
+                "  {}",
+                r.iter()
+                    .map(|&b| if b { '#' } else { '.' })
+                    .collect::<String>()
+            );
+        }
+    }
+
+    fn ink_cols(row: &[bool]) -> Vec<usize> {
+        row.iter()
+            .enumerate()
+            .filter(|(_, &b)| b)
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    #[test]
+    fn item_icons_read_the_right_way_round_from_the_chase_camera() {
+        use glam::Vec3;
+        // The chase camera looks along +Z: screen-right is world -X.
+        let (_, right, up) = crate::scene3d::screen_basis(
+            Vec3::new(0.0, 1.0, -5.9),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::Y,
+        );
+        assert!((right - Vec3::NEG_X).length() < 1e-4 && (up - Vec3::Y).length() < 1e-4);
+        for sway in [0.0f32, 0.75, -0.75] {
+            // Boost: two chevrons, tips on the right (the way the cat runs), open end on the left.
+            let (g, _) = icon_picture(ItemIcon::Chevron, sway);
+            show(&format!("chevron sway {sway}"), &g);
+            let ink: Vec<usize> = g.iter().flat_map(|r| ink_cols(r)).collect();
+            let (lo, hi) = (*ink.iter().min().unwrap(), *ink.iter().max().unwrap());
+            let rows_at = |c: usize| -> Vec<usize> { (0..g.len()).filter(|&r| g[r][c]).collect() };
+            let mid = (g.iter().position(|r| r.iter().any(|&b| b)).unwrap()
+                + g.iter().rposition(|r| r.iter().any(|&b| b)).unwrap())
+                as f32
+                / 2.0;
+            assert!(
+                rows_at(hi).iter().all(|&r| (r as f32 - mid).abs() <= 1.5),
+                "the tips are in the middle on the right (sway {sway})"
+            );
+            assert!(
+                rows_at(lo).iter().all(|&r| (r as f32 - mid).abs() >= 2.0),
+                "the open ends are top and bottom on the left (sway {sway})"
+            );
+            // Super jump: an arrow, head above its stem.
+            let (g, _) = icon_picture(ItemIcon::Arrow, sway);
+            show(&format!("arrow sway {sway}"), &g);
+            let widths: Vec<usize> = g.iter().map(|r| ink_cols(r).len()).collect();
+            let top = widths.iter().position(|&w| w > 0).unwrap();
+            let bottom = widths.iter().rposition(|&w| w > 0).unwrap();
+            let widest = widths.iter().copied().max().unwrap();
+            let widest_row = widths.iter().position(|&w| w == widest).unwrap();
+            assert!(widths[top] < widest && widths[bottom] < widest);
+            assert!(
+                widest_row - top < bottom - widest_row,
+                "the head is above the stem (sway {sway})"
+            );
+            // 2x: the 2 is on the left, the pale x on the right.
+            let (g, pale) = icon_picture(ItemIcon::TwoX, sway);
+            show(&format!("2x sway {sway}"), &g);
+            let mean = |grid: &[Vec<bool>], want: bool| {
+                let (mut sum, mut n) = (0.0, 0.0);
+                for r in 0..grid.len() {
+                    for c in 0..grid[r].len() {
+                        if g[r][c] && (pale[r][c] == want) {
+                            sum += c as f32;
+                            n += 1.0;
+                        }
+                    }
+                }
+                sum / n
+            };
+            assert!(
+                mean(&g, false) < mean(&g, true),
+                "the 2 is left of the x (sway {sway})"
+            );
+            // Magnet: a U that opens upward, pale tips on top.
+            let (g, pale) = icon_picture(ItemIcon::Horseshoe, sway);
+            show(&format!("horseshoe sway {sway}"), &g);
+            let top = g.iter().position(|r| r.iter().any(|&b| b)).unwrap();
+            let bottom = g.iter().rposition(|r| r.iter().any(|&b| b)).unwrap();
+            let runs = |row: &[bool]| {
+                let c = ink_cols(row);
+                1 + c.windows(2).filter(|w| w[1] > w[0] + 1).count()
+            };
+            assert_eq!(runs(&g[top]), 2, "two prongs at the top (sway {sway})");
+            assert_eq!(runs(&g[bottom]), 1, "joined at the bottom (sway {sway})");
+            assert!(pale[top].iter().any(|&b| b), "pale tips on top");
+            // Meow: a heart, two lobes on top and a point below.
+            let (g, _) = icon_picture(ItemIcon::Heart, sway);
+            show(&format!("heart sway {sway}"), &g);
+            let top = g.iter().position(|r| r.iter().any(|&b| b)).unwrap();
+            let bottom = g.iter().rposition(|r| r.iter().any(|&b| b)).unwrap();
+            assert_eq!(runs(&g[top]), 2, "two lobes (sway {sway})");
+            assert!(
+                ink_cols(&g[bottom]).len() < ink_cols(&g[(top + bottom) / 2]).len(),
+                "a point at the bottom (sway {sway})"
+            );
         }
     }
 
