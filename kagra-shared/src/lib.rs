@@ -40,6 +40,7 @@ pub mod hot;
 pub mod hud_kit;
 pub mod input;
 pub mod juice;
+pub mod kit_host;
 pub mod ktx_image;
 pub mod lookat;
 pub mod map;

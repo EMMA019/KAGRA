@@ -1,10 +1,12 @@
-//! Per-run missions for Neon Cat: "collect N coins", "run through M gates",
-//! "perch once". Progress is read from the run's own counters; this only
-//! remembers which goals were already announced so each fires once.
+//! Neon Cat's mission counters: coins, gates, perches and passes. The goal
+//! list and the tracker are generic (`game_core::missions`); this only says
+//! where each number comes from.
 
-use serde_json::{json, Value};
-
-use crate::neon_fx_spec::{MissionKind, MissionsSpec};
+use crate::game_core::missions::{Counters, MissionKind};
+#[cfg(test)]
+use crate::game_core::missions::{MissionsSpec, Tracker};
+#[cfg(test)]
+use serde_json::json;
 
 /// The run's counters a mission can watch.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -15,6 +17,12 @@ pub struct Counts {
     pub passes: u32,
 }
 
+impl Counters for Counts {
+    fn count(&self, kind: MissionKind) -> u32 {
+        self.get(kind)
+    }
+}
+
 impl Counts {
     pub fn get(&self, kind: MissionKind) -> u32 {
         match kind {
@@ -23,64 +31,6 @@ impl Counts {
             MissionKind::Perch => self.perches,
             MissionKind::Passes => self.passes,
         }
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct Tracker {
-    done: Vec<bool>,
-}
-
-impl Tracker {
-    pub fn reset(&mut self) {
-        self.done.clear();
-    }
-
-    /// Goals completed since the last call, as indices into `spec.list`.
-    /// Always empty when missions are off.
-    pub fn update(&mut self, spec: &MissionsSpec, c: Counts) -> Vec<usize> {
-        if !spec.enabled {
-            return Vec::new();
-        }
-        self.done.resize(spec.list.len(), false);
-        let mut fresh = Vec::new();
-        for (i, m) in spec.list.iter().enumerate() {
-            if !self.done[i] && c.get(m.kind) >= m.target {
-                self.done[i] = true;
-                fresh.push(i);
-            }
-        }
-        fresh
-    }
-
-    pub fn is_done(&self, i: usize) -> bool {
-        self.done.get(i).copied().unwrap_or(false)
-    }
-
-    pub fn completed(&self) -> usize {
-        self.done.iter().filter(|d| **d).count()
-    }
-
-    /// `[{kind, label, target, value, done}]` for the page and the result card.
-    pub fn json(&self, spec: &MissionsSpec, c: Counts) -> Value {
-        if !spec.enabled {
-            return json!([]);
-        }
-        Value::Array(
-            spec.list
-                .iter()
-                .enumerate()
-                .map(|(i, m)| {
-                    json!({
-                        "kind": m.kind.name(),
-                        "label": m.text(),
-                        "target": m.target,
-                        "value": c.get(m.kind).min(m.target),
-                        "done": self.is_done(i),
-                    })
-                })
-                .collect(),
-        )
     }
 }
 

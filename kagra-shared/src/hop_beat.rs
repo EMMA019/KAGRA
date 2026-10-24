@@ -2459,6 +2459,66 @@ impl HopBeat {
     }
 }
 
+impl crate::kit_host::KitHost for HopBeat {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &'static str {
+        "hop beat"
+    }
+    fn phase_name(&self) -> &'static str {
+        HopBeat::phase_name(self)
+    }
+    fn playing(&self) -> bool {
+        HopBeat::playing(self)
+    }
+    fn document(&self) -> &WorldDoc {
+        HopBeat::document(self)
+    }
+    fn dump_json(&self) -> String {
+        HopBeat::dump_json(self)
+    }
+    fn state_json(&self) -> String {
+        HopBeat::state_json(self)
+    }
+    fn confirm(&mut self) {
+        HopBeat::confirm(self)
+    }
+    fn show_title(&mut self) {
+        HopBeat::show_title(self)
+    }
+    fn pointer(&mut self, x: f32, y: f32, width: u32, height: u32) -> bool {
+        HopBeat::pointer(self, x, y, width, height)
+    }
+    fn on_key(&mut self, name: &str, down: bool) -> bool {
+        HopBeat::on_key(self, name, down)
+    }
+    fn tick(&mut self, dt: f32) {
+        HopBeat::tick(self, dt)
+    }
+    fn hud(&self, width: u32, height: u32, menu: bool) -> DrawList {
+        HopBeat::hud(self, width, height, menu)
+    }
+    /// One button: pointer and keys only, no stick.
+    fn walk(&mut self, _lx: f32, _lz: f32, _jump: bool) {}
+    /// A finger down in play is the hop button; any release lets go of it.
+    fn touch(&mut self, ev: crate::input::PointerEvent, _w: u32, _h: u32, _t: f32) {
+        use crate::input::PointerPhase as P;
+        match ev.phase {
+            P::Begin if self.flow.phase == FlowPhase::Play => self.touch_begin(),
+            P::End | P::Cancel => self.touch_end(),
+            _ => {}
+        }
+    }
+    fn uses_swipe(&self) -> bool {
+        // No pads or action buttons from the host: the whole canvas is the button.
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2727,5 +2787,43 @@ mod tests {
         assert!(g.hold_down());
         assert!(g.on_key("space", false));
         assert!(!g.hold_down());
+    }
+
+    #[test]
+    fn the_session_loads_it_as_a_boxed_kit_and_one_finger_is_the_button() {
+        use crate::input::{PointerEvent, PointerPhase};
+        use crate::session::SharedSession;
+        let json = include_str!("../tests/fixtures/hop_beat_world.json");
+        let mut s = SharedSession::default();
+        s.load_game_json(json).unwrap();
+        s.create_surface(800, 450);
+        assert!(s.hop().is_some() && s.cat().is_none());
+        assert!(s.uses_swipe());
+        s.set_direct_play(true);
+        let at = |phase| PointerEvent {
+            id: 1,
+            x: 400.0,
+            y: 300.0,
+            phase,
+            pressure: 1.0,
+        };
+        // A tap outside the buttons starts the run (title -> play).
+        s.push_pointer(at(PointerPhase::Begin));
+        s.push_pointer(at(PointerPhase::End));
+        s.request_frame();
+        assert_eq!(s.hop().unwrap().phase_name(), "play");
+        // The next finger down is the hop button, and lifting lets go of it.
+        s.push_pointer(at(PointerPhase::Begin));
+        assert!(s.hop().unwrap().hold_down());
+        s.push_pointer(at(PointerPhase::End));
+        assert!(!s.hop().unwrap().hold_down());
+        // The pad does not steer a one-button game.
+        s.set_pad(1.0, 0.0);
+        assert!(!s.hop().unwrap().hold_down());
+        // Host hooks reach the kit.
+        s.set_latency_ms(40.0);
+        assert_eq!(s.hop().unwrap().latency_ms(), 40.0);
+        assert!(!s.revive(), "nothing to continue from before a game over");
+        assert!(s.hop().unwrap().state_json().contains("\"music_t\""));
     }
 }

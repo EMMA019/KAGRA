@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Shared foundation, step 1b: the session holds one boxed kit (`kit: Option<Box<dyn KitHost>>`, new `kit_host.rs`) instead of one
+  slot per genre. Touch, pointer, key, tick, state/dump JSON, HUD, title/confirm and debug now go through the trait, so a new
+  kit adds one `impl KitHost` and one line in `kit_host::KITS` rather than a field and about ten `if let Some(cat)` branches.
+  `SceneKind::Neon` and `NeonCat` became `SceneKind::Kit`; tests and tools reach a kit with `session.cat()` / `session.neon()`.
+  Behaviour is unchanged (measure baselines, golden runs and the mesh-key test are untouched).
+
+- Shared foundation, step 1: lives, goals and the game-over/banner state moved out of `neon_cat.rs` into the generic
+  `game_core` (`lives.rs`, `missions.rs`, `result.rs`), carried on `Core` so any kit can use them from the `lives` and
+  `missions` GameSpec sections. Behaviour is unchanged: the golden runs, the measure baselines and the GPU mesh-key test
+  are untouched. `LivesSpec` and the mission types are re-exported from their old paths (JSON is identical). Python
+  mirror `kagra/run_rules.py`; one vector file (`run_rules_vectors.json`) is replayed by Rust and Python.
+
 - Neon Cat: the goal "perch up high once" is no longer offered on the plain street, where it could not be cleared (the stair lane
   and the decks are off by default). `missions.list` is now a pool and the new `missions.draw` (default 3, 0 = all) says how many a run
   shows. A perch goal is only drawn when `perch_rules.enabled` or `deck_rules.enabled` is true. The default pool gains a street goal,

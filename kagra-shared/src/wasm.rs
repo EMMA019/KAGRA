@@ -181,28 +181,12 @@ impl WasmSession {
     /// ゲーム状態 JSON（phase / time / score / objective）。
     #[wasm_bindgen(js_name = gameJson)]
     pub fn game_json(&self) -> String {
-        if self.inner.kind == crate::session::SceneKind::Neon {
+        if self.inner.kind == crate::session::SceneKind::Kit {
             return self
                 .inner
-                .neon
+                .kit
                 .as_ref()
-                .map(|neon| neon.state_json())
-                .unwrap_or_else(|| "{}".into());
-        }
-        if self.inner.kind == crate::session::SceneKind::NeonCat {
-            return self
-                .inner
-                .cat
-                .as_ref()
-                .map(|cat| cat.state_json())
-                .unwrap_or_else(|| "{}".into());
-        }
-        if self.inner.kind == crate::session::SceneKind::HopBeat {
-            return self
-                .inner
-                .hop
-                .as_ref()
-                .map(|hop| hop.state_json())
+                .map(|kit| kit.state_json())
                 .unwrap_or_else(|| "{}".into());
         }
         if self.inner.kind == crate::session::SceneKind::Collectathon {

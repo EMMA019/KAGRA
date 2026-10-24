@@ -20,7 +20,7 @@ use serde_json::json;
 
 use crate::atmosphere;
 use crate::flow::{FlowAction, FlowPhase, GameFlow};
-use crate::game_core::{self, Core, Hitbox, Juice, JuiceShake, Kit, Spring1};
+use crate::game_core::{self, Core, Hit, Hitbox, Juice, JuiceShake, Kit, ResultState, Spring1};
 use crate::game_spec::{
     Behavior, GameSpec, ItemEffect, ItemIcon, MischiefKind, PartRole, PerchKind, SectionKind,
     STAIR_END_FRAC,
@@ -40,8 +40,6 @@ use crate::gesture::{DragEvent, DragFlick, Gesture, InputBuffer, Swipe, SwipeRec
 
 /// How long a swipe waits for the cat to be able to act on it.
 pub const SWIPE_BUFFER_SECS: f32 = 0.15;
-/// `hurt_t` value that means no recent hit.
-const HURT_IDLE: f32 = 99.0;
 const FX_MAGNET: usize = 0;
 const FX_BOOST: usize = 1;
 const FX_JUMP: usize = 2;
@@ -125,12 +123,6 @@ pub struct NeonCat {
     passes_next: i32,
     /// Seconds since the crash, while it plays out (drives the flash and shake).
     dying: f32,
-    /// Hits left. The run ends when the last one goes.
-    lives: u32,
-    /// Seconds of protection left after a hit (the cat blinks).
-    invuln: f32,
-    /// Seconds since the last hit (drives the paw pop and the edge flash).
-    hurt_t: f32,
     /// Seconds left of each timed pick-up: magnet, boost, super jump, 2x.
     fx: [f32; 4],
     /// Pick-up slots taken this run.
@@ -282,7 +274,7 @@ impl NeonCat {
     /// (reachability, fairness) depend on a hit being a death.
     pub fn one_life(mut self) -> Self {
         std::sync::Arc::make_mut(&mut self.spec).lives.count = 1;
-        self.lives = 1;
+        self.core.lives.left = 1;
         self
     }
 
@@ -350,9 +342,6 @@ impl NeonCat {
             passes: 0,
             passes_next: 0,
             dying: 0.0,
-            lives: 0,
-            invuln: 0.0,
-            hurt_t: HURT_IDLE,
             fx: [0.0; 4],
             got_items: HashSet::new(),
             knocked: HashMap::new(),
@@ -378,7 +367,7 @@ impl NeonCat {
             robot_x: 0.0,
             fx_state: Default::default(),
         };
-        run.lives = run.spec.lives.count;
+        run.core.lives.left = run.spec.lives.count;
         if let Ok(p) = feel::resolve(&run.spec.feel) {
             run.feel = p;
         }
@@ -457,7 +446,7 @@ impl NeonCat {
             "columns": b.columns,
             "sort": b.sort,
             "run": run,
-            "missions": self.fx_state.missions.json(&self.missions(), self.mission_counts()),
+            "missions": self.core.missions.json(&self.missions(), self.mission_counts()),
         })
     }
 
@@ -534,8 +523,8 @@ impl NeonCat {
             "rings": self.core.stats.rings,
             "coins": self.coins,
             "gates": self.gates,
-            "missions": self.fx_state.missions.json(&self.missions(), self.mission_counts()),
-            "lives": self.lives,
+            "missions": self.core.missions.json(&self.missions(), self.mission_counts()),
+            "lives": self.core.lives.left,
             "fx": {
                 "magnet": self.fx[FX_MAGNET],
                 "boost": self.fx[FX_BOOST],
@@ -548,7 +537,7 @@ impl NeonCat {
             "mischief": { "knocked": self.knocks, "streak": if self.streak_t > 0.0 { self.streak } else { 0 } },
             "toast": if self.toast_t > 0.0 { self.toast.as_str() } else { "" },
             "lives_max": self.spec.lives.count,
-            "invulnerable": self.invuln > 0.0,
+            "invulnerable": self.core.lives.invuln > 0.0,
             "rolling": self.rolling > 0.0,
             "ground": self.ground,
             "alive": self.core.stats.alive,
@@ -867,13 +856,10 @@ impl NeonCat {
         self.gates = 0;
         self.passes = 0;
         self.passes_next = 0;
-        self.fx_state.missions.reset();
-        self.fx_state.banner_t = 0.0;
-        self.fx_state.gameover_pending = false;
+        self.core.missions.reset();
+        self.core.result.reset();
         self.dying = 0.0;
-        self.lives = self.spec.lives.count;
-        self.invuln = 0.0;
-        self.hurt_t = HURT_IDLE;
+        self.core.lives.reset(&self.spec.lives);
         self.fx = [0.0; 4];
         self.got_items.clear();
         self.knocked.clear();
@@ -1115,7 +1101,7 @@ impl NeonCat {
         self.update_robot(dt);
         self.update_missions();
         self.toast_t = (self.toast_t - dt).max(0.0);
-        self.fx_state.banner_t = (self.fx_state.banner_t - dt).max(0.0);
+        self.core.result.tick(dt);
         self.streak_t = (self.streak_t - dt).max(0.0);
         self.pop_t = (self.pop_t - dt).max(0.0);
         if self.pop_t <= 0.0 {
@@ -1144,23 +1130,22 @@ impl NeonCat {
     fn update_missions(&mut self) {
         let counts = self.mission_counts();
         let m = self.missions();
-        let fresh = self.fx_state.missions.update(&m, counts);
+        let fresh = self.core.missions.update(&m, counts);
         for i in fresh {
             // Its own banner: a pick-up's toast is not replaced.
-            self.fx_state.banner = format!("MISSION  {}", m.list[i].text());
-            self.fx_state.banner_t = 2.2;
+            let mut text = format!("MISSION  {}", m.list[i].text());
             if m.bonus > 0 {
                 self.core.stats.score += m.bonus;
-                self.fx_state.banner = format!("{}  +{}", self.fx_state.banner, m.bonus);
+                text = format!("{text}  +{}", m.bonus);
             }
+            self.core.result.announce(text, 2.2);
             self.sfx("mission");
         }
     }
 
     fn play_step_inner(&mut self, dt: f32) {
         self.time += dt;
-        self.invuln = (self.invuln - dt).max(0.0);
-        self.hurt_t = (self.hurt_t + dt).min(HURT_IDLE);
+        self.core.lives.tick(dt);
         let ax = self.axis_x();
         // +ax is screen-right. This camera looks along +Z, so that is world -X.
         let steer = -ax;
@@ -2247,8 +2232,7 @@ impl NeonCat {
             ItemEffect::Superjump => self.fx[FX_JUMP] = secs,
             ItemEffect::Double => self.fx[FX_DOUBLE] = secs,
             ItemEffect::Meow => {
-                if self.lives < self.spec.lives.count {
-                    self.lives += 1;
+                if self.core.lives.regain(&self.spec.lives) {
                     self.toast = "MEOW  +1 LIFE".into();
                 } else {
                     self.core.stats.score += 100;
@@ -2485,11 +2469,9 @@ impl NeonCat {
         }
     }
 
-    /// A hit that does not end the run: one life, a blink of protection.
+    /// A hit that does not end the run: the sparks and the sound of losing one
+    /// life (`Lives::hit` already took it and started the blink).
     fn hurt(&mut self) {
-        self.lives = self.lives.saturating_sub(1);
-        self.invuln = self.spec.lives.invuln_secs;
-        self.hurt_t = 0.0;
         self.call_robot();
         self.core.juice.hit(self.feel.hit_shake * 0.6, 0.07);
         self.burst(self.x, self.y + 0.4, self.z, 12, [255, 60, 170], 3.6, 0.14);
@@ -2499,18 +2481,15 @@ impl NeonCat {
 
     fn crash(&mut self, reason: &str) {
         if self.core.stats.alive {
-            if self.invuln > 0.0 || self.fx[FX_BOOST] > 0.0 {
+            if self.core.lives.protected() || self.fx[FX_BOOST] > 0.0 {
                 return;
             }
             // A second hit with the robot on your tail: it has caught you.
-            if self.robot_t > 0.0 && self.robot_flee <= 0.0 {
-                self.lives = 1;
-            }
-            if self.lives > 1 {
+            let caught = self.robot_t > 0.0 && self.robot_flee <= 0.0;
+            if self.core.lives.hit(&self.spec.lives, caught) == Hit::Absorbed {
                 self.hurt();
                 return;
             }
-            self.lives = 0;
         }
         if !self.core.stats.die(reason) {
             return;
@@ -2527,7 +2506,7 @@ impl NeonCat {
         self.burst(self.x, self.y + 0.4, self.z, 18, [255, 60, 170], 4.6, 0.16);
         self.burst(self.x, self.y + 0.5, self.z, 10, [90, 240, 255], 3.2, 0.12);
         self.sfx("hit");
-        self.fx_state.gameover_pending = true;
+        self.core.result.crashed();
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3359,9 +3338,7 @@ impl NeonCat {
 
     fn push_cat(&mut self, doc: &mut WorldDoc) {
         // The blink: hidden on the off half of each cycle while protected.
-        let hz = self.spec.lives.blink_hz;
-        let shown =
-            self.invuln <= 0.0 || hz <= 0.0 || (self.invuln * hz * 2.0).floor() as i64 % 2 == 0;
+        let shown = self.core.lives.blink_shown(&self.spec.lives);
         let k = if shown { 1.0 } else { 0.001 };
         let mut cat = WorldWalker {
             id: "walker:cat".into(),
@@ -3589,7 +3566,7 @@ impl NeonCat {
         let hurt = if dead {
             0.0
         } else {
-            (1.0 - self.hurt_t / 0.35).max(0.0)
+            (1.0 - self.core.lives.hurt_t / 0.35).max(0.0)
         };
         if hurt > 0.0 {
             let e = (10.0 * ui).max(6.0);
@@ -3630,7 +3607,10 @@ impl NeonCat {
             // The best score so far, on the caption row.
             list.texts.push(
                 TextQuad::new(
-                    &format!("BEST {}", self.flow.best_score.max(self.core.stats.score)),
+                    &format!(
+                        "BEST {}",
+                        ResultState::best_shown(self.flow.best_score, self.core.stats.score)
+                    ),
                     m + sw - 10.0 * ui + shake,
                     top + 6.0 * ui,
                     11.0 * ui,
@@ -3655,12 +3635,12 @@ impl NeonCat {
             let r = 6.5 * ui;
             let step = 17.0 * ui;
             let (x0, y0) = (m + 12.0 * ui + r + shake, top + sh + 6.0 * ui + r);
-            let pop = (1.0 - self.hurt_t / 0.6).clamp(0.0, 1.0);
+            let pop = (1.0 - self.core.lives.hurt_t / 0.6).clamp(0.0, 1.0);
             for k in 0..max {
                 let cx = x0 + k as f32 * step;
-                if k < self.lives {
+                if k < self.core.lives.left {
                     paw_icon(list, cx, y0, r, fade([255, 150, 205, 255], keep));
-                } else if k == self.lives && pop > 0.0 && !dead {
+                } else if k == self.core.lives.left && pop > 0.0 && !dead {
                     let c = [
                         255,
                         (60.0 + 90.0 * (1.0 - pop)) as u8,
@@ -3759,11 +3739,11 @@ impl NeonCat {
             ));
         }
         // A finished mission, under the pick-up toast.
-        if self.fx_state.banner_t > 0.0 && !dead {
-            let a = (self.fx_state.banner_t / 0.4).clamp(0.0, 1.0);
+        if self.core.result.banner_t > 0.0 && !dead {
+            let a = (self.core.result.banner_t / 0.4).clamp(0.0, 1.0);
             list.texts.push(
                 TextQuad::new(
-                    &self.fx_state.banner,
+                    &self.core.result.banner,
                     w * 0.5,
                     h * 0.30 + 34.0 * ui,
                     18.0 * ui,
@@ -3833,7 +3813,7 @@ impl NeonCat {
         }
         let counts = self.mission_counts();
         for (i, m) in spec.list.iter().enumerate() {
-            let done = self.fx_state.missions.is_done(i);
+            let done = self.core.missions.is_done(i);
             let (text, col) = if done {
                 (format!("{} DONE", m.text()), [120, 255, 190, 255])
             } else {
@@ -3908,8 +3888,7 @@ impl Kit for NeonCat {
         self.dying += dt;
         // The result card opens on the frame the freeze ends: the jingle
         // comes with it and the music fades out.
-        if self.fx_state.gameover_pending && self.core.juice.hitstop <= 0.0 {
-            self.fx_state.gameover_pending = false;
+        if self.core.result.take_gameover(self.core.juice.hitstop) {
             self.sfx("gameover");
         }
     }
@@ -4870,6 +4849,71 @@ fn splice_json_key(body: &str, key: &str, value: &serde_json::Value) -> String {
     format!("{{{block},{rest}")
 }
 
+impl crate::kit_host::KitHost for NeonCat {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &'static str {
+        "neon cat"
+    }
+    fn phase_name(&self) -> &'static str {
+        NeonCat::phase_name(self)
+    }
+    fn playing(&self) -> bool {
+        NeonCat::playing(self)
+    }
+    fn document(&self) -> &WorldDoc {
+        NeonCat::document(self)
+    }
+    fn dump_json(&self) -> String {
+        NeonCat::dump_json(self)
+    }
+    fn state_json(&self) -> String {
+        NeonCat::state_json(self)
+    }
+    fn confirm(&mut self) {
+        NeonCat::confirm(self)
+    }
+    fn show_title(&mut self) {
+        NeonCat::show_title(self)
+    }
+    fn pointer(&mut self, x: f32, y: f32, width: u32, height: u32) -> bool {
+        NeonCat::pointer(self, x, y, width, height)
+    }
+    fn on_key(&mut self, name: &str, down: bool) -> bool {
+        NeonCat::on_key(self, name, down)
+    }
+    fn tick(&mut self, dt: f32) {
+        NeonCat::tick(self, dt)
+    }
+    fn hud(&self, width: u32, height: u32, menu: bool) -> DrawList {
+        self.paint_hud(width, height, menu)
+    }
+    fn walk(&mut self, lx: f32, lz: f32, jump: bool) {
+        if self.phase_name() == "play" {
+            // A finger on the screen is a swipe, not a stick or a jump zone
+            // (Android shells send both).
+            if self.touch_active() {
+                self.set_steer(0.0, 0.0, false);
+            } else {
+                self.set_steer(lx, lz, jump);
+            }
+        }
+    }
+    fn touch(&mut self, ev: crate::input::PointerEvent, w: u32, h: u32, t: f32) {
+        NeonCat::touch(self, ev, w, h, t)
+    }
+    fn uses_swipe(&self) -> bool {
+        true
+    }
+    fn set_debug(&mut self, on: bool) {
+        NeonCat::set_debug(self, on)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     /// The three-crate course the older tests were written against.
@@ -5376,15 +5420,15 @@ mod tests {
         session
             .load_game_json(r#"{"version":1,"genre":"neon_cat"}"#)
             .unwrap();
-        assert_eq!(session.kind, SceneKind::NeonCat);
-        assert!(session.cat.is_some());
-        assert!(session.neon.is_none());
+        assert_eq!(session.kind, SceneKind::Kit);
+        assert!(session.cat().is_some());
+        assert!(session.neon().is_none());
         assert!(session.world.is_none());
         session
             .load_game_json(r#"{"version":1,"genre":"neon_run"}"#)
             .unwrap();
-        assert_eq!(session.kind, SceneKind::Neon);
-        assert!(session.cat.is_none());
+        assert_eq!(session.kind, SceneKind::Kit);
+        assert!(session.cat().is_none());
     }
 
     #[test]
@@ -5399,17 +5443,17 @@ mod tests {
             .unwrap();
         session.show_title();
         assert_eq!(phase(&session), "title");
-        assert!(session.cat.as_ref().unwrap().z().abs() < 0.01);
+        assert!(session.cat().unwrap().z().abs() < 0.01);
         session.start_game();
         assert_eq!(phase(&session), "playing");
         for _ in 0..60 * 6 {
             session.set_play_input(0.0, 0.0, false, false, false);
             session.request_frame();
-            if session.cat.as_ref().unwrap().phase_name() == "result" {
+            if session.cat().unwrap().phase_name() == "result" {
                 break;
             }
         }
-        assert_eq!(session.cat.as_ref().unwrap().phase_name(), "result");
+        assert_eq!(session.cat().unwrap().phase_name(), "result");
         assert_eq!(phase(&session), "complete");
         let crashed = session.draw_list();
         assert!(
@@ -5421,11 +5465,11 @@ mod tests {
                 .map(|text| &text.text)
                 .collect::<Vec<_>>()
         );
-        assert_eq!(session.cat.as_ref().unwrap().death(), "CRATE");
+        assert_eq!(session.cat().unwrap().death(), "CRATE");
         session.show_title();
         assert_eq!(phase(&session), "title");
         assert!(
-            session.cat.as_ref().unwrap().z().abs() < 0.01,
+            session.cat().unwrap().z().abs() < 0.01,
             "title puts the cat back at the start, not the crash arch"
         );
         let titled = session.draw_list();
@@ -5440,12 +5484,12 @@ mod tests {
             "the HTML card owns the menu"
         );
         session.start_game();
-        let z0 = session.cat.as_ref().unwrap().z();
+        let z0 = session.cat().unwrap().z();
         for _ in 0..30 {
             session.request_frame();
         }
         assert_eq!(phase(&session), "playing");
-        assert!(session.cat.as_ref().unwrap().z() > z0 + 1.0);
+        assert!(session.cat().unwrap().z() > z0 + 1.0);
     }
 
     fn place_on(index: i32, x: f32, y: f32) -> NeonCat {
@@ -6271,7 +6315,7 @@ mod tests {
     #[test]
     fn retry_starts_every_counter_from_zero() {
         let mut run = full_lives();
-        assert_eq!(run.lives, 3);
+        assert_eq!(run.core.lives.left, 3);
         // Collect a coin and a ring, run past some gates, then crash.
         let spec = run.spec.clone();
         let line = coin_line(&spec, 0);
@@ -6291,17 +6335,17 @@ mod tests {
         // Two hits cost two lives; the run goes on.
         for _ in 0..2 {
             run.robot_t = 0.0; // the robot has its own tests
-            run.invuln = 0.0;
+            run.core.lives.invuln = 0.0;
             run.crash("CRATE");
             assert!(run.core.stats.alive);
         }
-        assert_eq!(run.lives, 1);
-        assert!(run.invuln > 0.0);
-        run.invuln = 0.0;
-        run.lives = 1;
+        assert_eq!(run.core.lives.left, 1);
+        assert!(run.core.lives.invuln > 0.0);
+        run.core.lives.invuln = 0.0;
+        run.core.lives.left = 1;
         run.crash("CRATE");
         assert!(!run.core.stats.alive);
-        assert_eq!(run.lives, 0);
+        assert_eq!(run.core.lives.left, 0);
         for _ in 0..90 {
             run.tick(1.0 / 60.0);
         }
@@ -6312,7 +6356,7 @@ mod tests {
                 run.got.insert(1);
                 run.coins = 4;
                 run.gates = 2;
-                run.lives = 1;
+                run.core.lives.left = 1;
                 run.crash("BARREL");
                 for _ in 0..90 {
                     run.tick(1.0 / 60.0);
@@ -6336,10 +6380,13 @@ mod tests {
             assert_eq!(run.rolling, 0.0);
             assert_eq!(run.dying, 0.0, "crash timer");
             assert_eq!(run.pose, [1.0; 3]);
-            assert_eq!(run.lives, run.spec.lives.count, "every life is back");
-            assert_eq!(run.lives, 3);
-            assert_eq!(run.invuln, 0.0, "no leftover protection");
-            assert!(run.hurt_t > 10.0, "no leftover hurt flash");
+            assert_eq!(
+                run.core.lives.left, run.spec.lives.count,
+                "every life is back"
+            );
+            assert_eq!(run.core.lives.left, 3);
+            assert_eq!(run.core.lives.invuln, 0.0, "no leftover protection");
+            assert!(run.core.lives.hurt_t > 10.0, "no leftover hurt flash");
             assert_eq!(run.sim_value()["lives"], 3);
             // The collected coin is back in the world and the sim json shows it.
             let v = run.sim_value();
@@ -6354,7 +6401,7 @@ mod tests {
             run.tick(1.0 / 60.0);
             run.tick(1.0 / 60.0);
             assert!(run.coins >= 1, "the same coin pays again after a retry");
-            run.lives = 1;
+            run.core.lives.left = 1;
             run.crash("CRATE");
             for _ in 0..90 {
                 run.tick(1.0 / 60.0);
@@ -6366,19 +6413,19 @@ mod tests {
     fn a_hit_costs_a_life_then_protects_then_the_last_one_ends_the_run() {
         let mut run = full_lives();
         let fx = run.spec.lives.clone();
-        assert_eq!((fx.count, run.lives), (3, 3));
+        assert_eq!((fx.count, run.core.lives.left), (3, 3));
         run.crash("CRATE");
         assert!(run.core.stats.alive, "a hit is survivable");
-        assert_eq!(run.lives, 2);
-        assert!((run.invuln - fx.invuln_secs).abs() < 1e-6);
+        assert_eq!(run.core.lives.left, 2);
+        assert!((run.core.lives.invuln - fx.invuln_secs).abs() < 1e-6);
         // Protected: the same obstacle cannot hit again.
         run.crash("CRATE");
         run.crash("BARREL");
-        assert_eq!(run.lives, 2, "protected");
+        assert_eq!(run.core.lives.left, 2, "protected");
         run.robot_t = 0.0; // this one is about lives, not the robot
                            // Protection runs out with play time.
         let mut frames = 0;
-        while run.invuln > 0.0 && frames < 600 {
+        while run.core.lives.invuln > 0.0 && frames < 600 {
             run.tick(1.0 / 60.0);
             frames += 1;
         }
@@ -6386,22 +6433,22 @@ mod tests {
             (frames as f32 / 60.0 - fx.invuln_secs).abs() < 0.2,
             "{frames} frames"
         );
-        assert_eq!(run.invuln, 0.0);
+        assert_eq!(run.core.lives.invuln, 0.0);
         run.crash("CRATE");
-        assert_eq!(run.lives, 1);
+        assert_eq!(run.core.lives.left, 1);
         // Down to the last life: the next hit is the end.
-        run.invuln = 0.0;
-        run.lives = 1;
+        run.core.lives.invuln = 0.0;
+        run.core.lives.left = 1;
         run.crash("BARREL");
         assert!(!run.core.stats.alive);
         assert_eq!(run.core.stats.death, "BARREL");
-        assert_eq!(run.lives, 0);
+        assert_eq!(run.core.lives.left, 0);
     }
 
     #[test]
     fn one_life_is_the_old_rule() {
         let mut run = full();
-        assert_eq!(run.lives, 1);
+        assert_eq!(run.core.lives.left, 1);
         run.crash("CRATE");
         assert!(!run.core.stats.alive);
     }
@@ -6420,7 +6467,10 @@ mod tests {
             run.tick(1.0 / 60.0);
         }
         assert!(run.core.stats.alive);
-        assert_eq!(run.lives, 2, "one box, one life, however long it overlaps");
+        assert_eq!(
+            run.core.lives.left, 2,
+            "one box, one life, however long it overlaps"
+        );
     }
 
     #[test]
@@ -6442,7 +6492,7 @@ mod tests {
         };
         assert!(bright(&nine) > bright(&hit), "a filled paw went out");
         // Long after, the pop is over and the row stays one short.
-        run.hurt_t = 5.0;
+        run.core.lives.hurt_t = 5.0;
         let calm = hud_of(&run, 824, 1800);
         assert!(bright(&calm) < bright(&nine));
         // A one-life spec draws no row.
@@ -6486,7 +6536,7 @@ mod tests {
             }
         }
         assert!(shown > 5 && hidden > 5, "blinks: {shown} on, {hidden} off");
-        run.invuln = 0.0;
+        run.core.lives.invuln = 0.0;
         run.rebuild();
         assert!(sc(&run) > full_scale * 0.5 && eyes(&run) == 2);
     }
@@ -6617,16 +6667,16 @@ mod tests {
         let (i, p) = item_slot(&spec, ItemEffect::Boost);
         at_item(&mut run, i, p);
         assert!(run.speed() > base * 1.3, "{} vs {}", run.speed(), base);
-        let lives = run.lives;
+        let lives = run.core.lives.left;
         run.crash("CRATE");
         assert!(
-            run.core.stats.alive && run.lives == lives,
+            run.core.stats.alive && run.core.lives.left == lives,
             "nothing hurts a boosting cat"
         );
         run.fx[FX_BOOST] = 0.0;
-        run.invuln = 0.0;
+        run.core.lives.invuln = 0.0;
         run.crash("CRATE");
-        assert_eq!(run.lives, lives - 1);
+        assert_eq!(run.core.lives.left, lives - 1);
         // Super jump: a much higher arc.
         let apex = |boosted: bool| {
             let mut r = full_lives();
@@ -6685,8 +6735,8 @@ mod tests {
             Some(true)
         );
         assert!(run.sim_value()["toast"].as_str().unwrap().contains("2X"));
-        run.lives = 1;
-        run.invuln = 0.0;
+        run.core.lives.left = 1;
+        run.core.lives.invuln = 0.0;
         run.fx[FX_BOOST] = 0.0;
         run.crash("CRATE");
         for _ in 0..90 {
@@ -6765,7 +6815,7 @@ mod tests {
         assert!(["CRASH", "CLINK", "CLANG", "BOING"]
             .contains(&run.sim_value()["toast"].as_str().unwrap()));
         assert!(
-            run.core.stats.alive && run.lives == 3,
+            run.core.stats.alive && run.core.lives.left == 3,
             "knocking costs nothing"
         );
         // Each prop once.
@@ -6779,8 +6829,8 @@ mod tests {
         at_prop(&mut hop, [p[0], 0.0, p[2]], 2.0);
         assert_eq!(hop.knocks, 0, "over the top");
         // A retry puts them back.
-        run.lives = 1;
-        run.invuln = 0.0;
+        run.core.lives.left = 1;
+        run.core.lives.invuln = 0.0;
         run.fx[FX_BOOST] = 0.0;
         run.crash("CRATE");
         for _ in 0..90 {
@@ -6848,7 +6898,7 @@ mod tests {
             run.tick(1.0 / 60.0);
             run.x = p[0];
             run.z = p[2] - 1.0;
-            run.invuln = 1.0;
+            run.core.lives.invuln = 1.0;
         }
         run.rebuild();
         let end = run
@@ -6869,14 +6919,14 @@ mod tests {
         let spec = full().spec.clone();
         let (i, p) = item_slot(&spec, ItemEffect::Meow);
         let mut run = full_lives();
-        run.lives = 2;
+        run.core.lives.left = 2;
         at_item(&mut run, i, p);
-        assert_eq!(run.lives, 3);
+        assert_eq!(run.core.lives.left, 3);
         assert!(run.sim_value()["toast"].as_str().unwrap().contains("LIFE"));
         let mut run = full_lives();
         let s0 = run.core.stats.score;
         at_item(&mut run, i, p);
-        assert_eq!(run.lives, 3, "never above the row");
+        assert_eq!(run.core.lives.left, 3, "never above the row");
         assert!(run.core.stats.score >= s0 + 100);
     }
 
@@ -7666,7 +7716,7 @@ mod tests {
         }
         let (_, steps) = route_slot(&run.spec.clone());
         let b0 = steps[0];
-        run.invuln = 999.0;
+        run.core.lives.invuln = 999.0;
         put(&mut run, b0.x, 0.0, b0.z0 - ramp - lead);
         run.swipe(Swipe::Up);
         let mut stood: Vec<usize> = Vec::new();
@@ -8075,7 +8125,7 @@ mod tests {
         std::sync::Arc::make_mut(&mut run.spec).perch_rules.ramp_len = ramp;
         let (i, steps) = route_slot(&run.spec.clone());
         let b0 = steps[0];
-        run.invuln = 999.0;
+        run.core.lives.invuln = 999.0;
         put(&mut run, b0.x, 0.0, b0.z0 - ramp - 0.05);
         let score0 = run.core.stats.score;
         run.swipe(Swipe::Up);
@@ -8096,7 +8146,7 @@ mod tests {
         let b0 = steps[0];
         let ramp = run.spec.perch_rules.ramp_len;
         assert!(ramp > 0.5, "the default spec has a slope");
-        run.invuln = 999.0;
+        run.core.lives.invuln = 999.0;
         put(&mut run, b0.x, 0.0, b0.z0 - ramp - 1.0);
         let mut last = run.y;
         let mut worst = 0.0f32;
@@ -8114,7 +8164,7 @@ mod tests {
         assert!(worst < 0.15, "rose {worst} m in one tick");
         // The step to the pipe is a slope too.
         let mut run = full_lives();
-        run.invuln = 999.0;
+        run.core.lives.invuln = 999.0;
         let rl = run.spec.perch_rules.ramp_len;
         put(&mut run, b0.x, steps[0].top, steps[1].z0 - rl - 0.01);
         let mut worst = 0.0f32;
@@ -8136,7 +8186,7 @@ mod tests {
         let mut run = full_lives();
         let (_, steps) = route_slot(&run.spec.clone());
         let b = steps[0];
-        run.invuln = 999.0;
+        run.core.lives.invuln = 999.0;
         // Beside the AC unit in the street, then into its lane.
         put(&mut run, b.x + b.half_width + 0.3, 0.0, (b.z0 + b.z1) * 0.5);
         run.tick(1.0 / 60.0);
@@ -8187,7 +8237,7 @@ mod tests {
         let spec = full_lives().spec.clone();
         let (i, steps) = route_slot(&spec);
         let mut run = full_lives();
-        run.invuln = 99.0;
+        run.core.lives.invuln = 99.0;
         let b0 = steps[0];
         put(&mut run, b0.x, b0.top + 0.05, b0.z0 - 0.4);
         let score0 = run.core.stats.score;
@@ -8247,7 +8297,7 @@ mod tests {
         assert!(!run.spec.chaser.enabled);
         run.crash("CRATE");
         assert!(run.core.stats.alive);
-        assert_eq!(run.lives, 2);
+        assert_eq!(run.core.lives.left, 2);
         assert_eq!(run.robot_t, 0.0, "no robot after a hit");
         assert_eq!(run.sim_value()["robot"]["secs"], 0.0);
         // No ROBOT bar, and a second hit after the grace is a plain life too.
@@ -8256,12 +8306,12 @@ mod tests {
             .texts
             .iter()
             .any(|t| t.text == "ROBOT"));
-        run.invuln = 0.0;
+        run.core.lives.invuln = 0.0;
         run.crash("CRATE");
-        assert!(run.core.stats.alive && run.lives == 1);
+        assert!(run.core.stats.alive && run.core.lives.left == 1);
         // Meow still pays with no robot: a life back, or +100 when full.
         run.take_item(ItemEffect::Meow, [run.x, 0.5, run.z]);
-        assert_eq!(run.lives, 2);
+        assert_eq!(run.core.lives.left, 2);
         assert!(!run.sim_value()["toast"].as_str().unwrap().contains("SHOO"));
         let mut full_row = full_lives();
         let s0 = full_row.core.stats.score;
@@ -8288,10 +8338,10 @@ mod tests {
         assert_eq!(run.robot_t, 0.0);
         run.crash("CRATE");
         assert!(run.core.stats.alive);
-        assert_eq!(run.lives, 2);
+        assert_eq!(run.core.lives.left, 2);
         assert!(run.robot_t > 9.0, "robot called: {}", run.robot_t);
         assert_eq!(run.sim_value()["robot"]["fleeing"], false);
-        run.invuln = 0.0;
+        run.core.lives.invuln = 0.0;
         run.crash("CRATE");
         assert!(!run.core.stats.alive, "caught by the robot");
         // One life: no robot at all, the run just ends.
@@ -8304,7 +8354,7 @@ mod tests {
             "../tests/fixtures/neon_cat_classic_world.json"
         ))
         .unwrap();
-        classic.lives = 3;
+        classic.core.lives.left = 3;
         classic.confirm();
         classic.crash("CRATE");
         assert_eq!(classic.robot_t, 0.0);
@@ -8319,9 +8369,12 @@ mod tests {
             run.update_robot(1.0 / 60.0);
         }
         assert_eq!(run.robot_t, 0.0);
-        run.invuln = 0.0;
+        run.core.lives.invuln = 0.0;
         run.crash("CRATE");
-        assert!(run.core.stats.alive && run.lives == 1, "a plain hit");
+        assert!(
+            run.core.stats.alive && run.core.lives.left == 1,
+            "a plain hit"
+        );
         // A meow scares it off, pays, and the next hit is plain.
         let mut run = with_robot();
         run.crash("CRATE");
@@ -8330,7 +8383,7 @@ mod tests {
         assert!(run.robot_flee > 0.0);
         assert_eq!(run.sim_value()["robot"]["fleeing"], true);
         assert!(run.core.stats.score >= score + run.spec.chaser.scare_score);
-        run.invuln = 0.0;
+        run.core.lives.invuln = 0.0;
         run.crash("CRATE");
         assert!(run.core.stats.alive, "the scared robot cannot catch");
         for _ in 0..90 {
@@ -8734,7 +8787,7 @@ mod fx_tests {
         mixer::reset_mixer();
         let mut run = with_quality(None);
         play(&mut run, 0.3);
-        run.lives = 1;
+        run.core.lives.left = 1;
         run.take_item(ItemEffect::Magnet, [run.x, 0.5, run.z]);
         run.take_item(ItemEffect::Meow, [run.x, 0.5, run.z]);
         run.crash("CRATE");
@@ -8765,7 +8818,7 @@ mod fx_tests {
         let mut run = with_quality(None);
         assert!(cues().iter().any(|c| c == "bgm:bgm"), "plays on start");
         assert!(!run.spec.audio.bgm.file.is_empty());
-        run.lives = 1;
+        run.core.lives.left = 1;
         run.crash("CRATE");
         play(&mut run, 3.0);
         assert_eq!(run.flow.phase, FlowPhase::Result);
@@ -8805,7 +8858,7 @@ mod fx_tests {
         assert_eq!(m[0]["done"], true);
         assert_eq!(m[0]["value"], 40);
         assert_eq!(m[1]["done"], false);
-        assert!(run.fx_state.banner.starts_with("MISSION"));
+        assert!(run.core.result.banner.starts_with("MISSION"));
         assert!(run
             .hud(412, 915)
             .texts
@@ -8819,7 +8872,7 @@ mod fx_tests {
         run.passes = 30;
         run.passes_next = 1_000_000;
         run.tick(1.0 / 60.0);
-        assert_eq!(run.fx_state.missions.completed(), 3);
+        assert_eq!(run.core.missions.completed(), 3);
         assert_eq!(run.result_json()["missions"][2]["done"], true);
         // A new run starts from zero.
         run.start_run();
@@ -8917,7 +8970,7 @@ mod fx_tests {
         run.coins = 40;
         run.tick(1.0 / 60.0);
         assert!(run.core.stats.score >= before + 500);
-        assert!(run.fx_state.banner.contains("+500"));
+        assert!(run.core.result.banner.contains("+500"));
     }
 
     #[test]

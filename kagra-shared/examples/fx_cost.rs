@@ -25,7 +25,7 @@ fn main() -> Result<(), String> {
     session.render()?;
     let (mut render_ms, mut sim_ms) = (Vec::new(), Vec::new());
     for _ in 0..frames {
-        let steer = session.cat.as_ref().map(|run| run.script_steer());
+        let steer = session.cat().map(|run| run.script_steer());
         if let Some((lx, jump)) = steer {
             session.set_play_input(lx, 0.0, jump, false, false);
         }
@@ -38,7 +38,7 @@ fn main() -> Result<(), String> {
         let _ = session.render_readback()?;
         render_ms.push(t1.elapsed().as_secs_f32() * 1000.0);
     }
-    if let Some(cat) = session.cat.as_ref() {
+    if let Some(cat) = session.cat() {
         let t = Instant::now();
         let mut bytes = 0;
         for _ in 0..1000 {
