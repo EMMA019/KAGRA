@@ -1,0 +1,7 @@
+{
+  "title": "Rhythm",
+  "version": "0.1.0",
+  "slug": "rhythm",
+  "entry": "examples/rhythm_minimal.py",
+  "world": "kagra-shared/tests/fixtures/rhythm_world.json"
+}
