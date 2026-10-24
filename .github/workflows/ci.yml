@@ -174,16 +174,6 @@ jobs:
       - name: Setup Android SDK
         run: bash scripts/setup_android_sdk.sh
 
-      # AGP は未インストールの platform / NDK を自動取得しないので明示する。
-      - name: Install Android SDK packages
-        run: |
-          set -eu
-          set +o pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          set -o pipefail
-          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" \
-            "cmake;3.22.1" "ndk;${KAGRA_ANDROID_NDK_VERSION}"
-
       - name: Assemble debug
         working-directory: mobile/android
         run: gradle :app:assembleDebug --no-daemon --stacktrace

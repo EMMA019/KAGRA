@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Put sdkmanager on PATH for GitHub Actions.
+# Put sdkmanager on PATH and install the pinned SDK packages.
 #
 # ubuntu-latest already ships an Android SDK. Download commandlinetools only
 # when sdkmanager is missing.
@@ -63,6 +63,42 @@ else
 fi
 
 mkdir -p "$SDK/platform-tools"
+
+export ANDROID_HOME="$SDK"
+export ANDROID_SDK_ROOT="$SDK"
+export PATH="$bin:$SDK/platform-tools:$PATH"
+
+# Google's SDK repo sometimes 500s or serves a truncated zip
+# (`Error on ZipFile unknown archive` on cmake-3.22.1). Skip packages
+# already on the runner; retry the rest.
+set +o pipefail
+yes | "$bin/sdkmanager" --sdk_root="$SDK" --licenses >/dev/null || true
+set -o pipefail
+
+install_pkg() {
+  local pkg="$1"
+  local dest="$2"
+  if [ -d "$dest" ]; then
+    echo "already have $pkg"
+    return 0
+  fi
+  local attempt=1
+  while [ "$attempt" -le 3 ]; do
+    if "$bin/sdkmanager" --sdk_root="$SDK" --install "$pkg"; then
+      return 0
+    fi
+    echo "sdkmanager --install $pkg failed (attempt $attempt/3)" >&2
+    sleep $((attempt * 5))
+    attempt=$((attempt + 1))
+  done
+  echo "sdkmanager --install $pkg failed after 3 attempts" >&2
+  return 1
+}
+
+install_pkg "platforms;android-35" "$SDK/platforms/android-35"
+install_pkg "build-tools;35.0.0" "$SDK/build-tools/35.0.0"
+install_pkg "cmake;3.22.1" "$SDK/cmake/3.22.1"
+install_pkg "ndk;$NDK_VERSION" "$SDK/ndk/$NDK_VERSION"
 
 NDK_HOME="$SDK/ndk/$NDK_VERSION"
 

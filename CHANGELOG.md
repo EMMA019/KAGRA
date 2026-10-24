@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Android SDK setup skips packages already on the runner and retries
+  ``sdkmanager --install`` (Package Android failed on a truncated
+  CMake 3.22.1 zip). Same script for CI debug APK and Package Android.
+
 - Neon Cat: fix the stutter that came with the night look. The textured wall panels
   were listed for the GPU in a different set and order every time the cat crossed a
   12 m segment, so the renderer dropped and re-uploaded every mesh (textures

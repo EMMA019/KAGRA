@@ -57,13 +57,17 @@ def test_ndk_pin_is_r28_or_newer_and_shared():
     assert "useLegacyPackaging = false" in gradle
     assert "c++_shared" in gradle
     assert version in (ROOT / "docs" / "distribution.md").read_text(encoding="utf-8")
+    assert 'install_pkg "ndk;$NDK_VERSION"' in setup
+    assert "attempt $attempt/3" in setup
     for rel in (
         ".github/workflows/ci.yml",
         ".github/workflows/package-android.yml",
     ):
         text = (ROOT / rel).read_text(encoding="utf-8")
         assert "26.1.10909125" not in text
-        assert "KAGRA_ANDROID_NDK_VERSION" in text
+        assert "scripts/setup_android_sdk.sh" in text
+    pkg_wf = (ROOT / ".github/workflows/package-android.yml").read_text(encoding="utf-8")
+    assert "KAGRA_ANDROID_NDK_VERSION" in pkg_wf
 
 
 def test_cargo_android_targets_pass_page_size_flags():
