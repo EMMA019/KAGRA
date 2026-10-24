@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Shared foundation, step 2a: the running pick-up effects (magnet, boost, high jump, 2x) moved from a private array in
+  `neon_cat.rs` into the generic `game_core::items` (`Effects` timers on `Core`, `Timed`, the weighted pick-up draw, the
+  cadence check and the spec lookups for an effect's colour and length). What each effect does stays in the kit.
+  Behaviour is unchanged (baselines, golden runs and the mesh-key test are untouched).
+
 - Shared foundation, step 1: lives, goals and the game-over/banner state moved out of `neon_cat.rs` into the generic
   `game_core` (`lives.rs`, `missions.rs`, `result.rs`), carried on `Core` so any kit can use them from the `lives` and
   `missions` GameSpec sections. Behaviour is unchanged: the golden runs, the measure baselines and the GPU mesh-key test

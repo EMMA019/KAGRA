@@ -9,9 +9,10 @@
 
 use super::{
     ledges_at, obstacle_anchor, obstacle_parts, obstacle_shape, perch_route_at, NeonCat, PerchBox,
-    CAT_HALF_W, FX_BOOST, FX_JUMP,
+    CAT_HALF_W,
 };
 use crate::flow::FlowPhase;
+use crate::game_core::Timed;
 use crate::game_core::{collide, Hitbox};
 use crate::game_spec::{Behavior, PartRole, SectionKind, DECK_OBSTACLE_REACH};
 use crate::gesture::Swipe;
@@ -147,7 +148,7 @@ fn deck_play(
     g.rebuild();
     if let Some((high, _)) = jump {
         if high {
-            g.fx[FX_JUMP] = 20.0;
+            g.core.effects.start(Timed::Jump, 20.0);
         }
         g.swipe(Swipe::Up);
     }
@@ -156,7 +157,7 @@ fn deck_play(
     for _ in 0..(12.0 / DT) as u32 {
         // Judge the course at its own speed: a boost orb on the way would
         // change the cap this reports against.
-        g.fx[FX_BOOST] = 0.0;
+        g.core.effects.start(Timed::Boost, 0.0);
         g.tick(DT);
         if !g.alive() {
             break;
