@@ -16,7 +16,7 @@ def test_platformer_manifest_has_required_fields():
     assert manifest.title == "Box Hop"
     assert manifest.version == "0.1.0"
     assert manifest.entry == "examples/platformer_minimal.py"
-    assert manifest.icon == "games/icons/platformer.png"
+    assert manifest.icon == "assets/icons/game_placeholder.png"
     assert manifest.world == "kagra-shared/tests/fixtures/platformer_world.json"
     assert manifest.slug == "platformer"
     assert manifest.application_id == "dev.kagra.platformer"

@@ -1,6 +1,6 @@
 {
   "title": "FPS Range",
-  "icon": "games/icons/fps.png",
+  "icon": "assets/icons/game_placeholder.png",
   "version": "0.1.0",
   "entry": "examples/fps_minimal.py",
   "world": "kagra-shared/tests/fixtures/fps_world.json",

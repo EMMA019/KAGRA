@@ -1156,11 +1156,11 @@ def test_survival_fixture_is_camp_with_glb():
     assert any(p.get("gltf") == "stylized_pine" for p in data["props"])
     foods = [p for p in data["props"] if p.get("name") == "food"]
     assert len(foods) >= 4
-    assert any("Mushroom" in (p.get("gltf") or "") for p in foods)
+    assert any("mushroom" in (p.get("gltf") or "") for p in foods)
     fire = next(p for p in data["props"] if p.get("name") == "campfire")
     shelter = next(p for p in data["props"] if p.get("name") == "shelter")
     assert fire.get("enabled") is False
-    assert "Bonfire" in (fire.get("gltf") or "")
+    assert "bonfire" in (fire.get("gltf") or "")
     assert shelter.get("enabled") is False
     assert shelter.get("gltf") == "gazebo"
     assert any(p.get("gltf") == "rock" for p in data["props"])

@@ -1,6 +1,6 @@
 {
   "title": "Meteor Cat",
-  "icon": "games/icons/neon_cat.png",
+  "icon": "assets/icons/game_placeholder.png",
   "version": "0.1.0",
   "entry": "examples/meteor_cat_minimal.py",
   "world": "kagra-shared/tests/fixtures/meteor_cat_world.json",
@@ -82,7 +82,7 @@
     "assets/models/kenney/space-kit/rock_crystals.glb",
     "assets/models/kenney/space-kit/rock_largeA.glb",
     "assets/models/kenney/racing-kit/overheadRound.glb",
-    "assets/models/quaternius/modular-dungeons-pack/Arch.glb",
+    "assets/models/neon_cat/gate_arch.glb",
     "assets/models/coin.glb"
   ]
 }

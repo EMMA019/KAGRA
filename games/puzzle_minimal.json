@@ -1,6 +1,6 @@
 {
   "title": "Push Puzzle",
-  "icon": "games/icons/puzzle.png",
+  "icon": "assets/icons/game_placeholder.png",
   "version": "0.1.0",
   "entry": "examples/puzzle_minimal.py",
   "world": "kagra-shared/tests/fixtures/puzzle_world.json"

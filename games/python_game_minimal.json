@@ -1,6 +1,6 @@
 {
   "title": "Fish Talk",
-  "icon": "games/icons/python_game.png",
+  "icon": "assets/icons/game_placeholder.png",
   "version": "0.1.0",
   "entry": "examples/python_game_minimal.py",
   "world": "kagra-shared/tests/fixtures/interact_fish_world.json"

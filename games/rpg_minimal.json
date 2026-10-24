@@ -1,6 +1,6 @@
 {
   "title": "RPG Town",
-  "icon": "games/icons/rpg.png",
+  "icon": "assets/icons/game_placeholder.png",
   "version": "0.1.0",
   "entry": "examples/rpg_minimal.py",
   "world": "kagra-shared/tests/fixtures/rpg_world.json"

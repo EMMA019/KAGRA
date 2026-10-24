@@ -48,7 +48,7 @@ class RingSpec:
 
 @dataclass
 class GateSpec:
-    glb: str = "assets/models/quaternius/modular-dungeons-pack/Arch.glb"
+    glb: str = "assets/models/neon_cat/gate_arch.glb"
     z0: float = 10.0
     gap: float = 24.0
     scale_x: float = 2.15

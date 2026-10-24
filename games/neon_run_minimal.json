@@ -1,6 +1,6 @@
 {
   "title": "Lumen",
-  "icon": "games/icons/neon_run.png",
+  "icon": "assets/icons/game_placeholder.png",
   "version": "0.1.0",
   "entry": "examples/neon_run_minimal.py",
   "world": "kagra-shared/tests/fixtures/neon_run_world.json",

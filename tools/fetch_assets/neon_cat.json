@@ -70,20 +70,6 @@
       ]
     },
     {
-      "id": "quaternius-modular-dungeons",
-      "license": "CC0-1.0",
-      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
-      "credit": "Quaternius — Modular Dungeons",
-      "source_url": "https://quaternius.com/",
-      "dest": "assets/models/quaternius/modular-dungeons-pack",
-      "files": [
-        {
-          "out": "Arch.glb",
-          "check_only": true
-        }
-      ]
-    },
-    {
       "id": "kenney-space-kit",
       "license": "CC0-1.0",
       "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",

@@ -373,7 +373,7 @@
     "score": 100
    },
    "gates": {
-    "glb": "assets/models/quaternius/modular-dungeons-pack/Arch.glb",
+    "glb": "assets/models/neon_cat/gate_arch.glb",
     "z0": 10.0,
     "gap": 24.0,
     "scale_x": 2.15

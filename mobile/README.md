@@ -203,10 +203,10 @@ python tools/osm_bake.py --bbox 35.6565 35.6615 139.6985 139.7045 \
   --out kagra-shared/assets/maps/shibuya_demo.kagra.json
 ```
 
-- フォーマット: [`kagra-shared/assets/maps/demo_city.kagra.json`](../kagra-shared/assets/maps/demo_city.kagra.json)
+- フォーマット: [`kagra-shared/assets/maps/demo_grid.kagra.json`](../kagra-shared/assets/maps/demo_grid.kagra.json)
   （x=東, z=北, メートル。`include_str!` で共有コアに同梱）
 - ランタイム: [`map.rs`](../kagra-shared/src/map.rs) がロード。ミッションはグラフ最短経路 → 既存 `RoadPath`。
   描画はプレイヤー周辺エッジのリボン。
 - 既定プレイは Bake 済み [`shibuya_demo.kagra.json`](../kagra-shared/assets/maps/shibuya_demo.kagra.json)。
-  テスト用の小さい [`demo_city.kagra.json`](../kagra-shared/assets/maps/demo_city.kagra.json) も同梱。
+  テスト用の小さい [`demo_grid.kagra.json`](../kagra-shared/assets/maps/demo_grid.kagra.json) も同梱。
 - 衛星テクスチャ（地理院）は第1段スコープ外。

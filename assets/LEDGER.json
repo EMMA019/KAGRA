@@ -489,196 +489,6 @@
   {
    "license_spdx": "CC0-1.0",
    "license_evidence": [
-    "assets/library/quaternius/cyberpunkgamekit/License.txt"
-   ],
-   "receipt_ref": null,
-   "attribution_required": false,
-   "attribution_text": null,
-   "redistributable_in_public_repo": true,
-   "notes": "Quaternius changed to its own Asset License (QAL v1.0, 2026-08-28), which forbids redistributing assets as stand-alone files and applies the terms in force on the download date. These files were committed 2026-08-29; the CC0 facts hold only if they were downloaded before the change. The exact download date is not recorded.",
-   "verified": "checked",
-   "id": "quaternius-library-cyberpunkgamekit",
-   "name": "Quaternius Cyberpunk Game Kit (July 2022)",
-   "source": "quaternius",
-   "author": "Quaternius",
-   "url": "https://quaternius.com/packs/cyberpunkgamekit.html",
-   "license": "cc0",
-   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
-   "obtained": "2026-08-29",
-   "allowed_uses": [
-    "personal",
-    "commercial",
-    "modify",
-    "redistribute-in-game",
-    "redistribute-standalone"
-   ],
-   "paths": [
-    "assets/library/quaternius/cyberpunkgamekit/**"
-   ],
-   "verified_how": "In-repo License.txt plus the pack page, which links the CC0 1.0 dedication (checked 2026-10-24). The on-disk License.txt heading names another pack (Ultimate Platformer Pack) but the terms are CC0."
-  },
-  {
-   "license_spdx": "CC0-1.0",
-   "license_evidence": [],
-   "receipt_ref": null,
-   "attribution_required": false,
-   "attribution_text": null,
-   "redistributable_in_public_repo": true,
-   "notes": "Quaternius changed to its own Asset License (QAL v1.0, 2026-08-28), which forbids redistributing assets as stand-alone files and applies the terms in force on the download date. These files were committed 2026-08-29; the CC0 facts hold only if they were downloaded before the change. The exact download date is not recorded.",
-   "verified": "checked",
-   "id": "quaternius-library-cubeworldkit",
-   "name": "Quaternius Cube World Kit (Aug 2023)",
-   "source": "quaternius",
-   "author": "Quaternius",
-   "url": "https://quaternius.com/packs/cubeworldkit.html",
-   "license": "cc0",
-   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
-   "obtained": "2026-08-29",
-   "allowed_uses": [
-    "personal",
-    "commercial",
-    "modify",
-    "redistribute-in-game",
-    "redistribute-standalone"
-   ],
-   "paths": [
-    "assets/library/quaternius/cubeworldkit/**"
-   ],
-   "verified_how": "No License.txt in the repo; the pack page links the CC0 1.0 dedication (checked 2026-10-24)."
-  },
-  {
-   "license_spdx": "CC0-1.0",
-   "license_evidence": [
-    "assets/models/quaternius/stylized-nature-megakit/LICENSE.txt"
-   ],
-   "receipt_ref": null,
-   "attribution_required": false,
-   "attribution_text": null,
-   "redistributable_in_public_repo": true,
-   "notes": "Quaternius changed to its own Asset License (QAL v1.0, 2026-08-28), which forbids redistributing assets as stand-alone files and applies the terms in force on the download date. These files were committed 2026-08-29; the CC0 facts hold only if they were downloaded before the change. The exact download date is not recorded.",
-   "verified": "checked",
-   "id": "quaternius-models-stylized-nature-megakit",
-   "name": "Quaternius Stylized Nature MegaKit",
-   "source": "quaternius",
-   "author": "Quaternius",
-   "url": "https://quaternius.com/packs/stylizednaturemegakit.html",
-   "license": "cc0",
-   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
-   "obtained": "before 2026-08-26 (prior batch, see QUATERNIUS_LICENSES.md)",
-   "allowed_uses": [
-    "personal",
-    "commercial",
-    "modify",
-    "redistribute-in-game",
-    "redistribute-standalone"
-   ],
-   "paths": [
-    "assets/models/quaternius/stylized-nature-megakit/**"
-   ],
-   "verified_how": "In-repo License.txt / assets/models/QUATERNIUS_LICENSES.md (batch 2026-08-26) record CC0 1.0 and the official source."
-  },
-  {
-   "license_spdx": "CC0-1.0",
-   "license_evidence": [
-    "assets/models/quaternius/medieval-village-pack/LICENSE.txt"
-   ],
-   "receipt_ref": null,
-   "attribution_required": false,
-   "attribution_text": null,
-   "redistributable_in_public_repo": true,
-   "notes": "Quaternius changed to its own Asset License (QAL v1.0, 2026-08-28), which forbids redistributing assets as stand-alone files and applies the terms in force on the download date. These files were committed 2026-08-29; the CC0 facts hold only if they were downloaded before the change. The exact download date is not recorded.",
-   "verified": "checked",
-   "id": "quaternius-models-medieval-village-pack",
-   "name": "Quaternius Medieval Village Pack",
-   "source": "quaternius",
-   "author": "Quaternius",
-   "url": "https://quaternius.com/packs/medievalvillagemegakit.html",
-   "license": "cc0",
-   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
-   "obtained": "before 2026-08-26 (prior batch, see QUATERNIUS_LICENSES.md)",
-   "allowed_uses": [
-    "personal",
-    "commercial",
-    "modify",
-    "redistribute-in-game",
-    "redistribute-standalone"
-   ],
-   "paths": [
-    "assets/models/quaternius/medieval-village-pack/**"
-   ],
-   "verified_how": "In-repo License.txt / assets/models/QUATERNIUS_LICENSES.md (batch 2026-08-26) record CC0 1.0 and the official source."
-  },
-  {
-   "license_spdx": "CC0-1.0",
-   "license_evidence": [
-    "assets/models/quaternius/modular-dungeons-pack/LICENSE.txt",
-    "assets/models/quaternius/modular-dungeons-pack/CREDITS.md"
-   ],
-   "receipt_ref": null,
-   "attribution_required": false,
-   "attribution_text": null,
-   "redistributable_in_public_repo": true,
-   "notes": "Quaternius changed to its own Asset License (QAL v1.0, 2026-08-28), which forbids redistributing assets as stand-alone files and applies the terms in force on the download date. These files were committed 2026-08-29; the CC0 facts hold only if they were downloaded before the change. The exact download date is not recorded.",
-   "verified": "checked",
-   "id": "quaternius-models-modular-dungeons-pack",
-   "name": "Quaternius Modular Dungeons Pack",
-   "source": "quaternius",
-   "author": "Quaternius",
-   "url": "https://quaternius.com/",
-   "license": "cc0",
-   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
-   "obtained": "before 2026-08-26 (prior batch, see QUATERNIUS_LICENSES.md)",
-   "allowed_uses": [
-    "personal",
-    "commercial",
-    "modify",
-    "redistribute-in-game",
-    "redistribute-standalone"
-   ],
-   "paths": [
-    "assets/models/quaternius/modular-dungeons-pack/**"
-   ],
-   "verified_how": "In-repo License.txt / assets/models/QUATERNIUS_LICENSES.md (batch 2026-08-26) record CC0 1.0 and the official source."
-  },
-  {
-   "license_spdx": "CC0-1.0",
-   "license_evidence": [
-    "assets/models/quaternius/buildings/License.txt"
-   ],
-   "receipt_ref": null,
-   "attribution_required": false,
-   "attribution_text": null,
-   "redistributable_in_public_repo": true,
-   "notes": "Quaternius changed to its own Asset License (QAL v1.0, 2026-08-28), which forbids redistributing assets as stand-alone files and applies the terms in force on the download date. These files were committed 2026-08-29; the CC0 facts hold only if they were downloaded before the change. The exact download date is not recorded. Only License.txt and Preview images are committed for the FBX batch; the FBX files are not.",
-   "verified": "checked",
-   "id": "quaternius-models-fbx-batch-2026-08-26",
-   "name": "Quaternius FBX batch 2026-08-26 (buildings, cars, farmanimal, farmbuildings, medievalweapons, modularstreets)",
-   "source": "quaternius",
-   "author": "Quaternius",
-   "url": "https://quaternius.com/",
-   "license": "cc0",
-   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
-   "obtained": "2026-08-26 (batch) or earlier",
-   "allowed_uses": [
-    "personal",
-    "commercial",
-    "modify",
-    "redistribute-in-game",
-    "redistribute-standalone"
-   ],
-   "paths": [
-    "assets/models/quaternius/buildings/**",
-    "assets/models/quaternius/cars/**",
-    "assets/models/quaternius/farmanimal/**",
-    "assets/models/quaternius/farmbuildings/**",
-    "assets/models/quaternius/medievalweapons/**",
-    "assets/models/quaternius/modularstreets/**"
-   ],
-   "verified_how": "In-repo License.txt / assets/models/QUATERNIUS_LICENSES.md (batch 2026-08-26) record CC0 1.0 and the official source."
-  },
-  {
-   "license_spdx": "CC0-1.0",
-   "license_evidence": [
     "assets/models/BIPLANE.txt"
    ],
    "receipt_ref": null,
@@ -825,112 +635,6 @@
   },
   {
    "license_spdx": null,
-   "license_evidence": [],
-   "receipt_ref": null,
-   "attribution_required": false,
-   "attribution_text": null,
-   "redistributable_in_public_repo": true,
-   "notes": "Confirm who or what made the 24 genre icons.",
-   "verified": "owner_confirmation_needed",
-   "id": "project-icons",
-   "name": "KAGRA genre icons",
-   "source": "project",
-   "author": "KAGRA project",
-   "url": "https://github.com/EMMA019/KAGRA",
-   "license": "custom",
-   "license_url": "https://github.com/EMMA019/KAGRA/blob/master/LICENSE",
-   "obtained": "2026-10-22",
-   "allowed_uses": [
-    "personal",
-    "commercial",
-    "modify",
-    "redistribute-in-game"
-   ],
-   "paths": [
-    "games/icons/*.png"
-   ],
-   "verified_how": "Committed with the Neon Cat Run and packaging commits; the tool or artist that made them is not recorded in the repo."
-  },
-  {
-   "license_spdx": null,
-   "license_evidence": [],
-   "receipt_ref": null,
-   "attribution_required": false,
-   "attribution_text": null,
-   "redistributable_in_public_repo": true,
-   "notes": "Provenance unknown. The file name suggests a trial plan of a music generator or a sample; trial plans often forbid commercial use. Owner to say where it came from, or replace it with a CC0 track.",
-   "verified": "owner_confirmation_needed",
-   "id": "unknown-demo-song",
-   "name": "cute_song_trial.wav (live-demo song)",
-   "source": "unknown",
-   "author": "unknown",
-   "url": "https://github.com/EMMA019/KAGRA",
-   "license": "custom",
-   "license_url": "https://github.com/EMMA019/KAGRA/blob/master/LICENSE",
-   "obtained": "2026-08-23",
-   "allowed_uses": [
-    "personal"
-   ],
-   "paths": [
-    "assets/cute_song_trial.wav"
-   ],
-   "verified_how": "Committed 2026-08-23 as 'Ship the live-demo song'. No source, author or license is recorded anywhere in the repo."
-  },
-  {
-   "license_spdx": null,
-   "license_evidence": [],
-   "receipt_ref": null,
-   "attribution_required": false,
-   "attribution_text": null,
-   "redistributable_in_public_repo": true,
-   "notes": "Provenance unknown. Owner to name the text-to-motion service and its terms, or replace it with a CC0 clip.",
-   "verified": "owner_confirmation_needed",
-   "id": "unknown-vrma-dance",
-   "name": "coolHeadbangWalk.vrma (dance clip)",
-   "source": "unknown",
-   "author": "unknown (generator tag: text-to-motion)",
-   "url": "https://github.com/EMMA019/KAGRA",
-   "license": "custom",
-   "license_url": "https://github.com/EMMA019/KAGRA/blob/master/LICENSE",
-   "obtained": "2026-08-23",
-   "allowed_uses": [
-    "personal"
-   ],
-   "paths": [
-    "assets/coolHeadbangWalk.vrma"
-   ],
-   "verified_how": "The glTF header says generator 'text-to-motion' (an AI motion service). No service name, plan or license is recorded."
-  },
-  {
-   "license_spdx": null,
-   "license_evidence": [],
-   "receipt_ref": null,
-   "attribution_required": false,
-   "attribution_text": null,
-   "redistributable_in_public_repo": true,
-   "notes": "Confirm the recordings contain only project-owned or CC0 material (audio especially).",
-   "verified": "owner_confirmation_needed",
-   "id": "project-demo-videos",
-   "name": "Old example screen recordings (dance.mp4, game 154555.mp4)",
-   "source": "project",
-   "author": "KAGRA project",
-   "url": "https://github.com/EMMA019/KAGRA",
-   "license": "custom",
-   "license_url": "https://github.com/EMMA019/KAGRA/blob/master/LICENSE",
-   "obtained": "2026-08-30",
-   "allowed_uses": [
-    "personal",
-    "commercial",
-    "modify",
-    "redistribute-in-game"
-   ],
-   "paths": [
-    "old/examples/media/*.mp4"
-   ],
-   "verified_how": "Screen captures of KAGRA examples. Contents were not inspected, so whether they include other people's music or art is not confirmed."
-  },
-  {
-   "license_spdx": null,
    "license_evidence": [
     "kagra-shared/assets/PixelMplus-LICENSE.txt"
    ],
@@ -1023,34 +727,6 @@
    "receipt_ref": null,
    "attribution_required": false,
    "attribution_text": null,
-   "redistributable_in_public_repo": true,
-   "notes": "Confirm demo_city was hand-made and not baked from OpenStreetMap.",
-   "verified": "owner_confirmation_needed",
-   "id": "map-demo-city",
-   "name": "Demo city map",
-   "source": "project",
-   "author": "KAGRA project",
-   "url": "https://github.com/EMMA019/KAGRA",
-   "license": "custom",
-   "license_url": "https://github.com/EMMA019/KAGRA/blob/master/LICENSE",
-   "obtained": "2026-08-14",
-   "allowed_uses": [
-    "personal",
-    "commercial",
-    "modify",
-    "redistribute-in-game"
-   ],
-   "paths": [
-    "kagra-shared/assets/maps/demo_city.kagra.json"
-   ],
-   "verified_how": "No origin or tool recorded in the file (unlike shibuya_demo)."
-  },
-  {
-   "license_spdx": null,
-   "license_evidence": [],
-   "receipt_ref": null,
-   "attribution_required": false,
-   "attribution_text": null,
    "redistributable_in_public_repo": false,
    "notes": "Any future Mixamo file goes under assets-private/ only.",
    "verified": "checked",
@@ -1072,6 +748,94 @@
     "assets-private/mixamo/**"
    ],
    "verified_how": "Adobe's Mixamo terms allow use in games but not redistribution of the files as stand-alone assets. The repo holds no Mixamo binary (tests/fixtures/synthetic_mixamo_hang.json is hand-made data)."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Stand-ins for removed third-party scenery and gate; shapes only, not art.",
+   "verified": "checked",
+   "id": "project-placeholder-models",
+   "name": "KAGRA placeholder models (scenery stand-ins and the Neon Cat gate arch)",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-24",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/placeholder/*.glb",
+    "assets/models/neon_cat/gate_arch.glb"
+   ],
+   "verified_how": "Written by tools/gen_assets/placeholder_models.py from primitives in plain Python; no input meshes or network access. Run it with --check to confirm the files match."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "",
+   "verified": "checked",
+   "id": "project-icon-placeholder",
+   "name": "KAGRA placeholder launcher icon",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-24",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/icons/*.png"
+   ],
+   "verified_how": "Drawn by tools/gen_assets/game_icon.py in plain Python (a ring and a triangle); no input images."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Replaces demo_city, whose provenance could not be confirmed.",
+   "verified": "checked",
+   "id": "project-demo-grid",
+   "name": "KAGRA demo road grid",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-24",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "kagra-shared/assets/maps/demo_grid.kagra.json"
+   ],
+   "verified_how": "Generated by tools/gen_assets/demo_grid.py from a 3 x 6 grid of numbers; no map data."
   }
  ]
 }

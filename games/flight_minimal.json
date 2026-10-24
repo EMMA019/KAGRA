@@ -1,6 +1,6 @@
 {
   "title": "Island Flight",
-  "icon": "games/icons/flight.png",
+  "icon": "assets/icons/game_placeholder.png",
   "version": "0.1.0",
   "entry": "examples/flight_minimal.py",
   "bundle_assets": [

@@ -178,38 +178,21 @@ pub fn resolve_alias(name: &str) -> Vec<&'static str> {
         "rogue" => vec!["assets/library/kaykit/adventurers/characters/Rogue.glb"],
         "mage" => vec!["assets/library/kaykit/adventurers/characters/Mage.glb"],
         "barbarian" => vec!["assets/library/kaykit/adventurers/characters/Barbarian.glb"],
-        "raccoon" => vec!["assets/library/quaternius/cubeworldkit/Animals/glTF/Raccoon.gltf"],
-        "wolf" => vec!["assets/library/quaternius/cubeworldkit/Animals/glTF/Wolf.gltf"],
-        "house" | "fantasy_house" => {
-            vec!["assets/models/quaternius/medieval-village-pack/Fantasy House.glb"]
-        }
-        "inn" | "fantasy_inn" => {
-            vec!["assets/models/quaternius/medieval-village-pack/Fantasy Inn.glb"]
-        }
-        "tower" | "bell_tower" => {
-            vec!["assets/models/quaternius/medieval-village-pack/Bell Tower.glb"]
-        }
-        "mill" => vec!["assets/models/quaternius/medieval-village-pack/Mill.glb"],
-        "gazebo" => vec!["assets/models/quaternius/medieval-village-pack/Gazebo.glb"],
-        "well" => vec!["assets/models/quaternius/medieval-village-pack/Well.glb"],
+        "house" | "fantasy_house" => vec!["assets/models/placeholder/house.glb"],
+        "inn" | "fantasy_inn" => vec!["assets/models/placeholder/inn.glb"],
+        "tower" | "bell_tower" => vec!["assets/models/placeholder/bell_tower.glb"],
+        "mill" => vec!["assets/models/placeholder/mill.glb"],
+        "gazebo" => vec!["assets/models/placeholder/gazebo.glb"],
+        "well" => vec!["assets/models/placeholder/well.glb"],
         "stylized_tree" | "tree" => {
             vec![
-                "assets/library/quaternius/cubeworldkit/Environment/glTF/Tree_1.gltf",
+                "assets/models/placeholder/tree.glb",
                 "assets/models/tree.glb",
             ]
         }
-        "stylized_pine" | "pine" => {
-            vec![
-                "assets/library/quaternius/cubeworldkit/Environment/glTF/Tree_2.gltf",
-                "assets/models/quaternius/stylized-nature-megakit/Pine.glb",
-            ]
-        }
-        "rock" | "rock_medium" => {
-            vec!["assets/models/quaternius/stylized-nature-megakit/Rock Medium.glb"]
-        }
-        "chest" => {
-            vec!["assets/library/quaternius/cubeworldkit/Environment/glTF/Chest_Closed.gltf"]
-        }
+        "stylized_pine" | "pine" => vec!["assets/models/placeholder/pine.glb"],
+        "rock" | "rock_medium" => vec!["assets/models/placeholder/rock.glb"],
+        "chest" => vec!["assets/models/placeholder/chest.glb"],
         "biplane" | "airplane" | "plane_glb" => {
             vec!["assets/models/biplane.glb"]
         }

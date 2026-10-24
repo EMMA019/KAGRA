@@ -77,8 +77,8 @@ scratch/
 *.png
 !kagra-shared/tests/fixtures/*.png
 # 配布マニフェストのアイコン（games/*.json の icon）
-!games/icons/
-!games/icons/*.png
+!assets/icons/
+!assets/icons/*.png
 # Bar sim generated art / SE (procedural contract)
 !assets/bar/
 !assets/bar/**
@@ -106,7 +106,6 @@ scratch/
 !docs/screenshots/
 !docs/screenshots/**/*.png
 *.wav
-!assets/cute_song_trial.wav
 !assets/bar/**/*.wav
 !assets/audio/*.wav
 *.ogg
