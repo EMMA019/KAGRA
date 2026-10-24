@@ -1104,7 +1104,8 @@ impl NeonCat {
             } else {
                 1.0
             };
-            self.vy = self.spec.runner.jump.velocity * self.feel.velocity_scale * boost;
+            let vy = self.spec.runner.jump.velocity * self.feel.velocity_scale * boost;
+            self.vy = self.perch_hop(g0 + 0.02, vy);
             self.y = g0 + 0.02;
             self.rolling = 0.0;
             self.recover = 0.0;
@@ -1118,7 +1119,8 @@ impl NeonCat {
                 self.start_roll();
             }
         }
-        self.vy += self.spec.runner.jump.gravity * self.feel.gravity_scale * dt;
+        let pull = self.perch_fall_pull(dt);
+        self.vy += self.spec.runner.jump.gravity * self.feel.gravity_scale * pull * dt;
         self.y += self.vy * dt;
         if self.y <= g0 {
             if self.vy < -1.5 {
@@ -1169,6 +1171,16 @@ impl NeonCat {
             if self.y < g1 && self.vy <= 0.0 {
                 self.y = g1;
                 self.vy = 0.0;
+            } else if self.y < g1 && self.vy > 0.0 {
+                // Jumping up into a ledge that is within reach lands on it
+                // (a late jump no longer rises through the front of a step).
+                if let Some((_, _, top)) = self.perch_support(self.x, self.z) {
+                    if top >= g1 {
+                        self.y = top;
+                        self.vy = 0.0;
+                        self.core.juice.land_squash = self.feel.land_squash_secs;
+                    }
+                }
             }
             self.ground = g1;
             self.collect_rings();
@@ -1296,6 +1308,118 @@ impl NeonCat {
             }
         }
         best
+    }
+
+    /// The first route step ahead that a jump with take-off speed `vy` from
+    /// `y0` can get onto: it starts ahead of the feet and rises above them,
+    /// but not above the top of the arc. `(z0, z1, top)`.
+    fn perch_target(&self, y0: f32, vy: f32) -> Option<(f32, f32, f32)> {
+        let g = self.spec.runner.jump.gravity * self.feel.gravity_scale;
+        let v = self.speed();
+        if g >= 0.0 || v <= 0.1 {
+            return None;
+        }
+        let apex = y0 + vy * vy / (2.0 * -g);
+        let reach = v * (2.0 * vy / -g).max(0.0);
+        let track = &self.spec.runner.obstacle_track;
+        let i0 = near_index(self.z, track.z0, track.gap).saturating_sub(1);
+        let i1 = near_index(self.z + reach, track.z0, track.gap) + 1;
+        let mut best: Option<(f32, f32, f32)> = None;
+        for i in i0..=i1 {
+            let Some(steps) = perch_route_at(&self.spec, i) else {
+                continue;
+            };
+            for b in &steps {
+                if (self.x - b.x).abs() > b.half_width
+                    || b.z1 <= self.z
+                    || b.top <= y0 + 0.05
+                    || b.top > apex - 0.1
+                    || best.is_some_and(|q| q.0 <= b.z0)
+                {
+                    continue;
+                }
+                best = Some((b.z0, b.z1, b.top));
+            }
+        }
+        best
+    }
+
+    /// Whether the arc `(y0, vy)` comes down on `step` short of its far end.
+    fn perch_arc_lands(&self, y0: f32, vy: f32, step: (f32, f32, f32)) -> bool {
+        let g = self.spec.runner.jump.gravity * self.feel.gravity_scale;
+        let disc = vy * vy - 2.0 * g * (y0 - step.2);
+        if g >= 0.0 || disc < 0.0 {
+            return false;
+        }
+        let z = self.z + self.speed() * (vy + disc.sqrt()) / -g;
+        z >= step.0 && z < step.1 - 0.2
+    }
+
+    /// Take-off speed for a jump from height `y0`: the full jump, unless that
+    /// arc would clear the first ledge ahead and a slightly lower hop comes
+    /// down on it (a late jump at running speed). Never lower than clears it.
+    fn perch_hop(&self, y0: f32, vy: f32) -> f32 {
+        if self.spec.perch_route.is_empty() {
+            return vy;
+        }
+        let Some(step) = self.perch_target(y0, vy) else {
+            return vy;
+        };
+        if self.perch_arc_lands(y0, vy, step) {
+            return vy;
+        }
+        let mut v = vy - 0.05;
+        while v * v
+            > 2.0 * -(self.spec.runner.jump.gravity * self.feel.gravity_scale) * (step.2 - y0)
+        {
+            if self.perch_arc_lands(y0, v, step) {
+                return v;
+            }
+            v -= 0.05;
+        }
+        vy
+    }
+
+    /// Gravity multiplier that brings a falling cat down onto the ledge it is
+    /// over before the ledge ends. A jump over a short step at running speed
+    /// lasts longer than the step is long, so without this the cat flies over
+    /// the first step and lands on the next. 1.0 when it lands anyway, when
+    /// there is no ledge below, or when no firm pull could make it.
+    fn perch_fall_pull(&self, dt: f32) -> f32 {
+        const MAX_PULL: f32 = 6.0;
+        if self.spec.perch_route.is_empty() || self.vy >= 0.0 {
+            return 1.0;
+        }
+        let g = self.spec.runner.jump.gravity * self.feel.gravity_scale;
+        let v = self.speed();
+        if g >= 0.0 || v <= 0.1 {
+            return 1.0;
+        }
+        let track = &self.spec.runner.obstacle_track;
+        let i0 = near_index(self.z, track.z0, track.gap).saturating_sub(1);
+        let mut pull = 1.0f32;
+        for i in i0..i0 + 3 {
+            let Some(steps) = perch_route_at(&self.spec, i) else {
+                continue;
+            };
+            for b in &steps {
+                if (self.x - b.x).abs() > b.half_width
+                    || self.z < b.z0
+                    || self.z >= b.z1
+                    || self.y <= b.top + 0.01
+                {
+                    continue;
+                }
+                // Land by a little before the ledge ends, within this tick at the latest.
+                let t = ((b.z1 - 0.2 - self.z) / v).max(dt);
+                let need = 2.0 * (b.top - self.y - self.vy * t) / (t * t);
+                let k = need / g;
+                if k > 1.0 && k <= MAX_PULL {
+                    pull = pull.max(k);
+                }
+            }
+        }
+        pull
     }
 
     /// Score and toast for landing on a route, time spent on a ledge and
@@ -6860,6 +6984,74 @@ mod tests {
         put(&mut r, b0.x + b0.half_width + 0.3, b0.top, b0.z0 + 0.3);
         assert_eq!(r.ground_at(b0.x + b0.half_width + 0.3, b0.z0 + 0.3), 0.0);
         let _ = i;
+    }
+
+    /// The route steps the cat stands on after one jump `lead` metres before
+    /// the first step at `speed`, running on to the end of the route.
+    fn steps_stood_on(speed: f32, lead: f32) -> Vec<usize> {
+        let mut run = full_lives();
+        {
+            let sp = std::sync::Arc::make_mut(&mut run.spec);
+            sp.runner.speed.start = speed;
+            sp.runner.speed.ramp = 0.0;
+            sp.runner.speed.cap = speed;
+        }
+        let (_, steps) = route_slot(&run.spec.clone());
+        let b0 = steps[0];
+        run.invuln = 999.0;
+        put(&mut run, b0.x, 0.0, b0.z0 - lead);
+        run.swipe(Swipe::Up);
+        let mut stood: Vec<usize> = Vec::new();
+        for _ in 0..400 {
+            run.tick(1.0 / 60.0);
+            if let Some((_, n, top)) = run.perch_support(run.x, run.z) {
+                if (run.y - top).abs() < 0.02 && !stood.contains(&n) {
+                    stood.push(n);
+                }
+            }
+            if run.z > steps.last().unwrap().z1 + 2.0 {
+                break;
+            }
+        }
+        stood
+    }
+
+    #[test]
+    fn a_jump_onto_the_first_step_lands_at_every_speed_and_timing() {
+        // The bot jumps from the street at every timing from "on the front
+        // edge" (a late jump) to "a long way ahead", at the start speed and
+        // up to the cap. Wherever the jump could get onto the first step it
+        // lands on it, and the run then goes up steps 2 and 3 in order.
+        // (Before, a late jump at running speed rose through the front of
+        // the AC unit and came down on the pipe, so the first step never
+        // paid a landing.)
+        for speed in [8.0f32, 10.5, 12.0, 14.0, 16.0, 18.0, 20.0] {
+            for lead4 in 0..=12 {
+                let lead = lead4 as f32 * 0.25;
+                let stood = steps_stood_on(speed, lead);
+                assert_eq!(stood, vec![0, 1, 2], "speed {speed} lead {lead}: {stood:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_late_jump_at_the_start_speed_lands_on_the_ac_unit_and_pays_the_perch() {
+        let mut run = full_lives();
+        let (i, steps) = route_slot(&run.spec.clone());
+        let b0 = steps[0];
+        run.invuln = 999.0;
+        // Normal speed, the jump pressed at the front edge of the first step.
+        put(&mut run, b0.x, 0.0, b0.z0 - 0.05);
+        let score0 = run.core.stats.score;
+        run.swipe(Swipe::Up);
+        let mut on_first = false;
+        for _ in 0..30 {
+            run.tick(1.0 / 60.0);
+            on_first |= run.on_perch && (run.y - b0.top).abs() < 0.02 && run.z < b0.z1;
+        }
+        assert!(on_first, "never stood on the first step");
+        assert!(run.perch_landed.contains(&i));
+        assert!(run.core.stats.score >= score0 + run.spec.perch_rules.land_score);
     }
 
     #[test]
