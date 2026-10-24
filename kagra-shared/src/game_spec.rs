@@ -83,6 +83,9 @@ pub struct InputSpec {
     pub swipe_cooldown_secs: f32,
     /// Jump/roll presses wait this long for the cat to act on them.
     pub buffer_secs: f32,
+    /// An up flick this soon after a down flick is the finger coming back,
+    /// not a jump.
+    pub reverse_guard_secs: f32,
 }
 
 impl Default for InputSpec {
@@ -97,6 +100,7 @@ impl Default for InputSpec {
             swipe_dist: 0.09,
             swipe_cooldown_secs: 0.3,
             buffer_secs: 0.15,
+            reverse_guard_secs: 0.2,
         }
     }
 }
@@ -118,6 +122,28 @@ pub struct RunnerKit {
     pub body: BodySpec,
     /// Coin lines.
     pub coins: CoinSpec,
+    /// How a run turns into score: distance and gates. Rings and coins carry
+    /// their own `score`.
+    pub score: ScoreSpec,
+}
+
+/// Score formula: `per_meter * distance + per_gate * gates + rings + coins`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ScoreSpec {
+    /// Points per metre run.
+    pub per_meter: f32,
+    /// Bonus for each stone arch (gate) the cat runs through.
+    pub per_gate: u32,
+}
+
+impl Default for ScoreSpec {
+    fn default() -> Self {
+        Self {
+            per_meter: 2.2,
+            per_gate: 50,
+        }
+    }
 }
 
 /// The cat's body for collision. Heights are metres above the feet.
@@ -132,6 +158,12 @@ pub struct BodySpec {
     pub roll_secs: f32,
     /// A rideable surface this far above the feet is a wall, not a step.
     pub step_tol: f32,
+    /// After a roll the cat stands back up over this long. The body and the
+    /// pose rise together, so the recovery is visible and fair.
+    pub recover_secs: f32,
+    /// Pose scale `[x, y, z]` at full crouch. A lowered, stretched body, not
+    /// a flat squash. Kept under the opening height of a gap.
+    pub crouch: [f32; 3],
 }
 
 impl Default for BodySpec {
@@ -141,6 +173,8 @@ impl Default for BodySpec {
             roll_height: 0.3,
             roll_secs: 0.55,
             step_tol: 0.18,
+            recover_secs: 0.2,
+            crouch: [1.05, 0.68, 1.2],
         }
     }
 }
@@ -372,6 +406,9 @@ pub struct Part {
     pub hit_y: Option<[f32; 2]>,
     /// Ramp only: horizontal length of the incline from the mesh's back edge.
     pub run: f32,
+    /// Emissive strength for a decor part that should shine (a lit opening,
+    /// a neon bar). 0 = the ordinary dim fill.
+    pub glow: f32,
 }
 
 impl Default for Part {
@@ -385,6 +422,7 @@ impl Default for Part {
             role: PartRole::Solid,
             hit_y: None,
             run: 0.0,
+            glow: 0.0,
         }
     }
 }
@@ -581,7 +619,9 @@ impl Default for RunnerKit {
             lanes: LaneSpec::default(),
             obstacle_track: Track {
                 z0: 26.0,
-                gap: 14.0,
+                // Far enough apart that two jumps in a row leave a quarter
+                // second of slack at the speed cap.
+                gap: 18.0,
                 amp: 1.2,
                 freq: 0.85,
             },
@@ -591,6 +631,7 @@ impl Default for RunnerKit {
             sections: default_sections(),
             body: BodySpec::default(),
             coins: CoinSpec::default(),
+            score: ScoreSpec::default(),
         }
     }
 }
@@ -643,21 +684,41 @@ impl Default for GameSpec {
                 },
                 EntityKind {
                     name: "OVERPASS".into(),
-                    glb: "assets/models/kenney/space-kit/hangar_smallA.glb".into(),
-                    scale: [2.2, 0.56, 0.9],
-                    mesh_min: [1.0, 0.0, 0.5],
-                    mesh_max: [3.0, 1.0, 2.5],
+                    glb: "".into(),
+                    scale: [1.0, 1.0, 1.0],
+                    mesh_min: [-0.5, 0.0, -0.5],
+                    mesh_max: [0.5, 1.0, 0.5],
                     weight: 1,
                     behavior: Behavior::RollUnder,
-                    hit_y: Some([0.9, 1.0]),
-                    parts: vec![Part {
-                        glb: "assets/models/kenney/space-kit/structure_closed.glb".into(),
-                        scale: [4.6, 1.0, 0.5],
-                        mesh_min: [1.5, 0.0, 1.0],
-                        mesh_max: [2.5, 1.0, 2.0],
-                        offset: [0.0, 0.56, 0.0],
-                        ..Part::default()
-                    }],
+                    // A low-hanging sign on two posts: a clear gap under it.
+                    parts: vec![
+                        Part {
+                            glb: "assets/models/kenney/space-kit/structure_closed.glb".into(),
+                            scale: [4.7, 1.1, 0.25],
+                            mesh_min: [1.5, 0.0, 1.0],
+                            mesh_max: [2.5, 1.0, 2.0],
+                            offset: [0.0, 0.5, 0.0],
+                            ..Part::default()
+                        },
+                        Part {
+                            glb: "assets/models/kenney/space-kit/structure_closed.glb".into(),
+                            scale: [0.25, 1.6, 0.25],
+                            mesh_min: [1.5, 0.0, 1.0],
+                            mesh_max: [2.5, 1.0, 2.0],
+                            offset: [2.5, 0.0, 0.0],
+                            role: PartRole::Decor,
+                            ..Part::default()
+                        },
+                        Part {
+                            glb: "assets/models/kenney/space-kit/structure_closed.glb".into(),
+                            scale: [0.25, 1.6, 0.25],
+                            mesh_min: [1.5, 0.0, 1.0],
+                            mesh_max: [2.5, 1.0, 2.0],
+                            offset: [-2.5, 0.0, 0.0],
+                            role: PartRole::Decor,
+                            ..Part::default()
+                        },
+                    ],
                     ..EntityKind::default()
                 },
                 EntityKind {
@@ -688,13 +749,14 @@ impl Default for GameSpec {
                     mesh_max: [0.5, 1.0, 0.5],
                     weight: 1,
                     behavior: Behavior::CatGap,
+                    // One lane wide, half a metre high, lit from inside.
                     parts: vec![
                         Part {
                             glb: "assets/models/kenney/space-kit/structure_closed.glb".into(),
                             scale: [2.2, 1.6, 0.8],
                             mesh_min: [1.5, 0.0, 1.0],
                             mesh_max: [2.5, 1.0, 2.0],
-                            offset: [1.55, 0.0, 0.0],
+                            offset: [1.7, 0.0, 0.0],
                             ..Part::default()
                         },
                         Part {
@@ -702,15 +764,25 @@ impl Default for GameSpec {
                             scale: [2.2, 1.6, 0.8],
                             mesh_min: [1.5, 0.0, 1.0],
                             mesh_max: [2.5, 1.0, 2.0],
-                            offset: [-1.55, 0.0, 0.0],
+                            offset: [-1.7, 0.0, 0.0],
                             ..Part::default()
                         },
                         Part {
                             glb: "assets/models/kenney/space-kit/structure_closed.glb".into(),
-                            scale: [0.9, 1.15, 0.8],
+                            scale: [1.2, 1.1, 0.8],
                             mesh_min: [1.5, 0.0, 1.0],
                             mesh_max: [2.5, 1.0, 2.0],
-                            offset: [0.0, 0.45, 0.0],
+                            offset: [0.0, 0.5, 0.0],
+                            ..Part::default()
+                        },
+                        Part {
+                            glb: "assets/models/kenney/space-kit/structure_closed.glb".into(),
+                            scale: [1.2, 0.5, 0.06],
+                            mesh_min: [1.5, 0.0, 1.0],
+                            mesh_max: [2.5, 1.0, 2.0],
+                            offset: [0.0, 0.0, 0.0],
+                            role: PartRole::Decor,
+                            glow: 1.8,
                             ..Part::default()
                         },
                     ],
@@ -864,7 +936,7 @@ impl Default for Style {
             edge_b: [255, 42, 180, 255],
             fill_a: [0.10, 0.55, 0.65],
             fill_b: [0.60, 0.10, 0.42],
-            fill_emissive: 0.35,
+            fill_emissive: 0.8,
             obstacle_color: [36, 26, 54],
             codes: ColorCodes::default(),
         }
@@ -1019,6 +1091,9 @@ impl GameSpec {
             o.weight = 1;
         }
         s.runner.sections = Vec::new();
+        s.runner.obstacle_track.gap = 14.0;
+        // The recorded runs score distance and rings only.
+        s.runner.score.per_gate = 0;
         s
     }
 

@@ -2,93 +2,148 @@
   "bot": {
     "clear_rate": 0.4,
     "clear_secs": 90.0,
-    "coins_mean": 140.1,
+    "coins_mean": 127.15,
     "collisions": 12,
     "death_causes": {
-      "BARRIER": 5,
-      "CRATE": 7
+      "BARRIER": 4,
+      "CRATE": 8
     },
     "death_z": [
-      445.886,
-      1579.891,
-      1047.821,
-      1047.821,
-      1047.821,
-      1047.821,
-      529.823,
-      529.823,
-      529.823,
-      445.886,
-      445.886,
-      445.886
+      421.88,
+      1429.794,
+      1339.816,
+      835.806,
+      1339.816,
+      1339.816,
+      835.806,
+      511.783,
+      511.783,
+      421.88,
+      421.88,
+      421.88
     ],
-    "rings_mean": 62.85,
+    "rings_mean": 66.45,
     "runs": 20,
-    "score_mean": 10095.15,
-    "survival_mean_s": 64.828,
-    "survival_median_s": 62.633
+    "score_mean": 12771.3,
+    "survival_mean_s": 66.52,
+    "survival_median_s": 77.25
+  },
+  "camera_clip": {
+    "issues": [],
+    "kinds": [
+      {
+        "index": 0,
+        "kind": "CRATE",
+        "min_clearance_m": 2.061,
+        "ok": true
+      },
+      {
+        "index": 2,
+        "kind": "BARREL",
+        "min_clearance_m": 2.06,
+        "ok": true
+      },
+      {
+        "index": 9,
+        "kind": "BARRIER",
+        "min_clearance_m": 2.137,
+        "ok": true
+      },
+      {
+        "index": 17,
+        "kind": "OVERPASS",
+        "min_clearance_m": 0.75,
+        "ok": true
+      },
+      {
+        "index": 23,
+        "kind": "GENERATOR",
+        "min_clearance_m": 1.125,
+        "ok": true
+      },
+      {
+        "index": 25,
+        "kind": "TRAIN",
+        "min_clearance_m": 0.75,
+        "ok": true
+      },
+      {
+        "index": 26,
+        "kind": "WALL",
+        "min_clearance_m": 0.75,
+        "ok": true
+      }
+    ],
+    "min_required_m": 0.3
   },
   "course": {
     "behaviors": {
-      "cat_gap": 8,
-      "jump_over": 66,
-      "rideable": 8,
-      "roll_under": 12,
-      "solid": 8
+      "cat_gap": 7,
+      "jump_over": 55,
+      "rideable": 6,
+      "roll_under": 10,
+      "solid": 6
     },
     "combos": {
       "by_pair": [
         {
-          "at_obstacle": 104,
-          "count": 53,
-          "min_margin_s": 0.054,
+          "at_obstacle": 92,
+          "count": 45,
+          "min_margin_s": 0.254,
           "pair": "jump>jump",
           "walkable_first": true
         },
         {
-          "at_obstacle": 107,
-          "count": 4,
-          "min_margin_s": 0.084,
+          "at_obstacle": 83,
+          "count": 3,
+          "min_margin_s": 0.323,
           "pair": "jump>roll",
           "walkable_first": true
         },
         {
-          "at_obstacle": 62,
-          "count": 8,
-          "min_margin_s": 0.3,
+          "at_obstacle": 53,
+          "count": 6,
+          "min_margin_s": 0.5,
           "pair": "ride>roll",
           "walkable_first": true
         },
         {
-          "at_obstacle": 102,
-          "count": 12,
-          "min_margin_s": 0.565,
+          "at_obstacle": 108,
+          "count": 9,
+          "min_margin_s": 0.79,
           "pair": "roll>jump",
           "walkable_first": false
         },
         {
-          "at_obstacle": 61,
-          "count": 8,
-          "min_margin_s": 0.445,
+          "at_obstacle": 115,
+          "count": 6,
+          "min_margin_s": 0.684,
           "pair": "roll>ride",
+          "walkable_first": false
+        },
+        {
+          "at_obstacle": 107,
+          "count": 2,
+          "min_margin_s": 8.06,
+          "pair": "roll>roll",
           "walkable_first": false
         }
       ],
-      "pairs": 85
+      "pairs": 71
     },
     "difficulty_per_window": [
-      0.3,
-      0.6,
-      0.86,
-      1.44,
-      0.42,
-      1.76,
-      0.52,
+      0.2,
       0.5,
-      1.34,
-      1.68,
-      0.4,
-      1.58
+      0.82,
+      1.14,
+      0.44,
+      1.26,
+      0.5,
+      0.5,
+      1.16,
+      1.26,
+      0.34,
+      1.24
     ],
     "horizon_s": 120.0,
     "kinds": [
@@ -100,23 +155,23 @@
       "TRAIN",
       "WALL"
     ],
-    "obstacles": 102,
+    "obstacles": 84,
     "placement": {
       "errors": 0,
       "issues": [
         {
           "at": {
-            "from": 0.86,
-            "to": 1.44,
-            "window": 3
+            "from": 0.5,
+            "to": 0.82,
+            "window": 2
           },
           "code": "difficulty_spike",
           "severity": "warn"
         },
         {
           "at": {
-            "from": 0.42,
-            "to": 1.76,
+            "from": 0.44,
+            "to": 1.26,
             "window": 5
           },
           "code": "difficulty_spike",
@@ -125,39 +180,10 @@
         {
           "at": {
             "from": 0.5,
-            "to": 1.34,
+            "to": 1.16,
             "window": 8
           },
           "code": "difficulty_spike",
-          "severity": "warn"
-        },
-        {
-          "at": {
-            "from": 0.4,
-            "to": 1.58,
-            "window": 11
-          },
-          "code": "difficulty_spike",
-          "severity": "warn"
-        },
-        {
-          "at": {
-            "at_obstacle": 104,
-            "count": 53,
-            "min_margin_s": 0.054,
-            "pair": "jump>jump"
-          },
-          "code": "combo_tight",
-          "severity": "warn"
-        },
-        {
-          "at": {
-            "at_obstacle": 107,
-            "count": 4,
-            "min_margin_s": 0.084,
-            "pair": "jump>roll"
-          },
-          "code": "combo_tight",
           "severity": "warn"
         }
       ],
@@ -165,24 +191,19 @@
     },
     "spikes": [
       {
-        "from": 0.86,
-        "to": 1.44,
-        "window": 3
+        "from": 0.5,
+        "to": 0.82,
+        "window": 2
       },
       {
-        "from": 0.42,
-        "to": 1.76,
+        "from": 0.44,
+        "to": 1.26,
         "window": 5
       },
       {
         "from": 0.5,
-        "to": 1.34,
+        "to": 1.16,
         "window": 8
-      },
-      {
-        "from": 0.4,
-        "to": 1.58,
-        "window": 11
       }
     ],
     "tight": [],
@@ -223,14 +244,14 @@
     "survives_grace": true
   },
   "perf": {
-    "draw_batches_est_max": 12.0,
-    "draw_batches_est_p95": 12.0,
+    "draw_batches_est_max": 11.0,
+    "draw_batches_est_p95": 11.0,
     "frames": 3599,
     "note": "wall clock; sim tick + dump rebuild only, no GPU",
-    "props_max": 283.0,
-    "props_p95": 274.0,
-    "tick_ms_p50": 0.081,
-    "tick_ms_p95": 0.101
+    "props_max": 302.0,
+    "props_p95": 295.0,
+    "tick_ms_p50": 0.089,
+    "tick_ms_p95": 0.111
   },
   "reachability": {
     "issues": [],
@@ -260,7 +281,7 @@
       {
         "behavior": "jump_over",
         "expected": "jump",
-        "index": 10,
+        "index": 9,
         "jump": true,
         "kind": "BARRIER",
         "ok": true,
@@ -278,6 +299,17 @@
         "roll": true,
         "stand": false,
         "walk": false
+      },
+      {
+        "behavior": "solid",
+        "expected": "walk",
+        "index": 23,
+        "jump": false,
+        "kind": "GENERATOR",
+        "ok": true,
+        "roll": false,
+        "stand": false,
+        "walk": true
       },
       {
         "behavior": "rideable",
@@ -300,19 +332,34 @@
         "roll": true,
         "stand": false,
         "walk": false
-      },
-      {
-        "behavior": "solid",
-        "expected": "walk",
-        "index": 32,
-        "jump": false,
-        "kind": "GENERATOR",
-        "ok": true,
-        "roll": false,
-        "stand": false,
-        "walk": true
       }
     ]
+  },
+  "roll_window": {
+    "issues": [],
+    "kinds": [
+      {
+        "behavior": "roll_under",
+        "early_m": 13.3,
+        "index": 17,
+        "kind": "OVERPASS",
+        "late_m": 0.0,
+        "window_s": 0.67,
+        "x_left_m": 2.0,
+        "x_right_m": 2.0
+      },
+      {
+        "behavior": "cat_gap",
+        "early_m": 12.9,
+        "index": 26,
+        "kind": "WALL",
+        "late_m": 0.0,
+        "window_s": 0.65,
+        "x_left_m": 0.55,
+        "x_right_m": 0.55
+      }
+    ],
+    "speed": 20.0
   },
   "touch": {
     "diagonal_45_jumped": false,

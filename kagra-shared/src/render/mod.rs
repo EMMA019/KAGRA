@@ -3370,7 +3370,12 @@ impl StrokeGpu {
             view_proj: cam.view_projection(aspect).to_cols_array_2d(),
             cam_right: [right.x, right.y, right.z, 0.0],
             cam_up: [up.x, up.y, up.z, 0.0],
-            viewport: [width.max(1) as f32, height.max(1) as f32, 0.0, 0.0],
+            viewport: [
+                width.max(1) as f32,
+                height.max(1) as f32,
+                scene.line_fade[0],
+                scene.line_fade[1],
+            ],
         };
         queue.write_buffer(&self.stroke_buf, 0, bytemuck::bytes_of(&view));
         if !points.is_empty() {

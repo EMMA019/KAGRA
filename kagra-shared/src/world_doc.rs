@@ -219,6 +219,11 @@ pub struct WorldDoc {
     /// Fog end in meters. None = 220.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fog_end: Option<f32>,
+    /// Fat lines fade out between these view depths (start, end). None = no
+    /// fade. Lines are not fogged by the mesh shader, so a long rail would
+    /// otherwise end in a hard cut.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_fade: Option<[f32; 2]>,
     /// Rapier joints (`physics` feature). Empty dumps omit the key.
     /// `name` is `fixed` / `revolute` / `spherical`. Anchors are body-local.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1425,6 +1430,7 @@ impl WorldDoc {
             fog_color: sky,
             fog_start: self.fog_start.unwrap_or(48.0),
             fog_end: self.fog_end.unwrap_or(220.0),
+            line_fade: self.line_fade.unwrap_or([0.0, 0.0]),
             ibl: self.ibl.unwrap_or(0.35),
             exposure: self.exposure.unwrap_or(1.0),
             tonemap: self.tonemap.unwrap_or(true),

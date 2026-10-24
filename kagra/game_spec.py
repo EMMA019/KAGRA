@@ -42,21 +42,24 @@ CATALOG: dict[str, dict] = {
     # Subway-style kinds (Kenney Space Kit). Ramps, lintels and wall sides are parts.
     "GENERATOR": {"name": "GENERATOR", "glb": f"{_K}/space-kit/machine_generatorLarge.glb",
                   "scale": [1.5, 3.0, 1.3], "behavior": "solid"},
-    "OVERPASS": {"name": "OVERPASS", "glb": f"{_K}/space-kit/hangar_smallA.glb",
-                 "scale": [2.2, 0.56, 0.9], "behavior": "roll_under", "hit_y": [0.9, 1.0],
-                 "parts": [{"glb": f"{_K}/space-kit/structure_closed.glb", "scale": [4.6, 1.0, 0.5],
-                            "offset": [0.0, 0.56, 0.0]}]},
+    # A low-hanging sign on two posts: a clear gap under it.
+    "OVERPASS": {"name": "OVERPASS", "glb": "", "behavior": "roll_under",
+                 "parts": [{"glb": f"{_K}/space-kit/structure_closed.glb", "scale": [4.7, 1.1, 0.25], "offset": [0.0, 0.5, 0.0]},
+                           {"glb": f"{_K}/space-kit/structure_closed.glb", "scale": [0.25, 1.6, 0.25], "offset": [2.5, 0.0, 0.0],
+                            "role": "decor"},
+                           {"glb": f"{_K}/space-kit/structure_closed.glb", "scale": [0.25, 1.6, 0.25], "offset": [-2.5, 0.0, 0.0],
+                            "role": "decor"}]},
     "TRAIN": {"name": "TRAIN", "glb": f"{_K}/space-kit/monorail_trainBox.glb",
               "scale": [2.4, 1.0, 4.4], "behavior": "rideable",
               "parts": [{"glb": f"{_K}/space-kit/terrain_ramp.glb", "scale": [1.2, 1.552, 4.0],
                          "offset": [0.0, 0.0, -2.2], "role": "ramp", "run": 2.0}]},
+    # One lane wide, half a metre high, lit from inside.
     "WALL": {"name": "WALL", "glb": "", "behavior": "cat_gap",
-             "parts": [{"glb": f"{_K}/space-kit/structure_closed.glb", "scale": [2.2, 1.6, 0.8],
-                        "offset": [1.55, 0.0, 0.0]},
-                       {"glb": f"{_K}/space-kit/structure_closed.glb", "scale": [2.2, 1.6, 0.8],
-                        "offset": [-1.55, 0.0, 0.0]},
-                       {"glb": f"{_K}/space-kit/structure_closed.glb", "scale": [0.9, 1.15, 0.8],
-                        "offset": [0.0, 0.45, 0.0]}]},
+             "parts": [{"glb": f"{_K}/space-kit/structure_closed.glb", "scale": [2.2, 1.6, 0.8], "offset": [1.7, 0.0, 0.0]},
+                       {"glb": f"{_K}/space-kit/structure_closed.glb", "scale": [2.2, 1.6, 0.8], "offset": [-1.7, 0.0, 0.0]},
+                       {"glb": f"{_K}/space-kit/structure_closed.glb", "scale": [1.2, 1.1, 0.8], "offset": [0.0, 0.5, 0.0]},
+                       {"glb": f"{_K}/space-kit/structure_closed.glb", "scale": [1.2, 0.5, 0.06], "offset": [0.0, 0.0, 0.0],
+                        "role": "decor", "glow": 1.8}]},
     "METEOR": {"name": "METEOR", "glb": f"{_K}/space-kit/meteor.glb", "scale": [1.1] * 3},
     "CRYSTALS": {"name": "CRYSTALS", "glb": f"{_K}/space-kit/rock_crystals.glb",
                  "scale": [1.3] * 3},
@@ -130,6 +133,7 @@ class Part:
     role: str = "solid"  # solid | ride | ramp | decor
     hit_y: list[float] | None = None
     run: float = 0.0
+    glow: float = 0.0  # emissive strength of a decor part that should shine
 
     def __post_init__(self) -> None:
         if self.role not in PART_ROLES:
@@ -189,7 +193,7 @@ class Style:
     edge_b: list[int] = field(default_factory=lambda: [255, 42, 180, 255])
     fill_a: list[float] = field(default_factory=lambda: [0.10, 0.55, 0.65])
     fill_b: list[float] = field(default_factory=lambda: [0.60, 0.10, 0.42])
-    fill_emissive: float = 0.35
+    fill_emissive: float = 0.8
     obstacle_color: list[int] = field(default_factory=lambda: [36, 26, 54])
     # One neon colour per thing the player has to do. ``edge_a/b`` and
     # ``fill_a/b`` are older alternating tints that obstacles no longer use.
@@ -255,6 +259,7 @@ class InputSpec:
     swipe_dist: float = 0.09
     swipe_cooldown_secs: float = 0.3
     buffer_secs: float = 0.15
+    reverse_guard_secs: float = 0.2  # an up flick this soon after a down flick is the finger coming back
 
 
 @dataclass

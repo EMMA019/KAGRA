@@ -72,6 +72,15 @@ struct LineOut {
     @location(0) color: vec4<f32>,
 };
 
+// viewport.zw = (start, end) view depth over which a line fades out.
+// end <= start disables it.
+fn line_fade(depth: f32) -> f32 {
+    if (v.viewport.w <= v.viewport.z) {
+        return 1.0;
+    }
+    return 1.0 - smoothstep(v.viewport.z, v.viewport.w, depth);
+}
+
 @vertex
 fn vs_line(input: LineIn) -> LineOut {
     let clip_a = v.view_proj * vec4<f32>(input.a.xyz, 1.0);
@@ -86,7 +95,8 @@ fn vs_line(input: LineIn) -> LineOut {
     let clip_w = mix(clip_a.w, clip_b.w, input.corner.x);
     var o: LineOut;
     o.clip = vec4<f32>(ndc * clip_w, mix(clip_a.z, clip_b.z, input.corner.x), clip_w);
-    o.color = input.color;
+    let fade = mix(line_fade(clip_a.w), line_fade(clip_b.w), input.corner.x);
+    o.color = vec4<f32>(input.color.rgb, input.color.a * fade);
     return o;
 }
 

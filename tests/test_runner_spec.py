@@ -70,7 +70,7 @@ def test_spec_needs_a_spawnable_obstacle():
 
 CLASSIC = {
     "obstacles": [{"name": n, "weight": 1} for n in ("CRATE", "BARREL", "BARRIER")],
-    "runner": {"sections": []},
+    "runner": {"sections": [], "obstacle_track": {"gap": 14.0}, "score": {"per_gate": 0}},
 }
 
 

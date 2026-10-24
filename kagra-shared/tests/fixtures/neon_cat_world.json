@@ -115,21 +115,21 @@
    },
    {
     "name": "OVERPASS",
-    "glb": "assets/models/kenney/space-kit/hangar_smallA.glb",
+    "glb": "",
     "scale": [
-     2.2,
-     0.56,
-     0.9
+     1.0,
+     1.0,
+     1.0
     ],
     "mesh_min": [
-     1.0,
+     -0.5,
      0.0,
-     0.5
+     -0.5
     ],
     "mesh_max": [
-     3.0,
+     0.5,
      1.0,
-     2.5
+     0.5
     ],
     "weight": 1,
     "behavior": "roll_under",
@@ -137,9 +137,9 @@
      {
       "glb": "assets/models/kenney/space-kit/structure_closed.glb",
       "scale": [
-       4.6,
-       1.0,
-       0.5
+       4.7,
+       1.1,
+       0.25
       ],
       "mesh_min": [
        1.5,
@@ -153,18 +153,70 @@
       ],
       "offset": [
        0.0,
-       0.56,
+       0.5,
        0.0
       ],
       "role": "solid",
       "hit_y": null,
-      "run": 0.0
+      "run": 0.0,
+      "glow": 0.0
+     },
+     {
+      "glb": "assets/models/kenney/space-kit/structure_closed.glb",
+      "scale": [
+       0.25,
+       1.6,
+       0.25
+      ],
+      "mesh_min": [
+       1.5,
+       0.0,
+       1.0
+      ],
+      "mesh_max": [
+       2.5,
+       1.0,
+       2.0
+      ],
+      "offset": [
+       2.5,
+       0.0,
+       0.0
+      ],
+      "role": "decor",
+      "hit_y": null,
+      "run": 0.0,
+      "glow": 0.0
+     },
+     {
+      "glb": "assets/models/kenney/space-kit/structure_closed.glb",
+      "scale": [
+       0.25,
+       1.6,
+       0.25
+      ],
+      "mesh_min": [
+       1.5,
+       0.0,
+       1.0
+      ],
+      "mesh_max": [
+       2.5,
+       1.0,
+       2.0
+      ],
+      "offset": [
+       -2.5,
+       0.0,
+       0.0
+      ],
+      "role": "decor",
+      "hit_y": null,
+      "run": 0.0,
+      "glow": 0.0
      }
     ],
-    "hit_y": [
-     0.9,
-     1.0
-    ],
+    "hit_y": null,
     "color": null
    },
    {
@@ -212,7 +264,8 @@
       ],
       "role": "ramp",
       "hit_y": null,
-      "run": 2.0
+      "run": 2.0,
+      "glow": 0.0
      }
     ],
     "hit_y": null,
@@ -257,13 +310,14 @@
        2.0
       ],
       "offset": [
-       1.55,
+       1.7,
        0.0,
        0.0
       ],
       "role": "solid",
       "hit_y": null,
-      "run": 0.0
+      "run": 0.0,
+      "glow": 0.0
      },
      {
       "glb": "assets/models/kenney/space-kit/structure_closed.glb",
@@ -283,19 +337,20 @@
        2.0
       ],
       "offset": [
-       -1.55,
+       -1.7,
        0.0,
        0.0
       ],
       "role": "solid",
       "hit_y": null,
-      "run": 0.0
+      "run": 0.0,
+      "glow": 0.0
      },
      {
       "glb": "assets/models/kenney/space-kit/structure_closed.glb",
       "scale": [
-       0.9,
-       1.15,
+       1.2,
+       1.1,
        0.8
       ],
       "mesh_min": [
@@ -310,12 +365,40 @@
       ],
       "offset": [
        0.0,
-       0.45,
+       0.5,
        0.0
       ],
       "role": "solid",
       "hit_y": null,
-      "run": 0.0
+      "run": 0.0,
+      "glow": 0.0
+     },
+     {
+      "glb": "assets/models/kenney/space-kit/structure_closed.glb",
+      "scale": [
+       1.2,
+       0.5,
+       0.06
+      ],
+      "mesh_min": [
+       1.5,
+       0.0,
+       1.0
+      ],
+      "mesh_max": [
+       2.5,
+       1.0,
+       2.0
+      ],
+      "offset": [
+       0.0,
+       0.0,
+       0.0
+      ],
+      "role": "decor",
+      "hit_y": null,
+      "run": 0.0,
+      "glow": 1.8
      }
     ],
     "hit_y": null,
@@ -365,7 +448,7 @@
     0.1,
     0.42
    ],
-   "fill_emissive": 0.35,
+   "fill_emissive": 0.8,
    "obstacle_color": [
     36,
     26,
@@ -427,7 +510,7 @@
    },
    "obstacle_track": {
     "z0": 26.0,
-    "gap": 14.0,
+    "gap": 18.0,
     "amp": 1.2,
     "freq": 0.85
    },
@@ -506,7 +589,13 @@
     "stand_height": 0.62,
     "roll_height": 0.3,
     "roll_secs": 0.55,
-    "step_tol": 0.18
+    "step_tol": 0.18,
+    "recover_secs": 0.2,
+    "crouch": [
+     1.05,
+     0.68,
+     1.2
+    ]
    },
    "coins": {
     "enabled": true,
@@ -516,6 +605,10 @@
     "free_line": 8,
     "spacing": 0.85,
     "arc_height": 0.85
+   },
+   "score": {
+    "per_meter": 2.2,
+    "per_gate": 50
    }
   },
   "input": {
@@ -527,7 +620,8 @@
    "flick_angle_deg": 30.0,
    "swipe_dist": 0.09,
    "swipe_cooldown_secs": 0.3,
-   "buffer_secs": 0.15
+   "buffer_secs": 0.15,
+   "reverse_guard_secs": 0.2
   },
   "feel": {}
  }
