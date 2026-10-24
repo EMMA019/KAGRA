@@ -9,6 +9,7 @@
 
 use super::{obstacle_shape, NeonCat};
 use crate::flow::FlowPhase;
+use crate::game_spec::SectionKind;
 use crate::gesture::Swipe;
 use crate::input::{PointerEvent, PointerPhase};
 use serde_json::{json, Value};
@@ -28,6 +29,10 @@ pub struct MeasureOpts {
     pub course_secs: f32,
     /// Difficulty window for spike detection.
     pub window_secs: f32,
+    /// An empty stretch at least this long counts as a rest.
+    pub rest_gap_secs: f32,
+    /// Longest play without a rest before `missing_rest` is raised.
+    pub max_no_rest_secs: f32,
     /// Skip the wall-clock section (tests).
     pub perf: bool,
 }
@@ -39,6 +44,8 @@ impl Default for MeasureOpts {
             clear_secs: 90.0,
             course_secs: 120.0,
             window_secs: 10.0,
+            rest_gap_secs: 3.0,
+            max_no_rest_secs: 45.0,
             perf: true,
         }
     }
@@ -532,13 +539,23 @@ fn course(world: &str, opts: &MeasureOpts, apex: f32, switch_s: f32) -> Result<V
     let mut count = 0u32;
     let mut i = 0i32;
     let mut kinds: BTreeSet<String> = BTreeSet::new();
+    let mut times: Vec<f32> = vec![0.0];
+    let mut sec_diff: Vec<f32> = vec![0.0; g.spec.runner.sections.len()];
     loop {
+        if !g.spec.obstacle_active(i) {
+            if time_at(&g, g.spec.runner.obstacle_track.z(i)) > opts.course_secs || i > 100_000 {
+                break;
+            }
+            i += 1;
+            continue;
+        }
         let o = obstacle_shape(&g.spec, i);
         let t = time_at(&g, o.hit_cz);
         if t > opts.course_secs || i > 100_000 {
             break;
         }
         count += 1;
+        times.push(t);
         kinds.insert(o.kind.clone());
         let jumpable = o.hit_top < apex * 0.95;
         let spans = free_spans(o.hit_cx, o.hit_hx, limit);
@@ -560,6 +577,9 @@ fn course(world: &str, opts: &MeasureOpts, apex: f32, switch_s: f32) -> Result<V
             }
             walls.push((i, t, spans));
         }
+        if let Some((k, _)) = g.spec.section_at(o.hit_cz) {
+            sec_diff[k] += d;
+        }
         score_at.push((t, d));
         i += 1;
     }
@@ -571,12 +591,16 @@ fn course(world: &str, opts: &MeasureOpts, apex: f32, switch_s: f32) -> Result<V
     }
     let mut spikes = Vec::new();
     for k in 1..win.len() {
-        if win[k] > win[k - 1] * 1.5 && win[k] - win[k - 1] > 0.3 {
+        // A rise out of a calm window is the pacing working, not a spike.
+        if win[k - 1] >= 0.35 && win[k] > win[k - 1] * 1.5 && win[k] - win[k - 1] > 0.3 {
             spikes.push(json!({"window": k, "from": r3(win[k - 1]), "to": r3(win[k])}));
         }
     }
+    let issues = placement_issues(&g, opts, &times, &sec_diff, &unavoidable, &tight, &spikes);
+    let errors = issues.iter().filter(|v| v["severity"] == "error").count();
     Ok(json!({
         "horizon_s": opts.course_secs,
+        "placement": {"ok": errors == 0, "errors": errors, "issues": issues},
         "obstacles": count,
         "kinds": kinds,
         "unavoidable": unavoidable,
@@ -584,6 +608,76 @@ fn course(world: &str, opts: &MeasureOpts, apex: f32, switch_s: f32) -> Result<V
         "difficulty_per_window": win.iter().map(|v| r3(*v)).collect::<Vec<_>>(),
         "spikes": spikes,
     }))
+}
+
+/// The validator proper. Severity `error` means a designer must fix it.
+fn placement_issues(
+    g: &NeonCat,
+    opts: &MeasureOpts,
+    times: &[f32],
+    sec_diff: &[f32],
+    unavoidable: &[Value],
+    tight: &[Value],
+    spikes: &[Value],
+) -> Vec<Value> {
+    let mut out = Vec::new();
+    for u in unavoidable {
+        out.push(json!({"severity": "error", "code": "unavoidable", "at": u}));
+    }
+    for t in tight {
+        out.push(json!({"severity": "warn", "code": "tight", "at": t}));
+    }
+    for s in spikes {
+        out.push(json!({"severity": "warn", "code": "difficulty_spike", "at": s}));
+    }
+    // Longest stretch with no empty gap of `rest_gap_secs`.
+    let mut last_rest = 0.0f32;
+    let mut longest = 0.0f32;
+    let mut best_gap = 0.0f32;
+    for w in times.windows(2) {
+        best_gap = best_gap.max(w[1] - w[0]);
+        if w[1] - w[0] >= opts.rest_gap_secs {
+            longest = longest.max(w[0] - last_rest);
+            last_rest = w[1];
+        }
+    }
+    longest = longest.max(opts.course_secs - last_rest);
+    if longest > opts.max_no_rest_secs {
+        out.push(json!({"severity": "error", "code": "missing_rest",
+            "longest_without_rest_s": r3(longest), "limit_s": opts.max_no_rest_secs,
+            "longest_empty_gap_s": r3(best_gap), "needs_gap_s": opts.rest_gap_secs,
+            "why": "no empty stretch long enough to breathe; add a rest section"}));
+    }
+    let secs = &g.spec.runner.sections;
+    for (k, s) in secs.iter().enumerate() {
+        let next = &secs[(k + 1) % secs.len()];
+        let allowed = if matches!(s.kind, SectionKind::Rest | SectionKind::Reward) {
+            3
+        } else {
+            1
+        };
+        if secs.len() > 1 && next.level as i32 - s.level as i32 > allowed {
+            out.push(json!({"severity": "warn", "code": "level_jump", "from": k,
+                "to": (k + 1) % secs.len(), "levels": [s.level, next.level], "allowed_rise": allowed}));
+        }
+        // Declared-calm sections must measure calm.
+        let sum = sec_diff[k];
+        if matches!(s.kind, SectionKind::Rest | SectionKind::Reward) && sum > 0.0 {
+            out.push(
+                json!({"severity": "error", "code": "rest_not_calm", "section": k,
+                "why": "a rest/reward section has obstacles (density > 0)"}),
+            );
+        }
+    }
+    if !secs.is_empty()
+        && !secs
+            .iter()
+            .any(|s| matches!(s.kind, SectionKind::Rest | SectionKind::Reward))
+    {
+        out.push(json!({"severity": "error", "code": "missing_rest_section",
+            "why": "sections are set but none is a rest or reward"}));
+    }
+    out
 }
 
 /// Wall-clock tick cost and dump size over one scripted run. Not
@@ -689,6 +783,105 @@ mod tests {
             0,
             "{}",
             r["course"]
+        );
+    }
+
+    const SECTIONED: &str = include_str!("../tests/fixtures/neon_cat_sectioned_world.json");
+
+    fn issues(world: &str) -> Vec<Value> {
+        let o = MeasureOpts {
+            perf: false,
+            runs: 2,
+            ..Default::default()
+        };
+        let r = measure(world, &o).unwrap();
+        r["course"]["placement"]["issues"]
+            .as_array()
+            .unwrap()
+            .clone()
+    }
+
+    fn codes(v: &[Value], sev: &str) -> Vec<String> {
+        v.iter()
+            .filter(|i| i["severity"] == sev)
+            .map(|i| i["code"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    fn with_sections(sections: Value) -> String {
+        let mut w: Value = serde_json::from_str(SECTIONED).unwrap();
+        w["game"]["runner"]["sections"] = sections;
+        w.to_string()
+    }
+
+    #[test]
+    fn uniform_course_is_flagged_for_no_rest_and_sections_fix_it() {
+        assert_eq!(codes(&issues(WORLD), "error"), ["missing_rest"]);
+        let errs = codes(&issues(SECTIONED), "error");
+        assert!(errs.is_empty(), "{errs:?}");
+    }
+
+    #[test]
+    fn validator_flags_sections_without_rest_and_sudden_jumps() {
+        let no_rest = with_sections(json!([
+            {"kind":"learn","length":200,"level":2},
+            {"kind":"challenge","length":300,"level":3}]));
+        let errs = codes(&issues(&no_rest), "error");
+        assert!(
+            errs.contains(&"missing_rest_section".to_string()),
+            "{errs:?}"
+        );
+        let jump = with_sections(json!([
+            {"kind":"intro","length":150,"level":1},
+            {"kind":"challenge","length":300,"level":5},
+            {"kind":"rest","length":200,"level":0}]));
+        let warns = codes(&issues(&jump), "warn");
+        assert!(warns.contains(&"level_jump".to_string()), "{warns:?}");
+        // A rest that still has obstacles is not a rest.
+        let fake = with_sections(json!([
+            {"kind":"rest","length":400,"level":0,"density":0.5}]));
+        let errs = codes(&issues(&fake), "error");
+        assert!(errs.contains(&"rest_not_calm".to_string()), "{errs:?}");
+    }
+
+    #[test]
+    fn validator_flags_unavoidable_placements() {
+        // A crate wider than the rails blocks every lane and cannot be jumped.
+        let mut w: Value = serde_json::from_str(WORLD).unwrap();
+        w["game"]["obstacles"][0]["scale"] = json!([9.0, 3.0, 1.0]);
+        let errs = codes(&issues(&w.to_string()), "error");
+        assert!(errs.contains(&"unavoidable".to_string()), "{errs:?}");
+    }
+
+    #[test]
+    fn rest_sections_spawn_nothing_and_the_bot_does_better() {
+        let g = NeonCat::from_json(SECTIONED).unwrap();
+        let spec = g.spec();
+        let (mut kept, mut empty_rest) = (0, 0);
+        for i in 0..200 {
+            let z = spec.runner.obstacle_track.z(i);
+            let (_, s) = spec.section_at(z).unwrap();
+            if spec.obstacle_active(i) {
+                kept += 1;
+                assert!(s.density() > 0.0, "obstacle {i} inside a {:?}", s.kind);
+            } else if s.density() == 0.0 {
+                empty_rest += 1;
+            }
+        }
+        assert!(kept > 40 && empty_rest > 10, "{kept} {empty_rest}");
+        // Deterministic.
+        let again = NeonCat::from_json(SECTIONED).unwrap();
+        assert!((0..200).all(|i| g.spec().obstacle_active(i) == again.spec().obstacle_active(i)));
+        let o = MeasureOpts {
+            perf: false,
+            runs: 8,
+            ..Default::default()
+        };
+        let uni = bot(WORLD, &o).unwrap();
+        let sec = bot(SECTIONED, &o).unwrap();
+        assert!(
+            sec["survival_mean_s"].as_f64() >= uni["survival_mean_s"].as_f64(),
+            "{uni} vs {sec}"
         );
     }
 

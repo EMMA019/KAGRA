@@ -49,6 +49,21 @@
       "CRATE"
     ],
     "obstacles": 155,
+    "placement": {
+      "errors": 1,
+      "issues": [
+        {
+          "code": "missing_rest",
+          "limit_s": 45.0,
+          "longest_empty_gap_s": 2.415,
+          "longest_without_rest_s": 120.0,
+          "needs_gap_s": 3.0,
+          "severity": "error",
+          "why": "no empty stretch long enough to breathe; add a rest section"
+        }
+      ],
+      "ok": false
+    },
     "spikes": [],
     "tight": [],
     "unavoidable": []
@@ -95,7 +110,7 @@
     "props_max": 238.0,
     "props_p95": 237.0,
     "tick_ms_p50": 0.064,
-    "tick_ms_p95": 0.078
+    "tick_ms_p95": 0.079
   },
   "touch": {
     "diagonal_45_jumped": false,

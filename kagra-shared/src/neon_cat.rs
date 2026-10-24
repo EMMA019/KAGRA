@@ -112,8 +112,25 @@ fn near_index(z: f32, origin: f32, gap: f32) -> i32 {
 
 /// Index of the next marker that is still in front of `z`.
 fn next_ahead(z: f32, origin: f32, gap: f32, at: impl Fn(i32) -> f32) -> i32 {
+    next_ahead_where(z, origin, gap, at, |_| true)
+}
+
+fn next_ahead_where(
+    z: f32,
+    origin: f32,
+    gap: f32,
+    at: impl Fn(i32) -> f32,
+    keep: impl Fn(i32) -> bool,
+) -> i32 {
     let mut i = near_index(z, origin, gap).max(0);
     if at(i) < z + 0.35 {
+        i += 1;
+    }
+    // Skip slots a section left empty (bounded: sections cannot be all-empty forever).
+    for _ in 0..4096 {
+        if keep(i) {
+            break;
+        }
         i += 1;
     }
     i
@@ -300,11 +317,12 @@ impl NeonCat {
     }
 
     fn sim_value(&self) -> serde_json::Value {
-        let oi = next_ahead(
+        let oi = next_ahead_where(
             self.z,
             self.spec.runner.obstacle_track.z0,
             self.spec.runner.obstacle_track.gap,
             |i| self.spec.runner.obstacle_track.z(i),
+            |i| self.spec.obstacle_active(i),
         );
         let ri = next_ahead(
             self.z,
@@ -434,11 +452,12 @@ impl NeonCat {
         );
         let dx = ring_x(&self.spec, ri) - self.x;
         let lx = (-dx * 1.4).clamp(-1.0, 1.0);
-        let oi = next_ahead(
+        let oi = next_ahead_where(
             self.z,
             self.spec.runner.obstacle_track.z0,
             self.spec.runner.obstacle_track.gap,
             |i| self.spec.runner.obstacle_track.z(i),
+            |i| self.spec.obstacle_active(i),
         );
         let ahead_obs = obstacle_shape(&self.spec, oi);
         let (ox, oz) = (ahead_obs.hit_cx, ahead_obs.hit_cz);
@@ -1241,7 +1260,7 @@ impl NeonCat {
         )
         .saturating_sub(1);
         for i in i0..i0 + 2 + self.obstacle_lead_count() {
-            if i < 0 {
+            if i < 0 || !self.spec.obstacle_active(i) {
                 continue;
             }
             let shape = obstacle_shape(&self.spec, i);
@@ -1323,7 +1342,7 @@ impl NeonCat {
         )
         .saturating_sub(1);
         for i in i0..i0 + 2 + self.obstacle_lead_count() {
-            if i < 0 {
+            if i < 0 || !self.spec.obstacle_active(i) {
                 continue;
             }
             let shape = obstacle_shape(&self.spec, i);
