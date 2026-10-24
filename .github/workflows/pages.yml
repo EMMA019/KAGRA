@@ -1,5 +1,4 @@
 # 安定版は gh-pages のルート。Lumen の play.html が既定（world.json は neon_run）。
-# latest/ は master の最新ビルドの全ゲーム（Neon Cat など）。neon_cat.html が入口。
 # pr/<number>/ は Preview が足す。ここはルートだけ差し替え、pr/ は残す。
 # 配信そのものは pages-deploy.yml が木全体を artifact にする。
 # dist/web だけを Pages に上げると /pr/ が消える。
@@ -40,17 +39,6 @@ jobs:
 
       - name: Stage Lumen
         run: python scripts/package_web.py --game examples/neon_run_minimal.py --build-wasm --out dist/web
-
-      - name: Stage every game as latest/ (the same page the PR previews serve)
-        # The root play.html is the Lumen demo. latest/play.html?game=neon_cat is
-        # the stable address of the newest master build of every game. The short
-        # entries neon_cat.html and meteor_cat.html (and ?game=<slug> on the root
-        # play.html) forward to it. corridor.html and crest.html are untouched.
-        run: |
-          set -eu
-          python scripts/build_browser_preview.py --out dist/web/latest --require-pkg
-          python scripts/write_entry_pages.py --root dist/web neon_cat meteor_cat
-          test -f dist/web/latest/play.html
 
       - name: Publish the stable root, keeping PR previews
         env:

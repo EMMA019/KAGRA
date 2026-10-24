@@ -136,9 +136,10 @@ def test_pages_and_previews_share_one_tree():
     assert "publish_preview_pages.py" in pages_yml
     assert "kagra-pages" in pages_yml
     assert "actions/deploy-pages" not in pages_yml
-    # Master serves every game at a stable address, next to the Lumen root.
-    assert "build_browser_preview.py --out dist/web/latest --require-pkg" in pages_yml
-    assert "write_entry_pages.py --root dist/web neon_cat meteor_cat" in pages_yml
+    # Master serves every game at latest/ next to the Lumen root: the Pages
+    # workflow runs package_web --build-wasm, which stages it (no workflow change).
+    assert "package_web.py --game examples/neon_run_minimal.py --build-wasm" in pages_yml
+    assert "--no-latest" not in pages_yml
     assert "actions/upload-pages-artifact" not in pages_yml
     preview_yml = (ROOT / ".github/workflows/preview.yml").read_text(encoding="utf-8")
     assert "branches: [master, main]" not in preview_yml
@@ -239,3 +240,9 @@ def test_entry_pages_forward_to_latest(tmp_path: Path):
         mod.write_entry(tmp_path / "web", "../x")
     with pytest.raises(SystemExit):
         mod.write_entry(tmp_path / "web", "no_such_game")
+
+
+def test_package_web_stages_latest_with_the_wasm_build_only():
+    src = (ROOT / "scripts/package_web.py").read_text(encoding="utf-8")
+    assert "if args.build_wasm and not args.no_latest:" in src
+    assert 'LATEST_ENTRIES = ("neon_cat", "meteor_cat")' in src
