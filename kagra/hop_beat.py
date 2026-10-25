@@ -107,7 +107,11 @@ def default_game() -> dict[str, Any]:
             "slab": [58, 52, 92],
             "glow": [96, 232, 255],
             "accent": [255, 92, 170],
+            "preset": "neon_night",
+            "post": {},
+            "atmo": {},
         },
+        "skin": "classic",
         "audio": {
             "enabled": True,
             "master": 0.8,
@@ -219,6 +223,7 @@ def validate(game: dict[str, Any]) -> None:
             raise ValueError(f"hop spec: audio.sfx.{name} is not a cue {SFX_CUES}")
         if not 0 <= cue["volume"] <= 1 or not 0.25 <= cue["rate"] <= 4:
             raise ValueError(f"hop spec: audio.sfx.{name} volume 0..=1, rate 0.25..=4")
+    _validate_look(game)
     _validate_enemies(game)
     for pi, ph in enumerate(game["course"]["phrases"]):
         w = ph.get("weight", 1)
@@ -232,6 +237,40 @@ def validate(game: dict[str, Any]) -> None:
 def _num(name: str, v: Any, lo: float, hi: float) -> None:
     if isinstance(v, bool) or not isinstance(v, (int, float)) or not lo <= v <= hi:
         raise ValueError(f"hop spec: {name} must be a number in {lo}..={hi}, got {v!r}")
+
+
+LOOK_PRESETS = ("neon_night", "dusk", "plain")
+SKINS = ("classic", "mint", "gold", "ember", "ghost")
+LUT_NAMES = ("off", "warm", "cool", "punch")
+POST_KEYS = {"bloom": (0, 2), "bloom_threshold": (0, 2), "vignette": (0, 2), "lut_strength": (0, 1),
+             "exposure": (0.3, 2), "ibl": (0, 2)}
+ATMO_KEYS = {"fog_start": (0, 400), "fog_end": (1, 400), "horizon_glow": (0, 4), "twinkle": (0, 2),
+             "stars": (0, 200), "clouds": (0, 12)}
+
+
+def _validate_look(game: dict[str, Any]) -> None:
+    look = game["look"]
+    if game["skin"] not in SKINS:
+        raise ValueError(f"hop spec: skin is {'|'.join(SKINS)}")
+    if look["preset"] not in LOOK_PRESETS:
+        raise ValueError(f"hop spec: look.preset is {'|'.join(LOOK_PRESETS)}")
+    post, atmo = look["post"], look["atmo"]
+    for sect, keys, extra in (("post", POST_KEYS, {"lut", "tonemap_curve"}), ("atmo", ATMO_KEYS, {"sky", "horizon"})):
+        for k, v in look[sect].items():
+            if k in keys:
+                _num(f"look.{sect}.{k}", v, *keys[k])
+            elif k not in extra:
+                raise ValueError(f"hop spec: look.{sect}.{k} is not a look setting")
+    if post.get("lut", "off") not in LUT_NAMES:
+        raise ValueError(f"hop spec: look.post.lut is {'|'.join(LUT_NAMES)}")
+    if post.get("tonemap_curve", "") not in ("", "agx", "neutral"):
+        raise ValueError("hop spec: look.post.tonemap_curve is agx|neutral or empty")
+    for k in ("sky", "horizon"):
+        c = atmo.get(k)
+        if c is not None and not (isinstance(c, list) and len(c) == 3 and all(isinstance(v, int) and 0 <= v <= 255 for v in c)):
+            raise ValueError(f"hop spec: look.atmo.{k} is three 0..=255 integers")
+    if "fog_start" in atmo and "fog_end" in atmo and atmo["fog_end"] <= atmo["fog_start"]:
+        raise ValueError("hop spec: look.atmo.fog_end must be above fog_start")
 
 
 def _validate_enemies(game: dict[str, Any]) -> None:

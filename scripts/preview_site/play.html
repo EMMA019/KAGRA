@@ -680,6 +680,18 @@
           }
           if (world.genre === "hop_beat") {
             hopMode = true;
+            // A/B on the phone: ?fx_post=0|1 (bloom, grade, vignette, tone curve) and
+            // ?fx_atmo=0|1 (stars, clouds, horizon glow, haze). Either one alone.
+            // ?skin=<id> and ?look=<id> pick the hero skin / finishing look by id; the
+            // shop and save code set the same two keys.
+            for (const key of ["skin", "look"]) {
+              const v = params.get(key);
+              if (v) world[key] = v;
+            }
+            for (const key of ["fx_post", "fx_atmo"]) {
+              const v = params.get(key);
+              if (v === "0" || v === "1") world[key] = v === "1";
+            }
             const a = world.game && world.game.audio;
             if (a && typeof a === "object" && params.get("audio") !== "0") audioSpec = a;
             // Straight into the run: ?play=1, or a portal build (CrazyGames

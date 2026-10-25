@@ -14,7 +14,8 @@
     python3 tools/gen_assets/hop_models.py --check  # exit 1 on drift
 
 Meshes are flat-coloured primitives from ``placeholder_models`` (one material per
-colour). The game tints them per prop, so the window and post colours are white or
+colour). The bunny, towers and post carry baked occlusion in COLOR_0 (height and
+facing, see ``_ao_for``). The game tints them per prop, so the window and post colours are white or
 grey here. Standard library only; the output is deterministic.
 """
 from __future__ import annotations
@@ -198,6 +199,22 @@ def post():
     ]
 
 
+def _ao_for(parts, floor=0.5, reach=0.22, under=0.35):
+    """Baked occlusion for a standing model: darker toward the ground, under
+    overhangs and where a surface faces down. Cheap and deterministic: it is
+    height and normal, no ray casting. The game's lights do the rest."""
+    ys = [v[1] for _, tris in parts for t in tris for v in t]
+    lo, hi = min(ys), max(ys)
+    span = max(hi - lo, 1e-3)
+
+    def ao(pos, nor):
+        u = min(1.0, max(0.0, (pos[1] - lo) / (span * reach)))
+        ground = floor + (1.0 - floor) * (u * u * (3.0 - 2.0 * u))
+        return ground * (1.0 - under * max(0.0, -nor[1]))
+
+    return ao
+
+
 TOWERS = {
     "a": dict(w=3.0, h=7.0, d=3.0, antenna=True, cols=3, rows=7),
     "b": dict(w=3.0, h=10.0, d=3.0, tank=True, cols=3, rows=10),
@@ -206,13 +223,15 @@ TOWERS = {
 
 
 def build() -> dict[Path, bytes]:
-    out = {OUT / "hop_bunny.glb": pm.write_glb(OUT / "hop_bunny.glb", bunny(), "hop_bunny")}
+    b = bunny()
+    out = {OUT / "hop_bunny.glb": pm.write_glb(OUT / "hop_bunny.glb", b, "hop_bunny", ao=_ao_for(b, floor=0.62, reach=0.3))}
     for i, (k, t) in enumerate(TOWERS.items()):
         body = _tower_body(t["w"], t["h"], t["d"], t.get("tank", False), t.get("antenna", False), t.get("ac", False), t.get("steps", False))
-        out[OUT / f"hop_tower_{k}.glb"] = pm.write_glb(OUT / f"hop_tower_{k}.glb", body, f"hop_tower_{k}")
+        out[OUT / f"hop_tower_{k}.glb"] = pm.write_glb(OUT / f"hop_tower_{k}.glb", body, f"hop_tower_{k}", ao=_ao_for(body, floor=0.42, reach=0.18))
         win = _windows(t["w"], t["h"], t["d"], t["cols"], t["rows"], i)
         out[OUT / f"hop_windows_{k}.glb"] = pm.write_glb(OUT / f"hop_windows_{k}.glb", win, f"hop_windows_{k}")
-    out[OUT / "hop_post.glb"] = pm.write_glb(OUT / "hop_post.glb", post(), "hop_post")
+    pst = post()
+    out[OUT / "hop_post.glb"] = pm.write_glb(OUT / "hop_post.glb", pst, "hop_post", ao=_ao_for(pst, floor=0.5, reach=0.3))
     for name, shape in (("slime", slime), ("beetle", beetle), ("bat", bat)):
         path = OUT / f"hop_{name}.glb"
         out[path] = pm.write_glb(path, shape(), f"hop_{name}")

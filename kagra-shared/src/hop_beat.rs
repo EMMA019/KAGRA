@@ -289,6 +289,228 @@ pub struct LookSpec {
     pub slab: [u32; 3],
     pub glow: [u32; 3],
     pub accent: [u32; 3],
+    /// The finishing bundle: one of [`LOOK_PRESETS`]. `post` and `atmo` override single values.
+    pub preset: String,
+    pub post: PostSpec,
+    pub atmo: AtmoSpec,
+}
+
+/// Hero skins by id: a body colour laid over the look's own hero colour.
+/// `classic` leaves `look.hero` alone, so a custom look keeps working.
+pub const DEFAULT_SKIN: &str = "classic";
+pub const SKINS: [(&str, Option<[u32; 3]>); 5] = [
+    ("classic", None),
+    ("mint", Some([140, 255, 205])),
+    ("gold", Some([255, 205, 90])),
+    ("ember", Some([255, 120, 90])),
+    ("ghost", Some([220, 226, 255])),
+];
+
+/// Look presets other games can reuse by name.
+pub const LOOK_PRESETS: [&str; 3] = ["neon_night", "dusk", "plain"];
+pub const LUT_NAMES: [&str; 4] = ["off", "warm", "cool", "punch"];
+
+/// Post-process overrides (the renderer's bloom, vignette, grade, tone map). `None` = the preset's value.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PostSpec {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bloom: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bloom_threshold: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vignette: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lut: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lut_strength: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exposure: Option<f32>,
+    /// `agx`, `neutral` or empty for the default ACES curve.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tonemap_curve: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ibl: Option<f32>,
+}
+
+/// Sky, haze and far-scenery overrides. `None` = the preset's value.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AtmoSpec {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sky: Option<[u32; 3]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fog_start: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fog_end: Option<f32>,
+    /// Twinkling stars at the quality tier's full count (low draws a third).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stars: Option<u32>,
+    /// Slow far clouds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clouds: Option<u32>,
+    /// The glow band on the horizon (colour and strength).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub horizon: Option<[u32; 3]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub horizon_glow: Option<f32>,
+    /// How much the tower windows flicker (0 = steady).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub twinkle: Option<f32>,
+}
+
+/// A look with every value filled in.
+#[derive(Clone, Debug)]
+pub struct Finish {
+    pub bloom: f32,
+    pub bloom_threshold: f32,
+    pub vignette: f32,
+    pub lut: String,
+    pub lut_strength: f32,
+    pub exposure: f32,
+    pub tonemap_curve: String,
+    pub ibl: f32,
+    pub sky: [u32; 3],
+    pub hemi_sky: [f32; 3],
+    pub hemi_ground: [f32; 3],
+    pub fog_start: f32,
+    pub fog_end: f32,
+    pub stars: u32,
+    pub clouds: u32,
+    pub horizon: [u32; 3],
+    pub horizon_glow: f32,
+    pub twinkle: f32,
+}
+
+impl LookSpec {
+    /// The preset's values with `post` and `atmo` laid over them.
+    pub fn finish(&self) -> Finish {
+        let mut f = match self.preset.as_str() {
+            "dusk" => Finish {
+                bloom: 0.2,
+                bloom_threshold: 1.3,
+                vignette: 0.55,
+                lut: "warm".into(),
+                lut_strength: 0.25,
+                exposure: 0.95,
+                tonemap_curve: String::new(),
+                ibl: 0.3,
+                sky: [40, 16, 58],
+                hemi_sky: [0.34, 0.2, 0.4],
+                hemi_ground: [0.14, 0.06, 0.12],
+                fog_start: 30.0,
+                fog_end: 105.0,
+                stars: 16,
+                clouds: 6,
+                horizon: [255, 120, 90],
+                horizon_glow: 2.0,
+                twinkle: 0.5,
+            },
+            "plain" => Finish {
+                bloom: 0.0,
+                bloom_threshold: 1.4,
+                vignette: 0.0,
+                lut: "off".into(),
+                lut_strength: 0.0,
+                exposure: 1.0,
+                tonemap_curve: String::new(),
+                ibl: 0.3,
+                sky: [14, 10, 40],
+                hemi_sky: [0.20, 0.16, 0.42],
+                hemi_ground: [0.10, 0.06, 0.14],
+                fog_start: 34.0,
+                fog_end: 92.0,
+                stars: 0,
+                clouds: 0,
+                horizon: [0, 0, 0],
+                horizon_glow: 0.0,
+                twinkle: 0.0,
+            },
+            _ => Finish {
+                bloom: 0.16,
+                bloom_threshold: 1.4,
+                vignette: 0.6,
+                lut: "cool".into(),
+                lut_strength: 0.2,
+                exposure: 0.9,
+                tonemap_curve: String::new(),
+                ibl: 0.3,
+                sky: [14, 10, 40],
+                hemi_sky: [0.20, 0.16, 0.42],
+                hemi_ground: [0.10, 0.06, 0.14],
+                fog_start: 34.0,
+                fog_end: 110.0,
+                stars: 40,
+                clouds: 4,
+                horizon: [150, 50, 170],
+                horizon_glow: 2.4,
+                twinkle: 0.6,
+            },
+        };
+        let (p, a) = (&self.post, &self.atmo);
+        f.bloom = p.bloom.unwrap_or(f.bloom);
+        f.bloom_threshold = p.bloom_threshold.unwrap_or(f.bloom_threshold);
+        f.vignette = p.vignette.unwrap_or(f.vignette);
+        if let Some(l) = &p.lut {
+            f.lut = l.clone();
+        }
+        f.lut_strength = p.lut_strength.unwrap_or(f.lut_strength);
+        f.exposure = p.exposure.unwrap_or(f.exposure);
+        if let Some(c) = &p.tonemap_curve {
+            f.tonemap_curve = c.clone();
+        }
+        f.ibl = p.ibl.unwrap_or(f.ibl);
+        f.sky = a.sky.unwrap_or(f.sky);
+        f.fog_start = a.fog_start.unwrap_or(f.fog_start);
+        f.fog_end = a.fog_end.unwrap_or(f.fog_end);
+        f.stars = a.stars.unwrap_or(f.stars);
+        f.clouds = a.clouds.unwrap_or(f.clouds);
+        f.horizon = a.horizon.unwrap_or(f.horizon);
+        f.horizon_glow = a.horizon_glow.unwrap_or(f.horizon_glow);
+        f.twinkle = a.twinkle.unwrap_or(f.twinkle);
+        f
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if !LOOK_PRESETS.contains(&self.preset.as_str()) {
+            return Err(format!(
+                "hop spec: look.preset is {}",
+                LOOK_PRESETS.join("|")
+            ));
+        }
+        let f = self.finish();
+        finite_in("look.post.bloom", f.bloom, 0.0, 2.0)?;
+        finite_in("look.post.bloom_threshold", f.bloom_threshold, 0.0, 2.0)?;
+        finite_in("look.post.vignette", f.vignette, 0.0, 2.0)?;
+        finite_in("look.post.lut_strength", f.lut_strength, 0.0, 1.0)?;
+        finite_in("look.post.exposure", f.exposure, 0.3, 2.0)?;
+        finite_in("look.post.ibl", f.ibl, 0.0, 2.0)?;
+        if !LUT_NAMES.contains(&f.lut.as_str()) {
+            return Err(format!(
+                "hop spec: look.post.lut is {}",
+                LUT_NAMES.join("|")
+            ));
+        }
+        if !["", "agx", "neutral"].contains(&f.tonemap_curve.as_str()) {
+            return Err("hop spec: look.post.tonemap_curve is agx|neutral or empty".into());
+        }
+        finite_in("look.atmo.fog_start", f.fog_start, 0.0, 400.0)?;
+        finite_in("look.atmo.fog_end", f.fog_end, 1.0, 400.0)?;
+        if f.fog_end <= f.fog_start {
+            return Err("hop spec: look.atmo.fog_end must be above fog_start".into());
+        }
+        finite_in("look.atmo.horizon_glow", f.horizon_glow, 0.0, 4.0)?;
+        finite_in("look.atmo.twinkle", f.twinkle, 0.0, 2.0)?;
+        if f.stars > 200 || f.clouds > 12 {
+            return Err("hop spec: look.atmo.stars 0..=200, clouds 0..=12".into());
+        }
+        for c in [f.sky, f.horizon] {
+            if c.iter().any(|v| *v > 255) {
+                return Err("hop spec: look colours are 0..=255".into());
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Default for LookSpec {
@@ -298,6 +520,9 @@ impl Default for LookSpec {
             slab: [58, 52, 92],
             glow: [96, 232, 255],
             accent: [255, 92, 170],
+            preset: "neon_night".into(),
+            post: PostSpec::default(),
+            atmo: AtmoSpec::default(),
         }
     }
 }
@@ -365,6 +590,8 @@ pub struct HopSpec {
     pub play: PlaySpec,
     pub enemies: EnemySpec,
     pub look: LookSpec,
+    /// The hero's skin: one of [`SKINS`]. The unlock system switches this (and `look.preset`).
+    pub skin: String,
     pub audio: HopAudio,
 }
 
@@ -382,6 +609,7 @@ impl Default for HopSpec {
             play: PlaySpec::default(),
             enemies: EnemySpec::default(),
             look: LookSpec::default(),
+            skin: DEFAULT_SKIN.into(),
             audio: HopAudio::default(),
         }
     }
@@ -420,6 +648,10 @@ impl HopSpec {
     }
 
     pub fn validate(&self) -> Result<(), String> {
+        if !SKINS.iter().any(|(id, _)| *id == self.skin) {
+            let ids: Vec<&str> = SKINS.iter().map(|(id, _)| *id).collect();
+            return Err(format!("hop spec: skin is {}", ids.join("|")));
+        }
         let m = &self.music;
         finite_in("music.bpm", m.bpm, 60.0, 200.0)?;
         finite_in("music.offset_ms", m.offset_ms, -500.0, 500.0)?;
@@ -490,6 +722,7 @@ impl HopSpec {
             finite_in(&format!("audio.sfx.{n}.volume"), s.volume, 0.0, 1.0)?;
             finite_in(&format!("audio.sfx.{n}.rate"), s.rate, 0.25, 4.0)?;
         }
+        self.look.validate()?;
         self.validate_enemies()?;
         let problems = self.course_problems();
         if let Some(first) = problems.first() {
@@ -1385,6 +1618,9 @@ pub struct HopBeat {
     course: Course,
     doc: WorldDoc,
     picture_quality: Option<String>,
+    /// A/B switches from the page (`fx_post`, `fx_atmo`): the finishing pass and the sky extras.
+    fx_post: bool,
+    fx_atmo: bool,
     /// Song clock, seconds. x = song_t * speed.
     song_t: f32,
     /// Added to the page's audio clock (a revive restarts the music mid-song).
@@ -1444,7 +1680,32 @@ pub struct HopBeat {
     pending_finish: bool,
 }
 
+/// The colour a skin id paints the hero, or None for `classic` / an unknown id.
+pub fn skin_tint(id: &str) -> Option<[u32; 3]> {
+    SKINS.iter().find(|(n, _)| *n == id).and_then(|(_, c)| *c)
+}
+
 impl HopBeat {
+    /// Switch the hero skin between runs (the shop / unlock hook). False for an unknown id.
+    pub fn set_skin(&mut self, id: &str) -> bool {
+        if !SKINS.iter().any(|(n, _)| *n == id) {
+            return false;
+        }
+        self.spec.skin = id.into();
+        self.rebuild();
+        true
+    }
+
+    /// Switch the finishing look (a [`LOOK_PRESETS`] id) between runs. False for an unknown id.
+    pub fn set_look(&mut self, id: &str) -> bool {
+        if !LOOK_PRESETS.contains(&id) {
+            return false;
+        }
+        self.spec.look.preset = id.into();
+        self.rebuild();
+        true
+    }
+
     pub fn from_json(json: &str) -> Result<Self, String> {
         let value: serde_json::Value =
             serde_json::from_str(json).map_err(|e| format!("hop dump: {e}"))?;
@@ -1465,6 +1726,19 @@ impl HopBeat {
             if !q.is_empty() {
                 run.picture_quality = Some(q.to_string());
             }
+        }
+        // Runtime picks from the page / save (`skin`, `look`); an unknown id keeps the spec's.
+        if let Some(id) = value.get("skin").and_then(|v| v.as_str()) {
+            run.set_skin(id);
+        }
+        if let Some(id) = value.get("look").and_then(|v| v.as_str()) {
+            run.set_look(id);
+        }
+        if let Some(b) = value.get("fx_post").and_then(|v| v.as_bool()) {
+            run.fx_post = b;
+        }
+        if let Some(b) = value.get("fx_atmo").and_then(|v| v.as_bool()) {
+            run.fx_atmo = b;
         }
         if value.get("direct").and_then(|v| v.as_bool()) == Some(true) {
             run.spec.play.direct = true;
@@ -1488,6 +1762,8 @@ impl HopBeat {
             course,
             doc: WorldDoc::default(),
             picture_quality: None,
+            fx_post: true,
+            fx_atmo: true,
             song_t: 0.0,
             clock_base: 0.0,
             clock: None,
@@ -1784,6 +2060,8 @@ impl HopBeat {
         fresh.picture_quality = keep.2;
         fresh.sfx = self.sfx;
         fresh.models_off = self.models_off;
+        fresh.fx_post = self.fx_post;
+        fresh.fx_atmo = self.fx_atmo;
         fresh.down = self.down;
         *self = fresh;
         self.flow.enter_play();
@@ -2744,30 +3022,45 @@ impl HopBeat {
         let bl = self.spec.hero.beat_len_m;
         let beat = hx / bl;
         let pulse = self.beat_flash;
+        let fin = look.finish();
+        // ?fx_post=0: the plain picture (no bloom, grade, vignette or tone curve).
+        let post_on = self.fx_post;
+        // ?fx_atmo=0: the old sky and haze, no stars, clouds or horizon glow.
+        let atmo_on = self.fx_atmo;
+        let sky = if atmo_on { fin.sky } else { [14, 10, 40] };
         let mut doc = WorldDoc {
             version: 1,
             genre: Some(GAME_ID.into()),
             half: 90.0,
             ground: Some(false),
             contact_blobs: Some(false),
-            sky: Some([14, 10, 40, 255]),
-            hemi_sky: Some([0.20, 0.16, 0.42]),
-            hemi_ground: Some([0.10, 0.06, 0.14]),
+            sky: Some([sky[0] as u8, sky[1] as u8, sky[2] as u8, 255]),
+            hemi_sky: Some(fin.hemi_sky),
+            hemi_ground: Some(fin.hemi_ground),
             env_map: Some("preset:studio".into()),
             shadow_softness: Some(1.0),
-            bloom: Some(0.16),
-            bloom_threshold: Some(1.4),
-            vignette: Some(0.6),
-            lut: Some("cool".into()),
-            lut_strength: Some(0.2),
+            bloom: Some(if post_on { fin.bloom } else { 0.0 }),
+            bloom_threshold: Some(fin.bloom_threshold),
+            vignette: Some(if post_on { fin.vignette } else { 0.0 }),
+            lut: Some(if post_on {
+                fin.lut.clone()
+            } else {
+                "off".into()
+            }),
+            lut_strength: Some(if post_on { fin.lut_strength } else { 0.0 }),
             fxaa: Some(true),
-            exposure: Some(0.9),
-            ibl: Some(0.3),
-            tonemap: Some(true),
+            exposure: Some(if post_on { fin.exposure } else { 1.0 }),
+            ibl: Some(fin.ibl),
+            tonemap: Some(post_on),
+            tonemap_curve: if post_on && !fin.tonemap_curve.is_empty() {
+                Some(fin.tonemap_curve.clone())
+            } else {
+                None
+            },
             cull: Some(true),
             prop_lod: Some(90.0),
-            fog_start: Some(34.0),
-            fog_end: Some(92.0),
+            fog_start: Some(if atmo_on { fin.fog_start } else { 34.0 }),
+            fog_end: Some(if atmo_on { fin.fog_end } else { 92.0 }),
             ..WorldDoc::default()
         };
         doc.quality = self.picture_quality.clone();
@@ -3020,7 +3313,12 @@ impl HopBeat {
             let off = 9.0 + ((i * 7) % 5) as f32 * 3.5;
             let hgt = 3.0 + ((i * 13) % 7) as f32 * 1.8;
             let zz = (hx * 0.9 / 12.0).floor() * 12.0 + i as f32 * 8.0 - 20.0 + hx * 0.1 % 12.0;
-            let lit = 0.15 + 0.2 * (((i + (beat as i32)) % 3) as f32 / 3.0);
+            let tw = if atmo_on {
+                fin.twinkle * 0.12 * (self.anim_t * (1.1 + 0.23 * i as f32) + i as f32 * 1.9).sin()
+            } else {
+                0.0
+            };
+            let lit = (0.15 + 0.2 * (((i + (beat as i32)) % 3) as f32 / 3.0) + tw).max(0.02);
             let (tower, windows) = TOWER_GLBS[(i as usize) % TOWER_GLBS.len()];
             if models.contains(&tower) && models.contains(&windows) {
                 // The model's own height, not a stretched box: the roof clutter keeps its shape.
@@ -3063,6 +3361,10 @@ impl HopBeat {
             }
         }
 
+        if atmo_on {
+            self.push_sky(&mut doc, &fin, hx, pulse);
+        }
+
         // ---- hero
         self.push_hero(&mut doc, hx, models.contains(&BUNNY_GLB));
         // ---- sparks (kit x = track, kit z = lateral)
@@ -3087,6 +3389,91 @@ impl HopBeat {
     /// The creatures on the slab. They are drawn exactly where the sim tests
     /// them (`enemy_dx`), with a little hop on every step so the walk reads as
     /// a rhythm; a stomped one is squashed flat for a moment, then gone.
+    /// Stars, far clouds, a horizon glow and a halo round the moon. Cheap props,
+    /// all far away: they ride along with the camera so they never pass.
+    fn push_sky(&self, doc: &mut WorldDoc, fin: &Finish, hx: f32, pulse: f32) {
+        let tier = match self.picture_quality.as_deref() {
+            Some("low") => 0.34,
+            Some("high") => 1.0,
+            _ => 0.75,
+        };
+        let hash = |i: u32, k: u32| -> f32 {
+            let mut h = i.wrapping_mul(0x9E37_79B1) ^ k.wrapping_mul(0x85EB_CA6B);
+            h ^= h >> 15;
+            h = h.wrapping_mul(0x2C1B_3C6D);
+            h ^= h >> 12;
+            (h & 0xFFFF) as f32 / 65535.0
+        };
+        let stars = (fin.stars as f32 * tier).round() as u32;
+        for i in 0..stars {
+            let x = (hash(i, 1) * 2.0 - 1.0) * 62.0;
+            let y = 11.0 + hash(i, 2) * 26.0;
+            let tw = 0.5 + 0.5 * (self.anim_t * (1.5 + hash(i, 3) * 2.5) + hash(i, 4) * 6.3).sin();
+            let sz = 0.34 + 0.3 * hash(i, 5);
+            doc.props.push(prop(
+                &format!("star-{i}"),
+                "sphere",
+                "star",
+                [x, y, hx + 54.0 + hash(i, 6) * 8.0],
+                [sz, sz, sz],
+                mix([200, 210, 255], [255, 236, 200], hash(i, 7)),
+                1.2 + 1.4 * tw + 0.5 * pulse,
+                0.5,
+                0.0,
+            ));
+        }
+        let clouds = if tier < 0.5 { 0 } else { fin.clouds };
+        for i in 0..clouds {
+            let drift =
+                (hash(i, 8) * 140.0 + self.anim_t * (0.6 + hash(i, 9) * 0.5)) % 140.0 - 70.0;
+            let wide = 12.0 + hash(i, 10) * 10.0;
+            doc.props.push(prop(
+                &format!("cloud-{i}"),
+                "sphere",
+                "cloud",
+                [
+                    drift,
+                    17.0 + hash(i, 11) * 9.0,
+                    hx + 66.0 + hash(i, 12) * 6.0,
+                ],
+                [wide, 1.1 + hash(i, 13) * 0.8, 2.6],
+                mix(fin.horizon, [40, 24, 90], 0.55),
+                0.22 + 0.1 * pulse,
+                0.9,
+                0.0,
+            ));
+        }
+        if fin.horizon_glow > 0.0 {
+            // Two stacked bands, bright at the bottom, so the haze fades upward.
+            // Just inside the prop cull distance (90) and behind nearly every tower.
+            let c = fin.horizon;
+            for (k, (y, hh, g)) in [(0.2, 3.0, 1.0), (3.4, 4.0, 0.35)].into_iter().enumerate() {
+                doc.props.push(prop(
+                    &format!("horizon-{k}"),
+                    "box",
+                    "horizon",
+                    [0.0, y, hx + 88.5],
+                    [220.0, hh, 1.0],
+                    mix(c, [14, 10, 40], 0.3 * k as f32),
+                    fin.horizon_glow * g * (0.55 + 0.15 * pulse),
+                    1.0,
+                    0.0,
+                ));
+            }
+            doc.props.push(prop(
+                "moon-halo",
+                "sphere",
+                "moon",
+                [-12.0, 15.0, hx + 66.0],
+                [11.0, 11.0, 1.0],
+                mix(c, [255, 220, 190], 0.6),
+                0.16 + 0.1 * pulse,
+                1.0,
+                0.0,
+            ));
+        }
+    }
+
     fn push_enemies(&self, doc: &mut WorldDoc, models: &[&str], lo: f32, hi: f32) {
         let bs = self.spec.beat_secs();
         let pulse = self.beat_flash;
@@ -3322,7 +3709,7 @@ impl HopBeat {
         let body_c = if self.hit_flash > 0.2 {
             [255, 255, 255]
         } else {
-            look.hero
+            skin_tint(&self.spec.skin).unwrap_or(look.hero)
         };
         let em = if blink {
             0.1
@@ -4106,7 +4493,7 @@ mod tests {
             g.tick(1.0 / 60.0);
             most = most.max(g.document().props.len());
         }
-        assert!(most > 20 && most < 260, "{most} props");
+        assert!(most > 20 && most < 400, "{most} props");
         let json = g.document().to_json().unwrap();
         let back = crate::world_doc::WorldDoc::from_json(&json).unwrap();
         assert_eq!(back.props.len(), g.document().props.len());

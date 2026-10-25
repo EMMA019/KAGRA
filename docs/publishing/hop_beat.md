@@ -146,3 +146,7 @@ getting past one is still a rhythm action, and the one button is unchanged.
 - The sounds are the existing effects plus `stomp.wav` (original, from `hop_audio.py`).
   Each enemy model falls back to primitives (a dome, a shell, two wings) if its glb is missing.
 
+
+## Look and finish
+
+The picture is a JSON look preset (`neon_night`, `dusk`, `plain`) with overrides, plus a hero `skin` id; see [look_presets.md](../look_presets.md). `?fx_post=0|1` and `?fx_atmo=0|1` switch the finishing pass on the preview page; `?skin=` and `?look=` pick the ids.
