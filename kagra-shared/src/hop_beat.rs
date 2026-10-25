@@ -287,6 +287,58 @@ impl Default for ReviveSpec {
     }
 }
 
+/// The breather after a fall that costs a life, and after a Continue. The drop plays out,
+/// the world holds for a few beats of READY, the music restarts on a bar line, and the
+/// bunny blinks (cannot be hurt) for a while once play resumes. All of it is timing and
+/// picture on the way back in; the sim before the fall is not touched.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct RecoverSpec {
+    /// Off = the old instant second wind (and an instant Continue).
+    pub enabled: bool,
+    /// After a fall that costs a life: seconds the drop plays out (slowed) before READY.
+    pub drop_secs: f32,
+    /// Beats of READY with the world held, after such a fall and after a Continue.
+    pub ready_beats: f32,
+    /// Seconds the bunny blinks and cannot be hurt once play resumes after a fall.
+    pub invuln_secs: f32,
+    /// Beats of empty slab laid ahead of the bunny where it comes back.
+    pub clear_beats: f32,
+}
+
+impl Default for RecoverSpec {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            drop_secs: 0.9,
+            ready_beats: 3.0,
+            invuln_secs: 2.4,
+            clear_beats: 4.0,
+        }
+    }
+}
+
+/// Where the way back in is. `Drop`: the fall plays on. `Ready`: the world holds and the
+/// beats count down; the music starts again when it reaches 0.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum RecoverStage {
+    Drop,
+    Ready,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Recover {
+    stage: RecoverStage,
+    /// Seconds left in this stage.
+    left: f32,
+    /// Seconds the READY stage lasts in all (0 during the drop).
+    total: f32,
+    /// Countdown beats already ticked.
+    ticked: i32,
+    /// Protection to give when play resumes.
+    invuln: f32,
+}
+
 /// How a fall into a gap looks. All of it is picture and timing: the sim decides the
 /// fall exactly as before, this only shapes what is drawn and how long the game over
 /// card waits.
@@ -644,6 +696,7 @@ pub struct HopSpec {
     pub judge: JudgeSpec,
     pub lives: LivesSpec,
     pub revive: ReviveSpec,
+    pub recover: RecoverSpec,
     pub fall: FallSpec,
     pub play: PlaySpec,
     pub enemies: EnemySpec,
@@ -664,6 +717,7 @@ impl Default for HopSpec {
             judge: JudgeSpec::default(),
             lives: LivesSpec::default(),
             revive: ReviveSpec::default(),
+            recover: RecoverSpec::default(),
             fall: FallSpec::default(),
             play: PlaySpec::default(),
             enemies: EnemySpec::default(),
@@ -756,6 +810,11 @@ impl HopSpec {
         {
             return Err("hop spec: lives.count 1..=9, invuln_secs 0..=10".into());
         }
+        let rc = &self.recover;
+        finite_in("recover.drop_secs", rc.drop_secs, 0.2, 3.0)?;
+        finite_in("recover.ready_beats", rc.ready_beats, 0.0, 8.0)?;
+        finite_in("recover.invuln_secs", rc.invuln_secs, 0.0, 10.0)?;
+        finite_in("recover.clear_beats", rc.clear_beats, 0.0, 32.0)?;
         let r = &self.revive;
         finite_in("revive.invuln_secs", r.invuln_secs, 0.0, 10.0)?;
         finite_in("revive.clear_beats", r.clear_beats, 0.0, 32.0)?;
@@ -925,6 +984,85 @@ impl HopSpec {
         out
     }
 
+    /// Does this phrase hold a flyer (an enemy that hovers above the track and only
+    /// punishes a hold hop)?
+    pub fn has_flyer(&self, p: &Phrase) -> bool {
+        p.items.iter().any(|it| {
+            parse_item(it).is_some_and(|(k, _)| k == Kind::Enemy)
+                && self
+                    .enemy_index(&it.enemy)
+                    .and_then(|i| self.enemies.types.get(i))
+                    .is_some_and(|t| t.y_lo > 0.0)
+        })
+    }
+
+    /// Phrase `a` followed straight away by phrase `b` (no rest bar: the worst case for
+    /// hops that spill over the seam and for flyers that walk in early). True = a bot
+    /// pressing every ideal `off` seconds early or late takes no damage.
+    pub fn pair_survives(&self, a: &Phrase, b: &Phrase, off: f32) -> bool {
+        let base = 4.0 * self.music.beats_per_bar as f32;
+        let mut obst = self.phrase_obstacles(a, base);
+        obst.extend(
+            self.phrase_obstacles(b, base + a.bars as f32 * self.music.beats_per_bar as f32),
+        );
+        self.sequence_survives(&obst, off)
+    }
+
+    /// The widest press error (ms, in 10 ms steps, at most 100) a phrase gets through
+    /// on its own. A seam is asked for no more than the narrower of its two phrases.
+    pub fn phrase_half_ms(&self, p: &Phrase) -> f32 {
+        let obst = self.phrase_obstacles(p, 4.0 * self.music.beats_per_bar as f32);
+        let mut half = 0.0;
+        while half < 100.0 {
+            let next = half + 10.0;
+            if !self.sequence_survives(&obst, -next * 0.001)
+                || !self.sequence_survives(&obst, next * 0.001)
+            {
+                break;
+            }
+            half = next;
+        }
+        half
+    }
+
+    /// What a seam is held to: the narrower of the two phrases' own windows.
+    pub fn pair_half_ms(&self, a: &Phrase, b: &Phrase) -> f32 {
+        self.phrase_half_ms(a).min(self.phrase_half_ms(b))
+    }
+
+    /// The first press (ms, early = negative) that takes damage in phrase `a` followed
+    /// straight away by phrase `b`, within `half_ms` either way in 10 ms steps.
+    pub fn seam_fail(&self, a: &Phrase, b: &Phrase, half_ms: f32) -> Option<f32> {
+        let n = (half_ms / 10.0).ceil() as i32;
+        (-n..=n)
+            .map(|k| (k as f32 * 10.0).clamp(-half_ms, half_ms))
+            .find(|ms| !self.pair_survives(a, b, ms * 0.001))
+    }
+
+    /// The seams between phrases: every ordered pair of phrases with a flyer in it (a bat
+    /// over a gap, a bat right after a hold) is played at every press from `half_ms` early
+    /// to `half_ms` late. Empty = every such pair is winnable.
+    pub fn seam_problems(&self, half_ms: f32) -> Vec<String> {
+        let phrases = self.phrases();
+        let mut out = Vec::new();
+        for (ai, a) in phrases.iter().enumerate() {
+            for (bi, b) in phrases.iter().enumerate() {
+                if !(self.has_flyer(a) || self.has_flyer(b)) {
+                    continue;
+                }
+                let half = half_ms.min(self.pair_half_ms(a, b));
+                if let Some(ms) = self.seam_fail(a, b, half) {
+                    out.push(format!(
+                        "phrases {ai} then {bi}: a bot pressing {:.0} ms {} the ideal beat takes damage",
+                        ms.abs(),
+                        if ms < 0.0 { "before" } else { "after" }
+                    ));
+                }
+            }
+        }
+        out
+    }
+
     /// The obstacles of a phrase laid at `base` beats, as the course lays them.
     pub fn phrase_obstacles(&self, p: &Phrase, base: f32) -> Vec<Obst> {
         p.items
@@ -1033,7 +1171,13 @@ impl HopSpec {
     fn sequence_problems(&self, pi: usize, p: &Phrase) -> Vec<String> {
         let base = 4.0 * self.music.beats_per_bar as f32;
         let obst = self.phrase_obstacles(p, base);
-        let half = (self.judge.perfect_ms * 0.001).min(0.1);
+        // A phrase with a flyer in it has to hold at the full 100 ms: the bat is the one
+        // thing a late or early tap can turn into a hold hop under.
+        let half = if self.has_flyer(p) {
+            0.1
+        } else {
+            (self.judge.perfect_ms * 0.001).min(0.1)
+        };
         let mut out = Vec::new();
         let hook = PhraseRun { spec: self, obst };
         if let Some(off) = foes::sweep(&hook, half, 0.005) {
@@ -1558,6 +1702,8 @@ pub struct Course {
     bars_laid: u32,
     since_rest: u32,
     last: usize,
+    /// What was laid, in order: a phrase index, or `usize::MAX` for a rest bar.
+    laid: Vec<usize>,
     /// The level of the previous phrase (u32::MAX before the first).
     lvl_seen: u32,
     pub obst: Vec<Obst>,
@@ -1579,6 +1725,7 @@ impl Course {
             bars_laid: 0,
             since_rest: 0,
             last: usize::MAX,
+            laid: Vec::new(),
             lvl_seen: u32::MAX,
             obst: Vec::new(),
         }
@@ -1593,6 +1740,11 @@ impl Course {
         self.gen_beat
     }
 
+    /// The phrases laid so far, in order (`usize::MAX` = a rest bar).
+    pub fn laid(&self) -> &[usize] {
+        &self.laid
+    }
+
     /// Lay phrases until the course reaches `until_beat`.
     pub fn ensure(&mut self, spec: &HopSpec, until_beat: f32) {
         let bpb = spec.music.beats_per_bar as f32;
@@ -1601,6 +1753,7 @@ impl Course {
                 self.since_rest = 0;
                 self.gen_beat += bpb;
                 self.bars_laid += 1;
+                self.laid.push(usize::MAX);
                 continue;
             }
             let lvl = level_at(self.bars_laid, spec.course.ramp_bars, self.max_level);
@@ -1630,6 +1783,7 @@ impl Course {
             let roll = self.rand();
             let pick = pool[foes::weighted_pick(&weights, roll)];
             self.last = pick;
+            self.laid.push(pick);
             let p = self.phrases[pick].clone();
             for it in &p.items {
                 let Some((kind, hop)) = parse_item(it) else {
@@ -1808,6 +1962,9 @@ pub struct HopBeat {
     fall_cam: f32,
     fall_vy: f32,
     dead_fall: Option<DeadFall>,
+    /// The way back in after a fall that cost a life, or after a Continue.
+    recover: Option<Recover>,
+    last_loss: &'static str,
 }
 
 /// The colour a skin id paints the hero, or None for `classic` / an unknown id.
@@ -1960,6 +2117,8 @@ impl HopBeat {
             fall_cam: 0.0,
             fall_vy: 0.0,
             dead_fall: None,
+            recover: None,
+            last_loss: "",
         }
     }
 
@@ -1984,6 +2143,10 @@ impl HopBeat {
     }
     pub fn lives(&self) -> u32 {
         self.lives
+    }
+    /// Why the last life went: "fell" or "enemy" (for the measure bots).
+    pub fn last_loss(&self) -> &'static str {
+        self.last_loss
     }
     pub fn combo(&self) -> u32 {
         self.combo
@@ -2392,13 +2555,18 @@ impl HopBeat {
             return false;
         }
         self.revives += 1;
-        let bar = self.spec.beat_secs() * self.spec.music.beats_per_bar as f32;
-        self.song_t = (self.song_t / bar).ceil() * bar;
-        let beat = self.beat_pos();
-        let clear = beat + self.spec.revive.clear_beats;
-        self.course.clear_before(clear);
-        self.course
-            .ensure(&self.spec, beat + AHEAD_M / self.spec.hero.beat_len_m + 8.0);
+        self.recover = None;
+        let breather = self.spec.recover.enabled && self.spec.recover.ready_beats > 0.0;
+        if !breather {
+            // (With a READY count `begin_ready` puts the bunny on the bar line and clears the slab.)
+            let bar = self.spec.beat_secs() * self.spec.music.beats_per_bar as f32;
+            self.song_t = (self.song_t / bar).ceil() * bar;
+            let beat = self.beat_pos();
+            let clear = beat + self.spec.revive.clear_beats;
+            self.course.clear_before(clear);
+            self.course
+                .ensure(&self.spec, beat + AHEAD_M / self.spec.hero.beat_len_m + 8.0);
+        }
         self.core.stats.alive = true;
         self.core.stats.death.clear();
         self.pending_finish = false;
@@ -2422,8 +2590,15 @@ impl HopBeat {
         self.flow.phase = FlowPhase::Play;
         self.flow.subtitle.clear();
         crate::mixer::stop_bgm(0.0);
-        self.begin();
         self.cue("revive");
+        let rc = self.spec.recover.clone();
+        if breather {
+            // A beat to breathe after the ad: READY, then the music from the bar line.
+            let (clear, inv) = (self.spec.revive.clear_beats, self.spec.revive.invuln_secs);
+            self.begin_ready(rc.ready_beats, clear, inv);
+        } else {
+            self.begin();
+        }
         self.rebuild();
         true
     }
@@ -2445,6 +2620,7 @@ impl HopBeat {
         self.combo = 0;
         self.streak = 0;
         let fell = reason == "fell";
+        self.last_loss = if fell { "fell" } else { "enemy" };
         if !fell {
             // A fall has its own picture (tumble, trailing camera): no red flash or camera snap.
             self.hit_flash = 1.0;
@@ -2483,12 +2659,129 @@ impl HopBeat {
             self.core.juice.shake = self.core.juice.shake.max(0.35);
             self.freeze_picture(0.09);
         }
+        if fell && self.spec.recover.enabled {
+            self.begin_drop();
+            return;
+        }
         self.grant_invuln(self.spec.lives.invuln_secs);
-        if reason == "fell" {
+        if fell {
             // Second wind: the hero floats until there is slab again.
             self.air = Air::Ground;
             self.y = 0.0;
         }
+    }
+
+    /// A fall that cost a life but not the run: the drop plays out (slowed, the same picture
+    /// as a fatal fall), the music fades, and the way back in starts (`step_recover`).
+    fn begin_drop(&mut self) {
+        let rc = self.spec.recover.clone();
+        self.dead_fall = Some(DeadFall {
+            age: 0.0,
+            cam: self.fall_cam,
+            vy: self.fall_vy,
+            t0: self.fall_age,
+        });
+        self.core.juice.shake = self.core.juice.shake.max(0.12);
+        self.vfreeze = 0.0;
+        self.recover = Some(Recover {
+            stage: RecoverStage::Drop,
+            left: rc.drop_secs,
+            total: 0.0,
+            ticked: 0,
+            invuln: rc.invuln_secs,
+        });
+        crate::mixer::stop_bgm(0.25);
+    }
+
+    /// The drop is over: put the bunny on empty slab at the next bar line and hold the world
+    /// for READY (`beats` of it). The music starts again when the count reaches 0.
+    fn begin_ready(&mut self, beats: f32, clear_beats: f32, invuln: f32) {
+        let bar = self.spec.beat_secs() * self.spec.music.beats_per_bar as f32;
+        self.song_t = (self.song_t / bar).ceil() * bar;
+        let beat = self.beat_pos();
+        self.course.clear_before(beat + clear_beats);
+        self.course
+            .ensure(&self.spec, beat + AHEAD_M / self.spec.hero.beat_len_m + 8.0);
+        self.dead_fall = None;
+        self.fall_age = 0.0;
+        self.fall_on = false;
+        self.fall_cam = 0.0;
+        self.fall_vy = 0.0;
+        self.vfreeze = 0.0;
+        self.vlag = 0.0;
+        self.combo = 0;
+        self.air = Air::Ground;
+        self.y = 0.0;
+        self.y_vis_off = 0.0;
+        self.kick.v = 0.0;
+        self.press_edge = false;
+        self.release_edge = false;
+        self.buffer = 0.0;
+        self.coyote = 0.0;
+        self.ground_t = self.song_t;
+        // The blink starts with READY, so the bunny reads as "not yet".
+        self.invuln = invuln.max(0.01);
+        let total = beats * self.spec.beat_secs();
+        self.recover = Some(Recover {
+            stage: RecoverStage::Ready,
+            left: total,
+            total,
+            ticked: 0,
+            invuln,
+        });
+        crate::mixer::stop_bgm(0.0);
+        self.rebuild();
+    }
+
+    /// READY is over: the music starts on the bar line and play resumes.
+    fn finish_ready(&mut self, invuln: f32) {
+        self.recover = None;
+        self.invuln = invuln;
+        self.begin();
+        self.beat_flash = 1.0;
+        self.cue("perfect");
+    }
+
+    /// One step of the way back in. The world is held: no scroll, no obstacles, no clock.
+    fn step_recover(&mut self, dt: f32) {
+        self.anim_t += dt;
+        self.hit_flash = (self.hit_flash - dt).max(0.0);
+        self.beat_flash = (self.beat_flash - dt * 4.0).max(0.0);
+        let Some(mut r) = self.recover else { return };
+        r.left -= dt;
+        match r.stage {
+            RecoverStage::Drop => {
+                let slow = self.spec.fall.slow_scale;
+                if let Some(d) = self.dead_fall.as_mut() {
+                    d.age += dt * slow;
+                }
+                if r.left <= 0.0 {
+                    self.begin_ready(
+                        self.spec.recover.ready_beats,
+                        self.spec.recover.clear_beats,
+                        r.invuln,
+                    );
+                    if self.spec.recover.ready_beats <= 0.0 {
+                        self.finish_ready(r.invuln);
+                    }
+                    return;
+                }
+            }
+            RecoverStage::Ready => {
+                let bs = self.spec.beat_secs();
+                let k = ((r.total - r.left) / bs).floor() as i32;
+                if k > r.ticked && r.left > 0.0 {
+                    r.ticked = k;
+                    self.beat_flash = 1.0;
+                    self.cue("land");
+                }
+                if r.left <= 0.0 {
+                    self.finish_ready(r.invuln);
+                    return;
+                }
+            }
+        }
+        self.recover = Some(r);
     }
 
     fn start_hop(&mut self, press_t: f32) {
@@ -2751,7 +3044,7 @@ impl HopBeat {
                 } else if self.y < -3.5 {
                     self.y = -3.5;
                     self.lose_life("fell");
-                    if self.core.stats.alive {
+                    if self.core.stats.alive && self.recover.is_none() {
                         self.y = 0.0;
                         self.air = Air::Ground;
                     }
@@ -2963,6 +3256,10 @@ impl Kit for HopBeat {
         1
     }
     fn step(&mut self, dt: f32) {
+        if self.recover.is_some() {
+            self.step_recover(dt);
+            return;
+        }
         if self.armed {
             self.anim_t += dt;
             if self.press_edge {
@@ -3065,6 +3362,12 @@ impl HopBeat {
             "armed": self.armed,
             "direct": self.spec.play.direct,
             "invulnerable": self.invuln > 0.0,
+            "recover": match self.recover {
+                Some(Recover { stage: RecoverStage::Drop, .. }) => "drop",
+                Some(Recover { stage: RecoverStage::Ready, .. }) => "ready",
+                None => "",
+            },
+            "ready_left": self.recover.map_or(0.0, |r| if r.stage == RecoverStage::Ready { r.left } else { 0.0 }),
             "song_t": self.song_t,
             // Where the music file should be right now (the inverse of the
             // clock sync), so a page that restarts the source can seek to it.
@@ -3515,6 +3818,31 @@ impl HopBeat {
                         [glow[0], glow[1], glow[2], a]
                     },
                 ));
+            }
+            if let Some(r) = self.recover.filter(|r| r.stage == RecoverStage::Ready) {
+                // READY and the beats left (3, 2, 1) while the world is held.
+                let bs = self.spec.beat_secs();
+                let n = (r.left / bs).ceil().max(1.0) as u32;
+                list.quads
+                    .push(Quad::new(0.0, h * 0.36, w, h * 0.20, [8, 6, 24, 150]));
+                txt(
+                    &mut list,
+                    self.tr("READY", "よーい"),
+                    w * 0.5,
+                    h * 0.385,
+                    16.0,
+                    [glow[0], glow[1], glow[2], 235],
+                    TextAlign::Center,
+                );
+                txt(
+                    &mut list,
+                    &n.to_string(),
+                    w * 0.5,
+                    h * 0.43,
+                    34.0,
+                    [255, 255, 255, 255],
+                    TextAlign::Center,
+                );
             }
             if self.armed {
                 list.quads

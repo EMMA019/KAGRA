@@ -219,6 +219,13 @@
     "play": {
       "direct": false
     },
+    "recover": {
+      "clear_beats": 4.0,
+      "drop_secs": 0.9,
+      "enabled": true,
+      "invuln_secs": 2.4,
+      "ready_beats": 3.0
+    },
     "revive": {
       "clear_beats": 4.0,
       "enabled": true,
