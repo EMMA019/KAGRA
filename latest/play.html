@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="robots" content="noindex" />
-  <meta name="kagra-build-id" content="10e5f0ce12e7" />
+  <meta name="kagra-build-id" content="1f62ffc5fc27" />
   <title>KAGRA</title>
   <style>
     :root { color-scheme: dark; }
@@ -318,12 +318,12 @@
     <div id="boot" data-i18n="boot">読み込み中…</div>
     <div id="update" hidden><span data-i18n="update.hint">新しいバージョンがあります</span> <button id="updateGo" type="button" data-i18n="update.reload">更新</button></div>
   </div>
-  <script src="./i18n.js?v=10e5f0ce12e7"></script>
-  <script src="./portal.js?v=10e5f0ce12e7"></script>
+  <script src="./i18n.js?v=1f62ffc5fc27"></script>
+  <script src="./portal.js?v=1f62ffc5fc27"></script>
   <!-- META hook 1/4: wallet, unlocks, daily run (docs/meta_core.md) -->
-  <script src="./meta.js?v=10e5f0ce12e7"></script>
+  <script src="./meta.js?v=1f62ffc5fc27"></script>
   <script type="module">
-    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js?v=10e5f0ce12e7";
+    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js?v=1f62ffc5fc27";
 
     const boot = document.getElementById("boot");
     const overlay = document.getElementById("overlay");
@@ -689,6 +689,9 @@
     // </kagra-build>
 
     let session;
+    // render_skip: on a screen faster than the 60 Hz sim, draw only when the sim stepped.
+    // Default off until measured (docs/phone_measure.md); ?render_skip=1|0 or world.json.
+    let renderSkip = params.get("render_skip") === "1";
     let bundle;
     let audioSpec = null;
     let portalHost = null; // portal.js: ads and gameplay events for a web-game portal
@@ -778,6 +781,7 @@
           } else if (slug === "neon_cat" && (world.quality == null || world.quality === "")) {
             world.quality = "mobile";
           }
+          if (params.get("render_skip") == null && world.render_skip === true) renderSkip = true;
           if (slug === "neon_cat") {
             // ?fx=low|mid|high sets how much night (rain, signs, walls) is
             // drawn, on its own. Without it the picture quality decides.
@@ -849,6 +853,7 @@
     // frames run long (see `adapt` in the loop); ?adapt=0 turns that off.
     const SCALE_STEPS = [2, 1.5, 1.25, 1];
     let scaleStep = 0;
+    let redraw = 0;
     const fit = () => {
       orient();
       const scale = Math.min(window.devicePixelRatio || 1, SCALE_STEPS[scaleStep]);
@@ -858,6 +863,7 @@
         canvas.width = w;
         canvas.height = h;
         session.createSurface(w, h);
+        redraw = 3; // a resized canvas is blank: draw it even on a render_skip frame
       }
     };
     fit();
@@ -1417,6 +1423,25 @@
     // is also the browser's audio gesture.
     if (hopDirect) session.startGame();
 
+    // <kagra-devtools>
+    // ?dev=1 only, never in a portal zip (package_portal.py cuts this block and leaves
+    // perf.js out): the frame-time overlay and the A/B recorder, docs/phone_measure.md.
+    if (dev && BUILD !== "portal") {
+      const tag = document.createElement("script");
+      tag.src = vq("./perf.js");
+      tag.onload = () => globalThis.KagraPerf?.start({
+        session, params, build: BUILD,
+        getCanvas: () => canvas,
+        getBackend: () => activeBackend,
+        getScale: () => ({ cap: SCALE_STEPS[scaleStep], step: scaleStep }),
+        getQuality: () => (params.get("quality") || "").toLowerCase() || "default",
+        getRenderSkip: () => renderSkip,
+        setRenderSkip: (on) => { renderSkip = on; },
+      });
+      document.head.appendChild(tag);
+    }
+    // </kagra-devtools>
+
     let presented = 0;
     let recovering = false;
     // Dynamic quality: a running average of the frame gap. Over 26 ms
@@ -1448,15 +1473,16 @@
     let acc = 0;
     let lastFrame = 0;
     const stepSim = (now) => {
-      if (!hopMode) { session.requestFrame(); return; }
+      if (!hopMode) { session.requestFrame(); return 1; }
       acc += lastFrame ? Math.min(0.1, (now - lastFrame) / 1000) : FIXED;
       lastFrame = now;
       let n = 0;
       while (acc >= FIXED * 0.85 && n < 3) { acc -= FIXED; n += 1; }
       if (acc > FIXED) acc = 0;
-      if (n === 0) return;
+      if (n === 0) return 0;
       session.setMusicClock(audio ? audio.songClock() : NaN);
       for (let i = 0; i < n; i += 1) session.requestFrame();
+      return n;
     };
     const loop = () => {
       if (recovering) return;
@@ -1470,11 +1496,14 @@
         state.attack || k.attack,
         false,
       );
-      stepSim(performance.now());
+      const stepped = stepSim(performance.now());
       if (audio) {
         try { audio.pump(session.audioCuesJson()); } catch {}
       }
-      if (rendering) {
+      // render_skip: a 120 Hz frame where the sim did not step draws the same picture.
+      const skipDraw = renderSkip && stepped === 0 && redraw <= 0;
+      if (redraw > 0) redraw -= 1;
+      if (rendering && !skipDraw) {
         try { session.render(); }
         catch (err) {
           rendering = false;
