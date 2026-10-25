@@ -286,6 +286,8 @@
   </div>
   <script src="./i18n.js"></script>
   <script src="./portal.js"></script>
+  <!-- META hook 1/4: wallet, unlocks, daily run (docs/meta_core.md) -->
+  <script src="./meta.js"></script>
   <script type="module">
     import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js";
 
@@ -607,6 +609,7 @@
     let audioSpec = null;
     let portalHost = null; // portal.js: ads and gameplay events for a web-game portal
     let portalPage = null;
+    let metaLayer = null; // meta.js: wallet, unlocks, daily run. META hooks 2-4 below.
     try {
       if (navigator.gpu && navigator.gpu.requestAdapter) {
         const adapter = await navigator.gpu.requestAdapter();
@@ -628,6 +631,16 @@
       portalHost = globalThis.KagraPortal.fromPage(window, document, bundle.platform && bundle.platform.ads);
       portalHost.loadingStart();
       portalHost.init();
+      // META hook 2/4: opt in when the manifest has a `meta` block (inert otherwise).
+      metaLayer = globalThis.KagraMeta.create({
+        config: bundle.meta,
+        gameId: bundle.slug || slug,
+        title: bundle.title || slug,
+        url: location.origin + location.pathname + (params.get("game") ? `?game=${encodeURIComponent(slug)}` : ""),
+        host: portalHost,
+        mockAds: dev && params.get("ads") === "mock",
+        mode: params.get("daily") === "1" ? "daily" : params.get("daily") === "0" ? "free" : undefined,
+      });
       document.title = bundle.title || slug;
       document.getElementById("title").textContent = bundle.title || slug;
       const files = Array.isArray(bundle.files) ? bundle.files : [];
@@ -697,6 +710,8 @@
             const a = world.game && world.game.audio;
             if (a && typeof a === "object" && params.get("audio") !== "0") audioSpec = a;
           }
+          // META hook 3/4: equipped items, the daily modifier and seed, applied to world.game.
+          if (metaLayer && metaLayer.enabled) return JSON.stringify(metaLayer.prepare(world));
           return JSON.stringify(world);
         } catch (_) {
           return worldText;
@@ -1060,6 +1075,8 @@
           showBoard(sim.result);
         }
       }
+      // META hook 4/4: settle the run (coins, daily best, streak) and draw the bar.
+      if (metaLayer) metaLayer.phase(phase, sim);
     };
 
     const readPhase = () => {

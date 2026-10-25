@@ -9,6 +9,7 @@ paths throughout, so it runs from any folder or iframe:
 
     index.html            play.html with the portal build flags in <meta>
     i18n.js portal.js     page strings and the portal shim
+    meta.js               wallet, unlocks, daily run (no network; see docs/meta_core.md)
     pkg/                  kagra_shared.js and kagra_shared_bg.wasm
     games/<slug>/         bundle.json, world.json, kagra_game.json
     assets/...            only what the game's world.json uses (audio is pruned

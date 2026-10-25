@@ -1,0 +1,1166 @@
+{
+ "_note": "Replayed by game_core/meta.rs, tests/test_meta_spec.py and tests/test_meta_js.py. Regenerate with: python3 tools/gen_meta_vectors.py",
+ "date": [
+  {
+   "ms": 0,
+   "day": 0,
+   "date": "1970-01-01"
+  },
+  {
+   "ms": 86399999,
+   "day": 0,
+   "date": "1970-01-01"
+  },
+  {
+   "ms": 86400000,
+   "day": 1,
+   "date": "1970-01-02"
+  },
+  {
+   "ms": 951782400000,
+   "day": 11016,
+   "date": "2000-02-29"
+  },
+  {
+   "ms": 1761350400000,
+   "day": 20386,
+   "date": "2025-10-25"
+  },
+  {
+   "ms": 1761436799999,
+   "day": 20386,
+   "date": "2025-10-25"
+  },
+  {
+   "ms": 1761436800000,
+   "day": 20387,
+   "date": "2025-10-26"
+  },
+  {
+   "ms": 1767225600000,
+   "day": 20454,
+   "date": "2026-01-01"
+  },
+  {
+   "ms": 1709164800000,
+   "day": 19782,
+   "date": "2024-02-29"
+  },
+  {
+   "ms": -1,
+   "day": -1,
+   "date": "1969-12-31"
+  }
+ ],
+ "seed": [
+  {
+   "game": "hop_beat",
+   "day": 0,
+   "mods": 0,
+   "seed": 1931228392,
+   "pick": null
+  },
+  {
+   "game": "hop_beat",
+   "day": 0,
+   "mods": 1,
+   "seed": 1931228392,
+   "pick": 0
+  },
+  {
+   "game": "hop_beat",
+   "day": 0,
+   "mods": 3,
+   "seed": 1931228392,
+   "pick": 0
+  },
+  {
+   "game": "hop_beat",
+   "day": 20751,
+   "mods": 0,
+   "seed": 3316973423,
+   "pick": null
+  },
+  {
+   "game": "hop_beat",
+   "day": 20751,
+   "mods": 1,
+   "seed": 3316973423,
+   "pick": 0
+  },
+  {
+   "game": "hop_beat",
+   "day": 20751,
+   "mods": 3,
+   "seed": 3316973423,
+   "pick": 0
+  },
+  {
+   "game": "hop_beat",
+   "day": 20752,
+   "mods": 0,
+   "seed": 3333751042,
+   "pick": null
+  },
+  {
+   "game": "hop_beat",
+   "day": 20752,
+   "mods": 1,
+   "seed": 3333751042,
+   "pick": 0
+  },
+  {
+   "game": "hop_beat",
+   "day": 20752,
+   "mods": 3,
+   "seed": 3333751042,
+   "pick": 0
+  },
+  {
+   "game": "hop_beat",
+   "day": 20753,
+   "mods": 0,
+   "seed": 3350528661,
+   "pick": null
+  },
+  {
+   "game": "hop_beat",
+   "day": 20753,
+   "mods": 1,
+   "seed": 3350528661,
+   "pick": 0
+  },
+  {
+   "game": "hop_beat",
+   "day": 20753,
+   "mods": 3,
+   "seed": 3350528661,
+   "pick": 1
+  },
+  {
+   "game": "hop_beat",
+   "day": 20800,
+   "mods": 0,
+   "seed": 1479324996,
+   "pick": null
+  },
+  {
+   "game": "hop_beat",
+   "day": 20800,
+   "mods": 1,
+   "seed": 1479324996,
+   "pick": 0
+  },
+  {
+   "game": "hop_beat",
+   "day": 20800,
+   "mods": 3,
+   "seed": 1479324996,
+   "pick": 1
+  },
+  {
+   "game": "neon_cat",
+   "day": 0,
+   "mods": 0,
+   "seed": 1125067673,
+   "pick": null
+  },
+  {
+   "game": "neon_cat",
+   "day": 0,
+   "mods": 1,
+   "seed": 1125067673,
+   "pick": 0
+  },
+  {
+   "game": "neon_cat",
+   "day": 0,
+   "mods": 3,
+   "seed": 1125067673,
+   "pick": 2
+  },
+  {
+   "game": "neon_cat",
+   "day": 20751,
+   "mods": 0,
+   "seed": 1500012650,
+   "pick": null
+  },
+  {
+   "game": "neon_cat",
+   "day": 20751,
+   "mods": 1,
+   "seed": 1500012650,
+   "pick": 0
+  },
+  {
+   "game": "neon_cat",
+   "day": 20751,
+   "mods": 3,
+   "seed": 1500012650,
+   "pick": 0
+  },
+  {
+   "game": "neon_cat",
+   "day": 20752,
+   "mods": 0,
+   "seed": 1483235031,
+   "pick": null
+  },
+  {
+   "game": "neon_cat",
+   "day": 20752,
+   "mods": 1,
+   "seed": 1483235031,
+   "pick": 0
+  },
+  {
+   "game": "neon_cat",
+   "day": 20752,
+   "mods": 3,
+   "seed": 1483235031,
+   "pick": 2
+  },
+  {
+   "game": "neon_cat",
+   "day": 20753,
+   "mods": 0,
+   "seed": 1466457412,
+   "pick": null
+  },
+  {
+   "game": "neon_cat",
+   "day": 20753,
+   "mods": 1,
+   "seed": 1466457412,
+   "pick": 0
+  },
+  {
+   "game": "neon_cat",
+   "day": 20753,
+   "mods": 3,
+   "seed": 1466457412,
+   "pick": 2
+  },
+  {
+   "game": "neon_cat",
+   "day": 20800,
+   "mods": 0,
+   "seed": 2721721501,
+   "pick": null
+  },
+  {
+   "game": "neon_cat",
+   "day": 20800,
+   "mods": 1,
+   "seed": 2721721501,
+   "pick": 0
+  },
+  {
+   "game": "neon_cat",
+   "day": 20800,
+   "mods": 3,
+   "seed": 2721721501,
+   "pick": 0
+  }
+ ],
+ "streak": [
+  {
+   "last": null,
+   "streak": 0,
+   "today": 10,
+   "next": 1,
+   "counted": true
+  },
+  {
+   "last": 10,
+   "streak": 3,
+   "today": 10,
+   "next": 3,
+   "counted": false
+  },
+  {
+   "last": 10,
+   "streak": 3,
+   "today": 11,
+   "next": 4,
+   "counted": true
+  },
+  {
+   "last": 10,
+   "streak": 3,
+   "today": 12,
+   "next": 1,
+   "counted": true
+  },
+  {
+   "last": 10,
+   "streak": 3,
+   "today": 40,
+   "next": 1,
+   "counted": true
+  },
+  {
+   "last": 10,
+   "streak": 3,
+   "today": 9,
+   "next": 3,
+   "counted": false
+  },
+  {
+   "last": 10,
+   "streak": 0,
+   "today": 10,
+   "next": 1,
+   "counted": false
+  },
+  {
+   "last": 10,
+   "streak": 0,
+   "today": 11,
+   "next": 1,
+   "counted": true
+  },
+  {
+   "last": null,
+   "streak": 5,
+   "today": 10,
+   "next": 1,
+   "counted": true
+  },
+  {
+   "last": 10,
+   "streak": 9,
+   "today": 11,
+   "next": 10,
+   "counted": true
+  }
+ ],
+ "reward": [
+  {
+   "base": 10,
+   "per_day": 5,
+   "max": 50,
+   "streak": 0,
+   "coins": 0
+  },
+  {
+   "base": 10,
+   "per_day": 5,
+   "max": 50,
+   "streak": 1,
+   "coins": 10
+  },
+  {
+   "base": 10,
+   "per_day": 5,
+   "max": 50,
+   "streak": 2,
+   "coins": 15
+  },
+  {
+   "base": 10,
+   "per_day": 5,
+   "max": 50,
+   "streak": 9,
+   "coins": 50
+  },
+  {
+   "base": 10,
+   "per_day": 5,
+   "max": 50,
+   "streak": 100,
+   "coins": 50
+  },
+  {
+   "base": 0,
+   "per_day": 0,
+   "max": 0,
+   "streak": 3,
+   "coins": 0
+  },
+  {
+   "base": 10,
+   "per_day": 5,
+   "max": 12,
+   "streak": 4,
+   "coins": 12
+  },
+  {
+   "base": 100,
+   "per_day": 0,
+   "max": 100,
+   "streak": 5,
+   "coins": 100
+  }
+ ],
+ "earn": [
+  {
+   "base": 5,
+   "per": {
+    "score": 0.02,
+    "combo": 0.5,
+    "perfect": 0.25
+   },
+   "cap": 400,
+   "run": {
+    "score": 1234,
+    "combo": 40,
+    "perfect": 10
+   },
+   "coins": 52
+  },
+  {
+   "base": 5,
+   "per": {
+    "score": 0.02
+   },
+   "cap": 400,
+   "run": {
+    "score": 0
+   },
+   "coins": 0
+  },
+  {
+   "base": 5,
+   "per": {
+    "score": 0.02
+   },
+   "cap": 400,
+   "run": {
+    "score": -5
+   },
+   "coins": 0
+  },
+  {
+   "base": 5,
+   "per": {
+    "score": 0.02
+   },
+   "cap": 400,
+   "run": {},
+   "coins": 0
+  },
+  {
+   "base": 0,
+   "per": {
+    "score": 0.01
+   },
+   "cap": 10,
+   "run": {
+    "score": 99999
+   },
+   "coins": 10
+  },
+  {
+   "base": 3,
+   "per": {
+    "score": 0.1,
+    "stomps": 2
+   },
+   "cap": 1000,
+   "run": {
+    "score": 55,
+    "stomps": 4
+   },
+   "coins": 16
+  },
+  {
+   "base": 3,
+   "per": {
+    "score": 0.1,
+    "stomps": 2
+   },
+   "cap": 1000,
+   "run": {
+    "score": 55,
+    "stomps": "x"
+   },
+   "coins": 8
+  },
+  {
+   "base": 3,
+   "per": {
+    "score": 0.1,
+    "combo": 1
+   },
+   "cap": 1000,
+   "run": {
+    "score": 55,
+    "combo": -9
+   },
+   "coins": 8
+  },
+  {
+   "base": 4,
+   "per": {},
+   "cap": 100,
+   "run": {
+    "score": 1
+   },
+   "coins": 4
+  }
+ ],
+ "patch": [
+  {
+   "doc": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   },
+   "patch": {
+    "look": {
+     "hero": [
+      9,
+      9,
+      9
+     ]
+    }
+   },
+   "allow": [
+    "look"
+   ],
+   "allowed": true,
+   "result": {
+    "look": {
+     "hero": [
+      9,
+      9,
+      9
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   }
+  },
+  {
+   "doc": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   },
+   "patch": {
+    "look": {
+     "hero": [
+      9,
+      9,
+      9
+     ]
+    }
+   },
+   "allow": [
+    "look.slab"
+   ],
+   "allowed": false,
+   "result": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   }
+  },
+  {
+   "doc": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   },
+   "patch": {
+    "course": {
+     "ramp_bars": 14
+    }
+   },
+   "allow": [
+    "look",
+    "course.ramp_bars"
+   ],
+   "allowed": true,
+   "result": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 14
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   }
+  },
+  {
+   "doc": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   },
+   "patch": {
+    "course": {
+     "ramp_bars": 14,
+     "seed": 1
+    }
+   },
+   "allow": [
+    "course.ramp_bars"
+   ],
+   "allowed": false,
+   "result": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   }
+  },
+  {
+   "doc": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   },
+   "patch": {
+    "audio": {
+     "master": 0
+    }
+   },
+   "allow": [
+    "look",
+    "course"
+   ],
+   "allowed": false,
+   "result": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   }
+  },
+  {
+   "doc": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   },
+   "patch": {
+    "lives": {
+     "count": 1
+    }
+   },
+   "allow": [
+    "lives.count"
+   ],
+   "allowed": true,
+   "result": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 1
+    }
+   }
+  },
+  {
+   "doc": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   },
+   "patch": {
+    "lives": {
+     "count": 1
+    }
+   },
+   "allow": [
+    "lives.countx"
+   ],
+   "allowed": false,
+   "result": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   }
+  },
+  {
+   "doc": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   },
+   "patch": {
+    "lives": {
+     "count": 1
+    }
+   },
+   "allow": [],
+   "allowed": false,
+   "result": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   }
+  },
+  {
+   "doc": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   },
+   "patch": {},
+   "allow": [
+    "look"
+   ],
+   "allowed": false,
+   "result": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   }
+  },
+  {
+   "doc": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   },
+   "patch": {
+    "look": {}
+   },
+   "allow": [
+    "look"
+   ],
+   "allowed": true,
+   "result": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   }
+  },
+  {
+   "doc": {
+    "look": {
+     "hero": [
+      1,
+      2,
+      3
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0.8
+    },
+    "lives": {
+     "count": 3
+    }
+   },
+   "patch": {
+    "look": {
+     "hero": [
+      9,
+      9,
+      9
+     ]
+    },
+    "audio": {
+     "master": 0
+    }
+   },
+   "allow": [
+    "look",
+    "audio"
+   ],
+   "allowed": true,
+   "result": {
+    "look": {
+     "hero": [
+      9,
+      9,
+      9
+     ],
+     "slab": [
+      4,
+      5,
+      6
+     ]
+    },
+    "course": {
+     "seed": 7,
+     "ramp_bars": 40
+    },
+    "audio": {
+     "master": 0
+    },
+    "lives": {
+     "count": 3
+    }
+   }
+  }
+ ]
+}

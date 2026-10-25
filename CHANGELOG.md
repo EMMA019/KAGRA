@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Retention layer, shared by every game (`meta`): a coin wallet earned from runs, an unlock catalogue (hero skins and
+  background looks, music later) with prices and rules, a daily run (one fixed seed per UTC date, its own best, a streak with a
+  small coin reward, a text share card) and run modifiers, with a shop screen, EN/JA. It is a manifest block (`meta` in
+  `games/<name>.json`, validated by `kagra/meta_spec.py`, copied into `bundle.json`) read by the new `scripts/preview_site/meta.js`;
+  it edits the spec a game is loaded with and never touches the simulation, so baked fixtures and baselines are unchanged. A kit
+  opts in by listing the spec paths a patch may touch (`meta.patchable`). Rules mirrored in Rust (`game_core/meta.rs`), Python and
+  JS from one vector file (`meta_vectors.json`). HOP-BEAT opts in (9 unlocks, 3 daily modifiers, an optional "double coins" rewarded
+  slot). No server, no leaderboard, no network. See `docs/meta_core.md`.
+
 - Shared foundation, step 1b: the session holds one boxed kit (`kit: Option<Box<dyn KitHost>>`, new `kit_host.rs`) instead of one
   slot per genre. Touch, pointer, key, tick, state/dump JSON, HUD, title/confirm and debug now go through the trait, so a new
   kit adds one `impl KitHost` and one line in `kit_host::KITS` rather than a field and about ten `if let Some(cat)` branches.

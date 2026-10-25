@@ -88,6 +88,12 @@ fixture and the Rust mirror. Deferred: if the engine ever needs to know (a
 rewarded revive), add `platform.ads` to the spec then, mirrored in Rust and
 Python in one change.
 
+HOP-BEAT now has a second rewarded slot, `double_coins` (`effect: "none"`: the
+page, not the simulation, pays it out). It is offered only where the host can
+(`canOfferRewarded`), so on GameMonetize and in a no-portal build the button is
+absent. Nothing is skipped or forced: Retry works without it. See
+[`docs/meta_core.md`](../meta_core.md).
+
 ## Page behaviour for portals (all builds)
 
 - Pauses on `visibilitychange`, `pagehide`, window blur, `Esc` and `P`; a pause
