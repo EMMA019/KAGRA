@@ -3609,12 +3609,16 @@ impl SurvivorArena {
         let keep = self.hint_atmo.clamp(0.0, 1.0);
         let total = self.doc.props.iter().filter(|p| p.name == "decor").count();
         let shown = (total as f32 * keep).ceil() as usize;
-        let mut k = 0usize;
-        for p in self.doc.props.iter_mut().filter(|p| p.name == "decor") {
+        for (k, p) in self
+            .doc
+            .props
+            .iter_mut()
+            .filter(|p| p.name == "decor")
+            .enumerate()
+        {
             // Bresenham-style spread: piece k stays when the running share steps up.
             let on = total > 0 && (k + 1) * shown / total > k * shown / total;
             p.enabled = on;
-            k += 1;
         }
     }
 
