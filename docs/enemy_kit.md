@@ -88,3 +88,11 @@ primitive fallback.
   lands on the next half beat, a "STOMP!" grade and the `stomp` cue.
 - Clearability: `sequence_survives` plays the phrase with one press per hop at the offset, which
   `sweep` runs over plus or minus min(perfect_ms, 100 ms) in 5 ms steps.
+
+## Swarm parts (Moonlit Swarm, the survivor-arena kit)
+
+`game_core::swarm` is the crowd side of the same kit idea: `Foes` (a fixed-capacity struct-of-arrays pool, no allocation in the frame),
+`Grid` (a spatial hash for contact and push-apart in O(N)), `Budget` (how many to spawn this frame from a rate, with the remainder carried)
+and `Rng` (a small seeded generator, so a daily seed replays). A type opts in with `EnemyType.swarm`
+(`SwarmStats`: hp, speed, radius, touch damage, xp, unlock seconds, weight); `validate` bounds every number. The first user is
+`kagra-shared/src/survivor_arena.rs`; the design and the asset list are in `docs/design/survivor_arena.md`.

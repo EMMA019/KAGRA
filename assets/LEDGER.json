@@ -986,6 +986,161 @@
     "assets/models/hop_beat/*.glb"
    ],
    "verified_how": "Written by tools/gen_assets/hop_models.py from flat-coloured primitives in plain Python (no input meshes, no network); the script's --check rebuilds every file and compares bytes. The bunny, the three enemies (slime, beetle, bat) and the skyline are original shapes."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/models/kenney/mini-characters/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Rest-pose copies made by tools/gen_assets/pack_glb.py (animations/skins dropped, colormap embedded); only the five used characters are in the repo.",
+   "verified": "checked",
+   "id": "kenney-mini-characters",
+   "name": "Kenney Mini Characters (5 hero skins)",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets/mini-characters",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-25",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/kenney/mini-characters/*.glb"
+   ],
+   "verified_how": "License.txt from the official zip says CC0 (copied in-repo as LICENSE.txt); kenney.nl pack page says Creative Commons CC0, page read 2026-10-25."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/models/kenney/graveyard-kit/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Rest-pose copies made by tools/gen_assets/pack_glb.py; only the files used by Moonlit Swarm are in the repo.",
+   "verified": "checked",
+   "id": "kenney-graveyard-kit",
+   "name": "Kenney Graveyard Kit (ghost, zombie, graveyard props)",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets/graveyard-kit",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-25",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/kenney/graveyard-kit/*.glb"
+   ],
+   "verified_how": "License.txt from the official zip says CC0 (copied in-repo as LICENSE.txt); kenney.nl pack page says Creative Commons CC0, page read 2026-10-25."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/audio/kenney-interface-sounds/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Converted from OGG to mono 22.05 kHz WAV with ffmpeg; one file used.",
+   "verified": "checked",
+   "id": "kenney-interface-sounds",
+   "name": "Kenney Interface Sounds (confirmation_001)",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets/interface-sounds",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-25",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/audio/kenney-interface-sounds/*.wav"
+   ],
+   "verified_how": "License.txt from the official zip says CC0 (copied in-repo as LICENSE.txt); kenney.nl pack page says Creative Commons CC0, page read 2026-10-25."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/audio/oga-retro-synth-sfx/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Converted from OGG to mono 22.05 kHz WAV with ffmpeg; seven files used.",
+   "verified": "checked",
+   "id": "oga-50-cc0-retro-synth-sfx",
+   "name": "OpenGameArt: 50 CC0 retro / synth SFX (7 used)",
+   "source": "opengameart",
+   "author": "rubberduck",
+   "url": "https://opengameart.org/content/50-cc0-retro-synth-sfx",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-25",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/audio/oga-retro-synth-sfx/*.wav"
+   ],
+   "verified_how": "OpenGameArt page 'License(s): CC0' (snapshot text saved as LICENSE.txt), read 2026-10-25. OGA licences are the uploader's declaration; the page says the effects were made from scratch in LMMS."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/audio/oga-flowerbed-fields/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Converted from OGG to 96 kbit/s MP3 with ffmpeg. Seamless looping is unverified.",
+   "verified": "checked",
+   "id": "oga-flowerbed-fields-loop",
+   "name": "OpenGameArt: Flowerbed Fields (loop)",
+   "source": "opengameart",
+   "author": "Zane Little Music",
+   "url": "https://opengameart.org/content/flowerbed-fields-loop",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-25",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/audio/oga-flowerbed-fields/*.mp3"
+   ],
+   "verified_how": "OpenGameArt page 'License(s): CC0' (snapshot text saved as LICENSE.txt), read 2026-10-25. OGA licences are the uploader's declaration."
   }
  ]
 }

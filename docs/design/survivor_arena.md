@@ -18,7 +18,53 @@ Branch `nana/survivor-arena`. Nothing here costs money; every asset is original 
 - **Pixel 10 向け**: 同時に敵 200〜300 体（画質ティアで 120/220/320 に上限）、描画は最大約 640 インスタンス・十数メッシュ、
   フレーム内のメモリ確保ゼロ（固定プール）、空間ハッシュで当たり判定は O(N)。
 - **公平さ**: ボットを走らせるバランス検査（放置・逃げ回り・拾い集め・ランダム選択）を CI に入れる。仕様読み込み時には静的な予算チェック。
+- **更新 (2026-10-25 夕)**: Emma が CC0 素材の自由な利用を許可したので、ステップ1は HOP-BEAT のうさぎ/スライムではなく **Kenney (CC0) のモデル**で作った。
+  タイトルは仮に **「Moonlit Swarm（月夜のむれ）」**: 月夜の墓地で、ミニキャラ（5スキン）がおばけとゾンビの大群を魔法の弾で撃退する。ジェムは Kenney のジュエル。
+  音は OpenGameArt の CC0 レトロ SFX、Kenney のボタン音、OpenGameArt の CC0 ループ曲。採用した素材は台帳（`assets/LEDGER.json`）に1パック1エントリ。
+  **Quaternius は使っていない**（ライセンス未確認、Emma 未承認）。フォント（OFL）はステップ1では未使用。詳細は下の「0b」。
 - **4ステップ**: ①最小プレイ可能（今回）→ ②敵6種・武器・パッシブ・ディレクター・ボット検査 → ③ボス・ミッション・デイリー・メタの本実装・音 → ④Pixel 10 実測と最適化・ポータル梱包。各ステップ後にスマホで遊べるプレビュー。
+
+## 0b. Phase 2, step 1 as built (what is in this PR)
+
+Title (working): **Moonlit Swarm**. A mini-character guards a moonlit graveyard from ghosts and zombies for 2 minutes (step 1 run length; the
+4:30 run comes with the director in step 2). Genre id `survivor_arena`, manifest `games/survivor_arena_minimal.json`, sim `kagra-shared/src/survivor_arena.rs`.
+
+- **Controls**: one finger drags, the hero walks toward it (dead zone near the hero, full speed from about 1.5 m). A second finger is ignored. Keyboard: arrows/WASD.
+- **Auto-attack**: weapon `bolt` fires at the nearest foe on its cooldown; four weapon levels (more bolts, damage, faster, pierce).
+- **Foes**: one `EnemyType` (`ghoul`, `swarm` stats in JSON), drawn as a ghost (3 in 4) or a zombie (1 in 4). The director spawns on a curve
+  (`start_rate` 1.5/s growing to `end_rate` 8.5/s over `ramp_secs`, squared curve, so the first 30 s are gentle and the last minute is a crowd) and
+  foe hp rises with time. Pools are sized from the quality tier (120/220/320), the grid makes contact checks O(N), no allocation in the frame.
+- **XP and level-up**: a kill drops a gem; the gem is pulled in inside the pickup radius. A full bar freezes the sim and shows 3 cards (bolt level or one of six
+  passives: vitality, swift, magnet, might, haste, growth), one tap to pick, 0.5 s grace. The finger that picked a card does not steer afterwards.
+- **Finish**: survive until the clock reaches `run.secs` (dawn, win bonus) or die (result). Score = kills, levels, time, win bonus.
+- **Meta**: result `run` = {score, time, kills, level, win}; `meta.earn` pays coins; five hero skins in the shop (classic, mint, ember, ghost, gold; unlocks by runs or best score),
+  daily seed (`director.seed`) and three modifiers, rewarded "double coins". All through the #203 meta layer, no new page code for it.
+- **Balance check (unit tests, deterministic)**: idle dies; a kiting bot that prefers weapon cards wins some seeds and loses others; level-up cards show up within ~10 s.
+  These are the first bots; the full baseline harness is step 2.
+- **Page**: `play.html` has a `survivor_arena` branch: fixed 60 Hz stepping, pause on hidden tab / Esc, column labels. No graphics-settings code is touched.
+
+### Assets adopted in step 1 (all CC0; one ledger entry per pack; files copied only if used)
+
+| Use | Pack (ledger id) | Files | Change made |
+|---|---|---|---|
+| Hero, 5 skins | Kenney Mini Characters (`kenney-mini-characters`) | `character-female-a/male-c/male-a/female-d/male-e.glb` | Rest-pose copy: animations/skin/joints dropped, colormap embedded (`tools/gen_assets/pack_glb.py`), 82-103 KB each |
+| Foes | Kenney Graveyard Kit (`kenney-graveyard-kit`) | `character-ghost.glb`, `character-zombie.glb` | Same rest-pose packing; bob/squash/float is done in code |
+| Arena dressing | Kenney Graveyard Kit (same entry) | 3 gravestones, 2 pines, 2 pumpkins, lantern, cross, rocks | Same packing |
+| XP gem | Kenney Platformer Kit (`kenney-platformer-kit`, existing) | `jewel.glb` | Same packing |
+| SFX | OpenGameArt "50 CC0 retro / synth SFX" (`oga-50-cc0-retro-synth-sfx`) | shot, explosion, die x2, coin, power-up x2 | ogg to mono 22.05 kHz wav (Safari-safe) |
+| Pick chime | Kenney Interface Sounds (`kenney-interface-sounds`) | `confirmation_001` | ogg to wav |
+| Music | OpenGameArt "Flowerbed Fields (loop)" (`oga-flowerbed-fields-loop`) | one loop | ogg to 96 kbit/s mp3 |
+
+### Picked for later steps, not adopted yet
+
+- More foes: Kenney Cube Pets (already in the ledger), KayKit Skeletons (clips stripped to about 8) for an elite. Not in step 1: one foe type is the step.
+- Weapons: Kenney Blaster Kit. Step 1's shot is an emissive sphere (a particle sprite pass needs the VFX path, which is step 2).
+- Arena floor: Mini Arena / Prototype / Nature Kit. The floor is still a procedural plane. **Nature Kit and Blocky Characters use
+  `KHR_materials_unlit`, which the renderer ignores (they would render lit)**; check before relying on them. `KHR_texture_transform` is supported.
+- VFX: Kenney Particle / Splat packs. UI: Game Icons, Mobile Controls (the HUD is drawn in the canvas today).
+- Fonts: Zen Maru Gothic and Noto Sans JP (OFL 1.1, not CC0). Step 1 uses the existing in-canvas font. When they are bundled they go in as
+  a separate ledger class with the OFL text next to the file (like `font-publicsans`).
+- **Not used, on purpose: anything from Quaternius** (license status not confirmed, Emma has not approved). No purchases were made.
 
 ## 1. Working title and theme
 
@@ -184,8 +230,8 @@ without thermal drop. The browser path is WebGL2 on the PowerVR (and WebGPU wher
 
 ## 11. Art plan
 
-- **Step 1**: hero = `hop_bunny.glb`, enemy = `hop_slime.glb`, ground disc and walls = primitives, gems = small octahedra/spheres, projectiles = capsules.
-  No new assets, so no ledger entry in step 1.
+- **Step 1 (built; supersedes the original plan of reusing the HOP-BEAT models)**: Kenney CC0 models, see section 0b. Ground and walls are primitives, shots are emissive spheres.
+  Five ledger entries (one per pack) were added.
 - **Steps 2-3**: the three new creatures (hopper, lantern, brute) and the boss crown, the arena props (flower beds, lamp posts), made by a new
   `tools/gen_assets/survivor_models.py` with the same recipe as `hop_models.py`: flat-coloured primitives, **baked AO** in `COLOR_0`,
   deterministic bytes, `--check` in tests, a ledger entry per pack (`project-...`, CC0, "written by this script").
@@ -213,7 +259,7 @@ Same idea as HOP-BEAT's `course_problems` plus its measurement harness:
 ## 13. Audio plan
 
 - **SFX**: synthesized by `tools/gen_assets/survivor_audio.py` on the `cat_audio.py` oscillators (CC0, seeded, `--check`). Cues: `shoot`, `hit`, `kill`,
-  `gem`, `levelup`, `hurt`, `boss`, `win`, `gameover`; rate-limited per cue per frame (a swarm must not machine-gun). Step 1 reuses the existing HOP-BEAT wavs if it adds sound.
+  `gem`, `levelup`, `hurt`, `boss`, `win`, `gameover`; rate-limited per cue per frame (a swarm must not machine-gun). Step 1 (built) uses the CC0 OpenGameArt/Kenney sounds and a CC0 loop instead (section 0b); the procedural plan stays for later steps.
 - **Music**: `/workspace/music` (the procedural kit: `kagra_music/tracks/*.py`, `render_all.py`, `verify.py`, `seam_test.py`, `make_provenance.py`).
   A new track "game N" copied from `hop_beat.py`: 105 or 120 BPM (integer samples per beat), 3 sections that map to the director's stages (intro, build, boss),
   plus stingers (win, gameover). Loop is gapless mp3, ledger entry from `make_provenance.py`. No samples, no ML.

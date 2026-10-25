@@ -9,3 +9,5 @@ Attribution is required for CC-BY. CC0 does not require it; credit is still reco
 
 - crate.glb: external images embedded (bufferView)
 - barrel.glb: external images embedded (bufferView)
+
+- jewel.glb: added for Moonlit Swarm (XP gem); rest-pose copy made with tools/gen_assets/pack_glb.py, colormap embedded
