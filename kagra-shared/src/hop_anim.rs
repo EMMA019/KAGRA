@@ -195,6 +195,29 @@ pub fn enemy_pose(look: &str, u: f32, pulse: f32, step_phase: f32) -> EnemyPose 
     p
 }
 
+/// A jumper's body over one step: `phase` 0..1 is where it is in the step, `crouch_from`
+/// the phase it starts to squat (the tell) and `takeoff` the phase it leaves the
+/// ground. After takeoff it stretches along the leap; just after landing it squashes.
+pub fn jumper_pose(phase: f32, crouch_from: f32, takeoff: f32) -> EnemyPose {
+    let mut p = EnemyPose::default();
+    let span = (takeoff - crouch_from).max(1e-3);
+    if phase < crouch_from.min(takeoff) {
+        // Landing squash, gone in a sixth of a step.
+        let land = (1.0 - phase / 0.16).clamp(0.0, 1.0);
+        p.scale = [1.0 + 0.18 * land, 1.0 - 0.22 * land, 1.0 + 0.18 * land];
+    } else if phase < takeoff {
+        // The squat deepens up to the jump.
+        let c = ((phase - crouch_from) / span).clamp(0.0, 1.0);
+        p.scale = [1.0 + 0.22 * c, 1.0 - 0.38 * c, 1.0 + 0.22 * c];
+    } else {
+        let u = ((phase - takeoff) / (1.0 - takeoff).max(1e-3)).clamp(0.0, 1.0);
+        let s = (u * std::f32::consts::PI).sin();
+        p.scale = [1.0 - 0.10 * s, 1.0 + 0.24 * s, 1.0 - 0.10 * s];
+        p.roll = -0.25 * (u * 2.0 - 1.0);
+    }
+    p
+}
+
 /// The stomped enemy: squashes flat in 40 ms with a pop outward, holds, then
 /// shrinks away. `age` seconds since the stomp, `life` its length.
 pub fn stomp_scale(age: f32, life: f32) -> [f32; 3] {
@@ -222,6 +245,21 @@ pub fn hit_puff(age: f32) -> EnemyPose {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_jumper_squats_before_it_leaps_and_stretches_in_the_air() {
+        let (from, takeoff) = (0.25, 0.5);
+        let rest = jumper_pose(0.2, from, takeoff);
+        let squat = jumper_pose(0.49, from, takeoff);
+        let air = jumper_pose(0.75, from, takeoff);
+        assert!(squat.scale[1] < 0.7 && squat.scale[0] > 1.1, "{squat:?}");
+        assert!(air.scale[1] > 1.15 && air.scale[0] < 1.0, "{air:?}");
+        // a calm frog on the ground is nearly at rest, and squat is deeper than the rest
+        assert!(rest.scale[1] > squat.scale[1]);
+        // just landed: a quick flat squash that has gone by a sixth of a step
+        assert!(jumper_pose(0.02, from, takeoff).scale[1] < 0.9);
+        assert!((jumper_pose(0.2, from, takeoff).scale[1] - 1.0).abs() < 1e-5);
+    }
+
     use super::*;
 
     fn settle(w: &mut Wobble, target: f32, omega: f32, zeta: f32, secs: f32) -> (f32, f32) {

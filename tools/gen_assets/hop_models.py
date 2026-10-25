@@ -7,6 +7,7 @@
     hop_post.glb        a roadside lamp post (the lamp bulb itself is drawn by the game)
     hop_slime.glb       enemy: a stompable slime, feet on y=0, facing -z (toward the hero)
     hop_beetle.glb      enemy: a walking beetle, same frame
+    hop_frog.glb        enemy: a jumping frog (the hopper), feet on y=0, facing -z, same frame
     hop_bat.glb         enemy: a hovering bat, bottom of the wings on y=0 (the game lifts it to
                         its flight height), same frame
 
@@ -104,6 +105,9 @@ SHELL_DK = (150, 70, 40)
 BAT = (170, 118, 250)
 BAT_DK = (120, 80, 210)
 YELLOW = (255, 232, 96)
+FROG = (170, 235, 80)
+FROG_DK = (96, 168, 56)
+FROG_BELLY = (236, 255, 170)
 
 
 def slime():
@@ -143,6 +147,27 @@ def beetle():
             parts.append((SHELL_DK, pm._box((sx * 0.37, 0.07, z), (0.16, 0.12, 0.09))))
         feeler = pm._box((sx * 0.10, 0.50, -0.50), (0.04, 0.04, 0.22))
         parts.append((SHELL_DK, _tilt_x(feeler, 0.50, -0.50, -0.5)))
+    return parts
+
+
+def frog():
+    """0.8 m long, 0.6 m tall: a squat green body, big eyes on top, folded back legs, a pale throat."""
+    sph = pm._sphere
+    parts = [
+        (FROG, sph((0, 0.27, 0.04), 0.31, 0.22, 0.36, 12, 6)),  # body
+        (FROG_BELLY, sph((0, 0.17, -0.20), 0.20, 0.12, 0.17, 12, 6)),  # throat
+        (FROG, sph((0, 0.32, -0.26), 0.27, 0.19, 0.20, 12, 6)),  # head
+        (FROG_DK, sph((0, 0.45, 0.10), 0.07, 0.03, 0.18, 8, 4)),  # stripe down the back
+        (WHITE, sph((-0.15, 0.52, -0.28), 0.10, 0.11, 0.09, 8, 5)),  # eyes on top
+        (WHITE, sph((0.15, 0.52, -0.28), 0.10, 0.11, 0.09, 8, 5)),
+        (INK, sph((-0.15, 0.52, -0.35), 0.05, 0.07, 0.04, 8, 5)),
+        (INK, sph((0.15, 0.52, -0.35), 0.05, 0.07, 0.04, 8, 5)),
+        (INK, sph((0, 0.26, -0.44), 0.10, 0.012, 0.03, 8, 4)),  # mouth line
+    ]
+    for sx in (-1.0, 1.0):
+        parts.append((FROG_DK, sph((sx * 0.30, 0.15, 0.22), 0.14, 0.15, 0.30, 8, 5)))  # folded thigh
+        parts.append((FROG_DK, sph((sx * 0.33, 0.05, 0.44), 0.12, 0.05, 0.16, 8, 4)))  # foot
+        parts.append((FROG_DK, sph((sx * 0.17, 0.05, -0.38), 0.07, 0.05, 0.10, 8, 4)))  # front hand
     return parts
 
 
@@ -266,7 +291,7 @@ def build() -> dict[Path, bytes]:
         out[OUT / f"hop_windows_{k}.glb"] = pm.write_glb(OUT / f"hop_windows_{k}.glb", win, f"hop_windows_{k}")
     pst = post()
     out[OUT / "hop_post.glb"] = pm.write_glb(OUT / "hop_post.glb", pst, "hop_post", ao=_ao_for(pst, floor=0.5, reach=0.3))
-    for name, shape in (("slime", slime), ("beetle", beetle), ("bat", bat)):
+    for name, shape in (("slime", slime), ("beetle", beetle), ("frog", frog), ("bat", bat)):
         path = OUT / f"hop_{name}.glb"
         out[path] = pm.write_glb(path, shape(), f"hop_{name}")
     return out

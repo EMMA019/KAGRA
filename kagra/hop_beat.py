@@ -25,7 +25,7 @@ CUE_VOLUME = {"hop": 0.6, "land": 0.4, "good": 0.65, "perfect": 0.85, "combo": 0
 STINGERS = ("gameover", "revive", "newbest")
 
 
-ENEMY_LOOKS = ("slime", "beetle", "bat")
+ENEMY_LOOKS = ("slime", "beetle", "bat", "frog")
 MAX_WALK_M = 12.0
 
 
@@ -40,6 +40,9 @@ def default_enemy() -> dict[str, Any]:
         "step_m": 0.0,
         "steps_per_beat": 1,
         "walk_steps": 0,
+        "jump_height": 0.0,
+        "jump_air": 0.5,
+        "telegraph": 0.25,
         "look": "slime",
         "color": [120, 240, 150],
     }
@@ -98,6 +101,9 @@ def default_game() -> dict[str, Any]:
                  "steps_per_beat": 2, "walk_steps": 8, "look": "beetle", "color": [255, 170, 80]},
                 {**default_enemy(), "id": "bat", "unlock_level": 2, "y_lo": 1.75, "y_hi": 2.4,
                  "stompable": False, "look": "bat", "color": [190, 130, 255]},
+                {**default_enemy(), "id": "hopper", "unlock_level": 3, "y_hi": 0.42, "step_m": 3.0,
+                 "steps_per_beat": 1, "walk_steps": 4, "jump_height": 0.4, "jump_air": 0.5,
+                 "telegraph": 0.25, "look": "frog", "color": [170, 235, 80]},
             ],
             "body_h": 0.45,
             "stomp_depth": 0.3,
@@ -315,6 +321,16 @@ def _validate_enemies(game: dict[str, Any]) -> None:
         _num(f"{n}.walk_steps", t["walk_steps"], 0, 16)
         if t["step_m"] * t["walk_steps"] > MAX_WALK_M:
             raise ValueError(f"hop spec: {n}: step_m * walk_steps must be at most {MAX_WALK_M} m")
+        _num(f"{n}.jump_height", t["jump_height"], 0, 2)
+        _num(f"{n}.jump_air", t["jump_air"], 0.2, 1)
+        _num(f"{n}.telegraph", t["telegraph"], 0, 1)
+        if t["jump_height"] > 0:
+            if t["y_lo"] != 0:
+                raise ValueError(f"hop spec: {n}: a jumper starts on the ground (y_lo 0)")
+            if t["step_m"] <= 0:
+                raise ValueError(f"hop spec: {n}: a jumper needs step_m above 0")
+            if t["telegraph"] + t["jump_air"] > 1.0 + 1e-4:
+                raise ValueError(f"hop spec: {n}: telegraph + jump_air must be at most 1")
         if t["look"] not in ENEMY_LOOKS:
             raise ValueError(f"hop spec: {n}.look is {'|'.join(ENEMY_LOOKS)}")
         if len(t["color"]) != 3 or any(not isinstance(c, int) or not 0 <= c <= 255 for c in t["color"]):
