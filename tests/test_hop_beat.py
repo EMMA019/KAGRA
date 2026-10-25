@@ -39,6 +39,14 @@ def test_overrides_merge_and_unknown_keys_are_refused():
         hb.game_from_overrides({"audio": {"sfx": {"zap": {"file": "x", "rate": 1, "volume": 1}}}})
 
 
+def test_fall_block_defaults_and_overrides():
+    g = hb.game_from_overrides({"fall": {"card_delay_secs": 1.2}})
+    assert g["fall"]["card_delay_secs"] == 1.2
+    assert hb.game_from_overrides({})["fall"]["card_delay_secs"] == 1.0
+    with pytest.raises(ValueError, match="unknown field"):
+        hb.game_from_overrides({"fall": {"bogus": 1}})
+
+
 @pytest.mark.parametrize("over", [
     {"music": {"bpm": 10}},
     {"music": {"bpm": 999}},
@@ -46,6 +54,10 @@ def test_overrides_merge_and_unknown_keys_are_refused():
     {"judge": {"perfect_ms": 200}},
     {"hero": {"tap": {"air_beats": 3.0}}},
     {"course": {"phrases": [{"items": [{"kind": "wall", "hop": "tap"}]}]}},
+    {"fall": {"card_delay_secs": 0.0}},
+    {"fall": {"slow_scale": 0.0}},
+    {"fall": {"cam_lag": 1.5}},
+    {"fall": {"dust": 99}},
 ])
 def test_out_of_range_values_are_refused(over):
     with pytest.raises(ValueError):

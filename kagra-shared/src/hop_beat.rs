@@ -287,6 +287,48 @@ impl Default for ReviveSpec {
     }
 }
 
+/// How a fall into a gap looks. All of it is picture and timing: the sim decides the
+/// fall exactly as before, this only shapes what is drawn and how long the game over
+/// card waits.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FallSpec {
+    /// Picture hold at the ledge (hit-stop; the sim and the music keep going).
+    pub edge_stop_secs: f32,
+    /// Somersaults per second once it is off the ledge.
+    pub tumble_turns_per_sec: f32,
+    /// Stretch along the fall at full speed (0 = none).
+    pub stretch: f32,
+    /// Share of the forward speed the bunny keeps while it drops out of frame.
+    pub carry: f32,
+    /// Share of its forward speed the camera does NOT follow (0 = rigid, 1 = stays put).
+    pub cam_lag: f32,
+    /// Time scale of the drop after the run has ended.
+    pub slow_scale: f32,
+    /// From the ledge to the game over card.
+    pub card_delay_secs: f32,
+    /// Strength of the dark screen edge (0 = off).
+    pub vignette: f32,
+    /// Dust puffs at the ledge (halved on the low tier).
+    pub dust: u32,
+}
+
+impl Default for FallSpec {
+    fn default() -> Self {
+        Self {
+            edge_stop_secs: 0.07,
+            tumble_turns_per_sec: 1.1,
+            stretch: 0.3,
+            carry: 0.55,
+            cam_lag: 0.6,
+            slow_scale: 0.5,
+            card_delay_secs: 1.0,
+            vignette: 0.7,
+            dust: 8,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct PlaySpec {
@@ -602,6 +644,7 @@ pub struct HopSpec {
     pub judge: JudgeSpec,
     pub lives: LivesSpec,
     pub revive: ReviveSpec,
+    pub fall: FallSpec,
     pub play: PlaySpec,
     pub enemies: EnemySpec,
     pub look: LookSpec,
@@ -621,6 +664,7 @@ impl Default for HopSpec {
             judge: JudgeSpec::default(),
             lives: LivesSpec::default(),
             revive: ReviveSpec::default(),
+            fall: FallSpec::default(),
             play: PlaySpec::default(),
             enemies: EnemySpec::default(),
             look: LookSpec::default(),
@@ -717,6 +761,27 @@ impl HopSpec {
         finite_in("revive.clear_beats", r.clear_beats, 0.0, 32.0)?;
         if !(1..=9).contains(&r.lives) || r.max_per_run > 9 {
             return Err("hop spec: revive.lives 1..=9, max_per_run 0..=9".into());
+        }
+        let f = &self.fall;
+        for (n, v, lo, hi) in [
+            ("fall.edge_stop_secs", f.edge_stop_secs, 0.0, 0.5),
+            (
+                "fall.tumble_turns_per_sec",
+                f.tumble_turns_per_sec,
+                0.0,
+                4.0,
+            ),
+            ("fall.stretch", f.stretch, 0.0, 1.0),
+            ("fall.carry", f.carry, 0.0, 1.0),
+            ("fall.cam_lag", f.cam_lag, 0.0, 1.0),
+            ("fall.slow_scale", f.slow_scale, 0.1, 1.0),
+            ("fall.card_delay_secs", f.card_delay_secs, 0.3, 3.0),
+            ("fall.vignette", f.vignette, 0.0, 1.0),
+        ] {
+            finite_in(n, v, lo, hi)?;
+        }
+        if f.dust > 32 {
+            return Err("hop spec: fall.dust 0..=32".into());
         }
         let a = &self.audio;
         for (n, v) in [
@@ -1469,6 +1534,18 @@ fn level_at(bar: u32, ramp_bars: u32, max_level: u32) -> u32 {
     (bar.saturating_mul(max_level + 1) / ramp_bars.max(1)).min(max_level)
 }
 
+/// The drop that plays after a fatal fall (the sim has stopped; this is only drawn).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct DeadFall {
+    /// Slowed seconds since the sim ended.
+    age: f32,
+    /// How far the camera already trailed the bunny.
+    cam: f32,
+    vy: f32,
+    /// `fall_age` when it ended.
+    t0: f32,
+}
+
 /// Lays the course phrase by phrase, from the seed. Pure: same spec and seed,
 /// same obstacles.
 #[derive(Clone, Debug)]
@@ -1723,6 +1800,14 @@ pub struct HopBeat {
     attract: f32,
     anim_t: f32,
     pending_finish: bool,
+    /// Picture only: seconds since the bunny left the ledge, whether the ledge
+    /// effects fired, how far the camera trails it, its fall speed, and the drop
+    /// that plays on after the run has ended.
+    fall_age: f32,
+    fall_on: bool,
+    fall_cam: f32,
+    fall_vy: f32,
+    dead_fall: Option<DeadFall>,
 }
 
 /// The colour a skin id paints the hero, or None for `classic` / an unknown id.
@@ -1870,6 +1955,11 @@ impl HopBeat {
             attract: 0.0,
             anim_t: 0.0,
             pending_finish: false,
+            fall_age: 0.0,
+            fall_on: false,
+            fall_cam: 0.0,
+            fall_vy: 0.0,
+            dead_fall: None,
         }
     }
 
@@ -2314,6 +2404,12 @@ impl HopBeat {
         self.pending_finish = false;
         self.new_best = false;
         self.core.juice.hitstop = 0.0;
+        self.dead_fall = None;
+        self.fall_age = 0.0;
+        self.fall_on = false;
+        self.fall_cam = 0.0;
+        self.vfreeze = 0.0;
+        self.vlag = 0.0;
         self.lives = self
             .spec
             .revive
@@ -2348,14 +2444,33 @@ impl HopBeat {
         }
         self.combo = 0;
         self.streak = 0;
-        self.hit_flash = 1.0;
-        self.anim.on_hit();
-        self.kick.v -= 6.0;
+        let fell = reason == "fell";
+        if !fell {
+            // A fall has its own picture (tumble, trailing camera): no red flash or camera snap.
+            self.hit_flash = 1.0;
+            self.anim.on_hit();
+            self.kick.v -= 6.0;
+        }
         self.lives = self.lives.saturating_sub(1);
         if self.lives == 0 {
             self.core.stats.die(reason);
-            self.core.juice.hit(0.7, 0.14);
-            self.cue(if reason == "fell" { "fall" } else { "hit" });
+            if fell {
+                // The sim is done; the drop plays on, then the card comes about
+                // `card_delay_secs` after the ledge.
+                let wait = (self.spec.fall.card_delay_secs - self.fall_age).max(0.15);
+                self.core.juice.hitstop = wait;
+                self.core.juice.shake = self.core.juice.shake.max(0.12);
+                self.vfreeze = 0.0;
+                self.dead_fall = Some(DeadFall {
+                    age: 0.0,
+                    cam: self.fall_cam,
+                    vy: self.fall_vy,
+                    t0: self.fall_age,
+                });
+            } else {
+                self.core.juice.hit(0.7, 0.14);
+                self.cue("hit");
+            }
             self.pending_finish = true;
             // The stinger for a run that beat the device best, the other one otherwise.
             let best = self.flow.best_score;
@@ -2363,9 +2478,11 @@ impl HopBeat {
             self.cue(if self.new_best { "newbest" } else { "gameover" });
             return;
         }
-        self.cue(if reason == "fell" { "fall" } else { "hit" });
-        self.core.juice.shake = self.core.juice.shake.max(0.35);
-        self.freeze_picture(0.09);
+        if !fell {
+            self.cue("hit");
+            self.core.juice.shake = self.core.juice.shake.max(0.35);
+            self.freeze_picture(0.09);
+        }
         self.grant_invuln(self.spec.lives.invuln_secs);
         if reason == "fell" {
             // Second wind: the hero floats until there is slab again.
@@ -2612,6 +2729,15 @@ impl HopBeat {
                 let vy = vy - hero.fall_gravity * dt;
                 self.y += vy * dt;
                 self.air = Air::Fall { vy };
+                self.fall_vy = vy;
+                self.fall_age += dt;
+                if !self.fall_on && self.y < -0.12 && self.invuln <= 0.0 {
+                    self.fall_on = true;
+                    self.ledge_fx();
+                }
+                if self.fall_on {
+                    self.fall_cam += v * self.spec.fall.cam_lag * dt;
+                }
                 if self.y <= 0.0 && self.y > -0.4 && supported(&self.course.obst, x, hero.edge_tol)
                 {
                     self.y = 0.0;
@@ -2633,6 +2759,11 @@ impl HopBeat {
             }
         }
 
+        if !matches!(self.air, Air::Fall { .. }) {
+            self.fall_age = 0.0;
+            self.fall_on = false;
+            self.fall_cam *= (1.0 - dt * 10.0).max(0.0);
+        }
         let grounded = matches!(self.air, Air::Ground);
         let (bp, bf) = (self.beat_pos(), self.beat_flash);
         if self.vfreeze <= 0.0 {
@@ -2853,6 +2984,10 @@ impl Kit for HopBeat {
     fn hitstop_frame(&mut self, dt: f32) {
         self.anim_t += dt * 0.3;
         self.hit_flash = (self.hit_flash - dt).max(0.0);
+        let slow = self.spec.fall.slow_scale;
+        if let Some(d) = self.dead_fall.as_mut() {
+            d.age += dt * slow;
+        }
     }
     fn follow(&mut self, _dt: f32) {}
     fn blocks_spark(&self, _x: f32, _y: f32, _z: f32) -> bool {
@@ -2946,6 +3081,7 @@ impl HopBeat {
             "x": self.hero_x(),
             "y": self.y,
             "grounded": matches!(self.air, Air::Ground),
+            "falling": self.fall_on || self.dead_fall.is_some(),
             "result": self.result_value(),
         })
     }
@@ -3180,6 +3316,20 @@ impl HopBeat {
                 let t = m * (0.05 + 0.035 * k as f32);
                 let a = (150.0 * f / (1.0 + k as f32 * 0.9)) as u8;
                 let c = [230, 20, 40, a];
+                list.quads.push(Quad::new(0.0, 0.0, w, t, c));
+                list.quads.push(Quad::new(0.0, h - t, w, t, c));
+                list.quads.push(Quad::new(0.0, t, t, h - 2.0 * t, c));
+                list.quads.push(Quad::new(w - t, t, t, h - 2.0 * t, c));
+            }
+        }
+        // A fall: the screen edge closes in, dark and cool (no red: nothing hit it).
+        let dark = self.fall_dark();
+        if dark > 0.02 {
+            let m = w.min(h);
+            for k in 0..5 {
+                let t = m * (0.06 + 0.05 * k as f32);
+                let a = (170.0 * dark / (1.0 + k as f32 * 0.8)) as u8;
+                let c = [6, 4, 22, a];
                 list.quads.push(Quad::new(0.0, 0.0, w, t, c));
                 list.quads.push(Quad::new(0.0, h - t, w, t, c));
                 list.quads.push(Quad::new(0.0, t, t, h - 2.0 * t, c));
@@ -3610,8 +3760,54 @@ impl HopBeat {
     fn view_x(&self) -> f32 {
         match self.flow.phase {
             FlowPhase::Title => 0.0,
-            _ => self.hero_x() - self.vlag,
+            _ => self.hero_x() - self.vlag + self.fall_view().0,
         }
+    }
+
+    /// While the bunny falls the camera trails it: (shift of the camera along the
+    /// track, how far the bunny is ahead of the camera). Both 0 outside a fall.
+    fn fall_view(&self) -> (f32, f32) {
+        if let Some(d) = self.dead_fall {
+            let f = &self.spec.fall;
+            let dx = self.spec.speed() * f.carry * (1.0 - (-3.0 * d.age).exp()) / 3.0;
+            (-d.cam + (1.0 - f.cam_lag) * dx, d.cam + f.cam_lag * dx)
+        } else {
+            (-self.fall_cam, self.fall_cam)
+        }
+    }
+
+    /// Seconds of the fall so far (the sim part, then the slowed drop).
+    fn fall_clock(&self) -> f32 {
+        match self.dead_fall {
+            Some(d) => d.t0 + d.age,
+            None if self.fall_on => self.fall_age,
+            None => 0.0,
+        }
+    }
+
+    /// Dark screen edge for a fall, 0..1.
+    fn fall_dark(&self) -> f32 {
+        if self.dead_fall.is_none() && !self.fall_on {
+            return 0.0;
+        }
+        (self.fall_clock() / 0.7).clamp(0.0, 1.0) * self.spec.fall.vignette
+    }
+
+    /// The bunny leaves the ledge: whoosh, a short picture hold, dust and a glint.
+    fn ledge_fx(&mut self) {
+        self.cue("fall");
+        self.freeze_picture(self.spec.fall.edge_stop_secs);
+        let hx = self.hero_x();
+        let n = match self.picture_quality.as_deref() {
+            Some("low") => self.spec.fall.dust / 2,
+            _ => self.spec.fall.dust,
+        };
+        self.core
+            .juice
+            .burst(hx, 0.05, 0.0, n, [196, 188, 220], 2.2, 0.11);
+        self.core
+            .juice
+            .burst(hx, 0.2, 0.0, n / 3, self.spec.look.glow, 3.0, 0.07);
     }
 
     fn build_doc(&mut self) {
@@ -4331,10 +4527,32 @@ impl HopBeat {
             y += crate::hop_anim::idle_bob(self.beat_pos().rem_euclid(1.0));
         }
         let blink = self.invuln > 0.0 && ((self.anim_t * 10.0) as u32).is_multiple_of(2);
-        let [sx, sy, _] = crate::hop_anim::body_scale(squash);
+        let [mut sx, mut sy, _] = crate::hop_anim::body_scale(squash);
         let r = 0.40;
-        let z = hx;
-        let gy = y.max(0.0);
+        // A fall: the bunny tumbles about its middle, stretches along the drop, and runs
+        // on ahead of the trailing camera. Dead or alive it is the same picture.
+        let falling = !title && (self.fall_on || self.dead_fall.is_some());
+        let (mut spin, mut z) = (0.0_f32, hx);
+        if falling {
+            let f = &self.spec.fall;
+            let (_, off) = self.fall_view();
+            z += off;
+            spin =
+                std::f32::consts::TAU * f.tumble_turns_per_sec * (self.fall_clock() - 0.1).max(0.0);
+            let vy = match self.dead_fall {
+                Some(d) => {
+                    let g = self.spec.hero.fall_gravity;
+                    y = -3.5 + d.vy * d.age - 0.5 * g * d.age * d.age;
+                    d.vy - g * d.age
+                }
+                None => self.fall_vy,
+            };
+            let k = (vy.abs() / 14.0).clamp(0.0, 1.0) * f.stretch;
+            sx *= 1.0 - 0.4 * k;
+            sy *= 1.0 + k;
+        }
+        let gy = if falling { y } else { y.max(0.0) };
+        let (sin_a, cos_a) = spin.sin_cos();
         let body_c = if self.hit_flash > 0.6 {
             [255, 255, 255]
         } else if self.hit_flash > 0.2 {
@@ -4349,7 +4567,7 @@ impl HopBeat {
         };
         {
             // shadow blob, only while there is slab below
-            let over = supported(&self.course.obst, hx, 0.0) || title;
+            let over = (supported(&self.course.obst, hx, 0.0) || title) && !falling;
             if over {
                 let k = (1.0 - gy / 2.2).clamp(0.2, 1.0);
                 doc.props.push(prop(
@@ -4414,24 +4632,30 @@ impl HopBeat {
                 )
             };
             let scale = [sx * 1.2, sy * 1.2, sx * 1.2];
-            doc.props.push(glb_prop(
+            // Turning about the middle of the body (0.4 m up the model), not the feet.
+            let c = 0.4 * scale[1];
+            let (fx, fy) = (c * sin_a, gy + c - c * cos_a);
+            let mut body = glb_prop(
                 "hero-body",
                 BUNNY_GLB,
                 "hero",
-                [0.0, gy, z],
+                [fx, fy, z],
                 scale,
                 [255, 255, 255],
                 em,
                 Some(col),
-            ));
+            );
+            body.roll = spin;
+            doc.props.push(body);
             // The ears swing from the top of the head: follow-through.
+            let ey = EAR_PIVOT[1] * scale[1];
             let mut ears = glb_prop(
                 "hero-ears",
                 EARS_GLB,
                 "hero",
                 [
-                    0.0,
-                    gy + EAR_PIVOT[1] * scale[1],
+                    fx - ey * sin_a,
+                    fy + ey * cos_a,
                     z + EAR_PIVOT[2] * scale[2],
                 ],
                 scale,
@@ -4440,6 +4664,7 @@ impl HopBeat {
                 Some(col),
             );
             ears.pitch = ear;
+            ears.roll = spin;
             doc.props.push(ears);
             return;
         }
@@ -4459,7 +4684,11 @@ impl HopBeat {
                 &format!("hero-ear-{i}"),
                 "box",
                 "hero",
-                [sx2 * 0.2, gy + r * 2.0 * sy + 0.06, z - 0.02],
+                [
+                    sx2 * 0.2 * cos_a - (r * sy + 0.06) * sin_a,
+                    gy + r * sy + sx2 * 0.2 * sin_a + (r * sy + 0.06) * cos_a,
+                    z - 0.02,
+                ],
                 [0.14, 0.24, 0.1],
                 body_c,
                 em,
@@ -4468,6 +4697,7 @@ impl HopBeat {
             ));
             if let Some(p) = doc.props.last_mut() {
                 p.pitch = ear;
+                p.roll = spin;
             }
         }
         doc.props.push(prop(
@@ -5326,6 +5556,171 @@ mod tests {
         ] {
             assert!(HopSpec::from_value(&bad).is_err(), "{bad}");
         }
+    }
+
+    /// One life and a gap on the first beat: standing still, the bunny walks off.
+    fn fall_spec(lives: u32) -> HopSpec {
+        let mut s = enemy_spec(vec![item(1.0, "gap", 1.5, "hold", "")]);
+        s.lives.count = lives;
+        s
+    }
+
+    fn falling(g: &HopBeat) -> bool {
+        g.state_value()["falling"].as_bool().unwrap()
+    }
+
+    /// Plays without pressing until the bunny is over the ledge.
+    fn until_falling(g: &mut HopBeat) {
+        g.confirm();
+        for _ in 0..(90.0 * 60.0) as u32 {
+            g.tick(1.0 / 60.0);
+            if falling(g) {
+                return;
+            }
+        }
+        panic!("never fell");
+    }
+
+    #[test]
+    fn a_fatal_fall_plays_out_and_then_ends_in_game_over() {
+        let mut g = HopBeat::new(fall_spec(1));
+        g.set_sfx(false);
+        until_falling(&mut g);
+        assert_eq!(g.phase_name(), "play");
+        let (mut frames, mut saw_drop) = (0, false);
+        while g.phase_name() == "play" && frames < 600 {
+            g.tick(1.0 / 60.0);
+            frames += 1;
+            saw_drop |= g.dead_fall.is_some();
+            // No red flash and no camera snap: a fall is its own picture.
+            assert_eq!(g.hit_flash, 0.0);
+        }
+        let secs = frames as f32 / 60.0;
+        assert_eq!(g.phase_name(), "result");
+        assert!(saw_drop, "the drop plays on after the run has ended");
+        assert!(secs > 0.6 && secs < 1.1, "the card comes after {secs}s");
+        assert_eq!(g.core.stats.death, "fell");
+        assert_eq!(g.lives(), 0);
+    }
+
+    #[test]
+    fn the_fall_timing_comes_from_the_spec_and_never_touches_the_sim() {
+        let end = |delay: f32, slow: f32| {
+            let mut spec = fall_spec(1);
+            spec.fall.card_delay_secs = delay;
+            spec.fall.slow_scale = slow;
+            spec.fall.cam_lag = 0.0;
+            spec.fall.dust = 0;
+            let mut g = HopBeat::new(spec);
+            g.set_sfx(false);
+            until_falling(&mut g);
+            let mut frames = 0;
+            let mut at_death = None;
+            while g.phase_name() == "play" && frames < 900 {
+                g.tick(1.0 / 60.0);
+                frames += 1;
+                if at_death.is_none() && g.dead_fall.is_some() {
+                    at_death = Some((g.song_t(), g.core.stats.score, g.combo, g.y));
+                }
+            }
+            (
+                frames as f32 / 60.0,
+                at_death.unwrap(),
+                g.state_value()["result"].clone(),
+            )
+        };
+        let (short, a, ra) = end(0.5, 1.0);
+        let (long, b, rb) = end(2.0, 0.2);
+        assert!(long > short + 1.0, "{short} vs {long}");
+        // The run itself ended in the same place, with the same result.
+        assert_eq!(a, b);
+        assert_eq!(ra, rb);
+    }
+
+    #[test]
+    fn a_revive_after_a_fall_puts_the_bunny_on_a_safe_tile() {
+        let mut g = HopBeat::new(fall_spec(1));
+        g.set_sfx(false);
+        until_falling(&mut g);
+        run(&mut g, 3.0);
+        assert_eq!(g.phase_name(), "result");
+        assert!(g.dead_fall.is_some());
+        assert!(g.revive());
+        assert_eq!(g.phase_name(), "play");
+        assert!(g.dead_fall.is_none() && !falling(&g));
+        assert_eq!((g.y, g.fall_cam, g.fall_age), (0.0, 0.0, 0.0));
+        assert!(supported(&g.course.obst, g.hero_x(), g.spec.hero.edge_tol));
+        // The camera is back on the bunny, and it stays alive on the next frames.
+        assert!((g.view_x() - g.hero_x()).abs() < 1e-3);
+        run(&mut g, 0.5);
+        assert_eq!(g.phase_name(), "play");
+        assert!(g.lives() > 0);
+    }
+
+    #[test]
+    fn a_fall_with_lives_left_keeps_playing_and_recovers_the_camera() {
+        let mut g = HopBeat::new(fall_spec(3));
+        g.set_sfx(false);
+        until_falling(&mut g);
+        run(&mut g, 1.5);
+        assert_eq!(g.phase_name(), "play");
+        assert_eq!(g.lives(), 2);
+        assert!(!falling(&g) && g.dead_fall.is_none());
+        assert!(g.fall_cam < 0.05, "{}", g.fall_cam);
+    }
+
+    #[test]
+    fn the_fall_is_drawn_on_every_tier_and_without_models() {
+        for q in ["low", "mid", "high"] {
+            for off in [false, true] {
+                let mut g = HopBeat::from_json(&format!(r#"{{"quality":"{q}"}}"#)).unwrap();
+                g.spec.lives.count = 1;
+                g.spec.course = fall_spec(1).course;
+                g.set_sfx(false);
+                g.set_models_off(off);
+                until_falling(&mut g);
+                let mut y_prev = f32::MAX;
+                for f in 0..70 {
+                    g.tick(1.0 / 60.0);
+                    let body = g
+                        .document()
+                        .props
+                        .iter()
+                        .find(|p| p.id == "prop:hero-body")
+                        .unwrap_or_else(|| panic!("{q} {off}: no hero at frame {f}"));
+                    assert!(body.position.iter().all(|v| v.is_finite()), "{q} {off}");
+                    assert!(body.scale.iter().all(|v| v.is_finite() && *v > 0.0));
+                    assert!(body.position[1] < y_prev + 0.08, "{q} {off}: rises at {f}");
+                    y_prev = body.position[1];
+                    if f > 20 {
+                        // The model turns as a whole; the ball turns its ears.
+                        let turned = g
+                            .document()
+                            .props
+                            .iter()
+                            .filter(|p| p.id.starts_with("prop:hero-ear"))
+                            .any(|p| p.roll != 0.0);
+                        assert!(turned, "{q} {off}: no tumble");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fall_block_is_validated() {
+        for bad in [
+            json!({"fall": {"card_delay_secs": 0.0}}),
+            json!({"fall": {"card_delay_secs": 9.0}}),
+            json!({"fall": {"slow_scale": 0.0}}),
+            json!({"fall": {"cam_lag": 2.0}}),
+            json!({"fall": {"dust": 999}}),
+            json!({"fall": {"bogus": 1}}),
+        ] {
+            assert!(HopSpec::from_value(&bad).is_err(), "{bad}");
+        }
+        let ok = HopSpec::from_value(&json!({"fall": {"card_delay_secs": 1.2}})).unwrap();
+        assert_eq!(ok.fall.card_delay_secs, 1.2);
     }
 
     #[test]

@@ -85,8 +85,16 @@ def hit(rng):
 
 
 def fall(rng):
-    t = c.lowpass(c.tone(c.hz(76), 0.55, wave_="saw", slide=-1.3, release=0.25, decay=3), 1600)
-    return t, 0.5
+    """Over the ledge: a wind whoosh whose band sinks from bright to dull, and a tone
+    sliding down under it. Reads as a drop, not as a hit."""
+    secs = 1.0
+    n = int(secs * c.RATE)
+    wind = c.noise(secs, rng, attack=0.04, release=0.45, decay=1.2)
+    centre = [2600.0 * (240.0 / 2600.0) ** (i / n) for i in range(n)]
+    whoosh = c.scale(c.bandpass(wind, centre, 2.2), 2.6)
+    voice = c.lowpass(c.tone(c.hz(79), secs, wave_="saw", attack=0.02, release=0.5,
+                             decay=2.2, slide=-1.7), 1400)
+    return c.mix(whoosh, c.scale(voice, 0.45)), 0.55
 
 
 def stomp(rng):

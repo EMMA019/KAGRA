@@ -147,6 +147,26 @@ getting past one is still a rhythm action, and the one button is unchanged.
   Each enemy model falls back to primitives (a dome, a shell, two wings) if its glb is missing.
 
 
+## Falling
+
+Falling into a gap is a plain fail (no catching, no rescue); the picture just plays it out. The bunny keeps its momentum over the ledge, the picture holds for a beat, dust and a glint puff up, `fall.wav` (a falling whoosh, original, CC0) sounds, and the bunny tumbles, stretches and drops while the camera trails behind and lets it fall out of frame. The edge of the screen darkens, and the game over card comes `fall.card_delay_secs` after the ledge. With lives left the bunny comes back on the slab as before; a revive puts it on a safe tile.
+
+Everything is in the JSON `fall` block (all keys optional, Python mirror in `kagra/hop_beat.py`):
+
+| key | default | range | meaning |
+| --- | --- | --- | --- |
+| `edge_stop_secs` | 0.07 | 0 to 0.5 | picture hold at the ledge |
+| `tumble_turns_per_sec` | 1.1 | 0 to 4 | turns per second while falling |
+| `stretch` | 0.3 | 0 to 1 | stretch along the drop |
+| `carry` | 0.55 | 0 to 1 | how far it keeps running after the run ends (about `carry`/3 s of running) |
+| `cam_lag` | 0.6 | 0 to 1 | how much of the speed the camera loses (1 = it stops) |
+| `slow_scale` | 0.5 | 0.1 to 1 | speed of the drop after the run has ended |
+| `card_delay_secs` | 1.0 | 0.3 to 3 | game over card, counted from the ledge |
+| `vignette` | 0.7 | 0 to 1 | screen edge darkening |
+| `dust` | 8 | 0 to 32 | dust particles at the ledge (half on the low tier) |
+
+This is picture only: the run, score and baselines are unchanged, and the primitive fallback and every quality tier draw it too.
+
 ## Look and finish
 
 The picture is a JSON look preset (`neon_night`, `dusk`, `plain`) with overrides, plus a hero `skin` id; see [look_presets.md](../look_presets.md). `?fx_post=0|1` and `?fx_atmo=0|1` switch the finishing pass on the preview page; `?skin=` and `?look=` pick the ids.
