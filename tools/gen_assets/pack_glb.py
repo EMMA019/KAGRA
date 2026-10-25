@@ -8,7 +8,11 @@ What it does (nothing is invented, only removed or re-packed):
   * prunes every accessor / buffer view / image that nothing references,
   * embeds the external `Textures/colormap.png` into the file, so one .glb is one asset.
 
-Usage:  pack_glb.py SRC.glb DST.glb [--clip NAME --time SECONDS]
+  * with --lean also drops the TANGENT and second-UV streams (the game has no normal
+    maps and every material samples UV 0): about a quarter fewer bytes to download and
+    to upload to the GPU, and no visible change.
+
+Usage:  pack_glb.py SRC.glb DST.glb [--clip NAME --time SECONDS] [--lean]
   (with --clip the skinned pose of that clip frame is baked in instead of the rest pose)
 """
 import json
@@ -53,7 +57,7 @@ def to_rgba_png(data):
     return out.getvalue()
 
 
-def pack(src, dst, clip=None, at=0.0):
+def pack(src, dst, clip=None, at=0.0, lean=False):
     j, bin_ = read_glb(src)
     src = Path(src)
     posed = {}
@@ -66,7 +70,9 @@ def pack(src, dst, clip=None, at=0.0):
     used = []
     for m in j.get("meshes", []):
         for p in m["primitives"]:
-            drop = ("JOINTS_", "WEIGHTS_") + (("TANGENT",) if clip else ())
+            drop = ("JOINTS_", "WEIGHTS_") + (("TANGENT",) if clip or lean else ())
+            if lean:
+                drop += ("TEXCOORD_1",)
             p["attributes"] = {k: v for k, v in p["attributes"].items() if not k.startswith(drop)}
             for v in p["attributes"].values():
                 used.append(v)
@@ -134,9 +140,11 @@ def pack(src, dst, clip=None, at=0.0):
     j["accessors"] = new_acc
     j["bufferViews"] = new_views
     j["buffers"] = [{"byteLength": len(new_bin)}]
-    j["asset"]["extras"] = {
-        "note": (f"static copy of clip {clip}@{at}s made by tools/gen_assets/pack_glb.py" if clip else "rest-pose copy made by tools/gen_assets/pack_glb.py")
-    }
+    prior = (j["asset"].get("extras") or {}).get("note", "")
+    note = f"static copy of clip {clip}@{at}s made by tools/gen_assets/pack_glb.py" if clip else "rest-pose copy made by tools/gen_assets/pack_glb.py"
+    if not clip and prior.startswith("static copy of clip"):
+        note = prior.split(";")[0]  # a re-pack of a baked pose keeps saying so
+    j["asset"]["extras"] = {"note": note + ("; lean (no tangent / second UV)" if lean else "")}
     jb = pad4(json.dumps(j, separators=(",", ":")).encode(), b" ")
     out = struct.pack("<4sII", b"glTF", 2, 12 + 8 + len(jb) + 8 + len(new_bin))
     out += struct.pack("<II", len(jb), 0x4E4F534A) + jb
@@ -154,5 +162,6 @@ if __name__ == "__main__":
     ap.add_argument("dst")
     ap.add_argument("--clip")
     ap.add_argument("--time", type=float, default=0.0)
+    ap.add_argument("--lean", action="store_true")
     a = ap.parse_args()
-    print(pack(a.src, a.dst, a.clip, a.time))
+    print(pack(a.src, a.dst, a.clip, a.time, a.lean))

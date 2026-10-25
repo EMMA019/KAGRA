@@ -5059,6 +5059,79 @@ mod tests {
         eprintln!("seed wins {wins}/8");
     }
 
+    /// `cargo test --release -p kagra-shared --lib perf_probe -- --ignored --nocapture`: the
+    /// per-frame load of a busy late run on each quality tier (sim + doc build time, live props,
+    /// points and lines handed to the renderer).
+    #[test]
+    #[ignore]
+    fn perf_probe() {
+        for (name, q) in [("low", Some("low")), ("mid", None), ("high", Some("high"))] {
+            let mut spec = SurvivorSpec::default();
+            spec.hero.max_hp = 1.0e6;
+            spec.director.seed = 3;
+            let mut g = SurvivorArena::new(spec);
+            g.picture_quality = q.map(String::from);
+            g.apply_quality();
+            g.build_doc();
+            g.confirm();
+            for _ in 0..3 {
+                g.grant_weapon();
+            }
+            let (mut props, mut pts, mut lines, mut max_props, mut n) =
+                (0usize, 0usize, 0usize, 0usize, 0u32);
+            let mut ns = 0u128;
+            let mut foes = 0usize;
+            while g.secs() < 119.0 && g.flow.phase == FlowPhase::Play {
+                if g.card_count() > 0 {
+                    g.choose(0);
+                }
+                kite_step(&mut g);
+                let t0 = std::time::Instant::now();
+                g.tick(DT);
+                let dt = t0.elapsed().as_nanos();
+                if g.secs() > 70.0 {
+                    ns += dt;
+                    n += 1;
+                    let live = g.doc.props.iter().filter(|p| p.enabled).count();
+                    props += live;
+                    max_props = max_props.max(live);
+                    pts += g
+                        .doc
+                        .points
+                        .iter()
+                        .map(|p| p.positions.len())
+                        .sum::<usize>();
+                    lines += g.doc.lines.iter().map(|l| l.points.len()).sum::<usize>();
+                    foes += g.foes.len();
+                }
+            }
+            if std::env::var("KAGRA_PROPS").is_ok() {
+                let mut by: std::collections::BTreeMap<String, usize> = Default::default();
+                for p in g.doc.props.iter().filter(|p| p.enabled) {
+                    let key = format!(
+                        "{} {}",
+                        p.name.trim_end_matches(char::is_numeric),
+                        p.gltf.clone().unwrap_or_default()
+                    );
+                    *by.entry(key).or_default() += 1;
+                }
+                eprintln!("{name} live props: {by:?}");
+            }
+            let n = n.max(1) as usize;
+            eprintln!(
+                "{name}: t={:.0}s avg tick {:.1} us | foes {} | live props avg {} max {} of {} | points {} | line pts {}",
+                g.secs(),
+                ns as f64 / n as f64 / 1000.0,
+                foes / n,
+                props / n,
+                max_props,
+                g.doc.props.len(),
+                pts / n,
+                lines / n
+            );
+        }
+    }
+
     fn ev(phase: PointerPhase, x: f32, y: f32) -> PointerEvent {
         PointerEvent {
             id: 1,

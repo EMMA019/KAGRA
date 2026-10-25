@@ -428,3 +428,19 @@ Fixed pools sized once: pick-ups (`drops.cap`), enemy orbs (24), missiles share 
 Not reused: `game_core` items-core (#201 is a draft; the survivor content lives in `survivor_content.rs` so the two cannot conflict). Not built: weapon codex page and coin-unlocked weapons beyond the two hero starts (`hero.petal`, `hero.blade`), evolve/merge (swap only).
 
 Evolutions, codex page, boss (the king) and its table, pick-up icon art (glyphs are used because browser HUD image quads are not drawn), a "weapons unlocked" gate for the drop draw, per-weapon unique models (KayKit weapons), more enemy kinds (skeleton mage, bat swarm), and ear-checking the new SFX mix.
+
+## 19. Lighter and cheaper (perf pass on PR "survivor-drops")
+
+Profile first. `cargo test --release -p kagra-shared --lib perf_probe -- --ignored --nocapture` plays a kiting bot with three weapons to dawn on each tier: a tick costs ~7-10 us (about 285 live props of a 609 / 804 / 999 pool, 28 / 63 / 96 points, ~19 foes), so the simulation is not the cost. What a phone pays for is the download and the GPU, and the GPU side is already bounded by the per-tier caps (`caps.foes`, `fx.cap`, `drops.cap`) and per-mesh instancing (draw calls are about the number of distinct meshes). So the pass cuts bytes and leaves the JSON tiers alone.
+
+| Preview download | Before | After |
+|---|---|---|
+| Total / requests | 15,104,548 B / 103 | 9,493,384 B / 67 |
+| wasm raw / gzip -9 | 9,741,628 / 2,929,863 | 6,580,725 / ~2.27 MB |
+| GLBs in the bundle | 1,496,576 | ~1,182,500 (plus 5 unused removed) |
+| Unrelated audio shipped | ~2.5 MB (31 files) | 0 |
+
+- wasm: opt-level `s`, `codegen-units=1`, `panic=abort`, names and producers stripped by wasm-bindgen. `KAGRA_WASM_OPT=3|default` and `KAGRA_WASM_NAMES=1` restore the old build. No wasm-opt (not available to CI here).
+- Preview bundle: when a game's `bundle_assets` names audio pack folders, only those files ship; games that list `assets/audio` keep the full scan.
+- GLB: `pack_glb.py --lean` drops TANGENT and TEXCOORD_1. CREDITS notes say so.
+- Not done: music (1.27 MB mp3; a lower bitrate costs quality), lazy-loading the BGM (needs `play.html`, see #207), foe LOD and wall culling (the scene is ~50k vertices; not worth the pop-in risk), the shared wasm data (fonts, shaders).

@@ -246,3 +246,19 @@ def test_package_web_stages_latest_with_the_wasm_build_only():
     src = (ROOT / "scripts/package_web.py").read_text(encoding="utf-8")
     assert "if args.build_wasm and not args.no_latest:" in src
     assert 'LATEST_ENTRIES = ("neon_cat", "meteor_cat")' in src
+
+
+def test_a_game_that_names_its_audio_packs_does_not_ship_every_clip():
+    """Moonlit Swarm names its packs: its bundle holds what its world uses, not other games' music."""
+    manifest = dist.load_manifest(ROOT / "games" / "survivor_arena_minimal.json", ROOT)
+    files = {p.relative_to(ROOT.resolve()).as_posix() for p in preview._preview_assets(ROOT, manifest)}
+    world = (ROOT / manifest.world).read_text(encoding="utf-8")
+    import re
+
+    wanted = set(re.findall(r"assets/audio/[\w./-]+\.(?:wav|mp3|ogg)", world))
+    assert wanted and wanted <= files
+    assert not [f for f in files if f.startswith(("assets/audio/neon_cat/", "assets/audio/hop_beat/"))]
+    # A game that names no pack keeps the blanket scan (its python layer may play any clip).
+    plain = dist.load_manifest(ROOT / "games" / "neon_cat_minimal.json", ROOT)
+    kept = {p.relative_to(ROOT.resolve()).as_posix() for p in preview._preview_assets(ROOT, plain)}
+    assert any(f.startswith("assets/audio/hop_beat/") for f in kept)

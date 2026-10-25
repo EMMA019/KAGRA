@@ -210,7 +210,13 @@ def _preview_assets(repo: Path, manifest) -> list[Path]:
             continue
         found.update(_expand(path))
     audio = repo / "assets" / "audio"
-    if audio.is_dir():
+    # A game that names its own audio packs (bundle_assets entries inside assets/audio)
+    # ships those and what its world references, not every clip in the repo: the
+    # blanket scan added ~2.5 MB of other games' music and sfx to such a bundle.
+    names_packs = any(
+        audio.resolve() in (repo / rel).resolve().parents for rel in manifest.bundle_assets
+    )
+    if audio.is_dir() and not names_packs:
         for child in audio.rglob("*"):
             if child.is_file() and child.suffix.lower() in {".wav", ".ogg", ".mp3"}:
                 found.add(child.resolve())
