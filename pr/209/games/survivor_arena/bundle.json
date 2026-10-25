@@ -8,7 +8,7 @@
     {
       "path": "world.json",
       "url": "games/survivor_arena/world.json",
-      "v": "8e9c98faf7"
+      "v": "f725c9784e"
     },
     {
       "path": "kagra_game.json",
@@ -99,6 +99,21 @@
       "path": "assets/audio/jump.wav",
       "url": "assets/audio/jump.wav",
       "v": "b265d4fdfa"
+    },
+    {
+      "path": "assets/audio/kenney-impact-sounds/CREDITS.md",
+      "url": "assets/audio/kenney-impact-sounds/CREDITS.md",
+      "v": "128b6be073"
+    },
+    {
+      "path": "assets/audio/kenney-impact-sounds/LICENSE.txt",
+      "url": "assets/audio/kenney-impact-sounds/LICENSE.txt",
+      "v": "b49aa9c56b"
+    },
+    {
+      "path": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+      "url": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+      "v": "3eba73bda8"
     },
     {
       "path": "assets/audio/kenney-interface-sounds/CREDITS.md",
@@ -244,6 +259,21 @@
       "path": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
       "url": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
       "v": "5d7d10947f"
+    },
+    {
+      "path": "assets/audio/oga-wet-squish/CREDITS.md",
+      "url": "assets/audio/oga-wet-squish/CREDITS.md",
+      "v": "935afd1ce8"
+    },
+    {
+      "path": "assets/audio/oga-wet-squish/LICENSE.txt",
+      "url": "assets/audio/oga-wet-squish/LICENSE.txt",
+      "v": "25e5997e61"
+    },
+    {
+      "path": "assets/audio/oga-wet-squish/impactsplat03.wav",
+      "url": "assets/audio/oga-wet-squish/impactsplat03.wav",
+      "v": "73e236ba1e"
     },
     {
       "path": "assets/models/kenney/blaster-kit/CREDITS.md",
@@ -660,5 +690,5 @@
       "slot": "double_coins"
     }
   },
-  "build": "8469403c7bbd"
+  "build": "7651790a8b54"
 }

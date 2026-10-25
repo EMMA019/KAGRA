@@ -101,6 +101,11 @@
       "v": "b265d4fdfa"
     },
     {
+      "path": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+      "url": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+      "v": "3eba73bda8"
+    },
+    {
       "path": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
       "url": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
       "v": "fe58f3600c"
@@ -216,6 +221,11 @@
       "v": "5d7d10947f"
     },
     {
+      "path": "assets/audio/oga-wet-squish/impactsplat03.wav",
+      "url": "assets/audio/oga-wet-squish/impactsplat03.wav",
+      "v": "73e236ba1e"
+    },
+    {
       "path": "assets/library/kaykit/adventurers/characters/Barbarian.glb",
       "url": "assets/library/kaykit/adventurers/characters/Barbarian.glb",
       "v": "cefc311a0e"
@@ -261,5 +271,5 @@
       "v": "923e243503"
     }
   ],
-  "build": "8469403c7bbd"
+  "build": "7651790a8b54"
 }
