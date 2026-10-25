@@ -1677,6 +1677,24 @@ pub struct HopBeat {
     land_squash: f32,
     /// The hero's squash and ear springs (`hop_anim`).
     anim: crate::hop_anim::HeroAnim,
+    /// Visual-only hit-stop: the picture holds for this long while the sim and the music run on.
+    vfreeze: f32,
+    /// Where the hero was drawn when the freeze began (height, metres).
+    freeze_y: f32,
+    /// How far behind the true position the picture is while it catches up (metres).
+    vlag: f32,
+    /// Camera punch spring: FOV and dolly follow it.
+    kick: crate::hop_anim::Wobble,
+    /// Seconds since the last ring burst under the hero, and its colour.
+    ring_age: f32,
+    ring_col: [u32; 3],
+    /// Combo glow, eased 0..1.
+    combo_glow: f32,
+    /// Enemy hints already shown this session, and the one on screen: (enemy type, seconds).
+    hints_seen: Vec<bool>,
+    hint: Option<(usize, f32)>,
+    /// Page language for the HUD words (false = English).
+    lang_ja: bool,
     just_hop: bool,
     sfx: bool,
     time: f32,
@@ -1810,6 +1828,16 @@ impl HopBeat {
             hit_flash: 0.0,
             land_squash: 0.0,
             anim: Default::default(),
+            vfreeze: 0.0,
+            freeze_y: 0.0,
+            vlag: 0.0,
+            kick: Default::default(),
+            ring_age: 9.0,
+            ring_col: [255, 255, 255],
+            combo_glow: 0.0,
+            hints_seen: Vec::new(),
+            hint: None,
+            lang_ja: false,
             just_hop: false,
             sfx: true,
             time: 0.0,
@@ -1886,6 +1914,89 @@ impl HopBeat {
 
     fn latency_secs(&self) -> f32 {
         (self.spec.music.offset_ms + self.latency_user_ms) / 1000.0
+    }
+
+    /// `en` or `ja` by the page language.
+    fn tr<'a>(&self, en: &'a str, ja: &'a str) -> &'a str {
+        if self.lang_ja {
+            ja
+        } else {
+            en
+        }
+    }
+
+    /// `ja` / `en` (anything starting with "ja" is Japanese).
+    pub fn set_lang(&mut self, lang: &str) {
+        self.lang_ja = lang.to_ascii_lowercase().starts_with("ja");
+    }
+
+    /// Hold the picture for `secs` (a hit-stop that leaves the sim and the music alone).
+    fn freeze_picture(&mut self, secs: f32) {
+        if self.vfreeze <= 0.0 && self.vlag < 0.02 {
+            self.freeze_y = self.y + self.y_vis_off;
+        }
+        self.vfreeze = self.vfreeze.max(secs);
+    }
+
+    /// A burst ring under the hero (PERFECT, stomp, landing).
+    fn ring(&mut self, color: [u32; 3]) {
+        self.ring_age = 0.0;
+        self.ring_col = color;
+    }
+
+    /// The nearest live enemy ahead of the hero within `max_m`, as (type, metres).
+    /// `flyers` keeps only the ones that hover.
+    fn enemy_ahead(&self, flyers: bool, max_m: f32) -> Option<(usize, f32)> {
+        let hx = self.hero_x();
+        let mut best: Option<(usize, f32)> = None;
+        for o in self.course.obst.iter() {
+            if o.kind != Kind::Enemy || o.fate != Fate::Pending {
+                continue;
+            }
+            let Some(et) = self.spec.enemies.types.get(o.ety) else {
+                continue;
+            };
+            if flyers && et.y_lo <= 0.0 {
+                continue;
+            }
+            let d = (o.start + o.end) * 0.5 - hx;
+            if d > 0.0 && d < max_m && best.is_none_or(|b| d < b.1) {
+                best = Some((o.ety, d));
+            }
+        }
+        best
+    }
+
+    /// Visual feel that does not touch the sim: the held picture, the camera
+    /// spring, the ring, the combo glow and the first-sight hints.
+    fn fx_step(&mut self, dt: f32) {
+        if self.vfreeze > 0.0 {
+            self.vlag += self.spec.speed() * dt;
+            self.vfreeze -= dt;
+            self.y_vis_off = self.freeze_y - self.y;
+        } else {
+            self.vlag *= (1.0 - dt * 14.0).max(0.0);
+        }
+        self.vlag = self.vlag.min(0.7);
+        self.kick.step(0.0, 20.0, 0.5, dt);
+        self.ring_age += dt;
+        let want = if self.core.stats.alive {
+            (self.combo as f32 / 12.0).min(1.0)
+        } else {
+            0.0
+        };
+        self.combo_glow += (want - self.combo_glow) * (1.0 - (-dt * 6.0).exp());
+        if let Some((e, age)) = self.hint {
+            self.hint = (age + dt < 3.0).then_some((e, age + dt));
+        } else if let Some((e, d)) = self.enemy_ahead(false, 34.0) {
+            if self.hints_seen.len() <= e {
+                self.hints_seen.resize(e + 1, false);
+            }
+            if !self.hints_seen[e] && d > 8.0 {
+                self.hints_seen[e] = true;
+                self.hint = Some((e, 0.0));
+            }
+        }
     }
 
     fn beat_pos(&self) -> f32 {
@@ -2142,6 +2253,8 @@ impl HopBeat {
         self.combo = 0;
         self.streak = 0;
         self.hit_flash = 1.0;
+        self.anim.on_hit();
+        self.kick.v -= 6.0;
         self.lives = self.lives.saturating_sub(1);
         if self.lives == 0 {
             self.core.stats.die(reason);
@@ -2153,6 +2266,7 @@ impl HopBeat {
         }
         self.cue(if reason == "fell" { "fall" } else { "hit" });
         self.core.juice.shake = self.core.juice.shake.max(0.35);
+        self.freeze_picture(0.09);
         self.grant_invuln(self.spec.lives.invuln_secs);
         if reason == "fell" {
             // Second wind: the hero floats until there is slab again.
@@ -2184,6 +2298,7 @@ impl HopBeat {
     fn land(&mut self, id: u32) {
         self.land_squash = 1.0;
         self.anim.on_land(1.0);
+        self.kick.v += 1.0;
         self.cue("land");
         let t = self.song_t + 0.2;
         self.stray_check = Some((id, t));
@@ -2245,9 +2360,18 @@ impl HopBeat {
             Grade::Ok | Grade::Stomp => "land",
         });
         let hx = self.hero_x();
-        if grade == Grade::Perfect {
-            let (c, n) = (self.spec.look.accent, 7);
-            self.core.juice.burst(hx, 0.3, 0.0, n, c, 2.8, 0.09);
+        match grade {
+            Grade::Perfect => {
+                let (c, n) = (self.spec.look.accent, 7);
+                self.core.juice.burst(hx, 0.3, 0.0, n, c, 2.8, 0.09);
+                self.kick.v += 3.5;
+                self.ring([255, 236, 150]);
+            }
+            Grade::Good => {
+                self.kick.v += 1.4;
+                self.ring(self.spec.look.glow);
+            }
+            _ => {}
         }
     }
 
@@ -2412,7 +2536,10 @@ impl HopBeat {
 
         let grounded = matches!(self.air, Air::Ground);
         let (bp, bf) = (self.beat_pos(), self.beat_flash);
-        self.anim.update(dt, self.y, grounded, bp, bf);
+        if self.vfreeze <= 0.0 {
+            self.anim.update(dt, self.y, grounded, bp, bf);
+        }
+        self.fx_step(dt);
 
         // ---- obstacles
         let hw = hero.half_width;
@@ -2543,6 +2670,9 @@ impl HopBeat {
         self.grade_age = 0.0;
         self.cue("stomp");
         self.anim.on_stomp();
+        self.kick.v += 6.0;
+        self.freeze_picture(0.07);
+        self.ring(self.spec.look.accent);
         let c = self.spec.look.accent;
         self.core.juice.burst(px, py, 0.0, 9, c, 3.0, 0.1);
         self.core.juice.shake = self.core.juice.shake.max(0.12);
@@ -2724,6 +2854,138 @@ impl HopBeat {
         value.to_string()
     }
 
+    /// Grade popup near the hero, the enemy warning and hint, and the hurt vignette.
+    fn hud_popups(&self, list: &mut DrawList, w: f32, h: f32, s: f32) {
+        let glow = self.spec.look.glow.map(|v| v as u8);
+        let accent = self.spec.look.accent.map(|v| v as u8);
+        // Text with a dark drop shadow so it reads on any sky.
+        let shadowed = |list: &mut DrawList, t: &str, x: f32, y: f32, size: f32, c: [u8; 4]| {
+            let sh = [6, 4, 20, (c[3] as f32 * 0.8) as u8];
+            list.texts.push(
+                TextQuad::new(t, x + 2.0 * s, y + 2.0 * s, size * s, sh).aligned(TextAlign::Center),
+            );
+            list.texts
+                .push(TextQuad::new(t, x, y, size * s, c).aligned(TextAlign::Center));
+        };
+        if let Some((g, err, _)) = self.last_grade {
+            let a = self.grade_age;
+            if a < 0.8 {
+                let fade = if a < 0.5 { 1.0 } else { 1.0 - (a - 0.5) / 0.3 };
+                let al = (255.0 * fade).clamp(0.0, 255.0) as u8;
+                // Pops in big, settles, floats up.
+                let pop = 1.0 + 0.7 * (1.0 - a / 0.12).max(0.0);
+                let y = h * 0.45 - a * 46.0 * s;
+                let (word, c, size) = match g {
+                    Grade::Perfect => ("PERFECT!", [255, 236, 150, al], 28.0),
+                    Grade::Good => ("GOOD", [glow[0], glow[1], glow[2], al], 22.0),
+                    Grade::Ok => ("OK", [200, 200, 220, al], 18.0),
+                    Grade::Stomp => ("STOMP!", [accent[0], accent[1], accent[2], al], 28.0),
+                };
+                shadowed(list, word, w * 0.5, y, size * pop, c);
+                if matches!(g, Grade::Good | Grade::Ok) {
+                    let side = if err < 0.0 {
+                        self.tr("EARLY", "はやい")
+                    } else {
+                        self.tr("LATE", "おそい")
+                    };
+                    shadowed(
+                        list,
+                        side,
+                        w * 0.5,
+                        y + 28.0 * s,
+                        12.0,
+                        [c[0], c[1], c[2], al / 2],
+                    );
+                }
+            }
+        }
+        // A flyer is close: a flashing badge.
+        if let Some((e, d)) = self.enemy_ahead(true, WARN_M) {
+            let on = ((self.beat_pos() * 2.0).fract()) < 0.6;
+            let col = self
+                .spec
+                .enemies
+                .types
+                .get(e)
+                .map(|t| t.color.map(|v| v as u8))
+                .unwrap_or([255, 200, 60]);
+            let near = (1.0 - d / WARN_M).clamp(0.0, 1.0);
+            let bw = (44.0 + 14.0 * near) * s;
+            let (bx, by) = (w * 0.5 - bw * 0.5, h * 0.17);
+            let a = if on { 235 } else { 120 };
+            list.quads.push(Quad::new(
+                bx - 3.0 * s,
+                by - 3.0 * s,
+                bw + 6.0 * s,
+                bw + 6.0 * s,
+                [255, 255, 255, a / 2],
+            ));
+            list.quads
+                .push(Quad::new(bx, by, bw, bw, [col[0], col[1], col[2], a]));
+            list.texts.push(
+                TextQuad::new(
+                    "!",
+                    w * 0.5,
+                    by + bw * 0.12,
+                    bw / s * 0.62 * s,
+                    [20, 8, 30, 255],
+                )
+                .aligned(TextAlign::Center),
+            );
+        }
+        // First sight of a kind of enemy: one line on what to do.
+        if let Some((e, age)) = self.hint {
+            if let Some(et) = self.spec.enemies.types.get(e) {
+                let (en, ja) = match (et.look.as_str(), et.stompable) {
+                    ("bat", _) => (
+                        "FLYING! TAP, DON'T HOLD",
+                        "とんでる！ホールドしないでタップ",
+                    ),
+                    (_, true) if et.step_m > 0.0 => (
+                        "IT WALKS AT YOU. LAND ON ITS HEAD!",
+                        "あるいてくる！あたまにのろう！",
+                    ),
+                    (_, true) => (
+                        "HOP OVER IT, OR LAND ON ITS HEAD!",
+                        "とびこえるか、あたまにのろう！",
+                    ),
+                    _ => ("HOP OVER IT!", "とびこえよう！"),
+                };
+                let fade = (age.min(3.0 - age) * 4.0).clamp(0.0, 1.0);
+                let al = (240.0 * fade) as u8;
+                list.quads.push(Quad::new(
+                    0.0,
+                    h * 0.265,
+                    w,
+                    34.0 * s,
+                    [8, 6, 24, (140.0 * fade) as u8],
+                ));
+                shadowed(
+                    list,
+                    self.tr(en, ja),
+                    w * 0.5,
+                    h * 0.265 + 8.0 * s,
+                    13.0,
+                    [255, 255, 255, al],
+                );
+            }
+        }
+        // Hurt: red closes in from the edges and fades.
+        if self.hit_flash > 0.02 {
+            let f = self.hit_flash.clamp(0.0, 1.0);
+            let m = w.min(h);
+            for k in 0..4 {
+                let t = m * (0.05 + 0.035 * k as f32);
+                let a = (150.0 * f / (1.0 + k as f32 * 0.9)) as u8;
+                let c = [230, 20, 40, a];
+                list.quads.push(Quad::new(0.0, 0.0, w, t, c));
+                list.quads.push(Quad::new(0.0, h - t, w, t, c));
+                list.quads.push(Quad::new(0.0, t, t, h - 2.0 * t, c));
+                list.quads.push(Quad::new(w - t, t, t, h - 2.0 * t, c));
+            }
+        }
+    }
+
     /// `menu` draws the built-in title / pause / result cards; a page that
     /// brings its own passes false.
     pub fn hud(&self, width: u32, height: u32, menu: bool) -> DrawList {
@@ -2791,38 +3053,7 @@ impl HopBeat {
                     TextAlign::Center,
                 );
             }
-            if let Some((g, err, _)) = self.last_grade {
-                if self.grade_age < 0.7 {
-                    let a = (255.0 * (1.0 - self.grade_age / 0.7)).clamp(0.0, 255.0) as u8;
-                    let (word, c) = match g {
-                        Grade::Perfect => ("PERFECT", [255, 236, 150, a]),
-                        Grade::Good => ("GOOD", [glow[0], glow[1], glow[2], a]),
-                        Grade::Ok => ("OK", [200, 200, 220, a]),
-                        Grade::Stomp => ("STOMP!", [accent[0], accent[1], accent[2], a]),
-                    };
-                    txt(
-                        &mut list,
-                        word,
-                        w * 0.5,
-                        h * 0.60,
-                        20.0,
-                        c,
-                        TextAlign::Center,
-                    );
-                    if matches!(g, Grade::Good | Grade::Ok) {
-                        let side = if err < 0.0 { "EARLY" } else { "LATE" };
-                        txt(
-                            &mut list,
-                            side,
-                            w * 0.5,
-                            h * 0.60 + 26.0 * s,
-                            11.0,
-                            [c[0], c[1], c[2], a / 2],
-                            TextAlign::Center,
-                        );
-                    }
-                }
-            }
+            self.hud_popups(&mut list, w, h, s);
             // beat dots
             let bpb = self.spec.music.beats_per_bar.max(1);
             let cur = (self.beat_pos().floor().max(0.0) as u32) % bpb;
@@ -2957,6 +3188,8 @@ const BEETLE_GLB: &str = "assets/models/hop_beat/hop_beetle.glb";
 /// (`EAR_PIVOT`, in the body's own units).
 const EARS_GLB: &str = "assets/models/hop_beat/hop_ears.glb";
 const EAR_PIVOT: [f32; 3] = [0.0, 0.80, 0.26];
+/// A flyer this far ahead (metres, about 4 beats) starts to warn.
+const WARN_M: f32 = 26.0;
 const BAT_GLB: &str = "assets/models/hop_beat/hop_bat.glb";
 /// Skyline variants: (tower, lit windows), unit footprint 3 x 3 m, base on y = 0.
 const TOWER_GLBS: [(&str, &str); 3] = [
@@ -3034,7 +3267,7 @@ impl HopBeat {
     fn view_x(&self) -> f32 {
         match self.flow.phase {
             FlowPhase::Title => 0.0,
-            _ => self.hero_x(),
+            _ => self.hero_x() - self.vlag,
         }
     }
 
@@ -3096,9 +3329,14 @@ impl HopBeat {
             id: "camera:main".into(),
             kind: "camera".into(),
             name: "chase".into(),
-            position: [shake[0], 3.1 + lift * 0.5 + shake[1], hx - 6.6],
+            position: [
+                shake[0],
+                3.1 + lift * 0.5 + shake[1],
+                hx - 6.6 - 1.2 * self.kick.x,
+            ],
             target: [0.0, 0.5 + lift, hx + 7.5],
-            fov: 64.0,
+            // The beat breathes the lens a little; a PERFECT or a stomp punches it.
+            fov: 64.0 + 24.0 * self.kick.x.clamp(-0.18, 0.2) + 0.7 * pulse * pulse,
             roll: 0.0,
         });
         doc.lights.push(light(
@@ -3592,14 +3830,26 @@ impl HopBeat {
             };
             if et.y_lo > 0.0 {
                 // A bright pulsing blob on the slab marks the flyer's lane: the track under it is safe to tap through.
+                // Inside the warning distance it flashes white-hot on every half beat.
+                let ahead = center - self.hero_x();
+                let warn = if live && ahead > 0.0 && ahead < WARN_M {
+                    let b = (self.beat_pos() * 2.0).fract();
+                    (1.0 - b) * (1.0 - ahead / WARN_M * 0.5)
+                } else {
+                    0.0
+                };
                 doc.props.push(prop(
                     &format!("{id}-shadow"),
                     "sphere",
                     "shadow",
                     [0.0, 0.015, center],
-                    [(o.end - o.start).max(0.9) * (0.9 + 0.1 * pulse), 0.012, 0.8],
-                    et.color.map(|v| v / 2),
-                    0.9 + 0.5 * pulse,
+                    [
+                        (o.end - o.start).max(0.9) * (0.9 + 0.1 * pulse + 0.25 * warn),
+                        0.012,
+                        0.8 + 0.4 * warn,
+                    ],
+                    mix(et.color.map(|v| v / 2), [255, 255, 255], 0.6 * warn),
+                    0.9 + 0.5 * pulse + 1.4 * warn,
                     1.0,
                     0.0,
                 ));
@@ -3742,15 +3992,17 @@ impl HopBeat {
         let r = 0.40;
         let z = hx;
         let gy = y.max(0.0);
-        let body_c = if self.hit_flash > 0.2 {
+        let body_c = if self.hit_flash > 0.6 {
             [255, 255, 255]
+        } else if self.hit_flash > 0.2 {
+            [255, 70, 80]
         } else {
             skin_tint(&self.spec.skin).unwrap_or(look.hero)
         };
         let em = if blink {
             0.1
         } else {
-            0.18 + 0.25 * self.hit_flash
+            0.18 + 0.25 * self.hit_flash + 0.3 * self.combo_glow * (0.6 + 0.4 * self.beat_flash)
         };
         {
             // shadow blob, only while there is slab below
@@ -3768,18 +4020,55 @@ impl HopBeat {
                     1.0,
                     0.0,
                 ));
+                // Combo glow: a ring of light on the slab that grows with the streak.
+                if self.combo_glow > 0.05 && !title {
+                    let g = self.combo_glow;
+                    let r = (0.9 + 0.7 * g) * (1.0 + 0.12 * self.beat_flash);
+                    doc.props.push(prop(
+                        "hero-aura",
+                        "sphere",
+                        "aura",
+                        [0.0, 0.02, z],
+                        [r, 0.012, r],
+                        look.accent,
+                        0.5 + 1.1 * g,
+                        1.0,
+                        0.0,
+                    ));
+                }
+                // PERFECT / GOOD / stomp: a ring that runs out from the feet.
+                if self.ring_age < 0.4 && !title {
+                    let u = self.ring_age / 0.4;
+                    let r = 0.7 + 2.6 * (1.0 - (1.0 - u) * (1.0 - u));
+                    doc.props.push(prop(
+                        "hero-ring",
+                        "sphere",
+                        "ring",
+                        [0.0, 0.03, z],
+                        [r, 0.01, r],
+                        self.ring_col,
+                        1.6 * (1.0 - u),
+                        1.0,
+                        0.0,
+                    ));
+                }
             }
         }
         if glb {
             // The model is 0.8 m tall with its feet on y = 0, like the ball below.
             let flash = self.hit_flash.clamp(0.0, 1.0);
             let beat = 0.12 * self.beat_flash;
-            let (em, col) = if flash > 0.2 {
+            let (em, col) = if flash > 0.6 {
                 (0.5 + 0.8 * flash, [1.0, 1.0, 1.0])
+            } else if flash > 0.2 {
+                (0.4 + 0.6 * flash, [1.0, 0.18, 0.22])
             } else if blink {
                 (0.0, [1.0, 1.0, 1.0])
             } else {
-                (beat, look.glow.map(|v| (v as f32 / 255.0).powf(2.2)))
+                (
+                    beat + 0.22 * self.combo_glow,
+                    look.glow.map(|v| (v as f32 / 255.0).powf(2.2)),
+                )
             };
             let scale = [sx * 1.2, sy * 1.2, sx * 1.2];
             doc.props.push(glb_prop(
@@ -4112,6 +4401,56 @@ mod tests {
             let _ = g.hud(w, h, true);
             let _ = g.hud(w, h, false);
         }
+    }
+
+    #[test]
+    fn the_visual_hit_stop_holds_the_picture_but_never_the_sim() {
+        let mut g = fresh();
+        g.confirm();
+        run(&mut g, 1.0);
+        let (t0, x0) = (g.song_t(), g.view_x());
+        g.freeze_picture(0.07);
+        run(&mut g, 0.05);
+        // The music clock and the hero ran on at full speed ...
+        assert!((g.song_t() - t0 - 0.05).abs() < 0.02, "{}", g.song_t() - t0);
+        // ... the picture did not move.
+        assert!((g.view_x() - x0).abs() < 0.02, "{}", g.view_x() - x0);
+        assert!(g.vlag > 0.2);
+        // Then it catches up without a pop.
+        run(&mut g, 0.4);
+        assert!(g.vlag < 0.02, "{}", g.vlag);
+        assert!((g.hero_x() - g.view_x()).abs() < 0.02);
+        // A full freeze never lags more than 0.7 m.
+        g.freeze_picture(9.0);
+        run(&mut g, 2.0);
+        assert!(g.vlag <= 0.7 + 1e-4);
+    }
+
+    #[test]
+    fn the_first_sight_of_each_enemy_gets_one_hint_and_the_language_switches_it() {
+        let mut g = fresh();
+        g.confirm();
+        let mut seen = false;
+        for _ in 0..(14.0 * 60.0) as u32 {
+            g.tick(1.0 / 60.0);
+            if g.hint.is_some() {
+                seen = true;
+                let ja = |g: &HopBeat| {
+                    g.hud(390, 844, false)
+                        .texts
+                        .iter()
+                        .map(|t| t.text.clone())
+                        .collect::<Vec<_>>()
+                        .join("|")
+                };
+                assert!(ja(&g).contains("HOP OVER IT"), "{}", ja(&g));
+                g.set_lang("ja-JP");
+                assert!(ja(&g).contains("とびこえるか"), "{}", ja(&g));
+                break;
+            }
+        }
+        assert!(seen, "no hint before the first enemy");
+        assert!(g.hints_seen.first().copied().unwrap_or(false));
     }
 
     #[test]

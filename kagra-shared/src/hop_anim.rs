@@ -127,6 +127,13 @@ impl HeroAnim {
         self.ear.v += 5.0;
     }
 
+    /// Hurt: squashed flat, the ears thrown forward.
+    pub fn on_hit(&mut self) {
+        self.squash.x = 0.8;
+        self.squash.v = 6.0;
+        self.ear.v -= 12.0;
+    }
+
     /// Landed on an enemy: a hard squash.
     pub fn on_stomp(&mut self) {
         self.squash.x = 1.0;
