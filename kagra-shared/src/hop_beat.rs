@@ -5175,6 +5175,42 @@ mod tests {
     }
 
     #[test]
+    fn the_default_course_has_enemies_from_the_first_bars() {
+        // Emma's "no enemies exist" report: a default run must show a
+        // slime early, whatever the saved best / language / look say.
+        let spec = HopSpec::default();
+        let bpb = spec.music.beats_per_bar as f32;
+        let mut c = Course::new(&spec);
+        c.ensure(&spec, 24.0 * bpb + spec.music.lead_in_bars as f32 * bpb);
+        let lead = spec.music.lead_in_bars as f32 * bpb;
+        let first: Vec<(f32, usize)> = c
+            .obst
+            .iter()
+            .filter(|o| o.kind == Kind::Enemy)
+            .map(|o| {
+                (
+                    ((o.start + o.end) * 0.5 / spec.hero.beat_len_m - lead) / bpb,
+                    o.ety,
+                )
+            })
+            .collect();
+        eprintln!("enemy bars: {first:?}");
+        let early = first.iter().filter(|(bar, _)| *bar < 24.0).count();
+        assert!(early >= 3, "only {early} enemies in the first 24 bars");
+        assert!(
+            first.iter().any(|(b, t)| *b < 12.0 && *t == 0),
+            "no slime by bar 12"
+        );
+        // through the world JSON a real page sends, with a saved best
+        let h2 =
+            HopBeat::from_json(r#"{"best":5000,"quality":"low","skin":"x","look":"y"}"#).unwrap();
+        assert_eq!(h2.spec.enemies.types.len(), 3);
+        let mut c2 = h2.course().clone();
+        c2.ensure(&h2.spec, 24.0 * bpb + lead);
+        assert!(c2.obst.iter().filter(|o| o.kind == Kind::Enemy).count() >= 3);
+    }
+
+    #[test]
     fn the_checker_rejects_impossible_enemy_patterns() {
         let bad = |items: Vec<Item>| enemy_spec(items).course_problems();
         // fine: one slime
@@ -5276,6 +5312,57 @@ mod tests {
             !without.is_empty() && without.iter().all(|(_, glb)| !*glb),
             "{without:?}"
         );
+    }
+
+    #[test]
+    fn default_runs_always_draw_enemies_with_a_real_transform() {
+        // Regression for "the enemies are gone": every quality tier, a fresh run
+        // shows enemies early, and none is ever drawn at zero size, non-finite
+        // or disabled.
+        for q in ["", "low", "mid", "high"] {
+            let json = if q.is_empty() {
+                "{}".to_string()
+            } else {
+                format!(r#"{{"quality":"{q}"}}"#)
+            };
+            let mut g = HopBeat::from_json(&json).unwrap();
+            g.set_sfx(false);
+            g.confirm();
+            let (mut seen, mut first_t) = (0usize, None);
+            for f in 0..(30.0 * 60.0) as u32 {
+                g.tick(1.0 / 60.0);
+                for p in g
+                    .document()
+                    .props
+                    .iter()
+                    .filter(|p| p.name == "enemy" || p.id.starts_with("enemy-"))
+                {
+                    if p.id.ends_with("-shadow") {
+                        continue;
+                    }
+                    seen += 1;
+                    first_t.get_or_insert(f as f32 / 60.0);
+                    assert!(p.enabled, "{q}: {} is disabled", p.id);
+                    assert!(
+                        p.position.iter().all(|v| v.is_finite())
+                            && p.yaw.is_finite()
+                            && p.roll.is_finite(),
+                        "{q}: {} has a bad transform {:?}",
+                        p.id,
+                        p.position
+                    );
+                    // the smallest scale is the 5 % "appearing" floor of a 0.3 m pose
+                    assert!(
+                        p.scale.iter().all(|v| v.is_finite() && *v > 0.01),
+                        "{q}: {} scale {:?}",
+                        p.id,
+                        p.scale
+                    );
+                }
+            }
+            assert!(seen > 60, "{q}: only {seen} enemy prop frames in 30 s");
+            assert!(first_t.unwrap() < 6.0, "{q}: first enemy at {first_t:?} s");
+        }
     }
 
     #[test]
