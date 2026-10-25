@@ -266,6 +266,40 @@ impl Default for CameraSpec {
     }
 }
 
+/// Game feel and effects, all switchable from the JSON. `cap` is the live-particle cap for
+/// the low, mid and high quality tiers; the costly extras are only there on `high`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FxSpec {
+    /// Hit sparks, death puffs, gem glints, muzzle flash.
+    pub particles: bool,
+    /// Camera shake scale (0 = none, 1 = as tuned, 2 = double).
+    pub shake: f32,
+    /// Floating damage numbers.
+    pub damage_numbers: bool,
+    /// Metres a foe is shoved by a hit.
+    pub knockback: f32,
+    /// Camera zoom-in pulse scale on hurt, level-up and big kills.
+    pub zoom_pulse: f32,
+    /// Streaks behind shots.
+    pub trails: bool,
+    pub cap: [u32; 3],
+}
+
+impl Default for FxSpec {
+    fn default() -> Self {
+        Self {
+            particles: true,
+            shake: 1.0,
+            damage_numbers: true,
+            knockback: 0.12,
+            zoom_pulse: 1.0,
+            trails: true,
+            cap: [48, 160, 480],
+        }
+    }
+}
+
 /// Pool sizes. `foes` is the live-enemy cap for the low, mid and high quality tiers.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -380,6 +414,7 @@ pub struct SurvivorSpec {
     pub director: DirectorSpec,
     pub camera: CameraSpec,
     pub caps: CapSpec,
+    pub fx: FxSpec,
     pub enemies: EnemySpec,
     pub weapons: Vec<WeaponSpec>,
     pub passives: Vec<PassiveSpec>,
@@ -466,6 +501,7 @@ impl Default for SurvivorSpec {
             director: DirectorSpec::default(),
             camera: CameraSpec::default(),
             caps: CapSpec::default(),
+            fx: FxSpec::default(),
             enemies: EnemySpec {
                 types: vec![ghoul],
                 ..EnemySpec::default()
@@ -640,6 +676,13 @@ impl SurvivorSpec {
         }
         if self.caps.foes[0] > self.caps.foes[1] || self.caps.foes[1] > self.caps.foes[2] {
             return Err(format!("{w}: caps.foes must rise from low to high"));
+        }
+        let f = &self.fx;
+        range(w, "fx.shake", f.shake, 0.0, 2.0)?;
+        range(w, "fx.knockback", f.knockback, 0.0, 0.6)?;
+        range(w, "fx.zoom_pulse", f.zoom_pulse, 0.0, 2.0)?;
+        if f.cap.iter().any(|c| *c > 600) || f.cap[0] > f.cap[1] || f.cap[1] > f.cap[2] {
+            return Err(format!("{w}: fx.cap is 0..=600 and rises from low to high"));
         }
         self.enemies.validate(w, &["ghoul"])?;
         if self.enemies.types.is_empty() {
@@ -869,6 +912,48 @@ const MAX_FOE_R: f32 = 1.0;
 const HOLD: f32 = 0.85;
 const PUSH_NEIGHBOURS: u32 = 6;
 
+/// One effect particle (hit spark, puff, glint, muzzle flash).
+#[derive(Clone, Copy, Debug)]
+struct Fx {
+    x: f32,
+    y: f32,
+    z: f32,
+    vx: f32,
+    vy: f32,
+    vz: f32,
+    age: f32,
+    life: f32,
+    kind: u8,
+}
+
+/// A floating damage number (world position, shown by the HUD).
+#[derive(Clone, Copy, Debug)]
+struct DmgNum {
+    x: f32,
+    z: f32,
+    val: i32,
+    age: f32,
+}
+
+const DMG_CAP: [usize; 3] = [6, 12, 20];
+const DMG_LIFE: f32 = 0.7;
+const FX_SPARK: u8 = 0;
+const FX_PUFF_GHOST: u8 = 1;
+const FX_PUFF_ZOMBIE: u8 = 2;
+const FX_GLINT: u8 = 3;
+const FX_MUZZLE: u8 = 4;
+const FX_HURT: u8 = 5;
+/// Per kind: sRGB colour, sprite radius (m) and opacity for the young, middle and old third
+/// of its life. One point cloud per kind and third, refilled in place each frame.
+const FX_LOOK: [([u8; 3], [f32; 3], [u8; 3]); 6] = [
+    ([185, 240, 255], [0.075, 0.055, 0.035], [255, 230, 170]),
+    ([185, 165, 255], [0.16, 0.26, 0.34], [210, 130, 60]),
+    ([140, 225, 150], [0.16, 0.26, 0.34], [210, 130, 60]),
+    ([255, 225, 110], [0.10, 0.08, 0.05], [255, 230, 160]),
+    ([255, 225, 160], [0.28, 0.18, 0.10], [255, 200, 110]),
+    ([255, 85, 95], [0.12, 0.09, 0.06], [255, 220, 140]),
+];
+
 #[derive(Debug)]
 pub struct SurvivorArena {
     pub spec: SurvivorSpec,
@@ -886,6 +971,14 @@ pub struct SurvivorArena {
     gems: Vec<Gem>,
     budget: Budget,
     rng: Rng,
+    /// Effects roll their own dice, so switching them off never changes a run.
+    fx_rng: Rng,
+    fx: Vec<Fx>,
+    fx_cap: usize,
+    dmg: Vec<DmgNum>,
+    tier: usize,
+    /// Camera zoom-in kick, 0..1, decays fast.
+    zoom_kick: f32,
     // hero
     hx: f32,
     hz: f32,
@@ -971,6 +1064,12 @@ impl SurvivorArena {
             gems: Vec::new(),
             budget: Budget::default(),
             rng: Rng::new(spec.director.seed),
+            fx_rng: Rng::new(spec.director.seed ^ 0x9e37_79b9),
+            fx: Vec::new(),
+            fx_cap: 0,
+            dmg: Vec::new(),
+            tier: 1,
+            zoom_kick: 0.0,
             hx: 0.0,
             hz: 0.0,
             vx: 0.0,
@@ -1027,6 +1126,10 @@ impl SurvivorArena {
             Some("high") => 2,
             _ => 1,
         };
+        self.tier = tier;
+        self.fx_cap = self.spec.fx.cap[tier] as usize;
+        self.fx = Vec::with_capacity(self.fx_cap);
+        self.dmg = Vec::with_capacity(DMG_CAP[tier]);
         let cap = self.spec.caps.foes[tier] as usize;
         self.foes = Foes::with_capacity(cap);
         self.grid = Grid::new(self.spec.arena.half + 3.0, 2.0, cap);
@@ -1123,6 +1226,10 @@ impl SurvivorArena {
         self.gems.clear();
         self.budget.reset();
         self.rng = Rng::new(self.spec.director.seed);
+        self.fx_rng = Rng::new(self.spec.director.seed ^ 0x9e37_79b9);
+        self.fx.clear();
+        self.dmg.clear();
+        self.zoom_kick = 0.0;
         (self.hx, self.hz, self.vx, self.vz, self.face) = (0.0, 0.0, 0.0, 0.0, 0.0);
         self.hurt_cd = 0.0;
         self.hurt_flash = 0.0;
@@ -1212,6 +1319,7 @@ impl SurvivorArena {
             *c = (*c - dt).max(0.0);
         }
         self.hurt_flash = (self.hurt_flash - dt * 3.0).max(0.0);
+        self.step_fx(dt);
         if !self.cards.is_empty() {
             return;
         }
@@ -1235,6 +1343,9 @@ impl SurvivorArena {
             self.level += 1;
             self.pending_levels += 1;
             self.cue("levelup", 2, 0.2);
+            self.zoom_kick = 1.0;
+            let at = [self.hx, 0.3, self.hz];
+            self.burst(FX_GLINT, 14, at, [0.0, 0.0], 3.4, 1.0, 3.2, 0.7);
         }
         self.core.stats.score = self.score_now();
         if self.hp <= 0.0 {
@@ -1256,6 +1367,25 @@ impl SurvivorArena {
         let half_w = c.view_width_m * 0.5;
         let fov = 2.0 * (half_w / (dist * aspect.max(0.2))).atan().to_degrees();
         (eye, target, fov.clamp(c.fov_min, c.fov_max))
+    }
+
+    /// A world point on the canvas (pixels), or `None` behind the camera.
+    fn project(&self, p: [f32; 3], w: f32, h: f32) -> Option<(f32, f32)> {
+        let aspect = w / h.max(1.0);
+        let (eye, target, fov) = self.camera(aspect);
+        let f = norm3([target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]]);
+        let r = norm3(cross(f, [0.0, 1.0, 0.0]));
+        let u = cross(r, f);
+        let v = [p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]];
+        let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let cz = dot(v, f);
+        if cz < 0.1 {
+            return None;
+        }
+        let t = (fov.to_radians() * 0.5).tan();
+        let nx = dot(v, r) / (cz * t * aspect.max(0.2));
+        let ny = dot(v, u) / (cz * t);
+        Some(((nx * 0.5 + 0.5) * w, (0.5 - ny * 0.5) * h))
     }
 
     /// The ground point under a canvas pixel, or `None` for a sky ray.
@@ -1369,6 +1499,78 @@ impl SurvivorArena {
         }
     }
 
+    /// A burst of `n` particles (scaled by the quality tier), thrown along (`dx`,`dz`) with a
+    /// spread of `fan` and an upward `up`. Dropped when the pool is full.
+    #[allow(clippy::too_many_arguments)]
+    fn burst(
+        &mut self,
+        kind: u8,
+        n: u32,
+        at: [f32; 3],
+        dir: [f32; 2],
+        speed: f32,
+        fan: f32,
+        up: f32,
+        life: f32,
+    ) {
+        if !self.spec.fx.particles {
+            return;
+        }
+        let n = (n as f32 * [0.5, 1.0, 1.5][self.tier]).ceil() as u32;
+        for _ in 0..n {
+            if self.fx.len() >= self.fx_cap {
+                return;
+            }
+            let a = self.fx_rng.range(0.0, std::f32::consts::TAU);
+            let sp = speed * self.fx_rng.range(0.4, 1.0);
+            self.fx.push(Fx {
+                x: at[0],
+                y: at[1],
+                z: at[2],
+                vx: dir[0] * speed * 0.7 + a.cos() * sp * fan,
+                vy: up * self.fx_rng.range(0.5, 1.0),
+                vz: dir[1] * speed * 0.7 + a.sin() * sp * fan,
+                age: 0.0,
+                life: life * self.fx_rng.range(0.7, 1.0),
+                kind,
+            });
+        }
+    }
+
+    fn step_fx(&mut self, dt: f32) {
+        self.zoom_kick = (self.zoom_kick - dt * 3.5).max(0.0);
+        for i in (0..self.fx.len()).rev() {
+            let p = &mut self.fx[i];
+            p.age += dt;
+            if p.age >= p.life {
+                self.fx.swap_remove(i);
+                continue;
+            }
+            let (drag, grav) = match p.kind {
+                FX_SPARK | FX_HURT => (1.6, 12.0),
+                FX_GLINT => (0.8, -2.2),
+                _ => (2.6, 0.0),
+            };
+            let k = (1.0 - drag * dt).max(0.0);
+            p.vx *= k;
+            p.vz *= k;
+            p.vy = p.vy * k - grav * dt;
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.z += p.vz * dt;
+            if p.y < 0.04 {
+                p.y = 0.04;
+                p.vy = -p.vy * 0.25;
+            }
+        }
+        for i in (0..self.dmg.len()).rev() {
+            self.dmg[i].age += dt;
+            if self.dmg[i].age >= DMG_LIFE {
+                self.dmg.remove(i);
+            }
+        }
+    }
+
     fn hurt(&mut self, dmg: f32) {
         if self.hurt_cd > 0.0 || dmg <= 0.0 {
             return;
@@ -1377,6 +1579,9 @@ impl SurvivorArena {
         self.hurt_cd = self.spec.hero.hurt_cd;
         self.hurt_flash = 1.0;
         self.core.juice.shake = self.core.juice.shake.max(0.35);
+        self.zoom_kick = self.zoom_kick.max(0.7);
+        let at = [self.hx, 0.7, self.hz];
+        self.burst(FX_HURT, 8, at, [0.0, 0.0], 4.5, 1.0, 3.0, 0.45);
         self.cue("hurt", 1, 0.15);
     }
 
@@ -1492,6 +1697,10 @@ impl SurvivorArena {
                 });
             }
             self.cue("shoot", 0, 0.12);
+            let (sn, cs) = base.sin_cos();
+            let at = [self.hx + sn * reach, MUZZLE_Y, self.hz + cs * reach];
+            self.burst(FX_MUZZLE, 1, at, [0.0, 0.0], 0.0, 0.0, 0.0, 0.09);
+            self.burst(FX_SPARK, 2, at, [sn, cs], 5.0, 0.5, 0.5, 0.18);
         }
     }
 
@@ -1526,9 +1735,25 @@ impl SurvivorArena {
                 let k = 1.0 / s.vx.hypot(s.vz).max(1e-3);
                 self.foes.hp[j] -= s.dmg;
                 self.foes.flash[j] = 0.1;
-                self.foes.x[j] += s.vx * k * 0.12;
-                self.foes.z[j] += s.vz * k * 0.12;
+                let kb = self.spec.fx.knockback;
+                self.foes.x[j] += s.vx * k * kb;
+                self.foes.z[j] += s.vz * k * kb;
                 hit_cue = true;
+                let (dirx, dirz, dmg_val) = (-s.vx * k, -s.vz * k, s.dmg);
+                let (fx_x, fx_z) = (self.foes.x[j], self.foes.z[j]);
+                if self.spec.fx.damage_numbers {
+                    if self.dmg.len() >= DMG_CAP[self.tier] {
+                        self.dmg.remove(0);
+                    }
+                    self.dmg.push(DmgNum {
+                        x: fx_x,
+                        z: fx_z,
+                        val: dmg_val.round().max(1.0) as i32,
+                        age: 0.0,
+                    });
+                }
+                self.burst(FX_SPARK, 4, [sx, 0.6, sz], [dirx, dirz], 5.5, 0.6, 1.8, 0.3);
+                let s = &mut self.shots[si];
                 if (s.n as usize) < s.hits.len() {
                     s.hits[s.n as usize] = self.foes.uid[j];
                     s.n += 1;
@@ -1552,6 +1777,15 @@ impl SurvivorArena {
             let k = self.kinds[self.foes.kind[i] as usize];
             self.kills += 1;
             let (x, z) = (self.foes.x[i], self.foes.z[i]);
+            let puff = if self.foes.uid[i].is_multiple_of(4) {
+                FX_PUFF_ZOMBIE
+            } else {
+                FX_PUFF_GHOST
+            };
+            self.burst(puff, 6, [x, 0.5, z], [0.0, 0.0], 2.4, 1.0, 1.2, 0.55);
+            self.burst(FX_SPARK, 4, [x, 0.5, z], [0.0, 0.0], 5.0, 1.0, 2.5, 0.35);
+            self.core.juice.shake = self.core.juice.shake.max(0.07);
+            self.zoom_kick = self.zoom_kick.max(0.12);
             if self.gems.len() < self.spec.caps.gems as usize {
                 self.gems.push(Gem {
                     x,
@@ -1584,9 +1818,11 @@ impl SurvivorArena {
                 g.z += dz * k;
             }
             if d < take {
-                self.xp += g.v * self.mods.xp;
+                let (gx, gz, gv) = (g.x, g.z, g.v);
+                self.xp += gv * self.mods.xp;
                 self.gems.swap_remove(gi);
                 got = true;
+                self.burst(FX_GLINT, 5, [gx, 0.3, gz], [0.0, 0.0], 1.6, 1.0, 2.4, 0.45);
             }
         }
         if got {
@@ -1982,6 +2218,8 @@ const BLASTER_GLB: &str = "assets/models/kenney/blaster-kit/blaster-a.glb";
 const GUN_FWD: f32 = 0.86;
 const GUN_UP: f32 = 0.9;
 const GUN_SCALE: f32 = 1.3;
+/// Height of the muzzle above the floor (m).
+const MUZZLE_Y: f32 = 0.62;
 const MUZZLE: f32 = GUN_FWD + 0.37 * GUN_SCALE;
 /// How long the hero keeps facing the target after a shot.
 const AIM_HOLD: f32 = 0.5;
@@ -1996,7 +2234,8 @@ const DECOR: [(&str, f32, u32); 6] = [
     ("cross-wood", 1.4, 2),
 ];
 /// Pines ringed outside the wall, so the arena has a dark treeline round it.
-const TREES: [(&str, u32); 2] = [("pine", 12), ("pine-crooked", 8)];
+/// Seen from the high camera the pines read as flat pale boxes, so the ring is off.
+const TREES: [(&str, u32); 0] = [];
 /// Kenney Mini Arena (CC0): the stone boundary wall (1 m long, x) and the corner column.
 const WALL_GLB: &str = "assets/models/kenney/mini-arena/wall.glb";
 const COLUMN_GLB: &str = "assets/models/kenney/mini-arena/column.glb";
@@ -2415,6 +2654,26 @@ impl SurvivorArena {
             7.0,
             false,
         ));
+        // Effect clouds (one per kind and third of life) and shot streaks: fixed lists whose
+        // vectors are refilled in place each frame.
+        for (k, (rgb, size, alpha)) in FX_LOOK.iter().enumerate() {
+            for b in 0..3 {
+                doc.points.push(crate::strokes::PointCloud {
+                    id: format!("fx-{k}-{b}"),
+                    positions: Vec::with_capacity(self.fx_cap),
+                    color: [rgb[0], rgb[1], rgb[2], alpha[b]],
+                    size: size[b],
+                });
+            }
+        }
+        for i in 0..self.spec.caps.shots {
+            doc.lines.push(crate::strokes::FatLine {
+                id: format!("trail-{i}"),
+                points: Vec::with_capacity(2),
+                color: [150, 235, 255, 150],
+                width: 3.0,
+            });
+        }
         self.doc = doc;
     }
 
@@ -2424,7 +2683,8 @@ impl SurvivorArena {
         }
         let (w, h) = self.size.get();
         let (mut eye, mut target, fov) = self.camera(w / h.max(1.0));
-        let sh = self.core.juice.shake.min(1.0) * 0.25;
+        let fov = fov * (1.0 - 0.035 * self.zoom_kick * self.spec.fx.zoom_pulse);
+        let sh = self.core.juice.shake.min(1.0) * 0.25 * self.spec.fx.shake;
         eye[0] += (self.anim_t * 61.0).sin() * sh;
         eye[2] += (self.anim_t * 47.0).sin() * sh;
         target[0] += (self.anim_t * 61.0).sin() * sh;
@@ -2564,6 +2824,23 @@ impl SurvivorArena {
             p.position = [s.x, 0.55, s.z];
             p.yaw = s.vx.atan2(s.vz);
             p.scale = [s.r * 0.8, s.r * 0.8, s.r * 2.0];
+        }
+        for c in &mut self.doc.points {
+            c.positions.clear();
+        }
+        for p in &self.fx {
+            let b = ((p.age / p.life * 3.0) as usize).min(2);
+            self.doc.points[p.kind as usize * 3 + b]
+                .positions
+                .push([p.x, p.y, p.z]);
+        }
+        let streak = self.spec.fx.trails;
+        for (i, l) in self.doc.lines.iter_mut().enumerate() {
+            l.points.clear();
+            if let (true, Some(s)) = (streak, self.shots.get(i)) {
+                l.points.push([s.x - s.vx * 0.05, 0.58, s.z - s.vz * 0.05]);
+                l.points.push([s.x, 0.58, s.z]);
+            }
         }
         let cam = &mut self.doc.cameras[0];
         cam.position = eye;
@@ -2776,6 +3053,36 @@ impl SurvivorArena {
             [255, 240, 200, 255],
             TextAlign::Center,
         );
+        // Floating damage numbers.
+        if self.spec.fx.damage_numbers {
+            for d in &self.dmg {
+                let t = d.age / DMG_LIFE;
+                let Some((sx, sy)) = self.project([d.x, 0.9 + t * 0.9, d.z], w, h) else {
+                    continue;
+                };
+                let a = ((1.0 - t * t) * 255.0) as u8;
+                let pop = 1.0 + 0.6 * (1.0 - (d.age * 9.0).min(1.0));
+                let label = format!("{}", d.val);
+                text(
+                    &mut list,
+                    &label,
+                    sx + 1.5 * s,
+                    sy + 1.5 * s,
+                    15.0 * pop,
+                    [10, 10, 30, a / 2],
+                    TextAlign::Center,
+                );
+                text(
+                    &mut list,
+                    &label,
+                    sx,
+                    sy,
+                    15.0 * pop,
+                    [255, 240, 190, a],
+                    TextAlign::Center,
+                );
+            }
+        }
         // Pause button.
         if self.flow.phase == FlowPhase::Play {
             let r = pause_rect(w, s);
@@ -3261,6 +3568,74 @@ mod tests {
         g.key_dir = (-1.0, 0.0);
         g.tick(DT);
         assert!((g.face - aim).abs() < 0.05);
+    }
+
+    #[test]
+    fn effects_fill_pools_inside_their_caps_and_never_change_the_run() {
+        let run = |fx: bool| {
+            let mut g = started();
+            g.spec.fx.particles = fx;
+            g.spec.fx.damage_numbers = fx;
+            g.spec.fx.trails = fx;
+            g.spec.fx.shake = if fx { 1.0 } else { 0.0 };
+            let (mut peak, mut peak_dmg, mut seen_points) = (0, 0, 0);
+            kite_each(&mut g, 40.0, |g| {
+                peak = peak.max(g.fx.len());
+                peak_dmg = peak_dmg.max(g.dmg.len());
+                assert!(g.fx.len() <= g.fx_cap);
+                assert!(g.dmg.len() <= DMG_CAP[g.tier]);
+            });
+            g.build_doc();
+            seen_points += g
+                .doc
+                .points
+                .iter()
+                .map(|c| c.positions.len())
+                .sum::<usize>();
+            let again = g.doc.points.len();
+            (
+                g.kills(),
+                (g.hp() * 100.0) as i32,
+                peak,
+                peak_dmg,
+                seen_points,
+                again,
+            )
+        };
+        let (k1, h1, peak, peak_dmg, _, clouds) = run(true);
+        let (k0, h0, none, none_dmg, pts, _) = run(false);
+        assert_eq!((k1, h1), (k0, h0), "effects changed the sim");
+        assert!(peak > 5 && peak_dmg > 0, "peak {peak} dmg {peak_dmg}");
+        assert_eq!((none, none_dmg, pts), (0, 0, 0));
+        assert_eq!(clouds, FX_LOOK.len() * 3);
+    }
+
+    #[test]
+    fn a_damage_number_lands_on_its_foe() {
+        let mut g = started();
+        g.foes.spawn(0, g.hx + 2.0, g.hz - 3.0, 999.0);
+        for _ in 0..180 {
+            g.tick(DT);
+            if !g.dmg.is_empty() {
+                break;
+            }
+        }
+        assert!(!g.dmg.is_empty());
+        let d = g.dmg[0];
+        let (w, h) = (390.0, 844.0);
+        g.hud(390, 844, false);
+        let (sx, sy) = g
+            .project([d.x, 0.0, d.z], w, h)
+            .expect("in front of the camera");
+        assert!(
+            (0.0..w).contains(&sx) && (0.0..h).contains(&sy),
+            "{sx},{sy}"
+        );
+        // The hero projects to where the camera looks: upper half, centred.
+        let (hx, hy) = g.project([g.hx, 0.0, g.hz], w, h).unwrap();
+        assert!((hx - w * 0.5).abs() < 4.0 && hy < h * 0.6, "{hx},{hy}");
+        let list = g.hud(390, 844, false);
+        assert!(list.texts.iter().any(|t| t.text == format!("{}", d.val)));
     }
 
     #[test]

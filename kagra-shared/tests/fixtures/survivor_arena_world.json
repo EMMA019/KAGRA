@@ -127,6 +127,19 @@
         }
       ]
     },
+    "fx": {
+      "cap": [
+        48,
+        160,
+        480
+      ],
+      "damage_numbers": true,
+      "knockback": 0.12,
+      "particles": true,
+      "shake": 1.0,
+      "trails": true,
+      "zoom_pulse": 1.0
+    },
     "hero": {
       "hurt_cd": 0.5,
       "max_hp": 100.0,
