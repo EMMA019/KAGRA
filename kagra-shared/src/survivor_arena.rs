@@ -3454,26 +3454,27 @@ impl SurvivorArena {
                 ));
             }
         }
-        // The thumb marker.
+        // The thumb marker: a soft round dot (a square read as a stray grey box).
         if let Some((fx, fy)) = self.finger {
-            let d = 16.0 * s;
-            list.quads.push(Quad::new(
-                fx - d * 0.5,
-                fy - d * 0.5,
-                d,
-                d,
+            text(
+                &mut list,
+                "●",
+                fx,
+                fy - 12.0 * s,
+                22.0,
                 [255, 255, 255, 70],
-            ));
+                TextAlign::Center,
+            );
             if self.spec.input.mode == "stick" {
-                let o = self.origin;
-                let d2 = 44.0 * s;
-                list.quads.push(Quad::new(
-                    o.0 - d2 * 0.5,
-                    o.1 - d2 * 0.5,
-                    d2,
-                    d2,
-                    [255, 255, 255, 40],
-                ));
+                text(
+                    &mut list,
+                    "○",
+                    self.origin.0,
+                    self.origin.1 - 22.0 * s,
+                    44.0,
+                    [255, 255, 255, 50],
+                    TextAlign::Center,
+                );
             }
         }
         if !self.cards.is_empty() {
