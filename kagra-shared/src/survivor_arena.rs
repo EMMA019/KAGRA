@@ -1247,6 +1247,10 @@ pub struct SurvivorArena {
     doc: WorldDoc,
     slots: Slots,
     picture_quality: Option<String>,
+    /// Graphics-tier hints (`quality_hints`): the share of arena dressing and of spark
+    /// particles drawn. Picture only: the sim and its RNG never read them.
+    hint_atmo: f32,
+    hint_particles: f32,
     kinds: Vec<Kind>,
     foes: Foes,
     grid: Grid,
@@ -1408,6 +1412,8 @@ impl SurvivorArena {
             doc: WorldDoc::default(),
             slots: Slots::default(),
             picture_quality: None,
+            hint_atmo: 1.0,
+            hint_particles: 1.0,
             kinds,
             foes: Foes::default(),
             grid: Grid::new(half + 3.0, 2.0, 1),
@@ -2048,7 +2054,7 @@ impl SurvivorArena {
         if !self.spec.fx.particles {
             return;
         }
-        let n = (n as f32 * [0.5, 1.0, 1.5][self.tier]).ceil() as u32;
+        let n = (n as f32 * [0.5, 1.0, 1.5][self.tier] * self.hint_particles).ceil() as u32;
         for _ in 0..n {
             if self.fx.len() >= self.fx_cap {
                 return;
@@ -3594,6 +3600,22 @@ impl SurvivorArena {
         doc.lines
             .push(line("orbit".into(), RING_SEG + 1, [150, 220, 255, 50], 3.0));
         self.doc = doc;
+        self.apply_hints();
+    }
+
+    /// Thin the graveyard dressing to the tier's `atmo` share (every n-th piece stays, so the
+    /// ring never gaps on one side). Static props only; the sim has no say in them.
+    fn apply_hints(&mut self) {
+        let keep = self.hint_atmo.clamp(0.0, 1.0);
+        let total = self.doc.props.iter().filter(|p| p.name == "decor").count();
+        let shown = (total as f32 * keep).ceil() as usize;
+        let mut k = 0usize;
+        for p in self.doc.props.iter_mut().filter(|p| p.name == "decor") {
+            // Bresenham-style spread: piece k stays when the running share steps up.
+            let on = total > 0 && (k + 1) * shown / total > k * shown / total;
+            p.enabled = on;
+            k += 1;
+        }
     }
 
     fn build_doc(&mut self) {
@@ -4521,6 +4543,14 @@ impl crate::kit_host::KitHost for SurvivorArena {
     fn set_lang(&mut self, lang: &str) {
         SurvivorArena::set_lang(self, lang);
     }
+    fn supports_quality_tiers(&self) -> bool {
+        true
+    }
+    fn quality_hints(&mut self, atmo: f32, particles: f32) {
+        self.hint_atmo = atmo;
+        self.hint_particles = particles.clamp(0.0, 1.0);
+        self.apply_hints();
+    }
     fn pause_run(&mut self) {
         self.pause();
     }
@@ -5328,6 +5358,41 @@ mod tests {
         });
         g.build_doc();
         assert!(g.doc.lines[0].points.is_empty(), "a petal leaves no streak");
+    }
+
+    #[test]
+    fn graphics_hints_thin_the_picture_and_never_touch_the_sim() {
+        use crate::kit_host::KitHost;
+        let play = |atmo: f32, particles: f32| {
+            let mut g = fresh();
+            g.apply_quality();
+            g.build_doc();
+            g.confirm();
+            KitHost::quality_hints(&mut g, atmo, particles);
+            let mut fx_seen = 0usize;
+            for _ in 0..60 * 40 {
+                if g.card_count() > 0 {
+                    g.choose(0);
+                }
+                kite_step(&mut g);
+                g.tick(DT);
+                fx_seen = fx_seen.max(g.fx.len());
+            }
+            let decor = g
+                .doc
+                .props
+                .iter()
+                .filter(|p| p.name == "decor" && p.enabled)
+                .count();
+            (g.state_json(), decor, fx_seen)
+        };
+        assert!(KitHost::supports_quality_tiers(&fresh()));
+        let (full, decor_full, fx_full) = play(1.0, 1.0);
+        let (thin, decor_thin, fx_thin) = play(0.3, 0.4);
+        assert_eq!(full, thin, "tiers are picture only: same run, same state");
+        assert!(decor_full > 10 && decor_thin < decor_full * 4 / 10 + 2);
+        assert!(decor_thin > 0, "a thin ring, not an empty one");
+        assert!(fx_thin < fx_full, "fewer sparks ({fx_thin} vs {fx_full})");
     }
 
     /// Close-ups of the hero for each starting weapon, to see what it holds.

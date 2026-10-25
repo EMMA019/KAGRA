@@ -781,6 +781,10 @@
           const world = JSON.parse(worldText);
           if (asked === "low" || asked === "mobile" || asked === "high") {
             world.quality = asked;
+          } else if (world.genre === "survivor_arena" && (asked === "safe" || asked === "mid" || asked === "max")) {
+            // Moonlit Swarm sizes its pools (foes, sparks, props) once, at load, from the
+            // picture quality. The graphics tier picks the rest (scale, post, shadows) live.
+            world.quality = asked === "safe" ? "low" : asked === "max" ? "high" : "mobile";
           } else if (slug === "neon_cat" && (world.quality == null || world.quality === "")) {
             world.quality = "mobile";
           }
