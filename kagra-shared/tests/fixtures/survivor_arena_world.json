@@ -23,6 +23,21 @@
       "enabled": true,
       "master": 0.8,
       "sfx": {
+        "boom": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+          "rate": 1.0,
+          "volume": 0.5
+        },
+        "chest": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+          "rate": 1.25,
+          "volume": 0.6
+        },
+        "elite": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+          "rate": 0.55,
+          "volume": 0.6
+        },
         "gameover": {
           "file": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
           "rate": 1.0,
@@ -58,15 +73,40 @@
           "rate": 1.0,
           "volume": 0.7
         },
+        "pickup": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+          "rate": 1.0,
+          "volume": 0.35
+        },
+        "pulse": {
+          "file": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+          "rate": 0.55,
+          "volume": 0.3
+        },
+        "shield": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+          "rate": 1.5,
+          "volume": 0.5
+        },
         "shoot": {
           "file": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
           "rate": 1.0,
           "volume": 0.16
         },
+        "slash": {
+          "file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+          "rate": 1.6,
+          "volume": 0.3
+        },
         "win": {
           "file": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
           "rate": 1.0,
           "volume": 0.8
+        },
+        "zap": {
+          "file": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+          "rate": 2.0,
+          "volume": 0.2
         }
       },
       "sfx_volume": 1.0
@@ -90,12 +130,175 @@
     },
     "director": {
       "curve": 2.0,
+      "elite_every": 40.0,
+      "elite_first": 45.0,
       "end_rate": 8.5,
       "hp_per_min": 0.35,
       "ramp_secs": 100.0,
       "seed": 1,
       "spawn_dist": 10.5,
       "start_rate": 1.5
+    },
+    "drops": {
+      "blink": 4.0,
+      "cap": 16,
+      "enabled": true,
+      "items": [
+        {
+          "amount": 0.3,
+          "area": 0.0,
+          "color": [
+            120,
+            235,
+            150
+          ],
+          "glyph": "♥",
+          "id": "heal",
+          "kind": "heal",
+          "name": {
+            "en": "Rice ball",
+            "ja": "おにぎり"
+          },
+          "rarity": 0,
+          "secs": 0.0,
+          "weight": 30
+        },
+        {
+          "amount": 0.0,
+          "area": 0.0,
+          "color": [
+            110,
+            200,
+            255
+          ],
+          "glyph": "∪",
+          "id": "magnet",
+          "kind": "magnet",
+          "name": {
+            "en": "Magnet",
+            "ja": "じしゃく"
+          },
+          "rarity": 0,
+          "secs": 0.0,
+          "weight": 22
+        },
+        {
+          "amount": 4.0,
+          "area": 0.0,
+          "color": [
+            150,
+            160,
+            255
+          ],
+          "glyph": "◇",
+          "id": "dust",
+          "kind": "xp",
+          "name": {
+            "en": "Moon dust",
+            "ja": "つきのこ"
+          },
+          "rarity": 0,
+          "secs": 0.0,
+          "weight": 16
+        },
+        {
+          "amount": 14.0,
+          "area": 8.0,
+          "color": [
+            255,
+            120,
+            90
+          ],
+          "glyph": "◎",
+          "id": "bomb",
+          "kind": "bomb",
+          "name": {
+            "en": "Moon bomb",
+            "ja": "つきのボム"
+          },
+          "rarity": 1,
+          "secs": 0.0,
+          "weight": 12
+        },
+        {
+          "amount": 0.0,
+          "area": 0.0,
+          "color": [
+            120,
+            220,
+            255
+          ],
+          "glyph": "□",
+          "id": "shield",
+          "kind": "shield",
+          "name": {
+            "en": "Shield",
+            "ja": "バリア"
+          },
+          "rarity": 1,
+          "secs": 6.0,
+          "weight": 12
+        },
+        {
+          "amount": 0.45,
+          "area": 0.0,
+          "color": [
+            255,
+            200,
+            90
+          ],
+          "glyph": "↑",
+          "id": "frenzy",
+          "kind": "frenzy",
+          "name": {
+            "en": "Frenzy",
+            "ja": "ハッスル"
+          },
+          "rarity": 1,
+          "secs": 8.0,
+          "weight": 12
+        },
+        {
+          "amount": 0.0,
+          "area": 0.0,
+          "color": [
+            255,
+            170,
+            80
+          ],
+          "glyph": "★",
+          "id": "weapon",
+          "kind": "weapon",
+          "name": {
+            "en": "Weapon",
+            "ja": "ぶき"
+          },
+          "rarity": 2,
+          "secs": 0.0,
+          "weight": 14
+        }
+      ],
+      "life": 16.0,
+      "pity_kills": 24,
+      "pull_m": 2.4,
+      "tables": [
+        {
+          "chance": 0.07,
+          "chest": false,
+          "guarantee": "",
+          "id": "common",
+          "rarity_min": 0,
+          "rolls": 1
+        },
+        {
+          "chance": 1.0,
+          "chest": true,
+          "guarantee": "weapon",
+          "id": "elite",
+          "rarity_min": 1,
+          "rolls": 2
+        }
+      ]
     },
     "enemies": {
       "body_h": 0.45,
@@ -132,9 +335,223 @@
           "walk_steps": 0,
           "y_hi": 0.38,
           "y_lo": 0.0
+        },
+        {
+          "color": [
+            255,
+            110,
+            130
+          ],
+          "id": "runner",
+          "jump_air": 0.5,
+          "jump_height": 0.0,
+          "look": "vampire",
+          "step_m": 0.0,
+          "steps_per_beat": 1,
+          "stompable": true,
+          "swarm": {
+            "hp": 3.0,
+            "radius": 0.34,
+            "speed": 2.7,
+            "touch_dmg": 4.0,
+            "unlock_secs": 20.0,
+            "weight": 4,
+            "xp": 1.0
+          },
+          "telegraph": 0.25,
+          "unlock_level": 0,
+          "walk_steps": 0,
+          "y_hi": 0.38,
+          "y_lo": 0.0
+        },
+        {
+          "color": [
+            190,
+            140,
+            255
+          ],
+          "id": "shooter",
+          "jump_air": 0.5,
+          "jump_height": 0.0,
+          "look": "skeleton",
+          "step_m": 0.0,
+          "steps_per_beat": 1,
+          "stompable": true,
+          "swarm": {
+            "hp": 6.0,
+            "radius": 0.38,
+            "speed": 1.5,
+            "touch_dmg": 4.0,
+            "unlock_secs": 34.0,
+            "weight": 2,
+            "xp": 2.0
+          },
+          "telegraph": 0.25,
+          "unlock_level": 0,
+          "walk_steps": 0,
+          "y_hi": 0.38,
+          "y_lo": 0.0
+        },
+        {
+          "color": [
+            255,
+            170,
+            90
+          ],
+          "id": "tank",
+          "jump_air": 0.5,
+          "jump_height": 0.0,
+          "look": "keeper",
+          "step_m": 0.0,
+          "steps_per_beat": 1,
+          "stompable": true,
+          "swarm": {
+            "hp": 16.0,
+            "radius": 0.62,
+            "speed": 1.0,
+            "touch_dmg": 10.0,
+            "unlock_secs": 45.0,
+            "weight": 2,
+            "xp": 4.0
+          },
+          "telegraph": 0.25,
+          "unlock_level": 0,
+          "walk_steps": 0,
+          "y_hi": 0.38,
+          "y_lo": 0.0
+        },
+        {
+          "color": [
+            255,
+            215,
+            90
+          ],
+          "id": "warden",
+          "jump_air": 0.5,
+          "jump_height": 0.0,
+          "look": "zombie",
+          "step_m": 0.0,
+          "steps_per_beat": 1,
+          "stompable": true,
+          "swarm": {
+            "hp": 50.0,
+            "radius": 0.8,
+            "speed": 1.25,
+            "touch_dmg": 14.0,
+            "unlock_secs": 0.0,
+            "weight": 0,
+            "xp": 12.0
+          },
+          "telegraph": 0.25,
+          "unlock_level": 0,
+          "walk_steps": 0,
+          "y_hi": 0.38,
+          "y_lo": 0.0
         }
       ]
     },
+    "foes": [
+      {
+        "ai": "chase",
+        "armor": 0.0,
+        "drop_mul": 1.0,
+        "elite": false,
+        "hold_m": 6.0,
+        "id": "ghoul",
+        "knock_resist": 0.0,
+        "scale": 1.0,
+        "shoot_every": 2.6,
+        "shot_dmg": 7.0,
+        "shot_speed": 4.6,
+        "table": "common",
+        "tint": [
+          255,
+          255,
+          255
+        ],
+        "weave": 0.0
+      },
+      {
+        "ai": "chase",
+        "armor": 0.0,
+        "drop_mul": 0.6,
+        "elite": false,
+        "hold_m": 6.0,
+        "id": "runner",
+        "knock_resist": 0.0,
+        "scale": 1.0,
+        "shoot_every": 2.6,
+        "shot_dmg": 7.0,
+        "shot_speed": 4.6,
+        "table": "common",
+        "tint": [
+          255,
+          200,
+          215
+        ],
+        "weave": 0.55
+      },
+      {
+        "ai": "shoot",
+        "armor": 0.0,
+        "drop_mul": 1.5,
+        "elite": false,
+        "hold_m": 6.0,
+        "id": "shooter",
+        "knock_resist": 0.0,
+        "scale": 1.0,
+        "shoot_every": 2.6,
+        "shot_dmg": 7.0,
+        "shot_speed": 4.6,
+        "table": "common",
+        "tint": [
+          215,
+          195,
+          255
+        ],
+        "weave": 0.0
+      },
+      {
+        "ai": "chase",
+        "armor": 1.0,
+        "drop_mul": 2.2,
+        "elite": false,
+        "hold_m": 6.0,
+        "id": "tank",
+        "knock_resist": 0.8,
+        "scale": 1.0,
+        "shoot_every": 2.6,
+        "shot_dmg": 7.0,
+        "shot_speed": 4.6,
+        "table": "common",
+        "tint": [
+          255,
+          215,
+          170
+        ],
+        "weave": 0.0
+      },
+      {
+        "ai": "chase",
+        "armor": 0.5,
+        "drop_mul": 1.0,
+        "elite": true,
+        "hold_m": 6.0,
+        "id": "warden",
+        "knock_resist": 0.9,
+        "scale": 1.0,
+        "shoot_every": 2.6,
+        "shot_dmg": 7.0,
+        "shot_speed": 4.6,
+        "table": "elite",
+        "tint": [
+          255,
+          235,
+          150
+        ],
+        "weave": 0.0
+      }
+    ],
     "fx": {
       "cap": [
         48,
@@ -173,6 +590,7 @@
       "choices": 3,
       "heal_frac": 0.3,
       "max_passives": 4,
+      "max_weapons": 3,
       "passive_weight": 2,
       "weapon_weight": 3,
       "xp_base": 3.0,
@@ -272,10 +690,111 @@
       "secs": 120.0,
       "win_bonus": 500
     },
+    "synergies": [
+      {
+        "area": 0.0,
+        "cooldown": -0.15,
+        "count": 0,
+        "damage": 0.0,
+        "min_level": 3,
+        "name": {
+          "en": "Rapid moon",
+          "ja": "はやづき"
+        },
+        "passive": "haste",
+        "pierce": 0,
+        "weapon": "bolt"
+      },
+      {
+        "area": 0.0,
+        "cooldown": 0.0,
+        "count": 0,
+        "damage": 0.0,
+        "min_level": 3,
+        "name": {
+          "en": "Moonstrike",
+          "ja": "つきぬき"
+        },
+        "passive": "might",
+        "pierce": 1,
+        "weapon": "bolt"
+      },
+      {
+        "area": 0.0,
+        "cooldown": 0.0,
+        "count": 1,
+        "damage": 0.0,
+        "min_level": 3,
+        "name": {
+          "en": "Heavy bloom",
+          "ja": "おもいはな"
+        },
+        "passive": "might",
+        "pierce": 0,
+        "weapon": "petals"
+      },
+      {
+        "area": 0.25,
+        "cooldown": 0.0,
+        "count": 0,
+        "damage": 0.0,
+        "min_level": 3,
+        "name": {
+          "en": "Whirlwind",
+          "ja": "つむじかぜ"
+        },
+        "passive": "swift",
+        "pierce": 0,
+        "weapon": "blades"
+      },
+      {
+        "area": 0.0,
+        "cooldown": 0.0,
+        "count": 1,
+        "damage": 0.0,
+        "min_level": 3,
+        "name": {
+          "en": "Bloom swarm",
+          "ja": "ふえるウィスプ"
+        },
+        "passive": "growth",
+        "pierce": 0,
+        "weapon": "wisps"
+      },
+      {
+        "area": 0.0,
+        "cooldown": -0.2,
+        "count": 0,
+        "damage": 0.0,
+        "min_level": 3,
+        "name": {
+          "en": "Static",
+          "ja": "せいでんき"
+        },
+        "passive": "haste",
+        "pierce": 0,
+        "weapon": "zap"
+      },
+      {
+        "area": 0.3,
+        "cooldown": 0.0,
+        "count": 0,
+        "damage": 0.2,
+        "min_level": 3,
+        "name": {
+          "en": "Bulwark",
+          "ja": "まもりのなみ"
+        },
+        "passive": "vitality",
+        "pierce": 0,
+        "weapon": "pulse"
+      }
+    ],
     "title": "Moonlit Swarm",
     "weapons": [
       {
         "base": {
+          "area": 0.0,
           "cooldown": 0.5,
           "count": 1,
           "damage": 4.0,
@@ -285,10 +804,21 @@
           "speed": 13.0,
           "spread_deg": 12.0
         },
+        "color": [
+          255,
+          190,
+          90
+        ],
+        "desc": {
+          "en": "Throws bolts at the nearest foe",
+          "ja": "いちばんちかいてきになげる"
+        },
+        "glyph": "●",
         "id": "bolt",
         "kind": "projectile",
         "levels": [
           {
+            "area": 0.0,
             "cooldown": 0.0,
             "count": 1,
             "damage": 0.0,
@@ -301,6 +831,7 @@
             "speed": 0.0
           },
           {
+            "area": 0.0,
             "cooldown": 0.0,
             "count": 0,
             "damage": 3.0,
@@ -313,6 +844,7 @@
             "speed": 0.0
           },
           {
+            "area": 0.0,
             "cooldown": -0.15,
             "count": 1,
             "damage": 0.0,
@@ -325,6 +857,7 @@
             "speed": 0.0
           },
           {
+            "area": 0.0,
             "cooldown": 0.0,
             "count": 0,
             "damage": 2.0,
@@ -340,6 +873,421 @@
         "name": {
           "en": "Moon bolt",
           "ja": "つきのたま"
+        }
+      },
+      {
+        "base": {
+          "area": 0.0,
+          "cooldown": 1.0,
+          "count": 4,
+          "damage": 2.4,
+          "pierce": 0,
+          "range": 5.0,
+          "size": 0.2,
+          "speed": 15.0,
+          "spread_deg": 9.0
+        },
+        "color": [
+          255,
+          150,
+          200
+        ],
+        "desc": {
+          "en": "A fan of petals, deadly up close",
+          "ja": "ちかくでつよい、はなびらのたば"
+        },
+        "glyph": "※",
+        "id": "petals",
+        "kind": "spread",
+        "levels": [
+          {
+            "area": 0.0,
+            "cooldown": 0.0,
+            "count": 1,
+            "damage": 0.0,
+            "desc": {
+              "en": "+1 petal",
+              "ja": "はなびら +1"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.0
+          },
+          {
+            "area": 0.0,
+            "cooldown": 0.0,
+            "count": 0,
+            "damage": 1.5,
+            "desc": {
+              "en": "Damage +1.5",
+              "ja": "ダメージ +1.5"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.0
+          },
+          {
+            "area": 0.0,
+            "cooldown": -0.2,
+            "count": 1,
+            "damage": 0.0,
+            "desc": {
+              "en": "Casts faster, +1 petal",
+              "ja": "はやくなる、+1まい"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.0
+          },
+          {
+            "area": 0.0,
+            "cooldown": 0.0,
+            "count": 2,
+            "damage": 0.0,
+            "desc": {
+              "en": "+2 petals, pierces one",
+              "ja": "はなびら +2、ぬける +1"
+            },
+            "pierce": 1,
+            "range": 0.0,
+            "speed": 0.0
+          }
+        ],
+        "name": {
+          "en": "Moon petals",
+          "ja": "つきのはなびら"
+        }
+      },
+      {
+        "base": {
+          "area": 1.9,
+          "cooldown": 0.45,
+          "count": 2,
+          "damage": 3.0,
+          "pierce": 0,
+          "range": 3.0,
+          "size": 0.55,
+          "speed": 3.2,
+          "spread_deg": 0.0
+        },
+        "color": [
+          150,
+          220,
+          255
+        ],
+        "desc": {
+          "en": "Blades circle you and cut what they touch",
+          "ja": "まわりをまわる、さわるとダメージ"
+        },
+        "glyph": "†",
+        "id": "blades",
+        "kind": "orbit",
+        "levels": [
+          {
+            "area": 0.0,
+            "cooldown": 0.0,
+            "count": 1,
+            "damage": 0.0,
+            "desc": {
+              "en": "+1 blade",
+              "ja": "やいば +1"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.0
+          },
+          {
+            "area": 0.0,
+            "cooldown": 0.0,
+            "count": 0,
+            "damage": 2.0,
+            "desc": {
+              "en": "Damage +2",
+              "ja": "ダメージ +2"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.0
+          },
+          {
+            "area": 0.3,
+            "cooldown": 0.0,
+            "count": 0,
+            "damage": 0.0,
+            "desc": {
+              "en": "Spins faster, wider circle",
+              "ja": "はやくまわる、おおきなわ"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.9
+          },
+          {
+            "area": 0.0,
+            "cooldown": 0.0,
+            "count": 1,
+            "damage": 2.0,
+            "desc": {
+              "en": "+1 blade, damage +2",
+              "ja": "やいば +1、ダメージ +2"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.0
+          }
+        ],
+        "name": {
+          "en": "Crescent blades",
+          "ja": "みかづきのやいば"
+        }
+      },
+      {
+        "base": {
+          "area": 1.5,
+          "cooldown": 1.6,
+          "count": 2,
+          "damage": 5.0,
+          "pierce": 0,
+          "range": 11.0,
+          "size": 0.3,
+          "speed": 7.0,
+          "spread_deg": 40.0
+        },
+        "color": [
+          190,
+          150,
+          255
+        ],
+        "desc": {
+          "en": "Wisps curve toward foes and burst",
+          "ja": "てきをおいかけてはじける"
+        },
+        "glyph": "☆",
+        "id": "wisps",
+        "kind": "missile",
+        "levels": [
+          {
+            "area": 0.0,
+            "cooldown": 0.0,
+            "count": 1,
+            "damage": 0.0,
+            "desc": {
+              "en": "+1 wisp",
+              "ja": "ウィスプ +1"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.0
+          },
+          {
+            "area": 0.0,
+            "cooldown": 0.0,
+            "count": 0,
+            "damage": 3.0,
+            "desc": {
+              "en": "Damage +3",
+              "ja": "ダメージ +3"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.0
+          },
+          {
+            "area": 0.0,
+            "cooldown": -0.3,
+            "count": 0,
+            "damage": 0.0,
+            "desc": {
+              "en": "Casts faster",
+              "ja": "はやくなる"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.0
+          },
+          {
+            "area": 0.5,
+            "cooldown": 0.0,
+            "count": 1,
+            "damage": 0.0,
+            "desc": {
+              "en": "+1 wisp, bigger burst",
+              "ja": "ウィスプ +1、おおきなばくはつ"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.0
+          }
+        ],
+        "name": {
+          "en": "Seeker wisps",
+          "ja": "おいかけウィスプ"
+        }
+      },
+      {
+        "base": {
+          "area": 3.2,
+          "cooldown": 1.1,
+          "count": 3,
+          "damage": 6.0,
+          "pierce": 0,
+          "range": 7.5,
+          "size": 0.3,
+          "speed": 1.0,
+          "spread_deg": 0.0
+        },
+        "color": [
+          255,
+          245,
+          130
+        ],
+        "desc": {
+          "en": "Lightning jumps from foe to foe",
+          "ja": "てきからてきへとびうつる"
+        },
+        "glyph": "∠",
+        "id": "zap",
+        "kind": "chain",
+        "levels": [
+          {
+            "area": 0.0,
+            "cooldown": 0.0,
+            "count": 1,
+            "damage": 0.0,
+            "desc": {
+              "en": "Jumps to +1 foe",
+              "ja": "とびうつる +1たい"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.0
+          },
+          {
+            "area": 0.0,
+            "cooldown": 0.0,
+            "count": 0,
+            "damage": 3.0,
+            "desc": {
+              "en": "Damage +3",
+              "ja": "ダメージ +3"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.0
+          },
+          {
+            "area": 0.0,
+            "cooldown": -0.25,
+            "count": 0,
+            "damage": 0.0,
+            "desc": {
+              "en": "Casts faster",
+              "ja": "はやくなる"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.0
+          },
+          {
+            "area": 1.0,
+            "cooldown": 0.0,
+            "count": 2,
+            "damage": 0.0,
+            "desc": {
+              "en": "+2 jumps, longer reach",
+              "ja": "とびうつる +2、とおくまで"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.0
+          }
+        ],
+        "name": {
+          "en": "Thunder thread",
+          "ja": "いなずまのいと"
+        }
+      },
+      {
+        "base": {
+          "area": 2.6,
+          "cooldown": 2.4,
+          "count": 1,
+          "damage": 5.0,
+          "pierce": 0,
+          "range": 2.6,
+          "size": 0.3,
+          "speed": 1.0,
+          "spread_deg": 0.0
+        },
+        "color": [
+          120,
+          235,
+          220
+        ],
+        "desc": {
+          "en": "A ring that shoves the crowd back",
+          "ja": "まわりをはじきとばすリング"
+        },
+        "glyph": "○",
+        "id": "pulse",
+        "kind": "pulse",
+        "levels": [
+          {
+            "area": 0.0,
+            "cooldown": 0.0,
+            "count": 0,
+            "damage": 3.0,
+            "desc": {
+              "en": "Damage +3",
+              "ja": "ダメージ +3"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.0
+          },
+          {
+            "area": 0.5,
+            "cooldown": 0.0,
+            "count": 0,
+            "damage": 0.0,
+            "desc": {
+              "en": "Wider ring",
+              "ja": "リングがひろがる"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.0
+          },
+          {
+            "area": 0.0,
+            "cooldown": -0.5,
+            "count": 0,
+            "damage": 0.0,
+            "desc": {
+              "en": "Pulses faster",
+              "ja": "はやくなる"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.0
+          },
+          {
+            "area": 0.5,
+            "cooldown": 0.0,
+            "count": 0,
+            "damage": 4.0,
+            "desc": {
+              "en": "Damage +4, wider ring",
+              "ja": "ダメージ +4、ひろがる"
+            },
+            "pierce": 0,
+            "range": 0.0,
+            "speed": 0.0
+          }
+        ],
+        "name": {
+          "en": "Moon pulse",
+          "ja": "つきのはどう"
         }
       }
     ]

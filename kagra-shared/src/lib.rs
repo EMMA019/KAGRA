@@ -83,6 +83,7 @@ pub mod stealth;
 pub mod strokes;
 pub mod survival;
 pub mod survivor_arena;
+pub mod survivor_content;
 pub mod td;
 pub mod traffic;
 pub mod ui;
