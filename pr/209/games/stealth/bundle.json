@@ -1,0 +1,595 @@
+{
+  "slug": "stealth",
+  "title": "Stealth",
+  "version": "0.1.0",
+  "genre": "stealth_hide",
+  "world": "world.json",
+  "files": [
+    {
+      "path": "world.json",
+      "url": "games/stealth/world.json",
+      "v": "6b1a1b2232"
+    },
+    {
+      "path": "kagra_game.json",
+      "url": "games/stealth/kagra_game.json",
+      "v": "05218a7ed1"
+    },
+    {
+      "path": "assets/audio/bgm.wav",
+      "url": "assets/audio/bgm.wav",
+      "v": "0841950e00"
+    },
+    {
+      "path": "assets/audio/card.wav",
+      "url": "assets/audio/card.wav",
+      "v": "82d078f0df"
+    },
+    {
+      "path": "assets/audio/fire.wav",
+      "url": "assets/audio/fire.wav",
+      "v": "e0c24e16c8"
+    },
+    {
+      "path": "assets/audio/hop_beat/combo.wav",
+      "url": "assets/audio/hop_beat/combo.wav",
+      "v": "13946f5930"
+    },
+    {
+      "path": "assets/audio/hop_beat/fall.wav",
+      "url": "assets/audio/hop_beat/fall.wav",
+      "v": "31f1d8074b"
+    },
+    {
+      "path": "assets/audio/hop_beat/good.wav",
+      "url": "assets/audio/hop_beat/good.wav",
+      "v": "70f73f20d1"
+    },
+    {
+      "path": "assets/audio/hop_beat/hit.wav",
+      "url": "assets/audio/hop_beat/hit.wav",
+      "v": "21f69dda2d"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop.wav",
+      "url": "assets/audio/hop_beat/hop.wav",
+      "v": "561e6e11ea"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_gameover.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_gameover.mp3",
+      "v": "1865a59646"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_loop.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_loop.mp3",
+      "v": "e25a9d983b"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_newbest.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_newbest.mp3",
+      "v": "47285841db"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_revive.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_revive.mp3",
+      "v": "f8ae0b7836"
+    },
+    {
+      "path": "assets/audio/hop_beat/land.wav",
+      "url": "assets/audio/hop_beat/land.wav",
+      "v": "62f7482dc4"
+    },
+    {
+      "path": "assets/audio/hop_beat/perfect.wav",
+      "url": "assets/audio/hop_beat/perfect.wav",
+      "v": "19962c2bee"
+    },
+    {
+      "path": "assets/audio/hop_beat/stomp.wav",
+      "url": "assets/audio/hop_beat/stomp.wav",
+      "v": "dfe75ed7e9"
+    },
+    {
+      "path": "assets/audio/hop_beat/warn.wav",
+      "url": "assets/audio/hop_beat/warn.wav",
+      "v": "3780360257"
+    },
+    {
+      "path": "assets/audio/jump.wav",
+      "url": "assets/audio/jump.wav",
+      "v": "b265d4fdfa"
+    },
+    {
+      "path": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+      "url": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+      "v": "fe58f3600c"
+    },
+    {
+      "path": "assets/audio/neon_cat/bgm.wav",
+      "url": "assets/audio/neon_cat/bgm.wav",
+      "v": "2d649821f4"
+    },
+    {
+      "path": "assets/audio/neon_cat/card.wav",
+      "url": "assets/audio/neon_cat/card.wav",
+      "v": "a5deba6e08"
+    },
+    {
+      "path": "assets/audio/neon_cat/coin.wav",
+      "url": "assets/audio/neon_cat/coin.wav",
+      "v": "ce0ae0de97"
+    },
+    {
+      "path": "assets/audio/neon_cat/gameover.wav",
+      "url": "assets/audio/neon_cat/gameover.wav",
+      "v": "42cbfbf902"
+    },
+    {
+      "path": "assets/audio/neon_cat/hit.wav",
+      "url": "assets/audio/neon_cat/hit.wav",
+      "v": "9c7d60bdde"
+    },
+    {
+      "path": "assets/audio/neon_cat/item.wav",
+      "url": "assets/audio/neon_cat/item.wav",
+      "v": "5e77291f24"
+    },
+    {
+      "path": "assets/audio/neon_cat/jump.wav",
+      "url": "assets/audio/neon_cat/jump.wav",
+      "v": "e895662ef8"
+    },
+    {
+      "path": "assets/audio/neon_cat/knock.wav",
+      "url": "assets/audio/neon_cat/knock.wav",
+      "v": "9d26a2e92d"
+    },
+    {
+      "path": "assets/audio/neon_cat/meow.wav",
+      "url": "assets/audio/neon_cat/meow.wav",
+      "v": "0ce8f2f1c3"
+    },
+    {
+      "path": "assets/audio/neon_cat/mission.wav",
+      "url": "assets/audio/neon_cat/mission.wav",
+      "v": "c97d416829"
+    },
+    {
+      "path": "assets/audio/neon_cat/perch.wav",
+      "url": "assets/audio/neon_cat/perch.wav",
+      "v": "15faa28ce6"
+    },
+    {
+      "path": "assets/audio/neon_cat/robot_off.wav",
+      "url": "assets/audio/neon_cat/robot_off.wav",
+      "v": "4ce33e986f"
+    },
+    {
+      "path": "assets/audio/neon_cat/robot_on.wav",
+      "url": "assets/audio/neon_cat/robot_on.wav",
+      "v": "4bc62ebff3"
+    },
+    {
+      "path": "assets/audio/neon_cat/roll.wav",
+      "url": "assets/audio/neon_cat/roll.wav",
+      "v": "f1d0e7409f"
+    },
+    {
+      "path": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+      "url": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+      "v": "8be3009beb"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+      "v": "770685003f"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+      "v": "50b01a7974"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+      "v": "955fbf6c23"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+      "v": "8dde50e1fe"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+      "v": "8ac1eb6e4c"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+      "v": "c41ef1b321"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+      "v": "5d7d10947f"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/arrow.bin",
+      "url": "assets/library/kaykit/adventurers/assets/arrow.bin",
+      "v": "4b12b8c3d0"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/arrow_bundle.bin",
+      "url": "assets/library/kaykit/adventurers/assets/arrow_bundle.bin",
+      "v": "fd17c74114"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/axe_1handed.bin",
+      "url": "assets/library/kaykit/adventurers/assets/axe_1handed.bin",
+      "v": "0e3e5f009e"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/axe_2handed.bin",
+      "url": "assets/library/kaykit/adventurers/assets/axe_2handed.bin",
+      "v": "e5ca2d08f8"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/crossbow_1handed.bin",
+      "url": "assets/library/kaykit/adventurers/assets/crossbow_1handed.bin",
+      "v": "0401a7f6a6"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/crossbow_2handed.bin",
+      "url": "assets/library/kaykit/adventurers/assets/crossbow_2handed.bin",
+      "v": "1fcadb445d"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/dagger.bin",
+      "url": "assets/library/kaykit/adventurers/assets/dagger.bin",
+      "v": "2ef02dbdc5"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/dagger.gltf",
+      "url": "assets/library/kaykit/adventurers/assets/dagger.gltf",
+      "v": "33c577d4d5"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/mug_empty.bin",
+      "url": "assets/library/kaykit/adventurers/assets/mug_empty.bin",
+      "v": "1c0e4868e6"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/mug_full.bin",
+      "url": "assets/library/kaykit/adventurers/assets/mug_full.bin",
+      "v": "b79442e95a"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/quiver.bin",
+      "url": "assets/library/kaykit/adventurers/assets/quiver.bin",
+      "v": "47091e8d29"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/shield_badge.bin",
+      "url": "assets/library/kaykit/adventurers/assets/shield_badge.bin",
+      "v": "3c0f04767c"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/shield_badge_color.bin",
+      "url": "assets/library/kaykit/adventurers/assets/shield_badge_color.bin",
+      "v": "54ed559b5b"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/shield_round.bin",
+      "url": "assets/library/kaykit/adventurers/assets/shield_round.bin",
+      "v": "42da365328"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/shield_round_barbarian.bin",
+      "url": "assets/library/kaykit/adventurers/assets/shield_round_barbarian.bin",
+      "v": "4e94810397"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/shield_round_color.bin",
+      "url": "assets/library/kaykit/adventurers/assets/shield_round_color.bin",
+      "v": "0e689cf61e"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/shield_spikes.bin",
+      "url": "assets/library/kaykit/adventurers/assets/shield_spikes.bin",
+      "v": "de615f1d5b"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/shield_spikes_color.bin",
+      "url": "assets/library/kaykit/adventurers/assets/shield_spikes_color.bin",
+      "v": "0ce0dc3e7a"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/shield_square.bin",
+      "url": "assets/library/kaykit/adventurers/assets/shield_square.bin",
+      "v": "10937706e3"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/shield_square_color.bin",
+      "url": "assets/library/kaykit/adventurers/assets/shield_square_color.bin",
+      "v": "6e3a079dd9"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/smokebomb.bin",
+      "url": "assets/library/kaykit/adventurers/assets/smokebomb.bin",
+      "v": "a50b0b4807"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/spellbook_closed.bin",
+      "url": "assets/library/kaykit/adventurers/assets/spellbook_closed.bin",
+      "v": "4cf311c021"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/spellbook_open.bin",
+      "url": "assets/library/kaykit/adventurers/assets/spellbook_open.bin",
+      "v": "888e45aff6"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/staff.bin",
+      "url": "assets/library/kaykit/adventurers/assets/staff.bin",
+      "v": "acf921e547"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/sword_1handed.bin",
+      "url": "assets/library/kaykit/adventurers/assets/sword_1handed.bin",
+      "v": "780ebfd002"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/sword_2handed.bin",
+      "url": "assets/library/kaykit/adventurers/assets/sword_2handed.bin",
+      "v": "0f54186de9"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/sword_2handed_color.bin",
+      "url": "assets/library/kaykit/adventurers/assets/sword_2handed_color.bin",
+      "v": "8c6a20309d"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/assets/wand.bin",
+      "url": "assets/library/kaykit/adventurers/assets/wand.bin",
+      "v": "db1c466f40"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/characters/Knight.glb",
+      "url": "assets/library/kaykit/adventurers/characters/Knight.glb",
+      "v": "60428e3abc"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/characters/Rogue.glb",
+      "url": "assets/library/kaykit/adventurers/characters/Rogue.glb",
+      "v": "e825437cd4"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/base.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/base.bin",
+      "v": "2b00ed6bb8"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/bench.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/bench.bin",
+      "v": "53ac973411"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/bench.gltf",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/bench.gltf",
+      "v": "f3b731470c"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/box_A.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/box_A.bin",
+      "v": "7d73d90c73"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/box_B.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/box_B.bin",
+      "v": "07ea7050e8"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/box_B.gltf",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/box_B.gltf",
+      "v": "6ad0554fed"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_A.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_A.bin",
+      "v": "29feccd24a"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_A_withoutBase.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_A_withoutBase.bin",
+      "v": "a0446a10d1"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_B.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_B.bin",
+      "v": "310c032929"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_B_withoutBase.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_B_withoutBase.bin",
+      "v": "1fca25dd4b"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_C.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_C.bin",
+      "v": "77c6e813fc"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_C_withoutBase.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_C_withoutBase.bin",
+      "v": "56ab30ffad"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_D.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_D.bin",
+      "v": "b8d7091ba0"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_D_withoutBase.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_D_withoutBase.bin",
+      "v": "6342dbff9e"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_E.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_E.bin",
+      "v": "1280f8b64d"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_E_withoutBase.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_E_withoutBase.bin",
+      "v": "6403701c01"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_F.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_F.bin",
+      "v": "fc3c72d718"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_F_withoutBase.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_F_withoutBase.bin",
+      "v": "1bed0be4aa"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_G.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_G.bin",
+      "v": "06f0ec0113"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_G_withoutBase.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_G_withoutBase.bin",
+      "v": "34112472a3"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_H.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_H.bin",
+      "v": "fbee968ad4"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_H_withoutBase.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_H_withoutBase.bin",
+      "v": "310a8c61e9"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/bush.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/bush.bin",
+      "v": "6b00a80ec2"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/bush.gltf",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/bush.gltf",
+      "v": "b1de478b23"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/car_hatchback.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/car_hatchback.bin",
+      "v": "e7756d8a44"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/car_police.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/car_police.bin",
+      "v": "07bf316055"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/car_sedan.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/car_sedan.bin",
+      "v": "1d69e7f098"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/car_stationwagon.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/car_stationwagon.bin",
+      "v": "46d28202e7"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/car_taxi.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/car_taxi.bin",
+      "v": "28abb85c4e"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/dumpster.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/dumpster.bin",
+      "v": "389a04cddf"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/firehydrant.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/firehydrant.bin",
+      "v": "02cab93bf6"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/road_corner.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/road_corner.bin",
+      "v": "357bfda568"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/road_corner_curved.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/road_corner_curved.bin",
+      "v": "5a89cc3e2c"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/road_junction.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/road_junction.bin",
+      "v": "deb16c15a1"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/road_straight.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/road_straight.bin",
+      "v": "6509b35095"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/road_straight_crossing.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/road_straight_crossing.bin",
+      "v": "2c9ffb1dca"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/road_tsplit.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/road_tsplit.bin",
+      "v": "4856ecd193"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/streetlight.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/streetlight.bin",
+      "v": "2e95833194"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/trafficlight_A.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/trafficlight_A.bin",
+      "v": "8d41a66bbf"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/trafficlight_B.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/trafficlight_B.bin",
+      "v": "e0a20f34ca"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/trafficlight_C.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/trafficlight_C.bin",
+      "v": "0be9badcc8"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/trash_A.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/trash_A.bin",
+      "v": "3fbaf543d2"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/trash_B.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/trash_B.bin",
+      "v": "2663a8ed7f"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/watertower.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/watertower.bin",
+      "v": "384bc04add"
+    },
+    {
+      "path": "assets/models/kenney/platformer-kit/crate.glb",
+      "url": "assets/models/kenney/platformer-kit/crate.glb",
+      "v": "bced96b106"
+    }
+  ],
+  "build": "aad57b530d2c"
+}
