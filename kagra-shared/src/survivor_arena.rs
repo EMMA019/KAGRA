@@ -137,6 +137,11 @@ pub struct InputSpec {
     pub full_speed_m: f32,
     /// Stick: radius in pixels at 400 px of short screen side.
     pub stick_px: f32,
+    /// Who picks the target: `auto` (nearest foe), `manual` (tap a foe to lock it, tap the
+    /// ground to aim that way) or `hybrid` (a locked foe first, else nearest).
+    pub aim: String,
+    /// Manual and hybrid: a tap picks a foe within this many pixels (at 400 px short side).
+    pub tap_px: f32,
 }
 
 impl Default for InputSpec {
@@ -147,6 +152,8 @@ impl Default for InputSpec {
             dead_zone_m: 0.3,
             full_speed_m: 2.2,
             stick_px: 70.0,
+            aim: "hybrid".into(),
+            tap_px: 44.0,
         }
     }
 }
@@ -620,6 +627,10 @@ impl SurvivorSpec {
             return Err(format!("{w}: input.full_speed_m must exceed dead_zone_m"));
         }
         range(w, "input.stick_px", self.input.stick_px, 20.0, 200.0)?;
+        if !matches!(self.input.aim.as_str(), "auto" | "manual" | "hybrid") {
+            return Err(format!("{w}: input.aim is auto|manual|hybrid"));
+        }
+        range(w, "input.tap_px", self.input.tap_px, 10.0, 200.0)?;
         range(w, "run.secs", self.run.secs, 10.0, 1800.0)?;
         range(w, "levels.xp_base", self.levels.xp_base, 1.0, 10_000.0)?;
         range(w, "levels.xp_step", self.levels.xp_step, 0.0, 1000.0)?;
@@ -1015,6 +1026,14 @@ pub struct SurvivorArena {
     finger: Option<(f32, f32)>,
     origin: (f32, f32),
     mute_finger: bool,
+    /// Manual aim: 0 auto, 1 manual, 2 hybrid (a pause-card setting, kept across runs).
+    aim_mode: u8,
+    /// The locked foe (`Foes::uid`), its last known index, and a ground-aimed direction (yaw).
+    lock: Option<u32>,
+    lock_idx: usize,
+    aim_dir: Option<f32>,
+    /// The lone finger's first position and age (s), to tell a tap from a drag.
+    tap: Option<(f32, f32, f32)>,
     key_dir: (f32, f32),
     size: Cell<(f32, f32)>,
     // presentation
@@ -1109,6 +1128,11 @@ impl SurvivorArena {
             finger: None,
             origin: (0.0, 0.0),
             mute_finger: false,
+            aim_mode: aim_code(&spec.input.aim),
+            lock: None,
+            lock_idx: 0,
+            aim_dir: None,
+            tap: None,
             key_dir: (0.0, 0.0),
             size: Cell::new((390.0, 844.0)),
             lang_ja: false,
@@ -1249,6 +1273,9 @@ impl SurvivorArena {
         self.finger = None;
         self.finger_id = None;
         self.mute_finger = false;
+        self.lock = None;
+        self.aim_dir = None;
+        self.tap = None;
         self.weapon_lv.iter_mut().for_each(|l| *l = 0);
         self.weapon_cd.iter_mut().for_each(|c| *c = 0.0);
         self.passive_lv.iter_mut().for_each(|l| *l = 0);
@@ -1319,6 +1346,9 @@ impl SurvivorArena {
 
     fn step_sim(&mut self, dt: f32) {
         self.anim_t += dt;
+        if let Some(t) = &mut self.tap {
+            t.2 += dt;
+        }
         for c in &mut self.cue_t {
             *c = (*c - dt).max(0.0);
         }
@@ -1666,21 +1696,16 @@ impl SurvivorArena {
                 continue;
             }
             let st = self.weapon_stats[wi];
-            let Some((j, _)) =
-                self.grid
-                    .nearest(&self.foes.x, &self.foes.z, self.hx, self.hz, st.range)
-            else {
-                self.weapon_cd[wi] = 0.1; // nothing in range: look again soon
+            let Some((base, dist)) = self.pick_aim(st.range) else {
+                self.weapon_cd[wi] = 0.1; // nothing to aim at: look again soon
                 continue;
             };
             self.weapon_cd[wi] = (st.cooldown * self.mods.cooldown).max(0.08);
-            let (dx, dz) = (self.foes.x[j] - self.hx, self.foes.z[j] - self.hz);
-            let base = dx.atan2(dz);
             // Turn to the target first: the blaster points where the shot goes, and the
             // shot leaves from the muzzle (nearer if the foe is already in the way).
             self.face = base;
             self.aim_hold = AIM_HOLD;
-            let reach = MUZZLE.min(dx.hypot(dz) * 0.6);
+            let reach = MUZZLE.min(dist * 0.6);
             let n = st.count;
             for k in 0..n {
                 if self.shots.len() >= self.spec.caps.shots as usize {
@@ -1705,6 +1730,114 @@ impl SurvivorArena {
             let at = [self.hx + sn * reach, MUZZLE_Y, self.hz + cs * reach];
             self.burst(FX_MUZZLE, 1, at, [0.0, 0.0], 0.0, 0.0, 0.0, 0.09);
             self.burst(FX_SPARK, 2, at, [sn, cs], 5.0, 0.5, 0.5, 0.18);
+        }
+    }
+
+    // ---- aiming: auto, tap-to-lock, tap-the-ground
+
+    /// The locked foe's index now, without touching the lock.
+    fn lock_foe(&self) -> Option<usize> {
+        let uid = self.lock?;
+        let ok = |i: usize| i < self.foes.len() && self.foes.uid[i] == uid && self.foes.hp[i] > 0.0;
+        if ok(self.lock_idx) {
+            return Some(self.lock_idx);
+        }
+        (0..self.foes.len()).find(|&i| ok(i))
+    }
+
+    /// Where a weapon with this range fires: `(yaw, distance)`. Manual and hybrid prefer the
+    /// locked foe (in range), then the ground direction (manual) or the nearest foe, then
+    /// the ground direction. A lock that died is dropped.
+    fn pick_aim(&mut self, range: f32) -> Option<(f32, f32)> {
+        if self.aim_mode != 0 {
+            if self.lock.is_some() {
+                match self.lock_foe() {
+                    Some(j) => {
+                        self.lock_idx = j;
+                        let (dx, dz) = (self.foes.x[j] - self.hx, self.foes.z[j] - self.hz);
+                        let d = dx.hypot(dz);
+                        if d <= range {
+                            return Some((dx.atan2(dz), d));
+                        }
+                    }
+                    None => self.lock = None, // the target died: back to nearest
+                }
+            }
+            if self.aim_mode == 1 {
+                if let Some(a) = self.aim_dir {
+                    return Some((a, f32::INFINITY));
+                }
+            }
+        }
+        if let Some((j, _)) = self
+            .grid
+            .nearest(&self.foes.x, &self.foes.z, self.hx, self.hz, range)
+        {
+            let (dx, dz) = (self.foes.x[j] - self.hx, self.foes.z[j] - self.hz);
+            return Some((dx.atan2(dz), dx.hypot(dz)));
+        }
+        if self.aim_mode != 0 {
+            if let Some(a) = self.aim_dir {
+                return Some((a, f32::INFINITY));
+            }
+        }
+        None
+    }
+
+    /// `auto`, `manual` or `hybrid`.
+    pub fn aim_name(&self) -> &'static str {
+        ["auto", "manual", "hybrid"][self.aim_mode.min(2) as usize]
+    }
+
+    /// Set the aim scheme (the pause card cycles it). Clears any lock.
+    pub fn set_aim(&mut self, mode: &str) {
+        self.aim_mode = aim_code(mode);
+        self.lock = None;
+        self.aim_dir = None;
+    }
+
+    /// The locked foe's uid, if the lock is still alive.
+    pub fn locked(&self) -> Option<u32> {
+        self.lock_foe().and(self.lock)
+    }
+
+    /// A tap at a canvas pixel: a foe near it is locked (tap it again to release), the hero
+    /// clears the aim, bare ground aims that way. Auto mode ignores taps.
+    fn tap_select(&mut self, x: f32, y: f32) {
+        if self.aim_mode == 0 {
+            return;
+        }
+        let (w, h) = self.size.get();
+        let pick = self.spec.input.tap_px * hud_scale(w, h);
+        let mut best: Option<(usize, f32)> = None;
+        for i in 0..self.foes.len() {
+            let Some((sx, sy)) = self.project([self.foes.x[i], 0.45, self.foes.z[i]], w, h) else {
+                continue;
+            };
+            let d = (sx - x).hypot(sy - y);
+            if d < pick && best.is_none_or(|(_, bd)| d < bd) {
+                best = Some((i, d));
+            }
+        }
+        if let Some((i, _)) = best {
+            let uid = self.foes.uid[i];
+            if self.lock == Some(uid) {
+                self.lock = None;
+            } else {
+                self.lock = Some(uid);
+                self.lock_idx = i;
+            }
+            self.aim_dir = None;
+            self.cue("pick", 2, 0.1);
+        } else if let Some((gx, gz)) = self.ground_at(x, y) {
+            let (dx, dz) = (gx - self.hx, gz - self.hz);
+            self.lock = None;
+            self.aim_dir = if dx.hypot(dz) < 0.8 {
+                None
+            } else {
+                Some(dx.atan2(dz))
+            };
+            self.cue("pick", 2, 0.1);
         }
     }
 
@@ -1986,6 +2119,10 @@ impl SurvivorArena {
                     self.finger_id = Some(ev.id);
                     self.finger = Some((ev.x, ev.y));
                     self.origin = (ev.x, ev.y);
+                    self.tap = Some((ev.x, ev.y, 0.0));
+                } else if live && self.finger_id != Some(ev.id) {
+                    // The other thumb: a tap picks the target.
+                    self.tap_select(ev.x, ev.y);
                 }
             }
             PointerPhase::Move => {
@@ -1994,6 +2131,14 @@ impl SurvivorArena {
                 }
             }
             PointerPhase::End | PointerPhase::Cancel if self.finger_id == Some(ev.id) => {
+                // A quick, short touch of the lone finger is a tap too.
+                if let (PointerPhase::End, Some((tx, ty, age))) = (ev.phase, self.tap.take()) {
+                    let (w, h) = self.size.get();
+                    if live && age < 0.25 && (ev.x - tx).hypot(ev.y - ty) < 12.0 * hud_scale(w, h) {
+                        self.tap_select(ev.x, ev.y);
+                    }
+                }
+                self.tap = None;
                 self.finger_id = None;
                 self.finger = None;
                 self.mute_finger = false;
@@ -2013,6 +2158,10 @@ impl SurvivorArena {
                     if r.contains(x, y) {
                         match b {
                             PauseBtn::Resume => self.flow.resume(),
+                            PauseBtn::Aim => {
+                                let next = (self.aim_mode + 1) % 3;
+                                self.set_aim(["auto", "manual", "hybrid"][next as usize]);
+                            }
                             PauseBtn::Retry => self.start_run(),
                             PauseBtn::Title => self.show_title(),
                         }
@@ -2046,6 +2195,7 @@ impl SurvivorArena {
     /// The finger that made this tap must lift before it steers again.
     fn mute_after_tap(&mut self) {
         self.finger = None;
+        self.tap = None;
         if self.finger_id.is_some() {
             self.mute_finger = true;
         }
@@ -2134,6 +2284,14 @@ fn norm3(a: [f32; 3]) -> [f32; 3] {
 
 // ------------------------------------------------------------ layout -----
 
+fn aim_code(name: &str) -> u8 {
+    match name {
+        "auto" => 0,
+        "manual" => 1,
+        _ => 2,
+    }
+}
+
 fn hud_scale(w: f32, h: f32) -> f32 {
     (w.min(h) / 400.0).clamp(0.9, 2.6)
 }
@@ -2141,6 +2299,7 @@ fn hud_scale(w: f32, h: f32) -> f32 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PauseBtn {
     Resume,
+    Aim,
     Retry,
     Title,
 }
@@ -2152,19 +2311,20 @@ fn pause_rect(w: f32, s: f32) -> Quad {
 
 fn pause_buttons(w: f32, h: f32, s: f32) -> Vec<(PauseBtn, Quad)> {
     let bw = (w * 0.7).min(320.0 * s);
-    let bh = 54.0 * s;
+    let bh = (54.0 * s).min(h * 0.12);
+    let gap = bh * 0.26;
     let x = (w - bw) * 0.5;
-    let y0 = h * 0.36;
-    [PauseBtn::Resume, PauseBtn::Retry, PauseBtn::Title]
-        .into_iter()
-        .enumerate()
-        .map(|(i, b)| {
-            (
-                b,
-                Quad::new(x, y0 + i as f32 * (bh + 14.0 * s), bw, bh, [0; 4]),
-            )
-        })
-        .collect()
+    let y0 = h * 0.30;
+    [
+        PauseBtn::Resume,
+        PauseBtn::Aim,
+        PauseBtn::Retry,
+        PauseBtn::Title,
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(i, b)| (b, Quad::new(x, y0 + i as f32 * (bh + gap), bw, bh, [0; 4])))
+    .collect()
 }
 
 fn card_rects(w: f32, h: f32, s: f32, n: usize) -> Vec<Quad> {
@@ -2256,6 +2416,8 @@ const GUN_FWD: f32 = 0.86;
 const GUN_UP: f32 = 0.9;
 const GUN_SCALE: f32 = 1.3;
 /// Height of the muzzle above the floor (m).
+/// Segments in the lock-on ring.
+const LOCK_SEG: usize = 16;
 const MUZZLE_Y: f32 = 0.62;
 const MUZZLE: f32 = GUN_FWD + 0.37 * GUN_SCALE;
 /// How long the hero keeps facing the target after a shot.
@@ -2723,6 +2885,19 @@ impl SurvivorArena {
                 width: 3.0,
             });
         }
+        // The lock-on ring and the ground-aim line (empty unless used).
+        doc.lines.push(crate::strokes::FatLine {
+            id: "lock-ring".into(),
+            points: Vec::with_capacity(LOCK_SEG + 1),
+            color: [255, 96, 96, 235],
+            width: 4.0,
+        });
+        doc.lines.push(crate::strokes::FatLine {
+            id: "aim-line".into(),
+            points: Vec::with_capacity(2),
+            color: [255, 220, 120, 150],
+            width: 3.0,
+        });
         self.doc = doc;
     }
 
@@ -2884,11 +3059,45 @@ impl SurvivorArena {
                 .push([p.x, p.y, p.z]);
         }
         let streak = self.spec.fx.trails;
-        for (i, l) in self.doc.lines.iter_mut().enumerate() {
+        let nshots = self.spec.caps.shots as usize;
+        for (i, l) in self.doc.lines.iter_mut().take(nshots).enumerate() {
             l.points.clear();
             if let (true, Some(s)) = (streak, self.shots.get(i)) {
                 l.points.push([s.x - s.vx * 0.05, 0.58, s.z - s.vz * 0.05]);
                 l.points.push([s.x, 0.58, s.z]);
+            }
+        }
+        let lock = if self.aim_mode != 0 {
+            self.lock_foe()
+        } else {
+            None
+        };
+        let aim_dir = if self.aim_mode != 0 && lock.is_none() {
+            self.aim_dir
+        } else {
+            None
+        };
+        if let [ring, aim] = &mut self.doc.lines[nshots..] {
+            ring.points.clear();
+            aim.points.clear();
+            if let Some(j) = lock {
+                let r = self.kinds[self.foes.kind[j] as usize].radius
+                    + 0.3
+                    + 0.07 * (self.anim_t * 7.0).sin();
+                let spin = self.anim_t * 1.5;
+                for k in 0..=LOCK_SEG {
+                    let a = spin + k as f32 / LOCK_SEG as f32 * std::f32::consts::TAU;
+                    ring.points.push([
+                        self.foes.x[j] + a.sin() * r,
+                        0.07,
+                        self.foes.z[j] + a.cos() * r,
+                    ]);
+                }
+            }
+            if let Some(a) = aim_dir {
+                let (sn, cs) = a.sin_cos();
+                aim.points.push([hx + sn * 1.2, 0.3, hz + cs * 1.2]);
+                aim.points.push([hx + sn * 4.5, 0.3, hz + cs * 4.5]);
             }
         }
         let cam = &mut self.doc.cameras[0];
@@ -2949,6 +3158,8 @@ impl SurvivorArena {
             "foes_cap": self.foes.cap(),
             "gems": self.gems.len(),
             "shots": self.shots.len(),
+            "aim": self.aim_name(),
+            "locked": self.locked().is_some(),
             "cards": self.card_values(),
             "win": self.win,
             "death": self.core.stats.death,
@@ -3211,6 +3422,23 @@ impl SurvivorArena {
                 );
             }
         }
+        // The lock-on arrow over the locked foe.
+        if self.aim_mode != 0 && self.flow.phase == FlowPhase::Play {
+            if let Some(j) = self.lock_foe() {
+                if let Some((sx, sy)) = self.project([self.foes.x[j], 1.35, self.foes.z[j]], w, h) {
+                    let bob = (self.anim_t * 7.0).sin() * 3.0 * s;
+                    text(
+                        &mut list,
+                        "▼",
+                        sx,
+                        sy - 12.0 * s + bob,
+                        18.0,
+                        [255, 96, 96, 255],
+                        TextAlign::Center,
+                    );
+                }
+            }
+        }
         // Pause button.
         if self.flow.phase == FlowPhase::Play {
             let r = pause_rect(w, s);
@@ -3377,6 +3605,15 @@ impl SurvivorArena {
                     self.tr("RESUME", "つづける"),
                     [255, 170, 80, 255],
                     [30, 14, 20, 255],
+                ),
+                PauseBtn::Aim => (
+                    match self.aim_mode {
+                        0 => self.tr("AIM: AUTO", "ねらい: オート"),
+                        1 => self.tr("AIM: TAP", "ねらい: タップ"),
+                        _ => self.tr("AIM: HYBRID", "ねらい: ミックス"),
+                    },
+                    [40, 34, 74, 245],
+                    [150, 235, 255, 255],
                 ),
                 PauseBtn::Retry => (
                     self.tr("RETRY", "リトライ"),
@@ -3784,6 +4021,197 @@ mod tests {
         assert!(peak > 5 && peak_dmg > 0, "peak {peak} dmg {peak_dmg}");
         assert_eq!((none, none_dmg, pts), (0, 0, 0));
         assert_eq!(clouds, FX_LOOK.len() * 3);
+    }
+
+    fn finger(g: &mut SurvivorArena, id: u32, x: f32, y: f32, phase: PointerPhase) {
+        g.touch_ev(
+            PointerEvent {
+                id,
+                x,
+                y,
+                phase,
+                pressure: 1.0,
+            },
+            390,
+            844,
+        );
+    }
+
+    /// Foe `uid` as a screen pixel.
+    fn on_screen(g: &SurvivorArena, uid: u32) -> (f32, f32) {
+        let j = (0..g.foes.len()).find(|&i| g.foes.uid[i] == uid).unwrap();
+        g.project([g.foes.x[j], 0.45, g.foes.z[j]], 390.0, 844.0)
+            .unwrap()
+    }
+
+    /// Tick until a shot exists and return its yaw.
+    fn first_shot_yaw(g: &mut SurvivorArena) -> f32 {
+        for _ in 0..120 {
+            g.tick(DT);
+            if let Some(s) = g.shots.first() {
+                return s.vx.atan2(s.vz);
+            }
+        }
+        panic!("no shot");
+    }
+
+    fn bearing(g: &SurvivorArena, uid: u32) -> f32 {
+        let j = (0..g.foes.len()).find(|&i| g.foes.uid[i] == uid).unwrap();
+        (g.foes.x[j] - g.hx).atan2(g.foes.z[j] - g.hz)
+    }
+
+    fn yaw_gap(a: f32, b: f32) -> f32 {
+        let d = (a - b).rem_euclid(std::f32::consts::TAU);
+        d.min(std::f32::consts::TAU - d)
+    }
+
+    /// A near foe east and a farther one west, both inside the bolt's range.
+    fn two_foes() -> (SurvivorArena, u32, u32) {
+        let mut g = started();
+        g.weapon_cd.iter_mut().for_each(|c| *c = 5.0);
+        g.foes.spawn(0, g.hx + 2.5, g.hz, 9999.0);
+        g.foes.spawn(0, g.hx - 5.5, g.hz + 1.0, 9999.0);
+        let (near, far) = (g.foes.uid[0], g.foes.uid[1]);
+        g.tick(DT);
+        (g, near, far)
+    }
+
+    #[test]
+    fn a_tap_with_the_other_thumb_locks_a_foe_and_the_shot_follows_it() {
+        let (mut g, near, far) = two_foes();
+        assert_eq!(g.aim_name(), "hybrid");
+        finger(&mut g, 1, 195.0, 700.0, PointerPhase::Begin); // thumb one steers
+        let (x, y) = on_screen(&g, far);
+        finger(&mut g, 2, x, y, PointerPhase::Begin); // thumb two taps the far foe
+        finger(&mut g, 2, x, y, PointerPhase::End);
+        assert_eq!(g.locked(), Some(far));
+        g.weapon_cd.iter_mut().for_each(|c| *c = 0.0);
+        let yaw = first_shot_yaw(&mut g);
+        assert!(
+            yaw_gap(yaw, bearing(&g, far)) < 0.2,
+            "shot ignored the lock"
+        );
+        assert!(yaw_gap(yaw, bearing(&g, near)) > 1.0);
+        // The blaster points the same way.
+        assert!(yaw_gap(g.face, yaw) < 1e-3);
+        // Tap it again: released, the nearest is back.
+        finger(&mut g, 2, x, y, PointerPhase::Begin);
+        assert_eq!(g.locked(), None);
+    }
+
+    #[test]
+    fn the_lock_falls_back_to_the_nearest_when_the_target_dies() {
+        let (mut g, near, far) = two_foes();
+        let (x, y) = on_screen(&g, far);
+        finger(&mut g, 1, 195.0, 700.0, PointerPhase::Begin);
+        finger(&mut g, 2, x, y, PointerPhase::Begin);
+        assert_eq!(g.locked(), Some(far));
+        let j = (0..g.foes.len()).find(|&i| g.foes.uid[i] == far).unwrap();
+        g.foes.hp[j] = 0.0;
+        g.tick(DT);
+        g.shots.clear();
+        g.weapon_cd.iter_mut().for_each(|c| *c = 0.0);
+        let yaw = first_shot_yaw(&mut g);
+        assert_eq!(g.locked(), None);
+        assert!(yaw_gap(yaw, bearing(&g, near)) < 0.2, "did not fall back");
+    }
+
+    #[test]
+    fn a_quick_tap_of_the_lone_finger_also_locks() {
+        let (mut g, _, far) = two_foes();
+        let (x, y) = on_screen(&g, far);
+        finger(&mut g, 1, x, y, PointerPhase::Begin);
+        g.tick(DT);
+        finger(&mut g, 1, x, y, PointerPhase::End);
+        assert_eq!(g.locked(), Some(far));
+        // A long drag never locks.
+        g.set_aim("hybrid");
+        finger(&mut g, 1, x, y, PointerPhase::Begin);
+        for _ in 0..30 {
+            g.tick(DT);
+        }
+        finger(&mut g, 1, x, y, PointerPhase::End);
+        assert_eq!(g.locked(), None);
+    }
+
+    #[test]
+    fn auto_ignores_taps_and_the_ground_tap_aims_a_direction() {
+        let (mut g, near, far) = two_foes();
+        g.set_aim("auto");
+        let (x, y) = on_screen(&g, far);
+        finger(&mut g, 1, 195.0, 700.0, PointerPhase::Begin);
+        finger(&mut g, 2, x, y, PointerPhase::Begin);
+        assert_eq!(g.locked(), None);
+        g.weapon_cd.iter_mut().for_each(|c| *c = 0.0);
+        let yaw = first_shot_yaw(&mut g);
+        assert!(yaw_gap(yaw, bearing(&g, near)) < 0.2);
+
+        // Manual: a ground tap aims that way even with foes around.
+        let (mut g, near, _) = two_foes();
+        g.set_aim("manual");
+        finger(&mut g, 1, 195.0, 700.0, PointerPhase::Begin);
+        let (gx, gz) = (g.hx, g.hz + 6.0); // north of the hero
+        let (sx, sy) = g.project([gx, 0.0, gz], 390.0, 844.0).unwrap();
+        finger(&mut g, 2, sx, sy, PointerPhase::Begin);
+        assert_eq!(g.locked(), None);
+        let a = g.aim_dir.expect("ground aim");
+        assert!(yaw_gap(a, 0.0) < 0.1, "aim yaw {a}");
+        g.weapon_cd.iter_mut().for_each(|c| *c = 0.0);
+        let yaw = first_shot_yaw(&mut g);
+        assert!(yaw_gap(yaw, a) < 1e-3);
+        assert!(yaw_gap(yaw, bearing(&g, near)) > 0.5);
+        assert!(yaw_gap(g.face, yaw) < 1e-3);
+    }
+
+    #[test]
+    fn hybrid_uses_the_ground_aim_only_when_nothing_is_near() {
+        let mut g = started();
+        g.weapon_cd.iter_mut().for_each(|c| *c = 0.0);
+        g.aim_dir = Some(1.0);
+        let yaw = first_shot_yaw(&mut g);
+        assert!(yaw_gap(yaw, 1.0) < 1e-3, "empty field: fires along the aim");
+        let (mut g, near, _) = two_foes();
+        g.aim_dir = Some(1.0);
+        g.weapon_cd.iter_mut().for_each(|c| *c = 0.0);
+        let yaw = first_shot_yaw(&mut g);
+        assert!(yaw_gap(yaw, bearing(&g, near)) < 0.2, "foes in range win");
+    }
+
+    #[test]
+    fn the_pause_card_cycles_the_aim_and_the_doc_stays_inside_its_pools() {
+        let mut g = started();
+        g.pause();
+        for want in ["auto", "manual", "hybrid"] {
+            let (w, h) = (390.0, 844.0);
+            let r = pause_buttons(w, h, hud_scale(w, h))
+                .into_iter()
+                .find(|(b, _)| *b == PauseBtn::Aim)
+                .unwrap()
+                .1;
+            assert!(g.pointer(r.x + r.w * 0.5, r.y + r.h * 0.5, 390, 844));
+            assert_eq!(g.aim_name(), want);
+            assert!(g.state_value()["aim"] == want);
+        }
+        g.resume_from_page();
+        let (mut g, _, far) = two_foes();
+        finger(&mut g, 1, 195.0, 700.0, PointerPhase::Begin);
+        let (x, y) = on_screen(&g, far);
+        finger(&mut g, 2, x, y, PointerPhase::Begin);
+        g.build_doc();
+        let ring = g.doc.lines.iter().find(|l| l.id == "lock-ring").unwrap();
+        assert_eq!(ring.points.len(), LOCK_SEG + 1);
+        assert!(g.doc.lines.len() == g.spec.caps.shots as usize + 2);
+        g.tick(DT);
+        assert!(g.hud(390, 844, false).texts.iter().any(|t| t.text == "▼"));
+    }
+
+    #[test]
+    fn the_spec_validates_the_aim_scheme() {
+        let mut s = SurvivorSpec::default();
+        assert_eq!(s.input.aim, "hybrid");
+        assert!(s.validate().is_ok());
+        s.input.aim = "psychic".into();
+        assert!(s.validate().is_err());
     }
 
     #[test]

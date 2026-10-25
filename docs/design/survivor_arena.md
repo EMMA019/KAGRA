@@ -322,3 +322,16 @@ effects use their own RNG stream, so toggling them never changes a run (tested).
 | Audio | Kenney impact hit, wet-squish pop, gem/level/pick cues; BGM loop checked for clicks | Layered mix with ducking, pitch variation per cue, adaptive music intensity, ear-checked loop | all |
 
 Order by visible impact per effort: animated characters (squash/anticipation), flipbook VFX, icon art in the browser HUD, font swap, mix and ducking, extra enemy kinds.
+
+## 17. Manual target selection (PR #209, step 5)
+
+`input.aim` in the JSON spec: `auto` (nearest foe, as before), `manual` or `hybrid` (default). `input.tap_px` is the pick radius (44 px at 400 px short side).
+One thumb keeps steering (drag-follow). The other thumb taps:
+
+- **a foe** locks it: a red ring on the floor and a bobbing red arrow over it; every weapon fires at it while it is in range (out of range falls back to nearest); tap it again to release;
+- **bare ground** aims that way (a gold line from the hero); a tap on the hero clears it;
+- a quick tap of the lone steering finger (under 0.25 s and 12 px) counts as a tap too, for one-thumb play.
+
+Fallbacks: a dead lock drops to the nearest foe. `hybrid` is lock, then nearest, then the ground aim when nothing is in range. `manual` is lock, then the ground aim (even with foes near), then nearest,
+so nobody is stuck without a target. `auto` ignores taps. The hero faces and the muzzle sits on the shot line for every choice. The pause card has an AIM button that cycles auto / tap / hybrid (kept until the page reloads; it is not stored on the device).
+The lock is one uid and an index hint, the ring and arrow reuse two persistent lines and one HUD text, so no pools grow and nothing allocates per frame.

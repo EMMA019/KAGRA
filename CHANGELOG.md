@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Moonlit Swarm manual aim.** `input.aim` (`auto` | `manual` | `hybrid`, default hybrid) and `input.tap_px`: tap a foe with the other thumb to lock it (ring and arrow marker,
+  weapons prefer it, tap again to release, a dead lock falls back to the nearest foe), tap the ground to aim that way. An AIM button on the pause card cycles the scheme. Headless tests cover lock, unlock, fallback and the muzzle line.
 - **Moonlit Swarm polish pass.** The blaster now points where it fires (the hero faces the target, shots spawn at the muzzle). The arena has Kenney
   Mini Arena walls and columns and a seamless paver floor; the stray grey squares (the distant pine ring) are gone. A warm hero lantern, a calmer grade
   and tinted foes fix the washed-out look. New `fx` spec block, all switchable in JSON: pooled sparks, death puffs, gem glints, muzzle flash, shot
