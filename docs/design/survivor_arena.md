@@ -444,3 +444,29 @@ Profile first. `cargo test --release -p kagra-shared --lib perf_probe -- --ignor
 - Preview bundle: when a game's `bundle_assets` names audio pack folders, only those files ship; games that list `assets/audio` keep the full scan.
 - GLB: `pack_glb.py --lean` drops TANGENT and TEXCOORD_1. CREDITS notes say so.
 - Not done: music (1.27 MB mp3; a lower bitrate costs quality), lazy-loading the BGM (needs `play.html`, see #207), foe LOD and wall culling (the scene is ~50k vertices; not worth the pop-in risk), the shared wasm data (fonts, shaders).
+
+## 20. Why it was still slow on a phone, and the three "guns" (perf pass 2 on PR #210)
+
+**Root cause of the slowness.** Every frame `WorldDoc::compile_scene` (the arena draws with frustum culling on) called `compile_meshes()`,
+which decodes every GLB and texture the world uses (17 models) only to read their bounding boxes. That is a few ms of CPU on a desktop and
+tens of ms on a phone, on the main thread, every frame. The download-size pass could not touch it. Fix: `WorldDoc::cull_bounds()` keeps the
+bounds per `gpu_mesh_key()` in a small thread-local cache (skinned and heightfield docs bypass it, a test checks it matches a fresh build).
+Two smaller per-frame costs went too: the baked env strip (`baked_env`, a powf per texel plus three blurs, rebaked and re-uploaded every
+frame) is cached by (spec, sky, ground), and `prop_world_mats` (a `HashMap<String, Mat4>` over every pooled prop, disabled ones included,
+with a linear search per id) is skipped when no prop has a parent.
+
+Measured on the box (relative numbers only): native `compile_scene` 122 ms -> about 1 ms; headless-Chrome CPU-bound frame rate 4.2 -> 34.6 fps;
+the sim is 7-8 us a tick, so it was never the sim.
+
+**Graphics tiers.** #207's tier system is merged into this branch (a normal merge commit) and Moonlit Swarm opts in
+(`supports_quality_tiers`): the settings card gets the Graphics row, `?quality=auto|safe|mid|high|max` works, auto probes on the first run and
+steps down when frames are slow. For Moonlit Swarm `atmo` thins the graveyard dressing (every n-th piece stays) and `particles` thins sparks;
+both are picture only (a test plays the same run at two settings and compares the state JSON). `?quality=safe|mid|max` also pick the
+pool sizes at load (safe = the `low` pools, max = `high`), because pools are sized once.
+`safe` renders at scale 1.0 with bloom off and the low picture; `mid` (the auto start) at 1.5; `high` at 2.0.
+
+**The three items near the hero.** Not three guns: (a) the blaster was always in the hero's hands, also when the only weapon was the orbit
+blades, zap or the pulse, so blades + gun looked like three weapons next to one HUD chip; (b) a petal fan (4 petals) was drawn as egg-shaped
+bars with a long streak, which read as extra barrels. Now the blaster is shown only while a weapon that shoots from it (bolt, petals, wisps)
+is owned, and petals are small flat discs that tumble, with no streak. The HUD chips already list exactly the owned weapons.
+`closeup_probe` (ignored test) renders hero close-ups per starting weapon.
