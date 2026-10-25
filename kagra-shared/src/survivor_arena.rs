@@ -283,6 +283,9 @@ pub struct FxSpec {
     pub zoom_pulse: f32,
     /// Streaks behind shots.
     pub trails: bool,
+    /// On the `high` picture tier only: wider soft shadows, stronger bloom and SSAO
+    /// (TAA, cascades and PCSS come from the tier itself).
+    pub high_post: bool,
     pub cap: [u32; 3],
 }
 
@@ -295,6 +298,7 @@ impl Default for FxSpec {
             knockback: 0.12,
             zoom_pulse: 1.0,
             trails: true,
+            high_post: true,
             cap: [48, 160, 480],
         }
     }
@@ -946,12 +950,12 @@ const FX_HURT: u8 = 5;
 /// Per kind: sRGB colour, sprite radius (m) and opacity for the young, middle and old third
 /// of its life. One point cloud per kind and third, refilled in place each frame.
 const FX_LOOK: [([u8; 3], [f32; 3], [u8; 3]); 6] = [
-    ([185, 240, 255], [0.075, 0.055, 0.035], [255, 230, 170]),
+    ([185, 240, 255], [0.11, 0.08, 0.05], [255, 235, 190]),
     ([185, 165, 255], [0.16, 0.26, 0.34], [210, 130, 60]),
     ([140, 225, 150], [0.16, 0.26, 0.34], [210, 130, 60]),
     ([255, 225, 110], [0.10, 0.08, 0.05], [255, 230, 160]),
     ([255, 225, 160], [0.28, 0.18, 0.10], [255, 200, 110]),
-    ([255, 85, 95], [0.12, 0.09, 0.06], [255, 220, 140]),
+    ([255, 85, 95], [0.16, 0.12, 0.08], [255, 230, 160]),
 ];
 
 #[derive(Debug)]
@@ -1894,6 +1898,37 @@ impl SurvivorArena {
     }
 
     /// (kind label, name, description, accent colour) of a card, in the page language.
+    /// A glyph from the bundled UI font for a card.
+    fn card_glyph(&self, c: Card) -> &'static str {
+        match c {
+            Card::Weapon(_) => "★",
+            Card::Heal => "♡",
+            Card::Passive(i) => match self.spec.passives[i as usize].stat {
+                PassiveStat::MaxHp => "♥",
+                PassiveStat::Speed => "→",
+                PassiveStat::Magnet => "◎",
+                PassiveStat::Might => "▲",
+                PassiveStat::Haste => "◆",
+                PassiveStat::Growth => "☀",
+            },
+        }
+    }
+
+    /// Level pips for a card: levels owned and the most it can reach (0 max: no pips).
+    fn card_pips(&self, c: Card) -> (usize, usize) {
+        match c {
+            Card::Weapon(i) => (
+                self.weapon_lv[i as usize] as usize,
+                self.spec.weapons[i as usize].levels.len() + 1,
+            ),
+            Card::Passive(i) => (
+                self.passive_lv[i as usize] as usize,
+                self.spec.passives[i as usize].max_level as usize,
+            ),
+            Card::Heal => (0, 0),
+        }
+    }
+
     fn card_text(&self, c: Card) -> (String, String, String, [u8; 3]) {
         match c {
             Card::Weapon(i) => {
@@ -2247,6 +2282,9 @@ const FLOOR_TILE_M: f32 = 12.0;
 const GRAVEYARD: &str = "assets/models/kenney/graveyard-kit/";
 /// Every Kenney character is about 0.8 tall; this puts a foe of radius r at ~2.2 r tall x 1.4.
 const FOE_MODEL_K: f32 = 5.2;
+/// Albedo tints: the ghost is white in the kit and burnt out under the moon without one.
+const GHOST_TINT: [u32; 3] = [150, 150, 225];
+const ZOMBIE_TINT: [u32; 3] = [205, 225, 190];
 const HERO_MODEL_SCALE: f32 = 2.2;
 
 fn hero_glb(skin: &str) -> &'static str {
@@ -2296,6 +2334,11 @@ impl SurvivorArena {
             ..WorldDoc::default()
         };
         doc.quality = self.picture_quality.clone();
+        if self.tier == 2 && self.spec.fx.high_post {
+            doc.shadow_softness = Some(2.6);
+            doc.ssao = Some(10.0);
+            doc.bloom = doc.bloom.map(|b| b * 1.3);
+        }
         // One tiny buried prop per model keeps the renderer's glTF table constant.
         let hero_path = hero_glb(&self.spec.hero.skin);
         let mut wanted: Vec<String> = vec![
@@ -2366,7 +2409,7 @@ impl SurvivorArena {
                         "decor",
                         [x, 0.0, z],
                         [scale; 3],
-                        [255, 255, 255],
+                        [165, 170, 210],
                         0.0,
                         None,
                     )
@@ -2551,8 +2594,12 @@ impl SurvivorArena {
                     "foe",
                     [0.0, -50.0, 0.0],
                     [1.0; 3],
-                    [255, 255, 255],
-                    0.15,
+                    if path == ZOMBIE_GLB {
+                        ZOMBIE_TINT
+                    } else {
+                        GHOST_TINT
+                    },
+                    0.06,
                     Some([0.2, 0.8, 0.3]),
                 )
             } else {
@@ -2776,7 +2823,7 @@ impl SurvivorArena {
             p.yaw = (hx - x).atan2(hz - z);
             p.scale = [d * sx, d * sy, d * sx];
             let fl = self.foes.flash[i] * 10.0;
-            p.emissive = Some(0.15 + 2.0 * fl);
+            p.emissive = Some(0.06 + 2.2 * fl);
             p.emissive_color = Some(if fl > 0.0 { [1.0, 1.0, 1.0] } else { k.linear });
             if !slots.glb_foe {
                 p.color = Some(k.color);
@@ -2997,17 +3044,36 @@ impl SurvivorArena {
             12.0 * s,
             [110, 220, 255, 255],
         ));
+        // A sheen on the top half and a bright tip where the bar ends.
+        list.quads
+            .push(Quad::new(0.0, 0.0, w * frac, 4.5 * s, [220, 250, 255, 120]));
+        if frac > 0.01 {
+            list.quads.push(Quad::new(
+                w * frac - 3.0 * s,
+                0.0,
+                3.0 * s,
+                12.0 * s,
+                [255, 255, 255, 255],
+            ));
+        }
+        list.quads.push(Quad::new(
+            6.0 * s,
+            13.0 * s,
+            62.0 * s,
+            21.0 * s,
+            [8, 8, 24, 150],
+        ));
         text(
             &mut list,
             &list_lv(self.lang_ja, self.level),
-            10.0 * s,
-            14.0 * s,
+            12.0 * s,
+            15.0 * s,
             15.0,
-            [255, 255, 255, 255],
+            [255, 240, 170, 255],
             TextAlign::Left,
         );
         // HP bar under it.
-        let (bx, by, bw, bh) = (10.0 * s, 36.0 * s, (w * 0.42).min(210.0 * s), 14.0 * s);
+        let (bx, by, bw, bh) = (30.0 * s, 40.0 * s, (w * 0.40).min(200.0 * s), 16.0 * s);
         let hf = (self.hp / self.mods.hp_max).clamp(0.0, 1.0);
         list.quads.push(Quad::new(
             bx - 2.0 * s,
@@ -3016,14 +3082,46 @@ impl SurvivorArena {
             bh + 4.0 * s,
             [8, 8, 24, 200],
         ));
+        let low = hf <= 0.3 && self.hp > 0.0;
+        let beat = if low {
+            (self.anim_t * 8.0).sin() * 0.5 + 0.5
+        } else {
+            0.0
+        };
         let hc = if hf > 0.5 {
             [120, 235, 150, 255]
         } else if hf > 0.25 {
             [255, 200, 90, 255]
         } else {
-            [255, 90, 100, 255]
+            [
+                255,
+                (90.0 + 120.0 * beat) as u8,
+                (100.0 + 60.0 * beat) as u8,
+                255,
+            ]
         };
         list.quads.push(Quad::new(bx, by, bw * hf, bh, hc));
+        list.quads
+            .push(Quad::new(bx, by, bw * hf, bh * 0.4, [255, 255, 255, 80]));
+        text(
+            &mut list,
+            "♥",
+            bx - 22.0 * s,
+            by - 3.0 * s,
+            20.0,
+            [255, (90.0 + 120.0 * beat) as u8, 110, 255],
+            TextAlign::Left,
+        );
+        if low {
+            // A faint red breathing at the screen edge: the bar is nearly gone.
+            list.quads.push(Quad::new(
+                0.0,
+                0.0,
+                w,
+                h,
+                [255, 30, 50, (18.0 + 26.0 * beat) as u8],
+            ));
+        }
         text(
             &mut list,
             &format!("{}", self.hp.max(0.0).ceil() as i32),
@@ -3035,22 +3133,50 @@ impl SurvivorArena {
         );
         text(
             &mut list,
-            &format!("{} {}", self.tr("KO", "たおした"), self.kills),
-            bx,
-            by + 20.0 * s,
-            13.0,
-            [255, 255, 255, 220],
+            &format!("★ {} {}", self.kills, self.tr("KO", "たおした")),
+            bx - 22.0 * s,
+            by + 22.0 * s,
+            14.0,
+            [255, 235, 160, 235],
             TextAlign::Left,
         );
         // Clock: time left until dawn.
         let left = (self.spec.run.secs - self.t).max(0.0).ceil() as u32;
+        let pw = 96.0 * s;
+        list.quads.push(Quad::new(
+            w * 0.5 - pw * 0.5,
+            14.0 * s,
+            pw,
+            40.0 * s,
+            [8, 8, 24, 150],
+        ));
+        let prog = (self.t / self.spec.run.secs.max(1.0)).clamp(0.0, 1.0);
+        list.quads.push(Quad::new(
+            w * 0.5 - pw * 0.5 + 6.0 * s,
+            47.0 * s,
+            (pw - 12.0 * s) * prog,
+            3.0 * s,
+            [255, 190 + (60.0 * prog) as u8, 110, 255],
+        ));
+        // The clock warms toward dawn and flickers in the last ten seconds.
+        let urgent = left <= 10 && (self.anim_t * 6.0).sin() > 0.0;
+        let clock = if urgent {
+            [255, 150, 120, 255]
+        } else {
+            [
+                255,
+                240 - (40.0 * prog) as u8,
+                200 - (60.0 * prog) as u8,
+                255,
+            ]
+        };
         text(
             &mut list,
             &format!("{}:{:02}", left / 60, left % 60),
             w * 0.5,
-            16.0 * s,
+            17.0 * s,
             26.0,
-            [255, 240, 200, 255],
+            clock,
             TextAlign::Center,
         );
         // Floating damage numbers.
@@ -3163,20 +3289,68 @@ impl SurvivorArena {
             list.quads
                 .push(Quad::new(r.x, r.y, r.w, r.h, [28, 24, 56, 250]));
             list.quads.push(Quad::new(r.x, r.y, 8.0 * s, r.h, a));
-            let tx = r.x + 22.0 * s;
-            list.texts
-                .push(TextQuad::new(&tag, tx, r.y + 9.0 * s, 12.0 * s, a));
+            // An icon badge: the card's glyph on a tinted tile.
+            let portrait = h >= w;
+            let bs = if portrait {
+                (r.h * 0.62).min(76.0 * s)
+            } else {
+                56.0 * s
+            };
+            let (bx, by) = if portrait {
+                (r.x + 18.0 * s, r.y + (r.h - bs) * 0.5)
+            } else {
+                (r.x + 18.0 * s, r.y + 14.0 * s)
+            };
+            list.quads.push(Quad::new(
+                bx,
+                by,
+                bs,
+                bs,
+                [a[0] / 3, a[1] / 3, a[2] / 3, 255],
+            ));
+            list.quads
+                .push(Quad::new(bx, by, bs, 3.0 * s, [a[0], a[1], a[2], 200]));
+            list.texts.push(
+                TextQuad::new(
+                    self.card_glyph(*c),
+                    bx + bs * 0.5,
+                    by + bs * 0.5 - bs * 0.30,
+                    bs * 0.6,
+                    [255, 255, 255, 255],
+                )
+                .aligned(TextAlign::Center),
+            );
+            let (tx, ty) = if portrait {
+                (bx + bs + 14.0 * s, r.y + 9.0 * s)
+            } else {
+                (r.x + 22.0 * s, by + bs + 12.0 * s)
+            };
+            let (cur, max) = self.card_pips(*c);
+            if max > 1 {
+                let pips: String = (0..max)
+                    .map(|k| match k.cmp(&cur) {
+                        std::cmp::Ordering::Less => '●',
+                        std::cmp::Ordering::Equal => '◆',
+                        std::cmp::Ordering::Greater => '○',
+                    })
+                    .collect();
+                list.texts.push(
+                    TextQuad::new(&pips, r.x + r.w - 12.0 * s, r.y + 8.0 * s, 12.0 * s, a)
+                        .aligned(TextAlign::Right),
+                );
+            }
+            list.texts.push(TextQuad::new(&tag, tx, ty, 12.0 * s, a));
             list.texts.push(TextQuad::new(
                 &name,
                 tx,
-                r.y + 9.0 * s + 17.0 * s,
+                ty + 17.0 * s,
                 22.0 * s,
                 [255, 255, 255, 255],
             ));
             list.texts.push(TextQuad::new(
                 &desc,
                 tx,
-                r.y + 9.0 * s + 47.0 * s,
+                ty + 47.0 * s,
                 14.0 * s,
                 [225, 225, 245, 230],
             ));

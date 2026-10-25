@@ -134,6 +134,7 @@
         480
       ],
       "damage_numbers": true,
+      "high_post": true,
       "knockback": 0.12,
       "particles": true,
       "shake": 1.0,
