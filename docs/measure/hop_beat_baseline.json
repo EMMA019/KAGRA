@@ -2,79 +2,86 @@
   "bots": {
     "hold_all": {
       "died": 8,
-      "mean_bars": 9.87,
+      "mean_bars": 6.85,
       "mean_cleared": 0.0,
       "mean_lives_lost": 3.0,
       "mean_max_combo": 0.0,
       "mean_perfects": 0.0,
-      "mean_score": 80.0,
-      "median_seconds": 21.58,
+      "mean_score": 56.0,
+      "mean_stomps": 0.0,
+      "median_seconds": 13.03,
       "runs": 8
     },
     "human_25ms_2pct": {
       "died": 0,
       "mean_bars": 78.75,
-      "mean_cleared": 115.13,
-      "mean_lives_lost": 1.0,
-      "mean_max_combo": 62.63,
-      "mean_perfects": 111.25,
-      "mean_score": 31877.0,
+      "mean_cleared": 82.75,
+      "mean_lives_lost": 0.88,
+      "mean_max_combo": 59.88,
+      "mean_perfects": 79.63,
+      "mean_score": 23225.13,
+      "mean_stomps": 0.0,
       "median_seconds": 150.01,
       "runs": 8
     },
     "human_55ms_6pct": {
-      "died": 8,
-      "mean_bars": 30.97,
-      "mean_cleared": 27.13,
-      "mean_lives_lost": 3.0,
-      "mean_max_combo": 10.63,
-      "mean_perfects": 20.63,
-      "mean_score": 4837.13,
-      "median_seconds": 63.53,
+      "died": 7,
+      "mean_bars": 58.22,
+      "mean_cleared": 52.38,
+      "mean_lives_lost": 2.88,
+      "mean_max_combo": 15.88,
+      "mean_perfects": 38.5,
+      "mean_score": 9795.75,
+      "mean_stomps": 0.25,
+      "median_seconds": 107.83,
       "runs": 8
     },
     "human_90ms_12pct": {
       "died": 8,
-      "mean_bars": 18.71,
-      "mean_cleared": 11.88,
+      "mean_bars": 29.82,
+      "mean_cleared": 17.63,
       "mean_lives_lost": 3.0,
-      "mean_max_combo": 3.38,
-      "mean_perfects": 7.25,
-      "mean_score": 1452.25,
-      "median_seconds": 32.07,
+      "mean_max_combo": 5.5,
+      "mean_perfects": 10.75,
+      "mean_score": 2572.38,
+      "mean_stomps": 1.0,
+      "median_seconds": 59.77,
       "runs": 8
     },
     "idle": {
       "died": 8,
-      "mean_bars": 9.87,
+      "mean_bars": 6.85,
       "mean_cleared": 0.0,
       "mean_lives_lost": 3.0,
       "mean_max_combo": 0.0,
       "mean_perfects": 0.0,
-      "mean_score": 80.0,
-      "median_seconds": 21.58,
+      "mean_score": 56.0,
+      "mean_stomps": 0.0,
+      "median_seconds": 13.03,
       "runs": 8
     },
     "perfect": {
       "died": 0,
       "mean_bars": 78.75,
-      "mean_cleared": 117.5,
+      "mean_cleared": 84.75,
       "mean_lives_lost": 0.0,
-      "mean_max_combo": 117.5,
-      "mean_perfects": 117.5,
-      "mean_score": 35182.0,
+      "mean_max_combo": 84.75,
+      "mean_perfects": 84.75,
+      "mean_score": 25357.0,
+      "mean_stomps": 0.0,
       "median_seconds": 150.01,
       "runs": 8
     },
     "spam": {
       "died": 8,
-      "mean_bars": 28.02,
-      "mean_cleared": 24.38,
+      "mean_bars": 43.15,
+      "mean_cleared": 37.75,
       "mean_lives_lost": 3.0,
-      "mean_max_combo": 7.63,
-      "mean_perfects": 16.0,
-      "mean_score": 3386.13,
-      "median_seconds": 52.38,
+      "mean_max_combo": 14.63,
+      "mean_perfects": 28.75,
+      "mean_score": 8267.0,
+      "mean_stomps": 4.38,
+      "median_seconds": 70.07,
       "runs": 8
     }
   },
@@ -85,23 +92,32 @@
         0,
         8
       ],
-      "busy": 0.19,
-      "gap_share": 0.6,
-      "hold_share": 0.2,
-      "mean_window_ms": 318.0,
-      "min_window_ms": 150.0,
-      "obstacles_per_bar": 0.63
+      "busy": 0.16,
+      "enemy_kinds": [
+        "slime"
+      ],
+      "enemy_share": 0.75,
+      "gap_share": 0.25,
+      "hold_share": 0.25,
+      "mean_window_ms": 452.0,
+      "min_window_ms": 406.0,
+      "obstacles_per_bar": 0.5
     },
     {
       "bars": [
         8,
         16
       ],
-      "busy": 0.25,
-      "gap_share": 0.5,
-      "hold_share": 0.33,
-      "mean_window_ms": 330.0,
-      "min_window_ms": 150.0,
+      "busy": 0.19,
+      "enemy_kinds": [
+        "beetle",
+        "slime"
+      ],
+      "enemy_share": 0.67,
+      "gap_share": 0.0,
+      "hold_share": 0.0,
+      "mean_window_ms": 317.33,
+      "min_window_ms": 146.0,
       "obstacles_per_bar": 0.75
     },
     {
@@ -109,96 +125,138 @@
         16,
         24
       ],
-      "busy": 0.34,
-      "gap_share": 0.75,
-      "hold_share": 0.38,
-      "mean_window_ms": 330.0,
-      "min_window_ms": 150.0,
-      "obstacles_per_bar": 1.0
+      "busy": 0.19,
+      "enemy_kinds": [
+        "bat",
+        "beetle"
+      ],
+      "enemy_share": 0.4,
+      "gap_share": 0.6,
+      "hold_share": 0.4,
+      "mean_window_ms": 362.5,
+      "min_window_ms": 352.0,
+      "obstacles_per_bar": 0.63
     },
     {
       "bars": [
         24,
         32
       ],
-      "busy": 0.44,
-      "gap_share": 0.89,
-      "hold_share": 0.56,
-      "mean_window_ms": 381.11,
-      "min_window_ms": 150.0,
-      "obstacles_per_bar": 1.13
+      "busy": 0.28,
+      "enemy_kinds": [
+        "bat",
+        "beetle"
+      ],
+      "enemy_share": 0.38,
+      "gap_share": 0.63,
+      "hold_share": 0.25,
+      "mean_window_ms": 397.43,
+      "min_window_ms": 352.0,
+      "obstacles_per_bar": 1.0
     },
     {
       "bars": [
         32,
         40
       ],
-      "busy": 0.5,
-      "gap_share": 0.77,
-      "hold_share": 0.23,
-      "mean_window_ms": 322.31,
-      "min_window_ms": 150.0,
-      "obstacles_per_bar": 1.63
+      "busy": 0.38,
+      "enemy_kinds": [
+        "beetle"
+      ],
+      "enemy_share": 0.18,
+      "gap_share": 0.73,
+      "hold_share": 0.09,
+      "mean_window_ms": 340.55,
+      "min_window_ms": 146.0,
+      "obstacles_per_bar": 1.38
     },
     {
       "bars": [
         40,
         48
       ],
-      "busy": 0.5,
-      "gap_share": 0.71,
-      "hold_share": 0.14,
-      "mean_window_ms": 292.86,
-      "min_window_ms": 150.0,
-      "obstacles_per_bar": 1.75
+      "busy": 0.44,
+      "enemy_kinds": [
+        "beetle",
+        "slime"
+      ],
+      "enemy_share": 0.58,
+      "gap_share": 0.42,
+      "hold_share": 0.17,
+      "mean_window_ms": 400.17,
+      "min_window_ms": 350.0,
+      "obstacles_per_bar": 1.5
     },
     {
       "bars": [
         48,
         56
       ],
-      "busy": 0.69,
-      "gap_share": 0.71,
-      "hold_share": 0.29,
-      "mean_window_ms": 291.18,
-      "min_window_ms": 150.0,
-      "obstacles_per_bar": 2.13
+      "busy": 0.38,
+      "enemy_kinds": [
+        "bat",
+        "beetle",
+        "slime"
+      ],
+      "enemy_share": 0.69,
+      "gap_share": 0.31,
+      "hold_share": 0.15,
+      "mean_window_ms": 383.0,
+      "min_window_ms": 352.0,
+      "obstacles_per_bar": 1.63
     },
     {
       "bars": [
         56,
         64
       ],
-      "busy": 0.5,
-      "gap_share": 0.77,
-      "hold_share": 0.23,
-      "mean_window_ms": 322.31,
-      "min_window_ms": 150.0,
-      "obstacles_per_bar": 1.63
+      "busy": 0.38,
+      "enemy_kinds": [
+        "bat",
+        "beetle",
+        "slime"
+      ],
+      "enemy_share": 0.36,
+      "gap_share": 0.45,
+      "hold_share": 0.18,
+      "mean_window_ms": 324.4,
+      "min_window_ms": 146.0,
+      "obstacles_per_bar": 1.38
     },
     {
       "bars": [
         64,
         72
       ],
-      "busy": 0.5,
-      "gap_share": 0.91,
-      "hold_share": 0.45,
-      "mean_window_ms": 353.64,
-      "min_window_ms": 150.0,
-      "obstacles_per_bar": 1.38
+      "busy": 0.38,
+      "enemy_kinds": [
+        "beetle",
+        "slime"
+      ],
+      "enemy_share": 0.6,
+      "gap_share": 0.4,
+      "hold_share": 0.2,
+      "mean_window_ms": 381.8,
+      "min_window_ms": 350.0,
+      "obstacles_per_bar": 1.25
     },
     {
       "bars": [
         72,
         80
       ],
-      "busy": 0.69,
-      "gap_share": 0.63,
-      "hold_share": 0.16,
-      "mean_window_ms": 276.32,
-      "min_window_ms": 150.0,
-      "obstacles_per_bar": 2.38
+      "busy": 0.47,
+      "enemy_kinds": [
+        "bat",
+        "beetle",
+        "slime"
+      ],
+      "enemy_share": 0.5,
+      "gap_share": 0.36,
+      "hold_share": 0.14,
+      "mean_window_ms": 343.08,
+      "min_window_ms": 146.0,
+      "obstacles_per_bar": 1.75
     }
   ],
   "game": "hop_beat",
@@ -206,8 +264,8 @@
     "bars_checked": 200,
     "course_problems": [],
     "min_gap_ms": 0.0,
-    "min_window_ms": 150.0,
-    "obstacles": 342,
+    "min_window_ms": 146.0,
+    "obstacles": 258,
     "phrase_problems": []
   },
   "seeds": [

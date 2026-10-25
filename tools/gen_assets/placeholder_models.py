@@ -117,8 +117,11 @@ def _norm(t):
     return tuple(x / l for x in n)
 
 
-def write_glb(path: Path, parts, name: str):
-    """parts: [(color rgb 0..255, [tri])] -> one primitive per colour."""
+def write_glb(path: Path, parts, name: str, ao=None):
+    """parts: [(color rgb 0..255, [tri])] -> one primitive per colour.
+
+    ``ao(pos, normal)`` (optional) returns 0..1 per vertex and is written as a grey
+    8-bit normalized COLOR_0, baked ambient occlusion the renderer multiplies into the base colour."""
     by = {}
     for col, tris in parts:
         by.setdefault(tuple(col), []).extend(tris)
@@ -152,6 +155,17 @@ def write_glb(path: Path, parts, name: str):
         views.append({"buffer": 0, "byteOffset": o, "byteLength": len(blob) - o, "target": 34962})
         accs.append({"bufferView": len(views) - 1, "componentType": 5126, "count": len(nor), "type": "VEC3"})
         na = len(accs) - 1
+        attrs = {"POSITION": pa, "NORMAL": na}
+        if ao is not None:
+            pad()
+            o = len(blob)
+            for v, n in zip(pos, nor):
+                a = round(max(0.0, min(1.0, ao(v, n))) * 255)
+                blob += struct.pack("<4B", a, a, a, 255)
+            views.append({"buffer": 0, "byteOffset": o, "byteLength": len(blob) - o, "target": 34962})
+            accs.append({"bufferView": len(views) - 1, "componentType": 5121, "normalized": True,
+                         "count": len(pos), "type": "VEC4"})
+            attrs["COLOR_0"] = len(accs) - 1
         mats.append({
             "name": f"mat{mi}",
             "pbrMetallicRoughness": {
@@ -160,7 +174,7 @@ def write_glb(path: Path, parts, name: str):
                 "roughnessFactor": 0.9,
             },
         })
-        prims.append({"attributes": {"POSITION": pa, "NORMAL": na}, "material": mi, "mode": 4})
+        prims.append({"attributes": attrs, "material": mi, "mode": 4})
     pad()
     doc = {
         "asset": {"version": "2.0", "generator": "kagra tools/gen_assets/placeholder_models.py (CC0-1.0)"},

@@ -820,6 +820,27 @@ impl SharedSession {
         }
     }
 
+    /// HOP-BEAT: the page language (`ja` or `en`) for the in-canvas texts.
+    pub fn set_lang(&mut self, lang: &str) {
+        if let Some(hop) = self.hop_mut() {
+            hop.set_lang(lang);
+        }
+    }
+
+    /// HOP-BEAT: pause the run (a hidden tab, the Escape key); the pause card appears.
+    pub fn pause_run(&mut self) {
+        if let Some(hop) = self.hop_mut() {
+            hop.pause();
+        }
+    }
+
+    /// HOP-BEAT: back into the run from the pause card.
+    pub fn resume_run(&mut self) {
+        if let Some(hop) = self.hop_mut() {
+            hop.resume_from_page();
+        }
+    }
+
     /// HOP-BEAT: land in the run itself (the first tap starts the music).
     pub fn set_direct_play(&mut self, on: bool) {
         if let Some(hop) = self.hop_mut() {

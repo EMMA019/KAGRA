@@ -33,9 +33,25 @@ const AHEAD_M: f32 = 44.0;
 /// How much stays drawn behind the hero.
 const BEHIND_M: f32 = 14.0;
 
-pub const SFX_CUES: [&str; 10] = [
-    "hop", "land", "perfect", "good", "combo", "hit", "fall", "gameover", "revive", "newbest",
+pub const SFX_CUES: [&str; 12] = [
+    "hop", "land", "perfect", "good", "combo", "hit", "fall", "stomp", "warn", "gameover",
+    "revive", "newbest",
 ];
+
+/// Loudness of each cue under the music (the music file is about -14 LUFS at 0.7):
+/// the ones that repeat every beat sit low, the rewards and the damage stand out.
+fn cue_volume(name: &str) -> f32 {
+    match name {
+        "hop" => 0.6,
+        "land" => 0.4,
+        "good" => 0.65,
+        "perfect" => 0.85,
+        "combo" => 0.8,
+        "warn" => 0.55,
+        "hit" => 0.95,
+        _ => 0.9,
+    }
+}
 
 /// Cues that are long music stingers (mp3 from the music pack); the rest are
 /// short generated effects (wav).
@@ -146,12 +162,15 @@ impl Default for HopArc {
 #[serde(deny_unknown_fields)]
 pub struct Item {
     pub beat: f32,
-    /// `gap` or `block`.
+    /// `gap`, `block` or `enemy`.
     pub kind: String,
     /// Width in beats.
     pub beats: f32,
     /// `tap` or `hold`: the hop this obstacle is written for.
     pub hop: String,
+    /// For `kind: "enemy"`: the id of an entry of `enemies.types`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub enemy: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -161,6 +180,22 @@ pub struct Phrase {
     pub level: u32,
     pub bars: u32,
     pub items: Vec<Item>,
+    /// How often it is picked among the phrases of its level (1..=16).
+    #[serde(default = "one_weight")]
+    pub weight: u32,
+    /// The first phrase laid when a level starts is picked among the `debut`
+    /// phrases of that level (if it has any), so a new enemy is introduced on
+    /// its own.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub debut: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+fn one_weight() -> u32 {
+    1
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -252,12 +287,57 @@ impl Default for ReviveSpec {
     }
 }
 
+/// How a fall into a gap looks. All of it is picture and timing: the sim decides the
+/// fall exactly as before, this only shapes what is drawn and how long the game over
+/// card waits.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FallSpec {
+    /// Picture hold at the ledge (hit-stop; the sim and the music keep going).
+    pub edge_stop_secs: f32,
+    /// Somersaults per second once it is off the ledge.
+    pub tumble_turns_per_sec: f32,
+    /// Stretch along the fall at full speed (0 = none).
+    pub stretch: f32,
+    /// Share of the forward speed the bunny keeps while it drops out of frame.
+    pub carry: f32,
+    /// Share of its forward speed the camera does NOT follow (0 = rigid, 1 = stays put).
+    pub cam_lag: f32,
+    /// Time scale of the drop after the run has ended.
+    pub slow_scale: f32,
+    /// From the ledge to the game over card.
+    pub card_delay_secs: f32,
+    /// Strength of the dark screen edge (0 = off).
+    pub vignette: f32,
+    /// Dust puffs at the ledge (halved on the low tier).
+    pub dust: u32,
+}
+
+impl Default for FallSpec {
+    fn default() -> Self {
+        Self {
+            edge_stop_secs: 0.07,
+            tumble_turns_per_sec: 1.1,
+            stretch: 0.3,
+            carry: 0.55,
+            cam_lag: 0.6,
+            slow_scale: 0.5,
+            card_delay_secs: 1.0,
+            vignette: 0.7,
+            dust: 8,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct PlaySpec {
     /// Land in the run itself: no title card, the first tap starts the music.
     pub direct: bool,
 }
+
+use crate::game_core::enemies::{self as foes, HeroBox, MAX_WALK_M};
+pub use crate::game_core::enemies::{EnemySpec, EnemyType, Touch};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -266,6 +346,228 @@ pub struct LookSpec {
     pub slab: [u32; 3],
     pub glow: [u32; 3],
     pub accent: [u32; 3],
+    /// The finishing bundle: one of [`LOOK_PRESETS`]. `post` and `atmo` override single values.
+    pub preset: String,
+    pub post: PostSpec,
+    pub atmo: AtmoSpec,
+}
+
+/// Hero skins by id: a body colour laid over the look's own hero colour.
+/// `classic` leaves `look.hero` alone, so a custom look keeps working.
+pub const DEFAULT_SKIN: &str = "classic";
+pub const SKINS: [(&str, Option<[u32; 3]>); 5] = [
+    ("classic", None),
+    ("mint", Some([140, 255, 205])),
+    ("gold", Some([255, 205, 90])),
+    ("ember", Some([255, 120, 90])),
+    ("ghost", Some([220, 226, 255])),
+];
+
+/// Look presets other games can reuse by name.
+pub const LOOK_PRESETS: [&str; 3] = ["neon_night", "dusk", "plain"];
+pub const LUT_NAMES: [&str; 4] = ["off", "warm", "cool", "punch"];
+
+/// Post-process overrides (the renderer's bloom, vignette, grade, tone map). `None` = the preset's value.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PostSpec {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bloom: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bloom_threshold: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vignette: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lut: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lut_strength: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exposure: Option<f32>,
+    /// `agx`, `neutral` or empty for the default ACES curve.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tonemap_curve: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ibl: Option<f32>,
+}
+
+/// Sky, haze and far-scenery overrides. `None` = the preset's value.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AtmoSpec {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sky: Option<[u32; 3]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fog_start: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fog_end: Option<f32>,
+    /// Twinkling stars at the quality tier's full count (low draws a third).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stars: Option<u32>,
+    /// Slow far clouds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clouds: Option<u32>,
+    /// The glow band on the horizon (colour and strength).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub horizon: Option<[u32; 3]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub horizon_glow: Option<f32>,
+    /// How much the tower windows flicker (0 = steady).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub twinkle: Option<f32>,
+}
+
+/// A look with every value filled in.
+#[derive(Clone, Debug)]
+pub struct Finish {
+    pub bloom: f32,
+    pub bloom_threshold: f32,
+    pub vignette: f32,
+    pub lut: String,
+    pub lut_strength: f32,
+    pub exposure: f32,
+    pub tonemap_curve: String,
+    pub ibl: f32,
+    pub sky: [u32; 3],
+    pub hemi_sky: [f32; 3],
+    pub hemi_ground: [f32; 3],
+    pub fog_start: f32,
+    pub fog_end: f32,
+    pub stars: u32,
+    pub clouds: u32,
+    pub horizon: [u32; 3],
+    pub horizon_glow: f32,
+    pub twinkle: f32,
+}
+
+impl LookSpec {
+    /// The preset's values with `post` and `atmo` laid over them.
+    pub fn finish(&self) -> Finish {
+        let mut f = match self.preset.as_str() {
+            "dusk" => Finish {
+                bloom: 0.2,
+                bloom_threshold: 1.3,
+                vignette: 0.55,
+                lut: "warm".into(),
+                lut_strength: 0.25,
+                exposure: 0.95,
+                tonemap_curve: String::new(),
+                ibl: 0.3,
+                sky: [40, 16, 58],
+                hemi_sky: [0.34, 0.2, 0.4],
+                hemi_ground: [0.14, 0.06, 0.12],
+                fog_start: 30.0,
+                fog_end: 105.0,
+                stars: 16,
+                clouds: 6,
+                horizon: [255, 120, 90],
+                horizon_glow: 2.0,
+                twinkle: 0.5,
+            },
+            "plain" => Finish {
+                bloom: 0.0,
+                bloom_threshold: 1.4,
+                vignette: 0.0,
+                lut: "off".into(),
+                lut_strength: 0.0,
+                exposure: 1.0,
+                tonemap_curve: String::new(),
+                ibl: 0.3,
+                sky: [14, 10, 40],
+                hemi_sky: [0.20, 0.16, 0.42],
+                hemi_ground: [0.10, 0.06, 0.14],
+                fog_start: 34.0,
+                fog_end: 92.0,
+                stars: 0,
+                clouds: 0,
+                horizon: [0, 0, 0],
+                horizon_glow: 0.0,
+                twinkle: 0.0,
+            },
+            _ => Finish {
+                bloom: 0.16,
+                bloom_threshold: 1.4,
+                vignette: 0.6,
+                lut: "cool".into(),
+                lut_strength: 0.2,
+                exposure: 0.9,
+                tonemap_curve: String::new(),
+                ibl: 0.3,
+                sky: [14, 10, 40],
+                hemi_sky: [0.20, 0.16, 0.42],
+                hemi_ground: [0.10, 0.06, 0.14],
+                fog_start: 34.0,
+                fog_end: 110.0,
+                stars: 40,
+                clouds: 4,
+                horizon: [150, 50, 170],
+                horizon_glow: 2.4,
+                twinkle: 0.6,
+            },
+        };
+        let (p, a) = (&self.post, &self.atmo);
+        f.bloom = p.bloom.unwrap_or(f.bloom);
+        f.bloom_threshold = p.bloom_threshold.unwrap_or(f.bloom_threshold);
+        f.vignette = p.vignette.unwrap_or(f.vignette);
+        if let Some(l) = &p.lut {
+            f.lut = l.clone();
+        }
+        f.lut_strength = p.lut_strength.unwrap_or(f.lut_strength);
+        f.exposure = p.exposure.unwrap_or(f.exposure);
+        if let Some(c) = &p.tonemap_curve {
+            f.tonemap_curve = c.clone();
+        }
+        f.ibl = p.ibl.unwrap_or(f.ibl);
+        f.sky = a.sky.unwrap_or(f.sky);
+        f.fog_start = a.fog_start.unwrap_or(f.fog_start);
+        f.fog_end = a.fog_end.unwrap_or(f.fog_end);
+        f.stars = a.stars.unwrap_or(f.stars);
+        f.clouds = a.clouds.unwrap_or(f.clouds);
+        f.horizon = a.horizon.unwrap_or(f.horizon);
+        f.horizon_glow = a.horizon_glow.unwrap_or(f.horizon_glow);
+        f.twinkle = a.twinkle.unwrap_or(f.twinkle);
+        f
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if !LOOK_PRESETS.contains(&self.preset.as_str()) {
+            return Err(format!(
+                "hop spec: look.preset is {}",
+                LOOK_PRESETS.join("|")
+            ));
+        }
+        let f = self.finish();
+        finite_in("look.post.bloom", f.bloom, 0.0, 2.0)?;
+        finite_in("look.post.bloom_threshold", f.bloom_threshold, 0.0, 2.0)?;
+        finite_in("look.post.vignette", f.vignette, 0.0, 2.0)?;
+        finite_in("look.post.lut_strength", f.lut_strength, 0.0, 1.0)?;
+        finite_in("look.post.exposure", f.exposure, 0.3, 2.0)?;
+        finite_in("look.post.ibl", f.ibl, 0.0, 2.0)?;
+        if !LUT_NAMES.contains(&f.lut.as_str()) {
+            return Err(format!(
+                "hop spec: look.post.lut is {}",
+                LUT_NAMES.join("|")
+            ));
+        }
+        if !["", "agx", "neutral"].contains(&f.tonemap_curve.as_str()) {
+            return Err("hop spec: look.post.tonemap_curve is agx|neutral or empty".into());
+        }
+        finite_in("look.atmo.fog_start", f.fog_start, 0.0, 400.0)?;
+        finite_in("look.atmo.fog_end", f.fog_end, 1.0, 400.0)?;
+        if f.fog_end <= f.fog_start {
+            return Err("hop spec: look.atmo.fog_end must be above fog_start".into());
+        }
+        finite_in("look.atmo.horizon_glow", f.horizon_glow, 0.0, 4.0)?;
+        finite_in("look.atmo.twinkle", f.twinkle, 0.0, 2.0)?;
+        if f.stars > 200 || f.clouds > 12 {
+            return Err("hop spec: look.atmo.stars 0..=200, clouds 0..=12".into());
+        }
+        for c in [f.sky, f.horizon] {
+            if c.iter().any(|v| *v > 255) {
+                return Err("hop spec: look colours are 0..=255".into());
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Default for LookSpec {
@@ -275,6 +577,9 @@ impl Default for LookSpec {
             slab: [58, 52, 92],
             glow: [96, 232, 255],
             accent: [255, 92, 170],
+            preset: "neon_night".into(),
+            post: PostSpec::default(),
+            atmo: AtmoSpec::default(),
         }
     }
 }
@@ -318,7 +623,7 @@ impl Default for HopAudio {
                             } else {
                                 format!("{AUDIO_DIR}/{n}.wav")
                             },
-                            volume: if *n == "land" { 0.5 } else { 0.9 },
+                            volume: cue_volume(n),
                             rate: 1.0,
                         },
                     )
@@ -339,8 +644,12 @@ pub struct HopSpec {
     pub judge: JudgeSpec,
     pub lives: LivesSpec,
     pub revive: ReviveSpec,
+    pub fall: FallSpec,
     pub play: PlaySpec,
+    pub enemies: EnemySpec,
     pub look: LookSpec,
+    /// The hero's skin: one of [`SKINS`]. The unlock system switches this (and `look.preset`).
+    pub skin: String,
     pub audio: HopAudio,
 }
 
@@ -355,8 +664,11 @@ impl Default for HopSpec {
             judge: JudgeSpec::default(),
             lives: LivesSpec::default(),
             revive: ReviveSpec::default(),
+            fall: FallSpec::default(),
             play: PlaySpec::default(),
+            enemies: EnemySpec::default(),
             look: LookSpec::default(),
+            skin: DEFAULT_SKIN.into(),
             audio: HopAudio::default(),
         }
     }
@@ -395,6 +707,10 @@ impl HopSpec {
     }
 
     pub fn validate(&self) -> Result<(), String> {
+        if !SKINS.iter().any(|(id, _)| *id == self.skin) {
+            let ids: Vec<&str> = SKINS.iter().map(|(id, _)| *id).collect();
+            return Err(format!("hop spec: skin is {}", ids.join("|")));
+        }
         let m = &self.music;
         finite_in("music.bpm", m.bpm, 60.0, 200.0)?;
         finite_in("music.offset_ms", m.offset_ms, -500.0, 500.0)?;
@@ -446,6 +762,27 @@ impl HopSpec {
         if !(1..=9).contains(&r.lives) || r.max_per_run > 9 {
             return Err("hop spec: revive.lives 1..=9, max_per_run 0..=9".into());
         }
+        let f = &self.fall;
+        for (n, v, lo, hi) in [
+            ("fall.edge_stop_secs", f.edge_stop_secs, 0.0, 0.5),
+            (
+                "fall.tumble_turns_per_sec",
+                f.tumble_turns_per_sec,
+                0.0,
+                4.0,
+            ),
+            ("fall.stretch", f.stretch, 0.0, 1.0),
+            ("fall.carry", f.carry, 0.0, 1.0),
+            ("fall.cam_lag", f.cam_lag, 0.0, 1.0),
+            ("fall.slow_scale", f.slow_scale, 0.1, 1.0),
+            ("fall.card_delay_secs", f.card_delay_secs, 0.3, 3.0),
+            ("fall.vignette", f.vignette, 0.0, 1.0),
+        ] {
+            finite_in(n, v, lo, hi)?;
+        }
+        if f.dust > 32 {
+            return Err("hop spec: fall.dust 0..=32".into());
+        }
         let a = &self.audio;
         for (n, v) in [
             ("master", a.master),
@@ -465,11 +802,30 @@ impl HopSpec {
             finite_in(&format!("audio.sfx.{n}.volume"), s.volume, 0.0, 1.0)?;
             finite_in(&format!("audio.sfx.{n}.rate"), s.rate, 0.25, 4.0)?;
         }
+        self.look.validate()?;
+        self.validate_enemies()?;
         let problems = self.course_problems();
         if let Some(first) = problems.first() {
             return Err(format!("hop spec: {first} ({} problem(s))", problems.len()));
         }
         Ok(())
+    }
+
+    fn validate_enemies(&self) -> Result<(), String> {
+        self.enemies
+            .validate("hop spec", &["slime", "beetle", "bat"])
+    }
+
+    /// How long a bounce that starts at song time `t` lasts: it comes down on
+    /// the next half beat at least 0.2 s away.
+    pub fn bounce_secs(&self, t: f32) -> f32 {
+        let half = self.beat_secs() * 0.5;
+        (((t + 0.2) / half).ceil() * half - t).max(0.2)
+    }
+
+    /// Index of the enemy type called `id`.
+    pub fn enemy_index(&self, id: &str) -> Option<usize> {
+        self.enemies.index(id)
     }
 
     /// The phrases in use: the spec's, or the built-in set.
@@ -478,6 +834,15 @@ impl HopSpec {
             builtin_phrases()
         } else {
             self.course.phrases.clone()
+        }
+    }
+
+    /// Does the player have to press for this one? A hovering enemy is only
+    /// something to stay clear of.
+    pub fn needs_press(&self, o: &Obst) -> bool {
+        match o.kind {
+            Kind::Enemy => o.y_lo <= 0.0,
+            _ => true,
         }
     }
 
@@ -494,100 +859,333 @@ impl HopSpec {
                 out.push(format!("phrase {pi}: bars must be 1..=16"));
                 continue;
             }
-            let mut free_from = 0.0_f32;
+            if !(1..=16).contains(&p.weight) {
+                out.push(format!("phrase {pi}: weight must be 1..=16"));
+            }
+            let end = p.bars as f32 * bpb;
+            let mut slots: Vec<foes::Slot> = Vec::new();
+            let mut sound = true;
             for (ii, it) in p.items.iter().enumerate() {
                 let where_ = format!("phrase {pi} item {ii}");
                 let Some((kind, hop)) = parse_item(it) else {
-                    out.push(format!("{where_}: kind gap|block and hop tap|hold"));
+                    out.push(format!("{where_}: kind gap|block|enemy and hop tap|hold"));
+                    sound = false;
                     continue;
                 };
                 if !(0.1..=4.0).contains(&it.beats) || it.beat < 0.0 {
                     out.push(format!("{where_}: bad beat or width"));
+                    sound = false;
                     continue;
                 }
+                let mut ety = None;
+                if kind == Kind::Enemy {
+                    match self.enemy_index(&it.enemy) {
+                        None => {
+                            out.push(format!("{where_}: unknown enemy {:?}", it.enemy));
+                            sound = false;
+                            continue;
+                        }
+                        Some(i) => ety = Some(i),
+                    }
+                } else if !it.enemy.is_empty() {
+                    out.push(format!("{where_}: only kind enemy names an enemy"));
+                }
+                let probe = self.probe(kind, hop, it.beats, it.beat, ety);
                 let air = self.arc(hop).air_beats;
-                if it.beat + 0.001 < free_from {
-                    out.push(format!("{where_}: starts before the last hop lands"));
+                slots.push(foes::Slot {
+                    item: ii,
+                    enemy: ety,
+                    at: it.beat,
+                    len: air,
+                });
+                if !self.needs_press(&probe) {
+                    // A flyer: the hops around it must stay clear (the sequence check).
+                    continue;
                 }
-                free_from = it.beat + air;
-                if free_from > p.bars as f32 * bpb + 0.001 {
-                    out.push(format!("{where_}: lands after the phrase ends"));
-                }
-                let (lo, hi) = self.window_secs(kind, hop, it.beats);
+                let (lo, hi) = self.window_secs_obst(&probe);
                 let width_ms = (hi - lo).max(0.0) * 1000.0;
                 if width_ms < self.course.min_window_ms {
                     out.push(format!(
-                        "{where_}: only {width_ms:.0} ms of timing window (gap too wide for a {} hop?)",
+                        "{where_}: only {width_ms:.0} ms of timing window (too wide or too fast for a {} hop?)",
                         if hop == Hop::Tap { "tap" } else { "hold" }
                     ));
                 }
+            }
+            out.extend(foes::spacing_problems(
+                &self.enemies,
+                &format!("phrase {pi}"),
+                p.level,
+                end,
+                &slots,
+            ));
+            if sound {
+                out.extend(self.sequence_problems(pi, p));
             }
         }
         out
     }
 
-    /// The press times (relative to the ideal, seconds) that clear an
-    /// obstacle written for `hop`, found by playing the hop out.
+    /// The obstacles of a phrase laid at `base` beats, as the course lays them.
+    pub fn phrase_obstacles(&self, p: &Phrase, base: f32) -> Vec<Obst> {
+        p.items
+            .iter()
+            .filter_map(|it| {
+                let (kind, hop) = parse_item(it)?;
+                let ety = if kind == Kind::Enemy {
+                    Some(self.enemy_index(&it.enemy)?)
+                } else {
+                    None
+                };
+                Some(self.probe(kind, hop, it.beats, base + it.beat, ety))
+            })
+            .collect()
+    }
+
+    /// Plays the whole phrase with a bot that presses every ideal `off`
+    /// seconds early or late (a negative `off` is early). True = no damage.
+    /// A stomp counts as a clear; the bounce is left out because the phrase
+    /// rules keep the next press clear of it.
+    pub fn sequence_survives(&self, obst: &[Obst], off: f32) -> bool {
+        let bs = self.beat_secs();
+        let v = self.speed();
+        let hw = self.hero.half_width;
+        let mut presses: Vec<(f32, Hop)> = obst
+            .iter()
+            .filter(|o| self.needs_press(o))
+            .map(|o| (o.take_beat * bs + off, o.hop))
+            .collect();
+        presses.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let (Some(first), Some(last)) = (
+            obst.iter().map(|o| o.take_beat).reduce(f32::min),
+            obst.iter().map(|o| o.take_beat).reduce(f32::max),
+        ) else {
+            return true;
+        };
+        let mut gone = vec![false; obst.len()];
+        // (start, land, start height) of a bounce in progress.
+        let mut bounce: Option<(f32, f32, f32)> = None;
+        let mut t = (first - 3.0) * bs;
+        let t_end = (last + 5.0) * bs;
+        while t <= t_end {
+            let x = t * v;
+            let mut y = 0.0;
+            let mut airborne = false;
+            let mut desc = false;
+            for (pt, hop) in presses.iter().rev() {
+                if *pt > t {
+                    continue;
+                }
+                let arc = self.arc(*hop);
+                let air = arc.air_beats * bs;
+                if t - pt < air {
+                    y = arc_y(arc.height, air, t - pt);
+                    airborne = true;
+                    desc = t - pt > air * 0.5;
+                }
+                break;
+            }
+            if let Some((t0, land, y0)) = bounce {
+                if t >= land {
+                    bounce = None;
+                } else {
+                    let u = (t - t0) / (land - t0);
+                    y = bounce_y(y0, self.enemies.bounce_height, u);
+                    airborne = true;
+                    desc = bounce_dy(y0, self.enemies.bounce_height, u) < 0.0;
+                }
+            }
+            for (i, o) in obst.iter().enumerate() {
+                if gone[i] {
+                    continue;
+                }
+                if o.kind == Kind::Gap {
+                    if !airborne
+                        && x > o.start + self.hero.edge_tol
+                        && x < o.end - self.hero.edge_tol
+                    {
+                        return false;
+                    }
+                    continue;
+                }
+                match self.touch(o, t, x, y, desc, hw) {
+                    Touch::Hit => return false,
+                    Touch::Stomp => {
+                        gone[i] = true;
+                        let land = t + self.bounce_secs(t);
+                        // No press can be taken while bouncing.
+                        if presses.iter().any(|(pt, _)| *pt > t && *pt < land) {
+                            return false;
+                        }
+                        bounce = Some((t, land, y));
+                    }
+                    Touch::None => {}
+                }
+            }
+            t += 0.004;
+        }
+        true
+    }
+
+    /// Every press within the Perfect window of its ideal beat (`judge.perfect_ms`,
+    /// at most 100 ms) must get through the whole phrase untouched: the per-item
+    /// window alone can sit off centre, and a walker or a flyer next to a gap
+    /// only shows up when the hops are played one after the other.
+    fn sequence_problems(&self, pi: usize, p: &Phrase) -> Vec<String> {
+        let base = 4.0 * self.music.beats_per_bar as f32;
+        let obst = self.phrase_obstacles(p, base);
+        let half = (self.judge.perfect_ms * 0.001).min(0.1);
+        let mut out = Vec::new();
+        let hook = PhraseRun { spec: self, obst };
+        if let Some(off) = foes::sweep(&hook, half, 0.005) {
+            out.push(format!(
+                "phrase {pi}: a bot pressing {:.0} ms {} the ideal beat takes damage",
+                off.abs() * 1000.0,
+                if off < 0.0 { "before" } else { "after" }
+            ));
+        }
+        out
+    }
+
+    /// The obstacle for an item at `take_beat` (the beat of the ideal press),
+    /// centred under the arc of `hop`, exactly as the course lays it.
+    pub fn probe(
+        &self,
+        kind: Kind,
+        hop: Hop,
+        width_beats: f32,
+        take_beat: f32,
+        ety: Option<usize>,
+    ) -> Obst {
+        let bl = self.hero.beat_len_m;
+        let center = take_beat + self.arc(hop).air_beats * 0.5;
+        let mut o = Obst::new(
+            kind,
+            (center - width_beats * 0.5) * bl,
+            (center + width_beats * 0.5) * bl,
+            take_beat,
+            hop,
+            self.course.block_height,
+        );
+        if let (Kind::Enemy, Some(i)) = (kind, ety) {
+            if let Some(et) = self.enemies.types.get(i) {
+                o.ety = i;
+                o.y_lo = et.y_lo;
+                o.height = et.y_hi;
+            }
+        }
+        o
+    }
+
+    /// How far (metres) the enemy stands from its meeting spot at song time
+    /// `t`, or None if it has not appeared yet. Positive = still ahead.
+    pub fn enemy_dx(&self, o: &Obst, t: f32) -> Option<f32> {
+        let Some(et) = self.enemies.types.get(o.ety) else {
+            return Some(0.0);
+        };
+        let spb = et.steps_per_beat.max(1) as f32;
+        let now = (t / self.beat_secs() * spb).floor() as i64;
+        let meet = ((o.start + o.end) * 0.5 / self.hero.beat_len_m * spb).floor() as i64;
+        self.enemies.walk_dx(o.ety, now, meet)
+    }
+
+    /// What the hero at (`x`, `y`) touches of `o` at song time `t`.
+    pub fn touch(&self, o: &Obst, t: f32, x: f32, y: f32, descending: bool, hw: f32) -> Touch {
+        match o.kind {
+            Kind::Gap => Touch::None,
+            Kind::Block => {
+                if hits_block(o, x, y, hw) {
+                    Touch::Hit
+                } else {
+                    Touch::None
+                }
+            }
+            Kind::Enemy => {
+                let Some(dx) = self.enemy_dx(o, t) else {
+                    return Touch::None;
+                };
+                let hero = HeroBox {
+                    x,
+                    y,
+                    half_width: hw,
+                    descending,
+                };
+                self.enemies.touch(o.ety, o.start + dx, o.end + dx, &hero)
+            }
+        }
+    }
+
+    /// The unbroken stretch of press times (relative to the ideal, seconds)
+    /// around the ideal one that clear an obstacle written for `hop`, found by
+    /// playing the hop out. (0, 0) if even the ideal press fails.
     pub fn window_secs(&self, kind: Kind, hop: Hop, width_beats: f32) -> (f32, f32) {
+        self.window_secs_obst(&self.probe(kind, hop, width_beats, 0.0, None))
+    }
+
+    /// Same, for a laid obstacle (an enemy's window depends on where on the
+    /// beat grid it stands, so pass the real one).
+    pub fn window_secs_obst(&self, o: &Obst) -> (f32, f32) {
         let bs = self.beat_secs();
         let step = 0.002;
-        let mut lo = f32::MAX;
-        let mut hi = f32::MIN;
-        let mut off = -2.0 * bs;
-        while off <= 2.0 * bs {
-            if self.clears(kind, hop, width_beats, off) {
-                lo = lo.min(off);
-                hi = hi.max(off);
-            }
-            off += step;
+        if !self.clears_obst(o, 0.0) {
+            return (0.0, 0.0);
         }
-        if lo > hi {
-            (0.0, 0.0)
-        } else {
-            (lo, hi)
+        // The unbroken stretch of good presses around the ideal one.
+        let (mut lo, mut hi) = (0.0_f32, 0.0_f32);
+        while lo > -2.0 * bs && self.clears_obst(o, lo - step) {
+            lo -= step;
         }
+        while hi < 2.0 * bs && self.clears_obst(o, hi + step) {
+            hi += step;
+        }
+        (lo, hi)
     }
 
     /// Does a hop of `hop` pressed `off` seconds from the ideal clear this
     /// obstacle? Uses the same support and hit tests as the sim.
     pub fn clears(&self, kind: Kind, hop: Hop, width_beats: f32, off: f32) -> bool {
+        self.clears_obst(&self.probe(kind, hop, width_beats, 0.0, None), off)
+    }
+
+    pub fn clears_obst(&self, o: &Obst, off: f32) -> bool {
         let bs = self.beat_secs();
         let v = self.speed();
-        let arc = self.arc(hop);
+        let arc = self.arc(o.hop);
         let air = arc.air_beats * bs;
-        // The ideal press is at t = 0; the obstacle is centred on the arc.
-        let center = air * 0.5 * v;
-        let w = width_beats * self.hero.beat_len_m;
-        let obst = Obst::new(
-            kind,
-            center - w / 2.0,
-            center + w / 2.0,
-            0.0,
-            hop,
-            self.course.block_height,
-        );
-        let take = off;
+        let take = o.take_beat * bs + off;
         let hw = self.hero.half_width;
         let mut t = take - 3.0 * bs;
         while t <= take + air + 3.0 * bs {
             let x = t * v;
-            let y = if t < take {
-                0.0
-            } else if t < take + air {
-                arc_y(arc.height, air, t - take)
+            let el = t - take;
+            let airborne = el >= 0.0 && el < air;
+            let y = if airborne {
+                arc_y(arc.height, air, el)
             } else {
                 0.0
             };
-            let airborne = t >= take && t < take + air;
-            if !airborne && !supported(std::slice::from_ref(&obst), x, self.hero.edge_tol) {
+            if !airborne && !supported(std::slice::from_ref(o), x, self.hero.edge_tol) {
                 return false;
             }
-            if hits_block(&obst, x, y, hw) {
-                return false;
+            match self.touch(o, t, x, y, airborne && el > air * 0.5, hw) {
+                Touch::Hit => return false,
+                Touch::Stomp => return true,
+                Touch::None => {}
             }
             t += 0.004;
         }
         true
+    }
+}
+
+/// A phrase played by the checker's bot: the kit's side of [`foes::Clearable`].
+struct PhraseRun<'a> {
+    spec: &'a HopSpec,
+    obst: Vec<Obst>,
+}
+
+impl foes::Clearable for PhraseRun<'_> {
+    fn survives(&self, offset: f32) -> bool {
+        self.spec.sequence_survives(&self.obst, offset)
     }
 }
 
@@ -596,6 +1194,7 @@ pub fn parse_item(it: &Item) -> Option<(Kind, Hop)> {
     let kind = match it.kind.as_str() {
         "gap" => Kind::Gap,
         "block" => Kind::Block,
+        "enemy" => Kind::Enemy,
         _ => return None,
     };
     let hop = match it.hop.as_str() {
@@ -612,17 +1211,46 @@ fn item(beat: f32, kind: &str, beats: f32, hop: &str) -> Item {
         kind: kind.into(),
         beats,
         hop: hop.into(),
+        enemy: String::new(),
     }
 }
 
-/// The phrase set the game ships with: five levels, one to three bars each.
+/// An enemy of type `id` whose ideal hop is pressed at `beat`.
+fn foe(beat: f32, id: &str, beats: f32) -> Item {
+    Item {
+        enemy: id.into(),
+        ..item(beat, "enemy", beats, "tap")
+    }
+}
+
+/// The phrase set the game ships with: five levels, one to three bars each,
+/// with enemies introduced one kind per level.
 pub fn builtin_phrases() -> Vec<Phrase> {
-    let p = |level, bars, items| Phrase { level, bars, items };
-    vec![
+    let p = |level, bars, items| Phrase {
+        level,
+        bars,
+        items,
+        weight: 1,
+        debut: false,
+    };
+    let debut = |mut ph: Phrase| {
+        ph.debut = true;
+        ph
+    };
+    // Enemies arrive one kind per level: slime (0), beetle (1), bat (2), then mixes.
+    let mut phrases = vec![
         p(
             0,
             2,
             vec![item(1.0, "gap", 0.5, "tap"), item(3.0, "gap", 0.5, "tap")],
+        ),
+        // The first slime comes on its own.
+        debut(p(0, 2, vec![foe(1.0, "slime", 0.12)])),
+        p(0, 2, vec![foe(1.0, "slime", 0.12), foe(3.0, "slime", 0.12)]),
+        p(
+            0,
+            2,
+            vec![item(1.0, "gap", 0.5, "tap"), foe(3.0, "slime", 0.12)],
         ),
         p(
             0,
@@ -651,6 +1279,18 @@ pub fn builtin_phrases() -> Vec<Phrase> {
                 item(2.0, "gap", 0.5, "tap"),
             ],
         ),
+        // The first beetle comes on its own.
+        debut(p(1, 2, vec![foe(1.0, "beetle", 0.16)])),
+        p(
+            1,
+            2,
+            vec![foe(1.0, "beetle", 0.16), foe(3.0, "slime", 0.12)],
+        ),
+        p(
+            1,
+            2,
+            vec![foe(1.0, "beetle", 0.16), item(3.0, "gap", 0.5, "tap")],
+        ),
         p(
             2,
             2,
@@ -658,6 +1298,17 @@ pub fn builtin_phrases() -> Vec<Phrase> {
                 item(0.5, "gap", 0.5, "tap"),
                 item(1.5, "block", 0.2, "tap"),
                 item(2.5, "gap", 0.5, "tap"),
+            ],
+        ),
+        // The first bat flies alone over a clear track: holding would hit it.
+        debut(p(2, 2, vec![foe(1.0, "bat", 0.9)])),
+        p(
+            2,
+            2,
+            vec![
+                item(1.0, "gap", 0.5, "tap"),
+                foe(1.0, "bat", 0.9),
+                foe(3.0, "beetle", 0.16),
             ],
         ),
         p(
@@ -673,6 +1324,44 @@ pub fn builtin_phrases() -> Vec<Phrase> {
                 item(1.0, "block", 0.2, "tap"),
                 item(2.0, "gap", 0.5, "tap"),
                 item(3.0, "block", 0.2, "tap"),
+            ],
+        ),
+        p(
+            3,
+            3,
+            vec![
+                foe(0.5, "slime", 0.12),
+                foe(2.5, "slime", 0.12),
+                foe(4.5, "beetle", 0.16),
+            ],
+        ),
+        p(
+            3,
+            2,
+            vec![
+                foe(1.0, "beetle", 0.16),
+                item(3.0, "gap", 0.5, "tap"),
+                item(4.0, "gap", 0.5, "tap"),
+            ],
+        ),
+        p(
+            3,
+            2,
+            vec![
+                foe(1.0, "slime", 0.12),
+                foe(1.0, "bat", 0.9),
+                foe(3.0, "slime", 0.12),
+                foe(3.0, "bat", 0.9),
+            ],
+        ),
+        p(
+            3,
+            2,
+            vec![
+                foe(0.5, "slime", 0.12),
+                foe(2.5, "beetle", 0.16),
+                foe(4.5, "slime", 0.12),
+                item(6.5, "gap", 0.5, "tap"),
             ],
         ),
         p(
@@ -698,6 +1387,36 @@ pub fn builtin_phrases() -> Vec<Phrase> {
         ),
         p(
             4,
+            3,
+            vec![
+                foe(1.0, "beetle", 0.16),
+                foe(3.0, "slime", 0.12),
+                item(5.0, "gap", 0.5, "tap"),
+                foe(7.0, "beetle", 0.16),
+            ],
+        ),
+        p(
+            4,
+            3,
+            vec![
+                item(0.0, "gap", 1.5, "hold"),
+                foe(3.0, "slime", 0.12),
+                foe(3.0, "bat", 0.9),
+                item(5.0, "gap", 1.5, "hold"),
+            ],
+        ),
+        p(
+            4,
+            2,
+            vec![
+                foe(0.5, "beetle", 0.16),
+                foe(2.5, "slime", 0.12),
+                foe(4.5, "beetle", 0.16),
+                foe(6.5, "slime", 0.12),
+            ],
+        ),
+        p(
+            4,
             2,
             vec![
                 item(0.0, "gap", 1.5, "hold"),
@@ -708,7 +1427,15 @@ pub fn builtin_phrases() -> Vec<Phrase> {
                 item(7.0, "block", 0.2, "tap"),
             ],
         ),
-    ]
+    ];
+    // Enemy phrases come up more often than the plain ones (a slime in the
+    // first bars, then a heavier mix as the run goes on).
+    for ph in phrases.iter_mut() {
+        if ph.items.iter().any(|it| it.kind == "enemy") {
+            ph.weight = 3;
+        }
+    }
+    phrases
 }
 
 // -------------------------------------------------------------- course ----
@@ -717,6 +1444,8 @@ pub fn builtin_phrases() -> Vec<Phrase> {
 pub enum Kind {
     Gap,
     Block,
+    /// A creature from `enemies.types`.
+    Enemy,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -740,8 +1469,17 @@ pub struct Obst {
     /// Absolute beat of the ideal press.
     pub take_beat: f32,
     pub hop: Hop,
+    /// Block and enemy: the top of the hurt band.
     pub height: f32,
     pub fate: Fate,
+    /// Enemy: index into `enemies.types` (`usize::MAX` = none) and the bottom
+    /// of its hurt band.
+    pub ety: usize,
+    pub y_lo: f32,
+    /// Song time the hero stomped it.
+    pub stomped_t: Option<f32>,
+    /// Song time it hurt the hero.
+    pub hit_t: Option<f32>,
 }
 
 impl Obst {
@@ -754,11 +1492,24 @@ impl Obst {
             hop,
             height,
             fate: Fate::Pending,
+            ety: usize::MAX,
+            y_lo: 0.0,
+            stomped_t: None,
+            hit_t: None,
         }
     }
 }
 
 /// Height of a hop `el` seconds after takeoff.
+/// Height `u` (0..1) of the way through a bounce that starts `y0` above the slab.
+fn bounce_y(y0: f32, peak: f32, u: f32) -> f32 {
+    (y0 * (1.0 - u) + 4.0 * peak * u * (1.0 - u)).max(0.0)
+}
+
+fn bounce_dy(y0: f32, peak: f32, u: f32) -> f32 {
+    -y0 + 4.0 * peak * (1.0 - 2.0 * u)
+}
+
 fn arc_y(height: f32, air: f32, el: f32) -> f32 {
     let u = el / air;
     if (0.0..1.0).contains(&u) {
@@ -783,6 +1534,18 @@ fn level_at(bar: u32, ramp_bars: u32, max_level: u32) -> u32 {
     (bar.saturating_mul(max_level + 1) / ramp_bars.max(1)).min(max_level)
 }
 
+/// The drop that plays after a fatal fall (the sim has stopped; this is only drawn).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct DeadFall {
+    /// Slowed seconds since the sim ended.
+    age: f32,
+    /// How far the camera already trailed the bunny.
+    cam: f32,
+    vy: f32,
+    /// `fall_age` when it ended.
+    t0: f32,
+}
+
 /// Lays the course phrase by phrase, from the seed. Pure: same spec and seed,
 /// same obstacles.
 #[derive(Clone, Debug)]
@@ -795,6 +1558,8 @@ pub struct Course {
     bars_laid: u32,
     since_rest: u32,
     last: usize,
+    /// The level of the previous phrase (u32::MAX before the first).
+    lvl_seen: u32,
     pub obst: Vec<Obst>,
 }
 
@@ -814,6 +1579,7 @@ impl Course {
             bars_laid: 0,
             since_rest: 0,
             last: usize::MAX,
+            lvl_seen: u32::MAX,
             obst: Vec::new(),
         }
     }
@@ -846,28 +1612,39 @@ impl Course {
             if pool.is_empty() {
                 pool = (0..self.phrases.len()).collect();
             }
+            if lvl != self.lvl_seen {
+                self.lvl_seen = lvl;
+                let debuts: Vec<usize> = pool
+                    .iter()
+                    .copied()
+                    .filter(|&i| self.phrases[i].debut && self.phrases[i].level == lvl)
+                    .collect();
+                if !debuts.is_empty() {
+                    pool = debuts;
+                }
+            }
             if pool.len() > 1 {
                 pool.retain(|&i| i != self.last);
             }
-            let pick = pool[(self.rand() as usize) % pool.len()];
+            let weights: Vec<u32> = pool.iter().map(|&i| self.phrases[i].weight).collect();
+            let roll = self.rand();
+            let pick = pool[foes::weighted_pick(&weights, roll)];
             self.last = pick;
             let p = self.phrases[pick].clone();
             for it in &p.items {
                 let Some((kind, hop)) = parse_item(it) else {
                     continue;
                 };
-                let air = spec.arc(hop).air_beats;
-                let take = self.gen_beat + it.beat;
-                let center = take + air * 0.5;
-                let (s, e) = (center - it.beats * 0.5, center + it.beats * 0.5);
-                self.obst.push(Obst::new(
-                    kind,
-                    s * spec.hero.beat_len_m,
-                    e * spec.hero.beat_len_m,
-                    take,
-                    hop,
-                    spec.course.block_height,
-                ));
+                let ety = if kind == Kind::Enemy {
+                    spec.enemy_index(&it.enemy)
+                } else {
+                    None
+                };
+                if kind == Kind::Enemy && ety.is_none() {
+                    continue;
+                }
+                self.obst
+                    .push(spec.probe(kind, hop, it.beats, self.gen_beat + it.beat, ety));
             }
             self.gen_beat += p.bars as f32 * bpb;
             self.bars_laid += p.bars;
@@ -899,6 +1676,14 @@ enum Air {
     Fall {
         vy: f32,
     },
+    /// The hop after a stomp: a parabola from where the hero was to the slab,
+    /// timed to come down on a half beat.
+    Bounce {
+        t0: f32,
+        dur: f32,
+        y0: f32,
+        id: u32,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -906,6 +1691,7 @@ pub enum Grade {
     Perfect,
     Good,
     Ok,
+    Stomp,
 }
 
 impl Grade {
@@ -914,6 +1700,7 @@ impl Grade {
             Grade::Perfect => "perfect",
             Grade::Good => "good",
             Grade::Ok => "ok",
+            Grade::Stomp => "stomp",
         }
     }
 }
@@ -926,6 +1713,9 @@ pub struct HopBeat {
     course: Course,
     doc: WorldDoc,
     picture_quality: Option<String>,
+    /// A/B switches from the page (`fx_post`, `fx_atmo`): the finishing pass and the sky extras.
+    fx_post: bool,
+    fx_atmo: bool,
     /// Song clock, seconds. x = song_t * speed.
     song_t: f32,
     /// Added to the page's audio clock (a revive restarts the music mid-song).
@@ -943,6 +1733,8 @@ pub struct HopBeat {
     ground_t: f32,
     /// Skip building the picture (the measure harness plays thousands of frames).
     headless: bool,
+    /// Draw every model as primitives (a dev switch; also what a missing glb does).
+    models_off: bool,
     touches: u32,
     /// Clears in a row without damage.
     streak: u32,
@@ -964,6 +1756,7 @@ pub struct HopBeat {
     combo: u32,
     max_combo: u32,
     perfects: u32,
+    stomps: u32,
     goods: u32,
     oks: u32,
     cleared: u32,
@@ -974,15 +1767,75 @@ pub struct HopBeat {
     last_beat: i64,
     hit_flash: f32,
     land_squash: f32,
+    /// The hero's squash and ear springs (`hop_anim`).
+    anim: crate::hop_anim::HeroAnim,
+    /// Visual-only hit-stop: the picture holds for this long while the sim and the music run on.
+    vfreeze: f32,
+    /// Where the hero was drawn when the freeze began (height, metres).
+    freeze_y: f32,
+    /// How far behind the true position the picture is while it catches up (metres).
+    vlag: f32,
+    /// Camera punch spring: FOV and dolly follow it.
+    kick: crate::hop_anim::Wobble,
+    /// Seconds since the last ring burst under the hero, and its colour.
+    ring_age: f32,
+    ring_col: [u32; 3],
+    /// Combo glow, eased 0..1.
+    combo_glow: f32,
+    /// Enemy hints already shown this session, and the one on screen: (enemy type, seconds).
+    hints_seen: Vec<bool>,
+    hint: Option<(usize, f32)>,
+    /// Page language for the HUD words (false = English).
+    lang_ja: bool,
+    /// The run beat the best score of the device (set at game over).
+    new_best: bool,
+    /// The running score passed the best: seconds of the "NEW BEST!" banner left, and whether it fired.
+    best_banner: f32,
+    best_passed: bool,
+    /// Where the flyer we last warned about hovers (m), so the warning sounds once each.
+    warned_x: f32,
     just_hop: bool,
     sfx: bool,
     time: f32,
     attract: f32,
     anim_t: f32,
     pending_finish: bool,
+    /// Picture only: seconds since the bunny left the ledge, whether the ledge
+    /// effects fired, how far the camera trails it, its fall speed, and the drop
+    /// that plays on after the run has ended.
+    fall_age: f32,
+    fall_on: bool,
+    fall_cam: f32,
+    fall_vy: f32,
+    dead_fall: Option<DeadFall>,
+}
+
+/// The colour a skin id paints the hero, or None for `classic` / an unknown id.
+pub fn skin_tint(id: &str) -> Option<[u32; 3]> {
+    SKINS.iter().find(|(n, _)| *n == id).and_then(|(_, c)| *c)
 }
 
 impl HopBeat {
+    /// Switch the hero skin between runs (the shop / unlock hook). False for an unknown id.
+    pub fn set_skin(&mut self, id: &str) -> bool {
+        if !SKINS.iter().any(|(n, _)| *n == id) {
+            return false;
+        }
+        self.spec.skin = id.into();
+        self.rebuild();
+        true
+    }
+
+    /// Switch the finishing look (a [`LOOK_PRESETS`] id) between runs. False for an unknown id.
+    pub fn set_look(&mut self, id: &str) -> bool {
+        if !LOOK_PRESETS.contains(&id) {
+            return false;
+        }
+        self.spec.look.preset = id.into();
+        self.rebuild();
+        true
+    }
+
     pub fn from_json(json: &str) -> Result<Self, String> {
         let value: serde_json::Value =
             serde_json::from_str(json).map_err(|e| format!("hop dump: {e}"))?;
@@ -1003,6 +1856,19 @@ impl HopBeat {
             if !q.is_empty() {
                 run.picture_quality = Some(q.to_string());
             }
+        }
+        // Runtime picks from the page / save (`skin`, `look`); an unknown id keeps the spec's.
+        if let Some(id) = value.get("skin").and_then(|v| v.as_str()) {
+            run.set_skin(id);
+        }
+        if let Some(id) = value.get("look").and_then(|v| v.as_str()) {
+            run.set_look(id);
+        }
+        if let Some(b) = value.get("fx_post").and_then(|v| v.as_bool()) {
+            run.fx_post = b;
+        }
+        if let Some(b) = value.get("fx_atmo").and_then(|v| v.as_bool()) {
+            run.fx_atmo = b;
         }
         if value.get("direct").and_then(|v| v.as_bool()) == Some(true) {
             run.spec.play.direct = true;
@@ -1026,6 +1892,8 @@ impl HopBeat {
             course,
             doc: WorldDoc::default(),
             picture_quality: None,
+            fx_post: true,
+            fx_atmo: true,
             song_t: 0.0,
             clock_base: 0.0,
             clock: None,
@@ -1035,6 +1903,7 @@ impl HopBeat {
             recent_hop: None,
             ground_t: f32::MIN,
             headless: false,
+            models_off: false,
             touches: 0,
             streak: 0,
             y: 0.0,
@@ -1054,6 +1923,7 @@ impl HopBeat {
             combo: 0,
             max_combo: 0,
             perfects: 0,
+            stomps: 0,
             goods: 0,
             oks: 0,
             cleared: 0,
@@ -1064,12 +1934,32 @@ impl HopBeat {
             last_beat: -1,
             hit_flash: 0.0,
             land_squash: 0.0,
+            anim: Default::default(),
+            vfreeze: 0.0,
+            freeze_y: 0.0,
+            vlag: 0.0,
+            kick: Default::default(),
+            ring_age: 9.0,
+            ring_col: [255, 255, 255],
+            combo_glow: 0.0,
+            hints_seen: Vec::new(),
+            hint: None,
+            lang_ja: false,
+            new_best: false,
+            best_banner: 0.0,
+            best_passed: false,
+            warned_x: f32::NEG_INFINITY,
             just_hop: false,
             sfx: true,
             time: 0.0,
             attract: 0.0,
             anim_t: 0.0,
             pending_finish: false,
+            fall_age: 0.0,
+            fall_on: false,
+            fall_cam: 0.0,
+            fall_vy: 0.0,
+            dead_fall: None,
         }
     }
 
@@ -1122,6 +2012,9 @@ impl HopBeat {
     pub fn set_sfx(&mut self, on: bool) {
         self.sfx = on;
     }
+    pub fn stomps(&self) -> u32 {
+        self.stomps
+    }
     pub fn counts(&self) -> (u32, u32, u32, u32) {
         (self.cleared, self.perfects, self.goods, self.oks)
     }
@@ -1137,6 +2030,127 @@ impl HopBeat {
 
     fn latency_secs(&self) -> f32 {
         (self.spec.music.offset_ms + self.latency_user_ms) / 1000.0
+    }
+
+    /// `en` or `ja` by the page language.
+    fn tr<'a>(&self, en: &'a str, ja: &'a str) -> &'a str {
+        if self.lang_ja {
+            ja
+        } else {
+            en
+        }
+    }
+
+    /// `ja` / `en` (anything starting with "ja" is Japanese).
+    pub fn set_lang(&mut self, lang: &str) {
+        self.lang_ja = lang.to_ascii_lowercase().starts_with("ja");
+    }
+
+    /// Pause from the page or the button: let go of the hop and stop the music.
+    pub fn pause(&mut self) {
+        if self.flow.phase == FlowPhase::Play {
+            self.touches = 0;
+            self.set_hold(false);
+            self.flow.pause();
+        }
+    }
+
+    /// Back into the run from the page (the Escape key).
+    pub fn resume_from_page(&mut self) {
+        self.resume();
+    }
+
+    /// Back into the run with a second of grace.
+    fn resume(&mut self) {
+        if self.flow.phase == FlowPhase::Pause {
+            self.flow.resume();
+            self.grant_invuln(1.0);
+        }
+    }
+
+    /// Hold the picture for `secs` (a hit-stop that leaves the sim and the music alone).
+    fn freeze_picture(&mut self, secs: f32) {
+        if self.vfreeze <= 0.0 && self.vlag < 0.02 {
+            self.freeze_y = self.y + self.y_vis_off;
+        }
+        self.vfreeze = self.vfreeze.max(secs);
+    }
+
+    /// A burst ring under the hero (PERFECT, stomp, landing).
+    fn ring(&mut self, color: [u32; 3]) {
+        self.ring_age = 0.0;
+        self.ring_col = color;
+    }
+
+    /// The nearest live enemy ahead of the hero within `max_m`, as (type, metres).
+    /// `flyers` keeps only the ones that hover.
+    fn enemy_ahead(&self, flyers: bool, max_m: f32) -> Option<(usize, f32)> {
+        let hx = self.hero_x();
+        let mut best: Option<(usize, f32)> = None;
+        for o in self.course.obst.iter() {
+            if o.kind != Kind::Enemy || o.fate != Fate::Pending {
+                continue;
+            }
+            let Some(et) = self.spec.enemies.types.get(o.ety) else {
+                continue;
+            };
+            if flyers && et.y_lo <= 0.0 {
+                continue;
+            }
+            let d = (o.start + o.end) * 0.5 - hx;
+            if d > 0.0 && d < max_m && best.is_none_or(|b| d < b.1) {
+                best = Some((o.ety, d));
+            }
+        }
+        best
+    }
+
+    /// Visual feel that does not touch the sim: the held picture, the camera
+    /// spring, the ring, the combo glow and the first-sight hints.
+    fn fx_step(&mut self, dt: f32) {
+        if self.vfreeze > 0.0 {
+            self.vlag += self.spec.speed() * dt;
+            self.vfreeze -= dt;
+            self.y_vis_off = self.freeze_y - self.y;
+        } else {
+            self.vlag *= (1.0 - dt * 14.0).max(0.0);
+        }
+        self.vlag = self.vlag.min(0.7);
+        self.kick.step(0.0, 20.0, 0.5, dt);
+        self.ring_age += dt;
+        let want = if self.core.stats.alive {
+            (self.combo as f32 / 12.0).min(1.0)
+        } else {
+            0.0
+        };
+        self.combo_glow += (want - self.combo_glow) * (1.0 - (-dt * 6.0).exp());
+        if let Some((_, d)) = self.enemy_ahead(true, WARN_M) {
+            let at = (self.hero_x() + d).round();
+            if at != self.warned_x {
+                self.warned_x = at;
+                self.cue("warn");
+            }
+        }
+        self.best_banner = (self.best_banner - dt).max(0.0);
+        let best = self.flow.best_score;
+        if !self.best_passed && best > 0 && self.core.stats.score > best {
+            self.best_passed = true;
+            self.best_banner = 2.4;
+            self.ring([255, 236, 150]);
+            self.kick.v += 3.0;
+            self.cue("combo");
+        }
+        if let Some((e, age)) = self.hint {
+            self.hint = (age + dt < 3.0).then_some((e, age + dt));
+        } else if let Some((e, d)) = self.enemy_ahead(false, 34.0) {
+            if self.hints_seen.len() <= e {
+                self.hints_seen.resize(e + 1, false);
+            }
+            if !self.hints_seen[e] && d > 8.0 {
+                self.hints_seen[e] = true;
+                self.hint = Some((e, 0.0));
+            }
+        }
     }
 
     fn beat_pos(&self) -> f32 {
@@ -1181,6 +2195,11 @@ impl HopBeat {
         self.headless = on;
     }
 
+    /// Force the primitive picture (the fallback a missing glb gets).
+    pub fn set_models_off(&mut self, off: bool) {
+        self.models_off = off;
+    }
+
     /// A finger went down / came up. Several fingers count as one held button.
     pub fn touch_begin(&mut self) {
         self.touches += 1;
@@ -1206,7 +2225,7 @@ impl HopBeat {
     ) {
         use crate::input::PointerPhase as P;
         match (self.flow.phase, phase) {
-            (FlowPhase::Play, P::Begin) => self.touch_begin(),
+            (FlowPhase::Play, P::Begin) => self.press(x, y, w, h),
             (FlowPhase::Play, P::End | P::Cancel) => self.touch_end(),
             (FlowPhase::Title | FlowPhase::Result, P::Begin) => {
                 if !self.pointer(x, y, w, h) {
@@ -1214,11 +2233,37 @@ impl HopBeat {
                 }
             }
             (FlowPhase::Pause, P::Begin) => {
-                self.pointer(x, y, w, h);
+                self.pause_hit(x, y, w, h);
             }
             (_, P::End | P::Cancel) => self.touch_end(),
             _ => {}
         }
+    }
+
+    /// A finger down in play: the pause button pauses, anywhere else is the hop.
+    fn press(&mut self, x: f32, y: f32, w: u32, h: u32) {
+        if pause_button(w as f32, h as f32).contains(x, y) {
+            self.pause();
+        } else {
+            self.touch_begin();
+        }
+    }
+
+    /// A tap on the pause card.
+    fn pause_hit(&mut self, x: f32, y: f32, w: u32, h: u32) -> bool {
+        let btn = pause_layout(w as f32, h as f32)
+            .into_iter()
+            .find(|(_, r)| r.contains(x, y))
+            .map(|(b, _)| b);
+        match btn {
+            Some(PauseBtn::Resume) => self.resume(),
+            Some(PauseBtn::Retry) => self.start_run(),
+            Some(PauseBtn::Title) => self.show_title(),
+            Some(PauseBtn::SyncMinus) => self.set_latency_ms(self.latency_user_ms - 10.0),
+            Some(PauseBtn::SyncPlus) => self.set_latency_ms(self.latency_user_ms + 10.0),
+            None => return false,
+        }
+        true
     }
 
     pub fn hold_down(&self) -> bool {
@@ -1250,6 +2295,9 @@ impl HopBeat {
     }
 
     pub fn pointer(&mut self, x: f32, y: f32, width: u32, height: u32) -> bool {
+        if self.flow.phase == FlowPhase::Pause {
+            return self.pause_hit(x, y, width, height);
+        }
         let Some(action) = self.flow.hit(x, y, width, height) else {
             return false;
         };
@@ -1288,9 +2336,9 @@ impl HopBeat {
     fn apply_action(&mut self, action: FlowAction) {
         match action {
             FlowAction::Start | FlowAction::Retry => self.start_run(),
-            FlowAction::Resume => self.flow.resume(),
+            FlowAction::Resume => self.resume(),
             FlowAction::ToTitle => self.show_title(),
-            FlowAction::Pause => self.flow.pause(),
+            FlowAction::Pause => self.pause(),
             FlowAction::VolumeUp => self.flow.bump_master(0.1),
             FlowAction::VolumeDown => self.flow.bump_master(-0.1),
             FlowAction::ToggleMute => self.flow.toggle_mute(),
@@ -1311,6 +2359,11 @@ impl HopBeat {
         fresh.latency_user_ms = keep.1;
         fresh.picture_quality = keep.2;
         fresh.sfx = self.sfx;
+        fresh.models_off = self.models_off;
+        fresh.fx_post = self.fx_post;
+        fresh.lang_ja = self.lang_ja;
+        fresh.hints_seen = std::mem::take(&mut self.hints_seen);
+        fresh.fx_atmo = self.fx_atmo;
         fresh.down = self.down;
         *self = fresh;
         self.flow.enter_play();
@@ -1349,7 +2402,14 @@ impl HopBeat {
         self.core.stats.alive = true;
         self.core.stats.death.clear();
         self.pending_finish = false;
+        self.new_best = false;
         self.core.juice.hitstop = 0.0;
+        self.dead_fall = None;
+        self.fall_age = 0.0;
+        self.fall_on = false;
+        self.fall_cam = 0.0;
+        self.vfreeze = 0.0;
+        self.vlag = 0.0;
         self.lives = self
             .spec
             .revive
@@ -1384,18 +2444,45 @@ impl HopBeat {
         }
         self.combo = 0;
         self.streak = 0;
-        self.hit_flash = 1.0;
+        let fell = reason == "fell";
+        if !fell {
+            // A fall has its own picture (tumble, trailing camera): no red flash or camera snap.
+            self.hit_flash = 1.0;
+            self.anim.on_hit();
+            self.kick.v -= 6.0;
+        }
         self.lives = self.lives.saturating_sub(1);
         if self.lives == 0 {
             self.core.stats.die(reason);
-            self.core.juice.hit(0.7, 0.14);
-            self.cue(if reason == "fell" { "fall" } else { "hit" });
+            if fell {
+                // The sim is done; the drop plays on, then the card comes about
+                // `card_delay_secs` after the ledge.
+                let wait = (self.spec.fall.card_delay_secs - self.fall_age).max(0.15);
+                self.core.juice.hitstop = wait;
+                self.core.juice.shake = self.core.juice.shake.max(0.12);
+                self.vfreeze = 0.0;
+                self.dead_fall = Some(DeadFall {
+                    age: 0.0,
+                    cam: self.fall_cam,
+                    vy: self.fall_vy,
+                    t0: self.fall_age,
+                });
+            } else {
+                self.core.juice.hit(0.7, 0.14);
+                self.cue("hit");
+            }
             self.pending_finish = true;
-            self.cue("gameover");
+            // The stinger for a run that beat the device best, the other one otherwise.
+            let best = self.flow.best_score;
+            self.new_best = best > 0 && self.core.stats.score > best;
+            self.cue(if self.new_best { "newbest" } else { "gameover" });
             return;
         }
-        self.cue(if reason == "fell" { "fall" } else { "hit" });
-        self.core.juice.shake = self.core.juice.shake.max(0.35);
+        if !fell {
+            self.cue("hit");
+            self.core.juice.shake = self.core.juice.shake.max(0.35);
+            self.freeze_picture(0.09);
+        }
         self.grant_invuln(self.spec.lives.invuln_secs);
         if reason == "fell" {
             // Second wind: the hero floats until there is slab again.
@@ -1418,6 +2505,7 @@ impl HopBeat {
         self.coyote = 0.0;
         self.buffer = 0.0;
         self.just_hop = true;
+        self.anim.on_takeoff();
         self.core.stats.just_jump = true;
         self.stray_check = None;
         self.cue("hop");
@@ -1425,6 +2513,8 @@ impl HopBeat {
 
     fn land(&mut self, id: u32) {
         self.land_squash = 1.0;
+        self.anim.on_land(1.0);
+        self.kick.v += 1.0;
         self.cue("land");
         let t = self.song_t + 0.2;
         self.stray_check = Some((id, t));
@@ -1466,6 +2556,7 @@ impl HopBeat {
                 self.combo = 0;
                 j.score_ok
             }
+            Grade::Stomp => 0,
         };
         self.max_combo = self.max_combo.max(self.combo);
         self.cleared += 1;
@@ -1482,12 +2573,21 @@ impl HopBeat {
             Grade::Perfect if self.combo > 0 && self.combo.is_multiple_of(4) => "combo",
             Grade::Perfect => "perfect",
             Grade::Good => "good",
-            Grade::Ok => "land",
+            Grade::Ok | Grade::Stomp => "land",
         });
         let hx = self.hero_x();
-        if grade == Grade::Perfect {
-            let (c, n) = (self.spec.look.accent, 7);
-            self.core.juice.burst(hx, 0.3, 0.0, n, c, 2.8, 0.09);
+        match grade {
+            Grade::Perfect => {
+                let (c, n) = (self.spec.look.accent, 7);
+                self.core.juice.burst(hx, 0.3, 0.0, n, c, 2.8, 0.09);
+                self.kick.v += 3.5;
+                self.ring([255, 236, 150]);
+            }
+            Grade::Good => {
+                self.kick.v += 1.4;
+                self.ring(self.spec.look.glow);
+            }
+            _ => {}
         }
     }
 
@@ -1610,16 +2710,41 @@ impl HopBeat {
                     self.y = arc_y(arc.height, air, el);
                 }
             }
+            Air::Bounce { t0, dur, y0, id } => {
+                let u = (self.song_t - t0) / dur;
+                if u >= 1.0 {
+                    self.y = 0.0;
+                    if supported(&self.course.obst, x, hero.edge_tol) || self.invuln > 0.0 {
+                        self.ground_t = t0 + dur;
+                        self.air = Air::Ground;
+                        self.land(id);
+                    } else {
+                        self.air = Air::Fall { vy: 0.0 };
+                    }
+                } else {
+                    self.y = bounce_y(y0, self.spec.enemies.bounce_height, u);
+                }
+            }
             Air::Fall { vy } => {
                 let vy = vy - hero.fall_gravity * dt;
                 self.y += vy * dt;
                 self.air = Air::Fall { vy };
+                self.fall_vy = vy;
+                self.fall_age += dt;
+                if !self.fall_on && self.y < -0.12 && self.invuln <= 0.0 {
+                    self.fall_on = true;
+                    self.ledge_fx();
+                }
+                if self.fall_on {
+                    self.fall_cam += v * self.spec.fall.cam_lag * dt;
+                }
                 if self.y <= 0.0 && self.y > -0.4 && supported(&self.course.obst, x, hero.edge_tol)
                 {
                     self.y = 0.0;
                     self.ground_t = self.song_t;
                     self.air = Air::Ground;
                     self.land_squash = 0.6;
+                    self.anim.on_land(0.6);
                 } else if self.y < -0.35 && self.invuln > 0.0 {
                     self.y = 0.0;
                     self.air = Air::Ground;
@@ -1634,10 +2759,25 @@ impl HopBeat {
             }
         }
 
+        if !matches!(self.air, Air::Fall { .. }) {
+            self.fall_age = 0.0;
+            self.fall_on = false;
+            self.fall_cam *= (1.0 - dt * 10.0).max(0.0);
+        }
+        let grounded = matches!(self.air, Air::Ground);
+        let (bp, bf) = (self.beat_pos(), self.beat_flash);
+        if self.vfreeze <= 0.0 {
+            self.anim.update(dt, self.y, grounded, bp, bf);
+        }
+        self.fx_step(dt);
+
         // ---- obstacles
         let hw = hero.half_width;
         let y = self.y;
-        let mut hit_block = false;
+        let desc = self.descending();
+        let t_now = self.song_t;
+        let mut hit: Vec<usize> = Vec::new();
+        let mut stomped: Vec<usize> = Vec::new();
         let mut resolved: Vec<usize> = Vec::new();
         for (i, o) in self.course.obst.iter().enumerate() {
             if o.fate != Fate::Pending {
@@ -1646,29 +2786,38 @@ impl HopBeat {
             if o.start > x + 20.0 {
                 break;
             }
-            if hits_block(o, x, y, hw) {
-                hit_block = true;
+            match self.spec.touch(o, t_now, x, y, desc, hw) {
+                Touch::Hit => hit.push(i),
+                Touch::Stomp => stomped.push(i),
+                Touch::None => {}
             }
             if x > o.end + hw {
                 resolved.push(i);
             }
         }
-        if hit_block {
-            if self.invuln > 0.0 {
-                // ghosting through: those blocks do not count
-                for o in self.course.obst.iter_mut() {
-                    if o.fate == Fate::Pending && hits_block(o, x, y, hw) {
-                        o.fate = Fate::Skipped;
-                    }
-                }
-            } else {
-                self.lose_life("block");
-                for o in self.course.obst.iter_mut() {
-                    if o.fate == Fate::Pending && hits_block(o, x, y, hw) {
-                        o.fate = Fate::Skipped;
-                    }
+        if !hit.is_empty() {
+            let enemy_hit = hit.iter().any(|&i| self.course.obst[i].kind == Kind::Enemy);
+            // While ghosting (after a hit or a revive) they pass through.
+            let hurt = self.invuln <= 0.0;
+            if hurt {
+                self.lose_life(if enemy_hit { "enemy" } else { "block" });
+            }
+            for &i in &hit {
+                self.course.obst[i].fate = Fate::Skipped;
+                if hurt {
+                    self.course.obst[i].hit_t = Some(self.song_t);
                 }
             }
+            stomped.retain(|i| !hit.contains(i));
+        }
+        if self.invuln > 0.0 {
+            for &i in &stomped {
+                self.course.obst[i].fate = Fate::Skipped;
+            }
+            stomped.clear();
+        }
+        if !stomped.is_empty() && self.core.stats.alive {
+            self.stomp(&stomped);
         }
         for i in resolved {
             if self.course.obst[i].fate != Fate::Pending {
@@ -1676,6 +2825,10 @@ impl HopBeat {
             }
             self.course.obst[i].fate = Fate::Cleared;
             let o = self.course.obst[i].clone();
+            if !self.spec.needs_press(&o) {
+                // A flyer passed underneath: nothing to judge.
+                continue;
+            }
             if self.invuln > 0.0 && !matches!(self.air, Air::Hop { .. }) {
                 continue;
             }
@@ -1705,6 +2858,68 @@ impl HopBeat {
                 self.core.juice.burst(hx - 0.2, 0.05, 0.0, 1, c, 0.6, 0.05);
             }
         }
+    }
+
+    /// Is the hero coming down (a stomp only counts from above)?
+    fn descending(&self) -> bool {
+        match self.air {
+            Air::Hop { t0, hop, .. } => {
+                let air = self.spec.arc(hop).air_beats * self.spec.beat_secs();
+                self.song_t - t0 > air * 0.5
+            }
+            Air::Bounce { t0, dur, y0, .. } => {
+                let u = (self.song_t - t0) / dur;
+                bounce_dy(y0, self.spec.enemies.bounce_height, u) < 0.0
+            }
+            _ => false,
+        }
+    }
+
+    /// Landed on top of enemies: squash them, score, and bounce to the next half beat.
+    fn stomp(&mut self, which: &[usize]) {
+        let bonus = self.spec.enemies.stomp_score;
+        let j = self.spec.judge.clone();
+        let (px, py) = (self.hero_x(), self.y);
+        for &i in which {
+            self.course.obst[i].fate = Fate::Cleared;
+            self.course.obst[i].stomped_t = Some(self.song_t);
+            self.combo += 1;
+            self.stomps += 1;
+            self.cleared += 1;
+            self.streak += 1;
+            let pts = bonus + j.combo_bonus * self.combo.min(j.combo_cap);
+            self.core.stats.pickup(pts);
+        }
+        self.max_combo = self.max_combo.max(self.combo);
+        let every = j.regain_clears;
+        if every > 0 && self.streak.is_multiple_of(every) && self.lives < self.spec.lives.count {
+            self.lives += 1;
+            self.cue("combo");
+        }
+        self.last_grade = Some((Grade::Stomp, 0.0, 0.0));
+        self.grade_age = 0.0;
+        self.cue("stomp");
+        self.anim.on_stomp();
+        self.kick.v += 6.0;
+        self.freeze_picture(0.07);
+        self.ring(self.spec.look.accent);
+        let c = self.spec.look.accent;
+        self.core.juice.burst(px, py, 0.0, 9, c, 3.0, 0.1);
+        self.core.juice.shake = self.core.juice.shake.max(0.12);
+        let id = match self.air {
+            Air::Hop { id, .. } | Air::Bounce { id, .. } => id,
+            _ => self.hop_id,
+        };
+        self.last_cleared_hop = id as i64;
+        self.stray_check = None;
+        let dur = self.spec.bounce_secs(self.song_t);
+        self.air = Air::Bounce {
+            t0: self.song_t,
+            dur,
+            y0: self.y,
+            id,
+        };
+        self.buffer = 0.0;
     }
 
     /// The hop (kind, press time, id) in the air around song time `t`.
@@ -1769,6 +2984,10 @@ impl Kit for HopBeat {
     fn hitstop_frame(&mut self, dt: f32) {
         self.anim_t += dt * 0.3;
         self.hit_flash = (self.hit_flash - dt).max(0.0);
+        let slow = self.spec.fall.slow_scale;
+        if let Some(d) = self.dead_fall.as_mut() {
+            d.age += dt * slow;
+        }
     }
     fn follow(&mut self, _dt: f32) {}
     fn blocks_spark(&self, _x: f32, _y: f32, _z: f32) -> bool {
@@ -1818,8 +3037,10 @@ impl HopBeat {
                 "score": self.core.stats.score,
                 "combo": self.max_combo,
                 "perfect": self.perfects,
+                "stomps": self.stomps,
             },
             "can_revive": self.can_revive(),
+            "new_best": self.new_best,
         })
     }
 
@@ -1835,11 +3056,12 @@ impl HopBeat {
             "max_combo": self.max_combo,
             "cleared": self.cleared,
             "perfect": self.perfects,
+            "stomps": self.stomps,
             "good": self.goods,
             "ok": self.oks,
             "alive": self.core.stats.alive,
             "death": self.core.stats.death,
-            "death_text": "",
+            "death_text": if self.core.stats.death == "enemy" { "You ran into an enemy (hop over it, or land on its head)" } else { "" },
             "armed": self.armed,
             "direct": self.spec.play.direct,
             "invulnerable": self.invuln > 0.0,
@@ -1851,11 +3073,15 @@ impl HopBeat {
             "beat": beat,
             "bpm": self.spec.music.bpm,
             "latency_ms": self.latency_user_ms + self.spec.music.offset_ms,
+            // The player's own setting (what the pause screen steps and the page stores).
+            "sync_ms": self.latency_user_ms,
+            "new_best": self.new_best,
             "can_revive": self.can_revive(),
             "revives": self.revives,
             "x": self.hero_x(),
             "y": self.y,
             "grounded": matches!(self.air, Air::Ground),
+            "falling": self.fall_on || self.dead_fall.is_some(),
             "result": self.result_value(),
         })
     }
@@ -1866,6 +3092,250 @@ impl HopBeat {
         ))
         .unwrap_or_else(|_| json!({"quads": [], "texts": []}));
         value.to_string()
+    }
+
+    /// The pause screen: resume / retry / title and the audio sync stepper.
+    fn hud_pause(&self, list: &mut DrawList, w: f32, h: f32, s: f32) {
+        let glow = self.spec.look.glow.map(|v| v as u8);
+        let accent = self.spec.look.accent.map(|v| v as u8);
+        list.quads.push(Quad::new(0.0, 0.0, w, h, [6, 6, 20, 205]));
+        let mut text = |t: &str, x: f32, y: f32, size: f32, c: [u8; 4]| {
+            list.texts
+                .push(TextQuad::new(t, x, y, size * s, c).aligned(TextAlign::Center));
+        };
+        text(
+            self.tr("PAUSED", "ポーズ"),
+            w * 0.5,
+            h * 0.12,
+            30.0,
+            [255, 255, 255, 255],
+        );
+        let sync = self.latency_user_ms.round() as i32;
+        let layout = pause_layout(w, h);
+        let mut sync_y = 0.0;
+        let mut sync_x = (0.0, 0.0);
+        for (b, r) in &layout {
+            let (label, fill) = match b {
+                PauseBtn::Resume => (
+                    self.tr("RESUME", "つづける"),
+                    [accent[0], accent[1], accent[2], 255],
+                ),
+                PauseBtn::Retry => (self.tr("RETRY", "リトライ"), [40, 34, 74, 245]),
+                PauseBtn::Title => (self.tr("TITLE", "タイトル"), [40, 34, 74, 245]),
+                PauseBtn::SyncMinus => ("−", [40, 34, 74, 245]),
+                PauseBtn::SyncPlus => ("+", [40, 34, 74, 245]),
+            };
+            list.quads.push(Quad::new(
+                r.x - 2.0 * s,
+                r.y - 2.0 * s,
+                r.w + 4.0 * s,
+                r.h + 4.0 * s,
+                [glow[0], glow[1], glow[2], 150],
+            ));
+            list.quads.push(Quad::new(r.x, r.y, r.w, r.h, fill));
+            let ink = if *b == PauseBtn::Resume {
+                [20, 12, 30, 255]
+            } else {
+                [255, 255, 255, 255]
+            };
+            let size = if matches!(b, PauseBtn::SyncMinus | PauseBtn::SyncPlus) {
+                24.0
+            } else {
+                17.0
+            };
+            list.texts.push(
+                TextQuad::new(
+                    label,
+                    r.x + r.w * 0.5,
+                    r.y + r.h * 0.5 - size * s * 0.5,
+                    size * s,
+                    ink,
+                )
+                .aligned(TextAlign::Center),
+            );
+            if *b == PauseBtn::SyncMinus {
+                sync_y = r.y;
+                sync_x.0 = r.x + r.w;
+            }
+            if *b == PauseBtn::SyncPlus {
+                sync_x.1 = r.x;
+            }
+        }
+        let cx = (sync_x.0 + sync_x.1) * 0.5;
+        let mut text = |t: &str, x: f32, y: f32, size: f32, c: [u8; 4]| {
+            list.texts
+                .push(TextQuad::new(t, x, y, size * s, c).aligned(TextAlign::Center));
+        };
+        text(
+            self.tr("AUDIO SYNC", "音ズレ補正"),
+            w * 0.5,
+            sync_y - 22.0 * s,
+            11.0,
+            [glow[0], glow[1], glow[2], 230],
+        );
+        text(
+            &format!("{}{} ms", if sync > 0 { "+" } else { "" }, sync),
+            cx,
+            sync_y + 12.0 * s,
+            17.0,
+            [255, 255, 255, 255],
+        );
+        text(
+            self.tr(
+                "Hopping late? Press +.  Early? Press −.",
+                "遅れるなら＋、早すぎなら−",
+            ),
+            w * 0.5,
+            sync_y + 54.0 * s,
+            10.0,
+            [255, 255, 255, 150],
+        );
+    }
+
+    /// Grade popup near the hero, the enemy warning and hint, and the hurt vignette.
+    fn hud_popups(&self, list: &mut DrawList, w: f32, h: f32, s: f32) {
+        let glow = self.spec.look.glow.map(|v| v as u8);
+        let accent = self.spec.look.accent.map(|v| v as u8);
+        // Text with a dark drop shadow so it reads on any sky.
+        let shadowed = |list: &mut DrawList, t: &str, x: f32, y: f32, size: f32, c: [u8; 4]| {
+            let sh = [6, 4, 20, (c[3] as f32 * 0.8) as u8];
+            list.texts.push(
+                TextQuad::new(t, x + 2.0 * s, y + 2.0 * s, size * s, sh).aligned(TextAlign::Center),
+            );
+            list.texts
+                .push(TextQuad::new(t, x, y, size * s, c).aligned(TextAlign::Center));
+        };
+        if let Some((g, err, _)) = self.last_grade {
+            let a = self.grade_age;
+            if a < 0.8 {
+                let fade = if a < 0.5 { 1.0 } else { 1.0 - (a - 0.5) / 0.3 };
+                let al = (255.0 * fade).clamp(0.0, 255.0) as u8;
+                // Pops in big, settles, floats up.
+                let pop = 1.0 + 0.7 * (1.0 - a / 0.12).max(0.0);
+                let y = h * 0.45 - a * 46.0 * s;
+                let (word, c, size) = match g {
+                    Grade::Perfect => ("PERFECT!", [255, 236, 150, al], 28.0),
+                    Grade::Good => ("GOOD", [glow[0], glow[1], glow[2], al], 22.0),
+                    Grade::Ok => ("OK", [200, 200, 220, al], 18.0),
+                    Grade::Stomp => ("STOMP!", [accent[0], accent[1], accent[2], al], 28.0),
+                };
+                shadowed(list, word, w * 0.5, y, size * pop, c);
+                if matches!(g, Grade::Good | Grade::Ok) {
+                    let side = if err < 0.0 {
+                        self.tr("EARLY", "はやい")
+                    } else {
+                        self.tr("LATE", "おそい")
+                    };
+                    shadowed(
+                        list,
+                        side,
+                        w * 0.5,
+                        y + 28.0 * s,
+                        12.0,
+                        [c[0], c[1], c[2], al / 2],
+                    );
+                }
+            }
+        }
+        // A flyer is close: a flashing badge.
+        if let Some((e, d)) = self.enemy_ahead(true, WARN_M) {
+            let on = ((self.beat_pos() * 2.0).fract()) < 0.6;
+            let col = self
+                .spec
+                .enemies
+                .types
+                .get(e)
+                .map(|t| t.color.map(|v| v as u8))
+                .unwrap_or([255, 200, 60]);
+            let near = (1.0 - d / WARN_M).clamp(0.0, 1.0);
+            let bw = (44.0 + 14.0 * near) * s;
+            let (bx, by) = (w * 0.5 - bw * 0.5, h * 0.17);
+            let a = if on { 235 } else { 120 };
+            list.quads.push(Quad::new(
+                bx - 3.0 * s,
+                by - 3.0 * s,
+                bw + 6.0 * s,
+                bw + 6.0 * s,
+                [255, 255, 255, a / 2],
+            ));
+            list.quads
+                .push(Quad::new(bx, by, bw, bw, [col[0], col[1], col[2], a]));
+            list.texts.push(
+                TextQuad::new(
+                    "!",
+                    w * 0.5,
+                    by + bw * 0.12,
+                    bw / s * 0.62 * s,
+                    [20, 8, 30, 255],
+                )
+                .aligned(TextAlign::Center),
+            );
+        }
+        // First sight of a kind of enemy: one line on what to do.
+        if let Some((e, age)) = self.hint {
+            if let Some(et) = self.spec.enemies.types.get(e) {
+                let (en, ja) = match (et.look.as_str(), et.stompable) {
+                    ("bat", _) => (
+                        "FLYING! TAP, DON'T HOLD",
+                        "とんでる！ホールドしないでタップ",
+                    ),
+                    (_, true) if et.step_m > 0.0 => (
+                        "IT WALKS AT YOU. LAND ON ITS HEAD!",
+                        "あるいてくる！あたまにのろう！",
+                    ),
+                    (_, true) => (
+                        "HOP OVER IT, OR LAND ON ITS HEAD!",
+                        "とびこえるか、あたまにのろう！",
+                    ),
+                    _ => ("HOP OVER IT!", "とびこえよう！"),
+                };
+                let fade = (age.min(3.0 - age) * 4.0).clamp(0.0, 1.0);
+                let al = (240.0 * fade) as u8;
+                list.quads.push(Quad::new(
+                    0.0,
+                    h * 0.265,
+                    w,
+                    34.0 * s,
+                    [8, 6, 24, (140.0 * fade) as u8],
+                ));
+                shadowed(
+                    list,
+                    self.tr(en, ja),
+                    w * 0.5,
+                    h * 0.265 + 8.0 * s,
+                    13.0,
+                    [255, 255, 255, al],
+                );
+            }
+        }
+        // Hurt: red closes in from the edges and fades.
+        if self.hit_flash > 0.02 {
+            let f = self.hit_flash.clamp(0.0, 1.0);
+            let m = w.min(h);
+            for k in 0..4 {
+                let t = m * (0.05 + 0.035 * k as f32);
+                let a = (150.0 * f / (1.0 + k as f32 * 0.9)) as u8;
+                let c = [230, 20, 40, a];
+                list.quads.push(Quad::new(0.0, 0.0, w, t, c));
+                list.quads.push(Quad::new(0.0, h - t, w, t, c));
+                list.quads.push(Quad::new(0.0, t, t, h - 2.0 * t, c));
+                list.quads.push(Quad::new(w - t, t, t, h - 2.0 * t, c));
+            }
+        }
+        // A fall: the screen edge closes in, dark and cool (no red: nothing hit it).
+        let dark = self.fall_dark();
+        if dark > 0.02 {
+            let m = w.min(h);
+            for k in 0..5 {
+                let t = m * (0.06 + 0.05 * k as f32);
+                let a = (170.0 * dark / (1.0 + k as f32 * 0.8)) as u8;
+                let c = [6, 4, 22, a];
+                list.quads.push(Quad::new(0.0, 0.0, w, t, c));
+                list.quads.push(Quad::new(0.0, h - t, w, t, c));
+                list.quads.push(Quad::new(0.0, t, t, h - 2.0 * t, c));
+                list.quads.push(Quad::new(w - t, t, t, h - 2.0 * t, c));
+            }
+        }
     }
 
     /// `menu` draws the built-in title / pause / result cards; a page that
@@ -1888,84 +3358,140 @@ impl HopBeat {
         let glow = self.spec.look.glow.map(|v| v as u8);
         let accent = self.spec.look.accent.map(|v| v as u8);
         if self.flow.phase == FlowPhase::Play {
+            let pad = 10.0 * s;
+            let top = 8.0 * s;
+            let ink = [glow[0], glow[1], glow[2], 255];
+            // Score: a dark plate with an accent edge, label above the number.
+            list.quads
+                .push(Quad::new(pad, top, 148.0 * s, 46.0 * s, [8, 6, 24, 165]));
             list.quads.push(Quad::new(
-                10.0 * s,
-                8.0 * s,
-                150.0 * s,
-                32.0 * s,
-                [8, 6, 24, 150],
+                pad,
+                top,
+                4.0 * s,
+                46.0 * s,
+                [accent[0], accent[1], accent[2], 255],
             ));
             txt(
                 &mut list,
-                &format!("SCORE {}", self.core.stats.score),
-                18.0 * s,
-                14.0 * s,
-                15.0,
-                [glow[0], glow[1], glow[2], 255],
+                self.tr("SCORE", "スコア"),
+                pad + 14.0 * s,
+                top + 5.0 * s,
+                9.0,
+                [255, 255, 255, 170],
                 TextAlign::Left,
             );
-            // lives: one pip each
-            for i in 0..self.spec.lives.count.max(self.lives) {
-                let on = i < self.lives;
-                let blink = self.invuln > 0.0 && ((self.anim_t * 8.0) as u32).is_multiple_of(2);
-                let c = if on && !blink {
-                    [accent[0], accent[1], accent[2], 255]
-                } else if on {
-                    [255, 255, 255, 120]
-                } else {
-                    [60, 56, 80, 150]
-                };
-                list.quads.push(Quad::new(
-                    w - (22.0 + i as f32 * 22.0) * s,
-                    14.0 * s,
-                    16.0 * s,
-                    16.0 * s,
-                    c,
-                ));
-            }
-            if self.combo >= 2 {
-                let pulse = 1.0 + 0.25 * self.beat_flash;
+            txt(
+                &mut list,
+                &format!("{}", self.core.stats.score),
+                pad + 14.0 * s,
+                top + 17.0 * s,
+                20.0,
+                ink,
+                TextAlign::Left,
+            );
+            if self.flow.best_score > 0 {
                 txt(
                     &mut list,
-                    &format!("{} COMBO", self.combo),
+                    &format!("{} {}", self.tr("BEST", "ベスト"), self.flow.best_score),
+                    pad + 2.0 * s,
+                    top + 50.0 * s,
+                    9.0,
+                    [255, 255, 255, 140],
+                    TextAlign::Left,
+                );
+            }
+            // Pause button, then the lives to its left.
+            let pb = pause_button(w, h);
+            list.quads
+                .push(Quad::new(pb.x, pb.y, pb.w, pb.h, [8, 6, 24, 175]));
+            for k in 0..2 {
+                list.quads.push(Quad::new(
+                    pb.x + pb.w * (0.30 + 0.24 * k as f32),
+                    pb.y + pb.h * 0.26,
+                    pb.w * 0.16,
+                    pb.h * 0.48,
+                    [255, 255, 255, 235],
+                ));
+            }
+            let blink = self.invuln > 0.0 && ((self.anim_t * 8.0) as u32).is_multiple_of(2);
+            let pip = |list: &mut DrawList, x: f32, on: bool| {
+                let c = if on && !blink {
+                    [255, 112, 150, 255]
+                } else if on {
+                    [255, 255, 255, 140]
+                } else {
+                    [40, 36, 64, 190]
+                };
+                list.quads.push(Quad::new(
+                    x - 1.5 * s,
+                    top + 10.0 * s - 1.5 * s,
+                    17.0 * s,
+                    17.0 * s,
+                    [255, 255, 255, if on { 110 } else { 40 }],
+                ));
+                list.quads
+                    .push(Quad::new(x, top + 10.0 * s, 14.0 * s, 14.0 * s, c));
+            };
+            let lives_max = self.spec.lives.count.max(self.lives);
+            let mut x = pb.x - 10.0 * s - 14.0 * s;
+            if lives_max <= 5 {
+                for i in 0..lives_max {
+                    pip(&mut list, x, i < self.lives);
+                    x -= 20.0 * s;
+                }
+            } else {
+                // Many lives: one pip and a count.
+                pip(&mut list, x, self.lives > 0);
+                txt(
+                    &mut list,
+                    &format!("×{}", self.lives),
+                    x - 8.0 * s,
+                    top + 8.0 * s,
+                    16.0,
+                    [255, 255, 255, 240],
+                    TextAlign::Right,
+                );
+            }
+            // Combo: big multiplier that pulses on the beat; the colour climbs with it.
+            if self.combo >= 2 {
+                let pulse = 1.0 + 0.22 * self.beat_flash;
+                let c = match self.combo {
+                    0..=3 => [255, 244, 190, 255],
+                    4..=7 => [255, 214, 90, 255],
+                    8..=15 => [255, 150, 90, 255],
+                    _ => [255, 110, 200, 255],
+                };
+                let y = h * 0.095;
+                let size = (26.0 + (self.combo.min(20) as f32) * 0.5) * pulse;
+                txt(
+                    &mut list,
+                    &format!("×{}", self.combo),
+                    w * 0.5 + 2.0 * s,
+                    y + 2.0 * s,
+                    size,
+                    [6, 4, 20, 190],
+                    TextAlign::Center,
+                );
+                txt(
+                    &mut list,
+                    &format!("×{}", self.combo),
                     w * 0.5,
-                    h * 0.12,
-                    22.0 * pulse,
-                    [255, 236, 150, 255],
+                    y,
+                    size,
+                    c,
+                    TextAlign::Center,
+                );
+                txt(
+                    &mut list,
+                    self.tr("COMBO", "コンボ"),
+                    w * 0.5,
+                    y + (size + 2.0) * s,
+                    10.0,
+                    [c[0], c[1], c[2], 200],
                     TextAlign::Center,
                 );
             }
-            if let Some((g, err, _)) = self.last_grade {
-                if self.grade_age < 0.7 {
-                    let a = (255.0 * (1.0 - self.grade_age / 0.7)).clamp(0.0, 255.0) as u8;
-                    let (word, c) = match g {
-                        Grade::Perfect => ("PERFECT", [255, 236, 150, a]),
-                        Grade::Good => ("GOOD", [glow[0], glow[1], glow[2], a]),
-                        Grade::Ok => ("OK", [200, 200, 220, a]),
-                    };
-                    txt(
-                        &mut list,
-                        word,
-                        w * 0.5,
-                        h * 0.60,
-                        20.0,
-                        c,
-                        TextAlign::Center,
-                    );
-                    if g != Grade::Perfect {
-                        let side = if err < 0.0 { "EARLY" } else { "LATE" };
-                        txt(
-                            &mut list,
-                            side,
-                            w * 0.5,
-                            h * 0.60 + 26.0 * s,
-                            11.0,
-                            [c[0], c[1], c[2], a / 2],
-                            TextAlign::Center,
-                        );
-                    }
-                }
-            }
+            self.hud_popups(&mut list, w, h, s);
             // beat dots
             let bpb = self.spec.music.beats_per_bar.max(1);
             let cur = (self.beat_pos().floor().max(0.0) as u32) % bpb;
@@ -1995,7 +3521,7 @@ impl HopBeat {
                     .push(Quad::new(0.0, h * 0.40, w, h * 0.16, [8, 6, 24, 150]));
                 txt(
                     &mut list,
-                    "TAP TO START",
+                    self.tr("TAP TO START", "タップでスタート"),
                     w * 0.5,
                     h * 0.44,
                     22.0,
@@ -2004,7 +3530,10 @@ impl HopBeat {
                 );
                 txt(
                     &mut list,
-                    "TAP = SHORT HOP   HOLD = LONG HOP",
+                    self.tr(
+                        "TAP = SHORT HOP   HOLD = LONG HOP",
+                        "タップ＝小ジャンプ　長押し＝大ジャンプ",
+                    ),
                     w * 0.5,
                     h * 0.50,
                     11.0,
@@ -2013,7 +3542,9 @@ impl HopBeat {
                 );
             }
         }
-        if menu {
+        if self.flow.phase == FlowPhase::Pause {
+            self.hud_pause(&mut list, w, h, s);
+        } else if menu {
             if self.flow.phase == FlowPhase::Result {
                 list.quads.push(Quad::new(0.0, 0.0, w, h, [8, 0, 16, 150]));
             }
@@ -2023,6 +3554,56 @@ impl HopBeat {
         }
         list
     }
+}
+
+// ------------------------------------------------------------------- ui ---
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PauseBtn {
+    Resume,
+    Retry,
+    Title,
+    SyncMinus,
+    SyncPlus,
+}
+
+fn ui_scale(w: f32, h: f32) -> f32 {
+    (w.min(h) / 400.0).clamp(0.9, 2.6)
+}
+
+/// The touch pause button, top right (with a little slop around it).
+fn pause_button(w: f32, h: f32) -> Quad {
+    let s = ui_scale(w, h);
+    Quad::new(
+        w - 10.0 * s - 38.0 * s,
+        8.0 * s,
+        38.0 * s,
+        38.0 * s,
+        [0, 0, 0, 0],
+    )
+}
+
+/// The pause screen's hit areas, pixels.
+fn pause_layout(w: f32, h: f32) -> Vec<(PauseBtn, Quad)> {
+    let s = ui_scale(w, h);
+    let bw = 230.0 * s;
+    let bh = 42.0 * s;
+    let gap = 10.0 * s;
+    let x = (w - bw) * 0.5;
+    let mut y = h * 0.22;
+    let mut v = Vec::new();
+    for b in [PauseBtn::Resume, PauseBtn::Retry, PauseBtn::Title] {
+        v.push((b, Quad::new(x, y, bw, bh, [0; 4])));
+        y += bh + gap;
+    }
+    y += 40.0 * s;
+    let sb = 46.0 * s;
+    v.push((PauseBtn::SyncMinus, Quad::new(x, y, sb, sb, [0; 4])));
+    v.push((
+        PauseBtn::SyncPlus,
+        Quad::new(x + bw - sb, y, sb, sb, [0; 4]),
+    ));
+    v
 }
 
 // -------------------------------------------------------------- picture ---
@@ -2094,6 +3675,15 @@ const TRACK_HALF: f32 = 1.7;
 /// file is missing or does not parse the picture falls back to primitives.
 const BUNNY_GLB: &str = "assets/models/hop_beat/hop_bunny.glb";
 const POST_GLB: &str = "assets/models/hop_beat/hop_post.glb";
+const SLIME_GLB: &str = "assets/models/hop_beat/hop_slime.glb";
+const BEETLE_GLB: &str = "assets/models/hop_beat/hop_beetle.glb";
+/// The ears, a separate mesh whose origin is the pivot at the top of the head
+/// (`EAR_PIVOT`, in the body's own units).
+const EARS_GLB: &str = "assets/models/hop_beat/hop_ears.glb";
+const EAR_PIVOT: [f32; 3] = [0.0, 0.80, 0.26];
+/// A flyer this far ahead (metres, about 4 beats) starts to warn.
+const WARN_M: f32 = 26.0;
+const BAT_GLB: &str = "assets/models/hop_beat/hop_bat.glb";
 /// Skyline variants: (tower, lit windows), unit footprint 3 x 3 m, base on y = 0.
 const TOWER_GLBS: [(&str, &str); 3] = [
     (
@@ -2170,8 +3760,54 @@ impl HopBeat {
     fn view_x(&self) -> f32 {
         match self.flow.phase {
             FlowPhase::Title => 0.0,
-            _ => self.hero_x(),
+            _ => self.hero_x() - self.vlag + self.fall_view().0,
         }
+    }
+
+    /// While the bunny falls the camera trails it: (shift of the camera along the
+    /// track, how far the bunny is ahead of the camera). Both 0 outside a fall.
+    fn fall_view(&self) -> (f32, f32) {
+        if let Some(d) = self.dead_fall {
+            let f = &self.spec.fall;
+            let dx = self.spec.speed() * f.carry * (1.0 - (-3.0 * d.age).exp()) / 3.0;
+            (-d.cam + (1.0 - f.cam_lag) * dx, d.cam + f.cam_lag * dx)
+        } else {
+            (-self.fall_cam, self.fall_cam)
+        }
+    }
+
+    /// Seconds of the fall so far (the sim part, then the slowed drop).
+    fn fall_clock(&self) -> f32 {
+        match self.dead_fall {
+            Some(d) => d.t0 + d.age,
+            None if self.fall_on => self.fall_age,
+            None => 0.0,
+        }
+    }
+
+    /// Dark screen edge for a fall, 0..1.
+    fn fall_dark(&self) -> f32 {
+        if self.dead_fall.is_none() && !self.fall_on {
+            return 0.0;
+        }
+        (self.fall_clock() / 0.7).clamp(0.0, 1.0) * self.spec.fall.vignette
+    }
+
+    /// The bunny leaves the ledge: whoosh, a short picture hold, dust and a glint.
+    fn ledge_fx(&mut self) {
+        self.cue("fall");
+        self.freeze_picture(self.spec.fall.edge_stop_secs);
+        let hx = self.hero_x();
+        let n = match self.picture_quality.as_deref() {
+            Some("low") => self.spec.fall.dust / 2,
+            _ => self.spec.fall.dust,
+        };
+        self.core
+            .juice
+            .burst(hx, 0.05, 0.0, n, [196, 188, 220], 2.2, 0.11);
+        self.core
+            .juice
+            .burst(hx, 0.2, 0.0, n / 3, self.spec.look.glow, 3.0, 0.07);
     }
 
     fn build_doc(&mut self) {
@@ -2180,30 +3816,45 @@ impl HopBeat {
         let bl = self.spec.hero.beat_len_m;
         let beat = hx / bl;
         let pulse = self.beat_flash;
+        let fin = look.finish();
+        // ?fx_post=0: the plain picture (no bloom, grade, vignette or tone curve).
+        let post_on = self.fx_post;
+        // ?fx_atmo=0: the old sky and haze, no stars, clouds or horizon glow.
+        let atmo_on = self.fx_atmo;
+        let sky = if atmo_on { fin.sky } else { [14, 10, 40] };
         let mut doc = WorldDoc {
             version: 1,
             genre: Some(GAME_ID.into()),
             half: 90.0,
             ground: Some(false),
             contact_blobs: Some(false),
-            sky: Some([14, 10, 40, 255]),
-            hemi_sky: Some([0.20, 0.16, 0.42]),
-            hemi_ground: Some([0.10, 0.06, 0.14]),
+            sky: Some([sky[0] as u8, sky[1] as u8, sky[2] as u8, 255]),
+            hemi_sky: Some(fin.hemi_sky),
+            hemi_ground: Some(fin.hemi_ground),
             env_map: Some("preset:studio".into()),
             shadow_softness: Some(1.0),
-            bloom: Some(0.16),
-            bloom_threshold: Some(1.4),
-            vignette: Some(0.6),
-            lut: Some("cool".into()),
-            lut_strength: Some(0.2),
+            bloom: Some(if post_on { fin.bloom } else { 0.0 }),
+            bloom_threshold: Some(fin.bloom_threshold),
+            vignette: Some(if post_on { fin.vignette } else { 0.0 }),
+            lut: Some(if post_on {
+                fin.lut.clone()
+            } else {
+                "off".into()
+            }),
+            lut_strength: Some(if post_on { fin.lut_strength } else { 0.0 }),
             fxaa: Some(true),
-            exposure: Some(0.9),
-            ibl: Some(0.3),
-            tonemap: Some(true),
+            exposure: Some(if post_on { fin.exposure } else { 1.0 }),
+            ibl: Some(fin.ibl),
+            tonemap: Some(post_on),
+            tonemap_curve: if post_on && !fin.tonemap_curve.is_empty() {
+                Some(fin.tonemap_curve.clone())
+            } else {
+                None
+            },
             cull: Some(true),
             prop_lod: Some(90.0),
-            fog_start: Some(34.0),
-            fog_end: Some(92.0),
+            fog_start: Some(if atmo_on { fin.fog_start } else { 34.0 }),
+            fog_end: Some(if atmo_on { fin.fog_end } else { 92.0 }),
             ..WorldDoc::default()
         };
         doc.quality = self.picture_quality.clone();
@@ -2217,9 +3868,14 @@ impl HopBeat {
             id: "camera:main".into(),
             kind: "camera".into(),
             name: "chase".into(),
-            position: [shake[0], 3.1 + lift * 0.5 + shake[1], hx - 6.6],
+            position: [
+                shake[0],
+                3.1 + lift * 0.5 + shake[1],
+                hx - 6.6 - 1.2 * self.kick.x,
+            ],
             target: [0.0, 0.5 + lift, hx + 7.5],
-            fov: 64.0,
+            // The beat breathes the lens a little; a PERFECT or a stomp punches it.
+            fov: 64.0 + 24.0 * self.kick.x.clamp(-0.18, 0.2) + 0.7 * pulse * pulse,
             roll: 0.0,
         });
         doc.lights.push(light(
@@ -2256,12 +3912,17 @@ impl HopBeat {
         // The renderer rebuilds its glTF slot table whenever the list of distinct
         // models changes. One tiny buried prop per model, first in the list, keeps
         // the table constant while towers and posts scroll in and out.
-        let mut models: Vec<&str> = vec![BUNNY_GLB, POST_GLB];
+        let mut models: Vec<&str> = vec![
+            BUNNY_GLB, EARS_GLB, POST_GLB, SLIME_GLB, BEETLE_GLB, BAT_GLB,
+        ];
         for (tower, windows) in TOWER_GLBS {
             models.push(tower);
             models.push(windows);
         }
-        let models: Vec<&str> = models.into_iter().filter(|m| glb_ready(m)).collect();
+        let models: Vec<&str> = models
+            .into_iter()
+            .filter(|m| !self.models_off && glb_ready(m))
+            .collect();
         for (i, m) in models.iter().enumerate() {
             doc.props.push(glb_prop(
                 &format!("anchor-{i}"),
@@ -2387,6 +4048,8 @@ impl HopBeat {
                 0.2,
             ));
         }
+        // ---- enemies
+        self.push_enemies(&mut doc, &models, lo, hi);
         // ---- lanterns: speed cue, pulse with the beat
         let step = 2.0 * bl;
         let mut z = (lo / step).ceil() * step;
@@ -2451,7 +4114,12 @@ impl HopBeat {
             let off = 9.0 + ((i * 7) % 5) as f32 * 3.5;
             let hgt = 3.0 + ((i * 13) % 7) as f32 * 1.8;
             let zz = (hx * 0.9 / 12.0).floor() * 12.0 + i as f32 * 8.0 - 20.0 + hx * 0.1 % 12.0;
-            let lit = 0.15 + 0.2 * (((i + (beat as i32)) % 3) as f32 / 3.0);
+            let tw = if atmo_on {
+                fin.twinkle * 0.12 * (self.anim_t * (1.1 + 0.23 * i as f32) + i as f32 * 1.9).sin()
+            } else {
+                0.0
+            };
+            let lit = (0.15 + 0.2 * (((i + (beat as i32)) % 3) as f32 / 3.0) + tw).max(0.02);
             let (tower, windows) = TOWER_GLBS[(i as usize) % TOWER_GLBS.len()];
             if models.contains(&tower) && models.contains(&windows) {
                 // The model's own height, not a stretched box: the roof clutter keeps its shape.
@@ -2494,8 +4162,16 @@ impl HopBeat {
             }
         }
 
+        if atmo_on {
+            self.push_sky(&mut doc, &fin, hx, pulse);
+        }
+
         // ---- hero
-        self.push_hero(&mut doc, hx, models.contains(&BUNNY_GLB));
+        self.push_hero(
+            &mut doc,
+            hx,
+            models.contains(&BUNNY_GLB) && models.contains(&EARS_GLB),
+        );
         // ---- sparks (kit x = track, kit z = lateral)
         for (i, sp) in self.core.juice.sparks.iter().enumerate() {
             let fade = 1.0 - (sp.life / sp.max_life).clamp(0.0, 1.0);
@@ -2515,38 +4191,383 @@ impl HopBeat {
         self.doc = doc;
     }
 
+    /// The creatures on the slab. They are drawn exactly where the sim tests
+    /// them (`enemy_dx`), with a little hop on every step so the walk reads as
+    /// a rhythm; a stomped one is squashed flat for a moment, then gone.
+    /// Stars, far clouds, a horizon glow and a halo round the moon. Cheap props,
+    /// all far away: they ride along with the camera so they never pass.
+    fn push_sky(&self, doc: &mut WorldDoc, fin: &Finish, hx: f32, pulse: f32) {
+        let tier = match self.picture_quality.as_deref() {
+            Some("low") => 0.34,
+            Some("high") => 1.0,
+            _ => 0.75,
+        };
+        let hash = |i: u32, k: u32| -> f32 {
+            let mut h = i.wrapping_mul(0x9E37_79B1) ^ k.wrapping_mul(0x85EB_CA6B);
+            h ^= h >> 15;
+            h = h.wrapping_mul(0x2C1B_3C6D);
+            h ^= h >> 12;
+            (h & 0xFFFF) as f32 / 65535.0
+        };
+        let stars = (fin.stars as f32 * tier).round() as u32;
+        for i in 0..stars {
+            let x = (hash(i, 1) * 2.0 - 1.0) * 62.0;
+            let y = 11.0 + hash(i, 2) * 26.0;
+            let tw = 0.5 + 0.5 * (self.anim_t * (1.5 + hash(i, 3) * 2.5) + hash(i, 4) * 6.3).sin();
+            let sz = 0.34 + 0.3 * hash(i, 5);
+            doc.props.push(prop(
+                &format!("star-{i}"),
+                "sphere",
+                "star",
+                [x, y, hx + 54.0 + hash(i, 6) * 8.0],
+                [sz, sz, sz],
+                mix([200, 210, 255], [255, 236, 200], hash(i, 7)),
+                1.2 + 1.4 * tw + 0.5 * pulse,
+                0.5,
+                0.0,
+            ));
+        }
+        let clouds = if tier < 0.5 { 0 } else { fin.clouds };
+        for i in 0..clouds {
+            let drift =
+                (hash(i, 8) * 140.0 + self.anim_t * (0.6 + hash(i, 9) * 0.5)) % 140.0 - 70.0;
+            let wide = 12.0 + hash(i, 10) * 10.0;
+            doc.props.push(prop(
+                &format!("cloud-{i}"),
+                "sphere",
+                "cloud",
+                [
+                    drift,
+                    17.0 + hash(i, 11) * 9.0,
+                    hx + 66.0 + hash(i, 12) * 6.0,
+                ],
+                [wide, 1.1 + hash(i, 13) * 0.8, 2.6],
+                mix(fin.horizon, [40, 24, 90], 0.55),
+                0.22 + 0.1 * pulse,
+                0.9,
+                0.0,
+            ));
+        }
+        if fin.horizon_glow > 0.0 {
+            // Two stacked bands, bright at the bottom, so the haze fades upward.
+            // Just inside the prop cull distance (90) and behind nearly every tower.
+            let c = fin.horizon;
+            for (k, (y, hh, g)) in [(0.2, 3.0, 1.0), (3.4, 4.0, 0.35)].into_iter().enumerate() {
+                doc.props.push(prop(
+                    &format!("horizon-{k}"),
+                    "box",
+                    "horizon",
+                    [0.0, y, hx + 88.5],
+                    [220.0, hh, 1.0],
+                    mix(c, [14, 10, 40], 0.3 * k as f32),
+                    fin.horizon_glow * g * (0.55 + 0.15 * pulse),
+                    1.0,
+                    0.0,
+                ));
+            }
+            doc.props.push(prop(
+                "moon-halo",
+                "sphere",
+                "moon",
+                [-12.0, 15.0, hx + 66.0],
+                [11.0, 11.0, 1.0],
+                mix(c, [255, 220, 190], 0.6),
+                0.16 + 0.1 * pulse,
+                1.0,
+                0.0,
+            ));
+        }
+    }
+
+    fn push_enemies(&self, doc: &mut WorldDoc, models: &[&str], lo: f32, hi: f32) {
+        let bs = self.spec.beat_secs();
+        let pulse = self.beat_flash;
+        for o in self.course.obst.iter() {
+            if o.kind != Kind::Enemy || o.end + MAX_WALK_M < lo || o.start - 1.0 > hi {
+                continue;
+            }
+            let Some(et) = self.spec.enemies.types.get(o.ety) else {
+                continue;
+            };
+            let squash_age = o.stomped_t.map(|t| self.song_t - t);
+            if squash_age.is_some_and(|a| a > 0.35) {
+                continue;
+            }
+            if o.fate == Fate::Skipped && o.end < self.hero_x() - 2.0 {
+                continue;
+            }
+            let Some(dx) = self.spec.enemy_dx(o, self.song_t) else {
+                continue;
+            };
+            let center = (o.start + o.end) * 0.5 + dx;
+            let stepping = et.step_m > 0.0;
+            // Where in its step: a hop of 0.14 m over the first half of each step.
+            let phase = if stepping {
+                (self.song_t / bs * et.steps_per_beat as f32).fract()
+            } else {
+                0.0
+            };
+            let hop = if stepping && o.stomped_t.is_none() {
+                0.14 * (phase * 2.0)
+                    .min(1.0)
+                    .mul_add(std::f32::consts::PI, 0.0)
+                    .sin()
+                    .max(0.0)
+            } else {
+                0.0
+            };
+            // Appears over its first step instead of popping.
+            let appear = if stepping {
+                let first = self
+                    .spec
+                    .enemy_dx(o, self.song_t - bs / et.steps_per_beat as f32);
+                if first.is_none() {
+                    (phase * 2.0).min(1.0)
+                } else {
+                    1.0
+                }
+            } else {
+                1.0
+            };
+            // Idle / walk / fly from the beat clock; a stomp or a hit overrides it.
+            let mut pose = crate::hop_anim::enemy_pose(
+                &et.look,
+                self.beat_pos().rem_euclid(1.0),
+                pulse,
+                phase,
+            );
+            if let Some(a) = squash_age {
+                pose.scale = crate::hop_anim::stomp_scale(a, 0.35);
+                pose.flash = 1.0;
+            } else if let Some(t) = o.hit_t {
+                let h = crate::hop_anim::hit_puff(self.song_t - t);
+                pose.scale = h.scale;
+                pose.flash = h.flash;
+            }
+            let mut k = pose.scale;
+            k = k.map(|v| v * appear.max(0.05));
+            let live = o.fate == Fate::Pending;
+            let em = if squash_age.is_some() {
+                1.2
+            } else if live {
+                0.45 + 0.4 * pulse + 0.9 * pose.flash
+            } else {
+                0.2 + 0.9 * pose.flash
+            };
+            let linear = et.color.map(|v| (v as f32 / 255.0).powf(2.2));
+            let id = format!("enemy-{}-{}", (o.take_beat * 100.0).round() as i64, o.ety);
+            let bob = if et.y_lo > 0.0 {
+                0.06 * (self.anim_t * 5.0 + o.take_beat).sin()
+            } else {
+                0.0
+            };
+            let y = o.y_lo + hop + bob + pose.dy;
+            let glb = match et.look.as_str() {
+                "slime" => SLIME_GLB,
+                "beetle" => BEETLE_GLB,
+                _ => BAT_GLB,
+            };
+            if et.y_lo > 0.0 {
+                // A bright pulsing blob on the slab marks the flyer's lane: the track under it is safe to tap through.
+                // Inside the warning distance it flashes white-hot on every half beat.
+                let ahead = center - self.hero_x();
+                let warn = if live && ahead > 0.0 && ahead < WARN_M {
+                    let b = (self.beat_pos() * 2.0).fract();
+                    (1.0 - b) * (1.0 - ahead / WARN_M * 0.5)
+                } else {
+                    0.0
+                };
+                doc.props.push(prop(
+                    &format!("{id}-shadow"),
+                    "sphere",
+                    "shadow",
+                    [0.0, 0.015, center],
+                    [
+                        (o.end - o.start).max(0.9) * (0.9 + 0.1 * pulse + 0.25 * warn),
+                        0.012,
+                        0.8 + 0.4 * warn,
+                    ],
+                    mix(et.color.map(|v| v / 2), [255, 255, 255], 0.6 * warn),
+                    0.9 + 0.5 * pulse + 1.4 * warn,
+                    1.0,
+                    0.0,
+                ));
+            }
+            if models.contains(&glb) {
+                let mut p = glb_prop(
+                    &id,
+                    glb,
+                    "enemy",
+                    [0.0, y, center],
+                    k,
+                    [255, 255, 255],
+                    em,
+                    Some(linear),
+                );
+                p.roll = pose.roll;
+                p.yaw = pose.yaw;
+                doc.props.push(p);
+                continue;
+            }
+            // Primitive fallback: the same silhouette from a few shapes.
+            let c = et.color;
+            let dark = c.map(|v| v / 3);
+            let mut add =
+                |name: &str, kind: &str, pos: [f32; 3], size: [f32; 3], col: [u32; 3], e: f32| {
+                    doc.props.push(prop(
+                        &format!("{id}-{name}"),
+                        kind,
+                        "enemy",
+                        [pos[0] * k[0], y + pos[1] * k[1], center + pos[2] * k[2]],
+                        [size[0] * k[0], size[1] * k[1], size[2] * k[2]],
+                        col,
+                        e,
+                        0.4,
+                        0.0,
+                    ));
+                };
+            match et.look.as_str() {
+                "slime" => {
+                    add("body", "sphere", [0.0, 0.25, 0.0], [0.8, 0.5, 0.76], c, em);
+                    add(
+                        "eye-l",
+                        "sphere",
+                        [-0.15, 0.28, -0.3],
+                        [0.16, 0.18, 0.1],
+                        [255, 255, 255],
+                        0.5,
+                    );
+                    add(
+                        "eye-r",
+                        "sphere",
+                        [0.15, 0.28, -0.3],
+                        [0.16, 0.18, 0.1],
+                        [255, 255, 255],
+                        0.5,
+                    );
+                }
+                "beetle" => {
+                    add("body", "sphere", [0.0, 0.3, 0.06], [0.72, 0.52, 0.8], c, em);
+                    add(
+                        "head",
+                        "sphere",
+                        [0.0, 0.22, -0.36],
+                        [0.36, 0.32, 0.3],
+                        dark,
+                        0.2,
+                    );
+                    add(
+                        "eye-l",
+                        "sphere",
+                        [-0.09, 0.28, -0.5],
+                        [0.1, 0.12, 0.07],
+                        [255, 255, 255],
+                        0.5,
+                    );
+                    add(
+                        "eye-r",
+                        "sphere",
+                        [0.09, 0.28, -0.5],
+                        [0.1, 0.12, 0.07],
+                        [255, 255, 255],
+                        0.5,
+                    );
+                }
+                _ => {
+                    add("body", "sphere", [0.0, 0.34, 0.0], [0.44, 0.5, 0.4], c, em);
+                    add(
+                        "wing-l",
+                        "box",
+                        [-0.5, 0.34, 0.0],
+                        [0.7, 0.06, 0.45],
+                        dark,
+                        em * 0.6,
+                    );
+                    add(
+                        "wing-r",
+                        "box",
+                        [0.5, 0.34, 0.0],
+                        [0.7, 0.06, 0.45],
+                        dark,
+                        em * 0.6,
+                    );
+                    add(
+                        "eye-l",
+                        "sphere",
+                        [-0.08, 0.42, -0.16],
+                        [0.09, 0.1, 0.06],
+                        [255, 232, 96],
+                        1.2,
+                    );
+                    add(
+                        "eye-r",
+                        "sphere",
+                        [0.08, 0.42, -0.16],
+                        [0.09, 0.1, 0.06],
+                        [255, 232, 96],
+                        1.2,
+                    );
+                }
+            }
+        }
+    }
+
     fn push_hero(&self, doc: &mut WorldDoc, hx: f32, glb: bool) {
         let look = &self.spec.look;
         let title = self.flow.phase == FlowPhase::Title;
-        let (mut y, mut squash, mut stretch) = (self.y + self.y_vis_off, self.land_squash, 0.0);
+        let mut y = self.y + self.y_vis_off;
+        let (mut squash, mut ear) = (self.anim.squash.x, self.anim.ear.x);
         if title {
             let b = (self.attract / self.spec.beat_secs()).fract();
             y = 4.0 * 0.5 * b * (1.0 - b);
             squash = if b < 0.1 { 0.5 } else { 0.0 };
-        } else if !matches!(self.air, Air::Ground) {
-            stretch = 0.18;
+            ear = crate::hop_anim::ear_target(4.0 * (1.0 - 2.0 * b), b, false);
+        } else if matches!(self.air, Air::Ground) {
+            // Standing: a small bob on the beat.
+            y += crate::hop_anim::idle_bob(self.beat_pos().rem_euclid(1.0));
         }
         let blink = self.invuln > 0.0 && ((self.anim_t * 10.0) as u32).is_multiple_of(2);
-        let (sx, sy) = (
-            1.0 + 0.22 * squash - 0.06 * stretch,
-            1.0 - 0.28 * squash + stretch,
-        );
+        let [mut sx, mut sy, _] = crate::hop_anim::body_scale(squash);
         let r = 0.40;
-        let z = hx;
-        let gy = y.max(0.0);
-        let body_c = if self.hit_flash > 0.2 {
+        // A fall: the bunny tumbles about its middle, stretches along the drop, and runs
+        // on ahead of the trailing camera. Dead or alive it is the same picture.
+        let falling = !title && (self.fall_on || self.dead_fall.is_some());
+        let (mut spin, mut z) = (0.0_f32, hx);
+        if falling {
+            let f = &self.spec.fall;
+            let (_, off) = self.fall_view();
+            z += off;
+            spin =
+                std::f32::consts::TAU * f.tumble_turns_per_sec * (self.fall_clock() - 0.1).max(0.0);
+            let vy = match self.dead_fall {
+                Some(d) => {
+                    let g = self.spec.hero.fall_gravity;
+                    y = -3.5 + d.vy * d.age - 0.5 * g * d.age * d.age;
+                    d.vy - g * d.age
+                }
+                None => self.fall_vy,
+            };
+            let k = (vy.abs() / 14.0).clamp(0.0, 1.0) * f.stretch;
+            sx *= 1.0 - 0.4 * k;
+            sy *= 1.0 + k;
+        }
+        let gy = if falling { y } else { y.max(0.0) };
+        let (sin_a, cos_a) = spin.sin_cos();
+        let body_c = if self.hit_flash > 0.6 {
             [255, 255, 255]
+        } else if self.hit_flash > 0.2 {
+            [255, 70, 80]
         } else {
-            look.hero
+            skin_tint(&self.spec.skin).unwrap_or(look.hero)
         };
         let em = if blink {
             0.1
         } else {
-            0.18 + 0.25 * self.hit_flash
+            0.18 + 0.25 * self.hit_flash + 0.3 * self.combo_glow * (0.6 + 0.4 * self.beat_flash)
         };
         {
             // shadow blob, only while there is slab below
-            let over = supported(&self.course.obst, hx, 0.0) || title;
+            let over = (supported(&self.course.obst, hx, 0.0) || title) && !falling;
             if over {
                 let k = (1.0 - gy / 2.2).clamp(0.2, 1.0);
                 doc.props.push(prop(
@@ -2560,29 +4581,91 @@ impl HopBeat {
                     1.0,
                     0.0,
                 ));
+                // Combo glow: a ring of light on the slab that grows with the streak.
+                if self.combo_glow > 0.05 && !title {
+                    let g = self.combo_glow;
+                    let r = (0.9 + 0.7 * g) * (1.0 + 0.12 * self.beat_flash);
+                    doc.props.push(prop(
+                        "hero-aura",
+                        "sphere",
+                        "aura",
+                        [0.0, 0.02, z],
+                        [r, 0.012, r],
+                        look.accent,
+                        0.5 + 1.1 * g,
+                        1.0,
+                        0.0,
+                    ));
+                }
+                // PERFECT / GOOD / stomp: a ring that runs out from the feet.
+                if self.ring_age < 0.4 && !title {
+                    let u = self.ring_age / 0.4;
+                    let r = 0.7 + 2.6 * (1.0 - (1.0 - u) * (1.0 - u));
+                    doc.props.push(prop(
+                        "hero-ring",
+                        "sphere",
+                        "ring",
+                        [0.0, 0.03, z],
+                        [r, 0.01, r],
+                        self.ring_col,
+                        1.6 * (1.0 - u),
+                        1.0,
+                        0.0,
+                    ));
+                }
             }
         }
         if glb {
             // The model is 0.8 m tall with its feet on y = 0, like the ball below.
             let flash = self.hit_flash.clamp(0.0, 1.0);
             let beat = 0.12 * self.beat_flash;
-            let (em, col) = if flash > 0.2 {
+            let (em, col) = if flash > 0.6 {
                 (0.5 + 0.8 * flash, [1.0, 1.0, 1.0])
+            } else if flash > 0.2 {
+                (0.4 + 0.6 * flash, [1.0, 0.18, 0.22])
             } else if blink {
                 (0.0, [1.0, 1.0, 1.0])
             } else {
-                (beat, look.glow.map(|v| (v as f32 / 255.0).powf(2.2)))
+                (
+                    beat + 0.22 * self.combo_glow,
+                    look.glow.map(|v| (v as f32 / 255.0).powf(2.2)),
+                )
             };
-            doc.props.push(glb_prop(
+            let scale = [sx * 1.2, sy * 1.2, sx * 1.2];
+            // Turning about the middle of the body (0.4 m up the model), not the feet.
+            let c = 0.4 * scale[1];
+            let (fx, fy) = (c * sin_a, gy + c - c * cos_a);
+            let mut body = glb_prop(
                 "hero-body",
                 BUNNY_GLB,
                 "hero",
-                [0.0, gy, z],
-                [sx * 1.2, sy * 1.2, sx * 1.2],
+                [fx, fy, z],
+                scale,
                 [255, 255, 255],
                 em,
                 Some(col),
-            ));
+            );
+            body.roll = spin;
+            doc.props.push(body);
+            // The ears swing from the top of the head: follow-through.
+            let ey = EAR_PIVOT[1] * scale[1];
+            let mut ears = glb_prop(
+                "hero-ears",
+                EARS_GLB,
+                "hero",
+                [
+                    fx - ey * sin_a,
+                    fy + ey * cos_a,
+                    z + EAR_PIVOT[2] * scale[2],
+                ],
+                scale,
+                [255, 255, 255],
+                em,
+                Some(col),
+            );
+            ears.pitch = ear;
+            ears.roll = spin;
+            doc.props.push(ears);
             return;
         }
         doc.props.push(prop(
@@ -2601,13 +4684,21 @@ impl HopBeat {
                 &format!("hero-ear-{i}"),
                 "box",
                 "hero",
-                [sx2 * 0.2, gy + r * 2.0 * sy + 0.06, z - 0.02],
+                [
+                    sx2 * 0.2 * cos_a - (r * sy + 0.06) * sin_a,
+                    gy + r * sy + sx2 * 0.2 * sin_a + (r * sy + 0.06) * cos_a,
+                    z - 0.02,
+                ],
                 [0.14, 0.24, 0.1],
                 body_c,
                 em,
                 0.4,
                 0.0,
             ));
+            if let Some(p) = doc.props.last_mut() {
+                p.pitch = ear;
+                p.roll = spin;
+            }
         }
         doc.props.push(prop(
             "hero-core",
@@ -2669,10 +4760,10 @@ impl crate::kit_host::KitHost for HopBeat {
     /// One button: pointer and keys only, no stick.
     fn walk(&mut self, _lx: f32, _lz: f32, _jump: bool) {}
     /// A finger down in play is the hop button; any release lets go of it.
-    fn touch(&mut self, ev: crate::input::PointerEvent, _w: u32, _h: u32, _t: f32) {
+    fn touch(&mut self, ev: crate::input::PointerEvent, w: u32, h: u32, _t: f32) {
         use crate::input::PointerPhase as P;
         match ev.phase {
-            P::Begin if self.flow.phase == FlowPhase::Play => self.touch_begin(),
+            P::Begin if self.flow.phase == FlowPhase::Play => self.press(ev.x, ev.y, w, h),
             P::End | P::Cancel => self.touch_end(),
             _ => {}
         }
@@ -2886,8 +4977,163 @@ mod tests {
     }
 
     #[test]
+    fn the_visual_hit_stop_holds_the_picture_but_never_the_sim() {
+        let mut g = fresh();
+        g.confirm();
+        run(&mut g, 1.0);
+        let (t0, x0) = (g.song_t(), g.view_x());
+        g.freeze_picture(0.07);
+        run(&mut g, 0.05);
+        // The music clock and the hero ran on at full speed ...
+        assert!((g.song_t() - t0 - 0.05).abs() < 0.02, "{}", g.song_t() - t0);
+        // ... the picture did not move.
+        assert!((g.view_x() - x0).abs() < 0.02, "{}", g.view_x() - x0);
+        assert!(g.vlag > 0.2);
+        // Then it catches up without a pop.
+        run(&mut g, 0.4);
+        assert!(g.vlag < 0.02, "{}", g.vlag);
+        assert!((g.hero_x() - g.view_x()).abs() < 0.02);
+        // A full freeze never lags more than 0.7 m.
+        g.freeze_picture(9.0);
+        run(&mut g, 2.0);
+        assert!(g.vlag <= 0.7 + 1e-4);
+    }
+
+    #[test]
+    fn the_first_sight_of_each_enemy_gets_one_hint_and_the_language_switches_it() {
+        let mut g = fresh();
+        g.confirm();
+        let mut seen = false;
+        for _ in 0..(14.0 * 60.0) as u32 {
+            g.tick(1.0 / 60.0);
+            if g.hint.is_some() {
+                seen = true;
+                let ja = |g: &HopBeat| {
+                    g.hud(390, 844, false)
+                        .texts
+                        .iter()
+                        .map(|t| t.text.clone())
+                        .collect::<Vec<_>>()
+                        .join("|")
+                };
+                assert!(ja(&g).contains("HOP OVER IT"), "{}", ja(&g));
+                g.set_lang("ja-JP");
+                assert!(ja(&g).contains("とびこえるか"), "{}", ja(&g));
+                break;
+            }
+        }
+        assert!(seen, "no hint before the first enemy");
+        assert!(g.hints_seen.first().copied().unwrap_or(false));
+    }
+
+    #[test]
+    fn the_pause_button_and_card_work_and_the_sync_steps() {
+        use crate::input::PointerPhase as P;
+        let (w, h) = (800u32, 400u32);
+        let mut g = fresh();
+        g.set_direct(false);
+        g.confirm();
+        run(&mut g, 1.0);
+        assert_eq!(g.flow.phase, FlowPhase::Play);
+        // A tap on the button pauses and does not hop.
+        let pb = pause_button(w as f32, h as f32);
+        g.pointer_event(P::Begin, pb.x + pb.w * 0.5, pb.y + pb.h * 0.5, w, h);
+        assert_eq!(g.flow.phase, FlowPhase::Pause);
+        assert_eq!(g.touches, 0);
+        let hud = crate::flow::draw_list_json(&g.hud(w, h, false));
+        assert!(
+            hud.contains("PAUSED") && hud.contains("AUDIO SYNC") && hud.contains("0 ms"),
+            "{hud}"
+        );
+        let hit = |g: &mut HopBeat, b: PauseBtn| {
+            let r = pause_layout(w as f32, h as f32)
+                .into_iter()
+                .find(|(k, _)| *k == b)
+                .unwrap()
+                .1;
+            g.pointer_event(P::Begin, r.x + r.w * 0.5, r.y + r.h * 0.5, w, h);
+        };
+        hit(&mut g, PauseBtn::SyncPlus);
+        hit(&mut g, PauseBtn::SyncPlus);
+        hit(&mut g, PauseBtn::SyncMinus);
+        assert_eq!(g.latency_ms(), 10.0);
+        assert!(crate::flow::draw_list_json(&g.hud(w, h, false)).contains("+10 ms"));
+        // The pause card is on screen in Japanese too.
+        g.set_lang("ja");
+        assert!(crate::flow::draw_list_json(&g.hud(w, h, false)).contains("ポーズ"));
+        // Every button of the card fits on a small phone in both orientations.
+        for (pw, ph) in [(360.0f32, 640.0f32), (640.0, 360.0), (390.0, 844.0)] {
+            for (_, r) in pause_layout(pw, ph) {
+                assert!(
+                    r.x >= 0.0 && r.x + r.w <= pw && r.y >= 0.0 && r.y + r.h + 40.0 <= ph,
+                    "{pw}x{ph} {r:?}"
+                );
+            }
+        }
+        hit(&mut g, PauseBtn::Resume);
+        assert_eq!(g.flow.phase, FlowPhase::Play);
+        assert!(g.invuln > 0.5, "a second of grace after resume");
+        // Retry starts a fresh run and keeps the player's sync.
+        g.pause();
+        hit(&mut g, PauseBtn::Retry);
+        assert_eq!(g.flow.phase, FlowPhase::Play);
+        assert_eq!(g.revives, 0, "a new run starts with its revives back");
+        assert_eq!(g.latency_ms(), 10.0);
+        g.pause();
+        hit(&mut g, PauseBtn::Title);
+        assert_eq!(g.flow.phase, FlowPhase::Title);
+    }
+
+    #[test]
+    fn game_over_cues_the_new_best_stinger_only_for_a_new_best() {
+        for (best, want) in [(1u32, true), (u32::MAX, false)] {
+            let mut g = fresh();
+            g.set_direct(false);
+            g.flow.best_score = best;
+            g.confirm();
+            let mut t = 0.0;
+            while !g.pending_finish && t < 60.0 {
+                // No input: the bunny runs on until the first gap.
+                g.tick(1.0 / 60.0);
+                t += 1.0 / 60.0;
+            }
+            assert!(g.pending_finish, "the run never ended");
+            if want {
+                assert!(g.core.stats.score > best, "score {}", g.core.stats.score);
+            }
+            assert_eq!(g.new_best, want);
+            assert_eq!(g.result_value()["new_best"], json!(want));
+            let run = &g.result_value()["run"];
+            assert!(
+                run["score"].is_number() && run["combo"].is_number() && run["perfect"].is_number()
+            );
+            assert!(run["stomps"].is_number());
+        }
+    }
+
+    #[test]
+    fn every_cue_has_a_file_and_the_repeating_ones_sit_under_the_rewards() {
+        let spec = HopSpec::default();
+        for n in SFX_CUES {
+            let cue = &spec.audio.sfx[n];
+            let f = crate::assets::resolve_asset(&cue.file);
+            assert!(f.is_some(), "{n}: {} is missing", cue.file);
+        }
+        let v = |n: &str| spec.audio.sfx[n].volume;
+        assert!(v("hop") < v("perfect") && v("land") < v("stomp") && v("warn") < v("hit"));
+        assert!(spec.audio.sfx.contains_key("warn"));
+    }
+
+    #[test]
     fn the_models_load_are_the_right_size_and_the_picture_uses_them() {
-        let mut files = vec![BUNNY_GLB.to_string(), POST_GLB.to_string()];
+        let mut files = vec![
+            BUNNY_GLB.to_string(),
+            EARS_GLB.to_string(),
+            POST_GLB.to_string(),
+            SLIME_GLB.to_string(),
+            BEETLE_GLB.to_string(),
+            BAT_GLB.to_string(),
+        ];
         for (t, w) in TOWER_GLBS {
             files.push(t.to_string());
             files.push(w.to_string());
@@ -2901,7 +5147,7 @@ mod tests {
             assert!(b.min.y > -0.05, "{f} sinks below its base ({})", b.min.y);
             if f == BUNNY_GLB {
                 // 1.0-1.3 m tall, feet on y = 0, much narrower than the track
-                assert!(b.max.y > 0.9 && b.max.y < 1.4, "bunny {}", b.max.y);
+                assert!(b.max.y > 0.8 && b.max.y < 1.4, "bunny {}", b.max.y);
                 assert!(b.max.x - b.min.x < 1.0);
             }
         }
@@ -2935,6 +5181,623 @@ mod tests {
         }
     }
 
+    fn item(beat: f32, kind: &str, beats: f32, hop: &str, enemy: &str) -> Item {
+        Item {
+            beat,
+            kind: kind.into(),
+            beats,
+            hop: hop.into(),
+            enemy: enemy.into(),
+        }
+    }
+
+    /// One phrase, every enemy unlocked at level 0, no rest bars.
+    fn enemy_spec(items: Vec<Item>) -> HopSpec {
+        let mut s = HopSpec::default();
+        s.course.phrases = vec![Phrase {
+            level: 0,
+            bars: 4,
+            items,
+            weight: 1,
+            debut: false,
+        }];
+        s.course.rest_every_bars = 1000;
+        for t in s.enemies.types.iter_mut() {
+            t.unlock_level = 0;
+        }
+        s
+    }
+
+    /// Plays `spec` and presses `off` seconds from every ideal press (holding for
+    /// a hold hop), until `secs` after the first obstacle's ideal press.
+    fn drive(spec: HopSpec, off: f32, secs: f32) -> HopBeat {
+        let mut c = Course::new(&spec);
+        c.ensure(&spec, 200.0);
+        let bs = spec.beat_secs();
+        let presses: Vec<(f32, f32)> = c
+            .obst
+            .iter()
+            .filter(|o| spec.needs_press(o))
+            .map(|o| {
+                let air = spec.arc(o.hop).air_beats * bs;
+                let hold = if o.hop == Hop::Hold { air * 0.9 } else { 0.05 };
+                (o.take_beat * bs + off, hold)
+            })
+            .collect();
+        let end = c.obst.first().map(|o| o.take_beat * bs).unwrap_or(0.0) + secs;
+        let mut g = HopBeat::new(spec);
+        g.set_sfx(false);
+        g.set_headless(true);
+        g.confirm();
+        while g.song_t() < end && g.phase_name() == "play" {
+            let t = g.song_t();
+            g.set_hold(presses.iter().any(|(p, h)| t >= *p && t < p + h));
+            g.tick(1.0 / 60.0);
+        }
+        g
+    }
+
+    #[test]
+    fn a_slime_is_stomped_by_an_early_press_and_hurts_a_late_one() {
+        let spec = enemy_spec(vec![item(4.0, "enemy", 0.2, "tap", "slime")]);
+        let ideal = drive(spec.clone(), 0.0, 2.0);
+        assert_eq!(
+            (ideal.lives(), ideal.stomps()),
+            (3, 0),
+            "ideal press clears it"
+        );
+        let early = drive(spec.clone(), -0.2, 2.0);
+        assert_eq!(
+            (early.lives(), early.stomps()),
+            (3, 1),
+            "early press lands on it"
+        );
+        assert!(
+            early.score() >= spec.enemies.stomp_score,
+            "{}",
+            early.score()
+        );
+        assert_eq!(early.state_value()["stomps"], 1);
+        let late = drive(spec, 0.25, 2.0);
+        assert_eq!(late.lives(), 2, "a late press runs into its side");
+    }
+
+    #[test]
+    fn the_stomp_bounce_lands_back_on_the_half_beat_grid() {
+        let spec = HopSpec::default();
+        let half = spec.beat_secs() * 0.5;
+        for i in 0..40 {
+            let t = 10.0 + i as f32 * 0.0137;
+            let d = spec.bounce_secs(t);
+            assert!(d >= 0.2 - 1e-5 && d < 0.2 + half + 1e-5, "{d}");
+            let landing = (t + d) / half;
+            assert!((landing - landing.round()).abs() < 1e-3, "{landing}");
+        }
+    }
+
+    #[test]
+    fn a_bat_punishes_a_hold_hop_and_leaves_a_tap_hop_alone() {
+        let flyer = |hop: &str| {
+            enemy_spec(vec![
+                item(4.0, "enemy", 0.2, hop, "slime"),
+                item(4.0, "enemy", 0.9, hop, "bat"),
+            ])
+        };
+        // the slime is under the bat: a tap hop clears both, a hold hop climbs into the bat
+        let tap = drive(flyer("tap"), 0.0, 2.0);
+        assert_eq!(tap.lives(), 3);
+        let hold = drive(flyer("hold"), 0.0, 3.0);
+        assert!(hold.lives() < 3, "a hold hop must hit a bat");
+    }
+
+    #[test]
+    fn a_bat_over_a_slime_is_clearable_with_room_to_spare() {
+        // Emma's case: a slime under a bat reads as impossible. It is not, and the
+        // tap hop's head stays well clear of the bat.
+        let spec = HopSpec::default();
+        let bat = &spec.enemies.types[spec.enemy_index("bat").unwrap()];
+        let tap_peak = spec.arc(Hop::Tap).height + spec.enemies.body_h;
+        assert!(
+            bat.y_lo - tap_peak >= 0.3,
+            "only {:.2} m between a tap hop and the bat",
+            bat.y_lo - tap_peak
+        );
+        // every builtin phrase that stacks a bat over a ground enemy is cleared by a
+        // tap at every press offset inside the perfect window
+        let stacked: Vec<Phrase> = builtin_phrases()
+            .into_iter()
+            .filter(|p| {
+                p.items.iter().any(|a| {
+                    a.enemy == "bat"
+                        && p.items
+                            .iter()
+                            .any(|b| b.enemy != "bat" && b.kind == "enemy" && b.beat == a.beat)
+                })
+            })
+            .collect();
+        assert!(!stacked.is_empty());
+        for ph in &stacked {
+            assert!(ph.level >= 3, "stacked bats wait until level 3");
+            let items: Vec<Item> = ph.items.clone();
+            for off in [-0.065_f32, -0.04, 0.0, 0.04, 0.065] {
+                let mut s = enemy_spec(items.clone());
+                s.course.phrases = vec![Phrase {
+                    level: 0,
+                    ..ph.clone()
+                }];
+                assert!(s.course_problems().is_empty(), "{:?}", s.course_problems());
+                let g = drive(s, off, 5.0);
+                assert_eq!(g.lives(), 3, "offset {off}");
+            }
+        }
+    }
+
+    #[test]
+    fn enemies_arrive_in_the_stated_order_one_kind_at_a_time() {
+        let base = HopSpec::default();
+        let lead = (base.music.lead_in_bars) as f32;
+        let bpb = base.music.beats_per_bar as f32;
+        for seed in 0..40 {
+            let mut spec = base.clone();
+            spec.course.seed = seed;
+            let mut c = Course::new(&spec);
+            c.ensure(&spec, 200.0 * bpb);
+            let first = |id: &str| {
+                let i = spec.enemy_index(id).unwrap();
+                c.obst
+                    .iter()
+                    .find(|o| o.kind == Kind::Enemy && o.ety == i)
+                    .map(|o| o.take_beat / bpb - lead)
+            };
+            let slime = first("slime").unwrap();
+            let beetle = first("beetle").unwrap();
+            let bat = first("bat").unwrap();
+            assert!(slime < 4.0, "seed {seed}: first slime at bar {slime}");
+            assert!(
+                (8.0..12.0).contains(&beetle),
+                "seed {seed}: beetle at bar {beetle}"
+            );
+            assert!((16.0..20.0).contains(&bat), "seed {seed}: bat at bar {bat}");
+            // the first bat has the track to itself
+            let enemy_beats = |id: &str| -> Vec<f32> {
+                let i = spec.enemy_index(id).unwrap();
+                c.obst
+                    .iter()
+                    .filter(|o| o.kind == Kind::Enemy && o.ety == i)
+                    .map(|o| o.take_beat)
+                    .collect()
+            };
+            let first_bat = enemy_beats("bat")[0];
+            let crowd = c
+                .obst
+                .iter()
+                .filter(|o| (o.take_beat - first_bat).abs() < 1.5)
+                .count();
+            assert_eq!(crowd, 1, "seed {seed}: the first bat shares its stretch");
+        }
+    }
+
+    #[test]
+    fn a_flyer_alone_asks_for_no_press() {
+        let spec = enemy_spec(vec![item(4.0, "enemy", 1.0, "tap", "bat")]);
+        let mut c = Course::new(&spec);
+        c.ensure(&spec, 100.0);
+        assert!(!spec.needs_press(&c.obst[0]));
+        let g = drive(spec, 0.0, 2.0);
+        assert_eq!(g.lives(), 3);
+        assert_eq!(g.state_value()["perfect"].as_u64().unwrap_or(0), 0);
+    }
+
+    #[test]
+    fn a_walker_moves_on_the_half_beat_grid() {
+        let spec = HopSpec::default();
+        let bs = spec.beat_secs();
+        let i = spec.enemy_index("beetle").unwrap();
+        let o = spec.probe(Kind::Enemy, Hop::Tap, 0.25, 20.0, Some(i));
+        let et = &spec.enemies.types[i];
+        let meet_t = (o.start + o.end) * 0.5 / spec.speed();
+        let step = bs / et.steps_per_beat as f32;
+        // standing still inside a step, one step_m further on after it
+        let a = spec.enemy_dx(&o, meet_t + 0.01).unwrap();
+        let b = spec.enemy_dx(&o, meet_t + step * 0.4).unwrap();
+        assert_eq!(a, b);
+        let before = spec.enemy_dx(&o, meet_t - step * 1.01).unwrap();
+        assert!((before - a - et.step_m).abs() < 1e-4 || a.abs() < 1e-4 + et.step_m);
+        // not there yet before its walk starts
+        assert!(spec
+            .enemy_dx(&o, meet_t - step * (et.walk_steps as f32 + 2.0))
+            .is_none());
+        // a slime never moves
+        let s = spec.probe(Kind::Enemy, Hop::Tap, 0.2, 20.0, spec.enemy_index("slime"));
+        assert_eq!(spec.enemy_dx(&s, meet_t - 1.0), Some(0.0));
+    }
+
+    #[test]
+    fn enemies_arrive_one_kind_at_a_time_in_the_built_in_course() {
+        let spec = HopSpec::default();
+        spec.validate().unwrap();
+        for et in &spec.enemies.types {
+            let first = builtin_phrases()
+                .iter()
+                .filter(|p| p.items.iter().any(|i| i.enemy == et.id))
+                .map(|p| p.level)
+                .min()
+                .unwrap_or_else(|| panic!("{} is never used", et.id));
+            assert_eq!(first, et.unlock_level, "{} appears at level {first}", et.id);
+        }
+        let mut levels: Vec<u32> = spec.enemies.types.iter().map(|t| t.unlock_level).collect();
+        levels.dedup();
+        assert_eq!(
+            levels.len(),
+            spec.enemies.types.len(),
+            "one new kind per level"
+        );
+        // and the spec's own check lets all of it through
+        assert_eq!(spec.course_problems(), Vec::<String>::new());
+        // a long run gets all three, weighted towards the early kinds
+        let mut c = Course::new(&spec);
+        c.ensure(&spec, 3000.0);
+        for i in 0..3 {
+            assert!(c.obst.iter().any(|o| o.ety == i), "type {i} never laid");
+        }
+    }
+
+    #[test]
+    fn the_default_course_has_enemies_from_the_first_bars() {
+        // Emma's "no enemies exist" report: a default run must show a
+        // slime early, whatever the saved best / language / look say.
+        let spec = HopSpec::default();
+        let bpb = spec.music.beats_per_bar as f32;
+        let mut c = Course::new(&spec);
+        c.ensure(&spec, 24.0 * bpb + spec.music.lead_in_bars as f32 * bpb);
+        let lead = spec.music.lead_in_bars as f32 * bpb;
+        let first: Vec<(f32, usize)> = c
+            .obst
+            .iter()
+            .filter(|o| o.kind == Kind::Enemy)
+            .map(|o| {
+                (
+                    ((o.start + o.end) * 0.5 / spec.hero.beat_len_m - lead) / bpb,
+                    o.ety,
+                )
+            })
+            .collect();
+        eprintln!("enemy bars: {first:?}");
+        let early = first.iter().filter(|(bar, _)| *bar < 24.0).count();
+        assert!(early >= 3, "only {early} enemies in the first 24 bars");
+        assert!(
+            first.iter().any(|(b, t)| *b < 12.0 && *t == 0),
+            "no slime by bar 12"
+        );
+        // through the world JSON a real page sends, with a saved best
+        let h2 =
+            HopBeat::from_json(r#"{"best":5000,"quality":"low","skin":"x","look":"y"}"#).unwrap();
+        assert_eq!(h2.spec.enemies.types.len(), 3);
+        let mut c2 = h2.course().clone();
+        c2.ensure(&h2.spec, 24.0 * bpb + lead);
+        assert!(c2.obst.iter().filter(|o| o.kind == Kind::Enemy).count() >= 3);
+    }
+
+    #[test]
+    fn the_checker_rejects_impossible_enemy_patterns() {
+        let bad = |items: Vec<Item>| enemy_spec(items).course_problems();
+        // fine: one slime
+        assert_eq!(
+            bad(vec![item(4.0, "enemy", 0.2, "tap", "slime")]),
+            Vec::<String>::new()
+        );
+        // too tight: a second slime before the first bounce is over
+        assert!(!bad(vec![
+            item(4.0, "enemy", 0.2, "tap", "slime"),
+            item(5.0, "enemy", 0.2, "tap", "slime")
+        ])
+        .is_empty());
+        // a hold hop cannot be made under a bat
+        assert!(!bad(vec![
+            item(2.0, "gap", 1.0, "hold", ""),
+            item(2.0, "enemy", 0.9, "hold", "bat")
+        ])
+        .is_empty());
+        // too wide to clear with a tap hop at the perfect window
+        assert!(!bad(vec![item(4.0, "enemy", 1.6, "tap", "slime")]).is_empty());
+        // unknown enemy id, an enemy named on a gap, a locked enemy
+        assert!(!bad(vec![item(4.0, "enemy", 0.2, "tap", "ghost")]).is_empty());
+        assert!(!bad(vec![item(4.0, "gap", 1.0, "tap", "slime")]).is_empty());
+        let mut locked = enemy_spec(vec![item(4.0, "enemy", 0.25, "tap", "beetle")]);
+        locked.enemies.types[1].unlock_level = 3;
+        assert!(!locked.course_problems().is_empty());
+        // no rest after a walker
+        assert!(!bad(vec![
+            item(4.0, "enemy", 0.25, "tap", "beetle"),
+            item(5.5, "gap", 1.0, "tap", "")
+        ])
+        .is_empty());
+    }
+
+    #[test]
+    fn a_fourth_enemy_is_only_json() {
+        // a quick red beetle: four small steps a beat, no new code or model
+        let v = json!({"enemies": {"types": [
+            {"id": "slime"},
+            {"id": "dasher", "look": "beetle", "unlock_level": 0, "y_hi": 0.5, "step_m": 0.75,
+             "steps_per_beat": 4, "walk_steps": 12, "color": [255, 70, 70]}
+        ]}, "course": {"phrases": [
+            {"level": 0, "bars": 2, "items": [
+                {"beat": 1.0, "kind": "enemy", "beats": 0.2, "hop": "tap", "enemy": "dasher"},
+                {"beat": 3.0, "kind": "enemy", "beats": 0.2, "hop": "tap", "enemy": "slime"}]}]}});
+        let spec = HopSpec::from_value(&v).unwrap();
+        assert_eq!(spec.enemy_index("dasher"), Some(1));
+        assert_eq!(spec.course_problems(), Vec::<String>::new());
+        let g = drive(spec, 0.0, 2.0);
+        assert_eq!(g.lives(), 3, "the perfect press clears it");
+    }
+
+    #[test]
+    fn enemy_specs_are_read_from_json_and_refused_when_wrong() {
+        let ok = json!({"enemies": {"types": [
+            {"id": "ghost", "look": "bat", "y_lo": 1.4, "y_hi": 2.0, "stompable": false}
+        ], "stomp_score": 200}, "course": {"phrases": [
+            {"level": 0, "bars": 2, "items": [
+                {"beat": 1.0, "kind": "enemy", "beats": 0.9, "hop": "tap", "enemy": "ghost"}]}]}});
+        let s = HopSpec::from_value(&ok).unwrap();
+        assert_eq!(s.enemies.types.len(), 1);
+        assert_eq!(s.enemies.stomp_score, 200);
+        for bad in [
+            json!({"enemies": {"types": [{"id": "x", "bogus": 1}]}}),
+            json!({"enemies": {"types": [{"id": "x"}, {"id": "x"}]}}),
+            json!({"enemies": {"types": [{"id": "X!"}]}}),
+            json!({"enemies": {"types": [{"id": "x", "y_lo": 1.0, "y_hi": 2.0}]}}),
+            json!({"enemies": {"types": [{"id": "x", "look": "dragon"}]}}),
+            json!({"enemies": {"types": [{"id": "x", "step_m": 3.0, "walk_steps": 8}]}}),
+            json!({"enemies": {"body_h": 0.0}}),
+            json!({"enemies": {"types": []}, "course": {"phrases": [
+                {"level": 0, "bars": 2, "items": [
+                    {"beat": 2.0, "kind": "enemy", "beats": 0.2, "hop": "tap", "enemy": "slime"}]}]}}),
+        ] {
+            assert!(HopSpec::from_value(&bad).is_err(), "{bad}");
+        }
+    }
+
+    /// One life and a gap on the first beat: standing still, the bunny walks off.
+    fn fall_spec(lives: u32) -> HopSpec {
+        let mut s = enemy_spec(vec![item(1.0, "gap", 1.5, "hold", "")]);
+        s.lives.count = lives;
+        s
+    }
+
+    fn falling(g: &HopBeat) -> bool {
+        g.state_value()["falling"].as_bool().unwrap()
+    }
+
+    /// Plays without pressing until the bunny is over the ledge.
+    fn until_falling(g: &mut HopBeat) {
+        g.confirm();
+        for _ in 0..(90.0 * 60.0) as u32 {
+            g.tick(1.0 / 60.0);
+            if falling(g) {
+                return;
+            }
+        }
+        panic!("never fell");
+    }
+
+    #[test]
+    fn a_fatal_fall_plays_out_and_then_ends_in_game_over() {
+        let mut g = HopBeat::new(fall_spec(1));
+        g.set_sfx(false);
+        until_falling(&mut g);
+        assert_eq!(g.phase_name(), "play");
+        let (mut frames, mut saw_drop) = (0, false);
+        while g.phase_name() == "play" && frames < 600 {
+            g.tick(1.0 / 60.0);
+            frames += 1;
+            saw_drop |= g.dead_fall.is_some();
+            // No red flash and no camera snap: a fall is its own picture.
+            assert_eq!(g.hit_flash, 0.0);
+        }
+        let secs = frames as f32 / 60.0;
+        assert_eq!(g.phase_name(), "result");
+        assert!(saw_drop, "the drop plays on after the run has ended");
+        assert!(secs > 0.6 && secs < 1.1, "the card comes after {secs}s");
+        assert_eq!(g.core.stats.death, "fell");
+        assert_eq!(g.lives(), 0);
+    }
+
+    #[test]
+    fn the_fall_timing_comes_from_the_spec_and_never_touches_the_sim() {
+        let end = |delay: f32, slow: f32| {
+            let mut spec = fall_spec(1);
+            spec.fall.card_delay_secs = delay;
+            spec.fall.slow_scale = slow;
+            spec.fall.cam_lag = 0.0;
+            spec.fall.dust = 0;
+            let mut g = HopBeat::new(spec);
+            g.set_sfx(false);
+            until_falling(&mut g);
+            let mut frames = 0;
+            let mut at_death = None;
+            while g.phase_name() == "play" && frames < 900 {
+                g.tick(1.0 / 60.0);
+                frames += 1;
+                if at_death.is_none() && g.dead_fall.is_some() {
+                    at_death = Some((g.song_t(), g.core.stats.score, g.combo, g.y));
+                }
+            }
+            (
+                frames as f32 / 60.0,
+                at_death.unwrap(),
+                g.state_value()["result"].clone(),
+            )
+        };
+        let (short, a, ra) = end(0.5, 1.0);
+        let (long, b, rb) = end(2.0, 0.2);
+        assert!(long > short + 1.0, "{short} vs {long}");
+        // The run itself ended in the same place, with the same result.
+        assert_eq!(a, b);
+        assert_eq!(ra, rb);
+    }
+
+    #[test]
+    fn a_revive_after_a_fall_puts_the_bunny_on_a_safe_tile() {
+        let mut g = HopBeat::new(fall_spec(1));
+        g.set_sfx(false);
+        until_falling(&mut g);
+        run(&mut g, 3.0);
+        assert_eq!(g.phase_name(), "result");
+        assert!(g.dead_fall.is_some());
+        assert!(g.revive());
+        assert_eq!(g.phase_name(), "play");
+        assert!(g.dead_fall.is_none() && !falling(&g));
+        assert_eq!((g.y, g.fall_cam, g.fall_age), (0.0, 0.0, 0.0));
+        assert!(supported(&g.course.obst, g.hero_x(), g.spec.hero.edge_tol));
+        // The camera is back on the bunny, and it stays alive on the next frames.
+        assert!((g.view_x() - g.hero_x()).abs() < 1e-3);
+        run(&mut g, 0.5);
+        assert_eq!(g.phase_name(), "play");
+        assert!(g.lives() > 0);
+    }
+
+    #[test]
+    fn a_fall_with_lives_left_keeps_playing_and_recovers_the_camera() {
+        let mut g = HopBeat::new(fall_spec(3));
+        g.set_sfx(false);
+        until_falling(&mut g);
+        run(&mut g, 1.5);
+        assert_eq!(g.phase_name(), "play");
+        assert_eq!(g.lives(), 2);
+        assert!(!falling(&g) && g.dead_fall.is_none());
+        assert!(g.fall_cam < 0.05, "{}", g.fall_cam);
+    }
+
+    #[test]
+    fn the_fall_is_drawn_on_every_tier_and_without_models() {
+        for q in ["low", "mid", "high"] {
+            for off in [false, true] {
+                let mut g = HopBeat::from_json(&format!(r#"{{"quality":"{q}"}}"#)).unwrap();
+                g.spec.lives.count = 1;
+                g.spec.course = fall_spec(1).course;
+                g.set_sfx(false);
+                g.set_models_off(off);
+                until_falling(&mut g);
+                let mut y_prev = f32::MAX;
+                for f in 0..70 {
+                    g.tick(1.0 / 60.0);
+                    let body = g
+                        .document()
+                        .props
+                        .iter()
+                        .find(|p| p.id == "prop:hero-body")
+                        .unwrap_or_else(|| panic!("{q} {off}: no hero at frame {f}"));
+                    assert!(body.position.iter().all(|v| v.is_finite()), "{q} {off}");
+                    assert!(body.scale.iter().all(|v| v.is_finite() && *v > 0.0));
+                    assert!(body.position[1] < y_prev + 0.08, "{q} {off}: rises at {f}");
+                    y_prev = body.position[1];
+                    if f > 20 {
+                        // The model turns as a whole; the ball turns its ears.
+                        let turned = g
+                            .document()
+                            .props
+                            .iter()
+                            .filter(|p| p.id.starts_with("prop:hero-ear"))
+                            .any(|p| p.roll != 0.0);
+                        assert!(turned, "{q} {off}: no tumble");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fall_block_is_validated() {
+        for bad in [
+            json!({"fall": {"card_delay_secs": 0.0}}),
+            json!({"fall": {"card_delay_secs": 9.0}}),
+            json!({"fall": {"slow_scale": 0.0}}),
+            json!({"fall": {"cam_lag": 2.0}}),
+            json!({"fall": {"dust": 999}}),
+            json!({"fall": {"bogus": 1}}),
+        ] {
+            assert!(HopSpec::from_value(&bad).is_err(), "{bad}");
+        }
+        let ok = HopSpec::from_value(&json!({"fall": {"card_delay_secs": 1.2}})).unwrap();
+        assert_eq!(ok.fall.card_delay_secs, 1.2);
+    }
+
+    #[test]
+    fn enemies_are_drawn_from_models_and_from_primitives_alike() {
+        let enemy_props = |off: bool| {
+            let mut g = HopBeat::new(enemy_spec(vec![item(3.0, "enemy", 0.2, "tap", "slime")]));
+            g.set_sfx(false);
+            g.set_models_off(off);
+            g.confirm();
+            run(&mut g, 2.0);
+            g.document()
+                .props
+                .iter()
+                .filter(|p| p.id.contains("enemy-"))
+                .map(|p| (p.id.clone(), p.gltf.is_some()))
+                .collect::<Vec<_>>()
+        };
+        let with = enemy_props(false);
+        assert!(with.iter().any(|(_, glb)| *glb), "{with:?}");
+        let without = enemy_props(true);
+        assert!(
+            !without.is_empty() && without.iter().all(|(_, glb)| !*glb),
+            "{without:?}"
+        );
+    }
+
+    #[test]
+    fn default_runs_always_draw_enemies_with_a_real_transform() {
+        // Regression for "the enemies are gone": every quality tier, a fresh run
+        // shows enemies early, and none is ever drawn at zero size, non-finite
+        // or disabled.
+        for q in ["", "low", "mid", "high"] {
+            let json = if q.is_empty() {
+                "{}".to_string()
+            } else {
+                format!(r#"{{"quality":"{q}"}}"#)
+            };
+            let mut g = HopBeat::from_json(&json).unwrap();
+            g.set_sfx(false);
+            g.confirm();
+            let (mut seen, mut first_t) = (0usize, None);
+            for f in 0..(30.0 * 60.0) as u32 {
+                g.tick(1.0 / 60.0);
+                for p in g
+                    .document()
+                    .props
+                    .iter()
+                    .filter(|p| p.name == "enemy" || p.id.starts_with("enemy-"))
+                {
+                    if p.id.ends_with("-shadow") {
+                        continue;
+                    }
+                    seen += 1;
+                    first_t.get_or_insert(f as f32 / 60.0);
+                    assert!(p.enabled, "{q}: {} is disabled", p.id);
+                    assert!(
+                        p.position.iter().all(|v| v.is_finite())
+                            && p.yaw.is_finite()
+                            && p.roll.is_finite(),
+                        "{q}: {} has a bad transform {:?}",
+                        p.id,
+                        p.position
+                    );
+                    // the smallest scale is the 5 % "appearing" floor of a 0.3 m pose
+                    assert!(
+                        p.scale.iter().all(|v| v.is_finite() && *v > 0.01),
+                        "{q}: {} scale {:?}",
+                        p.id,
+                        p.scale
+                    );
+                }
+            }
+            assert!(seen > 60, "{q}: only {seen} enemy prop frames in 30 s");
+            assert!(first_t.unwrap() < 6.0, "{q}: first enemy at {first_t:?} s");
+        }
+    }
+
     #[test]
     fn a_missing_model_is_not_ready_and_never_panics() {
         assert!(!glb_ready("assets/models/hop_beat/does_not_exist.glb"));
@@ -2950,7 +5813,7 @@ mod tests {
             g.tick(1.0 / 60.0);
             most = most.max(g.document().props.len());
         }
-        assert!(most > 20 && most < 260, "{most} props");
+        assert!(most > 20 && most < 400, "{most} props");
         let json = g.document().to_json().unwrap();
         let back = crate::world_doc::WorldDoc::from_json(&json).unwrap();
         assert_eq!(back.props.len(), g.document().props.len());
