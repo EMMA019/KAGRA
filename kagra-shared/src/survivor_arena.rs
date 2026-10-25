@@ -5117,6 +5117,35 @@ mod tests {
                 }
                 eprintln!("{name} live props: {by:?}");
             }
+            // What one render() costs on the CPU before the GPU sees a vertex (native release:
+            // a phone in wasm is several times slower).
+            let time = |label: &str, f: &mut dyn FnMut()| {
+                let t0 = std::time::Instant::now();
+                for _ in 0..200 {
+                    f();
+                }
+                eprintln!(
+                    "{name}:   {label} {:.1} us",
+                    t0.elapsed().as_nanos() as f64 / 200.0 / 1000.0
+                );
+            };
+            time("doc.clone()", &mut || {
+                std::hint::black_box(g.doc.clone());
+            });
+            time("gpu_mesh_key", &mut || {
+                std::hint::black_box(g.doc.gpu_mesh_key());
+            });
+            time("gltf_slots", &mut || {
+                std::hint::black_box(g.doc.gltf_slots());
+            });
+            time("compile_scene", &mut || {
+                std::hint::black_box(g.doc.compile_scene(0.45));
+            });
+            let fp = crate::profile::FrameProfile::from_world(&g.doc);
+            eprintln!(
+                "{name}:   gpu draws {} triangles {} texture bytes {}",
+                fp.draws, fp.triangles, fp.texture_bytes
+            );
             let n = n.max(1) as usize;
             eprintln!(
                 "{name}: t={:.0}s avg tick {:.1} us | foes {} | live props avg {} max {} of {} | points {} | line pts {}",
@@ -5129,6 +5158,111 @@ mod tests {
                 pts / n,
                 lines / n
             );
+        }
+    }
+
+    /// `cargo test --release -p kagra-shared --features render --lib render_probe -- --ignored --nocapture`
+    /// draws a busy late frame on the software GPU and times it with one picture feature
+    /// off at a time. Software numbers are not a phone's, but the ratios show which pass or
+    /// prop family is worth cutting (fill-rate bound work scales the same way).
+    #[cfg(feature = "render")]
+    #[test]
+    #[ignore]
+    fn render_probe() {
+        use crate::render::Renderer;
+        let (w, h) = (390u32, 844u32);
+        let mut spec = SurvivorSpec::default();
+        spec.hero.max_hp = 1.0e6;
+        spec.director.seed = 3;
+        let mut g = SurvivorArena::new(spec);
+        g.apply_quality();
+        g.build_doc();
+        g.confirm();
+        for _ in 0..3 {
+            g.grant_weapon();
+        }
+        while g.secs() < 100.0 && g.flow.phase == FlowPhase::Play {
+            if g.card_count() > 0 {
+                g.choose(0);
+            }
+            kite_step(&mut g);
+            g.tick(DT);
+        }
+        let Ok(mut r) = pollster::block_on(Renderer::new_offscreen(w, h)) else {
+            eprintln!("no adapter");
+            return;
+        };
+        let hud = crate::scene::DrawList::default();
+        let base = g.doc.clone();
+        let run = |label: &str, doc: &WorldDoc, rr: &mut Renderer| {
+            let _ = rr.draw_world_doc_with_hud(doc, &hud);
+            let _ = rr.read_rgba();
+            let t0 = std::time::Instant::now();
+            for _ in 0..4 {
+                rr.draw_world_doc_with_hud(doc, &hud).unwrap();
+                let _ = rr.read_rgba();
+            }
+            eprintln!(
+                "{label:<22} {:7.1} ms/frame",
+                t0.elapsed().as_secs_f64() * 250.0
+            );
+        };
+        run("base", &base, &mut r);
+        let mut d = base.clone();
+        d.bloom = Some(0.0);
+        run("no bloom", &d, &mut r);
+        let mut d = base.clone();
+        d.lut = None;
+        run("no lut", &d, &mut r);
+        let mut d = base.clone();
+        d.fxaa = Some(false);
+        run("no fxaa", &d, &mut r);
+        let mut d = base.clone();
+        d.bloom = Some(0.0);
+        d.lut = None;
+        d.fxaa = Some(false);
+        d.vignette = Some(0.0);
+        run("no post at all", &d, &mut r);
+        let mut d = base.clone();
+        d.env_map = None;
+        d.ibl = Some(0.0);
+        run("no env/ibl", &d, &mut r);
+        let mut d = base.clone();
+        d.lights.truncate(1);
+        run("one light", &d, &mut r);
+        let mut d = base.clone();
+        d.points.clear();
+        d.lines.clear();
+        run("no points/lines", &d, &mut r);
+        for prefix in [
+            "pick", "foe", "gem", "wall", "column", "decor", "shot", "hero", "floor", "ring",
+            "loot", "blade", "chest",
+        ] {
+            let mut d = base.clone();
+            let mut n = 0;
+            for p in d
+                .props
+                .iter_mut()
+                .filter(|p| p.name.starts_with(prefix) || p.id.starts_with(prefix))
+            {
+                if p.enabled {
+                    n += 1;
+                }
+                p.enabled = false;
+            }
+            if n > 0 {
+                run(&format!("no {prefix} ({n})"), &d, &mut r);
+            }
+        }
+        let mut d = base.clone();
+        for p in d.props.iter_mut() {
+            p.enabled = false;
+        }
+        run("no props", &d, &mut r);
+        for (sw, sh) in [(585u32, 1266u32), (780, 1688), (294, 633)] {
+            if let Ok(mut r2) = pollster::block_on(Renderer::new_offscreen(sw, sh)) {
+                run(&format!("base @{sw}x{sh}"), &base, &mut r2);
+            }
         }
     }
 

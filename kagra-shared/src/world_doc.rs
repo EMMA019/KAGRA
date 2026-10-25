@@ -38,8 +38,8 @@ use crate::gltf_load::{
     skinned_tpose_humanoid, unit_cube_gltf, walk_skinned_gltf, walk_skinned_vrm, WalkerPose,
 };
 use crate::scene3d::{
-    primitives, Camera, Instance, LocalLight, Material, MeshData, MeshId, Scene3D, SceneBuilder,
-    Vertex3,
+    primitives, Aabb, Camera, Instance, LocalLight, Material, MeshData, MeshId, Scene3D,
+    SceneBuilder, Vertex3,
 };
 use crate::strokes::{FatLine, PointCloud};
 use glam::{EulerRot, Mat4, Quat, Vec3};
@@ -1170,6 +1170,54 @@ impl WorldDoc {
         world
     }
 
+    /// Local bounds of every mesh, for frustum culling. `compile_meshes` rebuilds every
+    /// primitive and re-reads and decodes every glTF and its textures, which cost ~120 ms a
+    /// call on a doc with 17 models, and `compile_scene` runs once per frame. So the bounds
+    /// of a doc whose meshes cannot change between frames (no heightfield, no skinned
+    /// walker pose) are kept per mesh key (`gpu_mesh_key`, a few microseconds) and rebuilt
+    /// only when that key changes.
+    fn cull_bounds(&self) -> Vec<(MeshId, Aabb)> {
+        let build = |doc: &WorldDoc| -> Vec<(MeshId, Aabb)> {
+            doc.compile_meshes()
+                .into_iter()
+                .filter_map(|(id, mesh)| {
+                    let bounds = mesh.bounds();
+                    (!bounds.is_empty()).then_some((id, bounds))
+                })
+                .collect()
+        };
+        let steady = self.heightfield.is_none()
+            && !self
+                .gltf_slots()
+                .iter()
+                .any(|s| matches!(s, GltfSlot::Skinned { .. }));
+        if !steady {
+            return build(self);
+        }
+        type Entry = (String, Vec<(MeshId, Aabb)>);
+        thread_local! {
+            static CACHE: std::cell::RefCell<Vec<Entry>> = const { std::cell::RefCell::new(Vec::new()) };
+        }
+        let key = self.gpu_mesh_key();
+        if let Some(hit) = CACHE.with(|c| {
+            c.borrow()
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| v.clone())
+        }) {
+            return hit;
+        }
+        let built = build(self);
+        CACHE.with(|c| {
+            let mut c = c.borrow_mut();
+            if c.len() >= 4 {
+                c.remove(0);
+            }
+            c.push((key, built.clone()));
+        });
+        built
+    }
+
     /// One-frame draw list. Heightfield + glTF/box/sphere/capsule + sprite/quad.
     /// Empty lights get default key+fill (max 4 slots). Capsules/props get a
     /// ground contact blob. Does not mutate this document. GPU upload uses `compile_meshes`.
@@ -1178,11 +1226,8 @@ impl WorldDoc {
         let mut b = SceneBuilder::new(&camera, aspect.max(1e-3));
         // Opt-in. An omitted `cull` stays unregistered so every prop still draws.
         if self.cull == Some(true) {
-            for (id, mesh) in self.compile_meshes() {
-                let bounds = mesh.bounds();
-                if !bounds.is_empty() {
-                    b.register(id, bounds);
-                }
+            for (id, bounds) in self.cull_bounds() {
+                b.register(id, bounds);
             }
         }
         let (gltf_ids, walker_gltf_ids) = self.gltf_mesh_ids();
@@ -3902,6 +3947,45 @@ mod tests {
             1,
             "the box behind the camera drops"
         );
+    }
+
+    /// The per-frame cull bounds are cached, and the cache can never give another doc's answer.
+    #[test]
+    fn cull_bounds_cache_matches_a_fresh_build_and_follows_the_models() {
+        let fresh = |doc: &WorldDoc| -> Vec<(MeshId, crate::scene3d::Aabb)> {
+            doc.compile_meshes()
+                .into_iter()
+                .filter_map(|(id, m)| {
+                    let b = m.bounds();
+                    (!b.is_empty()).then_some((id, b))
+                })
+                .collect()
+        };
+        let mut a = WorldDoc::from_json(r#"{"version":1,"cull":true,"props":[]}"#).unwrap();
+        a.props.push(WorldProp {
+            id: "m".into(),
+            gltf: Some(crate::gltf_load::unit_cube_gltf()),
+            ..serde_json::from_str::<WorldProp>(r#"{"id":"m"}"#).unwrap()
+        });
+        let want = fresh(&a);
+        assert_eq!(a.cull_bounds(), want, "first call builds");
+        assert_eq!(a.cull_bounds(), want, "second call is the cached copy");
+        // A different model set has another key, so it is rebuilt, not served from the cache.
+        let b = WorldDoc::from_json(r#"{"version":1,"cull":true,"props":[]}"#).unwrap();
+        assert_eq!(b.cull_bounds(), fresh(&b));
+        assert_ne!(b.cull_bounds().len(), a.cull_bounds().len());
+        // Many more docs than the cache holds still answer correctly.
+        for i in 0..6 {
+            let mut c = b.clone();
+            c.props.push(WorldProp {
+                id: format!("p{i}"),
+                gltf: Some(crate::gltf_load::unit_cube_gltf()),
+                name: format!("{i}"),
+                ..serde_json::from_str::<WorldProp>(r#"{"id":"m"}"#).unwrap()
+            });
+            assert_eq!(c.cull_bounds(), fresh(&c));
+        }
+        assert_eq!(a.cull_bounds(), want);
     }
 
     #[test]
