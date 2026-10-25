@@ -4643,6 +4643,378 @@ mod tests {
         }
     }
 
+    fn kind_of(g: &SurvivorArena, id: &str) -> u8 {
+        g.spec
+            .enemies
+            .types
+            .iter()
+            .position(|t| t.id == id)
+            .unwrap() as u8
+    }
+
+    /// A world with no director spawns, for staging a fight by hand.
+    fn quiet(start_weapon: &str) -> SurvivorArena {
+        let mut spec = SurvivorSpec::default();
+        spec.hero.start_weapon = start_weapon.into();
+        spec.hero.max_hp = 10_000.0;
+        spec.director.start_rate = 0.0;
+        spec.director.end_rate = 0.0;
+        spec.director.elite_first = 0.0;
+        let mut g = SurvivorArena::new(spec);
+        g.confirm();
+        g
+    }
+
+    #[test]
+    fn drops_are_seeded_capped_pooled_and_switchable() {
+        let run = |enabled: bool| {
+            let mut spec = SurvivorSpec::default();
+            spec.drops.enabled = enabled;
+            spec.drops.tables[0].chance = 1.0;
+            let mut g = SurvivorArena::new(spec);
+            g.confirm();
+            let cap = g.spec.drops.cap as usize;
+            let ptr = g.pickups.as_ptr();
+            let mut most = 0;
+            kite_each(&mut g, 40.0, |g| {
+                most = most.max(g.pickups.len());
+                assert!(g.pickups.len() <= cap, "pickups are capped");
+            });
+            assert_eq!(ptr, g.pickups.as_ptr(), "no reallocation");
+            (g.kills(), most, g.pickups.len(), g.hp().to_bits())
+        };
+        let (a, b) = (run(true), run(true));
+        assert_eq!(a, b, "a seed drops the same things twice");
+        assert!(a.1 >= 8, "a storm of drops fills the pool ({})", a.1);
+        assert_eq!(run(false).1, 0, "switched off: nothing drops");
+    }
+
+    #[test]
+    fn the_pity_timer_forces_a_drop() {
+        let mut spec = SurvivorSpec::default();
+        spec.drops.tables[0].chance = 0.0;
+        spec.drops.pity_kills = 5;
+        let mut g = SurvivorArena::new(spec);
+        g.confirm();
+        let k = g.kinds[0];
+        for _ in 0..4 {
+            g.drop_loot(1.0, 1.0, &k);
+        }
+        assert!(g.pickups.is_empty());
+        g.drop_loot(1.0, 1.0, &k);
+        assert_eq!(g.pickups.len(), 1);
+    }
+
+    #[test]
+    fn the_elite_arrives_and_always_leaves_a_chest_with_a_weapon() {
+        let mut g = quiet("bolt");
+        g.next_elite = 45.0;
+        g.t = 46.0;
+        g.tick(DT);
+        assert_eq!(g.state_value()["elites"], 1);
+        assert!(g
+            .hud(390, 844, false)
+            .texts
+            .iter()
+            .any(|t| t.text.starts_with('☠')));
+        let j = (0..g.foes.len())
+            .find(|&i| g.kinds[g.foes.kind[i] as usize].elite)
+            .unwrap();
+        g.foes.hp[j] = 0.0;
+        g.tick(DT);
+        assert!(
+            g.pickups.iter().any(|p| p.item == CHEST),
+            "the elite leaves a chest"
+        );
+        g.build_doc();
+        assert!(g.doc.props.iter().any(|p| p.enabled && p.name == "chest"));
+        let (cx, cz) = (g.pickups[0].x, g.pickups[0].z);
+        (g.hx, g.hz) = (cx, cz);
+        g.tick(DT);
+        assert!(
+            g.pickups.iter().all(|p| p.item != CHEST),
+            "touching opens it"
+        );
+        assert!(g.held_weapons() >= 2, "the chest guarantees a weapon");
+        assert!(g.state_value()["toast"]
+            .as_str()
+            .is_some_and(|t| !t.is_empty()));
+    }
+
+    #[test]
+    fn weapon_pickups_fill_the_slots_then_offer_a_swap() {
+        let mut g = quiet("bolt");
+        let max = g.spec.levels.max_weapons;
+        for _ in 0..500 {
+            if g.held_weapons() >= max {
+                break;
+            }
+            g.grant_weapon();
+        }
+        assert_eq!(g.held_weapons(), max, "slots fill up");
+        assert!(g.cards.is_empty());
+        for _ in 0..2000 {
+            g.grant_weapon();
+            if !g.cards.is_empty() {
+                break;
+            }
+        }
+        assert!(g.swap_in.is_some(), "a full bar offers a swap");
+        assert!(matches!(g.cards.last(), Some(Card::Keep)));
+        assert!(g.cards.iter().any(|c| matches!(c, Card::Swap(_))));
+        let incoming = g.swap_in.unwrap() as usize;
+        assert_eq!(g.weapon_lv[incoming], 0);
+        let hud = g.hud(390, 844, false);
+        assert!(hud.texts.iter().any(|t| t.text == "WEAPON FOUND!"));
+        // Swap the first offer in.
+        let Some(Card::Swap(old)) = g.cards.first().copied() else {
+            panic!("the first card is a swap");
+        };
+        g.choose(0);
+        assert!(g.cards.is_empty() && g.swap_in.is_none());
+        assert_eq!(g.weapon_lv[old as usize], 0, "the old weapon is gone");
+        assert_eq!(g.weapon_lv[incoming], 1, "the new one is in");
+        assert_eq!(g.held_weapons(), max);
+        // And keeping refuses the new one.
+        for _ in 0..2000 {
+            g.grant_weapon();
+            if !g.cards.is_empty() {
+                break;
+            }
+        }
+        let before: Vec<u32> = g.weapon_lv.clone();
+        let last = g.cards.len() - 1;
+        g.choose(last);
+        assert_eq!(before, g.weapon_lv);
+        assert!(g.cards.is_empty());
+    }
+
+    #[test]
+    fn every_weapon_hurts_a_crowd() {
+        let ids: Vec<String> = SurvivorSpec::default()
+            .weapons
+            .iter()
+            .map(|w| w.id.clone())
+            .collect();
+        for id in ids {
+            let mut g = quiet(&id);
+            for k in 0..8 {
+                let a = k as f32 * 0.785;
+                g.foes.spawn(0, a.sin() * 2.6, a.cos() * 2.6, 1000.0);
+            }
+            let hp0: f32 = g.foes.hp.iter().sum();
+            for _ in 0..360 {
+                g.tick(DT);
+            }
+            let hp1: f32 = g.foes.hp.iter().sum();
+            assert!(hp1 < hp0 - 15.0, "{id} dealt only {:.1} in 6 s", hp0 - hp1);
+        }
+    }
+
+    #[test]
+    fn each_weapon_builds_its_own_effect() {
+        let mut g = quiet("zap");
+        for k in 0..4 {
+            g.foes.spawn(0, 2.0 + k as f32 * 0.8, 0.0, 1000.0);
+        }
+        let mut zaps = 0;
+        for _ in 0..180 {
+            g.tick(DT);
+            zaps = zaps.max(g.zaps.len());
+        }
+        assert!(zaps > 0, "lightning is drawn");
+        g.build_doc();
+        let mut p = quiet("pulse");
+        p.foes.spawn(0, 1.5, 0.0, 1000.0);
+        let mut rings = 0;
+        let mut far = 0.0f32;
+        for _ in 0..200 {
+            p.tick(DT);
+            rings = rings.max(p.rings.len());
+            if !p.foes.x.is_empty() {
+                far = far.max(p.foes.x[0]);
+            }
+        }
+        assert!(rings > 0 && far > 1.6, "the pulse shoves (far {far})");
+        let mut b = quiet("blades");
+        b.foes.spawn(0, 1.9, 0.0, 1000.0);
+        for _ in 0..60 {
+            b.tick(DT);
+        }
+        b.build_doc();
+        let live = b
+            .doc
+            .props
+            .iter()
+            .filter(|p| p.enabled && p.name == "blade")
+            .count();
+        assert_eq!(live, 2, "two blades circle");
+        let mut w = quiet("wisps");
+        w.foes.spawn(0, 0.0, 6.0, 1000.0);
+        w.foes.spawn(0, 1.0, 6.4, 1000.0);
+        let mut shots = 0;
+        for _ in 0..120 {
+            w.tick(DT);
+            shots = shots.max(w.shots.len());
+        }
+        assert!(shots >= 1, "wisps fly");
+        let mut f = quiet("petals");
+        f.foes.spawn(0, 0.0, 3.0, 1000.0);
+        f.tick(DT);
+        assert!(f.shots.len() >= 4, "a fan of petals ({})", f.shots.len());
+    }
+
+    #[test]
+    fn a_shield_blocks_hits_and_frenzy_speeds_the_weapons() {
+        let mut g = quiet("bolt");
+        g.hp = 100.0;
+        g.shield_t = 3.0;
+        g.foes.spawn(0, 0.0, 0.0, 1000.0);
+        for _ in 0..60 {
+            g.tick(DT);
+        }
+        assert_eq!(g.hp, 100.0, "the shield takes the hit");
+        g.shield_t = 0.0;
+        for _ in 0..60 {
+            g.tick(DT);
+        }
+        assert!(g.hp < 100.0, "then it wears off");
+        let slow = g.cd_scale();
+        g.frenzy_t = 5.0;
+        g.frenzy_amt = 0.45;
+        assert!(g.cd_scale() < slow * 0.6);
+    }
+
+    #[test]
+    fn items_do_what_they_say() {
+        let mut g = quiet("bolt");
+        let id = |g: &SurvivorArena, kind: PickupKind| {
+            g.spec
+                .drops
+                .items
+                .iter()
+                .position(|i| i.kind == kind)
+                .unwrap()
+        };
+        g.hp = 10.0;
+        let heal = id(&g, PickupKind::Heal);
+        g.apply_item(heal);
+        assert!(g.hp > 10.0);
+        let xp0 = g.xp;
+        let dust = id(&g, PickupKind::Xp);
+        g.apply_item(dust);
+        assert!(g.xp > xp0 || g.level > 1);
+        let shield = id(&g, PickupKind::Shield);
+        g.apply_item(shield);
+        assert!(g.shield_t > 0.0);
+        let frenzy = id(&g, PickupKind::Frenzy);
+        g.apply_item(frenzy);
+        assert!(g.frenzy_t > 0.0);
+        g.foes.spawn(0, 2.0, 0.0, 1.0);
+        let bomb = id(&g, PickupKind::Bomb);
+        g.apply_item(bomb);
+        g.tick(DT);
+        assert_eq!(g.foes.len(), 0, "the bomb clears what is near");
+        g.gems.push(Gem {
+            x: 9.0,
+            z: 9.0,
+            v: 1.0,
+            fly: false,
+        });
+        let magnet = id(&g, PickupKind::Magnet);
+        g.apply_item(magnet);
+        assert!(g.gems.iter().all(|m| m.fly), "a magnet calls every gem");
+    }
+
+    #[test]
+    fn synergies_switch_on_with_a_weapon_and_a_passive() {
+        let mut spec = SurvivorSpec::default();
+        spec.synergies.clear();
+        let mut plain = SurvivorArena::new(spec);
+        plain.confirm();
+        let mut g = started();
+        let hi = |g: &SurvivorArena| {
+            g.spec
+                .passives
+                .iter()
+                .position(|p| p.id == "haste")
+                .unwrap()
+        };
+        let (a, b) = (hi(&plain), hi(&g));
+        plain.passive_lv[a] = 3;
+        plain.recompute();
+        g.passive_lv[b] = 3;
+        g.recompute();
+        assert_eq!(plain.syn_mask, 0);
+        assert_ne!(g.syn_mask, 0);
+        assert!(g.weapon_stats[0].cooldown < plain.weapon_stats[0].cooldown);
+        assert!(g.hud(390, 844, false).texts.iter().any(|t| t.text == "★"));
+    }
+
+    #[test]
+    fn shooters_throw_orbs_and_the_pools_hold() {
+        let mut g = quiet("bolt");
+        let k = kind_of(&g, "shooter");
+        g.foes.spawn(k, 0.0, 6.0, 1000.0);
+        let (op, zp, rp) = (g.orbs.as_ptr(), g.zaps.as_ptr(), g.rings.as_ptr());
+        let mut most = 0;
+        for _ in 0..600 {
+            g.tick(DT);
+            most = most.max(g.orbs.len());
+            assert!(g.orbs.len() <= ORB_CAP);
+        }
+        assert!(most >= 1, "the shooter throws");
+        assert!(g.hp < 10_000.0, "an orb can hurt");
+        assert_eq!(
+            (op, zp, rp),
+            (g.orbs.as_ptr(), g.zaps.as_ptr(), g.rings.as_ptr())
+        );
+    }
+
+    #[test]
+    fn the_whole_cast_shows_up_and_the_loadout_is_drawn() {
+        let mut g = started();
+        let mut seen = [false; 5];
+        let mut elite_hud = false;
+        kite_each(&mut g, 70.0, |g| {
+            for i in 0..g.foes.len() {
+                seen[g.foes.kind[i] as usize] = true;
+            }
+            elite_hud |= g
+                .hud(390, 844, false)
+                .texts
+                .iter()
+                .any(|t| t.text.starts_with('☠'));
+        });
+        assert_eq!(
+            seen, [true; 5],
+            "ghoul, runner, shooter, tank and warden all show up"
+        );
+        assert!(elite_hud, "the elite has a health bar");
+        let hud = g.hud(390, 844, false);
+        assert!(hud.texts.iter().any(|t| t.text == "●"), "the bolt chip");
+        let w = g.state_value()["weapons"].as_array().unwrap().len();
+        assert!(w >= 1);
+    }
+
+    #[test]
+    fn each_weapon_alone_holds_the_early_game() {
+        let ids: Vec<String> = SurvivorSpec::default()
+            .weapons
+            .iter()
+            .map(|w| w.id.clone())
+            .collect();
+        for id in ids {
+            let mut spec = SurvivorSpec::default();
+            spec.hero.start_weapon = id.clone();
+            let mut g = SurvivorArena::new(spec);
+            g.confirm();
+            kite(&mut g, 30.0);
+            assert!(g.secs() >= 30.0, "{id} died at {:.0}s", g.secs());
+            assert!(g.kills() >= 25, "{id} only killed {}", g.kills());
+        }
+    }
+
     fn merge(a: &mut Value, b: &Value) {
         match (a, b) {
             (Value::Object(x), Value::Object(y)) => {
@@ -5184,6 +5556,7 @@ mod tests {
         let mut g = started();
         let (fx, fc) = (g.foes().x.as_ptr(), g.foes().cap());
         let (sp, gp) = (g.shots.as_ptr(), g.gems.as_ptr());
+        let (pk, ob, sc) = (g.pickups.as_ptr(), g.orbs.as_ptr(), g.scratch.as_ptr());
         let mut most = 0;
         kite_each(&mut g, 100.0, |g| {
             most = most.max(g.foes().len());
@@ -5195,6 +5568,9 @@ mod tests {
         assert_eq!(fx, g.foes().x.as_ptr());
         assert_eq!(sp, g.shots.as_ptr());
         assert_eq!(gp, g.gems.as_ptr());
+        assert_eq!(pk, g.pickups.as_ptr());
+        assert_eq!(ob, g.orbs.as_ptr());
+        assert_eq!(sc, g.scratch.as_ptr());
         assert_eq!(g.document().props.len(), g.doc.props.len());
     }
 

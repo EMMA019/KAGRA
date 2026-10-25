@@ -145,7 +145,7 @@ impl SurvivorArena {
     }
 
     /// Open a chest: `rolls` items from its table, the first the table's guarantee if it has one.
-    fn open_chest(&mut self, table: usize) -> String {
+    pub(super) fn open_chest(&mut self, table: usize) -> String {
         let Some(t) = self.spec.drops.tables.get(table) else {
             return String::new();
         };
@@ -176,7 +176,7 @@ impl SurvivorArena {
     }
 
     /// Do what a pickup does. Returns the line for the toast.
-    fn apply_item(&mut self, i: usize) -> String {
+    pub(super) fn apply_item(&mut self, i: usize) -> String {
         let row = self.spec.drops.items[i].clone();
         let name = row.name.get(self.lang_ja).to_string();
         match row.kind {
@@ -216,7 +216,7 @@ impl SurvivorArena {
     }
 
     /// A weapon pickup: raise one you hold, fill a free slot, or (slots full) offer a swap.
-    fn grant_weapon(&mut self) -> String {
+    pub(super) fn grant_weapon(&mut self) -> String {
         let free = self.held_weapons() < self.spec.levels.max_weapons;
         let mut ws = [0_u32; 8];
         let mut ids = [0_usize; 8];
