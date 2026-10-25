@@ -13,7 +13,10 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 | [KayKit Adventurers Character Pack 1.0](https://kaylousberg.itch.io/kaykit-adventurers) | Kay Lousberg (www.kaylousberg.com) | CC0-1.0 | not required | `assets/library/kaykit/adventurers/**` |
 | [KayKit City Builder Bits 1.0](https://kaylousberg.itch.io/city-builder-bits) | Kay Lousberg (www.kaylousberg.com) | CC0-1.0 | not required | `assets/library/kaykit/city-builder-bits/**` |
 | [Kenney Cube Pets](https://kenney.nl/assets/cube-pets) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/cube-pets/**` |
+| [Kenney Graveyard Kit (ghost, zombie, graveyard props)](https://kenney.nl/assets/graveyard-kit) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/graveyard-kit/*.glb` |
+| [Kenney Interface Sounds (confirmation_001)](https://kenney.nl/assets/interface-sounds) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/audio/kenney-interface-sounds/*.wav` |
 | [Kenney props (ball, bat, block, coin, diamond, flag, grass, heart, plaza, tree)](https://kenney.nl/assets) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/ball.glb`, `assets/models/bat.glb` … |
+| [Kenney Mini Characters (5 hero skins)](https://kenney.nl/assets/mini-characters) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/mini-characters/*.glb` |
 | [Kenney Castle Kit 2.0 (old/examples open_world)](https://kenney.nl/assets/castle-kit) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `old/examples/assets/open_world/kenney/castle/**` |
 | [Kenney Dungeon Kit (old/examples open_world)](https://kenney.nl/assets) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `old/examples/assets/open_world/kenney/dungeon/**` |
 | [Kenney Forest kit (old/examples open_world)](https://kenney.nl/assets) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `old/examples/assets/open_world/kenney/forest/**` |
@@ -24,6 +27,8 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 | [Kenney Racing Kit](https://kenney.nl/assets/racing-kit) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/racing-kit/**` |
 | [Kenney Space Kit](https://kenney.nl/assets/space-kit) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/space-kit/**` |
 | [Adobe Mixamo characters and animations (not committed)](https://www.mixamo.com/) | Adobe | custom | not required | `assets-private/mixamo/**` |
+| [OpenGameArt: 50 CC0 retro / synth SFX (7 used)](https://opengameart.org/content/50-cc0-retro-synth-sfx) | rubberduck | CC0-1.0 | not required | `assets/audio/oga-retro-synth-sfx/*.wav` |
+| [OpenGameArt: Flowerbed Fields (loop)](https://opengameart.org/content/flowerbed-fields-loop) | Zane Little Music | CC0-1.0 | not required | `assets/audio/oga-flowerbed-fields/*.mp3` |
 | [Shibuya demo street map (from OpenStreetMap)](https://www.openstreetmap.org/copyright) | OpenStreetMap contributors | ODbL-1.0 | required | `kagra-shared/assets/maps/shibuya_demo.kagra.json` |
 | [Poly Haven props (31 models)](https://polyhaven.com/models) | Poly Haven contributors (per model, see credits) | CC0-1.0 | not required | `assets/library/polyhaven/props/**` |
 | [KAGRA synthesized tones (jump, fire, card, bgm)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/audio/*.wav` |

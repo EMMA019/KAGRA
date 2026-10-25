@@ -205,6 +205,11 @@ impl SharedSession {
         self.kit.as_mut()?.as_any_mut().downcast_mut()
     }
 
+    /// The loaded kit as a survivor arena run, if it is one.
+    pub fn survivor_mut(&mut self) -> Option<&mut crate::survivor_arena::SurvivorArena> {
+        self.kit.as_mut()?.as_any_mut().downcast_mut()
+    }
+
     /// The loaded kit as a Lumen run, if it is one.
     pub fn neon(&self) -> Option<&crate::neon_run::NeonRun> {
         self.kit.as_ref()?.as_any().downcast_ref()
@@ -849,6 +854,8 @@ impl SharedSession {
     pub fn set_lang(&mut self, lang: &str) {
         if let Some(hop) = self.hop_mut() {
             hop.set_lang(lang);
+        } else if let Some(kit) = self.kit.as_mut() {
+            kit.set_lang(lang);
         }
     }
 
@@ -856,6 +863,8 @@ impl SharedSession {
     pub fn pause_run(&mut self) {
         if let Some(hop) = self.hop_mut() {
             hop.pause();
+        } else if let Some(kit) = self.kit.as_mut() {
+            kit.pause_run();
         }
     }
 
@@ -863,6 +872,8 @@ impl SharedSession {
     pub fn resume_run(&mut self) {
         if let Some(hop) = self.hop_mut() {
             hop.resume_from_page();
+        } else if let Some(kit) = self.kit.as_mut() {
+            kit.resume_run();
         }
     }
 

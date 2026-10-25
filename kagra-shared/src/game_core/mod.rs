@@ -17,7 +17,10 @@
 //!   weights, hit/stomp rules and the fairness hook (HOP-BEAT supplies the
 //!   placement and the response; see `docs/enemy_kit.md`).
 //!
-//! The runner kit (`neon_cat.rs`) and HOP-BEAT are the kits today.
+//! - [`swarm`]: arena parts (foe pool, spatial grid, spawn budget, seeded RNG)
+//!   for survivor-style kits.
+//!
+//! The runner kit (`neon_cat.rs`), HOP-BEAT and the survivor arena are the kits today.
 
 pub mod collide;
 pub mod enemies;
@@ -28,6 +31,7 @@ pub mod meta;
 pub mod missions;
 pub mod result;
 pub mod run;
+pub mod swarm;
 
 use crate::flow::{FlowPhase, GameFlow};
 

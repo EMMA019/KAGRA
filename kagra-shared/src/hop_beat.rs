@@ -4154,7 +4154,7 @@ fn pause_layout(w: f32, h: f32) -> Vec<(PauseBtn, Quad)> {
 // -------------------------------------------------------------- picture ---
 
 #[allow(clippy::too_many_arguments)]
-fn prop(
+pub(crate) fn prop(
     id: &str,
     model: &str,
     name: &str,
@@ -4189,7 +4189,7 @@ fn mix(a: [u32; 3], b: [u32; 3], t: f32) -> [u32; 3] {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn light(
+pub(crate) fn light(
     slot: u32,
     name: &str,
     pos: [f32; 3],
@@ -4218,15 +4218,15 @@ const TRACK_HALF: f32 = 1.7;
 
 /// The models (`tools/gen_assets/hop_models.py`). Each one is optional: when a
 /// file is missing or does not parse the picture falls back to primitives.
-const BUNNY_GLB: &str = "assets/models/hop_beat/hop_bunny.glb";
+pub(crate) const BUNNY_GLB: &str = "assets/models/hop_beat/hop_bunny.glb";
 const POST_GLB: &str = "assets/models/hop_beat/hop_post.glb";
-const SLIME_GLB: &str = "assets/models/hop_beat/hop_slime.glb";
+pub(crate) const SLIME_GLB: &str = "assets/models/hop_beat/hop_slime.glb";
 const BEETLE_GLB: &str = "assets/models/hop_beat/hop_beetle.glb";
 const FROG_GLB: &str = "assets/models/hop_beat/hop_frog.glb";
 /// The ears, a separate mesh whose origin is the pivot at the top of the head
 /// (`EAR_PIVOT`, in the body's own units).
-const EARS_GLB: &str = "assets/models/hop_beat/hop_ears.glb";
-const EAR_PIVOT: [f32; 3] = [0.0, 0.80, 0.26];
+pub(crate) const EARS_GLB: &str = "assets/models/hop_beat/hop_ears.glb";
+pub(crate) const EAR_PIVOT: [f32; 3] = [0.0, 0.80, 0.26];
 /// A flyer this far ahead (metres, about 4 beats) starts to warn.
 const WARN_M: f32 = 26.0;
 const BAT_GLB: &str = "assets/models/hop_beat/hop_bat.glb";
@@ -4248,7 +4248,7 @@ const TOWER_GLBS: [(&str, &str); 3] = [
 
 /// True when `path` is a mounted or on-disk GLB that parses. A miss is not
 /// cached, so a wasm page can mount the file after boot.
-fn glb_ready(path: &str) -> bool {
+pub(crate) fn glb_ready(path: &str) -> bool {
     use std::collections::HashSet;
     use std::sync::{Mutex, OnceLock};
     static OK: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
@@ -4285,7 +4285,7 @@ fn glb_ready(path: &str) -> bool {
 
 /// A `prop` drawn from a GLB instead of a primitive.
 #[allow(clippy::too_many_arguments)]
-fn glb_prop(
+pub(crate) fn glb_prop(
     id: &str,
     path: &str,
     name: &str,

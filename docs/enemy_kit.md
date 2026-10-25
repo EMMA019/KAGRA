@@ -139,3 +139,11 @@ The 2000-seed laid-courses test plays every seam the generator produces at those
 The bat appears only in its own level-2 debut phrase. The late phrases that had a bat over a beetle
 or over a slime use the hopper instead: beetle then hopper then a gap, slime-hopper-slime, a hopper
 between two hold gaps, and frog-beetle-frog-slime. The hopper debuts alone in level 3.
+
+## Swarm parts (Moonlit Swarm, the survivor-arena kit)
+
+`game_core::swarm` is the crowd side of the same kit idea: `Foes` (a fixed-capacity struct-of-arrays pool, no allocation in the frame),
+`Grid` (a spatial hash for contact and push-apart in O(N)), `Budget` (how many to spawn this frame from a rate, with the remainder carried)
+and `Rng` (a small seeded generator, so a daily seed replays). A type opts in with `EnemyType.swarm`
+(`SwarmStats`: hp, speed, radius, touch damage, xp, unlock seconds, weight); `validate` bounds every number. The first user is
+`kagra-shared/src/survivor_arena.rs`; the design and the asset list are in `docs/design/survivor_arena.md`.
