@@ -1207,6 +1207,37 @@
   {
    "license_spdx": "CC0-1.0",
    "license_evidence": [
+    "assets/models/kenney/mini-dungeon/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Rest-pose copies made by tools/gen_assets/pack_glb.py; only the files used by Moonlit Swarm are in the repo.",
+   "verified": "checked",
+   "id": "kenney-mini-dungeon",
+   "name": "Kenney Mini Dungeon (treasure chest, sword)",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets/mini-dungeon",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-25",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/kenney/mini-dungeon/*.glb"
+   ],
+   "verified_how": "License.txt from the official zip says CC0 (copied in-repo as LICENSE.txt); kenney.nl pack page says Creative Commons CC0, page read 2026-10-25 (candidate download receipt: assets-candidates/enemies/kenney-mini-dungeon/PROVENANCE.md)."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
     "assets/textures/survivor_arena/CREDITS.md"
    ],
    "receipt_ref": null,

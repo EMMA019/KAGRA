@@ -20,6 +20,7 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 | [Kenney props (ball, bat, block, coin, diamond, flag, grass, heart, plaza, tree)](https://kenney.nl/assets) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/ball.glb`, `assets/models/bat.glb` … |
 | [Kenney Mini Arena (boundary wall, columns)](https://kenney.nl/assets/mini-arena) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/mini-arena/*.glb` |
 | [Kenney Mini Characters (5 hero skins)](https://kenney.nl/assets/mini-characters) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/mini-characters/*.glb` |
+| [Kenney Mini Dungeon (treasure chest, sword)](https://kenney.nl/assets/mini-dungeon) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/mini-dungeon/*.glb` |
 | [Kenney Castle Kit 2.0 (old/examples open_world)](https://kenney.nl/assets/castle-kit) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `old/examples/assets/open_world/kenney/castle/**` |
 | [Kenney Dungeon Kit (old/examples open_world)](https://kenney.nl/assets) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `old/examples/assets/open_world/kenney/dungeon/**` |
 | [Kenney Forest kit (old/examples open_world)](https://kenney.nl/assets) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `old/examples/assets/open_world/kenney/forest/**` |
