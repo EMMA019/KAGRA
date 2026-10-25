@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="robots" content="noindex" />
+  <meta name="kagra-build-id" content="__KAGRA_BUILD__" />
   <title>KAGRA</title>
   <style>
     :root { color-scheme: dark; }
@@ -38,6 +39,12 @@
       background: rgba(12, 16, 24, 0.72);
     }
     #boot { z-index: 5; }
+    #update {
+      position: fixed; left: 50%; top: max(8px, env(safe-area-inset-top)); transform: translateX(-50%);
+      z-index: 9; padding: 6px 8px 6px 12px; border-radius: 999px; font-size: 13px;
+      background: rgba(16, 20, 28, .92); border: 1px solid rgba(255, 255, 255, .25); white-space: nowrap;
+    }
+    #update button { margin-left: 6px; padding: 4px 12px; border-radius: 999px; font: inherit; }
     #boot.err { color: #ffb4a2; text-align: center; white-space: pre-wrap; }
     #overlay { display: none; z-index: 4; pointer-events: none; }
     #overlay.visible { display: grid; pointer-events: auto; }
@@ -309,11 +316,12 @@
       </div>
     </div>
     <div id="boot" data-i18n="boot">読み込み中…</div>
+    <div id="update" hidden><span data-i18n="update.hint">新しいバージョンがあります</span> <button id="updateGo" type="button" data-i18n="update.reload">更新</button></div>
   </div>
-  <script src="./i18n.js"></script>
-  <script src="./portal.js"></script>
+  <script src="./i18n.js?v=__KAGRA_BUILD__"></script>
+  <script src="./portal.js?v=__KAGRA_BUILD__"></script>
   <script type="module">
-    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js";
+    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js?v=__KAGRA_BUILD__";
 
     const boot = document.getElementById("boot");
     const overlay = document.getElementById("overlay");
@@ -628,6 +636,55 @@
     };
     // </kagra-goals>
 
+    // <kagra-build>
+    // Cache busting after a deploy. The preview build stamps one build id into this
+    // page, the wasm / script URLs, bundle.json and every asset URL (`?v=`), and
+    // writes build.json. A page older than build.json offers a reload (and reloads
+    // once by itself before a run). Same-origin only; without a stamp (local, portal
+    // zip) nothing changes.
+    const BUILD = document.querySelector('meta[name="kagra-build-id"]')?.content || "";
+    const buildOn = /^[0-9a-f]{12}$/.test(BUILD);
+    const vq = (url) => (buildOn ? `${url}?v=${BUILD}` : url);
+    const assetUrl = (site, item) => {
+      if (typeof item === "string") return fileUrl(site, item);
+      return buildOn && item.v ? `${fileUrl(site, item.url)}?v=${encodeURIComponent(item.v)}` : fileUrl(site, item.url);
+    };
+    const reloadFor = (id) => {
+      const u = new URL(location.href);
+      u.searchParams.set("_b", id || String(Date.now()));
+      location.replace(u.href);
+    };
+    const showUpdate = (id) => {
+      const box = document.getElementById("update");
+      if (!box) return;
+      box.hidden = false;
+      document.getElementById("updateGo").onclick = () => reloadFor(id);
+    };
+    const checkBuild = async (mayReload) => {
+      if (!buildOn) return false;
+      try {
+        const ctl = new AbortController();
+        const timer = setTimeout(() => ctl.abort(), 2500);
+        const res = await fetch(`./build.json?t=${Date.now()}`, { cache: "no-store", signal: ctl.signal });
+        clearTimeout(timer);
+        if (!res.ok) return false;
+        const id = String((await res.json()).build || "");
+        if (!/^[0-9a-f]{12}$/.test(id) || id === BUILD) return false;
+        let tried = false;
+        try { tried = sessionStorage.getItem("kagra.build.tried") === id; } catch {}
+        if (mayReload && !tried) {
+          try { sessionStorage.setItem("kagra.build.tried", id); } catch {}
+          reloadFor(id);
+          return true;
+        }
+        showUpdate(id);
+      } catch (_) {}
+      return false;
+    };
+    // A tab left open across a deploy: look again when it comes back to the front.
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) checkBuild(false); });
+    // </kagra-build>
+
     let session;
     let bundle;
     let audioSpec = null;
@@ -645,12 +702,15 @@
       }
     } catch (_) {}
     try {
-      await init();
+      // A newer deploy: reload to it (this page goes away, so wait forever).
+      if (await checkBuild(true)) await new Promise(() => {});
+      await init({ module_or_path: new URL(vq("./pkg/kagra_shared_bg.wasm"), document.baseURI) });
       session = new WasmSession();
       const site = new URL("./", document.baseURI).href;
-      const bundleRes = await fetch(fileUrl(site, `games/${slug}/bundle.json`));
+      const bundleRes = await fetch(vq(fileUrl(site, `games/${slug}/bundle.json`)));
       if (!bundleRes.ok) throw new Error(`bundle.json ${bundleRes.status}`);
       bundle = await bundleRes.json();
+      if (buildOn && /^[0-9a-f]{12}$/.test(bundle.build || "") && bundle.build !== BUILD) showUpdate(bundle.build);
       portalHost = globalThis.KagraPortal.fromPage(window, document, bundle.platform && bundle.platform.ads);
       portalHost.loadingStart();
       portalHost.init();
@@ -669,7 +729,7 @@
           const optional = /\.glb$/i.test(path);
           let bytes = null;
           try {
-            const res = await fetch(fileUrl(site, url));
+            const res = await fetch(assetUrl(site, item));
             if (!res.ok) throw new Error(`${url} ${res.status}`);
             bytes = new Uint8Array(await res.arrayBuffer());
           } catch (err) {
@@ -684,7 +744,7 @@
       await Promise.all(workers);
       const worldFile = files.find((item) => (item.path || item) === (bundle.world || "world.json"));
       const worldUrl = worldFile ? (worldFile.url || worldFile) : `games/${slug}/world.json`;
-      const worldRes = await fetch(fileUrl(site, worldUrl));
+      const worldRes = await fetch(worldFile && typeof worldFile !== "string" ? assetUrl(site, worldFile) : fileUrl(site, worldUrl));
       if (!worldRes.ok) throw new Error(`${worldUrl} ${worldRes.status}`);
       let worldText = await worldRes.text();
       let asked = (params.get("quality") || "").toLowerCase();
@@ -846,7 +906,7 @@
             const site = new URL("./", document.baseURI).href;
             const item = (bundle.files || []).find((f) => (typeof f === "string" ? f : f.path) === file);
             if (!item) throw new Error(`${file} is not in the bundle`);
-            const res = await fetch(fileUrl(site, typeof item === "string" ? item : item.url));
+            const res = await fetch(assetUrl(site, item));
             if (!res.ok) throw new Error(`${file} ${res.status}`);
             return res.arrayBuffer();
           },

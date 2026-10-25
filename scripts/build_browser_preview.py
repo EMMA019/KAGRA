@@ -13,6 +13,7 @@ does not execute their Python rules.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 import sys
@@ -76,7 +77,48 @@ def build_preview(repo: Path, out: Path, pkg: Path | None, *, require_pkg: bool)
             raise SystemExit(f"wasm package missing: {js} (run ./scripts/build_wasm.sh)")
     elif require_pkg:
         raise SystemExit("wasm package missing (run ./scripts/build_wasm.sh)")
+    stamp_build(out)
     return catalog
+
+
+BUILD_TOKEN = "__KAGRA_BUILD__"
+
+
+def file_tag(data: bytes) -> str:
+    """Short content hash for a ``?v=`` query on one asset."""
+    return hashlib.sha256(data).hexdigest()[:10]
+
+
+def stamp_build(out: Path) -> str:
+    """One build id for the whole staged site, so a deploy never mixes old and new.
+
+    The id is a hash of every staged file (the page is hashed with its token still in
+    it). It goes into play.html (meta, script, wasm and bundle.json URLs), into each
+    bundle.json as ``build`` and into ``build.json``, which the page re-reads with
+    ``no-store`` to notice that it is older than the site. Assets carry their own
+    content tag as ``v`` in bundle.json. Nothing here touches the network.
+    """
+    digest = hashlib.sha256()
+    for path in sorted(p for p in out.rglob("*") if p.is_file()):
+        rel = path.relative_to(out).as_posix()
+        if rel == "build.json":
+            continue
+        digest.update(rel.encode("utf-8") + b"\0")
+        digest.update(path.read_bytes())
+    build = digest.hexdigest()[:12]
+    play = out / "play.html"
+    if play.is_file():
+        play.write_text(
+            play.read_text(encoding="utf-8").replace(BUILD_TOKEN, build), encoding="utf-8"
+        )
+    for bundle_path in sorted((out / "games").glob("*/bundle.json")):
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        bundle["build"] = build
+        bundle_path.write_text(
+            json.dumps(bundle, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+    (out / "build.json").write_text(json.dumps({"build": build}) + "\n", encoding="utf-8")
+    return build
 
 
 def _stage_one(repo: Path, out: Path, manifest) -> dict:
@@ -114,8 +156,8 @@ def _stage_one(repo: Path, out: Path, manifest) -> dict:
     # path = where WorldPlay looks, relative to the extracted game root.
     # url = where Pages stores the bytes (assets are shared across games).
     files = [
-        {"path": "world.json", "url": world_url},
-        {"path": "kagra_game.json", "url": marker_url},
+        {"path": "world.json", "url": world_url, "v": file_tag((out / world_url).read_bytes())},
+        {"path": "kagra_game.json", "url": marker_url, "v": file_tag((out / marker_url).read_bytes())},
     ]
     for asset in _preview_assets(repo, manifest):
         try:
@@ -126,7 +168,7 @@ def _stage_one(repo: Path, out: Path, manifest) -> dict:
         if not target.is_file():
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(asset, target)
-        files.append({"path": rel, "url": rel})
+        files.append({"path": rel, "url": rel, "v": file_tag(target.read_bytes())})
     bundle = {
         "slug": manifest.slug,
         "title": manifest.title,
