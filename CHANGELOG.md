@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- HOP-BEAT: a jumping enemy, the hopper (a green frog), replaces the bat in the late phrases that put a bat over a beetle or over a slime (the bat now only flies alone, in its level-2 debut). It is the genre-neutral `game_core::enemies` schema in JSON: `jump_height`, `jump_air` and `telegraph` on an enemy type turn a walker into a jumper that sits, squats (the tell) and leaps one step at a time, landing on the beat; it moves 3 m a beat against the beetle's 2 (JSON). It debuts alone at level 3 (phrases: hopper alone; beetle then hopper then a gap; slime-hopper-slime; a hopper between two hold gaps; frog-beetle-frog-slime), warns with the existing `warn` cue and the "!" badge, and has a procedural CC0 model `hop_frog.glb` (ledger text updated). The fairness checker covers it: the leap may not overlap a gap hop, two enemies of different speeds may not overlap in the last beat before the hero reaches the nearer one, seams with a hopper are played at +-90 ms and the 2000-seed laid-course test includes them. `docs/enemy_kit.md` documents the fields and rules; the fixture and measure baseline are regenerated.
+
 - On-phone measurement tool, shared by every game (`?dev=1`): an overlay with fps, frame time p50 / p95 / p99, jank,
   render scale, backend, adapter, canvas and DPR, display refresh, JS heap and a thermal guess; **Record 60 s** runs the
   `fx_post` / `fx_atmo` A/B (all-off, post, atmo, both, 15 s each) and shows a table with **Copy JSON**. HOP-BEAT gets a runtime

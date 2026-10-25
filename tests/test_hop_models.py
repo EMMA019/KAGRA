@@ -16,7 +16,7 @@ _spec.loader.exec_module(hm)
 def test_generator_is_deterministic_and_matches_the_committed_files():
     a, b = hm.build(), hm.build()
     assert a == b
-    assert len(a) == 12
+    assert len(a) == 13
     for path, data in a.items():
         assert path.is_file(), path
         assert path.read_bytes() == data, f"{path.name} drifted: run tools/gen_assets/hop_models.py"
@@ -47,9 +47,9 @@ def test_the_glbs_are_in_the_manifest_bundle_and_the_ledger():
     assert "assets/models/hop_beat/*.glb" in entry["paths"]
 
 
-def test_the_three_enemy_models_exist_stand_on_the_ground_and_are_small():
+def test_the_four_enemy_models_exist_stand_on_the_ground_and_are_small():
     built = {p.name: d for p, d in hm.build().items()}
-    for name in ("hop_slime.glb", "hop_beetle.glb", "hop_bat.glb"):
+    for name in ("hop_slime.glb", "hop_beetle.glb", "hop_frog.glb", "hop_bat.glb"):
         data = built[name]
         n = struct.unpack("<I", data[12:16])[0]
         doc = json.loads(data[20:20 + n])

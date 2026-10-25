@@ -981,11 +981,11 @@
    ],
    "notes": "",
    "id": "project-hop-beat-models",
-   "name": "HOP-BEAT models (bunny, slime, beetle, bat, rooftop towers, lit windows, lamp post)",
+   "name": "HOP-BEAT models (bunny, slime, beetle, frog, bat, rooftop towers, lit windows, lamp post)",
    "paths": [
     "assets/models/hop_beat/*.glb"
    ],
-   "verified_how": "Written by tools/gen_assets/hop_models.py from flat-coloured primitives in plain Python (no input meshes, no network); the script's --check rebuilds every file and compares bytes. The bunny, the three enemies (slime, beetle, bat) and the skyline are original shapes."
+   "verified_how": "Written by tools/gen_assets/hop_models.py from flat-coloured primitives in plain Python (no input meshes, no network); the script's --check rebuilds every file and compares bytes. The bunny, the four enemies (slime, beetle, frog, bat) and the skyline are original shapes."
   }
  ]
 }

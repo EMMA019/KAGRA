@@ -49,6 +49,17 @@ pub struct EnemyType {
     pub steps_per_beat: u32,
     /// Steps it has walked when the hero reaches it: it appears that many steps out.
     pub walk_steps: u32,
+    /// Peak height (metres) of the leap this enemy makes on every step. 0 = it
+    /// does not jump (a slime sits, a beetle walks). A jumper rests on the
+    /// ground, then covers its `step_m` through the air in one arc, so it lands
+    /// on the step grid: `steps_per_beat` is its jump period and
+    /// `step_m * steps_per_beat` its approach speed (metres per time unit).
+    pub jump_height: f32,
+    /// Share of a step the leap takes (the rest is spent on the ground). 0.2..=1.
+    pub jump_air: f32,
+    /// Share of a step, right before the leap, spent crouching: the kit's
+    /// "it is about to jump" tell. 0..=1 - `jump_air`.
+    pub telegraph: f32,
     /// Picture the kit draws it with; see [`EnemySpec::validate`].
     pub look: String,
     pub color: [u32; 3],
@@ -65,6 +76,9 @@ impl Default for EnemyType {
             step_m: 0.0,
             steps_per_beat: 1,
             walk_steps: 0,
+            jump_height: 0.0,
+            jump_air: 0.5,
+            telegraph: 0.25,
             look: "slime".into(),
             color: [120, 240, 150],
         }
@@ -75,6 +89,16 @@ impl EnemyType {
     /// A hovering enemy is something to stay clear of, not something to answer.
     pub fn is_flyer(&self) -> bool {
         self.y_lo > 0.0
+    }
+
+    /// A jumper leaves the ground on every step (see `jump_height`).
+    pub fn is_jumper(&self) -> bool {
+        self.jump_height > 0.0
+    }
+
+    /// Approach speed in metres per time unit (a beat).
+    pub fn speed_m(&self) -> f32 {
+        self.step_m * self.steps_per_beat as f32
     }
 }
 
@@ -98,7 +122,7 @@ pub struct EnemySpec {
 }
 
 impl Default for EnemySpec {
-    /// The starter roster: slime (stage 0), beetle (1), bat (2).
+    /// The starter roster: slime (stage 0), beetle (1), bat (2), hopper (3).
     fn default() -> Self {
         Self {
             types: vec![
@@ -122,6 +146,22 @@ impl Default for EnemySpec {
                     stompable: false,
                     look: "bat".into(),
                     color: [190, 130, 255],
+                    ..EnemyType::default()
+                },
+                // The jumper: a frog that leaps 3 m at the hero on every beat, half a beat
+                // in the air and a crouch before it goes. 3 m a beat against the beetle's 2.
+                EnemyType {
+                    id: "hopper".into(),
+                    unlock_level: 3,
+                    y_hi: 0.42,
+                    step_m: 3.0,
+                    steps_per_beat: 1,
+                    walk_steps: 4,
+                    jump_height: 0.4,
+                    jump_air: 0.5,
+                    telegraph: 0.25,
+                    look: "frog".into(),
+                    color: [170, 235, 80],
                     ..EnemyType::default()
                 },
             ],
@@ -210,19 +250,57 @@ impl EnemySpec {
         }
     }
 
+    /// Movement with jumps: `(dx, lift)` at the fractional step position
+    /// `step_pos` (the kit's clock in steps, not floored), or None if it has not
+    /// appeared yet. `dx` is as in [`walk_dx`](Self::walk_dx) but a jumper
+    /// covers each step in one arc: it waits on the ground for `1 - jump_air`
+    /// of the step, then flies to the next step's spot and lands on the grid.
+    /// `lift` is its height above the ground (0 for everything that does not jump).
+    pub fn motion(&self, ety: usize, step_pos: f32, meet_step: i64) -> Option<(f32, f32)> {
+        let n = step_pos.floor();
+        let dx = self.walk_dx(ety, n as i64, meet_step)?;
+        let Some(et) = self.types.get(ety) else {
+            return Some((dx, 0.0));
+        };
+        if !et.is_jumper() {
+            return Some((dx, 0.0));
+        }
+        let f = step_pos - n;
+        let air = et.jump_air.clamp(0.05, 1.0);
+        let u = ((f - (1.0 - air)) / air).clamp(0.0, 1.0);
+        // Ease the flight (quick off the ground, slower over the top is the arc's job): linear in x.
+        let dx = dx - et.step_m * u;
+        Some((dx, et.jump_height * 4.0 * u * (1.0 - u)))
+    }
+
+    /// The step fraction (0..1) at which an enemy of this type starts to crouch,
+    /// and the one at which it takes off: the kit's tell for "it jumps now".
+    pub fn crouch_window(&self, ety: usize) -> Option<(f32, f32)> {
+        let et = self.types.get(ety).filter(|t| t.is_jumper())?;
+        let takeoff = 1.0 - et.jump_air.clamp(0.05, 1.0);
+        Some(((takeoff - et.telegraph).max(0.0), takeoff))
+    }
+
     /// Hit/stomp rule: what the hero touches of an enemy of type `ety`
     /// occupying `x0..x1` along the track (already shifted by its walk).
     pub fn touch(&self, ety: usize, x0: f32, x1: f32, hero: &HeroBox) -> Touch {
+        self.touch_lifted(ety, x0, x1, 0.0, hero)
+    }
+
+    /// Same, for an enemy whose whole hurt band is `lift` metres above where its
+    /// type puts it (a jumper in the air).
+    pub fn touch_lifted(&self, ety: usize, x0: f32, x1: f32, lift: f32, hero: &HeroBox) -> Touch {
         let Some(et) = self.types.get(ety) else {
             return Touch::None;
         };
+        let (y_lo, y_hi) = (et.y_lo + lift, et.y_hi + lift);
         if !(hero.x > x0 - hero.half_width && hero.x < x1 + hero.half_width) {
             return Touch::None;
         }
-        if !(hero.y + self.body_h > et.y_lo && hero.y < et.y_hi) {
+        if !(hero.y + self.body_h > y_lo && hero.y < y_hi) {
             return Touch::None;
         }
-        if et.stompable && hero.descending && hero.y >= et.y_hi - self.stomp_depth {
+        if et.stompable && hero.descending && hero.y >= y_hi - self.stomp_depth {
             Touch::Stomp
         } else {
             Touch::Hit
@@ -277,6 +355,24 @@ impl EnemySpec {
                 return Err(format!(
                     "{who}: {n}: step_m * walk_steps must be at most {MAX_WALK_M} m"
                 ));
+            }
+            finite_in(who, &format!("{n}.jump_height"), t.jump_height, 0.0, 2.0)?;
+            finite_in(who, &format!("{n}.jump_air"), t.jump_air, 0.2, 1.0)?;
+            finite_in(who, &format!("{n}.telegraph"), t.telegraph, 0.0, 1.0)?;
+            if t.is_jumper() {
+                if t.y_lo > 0.0 {
+                    return Err(format!(
+                        "{who}: {n}: a jumper starts on the ground (y_lo 0)"
+                    ));
+                }
+                if t.step_m <= 0.0 {
+                    return Err(format!("{who}: {n}: a jumper needs step_m above 0"));
+                }
+                if t.telegraph + t.jump_air > 1.0 + 1e-4 {
+                    return Err(format!(
+                        "{who}: {n}: telegraph + jump_air must be at most 1"
+                    ));
+                }
             }
             if !looks.contains(&t.look.as_str()) {
                 return Err(format!("{who}: {n}.look is {}", looks.join("|")));
@@ -407,11 +503,12 @@ mod tests {
     #[test]
     fn default_roster_is_valid_and_staged() {
         let s = EnemySpec::default();
-        s.validate("t", &["slime", "beetle", "bat"]).unwrap();
+        s.validate("t", &["slime", "beetle", "bat", "frog"])
+            .unwrap();
         let levels: Vec<u32> = s.types.iter().map(|t| t.unlock_level).collect();
-        assert_eq!(levels, [0, 1, 2]);
+        assert_eq!(levels, [0, 1, 2, 3]);
         assert_eq!(s.unlocked(0).collect::<Vec<_>>(), [0]);
-        assert_eq!(s.unlocked(5).count(), 3);
+        assert_eq!(s.unlocked(5).count(), 4);
         assert!(s.needs_answer(0) && !s.needs_answer(2));
         assert_eq!(s.reserve(0), s.bounce_beats);
         assert_eq!(s.reserve(2), 0.0);
@@ -428,6 +525,94 @@ mod tests {
         // a bat: under it is safe, in its band is a hit, never a stomp
         assert_eq!(s.touch(2, 5.0, 5.6, &hero(5.2, 0.5, true)), Touch::None);
         assert_eq!(s.touch(2, 5.0, 5.6, &hero(5.2, 1.5, true)), Touch::Hit);
+    }
+
+    #[test]
+    fn a_jumper_rests_then_leaps_and_lands_on_the_step_grid() {
+        let s = EnemySpec::default();
+        let h = 3; // the hopper
+        let et = &s.types[h];
+        assert!(et.is_jumper() && !s.types[1].is_jumper());
+        // not on screen before its walk starts
+        assert_eq!(s.motion(h, 3.0, 10), None);
+        // on a step boundary it is on the ground, a whole step_m closer each step
+        let (d0, l0) = s.motion(h, 7.0, 10).unwrap();
+        let (d1, l1) = s.motion(h, 8.0, 10).unwrap();
+        assert_eq!((l0, l1), (0.0, 0.0));
+        assert!((d0 - d1 - et.step_m).abs() < 1e-4, "{d0} {d1}");
+        // it sits through the first half of the step, in the air mid-way, apex at the middle
+        let rest = 1.0 - et.jump_air;
+        assert_eq!(s.motion(h, 7.0 + rest * 0.5, 10).unwrap(), (d0, 0.0));
+        let mid = s.motion(h, 7.0 + rest + et.jump_air * 0.5, 10).unwrap();
+        assert!((mid.1 - et.jump_height).abs() < 1e-4);
+        assert!((mid.0 - (d0 - et.step_m * 0.5)).abs() < 1e-4);
+        // a beetle and a slime never leave the ground, and the beetle still steps in place
+        for ety in [0, 1] {
+            let (dx, lift) = s.motion(ety, 9.4, 10).unwrap();
+            assert_eq!(lift, 0.0);
+            assert_eq!(Some(dx), s.walk_dx(ety, 9, 10));
+        }
+        // the speed contrast is data: metres per beat differ by half
+        assert_eq!(et.speed_m(), 3.0);
+        assert_eq!(s.types[1].speed_m(), 2.0);
+        // the tell comes before takeoff and inside the resting part of the step
+        let (from, off) = s.crouch_window(h).unwrap();
+        assert!(from < off && (off - (1.0 - et.jump_air)).abs() < 1e-5);
+        assert!(s.crouch_window(1).is_none());
+    }
+
+    #[test]
+    fn a_jumper_in_the_air_is_safe_to_pass_under_and_hurts_where_it_is() {
+        let s = EnemySpec::default();
+        let h = 3;
+        // on the ground: same as any walker
+        assert_eq!(
+            s.touch_lifted(h, 5.0, 5.2, 0.0, &hero(5.1, 0.0, false)),
+            Touch::Hit
+        );
+        // its band moved up: a hero on the ground passes under, one in the band is hit
+        assert_eq!(
+            s.touch_lifted(h, 5.0, 5.2, 0.8, &hero(5.1, 0.0, false)),
+            Touch::None
+        );
+        assert_eq!(
+            s.touch_lifted(h, 5.0, 5.2, 0.8, &hero(5.1, 0.9, false)),
+            Touch::Hit
+        );
+        // stomping it from above works at its lifted height too
+        assert_eq!(
+            s.touch_lifted(h, 5.0, 5.2, 0.8, &hero(5.1, 1.1, true)),
+            Touch::Stomp
+        );
+        // no lift is exactly `touch`
+        let b = hero(5.1, 0.3, true);
+        assert_eq!(
+            s.touch(h, 5.0, 5.2, &b),
+            s.touch_lifted(h, 5.0, 5.2, 0.0, &b)
+        );
+    }
+
+    #[test]
+    fn bad_jumpers_are_refused() {
+        let looks = ["slime", "frog"];
+        let ok = |f: &dyn Fn(&mut EnemyType)| {
+            let mut s = EnemySpec::default();
+            s.types = vec![s.types[0].clone(), s.types[3].clone()];
+            f(&mut s.types[1]);
+            s.validate("t", &looks)
+        };
+        assert!(ok(&|_| {}).is_ok());
+        assert!(ok(&|t| t.step_m = 0.0).is_err(), "a jumper must advance");
+        assert!(
+            ok(&|t| t.y_lo = 0.5).is_err(),
+            "a jumper starts on the ground"
+        );
+        assert!(
+            ok(&|t| t.telegraph = 0.8).is_err(),
+            "the tell has to fit before takeoff"
+        );
+        assert!(ok(&|t| t.jump_height = 3.0).is_err());
+        assert!(ok(&|t| t.jump_air = 0.05).is_err());
     }
 
     #[test]
@@ -495,7 +680,7 @@ mod tests {
 
     #[test]
     fn bad_specs_are_refused() {
-        let looks = ["slime", "beetle", "bat"];
+        let looks = ["slime", "beetle", "bat", "frog"];
         let mut s = EnemySpec::default();
         s.types[0].look = "dragon".into();
         assert!(s.validate("t", &looks).is_err());
