@@ -59,7 +59,7 @@ def default_game() -> dict[str, Any]:
             "beat_len_m": 3.0,
             "tap": {"air_beats": 1.0, "height": 0.9},
             "hold": {"air_beats": 2.0, "height": 1.6},
-            "tap_window_secs": 0.11,
+            "tap_window_secs": 0.16,
             "coyote_secs": 0.09,
             "buffer_secs": 0.12,
             "half_width": 0.24,
@@ -87,6 +87,7 @@ def default_game() -> dict[str, Any]:
         },
         "lives": {"count": 3, "invuln_secs": 1.6, "blink_hz": 10.0},
         "revive": {"enabled": True, "max_per_run": 1, "lives": 2, "invuln_secs": 2.0, "clear_beats": 4.0},
+        "recover": {"enabled": True, "drop_secs": 0.9, "ready_beats": 3.0, "invuln_secs": 2.4, "clear_beats": 4.0},
         "fall": {"edge_stop_secs": 0.07, "tumble_turns_per_sec": 1.1, "stretch": 0.3, "carry": 0.55,
                  "cam_lag": 0.6, "slow_scale": 0.5, "card_delay_secs": 1.0, "vignette": 0.7, "dust": 8},
         "play": {"direct": False},
@@ -158,6 +159,10 @@ BOUNDS = (
     ("revive.clear_beats", 0, 32),
     ("revive.lives", 1, 9),
     ("revive.max_per_run", 0, 9),
+    ("recover.drop_secs", 0.2, 3),
+    ("recover.ready_beats", 0, 8),
+    ("recover.invuln_secs", 0, 10),
+    ("recover.clear_beats", 0, 32),
     ("fall.edge_stop_secs", 0, 0.5),
     ("fall.tumble_turns_per_sec", 0, 4),
     ("fall.stretch", 0, 1),
@@ -356,6 +361,30 @@ def phrase_problems(game: dict[str, Any], phrases: list[dict[str, Any]] | None =
             prev_enemy = is_enemy
             if free_from > end + 0.001:
                 out.append(f"{where}: lands after the phrase ends")
+    return out + flyer_gap_problems(game, phrases)
+
+
+def flyer_gap_problems(game: dict[str, Any], phrases: list[dict[str, Any]] | None = None) -> list[str]:
+    """No flyer (a bat) over a gap: the span of the hop across the gap, plus 100 ms of press
+    slack either way, must be clear of it. A bat above a hole leaves a thumb that stays down
+    a moment too long (a tap that becomes a hold) nowhere to go."""
+    out: list[str] = []
+    types = {t["id"]: t for t in game["enemies"]["types"]}
+    slack = 0.1 / beat_secs(game)
+    for pi, ph in enumerate(game["course"]["phrases"] if phrases is None else phrases):
+        items = ph.get("items", [])
+        for fi, f in enumerate(items):
+            t = types.get(f.get("enemy", ""))
+            if f.get("kind") != "enemy" or t is None or t["y_lo"] <= 0:
+                continue
+            c = f["beat"] + game["hero"][f["hop"]]["air_beats"] * 0.5
+            f0, f1 = c - f["beats"] * 0.5, c + f["beats"] * 0.5
+            for gi, g in enumerate(items):
+                if g.get("kind") != "gap":
+                    continue
+                air = game["hero"][g["hop"]]["air_beats"]
+                if f0 < g["beat"] + air + slack and f1 > g["beat"] - slack:
+                    out.append(f"phrase {pi} item {fi}: a flyer over the gap of item {gi} (keep it clear of the hop across the gap)")
     return out
 
 

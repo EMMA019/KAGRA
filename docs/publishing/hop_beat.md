@@ -149,7 +149,7 @@ getting past one is still a rhythm action, and the one button is unchanged.
 
 ## Falling
 
-Falling into a gap is a plain fail (no catching, no rescue); the picture just plays it out. The bunny keeps its momentum over the ledge, the picture holds for a beat, dust and a glint puff up, `fall.wav` (a falling whoosh, original, CC0) sounds, and the bunny tumbles, stretches and drops while the camera trails behind and lets it fall out of frame. The edge of the screen darkens, and the game over card comes `fall.card_delay_secs` after the ledge. With lives left the bunny comes back on the slab as before; a revive puts it on a safe tile.
+Falling into a gap is a plain fail (no catching, no rescue); the picture just plays it out. The bunny keeps its momentum over the ledge, the picture holds for a beat, dust and a glint puff up, `fall.wav` (a falling whoosh, original, CC0) sounds, and the bunny tumbles, stretches and drops while the camera trails behind and lets it fall out of frame. The edge of the screen darkens, and the game over card comes `fall.card_delay_secs` after the ledge. With lives left the bunny now comes back after a breather (see Recovering below); a revive puts it on a safe tile and gets the same READY count.
 
 Everything is in the JSON `fall` block (all keys optional, Python mirror in `kagra/hop_beat.py`):
 
@@ -166,6 +166,24 @@ Everything is in the JSON `fall` block (all keys optional, Python mirror in `kag
 | `dust` | 8 | 0 to 32 | dust particles at the ledge (half on the low tier) |
 
 This is picture only: the run, score and baselines are unchanged, and the primitive fallback and every quality tier draw it too.
+
+## Recovering after a fall
+
+A fall that costs a life (and a Continue after a game over) no longer drops the bunny straight back in. The JSON `recover` block (Python mirror in `kagra/hop_beat.py`):
+
+| key | default | range | meaning |
+| --- | --- | --- | --- |
+| `enabled` | true | | false = the old instant second wind |
+| `drop_secs` | 0.9 | 0.2 to 3 | the drop plays out (slowed, music faded) before anything else |
+| `ready_beats` | 3 | 0 to 8 | READY / 3 / 2 / 1: the world is held, one tick per beat; 0 = no count |
+| `invuln_secs` | 2.4 | 0 to 10 | the bunny blinks and cannot be hurt this long once play resumes |
+| `clear_beats` | 4 | 0 to 32 | beats of empty slab laid ahead of where it comes back |
+
+Order: drop, then the bunny is put on the next bar line on empty slab and the world holds for `ready_beats` beats (blinking, a tick on each beat), then the music restarts on that bar line (the audio clock is re-synced by `begin()`) and play resumes with the blink. Nothing in the sim runs during the hold (song time, scroll and obstacles stand still), so scores, baselines and the measure bots are unchanged (the bots play with it off). A Continue uses the same READY count with `revive.invuln_secs` and `revive.clear_beats`.
+
+## Flyers over gaps (fairness)
+
+A bat is only there to punish a hold hop, so a tap must always be safe under it. `tap_window_secs` (a press that is let go within it is a tap) is now 0.16 s instead of 0.11 s: a thumb on glass often stays down 120-150 ms, and under a bat that used to turn into a hold hop that flew into it. The placement rules are also stricter: no flyer over a gap (the whole hop across the gap, plus 100 ms of press slack either way, must be clear of the bat: `HopSpec::course_problems` and `phrase_problems` in Python), a phrase with a flyer must hold at +-100 ms, and `HopSpec::seam_problems` plays every ordered pair of phrases with a bat in it back to back at +-100 ms (or the narrower of the two phrases' own windows). Tests replay 2000 seeds with every modifier (plain, sprint, no_breaks, midnight, stomp_party) and check each seam the generator lays.
 
 ## Look and finish
 

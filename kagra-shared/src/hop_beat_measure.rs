@@ -17,6 +17,11 @@ pub enum Bot {
     Perfect,
     /// Presses `sigma_ms` off on average and sometimes forgets (`miss_pct`).
     Human { sigma_ms: f32, miss_pct: f32 },
+    /// Presses every ideal beat `ms` early (negative) or late, always the right hop.
+    Offset { ms: f32 },
+    /// Presses on the beat like `Perfect`, but keeps the finger down `ms` on a tap (a
+    /// thumb on glass, not a mouse click).
+    SlowTap { ms: f32 },
     /// Never touches the screen.
     Idle,
     /// Taps on every beat, whatever is coming.
@@ -30,6 +35,8 @@ impl Bot {
         match self {
             Bot::Perfect => "perfect".into(),
             Bot::Human { sigma_ms, miss_pct } => format!("human_{sigma_ms:.0}ms_{miss_pct:.0}pct"),
+            Bot::Offset { ms } => format!("offset_{ms:+.0}ms"),
+            Bot::SlowTap { ms } => format!("slow_tap_{ms:.0}ms"),
             Bot::Idle => "idle".into(),
             Bot::Spam => "spam".into(),
             Bot::HoldAll => "hold_all".into(),
@@ -51,6 +58,8 @@ pub struct BotRun {
     pub seconds: f32,
     pub bars: f32,
     pub died: bool,
+    /// The beat (song time / beat length) of each life lost, with the reason.
+    pub losses: Vec<(f32, String)>,
 }
 
 struct Rng(u32);
@@ -76,6 +85,8 @@ struct Plan {
 pub fn play(spec: &HopSpec, bot: Bot, seed: u32, max_secs: f32) -> BotRun {
     let mut spec = spec.clone();
     spec.play.direct = false;
+    // The bots measure the course, not the breather after a fall.
+    spec.recover.enabled = false;
     spec.course.seed = seed;
     let bs = spec.beat_secs();
     let mut g = HopBeat::new(spec.clone());
@@ -88,6 +99,7 @@ pub fn play(spec: &HopSpec, bot: Bot, seed: u32, max_secs: f32) -> BotRun {
     let mut last_release = -1.0_f32;
     let dt = 1.0 / 60.0;
     let mut lives_lost = 0;
+    let mut losses: Vec<(f32, String)> = Vec::new();
     let mut lives = g.lives();
     let mut steps = 0u32;
     let max_steps = (max_secs / dt) as u32 + 600;
@@ -101,10 +113,18 @@ pub fn play(spec: &HopSpec, bot: Bot, seed: u32, max_secs: f32) -> BotRun {
                 let phase = (now / bs).fract();
                 g.set_hold(phase < 0.1);
             }
-            Bot::Perfect | Bot::Human { .. } => {
+            Bot::Perfect | Bot::Human { .. } | Bot::Offset { .. } | Bot::SlowTap { .. } => {
                 let (sigma, miss) = match bot {
                     Bot::Human { sigma_ms, miss_pct } => (sigma_ms / 1000.0, miss_pct / 100.0),
                     _ => (0.0, 0.0),
+                };
+                let tap_hold = match bot {
+                    Bot::SlowTap { ms } => ms / 1000.0,
+                    _ => 0.05,
+                };
+                let shift = match bot {
+                    Bot::Offset { ms } => ms / 1000.0,
+                    _ => 0.0,
                 };
                 for o in g.course().obst.iter() {
                     if o.fate != Fate::Pending || !spec.needs_press(o) {
@@ -122,11 +142,11 @@ pub fn play(spec: &HopSpec, bot: Bot, seed: u32, max_secs: f32) -> BotRun {
                     if rng.next() < miss {
                         continue;
                     }
-                    let press = (ideal + rng.gauss() * sigma)
+                    let press = (ideal + shift + rng.gauss() * sigma)
                         .max(now)
                         .max(last_release + 0.03);
                     let release = match o.hop {
-                        Hop::Tap => press + 0.05,
+                        Hop::Tap => press + tap_hold,
                         Hop::Hold => press + spec.arc(Hop::Hold).air_beats * bs * 0.8,
                     };
                     last_release = release;
@@ -151,6 +171,7 @@ pub fn play(spec: &HopSpec, bot: Bot, seed: u32, max_secs: f32) -> BotRun {
         if g.lives() < lives {
             lives_lost += lives - g.lives();
             lives = g.lives();
+            losses.push((g.song_t() / bs, g.last_loss().to_string()));
         }
     }
     let (cleared, perfects, goods, oks) = g.counts();
@@ -167,6 +188,7 @@ pub fn play(spec: &HopSpec, bot: Bot, seed: u32, max_secs: f32) -> BotRun {
         seconds,
         bars: seconds / (bs * spec.music.beats_per_bar as f32),
         died: !g.playing(),
+        losses,
     }
 }
 
@@ -560,6 +582,164 @@ mod tests {
                         .all(|(k, v)| y.get(k).is_some_and(|w| close(v, w, rel)))
             }
             _ => a == b,
+        }
+    }
+
+    fn item(beat: f32, kind: &str, beats: f32, hop: &str, enemy: &str) -> crate::hop_beat::Item {
+        crate::hop_beat::Item {
+            beat,
+            kind: kind.into(),
+            beats,
+            hop: hop.into(),
+            enemy: enemy.into(),
+        }
+    }
+
+    fn phrase(items: Vec<crate::hop_beat::Item>) -> crate::hop_beat::Phrase {
+        crate::hop_beat::Phrase {
+            level: 0,
+            bars: 2,
+            items,
+            weight: 1,
+            debut: false,
+        }
+    }
+
+    /// Every phrase with a bat, next to every other phrase, can be played at any press
+    /// within 100 ms of the beat: a bat over a gap, or after a hold, is never a trap.
+    #[test]
+    fn every_bat_phrase_pair_is_winnable_at_100ms() {
+        let s = spec();
+        let problems = s.seam_problems(100.0);
+        assert!(problems.is_empty(), "{problems:#?}");
+        // The checker does see the bats of the stock set.
+        let ph = s.phrases();
+        let bats: Vec<_> = ph.iter().filter(|p| s.has_flyer(p)).collect();
+        assert!(bats.len() >= 4, "{}", bats.len());
+        for p in bats {
+            assert!(
+                s.phrase_half_ms(p) >= 100.0,
+                "a bat phrase holds at +-100 ms alone"
+            );
+        }
+    }
+
+    /// The same check flags a bat over a gap that only a hold hop clears: a tap
+    /// would fall in, a hold flies into the bat.
+    #[test]
+    fn a_bat_over_a_hold_gap_is_caught() {
+        let s = spec();
+        let trap = phrase(vec![
+            item(1.0, "gap", 1.5, "hold", ""),
+            item(1.0, "enemy", 0.9, "tap", "bat"),
+        ]);
+        assert!(s.has_flyer(&trap));
+        let calm = phrase(vec![item(1.0, "gap", 0.5, "tap", "")]);
+        assert!(
+            s.seam_fail(&trap, &calm, 0.0).is_some(),
+            "a bat over a hold gap must fail even on the beat"
+        );
+        let mut custom = s.clone();
+        custom.course.phrases = vec![trap];
+        assert!(
+            !custom.course_problems().is_empty(),
+            "course_problems must flag a bat over a hold gap"
+        );
+        // And the stock bat-over-a-tap-gap phrase is fine.
+        let fair = phrase(vec![
+            item(1.0, "gap", 0.5, "tap", ""),
+            item(1.0, "enemy", 0.9, "tap", "bat"),
+        ]);
+        assert!(s.seam_fail(&fair, &calm, 100.0).is_none());
+    }
+
+    /// 2000 daily-style seeds, every modifier of the shipped set (sprint, no_breaks,
+    /// midnight, stomp_party) and the plain course: every phrase seam the generator lays
+    /// is one that was played at +-100 ms (flyers) or +-the Perfect window (the rest).
+    #[test]
+    fn laid_courses_only_use_winnable_seams() {
+        use std::collections::HashMap;
+        let base = spec();
+        let phrases = base.phrases();
+        let mut memo: HashMap<(usize, usize), bool> = HashMap::new();
+        let mut seams_seen = 0usize;
+        type Tweak = fn(&mut HopSpec);
+        let mods: [(&str, Tweak); 5] = [
+            ("plain", |_| {}),
+            ("sprint", |s| s.course.ramp_bars = 24),
+            ("no_breaks", |s| s.course.rest_every_bars = 16),
+            ("midnight", |s| {
+                s.look.accent = [190, 140, 255];
+                s.look.glow = [120, 160, 255];
+                s.look.slab = [30, 28, 60];
+            }),
+            ("stomp_party", |s| s.enemies.stomp_score = 300),
+        ];
+        for (name, apply) in mods {
+            let mut sp = base.clone();
+            apply(&mut sp);
+            sp.validate().unwrap();
+            for seed in 0..2000u32 {
+                sp.course.seed = seed.wrapping_mul(2_654_435_761).wrapping_add(seed);
+                let mut c = Course::new(&sp);
+                c.ensure(&sp, 160.0 * sp.music.beats_per_bar as f32);
+                let laid = c.laid().to_vec();
+                for w in laid.windows(2) {
+                    let (a, b) = (w[0], w[1]);
+                    if a == usize::MAX || b == usize::MAX {
+                        continue;
+                    }
+                    seams_seen += 1;
+                    let ok = *memo.entry((a, b)).or_insert_with(|| {
+                        let cap = if sp.has_flyer(&phrases[a]) || sp.has_flyer(&phrases[b]) {
+                            100.0
+                        } else {
+                            sp.judge.perfect_ms.min(100.0)
+                        };
+                        let half = cap.min(sp.pair_half_ms(&phrases[a], &phrases[b]));
+                        sp.seam_fail(&phrases[a], &phrases[b], half).is_none()
+                    });
+                    assert!(
+                        ok,
+                        "{name} seed {seed}: phrase {a} then {b} is not winnable"
+                    );
+                }
+            }
+        }
+        assert!(seams_seen > 100_000, "{seams_seen}");
+    }
+
+    /// A tap that stays down a little long (a thumb, not a click) is still a tap: the
+    /// bat phrases have no trap for it. Found by this test: with the old 110 ms tap window
+    /// a 140 ms touch turned into a hold hop under every bat.
+    #[test]
+    fn a_thumb_tap_clears_every_bat_phrase() {
+        let s = spec();
+        for seed in 0..40u32 {
+            let r = play(&s, Bot::SlowTap { ms: 140.0 }, seed, 260.0);
+            let mut sp = s.clone();
+            sp.course.seed = seed;
+            let mut c = Course::new(&sp);
+            c.ensure(&sp, 700.0);
+            let near: Vec<String> = r
+                .losses
+                .iter()
+                .map(|(b, why)| {
+                    let o: Vec<String> = c
+                        .obst
+                        .iter()
+                        .filter(|o| o.take_beat <= b + 0.3 && o.take_beat > b - 3.0)
+                        .map(|o| {
+                            format!(
+                                "{:?}{:?}@{:.1}ety{}",
+                                o.kind, o.hop, o.take_beat, o.ety as i32
+                            )
+                        })
+                        .collect();
+                    format!("{why} at beat {b:.1}: {o:?}")
+                })
+                .collect();
+            assert!(r.losses.is_empty(), "seed {seed}: {near:#?}");
         }
     }
 }
