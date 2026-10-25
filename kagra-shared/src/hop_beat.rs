@@ -1398,6 +1398,8 @@ pub struct Obst {
     pub y_lo: f32,
     /// Song time the hero stomped it.
     pub stomped_t: Option<f32>,
+    /// Song time it hurt the hero.
+    pub hit_t: Option<f32>,
 }
 
 impl Obst {
@@ -1413,6 +1415,7 @@ impl Obst {
             ety: usize::MAX,
             y_lo: 0.0,
             stomped_t: None,
+            hit_t: None,
         }
     }
 }
@@ -1672,6 +1675,8 @@ pub struct HopBeat {
     last_beat: i64,
     hit_flash: f32,
     land_squash: f32,
+    /// The hero's squash and ear springs (`hop_anim`).
+    anim: crate::hop_anim::HeroAnim,
     just_hop: bool,
     sfx: bool,
     time: f32,
@@ -1804,6 +1809,7 @@ impl HopBeat {
             last_beat: -1,
             hit_flash: 0.0,
             land_squash: 0.0,
+            anim: Default::default(),
             just_hop: false,
             sfx: true,
             time: 0.0,
@@ -2169,6 +2175,7 @@ impl HopBeat {
         self.coyote = 0.0;
         self.buffer = 0.0;
         self.just_hop = true;
+        self.anim.on_takeoff();
         self.core.stats.just_jump = true;
         self.stray_check = None;
         self.cue("hop");
@@ -2176,6 +2183,7 @@ impl HopBeat {
 
     fn land(&mut self, id: u32) {
         self.land_squash = 1.0;
+        self.anim.on_land(1.0);
         self.cue("land");
         let t = self.song_t + 0.2;
         self.stray_check = Some((id, t));
@@ -2387,6 +2395,7 @@ impl HopBeat {
                     self.ground_t = self.song_t;
                     self.air = Air::Ground;
                     self.land_squash = 0.6;
+                    self.anim.on_land(0.6);
                 } else if self.y < -0.35 && self.invuln > 0.0 {
                     self.y = 0.0;
                     self.air = Air::Ground;
@@ -2400,6 +2409,10 @@ impl HopBeat {
                 }
             }
         }
+
+        let grounded = matches!(self.air, Air::Ground);
+        let (bp, bf) = (self.beat_pos(), self.beat_flash);
+        self.anim.update(dt, self.y, grounded, bp, bf);
 
         // ---- obstacles
         let hw = hero.half_width;
@@ -2428,11 +2441,15 @@ impl HopBeat {
         if !hit.is_empty() {
             let enemy_hit = hit.iter().any(|&i| self.course.obst[i].kind == Kind::Enemy);
             // While ghosting (after a hit or a revive) they pass through.
-            if self.invuln <= 0.0 {
+            let hurt = self.invuln <= 0.0;
+            if hurt {
                 self.lose_life(if enemy_hit { "enemy" } else { "block" });
             }
             for &i in &hit {
                 self.course.obst[i].fate = Fate::Skipped;
+                if hurt {
+                    self.course.obst[i].hit_t = Some(self.song_t);
+                }
             }
             stomped.retain(|i| !hit.contains(i));
         }
@@ -2525,6 +2542,7 @@ impl HopBeat {
         self.last_grade = Some((Grade::Stomp, 0.0, 0.0));
         self.grade_age = 0.0;
         self.cue("stomp");
+        self.anim.on_stomp();
         let c = self.spec.look.accent;
         self.core.juice.burst(px, py, 0.0, 9, c, 3.0, 0.1);
         self.core.juice.shake = self.core.juice.shake.max(0.12);
@@ -2935,6 +2953,10 @@ const BUNNY_GLB: &str = "assets/models/hop_beat/hop_bunny.glb";
 const POST_GLB: &str = "assets/models/hop_beat/hop_post.glb";
 const SLIME_GLB: &str = "assets/models/hop_beat/hop_slime.glb";
 const BEETLE_GLB: &str = "assets/models/hop_beat/hop_beetle.glb";
+/// The ears, a separate mesh whose origin is the pivot at the top of the head
+/// (`EAR_PIVOT`, in the body's own units).
+const EARS_GLB: &str = "assets/models/hop_beat/hop_ears.glb";
+const EAR_PIVOT: [f32; 3] = [0.0, 0.80, 0.26];
 const BAT_GLB: &str = "assets/models/hop_beat/hop_bat.glb";
 /// Skyline variants: (tower, lit windows), unit footprint 3 x 3 m, base on y = 0.
 const TOWER_GLBS: [(&str, &str); 3] = [
@@ -3113,7 +3135,9 @@ impl HopBeat {
         // The renderer rebuilds its glTF slot table whenever the list of distinct
         // models changes. One tiny buried prop per model, first in the list, keeps
         // the table constant while towers and posts scroll in and out.
-        let mut models: Vec<&str> = vec![BUNNY_GLB, POST_GLB, SLIME_GLB, BEETLE_GLB, BAT_GLB];
+        let mut models: Vec<&str> = vec![
+            BUNNY_GLB, EARS_GLB, POST_GLB, SLIME_GLB, BEETLE_GLB, BAT_GLB,
+        ];
         for (tower, windows) in TOWER_GLBS {
             models.push(tower);
             models.push(windows);
@@ -3366,7 +3390,11 @@ impl HopBeat {
         }
 
         // ---- hero
-        self.push_hero(&mut doc, hx, models.contains(&BUNNY_GLB));
+        self.push_hero(
+            &mut doc,
+            hx,
+            models.contains(&BUNNY_GLB) && models.contains(&EARS_GLB),
+        );
         // ---- sparks (kit x = track, kit z = lateral)
         for (i, sp) in self.core.juice.sparks.iter().enumerate() {
             let fade = 1.0 - (sp.life / sp.max_life).clamp(0.0, 1.0);
@@ -3524,21 +3552,30 @@ impl HopBeat {
             } else {
                 1.0
             };
-            let mut k = [1.0_f32, 1.0, 1.0];
+            // Idle / walk / fly from the beat clock; a stomp or a hit overrides it.
+            let mut pose = crate::hop_anim::enemy_pose(
+                &et.look,
+                self.beat_pos().rem_euclid(1.0),
+                pulse,
+                phase,
+            );
             if let Some(a) = squash_age {
-                let u = (a / 0.35).clamp(0.0, 1.0);
-                k = [1.0 + 0.5 * (1.0 - u), 0.18, 1.0 + 0.5 * (1.0 - u)];
-            } else if et.look == "slime" {
-                k = [1.0 + 0.08 * pulse, 1.0 - 0.12 * pulse, 1.0 + 0.08 * pulse];
+                pose.scale = crate::hop_anim::stomp_scale(a, 0.35);
+                pose.flash = 1.0;
+            } else if let Some(t) = o.hit_t {
+                let h = crate::hop_anim::hit_puff(self.song_t - t);
+                pose.scale = h.scale;
+                pose.flash = h.flash;
             }
+            let mut k = pose.scale;
             k = k.map(|v| v * appear.max(0.05));
             let live = o.fate == Fate::Pending;
             let em = if squash_age.is_some() {
                 1.2
             } else if live {
-                0.45 + 0.4 * pulse
+                0.45 + 0.4 * pulse + 0.9 * pose.flash
             } else {
-                0.2
+                0.2 + 0.9 * pose.flash
             };
             let linear = et.color.map(|v| (v as f32 / 255.0).powf(2.2));
             let id = format!("enemy-{}-{}", (o.take_beat * 100.0).round() as i64, o.ety);
@@ -3547,7 +3584,7 @@ impl HopBeat {
             } else {
                 0.0
             };
-            let y = o.y_lo + hop + bob;
+            let y = o.y_lo + hop + bob + pose.dy;
             let glb = match et.look.as_str() {
                 "slime" => SLIME_GLB,
                 "beetle" => BEETLE_GLB,
@@ -3578,9 +3615,8 @@ impl HopBeat {
                     em,
                     Some(linear),
                 );
-                if et.look == "bat" {
-                    p.roll = 0.22 * (self.anim_t * 13.0 + o.take_beat).sin();
-                }
+                p.roll = pose.roll;
+                p.yaw = pose.yaw;
                 doc.props.push(p);
                 continue;
             }
@@ -3690,19 +3726,19 @@ impl HopBeat {
     fn push_hero(&self, doc: &mut WorldDoc, hx: f32, glb: bool) {
         let look = &self.spec.look;
         let title = self.flow.phase == FlowPhase::Title;
-        let (mut y, mut squash, mut stretch) = (self.y + self.y_vis_off, self.land_squash, 0.0);
+        let mut y = self.y + self.y_vis_off;
+        let (mut squash, mut ear) = (self.anim.squash.x, self.anim.ear.x);
         if title {
             let b = (self.attract / self.spec.beat_secs()).fract();
             y = 4.0 * 0.5 * b * (1.0 - b);
             squash = if b < 0.1 { 0.5 } else { 0.0 };
-        } else if !matches!(self.air, Air::Ground) {
-            stretch = 0.18;
+            ear = crate::hop_anim::ear_target(4.0 * (1.0 - 2.0 * b), b, false);
+        } else if matches!(self.air, Air::Ground) {
+            // Standing: a small bob on the beat.
+            y += crate::hop_anim::idle_bob(self.beat_pos().rem_euclid(1.0));
         }
         let blink = self.invuln > 0.0 && ((self.anim_t * 10.0) as u32).is_multiple_of(2);
-        let (sx, sy) = (
-            1.0 + 0.22 * squash - 0.06 * stretch,
-            1.0 - 0.28 * squash + stretch,
-        );
+        let [sx, sy, _] = crate::hop_anim::body_scale(squash);
         let r = 0.40;
         let z = hx;
         let gy = y.max(0.0);
@@ -3745,16 +3781,34 @@ impl HopBeat {
             } else {
                 (beat, look.glow.map(|v| (v as f32 / 255.0).powf(2.2)))
             };
+            let scale = [sx * 1.2, sy * 1.2, sx * 1.2];
             doc.props.push(glb_prop(
                 "hero-body",
                 BUNNY_GLB,
                 "hero",
                 [0.0, gy, z],
-                [sx * 1.2, sy * 1.2, sx * 1.2],
+                scale,
                 [255, 255, 255],
                 em,
                 Some(col),
             ));
+            // The ears swing from the top of the head: follow-through.
+            let mut ears = glb_prop(
+                "hero-ears",
+                EARS_GLB,
+                "hero",
+                [
+                    0.0,
+                    gy + EAR_PIVOT[1] * scale[1],
+                    z + EAR_PIVOT[2] * scale[2],
+                ],
+                scale,
+                [255, 255, 255],
+                em,
+                Some(col),
+            );
+            ears.pitch = ear;
+            doc.props.push(ears);
             return;
         }
         doc.props.push(prop(
@@ -3780,6 +3834,9 @@ impl HopBeat {
                 0.4,
                 0.0,
             ));
+            if let Some(p) = doc.props.last_mut() {
+                p.pitch = ear;
+            }
         }
         doc.props.push(prop(
             "hero-core",
@@ -4061,6 +4118,7 @@ mod tests {
     fn the_models_load_are_the_right_size_and_the_picture_uses_them() {
         let mut files = vec![
             BUNNY_GLB.to_string(),
+            EARS_GLB.to_string(),
             POST_GLB.to_string(),
             SLIME_GLB.to_string(),
             BEETLE_GLB.to_string(),
@@ -4079,7 +4137,7 @@ mod tests {
             assert!(b.min.y > -0.05, "{f} sinks below its base ({})", b.min.y);
             if f == BUNNY_GLB {
                 // 1.0-1.3 m tall, feet on y = 0, much narrower than the track
-                assert!(b.max.y > 0.9 && b.max.y < 1.4, "bunny {}", b.max.y);
+                assert!(b.max.y > 0.8 && b.max.y < 1.4, "bunny {}", b.max.y);
                 assert!(b.max.x - b.min.x < 1.0);
             }
         }

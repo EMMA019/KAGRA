@@ -16,7 +16,7 @@ _spec.loader.exec_module(hm)
 def test_generator_is_deterministic_and_matches_the_committed_files():
     a, b = hm.build(), hm.build()
     assert a == b
-    assert len(a) == 11
+    assert len(a) == 12
     for path, data in a.items():
         assert path.is_file(), path
         assert path.read_bytes() == data, f"{path.name} drifted: run tools/gen_assets/hop_models.py"

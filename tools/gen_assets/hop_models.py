@@ -51,6 +51,18 @@ def _tilt_x(tris, cy, cz, ang):
     return [tuple(r(v) for v in t) for t in tris]
 
 
+def _tilt_z(tris, cx, cy, ang):
+    """Rotate triangles about the z axis through (cx, cy): +ang raises the +x side."""
+    c, s = math.cos(ang), math.sin(ang)
+
+    def r(v):
+        x, y, z = v
+        dx, dy = x - cx, y - cy
+        return (cx + dx * c - dy * s, cy + dx * s + dy * c, z)
+
+    return [tuple(r(v) for v in t) for t in tris]
+
+
 def bunny():
     sph = pm._sphere
     parts = [
@@ -65,12 +77,24 @@ def bunny():
         (CREAM, sph((-0.15, 0.05, 0.22), 0.09, 0.05, 0.14, 8, 5)),  # feet
         (CREAM, sph((0.15, 0.05, 0.22), 0.09, 0.05, 0.14, 8, 5)),
     ]
+    return parts
+
+
+# The ears are their own mesh so the game can swing them (follow-through).
+# Origin = the pivot at the top of the head, in the body's units.
+EAR_PIVOT = (0.0, 0.80, 0.26)
+
+
+def bunny_ears():
+    sph = pm._sphere
+    parts = []
     for sx in (-1.0, 1.0):
         ear = sph((sx * 0.11, 0.98, 0.22), 0.065, 0.24, 0.045, 10, 8)
         inner = sph((sx * 0.11, 0.98, 0.245), 0.035, 0.19, 0.02, 8, 6)
         parts.append((CREAM, _tilt_x(ear, 0.80, 0.26, 0.28)))
         parts.append((PINK, _tilt_x(inner, 0.80, 0.26, 0.28)))
-    return parts
+    px, py, pz = EAR_PIVOT
+    return [(c, [tuple((v[0] - px, v[1] - py, v[2] - pz) for v in t) for t in tris]) for c, tris in parts]
 
 
 SLIME = (96, 226, 140)
@@ -123,7 +147,7 @@ def beetle():
 
 
 def bat():
-    """1.4 m across, 0.66 m tall: a round body, two flat wings with a tip each, ears, yellow eyes."""
+    """1.6 m across: a round body, two wings raised in a V with fingers, ears, yellow eyes."""
     sph = pm._sphere
     parts = [
         (BAT, sph((0, 0.30, 0.0), 0.22, 0.26, 0.20, 12, 7)),
@@ -134,9 +158,17 @@ def bat():
         (YELLOW, sph((0.075, 0.52, -0.17), 0.028, 0.04, 0.02, 6, 4)),
         (INK, sph((0, 0.44, -0.16), 0.03, 0.02, 0.02, 6, 4)),
     ]
+    # Wings raised in a V so the silhouette reads from behind and above, with
+    # three pointed fingers hanging off each.
     for sx in (-1.0, 1.0):
-        parts.append((BAT_DK, sph((sx * 0.46, 0.34, 0.02), 0.30, 0.035, 0.24, 12, 4)))  # wing
-        parts.append((BAT_DK, sph((sx * 0.68, 0.28, 0.04), 0.20, 0.030, 0.16, 10, 4)))  # tip
+        up = sx * 0.55
+        wing = sph((sx * 0.48, 0.34, 0.02), 0.34, 0.05, 0.26, 12, 5)
+        tip = sph((sx * 0.74, 0.34, 0.04), 0.22, 0.045, 0.17, 10, 4)
+        parts.append((BAT_DK, _tilt_z(wing, sx * 0.14, 0.34, up)))
+        parts.append((BAT_DK, _tilt_z(tip, sx * 0.14, 0.34, up)))
+        for k, fx in enumerate((0.50, 0.68, 0.86)):
+            finger = pm._lathe([(1e-6, -0.10), (0.05, 0.10)], 6, (sx * fx, 0.25 - 0.02 * k, 0.05 + 0.04 * k))
+            parts.append((BAT_DK, _tilt_z(finger, sx * 0.14, 0.34, up)))
         parts.append((BAT, pm._cone((sx * 0.10, 0.68, 0.0), 0.06, 0.16, 8)))  # ear
     return parts
 
@@ -224,7 +256,9 @@ TOWERS = {
 
 def build() -> dict[Path, bytes]:
     b = bunny()
-    out = {OUT / "hop_bunny.glb": pm.write_glb(OUT / "hop_bunny.glb", b, "hop_bunny", ao=_ao_for(b, floor=0.62, reach=0.3))}
+    ears = bunny_ears()
+    out = {OUT / "hop_ears.glb": pm.write_glb(OUT / "hop_ears.glb", ears, "hop_ears")}
+    out[OUT / "hop_bunny.glb"] = pm.write_glb(OUT / "hop_bunny.glb", b, "hop_bunny", ao=_ao_for(b, floor=0.62, reach=0.3))
     for i, (k, t) in enumerate(TOWERS.items()):
         body = _tower_body(t["w"], t["h"], t["d"], t.get("tank", False), t.get("antenna", False), t.get("ac", False), t.get("steps", False))
         out[OUT / f"hop_tower_{k}.glb"] = pm.write_glb(OUT / f"hop_tower_{k}.glb", body, f"hop_tower_{k}", ao=_ao_for(body, floor=0.42, reach=0.18))

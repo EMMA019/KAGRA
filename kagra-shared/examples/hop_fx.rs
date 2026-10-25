@@ -62,12 +62,34 @@ fn main() -> Result<(), String> {
         }
         let mut ms = Vec::new();
         let mut last = Vec::new();
-        for _ in 0..frames {
+        // HOP_FX_STRIP=n writes every n-th frame of the "both" run; HOP_FX_TAP=f taps at frame f
+        // (held for 4 frames) so the hop and landing can be looked at.
+        let strip: u32 = std::env::var("HOP_FX_STRIP")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let tap: Option<u32> = std::env::var("HOP_FX_TAP")
+            .ok()
+            .and_then(|v| v.parse().ok());
+        for f in 0..frames {
+            if let (Some(t), Some(g)) = (tap, session.hop_mut()) {
+                if f == t {
+                    g.set_hold(true);
+                }
+                if f == t + 4 {
+                    g.set_hold(false);
+                }
+            }
             session.request_frame();
             let t = Instant::now();
             session.render()?;
             last = session.render_readback()?;
             ms.push(t.elapsed().as_secs_f32() * 1000.0);
+            if strip > 0 && f % strip == 0 && name == "both" {
+                if let Some(dir) = &out {
+                    write_png(&dir.join(format!("strip_{f:03}.png")), w, h, &last)?;
+                }
+            }
         }
         if let Some(dir) = &out {
             write_png(&dir.join(format!("{name}.png")), w, h, &last)?;

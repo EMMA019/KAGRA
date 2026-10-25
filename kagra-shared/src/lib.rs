@@ -34,6 +34,7 @@ pub mod genre_session;
 pub mod gesture;
 pub mod gltf_load;
 pub mod grade;
+pub mod hop_anim;
 pub mod hop_beat;
 pub mod hop_beat_measure;
 pub mod hot;
