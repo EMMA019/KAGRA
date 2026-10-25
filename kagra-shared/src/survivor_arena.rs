@@ -3626,6 +3626,16 @@ impl SurvivorArena {
             (0.12, lin(HERO_GLOW))
         };
         let mut slots = self.slots;
+        // The blaster is in her hands only while she owns something that shoots from it.
+        // Blades, lightning and the pulse have no muzzle, and a gun beside two orbiting
+        // swords read as three weapons while the HUD showed one.
+        let gun_held = self.spec.weapons.iter().enumerate().any(|(i, w)| {
+            self.weapon_lv[i] > 0
+                && matches!(
+                    w.kind,
+                    WeaponKind::Projectile | WeaponKind::Spread | WeaponKind::Missile
+                )
+        });
         let glb_hero = props_has_model(&self.doc.props[slots.hero]);
         let props = &mut self.doc.props;
         {
@@ -3658,6 +3668,7 @@ impl SurvivorArena {
         if slots.glb_gun {
             let (sn, cs) = face.sin_cos();
             let p = &mut props[slots.gun];
+            p.enabled = gun_held;
             p.position = [hx + sn * GUN_FWD, bob + GUN_UP, hz + cs * GUN_FWD];
             p.yaw = face + std::f32::consts::PI;
             p.emissive = Some(hero_em * 0.5);
@@ -3761,8 +3772,14 @@ impl SurvivorArena {
             p.yaw = s.vx.atan2(s.vz);
             p.color = Some(wc.map(u32::from));
             p.emissive_color = Some(lin(wc.map(u32::from)));
+            // A petal is a small flat disc that tumbles. It used to be an egg-shaped bar
+            // with a long streak, which read as a second and third gun barrel.
+            p.emissive = Some(if s.kind == 1 { 0.7 } else { 1.2 });
+            if s.kind == 1 {
+                p.yaw = self.anim_t * 11.0 + i as f32 * 1.7;
+            }
             p.scale = match s.kind {
-                1 => [s.r * 0.9, s.r * 0.9, s.r * 1.4],
+                1 => [s.r * 1.6, s.r * 0.45, s.r * 1.6],
                 2 => {
                     let pulse = 1.0 + 0.15 * (self.anim_t * 14.0 + i as f32).sin();
                     [s.r * 1.7 * pulse; 3]
@@ -3784,7 +3801,8 @@ impl SurvivorArena {
         let nshots = self.spec.caps.shots as usize;
         for (i, l) in self.doc.lines.iter_mut().take(nshots).enumerate() {
             l.points.clear();
-            if let (true, Some(s)) = (streak, self.shots.get(i)) {
+            // No streak behind petals: they are discs, not bolts.
+            if let (true, Some(s)) = (streak, self.shots.get(i).filter(|s| s.kind != 1)) {
                 let wc = self
                     .spec
                     .weapons
@@ -5263,6 +5281,100 @@ mod tests {
             if let Ok(mut r2) = pollster::block_on(Renderer::new_offscreen(sw, sh)) {
                 run(&format!("base @{sw}x{sh}"), &base, &mut r2);
             }
+        }
+    }
+
+    #[test]
+    fn the_blaster_is_held_only_with_a_gun_weapon_and_petals_have_no_barrel_streak() {
+        let gun = |g: &SurvivorArena| {
+            g.doc
+                .props
+                .iter()
+                .find(|p| p.name == "gun")
+                .map(|p| p.enabled)
+        };
+        for (start, held) in [
+            ("bolt", true),
+            ("petals", true),
+            ("wisps", true),
+            ("blades", false),
+            ("zap", false),
+            ("pulse", false),
+        ] {
+            let mut g = quiet(start);
+            g.build_doc();
+            g.tick(DT);
+            if gun(&g).is_none() {
+                return; // the model is not in this build: nothing to check
+            }
+            assert_eq!(gun(&g), Some(held), "{start}");
+        }
+        let mut g = quiet("petals");
+        g.build_doc();
+        g.shots.push(Shot {
+            x: g.hx + 3.0,
+            z: g.hz,
+            vx: 15.0,
+            vz: 0.0,
+            life: 1.0,
+            dmg: 1.0,
+            pierce: 0,
+            r: 0.2,
+            hits: [0; 4],
+            n: 0,
+            kind: 1,
+            w: 0,
+            area: 0.0,
+        });
+        g.build_doc();
+        assert!(g.doc.lines[0].points.is_empty(), "a petal leaves no streak");
+    }
+
+    /// Close-ups of the hero for each starting weapon, to see what it holds.
+    /// `KAGRA_CLOSEUP_DIR=/tmp/x cargo test --release -p kagra-shared --features render --lib closeup_probe -- --ignored --nocapture`
+    #[cfg(feature = "render")]
+    #[test]
+    #[ignore = "writes PNGs for a human to look at"]
+    fn closeup_probe() {
+        use crate::render::Renderer;
+        let dir = std::env::var("KAGRA_CLOSEUP_DIR").unwrap_or_else(|_| "/tmp/closeup".into());
+        std::fs::create_dir_all(&dir).unwrap();
+        let Ok(mut r) = pollster::block_on(Renderer::new_offscreen(390, 520)) else {
+            eprintln!("no adapter");
+            return;
+        };
+        for start in ["bolt", "petals", "blades", "wisps", "zap", "pulse"] {
+            let mut g = quiet(start);
+            g.apply_quality();
+            g.build_doc();
+            g.confirm();
+            for _ in 0..90 {
+                g.tick(DT);
+            }
+            let mut d = g.doc.clone();
+            let (hx, hz) = (g.hx, g.hz);
+            let near = std::env::var("KAGRA_CLOSEUP_NEAR").is_ok();
+            d.cameras[0].position = if near {
+                [hx + 1.6, 1.8, hz + 2.0]
+            } else {
+                [hx, 5.5, hz + 4.0]
+            };
+            d.cameras[0].target = [hx, if near { 0.9 } else { 0.4 }, hz];
+            d.cameras[0].fov = if near { 40.0 } else { 45.0 };
+            let _ = r.draw_world_doc_with_hud(&d, &crate::scene::DrawList::default());
+            let px = r.read_rgba().unwrap();
+            let mut out = format!("P6\n390 520\n255\n").into_bytes();
+            for c in px.chunks(4) {
+                out.extend_from_slice(&c[..3]);
+            }
+            std::fs::write(format!("{dir}/{start}.ppm"), out).unwrap();
+            let on: Vec<_> = d
+                .props
+                .iter()
+                .filter(|p| p.enabled && (p.name == "gun" || p.name == "blade" || p.name == "hero"))
+                .map(|p| (p.id.clone(), p.name.clone()))
+                .collect();
+            eprintln!("{start}: {on:?}");
         }
     }
 
