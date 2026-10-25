@@ -84,6 +84,8 @@ export const wasmsession_playtestPointer: (a: number, b: number, c: number, d: n
 export const wasmsession_playtestStateJson: (a: number) => [number, number];
 export const wasmsession_pushKey: (a: number, b: number, c: number, d: number) => number;
 export const wasmsession_pushPointer: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+export const wasmsession_qualityJson: (a: number) => [number, number];
+export const wasmsession_qualityTier: (a: number) => [number, number];
 export const wasmsession_render: (a: number) => [number, number];
 export const wasmsession_renderSupported: (a: number) => number;
 export const wasmsession_requestFrame: (a: number) => number;
@@ -107,6 +109,8 @@ export const wasmsession_setPlaytestDevice: (a: number, b: number, c: number, d:
 export const wasmsession_setPlaytestEnabled: (a: number, b: number) => void;
 export const wasmsession_setPlaytestExternalChrome: (a: number, b: number) => void;
 export const wasmsession_setPlaytestNote: (a: number, b: number, c: number) => void;
+export const wasmsession_setQualityCustom: (a: number, b: number, c: number) => [number, number];
+export const wasmsession_setQualityTier: (a: number, b: number, c: number) => number;
 export const wasmsession_setScene: (a: number, b: number) => void;
 export const wasmsession_setSettings: (a: number, b: number, c: number, d: number) => void;
 export const wasmsession_setSwitch: (a: number, b: number, c: number, d: number) => number;

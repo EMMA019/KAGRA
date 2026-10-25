@@ -77,6 +77,15 @@ export class WasmSession {
     pushKey(name: string, down: boolean): boolean;
     pushPointer(id: number, x: number, y: number, phase: number, pressure: number): void;
     /**
+     * Graphics tiers of the loaded game as JSON (definitions, auto numbers, active tier).
+     * `{}` when the game has none.
+     */
+    qualityJson(): string;
+    /**
+     * The active tier: `safe`, `mid`, `high`, `max`, `custom` or `""`.
+     */
+    qualityTier(): string;
+    /**
      * 現在のシーンを 1 枚描く。`requestFrame()` の後に呼ぶ。
      */
     render(): void;
@@ -143,6 +152,14 @@ export class WasmSession {
     setPlaytestEnabled(on: boolean): void;
     setPlaytestExternalChrome(on: boolean): void;
     setPlaytestNote(note: string): void;
+    /**
+     * A probe step: the active tier with these keys laid over it (JSON object).
+     */
+    setQualityCustom(json: string): void;
+    /**
+     * Switch to a named tier. False for an unknown name or a game without tiers.
+     */
+    setQualityTier(name: string): boolean;
     /**
      * 0 = 運転（3D）、1 = タッチデモ（2D）、2 = Crest Isle。
      */
@@ -288,6 +305,8 @@ export interface InitOutput {
     readonly wasmsession_playtestStateJson: (a: number) => [number, number];
     readonly wasmsession_pushKey: (a: number, b: number, c: number, d: number) => number;
     readonly wasmsession_pushPointer: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly wasmsession_qualityJson: (a: number) => [number, number];
+    readonly wasmsession_qualityTier: (a: number) => [number, number];
     readonly wasmsession_render: (a: number) => [number, number];
     readonly wasmsession_renderSupported: (a: number) => number;
     readonly wasmsession_requestFrame: (a: number) => number;
@@ -311,6 +330,8 @@ export interface InitOutput {
     readonly wasmsession_setPlaytestEnabled: (a: number, b: number) => void;
     readonly wasmsession_setPlaytestExternalChrome: (a: number, b: number) => void;
     readonly wasmsession_setPlaytestNote: (a: number, b: number, c: number) => void;
+    readonly wasmsession_setQualityCustom: (a: number, b: number, c: number) => [number, number];
+    readonly wasmsession_setQualityTier: (a: number, b: number, c: number) => number;
     readonly wasmsession_setScene: (a: number, b: number) => void;
     readonly wasmsession_setSettings: (a: number, b: number, c: number, d: number) => void;
     readonly wasmsession_setSwitch: (a: number, b: number, c: number, d: number) => number;
