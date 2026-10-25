@@ -117,13 +117,17 @@ def test_prune_audio_keeps_named_clips_and_drops_orphan_licences():
 def test_portal_index_html_needs_anchors():
     src = ('<!doctype html>\n<html>\n<head>\n  <meta charset="utf-8" />\n'
            '  <meta name="robots" content="noindex" />\n</head>\n<body>\n'
-           '<p data-portal="hide"><a href="index.html">all games</a></p>\n</body></html>\n')
+           '<p data-portal="hide"><a href="index.html">all games</a></p>\n'
+           '<script>\n    // <kagra-devtools>\n    load("perf.js");\n    // </kagra-devtools>\n</script>\n</body></html>\n')
     out = pp.portal_index_html(src, "g", "gamemonetize")
+    assert "perf.js" not in out and "kagra-devtools" not in out
     assert 'content="gamemonetize"' in out and "noindex" not in out and "all games" not in out
     with pytest.raises(pp.PackageError):
         pp.portal_index_html(src.replace('<meta charset="utf-8" />', ""), "g", "none")
     with pytest.raises(pp.PackageError):
         pp.portal_index_html(src.replace(' data-portal="hide"', ""), "g", "none")
+    with pytest.raises(pp.PackageError):
+        pp.portal_index_html(src.replace("// <kagra-devtools>", ""), "g", "none")
 
 
 def measured(initial_raw, initial_gz, total_raw, total_gz):

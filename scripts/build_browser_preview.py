@@ -36,6 +36,8 @@ SITE_DIR = Path(__file__).resolve().parent / "preview_site"
 PLAY_HTML = SITE_DIR / "play.html"
 # Classic scripts play.html loads next to itself: page strings and the portal shim.
 SITE_SCRIPTS = ("i18n.js", "portal.js", "meta.js")
+# Dev-only scripts (?dev=1 measurement overlay): the preview site gets them, a portal zip never does.
+DEV_SCRIPTS = ("perf.js",)
 # Opening the preview with no ?game= loads this slug. Box Hop stays in the list.
 LANDING_SLUG = "neon_run"
 
@@ -67,7 +69,7 @@ def build_preview(repo: Path, out: Path, pkg: Path | None, *, require_pkg: bool)
     )
     (out / "index.html").write_text(render_index(games), encoding="utf-8")
     shutil.copyfile(PLAY_HTML, out / "play.html")
-    for name in SITE_SCRIPTS:
+    for name in SITE_SCRIPTS + DEV_SCRIPTS:
         shutil.copyfile(SITE_DIR / name, out / name)
     (out / ".nojekyll").write_bytes(b"")
     if pkg is not None:

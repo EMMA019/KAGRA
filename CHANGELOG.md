@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- On-phone measurement tool, shared by every game (`?dev=1`): an overlay with fps, frame time p50 / p95 / p99, jank,
+  render scale, backend, adapter, canvas and DPR, display refresh, JS heap and a thermal guess; **Record 60 s** runs the
+  `fx_post` / `fx_atmo` A/B (all-off, post, atmo, both, 15 s each) and shows a table with **Copy JSON**. HOP-BEAT gets a runtime
+  `setSwitch` (picture only). `render_skip` (off by default, `?render_skip=1` or world.json) skips the draw on a 120 Hz frame
+  where the 60 Hz sim did not step. The tool is `scripts/preview_site/perf.js`: dev only, not in portal zips, no network,
+  nothing stored. See `docs/phone_measure.md`.
+
 - HOP-BEAT fixes. (1) A fall that costs a life no longer pops the bunny straight back: the drop plays out, the world holds for a READY count of 3 beats (JSON `recover` block, Python mirror), the music restarts on a bar line and the bunny blinks while protected for 2.4 s; a Continue gets the same count. (2) A bat could hang over a gap, where a tap held a little too long (a thumb, over the 110 ms tap window) turned into a hold hop that flew into the bat with a hole below. The `tap_window_secs` default is 0.16 s, the bat+gap phrase is rearranged (bat over the beetle, never over the gap), flyers may not overlap the hop across a gap (Rust and Python rule), flyer phrases are checked at +-100 ms, and every ordered pair of phrases with a bat is played back to back (`seam_problems`); a 2000-seed x 5-modifier test checks every seam the generator lays and a thumb-tap bot clears the course.
 
 - Retention layer, shared by every game (`meta`): a coin wallet earned from runs, an unlock catalogue (hero skins and

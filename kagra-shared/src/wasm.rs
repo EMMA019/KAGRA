@@ -222,6 +222,19 @@ impl WasmSession {
         self.inner.set_lang(lang);
     }
 
+    /// A/B picture switch (`fx_post`, `fx_atmo`) for the `?dev=1` measurement tool; false if
+    /// the game has no such switch.
+    #[wasm_bindgen(js_name = setSwitch)]
+    pub fn set_switch(&mut self, name: &str, on: bool) -> bool {
+        self.inner.set_switch(name, on)
+    }
+
+    /// The game's A/B switches and their values as JSON, `{}` for none.
+    #[wasm_bindgen(js_name = switchesJson)]
+    pub fn switches_json(&mut self) -> String {
+        self.inner.switches_json()
+    }
+
     /// HOP-BEAT: pause the run (shows the pause card).
     #[wasm_bindgen(js_name = pauseRun)]
     pub fn pause_run(&mut self) {

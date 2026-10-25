@@ -2371,6 +2371,28 @@ impl HopBeat {
         self.clock = secs.filter(|s| s.is_finite());
     }
 
+    /// A/B switches for the on-phone measurement tool (`?dev=1`): `fx_post` (the finishing
+    /// pass) and `fx_atmo` (the sky extras). Picture only; the sim is not touched.
+    /// Returns false for a name this kit does not have.
+    pub fn set_switch(&mut self, name: &str, on: bool) -> bool {
+        match name {
+            "fx_post" => self.fx_post = on,
+            "fx_atmo" => self.fx_atmo = on,
+            _ => return false,
+        }
+        self.rebuild();
+        true
+    }
+
+    /// Current value of a switch, `None` for an unknown name.
+    pub fn switch(&self, name: &str) -> Option<bool> {
+        match name {
+            "fx_post" => Some(self.fx_post),
+            "fx_atmo" => Some(self.fx_atmo),
+            _ => None,
+        }
+    }
+
     /// The player's own latency setting, ms (positive = picture later).
     pub fn set_latency_ms(&mut self, ms: f32) {
         self.latency_user_ms = if ms.is_finite() {
@@ -5153,6 +5175,28 @@ mod tests {
         for _ in 0..(secs * 60.0) as u32 {
             g.tick(1.0 / 60.0);
         }
+    }
+
+    #[test]
+    fn picture_switches_flip_at_runtime_and_leave_the_sim_alone() {
+        let mut a = fresh();
+        let mut b = fresh();
+        assert_eq!(a.switch("fx_post"), Some(true));
+        assert_eq!(a.switch("nope"), None);
+        assert!(!a.set_switch("nope", false));
+        assert!(a.set_switch("fx_post", false));
+        assert!(a.set_switch("fx_atmo", false));
+        assert_eq!(a.switch("fx_post"), Some(false));
+        assert_eq!(a.switch("fx_atmo"), Some(false));
+        run(&mut a, 2.0);
+        run(&mut b, 2.0);
+        assert_eq!(
+            a.state_json(),
+            b.state_json(),
+            "the switches are picture only"
+        );
+        assert!(a.set_switch("fx_post", true));
+        assert_eq!(a.switch("fx_post"), Some(true));
     }
 
     #[test]

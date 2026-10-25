@@ -820,6 +820,31 @@ impl SharedSession {
         }
     }
 
+    /// A/B picture switch by name (`fx_post`, `fx_atmo`) for the `?dev=1` measurement tool.
+    /// False when the loaded game has no such switch.
+    pub fn set_switch(&mut self, name: &str, on: bool) -> bool {
+        match self.hop_mut() {
+            Some(hop) => hop.set_switch(name, on),
+            None => false,
+        }
+    }
+
+    /// The switches the loaded game has, as `{"fx_post":true,...}` JSON (`{}` for none).
+    pub fn switches_json(&mut self) -> String {
+        match self.hop_mut() {
+            Some(hop) => {
+                let mut m = serde_json::Map::new();
+                for n in ["fx_post", "fx_atmo"] {
+                    if let Some(v) = hop.switch(n) {
+                        m.insert(n.into(), serde_json::Value::Bool(v));
+                    }
+                }
+                serde_json::Value::Object(m).to_string()
+            }
+            None => "{}".into(),
+        }
+    }
+
     /// HOP-BEAT: the page language (`ja` or `en`) for the in-canvas texts.
     pub fn set_lang(&mut self, lang: &str) {
         if let Some(hop) = self.hop_mut() {
