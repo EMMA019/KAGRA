@@ -353,6 +353,8 @@
       if (!storage) return;
       try { storage.setItem(KEY, JSON.stringify(st)); persistent = true; } catch { persistent = false; }
     };
+    // A mode given by the page (`?daily=1`) is saved, so a reload (a new build, an equip) keeps it.
+    if (o.mode === "daily" || o.mode === "free") save();
     const changed = () => {
       grantRules();
       save();
@@ -620,20 +622,23 @@
 
       const css = h("style", { id: "kagra-meta-css" });
       css.textContent = [
-        "#kagra-meta-bar{margin:10px auto 0;max-width:420px;display:flex;flex-direction:column;gap:6px;align-items:stretch;font:600 14px system-ui,sans-serif;color:#fff}",
+        "#kagra-meta-bar{margin:6px auto 12px;max-width:420px;display:flex;flex-direction:column;gap:8px;align-items:stretch;font:600 14px/1.35 system-ui,sans-serif;color:#dff}",
         "#kagra-meta-bar .km-row{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap}",
-        "#kagra-meta-bar .km-note{opacity:.85;font-weight:500;text-align:center}",
-        "#kagra-meta-bar .km-award{font-size:16px;text-align:center}",
-        ".km-btn{min-height:44px;min-width:44px;padding:8px 14px;border-radius:12px;border:2px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;font:700 14px system-ui,sans-serif;cursor:pointer;touch-action:manipulation}",
+        "#kagra-meta-bar .km-note{opacity:.85;font-weight:500;text-align:center;font-size:13px}",
+        "#kagra-meta-bar .km-award{font-size:17px;text-align:center;color:#ffe08a;font-weight:800;letter-spacing:.02em}",
+        ".km-btn{min-height:44px;min-width:44px;margin:0;padding:8px 16px;border-radius:999px;border:1px solid rgba(140,255,255,.45);background:rgba(255,255,255,.08);color:#dff;font:700 14px system-ui,sans-serif;letter-spacing:.04em;cursor:pointer;touch-action:manipulation}",
+        ".km-btn:active{background:rgba(140,255,255,.22)}",
         ".km-btn:disabled{opacity:.45;cursor:default}",
-        ".km-btn.km-on{background:rgba(255,92,170,.35);border-color:#ff5caa}",
-        ".km-coin{display:inline-block;padding:6px 12px;border-radius:999px;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.25)}",
-        "#kagra-shop{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(8,6,20,.82);font:600 15px system-ui,sans-serif;color:#fff}",
+        ".km-btn.km-on{background:#8cffff;color:#08121a;border-color:#8cffff}",
+        ".km-btn.km-gold{border-color:#f0c36a;color:#ffe9b0}",
+        ".km-coin{display:inline-block;padding:7px 14px;border-radius:999px;background:rgba(0,0,0,.4);border:1px solid rgba(240,195,106,.6);color:#ffe08a;font-weight:800;font-variant-numeric:tabular-nums}",
+        "#kagra-shop{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(8,6,20,.86);font:600 15px system-ui,sans-serif;color:#f5ffff;touch-action:none}",
         "#kagra-shop[hidden]{display:none}",
-        "#kagra-shop .km-panel{width:min(94vw,460px);max-height:92vh;display:flex;flex-direction:column;background:#1d1838;border:2px solid rgba(255,255,255,.3);border-radius:18px;padding:14px;gap:10px;box-sizing:border-box}",
+        "#kagra-shop .km-panel{width:min(94vw,460px);max-height:min(92vh,720px);display:flex;flex-direction:column;background:#181228;border:3px solid #8cffff;border-radius:14px;padding:14px;gap:10px;box-sizing:border-box;box-shadow:3px 4px 0 rgba(0,0,0,.5)}",
         "#kagra-shop .km-head{display:flex;justify-content:space-between;align-items:center;gap:8px}",
+        "#kagra-shop .km-head strong{font-size:20px;letter-spacing:.08em;color:#ffe08a}",
         "#kagra-shop .km-tabs{display:flex;gap:6px;flex-wrap:wrap}",
-        "#kagra-shop .km-list{overflow-y:auto;display:flex;flex-direction:column;gap:8px;-webkit-overflow-scrolling:touch}",
+        "#kagra-shop .km-list{overflow-y:auto;display:flex;flex-direction:column;gap:8px;-webkit-overflow-scrolling:touch;touch-action:pan-y;overscroll-behavior:contain}",
         "#kagra-shop .km-item{display:flex;align-items:center;gap:10px;padding:8px;border-radius:12px;background:rgba(255,255,255,.07)}",
         "#kagra-shop .km-name{flex:1;min-width:0}",
         "#kagra-shop .km-sub{display:block;opacity:.75;font-weight:500;font-size:12px}",
@@ -700,10 +705,19 @@
       const openShop = () => {
         if (!shop) {
           shop = h("div", { id: "kagra-shop", role: "dialog", "aria-modal": "true", "aria-label": T("shop") }, h("div", { class: "km-panel" }));
-          for (const ev of ["pointerdown", "pointerup", "touchstart", "touchend", "keydown", "keyup", "click"]) {
+          for (const ev of ["pointerdown", "pointerup", "touchstart", "touchmove", "touchend", "keydown", "keyup", "click"]) {
             shop.addEventListener(ev, stop);
           }
           doc.body.appendChild(shop);
+          // While the shop is open no key reaches the page (Space / Enter would start a run behind it).
+          if (doc.defaultView && doc.defaultView.addEventListener) {
+            doc.defaultView.addEventListener("keydown", (e) => {
+              if (!shop || shop.hidden) return;
+              e.stopPropagation();
+              if (e.key === "Escape") closeShop();
+            }, true);
+            doc.defaultView.addEventListener("keyup", (e) => { if (shop && !shop.hidden) e.stopPropagation(); }, true);
+          }
         }
         shop.hidden = false;
         drawShop();
@@ -746,7 +760,7 @@
           bar.append(h("div", { class: "km-award", "data-km": "award" }, bits.join(" · ")));
           const acts = h("div", { class: "km-row" });
           if (canDouble()) {
-            acts.append(h("button", { class: "km-btn", type: "button", "data-km": "double", onclick: () => { doubleCoins(); } }, T("double")));
+            acts.append(h("button", { class: "km-btn km-gold", type: "button", "data-km": "double", onclick: () => { doubleCoins(); } }, T("double")));
           }
           const shareBtn = h("button", { class: "km-btn", type: "button", "data-km": "share" }, T("share"));
           shareBtn.addEventListener("click", async () => {
@@ -771,7 +785,11 @@
         if (!card) return false;
         bar = h("div", { id: "kagra-meta-bar" });
         for (const ev of ["pointerdown", "pointerup", "touchstart", "touchend", "keydown", "keyup", "click"]) bar.addEventListener(ev, stop);
-        card.append(bar);
+        // Under the Start / Retry button when the page has one, so it is on screen without scrolling.
+        const start = card.querySelector("#start");
+        const anchor = start && start.parentElement && start.parentElement !== card ? start.parentElement : start;
+        if (anchor && anchor.parentNode === card) anchor.after(bar);
+        else card.append(bar);
         return true;
       };
 
