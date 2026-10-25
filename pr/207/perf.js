@@ -9,6 +9,12 @@
  * A/B picture switches (`setSwitch` / `switchesJson` on the wasm session) are used when
  * the loaded game has them; otherwise the recorder takes one plain window.
  *
+ * Two recordings: "Record 60 s" (the A/B switch mixes) and "Find my limit" (adds load one
+ * step at a time until frames miss 60 fps; docs/phone_measure.md). Both keep a run going
+ * with the game's `autoplay` switch when it has one, count the seconds the page stopped
+ * drawing (a step is a fixed wall time, not a fixed frame count), and hold the quality
+ * guard (quality.js) so it does not change the picture mid-measurement.
+ *
  * Plain script (no module) so the same file runs in the page and under node (tests).
  */
 (function (root, factory) {
@@ -148,6 +154,140 @@
     return steps;
   }
 
+  // ------------------------------------------------------ the headroom probe --
+  const LIMIT_CRITERIA = { p95: 17.2, p99: 20, minFrames: 60, note: "p95 <= 16.7 ms (+0.5 ms of rAF jitter) and p99 <= 20 ms" };
+
+  /** The "Find my limit" ladder from the game's tier definitions (`qualityJson`): the safe
+   *  tier first, then, tier by tier (mid, high, max), one knob at a time up to that tier's
+   *  value: render scale, bloom, sky props, particles, shadow cascades, SSAO, soft shadows,
+   *  TAA. Each step sits on top of the one before, so a step that holds means everything up to
+   *  it holds together, and the last step of a group is that whole tier. Steps that change
+   *  nothing on this display (a scale above the device ratio) are left out. */
+  function planLimit(spec, opts) {
+    const o = opts || {};
+    const ms = o.stepMs || 9000;
+    const dpr = o.dpr || 1;
+    const T = spec.tiers;
+    const KEYS = ["scale", "bloom_scale", "atmo", "particles", "shadow_cascades", "ssao", "shadow_pcss", "taa"];
+    const label = {
+      scale: (v) => `scale ${v}`, bloom_scale: (v) => `bloom ${v}`, atmo: (v) => `atmo ${v}`, particles: (v) => `particles ${v}`,
+      shadow_cascades: (v) => `shadows ${v}c`, ssao: (v) => `ssao ${v}`, shadow_pcss: () => "soft shadows", taa: () => "taa",
+    };
+    let cur = {};
+    for (const k of [...KEYS, "shadow_softness"]) cur[k] = T.safe[k];
+    const steps = [{ name: "safe", tier: "safe", over: {}, reach: Object.assign({}, cur), ms }];
+    let effPrev = Math.min(dpr, cur.scale);
+    for (const tn of ["mid", "high", "max"]) {
+      const goal = T[tn];
+      const before = steps.length;
+      const add = (name, patch) => {
+        cur = Object.assign({}, cur, patch);
+        steps.push({ name, over: Object.assign({}, cur), reach: Object.assign({}, cur), ms });
+      };
+      for (const k of KEYS) {
+        const v = goal[k];
+        if (v === true ? cur[k] === true : !(v > cur[k])) continue;
+        if (k === "scale") {
+          // a quarter-step between the safe scale and mid's, so a weak GPU still gets a number
+          if (tn === "mid" && v - cur.scale > 0.3) {
+            const half = Math.round((cur.scale + (v - cur.scale) / 2) * 100) / 100;
+            if (Math.min(dpr, half) > effPrev + 0.01) { effPrev = Math.min(dpr, half); add(label.scale(half), { scale: half }); }
+          }
+          if (Math.min(dpr, v) <= effPrev + 0.01) { cur = Object.assign({}, cur, { scale: v }); continue; } // no visible change on this display
+          effPrev = Math.min(dpr, v);
+          add(label.scale(v), { scale: v });
+        } else if (k === "shadow_pcss") {
+          add(label[k](v), { shadow_pcss: true, shadow_softness: goal.shadow_softness });
+        } else {
+          add(label[k](v), { [k]: v });
+        }
+      }
+      if (steps.length > before) steps[steps.length - 1].tierDone = tn;
+    }
+    return steps;
+  }
+
+  /** Did a step hold 60 fps? A step the page could not draw properly (stalled or hidden) is
+   *  never a pass. */
+  function limitPass(row, crit) {
+    const c = crit || LIMIT_CRITERIA;
+    return Boolean(row && row.n >= c.minFrames && row.p95 <= c.p95 && row.p99 <= c.p99 && !row.stalled);
+  }
+
+  /** The highest tier whose every knob is at or below what the last good step reached. */
+  function suggestTier(spec, reached, dpr) {
+    const T = spec.tiers;
+    const eff = (v) => Math.min(dpr || 1, v);
+    let best = "safe";
+    for (const n of ["safe", "mid", "high", "max"]) {
+      const t = T[n];
+      const ok = eff(t.scale) <= eff(reached.scale) + 0.01 && t.atmo <= reached.atmo + 1e-6 && t.particles <= reached.particles + 1e-6 &&
+        t.bloom_scale <= reached.bloom_scale + 1e-6 && t.shadow_cascades <= reached.shadow_cascades && t.ssao <= reached.ssao + 1e-6 &&
+        (!t.shadow_pcss || reached.shadow_pcss) && (!t.taa || reached.taa);
+      if (ok) best = n; else break;
+    }
+    return best;
+  }
+
+  /** WebGL2 GPU timer around a callback, when the canvas is WebGL2 and the browser offers
+   *  EXT_disjoint_timer_query_webgl2. `info` says why not otherwise. Touches the canvas only
+   *  when asked (`init`), never at start-up. */
+  function createGpuTimer(canvas, extra) {
+    const info = { source: null, available: false, why: "", webgpuTimestamp: Boolean(extra && extra.webgpuTimestamp) };
+    let gl = null, ext = null;
+    const pending = [];
+    let cur = null;
+    const samples = [];
+    const api = {
+      info,
+      on: false,
+      samples,
+      init() {
+        try { gl = canvas && canvas.getContext ? canvas.getContext("webgl2") : null; } catch (_) { gl = null; }
+        if (!gl) {
+          info.why = info.webgpuTimestamp
+            ? "this page draws with WebGPU; the browser has timestamp-query but KAGRA's web renderer does not use it yet. Add &backend=gl for a GPU time"
+            : "the canvas is not WebGL2 (add &backend=gl for a GPU time)";
+          return info;
+        }
+        try { ext = gl.getExtension("EXT_disjoint_timer_query_webgl2"); } catch (_) { ext = null; }
+        if (!ext) { info.why = "EXT_disjoint_timer_query_webgl2 is not offered by this browser"; return info; }
+        info.source = "EXT_disjoint_timer_query_webgl2";
+        info.available = true;
+        return info;
+      },
+      begin() {
+        if (!info.available || !api.on || cur || pending.length >= 8) return;
+        try {
+          cur = gl.createQuery();
+          gl.beginQuery(ext.TIME_ELAPSED_EXT, cur);
+        } catch (e) { info.available = false; info.why = `timer query failed: ${String((e && e.message) || e)}`; cur = null; }
+      },
+      end() {
+        if (!cur) return;
+        try { gl.endQuery(ext.TIME_ELAPSED_EXT); pending.push(cur); } catch (e) { info.available = false; info.why = `timer query failed: ${String((e && e.message) || e)}`; }
+        cur = null;
+      },
+      /** Collect finished queries (call once a frame). Returns the ms values found. */
+      poll() {
+        const got = [];
+        try {
+          for (let i = 0; i < pending.length && got.length < 4;) {
+            const q = pending[i];
+            if (!gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE)) { i += 1; continue; }
+            const bad = gl.getParameter(ext.GPU_DISJOINT_EXT);
+            const ns = gl.getQueryParameter(q, gl.QUERY_RESULT);
+            gl.deleteQuery(q);
+            pending.splice(i, 1);
+            if (!bad && Number.isFinite(ns)) got.push(ns / 1e6);
+          }
+        } catch (_) { /* context lost */ }
+        return got;
+      },
+    };
+    return api;
+  }
+
   // ---------------------------------------------------------- device facts ---
   /** Browser / screen facts. Nothing that identifies the person: no URL, no storage. */
   function deviceInfo(env) {
@@ -195,6 +335,7 @@
             vendor: info.vendor || "", architecture: info.architecture || "",
             device: info.device || "", description: info.description || "",
             fallback: Boolean(a.isFallbackAdapter),
+            timestampQuery: Boolean(a.features && a.features.has && a.features.has("timestamp-query")),
           };
         } else {
           out.webgpu = null;
@@ -241,7 +382,7 @@
   function buildReport(ctx) {
     return {
       tool: "kagra-perf",
-      v: 1,
+      v: 2,
       when: ctx.when || null,
       page: ctx.page || {},
       device: ctx.device || {},
@@ -254,6 +395,7 @@
       overlayMs: ctx.overlayMs == null ? null : r2(ctx.overlayMs),
       longTasks: ctx.longTasks == null ? null : ctx.longTasks,
       steps: ctx.steps || [],
+      limit: ctx.limit || null,
     };
   }
 
@@ -270,6 +412,17 @@
       );
     }
     return rows.join("\n");
+  }
+
+  /** The "Find my limit" rows, monospace. */
+  function formatLimit(rows) {
+    const pad = (v, w) => String(v == null ? "-" : v).padStart(w);
+    const f1 = (v) => (typeof v === "number" ? (Math.round(v * 10) / 10).toFixed(1) : v);
+    const out = [`${"limit".padEnd(14)}${pad("p95", 6)}${pad("p99", 6)}${pad("drp%", 5)}${pad("gpu", 5)} held`];
+    for (const r of rows) {
+      out.push(`${String(r.name).padEnd(14).slice(0, 14)}${pad(f1(r.p95), 6)}${pad(f1(r.p99), 6)}${pad(f1(r.dropPct), 5)}${pad(f1(r.gpuMs), 5)} ${r.pass ? "yes" : "NO"}${r.note ? ` (${r.note})` : ""}`);
+    }
+    return out.join("\n");
   }
 
   // ----------------------------------------------------------- the tool ------
@@ -318,10 +471,28 @@
     const buckets = [];
     let bStart = 0, bDt = [], bCpu = [];
     let overlayMs = 0, longTasks = 0;
-    let rec = null; // { steps, i, t0, settleUntil, data, done }
+    let rec = null; // { kind, steps, i, t0, settleUntil, data, done }
     const results = [];
+    const limitRows = [];
+    let limitResult = null;
     let resultReport = null;
     let adapterInfo = null;
+    let gpuT = null;
+    const kq = () => (win.kagraQuality && win.kagraQuality.spec ? win.kagraQuality : null);
+    const flowPhase = () => {
+      try { return JSON.parse(session.gameJson()).phase || ""; } catch (_) { return ""; }
+    };
+
+    // the GPU timer wraps the render call (only while recording)
+    {
+      const orig = session.render;
+      if (typeof orig === "function") {
+        session.render = function timed() {
+          if (gpuT && gpuT.on) gpuT.begin();
+          try { return orig.apply(this, arguments); } finally { if (gpuT && gpuT.on) gpuT.end(); }
+        };
+      }
+    }
 
     const baseSw = () => {
       try { return JSON.parse(session.switchesJson ? session.switchesJson() : "{}"); } catch (_) { return {}; }
@@ -335,7 +506,18 @@
       const dt = t - lastT;
       lastT = t;
       if (dt <= 0) return;
-      if (dt > 1000) { pauses += 1; bStart = 0; return; } // a hidden tab or a stop: not a frame
+      if (dt > 1000) { // a hidden tab or a stop: not a frame, but the recorder keeps count of it
+        pauses += 1; bStart = 0;
+        if (rec && !rec.done && rec.active && t >= rec.settleUntil) {
+          const d = rec.data;
+          d.stalls += 1; d.stallMs += dt; d.maxGap = Math.max(d.maxGap, dt);
+        }
+        return;
+      }
+      if (gpuT && gpuT.on) {
+        const got = gpuT.poll();
+        if (got.length && rec && !rec.done && rec.active && t >= rec.settleUntil) for (const g of got) rec.data.gpu.push(g);
+      }
       totalFrames += 1;
       if (early.length < 240) {
         early.push(dt);
@@ -419,7 +601,7 @@
     const text = doc.createElement("div");
     const table = doc.createElement("div");
     const bar = doc.createElement("div");
-    bar.style.cssText = "display:flex;gap:6px;margin-top:4px;pointer-events:auto";
+    bar.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;pointer-events:auto";
     const mkBtn = (label) => {
       const b = doc.createElement("button");
       b.type = "button";
@@ -431,9 +613,10 @@
     const btnRec = mkBtn("Record 60 s");
     const btnCopy = mkBtn("Copy JSON");
     const btnMin = mkBtn("-");
+    const btnLimit = mkBtn("Find my limit");
     const btnPos = mkBtn("\u21C5");
     btnCopy.hidden = true;
-    bar.append(btnRec, btnCopy, btnPos, btnMin);
+    bar.append(btnRec, btnCopy, btnLimit, btnPos, btnMin);
     const area = doc.createElement("textarea");
     area.readOnly = true;
     area.hidden = true;
@@ -475,6 +658,7 @@
     }
     function paint() {
       const t0 = now();
+      btnLimit.hidden = !kq(); // only a game with graphics tiers has a ladder
       if (minimized) {
         const s = live(5000);
         text.textContent = `${s.fps ?? "--"} fps  p95 ${s.p95 ?? "-"} ms`;
@@ -483,11 +667,20 @@
         if (rec && !rec.done) {
           const st = rec.steps[rec.i];
           const left = Math.max(0, Math.ceil((rec.t0 + st.ms - now()) / 1000));
-          lines.unshift(`REC ${rec.i + 1}/${rec.steps.length} ${st.name}  ${left}s  (keep playing)`);
+          const what = rec.kind === "limit" ? "LIMIT" : "REC";
+          lines.unshift(`${what} ${rec.i + 1}/${rec.steps.length} ${st.name}  ${left}s  (${rec.bot ? "the bot plays" : "keep playing"})`);
         }
         text.textContent = lines.join("\n");
       }
-      table.textContent = !minimized && results.length ? formatTable(results) : "";
+      let tbl = "";
+      if (!minimized && limitRows.length) {
+        tbl = formatLimit(limitRows);
+        if (limitResult) {
+          tbl += `\nheld up to: ${limitResult.lastGood || "nothing"}${limitResult.firstFail ? `  first miss: ${limitResult.firstFail}` : "  (all steps held)"}`;
+          tbl += `\nsuggested tier: ${limitResult.suggestedTier || "-"}  gpu: ${limitResult.gpu && limitResult.gpu.available ? "measured" : "unavailable"}`;
+        }
+      } else if (!minimized && results.length) tbl = formatTable(results);
+      table.textContent = tbl;
       overlayMs += (now() - t0 - overlayMs) * 0.1;
     }
 
@@ -496,13 +689,50 @@
       for (const k of Object.keys(sw)) { try { session.setSwitch && session.setSwitch(k, sw[k]); } catch (_) { /* a game without it */ } }
       if (ctx.setRenderSkip) ctx.setRenderSkip(Boolean(skip));
     }
+    const newData = () => ({
+      dts: [], cpu: [], sim: [], rnd: [], rend: 0, heap0: heapMB(), gpu: [],
+      stalls: 0, stallMs: 0, maxGap: 0, hiddenMs: 0, playMs: 0, otherMs: 0, runs: 0, runEnds: 0, resumes: 0,
+      pauseMs: 0, lastFlow: null, lastSample: now(),
+    });
     function beginStep() {
       const st = rec.steps[rec.i];
-      applySwitches(st.sw, st.skip);
+      if (rec.kind === "limit") {
+        const q = kq();
+        if (q) { if (st.tier) q.show(st.tier); else q.custom(st.over); }
+      } else {
+        applySwitches(Object.assign({}, st.sw, rec.bot ? { autoplay: true } : {}), st.skip);
+      }
       rec.t0 = now();
-      rec.settleUntil = lastT + 1500; // the first 1.5 s after a switch (shader / pipeline rebuild) is dropped
+      // the first seconds after a change (pipeline / shader rebuild, resize) are dropped
+      rec.settleUntil = Math.max(lastT, now()) + (rec.kind === "limit" ? 2000 : 1500);
       rec.active = true;
-      rec.data = { dts: [], cpu: [], sim: [], rnd: [], rend: 0, heap0: heapMB() };
+      rec.data = newData();
+    }
+    /** Once per tick: what the game is doing (run, pause, result), whether the page is hidden. */
+    function sampleRun() {
+      if (!rec || rec.done || !rec.active) return;
+      const d = rec.data;
+      const t = now();
+      const w = t - d.lastSample;
+      d.lastSample = t;
+      if (t < rec.settleUntil) return;
+      if (doc.hidden) d.hiddenMs += w;
+      const flow = flowPhase();
+      if (!flow) return; // a game that does not report its phase
+      if (flow === "play") d.playMs += w; else d.otherMs += w;
+      if (flow !== d.lastFlow) {
+        if (flow === "play") d.runs += 1;
+        else if (d.lastFlow === "play" && (flow === "result" || flow === "title")) d.runEnds += 1;
+        d.lastFlow = flow;
+      }
+      // a paused run (the page pauses itself when it was hidden) would measure an idle card
+      if (flow === "pause" && !doc.hidden) {
+        d.pauseMs += w;
+        if (d.pauseMs >= 1000) {
+          d.pauseMs = 0;
+          try { if (session.resumeRun) { session.resumeRun(); d.resumes += 1; } } catch (_) { /* not this game */ }
+        }
+      } else d.pauseMs = 0;
     }
     function endStep() {
       const st = rec.steps[rec.i];
@@ -510,6 +740,8 @@
       const I = refresh ? refresh.intervalMs : 1000 / 60;
       const secs = d.dts.reduce((a, b) => a + b, 0) / 1000;
       const heap1 = heapMB();
+      const wallMs = Math.max(1, now() - rec.settleUntil);
+      const coverage = Math.min(1, secs * 1000 / wallMs);
       const row = summarize(d.dts, I, {
         name: st.name,
         sw: st.sw,
@@ -522,46 +754,148 @@
         rendersPerSec: secs > 0 ? r1(d.rend / secs) : null,
         heapDeltaMB: d.heap0 != null && heap1 != null ? r1(heap1 - d.heap0) : null,
       });
-      if (d.dts.length < 60) row.note = "too few frames (tab hidden or screen off?)";
-      results.push(row);
+      // how much of the wall time the page really drew, and what the run did meanwhile
+      row.wallMs = Math.round(wallMs);
+      row.coverage = r2(coverage);
+      row.stalls = d.stalls;
+      row.stallMs = Math.round(d.stallMs);
+      row.maxGapMs = r1(Math.max(d.maxGap, row.max || 0));
+      row.hiddenMs = Math.round(d.hiddenMs);
+      const act = d.playMs + d.otherMs;
+      row.playPct = act > 0 ? Math.round((100 * d.playMs) / act) : null;
+      row.runs = d.runs;
+      row.runEnds = d.runEnds;
+      row.resumes = d.resumes;
+      row.bot = Boolean(rec.bot);
+      row.stalled = coverage < 0.75 || d.hiddenMs > 500;
+      const notes = [];
+      if (d.dts.length < 60) notes.push("too few frames (tab hidden or screen off?)");
+      if (row.stalled) notes.push(d.hiddenMs > 500 ? `page hidden ${Math.round(d.hiddenMs / 1000)} s` : `drawing stopped for ${r1(d.stallMs / 1000)} s (${d.stalls}x)`);
+      else if (d.stalls) notes.push(`${d.stalls} stall${d.stalls > 1 ? "s" : ""} of ${Math.round(d.stallMs)} ms dropped`);
+      if (row.playPct != null && row.playPct < 60) {
+        notes.push(rec.bot ? `a run was going only ${row.playPct}% of the time` : `no run was going for ${100 - row.playPct}% of the time (no autoplay bot in this game: start a run and keep playing)`);
+      } else if (!rec.bot && d.runEnds) notes.push(`the run ended ${d.runEnds}x (no autoplay bot in this game)`);
+      if (d.gpu.length) {
+        row.gpuMs = r2(mean(d.gpu));
+        row.gpuP95Ms = r2(percentile(asc(d.gpu), 0.95));
+        row.gpuN = d.gpu.length;
+      }
+      if (st.retried) notes.push("second try after a stall");
+      if (notes.length) row.note = notes.join("; ");
+      return row;
+    }
+    function limitReport() {
+      const dpr = win.devicePixelRatio || 1;
+      const rows = limitRows.slice();
+      const good = rows.filter((r) => r.pass);
+      const last = good.length ? good[good.length - 1] : null;
+      const fail = rows.find((r) => !r.pass) || null;
+      const q = kq();
+      const lastStep = last ? rec.steps.find((x) => x.name === last.name) : null;
+      return {
+        criteria: LIMIT_CRITERIA,
+        stepMs: rec ? rec.steps[0].ms : null,
+        steps: rows,
+        lastGood: last ? last.name : null,
+        firstFail: fail ? fail.name : null,
+        complete: Boolean(rec && rec.done && !fail && rows.length === rec.steps.length),
+        reached: lastStep ? lastStep.reach : null,
+        suggestedTier: lastStep && q ? suggestTier(q.spec, lastStep.reach, dpr) : null,
+        gpu: gpuT ? Object.assign({}, gpuT.info) : null,
+        gameTier: q ? { mode: q.mode, tier: q.tier } : null,
+      };
     }
     function finish() {
       rec.done = true;
       rec.active = false;
-      applySwitches(rec.restore, rec.restoreSkip);
+      if (rec.kind === "limit") {
+        const q = kq();
+        if (q) q.restore();
+        try { session.setSwitch && session.setSwitch("autoplay", Boolean(rec.restore.autoplay)); } catch (_) { /* no bot */ }
+        limitResult = limitReport();
+      } else {
+        applySwitches(rec.restore, rec.restoreSkip);
+      }
+      if (gpuT) gpuT.on = false;
+      const q = kq();
+      if (q) q.hold(false);
       btnRec.disabled = false;
-      btnRec.textContent = "Record again";
+      btnRec.textContent = rec.kind === "limit" ? "Record 60 s" : "Record again";
+      btnLimit.disabled = false;
+      btnLimit.textContent = rec.kind === "limit" ? "Find my limit again" : "Find my limit";
       btnCopy.hidden = false;
       resultReport = report();
       paint();
     }
     function tick() {
+      sampleRun();
       if (rec && !rec.done && rec.active && now() - rec.t0 >= rec.steps[rec.i].ms) {
-        endStep();
+        const st = rec.steps[rec.i];
+        const row = endStep();
+        if (rec.kind === "limit") {
+          row.pass = limitPass(row);
+          if (!row.pass && row.stalled && !st.retried) { // the page stopped drawing: measure that step again
+            st.retried = true;
+            beginStep();
+            paint();
+            return;
+          }
+          limitRows.push(row);
+          if (!row.pass) { finish(); paint(); return; }
+        } else {
+          results.push(row);
+        }
         rec.i += 1;
         if (rec.i >= rec.steps.length) finish(); else beginStep();
       }
       paint();
+    }
+    function startRecording(kind, steps, restore) {
+      const q = kq();
+      if (q) q.hold(true);
+      if (!gpuT) {
+        gpuT = createGpuTimer(ctx.getCanvas ? ctx.getCanvas() : null, { webgpuTimestamp: Boolean(adapterInfo && adapterInfo.webgpu && adapterInfo.webgpu.timestampQuery) });
+        gpuT.init();
+      }
+      gpuT.on = gpuT.info.available;
+      results.length = 0;
+      limitRows.length = 0;
+      limitResult = null;
+      resultReport = null;
+      const bot = "autoplay" in restore;
+      // keep a run going while measuring: the game's own bot starts and restarts runs
+      if (bot) { try { session.setSwitch("autoplay", true); } catch (_) { /* no bot */ } }
+      rec = {
+        kind, steps, i: 0, t0: 0, settleUntil: 0, done: false, active: false, data: null, bot,
+        restore, restoreSkip: ctx.getRenderSkip ? ctx.getRenderSkip() : false,
+      };
+      btnRec.disabled = true;
+      btnLimit.disabled = true;
+      btnRec.textContent = kind === "limit" ? "Record 60 s" : "Recording...";
+      btnLimit.textContent = kind === "limit" ? "Searching..." : "Find my limit";
+      btnCopy.hidden = true;
+      area.hidden = true;
+      beginStep();
+      paint();
+      return true;
     }
     function record(opts) {
       if (rec && !rec.done) return false;
       const sw = baseSw();
       const o = Object.assign({ stepMs: 15000 }, opts);
       const canSkip = Boolean(ctx.setRenderSkip) && refresh && refresh.hz >= 100 && Boolean(session.setSwitch);
-      results.length = 0;
-      resultReport = null;
-      rec = {
-        steps: planSteps(sw, { stepMs: o.stepMs, skipStep: canSkip && o.skipStep !== false }),
-        i: 0, t0: 0, settleUntil: 0, done: false, active: false, data: null,
-        restore: sw, restoreSkip: ctx.getRenderSkip ? ctx.getRenderSkip() : false,
-      };
-      btnRec.disabled = true;
-      btnRec.textContent = "Recording...";
-      btnCopy.hidden = true;
-      area.hidden = true;
-      beginStep();
-      paint();
-      return true;
+      // the bot is not one of the A/B mixes
+      const mixes = Object.assign({}, sw);
+      delete mixes.autoplay;
+      return startRecording("ab", planSteps(mixes, { stepMs: o.stepMs, skipStep: canSkip && o.skipStep !== false }), sw);
+    }
+    /** "Find my limit": the headroom probe. False when the game has no graphics tiers. */
+    function findLimit(opts) {
+      if (rec && !rec.done) return false;
+      const q = kq();
+      if (!q) return false;
+      const o = Object.assign({ stepMs: 9000 }, opts);
+      return startRecording("limit", planLimit(q.spec, { stepMs: o.stepMs, dpr: win.devicePixelRatio || 1 }), baseSw());
     }
     function report() {
       return buildReport({
@@ -577,6 +911,7 @@
         overlayMs,
         longTasks,
         steps: results.slice(),
+        limit: limitResult,
       });
     }
     async function copyJson() {
@@ -600,6 +935,7 @@
       return ok ? "execCommand" : "textarea";
     }
     btnRec.onclick = () => record();
+    btnLimit.onclick = () => findLimit();
     btnCopy.onclick = () => { copyJson(); };
 
     try {
@@ -612,7 +948,7 @@
 
     win.requestAnimationFrame(onFrame);
     const timer = win.setInterval(tick, 250);
-    const api = { record, report, copyJson, live, results, buckets, stop() { win.clearInterval(timer); root_.remove(); } };
+    const api = { record, findLimit, report, copyJson, live, results, limitRows, buckets, stop() { win.clearInterval(timer); root_.remove(); } };
     Object.defineProperty(api, "recording", { get: () => Boolean(rec && !rec.done) });
     Object.defineProperty(api, "refresh", { get: () => refresh });
     win.kagraPerf = api;
@@ -622,6 +958,7 @@
 
   return {
     percentile, estimateRefresh, summarize, grade, thermalGuess, planSteps,
+    planLimit, limitPass, suggestTier, createGpuTimer, formatLimit, LIMIT_CRITERIA,
     deviceInfo, gatherAdapter, buildReport, formatTable, adapterLine, start,
   };
 });
