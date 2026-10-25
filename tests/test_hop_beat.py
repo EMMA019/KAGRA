@@ -114,6 +114,11 @@ def test_phrases_may_name_enemies_and_the_static_placement_rules_hold():
     assert hb.phrase_problems(g, [phrase([foe(1, "slime"), foe(3, "slime")])]) == []
     # a hovering bat needs no press, so it may share a beat with the slime below it
     assert hb.phrase_problems(g, [phrase([foe(1, "slime"), foe(1, "bat", 0.9)], level=2)]) == []
+    # ... but never hang over a gap (the hop across it, with 100 ms of slack either way)
+    gap = {"beat": 1, "kind": "gap", "beats": 0.5, "hop": "tap"}
+    assert hb.phrase_problems(g, [phrase([gap, foe(1, "bat", 0.9)], level=2)])
+    assert hb.phrase_problems(g, [phrase([gap, foe(1.8, "bat", 0.9)], level=2)])
+    assert hb.phrase_problems(g, [phrase([gap, foe(3, "bat", 0.9)], level=2)]) == []
 
 
 def test_the_built_in_phrase_set_lives_in_rust_so_the_fixture_leaves_it_empty():
@@ -192,3 +197,15 @@ def test_page_starts_the_loop_at_the_sims_position_and_reads_the_clock_back():
     assert r["sources_after"] == 1
     assert r["stopped"] and r["clock_when_stopped"]
     assert r["wrapped_offset"] == pytest.approx(70 % 60.952)
+
+
+def test_recover_block_mirrors_the_rust_defaults_and_is_bounded():
+    g = hb.default_game()
+    assert g["recover"] == {"enabled": True, "drop_secs": 0.9, "ready_beats": 3.0, "invuln_secs": 2.4, "clear_beats": 4.0}
+    ok = hb.game_from_overrides({"recover": {"ready_beats": 2}})
+    assert ok["recover"]["ready_beats"] == 2
+    for key, bad in (("drop_secs", 0), ("ready_beats", 20), ("invuln_secs", -1), ("clear_beats", 99)):
+        with pytest.raises(ValueError):
+            hb.game_from_overrides({"recover": {key: bad}})
+    with pytest.raises(ValueError):
+        hb.game_from_overrides({"recover": {"nope": 1}})
