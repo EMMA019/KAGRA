@@ -59,6 +59,14 @@ pub trait KitHost: Debug + Any {
     fn pause_run(&mut self) {}
     /// Back into the run from the pause card.
     fn resume_run(&mut self) {}
+    /// Does this kit take part in graphics tiers (`quality.rs`)? Off by default so a kit with
+    /// its own picture settings (Neon Cat's `?fx=`) is left alone until it opts in.
+    fn supports_quality_tiers(&self) -> bool {
+        false
+    }
+    /// The two tier knobs only the kit can apply: sky props (`atmo`, 1 = the full set) and
+    /// spark particles kept (`particles`, 0..=1). Called when the tier changes.
+    fn quality_hints(&mut self, _atmo: f32, _particles: f32) {}
 }
 
 type Detect = fn(&str) -> bool;

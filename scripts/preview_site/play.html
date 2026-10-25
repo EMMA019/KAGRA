@@ -319,6 +319,7 @@
     <div id="update" hidden><span data-i18n="update.hint">新しいバージョンがあります</span> <button id="updateGo" type="button" data-i18n="update.reload">更新</button></div>
   </div>
   <script src="./i18n.js"></script>
+  <script src="./quality.js"></script>
   <script src="./portal.js"></script>
   <!-- META hook 1/4: wallet, unlocks, daily run (docs/meta_core.md) -->
   <script src="./meta.js"></script>
@@ -861,12 +862,15 @@
 
     // Render-scale ladder. Starts at the usual cap of 2 and steps down when
     // frames run long (see `adapt` in the loop); ?adapt=0 turns that off.
+    // A graphics tier (quality.js) sets `tierCap`; the ladder only goes below it.
     const SCALE_STEPS = [2, 1.5, 1.25, 1];
     let scaleStep = 0;
+    let tierCap = SCALE_STEPS[0];
+    const effectiveCap = () => (scaleStep ? Math.min(tierCap, SCALE_STEPS[scaleStep]) : tierCap);
     let redraw = 0;
     const fit = () => {
       orient();
-      const scale = Math.min(window.devicePixelRatio || 1, SCALE_STEPS[scaleStep]);
+      const scale = Math.min(window.devicePixelRatio || 1, effectiveCap());
       const w = Math.max(1, Math.round(canvas.clientWidth * scale));
       const h = Math.max(1, Math.round(canvas.clientHeight * scale));
       if (canvas.width !== w || canvas.height !== h) {
@@ -1443,8 +1447,8 @@
         session, params, build: BUILD,
         getCanvas: () => canvas,
         getBackend: () => activeBackend,
-        getScale: () => ({ cap: SCALE_STEPS[scaleStep], step: scaleStep }),
-        getQuality: () => (params.get("quality") || "").toLowerCase() || "default",
+        getScale: () => ({ cap: effectiveCap(), step: scaleStep }),
+        getQuality: () => globalThis.kagraQuality?.tier || (params.get("quality") || "").toLowerCase() || "default",
         getRenderSkip: () => renderSkip,
         setRenderSkip: (on) => { renderSkip = on; },
       });
@@ -1494,6 +1498,13 @@
       for (let i = 0; i < n; i += 1) session.requestFrame();
       return n;
     };
+    // Graphics tiers (quality.js): a no-op for a game that has none.
+    globalThis.KagraQuality?.start({
+      session, params,
+      getPhase: () => (phase === "playing" ? "play" : phase === "complete" ? "result" : "title"),
+      setScaleCap: (cap) => { tierCap = cap; scaleStep = 0; avgGap = 16.7; gapFrames = 0; fit(); },
+    });
+
     const loop = () => {
       if (recovering) return;
       adapt(performance.now());

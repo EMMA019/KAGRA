@@ -135,6 +135,11 @@ pub struct SharedSession {
     world_meshes: bool,
     /// HTML title / result card is the menu. Skip the in-canvas flow column.
     external_menu: bool,
+    /// Graphics tiers: the game's (or the built-in) definitions, the active tier's name
+    /// (`""` = none, `"custom"` = a probe step) and its values.
+    quality: crate::quality::QualitySpec,
+    quality_name: String,
+    quality_tier: Option<crate::quality::Tier>,
 }
 
 impl Default for SharedSession {
@@ -172,6 +177,9 @@ impl Default for SharedSession {
             #[cfg(feature = "render")]
             world_meshes: false,
             external_menu: false,
+            quality: crate::quality::QualitySpec::builtin(),
+            quality_name: String::new(),
+            quality_tier: None,
         }
     }
 }
@@ -184,6 +192,20 @@ fn flow_stats_phase(name: Option<&str>) -> GamePhase {
         "result" => GamePhase::Complete,
         _ => GamePhase::Title,
     }
+}
+
+/// Take a game's top-level `quality_tiers` object out of its JSON. Returns the JSON for the
+/// kit's loader and the object, if any. Text without the key is returned as it came.
+fn split_quality_tiers(json: &str) -> Result<(String, Option<serde_json::Value>), String> {
+    if !json.contains("\"quality_tiers\"") {
+        return Ok((json.to_string(), None));
+    }
+    let mut v: serde_json::Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    let tiers = v.as_object_mut().and_then(|m| m.remove("quality_tiers"));
+    if tiers.is_none() {
+        return Ok((json.to_string(), None));
+    }
+    Ok((v.to_string(), tiers))
 }
 
 impl SharedSession {
@@ -237,6 +259,15 @@ impl SharedSession {
     /// ジャンル dump を読み、シーンを `World` にする。タイトルのまま待つ。
     pub fn load_game_json(&mut self, json: &str) -> Result<(), String> {
         crate::world_doc::clear_runtime_asset_cache();
+        // A game's own `quality_tiers` is read here and kept away from the kit's loader.
+        let (stripped, tiers) = split_quality_tiers(json)?;
+        let json = stripped.as_str();
+        self.quality = match tiers {
+            Some(v) => crate::quality::QualitySpec::with_overrides(&v)?,
+            None => crate::quality::QualitySpec::builtin(),
+        };
+        self.quality_name.clear();
+        self.quality_tier = None;
         if let Some(kit) = crate::kit_host::load(json) {
             let kit = kit?;
             let dump = kit.dump_json();
@@ -839,7 +870,7 @@ impl SharedSession {
         match self.hop_mut() {
             Some(hop) => {
                 let mut m = serde_json::Map::new();
-                for n in ["fx_post", "fx_atmo"] {
+                for n in ["fx_post", "fx_atmo", "autoplay"] {
                     if let Some(v) = hop.switch(n) {
                         m.insert(n.into(), serde_json::Value::Bool(v));
                     }
@@ -848,6 +879,69 @@ impl SharedSession {
             }
             None => "{}".into(),
         }
+    }
+
+    /// Graphics tiers of the loaded game as JSON (`quality.rs`): the tier definitions, the
+    /// auto numbers and the active tier name. `{}` when the game does not take part.
+    pub fn quality_json(&self) -> String {
+        match self.kit.as_ref() {
+            Some(kit) if kit.supports_quality_tiers() => {
+                crate::quality::to_json(&self.quality, &self.quality_name)
+            }
+            _ => "{}".into(),
+        }
+    }
+
+    /// The active tier's name: `safe`, `mid`, `high`, `max`, `custom` (a probe step) or `""`.
+    pub fn quality_tier(&self) -> String {
+        self.quality_name.clone()
+    }
+
+    /// Pick a tier by name. False for an unknown name or a game that has no tiers.
+    pub fn set_quality_tier(&mut self, name: &str) -> bool {
+        let Some(tier) = self.quality.tier(name).cloned() else {
+            return false;
+        };
+        self.install_tier(name, tier)
+    }
+
+    /// A one-off tier for the probe: the active tier (`mid` when none) with the keys of `json`
+    /// laid over it. Refused when a value is out of range.
+    pub fn set_quality_custom(&mut self, json: &str) -> Result<(), String> {
+        let over: serde_json::Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
+        let base = self
+            .quality_tier
+            .clone()
+            .or_else(|| self.quality.tier("mid").cloned())
+            .ok_or("no tiers")?;
+        let mut v = serde_json::to_value(&base).map_err(|e| e.to_string())?;
+        crate::quality::merge_json(&mut v, &over);
+        let tier: crate::quality::Tier =
+            serde_json::from_value(v).map_err(|e| format!("quality_tiers: {e}"))?;
+        tier.validate("custom")?;
+        if self.install_tier("custom", tier) {
+            Ok(())
+        } else {
+            Err("this game has no graphics tiers".into())
+        }
+    }
+
+    fn install_tier(&mut self, name: &str, tier: crate::quality::Tier) -> bool {
+        let Some(kit) = self.kit.as_mut() else {
+            return false;
+        };
+        if !kit.supports_quality_tiers() {
+            return false;
+        }
+        kit.quality_hints(tier.atmo, tier.particles);
+        if let Some(hop) = self.hop_mut() {
+            for (k, v) in &tier.fx {
+                hop.set_switch(k, *v);
+            }
+        }
+        self.quality_name = name.to_string();
+        self.quality_tier = Some(tier);
+        true
     }
 
     /// HOP-BEAT: the page language (`ja` or `en`) for the in-canvas texts.
@@ -997,7 +1091,10 @@ impl SharedSession {
     pub fn render(&mut self) -> Result<(), String> {
         if self.kind == SceneKind::Kit {
             let hud = self.draw_list();
-            let doc = self.kit.as_ref().map(|kit| kit.document().clone());
+            let mut doc = self.kit.as_ref().map(|kit| kit.document().clone());
+            if let (Some(doc), Some(tier)) = (doc.as_mut(), self.quality_tier.as_ref()) {
+                tier.apply(doc);
+            }
             let missing = "no game kit loaded";
             let mut renderer = self.renderer.take();
             let result = match (renderer.as_mut(), doc.as_ref()) {

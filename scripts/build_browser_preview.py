@@ -35,7 +35,7 @@ from kagra.distribute import (  # noqa: E402
 SITE_DIR = Path(__file__).resolve().parent / "preview_site"
 PLAY_HTML = SITE_DIR / "play.html"
 # Classic scripts play.html loads next to itself: page strings and the portal shim.
-SITE_SCRIPTS = ("i18n.js", "portal.js", "meta.js")
+SITE_SCRIPTS = ("i18n.js", "quality.js", "portal.js", "meta.js")
 # Dev-only scripts (?dev=1 measurement overlay): the preview site gets them, a portal zip never does.
 DEV_SCRIPTS = ("perf.js",)
 # Opening the preview with no ?game= loads this slug. Box Hop stays in the list.
