@@ -5432,7 +5432,7 @@ mod tests {
             d.cameras[0].fov = if near { 40.0 } else { 45.0 };
             let _ = r.draw_world_doc_with_hud(&d, &crate::scene::DrawList::default());
             let px = r.read_rgba().unwrap();
-            let mut out = format!("P6\n390 520\n255\n").into_bytes();
+            let mut out = b"P6\n390 520\n255\n".to_vec();
             for c in px.chunks(4) {
                 out.extend_from_slice(&c[..3]);
             }
