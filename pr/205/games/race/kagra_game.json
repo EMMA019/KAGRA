@@ -1,0 +1,7 @@
+{
+  "title": "Race",
+  "version": "0.1.0",
+  "slug": "race",
+  "entry": "examples/race_minimal.py",
+  "world": "kagra-shared/tests/fixtures/race_world.json"
+}
