@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -82,6 +83,8 @@ def build_preview(repo: Path, out: Path, pkg: Path | None, *, require_pkg: bool)
 
 
 BUILD_TOKEN = "__KAGRA_BUILD__"
+# Classic scripts next to the page (i18n, portal, meta): stamped here, not in the source.
+_SCRIPT_SRC = re.compile(r'<script src="(\./[\w.]+\.js)"')
 
 
 def file_tag(data: bytes) -> str:
@@ -109,7 +112,11 @@ def stamp_build(out: Path) -> str:
     play = out / "play.html"
     if play.is_file():
         play.write_text(
-            play.read_text(encoding="utf-8").replace(BUILD_TOKEN, build), encoding="utf-8"
+            _SCRIPT_SRC.sub(
+                lambda m: f'<script src="{m.group(1)}?v={build}"',
+                play.read_text(encoding="utf-8").replace(BUILD_TOKEN, build),
+            ),
+            encoding="utf-8",
         )
     for bundle_path in sorted((out / "games").glob("*/bundle.json")):
         bundle = json.loads(bundle_path.read_text(encoding="utf-8"))

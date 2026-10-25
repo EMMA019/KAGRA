@@ -209,7 +209,7 @@ def test_string_tables_match(r):
 
 def test_play_html_loads_the_shim_and_keeps_dev_tools_behind_dev():
     html = PLAY.read_text(encoding="utf-8")
-    assert html.index('src="./i18n.js?v=') < html.index('src="./portal.js?v=') < html.index('<script type="module">')
+    assert html.index('src="./i18n.js"') < html.index('src="./portal.js"') < html.index('<script type="module">')
     assert 'const dev = params.get("dev") === "1";' in html
     assert 'dev ? (params.get("backend") || "auto") : "auto"' in html
     assert 'dev && params.get("debug") === "1"' in html
