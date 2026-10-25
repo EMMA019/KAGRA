@@ -425,4 +425,6 @@ Fixed pools sized once: pick-ups (`drops.cap`), enemy orbs (24), missiles share 
 
 ### 18.8 Gap list (what is not done after 2a)
 
+Not reused: `game_core` items-core (#201 is a draft; the survivor content lives in `survivor_content.rs` so the two cannot conflict). Not built: weapon codex page and coin-unlocked weapons beyond the two hero starts (`hero.petal`, `hero.blade`), evolve/merge (swap only).
+
 Evolutions, codex page, boss (the king) and its table, pick-up icon art (glyphs are used because browser HUD image quads are not drawn), a "weapons unlocked" gate for the drop draw, per-weapon unique models (KayKit weapons), more enemy kinds (skeleton mage, bat swarm), and ear-checking the new SFX mix.

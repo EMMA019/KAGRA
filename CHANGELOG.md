@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Moonlit Swarm step 2a: drops, weapon slots, new weapons, more foes.** Foes now drop pick-ups from JSON drop tables (per enemy type, with rarity, a pity timer and a pool cap): rice ball (heal), magnet, moon dust (XP), bomb, shield, frenzy, and weapon pick-ups that grant or deepen a weapon. Up to 3 weapon slots (`levels.max_weapons`); a full loadout offers a swap card. Five new weapons beside the bolt: petals (spread), blades (orbit), wisps (homing missiles), zap (chain lightning), pulse (area shove), each with its own FX and sound cue. Three new foes (fast runner, shooter that lobs telegraphed orbs, armoured tank) and a timed warden elite with a boss bar that always leaves a treasure chest with a weapon. Seven weapon x passive synergies at level 3. A loadout HUD shows slot chips with levels, and the active power-ups. All of it is JSON (`drops`, `foes`, `synergies`, `weapons`, `director.elite_*`), pooled and capped, no per-frame allocation. New CC0 assets with ledger entries: Kenney Graveyard Kit skeleton / vampire / keeper, Kenney Mini Dungeon chest and sword. Design: `docs/design/survivor_arena.md` section 18. Not done: weapon codex, evolve/merge, #201 items-core reuse.
+
 - **Moonlit Swarm manual aim.** `input.aim` (`auto` | `manual` | `hybrid`, default hybrid) and `input.tap_px`: tap a foe with the other thumb to lock it (ring and arrow marker,
   weapons prefer it, tap again to release, a dead lock falls back to the nearest foe), tap the ground to aim that way. An AIM button on the pause card cycles the scheme. Headless tests cover lock, unlock, fallback and the muzzle line.
 - **Moonlit Swarm polish pass.** The blaster now points where it fires (the hero faces the target, shots spawn at the muzzle). The arena has Kenney
