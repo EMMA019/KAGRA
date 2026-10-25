@@ -7,6 +7,8 @@
   "bundle_assets": [
     "assets/audio/oga-retro-synth-sfx",
     "assets/audio/kenney-interface-sounds",
+    "assets/audio/kenney-impact-sounds",
+    "assets/audio/oga-wet-squish",
     "assets/audio/oga-flowerbed-fields",
     "assets/models/kenney/mini-characters",
     "assets/models/kenney/graveyard-kit",

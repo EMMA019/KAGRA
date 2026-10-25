@@ -112,6 +112,8 @@ scratch/
 !assets/audio/*.wav
 !assets/audio/oga-retro-synth-sfx/*.wav
 !assets/audio/kenney-interface-sounds/*.wav
+!assets/audio/kenney-impact-sounds/*.wav
+!assets/audio/oga-wet-squish/*.wav
 *.ogg
 *.mp3
 !assets/audio/oga-flowerbed-fields/*.mp3

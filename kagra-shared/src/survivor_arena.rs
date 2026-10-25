@@ -1020,7 +1020,7 @@ pub struct SurvivorArena {
     // presentation
     lang_ja: bool,
     sfx: bool,
-    cue_t: [f32; 4],
+    cue_t: [f32; 5],
 }
 
 fn lin(c: [u32; 3]) -> [f32; 3] {
@@ -1113,7 +1113,7 @@ impl SurvivorArena {
             size: Cell::new((390.0, 844.0)),
             lang_ja: false,
             sfx: true,
-            cue_t: [0.0; 4],
+            cue_t: [0.0; 5],
             spec,
         };
         me.apply_quality();
@@ -1780,6 +1780,7 @@ impl SurvivorArena {
             }
             let k = self.kinds[self.foes.kind[i] as usize];
             self.kills += 1;
+            self.cue("kill", 4, 0.06);
             let (x, z) = (self.foes.x[i], self.foes.z[i]);
             let puff = if self.foes.uid[i].is_multiple_of(4) {
                 FX_PUFF_ZOMBIE
@@ -2204,7 +2205,8 @@ fn default_audio() -> Value {
         "bgm": {"file": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3", "volume": 0.6, "fade_secs": 0.5},
         "sfx": {
             "shoot": cue("shot_01.wav", 0.16, 1.0),
-            "hit": cue("retro_explosion_02.wav", 0.14, 1.6),
+            "hit": {"file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav", "volume": 0.45, "rate": 1.0},
+            "kill": {"file": "assets/audio/oga-wet-squish/impactsplat03.wav", "volume": 0.3, "rate": 1.15},
             "hurt": cue("retro_die_01.wav", 0.6, 1.0),
             "gem": cue("retro_coin_01.wav", 0.25, 1.3),
             "levelup": cue("power_up_02.wav", 0.7, 1.0),
