@@ -80,7 +80,7 @@ def test_plan_is_all_off_post_atmo_both_then_the_skip_step(r):
     assert p["ms"] == [15000] * 4, "four steps of 15 s are the 60 s"
     assert p["none"] == ["as-is"], "a game without switches gets one plain window"
     assert p["one"] == ["all-off", "post"]
-    assert p["skip"][-1] == "all-on+skip"
+    assert p["skip"][-1] == "both+skip"
 
 
 def test_table_has_one_row_per_step(r):
@@ -102,7 +102,7 @@ def test_recording_runs_every_mix_once_and_puts_everything_back(r):
     assert r["recordStarted"] is True and r["recordTwice"] is False
     assert r["recordingAfter"] is False
     steps = r["report"]["steps"]
-    assert [s["name"] for s in steps] == ["all-off", "post", "atmo", "both", "all-on+skip"]
+    assert [s["name"] for s in steps] == ["all-off", "post", "atmo", "both", "both+skip"]
     assert all(s["n"] > 200 and s["grade"] == "good" for s in steps)
     # more picture work costs more CPU per frame, in this fake: off < one on < both on
     cpu = {s["name"]: s["cpu"] for s in steps}
@@ -113,9 +113,9 @@ def test_recording_runs_every_mix_once_and_puts_everything_back(r):
 
 def test_render_skip_halves_the_draws_on_a_120hz_screen_with_a_60hz_sim(r):
     s = {x["name"]: x for x in r["report"]["steps"]}
-    assert s["both"]["rps"] == 120 and s["all-on+skip"]["rps"] == 60
-    assert s["all-on+skip"]["cpu"] < s["both"]["cpu"]
-    assert s["all-on+skip"]["p50"] == s["both"]["p50"], "the frame pacing itself is not changed"
+    assert s["both"]["rps"] == 120 and s["both+skip"]["rps"] == 60
+    assert s["both+skip"]["cpu"] < s["both"]["cpu"]
+    assert s["both+skip"]["p50"] == s["both"]["p50"], "the frame pacing itself is not changed"
 
 
 def test_report_has_device_and_adapter_facts_and_nothing_personal(r):

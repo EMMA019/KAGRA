@@ -44,7 +44,7 @@ Four 15 s steps, in this order, each step drops its first 1.5 s (pipeline rebuil
 | atmo | off | on |
 | both | on | on |
 
-On a screen of 100 Hz or more, a fifth 15 s step `all-on+skip` repeats `both` with `render_skip` on.
+On a screen of 100 Hz or more, a fifth 15 s step `both+skip` repeats `both` with `render_skip` on.
 Switches go back to their values afterwards. Games without switches (Neon Cat today) get one `as-is` window.
 The switches are a runtime setter (`WasmSession.setSwitch(name, on)`, `switchesJson()`) on the HOP-BEAT kit;
 other kits can add the same two methods and appear in the plan with no page change.
@@ -71,7 +71,7 @@ render-call work with the same look.
   `world.json`. The URL wins.
 - Never skips a frame the sim stepped, after a canvas resize (3 frames are redrawn), or for kits that step every frame.
 - Open question until measured on the phone: whether anything animates on render-only frames (the HOP-BEAT picture
-  is driven by sim state, so nothing should), and how much it saves (the `all-on+skip` row against `both`).
+  is driven by sim state, so nothing should), and how much it saves (the `both+skip` row against `both`).
 
 ## Cost and shipping
 

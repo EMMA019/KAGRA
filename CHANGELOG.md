@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- On-phone measurement tool, shared by every game (`?dev=1`): an overlay with fps, frame time p50 / p95 / p99, jank,
+  render scale, backend, adapter, canvas and DPR, display refresh, JS heap and a thermal guess; **Record 60 s** runs the
+  `fx_post` / `fx_atmo` A/B (all-off, post, atmo, both, 15 s each) and shows a table with **Copy JSON**. HOP-BEAT gets a runtime
+  `setSwitch` (picture only). `render_skip` (off by default, `?render_skip=1` or world.json) skips the draw on a 120 Hz frame
+  where the 60 Hz sim did not step. The tool is `scripts/preview_site/perf.js`: dev only, not in portal zips, no network,
+  nothing stored. See `docs/phone_measure.md`.
+
 - Retention layer, shared by every game (`meta`): a coin wallet earned from runs, an unlock catalogue (hero skins and
   background looks, music later) with prices and rules, a daily run (one fixed seed per UTC date, its own best, a streak with a
   small coin reward, a text share card) and run modifiers, with a shop screen, EN/JA. It is a manifest block (`meta` in
