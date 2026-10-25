@@ -8,7 +8,7 @@
     {
       "path": "world.json",
       "url": "games/survivor_arena/world.json",
-      "v": "6f5d9bda45"
+      "v": "2553e0a2b9"
     },
     {
       "path": "kagra_game.json",
@@ -293,7 +293,7 @@
     {
       "path": "assets/models/kenney/graveyard-kit/CREDITS.md",
       "url": "assets/models/kenney/graveyard-kit/CREDITS.md",
-      "v": "36d7e9aa11"
+      "v": "9e6f42ffff"
     },
     {
       "path": "assets/models/kenney/graveyard-kit/LICENSE.txt",
@@ -304,6 +304,21 @@
       "path": "assets/models/kenney/graveyard-kit/character-ghost.glb",
       "url": "assets/models/kenney/graveyard-kit/character-ghost.glb",
       "v": "f561e76b18"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/character-keeper.glb",
+      "url": "assets/models/kenney/graveyard-kit/character-keeper.glb",
+      "v": "b691defe3d"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/character-skeleton.glb",
+      "url": "assets/models/kenney/graveyard-kit/character-skeleton.glb",
+      "v": "07a84415fe"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/character-vampire.glb",
+      "url": "assets/models/kenney/graveyard-kit/character-vampire.glb",
+      "v": "0289d409db"
     },
     {
       "path": "assets/models/kenney/graveyard-kit/character-zombie.glb",
@@ -421,6 +436,26 @@
       "v": "c37e1263f8"
     },
     {
+      "path": "assets/models/kenney/mini-dungeon/CREDITS.md",
+      "url": "assets/models/kenney/mini-dungeon/CREDITS.md",
+      "v": "9e1b96ab56"
+    },
+    {
+      "path": "assets/models/kenney/mini-dungeon/LICENSE.txt",
+      "url": "assets/models/kenney/mini-dungeon/LICENSE.txt",
+      "v": "f8b470068a"
+    },
+    {
+      "path": "assets/models/kenney/mini-dungeon/chest.glb",
+      "url": "assets/models/kenney/mini-dungeon/chest.glb",
+      "v": "f2105c56f3"
+    },
+    {
+      "path": "assets/models/kenney/mini-dungeon/weapon-sword.glb",
+      "url": "assets/models/kenney/mini-dungeon/weapon-sword.glb",
+      "v": "9ff07087ca"
+    },
+    {
       "path": "assets/models/kenney/platformer-kit/jewel.glb",
       "url": "assets/models/kenney/platformer-kit/jewel.glb",
       "v": "d0169e703c"
@@ -474,6 +509,7 @@
     "patchable": [
       "hero.skin",
       "hero.start_passives",
+      "hero.start_weapon",
       "director.seed",
       "director.start_rate",
       "director.end_rate",
@@ -529,6 +565,60 @@
             140,
             255,
             205
+          ]
+        ]
+      },
+      {
+        "id": "hero.petal",
+        "slot": "hero",
+        "name": {
+          "en": "Petal (spread)",
+          "ja": "はなびら（ひろがる）"
+        },
+        "price": 250,
+        "requires": {
+          "stat": "runs",
+          "at_least": 3
+        },
+        "patch": {
+          "hero": {
+            "skin": "classic",
+            "start_weapon": "petals",
+            "start_passives": []
+          }
+        },
+        "preview": [
+          [
+            255,
+            150,
+            200
+          ]
+        ]
+      },
+      {
+        "id": "hero.blade",
+        "slot": "hero",
+        "name": {
+          "en": "Blade (orbit)",
+          "ja": "やいば（まわる）"
+        },
+        "price": 400,
+        "requires": {
+          "stat": "best_score",
+          "at_least": 1500
+        },
+        "patch": {
+          "hero": {
+            "skin": "classic",
+            "start_weapon": "blades",
+            "start_passives": []
+          }
+        },
+        "preview": [
+          [
+            150,
+            220,
+            255
           ]
         ]
       },
@@ -690,5 +780,5 @@
       "slot": "double_coins"
     }
   },
-  "build": "5b2a687f3b8a"
+  "build": "43c81b894bdb"
 }
