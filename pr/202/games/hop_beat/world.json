@@ -13,7 +13,7 @@
         "combo": {
           "file": "assets/audio/hop_beat/combo.wav",
           "rate": 1.0,
-          "volume": 0.9
+          "volume": 0.8
         },
         "fall": {
           "file": "assets/audio/hop_beat/fall.wav",
@@ -28,22 +28,22 @@
         "good": {
           "file": "assets/audio/hop_beat/good.wav",
           "rate": 1.0,
-          "volume": 0.9
+          "volume": 0.65
         },
         "hit": {
           "file": "assets/audio/hop_beat/hit.wav",
           "rate": 1.0,
-          "volume": 0.9
+          "volume": 0.95
         },
         "hop": {
           "file": "assets/audio/hop_beat/hop.wav",
           "rate": 1.0,
-          "volume": 0.9
+          "volume": 0.6
         },
         "land": {
           "file": "assets/audio/hop_beat/land.wav",
           "rate": 1.0,
-          "volume": 0.5
+          "volume": 0.4
         },
         "newbest": {
           "file": "assets/audio/hop_beat/hop_beat_newbest.mp3",
@@ -53,7 +53,7 @@
         "perfect": {
           "file": "assets/audio/hop_beat/perfect.wav",
           "rate": 1.0,
-          "volume": 0.9
+          "volume": 0.85
         },
         "revive": {
           "file": "assets/audio/hop_beat/hop_beat_revive.mp3",
@@ -64,6 +64,11 @@
           "file": "assets/audio/hop_beat/stomp.wav",
           "rate": 1.0,
           "volume": 0.9
+        },
+        "warn": {
+          "file": "assets/audio/hop_beat/warn.wav",
+          "rate": 1.0,
+          "volume": 0.55
         }
       },
       "sfx_volume": 1.0

@@ -74,6 +74,10 @@
       "url": "assets/audio/hop_beat/stomp.wav"
     },
     {
+      "path": "assets/audio/hop_beat/warn.wav",
+      "url": "assets/audio/hop_beat/warn.wav"
+    },
+    {
       "path": "assets/audio/jump.wav",
       "url": "assets/audio/jump.wav"
     },
