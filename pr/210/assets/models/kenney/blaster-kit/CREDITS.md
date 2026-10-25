@@ -7,6 +7,6 @@ Source: https://kenney.nl/assets/blaster-kit
 Attribution is not required for CC0; credit is recorded here anyway.
 
 Used by Moonlit Swarm (survivor arena): the hero's blaster. The file is a rest-pose copy made with
-`tools/gen_assets/pack_glb.py` from `Models/GLB format/<id>.glb`: the colormap texture embedded. Nothing else changed.
+`tools/gen_assets/pack_glb.py` from `Models/GLB format/<id>.glb`: the colormap texture embedded and (`--lean`) the unused tangent and second-UV streams removed. Nothing else changed.
 
 - blaster-a.glb
