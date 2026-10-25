@@ -205,14 +205,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly __wbg_wasmlockstep_free: (a: number, b: number) => void;
-    readonly netDecode: (a: number, b: number) => [number, number, number, number];
-    readonly netDt: (a: number, b: number) => number;
-    readonly netHello: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly wasmlockstep_ingest: (a: number, b: number, c: number) => [number, number];
-    readonly wasmlockstep_new: (a: number, b: number) => [number, number, number];
-    readonly wasmlockstep_ready: (a: number, b: number) => number;
-    readonly wasmlockstep_submitLocal: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly kagra_net_hello: (a: number, b: number, c: number, d: number) => number;
     readonly kagra_net_ingest: (a: number, b: number) => number;
     readonly kagra_net_input_axis: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
@@ -279,6 +271,14 @@ export interface InitOutput {
     readonly wasmsession_switchesJson: (a: number) => [number, number];
     readonly wasmsession_usesSwipe: (a: number) => number;
     readonly wasmsession_loadGameJson: (a: number, b: number, c: number) => [number, number];
+    readonly __wbg_wasmlockstep_free: (a: number, b: number) => void;
+    readonly netDecode: (a: number, b: number) => [number, number, number, number];
+    readonly netDt: (a: number, b: number) => number;
+    readonly netHello: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly wasmlockstep_ingest: (a: number, b: number, c: number) => [number, number];
+    readonly wasmlockstep_new: (a: number, b: number) => [number, number, number];
+    readonly wasmlockstep_ready: (a: number, b: number) => number;
+    readonly wasmlockstep_submitLocal: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly kagra_shared_attach_android_surface: (a: number, b: number, c: number, d: number) => number;
     readonly kagra_shared_attach_ios_view: (a: number, b: number, c: number, d: number) => number;
     readonly kagra_shared_attach_offscreen: (a: number, b: number, c: number) => number;

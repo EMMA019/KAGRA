@@ -1,14 +1,6 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
-export const __wbg_wasmlockstep_free: (a: number, b: number) => void;
-export const netDecode: (a: number, b: number) => [number, number, number, number];
-export const netDt: (a: number, b: number) => number;
-export const netHello: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-export const wasmlockstep_ingest: (a: number, b: number, c: number) => [number, number];
-export const wasmlockstep_new: (a: number, b: number) => [number, number, number];
-export const wasmlockstep_ready: (a: number, b: number) => number;
-export const wasmlockstep_submitLocal: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
 export const kagra_net_hello: (a: number, b: number, c: number, d: number) => number;
 export const kagra_net_ingest: (a: number, b: number) => number;
 export const kagra_net_input_axis: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
@@ -75,6 +67,14 @@ export const wasmsession_statsJson: (a: number) => [number, number];
 export const wasmsession_switchesJson: (a: number) => [number, number];
 export const wasmsession_usesSwipe: (a: number) => number;
 export const wasmsession_loadGameJson: (a: number, b: number, c: number) => [number, number];
+export const __wbg_wasmlockstep_free: (a: number, b: number) => void;
+export const netDecode: (a: number, b: number) => [number, number, number, number];
+export const netDt: (a: number, b: number) => number;
+export const netHello: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const wasmlockstep_ingest: (a: number, b: number, c: number) => [number, number];
+export const wasmlockstep_new: (a: number, b: number) => [number, number, number];
+export const wasmlockstep_ready: (a: number, b: number) => number;
+export const wasmlockstep_submitLocal: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
 export const kagra_shared_attach_android_surface: (a: number, b: number, c: number, d: number) => number;
 export const kagra_shared_attach_ios_view: (a: number, b: number, c: number, d: number) => number;
 export const kagra_shared_attach_offscreen: (a: number, b: number, c: number) => number;
