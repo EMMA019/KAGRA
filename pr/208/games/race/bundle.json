@@ -1,0 +1,420 @@
+{
+  "slug": "race",
+  "title": "Race",
+  "version": "0.1.0",
+  "genre": "race_drive",
+  "world": "world.json",
+  "files": [
+    {
+      "path": "world.json",
+      "url": "games/race/world.json",
+      "v": "489f5b6822"
+    },
+    {
+      "path": "kagra_game.json",
+      "url": "games/race/kagra_game.json",
+      "v": "c0dadd3477"
+    },
+    {
+      "path": "assets/audio/bgm.wav",
+      "url": "assets/audio/bgm.wav",
+      "v": "0841950e00"
+    },
+    {
+      "path": "assets/audio/card.wav",
+      "url": "assets/audio/card.wav",
+      "v": "82d078f0df"
+    },
+    {
+      "path": "assets/audio/fire.wav",
+      "url": "assets/audio/fire.wav",
+      "v": "e0c24e16c8"
+    },
+    {
+      "path": "assets/audio/hop_beat/combo.wav",
+      "url": "assets/audio/hop_beat/combo.wav",
+      "v": "13946f5930"
+    },
+    {
+      "path": "assets/audio/hop_beat/fall.wav",
+      "url": "assets/audio/hop_beat/fall.wav",
+      "v": "31f1d8074b"
+    },
+    {
+      "path": "assets/audio/hop_beat/good.wav",
+      "url": "assets/audio/hop_beat/good.wav",
+      "v": "70f73f20d1"
+    },
+    {
+      "path": "assets/audio/hop_beat/hit.wav",
+      "url": "assets/audio/hop_beat/hit.wav",
+      "v": "21f69dda2d"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop.wav",
+      "url": "assets/audio/hop_beat/hop.wav",
+      "v": "561e6e11ea"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_gameover.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_gameover.mp3",
+      "v": "1865a59646"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_loop.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_loop.mp3",
+      "v": "e25a9d983b"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_newbest.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_newbest.mp3",
+      "v": "47285841db"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_revive.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_revive.mp3",
+      "v": "f8ae0b7836"
+    },
+    {
+      "path": "assets/audio/hop_beat/land.wav",
+      "url": "assets/audio/hop_beat/land.wav",
+      "v": "62f7482dc4"
+    },
+    {
+      "path": "assets/audio/hop_beat/perfect.wav",
+      "url": "assets/audio/hop_beat/perfect.wav",
+      "v": "19962c2bee"
+    },
+    {
+      "path": "assets/audio/hop_beat/stomp.wav",
+      "url": "assets/audio/hop_beat/stomp.wav",
+      "v": "dfe75ed7e9"
+    },
+    {
+      "path": "assets/audio/hop_beat/warn.wav",
+      "url": "assets/audio/hop_beat/warn.wav",
+      "v": "3780360257"
+    },
+    {
+      "path": "assets/audio/jump.wav",
+      "url": "assets/audio/jump.wav",
+      "v": "b265d4fdfa"
+    },
+    {
+      "path": "assets/audio/neon_cat/bgm.wav",
+      "url": "assets/audio/neon_cat/bgm.wav",
+      "v": "2d649821f4"
+    },
+    {
+      "path": "assets/audio/neon_cat/card.wav",
+      "url": "assets/audio/neon_cat/card.wav",
+      "v": "a5deba6e08"
+    },
+    {
+      "path": "assets/audio/neon_cat/coin.wav",
+      "url": "assets/audio/neon_cat/coin.wav",
+      "v": "ce0ae0de97"
+    },
+    {
+      "path": "assets/audio/neon_cat/gameover.wav",
+      "url": "assets/audio/neon_cat/gameover.wav",
+      "v": "42cbfbf902"
+    },
+    {
+      "path": "assets/audio/neon_cat/hit.wav",
+      "url": "assets/audio/neon_cat/hit.wav",
+      "v": "9c7d60bdde"
+    },
+    {
+      "path": "assets/audio/neon_cat/item.wav",
+      "url": "assets/audio/neon_cat/item.wav",
+      "v": "5e77291f24"
+    },
+    {
+      "path": "assets/audio/neon_cat/jump.wav",
+      "url": "assets/audio/neon_cat/jump.wav",
+      "v": "e895662ef8"
+    },
+    {
+      "path": "assets/audio/neon_cat/knock.wav",
+      "url": "assets/audio/neon_cat/knock.wav",
+      "v": "9d26a2e92d"
+    },
+    {
+      "path": "assets/audio/neon_cat/meow.wav",
+      "url": "assets/audio/neon_cat/meow.wav",
+      "v": "0ce8f2f1c3"
+    },
+    {
+      "path": "assets/audio/neon_cat/mission.wav",
+      "url": "assets/audio/neon_cat/mission.wav",
+      "v": "c97d416829"
+    },
+    {
+      "path": "assets/audio/neon_cat/perch.wav",
+      "url": "assets/audio/neon_cat/perch.wav",
+      "v": "15faa28ce6"
+    },
+    {
+      "path": "assets/audio/neon_cat/robot_off.wav",
+      "url": "assets/audio/neon_cat/robot_off.wav",
+      "v": "4ce33e986f"
+    },
+    {
+      "path": "assets/audio/neon_cat/robot_on.wav",
+      "url": "assets/audio/neon_cat/robot_on.wav",
+      "v": "4bc62ebff3"
+    },
+    {
+      "path": "assets/audio/neon_cat/roll.wav",
+      "url": "assets/audio/neon_cat/roll.wav",
+      "v": "f1d0e7409f"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/base.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/base.bin",
+      "v": "2b00ed6bb8"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/bench.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/bench.bin",
+      "v": "53ac973411"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/box_A.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/box_A.bin",
+      "v": "7d73d90c73"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/box_B.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/box_B.bin",
+      "v": "07ea7050e8"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_A.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_A.bin",
+      "v": "29feccd24a"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_A_withoutBase.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_A_withoutBase.bin",
+      "v": "a0446a10d1"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_B.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_B.bin",
+      "v": "310c032929"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_B_withoutBase.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_B_withoutBase.bin",
+      "v": "1fca25dd4b"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_C.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_C.bin",
+      "v": "77c6e813fc"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_C_withoutBase.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_C_withoutBase.bin",
+      "v": "56ab30ffad"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_D.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_D.bin",
+      "v": "b8d7091ba0"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_D_withoutBase.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_D_withoutBase.bin",
+      "v": "6342dbff9e"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_E.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_E.bin",
+      "v": "1280f8b64d"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_E_withoutBase.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_E_withoutBase.bin",
+      "v": "6403701c01"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_F.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_F.bin",
+      "v": "fc3c72d718"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_F_withoutBase.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_F_withoutBase.bin",
+      "v": "1bed0be4aa"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_G.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_G.bin",
+      "v": "06f0ec0113"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_G_withoutBase.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_G_withoutBase.bin",
+      "v": "34112472a3"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_H.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_H.bin",
+      "v": "fbee968ad4"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/building_H_withoutBase.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/building_H_withoutBase.bin",
+      "v": "310a8c61e9"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/bush.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/bush.bin",
+      "v": "6b00a80ec2"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/car_hatchback.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/car_hatchback.bin",
+      "v": "e7756d8a44"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/car_police.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/car_police.bin",
+      "v": "07bf316055"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/car_sedan.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/car_sedan.bin",
+      "v": "1d69e7f098"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/car_sedan.gltf",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/car_sedan.gltf",
+      "v": "96c9d38e68"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/car_stationwagon.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/car_stationwagon.bin",
+      "v": "46d28202e7"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/car_taxi.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/car_taxi.bin",
+      "v": "28abb85c4e"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/car_taxi.gltf",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/car_taxi.gltf",
+      "v": "781b326547"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/dumpster.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/dumpster.bin",
+      "v": "389a04cddf"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/firehydrant.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/firehydrant.bin",
+      "v": "02cab93bf6"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/road_corner.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/road_corner.bin",
+      "v": "357bfda568"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/road_corner.gltf",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/road_corner.gltf",
+      "v": "592dadb7a6"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/road_corner_curved.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/road_corner_curved.bin",
+      "v": "5a89cc3e2c"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/road_junction.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/road_junction.bin",
+      "v": "deb16c15a1"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/road_straight.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/road_straight.bin",
+      "v": "6509b35095"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/road_straight.gltf",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/road_straight.gltf",
+      "v": "35c74b311a"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/road_straight_crossing.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/road_straight_crossing.bin",
+      "v": "2c9ffb1dca"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/road_tsplit.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/road_tsplit.bin",
+      "v": "4856ecd193"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/streetlight.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/streetlight.bin",
+      "v": "2e95833194"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/trafficlight_A.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/trafficlight_A.bin",
+      "v": "8d41a66bbf"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/trafficlight_A.gltf",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/trafficlight_A.gltf",
+      "v": "4a22f6fc11"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/trafficlight_B.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/trafficlight_B.bin",
+      "v": "e0a20f34ca"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/trafficlight_C.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/trafficlight_C.bin",
+      "v": "0be9badcc8"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/trash_A.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/trash_A.bin",
+      "v": "3fbaf543d2"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/trash_B.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/trash_B.bin",
+      "v": "2663a8ed7f"
+    },
+    {
+      "path": "assets/library/kaykit/city-builder-bits/gltf/watertower.bin",
+      "url": "assets/library/kaykit/city-builder-bits/gltf/watertower.bin",
+      "v": "384bc04add"
+    },
+    {
+      "path": "assets/models/placeholder/pine.glb",
+      "url": "assets/models/placeholder/pine.glb",
+      "v": "5d83373239"
+    },
+    {
+      "path": "assets/models/placeholder/rock.glb",
+      "url": "assets/models/placeholder/rock.glb",
+      "v": "bb9395c3be"
+    },
+    {
+      "path": "assets/models/placeholder/tree.glb",
+      "url": "assets/models/placeholder/tree.glb",
+      "v": "73d8d6760c"
+    }
+  ],
+  "build": "7f04545b2bbd"
+}
