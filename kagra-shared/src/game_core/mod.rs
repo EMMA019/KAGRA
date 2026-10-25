@@ -6,6 +6,9 @@
 //! - [`lives`], [`missions`], [`result`]: the run rules every kit shares
 //!   (lives and the blink after a hit, per-run goals, game-over and banner),
 //!   driven by the `lives` and `missions` sections of the GameSpec JSON.
+//! - [`meta`]: retention rules every kit can share (the coin formula, the daily
+//!   seed and streak, JSON patches for unlocks and run modifiers), mirrored in
+//!   `kagra/meta_spec.py` and `scripts/preview_site/meta.js`.
 //! - [`Kit`] + [`tick_frame`]: the fixed-step frame driver. A kit supplies
 //!   one sim step; the core owns substepping, hitstop, title attract, and
 //!   juice decay in a fixed order so runs replay exactly.
@@ -21,6 +24,7 @@ pub mod enemies;
 pub mod feel;
 pub mod juice;
 pub mod lives;
+pub mod meta;
 pub mod missions;
 pub mod result;
 pub mod run;

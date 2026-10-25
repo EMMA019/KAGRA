@@ -35,7 +35,7 @@ from kagra.distribute import (  # noqa: E402
 SITE_DIR = Path(__file__).resolve().parent / "preview_site"
 PLAY_HTML = SITE_DIR / "play.html"
 # Classic scripts play.html loads next to itself: page strings and the portal shim.
-SITE_SCRIPTS = ("i18n.js", "portal.js")
+SITE_SCRIPTS = ("i18n.js", "portal.js", "meta.js")
 # Opening the preview with no ?game= loads this slug. Box Hop stays in the list.
 LANDING_SLUG = "neon_run"
 
@@ -186,6 +186,8 @@ def _stage_one(repo: Path, out: Path, manifest) -> dict:
     }
     if manifest.platform:
         bundle["platform"] = manifest.platform
+    if manifest.meta:
+        bundle["meta"] = manifest.meta
     (dest / "bundle.json").write_text(
         json.dumps(bundle, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",

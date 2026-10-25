@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from kagra.contracts import AssetKind, resolve_asset
+from kagra.meta_spec import MetaError, normalize_meta
 from kagra.platform_spec import PlatformError, normalize_platform
 
 REQUIRED = ("title", "icon", "version", "entry")
@@ -43,6 +44,7 @@ class GameManifest:
     path: Path | None = None
     slug: str = ""
     platform: dict = field(default_factory=dict)
+    meta: dict = field(default_factory=dict)
 
     def version_code(self) -> int:
         return version_code(self.version)
@@ -127,6 +129,14 @@ def load_manifest(path: Path, repo: Path | None = None) -> GameManifest:
         platform = normalize_platform(raw.get("platform"))
     except PlatformError as exc:
         raise ManifestError(f"{path}: {exc}") from exc
+    try:
+        meta = normalize_meta(raw.get("meta"))
+    except MetaError as exc:
+        raise ManifestError(f"{path}: {exc}") from exc
+    if meta.get("rewarded") and meta["rewarded"]["slot"] not in {r["slot"] for r in platform.get("ads", {}).get("rewarded", [])}:
+        raise ManifestError(
+            f"{path}: meta.rewarded.slot {meta['rewarded']['slot']!r} is not a platform.ads.rewarded slot"
+        )
     _must_exist(repo / entry, "entry")
     _must_exist(repo / icon, "icon")
     if world:
@@ -142,6 +152,7 @@ def load_manifest(path: Path, repo: Path | None = None) -> GameManifest:
         path=path,
         slug=slug,
         platform=platform,
+        meta=meta,
     )
 
 

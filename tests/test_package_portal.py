@@ -40,7 +40,7 @@ def test_zip_layout_and_no_external_requests(tmp_path, fake_pkg, capsys):
     with zipfile.ZipFile(zips[0]) as zf:
         names = zf.namelist()
     assert names[0] == "index.html"
-    assert {"i18n.js", "portal.js", "pkg/kagra_shared.js", "pkg/kagra_shared_bg.wasm",
+    assert {"i18n.js", "portal.js", "meta.js", "pkg/kagra_shared.js", "pkg/kagra_shared_bg.wasm",
             "games/neon_cat/bundle.json", "games/neon_cat/world.json"} <= set(names)
     assert not any(n.startswith("/") or ".." in n for n in names)
     assert not any(n.endswith(".pyc") for n in names)
