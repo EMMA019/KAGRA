@@ -96,10 +96,13 @@
             150
           ],
           "id": "slime",
+          "jump_air": 0.5,
+          "jump_height": 0.0,
           "look": "slime",
           "step_m": 0.0,
           "steps_per_beat": 1,
           "stompable": true,
+          "telegraph": 0.25,
           "unlock_level": 0,
           "walk_steps": 0,
           "y_hi": 0.38,
@@ -112,10 +115,13 @@
             80
           ],
           "id": "beetle",
+          "jump_air": 0.5,
+          "jump_height": 0.0,
           "look": "beetle",
           "step_m": 1.0,
           "steps_per_beat": 2,
           "stompable": true,
+          "telegraph": 0.25,
           "unlock_level": 1,
           "walk_steps": 8,
           "y_hi": 0.42,
@@ -128,14 +134,36 @@
             255
           ],
           "id": "bat",
+          "jump_air": 0.5,
+          "jump_height": 0.0,
           "look": "bat",
           "step_m": 0.0,
           "steps_per_beat": 1,
           "stompable": false,
+          "telegraph": 0.25,
           "unlock_level": 2,
           "walk_steps": 0,
           "y_hi": 2.4,
           "y_lo": 1.75
+        },
+        {
+          "color": [
+            170,
+            235,
+            80
+          ],
+          "id": "hopper",
+          "jump_air": 0.5,
+          "jump_height": 0.4,
+          "look": "frog",
+          "step_m": 3.0,
+          "steps_per_beat": 1,
+          "stompable": true,
+          "telegraph": 0.25,
+          "unlock_level": 3,
+          "walk_steps": 4,
+          "y_hi": 0.42,
+          "y_lo": 0.0
         }
       ]
     },
