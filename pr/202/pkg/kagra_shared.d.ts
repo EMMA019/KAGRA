@@ -184,6 +184,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_wasmlockstep_free: (a: number, b: number) => void;
     readonly kagra_shared_attach_android_surface: (a: number, b: number, c: number, d: number) => number;
     readonly kagra_shared_attach_ios_view: (a: number, b: number, c: number, d: number) => number;
     readonly kagra_shared_attach_offscreen: (a: number, b: number, c: number) => number;
@@ -228,7 +229,6 @@ export interface InitOutput {
     readonly kagra_shared_stats_json: (a: number, b: number, c: number) => number;
     readonly kagra_shared_take_audio_cues: (a: number, b: number) => number;
     readonly kagra_shared_version: () => number;
-    readonly __wbg_wasmlockstep_free: (a: number, b: number) => void;
     readonly netDecode: (a: number, b: number) => [number, number, number, number];
     readonly netDt: (a: number, b: number) => number;
     readonly netHello: (a: number, b: number, c: number, d: number) => [number, number, number, number];
