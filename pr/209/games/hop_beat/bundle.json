@@ -8,7 +8,7 @@
     {
       "path": "world.json",
       "url": "games/hop_beat/world.json",
-      "v": "ba3448b05c"
+      "v": "17d990ed54"
     },
     {
       "path": "kagra_game.json",
@@ -254,6 +254,11 @@
       "path": "assets/models/hop_beat/hop_ears.glb",
       "url": "assets/models/hop_beat/hop_ears.glb",
       "v": "f4e7f0df7d"
+    },
+    {
+      "path": "assets/models/hop_beat/hop_frog.glb",
+      "url": "assets/models/hop_beat/hop_frog.glb",
+      "v": "0f84d8ee6d"
     },
     {
       "path": "assets/models/hop_beat/hop_post.glb",
@@ -679,5 +684,5 @@
       "slot": "double_coins"
     }
   },
-  "build": "7651790a8b54"
+  "build": "89f9feeb541c"
 }
