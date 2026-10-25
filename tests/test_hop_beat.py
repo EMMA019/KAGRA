@@ -64,17 +64,43 @@ def test_out_of_range_values_are_refused(over):
         hb.game_from_overrides(over)
 
 
-def test_default_enemies_are_the_three_staged_kinds():
+def test_default_enemies_are_the_four_staged_kinds():
     en = hb.default_game()["enemies"]
     ids = [t["id"] for t in en["types"]]
-    assert ids == ["slime", "beetle", "bat"]
-    assert [t["unlock_level"] for t in en["types"]] == [0, 1, 2], "one new kind per level"
-    slime, beetle, bat = en["types"]
+    assert ids == ["slime", "beetle", "bat", "hopper"]
+    assert [t["unlock_level"] for t in en["types"]] == [0, 1, 2, 3], "one new kind per level"
+    slime, beetle, bat, hopper = en["types"]
     assert slime["stompable"] and beetle["stompable"] and not bat["stompable"]
     assert bat["y_lo"] > 1.0, "a bat hovers where a hold hop climbs"
     assert beetle["step_m"] * beetle["walk_steps"] <= hb.MAX_WALK_M
+    # the jumper: a stompable ground enemy that leaps, at a clearly different speed from the beetle
+    assert hopper["look"] == "frog" and hopper["stompable"] and hopper["jump_height"] > 0
+    assert hopper["y_lo"] == 0 and hopper["telegraph"] + hopper["jump_air"] <= 1
+    speed = lambda t: t["step_m"] * t["steps_per_beat"]  # noqa: E731
+    assert abs(speed(hopper) - speed(beetle)) / max(speed(hopper), speed(beetle)) >= 0.25
+    assert hopper["step_m"] * hopper["walk_steps"] <= hb.MAX_WALK_M
+    assert beetle["jump_height"] == 0 and slime["jump_height"] == 0
     assert "stomp" in hb.SFX_CUES and "stomp" in hb.default_game()["audio"]["sfx"]
     assert (ROOT / hb.AUDIO_DIR / "stomp.wav").is_file()
+
+
+@pytest.mark.parametrize("bad", [
+    {"jump_height": 3.0},
+    {"jump_height": 0.4, "step_m": 0.0},  # a jumper must advance
+    {"jump_height": 0.4, "step_m": 1.0, "y_lo": 0.5, "y_hi": 1.0, "stompable": False},  # starts on the ground
+    {"jump_height": 0.4, "step_m": 1.0, "jump_air": 0.5, "telegraph": 0.8},  # the tell must fit
+    {"jump_air": 0.05},
+])
+def test_a_bad_jumper_is_refused(bad):
+    with pytest.raises(ValueError):
+        hb.game_from_overrides({"enemies": {"types": [{"id": "x", **bad}]}})
+
+
+def test_a_jumper_is_only_json():
+    g = hb.game_from_overrides({"enemies": {"types": [
+        {"id": "frog2", "look": "frog", "jump_height": 0.6, "jump_air": 0.4, "telegraph": 0.3,
+         "step_m": 1.5, "steps_per_beat": 2, "walk_steps": 6, "stompable": True}]}})
+    assert g["enemies"]["types"][0]["jump_height"] == 0.6
 
 
 def test_enemy_types_merge_over_the_slime_defaults_and_reject_nonsense():

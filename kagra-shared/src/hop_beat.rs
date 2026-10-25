@@ -872,7 +872,7 @@ impl HopSpec {
 
     fn validate_enemies(&self) -> Result<(), String> {
         self.enemies
-            .validate("hop spec", &["slime", "beetle", "bat"])
+            .validate("hop spec", &["slime", "beetle", "bat", "frog"])
     }
 
     /// How long a bounce that starts at song time `t` lasts: it comes down on
@@ -979,6 +979,8 @@ impl HopSpec {
             ));
             if sound {
                 out.extend(self.flyer_gap_problems(pi, p));
+                out.extend(self.jumper_gap_problems(pi, p));
+                out.extend(self.enemy_crowd_problems(pi, p));
                 out.extend(self.sequence_problems(pi, p));
             }
         }
@@ -1029,6 +1031,137 @@ impl HopSpec {
                     .and_then(|i| self.enemies.types.get(i))
                     .is_some_and(|t| t.y_lo > 0.0)
         })
+    }
+
+    /// Does this phrase hold a jumper (an enemy that leaps at the hero on the step grid)?
+    pub fn has_jumper(&self, p: &Phrase) -> bool {
+        p.items.iter().any(|it| {
+            parse_item(it).is_some_and(|(k, _)| k == Kind::Enemy)
+                && self
+                    .enemy_index(&it.enemy)
+                    .and_then(|i| self.enemies.types.get(i))
+                    .is_some_and(|t| t.is_jumper())
+        })
+    }
+
+    /// Does this phrase hold an enemy whose danger is a matter of timing in the air
+    /// (a flyer or a jumper)? Those get the stricter seam checks.
+    pub fn has_airborne_foe(&self, p: &Phrase) -> bool {
+        self.has_flyer(p) || self.has_jumper(p)
+    }
+
+    /// The span of song time (seconds) in which a jumper laid at `o` is off the
+    /// ground **and** within one hero hop's reach (`beat_len_m`) of a hero running
+    /// straight through: its airborne window where it can matter. None if it never is.
+    pub fn jumper_air_span(&self, o: &Obst) -> Option<(f32, f32)> {
+        let bs = self.beat_secs();
+        let v = self.speed();
+        let reach = self.hero.beat_len_m + self.hero.half_width;
+        let (mut lo, mut hi): (Option<f32>, f32) = (None, 0.0);
+        let mut t = (o.take_beat - 6.0) * bs;
+        let t_end = (o.take_beat + 6.0) * bs;
+        while t <= t_end {
+            if let Some((dx, lift)) = self.enemy_motion(o, t) {
+                let centre = (o.start + o.end) * 0.5 + dx;
+                if lift > 0.0 && (centre - t * v).abs() <= reach {
+                    lo.get_or_insert(t);
+                    hi = t;
+                }
+            }
+            t += 0.004;
+        }
+        lo.map(|l| (l, hi))
+    }
+
+    /// Two enemies that move at different speeds (a beetle's 2 m a beat, a hopper's 3)
+    /// may not share space while the hero is closing on the nearer one: no frog sailing
+    /// through a beetle just as the hero arrives, so the hero never has to read two bodies
+    /// as one. Plays every pair over the last beat before the hero reaches the nearer
+    /// enemy, up to the meeting. Further out the two may overlap (one spawns behind the
+    /// other, or a hopper sails over a slime): more than a beat away nothing can touch the
+    /// hero.
+    pub fn enemy_crowd_problems(&self, pi: usize, p: &Phrase) -> Vec<String> {
+        let base = 4.0 * self.music.beats_per_bar as f32;
+        let obst = self.phrase_obstacles(p, base);
+        let v = self.speed();
+        let bs = self.beat_secs();
+        let mut out = Vec::new();
+        let foes: Vec<(usize, &Obst)> = obst
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| o.kind == Kind::Enemy)
+            .collect();
+        for (ai, (ia, a)) in foes.iter().enumerate() {
+            for (ib, b) in foes.iter().skip(ai + 1) {
+                let (near, far) = if a.start <= b.start { (a, b) } else { (b, a) };
+                let moves = |o: &Obst| {
+                    self.enemies
+                        .types
+                        .get(o.ety)
+                        .is_some_and(|t| t.step_m > 0.0)
+                };
+                if !(moves(near) || moves(far)) {
+                    continue;
+                }
+                let met = (near.start + near.end) * 0.5 / v;
+                let mut t = met - bs;
+                while t <= met {
+                    if let (Some((dn, _)), Some((df, _))) =
+                        (self.enemy_motion(near, t), self.enemy_motion(far, t))
+                    {
+                        let (n0, n1) = (near.start + dn, near.end + dn);
+                        let (f0, f1) = (far.start + df, far.end + df);
+                        if n0 < f1 && f0 < n1 {
+                            out.push(format!(
+                                "phrase {pi} items {ia} and {ib}: one enemy runs into the other before the hero reaches it (a faster one placed too close behind a slower one)"
+                            ));
+                            break;
+                        }
+                    }
+                    t += 0.004;
+                }
+            }
+        }
+        out
+    }
+
+    /// A jumper's airborne window may not overlap the hop across a gap: the leap and the
+    /// gap would both ask for the hero's feet at once. Same 100 ms of press slack either
+    /// way as a flyer.
+    fn jumper_gap_problems(&self, pi: usize, p: &Phrase) -> Vec<String> {
+        let bs = self.beat_secs();
+        let slack = 0.1 / bs;
+        let base = 4.0 * self.music.beats_per_bar as f32;
+        let mut out = Vec::new();
+        for (fi, f) in p.items.iter().enumerate() {
+            let Some((Kind::Enemy, fhop)) = parse_item(f) else {
+                continue;
+            };
+            let Some(ety) = self.enemy_index(&f.enemy) else {
+                continue;
+            };
+            if !self.enemies.types.get(ety).is_some_and(|t| t.is_jumper()) {
+                continue;
+            }
+            let o = self.probe(Kind::Enemy, fhop, f.beats, base + f.beat, Some(ety));
+            let Some((t0, t1)) = self.jumper_air_span(&o) else {
+                continue;
+            };
+            let (f0, f1) = (t0 / bs - base, t1 / bs - base);
+            for (gi, g) in p.items.iter().enumerate() {
+                let Some((Kind::Gap, ghop)) = parse_item(g) else {
+                    continue;
+                };
+                let air = self.arc(ghop).air_beats;
+                if f0 < g.beat + air + slack && f1 > g.beat - slack {
+                    out.push(format!(
+                        "phrase {pi} item {fi}: a jumper is in the air over the hop across the gap of item {gi} (keep them {:.1} beats apart)",
+                        slack
+                    ));
+                }
+            }
+        }
+        out
     }
 
     /// Phrase `a` followed straight away by phrase `b` (no rest bar: the worst case for
@@ -1082,7 +1215,7 @@ impl HopSpec {
         let mut out = Vec::new();
         for (ai, a) in phrases.iter().enumerate() {
             for (bi, b) in phrases.iter().enumerate() {
-                if !(self.has_flyer(a) || self.has_flyer(b)) {
+                if !(self.has_airborne_foe(a) || self.has_airborne_foe(b)) {
                     continue;
                 }
                 let half = half_ms.min(self.pair_half_ms(a, b));
@@ -1256,15 +1389,22 @@ impl HopSpec {
     }
 
     /// How far (metres) the enemy stands from its meeting spot at song time
-    /// `t`, or None if it has not appeared yet. Positive = still ahead.
-    pub fn enemy_dx(&self, o: &Obst, t: f32) -> Option<f32> {
+    /// `t`, and how high it is above the ground (a jumper in the air), or None if
+    /// it has not appeared yet. Positive dx = still ahead.
+    pub fn enemy_motion(&self, o: &Obst, t: f32) -> Option<(f32, f32)> {
         let Some(et) = self.enemies.types.get(o.ety) else {
-            return Some(0.0);
+            return Some((0.0, 0.0));
         };
         let spb = et.steps_per_beat.max(1) as f32;
-        let now = (t / self.beat_secs() * spb).floor() as i64;
+        let now = t / self.beat_secs() * spb;
         let meet = ((o.start + o.end) * 0.5 / self.hero.beat_len_m * spb).floor() as i64;
-        self.enemies.walk_dx(o.ety, now, meet)
+        self.enemies.motion(o.ety, now, meet)
+    }
+
+    /// How far (metres) the enemy stands from its meeting spot at song time
+    /// `t`, or None if it has not appeared yet. Positive = still ahead.
+    pub fn enemy_dx(&self, o: &Obst, t: f32) -> Option<f32> {
+        self.enemy_motion(o, t).map(|m| m.0)
     }
 
     /// What the hero at (`x`, `y`) touches of `o` at song time `t`.
@@ -1279,7 +1419,7 @@ impl HopSpec {
                 }
             }
             Kind::Enemy => {
-                let Some(dx) = self.enemy_dx(o, t) else {
+                let Some((dx, lift)) = self.enemy_motion(o, t) else {
                     return Touch::None;
                 };
                 let hero = HeroBox {
@@ -1288,7 +1428,8 @@ impl HopSpec {
                     half_width: hw,
                     descending,
                 };
-                self.enemies.touch(o.ety, o.start + dx, o.end + dx, &hero)
+                self.enemies
+                    .touch_lifted(o.ety, o.start + dx, o.end + dx, lift, &hero)
             }
         }
     }
@@ -1416,7 +1557,8 @@ pub fn builtin_phrases() -> Vec<Phrase> {
         ph.debut = true;
         ph
     };
-    // Enemies arrive one kind per level: slime (0), beetle (1), bat (2), then mixes.
+    // Enemies arrive one kind per level: slime (0), beetle (1), bat (2, only ever alone),
+    // hopper (3), then mixes.
     let mut phrases = vec![
         p(
             0,
@@ -1481,15 +1623,17 @@ pub fn builtin_phrases() -> Vec<Phrase> {
         ),
         // The first bat flies alone over a clear track: holding would hit it.
         debut(p(2, 2, vec![foe(1.0, "bat", 0.9)])),
+        // The first hopper (the jumping frog) comes on its own.
+        debut(p(3, 2, vec![foe(1.0, "hopper", 0.16)])),
+        // The beetle walks in at 2 m a beat, then the frog leaps in at 3: two speeds, two
+        // beats apart (this was the beetle with a bat over it).
         p(
             3,
             2,
-            // The bat hangs over the beetle, never over the gap: a tap that stays down a
-            // moment too long becomes a hold, and a hold flies into a bat.
             vec![
-                item(1.0, "gap", 0.5, "tap"),
-                foe(3.0, "beetle", 0.16),
-                foe(3.0, "bat", 0.9),
+                foe(1.0, "beetle", 0.16),
+                foe(3.0, "hopper", 0.16),
+                item(5.0, "gap", 0.5, "tap"),
             ],
         ),
         p(
@@ -1525,14 +1669,14 @@ pub fn builtin_phrases() -> Vec<Phrase> {
                 item(4.0, "gap", 0.5, "tap"),
             ],
         ),
+        // A frog between two slimes (this was a bat over each slime).
         p(
             3,
             2,
             vec![
                 foe(1.0, "slime", 0.12),
-                foe(1.0, "bat", 0.9),
-                foe(3.0, "slime", 0.12),
-                foe(3.0, "bat", 0.9),
+                foe(3.0, "hopper", 0.16),
+                foe(5.0, "slime", 0.12),
             ],
         ),
         p(
@@ -1581,9 +1725,19 @@ pub fn builtin_phrases() -> Vec<Phrase> {
             3,
             vec![
                 item(0.0, "gap", 1.5, "hold"),
-                foe(3.0, "slime", 0.12),
-                foe(3.0, "bat", 0.9),
+                foe(3.0, "hopper", 0.16),
                 item(5.0, "gap", 1.5, "hold"),
+            ],
+        ),
+        // Frog, beetle, frog, slime: the fast leaper and the slow walker in a row.
+        p(
+            4,
+            3,
+            vec![
+                foe(1.0, "hopper", 0.16),
+                foe(3.0, "beetle", 0.16),
+                foe(5.0, "hopper", 0.16),
+                foe(7.0, "slime", 0.12),
             ],
         ),
         p(
@@ -2283,7 +2437,7 @@ impl HopBeat {
     }
 
     /// The nearest live enemy ahead of the hero within `max_m`, as (type, metres).
-    /// `flyers` keeps only the ones that hover.
+    /// `flyers` keeps only the ones that warn: a flyer (hovers) or a jumper (leaps at you).
     fn enemy_ahead(&self, flyers: bool, max_m: f32) -> Option<(usize, f32)> {
         let hx = self.hero_x();
         let mut best: Option<(usize, f32)> = None;
@@ -2294,7 +2448,7 @@ impl HopBeat {
             let Some(et) = self.spec.enemies.types.get(o.ety) else {
                 continue;
             };
-            if flyers && et.y_lo <= 0.0 {
+            if flyers && et.y_lo <= 0.0 && !et.is_jumper() {
                 continue;
             }
             let d = (o.start + o.end) * 0.5 - hx;
@@ -3641,6 +3795,10 @@ impl HopBeat {
                         "FLYING! TAP, DON'T HOLD",
                         "とんでる！ホールドしないでタップ",
                     ),
+                    (_, true) if et.is_jumper() => (
+                        "IT LEAPS AT YOU! HOP AS IT LANDS, OR STOMP IT",
+                        "とびかかってくる！おりたところをとぶか、ふもう！",
+                    ),
                     (_, true) if et.step_m > 0.0 => (
                         "IT WALKS AT YOU. LAND ON ITS HEAD!",
                         "あるいてくる！あたまにのろう！",
@@ -4064,6 +4222,7 @@ pub(crate) const BUNNY_GLB: &str = "assets/models/hop_beat/hop_bunny.glb";
 const POST_GLB: &str = "assets/models/hop_beat/hop_post.glb";
 pub(crate) const SLIME_GLB: &str = "assets/models/hop_beat/hop_slime.glb";
 const BEETLE_GLB: &str = "assets/models/hop_beat/hop_beetle.glb";
+const FROG_GLB: &str = "assets/models/hop_beat/hop_frog.glb";
 /// The ears, a separate mesh whose origin is the pivot at the top of the head
 /// (`EAR_PIVOT`, in the body's own units).
 pub(crate) const EARS_GLB: &str = "assets/models/hop_beat/hop_ears.glb";
@@ -4300,7 +4459,7 @@ impl HopBeat {
         // models changes. One tiny buried prop per model, first in the list, keeps
         // the table constant while towers and posts scroll in and out.
         let mut models: Vec<&str> = vec![
-            BUNNY_GLB, EARS_GLB, POST_GLB, SLIME_GLB, BEETLE_GLB, BAT_GLB,
+            BUNNY_GLB, EARS_GLB, POST_GLB, SLIME_GLB, BEETLE_GLB, BAT_GLB, FROG_GLB,
         ];
         for (tower, windows) in TOWER_GLBS {
             models.push(tower);
@@ -4683,9 +4842,10 @@ impl HopBeat {
             if o.fate == Fate::Skipped && o.end < self.hero_x() - 2.0 {
                 continue;
             }
-            let Some(dx) = self.spec.enemy_dx(o, self.song_t) else {
+            let Some((dx, lift)) = self.spec.enemy_motion(o, self.song_t) else {
                 continue;
             };
+            let jumper = et.is_jumper();
             let center = (o.start + o.end) * 0.5 + dx;
             let stepping = et.step_m > 0.0;
             // Where in its step: a hop of 0.14 m over the first half of each step.
@@ -4694,7 +4854,7 @@ impl HopBeat {
             } else {
                 0.0
             };
-            let hop = if stepping && o.stomped_t.is_none() {
+            let hop = if stepping && !jumper && o.stomped_t.is_none() {
                 0.14 * (phase * 2.0)
                     .min(1.0)
                     .mul_add(std::f32::consts::PI, 0.0)
@@ -4723,6 +4883,11 @@ impl HopBeat {
                 pulse,
                 phase,
             );
+            if jumper {
+                // Crouch (the tell), leap, land: from where in its step it is.
+                let (from, takeoff) = self.spec.enemies.crouch_window(o.ety).unwrap_or((1.0, 1.0));
+                pose = crate::hop_anim::jumper_pose(phase, from, takeoff);
+            }
             if let Some(a) = squash_age {
                 pose.scale = crate::hop_anim::stomp_scale(a, 0.35);
                 pose.flash = 1.0;
@@ -4748,13 +4913,14 @@ impl HopBeat {
             } else {
                 0.0
             };
-            let y = o.y_lo + hop + bob + pose.dy;
+            let y = o.y_lo + hop + bob + pose.dy + lift;
             let glb = match et.look.as_str() {
                 "slime" => SLIME_GLB,
                 "beetle" => BEETLE_GLB,
+                "frog" => FROG_GLB,
                 _ => BAT_GLB,
             };
-            if et.y_lo > 0.0 {
+            if et.y_lo > 0.0 || jumper {
                 // A bright pulsing blob on the slab marks the flyer's lane: the track under it is safe to tap through.
                 // Inside the warning distance it flashes white-hot on every half beat.
                 let ahead = center - self.hero_x();
@@ -4770,12 +4936,23 @@ impl HopBeat {
                     "shadow",
                     [0.0, 0.015, center],
                     [
-                        (o.end - o.start).max(0.9) * (0.9 + 0.1 * pulse + 0.25 * warn),
+                        (o.end - o.start).max(0.9)
+                            * (0.9 + 0.1 * pulse + 0.25 * warn)
+                            * (1.0 - 0.5 * lift / et.jump_height.max(0.1)).max(0.4),
                         0.012,
                         0.8 + 0.4 * warn,
                     ],
-                    mix(et.color.map(|v| v / 2), [255, 255, 255], 0.6 * warn),
-                    0.9 + 0.5 * pulse + 1.4 * warn,
+                    if jumper {
+                        // Only a contact shadow: where it will land, not a safe lane.
+                        et.color.map(|v| v / 4)
+                    } else {
+                        mix(et.color.map(|v| v / 2), [255, 255, 255], 0.6 * warn)
+                    },
+                    if jumper {
+                        0.25
+                    } else {
+                        0.9 + 0.5 * pulse + 1.4 * warn
+                    },
                     1.0,
                     0.0,
                 ));
@@ -4856,6 +5033,41 @@ impl HopBeat {
                         "sphere",
                         [0.09, 0.28, -0.5],
                         [0.1, 0.12, 0.07],
+                        [255, 255, 255],
+                        0.5,
+                    );
+                }
+                "frog" => {
+                    add("body", "sphere", [0.0, 0.26, 0.0], [0.62, 0.46, 0.7], c, em);
+                    add(
+                        "leg-l",
+                        "sphere",
+                        [-0.3, 0.12, 0.2],
+                        [0.2, 0.22, 0.5],
+                        dark,
+                        0.2,
+                    );
+                    add(
+                        "leg-r",
+                        "sphere",
+                        [0.3, 0.12, 0.2],
+                        [0.2, 0.22, 0.5],
+                        dark,
+                        0.2,
+                    );
+                    add(
+                        "eye-l",
+                        "sphere",
+                        [-0.17, 0.5, -0.22],
+                        [0.16, 0.18, 0.14],
+                        [255, 255, 255],
+                        0.5,
+                    );
+                    add(
+                        "eye-r",
+                        "sphere",
+                        [0.17, 0.5, -0.22],
+                        [0.16, 0.18, 0.14],
                         [255, 255, 255],
                         0.5,
                     );
@@ -5542,6 +5754,7 @@ mod tests {
             SLIME_GLB.to_string(),
             BEETLE_GLB.to_string(),
             BAT_GLB.to_string(),
+            FROG_GLB.to_string(),
         ];
         for (t, w) in TOWER_GLBS {
             files.push(t.to_string());
@@ -5700,7 +5913,7 @@ mod tests {
     }
 
     #[test]
-    fn a_bat_over_a_slime_is_clearable_with_room_to_spare() {
+    fn a_bat_has_room_to_spare_and_what_replaced_the_stacked_bats_is_clearable() {
         // Emma's case: a slime under a bat reads as impossible. It is not, and the
         // tap hop's head stays well clear of the bat.
         let spec = HopSpec::default();
@@ -5711,22 +5924,27 @@ mod tests {
             "only {:.2} m between a tap hop and the bat",
             bat.y_lo - tap_peak
         );
-        // every builtin phrase that stacks a bat over a ground enemy is cleared by a
-        // tap at every press offset inside the perfect window
-        let stacked: Vec<Phrase> = builtin_phrases()
-            .into_iter()
-            .filter(|p| {
-                p.items.iter().any(|a| {
-                    a.enemy == "bat"
-                        && p.items
-                            .iter()
-                            .any(|b| b.enemy != "bat" && b.kind == "enemy" && b.beat == a.beat)
-                })
-            })
+        // the bat flies alone: no builtin phrase stacks it over a ground enemy any more
+        // (the hopper took those places), and what replaced them is cleared by a tap at
+        // every press offset inside the perfect window
+        let phrases = builtin_phrases();
+        for ph in &phrases {
+            if ph.items.iter().any(|i| i.enemy == "bat") {
+                assert!(
+                    ph.items
+                        .iter()
+                        .all(|i| i.kind != "enemy" || i.enemy == "bat"),
+                    "a bat shares a phrase with another enemy: {ph:?}"
+                );
+            }
+        }
+        let hoppers: Vec<&Phrase> = phrases
+            .iter()
+            .filter(|p| p.items.iter().any(|i| i.enemy == "hopper"))
             .collect();
-        assert!(!stacked.is_empty());
-        for ph in &stacked {
-            assert!(ph.level >= 3, "stacked bats wait until level 3");
+        assert!(hoppers.len() >= 5, "{}", hoppers.len());
+        for ph in hoppers {
+            assert!(ph.level >= 3, "the hopper waits until level 3");
             let items: Vec<Item> = ph.items.clone();
             for off in [-0.065_f32, -0.04, 0.0, 0.04, 0.065] {
                 let mut s = enemy_spec(items.clone());
@@ -5736,7 +5954,7 @@ mod tests {
                 }];
                 assert!(s.course_problems().is_empty(), "{:?}", s.course_problems());
                 let g = drive(s, off, 5.0);
-                assert_eq!(g.lives(), 3, "offset {off}");
+                assert_eq!(g.lives(), 3, "{ph:?} offset {off}");
             }
         }
     }
@@ -5843,10 +6061,10 @@ mod tests {
         );
         // and the spec's own check lets all of it through
         assert_eq!(spec.course_problems(), Vec::<String>::new());
-        // a long run gets all three, weighted towards the early kinds
+        // a long run gets all four, weighted towards the early kinds
         let mut c = Course::new(&spec);
         c.ensure(&spec, 3000.0);
-        for i in 0..3 {
+        for i in 0..4 {
             assert!(c.obst.iter().any(|o| o.ety == i), "type {i} never laid");
         }
     }
@@ -5881,7 +6099,7 @@ mod tests {
         // through the world JSON a real page sends, with a saved best
         let h2 =
             HopBeat::from_json(r#"{"best":5000,"quality":"low","skin":"x","look":"y"}"#).unwrap();
-        assert_eq!(h2.spec.enemies.types.len(), 3);
+        assert_eq!(h2.spec.enemies.types.len(), 4);
         let mut c2 = h2.course().clone();
         c2.ensure(&h2.spec, 24.0 * bpb + lead);
         assert!(c2.obst.iter().filter(|o| o.kind == Kind::Enemy).count() >= 3);

@@ -612,10 +612,10 @@ mod tests {
         let s = spec();
         let problems = s.seam_problems(100.0);
         assert!(problems.is_empty(), "{problems:#?}");
-        // The checker does see the bats of the stock set.
+        // The checker does see the bat of the stock set (it flies alone now).
         let ph = s.phrases();
         let bats: Vec<_> = ph.iter().filter(|p| s.has_flyer(p)).collect();
-        assert!(bats.len() >= 4, "{}", bats.len());
+        assert!(!bats.is_empty());
         for p in bats {
             assert!(
                 s.phrase_half_ms(p) >= 100.0,
@@ -693,6 +693,9 @@ mod tests {
                     let ok = *memo.entry((a, b)).or_insert_with(|| {
                         let cap = if sp.has_flyer(&phrases[a]) || sp.has_flyer(&phrases[b]) {
                             100.0
+                        } else if sp.has_jumper(&phrases[a]) || sp.has_jumper(&phrases[b]) {
+                            // a hopper's window is a little lopsided: +-90 ms
+                            90.0
                         } else {
                             sp.judge.perfect_ms.min(100.0)
                         };
@@ -707,6 +710,119 @@ mod tests {
             }
         }
         assert!(seams_seen > 100_000, "{seams_seen}");
+    }
+
+    fn hopper_spec() -> HopSpec {
+        let mut s = spec();
+        s.course.phrases = Vec::new();
+        s
+    }
+
+    /// A phrase at the level the hopper is unlocked at.
+    fn late_phrase(items: Vec<crate::hop_beat::Item>) -> crate::hop_beat::Phrase {
+        crate::hop_beat::Phrase {
+            level: 3,
+            ..phrase(items)
+        }
+    }
+
+    fn foe_item(beat: f32, enemy: &str) -> crate::hop_beat::Item {
+        item(beat, "enemy", 0.16, "tap", enemy)
+    }
+
+    /// The hopper does not move like the beetle: JSON alone gives it another speed and a
+    /// leap, and the stock phrases that put the two close together still pass.
+    #[test]
+    fn the_hopper_moves_at_a_clearly_different_speed_from_the_beetle() {
+        let s = spec();
+        let beetle = &s.enemies.types[s.enemy_index("beetle").unwrap()];
+        let hopper = &s.enemies.types[s.enemy_index("hopper").unwrap()];
+        assert!(hopper.is_jumper() && !beetle.is_jumper());
+        let (a, b) = (hopper.speed_m(), beetle.speed_m());
+        assert!((a - b).abs() / a.max(b) >= 0.25, "{a} m/beat vs {b} m/beat");
+        // both orders of the two sit in stock phrases
+        let ph = s.phrases();
+        let order = |first: &str, second: &str| {
+            ph.iter().any(|p| {
+                let at = |id: &str| p.items.iter().find(|i| i.enemy == id).map(|i| i.beat);
+                matches!((at(first), at(second)), (Some(x), Some(y)) if x < y)
+            })
+        };
+        assert!(order("hopper", "beetle") && order("beetle", "hopper"));
+    }
+
+    /// Every pair of stock phrases that has a hopper and a beetle (or either with any
+    /// other phrase), in both orders, is played at +-90 ms with every press.
+    #[test]
+    fn every_hopper_phrase_pair_is_winnable_at_90ms() {
+        let s = spec();
+        let problems = s.seam_problems(90.0);
+        assert!(problems.is_empty(), "{problems:#?}");
+        let ph = s.phrases();
+        let hop: Vec<_> = ph.iter().filter(|p| s.has_jumper(p)).collect();
+        assert!(hop.len() >= 4, "{}", hop.len());
+        let beetle: Vec<_> = ph
+            .iter()
+            .filter(|p| p.items.iter().any(|i| i.enemy == "beetle"))
+            .collect();
+        for a in &hop {
+            for b in &beetle {
+                for (x, y) in [(a, b), (b, a)] {
+                    let half = 90.0_f32.min(s.pair_half_ms(x, y));
+                    assert!(s.seam_fail(x, y, half).is_none(), "{x:?} then {y:?}");
+                }
+            }
+        }
+    }
+
+    /// The checker refuses a hopper whose leap lands on the hop across a gap.
+    #[test]
+    fn a_hopper_over_a_gap_is_caught() {
+        let mut c = hopper_spec();
+        c.course.phrases = vec![late_phrase(vec![
+            item(1.0, "gap", 0.5, "tap", ""),
+            foe_item(1.0, "hopper"),
+        ])];
+        let p = c.course_problems();
+        assert!(p.iter().any(|m| m.contains("jumper")), "{p:?}");
+        // the same hopper well clear of the gap is fine
+        let mut ok = hopper_spec();
+        ok.course.phrases = vec![late_phrase(vec![
+            foe_item(1.0, "hopper"),
+            item(5.0, "gap", 0.5, "tap", ""),
+        ])];
+        assert!(
+            ok.course_problems().is_empty(),
+            "{:?}",
+            ok.course_problems()
+        );
+    }
+
+    /// A hopper and a beetle too close in space, with different speeds, are caught; the
+    /// stock gaps between them are not.
+    #[test]
+    fn a_hopper_running_through_a_beetle_is_caught() {
+        let s = hopper_spec();
+        let near = late_phrase(vec![foe_item(1.0, "hopper"), foe_item(1.3, "beetle")]);
+        assert!(!s.enemy_crowd_problems(0, &near).is_empty());
+        let near2 = late_phrase(vec![foe_item(1.0, "beetle"), foe_item(1.3, "hopper")]);
+        assert!(!s.enemy_crowd_problems(0, &near2).is_empty());
+        let stock = late_phrase(vec![foe_item(1.0, "hopper"), foe_item(3.0, "beetle")]);
+        assert!(s.enemy_crowd_problems(0, &stock).is_empty());
+        let stock2 = late_phrase(vec![foe_item(1.0, "beetle"), foe_item(3.0, "hopper")]);
+        assert!(s.enemy_crowd_problems(0, &stock2).is_empty());
+        let mut c = hopper_spec();
+        c.course.phrases = vec![near];
+        assert!(!c.course_problems().is_empty());
+    }
+
+    /// A hopper leaving the ground can only be cleared by a hop landing where it lands: a
+    /// bot that holds (the long hop) takes damage, so the checker has something to bite on.
+    #[test]
+    fn a_hopper_is_not_a_free_pass_for_a_hold_bot() {
+        let s = spec();
+        let r = play(&s, Bot::HoldAll, 1, 60.0);
+        assert!(r.lives_lost >= 1, "{r:?}");
     }
 
     /// A tap that stays down a little long (a thumb, not a click) is still a tap: the

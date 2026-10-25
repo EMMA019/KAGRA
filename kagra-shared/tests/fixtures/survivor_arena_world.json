@@ -112,6 +112,8 @@
             150
           ],
           "id": "ghoul",
+          "jump_air": 0.5,
+          "jump_height": 0.0,
           "look": "ghoul",
           "step_m": 0.0,
           "steps_per_beat": 1,
@@ -125,6 +127,7 @@
             "weight": 10,
             "xp": 1.0
           },
+          "telegraph": 0.25,
           "unlock_level": 0,
           "walk_steps": 0,
           "y_hi": 0.38,
