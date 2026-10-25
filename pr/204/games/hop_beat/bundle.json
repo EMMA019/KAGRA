@@ -8,7 +8,7 @@
     {
       "path": "world.json",
       "url": "games/hop_beat/world.json",
-      "v": "b06f8feafd"
+      "v": "ba3448b05c"
     },
     {
       "path": "kagra_game.json",
@@ -624,5 +624,5 @@
       "slot": "double_coins"
     }
   },
-  "build": "8aa6b8f6a18e"
+  "build": "c7b3e0111de0"
 }
