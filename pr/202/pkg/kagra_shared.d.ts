@@ -196,13 +196,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly kagra_net_hello: (a: number, b: number, c: number, d: number) => number;
-    readonly kagra_net_ingest: (a: number, b: number) => number;
-    readonly kagra_net_input_axis: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
-    readonly kagra_net_lockstep_free: (a: number) => void;
-    readonly kagra_net_lockstep_new: (a: number, b: number) => number;
-    readonly kagra_net_ready: (a: number, b: number) => number;
-    readonly kagra_net_submit_local: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly kagra_shared_attach_android_surface: (a: number, b: number, c: number, d: number) => number;
     readonly kagra_shared_attach_ios_view: (a: number, b: number, c: number, d: number) => number;
     readonly kagra_shared_attach_offscreen: (a: number, b: number, c: number) => number;
@@ -247,6 +240,13 @@ export interface InitOutput {
     readonly kagra_shared_stats_json: (a: number, b: number, c: number) => number;
     readonly kagra_shared_take_audio_cues: (a: number, b: number) => number;
     readonly kagra_shared_version: () => number;
+    readonly kagra_net_hello: (a: number, b: number, c: number, d: number) => number;
+    readonly kagra_net_ingest: (a: number, b: number) => number;
+    readonly kagra_net_input_axis: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly kagra_net_lockstep_free: (a: number) => void;
+    readonly kagra_net_lockstep_new: (a: number, b: number) => number;
+    readonly kagra_net_ready: (a: number, b: number) => number;
+    readonly kagra_net_submit_local: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly __wbg_wasmsession_free: (a: number, b: number) => void;
     readonly sharedVersion: () => [number, number];
     readonly synthWav: (a: number, b: number) => [number, number];

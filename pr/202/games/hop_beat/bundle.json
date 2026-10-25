@@ -8,7 +8,7 @@
     {
       "path": "world.json",
       "url": "games/hop_beat/world.json",
-      "v": "2a6a520950"
+      "v": "b06f8feafd"
     },
     {
       "path": "kagra_game.json",
@@ -43,7 +43,7 @@
     {
       "path": "assets/audio/hop_beat/fall.wav",
       "url": "assets/audio/hop_beat/fall.wav",
-      "v": "ebfd2dd604"
+      "v": "31f1d8074b"
     },
     {
       "path": "assets/audio/hop_beat/good.wav",
@@ -257,5 +257,5 @@
       "min_interval_secs": 90
     }
   },
-  "build": "e69386967392"
+  "build": "b9150c60058b"
 }
