@@ -13,7 +13,7 @@
   const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.KagraQuality = api;
-})(typeof self !== "undefined" ? self : globalThis, function () {
+})(typeof self !== "undefined" ? self : globalThis, function (root) {
   "use strict";
 
   const TIERS = ["safe", "mid", "high", "max"];
@@ -90,6 +90,7 @@
     const reset = () => { elapsed = 0; dts = []; };
     return {
       get tier() { return TIERS[i]; },
+      reset,
       feed(dt) {
         if (!(dt > 0)) return null;
         if (dt > 1000) { reset(); return null; } // a hidden tab or a stop: start the window again
@@ -311,6 +312,8 @@
         return;
       }
       if (probe) {
+        // the probe measures a run, not a menu: it waits for play and starts its window over after a pause
+        if (phase() !== "play") { probe.reset(); return; }
         const r = probe.feed(dt);
         if (r && r.try) { probeTier = r.try; apply(r.try, "probe"); }
         else if (r && r.done) {

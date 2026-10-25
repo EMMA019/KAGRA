@@ -389,7 +389,13 @@ def flyer_gap_problems(game: dict[str, Any], phrases: list[dict[str, Any]] | Non
 
 
 def game_from_overrides(over: dict[str, Any] | None = None) -> dict[str, Any]:
-    game = _merge(default_game(), over or {})
+    over = dict(over or {})
+    tiers = over.pop("quality_tiers", None)  # the session strips it before the kit loader sees the game
+    if tiers is not None:
+        from kagra import quality
+
+        quality.resolve(tiers)  # refuses unknown keys and out-of-range numbers, like Rust
+    game = _merge(default_game(), over)
     validate(game)
     return game
 
