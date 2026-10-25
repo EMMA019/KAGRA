@@ -33,10 +33,25 @@ const AHEAD_M: f32 = 44.0;
 /// How much stays drawn behind the hero.
 const BEHIND_M: f32 = 14.0;
 
-pub const SFX_CUES: [&str; 11] = [
-    "hop", "land", "perfect", "good", "combo", "hit", "fall", "stomp", "gameover", "revive",
-    "newbest",
+pub const SFX_CUES: [&str; 12] = [
+    "hop", "land", "perfect", "good", "combo", "hit", "fall", "stomp", "warn", "gameover",
+    "revive", "newbest",
 ];
+
+/// Loudness of each cue under the music (the music file is about -14 LUFS at 0.7):
+/// the ones that repeat every beat sit low, the rewards and the damage stand out.
+fn cue_volume(name: &str) -> f32 {
+    match name {
+        "hop" => 0.6,
+        "land" => 0.4,
+        "good" => 0.65,
+        "perfect" => 0.85,
+        "combo" => 0.8,
+        "warn" => 0.55,
+        "hit" => 0.95,
+        _ => 0.9,
+    }
+}
 
 /// Cues that are long music stingers (mp3 from the music pack); the rest are
 /// short generated effects (wav).
@@ -566,7 +581,7 @@ impl Default for HopAudio {
                             } else {
                                 format!("{AUDIO_DIR}/{n}.wav")
                             },
-                            volume: if *n == "land" { 0.5 } else { 0.9 },
+                            volume: cue_volume(n),
                             rate: 1.0,
                         },
                     )
@@ -1700,6 +1715,8 @@ pub struct HopBeat {
     /// The running score passed the best: seconds of the "NEW BEST!" banner left, and whether it fired.
     best_banner: f32,
     best_passed: bool,
+    /// Where the flyer we last warned about hovers (m), so the warning sounds once each.
+    warned_x: f32,
     just_hop: bool,
     sfx: bool,
     time: f32,
@@ -1846,6 +1863,7 @@ impl HopBeat {
             new_best: false,
             best_banner: 0.0,
             best_passed: false,
+            warned_x: f32::NEG_INFINITY,
             just_hop: false,
             sfx: true,
             time: 0.0,
@@ -2016,6 +2034,13 @@ impl HopBeat {
             0.0
         };
         self.combo_glow += (want - self.combo_glow) * (1.0 - (-dt * 6.0).exp());
+        if let Some((_, d)) = self.enemy_ahead(true, WARN_M) {
+            let at = (self.hero_x() + d).round();
+            if at != self.warned_x {
+                self.warned_x = at;
+                self.cue("warn");
+            }
+        }
         self.best_banner = (self.best_banner - dt).max(0.0);
         let best = self.flow.best_score;
         if !self.best_passed && best > 0 && self.core.stats.score > best {
@@ -4854,6 +4879,19 @@ mod tests {
             );
             assert!(run["stomps"].is_number());
         }
+    }
+
+    #[test]
+    fn every_cue_has_a_file_and_the_repeating_ones_sit_under_the_rewards() {
+        let spec = HopSpec::default();
+        for n in SFX_CUES {
+            let cue = &spec.audio.sfx[n];
+            let f = crate::assets::resolve_asset(&cue.file);
+            assert!(f.is_some(), "{n}: {} is missing", cue.file);
+        }
+        let v = |n: &str| spec.audio.sfx[n].volume;
+        assert!(v("hop") < v("perfect") && v("land") < v("stomp") && v("warn") < v("hit"));
+        assert!(spec.audio.sfx.contains_key("warn"));
     }
 
     #[test]

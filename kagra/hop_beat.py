@@ -20,7 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "kagra-shared/tests/fixtures/hop_beat_world.json"
 AUDIO_DIR = "assets/audio/hop_beat"
 GAME_ID = "hop_beat"
-SFX_CUES = ("hop", "land", "perfect", "good", "combo", "hit", "fall", "stomp", "gameover", "revive", "newbest")
+SFX_CUES = ("hop", "land", "perfect", "good", "combo", "hit", "fall", "stomp", "warn", "gameover", "revive", "newbest")
+CUE_VOLUME = {"hop": 0.6, "land": 0.4, "good": 0.65, "perfect": 0.85, "combo": 0.8, "warn": 0.55, "hit": 0.95}
 STINGERS = ("gameover", "revive", "newbest")
 
 
@@ -49,7 +50,7 @@ def default_game() -> dict[str, Any]:
     for name in SFX_CUES:
         ext = "mp3" if name in STINGERS else "wav"
         stem = f"hop_beat_{name}" if name in STINGERS else name
-        sfx[name] = {"file": f"{AUDIO_DIR}/{stem}.{ext}", "rate": 1.0, "volume": 0.5 if name == "land" else 0.9}
+        sfx[name] = {"file": f"{AUDIO_DIR}/{stem}.{ext}", "rate": 1.0, "volume": CUE_VOLUME.get(name, 0.9)}
     return {
         "id": GAME_ID,
         "title": "Hop Beat",

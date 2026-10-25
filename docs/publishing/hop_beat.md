@@ -143,7 +143,7 @@ getting past one is still a rhythm action, and the one button is unchanged.
   die. Enemy windows are wide (about 350-420 ms for a tap over a slime), so enemy phrases
   are easier than gaps and the course gets denser per bar only slowly: about 0.6
   obstacles per bar at the start, about 1.7 late.
-- The sounds are the existing effects plus `stomp.wav` (original, from `hop_audio.py`).
+- The sounds are the existing effects plus `stomp.wav` and `warn.wav` (original, from `hop_audio.py`, CC0). Cue volumes are set under the music (repeating cues low, rewards and damage high; see `cue_volume`); `warn` sounds once when a flyer comes within 26 m.
   Each enemy model falls back to primitives (a dome, a shell, two wings) if its glb is missing.
 
 

@@ -17,7 +17,7 @@ No attribution is required. Provenance and rebuild parameters: docs/provenance/h
 HOP-BEAT effects
 ================
 
-hop.wav, land.wav, perfect.wav, good.wav, combo.wav, hit.wav, fall.wav and stomp.wav
+hop.wav, land.wav, perfect.wav, good.wav, combo.wav, hit.wav, fall.wav, stomp.wav and warn.wav
 are original works written by tools/gen_assets/hop_audio.py from oscillator and noise
 maths in plain Python (no samples, no recordings, no third-party material). They are
 dedicated to the public domain under CC0 1.0 as well; `python3 tools/gen_assets/hop_audio.py --check`
