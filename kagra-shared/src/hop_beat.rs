@@ -1896,6 +1896,18 @@ impl Grade {
     }
 }
 
+/// What the `autoplay` dev switch remembers between ticks.
+#[derive(Clone, Debug, Default)]
+pub struct AutoBot {
+    /// Obstacles already planned (a key made from the take beat and kind).
+    planned: Vec<u32>,
+    /// (press time, release time, pressed yet), in song seconds.
+    plans: Vec<(f32, f32, bool)>,
+    last_release: f32,
+    /// Ticks spent on a title or result card.
+    idle: u32,
+}
+
 #[derive(Debug)]
 pub struct HopBeat {
     pub spec: HopSpec,
@@ -1907,6 +1919,13 @@ pub struct HopBeat {
     /// A/B switches from the page (`fx_post`, `fx_atmo`): the finishing pass and the sky extras.
     fx_post: bool,
     fx_atmo: bool,
+    /// Graphics-tier knobs from the session: sky props and spark particles. `None` = the
+    /// picture-quality default (sky) and every spark.
+    q_atmo: Option<f32>,
+    q_particles: f32,
+    /// Dev switch `autoplay`: a perfect-timing bot presses for the player, so the measurement
+    /// tool keeps a gameplay-like load after a run ends. Off for players.
+    autoplay: Option<AutoBot>,
     /// Song clock, seconds. x = song_t * speed.
     song_t: f32,
     /// Added to the page's audio clock (a revive restarts the music mid-song).
@@ -2088,6 +2107,9 @@ impl HopBeat {
             picture_quality: None,
             fx_post: true,
             fx_atmo: true,
+            q_atmo: None,
+            q_particles: 1.0,
+            autoplay: None,
             song_t: 0.0,
             clock_base: 0.0,
             clock: None,
@@ -2378,6 +2400,12 @@ impl HopBeat {
         match name {
             "fx_post" => self.fx_post = on,
             "fx_atmo" => self.fx_atmo = on,
+            "autoplay" => {
+                self.autoplay = on.then(AutoBot::default);
+                if !on && self.down {
+                    self.set_hold(false);
+                }
+            }
             _ => return false,
         }
         self.rebuild();
@@ -2389,6 +2417,7 @@ impl HopBeat {
         match name {
             "fx_post" => Some(self.fx_post),
             "fx_atmo" => Some(self.fx_atmo),
+            "autoplay" => Some(self.autoplay.is_some()),
             _ => None,
         }
     }
@@ -2586,6 +2615,9 @@ impl HopBeat {
         fresh.lang_ja = self.lang_ja;
         fresh.hints_seen = std::mem::take(&mut self.hints_seen);
         fresh.fx_atmo = self.fx_atmo;
+        fresh.q_atmo = self.q_atmo;
+        fresh.q_particles = self.q_particles;
+        fresh.autoplay = self.autoplay.as_ref().map(|_| AutoBot::default());
         fresh.down = self.down;
         *self = fresh;
         self.flow.enter_play();
@@ -2663,7 +2695,88 @@ impl HopBeat {
     }
 
     pub fn tick(&mut self, dt: f32) {
+        if self.autoplay.is_some() {
+            self.drive_autoplay();
+        }
         tick_frame(self, dt);
+    }
+
+    /// Graphics tier knobs (`quality_tiers.json`): sky props and spark particles.
+    pub fn set_quality_hints(&mut self, atmo: f32, particles: f32) {
+        self.q_atmo = atmo.is_finite().then(|| atmo.clamp(0.0, 2.0));
+        self.q_particles = if particles.is_finite() {
+            particles.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        self.rebuild();
+    }
+
+    /// The autoplay bot's turn, before the step: press on the beat before each obstacle, let
+    /// go shortly after (a tap) or at the end of the hold. Port of the measure harness's
+    /// `Bot::Perfect`, kept small: it only has to survive long enough to look like play.
+    fn drive_autoplay(&mut self) {
+        if self.flow.phase != FlowPhase::Play {
+            // The title, the result card or a pause: the page (or the next tap) moves on.
+            if self.down {
+                self.set_hold(false);
+            }
+            if matches!(self.flow.phase, FlowPhase::Title | FlowPhase::Result) {
+                // A bot has no thumb for the Start button: it starts the run itself, after a
+                // moment so the card is seen once.
+                let bot = self.autoplay.as_mut().expect("autoplay is on");
+                bot.idle += 1;
+                if bot.idle >= 45 {
+                    self.confirm();
+                }
+            }
+            return;
+        }
+        if self.armed {
+            // Direct mode waits for a first tap.
+            let on = !self.down;
+            self.set_hold(on);
+            return;
+        }
+        let bs = self.spec.beat_secs();
+        let now = self.song_t;
+        let hold_secs = self.spec.arc(Hop::Hold).air_beats * bs * 0.8;
+        let mut bot = self.autoplay.take().expect("autoplay is on");
+        for o in self.course.obst.iter() {
+            if o.fate != Fate::Pending || !self.spec.needs_press(o) {
+                continue;
+            }
+            let ideal = o.take_beat * bs;
+            if ideal > now + 2.5 {
+                break;
+            }
+            let key = (o.take_beat * 1000.0) as u32 ^ ((o.kind == Kind::Gap) as u32) << 31;
+            if bot.planned.contains(&key) {
+                continue;
+            }
+            bot.planned.push(key);
+            let press = ideal.max(now).max(bot.last_release + 0.03);
+            let release = match o.hop {
+                Hop::Tap => press + 0.05,
+                Hop::Hold => press + hold_secs,
+            };
+            bot.last_release = release;
+            bot.plans.push((press, release, false));
+        }
+        for p in bot.plans.iter_mut() {
+            if !p.2 && now >= p.0 {
+                p.2 = true;
+                self.set_hold(true);
+            } else if p.2 && now >= p.1 && self.down {
+                self.set_hold(false);
+            }
+        }
+        bot.plans.retain(|p| !(p.2 && now >= p.1 + 0.05));
+        // Old keys are never asked about again once the song has passed them.
+        if bot.planned.len() > 256 {
+            bot.planned.drain(..128);
+        }
+        self.autoplay = Some(bot);
     }
 
     // ---- play step -------------------------------------------------------
@@ -4560,7 +4673,12 @@ impl HopBeat {
             models.contains(&BUNNY_GLB) && models.contains(&EARS_GLB),
         );
         // ---- sparks (kit x = track, kit z = lateral)
+        let keep = (self.core.juice.sparks.len() as f32 * self.q_particles).ceil() as usize;
         for (i, sp) in self.core.juice.sparks.iter().enumerate() {
+            // A lighter tier keeps the newest sparks and drops the rest.
+            if i + keep < self.core.juice.sparks.len() {
+                continue;
+            }
             let fade = 1.0 - (sp.life / sp.max_life).clamp(0.0, 1.0);
             let size = (sp.size * (0.4 + 0.6 * fade)).max(0.04);
             doc.props.push(prop(
@@ -4584,11 +4702,13 @@ impl HopBeat {
     /// Stars, far clouds, a horizon glow and a halo round the moon. Cheap props,
     /// all far away: they ride along with the camera so they never pass.
     fn push_sky(&self, doc: &mut WorldDoc, fin: &Finish, hx: f32, pulse: f32) {
-        let tier = match self.picture_quality.as_deref() {
-            Some("low") => 0.34,
-            Some("high") => 1.0,
-            _ => 0.75,
-        };
+        let tier = self
+            .q_atmo
+            .unwrap_or(match self.picture_quality.as_deref() {
+                Some("low") => 0.34,
+                Some("high") => 1.0,
+                _ => 0.75,
+            });
         let hash = |i: u32, k: u32| -> f32 {
             let mut h = i.wrapping_mul(0x9E37_79B1) ^ k.wrapping_mul(0x85EB_CA6B);
             h ^= h >> 15;
@@ -4614,7 +4734,11 @@ impl HopBeat {
                 0.0,
             ));
         }
-        let clouds = if tier < 0.5 { 0 } else { fin.clouds };
+        let clouds = if tier < 0.5 {
+            0
+        } else {
+            ((fin.clouds as f32 * tier.max(1.0)).round() as u32).min(16)
+        };
         for i in 0..clouds {
             let drift =
                 (hash(i, 8) * 140.0 + self.anim_t * (0.6 + hash(i, 9) * 0.5)) % 140.0 - 70.0;
@@ -5140,6 +5264,12 @@ impl crate::kit_host::KitHost for HopBeat {
     }
     fn tick(&mut self, dt: f32) {
         HopBeat::tick(self, dt)
+    }
+    fn supports_quality_tiers(&self) -> bool {
+        true
+    }
+    fn quality_hints(&mut self, atmo: f32, particles: f32) {
+        self.set_quality_hints(atmo, particles);
     }
     fn hud(&self, width: u32, height: u32, menu: bool) -> DrawList {
         HopBeat::hud(self, width, height, menu)
@@ -6403,6 +6533,111 @@ mod tests {
         assert!(g.hold_down());
         assert!(g.on_key("space", false));
         assert!(!g.hold_down());
+    }
+
+    #[test]
+    fn autoplay_switch_plays_through_a_dozen_bars_and_restarts_after_game_over() {
+        let mut g = fresh();
+        assert_eq!(g.switch("autoplay"), Some(false));
+        assert!(g.set_switch("autoplay", true));
+        assert_eq!(g.switch("autoplay"), Some(true));
+        g.confirm();
+        // The bot is a perfect player: no life lost over the first 30 seconds.
+        run(&mut g, 30.0);
+        assert!(g.playing(), "the bot keeps the run alive");
+        assert_eq!(g.lives(), 3, "perfect timing loses nothing early");
+        assert!(g.counts().0 > 5, "it cleared obstacles: {:?}", g.counts());
+        // A dead run starts again by itself, after the card has been up a moment.
+        g.core.stats.die("test");
+        g.flow.finish(0, 0, "");
+        let mut restarted = false;
+        for _ in 0..200 {
+            g.tick(1.0 / 60.0);
+            if g.phase_name() == "play" {
+                restarted = true;
+                break;
+            }
+        }
+        assert!(restarted, "autoplay starts the next run");
+        assert_eq!(
+            g.switch("autoplay"),
+            Some(true),
+            "the switch survives a restart"
+        );
+        run(&mut g, 10.0);
+        assert!(g.playing());
+        assert!(g.set_switch("autoplay", false));
+        assert_eq!(g.switch("autoplay"), Some(false));
+    }
+
+    #[test]
+    fn quality_hints_thin_the_sky_and_leave_the_sim_alone() {
+        let count = |g: &HopBeat, pre: &str| {
+            g.document()
+                .props
+                .iter()
+                .filter(|p| p.id.starts_with(pre))
+                .count()
+        };
+        let mut a = fresh();
+        let mut b = fresh();
+        a.confirm();
+        b.confirm();
+        run(&mut a, 1.0);
+        run(&mut b, 1.0);
+        let stars_default = count(&a, "prop:star-");
+        assert!(stars_default > 10);
+        a.set_quality_hints(0.3, 0.4);
+        assert!(count(&a, "prop:star-") < stars_default / 2);
+        assert_eq!(count(&a, "prop:cloud-"), 0, "a thin sky has no clouds");
+        a.set_quality_hints(1.4, 1.0);
+        assert!(count(&a, "prop:star-") > stars_default);
+        assert!(count(&a, "prop:cloud-") >= 1);
+        run(&mut a, 2.0);
+        run(&mut b, 2.0);
+        assert_eq!(a.state_json(), b.state_json(), "hints are picture only");
+        // They survive a restart.
+        a.set_quality_hints(0.3, 0.4);
+        a.core.stats.die("test");
+        a.flow.finish(0, 0, "");
+        a.confirm();
+        assert!(count(&a, "prop:star-") < stars_default / 2);
+    }
+
+    #[test]
+    fn session_tiers_apply_to_the_drawn_doc_and_a_game_can_override_them() {
+        use crate::session::SharedSession;
+        let json = include_str!("../tests/fixtures/hop_beat_world.json");
+        let mut s = SharedSession::default();
+        assert_eq!(s.quality_json(), "{}", "no game, no tiers");
+        s.load_game_json(json).unwrap();
+        let q: serde_json::Value = serde_json::from_str(&s.quality_json()).unwrap();
+        assert_eq!(q["active"], "");
+        assert_eq!(q["tiers"]["high"]["scale"], 2.0);
+        assert!(!s.set_quality_tier("ultra"));
+        assert!(s.set_quality_tier("safe"));
+        assert_eq!(s.quality_tier(), "safe");
+        assert_eq!(s.hop().unwrap().switch("fx_atmo"), Some(true));
+        // A probe step lays keys over the active tier; bad numbers are refused.
+        s.set_quality_custom(r#"{"ssao": 6.0, "shadow_cascades": 3}"#)
+            .unwrap();
+        assert_eq!(s.quality_tier(), "custom");
+        assert!(s.set_quality_custom(r#"{"scale": 40.0}"#).is_err());
+        assert!(s.set_quality_custom(r#"{"sparkle": 1}"#).is_err());
+        assert_eq!(s.quality_tier(), "custom", "a refused step changes nothing");
+        // A game's quality_tiers is stripped before the kit sees it and merged over the defaults.
+        let mut v: serde_json::Value = serde_json::from_str(json).unwrap();
+        v["quality_tiers"] = serde_json::json!({"tiers": {"mid": {"scale": 1.25}}});
+        s.load_game_json(&v.to_string()).unwrap();
+        let q: serde_json::Value = serde_json::from_str(&s.quality_json()).unwrap();
+        assert_eq!(q["tiers"]["mid"]["scale"], 1.25);
+        assert_eq!(q["tiers"]["mid"]["atmo"], 0.75);
+        assert_eq!(
+            q["active"], "",
+            "a reload forgets the tier; the page sets it again"
+        );
+        v["quality_tiers"] = serde_json::json!({"tiers": {"mid": {"scale": 99.0}}});
+        assert!(s.load_game_json(&v.to_string()).is_err());
     }
 
     #[test]

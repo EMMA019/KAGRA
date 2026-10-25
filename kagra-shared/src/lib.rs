@@ -63,6 +63,7 @@ pub mod playtest;
 pub mod profile;
 pub mod puzzle;
 pub mod puzzle_board;
+pub mod quality;
 pub mod race;
 pub mod rhythm;
 pub mod rhythm_chart;

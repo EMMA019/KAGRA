@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Graphics tiers, shared by every game: `safe` / `mid` / `high` / `max` defined in one JSON file (`kagra-shared/src/quality_tiers.json`: render scale,
+  picture quality, SSAO, TAA, shadow cascades and softness, bloom, sky props, particles, fx switches), a **Graphics** row on the settings card
+  (auto + the four tiers, EN/JA), auto-selected by a first-run probe and a runtime guard that steps down on a slow stretch and back up at calm moments
+  (frame-time trend, bans against flapping), stored in `localStorage` (`kagra.quality`), `?quality=auto|safe|mid|high|max` (and the old `low`/`mobile`) for a
+  visit. A kit opts in (`supports_quality_tiers`, `quality_hints`); HOP-BEAT does, Neon Cat is unchanged. A game may override the tiers with a
+  `quality_tiers` block. Python mirror and validation in `kagra/quality.py`. HOP-BEAT gets an `autoplay` bot switch. See `docs/quality_tiers.md`.
+
+- Measurement tool: the recorder is now a fixed wall time per step, counts the seconds the page stopped drawing instead of dropping them silently
+  (`wallMs`, `coverage`, `stalls`, `hiddenMs`, a `note`), keeps a run going with the game's autoplay bot (restarts after a game over), and gets a
+  **Find my limit** button: stepwise adds load (scale, bloom, sky props, particles, shadows, SSAO, soft shadows, TAA), 9 s a step, and reports the
+  last step that held p95 <= 16.7 ms (+0.5) and p99 <= 20 ms, a suggested tier, and GPU time where the WebGL2 timer exists (`&backend=gl`; else it says why not).
+  Copy JSON is `v` 2 and carries `limit`. See `docs/phone_measure.md`.
+
 - On-phone measurement tool, shared by every game (`?dev=1`): an overlay with fps, frame time p50 / p95 / p99, jank,
   render scale, backend, adapter, canvas and DPR, display refresh, JS heap and a thermal guess; **Record 60 s** runs the
   `fx_post` / `fx_atmo` A/B (all-off, post, atmo, both, 15 s each) and shows a table with **Copy JSON**. HOP-BEAT gets a runtime
