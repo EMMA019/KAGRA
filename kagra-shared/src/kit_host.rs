@@ -53,6 +53,12 @@ pub trait KitHost: Debug + Any {
         false
     }
     fn set_debug(&mut self, _on: bool) {}
+    /// The page language (`ja` or `en`) for in-canvas texts. Kits with none ignore it.
+    fn set_lang(&mut self, _lang: &str) {}
+    /// Pause the run (a hidden tab, the Escape key). Kits with a pause card implement it.
+    fn pause_run(&mut self) {}
+    /// Back into the run from the pause card.
+    fn resume_run(&mut self) {}
 }
 
 type Detect = fn(&str) -> bool;
@@ -68,6 +74,11 @@ pub const KITS: &[(Detect, Load)] = &[
     }),
     (crate::hop_beat::is_hop_dump, |json| {
         Ok(Box::new(crate::hop_beat::HopBeat::from_json(json)?))
+    }),
+    (crate::survivor_arena::is_survivor_dump, |json| {
+        Ok(Box::new(crate::survivor_arena::SurvivorArena::from_json(
+            json,
+        )?))
     }),
 ];
 

@@ -340,6 +340,8 @@
     const slug = (metaGame || params.get("game") || "neon_run").trim() || "neon_run";
     // HOP-BEAT: one button on the whole canvas, music-locked sim.
     let hopMode = false;
+    // Survivor arena kit: drag to move, fixed 60 Hz sim, pause on Esc / hidden tab.
+    let survivorMode = false;
     let hopDirect = false;
     // The player's audio offset, ms (+ = they hear the music late). Device-only.
     const SYNC_KEY = "kagra.hop.sync.v1";
@@ -362,7 +364,7 @@
       document.getElementById("keys")?.remove();
       document.getElementById("start").classList.add("styled");
       const blurbEl = document.getElementById("blurb");
-      if (blurbEl) blurbEl.textContent = hopMode ? t("hop.blurb") : t("blurb.swipe");
+      if (blurbEl) blurbEl.textContent = hopMode ? t("hop.blurb") : survivorMode ? t("sv.blurb") : t("blurb.swipe");
     };
 
     const fail = (text) => {
@@ -819,6 +821,13 @@
             hopDirect = direct;
             if (direct) world.game.play = { ...(world.game.play || {}), direct: true };
           }
+          if (world.genre === "survivor_arena") {
+            survivorMode = true;
+            const storedBest = loadBest(slug);
+            if (storedBest > 0) world.best = Math.max(Number(world.best) || 0, storedBest);
+            const a = world.game && world.game.audio;
+            if (a && typeof a === "object" && params.get("audio") !== "0") audioSpec = a;
+          }
           if (world.genre === "neon_cat") {
             // The device's best score goes in as the run's best, so the HUD's
             // BEST and the cards agree after a reload.
@@ -835,6 +844,7 @@
         }
       })();
       session.loadGame(payload);
+      if (survivorMode && session.setLang) session.setLang(globalThis.kagraLang || "en");
       if (hopMode) {
         syncMs = loadSync();
         session.setLatencyMs(syncMs);
@@ -988,7 +998,7 @@
     // ---- Local ranking. Device only (localStorage), no network. The sim hands
     // over `result` = {key, columns, top_n, sort, run}; nothing here is Neon Cat
     // specific, so another kit with the same `hud.result.board` gets the same list.
-    const COLUMN_LABEL = { time: t("col.time"), gates: t("col.gates"), coins: t("col.coins"), score: t("col.score"), combo: t("col.combo"), perfect: t("col.perfect") };
+    const COLUMN_LABEL = { time: t("col.time"), gates: t("col.gates"), coins: t("col.coins"), score: t("col.score"), combo: t("col.combo"), perfect: t("col.perfect"), kills: t("col.kills"), level: t("col.level") };
     const fmtTime = (t) => {
       const m = Math.floor(t / 60);
       const sec = (t - m * 60).toFixed(1).padStart(m ? 4 : 1, "0");
@@ -1368,13 +1378,13 @@
     // HOP-BEAT pause: Escape or P toggles it; a hidden tab pauses by itself.
     const hopPhase = () => { try { return JSON.parse(session.gameJson()).phase || ""; } catch { return ""; } };
     window.addEventListener("keydown", (e) => {
-      if (!hopMode || e.repeat || phase !== "playing") return;
+      if (!(hopMode || survivorMode) || e.repeat || phase !== "playing") return;
       if (e.key === "Escape" || e.key === "p" || e.key === "P") {
         if (hopPhase() === "pause") session.resumeRun(); else session.pauseRun();
       }
     });
     document.addEventListener("visibilitychange", () => {
-      if (hopMode && document.hidden && phase === "playing" && session.pauseRun) session.pauseRun();
+      if ((hopMode || survivorMode) && document.hidden && phase === "playing" && session.pauseRun) session.pauseRun();
     });
     // The pause card steps the sync in the canvas: keep the device copy in step.
     window.addEventListener("pointerup", () => {
@@ -1473,14 +1483,14 @@
     let acc = 0;
     let lastFrame = 0;
     const stepSim = (now) => {
-      if (!hopMode) { session.requestFrame(); return 1; }
+      if (!hopMode && !survivorMode) { session.requestFrame(); return 1; }
       acc += lastFrame ? Math.min(0.1, (now - lastFrame) / 1000) : FIXED;
       lastFrame = now;
       let n = 0;
       while (acc >= FIXED * 0.85 && n < 3) { acc -= FIXED; n += 1; }
       if (acc > FIXED) acc = 0;
       if (n === 0) return 0;
-      session.setMusicClock(audio ? audio.songClock() : NaN);
+      if (hopMode) session.setMusicClock(audio ? audio.songClock() : NaN);
       for (let i = 0; i < n; i += 1) session.requestFrame();
       return n;
     };

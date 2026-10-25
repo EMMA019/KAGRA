@@ -52,6 +52,61 @@ pub struct EnemyType {
     /// Picture the kit draws it with; see [`EnemySpec::validate`].
     pub look: String,
     pub color: [u32; 3],
+    /// Arena swarm stats ([`SwarmStats`]). Absent for the runner kits, and then
+    /// not written back, so their baked worlds do not change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub swarm: Option<SwarmStats>,
+}
+
+/// What an enemy type needs in a survivor-style arena (`game_core::swarm`): the
+/// body, the pace, what it costs the hero and pays out, and when and how often
+/// the director may use it. Metres and seconds.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SwarmStats {
+    pub hp: f32,
+    /// Metres per second toward the hero.
+    pub speed: f32,
+    /// Body radius, for contact and for the push between neighbours.
+    pub radius: f32,
+    /// Hit points the hero loses on contact.
+    pub touch_dmg: f32,
+    /// XP in the gem it drops.
+    pub xp: f32,
+    /// The director may spawn it from this second of the run.
+    pub unlock_secs: f32,
+    /// Share of the spawns among the unlocked types (0 counts as 1).
+    pub weight: u32,
+}
+
+impl Default for SwarmStats {
+    fn default() -> Self {
+        Self {
+            hp: 6.0,
+            speed: 1.6,
+            radius: 0.4,
+            touch_dmg: 8.0,
+            xp: 1.0,
+            unlock_secs: 0.0,
+            weight: 10,
+        }
+    }
+}
+
+impl SwarmStats {
+    /// Ranges, so a JSON typo cannot make an enemy a point or a wall.
+    pub fn validate(&self, who: &str) -> Result<(), String> {
+        finite_in(who, "swarm.hp", self.hp, 0.5, 100_000.0)?;
+        finite_in(who, "swarm.speed", self.speed, 0.0, 12.0)?;
+        finite_in(who, "swarm.radius", self.radius, 0.1, 1.5)?;
+        finite_in(who, "swarm.touch_dmg", self.touch_dmg, 0.0, 1000.0)?;
+        finite_in(who, "swarm.xp", self.xp, 0.0, 1000.0)?;
+        finite_in(who, "swarm.unlock_secs", self.unlock_secs, 0.0, 3600.0)?;
+        if self.weight > 1000 {
+            return Err(format!("{who}: swarm.weight must be 0..=1000"));
+        }
+        Ok(())
+    }
 }
 
 impl Default for EnemyType {
@@ -67,6 +122,7 @@ impl Default for EnemyType {
             walk_steps: 0,
             look: "slime".into(),
             color: [120, 240, 150],
+            swarm: None,
         }
     }
 }
@@ -283,6 +339,9 @@ impl EnemySpec {
             }
             if t.color.iter().any(|c| *c > 255) {
                 return Err(format!("{who}: {n}.color is 0..=255 per channel"));
+            }
+            if let Some(sw) = &t.swarm {
+                sw.validate(&format!("{who}: {n}"))?;
             }
         }
         Ok(())
