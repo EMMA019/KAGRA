@@ -47,7 +47,7 @@ for _p in (ROOT, ROOT / "scripts"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-from build_browser_preview import PLAY_HTML, SITE_DIR, SITE_SCRIPTS, _stage_one  # noqa: E402
+from build_browser_preview import BUILD_TOKEN, PLAY_HTML, SITE_DIR, SITE_SCRIPTS, _stage_one  # noqa: E402
 
 from kagra.distribute import ManifestError, manifest_for_game  # noqa: E402
 
@@ -86,6 +86,7 @@ def portal_index_html(source: str, slug: str, portal: str) -> str:
     if marker not in html:
         raise PackageError("play.html changed: no charset meta to anchor the build flags")
     html = html.replace(marker, marker + flags, 1)
+    html = html.replace(BUILD_TOKEN, "portal")  # no deploy cache to bust in a zip
     html, hidden = _HIDE_RE.subn("", html)
     if hidden < 1:
         raise PackageError("play.html changed: no data-portal=\"hide\" element to strip")

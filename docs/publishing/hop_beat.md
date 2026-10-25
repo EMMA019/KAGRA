@@ -103,11 +103,70 @@ AI サービスを呼び出すことはありません。スクリプトとロ�
 
 ## Models
 
-The bunny, the three rooftop towers (with lit-window panels) and the lamp post are
+The bunny, the three enemies (slime, beetle, bat), the three rooftop towers (with lit-window panels) and the lamp post are
 `assets/models/hop_beat/*.glb`, written by `python3 tools/gen_assets/hop_models.py`
-(plain Python, CC0, no input meshes; `--check` fails on drift). They add about 0.38 MB
+(plain Python, CC0, no input meshes; `--check` fails on drift). They add about 0.64 MB
 raw to the bundle and are listed in the asset ledger as `project-hop-beat-models`.
 
 Every model is optional. If a file is missing or does not parse, the page logs one
 warning and HOP-BEAT draws that part with its primitives (ball hero, box towers, box
 posts). A model the bundle could not fetch does not stop the game from starting.
+
+## Enemies
+
+The enemy logic is a shared, genre-neutral module (`game_core::enemies`). See [enemy_kit.md](../enemy_kit.md) for the module boundary and how another kit plugs in.
+
+Three creatures, all defined in the spec (`enemies.types`, `course.phrases[].items[].enemy`,
+`course.phrases[].weight`), none hard-coded. They stand and move on the beat grid, so
+getting past one is still a rhythm action, and the one button is unchanged.
+
+| Kind | Unlocks | Behaviour | What the player does |
+|---|---|---|---|
+| slime | level 0 (bars 0-8) | sits on the track | tap over it, or land on it |
+| beetle | level 1 (bars 8-16) | walks towards you one step on every half beat | the same, but its walk shifts where it is when you land |
+| bat | level 2 (bars 16-24) | hovers at head height above a spot where a hold hop climbs | tap: a tap hop stays under it. A hold hop flies into it |
+
+- Landing on a slime or beetle from above is a **stomp**: +150, a short bounce that
+  comes down on the next half beat, a "STOMP!" and the `stomp` cue. It does not need
+  a perfect press; an early one stomps, a late one runs into its side and costs a life.
+- Running into a side, or climbing into a bat, costs a life (death reason `enemy`).
+- Falling into a gap stays a plain fail. Blocks are as before.
+- A bat needs no press of its own and is not judged. It is only there to punish a hold.
+- The checker (`HopSpec::course_problems`, run on every spec load and in `hop_measure`)
+  plays every phrase with the hero at +-`judge.perfect_ms` (capped at 100 ms) around each
+  ideal press and refuses a phrase where any offset takes damage, an unknown or still
+  locked enemy, a stompable enemy without `rest_beats` and `bounce_beats` of room, or an
+  item that runs past the end of the phrase. `kagra/hop_beat.py` mirrors the spec and the
+  rules that need no simulation (`phrase_problems`).
+- Measured, `docs/measure/hop_beat_baseline.json`: the perfect bot loses no life over 150 s
+  on 8 seeds; the 25 ms human bot loses about one; the idle, hold-all and spam bots all
+  die. Enemy windows are wide (about 350-420 ms for a tap over a slime), so enemy phrases
+  are easier than gaps and the course gets denser per bar only slowly: about 0.6
+  obstacles per bar at the start, about 1.7 late.
+- The sounds are the existing effects plus `stomp.wav` and `warn.wav` (original, from `hop_audio.py`, CC0). Cue volumes are set under the music (repeating cues low, rewards and damage high; see `cue_volume`); `warn` sounds once when a flyer comes within 26 m.
+  Each enemy model falls back to primitives (a dome, a shell, two wings) if its glb is missing.
+
+
+## Falling
+
+Falling into a gap is a plain fail (no catching, no rescue); the picture just plays it out. The bunny keeps its momentum over the ledge, the picture holds for a beat, dust and a glint puff up, `fall.wav` (a falling whoosh, original, CC0) sounds, and the bunny tumbles, stretches and drops while the camera trails behind and lets it fall out of frame. The edge of the screen darkens, and the game over card comes `fall.card_delay_secs` after the ledge. With lives left the bunny comes back on the slab as before; a revive puts it on a safe tile.
+
+Everything is in the JSON `fall` block (all keys optional, Python mirror in `kagra/hop_beat.py`):
+
+| key | default | range | meaning |
+| --- | --- | --- | --- |
+| `edge_stop_secs` | 0.07 | 0 to 0.5 | picture hold at the ledge |
+| `tumble_turns_per_sec` | 1.1 | 0 to 4 | turns per second while falling |
+| `stretch` | 0.3 | 0 to 1 | stretch along the drop |
+| `carry` | 0.55 | 0 to 1 | how far it keeps running after the run ends (about `carry`/3 s of running) |
+| `cam_lag` | 0.6 | 0 to 1 | how much of the speed the camera loses (1 = it stops) |
+| `slow_scale` | 0.5 | 0.1 to 1 | speed of the drop after the run has ended |
+| `card_delay_secs` | 1.0 | 0.3 to 3 | game over card, counted from the ledge |
+| `vignette` | 0.7 | 0 to 1 | screen edge darkening |
+| `dust` | 8 | 0 to 32 | dust particles at the ledge (half on the low tier) |
+
+This is picture only: the run, score and baselines are unchanged, and the primitive fallback and every quality tier draw it too.
+
+## Look and finish
+
+The picture is a JSON look preset (`neon_night`, `dusk`, `plain`) with overrides, plus a hero `skin` id; see [look_presets.md](../look_presets.md). `?fx_post=0|1` and `?fx_atmo=0|1` switch the finishing pass on the preview page; `?skin=` and `?look=` pick the ids.

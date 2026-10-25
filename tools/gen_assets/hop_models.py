@@ -5,12 +5,17 @@
     hop_windows_{a,b,c}.glb the lit window panels of each tower (a separate mesh,
                         so the page can give them a glow the tower does not get)
     hop_post.glb        a roadside lamp post (the lamp bulb itself is drawn by the game)
+    hop_slime.glb       enemy: a stompable slime, feet on y=0, facing -z (toward the hero)
+    hop_beetle.glb      enemy: a walking beetle, same frame
+    hop_bat.glb         enemy: a hovering bat, bottom of the wings on y=0 (the game lifts it to
+                        its flight height), same frame
 
     python3 tools/gen_assets/hop_models.py          # write all
     python3 tools/gen_assets/hop_models.py --check  # exit 1 on drift
 
 Meshes are flat-coloured primitives from ``placeholder_models`` (one material per
-colour). The game tints them per prop, so the window and post colours are white or
+colour). The bunny, towers and post carry baked occlusion in COLOR_0 (height and
+facing, see ``_ao_for``). The game tints them per prop, so the window and post colours are white or
 grey here. Standard library only; the output is deterministic.
 """
 from __future__ import annotations
@@ -46,6 +51,18 @@ def _tilt_x(tris, cy, cz, ang):
     return [tuple(r(v) for v in t) for t in tris]
 
 
+def _tilt_z(tris, cx, cy, ang):
+    """Rotate triangles about the z axis through (cx, cy): +ang raises the +x side."""
+    c, s = math.cos(ang), math.sin(ang)
+
+    def r(v):
+        x, y, z = v
+        dx, dy = x - cx, y - cy
+        return (cx + dx * c - dy * s, cy + dx * s + dy * c, z)
+
+    return [tuple(r(v) for v in t) for t in tris]
+
+
 def bunny():
     sph = pm._sphere
     parts = [
@@ -60,11 +77,99 @@ def bunny():
         (CREAM, sph((-0.15, 0.05, 0.22), 0.09, 0.05, 0.14, 8, 5)),  # feet
         (CREAM, sph((0.15, 0.05, 0.22), 0.09, 0.05, 0.14, 8, 5)),
     ]
+    return parts
+
+
+# The ears are their own mesh so the game can swing them (follow-through).
+# Origin = the pivot at the top of the head, in the body's units.
+EAR_PIVOT = (0.0, 0.80, 0.26)
+
+
+def bunny_ears():
+    sph = pm._sphere
+    parts = []
     for sx in (-1.0, 1.0):
         ear = sph((sx * 0.11, 0.98, 0.22), 0.065, 0.24, 0.045, 10, 8)
         inner = sph((sx * 0.11, 0.98, 0.245), 0.035, 0.19, 0.02, 8, 6)
         parts.append((CREAM, _tilt_x(ear, 0.80, 0.26, 0.28)))
         parts.append((PINK, _tilt_x(inner, 0.80, 0.26, 0.28)))
+    px, py, pz = EAR_PIVOT
+    return [(c, [tuple((v[0] - px, v[1] - py, v[2] - pz) for v in t) for t in tris]) for c, tris in parts]
+
+
+SLIME = (96, 226, 140)
+SLIME_HI = (190, 255, 205)
+SHELL = (255, 150, 60)
+SHELL_DK = (150, 70, 40)
+BAT = (170, 118, 250)
+BAT_DK = (120, 80, 210)
+YELLOW = (255, 232, 96)
+
+
+def slime():
+    """0.8 m wide, 0.54 m tall: a dome with a glossy highlight, two eyes and a tuft."""
+    sph = pm._sphere
+    parts = [
+        (SLIME, sph((0, 0.25, 0.0), 0.40, 0.25, 0.38, 16, 8)),
+        (SLIME, sph((0, 0.06, 0.0), 0.43, 0.06, 0.41, 16, 4)),  # the wobbly skirt
+        (SLIME_HI, sph((0.14, 0.40, 0.12), 0.09, 0.05, 0.07, 8, 5)),  # shine
+        (SLIME, sph((0, 0.49, 0.02), 0.06, 0.05, 0.06, 8, 5)),  # tuft
+        (WHITE, sph((-0.15, 0.26, -0.30), 0.09, 0.10, 0.06, 10, 6)),  # eyes
+        (WHITE, sph((0.15, 0.26, -0.30), 0.09, 0.10, 0.06, 10, 6)),
+        (INK, sph((-0.15, 0.25, -0.35), 0.04, 0.05, 0.03, 8, 5)),
+        (INK, sph((0.15, 0.25, -0.35), 0.04, 0.05, 0.03, 8, 5)),
+    ]
+    return parts
+
+
+def beetle():
+    """0.8 m long, 0.55 m tall: a round orange shell with spots, a dark head, six legs."""
+    sph = pm._sphere
+    parts = [
+        (SHELL, sph((0, 0.30, 0.06), 0.36, 0.26, 0.40, 16, 8)),
+        (SHELL_DK, pm._box((0, 0.545, 0.06), (0.05, 0.02, 0.56))),  # seam down the back
+        (INK, sph((-0.17, 0.46, 0.20), 0.07, 0.03, 0.07, 8, 4)),  # spots
+        (INK, sph((0.17, 0.46, 0.20), 0.07, 0.03, 0.07, 8, 4)),
+        (INK, sph((-0.18, 0.46, -0.06), 0.06, 0.03, 0.06, 8, 4)),
+        (INK, sph((0.18, 0.46, -0.06), 0.06, 0.03, 0.06, 8, 4)),
+        (SHELL_DK, sph((0, 0.22, -0.36), 0.20, 0.17, 0.17, 12, 6)),  # head
+        (WHITE, sph((-0.09, 0.28, -0.50), 0.055, 0.065, 0.04, 8, 5)),  # eyes
+        (WHITE, sph((0.09, 0.28, -0.50), 0.055, 0.065, 0.04, 8, 5)),
+        (INK, sph((-0.09, 0.28, -0.54), 0.025, 0.035, 0.02, 6, 4)),
+        (INK, sph((0.09, 0.28, -0.54), 0.025, 0.035, 0.02, 6, 4)),
+    ]
+    for sx in (-1.0, 1.0):
+        for z in (-0.18, 0.06, 0.30):
+            parts.append((SHELL_DK, pm._box((sx * 0.37, 0.07, z), (0.16, 0.12, 0.09))))
+        feeler = pm._box((sx * 0.10, 0.50, -0.50), (0.04, 0.04, 0.22))
+        parts.append((SHELL_DK, _tilt_x(feeler, 0.50, -0.50, -0.5)))
+    return parts
+
+
+def bat():
+    """1.6 m across: a round body, two wings raised in a V with fingers, ears, yellow eyes."""
+    sph = pm._sphere
+    parts = [
+        (BAT, sph((0, 0.30, 0.0), 0.22, 0.26, 0.20, 12, 7)),
+        (BAT, sph((0, 0.50, 0.0), 0.17, 0.15, 0.16, 12, 6)),  # head
+        (WHITE, sph((-0.075, 0.52, -0.14), 0.05, 0.06, 0.04, 8, 5)),
+        (WHITE, sph((0.075, 0.52, -0.14), 0.05, 0.06, 0.04, 8, 5)),
+        (YELLOW, sph((-0.075, 0.52, -0.17), 0.028, 0.04, 0.02, 6, 4)),
+        (YELLOW, sph((0.075, 0.52, -0.17), 0.028, 0.04, 0.02, 6, 4)),
+        (INK, sph((0, 0.44, -0.16), 0.03, 0.02, 0.02, 6, 4)),
+    ]
+    # Wings raised in a V so the silhouette reads from behind and above, with
+    # three pointed fingers hanging off each.
+    for sx in (-1.0, 1.0):
+        up = sx * 0.55
+        wing = sph((sx * 0.48, 0.34, 0.02), 0.34, 0.05, 0.26, 12, 5)
+        tip = sph((sx * 0.74, 0.34, 0.04), 0.22, 0.045, 0.17, 10, 4)
+        parts.append((BAT_DK, _tilt_z(wing, sx * 0.14, 0.34, up)))
+        parts.append((BAT_DK, _tilt_z(tip, sx * 0.14, 0.34, up)))
+        for k, fx in enumerate((0.50, 0.68, 0.86)):
+            finger = pm._lathe([(1e-6, -0.10), (0.05, 0.10)], 6, (sx * fx, 0.25 - 0.02 * k, 0.05 + 0.04 * k))
+            parts.append((BAT_DK, _tilt_z(finger, sx * 0.14, 0.34, up)))
+        parts.append((BAT, pm._cone((sx * 0.10, 0.68, 0.0), 0.06, 0.16, 8)))  # ear
     return parts
 
 
@@ -126,6 +231,22 @@ def post():
     ]
 
 
+def _ao_for(parts, floor=0.5, reach=0.22, under=0.35):
+    """Baked occlusion for a standing model: darker toward the ground, under
+    overhangs and where a surface faces down. Cheap and deterministic: it is
+    height and normal, no ray casting. The game's lights do the rest."""
+    ys = [v[1] for _, tris in parts for t in tris for v in t]
+    lo, hi = min(ys), max(ys)
+    span = max(hi - lo, 1e-3)
+
+    def ao(pos, nor):
+        u = min(1.0, max(0.0, (pos[1] - lo) / (span * reach)))
+        ground = floor + (1.0 - floor) * (u * u * (3.0 - 2.0 * u))
+        return ground * (1.0 - under * max(0.0, -nor[1]))
+
+    return ao
+
+
 TOWERS = {
     "a": dict(w=3.0, h=7.0, d=3.0, antenna=True, cols=3, rows=7),
     "b": dict(w=3.0, h=10.0, d=3.0, tank=True, cols=3, rows=10),
@@ -134,13 +255,20 @@ TOWERS = {
 
 
 def build() -> dict[Path, bytes]:
-    out = {OUT / "hop_bunny.glb": pm.write_glb(OUT / "hop_bunny.glb", bunny(), "hop_bunny")}
+    b = bunny()
+    ears = bunny_ears()
+    out = {OUT / "hop_ears.glb": pm.write_glb(OUT / "hop_ears.glb", ears, "hop_ears")}
+    out[OUT / "hop_bunny.glb"] = pm.write_glb(OUT / "hop_bunny.glb", b, "hop_bunny", ao=_ao_for(b, floor=0.62, reach=0.3))
     for i, (k, t) in enumerate(TOWERS.items()):
         body = _tower_body(t["w"], t["h"], t["d"], t.get("tank", False), t.get("antenna", False), t.get("ac", False), t.get("steps", False))
-        out[OUT / f"hop_tower_{k}.glb"] = pm.write_glb(OUT / f"hop_tower_{k}.glb", body, f"hop_tower_{k}")
+        out[OUT / f"hop_tower_{k}.glb"] = pm.write_glb(OUT / f"hop_tower_{k}.glb", body, f"hop_tower_{k}", ao=_ao_for(body, floor=0.42, reach=0.18))
         win = _windows(t["w"], t["h"], t["d"], t["cols"], t["rows"], i)
         out[OUT / f"hop_windows_{k}.glb"] = pm.write_glb(OUT / f"hop_windows_{k}.glb", win, f"hop_windows_{k}")
-    out[OUT / "hop_post.glb"] = pm.write_glb(OUT / "hop_post.glb", post(), "hop_post")
+    pst = post()
+    out[OUT / "hop_post.glb"] = pm.write_glb(OUT / "hop_post.glb", pst, "hop_post", ao=_ao_for(pst, floor=0.5, reach=0.3))
+    for name, shape in (("slime", slime), ("beetle", beetle), ("bat", bat)):
+        path = OUT / f"hop_{name}.glb"
+        out[path] = pm.write_glb(path, shape(), f"hop_{name}")
     return out
 
 

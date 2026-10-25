@@ -10,9 +10,14 @@
 //!   one sim step; the core owns substepping, hitstop, title attract, and
 //!   juice decay in a fixed order so runs replay exactly.
 //!
-//! The runner kit (`neon_cat.rs`) is the only kit today.
+//! - [`enemies`]: JSON-defined enemy types, movement, unlock stages, spawn
+//!   weights, hit/stomp rules and the fairness hook (HOP-BEAT supplies the
+//!   placement and the response; see `docs/enemy_kit.md`).
+//!
+//! The runner kit (`neon_cat.rs`) and HOP-BEAT are the kits today.
 
 pub mod collide;
+pub mod enemies;
 pub mod feel;
 pub mod juice;
 pub mod lives;

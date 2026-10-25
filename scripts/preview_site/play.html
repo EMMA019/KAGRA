@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="robots" content="noindex" />
+  <meta name="kagra-build-id" content="__KAGRA_BUILD__" />
   <title>KAGRA</title>
   <style>
     :root { color-scheme: dark; }
@@ -38,6 +39,12 @@
       background: rgba(12, 16, 24, 0.72);
     }
     #boot { z-index: 5; }
+    #update {
+      position: fixed; left: 50%; top: max(8px, env(safe-area-inset-top)); transform: translateX(-50%);
+      z-index: 9; padding: 6px 8px 6px 12px; border-radius: 999px; font-size: 13px;
+      background: rgba(16, 20, 28, .92); border: 1px solid rgba(255, 255, 255, .25); white-space: nowrap;
+    }
+    #update button { margin-left: 6px; padding: 4px 12px; border-radius: 999px; font: inherit; }
     #boot.err { color: #ffb4a2; text-align: center; white-space: pre-wrap; }
     #overlay { display: none; z-index: 4; pointer-events: none; }
     #overlay.visible { display: grid; pointer-events: auto; }
@@ -53,6 +60,9 @@
     }
     h1 { margin: 0 0 8px; font-size: clamp(32px, 8vw, 48px); letter-spacing: 0.04em; }
     p { margin: 0 0 14px; line-height: 1.5; }
+    /* A class or element display rule must not win over the hidden attribute
+       (the Continue button used to show on the title card). */
+    [hidden] { display: none !important; }
     button, a.btn {
       display: inline-block;
       border: 0;
@@ -241,6 +251,27 @@
     .sync b { min-width: 4.5em; font-variant-numeric: tabular-nums; color: #ffe08a; }
     .syncHelp { margin: 0 0 12px; font-size: 12px; opacity: 0.6; }
     #revive { margin: 0 0 10px; border-color: #f0c36a; color: #ffe9b0; }
+    /* HOP-BEAT: title and result polish. The bounce runs at the song's 126 BPM. */
+    .tagline { margin: 0 0 6px; font-size: 15px; letter-spacing: 0.12em; color: #8cffff; text-transform: uppercase; }
+    html[data-hop="1"] #title {
+      font-size: clamp(40px, 12vw, 64px); font-weight: 900; letter-spacing: 0.08em; margin: 0 0 6px;
+      background: linear-gradient(180deg, #fff6c9 10%, #ffb066 55%, #ff5fa8 100%);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+      filter: drop-shadow(0 3px 0 rgba(10, 6, 24, 0.7)) drop-shadow(0 0 18px rgba(255, 110, 190, 0.45));
+      animation: hopTitle 0.476s ease-out infinite;
+      transform-origin: 50% 90%;
+    }
+    html[data-hop="1"] #start.styled { font-size: 22px; padding: 17px 40px; min-width: 250px; border-color: #ffd76a;
+      background: linear-gradient(180deg, #3a2468, #1d1236); animation: hopPulse 0.952s ease-in-out infinite; }
+    html[data-hop="1"] #blurb { font-size: 14px; max-width: 34em; margin-left: auto; margin-right: auto; }
+    .newbest.big { display: block; width: fit-content; margin: 0 auto 10px; padding: 5px 16px; font-size: 14px;
+      animation: bestPop 0.9s ease-out both, hopPulse 0.952s 0.9s ease-in-out infinite; }
+    @keyframes hopTitle { 0% { transform: scale(1.05, 0.95); } 35% { transform: scale(0.98, 1.04); } 100% { transform: scale(1, 1); } }
+    @keyframes hopPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045); } }
+    @keyframes bestPop { 0% { transform: scale(0.2) rotate(-8deg); opacity: 0; } 60% { transform: scale(1.25) rotate(2deg); opacity: 1; } 100% { transform: scale(1); } }
+    @media (prefers-reduced-motion: reduce) {
+      html[data-hop="1"] #title, html[data-hop="1"] #start.styled, .newbest.big { animation: none; }
+    }
   </style>
 </head>
 <body>
@@ -255,7 +286,9 @@
     <div id="overlay">
       <div class="card">
         <h1 id="title">KAGRA</h1>
-        <h2 id="gameover" hidden>GAME OVER</h2>
+        <h2 id="gameover" hidden data-i18n="gameover">GAME OVER</h2>
+        <div id="bestBanner" class="newbest big" hidden data-i18n="newbest">NEW BEST!</div>
+        <p id="tagline" class="tagline" hidden data-i18n="hop.tagline">Hop to the beat</p>
         <p id="blurb" class="hint" data-i18n="blurb">タップではじめる。左が移動、右下ジャンプ、右上アクション。</p>
         <p id="death" class="hint" hidden></p>
         <div class="panel goals" id="goalsTitle" hidden></div>
@@ -283,11 +316,12 @@
       </div>
     </div>
     <div id="boot" data-i18n="boot">読み込み中…</div>
+    <div id="update" hidden><span data-i18n="update.hint">新しいバージョンがあります</span> <button id="updateGo" type="button" data-i18n="update.reload">更新</button></div>
   </div>
   <script src="./i18n.js"></script>
   <script src="./portal.js"></script>
   <script type="module">
-    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js";
+    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js?v=__KAGRA_BUILD__";
 
     const boot = document.getElementById("boot");
     const overlay = document.getElementById("overlay");
@@ -602,6 +636,55 @@
     };
     // </kagra-goals>
 
+    // <kagra-build>
+    // Cache busting after a deploy. The preview build stamps one build id into this
+    // page, the wasm / script URLs, bundle.json and every asset URL (`?v=`), and
+    // writes build.json. A page older than build.json offers a reload (and reloads
+    // once by itself before a run). Same-origin only; without a stamp (local, portal
+    // zip) nothing changes.
+    const BUILD = document.querySelector('meta[name="kagra-build-id"]')?.content || "";
+    const buildOn = /^[0-9a-f]{12}$/.test(BUILD);
+    const vq = (url) => (buildOn ? `${url}?v=${BUILD}` : url);
+    const assetUrl = (site, item) => {
+      if (typeof item === "string") return fileUrl(site, item);
+      return buildOn && item.v ? `${fileUrl(site, item.url)}?v=${encodeURIComponent(item.v)}` : fileUrl(site, item.url);
+    };
+    const reloadFor = (id) => {
+      const u = new URL(location.href);
+      u.searchParams.set("_b", id || String(Date.now()));
+      location.replace(u.href);
+    };
+    const showUpdate = (id) => {
+      const box = document.getElementById("update");
+      if (!box) return;
+      box.hidden = false;
+      document.getElementById("updateGo").onclick = () => reloadFor(id);
+    };
+    const checkBuild = async (mayReload) => {
+      if (!buildOn) return false;
+      try {
+        const ctl = new AbortController();
+        const timer = setTimeout(() => ctl.abort(), 2500);
+        const res = await fetch(`./build.json?t=${Date.now()}`, { cache: "no-store", signal: ctl.signal });
+        clearTimeout(timer);
+        if (!res.ok) return false;
+        const id = String((await res.json()).build || "");
+        if (!/^[0-9a-f]{12}$/.test(id) || id === BUILD) return false;
+        let tried = false;
+        try { tried = sessionStorage.getItem("kagra.build.tried") === id; } catch {}
+        if (mayReload && !tried) {
+          try { sessionStorage.setItem("kagra.build.tried", id); } catch {}
+          reloadFor(id);
+          return true;
+        }
+        showUpdate(id);
+      } catch (_) {}
+      return false;
+    };
+    // A tab left open across a deploy: look again when it comes back to the front.
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) checkBuild(false); });
+    // </kagra-build>
+
     let session;
     let bundle;
     let audioSpec = null;
@@ -619,12 +702,15 @@
       }
     } catch (_) {}
     try {
-      await init();
+      // A newer deploy: reload to it (this page goes away, so wait forever).
+      if (await checkBuild(true)) await new Promise(() => {});
+      await init({ module_or_path: new URL(vq("./pkg/kagra_shared_bg.wasm"), document.baseURI) });
       session = new WasmSession();
       const site = new URL("./", document.baseURI).href;
-      const bundleRes = await fetch(fileUrl(site, `games/${slug}/bundle.json`));
+      const bundleRes = await fetch(vq(fileUrl(site, `games/${slug}/bundle.json`)));
       if (!bundleRes.ok) throw new Error(`bundle.json ${bundleRes.status}`);
       bundle = await bundleRes.json();
+      if (buildOn && /^[0-9a-f]{12}$/.test(bundle.build || "") && bundle.build !== BUILD) showUpdate(bundle.build);
       portalHost = globalThis.KagraPortal.fromPage(window, document, bundle.platform && bundle.platform.ads);
       portalHost.loadingStart();
       portalHost.init();
@@ -643,7 +729,7 @@
           const optional = /\.glb$/i.test(path);
           let bytes = null;
           try {
-            const res = await fetch(fileUrl(site, url));
+            const res = await fetch(assetUrl(site, item));
             if (!res.ok) throw new Error(`${url} ${res.status}`);
             bytes = new Uint8Array(await res.arrayBuffer());
           } catch (err) {
@@ -658,7 +744,7 @@
       await Promise.all(workers);
       const worldFile = files.find((item) => (item.path || item) === (bundle.world || "world.json"));
       const worldUrl = worldFile ? (worldFile.url || worldFile) : `games/${slug}/world.json`;
-      const worldRes = await fetch(fileUrl(site, worldUrl));
+      const worldRes = await fetch(worldFile && typeof worldFile !== "string" ? assetUrl(site, worldFile) : fileUrl(site, worldUrl));
       if (!worldRes.ok) throw new Error(`${worldUrl} ${worldRes.status}`);
       let worldText = await worldRes.text();
       let asked = (params.get("quality") || "").toLowerCase();
@@ -680,6 +766,24 @@
           }
           if (world.genre === "hop_beat") {
             hopMode = true;
+            document.documentElement.dataset.hop = "1";
+            document.getElementById("tagline").hidden = false;
+            // The device best goes into the run, so the in-run NEW BEST banner and the
+            // game-over stinger agree with the saved score after a reload.
+            const storedBest = loadBest(slug);
+            if (storedBest > 0) world.best = Math.max(Number(world.best) || 0, storedBest);
+            // A/B on the phone: ?fx_post=0|1 (bloom, grade, vignette, tone curve) and
+            // ?fx_atmo=0|1 (stars, clouds, horizon glow, haze). Either one alone.
+            // ?skin=<id> and ?look=<id> pick the hero skin / finishing look by id; the
+            // shop and save code set the same two keys.
+            for (const key of ["skin", "look"]) {
+              const v = params.get(key);
+              if (v) world[key] = v;
+            }
+            for (const key of ["fx_post", "fx_atmo"]) {
+              const v = params.get(key);
+              if (v === "0" || v === "1") world[key] = v === "1";
+            }
             const a = world.game && world.game.audio;
             if (a && typeof a === "object" && params.get("audio") !== "0") audioSpec = a;
             // Straight into the run: ?play=1, or a portal build (CrazyGames
@@ -703,7 +807,11 @@
         }
       })();
       session.loadGame(payload);
-      if (hopMode) { syncMs = loadSync(); session.setLatencyMs(syncMs); }
+      if (hopMode) {
+        syncMs = loadSync();
+        session.setLatencyMs(syncMs);
+        if (session.setLang) session.setLang(globalThis.kagraLang || "en");
+      }
       applySwipeMode();
       if (session.setExternalMenu) session.setExternalMenu(true);
       session.showTitle();
@@ -798,7 +906,7 @@
             const site = new URL("./", document.baseURI).href;
             const item = (bundle.files || []).find((f) => (typeof f === "string" ? f : f.path) === file);
             if (!item) throw new Error(`${file} is not in the bundle`);
-            const res = await fetch(fileUrl(site, typeof item === "string" ? item : item.url));
+            const res = await fetch(assetUrl(site, item));
             if (!res.ok) throw new Error(`${file} ${res.status}`);
             return res.arrayBuffer();
           },
@@ -938,7 +1046,7 @@
         if (best) {
           const tag = document.createElement("div");
           tag.className = "newbest";
-          tag.textContent = "NEW BEST!";
+          tag.textContent = t("newbest");
           box.appendChild(tag);
         }
         box.appendChild(table);
@@ -1035,8 +1143,16 @@
         gameover.hidden = phase !== "complete";
         document.getElementById("title").hidden = phase === "complete";
         document.getElementById("blurb").hidden = phase === "complete";
+        if (hopMode) document.getElementById("tagline").hidden = phase === "complete";
       }
       resultBox.hidden = !showResult;
+      // The game-over card: the banner for a run that beat the device best.
+      const bestBanner = document.getElementById("bestBanner");
+      const beat = !!(showResult && sim.result.new_best);
+      if (bestBanner.hidden === beat) {
+        bestBanner.hidden = !beat;
+        if (beat) { bestBanner.style.animation = "none"; void bestBanner.offsetWidth; bestBanner.style.animation = ""; }
+      }
       const goalsTitle = document.getElementById("goalsTitle");
       const runGoals = document.getElementById("runGoals");
       const bestNow = Math.max(Number(sim.best) || 0, loadBest(slug));
@@ -1217,6 +1333,28 @@
       if (e.key === " " || e.key.startsWith("Arrow")) e.preventDefault();
       if ((e.key === "Enter" || e.key === " ") && phase !== "playing") confirmGame();
     });
+    // HOP-BEAT pause: Escape or P toggles it; a hidden tab pauses by itself.
+    const hopPhase = () => { try { return JSON.parse(session.gameJson()).phase || ""; } catch { return ""; } };
+    window.addEventListener("keydown", (e) => {
+      if (!hopMode || e.repeat || phase !== "playing") return;
+      if (e.key === "Escape" || e.key === "p" || e.key === "P") {
+        if (hopPhase() === "pause") session.resumeRun(); else session.pauseRun();
+      }
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (hopMode && document.hidden && phase === "playing" && session.pauseRun) session.pauseRun();
+    });
+    // The pause card steps the sync in the canvas: keep the device copy in step.
+    window.addEventListener("pointerup", () => {
+      if (!hopMode || phase !== "playing") return;
+      let v = NaN;
+      try { v = Number(JSON.parse(session.gameJson()).sync_ms); } catch {}
+      if (Number.isFinite(v) && Math.round(v) !== syncMs) {
+        syncMs = Math.round(v);
+        try { localStorage.setItem(SYNC_KEY, String(syncMs)); } catch {}
+        paintSync();
+      }
+    }, true);
     window.addEventListener("keyup", (e) => {
       held.delete(e.key);
       if (hopMode && HOP_KEYS.has(e.key)) session.pushKey("space", false);

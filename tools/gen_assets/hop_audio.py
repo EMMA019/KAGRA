@@ -1,6 +1,6 @@
-"""HOP-BEAT's seven short effects (CC0-1.0, synthesized here, no input audio).
+"""HOP-BEAT's nine short effects (CC0-1.0, synthesized here, no input audio).
 
-hop, land, perfect, good, combo, hit, fall: 22.05 kHz mono 16-bit WAV in
+hop, land, perfect, good, combo, hit, fall, stomp, warn: 22.05 kHz mono 16-bit WAV in
 `assets/audio/hop_beat/`. They are pitched to A minor to sit under the music
 pack (hop_beat_loop.mp3, hop_beat_{gameover,newbest,revive}.mp3, which are
 committed as built and described in assets/LEDGER.json).
@@ -36,7 +36,9 @@ def _place(out: list[float], part: list[float], at: float, gain: float = 1.0) ->
 def hop(rng):
     a = c.tone(c.hz(69), 0.13, wave_="tri", slide=1.4, release=0.06, decay=8)
     b = c.tone(c.hz(81), 0.09, wave_="sine", slide=1.0, release=0.05, decay=14)
-    return c.mix(a, c.scale(b, 0.3)), 0.5
+    # A breath of air under the takeoff.
+    air = c.bandpass(c.noise(0.1, rng, attack=0.01, release=0.07, decay=14), 2400, 2.0)
+    return c.mix(a, c.scale(b, 0.3), c.scale(air, 0.22)), 0.5
 
 
 def land(rng):
@@ -62,21 +64,63 @@ def combo(rng):
     out = [0.0] * int(0.5 * c.RATE)
     for k, n in enumerate((81, 84, 88, 93)):
         _place(out, c.tone(c.hz(n), 0.18, wave_="tri", release=0.08, decay=8), k * 0.055)
+    # A little glitter on the last note.
+    _place(out, c.highpass(c.noise(0.12, rng, attack=0.004, release=0.09, decay=22), 5000), 0.165, 0.12)
     return c.delay(out, 0.08, 0.5, 0.3, 2), 0.5
+
+
+def warn(rng):
+    """A flyer is close: two short rising pings (E6 then A6), clearly not a reward."""
+    out = [0.0] * int(0.26 * c.RATE)
+    _place(out, c.tone(c.hz(100), 0.1, wave_="square", release=0.05, decay=14), 0.0, 0.35)
+    _place(out, c.tone(c.hz(105), 0.12, wave_="square", release=0.07, decay=12), 0.1, 0.35)
+    return c.lowpass(out, 3200), 0.4
 
 
 def hit(rng):
     low = c.tone(190, 0.2, wave_="saw", slide=-1.5, release=0.09, decay=10)
     burst = c.lowpass(c.noise(0.14, rng, release=0.09, decay=16), 2800)
-    return c.mix(c.scale(c.lowpass(low, 800), 0.7), burst), 0.6
+    thump = c.tone(70, 0.16, wave_="sine", slide=-0.8, release=0.08, decay=16)
+    return c.mix(c.scale(c.lowpass(low, 800), 0.7), burst, c.scale(thump, 0.8)), 0.6
 
 
 def fall(rng):
-    t = c.lowpass(c.tone(c.hz(76), 0.55, wave_="saw", slide=-1.3, release=0.25, decay=3), 1600)
-    return t, 0.5
+    """Over the ledge: a wind whoosh whose band sinks from bright to dull, and a tone
+    sliding down under it. Reads as a drop, not as a hit."""
+    secs = 1.0
+    n = int(secs * c.RATE)
+    wind = c.noise(secs, rng, attack=0.04, release=0.45, decay=1.2)
+    centre = [2600.0 * (240.0 / 2600.0) ** (i / n) for i in range(n)]
+    whoosh = c.scale(c.bandpass(wind, centre, 2.2), 2.6)
+    voice = c.lowpass(c.tone(c.hz(79), secs, wave_="saw", attack=0.02, release=0.5,
+                             decay=2.2, slide=-1.7), 1400)
+    return c.mix(whoosh, c.scale(voice, 0.45)), 0.55
 
 
-SHOTS = {"hop": hop, "land": land, "perfect": perfect, "good": good, "combo": combo, "hit": hit, "fall": fall}
+def stomp(rng):
+    """Landing on an enemy: a wet squish, then a springy boing up to the bounce."""
+    out = [0.0] * int(0.34 * c.RATE)
+    squish = c.lowpass(c.noise(0.07, rng, release=0.05, decay=30), 1100)
+    _place(out, squish, 0.0, 0.7)
+    _place(out, c.tone(c.hz(64), 0.07, wave_="sine", slide=-0.5, release=0.04, decay=20), 0.0, 0.6)
+    _place(out, c.tone(c.hz(69), 0.2, wave_="tri", slide=1.8, release=0.1, decay=9), 0.05)
+    _place(out, c.tone(c.hz(81), 0.14, wave_="sine", slide=1.2, release=0.07, decay=12), 0.09, 0.35)
+    # A bright ping on top: the reward of a clean stomp.
+    _place(out, c.tone(c.hz(93), 0.16, wave_="sine", release=0.1, decay=14), 0.07, 0.3)
+    return out, 0.6
+
+
+SHOTS = {
+    "hop": hop,
+    "land": land,
+    "perfect": perfect,
+    "good": good,
+    "combo": combo,
+    "hit": hit,
+    "fall": fall,
+    "stomp": stomp,
+    "warn": warn,
+}
 
 
 def render(name: str) -> bytes:
