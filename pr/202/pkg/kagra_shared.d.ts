@@ -59,6 +59,10 @@ export class WasmSession {
     constructor();
     pause(): void;
     /**
+     * HOP-BEAT: pause the run (shows the pause card).
+     */
+    pauseRun(): void;
+    /**
      * `mobile webgpu fxaa=1 bloom=1 ssao=4 c2 post` after a 3D frame.
      * `pending` until the first present. The page prints this on screen.
      */
@@ -82,6 +86,10 @@ export class WasmSession {
     renderSupported(): boolean;
     requestFrame(): number;
     resume(): void;
+    /**
+     * HOP-BEAT: back into the run.
+     */
+    resumeRun(): void;
     /**
      * Continue after game over. True when it worked.
      */
@@ -114,6 +122,10 @@ export class WasmSession {
      */
     setGraphicsBackend(name: string): void;
     setJump(held: boolean): void;
+    /**
+     * HOP-BEAT: the page language, `ja` or `en`.
+     */
+    setLang(lang: string): void;
     /**
      * HOP-BEAT: the player's latency setting, ms.
      */
@@ -236,13 +248,6 @@ export interface InitOutput {
     readonly wasmlockstep_new: (a: number, b: number) => [number, number, number];
     readonly wasmlockstep_ready: (a: number, b: number) => number;
     readonly wasmlockstep_submitLocal: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
-    readonly kagra_net_hello: (a: number, b: number, c: number, d: number) => number;
-    readonly kagra_net_ingest: (a: number, b: number) => number;
-    readonly kagra_net_input_axis: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
-    readonly kagra_net_lockstep_free: (a: number) => void;
-    readonly kagra_net_lockstep_new: (a: number, b: number) => number;
-    readonly kagra_net_ready: (a: number, b: number) => number;
-    readonly kagra_net_submit_local: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly __wbg_wasmsession_free: (a: number, b: number) => void;
     readonly sharedVersion: () => [number, number];
     readonly synthWav: (a: number, b: number) => [number, number];
@@ -259,6 +264,7 @@ export interface InitOutput {
     readonly wasmsession_mountFile: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly wasmsession_new: () => number;
     readonly wasmsession_pause: (a: number) => void;
+    readonly wasmsession_pauseRun: (a: number) => void;
     readonly wasmsession_pictureStatus: (a: number) => [number, number];
     readonly wasmsession_playtestAction: (a: number, b: number, c: number) => void;
     readonly wasmsession_playtestPacketJson: (a: number) => [number, number];
@@ -270,6 +276,7 @@ export interface InitOutput {
     readonly wasmsession_renderSupported: (a: number) => number;
     readonly wasmsession_requestFrame: (a: number) => number;
     readonly wasmsession_resume: (a: number) => void;
+    readonly wasmsession_resumeRun: (a: number) => void;
     readonly wasmsession_revive: (a: number) => number;
     readonly wasmsession_saveJson: (a: number) => [number, number, number, number];
     readonly wasmsession_setAssetRoot: (a: number, b: number, c: number) => void;
@@ -279,6 +286,7 @@ export interface InitOutput {
     readonly wasmsession_setExternalMenu: (a: number, b: number) => void;
     readonly wasmsession_setGraphicsBackend: (a: number, b: number, c: number) => void;
     readonly wasmsession_setJump: (a: number, b: number) => void;
+    readonly wasmsession_setLang: (a: number, b: number, c: number) => void;
     readonly wasmsession_setLatencyMs: (a: number, b: number) => void;
     readonly wasmsession_setMusicClock: (a: number, b: number) => void;
     readonly wasmsession_setPad: (a: number, b: number, c: number) => void;
@@ -297,6 +305,13 @@ export interface InitOutput {
     readonly wasmsession_statsJson: (a: number) => [number, number];
     readonly wasmsession_usesSwipe: (a: number) => number;
     readonly wasmsession_loadGameJson: (a: number, b: number, c: number) => [number, number];
+    readonly kagra_net_hello: (a: number, b: number, c: number, d: number) => number;
+    readonly kagra_net_ingest: (a: number, b: number) => number;
+    readonly kagra_net_input_axis: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly kagra_net_lockstep_free: (a: number) => void;
+    readonly kagra_net_lockstep_new: (a: number, b: number) => number;
+    readonly kagra_net_ready: (a: number, b: number) => number;
+    readonly kagra_net_submit_local: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly wasm_bindgen_42bf64e63cc180fa___convert__closures_____invoke___wasm_bindgen_42bf64e63cc180fa___JsValue__core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_42bf64e63cc180fa___JsError___true_: (a: number, b: number, c: any) => [number, number];
     readonly wasm_bindgen_42bf64e63cc180fa___convert__closures_____invoke___wasm_bindgen_42bf64e63cc180fa___sys__JsOption_wgpu_51a115929c565234___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_42bf64e63cc180fa___JsError___true_: (a: number, b: number, c: any) => [number, number];
     readonly wasm_bindgen_42bf64e63cc180fa___convert__closures_____invoke___wasm_bindgen_42bf64e63cc180fa___sys__JsOption_wgpu_51a115929c565234___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_42bf64e63cc180fa___JsError___true__3: (a: number, b: number, c: any) => [number, number];
