@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Moonlit Swarm polish pass.** The blaster now points where it fires (the hero faces the target, shots spawn at the muzzle). The arena has Kenney
+  Mini Arena walls and columns and a seamless paver floor; the stray grey squares (the distant pine ring) are gone. A warm hero lantern, a calmer grade
+  and tinted foes fix the washed-out look. New `fx` spec block, all switchable in JSON: pooled sparks, death puffs, gem glints, muzzle flash, shot
+  streaks, damage numbers, hit knockback, shake and zoom pulses (own RNG, so a run is identical with them off; pools capped per tier 48/160/480).
+  Polished HUD and level-up cards with icon badges and level pips. Audio: Kenney impact hit and a wet-squish pop. New CC0 ledger entries: Kenney Mini Arena,
+  Blaster Kit, Impact Sounds, and OpenGameArt wet squish. Design: `docs/design/survivor_arena.md` section 16.
 - **Moonlit Swarm, the survivor-arena kit (step 1).** A survivor-like game on the shared parts: `game_core::swarm` (pooled foes, spatial
   grid, spawn budget, seeded RNG), `EnemyType.swarm` stats, and a new `KitHost` (`kagra-shared/src/survivor_arena.rs`, genre `survivor_arena`,
   manifest `games/survivor_arena_minimal.json`). One finger drags and the hero walks toward it; the bolt weapon auto-fires; ghosts and zombies
