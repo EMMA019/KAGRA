@@ -1072,15 +1072,34 @@ impl WorldDoc {
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())?;
-        Some(bake_env_strip(
-            self.hemi_sky_color(),
-            self.hemi_ground_color(),
+        // The strip is a pure function of these three, and `compile_scene` asks for it every
+        // frame (it was re-baked, a powf per texel and three blurs, and re-read from disk for
+        // a PNG). Keep the last answer.
+        let (sky, ground) = (self.hemi_sky_color(), self.hemi_ground_color());
+        type Key = (String, [f32; 3], [f32; 3]);
+        thread_local! {
+            static LAST: std::cell::RefCell<Option<(Key, Vec<u8>)>> = const { std::cell::RefCell::new(None) };
+        }
+        let key: Key = (spec.to_string(), sky, ground);
+        if let Some(hit) = LAST.with(|l| {
+            l.borrow()
+                .as_ref()
+                .filter(|(k, _)| *k == key)
+                .map(|(_, v)| v.clone())
+        }) {
+            return Some(hit);
+        }
+        let strip = bake_env_strip(
+            sky,
+            ground,
             if spec == "preset:studio" {
                 None
             } else {
                 load_png_albedo(spec)
             },
-        ))
+        );
+        LAST.with(|l| *l.borrow_mut() = Some((key, strip.clone())));
+        Some(strip)
     }
 
     /// Probe walker `gltf` paths. Missing/parse failures are dump-visible;
@@ -1279,12 +1298,22 @@ impl WorldDoc {
 
         let lod_r = self.vegetation_lod_radius();
         let prop_lod = self.prop_lod.filter(|r| *r > 0.0);
-        let worlds = self.prop_world_mats();
+        // Parent links are rare. Without one, a prop's world matrix is its own local one, so
+        // skip the id-keyed map (it cloned and hashed every id, disabled pool slots included,
+        // and looked each one up by a linear search: a few ms a frame on a phone).
+        let worlds = self
+            .props
+            .iter()
+            .any(|p| p.local)
+            .then(|| self.prop_world_mats());
         for prop in &self.props {
             if !prop.enabled {
                 continue;
             }
-            let model = worlds.get(&prop.id).copied().unwrap_or(Mat4::IDENTITY);
+            let model = match &worlds {
+                Some(w) => w.get(&prop.id).copied().unwrap_or(Mat4::IDENTITY),
+                None => prop_local_matrix(prop),
+            };
             let pos = model.transform_point3(Vec3::ZERO);
             let scale = Vec3::from_array(prop.scale);
             let mat = material_for_prop(prop);
@@ -3986,6 +4015,25 @@ mod tests {
             assert_eq!(c.cull_bounds(), fresh(&c));
         }
         assert_eq!(a.cull_bounds(), want);
+    }
+
+    #[test]
+    fn the_baked_env_strip_is_kept_but_follows_the_sky() {
+        let mut doc =
+            WorldDoc::from_json(r#"{"version":1,"env_map":"preset:studio","props":[]}"#).unwrap();
+        let first = doc.baked_env().expect("strip");
+        assert_eq!(
+            doc.baked_env().as_ref(),
+            Some(&first),
+            "same inputs, same strip"
+        );
+        doc.hemi_sky = Some([0.9, 0.1, 0.1]);
+        let red = doc.baked_env().expect("strip");
+        assert_ne!(red, first, "a new sky is a new strip, not the cached one");
+        assert_eq!(
+            red,
+            bake_env_strip(doc.hemi_sky_color(), doc.hemi_ground_color(), None)
+        );
     }
 
     #[test]
