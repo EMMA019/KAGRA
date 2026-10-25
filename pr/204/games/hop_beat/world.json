@@ -1,0 +1,234 @@
+{
+  "game": {
+    "audio": {
+      "bgm": {
+        "fade_secs": 0.3,
+        "file": "assets/audio/hop_beat/hop_beat_loop.mp3",
+        "volume": 0.8
+      },
+      "bgm_volume": 0.7,
+      "enabled": true,
+      "master": 0.8,
+      "sfx": {
+        "combo": {
+          "file": "assets/audio/hop_beat/combo.wav",
+          "rate": 1.0,
+          "volume": 0.8
+        },
+        "fall": {
+          "file": "assets/audio/hop_beat/fall.wav",
+          "rate": 1.0,
+          "volume": 0.9
+        },
+        "gameover": {
+          "file": "assets/audio/hop_beat/hop_beat_gameover.mp3",
+          "rate": 1.0,
+          "volume": 0.9
+        },
+        "good": {
+          "file": "assets/audio/hop_beat/good.wav",
+          "rate": 1.0,
+          "volume": 0.65
+        },
+        "hit": {
+          "file": "assets/audio/hop_beat/hit.wav",
+          "rate": 1.0,
+          "volume": 0.95
+        },
+        "hop": {
+          "file": "assets/audio/hop_beat/hop.wav",
+          "rate": 1.0,
+          "volume": 0.6
+        },
+        "land": {
+          "file": "assets/audio/hop_beat/land.wav",
+          "rate": 1.0,
+          "volume": 0.4
+        },
+        "newbest": {
+          "file": "assets/audio/hop_beat/hop_beat_newbest.mp3",
+          "rate": 1.0,
+          "volume": 0.9
+        },
+        "perfect": {
+          "file": "assets/audio/hop_beat/perfect.wav",
+          "rate": 1.0,
+          "volume": 0.85
+        },
+        "revive": {
+          "file": "assets/audio/hop_beat/hop_beat_revive.mp3",
+          "rate": 1.0,
+          "volume": 0.9
+        },
+        "stomp": {
+          "file": "assets/audio/hop_beat/stomp.wav",
+          "rate": 1.0,
+          "volume": 0.9
+        },
+        "warn": {
+          "file": "assets/audio/hop_beat/warn.wav",
+          "rate": 1.0,
+          "volume": 0.55
+        }
+      },
+      "sfx_volume": 1.0
+    },
+    "course": {
+      "block_height": 0.5,
+      "min_window_ms": 110.0,
+      "phrases": [],
+      "ramp_bars": 40,
+      "rest_every_bars": 8,
+      "seed": 7
+    },
+    "enemies": {
+      "body_h": 0.45,
+      "bounce_beats": 0.5,
+      "bounce_height": 0.7,
+      "rest_beats": 0.5,
+      "stomp_depth": 0.3,
+      "stomp_score": 150,
+      "types": [
+        {
+          "color": [
+            120,
+            240,
+            150
+          ],
+          "id": "slime",
+          "look": "slime",
+          "step_m": 0.0,
+          "steps_per_beat": 1,
+          "stompable": true,
+          "unlock_level": 0,
+          "walk_steps": 0,
+          "y_hi": 0.38,
+          "y_lo": 0.0
+        },
+        {
+          "color": [
+            255,
+            170,
+            80
+          ],
+          "id": "beetle",
+          "look": "beetle",
+          "step_m": 1.0,
+          "steps_per_beat": 2,
+          "stompable": true,
+          "unlock_level": 1,
+          "walk_steps": 8,
+          "y_hi": 0.42,
+          "y_lo": 0.0
+        },
+        {
+          "color": [
+            190,
+            130,
+            255
+          ],
+          "id": "bat",
+          "look": "bat",
+          "step_m": 0.0,
+          "steps_per_beat": 1,
+          "stompable": false,
+          "unlock_level": 2,
+          "walk_steps": 0,
+          "y_hi": 2.4,
+          "y_lo": 1.75
+        }
+      ]
+    },
+    "fall": {
+      "cam_lag": 0.6,
+      "card_delay_secs": 1.0,
+      "carry": 0.55,
+      "dust": 8,
+      "edge_stop_secs": 0.07,
+      "slow_scale": 0.5,
+      "stretch": 0.3,
+      "tumble_turns_per_sec": 1.1,
+      "vignette": 0.7
+    },
+    "hero": {
+      "beat_len_m": 3.0,
+      "buffer_secs": 0.12,
+      "coyote_secs": 0.09,
+      "edge_tol": 0.35,
+      "fall_gravity": 28.0,
+      "half_width": 0.24,
+      "hold": {
+        "air_beats": 2.0,
+        "height": 1.6
+      },
+      "tap": {
+        "air_beats": 1.0,
+        "height": 0.9
+      },
+      "tap_window_secs": 0.11
+    },
+    "id": "hop_beat",
+    "judge": {
+      "combo_bonus": 25,
+      "combo_cap": 8,
+      "good_ms": 130.0,
+      "per_beat": 2.0,
+      "perfect_ms": 70.0,
+      "regain_clears": 12,
+      "score_good": 60,
+      "score_ok": 30,
+      "score_perfect": 100
+    },
+    "lives": {
+      "blink_hz": 10.0,
+      "count": 3,
+      "invuln_secs": 1.6
+    },
+    "look": {
+      "accent": [
+        255,
+        92,
+        170
+      ],
+      "atmo": {},
+      "glow": [
+        96,
+        232,
+        255
+      ],
+      "hero": [
+        255,
+        214,
+        120
+      ],
+      "post": {},
+      "preset": "neon_night",
+      "slab": [
+        58,
+        52,
+        92
+      ]
+    },
+    "music": {
+      "beats_per_bar": 4,
+      "bpm": 126.0,
+      "lead_in_bars": 2,
+      "loop_bars": 32,
+      "offset_ms": 0.0
+    },
+    "play": {
+      "direct": false
+    },
+    "revive": {
+      "clear_beats": 4.0,
+      "enabled": true,
+      "invuln_secs": 2.0,
+      "lives": 2,
+      "max_per_run": 1
+    },
+    "skin": "classic",
+    "title": "Hop Beat"
+  },
+  "genre": "hop_beat",
+  "version": 1
+}
