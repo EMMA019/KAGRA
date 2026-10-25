@@ -19,6 +19,9 @@ pub enum Bot {
     Human { sigma_ms: f32, miss_pct: f32 },
     /// Presses every ideal beat `ms` early (negative) or late, always the right hop.
     Offset { ms: f32 },
+    /// Presses on the beat like `Perfect`, but keeps the finger down `ms` on a tap (a
+    /// thumb on glass, not a mouse click).
+    SlowTap { ms: f32 },
     /// Never touches the screen.
     Idle,
     /// Taps on every beat, whatever is coming.
@@ -33,6 +36,7 @@ impl Bot {
             Bot::Perfect => "perfect".into(),
             Bot::Human { sigma_ms, miss_pct } => format!("human_{sigma_ms:.0}ms_{miss_pct:.0}pct"),
             Bot::Offset { ms } => format!("offset_{ms:+.0}ms"),
+            Bot::SlowTap { ms } => format!("slow_tap_{ms:.0}ms"),
             Bot::Idle => "idle".into(),
             Bot::Spam => "spam".into(),
             Bot::HoldAll => "hold_all".into(),
@@ -109,10 +113,14 @@ pub fn play(spec: &HopSpec, bot: Bot, seed: u32, max_secs: f32) -> BotRun {
                 let phase = (now / bs).fract();
                 g.set_hold(phase < 0.1);
             }
-            Bot::Perfect | Bot::Human { .. } | Bot::Offset { .. } => {
+            Bot::Perfect | Bot::Human { .. } | Bot::Offset { .. } | Bot::SlowTap { .. } => {
                 let (sigma, miss) = match bot {
                     Bot::Human { sigma_ms, miss_pct } => (sigma_ms / 1000.0, miss_pct / 100.0),
                     _ => (0.0, 0.0),
+                };
+                let tap_hold = match bot {
+                    Bot::SlowTap { ms } => ms / 1000.0,
+                    _ => 0.05,
                 };
                 let shift = match bot {
                     Bot::Offset { ms } => ms / 1000.0,
@@ -138,7 +146,7 @@ pub fn play(spec: &HopSpec, bot: Bot, seed: u32, max_secs: f32) -> BotRun {
                         .max(now)
                         .max(last_release + 0.03);
                     let release = match o.hop {
-                        Hop::Tap => press + 0.05,
+                        Hop::Tap => press + tap_hold,
                         Hop::Hold => press + spec.arc(Hop::Hold).air_beats * bs * 0.8,
                     };
                     last_release = release;
@@ -655,7 +663,8 @@ mod tests {
         let phrases = base.phrases();
         let mut memo: HashMap<(usize, usize), bool> = HashMap::new();
         let mut seams_seen = 0usize;
-        let mods: [(&str, fn(&mut HopSpec)); 5] = [
+        type Tweak = fn(&mut HopSpec);
+        let mods: [(&str, Tweak); 5] = [
             ("plain", |_| {}),
             ("sprint", |s| s.course.ramp_bars = 24),
             ("no_breaks", |s| s.course.rest_every_bars = 16),
@@ -698,5 +707,39 @@ mod tests {
             }
         }
         assert!(seams_seen > 100_000, "{seams_seen}");
+    }
+
+    /// A tap that stays down a little long (a thumb, not a click) is still a tap: the
+    /// bat phrases have no trap for it. Found by this test: with the old 110 ms tap window
+    /// a 140 ms touch turned into a hold hop under every bat.
+    #[test]
+    fn a_thumb_tap_clears_every_bat_phrase() {
+        let s = spec();
+        for seed in 0..40u32 {
+            let r = play(&s, Bot::SlowTap { ms: 140.0 }, seed, 260.0);
+            let mut sp = s.clone();
+            sp.course.seed = seed;
+            let mut c = Course::new(&sp);
+            c.ensure(&sp, 700.0);
+            let near: Vec<String> = r
+                .losses
+                .iter()
+                .map(|(b, why)| {
+                    let o: Vec<String> = c
+                        .obst
+                        .iter()
+                        .filter(|o| o.take_beat <= b + 0.3 && o.take_beat > b - 3.0)
+                        .map(|o| {
+                            format!(
+                                "{:?}{:?}@{:.1}ety{}",
+                                o.kind, o.hop, o.take_beat, o.ety as i32
+                            )
+                        })
+                        .collect();
+                    format!("{why} at beat {b:.1}: {o:?}")
+                })
+                .collect();
+            assert!(r.losses.is_empty(), "seed {seed}: {near:#?}");
+        }
     }
 }

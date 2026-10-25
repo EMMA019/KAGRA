@@ -138,7 +138,7 @@ impl Default for HeroSpec {
                 air_beats: 1.0,
                 height: 0.9,
             },
-            tap_window_secs: 0.11,
+            tap_window_secs: 0.16,
             coyote_secs: 0.09,
             buffer_secs: 0.12,
             half_width: 0.24,
@@ -978,7 +978,42 @@ impl HopSpec {
                 &slots,
             ));
             if sound {
+                out.extend(self.flyer_gap_problems(pi, p));
                 out.extend(self.sequence_problems(pi, p));
+            }
+        }
+        out
+    }
+
+    /// A flyer may not hang over a gap: the whole span of the hop over the gap, 100 ms of
+    /// press slack either way, has to be clear of it. A bat above a hole leaves a thumb that
+    /// stays down a moment too long (a tap that turns into a hold) nowhere to go.
+    fn flyer_gap_problems(&self, pi: usize, p: &Phrase) -> Vec<String> {
+        let slack = 0.1 / self.beat_secs();
+        let mut out = Vec::new();
+        for (fi, f) in p.items.iter().enumerate() {
+            let Some((Kind::Enemy, fhop)) = parse_item(f) else {
+                continue;
+            };
+            let flies = self
+                .enemy_index(&f.enemy)
+                .and_then(|i| self.enemies.types.get(i))
+                .is_some_and(|t| t.y_lo > 0.0);
+            if !flies {
+                continue;
+            }
+            let c = f.beat + self.arc(fhop).air_beats * 0.5;
+            let (f0, f1) = (c - f.beats * 0.5, c + f.beats * 0.5);
+            for (gi, g) in p.items.iter().enumerate() {
+                if !matches!(parse_item(g), Some((Kind::Gap, _))) {
+                    continue;
+                }
+                let air = parse_item(g).map_or(0.0, |(_, h)| self.arc(h).air_beats);
+                if f0 < g.beat + air + slack && f1 > g.beat - slack {
+                    out.push(format!(
+                        "phrase {pi} item {fi}: a flyer over the gap of item {gi} (keep it clear of the hop across the gap)"
+                    ));
+                }
             }
         }
         out
@@ -1447,12 +1482,14 @@ pub fn builtin_phrases() -> Vec<Phrase> {
         // The first bat flies alone over a clear track: holding would hit it.
         debut(p(2, 2, vec![foe(1.0, "bat", 0.9)])),
         p(
+            3,
             2,
-            2,
+            // The bat hangs over the beetle, never over the gap: a tap that stays down a
+            // moment too long becomes a hold, and a hold flies into a bat.
             vec![
                 item(1.0, "gap", 0.5, "tap"),
-                foe(1.0, "bat", 0.9),
                 foe(3.0, "beetle", 0.16),
+                foe(3.0, "bat", 0.9),
             ],
         ),
         p(
@@ -5983,6 +6020,130 @@ mod tests {
         run(&mut g, 0.5);
         assert_eq!(g.phase_name(), "play");
         assert!(g.lives() > 0);
+    }
+
+    fn recover_stage(g: &HopBeat) -> String {
+        g.state_value()["recover"].as_str().unwrap().to_string()
+    }
+
+    /// A fall with lives left: the drop plays, the world holds for READY, the music restarts
+    /// on a bar line, and the bunny blinks for a while. Nothing runs during the hold.
+    #[test]
+    fn a_fall_with_lives_left_gets_a_ready_beat_before_play_resumes() {
+        let mut g = HopBeat::new(fall_spec(3));
+        g.set_sfx(false);
+        until_falling(&mut g);
+        let (mut drop, mut ready) = (0, 0);
+        let mut ready_song_t = None;
+        let mut frames = 0;
+        while frames < 60 * 12 {
+            g.tick(1.0 / 60.0);
+            frames += 1;
+            match recover_stage(&g).as_str() {
+                "drop" => drop += 1,
+                "ready" => {
+                    ready += 1;
+                    assert!(g.invuln > 0.0, "blinks from the READY on");
+                    let t = *ready_song_t.get_or_insert(g.song_t());
+                    assert_eq!(g.song_t(), t, "the world is held during READY");
+                    assert_eq!(g.lives(), 2);
+                    assert_eq!(g.y, 0.0);
+                    assert!(g.dead_fall.is_none());
+                }
+                _ => {
+                    if ready > 0 {
+                        break;
+                    }
+                }
+            }
+        }
+        let rc = g.spec.recover.clone();
+        let (drop_s, ready_s) = (drop as f32 / 60.0, ready as f32 / 60.0);
+        assert!((drop_s - rc.drop_secs).abs() < 0.1, "drop {drop_s}s");
+        let want = rc.ready_beats * g.spec.beat_secs();
+        assert!(
+            (ready_s - want).abs() < 0.1,
+            "READY {ready_s}s, want {want}s"
+        );
+        assert!(
+            ready_s > 1.2,
+            "a real beat to breathe, not a blink: {ready_s}s"
+        );
+        // Play is back: on a bar line, on empty slab, blinking.
+        let bar = g.spec.beat_secs() * g.spec.music.beats_per_bar as f32;
+        let t = ready_song_t.unwrap();
+        assert!(((t / bar) - (t / bar).round()).abs() < 1e-3);
+        assert!(g.invuln > rc.invuln_secs - 0.1, "{}", g.invuln);
+        assert!(g.state_value()["invulnerable"].as_bool().unwrap());
+        assert!(g
+            .course()
+            .obst
+            .iter()
+            .all(|o| o.take_beat >= g.beat_pos() + rc.clear_beats - 0.1));
+        run(&mut g, 0.5);
+        assert_eq!(g.phase_name(), "play");
+        assert_eq!(g.lives(), 2, "no second hit while it blinks");
+    }
+
+    #[test]
+    fn the_recover_pause_can_be_turned_off_or_tuned() {
+        let end = |f: fn(&mut HopSpec)| {
+            let mut spec = fall_spec(3);
+            f(&mut spec);
+            let mut g = HopBeat::new(spec);
+            g.set_sfx(false);
+            until_falling(&mut g);
+            let mut frames = 0;
+            while g.lives() == 3 || !recover_stage(&g).is_empty() || g.dead_fall.is_some() {
+                g.tick(1.0 / 60.0);
+                frames += 1;
+                assert!(frames < 60 * 20);
+            }
+            frames as f32 / 60.0
+        };
+        let off = end(|s| s.recover.enabled = false);
+        let std = end(|_| {});
+        let long = end(|s| s.recover.ready_beats = 6.0);
+        assert!(off < 0.6, "{off}");
+        assert!(std > off + 2.0, "{std} vs {off}");
+        assert!(long > std + 1.0, "{long} vs {std}");
+    }
+
+    #[test]
+    fn a_continue_also_gets_a_ready_count() {
+        let mut g = HopBeat::new(fall_spec(1));
+        g.set_sfx(false);
+        until_falling(&mut g);
+        run(&mut g, 3.0);
+        assert!(g.revive());
+        assert_eq!(recover_stage(&g), "ready");
+        let t = g.song_t();
+        run(&mut g, 0.5);
+        assert_eq!(g.song_t(), t, "held while READY");
+        run(&mut g, 3.0);
+        assert_eq!(recover_stage(&g), "");
+        assert!(g.song_t() > t);
+        assert_eq!(g.phase_name(), "play");
+    }
+
+    #[test]
+    fn recover_block_is_validated_and_round_trips() {
+        let mut v = serde_json::to_value(HopSpec::default()).unwrap();
+        v["recover"]["ready_beats"] = serde_json::json!(2.0);
+        assert_eq!(HopSpec::from_value(&v).unwrap().recover.ready_beats, 2.0);
+        for (k, bad) in [
+            ("drop_secs", 0.0),
+            ("ready_beats", 20.0),
+            ("invuln_secs", -1.0),
+            ("clear_beats", 99.0),
+        ] {
+            let mut v = serde_json::to_value(HopSpec::default()).unwrap();
+            v["recover"][k] = serde_json::json!(bad);
+            assert!(HopSpec::from_value(&v).is_err(), "{k}");
+        }
+        let mut v = serde_json::to_value(HopSpec::default()).unwrap();
+        v["recover"]["nope"] = serde_json::json!(1);
+        assert!(HopSpec::from_value(&v).is_err());
     }
 
     #[test]

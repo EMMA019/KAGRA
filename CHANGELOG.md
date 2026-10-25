@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- HOP-BEAT fixes. (1) A fall that costs a life no longer pops the bunny straight back: the drop plays out, the world holds for a READY count of 3 beats (JSON `recover` block, Python mirror), the music restarts on a bar line and the bunny blinks while protected for 2.4 s; a Continue gets the same count. (2) A bat could hang over a gap, where a tap held a little too long (a thumb, over the 110 ms tap window) turned into a hold hop that flew into the bat with a hole below. The `tap_window_secs` default is 0.16 s, the bat+gap phrase is rearranged (bat over the beetle, never over the gap), flyers may not overlap the hop across a gap (Rust and Python rule), flyer phrases are checked at +-100 ms, and every ordered pair of phrases with a bat is played back to back (`seam_problems`); a 2000-seed x 5-modifier test checks every seam the generator lays and a thumb-tap bot clears the course.
+
 - Retention layer, shared by every game (`meta`): a coin wallet earned from runs, an unlock catalogue (hero skins and
   background looks, music later) with prices and rules, a daily run (one fixed seed per UTC date, its own best, a streak with a
   small coin reward, a text share card) and run modifiers, with a shop screen, EN/JA. It is a manifest block (`meta` in
