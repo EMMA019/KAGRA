@@ -101,6 +101,11 @@
       "v": "b265d4fdfa"
     },
     {
+      "path": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+      "url": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+      "v": "fe58f3600c"
+    },
+    {
       "path": "assets/audio/neon_cat/bgm.wav",
       "url": "assets/audio/neon_cat/bgm.wav",
       "v": "2d649821f4"
@@ -169,7 +174,47 @@
       "path": "assets/audio/neon_cat/roll.wav",
       "url": "assets/audio/neon_cat/roll.wav",
       "v": "f1d0e7409f"
+    },
+    {
+      "path": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+      "url": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+      "v": "8be3009beb"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+      "v": "770685003f"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+      "v": "50b01a7974"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+      "v": "955fbf6c23"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+      "v": "8dde50e1fe"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+      "v": "8ac1eb6e4c"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+      "v": "c41ef1b321"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+      "v": "5d7d10947f"
     }
   ],
-  "build": "a9210726b975"
+  "build": "fa50a2331b2c"
 }
