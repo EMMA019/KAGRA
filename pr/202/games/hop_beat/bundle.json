@@ -154,6 +154,10 @@
       "url": "assets/models/hop_beat/hop_bunny.glb"
     },
     {
+      "path": "assets/models/hop_beat/hop_ears.glb",
+      "url": "assets/models/hop_beat/hop_ears.glb"
+    },
+    {
       "path": "assets/models/hop_beat/hop_post.glb",
       "url": "assets/models/hop_beat/hop_post.glb"
     },
