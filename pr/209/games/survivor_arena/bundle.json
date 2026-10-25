@@ -8,7 +8,7 @@
     {
       "path": "world.json",
       "url": "games/survivor_arena/world.json",
-      "v": "d79de34e2a"
+      "v": "8e9c98faf7"
     },
     {
       "path": "kagra_game.json",
@@ -660,5 +660,5 @@
       "slot": "double_coins"
     }
   },
-  "build": "7ad5ebe242bd"
+  "build": "8469403c7bbd"
 }
