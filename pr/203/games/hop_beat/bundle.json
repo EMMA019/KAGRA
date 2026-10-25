@@ -1,0 +1,532 @@
+{
+  "slug": "hop_beat",
+  "title": "Hop Beat",
+  "version": "0.1.0",
+  "genre": "hop_beat",
+  "world": "world.json",
+  "files": [
+    {
+      "path": "world.json",
+      "url": "games/hop_beat/world.json"
+    },
+    {
+      "path": "kagra_game.json",
+      "url": "games/hop_beat/kagra_game.json"
+    },
+    {
+      "path": "assets/audio/bgm.wav",
+      "url": "assets/audio/bgm.wav"
+    },
+    {
+      "path": "assets/audio/card.wav",
+      "url": "assets/audio/card.wav"
+    },
+    {
+      "path": "assets/audio/fire.wav",
+      "url": "assets/audio/fire.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/LICENSE.txt",
+      "url": "assets/audio/hop_beat/LICENSE.txt"
+    },
+    {
+      "path": "assets/audio/hop_beat/combo.wav",
+      "url": "assets/audio/hop_beat/combo.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/fall.wav",
+      "url": "assets/audio/hop_beat/fall.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/good.wav",
+      "url": "assets/audio/hop_beat/good.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/hit.wav",
+      "url": "assets/audio/hop_beat/hit.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop.wav",
+      "url": "assets/audio/hop_beat/hop.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_beatgrid.json",
+      "url": "assets/audio/hop_beat/hop_beat_beatgrid.json"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_gameover.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_gameover.mp3"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_loop.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_loop.mp3"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_newbest.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_newbest.mp3"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_revive.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_revive.mp3"
+    },
+    {
+      "path": "assets/audio/hop_beat/land.wav",
+      "url": "assets/audio/hop_beat/land.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/perfect.wav",
+      "url": "assets/audio/hop_beat/perfect.wav"
+    },
+    {
+      "path": "assets/audio/jump.wav",
+      "url": "assets/audio/jump.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/bgm.wav",
+      "url": "assets/audio/neon_cat/bgm.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/card.wav",
+      "url": "assets/audio/neon_cat/card.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/coin.wav",
+      "url": "assets/audio/neon_cat/coin.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/gameover.wav",
+      "url": "assets/audio/neon_cat/gameover.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/hit.wav",
+      "url": "assets/audio/neon_cat/hit.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/item.wav",
+      "url": "assets/audio/neon_cat/item.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/jump.wav",
+      "url": "assets/audio/neon_cat/jump.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/knock.wav",
+      "url": "assets/audio/neon_cat/knock.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/meow.wav",
+      "url": "assets/audio/neon_cat/meow.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/mission.wav",
+      "url": "assets/audio/neon_cat/mission.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/perch.wav",
+      "url": "assets/audio/neon_cat/perch.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/robot_off.wav",
+      "url": "assets/audio/neon_cat/robot_off.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/robot_on.wav",
+      "url": "assets/audio/neon_cat/robot_on.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/roll.wav",
+      "url": "assets/audio/neon_cat/roll.wav"
+    },
+    {
+      "path": "assets/models/hop_beat/hop_bunny.glb",
+      "url": "assets/models/hop_beat/hop_bunny.glb"
+    },
+    {
+      "path": "assets/models/hop_beat/hop_post.glb",
+      "url": "assets/models/hop_beat/hop_post.glb"
+    },
+    {
+      "path": "assets/models/hop_beat/hop_tower_a.glb",
+      "url": "assets/models/hop_beat/hop_tower_a.glb"
+    },
+    {
+      "path": "assets/models/hop_beat/hop_tower_b.glb",
+      "url": "assets/models/hop_beat/hop_tower_b.glb"
+    },
+    {
+      "path": "assets/models/hop_beat/hop_tower_c.glb",
+      "url": "assets/models/hop_beat/hop_tower_c.glb"
+    },
+    {
+      "path": "assets/models/hop_beat/hop_windows_a.glb",
+      "url": "assets/models/hop_beat/hop_windows_a.glb"
+    },
+    {
+      "path": "assets/models/hop_beat/hop_windows_b.glb",
+      "url": "assets/models/hop_beat/hop_windows_b.glb"
+    },
+    {
+      "path": "assets/models/hop_beat/hop_windows_c.glb",
+      "url": "assets/models/hop_beat/hop_windows_c.glb"
+    }
+  ],
+  "platform": {
+    "ads": {
+      "commercial_on": [
+        "retry"
+      ],
+      "rewarded": [
+        {
+          "slot": "revive",
+          "at": "game_over",
+          "effect": "revive",
+          "per_run": 1
+        },
+        {
+          "slot": "double_coins",
+          "at": "game_over",
+          "effect": "none",
+          "per_run": 1
+        }
+      ],
+      "min_interval_secs": 90
+    }
+  },
+  "meta": {
+    "version": 1,
+    "currency": {
+      "id": "coins",
+      "name": {
+        "en": "Coins",
+        "ja": "コイン"
+      }
+    },
+    "earn": {
+      "base": 3,
+      "per": {
+        "score": 0.01,
+        "combo": 0.5,
+        "perfect": 0.25
+      },
+      "cap": 300
+    },
+    "patchable": [
+      "look",
+      "course.ramp_bars",
+      "course.rest_every_bars"
+    ],
+    "catalog": [
+      {
+        "id": "hero.sun",
+        "slot": "hero",
+        "name": {
+          "en": "Sun",
+          "ja": "サン"
+        },
+        "price": 0,
+        "requires": null,
+        "patch": {
+          "look": {
+            "hero": [
+              255,
+              214,
+              120
+            ]
+          }
+        },
+        "preview": []
+      },
+      {
+        "id": "hero.mint",
+        "slot": "hero",
+        "name": {
+          "en": "Mint",
+          "ja": "ミント"
+        },
+        "price": 100,
+        "requires": null,
+        "patch": {
+          "look": {
+            "hero": [
+              120,
+              255,
+              190
+            ]
+          }
+        },
+        "preview": []
+      },
+      {
+        "id": "hero.berry",
+        "slot": "hero",
+        "name": {
+          "en": "Berry",
+          "ja": "ベリー"
+        },
+        "price": 200,
+        "requires": {
+          "stat": "runs",
+          "at_least": 5
+        },
+        "patch": {
+          "look": {
+            "hero": [
+              255,
+              120,
+              170
+            ]
+          }
+        },
+        "preview": []
+      },
+      {
+        "id": "hero.ice",
+        "slot": "hero",
+        "name": {
+          "en": "Ice",
+          "ja": "アイス"
+        },
+        "price": 300,
+        "requires": {
+          "stat": "best_combo",
+          "at_least": 16
+        },
+        "patch": {
+          "look": {
+            "hero": [
+              170,
+              220,
+              255
+            ]
+          }
+        },
+        "preview": []
+      },
+      {
+        "id": "hero.gold",
+        "slot": "hero",
+        "name": {
+          "en": "Gold",
+          "ja": "ゴールド"
+        },
+        "price": 600,
+        "requires": {
+          "stat": "best_streak",
+          "at_least": 3
+        },
+        "patch": {
+          "look": {
+            "hero": [
+              255,
+              236,
+              150
+            ]
+          }
+        },
+        "preview": []
+      },
+      {
+        "id": "look.neon",
+        "slot": "look",
+        "name": {
+          "en": "Neon",
+          "ja": "ネオン"
+        },
+        "price": 0,
+        "requires": null,
+        "patch": {
+          "look": {
+            "accent": [
+              255,
+              92,
+              170
+            ],
+            "glow": [
+              96,
+              232,
+              255
+            ],
+            "slab": [
+              58,
+              52,
+              92
+            ]
+          }
+        },
+        "preview": []
+      },
+      {
+        "id": "look.sunset",
+        "slot": "look",
+        "name": {
+          "en": "Sunset",
+          "ja": "サンセット"
+        },
+        "price": 150,
+        "requires": null,
+        "patch": {
+          "look": {
+            "accent": [
+              255,
+              140,
+              66
+            ],
+            "glow": [
+              255,
+              220,
+              120
+            ],
+            "slab": [
+              92,
+              52,
+              58
+            ]
+          }
+        },
+        "preview": []
+      },
+      {
+        "id": "look.forest",
+        "slot": "look",
+        "name": {
+          "en": "Forest",
+          "ja": "フォレスト"
+        },
+        "price": 150,
+        "requires": {
+          "stat": "runs",
+          "at_least": 3
+        },
+        "patch": {
+          "look": {
+            "accent": [
+              120,
+              230,
+              120
+            ],
+            "glow": [
+              200,
+              255,
+              160
+            ],
+            "slab": [
+              40,
+              78,
+              64
+            ]
+          }
+        },
+        "preview": []
+      },
+      {
+        "id": "look.mono",
+        "slot": "look",
+        "name": {
+          "en": "Mono",
+          "ja": "モノ"
+        },
+        "price": 300,
+        "requires": {
+          "stat": "best_score",
+          "at_least": 1500
+        },
+        "patch": {
+          "look": {
+            "accent": [
+              235,
+              235,
+              245
+            ],
+            "glow": [
+              150,
+              160,
+              200
+            ],
+            "slab": [
+              60,
+              62,
+              80
+            ]
+          }
+        },
+        "preview": []
+      }
+    ],
+    "daily": {
+      "enabled": true,
+      "seed_path": "course.seed",
+      "streak_reward": {
+        "base": 10,
+        "per_day": 5,
+        "max": 50
+      }
+    },
+    "modifiers": [
+      {
+        "id": "sprint",
+        "name": {
+          "en": "Sprint",
+          "ja": "スプリント"
+        },
+        "patch": {
+          "course": {
+            "ramp_bars": 24
+          }
+        },
+        "desc": {
+          "en": "Gets hard sooner",
+          "ja": "早く難しくなる"
+        }
+      },
+      {
+        "id": "no_breaks",
+        "name": {
+          "en": "No breaks",
+          "ja": "ノーブレイク"
+        },
+        "patch": {
+          "course": {
+            "rest_every_bars": 16
+          }
+        },
+        "desc": {
+          "en": "Fewer rest bars",
+          "ja": "休みが少ない"
+        }
+      },
+      {
+        "id": "midnight",
+        "name": {
+          "en": "Midnight",
+          "ja": "ミッドナイト"
+        },
+        "patch": {
+          "look": {
+            "accent": [
+              190,
+              140,
+              255
+            ],
+            "glow": [
+              120,
+              160,
+              255
+            ],
+            "slab": [
+              30,
+              28,
+              60
+            ]
+          }
+        },
+        "desc": {
+          "en": "A dark look for today",
+          "ja": "今日は夜の見た目"
+        }
+      }
+    ],
+    "rewarded": {
+      "slot": "double_coins"
+    }
+  }
+}

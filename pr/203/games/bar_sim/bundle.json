@@ -1,0 +1,197 @@
+{
+  "slug": "bar_sim",
+  "title": "Bar Sim",
+  "version": "0.1.0",
+  "genre": "",
+  "world": "world.json",
+  "files": [
+    {
+      "path": "world.json",
+      "url": "games/bar_sim/world.json"
+    },
+    {
+      "path": "kagra_game.json",
+      "url": "games/bar_sim/kagra_game.json"
+    },
+    {
+      "path": "assets/audio/bgm.wav",
+      "url": "assets/audio/bgm.wav"
+    },
+    {
+      "path": "assets/audio/card.wav",
+      "url": "assets/audio/card.wav"
+    },
+    {
+      "path": "assets/audio/fire.wav",
+      "url": "assets/audio/fire.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/combo.wav",
+      "url": "assets/audio/hop_beat/combo.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/fall.wav",
+      "url": "assets/audio/hop_beat/fall.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/good.wav",
+      "url": "assets/audio/hop_beat/good.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/hit.wav",
+      "url": "assets/audio/hop_beat/hit.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop.wav",
+      "url": "assets/audio/hop_beat/hop.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_gameover.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_gameover.mp3"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_loop.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_loop.mp3"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_newbest.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_newbest.mp3"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_revive.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_revive.mp3"
+    },
+    {
+      "path": "assets/audio/hop_beat/land.wav",
+      "url": "assets/audio/hop_beat/land.wav"
+    },
+    {
+      "path": "assets/audio/hop_beat/perfect.wav",
+      "url": "assets/audio/hop_beat/perfect.wav"
+    },
+    {
+      "path": "assets/audio/jump.wav",
+      "url": "assets/audio/jump.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/bgm.wav",
+      "url": "assets/audio/neon_cat/bgm.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/card.wav",
+      "url": "assets/audio/neon_cat/card.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/coin.wav",
+      "url": "assets/audio/neon_cat/coin.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/gameover.wav",
+      "url": "assets/audio/neon_cat/gameover.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/hit.wav",
+      "url": "assets/audio/neon_cat/hit.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/item.wav",
+      "url": "assets/audio/neon_cat/item.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/jump.wav",
+      "url": "assets/audio/neon_cat/jump.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/knock.wav",
+      "url": "assets/audio/neon_cat/knock.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/meow.wav",
+      "url": "assets/audio/neon_cat/meow.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/mission.wav",
+      "url": "assets/audio/neon_cat/mission.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/perch.wav",
+      "url": "assets/audio/neon_cat/perch.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/robot_off.wav",
+      "url": "assets/audio/neon_cat/robot_off.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/robot_on.wav",
+      "url": "assets/audio/neon_cat/robot_on.wav"
+    },
+    {
+      "path": "assets/audio/neon_cat/roll.wav",
+      "url": "assets/audio/neon_cat/roll.wav"
+    },
+    {
+      "path": "assets/bar/manifest.json",
+      "url": "assets/bar/manifest.json"
+    },
+    {
+      "path": "assets/bar/se/door.wav",
+      "url": "assets/bar/se/door.wav"
+    },
+    {
+      "path": "assets/bar/se/glass.wav",
+      "url": "assets/bar/se/glass.wav"
+    },
+    {
+      "path": "assets/bar/se/register.wav",
+      "url": "assets/bar/se/register.wav"
+    },
+    {
+      "path": "assets/bar/tex/bottle_gin.png",
+      "url": "assets/bar/tex/bottle_gin.png"
+    },
+    {
+      "path": "assets/bar/tex/bottle_whiskey.png",
+      "url": "assets/bar/tex/bottle_whiskey.png"
+    },
+    {
+      "path": "assets/bar/tex/bottle_wine.png",
+      "url": "assets/bar/tex/bottle_wine.png"
+    },
+    {
+      "path": "assets/bar/tex/haru.png",
+      "url": "assets/bar/tex/haru.png"
+    },
+    {
+      "path": "assets/bar/tex/kai.png",
+      "url": "assets/bar/tex/kai.png"
+    },
+    {
+      "path": "assets/bar/tex/logo.png",
+      "url": "assets/bar/tex/logo.png"
+    },
+    {
+      "path": "assets/bar/tex/mio.png",
+      "url": "assets/bar/tex/mio.png"
+    },
+    {
+      "path": "assets/bar/tex/ren.png",
+      "url": "assets/bar/tex/ren.png"
+    },
+    {
+      "path": "assets/bar/tex/sora.png",
+      "url": "assets/bar/tex/sora.png"
+    },
+    {
+      "path": "assets/bar/tex/wall.png",
+      "url": "assets/bar/tex/wall.png"
+    },
+    {
+      "path": "assets/bar/tex/wood.png",
+      "url": "assets/bar/tex/wood.png"
+    },
+    {
+      "path": "assets/bar/tex/yuki.png",
+      "url": "assets/bar/tex/yuki.png"
+    }
+  ]
+}
