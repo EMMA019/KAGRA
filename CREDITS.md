@@ -12,10 +12,12 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 | [PixelMplus10-Regular](http://itouhiro.hatenablog.com/entry/20130602/font) | itouhiro; M+ FONTS PROJECT | custom | required | `kagra-shared/assets/PixelMplus10-Regular.ttf` |
 | [KayKit Adventurers Character Pack 1.0](https://kaylousberg.itch.io/kaykit-adventurers) | Kay Lousberg (www.kaylousberg.com) | CC0-1.0 | not required | `assets/library/kaykit/adventurers/**` |
 | [KayKit City Builder Bits 1.0](https://kaylousberg.itch.io/city-builder-bits) | Kay Lousberg (www.kaylousberg.com) | CC0-1.0 | not required | `assets/library/kaykit/city-builder-bits/**` |
+| [Kenney Blaster Kit (hero blaster)](https://kenney.nl/assets/blaster-kit) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/blaster-kit/*.glb` |
 | [Kenney Cube Pets](https://kenney.nl/assets/cube-pets) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/cube-pets/**` |
 | [Kenney Graveyard Kit (ghost, zombie, graveyard props)](https://kenney.nl/assets/graveyard-kit) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/graveyard-kit/*.glb` |
 | [Kenney Interface Sounds (confirmation_001)](https://kenney.nl/assets/interface-sounds) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/audio/kenney-interface-sounds/*.wav` |
 | [Kenney props (ball, bat, block, coin, diamond, flag, grass, heart, plaza, tree)](https://kenney.nl/assets) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/ball.glb`, `assets/models/bat.glb` … |
+| [Kenney Mini Arena (boundary wall, columns)](https://kenney.nl/assets/mini-arena) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/mini-arena/*.glb` |
 | [Kenney Mini Characters (5 hero skins)](https://kenney.nl/assets/mini-characters) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/mini-characters/*.glb` |
 | [Kenney Castle Kit 2.0 (old/examples open_world)](https://kenney.nl/assets/castle-kit) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `old/examples/assets/open_world/kenney/castle/**` |
 | [Kenney Dungeon Kit (old/examples open_world)](https://kenney.nl/assets) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `old/examples/assets/open_world/kenney/dungeon/**` |
@@ -44,6 +46,7 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 | [Neon Cat placeholder sounds](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/audio/neon_cat/*.wav` |
 | [Neon Cat concrete wall texture](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/textures/neon_cat/*.png` |
 | [KAGRA placeholder models (scenery stand-ins and the Neon Cat gate arch)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/models/placeholder/*.glb`, `assets/models/neon_cat/gate_arch.glb` |
+| [Moonlit Swarm textures (original)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/textures/survivor_arena/*.png` |
 
 ## Required attribution
 

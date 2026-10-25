@@ -256,12 +256,12 @@ pub struct CameraSpec {
 impl Default for CameraSpec {
     fn default() -> Self {
         Self {
-            height: 20.0,
+            height: 16.0,
             back: 11.0,
-            view_width_m: 12.0,
+            view_width_m: 9.6,
             fov_min: 36.0,
             fov_max: 66.0,
-            hero_up_m: 1.8,
+            hero_up_m: 1.4,
         }
     }
 }
@@ -846,6 +846,9 @@ struct Gem {
 #[derive(Clone, Copy, Debug, Default)]
 struct Slots {
     hero: usize,
+    /// The blaster in the hero's hands (`glb_gun`: the model is there).
+    gun: usize,
+    glb_gun: bool,
     shadow: usize,
     foe0: usize,
     /// Zombie pool start and size (size 0: no zombie model, every foe is a ghost).
@@ -889,6 +892,8 @@ pub struct SurvivorArena {
     vx: f32,
     vz: f32,
     face: f32,
+    /// Seconds the hero keeps facing its last target after a shot.
+    aim_hold: f32,
     hp: f32,
     hurt_cd: f32,
     hurt_flash: f32,
@@ -971,6 +976,7 @@ impl SurvivorArena {
             vx: 0.0,
             vz: 0.0,
             face: 0.0,
+            aim_hold: 0.0,
             hp: spec.hero.max_hp,
             hurt_cd: 0.0,
             hurt_flash: 0.0,
@@ -1314,7 +1320,8 @@ impl SurvivorArena {
         let lim = self.spec.arena.half - self.spec.hero.radius;
         self.hx = self.hx.clamp(-lim, lim);
         self.hz = self.hz.clamp(-lim, lim);
-        if self.vx.hypot(self.vz) > 0.4 {
+        self.aim_hold = (self.aim_hold - dt).max(0.0);
+        if self.aim_hold <= 0.0 && self.vx.hypot(self.vz) > 0.4 {
             self.face = self.vx.atan2(self.vz);
         }
     }
@@ -1460,6 +1467,11 @@ impl SurvivorArena {
             self.weapon_cd[wi] = (st.cooldown * self.mods.cooldown).max(0.08);
             let (dx, dz) = (self.foes.x[j] - self.hx, self.foes.z[j] - self.hz);
             let base = dx.atan2(dz);
+            // Turn to the target first: the blaster points where the shot goes, and the
+            // shot leaves from the muzzle (nearer if the foe is already in the way).
+            self.face = base;
+            self.aim_hold = AIM_HOLD;
+            let reach = MUZZLE.min(dx.hypot(dz) * 0.6);
             let n = st.count;
             for k in 0..n {
                 if self.shots.len() >= self.spec.caps.shots as usize {
@@ -1467,8 +1479,8 @@ impl SurvivorArena {
                 }
                 let a = base + (k as f32 - (n - 1) as f32 * 0.5) * st.spread;
                 self.shots.push(Shot {
-                    x: self.hx,
-                    z: self.hz,
+                    x: self.hx + a.sin() * reach,
+                    z: self.hz + a.cos() * reach,
                     vx: a.sin() * st.speed,
                     vz: a.cos() * st.speed,
                     life: st.range / st.speed,
@@ -1963,18 +1975,36 @@ const HERO_GLBS: [(&str, &str); 5] = [
 const GHOST_GLB: &str = "assets/models/kenney/graveyard-kit/character-ghost.glb";
 const ZOMBIE_GLB: &str = "assets/models/kenney/graveyard-kit/character-zombie.glb";
 /// Kenney Platformer Kit jewel (CC0): the XP gem.
+/// Kenney Blaster Kit (CC0): the hero's blaster. The model's muzzle is at -Z.
+const BLASTER_GLB: &str = "assets/models/kenney/blaster-kit/blaster-a.glb";
+/// Where the blaster sits in front of the hero (metres along the aim, and up) and how
+/// big it is drawn. The muzzle is `GUN_FWD + 0.37 * GUN_SCALE` ahead of the hero.
+const GUN_FWD: f32 = 0.86;
+const GUN_UP: f32 = 0.9;
+const GUN_SCALE: f32 = 1.3;
+const MUZZLE: f32 = GUN_FWD + 0.37 * GUN_SCALE;
+/// How long the hero keeps facing the target after a shot.
+const AIM_HOLD: f32 = 0.5;
 const GEM_GLB: &str = "assets/models/kenney/platformer-kit/jewel.glb";
-/// Arena dressing from the Graveyard Kit: (file, scale, how many).
-const DECOR: [(&str, f32, u32); 8] = [
-    ("gravestone-round", 1.5, 5),
-    ("gravestone-cross", 1.5, 4),
+/// Arena dressing from the Graveyard Kit inside the walls: (file, scale, how many).
+const DECOR: [(&str, f32, u32); 6] = [
+    ("gravestone-round", 1.5, 4),
+    ("gravestone-cross", 1.5, 3),
     ("gravestone-broken", 1.5, 3),
-    ("pine", 1.3, 4),
-    ("pine-crooked", 1.3, 3),
     ("pumpkin-carved", 1.4, 3),
-    ("lantern-candle", 1.6, 2),
-    ("rocks", 1.5, 3),
+    ("lantern-candle", 1.6, 3),
+    ("cross-wood", 1.4, 2),
 ];
+/// Pines ringed outside the wall, so the arena has a dark treeline round it.
+const TREES: [(&str, u32); 2] = [("pine", 12), ("pine-crooked", 8)];
+/// Kenney Mini Arena (CC0): the stone boundary wall (1 m long, x) and the corner column.
+const WALL_GLB: &str = "assets/models/kenney/mini-arena/wall.glb";
+const COLUMN_GLB: &str = "assets/models/kenney/mini-arena/column.glb";
+/// The hand-drawn paver texture (original, CC0) and how many metres one tile covers.
+/// The Mini Arena stone is sandy; a cool tint puts it under the moon.
+const STONE_TINT: [u32; 3] = [135, 150, 205];
+const FLOOR_TEX: &str = "assets/textures/survivor_arena/floor.png";
+const FLOOR_TILE_M: f32 = 12.0;
 const GRAVEYARD: &str = "assets/models/kenney/graveyard-kit/";
 /// Every Kenney character is about 0.8 tall; this puts a foe of radius r at ~2.2 r tall x 1.4.
 const FOE_MODEL_K: f32 = 5.2;
@@ -2006,19 +2036,19 @@ impl SurvivorArena {
             half: half + 4.0,
             ground: Some(false),
             contact_blobs: Some(false),
-            sky: Some([26, 22, 52, 255]),
-            hemi_sky: Some([0.26, 0.28, 0.44]),
-            hemi_ground: Some([0.14, 0.14, 0.22]),
+            sky: Some([12, 18, 40, 255]),
+            hemi_sky: Some([0.30, 0.38, 0.62]),
+            hemi_ground: Some([0.20, 0.20, 0.30]),
             env_map: Some("preset:studio".into()),
             shadow_softness: Some(1.0),
-            bloom: Some(0.3),
-            bloom_threshold: Some(1.1),
-            vignette: Some(0.3),
-            lut: Some("warm".into()),
-            lut_strength: Some(0.2),
+            bloom: Some(0.42),
+            bloom_threshold: Some(0.95),
+            vignette: Some(0.35),
+            lut: Some("punch".into()),
+            lut_strength: Some(0.3),
             fxaa: Some(true),
-            exposure: Some(0.8),
-            ibl: Some(0.2),
+            exposure: Some(1.0),
+            ibl: Some(0.3),
             tonemap: Some(true),
             cull: Some(true),
             prop_lod: Some(80.0),
@@ -2031,18 +2061,22 @@ impl SurvivorArena {
         let hero_path = hero_glb(&self.spec.hero.skin);
         let mut wanted: Vec<String> = vec![
             hero_path.to_string(),
+            BLASTER_GLB.to_string(),
             GHOST_GLB.to_string(),
             ZOMBIE_GLB.to_string(),
             GEM_GLB.to_string(),
         ];
+        wanted.push(WALL_GLB.to_string());
+        wanted.push(COLUMN_GLB.to_string());
         wanted.extend(DECOR.iter().map(|(n, _, _)| decor_path(n)));
+        wanted.extend(TREES.iter().map(|(n, _)| decor_path(n)));
         let models: Vec<String> = wanted.into_iter().filter(|m| glb_ready(m)).collect();
         for (i, m) in models.iter().enumerate() {
             doc.props.push(glb_prop(
                 &format!("anchor-{i}"),
                 m,
                 "anchor",
-                [0.0, -60.0, -60.0],
+                [0.0, -60.0, 60.0],
                 [1e-4; 3],
                 [0, 0, 0],
                 0.0,
@@ -2051,50 +2085,27 @@ impl SurvivorArena {
         }
         let has = |p: &str| models.iter().any(|m| m == p);
         let glb_hero = has(hero_path);
+        self.slots.glb_gun = glb_hero && has(BLASTER_GLB);
         let glb_foe = has(GHOST_GLB);
         let glb_zombie = glb_foe && has(ZOMBIE_GLB);
         self.slots.glb_gem = has(GEM_GLB);
         let a = &self.spec.arena;
         let side = half * 2.0;
-        doc.props.push(prop(
+        let mut floor = prop(
             "floor",
             "box",
             "floor",
             [0.0, -0.12, 0.0],
             [side + 8.0, 0.24, side + 8.0],
-            a.floor,
+            [255, 255, 255],
             0.0,
             0.9,
             0.0,
-        ));
-        let line = a.floor.map(|v| (v + 26).min(255));
-        let mut k = -3;
-        while (k as f32 * 4.0).abs() < half {
-            let o = k as f32 * 4.0;
-            doc.props.push(prop(
-                &format!("line-x{k}"),
-                "box",
-                "line",
-                [o, 0.0, 0.0],
-                [0.08, 0.02, side],
-                line,
-                0.0,
-                0.9,
-                0.0,
-            ));
-            doc.props.push(prop(
-                &format!("line-z{k}"),
-                "box",
-                "line",
-                [0.0, 0.0, o],
-                [side, 0.02, 0.08],
-                line,
-                0.0,
-                0.9,
-                0.0,
-            ));
-            k += 1;
-        }
+        );
+        floor.texture = Some(FLOOR_TEX.into());
+        let reps = (side + 8.0) / FLOOR_TILE_M;
+        floor.uv_scale = Some([reps, reps]);
+        doc.props.push(floor);
         // Graveyard dressing: a fixed scatter in the outer ring so the floor shows
         // the hero moving and the middle stays clear. Primitive pebbles when the
         // models are missing.
@@ -2138,26 +2149,106 @@ impl SurvivorArena {
                 n_decor += 1;
             }
         }
-        for (i, (pos, sc)) in [
-            ([0.0, 0.4, -half - 0.25], [side + 1.0, 0.8, 0.5]),
-            ([0.0, 0.4, half + 0.25], [side + 1.0, 0.8, 0.5]),
-            ([-half - 0.25, 0.4, 0.0], [0.5, 0.8, side + 1.0]),
-            ([half + 0.25, 0.4, 0.0], [0.5, 0.8, side + 1.0]),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            doc.props.push(prop(
-                &format!("wall-{i}"),
-                "box",
-                "wall",
-                pos,
-                sc,
-                a.wall,
-                0.45,
-                0.6,
-                0.0,
-            ));
+        // The boundary: 2 m stone wall pieces just outside the playable square, a column
+        // on each corner. Plain boxes when the models are missing.
+        let (wall_ok, col_ok) = (has(WALL_GLB), has(COLUMN_GLB));
+        let pieces = (side / 2.0).ceil() as i32 + 1;
+        let off = half + 0.45;
+        let mut n_wall = 0;
+        for side_i in 0..4 {
+            for k in 0..pieces {
+                let along = -half - 0.9 + k as f32 * 2.0;
+                let (x, z, yaw) = match side_i {
+                    0 => (along, -off, 0.0),
+                    1 => (along, off, std::f32::consts::PI),
+                    2 => (-off, along, std::f32::consts::FRAC_PI_2),
+                    _ => (off, along, -std::f32::consts::FRAC_PI_2),
+                };
+                if wall_ok {
+                    let mut p = glb_prop(
+                        &format!("wall-{n_wall}"),
+                        WALL_GLB,
+                        "wall",
+                        [x, 0.0, z],
+                        [2.0, 1.1, 1.5],
+                        STONE_TINT,
+                        0.0,
+                        None,
+                    );
+                    p.yaw = yaw;
+                    doc.props.push(p);
+                } else if k == 0 {
+                    let (pos, sc) = if side_i < 2 {
+                        (
+                            [0.0, 0.4, off * if side_i == 0 { -1.0 } else { 1.0 }],
+                            [side + 1.0, 0.8, 0.5],
+                        )
+                    } else {
+                        (
+                            [off * if side_i == 2 { -1.0 } else { 1.0 }, 0.4, 0.0],
+                            [0.5, 0.8, side + 1.0],
+                        )
+                    };
+                    doc.props.push(prop(
+                        &format!("wall-{n_wall}"),
+                        "box",
+                        "wall",
+                        pos,
+                        sc,
+                        a.wall,
+                        0.45,
+                        0.6,
+                        0.0,
+                    ));
+                }
+                n_wall += 1;
+            }
+        }
+        if col_ok {
+            for (i, (sx, sz)) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)]
+                .into_iter()
+                .enumerate()
+            {
+                doc.props.push(glb_prop(
+                    &format!("column-{i}"),
+                    COLUMN_GLB,
+                    "wall",
+                    [sx * (half + 0.6), 0.0, sz * (half + 0.6)],
+                    [2.4, 2.4, 2.4],
+                    STONE_TINT,
+                    0.0,
+                    None,
+                ));
+            }
+        }
+        // Pines ringed outside the wall.
+        let mut n_tree = 0;
+        for (name, count) in TREES {
+            let path = decor_path(name);
+            for _ in 0..count {
+                if !has(&path) {
+                    continue;
+                }
+                let a_ = r.range(0.0, std::f32::consts::TAU);
+                let ring = half + r.range(2.6, 4.2);
+                let (c, s_) = (a_.cos(), a_.sin());
+                // Push the angle out to the square ring so trees hug the walls.
+                let m = c.abs().max(s_.abs());
+                let sc = r.range(1.5, 2.3);
+                let mut p = glb_prop(
+                    &format!("tree-{n_tree}"),
+                    &path,
+                    "decor",
+                    [c / m * ring, 0.0, s_ / m * ring],
+                    [sc; 3],
+                    [110, 150, 135],
+                    0.0,
+                    None,
+                );
+                p.yaw = r.range(0.0, std::f32::consts::TAU);
+                doc.props.push(p);
+                n_tree += 1;
+            }
         }
         self.slots.shadow = doc.props.len();
         doc.props.push(prop(
@@ -2194,6 +2285,19 @@ impl SurvivorArena {
                 0.35,
                 0.5,
                 0.0,
+            ));
+        }
+        self.slots.gun = doc.props.len();
+        if self.slots.glb_gun {
+            doc.props.push(glb_prop(
+                "hero-gun",
+                BLASTER_GLB,
+                "gun",
+                [0.0, -50.0, 0.0],
+                [GUN_SCALE; 3],
+                [255, 255, 255],
+                0.1,
+                Some(lin(HERO_GLOW)),
             ));
         }
         self.slots.glb_foe = glb_foe;
@@ -2295,9 +2399,20 @@ impl SurvivorArena {
             "key",
             [0.0, 9.0, 3.0],
             [0.0; 3],
-            [1.0, 0.92, 0.8],
-            0.8,
+            [0.78, 0.86, 1.0],
+            1.1,
             34.0,
+            false,
+        ));
+        // A warm lantern that follows the hero: it lifts the hero off the cold floor.
+        doc.lights.push(light(
+            1,
+            "lantern",
+            [0.0, 2.4, 0.0],
+            [0.0; 3],
+            [1.0, 0.78, 0.5],
+            1.3,
+            7.0,
             false,
         ));
         self.doc = doc;
@@ -2356,6 +2471,13 @@ impl SurvivorArena {
                 p.position = [hx, 0.4 + bob, hz];
                 p.color = Some(if blink { [255, 60, 60] } else { HERO_GLOW });
             }
+        }
+        if slots.glb_gun {
+            let (sn, cs) = face.sin_cos();
+            let p = &mut props[slots.gun];
+            p.position = [hx + sn * GUN_FWD, bob + GUN_UP, hz + cs * GUN_FWD];
+            p.yaw = face + std::f32::consts::PI;
+            p.emissive = Some(hero_em * 0.5);
         }
         let n = self.foes.len();
         let (mut ng, mut nz) = (0usize, 0usize);
@@ -2449,6 +2571,7 @@ impl SurvivorArena {
         cam.fov = fov;
         let l = &mut self.doc.lights[0];
         l.position = [hx, 9.0, hz + 3.0];
+        self.doc.lights[1].position = [hx, 2.4, hz + 0.8];
     }
 
     // ---- state for the page
@@ -3108,6 +3231,36 @@ mod tests {
         assert_eq!(g.level(), 1);
         assert!((g.hp() - g.hp_max()).abs() < 1e-3);
         assert_eq!(g.weapon_level(&g.spec.hero.start_weapon), 1);
+    }
+
+    #[test]
+    fn the_blaster_points_where_the_shot_goes() {
+        let mut g = started();
+        g.foes.spawn(0, g.hx + 3.0, g.hz - 4.0, 999.0);
+        for _ in 0..120 {
+            g.tick(DT);
+            if !g.shots.is_empty() {
+                break;
+            }
+        }
+        let s = g.shots[0];
+        let aim = s.vx.atan2(s.vz);
+        let turn = (g.face - aim + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
+            - std::f32::consts::PI;
+        assert!(
+            turn.abs() < 0.05,
+            "the hero faces {} but the shot flies {aim}",
+            g.face
+        );
+        // It leaves from the muzzle (one or two sim steps of flight allowed), along the aim.
+        let (dx, dz) = (s.x - g.hx, s.z - g.hz);
+        let d = dx.hypot(dz);
+        assert!(d > 0.6 && d < MUZZLE + 0.5, "spawned {d} m from the hero");
+        assert!((dx.atan2(dz) - aim).abs() < 0.05);
+        // It keeps facing the target while it holds the aim, even if the thumb drags the other way.
+        g.key_dir = (-1.0, 0.0);
+        g.tick(DT);
+        assert!((g.face - aim).abs() < 0.05);
     }
 
     #[test]

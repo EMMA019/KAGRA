@@ -996,7 +996,7 @@
    "attribution_required": false,
    "attribution_text": null,
    "redistributable_in_public_repo": true,
-   "notes": "Rest-pose copies made by tools/gen_assets/pack_glb.py (animations/skins dropped, colormap embedded); only the five used characters are in the repo.",
+   "notes": "Posed copies made by tools/gen_assets/pack_glb.py: the 'holding-both-shoot' clip frame at 0.1 s is baked into the vertices (arms forward) and animations/skins dropped, colormap embedded; only the five used characters are in the repo.",
    "verified": "checked",
    "id": "kenney-mini-characters",
    "name": "Kenney Mini Characters (5 hero skins)",
@@ -1141,6 +1141,99 @@
     "assets/audio/oga-flowerbed-fields/*.mp3"
    ],
    "verified_how": "OpenGameArt page 'License(s): CC0' (snapshot text saved as LICENSE.txt), read 2026-10-25. OGA licences are the uploader's declaration."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/models/kenney/blaster-kit/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Rest-pose copy made by tools/gen_assets/pack_glb.py; only the files used by Moonlit Swarm are in the repo.",
+   "verified": "checked",
+   "id": "kenney-blaster-kit",
+   "name": "Kenney Blaster Kit (hero blaster)",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets/blaster-kit",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-25",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/kenney/blaster-kit/*.glb"
+   ],
+   "verified_how": "License.txt from the official zip says CC0 (copied in-repo as LICENSE.txt); kenney.nl pack page says Creative Commons CC0, page read 2026-10-25."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/models/kenney/mini-arena/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Rest-pose copies made by tools/gen_assets/pack_glb.py; only the files used by Moonlit Swarm are in the repo.",
+   "verified": "checked",
+   "id": "kenney-mini-arena",
+   "name": "Kenney Mini Arena (boundary wall, columns)",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets/mini-arena",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-25",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/kenney/mini-arena/*.glb"
+   ],
+   "verified_how": "License.txt from the official zip says CC0 (copied in-repo as LICENSE.txt); kenney.nl pack page says Creative Commons CC0, page read 2026-10-25."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/textures/survivor_arena/CREDITS.md"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Drawn by tools/gen_assets/sv_floor.py for this project; CC0.",
+   "verified": "checked",
+   "id": "project-survivor-textures",
+   "name": "Moonlit Swarm textures (original)",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-10-25",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/textures/survivor_arena/*.png"
+   ],
+   "verified_how": "Made by the project (tools/gen_assets/sv_floor.py); no third-party material."
   }
  ]
 }
