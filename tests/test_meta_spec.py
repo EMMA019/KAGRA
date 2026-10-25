@@ -233,3 +233,13 @@ def test_portal_package_ships_meta_js_and_no_urls(tmp_path):
     with zipfile.ZipFile(next(out.glob("*.zip"))) as zf:
         assert "meta.js" in zf.namelist()
     assert "http" not in (ROOT / "scripts/preview_site/meta.js").read_text(encoding="utf-8")
+
+
+def test_the_page_carries_the_four_hooks_and_the_daily_best():
+    html = (ROOT / "scripts/preview_site/play.html").read_text(encoding="utf-8")
+    for n in (1, 2, 3, 4):
+        assert f"META hook {n}/4" in html
+    assert '<script src="./meta.js"></script>' in html          # stamped with ?v= by the build, like the others
+    assert "bestScope" in html and "metaLayer.phase(phase, sim)" in html
+    assert "searchParams.delete(\"daily\")" in html              # the mode lives in the save, not the address
+    assert "kagra.meta" not in html                              # the page never touches the save itself

@@ -22,9 +22,10 @@ choice as `platform.ads`; see `docs/publishing/web_portals.md`.)
 
 1. Add a `meta` block to `games/<game>.json` (schema below).
 2. List in `meta.patchable` the spec paths a skin or modifier may touch. Anything else is
-   ignored whole. HOP-BEAT: `look`, `course.ramp_bars`, `course.rest_every_bars`. It does **not**
-   list `music`, `audio`, `judge` or `lives`, so no unlock can change timing, difficulty
-   fairness or sound. (BPM is deliberately not patchable: the music file is fixed at 126 BPM.)
+   ignored whole. HOP-BEAT: `skin`, `look`, `course.ramp_bars`, `course.rest_every_bars`,
+   `enemies.stomp_score`. It does **not** list `music`, `audio`, `judge`, `lives`, `revive`, the enemy
+   `types` or the enemy spacing (`rest_beats`, `bounce_beats`), so no unlock or daily twist can change
+   timing, fairness or sound. (BPM is deliberately not patchable: the music file is fixed at 126 BPM.)
 3. The page needs three things from the kit, all already true for HOP-BEAT:
    the world's `game` object is the spec (`world.game.*`); a finished run arrives as
    `sim.result.run` with numeric fields (`score`, `combo`, `perfect`, …); and `sim.revives`
@@ -127,7 +128,7 @@ The normalized block (defaults filled in, plus `version: 1`) is what ends up in 
 
 The module injects its own DOM and CSS; it needs only `#overlay .card` (falls back to `#overlay`).
 
-* **Bar** (on the title card and the result card, hidden while playing): coin badge · **Shop** · daily
+* **Bar** (under the Start / Retry button of the title card and the game-over card, hidden while playing and on pause): coin badge · **Shop** · daily
   toggle ("Play today's daily" / "Back to free play"). In daily mode a line: date · streak · today's best
   (or all-time daily best) and "Today's twist: Sprint". On the result card: "+N coins · Streak bonus +M",
   **Double coins (watch an ad)** (only if offered), **Share result**.
@@ -142,15 +143,33 @@ The module injects its own DOM and CSS; it needs only `#overlay .card` (falls ba
   Free play: `HOP-BEAT score 1234 combo 40`. The URL is the page's own (origin + path, plus `?game=` when set);
   a `?daily=1` link opens straight into daily mode, `?daily=0` into free play.
 
+## HOP-BEAT catalogue (real ids)
+
+Heroes patch `skin` (`SKINS` in `hop_beat.rs`): `hero.classic` (free default), `hero.mint` 100, `hero.ember` 200 (play 5 runs),
+`hero.ghost` 300 (combo 16), `hero.gold` 600 (3-day streak). Looks patch `look.preset` (`LOOK_PRESETS`) and optionally the
+palette (`look.accent/glow/slab`): `look.neon_night` (free default), `look.dusk` 150, `look.forest` 150 (play 3 runs, neon_night
+atmosphere with a green palette), `look.mono` 300 (score 1500, the flat `plain` picture with a grey palette). Daily twists:
+`sprint`, `no_breaks`, `midnight` (dark palette), `stomp_party` (`enemies.stomp_score` 150 → 300). Run coins:
+`3 + 0.01·score + 0.5·combo + 0.25·perfect + 2·stomps` (cap 300). The Rust test `meta_manifest.rs` checks that every item names a
+real skin / preset and that every item and twist is a valid spec for a year of days.
+
 ## Page hooks (`scripts/preview_site/play.html`)
 
 Four small, labelled blocks (`META hook n/4`). They are the only edits to existing files besides the manifest:
 
 1. `<script src="./meta.js">` after `portal.js`.
 2. After `portalHost.init()`: `metaLayer = KagraMeta.create({config: bundle.meta, gameId, title, url, host: portalHost, mockAds, mode})`.
-   With no `bundle.meta` it is inert (`enabled:false`) and the page behaves as before.
+   With no `bundle.meta` it is inert (`enabled:false`) and the page behaves as before. Right after it the page (a) removes
+   `?daily=` from the address (the mode is already saved, so the Daily toggle survives a reload) and (b) scopes the device
+   best to `<slug>.daily` when the daily is on (`bestScope`), so a daily score never replaces the free-play best and the NEW BEST
+   banner compares like with like.
 3. End of the payload builder: `if (metaLayer && metaLayer.enabled) return JSON.stringify(metaLayer.prepare(world));`.
 4. End of `showPhase(next)`: `if (metaLayer) metaLayer.phase(phase, sim);`.
+
+`meta.js` is a classic script next to `i18n.js` / `portal.js`: the build stamps it with `?v=<build>` by the same rule
+(`_SCRIPT_SRC` in `build_browser_preview.py`), and a page reload for a new build keeps the saved mode and wallet.
+Reloads: an equip / mode change calls `location.reload()` (the URL keeps `?game=`; the cache-busting `_b=` is harmless).
+A fall counts as a finished run: the game-over card comes after the fall, and that phase change pays the coins.
 
 If the page later wants to apply an equip without a page reload, pass `reload` to `create` (a function that
 rebuilds the payload and calls `session.loadGame`); nothing else changes.
@@ -176,5 +195,5 @@ Rust test in `kagra-shared/tests/meta_manifest.rs` is the template: apply every 
 
 * Music unlocks need a second track in the kit (the `music` slot is accepted by the schema and the shop but HOP-BEAT
   ships one track). BPM stays fixed per track.
-* Enemy-mix modifier: needs the enemy spec from the HOP-BEAT polish branch; add its paths to `patchable`.
-* A stat for stomps works as soon as `result.run` carries it (add `"stomps": 2` to `earn.per`).
+* Enemy-mix modifiers (a different roster or tighter spacing) are not offered: `enemies.types` is an array (a patch would
+  replace it whole) and the spacing numbers feed the fairness check. Only `enemies.stomp_score` is patchable.

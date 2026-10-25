@@ -75,7 +75,10 @@ fn skins_change_the_look_and_never_the_rules() {
             "{}: a skin must not change the course",
             item["id"]
         );
-        for key in ["audio", "judge", "music", "lives", "play", "revive"] {
+        for key in [
+            "audio", "judge", "music", "lives", "play", "revive", "enemies", "fall", "hero",
+            "course",
+        ] {
             assert_eq!(patched[key], game[key], "{}: {key}", item["id"]);
         }
     }
@@ -125,4 +128,62 @@ fn a_patch_outside_the_allow_list_changes_nothing() {
     let (_, allow, game) = setup();
     let evil = serde_json::json!({"audio": {"master": 0}, "lives": {"count": 9}});
     assert_eq!(apply_patch(&game, &evil, &allow), game);
+}
+
+#[test]
+fn only_cosmetics_scoring_and_pacing_are_patchable() {
+    let (meta, allow, game) = setup();
+    // Timing, sound, fairness and the enemy roster are never opened up (BPM stays fixed).
+    for a in &allow {
+        let top = a.split('.').next().unwrap();
+        assert!(
+            ["skin", "look", "course", "enemies"].contains(&top),
+            "{a} must not be patchable"
+        );
+        assert!(
+            !a.starts_with("music") && !a.contains("bpm") && !a.contains("types"),
+            "{a}"
+        );
+    }
+    // The enemy twist moves one number and leaves the roster and spacing alone.
+    let party = meta["modifiers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["id"] == "stomp_party")
+        .expect("stomp_party");
+    let patched = apply_patch(&game, &party["patch"], &allow);
+    assert_eq!(patched["enemies"]["types"], game["enemies"]["types"]);
+    assert_eq!(
+        patched["enemies"]["rest_beats"],
+        game["enemies"]["rest_beats"]
+    );
+    assert_eq!(
+        patched["enemies"]["bounce_beats"],
+        game["enemies"]["bounce_beats"]
+    );
+    assert!(patched["enemies"]["stomp_score"].as_u64() > game["enemies"]["stomp_score"].as_u64());
+    assert_eq!(layout(&patched), layout(&game));
+}
+
+#[test]
+fn every_hero_and_look_item_names_a_real_runtime_id() {
+    use kagra_shared::hop_beat::{LOOK_PRESETS, SKINS};
+    let (meta, _, _) = setup();
+    for item in meta["catalog"].as_array().unwrap() {
+        let patch = &item["patch"];
+        match item["slot"].as_str().unwrap() {
+            "hero" => {
+                let id = patch["skin"].as_str().expect("a hero item sets `skin`");
+                assert!(SKINS.iter().any(|(n, _)| *n == id), "{id}");
+            }
+            "look" => {
+                let id = patch["look"]["preset"]
+                    .as_str()
+                    .expect("a look item sets `look.preset`");
+                assert!(LOOK_PRESETS.contains(&id), "{id}");
+            }
+            _ => {}
+        }
+    }
 }

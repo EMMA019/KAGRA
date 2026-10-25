@@ -67,17 +67,17 @@ def test_shop_rules_buy_equip_and_prepare(r, cfg):
     free = {c["id"] for c in cfg["catalog"] if c["price"] == 0 and not c["requires"]}
     assert {k for k, v in s["initial"].items() if v == "equipped"} == free
     assert s["initial"]["hero.mint"] == "poor"       # no requirement, no money
-    assert s["initial"]["hero.berry"] == "locked"    # needs runs
+    assert s["initial"]["hero.ember"] == "locked"    # needs runs
     assert s["poor"] == {"ok": False, "reason": "poor"} and s["locked"] == {"ok": False, "reason": "locked"}
     assert s["runs"] == 12 and s["coins"] == 12 * coins(cfg, 1000, 20, 10)
-    assert s["after_runs"]["hero.berry"] == "buyable"   # 12 runs >= 5
-    assert s["after_runs"]["hero.ice"] == "buyable"     # best combo 20 >= 16
+    assert s["after_runs"]["hero.ember"] == "buyable"   # 12 runs >= 5
+    assert s["after_runs"]["hero.ghost"] == "buyable"     # best combo 20 >= 16
     assert s["after_runs"]["hero.gold"] == "locked"     # needs a 3-day streak
     assert s["after_runs"]["look.mono"] == "locked"     # needs a score of 1500
     assert s["buy"] == {"ok": True} and s["spent"] == 100
     assert s["buy_again"]["reason"] == "owned" and s["equip_unowned"]["reason"] == "not_owned"
-    assert s["hero"] == [120, 255, 190] and s["slab_untouched"] == [58, 52, 92]
-    assert s["seed_free"] == 7 and s["world_not_mutated"] == [255, 214, 120]
+    assert s["hero"] == "mint" and s["slab_untouched"] == [58, 52, 92]
+    assert s["seed_free"] == 7 and s["world_not_mutated"] == "classic"
 
 
 def test_daily_seed_streak_best_and_the_day_rollover(r, cfg):
@@ -144,10 +144,10 @@ def test_bad_saves_keep_what_is_good_and_drop_what_is_not(r, cfg):
     one_run = coins(cfg, 100, 3, 1)
     assert c["garbage"]["coins"] == one_run and c["garbage"]["bad_kept"] is True   # a copy is kept for support
     assert c["empty"]["bad_kept"] is False
-    assert c["unknown_ids"]["owned"] == ["hero.mint", "hero.sun", "look.neon"]     # unknown and non-true ids dropped
-    assert c["unknown_ids"]["equipped"]["hero"] == "hero.sun"                      # equipping an unowned item is undone
+    assert c["unknown_ids"]["owned"] == ["hero.classic", "hero.mint", "look.neon_night"]     # unknown and non-true ids dropped
+    assert c["unknown_ids"]["equipped"]["hero"] == "hero.classic"                      # equipping an unowned item is undone
     assert c["owned_list_v0"]["coins"] == 40 + one_run and c["owned_list_v0"]["equipped"]["hero"] == "hero.mint"
-    assert set(c["owned_list_v0"]["owned"]) >= {"hero.mint", "look.sunset"}        # the old list shape is migrated
+    assert set(c["owned_list_v0"]["owned"]) >= {"hero.mint", "look.dusk"}        # the old list shape is migrated
     assert c["future"]["coins"] == 12 + one_run and c["future"]["v"] == 1          # a newer save is read, not rejected
     assert c["negative"]["coins"] == one_run                                       # negatives clamp to zero
     assert c["nan_like"]["runs"] == 8                                              # "7" read as 7, then this run
@@ -157,4 +157,4 @@ def test_bad_saves_keep_what_is_good_and_drop_what_is_not(r, cfg):
 
 
 def test_a_patch_outside_the_kits_allowlist_is_ignored_at_runtime_too(r):
-    assert r["guard"] == {"audio": 1, "hero": [255, 214, 120]}
+    assert r["guard"] == {"audio": 1, "hero": "classic"}

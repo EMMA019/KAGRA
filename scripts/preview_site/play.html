@@ -627,7 +627,8 @@
       }
       el.appendChild(ul);
     };
-    const bestKey = (slug) => `kagra.best.v1.${slug}`;
+    let bestScope = ""; // ".daily" when the daily run is on: it keeps its own device best
+    const bestKey = (slug) => `kagra.best.v1.${slug}${bestScope}`;
     const loadBest = (slug) => {
       try { return Math.max(0, Number(localStorage.getItem(bestKey(slug))) || 0); } catch { return 0; }
     };
@@ -727,6 +728,14 @@
         mockAds: dev && params.get("ads") === "mock",
         mode: params.get("daily") === "1" ? "daily" : params.get("daily") === "0" ? "free" : undefined,
       });
+      if (params.has("daily")) {
+        // The mode is saved now; drop the link's switch so Shop / Daily toggles survive a reload.
+        const u = new URL(location.href);
+        u.searchParams.delete("daily");
+        try { history.replaceState(null, "", u.href); } catch {}
+      }
+      // The daily run keeps its own device best, so a daily score never replaces the free-play best.
+      if (metaLayer.enabled && metaLayer.dailyInfo().active) bestScope = ".daily";
       document.title = bundle.title || slug;
       document.getElementById("title").textContent = bundle.title || slug;
       const files = Array.isArray(bundle.files) ? bundle.files : [];

@@ -51,7 +51,7 @@ const memStore = (init) => {
 };
 const world = () => ({
   genre: "hop_beat",
-  game: { id: "hop_beat", look: { hero: [255, 214, 120], slab: [58, 52, 92], glow: [96, 232, 255], accent: [255, 92, 170] },
+  game: { id: "hop_beat", skin: "classic", enemies: { stomp_score: 150 }, look: { hero: [255, 214, 120], slab: [58, 52, 92], glow: [96, 232, 255], accent: [255, 92, 170] },
     course: { seed: 7, ramp_bars: 40, rest_every_bars: 8 }, audio: { master: 1 }, lives: { count: 3 } },
 });
 let clock = D0 * DAY + 5 * 3600 * 1000;
@@ -106,7 +106,7 @@ out.shop = (() => {
   const states = () => Object.fromEntries(m.items().map((i) => [i.id, i.state]));
   seen.initial = states();
   seen.poor = m.buy("hero.mint");
-  seen.locked = m.buy("hero.berry");
+  seen.locked = m.buy("hero.ember");
   seen.prepare_default = M.sanitize({}, cfg).equipped;
   // earn enough: five runs of 1000 score
   for (let i = 0; i < 12; i += 1) run(m, 1000, 20, 10);
@@ -122,10 +122,10 @@ out.shop = (() => {
   const m2 = make(store, { reload: () => { reloads += 1; } });
   seen.equip = m2.equip("hero.mint");
   const w = m2.prepare(world());
-  seen.hero = w.game.look.hero;
+  seen.hero = w.game.skin;
   seen.slab_untouched = w.game.look.slab;
   seen.seed_free = w.game.course.seed;
-  seen.world_not_mutated = world().game.look.hero;
+  seen.world_not_mutated = world().game.skin;
   seen.ice = m2.state().stats.best_combo >= 16 ? states().x : null;
   return seen;
 })();
@@ -240,7 +240,7 @@ out.corrupt = (() => {
     negative: JSON.stringify({ v: 1, coins: -50, lifetime: -1, stats: { runs: -3, best_score: 1e30 } }),
     nan_like: JSON.stringify({ v: 1, coins: null, stats: { runs: "7" } }),
     unknown_ids: JSON.stringify({ v: 1, owned: { "hero.mint": true, "nope": true, "hero.gold": "yes" }, equipped: { hero: "hero.gold", look: "nope" } }),
-    owned_list_v0: JSON.stringify({ coins: 40, owned: ["hero.mint", "look.sunset", 7], equipped: { hero: "hero.mint" } }),
+    owned_list_v0: JSON.stringify({ coins: 40, owned: ["hero.mint", "look.dusk", 7], equipped: { hero: "hero.mint" } }),
     future: JSON.stringify({ v: 9, coins: 12, brand_new_field: { x: 1 }, owned: { "hero.mint": true }, equipped: { hero: "hero.mint" } }),
     proto: '{"__proto__":{"polluted":true},"owned":{"__proto__":true},"v":1}',
     bad_daily: JSON.stringify({ v: 1, daily: { last_day: "yesterday", streak: 5, today: { day: -4, score: "x" } }, mode: "daily" }),
@@ -292,7 +292,7 @@ out.guard = (() => {
   m.buy("hero.mint");
   m.equip("hero.mint");
   const w = m.prepare(world());
-  return { audio: w.game.audio.master, hero: w.game.look.hero };
+  return { audio: w.game.audio.master, hero: w.game.skin };
 })();
 
 console.log(JSON.stringify(out));

@@ -8,7 +8,7 @@
   `games/<name>.json`, validated by `kagra/meta_spec.py`, copied into `bundle.json`) read by the new `scripts/preview_site/meta.js`;
   it edits the spec a game is loaded with and never touches the simulation, so baked fixtures and baselines are unchanged. A kit
   opts in by listing the spec paths a patch may touch (`meta.patchable`). Rules mirrored in Rust (`game_core/meta.rs`), Python and
-  JS from one vector file (`meta_vectors.json`). HOP-BEAT opts in (9 unlocks, 3 daily modifiers, an optional "double coins" rewarded
+  JS from one vector file (`meta_vectors.json`). HOP-BEAT opts in with its real skins and looks (9 unlocks, `stomps` earn coins, daily best kept apart from the free-play best, 4 daily modifiers, an optional "double coins" rewarded
   slot). No server, no leaderboard, no network. See `docs/meta_core.md`.
 
 - Shared foundation, step 1b: the session holds one boxed kit (`kit: Option<Box<dyn KitHost>>`, new `kit_host.rs`) instead of one
