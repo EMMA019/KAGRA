@@ -1695,6 +1695,11 @@ pub struct HopBeat {
     hint: Option<(usize, f32)>,
     /// Page language for the HUD words (false = English).
     lang_ja: bool,
+    /// The run beat the best score of the device (set at game over).
+    new_best: bool,
+    /// The running score passed the best: seconds of the "NEW BEST!" banner left, and whether it fired.
+    best_banner: f32,
+    best_passed: bool,
     just_hop: bool,
     sfx: bool,
     time: f32,
@@ -1838,6 +1843,9 @@ impl HopBeat {
             hints_seen: Vec::new(),
             hint: None,
             lang_ja: false,
+            new_best: false,
+            best_banner: 0.0,
+            best_passed: false,
             just_hop: false,
             sfx: true,
             time: 0.0,
@@ -1930,6 +1938,28 @@ impl HopBeat {
         self.lang_ja = lang.to_ascii_lowercase().starts_with("ja");
     }
 
+    /// Pause from the page or the button: let go of the hop and stop the music.
+    pub fn pause(&mut self) {
+        if self.flow.phase == FlowPhase::Play {
+            self.touches = 0;
+            self.set_hold(false);
+            self.flow.pause();
+        }
+    }
+
+    /// Back into the run from the page (the Escape key).
+    pub fn resume_from_page(&mut self) {
+        self.resume();
+    }
+
+    /// Back into the run with a second of grace.
+    fn resume(&mut self) {
+        if self.flow.phase == FlowPhase::Pause {
+            self.flow.resume();
+            self.grant_invuln(1.0);
+        }
+    }
+
     /// Hold the picture for `secs` (a hit-stop that leaves the sim and the music alone).
     fn freeze_picture(&mut self, secs: f32) {
         if self.vfreeze <= 0.0 && self.vlag < 0.02 {
@@ -1986,6 +2016,15 @@ impl HopBeat {
             0.0
         };
         self.combo_glow += (want - self.combo_glow) * (1.0 - (-dt * 6.0).exp());
+        self.best_banner = (self.best_banner - dt).max(0.0);
+        let best = self.flow.best_score;
+        if !self.best_passed && best > 0 && self.core.stats.score > best {
+            self.best_passed = true;
+            self.best_banner = 2.4;
+            self.ring([255, 236, 150]);
+            self.kick.v += 3.0;
+            self.cue("combo");
+        }
         if let Some((e, age)) = self.hint {
             self.hint = (age + dt < 3.0).then_some((e, age + dt));
         } else if let Some((e, d)) = self.enemy_ahead(false, 34.0) {
@@ -2071,7 +2110,7 @@ impl HopBeat {
     ) {
         use crate::input::PointerPhase as P;
         match (self.flow.phase, phase) {
-            (FlowPhase::Play, P::Begin) => self.touch_begin(),
+            (FlowPhase::Play, P::Begin) => self.press(x, y, w, h),
             (FlowPhase::Play, P::End | P::Cancel) => self.touch_end(),
             (FlowPhase::Title | FlowPhase::Result, P::Begin) => {
                 if !self.pointer(x, y, w, h) {
@@ -2079,11 +2118,37 @@ impl HopBeat {
                 }
             }
             (FlowPhase::Pause, P::Begin) => {
-                self.pointer(x, y, w, h);
+                self.pause_hit(x, y, w, h);
             }
             (_, P::End | P::Cancel) => self.touch_end(),
             _ => {}
         }
+    }
+
+    /// A finger down in play: the pause button pauses, anywhere else is the hop.
+    fn press(&mut self, x: f32, y: f32, w: u32, h: u32) {
+        if pause_button(w as f32, h as f32).contains(x, y) {
+            self.pause();
+        } else {
+            self.touch_begin();
+        }
+    }
+
+    /// A tap on the pause card.
+    fn pause_hit(&mut self, x: f32, y: f32, w: u32, h: u32) -> bool {
+        let btn = pause_layout(w as f32, h as f32)
+            .into_iter()
+            .find(|(_, r)| r.contains(x, y))
+            .map(|(b, _)| b);
+        match btn {
+            Some(PauseBtn::Resume) => self.resume(),
+            Some(PauseBtn::Retry) => self.start_run(),
+            Some(PauseBtn::Title) => self.show_title(),
+            Some(PauseBtn::SyncMinus) => self.set_latency_ms(self.latency_user_ms - 10.0),
+            Some(PauseBtn::SyncPlus) => self.set_latency_ms(self.latency_user_ms + 10.0),
+            None => return false,
+        }
+        true
     }
 
     pub fn hold_down(&self) -> bool {
@@ -2115,6 +2180,9 @@ impl HopBeat {
     }
 
     pub fn pointer(&mut self, x: f32, y: f32, width: u32, height: u32) -> bool {
+        if self.flow.phase == FlowPhase::Pause {
+            return self.pause_hit(x, y, width, height);
+        }
         let Some(action) = self.flow.hit(x, y, width, height) else {
             return false;
         };
@@ -2153,9 +2221,9 @@ impl HopBeat {
     fn apply_action(&mut self, action: FlowAction) {
         match action {
             FlowAction::Start | FlowAction::Retry => self.start_run(),
-            FlowAction::Resume => self.flow.resume(),
+            FlowAction::Resume => self.resume(),
             FlowAction::ToTitle => self.show_title(),
-            FlowAction::Pause => self.flow.pause(),
+            FlowAction::Pause => self.pause(),
             FlowAction::VolumeUp => self.flow.bump_master(0.1),
             FlowAction::VolumeDown => self.flow.bump_master(-0.1),
             FlowAction::ToggleMute => self.flow.toggle_mute(),
@@ -2178,6 +2246,8 @@ impl HopBeat {
         fresh.sfx = self.sfx;
         fresh.models_off = self.models_off;
         fresh.fx_post = self.fx_post;
+        fresh.lang_ja = self.lang_ja;
+        fresh.hints_seen = std::mem::take(&mut self.hints_seen);
         fresh.fx_atmo = self.fx_atmo;
         fresh.down = self.down;
         *self = fresh;
@@ -2217,6 +2287,7 @@ impl HopBeat {
         self.core.stats.alive = true;
         self.core.stats.death.clear();
         self.pending_finish = false;
+        self.new_best = false;
         self.core.juice.hitstop = 0.0;
         self.lives = self
             .spec
@@ -2261,7 +2332,10 @@ impl HopBeat {
             self.core.juice.hit(0.7, 0.14);
             self.cue(if reason == "fell" { "fall" } else { "hit" });
             self.pending_finish = true;
-            self.cue("gameover");
+            // The stinger for a run that beat the device best, the other one otherwise.
+            let best = self.flow.best_score;
+            self.new_best = best > 0 && self.core.stats.score > best;
+            self.cue(if self.new_best { "newbest" } else { "gameover" });
             return;
         }
         self.cue(if reason == "fell" { "fall" } else { "hit" });
@@ -2803,8 +2877,10 @@ impl HopBeat {
                 "score": self.core.stats.score,
                 "combo": self.max_combo,
                 "perfect": self.perfects,
+                "stomps": self.stomps,
             },
             "can_revive": self.can_revive(),
+            "new_best": self.new_best,
         })
     }
 
@@ -2837,6 +2913,9 @@ impl HopBeat {
             "beat": beat,
             "bpm": self.spec.music.bpm,
             "latency_ms": self.latency_user_ms + self.spec.music.offset_ms,
+            // The player's own setting (what the pause screen steps and the page stores).
+            "sync_ms": self.latency_user_ms,
+            "new_best": self.new_best,
             "can_revive": self.can_revive(),
             "revives": self.revives,
             "x": self.hero_x(),
@@ -2852,6 +2931,104 @@ impl HopBeat {
         ))
         .unwrap_or_else(|_| json!({"quads": [], "texts": []}));
         value.to_string()
+    }
+
+    /// The pause screen: resume / retry / title and the audio sync stepper.
+    fn hud_pause(&self, list: &mut DrawList, w: f32, h: f32, s: f32) {
+        let glow = self.spec.look.glow.map(|v| v as u8);
+        let accent = self.spec.look.accent.map(|v| v as u8);
+        list.quads.push(Quad::new(0.0, 0.0, w, h, [6, 6, 20, 205]));
+        let mut text = |t: &str, x: f32, y: f32, size: f32, c: [u8; 4]| {
+            list.texts
+                .push(TextQuad::new(t, x, y, size * s, c).aligned(TextAlign::Center));
+        };
+        text(
+            self.tr("PAUSED", "ポーズ"),
+            w * 0.5,
+            h * 0.12,
+            30.0,
+            [255, 255, 255, 255],
+        );
+        let sync = self.latency_user_ms.round() as i32;
+        let layout = pause_layout(w, h);
+        let mut sync_y = 0.0;
+        let mut sync_x = (0.0, 0.0);
+        for (b, r) in &layout {
+            let (label, fill) = match b {
+                PauseBtn::Resume => (
+                    self.tr("RESUME", "つづける"),
+                    [accent[0], accent[1], accent[2], 255],
+                ),
+                PauseBtn::Retry => (self.tr("RETRY", "リトライ"), [40, 34, 74, 245]),
+                PauseBtn::Title => (self.tr("TITLE", "タイトル"), [40, 34, 74, 245]),
+                PauseBtn::SyncMinus => ("−", [40, 34, 74, 245]),
+                PauseBtn::SyncPlus => ("+", [40, 34, 74, 245]),
+            };
+            list.quads.push(Quad::new(
+                r.x - 2.0 * s,
+                r.y - 2.0 * s,
+                r.w + 4.0 * s,
+                r.h + 4.0 * s,
+                [glow[0], glow[1], glow[2], 150],
+            ));
+            list.quads.push(Quad::new(r.x, r.y, r.w, r.h, fill));
+            let ink = if *b == PauseBtn::Resume {
+                [20, 12, 30, 255]
+            } else {
+                [255, 255, 255, 255]
+            };
+            let size = if matches!(b, PauseBtn::SyncMinus | PauseBtn::SyncPlus) {
+                24.0
+            } else {
+                17.0
+            };
+            list.texts.push(
+                TextQuad::new(
+                    label,
+                    r.x + r.w * 0.5,
+                    r.y + r.h * 0.5 - size * s * 0.5,
+                    size * s,
+                    ink,
+                )
+                .aligned(TextAlign::Center),
+            );
+            if *b == PauseBtn::SyncMinus {
+                sync_y = r.y;
+                sync_x.0 = r.x + r.w;
+            }
+            if *b == PauseBtn::SyncPlus {
+                sync_x.1 = r.x;
+            }
+        }
+        let cx = (sync_x.0 + sync_x.1) * 0.5;
+        let mut text = |t: &str, x: f32, y: f32, size: f32, c: [u8; 4]| {
+            list.texts
+                .push(TextQuad::new(t, x, y, size * s, c).aligned(TextAlign::Center));
+        };
+        text(
+            self.tr("AUDIO SYNC", "音ズレ補正"),
+            w * 0.5,
+            sync_y - 22.0 * s,
+            11.0,
+            [glow[0], glow[1], glow[2], 230],
+        );
+        text(
+            &format!("{}{} ms", if sync > 0 { "+" } else { "" }, sync),
+            cx,
+            sync_y + 12.0 * s,
+            17.0,
+            [255, 255, 255, 255],
+        );
+        text(
+            self.tr(
+                "Hopping late? Press +.  Early? Press −.",
+                "遅れるなら＋、早すぎなら−",
+            ),
+            w * 0.5,
+            sync_y + 54.0 * s,
+            10.0,
+            [255, 255, 255, 150],
+        );
     }
 
     /// Grade popup near the hero, the enemy warning and hint, and the hurt vignette.
@@ -3006,50 +3183,136 @@ impl HopBeat {
         let glow = self.spec.look.glow.map(|v| v as u8);
         let accent = self.spec.look.accent.map(|v| v as u8);
         if self.flow.phase == FlowPhase::Play {
+            let pad = 10.0 * s;
+            let top = 8.0 * s;
+            let ink = [glow[0], glow[1], glow[2], 255];
+            // Score: a dark plate with an accent edge, label above the number.
+            list.quads
+                .push(Quad::new(pad, top, 148.0 * s, 46.0 * s, [8, 6, 24, 165]));
             list.quads.push(Quad::new(
-                10.0 * s,
-                8.0 * s,
-                150.0 * s,
-                32.0 * s,
-                [8, 6, 24, 150],
+                pad,
+                top,
+                4.0 * s,
+                46.0 * s,
+                [accent[0], accent[1], accent[2], 255],
             ));
             txt(
                 &mut list,
-                &format!("SCORE {}", self.core.stats.score),
-                18.0 * s,
-                14.0 * s,
-                15.0,
-                [glow[0], glow[1], glow[2], 255],
+                self.tr("SCORE", "スコア"),
+                pad + 14.0 * s,
+                top + 5.0 * s,
+                9.0,
+                [255, 255, 255, 170],
                 TextAlign::Left,
             );
-            // lives: one pip each
-            for i in 0..self.spec.lives.count.max(self.lives) {
-                let on = i < self.lives;
-                let blink = self.invuln > 0.0 && ((self.anim_t * 8.0) as u32).is_multiple_of(2);
-                let c = if on && !blink {
-                    [accent[0], accent[1], accent[2], 255]
-                } else if on {
-                    [255, 255, 255, 120]
-                } else {
-                    [60, 56, 80, 150]
-                };
-                list.quads.push(Quad::new(
-                    w - (22.0 + i as f32 * 22.0) * s,
-                    14.0 * s,
-                    16.0 * s,
-                    16.0 * s,
-                    c,
-                ));
-            }
-            if self.combo >= 2 {
-                let pulse = 1.0 + 0.25 * self.beat_flash;
+            txt(
+                &mut list,
+                &format!("{}", self.core.stats.score),
+                pad + 14.0 * s,
+                top + 17.0 * s,
+                20.0,
+                ink,
+                TextAlign::Left,
+            );
+            if self.flow.best_score > 0 {
                 txt(
                     &mut list,
-                    &format!("{} COMBO", self.combo),
+                    &format!("{} {}", self.tr("BEST", "ベスト"), self.flow.best_score),
+                    pad + 2.0 * s,
+                    top + 50.0 * s,
+                    9.0,
+                    [255, 255, 255, 140],
+                    TextAlign::Left,
+                );
+            }
+            // Pause button, then the lives to its left.
+            let pb = pause_button(w, h);
+            list.quads
+                .push(Quad::new(pb.x, pb.y, pb.w, pb.h, [8, 6, 24, 175]));
+            for k in 0..2 {
+                list.quads.push(Quad::new(
+                    pb.x + pb.w * (0.30 + 0.24 * k as f32),
+                    pb.y + pb.h * 0.26,
+                    pb.w * 0.16,
+                    pb.h * 0.48,
+                    [255, 255, 255, 235],
+                ));
+            }
+            let blink = self.invuln > 0.0 && ((self.anim_t * 8.0) as u32).is_multiple_of(2);
+            let pip = |list: &mut DrawList, x: f32, on: bool| {
+                let c = if on && !blink {
+                    [255, 112, 150, 255]
+                } else if on {
+                    [255, 255, 255, 140]
+                } else {
+                    [40, 36, 64, 190]
+                };
+                list.quads.push(Quad::new(
+                    x - 1.5 * s,
+                    top + 10.0 * s - 1.5 * s,
+                    17.0 * s,
+                    17.0 * s,
+                    [255, 255, 255, if on { 110 } else { 40 }],
+                ));
+                list.quads
+                    .push(Quad::new(x, top + 10.0 * s, 14.0 * s, 14.0 * s, c));
+            };
+            let lives_max = self.spec.lives.count.max(self.lives);
+            let mut x = pb.x - 10.0 * s - 14.0 * s;
+            if lives_max <= 5 {
+                for i in 0..lives_max {
+                    pip(&mut list, x, i < self.lives);
+                    x -= 20.0 * s;
+                }
+            } else {
+                // Many lives: one pip and a count.
+                pip(&mut list, x, self.lives > 0);
+                txt(
+                    &mut list,
+                    &format!("×{}", self.lives),
+                    x - 8.0 * s,
+                    top + 8.0 * s,
+                    16.0,
+                    [255, 255, 255, 240],
+                    TextAlign::Right,
+                );
+            }
+            // Combo: big multiplier that pulses on the beat; the colour climbs with it.
+            if self.combo >= 2 {
+                let pulse = 1.0 + 0.22 * self.beat_flash;
+                let c = match self.combo {
+                    0..=3 => [255, 244, 190, 255],
+                    4..=7 => [255, 214, 90, 255],
+                    8..=15 => [255, 150, 90, 255],
+                    _ => [255, 110, 200, 255],
+                };
+                let y = h * 0.095;
+                let size = (26.0 + (self.combo.min(20) as f32) * 0.5) * pulse;
+                txt(
+                    &mut list,
+                    &format!("×{}", self.combo),
+                    w * 0.5 + 2.0 * s,
+                    y + 2.0 * s,
+                    size,
+                    [6, 4, 20, 190],
+                    TextAlign::Center,
+                );
+                txt(
+                    &mut list,
+                    &format!("×{}", self.combo),
                     w * 0.5,
-                    h * 0.12,
-                    22.0 * pulse,
-                    [255, 236, 150, 255],
+                    y,
+                    size,
+                    c,
+                    TextAlign::Center,
+                );
+                txt(
+                    &mut list,
+                    self.tr("COMBO", "コンボ"),
+                    w * 0.5,
+                    y + (size + 2.0) * s,
+                    10.0,
+                    [c[0], c[1], c[2], 200],
                     TextAlign::Center,
                 );
             }
@@ -3083,7 +3346,7 @@ impl HopBeat {
                     .push(Quad::new(0.0, h * 0.40, w, h * 0.16, [8, 6, 24, 150]));
                 txt(
                     &mut list,
-                    "TAP TO START",
+                    self.tr("TAP TO START", "タップでスタート"),
                     w * 0.5,
                     h * 0.44,
                     22.0,
@@ -3092,7 +3355,10 @@ impl HopBeat {
                 );
                 txt(
                     &mut list,
-                    "TAP = SHORT HOP   HOLD = LONG HOP",
+                    self.tr(
+                        "TAP = SHORT HOP   HOLD = LONG HOP",
+                        "タップ＝小ジャンプ　長押し＝大ジャンプ",
+                    ),
                     w * 0.5,
                     h * 0.50,
                     11.0,
@@ -3101,7 +3367,9 @@ impl HopBeat {
                 );
             }
         }
-        if menu {
+        if self.flow.phase == FlowPhase::Pause {
+            self.hud_pause(&mut list, w, h, s);
+        } else if menu {
             if self.flow.phase == FlowPhase::Result {
                 list.quads.push(Quad::new(0.0, 0.0, w, h, [8, 0, 16, 150]));
             }
@@ -3111,6 +3379,56 @@ impl HopBeat {
         }
         list
     }
+}
+
+// ------------------------------------------------------------------- ui ---
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PauseBtn {
+    Resume,
+    Retry,
+    Title,
+    SyncMinus,
+    SyncPlus,
+}
+
+fn ui_scale(w: f32, h: f32) -> f32 {
+    (w.min(h) / 400.0).clamp(0.9, 2.6)
+}
+
+/// The touch pause button, top right (with a little slop around it).
+fn pause_button(w: f32, h: f32) -> Quad {
+    let s = ui_scale(w, h);
+    Quad::new(
+        w - 10.0 * s - 38.0 * s,
+        8.0 * s,
+        38.0 * s,
+        38.0 * s,
+        [0, 0, 0, 0],
+    )
+}
+
+/// The pause screen's hit areas, pixels.
+fn pause_layout(w: f32, h: f32) -> Vec<(PauseBtn, Quad)> {
+    let s = ui_scale(w, h);
+    let bw = 230.0 * s;
+    let bh = 42.0 * s;
+    let gap = 10.0 * s;
+    let x = (w - bw) * 0.5;
+    let mut y = h * 0.22;
+    let mut v = Vec::new();
+    for b in [PauseBtn::Resume, PauseBtn::Retry, PauseBtn::Title] {
+        v.push((b, Quad::new(x, y, bw, bh, [0; 4])));
+        y += bh + gap;
+    }
+    y += 40.0 * s;
+    let sb = 46.0 * s;
+    v.push((PauseBtn::SyncMinus, Quad::new(x, y, sb, sb, [0; 4])));
+    v.push((
+        PauseBtn::SyncPlus,
+        Quad::new(x + bw - sb, y, sb, sb, [0; 4]),
+    ));
+    v
 }
 
 // -------------------------------------------------------------- picture ---
@@ -4187,10 +4505,10 @@ impl crate::kit_host::KitHost for HopBeat {
     /// One button: pointer and keys only, no stick.
     fn walk(&mut self, _lx: f32, _lz: f32, _jump: bool) {}
     /// A finger down in play is the hop button; any release lets go of it.
-    fn touch(&mut self, ev: crate::input::PointerEvent, _w: u32, _h: u32, _t: f32) {
+    fn touch(&mut self, ev: crate::input::PointerEvent, w: u32, h: u32, _t: f32) {
         use crate::input::PointerPhase as P;
         match ev.phase {
-            P::Begin if self.flow.phase == FlowPhase::Play => self.touch_begin(),
+            P::Begin if self.flow.phase == FlowPhase::Play => self.press(ev.x, ev.y, w, h),
             P::End | P::Cancel => self.touch_end(),
             _ => {}
         }
@@ -4451,6 +4769,91 @@ mod tests {
         }
         assert!(seen, "no hint before the first enemy");
         assert!(g.hints_seen.first().copied().unwrap_or(false));
+    }
+
+    #[test]
+    fn the_pause_button_and_card_work_and_the_sync_steps() {
+        use crate::input::PointerPhase as P;
+        let (w, h) = (800u32, 400u32);
+        let mut g = fresh();
+        g.set_direct(false);
+        g.confirm();
+        run(&mut g, 1.0);
+        assert_eq!(g.flow.phase, FlowPhase::Play);
+        // A tap on the button pauses and does not hop.
+        let pb = pause_button(w as f32, h as f32);
+        g.pointer_event(P::Begin, pb.x + pb.w * 0.5, pb.y + pb.h * 0.5, w, h);
+        assert_eq!(g.flow.phase, FlowPhase::Pause);
+        assert_eq!(g.touches, 0);
+        let hud = crate::flow::draw_list_json(&g.hud(w, h, false));
+        assert!(
+            hud.contains("PAUSED") && hud.contains("AUDIO SYNC") && hud.contains("0 ms"),
+            "{hud}"
+        );
+        let hit = |g: &mut HopBeat, b: PauseBtn| {
+            let r = pause_layout(w as f32, h as f32)
+                .into_iter()
+                .find(|(k, _)| *k == b)
+                .unwrap()
+                .1;
+            g.pointer_event(P::Begin, r.x + r.w * 0.5, r.y + r.h * 0.5, w, h);
+        };
+        hit(&mut g, PauseBtn::SyncPlus);
+        hit(&mut g, PauseBtn::SyncPlus);
+        hit(&mut g, PauseBtn::SyncMinus);
+        assert_eq!(g.latency_ms(), 10.0);
+        assert!(crate::flow::draw_list_json(&g.hud(w, h, false)).contains("+10 ms"));
+        // The pause card is on screen in Japanese too.
+        g.set_lang("ja");
+        assert!(crate::flow::draw_list_json(&g.hud(w, h, false)).contains("ポーズ"));
+        // Every button of the card fits on a small phone in both orientations.
+        for (pw, ph) in [(360.0f32, 640.0f32), (640.0, 360.0), (390.0, 844.0)] {
+            for (_, r) in pause_layout(pw, ph) {
+                assert!(
+                    r.x >= 0.0 && r.x + r.w <= pw && r.y >= 0.0 && r.y + r.h + 40.0 <= ph,
+                    "{pw}x{ph} {r:?}"
+                );
+            }
+        }
+        hit(&mut g, PauseBtn::Resume);
+        assert_eq!(g.flow.phase, FlowPhase::Play);
+        assert!(g.invuln > 0.5, "a second of grace after resume");
+        // Retry starts a fresh run and keeps the player's sync.
+        g.pause();
+        hit(&mut g, PauseBtn::Retry);
+        assert_eq!(g.flow.phase, FlowPhase::Play);
+        assert_eq!(g.revives, 0, "a new run starts with its revives back");
+        assert_eq!(g.latency_ms(), 10.0);
+        g.pause();
+        hit(&mut g, PauseBtn::Title);
+        assert_eq!(g.flow.phase, FlowPhase::Title);
+    }
+
+    #[test]
+    fn game_over_cues_the_new_best_stinger_only_for_a_new_best() {
+        for (best, want) in [(1u32, true), (u32::MAX, false)] {
+            let mut g = fresh();
+            g.set_direct(false);
+            g.flow.best_score = best;
+            g.confirm();
+            let mut t = 0.0;
+            while !g.pending_finish && t < 60.0 {
+                // No input: the bunny runs on until the first gap.
+                g.tick(1.0 / 60.0);
+                t += 1.0 / 60.0;
+            }
+            assert!(g.pending_finish, "the run never ended");
+            if want {
+                assert!(g.core.stats.score > best, "score {}", g.core.stats.score);
+            }
+            assert_eq!(g.new_best, want);
+            assert_eq!(g.result_value()["new_best"], json!(want));
+            let run = &g.result_value()["run"];
+            assert!(
+                run["score"].is_number() && run["combo"].is_number() && run["perfect"].is_number()
+            );
+            assert!(run["stomps"].is_number());
+        }
     }
 
     #[test]

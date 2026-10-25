@@ -216,6 +216,24 @@ impl WasmSession {
         self.inner.set_latency_ms(ms);
     }
 
+    /// HOP-BEAT: the page language, `ja` or `en`.
+    #[wasm_bindgen(js_name = setLang)]
+    pub fn set_lang(&mut self, lang: &str) {
+        self.inner.set_lang(lang);
+    }
+
+    /// HOP-BEAT: pause the run (shows the pause card).
+    #[wasm_bindgen(js_name = pauseRun)]
+    pub fn pause_run(&mut self) {
+        self.inner.pause_run();
+    }
+
+    /// HOP-BEAT: back into the run.
+    #[wasm_bindgen(js_name = resumeRun)]
+    pub fn resume_run(&mut self) {
+        self.inner.resume_run();
+    }
+
     /// HOP-BEAT: skip the title card; the first tap starts the music.
     #[wasm_bindgen(js_name = setDirectPlay)]
     pub fn set_direct_play(&mut self, on: bool) {
