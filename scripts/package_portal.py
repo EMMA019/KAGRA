@@ -65,6 +65,8 @@ CODE_SUFFIXES = (".html", ".js", ".json", ".css", ".svg")
 _URL_RE = re.compile(r"https?://[^\s\"'<>)\\`]+")
 # Namespace identifiers, not requests.
 _NAMESPACE_URLS = ("http://www.w3.org/",)
+# The dev-tools block in play.html (?dev=1 overlay loader), cut whole, marker lines and all.
+_DEVTOOLS_RE = re.compile(r"[ \t]*// <kagra-devtools>\n.*?// </kagra-devtools>\n", re.S)
 _HIDE_RE = re.compile(r"<(\w+)\b[^>]*\bdata-portal=\"hide\"[^>]*>.*?</\1>\s*", re.S)
 
 
@@ -88,6 +90,9 @@ def portal_index_html(source: str, slug: str, portal: str) -> str:
         raise PackageError("play.html changed: no charset meta to anchor the build flags")
     html = html.replace(marker, marker + flags, 1)
     html = html.replace(BUILD_TOKEN, "portal")  # no deploy cache to bust in a zip
+    html, devtools = _DEVTOOLS_RE.subn("", html)  # the ?dev=1 overlay never ships in a zip
+    if devtools != 1:
+        raise PackageError("play.html changed: no kagra-devtools block to strip")
     html, hidden = _HIDE_RE.subn("", html)
     if hidden < 1:
         raise PackageError("play.html changed: no data-portal=\"hide\" element to strip")
