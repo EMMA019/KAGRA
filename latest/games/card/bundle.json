@@ -116,6 +116,21 @@
       "v": "b265d4fdfa"
     },
     {
+      "path": "assets/audio/kenney-interface-sounds/CREDITS.md",
+      "url": "assets/audio/kenney-interface-sounds/CREDITS.md",
+      "v": "9ddac4c23d"
+    },
+    {
+      "path": "assets/audio/kenney-interface-sounds/LICENSE.txt",
+      "url": "assets/audio/kenney-interface-sounds/LICENSE.txt",
+      "v": "f7966c773b"
+    },
+    {
+      "path": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+      "url": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+      "v": "fe58f3600c"
+    },
+    {
       "path": "assets/audio/neon_cat/LICENSE.txt",
       "url": "assets/audio/neon_cat/LICENSE.txt",
       "v": "d973d7f9a6"
@@ -191,6 +206,66 @@
       "v": "f1d0e7409f"
     },
     {
+      "path": "assets/audio/oga-flowerbed-fields/CREDITS.md",
+      "url": "assets/audio/oga-flowerbed-fields/CREDITS.md",
+      "v": "d9caacbc3c"
+    },
+    {
+      "path": "assets/audio/oga-flowerbed-fields/LICENSE.txt",
+      "url": "assets/audio/oga-flowerbed-fields/LICENSE.txt",
+      "v": "aa1d8df4be"
+    },
+    {
+      "path": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+      "url": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+      "v": "8be3009beb"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/CREDITS.md",
+      "url": "assets/audio/oga-retro-synth-sfx/CREDITS.md",
+      "v": "7f18cd6513"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/LICENSE.txt",
+      "url": "assets/audio/oga-retro-synth-sfx/LICENSE.txt",
+      "v": "f7cb95a5fe"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+      "v": "770685003f"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+      "v": "50b01a7974"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+      "v": "955fbf6c23"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+      "v": "8dde50e1fe"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+      "v": "8ac1eb6e4c"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+      "v": "c41ef1b321"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+      "v": "5d7d10947f"
+    },
+    {
       "path": "assets/library/kaykit/adventurers/characters/Knight.glb",
       "url": "assets/library/kaykit/adventurers/characters/Knight.glb",
       "v": "60428e3abc"
@@ -206,5 +281,5 @@
       "v": "e33afdb620"
     }
   ],
-  "build": "1f62ffc5fc27"
+  "build": "4794bca9d150"
 }

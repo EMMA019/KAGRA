@@ -111,6 +111,17 @@
       "icon": "games/meteor_cat/icon.png"
     },
     {
+      "slug": "survivor_arena",
+      "title": "Moonlit Swarm",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "survivor_arena",
+      "entry": "examples/survivor_arena_minimal.py",
+      "world": "kagra-shared/tests/fixtures/survivor_arena_world.json",
+      "href": "play.html?game=survivor_arena",
+      "icon": "games/survivor_arena/icon.png"
+    },
+    {
       "slug": "neon_cat",
       "title": "Neon Cat",
       "version": "0.1.0",
