@@ -8,6 +8,6 @@ Attribution is not required for CC0; credit is recorded here anyway.
 
 Used by Moonlit Swarm (survivor arena): the treasure chest an elite drops and the sword that orbits the hero.
 Each file is a rest-pose copy made with `tools/gen_assets/pack_glb.py` from `Models/GLB format/<id>.glb`:
-the colormap texture embedded. Nothing else changed.
+the colormap texture embedded and (`--lean`) the unused tangent and second-UV streams removed. Nothing else changed.
 
 - chest.glb, weapon-sword.glb
