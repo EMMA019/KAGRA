@@ -143,7 +143,7 @@
     if (o.skipStep) {
       const sw = {};
       names.forEach((n) => { sw[n] = true; });
-      steps.push({ name: names.length ? "all-on+skip" : "as-is+skip", sw, ms: stepMs, skip: true });
+      steps.push({ name: names.length > 1 ? "both+skip" : names.length ? "on+skip" : "as-is+skip", sw, ms: stepMs, skip: true });
     }
     return steps;
   }
@@ -260,12 +260,13 @@
   /** The result table, monospace, one row per step. */
   function formatTable(steps) {
     const pad = (v, w) => String(v == null ? "-" : v).padStart(w);
+    const f1 = (v) => (typeof v === "number" ? (Math.round(v * 10) / 10).toFixed(1) : v);
     const rows = [
-      `${"step".padEnd(11)}${pad("fps", 6)}${pad("p50", 6)}${pad("p95", 6)}${pad("p99", 6)}${pad("jnk", 4)}${pad("drp%", 5)}${pad("cpu", 5)}${pad("rnd/s", 6)} grade`,
+      `${"step".padEnd(10)}${pad("fps", 6)}${pad("p50", 6)}${pad("p95", 6)}${pad("p99", 6)}${pad("jnk", 4)}${pad("drp%", 5)}${pad("cpu", 5)}${pad("rnd/s", 6)} grade`,
     ];
     for (const s of steps) {
       rows.push(
-        `${String(s.name).padEnd(11).slice(0, 11)}${pad(s.fps, 6)}${pad(s.p50, 6)}${pad(s.p95, 6)}${pad(s.p99, 6)}${pad(s.jank, 4)}${pad(s.dropPct, 5)}${pad(s.cpuMs, 5)}${pad(s.rendersPerSec, 6)} ${s.grade || ""}`,
+        `${String(s.name).padEnd(10).slice(0, 10)}${pad(f1(s.fps), 6)}${pad(f1(s.p50), 6)}${pad(f1(s.p95), 6)}${pad(f1(s.p99), 6)}${pad(s.jank, 4)}${pad(f1(s.dropPct), 5)}${pad(f1(s.cpuMs), 5)}${pad(Math.round(s.rendersPerSec), 6)} ${s.grade || ""}`,
       );
     }
     return rows.join("\n");
@@ -414,7 +415,7 @@
     root_.style.cssText = "position:fixed;left:4px;top:calc(env(safe-area-inset-top,0px) + 4px);z-index:2147483000;" +
       "font:10px/1.3 ui-monospace,Menlo,Consolas,monospace;color:#d8ffe8;background:rgba(0,0,0,.66);" +
       "padding:4px 6px;border-radius:6px;max-width:96vw;box-sizing:border-box;pointer-events:none;" +
-      "-webkit-user-select:none;user-select:none;touch-action:manipulation;white-space:pre";
+      "-webkit-user-select:none;user-select:none;touch-action:manipulation;white-space:pre-wrap;overflow-wrap:anywhere";
     const text = doc.createElement("div");
     const table = doc.createElement("div");
     const bar = doc.createElement("div");
