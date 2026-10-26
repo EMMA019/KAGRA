@@ -813,7 +813,7 @@
           "en": "Throws bolts at the nearest foe",
           "ja": "いちばんちかいてきになげる"
         },
-        "glyph": "●",
+        "glyph": "弾",
         "id": "bolt",
         "kind": "projectile",
         "levels": [
@@ -896,7 +896,7 @@
           "en": "A fan of petals, deadly up close",
           "ja": "ちかくでつよい、はなびらのたば"
         },
-        "glyph": "※",
+        "glyph": "花",
         "id": "petals",
         "kind": "spread",
         "levels": [
@@ -979,7 +979,7 @@
           "en": "Blades circle you and cut what they touch",
           "ja": "まわりをまわる、さわるとダメージ"
         },
-        "glyph": "†",
+        "glyph": "刃",
         "id": "blades",
         "kind": "orbit",
         "levels": [
@@ -1062,7 +1062,7 @@
           "en": "Wisps curve toward foes and burst",
           "ja": "てきをおいかけてはじける"
         },
-        "glyph": "☆",
+        "glyph": "霊",
         "id": "wisps",
         "kind": "missile",
         "levels": [
@@ -1145,7 +1145,7 @@
           "en": "Lightning jumps from foe to foe",
           "ja": "てきからてきへとびうつる"
         },
-        "glyph": "∠",
+        "glyph": "雷",
         "id": "zap",
         "kind": "chain",
         "levels": [
@@ -1228,7 +1228,7 @@
           "en": "A ring that shoves the crowd back",
           "ja": "まわりをはじきとばすリング"
         },
-        "glyph": "○",
+        "glyph": "波",
         "id": "pulse",
         "kind": "pulse",
         "levels": [
