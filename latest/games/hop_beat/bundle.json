@@ -111,6 +111,11 @@
       "v": "b265d4fdfa"
     },
     {
+      "path": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+      "url": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+      "v": "3eba73bda8"
+    },
+    {
       "path": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
       "url": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
       "v": "fe58f3600c"
@@ -224,6 +229,11 @@
       "path": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
       "url": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
       "v": "5d7d10947f"
+    },
+    {
+      "path": "assets/audio/oga-wet-squish/impactsplat03.wav",
+      "url": "assets/audio/oga-wet-squish/impactsplat03.wav",
+      "v": "73e236ba1e"
     },
     {
       "path": "assets/models/hop_beat/hop_bat.glb",
@@ -674,5 +684,5 @@
       "slot": "double_coins"
     }
   },
-  "build": "d89a8a0f120e"
+  "build": "ea990997e9a1"
 }

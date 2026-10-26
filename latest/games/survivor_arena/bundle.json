@@ -8,7 +8,7 @@
     {
       "path": "world.json",
       "url": "games/survivor_arena/world.json",
-      "v": "f02f236a95"
+      "v": "6f5d9bda45"
     },
     {
       "path": "kagra_game.json",
@@ -99,6 +99,21 @@
       "path": "assets/audio/jump.wav",
       "url": "assets/audio/jump.wav",
       "v": "b265d4fdfa"
+    },
+    {
+      "path": "assets/audio/kenney-impact-sounds/CREDITS.md",
+      "url": "assets/audio/kenney-impact-sounds/CREDITS.md",
+      "v": "128b6be073"
+    },
+    {
+      "path": "assets/audio/kenney-impact-sounds/LICENSE.txt",
+      "url": "assets/audio/kenney-impact-sounds/LICENSE.txt",
+      "v": "b49aa9c56b"
+    },
+    {
+      "path": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+      "url": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+      "v": "3eba73bda8"
     },
     {
       "path": "assets/audio/kenney-interface-sounds/CREDITS.md",
@@ -246,6 +261,36 @@
       "v": "5d7d10947f"
     },
     {
+      "path": "assets/audio/oga-wet-squish/CREDITS.md",
+      "url": "assets/audio/oga-wet-squish/CREDITS.md",
+      "v": "935afd1ce8"
+    },
+    {
+      "path": "assets/audio/oga-wet-squish/LICENSE.txt",
+      "url": "assets/audio/oga-wet-squish/LICENSE.txt",
+      "v": "25e5997e61"
+    },
+    {
+      "path": "assets/audio/oga-wet-squish/impactsplat03.wav",
+      "url": "assets/audio/oga-wet-squish/impactsplat03.wav",
+      "v": "73e236ba1e"
+    },
+    {
+      "path": "assets/models/kenney/blaster-kit/CREDITS.md",
+      "url": "assets/models/kenney/blaster-kit/CREDITS.md",
+      "v": "231383c5cf"
+    },
+    {
+      "path": "assets/models/kenney/blaster-kit/LICENSE.txt",
+      "url": "assets/models/kenney/blaster-kit/LICENSE.txt",
+      "v": "bece5f4d99"
+    },
+    {
+      "path": "assets/models/kenney/blaster-kit/blaster-a.glb",
+      "url": "assets/models/kenney/blaster-kit/blaster-a.glb",
+      "v": "e5ce2c5c4b"
+    },
+    {
       "path": "assets/models/kenney/graveyard-kit/CREDITS.md",
       "url": "assets/models/kenney/graveyard-kit/CREDITS.md",
       "v": "36d7e9aa11"
@@ -316,9 +361,34 @@
       "v": "22ba1f1de1"
     },
     {
+      "path": "assets/models/kenney/mini-arena/CREDITS.md",
+      "url": "assets/models/kenney/mini-arena/CREDITS.md",
+      "v": "50ebffcc23"
+    },
+    {
+      "path": "assets/models/kenney/mini-arena/LICENSE.txt",
+      "url": "assets/models/kenney/mini-arena/LICENSE.txt",
+      "v": "f90537c9ed"
+    },
+    {
+      "path": "assets/models/kenney/mini-arena/column.glb",
+      "url": "assets/models/kenney/mini-arena/column.glb",
+      "v": "d3c77d8ced"
+    },
+    {
+      "path": "assets/models/kenney/mini-arena/wall-corner.glb",
+      "url": "assets/models/kenney/mini-arena/wall-corner.glb",
+      "v": "f010d64185"
+    },
+    {
+      "path": "assets/models/kenney/mini-arena/wall.glb",
+      "url": "assets/models/kenney/mini-arena/wall.glb",
+      "v": "79d9f880ff"
+    },
+    {
       "path": "assets/models/kenney/mini-characters/CREDITS.md",
       "url": "assets/models/kenney/mini-characters/CREDITS.md",
-      "v": "8cf7a3c4b7"
+      "v": "2ad9eed1d2"
     },
     {
       "path": "assets/models/kenney/mini-characters/LICENSE.txt",
@@ -328,32 +398,42 @@
     {
       "path": "assets/models/kenney/mini-characters/character-female-a.glb",
       "url": "assets/models/kenney/mini-characters/character-female-a.glb",
-      "v": "48fe04205d"
+      "v": "3c9621d59c"
     },
     {
       "path": "assets/models/kenney/mini-characters/character-female-d.glb",
       "url": "assets/models/kenney/mini-characters/character-female-d.glb",
-      "v": "e1e01ae607"
+      "v": "4e22e77d0d"
     },
     {
       "path": "assets/models/kenney/mini-characters/character-male-a.glb",
       "url": "assets/models/kenney/mini-characters/character-male-a.glb",
-      "v": "66a1569929"
+      "v": "079ef30f2a"
     },
     {
       "path": "assets/models/kenney/mini-characters/character-male-c.glb",
       "url": "assets/models/kenney/mini-characters/character-male-c.glb",
-      "v": "1be5e5bb0f"
+      "v": "8b1d5f269e"
     },
     {
       "path": "assets/models/kenney/mini-characters/character-male-e.glb",
       "url": "assets/models/kenney/mini-characters/character-male-e.glb",
-      "v": "2e99dbcd21"
+      "v": "c37e1263f8"
     },
     {
       "path": "assets/models/kenney/platformer-kit/jewel.glb",
       "url": "assets/models/kenney/platformer-kit/jewel.glb",
       "v": "d0169e703c"
+    },
+    {
+      "path": "assets/textures/survivor_arena/CREDITS.md",
+      "url": "assets/textures/survivor_arena/CREDITS.md",
+      "v": "d018dae3d1"
+    },
+    {
+      "path": "assets/textures/survivor_arena/floor.png",
+      "url": "assets/textures/survivor_arena/floor.png",
+      "v": "6281f007ae"
     }
   ],
   "platform": {
@@ -610,5 +690,5 @@
       "slot": "double_coins"
     }
   },
-  "build": "d89a8a0f120e"
+  "build": "ea990997e9a1"
 }

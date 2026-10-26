@@ -34,14 +34,19 @@
           "volume": 0.25
         },
         "hit": {
-          "file": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
-          "rate": 1.6,
-          "volume": 0.14
+          "file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+          "rate": 1.0,
+          "volume": 0.45
         },
         "hurt": {
           "file": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
           "rate": 1.0,
           "volume": 0.6
+        },
+        "kill": {
+          "file": "assets/audio/oga-wet-squish/impactsplat03.wav",
+          "rate": 1.15,
+          "volume": 0.3
         },
         "levelup": {
           "file": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
@@ -70,9 +75,9 @@
       "back": 11.0,
       "fov_max": 66.0,
       "fov_min": 36.0,
-      "height": 20.0,
-      "hero_up_m": 1.8,
-      "view_width_m": 12.0
+      "height": 16.0,
+      "hero_up_m": 1.4,
+      "view_width_m": 9.6
     },
     "caps": {
       "foes": [
@@ -130,6 +135,20 @@
         }
       ]
     },
+    "fx": {
+      "cap": [
+        48,
+        160,
+        480
+      ],
+      "damage_numbers": true,
+      "high_post": true,
+      "knockback": 0.12,
+      "particles": true,
+      "shake": 1.0,
+      "trails": true,
+      "zoom_pulse": 1.0
+    },
     "hero": {
       "hurt_cd": 0.5,
       "max_hp": 100.0,
@@ -142,10 +161,12 @@
     },
     "id": "survivor_arena",
     "input": {
+      "aim": "hybrid",
       "dead_zone_m": 0.3,
       "full_speed_m": 2.2,
       "mode": "follow",
       "stick_px": 70.0,
+      "tap_px": 44.0,
       "thumb_offset_m": 2.0
     },
     "levels": {
