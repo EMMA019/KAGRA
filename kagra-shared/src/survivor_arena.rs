@@ -30,6 +30,7 @@ use crate::world_doc::{WorldCamera, WorldDoc};
 
 mod hud_extra;
 mod loot;
+mod motion;
 mod stick;
 mod view;
 mod weapons;
@@ -329,6 +330,9 @@ pub struct FxSpec {
     /// tiers (vertex clustering at load; 1 = full detail). A crowd of small figures does not
     /// need a thousand triangles each.
     pub foe_detail: [f32; 3],
+    /// Body motion of the foes (bob, squash, sway, lean, a flinch on a hit), each model its own
+    /// way and each foe its own phase: 0 = still figures, 1 = as tuned, up to 2. Picture only.
+    pub foe_motion: f32,
 }
 
 impl Default for FxSpec {
@@ -343,6 +347,7 @@ impl Default for FxSpec {
             high_post: true,
             cap: [48, 160, 480],
             foe_detail: [0.5, 0.65, 1.0],
+            foe_motion: 1.0,
         }
     }
 }
@@ -661,6 +666,7 @@ impl SurvivorSpec {
         for (i, d) in self.fx.foe_detail.iter().enumerate() {
             range(w, &format!("fx.foe_detail[{i}]"), *d, 0.2, 1.0)?;
         }
+        range(w, "fx.foe_motion", self.fx.foe_motion, 0.0, 2.0)?;
         range(
             w,
             "director.elite_fight_secs",
@@ -3873,21 +3879,34 @@ impl SurvivorArena {
             let p = &mut props[idx];
             let age = self.foes.age[i];
             let pop = (age / 0.25).min(1.0);
-            let wob = (age * 9.0 + self.foes.uid[i] as f32).sin();
             let mk = if slots.glb_foe { FOE_MODEL_K } else { 2.2 };
             let d = k.radius * k.scale * mk * (0.4 + 0.6 * pop);
-            let (sx, sy) = (1.0 - 0.07 * wob, 1.0 + 0.1 * wob);
+            let (phase, tempo) = motion::phase_tempo(self.foes.uid[i]);
+            let pose = motion::pose(
+                motion::POOL_MOTION[m],
+                self.anim_t,
+                phase,
+                tempo,
+                self.spec.fx.foe_motion,
+                self.foes.flash[i],
+            );
             let (x, z) = (self.foes.x[i], self.foes.z[i]);
             p.enabled = true;
-            // The ghost floats a little; the others shamble on the ground.
+            // The ghost and the vampire float a little; the others walk on the ground.
             let float = if slots.glb_foe && (m == 0 || k.model == 3) {
-                0.12 + 0.06 * wob
+                0.12
             } else {
                 0.0
             };
-            p.position = [x, if slots.glb_foe { float } else { d * 0.4 }, z];
+            let rest = if slots.glb_foe { float } else { d * 0.4 };
+            p.position = [x, rest + pose.lift * d.min(1.5), z];
             p.yaw = (hx - x).atan2(hz - z);
-            p.scale = [d * sx, d * sy, d * sx];
+            if slots.glb_foe {
+                // A prop's +pitch lifts its nose (YXZ, front +Z toward the hero): lean is minus.
+                p.pitch = -pose.pitch;
+                p.roll = pose.roll;
+            }
+            p.scale = [d * pose.wide, d * pose.tall, d * pose.wide];
             let fl = self.foes.flash[i] * 10.0;
             let glow = if k.elite {
                 0.35 + 0.25 * (self.anim_t * 4.0).sin()

@@ -566,6 +566,7 @@
         0.65,
         1.0
       ],
+      "foe_motion": 1.0,
       "high_post": true,
       "knockback": 0.12,
       "particles": true,
