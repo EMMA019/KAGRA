@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Preview page: a device whose GPU draws black above a canvas size steps down by itself.** Emma's Pixel 10 (PowerVR D-Series) drew only black at render scale 2 (822x1530: the High and Max tiers, and Auto once it climbed to High), fine at 1.5. Ten frames after any resize the page samples the picture; if it is blank it steps the scale down one rung and keeps that ceiling for the device (`localStorage kagra.scale.safe`). `?dev=1&scale=` and `&cascades=` A/B one setting over a tier.
+
 - **Preview page: no more silent black screen.** An exception in the frame loop, or anywhere between hiding the loading card and showing the title, used to stop the page with no title and no message. The loop now catches it and shows the error (with the Rust panic text when there is one), errors before the loop show the start error, the gamepad read turns itself off if `getGamepads()` throws (a portal iframe without `allow="gamepad"`), graphics tiers fail soft to the default, and the loading card names the GPU step while the backend starts.
 
 - **Moonlit Swarm: a fixed on-screen thumb stick is the default.** `input.move` is `stick` (default) or `drag` (the old drag-follow): a translucent base bottom-left, a big thumb zone (lower-left), `input.stick_dead` dead zone and analog speed; any other finger taps to lock a foe, so manual aim keeps its own thumb. play.html also reads a standard gamepad (left stick or d-pad move, A / right trigger = action, Start = pause); keyboard WASD / arrows + Space already worked.

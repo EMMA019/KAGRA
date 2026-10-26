@@ -889,8 +889,17 @@
     const SCALE_STEPS = [2, 1.5, 1.25, 1];
     let scaleStep = 0;
     let tierCap = SCALE_STEPS[0];
-    const effectiveCap = () => (scaleStep ? Math.min(tierCap, SCALE_STEPS[scaleStep]) : tierCap);
+    // Some GPUs draw only black above a canvas size (a Pixel 10, PowerVR D-Series: black at
+    // 822x1530, fine at 617x1148). A blank frame after a resize steps the scale down and this
+    // device keeps that ceiling (`checkSize` in the loop).
+    const SAFE_SCALE_KEY = "kagra.scale.safe";
+    let safeCap = (() => {
+      try { const v = Number(localStorage.getItem(SAFE_SCALE_KEY)); return v >= 1 ? v : Infinity; } catch { return Infinity; }
+    })();
+    const effectiveCap = () => Math.min(safeCap, scaleStep ? Math.min(tierCap, SCALE_STEPS[scaleStep]) : tierCap);
     let redraw = 0;
+    let sizeCheck = 0; // frames until a new canvas size is checked for a blank picture
+    let sizeScale = 1;
     const fit = () => {
       orient();
       const scale = Math.min(window.devicePixelRatio || 1, effectiveCap());
@@ -901,7 +910,18 @@
         canvas.height = h;
         session.createSurface(w, h);
         redraw = 3; // a resized canvas is blank: draw it even on a render_skip frame
+        sizeCheck = 10;
+        sizeScale = scale;
       }
+    };
+    const checkSize = () => {
+      if (!sizeCheck || --sizeCheck > 0 || document.hidden) return;
+      const next = SCALE_STEPS.find((v) => v < sizeScale - 0.01);
+      if (!next || !canvasIsBlank(canvas)) return;
+      console.warn(`kagra: blank frame at scale ${sizeScale}, this device stays at ${next} or below`);
+      safeCap = next;
+      try { localStorage.setItem(SAFE_SCALE_KEY, String(next)); } catch {}
+      fit();
     };
     fit();
     window.addEventListener("resize", fit);
@@ -1632,6 +1652,7 @@
           });
           return;
         }
+        checkSize();
       }
       try {
         const next = readPhase();
