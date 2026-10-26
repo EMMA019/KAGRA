@@ -2,7 +2,7 @@
 //! wasm / Android / iOS / オフスクリーンが同じ画素を出す。
 //!
 //! 日本語は Zen Maru Gothic Bold（SIL OFL、ゲームが使う字 + かな全部に subset:
-//! `tools/subset_fonts.py`）。subset に無い字は PixelMplus（M+ FONT LICENSE、
+//! `tools/subset_fonts.py`）。subset に無い字は PixelMplus（M+ FONT LICENSE、wasm には入れない、
 //! JIS 第1・2水準）に落ちる。数字・タイトル用の `TextFace::Display` は Cinzel Bold（OFL）。
 //! グリフは `ab_glyph`（純 Rust）で表示サイズの 2 倍にラスタライズし、
 //! カバレッジ画素を 0.5px の `Quad` に展開する。1px 四方の画素文字より
@@ -21,6 +21,9 @@ use crate::scene::{Quad, TextAlign, TextFace, TextQuad};
 const TEXT_SUPERSAMPLE: u32 = 2;
 
 /// 埋め込みフォント（M+ ライセンス: 日本語フォールバック）。
+/// Not in the wasm build (1.1 MB): there every game string is in the Zen Maru subset (a test
+/// checks), and a phone download is worth more than a fallback for text no game ships.
+#[cfg(not(target_arch = "wasm32"))]
 pub const DEFAULT_FONT_BYTES: &[u8] = include_bytes!("../assets/PixelMplus10-Regular.ttf");
 
 /// 滑らかな欧文 UI フォント（Public Sans Bold, SIL OFL）。
@@ -42,6 +45,7 @@ static DISPLAY_FONT: Lazy<ab_glyph::FontArc> = Lazy::new(|| {
         .expect("embedded Cinzel-Bold.ttf must parse")
 });
 
+#[cfg(not(target_arch = "wasm32"))]
 static FONT: Lazy<ab_glyph::FontArc> = Lazy::new(|| {
     ab_glyph::FontArc::try_from_slice(DEFAULT_FONT_BYTES)
         .expect("embedded PixelMplus10-Regular.ttf must parse")
@@ -81,6 +85,7 @@ fn select_font_for(ch: char, face: TextFace) -> Option<&'static ab_glyph::FontAr
     if font_has_glyph(&JP_FONT, ch) {
         return Some(&JP_FONT);
     }
+    #[cfg(not(target_arch = "wasm32"))]
     if font_has_glyph(&FONT, ch) {
         return Some(&FONT);
     }
