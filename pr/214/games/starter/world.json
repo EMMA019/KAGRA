@@ -1,0 +1,20 @@
+{
+  "game": {
+    "half": 7.0,
+    "hazard_radius": 0.5,
+    "hazard_speed": 3.2,
+    "hazards": 4,
+    "id": "starter",
+    "radius": 0.4,
+    "secs": 60.0,
+    "seed": 7,
+    "speed": 5.0,
+    "star_radius": 0.45,
+    "star_score": 10,
+    "stick_dead": 0.12,
+    "stick_px": 70.0,
+    "title": "Starter"
+  },
+  "genre": "starter",
+  "version": 1
+}
