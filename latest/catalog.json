@@ -100,6 +100,17 @@
       "icon": "games/hop_beat/icon.png"
     },
     {
+      "slug": "lantern_watch",
+      "title": "Lantern Watch",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "lantern_watch",
+      "entry": "examples/lantern_watch_minimal.py",
+      "world": "kagra-shared/tests/fixtures/lantern_watch_world.json",
+      "href": "play.html?game=lantern_watch",
+      "icon": "games/lantern_watch/icon.png"
+    },
+    {
       "slug": "meteor_cat",
       "title": "Meteor Cat",
       "version": "0.1.0",

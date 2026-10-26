@@ -1,5 +1,43 @@
 {
   "game": {
+    "audio": {
+      "bgm": {
+        "fade_secs": 0.5,
+        "file": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+        "volume": 0.6
+      },
+      "bgm_volume": 0.5,
+      "enabled": true,
+      "master": 0.8,
+      "sfx": {
+        "gameover": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+          "rate": 1.0,
+          "volume": 0.8
+        },
+        "go": {
+          "file": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+          "rate": 1.0,
+          "volume": 0.7
+        },
+        "hurt": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+          "rate": 1.0,
+          "volume": 0.7
+        },
+        "star": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+          "rate": 1.2,
+          "volume": 0.4
+        },
+        "win": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+          "rate": 1.0,
+          "volume": 0.8
+        }
+      },
+      "sfx_volume": 1.0
+    },
     "half": 7.0,
     "hazard_radius": 0.5,
     "hazard_speed": 3.2,
