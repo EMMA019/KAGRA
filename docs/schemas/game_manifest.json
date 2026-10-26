@@ -4,7 +4,12 @@
   "title": "KAGRA game manifest",
   "description": "Windows の exe と Android の APK が同じ JSON を読む。置き場所は games/<example-stem>.json。",
   "type": "object",
-  "required": ["title", "icon", "version", "entry"],
+  "required": [
+    "title",
+    "icon",
+    "version",
+    "entry"
+  ],
   "additionalProperties": false,
   "properties": {
     "title": {
@@ -37,8 +42,22 @@
     },
     "bundle_assets": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "追加で同梱するリポジトリ相対パス。省略時は world と entry から参照アセットを集める。[\"assets\"] で assets/ 全体。"
+    },
+    "platform": {
+      "type": "object",
+      "description": "Web-portal settings (ads). kagra/platform_spec.py."
+    },
+    "meta": {
+      "type": "object",
+      "description": "Retention layer: wallet, unlocks, daily run. kagra/meta_spec.py."
+    },
+    "page": {
+      "type": "object",
+      "description": "Browser-page features the game uses (best, audio, lang, pause, fixed_step, one_button, music_sync, revive, direct, tagline, theme, blurb, default_quality, quality_words, url_params). kagra/page_spec.py."
     }
   }
 }

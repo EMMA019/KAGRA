@@ -30,5 +30,6 @@
       "min_interval_secs": 90
     }
   },
-  "game": {}
+  "game": {},
+  "page": {"best": true, "audio": true, "default_quality": "mobile", "url_params": {"fx": ["low", "mid", "high"], "cam": ["classic", "chase"]}}
 }

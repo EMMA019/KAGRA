@@ -30,6 +30,9 @@ Windows と Android は同じマニフェストを読む。
 | `world` | いいえ | Android の WorldPlay が読む dump |
 | `application_id` | いいえ | 省略時は `dev.kagra.<slug>` |
 | `bundle_assets` | いいえ | 追加で同梱するパス。`["assets"]` で `assets/` 全体 |
+| `platform` | いいえ | ポータルの広告枠（`kagra/platform_spec.py`） |
+| `meta` | いいえ | コイン・ショップ・デイリー（`kagra/meta_spec.py`） |
+| `page` | いいえ | ブラウザページの機能（ベスト保存、音、言語、一時停止、60 Hz 固定、ワンボタン、音ズレ補正、広告で続ける、直接プレイ、`?fx=` などの URL 切替）。`play.html` はジャンルで分岐せず、これだけを読む（`kagra/page_spec.py`） |
 
 `--game` には例のパスを渡す。`games/platformer_minimal.json` のように JSON を
 直接渡してもよい。

@@ -190,6 +190,8 @@ def _stage_one(repo: Path, out: Path, manifest) -> dict:
         bundle["platform"] = manifest.platform
     if manifest.meta:
         bundle["meta"] = manifest.meta
+    if manifest.page:
+        bundle["page"] = manifest.page
     (dest / "bundle.json").write_text(
         json.dumps(bundle, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
