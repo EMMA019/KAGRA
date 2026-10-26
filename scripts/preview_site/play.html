@@ -1509,14 +1509,45 @@
       setScaleCap: (cap) => { tierCap = cap; scaleStep = 0; avgGap = 16.7; gapFrames = 0; fit(); },
     });
 
+    // Gamepad (standard mapping): left stick / d-pad move, A or right trigger = action, Start = pause.
+    let padStart = false;
+    const padAxis = () => {
+      const out = { lx: 0, lz: 0, act: false };
+      if (!navigator.getGamepads) return out;
+      let startDown = false;
+      for (const gp of navigator.getGamepads()) {
+        if (!gp || !gp.connected) continue;
+        let x = gp.axes[0] || 0, y = gp.axes[1] || 0;
+        const m = Math.hypot(x, y);
+        if (m < 0.18) { x = 0; y = 0; } else { const s = Math.min(1, (m - 0.18) / 0.77) / m; x *= s; y *= s; }
+        const b = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
+        if (b(14)) x -= 1;
+        if (b(15)) x += 1;
+        if (b(12)) y -= 1;
+        if (b(13)) y += 1;
+        out.lx += x;
+        out.lz += -y;
+        if (b(0) || b(7)) out.act = true;
+        if (b(9)) startDown = true;
+      }
+      out.lx = clamp(out.lx);
+      out.lz = clamp(out.lz);
+      if (startDown && !padStart && (hopMode || survivorMode) && phase === "playing") {
+        if (hopPhase() === "pause") session.resumeRun(); else session.pauseRun();
+      }
+      padStart = startDown;
+      return out;
+    };
+
     const loop = () => {
       if (recovering) return;
       adapt(performance.now());
       const k = keyAxis();
-      const jump = state.jump || held.has(" ") || held.has("Spacebar");
+      const gpd = padAxis();
+      const jump = state.jump || held.has(" ") || held.has("Spacebar") || gpd.act;
       session.setPlayInput(
-        clamp(state.lx + k.lx),
-        clamp(state.lz + k.lz),
+        clamp(state.lx + k.lx + gpd.lx),
+        clamp(state.lz + k.lz + gpd.lz),
         jump,
         state.attack || k.attack,
         false,

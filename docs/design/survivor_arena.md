@@ -326,7 +326,7 @@ Order by visible impact per effort: animated characters (squash/anticipation), f
 ## 17. Manual target selection (PR #209, step 5)
 
 `input.aim` in the JSON spec: `auto` (nearest foe, as before), `manual` or `hybrid` (default). `input.tap_px` is the pick radius (44 px at 400 px short side).
-One thumb keeps steering (drag-follow). The other thumb taps:
+One thumb steers: by default a fixed on-screen stick (bottom-left; `input.move` = `stick`, with `stick_dead`), or the old drag-follow (`drag`). The other thumb taps:
 
 - **a foe** locks it: a red ring on the floor and a bobbing red arrow over it; every weapon fires at it while it is in range (out of range falls back to nearest); tap it again to release;
 - **bare ground** aims that way (a gold line from the hero); a tap on the hero clears it;

@@ -136,8 +136,10 @@ impl Default for HeroSpec {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct InputSpec {
-    /// `follow` (the hero goes to the finger) or `stick` (a floating stick).
-    pub mode: String,
+    /// `stick` (a fixed on-screen joystick bottom-left, analog, the default) or `drag` (the hero
+    /// goes to the finger). The old `mode` key and `follow` still read as `drag`.
+    #[serde(rename = "move", alias = "mode")]
+    pub move_scheme: String,
     /// Follow: the hero aims this far (m) above the finger, so the thumb does not cover it.
     pub thumb_offset_m: f32,
     /// Follow: closer than this (m) the hero stands still.
@@ -146,6 +148,8 @@ pub struct InputSpec {
     pub full_speed_m: f32,
     /// Stick: radius in pixels at 400 px of short screen side.
     pub stick_px: f32,
+    /// Stick: the inner fraction of the radius that does not move the hero.
+    pub stick_dead: f32,
     /// Who picks the target: `auto` (nearest foe), `manual` (tap a foe to lock it, tap the
     /// ground to aim that way) or `hybrid` (a locked foe first, else nearest).
     pub aim: String,
@@ -156,11 +160,12 @@ pub struct InputSpec {
 impl Default for InputSpec {
     fn default() -> Self {
         Self {
-            mode: "follow".into(),
+            move_scheme: "stick".into(),
             thumb_offset_m: 2.0,
             dead_zone_m: 0.3,
             full_speed_m: 2.2,
             stick_px: 70.0,
+            stick_dead: 0.12,
             aim: "hybrid".into(),
             tap_px: 44.0,
         }
@@ -788,8 +793,8 @@ impl SurvivorSpec {
         range(w, "hero.radius", self.hero.radius, 0.1, 1.0)?;
         range(w, "hero.pickup_radius", self.hero.pickup_radius, 0.3, 10.0)?;
         range(w, "hero.hurt_cd", self.hero.hurt_cd, 0.0, 5.0)?;
-        if !matches!(self.input.mode.as_str(), "follow" | "stick") {
-            return Err(format!("{w}: input.mode is follow|stick"));
+        if !matches!(self.input.move_scheme.as_str(), "drag" | "follow" | "stick") {
+            return Err(format!("{w}: input.move is stick|drag"));
         }
         range(
             w,
@@ -804,6 +809,7 @@ impl SurvivorSpec {
             return Err(format!("{w}: input.full_speed_m must exceed dead_zone_m"));
         }
         range(w, "input.stick_px", self.input.stick_px, 20.0, 200.0)?;
+        range(w, "input.stick_dead", self.input.stick_dead, 0.0, 0.6)?;
         if !matches!(self.input.aim.as_str(), "auto" | "manual" | "hybrid") {
             return Err(format!("{w}: input.aim is auto|manual|hybrid"));
         }
@@ -1934,15 +1940,16 @@ impl SurvivorArena {
         let sp = self.spec.hero.speed * self.mods.speed;
         let mut want = (0.0_f32, 0.0_f32);
         if let Some((fx, fy)) = self.finger {
-            if self.spec.input.mode == "stick" {
+            if self.stick_mode() {
                 let (w, h) = self.size.get();
-                let s = (w.min(h) / 400.0).clamp(0.9, 2.6);
-                let rad = self.spec.input.stick_px * s;
+                let rad = self.stick_radius(w, h);
                 let (dx, dy) = ((fx - self.origin.0) / rad, (fy - self.origin.1) / rad);
                 let len = dx.hypot(dy);
-                if len > 0.12 {
-                    let k = len.min(1.0) / len;
-                    want = (dx * k * sp, dy * k * sp);
+                let dead = self.spec.input.stick_dead;
+                if len > dead {
+                    // Analog: nothing inside the dead zone, then a smooth ramp to full at the rim.
+                    let m = ((len.min(1.0) - dead) / (1.0 - dead)).clamp(0.0, 1.0);
+                    want = (dx / len * m * sp, dy / len * m * sp);
                 }
             } else if let Some((gx, gz)) = self.ground_at(fx, fy) {
                 let (tx, tz) = (gx, gz - self.spec.input.thumb_offset_m);
@@ -2710,6 +2717,19 @@ impl SurvivorArena {
         self.size.set((w.max(1) as f32, h.max(1) as f32));
         let live = self.flow.phase == FlowPhase::Play && self.cards.is_empty();
         match ev.phase {
+            PointerPhase::Begin if live && self.stick_mode() => {
+                let (w, h) = self.size.get();
+                let (cx, cy) = self.stick_center(w, h);
+                if self.finger_id.is_none() && self.in_stick_zone(ev.x, ev.y, w, h) {
+                    // The stick thumb: relative to the fixed base, never a tap.
+                    self.finger_id = Some(ev.id);
+                    self.finger = Some((ev.x, ev.y));
+                    self.origin = (cx, cy);
+                } else if self.finger_id != Some(ev.id) {
+                    // The other thumb: a tap picks the target.
+                    self.tap_select(ev.x, ev.y);
+                }
+            }
             PointerPhase::Begin => {
                 if live && self.finger_id.is_none() {
                     self.finger_id = Some(ev.id);
@@ -2742,6 +2762,30 @@ impl SurvivorArena {
             #[allow(unreachable_patterns)]
             _ => {}
         }
+    }
+
+    fn stick_mode(&self) -> bool {
+        self.spec.input.move_scheme == "stick"
+    }
+
+    /// Stick radius in pixels (a little bigger than the floating one: it is a fixed target).
+    fn stick_radius(&self, w: f32, h: f32) -> f32 {
+        self.spec.input.stick_px * hud_scale(w, h) * 1.25
+    }
+
+    /// The fixed stick's centre: bottom-left, clear of the screen edge and the home bar.
+    fn stick_center(&self, w: f32, h: f32) -> (f32, f32) {
+        let r = self.stick_radius(w, h);
+        (
+            (r * 1.35).max(w * 0.2),
+            h - r * 1.45 - 12.0 * hud_scale(w, h),
+        )
+    }
+
+    /// The thumb zone that grabs the stick: the whole lower-left quadrant-ish, so a thumb
+    /// need not land on the base.
+    fn in_stick_zone(&self, x: f32, y: f32, w: f32, h: f32) -> bool {
+        x < w * 0.55 && y > h * 0.4
     }
 
     /// A tap on a card, a pause button or a pause-card button. True when used.
@@ -4363,8 +4407,53 @@ impl SurvivorArena {
                 ));
             }
         }
-        // The thumb marker: a soft round dot (a square read as a stray grey box).
-        if let Some((fx, fy)) = self.finger {
+        if self.stick_mode() && self.flow.phase == FlowPhase::Play && self.cards.is_empty() {
+            // The fixed stick: a translucent base and a knob that follows the thumb.
+            let (cx, cy) = self.stick_center(w, h);
+            let rad = self.stick_radius(w, h);
+            let (kx, ky) = match self.finger {
+                Some((fx, fy)) => {
+                    let (dx, dy) = (fx - cx, fy - cy);
+                    let d = dx.hypot(dy).max(1e-3);
+                    let k = d.min(rad) / d;
+                    (cx + dx * k, cy + dy * k)
+                }
+                None => (cx, cy),
+            };
+            let live = self.finger.is_some();
+            let (base, rim, knob) = if live { (46, 120, 190) } else { (30, 80, 120) };
+            // A glyph's circle fills about 0.7 em, so the size is the diameter over 0.7.
+            let fs = rad * 2.0 / 0.7;
+            text(
+                &mut list,
+                "●",
+                cx,
+                cy - fs * 0.5,
+                fs,
+                [200, 220, 255, base],
+                TextAlign::Center,
+            );
+            text(
+                &mut list,
+                "○",
+                cx,
+                cy - fs * 0.5,
+                fs,
+                [235, 245, 255, rim],
+                TextAlign::Center,
+            );
+            let ks = rad * 0.9 / 0.7;
+            text(
+                &mut list,
+                "●",
+                kx,
+                ky - ks * 0.5,
+                ks,
+                [255, 255, 255, knob],
+                TextAlign::Center,
+            );
+        } else if let Some((fx, fy)) = self.finger {
+            // The thumb marker: a soft round dot (a square read as a stray grey box).
             text(
                 &mut list,
                 "●",
@@ -4374,17 +4463,6 @@ impl SurvivorArena {
                 [255, 255, 255, 70],
                 TextAlign::Center,
             );
-            if self.spec.input.mode == "stick" {
-                text(
-                    &mut list,
-                    "○",
-                    self.origin.0,
-                    self.origin.1 - 22.0 * s,
-                    44.0,
-                    [255, 255, 255, 50],
-                    TextAlign::Center,
-                );
-            }
         }
         if !self.cards.is_empty() {
             self.hud_cards(&mut list, w, h, s);
@@ -5873,6 +5951,77 @@ mod tests {
         assert_eq!(g.dmg[0].val, 12);
     }
 
+    #[test]
+    fn the_fixed_stick_is_analog_has_a_dead_zone_and_leaves_the_other_thumb_free() {
+        let (w, h) = (390u32, 844u32);
+        let at = |g: &mut SurvivorArena, id, x, y, phase| {
+            g.touch_ev(
+                PointerEvent {
+                    id,
+                    x,
+                    y,
+                    phase,
+                    pressure: 1.0,
+                },
+                w,
+                h,
+            )
+        };
+        let run = |dx: f32, dy: f32| -> (f32, f32) {
+            let mut g = started();
+            g.foes.clear();
+            g.budget = Default::default();
+            g.spec.director.start_rate = 0.0;
+            g.spec.director.end_rate = 0.0;
+            g.hud(w, h, false);
+            let (cx, cy) = g.stick_center(w as f32, h as f32);
+            let r = g.stick_radius(w as f32, h as f32);
+            // Land anywhere in the thumb zone; the push is measured from the base.
+            // Land inside the zone, then slide to the target: dragging past the rim is fine.
+            at(&mut g, 1, cx, cy, PointerPhase::Begin);
+            at(&mut g, 1, cx + dx * r, cy + dy * r, PointerPhase::Move);
+            let p0 = g.hero();
+            for _ in 0..60 {
+                g.tick(DT);
+            }
+            let p1 = g.hero();
+            (p1.0 - p0.0, p1.1 - p0.1)
+        };
+        let still = run(0.05, 0.0);
+        assert!(still.0.hypot(still.1) < 0.05, "dead zone: {still:?}");
+        let half = run(0.55, 0.0);
+        let full = run(1.0, 0.0);
+        assert!(
+            half.0 > 0.5 && full.0 > half.0 * 1.4,
+            "analog: {half:?} {full:?}"
+        );
+        assert!(full.1.abs() < 0.2, "straight right");
+        let up = run(0.0, -1.0);
+        assert!(up.1 < -1.0, "up the screen is -z: {up:?}");
+        let beyond = run(3.0, 0.0);
+        assert!(
+            (beyond.0 - full.0).abs() < 0.3,
+            "the rim clamps: {beyond:?} vs {full:?}"
+        );
+
+        // The stick finger never taps; a finger outside the zone does, with the stick held.
+        let (mut g, _, far) = two_foes();
+        g.hud(w, h, false);
+        let (cx, cy) = g.stick_center(w as f32, h as f32);
+        at(&mut g, 1, cx, cy, PointerPhase::Begin);
+        at(&mut g, 1, cx, cy, PointerPhase::End);
+        assert_eq!(g.locked(), None, "a stick tap is not a foe tap");
+        at(&mut g, 1, cx + 5.0, cy, PointerPhase::Begin);
+        let (x, y) = on_screen(&g, far);
+        at(&mut g, 2, x, y, PointerPhase::Begin);
+        at(&mut g, 2, x, y, PointerPhase::End);
+        assert_eq!(g.locked(), Some(far), "the other thumb locks it");
+        assert!(g.finger.is_some(), "the stick thumb still steers");
+        // The base is on screen in play and gone behind the cards.
+        let l = g.hud(w, h, false);
+        assert!(l.texts.iter().any(|t| t.text == "○"));
+    }
+
     fn ev(phase: PointerPhase, x: f32, y: f32) -> PointerEvent {
         PointerEvent {
             id: 1,
@@ -6123,6 +6272,7 @@ mod tests {
     #[test]
     fn a_quick_tap_of_the_lone_finger_also_locks() {
         let (mut g, _, far) = two_foes();
+        g.spec.input.move_scheme = "drag".into();
         let (x, y) = on_screen(&g, far);
         finger(&mut g, 1, x, y, PointerPhase::Begin);
         g.tick(DT);
@@ -6409,6 +6559,7 @@ mod tests {
     #[test]
     fn a_finger_drags_the_hero_toward_it() {
         let mut g = started();
+        g.spec.input.move_scheme = "drag".into();
         let (w, h) = (800u32, 450u32);
         g.hud(w, h, false);
         let p0 = g.hero();
@@ -6506,7 +6657,7 @@ mod tests {
         s.request_frame();
         assert_eq!(s.survivor_mut().unwrap().phase_name(), "play");
         // Hold a finger to the right: the hero follows over some frames.
-        s.push_pointer(ev(PointerPhase::Begin, 700.0, 225.0));
+        s.push_pointer(ev(PointerPhase::Begin, 300.0, 340.0));
         for _ in 0..90 {
             s.request_frame();
         }
