@@ -411,7 +411,7 @@ Orbs the shooters throw live in a fixed pool and hurt like a touch; the hero's s
                 "damage": 0.0, "cooldown": -0.15, "count": 0, "pierce": 1, "area": 0.0} ]
 ```
 
-A weapon at `min_level` or above plus any level of the named passive adds the row's bonus (`damage`/`cooldown`/`area` are fractions, `count`/`pierce` are whole numbers). The slot chip shows a ✦ while one is active. Rows are data, so a weapon x passive grid can grow without code. Evolve (18.2) builds on it.
+The named passive at `min_level` or above, with the weapon in hand (any level), adds the row's bonus (`damage`/`cooldown`/`area` are fractions, `count`/`pierce` are whole numbers). The slot chip shows a ✦ while one is active. Rows are data, so a weapon x passive grid can grow without code. Evolve (18.2) builds on it.
 
 ### 18.6 Meta layer (wired lightly in 2a)
 

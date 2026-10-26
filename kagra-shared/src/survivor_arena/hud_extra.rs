@@ -173,8 +173,12 @@ impl SurvivorArena {
         }
         if let (Some(j), true) = (best, self.aux.len() >= self.foes.len()) {
             let f = (self.foes.hp[j] / self.aux[j].hp_max.max(1.0)).clamp(0.0, 1.0);
-            let (bw, bh) = ((w * 0.5).min(260.0 * s), 9.0 * s);
-            let (x, y) = (w * 0.5 - bw * 0.5, 88.0 * s);
+            // Right of the weapon chips (they share this band on a narrow phone), centred when
+            // there is room.
+            let chips_end = 8.0 * s + self.spec.levels.max_weapons as f32 * 38.0 * s + 8.0 * s;
+            let bw = (w * 0.5).min(260.0 * s).min(w - chips_end - 12.0 * s);
+            let bh = 9.0 * s;
+            let (x, y) = ((w * 0.5 - bw * 0.5).max(chips_end), 88.0 * s);
             list.quads.push(Quad::new(
                 x - 2.0 * s,
                 y - 2.0 * s,
@@ -189,7 +193,7 @@ impl SurvivorArena {
             list.texts.push(
                 TextQuad::new(
                     &format!("☠ {}", self.tr("WARDEN", "ばんにん")),
-                    w * 0.5,
+                    x + bw * 0.5,
                     y + bh + 3.0 * s,
                     12.0 * s,
                     [255, 200, 190, 255],
