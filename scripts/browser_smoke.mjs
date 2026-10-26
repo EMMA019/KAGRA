@@ -22,8 +22,10 @@ const { chromium } = createRequire(import.meta.url)("playwright");
 
 const root = resolve(process.argv[2] || "dist/preview");
 const only = process.argv.slice(3);
-const WAIT_MS = Number(process.env.SMOKE_WAIT_MS || 60000);
-const PARALLEL = Number(process.env.SMOKE_PARALLEL || 3);
+// SwiftShader on a CI runner is slow: a heavy game took 115 s to its first picture with three
+// at once, and 60 s timed one out (PR #213). Two at a time and a generous wait.
+const WAIT_MS = Number(process.env.SMOKE_WAIT_MS || 150000);
+const PARALLEL = Number(process.env.SMOKE_PARALLEL || 2);
 
 const TYPES = {
   ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json",
