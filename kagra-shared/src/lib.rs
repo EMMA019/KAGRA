@@ -43,6 +43,7 @@ pub mod input;
 pub mod juice;
 pub mod kit_host;
 pub mod ktx_image;
+pub mod lantern_watch;
 pub mod lookat;
 pub mod map;
 pub mod mission;

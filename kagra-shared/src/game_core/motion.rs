@@ -22,6 +22,20 @@ pub enum Motion {
     Stomp,
 }
 
+impl Motion {
+    /// The style a JSON row names: `float`, `shamble`, `hop`, `glide` or `stomp`.
+    pub fn parse(name: &str) -> Option<Self> {
+        Some(match name {
+            "float" => Motion::Float,
+            "shamble" => Motion::Shamble,
+            "hop" => Motion::Hop,
+            "glide" => Motion::Glide,
+            "stomp" => Motion::Stomp,
+            _ => return None,
+        })
+    }
+}
+
 /// Offsets on top of a foe's resting transform.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Pose {

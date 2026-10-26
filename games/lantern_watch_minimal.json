@@ -1,0 +1,23 @@
+{
+  "title": "Lantern Watch",
+  "icon": "assets/icons/game_placeholder.png",
+  "version": "0.1.0",
+  "entry": "examples/lantern_watch_minimal.py",
+  "world": "kagra-shared/tests/fixtures/lantern_watch_world.json",
+  "bundle_assets": [
+    "assets/audio/oga-retro-synth-sfx",
+    "assets/audio/kenney-interface-sounds",
+    "assets/audio/kenney-impact-sounds",
+    "assets/audio/oga-wet-squish",
+    "assets/audio/oga-flowerbed-fields",
+    "assets/models/kenney/graveyard-kit"
+  ],
+  "page": {
+    "best": true,
+    "audio": true,
+    "lang": true,
+    "pause": true,
+    "fixed_step": true,
+    "blurb": "blurb.lantern"
+  }
+}

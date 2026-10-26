@@ -47,7 +47,8 @@ KAGRA_BAKE=1 cargo test -p kagra-shared --lib <slug>::
 |---|---|
 | 固定ステップの駆動、ヒットストップ、スコア | `game_core::{tick_frame, Kit, Core}` |
 | フローティングのスティック（着地、追従、アナログ、見た目） | `game_core::stick` |
-| 群れの体の動き（ふわふわ、よろよろ、ぴょん、すべり、どしん） | `game_core::motion` |
+| カメラ（縦でも横でも範囲が収まる）、タップした物・地面 | `game_core::view::{View::frame, project, ground_at}` |
+| 群れの体の動き（ふわふわ、よろよろ、ぴょん、すべり、どしん。JSON で `Motion::parse`） | `game_core::motion` |
 | 敵プール、空間グリッド、出現予算、シード付き乱数 | `game_core::swarm` |
 | 敵の JSON 定義（歩く・飛ぶ・跳ぶ・予告） | `game_core::enemies`（`docs/enemy_kit.md`） |
 | ライフ、ミッション、結果、ゲームの手触り | `game_core::{lives, missions, result, juice, feel}` |

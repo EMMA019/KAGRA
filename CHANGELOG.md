@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Lantern Watch, a one-thumb tap defense (`lantern_watch`).** The dead rise on the rim of a graveyard and walk toward the lantern in the middle; tap one to strike it (ghosts and skeletons fall to one tap, zombies take three, vampires weave), every hit knocks it back, a tap on empty ground breaks the combo multiplier, and five that reach the lantern put it out. Last 90 s for the dawn bonus. Built from the Starter template with bundled assets only (Kenney Graveyard Kit, the existing sounds); walkers, waves and scores are JSON (`game.foes`). Build log: `docs/agent-runs/20261026-lantern-watch/`.
+
+- **`game_core::view`: camera math for touch.** `View::frame` backs the camera off until a set of ground points fits a phone either way up, `View::fit` widens the angle instead, `project` puts a world point on the canvas and `ground_at` finds the ground under a finger (Moonlit Swarm's private copies now call it). The Starter template uses it, so its arena no longer loses its sides on a portrait phone, and plays music and sound cues (`game.audio`). `Motion::parse` lets JSON pick a crowd motion.
+
 - **survivor_arena.rs split up (no behaviour change).** 6,843 lines became the kit core (2,330) plus `survivor_arena/{spec, input, doc, hud, tests}.rs` next to the existing `hud_extra`, `loot`, `view` and `weapons`: the spec and its checks, touch / pointer input, the 3D world, the HUD and the tests each in their own file. Moved private methods became `pub(super)`; the code is otherwise unchanged.
 
 - **Docs say what KAGRA is for now.** `AGENTS.md` is rewritten around the goal (phone browser games made with AI, the engine growing from the games), the kit + JSON + manifest workflow, the template, the shared parts, the page contract, the ship checks, assets and the PR rules; the old desktop / VRM guide moves to `old/docs-archive/AGENTS-2026-10-legacy.md`. `docs/ROADMAP.ja.md` and `docs/REVIEW.ja.md` are rewritten for the same goal (the old ones are archived next to it); the Cursor skill points at `AGENTS.md`; `docs/AGENT.md` says it maps the desktop side.

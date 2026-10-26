@@ -21,6 +21,7 @@
 //!   for survivor-style kits.
 //! - [`stick`]: a floating thumb stick (landing, follow, analog push, smooth look).
 //! - [`motion`]: body motion for a crowd of static models (bob, squash, sway, lean, flinch).
+//! - [`view`]: camera math for touch (fit a phone in either orientation, project, ground under a finger).
 //!
 //! The runner kit (`neon_cat.rs`), HOP-BEAT and the survivor arena are the kits today.
 
@@ -36,6 +37,7 @@ pub mod result;
 pub mod run;
 pub mod stick;
 pub mod swarm;
+pub mod view;
 
 use crate::flow::{FlowPhase, GameFlow};
 

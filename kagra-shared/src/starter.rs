@@ -8,17 +8,22 @@
 //! - [`crate::game_core`]: the fixed-step driver ([`tick_frame`]), run stats, hitstop, the
 //!   floating [`stick`].
 //! - [`crate::hud_kit`]: the rounded [`gauge`].
+//! - [`crate::game_core::view`]: a camera that fits the arena on a phone either way up.
+//! - [`crate::mixer`]: music and sound cues; `game.audio` names the files the page plays.
 //! - [`crate::kit_host::KitHost`]: what the session and the page call.
 //!
 //! To make a new game, run `python scripts/new_kit.py <slug> "<Title>"`, then change the
 //! parts marked `GAME:` below. Keep the rest: it is what the page, the preview and the tests
 //! expect. `docs/making_a_game.md` walks through it.
 
+use std::cell::Cell;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::flow::{FlowPhase, GameFlow};
 use crate::game_core::swarm::Rng;
+use crate::game_core::view::View;
 use crate::game_core::{stick, tick_frame, Core, Kit};
 use crate::hop_beat::{glb_prop, glb_ready, light, prop};
 use crate::hud_kit::gauge;
@@ -68,6 +73,8 @@ pub struct StarterSpec {
     pub stick_px: f32,
     pub stick_dead: f32,
     pub seed: u32,
+    /// Music and sound cues for the page (file names under the bundle). Passed through.
+    pub audio: Option<Value>,
 }
 
 impl Default for StarterSpec {
@@ -87,6 +94,7 @@ impl Default for StarterSpec {
             stick_px: 70.0,
             stick_dead: 0.12,
             seed: 7,
+            audio: Some(default_audio()),
         }
     }
 }
@@ -130,6 +138,28 @@ const HERO_GLB: &str = "assets/models/kenney/mini-characters/character-female-a.
 const STAR_GLB: &str = "assets/models/kenney/platformer-kit/jewel.glb";
 const HAZARD_GLB: &str = "assets/models/kenney/graveyard-kit/character-ghost.glb";
 
+/// GAME: the music and the sound cues. The sim cues a name (`crate::mixer::cue_sfx`); this
+/// maps names to files. Add the folders to the manifest's `bundle_assets`.
+fn default_audio() -> Value {
+    let sfx = "assets/audio/oga-retro-synth-sfx/";
+    let cue =
+        |f: &str, v: f64, r: f64| json!({"file": format!("{sfx}{f}"), "volume": v, "rate": r});
+    json!({
+        "enabled": true,
+        "master": 0.8,
+        "sfx_volume": 1.0,
+        "bgm_volume": 0.5,
+        "bgm": {"file": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3", "volume": 0.6, "fade_secs": 0.5},
+        "sfx": {
+            "star": cue("retro_coin_01.wav", 0.4, 1.2),
+            "hurt": cue("retro_die_01.wav", 0.7, 1.0),
+            "win": cue("power_up_04.wav", 0.8, 1.0),
+            "gameover": cue("retro_die_03.wav", 0.8, 1.0),
+            "go": {"file": "assets/audio/kenney-interface-sounds/confirmation_001.wav", "volume": 0.7, "rate": 1.0}
+        }
+    })
+}
+
 // ----------------------------------------------------------------- run ----
 
 #[derive(Debug)]
@@ -155,7 +185,8 @@ pub struct Starter {
     finger_id: Option<u32>,
     finger: Option<(f32, f32)>,
     base: (f32, f32),
-    size: (f32, f32),
+    /// The canvas in pixels, from the last HUD call (the camera fits it).
+    size: Cell<(f32, f32)>,
 }
 
 impl Starter {
@@ -182,7 +213,7 @@ impl Starter {
             finger_id: None,
             finger: None,
             base: (0.0, 0.0),
-            size: (390.0, 844.0),
+            size: Cell::new((390.0, 844.0)),
         };
         g.reset_field();
         g.build_doc();
@@ -261,6 +292,8 @@ impl Starter {
                 self.reset_field();
                 self.best_before = self.flow.best_score;
                 self.flow.enter_play();
+                crate::mixer::cue_sfx("go");
+                crate::mixer::play_bgm("bgm", 0.5);
             }
             FlowPhase::Pause => self.flow.resume(),
             FlowPhase::Play => {}
@@ -283,6 +316,8 @@ impl Starter {
 
     fn finish(&mut self, win: bool) {
         self.win = win;
+        crate::mixer::stop_bgm(0.6);
+        crate::mixer::cue_sfx(if win { "win" } else { "gameover" });
         let score = self.core.stats.score;
         self.new_best = score > self.best_before;
         self.flow.finish(
@@ -298,7 +333,7 @@ impl Starter {
     fn step_sim(&mut self, dt: f32) {
         self.t += dt;
         // Move: stick first, keys otherwise. Screen y down is world +z (the camera looks -z).
-        let (w, h) = self.size;
+        let (w, h) = self.size.get();
         let dir = match self.finger {
             Some(f) => stick::analog(self.base, f, self.stick_radius(w, h), self.spec.stick_dead),
             None => {
@@ -334,6 +369,7 @@ impl Starter {
             self.core.stats.score += self.spec.star_score;
             self.core.stats.rings += 1;
             self.core.stats.just_rings += 1;
+            crate::mixer::cue_sfx("star");
             self.place_star();
         }
         // A hazard ends the run: the core's hitstop, then `tick_frame` finishes it.
@@ -347,6 +383,8 @@ impl Starter {
             self.core.stats.just_crash = true;
             self.core.stats.death = "hazard".into();
             self.core.juice.hitstop = 0.25;
+            crate::mixer::stop_bgm(0.6);
+            crate::mixer::cue_sfx("hurt");
             self.new_best = self.core.stats.score > self.best_before;
             return;
         }
@@ -371,7 +409,7 @@ impl Starter {
 
     pub fn touch_ev(&mut self, ev: PointerEvent, w: u32, h: u32) {
         let (w, h) = (w.max(1) as f32, h.max(1) as f32);
-        self.size = (w, h);
+        self.size.set((w, h));
         let r = self.stick_radius(w, h);
         match ev.phase {
             PointerPhase::Begin
@@ -472,13 +510,14 @@ impl Starter {
                 0.1,
             ));
         }
+        let view = self.view();
         doc.cameras.push(WorldCamera {
             id: "camera:main".into(),
             kind: "camera".into(),
             name: "arena".into(),
-            position: [0.0, half * 2.1, half * 1.25],
-            target: [0.0, 0.0, 0.0],
-            fov: 50.0,
+            position: view.eye,
+            target: view.target,
+            fov: view.fov,
             roll: 0.0,
         });
         doc.lights.push(light(
@@ -494,9 +533,24 @@ impl Starter {
         self.doc = doc;
     }
 
+    /// GAME: the camera. It fits the whole arena on the canvas, portrait or landscape.
+    fn view(&self) -> View {
+        let half = self.spec.half;
+        let (w, h) = self.size.get();
+        let m = half + 0.3;
+        View::frame(
+            [0.0, 0.0, 0.0],
+            [0.0, 2.1, 1.25],
+            45.0,
+            &View::ground_box(-m, m, -m, m, 0.0),
+            w / h.max(1.0),
+        )
+    }
+
     /// GAME: the in-play HUD (the page draws the title and result cards).
     pub fn hud(&self, w: u32, h: u32, _menu: bool) -> DrawList {
         let (w, h) = (w as f32, h as f32);
+        self.size.set((w.max(1.0), h.max(1.0)));
         let s = hud_scale(w, h);
         let mut list = DrawList::default();
         if !matches!(self.flow.phase, FlowPhase::Play | FlowPhase::Pause) {
@@ -809,6 +863,29 @@ mod tests {
             hud.quads.iter().any(|q| q.radius > 0.0),
             "gauge and stick are rounded"
         );
+    }
+
+    #[test]
+    fn the_whole_arena_is_on_screen_either_way_up() {
+        let mut g = started();
+        for (w, h) in [(390_u32, 844_u32), (844, 390), (1024, 768)] {
+            let _ = g.hud(w, h, false);
+            g.rebuild();
+            let cam = &g.document().cameras[0];
+            let view = View {
+                eye: cam.position,
+                target: cam.target,
+                fov: cam.fov,
+            };
+            let half = g.spec.half;
+            for (x, z) in [(-half, -half), (half, -half), (-half, half), (half, half)] {
+                let (sx, sy) = view.project([x, 0.0, z], w as f32, h as f32).unwrap();
+                assert!(
+                    (0.0..=w as f32).contains(&sx) && (0.0..=h as f32).contains(&sy),
+                    "{w}x{h}: corner ({x}, {z}) at ({sx}, {sy})"
+                );
+            }
+        }
     }
 
     #[test]
