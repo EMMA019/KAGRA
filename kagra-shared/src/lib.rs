@@ -80,6 +80,7 @@ pub mod sleeve;
 pub mod sports;
 pub mod spring;
 pub mod sprite;
+pub mod starter;
 pub mod stealth;
 pub mod strokes;
 pub mod survival;
