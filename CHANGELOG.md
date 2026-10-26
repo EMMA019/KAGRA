@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Preview page: a device whose GPU draws black above a canvas size steps down by itself.** Emma's Pixel 10 (PowerVR D-Series) drew only black at render scale 2 (822x1530: the High and Max tiers, and Auto once it climbed to High), fine at 1.5. Ten frames after any resize the page samples the picture; if it is blank it steps the scale down one rung and keeps that ceiling for the device (`localStorage kagra.scale.safe`). `?dev=1&scale=` and `&cascades=` A/B one setting over a tier.
+- **Preview page: PowerVR phones render at 1.5x at most.** Emma's Pixel 10 (Chrome, `img-tec d-series`) blacked out the whole page, title and all, at render scale 2 (822x1530: the High and Max tiers, and Auto once it climbed to High) while the game ran and played sound; 1.5 is fine. The page reads the GPU name (WebGPU adapter info, else the WebGL2 renderer) and caps PowerVR at 1.5. As a second net, ten frames after any resize a blank picture steps the scale down a rung and the device keeps that ceiling (`localStorage kagra.scale.safe`). `?dev=1&scale=` (lifts the PowerVR cap) and `&cascades=` A/B one setting over a tier.
 
 - **Preview page: no more silent black screen.** An exception in the frame loop, or anywhere between hiding the loading card and showing the title, used to stop the page with no title and no message. The loop now catches it and shows the error (with the Rust panic text when there is one), errors before the loop show the start error, the gamepad read turns itself off if `getGamepads()` throws (a portal iframe without `allow="gamepad"`), graphics tiers fail soft to the default, and the loading card names the GPU step while the backend starts.
 

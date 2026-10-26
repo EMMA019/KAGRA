@@ -719,9 +719,11 @@
     let portalHost = null; // portal.js: ads and gameplay events for a web-game portal
     let portalPage = null;
     let metaLayer = null; // meta.js: wallet, unlocks, daily run. META hooks 2-4 below.
+    let gpuName = ""; // adapter vendor / architecture, or the WebGL2 renderer string
     try {
       if (navigator.gpu && navigator.gpu.requestAdapter) {
         const adapter = await navigator.gpu.requestAdapter();
+        if (adapter && adapter.info) gpuName = `${adapter.info.vendor || ""} ${adapter.info.architecture || ""}`;
         if (!adapter) {
           Object.defineProperty(Navigator.prototype, "gpu", {
             configurable: true,
@@ -889,13 +891,23 @@
     const SCALE_STEPS = [2, 1.5, 1.25, 1];
     let scaleStep = 0;
     let tierCap = SCALE_STEPS[0];
-    // Some GPUs draw only black above a canvas size (a Pixel 10, PowerVR D-Series: black at
-    // 822x1530, fine at 617x1148). A blank frame after a resize steps the scale down and this
-    // device keeps that ceiling (`checkSize` in the loop).
+    // Some GPUs draw only black above a canvas size. A blank frame after a resize steps the
+    // scale down and this device keeps that ceiling (`checkSize` in the loop).
     const SAFE_SCALE_KEY = "kagra.scale.safe";
     let safeCap = (() => {
       try { const v = Number(localStorage.getItem(SAFE_SCALE_KEY)); return v >= 1 ? v : Infinity; } catch { return Infinity; }
     })();
+    // PowerVR (a Pixel 10, Chrome): at render scale 2 the whole page went black, title and all,
+    // while the game ran and played sound, so a frame readback cannot see it. Cap it up front.
+    if (!gpuName) {
+      try {
+        const gl = document.createElement("canvas").getContext("webgl2");
+        const ext = gl && gl.getExtension("WEBGL_debug_renderer_info");
+        if (gl) gpuName = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+        gl?.getExtension("WEBGL_lose_context")?.loseContext();
+      } catch (_) {}
+    }
+    if (/img-tec|imagination|powervr/i.test(gpuName) && !(dev && params.has("scale"))) safeCap = Math.min(safeCap, 1.5);
     const effectiveCap = () => Math.min(safeCap, scaleStep ? Math.min(tierCap, SCALE_STEPS[scaleStep]) : tierCap);
     let redraw = 0;
     let sizeCheck = 0; // frames until a new canvas size is checked for a blank picture
