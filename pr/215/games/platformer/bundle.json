@@ -1,0 +1,335 @@
+{
+  "slug": "platformer",
+  "title": "Box Hop",
+  "version": "0.1.0",
+  "genre": "box_hop",
+  "world": "world.json",
+  "files": [
+    {
+      "path": "world.json",
+      "url": "games/platformer/world.json",
+      "v": "fe1fbce5b1"
+    },
+    {
+      "path": "kagra_game.json",
+      "url": "games/platformer/kagra_game.json",
+      "v": "5ff709c5a8"
+    },
+    {
+      "path": "assets/audio/LICENSE.txt",
+      "url": "assets/audio/LICENSE.txt",
+      "v": "42eaec62d1"
+    },
+    {
+      "path": "assets/audio/bgm.wav",
+      "url": "assets/audio/bgm.wav",
+      "v": "0841950e00"
+    },
+    {
+      "path": "assets/audio/card.wav",
+      "url": "assets/audio/card.wav",
+      "v": "82d078f0df"
+    },
+    {
+      "path": "assets/audio/fire.wav",
+      "url": "assets/audio/fire.wav",
+      "v": "e0c24e16c8"
+    },
+    {
+      "path": "assets/audio/hop_beat/LICENSE.txt",
+      "url": "assets/audio/hop_beat/LICENSE.txt",
+      "v": "917dff300c"
+    },
+    {
+      "path": "assets/audio/hop_beat/combo.wav",
+      "url": "assets/audio/hop_beat/combo.wav",
+      "v": "13946f5930"
+    },
+    {
+      "path": "assets/audio/hop_beat/fall.wav",
+      "url": "assets/audio/hop_beat/fall.wav",
+      "v": "31f1d8074b"
+    },
+    {
+      "path": "assets/audio/hop_beat/good.wav",
+      "url": "assets/audio/hop_beat/good.wav",
+      "v": "70f73f20d1"
+    },
+    {
+      "path": "assets/audio/hop_beat/hit.wav",
+      "url": "assets/audio/hop_beat/hit.wav",
+      "v": "21f69dda2d"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop.wav",
+      "url": "assets/audio/hop_beat/hop.wav",
+      "v": "561e6e11ea"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_beatgrid.json",
+      "url": "assets/audio/hop_beat/hop_beat_beatgrid.json",
+      "v": "69dc551a9d"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_gameover.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_gameover.mp3",
+      "v": "1865a59646"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_loop.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_loop.mp3",
+      "v": "e25a9d983b"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_newbest.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_newbest.mp3",
+      "v": "47285841db"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_revive.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_revive.mp3",
+      "v": "f8ae0b7836"
+    },
+    {
+      "path": "assets/audio/hop_beat/land.wav",
+      "url": "assets/audio/hop_beat/land.wav",
+      "v": "62f7482dc4"
+    },
+    {
+      "path": "assets/audio/hop_beat/perfect.wav",
+      "url": "assets/audio/hop_beat/perfect.wav",
+      "v": "19962c2bee"
+    },
+    {
+      "path": "assets/audio/hop_beat/stomp.wav",
+      "url": "assets/audio/hop_beat/stomp.wav",
+      "v": "dfe75ed7e9"
+    },
+    {
+      "path": "assets/audio/hop_beat/warn.wav",
+      "url": "assets/audio/hop_beat/warn.wav",
+      "v": "3780360257"
+    },
+    {
+      "path": "assets/audio/jump.wav",
+      "url": "assets/audio/jump.wav",
+      "v": "b265d4fdfa"
+    },
+    {
+      "path": "assets/audio/kenney-impact-sounds/CREDITS.md",
+      "url": "assets/audio/kenney-impact-sounds/CREDITS.md",
+      "v": "128b6be073"
+    },
+    {
+      "path": "assets/audio/kenney-impact-sounds/LICENSE.txt",
+      "url": "assets/audio/kenney-impact-sounds/LICENSE.txt",
+      "v": "b49aa9c56b"
+    },
+    {
+      "path": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+      "url": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+      "v": "3eba73bda8"
+    },
+    {
+      "path": "assets/audio/kenney-interface-sounds/CREDITS.md",
+      "url": "assets/audio/kenney-interface-sounds/CREDITS.md",
+      "v": "9ddac4c23d"
+    },
+    {
+      "path": "assets/audio/kenney-interface-sounds/LICENSE.txt",
+      "url": "assets/audio/kenney-interface-sounds/LICENSE.txt",
+      "v": "f7966c773b"
+    },
+    {
+      "path": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+      "url": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+      "v": "fe58f3600c"
+    },
+    {
+      "path": "assets/audio/neon_cat/LICENSE.txt",
+      "url": "assets/audio/neon_cat/LICENSE.txt",
+      "v": "d973d7f9a6"
+    },
+    {
+      "path": "assets/audio/neon_cat/bgm.wav",
+      "url": "assets/audio/neon_cat/bgm.wav",
+      "v": "2d649821f4"
+    },
+    {
+      "path": "assets/audio/neon_cat/card.wav",
+      "url": "assets/audio/neon_cat/card.wav",
+      "v": "a5deba6e08"
+    },
+    {
+      "path": "assets/audio/neon_cat/coin.wav",
+      "url": "assets/audio/neon_cat/coin.wav",
+      "v": "ce0ae0de97"
+    },
+    {
+      "path": "assets/audio/neon_cat/gameover.wav",
+      "url": "assets/audio/neon_cat/gameover.wav",
+      "v": "42cbfbf902"
+    },
+    {
+      "path": "assets/audio/neon_cat/hit.wav",
+      "url": "assets/audio/neon_cat/hit.wav",
+      "v": "9c7d60bdde"
+    },
+    {
+      "path": "assets/audio/neon_cat/item.wav",
+      "url": "assets/audio/neon_cat/item.wav",
+      "v": "5e77291f24"
+    },
+    {
+      "path": "assets/audio/neon_cat/jump.wav",
+      "url": "assets/audio/neon_cat/jump.wav",
+      "v": "e895662ef8"
+    },
+    {
+      "path": "assets/audio/neon_cat/knock.wav",
+      "url": "assets/audio/neon_cat/knock.wav",
+      "v": "9d26a2e92d"
+    },
+    {
+      "path": "assets/audio/neon_cat/meow.wav",
+      "url": "assets/audio/neon_cat/meow.wav",
+      "v": "0ce8f2f1c3"
+    },
+    {
+      "path": "assets/audio/neon_cat/mission.wav",
+      "url": "assets/audio/neon_cat/mission.wav",
+      "v": "c97d416829"
+    },
+    {
+      "path": "assets/audio/neon_cat/perch.wav",
+      "url": "assets/audio/neon_cat/perch.wav",
+      "v": "15faa28ce6"
+    },
+    {
+      "path": "assets/audio/neon_cat/robot_off.wav",
+      "url": "assets/audio/neon_cat/robot_off.wav",
+      "v": "4ce33e986f"
+    },
+    {
+      "path": "assets/audio/neon_cat/robot_on.wav",
+      "url": "assets/audio/neon_cat/robot_on.wav",
+      "v": "4bc62ebff3"
+    },
+    {
+      "path": "assets/audio/neon_cat/roll.wav",
+      "url": "assets/audio/neon_cat/roll.wav",
+      "v": "f1d0e7409f"
+    },
+    {
+      "path": "assets/audio/oga-flowerbed-fields/CREDITS.md",
+      "url": "assets/audio/oga-flowerbed-fields/CREDITS.md",
+      "v": "d9caacbc3c"
+    },
+    {
+      "path": "assets/audio/oga-flowerbed-fields/LICENSE.txt",
+      "url": "assets/audio/oga-flowerbed-fields/LICENSE.txt",
+      "v": "aa1d8df4be"
+    },
+    {
+      "path": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+      "url": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+      "v": "8be3009beb"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/CREDITS.md",
+      "url": "assets/audio/oga-retro-synth-sfx/CREDITS.md",
+      "v": "7f18cd6513"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/LICENSE.txt",
+      "url": "assets/audio/oga-retro-synth-sfx/LICENSE.txt",
+      "v": "f7cb95a5fe"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+      "v": "770685003f"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+      "v": "50b01a7974"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+      "v": "955fbf6c23"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+      "v": "8dde50e1fe"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+      "v": "8ac1eb6e4c"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+      "v": "c41ef1b321"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+      "v": "5d7d10947f"
+    },
+    {
+      "path": "assets/audio/oga-wet-squish/CREDITS.md",
+      "url": "assets/audio/oga-wet-squish/CREDITS.md",
+      "v": "935afd1ce8"
+    },
+    {
+      "path": "assets/audio/oga-wet-squish/LICENSE.txt",
+      "url": "assets/audio/oga-wet-squish/LICENSE.txt",
+      "v": "25e5997e61"
+    },
+    {
+      "path": "assets/audio/oga-wet-squish/impactsplat03.wav",
+      "url": "assets/audio/oga-wet-squish/impactsplat03.wav",
+      "v": "73e236ba1e"
+    },
+    {
+      "path": "assets/library/kaykit/adventurers/characters/Knight.glb",
+      "url": "assets/library/kaykit/adventurers/characters/Knight.glb",
+      "v": "60428e3abc"
+    },
+    {
+      "path": "assets/models/kenney/platformer-kit/crate.glb",
+      "url": "assets/models/kenney/platformer-kit/crate.glb",
+      "v": "bced96b106"
+    },
+    {
+      "path": "assets/models/placeholder/chest.glb",
+      "url": "assets/models/placeholder/chest.glb",
+      "v": "e33afdb620"
+    },
+    {
+      "path": "assets/models/placeholder/pine.glb",
+      "url": "assets/models/placeholder/pine.glb",
+      "v": "5d83373239"
+    },
+    {
+      "path": "assets/models/placeholder/rock.glb",
+      "url": "assets/models/placeholder/rock.glb",
+      "v": "bb9395c3be"
+    },
+    {
+      "path": "assets/models/placeholder/tree.glb",
+      "url": "assets/models/placeholder/tree.glb",
+      "v": "73d8d6760c"
+    },
+    {
+      "path": "assets/models/placeholder/well.glb",
+      "url": "assets/models/placeholder/well.glb",
+      "v": "923e243503"
+    }
+  ],
+  "build": "286d6cf259c4"
+}
