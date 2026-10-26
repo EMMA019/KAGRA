@@ -21,6 +21,7 @@
 //!   for survivor-style kits.
 //! - [`stick`]: a floating thumb stick (landing, follow, analog push, smooth look).
 //! - [`motion`]: body motion for a crowd of static models (bob, squash, sway, lean, flinch).
+//! - [`declare_models`]: name every model a game may show, so the GPU set never changes.
 //! - [`view`]: camera math for touch (fit a phone in either orientation, project, ground under a finger).
 //!
 //! The runner kit (`neon_cat.rs`), HOP-BEAT and the survivor arena are the kits today.
@@ -138,6 +139,31 @@ fn finish_juice<K: Kit>(kit: &mut K, dt: f32) {
     juice.tick_sparks(dt, |x, y, z| kit.blocks_spark(x, y, z));
     juice.decay(dt);
     kit.core_mut().juice = juice;
+}
+
+/// Name every glTF model a game may show as a hidden prop, so the set of models the GPU holds
+/// is the same from the first frame to the last. Without it, the first frame that shows a new
+/// model, or the frame its last copy goes away, makes the renderer decode and upload every
+/// model again: a hitch of tens of milliseconds on a phone (`WorldDoc::gpu_mesh_key`).
+/// A model that is not mounted (yet) is skipped, like a prop that falls back to a primitive.
+pub fn declare_models(doc: &mut crate::world_doc::WorldDoc, models: &[&str]) {
+    for (i, path) in models.iter().enumerate() {
+        if !crate::hop_beat::glb_ready(path) {
+            continue;
+        }
+        doc.props.push(crate::world_doc::WorldProp {
+            id: format!("prop:model-{i}"),
+            kind: "prop".into(),
+            name: "model".into(),
+            model: "box".into(),
+            gltf: Some((*path).to_string()),
+            scale: [1.0; 3],
+            enabled: false,
+            is_static: true,
+            collider: Some("none".into()),
+            ..crate::world_doc::WorldProp::default()
+        });
+    }
 }
 
 #[cfg(test)]

@@ -20,7 +20,7 @@ use serde_json::{json, Value};
 
 use crate::flow::{FlowPhase, GameFlow};
 use crate::game_core::view::View;
-use crate::game_core::{tick_frame, Core, Kit};
+use crate::game_core::{declare_models, tick_frame, Core, Kit};
 use crate::hop_beat::{glb_prop, glb_ready, light, prop};
 use crate::hud_kit::round_panel;
 use crate::input::{PointerEvent, PointerPhase};
@@ -688,6 +688,9 @@ impl CrateTower {
             p.roll = -b[4] * (2.0 - b[5]);
             doc.props.push(p);
         }
+        // The crate, barrel and chest stay on the GPU from the first frame (no hitch at the
+        // first barrel or chest).
+        declare_models(&mut doc, &[CRATE_GLB, BARREL_GLB, CHEST_GLB]);
         let view = self.view();
         let sh = self.core.juice.shake;
         doc.cameras.push(WorldCamera {
@@ -1143,6 +1146,18 @@ mod tests {
             }
             let hud = g.hud(w, h, false);
             assert!(hud.texts.iter().any(|t| t.face == TextFace::Display));
+        }
+    }
+
+    #[test]
+    fn the_gpu_model_set_never_changes_while_stacking() {
+        let mut g = started();
+        g.rebuild();
+        let key = g.document().gpu_mesh_key();
+        for i in 0..14 {
+            drop_at(&mut g, if i % 5 == 4 { 1.9 } else { 0.0 });
+            g.rebuild();
+            assert_eq!(g.document().gpu_mesh_key(), key, "crate {i}");
         }
     }
 

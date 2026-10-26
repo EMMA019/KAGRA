@@ -24,7 +24,7 @@ use serde_json::{json, Value};
 use crate::flow::{FlowPhase, GameFlow};
 use crate::game_core::swarm::Rng;
 use crate::game_core::view::View;
-use crate::game_core::{stick, tick_frame, Core, Kit};
+use crate::game_core::{declare_models, stick, tick_frame, Core, Kit};
 use crate::hop_beat::{glb_prop, glb_ready, light, prop};
 use crate::hud_kit::gauge;
 use crate::input::{PointerEvent, PointerPhase};
@@ -510,6 +510,9 @@ impl Starter {
                 0.1,
             ));
         }
+        // GAME: every model the game may show, declared once, so a model appearing or going
+        // never makes the renderer upload them all again (a hitch on a phone).
+        declare_models(&mut doc, &[HERO_GLB, STAR_GLB, HAZARD_GLB]);
         let view = self.view();
         doc.cameras.push(WorldCamera {
             id: "camera:main".into(),
