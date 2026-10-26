@@ -547,7 +547,7 @@ pub fn default_weapons() -> Vec<WeaponSpec> {
             "Throws bolts at the nearest foe",
             "いちばんちかいてきになげる",
         ),
-        glyph: "●".into(),
+        glyph: "弾".into(),
         color: [255, 190, 90],
         kind: WeaponKind::Projectile,
         base: WeaponBase::default(),
@@ -579,7 +579,7 @@ pub fn default_weapons() -> Vec<WeaponSpec> {
             "A fan of petals, deadly up close",
             "ちかくでつよい、はなびらのたば",
         ),
-        glyph: "※".into(),
+        glyph: "花".into(),
         color: [255, 150, 200],
         kind: WeaponKind::Spread,
         base: WeaponBase {
@@ -621,7 +621,7 @@ pub fn default_weapons() -> Vec<WeaponSpec> {
             "Blades circle you and cut what they touch",
             "まわりをまわる、さわるとダメージ",
         ),
-        glyph: "†".into(),
+        glyph: "刃".into(),
         color: [150, 220, 255],
         kind: WeaponKind::Orbit,
         base: WeaponBase {
@@ -663,7 +663,7 @@ pub fn default_weapons() -> Vec<WeaponSpec> {
             "Wisps curve toward foes and burst",
             "てきをおいかけてはじける",
         ),
-        glyph: "☆".into(),
+        glyph: "霊".into(),
         color: [190, 150, 255],
         kind: WeaponKind::Missile,
         base: WeaponBase {
@@ -695,7 +695,7 @@ pub fn default_weapons() -> Vec<WeaponSpec> {
             "Lightning jumps from foe to foe",
             "てきからてきへとびうつる",
         ),
-        glyph: "∠".into(),
+        glyph: "雷".into(),
         color: [255, 245, 130],
         kind: WeaponKind::Chain,
         base: WeaponBase {
@@ -727,7 +727,7 @@ pub fn default_weapons() -> Vec<WeaponSpec> {
             "A ring that shoves the crowd back",
             "まわりをはじきとばすリング",
         ),
-        glyph: "○".into(),
+        glyph: "波".into(),
         color: [120, 235, 220],
         kind: WeaponKind::Pulse,
         base: WeaponBase {

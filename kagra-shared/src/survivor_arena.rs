@@ -1725,6 +1725,18 @@ impl SurvivorArena {
         }
         self.recompute();
         self.hp = self.mods.hp_max;
+        // Say what the hero starts with: the chip alone was an unreadable glyph.
+        if let Some(i) = (0..self.spec.weapons.len()).find(|&i| self.weapon_lv[i] > 0) {
+            let w = &self.spec.weapons[i];
+            let line = format!(
+                "{}  {}  {}",
+                w.glyph,
+                w.name.get(self.lang_ja),
+                self.tr("equipped", "そうび")
+            );
+            let col = w.color.map(|c| c.min(255) as u8);
+            self.set_toast(&line, col);
+        }
     }
 
     pub fn show_title(&mut self) {
@@ -5044,7 +5056,7 @@ mod tests {
         );
         assert!(elite_hud, "the elite has a health bar");
         let hud = g.hud(390, 844, false);
-        assert!(hud.texts.iter().any(|t| t.text == "●"), "the bolt chip");
+        assert!(hud.texts.iter().any(|t| t.text == "弾"), "the bolt chip");
         let w = g.state_value()["weapons"].as_array().unwrap().len();
         assert!(w >= 1);
     }
