@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="robots" content="noindex" />
-  <meta name="kagra-build-id" content="a062046f8904" />
+  <meta name="kagra-build-id" content="aa4529683e97" />
   <title>KAGRA</title>
   <style>
     :root { color-scheme: dark; }
@@ -318,13 +318,13 @@
     <div id="boot" data-i18n="boot">読み込み中…</div>
     <div id="update" hidden><span data-i18n="update.hint">新しいバージョンがあります</span> <button id="updateGo" type="button" data-i18n="update.reload">更新</button></div>
   </div>
-  <script src="./i18n.js?v=a062046f8904"></script>
-  <script src="./quality.js?v=a062046f8904"></script>
-  <script src="./portal.js?v=a062046f8904"></script>
+  <script src="./i18n.js?v=aa4529683e97"></script>
+  <script src="./quality.js?v=aa4529683e97"></script>
+  <script src="./portal.js?v=aa4529683e97"></script>
   <!-- META hook 1/4: wallet, unlocks, daily run (docs/meta_core.md) -->
-  <script src="./meta.js?v=a062046f8904"></script>
+  <script src="./meta.js?v=aa4529683e97"></script>
   <script type="module">
-    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js?v=a062046f8904";
+    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js?v=aa4529683e97";
 
     const boot = document.getElementById("boot");
     const overlay = document.getElementById("overlay");
@@ -719,9 +719,11 @@
     let portalHost = null; // portal.js: ads and gameplay events for a web-game portal
     let portalPage = null;
     let metaLayer = null; // meta.js: wallet, unlocks, daily run. META hooks 2-4 below.
+    let gpuName = ""; // adapter vendor / architecture, or the WebGL2 renderer string
     try {
       if (navigator.gpu && navigator.gpu.requestAdapter) {
         const adapter = await navigator.gpu.requestAdapter();
+        if (adapter && adapter.info) gpuName = `${adapter.info.vendor || ""} ${adapter.info.architecture || ""}`;
         if (!adapter) {
           Object.defineProperty(Navigator.prototype, "gpu", {
             configurable: true,
@@ -889,13 +891,23 @@
     const SCALE_STEPS = [2, 1.5, 1.25, 1];
     let scaleStep = 0;
     let tierCap = SCALE_STEPS[0];
-    // Some GPUs draw only black above a canvas size (a Pixel 10, PowerVR D-Series: black at
-    // 822x1530, fine at 617x1148). A blank frame after a resize steps the scale down and this
-    // device keeps that ceiling (`checkSize` in the loop).
+    // Some GPUs draw only black above a canvas size. A blank frame after a resize steps the
+    // scale down and this device keeps that ceiling (`checkSize` in the loop).
     const SAFE_SCALE_KEY = "kagra.scale.safe";
     let safeCap = (() => {
       try { const v = Number(localStorage.getItem(SAFE_SCALE_KEY)); return v >= 1 ? v : Infinity; } catch { return Infinity; }
     })();
+    // PowerVR (a Pixel 10, Chrome): at render scale 2 the whole page went black, title and all,
+    // while the game ran and played sound, so a frame readback cannot see it. Cap it up front.
+    if (!gpuName) {
+      try {
+        const gl = document.createElement("canvas").getContext("webgl2");
+        const ext = gl && gl.getExtension("WEBGL_debug_renderer_info");
+        if (gl) gpuName = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+        gl?.getExtension("WEBGL_lose_context")?.loseContext();
+      } catch (_) {}
+    }
+    if (/img-tec|imagination|powervr/i.test(gpuName) && !(dev && params.has("scale"))) safeCap = Math.min(safeCap, 1.5);
     const effectiveCap = () => Math.min(safeCap, scaleStep ? Math.min(tierCap, SCALE_STEPS[scaleStep]) : tierCap);
     let redraw = 0;
     let sizeCheck = 0; // frames until a new canvas size is checked for a blank picture
