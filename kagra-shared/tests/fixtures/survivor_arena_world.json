@@ -1,6 +1,7 @@
 {
   "game": {
     "arena": {
+      "dark": 1.0,
       "floor": [
         34,
         46,

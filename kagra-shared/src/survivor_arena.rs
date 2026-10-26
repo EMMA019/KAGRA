@@ -83,6 +83,9 @@ pub struct ArenaSpec {
     pub half: f32,
     pub floor: [u32; 3],
     pub wall: [u32; 3],
+    /// How dark the night is: 0 = the old blue-lit arena, 1 = dim moonlight (darker floor,
+    /// walls and fill, a tighter key light, closer fog) where the pale foes glow out of it.
+    pub dark: f32,
 }
 
 impl Default for ArenaSpec {
@@ -91,6 +94,7 @@ impl Default for ArenaSpec {
             half: 13.0,
             floor: [34, 46, 66],
             wall: [84, 70, 128],
+            dark: 1.0,
         }
     }
 }
@@ -795,6 +799,7 @@ impl SurvivorSpec {
     pub fn validate(&self) -> Result<(), String> {
         let w = "survivor spec";
         range(w, "arena.half", self.arena.half, 6.0, 40.0)?;
+        range(w, "arena.dark", self.arena.dark, 0.0, 1.0)?;
         range(w, "hero.speed", self.hero.speed, 1.0, 12.0)?;
         range(w, "hero.max_hp", self.hero.max_hp, 1.0, 10_000.0)?;
         range(w, "hero.radius", self.hero.radius, 0.1, 1.0)?;
@@ -3164,6 +3169,45 @@ fn props_has_model(p: &crate::WorldProp) -> bool {
 }
 
 impl SurvivorArena {
+    /// `arena.dark`: from the blue-lit arena toward dim moonlight. Fill, sky, fog and the key
+    /// light ease toward the night values; the floor and the walls lose some light.
+    fn darken(&self, doc: &mut WorldDoc) {
+        let k = self.spec.arena.dark.clamp(0.0, 1.0);
+        if k <= 0.0 {
+            return;
+        }
+        let mix = |a: f32, b: f32| a + (b - a) * k;
+        let mix3 = |a: [f32; 3], b: [f32; 3]| [mix(a[0], b[0]), mix(a[1], b[1]), mix(a[2], b[2])];
+        doc.exposure = doc.exposure.map(|e| mix(e, 0.85));
+        doc.hemi_sky = doc.hemi_sky.map(|c| mix3(c, [0.14, 0.16, 0.30]));
+        doc.hemi_ground = doc.hemi_ground.map(|c| mix3(c, [0.08, 0.07, 0.12]));
+        doc.ibl = doc.ibl.map(|v| mix(v, 0.15));
+        doc.sky = doc.sky.map(|c| {
+            let m = mix3([c[0] as f32, c[1] as f32, c[2] as f32], [5.0, 7.0, 18.0]);
+            [m[0] as u8, m[1] as u8, m[2] as u8, c[3]]
+        });
+        doc.vignette = doc.vignette.map(|v| mix(v, 0.5));
+        doc.fog_start = doc.fog_start.map(|v| mix(v, 20.0));
+        doc.fog_end = doc.fog_end.map(|v| mix(v, 48.0));
+        if let Some(key) = doc.lights.get_mut(0) {
+            key.radius = mix(key.radius, 12.0);
+            key.intensity = mix(key.intensity, 1.5);
+            key.color = key.color.map(|c| mix3(c, [0.70, 0.78, 1.0]));
+        }
+        if let Some(lantern) = doc.lights.get_mut(1) {
+            lantern.radius = mix(lantern.radius, 6.0);
+            lantern.intensity = mix(lantern.intensity, 2.2);
+        }
+        let dim = |c: [u32; 3], f: f32| c.map(|v| (v as f32 * mix(1.0, f)) as u32);
+        for p in doc.props.iter_mut() {
+            match p.name.as_str() {
+                "floor" => p.color = p.color.map(|c| dim(c, 0.6)),
+                "wall" => p.color = p.color.map(|c| dim(c, 0.62)),
+                _ => {}
+            }
+        }
+    }
+
     /// Build the persistent prop list once: scenery, then the pools (hero, foes,
     /// gems, shots). After this a frame only edits fields in place.
     fn init_doc(&mut self) {
@@ -3760,6 +3804,7 @@ impl SurvivorArena {
         self.slots.ln_orbit = doc.lines.len();
         doc.lines
             .push(line("orbit".into(), RING_SEG + 1, [150, 220, 255, 50], 3.0));
+        self.darken(&mut doc);
         self.doc = doc;
         self.apply_hints();
     }
@@ -6080,6 +6125,26 @@ mod tests {
         let mut bad = SurvivorSpec::default();
         let step = bad.weapons[0].levels[0].clone();
         bad.weapons[0].levels = vec![step; 10];
+        assert!(bad.validate().is_err());
+    }
+
+    #[test]
+    fn arena_dark_dims_the_night_and_zero_keeps_the_old_look() {
+        let doc_at = |dark: f32| {
+            let mut spec = SurvivorSpec::default();
+            spec.arena.dark = dark;
+            let mut g = SurvivorArena::new(spec);
+            g.build_doc();
+            g.doc.clone()
+        };
+        let (old, night) = (doc_at(0.0), doc_at(1.0));
+        assert_eq!(old.exposure, Some(1.0));
+        assert!(night.exposure.unwrap() < 0.9);
+        assert!(night.lights[0].radius < old.lights[0].radius);
+        let floor = |d: &WorldDoc| d.props.iter().find(|p| p.name == "floor").unwrap().color;
+        assert!(floor(&night).unwrap()[0] < floor(&old).unwrap()[0]);
+        let mut bad = SurvivorSpec::default();
+        bad.arena.dark = 1.5;
         assert!(bad.validate().is_err());
     }
 
