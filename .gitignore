@@ -141,3 +141,6 @@ examples/*.mp4
 --seed*
 
 assets-private/
+
+# scripts/browser_smoke.mjs installs playwright locally
+node_modules/
