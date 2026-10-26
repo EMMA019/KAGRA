@@ -5052,6 +5052,58 @@ mod tests {
     }
 
     #[test]
+    fn a_full_pickup_pool_still_gets_the_warden_chest_and_its_bar_clears_the_chips() {
+        let mut g = quiet("bolt");
+        g.next_elite = 45.0;
+        g.t = 46.0;
+        g.tick(DT);
+        // Fill the pool with ordinary pickups far from the hero.
+        let cap = g.spec.drops.cap as usize;
+        let half = g.spec.arena.half - 1.0;
+        while g.pickups.len() < cap {
+            let k = g.pickups.len() as f32;
+            g.pickups.push(Pickup {
+                x: -half,
+                z: -half + k * 0.1,
+                item: 0,
+                table: 0,
+                age: k,
+                fly: false,
+            });
+        }
+        // The warden's bar starts right of the weapon chips on a narrow phone.
+        let s = hud_scale(390.0, 844.0);
+        let chips_end = 8.0 * s + g.spec.levels.max_weapons as f32 * 38.0 * s;
+        let l = g.hud(390, 844, false);
+        let bar = l
+            .quads
+            .iter()
+            .find(|q| q.color == [255, 110, 90, 255])
+            .expect("the warden bar");
+        assert!(
+            bar.x >= chips_end,
+            "bar at {} under chips to {chips_end}",
+            bar.x
+        );
+        let j = (0..g.foes.len())
+            .find(|&i| g.kinds[g.foes.kind[i] as usize].elite)
+            .unwrap();
+        g.foes.hp[j] = 0.0;
+        g.tick(DT);
+        assert!(
+            g.pickups.iter().any(|p| p.item == CHEST),
+            "the chest is not lost"
+        );
+        assert!(g.pickups.len() <= cap);
+        assert!(
+            g.pickups
+                .iter()
+                .all(|p| p.item == CHEST || p.age < (cap - 1) as f32 + 0.5),
+            "the oldest ordinary pickup made room"
+        );
+    }
+
+    #[test]
     fn the_warden_is_a_fight_that_grows_with_firepower_but_stays_capped() {
         let elite_hp = |g: &mut SurvivorArena| {
             g.next_elite = 45.0;

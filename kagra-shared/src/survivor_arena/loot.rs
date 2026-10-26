@@ -29,8 +29,21 @@ impl SurvivorArena {
         let roll = self.rng.unit(); // always drawn: the dice stay in step
         self.since_drop += 1;
         let hit = roll < chance || (pity > 0 && chance < 1.0 && self.since_drop >= pity);
-        if !hit || self.pickups.len() >= cap {
+        if !hit {
             return;
+        }
+        if self.pickups.len() >= cap {
+            // A full pool drops an ordinary pickup, but the warden's chest is the fight's prize:
+            // it takes the place of the oldest non-chest pickup instead.
+            let oldest = (0..self.pickups.len())
+                .filter(|&i| self.pickups[i].item != CHEST)
+                .max_by(|&a, &b| self.pickups[a].age.total_cmp(&self.pickups[b].age));
+            match (chest, oldest) {
+                (true, Some(i)) => {
+                    self.pickups.swap_remove(i);
+                }
+                _ => return,
+            }
         }
         self.since_drop = 0;
         let item = if chest {
