@@ -1,0 +1,614 @@
+{
+  "slug": "survivor_arena",
+  "title": "Moonlit Swarm",
+  "version": "0.1.0",
+  "genre": "survivor_arena",
+  "world": "world.json",
+  "files": [
+    {
+      "path": "world.json",
+      "url": "games/survivor_arena/world.json",
+      "v": "f02f236a95"
+    },
+    {
+      "path": "kagra_game.json",
+      "url": "games/survivor_arena/kagra_game.json",
+      "v": "ade1f5f31d"
+    },
+    {
+      "path": "assets/audio/bgm.wav",
+      "url": "assets/audio/bgm.wav",
+      "v": "0841950e00"
+    },
+    {
+      "path": "assets/audio/card.wav",
+      "url": "assets/audio/card.wav",
+      "v": "82d078f0df"
+    },
+    {
+      "path": "assets/audio/fire.wav",
+      "url": "assets/audio/fire.wav",
+      "v": "e0c24e16c8"
+    },
+    {
+      "path": "assets/audio/hop_beat/combo.wav",
+      "url": "assets/audio/hop_beat/combo.wav",
+      "v": "13946f5930"
+    },
+    {
+      "path": "assets/audio/hop_beat/fall.wav",
+      "url": "assets/audio/hop_beat/fall.wav",
+      "v": "31f1d8074b"
+    },
+    {
+      "path": "assets/audio/hop_beat/good.wav",
+      "url": "assets/audio/hop_beat/good.wav",
+      "v": "70f73f20d1"
+    },
+    {
+      "path": "assets/audio/hop_beat/hit.wav",
+      "url": "assets/audio/hop_beat/hit.wav",
+      "v": "21f69dda2d"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop.wav",
+      "url": "assets/audio/hop_beat/hop.wav",
+      "v": "561e6e11ea"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_gameover.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_gameover.mp3",
+      "v": "1865a59646"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_loop.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_loop.mp3",
+      "v": "e25a9d983b"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_newbest.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_newbest.mp3",
+      "v": "47285841db"
+    },
+    {
+      "path": "assets/audio/hop_beat/hop_beat_revive.mp3",
+      "url": "assets/audio/hop_beat/hop_beat_revive.mp3",
+      "v": "f8ae0b7836"
+    },
+    {
+      "path": "assets/audio/hop_beat/land.wav",
+      "url": "assets/audio/hop_beat/land.wav",
+      "v": "62f7482dc4"
+    },
+    {
+      "path": "assets/audio/hop_beat/perfect.wav",
+      "url": "assets/audio/hop_beat/perfect.wav",
+      "v": "19962c2bee"
+    },
+    {
+      "path": "assets/audio/hop_beat/stomp.wav",
+      "url": "assets/audio/hop_beat/stomp.wav",
+      "v": "dfe75ed7e9"
+    },
+    {
+      "path": "assets/audio/hop_beat/warn.wav",
+      "url": "assets/audio/hop_beat/warn.wav",
+      "v": "3780360257"
+    },
+    {
+      "path": "assets/audio/jump.wav",
+      "url": "assets/audio/jump.wav",
+      "v": "b265d4fdfa"
+    },
+    {
+      "path": "assets/audio/kenney-interface-sounds/CREDITS.md",
+      "url": "assets/audio/kenney-interface-sounds/CREDITS.md",
+      "v": "9ddac4c23d"
+    },
+    {
+      "path": "assets/audio/kenney-interface-sounds/LICENSE.txt",
+      "url": "assets/audio/kenney-interface-sounds/LICENSE.txt",
+      "v": "f7966c773b"
+    },
+    {
+      "path": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+      "url": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+      "v": "fe58f3600c"
+    },
+    {
+      "path": "assets/audio/neon_cat/bgm.wav",
+      "url": "assets/audio/neon_cat/bgm.wav",
+      "v": "2d649821f4"
+    },
+    {
+      "path": "assets/audio/neon_cat/card.wav",
+      "url": "assets/audio/neon_cat/card.wav",
+      "v": "a5deba6e08"
+    },
+    {
+      "path": "assets/audio/neon_cat/coin.wav",
+      "url": "assets/audio/neon_cat/coin.wav",
+      "v": "ce0ae0de97"
+    },
+    {
+      "path": "assets/audio/neon_cat/gameover.wav",
+      "url": "assets/audio/neon_cat/gameover.wav",
+      "v": "42cbfbf902"
+    },
+    {
+      "path": "assets/audio/neon_cat/hit.wav",
+      "url": "assets/audio/neon_cat/hit.wav",
+      "v": "9c7d60bdde"
+    },
+    {
+      "path": "assets/audio/neon_cat/item.wav",
+      "url": "assets/audio/neon_cat/item.wav",
+      "v": "5e77291f24"
+    },
+    {
+      "path": "assets/audio/neon_cat/jump.wav",
+      "url": "assets/audio/neon_cat/jump.wav",
+      "v": "e895662ef8"
+    },
+    {
+      "path": "assets/audio/neon_cat/knock.wav",
+      "url": "assets/audio/neon_cat/knock.wav",
+      "v": "9d26a2e92d"
+    },
+    {
+      "path": "assets/audio/neon_cat/meow.wav",
+      "url": "assets/audio/neon_cat/meow.wav",
+      "v": "0ce8f2f1c3"
+    },
+    {
+      "path": "assets/audio/neon_cat/mission.wav",
+      "url": "assets/audio/neon_cat/mission.wav",
+      "v": "c97d416829"
+    },
+    {
+      "path": "assets/audio/neon_cat/perch.wav",
+      "url": "assets/audio/neon_cat/perch.wav",
+      "v": "15faa28ce6"
+    },
+    {
+      "path": "assets/audio/neon_cat/robot_off.wav",
+      "url": "assets/audio/neon_cat/robot_off.wav",
+      "v": "4ce33e986f"
+    },
+    {
+      "path": "assets/audio/neon_cat/robot_on.wav",
+      "url": "assets/audio/neon_cat/robot_on.wav",
+      "v": "4bc62ebff3"
+    },
+    {
+      "path": "assets/audio/neon_cat/roll.wav",
+      "url": "assets/audio/neon_cat/roll.wav",
+      "v": "f1d0e7409f"
+    },
+    {
+      "path": "assets/audio/oga-flowerbed-fields/CREDITS.md",
+      "url": "assets/audio/oga-flowerbed-fields/CREDITS.md",
+      "v": "d9caacbc3c"
+    },
+    {
+      "path": "assets/audio/oga-flowerbed-fields/LICENSE.txt",
+      "url": "assets/audio/oga-flowerbed-fields/LICENSE.txt",
+      "v": "aa1d8df4be"
+    },
+    {
+      "path": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+      "url": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+      "v": "8be3009beb"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/CREDITS.md",
+      "url": "assets/audio/oga-retro-synth-sfx/CREDITS.md",
+      "v": "7f18cd6513"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/LICENSE.txt",
+      "url": "assets/audio/oga-retro-synth-sfx/LICENSE.txt",
+      "v": "f7cb95a5fe"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+      "v": "770685003f"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+      "v": "50b01a7974"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+      "v": "955fbf6c23"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+      "v": "8dde50e1fe"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+      "v": "8ac1eb6e4c"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+      "v": "c41ef1b321"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+      "v": "5d7d10947f"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/CREDITS.md",
+      "url": "assets/models/kenney/graveyard-kit/CREDITS.md",
+      "v": "36d7e9aa11"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/LICENSE.txt",
+      "url": "assets/models/kenney/graveyard-kit/LICENSE.txt",
+      "v": "a48e274258"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/character-ghost.glb",
+      "url": "assets/models/kenney/graveyard-kit/character-ghost.glb",
+      "v": "f561e76b18"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/character-zombie.glb",
+      "url": "assets/models/kenney/graveyard-kit/character-zombie.glb",
+      "v": "66cc5f54be"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/cross-wood.glb",
+      "url": "assets/models/kenney/graveyard-kit/cross-wood.glb",
+      "v": "065f1de12f"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/gravestone-broken.glb",
+      "url": "assets/models/kenney/graveyard-kit/gravestone-broken.glb",
+      "v": "0f161dcd62"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/gravestone-cross.glb",
+      "url": "assets/models/kenney/graveyard-kit/gravestone-cross.glb",
+      "v": "61f0d28532"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/gravestone-round.glb",
+      "url": "assets/models/kenney/graveyard-kit/gravestone-round.glb",
+      "v": "9e8da58ba3"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/lantern-candle.glb",
+      "url": "assets/models/kenney/graveyard-kit/lantern-candle.glb",
+      "v": "c3b0fc4657"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/pine-crooked.glb",
+      "url": "assets/models/kenney/graveyard-kit/pine-crooked.glb",
+      "v": "07b5876d8a"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/pine.glb",
+      "url": "assets/models/kenney/graveyard-kit/pine.glb",
+      "v": "020f5c0ab6"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/pumpkin-carved.glb",
+      "url": "assets/models/kenney/graveyard-kit/pumpkin-carved.glb",
+      "v": "b7848f1037"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/pumpkin.glb",
+      "url": "assets/models/kenney/graveyard-kit/pumpkin.glb",
+      "v": "2d14304a4d"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/rocks.glb",
+      "url": "assets/models/kenney/graveyard-kit/rocks.glb",
+      "v": "22ba1f1de1"
+    },
+    {
+      "path": "assets/models/kenney/mini-characters/CREDITS.md",
+      "url": "assets/models/kenney/mini-characters/CREDITS.md",
+      "v": "8cf7a3c4b7"
+    },
+    {
+      "path": "assets/models/kenney/mini-characters/LICENSE.txt",
+      "url": "assets/models/kenney/mini-characters/LICENSE.txt",
+      "v": "28358ae5ac"
+    },
+    {
+      "path": "assets/models/kenney/mini-characters/character-female-a.glb",
+      "url": "assets/models/kenney/mini-characters/character-female-a.glb",
+      "v": "48fe04205d"
+    },
+    {
+      "path": "assets/models/kenney/mini-characters/character-female-d.glb",
+      "url": "assets/models/kenney/mini-characters/character-female-d.glb",
+      "v": "e1e01ae607"
+    },
+    {
+      "path": "assets/models/kenney/mini-characters/character-male-a.glb",
+      "url": "assets/models/kenney/mini-characters/character-male-a.glb",
+      "v": "66a1569929"
+    },
+    {
+      "path": "assets/models/kenney/mini-characters/character-male-c.glb",
+      "url": "assets/models/kenney/mini-characters/character-male-c.glb",
+      "v": "1be5e5bb0f"
+    },
+    {
+      "path": "assets/models/kenney/mini-characters/character-male-e.glb",
+      "url": "assets/models/kenney/mini-characters/character-male-e.glb",
+      "v": "2e99dbcd21"
+    },
+    {
+      "path": "assets/models/kenney/platformer-kit/jewel.glb",
+      "url": "assets/models/kenney/platformer-kit/jewel.glb",
+      "v": "d0169e703c"
+    }
+  ],
+  "platform": {
+    "ads": {
+      "commercial_on": [
+        "retry"
+      ],
+      "rewarded": [
+        {
+          "slot": "double_coins",
+          "at": "game_over",
+          "effect": "none",
+          "per_run": 1
+        }
+      ],
+      "min_interval_secs": 90
+    }
+  },
+  "meta": {
+    "version": 1,
+    "currency": {
+      "id": "coins",
+      "name": {
+        "en": "Coins",
+        "ja": "コイン"
+      }
+    },
+    "earn": {
+      "base": 3,
+      "per": {
+        "kills": 0.1,
+        "level": 2,
+        "time": 0.05,
+        "win": 15
+      },
+      "cap": 300
+    },
+    "patchable": [
+      "hero.skin",
+      "hero.start_passives",
+      "director.seed",
+      "director.start_rate",
+      "director.end_rate",
+      "hero.max_hp",
+      "hero.speed"
+    ],
+    "catalog": [
+      {
+        "id": "hero.classic",
+        "slot": "hero",
+        "name": {
+          "en": "Classic",
+          "ja": "クラシック"
+        },
+        "price": 0,
+        "requires": null,
+        "patch": {
+          "hero": {
+            "skin": "classic",
+            "start_passives": []
+          }
+        },
+        "preview": [
+          [
+            255,
+            214,
+            120
+          ]
+        ]
+      },
+      {
+        "id": "hero.mint",
+        "slot": "hero",
+        "name": {
+          "en": "Mint (quick)",
+          "ja": "ミント（はやあし）"
+        },
+        "price": 100,
+        "requires": null,
+        "patch": {
+          "hero": {
+            "skin": "mint",
+            "start_passives": [
+              {
+                "id": "swift",
+                "level": 2
+              }
+            ]
+          }
+        },
+        "preview": [
+          [
+            140,
+            255,
+            205
+          ]
+        ]
+      },
+      {
+        "id": "hero.ember",
+        "slot": "hero",
+        "name": {
+          "en": "Ember (strong)",
+          "ja": "エンバー（ちからもち）"
+        },
+        "price": 200,
+        "requires": {
+          "stat": "runs",
+          "at_least": 5
+        },
+        "patch": {
+          "hero": {
+            "skin": "ember",
+            "start_passives": [
+              {
+                "id": "might",
+                "level": 1
+              }
+            ]
+          }
+        },
+        "preview": [
+          [
+            255,
+            120,
+            90
+          ]
+        ]
+      },
+      {
+        "id": "hero.ghost",
+        "slot": "hero",
+        "name": {
+          "en": "Ghost (magnet)",
+          "ja": "ゴースト（きゅういん）"
+        },
+        "price": 300,
+        "requires": {
+          "stat": "best_score",
+          "at_least": 1200
+        },
+        "patch": {
+          "hero": {
+            "skin": "ghost",
+            "start_passives": [
+              {
+                "id": "magnet",
+                "level": 2
+              }
+            ]
+          }
+        },
+        "preview": [
+          [
+            220,
+            226,
+            255
+          ]
+        ]
+      },
+      {
+        "id": "hero.gold",
+        "slot": "hero",
+        "name": {
+          "en": "Gold (tough)",
+          "ja": "ゴールド（がんじょう）"
+        },
+        "price": 600,
+        "requires": {
+          "stat": "best_score",
+          "at_least": 3000
+        },
+        "patch": {
+          "hero": {
+            "skin": "gold",
+            "start_passives": [
+              {
+                "id": "vitality",
+                "level": 2
+              }
+            ]
+          }
+        },
+        "preview": [
+          [
+            255,
+            205,
+            90
+          ]
+        ]
+      }
+    ],
+    "daily": {
+      "enabled": true,
+      "seed_path": "director.seed",
+      "streak_reward": {
+        "base": 10,
+        "per_day": 5,
+        "max": 50
+      }
+    },
+    "modifiers": [
+      {
+        "id": "horde",
+        "name": {
+          "en": "Horde",
+          "ja": "だいぐん"
+        },
+        "patch": {
+          "director": {
+            "start_rate": 1.8,
+            "end_rate": 9.0
+          }
+        },
+        "desc": {
+          "en": "More foes, from the start",
+          "ja": "さいしょから敵がおおい"
+        }
+      },
+      {
+        "id": "glass",
+        "name": {
+          "en": "Glass",
+          "ja": "ガラス"
+        },
+        "patch": {
+          "hero": {
+            "max_hp": 50
+          }
+        },
+        "desc": {
+          "en": "Half the health",
+          "ja": "体力が半分"
+        }
+      },
+      {
+        "id": "swift",
+        "name": {
+          "en": "Swift",
+          "ja": "しっそう"
+        },
+        "patch": {
+          "hero": {
+            "speed": 6.4
+          }
+        },
+        "desc": {
+          "en": "Faster hero",
+          "ja": "足がはやい"
+        }
+      }
+    ],
+    "rewarded": {
+      "slot": "double_coins"
+    }
+  },
+  "build": "1253a10bb6a1"
+}
