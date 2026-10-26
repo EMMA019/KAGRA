@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **survivor_arena.rs split up (no behaviour change).** 6,843 lines became the kit core (2,330) plus `survivor_arena/{spec, input, doc, hud, tests}.rs` next to the existing `hud_extra`, `loot`, `view` and `weapons`: the spec and its checks, touch / pointer input, the 3D world, the HUD and the tests each in their own file. Moved private methods became `pub(super)`; the code is otherwise unchanged.
+
 - **Docs say what KAGRA is for now.** `AGENTS.md` is rewritten around the goal (phone browser games made with AI, the engine growing from the games), the kit + JSON + manifest workflow, the template, the shared parts, the page contract, the ship checks, assets and the PR rules; the old desktop / VRM guide moves to `old/docs-archive/AGENTS-2026-10-legacy.md`. `docs/ROADMAP.ja.md` and `docs/REVIEW.ja.md` are rewritten for the same goal (the old ones are archived next to it); the Cursor skill points at `AGENTS.md`; `docs/AGENT.md` says it maps the desktop side.
 
 - **Starting a new game is one command.** `kagra-shared/src/starter.rs` is the smallest whole kit (stick, stars, bouncing hazards, a timer; title -> play -> result, best, pause, two languages, all JSON) on the shared parts, and the template `scripts/new_kit.py <slug> "<Title>"` copies: it writes the renamed kit, registers it in `lib.rs` and `KITS`, and writes the world fixture, the manifest (with `page`) and the `--check` example, so the game shows up in the preview and the CI browser smoke with no other edit. Tested end to end (a generated kit builds, passes its tests and starts in the browser). `docs/making_a_game.md`: the walk-through, the parts to reuse and the ship checklist. New i18n key `blurb.stick` for stick games.
