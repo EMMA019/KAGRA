@@ -10,6 +10,7 @@
 
 mod bloom;
 mod color_space;
+mod glyph_atlas;
 mod post;
 mod target;
 
@@ -30,6 +31,12 @@ const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 struct Vertex {
     pos: [f32; 2],
     color: [f32; 4],
+    /// Rounded quad: offset from the quad's centre (px). Glyph: atlas uv.
+    local: [f32; 2],
+    /// (half width, half height, corner radius, kind): kind 0 flat, 1 rounded, 2 glyph.
+    shape: [f32; 4],
+    /// Rounded quad: outline width (0 = filled).
+    stroke: f32,
 }
 
 /// 3D シェーダの `Globals` と同じ並び。
@@ -221,6 +228,8 @@ pub struct Renderer {
     screen_bind: wgpu::BindGroup,
     vbuf: wgpu::Buffer,
     vbuf_capacity: usize,
+    atlas_tex: wgpu::Texture,
+    atlas: glyph_atlas::Packer,
 
     pipeline3d: wgpu::RenderPipeline,
     /// Color target of linear eye depth. Drawn only when a post pass samples it.
@@ -272,7 +281,6 @@ pub struct Renderer {
     /// SSAO / DOF / motion / TAA. Off unless a dump or `set_post` enables them.
     post: PostGraph,
     /// TextQuad → カバレッジ Quad のキャッシュ。GPU 状態を持たない。
-    text: crate::font::TextRaster,
     /// walker glTF spec → SpringBone 布シミュ（フレーム跨ぎで保持）。
     cloth: std::collections::HashMap<String, crate::spring::SpringState>,
     /// Which `WorldDoc` mesh table is on the GPU. A new dump reuploads.
@@ -498,25 +506,76 @@ impl Renderer {
 
         let bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("kagra-shared screen layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
+        // The HUD glyph atlas (R8 coverage). Glyphs are copied in as text first uses them.
+        let atlas_tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("kagra-shared glyph atlas"),
+            size: wgpu::Extent3d {
+                width: glyph_atlas::ATLAS_SIDE,
+                height: glyph_atlas::ATLAS_SIDE,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let atlas_view = atlas_tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let atlas_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("kagra-shared glyph sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
         });
 
         let screen_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("kagra-shared screen bind"),
             layout: &bind_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: screen_buf.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: screen_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&atlas_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&atlas_sampler),
+                },
+            ],
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -544,7 +603,13 @@ impl Renderer {
                 buffers: &[Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4],
+                    attributes: &wgpu::vertex_attr_array![
+                        0 => Float32x2,
+                        1 => Float32x4,
+                        2 => Float32x2,
+                        3 => Float32x4,
+                        4 => Float32
+                    ],
                 })],
             },
             fragment: Some(wgpu::FragmentState {
@@ -1333,6 +1398,8 @@ impl Renderer {
             screen_bind,
             vbuf,
             vbuf_capacity,
+            atlas_tex,
+            atlas: glyph_atlas::Packer::default(),
             pipeline3d,
             pipeline_depth,
             pipeline_nocull,
@@ -1369,7 +1436,6 @@ impl Renderer {
             elapsed: 0.0,
             bloom,
             post,
-            text: crate::font::TextRaster::new(),
             cloth: std::collections::HashMap::new(),
             mesh_key: String::new(),
             last_profile: crate::profile::FrameProfile::default(),
@@ -2204,16 +2270,83 @@ impl Renderer {
     }
 
     fn build_vertices(&mut self, list: &DrawList) -> Vec<Vertex> {
-        let mut out = Vec::with_capacity((list.quads.len() + list.texts.len() * 64) * 6);
+        let mut out = Vec::with_capacity((list.quads.len() + list.texts.len() * 8) * 6);
         for q in &list.quads {
             out.extend(quad_vertices(q, self.format));
         }
-        for t in &list.texts {
-            for q in self.text.text_quads(t) {
-                out.extend(quad_vertices(&q, self.format));
+        let glyphs_at = out.len();
+        // A full atlas starts over once and lays this frame's text out again.
+        for _ in 0..2 {
+            match self.glyph_vertices(list, &mut out) {
+                Ok(()) => break,
+                // The second try only fails when one frame's text alone overflows the atlas:
+                // that frame draws without text rather than wrong glyphs.
+                Err(glyph_atlas::Full) => {
+                    out.truncate(glyphs_at);
+                    self.atlas.clear();
+                }
             }
         }
         out
+    }
+
+    /// One textured quad per glyph (atlas sampled in `fs_main`, kind 2).
+    fn glyph_vertices(
+        &mut self,
+        list: &DrawList,
+        out: &mut Vec<Vertex>,
+    ) -> Result<(), glyph_atlas::Full> {
+        let (queue, tex) = (&self.queue, &self.atlas_tex);
+        let mut upload = |x: u32, y: u32, w: u32, h: u32, bytes: &[u8]| {
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: tex,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d { x, y, z: 0 },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                bytes,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(w),
+                    rows_per_image: Some(h),
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+            );
+        };
+        for t in &list.texts {
+            let px = crate::font::atlas_px(t.size);
+            let k = t.size.max(1.0) / px as f32;
+            let color = color_space::display_u8(t.color, self.format.is_srgb());
+            for g in crate::font::layout(t) {
+                let Some(slot) = self.atlas.get(g.ch, px, t.face, &mut upload)? else {
+                    continue;
+                };
+                let (l, top) = (g.x + slot.dx * k, g.baseline + slot.dy * k);
+                let (r, b) = (l + slot.w as f32 * k, top + slot.h as f32 * k);
+                let [u0, v0, u1, v1] = slot.uv;
+                let corners = [
+                    ([l, top], [u0, v0]),
+                    ([r, top], [u1, v0]),
+                    ([r, b], [u1, v1]),
+                    ([l, top], [u0, v0]),
+                    ([r, b], [u1, v1]),
+                    ([l, b], [u0, v1]),
+                ];
+                out.extend(corners.map(|(pos, uv)| Vertex {
+                    pos,
+                    color,
+                    local: uv,
+                    shape: [0.0, 0.0, 0.0, 2.0],
+                    stroke: 0.0,
+                }));
+            }
+        }
+        Ok(())
     }
 
     fn ensure_vertex_capacity(&mut self, needed: usize) {
@@ -4104,9 +4237,19 @@ fn quad_vertices(q: &crate::scene::Quad, format: wgpu::TextureFormat) -> [Vertex
     let color = color_space::display_u8(q.color, format.is_srgb());
     let (l, t, r, b) = (q.x, q.y, q.x + q.w, q.y + q.h);
     let corners = [[l, t], [r, t], [r, b], [l, t], [r, b], [l, b]];
+    let (hw, hh) = (q.w.abs() * 0.5, q.h.abs() * 0.5);
+    let (cx, cy) = (q.x + q.w * 0.5, q.y + q.h * 0.5);
+    let shape = if q.radius > 0.0 {
+        [hw, hh, q.radius.min(hw).min(hh), 1.0]
+    } else {
+        [0.0; 4]
+    };
     std::array::from_fn(|i| Vertex {
         pos: corners[i],
         color,
+        local: [corners[i][0] - cx, corners[i][1] - cy],
+        shape,
+        stroke: q.stroke,
     })
 }
 

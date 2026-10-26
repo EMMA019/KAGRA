@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **HUD 2D layer: rounded shapes and a glyph atlas.** `Quad` gains `radius` (rounded corners; `Quad::round`, `Quad::circle`) and `stroke` (an outline band; `Quad::ring`), drawn by an SDF in the 2D shader with a one-pixel soft edge. Text now draws one textured quad per glyph from an R8 glyph atlas (`render/glyph_atlas.rs`: shelf-packed, rasterized once per character, raster step and face; starts over when full) instead of one quad per covered pixel, at sizes stepped so animated text reuses a few rasters. Layout is shared with the CPU `text_quads` path (`font::layout`), so positions do not move. Moonlit Swarm's stick discs and rings are rounded quads: a frame's HUD went from ~1,700 quads to ~24 plus glyphs.
+
 - **Lighter wasm: no pixel-font fallback in the browser build.** PixelMplus (1.1 MB) stays the last fallback on desktop, Android and Python, but the wasm build no longer embeds it: every game string is in the Zen Maru Gothic subset (a test checks). Measured on the same build: 8.59 MB -> 7.45 MB raw, 2.98 -> 2.66 MB gzip, 2.17 -> 1.90 MB brotli. (wasm-opt -Oz was measured too: 7% smaller raw but larger compressed, so it is not used; the old genre modules are ~250 KB of code in all, not worth a feature split yet.)
 
 - **CI: every game must start in a browser.** `scripts/browser_smoke.mjs` opens each playable game of the staged preview in headless Chromium (WebGL2 on SwiftShader) and fails on a page error, an error card, a load that never ends or a blank picture; Preview runs it last, after publishing. 22/22 start; a truncated wasm fails it.

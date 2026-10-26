@@ -110,12 +110,68 @@ fn char_advance_for(ch: char, size: f32, face: TextFace) -> f32 {
 
 /// グリフのカバレッジ画素（0..1）とベースライン相対オフセット。
 #[derive(Debug)]
-struct Coverage {
-    dx: f32,
-    dy: f32,
-    w: u32,
-    h: u32,
-    pixels: Vec<f32>,
+pub(crate) struct Coverage {
+    pub(crate) dx: f32,
+    pub(crate) dy: f32,
+    pub(crate) w: u32,
+    pub(crate) h: u32,
+    pub(crate) pixels: Vec<f32>,
+}
+
+/// One glyph of laid-out text: the character, its pen x (rounded) and its baseline y.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Placed {
+    pub(crate) ch: char,
+    pub(crate) x: f32,
+    pub(crate) baseline: f32,
+}
+
+/// Where each visible character of `tq` goes (lines, alignment, advances). Spaces only advance.
+pub(crate) fn layout(tq: &TextQuad) -> Vec<Placed> {
+    let size = tq.size.max(1.0);
+    let scaled = UI_FONT.as_scaled(size);
+    let line_h = scaled.height().max(size * 1.2).round();
+    let mut base = (tq.y + scaled.ascent()).round();
+    let mut out = Vec::with_capacity(tq.text.len());
+    for line in tq.text.split('\n') {
+        let line_w: f32 = line
+            .chars()
+            .map(|c| char_advance_for(c, size, tq.face))
+            .sum();
+        let mut col = match tq.align {
+            TextAlign::Left => tq.x,
+            TextAlign::Center => tq.x - line_w * 0.5,
+            TextAlign::Right => tq.x - line_w,
+        };
+        for ch in line.chars() {
+            if ch != ' ' {
+                out.push(Placed {
+                    ch,
+                    x: col.round(),
+                    baseline: base,
+                });
+            }
+            col += char_advance_for(ch, size, tq.face);
+        }
+        base += line_h;
+    }
+    out
+}
+
+/// Raster size for the GPU glyph atlas: twice the drawn size (as the quad path), rounded up to
+/// a step, so a size that animates (a popping damage number) reuses a few rasters instead of
+/// making a new one every frame. Capped at 160 px; bigger text scales that raster up.
+#[cfg_attr(not(feature = "render"), allow(dead_code))]
+pub(crate) fn atlas_px(size: f32) -> u32 {
+    const STEPS: [u32; 14] = [12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 128, 160];
+    let want = (size.max(1.0) * TEXT_SUPERSAMPLE as f32).ceil() as u32;
+    STEPS.into_iter().find(|&p| p >= want).unwrap_or(160)
+}
+
+/// Rasterize one glyph at `px` (for the GPU atlas).
+#[cfg_attr(not(feature = "render"), allow(dead_code))]
+pub(crate) fn glyph_coverage(ch: char, px: u32, face: TextFace) -> Option<Coverage> {
+    rasterize(ch, px, face)
 }
 
 /// (文字, ピクセル高) → カバレッジ。1 回ラスタライズしたら使い回す。
@@ -161,42 +217,15 @@ impl TextRaster {
     /// TextQuad を Quad の列に展開する。点灯画素 1 つ = 0.5px の Quad。
     pub fn text_quads(&mut self, tq: &TextQuad) -> Vec<Quad> {
         let size = tq.size.max(1.0);
-        let scaled = UI_FONT.as_scaled(size);
-        let baseline = (tq.y + scaled.ascent()).round();
-        let line_h = scaled.height().max(size * 1.2).round();
+        let raster_px = (size.round() as u32)
+            .saturating_mul(TEXT_SUPERSAMPLE)
+            .max(TEXT_SUPERSAMPLE);
+        let step = 1.0 / TEXT_SUPERSAMPLE as f32;
         let mut out = Vec::new();
-        let mut line_base_y = baseline;
-        for line in tq.text.split('\n') {
-            let line_w: f32 = line
-                .chars()
-                .map(|c| char_advance_for(c, size, tq.face))
-                .sum();
-            let x0 = match tq.align {
-                TextAlign::Left => tq.x,
-                TextAlign::Center => tq.x - line_w * 0.5,
-                TextAlign::Right => tq.x - line_w,
-            };
-            let mut col = x0;
-            for ch in line.chars() {
-                let advance = char_advance_for(ch, size, tq.face);
-                if ch != ' ' {
-                    let raster_px = (size.round() as u32)
-                        .saturating_mul(TEXT_SUPERSAMPLE)
-                        .max(TEXT_SUPERSAMPLE);
-                    if let Some(cov) = self.coverage(ch, raster_px, tq.face) {
-                        let step = 1.0 / TEXT_SUPERSAMPLE as f32;
-                        out.extend(coverage_quads(
-                            cov,
-                            col.round(),
-                            line_base_y,
-                            tq.color,
-                            step,
-                        ));
-                    }
-                }
-                col += advance;
+        for g in layout(tq) {
+            if let Some(cov) = self.coverage(g.ch, raster_px, tq.face) {
+                out.extend(coverage_quads(cov, g.x, g.baseline, tq.color, step));
             }
-            line_base_y += line_h;
         }
         out
     }

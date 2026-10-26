@@ -1,6 +1,6 @@
-//! The thumb stick, drawn smooth. Quads are the only HUD shape, so a round shape is filled one
-//! pixel row at a time, with a part-covered quad at each row end for a soft edge. The jelly neck
-//! is the hull of the base and the knob, filled the same way, so nothing is drawn twice.
+//! The thumb stick, drawn smooth. Discs and rings are rounded quads (the GPU draws the edge).
+//! The jelly neck is the hull of the base and the knob, filled one pixel row at a time with a
+//! part-covered quad at each row end, so nothing in it is drawn twice.
 
 use super::*;
 
@@ -33,28 +33,14 @@ fn chord(cx: f32, cy: f32, rad: f32, y: f32) -> Option<(f32, f32)> {
     })
 }
 
-/// A filled circle.
+/// A filled circle (the GPU rounds it: `Quad::circle`).
 pub(super) fn smooth_disc(list: &mut DrawList, cx: f32, cy: f32, rad: f32, c: [u8; 4]) {
-    blob(list, &[(cx, cy, rad)], c);
+    list.quads.push(Quad::circle(cx, cy, rad, c));
 }
 
 /// A ring from `rad - width` to `rad`.
 pub(super) fn smooth_ring(list: &mut DrawList, cx: f32, cy: f32, rad: f32, width: f32, c: [u8; 4]) {
-    let inner = (rad - width).max(0.0);
-    let mut y = (cy - rad).floor();
-    while y < cy + rad {
-        let mid = y + 0.5;
-        if let Some((l, r)) = chord(cx, cy, rad, mid) {
-            match chord(cx, cy, inner, mid) {
-                Some((il, ir)) => {
-                    span(list, y, l, il, c);
-                    span(list, y, ir, r, c);
-                }
-                None => span(list, y, l, r, c),
-            }
-        }
-        y += 1.0;
-    }
+    list.quads.push(Quad::ring(cx, cy, rad, width, c));
 }
 
 /// The convex hull of a chain of circles, one span per row (left-most to right-most edge of
@@ -140,22 +126,17 @@ mod tests {
     }
 
     #[test]
-    fn a_disc_is_round_and_soft_edged() {
+    fn discs_and_rings_are_single_rounded_quads() {
         let mut l = DrawList::default();
         smooth_disc(&mut l, 100.0, 100.0, 40.0, [255, 255, 255, 200]);
-        assert!(alpha_at(&l, 100.5, 100.5) > 0, "the middle is filled");
-        assert!(alpha_at(&l, 100.5, 139.0) > 0, "the bottom is filled");
+        smooth_ring(&mut l, 100.0, 100.0, 40.0, 3.0, [255, 255, 255, 200]);
+        assert_eq!(l.quads.len(), 2);
+        let (d, r) = (l.quads[0], l.quads[1]);
         assert_eq!(
-            alpha_at(&l, 129.5, 129.5),
-            0,
-            "the corner of the box is not"
+            (d.x, d.y, d.w, d.radius, d.stroke),
+            (60.0, 60.0, 80.0, 40.0, 0.0)
         );
-        // Rows are one pixel tall: no stair wider than a pixel.
-        assert!(l.quads.iter().all(|q| q.h <= 1.0));
-        assert!(
-            l.quads.iter().any(|q| q.color[3] > 0 && q.color[3] < 200),
-            "the row ends fade"
-        );
+        assert_eq!((r.radius, r.stroke), (40.0, 3.0));
     }
 
     #[test]
