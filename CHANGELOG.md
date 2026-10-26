@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Moonlit Swarm: a soft floating thumb stick.** The base appears where the thumb lands in the lower-left zone (kept on screen) and follows the thumb past the rim, so turning back is instant; a faint ring shows where to put a thumb. Drawn smooth instead of from a scaled-up glyph (the old one was a blocky mosaic): one-pixel rows with faded row ends, a dark violet base and rim, a jelly neck (the hull of base and knob, thinner as it stretches, drawn once per row so it does not stack alpha) and a soft knob with a glint (`survivor_arena/stick.rs`).
+
 - **Preview page: PowerVR phones render at 1.5x at most.** Emma's Pixel 10 (Chrome, `img-tec d-series`) blacked out the whole page, title and all, at render scale 2 (822x1530: the High and Max tiers, and Auto once it climbed to High) while the game ran and played sound; 1.5 is fine. The page reads the GPU name (WebGPU adapter info, else the WebGL2 renderer) and caps PowerVR at 1.5. As a second net, ten frames after any resize a blank picture steps the scale down a rung and the device keeps that ceiling (`localStorage kagra.scale.safe`). `?dev=1&scale=` (lifts the PowerVR cap) and `&cascades=` A/B one setting over a tier.
 
 - **Preview page: no more silent black screen.** An exception in the frame loop, or anywhere between hiding the loading card and showing the title, used to stop the page with no title and no message. The loop now catches it and shows the error (with the Rust panic text when there is one), errors before the loop show the start error, the gamepad read turns itself off if `getGamepads()` throws (a portal iframe without `allow="gamepad"`), graphics tiers fail soft to the default, and the loading card names the GPU step while the backend starts.

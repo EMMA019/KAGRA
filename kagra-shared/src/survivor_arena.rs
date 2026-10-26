@@ -30,6 +30,7 @@ use crate::world_doc::{WorldCamera, WorldDoc};
 
 mod hud_extra;
 mod loot;
+mod stick;
 mod view;
 mod weapons;
 
@@ -2719,12 +2720,16 @@ impl SurvivorArena {
         match ev.phase {
             PointerPhase::Begin if live && self.stick_mode() => {
                 let (w, h) = self.size.get();
-                let (cx, cy) = self.stick_center(w, h);
                 if self.finger_id.is_none() && self.in_stick_zone(ev.x, ev.y, w, h) {
-                    // The stick thumb: relative to the fixed base, never a tap.
+                    // The stick thumb: the base appears where it lands (kept on screen), never a tap.
+                    let r = self.stick_radius(w, h);
+                    let m = 4.0 * hud_scale(w, h);
                     self.finger_id = Some(ev.id);
                     self.finger = Some((ev.x, ev.y));
-                    self.origin = (cx, cy);
+                    self.origin = (
+                        ev.x.clamp(r + m, (w - r - m).max(r + m)),
+                        ev.y.clamp(r + m, (h - r - m).max(r + m)),
+                    );
                 } else if self.finger_id != Some(ev.id) {
                     // The other thumb: a tap picks the target.
                     self.tap_select(ev.x, ev.y);
@@ -2744,6 +2749,17 @@ impl SurvivorArena {
             PointerPhase::Move => {
                 if self.finger_id == Some(ev.id) && !self.mute_finger {
                     self.finger = Some((ev.x, ev.y));
+                    if self.stick_mode() {
+                        // Past the rim the base follows the thumb, so turning back is instant.
+                        let (w, h) = self.size.get();
+                        let r = self.stick_radius(w, h);
+                        let (dx, dy) = (ev.x - self.origin.0, ev.y - self.origin.1);
+                        let d = dx.hypot(dy);
+                        if d > r {
+                            let k = (d - r) / d;
+                            self.origin = (self.origin.0 + dx * k, self.origin.1 + dy * k);
+                        }
+                    }
                 }
             }
             PointerPhase::End | PointerPhase::Cancel if self.finger_id == Some(ev.id) => {
@@ -2768,12 +2784,13 @@ impl SurvivorArena {
         self.spec.input.move_scheme == "stick"
     }
 
-    /// Stick radius in pixels (a little bigger than the floating one: it is a fixed target).
+    /// Stick radius in pixels.
     fn stick_radius(&self, w: f32, h: f32) -> f32 {
         self.spec.input.stick_px * hud_scale(w, h) * 1.25
     }
 
-    /// The fixed stick's centre: bottom-left, clear of the screen edge and the home bar.
+    /// Where the resting stick hint sits: bottom-left, clear of the screen edge and the home bar.
+    /// A thumb anywhere in the zone gets its own base.
     fn stick_center(&self, w: f32, h: f32) -> (f32, f32) {
         let r = self.stick_radius(w, h);
         (
@@ -4408,50 +4425,29 @@ impl SurvivorArena {
             }
         }
         if self.stick_mode() && self.flow.phase == FlowPhase::Play && self.cards.is_empty() {
-            // The fixed stick: a translucent base and a knob that follows the thumb.
-            let (cx, cy) = self.stick_center(w, h);
+            // The thumb stick: a resting hint where a thumb lands, or the base where it landed,
+            // a knob under the thumb and a jelly neck between them.
             let rad = self.stick_radius(w, h);
-            let (kx, ky) = match self.finger {
+            match self.finger {
                 Some((fx, fy)) => {
+                    let (cx, cy) = self.origin;
                     let (dx, dy) = (fx - cx, fy - cy);
                     let d = dx.hypot(dy).max(1e-3);
                     let k = d.min(rad) / d;
-                    (cx + dx * k, cy + dy * k)
+                    stick::draw_stick(
+                        &mut list,
+                        (cx, cy),
+                        (cx + dx * k, cy + dy * k),
+                        rad,
+                        s,
+                        true,
+                    );
                 }
-                None => (cx, cy),
-            };
-            let live = self.finger.is_some();
-            let (base, rim, knob) = if live { (46, 120, 190) } else { (30, 80, 120) };
-            // A glyph's circle fills about 0.7 em, so the size is the diameter over 0.7.
-            let fs = rad * 2.0 / 0.7;
-            text(
-                &mut list,
-                "●",
-                cx,
-                cy - fs * 0.5,
-                fs,
-                [200, 220, 255, base],
-                TextAlign::Center,
-            );
-            text(
-                &mut list,
-                "○",
-                cx,
-                cy - fs * 0.5,
-                fs,
-                [235, 245, 255, rim],
-                TextAlign::Center,
-            );
-            let ks = rad * 0.9 / 0.7;
-            text(
-                &mut list,
-                "●",
-                kx,
-                ky - ks * 0.5,
-                ks,
-                [255, 255, 255, knob],
-                TextAlign::Center,
-            );
+                None => {
+                    let c = self.stick_center(w, h);
+                    stick::draw_stick(&mut list, c, c, rad, s, false);
+                }
+            }
         } else if let Some((fx, fy)) = self.finger {
             // The thumb marker: a soft round dot (a square read as a stray grey box).
             text(
@@ -6017,9 +6013,17 @@ mod tests {
         at(&mut g, 2, x, y, PointerPhase::End);
         assert_eq!(g.locked(), Some(far), "the other thumb locks it");
         assert!(g.finger.is_some(), "the stick thumb still steers");
-        // The base is on screen in play and gone behind the cards.
+        // The base is drawn under the thumb, smooth (one-pixel rows), and follows past the rim.
         let l = g.hud(w, h, false);
-        assert!(l.texts.iter().any(|t| t.text == "○"));
+        let (bx, by) = g.origin;
+        assert!(l.quads.iter().any(|q| q.h <= 1.0 && q.contains(bx, by)));
+        let r = g.stick_radius(w as f32, h as f32);
+        at(&mut g, 1, bx + 3.0 * r, by, PointerPhase::Move);
+        assert!(
+            (g.origin.0 - (bx + 2.0 * r)).abs() < 0.5,
+            "the base follows: {:?}",
+            g.origin
+        );
     }
 
     fn ev(phase: PointerPhase, x: f32, y: f32) -> PointerEvent {
@@ -6656,8 +6660,9 @@ mod tests {
         s.push_pointer(ev(PointerPhase::End, 400.0, 225.0));
         s.request_frame();
         assert_eq!(s.survivor_mut().unwrap().phase_name(), "play");
-        // Hold a finger to the right: the hero follows over some frames.
-        s.push_pointer(ev(PointerPhase::Begin, 300.0, 340.0));
+        // Land a thumb, slide it to the right and hold: the hero follows over some frames.
+        s.push_pointer(ev(PointerPhase::Begin, 200.0, 340.0));
+        s.push_pointer(ev(PointerPhase::Move, 320.0, 340.0));
         for _ in 0..90 {
             s.request_frame();
         }
