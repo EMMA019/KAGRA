@@ -1,8 +1,9 @@
 //! テキスト → 画面 Quad。GPU 非依存なので `render` feature 無しでもテストでき、
 //! wasm / Android / iOS / オフスクリーンが同じ画素を出す。
 //!
-//! 埋め込みフォントは PixelMplus（M+ FONT LICENSE、自由に使用・再配布可、
-//! JIS 第1・2水準の漢字 + Latin-1 収録）: `assets/PixelMplus10-Regular.ttf`。
+//! 日本語は Zen Maru Gothic Bold（SIL OFL、ゲームが使う字 + かな全部に subset:
+//! `tools/subset_fonts.py`）。subset に無い字は PixelMplus（M+ FONT LICENSE、
+//! JIS 第1・2水準）に落ちる。数字・タイトル用の `TextFace::Display` は Cinzel Bold（OFL）。
 //! グリフは `ab_glyph`（純 Rust）で表示サイズの 2 倍にラスタライズし、
 //! カバレッジ画素を 0.5px の `Quad` に展開する。1px 四方の画素文字より
 //! 縁が細い。テクスチャ / シェーダーの追加は不要で、既存の 2D HUD パスが
@@ -13,7 +14,7 @@ use std::collections::HashMap;
 use ab_glyph::{Font as _, ScaleFont}; // as_scaled(Font) / glyph_id・h_advance(ScaleFont)
 use once_cell::sync::Lazy;
 
-use crate::scene::{Quad, TextAlign, TextQuad};
+use crate::scene::{Quad, TextAlign, TextFace, TextQuad};
 
 /// Raster scale. Quads are `1 / TEXT_SUPERSAMPLE` pixels so edges are finer
 /// than the old 1px coverage stamps. Still ab_glyph coverage, not an SDF.
@@ -24,6 +25,22 @@ pub const DEFAULT_FONT_BYTES: &[u8] = include_bytes!("../assets/PixelMplus10-Reg
 
 /// 滑らかな欧文 UI フォント（Public Sans Bold, SIL OFL）。
 pub const UI_FONT_BYTES: &[u8] = include_bytes!("../assets/PublicSans-Bold.ttf");
+
+/// 日本語の本文（Zen Maru Gothic Bold, SIL OFL; subset）。
+pub const JP_FONT_BYTES: &[u8] = include_bytes!("../assets/ZenMaruGothic-Bold.ttf");
+
+/// 数字・タイトル（Cinzel Bold, SIL OFL; Latin subset）。
+pub const DISPLAY_FONT_BYTES: &[u8] = include_bytes!("../assets/Cinzel-Bold.ttf");
+
+static JP_FONT: Lazy<ab_glyph::FontArc> = Lazy::new(|| {
+    ab_glyph::FontArc::try_from_slice(JP_FONT_BYTES)
+        .expect("embedded ZenMaruGothic-Bold.ttf must parse")
+});
+
+static DISPLAY_FONT: Lazy<ab_glyph::FontArc> = Lazy::new(|| {
+    ab_glyph::FontArc::try_from_slice(DISPLAY_FONT_BYTES)
+        .expect("embedded Cinzel-Bold.ttf must parse")
+});
 
 static FONT: Lazy<ab_glyph::FontArc> = Lazy::new(|| {
     ab_glyph::FontArc::try_from_slice(DEFAULT_FONT_BYTES)
@@ -47,12 +64,22 @@ fn font_has_glyph(font: &ab_glyph::FontArc, ch: char) -> bool {
     font.glyph_id(ch).0 != 0
 }
 
-/// Latin prefers Public Sans. Everything else, and any Latin the UI face
-/// lacks, falls back to PixelMplus (JIS). If neither face has the character,
-/// return `None` so the caller skips the glyph instead of rasterizing `.notdef`.
+/// Latin prefers Public Sans. Everything else goes to Zen Maru Gothic, then PixelMplus (JIS)
+/// for a character outside the subset. If no face has the character, return `None` so the
+/// caller skips the glyph instead of rasterizing `.notdef`.
 fn select_font(ch: char) -> Option<&'static ab_glyph::FontArc> {
+    select_font_for(ch, TextFace::Ui)
+}
+
+fn select_font_for(ch: char, face: TextFace) -> Option<&'static ab_glyph::FontArc> {
+    if face == TextFace::Display && (ch as u32) <= 0x024F && font_has_glyph(&DISPLAY_FONT, ch) {
+        return Some(&DISPLAY_FONT);
+    }
     if (ch as u32) <= 0x024F && font_has_glyph(&UI_FONT, ch) {
         return Some(&UI_FONT);
+    }
+    if font_has_glyph(&JP_FONT, ch) {
+        return Some(&JP_FONT);
     }
     if font_has_glyph(&FONT, ch) {
         return Some(&FONT);
@@ -64,8 +91,12 @@ fn select_font(ch: char) -> Option<&'static ab_glyph::FontArc> {
 }
 
 fn char_advance(ch: char, size: f32) -> f32 {
+    char_advance_for(ch, size, TextFace::Ui)
+}
+
+fn char_advance_for(ch: char, size: f32, face: TextFace) -> f32 {
     let size = size.max(1.0);
-    let Some(font) = select_font(ch) else {
+    let Some(font) = select_font_for(ch, face) else {
         return size * 0.5;
     };
     let scaled = font.as_scaled(size);
@@ -85,7 +116,7 @@ struct Coverage {
 /// (文字, ピクセル高) → カバレッジ。1 回ラスタライズしたら使い回す。
 #[derive(Debug, Default)]
 pub struct TextRaster {
-    cache: HashMap<(char, u32), Coverage>,
+    cache: HashMap<(char, u32, TextFace), Coverage>,
 }
 
 /// 行幅（ピクセル）。キャッシュ不要: h_advance だけで出るので
@@ -100,12 +131,12 @@ impl TextRaster {
         Self::default()
     }
 
-    fn coverage(&mut self, ch: char, px: u32) -> Option<&Coverage> {
-        let key = (ch, px);
+    fn coverage(&mut self, ch: char, px: u32, face: TextFace) -> Option<&Coverage> {
+        let key = (ch, px, face);
         match self.cache.entry(key) {
             std::collections::hash_map::Entry::Occupied(e) => Some(e.into_mut()),
             std::collections::hash_map::Entry::Vacant(e) => {
-                let cov = rasterize(ch, px)?;
+                let cov = rasterize(ch, px, face)?;
                 Some(e.insert(cov))
             }
         }
@@ -131,7 +162,10 @@ impl TextRaster {
         let mut out = Vec::new();
         let mut line_base_y = baseline;
         for line in tq.text.split('\n') {
-            let line_w: f32 = line.chars().map(|c| char_advance(c, size)).sum();
+            let line_w: f32 = line
+                .chars()
+                .map(|c| char_advance_for(c, size, tq.face))
+                .sum();
             let x0 = match tq.align {
                 TextAlign::Left => tq.x,
                 TextAlign::Center => tq.x - line_w * 0.5,
@@ -139,12 +173,12 @@ impl TextRaster {
             };
             let mut col = x0;
             for ch in line.chars() {
-                let advance = char_advance(ch, size);
+                let advance = char_advance_for(ch, size, tq.face);
                 if ch != ' ' {
                     let raster_px = (size.round() as u32)
                         .saturating_mul(TEXT_SUPERSAMPLE)
                         .max(TEXT_SUPERSAMPLE);
-                    if let Some(cov) = self.coverage(ch, raster_px) {
+                    if let Some(cov) = self.coverage(ch, raster_px, tq.face) {
                         let step = 1.0 / TEXT_SUPERSAMPLE as f32;
                         out.extend(coverage_quads(
                             cov,
@@ -187,9 +221,9 @@ fn coverage_quads(cov: &Coverage, x: f32, y: f32, color: [u8; 4], step: f32) -> 
     out
 }
 
-fn rasterize(ch: char, px: u32) -> Option<Coverage> {
+fn rasterize(ch: char, px: u32, face: TextFace) -> Option<Coverage> {
     let size = px.max(1) as f32;
-    let font = select_font(ch)?;
+    let font = select_font_for(ch, face)?;
     let scaled = font.as_scaled(size);
     let glyph = scaled.scaled_glyph(ch);
     let outline = scaled.outline_glyph(glyph)?;
@@ -253,6 +287,74 @@ mod tests {
                 "char {ch} must not be a missing-glyph box"
             );
         }
+    }
+
+    #[test]
+    fn every_japanese_character_in_the_games_is_in_the_subset() {
+        // Zen Maru Gothic is cut down to the characters the games use. A new kanji outside it
+        // would quietly fall back to the pixel face: rerun `python tools/subset_fonts.py`.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut files = Vec::new();
+        let mut dirs = vec![root.join("src")];
+        while let Some(d) = dirs.pop() {
+            for e in std::fs::read_dir(&d).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    dirs.push(p);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    files.push(p);
+                }
+            }
+        }
+        for d in [root.join("../games"), root.join("tests/fixtures")] {
+            for e in std::fs::read_dir(d).into_iter().flatten().flatten() {
+                if e.path().extension().is_some_and(|x| x == "json") {
+                    files.push(e.path());
+                }
+            }
+        }
+        let mut missing = std::collections::BTreeSet::new();
+        for f in &files {
+            for ch in std::fs::read_to_string(f).unwrap_or_default().chars() {
+                let jp = matches!(ch as u32, 0x3041..=0x30FF | 0x4E00..=0x9FFF);
+                if jp && !font_has_glyph(&JP_FONT, ch) {
+                    missing.insert(ch);
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "not in ZenMaruGothic-Bold.ttf, run tools/subset_fonts.py: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn japanese_uses_zen_maru_and_digits_can_use_the_display_face() {
+        let jp = select_font('弾').unwrap();
+        assert_ne!(jp.glyph_id('弾').0, 0);
+        assert!(std::ptr::eq(jp, &*JP_FONT), "kanji draw in Zen Maru Gothic");
+        assert!(std::ptr::eq(
+            select_font_for('7', TextFace::Display).unwrap(),
+            &*DISPLAY_FONT
+        ));
+        assert!(std::ptr::eq(
+            select_font_for('7', TextFace::Ui).unwrap(),
+            &*UI_FONT
+        ));
+        // The display face has no kana: it falls back to the Japanese face.
+        assert!(std::ptr::eq(
+            select_font_for('あ', TextFace::Display).unwrap(),
+            &*JP_FONT
+        ));
+        let mut r = raster();
+        let ui = r.text_quads(&TextQuad::new("1:57", 0.0, 0.0, 24.0, [255; 4]));
+        let disp = r.text_quads(
+            &TextQuad::new("1:57", 0.0, 0.0, 24.0, [255; 4]).with_face(TextFace::Display),
+        );
+        assert!(
+            !disp.is_empty() && ui != disp,
+            "a different face draws different pixels"
+        );
     }
 
     #[test]

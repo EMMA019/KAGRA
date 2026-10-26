@@ -1327,6 +1327,66 @@
     "assets/audio/oga-wet-squish/*.wav"
    ],
    "verified_how": "OpenGameArt page 'License(s): CC0' (snapshot text saved as LICENSE.txt), read 2026-10-25. OGA licences are the uploader's declaration."
+  },
+  {
+   "license_spdx": "OFL-1.1",
+   "receipt_ref": null,
+   "attribution_required": true,
+   "redistributable_in_public_repo": true,
+   "verified": "checked",
+   "license": "custom",
+   "license_url": "https://openfontlicense.org/open-font-license-official-text/",
+   "obtained": "2026-10-26",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game"
+   ],
+   "id": "font-zenmarugothic",
+   "name": "Zen Maru Gothic Bold (subset)",
+   "source": "Google Fonts (googlefonts/zen-marugothic)",
+   "author": "The Zen Maru Gothic Project Authors (Yoshimichi Ohira)",
+   "url": "https://github.com/google/fonts/tree/main/ofl/zenmarugothic",
+   "license_evidence": [
+    "kagra-shared/assets/ZenMaruGothic-OFL.txt"
+   ],
+   "attribution_text": "Zen Maru Gothic font: Copyright 2021 The Zen Maru Gothic Project Authors, SIL Open Font License 1.1.",
+   "paths": [
+    "kagra-shared/assets/ZenMaruGothic-Bold.ttf"
+   ],
+   "verified_how": "OFL.txt fetched from google/fonts 2026-10-26: OFL 1.1, no Reserved Font Name. The subset (tools/subset_fonts.py) is a modified version under the same license; the OFL text ships next to it.",
+   "notes": "Subset to the characters the games use plus all kana; the HUD's Japanese face."
+  },
+  {
+   "license_spdx": "OFL-1.1",
+   "receipt_ref": null,
+   "attribution_required": true,
+   "redistributable_in_public_repo": true,
+   "verified": "checked",
+   "license": "custom",
+   "license_url": "https://openfontlicense.org/open-font-license-official-text/",
+   "obtained": "2026-10-26",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game"
+   ],
+   "id": "font-cinzel",
+   "name": "Cinzel Bold (wght 700 instance, Latin subset)",
+   "source": "Google Fonts (NDISCOVER/Cinzel)",
+   "author": "The Cinzel Project Authors (Natanael Gama)",
+   "url": "https://github.com/google/fonts/tree/main/ofl/cinzel",
+   "license_evidence": [
+    "kagra-shared/assets/Cinzel-OFL.txt"
+   ],
+   "attribution_text": "Cinzel font: Copyright 2020 The Cinzel Project Authors, SIL Open Font License 1.1.",
+   "paths": [
+    "kagra-shared/assets/Cinzel-Bold.ttf"
+   ],
+   "verified_how": "OFL.txt fetched from google/fonts 2026-10-26: OFL 1.1, no Reserved Font Name. Instanced at wght=700 and subset by tools/subset_fonts.py; the OFL text ships next to it.",
+   "notes": "The HUD's display face for numbers (TextFace::Display)."
   }
  ]
 }

@@ -21,7 +21,7 @@ use crate::game_core::swarm::{Budget, Foes, Grid, Rng};
 use crate::game_core::{tick_frame, Core, Kit};
 use crate::hop_beat::{glb_prop, glb_ready, light, prop};
 use crate::input::{PointerEvent, PointerPhase};
-use crate::scene::{DrawList, Quad, TextAlign, TextQuad};
+use crate::scene::{DrawList, Quad, TextAlign, TextFace, TextQuad};
 use crate::survivor_content::{
     default_enemies, default_foes, default_synergies, default_weapons, DropSpec, FoeAi, FoeSpec,
     PickupKind, SynergySpec,
@@ -4205,6 +4205,15 @@ impl SurvivorArena {
                 list.texts
                     .push(TextQuad::new(t, x, y, size * s, c).aligned(a));
             };
+        // Numbers (the clock, damage) in the display face.
+        let num =
+            |list: &mut DrawList, t: &str, x: f32, y: f32, size: f32, c: [u8; 4], a: TextAlign| {
+                list.texts.push(
+                    TextQuad::new(t, x, y, size * s, c)
+                        .aligned(a)
+                        .with_face(TextFace::Display),
+                );
+            };
         // Hurt vignette.
         if self.hurt_flash > 0.0 {
             list.quads.push(Quad::new(
@@ -4352,7 +4361,7 @@ impl SurvivorArena {
                 255,
             ]
         };
-        text(
+        num(
             &mut list,
             &format!("{}:{:02}", left / 60, left % 60),
             w * 0.5,
@@ -4371,7 +4380,7 @@ impl SurvivorArena {
                 let a = ((1.0 - t * t) * 255.0) as u8;
                 let pop = 1.0 + 0.6 * (1.0 - (d.age * 9.0).min(1.0));
                 let label = format!("{}", d.val);
-                text(
+                num(
                     &mut list,
                     &label,
                     sx + 1.5 * s,
@@ -4380,7 +4389,7 @@ impl SurvivorArena {
                     [10, 10, 30, a / 2],
                     TextAlign::Center,
                 );
-                text(
+                num(
                     &mut list,
                     &label,
                     sx,
