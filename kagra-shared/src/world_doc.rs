@@ -38,8 +38,8 @@ use crate::gltf_load::{
     skinned_tpose_humanoid, unit_cube_gltf, walk_skinned_gltf, walk_skinned_vrm, WalkerPose,
 };
 use crate::scene3d::{
-    primitives, Camera, Instance, LocalLight, Material, MeshData, MeshId, Scene3D, SceneBuilder,
-    Vertex3,
+    primitives, Aabb, Camera, Instance, LocalLight, Material, MeshData, MeshId, Scene3D,
+    SceneBuilder, Vertex3,
 };
 use crate::strokes::{FatLine, PointCloud};
 use glam::{EulerRot, Mat4, Quat, Vec3};
@@ -57,6 +57,15 @@ pub(crate) const MESH_QUAD: MeshId = MeshId(5);
 const MESH_CONE: MeshId = MeshId(6);
 const MESH_TORUS: MeshId = MeshId(7);
 pub(crate) const MESH_GLTF_BASE: u32 = 8;
+
+/// See [`WorldDoc::mesh_lod`].
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MeshLod {
+    /// Fraction of the triangles to keep, 0.2..=1.
+    pub keep: f32,
+    /// A model is thinned when its path contains any of these.
+    pub models: Vec<String>,
+}
 
 /// Persistent world. JSON source of truth. Not a draw list.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -136,6 +145,11 @@ pub struct WorldDoc {
     /// FXAA on the composite. None = on. Ignored while `taa` is on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fxaa: Option<bool>,
+    /// Thin the triangles of the glTF models whose path contains one of `models`
+    /// (vertex clustering at load, same textures and silhouette), so a crowd of small
+    /// figures costs less on the GPU. None = every model at full detail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mesh_lod: Option<MeshLod>,
     /// Half-resolution SSAO radius in pixels. None = off, unless `quality` is
     /// `mobile` (4) or `high` (8), or env `KAGRA_QUALITY=high` (8).
     /// `quality=low` and `KAGRA_QUALITY=0` / `off` / `low` force 0.
@@ -1072,15 +1086,34 @@ impl WorldDoc {
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())?;
-        Some(bake_env_strip(
-            self.hemi_sky_color(),
-            self.hemi_ground_color(),
+        // The strip is a pure function of these three, and `compile_scene` asks for it every
+        // frame (it was re-baked, a powf per texel and three blurs, and re-read from disk for
+        // a PNG). Keep the last answer.
+        let (sky, ground) = (self.hemi_sky_color(), self.hemi_ground_color());
+        type Key = (String, [f32; 3], [f32; 3]);
+        thread_local! {
+            static LAST: std::cell::RefCell<Option<(Key, Vec<u8>)>> = const { std::cell::RefCell::new(None) };
+        }
+        let key: Key = (spec.to_string(), sky, ground);
+        if let Some(hit) = LAST.with(|l| {
+            l.borrow()
+                .as_ref()
+                .filter(|(k, _)| *k == key)
+                .map(|(_, v)| v.clone())
+        }) {
+            return Some(hit);
+        }
+        let strip = bake_env_strip(
+            sky,
+            ground,
             if spec == "preset:studio" {
                 None
             } else {
                 load_png_albedo(spec)
             },
-        ))
+        );
+        LAST.with(|l| *l.borrow_mut() = Some((key, strip.clone())));
+        Some(strip)
     }
 
     /// Probe walker `gltf` paths. Missing/parse failures are dump-visible;
@@ -1170,6 +1203,54 @@ impl WorldDoc {
         world
     }
 
+    /// Local bounds of every mesh, for frustum culling. `compile_meshes` rebuilds every
+    /// primitive and re-reads and decodes every glTF and its textures, which cost ~120 ms a
+    /// call on a doc with 17 models, and `compile_scene` runs once per frame. So the bounds
+    /// of a doc whose meshes cannot change between frames (no heightfield, no skinned
+    /// walker pose) are kept per mesh key (`gpu_mesh_key`, a few microseconds) and rebuilt
+    /// only when that key changes.
+    fn cull_bounds(&self) -> Vec<(MeshId, Aabb)> {
+        let build = |doc: &WorldDoc| -> Vec<(MeshId, Aabb)> {
+            doc.compile_meshes()
+                .into_iter()
+                .filter_map(|(id, mesh)| {
+                    let bounds = mesh.bounds();
+                    (!bounds.is_empty()).then_some((id, bounds))
+                })
+                .collect()
+        };
+        let steady = self.heightfield.is_none()
+            && !self
+                .gltf_slots()
+                .iter()
+                .any(|s| matches!(s, GltfSlot::Skinned { .. }));
+        if !steady {
+            return build(self);
+        }
+        type Entry = (String, Vec<(MeshId, Aabb)>);
+        thread_local! {
+            static CACHE: std::cell::RefCell<Vec<Entry>> = const { std::cell::RefCell::new(Vec::new()) };
+        }
+        let key = self.gpu_mesh_key();
+        if let Some(hit) = CACHE.with(|c| {
+            c.borrow()
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| v.clone())
+        }) {
+            return hit;
+        }
+        let built = build(self);
+        CACHE.with(|c| {
+            let mut c = c.borrow_mut();
+            if c.len() >= 4 {
+                c.remove(0);
+            }
+            c.push((key, built.clone()));
+        });
+        built
+    }
+
     /// One-frame draw list. Heightfield + glTF/box/sphere/capsule + sprite/quad.
     /// Empty lights get default key+fill (max 4 slots). Capsules/props get a
     /// ground contact blob. Does not mutate this document. GPU upload uses `compile_meshes`.
@@ -1178,11 +1259,8 @@ impl WorldDoc {
         let mut b = SceneBuilder::new(&camera, aspect.max(1e-3));
         // Opt-in. An omitted `cull` stays unregistered so every prop still draws.
         if self.cull == Some(true) {
-            for (id, mesh) in self.compile_meshes() {
-                let bounds = mesh.bounds();
-                if !bounds.is_empty() {
-                    b.register(id, bounds);
-                }
+            for (id, bounds) in self.cull_bounds() {
+                b.register(id, bounds);
             }
         }
         let (gltf_ids, walker_gltf_ids) = self.gltf_mesh_ids();
@@ -1234,12 +1312,22 @@ impl WorldDoc {
 
         let lod_r = self.vegetation_lod_radius();
         let prop_lod = self.prop_lod.filter(|r| *r > 0.0);
-        let worlds = self.prop_world_mats();
+        // Parent links are rare. Without one, a prop's world matrix is its own local one, so
+        // skip the id-keyed map (it cloned and hashed every id, disabled pool slots included,
+        // and looked each one up by a linear search: a few ms a frame on a phone).
+        let worlds = self
+            .props
+            .iter()
+            .any(|p| p.local)
+            .then(|| self.prop_world_mats());
         for prop in &self.props {
             if !prop.enabled {
                 continue;
             }
-            let model = worlds.get(&prop.id).copied().unwrap_or(Mat4::IDENTITY);
+            let model = match &worlds {
+                Some(w) => w.get(&prop.id).copied().unwrap_or(Mat4::IDENTITY),
+                None => prop_local_matrix(prop),
+            };
             let pos = model.transform_point3(Vec3::ZERO);
             let scale = Vec3::from_array(prop.scale);
             let mat = material_for_prop(prop);
@@ -1683,6 +1771,11 @@ impl WorldDoc {
             let mesh = match &slot {
                 GltfSlot::Rest(spec) => gltf_mesh_for(spec).map(|mut mesh| {
                     self.attach_surface_maps(&mut mesh, spec);
+                    if let Some(l) = &self.mesh_lod {
+                        if l.models.iter().any(|m| spec.contains(m.as_str())) {
+                            decimate_mesh(&mut mesh, l.keep);
+                        }
+                    }
                     mesh
                 }),
                 GltfSlot::Skinned {
@@ -1809,6 +1902,9 @@ impl WorldDoc {
             }
         }
         parts.push(format!("lod:{}", self.vegetation_lod_cells()));
+        if let Some(l) = &self.mesh_lod {
+            parts.push(format!("mlod:{}:{}", l.keep, l.models.join(",")));
+        }
         parts.join("|")
     }
 
@@ -2826,6 +2922,109 @@ fn is_emma_vrm_stem(stem: &str) -> bool {
     stem.eq_ignore_ascii_case("emma.vrm")
 }
 
+/// Thin a mesh to about `keep` of its triangles by vertex clustering: vertices that share a
+/// grid cell, a facing octant and a texel neighbourhood collapse onto the one nearest the cell's
+/// centroid, so positions stay on the surface, hard edges stay hard and the texture lookup is
+/// untouched. The cell size is found by bisection. Deterministic (ids by first occurrence).
+pub(crate) fn decimate_mesh(m: &mut MeshData, keep: f32) {
+    let tris = m.indices.len() / 3;
+    let keep = keep.clamp(0.2, 1.0);
+    if keep >= 0.98 || tris < 80 || m.vertices.is_empty() {
+        return;
+    }
+    let target = (tris as f32 * keep).ceil() as usize;
+    let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+    for v in &m.vertices {
+        for a in 0..3 {
+            lo[a] = lo[a].min(v.pos[a]);
+            hi[a] = hi[a].max(v.pos[a]);
+        }
+    }
+    let diag = ((hi[0] - lo[0]).powi(2) + (hi[1] - lo[1]).powi(2) + (hi[2] - lo[2]).powi(2)).sqrt();
+    if diag < 1e-5 {
+        return;
+    }
+    type Key = (i32, i32, i32, u8, i32, i32);
+    let key_of = |v: &Vertex3, cell: f32| -> Key {
+        let q = |x: f32, o: f32| ((x - o) / cell).floor() as i32;
+        let oct = (v.normal[0] >= 0.0) as u8
+            | ((v.normal[1] >= 0.0) as u8) << 1
+            | ((v.normal[2] >= 0.0) as u8) << 2;
+        (
+            q(v.pos[0], lo[0]),
+            q(v.pos[1], lo[1]),
+            q(v.pos[2], lo[2]),
+            oct,
+            (v.uv[0] * 10.0).floor() as i32,
+            (v.uv[1] * 10.0).floor() as i32,
+        )
+    };
+    // The cell id of every vertex at a cell size, ids by first occurrence.
+    let cluster = |cell: f32| -> (Vec<u32>, usize) {
+        let mut ids: std::collections::HashMap<Key, u32> = std::collections::HashMap::new();
+        let mut of = Vec::with_capacity(m.vertices.len());
+        for v in &m.vertices {
+            let next = ids.len() as u32;
+            of.push(*ids.entry(key_of(v, cell)).or_insert(next));
+        }
+        let n = ids.len();
+        (of, n)
+    };
+    let surviving = |of: &[u32]| -> usize {
+        m.indices
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .filter(|t| {
+                let (a, b, c) = (of[t[0] as usize], of[t[1] as usize], of[t[2] as usize]);
+                a != b && b != c && a != c
+            })
+            .count()
+    };
+    let (mut lo_c, mut hi_c) = (diag / 600.0, diag / 2.0);
+    for _ in 0..14 {
+        let mid = (lo_c * hi_c).sqrt();
+        let (of, _) = cluster(mid);
+        if surviving(&of) >= target {
+            lo_c = mid;
+        } else {
+            hi_c = mid;
+        }
+    }
+    let (of, n) = cluster(lo_c);
+    // The representative of each cell: the member nearest the members' centroid.
+    let mut sum = vec![[0.0f32; 4]; n];
+    for (v, &c) in m.vertices.iter().zip(&of) {
+        let s = &mut sum[c as usize];
+        s[0] += v.pos[0];
+        s[1] += v.pos[1];
+        s[2] += v.pos[2];
+        s[3] += 1.0;
+    }
+    let mut best = vec![(f32::MAX, 0usize); n];
+    for (i, (v, &c)) in m.vertices.iter().zip(&of).enumerate() {
+        let s = sum[c as usize];
+        let d = (0..3)
+            .map(|a| (v.pos[a] - s[a] / s[3]).powi(2))
+            .sum::<f32>();
+        if d < best[c as usize].0 {
+            best[c as usize] = (d, i);
+        }
+    }
+    let verts: Vec<Vertex3> = best.iter().map(|&(_, i)| m.vertices[i]).collect();
+    let mut indices = Vec::with_capacity(target * 3 + 3);
+    for t in m.indices.as_chunks::<3>().0 {
+        let (a, b, c) = (of[t[0] as usize], of[t[1] as usize], of[t[2] as usize]);
+        if a != b && b != c && a != c {
+            indices.extend_from_slice(&[a, b, c]);
+        }
+    }
+    if indices.len() >= 3 {
+        m.vertices = verts;
+        m.indices = indices;
+    }
+}
+
 fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
     let spec = spec.trim();
     if spec.starts_with('{') {
@@ -3071,6 +3270,55 @@ mod tests {
             }
             other => panic!("heightfield roundtrip mismatch: {other:?}"),
         }
+    }
+
+    #[test]
+    fn decimation_keeps_the_shape_and_the_texture_lookup() {
+        let mut m = primitives::sphere_mesh(0.5, 24);
+        let full = m.indices.len() / 3;
+        decimate_mesh(&mut m, 0.5);
+        let now = m.indices.len() / 3;
+        assert!(now < full * 7 / 10 && now > full / 4, "{now} of {full}");
+        assert!(m.indices.iter().all(|&i| (i as usize) < m.vertices.len()));
+        assert!(
+            m.vertices
+                .iter()
+                .all(
+                    |v| (v.pos[0].powi(2) + v.pos[1].powi(2) + v.pos[2].powi(2) - 0.25).abs()
+                        < 1e-3
+                ),
+            "vertices stay on the surface"
+        );
+        let mut again = primitives::sphere_mesh(0.5, 24);
+        decimate_mesh(&mut again, 0.5);
+        assert_eq!(m.indices, again.indices, "deterministic");
+        let mut keep_all = primitives::sphere_mesh(0.5, 24);
+        decimate_mesh(&mut keep_all, 1.0);
+        assert_eq!(keep_all.indices.len() / 3, full);
+        if let Some(mut g) =
+            gltf_mesh_for("assets/models/kenney/graveyard-kit/character-vampire.glb")
+        {
+            let full = g.indices.len() / 3;
+            decimate_mesh(&mut g, 0.6);
+            let now = g.indices.len() / 3;
+            eprintln!("vampire {full} -> {now}");
+            assert!(now < full * 8 / 10, "a real model thins: {now} of {full}");
+            assert!(g.indices.iter().all(|&i| (i as usize) < g.vertices.len()));
+        }
+    }
+
+    #[test]
+    fn mesh_lod_changes_the_gpu_mesh_key_and_round_trips() {
+        let mut doc = WorldDoc::default();
+        let a = doc.gpu_mesh_key();
+        doc.mesh_lod = Some(MeshLod {
+            keep: 0.5,
+            models: vec!["character-".into()],
+        });
+        assert_ne!(a, doc.gpu_mesh_key());
+        let back = WorldDoc::from_json(&doc.to_json().unwrap()).unwrap();
+        assert_eq!(back.mesh_lod, doc.mesh_lod);
+        assert!(!WorldDoc::default().to_json().unwrap().contains("mesh_lod"));
     }
 
     #[test]
@@ -3901,6 +4149,64 @@ mod tests {
             boxes(closed.compile_scene(1.0)),
             1,
             "the box behind the camera drops"
+        );
+    }
+
+    /// The per-frame cull bounds are cached, and the cache can never give another doc's answer.
+    #[test]
+    fn cull_bounds_cache_matches_a_fresh_build_and_follows_the_models() {
+        let fresh = |doc: &WorldDoc| -> Vec<(MeshId, crate::scene3d::Aabb)> {
+            doc.compile_meshes()
+                .into_iter()
+                .filter_map(|(id, m)| {
+                    let b = m.bounds();
+                    (!b.is_empty()).then_some((id, b))
+                })
+                .collect()
+        };
+        let mut a = WorldDoc::from_json(r#"{"version":1,"cull":true,"props":[]}"#).unwrap();
+        a.props.push(WorldProp {
+            id: "m".into(),
+            gltf: Some(crate::gltf_load::unit_cube_gltf()),
+            ..serde_json::from_str::<WorldProp>(r#"{"id":"m"}"#).unwrap()
+        });
+        let want = fresh(&a);
+        assert_eq!(a.cull_bounds(), want, "first call builds");
+        assert_eq!(a.cull_bounds(), want, "second call is the cached copy");
+        // A different model set has another key, so it is rebuilt, not served from the cache.
+        let b = WorldDoc::from_json(r#"{"version":1,"cull":true,"props":[]}"#).unwrap();
+        assert_eq!(b.cull_bounds(), fresh(&b));
+        assert_ne!(b.cull_bounds().len(), a.cull_bounds().len());
+        // Many more docs than the cache holds still answer correctly.
+        for i in 0..6 {
+            let mut c = b.clone();
+            c.props.push(WorldProp {
+                id: format!("p{i}"),
+                gltf: Some(crate::gltf_load::unit_cube_gltf()),
+                name: format!("{i}"),
+                ..serde_json::from_str::<WorldProp>(r#"{"id":"m"}"#).unwrap()
+            });
+            assert_eq!(c.cull_bounds(), fresh(&c));
+        }
+        assert_eq!(a.cull_bounds(), want);
+    }
+
+    #[test]
+    fn the_baked_env_strip_is_kept_but_follows_the_sky() {
+        let mut doc =
+            WorldDoc::from_json(r#"{"version":1,"env_map":"preset:studio","props":[]}"#).unwrap();
+        let first = doc.baked_env().expect("strip");
+        assert_eq!(
+            doc.baked_env().as_ref(),
+            Some(&first),
+            "same inputs, same strip"
+        );
+        doc.hemi_sky = Some([0.9, 0.1, 0.1]);
+        let red = doc.baked_env().expect("strip");
+        assert_ne!(red, first, "a new sky is a new strip, not the cached one");
+        assert_eq!(
+            red,
+            bake_env_strip(doc.hemi_sky_color(), doc.hemi_ground_color(), None)
         );
     }
 

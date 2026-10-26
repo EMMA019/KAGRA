@@ -1,0 +1,21 @@
+{
+  "tiers": {
+    "safe": {"scale": 1.0, "picture": "low", "ssao": 0.0, "taa": false, "shadow_cascades": 1, "shadow_pcss": false, "shadow_softness": 1.0, "bloom_scale": 0.0, "atmo": 0.3, "particles": 0.4, "fx": {"fx_post": true, "fx_atmo": true}},
+    "mid": {"scale": 1.5, "picture": "legacy", "ssao": 0.0, "taa": false, "shadow_cascades": 1, "shadow_pcss": false, "shadow_softness": 1.0, "bloom_scale": 1.0, "atmo": 0.75, "particles": 0.75, "fx": {"fx_post": true, "fx_atmo": true}},
+    "high": {"scale": 2.0, "picture": "legacy", "ssao": 0.0, "taa": false, "shadow_cascades": 2, "shadow_pcss": false, "shadow_softness": 1.5, "bloom_scale": 1.0, "atmo": 1.0, "particles": 1.0, "fx": {"fx_post": true, "fx_atmo": true}},
+    "max": {"scale": 2.5, "picture": "legacy", "ssao": 4.0, "taa": true, "shadow_cascades": 3, "shadow_pcss": true, "shadow_softness": 2.0, "bloom_scale": 1.0, "atmo": 1.4, "particles": 1.0, "fx": {"fx_post": true, "fx_atmo": true}}
+  },
+  "auto": {
+    "start": "mid",
+    "ceiling": "high",
+    "probe_secs": 3.0,
+    "settle_secs": 1.0,
+    "good_p95_ms": 17.5,
+    "good_p99_ms": 22.0,
+    "down_drop_pct": 6.0,
+    "down_secs": 3.0,
+    "up_secs": 25.0,
+    "cooldown_secs": 8.0,
+    "ban_secs": 180.0
+  }
+}

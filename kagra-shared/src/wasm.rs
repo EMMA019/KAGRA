@@ -235,6 +235,33 @@ impl WasmSession {
         self.inner.switches_json()
     }
 
+    /// Graphics tiers of the loaded game as JSON (definitions, auto numbers, active tier).
+    /// `{}` when the game has none.
+    #[wasm_bindgen(js_name = qualityJson)]
+    pub fn quality_json(&self) -> String {
+        self.inner.quality_json()
+    }
+
+    /// The active tier: `safe`, `mid`, `high`, `max`, `custom` or `""`.
+    #[wasm_bindgen(js_name = qualityTier)]
+    pub fn quality_tier(&self) -> String {
+        self.inner.quality_tier()
+    }
+
+    /// Switch to a named tier. False for an unknown name or a game without tiers.
+    #[wasm_bindgen(js_name = setQualityTier)]
+    pub fn set_quality_tier(&mut self, name: &str) -> bool {
+        self.inner.set_quality_tier(name)
+    }
+
+    /// A probe step: the active tier with these keys laid over it (JSON object).
+    #[wasm_bindgen(js_name = setQualityCustom)]
+    pub fn set_quality_custom(&mut self, json: &str) -> Result<(), JsValue> {
+        self.inner
+            .set_quality_custom(json)
+            .map_err(|e| JsValue::from_str(&e))
+    }
+
     /// HOP-BEAT: pause the run (shows the pause card).
     #[wasm_bindgen(js_name = pauseRun)]
     pub fn pause_run(&mut self) {

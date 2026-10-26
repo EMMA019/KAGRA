@@ -326,7 +326,7 @@ Order by visible impact per effort: animated characters (squash/anticipation), f
 ## 17. Manual target selection (PR #209, step 5)
 
 `input.aim` in the JSON spec: `auto` (nearest foe, as before), `manual` or `hybrid` (default). `input.tap_px` is the pick radius (44 px at 400 px short side).
-One thumb keeps steering (drag-follow). The other thumb taps:
+One thumb steers: by default a fixed on-screen stick (bottom-left; `input.move` = `stick`, with `stick_dead`), or the old drag-follow (`drag`). The other thumb taps:
 
 - **a foe** locks it: a red ring on the floor and a bobbing red arrow over it; every weapon fires at it while it is in range (out of range falls back to nearest); tap it again to release;
 - **bare ground** aims that way (a gold line from the hero); a tap on the hero clears it;
@@ -335,3 +335,138 @@ One thumb keeps steering (drag-follow). The other thumb taps:
 Fallbacks: a dead lock drops to the nearest foe. `hybrid` is lock, then nearest, then the ground aim when nothing is in range. `manual` is lock, then the ground aim (even with foes near), then nearest,
 so nobody is stuck without a target. `auto` ignores taps. The hero faces and the muzzle sits on the shot line for every choice. The pause card has an AIM button that cycles auto / tap / hybrid (kept until the page reloads; it is not stored on the device).
 The lock is one uid and an index hint, the ring and arrow reuse two persistent lines and one HUD text, so no pools grow and nothing allocates per frame.
+
+## 18. Drops, weapon slots and depth (PR "survivor-drops", step 2a)
+
+日本語: 敵がたおれるとたまにぶき・回復・ボムなどを落とす。ぶきは3スロット、にたぶきは強化、いっぱいのときは入れかえカード。エリートはかならず宝箱を落とす。ぶきとパッシブの組み合わせ(シナジー)でさらに強くなる。ぜんぶ JSON で変えられる。
+
+Goal: a run that has decisions in it. Level-ups stay the steady spine; drops are the surprise on top; weapon slots and synergies make "what do I keep" matter.
+Everything below is JSON (`SurvivorSpec`), validated, deterministic for a seed; the defaults ship in `SurvivorSpec::default()`.
+
+### 18.1 Drops
+
+```jsonc
+"drops": {
+  "enabled": true, "cap": 16, "life": 16.0, "blink": 4.0, "pull_m": 2.4, "pity_kills": 24,
+  "items": [   // one row per pick-up: kind, weight, rarity 0 common / 1 rare / 2 epic
+    {"id": "heal",   "kind": "heal",   "rarity": 0, "weight": 30, "amount": 0.30},       // share of max HP
+    {"id": "magnet", "kind": "magnet", "rarity": 0, "weight": 24},                       // every gem flies to the hero
+    {"id": "xp",     "kind": "xp",     "rarity": 0, "weight": 18, "amount": 4.0},        // an XP burst
+    {"id": "bomb",   "kind": "bomb",   "rarity": 1, "weight": 14, "amount": 14.0},       // damage to everything near the screen
+    {"id": "shield", "kind": "shield", "rarity": 1, "weight": 14, "secs": 6.0},          // no damage for a while
+    {"id": "frenzy", "kind": "frenzy", "rarity": 1, "weight": 14, "secs": 8.0},          // faster casts and legs
+    {"id": "weapon", "kind": "weapon", "rarity": 2, "weight": 16}                        // grants or upgrades a weapon (see 18.2)
+  ],
+  "tables": [  // what a kind of foe rolls on death
+    {"id": "common", "chance": 0.07, "rolls": 1, "rarity_min": 0},
+    {"id": "elite",  "chance": 1.00, "rolls": 2, "rarity_min": 1, "chest": true}         // a chest, guaranteed
+  ]
+}
+```
+
+- Each foe type names a table (`foes[].table`) and a `drop_mul` (a tank drops more often than a runner). Elites use `elite`: a chest that opens on touch with `rolls` rewards of at least `rarity_min`, so elite and boss drops are better, never worse.
+- `pity_kills`: after that many kills without a drop the next kill drops one (a long dry run cannot happen).
+- A pick-up bobs and glows, flies to the hero inside `pull_m` (the Magnet passive widens it), blinks for the last `blink` seconds and then goes. Pool `cap` is fixed (no allocation in a step); a full pool drops nothing new.
+- Draws use the sim RNG (deterministic per seed, so the daily challenge gives everybody the same drops); effects keep their own RNG.
+
+### 18.2 Weapons and slots
+
+`WeaponKind` grows from one to six: `projectile` (the moon bolt), plus four-to-five new ones with their own feel. All numbers stay in `base` and `levels[]`; `area` is the new radius/range field.
+
+| id | kind | feel | key numbers |
+|---|---|---|---|
+| bolt | projectile | steady auto-aim stream | as before |
+| petals | spread | shotgun: a fan of short pellets, strong up close, weak against armour | `count` pellets over `spread_deg`, short `range` |
+| blades | orbit | crescents circle the hero and shred whatever touches them; no aim needed | `count`, `area` = orbit radius, `speed` = rad/s, `cooldown` = per-foe hit gap |
+| wisps | missile | launched sideways then home in; explode in an area, ignore armour | `count`, `area` = blast radius |
+| zap | chain | instant lightning that jumps from foe to foe | `count` = targets, `area` = jump range, damage falls 20% per jump |
+| pulse | pulse | a ring around the hero that shoves the crowd back | `area` = radius |
+
+- **Slots**: `levels.max_weapons` (default 3, 1..=4). A level-up card can offer a new weapon while a slot is free, or +1 level of an owned one.
+- **Pick-up rules**: a weapon pick-up of an owned weapon is +1 level (a chest does the same for the best owned weapon); an unowned one fills a free slot; with the slots full it opens a **swap** card set: replace one of your weapons (the new one starts at level 1 and keeps no levels, the old one is gone), or keep what you have (the pick-up turns into XP).
+- **Evolve / merge** (step 2b): a weapon at max level with its synergy passive gets the evolved form (`levels[last]` stats x1.5, new FX). Not in 2a; synergies below are the first half of it.
+
+### 18.3 Temporary power-ups
+
+Kinds `magnet`, `bomb`, `heal`, `shield`, `frenzy` (and `xp`). `shield` and `frenzy` are timed (a small clock per effect, like `items::Effects` in #201: restarting refreshes, it does not stack); the HUD shows a chip with its time left. `bomb` and `magnet` are instant. #201 (items-core, draft) holds the runner's effect vocabulary (`ItemEffect`: meow, boost, superjump, double); the arena's effects are different, so 2a keeps its own 20 lines and does not depend on #201. When #201 merges, the clock and `weighted` draw can move over.
+
+### 18.4 Enemies
+
+The five roles live on `game_core::enemies` types (`swarm` stats: hp, speed, radius, touch damage, xp, unlock second, weight) plus a survivor-only `foes[]` row per type id for what a swarm stat cannot say:
+
+| id | role | behaviour (`foes[].ai`) | counter |
+|---|---|---|---|
+| ghoul | filler (the carpet) | `chase` | anything |
+| runner | fast, brittle, arrives in packs | `chase` with a side weave | area weapons, orbit |
+| tank | slow, big, armoured (`armor` flat per hit, `knock_resist`) | `chase` | missiles, pulse, high-damage hits; petals struggle |
+| shooter | keeps its distance and lobs a slow orb every `shoot_every` s (telegraphed flash) | `shoot` | close the gap, chain, wisps |
+| warden (elite) | scheduled (`director.elite_first`, `elite_every`), big, many hp | `chase` | everything; drops a chest |
+
+Orbs the shooters throw live in a fixed pool and hurt like a touch; the hero's shield and hurt cooldown apply.
+
+### 18.5 Synergies (runs get a shape)
+
+```jsonc
+"synergies": [ {"weapon": "bolt", "passive": "haste", "min_level": 3, "name": {"en":"Rapid moon","ja":"はやづき"},
+                "damage": 0.0, "cooldown": -0.15, "count": 0, "pierce": 1, "area": 0.0} ]
+```
+
+The named passive at `min_level` or above, with the weapon in hand (any level), adds the row's bonus (`damage`/`cooldown`/`area` are fractions, `count`/`pierce` are whole numbers). The slot chip shows a ✦ while one is active. Rows are data, so a weapon x passive grid can grow without code. Evolve (18.2) builds on it.
+
+### 18.6 Meta layer (wired lightly in 2a)
+
+- Weapon unlocks: heroes in the existing `hero` catalog slot start with a different `hero.start_weapon` (path whitelisted in `meta.patchable`); coins unlock them. No new slot, no new page code.
+- Weapon codex: a "seen" list per weapon id in the profile and a codex tab in the shop page. **Step 2b** (needs a page change; kept out so #207's `play.html` edits do not conflict).
+- Meta patches may make a run easier or richer, never change a table's rarity floor or the roster.
+
+### 18.7 Performance (Pixel 10 rules still hold)
+
+Fixed pools sized once: pick-ups (`drops.cap`), enemy orbs (24), missiles share the shot pool (`caps.shots`), blades (6), lightning segments (24), foe props per model. Per-foe extras (orbit hit gap, shooter clock, dash state) sit in one parallel array that swaps with `Foes::remove`. The per-frame work added: pick-ups (<=16), blades x grid query, missile homing (<=12 nearest queries), no new allocation in a step. Bots (section 12) check the run is still winnable with each weapon alone and that a drop-heavy build cannot trivialise the clock.
+
+### 18.8 Gap list (what is not done after 2a)
+
+Not reused: `game_core` items-core (#201 is a draft; the survivor content lives in `survivor_content.rs` so the two cannot conflict). Not built: weapon codex page and coin-unlocked weapons beyond the two hero starts (`hero.petal`, `hero.blade`), evolve/merge (swap only).
+
+Evolutions, codex page, boss (the king) and its table, pick-up icon art (glyphs are used because browser HUD image quads are not drawn), a "weapons unlocked" gate for the drop draw, per-weapon unique models (KayKit weapons), more enemy kinds (skeleton mage, bat swarm), and ear-checking the new SFX mix.
+
+## 19. Lighter and cheaper (perf pass on PR "survivor-drops")
+
+Profile first. `cargo test --release -p kagra-shared --lib perf_probe -- --ignored --nocapture` plays a kiting bot with three weapons to dawn on each tier: a tick costs ~7-10 us (about 285 live props of a 609 / 804 / 999 pool, 28 / 63 / 96 points, ~19 foes), so the simulation is not the cost. What a phone pays for is the download and the GPU, and the GPU side is already bounded by the per-tier caps (`caps.foes`, `fx.cap`, `drops.cap`) and per-mesh instancing (draw calls are about the number of distinct meshes). So the pass cuts bytes and leaves the JSON tiers alone.
+
+| Preview download | Before | After |
+|---|---|---|
+| Total / requests | 15,104,548 B / 103 | 9,493,384 B / 67 |
+| wasm raw / gzip -9 | 9,741,628 / 2,929,863 | 6,580,725 / ~2.27 MB |
+| GLBs in the bundle | 1,496,576 | ~1,182,500 (plus 5 unused removed) |
+| Unrelated audio shipped | ~2.5 MB (31 files) | 0 |
+
+- wasm: opt-level `s`, `codegen-units=1`, `panic=abort`, names and producers stripped by wasm-bindgen. `KAGRA_WASM_OPT=3|default` and `KAGRA_WASM_NAMES=1` restore the old build. No wasm-opt (not available to CI here).
+- Preview bundle: when a game's `bundle_assets` names audio pack folders, only those files ship; games that list `assets/audio` keep the full scan.
+- GLB: `pack_glb.py --lean` drops TANGENT and TEXCOORD_1. CREDITS notes say so.
+- Not done: music (1.27 MB mp3; a lower bitrate costs quality), lazy-loading the BGM (needs `play.html`, see #207), foe LOD and wall culling (the scene is ~50k vertices; not worth the pop-in risk), the shared wasm data (fonts, shaders).
+
+## 20. Why it was still slow on a phone, and the three "guns" (perf pass 2 on PR #210)
+
+**Root cause of the slowness.** Every frame `WorldDoc::compile_scene` (the arena draws with frustum culling on) called `compile_meshes()`,
+which decodes every GLB and texture the world uses (17 models) only to read their bounding boxes. That is a few ms of CPU on a desktop and
+tens of ms on a phone, on the main thread, every frame. The download-size pass could not touch it. Fix: `WorldDoc::cull_bounds()` keeps the
+bounds per `gpu_mesh_key()` in a small thread-local cache (skinned and heightfield docs bypass it, a test checks it matches a fresh build).
+Two smaller per-frame costs went too: the baked env strip (`baked_env`, a powf per texel plus three blurs, rebaked and re-uploaded every
+frame) is cached by (spec, sky, ground), and `prop_world_mats` (a `HashMap<String, Mat4>` over every pooled prop, disabled ones included,
+with a linear search per id) is skipped when no prop has a parent.
+
+Measured on the box (relative numbers only): native `compile_scene` 122 ms -> about 1 ms; headless-Chrome CPU-bound frame rate 4.2 -> 34.6 fps;
+the sim is 7-8 us a tick, so it was never the sim.
+
+**Graphics tiers.** #207's tier system is merged into this branch (a normal merge commit) and Moonlit Swarm opts in
+(`supports_quality_tiers`): the settings card gets the Graphics row, `?quality=auto|safe|mid|high|max` works, auto probes on the first run and
+steps down when frames are slow. For Moonlit Swarm `atmo` thins the graveyard dressing (every n-th piece stays) and `particles` thins sparks;
+both are picture only (a test plays the same run at two settings and compares the state JSON). `?quality=safe|mid|max` also pick the
+pool sizes at load (safe = the `low` pools, max = `high`), because pools are sized once.
+`safe` renders at scale 1.0 with bloom off and the low picture; `mid` (the auto start) at 1.5; `high` at 2.0.
+
+**The three items near the hero.** Not three guns: (a) the blaster was always in the hero's hands, also when the only weapon was the orbit
+blades, zap or the pulse, so blades + gun looked like three weapons next to one HUD chip; (b) a petal fan (4 petals) was drawn as egg-shaped
+bars with a long streak, which read as extra barrels. Now the blaster is shown only while a weapon that shoots from it (bolt, petals, wisps)
+is owned, and petals are small flat discs that tumble, with no streak. The HUD chips already list exactly the owned weapons.
+`closeup_probe` (ignored test) renders hero close-ups per starting weapon.

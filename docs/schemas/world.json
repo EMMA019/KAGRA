@@ -113,6 +113,14 @@
       "type": ["boolean", "null"],
       "description": "FXAA on the composite. Omit = on. Ignored while taa is on."
     },
+    "mesh_lod": {
+      "type": ["object", "null"],
+      "description": "Thin the triangles of glTF models whose path contains one of models (vertex clustering at load): keep = fraction of triangles kept (0.2..1). Omit = full detail.",
+      "properties": {
+        "keep": {"type": "number"},
+        "models": {"type": "array", "items": {"type": "string"}}
+      }
+    },
     "ssao": {
       "type": ["number", "null"],
       "description": "Half-resolution SSAO radius in pixels. Omit = off. KAGRA_QUALITY=high uses 8 when omitted. KAGRA_QUALITY=0 forces off."

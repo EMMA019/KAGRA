@@ -35,7 +35,7 @@ from kagra.distribute import (  # noqa: E402
 SITE_DIR = Path(__file__).resolve().parent / "preview_site"
 PLAY_HTML = SITE_DIR / "play.html"
 # Classic scripts play.html loads next to itself: page strings and the portal shim.
-SITE_SCRIPTS = ("i18n.js", "portal.js", "meta.js")
+SITE_SCRIPTS = ("i18n.js", "quality.js", "portal.js", "meta.js")
 # Dev-only scripts (?dev=1 measurement overlay): the preview site gets them, a portal zip never does.
 DEV_SCRIPTS = ("perf.js",)
 # Opening the preview with no ?game= loads this slug. Box Hop stays in the list.
@@ -210,7 +210,13 @@ def _preview_assets(repo: Path, manifest) -> list[Path]:
             continue
         found.update(_expand(path))
     audio = repo / "assets" / "audio"
-    if audio.is_dir():
+    # A game that names its own audio packs (bundle_assets entries inside assets/audio)
+    # ships those and what its world references, not every clip in the repo: the
+    # blanket scan added ~2.5 MB of other games' music and sfx to such a bundle.
+    names_packs = any(
+        audio.resolve() in (repo / rel).resolve().parents for rel in manifest.bundle_assets
+    )
+    if audio.is_dir() and not names_packs:
         for child in audio.rglob("*"):
             if child.is_file() and child.suffix.lower() in {".wav", ".ogg", ".mp3"}:
                 found.add(child.resolve())

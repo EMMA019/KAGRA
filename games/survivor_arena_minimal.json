@@ -14,6 +14,7 @@
     "assets/models/kenney/graveyard-kit",
     "assets/models/kenney/blaster-kit",
     "assets/models/kenney/mini-arena",
+    "assets/models/kenney/mini-dungeon",
     "assets/textures/survivor_arena",
     "assets/models/kenney/platformer-kit/jewel.glb"
   ],
@@ -29,10 +30,12 @@
   "meta": {
     "currency": {"id": "coins", "name": {"en": "Coins", "ja": "コイン"}},
     "earn": {"base": 3, "per": {"kills": 0.1, "level": 2, "time": 0.05, "win": 15}, "cap": 300},
-    "patchable": ["hero.skin", "hero.start_passives", "director.seed", "director.start_rate", "director.end_rate", "hero.max_hp", "hero.speed"],
+    "patchable": ["hero.skin", "hero.start_passives", "hero.start_weapon", "director.seed", "director.start_rate", "director.end_rate", "hero.max_hp", "hero.speed"],
     "catalog": [
       {"id": "hero.classic", "slot": "hero", "name": {"en": "Classic", "ja": "クラシック"}, "price": 0, "patch": {"hero": {"skin": "classic", "start_passives": []}}, "preview": [[255, 214, 120]]},
       {"id": "hero.mint", "slot": "hero", "name": {"en": "Mint (quick)", "ja": "ミント（はやあし）"}, "price": 100, "patch": {"hero": {"skin": "mint", "start_passives": [{"id": "swift", "level": 2}]}}, "preview": [[140, 255, 205]]},
+      {"id": "hero.petal", "slot": "hero", "name": {"en": "Petal (spread)", "ja": "はなびら（ひろがる）"}, "price": 250, "requires": {"stat": "runs", "at_least": 3}, "patch": {"hero": {"skin": "classic", "start_weapon": "petals", "start_passives": []}}, "preview": [[255, 150, 200]]},
+      {"id": "hero.blade", "slot": "hero", "name": {"en": "Blade (orbit)", "ja": "やいば（まわる）"}, "price": 400, "requires": {"stat": "best_score", "at_least": 1500}, "patch": {"hero": {"skin": "classic", "start_weapon": "blades", "start_passives": []}}, "preview": [[150, 220, 255]]},
       {"id": "hero.ember", "slot": "hero", "name": {"en": "Ember (strong)", "ja": "エンバー（ちからもち）"}, "price": 200, "requires": {"stat": "runs", "at_least": 5}, "patch": {"hero": {"skin": "ember", "start_passives": [{"id": "might", "level": 1}]}}, "preview": [[255, 120, 90]]},
       {"id": "hero.ghost", "slot": "hero", "name": {"en": "Ghost (magnet)", "ja": "ゴースト（きゅういん）"}, "price": 300, "requires": {"stat": "best_score", "at_least": 1200}, "patch": {"hero": {"skin": "ghost", "start_passives": [{"id": "magnet", "level": 2}]}}, "preview": [[220, 226, 255]]},
       {"id": "hero.gold", "slot": "hero", "name": {"en": "Gold (tough)", "ja": "ゴールド（がんじょう）"}, "price": 600, "requires": {"stat": "best_score", "at_least": 3000}, "patch": {"hero": {"skin": "gold", "start_passives": [{"id": "vitality", "level": 2}]}}, "preview": [[255, 205, 90]]}

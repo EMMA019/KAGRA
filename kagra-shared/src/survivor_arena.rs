@@ -16,13 +16,24 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::flow::{FlowPhase, GameFlow};
-use crate::game_core::enemies::{weighted_pick, EnemySpec, EnemyType, SwarmStats};
+use crate::game_core::enemies::{weighted_pick, EnemySpec};
 use crate::game_core::swarm::{Budget, Foes, Grid, Rng};
 use crate::game_core::{tick_frame, Core, Kit};
 use crate::hop_beat::{glb_prop, glb_ready, light, prop};
 use crate::input::{PointerEvent, PointerPhase};
-use crate::scene::{DrawList, Quad, TextAlign, TextQuad};
+use crate::scene::{DrawList, Quad, TextAlign, TextFace, TextQuad};
+use crate::survivor_content::{
+    default_enemies, default_foes, default_synergies, default_weapons, DropSpec, FoeAi, FoeSpec,
+    PickupKind, SynergySpec,
+};
 use crate::world_doc::{WorldCamera, WorldDoc};
+
+mod hud_extra;
+mod loot;
+mod motion;
+mod stick;
+mod view;
+mod weapons;
 
 pub const GAME_ID: &str = "survivor_arena";
 
@@ -49,14 +60,14 @@ pub struct Loc {
 }
 
 impl Loc {
-    fn new(en: &str, ja: &str) -> Self {
+    pub(crate) fn new(en: &str, ja: &str) -> Self {
         Self {
             en: en.into(),
             ja: ja.into(),
         }
     }
 
-    fn get(&self, ja: bool) -> &str {
+    pub(crate) fn get(&self, ja: bool) -> &str {
         if ja && !self.ja.is_empty() {
             &self.ja
         } else {
@@ -72,6 +83,9 @@ pub struct ArenaSpec {
     pub half: f32,
     pub floor: [u32; 3],
     pub wall: [u32; 3],
+    /// How dark the night is: 0 = the old blue-lit arena, 1 = dim moonlight (darker floor,
+    /// walls and fill, a tighter key light, closer fog) where the pale foes glow out of it.
+    pub dark: f32,
 }
 
 impl Default for ArenaSpec {
@@ -80,6 +94,7 @@ impl Default for ArenaSpec {
             half: 13.0,
             floor: [34, 46, 66],
             wall: [84, 70, 128],
+            dark: 1.0,
         }
     }
 }
@@ -127,8 +142,10 @@ impl Default for HeroSpec {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct InputSpec {
-    /// `follow` (the hero goes to the finger) or `stick` (a floating stick).
-    pub mode: String,
+    /// `stick` (a fixed on-screen joystick bottom-left, analog, the default) or `drag` (the hero
+    /// goes to the finger). The old `mode` key and `follow` still read as `drag`.
+    #[serde(rename = "move", alias = "mode")]
+    pub move_scheme: String,
     /// Follow: the hero aims this far (m) above the finger, so the thumb does not cover it.
     pub thumb_offset_m: f32,
     /// Follow: closer than this (m) the hero stands still.
@@ -137,6 +154,8 @@ pub struct InputSpec {
     pub full_speed_m: f32,
     /// Stick: radius in pixels at 400 px of short screen side.
     pub stick_px: f32,
+    /// Stick: the inner fraction of the radius that does not move the hero.
+    pub stick_dead: f32,
     /// Who picks the target: `auto` (nearest foe), `manual` (tap a foe to lock it, tap the
     /// ground to aim that way) or `hybrid` (a locked foe first, else nearest).
     pub aim: String,
@@ -147,11 +166,12 @@ pub struct InputSpec {
 impl Default for InputSpec {
     fn default() -> Self {
         Self {
-            mode: "follow".into(),
+            move_scheme: "stick".into(),
             thumb_offset_m: 2.0,
             dead_zone_m: 0.3,
             full_speed_m: 2.2,
             stick_px: 70.0,
+            stick_dead: 0.12,
             aim: "hybrid".into(),
             tap_px: 44.0,
         }
@@ -192,6 +212,8 @@ pub struct LevelSpec {
     pub choices: u32,
     /// How many different passives the hero can hold.
     pub max_passives: u32,
+    /// How many different weapons the hero can hold (1..=6).
+    pub max_weapons: u32,
     /// Draw weights of a weapon card and a passive card.
     pub weapon_weight: u32,
     pub passive_weight: u32,
@@ -207,6 +229,7 @@ impl Default for LevelSpec {
             xp_quad: 0.3,
             choices: 3,
             max_passives: 4,
+            max_weapons: 3,
             weapon_weight: 3,
             passive_weight: 2,
             heal_frac: 0.3,
@@ -229,6 +252,15 @@ pub struct DirectorSpec {
     pub hp_per_min: f32,
     /// Foes appear this far (m) from the hero, off screen.
     pub spawn_dist: f32,
+    /// The first elite (a foe row with `elite: true`) walks in at this second (0: no elites),
+    /// and another one every `elite_every` seconds.
+    pub elite_first: f32,
+    pub elite_every: f32,
+    /// A warden should take about this many seconds to bring down at the hero's current
+    /// firepower (half of it landing), never less than its own HP and never more than
+    /// `elite_hp_cap` times that.
+    pub elite_fight_secs: f32,
+    pub elite_hp_cap: f32,
 }
 
 impl Default for DirectorSpec {
@@ -241,6 +273,10 @@ impl Default for DirectorSpec {
             curve: 2.0,
             hp_per_min: 0.35,
             spawn_dist: 10.5,
+            elite_first: 45.0,
+            elite_every: 40.0,
+            elite_fight_secs: 14.0,
+            elite_hp_cap: 4.0,
         }
     }
 }
@@ -294,6 +330,13 @@ pub struct FxSpec {
     /// (TAA, cascades and PCSS come from the tier itself).
     pub high_post: bool,
     pub cap: [u32; 3],
+    /// Fraction of the triangles of the foe models kept on the low, mid and high picture
+    /// tiers (vertex clustering at load; 1 = full detail). A crowd of small figures does not
+    /// need a thousand triangles each.
+    pub foe_detail: [f32; 3],
+    /// Body motion of the foes (bob, squash, sway, lean, a flinch on a hit), each model its own
+    /// way and each foe its own phase: 0 = still figures, 1 = as tuned, up to 2. Picture only.
+    pub foe_motion: f32,
 }
 
 impl Default for FxSpec {
@@ -307,6 +350,8 @@ impl Default for FxSpec {
             trails: true,
             high_post: true,
             cap: [48, 160, 480],
+            foe_detail: [0.5, 0.65, 1.0],
+            foe_motion: 1.0,
         }
     }
 }
@@ -335,6 +380,16 @@ impl Default for CapSpec {
 pub enum WeaponKind {
     /// Auto-aimed shots at the nearest enemy.
     Projectile,
+    /// A fan of short-lived pellets with a little scatter.
+    Spread,
+    /// `count` blades circle the hero (`area` is the radius, `speed` rad/s) and cut what they touch.
+    Orbit,
+    /// Homing wisps that burst for `damage` to every foe within `area`.
+    Missile,
+    /// Lightning: hits the nearest foe, then jumps `count - 1` times (`area` m per jump).
+    Chain,
+    /// A ring around the hero: `damage` to every foe within `area`, and a shove.
+    Pulse,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -348,6 +403,8 @@ pub struct WeaponBase {
     pub spread_deg: f32,
     pub pierce: u32,
     pub size: f32,
+    /// Orbit radius, blast radius, jump length or ring radius (m), by weapon kind.
+    pub area: f32,
 }
 
 impl Default for WeaponBase {
@@ -361,6 +418,7 @@ impl Default for WeaponBase {
             spread_deg: 12.0,
             pierce: 0,
             size: 0.3,
+            area: 0.0,
         }
     }
 }
@@ -376,6 +434,7 @@ pub struct WeaponLevel {
     pub pierce: i32,
     pub speed: f32,
     pub range: f32,
+    pub area: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -383,6 +442,14 @@ pub struct WeaponLevel {
 pub struct WeaponSpec {
     pub id: String,
     pub name: Loc,
+    /// What the weapon is, on its card when it is new.
+    #[serde(default)]
+    pub desc: Loc,
+    /// One glyph from the UI font (HUD chip and card badge).
+    #[serde(default = "default_weapon_glyph")]
+    pub glyph: String,
+    #[serde(default = "default_weapon_color")]
+    pub color: [u32; 3],
     pub kind: WeaponKind,
     pub base: WeaponBase,
     /// `levels[0]` is the step from level 1 to 2, and so on.
@@ -427,11 +494,24 @@ pub struct SurvivorSpec {
     pub caps: CapSpec,
     pub fx: FxSpec,
     pub enemies: EnemySpec,
+    /// Survivor extras per enemy type (ai, armor, drop table).
+    pub foes: Vec<FoeSpec>,
+    pub drops: DropSpec,
     pub weapons: Vec<WeaponSpec>,
     pub passives: Vec<PassiveSpec>,
+    /// Weapon x passive bonuses that switch on at a passive level.
+    pub synergies: Vec<SynergySpec>,
     /// Sound cues for the page (`game.audio`: file names under the bundle). Passed through.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio: Option<Value>,
+}
+
+fn default_weapon_glyph() -> String {
+    "★".into()
+}
+
+fn default_weapon_color() -> [u32; 3] {
+    [255, 170, 80]
 }
 
 fn passive(
@@ -453,7 +533,7 @@ fn passive(
     }
 }
 
-fn lv(en: &str, ja: &str) -> WeaponLevel {
+pub(crate) fn lv(en: &str, ja: &str) -> WeaponLevel {
     WeaponLevel {
         desc: Loc::new(en, ja),
         ..WeaponLevel::default()
@@ -461,46 +541,8 @@ fn lv(en: &str, ja: &str) -> WeaponLevel {
 }
 
 impl Default for SurvivorSpec {
-    /// The shipped step-1 game: one hero, the moon bolt, the ghoul swarm, six passives.
+    /// The shipped game: one hero, six weapons, five foe kinds, drops, six passives.
     fn default() -> Self {
-        let bolt = WeaponSpec {
-            id: "bolt".into(),
-            name: Loc::new("Moon bolt", "つきのたま"),
-            kind: WeaponKind::Projectile,
-            base: WeaponBase::default(),
-            levels: vec![
-                WeaponLevel {
-                    count: 1,
-                    ..lv("+1 bolt per cast", "いちどに +1こ")
-                },
-                WeaponLevel {
-                    damage: 3.0,
-                    ..lv("Damage +3", "ダメージ +3")
-                },
-                WeaponLevel {
-                    cooldown: -0.15,
-                    count: 1,
-                    ..lv("Casts faster, +1 bolt", "はやくなげる、+1こ")
-                },
-                WeaponLevel {
-                    pierce: 2,
-                    damage: 2.0,
-                    ..lv("Pierces two more, +2 damage", "ぬける +2、ダメージ +2")
-                },
-            ],
-        };
-        let ghoul = EnemyType {
-            id: "ghoul".into(),
-            look: "ghoul".into(),
-            color: [120, 240, 150],
-            swarm: Some(SwarmStats {
-                hp: 4.0,
-                speed: 1.7,
-                touch_dmg: 6.0,
-                ..SwarmStats::default()
-            }),
-            ..EnemyType::default()
-        };
         Self {
             id: GAME_ID.into(),
             title: "Moonlit Swarm".into(),
@@ -514,10 +556,12 @@ impl Default for SurvivorSpec {
             caps: CapSpec::default(),
             fx: FxSpec::default(),
             enemies: EnemySpec {
-                types: vec![ghoul],
+                types: default_enemies(),
                 ..EnemySpec::default()
             },
-            weapons: vec![bolt],
+            foes: default_foes(),
+            drops: DropSpec::default(),
+            weapons: default_weapons(),
             passives: vec![
                 passive(
                     "vitality",
@@ -574,6 +618,7 @@ impl Default for SurvivorSpec {
                     0.12,
                 ),
             ],
+            synergies: default_synergies(),
             audio: Some(default_audio()),
         }
     }
@@ -603,16 +648,165 @@ impl SurvivorSpec {
         Ok(spec)
     }
 
+    /// The drop tables, foe rows, weapon slots and synergies.
+    fn validate_content(&self, w: &str) -> Result<(), String> {
+        if !(1..=4).contains(&self.levels.max_weapons) {
+            return Err(format!("{w}: levels.max_weapons must be 1..=4"));
+        }
+        range(
+            w,
+            "director.elite_first",
+            self.director.elite_first,
+            0.0,
+            1800.0,
+        )?;
+        range(
+            w,
+            "director.elite_every",
+            self.director.elite_every,
+            0.0,
+            1800.0,
+        )?;
+        for (i, d) in self.fx.foe_detail.iter().enumerate() {
+            range(w, &format!("fx.foe_detail[{i}]"), *d, 0.2, 1.0)?;
+        }
+        range(w, "fx.foe_motion", self.fx.foe_motion, 0.0, 2.0)?;
+        range(
+            w,
+            "director.elite_fight_secs",
+            self.director.elite_fight_secs,
+            0.0,
+            120.0,
+        )?;
+        range(
+            w,
+            "director.elite_hp_cap",
+            self.director.elite_hp_cap,
+            1.0,
+            20.0,
+        )?;
+        for (i, wp) in self.weapons.iter().enumerate() {
+            let n = format!("weapons[{i}]");
+            range(w, &format!("{n}.base.area"), wp.base.area, 0.0, 12.0)?;
+            if wp.color.iter().any(|c| *c > 255) {
+                return Err(format!("{w}: {n}.color is 0..=255 each"));
+            }
+            if wp.glyph.chars().count() > 2 {
+                return Err(format!("{w}: {n}.glyph is one or two characters"));
+            }
+        }
+        if self.foes.len() > 8 {
+            return Err(format!("{w}: foes holds at most 8 rows"));
+        }
+        let mut elites = 0;
+        for (i, f) in self.foes.iter().enumerate() {
+            let n = format!("foes[{i}]");
+            // A row for a type this world does not have is simply unused.
+            if self.foes[..i].iter().any(|o| o.id == f.id) {
+                return Err(format!("{w}: {n}.id is used twice"));
+            }
+            range(w, &format!("{n}.scale"), f.scale, 0.3, 3.0)?;
+            range(w, &format!("{n}.weave"), f.weave, 0.0, 1.0)?;
+            range(w, &format!("{n}.armor"), f.armor, 0.0, 50.0)?;
+            range(w, &format!("{n}.knock_resist"), f.knock_resist, 0.0, 1.0)?;
+            range(w, &format!("{n}.hold_m"), f.hold_m, 1.0, 20.0)?;
+            range(w, &format!("{n}.shoot_every"), f.shoot_every, 0.4, 20.0)?;
+            range(w, &format!("{n}.shot_dmg"), f.shot_dmg, 0.0, 1000.0)?;
+            range(w, &format!("{n}.shot_speed"), f.shot_speed, 1.0, 20.0)?;
+            range(w, &format!("{n}.drop_mul"), f.drop_mul, 0.0, 20.0)?;
+            if f.tint.iter().any(|c| *c > 255) {
+                return Err(format!("{w}: {n}.tint is 0..=255 each"));
+            }
+            if !f.table.is_empty() && !self.drops.tables.iter().any(|t| t.id == f.table) {
+                return Err(format!("{w}: {n}.table names no drops.tables entry"));
+            }
+            if f.elite {
+                elites += 1;
+            }
+        }
+        if elites > 1 {
+            return Err(format!("{w}: at most one foe row may be the elite"));
+        }
+        let d = &self.drops;
+        if d.cap > 24 || d.items.len() > 16 || d.tables.len() > 6 {
+            return Err(format!(
+                "{w}: drops.cap 0..=24, items at most 16, tables at most 6"
+            ));
+        }
+        range(w, "drops.life", d.life, 2.0, 120.0)?;
+        range(w, "drops.blink", d.blink, 0.0, 10.0)?;
+        range(w, "drops.pull_m", d.pull_m, 0.0, 12.0)?;
+        if d.pity_kills > 1000 {
+            return Err(format!("{w}: drops.pity_kills is 0..=1000"));
+        }
+        for (i, it) in d.items.iter().enumerate() {
+            let n = format!("drops.items[{i}]");
+            if !id_ok(&it.id) || d.items[..i].iter().any(|o| o.id == it.id) {
+                return Err(format!("{w}: {n}.id is 1..=16 of a-z 0-9 _ and unique"));
+            }
+            if it.rarity > 2 || it.color.iter().any(|c| *c > 255) || it.glyph.chars().count() > 2 {
+                return Err(format!(
+                    "{w}: {n}: rarity 0..=2, color 0..=255, glyph 1-2 chars"
+                ));
+            }
+            range(w, &format!("{n}.amount"), it.amount, 0.0, 10_000.0)?;
+            range(w, &format!("{n}.secs"), it.secs, 0.0, 120.0)?;
+            range(w, &format!("{n}.area"), it.area, 0.0, 30.0)?;
+            if it.weight > 1000 {
+                return Err(format!("{w}: {n}.weight is 0..=1000"));
+            }
+        }
+        for (i, t) in d.tables.iter().enumerate() {
+            let n = format!("drops.tables[{i}]");
+            if !id_ok(&t.id) || d.tables[..i].iter().any(|o| o.id == t.id) {
+                return Err(format!("{w}: {n}.id is 1..=16 of a-z 0-9 _ and unique"));
+            }
+            range(w, &format!("{n}.chance"), t.chance, 0.0, 1.0)?;
+            if !(1..=6).contains(&t.rolls) || t.rarity_min > 2 {
+                return Err(format!("{w}: {n}: rolls 1..=6, rarity_min 0..=2"));
+            }
+            if !t.guarantee.is_empty() && !d.items.iter().any(|o| o.id == t.guarantee) {
+                return Err(format!("{w}: {n}.guarantee names no item"));
+            }
+            if d.enabled
+                && !d
+                    .items
+                    .iter()
+                    .any(|o| o.rarity >= t.rarity_min && o.weight > 0)
+                && !t.chest
+            {
+                return Err(format!("{w}: {n}: no item reaches its rarity_min"));
+            }
+        }
+        for (i, sy) in self.synergies.iter().enumerate() {
+            let n = format!("synergies[{i}]");
+            // A synergy for a weapon or passive this world lacks is simply unused.
+            if self.synergies.len() > 32 {
+                return Err(format!("{w}: synergies holds at most 32 entries"));
+            }
+            range(w, &format!("{n}.damage"), sy.damage, -0.9, 3.0)?;
+            range(w, &format!("{n}.cooldown"), sy.cooldown, -0.6, 2.0)?;
+            range(w, &format!("{n}.area"), sy.area, -0.9, 3.0)?;
+            if !(-2..=4).contains(&sy.count) || !(0..=2).contains(&sy.pierce) || sy.min_level == 0 {
+                return Err(format!(
+                    "{w}: {n}: count -2..=4, pierce 0..=2, min_level >= 1"
+                ));
+            }
+        }
+        Ok(())
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         let w = "survivor spec";
         range(w, "arena.half", self.arena.half, 6.0, 40.0)?;
+        range(w, "arena.dark", self.arena.dark, 0.0, 1.0)?;
         range(w, "hero.speed", self.hero.speed, 1.0, 12.0)?;
         range(w, "hero.max_hp", self.hero.max_hp, 1.0, 10_000.0)?;
         range(w, "hero.radius", self.hero.radius, 0.1, 1.0)?;
         range(w, "hero.pickup_radius", self.hero.pickup_radius, 0.3, 10.0)?;
         range(w, "hero.hurt_cd", self.hero.hurt_cd, 0.0, 5.0)?;
-        if !matches!(self.input.mode.as_str(), "follow" | "stick") {
-            return Err(format!("{w}: input.mode is follow|stick"));
+        if !matches!(self.input.move_scheme.as_str(), "drag" | "follow" | "stick") {
+            return Err(format!("{w}: input.move is stick|drag"));
         }
         range(
             w,
@@ -627,6 +821,7 @@ impl SurvivorSpec {
             return Err(format!("{w}: input.full_speed_m must exceed dead_zone_m"));
         }
         range(w, "input.stick_px", self.input.stick_px, 20.0, 200.0)?;
+        range(w, "input.stick_dead", self.input.stick_dead, 0.0, 0.6)?;
         if !matches!(self.input.aim.as_str(), "auto" | "manual" | "hybrid") {
             return Err(format!("{w}: input.aim is auto|manual|hybrid"));
         }
@@ -699,7 +894,10 @@ impl SurvivorSpec {
         if f.cap.iter().any(|c| *c > 600) || f.cap[0] > f.cap[1] || f.cap[1] > f.cap[2] {
             return Err(format!("{w}: fx.cap is 0..=600 and rises from low to high"));
         }
-        self.enemies.validate(w, &["ghoul"])?;
+        self.enemies.validate(
+            w,
+            &["ghoul", "ghost", "zombie", "skeleton", "vampire", "keeper"],
+        )?;
         if self.enemies.types.is_empty() {
             return Err(format!("{w}: enemies.types needs at least one kind"));
         }
@@ -789,6 +987,7 @@ impl SurvivorSpec {
         if !self.weapons.iter().any(|x| x.id == self.hero.start_weapon) {
             return Err(format!("{w}: hero.start_weapon names no weapon"));
         }
+        self.validate_content(w)?;
         if self.hero.start_passives.len() > 4 {
             return Err(format!("{w}: hero.start_passives holds at most 4"));
         }
@@ -820,6 +1019,7 @@ struct WeaponStats {
     pierce: i32,
     spread: f32,
     size: f32,
+    area: f32,
 }
 
 impl WeaponStats {
@@ -833,6 +1033,7 @@ impl WeaponStats {
             pierce: b.pierce as i32,
             spread: b.spread_deg.to_radians(),
             size: b.size,
+            area: b.area,
         }
     }
 
@@ -843,6 +1044,7 @@ impl WeaponStats {
         self.range += l.range;
         self.count += l.count;
         self.pierce += l.pierce;
+        self.area += l.area;
     }
 }
 
@@ -869,13 +1071,107 @@ struct Kind {
     weight: u32,
     color: [u32; 3],
     linear: [f32; 3],
+    ai: FoeAi,
+    scale: f32,
+    tint: [u32; 3],
+    weave: f32,
+    armor: f32,
+    resist: f32,
+    hold: f32,
+    every: f32,
+    shot_dmg: f32,
+    shot_speed: f32,
+    /// Index into `drops.tables`, or `NO_TABLE`.
+    table: u8,
+    drop_mul: f32,
+    elite: bool,
+    /// Which model pool draws it (`MODEL_*`).
+    model: u8,
 }
+
+const NO_TABLE: u8 = 255;
+/// Pool slots: ghost, zombie, skeleton, vampire, keeper. `MODEL_MIX` is the ghoul crowd that
+/// shows as ghosts and (one in four) zombies.
+const MODEL_MIX: u8 = 255;
+const POOLS: usize = 5;
+/// Enemy orbs, blades, zaps and rings alive at once.
+const ORB_CAP: usize = 24;
+const BLADE_CAP: usize = 6;
+const ZAP_CAP: usize = 6;
+const ZAP_PTS: usize = 10;
+const RING_CAP: usize = 8;
+const CHEST_CAP: usize = 3;
+const ORB_LIFE: f32 = 4.5;
+const ORB_R: f32 = 0.22;
+const TOAST_LIFE: f32 = 2.4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Card {
     Weapon(u8),
     Passive(u8),
     Heal,
+    /// A full weapon bar: drop this weapon for the one that was found.
+    Swap(u8),
+    /// A full weapon bar: keep what you have (a little XP instead).
+    Keep,
+}
+
+/// Per-foe state that the shared `Foes` pool does not carry; index-for-index with it.
+#[derive(Clone, Copy, Debug, Default)]
+struct FoeAux {
+    /// Seconds until the blades may cut this foe again.
+    blade_cd: f32,
+    /// Shooter: seconds until the next orb.
+    clock: f32,
+    hp_max: f32,
+}
+
+/// An enemy orb.
+#[derive(Clone, Copy, Debug)]
+struct Orb {
+    x: f32,
+    z: f32,
+    vx: f32,
+    vz: f32,
+    life: f32,
+    dmg: f32,
+}
+
+/// A pickup lying in the arena.
+#[derive(Clone, Copy, Debug)]
+struct Pickup {
+    x: f32,
+    z: f32,
+    /// Index into `drops.items`, or `CHEST`.
+    item: u8,
+    /// The table a chest opens on.
+    table: u8,
+    age: f32,
+    fly: bool,
+}
+
+const CHEST: u8 = 255;
+
+/// A lightning bolt on screen for a moment: the hero, then each foe it hit.
+#[derive(Clone, Copy, Debug)]
+struct Zap {
+    pts: [[f32; 2]; ZAP_PTS],
+    n: u8,
+    age: f32,
+    w: u8,
+}
+
+const ZAP_LIFE: f32 = 0.24;
+
+/// An expanding ring on the floor (pulse, blast, bomb).
+#[derive(Clone, Copy, Debug)]
+struct Ring {
+    x: f32,
+    z: f32,
+    r: f32,
+    age: f32,
+    life: f32,
+    color: [u8; 3],
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -890,6 +1186,12 @@ struct Shot {
     r: f32,
     hits: [u32; 4],
     n: u8,
+    /// 0 bolt, 1 pellet, 2 homing wisp.
+    kind: u8,
+    /// The weapon that fired it (its colour and sums).
+    w: u8,
+    /// Wisp: blast radius.
+    area: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -908,18 +1210,29 @@ struct Slots {
     gun: usize,
     glb_gun: bool,
     shadow: usize,
-    foe0: usize,
-    /// Zombie pool start and size (size 0: no zombie model, every foe is a ghost).
-    zombie0: usize,
-    zombie_cap: usize,
-    ghost_cap: usize,
+    /// Per model pool: first prop, size (0: no such model, its foes use pool 0), props drawn last frame.
+    pool0: [usize; POOLS],
+    pool_cap: [usize; POOLS],
+    drawn: [usize; POOLS],
     gem0: usize,
     shot0: usize,
+    orb0: usize,
+    blade0: usize,
+    glb_blade: bool,
+    pick0: usize,
+    glow0: usize,
+    chest0: usize,
+    glb_chest: bool,
     glb_foe: bool,
     glb_gem: bool,
-    /// How many foe props each pool drew last frame (to hide the leftovers).
-    drawn_ghost: usize,
-    drawn_zombie: usize,
+    // line list offsets in `doc.lines`
+    ln_ring: usize,
+    ln_aim: usize,
+    ln_beam: usize,
+    ln_zap: usize,
+    ln_fring: usize,
+    ln_shield: usize,
+    ln_orbit: usize,
 }
 
 const MAX_FOE_R: f32 = 1.0;
@@ -950,6 +1263,11 @@ struct DmgNum {
     age: f32,
 }
 
+/// A gem dropped within this far (m) of a resting one adds to it; the wider reach applies
+/// once the pool is more than three-fifths full.
+const GEM_MERGE_R: f32 = 0.7;
+const GEM_MERGE_FULL_R: f32 = 1.7;
+
 const DMG_CAP: [usize; 3] = [6, 12, 20];
 const DMG_LIFE: f32 = 0.7;
 const FX_SPARK: u8 = 0;
@@ -958,15 +1276,19 @@ const FX_PUFF_ZOMBIE: u8 = 2;
 const FX_GLINT: u8 = 3;
 const FX_MUZZLE: u8 = 4;
 const FX_HURT: u8 = 5;
+const FX_BLAST: u8 = 6;
+const FX_ZAP: u8 = 7;
 /// Per kind: sRGB colour, sprite radius (m) and opacity for the young, middle and old third
 /// of its life. One point cloud per kind and third, refilled in place each frame.
-const FX_LOOK: [([u8; 3], [f32; 3], [u8; 3]); 6] = [
+const FX_LOOK: [([u8; 3], [f32; 3], [u8; 3]); 8] = [
     ([185, 240, 255], [0.11, 0.08, 0.05], [255, 235, 190]),
     ([185, 165, 255], [0.16, 0.26, 0.34], [210, 130, 60]),
     ([140, 225, 150], [0.16, 0.26, 0.34], [210, 130, 60]),
     ([255, 225, 110], [0.10, 0.08, 0.05], [255, 230, 160]),
     ([255, 225, 160], [0.28, 0.18, 0.10], [255, 200, 110]),
     ([255, 85, 95], [0.16, 0.12, 0.08], [255, 230, 160]),
+    ([255, 190, 150], [0.22, 0.34, 0.42], [200, 90, 150]),
+    ([255, 250, 160], [0.13, 0.09, 0.06], [190, 220, 255]),
 ];
 
 #[derive(Debug)]
@@ -977,6 +1299,10 @@ pub struct SurvivorArena {
     doc: WorldDoc,
     slots: Slots,
     picture_quality: Option<String>,
+    /// Graphics-tier hints (`quality_hints`): the share of arena dressing and of spark
+    /// particles drawn. Picture only: the sim and its RNG never read them.
+    hint_atmo: f32,
+    hint_particles: f32,
     kinds: Vec<Kind>,
     foes: Foes,
     grid: Grid,
@@ -984,6 +1310,31 @@ pub struct SurvivorArena {
     push_z: Vec<f32>,
     shots: Vec<Shot>,
     gems: Vec<Gem>,
+    aux: Vec<FoeAux>,
+    orbs: Vec<Orb>,
+    pickups: Vec<Pickup>,
+    zaps: Vec<Zap>,
+    rings: Vec<Ring>,
+    /// Scratch for area hits: foe indices, sized once to the foe cap.
+    scratch: Vec<usize>,
+    /// Spins the blades.
+    orbit_phase: f32,
+    // buffs and loot
+    shield_t: f32,
+    frenzy_t: f32,
+    frenzy_amt: f32,
+    /// While above 0 every gem and pickup flies to the hero (a magnet).
+    pull_all_t: f32,
+    since_drop: u32,
+    /// Seconds into the run of the next elite (0: none).
+    next_elite: f32,
+    /// The weapon waiting for a slot while the swap cards are up.
+    swap_in: Option<u8>,
+    toast: String,
+    toast_t: f32,
+    toast_col: [u8; 3],
+    /// Which synergies are on (bit per `spec.synergies` row).
+    syn_mask: u32,
     budget: Budget,
     rng: Rng,
     /// Effects roll their own dice, so switching them off never changes a run.
@@ -1057,7 +1408,42 @@ impl SurvivorArena {
             .iter()
             .map(|t| {
                 let s = t.swarm.clone().unwrap_or_default();
+                let f = spec
+                    .foes
+                    .iter()
+                    .find(|f| f.id == t.id)
+                    .cloned()
+                    .unwrap_or_else(|| FoeSpec {
+                        id: t.id.clone(),
+                        ..FoeSpec::default()
+                    });
                 Kind {
+                    ai: f.ai,
+                    scale: f.scale,
+                    tint: f.tint,
+                    weave: f.weave,
+                    armor: f.armor,
+                    resist: f.knock_resist,
+                    hold: f.hold_m,
+                    every: f.shoot_every,
+                    shot_dmg: f.shot_dmg,
+                    shot_speed: f.shot_speed,
+                    table: spec
+                        .drops
+                        .tables
+                        .iter()
+                        .position(|d| d.id == f.table)
+                        .map_or(NO_TABLE, |i| i as u8),
+                    drop_mul: f.drop_mul,
+                    elite: f.elite,
+                    model: match t.look.as_str() {
+                        "ghost" => 0,
+                        "zombie" => 1,
+                        "skeleton" => 2,
+                        "vampire" => 3,
+                        "keeper" => 4,
+                        _ => MODEL_MIX,
+                    },
                     hp: s.hp,
                     speed: s.speed,
                     radius: s.radius,
@@ -1078,6 +1464,8 @@ impl SurvivorArena {
             doc: WorldDoc::default(),
             slots: Slots::default(),
             picture_quality: None,
+            hint_atmo: 1.0,
+            hint_particles: 1.0,
             kinds,
             foes: Foes::default(),
             grid: Grid::new(half + 3.0, 2.0, 1),
@@ -1085,6 +1473,24 @@ impl SurvivorArena {
             push_z: Vec::new(),
             shots: Vec::new(),
             gems: Vec::new(),
+            aux: Vec::new(),
+            orbs: Vec::new(),
+            pickups: Vec::new(),
+            zaps: Vec::new(),
+            rings: Vec::new(),
+            scratch: Vec::new(),
+            orbit_phase: 0.0,
+            shield_t: 0.0,
+            frenzy_t: 0.0,
+            frenzy_amt: 0.0,
+            pull_all_t: 0.0,
+            since_drop: 0,
+            next_elite: 0.0,
+            swap_in: None,
+            toast: String::new(),
+            toast_t: 0.0,
+            toast_col: [255, 255, 255],
+            syn_mask: 0,
             budget: Budget::default(),
             rng: Rng::new(spec.director.seed),
             fx_rng: Rng::new(spec.director.seed ^ 0x9e37_79b9),
@@ -1165,6 +1571,12 @@ impl SurvivorArena {
         self.push_z = Vec::with_capacity(cap);
         self.shots = Vec::with_capacity(self.spec.caps.shots as usize);
         self.gems = Vec::with_capacity(self.spec.caps.gems as usize);
+        self.aux = Vec::with_capacity(cap);
+        self.scratch = Vec::with_capacity(cap);
+        self.orbs = Vec::with_capacity(ORB_CAP);
+        self.pickups = Vec::with_capacity(self.spec.drops.cap as usize);
+        self.zaps = Vec::with_capacity(ZAP_CAP);
+        self.rings = Vec::with_capacity(RING_CAP);
         self.doc = WorldDoc::default();
     }
 
@@ -1224,6 +1636,56 @@ impl SurvivorArena {
             }
             self.weapon_stats.push(s);
         }
+        // Synergies: a weapon in hand plus a passive at its level switches a bonus on.
+        let old = self.syn_mask;
+        self.syn_mask = 0;
+        for (k, sy) in self.spec.synergies.iter().enumerate().take(32) {
+            let (Some(wi), Some(pi)) = (
+                self.spec.weapons.iter().position(|w| w.id == sy.weapon),
+                self.spec.passives.iter().position(|p| p.id == sy.passive),
+            ) else {
+                continue;
+            };
+            if self.weapon_lv[wi] == 0 || self.passive_lv[pi] < sy.min_level {
+                continue;
+            }
+            self.syn_mask |= 1 << k;
+            let st = &mut self.weapon_stats[wi];
+            st.damage *= 1.0 + sy.damage;
+            st.cooldown *= 1.0 + sy.cooldown;
+            st.count += sy.count;
+            st.pierce += sy.pierce;
+            st.area *= 1.0 + sy.area;
+        }
+        for (i, w) in self.spec.weapons.iter().enumerate() {
+            let st = &mut self.weapon_stats[i];
+            let max_n = match w.kind {
+                WeaponKind::Orbit | WeaponKind::Missile => BLADE_CAP as i32,
+                _ => 8,
+            };
+            st.count = st.count.clamp(1, max_n);
+            st.pierce = st.pierce.clamp(0, 3);
+            st.cooldown = st.cooldown.max(0.1);
+        }
+        let fresh = self.syn_mask & !old;
+        if fresh != 0 && self.flow.phase == FlowPhase::Play {
+            let k = fresh.trailing_zeros() as usize;
+            let name = self.spec.synergies[k].name.get(self.lang_ja).to_string();
+            let head = self.tr("SYNERGY", "シナジー");
+            self.set_toast(&format!("{head}  {name}"), [255, 225, 120]);
+        }
+    }
+
+    fn set_toast(&mut self, text: &str, col: [u8; 3]) {
+        self.toast.clear();
+        self.toast.push_str(text);
+        self.toast_t = TOAST_LIFE;
+        self.toast_col = col;
+    }
+
+    /// Weapons in hand.
+    fn held_weapons(&self) -> u32 {
+        self.weapon_lv.iter().filter(|l| **l > 0).count() as u32
     }
 
     fn xp_need(&self) -> f32 {
@@ -1252,6 +1714,27 @@ impl SurvivorArena {
         self.foes.clear();
         self.shots.clear();
         self.gems.clear();
+        self.aux.clear();
+        self.orbs.clear();
+        self.pickups.clear();
+        self.zaps.clear();
+        self.rings.clear();
+        self.orbit_phase = 0.0;
+        self.shield_t = 0.0;
+        self.frenzy_t = 0.0;
+        self.pull_all_t = 0.0;
+        self.since_drop = 0;
+        self.swap_in = None;
+        self.toast.clear();
+        self.toast_t = 0.0;
+        self.syn_mask = 0;
+        let d = &self.spec.director;
+        let has_elite = self.kinds.iter().any(|k| k.elite);
+        self.next_elite = if d.elite_first > 0.0 && has_elite {
+            d.elite_first
+        } else {
+            0.0
+        };
         self.budget.reset();
         self.rng = Rng::new(self.spec.director.seed);
         self.fx_rng = Rng::new(self.spec.director.seed ^ 0x9e37_79b9);
@@ -1294,6 +1777,18 @@ impl SurvivorArena {
         }
         self.recompute();
         self.hp = self.mods.hp_max;
+        // Say what the hero starts with: the chip alone was an unreadable glyph.
+        if let Some(i) = (0..self.spec.weapons.len()).find(|&i| self.weapon_lv[i] > 0) {
+            let w = &self.spec.weapons[i];
+            let line = format!(
+                "{}  {}  {}",
+                w.glyph,
+                w.name.get(self.lang_ja),
+                self.tr("equipped", "そうび")
+            );
+            let col = w.color.map(|c| c.min(255) as u8);
+            self.set_toast(&line, col);
+        }
     }
 
     pub fn show_title(&mut self) {
@@ -1353,6 +1848,7 @@ impl SurvivorArena {
             *c = (*c - dt).max(0.0);
         }
         self.hurt_flash = (self.hurt_flash - dt * 3.0).max(0.0);
+        self.toast_t = (self.toast_t - dt).max(0.0);
         self.step_fx(dt);
         if !self.cards.is_empty() {
             return;
@@ -1363,14 +1859,21 @@ impl SurvivorArena {
         }
         self.t += dt;
         self.hurt_cd = (self.hurt_cd - dt).max(0.0);
+        self.shield_t = (self.shield_t - dt).max(0.0);
+        self.frenzy_t = (self.frenzy_t - dt).max(0.0);
+        self.pull_all_t = (self.pull_all_t - dt).max(0.0);
         self.move_hero(dt);
         self.spawn(dt);
         self.grid.rebuild(&self.foes.x, &self.foes.z);
         self.move_foes(dt);
+        self.step_orbs(dt);
         self.fire(dt);
+        self.step_blades(dt);
         self.move_shots(dt);
+        self.step_vfx(dt);
         self.reap();
         self.collect(dt);
+        self.collect_loot(dt);
         let need = self.xp_need();
         if self.xp >= need {
             self.xp -= need;
@@ -1449,15 +1952,16 @@ impl SurvivorArena {
         let sp = self.spec.hero.speed * self.mods.speed;
         let mut want = (0.0_f32, 0.0_f32);
         if let Some((fx, fy)) = self.finger {
-            if self.spec.input.mode == "stick" {
+            if self.stick_mode() {
                 let (w, h) = self.size.get();
-                let s = (w.min(h) / 400.0).clamp(0.9, 2.6);
-                let rad = self.spec.input.stick_px * s;
+                let rad = self.stick_radius(w, h);
                 let (dx, dy) = ((fx - self.origin.0) / rad, (fy - self.origin.1) / rad);
                 let len = dx.hypot(dy);
-                if len > 0.12 {
-                    let k = len.min(1.0) / len;
-                    want = (dx * k * sp, dy * k * sp);
+                let dead = self.spec.input.stick_dead;
+                if len > dead {
+                    // Analog: nothing inside the dead zone, then a smooth ramp to full at the rim.
+                    let m = ((len.min(1.0) - dead) / (1.0 - dead)).clamp(0.0, 1.0);
+                    want = (dx / len * m * sp, dy / len * m * sp);
                 }
             } else if let Some((gx, gz)) = self.ground_at(fx, fy) {
                 let (tx, tz) = (gx, gz - self.spec.input.thumb_offset_m);
@@ -1491,6 +1995,7 @@ impl SurvivorArena {
     }
 
     fn spawn(&mut self, dt: f32) {
+        self.spawn_elite();
         let d = &self.spec.director;
         let rate = Budget::rate(d.start_rate, d.end_rate, d.ramp_secs, d.curve, self.t);
         let n = self.budget.take(rate, dt);
@@ -1501,7 +2006,7 @@ impl SurvivorArena {
         let mut ids = [0_usize; 8];
         let mut m = 0;
         for (i, k) in self.kinds.iter().enumerate() {
-            if k.unlock <= self.t && m < 8 {
+            if k.unlock <= self.t && !k.elite && m < 8 {
                 weights[m] = k.weight;
                 ids[m] = i;
                 m += 1;
@@ -1527,10 +2032,101 @@ impl SurvivorArena {
                 }
             }
             let hp = self.kinds[kind].hp * hp_mul;
-            if self.foes.spawn(kind as u8, pos.0, pos.1, hp).is_none() {
+            if !self.add_foe(kind, pos, hp) {
                 break; // the cap is the budget: the rest of this step's births are dropped
             }
         }
+    }
+
+    /// Add a foe and its aux row. False when the pool is full.
+    fn add_foe(&mut self, kind: usize, pos: (f32, f32), hp: f32) -> bool {
+        self.sync_aux();
+        if self.foes.spawn(kind as u8, pos.0, pos.1, hp).is_none() {
+            return false;
+        }
+        let every = self.kinds[kind].every;
+        let clock = self.rng.range(0.6, every.max(0.7));
+        self.aux.push(FoeAux {
+            blade_cd: 0.0,
+            clock,
+            hp_max: hp,
+        });
+        true
+    }
+
+    /// Keep `aux` index-for-index with the foes (a test or a mod may add foes directly).
+    fn sync_aux(&mut self) {
+        let n = self.foes.len();
+        if self.aux.len() > n {
+            self.aux.truncate(n);
+        }
+        while self.aux.len() < n {
+            let hp = self.foes.hp[self.aux.len()];
+            self.aux.push(FoeAux {
+                blade_cd: 0.0,
+                clock: 1.5,
+                hp_max: hp,
+            });
+        }
+    }
+
+    /// Rough damage per second of the weapons the hero holds (every hit landing).
+    pub(super) fn firepower(&self) -> f32 {
+        let mut sum = 0.0;
+        for (i, w) in self.spec.weapons.iter().enumerate() {
+            if self.weapon_lv[i] == 0 {
+                continue;
+            }
+            let st = &self.weapon_stats[i];
+            let gap = match w.kind {
+                // Blades re-hit a foe on a short gap, about twice a second a blade.
+                WeaponKind::Orbit => 0.5,
+                _ => (st.cooldown * self.cd_scale()).max(0.1),
+            };
+            let n = if w.kind == WeaponKind::Pulse {
+                1
+            } else {
+                st.count.max(1)
+            };
+            sum += st.damage * self.mods.damage * n as f32 / gap;
+        }
+        sum
+    }
+
+    /// The timed elite: the first at `director.elite_first`, then every `elite_every`.
+    fn spawn_elite(&mut self) {
+        if self.next_elite <= 0.0 || self.t < self.next_elite {
+            return;
+        }
+        let Some(kind) = self
+            .kinds
+            .iter()
+            .position(|k| k.elite && k.unlock <= self.t)
+        else {
+            return;
+        };
+        let half = self.spec.arena.half - 1.2;
+        let a = self.rng.range(0.0, std::f32::consts::TAU);
+        let r = self.spec.director.spawn_dist * 0.8;
+        let pos = (
+            (self.hx + a.sin() * r).clamp(-half, half),
+            (self.hz + a.cos() * r).clamp(-half, half),
+        );
+        let hp_mul = 1.0 + self.spec.director.hp_per_min * self.t / 60.0;
+        let base = self.kinds[kind].hp * hp_mul;
+        // A fight, not a speed bump: scale with what the hero can dish out (several weapons
+        // and levels made the warden fall in two seconds), within a cap so it stays fair.
+        let d = &self.spec.director;
+        let hp = (self.firepower() * d.elite_fight_secs * 0.5).clamp(base, base * d.elite_hp_cap);
+        if !self.add_foe(kind, pos, hp) {
+            return; // the pool is full: try again next step
+        }
+        self.next_elite += self.spec.director.elite_every.max(5.0);
+        let msg = self.tr("A WARDEN APPROACHES!", "ばんにんがやってくる！");
+        self.set_toast(msg, [255, 215, 90]);
+        self.zoom_kick = self.zoom_kick.max(0.5);
+        self.core.juice.shake = self.core.juice.shake.max(0.25);
+        self.cue("elite", 2, 0.5);
     }
 
     /// A burst of `n` particles (scaled by the quality tier), thrown along (`dx`,`dz`) with a
@@ -1550,7 +2146,7 @@ impl SurvivorArena {
         if !self.spec.fx.particles {
             return;
         }
-        let n = (n as f32 * [0.5, 1.0, 1.5][self.tier]).ceil() as u32;
+        let n = (n as f32 * [0.5, 1.0, 1.5][self.tier] * self.hint_particles).ceil() as u32;
         for _ in 0..n {
             if self.fx.len() >= self.fx_cap {
                 return;
@@ -1609,6 +2205,14 @@ impl SurvivorArena {
         if self.hurt_cd > 0.0 || dmg <= 0.0 {
             return;
         }
+        if self.shield_t > 0.0 {
+            // The barrier takes it: a flash, a short breather, no damage.
+            self.hurt_cd = 0.25;
+            let at = [self.hx, 0.7, self.hz];
+            self.burst(FX_GLINT, 4, at, [0.0, 0.0], 3.0, 1.0, 1.5, 0.35);
+            self.cue("shield", 1, 0.2);
+            return;
+        }
         self.hp -= dmg;
         self.hurt_cd = self.spec.hero.hurt_cd;
         self.hurt_flash = 1.0;
@@ -1620,6 +2224,7 @@ impl SurvivorArena {
     }
 
     fn move_foes(&mut self, dt: f32) {
+        self.sync_aux();
         let n = self.foes.len();
         self.push_x.clear();
         self.push_z.clear();
@@ -1660,7 +2265,49 @@ impl SurvivorArena {
             let jitter =
                 0.9 + 0.2 * ((self.foes.uid[i].wrapping_mul(2_654_435_761) >> 24) as f32 / 255.0);
             let sp = k.speed * jitter;
-            let (mut vx, mut vz) = (dx / d * sp, dz / d * sp);
+            let (ux, uz) = (dx / d, dz / d);
+            let (mut vx, mut vz) = (ux * sp, uz * sp);
+            match k.ai {
+                FoeAi::Chase => {
+                    if k.weave > 0.0 {
+                        // A zigzag: sideways sway across the line to the hero.
+                        let sway =
+                            (self.foes.age[i] * 3.4 + self.foes.uid[i] as f32).sin() * k.weave * sp;
+                        vx += -uz * sway;
+                        vz += ux * sway;
+                    }
+                }
+                FoeAi::Shoot => {
+                    // Keep the distance, circle a little, and throw an orb now and then.
+                    let go = if d > k.hold {
+                        1.0
+                    } else if d < k.hold * 0.7 {
+                        -0.8
+                    } else {
+                        0.0
+                    };
+                    let strafe = if self.foes.uid[i].is_multiple_of(2) {
+                        0.4
+                    } else {
+                        -0.4
+                    };
+                    vx = ux * sp * go - uz * sp * strafe;
+                    vz = uz * sp * go + ux * sp * strafe;
+                    let aux = &mut self.aux[i];
+                    aux.clock -= dt;
+                    if aux.clock <= 0.0 && d < k.hold * 2.2 && self.orbs.len() < ORB_CAP {
+                        aux.clock = k.every * (0.85 + 0.3 * self.rng.unit());
+                        self.orbs.push(Orb {
+                            x: self.foes.x[i],
+                            z: self.foes.z[i],
+                            vx: ux * k.shot_speed,
+                            vz: uz * k.shot_speed,
+                            life: ORB_LIFE,
+                            dmg: k.shot_dmg,
+                        });
+                    }
+                }
+            }
             vx += self.push_x[i] * 6.0;
             vz += self.push_z[i] * 6.0;
             let x = (self.foes.x[i] + vx * dt).clamp(-lim, lim);
@@ -1683,53 +2330,6 @@ impl SurvivorArena {
         }
         if contact > 0.0 {
             self.hurt(contact);
-        }
-    }
-
-    fn fire(&mut self, dt: f32) {
-        for wi in 0..self.spec.weapons.len() {
-            if self.weapon_lv[wi] == 0 {
-                continue;
-            }
-            self.weapon_cd[wi] -= dt;
-            if self.weapon_cd[wi] > 0.0 {
-                continue;
-            }
-            let st = self.weapon_stats[wi];
-            let Some((base, dist)) = self.pick_aim(st.range) else {
-                self.weapon_cd[wi] = 0.1; // nothing to aim at: look again soon
-                continue;
-            };
-            self.weapon_cd[wi] = (st.cooldown * self.mods.cooldown).max(0.08);
-            // Turn to the target first: the blaster points where the shot goes, and the
-            // shot leaves from the muzzle (nearer if the foe is already in the way).
-            self.face = base;
-            self.aim_hold = AIM_HOLD;
-            let reach = MUZZLE.min(dist * 0.6);
-            let n = st.count;
-            for k in 0..n {
-                if self.shots.len() >= self.spec.caps.shots as usize {
-                    break;
-                }
-                let a = base + (k as f32 - (n - 1) as f32 * 0.5) * st.spread;
-                self.shots.push(Shot {
-                    x: self.hx + a.sin() * reach,
-                    z: self.hz + a.cos() * reach,
-                    vx: a.sin() * st.speed,
-                    vz: a.cos() * st.speed,
-                    life: st.range / st.speed,
-                    dmg: st.damage * self.mods.damage,
-                    pierce: st.pierce,
-                    r: st.size,
-                    hits: [0; 4],
-                    n: 0,
-                });
-            }
-            self.cue("shoot", 0, 0.12);
-            let (sn, cs) = base.sin_cos();
-            let at = [self.hx + sn * reach, MUZZLE_Y, self.hz + cs * reach];
-            self.burst(FX_MUZZLE, 1, at, [0.0, 0.0], 0.0, 0.0, 0.0, 0.09);
-            self.burst(FX_SPARK, 2, at, [sn, cs], 5.0, 0.5, 0.5, 0.18);
         }
     }
 
@@ -1841,72 +2441,8 @@ impl SurvivorArena {
         }
     }
 
-    fn move_shots(&mut self, dt: f32) {
-        let lim = self.spec.arena.half + 1.0;
-        let mut hit_cue = false;
-        for si in (0..self.shots.len()).rev() {
-            let s = &mut self.shots[si];
-            s.x += s.vx * dt;
-            s.z += s.vz * dt;
-            s.life -= dt;
-            if s.life <= 0.0 || s.x.abs() > lim || s.z.abs() > lim {
-                self.shots.swap_remove(si);
-                continue;
-            }
-            let (sx, sz, sr) = (s.x, s.z, s.r);
-            let (hits, nh) = (s.hits, s.n);
-            let mut found: Option<usize> = None;
-            let (foes, kinds) = (&self.foes, &self.kinds);
-            self.grid.query(sx, sz, sr + MAX_FOE_R, |j| {
-                if found.is_some() {
-                    return;
-                }
-                let rs = sr + kinds[foes.kind[j] as usize].radius;
-                let (dx, dz) = (foes.x[j] - sx, foes.z[j] - sz);
-                if dx * dx + dz * dz < rs * rs && !hits[..nh as usize].contains(&foes.uid[j]) {
-                    found = Some(j);
-                }
-            });
-            if let Some(j) = found {
-                let s = &mut self.shots[si];
-                let k = 1.0 / s.vx.hypot(s.vz).max(1e-3);
-                self.foes.hp[j] -= s.dmg;
-                self.foes.flash[j] = 0.1;
-                let kb = self.spec.fx.knockback;
-                self.foes.x[j] += s.vx * k * kb;
-                self.foes.z[j] += s.vz * k * kb;
-                hit_cue = true;
-                let (dirx, dirz, dmg_val) = (-s.vx * k, -s.vz * k, s.dmg);
-                let (fx_x, fx_z) = (self.foes.x[j], self.foes.z[j]);
-                if self.spec.fx.damage_numbers {
-                    if self.dmg.len() >= DMG_CAP[self.tier] {
-                        self.dmg.remove(0);
-                    }
-                    self.dmg.push(DmgNum {
-                        x: fx_x,
-                        z: fx_z,
-                        val: dmg_val.round().max(1.0) as i32,
-                        age: 0.0,
-                    });
-                }
-                self.burst(FX_SPARK, 4, [sx, 0.6, sz], [dirx, dirz], 5.5, 0.6, 1.8, 0.3);
-                let s = &mut self.shots[si];
-                if (s.n as usize) < s.hits.len() {
-                    s.hits[s.n as usize] = self.foes.uid[j];
-                    s.n += 1;
-                }
-                s.pierce -= 1;
-                if s.pierce < 0 {
-                    self.shots.swap_remove(si);
-                }
-            }
-        }
-        if hit_cue {
-            self.cue("hit", 1, 0.07);
-        }
-    }
-
     fn reap(&mut self) {
+        self.sync_aux();
         for i in (0..self.foes.len()).rev() {
             if self.foes.hp[i] > 0.0 {
                 continue;
@@ -1924,7 +2460,27 @@ impl SurvivorArena {
             self.burst(FX_SPARK, 4, [x, 0.5, z], [0.0, 0.0], 5.0, 1.0, 2.5, 0.35);
             self.core.juice.shake = self.core.juice.shake.max(0.07);
             self.zoom_kick = self.zoom_kick.max(0.12);
-            if self.gems.len() < self.spec.caps.gems as usize {
+            if k.elite {
+                self.burst(FX_BLAST, 12, [x, 0.6, z], [0.0, 0.0], 4.5, 1.0, 2.5, 0.8);
+                self.core.juice.shake = self.core.juice.shake.max(0.4);
+                self.zoom_kick = self.zoom_kick.max(0.6);
+            }
+            self.drop_loot(x, z, &k);
+            // Gems that land beside a resting gem melt into it (a bigger gem worth the sum), more
+            // eagerly as the pool fills: a crowd's kills leave a few fat gems, not a carpet.
+            let cap = self.spec.caps.gems as usize;
+            let reach = if self.gems.len() * 5 > cap * 3 {
+                GEM_MERGE_FULL_R
+            } else {
+                GEM_MERGE_R
+            };
+            let near = self
+                .gems
+                .iter()
+                .position(|g| !g.fly && (g.x - x).powi(2) + (g.z - z).powi(2) < reach * reach);
+            if let Some(gi) = near {
+                self.gems[gi].v += k.xp;
+            } else if self.gems.len() < cap {
                 self.gems.push(Gem {
                     x,
                     z,
@@ -1935,6 +2491,7 @@ impl SurvivorArena {
                 self.xp += k.xp * self.mods.xp; // pool full: the XP goes straight in
             }
             self.foes.remove(i);
+            self.aux.swap_remove(i);
         }
     }
 
@@ -1974,11 +2531,15 @@ impl SurvivorArena {
         self.cards.clear();
         let lv = &self.spec.levels;
         let held = self.passive_lv.iter().filter(|l| **l > 0).count() as u32;
+        let free_slot = self.held_weapons() < lv.max_weapons;
         let mut pool: Vec<(Card, u32)> = Vec::with_capacity(16);
         for (i, w) in self.spec.weapons.iter().enumerate() {
             let cur = self.weapon_lv[i];
             if cur > 0 && (cur as usize) < w.levels.len() + 1 {
                 pool.push((Card::Weapon(i as u8), lv.weapon_weight.max(1)));
+            } else if cur == 0 && free_slot {
+                // A new weapon is a bigger change than a level: a little likelier to show.
+                pool.push((Card::Weapon(i as u8), lv.weapon_weight.max(1) + 1));
             }
         }
         for (i, p) in self.spec.passives.iter().enumerate() {
@@ -2012,8 +2573,23 @@ impl SurvivorArena {
         let Some(card) = self.cards.get(at).copied() else {
             return;
         };
+        let from_swap = self.swap_in.take();
         match card {
-            Card::Weapon(i) => self.weapon_lv[i as usize] += 1,
+            Card::Weapon(i) => {
+                let w = &mut self.weapon_lv[i as usize];
+                *w += 1;
+                if *w == 1 {
+                    self.weapon_cd[i as usize] = 0.0;
+                }
+            }
+            Card::Swap(old) => {
+                if let Some(new) = from_swap {
+                    self.weapon_lv[old as usize] = 0;
+                    self.weapon_lv[new as usize] = 1;
+                    self.weapon_cd[new as usize] = 0.0;
+                }
+            }
+            Card::Keep => self.xp += 4.0 * self.mods.xp,
             Card::Passive(i) => {
                 self.passive_lv[i as usize] += 1;
                 if self.spec.passives[i as usize].stat == PassiveStat::MaxHp {
@@ -2027,15 +2603,21 @@ impl SurvivorArena {
         self.recompute();
         self.hp = self.hp.min(self.mods.hp_max);
         self.cards.clear();
-        self.pending_levels = self.pending_levels.saturating_sub(1);
+        if from_swap.is_none() {
+            self.pending_levels = self.pending_levels.saturating_sub(1);
+        }
         self.cue("pick", 2, 0.1);
     }
 
     /// (kind label, name, description, accent colour) of a card, in the page language.
     /// A glyph from the bundled UI font for a card.
-    fn card_glyph(&self, c: Card) -> &'static str {
+    fn card_glyph(&self, c: Card) -> &str {
         match c {
-            Card::Weapon(_) => "★",
+            Card::Weapon(i) | Card::Swap(i) => match self.spec.weapons[i as usize].glyph.as_str() {
+                "" => "★",
+                g => g,
+            },
+            Card::Keep => "×",
             Card::Heal => "♡",
             Card::Passive(i) => match self.spec.passives[i as usize].stat {
                 PassiveStat::MaxHp => "♥",
@@ -2051,7 +2633,7 @@ impl SurvivorArena {
     /// Level pips for a card: levels owned and the most it can reach (0 max: no pips).
     fn card_pips(&self, c: Card) -> (usize, usize) {
         match c {
-            Card::Weapon(i) => (
+            Card::Weapon(i) | Card::Swap(i) => (
                 self.weapon_lv[i as usize] as usize,
                 self.spec.weapons[i as usize].levels.len() + 1,
             ),
@@ -2059,7 +2641,7 @@ impl SurvivorArena {
                 self.passive_lv[i as usize] as usize,
                 self.spec.passives[i as usize].max_level as usize,
             ),
-            Card::Heal => (0, 0),
+            Card::Heal | Card::Keep => (0, 0),
         }
     }
 
@@ -2068,6 +2650,15 @@ impl SurvivorArena {
             Card::Weapon(i) => {
                 let w = &self.spec.weapons[i as usize];
                 let cur = self.weapon_lv[i as usize] as usize;
+                let acc = w.color.map(|c| c.min(255) as u8);
+                if cur == 0 {
+                    return (
+                        self.tr("NEW WEAPON", "あたらしいぶき").to_string(),
+                        w.name.get(self.lang_ja).to_string(),
+                        w.desc.get(self.lang_ja).to_string(),
+                        acc,
+                    );
+                }
                 let d = w
                     .levels
                     .get(cur - 1)
@@ -2077,9 +2668,33 @@ impl SurvivorArena {
                     format!("{} LV {}", self.tr("WEAPON", "ぶき"), cur + 1),
                     w.name.get(self.lang_ja).to_string(),
                     d,
-                    [255, 170, 80],
+                    acc,
                 )
             }
+            Card::Swap(old) => {
+                let o = &self.spec.weapons[old as usize];
+                let new = self
+                    .swap_in
+                    .map(|n| self.spec.weapons[n as usize].name.get(self.lang_ja))
+                    .unwrap_or_default();
+                (
+                    format!(
+                        "{} LV {}",
+                        self.tr("SWAP", "いれかえ"),
+                        self.weapon_lv[old as usize]
+                    ),
+                    o.name.get(self.lang_ja).to_string(),
+                    format!("{} {}", self.tr("Drop it for", "すてて"), new),
+                    [255, 120, 110],
+                )
+            }
+            Card::Keep => (
+                self.tr("KEEP", "そのまま").to_string(),
+                self.tr("Keep your weapons", "いまのぶきでいく").to_string(),
+                self.tr("Take a little XP instead", "かわりにXPをすこし")
+                    .to_string(),
+                [150, 160, 255],
+            ),
             Card::Passive(i) => {
                 let p = &self.spec.passives[i as usize];
                 let cur = self.passive_lv[i as usize];
@@ -2114,6 +2729,23 @@ impl SurvivorArena {
         self.size.set((w.max(1) as f32, h.max(1) as f32));
         let live = self.flow.phase == FlowPhase::Play && self.cards.is_empty();
         match ev.phase {
+            PointerPhase::Begin if live && self.stick_mode() => {
+                let (w, h) = self.size.get();
+                if self.finger_id.is_none() && self.in_stick_zone(ev.x, ev.y, w, h) {
+                    // The stick thumb: the base appears where it lands (kept on screen), never a tap.
+                    let r = self.stick_radius(w, h);
+                    let m = 4.0 * hud_scale(w, h);
+                    self.finger_id = Some(ev.id);
+                    self.finger = Some((ev.x, ev.y));
+                    self.origin = (
+                        ev.x.clamp(r + m, (w - r - m).max(r + m)),
+                        ev.y.clamp(r + m, (h - r - m).max(r + m)),
+                    );
+                } else if self.finger_id != Some(ev.id) {
+                    // The other thumb: a tap picks the target.
+                    self.tap_select(ev.x, ev.y);
+                }
+            }
             PointerPhase::Begin => {
                 if live && self.finger_id.is_none() {
                     self.finger_id = Some(ev.id);
@@ -2128,6 +2760,17 @@ impl SurvivorArena {
             PointerPhase::Move => {
                 if self.finger_id == Some(ev.id) && !self.mute_finger {
                     self.finger = Some((ev.x, ev.y));
+                    if self.stick_mode() {
+                        // Past the rim the base follows the thumb, so turning back is instant.
+                        let (w, h) = self.size.get();
+                        let r = self.stick_radius(w, h);
+                        let (dx, dy) = (ev.x - self.origin.0, ev.y - self.origin.1);
+                        let d = dx.hypot(dy);
+                        if d > r {
+                            let k = (d - r) / d;
+                            self.origin = (self.origin.0 + dx * k, self.origin.1 + dy * k);
+                        }
+                    }
                 }
             }
             PointerPhase::End | PointerPhase::Cancel if self.finger_id == Some(ev.id) => {
@@ -2146,6 +2789,31 @@ impl SurvivorArena {
             #[allow(unreachable_patterns)]
             _ => {}
         }
+    }
+
+    fn stick_mode(&self) -> bool {
+        self.spec.input.move_scheme == "stick"
+    }
+
+    /// Stick radius in pixels.
+    fn stick_radius(&self, w: f32, h: f32) -> f32 {
+        self.spec.input.stick_px * hud_scale(w, h) * 1.25
+    }
+
+    /// Where the resting stick hint sits: bottom-left, clear of the screen edge and the home bar.
+    /// A thumb anywhere in the zone gets its own base.
+    fn stick_center(&self, w: f32, h: f32) -> (f32, f32) {
+        let r = self.stick_radius(w, h);
+        (
+            (r * 1.35).max(w * 0.2),
+            h - r * 1.45 - 12.0 * hud_scale(w, h),
+        )
+    }
+
+    /// The thumb zone that grabs the stick: the whole lower-left quadrant-ish, so a thumb
+    /// need not land on the base.
+    fn in_stick_zone(&self, x: f32, y: f32, w: f32, h: f32) -> bool {
+        x < w * 0.55 && y > h * 0.4
     }
 
     /// A tap on a card, a pause button or a pause-card button. True when used.
@@ -2248,6 +2916,8 @@ impl SurvivorArena {
             Card::Weapon(i) => format!("weapon:{}", self.spec.weapons[*i as usize].id),
             Card::Passive(i) => format!("passive:{}", self.spec.passives[*i as usize].id),
             Card::Heal => "heal".into(),
+            Card::Swap(i) => format!("swap:{}", self.spec.weapons[*i as usize].id),
+            Card::Keep => "keep".into(),
         })
     }
     pub fn passive_level(&self, id: &str) -> u32 {
@@ -2372,6 +3042,14 @@ fn default_audio() -> Value {
             "levelup": cue("power_up_02.wav", 0.7, 1.0),
             "pick": {"file": "assets/audio/kenney-interface-sounds/confirmation_001.wav", "volume": 0.7, "rate": 1.0},
             "win": cue("power_up_04.wav", 0.8, 1.0),
+            "pickup": cue("retro_coin_01.wav", 0.35, 1.0),
+            "chest": cue("power_up_04.wav", 0.6, 1.25),
+            "boom": cue("retro_explosion_02.wav", 0.5, 1.0),
+            "elite": cue("retro_explosion_02.wav", 0.6, 0.55),
+            "zap": cue("shot_01.wav", 0.2, 2.0),
+            "pulse": cue("shot_01.wav", 0.3, 0.55),
+            "slash": {"file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav", "volume": 0.3, "rate": 1.6},
+            "shield": cue("power_up_02.wav", 0.5, 1.5),
             "gameover": cue("retro_die_03.wav", 0.8, 1.0)
         }
     })
@@ -2407,6 +3085,28 @@ const HERO_GLBS: [(&str, &str); 5] = [
 /// Kenney Graveyard Kit (CC0): the two foes.
 const GHOST_GLB: &str = "assets/models/kenney/graveyard-kit/character-ghost.glb";
 const ZOMBIE_GLB: &str = "assets/models/kenney/graveyard-kit/character-zombie.glb";
+/// The foe model pools, in `Kind::model` order: ghost, zombie, skeleton, vampire, keeper.
+const FOE_GLBS: [&str; POOLS] = [
+    GHOST_GLB,
+    ZOMBIE_GLB,
+    "assets/models/kenney/graveyard-kit/character-skeleton.glb",
+    "assets/models/kenney/graveyard-kit/character-vampire.glb",
+    "assets/models/kenney/graveyard-kit/character-keeper.glb",
+];
+/// Share of the foe cap (percent) each pool can draw at once, plus 4.
+const POOL_SHARE: [usize; POOLS] = [85, 40, 25, 30, 15];
+/// Albedo tints of the models before a foe row's own tint.
+/// (The ghost is white in the kit and burnt out under the moon without one.)
+const POOL_TINT: [[u32; 3]; POOLS] = [
+    [150, 150, 225],
+    [205, 225, 190],
+    [200, 205, 235],
+    [215, 190, 215],
+    [215, 200, 175],
+];
+/// Kenney Mini Dungeon (CC0): the elite's treasure chest and the orbiting blade.
+const CHEST_GLB: &str = "assets/models/kenney/mini-dungeon/chest.glb";
+const BLADE_GLB: &str = "assets/models/kenney/mini-dungeon/weapon-sword.glb";
 /// Kenney Platformer Kit jewel (CC0): the XP gem.
 /// Kenney Blaster Kit (CC0): the hero's blaster. The model's muzzle is at -Z.
 const BLASTER_GLB: &str = "assets/models/kenney/blaster-kit/blaster-a.glb";
@@ -2418,6 +3118,8 @@ const GUN_SCALE: f32 = 1.3;
 /// Height of the muzzle above the floor (m).
 /// Segments in the lock-on ring.
 const LOCK_SEG: usize = 16;
+/// Segments in a floor ring (pulse, blast, shield, the blades' track).
+const RING_SEG: usize = 28;
 const MUZZLE_Y: f32 = 0.62;
 const MUZZLE: f32 = GUN_FWD + 0.37 * GUN_SCALE;
 /// How long the hero keeps facing the target after a shot.
@@ -2447,9 +3149,9 @@ const GRAVEYARD: &str = "assets/models/kenney/graveyard-kit/";
 /// Every Kenney character is about 0.8 tall; this puts a foe of radius r at ~2.2 r tall x 1.4.
 const FOE_MODEL_K: f32 = 5.2;
 /// Albedo tints: the ghost is white in the kit and burnt out under the moon without one.
-const GHOST_TINT: [u32; 3] = [150, 150, 225];
-const ZOMBIE_TINT: [u32; 3] = [205, 225, 190];
 const HERO_MODEL_SCALE: f32 = 2.2;
+const BLADE_SCALE: f32 = 1.5;
+const CHEST_SCALE: f32 = 1.5;
 
 fn hero_glb(skin: &str) -> &'static str {
     HERO_GLBS
@@ -2467,6 +3169,45 @@ fn props_has_model(p: &crate::WorldProp) -> bool {
 }
 
 impl SurvivorArena {
+    /// `arena.dark`: from the blue-lit arena toward dim moonlight. Fill, sky, fog and the key
+    /// light ease toward the night values; the floor and the walls lose some light.
+    fn darken(&self, doc: &mut WorldDoc) {
+        let k = self.spec.arena.dark.clamp(0.0, 1.0);
+        if k <= 0.0 {
+            return;
+        }
+        let mix = |a: f32, b: f32| a + (b - a) * k;
+        let mix3 = |a: [f32; 3], b: [f32; 3]| [mix(a[0], b[0]), mix(a[1], b[1]), mix(a[2], b[2])];
+        doc.exposure = doc.exposure.map(|e| mix(e, 0.85));
+        doc.hemi_sky = doc.hemi_sky.map(|c| mix3(c, [0.14, 0.16, 0.30]));
+        doc.hemi_ground = doc.hemi_ground.map(|c| mix3(c, [0.08, 0.07, 0.12]));
+        doc.ibl = doc.ibl.map(|v| mix(v, 0.15));
+        doc.sky = doc.sky.map(|c| {
+            let m = mix3([c[0] as f32, c[1] as f32, c[2] as f32], [5.0, 7.0, 18.0]);
+            [m[0] as u8, m[1] as u8, m[2] as u8, c[3]]
+        });
+        doc.vignette = doc.vignette.map(|v| mix(v, 0.5));
+        doc.fog_start = doc.fog_start.map(|v| mix(v, 20.0));
+        doc.fog_end = doc.fog_end.map(|v| mix(v, 48.0));
+        if let Some(key) = doc.lights.get_mut(0) {
+            key.radius = mix(key.radius, 12.0);
+            key.intensity = mix(key.intensity, 1.5);
+            key.color = key.color.map(|c| mix3(c, [0.70, 0.78, 1.0]));
+        }
+        if let Some(lantern) = doc.lights.get_mut(1) {
+            lantern.radius = mix(lantern.radius, 6.0);
+            lantern.intensity = mix(lantern.intensity, 2.2);
+        }
+        let dim = |c: [u32; 3], f: f32| c.map(|v| (v as f32 * mix(1.0, f)) as u32);
+        for p in doc.props.iter_mut() {
+            match p.name.as_str() {
+                "floor" => p.color = p.color.map(|c| dim(c, 0.6)),
+                "wall" => p.color = p.color.map(|c| dim(c, 0.62)),
+                _ => {}
+            }
+        }
+    }
+
     /// Build the persistent prop list once: scenery, then the pools (hero, foes,
     /// gems, shots). After this a frame only edits fields in place.
     fn init_doc(&mut self) {
@@ -2498,6 +3239,13 @@ impl SurvivorArena {
             ..WorldDoc::default()
         };
         doc.quality = self.picture_quality.clone();
+        let keep = self.spec.fx.foe_detail[self.tier.min(2)];
+        if keep < 0.98 {
+            doc.mesh_lod = Some(crate::world_doc::MeshLod {
+                keep,
+                models: vec![GRAVEYARD.to_string() + "character-"],
+            });
+        }
         if self.tier == 2 && self.spec.fx.high_post {
             doc.shadow_softness = Some(2.6);
             doc.ssao = Some(10.0);
@@ -2512,6 +3260,9 @@ impl SurvivorArena {
             ZOMBIE_GLB.to_string(),
             GEM_GLB.to_string(),
         ];
+        wanted.extend(FOE_GLBS.iter().map(|m| m.to_string()));
+        wanted.push(CHEST_GLB.to_string());
+        wanted.push(BLADE_GLB.to_string());
         wanted.push(WALL_GLB.to_string());
         wanted.push(COLUMN_GLB.to_string());
         wanted.extend(DECOR.iter().map(|(n, _, _)| decor_path(n)));
@@ -2533,7 +3284,8 @@ impl SurvivorArena {
         let glb_hero = has(hero_path);
         self.slots.glb_gun = glb_hero && has(BLASTER_GLB);
         let glb_foe = has(GHOST_GLB);
-        let glb_zombie = glb_foe && has(ZOMBIE_GLB);
+        self.slots.glb_chest = has(CHEST_GLB);
+        self.slots.glb_blade = has(BLADE_GLB);
         self.slots.glb_gem = has(GEM_GLB);
         let a = &self.spec.arena;
         let side = half * 2.0;
@@ -2748,21 +3500,29 @@ impl SurvivorArena {
         }
         self.slots.glb_foe = glb_foe;
         let cap = self.foes.cap();
-        self.slots.ghost_cap = if glb_zombie { cap * 85 / 100 + 4 } else { cap };
-        self.slots.zombie_cap = if glb_zombie { cap * 40 / 100 + 4 } else { 0 };
-        let foe_prop = |id: String, path: &str| {
+        for m in 0..POOLS {
+            // A missing model has no pool: its foes draw as ghosts (or spheres).
+            self.slots.pool_cap[m] = if m == 0 {
+                if glb_foe {
+                    cap * POOL_SHARE[0] / 100 + 4
+                } else {
+                    cap
+                }
+            } else if glb_foe && has(FOE_GLBS[m]) {
+                cap * POOL_SHARE[m] / 100 + 4
+            } else {
+                0
+            };
+        }
+        let foe_prop = |id: String, m: usize| {
             let mut p = if glb_foe {
                 glb_prop(
                     &id,
-                    path,
+                    FOE_GLBS[m],
                     "foe",
                     [0.0, -50.0, 0.0],
                     [1.0; 3],
-                    if path == ZOMBIE_GLB {
-                        ZOMBIE_TINT
-                    } else {
-                        GHOST_TINT
-                    },
+                    POOL_TINT[m],
                     0.06,
                     Some([0.2, 0.8, 0.3]),
                 )
@@ -2782,13 +3542,11 @@ impl SurvivorArena {
             p.enabled = false;
             p
         };
-        self.slots.foe0 = doc.props.len();
-        for i in 0..self.slots.ghost_cap {
-            doc.props.push(foe_prop(format!("foe-{i}"), GHOST_GLB));
-        }
-        self.slots.zombie0 = doc.props.len();
-        for i in 0..self.slots.zombie_cap {
-            doc.props.push(foe_prop(format!("zombie-{i}"), ZOMBIE_GLB));
+        for m in 0..POOLS {
+            self.slots.pool0[m] = doc.props.len();
+            for i in 0..self.slots.pool_cap[m] {
+                doc.props.push(foe_prop(format!("foe{m}-{i}"), m));
+            }
         }
         self.slots.gem0 = doc.props.len();
         for i in 0..self.spec.caps.gems as usize {
@@ -2832,6 +3590,116 @@ impl SurvivorArena {
                 0.4,
                 0.0,
             );
+            p.enabled = false;
+            doc.props.push(p);
+        }
+        // Enemy orbs.
+        self.slots.orb0 = doc.props.len();
+        for i in 0..ORB_CAP {
+            let mut p = prop(
+                &format!("orb-{i}"),
+                "sphere",
+                "orb",
+                [0.0, -50.0, 0.0],
+                [ORB_R * 2.0; 3],
+                [200, 120, 255],
+                2.2,
+                0.3,
+                0.0,
+            );
+            p.enabled = false;
+            doc.props.push(p);
+        }
+        // The orbiting blades.
+        self.slots.blade0 = doc.props.len();
+        for i in 0..BLADE_CAP {
+            let mut p = if self.slots.glb_blade {
+                glb_prop(
+                    &format!("blade-{i}"),
+                    BLADE_GLB,
+                    "blade",
+                    [0.0, -50.0, 0.0],
+                    [BLADE_SCALE; 3],
+                    [255, 255, 255],
+                    0.9,
+                    Some([0.55, 0.85, 1.0]),
+                )
+            } else {
+                prop(
+                    &format!("blade-{i}"),
+                    "box",
+                    "blade",
+                    [0.0, -50.0, 0.0],
+                    [0.12, 0.08, 0.9],
+                    [150, 220, 255],
+                    1.2,
+                    0.3,
+                    0.0,
+                )
+            };
+            p.enabled = false;
+            doc.props.push(p);
+        }
+        // Pickups: a glowing orb and a soft ground glow each, plus a few chest models.
+        let ncap = self.spec.drops.cap as usize;
+        self.slots.pick0 = doc.props.len();
+        for i in 0..ncap {
+            let mut p = prop(
+                &format!("pick-{i}"),
+                "sphere",
+                "pickup",
+                [0.0, -50.0, 0.0],
+                [0.36; 3],
+                [255, 255, 255],
+                1.6,
+                0.3,
+                0.0,
+            );
+            p.enabled = false;
+            doc.props.push(p);
+        }
+        self.slots.glow0 = doc.props.len();
+        for i in 0..ncap {
+            let mut p = prop(
+                &format!("glow-{i}"),
+                "sphere",
+                "glow",
+                [0.0, -50.0, 0.0],
+                [0.9, 0.03, 0.9],
+                [255, 255, 255],
+                1.0,
+                1.0,
+                0.0,
+            );
+            p.enabled = false;
+            doc.props.push(p);
+        }
+        self.slots.chest0 = doc.props.len();
+        for i in 0..CHEST_CAP {
+            let mut p = if self.slots.glb_chest {
+                glb_prop(
+                    &format!("chest-{i}"),
+                    CHEST_GLB,
+                    "chest",
+                    [0.0, -50.0, 0.0],
+                    [CHEST_SCALE; 3],
+                    [255, 235, 190],
+                    0.5,
+                    Some([1.0, 0.8, 0.3]),
+                )
+            } else {
+                prop(
+                    &format!("chest-{i}"),
+                    "box",
+                    "chest",
+                    [0.0, -50.0, 0.0],
+                    [0.7, 0.5, 0.5],
+                    [255, 200, 80],
+                    0.6,
+                    0.5,
+                    0.0,
+                )
+            };
             p.enabled = false;
             doc.props.push(p);
         }
@@ -2886,19 +3754,78 @@ impl SurvivorArena {
             });
         }
         // The lock-on ring and the ground-aim line (empty unless used).
-        doc.lines.push(crate::strokes::FatLine {
-            id: "lock-ring".into(),
-            points: Vec::with_capacity(LOCK_SEG + 1),
-            color: [255, 96, 96, 235],
-            width: 4.0,
-        });
-        doc.lines.push(crate::strokes::FatLine {
-            id: "aim-line".into(),
-            points: Vec::with_capacity(2),
-            color: [255, 220, 120, 150],
-            width: 3.0,
-        });
+        let line = |id: String, cap: usize, color: [u8; 4], width: f32| crate::strokes::FatLine {
+            id,
+            points: Vec::with_capacity(cap),
+            color,
+            width,
+        };
+        self.slots.ln_ring = doc.lines.len();
+        doc.lines.push(line(
+            "lock-ring".into(),
+            LOCK_SEG + 1,
+            [255, 96, 96, 235],
+            4.0,
+        ));
+        self.slots.ln_aim = doc.lines.len();
+        doc.lines
+            .push(line("aim-line".into(), 2, [255, 220, 120, 150], 3.0));
+        // Loot beams, lightning, floor rings, the shield bubble and the blades' track.
+        self.slots.ln_beam = doc.lines.len();
+        for i in 0..ncap {
+            doc.lines
+                .push(line(format!("beam-{i}"), 2, [255, 255, 255, 120], 5.0));
+        }
+        self.slots.ln_zap = doc.lines.len();
+        for i in 0..ZAP_CAP {
+            doc.lines.push(line(
+                format!("zap-{i}"),
+                (ZAP_PTS - 1) * 4 + 2,
+                [255, 245, 130, 255],
+                5.0,
+            ));
+        }
+        self.slots.ln_fring = doc.lines.len();
+        for i in 0..RING_CAP {
+            doc.lines.push(line(
+                format!("ring-{i}"),
+                RING_SEG + 1,
+                [255, 255, 255, 200],
+                5.0,
+            ));
+        }
+        self.slots.ln_shield = doc.lines.len();
+        doc.lines.push(line(
+            "shield".into(),
+            RING_SEG + 1,
+            [120, 220, 255, 200],
+            4.0,
+        ));
+        self.slots.ln_orbit = doc.lines.len();
+        doc.lines
+            .push(line("orbit".into(), RING_SEG + 1, [150, 220, 255, 50], 3.0));
+        self.darken(&mut doc);
         self.doc = doc;
+        self.apply_hints();
+    }
+
+    /// Thin the graveyard dressing to the tier's `atmo` share (every n-th piece stays, so the
+    /// ring never gaps on one side). Static props only; the sim has no say in them.
+    fn apply_hints(&mut self) {
+        let keep = self.hint_atmo.clamp(0.0, 1.0);
+        let total = self.doc.props.iter().filter(|p| p.name == "decor").count();
+        let shown = (total as f32 * keep).ceil() as usize;
+        for (k, p) in self
+            .doc
+            .props
+            .iter_mut()
+            .filter(|p| p.name == "decor")
+            .enumerate()
+        {
+            // Bresenham-style spread: piece k stays when the running share steps up.
+            let on = total > 0 && (k + 1) * shown / total > k * shown / total;
+            p.enabled = on;
+        }
     }
 
     fn build_doc(&mut self) {
@@ -2923,10 +3850,24 @@ impl SurvivorArena {
         let blink = self.hurt_cd > 0.0 && (self.anim_t * 24.0) as i32 % 2 == 0;
         let (hero_em, hero_glow) = if blink {
             (1.6, [1.0, 0.25, 0.25])
+        } else if self.shield_t > 0.0 {
+            (0.55, [0.4, 0.85, 1.0])
+        } else if self.frenzy_t > 0.0 {
+            (0.6, [1.0, 0.6, 0.2])
         } else {
             (0.12, lin(HERO_GLOW))
         };
         let mut slots = self.slots;
+        // The blaster is in her hands only while she owns something that shoots from it.
+        // Blades, lightning and the pulse have no muzzle, and a gun beside two orbiting
+        // swords read as three weapons while the HUD showed one.
+        let gun_held = self.spec.weapons.iter().enumerate().any(|(i, w)| {
+            self.weapon_lv[i] > 0
+                && matches!(
+                    w.kind,
+                    WeaponKind::Projectile | WeaponKind::Spread | WeaponKind::Missile
+                )
+        });
         let glb_hero = props_has_model(&self.doc.props[slots.hero]);
         let props = &mut self.doc.props;
         {
@@ -2959,61 +3900,83 @@ impl SurvivorArena {
         if slots.glb_gun {
             let (sn, cs) = face.sin_cos();
             let p = &mut props[slots.gun];
+            p.enabled = gun_held;
             p.position = [hx + sn * GUN_FWD, bob + GUN_UP, hz + cs * GUN_FWD];
             p.yaw = face + std::f32::consts::PI;
             p.emissive = Some(hero_em * 0.5);
         }
         let n = self.foes.len();
-        let (mut ng, mut nz) = (0usize, 0usize);
+        let mut drawn = [0usize; POOLS];
         for i in 0..n {
-            let zombie = slots.zombie_cap > 0 && self.foes.uid[i].is_multiple_of(4);
-            let idx = if zombie {
-                if nz >= slots.zombie_cap {
-                    continue;
-                }
-                nz += 1;
-                slots.zombie0 + nz - 1
-            } else {
-                if ng >= slots.ghost_cap {
-                    continue;
-                }
-                ng += 1;
-                slots.foe0 + ng - 1
-            };
-            let p = &mut props[idx];
             let k = &self.kinds[self.foes.kind[i] as usize];
+            let mut m = match k.model {
+                MODEL_MIX => usize::from(self.foes.uid[i].is_multiple_of(4)),
+                v => v as usize,
+            };
+            if slots.pool_cap[m] == 0 {
+                m = 0; // that model is missing: draw it as the ghost
+            }
+            if drawn[m] >= slots.pool_cap[m] {
+                continue;
+            }
+            drawn[m] += 1;
+            let idx = slots.pool0[m] + drawn[m] - 1;
+            let p = &mut props[idx];
             let age = self.foes.age[i];
             let pop = (age / 0.25).min(1.0);
-            let wob = (age * 9.0 + self.foes.uid[i] as f32).sin();
-            let m = if slots.glb_foe { FOE_MODEL_K } else { 2.2 };
-            let d = k.radius * m * (0.4 + 0.6 * pop);
-            let (sx, sy) = (1.0 - 0.07 * wob, 1.0 + 0.1 * wob);
+            let mk = if slots.glb_foe { FOE_MODEL_K } else { 2.2 };
+            let d = k.radius * k.scale * mk * (0.4 + 0.6 * pop);
+            let (phase, tempo) = motion::phase_tempo(self.foes.uid[i]);
+            let pose = motion::pose(
+                motion::POOL_MOTION[m],
+                self.anim_t,
+                phase,
+                tempo,
+                self.spec.fx.foe_motion,
+                self.foes.flash[i],
+            );
             let (x, z) = (self.foes.x[i], self.foes.z[i]);
             p.enabled = true;
-            // The ghost floats a little; the zombie shambles on the ground.
-            let float = if slots.glb_foe && !zombie {
-                0.12 + 0.06 * wob
+            // The ghost and the vampire float a little; the others walk on the ground.
+            let float = if slots.glb_foe && (m == 0 || k.model == 3) {
+                0.12
             } else {
                 0.0
             };
-            p.position = [x, if slots.glb_foe { float } else { d * 0.4 }, z];
+            let rest = if slots.glb_foe { float } else { d * 0.4 };
+            p.position = [x, rest + pose.lift * d.min(1.5), z];
             p.yaw = (hx - x).atan2(hz - z);
-            p.scale = [d * sx, d * sy, d * sx];
+            if slots.glb_foe {
+                // A prop's +pitch lifts its nose (YXZ, front +Z toward the hero): lean is minus.
+                p.pitch = -pose.pitch;
+                p.roll = pose.roll;
+            }
+            p.scale = [d * pose.wide, d * pose.tall, d * pose.wide];
             let fl = self.foes.flash[i] * 10.0;
-            p.emissive = Some(0.06 + 2.2 * fl);
+            let glow = if k.elite {
+                0.35 + 0.25 * (self.anim_t * 4.0).sin()
+            } else {
+                0.06
+            };
+            p.emissive = Some(glow + 2.2 * fl);
             p.emissive_color = Some(if fl > 0.0 { [1.0, 1.0, 1.0] } else { k.linear });
-            if !slots.glb_foe {
+            if slots.glb_foe {
+                let base = POOL_TINT[m];
+                p.color = Some([
+                    base[0] * k.tint[0] / 255,
+                    base[1] * k.tint[1] / 255,
+                    base[2] * k.tint[2] / 255,
+                ]);
+            } else {
                 p.color = Some(k.color);
             }
         }
-        for j in ng..slots.drawn_ghost {
-            props[slots.foe0 + j].enabled = false;
+        for m in 0..POOLS {
+            for j in drawn[m]..slots.drawn[m] {
+                props[slots.pool0[m] + j].enabled = false;
+            }
         }
-        for j in nz..slots.drawn_zombie {
-            props[slots.zombie0 + j].enabled = false;
-        }
-        slots.drawn_ghost = ng;
-        slots.drawn_zombie = nz;
+        slots.drawn = drawn;
         self.slots = slots;
         let gn = self.gems.len();
         for i in 0..self.spec.caps.gems as usize {
@@ -3027,11 +3990,28 @@ impl SurvivorArena {
             let g = &self.gems[i];
             p.enabled = true;
             let bob = 0.08 * (self.anim_t * 5.0 + i as f32).sin();
+            // A merged gem is bigger (and goldens past a handful of XP).
+            let m = g.v.max(1.0).powf(0.33).min(2.0);
             if slots.glb_gem {
-                p.position = [g.x, 0.12 + bob, g.z];
+                p.position = [g.x, 0.12 + bob * m, g.z];
                 p.yaw = self.anim_t * 2.2 + i as f32;
+                p.scale = [1.3 * m; 3];
             } else {
                 p.position = [g.x, 0.3 + bob, g.z];
+                p.scale = [0.28 * m; 3];
+            }
+            let gold = g.v >= 6.0;
+            p.color = Some(match (gold, slots.glb_gem) {
+                (true, _) => [255, 215, 110],
+                (false, true) => [255, 255, 255],
+                (false, false) => [90, 230, 255],
+            });
+            if slots.glb_gem {
+                p.emissive_color = Some(if gold {
+                    [1.0, 0.7, 0.2]
+                } else {
+                    [0.35, 0.9, 1.0]
+                });
             }
         }
         let sn = self.shots.len();
@@ -3044,11 +4024,32 @@ impl SurvivorArena {
                 continue;
             }
             let s = &self.shots[i];
+            let wc = self
+                .spec
+                .weapons
+                .get(s.w as usize)
+                .map_or([255, 190, 90], |w| w.color.map(|c| c.min(255) as u8));
             p.enabled = true;
             p.position = [s.x, 0.55, s.z];
             p.yaw = s.vx.atan2(s.vz);
-            p.scale = [s.r * 0.8, s.r * 0.8, s.r * 2.0];
+            p.color = Some(wc.map(u32::from));
+            p.emissive_color = Some(lin(wc.map(u32::from)));
+            // A petal is a small flat disc that tumbles. It used to be an egg-shaped bar
+            // with a long streak, which read as a second and third gun barrel.
+            p.emissive = Some(if s.kind == 1 { 0.7 } else { 1.2 });
+            if s.kind == 1 {
+                p.yaw = self.anim_t * 11.0 + i as f32 * 1.7;
+            }
+            p.scale = match s.kind {
+                1 => [s.r * 1.6, s.r * 0.45, s.r * 1.6],
+                2 => {
+                    let pulse = 1.0 + 0.15 * (self.anim_t * 14.0 + i as f32).sin();
+                    [s.r * 1.7 * pulse; 3]
+                }
+                _ => [s.r * 0.8, s.r * 0.8, s.r * 2.0],
+            };
         }
+        self.build_extras(&slots);
         for c in &mut self.doc.points {
             c.positions.clear();
         }
@@ -3062,9 +4063,18 @@ impl SurvivorArena {
         let nshots = self.spec.caps.shots as usize;
         for (i, l) in self.doc.lines.iter_mut().take(nshots).enumerate() {
             l.points.clear();
-            if let (true, Some(s)) = (streak, self.shots.get(i)) {
-                l.points.push([s.x - s.vx * 0.05, 0.58, s.z - s.vz * 0.05]);
+            // No streak behind petals: they are discs, not bolts.
+            if let (true, Some(s)) = (streak, self.shots.get(i).filter(|s| s.kind != 1)) {
+                let wc = self
+                    .spec
+                    .weapons
+                    .get(s.w as usize)
+                    .map_or([255, 190, 90], |w| w.color.map(|c| c.min(255) as u8));
+                let len = if s.kind == 2 { 0.16 } else { 0.05 };
+                l.points.push([s.x - s.vx * len, 0.58, s.z - s.vz * len]);
                 l.points.push([s.x, 0.58, s.z]);
+                l.color = [wc[0], wc[1], wc[2], 150];
+                l.width = if s.kind == 2 { 6.0 } else { 3.0 };
             }
         }
         let lock = if self.aim_mode != 0 {
@@ -3077,7 +4087,8 @@ impl SurvivorArena {
         } else {
             None
         };
-        if let [ring, aim] = &mut self.doc.lines[nshots..] {
+        let (head, tail) = self.doc.lines.split_at_mut(slots.ln_aim);
+        if let (Some(ring), Some(aim)) = (head.get_mut(slots.ln_ring), tail.first_mut()) {
             ring.points.clear();
             aim.points.clear();
             if let Some(j) = lock {
@@ -3161,6 +4172,16 @@ impl SurvivorArena {
             "aim": self.aim_name(),
             "locked": self.locked().is_some(),
             "cards": self.card_values(),
+            "weapons": self.weapon_values(),
+            "max_weapons": self.spec.levels.max_weapons,
+            "pickups": self.pickups.len(),
+            "chests": self.pickups.iter().filter(|p| p.item == CHEST).count(),
+            "orbs": self.orbs.len(),
+            "shield": self.shield_t,
+            "frenzy": self.frenzy_t,
+            "synergies": self.syn_mask.count_ones(),
+            "elites": (0..self.foes.len()).filter(|&i| self.kinds[self.foes.kind[i] as usize].elite).count(),
+            "toast": if self.toast_t > 0.0 { self.toast.as_str() } else { "" },
             "win": self.win,
             "death": self.core.stats.death,
             "death_text": self.death_text,
@@ -3168,6 +4189,18 @@ impl SurvivorArena {
             "result": if self.flow.phase == FlowPhase::Result { self.result_value() } else { Value::Null },
             "pos": [self.hx, self.hz],
         })
+    }
+
+    fn weapon_values(&self) -> Value {
+        Value::Array(
+            self.spec
+                .weapons
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| self.weapon_lv[*i] > 0)
+                .map(|(i, w)| json!({"id": w.id, "lv": self.weapon_lv[i]}))
+                .collect(),
+        )
     }
 
     pub fn state_json(&self) -> String {
@@ -3235,6 +4268,15 @@ impl SurvivorArena {
             |list: &mut DrawList, t: &str, x: f32, y: f32, size: f32, c: [u8; 4], a: TextAlign| {
                 list.texts
                     .push(TextQuad::new(t, x, y, size * s, c).aligned(a));
+            };
+        // Numbers (the clock, damage) in the display face.
+        let num =
+            |list: &mut DrawList, t: &str, x: f32, y: f32, size: f32, c: [u8; 4], a: TextAlign| {
+                list.texts.push(
+                    TextQuad::new(t, x, y, size * s, c)
+                        .aligned(a)
+                        .with_face(TextFace::Display),
+                );
             };
         // Hurt vignette.
         if self.hurt_flash > 0.0 {
@@ -3383,7 +4425,7 @@ impl SurvivorArena {
                 255,
             ]
         };
-        text(
+        num(
             &mut list,
             &format!("{}:{:02}", left / 60, left % 60),
             w * 0.5,
@@ -3402,7 +4444,7 @@ impl SurvivorArena {
                 let a = ((1.0 - t * t) * 255.0) as u8;
                 let pop = 1.0 + 0.6 * (1.0 - (d.age * 9.0).min(1.0));
                 let label = format!("{}", d.val);
-                text(
+                num(
                     &mut list,
                     &label,
                     sx + 1.5 * s,
@@ -3411,7 +4453,7 @@ impl SurvivorArena {
                     [10, 10, 30, a / 2],
                     TextAlign::Center,
                 );
-                text(
+                num(
                     &mut list,
                     &label,
                     sx,
@@ -3422,6 +4464,7 @@ impl SurvivorArena {
                 );
             }
         }
+        self.hud_loadout(&mut list, w, h, s);
         // The lock-on arrow over the locked foe.
         if self.aim_mode != 0 && self.flow.phase == FlowPhase::Play {
             if let Some(j) = self.lock_foe() {
@@ -3454,8 +4497,32 @@ impl SurvivorArena {
                 ));
             }
         }
-        // The thumb marker: a soft round dot (a square read as a stray grey box).
-        if let Some((fx, fy)) = self.finger {
+        if self.stick_mode() && self.flow.phase == FlowPhase::Play && self.cards.is_empty() {
+            // The thumb stick: a resting hint where a thumb lands, or the base where it landed,
+            // a knob under the thumb and a jelly neck between them.
+            let rad = self.stick_radius(w, h);
+            match self.finger {
+                Some((fx, fy)) => {
+                    let (cx, cy) = self.origin;
+                    let (dx, dy) = (fx - cx, fy - cy);
+                    let d = dx.hypot(dy).max(1e-3);
+                    let k = d.min(rad) / d;
+                    stick::draw_stick(
+                        &mut list,
+                        (cx, cy),
+                        (cx + dx * k, cy + dy * k),
+                        rad,
+                        s,
+                        true,
+                    );
+                }
+                None => {
+                    let c = self.stick_center(w, h);
+                    stick::draw_stick(&mut list, c, c, rad, s, false);
+                }
+            }
+        } else if let Some((fx, fy)) = self.finger {
+            // The thumb marker: a soft round dot (a square read as a stray grey box).
             text(
                 &mut list,
                 "●",
@@ -3465,17 +4532,6 @@ impl SurvivorArena {
                 [255, 255, 255, 70],
                 TextAlign::Center,
             );
-            if self.spec.input.mode == "stick" {
-                text(
-                    &mut list,
-                    "○",
-                    self.origin.0,
-                    self.origin.1 - 22.0 * s,
-                    44.0,
-                    [255, 255, 255, 50],
-                    TextAlign::Center,
-                );
-            }
         }
         if !self.cards.is_empty() {
             self.hud_cards(&mut list, w, h, s);
@@ -3489,7 +4545,11 @@ impl SurvivorArena {
         list.quads.push(Quad::new(0.0, 0.0, w, h, [6, 6, 20, 200]));
         list.texts.push(
             TextQuad::new(
-                self.tr("LEVEL UP!", "レベルアップ！"),
+                if self.swap_in.is_some() {
+                    self.tr("WEAPON FOUND!", "ぶきをみつけた！")
+                } else {
+                    self.tr("LEVEL UP!", "レベルアップ！")
+                },
                 w * 0.5,
                 h * 0.09,
                 32.0 * s,
@@ -3499,7 +4559,14 @@ impl SurvivorArena {
         );
         list.texts.push(
             TextQuad::new(
-                self.tr("Pick one", "ひとつえらんでね"),
+                if self.swap_in.is_some() {
+                    self.tr(
+                        "Slots full: drop one?",
+                        "スロットがいっぱい：どれをすてる？",
+                    )
+                } else {
+                    self.tr("Pick one", "ひとつえらんでね")
+                },
                 w * 0.5,
                 h * 0.09 + 40.0 * s,
                 14.0 * s,
@@ -3738,6 +4805,14 @@ impl crate::kit_host::KitHost for SurvivorArena {
     fn set_lang(&mut self, lang: &str) {
         SurvivorArena::set_lang(self, lang);
     }
+    fn supports_quality_tiers(&self) -> bool {
+        true
+    }
+    fn quality_hints(&mut self, atmo: f32, particles: f32) {
+        self.hint_atmo = atmo;
+        self.hint_particles = particles.clamp(0.0, 1.0);
+        self.apply_hints();
+    }
     fn pause_run(&mut self) {
         self.pause();
     }
@@ -3827,8 +4902,16 @@ mod tests {
         let mut n = 0;
         while g.flow.phase == FlowPhase::Play && g.secs() < secs && n < 60 * 400 {
             if g.card_count() > 0 {
+                // Deepen what is held (the sensible player), else take the first card; a
+                // swap offer is declined.
+                let id = |i: usize| g.card_id(i).unwrap_or_default();
+                let held = |c: &str| {
+                    c.strip_prefix("weapon:")
+                        .is_some_and(|w| g.weapon_level(w) > 0)
+                };
                 let at = (0..g.card_count())
-                    .find(|i| g.card_id(*i).is_some_and(|c| c.starts_with("weapon")))
+                    .find(|i| held(&id(*i)))
+                    .or_else(|| (0..g.card_count()).find(|i| id(*i) == "keep"))
                     .unwrap_or(0);
                 g.choose(at);
             }
@@ -3870,6 +4953,1204 @@ mod tests {
         }
     }
 
+    fn kind_of(g: &SurvivorArena, id: &str) -> u8 {
+        g.spec
+            .enemies
+            .types
+            .iter()
+            .position(|t| t.id == id)
+            .unwrap() as u8
+    }
+
+    /// A world with no director spawns, for staging a fight by hand.
+    fn quiet(start_weapon: &str) -> SurvivorArena {
+        let mut spec = SurvivorSpec::default();
+        spec.hero.start_weapon = start_weapon.into();
+        spec.hero.max_hp = 10_000.0;
+        spec.director.start_rate = 0.0;
+        spec.director.end_rate = 0.0;
+        spec.director.elite_first = 0.0;
+        let mut g = SurvivorArena::new(spec);
+        g.confirm();
+        g
+    }
+
+    #[test]
+    fn drops_are_seeded_capped_pooled_and_switchable() {
+        let run = |enabled: bool| {
+            let mut spec = SurvivorSpec::default();
+            spec.drops.enabled = enabled;
+            spec.drops.tables[0].chance = 1.0;
+            let mut g = SurvivorArena::new(spec);
+            g.confirm();
+            let cap = g.spec.drops.cap as usize;
+            let ptr = g.pickups.as_ptr();
+            let mut most = 0;
+            kite_each(&mut g, 40.0, |g| {
+                most = most.max(g.pickups.len());
+                assert!(g.pickups.len() <= cap, "pickups are capped");
+            });
+            assert_eq!(ptr, g.pickups.as_ptr(), "no reallocation");
+            (g.kills(), most, g.pickups.len(), g.hp().to_bits())
+        };
+        let (a, b) = (run(true), run(true));
+        assert_eq!(a, b, "a seed drops the same things twice");
+        assert!(a.1 >= 8, "a storm of drops fills the pool ({})", a.1);
+        assert_eq!(run(false).1, 0, "switched off: nothing drops");
+    }
+
+    #[test]
+    fn the_pity_timer_forces_a_drop() {
+        let mut spec = SurvivorSpec::default();
+        spec.drops.tables[0].chance = 0.0;
+        spec.drops.pity_kills = 5;
+        let mut g = SurvivorArena::new(spec);
+        g.confirm();
+        let k = g.kinds[0];
+        for _ in 0..4 {
+            g.drop_loot(1.0, 1.0, &k);
+        }
+        assert!(g.pickups.is_empty());
+        g.drop_loot(1.0, 1.0, &k);
+        assert_eq!(g.pickups.len(), 1);
+    }
+
+    #[test]
+    fn the_elite_arrives_and_always_leaves_a_chest_with_a_weapon() {
+        let mut g = quiet("bolt");
+        g.next_elite = 45.0;
+        g.t = 46.0;
+        g.tick(DT);
+        assert_eq!(g.state_value()["elites"], 1);
+        assert!(g
+            .hud(390, 844, false)
+            .texts
+            .iter()
+            .any(|t| t.text.starts_with('☠')));
+        let j = (0..g.foes.len())
+            .find(|&i| g.kinds[g.foes.kind[i] as usize].elite)
+            .unwrap();
+        g.foes.hp[j] = 0.0;
+        g.tick(DT);
+        assert!(
+            g.pickups.iter().any(|p| p.item == CHEST),
+            "the elite leaves a chest"
+        );
+        g.build_doc();
+        assert!(g.doc.props.iter().any(|p| p.enabled && p.name == "chest"));
+        let (cx, cz) = (g.pickups[0].x, g.pickups[0].z);
+        (g.hx, g.hz) = (cx, cz);
+        g.tick(DT);
+        assert!(
+            g.pickups.iter().all(|p| p.item != CHEST),
+            "touching opens it"
+        );
+        assert!(g.held_weapons() >= 2, "the chest guarantees a weapon");
+        assert!(g.state_value()["toast"]
+            .as_str()
+            .is_some_and(|t| !t.is_empty()));
+    }
+
+    #[test]
+    fn a_full_pickup_pool_still_gets_the_warden_chest_and_its_bar_clears_the_chips() {
+        let mut g = quiet("bolt");
+        g.next_elite = 45.0;
+        g.t = 46.0;
+        g.tick(DT);
+        // Fill the pool with ordinary pickups far from the hero.
+        let cap = g.spec.drops.cap as usize;
+        let half = g.spec.arena.half - 1.0;
+        while g.pickups.len() < cap {
+            let k = g.pickups.len() as f32;
+            g.pickups.push(Pickup {
+                x: -half,
+                z: -half + k * 0.1,
+                item: 0,
+                table: 0,
+                age: k,
+                fly: false,
+            });
+        }
+        // The warden's bar starts right of the weapon chips on a narrow phone.
+        let s = hud_scale(390.0, 844.0);
+        let chips_end = 8.0 * s + g.spec.levels.max_weapons as f32 * 38.0 * s;
+        let l = g.hud(390, 844, false);
+        let bar = l
+            .quads
+            .iter()
+            .find(|q| q.color == [255, 110, 90, 255])
+            .expect("the warden bar");
+        assert!(
+            bar.x >= chips_end,
+            "bar at {} under chips to {chips_end}",
+            bar.x
+        );
+        let j = (0..g.foes.len())
+            .find(|&i| g.kinds[g.foes.kind[i] as usize].elite)
+            .unwrap();
+        g.foes.hp[j] = 0.0;
+        g.tick(DT);
+        assert!(
+            g.pickups.iter().any(|p| p.item == CHEST),
+            "the chest is not lost"
+        );
+        assert!(g.pickups.len() <= cap);
+        assert!(
+            g.pickups
+                .iter()
+                .all(|p| p.item == CHEST || p.age < (cap - 1) as f32 + 0.5),
+            "the oldest ordinary pickup made room"
+        );
+    }
+
+    #[test]
+    fn the_warden_is_a_fight_that_grows_with_firepower_but_stays_capped() {
+        let elite_hp = |g: &mut SurvivorArena| {
+            g.next_elite = 45.0;
+            g.t = 46.0;
+            g.tick(DT);
+            let j = (0..g.foes.len())
+                .find(|&i| g.kinds[g.foes.kind[i] as usize].elite)
+                .unwrap();
+            g.foes.hp[j]
+        };
+        let mut g = quiet("bolt");
+        let base = g.kinds.iter().find(|k| k.elite).unwrap().hp;
+        let weak = elite_hp(&mut g);
+        assert!(weak >= base, "never below its own hp");
+        let mut s = quiet("bolt");
+        for i in 0..s.weapon_lv.len() {
+            s.weapon_lv[i] = 6;
+        }
+        let strong = elite_hp(&mut s);
+        assert!(
+            strong > weak,
+            "more firepower, more warden: {strong} vs {weak}"
+        );
+        let cap =
+            base * (1.0 + s.spec.director.hp_per_min * s.t / 60.0) * s.spec.director.elite_hp_cap;
+        assert!(
+            strong <= cap + 1e-3,
+            "capped so it stays fair: {strong} <= {cap}"
+        );
+    }
+
+    #[test]
+    fn a_chest_drifts_to_the_hero_from_afar_and_opens_from_a_wider_reach() {
+        let mut g = quiet("bolt");
+        g.pickups.clear();
+        let (hx, hz) = (g.hx, g.hz);
+        g.pickups.push(Pickup {
+            x: hx + 5.0,
+            z: hz,
+            item: CHEST,
+            table: 0,
+            age: 0.0,
+            fly: false,
+        });
+        g.tick(DT);
+        assert!(g.pickups[0].fly, "pulled in from 5 m without any magnet");
+        g.pickups.clear();
+        g.pickups.push(Pickup {
+            x: hx + 1.6,
+            z: hz,
+            item: CHEST,
+            table: 0,
+            age: 0.0,
+            fly: false,
+        });
+        g.tick(DT);
+        assert!(
+            g.pickups.iter().all(|p| p.item != CHEST),
+            "opens from 1.6 m"
+        );
+    }
+
+    #[test]
+    fn an_off_screen_chest_gets_an_edge_arrow() {
+        let mut g = quiet("bolt");
+        g.pickups.clear();
+        let (hx, hz) = (g.hx, g.hz);
+        g.pickups.push(Pickup {
+            x: hx + 11.0,
+            z: hz,
+            item: CHEST,
+            table: 0,
+            age: 0.0,
+            fly: false,
+        });
+        g.build_doc();
+        let hud = g.hud(390, 844, false);
+        assert!(hud.texts.iter().any(|t| t.text.starts_with('宝')));
+        assert!(hud.texts.iter().any(|t| t.text == "→"));
+        g.pickups.clear();
+        let hud = g.hud(390, 844, false);
+        assert!(hud.texts.iter().all(|t| !t.text.starts_with('宝')));
+    }
+
+    #[test]
+    fn weapon_pickups_fill_the_slots_then_offer_a_swap() {
+        let mut g = quiet("bolt");
+        let max = g.spec.levels.max_weapons;
+        for _ in 0..500 {
+            if g.held_weapons() >= max {
+                break;
+            }
+            g.grant_weapon();
+        }
+        assert_eq!(g.held_weapons(), max, "slots fill up");
+        assert!(g.cards.is_empty());
+        for _ in 0..2000 {
+            g.grant_weapon();
+            if !g.cards.is_empty() {
+                break;
+            }
+        }
+        assert!(g.swap_in.is_some(), "a full bar offers a swap");
+        assert!(matches!(g.cards.last(), Some(Card::Keep)));
+        assert!(g.cards.iter().any(|c| matches!(c, Card::Swap(_))));
+        let incoming = g.swap_in.unwrap() as usize;
+        assert_eq!(g.weapon_lv[incoming], 0);
+        let hud = g.hud(390, 844, false);
+        assert!(hud.texts.iter().any(|t| t.text == "WEAPON FOUND!"));
+        // Swap the first offer in.
+        let Some(Card::Swap(old)) = g.cards.first().copied() else {
+            panic!("the first card is a swap");
+        };
+        g.choose(0);
+        assert!(g.cards.is_empty() && g.swap_in.is_none());
+        assert_eq!(g.weapon_lv[old as usize], 0, "the old weapon is gone");
+        assert_eq!(g.weapon_lv[incoming], 1, "the new one is in");
+        assert_eq!(g.held_weapons(), max);
+        // And keeping refuses the new one.
+        for _ in 0..2000 {
+            g.grant_weapon();
+            if !g.cards.is_empty() {
+                break;
+            }
+        }
+        let before: Vec<u32> = g.weapon_lv.clone();
+        let last = g.cards.len() - 1;
+        g.choose(last);
+        assert_eq!(before, g.weapon_lv);
+        assert!(g.cards.is_empty());
+    }
+
+    #[test]
+    fn every_weapon_hurts_a_crowd() {
+        let ids: Vec<String> = SurvivorSpec::default()
+            .weapons
+            .iter()
+            .map(|w| w.id.clone())
+            .collect();
+        for id in ids {
+            let mut g = quiet(&id);
+            for k in 0..8 {
+                let a = k as f32 * 0.785;
+                g.foes.spawn(0, a.sin() * 2.6, a.cos() * 2.6, 1000.0);
+            }
+            let hp0: f32 = g.foes.hp.iter().sum();
+            for _ in 0..360 {
+                g.tick(DT);
+            }
+            let hp1: f32 = g.foes.hp.iter().sum();
+            assert!(hp1 < hp0 - 15.0, "{id} dealt only {:.1} in 6 s", hp0 - hp1);
+        }
+    }
+
+    #[test]
+    fn each_weapon_builds_its_own_effect() {
+        let mut g = quiet("zap");
+        for k in 0..4 {
+            g.foes.spawn(0, 2.0 + k as f32 * 0.8, 0.0, 1000.0);
+        }
+        let mut zaps = 0;
+        for _ in 0..180 {
+            g.tick(DT);
+            zaps = zaps.max(g.zaps.len());
+        }
+        assert!(zaps > 0, "lightning is drawn");
+        g.build_doc();
+        let mut p = quiet("pulse");
+        p.foes.spawn(0, 1.5, 0.0, 1000.0);
+        let mut rings = 0;
+        let mut far = 0.0f32;
+        for _ in 0..200 {
+            p.tick(DT);
+            rings = rings.max(p.rings.len());
+            if !p.foes.x.is_empty() {
+                far = far.max(p.foes.x[0]);
+            }
+        }
+        assert!(rings > 0 && far > 1.6, "the pulse shoves (far {far})");
+        let mut b = quiet("blades");
+        b.foes.spawn(0, 1.9, 0.0, 1000.0);
+        for _ in 0..60 {
+            b.tick(DT);
+        }
+        b.build_doc();
+        let live = b
+            .doc
+            .props
+            .iter()
+            .filter(|p| p.enabled && p.name == "blade")
+            .count();
+        assert_eq!(live, 2, "two blades circle");
+        let mut w = quiet("wisps");
+        w.foes.spawn(0, 0.0, 6.0, 1000.0);
+        w.foes.spawn(0, 1.0, 6.4, 1000.0);
+        let mut shots = 0;
+        for _ in 0..120 {
+            w.tick(DT);
+            shots = shots.max(w.shots.len());
+        }
+        assert!(shots >= 1, "wisps fly");
+        let mut f = quiet("petals");
+        f.foes.spawn(0, 0.0, 3.0, 1000.0);
+        f.tick(DT);
+        assert!(f.shots.len() >= 4, "a fan of petals ({})", f.shots.len());
+    }
+
+    #[test]
+    fn a_shield_blocks_hits_and_frenzy_speeds_the_weapons() {
+        let mut g = quiet("bolt");
+        g.hp = 100.0;
+        g.shield_t = 3.0;
+        g.foes.spawn(0, 0.0, 0.0, 1000.0);
+        for _ in 0..60 {
+            g.tick(DT);
+        }
+        assert_eq!(g.hp, 100.0, "the shield takes the hit");
+        g.shield_t = 0.0;
+        for _ in 0..60 {
+            g.tick(DT);
+        }
+        assert!(g.hp < 100.0, "then it wears off");
+        let slow = g.cd_scale();
+        g.frenzy_t = 5.0;
+        g.frenzy_amt = 0.45;
+        assert!(g.cd_scale() < slow * 0.6);
+    }
+
+    #[test]
+    fn items_do_what_they_say() {
+        let mut g = quiet("bolt");
+        let id = |g: &SurvivorArena, kind: PickupKind| {
+            g.spec
+                .drops
+                .items
+                .iter()
+                .position(|i| i.kind == kind)
+                .unwrap()
+        };
+        g.hp = 10.0;
+        let heal = id(&g, PickupKind::Heal);
+        g.apply_item(heal);
+        assert!(g.hp > 10.0);
+        let xp0 = g.xp;
+        let dust = id(&g, PickupKind::Xp);
+        g.apply_item(dust);
+        assert!(g.xp > xp0 || g.level > 1);
+        let shield = id(&g, PickupKind::Shield);
+        g.apply_item(shield);
+        assert!(g.shield_t > 0.0);
+        let frenzy = id(&g, PickupKind::Frenzy);
+        g.apply_item(frenzy);
+        assert!(g.frenzy_t > 0.0);
+        g.foes.spawn(0, 2.0, 0.0, 1.0);
+        let bomb = id(&g, PickupKind::Bomb);
+        g.apply_item(bomb);
+        g.tick(DT);
+        assert_eq!(g.foes.len(), 0, "the bomb clears what is near");
+        g.gems.push(Gem {
+            x: 9.0,
+            z: 9.0,
+            v: 1.0,
+            fly: false,
+        });
+        let magnet = id(&g, PickupKind::Magnet);
+        g.apply_item(magnet);
+        assert!(g.gems.iter().all(|m| m.fly), "a magnet calls every gem");
+    }
+
+    #[test]
+    fn synergies_switch_on_with_a_weapon_and_a_passive() {
+        let mut spec = SurvivorSpec::default();
+        spec.synergies.clear();
+        let mut plain = SurvivorArena::new(spec);
+        plain.confirm();
+        let mut g = started();
+        let hi = |g: &SurvivorArena| {
+            g.spec
+                .passives
+                .iter()
+                .position(|p| p.id == "haste")
+                .unwrap()
+        };
+        let (a, b) = (hi(&plain), hi(&g));
+        plain.passive_lv[a] = 3;
+        plain.recompute();
+        g.passive_lv[b] = 3;
+        g.recompute();
+        assert_eq!(plain.syn_mask, 0);
+        assert_ne!(g.syn_mask, 0);
+        assert!(g.weapon_stats[0].cooldown < plain.weapon_stats[0].cooldown);
+        assert!(g.hud(390, 844, false).texts.iter().any(|t| t.text == "★"));
+    }
+
+    #[test]
+    fn shooters_throw_orbs_and_the_pools_hold() {
+        let mut g = quiet("bolt");
+        let k = kind_of(&g, "shooter");
+        g.foes.spawn(k, 0.0, 6.0, 1000.0);
+        let (op, zp, rp) = (g.orbs.as_ptr(), g.zaps.as_ptr(), g.rings.as_ptr());
+        let mut most = 0;
+        for _ in 0..600 {
+            g.tick(DT);
+            most = most.max(g.orbs.len());
+            assert!(g.orbs.len() <= ORB_CAP);
+        }
+        assert!(most >= 1, "the shooter throws");
+        assert!(g.hp < 10_000.0, "an orb can hurt");
+        assert_eq!(
+            (op, zp, rp),
+            (g.orbs.as_ptr(), g.zaps.as_ptr(), g.rings.as_ptr())
+        );
+    }
+
+    #[test]
+    fn the_whole_cast_shows_up_and_the_loadout_is_drawn() {
+        let mut g = started();
+        let mut seen = [false; 5];
+        let mut elite_hud = false;
+        kite_each(&mut g, 70.0, |g| {
+            for i in 0..g.foes.len() {
+                seen[g.foes.kind[i] as usize] = true;
+            }
+            elite_hud |= g
+                .hud(390, 844, false)
+                .texts
+                .iter()
+                .any(|t| t.text.starts_with('☠'));
+        });
+        assert_eq!(
+            seen, [true; 5],
+            "ghoul, runner, shooter, tank and warden all show up"
+        );
+        assert!(elite_hud, "the elite has a health bar");
+        let hud = g.hud(390, 844, false);
+        assert!(hud.texts.iter().any(|t| t.text == "弾"), "the bolt chip");
+        let w = g.state_value()["weapons"].as_array().unwrap().len();
+        assert!(w >= 1);
+    }
+
+    #[test]
+    fn each_weapon_alone_holds_the_early_game() {
+        let ids: Vec<String> = SurvivorSpec::default()
+            .weapons
+            .iter()
+            .map(|w| w.id.clone())
+            .collect();
+        for id in ids {
+            let mut spec = SurvivorSpec::default();
+            spec.hero.start_weapon = id.clone();
+            let mut g = SurvivorArena::new(spec);
+            g.confirm();
+            kite(&mut g, 30.0);
+            assert!(g.secs() >= 30.0, "{id} died at {:.0}s", g.secs());
+            assert!(g.kills() >= 25, "{id} only killed {}", g.kills());
+        }
+    }
+
+    fn merge(a: &mut Value, b: &Value) {
+        match (a, b) {
+            (Value::Object(x), Value::Object(y)) => {
+                for (k, v) in y {
+                    merge(x.entry(k.clone()).or_insert(Value::Null), v);
+                }
+            }
+            (a, b) => *a = b.clone(),
+        }
+    }
+
+    /// `KAGRA_TUNE='{"director":{"elite_first":60}}' cargo test --release sweep -- --ignored
+    /// --nocapture`: kiting bots over eight seeds with a patch on the default world.
+    #[test]
+    #[ignore]
+    fn sweep() {
+        let mut v = fresh().world_value()["game"].clone();
+        if let Ok(t) = std::env::var("KAGRA_TUNE") {
+            merge(&mut v, &serde_json::from_str(&t).unwrap());
+        }
+        let secs: f32 = std::env::var("KAGRA_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1000.0);
+        let mut wins = 0;
+        for seed in 1..=8u32 {
+            v["director"]["seed"] = json!(seed);
+            let mut g = SurvivorArena::new(SurvivorSpec::from_value(&v).unwrap());
+            g.confirm();
+            kite(&mut g, secs);
+            wins += u32::from(g.won());
+            eprintln!(
+                "seed{seed} t={:.0} lv={} kills={} win={} weapons={} pickups_left={}",
+                g.secs(),
+                g.level(),
+                g.kills(),
+                g.won(),
+                g.weapon_values(),
+                g.pickups.len()
+            );
+        }
+        eprintln!("seed wins {wins}/8");
+    }
+
+    /// `cargo test --release -p kagra-shared --lib perf_probe -- --ignored --nocapture`: the
+    /// per-frame load of a busy late run on each quality tier (sim + doc build time, live props,
+    /// points and lines handed to the renderer).
+    #[test]
+    #[ignore]
+    fn perf_probe() {
+        for (name, q) in [("low", Some("low")), ("mid", None), ("high", Some("high"))] {
+            let mut spec = SurvivorSpec::default();
+            spec.hero.max_hp = 1.0e6;
+            spec.director.seed = 3;
+            let mut g = SurvivorArena::new(spec);
+            g.picture_quality = q.map(String::from);
+            g.apply_quality();
+            g.build_doc();
+            g.confirm();
+            for _ in 0..3 {
+                g.grant_weapon();
+            }
+            let (mut props, mut pts, mut lines, mut max_props, mut n) =
+                (0usize, 0usize, 0usize, 0usize, 0u32);
+            let mut ns = 0u128;
+            let mut foes = 0usize;
+            while g.secs() < 119.0 && g.flow.phase == FlowPhase::Play {
+                if g.card_count() > 0 {
+                    g.choose(0);
+                }
+                kite_step(&mut g);
+                let t0 = std::time::Instant::now();
+                g.tick(DT);
+                let dt = t0.elapsed().as_nanos();
+                if g.secs() > 70.0 {
+                    ns += dt;
+                    n += 1;
+                    let live = g.doc.props.iter().filter(|p| p.enabled).count();
+                    props += live;
+                    max_props = max_props.max(live);
+                    pts += g
+                        .doc
+                        .points
+                        .iter()
+                        .map(|p| p.positions.len())
+                        .sum::<usize>();
+                    lines += g.doc.lines.iter().map(|l| l.points.len()).sum::<usize>();
+                    foes += g.foes.len();
+                }
+            }
+            if std::env::var("KAGRA_PROPS").is_ok() {
+                let mut by: std::collections::BTreeMap<String, usize> = Default::default();
+                for p in g.doc.props.iter().filter(|p| p.enabled) {
+                    let key = format!(
+                        "{} {}",
+                        p.name.trim_end_matches(char::is_numeric),
+                        p.gltf.clone().unwrap_or_default()
+                    );
+                    *by.entry(key).or_default() += 1;
+                }
+                eprintln!("{name} live props: {by:?}");
+            }
+            // What one render() costs on the CPU before the GPU sees a vertex (native release:
+            // a phone in wasm is several times slower).
+            let time = |label: &str, f: &mut dyn FnMut()| {
+                let t0 = std::time::Instant::now();
+                for _ in 0..200 {
+                    f();
+                }
+                eprintln!(
+                    "{name}:   {label} {:.1} us",
+                    t0.elapsed().as_nanos() as f64 / 200.0 / 1000.0
+                );
+            };
+            time("doc.clone()", &mut || {
+                std::hint::black_box(g.doc.clone());
+            });
+            time("gpu_mesh_key", &mut || {
+                std::hint::black_box(g.doc.gpu_mesh_key());
+            });
+            time("gltf_slots", &mut || {
+                std::hint::black_box(g.doc.gltf_slots());
+            });
+            time("compile_scene", &mut || {
+                std::hint::black_box(g.doc.compile_scene(0.45));
+            });
+            let fp = crate::profile::FrameProfile::from_world(&g.doc);
+            eprintln!(
+                "{name}:   gpu draws {} triangles {} texture bytes {}",
+                fp.draws, fp.triangles, fp.texture_bytes
+            );
+            let n = n.max(1) as usize;
+            eprintln!(
+                "{name}: t={:.0}s avg tick {:.1} us | foes {} | live props avg {} max {} of {} | points {} | line pts {}",
+                g.secs(),
+                ns as f64 / n as f64 / 1000.0,
+                foes / n,
+                props / n,
+                max_props,
+                g.doc.props.len(),
+                pts / n,
+                lines / n
+            );
+        }
+    }
+
+    /// Pile `n` foes of every unlocked kind (tough, so they stay) in a ring on the hero,
+    /// and fill the gem pool: the worst frame the swarm can make.
+    fn pile_crowd(g: &mut SurvivorArena, n_foes: usize) {
+        let unlocked: Vec<usize> = (0..g.kinds.len())
+            .filter(|&i| !g.kinds[i].elite && g.kinds[i].unlock <= g.t)
+            .collect();
+        let mut rng = Rng::new(9);
+        while g.foes.len() < n_foes {
+            let kind = unlocked[rng.next_u32() as usize % unlocked.len()];
+            let a = rng.range(0.0, std::f32::consts::TAU);
+            let r = rng.range(1.5, 11.0);
+            let hp = g.kinds[kind].hp * 40.0;
+            if !g.add_foe(kind, (g.hx + a.sin() * r, g.hz + a.cos() * r), hp) {
+                break;
+            }
+        }
+        for _ in 0..g.spec.caps.gems as usize {
+            if g.gems.len() < g.spec.caps.gems as usize {
+                let a = rng.range(0.0, std::f32::consts::TAU);
+                let r = rng.range(1.0, 10.0);
+                g.gems.push(Gem {
+                    x: g.hx + a.sin() * r,
+                    z: g.hz + a.cos() * r,
+                    v: 1.0,
+                    fly: false,
+                });
+            }
+        }
+    }
+
+    /// `cargo test --release -p kagra-shared --lib crowd_probe -- --ignored --nocapture`
+    /// is the worst frame: hundreds of foes of every kind on the hero, gems and damage
+    /// numbers at their caps, orbit blades out, particles flying. Per-phase native cost of
+    /// one step, and what the renderer is handed.
+    #[test]
+    #[ignore]
+    fn crowd_probe() {
+        let n_foes: usize = std::env::var("KAGRA_FOES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(250);
+        for (name, q) in [("low", Some("low")), ("mid", None), ("high", Some("high"))] {
+            let mut spec = SurvivorSpec::default();
+            spec.hero.max_hp = 1.0e9;
+            spec.director.seed = 5;
+            let mut g = SurvivorArena::new(spec);
+            g.picture_quality = q.map(String::from);
+            g.apply_quality();
+            g.build_doc();
+            g.confirm();
+            for _ in 0..3 {
+                g.grant_weapon();
+            }
+            // Run to a busy minute, then pile the crowd in a ring around the hero.
+            while g.secs() < 90.0 && g.flow.phase == FlowPhase::Play {
+                if g.card_count() > 0 {
+                    g.choose(0);
+                }
+                kite_step(&mut g);
+                g.tick(DT);
+            }
+            pile_crowd(&mut g, n_foes);
+            let at = [g.hx, 0.4, g.hz];
+            let time = |label: &str, g: &mut SurvivorArena, f: &dyn Fn(&mut SurvivorArena)| {
+                let t0 = std::time::Instant::now();
+                for _ in 0..120 {
+                    f(g);
+                }
+                eprintln!(
+                    "{name} {label:<14} {:8.1} us",
+                    t0.elapsed().as_nanos() as f64 / 120.0 / 1000.0
+                );
+            };
+            eprintln!(
+                "{name}: foes {} gems {} fx cap {} dmg cap {}",
+                g.foes.len(),
+                g.gems.len(),
+                g.fx_cap,
+                DMG_CAP[g.tier]
+            );
+            time("grid.rebuild", &mut g, &|g| {
+                g.grid.rebuild(&g.foes.x, &g.foes.z)
+            });
+            time("move_foes", &mut g, &|g| g.move_foes(0.0));
+            time("fire", &mut g, &|g| g.fire(0.0));
+            time("step_blades", &mut g, &|g| g.step_blades(0.0));
+            time("reap", &mut g, &|g| g.reap());
+            time("collect", &mut g, &|g| g.collect(0.0));
+            time("step_fx", &mut g, &|g| {
+                g.burst(FX_GLINT, 6, at, [0.0, 0.0], 3.0, 1.0, 3.0, 0.7);
+                g.step_fx(0.0)
+            });
+            time("whole step", &mut g, &|g| g.step_sim(DT));
+            time("build_doc", &mut g, &|g| g.build_doc());
+            let doc = g.doc.clone();
+            let live = doc.props.iter().filter(|p| p.enabled).count();
+            let pts: usize = doc.points.iter().map(|p| p.positions.len()).sum();
+            let fp = crate::profile::FrameProfile::from_world(&doc);
+            eprintln!(
+                "{name}: live props {live} points {pts} gpu draws {} triangles {}",
+                fp.draws, fp.triangles
+            );
+            {
+                let meshes = doc.compile_meshes();
+                let scene = doc.compile_scene(0.45);
+                for b in &scene.batches {
+                    if let Some((_, m)) = meshes.iter().find(|(id, _)| *id == b.mesh) {
+                        eprintln!(
+                            "{name}:   batch mesh {:?} x{:<4} {:6} tris each = {}",
+                            b.mesh,
+                            b.instances.len(),
+                            m.indices.len() / 3,
+                            m.indices.len() / 3 * b.instances.len()
+                        );
+                    }
+                }
+                let mut by: std::collections::BTreeMap<String, usize> = Default::default();
+                for p in doc.props.iter().filter(|p| p.enabled) {
+                    *by.entry(
+                        p.gltf
+                            .clone()
+                            .unwrap_or_else(|| format!("prim:{:?}", p.kind)),
+                    )
+                    .or_default() += 1;
+                }
+                eprintln!("{name}:   live by model {by:?}");
+            }
+            time("doc.clone", &mut g, &|g| {
+                std::hint::black_box(g.doc.clone());
+            });
+            time("compile_scene", &mut g, &|g| {
+                std::hint::black_box(g.doc.compile_scene(0.45));
+            });
+        }
+    }
+
+    /// `cargo test --release -p kagra-shared --features render --lib render_probe -- --ignored --nocapture`
+    /// draws a busy late frame on the software GPU and times it with one picture feature
+    /// off at a time. Software numbers are not a phone's, but the ratios show which pass or
+    /// prop family is worth cutting (fill-rate bound work scales the same way).
+    #[cfg(feature = "render")]
+    #[test]
+    #[ignore]
+    fn render_probe() {
+        use crate::render::Renderer;
+        let (w, h) = (390u32, 844u32);
+        let mut spec = SurvivorSpec::default();
+        spec.hero.max_hp = 1.0e6;
+        spec.director.seed = 3;
+        let mut g = SurvivorArena::new(spec);
+        g.apply_quality();
+        g.build_doc();
+        g.confirm();
+        for _ in 0..3 {
+            g.grant_weapon();
+        }
+        while g.secs() < 100.0 && g.flow.phase == FlowPhase::Play {
+            if g.card_count() > 0 {
+                g.choose(0);
+            }
+            kite_step(&mut g);
+            g.tick(DT);
+        }
+        if let Some(n) = std::env::var("KAGRA_CROWD")
+            .ok()
+            .and_then(|v| v.parse().ok())
+        {
+            pile_crowd(&mut g, n);
+            g.build_doc();
+        }
+        let Ok(mut r) = pollster::block_on(Renderer::new_offscreen(w, h)) else {
+            eprintln!("no adapter");
+            return;
+        };
+        let hud = crate::scene::DrawList::default();
+        let base = g.doc.clone();
+        let run = |label: &str, doc: &WorldDoc, rr: &mut Renderer| {
+            let _ = rr.draw_world_doc_with_hud(doc, &hud);
+            let _ = rr.read_rgba();
+            let t0 = std::time::Instant::now();
+            for _ in 0..4 {
+                rr.draw_world_doc_with_hud(doc, &hud).unwrap();
+                let _ = rr.read_rgba();
+            }
+            eprintln!(
+                "{label:<22} {:7.1} ms/frame",
+                t0.elapsed().as_secs_f64() * 250.0
+            );
+        };
+        run("base", &base, &mut r);
+        let mut d = base.clone();
+        d.bloom = Some(0.0);
+        run("no bloom", &d, &mut r);
+        let mut d = base.clone();
+        d.lut = None;
+        run("no lut", &d, &mut r);
+        let mut d = base.clone();
+        d.fxaa = Some(false);
+        run("no fxaa", &d, &mut r);
+        let mut d = base.clone();
+        d.bloom = Some(0.0);
+        d.lut = None;
+        d.fxaa = Some(false);
+        d.vignette = Some(0.0);
+        run("no post at all", &d, &mut r);
+        let mut d = base.clone();
+        d.env_map = None;
+        d.ibl = Some(0.0);
+        run("no env/ibl", &d, &mut r);
+        let mut d = base.clone();
+        d.lights.truncate(1);
+        run("one light", &d, &mut r);
+        let mut d = base.clone();
+        d.points.clear();
+        d.lines.clear();
+        run("no points/lines", &d, &mut r);
+        for prefix in [
+            "pick", "foe", "gem", "wall", "column", "decor", "shot", "hero", "floor", "ring",
+            "loot", "blade", "chest",
+        ] {
+            let mut d = base.clone();
+            let mut n = 0;
+            for p in d
+                .props
+                .iter_mut()
+                .filter(|p| p.name.starts_with(prefix) || p.id.starts_with(prefix))
+            {
+                if p.enabled {
+                    n += 1;
+                }
+                p.enabled = false;
+            }
+            if n > 0 {
+                run(&format!("no {prefix} ({n})"), &d, &mut r);
+            }
+        }
+        let mut d = base.clone();
+        for p in d.props.iter_mut() {
+            p.enabled = false;
+        }
+        run("no props", &d, &mut r);
+        for (sw, sh) in [(585u32, 1266u32), (780, 1688), (294, 633)] {
+            if let Ok(mut r2) = pollster::block_on(Renderer::new_offscreen(sw, sh)) {
+                run(&format!("base @{sw}x{sh}"), &base, &mut r2);
+            }
+        }
+    }
+
+    #[test]
+    fn the_blaster_is_held_only_with_a_gun_weapon_and_petals_have_no_barrel_streak() {
+        let gun = |g: &SurvivorArena| {
+            g.doc
+                .props
+                .iter()
+                .find(|p| p.name == "gun")
+                .map(|p| p.enabled)
+        };
+        for (start, held) in [
+            ("bolt", true),
+            ("petals", true),
+            ("wisps", true),
+            ("blades", false),
+            ("zap", false),
+            ("pulse", false),
+        ] {
+            let mut g = quiet(start);
+            g.build_doc();
+            g.tick(DT);
+            if gun(&g).is_none() {
+                return; // the model is not in this build: nothing to check
+            }
+            assert_eq!(gun(&g), Some(held), "{start}");
+        }
+        let mut g = quiet("petals");
+        g.build_doc();
+        g.shots.push(Shot {
+            x: g.hx + 3.0,
+            z: g.hz,
+            vx: 15.0,
+            vz: 0.0,
+            life: 1.0,
+            dmg: 1.0,
+            pierce: 0,
+            r: 0.2,
+            hits: [0; 4],
+            n: 0,
+            kind: 1,
+            w: 0,
+            area: 0.0,
+        });
+        g.build_doc();
+        assert!(g.doc.lines[0].points.is_empty(), "a petal leaves no streak");
+    }
+
+    #[test]
+    fn graphics_hints_thin_the_picture_and_never_touch_the_sim() {
+        use crate::kit_host::KitHost;
+        let play = |atmo: f32, particles: f32| {
+            let mut g = fresh();
+            g.apply_quality();
+            g.build_doc();
+            g.confirm();
+            KitHost::quality_hints(&mut g, atmo, particles);
+            let mut fx_seen = 0usize;
+            for _ in 0..60 * 40 {
+                if g.card_count() > 0 {
+                    g.choose(0);
+                }
+                kite_step(&mut g);
+                g.tick(DT);
+                fx_seen = fx_seen.max(g.fx.len());
+            }
+            let decor = g
+                .doc
+                .props
+                .iter()
+                .filter(|p| p.name == "decor" && p.enabled)
+                .count();
+            (g.state_json(), decor, fx_seen)
+        };
+        assert!(KitHost::supports_quality_tiers(&fresh()));
+        let (full, decor_full, fx_full) = play(1.0, 1.0);
+        let (thin, decor_thin, fx_thin) = play(0.3, 0.4);
+        assert_eq!(full, thin, "tiers are picture only: same run, same state");
+        assert!(decor_full > 10 && decor_thin < decor_full * 4 / 10 + 2);
+        assert!(decor_thin > 0, "a thin ring, not an empty one");
+        assert!(fx_thin < fx_full, "fewer sparks ({fx_thin} vs {fx_full})");
+    }
+
+    /// Close-ups of the hero for each starting weapon, to see what it holds.
+    /// `KAGRA_CLOSEUP_DIR=/tmp/x cargo test --release -p kagra-shared --features render --lib closeup_probe -- --ignored --nocapture`
+    #[cfg(feature = "render")]
+    #[test]
+    #[ignore = "writes PNGs for a human to look at"]
+    fn closeup_probe() {
+        use crate::render::Renderer;
+        let dir = std::env::var("KAGRA_CLOSEUP_DIR").unwrap_or_else(|_| "/tmp/closeup".into());
+        std::fs::create_dir_all(&dir).unwrap();
+        let Ok(mut r) = pollster::block_on(Renderer::new_offscreen(390, 520)) else {
+            eprintln!("no adapter");
+            return;
+        };
+        for start in ["bolt", "petals", "blades", "wisps", "zap", "pulse"] {
+            let mut g = quiet(start);
+            g.apply_quality();
+            g.build_doc();
+            g.confirm();
+            for _ in 0..90 {
+                g.tick(DT);
+            }
+            let mut d = g.doc.clone();
+            let (hx, hz) = (g.hx, g.hz);
+            let near = std::env::var("KAGRA_CLOSEUP_NEAR").is_ok();
+            d.cameras[0].position = if near {
+                [hx + 1.6, 1.8, hz + 2.0]
+            } else {
+                [hx, 5.5, hz + 4.0]
+            };
+            d.cameras[0].target = [hx, if near { 0.9 } else { 0.4 }, hz];
+            d.cameras[0].fov = if near { 40.0 } else { 45.0 };
+            let _ = r.draw_world_doc_with_hud(&d, &crate::scene::DrawList::default());
+            let px = r.read_rgba().unwrap();
+            let mut out = b"P6\n390 520\n255\n".to_vec();
+            for c in px.chunks(4) {
+                out.extend_from_slice(&c[..3]);
+            }
+            std::fs::write(format!("{dir}/{start}.ppm"), out).unwrap();
+            let on: Vec<_> = d
+                .props
+                .iter()
+                .filter(|p| p.enabled && (p.name == "gun" || p.name == "blade" || p.name == "hero"))
+                .map(|p| (p.id.clone(), p.name.clone()))
+                .collect();
+            eprintln!("{start}: {on:?}");
+        }
+    }
+
+    /// `cargo test --release -p kagra-shared --features render --lib lod_look_probe -- --ignored --nocapture`
+    /// writes the same crowd close up with full detail and thinned (`/tmp/closeup/lod-*.ppm`).
+    #[cfg(feature = "render")]
+    #[test]
+    #[ignore = "writes PNGs for a human to look at"]
+    fn lod_look_probe() {
+        use crate::render::Renderer;
+        let Ok(mut r) = pollster::block_on(Renderer::new_offscreen(640, 400)) else {
+            eprintln!("no adapter");
+            return;
+        };
+        std::fs::create_dir_all("/tmp/closeup").unwrap();
+        for (name, keep) in [("full", 1.0f32), ("mid", 0.65), ("low", 0.5)] {
+            let mut spec = SurvivorSpec::default();
+            spec.fx.foe_detail = [keep; 3];
+            spec.hero.max_hp = 1.0e9;
+            let mut g = SurvivorArena::new(spec);
+            g.apply_quality();
+            g.build_doc();
+            g.confirm();
+            while g.secs() < 80.0 {
+                if g.card_count() > 0 {
+                    g.choose(0);
+                }
+                kite_step(&mut g);
+                g.tick(DT);
+            }
+            pile_crowd(&mut g, 14);
+            for _ in 0..3 {
+                g.tick(DT);
+            }
+            g.build_doc();
+            let mut d = g.doc.clone();
+            let (hx, hz) = (g.hx, g.hz);
+            d.cameras[0].position = [hx, 6.0, hz + 5.0];
+            d.cameras[0].target = [hx, 0.4, hz];
+            d.cameras[0].fov = 45.0;
+            let _ = r.draw_world_doc_with_hud(&d, &crate::scene::DrawList::default());
+            let px = r.read_rgba().unwrap();
+            let mut out = b"P6\n640 400\n255\n".to_vec();
+            for c in px.chunks(4) {
+                out.extend_from_slice(&c[..3]);
+            }
+            std::fs::write(format!("/tmp/closeup/lod-{name}.ppm"), out).unwrap();
+        }
+    }
+
+    #[test]
+    fn crowd_kills_melt_gems_and_repeat_hits_count_up_one_number() {
+        let mut g = quiet("bolt");
+        g.gems.clear();
+        let (hx, hz) = (g.hx + 6.0, g.hz);
+        g.gems.push(Gem {
+            x: hx,
+            z: hz,
+            v: 2.0,
+            fly: false,
+        });
+        let j = g.foes.len();
+        assert!(g.add_foe(0, (hx, hz), 0.0));
+        g.tick(DT);
+        assert_eq!(g.foes.len(), j, "the foe died");
+        let near: Vec<_> = g.gems.iter().filter(|m| (m.x - hx).abs() < 1.0).collect();
+        assert_eq!(near.len(), 1, "the new gem melted into the resting one");
+        assert!(near[0].v >= 3.0, "worth the sum: {}", near[0].v);
+        // A gem that is already flying to the hero is not a merge target.
+        g.gems.clear();
+        g.gems.push(Gem {
+            x: hx,
+            z: hz,
+            v: 2.0,
+            fly: true,
+        });
+        assert!(g.add_foe(0, (hx, hz), 0.0));
+        g.tick(DT);
+        assert!(g.gems.len() >= 2 || g.gems.iter().all(|m| m.fly));
+
+        let mut g = quiet("bolt");
+        g.dmg.clear();
+        assert!(g.add_foe(0, (g.hx + 6.0, g.hz), 1.0e6));
+        let j = g.foes.len() - 1;
+        g.damage_foe(j, 5.0, (0.0, 0.0), 0.0, false);
+        g.damage_foe(j, 7.0, (0.0, 0.0), 0.0, false);
+        assert_eq!(g.dmg.len(), 1, "one number");
+        assert_eq!(g.dmg[0].val, 12);
+    }
+
+    #[test]
+    fn the_fixed_stick_is_analog_has_a_dead_zone_and_leaves_the_other_thumb_free() {
+        let (w, h) = (390u32, 844u32);
+        let at = |g: &mut SurvivorArena, id, x, y, phase| {
+            g.touch_ev(
+                PointerEvent {
+                    id,
+                    x,
+                    y,
+                    phase,
+                    pressure: 1.0,
+                },
+                w,
+                h,
+            )
+        };
+        let run = |dx: f32, dy: f32| -> (f32, f32) {
+            let mut g = started();
+            g.foes.clear();
+            g.budget = Default::default();
+            g.spec.director.start_rate = 0.0;
+            g.spec.director.end_rate = 0.0;
+            g.hud(w, h, false);
+            let (cx, cy) = g.stick_center(w as f32, h as f32);
+            let r = g.stick_radius(w as f32, h as f32);
+            // Land anywhere in the thumb zone; the push is measured from the base.
+            // Land inside the zone, then slide to the target: dragging past the rim is fine.
+            at(&mut g, 1, cx, cy, PointerPhase::Begin);
+            at(&mut g, 1, cx + dx * r, cy + dy * r, PointerPhase::Move);
+            let p0 = g.hero();
+            for _ in 0..60 {
+                g.tick(DT);
+            }
+            let p1 = g.hero();
+            (p1.0 - p0.0, p1.1 - p0.1)
+        };
+        let still = run(0.05, 0.0);
+        assert!(still.0.hypot(still.1) < 0.05, "dead zone: {still:?}");
+        let half = run(0.55, 0.0);
+        let full = run(1.0, 0.0);
+        assert!(
+            half.0 > 0.5 && full.0 > half.0 * 1.4,
+            "analog: {half:?} {full:?}"
+        );
+        assert!(full.1.abs() < 0.2, "straight right");
+        let up = run(0.0, -1.0);
+        assert!(up.1 < -1.0, "up the screen is -z: {up:?}");
+        let beyond = run(3.0, 0.0);
+        assert!(
+            (beyond.0 - full.0).abs() < 0.3,
+            "the rim clamps: {beyond:?} vs {full:?}"
+        );
+
+        // The stick finger never taps; a finger outside the zone does, with the stick held.
+        let (mut g, _, far) = two_foes();
+        g.hud(w, h, false);
+        let (cx, cy) = g.stick_center(w as f32, h as f32);
+        at(&mut g, 1, cx, cy, PointerPhase::Begin);
+        at(&mut g, 1, cx, cy, PointerPhase::End);
+        assert_eq!(g.locked(), None, "a stick tap is not a foe tap");
+        at(&mut g, 1, cx + 5.0, cy, PointerPhase::Begin);
+        let (x, y) = on_screen(&g, far);
+        at(&mut g, 2, x, y, PointerPhase::Begin);
+        at(&mut g, 2, x, y, PointerPhase::End);
+        assert_eq!(g.locked(), Some(far), "the other thumb locks it");
+        assert!(g.finger.is_some(), "the stick thumb still steers");
+        // The base is drawn under the thumb, smooth (one-pixel rows), and follows past the rim.
+        let l = g.hud(w, h, false);
+        let (bx, by) = g.origin;
+        assert!(l.quads.iter().any(|q| q.h <= 1.0 && q.contains(bx, by)));
+        let r = g.stick_radius(w as f32, h as f32);
+        at(&mut g, 1, bx + 3.0 * r, by, PointerPhase::Move);
+        assert!(
+            (g.origin.0 - (bx + 2.0 * r)).abs() < 0.5,
+            "the base follows: {:?}",
+            g.origin
+        );
+    }
+
     fn ev(phase: PointerPhase, x: f32, y: f32) -> PointerEvent {
         PointerEvent {
             id: 1,
@@ -3896,6 +6177,26 @@ mod tests {
         let mut bad = SurvivorSpec::default();
         let step = bad.weapons[0].levels[0].clone();
         bad.weapons[0].levels = vec![step; 10];
+        assert!(bad.validate().is_err());
+    }
+
+    #[test]
+    fn arena_dark_dims_the_night_and_zero_keeps_the_old_look() {
+        let doc_at = |dark: f32| {
+            let mut spec = SurvivorSpec::default();
+            spec.arena.dark = dark;
+            let mut g = SurvivorArena::new(spec);
+            g.build_doc();
+            g.doc.clone()
+        };
+        let (old, night) = (doc_at(0.0), doc_at(1.0));
+        assert_eq!(old.exposure, Some(1.0));
+        assert!(night.exposure.unwrap() < 0.9);
+        assert!(night.lights[0].radius < old.lights[0].radius);
+        let floor = |d: &WorldDoc| d.props.iter().find(|p| p.name == "floor").unwrap().color;
+        assert!(floor(&night).unwrap()[0] < floor(&old).unwrap()[0]);
+        let mut bad = SurvivorSpec::default();
+        bad.arena.dark = 1.5;
         assert!(bad.validate().is_err());
     }
 
@@ -4120,6 +6421,7 @@ mod tests {
     #[test]
     fn a_quick_tap_of_the_lone_finger_also_locks() {
         let (mut g, _, far) = two_foes();
+        g.spec.input.move_scheme = "drag".into();
         let (x, y) = on_screen(&g, far);
         finger(&mut g, 1, x, y, PointerPhase::Begin);
         g.tick(DT);
@@ -4201,7 +6503,15 @@ mod tests {
         g.build_doc();
         let ring = g.doc.lines.iter().find(|l| l.id == "lock-ring").unwrap();
         assert_eq!(ring.points.len(), LOCK_SEG + 1);
-        assert!(g.doc.lines.len() == g.spec.caps.shots as usize + 2);
+        assert!(
+            g.doc.lines.len()
+                == g.spec.caps.shots as usize
+                    + 2
+                    + g.spec.drops.cap as usize
+                    + ZAP_CAP
+                    + RING_CAP
+                    + 2
+        );
         g.tick(DT);
         assert!(g.hud(390, 844, false).texts.iter().any(|t| t.text == "▼"));
     }
@@ -4359,6 +6669,7 @@ mod tests {
         let mut g = started();
         let (fx, fc) = (g.foes().x.as_ptr(), g.foes().cap());
         let (sp, gp) = (g.shots.as_ptr(), g.gems.as_ptr());
+        let (pk, ob, sc) = (g.pickups.as_ptr(), g.orbs.as_ptr(), g.scratch.as_ptr());
         let mut most = 0;
         kite_each(&mut g, 100.0, |g| {
             most = most.max(g.foes().len());
@@ -4370,6 +6681,9 @@ mod tests {
         assert_eq!(fx, g.foes().x.as_ptr());
         assert_eq!(sp, g.shots.as_ptr());
         assert_eq!(gp, g.gems.as_ptr());
+        assert_eq!(pk, g.pickups.as_ptr());
+        assert_eq!(ob, g.orbs.as_ptr());
+        assert_eq!(sc, g.scratch.as_ptr());
         assert_eq!(g.document().props.len(), g.doc.props.len());
     }
 
@@ -4394,6 +6708,7 @@ mod tests {
     #[test]
     fn a_finger_drags_the_hero_toward_it() {
         let mut g = started();
+        g.spec.input.move_scheme = "drag".into();
         let (w, h) = (800u32, 450u32);
         g.hud(w, h, false);
         let p0 = g.hero();
@@ -4490,8 +6805,9 @@ mod tests {
         s.push_pointer(ev(PointerPhase::End, 400.0, 225.0));
         s.request_frame();
         assert_eq!(s.survivor_mut().unwrap().phase_name(), "play");
-        // Hold a finger to the right: the hero follows over some frames.
-        s.push_pointer(ev(PointerPhase::Begin, 700.0, 225.0));
+        // Land a thumb, slide it to the right and hold: the hero follows over some frames.
+        s.push_pointer(ev(PointerPhase::Begin, 200.0, 340.0));
+        s.push_pointer(ev(PointerPhase::Move, 320.0, 340.0));
         for _ in 0..90 {
             s.request_frame();
         }
