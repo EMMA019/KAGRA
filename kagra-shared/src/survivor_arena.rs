@@ -20,6 +20,7 @@ use crate::game_core::enemies::{weighted_pick, EnemySpec};
 use crate::game_core::motion::{self, Motion};
 use crate::game_core::stick;
 use crate::game_core::swarm::{Budget, Foes, Grid, Rng};
+use crate::game_core::view::View;
 use crate::game_core::{tick_frame, Core, Kit};
 use crate::hop_beat::{glb_prop, glb_ready, light, prop};
 use crate::input::{PointerEvent, PointerPhase};
@@ -957,44 +958,15 @@ impl SurvivorArena {
 
     /// A world point on the canvas (pixels), or `None` behind the camera.
     fn project(&self, p: [f32; 3], w: f32, h: f32) -> Option<(f32, f32)> {
-        let aspect = w / h.max(1.0);
-        let (eye, target, fov) = self.camera(aspect);
-        let f = norm3([target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]]);
-        let r = norm3(cross(f, [0.0, 1.0, 0.0]));
-        let u = cross(r, f);
-        let v = [p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]];
-        let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-        let cz = dot(v, f);
-        if cz < 0.1 {
-            return None;
-        }
-        let t = (fov.to_radians() * 0.5).tan();
-        let nx = dot(v, r) / (cz * t * aspect.max(0.2));
-        let ny = dot(v, u) / (cz * t);
-        Some(((nx * 0.5 + 0.5) * w, (0.5 - ny * 0.5) * h))
+        let (eye, target, fov) = self.camera(w / h.max(1.0));
+        View { eye, target, fov }.project(p, w, h)
     }
 
     /// The ground point under a canvas pixel, or `None` for a sky ray.
     fn ground_at(&self, px: f32, py: f32) -> Option<(f32, f32)> {
         let (w, h) = self.size.get();
-        let aspect = w / h.max(1.0);
-        let (eye, target, fov) = self.camera(aspect);
-        let f = norm3([target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]]);
-        let right = norm3(cross(f, [0.0, 1.0, 0.0]));
-        let up = cross(right, f);
-        let ty = (fov.to_radians() * 0.5).tan();
-        let nx = (2.0 * px / w - 1.0) * ty * aspect;
-        let ny = (1.0 - 2.0 * py / h) * ty;
-        let d = [
-            f[0] + right[0] * nx + up[0] * ny,
-            f[1] + right[1] * nx + up[1] * ny,
-            f[2] + right[2] * nx + up[2] * ny,
-        ];
-        if d[1] > -0.02 {
-            return None;
-        }
-        let t = -eye[1] / d[1];
-        Some((eye[0] + d[0] * t, eye[2] + d[2] * t))
+        let (eye, target, fov) = self.camera(w / h.max(1.0));
+        View { eye, target, fov }.ground_at(px, py, w, h, 0.0)
     }
 
     fn move_hero(&mut self, dt: f32) {
@@ -1832,19 +1804,6 @@ impl SurvivorArena {
     pub fn hp_max(&self) -> f32 {
         self.mods.hp_max
     }
-}
-
-fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
-}
-
-fn norm3(a: [f32; 3]) -> [f32; 3] {
-    let l = (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt().max(1e-6);
-    [a[0] / l, a[1] / l, a[2] / l]
 }
 
 // ------------------------------------------------------------ layout -----

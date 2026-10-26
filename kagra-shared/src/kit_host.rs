@@ -91,6 +91,11 @@ pub const KITS: &[(Detect, Load)] = &[
     (crate::starter::is_starter_dump, |json| {
         Ok(Box::new(crate::starter::Starter::from_json(json)?))
     }),
+    (crate::lantern_watch::is_lantern_watch_dump, |json| {
+        Ok(Box::new(crate::lantern_watch::LanternWatch::from_json(
+            json,
+        )?))
+    }),
     // new_kit.py adds kits above this line.
 ];
 
