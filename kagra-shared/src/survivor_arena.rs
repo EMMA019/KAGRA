@@ -21,7 +21,7 @@ use crate::game_core::swarm::{Budget, Foes, Grid, Rng};
 use crate::game_core::{tick_frame, Core, Kit};
 use crate::hop_beat::{glb_prop, glb_ready, light, prop};
 use crate::input::{PointerEvent, PointerPhase};
-use crate::scene::{DrawList, Quad, TextAlign, TextQuad};
+use crate::scene::{DrawList, Quad, TextAlign, TextFace, TextQuad};
 use crate::survivor_content::{
     default_enemies, default_foes, default_synergies, default_weapons, DropSpec, FoeAi, FoeSpec,
     PickupKind, SynergySpec,
@@ -30,6 +30,8 @@ use crate::world_doc::{WorldCamera, WorldDoc};
 
 mod hud_extra;
 mod loot;
+mod motion;
+mod stick;
 mod view;
 mod weapons;
 
@@ -81,6 +83,9 @@ pub struct ArenaSpec {
     pub half: f32,
     pub floor: [u32; 3],
     pub wall: [u32; 3],
+    /// How dark the night is: 0 = the old blue-lit arena, 1 = dim moonlight (darker floor,
+    /// walls and fill, a tighter key light, closer fog) where the pale foes glow out of it.
+    pub dark: f32,
 }
 
 impl Default for ArenaSpec {
@@ -89,6 +94,7 @@ impl Default for ArenaSpec {
             half: 13.0,
             floor: [34, 46, 66],
             wall: [84, 70, 128],
+            dark: 1.0,
         }
     }
 }
@@ -328,6 +334,9 @@ pub struct FxSpec {
     /// tiers (vertex clustering at load; 1 = full detail). A crowd of small figures does not
     /// need a thousand triangles each.
     pub foe_detail: [f32; 3],
+    /// Body motion of the foes (bob, squash, sway, lean, a flinch on a hit), each model its own
+    /// way and each foe its own phase: 0 = still figures, 1 = as tuned, up to 2. Picture only.
+    pub foe_motion: f32,
 }
 
 impl Default for FxSpec {
@@ -342,6 +351,7 @@ impl Default for FxSpec {
             high_post: true,
             cap: [48, 160, 480],
             foe_detail: [0.5, 0.65, 1.0],
+            foe_motion: 1.0,
         }
     }
 }
@@ -660,6 +670,7 @@ impl SurvivorSpec {
         for (i, d) in self.fx.foe_detail.iter().enumerate() {
             range(w, &format!("fx.foe_detail[{i}]"), *d, 0.2, 1.0)?;
         }
+        range(w, "fx.foe_motion", self.fx.foe_motion, 0.0, 2.0)?;
         range(
             w,
             "director.elite_fight_secs",
@@ -788,6 +799,7 @@ impl SurvivorSpec {
     pub fn validate(&self) -> Result<(), String> {
         let w = "survivor spec";
         range(w, "arena.half", self.arena.half, 6.0, 40.0)?;
+        range(w, "arena.dark", self.arena.dark, 0.0, 1.0)?;
         range(w, "hero.speed", self.hero.speed, 1.0, 12.0)?;
         range(w, "hero.max_hp", self.hero.max_hp, 1.0, 10_000.0)?;
         range(w, "hero.radius", self.hero.radius, 0.1, 1.0)?;
@@ -2719,12 +2731,16 @@ impl SurvivorArena {
         match ev.phase {
             PointerPhase::Begin if live && self.stick_mode() => {
                 let (w, h) = self.size.get();
-                let (cx, cy) = self.stick_center(w, h);
                 if self.finger_id.is_none() && self.in_stick_zone(ev.x, ev.y, w, h) {
-                    // The stick thumb: relative to the fixed base, never a tap.
+                    // The stick thumb: the base appears where it lands (kept on screen), never a tap.
+                    let r = self.stick_radius(w, h);
+                    let m = 4.0 * hud_scale(w, h);
                     self.finger_id = Some(ev.id);
                     self.finger = Some((ev.x, ev.y));
-                    self.origin = (cx, cy);
+                    self.origin = (
+                        ev.x.clamp(r + m, (w - r - m).max(r + m)),
+                        ev.y.clamp(r + m, (h - r - m).max(r + m)),
+                    );
                 } else if self.finger_id != Some(ev.id) {
                     // The other thumb: a tap picks the target.
                     self.tap_select(ev.x, ev.y);
@@ -2744,6 +2760,17 @@ impl SurvivorArena {
             PointerPhase::Move => {
                 if self.finger_id == Some(ev.id) && !self.mute_finger {
                     self.finger = Some((ev.x, ev.y));
+                    if self.stick_mode() {
+                        // Past the rim the base follows the thumb, so turning back is instant.
+                        let (w, h) = self.size.get();
+                        let r = self.stick_radius(w, h);
+                        let (dx, dy) = (ev.x - self.origin.0, ev.y - self.origin.1);
+                        let d = dx.hypot(dy);
+                        if d > r {
+                            let k = (d - r) / d;
+                            self.origin = (self.origin.0 + dx * k, self.origin.1 + dy * k);
+                        }
+                    }
                 }
             }
             PointerPhase::End | PointerPhase::Cancel if self.finger_id == Some(ev.id) => {
@@ -2768,12 +2795,13 @@ impl SurvivorArena {
         self.spec.input.move_scheme == "stick"
     }
 
-    /// Stick radius in pixels (a little bigger than the floating one: it is a fixed target).
+    /// Stick radius in pixels.
     fn stick_radius(&self, w: f32, h: f32) -> f32 {
         self.spec.input.stick_px * hud_scale(w, h) * 1.25
     }
 
-    /// The fixed stick's centre: bottom-left, clear of the screen edge and the home bar.
+    /// Where the resting stick hint sits: bottom-left, clear of the screen edge and the home bar.
+    /// A thumb anywhere in the zone gets its own base.
     fn stick_center(&self, w: f32, h: f32) -> (f32, f32) {
         let r = self.stick_radius(w, h);
         (
@@ -3141,6 +3169,45 @@ fn props_has_model(p: &crate::WorldProp) -> bool {
 }
 
 impl SurvivorArena {
+    /// `arena.dark`: from the blue-lit arena toward dim moonlight. Fill, sky, fog and the key
+    /// light ease toward the night values; the floor and the walls lose some light.
+    fn darken(&self, doc: &mut WorldDoc) {
+        let k = self.spec.arena.dark.clamp(0.0, 1.0);
+        if k <= 0.0 {
+            return;
+        }
+        let mix = |a: f32, b: f32| a + (b - a) * k;
+        let mix3 = |a: [f32; 3], b: [f32; 3]| [mix(a[0], b[0]), mix(a[1], b[1]), mix(a[2], b[2])];
+        doc.exposure = doc.exposure.map(|e| mix(e, 0.85));
+        doc.hemi_sky = doc.hemi_sky.map(|c| mix3(c, [0.14, 0.16, 0.30]));
+        doc.hemi_ground = doc.hemi_ground.map(|c| mix3(c, [0.08, 0.07, 0.12]));
+        doc.ibl = doc.ibl.map(|v| mix(v, 0.15));
+        doc.sky = doc.sky.map(|c| {
+            let m = mix3([c[0] as f32, c[1] as f32, c[2] as f32], [5.0, 7.0, 18.0]);
+            [m[0] as u8, m[1] as u8, m[2] as u8, c[3]]
+        });
+        doc.vignette = doc.vignette.map(|v| mix(v, 0.5));
+        doc.fog_start = doc.fog_start.map(|v| mix(v, 20.0));
+        doc.fog_end = doc.fog_end.map(|v| mix(v, 48.0));
+        if let Some(key) = doc.lights.get_mut(0) {
+            key.radius = mix(key.radius, 12.0);
+            key.intensity = mix(key.intensity, 1.5);
+            key.color = key.color.map(|c| mix3(c, [0.70, 0.78, 1.0]));
+        }
+        if let Some(lantern) = doc.lights.get_mut(1) {
+            lantern.radius = mix(lantern.radius, 6.0);
+            lantern.intensity = mix(lantern.intensity, 2.2);
+        }
+        let dim = |c: [u32; 3], f: f32| c.map(|v| (v as f32 * mix(1.0, f)) as u32);
+        for p in doc.props.iter_mut() {
+            match p.name.as_str() {
+                "floor" => p.color = p.color.map(|c| dim(c, 0.6)),
+                "wall" => p.color = p.color.map(|c| dim(c, 0.62)),
+                _ => {}
+            }
+        }
+    }
+
     /// Build the persistent prop list once: scenery, then the pools (hero, foes,
     /// gems, shots). After this a frame only edits fields in place.
     fn init_doc(&mut self) {
@@ -3737,6 +3804,7 @@ impl SurvivorArena {
         self.slots.ln_orbit = doc.lines.len();
         doc.lines
             .push(line("orbit".into(), RING_SEG + 1, [150, 220, 255, 50], 3.0));
+        self.darken(&mut doc);
         self.doc = doc;
         self.apply_hints();
     }
@@ -3856,21 +3924,34 @@ impl SurvivorArena {
             let p = &mut props[idx];
             let age = self.foes.age[i];
             let pop = (age / 0.25).min(1.0);
-            let wob = (age * 9.0 + self.foes.uid[i] as f32).sin();
             let mk = if slots.glb_foe { FOE_MODEL_K } else { 2.2 };
             let d = k.radius * k.scale * mk * (0.4 + 0.6 * pop);
-            let (sx, sy) = (1.0 - 0.07 * wob, 1.0 + 0.1 * wob);
+            let (phase, tempo) = motion::phase_tempo(self.foes.uid[i]);
+            let pose = motion::pose(
+                motion::POOL_MOTION[m],
+                self.anim_t,
+                phase,
+                tempo,
+                self.spec.fx.foe_motion,
+                self.foes.flash[i],
+            );
             let (x, z) = (self.foes.x[i], self.foes.z[i]);
             p.enabled = true;
-            // The ghost floats a little; the others shamble on the ground.
+            // The ghost and the vampire float a little; the others walk on the ground.
             let float = if slots.glb_foe && (m == 0 || k.model == 3) {
-                0.12 + 0.06 * wob
+                0.12
             } else {
                 0.0
             };
-            p.position = [x, if slots.glb_foe { float } else { d * 0.4 }, z];
+            let rest = if slots.glb_foe { float } else { d * 0.4 };
+            p.position = [x, rest + pose.lift * d.min(1.5), z];
             p.yaw = (hx - x).atan2(hz - z);
-            p.scale = [d * sx, d * sy, d * sx];
+            if slots.glb_foe {
+                // A prop's +pitch lifts its nose (YXZ, front +Z toward the hero): lean is minus.
+                p.pitch = -pose.pitch;
+                p.roll = pose.roll;
+            }
+            p.scale = [d * pose.wide, d * pose.tall, d * pose.wide];
             let fl = self.foes.flash[i] * 10.0;
             let glow = if k.elite {
                 0.35 + 0.25 * (self.anim_t * 4.0).sin()
@@ -4188,6 +4269,15 @@ impl SurvivorArena {
                 list.texts
                     .push(TextQuad::new(t, x, y, size * s, c).aligned(a));
             };
+        // Numbers (the clock, damage) in the display face.
+        let num =
+            |list: &mut DrawList, t: &str, x: f32, y: f32, size: f32, c: [u8; 4], a: TextAlign| {
+                list.texts.push(
+                    TextQuad::new(t, x, y, size * s, c)
+                        .aligned(a)
+                        .with_face(TextFace::Display),
+                );
+            };
         // Hurt vignette.
         if self.hurt_flash > 0.0 {
             list.quads.push(Quad::new(
@@ -4335,7 +4425,7 @@ impl SurvivorArena {
                 255,
             ]
         };
-        text(
+        num(
             &mut list,
             &format!("{}:{:02}", left / 60, left % 60),
             w * 0.5,
@@ -4354,7 +4444,7 @@ impl SurvivorArena {
                 let a = ((1.0 - t * t) * 255.0) as u8;
                 let pop = 1.0 + 0.6 * (1.0 - (d.age * 9.0).min(1.0));
                 let label = format!("{}", d.val);
-                text(
+                num(
                     &mut list,
                     &label,
                     sx + 1.5 * s,
@@ -4363,7 +4453,7 @@ impl SurvivorArena {
                     [10, 10, 30, a / 2],
                     TextAlign::Center,
                 );
-                text(
+                num(
                     &mut list,
                     &label,
                     sx,
@@ -4408,50 +4498,29 @@ impl SurvivorArena {
             }
         }
         if self.stick_mode() && self.flow.phase == FlowPhase::Play && self.cards.is_empty() {
-            // The fixed stick: a translucent base and a knob that follows the thumb.
-            let (cx, cy) = self.stick_center(w, h);
+            // The thumb stick: a resting hint where a thumb lands, or the base where it landed,
+            // a knob under the thumb and a jelly neck between them.
             let rad = self.stick_radius(w, h);
-            let (kx, ky) = match self.finger {
+            match self.finger {
                 Some((fx, fy)) => {
+                    let (cx, cy) = self.origin;
                     let (dx, dy) = (fx - cx, fy - cy);
                     let d = dx.hypot(dy).max(1e-3);
                     let k = d.min(rad) / d;
-                    (cx + dx * k, cy + dy * k)
+                    stick::draw_stick(
+                        &mut list,
+                        (cx, cy),
+                        (cx + dx * k, cy + dy * k),
+                        rad,
+                        s,
+                        true,
+                    );
                 }
-                None => (cx, cy),
-            };
-            let live = self.finger.is_some();
-            let (base, rim, knob) = if live { (46, 120, 190) } else { (30, 80, 120) };
-            // A glyph's circle fills about 0.7 em, so the size is the diameter over 0.7.
-            let fs = rad * 2.0 / 0.7;
-            text(
-                &mut list,
-                "●",
-                cx,
-                cy - fs * 0.5,
-                fs,
-                [200, 220, 255, base],
-                TextAlign::Center,
-            );
-            text(
-                &mut list,
-                "○",
-                cx,
-                cy - fs * 0.5,
-                fs,
-                [235, 245, 255, rim],
-                TextAlign::Center,
-            );
-            let ks = rad * 0.9 / 0.7;
-            text(
-                &mut list,
-                "●",
-                kx,
-                ky - ks * 0.5,
-                ks,
-                [255, 255, 255, knob],
-                TextAlign::Center,
-            );
+                None => {
+                    let c = self.stick_center(w, h);
+                    stick::draw_stick(&mut list, c, c, rad, s, false);
+                }
+            }
         } else if let Some((fx, fy)) = self.finger {
             // The thumb marker: a soft round dot (a square read as a stray grey box).
             text(
@@ -6017,9 +6086,17 @@ mod tests {
         at(&mut g, 2, x, y, PointerPhase::End);
         assert_eq!(g.locked(), Some(far), "the other thumb locks it");
         assert!(g.finger.is_some(), "the stick thumb still steers");
-        // The base is on screen in play and gone behind the cards.
+        // The base is drawn under the thumb, smooth (one-pixel rows), and follows past the rim.
         let l = g.hud(w, h, false);
-        assert!(l.texts.iter().any(|t| t.text == "○"));
+        let (bx, by) = g.origin;
+        assert!(l.quads.iter().any(|q| q.h <= 1.0 && q.contains(bx, by)));
+        let r = g.stick_radius(w as f32, h as f32);
+        at(&mut g, 1, bx + 3.0 * r, by, PointerPhase::Move);
+        assert!(
+            (g.origin.0 - (bx + 2.0 * r)).abs() < 0.5,
+            "the base follows: {:?}",
+            g.origin
+        );
     }
 
     fn ev(phase: PointerPhase, x: f32, y: f32) -> PointerEvent {
@@ -6048,6 +6125,26 @@ mod tests {
         let mut bad = SurvivorSpec::default();
         let step = bad.weapons[0].levels[0].clone();
         bad.weapons[0].levels = vec![step; 10];
+        assert!(bad.validate().is_err());
+    }
+
+    #[test]
+    fn arena_dark_dims_the_night_and_zero_keeps_the_old_look() {
+        let doc_at = |dark: f32| {
+            let mut spec = SurvivorSpec::default();
+            spec.arena.dark = dark;
+            let mut g = SurvivorArena::new(spec);
+            g.build_doc();
+            g.doc.clone()
+        };
+        let (old, night) = (doc_at(0.0), doc_at(1.0));
+        assert_eq!(old.exposure, Some(1.0));
+        assert!(night.exposure.unwrap() < 0.9);
+        assert!(night.lights[0].radius < old.lights[0].radius);
+        let floor = |d: &WorldDoc| d.props.iter().find(|p| p.name == "floor").unwrap().color;
+        assert!(floor(&night).unwrap()[0] < floor(&old).unwrap()[0]);
+        let mut bad = SurvivorSpec::default();
+        bad.arena.dark = 1.5;
         assert!(bad.validate().is_err());
     }
 
@@ -6656,8 +6753,9 @@ mod tests {
         s.push_pointer(ev(PointerPhase::End, 400.0, 225.0));
         s.request_frame();
         assert_eq!(s.survivor_mut().unwrap().phase_name(), "play");
-        // Hold a finger to the right: the hero follows over some frames.
-        s.push_pointer(ev(PointerPhase::Begin, 300.0, 340.0));
+        // Land a thumb, slide it to the right and hold: the hero follows over some frames.
+        s.push_pointer(ev(PointerPhase::Begin, 200.0, 340.0));
+        s.push_pointer(ev(PointerPhase::Move, 320.0, 340.0));
         for _ in 0..90 {
             s.request_frame();
         }

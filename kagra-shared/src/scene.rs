@@ -47,6 +47,17 @@ pub struct TextQuad {
     /// RGBA（0..255）。カバレッジでアルファを掛ける。
     pub color: [u8; 4],
     pub align: TextAlign,
+    /// Which face draws it. `Ui` everywhere unless a game asks for `Display` (numbers, titles).
+    pub face: TextFace,
+}
+
+/// Text face. `Ui`: Public Sans for Latin, Zen Maru Gothic for Japanese. `Display`: Cinzel for
+/// Latin and digits (timers, damage numbers, titles), falling back to `Ui` for the rest.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum TextFace {
+    #[default]
+    Ui,
+    Display,
 }
 
 impl TextQuad {
@@ -58,11 +69,17 @@ impl TextQuad {
             size,
             color,
             align: TextAlign::Left,
+            face: TextFace::Ui,
         }
     }
 
     pub fn aligned(mut self, align: TextAlign) -> Self {
         self.align = align;
+        self
+    }
+
+    pub fn with_face(mut self, face: TextFace) -> Self {
+        self.face = face;
         self
     }
 }

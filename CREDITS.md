@@ -8,6 +8,8 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 
 | Pack | Author | License | Attribution | Where |
 |---|---|---|---|---|
+| [Cinzel Bold (wght 700 instance, Latin subset)](https://github.com/google/fonts/tree/main/ofl/cinzel) | The Cinzel Project Authors (Natanael Gama) | OFL-1.1 | required | `kagra-shared/assets/Cinzel-Bold.ttf` |
+| [Zen Maru Gothic Bold (subset)](https://github.com/google/fonts/tree/main/ofl/zenmarugothic) | The Zen Maru Gothic Project Authors (Yoshimichi Ohira) | OFL-1.1 | required | `kagra-shared/assets/ZenMaruGothic-Bold.ttf` |
 | [Public Sans Bold](https://github.com/uswds/public-sans) | USWDS / GSA; original Libre Franklin by Impallari Type | custom | required | `kagra-shared/assets/PublicSans-Bold.ttf` |
 | [PixelMplus10-Regular](http://itouhiro.hatenablog.com/entry/20130602/font) | itouhiro; M+ FONTS PROJECT | custom | required | `kagra-shared/assets/PixelMplus10-Regular.ttf` |
 | [KayKit Adventurers Character Pack 1.0](https://kaylousberg.itch.io/kaykit-adventurers) | Kay Lousberg (www.kaylousberg.com) | CC0-1.0 | not required | `assets/library/kaykit/adventurers/**` |
@@ -53,6 +55,8 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 
 ## Required attribution
 
+- Cinzel font: Copyright 2020 The Cinzel Project Authors, SIL Open Font License 1.1.
+- Zen Maru Gothic font: Copyright 2021 The Zen Maru Gothic Project Authors, SIL Open Font License 1.1.
 - Public Sans font: SIL Open Font License 1.1 (original Libre Franklin) plus CC0 modifications by the US General Services Administration.
 - PixelMplus10 font: Copyright (C) 2013 itouhiro, Copyright (C) 2002-2013 M+ FONTS PROJECT (M+ FONT LICENSE).
 - Map data: © OpenStreetMap contributors, available under the Open Database License (ODbL 1.0).
