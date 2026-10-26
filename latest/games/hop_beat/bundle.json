@@ -539,5 +539,25 @@
       "slot": "double_coins"
     }
   },
-  "build": "59d86dee79eb"
+  "page": {
+    "best": true,
+    "audio": true,
+    "lang": true,
+    "pause": true,
+    "fixed_step": true,
+    "one_button": true,
+    "music_sync": true,
+    "revive": true,
+    "direct": true,
+    "tagline": true,
+    "theme": "hop",
+    "blurb": "hop.blurb",
+    "url_params": {
+      "skin": "string",
+      "look": "string",
+      "fx_post": "bool",
+      "fx_atmo": "bool"
+    }
+  },
+  "build": "c3d7a051e498"
 }

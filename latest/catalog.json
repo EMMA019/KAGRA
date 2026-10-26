@@ -210,6 +210,17 @@
       "icon": "games/sports/icon.png"
     },
     {
+      "slug": "starter",
+      "title": "Starter",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "starter",
+      "entry": "examples/starter_minimal.py",
+      "world": "kagra-shared/tests/fixtures/starter_world.json",
+      "href": "play.html?game=starter",
+      "icon": "games/starter/icon.png"
+    },
+    {
       "slug": "stealth",
       "title": "Stealth",
       "version": "0.1.0",

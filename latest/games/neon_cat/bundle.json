@@ -385,5 +385,21 @@
       "min_interval_secs": 90
     }
   },
-  "build": "59d86dee79eb"
+  "page": {
+    "best": true,
+    "audio": true,
+    "default_quality": "mobile",
+    "url_params": {
+      "fx": [
+        "low",
+        "mid",
+        "high"
+      ],
+      "cam": [
+        "classic",
+        "chase"
+      ]
+    }
+  },
+  "build": "c3d7a051e498"
 }

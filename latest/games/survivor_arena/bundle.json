@@ -600,5 +600,18 @@
       "slot": "double_coins"
     }
   },
-  "build": "59d86dee79eb"
+  "page": {
+    "best": true,
+    "audio": true,
+    "lang": true,
+    "pause": true,
+    "fixed_step": true,
+    "blurb": "sv.blurb",
+    "quality_words": {
+      "safe": "low",
+      "mid": "mobile",
+      "max": "high"
+    }
+  },
+  "build": "c3d7a051e498"
 }
