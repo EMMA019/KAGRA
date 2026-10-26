@@ -8,6 +8,9 @@ use super::*;
 const TAKE_R: f32 = 0.55;
 /// Chests lie around this many times longer than other pickups.
 const CHEST_LIFE_MUL: f32 = 4.0;
+/// A chest is pulled in from this far (m) and opens from this many times the usual reach.
+const CHEST_PULL_M: f32 = 7.0;
+const CHEST_TAKE_MUL: f32 = 2.4;
 /// XP a swap-and-keep or a maxed-out weapon pickup gives (before Growth).
 const SPARE_XP: f32 = 4.0;
 
@@ -88,7 +91,10 @@ impl SurvivorArena {
             }
             let (dx, dz) = (self.hx - p.x, self.hz - p.z);
             let dist = dx.hypot(dz);
-            if dist < pull || self.pull_all_t > 0.0 {
+            let chest = p.item == CHEST;
+            // A chest is the prize of a hard fight: it always drifts to the hero from a good
+            // way off, whatever the magnet level.
+            if dist < pull || self.pull_all_t > 0.0 || (chest && dist < CHEST_PULL_M) {
                 p.fly = true;
             }
             if p.fly {
@@ -97,7 +103,7 @@ impl SurvivorArena {
                 p.x += dx * k;
                 p.z += dz * k;
             }
-            if dist < take {
+            if dist < if chest { take * CHEST_TAKE_MUL } else { take } {
                 let p = self.pickups.swap_remove(pi);
                 self.take_pickup(p);
             }

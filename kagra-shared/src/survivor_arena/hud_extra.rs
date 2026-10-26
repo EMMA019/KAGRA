@@ -198,6 +198,60 @@ impl SurvivorArena {
             );
         }
 
+        // A marker for the nearest chest that is off screen (or far): an arrow on the edge.
+        let mut best: Option<(f32, f32, f32)> = None; // (distance, dx, dz)
+        for p in self.pickups.iter().filter(|p| p.item == CHEST) {
+            let (dx, dz) = (p.x - self.hx, p.z - self.hz);
+            let d = dx.hypot(dz);
+            if best.is_none_or(|b| d < b.0) {
+                best = Some((d, dx, dz));
+            }
+        }
+        if let Some((d, dx, dz)) = best {
+            let on = self
+                .project([self.hx + dx, 0.5, self.hz + dz], w, h)
+                .filter(|&(x, y)| {
+                    x > 24.0 * s && x < w - 24.0 * s && y > 90.0 * s && y < h - 24.0 * s
+                });
+            if on.is_none() {
+                // The hero is near the middle of the view, so the bearing on screen is the bearing
+                // in the world turned by the camera (it looks down -z): up is -z.
+                let a = dx.atan2(-dz); // 0 = up the screen, clockwise
+                let arrows = ["↑", "↗", "→", "↘", "↓", "↙", "←", "↖"];
+                let k = ((a / std::f32::consts::FRAC_PI_4).round() as i32).rem_euclid(8) as usize;
+                let (cx, cy) = (w * 0.5, h * 0.5);
+                let (sx, sy) = (a.sin(), -a.cos());
+                let tx = if sx.abs() > 1e-3 {
+                    (w * 0.5 - 40.0 * s) / sx.abs()
+                } else {
+                    f32::MAX
+                };
+                let ty = if sy.abs() > 1e-3 {
+                    (h * 0.5 - 70.0 * s) / sy.abs()
+                } else {
+                    f32::MAX
+                };
+                let r = tx.min(ty);
+                let (mx, my) = (cx + sx * r, cy + sy * r);
+                let pulse = 0.75 + 0.25 * (self.anim_t * 6.0).sin();
+                let col = [255, 215, 90, (255.0 * pulse) as u8];
+                list.texts.push(
+                    TextQuad::new(arrows[k], mx, my - 14.0 * s, 28.0 * s, col)
+                        .aligned(TextAlign::Center),
+                );
+                list.texts.push(
+                    TextQuad::new(
+                        &format!("宝 {:.0}m", d),
+                        mx,
+                        my + 12.0 * s,
+                        13.0 * s,
+                        [255, 235, 160, 235],
+                    )
+                    .aligned(TextAlign::Center),
+                );
+            }
+        }
+
         // The toast: what was just picked up.
         if self.toast_t > 0.0 && !self.toast.is_empty() {
             let f = (self.toast_t / TOAST_LIFE).clamp(0.0, 1.0);

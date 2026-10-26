@@ -131,7 +131,9 @@
     "director": {
       "curve": 2.0,
       "elite_every": 40.0,
+      "elite_fight_secs": 14.0,
       "elite_first": 45.0,
+      "elite_hp_cap": 4.0,
       "end_rate": 8.5,
       "hp_per_min": 0.35,
       "ramp_secs": 100.0,
@@ -434,7 +436,7 @@
           "steps_per_beat": 1,
           "stompable": true,
           "swarm": {
-            "hp": 50.0,
+            "hp": 110.0,
             "radius": 0.8,
             "speed": 1.25,
             "touch_dmg": 14.0,

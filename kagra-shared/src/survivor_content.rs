@@ -430,7 +430,7 @@ pub fn default_enemies() -> Vec<EnemyType> {
             "zombie",
             [255, 215, 90],
             SwarmStats {
-                hp: 50.0,
+                hp: 110.0,
                 speed: 1.25,
                 radius: 0.8,
                 touch_dmg: 14.0,

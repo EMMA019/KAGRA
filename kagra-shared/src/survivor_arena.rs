@@ -245,6 +245,11 @@ pub struct DirectorSpec {
     /// and another one every `elite_every` seconds.
     pub elite_first: f32,
     pub elite_every: f32,
+    /// A warden should take about this many seconds to bring down at the hero's current
+    /// firepower (half of it landing), never less than its own HP and never more than
+    /// `elite_hp_cap` times that.
+    pub elite_fight_secs: f32,
+    pub elite_hp_cap: f32,
 }
 
 impl Default for DirectorSpec {
@@ -259,6 +264,8 @@ impl Default for DirectorSpec {
             spawn_dist: 10.5,
             elite_first: 45.0,
             elite_every: 40.0,
+            elite_fight_secs: 14.0,
+            elite_hp_cap: 4.0,
         }
     }
 }
@@ -639,6 +646,20 @@ impl SurvivorSpec {
             self.director.elite_every,
             0.0,
             1800.0,
+        )?;
+        range(
+            w,
+            "director.elite_fight_secs",
+            self.director.elite_fight_secs,
+            0.0,
+            120.0,
+        )?;
+        range(
+            w,
+            "director.elite_hp_cap",
+            self.director.elite_hp_cap,
+            1.0,
+            20.0,
         )?;
         for (i, wp) in self.weapons.iter().enumerate() {
             let n = format!("weapons[{i}]");
@@ -2017,6 +2038,29 @@ impl SurvivorArena {
         }
     }
 
+    /// Rough damage per second of the weapons the hero holds (every hit landing).
+    pub(super) fn firepower(&self) -> f32 {
+        let mut sum = 0.0;
+        for (i, w) in self.spec.weapons.iter().enumerate() {
+            if self.weapon_lv[i] == 0 {
+                continue;
+            }
+            let st = &self.weapon_stats[i];
+            let gap = match w.kind {
+                // Blades re-hit a foe on a short gap, about twice a second a blade.
+                WeaponKind::Orbit => 0.5,
+                _ => (st.cooldown * self.cd_scale()).max(0.1),
+            };
+            let n = if w.kind == WeaponKind::Pulse {
+                1
+            } else {
+                st.count.max(1)
+            };
+            sum += st.damage * self.mods.damage * n as f32 / gap;
+        }
+        sum
+    }
+
     /// The timed elite: the first at `director.elite_first`, then every `elite_every`.
     fn spawn_elite(&mut self) {
         if self.next_elite <= 0.0 || self.t < self.next_elite {
@@ -2037,7 +2081,11 @@ impl SurvivorArena {
             (self.hz + a.cos() * r).clamp(-half, half),
         );
         let hp_mul = 1.0 + self.spec.director.hp_per_min * self.t / 60.0;
-        let hp = self.kinds[kind].hp * hp_mul;
+        let base = self.kinds[kind].hp * hp_mul;
+        // A fight, not a speed bump: scale with what the hero can dish out (several weapons
+        // and levels made the warden fall in two seconds), within a cap so it stays fair.
+        let d = &self.spec.director;
+        let hp = (self.firepower() * d.elite_fight_secs * 0.5).clamp(base, base * d.elite_hp_cap);
         if !self.add_foe(kind, pos, hp) {
             return; // the pool is full: try again next step
         }
@@ -4803,6 +4851,91 @@ mod tests {
         assert!(g.state_value()["toast"]
             .as_str()
             .is_some_and(|t| !t.is_empty()));
+    }
+
+    #[test]
+    fn the_warden_is_a_fight_that_grows_with_firepower_but_stays_capped() {
+        let elite_hp = |g: &mut SurvivorArena| {
+            g.next_elite = 45.0;
+            g.t = 46.0;
+            g.tick(DT);
+            let j = (0..g.foes.len())
+                .find(|&i| g.kinds[g.foes.kind[i] as usize].elite)
+                .unwrap();
+            g.foes.hp[j]
+        };
+        let mut g = quiet("bolt");
+        let base = g.kinds.iter().find(|k| k.elite).unwrap().hp;
+        let weak = elite_hp(&mut g);
+        assert!(weak >= base, "never below its own hp");
+        let mut s = quiet("bolt");
+        for i in 0..s.weapon_lv.len() {
+            s.weapon_lv[i] = 6;
+        }
+        let strong = elite_hp(&mut s);
+        assert!(
+            strong > weak,
+            "more firepower, more warden: {strong} vs {weak}"
+        );
+        let cap =
+            base * (1.0 + s.spec.director.hp_per_min * s.t / 60.0) * s.spec.director.elite_hp_cap;
+        assert!(
+            strong <= cap + 1e-3,
+            "capped so it stays fair: {strong} <= {cap}"
+        );
+    }
+
+    #[test]
+    fn a_chest_drifts_to_the_hero_from_afar_and_opens_from_a_wider_reach() {
+        let mut g = quiet("bolt");
+        g.pickups.clear();
+        let (hx, hz) = (g.hx, g.hz);
+        g.pickups.push(Pickup {
+            x: hx + 5.0,
+            z: hz,
+            item: CHEST,
+            table: 0,
+            age: 0.0,
+            fly: false,
+        });
+        g.tick(DT);
+        assert!(g.pickups[0].fly, "pulled in from 5 m without any magnet");
+        g.pickups.clear();
+        g.pickups.push(Pickup {
+            x: hx + 1.6,
+            z: hz,
+            item: CHEST,
+            table: 0,
+            age: 0.0,
+            fly: false,
+        });
+        g.tick(DT);
+        assert!(
+            g.pickups.iter().all(|p| p.item != CHEST),
+            "opens from 1.6 m"
+        );
+    }
+
+    #[test]
+    fn an_off_screen_chest_gets_an_edge_arrow() {
+        let mut g = quiet("bolt");
+        g.pickups.clear();
+        let (hx, hz) = (g.hx, g.hz);
+        g.pickups.push(Pickup {
+            x: hx + 11.0,
+            z: hz,
+            item: CHEST,
+            table: 0,
+            age: 0.0,
+            fly: false,
+        });
+        g.build_doc();
+        let hud = g.hud(390, 844, false);
+        assert!(hud.texts.iter().any(|t| t.text.starts_with('宝')));
+        assert!(hud.texts.iter().any(|t| t.text == "→"));
+        g.pickups.clear();
+        let hud = g.hud(390, 844, false);
+        assert!(hud.texts.iter().all(|t| !t.text.starts_with('宝')));
     }
 
     #[test]

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Moonlit Swarm: the warden is a fight, and the chest is easy to take.** `director.elite_fight_secs` (14) and `elite_hp_cap` (4): a warden's HP scales with the hero's firepower (weapons, levels, damage mods) so it takes about that long to bring down at half hits landing, never below its own HP and never above the cap times it; the warden's base HP 50 -> 110. A chest now drifts to the hero from 7 m with no magnet, opens from 2.4x the usual reach, and an off-screen chest shows a pulsing edge arrow with its distance. Picture and pick-up reach only; the dice order is unchanged.
+
 - **Moonlit Swarm perf pass 2 (phone slowness) and a clearer hero.** The real cause of the slow phone was a per-frame re-decode of every GLB just to cull
   (`compile_scene` -> `compile_meshes`): now cached (`WorldDoc::cull_bounds`), native 122 ms -> ~1 ms per frame, headless CPU-bound 4.2 -> 34.6 fps. The baked env strip is cached and the per-prop world-matrix map is skipped when nothing is parented.
   #207's graphics tiers are merged in and the game opts in: Graphics row, `?quality=auto|safe|mid|high|max`, first-run probe and guard (`atmo` thins the
