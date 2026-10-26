@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="robots" content="noindex" />
-  <meta name="kagra-build-id" content="c5e4d67bc0c1" />
+  <meta name="kagra-build-id" content="a062046f8904" />
   <title>KAGRA</title>
   <style>
     :root { color-scheme: dark; }
@@ -318,13 +318,13 @@
     <div id="boot" data-i18n="boot">読み込み中…</div>
     <div id="update" hidden><span data-i18n="update.hint">新しいバージョンがあります</span> <button id="updateGo" type="button" data-i18n="update.reload">更新</button></div>
   </div>
-  <script src="./i18n.js?v=c5e4d67bc0c1"></script>
-  <script src="./quality.js?v=c5e4d67bc0c1"></script>
-  <script src="./portal.js?v=c5e4d67bc0c1"></script>
+  <script src="./i18n.js?v=a062046f8904"></script>
+  <script src="./quality.js?v=a062046f8904"></script>
+  <script src="./portal.js?v=a062046f8904"></script>
   <!-- META hook 1/4: wallet, unlocks, daily run (docs/meta_core.md) -->
-  <script src="./meta.js?v=c5e4d67bc0c1"></script>
+  <script src="./meta.js?v=a062046f8904"></script>
   <script type="module">
-    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js?v=c5e4d67bc0c1";
+    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js?v=a062046f8904";
 
     const boot = document.getElementById("boot");
     const overlay = document.getElementById("overlay");
@@ -889,8 +889,17 @@
     const SCALE_STEPS = [2, 1.5, 1.25, 1];
     let scaleStep = 0;
     let tierCap = SCALE_STEPS[0];
-    const effectiveCap = () => (scaleStep ? Math.min(tierCap, SCALE_STEPS[scaleStep]) : tierCap);
+    // Some GPUs draw only black above a canvas size (a Pixel 10, PowerVR D-Series: black at
+    // 822x1530, fine at 617x1148). A blank frame after a resize steps the scale down and this
+    // device keeps that ceiling (`checkSize` in the loop).
+    const SAFE_SCALE_KEY = "kagra.scale.safe";
+    let safeCap = (() => {
+      try { const v = Number(localStorage.getItem(SAFE_SCALE_KEY)); return v >= 1 ? v : Infinity; } catch { return Infinity; }
+    })();
+    const effectiveCap = () => Math.min(safeCap, scaleStep ? Math.min(tierCap, SCALE_STEPS[scaleStep]) : tierCap);
     let redraw = 0;
+    let sizeCheck = 0; // frames until a new canvas size is checked for a blank picture
+    let sizeScale = 1;
     const fit = () => {
       orient();
       const scale = Math.min(window.devicePixelRatio || 1, effectiveCap());
@@ -901,7 +910,18 @@
         canvas.height = h;
         session.createSurface(w, h);
         redraw = 3; // a resized canvas is blank: draw it even on a render_skip frame
+        sizeCheck = 10;
+        sizeScale = scale;
       }
+    };
+    const checkSize = () => {
+      if (!sizeCheck || --sizeCheck > 0 || document.hidden) return;
+      const next = SCALE_STEPS.find((v) => v < sizeScale - 0.01);
+      if (!next || !canvasIsBlank(canvas)) return;
+      console.warn(`kagra: blank frame at scale ${sizeScale}, this device stays at ${next} or below`);
+      safeCap = next;
+      try { localStorage.setItem(SAFE_SCALE_KEY, String(next)); } catch {}
+      fit();
     };
     fit();
     window.addEventListener("resize", fit);
@@ -1632,6 +1652,7 @@
           });
           return;
         }
+        checkSize();
       }
       try {
         const next = readPhase();
