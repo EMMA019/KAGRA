@@ -373,6 +373,25 @@
       boot.style.display = "grid";
       boot.textContent = text;
     };
+    // A Rust panic prints "kagra panic: ..." and then throws a bare `unreachable`:
+    // keep the message so the screen can say what broke.
+    let lastPanic = "";
+    const consoleError = console.error.bind(console);
+    console.error = (...a) => {
+      const s = a.map(String).join(" ");
+      if (s.startsWith("kagra panic:")) lastPanic = s.slice(0, 600);
+      consoleError(...a);
+    };
+    const errText = (err) => {
+      const msg = err && err.stack ? String(err.stack) : String(err);
+      return (lastPanic ? `${lastPanic}\n` : "") + msg.slice(0, 800);
+    };
+    // Anything that throws before the frame loop runs would leave a black page
+    // with no title and no message. Put it on the screen instead.
+    let looping = false;
+    const failEarly = (err) => { if (!looping) fail(t("err.start", { err: errText(err) })); };
+    window.addEventListener("error", (e) => failEarly(e.error || e.message));
+    window.addEventListener("unhandledrejection", (e) => failEarly(e.reason));
 
     const orient = () => {
       document.documentElement.dataset.orient =
@@ -909,6 +928,8 @@
     };
     const attachBackend = async (backend) => {
       activeBackend = backend;
+      // A phone that never finishes starting the GPU shows which step it is on, not a dark page.
+      if (boot.style.display !== "none") boot.textContent = t("boot.gpu", { backend });
       session.setGraphicsBackend(backend);
       fit();
       await session.attachCanvas(canvas);
@@ -1503,19 +1524,32 @@
       return n;
     };
     // Graphics tiers (quality.js): a no-op for a game that has none.
-    globalThis.KagraQuality?.start({
-      session, params,
-      getPhase: () => (phase === "playing" ? "play" : phase === "complete" ? "result" : "title"),
-      setScaleCap: (cap) => { tierCap = cap; scaleStep = 0; avgGap = 16.7; gapFrames = 0; fit(); },
-    });
+    // A broken tier (or a saved setting it cannot read) must not stop the game: play at the default.
+    try {
+      globalThis.KagraQuality?.start({
+        session, params,
+        getPhase: () => (phase === "playing" ? "play" : phase === "complete" ? "result" : "title"),
+        setScaleCap: (cap) => { tierCap = cap; scaleStep = 0; avgGap = 16.7; gapFrames = 0; fit(); },
+      });
+    } catch (err) {
+      console.warn("kagra: graphics tiers off", err);
+    }
 
     // Gamepad (standard mapping): left stick / d-pad move, A or right trigger = action, Start = pause.
     let padStart = false;
+    let padOff = false;
     const padAxis = () => {
       const out = { lx: 0, lz: 0, act: false };
-      if (!navigator.getGamepads) return out;
+      if (padOff || !navigator.getGamepads) return out;
+      let pads;
+      // getGamepads() throws where the gamepad feature is blocked (a portal iframe without allow="gamepad").
+      try { pads = navigator.getGamepads() || []; } catch (err) {
+        padOff = true;
+        console.warn("kagra: gamepad off", err);
+        return out;
+      }
       let startDown = false;
-      for (const gp of navigator.getGamepads()) {
+      for (const gp of pads) {
         if (!gp || !gp.connected) continue;
         let x = gp.axes[0] || 0, y = gp.axes[1] || 0;
         const m = Math.hypot(x, y);
@@ -1540,6 +1574,15 @@
     };
 
     const loop = () => {
+      try { frame(); }
+      catch (err) {
+        // A throw here used to end the loop silently: a black screen with no title.
+        rendering = false;
+        fail(t("err.stopped", { err: errText(err) }));
+      }
+    };
+    const frame = () => {
+      looping = true;
       if (recovering) return;
       adapt(performance.now());
       const k = keyAxis();
@@ -1563,8 +1606,7 @@
         try { session.render(); }
         catch (err) {
           rendering = false;
-          const detail = err && err.stack ? err.stack : err;
-          fail(t("err.stopped", { err: detail }));
+          fail(t("err.stopped", { err: errText(err) }));
         }
         presented += 1;
         if (presented === 8 && activeBackend !== "gl" && requestedBackend !== "webgpu" && canvasIsBlank(canvas)) {
