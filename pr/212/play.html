@@ -1,0 +1,1639 @@
+<!DOCTYPE html>
+<html lang="ja" data-orient="portrait">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="robots" content="noindex" />
+  <meta name="kagra-build-id" content="b6c7ed3c71d2" />
+  <title>KAGRA</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #10141c;
+      color: #f4f1ea;
+      font-family: system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif;
+      overflow: hidden;
+      touch-action: none;
+      overscroll-behavior: none;
+    }
+    #app { position: fixed; inset: 0; }
+    canvas {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #6f93b4;
+      touch-action: none;
+    }
+    #boot, #overlay {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+      background: rgba(12, 16, 24, 0.72);
+    }
+    #boot { z-index: 5; }
+    #update {
+      position: fixed; left: 50%; top: max(8px, env(safe-area-inset-top)); transform: translateX(-50%);
+      z-index: 9; padding: 6px 8px 6px 12px; border-radius: 999px; font-size: 13px;
+      background: rgba(16, 20, 28, .92); border: 1px solid rgba(255, 255, 255, .25); white-space: nowrap;
+    }
+    #update button { margin-left: 6px; padding: 4px 12px; border-radius: 999px; font: inherit; }
+    #boot.err { color: #ffb4a2; text-align: center; white-space: pre-wrap; }
+    #overlay { display: none; z-index: 4; pointer-events: none; }
+    #overlay.visible { display: grid; pointer-events: auto; }
+    #overlay button, #overlay a.btn {
+      touch-action: manipulation;
+      pointer-events: auto;
+      cursor: pointer;
+    }
+    html[data-menu="1"] canvas { pointer-events: none; }
+    .card {
+      width: min(440px, 100%);
+      text-align: center;
+    }
+    h1 { margin: 0 0 8px; font-size: clamp(32px, 8vw, 48px); letter-spacing: 0.04em; }
+    p { margin: 0 0 14px; line-height: 1.5; }
+    /* A class or element display rule must not win over the hidden attribute
+       (the Continue button used to show on the title card). */
+    [hidden] { display: none !important; }
+    button, a.btn {
+      display: inline-block;
+      border: 0;
+      border-radius: 999px;
+      padding: 14px 22px;
+      background: #f0c36a;
+      color: #1a1408;
+      font: 700 16px/1 system-ui, sans-serif;
+      text-decoration: none;
+    }
+    .hint { opacity: 0.8; font-size: 13px; }
+    #death {
+      color: #ff6b9a;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      opacity: 1;
+    }
+    #hud {
+      position: absolute;
+      left: max(10px, env(safe-area-inset-left));
+      top: max(8px, env(safe-area-inset-top));
+      z-index: 2;
+      display: none;
+      gap: 8px;
+      align-items: center;
+      pointer-events: none;
+    }
+    #hud.visible { display: flex; }
+    #hud a {
+      pointer-events: auto;
+      color: #f4f1ea;
+      background: rgba(10, 14, 20, 0.45);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      text-decoration: none;
+    }
+    #pads { position: absolute; inset: 0; z-index: 2; pointer-events: none; display: none; }
+    #pads.visible { display: block; }
+    .pad {
+      position: absolute;
+      touch-action: none;
+      pointer-events: auto;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      background: rgba(10, 14, 20, 0.28);
+      color: rgba(255, 255, 255, 0.86);
+      font: 600 12px/1.2 system-ui, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .pad.on { background: rgba(240, 195, 106, 0.38); }
+    #stick { border-radius: 28%; }
+    #jump, #act { border-radius: 999px; }
+    html[data-orient="portrait"] #stick {
+      left: max(12px, env(safe-area-inset-left));
+      bottom: max(16px, env(safe-area-inset-bottom));
+      width: min(44vw, 210px);
+      height: min(44vw, 210px);
+    }
+    html[data-orient="portrait"] #jump {
+      right: max(16px, env(safe-area-inset-right));
+      bottom: max(18px, env(safe-area-inset-bottom));
+      width: min(24vw, 112px);
+      height: min(24vw, 112px);
+    }
+    html[data-orient="portrait"] #act {
+      right: max(22px, env(safe-area-inset-right));
+      bottom: calc(max(18px, env(safe-area-inset-bottom)) + min(24vw, 112px) + 14px);
+      width: min(20vw, 92px);
+      height: min(20vw, 92px);
+    }
+    html[data-orient="landscape"] #stick {
+      left: max(16px, env(safe-area-inset-left));
+      bottom: max(12px, env(safe-area-inset-bottom));
+      width: min(36vh, 190px);
+      height: min(36vh, 190px);
+    }
+    html[data-orient="landscape"] #jump {
+      right: max(16px, env(safe-area-inset-right));
+      bottom: max(14px, env(safe-area-inset-bottom));
+      width: min(24vh, 108px);
+      height: min(24vh, 108px);
+    }
+    html[data-orient="landscape"] #act {
+      right: calc(max(16px, env(safe-area-inset-right)) + min(24vh, 108px) + 14px);
+      bottom: max(20px, env(safe-area-inset-bottom));
+      width: min(20vh, 88px);
+      height: min(20vh, 88px);
+    }
+    /* Swipe games (Neon Cat kit): a styled game-over card. The 9-slice look of
+       the in-canvas HUD, drawn with a notched border so it needs no images. */
+    html[data-swipe="1"] #hud { display: none !important; }
+    html[data-swipe="1"] #overlay {
+      background: radial-gradient(ellipse at 50% 40%, rgba(40, 14, 52, 0.62), rgba(6, 4, 14, 0.9) 78%);
+      overflow-y: auto;
+      align-items: start;
+    }
+    html[data-swipe="1"] .card { margin: auto; padding: 8px 0 18px; }
+    .panel {
+      --cut: 8px;
+      background: linear-gradient(180deg, rgba(30, 22, 52, 0.94), rgba(14, 10, 32, 0.94));
+      border: 3px solid #5ad2e6;
+      box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.45), inset 0 2px 0 rgba(255, 255, 255, 0.08);
+      clip-path: polygon(var(--cut) 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% calc(100% - var(--cut)),
+                         calc(100% - var(--cut)) 100%, var(--cut) 100%, 0 calc(100% - var(--cut)), 0 var(--cut));
+      padding: 12px 14px;
+      margin: 0 0 14px;
+    }
+    .styled {
+      border: 3px solid #8cffff;
+      border-radius: 0;
+      background: #181228;
+      color: #f5ffff;
+      padding: 15px 30px;
+      font-size: 18px;
+      letter-spacing: 0.06em;
+      clip-path: polygon(7px 0, calc(100% - 7px) 0, 100% 7px, 100% calc(100% - 7px),
+                         calc(100% - 7px) 100%, 7px 100%, 0 calc(100% - 7px), 0 7px);
+      box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.5);
+      min-width: 220px;
+    }
+    .styled:active { background: #281c40; border-color: #ff78be; transform: translateY(2px); }
+    #gameover {
+      margin: 0 0 4px;
+      font-size: clamp(30px, 9vw, 44px);
+      letter-spacing: 0.12em;
+      color: #ff4f9a;
+      text-shadow: 0 0 18px rgba(255, 60, 150, 0.55), 3px 3px 0 rgba(0, 0, 0, 0.5);
+    }
+    html[data-swipe="1"] #death { margin: 0 0 14px; font-size: 16px; letter-spacing: 0.03em; color: #ffd0e2; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; text-align: center; }
+    .stats b { display: block; font-size: clamp(18px, 5.6vw, 24px); font-variant-numeric: tabular-nums; color: #bff8ff; }
+    .stats span { font-size: 11px; opacity: 0.7; letter-spacing: 0.08em; }
+    .stats .big b { color: #ffe08a; }
+    .newbest { display: inline-block; margin: 0 0 8px; padding: 3px 10px; font-size: 12px; font-weight: 800;
+      letter-spacing: 0.16em; color: #1a1408; background: #f0c36a; }
+    .tabs { display: flex; gap: 6px; justify-content: center; margin: 0 0 8px; }
+    .tabs button { padding: 6px 12px; font-size: 12px; border-radius: 999px; background: rgba(255,255,255,0.08);
+      color: #dff; border: 1px solid rgba(140, 255, 255, 0.35); }
+    .tabs button.on { background: #8cffff; color: #08121a; }
+    table.rank { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; }
+    table.rank th { font-size: 11px; font-weight: 600; opacity: 0.65; padding: 2px 4px 6px; letter-spacing: 0.06em; }
+    table.rank td { padding: 6px 4px; text-align: center; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+    table.rank td:first-child, table.rank th:first-child { text-align: left; width: 2.2em; opacity: 0.8; }
+    table.rank tr.me td { background: rgba(240, 195, 106, 0.22); color: #ffe9b0; font-weight: 700; border-top-color: transparent; }
+    table.rank tr.me td:first-child { opacity: 1; }
+    table.rank tr.gap td { padding: 0; line-height: 1; height: 14px; opacity: 0.5; border-top: 0; }
+    table.rank td.sorted { color: #bff8ff; }
+    table.rank tr.me td.sorted { color: #fff3c9; }
+    html[data-swipe="1"][data-orient="landscape"] .card { width: min(760px, 100%); }
+    html[data-swipe="1"][data-orient="landscape"] #result { display: grid; grid-template-columns: 1fr 1.3fr; gap: 12px; align-items: start; }
+    html[data-swipe="1"][data-orient="landscape"] #result .panel { margin: 0; }
+    html[data-swipe="1"][data-orient="landscape"] .stats { grid-template-columns: repeat(2, 1fr) !important; }
+    html[data-swipe="1"][data-orient="landscape"] #gameover { font-size: 28px; }
+    html[data-swipe="1"][data-orient="landscape"] table.rank td { padding: 3px 4px; }
+    html[data-swipe="1"][data-orient="landscape"] #death { margin-bottom: 8px; }
+    .goals { text-align: left; padding: 10px 14px; }
+    .goals h3 { margin: 0 0 6px; display: flex; justify-content: space-between; align-items: baseline;
+      font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: #8cffff; }
+    .goals h3 em { font-style: normal; color: #ffe08a; font-size: 13px; font-variant-numeric: tabular-nums; }
+    .goals ul { list-style: none; margin: 0; padding: 0; }
+    .goals li { --p: 0%; display: flex; gap: 8px; align-items: center; padding: 5px 6px; font-size: 14px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      background: linear-gradient(90deg, rgba(90, 210, 230, 0.2) var(--p), transparent var(--p)); }
+    .goals li:first-child { border-top: 0; }
+    .goals li .chk { width: 1.2em; text-align: center; opacity: 0.55; }
+    .goals li .gl { flex: 1; }
+    .goals li .gv { font-variant-numeric: tabular-nums; opacity: 0.85; font-size: 13px; }
+    .goals li.done { color: #ffe9b0; }
+    .goals li.done .chk { opacity: 1; color: #ffe08a; }
+    #goalsTitle { margin: 0 0 14px; }
+    #sound { margin: 0; padding: 7px 16px; font-size: 13px; border-radius: 999px; background: rgba(255,255,255,0.08);
+      color: #dff; border: 1px solid rgba(140, 255, 255, 0.35); }
+    #sound[aria-pressed="true"] { opacity: 0.6; }
+    html[data-swipe="1"][data-orient="landscape"] #resultLeft { display: grid; gap: 10px; }
+    #resultLeft .panel { margin: 0 0 10px; }
+    html[data-swipe="1"][data-orient="landscape"] #resultLeft .panel { margin: 0; }
+    .empty { opacity: 0.6; font-size: 13px; margin: 6px 0; }
+    /* HOP-BEAT: the sync stepper and the Continue button. */
+    .sync { display: inline-flex; align-items: center; gap: 10px; margin: 0 0 4px; font-size: 13px; color: #dff; }
+    .sync button { margin: 0; min-width: 40px; padding: 6px 12px; font-size: 16px; border-radius: 999px;
+      background: rgba(255,255,255,0.08); color: #dff; border: 1px solid rgba(140, 255, 255, 0.35); }
+    .sync b { min-width: 4.5em; font-variant-numeric: tabular-nums; color: #ffe08a; }
+    .syncHelp { margin: 0 0 12px; font-size: 12px; opacity: 0.6; }
+    #revive { margin: 0 0 10px; border-color: #f0c36a; color: #ffe9b0; }
+    /* HOP-BEAT: title and result polish. The bounce runs at the song's 126 BPM. */
+    .tagline { margin: 0 0 6px; font-size: 15px; letter-spacing: 0.12em; color: #8cffff; text-transform: uppercase; }
+    html[data-hop="1"] #title {
+      font-size: clamp(40px, 12vw, 64px); font-weight: 900; letter-spacing: 0.08em; margin: 0 0 6px;
+      background: linear-gradient(180deg, #fff6c9 10%, #ffb066 55%, #ff5fa8 100%);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+      filter: drop-shadow(0 3px 0 rgba(10, 6, 24, 0.7)) drop-shadow(0 0 18px rgba(255, 110, 190, 0.45));
+      animation: hopTitle 0.476s ease-out infinite;
+      transform-origin: 50% 90%;
+    }
+    html[data-hop="1"] #start.styled { font-size: 22px; padding: 17px 40px; min-width: 250px; border-color: #ffd76a;
+      background: linear-gradient(180deg, #3a2468, #1d1236); animation: hopPulse 0.952s ease-in-out infinite; }
+    html[data-hop="1"] #blurb { font-size: 14px; max-width: 34em; margin-left: auto; margin-right: auto; }
+    .newbest.big { display: block; width: fit-content; margin: 0 auto 10px; padding: 5px 16px; font-size: 14px;
+      animation: bestPop 0.9s ease-out both, hopPulse 0.952s 0.9s ease-in-out infinite; }
+    @keyframes hopTitle { 0% { transform: scale(1.05, 0.95); } 35% { transform: scale(0.98, 1.04); } 100% { transform: scale(1, 1); } }
+    @keyframes hopPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045); } }
+    @keyframes bestPop { 0% { transform: scale(0.2) rotate(-8deg); opacity: 0; } 60% { transform: scale(1.25) rotate(2deg); opacity: 1; } 100% { transform: scale(1); } }
+    @media (prefers-reduced-motion: reduce) {
+      html[data-hop="1"] #title, html[data-hop="1"] #start.styled, .newbest.big { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <canvas id="c"></canvas>
+    <div id="hud"><a id="home" href="./index.html" data-i18n="home" data-portal="hide">一覧</a><span id="phaseLabel"></span></div>
+    <div id="pads">
+      <div id="stick" class="pad" data-i18n="pad.move">移動</div>
+      <div id="act" class="pad" data-i18n="pad.act">アクション</div>
+      <div id="jump" class="pad" data-i18n="pad.jump">ジャンプ</div>
+    </div>
+    <div id="overlay">
+      <div class="card">
+        <h1 id="title">KAGRA</h1>
+        <h2 id="gameover" hidden data-i18n="gameover">GAME OVER</h2>
+        <div id="bestBanner" class="newbest big" hidden data-i18n="newbest">NEW BEST!</div>
+        <p id="tagline" class="tagline" hidden data-i18n="hop.tagline">Hop to the beat</p>
+        <p id="blurb" class="hint" data-i18n="blurb">タップではじめる。左が移動、右下ジャンプ、右上アクション。</p>
+        <p id="death" class="hint" hidden></p>
+        <div class="panel goals" id="goalsTitle" hidden></div>
+        <div id="result" hidden>
+          <div id="resultLeft">
+            <div class="panel stats" id="runStats"></div>
+            <div class="panel goals" id="runGoals" hidden></div>
+          </div>
+          <div class="panel" id="boardBox">
+            <div class="tabs" id="tabs"></div>
+            <div id="rows"></div>
+          </div>
+        </div>
+        <p><button id="revive" type="button" class="styled" hidden data-i18n="hop.continue">広告を見てつづける</button></p>
+        <p><button id="start" type="button" data-i18n="start">はじめる</button></p>
+        <div id="syncRow" hidden>
+          <div class="sync"><span data-i18n="hop.sync">音ズレ補正</span>
+            <button id="syncMinus" type="button" aria-label="-10 ms">−</button><b id="syncVal">0 ms</b>
+            <button id="syncPlus" type="button" aria-label="+10 ms">+</button></div>
+          <p class="syncHelp" data-i18n="hop.sync.help">ビートより遅れて押しがちなら＋、早いなら−。</p>
+        </div>
+        <p><button id="sound" type="button" hidden data-i18n="sound.on">サウンド: ON</button></p>
+        <p class="hint" id="keys" data-i18n="keys">WASD / 矢印、Space ジャンプ、J アクション。縦でも横でも同じ配置です。</p>
+        <p id="catalogRow" data-portal="hide"><a class="btn" href="./index.html" data-i18n="catalog">ジャンル一覧</a></p>
+      </div>
+    </div>
+    <div id="boot" data-i18n="boot">読み込み中…</div>
+    <div id="update" hidden><span data-i18n="update.hint">新しいバージョンがあります</span> <button id="updateGo" type="button" data-i18n="update.reload">更新</button></div>
+  </div>
+  <script src="./i18n.js?v=b6c7ed3c71d2"></script>
+  <script src="./quality.js?v=b6c7ed3c71d2"></script>
+  <script src="./portal.js?v=b6c7ed3c71d2"></script>
+  <!-- META hook 1/4: wallet, unlocks, daily run (docs/meta_core.md) -->
+  <script src="./meta.js?v=b6c7ed3c71d2"></script>
+  <script type="module">
+    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js?v=b6c7ed3c71d2";
+
+    const boot = document.getElementById("boot");
+    const overlay = document.getElementById("overlay");
+    const pads = document.getElementById("pads");
+    const hud = document.getElementById("hud");
+    let canvas = document.getElementById("c");
+    const params = new URLSearchParams(location.search);
+    const t = globalThis.kagraT || ((k) => k);
+    // ?debug=1 and ?backend= are development tools: they need ?dev=1 as well.
+    const dev = params.get("dev") === "1";
+    const requestedBackend = (dev ? (params.get("backend") || "auto") : "auto").toLowerCase();
+    let activeBackend = requestedBackend === "webgl" || requestedBackend === "webgl2" ? "gl" : requestedBackend;
+    const metaGame = document.querySelector('meta[name="kagra-game"]')?.content || "";
+    const slug = (metaGame || params.get("game") || "neon_run").trim() || "neon_run";
+    // HOP-BEAT: one button on the whole canvas, music-locked sim.
+    let hopMode = false;
+    // Survivor arena kit: drag to move, fixed 60 Hz sim, pause on Esc / hidden tab.
+    let survivorMode = false;
+    let hopDirect = false;
+    // The player's audio offset, ms (+ = they hear the music late). Device-only.
+    const SYNC_KEY = "kagra.hop.sync.v1";
+    const SYNC_MAX = 300;
+    const loadSync = () => {
+      try { return Math.max(-SYNC_MAX, Math.min(SYNC_MAX, Math.round(Number(localStorage.getItem(SYNC_KEY)) || 0))); }
+      catch { return 0; }
+    };
+    let syncMs = 0;
+    // Swipe games (Neon Cat kit) read gestures in the engine: no pads at all.
+    let swipeMode = false;
+    const applySwipeMode = () => {
+      swipeMode = typeof session?.usesSwipe === "function" && session.usesSwipe();
+      if (!swipeMode) return;
+      pads.classList.remove("visible");
+      // This kit owns its game-over card: retry and the ranking only. The
+      // other-genre link and the keyboard hint do not belong on it.
+      document.documentElement.dataset.swipe = "1";
+      document.getElementById("catalogRow")?.remove();
+      document.getElementById("keys")?.remove();
+      document.getElementById("start").classList.add("styled");
+      const blurbEl = document.getElementById("blurb");
+      if (blurbEl) blurbEl.textContent = hopMode ? t("hop.blurb") : survivorMode ? t("sv.blurb") : t("blurb.swipe");
+    };
+
+    const fail = (text) => {
+      boot.className = "err";
+      boot.style.display = "grid";
+      boot.textContent = text;
+    };
+    // A Rust panic prints "kagra panic: ..." and then throws a bare `unreachable`:
+    // keep the message so the screen can say what broke.
+    let lastPanic = "";
+    const consoleError = console.error.bind(console);
+    console.error = (...a) => {
+      const s = a.map(String).join(" ");
+      if (s.startsWith("kagra panic:")) lastPanic = s.slice(0, 600);
+      consoleError(...a);
+    };
+    const errText = (err) => {
+      const msg = err && err.stack ? String(err.stack) : String(err);
+      return (lastPanic ? `${lastPanic}\n` : "") + msg.slice(0, 800);
+    };
+    // Anything that throws before the frame loop runs would leave a black page
+    // with no title and no message. Put it on the screen instead.
+    let looping = false;
+    const failEarly = (err) => { if (!looping) fail(t("err.start", { err: errText(err) })); };
+    window.addEventListener("error", (e) => failEarly(e.error || e.message));
+    window.addEventListener("unhandledrejection", (e) => failEarly(e.reason));
+
+    const orient = () => {
+      document.documentElement.dataset.orient =
+        window.innerHeight >= window.innerWidth ? "portrait" : "landscape";
+    };
+    orient();
+
+    const fileUrl = (baseHref, rel) => {
+      const prefix = baseHref.endsWith("/") ? baseHref : baseHref + "/";
+      return prefix + rel.split("/").map(encodeURIComponent).join("/");
+    };
+
+    // <kagra-audio>
+    // Web Audio for the sim's cues. The sim only queues names (`audioCuesJson`
+    // = {bgm_name, bgm_gain, oneshots[]}); which file a name plays and how loud
+    // comes from `game.audio` in the spec. tests/test_neon_cat_page.py runs this
+    // block under node with a fake AudioContext.
+    const createAudio = (cfg, deps) => {
+      const num = (v, d) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+      const unit = (v, d) => Math.max(0, Math.min(1, num(v, d)));
+      const sfx = cfg && typeof cfg.sfx === "object" && cfg.sfx ? cfg.sfx : {};
+      const bgm = (cfg && cfg.bgm) || {};
+      const master = unit(cfg && cfg.master, 0.8);
+      const bgmVolume = unit(cfg && cfg.bgm_volume, 0.7) * unit(bgm.volume, 0.55);
+      const sfxVolume = unit(cfg && cfg.sfx_volume, 1);
+      const Ctor = deps.AudioContextCtor;
+      let usable = !!Ctor && !!cfg && cfg.enabled !== false;
+      let muted = !!deps.muted;
+      let ctx = null;
+      let masterNode = null;
+      let bgmNode = null;
+      let sfxNode = null;
+      let bgmSource = null;
+      // Beat-synced games (HOP-BEAT): the page asks the sim where the music
+      // should be (`bgmPos`), starts the loop there, and reads the clock back
+      // with songClock(). bgmT0 is the context time of music position 0.
+      let bgmPos = null;
+      let bgmT0 = 0;
+      let primed = false;
+      const buffers = new Map();
+      const lastShot = new Map();
+      const live = new Set();
+      // Fetching needs no gesture, so the bytes are on their way before the
+      // first tap. Decoding waits for the context.
+      const raw = new Map();
+      const files = [bgm.file, ...Object.values(sfx).map((c) => c && c.file)]
+        .filter((f) => typeof f === "string" && f);
+      if (usable) {
+        for (const f of files) {
+          if (!raw.has(f)) raw.set(f, Promise.resolve().then(() => deps.fetchBytes(f)).catch((err) => { warn(`kagra: could not fetch ${f}`, String(err)); return null; }));
+        }
+      }
+      const warn = (...a) => { if (deps.warn) deps.warn(...a); };
+      const decode = (ab) => new Promise((ok, bad) => {
+        const p = ctx.decodeAudioData(ab.slice(0), ok, bad);
+        if (p && typeof p.catch === "function") p.catch(bad);
+      });
+      const applyMute = () => { if (masterNode) masterNode.gain.value = muted ? 0 : master; };
+      const unlock = () => {
+        if (!usable) return;
+        if (!ctx) {
+          try {
+            // iOS 17+: play through the ringer switch (a game is not a ringtone).
+            const nav = globalThis.navigator;
+            if (nav && nav.audioSession) nav.audioSession.type = "playback";
+          } catch {}
+          try {
+            ctx = new Ctor();
+            masterNode = ctx.createGain();
+            bgmNode = ctx.createGain();
+            sfxNode = ctx.createGain();
+            bgmNode.gain.value = 0;
+            sfxNode.gain.value = sfxVolume;
+            bgmNode.connect(masterNode);
+            sfxNode.connect(masterNode);
+            masterNode.connect(ctx.destination);
+            applyMute();
+          } catch (err) {
+            warn("kagra: audio unavailable", err);
+            usable = false;
+            ctx = null;
+            return;
+          }
+          for (const [f, bytes] of raw) {
+            bytes
+              // One more try if the early fetch was lost (a tab that was busy
+              // booting can have its in-flight requests cancelled).
+              .then((ab) => ab || Promise.resolve().then(() => deps.fetchBytes(f)).catch(() => null))
+              .then((ab) => (ab ? decode(ab) : null))
+              .then((buf) => { if (buf) buffers.set(f, buf); else warn(`kagra: no audio for ${f}`); })
+              .catch((err) => warn(`kagra: could not decode ${f}`, err));
+          }
+        }
+        // iOS and Android only open the output inside a touch. resume() in the
+        // gesture, then a one-sample silent buffer to wake the route.
+        if (ctx.state !== "running" && typeof ctx.resume === "function") {
+          try { const r = ctx.resume(); if (r && r.catch) r.catch(() => {}); } catch {}
+        }
+        if (!primed) {
+          primed = true;
+          try {
+            const src = ctx.createBufferSource();
+            src.buffer = ctx.createBuffer(1, 1, 22050);
+            src.connect(ctx.destination);
+            src.start(0);
+          } catch {}
+        }
+      };
+      const playSfx = (name) => {
+        const cue = sfx[name];
+        if (!ctx || muted || !cue || !cue.file) return;
+        const buf = buffers.get(cue.file);
+        if (!buf) return;
+        const now = ctx.currentTime;
+        // The same cue twice inside 40 ms is one cue (a burst of coins).
+        if (now - (lastShot.get(name) ?? -1) < 0.04 || live.size >= 14) return;
+        lastShot.set(name, now);
+        const src = ctx.createBufferSource();
+        const g = ctx.createGain();
+        src.buffer = buf;
+        src.playbackRate.value = Math.max(0.25, Math.min(4, num(cue.rate, 1)));
+        g.gain.value = unit(cue.volume, 1);
+        src.connect(g);
+        g.connect(sfxNode);
+        live.add(src);
+        src.onended = () => live.delete(src);
+        src.start(0);
+      };
+      const stopBgm = () => {
+        if (!bgmSource) return;
+        try { bgmSource.stop(0); } catch {}
+        bgmSource = null;
+      };
+      const syncBgm = (name, gain) => {
+        if (!ctx) return;
+        const want = !!name && gain > 0.001 && !!bgm.file;
+        if (!want) { stopBgm(); return; }
+        if (!bgmSource) {
+          const buf = buffers.get(bgm.file);
+          if (!buf) return;
+          // A synced loop only starts on a running clock, so the seek is exact.
+          if (bgmPos && ctx.state !== "running") return;
+          const src = ctx.createBufferSource();
+          src.buffer = buf;
+          src.loop = true;
+          src.connect(bgmNode);
+          if (bgmPos) {
+            let pos = Number(bgmPos());
+            if (!Number.isFinite(pos) || pos < 0) pos = 0;
+            const at = ctx.currentTime + 0.03;
+            src.start(at, pos % (buf.duration || 1));
+            bgmT0 = at - pos;
+          } else {
+            src.start(0);
+          }
+          bgmSource = src;
+        }
+        const target = bgmVolume * Math.max(0, Math.min(1, gain));
+        if (typeof bgmNode.gain.setTargetAtTime === "function") {
+          bgmNode.gain.setTargetAtTime(target, ctx.currentTime, 0.04);
+        } else {
+          bgmNode.gain.value = target;
+        }
+      };
+      // Once per frame. Always drains the queue, even when muted.
+      const pump = (json) => {
+        let j;
+        try { j = typeof json === "string" ? JSON.parse(json) : json; } catch { return; }
+        if (!j || !ctx || !usable) return;
+        for (const name of Array.isArray(j.oneshots) ? j.oneshots : []) playSfx(String(name));
+        syncBgm(j.bgm_name, num(j.bgm_gain, 0));
+      };
+      return {
+        unlock,
+        pump,
+        get usable() { return usable; },
+        get muted() { return muted; },
+        /** fn() -> where the music should be, seconds. Turns the synced start on. */
+        setBgmPos(fn) { bgmPos = typeof fn === "function" ? fn : null; },
+        /** Seconds of music being heard (unwrapped across loops), or NaN when
+         *  nothing is playing on a running clock. Output latency is taken off. */
+        songClock() {
+          if (!bgmSource || !ctx || ctx.state !== "running") return NaN;
+          const lat = Number(ctx.outputLatency || ctx.baseLatency || 0);
+          return ctx.currentTime - bgmT0 - (Number.isFinite(lat) ? lat : 0);
+        },
+        setMuted(on) { muted = !!on; applyMute(); },
+        // Tab hidden: stop the output; the tab back: carry on.
+        hidden(on) {
+          if (!ctx) return;
+          try {
+            if (on && ctx.suspend) ctx.suspend();
+            else if (!on && ctx.resume) ctx.resume();
+          } catch {}
+        },
+        get state() { return ctx ? ctx.state : "none"; },
+        get loaded() { return buffers.size; },
+        /** name -> decoded seconds (a check that the loop is the whole file). */
+        get durations() { const o = {}; for (const [k, b] of buffers) o[k] = b.duration; return o; },
+        get expected() { return raw.size; },
+        files,
+      };
+    };
+    // </kagra-audio>
+
+    // <kagra-goals>
+    // Missions and the best score for the title and result cards. Mission
+    // wording comes from the spec; the three stock kinds get Japanese text.
+    const GOAL_TEXT = {
+      coins: (n) => t("goal.coins", { n }),
+      gates: (n) => t("goal.gates", { n }),
+      perch: (n) => t("goal.perch", { n }),
+      passes: (n) => t("goal.passes", { n }),
+    };
+    const GOAL_STOCK = { coins: "COINS", gates: "GATES", perch: "PERCH", passes: "PASSED" };
+    const goalText = (m) => {
+      const stock = GOAL_STOCK[m.kind] === m.label && GOAL_TEXT[m.kind];
+      return stock ? stock(m.target) : `${m.label} ${m.target}`;
+    };
+    const renderGoals = (el, missions, best, heading) => {
+      const list = Array.isArray(missions) ? missions : [];
+      const hasBest = Number(best) > 0;
+      el.hidden = list.length === 0 && !hasBest;
+      el.textContent = "";
+      if (el.hidden) return;
+      const head = document.createElement("h3");
+      const title = document.createElement("span");
+      title.textContent = list.length ? heading : t("best.title");
+      head.appendChild(title);
+      if (hasBest) {
+        const em = document.createElement("em");
+        em.textContent = t("best", { n: Number(best) });
+        head.appendChild(em);
+      }
+      el.appendChild(head);
+      if (!list.length) return;
+      const ul = document.createElement("ul");
+      for (const m of list) {
+        const li = document.createElement("li");
+        const target = Math.max(1, Number(m.target) || 1);
+        const value = Math.max(0, Math.min(target, Number(m.value) || 0));
+        li.style.setProperty("--p", `${Math.round((value / target) * 100)}%`);
+        if (m.done) li.className = "done";
+        const chk = document.createElement("span");
+        chk.className = "chk";
+        chk.textContent = m.done ? "✓" : "○";
+        const gl = document.createElement("span");
+        gl.className = "gl";
+        gl.textContent = goalText(m);
+        const gv = document.createElement("span");
+        gv.className = "gv";
+        gv.textContent = `${value} / ${target}`;
+        li.append(chk, gl, gv);
+        ul.appendChild(li);
+      }
+      el.appendChild(ul);
+    };
+    let bestScope = ""; // ".daily" when the daily run is on: it keeps its own device best
+    const bestKey = (slug) => `kagra.best.v1.${slug}${bestScope}`;
+    const loadBest = (slug) => {
+      try { return Math.max(0, Number(localStorage.getItem(bestKey(slug))) || 0); } catch { return 0; }
+    };
+    const saveBest = (slug, score) => {
+      const n = Math.max(0, Math.floor(Number(score) || 0));
+      if (n <= loadBest(slug)) return;
+      try { localStorage.setItem(bestKey(slug), String(n)); } catch {}
+    };
+    // </kagra-goals>
+
+    // <kagra-build>
+    // Cache busting after a deploy. The preview build stamps one build id into this
+    // page, the wasm / script URLs, bundle.json and every asset URL (`?v=`), and
+    // writes build.json. A page older than build.json offers a reload (and reloads
+    // once by itself before a run). Same-origin only; without a stamp (local, portal
+    // zip) nothing changes.
+    const BUILD = document.querySelector('meta[name="kagra-build-id"]')?.content || "";
+    const buildOn = /^[0-9a-f]{12}$/.test(BUILD);
+    const vq = (url) => (buildOn ? `${url}?v=${BUILD}` : url);
+    const assetUrl = (site, item) => {
+      if (typeof item === "string") return fileUrl(site, item);
+      return buildOn && item.v ? `${fileUrl(site, item.url)}?v=${encodeURIComponent(item.v)}` : fileUrl(site, item.url);
+    };
+    const reloadFor = (id) => {
+      const u = new URL(location.href);
+      u.searchParams.set("_b", id || String(Date.now()));
+      location.replace(u.href);
+    };
+    const showUpdate = (id) => {
+      const box = document.getElementById("update");
+      if (!box) return;
+      box.hidden = false;
+      document.getElementById("updateGo").onclick = () => reloadFor(id);
+    };
+    const checkBuild = async (mayReload) => {
+      if (!buildOn) return false;
+      try {
+        const ctl = new AbortController();
+        const timer = setTimeout(() => ctl.abort(), 2500);
+        const res = await fetch(`./build.json?t=${Date.now()}`, { cache: "no-store", signal: ctl.signal });
+        clearTimeout(timer);
+        if (!res.ok) return false;
+        const id = String((await res.json()).build || "");
+        if (!/^[0-9a-f]{12}$/.test(id) || id === BUILD) return false;
+        let tried = false;
+        try { tried = sessionStorage.getItem("kagra.build.tried") === id; } catch {}
+        if (mayReload && !tried) {
+          try { sessionStorage.setItem("kagra.build.tried", id); } catch {}
+          reloadFor(id);
+          return true;
+        }
+        showUpdate(id);
+      } catch (_) {}
+      return false;
+    };
+    // A tab left open across a deploy: look again when it comes back to the front.
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) checkBuild(false); });
+    // </kagra-build>
+
+    let session;
+    // render_skip: on a screen faster than the 60 Hz sim, draw only when the sim stepped.
+    // Default off until measured (docs/phone_measure.md); ?render_skip=1|0 or world.json.
+    let renderSkip = params.get("render_skip") === "1";
+    let bundle;
+    let audioSpec = null;
+    let portalHost = null; // portal.js: ads and gameplay events for a web-game portal
+    let portalPage = null;
+    let metaLayer = null; // meta.js: wallet, unlocks, daily run. META hooks 2-4 below.
+    try {
+      if (navigator.gpu && navigator.gpu.requestAdapter) {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+          Object.defineProperty(Navigator.prototype, "gpu", {
+            configurable: true,
+            get() { return undefined; },
+          });
+        }
+      }
+    } catch (_) {}
+    try {
+      // A newer deploy: reload to it (this page goes away, so wait forever).
+      if (await checkBuild(true)) await new Promise(() => {});
+      await init({ module_or_path: new URL(vq("./pkg/kagra_shared_bg.wasm"), document.baseURI) });
+      session = new WasmSession();
+      const site = new URL("./", document.baseURI).href;
+      const bundleRes = await fetch(vq(fileUrl(site, `games/${slug}/bundle.json`)));
+      if (!bundleRes.ok) throw new Error(`bundle.json ${bundleRes.status}`);
+      bundle = await bundleRes.json();
+      if (buildOn && /^[0-9a-f]{12}$/.test(bundle.build || "") && bundle.build !== BUILD) showUpdate(bundle.build);
+      portalHost = globalThis.KagraPortal.fromPage(window, document, bundle.platform && bundle.platform.ads);
+      portalHost.loadingStart();
+      portalHost.init();
+      // META hook 2/4: opt in when the manifest has a `meta` block (inert otherwise).
+      metaLayer = globalThis.KagraMeta.create({
+        config: bundle.meta,
+        gameId: bundle.slug || slug,
+        title: bundle.title || slug,
+        url: location.origin + location.pathname + (params.get("game") ? `?game=${encodeURIComponent(slug)}` : ""),
+        host: portalHost,
+        mockAds: dev && params.get("ads") === "mock",
+        mode: params.get("daily") === "1" ? "daily" : params.get("daily") === "0" ? "free" : undefined,
+      });
+      if (params.has("daily")) {
+        // The mode is saved now; drop the link's switch so Shop / Daily toggles survive a reload.
+        const u = new URL(location.href);
+        u.searchParams.delete("daily");
+        try { history.replaceState(null, "", u.href); } catch {}
+      }
+      // The daily run keeps its own device best, so a daily score never replaces the free-play best.
+      if (metaLayer.enabled && metaLayer.dailyInfo().active) bestScope = ".daily";
+      document.title = bundle.title || slug;
+      document.getElementById("title").textContent = bundle.title || slug;
+      const files = Array.isArray(bundle.files) ? bundle.files : [];
+      session.clearMount();
+      let done = 0;
+      const queue = files.slice();
+      const workers = Array.from({ length: Math.min(4, queue.length) }, async () => {
+        while (queue.length) {
+          const item = queue.shift();
+          const path = typeof item === "string" ? item : item.path;
+          const url = typeof item === "string" ? item : item.url;
+          // A model is a nicety, not a requirement: games draw primitives without it.
+          const optional = /\.glb$/i.test(path);
+          let bytes = null;
+          try {
+            const res = await fetch(assetUrl(site, item));
+            if (!res.ok) throw new Error(`${url} ${res.status}`);
+            bytes = new Uint8Array(await res.arrayBuffer());
+          } catch (err) {
+            if (!optional) throw err;
+            console.warn("kagra: optional model not loaded", path, err);
+          }
+          if (bytes) session.mountFile(path, bytes);
+          done += 1;
+          boot.textContent = t("boot.progress", { done, total: files.length });
+        }
+      });
+      await Promise.all(workers);
+      const worldFile = files.find((item) => (item.path || item) === (bundle.world || "world.json"));
+      const worldUrl = worldFile ? (worldFile.url || worldFile) : `games/${slug}/world.json`;
+      const worldRes = await fetch(worldFile && typeof worldFile !== "string" ? assetUrl(site, worldFile) : fileUrl(site, worldUrl));
+      if (!worldRes.ok) throw new Error(`${worldUrl} ${worldRes.status}`);
+      let worldText = await worldRes.text();
+      let asked = (params.get("quality") || "").toLowerCase();
+      let payload = (() => {
+        try {
+          const world = JSON.parse(worldText);
+          if (asked === "low" || asked === "mobile" || asked === "high") {
+            world.quality = asked;
+          } else if (world.genre === "survivor_arena" && (asked === "safe" || asked === "mid" || asked === "max")) {
+            // Moonlit Swarm sizes its pools (foes, sparks, props) once, at load, from the
+            // picture quality. The graphics tier picks the rest (scale, post, shadows) live.
+            world.quality = asked === "safe" ? "low" : asked === "max" ? "high" : "mobile";
+          } else if (slug === "neon_cat" && (world.quality == null || world.quality === "")) {
+            world.quality = "mobile";
+          }
+          if (params.get("render_skip") == null && world.render_skip === true) renderSkip = true;
+          if (slug === "neon_cat") {
+            // ?fx=low|mid|high sets how much night (rain, signs, walls) is
+            // drawn, on its own. Without it the picture quality decides.
+            const fx = (params.get("fx") || "").toLowerCase();
+            if (fx === "low" || fx === "mid" || fx === "high") world.fx = fx;
+            const cam = (params.get("cam") || "").toLowerCase();
+            if (cam === "classic" || cam === "chase") world.cam = cam;
+          }
+          if (world.genre === "hop_beat") {
+            hopMode = true;
+            document.documentElement.dataset.hop = "1";
+            document.getElementById("tagline").hidden = false;
+            // The device best goes into the run, so the in-run NEW BEST banner and the
+            // game-over stinger agree with the saved score after a reload.
+            const storedBest = loadBest(slug);
+            if (storedBest > 0) world.best = Math.max(Number(world.best) || 0, storedBest);
+            // A/B on the phone: ?fx_post=0|1 (bloom, grade, vignette, tone curve) and
+            // ?fx_atmo=0|1 (stars, clouds, horizon glow, haze). Either one alone.
+            // ?skin=<id> and ?look=<id> pick the hero skin / finishing look by id; the
+            // shop and save code set the same two keys.
+            for (const key of ["skin", "look"]) {
+              const v = params.get(key);
+              if (v) world[key] = v;
+            }
+            for (const key of ["fx_post", "fx_atmo"]) {
+              const v = params.get(key);
+              if (v === "0" || v === "1") world[key] = v === "1";
+            }
+            const a = world.game && world.game.audio;
+            if (a && typeof a === "object" && params.get("audio") !== "0") audioSpec = a;
+            // Straight into the run: ?play=1, or a portal build (CrazyGames
+            // wants gameplay on load). ?play=0 keeps the title card.
+            const ask = params.get("play");
+            const direct = ask === "1" || (ask !== "0" && globalThis.KagraPortal.isPortalBuild(document));
+            hopDirect = direct;
+            if (direct) world.game.play = { ...(world.game.play || {}), direct: true };
+          }
+          if (world.genre === "survivor_arena") {
+            survivorMode = true;
+            const storedBest = loadBest(slug);
+            if (storedBest > 0) world.best = Math.max(Number(world.best) || 0, storedBest);
+            const a = world.game && world.game.audio;
+            if (a && typeof a === "object" && params.get("audio") !== "0") audioSpec = a;
+          }
+          if (world.genre === "neon_cat") {
+            // The device's best score goes in as the run's best, so the HUD's
+            // BEST and the cards agree after a reload.
+            const stored = loadBest(slug);
+            if (stored > 0) world.best = Math.max(Number(world.best) || 0, stored);
+            const a = world.game && world.game.audio;
+            if (a && typeof a === "object" && params.get("audio") !== "0") audioSpec = a;
+          }
+          // META hook 3/4: equipped items, the daily modifier and seed, applied to world.game.
+          if (metaLayer && metaLayer.enabled) return JSON.stringify(metaLayer.prepare(world));
+          return JSON.stringify(world);
+        } catch (_) {
+          return worldText;
+        }
+      })();
+      session.loadGame(payload);
+      if (survivorMode && session.setLang) session.setLang(globalThis.kagraLang || "en");
+      if (hopMode) {
+        syncMs = loadSync();
+        session.setLatencyMs(syncMs);
+        if (session.setLang) session.setLang(globalThis.kagraLang || "en");
+      }
+      applySwipeMode();
+      if (session.setExternalMenu) session.setExternalMenu(true);
+      session.showTitle();
+      if (dev && params.get("debug") === "1" && session.setDebug) session.setDebug(true);
+    } catch (err) {
+      fail(t("err.start", { err }));
+      throw err;
+    }
+
+    // Render-scale ladder. Starts at the usual cap of 2 and steps down when
+    // frames run long (see `adapt` in the loop); ?adapt=0 turns that off.
+    // A graphics tier (quality.js) sets `tierCap`; the ladder only goes below it.
+    const SCALE_STEPS = [2, 1.5, 1.25, 1];
+    let scaleStep = 0;
+    let tierCap = SCALE_STEPS[0];
+    const effectiveCap = () => (scaleStep ? Math.min(tierCap, SCALE_STEPS[scaleStep]) : tierCap);
+    let redraw = 0;
+    const fit = () => {
+      orient();
+      const scale = Math.min(window.devicePixelRatio || 1, effectiveCap());
+      const w = Math.max(1, Math.round(canvas.clientWidth * scale));
+      const h = Math.max(1, Math.round(canvas.clientHeight * scale));
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+        session.createSurface(w, h);
+        redraw = 3; // a resized canvas is blank: draw it even on a render_skip frame
+      }
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    window.addEventListener("orientationchange", () => setTimeout(fit, 60));
+    window.visualViewport?.addEventListener("resize", fit);
+    screen.orientation?.addEventListener?.("change", () => setTimeout(fit, 60));
+
+    const canvasIsBlank = (el) => {
+      const probe = document.createElement("canvas");
+      probe.width = 48;
+      probe.height = 48;
+      const ctx = probe.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return false;
+      try { ctx.drawImage(el, 0, 0, 48, 48); }
+      catch (e) { console.warn("kagra: frame readback failed", e); return false; }
+      const data = ctx.getImageData(0, 0, 48, 48).data;
+      let max = 0, min = 255;
+      for (let i = 0; i < data.length; i += 16) {
+        max = Math.max(max, data[i], data[i + 1], data[i + 2]);
+        min = Math.min(min, data[i], data[i + 1], data[i + 2]);
+      }
+      console.warn(`kagra: frame sample max=${max} min=${min} backend=${activeBackend}`);
+      return max < 12 || min > 248;
+    };
+    const attachBackend = async (backend) => {
+      activeBackend = backend;
+      // A phone that never finishes starting the GPU shows which step it is on, not a dark page.
+      if (boot.style.display !== "none") boot.textContent = t("boot.gpu", { backend });
+      session.setGraphicsBackend(backend);
+      fit();
+      await session.attachCanvas(canvas);
+      fit();
+    };
+    let rendering = false;
+    const startBackend = activeBackend === "gl" || activeBackend === "webgpu" ? activeBackend : "auto";
+    try {
+      await attachBackend(startBackend);
+      rendering = session.hasRenderer();
+    } catch (err) {
+      if (startBackend === "gl") {
+        fail(t("err.render", { err }));
+        throw err;
+      }
+      console.warn("kagra: WebGPU attach failed, trying WebGL2", err);
+      const next = document.createElement("canvas");
+      next.id = "c";
+      canvas.replaceWith(next);
+      canvas = next;
+      try {
+        await attachBackend("gl");
+        rendering = session.hasRenderer();
+      } catch (err2) {
+        fail(t("err.render", { err: err2 }));
+        throw err2;
+      }
+    }
+    boot.style.display = "none";
+    portalHost.loadingFinished();
+
+    // ---- Sound. Built only when the spec has `audio` (Neon Cat kit); other
+    // games stay silent as before. The browser opens the output on the first
+    // touch, so every gesture below calls unlock().
+    const MUTE_KEY = "kagra.audio.muted";
+    const readMuted = () => { try { return localStorage.getItem(MUTE_KEY) === "1"; } catch { return false; } };
+    const audio = audioSpec
+      ? createAudio(audioSpec, {
+          AudioContextCtor: globalThis.AudioContext || globalThis.webkitAudioContext,
+          muted: params.get("mute") === "1" || readMuted(),
+          warn: (...a) => console.warn(...a),
+          fetchBytes: async (file) => {
+            const site = new URL("./", document.baseURI).href;
+            const item = (bundle.files || []).find((f) => (typeof f === "string" ? f : f.path) === file);
+            if (!item) throw new Error(`${file} is not in the bundle`);
+            const res = await fetch(assetUrl(site, item));
+            if (!res.ok) throw new Error(`${file} ${res.status}`);
+            return res.arrayBuffer();
+          },
+        })
+      : null;
+    globalThis.kagraAudio = audio;
+    // The music file and the sim share one clock: the loop starts where the
+    // sim says the song is, and the sim follows the audio clock back.
+    if (audio && hopMode) {
+      audio.setBgmPos(() => { try { return JSON.parse(session.gameJson()).music_t; } catch { return 0; } });
+    }
+    const soundBtn = document.getElementById("sound");
+    const paintSound = () => {
+      if (!audio || !audio.usable) { soundBtn.hidden = true; return; }
+      soundBtn.hidden = false;
+      soundBtn.textContent = audio.muted ? t("sound.off") : t("sound.on");
+      soundBtn.setAttribute("aria-pressed", audio.muted ? "true" : "false");
+    };
+    const toggleSound = () => {
+      if (!audio) return;
+      audio.unlock();
+      audio.setMuted(!audio.muted);
+      try { localStorage.setItem(MUTE_KEY, audio.muted ? "1" : "0"); } catch {}
+      paintSound();
+    };
+    if (audio) {
+      for (const type of ["pointerdown", "pointerup", "touchend", "click", "keydown"]) {
+        window.addEventListener(type, () => audio.unlock(), { capture: true, passive: true });
+      }
+      document.addEventListener("visibilitychange", () => audio.hidden(document.hidden || portalPage.blocked()));
+      soundBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+      soundBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); toggleSound(); });
+      window.addEventListener("keydown", (e) => { if (e.key === "m" || e.key === "M") toggleSound(); });
+      paintSound();
+    }
+
+    const state = { lx: 0, lz: 0, jump: false, attack: false };
+    const held = new Set();
+    const clamp = (v) => Math.max(-1, Math.min(1, v));
+    let phase = "title";
+    globalThis.kagraPreview = session;
+    portalPage = globalThis.KagraPortal.bindPage({
+      win: window, doc: document, host: portalHost, session, audio, t, getPhase: () => phase,
+    });
+
+    let boardDone = false;
+    let resultAt = 0;
+
+    // ---- Local ranking. Device only (localStorage), no network. The sim hands
+    // over `result` = {key, columns, top_n, sort, run}; nothing here is Neon Cat
+    // specific, so another kit with the same `hud.result.board` gets the same list.
+    const COLUMN_LABEL = { time: t("col.time"), gates: t("col.gates"), coins: t("col.coins"), score: t("col.score"), combo: t("col.combo"), perfect: t("col.perfect"), kills: t("col.kills"), level: t("col.level") };
+    const fmtTime = (t) => {
+      const m = Math.floor(t / 60);
+      const sec = (t - m * 60).toFixed(1).padStart(m ? 4 : 1, "0");
+      return m ? `${m}:${sec}` : `${sec}s`;
+    };
+    const fmtCell = (col, v) => (col === "time" ? fmtTime(v) : String(v));
+    const boardKey = (key) => `kagra.board.v1.${key}`;
+    const loadBoard = (key) => {
+      try {
+        const rows = JSON.parse(localStorage.getItem(boardKey(key)) || "[]");
+        return Array.isArray(rows) ? rows.filter((r) => r && typeof r === "object") : [];
+      } catch { return []; }
+    };
+    const rankOrder = (rows, col) =>
+      rows.slice().sort((a, b) => (b[col] - a[col]) || (b.score - a.score) || (a.at - b.at));
+    // Keep the union of the top N of every column, so a long survivor is not
+    // dropped just because its score is low.
+    const prune = (rows, columns, n) => {
+      const keep = new Set();
+      for (const col of columns) rankOrder(rows, col).slice(0, n).forEach((r) => keep.add(r.id));
+      return rows.filter((r) => keep.has(r.id));
+    };
+    // preview: show this run's numbers only. It is not saved and the ranking
+    // stays hidden (a run that may still be continued by a rewarded ad).
+    const showBoard = (res, preview = false) => {
+      const columns = Array.isArray(res.columns) && res.columns.length ? res.columns : ["score"];
+      const n = Math.max(1, res.top_n | 0 || 5);
+      const run = { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, at: Date.now() };
+      for (const c of columns) run[c] = Number(res.run?.[c]) || 0;
+      run.score = Number(res.run?.score) || 0;
+      // Rank against everything saved plus this run; only the top N of each
+      // column is kept on the device, so a weak run is shown but not stored.
+      const rows = loadBoard(res.key).concat(run);
+      if (!preview) {
+        try { localStorage.setItem(boardKey(res.key), JSON.stringify(prune(rows, columns, n))); } catch {}
+      }
+      let sort = columns.includes(res.sort) ? res.sort : columns[0];
+      const stats = document.getElementById("runStats");
+      const tabs = document.getElementById("tabs");
+      const box = document.getElementById("rows");
+      const best = rankOrder(rows, "score")[0] === run && rows.length > 1;
+      stats.innerHTML = "";
+      for (const c of columns) {
+        const cell = document.createElement("div");
+        if (c === "score") cell.className = "big";
+        cell.innerHTML = `<b></b><span></span>`;
+        cell.querySelector("b").textContent = fmtCell(c, run[c]);
+        cell.querySelector("span").textContent = COLUMN_LABEL[c] || c;
+        stats.appendChild(cell);
+      }
+      stats.style.gridTemplateColumns = `repeat(${columns.length}, 1fr)`;
+      document.getElementById("boardBox").hidden = preview;
+      if (preview) return;
+      const draw = () => {
+        tabs.innerHTML = "";
+        if (columns.length > 1) {
+          for (const c of columns) {
+            const b = document.createElement("button");
+            b.type = "button";
+            b.textContent = COLUMN_LABEL[c] || c;
+            b.className = c === sort ? "on" : "";
+            const pick = (e) => { e.preventDefault(); e.stopPropagation(); sort = c; draw(); };
+            b.addEventListener("pointerdown", stopOverlayEvent);
+            b.addEventListener("pointerup", pick);
+            tabs.appendChild(b);
+          }
+        }
+        const ordered = rankOrder(rows, sort);
+        const top = ordered.slice(0, n);
+        const table = document.createElement("table");
+        table.className = "rank";
+        const head = `<tr><th>#</th>${columns.map((c) => `<th>${COLUMN_LABEL[c] || c}</th>`).join("")}</tr>`;
+        const line = (r, rank, extra) =>
+          `<tr class="${extra}"><td>${rank}</td>${columns
+            .map((c) => `<td class="${c === sort ? "sorted" : ""}">${fmtCell(c, r[c] || 0)}</td>`)
+            .join("")}</tr>`;
+        let html = head;
+        top.forEach((r, i) => { html += line(r, i + 1, r.id === run.id ? "me" : ""); });
+        const at = ordered.findIndex((r) => r.id === run.id);
+        if (at >= n) {
+          html += `<tr class="gap"><td colspan="${columns.length + 1}">⋮</td></tr>` + line(run, at + 1, "me");
+        }
+        table.innerHTML = html;
+        box.innerHTML = "";
+        if (best) {
+          const tag = document.createElement("div");
+          tag.className = "newbest";
+          tag.textContent = t("newbest");
+          box.appendChild(tag);
+        }
+        box.appendChild(table);
+      };
+      draw();
+    };
+
+    const stopOverlayEvent = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    let cancelCanvasPointers = () => {};
+    // ---- HOP-BEAT: Continue (rewarded ad) and the audio-sync stepper.
+    // A run that can be continued is not saved until the player says no.
+    let pendingResult = null;
+    const mockAds = dev && params.get("ads") === "mock";
+    const reviveOffered = (res) =>
+      hopMode && !!res && res.can_revive === true &&
+      (mockAds || portalHost.canOfferRewarded("revive"));
+    const settleResult = () => {
+      const res = pendingResult;
+      pendingResult = null;
+      if (!res || boardDone) return;
+      boardDone = true;
+      showBoard(res);
+    };
+    const askRevive = async () => {
+      if (!hopMode || phase !== "complete" || portalPage.blocked()) return;
+      let ok = false;
+      if (mockAds) {
+        const adEl = document.getElementById("kagra-ad");
+        adEl.classList.add("visible");
+        await new Promise((r) => setTimeout(r, 900));
+        adEl.classList.remove("visible");
+        ok = true;
+      } else {
+        try { ok = !!(await portalHost.rewarded("revive")).rewarded; } catch { ok = false; }
+      }
+      if (ok && phase === "complete" && session.revive()) {
+        pendingResult = null;
+        audio && audio.unlock();
+        return;
+      }
+      // No ad, or no continue left: the result stands.
+      document.getElementById("revive").hidden = true;
+      settleResult();
+    };
+    const syncVal = document.getElementById("syncVal");
+    const paintSync = () => { syncVal.textContent = `${syncMs > 0 ? "+" : ""}${syncMs} ms`; };
+    const nudgeSync = (d) => {
+      syncMs = Math.max(-SYNC_MAX, Math.min(SYNC_MAX, syncMs + d));
+      try { localStorage.setItem(SYNC_KEY, String(syncMs)); } catch {}
+      session.setLatencyMs(syncMs);
+      paintSync();
+    };
+    const showPhase = (next) => {
+      phase = next || "title";
+      if (phase === "complete") resultAt = performance.now();
+      const playing = phase === "playing";
+      if (!playing) cancelCanvasPointers();
+      portalPage.phase(phase);
+      overlay.classList.toggle("visible", !playing);
+      pads.classList.toggle("visible", playing && !swipeMode);
+      hud.classList.toggle("visible", playing);
+      document.documentElement.dataset.menu = playing ? "0" : "1";
+      if (!playing && phase !== "complete") session.showTitle();
+      const label = playing ? t("phase.playing") : phase === "complete" ? t("phase.result") : t("phase.title");
+      document.getElementById("phaseLabel").textContent =
+        `${bundle.title || slug} · ${label} · ${sharedVersion()}`;
+      document.getElementById("start").textContent = phase === "complete" ? t("retry") : t("start");
+      const death = document.getElementById("death");
+      const resultBox = document.getElementById("result");
+      const gameover = document.getElementById("gameover");
+      let sim = {};
+      try { sim = JSON.parse(session.gameJson()); } catch {}
+      const reason = sim.death || "";
+      if (phase === "complete" && reason) {
+        death.hidden = false;
+        // The sim's own wording (hud.result.deaths in the spec); the raw name is the fallback.
+        death.textContent = swipeMode
+          ? (globalThis.KagraI18n.create(globalThis.kagraLang).tryT(`death.${reason}`) || sim.death_text || reason)
+          : t("hit", { reason });
+      } else {
+        death.hidden = true;
+        death.textContent = "";
+      }
+      if (phase === "playing") boardDone = false;
+      const showResult = swipeMode && phase === "complete" && sim.result;
+      const offer = showResult && reviveOffered(sim.result);
+      document.getElementById("revive").hidden = !offer;
+      document.getElementById("syncRow").hidden = !(hopMode && phase !== "playing");
+      paintSync();
+      if (swipeMode) {
+        gameover.hidden = phase !== "complete";
+        document.getElementById("title").hidden = phase === "complete";
+        document.getElementById("blurb").hidden = phase === "complete";
+        if (hopMode) document.getElementById("tagline").hidden = phase === "complete";
+      }
+      resultBox.hidden = !showResult;
+      // The game-over card: the banner for a run that beat the device best.
+      const bestBanner = document.getElementById("bestBanner");
+      const beat = !!(showResult && sim.result.new_best);
+      if (bestBanner.hidden === beat) {
+        bestBanner.hidden = !beat;
+        if (beat) { bestBanner.style.animation = "none"; void bestBanner.offsetWidth; bestBanner.style.animation = ""; }
+      }
+      const goalsTitle = document.getElementById("goalsTitle");
+      const runGoals = document.getElementById("runGoals");
+      const bestNow = Math.max(Number(sim.best) || 0, loadBest(slug));
+      if (swipeMode && phase === "title") {
+        renderGoals(goalsTitle, sim.missions, bestNow, t("missions"));
+      } else {
+        goalsTitle.hidden = true;
+      }
+      if (showResult) {
+        renderGoals(runGoals, sim.result.missions || sim.missions, Math.max(bestNow, Number(sim.score) || 0), t("missions"));
+        if (!boardDone) saveBest(slug, Math.max(Number(sim.best) || 0, Number(sim.result?.run?.score) || 0));
+      } else {
+        runGoals.hidden = true;
+      }
+      if (showResult && !boardDone) {
+        if (offer) {
+          pendingResult = sim.result;
+          showBoard(sim.result, true);
+        } else {
+          boardDone = true;
+          showBoard(sim.result);
+        }
+      }
+      // META hook 4/4: settle the run (coins, daily best, streak) and draw the bar.
+      if (metaLayer) metaLayer.phase(phase, sim);
+    };
+
+    const readPhase = () => {
+      let statsPhase = "title";
+      let flow = "";
+      try { statsPhase = JSON.parse(session.statsJson()).game_phase || "title"; } catch {}
+      try { flow = JSON.parse(session.gameJson()).phase || ""; } catch {}
+      if (flow === "play" || flow === "pause") return "playing";
+      if (flow === "result") return "complete";
+      if (flow === "playing" || flow === "complete") return flow;
+      if (statsPhase === "playing" || statsPhase === "complete") return statsPhase;
+      return flow === "title" ? "title" : (statsPhase || "title");
+    };
+
+    let startLock = 0;
+    const confirmGame = () => {
+      if (phase === "playing") return;
+      const now = performance.now();
+      // A thumb still down from the crash must not skip the result.
+      if (phase === "complete" && now - resultAt < 500) return;
+      if (now - startLock < 350) return;
+      startLock = now;
+      const from = phase;
+      portalPage.start(from, () => { settleResult(); session.startGame(); });
+    };
+    const startBtn = document.getElementById("start");
+    startBtn.addEventListener("pointerdown", stopOverlayEvent);
+    startBtn.addEventListener("pointerup", (e) => {
+      stopOverlayEvent(e);
+      confirmGame();
+    });
+    startBtn.addEventListener("click", (e) => {
+      stopOverlayEvent(e);
+      confirmGame();
+    });
+    for (const [id, fn] of [["revive", askRevive], ["syncMinus", () => nudgeSync(-10)], ["syncPlus", () => nudgeSync(10)]]) {
+      const el = document.getElementById(id);
+      el.addEventListener("pointerdown", stopOverlayEvent);
+      el.addEventListener("pointerup", (e) => { stopOverlayEvent(e); fn(); });
+      el.addEventListener("click", (e) => { stopOverlayEvent(e); });
+    }
+    const catalog = overlay.querySelector("a.btn");
+    if (catalog) {
+      const openCatalog = (e) => {
+        stopOverlayEvent(e);
+        const href = catalog.getAttribute("href") || "./index.html";
+        if (location.href !== new URL(href, location.href).href) location.href = href;
+      };
+      catalog.addEventListener("pointerdown", stopOverlayEvent);
+      catalog.addEventListener("pointerup", openCatalog);
+      catalog.addEventListener("click", openCatalog);
+    }
+    overlay.addEventListener("pointerup", (e) => {
+      if (e.target.closest("a, button, .panel")) return;
+      if (phase !== "playing") confirmGame();
+    });
+
+    const bindHold = (el, setDown) => {
+      const ids = new Set();
+      const down = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try { el.setPointerCapture(e.pointerId); } catch {}
+        ids.add(e.pointerId);
+        setDown(true);
+        el.classList.add("on");
+      };
+      const up = (e) => {
+        ids.delete(e.pointerId);
+        if (ids.size === 0) {
+          setDown(false);
+          el.classList.remove("on");
+        }
+      };
+      el.addEventListener("pointerdown", down);
+      el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);
+      el.addEventListener("lostpointercapture", up);
+    };
+    const stick = document.getElementById("stick");
+    const stickIds = new Set();
+    const applyStick = (e) => {
+      const r = stick.getBoundingClientRect();
+      const dx = (e.clientX - (r.left + r.width / 2)) / (r.width / 2);
+      const dy = (e.clientY - (r.top + r.height / 2)) / (r.height / 2);
+      state.lx = clamp(dx);
+      state.lz = clamp(-dy);
+      stick.classList.add("on");
+    };
+    stick.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try { stick.setPointerCapture(e.pointerId); } catch {}
+      stickIds.add(e.pointerId);
+      applyStick(e);
+    });
+    stick.addEventListener("pointermove", (e) => {
+      if (stickIds.has(e.pointerId)) applyStick(e);
+    });
+    const endStick = (e) => {
+      stickIds.delete(e.pointerId);
+      if (stickIds.size === 0) {
+        state.lx = 0;
+        state.lz = 0;
+        stick.classList.remove("on");
+      }
+    };
+    stick.addEventListener("pointerup", endStick);
+    stick.addEventListener("pointercancel", endStick);
+    bindHold(document.getElementById("jump"), (on) => { state.jump = on; });
+    bindHold(document.getElementById("act"), (on) => { state.attack = on; });
+
+    const toBuf = (e) => {
+      const r = canvas.getBoundingClientRect();
+      const sx = canvas.width / Math.max(1, r.width);
+      const sy = canvas.height / Math.max(1, r.height);
+      return [(e.clientX - r.left) * sx, (e.clientY - r.top) * sy];
+    };
+    const phaseOf = (type) => (type === "pointerdown" ? 0 : type === "pointermove" ? 1 : type === "pointerup" ? 2 : 3);
+    const appEl = document.getElementById("app");
+    // Fingers the game has seen go down. Their up/cancel always reaches the
+    // game, even under the result overlay; otherwise a stale finger blocks
+    // every later drag (Pixel: drag died after ~3 retries).
+    const canvasIds = new Map();
+    const endPointer = (id, phase) => {
+      const last = canvasIds.get(id);
+      if (!last) return;
+      canvasIds.delete(id);
+      session.pushPointer(id + 20, last[0], last[1], phase, 0);
+    };
+    cancelCanvasPointers = () => { for (const id of [...canvasIds.keys()]) endPointer(id, 3); };
+    for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel", "lostpointercapture"]) {
+      const target = type === "pointerdown" || type === "pointermove" ? appEl : window;
+      target.addEventListener(type, (e) => {
+        if (type !== "pointerdown" && type !== "pointermove") {
+          endPointer(e.pointerId, type === "pointerup" ? 2 : 3);
+          return;
+        }
+        if (type === "pointermove" && !canvasIds.has(e.pointerId)) return;
+        if (type === "pointerdown") {
+          if (overlay.classList.contains("visible") || e.target !== canvas) return;
+          try { canvas.setPointerCapture(e.pointerId); } catch {}
+        }
+        const [x, y] = toBuf(e);
+        canvasIds.set(e.pointerId, [x, y]);
+        session.pushPointer(e.pointerId + 20, x, y, phaseOf(type), e.pressure || 1);
+      }, true);
+    }
+
+    // HOP-BEAT is one button: Space and a few friends, press and release.
+    const HOP_KEYS = new Set([" ", "ArrowUp", "w", "W", "j", "J", "z", "Z"]);
+    window.addEventListener("keydown", (e) => {
+      held.add(e.key);
+      if (hopMode && phase === "playing" && !e.repeat && HOP_KEYS.has(e.key)) session.pushKey("space", true);
+      if (e.key === " " || e.key.startsWith("Arrow")) e.preventDefault();
+      if ((e.key === "Enter" || e.key === " ") && phase !== "playing") confirmGame();
+    });
+    // HOP-BEAT pause: Escape or P toggles it; a hidden tab pauses by itself.
+    const hopPhase = () => { try { return JSON.parse(session.gameJson()).phase || ""; } catch { return ""; } };
+    window.addEventListener("keydown", (e) => {
+      if (!(hopMode || survivorMode) || e.repeat || phase !== "playing") return;
+      if (e.key === "Escape" || e.key === "p" || e.key === "P") {
+        if (hopPhase() === "pause") session.resumeRun(); else session.pauseRun();
+      }
+    });
+    document.addEventListener("visibilitychange", () => {
+      if ((hopMode || survivorMode) && document.hidden && phase === "playing" && session.pauseRun) session.pauseRun();
+    });
+    // The pause card steps the sync in the canvas: keep the device copy in step.
+    window.addEventListener("pointerup", () => {
+      if (!hopMode || phase !== "playing") return;
+      let v = NaN;
+      try { v = Number(JSON.parse(session.gameJson()).sync_ms); } catch {}
+      if (Number.isFinite(v) && Math.round(v) !== syncMs) {
+        syncMs = Math.round(v);
+        try { localStorage.setItem(SYNC_KEY, String(syncMs)); } catch {}
+        paintSync();
+      }
+    }, true);
+    window.addEventListener("keyup", (e) => {
+      held.delete(e.key);
+      if (hopMode && HOP_KEYS.has(e.key)) session.pushKey("space", false);
+    });
+    window.addEventListener("blur", () => {
+      held.clear();
+      if (hopMode) session.pushKey("space", false);
+      state.lx = 0;
+      state.lz = 0;
+      state.jump = false;
+      state.attack = false;
+    });
+
+    const keyAxis = () => {
+      const l = held.has("ArrowLeft") || held.has("a") || held.has("A");
+      const r = held.has("ArrowRight") || held.has("d") || held.has("D");
+      const u = held.has("ArrowUp") || held.has("w") || held.has("W");
+      const d = held.has("ArrowDown") || held.has("s") || held.has("S");
+      return {
+        lx: (r ? 1 : 0) - (l ? 1 : 0),
+        lz: (u ? 1 : 0) - (d ? 1 : 0),
+        attack: held.has("j") || held.has("J") || held.has("k") || held.has("K"),
+      };
+    };
+
+    document.addEventListener("touchmove", (e) => {
+      if (e.target.closest("#overlay button, #overlay a")) return;
+      // A tall result card scrolls; everything else stays put.
+      if (swipeMode && overlay.classList.contains("visible") && overlay.scrollHeight > overlay.clientHeight) return;
+      e.preventDefault();
+    }, { passive: false });
+    showPhase("title");
+    // Direct play: no title card. The run waits at TAP TO START, and that tap
+    // is also the browser's audio gesture.
+    if (hopDirect) session.startGame();
+
+    // <kagra-devtools>
+    // ?dev=1 only, never in a portal zip (package_portal.py cuts this block and leaves
+    // perf.js out): the frame-time overlay and the A/B recorder, docs/phone_measure.md.
+    if (dev && BUILD !== "portal") {
+      const tag = document.createElement("script");
+      tag.src = vq("./perf.js");
+      tag.onload = () => globalThis.KagraPerf?.start({
+        session, params, build: BUILD,
+        getCanvas: () => canvas,
+        getBackend: () => activeBackend,
+        getScale: () => ({ cap: effectiveCap(), step: scaleStep }),
+        getQuality: () => globalThis.kagraQuality?.tier || (params.get("quality") || "").toLowerCase() || "default",
+        getRenderSkip: () => renderSkip,
+        setRenderSkip: (on) => { renderSkip = on; },
+      });
+      document.head.appendChild(tag);
+    }
+    // </kagra-devtools>
+
+    let presented = 0;
+    let recovering = false;
+    // Dynamic quality: a running average of the frame gap. Over 26 ms
+    // (under about 38 fps) for 2.5 s drops one rung of the render scale;
+    // pauses (a hidden tab, a long hitch) are not counted.
+    const adaptOn = params.get("adapt") !== "0";
+    let lastT = 0;
+    let avgGap = 16.7;
+    let gapFrames = 0;
+    let lastStep = 0;
+    const adapt = (now) => {
+      const gap = lastT ? now - lastT : 0;
+      lastT = now;
+      if (!adaptOn || gap <= 0 || gap > 250) return;
+      avgGap += (gap - avgGap) * 0.05;
+      gapFrames += 1;
+      if (gapFrames < 90 || avgGap < 26 || now - lastStep < 2500) return;
+      if (scaleStep >= SCALE_STEPS.length - 1) return;
+      scaleStep += 1;
+      lastStep = now;
+      avgGap = 16.7;
+      console.warn(`kagra: slow frames, render scale cap ${SCALE_STEPS[scaleStep]}`);
+      fit();
+    };
+    // The sim steps at 60 Hz whatever the screen does (a 120 Hz phone would
+    // otherwise play double speed). A slightly early step is allowed so a
+    // steady 60 Hz does not stutter between zero and two steps.
+    const FIXED = 1 / 60;
+    let acc = 0;
+    let lastFrame = 0;
+    const stepSim = (now) => {
+      if (!hopMode && !survivorMode) { session.requestFrame(); return 1; }
+      acc += lastFrame ? Math.min(0.1, (now - lastFrame) / 1000) : FIXED;
+      lastFrame = now;
+      let n = 0;
+      while (acc >= FIXED * 0.85 && n < 3) { acc -= FIXED; n += 1; }
+      if (acc > FIXED) acc = 0;
+      if (n === 0) return 0;
+      if (hopMode) session.setMusicClock(audio ? audio.songClock() : NaN);
+      for (let i = 0; i < n; i += 1) session.requestFrame();
+      return n;
+    };
+    // Graphics tiers (quality.js): a no-op for a game that has none.
+    // A broken tier (or a saved setting it cannot read) must not stop the game: play at the default.
+    try {
+      globalThis.KagraQuality?.start({
+        session, params,
+        getPhase: () => (phase === "playing" ? "play" : phase === "complete" ? "result" : "title"),
+        setScaleCap: (cap) => { tierCap = cap; scaleStep = 0; avgGap = 16.7; gapFrames = 0; fit(); },
+      });
+    } catch (err) {
+      console.warn("kagra: graphics tiers off", err);
+    }
+
+    // Gamepad (standard mapping): left stick / d-pad move, A or right trigger = action, Start = pause.
+    let padStart = false;
+    let padOff = false;
+    const padAxis = () => {
+      const out = { lx: 0, lz: 0, act: false };
+      if (padOff || !navigator.getGamepads) return out;
+      let pads;
+      // getGamepads() throws where the gamepad feature is blocked (a portal iframe without allow="gamepad").
+      try { pads = navigator.getGamepads() || []; } catch (err) {
+        padOff = true;
+        console.warn("kagra: gamepad off", err);
+        return out;
+      }
+      let startDown = false;
+      for (const gp of pads) {
+        if (!gp || !gp.connected) continue;
+        let x = gp.axes[0] || 0, y = gp.axes[1] || 0;
+        const m = Math.hypot(x, y);
+        if (m < 0.18) { x = 0; y = 0; } else { const s = Math.min(1, (m - 0.18) / 0.77) / m; x *= s; y *= s; }
+        const b = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
+        if (b(14)) x -= 1;
+        if (b(15)) x += 1;
+        if (b(12)) y -= 1;
+        if (b(13)) y += 1;
+        out.lx += x;
+        out.lz += -y;
+        if (b(0) || b(7)) out.act = true;
+        if (b(9)) startDown = true;
+      }
+      out.lx = clamp(out.lx);
+      out.lz = clamp(out.lz);
+      if (startDown && !padStart && (hopMode || survivorMode) && phase === "playing") {
+        if (hopPhase() === "pause") session.resumeRun(); else session.pauseRun();
+      }
+      padStart = startDown;
+      return out;
+    };
+
+    const loop = () => {
+      try { frame(); }
+      catch (err) {
+        // A throw here used to end the loop silently: a black screen with no title.
+        rendering = false;
+        fail(t("err.stopped", { err: errText(err) }));
+      }
+    };
+    const frame = () => {
+      looping = true;
+      if (recovering) return;
+      adapt(performance.now());
+      const k = keyAxis();
+      const gpd = padAxis();
+      const jump = state.jump || held.has(" ") || held.has("Spacebar") || gpd.act;
+      session.setPlayInput(
+        clamp(state.lx + k.lx + gpd.lx),
+        clamp(state.lz + k.lz + gpd.lz),
+        jump,
+        state.attack || k.attack,
+        false,
+      );
+      const stepped = stepSim(performance.now());
+      if (audio) {
+        try { audio.pump(session.audioCuesJson()); } catch {}
+      }
+      // render_skip: a 120 Hz frame where the sim did not step draws the same picture.
+      const skipDraw = renderSkip && stepped === 0 && redraw <= 0;
+      if (redraw > 0) redraw -= 1;
+      if (rendering && !skipDraw) {
+        try { session.render(); }
+        catch (err) {
+          rendering = false;
+          fail(t("err.stopped", { err: errText(err) }));
+        }
+        presented += 1;
+        if (presented === 8 && activeBackend !== "gl" && requestedBackend !== "webgpu" && canvasIsBlank(canvas)) {
+          recovering = true;
+          rendering = false;
+          console.warn("kagra: blank WebGPU frame, falling back to WebGL2");
+          const next = document.createElement("canvas");
+          next.id = "c";
+          canvas.replaceWith(next);
+          canvas = next;
+          attachBackend("gl").then(() => {
+            rendering = true;
+            recovering = false;
+            requestAnimationFrame(loop);
+          }).catch((err) => {
+            fail(t("err.fallback", { err }));
+          });
+          return;
+        }
+      }
+      try {
+        const next = readPhase();
+        if (next !== phase) showPhase(next);
+      } catch {}
+      requestAnimationFrame(loop);
+    };
+    loop();
+  </script>
+</body>
+</html>

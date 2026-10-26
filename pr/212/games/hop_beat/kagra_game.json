@@ -1,0 +1,7 @@
+{
+  "title": "Hop Beat",
+  "version": "0.1.0",
+  "slug": "hop_beat",
+  "entry": "examples/hop_beat_minimal.py",
+  "world": "kagra-shared/tests/fixtures/hop_beat_world.json"
+}
