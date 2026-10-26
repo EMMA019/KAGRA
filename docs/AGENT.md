@@ -1,5 +1,7 @@
 # Agent / Platform contracts
 
+> **Scope:** this file maps the desktop / Python side and the shared runtime's older genres. New phone games are Rust kits from `scripts/new_kit.py`; start at [`AGENTS.md`](../AGENTS.md) and [`docs/making_a_game.md`](making_a_game.md).
+
 エージェント向けの行動規範はリポジトリ直下の [`AGENTS.md`](../AGENTS.md)。
 エージェントに何かを作らせるときのログ規約は
 [`docs/agent-runs/README.md`](agent-runs/README.md)。
@@ -8,7 +10,7 @@
 |-------|------|
 | API index | `docs/API_INDEX.md` |
 | Engine review | `docs/REVIEW.ja.md` |
-| Roadmap | `docs/ROADMAP.ja.md` (100% = screenless indie ship; now ~40%, first M3 genre = collectathon. Old 63% is archived) |
+| Roadmap | `docs/ROADMAP.ja.md` (phone browser games made with AI; the engine grows from the games) |
 | World dump schema | `docs/schemas/world.json` |
 | Input schema | `docs/schemas/input_events.json` |
 | Verify scenarios | `examples/verify_scenarios/` |
