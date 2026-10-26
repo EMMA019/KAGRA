@@ -258,6 +258,16 @@ jobs:
           echo "Pages did not serve ${html}" >&2
           exit 1
 
+      # Last, so a game that fails to start still leaves its preview up to look at. Headless
+      # Chromium (WebGL2 on SwiftShader) opens every playable game in dist/preview and fails
+      # on a page error, an error card, a load that never ends or a blank picture.
+      - name: Browser smoke (every game starts)
+        run: |
+          set -eu
+          npm install --no-save --no-package-lock playwright@1.63.0
+          npx playwright install --with-deps chromium
+          node scripts/browser_smoke.mjs dist/preview
+
   cleanup:
     # Merged PRs keep /pr/<number>/. Deleting it here also dispatches Pages
     # Deploy while pages.yml is still building, so the live site gets the

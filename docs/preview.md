@@ -47,6 +47,20 @@ python -m http.server -d dist/preview 8000
 # http://localhost:8000/  と  http://localhost:8000/play.html?game=platformer
 ```
 
+### 起動確認（ブラウザ）
+
+Preview の最後の手順 `Browser smoke` が、`dist/preview` の遊べるゲームを全部ヘッドレス Chromium
+（SwiftShader の WebGL2）で開く。ページエラー、エラーカード、終わらない読み込み、真っ黒な画面の
+どれかで赤になる。プレビューは先に公開されるので、赤でもリンクは開ける。端末固有の GPU の不具合
+（Pixel 10 の黒画面など）は実機でしか見えない。手元では:
+
+```bash
+python scripts/build_browser_preview.py --out dist/preview --require-pkg
+npm install --no-save playwright && npx playwright install chromium
+node scripts/browser_smoke.mjs dist/preview            # 全部
+node scripts/browser_smoke.mjs dist/preview hop_beat   # 指定だけ
+```
+
 ## 配信
 
 Settings → Pages → Source は **GitHub Actions**。`gh-pages` はサイトの中身を

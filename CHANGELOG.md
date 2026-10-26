@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Lighter wasm: no pixel-font fallback in the browser build.** PixelMplus (1.1 MB) stays the last fallback on desktop, Android and Python, but the wasm build no longer embeds it: every game string is in the Zen Maru Gothic subset (a test checks). Measured on the same build: 8.59 MB -> 7.45 MB raw, 2.98 -> 2.66 MB gzip, 2.17 -> 1.90 MB brotli. (wasm-opt -Oz was measured too: 7% smaller raw but larger compressed, so it is not used; the old genre modules are ~250 KB of code in all, not worth a feature split yet.)
+
+- **CI: every game must start in a browser.** `scripts/browser_smoke.mjs` opens each playable game of the staged preview in headless Chromium (WebGL2 on SwiftShader) and fails on a page error, an error card, a load that never ends or a blank picture; Preview runs it last, after publishing. 22/22 start; a truncated wasm fails it.
+
 - **Moonlit Swarm: a darker night.** New `arena.dark` (0..1, default 1): fill light, IBL, exposure and the sky ease toward dim moonlight, the fog comes in closer, the key light tightens around the hero, the warm lantern gets stronger, and the floor and walls lose some light, so the pale foes glow out of the dark. `arena.dark: 0` keeps the old blue-lit arena.
 
 - **Moonlit Swarm: the foes move.** The models are static poses, so each foe now gets body motion from its transform, each model its own way: the ghost floats and sways, the zombie shuffles onto one leg, the skeleton hops and squashes on landing, the vampire glides leaning in, the keeper stomps. Every foe has its own phase and tempo (from its id), so a crowd does not move in lockstep, and a hit throws it back for the flash. `fx.foe_motion` (0 = still, 1 = as tuned, up to 2); picture only (`survivor_arena/motion.rs`). Lean direction checked in a side render.
