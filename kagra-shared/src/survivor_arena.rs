@@ -319,6 +319,10 @@ pub struct FxSpec {
     /// (TAA, cascades and PCSS come from the tier itself).
     pub high_post: bool,
     pub cap: [u32; 3],
+    /// Fraction of the triangles of the foe models kept on the low, mid and high picture
+    /// tiers (vertex clustering at load; 1 = full detail). A crowd of small figures does not
+    /// need a thousand triangles each.
+    pub foe_detail: [f32; 3],
 }
 
 impl Default for FxSpec {
@@ -332,6 +336,7 @@ impl Default for FxSpec {
             trails: true,
             high_post: true,
             cap: [48, 160, 480],
+            foe_detail: [0.5, 0.65, 1.0],
         }
     }
 }
@@ -647,6 +652,9 @@ impl SurvivorSpec {
             0.0,
             1800.0,
         )?;
+        for (i, d) in self.fx.foe_detail.iter().enumerate() {
+            range(w, &format!("fx.foe_detail[{i}]"), *d, 0.2, 1.0)?;
+        }
         range(
             w,
             "director.elite_fight_secs",
@@ -1236,6 +1244,11 @@ struct DmgNum {
     val: i32,
     age: f32,
 }
+
+/// A gem dropped within this far (m) of a resting one adds to it; the wider reach applies
+/// once the pool is more than three-fifths full.
+const GEM_MERGE_R: f32 = 0.7;
+const GEM_MERGE_FULL_R: f32 = 1.7;
 
 const DMG_CAP: [usize; 3] = [6, 12, 20];
 const DMG_LIFE: f32 = 0.7;
@@ -2434,7 +2447,21 @@ impl SurvivorArena {
                 self.zoom_kick = self.zoom_kick.max(0.6);
             }
             self.drop_loot(x, z, &k);
-            if self.gems.len() < self.spec.caps.gems as usize {
+            // Gems that land beside a resting gem melt into it (a bigger gem worth the sum), more
+            // eagerly as the pool fills: a crowd's kills leave a few fat gems, not a carpet.
+            let cap = self.spec.caps.gems as usize;
+            let reach = if self.gems.len() * 5 > cap * 3 {
+                GEM_MERGE_FULL_R
+            } else {
+                GEM_MERGE_R
+            };
+            let near = self
+                .gems
+                .iter()
+                .position(|g| !g.fly && (g.x - x).powi(2) + (g.z - z).powi(2) < reach * reach);
+            if let Some(gi) = near {
+                self.gems[gi].v += k.xp;
+            } else if self.gems.len() < cap {
                 self.gems.push(Gem {
                     x,
                     z,
@@ -3101,6 +3128,13 @@ impl SurvivorArena {
             ..WorldDoc::default()
         };
         doc.quality = self.picture_quality.clone();
+        let keep = self.spec.fx.foe_detail[self.tier.min(2)];
+        if keep < 0.98 {
+            doc.mesh_lod = Some(crate::world_doc::MeshLod {
+                keep,
+                models: vec![GRAVEYARD.to_string() + "character-"],
+            });
+        }
         if self.tier == 2 && self.spec.fx.high_post {
             doc.shadow_softness = Some(2.6);
             doc.ssao = Some(10.0);
@@ -3831,11 +3865,28 @@ impl SurvivorArena {
             let g = &self.gems[i];
             p.enabled = true;
             let bob = 0.08 * (self.anim_t * 5.0 + i as f32).sin();
+            // A merged gem is bigger (and goldens past a handful of XP).
+            let m = g.v.max(1.0).powf(0.33).min(2.0);
             if slots.glb_gem {
-                p.position = [g.x, 0.12 + bob, g.z];
+                p.position = [g.x, 0.12 + bob * m, g.z];
                 p.yaw = self.anim_t * 2.2 + i as f32;
+                p.scale = [1.3 * m; 3];
             } else {
                 p.position = [g.x, 0.3 + bob, g.z];
+                p.scale = [0.28 * m; 3];
+            }
+            let gold = g.v >= 6.0;
+            p.color = Some(match (gold, slots.glb_gem) {
+                (true, _) => [255, 215, 110],
+                (false, true) => [255, 255, 255],
+                (false, false) => [90, 230, 255],
+            });
+            if slots.glb_gem {
+                p.emissive_color = Some(if gold {
+                    [1.0, 0.7, 0.2]
+                } else {
+                    [0.35, 0.9, 1.0]
+                });
             }
         }
         let sn = self.shots.len();
@@ -5358,6 +5409,142 @@ mod tests {
         }
     }
 
+    /// Pile `n` foes of every unlocked kind (tough, so they stay) in a ring on the hero,
+    /// and fill the gem pool: the worst frame the swarm can make.
+    fn pile_crowd(g: &mut SurvivorArena, n_foes: usize) {
+        let unlocked: Vec<usize> = (0..g.kinds.len())
+            .filter(|&i| !g.kinds[i].elite && g.kinds[i].unlock <= g.t)
+            .collect();
+        let mut rng = Rng::new(9);
+        while g.foes.len() < n_foes {
+            let kind = unlocked[rng.next_u32() as usize % unlocked.len()];
+            let a = rng.range(0.0, std::f32::consts::TAU);
+            let r = rng.range(1.5, 11.0);
+            let hp = g.kinds[kind].hp * 40.0;
+            if !g.add_foe(kind, (g.hx + a.sin() * r, g.hz + a.cos() * r), hp) {
+                break;
+            }
+        }
+        for _ in 0..g.spec.caps.gems as usize {
+            if g.gems.len() < g.spec.caps.gems as usize {
+                let a = rng.range(0.0, std::f32::consts::TAU);
+                let r = rng.range(1.0, 10.0);
+                g.gems.push(Gem {
+                    x: g.hx + a.sin() * r,
+                    z: g.hz + a.cos() * r,
+                    v: 1.0,
+                    fly: false,
+                });
+            }
+        }
+    }
+
+    /// `cargo test --release -p kagra-shared --lib crowd_probe -- --ignored --nocapture`
+    /// is the worst frame: hundreds of foes of every kind on the hero, gems and damage
+    /// numbers at their caps, orbit blades out, particles flying. Per-phase native cost of
+    /// one step, and what the renderer is handed.
+    #[test]
+    #[ignore]
+    fn crowd_probe() {
+        let n_foes: usize = std::env::var("KAGRA_FOES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(250);
+        for (name, q) in [("low", Some("low")), ("mid", None), ("high", Some("high"))] {
+            let mut spec = SurvivorSpec::default();
+            spec.hero.max_hp = 1.0e9;
+            spec.director.seed = 5;
+            let mut g = SurvivorArena::new(spec);
+            g.picture_quality = q.map(String::from);
+            g.apply_quality();
+            g.build_doc();
+            g.confirm();
+            for _ in 0..3 {
+                g.grant_weapon();
+            }
+            // Run to a busy minute, then pile the crowd in a ring around the hero.
+            while g.secs() < 90.0 && g.flow.phase == FlowPhase::Play {
+                if g.card_count() > 0 {
+                    g.choose(0);
+                }
+                kite_step(&mut g);
+                g.tick(DT);
+            }
+            pile_crowd(&mut g, n_foes);
+            let at = [g.hx, 0.4, g.hz];
+            let time = |label: &str, g: &mut SurvivorArena, f: &dyn Fn(&mut SurvivorArena)| {
+                let t0 = std::time::Instant::now();
+                for _ in 0..120 {
+                    f(g);
+                }
+                eprintln!(
+                    "{name} {label:<14} {:8.1} us",
+                    t0.elapsed().as_nanos() as f64 / 120.0 / 1000.0
+                );
+            };
+            eprintln!(
+                "{name}: foes {} gems {} fx cap {} dmg cap {}",
+                g.foes.len(),
+                g.gems.len(),
+                g.fx_cap,
+                DMG_CAP[g.tier]
+            );
+            time("grid.rebuild", &mut g, &|g| {
+                g.grid.rebuild(&g.foes.x, &g.foes.z)
+            });
+            time("move_foes", &mut g, &|g| g.move_foes(0.0));
+            time("fire", &mut g, &|g| g.fire(0.0));
+            time("step_blades", &mut g, &|g| g.step_blades(0.0));
+            time("reap", &mut g, &|g| g.reap());
+            time("collect", &mut g, &|g| g.collect(0.0));
+            time("step_fx", &mut g, &|g| {
+                g.burst(FX_GLINT, 6, at, [0.0, 0.0], 3.0, 1.0, 3.0, 0.7);
+                g.step_fx(0.0)
+            });
+            time("whole step", &mut g, &|g| g.step_sim(DT));
+            time("build_doc", &mut g, &|g| g.build_doc());
+            let doc = g.doc.clone();
+            let live = doc.props.iter().filter(|p| p.enabled).count();
+            let pts: usize = doc.points.iter().map(|p| p.positions.len()).sum();
+            let fp = crate::profile::FrameProfile::from_world(&doc);
+            eprintln!(
+                "{name}: live props {live} points {pts} gpu draws {} triangles {}",
+                fp.draws, fp.triangles
+            );
+            {
+                let meshes = doc.compile_meshes();
+                let scene = doc.compile_scene(0.45);
+                for b in &scene.batches {
+                    if let Some((_, m)) = meshes.iter().find(|(id, _)| *id == b.mesh) {
+                        eprintln!(
+                            "{name}:   batch mesh {:?} x{:<4} {:6} tris each = {}",
+                            b.mesh,
+                            b.instances.len(),
+                            m.indices.len() / 3,
+                            m.indices.len() / 3 * b.instances.len()
+                        );
+                    }
+                }
+                let mut by: std::collections::BTreeMap<String, usize> = Default::default();
+                for p in doc.props.iter().filter(|p| p.enabled) {
+                    *by.entry(
+                        p.gltf
+                            .clone()
+                            .unwrap_or_else(|| format!("prim:{:?}", p.kind)),
+                    )
+                    .or_default() += 1;
+                }
+                eprintln!("{name}:   live by model {by:?}");
+            }
+            time("doc.clone", &mut g, &|g| {
+                std::hint::black_box(g.doc.clone());
+            });
+            time("compile_scene", &mut g, &|g| {
+                std::hint::black_box(g.doc.compile_scene(0.45));
+            });
+        }
+    }
+
     /// `cargo test --release -p kagra-shared --features render --lib render_probe -- --ignored --nocapture`
     /// draws a busy late frame on the software GPU and times it with one picture feature
     /// off at a time. Software numbers are not a phone's, but the ratios show which pass or
@@ -5384,6 +5571,13 @@ mod tests {
             }
             kite_step(&mut g);
             g.tick(DT);
+        }
+        if let Some(n) = std::env::var("KAGRA_CROWD")
+            .ok()
+            .and_then(|v| v.parse().ok())
+        {
+            pile_crowd(&mut g, n);
+            g.build_doc();
         }
         let Ok(mut r) = pollster::block_on(Renderer::new_offscreen(w, h)) else {
             eprintln!("no adapter");
@@ -5590,6 +5784,93 @@ mod tests {
                 .collect();
             eprintln!("{start}: {on:?}");
         }
+    }
+
+    /// `cargo test --release -p kagra-shared --features render --lib lod_look_probe -- --ignored --nocapture`
+    /// writes the same crowd close up with full detail and thinned (`/tmp/closeup/lod-*.ppm`).
+    #[cfg(feature = "render")]
+    #[test]
+    #[ignore = "writes PNGs for a human to look at"]
+    fn lod_look_probe() {
+        use crate::render::Renderer;
+        let Ok(mut r) = pollster::block_on(Renderer::new_offscreen(640, 400)) else {
+            eprintln!("no adapter");
+            return;
+        };
+        std::fs::create_dir_all("/tmp/closeup").unwrap();
+        for (name, keep) in [("full", 1.0f32), ("mid", 0.65), ("low", 0.5)] {
+            let mut spec = SurvivorSpec::default();
+            spec.fx.foe_detail = [keep; 3];
+            spec.hero.max_hp = 1.0e9;
+            let mut g = SurvivorArena::new(spec);
+            g.apply_quality();
+            g.build_doc();
+            g.confirm();
+            while g.secs() < 80.0 {
+                if g.card_count() > 0 {
+                    g.choose(0);
+                }
+                kite_step(&mut g);
+                g.tick(DT);
+            }
+            pile_crowd(&mut g, 14);
+            for _ in 0..3 {
+                g.tick(DT);
+            }
+            g.build_doc();
+            let mut d = g.doc.clone();
+            let (hx, hz) = (g.hx, g.hz);
+            d.cameras[0].position = [hx, 6.0, hz + 5.0];
+            d.cameras[0].target = [hx, 0.4, hz];
+            d.cameras[0].fov = 45.0;
+            let _ = r.draw_world_doc_with_hud(&d, &crate::scene::DrawList::default());
+            let px = r.read_rgba().unwrap();
+            let mut out = b"P6\n640 400\n255\n".to_vec();
+            for c in px.chunks(4) {
+                out.extend_from_slice(&c[..3]);
+            }
+            std::fs::write(format!("/tmp/closeup/lod-{name}.ppm"), out).unwrap();
+        }
+    }
+
+    #[test]
+    fn crowd_kills_melt_gems_and_repeat_hits_count_up_one_number() {
+        let mut g = quiet("bolt");
+        g.gems.clear();
+        let (hx, hz) = (g.hx + 6.0, g.hz);
+        g.gems.push(Gem {
+            x: hx,
+            z: hz,
+            v: 2.0,
+            fly: false,
+        });
+        let j = g.foes.len();
+        assert!(g.add_foe(0, (hx, hz), 0.0));
+        g.tick(DT);
+        assert_eq!(g.foes.len(), j, "the foe died");
+        let near: Vec<_> = g.gems.iter().filter(|m| (m.x - hx).abs() < 1.0).collect();
+        assert_eq!(near.len(), 1, "the new gem melted into the resting one");
+        assert!(near[0].v >= 3.0, "worth the sum: {}", near[0].v);
+        // A gem that is already flying to the hero is not a merge target.
+        g.gems.clear();
+        g.gems.push(Gem {
+            x: hx,
+            z: hz,
+            v: 2.0,
+            fly: true,
+        });
+        assert!(g.add_foe(0, (hx, hz), 0.0));
+        g.tick(DT);
+        assert!(g.gems.len() >= 2 || g.gems.iter().all(|m| m.fly));
+
+        let mut g = quiet("bolt");
+        g.dmg.clear();
+        assert!(g.add_foe(0, (g.hx + 6.0, g.hz), 1.0e6));
+        let j = g.foes.len() - 1;
+        g.damage_foe(j, 5.0, (0.0, 0.0), 0.0, false);
+        g.damage_foe(j, 7.0, (0.0, 0.0), 0.0, false);
+        assert_eq!(g.dmg.len(), 1, "one number");
+        assert_eq!(g.dmg[0].val, 12);
     }
 
     fn ev(phase: PointerPhase, x: f32, y: f32) -> PointerEvent {

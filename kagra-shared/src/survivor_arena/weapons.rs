@@ -44,15 +44,28 @@ impl SurvivorArena {
         self.foes.x[j] -= dir.0 * push;
         self.foes.z[j] -= dir.1 * push;
         if self.spec.fx.damage_numbers {
-            if self.dmg.len() >= DMG_CAP[self.tier] {
-                self.dmg.remove(0);
+            let (x, z) = (self.foes.x[j], self.foes.z[j]);
+            let val = dealt.round().max(1.0) as i32;
+            // A blade or a blast hits one foe again and again: a fresh number beside this one
+            // just counts up instead of stacking a new one.
+            let near = self
+                .dmg
+                .iter()
+                .position(|d| d.age < 0.2 && (d.x - x).powi(2) + (d.z - z).powi(2) < 0.64);
+            if let Some(n) = near {
+                self.dmg[n].val += val;
+                self.dmg[n].age = self.dmg[n].age.min(0.05);
+            } else {
+                if self.dmg.len() >= DMG_CAP[self.tier] {
+                    self.dmg.remove(0);
+                }
+                self.dmg.push(DmgNum {
+                    x,
+                    z,
+                    val,
+                    age: 0.0,
+                });
             }
-            self.dmg.push(DmgNum {
-                x: self.foes.x[j],
-                z: self.foes.z[j],
-                val: dealt.round().max(1.0) as i32,
-                age: 0.0,
-            });
         }
         dealt
     }
