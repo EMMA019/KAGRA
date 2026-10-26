@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="robots" content="noindex" />
-  <meta name="kagra-build-id" content="b6c7ed3c71d2" />
+  <meta name="kagra-build-id" content="c5e4d67bc0c1" />
   <title>KAGRA</title>
   <style>
     :root { color-scheme: dark; }
@@ -318,13 +318,13 @@
     <div id="boot" data-i18n="boot">読み込み中…</div>
     <div id="update" hidden><span data-i18n="update.hint">新しいバージョンがあります</span> <button id="updateGo" type="button" data-i18n="update.reload">更新</button></div>
   </div>
-  <script src="./i18n.js?v=b6c7ed3c71d2"></script>
-  <script src="./quality.js?v=b6c7ed3c71d2"></script>
-  <script src="./portal.js?v=b6c7ed3c71d2"></script>
+  <script src="./i18n.js?v=c5e4d67bc0c1"></script>
+  <script src="./quality.js?v=c5e4d67bc0c1"></script>
+  <script src="./portal.js?v=c5e4d67bc0c1"></script>
   <!-- META hook 1/4: wallet, unlocks, daily run (docs/meta_core.md) -->
-  <script src="./meta.js?v=b6c7ed3c71d2"></script>
+  <script src="./meta.js?v=c5e4d67bc0c1"></script>
   <script type="module">
-    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js?v=b6c7ed3c71d2";
+    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js?v=c5e4d67bc0c1";
 
     const boot = document.getElementById("boot");
     const overlay = document.getElementById("overlay");
@@ -1524,13 +1524,19 @@
       return n;
     };
     // Graphics tiers (quality.js): a no-op for a game that has none.
+    // ?dev=1&scale=1.5 caps the render scale below any tier (A/B on a phone).
+    const devScale = dev && Number(params.get("scale")) >= 0.5 ? Number(params.get("scale")) : Infinity;
+    if (devScale !== Infinity) { tierCap = Math.min(tierCap, devScale); fit(); }
     // A broken tier (or a saved setting it cannot read) must not stop the game: play at the default.
     try {
       globalThis.KagraQuality?.start({
         session, params,
         getPhase: () => (phase === "playing" ? "play" : phase === "complete" ? "result" : "title"),
-        setScaleCap: (cap) => { tierCap = cap; scaleStep = 0; avgGap = 16.7; gapFrames = 0; fit(); },
+        setScaleCap: (cap) => { tierCap = Math.min(cap, devScale); scaleStep = 0; avgGap = 16.7; gapFrames = 0; fit(); },
       });
+      // Dev A/B for a tier that goes dark on one phone: ?dev=1&cascades=1 lays one setting over the tier.
+      const cascades = dev ? Number(params.get("cascades")) : NaN;
+      if (cascades >= 1 && cascades <= 3 && globalThis.kagraQuality?.active) globalThis.kagraQuality.custom({ shadow_cascades: cascades });
     } catch (err) {
       console.warn("kagra: graphics tiers off", err);
     }
