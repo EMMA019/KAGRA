@@ -1,0 +1,30 @@
+{
+  "title": "Crate Tower",
+  "icon": "assets/icons/game_placeholder.png",
+  "version": "0.1.0",
+  "entry": "examples/crate_tower_minimal.py",
+  "world": "kagra-shared/tests/fixtures/crate_tower_world.json",
+  "bundle_assets": [
+    "assets/audio/oga-retro-synth-sfx",
+    "assets/audio/kenney-interface-sounds",
+    "assets/audio/kenney-impact-sounds",
+    "assets/audio/oga-flowerbed-fields",
+    "assets/models/kenney/platformer-kit/crate.glb",
+    "assets/models/kenney/platformer-kit/barrel.glb",
+    "assets/models/kenney/mini-dungeon/chest.glb",
+    "assets/models/kenney/space-kit/hangar_smallA.glb",
+    "assets/models/kenney/space-kit/machine_generatorLarge.glb",
+    "assets/models/kenney/space-kit/satelliteDish.glb",
+    "assets/models/kenney/space-kit/structure_closed.glb",
+    "assets/models/kenney/space-kit/turret_single.glb"
+  ],
+  "page": {
+    "best": true,
+    "audio": true,
+    "lang": true,
+    "pause": true,
+    "fixed_step": true,
+    "one_button": true,
+    "blurb": "blurb.crate"
+  }
+}

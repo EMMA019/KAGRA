@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Crate Tower, a one-button stacker (`crate_tower`).** A crate swings above the tower; tap (or Space) to drop it. Dead centre is a PERFECT (it snaps square, and PERFECTs in a row pay more), off the top it tumbles away and costs one of three lives, and every off-centre crate shifts the tower's balance until it topples. The swing speeds up as it grows; every tenth crate is a treasure chest. Bundled assets only (Kenney Platformer Kit crate and barrel, Mini Dungeon chest, Space Kit buildings far behind). The result card's column names are now translated for `height` and `stars` too. Build log: `docs/agent-runs/20261026-crate-tower/`.
+
 - **Lantern Watch, a one-thumb tap defense (`lantern_watch`).** The dead rise on the rim of a graveyard and walk toward the lantern in the middle; tap one to strike it (ghosts and skeletons fall to one tap, zombies take three, vampires weave), every hit knocks it back, a tap on empty ground breaks the combo multiplier, and five that reach the lantern put it out. Last 90 s for the dawn bonus. Built from the Starter template with bundled assets only (Kenney Graveyard Kit, the existing sounds); walkers, waves and scores are JSON (`game.foes`). Build log: `docs/agent-runs/20261026-lantern-watch/`.
 
 - **`game_core::view`: camera math for touch.** `View::frame` backs the camera off until a set of ground points fits a phone either way up, `View::fit` widens the angle instead, `project` puts a world point on the canvas and `ground_at` finds the ground under a finger (Moonlit Swarm's private copies now call it). The Starter template uses it, so its arena no longer loses its sides on a portrait phone, and plays music and sound cues (`game.audio`). `Motion::parse` lets JSON pick a crowd motion.

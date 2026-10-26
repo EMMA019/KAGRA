@@ -12,7 +12,7 @@ Android / Windows) runs every game; a game is a **kit** (one Rust file implement
 The owner plays it on a phone and says what feels wrong; agents build, verify and ship.
 
 The shipped games today: HOP-BEAT (rhythm hop), Neon Cat (lane runner), Moonlit Swarm
-(survivor arena), Lantern Watch (tap defense). Starter (`kagra-shared/src/starter.rs`) is the template.
+(survivor arena), Lantern Watch (tap defense), Crate Tower (one-button stacker). Starter (`kagra-shared/src/starter.rs`) is the template.
 
 ## Rules
 
@@ -92,7 +92,7 @@ Preview links: `https://emma019.github.io/KAGRA/pr/<n>/play.html?game=<slug>`
 
 | What | Where |
 |---|---|
-| Kits (games) | `kagra-shared/src/{starter,lantern_watch,survivor_arena,hop_beat,neon_cat}.rs`, registry `kit_host.rs` |
+| Kits (games) | `kagra-shared/src/{starter,lantern_watch,crate_tower,survivor_arena,hop_beat,neon_cat}.rs`, registry `kit_host.rs` |
 | Shared game parts | `kagra-shared/src/game_core/`, `hud_kit.rs` |
 | Renderer (wgpu 30; WebGPU, WebGL2, native) | `kagra-shared/src/render/` (2D: rounded quads, glyph atlas) |
 | Fonts | `kagra-shared/src/font.rs` (Public Sans, Zen Maru Gothic, Cinzel; PixelMplus off wasm) |

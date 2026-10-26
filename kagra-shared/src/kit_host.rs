@@ -96,6 +96,9 @@ pub const KITS: &[(Detect, Load)] = &[
             json,
         )?))
     }),
+    (crate::crate_tower::is_crate_tower_dump, |json| {
+        Ok(Box::new(crate::crate_tower::CrateTower::from_json(json)?))
+    }),
     // new_kit.py adds kits above this line.
 ];
 
