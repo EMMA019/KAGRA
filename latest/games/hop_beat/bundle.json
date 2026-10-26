@@ -16,21 +16,6 @@
       "v": "358db0ffe5"
     },
     {
-      "path": "assets/audio/bgm.wav",
-      "url": "assets/audio/bgm.wav",
-      "v": "0841950e00"
-    },
-    {
-      "path": "assets/audio/card.wav",
-      "url": "assets/audio/card.wav",
-      "v": "82d078f0df"
-    },
-    {
-      "path": "assets/audio/fire.wav",
-      "url": "assets/audio/fire.wav",
-      "v": "e0c24e16c8"
-    },
-    {
       "path": "assets/audio/hop_beat/LICENSE.txt",
       "url": "assets/audio/hop_beat/LICENSE.txt",
       "v": "917dff300c"
@@ -104,136 +89,6 @@
       "path": "assets/audio/hop_beat/warn.wav",
       "url": "assets/audio/hop_beat/warn.wav",
       "v": "3780360257"
-    },
-    {
-      "path": "assets/audio/jump.wav",
-      "url": "assets/audio/jump.wav",
-      "v": "b265d4fdfa"
-    },
-    {
-      "path": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
-      "url": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
-      "v": "3eba73bda8"
-    },
-    {
-      "path": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
-      "url": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
-      "v": "fe58f3600c"
-    },
-    {
-      "path": "assets/audio/neon_cat/bgm.wav",
-      "url": "assets/audio/neon_cat/bgm.wav",
-      "v": "2d649821f4"
-    },
-    {
-      "path": "assets/audio/neon_cat/card.wav",
-      "url": "assets/audio/neon_cat/card.wav",
-      "v": "a5deba6e08"
-    },
-    {
-      "path": "assets/audio/neon_cat/coin.wav",
-      "url": "assets/audio/neon_cat/coin.wav",
-      "v": "ce0ae0de97"
-    },
-    {
-      "path": "assets/audio/neon_cat/gameover.wav",
-      "url": "assets/audio/neon_cat/gameover.wav",
-      "v": "42cbfbf902"
-    },
-    {
-      "path": "assets/audio/neon_cat/hit.wav",
-      "url": "assets/audio/neon_cat/hit.wav",
-      "v": "9c7d60bdde"
-    },
-    {
-      "path": "assets/audio/neon_cat/item.wav",
-      "url": "assets/audio/neon_cat/item.wav",
-      "v": "5e77291f24"
-    },
-    {
-      "path": "assets/audio/neon_cat/jump.wav",
-      "url": "assets/audio/neon_cat/jump.wav",
-      "v": "e895662ef8"
-    },
-    {
-      "path": "assets/audio/neon_cat/knock.wav",
-      "url": "assets/audio/neon_cat/knock.wav",
-      "v": "9d26a2e92d"
-    },
-    {
-      "path": "assets/audio/neon_cat/meow.wav",
-      "url": "assets/audio/neon_cat/meow.wav",
-      "v": "0ce8f2f1c3"
-    },
-    {
-      "path": "assets/audio/neon_cat/mission.wav",
-      "url": "assets/audio/neon_cat/mission.wav",
-      "v": "c97d416829"
-    },
-    {
-      "path": "assets/audio/neon_cat/perch.wav",
-      "url": "assets/audio/neon_cat/perch.wav",
-      "v": "15faa28ce6"
-    },
-    {
-      "path": "assets/audio/neon_cat/robot_off.wav",
-      "url": "assets/audio/neon_cat/robot_off.wav",
-      "v": "4ce33e986f"
-    },
-    {
-      "path": "assets/audio/neon_cat/robot_on.wav",
-      "url": "assets/audio/neon_cat/robot_on.wav",
-      "v": "4bc62ebff3"
-    },
-    {
-      "path": "assets/audio/neon_cat/roll.wav",
-      "url": "assets/audio/neon_cat/roll.wav",
-      "v": "f1d0e7409f"
-    },
-    {
-      "path": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
-      "url": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
-      "v": "8be3009beb"
-    },
-    {
-      "path": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
-      "url": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
-      "v": "770685003f"
-    },
-    {
-      "path": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
-      "url": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
-      "v": "50b01a7974"
-    },
-    {
-      "path": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
-      "url": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
-      "v": "955fbf6c23"
-    },
-    {
-      "path": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
-      "url": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
-      "v": "8dde50e1fe"
-    },
-    {
-      "path": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
-      "url": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
-      "v": "8ac1eb6e4c"
-    },
-    {
-      "path": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
-      "url": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
-      "v": "c41ef1b321"
-    },
-    {
-      "path": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
-      "url": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
-      "v": "5d7d10947f"
-    },
-    {
-      "path": "assets/audio/oga-wet-squish/impactsplat03.wav",
-      "url": "assets/audio/oga-wet-squish/impactsplat03.wav",
-      "v": "73e236ba1e"
     },
     {
       "path": "assets/models/hop_beat/hop_bat.glb",
@@ -684,5 +539,5 @@
       "slot": "double_coins"
     }
   },
-  "build": "ea990997e9a1"
+  "build": "a3a9f415a3c2"
 }

@@ -8,97 +8,12 @@
     {
       "path": "world.json",
       "url": "games/survivor_arena/world.json",
-      "v": "6f5d9bda45"
+      "v": "b13c7d90b3"
     },
     {
       "path": "kagra_game.json",
       "url": "games/survivor_arena/kagra_game.json",
       "v": "ade1f5f31d"
-    },
-    {
-      "path": "assets/audio/bgm.wav",
-      "url": "assets/audio/bgm.wav",
-      "v": "0841950e00"
-    },
-    {
-      "path": "assets/audio/card.wav",
-      "url": "assets/audio/card.wav",
-      "v": "82d078f0df"
-    },
-    {
-      "path": "assets/audio/fire.wav",
-      "url": "assets/audio/fire.wav",
-      "v": "e0c24e16c8"
-    },
-    {
-      "path": "assets/audio/hop_beat/combo.wav",
-      "url": "assets/audio/hop_beat/combo.wav",
-      "v": "13946f5930"
-    },
-    {
-      "path": "assets/audio/hop_beat/fall.wav",
-      "url": "assets/audio/hop_beat/fall.wav",
-      "v": "31f1d8074b"
-    },
-    {
-      "path": "assets/audio/hop_beat/good.wav",
-      "url": "assets/audio/hop_beat/good.wav",
-      "v": "70f73f20d1"
-    },
-    {
-      "path": "assets/audio/hop_beat/hit.wav",
-      "url": "assets/audio/hop_beat/hit.wav",
-      "v": "21f69dda2d"
-    },
-    {
-      "path": "assets/audio/hop_beat/hop.wav",
-      "url": "assets/audio/hop_beat/hop.wav",
-      "v": "561e6e11ea"
-    },
-    {
-      "path": "assets/audio/hop_beat/hop_beat_gameover.mp3",
-      "url": "assets/audio/hop_beat/hop_beat_gameover.mp3",
-      "v": "1865a59646"
-    },
-    {
-      "path": "assets/audio/hop_beat/hop_beat_loop.mp3",
-      "url": "assets/audio/hop_beat/hop_beat_loop.mp3",
-      "v": "e25a9d983b"
-    },
-    {
-      "path": "assets/audio/hop_beat/hop_beat_newbest.mp3",
-      "url": "assets/audio/hop_beat/hop_beat_newbest.mp3",
-      "v": "47285841db"
-    },
-    {
-      "path": "assets/audio/hop_beat/hop_beat_revive.mp3",
-      "url": "assets/audio/hop_beat/hop_beat_revive.mp3",
-      "v": "f8ae0b7836"
-    },
-    {
-      "path": "assets/audio/hop_beat/land.wav",
-      "url": "assets/audio/hop_beat/land.wav",
-      "v": "62f7482dc4"
-    },
-    {
-      "path": "assets/audio/hop_beat/perfect.wav",
-      "url": "assets/audio/hop_beat/perfect.wav",
-      "v": "19962c2bee"
-    },
-    {
-      "path": "assets/audio/hop_beat/stomp.wav",
-      "url": "assets/audio/hop_beat/stomp.wav",
-      "v": "dfe75ed7e9"
-    },
-    {
-      "path": "assets/audio/hop_beat/warn.wav",
-      "url": "assets/audio/hop_beat/warn.wav",
-      "v": "3780360257"
-    },
-    {
-      "path": "assets/audio/jump.wav",
-      "url": "assets/audio/jump.wav",
-      "v": "b265d4fdfa"
     },
     {
       "path": "assets/audio/kenney-impact-sounds/CREDITS.md",
@@ -129,76 +44,6 @@
       "path": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
       "url": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
       "v": "fe58f3600c"
-    },
-    {
-      "path": "assets/audio/neon_cat/bgm.wav",
-      "url": "assets/audio/neon_cat/bgm.wav",
-      "v": "2d649821f4"
-    },
-    {
-      "path": "assets/audio/neon_cat/card.wav",
-      "url": "assets/audio/neon_cat/card.wav",
-      "v": "a5deba6e08"
-    },
-    {
-      "path": "assets/audio/neon_cat/coin.wav",
-      "url": "assets/audio/neon_cat/coin.wav",
-      "v": "ce0ae0de97"
-    },
-    {
-      "path": "assets/audio/neon_cat/gameover.wav",
-      "url": "assets/audio/neon_cat/gameover.wav",
-      "v": "42cbfbf902"
-    },
-    {
-      "path": "assets/audio/neon_cat/hit.wav",
-      "url": "assets/audio/neon_cat/hit.wav",
-      "v": "9c7d60bdde"
-    },
-    {
-      "path": "assets/audio/neon_cat/item.wav",
-      "url": "assets/audio/neon_cat/item.wav",
-      "v": "5e77291f24"
-    },
-    {
-      "path": "assets/audio/neon_cat/jump.wav",
-      "url": "assets/audio/neon_cat/jump.wav",
-      "v": "e895662ef8"
-    },
-    {
-      "path": "assets/audio/neon_cat/knock.wav",
-      "url": "assets/audio/neon_cat/knock.wav",
-      "v": "9d26a2e92d"
-    },
-    {
-      "path": "assets/audio/neon_cat/meow.wav",
-      "url": "assets/audio/neon_cat/meow.wav",
-      "v": "0ce8f2f1c3"
-    },
-    {
-      "path": "assets/audio/neon_cat/mission.wav",
-      "url": "assets/audio/neon_cat/mission.wav",
-      "v": "c97d416829"
-    },
-    {
-      "path": "assets/audio/neon_cat/perch.wav",
-      "url": "assets/audio/neon_cat/perch.wav",
-      "v": "15faa28ce6"
-    },
-    {
-      "path": "assets/audio/neon_cat/robot_off.wav",
-      "url": "assets/audio/neon_cat/robot_off.wav",
-      "v": "4ce33e986f"
-    },
-    {
-      "path": "assets/audio/neon_cat/robot_on.wav",
-      "url": "assets/audio/neon_cat/robot_on.wav",
-      "v": "4bc62ebff3"
-    },
-    {
-      "path": "assets/audio/neon_cat/roll.wav",
-      "url": "assets/audio/neon_cat/roll.wav",
-      "v": "f1d0e7409f"
     },
     {
       "path": "assets/audio/oga-flowerbed-fields/CREDITS.md",
@@ -278,7 +123,7 @@
     {
       "path": "assets/models/kenney/blaster-kit/CREDITS.md",
       "url": "assets/models/kenney/blaster-kit/CREDITS.md",
-      "v": "231383c5cf"
+      "v": "7cc6d8edde"
     },
     {
       "path": "assets/models/kenney/blaster-kit/LICENSE.txt",
@@ -288,12 +133,12 @@
     {
       "path": "assets/models/kenney/blaster-kit/blaster-a.glb",
       "url": "assets/models/kenney/blaster-kit/blaster-a.glb",
-      "v": "e5ce2c5c4b"
+      "v": "c3f5503c0b"
     },
     {
       "path": "assets/models/kenney/graveyard-kit/CREDITS.md",
       "url": "assets/models/kenney/graveyard-kit/CREDITS.md",
-      "v": "36d7e9aa11"
+      "v": "0fb9c8859a"
     },
     {
       "path": "assets/models/kenney/graveyard-kit/LICENSE.txt",
@@ -303,67 +148,62 @@
     {
       "path": "assets/models/kenney/graveyard-kit/character-ghost.glb",
       "url": "assets/models/kenney/graveyard-kit/character-ghost.glb",
-      "v": "f561e76b18"
+      "v": "ab84783450"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/character-keeper.glb",
+      "url": "assets/models/kenney/graveyard-kit/character-keeper.glb",
+      "v": "87cf7d5a68"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/character-skeleton.glb",
+      "url": "assets/models/kenney/graveyard-kit/character-skeleton.glb",
+      "v": "9bae971506"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/character-vampire.glb",
+      "url": "assets/models/kenney/graveyard-kit/character-vampire.glb",
+      "v": "49e536a3ed"
     },
     {
       "path": "assets/models/kenney/graveyard-kit/character-zombie.glb",
       "url": "assets/models/kenney/graveyard-kit/character-zombie.glb",
-      "v": "66cc5f54be"
+      "v": "bcde4b6959"
     },
     {
       "path": "assets/models/kenney/graveyard-kit/cross-wood.glb",
       "url": "assets/models/kenney/graveyard-kit/cross-wood.glb",
-      "v": "065f1de12f"
+      "v": "cba0b86a94"
     },
     {
       "path": "assets/models/kenney/graveyard-kit/gravestone-broken.glb",
       "url": "assets/models/kenney/graveyard-kit/gravestone-broken.glb",
-      "v": "0f161dcd62"
+      "v": "37d00f0453"
     },
     {
       "path": "assets/models/kenney/graveyard-kit/gravestone-cross.glb",
       "url": "assets/models/kenney/graveyard-kit/gravestone-cross.glb",
-      "v": "61f0d28532"
+      "v": "c272c76091"
     },
     {
       "path": "assets/models/kenney/graveyard-kit/gravestone-round.glb",
       "url": "assets/models/kenney/graveyard-kit/gravestone-round.glb",
-      "v": "9e8da58ba3"
+      "v": "c735f7d48a"
     },
     {
       "path": "assets/models/kenney/graveyard-kit/lantern-candle.glb",
       "url": "assets/models/kenney/graveyard-kit/lantern-candle.glb",
-      "v": "c3b0fc4657"
-    },
-    {
-      "path": "assets/models/kenney/graveyard-kit/pine-crooked.glb",
-      "url": "assets/models/kenney/graveyard-kit/pine-crooked.glb",
-      "v": "07b5876d8a"
-    },
-    {
-      "path": "assets/models/kenney/graveyard-kit/pine.glb",
-      "url": "assets/models/kenney/graveyard-kit/pine.glb",
-      "v": "020f5c0ab6"
+      "v": "831e09353c"
     },
     {
       "path": "assets/models/kenney/graveyard-kit/pumpkin-carved.glb",
       "url": "assets/models/kenney/graveyard-kit/pumpkin-carved.glb",
-      "v": "b7848f1037"
-    },
-    {
-      "path": "assets/models/kenney/graveyard-kit/pumpkin.glb",
-      "url": "assets/models/kenney/graveyard-kit/pumpkin.glb",
-      "v": "2d14304a4d"
-    },
-    {
-      "path": "assets/models/kenney/graveyard-kit/rocks.glb",
-      "url": "assets/models/kenney/graveyard-kit/rocks.glb",
-      "v": "22ba1f1de1"
+      "v": "81f50d568a"
     },
     {
       "path": "assets/models/kenney/mini-arena/CREDITS.md",
       "url": "assets/models/kenney/mini-arena/CREDITS.md",
-      "v": "50ebffcc23"
+      "v": "b703368d46"
     },
     {
       "path": "assets/models/kenney/mini-arena/LICENSE.txt",
@@ -373,22 +213,17 @@
     {
       "path": "assets/models/kenney/mini-arena/column.glb",
       "url": "assets/models/kenney/mini-arena/column.glb",
-      "v": "d3c77d8ced"
-    },
-    {
-      "path": "assets/models/kenney/mini-arena/wall-corner.glb",
-      "url": "assets/models/kenney/mini-arena/wall-corner.glb",
-      "v": "f010d64185"
+      "v": "678560e9db"
     },
     {
       "path": "assets/models/kenney/mini-arena/wall.glb",
       "url": "assets/models/kenney/mini-arena/wall.glb",
-      "v": "79d9f880ff"
+      "v": "3a1b594d78"
     },
     {
       "path": "assets/models/kenney/mini-characters/CREDITS.md",
       "url": "assets/models/kenney/mini-characters/CREDITS.md",
-      "v": "2ad9eed1d2"
+      "v": "fd5088d1e9"
     },
     {
       "path": "assets/models/kenney/mini-characters/LICENSE.txt",
@@ -398,27 +233,47 @@
     {
       "path": "assets/models/kenney/mini-characters/character-female-a.glb",
       "url": "assets/models/kenney/mini-characters/character-female-a.glb",
-      "v": "3c9621d59c"
+      "v": "842fa6ba7b"
     },
     {
       "path": "assets/models/kenney/mini-characters/character-female-d.glb",
       "url": "assets/models/kenney/mini-characters/character-female-d.glb",
-      "v": "4e22e77d0d"
+      "v": "d1899501dd"
     },
     {
       "path": "assets/models/kenney/mini-characters/character-male-a.glb",
       "url": "assets/models/kenney/mini-characters/character-male-a.glb",
-      "v": "079ef30f2a"
+      "v": "03cbe0ffe4"
     },
     {
       "path": "assets/models/kenney/mini-characters/character-male-c.glb",
       "url": "assets/models/kenney/mini-characters/character-male-c.glb",
-      "v": "8b1d5f269e"
+      "v": "08eaba8235"
     },
     {
       "path": "assets/models/kenney/mini-characters/character-male-e.glb",
       "url": "assets/models/kenney/mini-characters/character-male-e.glb",
-      "v": "c37e1263f8"
+      "v": "de44b78bcf"
+    },
+    {
+      "path": "assets/models/kenney/mini-dungeon/CREDITS.md",
+      "url": "assets/models/kenney/mini-dungeon/CREDITS.md",
+      "v": "219adcb2a2"
+    },
+    {
+      "path": "assets/models/kenney/mini-dungeon/LICENSE.txt",
+      "url": "assets/models/kenney/mini-dungeon/LICENSE.txt",
+      "v": "f8b470068a"
+    },
+    {
+      "path": "assets/models/kenney/mini-dungeon/chest.glb",
+      "url": "assets/models/kenney/mini-dungeon/chest.glb",
+      "v": "976dac2cba"
+    },
+    {
+      "path": "assets/models/kenney/mini-dungeon/weapon-sword.glb",
+      "url": "assets/models/kenney/mini-dungeon/weapon-sword.glb",
+      "v": "8c5670713b"
     },
     {
       "path": "assets/models/kenney/platformer-kit/jewel.glb",
@@ -474,6 +329,7 @@
     "patchable": [
       "hero.skin",
       "hero.start_passives",
+      "hero.start_weapon",
       "director.seed",
       "director.start_rate",
       "director.end_rate",
@@ -529,6 +385,60 @@
             140,
             255,
             205
+          ]
+        ]
+      },
+      {
+        "id": "hero.petal",
+        "slot": "hero",
+        "name": {
+          "en": "Petal (spread)",
+          "ja": "はなびら（ひろがる）"
+        },
+        "price": 250,
+        "requires": {
+          "stat": "runs",
+          "at_least": 3
+        },
+        "patch": {
+          "hero": {
+            "skin": "classic",
+            "start_weapon": "petals",
+            "start_passives": []
+          }
+        },
+        "preview": [
+          [
+            255,
+            150,
+            200
+          ]
+        ]
+      },
+      {
+        "id": "hero.blade",
+        "slot": "hero",
+        "name": {
+          "en": "Blade (orbit)",
+          "ja": "やいば（まわる）"
+        },
+        "price": 400,
+        "requires": {
+          "stat": "best_score",
+          "at_least": 1500
+        },
+        "patch": {
+          "hero": {
+            "skin": "classic",
+            "start_weapon": "blades",
+            "start_passives": []
+          }
+        },
+        "preview": [
+          [
+            150,
+            220,
+            255
           ]
         ]
       },
@@ -690,5 +600,5 @@
       "slot": "double_coins"
     }
   },
-  "build": "ea990997e9a1"
+  "build": "a3a9f415a3c2"
 }
