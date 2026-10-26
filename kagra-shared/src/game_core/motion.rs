@@ -1,11 +1,15 @@
-//! Fake animation for the foe crowd. The models are static poses (the engine does not skin a
-//! crowd), so each foe gets a little body motion from its transform: a bob, a squash on the
-//! beat, a sway, a lean, a flinch when hit. Every foe has its own phase and tempo, so a crowd
-//! does not move in lockstep. Picture only: the sim never reads it.
+//! Body motion for a crowd of static models. The engine does not skin a crowd, so each figure
+//! gets a little motion from its transform: a bob, a squash on the beat, a sway, a lean, a
+//! flinch when hit. Every figure has its own phase and tempo (from its id), so a crowd does not
+//! move in lockstep. Picture only: a sim never reads it. First used by Moonlit Swarm's foes.
+//!
+//! Apply a [`Pose`] on top of the resting transform: `lift` to y, `wide`/`tall` to the scale,
+//! `pitch` as a lean toward the facing direction (a `WorldProp`'s +pitch lifts its nose, so set
+//! `prop.pitch = -pose.pitch`) and `roll` as is.
 
-/// How a model moves. One per foe model pool (`FOE_GLBS`).
+/// A style of motion.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Motion {
+pub enum Motion {
     /// The ghost: floats, sways side to side, drifts up and down slowly.
     Float,
     /// The zombie: a heavy, uneven shuffle, rolling onto one leg.
@@ -18,18 +22,9 @@ pub(super) enum Motion {
     Stomp,
 }
 
-/// Which motion each foe pool uses (ghost, zombie, skeleton, vampire, keeper).
-pub(super) const POOL_MOTION: [Motion; 5] = [
-    Motion::Float,
-    Motion::Shamble,
-    Motion::Hop,
-    Motion::Glide,
-    Motion::Stomp,
-];
-
 /// Offsets on top of a foe's resting transform.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct Pose {
+pub struct Pose {
     /// Metres up.
     pub lift: f32,
     /// Scale across (x and z) and up (y), 1 = rest.
@@ -51,7 +46,7 @@ impl Pose {
 }
 
 /// A foe's own phase (0..TAU) and tempo (0.85..1.15) from its id, so neighbours differ.
-pub(super) fn phase_tempo(uid: u32) -> (f32, f32) {
+pub fn phase_tempo(uid: u32) -> (f32, f32) {
     let h = uid.wrapping_mul(0x9E37_79B9) ^ (uid >> 7).wrapping_mul(0x85EB_CA6B);
     let a = (h & 0xFFFF) as f32 / 65535.0;
     let b = ((h >> 16) & 0xFFFF) as f32 / 65535.0;
@@ -60,7 +55,7 @@ pub(super) fn phase_tempo(uid: u32) -> (f32, f32) {
 
 /// The pose at time `t` (seconds) for a foe with this phase and tempo. `amount` scales it
 /// (0 = rest, 1 = as tuned). `hit` is the hit flash, 0..~0.1: a flinch back.
-pub(super) fn pose(m: Motion, t: f32, phase: f32, tempo: f32, amount: f32, hit: f32) -> Pose {
+pub fn pose(m: Motion, t: f32, phase: f32, tempo: f32, amount: f32, hit: f32) -> Pose {
     if amount <= 0.0 {
         return Pose::REST;
     }
@@ -135,7 +130,13 @@ pub(super) fn pose(m: Motion, t: f32, phase: f32, tempo: f32, amount: f32, hit: 
 mod tests {
     use super::*;
 
-    const ALL: [Motion; 5] = POOL_MOTION;
+    const ALL: [Motion; 5] = [
+        Motion::Float,
+        Motion::Shamble,
+        Motion::Hop,
+        Motion::Glide,
+        Motion::Stomp,
+    ];
 
     #[test]
     fn off_is_the_rest_pose_and_every_motion_stays_small() {

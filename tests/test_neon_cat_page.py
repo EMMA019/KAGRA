@@ -86,8 +86,11 @@ def test_page_wires_audio_missions_and_best():
     assert html.index("world.best") < html.index("session.loadGame(payload)")
     assert "saveBest(slug" in html and "loadBest(slug)" in html
     assert 'id="goalsTitle"' in html and 'id="runGoals"' in html
-    # Only a spec with `audio` makes sound; the other genres stay as they were.
-    assert 'world.genre === "neon_cat"' in html and "createAudio(audioSpec" in html
+    # Only a game whose manifest asks for page audio, with `audio` in its spec, makes sound.
+    assert "if (page.audio) {" in html and "createAudio(audioSpec" in html
+    assert "if (page.best) {" in html
+    page = json.loads((ROOT / "games/neon_cat_minimal.json").read_text(encoding="utf-8"))["page"]
+    assert page["audio"] and page["best"]
 
 
 def test_preview_stages_every_audio_format():
@@ -150,8 +153,10 @@ def test_wall_texture_is_a_png_with_power_of_two_free_ratio():
 
 def test_page_passes_fx_and_steps_the_render_scale_down_when_frames_run_long():
     src = PLAY.read_text(encoding="utf-8")
-    # ?fx= reaches the dump as `fx` (the sim reads low / mid / high).
-    assert 'params.get("fx")' in src and "world.fx = fx" in src
+    # ?fx= reaches the dump as `fx` (the sim reads low / mid / high): the manifest allows it.
+    page = json.loads((ROOT / "games/neon_cat_minimal.json").read_text(encoding="utf-8"))["page"]
+    assert page["url_params"]["fx"] == ["low", "mid", "high"]
+    assert "Object.entries(page.url_params || {})" in src
     # The render-scale ladder starts at the old cap of 2 and ends at 1.
     assert "const SCALE_STEPS = [2, 1.5, 1.25, 1];" in src
     assert "SCALE_STEPS[scaleStep]" in src

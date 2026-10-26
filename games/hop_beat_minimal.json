@@ -42,5 +42,6 @@
     ],
     "rewarded": {"slot": "double_coins"}
   },
-  "game": {}
+  "game": {},
+  "page": {"best": true, "audio": true, "lang": true, "pause": true, "fixed_step": true, "one_button": true, "music_sync": true, "revive": true, "direct": true, "tagline": true, "theme": "hop", "blurb": "hop.blurb", "url_params": {"skin": "string", "look": "string", "fx_post": "bool", "fx_atmo": "bool"}}
 }

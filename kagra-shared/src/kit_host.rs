@@ -88,6 +88,10 @@ pub const KITS: &[(Detect, Load)] = &[
             json,
         )?))
     }),
+    (crate::starter::is_starter_dump, |json| {
+        Ok(Box::new(crate::starter::Starter::from_json(json)?))
+    }),
+    // new_kit.py adds kits above this line.
 ];
 
 /// The kit that claims `json`, loaded. `None` when no kit does (a WorldPlay genre).

@@ -1,5 +1,6 @@
-//! Game-agnostic HUD pieces built from plain quads: the 9-slice panel, a coin
-//! icon, a counter chip and the screen-size scale. Port of `kagra.ui2d.nine_slice`.
+//! Game-agnostic HUD pieces: the 9-slice panel, a coin icon, a counter chip and the
+//! screen-size scale (plain quads, a port of `kagra.ui2d.nine_slice`), and smooth rounded
+//! pieces on the GPU's rounded quads: [`round_panel`], [`gauge`], [`pill_button`].
 //! No kit-specific names live here; a game passes colours from its `HudSpec`.
 
 use crate::scene::{DrawList, Quad, TextAlign, TextQuad};
@@ -77,6 +78,104 @@ pub fn nine_slice(
         (s * 0.5).max(1.0),
         [255, 255, 255, (fill[3] as f32 * 0.12) as u8],
     );
+}
+
+/// A rounded panel: `fill` with a `rim` band `rim_w` wide inside its edge (0 = no rim) and an
+/// optional drop shadow `(dx, dy, alpha)`. Smooth corners (rounded quads, drawn on the GPU).
+#[allow(clippy::too_many_arguments)]
+pub fn round_panel(
+    list: &mut DrawList,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    radius: f32,
+    fill: [u8; 4],
+    rim: [u8; 4],
+    rim_w: f32,
+    shadow: (f32, f32, u8),
+) {
+    if w <= 0.0 || h <= 0.0 {
+        return;
+    }
+    let (dx, dy, a) = shadow;
+    if a > 0 {
+        list.quads
+            .push(Quad::round(x + dx, y + dy, w, h, radius, [0, 0, 0, a]));
+    }
+    list.quads.push(Quad::round(x, y, w, h, radius, fill));
+    if rim_w > 0.0 && rim[3] > 0 {
+        list.quads.push(Quad {
+            stroke: rim_w,
+            ..Quad::round(x, y, w, h, radius, rim)
+        });
+    }
+}
+
+/// A pill-shaped gauge: the track in `bg`, the filled share `frac` (0..=1) in `fg`, and a
+/// faint highlight on the top half. Returns nothing; HP, XP, charge and timers all use it.
+#[allow(clippy::too_many_arguments)]
+pub fn gauge(
+    list: &mut DrawList,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    frac: f32,
+    fg: [u8; 4],
+    bg: [u8; 4],
+) {
+    if w <= 0.0 || h <= 0.0 {
+        return;
+    }
+    let r = h * 0.5;
+    list.quads.push(Quad::round(x, y, w, h, r, bg));
+    let f = frac.clamp(0.0, 1.0);
+    if f > 0.0 {
+        // Never thinner than the pill's own height, so a nearly empty bar still reads round.
+        let fw = (w * f).max(h.min(w));
+        list.quads.push(Quad::round(x, y, fw, h, r, fg));
+        list.quads.push(Quad::round(
+            x + r * 0.5,
+            y + h * 0.12,
+            (fw - r).max(0.0),
+            h * 0.32,
+            h * 0.16,
+            [255, 255, 255, 60],
+        ));
+    }
+}
+
+/// A pill button with a centred label. Returns its rectangle for hit tests (`Quad::contains`).
+#[allow(clippy::too_many_arguments)]
+pub fn pill_button(
+    list: &mut DrawList,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    label: &str,
+    size: f32,
+    fill: [u8; 4],
+    text: [u8; 4],
+) -> Quad {
+    round_panel(
+        list,
+        x,
+        y,
+        w,
+        h,
+        h * 0.5,
+        fill,
+        [255, 255, 255, 60],
+        (h * 0.06).max(1.0),
+        (0.0, h * 0.08, 70),
+    );
+    list.texts.push(
+        TextQuad::new(label, x + w * 0.5, y + (h - size) * 0.5, size, text)
+            .aligned(TextAlign::Center),
+    );
+    Quad::new(x, y, w, h, fill)
 }
 
 /// A filled circle from horizontal strips (round without a texture).
@@ -172,6 +271,64 @@ pub fn counter_chip(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rounded_pieces_are_a_few_rounded_quads() {
+        let mut l = DrawList::default();
+        round_panel(
+            &mut l,
+            10.0,
+            10.0,
+            200.0,
+            80.0,
+            16.0,
+            [20, 20, 40, 220],
+            [255, 255, 255, 80],
+            2.0,
+            (0.0, 4.0, 90),
+        );
+        assert_eq!(l.quads.len(), 3, "shadow, fill, rim");
+        assert!(l.quads.iter().all(|q| q.radius == 16.0));
+        assert_eq!(l.quads[2].stroke, 2.0);
+        let mut g = DrawList::default();
+        gauge(
+            &mut g,
+            0.0,
+            0.0,
+            100.0,
+            10.0,
+            0.5,
+            [0, 255, 0, 255],
+            [0, 0, 0, 160],
+        );
+        assert_eq!(g.quads[1].w, 50.0);
+        let mut e = DrawList::default();
+        gauge(
+            &mut e,
+            0.0,
+            0.0,
+            100.0,
+            10.0,
+            0.01,
+            [0, 255, 0, 255],
+            [0, 0, 0, 160],
+        );
+        assert_eq!(e.quads[1].w, 10.0, "a nearly empty bar stays a round dot");
+        let mut b = DrawList::default();
+        let r = pill_button(
+            &mut b,
+            20.0,
+            30.0,
+            160.0,
+            48.0,
+            "START",
+            20.0,
+            [90, 60, 200, 255],
+            [255; 4],
+        );
+        assert!(r.contains(100.0, 54.0) && !r.contains(10.0, 54.0));
+        assert_eq!(b.texts[0].text, "START");
+    }
 
     fn empty() -> DrawList {
         DrawList {

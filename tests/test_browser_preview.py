@@ -74,9 +74,12 @@ def test_preview_links_every_browser_genre(tmp_path: Path):
     assert 'id="death"' in play
     assert 'params.get("debug")' in play
     assert 'params.get("quality")' in play
-    assert 'world.quality = "mobile"' in play
-    assert 'params.get("cam")' in play
-    assert 'world.cam = cam' in play
+    # Picture defaults and ?fx= / ?cam= come from the manifest's `page` block, not the genre.
+    assert "world.quality = page.default_quality" in play
+    assert "page.url_params" in play and "world[key] = raw.toLowerCase()" in play
+    neon = json.loads((tmp_path / "site" / "games" / "neon_cat" / "bundle.json").read_text(encoding="utf-8"))
+    assert neon["page"]["default_quality"] == "mobile"
+    assert neon["page"]["url_params"]["cam"] == ["classic", "chase"]
     assert "pointer-events: none" in play
     assert 'z-index: 4' in play
     assert (tmp_path / "site" / ".nojekyll").is_file()

@@ -13,11 +13,46 @@ pub struct Quad {
     pub h: f32,
     /// 直線 RGBA（0..255）。
     pub color: [u8; 4],
+    /// Corner radius in pixels. 0 is a sharp rectangle; half the short side or more is a
+    /// circle or a pill. The GPU draws the rounded edge smooth (one-pixel soft edge).
+    pub radius: f32,
+    /// Outline width in pixels: 0 fills the shape, more draws only a band that wide inside
+    /// its edge (a ring when the quad is a circle). Only for rounded quads (`radius` > 0).
+    pub stroke: f32,
 }
 
 impl Quad {
     pub fn new(x: f32, y: f32, w: f32, h: f32, color: [u8; 4]) -> Self {
-        Self { x, y, w, h, color }
+        Self {
+            x,
+            y,
+            w,
+            h,
+            color,
+            radius: 0.0,
+            stroke: 0.0,
+        }
+    }
+
+    /// A rectangle with rounded corners.
+    pub fn round(x: f32, y: f32, w: f32, h: f32, radius: f32, color: [u8; 4]) -> Self {
+        Self {
+            radius: radius.max(0.0),
+            ..Self::new(x, y, w, h, color)
+        }
+    }
+
+    /// A filled circle around (`cx`, `cy`).
+    pub fn circle(cx: f32, cy: f32, r: f32, color: [u8; 4]) -> Self {
+        Self::round(cx - r, cy - r, 2.0 * r, 2.0 * r, r, color)
+    }
+
+    /// A ring around (`cx`, `cy`): outer radius `r`, `width` pixels thick.
+    pub fn ring(cx: f32, cy: f32, r: f32, width: f32, color: [u8; 4]) -> Self {
+        Self {
+            stroke: width.max(0.0),
+            ..Self::circle(cx, cy, r, color)
+        }
     }
 
     pub fn contains(&self, px: f32, py: f32) -> bool {

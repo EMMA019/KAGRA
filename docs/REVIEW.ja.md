@@ -1,137 +1,41 @@
-# KAGRA 全体レビュー — 2026-08-24
+# KAGRA エンジンレビュー — 2026-10-26
 
-0.1.4（PyPI）。#52〜#66 の遊び場・画素・頭脳を載せた。
-最終目標と次の手は [ROADMAP.ja.md](ROADMAP.ja.md)。ここは能力とギャップ。
+目的（[ROADMAP](ROADMAP.ja.md)）は「AI でスマホ向けの小さな 3D ブラウザゲームを量産し、作りながら
+エンジンを育てる」。その目で見た強みと課題。以前の版（2026-08-24、VRM / three.js 比較）は
+[`old/docs-archive/REVIEW.ja.md.2026-08-24.md`](../old/docs-archive/REVIEW.ja.md.2026-08-24.md)。
 
-## 1 行
+## 規模
 
-**最終目標は「Python で AI に体を与えるなら KAGRA」という第一想起。**
-エンジン到達点は **80%**（今 **約 15%**。定義は 2026-08-26: 100% = 画面なしでインディーを出荷。旧 63% は [archive](archive/ROADMAP.ja.md.63pct-2026-08-25.md)）。
-能力の棚卸し（体・絵・書き味）は下の表。% を three.js 置換の 63 に戻さない。
-エージェントループは他に無い。頭脳の面は `kagra.brain("kairi")`（既定 https://kairi.onrender.com。モデルは wheel に無い）。出せるゲームが jam の箱ならループだけでは人は来ない。
+- Rust（`kagra-shared`）: 約 11 万行、約 90 モジュール。大きいのは neon_cat 9 千行、hop_beat 7 千行、survivor_arena 7 千行。
+- Python: 約 4 万行（デスクトップの旧エンジンが大半）。
+- ブラウザ: `play.html` 約 1,700 行と補助 JS 5 本。
+- wasm: 圧縮後で約 1.9 MB（brotli）〜 2.7 MB（gzip）。
 
-## 何と比べるか
+## 強み（残す）
 
-| ものさし | 戦う場所 | KAGRA の位置 |
-|---|---|---|
-| **three-vrm** | デスクトップ Python。Web では戦わない | 体は約 80%。配布はこちらが厚い。頭脳は [kairi.onrender.com](https://kairi.onrender.com)（同梱しない） |
-| **three.js** | 同じ種類の仕事（ライト・影・IBL・マテリアル）。ブラウザ対決ではない | 絵は約 85%。室内・這い・法線・局所 4・ACES/金属は CI。80% には 3 見本 |
-| **Ursina** | 「短い Python でゲームを書く」 | API は約 60%（親子 4 段は載った）。80% には 3 見本の 30 秒。機能欠落より見本 |
-| **Unity + UniVRM** | インストールと「歌って踊るまで」 | 5MB wheel で勝つ。エディタと量産では負ける（戦わない） |
-| **pygame / pyxel** | 2D エンジン | 棚に下げた。戻さない |
+1. **1 つの Rust コアから web / Android / Windows。** PR ごとにスマホで開けるプレビュー（QR 付き）。実機とのやりとりで問題を短時間で詰められる（Pixel 10 の黒画面は 1 時間）。
+2. **固定ステップの sim と「ゲームは JSON」。** 仕様は既定値つき・未知キーはエラー・範囲チェック。「fixture = 既定値」テストで仕様のずれがすぐ分かる。
+3. **ライセンス台帳と CI。** 公開リポジトリとして健全。フォントの記録漏れも止まる。
+4. **計測（`?dev=1`）。** fps、フレーム時間、限界の探索。原因の切り分けに効く。
+5. **作り始めが 1 コマンド。** `scripts/new_kit.py` で、登録・ワールド・マニフェスト込みの遊べるゲームができ、プレビューと起動確認に自動で載る。
 
-## 強い（残す）
+## 2026-10-26 に片付けたこと
 
-1. **縦の貫通。** glTF → MToon → SpringBone（コライダー付き）→ node constraint → 表情 override → リップシンク（WAV / VOICEVOX mora）→ TTS レシピ → OBS 仮想カメラが 1 プロセス。競合はだいたいブラウザか Godot に描画を投げている。
-2. **VRM 実装深度。** マルチスキン修正、VRM 0.x / 1.0、VRMA、LookAt、IK、一人称レイヤー、顔トラ extra。README の「表示できます」系との差は本当。
-3. **エージェントループ。** `docs/API_INDEX.md`（AST 生成）/ `kagra.verify` / MCP / `docs/agent-runs/`。Heart Catch・Switch Room・Dodge Room までログ付き。この形のエンジンは他に無い。**ループの価値は、見本が初日を超えてから効く。**
-4. **配布。** `pip install kagra` 0.1.4、約 5MB、Rust 不要。torch をコアに入れない判断は正しい。macOS wheel はまだ。
-5. **棚分け。** Front（VRM / 3D / エージェント）と Shelf（2D ECS / tilemap / エディタ / boids）。`kagra-shared` + `mobile/` は運転デモで、レンダラを混ぜない。
-6. **自制。** 今 15% を 80% と呼ばない。旧 63% をコピーしない。箱部屋 4 本目を D-6 と呼ばない。北極星を機能数にしない。
+| 課題 | 対応 |
+|---|---|
+| 実機の黒画面が CI で見えない | 画面にエラー表示、PowerVR の解像度上限、空白フレームで解像度を下げる。CI で全ゲームをヘッドレス Chromium で起動確認 |
+| `play.html` にゲームごとの分岐（約 30 か所） | マニフェストの `page` に移し、ページは読むだけ。分岐を戻さないテスト |
+| 部品が Moonlit Swarm に閉じていた | スティックと群れの動きを `game_core` へ。角丸パネル・ゲージ・ボタンを `hud_kit` へ |
+| 2D が単色の四角だけ（文字は 1 ピクセル 1 四角） | 角丸・円・リング（SDF）とグリフアトラス。HUD の四角が約 1,700 → 約 24（文字を除く） |
+| 文字が安っぽい（ドット文字） | Zen Maru Gothic（和文）と Cinzel（数字）、使う字だけ subset |
+| wasm が重い | 画素フォントを wasm から外して約 11% 減（wasm-opt は圧縮後が増えるので不採用） |
+| ドキュメントが古い | AGENTS.md・ROADMAP・この REVIEW を今の目的に書き直し、手順書 `docs/making_a_game.md` |
 
-## 弱い（正直）
+## 残っている課題（重要な順）
 
-### 頭脳（面はある。サーバーは外）
-
-`kagra.brain("kairi")` が公式面。本命は [kairi.onrender.com](https://kairi.onrender.com)。`/api/ping` は公開、`/api/chat` は `KAIRI_API_TOKEN`。
-wheel には入れない（VOICEVOX と同じ関係）。Ollama / OpenAI 互換も同じ `ask`。
-エンジン 80% の重みは薄い。楔 A/B のゲート。
-
-### 絵（three.js。今約 85%。80% の絵は閉じた）
-
-| 項目 | 今 | 80% で要る | 80% の外 |
-|---|---|---|---|
-| ライト | 平行光 1 + 局所 4（`slot=`。#62 CI 通過） | 維持。キーは影 | 多数ディレクショナル、RectArea |
-| IBL | HDRI + irradiance + 4 mip。金属差は CI 通過 | 維持 | 映画のフル LOD |
-| 影 | 2048×2。室内スポットは CI（#61）。這いは CI（#65。レイヤごとに VP） | 維持 | 4 段 CSM、SSAO |
-| 汎用メッシュ | baseColor + 金属/粗さ + 法線（#61 CI 通過） | 維持 | ディスプレースメント、transmission |
-| ポスト | bloom / vignette / fog / ACES（CI 通過） | 維持 | アウトライン（VRM 以外）、ボリュメトリック |
-| シーングラフ | `Prop` 4 段 | 4 段（玄孫） | 無限 Object3D |
-| カメラ | follow / 一人称 + ロック API | FPS として使える | 直交 3D エディタ |
-
-絵の画素は閉じた。残りは見本の 30 秒（書き味）。
-golden / smoke スクショで閉じる。**ばらして 80% と呼ばない。**
-
-### 体（three-vrm。既に約 80%）
-
-体そのものは近い。80% のボトルネックではない。空きでよい。
-
-- 複数アバター: 同じパスの `kagra.avatar()` はメッシュ / テクスチャ / MToon を共有。計測は `vrm_gpu_stats()`。見本 `examples/vrm_multi_avatar.py`。Crest Isle は 1 人のまま。バス係数 1 の複製ロードではない
-- ダンス + ジェスチャのレイヤ（VRMA の上に手だけ）
-- Web / XR はやらない（決めごとどおり）
-
-### 書き味（Ursina。API 約 60% → 80%）
-
-`kagra/play.py` の方向は正しい。**短いスクリプトで「置いて・歩いて・使って・動かす」。**
-Walk の strafe は画面右（#55）。
-
-| Ursina | KAGRA 今 | 80% で要る | 80% の外 |
-|---|---|---|---|
-| `Entity(..., parent=…)` | 4 段 | 4 段 | 無限の木 |
-| `FirstPersonController` | `Walk(first_person=True)` + ロック API | FPS として使える | より複雑なコントローラ |
-| `mouse` クリック | `clicked_prop` / `carry` | 使って持つ（見本で） | フルインベントリ UI |
-| `e.animate` | `animate` / Sequence | 手書き `p.x +=` をやめる | Tween カタログ全部 |
-| `Button` / `Text` | `Label` / `Button` | エージェントが `fill`+`text` を書かない | Dear ImGui |
-| `Audio` | `sound("coin")` / `play_se(..., x=)` | 2D + 距離/パン | HRTF / DAW |
-| `Entity(model='*.glb')` | 静的に畳む。`mesh_hit` | 法線が画素で見える | スキン Prop |
-| ゲームパッド | `inject_pad` + gilrs | 実機で歩く | 全ベンダ抽象 |
-
-2D の `Entity` / Tk エディタ / tilemap は Front に戻さない。
-剛体は AABB で落ちる・積む・乗る（世界 55%。Rapier クレートは 5MB のため入れない）。OSM は入らない。
-
-### 見本の天井
-
-エージェント製は箱部屋 3 本。ループの証明であって楔 D の天井ではない。
-Pretty Room / Overworld / Prop Garden は play-surface で、30 秒テストは未了。
-D-6 は箱の焼き直し禁止 + 30 秒以上 + スコアかゴール。
-見本無しでエンジン 80% とは呼ばない。
-
-### ドキュメント
-
-ルートの `KAGRA_ENGINE_GUIDE.md` はスタブ。本文は `docs/archive/`。
-現行は README / `docs/API_INDEX.md` / このレビュー / ロードマップ。
-
-### 流通
-
-スター / フォークはほぼゼロ。Stage 1 の楔が本当に必要。
-0.1.4 に遊び場・画素・頭脳を載せた。次は 30 秒見本。macOS wheel はまだ。
-
-## 構造（触るな / 畳め）
-
-```
-Python ゲーム  ──► kagra/  ──► kagra_core (wgpu, VRM, 2D/3D)
-kagra-shared + mobile/     ──► 別の運転デモ（道路・トラック・Wasm）
-```
-
-- **公開 API は Front に寄せる。** Shelf の `Entity` / 2D `world_to_screen` をエージェントに踏ませない。
-- 物理はキャラコン（`Walk.wish` / `CharacterController`。accel / 段差 / 着地）+ 静的三角形 + AABB 剛体（落ちる・積む・乗る）+ 持つ。坂の接地は小さい足 AABB + 8 点リング + 接平面（`debug_trace`）。OSM は外。Rapier クレートは wheel に入れない。
-- **Windows は EventLoop 1 本。** GPU は必ず subprocess（`kagra.verify`）。
-- **kagra-shared のレンダラは今混ぜない。** 統合は 80% の外。
-
-## 楔との関係
-
-能力を足す理由は「エンジンが欲しいから」ではない。楔が詰むから足す。
-80% の絵は楔 D が詰むから足す。SSAO は楔が詰まない。
-
-| 楔 | 今足りる絵 | 詰み | 先にやること |
-|---|---|---|---|
-| A ローカル LLM に体を | `avatar` + `kagra.brain("kairi")` | `KAIRI_API_TOKEN` | トークンを入れて 15 行 |
-| B 無人 3D VTuber | 歌・ダンス・HUD・仮想カメラ | 頭脳 + のちオートパイロット | 頭脳のあと。旗艦は Stage 3 |
-| C VRoid マスコット | 透明窓・常駐 | 配布物 / ワンライナー | エンジン不足ではない。優先は下 |
-| D エージェントがゲームを | 箱部屋 3 本 + Garden / Pretty Room / Overworld（画素は CI。見本の 30 秒は未） | 見知らぬ人に見せられない | **3 見本。そのあと D-6** |
-
-Stage 1 の「打てる楔を数字で選ぶ」は残す。D を箱部屋で投げて「需要が無い」と読むのは禁止。
-見本が初日のままだと需要より見本を疑う。頭脳を飛ばして A/B が黙ったら、面を疑う。
-
-## 製品の決めごと / 80% の外
-
-**決めごと:** pygame / 2D ECS を Front に戻す、Tk を 3D エディタに育てる、
-Web で three-vrm と戦う、torch をコア依存、箱部屋 4 本目を D-6、
-`KAGRA_ENGINE_GUIDE.md` を現行仕様として増やす。
-**エージェントの目 = `annotate` + `debug_trace`。ビジュアルエディタではない。**
-
-**80% の外（禁止ではない）:** 4 段 CSM / SSAO / ボリュメトリック / OSM / ボクセル /
-カリング P9、kagra-core と kagra-shared のレンダラ統合。Rapier クレートは 5MB のため 80% の外（AABB で世界は足りる）。
-
-次の手はロードマップの番号付きリスト。
-**今約 15%。山は看板(#97) → 世界をデータに → ランタイム一つ → ゲームとして足りる → 出荷。剛体は AABB。旧 63% はアーカイブ。**
+1. **巨大ファイル。** 1 ファイル 7〜9 千行は人にも AI にも重い。sim / 入力 / HUD / 見た目に分ける（survivor から）。
+2. **アニメは見せかけ。** 体の揺れのみ。主人公・ボスだけ本物のスキニング、または動きの焼き込みが次。
+3. **素材の取得。** この作業環境から `kenney.nl` などに届かない（環境の許可ドメインの設定が要る）。
+4. **端末差。** CI のブラウザは SwiftShader なので、特定の GPU の不具合は実機でしか見えない。新しい端末の報告は `?dev=1` で計測してから直す。
+5. **旧エンジンの重さ。** デスクトップ Python、旧ジャンルの Rust モジュール、`old/`。保守のみとし、新しいゲームには使わない。wasm に占める旧ジャンルのコードは約 250 KB で、今は分けない。
+6. **serde_json と naga。** wasm の約 1.3 MB。JSON の読み込みを減らす、シェーダを事前変換するなどは、出荷後のデータを見てから。

@@ -1,0 +1,19 @@
+{
+  "title": "Starter",
+  "icon": "assets/icons/game_placeholder.png",
+  "version": "0.1.0",
+  "entry": "examples/starter_minimal.py",
+  "world": "kagra-shared/tests/fixtures/starter_world.json",
+  "bundle_assets": [
+    "assets/models/kenney/mini-characters/character-female-a.glb",
+    "assets/models/kenney/platformer-kit/jewel.glb",
+    "assets/models/kenney/graveyard-kit/character-ghost.glb"
+  ],
+  "page": {
+    "best": true,
+    "lang": true,
+    "pause": true,
+    "fixed_step": true,
+    "blurb": "blurb.stick"
+  }
+}

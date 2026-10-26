@@ -48,5 +48,6 @@
     ],
     "rewarded": {"slot": "double_coins"}
   },
-  "game": {}
+  "game": {},
+  "page": {"best": true, "audio": true, "lang": true, "pause": true, "fixed_step": true, "blurb": "sv.blurb", "quality_words": {"safe": "low", "mid": "mobile", "max": "high"}}
 }

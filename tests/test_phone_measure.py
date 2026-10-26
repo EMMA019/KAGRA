@@ -171,7 +171,7 @@ def test_render_skip_is_off_by_default_and_never_skips_a_stepped_frame():
     assert "const skipDraw = renderSkip && stepped === 0 && redraw <= 0;" in html
     assert "if (rendering && !skipDraw)" in html
     # a game that is not on the fixed 60 Hz sim steps every frame, so it never skips
-    assert re.search(r"if \(!hopMode && !survivorMode\) \{ session\.requestFrame\(\); return 1; \}", html)
+    assert re.search(r"if \(!page\.fixed_step\) \{ session\.requestFrame\(\); return 1; \}", html)
 
 
 def test_preview_site_gets_perf_js_and_a_portal_zip_does_not(tmp_path):

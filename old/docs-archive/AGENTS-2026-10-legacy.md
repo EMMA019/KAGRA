@@ -1,0 +1,199 @@
+# AGENTS.md
+
+Instructions for AI coding agents working in this repository
+(Claude Code, Cursor, Windsurf, Codex, aider, ...). Cursor users get the
+same rules automatically via `.cursor/skills/kagra-agent/SKILL.md`.
+
+KAGRA's development loop is designed so that an agent can build and verify
+a game **without a human looking at the screen**.
+
+## Rules
+
+1. **Do not invent APIs.** Search `docs/API_INDEX.md` (or MCP
+   `kagra_api_search`) first. The index is generated from the AST:
+   `python tools/gen_api_index.py --check` must stay clean.
+2. **Resolve assets via contracts.** Use `kagra.contracts.resolve_asset`
+ (or MCP `kagra_resolve_asset`). Aliases: `Emma`, `walk`, `dance`,
+ `knight`, `rogue`, `mage`, `barbarian`, `raccoon`, `wolf`,
+ `inn`, `house`, `tower`, `mill`, `gazebo`, `well`,
+ `stylized_tree`, `stylized_pine`, `rock`, `chest`.
+ Prefer bundled `.glb`/`.gltf` characters and buildings over plain `box` primitives.
+3. **Close the loop.** After any visual change, run a verify scenario or
+   MCP `kagra_render` / `kagra_verify`. Never claim "done" without it.
+4. **One EventLoop per process on Windows.** Always run GPU scenes in a
+   subprocess — that is what `kagra.verify` does for you.
+5. **Keep tests extension-free.** `tests/` must not import the Rust
+   extension directly; load pure-logic modules via
+   `tests/conftest.py::load_kagra_submodule`. Run
+   `pytest tests -m "not golden"`.
+6. **Log build sessions.** When you build a game or scene on request,
+   save the prompt, the key decisions, and the verify results under
+   `docs/agent-runs/` (see `docs/agent-runs/README.md`). The log is a
+   first-class artifact, not an afterthought.
+7. **Format Rust before push.** `cargo fmt -p kagra-shared -- --check`
+   must stay clean (CI fails on rustfmt drift). MSRV is 1.88
+   (`kagra-shared/Cargo.toml` `rust-version`).
+8. **Do not add a genre module to WorldPlay.** New games are Python
+   (`kagra.gameloop` + a free `WorldDoc`). Rust owns walk / timers /
+   events / interact / physics. Picture fields live on the dump
+   (`sky`, `ground`, `WorldProp.texture`, `uv_scale`). Verify picture
+   with `expect_offscreen.pixels` (region mean / not_solid), not a
+   golden PNG.
+9. **Repro a playtest issue before editing it.** 「直してここ」 files a
+   `playtest` issue (`KAGRA-PLAYTEST-1` block: dump + ~10 s of input).
+   Run `python scripts/repro_issue.py <issue number or block>` first and
+   keep the screenshot. After the fix, run it again and attach the
+   before/after screenshots. The overlay is debug / preview only
+   (3-finger long-press or F12). It does not embed a token.
+
+## Coordinate system
+
+Right-handed, Y up. The framebuffer is not mirrored: NDC +x is the right
+edge, and screenshot readback does not flip X.
+
+World +X is screen-right **only when the camera looks toward -Z**. The
+default camera (eye `(0, 2, 6)`, target origin) does that, so a prop at
++X appears on the right of the frame and +Y is up. A chase camera that
+looks along +Z (behind a yaw-0 actor; move-forward is +Z) has
+`screen_right = -X` and `screen_left = +X`. Treating "+Z forward, +X
+right" as one rule is the mix-up that reverses left and right.
+
+`D`, `ArrowRight`, and `+lx` mean **screen-right**, not world +X. `A` /
+`ArrowLeft` / `-lx` mean screen-left. `W` / `+lz` moves into the frame.
+Use `kagra.screen_right(eye, target)`, `kagra.screen_left(...)`, and
+`kagra.wish_world(lx, lz, eye, target)` (Rust: `screen_right_xyz` /
+`wish_world_xz`) instead of hard-coding ±X.
+
+Every world dump names the sides. `coordinates.note` states this rule,
+and each camera carries `screen_right` and `screen_left` as world-space
+unit vectors. Read those fields. Do not infer the side from the sign of X.
+
+2D HUD pixels start at the top-left: +x is right, +y is down.
+glTF / VRM bind poses face -Z (the model's right hand is +X). A walker
+at yaw 0 moves toward +Z, so that bind-pose front points along -Z.
+Do not add π to every mesh yaw to "fix" it.
+
+## Commands
+
+```bash
+python tools/gen_api_index.py --check                              # API index drift
+python -m kagra.verify examples/verify_scenarios/blank_smoke.json  # headless smoke
+python -m kagra.verify examples/verify_scenarios/collectathon_smoke.json
+python -m kagra.verify examples/verify_scenarios/bar_sim_smoke.json
+python examples/bar_sim_minimal.py --headless scratch/bar.png --days 3 --seed 1
+# shared wgpu 30 offscreen of a World.dump JSON (skips if no helper; not RendererV2)
+python -m kagra.render_world scratch/crest_isle_world.json scratch/crest_shared.png
+# cargo run -p kagra-shared --features render --example offscreen -- W H out.png world dump.json
+# real desktop window (wgpu 30; WASD + look; skips without a display; not RendererV2)
+python -m kagra.play_world kagra-shared/tests/fixtures/crest_isle_world.json --seconds 8
+python tools/mcp_kagra/server.py                                   # MCP (stdio)
+pytest tests -m "not golden"                                       # pure-python tests
+# Windows zip / Android debug APK from the same game manifest (docs/distribution.md)
+python scripts/package_windows.py --game examples/platformer_minimal.py --stage-only
+python scripts/package_android.py --game examples/platformer_minimal.py --stage-only
+# 「直してここ」: rebuild the session, replay the logged input, save a shot
+python scripts/repro_issue.py 123
+python scripts/repro_issue.py path/to/block.txt --out scratch/playtest-repro
+```
+
+## MCP tools (`tools/mcp_kagra/server.py`)
+
+| Tool | What it does |
+|---|---|
+| `kagra_api_search` | search public signatures |
+| `kagra_env` | list available VRM / FBX / BVH assets |
+| `kagra_resolve_asset` | kind + name → path |
+| `kagra_verify` | run a scenario JSON headlessly |
+| `kagra_render` | clear-color smoke screenshot |
+
+## Reference game
+
+`examples/vrm_orb_rush.py` is the **old** (RendererV2) reference game — archived
+at `old/examples/vrm_orb_rush.py`. The current reference for the agent loop is
+the Python game master: `examples/bunny_garden_minimal.py` /
+`examples/torneko_minimal.py` / `examples/bar_sim_minimal.py` /
+`examples/flight_minimal.py` / `examples/backyard_brawl_minimal.py` /
+`examples/chess_minimal.py`
+(game logic in Python, world is dump data, `kagra.gameloop` / `kagra.ui2d` /
+`kagra.audio`). Archived RendererV2 APIs (`texture_from_fn` / `Walk` / `Prop` / `kagra_core`)
+live under `old/` and are **not** on `import kagra`. New games start on the
+shared wgpu 30 mainline (`WorldDoc` / `WorldPlay` / `kagra.gameloop`).
+Set `WorldDoc.genre` explicitly (`crest_isle`, `town_gate`, …). Prop names are
+scenery — a dump with `door` is not an RPG unless `genre` says so.
+
+- `kagra.texture_from_fn` / `kagra.tone` / `kagra.sound` — procedural art and SE
+- `kagra.set_listener` / `play_se(..., x=, y=, z=)` / `play_loop` — 3D SE (distance + stereo pan). `sound()` stays 2D
+- `set_point_light` / `set_spot_light` — 4 slots (`slot=0..3`). Slot 0 is the key
+- `Camera3D.world_to_screen` — world → HUD pixels
+- `avatar.set_position` / `avatar.set_yaw` — move a VRM in the arena
+- `kagra.billboard_mesh` / `disk_mesh` / `quad_y_mesh` / `box_mesh` — 3D sprites / floor / crates
+- `kagra.upload_mesh_3d` / `draw_mesh_id` — retain a mesh, draw by id
+- `World` (`World3D` と同じ型) + `Camera3D.follow` — floor / box collision and a chase camera. `world.query` / `world.dump` / `world.load` read the world without a screenshot
+- `Prop` / `Walk` / `sky()` / `room()` / `water()` — short 3D.
+  Outdoor island: `World.set_height_fn(..., tile=, stream_radius=)` /
+  `load_city` / `overworld_height` / `Walk(..., jump=)` /
+  `Walk.wish` / `CharacterController` /
+  `apply_outdoor_look()`. City JSON is not OSM. Dynamic boxes fall and
+  stack; `Walk` stands on them (`add_box(..., is_static=False)`). Rapier
+  crate stays out of the 5MB wheel. OSM is outside 80%.
+- `Walk(first_person=True)` / `hovered_prop(cam)` / `clicked_prop(cam)` /
+  `Walk.carry` — lock on first person, click to use, pick up
+- `Walk.wish` / `Walk.move` / `Walk.try_jump` (or `CharacterController`) —
+  accel/decel, slope sit, step-up, jump+land. Not Rapier. Sticky-walk quiet
+  gap 3 is input.
+- `animate` / `Label` / `Button` — tween and screen HUD
+- `destroy(prop)` / `Prop.update_all(dt)` — kinematic move and delete
+- Sphere / cylinder `Prop` collide and hover as those shapes (not boxes)
+- `Prop(..., texture=…)` / `set_parent` — 4-level parent
+- `Prop("crate.glb")` — static glTF part (not `stage()`). Alias `cube.glb`
+- `axis("left")` / `pad("a")` / `inject_pad` — gamepad. `Walk` reads both sticks
+- `kagra.save_json` / `load_json` — high scores
+- `kagra.annotate(sx, sy)` — preview click → JSONL (screen / world / bone / Prop id). How 「ここもう少し」 becomes numbers. Not a visual editor
+- `kagra.debug_trace(foot_y=…, height_fn=…)` — slope-float detector (`|foot-terrain|` while grounded). Default threshold 0.05. `debug_trace_summary()` → `frames 32-48 floated 0.15`. `World3D.update` feeds it when a tracer is active. Slope sit uses a tight foot AABB + 8-point ring + snap-to-plane, not Rapier.
+- `Camera3D.follow(..., world=)` — pull the chase camera in so it does not go through walls
+- `ActionController` — one-shot poses; `ActionController.names()` lists them
+- `avatar.set_locomotion(speed)` — idle/walk/run speed blend (no clip snap).
+  Local Mixamo Idle/Walk/Run: `avatar.bind_locomotion()` (rest+roll
+  compensation onto VRoid). Do not resolve the `walk` alias
+  (`synthetic_walk.bvh`). `play_upper` keeps spine/arms independent;
+  ActionController overlays do not fight the walk arm swing.
+  `dance()` is a full-body clip, not locomotion.
+- `kagra.avatar(path)` twice shares GPU mesh/texture/MToon. Measure with
+  `vrm_gpu_stats()`. Extra bodies: `old/examples/vrm_multi_avatar.py`
+  (Crest Isle stays one player)
+
+Verify: `examples/verify_scenarios/collectathon_smoke.json`,
+`interact_fish_smoke.json` and the per-genre smokes (action_arena / action_side /
+box_hop / fps_range / td_lane / race_drive / race / fight_hitstun / novel_pages / novel /
+stealth_hide / puzzle_pad / puzzle / sports_goal / sim_meter / survival_meter /
+rhythm_beat / rhythm / fish_cast / fishcook / shop_buy / cook / sprite_card / rpg_town …).
+Old RendererV2 smokes (orb_rush / heart_catch / switch_room / …) are archived
+at `old/examples/verify_scenarios/`.
+Logged builds live in `docs/agent-runs/`.
+The API index front is VRM / 3D / agents; the shelf is legacy 2D.
+
+## Adding a genre (Python / Android / Wasm)
+
+Rust genre logic stays in `kagra-shared/src/<genre>.rs` and plugs into `WorldPlay`.
+The **host contract** is `GenreSession` (`kagra-shared/src/genre_session.rs`):
+`from_json` / `set_input` / `tick` / `dump` / `take_events` (+ adhesive:
+`confirm`, `emit_event`, `start_timer`, `step_interact`, `phase`).
+
+1. Implement or extend the genre module; keep `WorldDoc.genre` explicit.
+2. Add `impl GenreSession for YourSession` in `genre_session.rs` (thin wrapper over `WorldPlay` today).
+3. Add `kagra-shared/src/py/<genre>.rs` and register it in `py/mod.rs` (`PuzzlePadSession` is the reference).
+4. Fixture `kagra-shared/tests/fixtures/<genre>_world.json` — use bundled `.glb` props (`crate.glb`, …), not bare boxes for hero meshes.
+5. `examples/<genre>_minimal.py` + `examples/verify_scenarios/<genre>_smoke.json`.
+6. Scaffold: `python scripts/new_genre.py <slug>` (then fill Rust + fixture).
+7. Verify: `python -m kagra.verify examples/verify_scenarios/<genre>_smoke.json`.
+
+`WorldPlay` / `WorldDoc` remain for multi-genre Python masters; per-genre
+`FooSession` classes are for focused games and future JNI/FFI shims.
+
+## More context
+
+- `docs/AGENT.md` — contracts table, CI-parity commands, Cargo.lock policy
+- `docs/API_INDEX.md` — the searchable public API
+- `docs/REVIEW.ja.md` — engine review vs three.js / three-vrm / Ursina
+- `docs/ROADMAP.ja.md` — 100% = 画面なしでインディーを出荷。80% はそのマイナス（ネット・破壊・布・乗り物・GI bake・DOTS・HDRP・人間エディタ・VRM-on-Wasm ほか）。今約 40%。M0–M2 閉じた。閉じたジャンルは collectathon。山は看板(#97) → 世界をデータに → ランタイム一つ → ゲームとして足りる → 出荷。旧 63% は `old/docs-archive/`。頭脳は `kagra.brain("kairi")`
+- `docs/schemas/input_events.json` — touch / pointer input schema

@@ -93,5 +93,6 @@
     "assets/models/kenney/racing-kit/overheadRound.glb",
     "assets/models/neon_cat/gate_arch.glb",
     "assets/models/coin.glb"
-  ]
+  ],
+  "page": {"best": true, "audio": true}
 }
