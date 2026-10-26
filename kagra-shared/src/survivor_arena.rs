@@ -17,6 +17,8 @@ use serde_json::{json, Value};
 
 use crate::flow::{FlowPhase, GameFlow};
 use crate::game_core::enemies::{weighted_pick, EnemySpec};
+use crate::game_core::motion::{self, Motion};
+use crate::game_core::stick;
 use crate::game_core::swarm::{Budget, Foes, Grid, Rng};
 use crate::game_core::{tick_frame, Core, Kit};
 use crate::hop_beat::{glb_prop, glb_ready, light, prop};
@@ -30,8 +32,6 @@ use crate::world_doc::{WorldCamera, WorldDoc};
 
 mod hud_extra;
 mod loot;
-mod motion;
-mod stick;
 mod view;
 mod weapons;
 
@@ -1955,14 +1955,9 @@ impl SurvivorArena {
             if self.stick_mode() {
                 let (w, h) = self.size.get();
                 let rad = self.stick_radius(w, h);
-                let (dx, dy) = ((fx - self.origin.0) / rad, (fy - self.origin.1) / rad);
-                let len = dx.hypot(dy);
-                let dead = self.spec.input.stick_dead;
-                if len > dead {
-                    // Analog: nothing inside the dead zone, then a smooth ramp to full at the rim.
-                    let m = ((len.min(1.0) - dead) / (1.0 - dead)).clamp(0.0, 1.0);
-                    want = (dx / len * m * sp, dy / len * m * sp);
-                }
+                let (ax, ay) =
+                    stick::analog(self.origin, (fx, fy), rad, self.spec.input.stick_dead);
+                want = (ax * sp, ay * sp);
             } else if let Some((gx, gz)) = self.ground_at(fx, fy) {
                 let (tx, tz) = (gx, gz - self.spec.input.thumb_offset_m);
                 let (dx, dz) = (tx - self.hx, tz - self.hz);
@@ -2734,13 +2729,9 @@ impl SurvivorArena {
                 if self.finger_id.is_none() && self.in_stick_zone(ev.x, ev.y, w, h) {
                     // The stick thumb: the base appears where it lands (kept on screen), never a tap.
                     let r = self.stick_radius(w, h);
-                    let m = 4.0 * hud_scale(w, h);
                     self.finger_id = Some(ev.id);
                     self.finger = Some((ev.x, ev.y));
-                    self.origin = (
-                        ev.x.clamp(r + m, (w - r - m).max(r + m)),
-                        ev.y.clamp(r + m, (h - r - m).max(r + m)),
-                    );
+                    self.origin = stick::land(ev.x, ev.y, r, 4.0 * hud_scale(w, h), w, h);
                 } else if self.finger_id != Some(ev.id) {
                     // The other thumb: a tap picks the target.
                     self.tap_select(ev.x, ev.y);
@@ -2764,12 +2755,7 @@ impl SurvivorArena {
                         // Past the rim the base follows the thumb, so turning back is instant.
                         let (w, h) = self.size.get();
                         let r = self.stick_radius(w, h);
-                        let (dx, dy) = (ev.x - self.origin.0, ev.y - self.origin.1);
-                        let d = dx.hypot(dy);
-                        if d > r {
-                            let k = (d - r) / d;
-                            self.origin = (self.origin.0 + dx * k, self.origin.1 + dy * k);
-                        }
+                        self.origin = stick::follow(self.origin, (ev.x, ev.y), r);
                     }
                 }
             }
@@ -3097,6 +3083,14 @@ const FOE_GLBS: [&str; POOLS] = [
 const POOL_SHARE: [usize; POOLS] = [85, 40, 25, 30, 15];
 /// Albedo tints of the models before a foe row's own tint.
 /// (The ghost is white in the kit and burnt out under the moon without one.)
+/// Which motion each foe pool uses (ghost, zombie, skeleton, vampire, keeper).
+const POOL_MOTION: [Motion; POOLS] = [
+    Motion::Float,
+    Motion::Shamble,
+    Motion::Hop,
+    Motion::Glide,
+    Motion::Stomp,
+];
 const POOL_TINT: [[u32; 3]; POOLS] = [
     [150, 150, 225],
     [205, 225, 190],
@@ -3928,7 +3922,7 @@ impl SurvivorArena {
             let d = k.radius * k.scale * mk * (0.4 + 0.6 * pop);
             let (phase, tempo) = motion::phase_tempo(self.foes.uid[i]);
             let pose = motion::pose(
-                motion::POOL_MOTION[m],
+                POOL_MOTION[m],
                 self.anim_t,
                 phase,
                 tempo,
@@ -4501,24 +4495,15 @@ impl SurvivorArena {
             // The thumb stick: a resting hint where a thumb lands, or the base where it landed,
             // a knob under the thumb and a jelly neck between them.
             let rad = self.stick_radius(w, h);
+            let look = stick::StickLook::default();
             match self.finger {
-                Some((fx, fy)) => {
-                    let (cx, cy) = self.origin;
-                    let (dx, dy) = (fx - cx, fy - cy);
-                    let d = dx.hypot(dy).max(1e-3);
-                    let k = d.min(rad) / d;
-                    stick::draw_stick(
-                        &mut list,
-                        (cx, cy),
-                        (cx + dx * k, cy + dy * k),
-                        rad,
-                        s,
-                        true,
-                    );
+                Some(f) => {
+                    let k = stick::knob(self.origin, f, rad);
+                    stick::draw(&mut list, self.origin, k, rad, s, true, &look);
                 }
                 None => {
                     let c = self.stick_center(w, h);
-                    stick::draw_stick(&mut list, c, c, rad, s, false);
+                    stick::draw(&mut list, c, c, rad, s, false, &look);
                 }
             }
         } else if let Some((fx, fy)) = self.finger {
