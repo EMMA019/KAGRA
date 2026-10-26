@@ -1,0 +1,312 @@
+{
+  "games": [
+    {
+      "slug": "neon_run",
+      "title": "Lumen",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "neon_run",
+      "entry": "examples/neon_run_minimal.py",
+      "world": "kagra-shared/tests/fixtures/neon_run_world.json",
+      "href": "play.html?game=neon_run",
+      "icon": "games/neon_run/icon.png"
+    },
+    {
+      "slug": "action",
+      "title": "Action Arena",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "action_arena",
+      "entry": "examples/action_minimal.py",
+      "world": "kagra-shared/tests/fixtures/action_world.json",
+      "href": "play.html?game=action",
+      "icon": "games/action/icon.png"
+    },
+    {
+      "slug": "bar_sim",
+      "title": "Bar Sim",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "",
+      "entry": "examples/bar_sim_minimal.py",
+      "world": "kagra-shared/tests/fixtures/bar_room_world.json",
+      "href": "play.html?game=bar_sim",
+      "icon": "games/bar_sim/icon.png"
+    },
+    {
+      "slug": "platformer",
+      "title": "Box Hop",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "box_hop",
+      "entry": "examples/platformer_minimal.py",
+      "world": "kagra-shared/tests/fixtures/platformer_world.json",
+      "href": "play.html?game=platformer",
+      "icon": "games/platformer/icon.png"
+    },
+    {
+      "slug": "card",
+      "title": "Card Duel",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "card",
+      "entry": "examples/card_minimal.py",
+      "world": "kagra-shared/tests/fixtures/card_world.json",
+      "href": "play.html?game=card",
+      "icon": "games/card/icon.png"
+    },
+    {
+      "slug": "fps",
+      "title": "FPS Range",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "fps_range",
+      "entry": "examples/fps_minimal.py",
+      "world": "kagra-shared/tests/fixtures/fps_world.json",
+      "href": "play.html?game=fps",
+      "icon": "games/fps/icon.png"
+    },
+    {
+      "slug": "fishcook",
+      "title": "Fish Cook",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "fishcook",
+      "entry": "examples/fishcook_minimal.py",
+      "world": "kagra-shared/tests/fixtures/fishcook_world.json",
+      "href": "play.html?game=fishcook",
+      "icon": "games/fishcook/icon.png"
+    },
+    {
+      "slug": "python_game",
+      "title": "Fish Talk",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "",
+      "entry": "examples/python_game_minimal.py",
+      "world": "kagra-shared/tests/fixtures/interact_fish_world.json",
+      "href": "play.html?game=python_game",
+      "icon": "games/python_game/icon.png"
+    },
+    {
+      "slug": "hop_beat",
+      "title": "Hop Beat",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "hop_beat",
+      "entry": "examples/hop_beat_minimal.py",
+      "world": "kagra-shared/tests/fixtures/hop_beat_world.json",
+      "href": "play.html?game=hop_beat",
+      "icon": "games/hop_beat/icon.png"
+    },
+    {
+      "slug": "meteor_cat",
+      "title": "Meteor Cat",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "neon_cat",
+      "entry": "examples/meteor_cat_minimal.py",
+      "world": "kagra-shared/tests/fixtures/meteor_cat_world.json",
+      "href": "play.html?game=meteor_cat",
+      "icon": "games/meteor_cat/icon.png"
+    },
+    {
+      "slug": "survivor_arena",
+      "title": "Moonlit Swarm",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "survivor_arena",
+      "entry": "examples/survivor_arena_minimal.py",
+      "world": "kagra-shared/tests/fixtures/survivor_arena_world.json",
+      "href": "play.html?game=survivor_arena",
+      "icon": "games/survivor_arena/icon.png"
+    },
+    {
+      "slug": "neon_cat",
+      "title": "Neon Cat",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "neon_cat",
+      "entry": "examples/neon_cat_minimal.py",
+      "world": "kagra-shared/tests/fixtures/neon_cat_world.json",
+      "href": "play.html?game=neon_cat",
+      "icon": "games/neon_cat/icon.png"
+    },
+    {
+      "slug": "novel",
+      "title": "Novel",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "novel_pages",
+      "entry": "examples/novel_minimal.py",
+      "world": "kagra-shared/tests/fixtures/novel_world.json",
+      "href": "play.html?game=novel",
+      "icon": "games/novel/icon.png"
+    },
+    {
+      "slug": "puzzle",
+      "title": "Push Puzzle",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "puzzle",
+      "entry": "examples/puzzle_minimal.py",
+      "world": "kagra-shared/tests/fixtures/puzzle_world.json",
+      "href": "play.html?game=puzzle",
+      "icon": "games/puzzle/icon.png"
+    },
+    {
+      "slug": "puzzle_pad",
+      "title": "Puzzle Pad",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "puzzle_pad",
+      "entry": "examples/puzzle_pad_minimal.py",
+      "world": "kagra-shared/tests/fixtures/puzzle_pad_world.json",
+      "href": "play.html?game=puzzle_pad",
+      "icon": "games/puzzle_pad/icon.png"
+    },
+    {
+      "slug": "rpg",
+      "title": "RPG Town",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "town_gate",
+      "entry": "examples/rpg_minimal.py",
+      "world": "kagra-shared/tests/fixtures/rpg_world.json",
+      "href": "play.html?game=rpg",
+      "icon": "games/rpg/icon.png"
+    },
+    {
+      "slug": "race",
+      "title": "Race",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "race_drive",
+      "entry": "examples/race_minimal.py",
+      "world": "kagra-shared/tests/fixtures/race_world.json",
+      "href": "play.html?game=race",
+      "icon": "games/race/icon.png"
+    },
+    {
+      "slug": "rhythm",
+      "title": "Rhythm",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "rhythm",
+      "entry": "examples/rhythm_minimal.py",
+      "world": "kagra-shared/tests/fixtures/rhythm_world.json",
+      "href": "play.html?game=rhythm",
+      "icon": "games/rhythm/icon.png"
+    },
+    {
+      "slug": "sports",
+      "title": "Sports Pitch",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "sports_goal",
+      "entry": "examples/sports_minimal.py",
+      "world": "kagra-shared/tests/fixtures/sports_world.json",
+      "href": "play.html?game=sports",
+      "icon": "games/sports/icon.png"
+    },
+    {
+      "slug": "stealth",
+      "title": "Stealth",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "stealth_hide",
+      "entry": "examples/stealth_minimal.py",
+      "world": "kagra-shared/tests/fixtures/stealth_world.json",
+      "href": "play.html?game=stealth",
+      "icon": "games/stealth/icon.png"
+    },
+    {
+      "slug": "survival",
+      "title": "Survival",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "survival",
+      "entry": "examples/survival_minimal.py",
+      "world": "kagra-shared/tests/fixtures/survival_world.json",
+      "href": "play.html?game=survival",
+      "icon": "games/survival/icon.png"
+    },
+    {
+      "slug": "td",
+      "title": "Tower Defense",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "td_lane",
+      "entry": "examples/td_minimal.py",
+      "world": "kagra-shared/tests/fixtures/td_world.json",
+      "href": "play.html?game=td",
+      "icon": "games/td/icon.png"
+    },
+    {
+      "slug": "backyard_brawl",
+      "title": "Backyard Brawl",
+      "version": "0.1.0",
+      "browser": false,
+      "genre": "",
+      "entry": "examples/backyard_brawl_minimal.py",
+      "world": null,
+      "href": null,
+      "icon": null
+    },
+    {
+      "slug": "bunny_garden",
+      "title": "Bunny Garden",
+      "version": "0.1.0",
+      "browser": false,
+      "genre": "",
+      "entry": "examples/bunny_garden_minimal.py",
+      "world": null,
+      "href": null,
+      "icon": null
+    },
+    {
+      "slug": "flight",
+      "title": "Island Flight",
+      "version": "0.1.0",
+      "browser": false,
+      "genre": "",
+      "entry": "examples/flight_minimal.py",
+      "world": null,
+      "href": null,
+      "icon": null
+    },
+    {
+      "slug": "physics",
+      "title": "Physics Stack",
+      "version": "0.1.0",
+      "browser": false,
+      "genre": "",
+      "entry": "examples/physics_minimal.py",
+      "world": null,
+      "href": null,
+      "icon": null
+    },
+    {
+      "slug": "chess",
+      "title": "Studio Chess",
+      "version": "0.1.0",
+      "browser": false,
+      "genre": "",
+      "entry": "examples/chess_minimal.py",
+      "world": null,
+      "href": null,
+      "icon": null
+    },
+    {
+      "slug": "torneko",
+      "title": "Torneko",
+      "version": "0.1.0",
+      "browser": false,
+      "genre": "",
+      "entry": "examples/torneko_minimal.py",
+      "world": null,
+      "href": null,
+      "icon": null
+    }
+  ]
+}
