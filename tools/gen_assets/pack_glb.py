@@ -8,7 +8,8 @@ What it does (nothing is invented, only removed or re-packed):
   * prunes every accessor / buffer view / image that nothing references,
   * embeds the external `Textures/colormap.png` into the file, so one .glb is one asset.
 
-Usage:  pack_glb.py SRC.glb DST.glb
+Usage:  pack_glb.py SRC.glb DST.glb [--clip NAME --time SECONDS]
+  (with --clip the skinned pose of that clip frame is baked in instead of the rest pose)
 """
 import json
 import struct
@@ -52,14 +53,21 @@ def to_rgba_png(data):
     return out.getvalue()
 
 
-def pack(src, dst):
+def pack(src, dst, clip=None, at=0.0):
     j, bin_ = read_glb(src)
     src = Path(src)
+    posed = {}
+    if clip:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from bake_pose import bake_pose
+
+        posed = bake_pose(j, bin_, clip, at)
     # 1. which accessors do the meshes use (without skin data)?
     used = []
     for m in j.get("meshes", []):
         for p in m["primitives"]:
-            p["attributes"] = {k: v for k, v in p["attributes"].items() if not k.startswith(("JOINTS_", "WEIGHTS_"))}
+            drop = ("JOINTS_", "WEIGHTS_") + (("TANGENT",) if clip else ())
+            p["attributes"] = {k: v for k, v in p["attributes"].items() if not k.startswith(drop)}
             for v in p["attributes"].values():
                 used.append(v)
             if "indices" in p:
@@ -81,6 +89,12 @@ def pack(src, dst):
             data = bin_[start : start + n * el]
         else:
             data = b"".join(bin_[start + i * stride : start + i * stride + el] for i in range(n))
+        extra = {}
+        if ai in posed:
+            arr = posed[ai]
+            data = arr.tobytes()
+            if a["type"] == "VEC3" and a.get("min") is not None:
+                extra = {"min": [float(x) for x in arr.min(0)], "max": [float(x) for x in arr.max(0)]}
         off = len(new_bin)
         new_bin += pad4(data)
         nv = {"buffer": 0, "byteOffset": off, "byteLength": len(data)}
@@ -89,6 +103,7 @@ def pack(src, dst):
         remap[ai] = len(new_acc)
         new_views.append(nv)
         na = {k: val for k, val in a.items() if k not in ("bufferView", "byteOffset", "sparse")}
+        na.update(extra)
         na["bufferView"] = len(new_views) - 1
         new_acc.append(na)
     for m in j.get("meshes", []):
@@ -119,7 +134,9 @@ def pack(src, dst):
     j["accessors"] = new_acc
     j["bufferViews"] = new_views
     j["buffers"] = [{"byteLength": len(new_bin)}]
-    j["asset"]["extras"] = {"note": "rest-pose copy made by tools/gen_assets/pack_glb.py"}
+    j["asset"]["extras"] = {
+        "note": (f"static copy of clip {clip}@{at}s made by tools/gen_assets/pack_glb.py" if clip else "rest-pose copy made by tools/gen_assets/pack_glb.py")
+    }
     jb = pad4(json.dumps(j, separators=(",", ":")).encode(), b" ")
     out = struct.pack("<4sII", b"glTF", 2, 12 + 8 + len(jb) + 8 + len(new_bin))
     out += struct.pack("<II", len(jb), 0x4E4F534A) + jb
@@ -130,4 +147,12 @@ def pack(src, dst):
 
 
 if __name__ == "__main__":
-    print(pack(sys.argv[1], sys.argv[2]))
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("src")
+    ap.add_argument("dst")
+    ap.add_argument("--clip")
+    ap.add_argument("--time", type=float, default=0.0)
+    a = ap.parse_args()
+    print(pack(a.src, a.dst, a.clip, a.time))

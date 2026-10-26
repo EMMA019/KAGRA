@@ -302,3 +302,36 @@ Risks and mitigations:
 2. **Content and director**: the six enemy types, 8 weapons, 6 passives, the director curve with bursts, merged gems, pickups, hit feel, **bots and baselines in CI**.
 3. **Finale and meta**: boss and dawn finish, missions, daily and modifiers, the `start` slot and heroes, new models, SFX and music, Continue ad.
 4. **Phone pass and release**: Pixel 10 measurement and optimization (borrowed doc, instance batches, caps), portal packaging, balance tuning from baselines, store/portal copy.
+
+## 16. Quality roadmap (polish pass, PR #209)
+
+North star: Switch-class look and feel (stylised, not realistic). Everything expensive is JSON-switchable and tied to the picture tier
+(`low` / `mobile` / `high`); the mobile default stays Pixel-10-friendly (capped pools, persistent buffers, no per-frame allocation).
+The `fx` block of the spec (`particles`, `shake`, `damage_numbers`, `knockback`, `zoom_pulse`, `trails`, `high_post`, `cap[3]`) switches each effect;
+effects use their own RNG stream, so toggling them never changes a run (tested).
+
+| Area | Done | Gap to Switch-class | Tier |
+|---|---|---|---|
+| Aim / weapon | Blaster Kit model points along the shot; hero faces the target; shots spawn at the muzzle (tested) | Aim-line anticipation, recoil | all |
+| Arena | Mini Arena walls and columns, seamless paver floor, stray squares removed | Props and set dressing, animated torches, a second biome | all |
+| Lighting / grade | Warm hero lantern, cool moon key, calmer grade, tinted foes; high tier adds wider soft shadows, stronger bloom/SSAO (+TAA, cascades, PCSS from the tier) | Baked-looking GI, rim light, colour-grade LUT per phase | high |
+| VFX | Pooled sparks, death puffs, gem glints, muzzle flash, hurt burst, shot streaks, level-up ring | Flipbook sprites (Kenney Particle/Splat), screen-space distortion, ground decals | caps 48 / 160 / 480 |
+| Camera | Shake and zoom pulses on hit, kill, hurt, level-up | Dolly on level-up, hit-stop, framing for boss | all |
+| Characters | Kenney Mini Characters (baked pose), hit flash, knockback | Skeletal animation (run, hit, death), squash and stretch, anticipation, more enemy kinds | all / high |
+| HUD / UI | HP bar with sheen, XP bar, level pill, kills, clock pill, dawn bar, low-HP pulse; level-up cards with glyph badges and level pips | Real icon art (HUD image quads do not draw in the browser yet), rounded OFL font (the font is embedded in `font.rs`, shared engine), animated card entrance | all |
+| Audio | Kenney impact hit, wet-squish pop, gem/level/pick cues; BGM loop checked for clicks | Layered mix with ducking, pitch variation per cue, adaptive music intensity, ear-checked loop | all |
+
+Order by visible impact per effort: animated characters (squash/anticipation), flipbook VFX, icon art in the browser HUD, font swap, mix and ducking, extra enemy kinds.
+
+## 17. Manual target selection (PR #209, step 5)
+
+`input.aim` in the JSON spec: `auto` (nearest foe, as before), `manual` or `hybrid` (default). `input.tap_px` is the pick radius (44 px at 400 px short side).
+One thumb keeps steering (drag-follow). The other thumb taps:
+
+- **a foe** locks it: a red ring on the floor and a bobbing red arrow over it; every weapon fires at it while it is in range (out of range falls back to nearest); tap it again to release;
+- **bare ground** aims that way (a gold line from the hero); a tap on the hero clears it;
+- a quick tap of the lone steering finger (under 0.25 s and 12 px) counts as a tap too, for one-thumb play.
+
+Fallbacks: a dead lock drops to the nearest foe. `hybrid` is lock, then nearest, then the ground aim when nothing is in range. `manual` is lock, then the ground aim (even with foes near), then nearest,
+so nobody is stuck without a target. `auto` ignores taps. The hero faces and the muzzle sits on the shot line for every choice. The pause card has an AIM button that cycles auto / tap / hybrid (kept until the page reloads; it is not stored on the device).
+The lock is one uid and an index hint, the ring and arrow reuse two persistent lines and one HUD text, so no pools grow and nothing allocates per frame.

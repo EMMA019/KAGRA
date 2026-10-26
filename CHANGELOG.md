@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Moonlit Swarm manual aim.** `input.aim` (`auto` | `manual` | `hybrid`, default hybrid) and `input.tap_px`: tap a foe with the other thumb to lock it (ring and arrow marker,
+  weapons prefer it, tap again to release, a dead lock falls back to the nearest foe), tap the ground to aim that way. An AIM button on the pause card cycles the scheme. Headless tests cover lock, unlock, fallback and the muzzle line.
+- **Moonlit Swarm polish pass.** The blaster now points where it fires (the hero faces the target, shots spawn at the muzzle). The arena has Kenney
+  Mini Arena walls and columns and a seamless paver floor; the stray grey squares (the distant pine ring) are gone. A warm hero lantern, a calmer grade
+  and tinted foes fix the washed-out look. New `fx` spec block, all switchable in JSON: pooled sparks, death puffs, gem glints, muzzle flash, shot
+  streaks, damage numbers, hit knockback, shake and zoom pulses (own RNG, so a run is identical with them off; pools capped per tier 48/160/480).
+  Polished HUD and level-up cards with icon badges and level pips. Audio: Kenney impact hit and a wet-squish pop. New CC0 ledger entries: Kenney Mini Arena,
+  Blaster Kit, Impact Sounds, and OpenGameArt wet squish. Design: `docs/design/survivor_arena.md` section 16.
+
 - HOP-BEAT: a jumping enemy, the hopper (a green frog), replaces the bat in the late phrases that put a bat over a beetle or over a slime (the bat now only flies alone, in its level-2 debut). It is the genre-neutral `game_core::enemies` schema in JSON: `jump_height`, `jump_air` and `telegraph` on an enemy type turn a walker into a jumper that sits, squats (the tell) and leaps one step at a time, landing on the beat; it moves 3 m a beat against the beetle's 2 (JSON). It debuts alone at level 3 (phrases: hopper alone; beetle then hopper then a gap; slime-hopper-slime; a hopper between two hold gaps; frog-beetle-frog-slime), warns with the existing `warn` cue and the "!" badge, and has a procedural CC0 model `hop_frog.glb` (ledger text updated). The fairness checker covers it: the leap may not overlap a gap hop, two enemies of different speeds may not overlap in the last beat before the hero reaches the nearer one, seams with a hopper are played at +-90 ms and the 2000-seed laid-course test includes them. `docs/enemy_kit.md` documents the fields and rules; the fixture and measure baseline are regenerated.
 
 - **Moonlit Swarm, the survivor-arena kit (step 1).** A survivor-like game on the shared parts: `game_core::swarm` (pooled foes, spatial

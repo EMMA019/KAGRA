@@ -137,6 +137,11 @@ pub struct InputSpec {
     pub full_speed_m: f32,
     /// Stick: radius in pixels at 400 px of short screen side.
     pub stick_px: f32,
+    /// Who picks the target: `auto` (nearest foe), `manual` (tap a foe to lock it, tap the
+    /// ground to aim that way) or `hybrid` (a locked foe first, else nearest).
+    pub aim: String,
+    /// Manual and hybrid: a tap picks a foe within this many pixels (at 400 px short side).
+    pub tap_px: f32,
 }
 
 impl Default for InputSpec {
@@ -147,6 +152,8 @@ impl Default for InputSpec {
             dead_zone_m: 0.3,
             full_speed_m: 2.2,
             stick_px: 70.0,
+            aim: "hybrid".into(),
+            tap_px: 44.0,
         }
     }
 }
@@ -256,12 +263,50 @@ pub struct CameraSpec {
 impl Default for CameraSpec {
     fn default() -> Self {
         Self {
-            height: 20.0,
+            height: 16.0,
             back: 11.0,
-            view_width_m: 12.0,
+            view_width_m: 9.6,
             fov_min: 36.0,
             fov_max: 66.0,
-            hero_up_m: 1.8,
+            hero_up_m: 1.4,
+        }
+    }
+}
+
+/// Game feel and effects, all switchable from the JSON. `cap` is the live-particle cap for
+/// the low, mid and high quality tiers; the costly extras are only there on `high`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FxSpec {
+    /// Hit sparks, death puffs, gem glints, muzzle flash.
+    pub particles: bool,
+    /// Camera shake scale (0 = none, 1 = as tuned, 2 = double).
+    pub shake: f32,
+    /// Floating damage numbers.
+    pub damage_numbers: bool,
+    /// Metres a foe is shoved by a hit.
+    pub knockback: f32,
+    /// Camera zoom-in pulse scale on hurt, level-up and big kills.
+    pub zoom_pulse: f32,
+    /// Streaks behind shots.
+    pub trails: bool,
+    /// On the `high` picture tier only: wider soft shadows, stronger bloom and SSAO
+    /// (TAA, cascades and PCSS come from the tier itself).
+    pub high_post: bool,
+    pub cap: [u32; 3],
+}
+
+impl Default for FxSpec {
+    fn default() -> Self {
+        Self {
+            particles: true,
+            shake: 1.0,
+            damage_numbers: true,
+            knockback: 0.12,
+            zoom_pulse: 1.0,
+            trails: true,
+            high_post: true,
+            cap: [48, 160, 480],
         }
     }
 }
@@ -380,6 +425,7 @@ pub struct SurvivorSpec {
     pub director: DirectorSpec,
     pub camera: CameraSpec,
     pub caps: CapSpec,
+    pub fx: FxSpec,
     pub enemies: EnemySpec,
     pub weapons: Vec<WeaponSpec>,
     pub passives: Vec<PassiveSpec>,
@@ -466,6 +512,7 @@ impl Default for SurvivorSpec {
             director: DirectorSpec::default(),
             camera: CameraSpec::default(),
             caps: CapSpec::default(),
+            fx: FxSpec::default(),
             enemies: EnemySpec {
                 types: vec![ghoul],
                 ..EnemySpec::default()
@@ -580,6 +627,10 @@ impl SurvivorSpec {
             return Err(format!("{w}: input.full_speed_m must exceed dead_zone_m"));
         }
         range(w, "input.stick_px", self.input.stick_px, 20.0, 200.0)?;
+        if !matches!(self.input.aim.as_str(), "auto" | "manual" | "hybrid") {
+            return Err(format!("{w}: input.aim is auto|manual|hybrid"));
+        }
+        range(w, "input.tap_px", self.input.tap_px, 10.0, 200.0)?;
         range(w, "run.secs", self.run.secs, 10.0, 1800.0)?;
         range(w, "levels.xp_base", self.levels.xp_base, 1.0, 10_000.0)?;
         range(w, "levels.xp_step", self.levels.xp_step, 0.0, 1000.0)?;
@@ -640,6 +691,13 @@ impl SurvivorSpec {
         }
         if self.caps.foes[0] > self.caps.foes[1] || self.caps.foes[1] > self.caps.foes[2] {
             return Err(format!("{w}: caps.foes must rise from low to high"));
+        }
+        let f = &self.fx;
+        range(w, "fx.shake", f.shake, 0.0, 2.0)?;
+        range(w, "fx.knockback", f.knockback, 0.0, 0.6)?;
+        range(w, "fx.zoom_pulse", f.zoom_pulse, 0.0, 2.0)?;
+        if f.cap.iter().any(|c| *c > 600) || f.cap[0] > f.cap[1] || f.cap[1] > f.cap[2] {
+            return Err(format!("{w}: fx.cap is 0..=600 and rises from low to high"));
         }
         self.enemies.validate(w, &["ghoul"])?;
         if self.enemies.types.is_empty() {
@@ -846,6 +904,9 @@ struct Gem {
 #[derive(Clone, Copy, Debug, Default)]
 struct Slots {
     hero: usize,
+    /// The blaster in the hero's hands (`glb_gun`: the model is there).
+    gun: usize,
+    glb_gun: bool,
     shadow: usize,
     foe0: usize,
     /// Zombie pool start and size (size 0: no zombie model, every foe is a ghost).
@@ -866,6 +927,48 @@ const MAX_FOE_R: f32 = 1.0;
 const HOLD: f32 = 0.85;
 const PUSH_NEIGHBOURS: u32 = 6;
 
+/// One effect particle (hit spark, puff, glint, muzzle flash).
+#[derive(Clone, Copy, Debug)]
+struct Fx {
+    x: f32,
+    y: f32,
+    z: f32,
+    vx: f32,
+    vy: f32,
+    vz: f32,
+    age: f32,
+    life: f32,
+    kind: u8,
+}
+
+/// A floating damage number (world position, shown by the HUD).
+#[derive(Clone, Copy, Debug)]
+struct DmgNum {
+    x: f32,
+    z: f32,
+    val: i32,
+    age: f32,
+}
+
+const DMG_CAP: [usize; 3] = [6, 12, 20];
+const DMG_LIFE: f32 = 0.7;
+const FX_SPARK: u8 = 0;
+const FX_PUFF_GHOST: u8 = 1;
+const FX_PUFF_ZOMBIE: u8 = 2;
+const FX_GLINT: u8 = 3;
+const FX_MUZZLE: u8 = 4;
+const FX_HURT: u8 = 5;
+/// Per kind: sRGB colour, sprite radius (m) and opacity for the young, middle and old third
+/// of its life. One point cloud per kind and third, refilled in place each frame.
+const FX_LOOK: [([u8; 3], [f32; 3], [u8; 3]); 6] = [
+    ([185, 240, 255], [0.11, 0.08, 0.05], [255, 235, 190]),
+    ([185, 165, 255], [0.16, 0.26, 0.34], [210, 130, 60]),
+    ([140, 225, 150], [0.16, 0.26, 0.34], [210, 130, 60]),
+    ([255, 225, 110], [0.10, 0.08, 0.05], [255, 230, 160]),
+    ([255, 225, 160], [0.28, 0.18, 0.10], [255, 200, 110]),
+    ([255, 85, 95], [0.16, 0.12, 0.08], [255, 230, 160]),
+];
+
 #[derive(Debug)]
 pub struct SurvivorArena {
     pub spec: SurvivorSpec,
@@ -883,12 +986,22 @@ pub struct SurvivorArena {
     gems: Vec<Gem>,
     budget: Budget,
     rng: Rng,
+    /// Effects roll their own dice, so switching them off never changes a run.
+    fx_rng: Rng,
+    fx: Vec<Fx>,
+    fx_cap: usize,
+    dmg: Vec<DmgNum>,
+    tier: usize,
+    /// Camera zoom-in kick, 0..1, decays fast.
+    zoom_kick: f32,
     // hero
     hx: f32,
     hz: f32,
     vx: f32,
     vz: f32,
     face: f32,
+    /// Seconds the hero keeps facing its last target after a shot.
+    aim_hold: f32,
     hp: f32,
     hurt_cd: f32,
     hurt_flash: f32,
@@ -913,12 +1026,20 @@ pub struct SurvivorArena {
     finger: Option<(f32, f32)>,
     origin: (f32, f32),
     mute_finger: bool,
+    /// Manual aim: 0 auto, 1 manual, 2 hybrid (a pause-card setting, kept across runs).
+    aim_mode: u8,
+    /// The locked foe (`Foes::uid`), its last known index, and a ground-aimed direction (yaw).
+    lock: Option<u32>,
+    lock_idx: usize,
+    aim_dir: Option<f32>,
+    /// The lone finger's first position and age (s), to tell a tap from a drag.
+    tap: Option<(f32, f32, f32)>,
     key_dir: (f32, f32),
     size: Cell<(f32, f32)>,
     // presentation
     lang_ja: bool,
     sfx: bool,
-    cue_t: [f32; 4],
+    cue_t: [f32; 5],
 }
 
 fn lin(c: [u32; 3]) -> [f32; 3] {
@@ -966,11 +1087,18 @@ impl SurvivorArena {
             gems: Vec::new(),
             budget: Budget::default(),
             rng: Rng::new(spec.director.seed),
+            fx_rng: Rng::new(spec.director.seed ^ 0x9e37_79b9),
+            fx: Vec::new(),
+            fx_cap: 0,
+            dmg: Vec::new(),
+            tier: 1,
+            zoom_kick: 0.0,
             hx: 0.0,
             hz: 0.0,
             vx: 0.0,
             vz: 0.0,
             face: 0.0,
+            aim_hold: 0.0,
             hp: spec.hero.max_hp,
             hurt_cd: 0.0,
             hurt_flash: 0.0,
@@ -1000,11 +1128,16 @@ impl SurvivorArena {
             finger: None,
             origin: (0.0, 0.0),
             mute_finger: false,
+            aim_mode: aim_code(&spec.input.aim),
+            lock: None,
+            lock_idx: 0,
+            aim_dir: None,
+            tap: None,
             key_dir: (0.0, 0.0),
             size: Cell::new((390.0, 844.0)),
             lang_ja: false,
             sfx: true,
-            cue_t: [0.0; 4],
+            cue_t: [0.0; 5],
             spec,
         };
         me.apply_quality();
@@ -1021,6 +1154,10 @@ impl SurvivorArena {
             Some("high") => 2,
             _ => 1,
         };
+        self.tier = tier;
+        self.fx_cap = self.spec.fx.cap[tier] as usize;
+        self.fx = Vec::with_capacity(self.fx_cap);
+        self.dmg = Vec::with_capacity(DMG_CAP[tier]);
         let cap = self.spec.caps.foes[tier] as usize;
         self.foes = Foes::with_capacity(cap);
         self.grid = Grid::new(self.spec.arena.half + 3.0, 2.0, cap);
@@ -1117,6 +1254,10 @@ impl SurvivorArena {
         self.gems.clear();
         self.budget.reset();
         self.rng = Rng::new(self.spec.director.seed);
+        self.fx_rng = Rng::new(self.spec.director.seed ^ 0x9e37_79b9);
+        self.fx.clear();
+        self.dmg.clear();
+        self.zoom_kick = 0.0;
         (self.hx, self.hz, self.vx, self.vz, self.face) = (0.0, 0.0, 0.0, 0.0, 0.0);
         self.hurt_cd = 0.0;
         self.hurt_flash = 0.0;
@@ -1132,6 +1273,9 @@ impl SurvivorArena {
         self.finger = None;
         self.finger_id = None;
         self.mute_finger = false;
+        self.lock = None;
+        self.aim_dir = None;
+        self.tap = None;
         self.weapon_lv.iter_mut().for_each(|l| *l = 0);
         self.weapon_cd.iter_mut().for_each(|c| *c = 0.0);
         self.passive_lv.iter_mut().for_each(|l| *l = 0);
@@ -1202,10 +1346,14 @@ impl SurvivorArena {
 
     fn step_sim(&mut self, dt: f32) {
         self.anim_t += dt;
+        if let Some(t) = &mut self.tap {
+            t.2 += dt;
+        }
         for c in &mut self.cue_t {
             *c = (*c - dt).max(0.0);
         }
         self.hurt_flash = (self.hurt_flash - dt * 3.0).max(0.0);
+        self.step_fx(dt);
         if !self.cards.is_empty() {
             return;
         }
@@ -1229,6 +1377,9 @@ impl SurvivorArena {
             self.level += 1;
             self.pending_levels += 1;
             self.cue("levelup", 2, 0.2);
+            self.zoom_kick = 1.0;
+            let at = [self.hx, 0.3, self.hz];
+            self.burst(FX_GLINT, 14, at, [0.0, 0.0], 3.4, 1.0, 3.2, 0.7);
         }
         self.core.stats.score = self.score_now();
         if self.hp <= 0.0 {
@@ -1250,6 +1401,25 @@ impl SurvivorArena {
         let half_w = c.view_width_m * 0.5;
         let fov = 2.0 * (half_w / (dist * aspect.max(0.2))).atan().to_degrees();
         (eye, target, fov.clamp(c.fov_min, c.fov_max))
+    }
+
+    /// A world point on the canvas (pixels), or `None` behind the camera.
+    fn project(&self, p: [f32; 3], w: f32, h: f32) -> Option<(f32, f32)> {
+        let aspect = w / h.max(1.0);
+        let (eye, target, fov) = self.camera(aspect);
+        let f = norm3([target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]]);
+        let r = norm3(cross(f, [0.0, 1.0, 0.0]));
+        let u = cross(r, f);
+        let v = [p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]];
+        let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let cz = dot(v, f);
+        if cz < 0.1 {
+            return None;
+        }
+        let t = (fov.to_radians() * 0.5).tan();
+        let nx = dot(v, r) / (cz * t * aspect.max(0.2));
+        let ny = dot(v, u) / (cz * t);
+        Some(((nx * 0.5 + 0.5) * w, (0.5 - ny * 0.5) * h))
     }
 
     /// The ground point under a canvas pixel, or `None` for a sky ray.
@@ -1314,7 +1484,8 @@ impl SurvivorArena {
         let lim = self.spec.arena.half - self.spec.hero.radius;
         self.hx = self.hx.clamp(-lim, lim);
         self.hz = self.hz.clamp(-lim, lim);
-        if self.vx.hypot(self.vz) > 0.4 {
+        self.aim_hold = (self.aim_hold - dt).max(0.0);
+        if self.aim_hold <= 0.0 && self.vx.hypot(self.vz) > 0.4 {
             self.face = self.vx.atan2(self.vz);
         }
     }
@@ -1362,6 +1533,78 @@ impl SurvivorArena {
         }
     }
 
+    /// A burst of `n` particles (scaled by the quality tier), thrown along (`dx`,`dz`) with a
+    /// spread of `fan` and an upward `up`. Dropped when the pool is full.
+    #[allow(clippy::too_many_arguments)]
+    fn burst(
+        &mut self,
+        kind: u8,
+        n: u32,
+        at: [f32; 3],
+        dir: [f32; 2],
+        speed: f32,
+        fan: f32,
+        up: f32,
+        life: f32,
+    ) {
+        if !self.spec.fx.particles {
+            return;
+        }
+        let n = (n as f32 * [0.5, 1.0, 1.5][self.tier]).ceil() as u32;
+        for _ in 0..n {
+            if self.fx.len() >= self.fx_cap {
+                return;
+            }
+            let a = self.fx_rng.range(0.0, std::f32::consts::TAU);
+            let sp = speed * self.fx_rng.range(0.4, 1.0);
+            self.fx.push(Fx {
+                x: at[0],
+                y: at[1],
+                z: at[2],
+                vx: dir[0] * speed * 0.7 + a.cos() * sp * fan,
+                vy: up * self.fx_rng.range(0.5, 1.0),
+                vz: dir[1] * speed * 0.7 + a.sin() * sp * fan,
+                age: 0.0,
+                life: life * self.fx_rng.range(0.7, 1.0),
+                kind,
+            });
+        }
+    }
+
+    fn step_fx(&mut self, dt: f32) {
+        self.zoom_kick = (self.zoom_kick - dt * 3.5).max(0.0);
+        for i in (0..self.fx.len()).rev() {
+            let p = &mut self.fx[i];
+            p.age += dt;
+            if p.age >= p.life {
+                self.fx.swap_remove(i);
+                continue;
+            }
+            let (drag, grav) = match p.kind {
+                FX_SPARK | FX_HURT => (1.6, 12.0),
+                FX_GLINT => (0.8, -2.2),
+                _ => (2.6, 0.0),
+            };
+            let k = (1.0 - drag * dt).max(0.0);
+            p.vx *= k;
+            p.vz *= k;
+            p.vy = p.vy * k - grav * dt;
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.z += p.vz * dt;
+            if p.y < 0.04 {
+                p.y = 0.04;
+                p.vy = -p.vy * 0.25;
+            }
+        }
+        for i in (0..self.dmg.len()).rev() {
+            self.dmg[i].age += dt;
+            if self.dmg[i].age >= DMG_LIFE {
+                self.dmg.remove(i);
+            }
+        }
+    }
+
     fn hurt(&mut self, dmg: f32) {
         if self.hurt_cd > 0.0 || dmg <= 0.0 {
             return;
@@ -1370,6 +1613,9 @@ impl SurvivorArena {
         self.hurt_cd = self.spec.hero.hurt_cd;
         self.hurt_flash = 1.0;
         self.core.juice.shake = self.core.juice.shake.max(0.35);
+        self.zoom_kick = self.zoom_kick.max(0.7);
+        let at = [self.hx, 0.7, self.hz];
+        self.burst(FX_HURT, 8, at, [0.0, 0.0], 4.5, 1.0, 3.0, 0.45);
         self.cue("hurt", 1, 0.15);
     }
 
@@ -1450,16 +1696,16 @@ impl SurvivorArena {
                 continue;
             }
             let st = self.weapon_stats[wi];
-            let Some((j, _)) =
-                self.grid
-                    .nearest(&self.foes.x, &self.foes.z, self.hx, self.hz, st.range)
-            else {
-                self.weapon_cd[wi] = 0.1; // nothing in range: look again soon
+            let Some((base, dist)) = self.pick_aim(st.range) else {
+                self.weapon_cd[wi] = 0.1; // nothing to aim at: look again soon
                 continue;
             };
             self.weapon_cd[wi] = (st.cooldown * self.mods.cooldown).max(0.08);
-            let (dx, dz) = (self.foes.x[j] - self.hx, self.foes.z[j] - self.hz);
-            let base = dx.atan2(dz);
+            // Turn to the target first: the blaster points where the shot goes, and the
+            // shot leaves from the muzzle (nearer if the foe is already in the way).
+            self.face = base;
+            self.aim_hold = AIM_HOLD;
+            let reach = MUZZLE.min(dist * 0.6);
             let n = st.count;
             for k in 0..n {
                 if self.shots.len() >= self.spec.caps.shots as usize {
@@ -1467,8 +1713,8 @@ impl SurvivorArena {
                 }
                 let a = base + (k as f32 - (n - 1) as f32 * 0.5) * st.spread;
                 self.shots.push(Shot {
-                    x: self.hx,
-                    z: self.hz,
+                    x: self.hx + a.sin() * reach,
+                    z: self.hz + a.cos() * reach,
                     vx: a.sin() * st.speed,
                     vz: a.cos() * st.speed,
                     life: st.range / st.speed,
@@ -1480,6 +1726,118 @@ impl SurvivorArena {
                 });
             }
             self.cue("shoot", 0, 0.12);
+            let (sn, cs) = base.sin_cos();
+            let at = [self.hx + sn * reach, MUZZLE_Y, self.hz + cs * reach];
+            self.burst(FX_MUZZLE, 1, at, [0.0, 0.0], 0.0, 0.0, 0.0, 0.09);
+            self.burst(FX_SPARK, 2, at, [sn, cs], 5.0, 0.5, 0.5, 0.18);
+        }
+    }
+
+    // ---- aiming: auto, tap-to-lock, tap-the-ground
+
+    /// The locked foe's index now, without touching the lock.
+    fn lock_foe(&self) -> Option<usize> {
+        let uid = self.lock?;
+        let ok = |i: usize| i < self.foes.len() && self.foes.uid[i] == uid && self.foes.hp[i] > 0.0;
+        if ok(self.lock_idx) {
+            return Some(self.lock_idx);
+        }
+        (0..self.foes.len()).find(|&i| ok(i))
+    }
+
+    /// Where a weapon with this range fires: `(yaw, distance)`. Manual and hybrid prefer the
+    /// locked foe (in range), then the ground direction (manual) or the nearest foe, then
+    /// the ground direction. A lock that died is dropped.
+    fn pick_aim(&mut self, range: f32) -> Option<(f32, f32)> {
+        if self.aim_mode != 0 {
+            if self.lock.is_some() {
+                match self.lock_foe() {
+                    Some(j) => {
+                        self.lock_idx = j;
+                        let (dx, dz) = (self.foes.x[j] - self.hx, self.foes.z[j] - self.hz);
+                        let d = dx.hypot(dz);
+                        if d <= range {
+                            return Some((dx.atan2(dz), d));
+                        }
+                    }
+                    None => self.lock = None, // the target died: back to nearest
+                }
+            }
+            if self.aim_mode == 1 {
+                if let Some(a) = self.aim_dir {
+                    return Some((a, f32::INFINITY));
+                }
+            }
+        }
+        if let Some((j, _)) = self
+            .grid
+            .nearest(&self.foes.x, &self.foes.z, self.hx, self.hz, range)
+        {
+            let (dx, dz) = (self.foes.x[j] - self.hx, self.foes.z[j] - self.hz);
+            return Some((dx.atan2(dz), dx.hypot(dz)));
+        }
+        if self.aim_mode != 0 {
+            if let Some(a) = self.aim_dir {
+                return Some((a, f32::INFINITY));
+            }
+        }
+        None
+    }
+
+    /// `auto`, `manual` or `hybrid`.
+    pub fn aim_name(&self) -> &'static str {
+        ["auto", "manual", "hybrid"][self.aim_mode.min(2) as usize]
+    }
+
+    /// Set the aim scheme (the pause card cycles it). Clears any lock.
+    pub fn set_aim(&mut self, mode: &str) {
+        self.aim_mode = aim_code(mode);
+        self.lock = None;
+        self.aim_dir = None;
+    }
+
+    /// The locked foe's uid, if the lock is still alive.
+    pub fn locked(&self) -> Option<u32> {
+        self.lock_foe().and(self.lock)
+    }
+
+    /// A tap at a canvas pixel: a foe near it is locked (tap it again to release), the hero
+    /// clears the aim, bare ground aims that way. Auto mode ignores taps.
+    fn tap_select(&mut self, x: f32, y: f32) {
+        if self.aim_mode == 0 {
+            return;
+        }
+        let (w, h) = self.size.get();
+        let pick = self.spec.input.tap_px * hud_scale(w, h);
+        let mut best: Option<(usize, f32)> = None;
+        for i in 0..self.foes.len() {
+            let Some((sx, sy)) = self.project([self.foes.x[i], 0.45, self.foes.z[i]], w, h) else {
+                continue;
+            };
+            let d = (sx - x).hypot(sy - y);
+            if d < pick && best.is_none_or(|(_, bd)| d < bd) {
+                best = Some((i, d));
+            }
+        }
+        if let Some((i, _)) = best {
+            let uid = self.foes.uid[i];
+            if self.lock == Some(uid) {
+                self.lock = None;
+            } else {
+                self.lock = Some(uid);
+                self.lock_idx = i;
+            }
+            self.aim_dir = None;
+            self.cue("pick", 2, 0.1);
+        } else if let Some((gx, gz)) = self.ground_at(x, y) {
+            let (dx, dz) = (gx - self.hx, gz - self.hz);
+            self.lock = None;
+            self.aim_dir = if dx.hypot(dz) < 0.8 {
+                None
+            } else {
+                Some(dx.atan2(dz))
+            };
+            self.cue("pick", 2, 0.1);
         }
     }
 
@@ -1514,9 +1872,25 @@ impl SurvivorArena {
                 let k = 1.0 / s.vx.hypot(s.vz).max(1e-3);
                 self.foes.hp[j] -= s.dmg;
                 self.foes.flash[j] = 0.1;
-                self.foes.x[j] += s.vx * k * 0.12;
-                self.foes.z[j] += s.vz * k * 0.12;
+                let kb = self.spec.fx.knockback;
+                self.foes.x[j] += s.vx * k * kb;
+                self.foes.z[j] += s.vz * k * kb;
                 hit_cue = true;
+                let (dirx, dirz, dmg_val) = (-s.vx * k, -s.vz * k, s.dmg);
+                let (fx_x, fx_z) = (self.foes.x[j], self.foes.z[j]);
+                if self.spec.fx.damage_numbers {
+                    if self.dmg.len() >= DMG_CAP[self.tier] {
+                        self.dmg.remove(0);
+                    }
+                    self.dmg.push(DmgNum {
+                        x: fx_x,
+                        z: fx_z,
+                        val: dmg_val.round().max(1.0) as i32,
+                        age: 0.0,
+                    });
+                }
+                self.burst(FX_SPARK, 4, [sx, 0.6, sz], [dirx, dirz], 5.5, 0.6, 1.8, 0.3);
+                let s = &mut self.shots[si];
                 if (s.n as usize) < s.hits.len() {
                     s.hits[s.n as usize] = self.foes.uid[j];
                     s.n += 1;
@@ -1539,7 +1913,17 @@ impl SurvivorArena {
             }
             let k = self.kinds[self.foes.kind[i] as usize];
             self.kills += 1;
+            self.cue("kill", 4, 0.06);
             let (x, z) = (self.foes.x[i], self.foes.z[i]);
+            let puff = if self.foes.uid[i].is_multiple_of(4) {
+                FX_PUFF_ZOMBIE
+            } else {
+                FX_PUFF_GHOST
+            };
+            self.burst(puff, 6, [x, 0.5, z], [0.0, 0.0], 2.4, 1.0, 1.2, 0.55);
+            self.burst(FX_SPARK, 4, [x, 0.5, z], [0.0, 0.0], 5.0, 1.0, 2.5, 0.35);
+            self.core.juice.shake = self.core.juice.shake.max(0.07);
+            self.zoom_kick = self.zoom_kick.max(0.12);
             if self.gems.len() < self.spec.caps.gems as usize {
                 self.gems.push(Gem {
                     x,
@@ -1572,9 +1956,11 @@ impl SurvivorArena {
                 g.z += dz * k;
             }
             if d < take {
-                self.xp += g.v * self.mods.xp;
+                let (gx, gz, gv) = (g.x, g.z, g.v);
+                self.xp += gv * self.mods.xp;
                 self.gems.swap_remove(gi);
                 got = true;
+                self.burst(FX_GLINT, 5, [gx, 0.3, gz], [0.0, 0.0], 1.6, 1.0, 2.4, 0.45);
             }
         }
         if got {
@@ -1646,6 +2032,37 @@ impl SurvivorArena {
     }
 
     /// (kind label, name, description, accent colour) of a card, in the page language.
+    /// A glyph from the bundled UI font for a card.
+    fn card_glyph(&self, c: Card) -> &'static str {
+        match c {
+            Card::Weapon(_) => "★",
+            Card::Heal => "♡",
+            Card::Passive(i) => match self.spec.passives[i as usize].stat {
+                PassiveStat::MaxHp => "♥",
+                PassiveStat::Speed => "→",
+                PassiveStat::Magnet => "◎",
+                PassiveStat::Might => "▲",
+                PassiveStat::Haste => "◆",
+                PassiveStat::Growth => "☀",
+            },
+        }
+    }
+
+    /// Level pips for a card: levels owned and the most it can reach (0 max: no pips).
+    fn card_pips(&self, c: Card) -> (usize, usize) {
+        match c {
+            Card::Weapon(i) => (
+                self.weapon_lv[i as usize] as usize,
+                self.spec.weapons[i as usize].levels.len() + 1,
+            ),
+            Card::Passive(i) => (
+                self.passive_lv[i as usize] as usize,
+                self.spec.passives[i as usize].max_level as usize,
+            ),
+            Card::Heal => (0, 0),
+        }
+    }
+
     fn card_text(&self, c: Card) -> (String, String, String, [u8; 3]) {
         match c {
             Card::Weapon(i) => {
@@ -1702,6 +2119,10 @@ impl SurvivorArena {
                     self.finger_id = Some(ev.id);
                     self.finger = Some((ev.x, ev.y));
                     self.origin = (ev.x, ev.y);
+                    self.tap = Some((ev.x, ev.y, 0.0));
+                } else if live && self.finger_id != Some(ev.id) {
+                    // The other thumb: a tap picks the target.
+                    self.tap_select(ev.x, ev.y);
                 }
             }
             PointerPhase::Move => {
@@ -1710,6 +2131,14 @@ impl SurvivorArena {
                 }
             }
             PointerPhase::End | PointerPhase::Cancel if self.finger_id == Some(ev.id) => {
+                // A quick, short touch of the lone finger is a tap too.
+                if let (PointerPhase::End, Some((tx, ty, age))) = (ev.phase, self.tap.take()) {
+                    let (w, h) = self.size.get();
+                    if live && age < 0.25 && (ev.x - tx).hypot(ev.y - ty) < 12.0 * hud_scale(w, h) {
+                        self.tap_select(ev.x, ev.y);
+                    }
+                }
+                self.tap = None;
                 self.finger_id = None;
                 self.finger = None;
                 self.mute_finger = false;
@@ -1729,6 +2158,10 @@ impl SurvivorArena {
                     if r.contains(x, y) {
                         match b {
                             PauseBtn::Resume => self.flow.resume(),
+                            PauseBtn::Aim => {
+                                let next = (self.aim_mode + 1) % 3;
+                                self.set_aim(["auto", "manual", "hybrid"][next as usize]);
+                            }
                             PauseBtn::Retry => self.start_run(),
                             PauseBtn::Title => self.show_title(),
                         }
@@ -1762,6 +2195,7 @@ impl SurvivorArena {
     /// The finger that made this tap must lift before it steers again.
     fn mute_after_tap(&mut self) {
         self.finger = None;
+        self.tap = None;
         if self.finger_id.is_some() {
             self.mute_finger = true;
         }
@@ -1850,6 +2284,14 @@ fn norm3(a: [f32; 3]) -> [f32; 3] {
 
 // ------------------------------------------------------------ layout -----
 
+fn aim_code(name: &str) -> u8 {
+    match name {
+        "auto" => 0,
+        "manual" => 1,
+        _ => 2,
+    }
+}
+
 fn hud_scale(w: f32, h: f32) -> f32 {
     (w.min(h) / 400.0).clamp(0.9, 2.6)
 }
@@ -1857,6 +2299,7 @@ fn hud_scale(w: f32, h: f32) -> f32 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PauseBtn {
     Resume,
+    Aim,
     Retry,
     Title,
 }
@@ -1868,19 +2311,20 @@ fn pause_rect(w: f32, s: f32) -> Quad {
 
 fn pause_buttons(w: f32, h: f32, s: f32) -> Vec<(PauseBtn, Quad)> {
     let bw = (w * 0.7).min(320.0 * s);
-    let bh = 54.0 * s;
+    let bh = (54.0 * s).min(h * 0.12);
+    let gap = bh * 0.26;
     let x = (w - bw) * 0.5;
-    let y0 = h * 0.36;
-    [PauseBtn::Resume, PauseBtn::Retry, PauseBtn::Title]
-        .into_iter()
-        .enumerate()
-        .map(|(i, b)| {
-            (
-                b,
-                Quad::new(x, y0 + i as f32 * (bh + 14.0 * s), bw, bh, [0; 4]),
-            )
-        })
-        .collect()
+    let y0 = h * 0.30;
+    [
+        PauseBtn::Resume,
+        PauseBtn::Aim,
+        PauseBtn::Retry,
+        PauseBtn::Title,
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(i, b)| (b, Quad::new(x, y0 + i as f32 * (bh + gap), bw, bh, [0; 4])))
+    .collect()
 }
 
 fn card_rects(w: f32, h: f32, s: f32, n: usize) -> Vec<Quad> {
@@ -1921,7 +2365,8 @@ fn default_audio() -> Value {
         "bgm": {"file": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3", "volume": 0.6, "fade_secs": 0.5},
         "sfx": {
             "shoot": cue("shot_01.wav", 0.16, 1.0),
-            "hit": cue("retro_explosion_02.wav", 0.14, 1.6),
+            "hit": {"file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav", "volume": 0.45, "rate": 1.0},
+            "kill": {"file": "assets/audio/oga-wet-squish/impactsplat03.wav", "volume": 0.3, "rate": 1.15},
             "hurt": cue("retro_die_01.wav", 0.6, 1.0),
             "gem": cue("retro_coin_01.wav", 0.25, 1.3),
             "levelup": cue("power_up_02.wav", 0.7, 1.0),
@@ -1963,21 +2408,47 @@ const HERO_GLBS: [(&str, &str); 5] = [
 const GHOST_GLB: &str = "assets/models/kenney/graveyard-kit/character-ghost.glb";
 const ZOMBIE_GLB: &str = "assets/models/kenney/graveyard-kit/character-zombie.glb";
 /// Kenney Platformer Kit jewel (CC0): the XP gem.
+/// Kenney Blaster Kit (CC0): the hero's blaster. The model's muzzle is at -Z.
+const BLASTER_GLB: &str = "assets/models/kenney/blaster-kit/blaster-a.glb";
+/// Where the blaster sits in front of the hero (metres along the aim, and up) and how
+/// big it is drawn. The muzzle is `GUN_FWD + 0.37 * GUN_SCALE` ahead of the hero.
+const GUN_FWD: f32 = 0.86;
+const GUN_UP: f32 = 0.9;
+const GUN_SCALE: f32 = 1.3;
+/// Height of the muzzle above the floor (m).
+/// Segments in the lock-on ring.
+const LOCK_SEG: usize = 16;
+const MUZZLE_Y: f32 = 0.62;
+const MUZZLE: f32 = GUN_FWD + 0.37 * GUN_SCALE;
+/// How long the hero keeps facing the target after a shot.
+const AIM_HOLD: f32 = 0.5;
 const GEM_GLB: &str = "assets/models/kenney/platformer-kit/jewel.glb";
-/// Arena dressing from the Graveyard Kit: (file, scale, how many).
-const DECOR: [(&str, f32, u32); 8] = [
-    ("gravestone-round", 1.5, 5),
-    ("gravestone-cross", 1.5, 4),
+/// Arena dressing from the Graveyard Kit inside the walls: (file, scale, how many).
+const DECOR: [(&str, f32, u32); 6] = [
+    ("gravestone-round", 1.5, 4),
+    ("gravestone-cross", 1.5, 3),
     ("gravestone-broken", 1.5, 3),
-    ("pine", 1.3, 4),
-    ("pine-crooked", 1.3, 3),
     ("pumpkin-carved", 1.4, 3),
-    ("lantern-candle", 1.6, 2),
-    ("rocks", 1.5, 3),
+    ("lantern-candle", 1.6, 3),
+    ("cross-wood", 1.4, 2),
 ];
+/// Pines ringed outside the wall, so the arena has a dark treeline round it.
+/// Seen from the high camera the pines read as flat pale boxes, so the ring is off.
+const TREES: [(&str, u32); 0] = [];
+/// Kenney Mini Arena (CC0): the stone boundary wall (1 m long, x) and the corner column.
+const WALL_GLB: &str = "assets/models/kenney/mini-arena/wall.glb";
+const COLUMN_GLB: &str = "assets/models/kenney/mini-arena/column.glb";
+/// The hand-drawn paver texture (original, CC0) and how many metres one tile covers.
+/// The Mini Arena stone is sandy; a cool tint puts it under the moon.
+const STONE_TINT: [u32; 3] = [135, 150, 205];
+const FLOOR_TEX: &str = "assets/textures/survivor_arena/floor.png";
+const FLOOR_TILE_M: f32 = 12.0;
 const GRAVEYARD: &str = "assets/models/kenney/graveyard-kit/";
 /// Every Kenney character is about 0.8 tall; this puts a foe of radius r at ~2.2 r tall x 1.4.
 const FOE_MODEL_K: f32 = 5.2;
+/// Albedo tints: the ghost is white in the kit and burnt out under the moon without one.
+const GHOST_TINT: [u32; 3] = [150, 150, 225];
+const ZOMBIE_TINT: [u32; 3] = [205, 225, 190];
 const HERO_MODEL_SCALE: f32 = 2.2;
 
 fn hero_glb(skin: &str) -> &'static str {
@@ -2006,19 +2477,19 @@ impl SurvivorArena {
             half: half + 4.0,
             ground: Some(false),
             contact_blobs: Some(false),
-            sky: Some([26, 22, 52, 255]),
-            hemi_sky: Some([0.26, 0.28, 0.44]),
-            hemi_ground: Some([0.14, 0.14, 0.22]),
+            sky: Some([12, 18, 40, 255]),
+            hemi_sky: Some([0.30, 0.38, 0.62]),
+            hemi_ground: Some([0.20, 0.20, 0.30]),
             env_map: Some("preset:studio".into()),
             shadow_softness: Some(1.0),
-            bloom: Some(0.3),
-            bloom_threshold: Some(1.1),
-            vignette: Some(0.3),
-            lut: Some("warm".into()),
-            lut_strength: Some(0.2),
+            bloom: Some(0.42),
+            bloom_threshold: Some(0.95),
+            vignette: Some(0.35),
+            lut: Some("punch".into()),
+            lut_strength: Some(0.3),
             fxaa: Some(true),
-            exposure: Some(0.8),
-            ibl: Some(0.2),
+            exposure: Some(1.0),
+            ibl: Some(0.3),
             tonemap: Some(true),
             cull: Some(true),
             prop_lod: Some(80.0),
@@ -2027,22 +2498,31 @@ impl SurvivorArena {
             ..WorldDoc::default()
         };
         doc.quality = self.picture_quality.clone();
+        if self.tier == 2 && self.spec.fx.high_post {
+            doc.shadow_softness = Some(2.6);
+            doc.ssao = Some(10.0);
+            doc.bloom = doc.bloom.map(|b| b * 1.3);
+        }
         // One tiny buried prop per model keeps the renderer's glTF table constant.
         let hero_path = hero_glb(&self.spec.hero.skin);
         let mut wanted: Vec<String> = vec![
             hero_path.to_string(),
+            BLASTER_GLB.to_string(),
             GHOST_GLB.to_string(),
             ZOMBIE_GLB.to_string(),
             GEM_GLB.to_string(),
         ];
+        wanted.push(WALL_GLB.to_string());
+        wanted.push(COLUMN_GLB.to_string());
         wanted.extend(DECOR.iter().map(|(n, _, _)| decor_path(n)));
+        wanted.extend(TREES.iter().map(|(n, _)| decor_path(n)));
         let models: Vec<String> = wanted.into_iter().filter(|m| glb_ready(m)).collect();
         for (i, m) in models.iter().enumerate() {
             doc.props.push(glb_prop(
                 &format!("anchor-{i}"),
                 m,
                 "anchor",
-                [0.0, -60.0, -60.0],
+                [0.0, -60.0, 60.0],
                 [1e-4; 3],
                 [0, 0, 0],
                 0.0,
@@ -2051,50 +2531,27 @@ impl SurvivorArena {
         }
         let has = |p: &str| models.iter().any(|m| m == p);
         let glb_hero = has(hero_path);
+        self.slots.glb_gun = glb_hero && has(BLASTER_GLB);
         let glb_foe = has(GHOST_GLB);
         let glb_zombie = glb_foe && has(ZOMBIE_GLB);
         self.slots.glb_gem = has(GEM_GLB);
         let a = &self.spec.arena;
         let side = half * 2.0;
-        doc.props.push(prop(
+        let mut floor = prop(
             "floor",
             "box",
             "floor",
             [0.0, -0.12, 0.0],
             [side + 8.0, 0.24, side + 8.0],
-            a.floor,
+            [255, 255, 255],
             0.0,
             0.9,
             0.0,
-        ));
-        let line = a.floor.map(|v| (v + 26).min(255));
-        let mut k = -3;
-        while (k as f32 * 4.0).abs() < half {
-            let o = k as f32 * 4.0;
-            doc.props.push(prop(
-                &format!("line-x{k}"),
-                "box",
-                "line",
-                [o, 0.0, 0.0],
-                [0.08, 0.02, side],
-                line,
-                0.0,
-                0.9,
-                0.0,
-            ));
-            doc.props.push(prop(
-                &format!("line-z{k}"),
-                "box",
-                "line",
-                [0.0, 0.0, o],
-                [side, 0.02, 0.08],
-                line,
-                0.0,
-                0.9,
-                0.0,
-            ));
-            k += 1;
-        }
+        );
+        floor.texture = Some(FLOOR_TEX.into());
+        let reps = (side + 8.0) / FLOOR_TILE_M;
+        floor.uv_scale = Some([reps, reps]);
+        doc.props.push(floor);
         // Graveyard dressing: a fixed scatter in the outer ring so the floor shows
         // the hero moving and the middle stays clear. Primitive pebbles when the
         // models are missing.
@@ -2116,7 +2573,7 @@ impl SurvivorArena {
                         "decor",
                         [x, 0.0, z],
                         [scale; 3],
-                        [255, 255, 255],
+                        [165, 170, 210],
                         0.0,
                         None,
                     )
@@ -2138,26 +2595,106 @@ impl SurvivorArena {
                 n_decor += 1;
             }
         }
-        for (i, (pos, sc)) in [
-            ([0.0, 0.4, -half - 0.25], [side + 1.0, 0.8, 0.5]),
-            ([0.0, 0.4, half + 0.25], [side + 1.0, 0.8, 0.5]),
-            ([-half - 0.25, 0.4, 0.0], [0.5, 0.8, side + 1.0]),
-            ([half + 0.25, 0.4, 0.0], [0.5, 0.8, side + 1.0]),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            doc.props.push(prop(
-                &format!("wall-{i}"),
-                "box",
-                "wall",
-                pos,
-                sc,
-                a.wall,
-                0.45,
-                0.6,
-                0.0,
-            ));
+        // The boundary: 2 m stone wall pieces just outside the playable square, a column
+        // on each corner. Plain boxes when the models are missing.
+        let (wall_ok, col_ok) = (has(WALL_GLB), has(COLUMN_GLB));
+        let pieces = (side / 2.0).ceil() as i32 + 1;
+        let off = half + 0.45;
+        let mut n_wall = 0;
+        for side_i in 0..4 {
+            for k in 0..pieces {
+                let along = -half - 0.9 + k as f32 * 2.0;
+                let (x, z, yaw) = match side_i {
+                    0 => (along, -off, 0.0),
+                    1 => (along, off, std::f32::consts::PI),
+                    2 => (-off, along, std::f32::consts::FRAC_PI_2),
+                    _ => (off, along, -std::f32::consts::FRAC_PI_2),
+                };
+                if wall_ok {
+                    let mut p = glb_prop(
+                        &format!("wall-{n_wall}"),
+                        WALL_GLB,
+                        "wall",
+                        [x, 0.0, z],
+                        [2.0, 1.1, 1.5],
+                        STONE_TINT,
+                        0.0,
+                        None,
+                    );
+                    p.yaw = yaw;
+                    doc.props.push(p);
+                } else if k == 0 {
+                    let (pos, sc) = if side_i < 2 {
+                        (
+                            [0.0, 0.4, off * if side_i == 0 { -1.0 } else { 1.0 }],
+                            [side + 1.0, 0.8, 0.5],
+                        )
+                    } else {
+                        (
+                            [off * if side_i == 2 { -1.0 } else { 1.0 }, 0.4, 0.0],
+                            [0.5, 0.8, side + 1.0],
+                        )
+                    };
+                    doc.props.push(prop(
+                        &format!("wall-{n_wall}"),
+                        "box",
+                        "wall",
+                        pos,
+                        sc,
+                        a.wall,
+                        0.45,
+                        0.6,
+                        0.0,
+                    ));
+                }
+                n_wall += 1;
+            }
+        }
+        if col_ok {
+            for (i, (sx, sz)) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)]
+                .into_iter()
+                .enumerate()
+            {
+                doc.props.push(glb_prop(
+                    &format!("column-{i}"),
+                    COLUMN_GLB,
+                    "wall",
+                    [sx * (half + 0.6), 0.0, sz * (half + 0.6)],
+                    [2.4, 2.4, 2.4],
+                    STONE_TINT,
+                    0.0,
+                    None,
+                ));
+            }
+        }
+        // Pines ringed outside the wall.
+        let mut n_tree = 0;
+        for (name, count) in TREES {
+            let path = decor_path(name);
+            for _ in 0..count {
+                if !has(&path) {
+                    continue;
+                }
+                let a_ = r.range(0.0, std::f32::consts::TAU);
+                let ring = half + r.range(2.6, 4.2);
+                let (c, s_) = (a_.cos(), a_.sin());
+                // Push the angle out to the square ring so trees hug the walls.
+                let m = c.abs().max(s_.abs());
+                let sc = r.range(1.5, 2.3);
+                let mut p = glb_prop(
+                    &format!("tree-{n_tree}"),
+                    &path,
+                    "decor",
+                    [c / m * ring, 0.0, s_ / m * ring],
+                    [sc; 3],
+                    [110, 150, 135],
+                    0.0,
+                    None,
+                );
+                p.yaw = r.range(0.0, std::f32::consts::TAU);
+                doc.props.push(p);
+                n_tree += 1;
+            }
         }
         self.slots.shadow = doc.props.len();
         doc.props.push(prop(
@@ -2196,6 +2733,19 @@ impl SurvivorArena {
                 0.0,
             ));
         }
+        self.slots.gun = doc.props.len();
+        if self.slots.glb_gun {
+            doc.props.push(glb_prop(
+                "hero-gun",
+                BLASTER_GLB,
+                "gun",
+                [0.0, -50.0, 0.0],
+                [GUN_SCALE; 3],
+                [255, 255, 255],
+                0.1,
+                Some(lin(HERO_GLOW)),
+            ));
+        }
         self.slots.glb_foe = glb_foe;
         let cap = self.foes.cap();
         self.slots.ghost_cap = if glb_zombie { cap * 85 / 100 + 4 } else { cap };
@@ -2208,8 +2758,12 @@ impl SurvivorArena {
                     "foe",
                     [0.0, -50.0, 0.0],
                     [1.0; 3],
-                    [255, 255, 255],
-                    0.15,
+                    if path == ZOMBIE_GLB {
+                        ZOMBIE_TINT
+                    } else {
+                        GHOST_TINT
+                    },
+                    0.06,
                     Some([0.2, 0.8, 0.3]),
                 )
             } else {
@@ -2295,11 +2849,55 @@ impl SurvivorArena {
             "key",
             [0.0, 9.0, 3.0],
             [0.0; 3],
-            [1.0, 0.92, 0.8],
-            0.8,
+            [0.78, 0.86, 1.0],
+            1.1,
             34.0,
             false,
         ));
+        // A warm lantern that follows the hero: it lifts the hero off the cold floor.
+        doc.lights.push(light(
+            1,
+            "lantern",
+            [0.0, 2.4, 0.0],
+            [0.0; 3],
+            [1.0, 0.78, 0.5],
+            1.3,
+            7.0,
+            false,
+        ));
+        // Effect clouds (one per kind and third of life) and shot streaks: fixed lists whose
+        // vectors are refilled in place each frame.
+        for (k, (rgb, size, alpha)) in FX_LOOK.iter().enumerate() {
+            for b in 0..3 {
+                doc.points.push(crate::strokes::PointCloud {
+                    id: format!("fx-{k}-{b}"),
+                    positions: Vec::with_capacity(self.fx_cap),
+                    color: [rgb[0], rgb[1], rgb[2], alpha[b]],
+                    size: size[b],
+                });
+            }
+        }
+        for i in 0..self.spec.caps.shots {
+            doc.lines.push(crate::strokes::FatLine {
+                id: format!("trail-{i}"),
+                points: Vec::with_capacity(2),
+                color: [150, 235, 255, 150],
+                width: 3.0,
+            });
+        }
+        // The lock-on ring and the ground-aim line (empty unless used).
+        doc.lines.push(crate::strokes::FatLine {
+            id: "lock-ring".into(),
+            points: Vec::with_capacity(LOCK_SEG + 1),
+            color: [255, 96, 96, 235],
+            width: 4.0,
+        });
+        doc.lines.push(crate::strokes::FatLine {
+            id: "aim-line".into(),
+            points: Vec::with_capacity(2),
+            color: [255, 220, 120, 150],
+            width: 3.0,
+        });
         self.doc = doc;
     }
 
@@ -2309,7 +2907,8 @@ impl SurvivorArena {
         }
         let (w, h) = self.size.get();
         let (mut eye, mut target, fov) = self.camera(w / h.max(1.0));
-        let sh = self.core.juice.shake.min(1.0) * 0.25;
+        let fov = fov * (1.0 - 0.035 * self.zoom_kick * self.spec.fx.zoom_pulse);
+        let sh = self.core.juice.shake.min(1.0) * 0.25 * self.spec.fx.shake;
         eye[0] += (self.anim_t * 61.0).sin() * sh;
         eye[2] += (self.anim_t * 47.0).sin() * sh;
         target[0] += (self.anim_t * 61.0).sin() * sh;
@@ -2357,6 +2956,13 @@ impl SurvivorArena {
                 p.color = Some(if blink { [255, 60, 60] } else { HERO_GLOW });
             }
         }
+        if slots.glb_gun {
+            let (sn, cs) = face.sin_cos();
+            let p = &mut props[slots.gun];
+            p.position = [hx + sn * GUN_FWD, bob + GUN_UP, hz + cs * GUN_FWD];
+            p.yaw = face + std::f32::consts::PI;
+            p.emissive = Some(hero_em * 0.5);
+        }
         let n = self.foes.len();
         let (mut ng, mut nz) = (0usize, 0usize);
         for i in 0..n {
@@ -2394,7 +3000,7 @@ impl SurvivorArena {
             p.yaw = (hx - x).atan2(hz - z);
             p.scale = [d * sx, d * sy, d * sx];
             let fl = self.foes.flash[i] * 10.0;
-            p.emissive = Some(0.15 + 2.0 * fl);
+            p.emissive = Some(0.06 + 2.2 * fl);
             p.emissive_color = Some(if fl > 0.0 { [1.0, 1.0, 1.0] } else { k.linear });
             if !slots.glb_foe {
                 p.color = Some(k.color);
@@ -2443,12 +3049,64 @@ impl SurvivorArena {
             p.yaw = s.vx.atan2(s.vz);
             p.scale = [s.r * 0.8, s.r * 0.8, s.r * 2.0];
         }
+        for c in &mut self.doc.points {
+            c.positions.clear();
+        }
+        for p in &self.fx {
+            let b = ((p.age / p.life * 3.0) as usize).min(2);
+            self.doc.points[p.kind as usize * 3 + b]
+                .positions
+                .push([p.x, p.y, p.z]);
+        }
+        let streak = self.spec.fx.trails;
+        let nshots = self.spec.caps.shots as usize;
+        for (i, l) in self.doc.lines.iter_mut().take(nshots).enumerate() {
+            l.points.clear();
+            if let (true, Some(s)) = (streak, self.shots.get(i)) {
+                l.points.push([s.x - s.vx * 0.05, 0.58, s.z - s.vz * 0.05]);
+                l.points.push([s.x, 0.58, s.z]);
+            }
+        }
+        let lock = if self.aim_mode != 0 {
+            self.lock_foe()
+        } else {
+            None
+        };
+        let aim_dir = if self.aim_mode != 0 && lock.is_none() {
+            self.aim_dir
+        } else {
+            None
+        };
+        if let [ring, aim] = &mut self.doc.lines[nshots..] {
+            ring.points.clear();
+            aim.points.clear();
+            if let Some(j) = lock {
+                let r = self.kinds[self.foes.kind[j] as usize].radius
+                    + 0.3
+                    + 0.07 * (self.anim_t * 7.0).sin();
+                let spin = self.anim_t * 1.5;
+                for k in 0..=LOCK_SEG {
+                    let a = spin + k as f32 / LOCK_SEG as f32 * std::f32::consts::TAU;
+                    ring.points.push([
+                        self.foes.x[j] + a.sin() * r,
+                        0.07,
+                        self.foes.z[j] + a.cos() * r,
+                    ]);
+                }
+            }
+            if let Some(a) = aim_dir {
+                let (sn, cs) = a.sin_cos();
+                aim.points.push([hx + sn * 1.2, 0.3, hz + cs * 1.2]);
+                aim.points.push([hx + sn * 4.5, 0.3, hz + cs * 4.5]);
+            }
+        }
         let cam = &mut self.doc.cameras[0];
         cam.position = eye;
         cam.target = target;
         cam.fov = fov;
         let l = &mut self.doc.lights[0];
         l.position = [hx, 9.0, hz + 3.0];
+        self.doc.lights[1].position = [hx, 2.4, hz + 0.8];
     }
 
     // ---- state for the page
@@ -2500,6 +3158,8 @@ impl SurvivorArena {
             "foes_cap": self.foes.cap(),
             "gems": self.gems.len(),
             "shots": self.shots.len(),
+            "aim": self.aim_name(),
+            "locked": self.locked().is_some(),
             "cards": self.card_values(),
             "win": self.win,
             "death": self.core.stats.death,
@@ -2597,17 +3257,36 @@ impl SurvivorArena {
             12.0 * s,
             [110, 220, 255, 255],
         ));
+        // A sheen on the top half and a bright tip where the bar ends.
+        list.quads
+            .push(Quad::new(0.0, 0.0, w * frac, 4.5 * s, [220, 250, 255, 120]));
+        if frac > 0.01 {
+            list.quads.push(Quad::new(
+                w * frac - 3.0 * s,
+                0.0,
+                3.0 * s,
+                12.0 * s,
+                [255, 255, 255, 255],
+            ));
+        }
+        list.quads.push(Quad::new(
+            6.0 * s,
+            13.0 * s,
+            62.0 * s,
+            21.0 * s,
+            [8, 8, 24, 150],
+        ));
         text(
             &mut list,
             &list_lv(self.lang_ja, self.level),
-            10.0 * s,
-            14.0 * s,
+            12.0 * s,
+            15.0 * s,
             15.0,
-            [255, 255, 255, 255],
+            [255, 240, 170, 255],
             TextAlign::Left,
         );
         // HP bar under it.
-        let (bx, by, bw, bh) = (10.0 * s, 36.0 * s, (w * 0.42).min(210.0 * s), 14.0 * s);
+        let (bx, by, bw, bh) = (30.0 * s, 40.0 * s, (w * 0.40).min(200.0 * s), 16.0 * s);
         let hf = (self.hp / self.mods.hp_max).clamp(0.0, 1.0);
         list.quads.push(Quad::new(
             bx - 2.0 * s,
@@ -2616,14 +3295,46 @@ impl SurvivorArena {
             bh + 4.0 * s,
             [8, 8, 24, 200],
         ));
+        let low = hf <= 0.3 && self.hp > 0.0;
+        let beat = if low {
+            (self.anim_t * 8.0).sin() * 0.5 + 0.5
+        } else {
+            0.0
+        };
         let hc = if hf > 0.5 {
             [120, 235, 150, 255]
         } else if hf > 0.25 {
             [255, 200, 90, 255]
         } else {
-            [255, 90, 100, 255]
+            [
+                255,
+                (90.0 + 120.0 * beat) as u8,
+                (100.0 + 60.0 * beat) as u8,
+                255,
+            ]
         };
         list.quads.push(Quad::new(bx, by, bw * hf, bh, hc));
+        list.quads
+            .push(Quad::new(bx, by, bw * hf, bh * 0.4, [255, 255, 255, 80]));
+        text(
+            &mut list,
+            "♥",
+            bx - 22.0 * s,
+            by - 3.0 * s,
+            20.0,
+            [255, (90.0 + 120.0 * beat) as u8, 110, 255],
+            TextAlign::Left,
+        );
+        if low {
+            // A faint red breathing at the screen edge: the bar is nearly gone.
+            list.quads.push(Quad::new(
+                0.0,
+                0.0,
+                w,
+                h,
+                [255, 30, 50, (18.0 + 26.0 * beat) as u8],
+            ));
+        }
         text(
             &mut list,
             &format!("{}", self.hp.max(0.0).ceil() as i32),
@@ -2635,24 +3346,99 @@ impl SurvivorArena {
         );
         text(
             &mut list,
-            &format!("{} {}", self.tr("KO", "たおした"), self.kills),
-            bx,
-            by + 20.0 * s,
-            13.0,
-            [255, 255, 255, 220],
+            &format!("★ {} {}", self.kills, self.tr("KO", "たおした")),
+            bx - 22.0 * s,
+            by + 22.0 * s,
+            14.0,
+            [255, 235, 160, 235],
             TextAlign::Left,
         );
         // Clock: time left until dawn.
         let left = (self.spec.run.secs - self.t).max(0.0).ceil() as u32;
+        let pw = 96.0 * s;
+        list.quads.push(Quad::new(
+            w * 0.5 - pw * 0.5,
+            14.0 * s,
+            pw,
+            40.0 * s,
+            [8, 8, 24, 150],
+        ));
+        let prog = (self.t / self.spec.run.secs.max(1.0)).clamp(0.0, 1.0);
+        list.quads.push(Quad::new(
+            w * 0.5 - pw * 0.5 + 6.0 * s,
+            47.0 * s,
+            (pw - 12.0 * s) * prog,
+            3.0 * s,
+            [255, 190 + (60.0 * prog) as u8, 110, 255],
+        ));
+        // The clock warms toward dawn and flickers in the last ten seconds.
+        let urgent = left <= 10 && (self.anim_t * 6.0).sin() > 0.0;
+        let clock = if urgent {
+            [255, 150, 120, 255]
+        } else {
+            [
+                255,
+                240 - (40.0 * prog) as u8,
+                200 - (60.0 * prog) as u8,
+                255,
+            ]
+        };
         text(
             &mut list,
             &format!("{}:{:02}", left / 60, left % 60),
             w * 0.5,
-            16.0 * s,
+            17.0 * s,
             26.0,
-            [255, 240, 200, 255],
+            clock,
             TextAlign::Center,
         );
+        // Floating damage numbers.
+        if self.spec.fx.damage_numbers {
+            for d in &self.dmg {
+                let t = d.age / DMG_LIFE;
+                let Some((sx, sy)) = self.project([d.x, 0.9 + t * 0.9, d.z], w, h) else {
+                    continue;
+                };
+                let a = ((1.0 - t * t) * 255.0) as u8;
+                let pop = 1.0 + 0.6 * (1.0 - (d.age * 9.0).min(1.0));
+                let label = format!("{}", d.val);
+                text(
+                    &mut list,
+                    &label,
+                    sx + 1.5 * s,
+                    sy + 1.5 * s,
+                    15.0 * pop,
+                    [10, 10, 30, a / 2],
+                    TextAlign::Center,
+                );
+                text(
+                    &mut list,
+                    &label,
+                    sx,
+                    sy,
+                    15.0 * pop,
+                    [255, 240, 190, a],
+                    TextAlign::Center,
+                );
+            }
+        }
+        // The lock-on arrow over the locked foe.
+        if self.aim_mode != 0 && self.flow.phase == FlowPhase::Play {
+            if let Some(j) = self.lock_foe() {
+                if let Some((sx, sy)) = self.project([self.foes.x[j], 1.35, self.foes.z[j]], w, h) {
+                    let bob = (self.anim_t * 7.0).sin() * 3.0 * s;
+                    text(
+                        &mut list,
+                        "▼",
+                        sx,
+                        sy - 12.0 * s + bob,
+                        18.0,
+                        [255, 96, 96, 255],
+                        TextAlign::Center,
+                    );
+                }
+            }
+        }
         // Pause button.
         if self.flow.phase == FlowPhase::Play {
             let r = pause_rect(w, s);
@@ -2668,26 +3454,27 @@ impl SurvivorArena {
                 ));
             }
         }
-        // The thumb marker.
+        // The thumb marker: a soft round dot (a square read as a stray grey box).
         if let Some((fx, fy)) = self.finger {
-            let d = 16.0 * s;
-            list.quads.push(Quad::new(
-                fx - d * 0.5,
-                fy - d * 0.5,
-                d,
-                d,
+            text(
+                &mut list,
+                "●",
+                fx,
+                fy - 12.0 * s,
+                22.0,
                 [255, 255, 255, 70],
-            ));
+                TextAlign::Center,
+            );
             if self.spec.input.mode == "stick" {
-                let o = self.origin;
-                let d2 = 44.0 * s;
-                list.quads.push(Quad::new(
-                    o.0 - d2 * 0.5,
-                    o.1 - d2 * 0.5,
-                    d2,
-                    d2,
-                    [255, 255, 255, 40],
-                ));
+                text(
+                    &mut list,
+                    "○",
+                    self.origin.0,
+                    self.origin.1 - 22.0 * s,
+                    44.0,
+                    [255, 255, 255, 50],
+                    TextAlign::Center,
+                );
             }
         }
         if !self.cards.is_empty() {
@@ -2733,20 +3520,68 @@ impl SurvivorArena {
             list.quads
                 .push(Quad::new(r.x, r.y, r.w, r.h, [28, 24, 56, 250]));
             list.quads.push(Quad::new(r.x, r.y, 8.0 * s, r.h, a));
-            let tx = r.x + 22.0 * s;
-            list.texts
-                .push(TextQuad::new(&tag, tx, r.y + 9.0 * s, 12.0 * s, a));
+            // An icon badge: the card's glyph on a tinted tile.
+            let portrait = h >= w;
+            let bs = if portrait {
+                (r.h * 0.62).min(76.0 * s)
+            } else {
+                56.0 * s
+            };
+            let (bx, by) = if portrait {
+                (r.x + 18.0 * s, r.y + (r.h - bs) * 0.5)
+            } else {
+                (r.x + 18.0 * s, r.y + 14.0 * s)
+            };
+            list.quads.push(Quad::new(
+                bx,
+                by,
+                bs,
+                bs,
+                [a[0] / 3, a[1] / 3, a[2] / 3, 255],
+            ));
+            list.quads
+                .push(Quad::new(bx, by, bs, 3.0 * s, [a[0], a[1], a[2], 200]));
+            list.texts.push(
+                TextQuad::new(
+                    self.card_glyph(*c),
+                    bx + bs * 0.5,
+                    by + bs * 0.5 - bs * 0.30,
+                    bs * 0.6,
+                    [255, 255, 255, 255],
+                )
+                .aligned(TextAlign::Center),
+            );
+            let (tx, ty) = if portrait {
+                (bx + bs + 14.0 * s, r.y + 9.0 * s)
+            } else {
+                (r.x + 22.0 * s, by + bs + 12.0 * s)
+            };
+            let (cur, max) = self.card_pips(*c);
+            if max > 1 {
+                let pips: String = (0..max)
+                    .map(|k| match k.cmp(&cur) {
+                        std::cmp::Ordering::Less => '●',
+                        std::cmp::Ordering::Equal => '◆',
+                        std::cmp::Ordering::Greater => '○',
+                    })
+                    .collect();
+                list.texts.push(
+                    TextQuad::new(&pips, r.x + r.w - 12.0 * s, r.y + 8.0 * s, 12.0 * s, a)
+                        .aligned(TextAlign::Right),
+                );
+            }
+            list.texts.push(TextQuad::new(&tag, tx, ty, 12.0 * s, a));
             list.texts.push(TextQuad::new(
                 &name,
                 tx,
-                r.y + 9.0 * s + 17.0 * s,
+                ty + 17.0 * s,
                 22.0 * s,
                 [255, 255, 255, 255],
             ));
             list.texts.push(TextQuad::new(
                 &desc,
                 tx,
-                r.y + 9.0 * s + 47.0 * s,
+                ty + 47.0 * s,
                 14.0 * s,
                 [225, 225, 245, 230],
             ));
@@ -2771,6 +3606,15 @@ impl SurvivorArena {
                     self.tr("RESUME", "つづける"),
                     [255, 170, 80, 255],
                     [30, 14, 20, 255],
+                ),
+                PauseBtn::Aim => (
+                    match self.aim_mode {
+                        0 => self.tr("AIM: AUTO", "ねらい: オート"),
+                        1 => self.tr("AIM: TAP", "ねらい: タップ"),
+                        _ => self.tr("AIM: HYBRID", "ねらい: ミックス"),
+                    },
+                    [40, 34, 74, 245],
+                    [150, 235, 255, 255],
                 ),
                 PauseBtn::Retry => (
                     self.tr("RETRY", "リトライ"),
@@ -3108,6 +3952,295 @@ mod tests {
         assert_eq!(g.level(), 1);
         assert!((g.hp() - g.hp_max()).abs() < 1e-3);
         assert_eq!(g.weapon_level(&g.spec.hero.start_weapon), 1);
+    }
+
+    #[test]
+    fn the_blaster_points_where_the_shot_goes() {
+        let mut g = started();
+        g.foes.spawn(0, g.hx + 3.0, g.hz - 4.0, 999.0);
+        for _ in 0..120 {
+            g.tick(DT);
+            if !g.shots.is_empty() {
+                break;
+            }
+        }
+        let s = g.shots[0];
+        let aim = s.vx.atan2(s.vz);
+        let turn = (g.face - aim + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
+            - std::f32::consts::PI;
+        assert!(
+            turn.abs() < 0.05,
+            "the hero faces {} but the shot flies {aim}",
+            g.face
+        );
+        // It leaves from the muzzle (one or two sim steps of flight allowed), along the aim.
+        let (dx, dz) = (s.x - g.hx, s.z - g.hz);
+        let d = dx.hypot(dz);
+        assert!(d > 0.6 && d < MUZZLE + 0.5, "spawned {d} m from the hero");
+        assert!((dx.atan2(dz) - aim).abs() < 0.05);
+        // It keeps facing the target while it holds the aim, even if the thumb drags the other way.
+        g.key_dir = (-1.0, 0.0);
+        g.tick(DT);
+        assert!((g.face - aim).abs() < 0.05);
+    }
+
+    #[test]
+    fn effects_fill_pools_inside_their_caps_and_never_change_the_run() {
+        let run = |fx: bool| {
+            let mut g = started();
+            g.spec.fx.particles = fx;
+            g.spec.fx.damage_numbers = fx;
+            g.spec.fx.trails = fx;
+            g.spec.fx.shake = if fx { 1.0 } else { 0.0 };
+            let (mut peak, mut peak_dmg, mut seen_points) = (0, 0, 0);
+            kite_each(&mut g, 40.0, |g| {
+                peak = peak.max(g.fx.len());
+                peak_dmg = peak_dmg.max(g.dmg.len());
+                assert!(g.fx.len() <= g.fx_cap);
+                assert!(g.dmg.len() <= DMG_CAP[g.tier]);
+            });
+            g.build_doc();
+            seen_points += g
+                .doc
+                .points
+                .iter()
+                .map(|c| c.positions.len())
+                .sum::<usize>();
+            let again = g.doc.points.len();
+            (
+                g.kills(),
+                (g.hp() * 100.0) as i32,
+                peak,
+                peak_dmg,
+                seen_points,
+                again,
+            )
+        };
+        let (k1, h1, peak, peak_dmg, _, clouds) = run(true);
+        let (k0, h0, none, none_dmg, pts, _) = run(false);
+        assert_eq!((k1, h1), (k0, h0), "effects changed the sim");
+        assert!(peak > 5 && peak_dmg > 0, "peak {peak} dmg {peak_dmg}");
+        assert_eq!((none, none_dmg, pts), (0, 0, 0));
+        assert_eq!(clouds, FX_LOOK.len() * 3);
+    }
+
+    fn finger(g: &mut SurvivorArena, id: u32, x: f32, y: f32, phase: PointerPhase) {
+        g.touch_ev(
+            PointerEvent {
+                id,
+                x,
+                y,
+                phase,
+                pressure: 1.0,
+            },
+            390,
+            844,
+        );
+    }
+
+    /// Foe `uid` as a screen pixel.
+    fn on_screen(g: &SurvivorArena, uid: u32) -> (f32, f32) {
+        let j = (0..g.foes.len()).find(|&i| g.foes.uid[i] == uid).unwrap();
+        g.project([g.foes.x[j], 0.45, g.foes.z[j]], 390.0, 844.0)
+            .unwrap()
+    }
+
+    /// Tick until a shot exists and return its yaw.
+    fn first_shot_yaw(g: &mut SurvivorArena) -> f32 {
+        for _ in 0..120 {
+            g.tick(DT);
+            if let Some(s) = g.shots.first() {
+                return s.vx.atan2(s.vz);
+            }
+        }
+        panic!("no shot");
+    }
+
+    fn bearing(g: &SurvivorArena, uid: u32) -> f32 {
+        let j = (0..g.foes.len()).find(|&i| g.foes.uid[i] == uid).unwrap();
+        (g.foes.x[j] - g.hx).atan2(g.foes.z[j] - g.hz)
+    }
+
+    fn yaw_gap(a: f32, b: f32) -> f32 {
+        let d = (a - b).rem_euclid(std::f32::consts::TAU);
+        d.min(std::f32::consts::TAU - d)
+    }
+
+    /// A near foe east and a farther one west, both inside the bolt's range.
+    fn two_foes() -> (SurvivorArena, u32, u32) {
+        let mut g = started();
+        g.weapon_cd.iter_mut().for_each(|c| *c = 5.0);
+        g.foes.spawn(0, g.hx + 2.5, g.hz, 9999.0);
+        g.foes.spawn(0, g.hx - 5.5, g.hz + 1.0, 9999.0);
+        let (near, far) = (g.foes.uid[0], g.foes.uid[1]);
+        g.tick(DT);
+        (g, near, far)
+    }
+
+    #[test]
+    fn a_tap_with_the_other_thumb_locks_a_foe_and_the_shot_follows_it() {
+        let (mut g, near, far) = two_foes();
+        assert_eq!(g.aim_name(), "hybrid");
+        finger(&mut g, 1, 195.0, 700.0, PointerPhase::Begin); // thumb one steers
+        let (x, y) = on_screen(&g, far);
+        finger(&mut g, 2, x, y, PointerPhase::Begin); // thumb two taps the far foe
+        finger(&mut g, 2, x, y, PointerPhase::End);
+        assert_eq!(g.locked(), Some(far));
+        g.weapon_cd.iter_mut().for_each(|c| *c = 0.0);
+        let yaw = first_shot_yaw(&mut g);
+        assert!(
+            yaw_gap(yaw, bearing(&g, far)) < 0.2,
+            "shot ignored the lock"
+        );
+        assert!(yaw_gap(yaw, bearing(&g, near)) > 1.0);
+        // The blaster points the same way.
+        assert!(yaw_gap(g.face, yaw) < 1e-3);
+        // Tap it again: released, the nearest is back.
+        finger(&mut g, 2, x, y, PointerPhase::Begin);
+        assert_eq!(g.locked(), None);
+    }
+
+    #[test]
+    fn the_lock_falls_back_to_the_nearest_when_the_target_dies() {
+        let (mut g, near, far) = two_foes();
+        let (x, y) = on_screen(&g, far);
+        finger(&mut g, 1, 195.0, 700.0, PointerPhase::Begin);
+        finger(&mut g, 2, x, y, PointerPhase::Begin);
+        assert_eq!(g.locked(), Some(far));
+        let j = (0..g.foes.len()).find(|&i| g.foes.uid[i] == far).unwrap();
+        g.foes.hp[j] = 0.0;
+        g.tick(DT);
+        g.shots.clear();
+        g.weapon_cd.iter_mut().for_each(|c| *c = 0.0);
+        let yaw = first_shot_yaw(&mut g);
+        assert_eq!(g.locked(), None);
+        assert!(yaw_gap(yaw, bearing(&g, near)) < 0.2, "did not fall back");
+    }
+
+    #[test]
+    fn a_quick_tap_of_the_lone_finger_also_locks() {
+        let (mut g, _, far) = two_foes();
+        let (x, y) = on_screen(&g, far);
+        finger(&mut g, 1, x, y, PointerPhase::Begin);
+        g.tick(DT);
+        finger(&mut g, 1, x, y, PointerPhase::End);
+        assert_eq!(g.locked(), Some(far));
+        // A long drag never locks.
+        g.set_aim("hybrid");
+        finger(&mut g, 1, x, y, PointerPhase::Begin);
+        for _ in 0..30 {
+            g.tick(DT);
+        }
+        finger(&mut g, 1, x, y, PointerPhase::End);
+        assert_eq!(g.locked(), None);
+    }
+
+    #[test]
+    fn auto_ignores_taps_and_the_ground_tap_aims_a_direction() {
+        let (mut g, near, far) = two_foes();
+        g.set_aim("auto");
+        let (x, y) = on_screen(&g, far);
+        finger(&mut g, 1, 195.0, 700.0, PointerPhase::Begin);
+        finger(&mut g, 2, x, y, PointerPhase::Begin);
+        assert_eq!(g.locked(), None);
+        g.weapon_cd.iter_mut().for_each(|c| *c = 0.0);
+        let yaw = first_shot_yaw(&mut g);
+        assert!(yaw_gap(yaw, bearing(&g, near)) < 0.2);
+
+        // Manual: a ground tap aims that way even with foes around.
+        let (mut g, near, _) = two_foes();
+        g.set_aim("manual");
+        finger(&mut g, 1, 195.0, 700.0, PointerPhase::Begin);
+        let (gx, gz) = (g.hx, g.hz + 6.0); // north of the hero
+        let (sx, sy) = g.project([gx, 0.0, gz], 390.0, 844.0).unwrap();
+        finger(&mut g, 2, sx, sy, PointerPhase::Begin);
+        assert_eq!(g.locked(), None);
+        let a = g.aim_dir.expect("ground aim");
+        assert!(yaw_gap(a, 0.0) < 0.1, "aim yaw {a}");
+        g.weapon_cd.iter_mut().for_each(|c| *c = 0.0);
+        let yaw = first_shot_yaw(&mut g);
+        assert!(yaw_gap(yaw, a) < 1e-3);
+        assert!(yaw_gap(yaw, bearing(&g, near)) > 0.5);
+        assert!(yaw_gap(g.face, yaw) < 1e-3);
+    }
+
+    #[test]
+    fn hybrid_uses_the_ground_aim_only_when_nothing_is_near() {
+        let mut g = started();
+        g.weapon_cd.iter_mut().for_each(|c| *c = 0.0);
+        g.aim_dir = Some(1.0);
+        let yaw = first_shot_yaw(&mut g);
+        assert!(yaw_gap(yaw, 1.0) < 1e-3, "empty field: fires along the aim");
+        let (mut g, near, _) = two_foes();
+        g.aim_dir = Some(1.0);
+        g.weapon_cd.iter_mut().for_each(|c| *c = 0.0);
+        let yaw = first_shot_yaw(&mut g);
+        assert!(yaw_gap(yaw, bearing(&g, near)) < 0.2, "foes in range win");
+    }
+
+    #[test]
+    fn the_pause_card_cycles_the_aim_and_the_doc_stays_inside_its_pools() {
+        let mut g = started();
+        g.pause();
+        for want in ["auto", "manual", "hybrid"] {
+            let (w, h) = (390.0, 844.0);
+            let r = pause_buttons(w, h, hud_scale(w, h))
+                .into_iter()
+                .find(|(b, _)| *b == PauseBtn::Aim)
+                .unwrap()
+                .1;
+            assert!(g.pointer(r.x + r.w * 0.5, r.y + r.h * 0.5, 390, 844));
+            assert_eq!(g.aim_name(), want);
+            assert!(g.state_value()["aim"] == want);
+        }
+        g.resume_from_page();
+        let (mut g, _, far) = two_foes();
+        finger(&mut g, 1, 195.0, 700.0, PointerPhase::Begin);
+        let (x, y) = on_screen(&g, far);
+        finger(&mut g, 2, x, y, PointerPhase::Begin);
+        g.build_doc();
+        let ring = g.doc.lines.iter().find(|l| l.id == "lock-ring").unwrap();
+        assert_eq!(ring.points.len(), LOCK_SEG + 1);
+        assert!(g.doc.lines.len() == g.spec.caps.shots as usize + 2);
+        g.tick(DT);
+        assert!(g.hud(390, 844, false).texts.iter().any(|t| t.text == "▼"));
+    }
+
+    #[test]
+    fn the_spec_validates_the_aim_scheme() {
+        let mut s = SurvivorSpec::default();
+        assert_eq!(s.input.aim, "hybrid");
+        assert!(s.validate().is_ok());
+        s.input.aim = "psychic".into();
+        assert!(s.validate().is_err());
+    }
+
+    #[test]
+    fn a_damage_number_lands_on_its_foe() {
+        let mut g = started();
+        g.foes.spawn(0, g.hx + 2.0, g.hz - 3.0, 999.0);
+        for _ in 0..180 {
+            g.tick(DT);
+            if !g.dmg.is_empty() {
+                break;
+            }
+        }
+        assert!(!g.dmg.is_empty());
+        let d = g.dmg[0];
+        let (w, h) = (390.0, 844.0);
+        g.hud(390, 844, false);
+        let (sx, sy) = g
+            .project([d.x, 0.0, d.z], w, h)
+            .expect("in front of the camera");
+        assert!(
+            (0.0..w).contains(&sx) && (0.0..h).contains(&sy),
+            "{sx},{sy}"
+        );
+        // The hero projects to where the camera looks: upper half, centred.
+        let (hx, hy) = g.project([g.hx, 0.0, g.hz], w, h).unwrap();
+        assert!((hx - w * 0.5).abs() < 4.0 && hy < h * 0.6, "{hx},{hy}");
+        let list = g.hud(390, 844, false);
+        assert!(list.texts.iter().any(|t| t.text == format!("{}", d.val)));
     }
 
     #[test]
