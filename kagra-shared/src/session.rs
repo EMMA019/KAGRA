@@ -482,6 +482,7 @@ impl SharedSession {
         if self.kind == SceneKind::Kit {
             if let Some(kit) = self.kit.as_mut() {
                 kit.walk(lx, lz, jump);
+                kit.buttons(attack, dodge);
             }
             return;
         }

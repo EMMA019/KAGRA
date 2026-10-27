@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Station Escape, round 1 (`station_escape`).** A side-on 3D platformer: run, jump and dash out of a space station that is breaking up. Left thumb runs (a floating stick), JUMP (hold for higher) and DASH (one in the air) on the right; keys A/D, Space, J/K/Shift and a gamepad work too. Two stages of JSON ledges (solid, one-way, crumbling, moving), blinking lasers, spikes, power cells, checkpoints, a story card and a clear card each; no game over. A test bot plays both stages to the end. Bundled assets only (Kenney Space Kit, Mini Characters). Design: `docs/design/station_escape.md`; build log `docs/agent-runs/20261027-station-escape/`.
+
+- **`game_core::platform`: a platformer body** with coyote time, a jump buffer, a short hop on an early release, one air dash, one-way platforms and riding moving ones, against box solids (no physics engine). **`KitHost::buttons`** hands kits the second and third buttons (J / K / Shift, a gamepad's B / X / left trigger).
+
 - **No more hitch when a model comes or goes.** The renderer decodes and uploads every glTF model again whenever the set of models a frame names changes (`WorldDoc::gpu_mesh_key`), and that set was the models of the *enabled* props in *first-seen order*: a walker reaching Lantern Watch's lantern, a new kind rising or the list reordering re-uploaded every model (Emma felt it on the phone). The set is now every model any prop names, hidden ones included, in name order, and `game_core::declare_models` names a game's models up front as hidden props, so the set is fixed from the first frame. Starter, Lantern Watch and Crate Tower declare theirs, with tests that a played run never changes the set.
 
 - **Lantern Watch is harder** (Emma: too easy). Walkers are faster (ghost 1.5 -> 1.9 m/s, skeleton 2.4 -> 2.9, zombie 0.8 -> 1.05, vampire 1.9 -> 2.3), the later kinds come sooner (12 / 25 / 40 s), spawns tighten from 1.15 s to 0.26 s (was 1.6 -> 0.42) with up to 32 on the field. An ignored `difficulty_probe` plays a perfect-aim bot: it now needs about 4 taps a second to see the dawn (2.5 was enough before).

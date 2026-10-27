@@ -1459,7 +1459,7 @@
       return {
         lx: (r ? 1 : 0) - (l ? 1 : 0),
         lz: (u ? 1 : 0) - (d ? 1 : 0),
-        attack: held.has("j") || held.has("J") || held.has("k") || held.has("K"),
+        attack: held.has("j") || held.has("J") || held.has("k") || held.has("K") || held.has("Shift"),
       };
     };
 
@@ -1553,11 +1553,12 @@
       console.warn("kagra: graphics tiers off", err);
     }
 
-    // Gamepad (standard mapping): left stick / d-pad move, A or right trigger = action, Start = pause.
+    // Gamepad (standard mapping): left stick / d-pad move, A or right trigger = action,
+    // B / X / left trigger = second action, Start = pause.
     let padStart = false;
     let padOff = false;
     const padAxis = () => {
-      const out = { lx: 0, lz: 0, act: false };
+      const out = { lx: 0, lz: 0, act: false, alt: false };
       if (padOff || !navigator.getGamepads) return out;
       let pads;
       // getGamepads() throws where the gamepad feature is blocked (a portal iframe without allow="gamepad").
@@ -1580,6 +1581,7 @@
         out.lx += x;
         out.lz += -y;
         if (b(0) || b(7)) out.act = true;
+        if (b(1) || b(2) || b(6)) out.alt = true;
         if (b(9)) startDown = true;
       }
       out.lx = clamp(out.lx);
@@ -1610,7 +1612,7 @@
         clamp(state.lx + k.lx + gpd.lx),
         clamp(state.lz + k.lz + gpd.lz),
         jump,
-        state.attack || k.attack,
+        state.attack || k.attack || gpd.alt,
         false,
       );
       const stepped = stepSim(performance.now());

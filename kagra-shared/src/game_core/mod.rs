@@ -22,6 +22,7 @@
 //! - [`stick`]: a floating thumb stick (landing, follow, analog push, smooth look).
 //! - [`motion`]: body motion for a crowd of static models (bob, squash, sway, lean, flinch).
 //! - [`declare_models`]: name every model a game may show, so the GPU set never changes.
+//! - [`platform`]: a platformer body (run, jump, dash, coyote time, one-way and moving platforms).
 //! - [`view`]: camera math for touch (fit a phone in either orientation, project, ground under a finger).
 //!
 //! The runner kit (`neon_cat.rs`), HOP-BEAT and the survivor arena are the kits today.
@@ -34,6 +35,7 @@ pub mod lives;
 pub mod meta;
 pub mod missions;
 pub mod motion;
+pub mod platform;
 pub mod result;
 pub mod run;
 pub mod stick;
