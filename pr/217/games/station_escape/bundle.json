@@ -8,7 +8,7 @@
     {
       "path": "world.json",
       "url": "games/station_escape/world.json",
-      "v": "d09eff6110"
+      "v": "a83c88b08b"
     },
     {
       "path": "kagra_game.json",
@@ -192,7 +192,10 @@
     "lang": true,
     "pause": true,
     "fixed_step": true,
-    "blurb": "blurb.escape"
+    "blurb": "blurb.escape",
+    "url_params": {
+      "stage": "string"
+    }
   },
-  "build": "2160c66d2c53"
+  "build": "1a5adaef02ef"
 }
