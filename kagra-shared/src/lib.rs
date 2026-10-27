@@ -18,6 +18,7 @@ pub mod collectathon;
 pub mod collide;
 pub mod constraint;
 pub mod cook;
+pub mod crate_tower;
 pub mod driving;
 pub mod ffi;
 pub mod fight;

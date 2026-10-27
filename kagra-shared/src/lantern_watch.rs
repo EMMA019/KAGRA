@@ -22,7 +22,7 @@ use crate::flow::{FlowPhase, GameFlow};
 use crate::game_core::motion::{self, Motion};
 use crate::game_core::swarm::Rng;
 use crate::game_core::view::View;
-use crate::game_core::{tick_frame, Core, Kit};
+use crate::game_core::{declare_models, tick_frame, Core, Kit};
 use crate::hop_beat::{glb_prop, glb_ready, light, prop};
 use crate::hud_kit::gauge;
 use crate::input::{PointerEvent, PointerPhase};
@@ -102,13 +102,14 @@ fn default_foes() -> Vec<FoeKind> {
             weight,
             scale,
         };
+    // id, model, motion, hp, speed, weave, score, from (s), weight, scale
     vec![
         kind(
             "ghost",
             "character-ghost.glb",
             "float",
             1,
-            1.5,
+            1.9,
             0.6,
             10,
             0.0,
@@ -120,11 +121,11 @@ fn default_foes() -> Vec<FoeKind> {
             "character-skeleton.glb",
             "hop",
             1,
-            2.4,
+            2.9,
             0.0,
             15,
-            15.0,
-            0.7,
+            12.0,
+            0.8,
             1.9,
         ),
         kind(
@@ -132,11 +133,11 @@ fn default_foes() -> Vec<FoeKind> {
             "character-zombie.glb",
             "shamble",
             3,
-            0.8,
+            1.05,
             0.0,
             40,
-            30.0,
-            0.5,
+            25.0,
+            0.55,
             2.0,
         ),
         kind(
@@ -144,11 +145,11 @@ fn default_foes() -> Vec<FoeKind> {
             "character-vampire.glb",
             "glide",
             2,
-            1.9,
+            2.3,
             1.4,
             30,
-            50.0,
-            0.5,
+            40.0,
+            0.6,
             2.0,
         ),
     ]
@@ -198,9 +199,9 @@ impl Default for LanternWatchSpec {
             field_z: 8.5,
             lantern_hp: 5,
             lantern_radius: 0.9,
-            start_gap: 1.6,
-            end_gap: 0.42,
-            max_foes: 24,
+            start_gap: 1.15,
+            end_gap: 0.26,
+            max_foes: 32,
             knock: 1.3,
             tap_px: 50.0,
             combo_step: 0.1,
@@ -771,6 +772,10 @@ impl LanternWatch {
         lamp.emissive = Some(glow * 0.45);
         lamp.emissive_color = Some([1.0, 0.7, 0.3]);
         doc.props.push(lamp);
+        // Every walker's model stays on the GPU from the first frame (no hitch when a kind
+        // first rises or its last one goes).
+        let models: Vec<&str> = self.spec.foes.iter().map(|k| k.model.as_str()).collect();
+        declare_models(&mut doc, &models);
         // The dead.
         for f in &self.foes {
             let k = &self.spec.foes[f.kind];
@@ -1320,6 +1325,66 @@ mod tests {
         assert!(g.t > t);
         let hud = g.hud(390, 844, false);
         assert!(hud.texts.iter().any(|t| t.face == TextFace::Display));
+    }
+
+    /// A walker rising, falling or reaching the lantern must not change the models the GPU
+    /// holds (the renderer would decode and upload them all again: a hitch on a phone).
+    #[test]
+    fn the_gpu_model_set_never_changes_during_a_night() {
+        let mut g = started();
+        g.rebuild();
+        let key = g.document().gpu_mesh_key();
+        let mut changes = 0;
+        for i in 0..(60 * 60) {
+            if i % 20 == 0 && !g.foes.is_empty() {
+                let _ = tap_on(&mut g, 0);
+            }
+            g.tick(DT);
+            g.rebuild();
+            if g.document().gpu_mesh_key() != key {
+                changes += 1;
+            }
+        }
+        assert_eq!(changes, 0, "the model set changed {changes} times");
+    }
+
+    /// How long a player who taps at a steady rate lasts (run with --ignored --nocapture).
+    #[test]
+    #[ignore]
+    fn difficulty_probe() {
+        for rate in [2.5_f32, 3.0, 3.5, 4.0, 5.0] {
+            let mut lasted = Vec::new();
+            for seed in 1..=8 {
+                let mut g = LanternWatch::new(LanternWatchSpec {
+                    seed,
+                    ..LanternWatchSpec::default()
+                });
+                let _ = g.hud(W as u32, H as u32, false);
+                g.confirm();
+                let mut next = 0.0;
+                while g.phase_name() == "play" && g.t < 200.0 {
+                    if g.t >= next {
+                        next = g.t + 1.0 / rate;
+                        // The walker nearest the lantern that has been up a moment.
+                        let pick =
+                            (0..g.foes.len())
+                                .filter(|&i| g.foes[i].age > 0.35)
+                                .min_by(|&a, &b| {
+                                    let d = |i: usize| g.foes[i].x.hypot(g.foes[i].z);
+                                    d(a).total_cmp(&d(b))
+                                });
+                        if let Some(i) = pick {
+                            let _ = tap_on(&mut g, i);
+                        }
+                    }
+                    g.tick(DT);
+                }
+                lasted.push((g.t, g.light, g.win));
+            }
+            let wins = lasted.iter().filter(|r| r.2).count();
+            let mean = lasted.iter().map(|r| r.0).sum::<f32>() / lasted.len() as f32;
+            eprintln!("{rate} taps/s: {wins}/8 dawns, mean {mean:.0} s, {lasted:?}");
+        }
     }
 
     #[test]

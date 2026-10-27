@@ -1908,24 +1908,26 @@ impl WorldDoc {
         parts.join("|")
     }
 
+    /// The glTF meshes the GPU holds for this doc. Static models are every distinct model any
+    /// prop names, disabled props included, in name order: a frame that hides, adds, removes or
+    /// reorders props of models already named keeps the same set, so the renderer does not
+    /// decode and upload every model again (`gpu_mesh_key`). Declare a model a game will show
+    /// later with a disabled prop and its first appearance costs nothing either.
     pub(crate) fn gltf_slots(&self) -> Vec<GltfSlot> {
-        let mut seen = HashSet::new();
-        let mut out = Vec::new();
+        let mut rest = std::collections::BTreeSet::new();
         for prop in &self.props {
-            if !prop.enabled {
-                continue;
-            }
             let Some(raw) = prop.gltf.as_deref() else {
                 continue;
             };
             let spec = raw.trim();
-            if spec.is_empty() {
-                continue;
-            }
-            if seen.insert(spec.to_string()) {
-                out.push(GltfSlot::Rest(spec.to_string()));
+            if !spec.is_empty() {
+                rest.insert(spec);
             }
         }
+        let mut out: Vec<GltfSlot> = rest
+            .into_iter()
+            .map(|spec| GltfSlot::Rest(spec.to_string()))
+            .collect();
         let mut seen_w = HashSet::new();
         for walk in self.walkers.iter().chain(self.player.iter()) {
             if !seen_w.insert(walk.id.as_str()) {
@@ -3305,6 +3307,31 @@ mod tests {
             assert!(now < full * 8 / 10, "a real model thins: {now} of {full}");
             assert!(g.indices.iter().all(|&i| (i as usize) < g.vertices.len()));
         }
+    }
+
+    /// Hiding, removing or reordering props of models already named must not make the
+    /// renderer decode and upload every model again (a visible hitch on a phone).
+    #[test]
+    fn the_gpu_mesh_key_ignores_prop_order_and_hidden_props() {
+        let glb = |id: &str, model: &str, on: bool| WorldProp {
+            id: id.into(),
+            gltf: Some(model.into()),
+            enabled: on,
+            ..serde_json::from_str::<WorldProp>(&format!(r#"{{"id":"{id}"}}"#)).unwrap()
+        };
+        let mut doc = WorldDoc {
+            props: vec![glb("a", "b.glb", true), glb("b", "a.glb", true)],
+            ..WorldDoc::default()
+        };
+        let key = doc.gpu_mesh_key();
+        doc.props.reverse();
+        assert_eq!(doc.gpu_mesh_key(), key, "order");
+        doc.props[0].enabled = false;
+        assert_eq!(doc.gpu_mesh_key(), key, "hidden");
+        doc.props.push(glb("c", "a.glb", true));
+        assert_eq!(doc.gpu_mesh_key(), key, "another prop of a known model");
+        doc.props.push(glb("d", "c.glb", false));
+        assert_ne!(doc.gpu_mesh_key(), key, "a new model is a new set");
     }
 
     #[test]

@@ -53,6 +53,7 @@ KAGRA_BAKE=1 cargo test -p kagra-shared --lib <slug>::
 | 敵の JSON 定義（歩く・飛ぶ・跳ぶ・予告） | `game_core::enemies`（`docs/enemy_kit.md`） |
 | ライフ、ミッション、結果、ゲームの手触り | `game_core::{lives, missions, result, juice, feel}` |
 | 角丸パネル、ゲージ、ボタン | `hud_kit::{round_panel, gauge, pill_button}` |
+| 出すモデルを最初に宣言（途中で出る・消えるモデルでカクつかない） | `game_core::declare_models` |
 | 角丸・円・リング | `Quad::round` / `Quad::circle` / `Quad::ring` |
 | 数字・タイトル用の書体 | `TextQuad::with_face(TextFace::Display)`（Cinzel） |
 | コイン、ショップ、デイリー | マニフェストの `meta`（`docs/meta_core.md`） |
@@ -89,6 +90,7 @@ PR を「出せる」と言う前に全部確認する。
 - [ ] ブラウザ起動確認: `node scripts/browser_smoke.mjs dist/preview <slug>`（CI でも走る）
 - [ ] タイトル → プレイ → 結果 → もう一回 が回る。ベストが残る。一時停止できる
 - [ ] 最初の 10 秒で遊び方が分かる（タイトルの説明文、`page.blurb`）
+- [ ] モデルの組が途中で変わらない（`declare_models` と、プレイ中に `gpu_mesh_key` が変わらないテスト）
 - [ ] スマホで 60 fps 近い（`?dev=1` の計測。Pixel 10 などの PowerVR は 1.5 倍で描く）
 - [ ] 日本語と英語の両方で文字が欠けない
 - [ ] 圧縮後の読み込みが 3 MB 前後に収まる
