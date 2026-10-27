@@ -83,6 +83,17 @@ fn spikes(x0: f32, x1: f32, top: f32) -> Rect {
         y: top,
         w: x1 - x0,
         h: 0.45,
+        ..Rect::default()
+    }
+}
+
+/// Spikes that stay out `on` seconds and pull in for `off`.
+fn spikes_cycle(x0: f32, x1: f32, top: f32, on: f32, off: f32, phase: f32) -> Rect {
+    Rect {
+        on,
+        off,
+        phase,
+        ..spikes(x0, x1, top)
     }
 }
 
@@ -126,11 +137,11 @@ pub fn docking_bay() -> Stage {
             oneway(39.0, 4.4, 3.0),
             oneway(43.0, 3.4, 2.5),
             floor(45.0, 56.0, 0.0),
-            floor(61.3, 76.0, 0.0),
+            floor(60.6, 76.0, 0.0),
             solid(76.0, 0.0, 1.0, 8.0),
         ],
         lasers: vec![laser(21.0, 0.0, 3.2, 1.3, 1.3, 0.0)],
-        spikes: vec![spikes(51.5, 53.0, 0.0)],
+        spikes: vec![spikes_cycle(48.0, 49.6, 0.0, 1.4, 1.4, 0.0)],
         cells: vec![
             [5.0, 1.0],
             [7.0, 1.0],
@@ -147,10 +158,11 @@ pub fn docking_bay() -> Stage {
         hints: vec![
             hint(1.0, "Slide your left thumb to run", "左の親指をすべらせて走る"),
             hint(9.0, "JUMP: hold for higher", "ジャンプ：長押しで高く"),
-            hint(18.0, "Lasers blink. Wait, then go", "レーザーは点滅する。待ってから進め"),
+            hint(17.0, "Lasers blink. Wait, then go", "レーザーは点滅する。待ってから進め"),
+            hint(21.6, "Land on a drone, or DASH through it", "ドローンは上から踏むか、ダッシュで突き抜けろ"),
             hint(33.0, "Jump across the ledges", "足場から足場へ飛び移れ"),
-            hint(49.0, "Jump the spikes", "トゲを飛び越えろ"),
-            hint(54.0, "Jump, then DASH in the air", "ジャンプしてから空中でダッシュ"),
+            hint(46.5, "Spikes pull in. Wait, or jump them", "トゲは引っこむ。待つか、飛び越えろ"),
+            hint(51.0, "Run, jump at the edge, then DASH in the air", "走って端でジャンプ、空中でダッシュ"),
         ],
         decos: vec![
             deco("hangar_smallA", 8.0, -0.2, -7.0, 4.5, 0.4),
@@ -164,6 +176,7 @@ pub fn docking_bay() -> Stage {
             deco("rock_crystals", 15.0, -0.2, -3.5, 2.0, 0.0),
             deco("rock_crystals", 47.0, -0.2, -3.0, 2.0, 1.0),
         ],
+        drones: vec![drone(22.8, 25.4, 1.0, 1.5, 0.0)],
         ..Stage::default()
     }
 }
@@ -204,7 +217,7 @@ pub fn reactor_ring() -> Stage {
             laser(48.5, 8.4, 3.0, 1.2, 1.0, 1.1),
             laser(51.5, 8.4, 3.0, 1.2, 1.0, 0.0),
         ],
-        spikes: vec![spikes(54.0, 56.0, 8.4)],
+        spikes: vec![spikes_cycle(54.0, 56.0, 8.4, 1.2, 1.0, 0.5)],
         cells: vec![
             [5.0, 1.0],
             [12.0, 1.4],
@@ -238,6 +251,7 @@ pub fn reactor_ring() -> Stage {
             deco("hangar_smallA", 82.0, 8.2, -6.5, 5.5, 0.0),
             deco("craft_speederC", 80.0, 8.7, -3.6, 1.6, 0.35),
         ],
+        drones: vec![drone(4.5, 7.5, 1.0, 1.6, 0.5)],
         ..Stage::default()
     }
 }
@@ -338,8 +352,8 @@ pub fn escape_pod() -> Stage {
         ],
         spikes: vec![],
         drones: vec![
-            drone(15.5, 19.0, 5.0, 2.0, 0.0),
-            drone(36.0, 43.0, 9.2, 2.5, 0.2),
+            drone(21.8, 25.2, 5.0, 2.0, 0.0),
+            drone(37.8, 43.0, 9.2, 2.5, 0.2),
             drone(71.5, 73.0, 9.6, 1.5, 0.0),
         ],
         turrets: vec![Turret {

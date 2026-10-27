@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Station Escape, playtest 1 (Emma).** The stage 1 dash gap had no run-up after the spikes: the spikes move back (6 m of run-up) and the gap is 4.6 m (was 5.3); a test jumps half a metre early and dashes late and still makes it. Spikes can pull in and come out on a cycle (`on` / `off` / `phase`, like lasers), rattling and glowing just before they come out; stage 1 and 2 spikes do. Drones join stages 1 and 2, and a test keeps every drone's patrol off spawns and checkpoints.
+
 - **Station Escape, round 2: the station fights back.** Patrol drones (touch one and you fall back; land on it or dash straight through to wreck it, a stomp bounces you up) and wall turrets whose bolts fly until a wall or their range stops them. Two new stages: Cargo Spine (drones and turrets, a high road) and Escape Pod (everything at once, up to the shuttle). Wrecked drones count on the clear card (40 points each). `?stage=3` on the preview link starts at that stage. The test bot clears all four stages.
 
 - **Station Escape, round 1 (`station_escape`).** A side-on 3D platformer: run, jump and dash out of a space station that is breaking up. Left thumb runs (a floating stick), JUMP (hold for higher) and DASH (one in the air) on the right; keys A/D, Space, J/K/Shift and a gamepad work too. Two stages of JSON ledges (solid, one-way, crumbling, moving), blinking lasers, spikes, power cells, checkpoints, a story card and a clear card each; no game over. A test bot plays both stages to the end. Bundled assets only (Kenney Space Kit, Mini Characters). Design: `docs/design/station_escape.md`; build log `docs/agent-runs/20261027-station-escape/`.

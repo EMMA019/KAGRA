@@ -84,7 +84,8 @@ impl Default for Block {
     }
 }
 
-/// A rectangle (spikes).
+/// A row of spikes on the floor. With `off` > 0 they pull in for `off` seconds and stay out for
+/// `on` (offset by `phase`), and rattle for the last 0.35 s before they come out.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Rect {
@@ -92,6 +93,28 @@ pub struct Rect {
     pub y: f32,
     pub w: f32,
     pub h: f32,
+    pub on: f32,
+    pub off: f32,
+    pub phase: f32,
+}
+
+impl Rect {
+    /// (out, about to come out) at time `t`.
+    fn state(&self, t: f32) -> (bool, bool) {
+        cycle(self.on, self.off, self.phase, t)
+    }
+}
+
+/// A thing that is on for `on` seconds and off for `off` (0 = always on), offset by `phase`:
+/// (on now, coming on within 0.35 s).
+fn cycle(on: f32, off: f32, phase: f32, t: f32) -> (bool, bool) {
+    if off <= 0.0 {
+        return (true, false);
+    }
+    let period = on + off;
+    let u = (t + phase).rem_euclid(period);
+    let now = u < on;
+    (now, !now && u > period - 0.35)
 }
 
 /// A laser beam: on for `on` seconds, off for `off` (0 = always on), offset by `phase`.
@@ -110,13 +133,7 @@ pub struct Laser {
 impl Laser {
     /// Is the beam on at time `t`? It shows a warning for the last 0.35 s before it comes on.
     fn state(&self, t: f32) -> (bool, bool) {
-        if self.off <= 0.0 {
-            return (true, false);
-        }
-        let period = self.on + self.off;
-        let u = (t + self.phase).rem_euclid(period);
-        let on = u < self.on;
-        (on, !on && u > period - 0.35)
+        cycle(self.on, self.off, self.phase, t)
     }
 }
 
@@ -401,6 +418,8 @@ struct Slots {
     meteors: usize,
     drones: Vec<usize>,
     bolts: usize,
+    /// The first cone of each spike row.
+    spikes: Vec<usize>,
 }
 
 #[derive(Debug)]
@@ -885,14 +904,15 @@ impl StationEscape {
         let hurt = hits.hurt
             || self.body.y < st.kill_y
             || st.spikes.iter().any(|s| {
-                touches(
-                    &self.body,
-                    &spec,
-                    s.x + 0.1,
-                    s.x + s.w - 0.1,
-                    s.y,
-                    s.y + s.h,
-                )
+                s.state(self.t).0
+                    && touches(
+                        &self.body,
+                        &spec,
+                        s.x + 0.1,
+                        s.x + s.w - 0.1,
+                        s.y,
+                        s.y + s.h,
+                    )
             })
             || st.lasers.iter().any(|l| {
                 l.state(self.t).0 && touches(&self.body, &spec, l.x, l.x + l.w, l.y, l.y + l.h)
@@ -1101,8 +1121,10 @@ impl StationEscape {
             p.color = Some([120, 130, 165]);
             doc.props.push(p);
         }
-        // Spikes: a row of small cones.
+        let mut slots = Slots::default();
+        // Spikes: a row of small cones (they sink into the floor when pulled in).
         for (i, s) in st.spikes.iter().enumerate() {
+            slots.spikes.push(doc.props.len());
             let n = (s.w / 0.4).ceil().max(1.0) as usize;
             for k in 0..n {
                 doc.props.push(prop(
@@ -1124,7 +1146,6 @@ impl StationEscape {
         }
         // Blocks: a hull and a glowing trim on the top edge (oneway ledges are thin and teal,
         // crumbling ones amber, moving ones violet).
-        let mut slots = Slots::default();
         for (i, b) in st.blocks.iter().enumerate() {
             let (col, trim) = match b.kind.as_str() {
                 "oneway" => ([60, 92, 110], [0.3, 1.0, 0.9]),
@@ -1450,6 +1471,27 @@ impl StationEscape {
             let p = &mut props[self.slots.meteors + i];
             p.yaw = self.clock * (0.05 + 0.03 * i as f32);
             p.roll = self.clock * 0.04;
+        }
+        for (i, sp) in st.spikes.iter().enumerate() {
+            let (out, warn) = sp.state(t);
+            let n = (sp.w / 0.4).ceil().max(1.0) as usize;
+            let rattle = if warn {
+                0.04 * (self.clock * 50.0).sin()
+            } else {
+                0.0
+            };
+            let sink = if out {
+                0.0
+            } else if warn {
+                0.75
+            } else {
+                0.95
+            };
+            for k in 0..n {
+                let p = &mut props[self.slots.spikes[i] + k];
+                p.position[1] = sp.y + sp.h * 0.5 - sp.h * sink + rattle;
+                p.emissive = Some(if warn { 1.6 } else { 0.5 });
+            }
         }
         for (i, d) in st.drones.iter().enumerate() {
             let (x, y, dir) = d.at(t);

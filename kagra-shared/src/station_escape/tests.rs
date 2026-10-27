@@ -190,6 +190,65 @@ fn spawns_checkpoints_and_exits_stand_on_something() {
 }
 
 #[test]
+fn no_drone_patrols_over_a_spawn_or_a_checkpoint() {
+    for (i, st) in StationEscapeSpec::default().stages.iter().enumerate() {
+        let mut safe = vec![st.spawn];
+        safe.extend(st.checkpoints.iter().copied());
+        for p in safe {
+            for d in &st.drones {
+                let over = p[0] > d.x0.min(d.x1) - 1.5 && p[0] < d.x0.max(d.x1) + 1.5;
+                let level = d.y > p[1] - 0.5 && d.y < p[1] + 2.0;
+                assert!(
+                    !(over && level),
+                    "stage {}: a drone patrols over {p:?}",
+                    i + 1
+                );
+            }
+        }
+    }
+}
+
+/// Emma's playtest: the dash gap in stage 1 had no run-up after the spikes. A sloppy human
+/// (jumps half a metre before the edge, dashes a little after the top) still makes it, from
+/// a stand-still just past the spikes.
+#[test]
+fn the_stage_one_dash_gap_forgives_a_sloppy_jump() {
+    let mut g = running();
+    let st = g.st().clone();
+    let sp = &st.spikes[0];
+    let edge = st
+        .blocks
+        .iter()
+        .filter(|b| b.x < 56.0 && b.x + b.w > sp.x + sp.w)
+        .map(|b| b.x + b.w)
+        .fold(f32::MIN, f32::max);
+    for early in [0.2_f32, 0.5] {
+        g.respawn();
+        g.body.reset_to(sp.x + sp.w + 0.4, 0.0);
+        key(&mut g, 0.0, false, false, 2);
+        let falls = g.falls;
+        let mut jumped = false;
+        let mut dashed = false;
+        let mut peak_t = 0;
+        for _ in 0..240 {
+            let jump = !jumped && g.body.x >= edge - early;
+            jumped |= jump;
+            if jumped && !g.body.grounded && g.body.vy <= 0.0 {
+                peak_t += 1;
+            }
+            let dash = jumped && !dashed && peak_t == 4;
+            dashed |= dash;
+            key(&mut g, 1.0, jumped, dash, 1);
+            if g.body.grounded && jumped && g.body.x > edge + 1.0 {
+                break;
+            }
+        }
+        assert_eq!(g.falls, falls, "jumping {early} m early fell");
+        assert!(g.body.x > edge + 1.0, "landed across: {}", g.body.x);
+    }
+}
+
+#[test]
 fn the_story_card_waits_for_a_tap() {
     let mut g = started();
     assert_eq!(g.beat, Beat::Intro);
