@@ -8,7 +8,7 @@
     {
       "path": "world.json",
       "url": "games/lantern_watch/world.json",
-      "v": "6f8665bd9d"
+      "v": "1b81ef9527"
     },
     {
       "path": "kagra_game.json",
@@ -194,5 +194,5 @@
     "fixed_step": true,
     "blurb": "blurb.lantern"
   },
-  "build": "34a4d5c088e5"
+  "build": "42448ca9c113"
 }

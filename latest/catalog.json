@@ -56,6 +56,17 @@
       "icon": "games/card/icon.png"
     },
     {
+      "slug": "crate_tower",
+      "title": "Crate Tower",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "crate_tower",
+      "entry": "examples/crate_tower_minimal.py",
+      "world": "kagra-shared/tests/fixtures/crate_tower_world.json",
+      "href": "play.html?game=crate_tower",
+      "icon": "games/crate_tower/icon.png"
+    },
+    {
       "slug": "fps",
       "title": "FPS Range",
       "version": "0.1.0",
