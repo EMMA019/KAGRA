@@ -1,7 +1,7 @@
 //! The stages that ship (the spec's defaults). Coordinates: metres, x right, y up; a block's
 //! (x, y) is its bottom-left corner. Floors have their top at y = 0 unless they climb.
 
-use super::{Block, Deco, Hint, Laser, Rect, Stage};
+use super::{Block, Deco, Drone, Hint, Laser, Rect, Stage, Turret};
 
 fn solid(x: f32, y: f32, w: f32, h: f32) -> Block {
     Block {
@@ -51,6 +51,29 @@ fn laser(x: f32, y: f32, h: f32, on: f32, off: f32, phase: f32) -> Laser {
         on,
         off,
         phase,
+    }
+}
+
+fn drone(x0: f32, x1: f32, y: f32, speed: f32, phase: f32) -> Drone {
+    Drone {
+        x0,
+        x1,
+        y,
+        speed,
+        phase,
+    }
+}
+
+/// A turret whose muzzle is at (x, y), firing left (-1) or right (+1).
+fn turret(x: f32, y: f32, dir: f32, every: f32, phase: f32) -> Turret {
+    Turret {
+        x,
+        y,
+        dir,
+        every,
+        phase,
+        speed: 6.5,
+        range: 18.0,
     }
 }
 
@@ -141,6 +164,7 @@ pub fn docking_bay() -> Stage {
             deco("rock_crystals", 15.0, -0.2, -3.5, 2.0, 0.0),
             deco("rock_crystals", 47.0, -0.2, -3.0, 2.0, 1.0),
         ],
+        ..Stage::default()
     }
 }
 
@@ -213,6 +237,138 @@ pub fn reactor_ring() -> Stage {
             deco("machine_generatorLarge", 64.0, 11.2, -4.5, 3.0, 1.2),
             deco("hangar_smallA", 82.0, 8.2, -6.5, 5.5, 0.0),
             deco("craft_speederC", 80.0, 8.7, -3.6, 1.6, 0.35),
+        ],
+        ..Stage::default()
+    }
+}
+
+/// Stage 3, Cargo Spine: the station fights back. Drones to stomp or dash through, turrets
+/// to jump over.
+pub fn cargo_spine() -> Stage {
+    Stage {
+        name: "Cargo Spine".into(),
+        name_ja: "カーゴスパイン".into(),
+        story: "Security has woken up and does not know you. Drones patrol the cargo spine: land on them, or dash straight through.".into(),
+        story_ja: "警備システムが目を覚ました。こちらを侵入者だと思っている。ドローンは上から踏むか、ダッシュで突き抜けろ。".into(),
+        spawn: [1.5, 0.0],
+        exit: [82.0, 0.0],
+        kill_y: -5.0,
+        par_secs: 60.0,
+        blocks: vec![
+            floor(-4.0, 18.0, 0.0),
+            solid(-4.0, 0.0, 1.0, 8.0),
+            floor(21.0, 52.0, 0.0),
+            solid(38.5, 0.0, 2.0, 1.6),
+            oneway(44.0, 3.2, 3.0),
+            oneway(48.0, 3.2, 3.0),
+            crumble(53.2, 0.0, 1.6),
+            floor(56.5, 86.0, 0.0),
+            solid(73.5, 0.0, 1.5, 1.6),
+            solid(86.0, 0.0, 1.0, 8.0),
+        ],
+        lasers: vec![],
+        spikes: vec![],
+        drones: vec![
+            drone(8.0, 14.0, 1.0, 2.0, 0.0),
+            drone(43.0, 50.0, 1.0, 3.0, 0.3),
+            drone(60.0, 68.0, 2.1, 2.5, 0.0),
+            drone(60.0, 68.0, 1.0, 2.0, 0.5),
+        ],
+        turrets: vec![turret(38.3, 0.5, -1.0, 2.4, 1.0), turret(73.3, 0.5, -1.0, 2.0, 0.5)],
+        cells: vec![
+            [5.0, 1.0],
+            [11.0, 2.4],
+            [19.5, 2.4],
+            [30.0, 1.0],
+            [39.5, 2.6],
+            [45.5, 4.2],
+            [49.5, 4.2],
+            [54.0, 1.6],
+            [64.0, 3.4],
+            [78.0, 1.0],
+        ],
+        checkpoints: vec![[22.0, 0.0], [57.5, 0.0]],
+        hints: vec![
+            hint(4.0, "Land on a drone, or DASH through it", "ドローンは上から踏むか、ダッシュで突き抜けろ"),
+            hint(24.0, "Jump the turret's bolts", "砲台の弾を飛び越えろ"),
+            hint(41.0, "Or take the high road", "上の道もある"),
+        ],
+        decos: vec![
+            deco("monorail_trainBox", 10.0, -0.2, -6.0, 4.0, 1.57),
+            deco("monorail_trainBox", 14.5, -0.2, -6.0, 4.0, 1.57),
+            deco("structure_closed", 30.0, -0.2, -7.0, 4.5, 0.2),
+            deco("machine_generatorLarge", 47.0, -0.2, -5.0, 3.0, 0.6),
+            deco("satelliteDish", 62.0, -0.2, -9.0, 6.0, -0.4),
+            deco("hangar_smallA", 82.0, -0.2, -6.5, 5.5, 0.0),
+            deco("rock_crystals", 25.0, -0.2, -3.5, 2.0, 0.4),
+        ],
+    }
+}
+
+/// Stage 4, Escape Pod: everything at once, up to the last shuttle.
+pub fn escape_pod() -> Stage {
+    Stage {
+        name: "Escape Pod".into(),
+        name_ja: "脱出ポッド".into(),
+        story: "The shuttle bay is above the reactor. The station has minutes left. Everything you learned, all at once. Go!".into(),
+        story_ja: "シャトルの格納庫はリアクターの真上。ステーションに残された時間はわずか。覚えたこと全部を使って、行け！".into(),
+        spawn: [2.0, 0.0],
+        exit: [74.0, 8.6],
+        kill_y: -6.0,
+        par_secs: 75.0,
+        blocks: vec![
+            floor(-4.0, 10.0, 0.0),
+            solid(-4.0, 0.0, 1.0, 8.0),
+            mover(10.5, 0.0, 3.0, [0.0, 4.0], 2.2),
+            floor(14.0, 26.0, 4.0),
+            oneway(26.5, 5.6, 3.5),
+            oneway(30.0, 7.4, 3.0),
+            floor(34.0, 46.5, 8.0),
+            solid(45.0, 8.0, 1.5, 1.6),
+            crumble(47.8, 8.0, 1.6),
+            crumble(50.3, 8.6, 1.6),
+            mover(52.8, 8.6, 2.5, [6.0, 0.0], 2.4),
+            floor(62.0, 78.0, 8.6),
+            solid(78.0, 8.6, 1.0, 8.0),
+        ],
+        lasers: vec![
+            laser(20.0, 4.0, 3.0, 1.0, 1.2, 0.0),
+            laser(66.0, 8.6, 3.0, 1.1, 1.0, 0.0),
+            laser(69.5, 8.6, 3.0, 1.1, 1.0, 1.0),
+        ],
+        spikes: vec![],
+        drones: vec![
+            drone(15.5, 19.0, 5.0, 2.0, 0.0),
+            drone(36.0, 43.0, 9.2, 2.5, 0.2),
+            drone(71.5, 73.0, 9.6, 1.5, 0.0),
+        ],
+        turrets: vec![Turret {
+            range: 10.5,
+            ..turret(44.8, 8.5, -1.0, 2.2, 0.8)
+        }],
+        cells: vec![
+            [6.0, 1.0],
+            [12.0, 5.4],
+            [17.0, 6.6],
+            [24.0, 5.0],
+            [28.2, 6.6],
+            [31.5, 8.4],
+            [40.0, 10.6],
+            [48.6, 9.6],
+            [56.0, 10.0],
+            [64.0, 9.6],
+            [68.0, 9.6],
+            [72.0, 11.2],
+        ],
+        checkpoints: vec![[15.0, 4.0], [35.0, 8.0], [63.0, 8.6]],
+        hints: vec![hint(8.0, "Last stretch. Don't stop", "最後のひとふんばり。止まるな")],
+        decos: vec![
+            deco("machine_generatorLarge", 6.0, -3.0, -6.0, 6.0, 0.0),
+            deco("structure_closed", 22.0, 1.0, -8.0, 6.0, 0.3),
+            deco("satelliteDish", 40.0, 7.8, -7.0, 5.0, -0.6),
+            deco("turret_single", 58.0, 8.4, -4.0, 3.0, 0.4),
+            deco("hangar_smallA", 74.0, 8.4, -6.5, 6.0, 0.0),
+            deco("craft_speederC", 74.0, 8.9, -3.4, 2.0, 0.35),
         ],
     }
 }

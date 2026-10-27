@@ -36,7 +36,6 @@ fn bot(g: &mut StationEscape, route: &[f32], secs: f32) -> bool {
     let mut leg = 0;
     let mut hold = 0_u32;
     let mut dash_wait = 0_u32;
-    let mut takeoff = g.body.y;
     let steps = (secs / DT) as usize;
     for _ in 0..steps {
         if g.beat == Beat::Clear {
@@ -90,6 +89,22 @@ fn bot(g: &mut StationEscape, route: &[f32], secs: f32) -> bool {
                 && l.y + l.h > y
                 && (l.state(g.t).0 || l.state(g.t + 0.45).0 || l.state(g.t + 0.2).0)
         });
+        // A live drone ahead at body height: dash through it. A bolt coming: jump it.
+        let drone_ahead = st.drones.iter().enumerate().any(|(i, d)| {
+            let (dx, dy, _) = d.at(g.t);
+            g.foes.alive[i]
+                && (dx - x) * dir > 0.0
+                && (dx - x) * dir < 2.4
+                && dy - y > -0.4
+                && dy - y < 1.5
+        });
+        let bolt_coming = g.foes.bolts.iter().flatten().any(|b| {
+            (b[0] - x) * dir > 0.0
+                && (b[0] - x) * dir < 2.6
+                && b[2] * dir < 0.0
+                && b[1] > y
+                && b[1] < y + spec.height + 0.2
+        });
         let mut mx = dir;
         let mut jump = hold > 0;
         let mut dash = false;
@@ -102,26 +117,39 @@ fn bot(g: &mut StationEscape, route: &[f32], secs: f32) -> bool {
             let lift = st.blocks.iter().any(|b| b.kind == "move");
             if laser_near || (edge && !reach && lift) {
                 mx = 0.0;
-            } else if (edge || wall || spike || climb) && hold == 0 {
+            } else if (edge || wall || spike || climb || bolt_coming) && hold == 0 {
                 jump = true;
                 hold = 30;
             }
         } else if g.body.vy < 1.0 && dash_wait == 0 {
-            // Near the top of a jump: where would it come down without a dash?
-            let drop = (y - takeoff).max(0.0) + 0.3;
-            let fall_t = (2.0 * drop / (spec.gravity * spec.fall_gravity)).sqrt();
-            let lands = x + dir * spec.run * fall_t;
-            if !under(lands, drop + 0.5) {
+            // Near the top of a jump: is there a surface below that it comes down on without a
+            // dash? Each surface is reached when the fall has dropped to its top; moving ones
+            // move meanwhile.
+            let g_fall = spec.gravity * spec.fall_gravity;
+            let vy0 = g.body.vy.max(0.0);
+            let lands = solids.iter().any(|s| {
+                let drop = y - s.y1;
+                if drop < -0.05 {
+                    return false;
+                }
+                let t_up = vy0 / spec.gravity;
+                let t = t_up + (2.0 * (drop + vy0 * vy0 / (2.0 * spec.gravity)) / g_fall).sqrt();
+                let lx = x + dir * spec.run * t;
+                let (x0, x1) = (s.x0 + s.vel.0 * t, s.x1 + s.vel.0 * t);
+                lx + spec.half_w > x0 && lx - spec.half_w < x1
+            });
+            if !lands {
                 dash = true;
                 dash_wait = 40;
             }
         }
-        if g.body.grounded {
-            takeoff = y;
+        if drone_ahead && dash_wait == 0 {
+            dash = true;
+            dash_wait = 25;
         }
         hold = hold.saturating_sub(1);
         dash_wait = dash_wait.saturating_sub(1);
-        if std::env::var("SE_DEBUG").is_ok() && g.body.x > 49.0 {
+        if std::env::var("SE_DEBUG").is_ok() {
             eprintln!("x {:.2} y {:.2} g {} vy {:.1} falls {} mx {mx} jump {jump} dash {dash} laser {laser_near} spike {spike} edge {edge} wall {wall} climb {climb}", x, y, g.body.grounded, g.body.vy, g.falls);
         }
         key(g, mx, jump, dash, 1);
@@ -268,41 +296,55 @@ fn crumbling_ledges_fall_and_come_back_and_lifts_carry() {
     );
 }
 
+fn tap_on(g: &mut StationEscape) {
+    g.walk(0.0, 0.0, true);
+    g.tick(DT);
+    g.walk(0.0, 0.0, false);
+    g.tick(DT);
+}
+
 #[test]
-fn a_player_clears_both_stages_and_the_run_ends() {
+fn a_player_clears_every_stage_and_the_run_ends() {
     let mut g = running();
-    assert!(
-        bot(&mut g, &[80.0], 90.0),
-        "stage 1: stuck at {:?}",
-        (g.body.x, g.body.y)
-    );
-    let t1 = *g.tallies.last().unwrap();
-    assert!(t1.score >= 100);
-    assert_eq!(g.state_value()["beat"], "clear");
-    g.walk(0.0, 0.0, true);
-    g.tick(DT);
-    g.walk(0.0, 0.0, false);
-    g.tick(DT);
-    assert_eq!(g.stage, 1);
-    g.walk(0.0, 0.0, true);
-    g.tick(DT);
-    g.walk(0.0, 0.0, false);
-    g.tick(DT);
-    let route = [29.0, 37.5, 32.5, 38.5, 59.5, 59.8, 64.0, 67.5, 90.0];
-    assert!(
-        bot(&mut g, &route, 150.0),
-        "stage 2: stuck at {:?}",
-        (g.body.x, g.body.y)
-    );
-    g.walk(0.0, 0.0, true);
-    g.tick(DT);
+    let routes: [&[f32]; 4] = [
+        &[80.0],
+        &[29.0, 37.5, 32.5, 38.5, 59.5, 59.8, 64.0, 67.5, 90.0],
+        &[90.0],
+        &[11.8, 11.9, 16.0, 28.2, 31.5, 35.0, 90.0],
+    ];
+    for (i, route) in routes.iter().enumerate() {
+        assert_eq!(g.stage, i);
+        assert!(
+            bot(&mut g, route, 150.0),
+            "stage {}: stuck at {:?} after {} falls",
+            i + 1,
+            (g.body.x, g.body.y),
+            g.falls
+        );
+        let tl = *g.tallies.last().unwrap();
+        assert!(tl.score >= 100);
+        eprintln!(
+            "stage {}: {:.0} s, {} falls, {} drones",
+            i + 1,
+            tl.secs,
+            tl.falls,
+            tl.wrecks
+        );
+        tap_on(&mut g);
+        if i + 1 < routes.len() {
+            tap_on(&mut g);
+        }
+    }
     for _ in 0..30 {
         g.tick(DT);
     }
     assert_eq!(g.phase_name(), "result");
     let v = g.state_value();
     assert_eq!(v["win"], true);
-    assert!(v["result"]["run"]["score"].as_u64().unwrap() > 0);
+    assert!(
+        g.tallies.iter().map(|t| t.wrecks).sum::<u32>() > 0,
+        "drones met"
+    );
 }
 
 #[test]
@@ -345,6 +387,18 @@ fn the_gpu_model_set_never_changes_in_a_stage() {
         g.rebuild();
         assert_eq!(g.document().gpu_mesh_key(), key0, "step {i}");
     }
+}
+
+#[test]
+fn a_link_can_start_at_a_later_stage() {
+    let mut v = StationEscape::new(StationEscapeSpec::default()).world_value();
+    v["stage"] = json!("3");
+    let mut g = StationEscape::from_json(&v.to_string()).unwrap();
+    g.confirm();
+    assert_eq!(g.stage, 2);
+    v["stage"] = json!(99);
+    let g = StationEscape::from_json(&v.to_string()).unwrap();
+    assert_eq!(g.stage, g.spec.stages.len() - 1);
 }
 
 #[test]

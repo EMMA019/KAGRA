@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Station Escape, round 2: the station fights back.** Patrol drones (touch one and you fall back; land on it or dash straight through to wreck it, a stomp bounces you up) and wall turrets whose bolts fly until a wall or their range stops them. Two new stages: Cargo Spine (drones and turrets, a high road) and Escape Pod (everything at once, up to the shuttle). Wrecked drones count on the clear card (40 points each). `?stage=3` on the preview link starts at that stage. The test bot clears all four stages.
+
 - **Station Escape, round 1 (`station_escape`).** A side-on 3D platformer: run, jump and dash out of a space station that is breaking up. Left thumb runs (a floating stick), JUMP (hold for higher) and DASH (one in the air) on the right; keys A/D, Space, J/K/Shift and a gamepad work too. Two stages of JSON ledges (solid, one-way, crumbling, moving), blinking lasers, spikes, power cells, checkpoints, a story card and a clear card each; no game over. A test bot plays both stages to the end. Bundled assets only (Kenney Space Kit, Mini Characters). Design: `docs/design/station_escape.md`; build log `docs/agent-runs/20261027-station-escape/`.
 
 - **`game_core::platform`: a platformer body** with coyote time, a jump buffer, a short hop on an early release, one air dash, one-way platforms and riding moving ones, against box solids (no physics engine). **`KitHost::buttons`** hands kits the second and third buttons (J / K / Shift, a gamepad's B / X / left trigger).

@@ -18,7 +18,10 @@
 //! The picture is a persistent prop list built once per stage; a frame only edits positions,
 //! colours and `enabled` in place (no per-frame allocation, a fixed GPU model set).
 
+mod foes;
 mod stages;
+
+pub use foes::{Drone, Turret};
 
 use std::cell::Cell;
 
@@ -159,6 +162,8 @@ pub struct Stage {
     pub checkpoints: Vec<[f32; 2]>,
     pub hints: Vec<Hint>,
     pub decos: Vec<Deco>,
+    pub drones: Vec<Drone>,
+    pub turrets: Vec<Turret>,
 }
 
 impl Default for Stage {
@@ -179,6 +184,8 @@ impl Default for Stage {
             checkpoints: Vec::new(),
             hints: Vec::new(),
             decos: Vec::new(),
+            drones: Vec::new(),
+            turrets: Vec::new(),
         }
     }
 }
@@ -201,6 +208,9 @@ pub struct StationEscapeSpec {
     pub cell_score: u32,
     pub par_score: u32,
     pub fall_cost: u32,
+    /// Points for each drone wrecked (a stomp or a dash), and the stomp's bounce (m/s).
+    pub foe_score: u32,
+    pub stomp_bounce: f32,
     /// Thumb stick radius and buttons, in pixels at 400 px of short side; the stick's dead zone.
     pub stick_px: f32,
     pub stick_dead: f32,
@@ -215,7 +225,12 @@ impl Default for StationEscapeSpec {
             id: GAME_ID.into(),
             title: "Station Escape".into(),
             body: BodySpec::default(),
-            stages: vec![stages::docking_bay(), stages::reactor_ring()],
+            stages: vec![
+                stages::docking_bay(),
+                stages::reactor_ring(),
+                stages::cargo_spine(),
+                stages::escape_pod(),
+            ],
             crumble_secs: 0.45,
             crumble_back: 3.0,
             respawn_secs: 0.7,
@@ -223,6 +238,8 @@ impl Default for StationEscapeSpec {
             cell_score: 50,
             par_score: 10,
             fall_cost: 25,
+            foe_score: 40,
+            stomp_bounce: 9.0,
             stick_px: 64.0,
             stick_dead: 0.15,
             button_px: 40.0,
@@ -253,6 +270,7 @@ impl StationEscapeSpec {
         range("crumble_secs", self.crumble_secs, 0.0, 10.0)?;
         range("crumble_back", self.crumble_back, 0.1, 60.0)?;
         range("respawn_secs", self.respawn_secs, 0.0, 5.0)?;
+        range("stomp_bounce", self.stomp_bounce, 0.0, 60.0)?;
         range("stick_px", self.stick_px, 20.0, 200.0)?;
         range("stick_dead", self.stick_dead, 0.0, 0.6)?;
         range("button_px", self.button_px, 16.0, 120.0)?;
@@ -278,6 +296,14 @@ impl StationEscapeSpec {
                     range(&format!("{at}.blocks[{j}].secs"), b.secs, 0.2, 60.0)?;
                 }
             }
+            for (j, d) in st.drones.iter().enumerate() {
+                range(&format!("{at}.drones[{j}].speed"), d.speed, 0.1, 30.0)?;
+            }
+            for (j, tu) in st.turrets.iter().enumerate() {
+                range(&format!("{at}.turrets[{j}].every"), tu.every, 0.2, 60.0)?;
+                range(&format!("{at}.turrets[{j}].speed"), tu.speed, 0.5, 60.0)?;
+                range(&format!("{at}.turrets[{j}].range"), tu.range, 0.5, 200.0)?;
+            }
             for (j, l) in st.lasers.iter().enumerate() {
                 range(&format!("{at}.lasers[{j}].on"), l.on, 0.0, 60.0)?;
                 range(&format!("{at}.lasers[{j}].off"), l.off, 0.0, 60.0)?;
@@ -294,6 +320,8 @@ impl StationEscapeSpec {
 
 // ---------------------------------------------------------------- look ----
 
+const DRONE_GLB: &str = "assets/models/kenney/space-kit/craft_speederC.glb";
+const TURRET_GLB: &str = "assets/models/kenney/space-kit/turret_single.glb";
 const HERO_GLB: &str = "assets/models/kenney/mini-characters/character-female-d.glb";
 const CELL_GLB: &str = "assets/models/kenney/platformer-kit/jewel.glb";
 /// The hero model is 0.78 m tall at scale 1.
@@ -320,6 +348,8 @@ fn default_audio() -> Value {
             "cell": cue("retro_coin_01.wav", 0.4, 1.2),
             "check": cue("power_up_02.wav", 0.5, 1.3),
             "fall": cue("retro_die_01.wav", 0.6, 1.0),
+            "stomp": {"file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav", "volume": 0.6, "rate": 1.6},
+            "shot": cue("shot_01.wav", 0.12, 1.3),
             "crumble": {"file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav", "volume": 0.4, "rate": 0.6},
             "clear": cue("power_up_04.wav", 0.8, 1.0),
             "go": {"file": "assets/audio/kenney-interface-sounds/confirmation_001.wav", "volume": 0.7, "rate": 1.0}
@@ -354,6 +384,7 @@ struct Tally {
     secs: f32,
     cells: u32,
     falls: u32,
+    wrecks: u32,
     score: u32,
 }
 
@@ -368,6 +399,8 @@ struct Slots {
     exit: usize,
     puffs: usize,
     meteors: usize,
+    drones: Vec<usize>,
+    bolts: usize,
 }
 
 #[derive(Debug)]
@@ -380,6 +413,8 @@ pub struct StationEscape {
     /// The stage the doc was built for.
     doc_stage: Option<usize>,
     stage: usize,
+    /// The stage a run starts at (0 unless a link asks for another).
+    first_stage: usize,
     beat: Beat,
     /// Seconds on the stage clock (from Run), and the picture's clock.
     t: f32,
@@ -392,6 +427,8 @@ pub struct StationEscape {
     got: Vec<bool>,
     check: Option<usize>,
     falls: u32,
+    wrecks: u32,
+    foes: foes::Foes,
     tallies: Vec<Tally>,
     puffs: [[f32; 3]; PUFFS],
     next_puff: usize,
@@ -433,6 +470,7 @@ impl StationEscape {
             slots: Slots::default(),
             doc_stage: None,
             stage: 0,
+            first_stage: 0,
             beat: Beat::Intro,
             t: 0.0,
             clock: 0.0,
@@ -443,6 +481,8 @@ impl StationEscape {
             got: Vec::new(),
             check: None,
             falls: 0,
+            wrecks: 0,
+            foes: foes::Foes::default(),
             tallies: Vec::new(),
             puffs: [[0.0; 3]; PUFFS],
             next_puff: 0,
@@ -481,6 +521,15 @@ impl StationEscape {
         if let Some(best) = value.get("best").and_then(|v| v.as_u64()) {
             g.flow.best_score = best as u32;
         }
+        // `?stage=3` on the preview link (the manifest's `page.url_params`) starts there.
+        let stage = value.get("stage").and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+        });
+        if let Some(n) = stage {
+            g.first_stage = (n.max(1) as usize - 1).min(g.spec.stages.len() - 1);
+            g.load_stage(g.first_stage);
+        }
         Ok(g)
     }
 
@@ -513,6 +562,8 @@ impl StationEscape {
         self.got = vec![false; st.cells.len()];
         self.check = None;
         self.falls = 0;
+        self.wrecks = 0;
+        self.foes = foes::Foes::new(&st.drones, &st.turrets);
         self.t = 0.0;
         self.beat = Beat::Intro;
         self.body = Body::at(st.spawn[0], st.spawn[1]);
@@ -529,7 +580,7 @@ impl StationEscape {
                 self.tallies.clear();
                 self.win = false;
                 self.new_best = false;
-                self.load_stage(0);
+                self.load_stage(self.first_stage);
                 self.best_before = self.flow.best_score;
                 self.flow.enter_play();
                 crate::mixer::cue_sfx("go");
@@ -655,6 +706,7 @@ impl StationEscape {
         for c in &mut self.crumbles {
             *c = Crumble::default();
         }
+        self.foes.reset(&st.turrets);
         self.beat = Beat::Run;
     }
 
@@ -664,6 +716,7 @@ impl StationEscape {
         let under = (st.par_secs - self.t).max(0.0);
         let score = (self.spec.clear_score
             + cells * self.spec.cell_score
+            + self.wrecks * self.spec.foe_score
             + (under * self.spec.par_score as f32) as u32)
             .saturating_sub(self.falls * self.spec.fall_cost)
             .max(100);
@@ -671,6 +724,7 @@ impl StationEscape {
             secs: self.t,
             cells,
             falls: self.falls,
+            wrecks: self.wrecks,
             score,
         });
         self.core.stats.score += score;
@@ -772,6 +826,28 @@ impl StationEscape {
             }
         }
         let spec = self.spec.body.clone();
+        // Drones and turrets.
+        let st = &self.spec.stages[self.stage];
+        let hits = self.foes.step(
+            &st.drones,
+            &st.turrets,
+            &self.solids,
+            &mut self.body,
+            &spec,
+            self.t,
+            dt,
+            self.spec.stomp_bounce,
+        );
+        let wrecked = hits.stomped + hits.wrecked;
+        if wrecked > 0 {
+            self.wrecks += wrecked;
+            self.core.juice.hit(0.12, 0.05);
+            self.puff(self.body.x, self.body.y);
+            crate::mixer::cue_sfx("stomp");
+        }
+        if hits.fired > 0 && self.foes_near() {
+            crate::mixer::cue_sfx("shot");
+        }
         let st = &self.spec.stages[self.stage];
         // Cells.
         let mut picked = 0;
@@ -806,7 +882,8 @@ impl StationEscape {
                 checked = Some(i);
             }
         }
-        let hurt = self.body.y < st.kill_y
+        let hurt = hits.hurt
+            || self.body.y < st.kill_y
             || st.spikes.iter().any(|s| {
                 touches(
                     &self.body,
@@ -842,6 +919,14 @@ impl StationEscape {
             self.clear_stage();
         }
         self.follow_cam(dt);
+    }
+
+    /// Any turret within earshot (a shot far off screen stays quiet).
+    fn foes_near(&self) -> bool {
+        self.st()
+            .turrets
+            .iter()
+            .any(|t| (t.x - self.body.x).abs() < 14.0)
     }
 
     fn follow_cam(&mut self, dt: f32) {
@@ -951,6 +1036,8 @@ impl StationEscape {
             models.push(d.model.as_str());
         }
         models.push("assets/models/kenney/space-kit/meteor.glb");
+        models.push(DRONE_GLB);
+        models.push(TURRET_GLB);
         declare_models(&mut doc, &models);
         let model = |id: &str, path: &str, name: &str, pos: [f32; 3], s: f32, col: [u32; 3]| {
             if glb_ready(path) {
@@ -1210,6 +1297,52 @@ impl StationEscape {
             p.enabled = false;
             doc.props.push(p);
         }
+        for (i, tu) in st.turrets.iter().enumerate() {
+            let mut p = model(
+                &format!("turret-{i}"),
+                TURRET_GLB,
+                "turret",
+                [tu.x - tu.dir * 0.3, tu.y - 0.6, 0.0],
+                1.8,
+                [170, 90, 90],
+            );
+            // The barrel points along +z at yaw 0: turn it to face along the fire.
+            p.yaw = tu.dir.signum() * std::f32::consts::FRAC_PI_2;
+            p.color = Some([210, 150, 150]);
+            doc.props.push(p);
+        }
+        for (i, _) in st.drones.iter().enumerate() {
+            slots.drones.push(doc.props.len());
+            let mut p = model(
+                &format!("drone-{i}"),
+                DRONE_GLB,
+                "drone",
+                [0.0; 3],
+                0.62,
+                [220, 120, 90],
+            );
+            p.color = Some([255, 130, 110]);
+            p.emissive = Some(0.7);
+            p.emissive_color = Some([1.0, 0.35, 0.2]);
+            doc.props.push(p);
+        }
+        slots.bolts = doc.props.len();
+        for i in 0..foes::BOLTS {
+            let mut p = prop(
+                &format!("bolt-{i}"),
+                "sphere",
+                "bolt",
+                [0.0; 3],
+                [0.32, 0.22, 0.22],
+                [255, 150, 90],
+                4.0,
+                0.3,
+                0.0,
+            );
+            p.emissive_color = Some([1.0, 0.45, 0.2]);
+            p.enabled = false;
+            doc.props.push(p);
+        }
         slots.hero = doc.props.len();
         let mut hero = model("hero", HERO_GLB, "hero", [0.0; 3], 1.0, [255, 200, 120]);
         hero.emissive = Some(0.05);
@@ -1317,6 +1450,21 @@ impl StationEscape {
             let p = &mut props[self.slots.meteors + i];
             p.yaw = self.clock * (0.05 + 0.03 * i as f32);
             p.roll = self.clock * 0.04;
+        }
+        for (i, d) in st.drones.iter().enumerate() {
+            let (x, y, dir) = d.at(t);
+            let p = &mut props[self.slots.drones[i]];
+            p.enabled = self.foes.alive[i];
+            p.position = [x, y - 0.25, 0.0];
+            p.yaw = dir * std::f32::consts::FRAC_PI_2;
+            p.roll = 0.15 * (self.clock * 3.0 + i as f32).sin();
+        }
+        for (i, b) in self.foes.bolts.iter().enumerate() {
+            let p = &mut props[self.slots.bolts + i];
+            p.enabled = b.is_some();
+            if let Some(b) = b {
+                p.position = [b[0], b[1], 0.0];
+            }
         }
         for (i, pf) in self.puffs.iter().enumerate() {
             let p = &mut props[self.slots.puffs + i];
@@ -1612,7 +1760,7 @@ impl StationEscape {
         let Some(tl) = self.tallies.last() else {
             return;
         };
-        let tall = 220.0 * s;
+        let tall = 250.0 * s;
         let (x, y, cw) = self.card(list, w, h, s, tall);
         list.texts.push(
             TextQuad::new(
@@ -1633,6 +1781,7 @@ impl StationEscape {
             ),
             (self.tr("Cells", "セル"), format!("{} / {total}", tl.cells)),
             (self.tr("Falls", "ミス"), format!("{}", tl.falls)),
+            (self.tr("Drones", "ドローン"), format!("{}", tl.wrecks)),
             (self.tr("Score", "スコア"), format!("{}", tl.score)),
         ];
         for (i, (k, v)) in rows.iter().enumerate() {
@@ -1687,6 +1836,7 @@ impl StationEscape {
             "secs": self.t,
             "cells": self.got.iter().filter(|g| **g).count(),
             "falls": self.falls,
+            "wrecks": self.wrecks,
             "pos": [self.body.x, self.body.y],
             "win": self.win,
             "death": self.core.stats.death,

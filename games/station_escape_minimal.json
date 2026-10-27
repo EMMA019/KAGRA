@@ -19,6 +19,9 @@
     "lang": true,
     "pause": true,
     "fixed_step": true,
-    "blurb": "blurb.escape"
+    "blurb": "blurb.escape",
+    "url_params": {
+      "stage": "string"
+    }
   }
 }
