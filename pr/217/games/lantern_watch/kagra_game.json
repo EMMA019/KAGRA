@@ -1,0 +1,7 @@
+{
+  "title": "Lantern Watch",
+  "version": "0.1.0",
+  "slug": "lantern_watch",
+  "entry": "examples/lantern_watch_minimal.py",
+  "world": "kagra-shared/tests/fixtures/lantern_watch_world.json"
+}

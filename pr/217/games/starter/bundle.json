@@ -1,0 +1,118 @@
+{
+  "slug": "starter",
+  "title": "Starter",
+  "version": "0.1.0",
+  "genre": "starter",
+  "world": "world.json",
+  "files": [
+    {
+      "path": "world.json",
+      "url": "games/starter/world.json",
+      "v": "9268726902"
+    },
+    {
+      "path": "kagra_game.json",
+      "url": "games/starter/kagra_game.json",
+      "v": "8a932d7421"
+    },
+    {
+      "path": "assets/audio/kenney-interface-sounds/CREDITS.md",
+      "url": "assets/audio/kenney-interface-sounds/CREDITS.md",
+      "v": "9ddac4c23d"
+    },
+    {
+      "path": "assets/audio/kenney-interface-sounds/LICENSE.txt",
+      "url": "assets/audio/kenney-interface-sounds/LICENSE.txt",
+      "v": "f7966c773b"
+    },
+    {
+      "path": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+      "url": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+      "v": "fe58f3600c"
+    },
+    {
+      "path": "assets/audio/oga-flowerbed-fields/CREDITS.md",
+      "url": "assets/audio/oga-flowerbed-fields/CREDITS.md",
+      "v": "d9caacbc3c"
+    },
+    {
+      "path": "assets/audio/oga-flowerbed-fields/LICENSE.txt",
+      "url": "assets/audio/oga-flowerbed-fields/LICENSE.txt",
+      "v": "aa1d8df4be"
+    },
+    {
+      "path": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+      "url": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+      "v": "8be3009beb"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/CREDITS.md",
+      "url": "assets/audio/oga-retro-synth-sfx/CREDITS.md",
+      "v": "7f18cd6513"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/LICENSE.txt",
+      "url": "assets/audio/oga-retro-synth-sfx/LICENSE.txt",
+      "v": "f7cb95a5fe"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+      "v": "770685003f"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+      "v": "50b01a7974"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+      "v": "955fbf6c23"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+      "v": "8dde50e1fe"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+      "v": "8ac1eb6e4c"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+      "v": "c41ef1b321"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+      "v": "5d7d10947f"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/character-ghost.glb",
+      "url": "assets/models/kenney/graveyard-kit/character-ghost.glb",
+      "v": "ab84783450"
+    },
+    {
+      "path": "assets/models/kenney/mini-characters/character-female-a.glb",
+      "url": "assets/models/kenney/mini-characters/character-female-a.glb",
+      "v": "842fa6ba7b"
+    },
+    {
+      "path": "assets/models/kenney/platformer-kit/jewel.glb",
+      "url": "assets/models/kenney/platformer-kit/jewel.glb",
+      "v": "d0169e703c"
+    }
+  ],
+  "page": {
+    "best": true,
+    "audio": true,
+    "lang": true,
+    "pause": true,
+    "fixed_step": true,
+    "blurb": "blurb.stick"
+  },
+  "build": "2160c66d2c53"
+}

@@ -1,0 +1,66 @@
+{
+  "game": {
+    "audio": {
+      "bgm": {
+        "fade_secs": 0.5,
+        "file": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+        "volume": 0.5
+      },
+      "bgm_volume": 0.5,
+      "enabled": true,
+      "master": 0.8,
+      "sfx": {
+        "chest": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+          "rate": 1.2,
+          "volume": 0.6
+        },
+        "gameover": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+          "rate": 1.0,
+          "volume": 0.8
+        },
+        "go": {
+          "file": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+          "rate": 1.0,
+          "volume": 0.7
+        },
+        "land": {
+          "file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+          "rate": 0.8,
+          "volume": 0.6
+        },
+        "miss": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+          "rate": 1.0,
+          "volume": 0.6
+        },
+        "perfect": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+          "rate": 1.0,
+          "volume": 0.5
+        }
+      },
+      "sfx_volume": 1.0
+    },
+    "chest_every": 10,
+    "chest_score": 50,
+    "crate_score": 10,
+    "drop_speed": 14.0,
+    "hover": 2.4,
+    "id": "crate_tower",
+    "land_tol": 0.7,
+    "lean_limit": 0.42,
+    "lives": 3,
+    "perfect_score": 5,
+    "perfect_tol": 0.1,
+    "size": 1.0,
+    "speed": 1.7,
+    "speed_max": 4.6,
+    "speed_per": 0.07,
+    "swing": 2.0,
+    "title": "Crate Tower"
+  },
+  "genre": "crate_tower",
+  "version": 1
+}
