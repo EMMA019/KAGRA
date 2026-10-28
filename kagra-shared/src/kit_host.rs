@@ -46,6 +46,9 @@ pub trait KitHost: Debug + Any {
     fn hud(&self, width: u32, height: u32, menu: bool) -> DrawList;
     /// Stick or key steering, already filtered to the frames that take it.
     fn walk(&mut self, lx: f32, lz: f32, jump: bool);
+    /// The second and third buttons held (keys J / K / Shift, a gamepad's B or X), for kits
+    /// with more than a jump. Kits with none ignore them.
+    fn buttons(&mut self, _attack: bool, _dodge: bool) {}
     /// Every pointer event, for swipe and flick gestures (`t`: seconds on the frame clock).
     fn touch(&mut self, _ev: PointerEvent, _width: u32, _height: u32, _t: f32) {}
     /// Hosts drop their own touch steering and action buttons when true.
@@ -98,6 +101,11 @@ pub const KITS: &[(Detect, Load)] = &[
     }),
     (crate::crate_tower::is_crate_tower_dump, |json| {
         Ok(Box::new(crate::crate_tower::CrateTower::from_json(json)?))
+    }),
+    (crate::station_escape::is_station_escape_dump, |json| {
+        Ok(Box::new(crate::station_escape::StationEscape::from_json(
+            json,
+        )?))
     }),
     // new_kit.py adds kits above this line.
 ];

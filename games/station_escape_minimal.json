@@ -1,0 +1,27 @@
+{
+  "title": "Station Escape",
+  "icon": "assets/icons/game_placeholder.png",
+  "version": "0.1.0",
+  "entry": "examples/station_escape_minimal.py",
+  "world": "kagra-shared/tests/fixtures/station_escape_world.json",
+  "bundle_assets": [
+    "assets/audio/oga-retro-synth-sfx",
+    "assets/audio/kenney-interface-sounds",
+    "assets/audio/kenney-impact-sounds",
+    "assets/audio/oga-flowerbed-fields",
+    "assets/models/kenney/mini-characters/character-female-d.glb",
+    "assets/models/kenney/platformer-kit/jewel.glb",
+    "assets/models/kenney/space-kit"
+  ],
+  "page": {
+    "best": true,
+    "audio": true,
+    "lang": true,
+    "pause": true,
+    "fixed_step": true,
+    "blurb": "blurb.escape",
+    "url_params": {
+      "stage": "string"
+    }
+  }
+}

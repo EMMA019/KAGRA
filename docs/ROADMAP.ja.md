@@ -23,7 +23,7 @@ GameMonetize、GameDistribution など。Poki は後）に出して広告で回�
 
 | 分類 | 中身 |
 |---|---|
-| ゲーム | HOP-BEAT（リズムで跳ぶ）、Neon Cat（3 レーンランナー）、Moonlit Swarm（サバイバー系）、Lantern Watch（タップで亡者を払う防衛）、Crate Tower（ワンボタンで箱を積む）、Starter（テンプレート） |
+| ゲーム | HOP-BEAT（リズムで跳ぶ）、Neon Cat（3 レーンランナー）、Moonlit Swarm（サバイバー系）、Lantern Watch（タップで亡者を払う防衛）、Crate Tower（ワンボタンで箱を積む）、Station Escape（横向きの脱出アクション、制作中）、Starter（テンプレート） |
 | 共有部品 | 固定ステップ駆動、ライフ、ミッション、結果、手触り（ヒットストップ・揺れ）、敵の JSON 定義、群れ（プール・グリッド・出現予算）、スティック、群れの体の動き、角丸パネル・ゲージ・ボタン |
 | 描画 | wgpu 30（WebGPU / WebGL2 / ネイティブ）、HDR ブルーム、影、画質段階（safe〜max）、角丸の 2D、グリフアトラスの文字、和文フォント（Zen Maru Gothic）と数字用（Cinzel） |
 | ページ | 全ゲーム共通の `play.html`（機能はマニフェストの `page`）、メタ層（コイン・ショップ・デイリー）、ポータル広告、計測（`?dev=1`）、黒画面対策（PowerVR の上限、空白フレームの検出、画面にエラー表示） |
