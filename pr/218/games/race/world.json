@@ -1,0 +1,1417 @@
+{
+  "version": 1,
+  "genre": "race_drive",
+  "half": 24.0,
+  "floor_y": 0.0,
+  "gravity": 9.8,
+  "water_y": null,
+  "coins": 0,
+  "ground": false,
+  "sky": [
+    142,
+    186,
+    224,
+    255
+  ],
+  "ibl": 0.4,
+  "exposure": 1.05,
+  "player": {
+    "id": "walker:player",
+    "type": "walker",
+    "name": "player",
+    "position": [
+      2.4,
+      0.55,
+      6.3
+    ],
+    "yaw": 1.5708,
+    "face": 1.5708,
+    "on_ground": true,
+    "model": "capsule"
+  },
+  "props": [
+    {
+      "id": "prop:floor",
+      "type": "prop",
+      "name": "floor",
+      "position": [
+        0,
+        -0.06,
+        0
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        48,
+        0.12,
+        40
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        58,
+        92,
+        58
+      ],
+      "metallic": 0.0,
+      "roughness": 0.92
+    },
+    {
+      "id": "prop:infield",
+      "type": "prop",
+      "name": "infield",
+      "position": [
+        0,
+        0.02,
+        0
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        12,
+        0.08,
+        8
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        72,
+        118,
+        64
+      ],
+      "metallic": 0.0,
+      "roughness": 0.9
+    },
+    {
+      "id": "prop:road-00",
+      "type": "prop",
+      "name": "road",
+      "position": [
+        -9.0,
+        0.04,
+        6.2
+      ],
+      "yaw": 0.0,
+      "model": "road_straight",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/road_straight.gltf",
+      "scale": [
+        2.3,
+        1.0,
+        2.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        94,
+        98
+      ],
+      "metallic": 0.04,
+      "roughness": 0.72
+    },
+    {
+      "id": "prop:road-01",
+      "type": "prop",
+      "name": "road",
+      "position": [
+        -9.0,
+        0.04,
+        -6.4
+      ],
+      "yaw": 0.0,
+      "model": "road_straight",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/road_straight.gltf",
+      "scale": [
+        2.3,
+        1.0,
+        2.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        94,
+        98
+      ],
+      "metallic": 0.04,
+      "roughness": 0.72
+    },
+    {
+      "id": "prop:road-02",
+      "type": "prop",
+      "name": "road",
+      "position": [
+        -4.5,
+        0.04,
+        6.2
+      ],
+      "yaw": 0.0,
+      "model": "road_straight",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/road_straight.gltf",
+      "scale": [
+        2.3,
+        1.0,
+        2.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        94,
+        98
+      ],
+      "metallic": 0.04,
+      "roughness": 0.72
+    },
+    {
+      "id": "prop:road-03",
+      "type": "prop",
+      "name": "road",
+      "position": [
+        -4.5,
+        0.04,
+        -6.4
+      ],
+      "yaw": 0.0,
+      "model": "road_straight",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/road_straight.gltf",
+      "scale": [
+        2.3,
+        1.0,
+        2.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        94,
+        98
+      ],
+      "metallic": 0.04,
+      "roughness": 0.72
+    },
+    {
+      "id": "prop:road-04",
+      "type": "prop",
+      "name": "road",
+      "position": [
+        0.0,
+        0.04,
+        6.2
+      ],
+      "yaw": 0.0,
+      "model": "road_straight",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/road_straight.gltf",
+      "scale": [
+        2.3,
+        1.0,
+        2.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        94,
+        98
+      ],
+      "metallic": 0.04,
+      "roughness": 0.72
+    },
+    {
+      "id": "prop:road-05",
+      "type": "prop",
+      "name": "road",
+      "position": [
+        0.0,
+        0.04,
+        -6.4
+      ],
+      "yaw": 0.0,
+      "model": "road_straight",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/road_straight.gltf",
+      "scale": [
+        2.3,
+        1.0,
+        2.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        94,
+        98
+      ],
+      "metallic": 0.04,
+      "roughness": 0.72
+    },
+    {
+      "id": "prop:road-06",
+      "type": "prop",
+      "name": "road",
+      "position": [
+        4.5,
+        0.04,
+        6.2
+      ],
+      "yaw": 0.0,
+      "model": "road_straight",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/road_straight.gltf",
+      "scale": [
+        2.3,
+        1.0,
+        2.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        94,
+        98
+      ],
+      "metallic": 0.04,
+      "roughness": 0.72
+    },
+    {
+      "id": "prop:road-07",
+      "type": "prop",
+      "name": "road",
+      "position": [
+        4.5,
+        0.04,
+        -6.4
+      ],
+      "yaw": 0.0,
+      "model": "road_straight",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/road_straight.gltf",
+      "scale": [
+        2.3,
+        1.0,
+        2.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        94,
+        98
+      ],
+      "metallic": 0.04,
+      "roughness": 0.72
+    },
+    {
+      "id": "prop:road-08",
+      "type": "prop",
+      "name": "road",
+      "position": [
+        9.0,
+        0.04,
+        6.2
+      ],
+      "yaw": 0.0,
+      "model": "road_straight",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/road_straight.gltf",
+      "scale": [
+        2.3,
+        1.0,
+        2.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        94,
+        98
+      ],
+      "metallic": 0.04,
+      "roughness": 0.72
+    },
+    {
+      "id": "prop:road-09",
+      "type": "prop",
+      "name": "road",
+      "position": [
+        9.0,
+        0.04,
+        -6.4
+      ],
+      "yaw": 0.0,
+      "model": "road_straight",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/road_straight.gltf",
+      "scale": [
+        2.3,
+        1.0,
+        2.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        94,
+        98
+      ],
+      "metallic": 0.04,
+      "roughness": 0.72
+    },
+    {
+      "id": "prop:road-10",
+      "type": "prop",
+      "name": "road",
+      "position": [
+        10.5,
+        0.04,
+        -2.2
+      ],
+      "yaw": 0.0,
+      "model": "road_straight",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/road_straight.gltf",
+      "scale": [
+        2.3,
+        1.0,
+        2.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        94,
+        98
+      ],
+      "metallic": 0.04,
+      "roughness": 0.72
+    },
+    {
+      "id": "prop:road-11",
+      "type": "prop",
+      "name": "road",
+      "position": [
+        -10.5,
+        0.04,
+        -2.2
+      ],
+      "yaw": 0.0,
+      "model": "road_straight",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/road_straight.gltf",
+      "scale": [
+        2.3,
+        1.0,
+        2.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        94,
+        98
+      ],
+      "metallic": 0.04,
+      "roughness": 0.72
+    },
+    {
+      "id": "prop:road-12",
+      "type": "prop",
+      "name": "road",
+      "position": [
+        10.5,
+        0.04,
+        2.2
+      ],
+      "yaw": 0.0,
+      "model": "road_straight",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/road_straight.gltf",
+      "scale": [
+        2.3,
+        1.0,
+        2.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        94,
+        98
+      ],
+      "metallic": 0.04,
+      "roughness": 0.72
+    },
+    {
+      "id": "prop:road-13",
+      "type": "prop",
+      "name": "road",
+      "position": [
+        -10.5,
+        0.04,
+        2.2
+      ],
+      "yaw": 0.0,
+      "model": "road_straight",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/road_straight.gltf",
+      "scale": [
+        2.3,
+        1.0,
+        2.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        94,
+        98
+      ],
+      "metallic": 0.04,
+      "roughness": 0.72
+    },
+    {
+      "id": "prop:road-100",
+      "type": "prop",
+      "name": "road",
+      "position": [
+        9.2,
+        0.04,
+        5.4
+      ],
+      "yaw": 0.0,
+      "model": "road_corner",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/road_corner.gltf",
+      "scale": [
+        2.3,
+        1.0,
+        2.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        94,
+        98
+      ],
+      "metallic": 0.04,
+      "roughness": 0.72
+    },
+    {
+      "id": "prop:road-101",
+      "type": "prop",
+      "name": "road",
+      "position": [
+        9.2,
+        0.04,
+        -5.4
+      ],
+      "yaw": 1.5708,
+      "model": "road_corner",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/road_corner.gltf",
+      "scale": [
+        2.3,
+        1.0,
+        2.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        94,
+        98
+      ],
+      "metallic": 0.04,
+      "roughness": 0.72
+    },
+    {
+      "id": "prop:road-102",
+      "type": "prop",
+      "name": "road",
+      "position": [
+        -9.2,
+        0.04,
+        -5.4
+      ],
+      "yaw": 3.1416,
+      "model": "road_corner",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/road_corner.gltf",
+      "scale": [
+        2.3,
+        1.0,
+        2.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        94,
+        98
+      ],
+      "metallic": 0.04,
+      "roughness": 0.72
+    },
+    {
+      "id": "prop:road-103",
+      "type": "prop",
+      "name": "road",
+      "position": [
+        -9.2,
+        0.04,
+        5.4
+      ],
+      "yaw": -1.5708,
+      "model": "road_corner",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/road_corner.gltf",
+      "scale": [
+        2.3,
+        1.0,
+        2.3
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        94,
+        98
+      ],
+      "metallic": 0.04,
+      "roughness": 0.72
+    },
+    {
+      "id": "prop:finish",
+      "type": "prop",
+      "name": "finish",
+      "position": [
+        0.0,
+        0.16,
+        6.2
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        2.4,
+        0.12,
+        7.0
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        240,
+        210,
+        64
+      ],
+      "metallic": 0.1,
+      "roughness": 0.4
+    },
+    {
+      "id": "prop:split",
+      "type": "prop",
+      "name": "split",
+      "position": [
+        0.0,
+        0.16,
+        -6.4
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        2.4,
+        0.12,
+        7.0
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        220,
+        230,
+        240
+      ],
+      "metallic": 0.05,
+      "roughness": 0.45
+    },
+    {
+      "id": "prop:flag",
+      "type": "prop",
+      "name": "flag",
+      "position": [
+        0.0,
+        0.0,
+        9.4
+      ],
+      "yaw": 0.0,
+      "model": "trafficlight",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/trafficlight_A.gltf",
+      "scale": [
+        2.2,
+        2.2,
+        2.2
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        240,
+        64,
+        48
+      ],
+      "metallic": 0.15,
+      "roughness": 0.45
+    },
+    {
+      "id": "prop:car",
+      "type": "prop",
+      "name": "car",
+      "position": [
+        2.4,
+        0.22,
+        6.3
+      ],
+      "yaw": 1.5708,
+      "model": "car_sedan",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/car_sedan.gltf",
+      "scale": [
+        3.4,
+        3.4,
+        3.4
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        196,
+        54,
+        42
+      ],
+      "metallic": 0.35,
+      "roughness": 0.32
+    },
+    {
+      "id": "prop:ghost",
+      "type": "prop",
+      "name": "ghost",
+      "position": [
+        2.4,
+        0.3,
+        6.3
+      ],
+      "yaw": 1.5708,
+      "model": "car_taxi",
+      "gltf": "assets/library/kaykit/city-builder-bits/gltf/car_taxi.gltf",
+      "scale": [
+        3.4,
+        3.4,
+        3.4
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        232,
+        196,
+        64
+      ],
+      "metallic": 0.2,
+      "roughness": 0.4
+    },
+    {
+      "id": "prop:wp-00",
+      "type": "prop",
+      "name": "waypoint",
+      "position": [
+        0.0,
+        0.0,
+        6.2
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.4,
+        0.4,
+        0.4
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        0,
+        0,
+        0
+      ],
+      "metallic": 0.02,
+      "roughness": 0.86
+    },
+    {
+      "id": "prop:wp-01",
+      "type": "prop",
+      "name": "waypoint",
+      "position": [
+        4.0,
+        0.0,
+        6.4
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.4,
+        0.4,
+        0.4
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        0,
+        0,
+        0
+      ],
+      "metallic": 0.02,
+      "roughness": 0.86
+    },
+    {
+      "id": "prop:wp-02",
+      "type": "prop",
+      "name": "waypoint",
+      "position": [
+        8.0,
+        0.0,
+        5.6
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.4,
+        0.4,
+        0.4
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        0,
+        0,
+        0
+      ],
+      "metallic": 0.02,
+      "roughness": 0.86
+    },
+    {
+      "id": "prop:wp-03",
+      "type": "prop",
+      "name": "waypoint",
+      "position": [
+        10.4,
+        0.0,
+        2.4
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.4,
+        0.4,
+        0.4
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        0,
+        0,
+        0
+      ],
+      "metallic": 0.02,
+      "roughness": 0.86
+    },
+    {
+      "id": "prop:wp-04",
+      "type": "prop",
+      "name": "waypoint",
+      "position": [
+        10.6,
+        0.0,
+        -1.6
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.4,
+        0.4,
+        0.4
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        0,
+        0,
+        0
+      ],
+      "metallic": 0.02,
+      "roughness": 0.86
+    },
+    {
+      "id": "prop:wp-05",
+      "type": "prop",
+      "name": "waypoint",
+      "position": [
+        8.2,
+        0.0,
+        -5.4
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.4,
+        0.4,
+        0.4
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        0,
+        0,
+        0
+      ],
+      "metallic": 0.02,
+      "roughness": 0.86
+    },
+    {
+      "id": "prop:wp-06",
+      "type": "prop",
+      "name": "waypoint",
+      "position": [
+        4.0,
+        0.0,
+        -6.4
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.4,
+        0.4,
+        0.4
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        0,
+        0,
+        0
+      ],
+      "metallic": 0.02,
+      "roughness": 0.86
+    },
+    {
+      "id": "prop:wp-07",
+      "type": "prop",
+      "name": "waypoint",
+      "position": [
+        0.0,
+        0.0,
+        -6.4
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.4,
+        0.4,
+        0.4
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        0,
+        0,
+        0
+      ],
+      "metallic": 0.02,
+      "roughness": 0.86
+    },
+    {
+      "id": "prop:wp-08",
+      "type": "prop",
+      "name": "waypoint",
+      "position": [
+        -4.0,
+        0.0,
+        -6.4
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.4,
+        0.4,
+        0.4
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        0,
+        0,
+        0
+      ],
+      "metallic": 0.02,
+      "roughness": 0.86
+    },
+    {
+      "id": "prop:wp-09",
+      "type": "prop",
+      "name": "waypoint",
+      "position": [
+        -8.2,
+        0.0,
+        -5.4
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.4,
+        0.4,
+        0.4
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        0,
+        0,
+        0
+      ],
+      "metallic": 0.02,
+      "roughness": 0.86
+    },
+    {
+      "id": "prop:wp-10",
+      "type": "prop",
+      "name": "waypoint",
+      "position": [
+        -10.6,
+        0.0,
+        -1.6
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.4,
+        0.4,
+        0.4
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        0,
+        0,
+        0
+      ],
+      "metallic": 0.02,
+      "roughness": 0.86
+    },
+    {
+      "id": "prop:wp-11",
+      "type": "prop",
+      "name": "waypoint",
+      "position": [
+        -10.4,
+        0.0,
+        2.4
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.4,
+        0.4,
+        0.4
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        0,
+        0,
+        0
+      ],
+      "metallic": 0.02,
+      "roughness": 0.86
+    },
+    {
+      "id": "prop:wp-12",
+      "type": "prop",
+      "name": "waypoint",
+      "position": [
+        -8.0,
+        0.0,
+        5.6
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.4,
+        0.4,
+        0.4
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        0,
+        0,
+        0
+      ],
+      "metallic": 0.02,
+      "roughness": 0.86
+    },
+    {
+      "id": "prop:wp-13",
+      "type": "prop",
+      "name": "waypoint",
+      "position": [
+        -4.0,
+        0.0,
+        6.4
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.4,
+        0.4,
+        0.4
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        0,
+        0,
+        0
+      ],
+      "metallic": 0.02,
+      "roughness": 0.86
+    },
+    {
+      "id": "prop:laps",
+      "type": "prop",
+      "name": "laps",
+      "position": [
+        0.0,
+        -6.0,
+        0.0
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        3.0,
+        1.0,
+        1.0
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        0,
+        0,
+        0
+      ],
+      "metallic": 0.02,
+      "roughness": 0.86
+    },
+    {
+      "id": "prop:wall-n",
+      "type": "prop",
+      "name": "wall",
+      "position": [
+        0,
+        0.6,
+        14.5
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        32,
+        1.2,
+        0.8
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        70,
+        74,
+        78
+      ],
+      "metallic": 0.02,
+      "roughness": 0.8
+    },
+    {
+      "id": "prop:wall-s",
+      "type": "prop",
+      "name": "wall",
+      "position": [
+        0,
+        0.6,
+        -14.5
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        32,
+        1.2,
+        0.8
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        70,
+        74,
+        78
+      ],
+      "metallic": 0.02,
+      "roughness": 0.8
+    },
+    {
+      "id": "prop:wall-e",
+      "type": "prop",
+      "name": "wall",
+      "position": [
+        16.5,
+        0.6,
+        0
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.8,
+        1.2,
+        26
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        70,
+        74,
+        78
+      ],
+      "metallic": 0.02,
+      "roughness": 0.8
+    },
+    {
+      "id": "prop:wall-w",
+      "type": "prop",
+      "name": "wall",
+      "position": [
+        -16.5,
+        0.6,
+        0
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.8,
+        1.2,
+        26
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        70,
+        74,
+        78
+      ],
+      "metallic": 0.02,
+      "roughness": 0.8
+    },
+    {
+      "id": "prop:tree-a",
+      "type": "prop",
+      "name": "tree",
+      "position": [
+        -6.5,
+        0.0,
+        2.2
+      ],
+      "yaw": 0.4,
+      "model": "stylized_tree",
+      "gltf": "stylized_tree",
+      "scale": [
+        0.55,
+        0.55,
+        0.55
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        64,
+        120,
+        62
+      ],
+      "metallic": 0.02,
+      "roughness": 0.86
+    },
+    {
+      "id": "prop:pine-a",
+      "type": "prop",
+      "name": "pine",
+      "position": [
+        5.5,
+        0.0,
+        -1.4
+      ],
+      "yaw": -0.2,
+      "model": "stylized_pine",
+      "gltf": "stylized_pine",
+      "scale": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        42,
+        96,
+        70
+      ],
+      "metallic": 0.02,
+      "roughness": 0.86
+    },
+    {
+      "id": "prop:rock-a",
+      "type": "prop",
+      "name": "rock",
+      "position": [
+        14.2,
+        0.35,
+        8.5
+      ],
+      "yaw": 0.6,
+      "model": "rock",
+      "gltf": "rock",
+      "scale": [
+        0.7,
+        0.5,
+        0.7
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        140,
+        136,
+        128
+      ],
+      "metallic": 0.02,
+      "roughness": 0.9
+    },
+    {
+      "id": "prop:rock-b",
+      "type": "prop",
+      "name": "rock",
+      "position": [
+        -13.6,
+        0.3,
+        -8.0
+      ],
+      "yaw": 1.1,
+      "model": "rock",
+      "gltf": "rock",
+      "scale": [
+        0.55,
+        0.4,
+        0.55
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        128,
+        124,
+        118
+      ],
+      "metallic": 0.02,
+      "roughness": 0.9
+    }
+  ],
+  "walkers": [
+    {
+      "id": "walker:player",
+      "type": "walker",
+      "name": "player",
+      "position": [
+        2.4,
+        0.55,
+        6.3
+      ],
+      "yaw": 1.5708,
+      "face": 1.5708,
+      "on_ground": true,
+      "model": "capsule"
+    }
+  ],
+  "lights": [
+    {
+      "id": "light:0",
+      "type": "light",
+      "name": "key",
+      "position": [
+        4.0,
+        12.0,
+        10.0
+      ],
+      "kind": "point",
+      "slot": 0,
+      "intensity": 1.4,
+      "radius": 40.0,
+      "color": [
+        1.0,
+        0.96,
+        0.9
+      ],
+      "direction": null
+    },
+    {
+      "id": "light:1",
+      "type": "light",
+      "name": "fill",
+      "position": [
+        -10.0,
+        8.0,
+        -6.0
+      ],
+      "kind": "point",
+      "slot": 1,
+      "intensity": 0.5,
+      "radius": 32.0,
+      "color": [
+        0.7,
+        0.82,
+        1.0
+      ],
+      "direction": null
+    }
+  ],
+  "cameras": [
+    {
+      "id": "camera:main",
+      "type": "camera",
+      "name": "chase",
+      "position": [
+        -4.0,
+        14.5,
+        18.0
+      ],
+      "target": [
+        1.0,
+        0.6,
+        1.0
+      ],
+      "fov": 48.0
+    }
+  ],
+  "timers": [
+    {
+      "id": "timer:lap",
+      "type": "timer",
+      "name": "lap",
+      "seconds": 0.0,
+      "remaining": 0.0,
+      "active": false
+    }
+  ],
+  "heightfield": null
+}
