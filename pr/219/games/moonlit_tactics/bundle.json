@@ -1,0 +1,243 @@
+{
+  "slug": "moonlit_tactics",
+  "title": "Moonlit Tactics",
+  "version": "0.1.0",
+  "genre": "moonlit_tactics",
+  "world": "world.json",
+  "files": [
+    {
+      "path": "world.json",
+      "url": "games/moonlit_tactics/world.json",
+      "v": "75b6549eeb"
+    },
+    {
+      "path": "kagra_game.json",
+      "url": "games/moonlit_tactics/kagra_game.json",
+      "v": "8744af60f1"
+    },
+    {
+      "path": "assets/audio/kenney-impact-sounds/CREDITS.md",
+      "url": "assets/audio/kenney-impact-sounds/CREDITS.md",
+      "v": "128b6be073"
+    },
+    {
+      "path": "assets/audio/kenney-impact-sounds/LICENSE.txt",
+      "url": "assets/audio/kenney-impact-sounds/LICENSE.txt",
+      "v": "b49aa9c56b"
+    },
+    {
+      "path": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+      "url": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+      "v": "3eba73bda8"
+    },
+    {
+      "path": "assets/audio/kenney-interface-sounds/CREDITS.md",
+      "url": "assets/audio/kenney-interface-sounds/CREDITS.md",
+      "v": "9ddac4c23d"
+    },
+    {
+      "path": "assets/audio/kenney-interface-sounds/LICENSE.txt",
+      "url": "assets/audio/kenney-interface-sounds/LICENSE.txt",
+      "v": "f7966c773b"
+    },
+    {
+      "path": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+      "url": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+      "v": "fe58f3600c"
+    },
+    {
+      "path": "assets/audio/oga-flowerbed-fields/CREDITS.md",
+      "url": "assets/audio/oga-flowerbed-fields/CREDITS.md",
+      "v": "d9caacbc3c"
+    },
+    {
+      "path": "assets/audio/oga-flowerbed-fields/LICENSE.txt",
+      "url": "assets/audio/oga-flowerbed-fields/LICENSE.txt",
+      "v": "aa1d8df4be"
+    },
+    {
+      "path": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+      "url": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+      "v": "8be3009beb"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/CREDITS.md",
+      "url": "assets/audio/oga-retro-synth-sfx/CREDITS.md",
+      "v": "7f18cd6513"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/LICENSE.txt",
+      "url": "assets/audio/oga-retro-synth-sfx/LICENSE.txt",
+      "v": "f7cb95a5fe"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+      "v": "770685003f"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+      "v": "50b01a7974"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+      "v": "955fbf6c23"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+      "v": "8dde50e1fe"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+      "v": "8ac1eb6e4c"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+      "v": "c41ef1b321"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+      "v": "5d7d10947f"
+    },
+    {
+      "path": "assets/audio/oga-wet-squish/CREDITS.md",
+      "url": "assets/audio/oga-wet-squish/CREDITS.md",
+      "v": "935afd1ce8"
+    },
+    {
+      "path": "assets/audio/oga-wet-squish/LICENSE.txt",
+      "url": "assets/audio/oga-wet-squish/LICENSE.txt",
+      "v": "25e5997e61"
+    },
+    {
+      "path": "assets/audio/oga-wet-squish/impactsplat03.wav",
+      "url": "assets/audio/oga-wet-squish/impactsplat03.wav",
+      "v": "73e236ba1e"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/CREDITS.md",
+      "url": "assets/models/kenney/graveyard-kit/CREDITS.md",
+      "v": "0fb9c8859a"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/LICENSE.txt",
+      "url": "assets/models/kenney/graveyard-kit/LICENSE.txt",
+      "v": "a48e274258"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/character-ghost.glb",
+      "url": "assets/models/kenney/graveyard-kit/character-ghost.glb",
+      "v": "ab84783450"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/character-keeper.glb",
+      "url": "assets/models/kenney/graveyard-kit/character-keeper.glb",
+      "v": "87cf7d5a68"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/character-skeleton.glb",
+      "url": "assets/models/kenney/graveyard-kit/character-skeleton.glb",
+      "v": "9bae971506"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/character-vampire.glb",
+      "url": "assets/models/kenney/graveyard-kit/character-vampire.glb",
+      "v": "49e536a3ed"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/character-zombie.glb",
+      "url": "assets/models/kenney/graveyard-kit/character-zombie.glb",
+      "v": "bcde4b6959"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/cross-wood.glb",
+      "url": "assets/models/kenney/graveyard-kit/cross-wood.glb",
+      "v": "cba0b86a94"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/gravestone-broken.glb",
+      "url": "assets/models/kenney/graveyard-kit/gravestone-broken.glb",
+      "v": "37d00f0453"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/gravestone-cross.glb",
+      "url": "assets/models/kenney/graveyard-kit/gravestone-cross.glb",
+      "v": "c272c76091"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/gravestone-round.glb",
+      "url": "assets/models/kenney/graveyard-kit/gravestone-round.glb",
+      "v": "c735f7d48a"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/lantern-candle.glb",
+      "url": "assets/models/kenney/graveyard-kit/lantern-candle.glb",
+      "v": "831e09353c"
+    },
+    {
+      "path": "assets/models/kenney/graveyard-kit/pumpkin-carved.glb",
+      "url": "assets/models/kenney/graveyard-kit/pumpkin-carved.glb",
+      "v": "81f50d568a"
+    },
+    {
+      "path": "assets/models/kenney/mini-arena/column.glb",
+      "url": "assets/models/kenney/mini-arena/column.glb",
+      "v": "678560e9db"
+    },
+    {
+      "path": "assets/models/kenney/mini-characters/CREDITS.md",
+      "url": "assets/models/kenney/mini-characters/CREDITS.md",
+      "v": "fd5088d1e9"
+    },
+    {
+      "path": "assets/models/kenney/mini-characters/LICENSE.txt",
+      "url": "assets/models/kenney/mini-characters/LICENSE.txt",
+      "v": "28358ae5ac"
+    },
+    {
+      "path": "assets/models/kenney/mini-characters/character-female-a.glb",
+      "url": "assets/models/kenney/mini-characters/character-female-a.glb",
+      "v": "842fa6ba7b"
+    },
+    {
+      "path": "assets/models/kenney/mini-characters/character-female-d.glb",
+      "url": "assets/models/kenney/mini-characters/character-female-d.glb",
+      "v": "d1899501dd"
+    },
+    {
+      "path": "assets/models/kenney/mini-characters/character-male-a.glb",
+      "url": "assets/models/kenney/mini-characters/character-male-a.glb",
+      "v": "03cbe0ffe4"
+    },
+    {
+      "path": "assets/models/kenney/mini-characters/character-male-c.glb",
+      "url": "assets/models/kenney/mini-characters/character-male-c.glb",
+      "v": "08eaba8235"
+    },
+    {
+      "path": "assets/models/kenney/mini-characters/character-male-e.glb",
+      "url": "assets/models/kenney/mini-characters/character-male-e.glb",
+      "v": "de44b78bcf"
+    },
+    {
+      "path": "assets/models/tree.glb",
+      "url": "assets/models/tree.glb",
+      "v": "d7fd877367"
+    }
+  ],
+  "page": {
+    "best": true,
+    "audio": true,
+    "lang": true,
+    "pause": true,
+    "fixed_step": true,
+    "blurb": "blurb.tactics"
+  },
+  "build": "a8cab221e2a8"
+}
