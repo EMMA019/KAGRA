@@ -71,3 +71,11 @@ def test_the_page_switches_features_from_the_manifest_not_the_genre():
         assert gone not in html, gone
     assert not re.search(r"world\.genre === \"", html), "no genre branches in the page"
     assert not re.search(r"slug === \"", html), "no game-name branches in the page"
+
+
+def test_page_save_keeps_a_kits_progress_per_game():
+    assert normalize_page({"save": True}) == {"save": True}
+    html = PLAY.read_text(encoding="utf-8")
+    assert "kagra.save.v1.${slug}" in html, "one key per game"
+    assert "world.save = kept" in html, "handed back to the kit at load"
+    assert "session.kitSaveJson()" in html and "if (!page.save" in html, "only for games that ask"

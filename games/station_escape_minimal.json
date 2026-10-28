@@ -22,6 +22,7 @@
     "blurb": "blurb.escape",
     "url_params": {
       "stage": "string"
-    }
+    },
+    "save": true
   }
 }

@@ -18,9 +18,11 @@
 //! The picture is a persistent prop list built once per stage; a frame only edits positions,
 //! colours and `enabled` in place (no per-frame allocation, a fixed GPU model set).
 
+mod boss;
 mod foes;
 mod stages;
 
+pub use boss::Boss;
 pub use foes::{Drone, Turret};
 
 use std::cell::Cell;
@@ -181,6 +183,8 @@ pub struct Stage {
     pub decos: Vec<Deco>,
     pub drones: Vec<Drone>,
     pub turrets: Vec<Turret>,
+    /// The Warden: the exit stays shut until it is down.
+    pub boss: Option<Boss>,
 }
 
 impl Default for Stage {
@@ -203,6 +207,7 @@ impl Default for Stage {
             decos: Vec::new(),
             drones: Vec::new(),
             turrets: Vec::new(),
+            boss: None,
         }
     }
 }
@@ -227,6 +232,8 @@ pub struct StationEscapeSpec {
     pub fall_cost: u32,
     /// Points for each drone wrecked (a stomp or a dash), and the stomp's bounce (m/s).
     pub foe_score: u32,
+    /// Points for bringing the Warden down.
+    pub boss_score: u32,
     pub stomp_bounce: f32,
     /// Thumb stick radius and buttons, in pixels at 400 px of short side; the stick's dead zone.
     pub stick_px: f32,
@@ -247,6 +254,7 @@ impl Default for StationEscapeSpec {
                 stages::reactor_ring(),
                 stages::cargo_spine(),
                 stages::escape_pod(),
+                stages::reactor_core(),
             ],
             crumble_secs: 0.45,
             crumble_back: 3.0,
@@ -256,6 +264,7 @@ impl Default for StationEscapeSpec {
             par_score: 10,
             fall_cost: 25,
             foe_score: 40,
+            boss_score: 800,
             stomp_bounce: 9.0,
             stick_px: 64.0,
             stick_dead: 0.15,
@@ -313,6 +322,21 @@ impl StationEscapeSpec {
                     range(&format!("{at}.blocks[{j}].secs"), b.secs, 0.2, 60.0)?;
                 }
             }
+            if let Some(b) = &st.boss {
+                if !(1..=20).contains(&b.hp) || b.x1 < b.x0 + 6.0 || b.high <= b.low + 1.0 {
+                    return Err(format!(
+                        "station_escape: {at}.boss needs hp 1..=20, x1 >= x0 + 6 and high > low + 1"
+                    ));
+                }
+                for (name, v) in [
+                    ("hover_secs", b.hover_secs),
+                    ("warn_secs", b.warn_secs),
+                    ("swoop_secs", b.swoop_secs),
+                    ("climb_secs", b.climb_secs),
+                ] {
+                    range(&format!("{at}.boss.{name}"), v, 0.2, 30.0)?;
+                }
+            }
             for (j, d) in st.drones.iter().enumerate() {
                 range(&format!("{at}.drones[{j}].speed"), d.speed, 0.1, 30.0)?;
             }
@@ -366,6 +390,7 @@ fn default_audio() -> Value {
             "check": cue("power_up_02.wav", 0.5, 1.3),
             "fall": cue("retro_die_01.wav", 0.6, 1.0),
             "stomp": {"file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav", "volume": 0.6, "rate": 1.6},
+            "boom": cue("retro_explosion_02.wav", 0.7, 0.8),
             "shot": cue("shot_01.wav", 0.12, 1.3),
             "crumble": {"file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav", "volume": 0.4, "rate": 0.6},
             "clear": cue("power_up_04.wav", 0.8, 1.0),
@@ -420,6 +445,7 @@ struct Slots {
     bolts: usize,
     /// The first cone of each spike row.
     spikes: Vec<usize>,
+    boss: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -448,6 +474,12 @@ pub struct StationEscape {
     falls: u32,
     wrecks: u32,
     foes: foes::Foes,
+    warden: Option<boss::Warden>,
+    /// Kept on the device (`page.save`): stages cleared, best clear time per stage.
+    cleared: usize,
+    best_secs: Vec<Option<f32>>,
+    /// The stick or keys' last sideways push on the first story card (stage select).
+    prev_pick: f32,
     tallies: Vec<Tally>,
     puffs: [[f32; 3]; PUFFS],
     next_puff: usize,
@@ -502,6 +534,10 @@ impl StationEscape {
             falls: 0,
             wrecks: 0,
             foes: foes::Foes::default(),
+            warden: None,
+            cleared: 0,
+            best_secs: Vec::new(),
+            prev_pick: 0.0,
             tallies: Vec::new(),
             puffs: [[0.0; 3]; PUFFS],
             next_puff: 0,
@@ -539,6 +575,10 @@ impl StationEscape {
         let mut g = Self::new(spec);
         if let Some(best) = value.get("best").and_then(|v| v.as_u64()) {
             g.flow.best_score = best as u32;
+        }
+        // What the device kept (`page.save`): the stages cleared and the records.
+        if let Some(sv) = value.get("save") {
+            g.load_save(sv);
         }
         // `?stage=3` on the preview link (the manifest's `page.url_params`) starts there.
         let stage = value.get("stage").and_then(|v| {
@@ -583,6 +623,7 @@ impl StationEscape {
         self.falls = 0;
         self.wrecks = 0;
         self.foes = foes::Foes::new(&st.drones, &st.turrets);
+        self.warden = st.boss.as_ref().map(boss::Warden::new);
         self.t = 0.0;
         self.beat = Beat::Intro;
         self.body = Body::at(st.spawn[0], st.spawn[1]);
@@ -657,6 +698,43 @@ impl StationEscape {
         self.flow.finish(score, self.cells_total(), "ESCAPED");
     }
 
+    /// Read what the device kept: `{"cleared": n, "best_secs": [s or null, ...]}`. Anything
+    /// odd is ignored (a save from an older version, a hand edit).
+    fn load_save(&mut self, v: &Value) {
+        let n = self.spec.stages.len();
+        self.cleared = v
+            .get("cleared")
+            .and_then(|c| c.as_u64())
+            .map_or(0, |c| (c as usize).min(n));
+        self.best_secs = (0..n)
+            .map(|i| {
+                v.get("best_secs")
+                    .and_then(|b| b.get(i))
+                    .and_then(|s| s.as_f64())
+                    .map(|s| s as f32)
+                    .filter(|s| s.is_finite() && *s > 0.0)
+            })
+            .collect();
+    }
+
+    /// Stage select is open on the run's first story card, once a stage has been cleared.
+    fn can_pick(&self) -> bool {
+        self.beat == Beat::Intro && self.tallies.is_empty() && self.cleared > 0
+    }
+
+    /// Step the first stage of the run by `dir` among the stages reached (cleared + 1).
+    fn pick_stage(&mut self, dir: i32) {
+        if !self.can_pick() {
+            return;
+        }
+        let reach = (self.cleared + 1).min(self.spec.stages.len()) as i32;
+        let next = (self.stage as i32 + dir).rem_euclid(reach) as usize;
+        if next != self.stage {
+            self.load_stage(next);
+            crate::mixer::cue_sfx("check");
+        }
+    }
+
     fn cells_total(&self) -> u32 {
         self.tallies.iter().map(|t| t.cells).sum()
     }
@@ -726,6 +804,9 @@ impl StationEscape {
             *c = Crumble::default();
         }
         self.foes.reset(&st.turrets);
+        if let (Some(w), Some(b)) = (self.warden.as_mut(), st.boss.as_ref()) {
+            w.restart(b);
+        }
         self.beat = Beat::Run;
     }
 
@@ -736,6 +817,11 @@ impl StationEscape {
         let score = (self.spec.clear_score
             + cells * self.spec.cell_score
             + self.wrecks * self.spec.foe_score
+            + if self.warden.as_ref().is_some_and(|w| w.dead()) {
+                self.spec.boss_score
+            } else {
+                0
+            }
             + (under * self.spec.par_score as f32) as u32)
             .saturating_sub(self.falls * self.spec.fall_cost)
             .max(100);
@@ -749,6 +835,14 @@ impl StationEscape {
         self.core.stats.score += score;
         self.core.stats.rings = self.cells_total();
         self.beat = Beat::Clear;
+        self.cleared = self.cleared.max(self.stage + 1);
+        if self.best_secs.len() < self.spec.stages.len() {
+            self.best_secs.resize(self.spec.stages.len(), None);
+        }
+        let rec = &mut self.best_secs[self.stage];
+        if rec.is_none_or(|b| self.t < b) {
+            *rec = Some(self.t);
+        }
         crate::mixer::cue_sfx("clear");
     }
 
@@ -770,6 +864,16 @@ impl StationEscape {
         self.dash_tap = false;
         match self.beat {
             Beat::Intro | Beat::Clear => {
+                // On the run's first story card, left / right picks among the stages reached.
+                let pick = if self.keys_x.abs() > 0.5 {
+                    self.keys_x.signum()
+                } else {
+                    0.0
+                };
+                if pick != 0.0 && pick != self.prev_pick {
+                    self.pick_stage(pick as i32);
+                }
+                self.prev_pick = pick;
                 if jump_pressed {
                     self.advance();
                 }
@@ -867,6 +971,37 @@ impl StationEscape {
         if hits.fired > 0 && self.foes_near() {
             crate::mixer::cue_sfx("shot");
         }
+        // The Warden.
+        let mut boss_hurt = false;
+        if let (Some(w), Some(b)) = (
+            self.warden.as_mut(),
+            self.spec.stages[self.stage].boss.as_ref(),
+        ) {
+            let bh = w.step(
+                b,
+                &mut self.foes,
+                &mut self.body,
+                &spec,
+                dt,
+                self.spec.stomp_bounce,
+            );
+            boss_hurt = bh.hurt;
+            if bh.fired > 0 {
+                crate::mixer::cue_sfx("shot");
+            }
+            if bh.hit {
+                self.core.juice.hit(0.3, 0.08);
+                crate::mixer::cue_sfx("stomp");
+            }
+            if bh.killed {
+                self.core.juice.hit(0.6, 0.15);
+                crate::mixer::cue_sfx("boom");
+                for k in 0..PUFFS {
+                    let a = k as f32 * 0.8;
+                    self.puffs[k] = [w.x + a.cos() * 0.9, w.y - 0.5 + a.sin() * 0.6, 0.35];
+                }
+            }
+        }
         let st = &self.spec.stages[self.stage];
         // Cells.
         let mut picked = 0;
@@ -902,6 +1037,7 @@ impl StationEscape {
             }
         }
         let hurt = hits.hurt
+            || boss_hurt
             || self.body.y < st.kill_y
             || st.spikes.iter().any(|s| {
                 s.state(self.t).0
@@ -917,14 +1053,16 @@ impl StationEscape {
             || st.lasers.iter().any(|l| {
                 l.state(self.t).0 && touches(&self.body, &spec, l.x, l.x + l.w, l.y, l.y + l.h)
             });
-        let out = touches(
-            &self.body,
-            &spec,
-            st.exit[0] - 0.5,
-            st.exit[0] + 0.5,
-            st.exit[1],
-            st.exit[1] + 2.0,
-        );
+        let open = self.warden.as_ref().is_none_or(|w| w.dead());
+        let out = open
+            && touches(
+                &self.body,
+                &spec,
+                st.exit[0] - 0.5,
+                st.exit[0] + 0.5,
+                st.exit[1],
+                st.exit[1] + 2.0,
+            );
         if picked > 0 {
             crate::mixer::cue_sfx("cell");
             self.core.stats.just_rings += picked;
@@ -952,8 +1090,13 @@ impl StationEscape {
     fn follow_cam(&mut self, dt: f32) {
         let k = (dt * 5.0).min(1.0);
         let ahead = self.body.facing * 1.6 + self.body.vx * 0.12;
-        let tx = self.body.x + ahead;
-        let ty = self.body.y + 0.9;
+        let mut tx = self.body.x + ahead;
+        let mut ty = self.body.y + 0.9;
+        // In a boss fight the view leans toward the Warden so both stay in sight.
+        if let Some(w) = self.warden.as_ref().filter(|w| !w.dead()) {
+            tx += (w.x - tx).clamp(-6.0, 6.0) * 0.45;
+            ty += ((w.y - 1.0 - ty) * 0.5).max(0.0);
+        }
         self.cam.0 += (tx - self.cam.0) * k;
         // Up and down follow slower while in the air, so a jump does not shake the view.
         let ky = if self.body.grounded { k } else { k * 0.4 };
@@ -993,7 +1136,13 @@ impl StationEscape {
         match ev.phase {
             PointerPhase::Begin => {
                 if matches!(self.beat, Beat::Intro | Beat::Clear) {
-                    self.jump_tap = true;
+                    if self.can_pick() && ev.x < w * 0.25 {
+                        self.pick_stage(-1);
+                    } else if self.can_pick() && ev.x > w * 0.75 {
+                        self.pick_stage(1);
+                    } else {
+                        self.jump_tap = true;
+                    }
                     return;
                 }
                 let [(jc, jr), (dc, dr)] = self.buttons_at(w, h);
@@ -1347,6 +1496,14 @@ impl StationEscape {
             p.emissive_color = Some([1.0, 0.35, 0.2]);
             doc.props.push(p);
         }
+        if st.boss.is_some() {
+            slots.boss = Some(doc.props.len());
+            let mut p = model("warden", DRONE_GLB, "warden", [0.0; 3], 1.5, [200, 90, 90]);
+            p.color = Some([235, 120, 120]);
+            p.emissive = Some(0.5);
+            p.emissive_color = Some([1.0, 0.3, 0.2]);
+            doc.props.push(p);
+        }
         slots.bolts = doc.props.len();
         for i in 0..foes::BOLTS {
             let mut p = prop(
@@ -1464,8 +1621,46 @@ impl StationEscape {
                 [1.0, 0.4, 0.3]
             });
         }
+        // The exit glows green when open, dim red while the Warden still flies.
+        let open = self.warden.as_ref().is_none_or(|w| w.dead());
         for k in 0..3 {
-            props[self.slots.exit + k].emissive = Some(2.5 + 1.0 * (self.clock * 3.0).sin());
+            let p = &mut props[self.slots.exit + k];
+            p.emissive = Some(if open {
+                2.5 + 1.0 * (self.clock * 3.0).sin()
+            } else {
+                0.8
+            });
+            p.emissive_color = Some(if open {
+                [0.4, 1.0, 0.6]
+            } else {
+                [1.0, 0.25, 0.2]
+            });
+            p.color = Some(if open { [140, 255, 190] } else { [180, 70, 70] });
+        }
+        if let (Some(i), Some(w)) = (self.slots.boss, self.warden.as_ref()) {
+            let p = &mut props[i];
+            p.enabled = !w.dead();
+            p.position = [w.x, w.y - 0.45, 0.0];
+            let lean = match w.beat {
+                boss::Beat::Swoop => -0.35 * w.dir,
+                boss::Beat::Warn => 0.25 * (self.clock * 30.0).sin(),
+                _ => 0.08 * (self.clock * 1.7).sin(),
+            };
+            p.yaw = w.dir * std::f32::consts::FRAC_PI_2;
+            p.roll = lean;
+            let warn = matches!(w.beat, boss::Beat::Warn | boss::Beat::Swoop);
+            p.emissive = Some(if w.flash > 0.0 {
+                3.0
+            } else if warn {
+                1.6
+            } else {
+                0.5
+            });
+            p.emissive_color = Some(if w.flash > 0.0 {
+                [1.0, 1.0, 1.0]
+            } else {
+                [1.0, 0.3, 0.2]
+            });
         }
         for i in 0..4 {
             let p = &mut props[self.slots.meteors + i];
@@ -1624,6 +1819,22 @@ impl StationEscape {
             )
             .with_face(TextFace::Display),
         );
+        // The Warden's health, under the clock.
+        if let (Some(wd), Some(b)) = (self.warden.as_ref(), st.boss.as_ref()) {
+            if !wd.dead() {
+                let (bw, bh) = (180.0 * s, 9.0 * s);
+                crate::hud_kit::gauge(
+                    &mut list,
+                    w * 0.5 - bw * 0.5,
+                    48.0 * s,
+                    bw,
+                    bh,
+                    wd.hp as f32 / b.hp as f32,
+                    [255, 90, 80, 255],
+                    [20, 10, 20, 180],
+                );
+            }
+        }
         // A tutorial hint near the bottom, from the last hint passed.
         if self.beat == Beat::Run {
             if let Some(hn) = st
@@ -1785,6 +1996,33 @@ impl StationEscape {
             [215, 222, 240, 255],
             self.lang_ja,
         );
+        if let Some(b) = self.best_secs.get(self.stage).copied().flatten() {
+            let b = b as u32;
+            list.texts.push(
+                TextQuad::new(
+                    &format!("{} {}:{:02}", self.tr("BEST", "ベスト"), b / 60, b % 60),
+                    w * 0.5,
+                    y + tall - 58.0 * s,
+                    14.0 * s,
+                    [150, 255, 190, 230],
+                )
+                .aligned(TextAlign::Center),
+            );
+        }
+        if self.can_pick() {
+            for (dx, glyph) in [(-1.0, "◀"), (1.0, "▶")] {
+                list.texts.push(
+                    TextQuad::new(
+                        glyph,
+                        w * 0.5 + dx * (cw * 0.5 - 18.0 * s),
+                        y + 40.0 * s,
+                        26.0 * s,
+                        [170, 200, 255, 230],
+                    )
+                    .aligned(TextAlign::Center),
+                );
+            }
+        }
         let a = (160.0 + 90.0 * (self.clock * 3.0).sin()) as u8;
         list.texts.push(
             TextQuad::new(
@@ -1879,6 +2117,8 @@ impl StationEscape {
             "cells": self.got.iter().filter(|g| **g).count(),
             "falls": self.falls,
             "wrecks": self.wrecks,
+            "boss_hp": self.warden.as_ref().map(|w| w.hp),
+            "cleared": self.cleared,
             "pos": [self.body.x, self.body.y],
             "win": self.win,
             "death": self.core.stats.death,
@@ -2033,6 +2273,15 @@ impl crate::kit_host::KitHost for StationEscape {
     fn walk(&mut self, lx: f32, _lz: f32, jump: bool) {
         self.keys_x = lx.clamp(-1.0, 1.0);
         self.keys_jump = jump;
+    }
+    fn save_json(&self) -> Option<String> {
+        Some(
+            json!({
+                "cleared": self.cleared,
+                "best_secs": self.best_secs.iter().map(|b| b.map(|s| (s * 10.0).round() / 10.0)).collect::<Vec<_>>(),
+            })
+            .to_string(),
+        )
     }
     fn buttons(&mut self, attack: bool, _dodge: bool) {
         self.keys_dash = attack;

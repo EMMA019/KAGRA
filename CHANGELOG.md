@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Station Escape, round 3: the Warden, stage select and records.** Stage 5, Reactor Core: a boss that hovers and fires aimed bolts, glows and drops to one side, then swoops across low; land on it or dash into it while it is low (three hits, it speeds up as it is hurt). The exit glows red and stays shut until it is down; hits stick across a respawn; the camera leans toward it so both are on screen. Clearing stages and best times are kept on the device, and the run's first story card picks among the stages reached (left / right, or tap the card's sides) and shows the record.
+
+- **`page.save`: a kit's progress on the device.** `KitHost::save_json` returns what a kit keeps (Station Escape: stages cleared, best times); with `"save": true` in the manifest's `page` the page stores it under `kagra.save.v1.<slug>` (about twice a second while it changes, and when the tab hides) and hands it back as `world.save` on the next load. `Session.kitSaveJson` in wasm.
+
 - **Station Escape, playtest 1 (Emma).** The stage 1 dash gap had no run-up after the spikes: the spikes move back (6 m of run-up) and the gap is 4.6 m (was 5.3); a test jumps half a metre early and dashes late and still makes it. Spikes can pull in and come out on a cycle (`on` / `off` / `phase`, like lasers), rattling and glowing just before they come out; stage 1 and 2 spikes do. Drones join stages 1 and 2, and a test keeps every drone's patrol off spawns and checkpoints.
 
 - **Station Escape, round 2: the station fights back.** Patrol drones (touch one and you fall back; land on it or dash straight through to wreck it, a stomp bounces you up) and wall turrets whose bolts fly until a wall or their range stops them. Two new stages: Cargo Spine (drones and turrets, a high road) and Escape Pod (everything at once, up to the shuttle). Wrecked drones count on the clear card (40 points each). `?stage=3` on the preview link starts at that stage. The test bot clears all four stages.
