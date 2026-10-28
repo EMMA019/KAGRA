@@ -268,6 +268,49 @@ pub fn counter_chip(
     );
 }
 
+/// Lines of text inside `width` pixels (a story card, a hint): Japanese breaks anywhere,
+/// English at spaces. A glyph is taken as 0.55 of the size wide in English and 1.0 in
+/// Japanese. At most four lines.
+#[allow(clippy::too_many_arguments)]
+pub fn wrap_text(
+    list: &mut DrawList,
+    text: &str,
+    x: f32,
+    y: f32,
+    width: f32,
+    size: f32,
+    color: [u8; 4],
+    ja: bool,
+) {
+    let per = if ja { size } else { size * 0.55 };
+    let max = ((width / per) as usize).max(4);
+    let mut lines: Vec<String> = Vec::new();
+    if ja {
+        let chars: Vec<char> = text.chars().collect();
+        for chunk in chars.chunks(max) {
+            lines.push(chunk.iter().collect());
+        }
+    } else {
+        let mut line = String::new();
+        for word in text.split_whitespace() {
+            if !line.is_empty() && line.len() + 1 + word.len() > max {
+                lines.push(std::mem::take(&mut line));
+            }
+            if !line.is_empty() {
+                line.push(' ');
+            }
+            line.push_str(word);
+        }
+        if !line.is_empty() {
+            lines.push(line);
+        }
+    }
+    for (i, l) in lines.iter().take(4).enumerate() {
+        list.texts
+            .push(TextQuad::new(l, x, y + i as f32 * size * 1.45, size, color));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

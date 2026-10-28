@@ -1,0 +1,370 @@
+{
+  "game": {
+    "audio": {
+      "bgm": {
+        "fade_secs": 0.5,
+        "file": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+        "volume": 0.45
+      },
+      "bgm_volume": 0.5,
+      "enabled": true,
+      "master": 0.8,
+      "sfx": {
+        "gameover": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+          "rate": 1.0,
+          "volume": 0.8
+        },
+        "go": {
+          "file": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+          "rate": 1.0,
+          "volume": 0.7
+        },
+        "heal": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+          "rate": 1.4,
+          "volume": 0.5
+        },
+        "hit": {
+          "file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+          "rate": 1.0,
+          "volume": 0.6
+        },
+        "kill": {
+          "file": "assets/audio/oga-wet-squish/impactsplat03.wav",
+          "rate": 0.9,
+          "volume": 0.45
+        },
+        "move": {
+          "file": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+          "rate": 0.8,
+          "volume": 0.25
+        },
+        "phase": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+          "rate": 0.7,
+          "volume": 0.3
+        },
+        "select": {
+          "file": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+          "rate": 1.3,
+          "volume": 0.4
+        },
+        "win": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+          "rate": 1.0,
+          "volume": 0.8
+        }
+      },
+      "sfx_volume": 1.0
+    },
+    "classes": [
+      {
+        "atk": 8,
+        "def": 5,
+        "flies": false,
+        "heal": 0,
+        "hp": 24,
+        "id": "knight",
+        "model": "assets/models/kenney/mini-characters/character-male-a.glb",
+        "mv": 4,
+        "name": "Knight",
+        "name_ja": "騎士",
+        "range_max": 1,
+        "range_min": 1,
+        "scale": 1.6
+      },
+      {
+        "atk": 9,
+        "def": 3,
+        "flies": false,
+        "heal": 0,
+        "hp": 19,
+        "id": "lancer",
+        "model": "assets/models/kenney/mini-characters/character-male-e.glb",
+        "mv": 5,
+        "name": "Lancer",
+        "name_ja": "槍兵",
+        "range_max": 1,
+        "range_min": 1,
+        "scale": 1.6
+      },
+      {
+        "atk": 7,
+        "def": 2,
+        "flies": false,
+        "heal": 0,
+        "hp": 18,
+        "id": "archer",
+        "model": "assets/models/kenney/mini-characters/character-female-d.glb",
+        "mv": 4,
+        "name": "Archer",
+        "name_ja": "弓兵",
+        "range_max": 3,
+        "range_min": 2,
+        "scale": 1.6
+      },
+      {
+        "atk": 3,
+        "def": 2,
+        "flies": false,
+        "heal": 9,
+        "hp": 17,
+        "id": "cleric",
+        "model": "assets/models/kenney/mini-characters/character-female-a.glb",
+        "mv": 4,
+        "name": "Cleric",
+        "name_ja": "僧侶",
+        "range_max": 1,
+        "range_min": 1,
+        "scale": 1.6
+      },
+      {
+        "atk": 7,
+        "def": 2,
+        "flies": false,
+        "heal": 0,
+        "hp": 17,
+        "id": "zombie",
+        "model": "assets/models/kenney/graveyard-kit/character-zombie.glb",
+        "mv": 3,
+        "name": "Zombie",
+        "name_ja": "ゾンビ",
+        "range_max": 1,
+        "range_min": 1,
+        "scale": 1.6
+      },
+      {
+        "atk": 8,
+        "def": 1,
+        "flies": false,
+        "heal": 0,
+        "hp": 13,
+        "id": "skeleton",
+        "model": "assets/models/kenney/graveyard-kit/character-skeleton.glb",
+        "mv": 4,
+        "name": "Skeleton",
+        "name_ja": "スケルトン",
+        "range_max": 1,
+        "range_min": 1,
+        "scale": 1.6
+      },
+      {
+        "atk": 6,
+        "def": 0,
+        "flies": true,
+        "heal": 0,
+        "hp": 11,
+        "id": "ghost",
+        "model": "assets/models/kenney/graveyard-kit/character-ghost.glb",
+        "mv": 5,
+        "name": "Ghost",
+        "name_ja": "ゴースト",
+        "range_max": 2,
+        "range_min": 1,
+        "scale": 1.6
+      },
+      {
+        "atk": 9,
+        "def": 3,
+        "flies": false,
+        "heal": 0,
+        "hp": 20,
+        "id": "vampire",
+        "model": "assets/models/kenney/graveyard-kit/character-vampire.glb",
+        "mv": 4,
+        "name": "Vampire",
+        "name_ja": "ヴァンパイア",
+        "range_max": 1,
+        "range_min": 1,
+        "scale": 1.6
+      },
+      {
+        "atk": 9,
+        "def": 3,
+        "flies": false,
+        "heal": 0,
+        "hp": 28,
+        "id": "keeper",
+        "model": "assets/models/kenney/graveyard-kit/character-keeper.glb",
+        "mv": 3,
+        "name": "The Keeper",
+        "name_ja": "墓守",
+        "range_max": 2,
+        "range_min": 1,
+        "scale": 2.1
+      }
+    ],
+    "id": "moonlit_tactics",
+    "map_score": 500,
+    "maps": [
+      {
+        "name": "Chapel Yard",
+        "name_ja": "礼拝堂の庭",
+        "par_turns": 8,
+        "rows": [
+          "..#.#..",
+          ".T...T.",
+          "...C...",
+          "#.T...#",
+          "...~...",
+          ".T...T.",
+          "..#.#..",
+          ".......",
+          "......."
+        ],
+        "story": "The bells rang at midnight and the graves opened. Hold the chapel yard: clear every one of the dead.",
+        "story_ja": "真夜中に鐘が鳴り、墓が開いた。礼拝堂の庭を守れ。亡者をすべて倒せ。",
+        "units": [
+          {
+            "class": "knight",
+            "leader": false,
+            "side": "hero",
+            "x": 3,
+            "y": 7
+          },
+          {
+            "class": "lancer",
+            "leader": false,
+            "side": "hero",
+            "x": 1,
+            "y": 7
+          },
+          {
+            "class": "archer",
+            "leader": false,
+            "side": "hero",
+            "x": 2,
+            "y": 8
+          },
+          {
+            "class": "cleric",
+            "leader": false,
+            "side": "hero",
+            "x": 4,
+            "y": 8
+          },
+          {
+            "class": "zombie",
+            "leader": false,
+            "side": "foe",
+            "x": 1,
+            "y": 1
+          },
+          {
+            "class": "zombie",
+            "leader": false,
+            "side": "foe",
+            "x": 5,
+            "y": 1
+          },
+          {
+            "class": "skeleton",
+            "leader": false,
+            "side": "foe",
+            "x": 3,
+            "y": 1
+          },
+          {
+            "class": "ghost",
+            "leader": false,
+            "side": "foe",
+            "x": 6,
+            "y": 4
+          }
+        ]
+      },
+      {
+        "name": "Keeper's Gate",
+        "name_ja": "墓守の門",
+        "par_turns": 10,
+        "rows": [
+          "#.#C#.#",
+          ".......",
+          ".T#.#T.",
+          ".......",
+          "#~.T.~#",
+          ".......",
+          ".T.#.T.",
+          ".......",
+          "......."
+        ],
+        "story": "The dead answer to the Keeper at the cemetery gate. Bring the Keeper down and the rest fall with it.",
+        "story_ja": "亡者を操るのは、墓地の門に立つ墓守。墓守を倒せば、残りも崩れ落ちる。",
+        "units": [
+          {
+            "class": "knight",
+            "leader": false,
+            "side": "hero",
+            "x": 3,
+            "y": 7
+          },
+          {
+            "class": "lancer",
+            "leader": false,
+            "side": "hero",
+            "x": 5,
+            "y": 7
+          },
+          {
+            "class": "archer",
+            "leader": false,
+            "side": "hero",
+            "x": 2,
+            "y": 8
+          },
+          {
+            "class": "cleric",
+            "leader": false,
+            "side": "hero",
+            "x": 4,
+            "y": 8
+          },
+          {
+            "class": "keeper",
+            "leader": true,
+            "side": "foe",
+            "x": 3,
+            "y": 1
+          },
+          {
+            "class": "vampire",
+            "leader": false,
+            "side": "foe",
+            "x": 1,
+            "y": 1
+          },
+          {
+            "class": "skeleton",
+            "leader": false,
+            "side": "foe",
+            "x": 5,
+            "y": 1
+          },
+          {
+            "class": "zombie",
+            "leader": false,
+            "side": "foe",
+            "x": 1,
+            "y": 3
+          },
+          {
+            "class": "ghost",
+            "leader": false,
+            "side": "foe",
+            "x": 6,
+            "y": 3
+          }
+        ]
+      }
+    ],
+    "step_secs": 0.11,
+    "strike_secs": 0.45,
+    "survivor_score": 150,
+    "tile": 1.2,
+    "title": "Moonlit Tactics",
+    "turn_score": 60
+  },
+  "genre": "moonlit_tactics",
+  "version": 1
+}

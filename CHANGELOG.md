@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Moonlit Tactics, round 1 (`moonlit_tactics`): turn-based tactics in the moonlit graveyard.** The night watch (knight, lancer, archer, cleric) against the dead (zombies, skeletons, flying ghosts, a vampire, the Keeper). Tap a unit to see where it can go, tap a cell to move, tap a red foe to strike (or a green friend to heal); foes in range hit back. The dead take their turn after yours: each goes for the attack that hurts most, or walks closer. Terrain: trees (cover, slow), graves (walls ghosts fly over), columns, mist. Two maps with story cards (clear the dead; bring down the Keeper), UNDO / WAIT / END TURN, damage forecasts over targets, HP bars, rising numbers. A careful-commander test bot wins both maps. Bundled assets only. Build log: `docs/agent-runs/20261028-moonlit-tactics/`.
+
+- **`game_core::grid`** (reach with move costs, cheapest paths, ranges) for tactics and puzzle games, and **`hud_kit::wrap_text`** (story-card lines, shared by Station Escape and Moonlit Tactics).
+
 - **Station Escape, round 3: the Warden, stage select and records.** Stage 5, Reactor Core: a boss that hovers and fires aimed bolts, glows and drops to one side, then swoops across low; land on it or dash into it while it is low (three hits, it speeds up as it is hurt). The exit glows red and stays shut until it is down; hits stick across a respawn; the camera leans toward it so both are on screen. Clearing stages and best times are kept on the device, and the run's first story card picks among the stages reached (left / right, or tap the card's sides) and shows the record.
 
 - **`page.save`: a kit's progress on the device.** `KitHost::save_json` returns what a kit keeps (Station Escape: stages cleared, best times); with `"save": true` in the manifest's `page` the page stores it under `kagra.save.v1.<slug>` (about twice a second while it changes, and when the tab hides) and hands it back as `world.save` on the next load. `Session.kitSaveJson` in wasm.

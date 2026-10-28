@@ -50,6 +50,7 @@ pub mod map;
 pub mod mission;
 pub mod mixamo;
 pub mod mixer;
+pub mod moonlit_tactics;
 pub mod morph;
 pub mod neon_cat;
 pub mod neon_fx_spec;

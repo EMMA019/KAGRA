@@ -48,6 +48,8 @@ KAGRA_BAKE=1 cargo test -p kagra-shared --lib <slug>::
 | 固定ステップの駆動、ヒットストップ、スコア | `game_core::{tick_frame, Kit, Core}` |
 | フローティングのスティック（着地、追従、アナログ、見た目） | `game_core::stick` |
 | 走る・跳ぶ・ダッシュする体（コヨーテタイム、先行入力、すり抜け足場、動く足場） | `game_core::platform` |
+| マス目の移動範囲・経路・射程（タクティクス、パズル） | `game_core::grid` |
+| 物語カードの文章の折り返し | `hud_kit::wrap_text` |
 | ジャンプ以外のボタン（J/K/Shift、パッド B/X） | `KitHost::buttons` |
 | カメラ（縦でも横でも範囲が収まる）、タップした物・地面 | `game_core::view::{View::frame, project, ground_at}` |
 | 群れの体の動き（ふわふわ、よろよろ、ぴょん、すべり、どしん。JSON で `Motion::parse`） | `game_core::motion` |

@@ -113,6 +113,11 @@ pub const KITS: &[(Detect, Load)] = &[
             json,
         )?))
     }),
+    (crate::moonlit_tactics::is_moonlit_tactics_dump, |json| {
+        Ok(Box::new(crate::moonlit_tactics::MoonlitTactics::from_json(
+            json,
+        )?))
+    }),
     // new_kit.py adds kits above this line.
 ];
 
