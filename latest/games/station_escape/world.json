@@ -10,6 +10,11 @@
       "enabled": true,
       "master": 0.8,
       "sfx": {
+        "boom": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+          "rate": 0.8,
+          "volume": 0.7
+        },
         "cell": {
           "file": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
           "rate": 1.2,
@@ -85,6 +90,7 @@
       "max_fall": 18.0,
       "run": 6.5
     },
+    "boss_score": 800,
     "button_px": 40.0,
     "cell_score": 50,
     "clear_score": 500,
@@ -231,6 +237,7 @@
             "y": 0.0
           }
         ],
+        "boss": null,
         "cells": [
           [
             5.0,
@@ -656,6 +663,7 @@
             "y": 8.4
           }
         ],
+        "boss": null,
         "cells": [
           [
             5.0,
@@ -1012,6 +1020,7 @@
             "y": 0.0
           }
         ],
+        "boss": null,
         "cells": [
           [
             5.0,
@@ -1365,6 +1374,7 @@
             "y": 8.6
           }
         ],
+        "boss": null,
         "cells": [
           [
             6.0,
@@ -1564,6 +1574,166 @@
             "y": 8.5
           }
         ]
+      },
+      {
+        "blocks": [
+          {
+            "h": 3.0,
+            "kind": "solid",
+            "secs": 2.0,
+            "to": [
+              0.0,
+              0.0
+            ],
+            "w": 34.0,
+            "x": -4.0,
+            "y": -3.0
+          },
+          {
+            "h": 10.0,
+            "kind": "solid",
+            "secs": 2.0,
+            "to": [
+              0.0,
+              0.0
+            ],
+            "w": 1.0,
+            "x": -4.0,
+            "y": 0.0
+          },
+          {
+            "h": 10.0,
+            "kind": "solid",
+            "secs": 2.0,
+            "to": [
+              0.0,
+              0.0
+            ],
+            "w": 1.0,
+            "x": 30.0,
+            "y": 0.0
+          },
+          {
+            "h": 0.25,
+            "kind": "oneway",
+            "secs": 2.0,
+            "to": [
+              0.0,
+              0.0
+            ],
+            "w": 2.5,
+            "x": 7.0,
+            "y": 2.35
+          },
+          {
+            "h": 0.25,
+            "kind": "oneway",
+            "secs": 2.0,
+            "to": [
+              0.0,
+              0.0
+            ],
+            "w": 2.5,
+            "x": 19.5,
+            "y": 2.35
+          }
+        ],
+        "boss": {
+          "climb_secs": 0.8,
+          "high": 5.6,
+          "hover_secs": 3.2,
+          "hp": 3,
+          "hurry": 0.15,
+          "low": 1.0,
+          "shot_speed": 6.0,
+          "shots": 3,
+          "swoop_secs": 2.6,
+          "warn_secs": 0.9,
+          "x0": 3.0,
+          "x1": 25.0
+        },
+        "cells": [
+          [
+            8.2,
+            3.6
+          ],
+          [
+            20.8,
+            3.6
+          ],
+          [
+            14.0,
+            1.0
+          ]
+        ],
+        "checkpoints": [],
+        "decos": [
+          {
+            "model": "assets/models/kenney/space-kit/machine_generatorLarge.glb",
+            "scale": 5.0,
+            "x": 4.0,
+            "y": -0.2,
+            "yaw": 0.3,
+            "z": -9.6
+          },
+          {
+            "model": "assets/models/kenney/space-kit/machine_generatorLarge.glb",
+            "scale": 5.0,
+            "x": 24.0,
+            "y": -0.2,
+            "yaw": -0.3,
+            "z": -9.6
+          },
+          {
+            "model": "assets/models/kenney/space-kit/structure_closed.glb",
+            "scale": 8.0,
+            "x": 14.0,
+            "y": -0.2,
+            "yaw": 0.0,
+            "z": -14.400001
+          },
+          {
+            "model": "assets/models/kenney/space-kit/hangar_smallA.glb",
+            "scale": 5.0,
+            "x": 27.0,
+            "y": -0.2,
+            "yaw": 0.0,
+            "z": -10.400001
+          },
+          {
+            "model": "assets/models/kenney/space-kit/craft_speederC.glb",
+            "scale": 2.0,
+            "x": 27.5,
+            "y": 0.3,
+            "yaw": 0.35,
+            "z": -5.44
+          }
+        ],
+        "drones": [],
+        "exit": [
+          27.0,
+          0.0
+        ],
+        "hints": [
+          {
+            "en": "Stomp or DASH into the Warden when it swoops low",
+            "ja": "低く来たウォーデンを踏むかダッシュで当てろ",
+            "x": 0.0
+          }
+        ],
+        "kill_y": -5.0,
+        "lasers": [],
+        "name": "Reactor Core",
+        "name_ja": "リアクターコア",
+        "par_secs": 60.0,
+        "spawn": [
+          1.0,
+          0.0
+        ],
+        "spikes": [],
+        "story": "The shuttle door is behind the reactor core, and the Warden guards it. When it swoops low, land on it or dash into it. Three hits.",
+        "story_ja": "シャトルの扉はリアクターコアの奥。番人ウォーデンが守っている。低く突っこんでくる時に、上から踏むかダッシュで当てろ。3 回で倒せる。",
+        "turrets": []
       }
     ],
     "stick_dead": 0.15,

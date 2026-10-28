@@ -41,6 +41,10 @@ export class WasmSession {
      */
     hasRenderer(): boolean;
     /**
+     * What a kit keeps on the device (`KitHost::save_json`), or "" when it keeps nothing.
+     */
+    kitSaveJson(): string;
+    /**
      * World dump JSON. The scene waits on the title until a tap confirms.
      */
     loadGame(json: string): void;
@@ -292,6 +296,7 @@ export interface InitOutput {
     readonly wasmsession_createSurface: (a: number, b: number, c: number) => void;
     readonly wasmsession_gameJson: (a: number) => [number, number];
     readonly wasmsession_hasRenderer: (a: number) => number;
+    readonly wasmsession_kitSaveJson: (a: number) => [number, number];
     readonly wasmsession_loadGame: (a: number, b: number, c: number) => [number, number];
     readonly wasmsession_loadJson: (a: number, b: number, c: number) => [number, number];
     readonly wasmsession_mountFile: (a: number, b: number, c: number, d: number, e: number) => void;

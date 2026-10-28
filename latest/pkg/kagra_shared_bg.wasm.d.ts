@@ -71,6 +71,7 @@ export const wasmsession_clearMount: (a: number) => void;
 export const wasmsession_createSurface: (a: number, b: number, c: number) => void;
 export const wasmsession_gameJson: (a: number) => [number, number];
 export const wasmsession_hasRenderer: (a: number) => number;
+export const wasmsession_kitSaveJson: (a: number) => [number, number];
 export const wasmsession_loadGame: (a: number, b: number, c: number) => [number, number];
 export const wasmsession_loadJson: (a: number, b: number, c: number) => [number, number];
 export const wasmsession_mountFile: (a: number, b: number, c: number, d: number, e: number) => void;
