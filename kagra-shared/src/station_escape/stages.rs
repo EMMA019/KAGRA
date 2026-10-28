@@ -1,7 +1,7 @@
 //! The stages that ship (the spec's defaults). Coordinates: metres, x right, y up; a block's
 //! (x, y) is its bottom-left corner. Floors have their top at y = 0 unless they climb.
 
-use super::{Block, Deco, Drone, Hint, Laser, Rect, Stage, Turret};
+use super::{Block, Boss, Deco, Drone, Hint, Laser, Rect, Stage, Turret};
 
 fn solid(x: f32, y: f32, w: f32, h: f32) -> Block {
     Block {
@@ -316,6 +316,7 @@ pub fn cargo_spine() -> Stage {
             deco("hangar_smallA", 82.0, -0.2, -6.5, 5.5, 0.0),
             deco("rock_crystals", 25.0, -0.2, -3.5, 2.0, 0.4),
         ],
+        boss: None,
     }
 }
 
@@ -384,5 +385,44 @@ pub fn escape_pod() -> Stage {
             deco("hangar_smallA", 74.0, 8.4, -6.5, 6.0, 0.0),
             deco("craft_speederC", 74.0, 8.9, -3.4, 2.0, 0.35),
         ],
+        boss: None,
+    }
+}
+
+/// Stage 5, Reactor Core: the Warden guards the last door.
+pub fn reactor_core() -> Stage {
+    Stage {
+        name: "Reactor Core".into(),
+        name_ja: "リアクターコア".into(),
+        story: "The shuttle door is behind the reactor core, and the Warden guards it. When it swoops low, land on it or dash into it. Three hits.".into(),
+        story_ja: "シャトルの扉はリアクターコアの奥。番人ウォーデンが守っている。低く突っこんでくる時に、上から踏むかダッシュで当てろ。3 回で倒せる。".into(),
+        spawn: [1.0, 0.0],
+        exit: [27.0, 0.0],
+        kill_y: -5.0,
+        par_secs: 60.0,
+        blocks: vec![
+            floor(-4.0, 30.0, 0.0),
+            solid(-4.0, 0.0, 1.0, 10.0),
+            solid(30.0, 0.0, 1.0, 10.0),
+            oneway(7.0, 2.6, 2.5),
+            oneway(19.5, 2.6, 2.5),
+        ],
+        cells: vec![[8.2, 3.6], [20.8, 3.6], [14.0, 1.0]],
+        hints: vec![
+            hint(0.0, "Stomp or DASH into the Warden when it swoops low", "低く来たウォーデンを踏むかダッシュで当てろ"),
+        ],
+        decos: vec![
+            deco("machine_generatorLarge", 4.0, -0.2, -6.0, 5.0, 0.3),
+            deco("machine_generatorLarge", 24.0, -0.2, -6.0, 5.0, -0.3),
+            deco("structure_closed", 14.0, -0.2, -9.0, 8.0, 0.0),
+            deco("hangar_smallA", 27.0, -0.2, -6.5, 5.0, 0.0),
+            deco("craft_speederC", 27.5, 0.3, -3.4, 2.0, 0.35),
+        ],
+        boss: Some(Boss {
+            x0: 3.0,
+            x1: 25.0,
+            ..Boss::default()
+        }),
+        ..Stage::default()
     }
 }

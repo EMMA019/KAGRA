@@ -178,6 +178,17 @@ impl WasmSession {
         self.inner.start_game();
     }
 
+    /// What a kit keeps on the device (`KitHost::save_json`), or "" when it keeps nothing.
+    #[wasm_bindgen(js_name = kitSaveJson)]
+    pub fn kit_save_json(&self) -> String {
+        self.inner
+            .kit
+            .as_ref()
+            .filter(|_| self.inner.kind == crate::session::SceneKind::Kit)
+            .and_then(|kit| kit.save_json())
+            .unwrap_or_default()
+    }
+
     /// ゲーム状態 JSON（phase / time / score / objective）。
     #[wasm_bindgen(js_name = gameJson)]
     pub fn game_json(&self) -> String {

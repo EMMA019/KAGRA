@@ -355,6 +355,65 @@ fn crumbling_ledges_fall_and_come_back_and_lifts_carry() {
     );
 }
 
+/// The boss fight: wait in the middle, dash into the Warden when it swoops close, run away
+/// from bolts' landing spot a little. Returns true at the clear card.
+fn boss_bot(g: &mut StationEscape, secs: f32) -> bool {
+    let exit = g.st().exit[0];
+    let steps = (secs / DT) as usize;
+    let mut dash_wait = 0_u32;
+    let mut pace_to = 19.0_f32;
+    for _ in 0..steps {
+        if g.beat == Beat::Clear {
+            return true;
+        }
+        let w = g.warden.clone().unwrap();
+        let (x, y) = (g.body.x, g.body.y);
+        let mut dash = false;
+        let mut mx;
+        if w.dead() {
+            mx = (exit - x).signum();
+        } else {
+            let to = w.x - x;
+            let near = to.abs() < 2.6 && (w.y - y) < 1.8;
+            if w.beat == boss::Beat::Swoop && near && dash_wait == 0 {
+                mx = to.signum();
+                dash = true;
+                dash_wait = 30;
+            } else {
+                // Keep moving under it, so aimed bolts land where it was.
+                if (x - pace_to).abs() < 0.4 {
+                    pace_to = if pace_to > 14.0 { 9.0 } else { 19.0 };
+                }
+                mx = (pace_to - x).signum();
+                // A bolt that would meet us on this course: turn round.
+                let run = g.spec.body.run;
+                let hits_us = |dir: f32| {
+                    g.foes.bolts.iter().flatten().any(|b| {
+                        (1..30).any(|k| {
+                            let t = k as f32 * 0.03;
+                            let (bx, by) = (b[0] + b[2] * t, b[1] + b[3] * t);
+                            let hx = x + dir * run * t;
+                            (bx - hx).abs() < 0.7 && by > y - 0.2 && by < y + 1.4
+                        })
+                    })
+                };
+                if hits_us(mx) {
+                    mx = -mx;
+                    pace_to = if mx > 0.0 { 19.0 } else { 9.0 };
+                }
+            }
+        }
+        dash_wait = dash_wait.saturating_sub(1);
+        let falls = g.falls;
+        key(g, mx, false, dash, 1);
+        if std::env::var("SE_DEBUG").is_ok() && g.falls > falls {
+            let bolt = g.foes.bolts.iter().flatten().count();
+            eprintln!("fell at x {x:.2} y {y:.2}: warden {:?} at ({:.2}, {:.2}) hp {} bolts {bolt} dashing {}", w.beat, w.x, w.y, w.hp, g.body.dashing());
+        }
+    }
+    g.beat == Beat::Clear
+}
+
 fn tap_on(g: &mut StationEscape) {
     g.walk(0.0, 0.0, true);
     g.tick(DT);
@@ -365,16 +424,22 @@ fn tap_on(g: &mut StationEscape) {
 #[test]
 fn a_player_clears_every_stage_and_the_run_ends() {
     let mut g = running();
-    let routes: [&[f32]; 4] = [
+    let routes: [&[f32]; 5] = [
         &[80.0],
         &[29.0, 37.5, 32.5, 38.5, 59.5, 59.8, 64.0, 67.5, 90.0],
         &[90.0],
         &[11.8, 11.9, 16.0, 28.2, 31.5, 35.0, 90.0],
+        &[],
     ];
     for (i, route) in routes.iter().enumerate() {
         assert_eq!(g.stage, i);
+        let cleared = if route.is_empty() {
+            boss_bot(&mut g, 150.0)
+        } else {
+            bot(&mut g, route, 150.0)
+        };
         assert!(
-            bot(&mut g, route, 150.0),
+            cleared,
             "stage {}: stuck at {:?} after {} falls",
             i + 1,
             (g.body.x, g.body.y),
@@ -458,6 +523,87 @@ fn a_link_can_start_at_a_later_stage() {
     v["stage"] = json!(99);
     let g = StationEscape::from_json(&v.to_string()).unwrap();
     assert_eq!(g.stage, g.spec.stages.len() - 1);
+}
+
+#[test]
+fn the_device_keeps_records_and_opens_the_stages_reached() {
+    let mut g = running();
+    assert_eq!(
+        g.save_json().unwrap(),
+        json!({"cleared": 0, "best_secs": []}).to_string()
+    );
+    g.t = 41.25;
+    g.clear_stage();
+    let saved: Value = serde_json::from_str(&g.save_json().unwrap()).unwrap();
+    assert_eq!(saved["cleared"], 1);
+    assert!((saved["best_secs"][0].as_f64().unwrap() - 41.3).abs() < 1e-3);
+    // Next visit: the page hands the save back as `save`.
+    let mut world = StationEscape::new(StationEscapeSpec::default()).world_value();
+    world["save"] = saved;
+    let mut g = StationEscape::from_json(&world.to_string()).unwrap();
+    g.confirm();
+    assert!(g.can_pick());
+    g.walk(1.0, 0.0, false);
+    g.tick(DT);
+    assert_eq!(g.stage, 1, "right picks the next stage reached");
+    g.walk(0.0, 0.0, false);
+    g.tick(DT);
+    g.walk(1.0, 0.0, false);
+    g.tick(DT);
+    assert_eq!(g.stage, 0, "stage 3 is not reached: wraps to 1");
+    let hud = g.hud(390, 844, false);
+    assert!(
+        hud.texts.iter().any(|t| t.text.contains("0:41")),
+        "the record shows"
+    );
+    // A save that does not fit is ignored, not an error.
+    world["save"] = json!({"cleared": "lots", "best_secs": [-1, "x"]});
+    let g = StationEscape::from_json(&world.to_string()).unwrap();
+    assert_eq!(g.cleared, 0);
+    assert!(g.best_secs.iter().all(|b| b.is_none()));
+}
+
+#[test]
+fn the_exit_stays_shut_until_the_warden_is_down() {
+    let mut g = running();
+    g.load_stage(4);
+    g.beat = Beat::Run;
+    let e = g.st().exit;
+    g.body.reset_to(e[0], e[1]);
+    key(&mut g, 0.0, false, false, 2);
+    assert_ne!(g.beat, Beat::Clear, "shut");
+    g.warden.as_mut().unwrap().hp = 1;
+    assert!(boss_bot(&mut g, 60.0), "the bot brings it down and leaves");
+    let v = g.state_value();
+    assert_eq!(v["boss_hp"], 0);
+    assert!(g.tallies.last().unwrap().score >= g.spec.boss_score);
+}
+
+#[test]
+fn the_warden_is_in_sight_from_the_start_of_the_fight() {
+    let mut g = running();
+    g.load_stage(4);
+    g.beat = Beat::Run;
+    for _ in 0..90 {
+        key(&mut g, 0.0, false, false, 1);
+        if matches!(g.beat, Beat::Down(_)) {
+            break;
+        }
+    }
+    let w = g.warden.clone().unwrap();
+    let _ = g.hud(390, 844, false);
+    g.rebuild();
+    let cam = &g.document().cameras[0];
+    let view = View {
+        eye: cam.position,
+        target: cam.target,
+        fov: cam.fov,
+    };
+    let (sx, sy) = view.project([w.x, w.y, 0.0], 390.0, 844.0).unwrap();
+    assert!(
+        (0.0..=390.0).contains(&sx) && (0.0..=844.0).contains(&sy),
+        "warden at ({sx}, {sy})"
+    );
 }
 
 #[test]

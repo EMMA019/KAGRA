@@ -659,6 +659,21 @@
       if (n <= loadBest(slug)) return;
       try { localStorage.setItem(bestKey(slug), String(n)); } catch {}
     };
+    // page.save: what a kit keeps between visits (KitHost::save_json), device only.
+    const saveKey = (slug) => `kagra.save.v1.${slug}`;
+    const loadSave = (slug) => {
+      try { const v = JSON.parse(localStorage.getItem(saveKey(slug)) || "null"); return v && typeof v === "object" ? v : null; } catch { return null; }
+    };
+    let lastSave = "";
+    let saveTick = 0;
+    const storeSave = (slug) => {
+      if (!page.save || !session.kitSaveJson) return;
+      let s = "";
+      try { s = session.kitSaveJson(); } catch { return; }
+      if (!s || s === lastSave) return;
+      lastSave = s;
+      try { localStorage.setItem(saveKey(slug), s); } catch {}
+    };
     // </kagra-goals>
 
     // <kagra-build>
@@ -826,6 +841,11 @@
             }
           }
           if (page.tagline) document.getElementById("tagline").hidden = false;
+          if (page.save) {
+            // The kit's own progress (unlocked stages, records) from the last visit.
+            const kept = loadSave(slug);
+            if (kept) world.save = kept;
+          }
           if (page.best) {
             // The device best goes into the run, so the in-run NEW BEST banner and the
             // game-over card agree with the saved score after a reload.
@@ -1426,6 +1446,7 @@
     });
     document.addEventListener("visibilitychange", () => {
       if (page.pause && document.hidden && phase === "playing" && session.pauseRun) session.pauseRun();
+      if (document.hidden) storeSave(slug);
     });
     // The pause card steps the sync in the canvas: keep the device copy in step.
     window.addEventListener("pointerup", () => {
@@ -1616,6 +1637,8 @@
         false,
       );
       const stepped = stepSim(performance.now());
+      // A kit's progress reaches the device about twice a second (page.save).
+      if (page.save && ++saveTick % 30 === 0) storeSave(slug);
       if (audio) {
         try { audio.pump(session.audioCuesJson()); } catch {}
       }

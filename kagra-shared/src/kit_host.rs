@@ -46,6 +46,12 @@ pub trait KitHost: Debug + Any {
     fn hud(&self, width: u32, height: u32, menu: bool) -> DrawList;
     /// Stick or key steering, already filtered to the frames that take it.
     fn walk(&mut self, lx: f32, lz: f32, jump: bool);
+    /// What the kit keeps on the device between visits (unlocked stages, records), as JSON,
+    /// or `None` for nothing. With the manifest's `page.save`, the page stores it per game
+    /// and hands it back in the world as `save` on the next load.
+    fn save_json(&self) -> Option<String> {
+        None
+    }
     /// The second and third buttons held (keys J / K / Shift, a gamepad's B or X), for kits
     /// with more than a jump. Kits with none ignore them.
     fn buttons(&mut self, _attack: bool, _dodge: bool) {}

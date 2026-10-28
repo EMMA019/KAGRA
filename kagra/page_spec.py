@@ -16,12 +16,16 @@ branches in the page. The manifest now says what the game wants and the page onl
       "revive": true,          # Continue after game over through a rewarded ad
       "direct": true,          # ?play=1 or a portal build starts the run with no title card
       "tagline": true,         # show the title card's tagline line
+      "save": true,            # keep the kit's save_json() on the device, hand it back as world.save
       "theme": "hop",          # html[data-theme] for the page's per-game CSS
       "blurb": "hop.blurb",    # i18n key of the title-card blurb (swipe games)
       "default_quality": "mobile",                      # world.quality when the link sets none
       "quality_words": {"safe": "low", "mid": "mobile", "max": "high"},  # ?quality= words
       "url_params": {"fx": ["low", "mid", "high"], "skin": "string", "fx_post": "bool"}
     }
+
+``save`` keeps what a kit returns from ``KitHost::save_json`` (unlocked stages, records) in
+the device's storage under ``kagra.save.v1.<slug>`` and hands it back as ``world.save``.
 
 ``url_params`` copies a link's ``?name=`` into the world before load: a list allows those
 values, ``"string"`` any non-empty value, ``"bool"`` ``0`` / ``1`` (as false / true). Like
@@ -42,6 +46,7 @@ FLAGS = (
     "revive",
     "direct",
     "tagline",
+    "save",
 )
 PICTURE = ("low", "mobile", "high")
 QUALITY_WORDS = ("safe", "mid", "max")

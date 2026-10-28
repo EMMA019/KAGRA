@@ -87,8 +87,8 @@ pub const BOLT_HALF: f32 = 0.15;
 /// Bolts in flight at most.
 pub const BOLTS: usize = 16;
 
-/// A bolt in flight: x, y, vx, metres left.
-pub type Bolt = [f32; 4];
+/// A bolt in flight: x, y, vx, vy, metres left.
+pub type Bolt = [f32; 5];
 
 /// What the foes did to the hero this step.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -126,6 +126,17 @@ impl Foes {
         self.bolts = [None; BOLTS];
     }
 
+    /// Put a bolt in flight (a boss's aimed shot). False when the pool is full.
+    pub fn fire(&mut self, x: f32, y: f32, vx: f32, vy: f32, range: f32) -> bool {
+        match self.bolts.iter_mut().find(|b| b.is_none()) {
+            Some(slot) => {
+                *slot = Some([x, y, vx, vy, range]);
+                true
+            }
+            None => false,
+        }
+    }
+
     /// One step: turrets fire, bolts fly, and the hero meets them. A stomp sets the body's
     /// upward speed to `bounce`.
     #[allow(clippy::too_many_arguments)]
@@ -146,7 +157,7 @@ impl Foes {
             if self.reload[i] <= 0.0 {
                 self.reload[i] += tu.every.max(0.2);
                 if let Some(slot) = self.bolts.iter_mut().find(|b| b.is_none()) {
-                    *slot = Some([tu.x, tu.y, tu.dir.signum() * tu.speed, tu.range]);
+                    *slot = Some([tu.x, tu.y, tu.dir.signum() * tu.speed, 0.0, tu.range]);
                     hits.fired += 1;
                 }
             }
@@ -155,13 +166,14 @@ impl Foes {
             let Some(b) = slot.as_mut() else {
                 continue;
             };
-            let dx = b[2] * dt;
+            let (dx, dy) = (b[2] * dt, b[3] * dt);
             b[0] += dx;
-            b[3] -= dx.abs();
+            b[1] += dy;
+            b[4] -= dx.hypot(dy);
             let hit_wall = solids
                 .iter()
                 .any(|s| !s.one_way && b[0] > s.x0 && b[0] < s.x1 && b[1] > s.y0 && b[1] < s.y1);
-            if b[3] <= 0.0 || hit_wall {
+            if b[4] <= 0.0 || hit_wall {
                 *slot = None;
                 continue;
             }
