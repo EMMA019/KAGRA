@@ -243,6 +243,17 @@
       "icon": "games/starter/icon.png"
     },
     {
+      "slug": "station_escape",
+      "title": "Station Escape",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "station_escape",
+      "entry": "examples/station_escape_minimal.py",
+      "world": "kagra-shared/tests/fixtures/station_escape_world.json",
+      "href": "play.html?game=station_escape",
+      "icon": "games/station_escape/icon.png"
+    },
+    {
       "slug": "stealth",
       "title": "Stealth",
       "version": "0.1.0",
