@@ -237,7 +237,11 @@
     "lang": true,
     "pause": true,
     "fixed_step": true,
-    "blurb": "blurb.tactics"
+    "save": true,
+    "blurb": "blurb.tactics",
+    "url_params": {
+      "map": "string"
+    }
   },
-  "build": "a8cab221e2a8"
+  "build": "6082dae429d4"
 }
