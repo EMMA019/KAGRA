@@ -3,7 +3,7 @@
 //! pieces on the GPU's rounded quads: [`round_panel`], [`gauge`], [`pill_button`].
 //! No kit-specific names live here; a game passes colours from its `HudSpec`.
 
-use crate::scene::{DrawList, Quad, TextAlign, TextQuad};
+use crate::scene::{DrawList, Quad, TextAlign, TextFace, TextQuad};
 
 /// HUD units -> buffer pixels. 1.0 at a 412 px wide phone buffer, so a CSS-pixel
 /// size on a 2x phone is `size * 2`. Clamped so a desktop window stays sane.
@@ -311,6 +311,205 @@ pub fn wrap_text(
     }
 }
 
+/// The first button whose rectangle `[x, y, w, h]` holds the pixel (HUD buttons a kit lays
+/// out once and both draws and hit-tests).
+pub fn hit<T: Copy>(buttons: &[(T, [f32; 4])], x: f32, y: f32) -> Option<T> {
+    buttons.iter().find_map(|&(b, r)| {
+        (x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3]).then_some(b)
+    })
+}
+
+/// The colours of a [`Card`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CardStyle {
+    /// Over the whole screen behind the card.
+    pub dim: [u8; 4],
+    pub fill: [u8; 4],
+    pub edge: [u8; 4],
+    /// The small line on top ("STAGE 2").
+    pub kicker: [u8; 4],
+    pub title: [u8; 4],
+    pub body: [u8; 4],
+    /// Row labels and values on a tally.
+    pub label: [u8; 4],
+    pub value: [u8; 4],
+}
+
+impl Default for CardStyle {
+    /// Night blue with warm titles.
+    fn default() -> Self {
+        Self {
+            dim: [0, 0, 10, 115],
+            fill: [12, 16, 34, 236],
+            edge: [120, 170, 255, 120],
+            kicker: [140, 190, 255, 255],
+            title: [255, 244, 225, 255],
+            body: [215, 222, 240, 255],
+            label: [190, 200, 225, 255],
+            value: [255, 244, 225, 255],
+        }
+    }
+}
+
+/// A card in the middle of a dimmed screen: a story card before a stage, a clear card with a
+/// tally, a defeat. Open it with its height, then place lines by their distance from its top.
+/// Every size is in HUD units times `s`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Card {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub s: f32,
+    pub style: CardStyle,
+}
+
+impl Card {
+    /// Dim the `w` x `h` screen and draw a card `tall` high (at most 420 wide).
+    pub fn open(list: &mut DrawList, w: f32, h: f32, s: f32, tall: f32, style: CardStyle) -> Self {
+        let cw = (w - 32.0 * s).min(420.0 * s);
+        let (x, y) = ((w - cw) * 0.5, h * 0.5 - tall * 0.5);
+        list.quads.push(Quad::new(0.0, 0.0, w, h, style.dim));
+        round_panel(
+            list,
+            x,
+            y,
+            cw,
+            tall,
+            16.0 * s,
+            style.fill,
+            style.edge,
+            1.5 * s,
+            (0.0, 6.0 * s, 90),
+        );
+        Self {
+            x,
+            y,
+            w: cw,
+            h: tall,
+            s,
+            style,
+        }
+    }
+
+    fn mid(&self) -> f32 {
+        self.x + self.w * 0.5
+    }
+
+    /// A centred line `dy` below the card's top.
+    pub fn line(&self, list: &mut DrawList, text: &str, dy: f32, size: f32, color: [u8; 4]) {
+        list.texts.push(
+            TextQuad::new(text, self.mid(), self.y + dy * self.s, size * self.s, color)
+                .aligned(TextAlign::Center),
+        );
+    }
+
+    /// The small display-face line on top ("STAGE 2", "MAP 1").
+    pub fn kicker(&self, list: &mut DrawList, text: &str) {
+        list.texts.push(
+            TextQuad::new(
+                text,
+                self.mid(),
+                self.y + 18.0 * self.s,
+                16.0 * self.s,
+                self.style.kicker,
+            )
+            .aligned(TextAlign::Center)
+            .with_face(TextFace::Display),
+        );
+    }
+
+    /// The big name under the kicker.
+    pub fn title(&self, list: &mut DrawList, text: &str) {
+        self.line(list, text, 42.0, 27.0, self.style.title);
+    }
+
+    /// A paragraph, wrapped to the card (`ja`: break anywhere).
+    pub fn body(&self, list: &mut DrawList, text: &str, dy: f32, size: f32, ja: bool) {
+        wrap_text(
+            list,
+            text,
+            self.x + 20.0 * self.s,
+            self.y + dy * self.s,
+            self.w - 40.0 * self.s,
+            size * self.s,
+            self.style.body,
+            ja,
+        );
+    }
+
+    /// A tally: labels on the left, values on the right, from `dy` down, `step` apart.
+    pub fn rows(&self, list: &mut DrawList, rows: &[(&str, String)], dy: f32, step: f32) {
+        let s = self.s;
+        for (i, (k, v)) in rows.iter().enumerate() {
+            let ry = self.y + (dy + i as f32 * step) * s;
+            list.texts.push(TextQuad::new(
+                k,
+                self.x + 28.0 * s,
+                ry,
+                17.0 * s,
+                self.style.label,
+            ));
+            list.texts.push(
+                TextQuad::new(
+                    v,
+                    self.x + self.w - 28.0 * s,
+                    ry,
+                    19.0 * s,
+                    self.style.value,
+                )
+                .aligned(TextAlign::Right)
+                .with_face(TextFace::Display),
+            );
+        }
+    }
+
+    /// The breathing "tap to go on" line, `from_bottom` above the card's bottom edge.
+    pub fn prompt(&self, list: &mut DrawList, text: &str, clock: f32, from_bottom: f32) {
+        let a = (255.0 * crate::game_core::tween::pulse(clock, 0.48, 0.27)) as u8;
+        list.texts.push(
+            TextQuad::new(
+                text,
+                self.mid(),
+                self.y + self.h - from_bottom * self.s,
+                16.0 * self.s,
+                [255, 255, 255, a],
+            )
+            .aligned(TextAlign::Center),
+        );
+    }
+
+    /// ◀ ▶ at the card's sides, `dy` below its top: a stage select (taps on the outer
+    /// quarters of the screen pick, see [`pick_side`]).
+    pub fn arrows(&self, list: &mut DrawList, dy: f32) {
+        let s = self.s;
+        for (dx, glyph) in [(-1.0, "◀"), (1.0, "▶")] {
+            list.texts.push(
+                TextQuad::new(
+                    glyph,
+                    self.mid() + dx * (self.w * 0.5 - 18.0 * s),
+                    self.y + dy * s,
+                    26.0 * s,
+                    [170, 200, 255, 230],
+                )
+                .aligned(TextAlign::Center),
+            );
+        }
+    }
+}
+
+/// A tap on a stage-select card: -1 on the left quarter of the screen, +1 on the right, 0 in
+/// the middle (start).
+pub fn pick_side(x: f32, w: f32) -> i32 {
+    if x < w * 0.25 {
+        -1
+    } else if x > w * 0.75 {
+        1
+    } else {
+        0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -464,5 +663,30 @@ mod tests {
             y1 - y0
         );
         assert!(l.quads.len() > 12, "pad plus four toes");
+    }
+
+    #[test]
+    fn a_card_dims_the_screen_and_buttons_hit_test() {
+        let mut l = DrawList::default();
+        let c = Card::open(&mut l, 400.0, 800.0, 1.0, 200.0, CardStyle::default());
+        assert_eq!((c.x, c.y, c.w), (16.0, 300.0, 368.0));
+        assert_eq!(l.quads[0].w, 400.0, "the dim covers the screen");
+        c.kicker(&mut l, "STAGE 1");
+        c.title(&mut l, "Docking Bay");
+        c.rows(&mut l, &[("Time", "0:41".into())], 60.0, 28.0);
+        c.prompt(&mut l, "Tap", 0.0, 30.0);
+        c.arrows(&mut l, 40.0);
+        assert_eq!(l.texts.len(), 7);
+        let btns = [(1, [0.0, 0.0, 10.0, 10.0]), (2, [20.0, 0.0, 10.0, 10.0])];
+        assert_eq!(hit(&btns, 25.0, 5.0), Some(2));
+        assert_eq!(hit(&btns, 15.0, 5.0), None);
+        assert_eq!(
+            (
+                pick_side(10.0, 400.0),
+                pick_side(200.0, 400.0),
+                pick_side(390.0, 400.0)
+            ),
+            (-1, 0, 1)
+        );
     }
 }

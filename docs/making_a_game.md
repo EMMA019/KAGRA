@@ -49,9 +49,13 @@ KAGRA_BAKE=1 cargo test -p kagra-shared --lib <slug>::
 | フローティングのスティック（着地、追従、アナログ、見た目） | `game_core::stick` |
 | 走る・跳ぶ・ダッシュする体（コヨーテタイム、先行入力、すり抜け足場、動く足場） | `game_core::platform` |
 | マス目の移動範囲・経路・射程（タクティクス、パズル） | `game_core::grid` |
-| 物語カードの文章の折り返し | `hud_kit::wrap_text` |
+| 物語カード・クリアカード（画面を暗くして中央にカード、見出し、本文、集計の行、点滅する「タップで」、ステージ選択の ◀ ▶） | `hud_kit::{Card, CardStyle, pick_side}`（文章の折り返しだけなら `hud_kit::wrap_text`） |
+| HUD ボタンの当たり判定（描くのと同じ矩形の表で） | `hud_kit::hit` |
+| ステージの解放と記録（端末に保存、最初の物語カードでステージ選択） | `game_core::progress::{Progress, Better}` + `KitHost::save_json` + マニフェストの `page.save` |
+| イージング、トゥイーン、タイマー、行って戻る動き | `game_core::tween::{Ease, Tween, Timer, ping_pong, pulse}` |
+| ダメージ数字や「MISS」が場所から浮かんで消える | `game_core::floats::Floats` |
 | ジャンプ以外のボタン（J/K/Shift、パッド B/X） | `KitHost::buttons` |
-| カメラ（縦でも横でも範囲が収まる）、タップした物・地面 | `game_core::view::{View::frame, project, ground_at}` |
+| カメラ（縦でも横でも範囲が収まる）、タップした物・地面 | `game_core::view::{View::frame, project, ground_at, pick}` |
 | 群れの体の動き（ふわふわ、よろよろ、ぴょん、すべり、どしん。JSON で `Motion::parse`） | `game_core::motion` |
 | 敵プール、空間グリッド、出現予算、シード付き乱数 | `game_core::swarm` |
 | 敵の JSON 定義（歩く・飛ぶ・跳ぶ・予告） | `game_core::enemies`（`docs/enemy_kit.md`） |

@@ -4,7 +4,7 @@
 use super::rules::Side;
 use super::{hud_scale, Btn, Mode, MoonlitTactics};
 use crate::flow::FlowPhase;
-use crate::hud_kit::{gauge, pill_button, round_panel, wrap_text};
+use crate::hud_kit::{gauge, pill_button, round_panel, Card, CardStyle};
 use crate::scene::{DrawList, Quad, TextAlign, TextFace, TextQuad};
 
 const WHITE: [u8; 4] = [240, 244, 255, 255];
@@ -31,9 +31,7 @@ impl MoonlitTactics {
     }
 
     pub(super) fn button_at(&self, x: f32, y: f32, w: f32, h: f32) -> Option<Btn> {
-        self.buttons(w, h).into_iter().find_map(|(b, r)| {
-            (x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3]).then_some(b)
-        })
+        crate::hud_kit::hit(&self.buttons(w, h), x, y)
     }
 
     /// The in-play HUD (the page draws the title and result cards).
@@ -149,26 +147,7 @@ impl MoonlitTactics {
             }
         }
         // Damage and heal numbers rising.
-        for f in &self.floats {
-            if f.delay > 0.0 {
-                continue;
-            }
-            let rise = (1.0 - f.life) * 0.9;
-            if let Some((sx, sy)) = view.project([f.at[0], 1.4 * t + rise, f.at[2]], w, h) {
-                let a = (255.0 * f.life.min(1.0)) as u8;
-                list.texts.push(
-                    TextQuad::new(
-                        &f.text,
-                        sx,
-                        sy,
-                        22.0 * s,
-                        [f.color[0], f.color[1], f.color[2], a],
-                    )
-                    .aligned(TextAlign::Center)
-                    .with_face(TextFace::Display),
-                );
-            }
-        }
+        self.floats.draw(&mut list, &view, w, h, s);
         // The unit panel, bottom left.
         if let Some(u) = self.sel {
             self.unit_panel(&mut list, u, w, h, s);
@@ -345,146 +324,86 @@ impl MoonlitTactics {
         ));
     }
 
-    fn card(&self, list: &mut DrawList, w: f32, h: f32, s: f32, tall: f32) -> (f32, f32, f32) {
-        let cw = (w - 32.0 * s).min(420.0 * s);
-        let (x, y) = ((w - cw) * 0.5, h * 0.5 - tall * 0.5);
-        list.quads.push(Quad::new(0.0, 0.0, w, h, [0, 0, 10, 120]));
-        round_panel(
-            list,
-            x,
-            y,
-            cw,
-            tall,
-            16.0 * s,
-            [12, 16, 34, 238],
-            [120, 170, 255, 120],
-            1.5 * s,
-            (0.0, 6.0 * s, 90),
-        );
-        (x, y, cw)
-    }
-
     fn card_intro(&self, list: &mut DrawList, w: f32, h: f32, s: f32) {
         let map = &self.spec.maps[self.map_i];
-        let tall = 220.0 * s;
-        let (x, y, cw) = self.card(list, w, h, s, tall);
-        list.texts.push(
-            TextQuad::new(
-                &format!("MAP {}", self.map_i + 1),
-                w * 0.5,
-                y + 18.0 * s,
-                16.0 * s,
-                [140, 190, 255, 255],
-            )
-            .aligned(TextAlign::Center)
-            .with_face(TextFace::Display),
-        );
-        list.texts.push(
-            TextQuad::new(
-                self.tr(&map.name, &map.name_ja),
-                w * 0.5,
-                y + 42.0 * s,
-                27.0 * s,
-                WARM,
-            )
-            .aligned(TextAlign::Center),
-        );
-        wrap_text(
+        let tall = 220.0;
+        let card = Card::open(list, w, h, s, tall * s, CardStyle::default());
+        card.kicker(list, &format!("MAP {}", self.map_i + 1));
+        card.title(list, self.tr(&map.name, &map.name_ja));
+        card.body(
             list,
             self.tr(&map.story, &map.story_ja),
-            x + 20.0 * s,
-            y + 88.0 * s,
-            cw - 40.0 * s,
-            15.0 * s,
-            [215, 222, 240, 255],
+            88.0,
+            15.0,
             self.lang_ja,
         );
-        let a = (160.0 + 90.0 * (self.clock * 3.0).sin()) as u8;
-        list.texts.push(
-            TextQuad::new(
-                self.tr("Tap to begin", "タップで開始"),
-                w * 0.5,
-                y + tall - 32.0 * s,
-                16.0 * s,
-                [255, 255, 255, a],
-            )
-            .aligned(TextAlign::Center),
+        if let Some(b) = self.progress.record(self.map_i) {
+            card.line(
+                list,
+                &format!("{} {}", self.tr("FEWEST TURNS", "最少ターン"), b as u32),
+                tall - 58.0,
+                14.0,
+                [150, 255, 190, 230],
+            );
+        }
+        if self.can_pick() {
+            card.arrows(list, 40.0);
+        }
+        card.prompt(
+            list,
+            self.tr("Tap to begin", "タップで開始"),
+            self.clock,
+            32.0,
         );
     }
 
     fn card_end(&self, list: &mut DrawList, w: f32, h: f32, s: f32) {
-        let tall = 210.0 * s;
-        let (x, y, cw) = self.card(list, w, h, s, tall);
+        let card = Card::open(list, w, h, s, 210.0 * s, CardStyle::default());
         let won = self.mode == Mode::Won;
-        list.texts.push(
-            TextQuad::new(
-                if won {
-                    self.tr("VICTORY", "勝利")
-                } else {
-                    self.tr("DEFEAT", "敗北")
-                },
-                w * 0.5,
-                y + 18.0 * s,
-                28.0 * s,
-                if won {
-                    [150, 255, 190, 255]
-                } else {
-                    [255, 130, 120, 255]
-                },
-            )
-            .aligned(TextAlign::Center),
+        card.line(
+            list,
+            if won {
+                self.tr("VICTORY", "勝利")
+            } else {
+                self.tr("DEFEAT", "敗北")
+            },
+            18.0,
+            28.0,
+            if won {
+                [150, 255, 190, 255]
+            } else {
+                [255, 130, 120, 255]
+            },
         );
         if let (true, Some(tl)) = (won, self.tallies.last()) {
+            let turns = if self.new_record {
+                format!("{}  {}", self.tr("NEW", "新記録"), tl.turns)
+            } else {
+                format!("{}", tl.turns)
+            };
             let rows = [
-                (self.tr("Turns", "ターン"), format!("{}", tl.turns)),
+                (self.tr("Turns", "ターン"), turns),
                 (self.tr("Standing", "生存"), format!("{}", tl.survivors)),
                 (self.tr("Score", "スコア"), format!("{}", tl.score)),
             ];
-            for (i, (k, v)) in rows.iter().enumerate() {
-                let ry = y + 64.0 * s + i as f32 * 28.0 * s;
-                list.texts.push(TextQuad::new(
-                    k,
-                    x + 28.0 * s,
-                    ry,
-                    17.0 * s,
-                    [190, 200, 225, 255],
-                ));
-                list.texts.push(
-                    TextQuad::new(v, x + cw - 28.0 * s, ry, 19.0 * s, WARM)
-                        .aligned(TextAlign::Right)
-                        .with_face(TextFace::Display),
-                );
-            }
+            card.rows(list, &rows, 64.0, 28.0);
         } else {
-            list.texts.push(
-                TextQuad::new(
-                    self.tr(
-                        "The dead hold the yard tonight.",
-                        "今夜は亡者が庭を制した。",
-                    ),
-                    w * 0.5,
-                    y + 80.0 * s,
-                    16.0 * s,
-                    [215, 222, 240, 255],
-                )
-                .aligned(TextAlign::Center),
+            card.line(
+                list,
+                self.tr(
+                    "The dead hold the yard tonight.",
+                    "今夜は亡者が庭を制した。",
+                ),
+                80.0,
+                16.0,
+                card.style.body,
             );
         }
-        let a = (160.0 + 90.0 * (self.clock * 3.0).sin()) as u8;
         let next = if won && self.map_i + 1 < self.spec.maps.len() {
             self.tr("Tap for the next map", "タップで次のマップ")
         } else {
             self.tr("Tap to finish", "タップでおわり")
         };
-        list.texts.push(
-            TextQuad::new(
-                next,
-                w * 0.5,
-                y + tall - 30.0 * s,
-                15.0 * s,
-                [255, 255, 255, a],
-            )
-            .aligned(TextAlign::Center),
-        );
+        card.prompt(list, next, self.clock, 30.0);
     }
 }

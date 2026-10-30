@@ -21,6 +21,10 @@
     "lang": true,
     "pause": true,
     "fixed_step": true,
-    "blurb": "blurb.tactics"
+    "blurb": "blurb.tactics",
+    "url_params": {
+      "map": "string"
+    },
+    "save": true
   }
 }

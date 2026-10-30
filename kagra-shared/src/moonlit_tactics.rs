@@ -31,7 +31,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::flow::{FlowPhase, GameFlow};
+use crate::game_core::floats::Floats;
 use crate::game_core::grid::{self, Cell};
+use crate::game_core::progress::{Better, Progress};
 use crate::game_core::view::View;
 use crate::game_core::{tick_frame, Core, Kit};
 use crate::input::{PointerEvent, PointerPhase};
@@ -184,16 +186,6 @@ enum Anim {
     Pause { t: f32 },
 }
 
-/// A number or a word rising over the board: world position, text, colour, delay, life.
-#[derive(Clone, Debug, PartialEq)]
-struct Float {
-    at: [f32; 3],
-    text: String,
-    color: [u8; 4],
-    delay: f32,
-    life: f32,
-}
-
 /// A button on the HUD.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Btn {
@@ -228,7 +220,7 @@ pub struct MoonlitTactics {
     moved_from: Option<Cell>,
     reach: Vec<(Cell, i32)>,
     anims: VecDeque<Anim>,
-    floats: Vec<Float>,
+    floats: Floats,
     /// Foes still to act this enemy phase.
     foe_queue: Vec<usize>,
     /// Which way each unit faces (yaw).
@@ -237,6 +229,14 @@ pub struct MoonlitTactics {
     banner: f32,
     kills: u32,
     tallies: Vec<Tally>,
+    /// Kept on the device (`page.save`): maps won, fewest turns per map.
+    progress: Progress,
+    /// The map a run starts at (0 unless a link or the map select asks for another).
+    first_map: usize,
+    /// A new fewest-turns record on the map just won.
+    new_record: bool,
+    /// The keys' last sideways push on the first story card (map select).
+    prev_pick: f32,
     clock: f32,
     win: bool,
     new_best: bool,
@@ -251,6 +251,7 @@ impl MoonlitTactics {
         flow.title = spec.title.clone();
         flow.tagline = String::new();
         let board = Board::new(&spec.maps[0], &spec.classes);
+        let progress = Progress::new(spec.maps.len(), "best_turns", Better::Lower).with_places(0);
         let mut g = Self {
             spec,
             core: Core::default(),
@@ -266,12 +267,16 @@ impl MoonlitTactics {
             moved_from: None,
             reach: Vec::new(),
             anims: VecDeque::new(),
-            floats: Vec::new(),
+            floats: Floats::default(),
             foe_queue: Vec::new(),
             facing: Vec::new(),
             banner: 0.0,
             kills: 0,
             tallies: Vec::new(),
+            progress,
+            first_map: 0,
+            new_record: false,
+            prev_pick: 0.0,
             clock: 0.0,
             win: false,
             new_best: false,
@@ -294,6 +299,19 @@ impl MoonlitTactics {
         let mut g = Self::new(spec);
         if let Some(best) = value.get("best").and_then(|v| v.as_u64()) {
             g.flow.best_score = best as u32;
+        }
+        // What the device kept (`page.save`): the maps won and the records.
+        if let Some(sv) = value.get("save") {
+            g.progress.load(sv);
+        }
+        // `?map=2` on the preview link (the manifest's `page.url_params`) starts there.
+        let map = value.get("map").and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+        });
+        if let Some(n) = map {
+            g.first_map = (n.max(1) as usize - 1).min(g.spec.maps.len() - 1);
+            g.load_map(g.first_map);
         }
         Ok(g)
     }
@@ -328,6 +346,7 @@ impl MoonlitTactics {
         self.floats.clear();
         self.foe_queue.clear();
         self.kills = 0;
+        self.new_record = false;
         self.facing = self
             .board
             .units
@@ -349,7 +368,7 @@ impl MoonlitTactics {
                 self.tallies.clear();
                 self.win = false;
                 self.new_best = false;
-                self.load_map(0);
+                self.load_map(self.first_map);
                 self.best_before = self.flow.best_score;
                 self.flow.enter_play();
                 crate::mixer::cue_sfx("go");
@@ -429,6 +448,7 @@ impl MoonlitTactics {
                 score,
             });
             self.core.stats.score += score;
+            self.new_record = self.progress.clear(self.map_i, self.turn as f32);
             self.mode = Mode::Won;
             crate::mixer::cue_sfx("win");
         } else {
@@ -452,6 +472,23 @@ impl MoonlitTactics {
             }
             Mode::Lost => self.finish(false),
             _ => {}
+        }
+    }
+
+    /// The map select is open on the run's first story card, once a map has been won.
+    fn can_pick(&self) -> bool {
+        self.mode == Mode::Intro && self.tallies.is_empty() && self.progress.can_pick()
+    }
+
+    /// Step the run's first map by `dir` among the maps reached (won + 1).
+    fn pick_map(&mut self, dir: i32) {
+        if !self.can_pick() {
+            return;
+        }
+        let next = self.progress.step(self.map_i, dir);
+        if next != self.map_i {
+            self.load_map(next);
+            crate::mixer::cue_sfx("select");
         }
     }
 
@@ -551,13 +588,8 @@ impl MoonlitTactics {
     }
 
     fn float(&mut self, at: [f32; 3], text: String, color: [u8; 4], delay: f32) {
-        self.floats.push(Float {
-            at,
-            text,
-            color,
-            delay,
-            life: 1.0,
-        });
+        let y = 1.4 * self.spec.tile;
+        self.floats.push([at[0], y, at[2]], text, color, delay);
     }
 
     /// The selected hero is done (after acting or waiting).
@@ -635,14 +667,7 @@ impl MoonlitTactics {
     fn step_sim(&mut self, dt: f32) {
         self.clock += dt;
         self.banner = (self.banner - dt).max(0.0);
-        for f in &mut self.floats {
-            if f.delay > 0.0 {
-                f.delay -= dt;
-            } else {
-                f.life -= dt;
-            }
-        }
-        self.floats.retain(|f| f.life > 0.0);
+        self.floats.tick(dt);
         if let Some(a) = self.anims.front_mut() {
             let done = match a {
                 Anim::Walk { path, t, .. } => {
@@ -723,7 +748,10 @@ impl MoonlitTactics {
             return;
         }
         if matches!(self.mode, Mode::Intro | Mode::Won | Mode::Lost) {
-            if self.anims.is_empty() {
+            let side = crate::hud_kit::pick_side(ev.x, w);
+            if self.can_pick() && side != 0 {
+                self.pick_map(side);
+            } else if self.anims.is_empty() {
                 self.advance();
             }
             return;
@@ -805,18 +833,11 @@ impl Kit for MoonlitTactics {
     fn flow_mut(&mut self) -> &mut GameFlow {
         &mut self.flow
     }
-    fn substeps(&self, _dt: f32) -> u32 {
-        1
-    }
     fn step(&mut self, dt: f32) {
         self.step_sim(dt);
     }
     fn attract(&mut self, dt: f32) {
         self.clock += dt;
-    }
-    fn follow(&mut self, _dt: f32) {}
-    fn blocks_spark(&self, _x: f32, _y: f32, _z: f32) -> bool {
-        false
     }
     fn rebuild(&mut self) {
         self.update_doc();
@@ -843,11 +864,7 @@ impl crate::kit_host::KitHost for MoonlitTactics {
         &self.doc
     }
     fn dump_json(&self) -> String {
-        let body = self.doc.to_json().unwrap_or_else(|_| "{}".into());
-        match body.strip_prefix('{') {
-            Some(rest) => format!("{{\n  \"sim\": {},{rest}", self.state_value()),
-            None => body,
-        }
+        crate::kit_host::dump_with_sim(&self.doc, &self.state_value())
     }
     fn state_json(&self) -> String {
         self.state_value().to_string()
@@ -870,7 +887,17 @@ impl crate::kit_host::KitHost for MoonlitTactics {
     fn hud(&self, width: u32, height: u32, menu: bool) -> DrawList {
         MoonlitTactics::hud(self, width, height, menu)
     }
-    fn walk(&mut self, _lx: f32, _lz: f32, _jump: bool) {}
+    fn walk(&mut self, lx: f32, _lz: f32, _jump: bool) {
+        // Left / right on the first story card picks the map.
+        let push = if lx.abs() > 0.5 { lx.signum() } else { 0.0 };
+        if push != 0.0 && push != self.prev_pick {
+            self.pick_map(push as i32);
+        }
+        self.prev_pick = push;
+    }
+    fn save_json(&self) -> Option<String> {
+        Some(self.progress.to_value().to_string())
+    }
     fn touch(&mut self, ev: PointerEvent, w: u32, h: u32, _t: f32) {
         self.touch_ev(ev, w, h);
     }

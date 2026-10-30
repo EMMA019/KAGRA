@@ -290,6 +290,49 @@ fn the_keeper_falls_and_the_map_is_won() {
 }
 
 #[test]
+fn the_device_keeps_the_maps_won_and_the_fewest_turns() {
+    let mut g = playing();
+    assert_eq!(
+        g.save_json().unwrap(),
+        json!({"cleared": 0, "best_turns": [null, null]}).to_string()
+    );
+    g.turn = 6;
+    for f in g.board.living(Side::Foe).collect::<Vec<_>>() {
+        g.board.units[f].hp = 0;
+    }
+    g.tick(DT);
+    assert_eq!(g.mode, Mode::Won);
+    assert!(g.new_record);
+    let saved: Value = serde_json::from_str(&g.save_json().unwrap()).unwrap();
+    assert_eq!(saved, json!({"cleared": 1, "best_turns": [6.0, null]}));
+    // Next visit: the page hands the save back; the first card opens the map select.
+    let mut world = MoonlitTactics::new(MoonlitTacticsSpec::default()).world_value();
+    world["save"] = saved;
+    let mut g = MoonlitTactics::from_json(&world.to_string()).unwrap();
+    let _ = g.hud(390, 844, false);
+    g.confirm();
+    assert!(g.can_pick());
+    let hud = g.hud(390, 844, false);
+    assert!(hud.texts.iter().any(|t| t.text.contains("FEWEST TURNS 6")));
+    assert!(hud.texts.iter().any(|t| t.text == "▶"));
+    tap_screen(&mut g, 380.0, 420.0);
+    assert_eq!(
+        (g.map_i, g.mode),
+        (1, Mode::Intro),
+        "a tap on the right picks map 2"
+    );
+    g.walk(1.0, 0.0, false);
+    assert_eq!(g.map_i, 0, "the keys wrap round the maps reached");
+    tap_screen(&mut g, 195.0, 420.0);
+    assert_eq!(g.mode, Mode::Player, "a tap in the middle begins");
+    // A link can start on map 2; an odd save is ignored.
+    world["save"] = json!({"cleared": "lots"});
+    world["map"] = json!("2");
+    let g = MoonlitTactics::from_json(&world.to_string()).unwrap();
+    assert_eq!((g.map_i, g.progress.cleared), (1, 0));
+}
+
+#[test]
 fn losing_everyone_ends_the_run() {
     let mut g = playing();
     for h in g.board.living(Side::Hero).collect::<Vec<_>>() {
