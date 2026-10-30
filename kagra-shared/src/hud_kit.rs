@@ -480,21 +480,49 @@ impl Card {
     }
 
     /// ◀ ▶ at the card's sides, `dy` below its top: a stage select (taps on the outer
-    /// quarters of the screen pick, see [`pick_side`]).
+    /// quarters of the screen pick, see [`pick_side`]). Drawn as shapes: the bundled fonts
+    /// have no triangle glyphs.
     pub fn arrows(&self, list: &mut DrawList, dy: f32) {
         let s = self.s;
-        for (dx, glyph) in [(-1.0, "◀"), (1.0, "▶")] {
-            list.texts.push(
-                TextQuad::new(
-                    glyph,
-                    self.mid() + dx * (self.w * 0.5 - 18.0 * s),
-                    self.y + dy * s,
-                    26.0 * s,
-                    [170, 200, 255, 230],
-                )
-                .aligned(TextAlign::Center),
+        for dir in [-1.0, 1.0] {
+            let cx = self.mid() + dir * (self.w * 0.5 - 22.0 * s);
+            let cy = self.y + (dy + 14.0) * s;
+            let r = 15.0 * s;
+            round_panel(
+                list,
+                cx - r,
+                cy - r,
+                2.0 * r,
+                2.0 * r,
+                r,
+                [60, 90, 160, 150],
+                [170, 200, 255, 140],
+                1.0 * s,
+                (0.0, 0.0, 0),
             );
+            arrow(list, cx, cy, 13.0 * s, dir, [220, 232, 255, 240]);
         }
+    }
+}
+
+/// A solid triangle `size` across centred on `(cx, cy)`, pointing right (`dir` > 0) or left,
+/// from thin columns (the fonts have no ◀ ▶).
+pub fn arrow(list: &mut DrawList, cx: f32, cy: f32, size: f32, dir: f32, color: [u8; 4]) {
+    let n = 10;
+    let col = size / n as f32;
+    // A little toward the tip, so the triangle's weight sits in the middle.
+    let x0 = cx - size * 0.5 + dir.signum() * size * 0.1;
+    for i in 0..n {
+        // The tall side at the back, the tip in front.
+        let k = if dir > 0.0 { i } else { n - 1 - i };
+        let tall = size * (1.0 - (k as f32 + 0.5) / n as f32);
+        list.quads.push(Quad::new(
+            x0 + i as f32 * col,
+            cy - tall * 0.5,
+            col + 0.3,
+            tall,
+            color,
+        ));
     }
 }
 
@@ -676,7 +704,7 @@ mod tests {
         c.rows(&mut l, &[("Time", "0:41".into())], 60.0, 28.0);
         c.prompt(&mut l, "Tap", 0.0, 30.0);
         c.arrows(&mut l, 40.0);
-        assert_eq!(l.texts.len(), 7);
+        assert_eq!(l.texts.len(), 5);
         let btns = [(1, [0.0, 0.0, 10.0, 10.0]), (2, [20.0, 0.0, 10.0, 10.0])];
         assert_eq!(hit(&btns, 25.0, 5.0), Some(2));
         assert_eq!(hit(&btns, 15.0, 5.0), None);

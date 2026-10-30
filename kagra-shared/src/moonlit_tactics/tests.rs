@@ -314,7 +314,6 @@ fn the_device_keeps_the_maps_won_and_the_fewest_turns() {
     assert!(g.can_pick());
     let hud = g.hud(390, 844, false);
     assert!(hud.texts.iter().any(|t| t.text.contains("FEWEST TURNS 6")));
-    assert!(hud.texts.iter().any(|t| t.text == "▶"));
     tap_screen(&mut g, 380.0, 420.0);
     assert_eq!(
         (g.map_i, g.mode),
