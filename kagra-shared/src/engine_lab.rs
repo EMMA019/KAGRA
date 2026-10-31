@@ -217,7 +217,7 @@ fn default_audio() -> Value {
             "tab": ui(0.4, 1.3),
             "thud": thud(0.5, 0.9),
             "knock": thud(0.6, 1.3),
-            "swing": cue("retro_jump_01.wav", 0.35, 1.4),
+            "swing": cue("shot_01.wav", 0.3, 0.7),
             "hit": thud(0.7, 0.8),
             "buy": cue("retro_coin_01.wav", 0.5, 1.2),
             "no": cue("retro_die_01.wav", 0.4, 1.6),
@@ -431,7 +431,8 @@ impl EngineLab {
         for x in [-5.0, 5.0] {
             add(
                 &mut w,
-                Body::fixed(Shape::rect(0.3, 6.0), Vec2::new(x, FLOOR_Y + 6.0)),
+                // Tall enough that nothing is thrown over (a crate on a wall top never falls).
+                Body::fixed(Shape::rect(0.3, 15.0), Vec2::new(x, FLOOR_Y + 15.0)),
                 3,
             );
         }
@@ -484,7 +485,7 @@ impl EngineLab {
         };
         if let Some(id) = self.world.body_at(p) {
             if self.world.get(id).is_some_and(|b| !b.is_fixed()) {
-                self.world.blast(p - Vec2::new(0.0, 0.3), 2.2, 9.0);
+                self.world.blast(p - Vec2::new(0.0, 0.3), 2.2, 7.0);
                 crate::mixer::cue_sfx("knock");
                 self.floats
                     .push([p.x, p.y + 0.6, 0.0], "BOOM", [255, 200, 120, 255], 0.0);
@@ -1628,19 +1629,23 @@ mod tests {
             thud = thud.max(g.world.impacts.first().map_or(0.0, |i| i.impulse));
         }
         assert!(thud > 4.0, "it hit the tower: {thud}");
-        // Tap a crate in the bottom row: it blows and the tower comes down.
-        let low = g
-            .look
-            .iter()
-            .filter(|(_, k)| *k == 0)
-            .filter_map(|(id, _)| g.world.get(*id))
-            .min_by(|a, b| (a.pos.y + a.pos.x.abs()).total_cmp(&(b.pos.y + b.pos.x.abs())))
-            .map(|b| b.pos)
-            .unwrap();
-        let (sx, sy) = view
-            .project([low.x, low.y, 0.0], W as f32, H as f32)
-            .unwrap();
-        tap(&mut g, sx, sy);
+        // Tap crates low in the tower: each blows, and a few bring it down.
+        for _ in 0..3 {
+            let low = g
+                .look
+                .iter()
+                .filter(|(_, k)| *k == 0)
+                .filter_map(|(id, _)| g.world.get(*id))
+                .filter(|b| b.pos.x.abs() < 2.0)
+                .min_by(|a, b| (a.pos.y + a.pos.x.abs()).total_cmp(&(b.pos.y + b.pos.x.abs())))
+                .map(|b| b.pos)
+                .unwrap();
+            let (sx, sy) = view
+                .project([low.x, low.y, 0.0], W as f32, H as f32)
+                .unwrap();
+            tap(&mut g, sx, sy);
+            run(&mut g, 0.4);
+        }
         run(&mut g, 4.0);
         let top_now: f32 = g
             .look

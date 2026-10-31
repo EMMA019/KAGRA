@@ -51,9 +51,9 @@
           "volume": 0.4
         },
         "swing": {
-          "file": "assets/audio/oga-retro-synth-sfx/retro_jump_01.wav",
-          "rate": 1.4,
-          "volume": 0.35
+          "file": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+          "rate": 0.7,
+          "volume": 0.3
         },
         "tab": {
           "file": "assets/audio/kenney-interface-sounds/confirmation_001.wav",

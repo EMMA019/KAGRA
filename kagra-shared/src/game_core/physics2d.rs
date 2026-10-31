@@ -243,6 +243,7 @@ impl Default for World {
 
 const SLOP: f32 = 0.01;
 const BIAS: f32 = 0.2;
+const MAX_PUSH: f32 = 3.0;
 const SLEEP_SPEED: f32 = 0.06;
 const SLEEP_SECS: f32 = 0.6;
 
@@ -356,7 +357,9 @@ impl World {
                 let t = tangent(c.normal);
                 c.mass_n = 1.0 / (k(r1, c.normal, ima, iia) + k(r2, c.normal, imb, iib)).max(1e-9);
                 c.mass_t = 1.0 / (k(r1, t, ima, iia) + k(r2, t, imb, iib)).max(1e-9);
-                c.bias = -BIAS * inv_dt * (c.sep + SLOP).min(0.0);
+                // Push overlaps apart, but never faster than MAX_PUSH: a deep overlap (a heavy
+                // ball landing hard) would otherwise fling the pile into the sky.
+                c.bias = (-BIAS * inv_dt * (c.sep + SLOP).min(0.0)).min(MAX_PUSH);
                 let vn =
                     (b.vel + cross_sv(b.spin, r2) - a.vel - cross_sv(a.spin, r1)).dot(c.normal);
                 if vn < -1.0 && bounce > 0.0 {
