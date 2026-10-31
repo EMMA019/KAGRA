@@ -67,6 +67,17 @@
       "icon": "games/crate_tower/icon.png"
     },
     {
+      "slug": "engine_lab",
+      "title": "Engine Lab",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "engine_lab",
+      "entry": "examples/engine_lab_minimal.py",
+      "world": "kagra-shared/tests/fixtures/engine_lab_world.json",
+      "href": "play.html?game=engine_lab",
+      "icon": "games/engine_lab/icon.png"
+    },
+    {
       "slug": "fps",
       "title": "FPS Range",
       "version": "0.1.0",

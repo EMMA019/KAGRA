@@ -1,0 +1,7 @@
+{
+  "title": "Engine Lab",
+  "version": "0.1.0",
+  "slug": "engine_lab",
+  "entry": "examples/engine_lab_minimal.py",
+  "world": "kagra-shared/tests/fixtures/engine_lab_world.json"
+}
