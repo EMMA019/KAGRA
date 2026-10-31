@@ -30,21 +30,30 @@
 //! - [`progress`]: stages unlocked and a record per stage, kept on the device (`page.save`),
 //!   and the stage select on the first story card.
 //! - [`floats`]: damage numbers and words rising from a spot in the world.
+//! - [`dialogue`]: JSON conversations with faces drawn from shapes, choices, flags, events.
+//! - [`items`]: item kinds, a bag with coins, equipment that adds up stats, shops, saves.
+//! - [`physics2d`]: side-view rigid boxes and balls (stack, roll, topple, blast).
+//! - [`anim`]: a character's moves (locomotion, one-shot attacks with a hit cue, death hold)
+//!   as crossfaded glTF clips or a procedural pose.
 //!
-//! HUD pieces (story and clear cards, button hit tests) are in [`crate::hud_kit`].
+//! HUD pieces (story and clear cards, list menus, button hit tests) are in [`crate::hud_kit`].
 //!
 //! The runner kit (`neon_cat.rs`), HOP-BEAT and the survivor arena are the kits today.
 
+pub mod anim;
 pub mod collide;
+pub mod dialogue;
 pub mod enemies;
 pub mod feel;
 pub mod floats;
 pub mod grid;
+pub mod items;
 pub mod juice;
 pub mod lives;
 pub mod meta;
 pub mod missions;
 pub mod motion;
+pub mod physics2d;
 pub mod platform;
 pub mod progress;
 pub mod result;

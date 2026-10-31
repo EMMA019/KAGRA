@@ -526,6 +526,192 @@ pub fn arrow(list: &mut DrawList, cx: f32, cy: f32, size: f32, dir: f32, color: 
     }
 }
 
+/// One row of a [`Menu`].
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Row {
+    /// A glyph or short word on the left ("♥", "⚔").
+    pub icon: String,
+    pub icon_color: [u8; 4],
+    pub label: String,
+    /// On the right: a count, a price, "E" for equipped.
+    pub right: String,
+    /// Greyed out (too dear, cannot use).
+    pub dim: bool,
+}
+
+/// A titled list panel: a bag, a shop, an equipment screen. Lay it out with
+/// [`Menu::layout`], draw it with [`Menu::draw`], hit-test rows with [`Menu::row_at`].
+/// It shows `visible` rows from `scroll`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Menu {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub s: f32,
+    pub row_h: f32,
+    pub visible: usize,
+}
+
+impl Menu {
+    /// A panel `w_max` wide at most, from `top` down to `bottom` pixels on a `w`-wide screen.
+    pub fn layout(w: f32, top: f32, bottom: f32, w_max: f32, s: f32) -> Self {
+        let mw = (w - 24.0 * s).min(w_max * s);
+        let row_h = 44.0 * s;
+        let h = (bottom - top).max(row_h * 2.0 + 50.0 * s);
+        let visible = (((h - 50.0 * s) / row_h).floor() as usize).max(1);
+        Self {
+            x: (w - mw) * 0.5,
+            y: top,
+            w: mw,
+            h,
+            s,
+            row_h,
+            visible,
+        }
+    }
+
+    fn row_y(&self, i: usize) -> f32 {
+        self.y + 44.0 * self.s + i as f32 * self.row_h
+    }
+
+    /// Draw the panel, the title (and a note on its right: coins), rows from `scroll`, with
+    /// `selected` (an index into `rows`) lit.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw(
+        &self,
+        list: &mut DrawList,
+        title: &str,
+        note: &str,
+        rows: &[Row],
+        scroll: usize,
+        selected: Option<usize>,
+    ) {
+        let s = self.s;
+        round_panel(
+            list,
+            self.x,
+            self.y,
+            self.w,
+            self.h,
+            14.0 * s,
+            [12, 16, 34, 238],
+            [140, 175, 255, 120],
+            1.5 * s,
+            (0.0, 5.0 * s, 90),
+        );
+        list.texts.push(TextQuad::new(
+            title,
+            self.x + 16.0 * s,
+            self.y + 12.0 * s,
+            19.0 * s,
+            [255, 236, 200, 255],
+        ));
+        if !note.is_empty() {
+            list.texts.push(
+                TextQuad::new(
+                    note,
+                    self.x + self.w - 16.0 * s,
+                    self.y + 13.0 * s,
+                    17.0 * s,
+                    [255, 220, 120, 255],
+                )
+                .aligned(TextAlign::Right),
+            );
+        }
+        for (k, row) in rows.iter().enumerate().skip(scroll).take(self.visible) {
+            let ry = self.row_y(k - scroll);
+            if selected == Some(k) {
+                let mut q = Quad::new(
+                    self.x + 8.0 * s,
+                    ry,
+                    self.w - 16.0 * s,
+                    self.row_h - 4.0 * s,
+                    [70, 110, 200, 200],
+                );
+                q.radius = 10.0 * s;
+                list.quads.push(q);
+            }
+            let a = if row.dim { 110 } else { 255 };
+            let ic = row.icon_color;
+            list.texts.push(
+                TextQuad::new(
+                    &row.icon,
+                    self.x + 30.0 * s,
+                    ry + 10.0 * s,
+                    20.0 * s,
+                    [ic[0], ic[1], ic[2], ic[3].min(a)],
+                )
+                .aligned(TextAlign::Center),
+            );
+            list.texts.push(TextQuad::new(
+                &row.label,
+                self.x + 52.0 * s,
+                ry + 11.0 * s,
+                17.0 * s,
+                [235, 238, 250, a],
+            ));
+            list.texts.push(
+                TextQuad::new(
+                    &row.right,
+                    self.x + self.w - 18.0 * s,
+                    ry + 11.0 * s,
+                    17.0 * s,
+                    [255, 220, 140, a],
+                )
+                .aligned(TextAlign::Right),
+            );
+        }
+        // More above / below.
+        if scroll > 0 {
+            list.texts.push(
+                TextQuad::new(
+                    "…",
+                    self.x + self.w * 0.5,
+                    self.y + 30.0 * s,
+                    14.0 * s,
+                    [200, 210, 255, 200],
+                )
+                .aligned(TextAlign::Center),
+            );
+        }
+        if scroll + self.visible < rows.len() {
+            list.texts.push(
+                TextQuad::new(
+                    "…",
+                    self.x + self.w * 0.5,
+                    self.y + self.h - 18.0 * s,
+                    14.0 * s,
+                    [200, 210, 255, 200],
+                )
+                .aligned(TextAlign::Center),
+            );
+        }
+    }
+
+    /// Which row (an index into the full list) a tap hit, with the list scrolled to `scroll`.
+    pub fn row_at(&self, x: f32, y: f32, rows: usize, scroll: usize) -> Option<usize> {
+        if x < self.x || x > self.x + self.w {
+            return None;
+        }
+        (0..self.visible.min(rows.saturating_sub(scroll))).find_map(|i| {
+            let ry = self.row_y(i);
+            (y >= ry && y < ry + self.row_h).then_some(i + scroll)
+        })
+    }
+
+    /// The scroll that keeps `selected` in view.
+    pub fn follow(&self, selected: usize, scroll: usize) -> usize {
+        if selected < scroll {
+            selected
+        } else if selected >= scroll + self.visible {
+            selected + 1 - self.visible
+        } else {
+            scroll
+        }
+    }
+}
+
 /// A tap on a stage-select card: -1 on the left quarter of the screen, +1 on the right, 0 in
 /// the middle (start).
 pub fn pick_side(x: f32, w: f32) -> i32 {
@@ -716,5 +902,32 @@ mod tests {
             ),
             (-1, 0, 1)
         );
+    }
+
+    #[test]
+    fn a_menu_draws_rows_scrolls_and_hit_tests() {
+        let m = Menu::layout(390.0, 100.0, 400.0, 420.0, 1.0);
+        assert_eq!(m.visible, 5);
+        let rows: Vec<Row> = (0..8)
+            .map(|i| Row {
+                icon: "♥".into(),
+                label: format!("Potion {i}"),
+                right: format!("x{i}"),
+                ..Row::default()
+            })
+            .collect();
+        let mut l = DrawList::default();
+        m.draw(&mut l, "Bag", "120 G", &rows, 2, Some(3));
+        assert!(l.texts.iter().any(|t| t.text == "Potion 2"));
+        assert!(
+            !l.texts.iter().any(|t| t.text == "Potion 1"),
+            "scrolled past"
+        );
+        assert!(l.texts.iter().any(|t| t.text == "120 G"));
+        let y = m.y + 44.0 + 1.5 * m.row_h;
+        assert_eq!(m.row_at(m.x + 20.0, y, rows.len(), 2), Some(3));
+        assert_eq!(m.row_at(2.0, y, rows.len(), 2), None);
+        assert_eq!(m.follow(7, 0), 3);
+        assert_eq!(m.follow(1, 3), 1);
     }
 }

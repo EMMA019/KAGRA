@@ -1,0 +1,400 @@
+{
+  "game": {
+    "audio": {
+      "bgm_volume": 0.5,
+      "enabled": true,
+      "master": 0.8,
+      "sfx": {
+        "buy": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+          "rate": 1.2,
+          "volume": 0.5
+        },
+        "cheer": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+          "rate": 1.0,
+          "volume": 0.5
+        },
+        "down": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+          "rate": 1.0,
+          "volume": 0.5
+        },
+        "equip": {
+          "file": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+          "rate": 0.8,
+          "volume": 0.5
+        },
+        "go": {
+          "file": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+          "rate": 1.0,
+          "volume": 0.6
+        },
+        "heal": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+          "rate": 1.4,
+          "volume": 0.5
+        },
+        "hit": {
+          "file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+          "rate": 0.8,
+          "volume": 0.7
+        },
+        "knock": {
+          "file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+          "rate": 1.3,
+          "volume": 0.6
+        },
+        "no": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+          "rate": 1.6,
+          "volume": 0.4
+        },
+        "swing": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_jump_01.wav",
+          "rate": 1.4,
+          "volume": 0.35
+        },
+        "tab": {
+          "file": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+          "rate": 1.3,
+          "volume": 0.4
+        },
+        "thud": {
+          "file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+          "rate": 0.9,
+          "volume": 0.5
+        }
+      },
+      "sfx_volume": 1.0
+    },
+    "bag_slots": 12,
+    "coins": 150,
+    "hp": 30,
+    "id": "engine_lab",
+    "items": [
+      {
+        "color": [
+          255,
+          120,
+          140
+        ],
+        "desc": "Heals 15 HP.",
+        "desc_ja": "HPを15回復する。",
+        "heal": 15,
+        "icon": "薬",
+        "id": "potion",
+        "name": "Potion",
+        "name_ja": "回復薬",
+        "price": 12,
+        "stack": 9
+      },
+      {
+        "color": [
+          140,
+          200,
+          255
+        ],
+        "desc": "Heals 40 HP.",
+        "desc_ja": "HPを40回復する。",
+        "heal": 40,
+        "icon": "水",
+        "id": "ether",
+        "name": "Moon Water",
+        "name_ja": "月の水",
+        "price": 30,
+        "stack": 9
+      },
+      {
+        "color": [
+          220,
+          230,
+          255
+        ],
+        "icon": "剣",
+        "id": "short_sword",
+        "kind": "equipment",
+        "name": "Short Sword",
+        "name_ja": "ショートソード",
+        "price": 40,
+        "slot": "hand",
+        "stats": {
+          "atk": 3
+        }
+      },
+      {
+        "color": [
+          255,
+          200,
+          140
+        ],
+        "icon": "斧",
+        "id": "war_axe",
+        "kind": "equipment",
+        "name": "War Axe",
+        "name_ja": "バトルアックス",
+        "price": 90,
+        "slot": "hand",
+        "stats": {
+          "atk": 7,
+          "def": -1
+        }
+      },
+      {
+        "color": [
+          210,
+          160,
+          110
+        ],
+        "icon": "服",
+        "id": "leather",
+        "kind": "equipment",
+        "name": "Leather Coat",
+        "name_ja": "革のコート",
+        "price": 35,
+        "slot": "body",
+        "stats": {
+          "def": 2
+        }
+      },
+      {
+        "color": [
+          200,
+          210,
+          225
+        ],
+        "icon": "鎧",
+        "id": "chain_mail",
+        "kind": "equipment",
+        "name": "Chain Mail",
+        "name_ja": "くさりかたびら",
+        "price": 80,
+        "slot": "body",
+        "stats": {
+          "def": 5
+        }
+      },
+      {
+        "color": [
+          255,
+          230,
+          140
+        ],
+        "icon": "月",
+        "id": "moon_charm",
+        "kind": "equipment",
+        "name": "Moon Charm",
+        "name_ja": "月のお守り",
+        "price": 60,
+        "slot": "charm",
+        "stats": {
+          "def": 1,
+          "hp": 10
+        }
+      },
+      {
+        "color": [
+          230,
+          200,
+          120
+        ],
+        "desc": "From the merchant.",
+        "desc_ja": "商人にもらった。",
+        "icon": "鍵",
+        "id": "old_key",
+        "kind": "key",
+        "name": "Old Key",
+        "name_ja": "古い鍵"
+      }
+    ],
+    "shop": {
+      "name": "Travelling Merchant",
+      "name_ja": "旅の商人",
+      "wares": [
+        {
+          "id": "potion",
+          "left": null,
+          "price": null
+        },
+        {
+          "id": "ether",
+          "left": null,
+          "price": null
+        },
+        {
+          "id": "short_sword",
+          "left": null,
+          "price": null
+        },
+        {
+          "id": "war_axe",
+          "left": 1,
+          "price": null
+        },
+        {
+          "id": "leather",
+          "left": null,
+          "price": null
+        },
+        {
+          "id": "chain_mail",
+          "left": 1,
+          "price": null
+        },
+        {
+          "id": "moon_charm",
+          "left": 1,
+          "price": null
+        }
+      ]
+    },
+    "speed": 3.0,
+    "stick_dead": 0.12,
+    "stick_px": 70.0,
+    "talk": {
+      "cast": {
+        "hero": {
+          "color": [
+            120,
+            180,
+            255
+          ],
+          "hair": [
+            60,
+            45,
+            35
+          ],
+          "name": "You",
+          "name_ja": "あなた",
+          "skin": [
+            240,
+            200,
+            165
+          ]
+        },
+        "merchant": {
+          "color": [
+            190,
+            120,
+            255
+          ],
+          "eyes": [
+            60,
+            40,
+            90
+          ],
+          "hair": [
+            120,
+            60,
+            150
+          ],
+          "name": "Mira",
+          "name_ja": "ミラ",
+          "side": "right",
+          "skin": [
+            245,
+            210,
+            180
+          ]
+        }
+      },
+      "nodes": {
+        "bye": {
+          "lines": [
+            {
+              "face": "smile",
+              "text": "Come back soon!",
+              "text_ja": "また来てね！",
+              "who": "merchant"
+            }
+          ]
+        },
+        "hello": {
+          "choices": [
+            {
+              "goto": "shop",
+              "text": "Show me your wares",
+              "text_ja": "品物を見せて"
+            },
+            {
+              "goto": "news",
+              "text": "Any news?",
+              "text_ja": "なにか噂は？"
+            },
+            {
+              "goto": "bye",
+              "text": "Goodbye",
+              "text_ja": "さようなら"
+            }
+          ],
+          "lines": [
+            {
+              "face": "smile",
+              "text": "Welcome, traveller! Moonlight prices, tonight only.",
+              "text_ja": "いらっしゃい、旅の人！今夜だけの月明かり価格だよ。",
+              "who": "merchant"
+            },
+            {
+              "if": "visits>=2",
+              "text": "Back again? I kept the good stuff for you.",
+              "text_ja": "また来たね？いい品をとっておいたよ。",
+              "who": "merchant"
+            }
+          ],
+          "set": {
+            "visits": 1
+          }
+        },
+        "key": {
+          "events": [
+            "give_key"
+          ],
+          "lines": [],
+          "next": "hello",
+          "set": {
+            "has_key": 1
+          }
+        },
+        "news": {
+          "lines": [
+            {
+              "face": "sad",
+              "text": "The old crypt opened at midnight. They say the dead walk there.",
+              "text_ja": "真夜中に古い地下墓地が開いたの。亡者が歩いているって。",
+              "who": "merchant"
+            },
+            {
+              "text": "I'll take a look.",
+              "text_ja": "見に行ってみるよ。",
+              "who": "hero"
+            },
+            {
+              "face": "surprised",
+              "if": "!has_key",
+              "text": "Then take this key. Don't die on me!",
+              "text_ja": "じゃあこの鍵を持っていって。死なないでよ！",
+              "who": "merchant"
+            }
+          ],
+          "next": "key"
+        },
+        "shop": {
+          "events": [
+            "open_shop"
+          ],
+          "lines": [
+            {
+              "text": "Take your time.",
+              "text_ja": "ゆっくり見ていってね。",
+              "who": "merchant"
+            }
+          ]
+        }
+      },
+      "start": "hello"
+    },
+    "title": "Engine Lab"
+  },
+  "genre": "engine_lab",
+  "version": 1
+}

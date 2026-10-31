@@ -52,6 +52,10 @@ KAGRA_BAKE=1 cargo test -p kagra-shared --lib <slug>::
 | 物語カード・クリアカード（画面を暗くして中央にカード、見出し、本文、集計の行、点滅する「タップで」、ステージ選択の ◀ ▶） | `hud_kit::{Card, CardStyle, pick_side}`（文章の折り返しだけなら `hud_kit::wrap_text`） |
 | HUD ボタンの当たり判定（描くのと同じ矩形の表で） | `hud_kit::hit` |
 | ステージの解放と記録（端末に保存、最初の物語カードでステージ選択） | `game_core::progress::{Progress, Better}` + `KitHost::save_json` + マニフェストの `page.save` |
+| 会話（顔は図形で描く、表情、口パク、文字送り、選択肢、フラグ、イベント。JSON） | `game_core::dialogue::{Script, Talk}` |
+| 持ち物・お金・装備・ショップ（JSON のアイテム定義、スタック、装備の能力値、売買、保存） | `game_core::items::{ItemBook, Bag, Gear, Shop}` + `hud_kit::Menu` |
+| 物理（横から見た箱とボール：落ちる、転がる、倒れる、積む、崩れる、爆発、眠る） | `game_core::physics2d::{World, Body, Shape}` |
+| キャラの動き（待機・歩き・走り・ジャンプ、攻撃の当たるタイミング、やられ、倒れたまま。リグ付きは glTF クリップ、無しは手続きのポーズ） | `game_core::anim::{Animator, MoveSet}`（KayKit は `MoveSet::kaykit()`） |
 | イージング、トゥイーン、タイマー、行って戻る動き | `game_core::tween::{Ease, Tween, Timer, ping_pong, pulse}` |
 | ダメージ数字や「MISS」が場所から浮かんで消える | `game_core::floats::Floats` |
 | ジャンプ以外のボタン（J/K/Shift、パッド B/X） | `KitHost::buttons` |

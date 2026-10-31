@@ -20,6 +20,7 @@ pub mod constraint;
 pub mod cook;
 pub mod crate_tower;
 pub mod driving;
+pub mod engine_lab;
 pub mod ffi;
 pub mod fight;
 pub mod first_person;

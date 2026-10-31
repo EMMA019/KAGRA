@@ -12,7 +12,7 @@ Android / Windows) runs every game; a game is a **kit** (one Rust file implement
 The owner plays it on a phone and says what feels wrong; agents build, verify and ship.
 
 The shipped games today: HOP-BEAT (rhythm hop), Neon Cat (lane runner), Moonlit Swarm
-(survivor arena), Lantern Watch (tap defense), Crate Tower (one-button stacker), Station Escape (side-on platformer), Moonlit Tactics (tactics, in progress). Starter (`kagra-shared/src/starter.rs`) is the template.
+(survivor arena), Lantern Watch (tap defense), Crate Tower (one-button stacker), Station Escape (side-on platformer), Moonlit Tactics (tactics, in progress), Engine Lab (a playground for the shared parts). Starter (`kagra-shared/src/starter.rs`) is the template.
 
 ## Rules
 
@@ -20,8 +20,8 @@ The shipped games today: HOP-BEAT (rhythm hop), Neon Cat (lane runner), Moonlit 
    then change the parts marked `GAME:`. The walk-through, the parts to reuse and the ship
    checklist are in [`docs/making_a_game.md`](docs/making_a_game.md). Do not add a genre to
    `WorldPlay` or game branches to `play.html`.
-2. **Reuse the shared parts before writing new ones** (`game_core::{stick, motion, view, platform, grid, tween, progress, floats, swarm,
-   enemies, lives, missions, juice}`, `hud_kit` (cards, buttons), rounded `Quad`s, `TextFace::Display`). When a
+2. **Reuse the shared parts before writing new ones** (`game_core::{stick, motion, view, platform, grid, tween, progress, floats, dialogue, items,
+   physics2d, anim, swarm, enemies, lives, missions, juice}`, `hud_kit` (cards, buttons), rounded `Quad`s, `TextFace::Display`). When a
    game grows a part another game could use, move it into `game_core` in the same PR series.
 3. **The page reads the manifest, never the genre.** Page features (best score, audio,
    language, pause, fixed 60 Hz step, one-button keys, music sync, revive ad, direct play,

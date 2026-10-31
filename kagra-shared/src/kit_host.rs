@@ -127,6 +127,9 @@ pub const KITS: &[(Detect, Load)] = &[
             json,
         )?))
     }),
+    (crate::engine_lab::is_engine_lab_dump, |json| {
+        Ok(Box::new(crate::engine_lab::EngineLab::from_json(json)?))
+    }),
     // new_kit.py adds kits above this line.
 ];
 
