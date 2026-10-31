@@ -78,6 +78,15 @@ pub trait KitHost: Debug + Any {
     fn quality_hints(&mut self, _atmo: f32, _particles: f32) {}
 }
 
+/// The usual `dump_json`: the world document with the kit's state as `sim` in front.
+pub fn dump_with_sim(doc: &WorldDoc, sim: &serde_json::Value) -> String {
+    let body = doc.to_json().unwrap_or_else(|_| "{}".into());
+    match body.strip_prefix('{') {
+        Some(rest) => format!("{{\n  \"sim\": {sim},{rest}"),
+        None => body,
+    }
+}
+
 type Detect = fn(&str) -> bool;
 type Load = fn(&str) -> Result<Box<dyn KitHost>, String>;
 
@@ -112,6 +121,14 @@ pub const KITS: &[(Detect, Load)] = &[
         Ok(Box::new(crate::station_escape::StationEscape::from_json(
             json,
         )?))
+    }),
+    (crate::moonlit_tactics::is_moonlit_tactics_dump, |json| {
+        Ok(Box::new(crate::moonlit_tactics::MoonlitTactics::from_json(
+            json,
+        )?))
+    }),
+    (crate::engine_lab::is_engine_lab_dump, |json| {
+        Ok(Box::new(crate::engine_lab::EngineLab::from_json(json)?))
     }),
     // new_kit.py adds kits above this line.
 ];

@@ -32,10 +32,11 @@ use serde_json::{json, Value};
 
 use crate::flow::{FlowPhase, GameFlow};
 use crate::game_core::platform::{touches, Body, BodyInput, BodySpec, Solid};
+use crate::game_core::progress::{self, Better, Progress};
 use crate::game_core::view::View;
 use crate::game_core::{declare_models, stick, tick_frame, Core, Kit};
 use crate::hop_beat::{glb_prop, glb_ready, light, prop};
-use crate::hud_kit::round_panel;
+use crate::hud_kit::{Card, CardStyle};
 use crate::input::{PointerEvent, PointerPhase};
 use crate::scene::{DrawList, Quad, TextAlign, TextFace, TextQuad};
 use crate::world_doc::{WorldCamera, WorldDoc};
@@ -476,8 +477,7 @@ pub struct StationEscape {
     foes: foes::Foes,
     warden: Option<boss::Warden>,
     /// Kept on the device (`page.save`): stages cleared, best clear time per stage.
-    cleared: usize,
-    best_secs: Vec<Option<f32>>,
+    progress: Progress,
     /// The stick or keys' last sideways push on the first story card (stage select).
     prev_pick: f32,
     tallies: Vec<Tally>,
@@ -513,6 +513,7 @@ impl StationEscape {
         flow.title = spec.title.clone();
         flow.tagline = String::new();
         let spawn = spec.stages[0].spawn;
+        let progress = Progress::new(spec.stages.len(), "best_secs", Better::Lower);
         let mut g = Self {
             spec,
             core: Core::default(),
@@ -535,8 +536,7 @@ impl StationEscape {
             wrecks: 0,
             foes: foes::Foes::default(),
             warden: None,
-            cleared: 0,
-            best_secs: Vec::new(),
+            progress,
             prev_pick: 0.0,
             tallies: Vec::new(),
             puffs: [[0.0; 3]; PUFFS],
@@ -578,7 +578,7 @@ impl StationEscape {
         }
         // What the device kept (`page.save`): the stages cleared and the records.
         if let Some(sv) = value.get("save") {
-            g.load_save(sv);
+            g.progress.load(sv);
         }
         // `?stage=3` on the preview link (the manifest's `page.url_params`) starts there.
         let stage = value.get("stage").and_then(|v| {
@@ -698,28 +698,9 @@ impl StationEscape {
         self.flow.finish(score, self.cells_total(), "ESCAPED");
     }
 
-    /// Read what the device kept: `{"cleared": n, "best_secs": [s or null, ...]}`. Anything
-    /// odd is ignored (a save from an older version, a hand edit).
-    fn load_save(&mut self, v: &Value) {
-        let n = self.spec.stages.len();
-        self.cleared = v
-            .get("cleared")
-            .and_then(|c| c.as_u64())
-            .map_or(0, |c| (c as usize).min(n));
-        self.best_secs = (0..n)
-            .map(|i| {
-                v.get("best_secs")
-                    .and_then(|b| b.get(i))
-                    .and_then(|s| s.as_f64())
-                    .map(|s| s as f32)
-                    .filter(|s| s.is_finite() && *s > 0.0)
-            })
-            .collect();
-    }
-
     /// Stage select is open on the run's first story card, once a stage has been cleared.
     fn can_pick(&self) -> bool {
-        self.beat == Beat::Intro && self.tallies.is_empty() && self.cleared > 0
+        self.beat == Beat::Intro && self.tallies.is_empty() && self.progress.can_pick()
     }
 
     /// Step the first stage of the run by `dir` among the stages reached (cleared + 1).
@@ -727,8 +708,7 @@ impl StationEscape {
         if !self.can_pick() {
             return;
         }
-        let reach = (self.cleared + 1).min(self.spec.stages.len()) as i32;
-        let next = (self.stage as i32 + dir).rem_euclid(reach) as usize;
+        let next = self.progress.step(self.stage, dir);
         if next != self.stage {
             self.load_stage(next);
             crate::mixer::cue_sfx("check");
@@ -835,14 +815,7 @@ impl StationEscape {
         self.core.stats.score += score;
         self.core.stats.rings = self.cells_total();
         self.beat = Beat::Clear;
-        self.cleared = self.cleared.max(self.stage + 1);
-        if self.best_secs.len() < self.spec.stages.len() {
-            self.best_secs.resize(self.spec.stages.len(), None);
-        }
-        let rec = &mut self.best_secs[self.stage];
-        if rec.is_none_or(|b| self.t < b) {
-            *rec = Some(self.t);
-        }
+        self.progress.clear(self.stage, self.t);
         crate::mixer::cue_sfx("clear");
     }
 
@@ -1942,97 +1915,41 @@ impl StationEscape {
         list
     }
 
-    fn card(&self, list: &mut DrawList, w: f32, h: f32, s: f32, tall: f32) -> (f32, f32, f32) {
-        let cw = (w - 32.0 * s).min(420.0 * s);
-        let (x, y) = ((w - cw) * 0.5, h * 0.5 - tall * 0.5);
-        list.quads.push(Quad::new(0.0, 0.0, w, h, [0, 0, 10, 110]));
-        round_panel(
-            list,
-            x,
-            y,
-            cw,
-            tall,
-            16.0 * s,
-            [12, 16, 34, 235],
-            [120, 170, 255, 120],
-            1.5 * s,
-            (0.0, 6.0 * s, 90),
-        );
-        (x, y, cw)
-    }
-
     fn card_intro(&self, list: &mut DrawList, w: f32, h: f32, s: f32) {
         let st = self.st();
-        let tall = 210.0 * s;
-        let (x, y, cw) = self.card(list, w, h, s, tall);
-        list.texts.push(
-            TextQuad::new(
-                &format!("STAGE {}", self.stage + 1),
-                w * 0.5,
-                y + 18.0 * s,
-                16.0 * s,
-                [140, 190, 255, 255],
-            )
-            .aligned(TextAlign::Center)
-            .with_face(TextFace::Display),
+        let card = Card::open(list, w, h, s, 210.0 * s, CardStyle::default());
+        card.kicker(list, &format!("STAGE {}", self.stage + 1));
+        card.line(
+            list,
+            self.tr(&st.name, &st.name_ja),
+            42.0,
+            28.0,
+            card.style.title,
         );
-        list.texts.push(
-            TextQuad::new(
-                self.tr(&st.name, &st.name_ja),
-                w * 0.5,
-                y + 42.0 * s,
-                28.0 * s,
-                [255, 244, 225, 255],
-            )
-            .aligned(TextAlign::Center),
-        );
-        wrap_into(
+        card.body(
             list,
             self.tr(&st.story, &st.story_ja),
-            x + 20.0 * s,
-            y + 88.0 * s,
-            cw - 40.0 * s,
-            16.0 * s,
-            [215, 222, 240, 255],
+            88.0,
+            16.0,
             self.lang_ja,
         );
-        if let Some(b) = self.best_secs.get(self.stage).copied().flatten() {
-            let b = b as u32;
-            list.texts.push(
-                TextQuad::new(
-                    &format!("{} {}:{:02}", self.tr("BEST", "ベスト"), b / 60, b % 60),
-                    w * 0.5,
-                    y + tall - 58.0 * s,
-                    14.0 * s,
-                    [150, 255, 190, 230],
-                )
-                .aligned(TextAlign::Center),
+        if let Some(b) = self.progress.record(self.stage) {
+            card.line(
+                list,
+                &format!("{} {}", self.tr("BEST", "ベスト"), progress::clock(b)),
+                210.0 - 58.0,
+                14.0,
+                [150, 255, 190, 230],
             );
         }
         if self.can_pick() {
-            for (dx, glyph) in [(-1.0, "◀"), (1.0, "▶")] {
-                list.texts.push(
-                    TextQuad::new(
-                        glyph,
-                        w * 0.5 + dx * (cw * 0.5 - 18.0 * s),
-                        y + 40.0 * s,
-                        26.0 * s,
-                        [170, 200, 255, 230],
-                    )
-                    .aligned(TextAlign::Center),
-                );
-            }
+            card.arrows(list, 40.0);
         }
-        let a = (160.0 + 90.0 * (self.clock * 3.0).sin()) as u8;
-        list.texts.push(
-            TextQuad::new(
-                self.tr("Tap to start", "タップでスタート"),
-                w * 0.5,
-                y + tall - 34.0 * s,
-                16.0 * s,
-                [255, 255, 255, a],
-            )
-            .aligned(TextAlign::Center),
+        card.prompt(
+            list,
+            self.tr("Tap to start", "タップでスタート"),
+            self.clock,
+            34.0,
         );
     }
 
@@ -2040,61 +1957,29 @@ impl StationEscape {
         let Some(tl) = self.tallies.last() else {
             return;
         };
-        let tall = 250.0 * s;
-        let (x, y, cw) = self.card(list, w, h, s, tall);
-        list.texts.push(
-            TextQuad::new(
-                self.tr("STAGE CLEAR", "ステージクリア"),
-                w * 0.5,
-                y + 18.0 * s,
-                26.0 * s,
-                [150, 255, 190, 255],
-            )
-            .aligned(TextAlign::Center),
+        let card = Card::open(list, w, h, s, 250.0 * s, CardStyle::default());
+        card.line(
+            list,
+            self.tr("STAGE CLEAR", "ステージクリア"),
+            18.0,
+            26.0,
+            [150, 255, 190, 255],
         );
         let total = self.st().cells.len();
-        let secs = tl.secs as u32;
         let rows = [
-            (
-                self.tr("Time", "タイム"),
-                format!("{}:{:02}", secs / 60, secs % 60),
-            ),
+            (self.tr("Time", "タイム"), progress::clock(tl.secs)),
             (self.tr("Cells", "セル"), format!("{} / {total}", tl.cells)),
             (self.tr("Falls", "ミス"), format!("{}", tl.falls)),
             (self.tr("Drones", "ドローン"), format!("{}", tl.wrecks)),
             (self.tr("Score", "スコア"), format!("{}", tl.score)),
         ];
-        for (i, (k, v)) in rows.iter().enumerate() {
-            let ry = y + 62.0 * s + i as f32 * 28.0 * s;
-            list.texts.push(TextQuad::new(
-                k,
-                x + 28.0 * s,
-                ry,
-                17.0 * s,
-                [190, 200, 225, 255],
-            ));
-            list.texts.push(
-                TextQuad::new(v, x + cw - 28.0 * s, ry, 19.0 * s, [255, 244, 225, 255])
-                    .aligned(TextAlign::Right)
-                    .with_face(TextFace::Display),
-            );
-        }
-        let a = (160.0 + 90.0 * (self.clock * 3.0).sin()) as u8;
+        card.rows(list, &rows, 62.0, 28.0);
         let next = if self.stage + 1 < self.spec.stages.len() {
             self.tr("Tap for the next stage", "タップで次のステージ")
         } else {
             self.tr("Tap to finish", "タップでおわり")
         };
-        list.texts.push(
-            TextQuad::new(
-                next,
-                w * 0.5,
-                y + tall - 30.0 * s,
-                15.0 * s,
-                [255, 255, 255, a],
-            )
-            .aligned(TextAlign::Center),
-        );
+        card.prompt(list, next, self.clock, 30.0);
     }
 
     // ---- what the page reads
@@ -2118,7 +2003,7 @@ impl StationEscape {
             "falls": self.falls,
             "wrecks": self.wrecks,
             "boss_hp": self.warden.as_ref().map(|w| w.hp),
-            "cleared": self.cleared,
+            "cleared": self.progress.cleared,
             "pos": [self.body.x, self.body.y],
             "win": self.win,
             "death": self.core.stats.death,
@@ -2147,48 +2032,6 @@ fn hud_scale(w: f32, h: f32) -> f32 {
     (w.min(h) / 400.0).clamp(0.9, 2.6)
 }
 
-/// Lines of text inside `width` pixels: Japanese breaks anywhere, English at spaces. A glyph
-/// is taken as 0.55 of the size wide in English and 1.0 in Japanese.
-#[allow(clippy::too_many_arguments)]
-fn wrap_into(
-    list: &mut DrawList,
-    text: &str,
-    x: f32,
-    y: f32,
-    width: f32,
-    size: f32,
-    color: [u8; 4],
-    ja: bool,
-) {
-    let per = if ja { size } else { size * 0.55 };
-    let max = ((width / per) as usize).max(4);
-    let mut lines: Vec<String> = Vec::new();
-    if ja {
-        let chars: Vec<char> = text.chars().collect();
-        for chunk in chars.chunks(max) {
-            lines.push(chunk.iter().collect());
-        }
-    } else {
-        let mut line = String::new();
-        for word in text.split_whitespace() {
-            if !line.is_empty() && line.len() + 1 + word.len() > max {
-                lines.push(std::mem::take(&mut line));
-            }
-            if !line.is_empty() {
-                line.push(' ');
-            }
-            line.push_str(word);
-        }
-        if !line.is_empty() {
-            lines.push(line);
-        }
-    }
-    for (i, l) in lines.iter().take(4).enumerate() {
-        list.texts
-            .push(TextQuad::new(l, x, y + i as f32 * size * 1.45, size, color));
-    }
-}
-
 // ------------------------------------------------------------ the host ----
 
 impl Kit for StationEscape {
@@ -2204,19 +2047,12 @@ impl Kit for StationEscape {
     fn flow_mut(&mut self) -> &mut GameFlow {
         &mut self.flow
     }
-    fn substeps(&self, _dt: f32) -> u32 {
-        1
-    }
     fn step(&mut self, dt: f32) {
         self.step_sim(dt);
     }
     fn attract(&mut self, dt: f32) {
         self.clock += dt;
         self.cam.0 += dt * 0.8;
-    }
-    fn follow(&mut self, _dt: f32) {}
-    fn blocks_spark(&self, _x: f32, _y: f32, _z: f32) -> bool {
-        false
     }
     fn rebuild(&mut self) {
         self.update_doc();
@@ -2243,11 +2079,7 @@ impl crate::kit_host::KitHost for StationEscape {
         &self.doc
     }
     fn dump_json(&self) -> String {
-        let body = self.doc.to_json().unwrap_or_else(|_| "{}".into());
-        match body.strip_prefix('{') {
-            Some(rest) => format!("{{\n  \"sim\": {},{rest}", self.state_value()),
-            None => body,
-        }
+        crate::kit_host::dump_with_sim(&self.doc, &self.state_value())
     }
     fn state_json(&self) -> String {
         self.state_value().to_string()
@@ -2275,13 +2107,7 @@ impl crate::kit_host::KitHost for StationEscape {
         self.keys_jump = jump;
     }
     fn save_json(&self) -> Option<String> {
-        Some(
-            json!({
-                "cleared": self.cleared,
-                "best_secs": self.best_secs.iter().map(|b| b.map(|s| (s * 10.0).round() / 10.0)).collect::<Vec<_>>(),
-            })
-            .to_string(),
-        )
+        Some(self.progress.to_value().to_string())
     }
     fn buttons(&mut self, attack: bool, _dodge: bool) {
         self.keys_dash = attack;

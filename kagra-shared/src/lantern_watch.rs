@@ -617,19 +617,12 @@ impl LanternWatch {
         let (w, h) = self.size.get();
         let view = self.view();
         let reach = self.spec.tap_px * hud_scale(w, h);
-        let mut best: Option<(usize, f32)> = None;
-        for (i, f) in self.foes.iter().enumerate() {
-            let k = &self.spec.foes[f.kind];
-            // The middle of the body, not the feet: that is where a thumb goes.
-            let Some((sx, sy)) = view.project([f.x, 0.35 * k.scale, f.z], w, h) else {
-                continue;
-            };
-            let d = (sx - x).hypot(sy - y);
-            if d < reach && best.is_none_or(|(_, bd)| d < bd) {
-                best = Some((i, d));
-            }
-        }
-        let Some((i, _)) = best else {
+        // The middle of the body, not the feet: that is where a thumb goes.
+        let middles = self
+            .foes
+            .iter()
+            .map(|f| [f.x, 0.35 * self.spec.foes[f.kind].scale, f.z]);
+        let Some(i) = view.pick(middles, x, y, w, h, reach) else {
             self.combo = 0;
             self.taps.push([x, y, 0.3, 0.0]);
             return false;
@@ -1037,18 +1030,11 @@ impl Kit for LanternWatch {
     fn flow_mut(&mut self) -> &mut GameFlow {
         &mut self.flow
     }
-    fn substeps(&self, _dt: f32) -> u32 {
-        1
-    }
     fn step(&mut self, dt: f32) {
         self.step_sim(dt);
     }
     fn attract(&mut self, dt: f32) {
         self.t += dt;
-    }
-    fn follow(&mut self, _dt: f32) {}
-    fn blocks_spark(&self, _x: f32, _y: f32, _z: f32) -> bool {
-        false
     }
     fn rebuild(&mut self) {
         self.build_doc();
@@ -1075,11 +1061,7 @@ impl crate::kit_host::KitHost for LanternWatch {
         &self.doc
     }
     fn dump_json(&self) -> String {
-        let body = self.doc.to_json().unwrap_or_else(|_| "{}".into());
-        match body.strip_prefix('{') {
-            Some(rest) => format!("{{\n  \"sim\": {},{rest}", self.state_value()),
-            None => body,
-        }
+        crate::kit_host::dump_with_sim(&self.doc, &self.state_value())
     }
     fn state_json(&self) -> String {
         self.state_value().to_string()

@@ -112,6 +112,30 @@ impl View {
         Some(((nx * 0.5 + 0.5) * w, (0.5 - ny * 0.5) * h))
     }
 
+    /// The nearest of `points` to a canvas pixel, within `reach` pixels: what a thumb meant to
+    /// tap. Give each thing's middle (not its feet). `None` when nothing is that close.
+    pub fn pick(
+        &self,
+        points: impl IntoIterator<Item = [f32; 3]>,
+        px: f32,
+        py: f32,
+        w: f32,
+        h: f32,
+        reach: f32,
+    ) -> Option<usize> {
+        let mut best: Option<(usize, f32)> = None;
+        for (i, p) in points.into_iter().enumerate() {
+            let Some((sx, sy)) = self.project(p, w, h) else {
+                continue;
+            };
+            let d = (sx - px).hypot(sy - py);
+            if d < reach && best.is_none_or(|(_, bd)| d < bd) {
+                best = Some((i, d));
+            }
+        }
+        best.map(|(i, _)| i)
+    }
+
     /// The point at height `ground_y` under a canvas pixel, as world `(x, z)`, or `None` for a
     /// ray that does not come down to it.
     pub fn ground_at(&self, px: f32, py: f32, w: f32, h: f32, ground_y: f32) -> Option<(f32, f32)> {
@@ -241,5 +265,14 @@ mod tests {
             v.ground_at(195.0, -4000.0, 390.0, 844.0, 0.0).is_none(),
             "sky"
         );
+    }
+
+    #[test]
+    fn pick_finds_the_nearest_thing_within_reach() {
+        let v = top_down();
+        let things = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [-3.0, 0.0, 3.0]];
+        let (sx, sy) = v.project(things[1], 390.0, 844.0).unwrap();
+        assert_eq!(v.pick(things, sx + 3.0, sy, 390.0, 844.0, 40.0), Some(1));
+        assert_eq!(v.pick(things, sx + 300.0, sy, 390.0, 844.0, 40.0), None);
     }
 }

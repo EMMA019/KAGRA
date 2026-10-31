@@ -3,7 +3,7 @@
 //! pieces on the GPU's rounded quads: [`round_panel`], [`gauge`], [`pill_button`].
 //! No kit-specific names live here; a game passes colours from its `HudSpec`.
 
-use crate::scene::{DrawList, Quad, TextAlign, TextQuad};
+use crate::scene::{DrawList, Quad, TextAlign, TextFace, TextQuad};
 
 /// HUD units -> buffer pixels. 1.0 at a 412 px wide phone buffer, so a CSS-pixel
 /// size on a 2x phone is `size * 2`. Clamped so a desktop window stays sane.
@@ -268,6 +268,462 @@ pub fn counter_chip(
     );
 }
 
+/// Lines of text inside `width` pixels (a story card, a hint): Japanese breaks anywhere,
+/// English at spaces. A glyph is taken as 0.55 of the size wide in English and 1.0 in
+/// Japanese. At most four lines.
+#[allow(clippy::too_many_arguments)]
+pub fn wrap_text(
+    list: &mut DrawList,
+    text: &str,
+    x: f32,
+    y: f32,
+    width: f32,
+    size: f32,
+    color: [u8; 4],
+    ja: bool,
+) {
+    let per = if ja { size } else { size * 0.55 };
+    let max = ((width / per) as usize).max(4);
+    let mut lines: Vec<String> = Vec::new();
+    if ja {
+        let chars: Vec<char> = text.chars().collect();
+        for chunk in chars.chunks(max) {
+            lines.push(chunk.iter().collect());
+        }
+    } else {
+        let mut line = String::new();
+        for word in text.split_whitespace() {
+            if !line.is_empty() && line.len() + 1 + word.len() > max {
+                lines.push(std::mem::take(&mut line));
+            }
+            if !line.is_empty() {
+                line.push(' ');
+            }
+            line.push_str(word);
+        }
+        if !line.is_empty() {
+            lines.push(line);
+        }
+    }
+    for (i, l) in lines.iter().take(4).enumerate() {
+        list.texts
+            .push(TextQuad::new(l, x, y + i as f32 * size * 1.45, size, color));
+    }
+}
+
+/// The first button whose rectangle `[x, y, w, h]` holds the pixel (HUD buttons a kit lays
+/// out once and both draws and hit-tests).
+pub fn hit<T: Copy>(buttons: &[(T, [f32; 4])], x: f32, y: f32) -> Option<T> {
+    buttons.iter().find_map(|&(b, r)| {
+        (x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3]).then_some(b)
+    })
+}
+
+/// The colours of a [`Card`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CardStyle {
+    /// Over the whole screen behind the card.
+    pub dim: [u8; 4],
+    pub fill: [u8; 4],
+    pub edge: [u8; 4],
+    /// The small line on top ("STAGE 2").
+    pub kicker: [u8; 4],
+    pub title: [u8; 4],
+    pub body: [u8; 4],
+    /// Row labels and values on a tally.
+    pub label: [u8; 4],
+    pub value: [u8; 4],
+}
+
+impl Default for CardStyle {
+    /// Night blue with warm titles.
+    fn default() -> Self {
+        Self {
+            dim: [0, 0, 10, 115],
+            fill: [12, 16, 34, 236],
+            edge: [120, 170, 255, 120],
+            kicker: [140, 190, 255, 255],
+            title: [255, 244, 225, 255],
+            body: [215, 222, 240, 255],
+            label: [190, 200, 225, 255],
+            value: [255, 244, 225, 255],
+        }
+    }
+}
+
+/// A card in the middle of a dimmed screen: a story card before a stage, a clear card with a
+/// tally, a defeat. Open it with its height, then place lines by their distance from its top.
+/// Every size is in HUD units times `s`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Card {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub s: f32,
+    pub style: CardStyle,
+}
+
+impl Card {
+    /// Dim the `w` x `h` screen and draw a card `tall` high (at most 420 wide).
+    pub fn open(list: &mut DrawList, w: f32, h: f32, s: f32, tall: f32, style: CardStyle) -> Self {
+        let cw = (w - 32.0 * s).min(420.0 * s);
+        let (x, y) = ((w - cw) * 0.5, h * 0.5 - tall * 0.5);
+        list.quads.push(Quad::new(0.0, 0.0, w, h, style.dim));
+        round_panel(
+            list,
+            x,
+            y,
+            cw,
+            tall,
+            16.0 * s,
+            style.fill,
+            style.edge,
+            1.5 * s,
+            (0.0, 6.0 * s, 90),
+        );
+        Self {
+            x,
+            y,
+            w: cw,
+            h: tall,
+            s,
+            style,
+        }
+    }
+
+    fn mid(&self) -> f32 {
+        self.x + self.w * 0.5
+    }
+
+    /// A centred line `dy` below the card's top.
+    pub fn line(&self, list: &mut DrawList, text: &str, dy: f32, size: f32, color: [u8; 4]) {
+        list.texts.push(
+            TextQuad::new(text, self.mid(), self.y + dy * self.s, size * self.s, color)
+                .aligned(TextAlign::Center),
+        );
+    }
+
+    /// The small display-face line on top ("STAGE 2", "MAP 1").
+    pub fn kicker(&self, list: &mut DrawList, text: &str) {
+        list.texts.push(
+            TextQuad::new(
+                text,
+                self.mid(),
+                self.y + 18.0 * self.s,
+                16.0 * self.s,
+                self.style.kicker,
+            )
+            .aligned(TextAlign::Center)
+            .with_face(TextFace::Display),
+        );
+    }
+
+    /// The big name under the kicker.
+    pub fn title(&self, list: &mut DrawList, text: &str) {
+        self.line(list, text, 42.0, 27.0, self.style.title);
+    }
+
+    /// A paragraph, wrapped to the card (`ja`: break anywhere).
+    pub fn body(&self, list: &mut DrawList, text: &str, dy: f32, size: f32, ja: bool) {
+        wrap_text(
+            list,
+            text,
+            self.x + 20.0 * self.s,
+            self.y + dy * self.s,
+            self.w - 40.0 * self.s,
+            size * self.s,
+            self.style.body,
+            ja,
+        );
+    }
+
+    /// A tally: labels on the left, values on the right, from `dy` down, `step` apart.
+    pub fn rows(&self, list: &mut DrawList, rows: &[(&str, String)], dy: f32, step: f32) {
+        let s = self.s;
+        for (i, (k, v)) in rows.iter().enumerate() {
+            let ry = self.y + (dy + i as f32 * step) * s;
+            list.texts.push(TextQuad::new(
+                k,
+                self.x + 28.0 * s,
+                ry,
+                17.0 * s,
+                self.style.label,
+            ));
+            list.texts.push(
+                TextQuad::new(
+                    v,
+                    self.x + self.w - 28.0 * s,
+                    ry,
+                    19.0 * s,
+                    self.style.value,
+                )
+                .aligned(TextAlign::Right)
+                .with_face(TextFace::Display),
+            );
+        }
+    }
+
+    /// The breathing "tap to go on" line, `from_bottom` above the card's bottom edge.
+    pub fn prompt(&self, list: &mut DrawList, text: &str, clock: f32, from_bottom: f32) {
+        let a = (255.0 * crate::game_core::tween::pulse(clock, 0.48, 0.27)) as u8;
+        list.texts.push(
+            TextQuad::new(
+                text,
+                self.mid(),
+                self.y + self.h - from_bottom * self.s,
+                16.0 * self.s,
+                [255, 255, 255, a],
+            )
+            .aligned(TextAlign::Center),
+        );
+    }
+
+    /// ◀ ▶ at the card's sides, `dy` below its top: a stage select (taps on the outer
+    /// quarters of the screen pick, see [`pick_side`]). Drawn as shapes: the bundled fonts
+    /// have no triangle glyphs.
+    pub fn arrows(&self, list: &mut DrawList, dy: f32) {
+        let s = self.s;
+        for dir in [-1.0, 1.0] {
+            let cx = self.mid() + dir * (self.w * 0.5 - 22.0 * s);
+            let cy = self.y + (dy + 14.0) * s;
+            let r = 15.0 * s;
+            round_panel(
+                list,
+                cx - r,
+                cy - r,
+                2.0 * r,
+                2.0 * r,
+                r,
+                [60, 90, 160, 150],
+                [170, 200, 255, 140],
+                1.0 * s,
+                (0.0, 0.0, 0),
+            );
+            arrow(list, cx, cy, 13.0 * s, dir, [220, 232, 255, 240]);
+        }
+    }
+}
+
+/// A solid triangle `size` across centred on `(cx, cy)`, pointing right (`dir` > 0) or left,
+/// from thin columns (the fonts have no ◀ ▶).
+pub fn arrow(list: &mut DrawList, cx: f32, cy: f32, size: f32, dir: f32, color: [u8; 4]) {
+    let n = 10;
+    let col = size / n as f32;
+    // A little toward the tip, so the triangle's weight sits in the middle.
+    let x0 = cx - size * 0.5 + dir.signum() * size * 0.1;
+    for i in 0..n {
+        // The tall side at the back, the tip in front.
+        let k = if dir > 0.0 { i } else { n - 1 - i };
+        let tall = size * (1.0 - (k as f32 + 0.5) / n as f32);
+        list.quads.push(Quad::new(
+            x0 + i as f32 * col,
+            cy - tall * 0.5,
+            col + 0.3,
+            tall,
+            color,
+        ));
+    }
+}
+
+/// One row of a [`Menu`].
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Row {
+    /// A glyph or short word on the left ("♥", "⚔").
+    pub icon: String,
+    pub icon_color: [u8; 4],
+    pub label: String,
+    /// On the right: a count, a price, "E" for equipped.
+    pub right: String,
+    /// Greyed out (too dear, cannot use).
+    pub dim: bool,
+}
+
+/// A titled list panel: a bag, a shop, an equipment screen. Lay it out with
+/// [`Menu::layout`], draw it with [`Menu::draw`], hit-test rows with [`Menu::row_at`].
+/// It shows `visible` rows from `scroll`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Menu {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub s: f32,
+    pub row_h: f32,
+    pub visible: usize,
+}
+
+impl Menu {
+    /// A panel `w_max` wide at most, from `top` down to `bottom` pixels on a `w`-wide screen.
+    pub fn layout(w: f32, top: f32, bottom: f32, w_max: f32, s: f32) -> Self {
+        let mw = (w - 24.0 * s).min(w_max * s);
+        let row_h = 44.0 * s;
+        let h = (bottom - top).max(row_h * 2.0 + 50.0 * s);
+        let visible = (((h - 50.0 * s) / row_h).floor() as usize).max(1);
+        Self {
+            x: (w - mw) * 0.5,
+            y: top,
+            w: mw,
+            h,
+            s,
+            row_h,
+            visible,
+        }
+    }
+
+    fn row_y(&self, i: usize) -> f32 {
+        self.y + 44.0 * self.s + i as f32 * self.row_h
+    }
+
+    /// Draw the panel, the title (and a note on its right: coins), rows from `scroll`, with
+    /// `selected` (an index into `rows`) lit.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw(
+        &self,
+        list: &mut DrawList,
+        title: &str,
+        note: &str,
+        rows: &[Row],
+        scroll: usize,
+        selected: Option<usize>,
+    ) {
+        let s = self.s;
+        round_panel(
+            list,
+            self.x,
+            self.y,
+            self.w,
+            self.h,
+            14.0 * s,
+            [12, 16, 34, 238],
+            [140, 175, 255, 120],
+            1.5 * s,
+            (0.0, 5.0 * s, 90),
+        );
+        list.texts.push(TextQuad::new(
+            title,
+            self.x + 16.0 * s,
+            self.y + 12.0 * s,
+            19.0 * s,
+            [255, 236, 200, 255],
+        ));
+        if !note.is_empty() {
+            list.texts.push(
+                TextQuad::new(
+                    note,
+                    self.x + self.w - 16.0 * s,
+                    self.y + 13.0 * s,
+                    17.0 * s,
+                    [255, 220, 120, 255],
+                )
+                .aligned(TextAlign::Right),
+            );
+        }
+        for (k, row) in rows.iter().enumerate().skip(scroll).take(self.visible) {
+            let ry = self.row_y(k - scroll);
+            if selected == Some(k) {
+                let mut q = Quad::new(
+                    self.x + 8.0 * s,
+                    ry,
+                    self.w - 16.0 * s,
+                    self.row_h - 4.0 * s,
+                    [70, 110, 200, 200],
+                );
+                q.radius = 10.0 * s;
+                list.quads.push(q);
+            }
+            let a = if row.dim { 110 } else { 255 };
+            let ic = row.icon_color;
+            list.texts.push(
+                TextQuad::new(
+                    &row.icon,
+                    self.x + 30.0 * s,
+                    ry + 10.0 * s,
+                    20.0 * s,
+                    [ic[0], ic[1], ic[2], ic[3].min(a)],
+                )
+                .aligned(TextAlign::Center),
+            );
+            list.texts.push(TextQuad::new(
+                &row.label,
+                self.x + 52.0 * s,
+                ry + 11.0 * s,
+                17.0 * s,
+                [235, 238, 250, a],
+            ));
+            list.texts.push(
+                TextQuad::new(
+                    &row.right,
+                    self.x + self.w - 18.0 * s,
+                    ry + 11.0 * s,
+                    17.0 * s,
+                    [255, 220, 140, a],
+                )
+                .aligned(TextAlign::Right),
+            );
+        }
+        // More above / below.
+        if scroll > 0 {
+            list.texts.push(
+                TextQuad::new(
+                    "…",
+                    self.x + self.w * 0.5,
+                    self.y + 30.0 * s,
+                    14.0 * s,
+                    [200, 210, 255, 200],
+                )
+                .aligned(TextAlign::Center),
+            );
+        }
+        if scroll + self.visible < rows.len() {
+            list.texts.push(
+                TextQuad::new(
+                    "…",
+                    self.x + self.w * 0.5,
+                    self.y + self.h - 18.0 * s,
+                    14.0 * s,
+                    [200, 210, 255, 200],
+                )
+                .aligned(TextAlign::Center),
+            );
+        }
+    }
+
+    /// Which row (an index into the full list) a tap hit, with the list scrolled to `scroll`.
+    pub fn row_at(&self, x: f32, y: f32, rows: usize, scroll: usize) -> Option<usize> {
+        if x < self.x || x > self.x + self.w {
+            return None;
+        }
+        (0..self.visible.min(rows.saturating_sub(scroll))).find_map(|i| {
+            let ry = self.row_y(i);
+            (y >= ry && y < ry + self.row_h).then_some(i + scroll)
+        })
+    }
+
+    /// The scroll that keeps `selected` in view.
+    pub fn follow(&self, selected: usize, scroll: usize) -> usize {
+        if selected < scroll {
+            selected
+        } else if selected >= scroll + self.visible {
+            selected + 1 - self.visible
+        } else {
+            scroll
+        }
+    }
+}
+
+/// A tap on a stage-select card: -1 on the left quarter of the screen, +1 on the right, 0 in
+/// the middle (start).
+pub fn pick_side(x: f32, w: f32) -> i32 {
+    if x < w * 0.25 {
+        -1
+    } else if x > w * 0.75 {
+        1
+    } else {
+        0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -421,5 +877,57 @@ mod tests {
             y1 - y0
         );
         assert!(l.quads.len() > 12, "pad plus four toes");
+    }
+
+    #[test]
+    fn a_card_dims_the_screen_and_buttons_hit_test() {
+        let mut l = DrawList::default();
+        let c = Card::open(&mut l, 400.0, 800.0, 1.0, 200.0, CardStyle::default());
+        assert_eq!((c.x, c.y, c.w), (16.0, 300.0, 368.0));
+        assert_eq!(l.quads[0].w, 400.0, "the dim covers the screen");
+        c.kicker(&mut l, "STAGE 1");
+        c.title(&mut l, "Docking Bay");
+        c.rows(&mut l, &[("Time", "0:41".into())], 60.0, 28.0);
+        c.prompt(&mut l, "Tap", 0.0, 30.0);
+        c.arrows(&mut l, 40.0);
+        assert_eq!(l.texts.len(), 5);
+        let btns = [(1, [0.0, 0.0, 10.0, 10.0]), (2, [20.0, 0.0, 10.0, 10.0])];
+        assert_eq!(hit(&btns, 25.0, 5.0), Some(2));
+        assert_eq!(hit(&btns, 15.0, 5.0), None);
+        assert_eq!(
+            (
+                pick_side(10.0, 400.0),
+                pick_side(200.0, 400.0),
+                pick_side(390.0, 400.0)
+            ),
+            (-1, 0, 1)
+        );
+    }
+
+    #[test]
+    fn a_menu_draws_rows_scrolls_and_hit_tests() {
+        let m = Menu::layout(390.0, 100.0, 400.0, 420.0, 1.0);
+        assert_eq!(m.visible, 5);
+        let rows: Vec<Row> = (0..8)
+            .map(|i| Row {
+                icon: "♥".into(),
+                label: format!("Potion {i}"),
+                right: format!("x{i}"),
+                ..Row::default()
+            })
+            .collect();
+        let mut l = DrawList::default();
+        m.draw(&mut l, "Bag", "120 G", &rows, 2, Some(3));
+        assert!(l.texts.iter().any(|t| t.text == "Potion 2"));
+        assert!(
+            !l.texts.iter().any(|t| t.text == "Potion 1"),
+            "scrolled past"
+        );
+        assert!(l.texts.iter().any(|t| t.text == "120 G"));
+        let y = m.y + 44.0 + 1.5 * m.row_h;
+        assert_eq!(m.row_at(m.x + 20.0, y, rows.len(), 2), Some(3));
+        assert_eq!(m.row_at(2.0, y, rows.len(), 2), None);
+        assert_eq!(m.follow(7, 0), 3);
+        assert_eq!(m.follow(1, 3), 1);
     }
 }

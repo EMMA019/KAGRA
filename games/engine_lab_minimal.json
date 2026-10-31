@@ -1,0 +1,23 @@
+{
+  "title": "Engine Lab",
+  "icon": "assets/icons/game_placeholder.png",
+  "version": "0.1.0",
+  "entry": "examples/engine_lab_minimal.py",
+  "world": "kagra-shared/tests/fixtures/engine_lab_world.json",
+  "bundle_assets": [
+    "assets/audio/oga-retro-synth-sfx",
+    "assets/audio/kenney-interface-sounds",
+    "assets/audio/kenney-impact-sounds",
+    "assets/library/kaykit/adventurers/characters/Knight.glb",
+    "assets/library/kaykit/adventurers/characters/Mage.glb",
+    "assets/models/kenney/mini-characters/character-male-a.glb",
+    "assets/models/kenney/platformer-kit/crate.glb"
+  ],
+  "page": {
+    "audio": true,
+    "lang": true,
+    "pause": true,
+    "fixed_step": true,
+    "blurb": "blurb.lab"
+  }
+}
