@@ -11,6 +11,7 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 | [Cinzel Bold (wght 700 instance, Latin subset)](https://github.com/google/fonts/tree/main/ofl/cinzel) | The Cinzel Project Authors (Natanael Gama) | OFL-1.1 | required | `kagra-shared/assets/Cinzel-Bold.ttf` |
 | [Zen Maru Gothic Bold (subset)](https://github.com/google/fonts/tree/main/ofl/zenmarugothic) | The Zen Maru Gothic Project Authors (Yoshimichi Ohira) | OFL-1.1 | required | `kagra-shared/assets/ZenMaruGothic-Bold.ttf` |
 | [Public Sans Bold](https://github.com/uswds/public-sans) | USWDS / GSA; original Libre Franklin by Impallari Type | custom | required | `kagra-shared/assets/PublicSans-Bold.ttf` |
+| [Grab3D creatures and sci-fi models](https://grab3d.com/license/) | Grab3D | CC0-1.0 | not required | `assets/models/grab3d/**` |
 | [PixelMplus10-Regular](http://itouhiro.hatenablog.com/entry/20130602/font) | itouhiro; M+ FONTS PROJECT | custom | required | `kagra-shared/assets/PixelMplus10-Regular.ttf` |
 | [KayKit Adventurers Character Pack 1.0](https://kaylousberg.itch.io/kaykit-adventurers) | Kay Lousberg (www.kaylousberg.com) | CC0-1.0 | not required | `assets/library/kaykit/adventurers/**` |
 | [KayKit City Builder Bits 1.0](https://kaylousberg.itch.io/city-builder-bits) | Kay Lousberg (www.kaylousberg.com) | CC0-1.0 | not required | `assets/library/kaykit/city-builder-bits/**` |

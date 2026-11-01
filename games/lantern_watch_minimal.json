@@ -5,6 +5,7 @@
   "entry": "examples/lantern_watch_minimal.py",
   "world": "kagra-shared/tests/fixtures/lantern_watch_world.json",
   "bundle_assets": [
+    "assets/models/grab3d/gargoyle.glb",
     "assets/audio/oga-retro-synth-sfx",
     "assets/audio/kenney-interface-sounds",
     "assets/audio/kenney-impact-sounds",

@@ -849,7 +849,9 @@ impl SurvivorSpec {
         }
         self.enemies.validate(
             w,
-            &["ghoul", "ghost", "zombie", "skeleton", "vampire", "keeper"],
+            &[
+                "ghoul", "ghost", "zombie", "skeleton", "vampire", "keeper", "gargoyle", "wyvern",
+            ],
         )?;
         if self.enemies.types.is_empty() {
             return Err(format!("{w}: enemies.types needs at least one kind"));

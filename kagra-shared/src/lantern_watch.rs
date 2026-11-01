@@ -152,6 +152,19 @@ fn default_foes() -> Vec<FoeKind> {
             0.6,
             2.0,
         ),
+        // Grab3D gargoyle (CC0): a full-height brute late in the night (1.02 m at scale 1).
+        FoeKind {
+            id: "gargoyle".into(),
+            model: "assets/models/grab3d/gargoyle.glb".into(),
+            motion: "shamble".into(),
+            hp: 5,
+            speed: 0.9,
+            weave: 0.0,
+            score: 60,
+            from_secs: 55.0,
+            weight: 0.35,
+            scale: 2.0,
+        },
     ]
 }
 

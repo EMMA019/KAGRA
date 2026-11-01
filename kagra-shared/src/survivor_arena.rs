@@ -143,7 +143,7 @@ const NO_TABLE: u8 = 255;
 /// Pool slots: ghost, zombie, skeleton, vampire, keeper. `MODEL_MIX` is the ghoul crowd that
 /// shows as ghosts and (one in four) zombies.
 const MODEL_MIX: u8 = 255;
-const POOLS: usize = 5;
+const POOLS: usize = 7;
 /// Enemy orbs, blades, zaps and rings alive at once.
 const ORB_CAP: usize = 24;
 const BLADE_CAP: usize = 6;
@@ -492,6 +492,8 @@ impl SurvivorArena {
                         "skeleton" => 2,
                         "vampire" => 3,
                         "keeper" => 4,
+                        "gargoyle" => 5,
+                        "wyvern" => 6,
                         _ => MODEL_MIX,
                     },
                     hp: s.hp,
@@ -1946,9 +1948,14 @@ const FOE_GLBS: [&str; POOLS] = [
     "assets/models/kenney/graveyard-kit/character-skeleton.glb",
     "assets/models/kenney/graveyard-kit/character-vampire.glb",
     "assets/models/kenney/graveyard-kit/character-keeper.glb",
+    // Grab3D (CC0): a full-height gargoyle and a low-poly dragon for the elite.
+    "assets/models/grab3d/gargoyle.glb",
+    "assets/models/grab3d/low-poly-dragon.glb",
 ];
+/// Per pool: model height multiplier against the 0.8 m Kenney figures.
+const POOL_K: [f32; POOLS] = [1.0, 1.0, 1.0, 1.0, 1.0, 0.75, 0.3];
 /// Share of the foe cap (percent) each pool can draw at once, plus 4.
-const POOL_SHARE: [usize; POOLS] = [85, 40, 25, 30, 15];
+const POOL_SHARE: [usize; POOLS] = [85, 40, 25, 30, 15, 12, 1];
 /// Albedo tints of the models before a foe row's own tint.
 /// (The ghost is white in the kit and burnt out under the moon without one.)
 /// Which motion each foe pool uses (ghost, zombie, skeleton, vampire, keeper).
@@ -1958,6 +1965,8 @@ const POOL_MOTION: [Motion; POOLS] = [
     Motion::Hop,
     Motion::Glide,
     Motion::Stomp,
+    Motion::Stomp,
+    Motion::Glide,
 ];
 const POOL_TINT: [[u32; 3]; POOLS] = [
     [150, 150, 225],
@@ -1965,6 +1974,8 @@ const POOL_TINT: [[u32; 3]; POOLS] = [
     [200, 205, 235],
     [215, 190, 215],
     [215, 200, 175],
+    [225, 225, 235],
+    [255, 235, 235],
 ];
 /// Kenney Mini Dungeon (CC0): the elite's treasure chest and the orbiting blade.
 const CHEST_GLB: &str = "assets/models/kenney/mini-dungeon/chest.glb";

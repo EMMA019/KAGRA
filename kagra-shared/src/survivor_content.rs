@@ -413,7 +413,7 @@ pub fn default_enemies() -> Vec<EnemyType> {
         ),
         t(
             "tank",
-            "keeper",
+            "gargoyle",
             [255, 170, 90],
             SwarmStats {
                 hp: 16.0,
@@ -427,7 +427,7 @@ pub fn default_enemies() -> Vec<EnemyType> {
         ),
         t(
             "warden",
-            "zombie",
+            "wyvern",
             [255, 215, 90],
             SwarmStats {
                 hp: 110.0,

@@ -5,6 +5,7 @@
   "entry": "examples/crate_tower_minimal.py",
   "world": "kagra-shared/tests/fixtures/crate_tower_world.json",
   "bundle_assets": [
+    "assets/models/grab3d/mech-walker.glb",
     "assets/audio/oga-retro-synth-sfx",
     "assets/audio/kenney-interface-sounds",
     "assets/audio/kenney-impact-sounds",

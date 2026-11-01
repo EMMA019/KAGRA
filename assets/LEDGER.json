@@ -1542,6 +1542,37 @@
     "assets/audio/oga-rubberduck-100sfx/**"
    ],
    "verified_how": "OpenGameArt page lists License(s): CC0 (checked 2026-11-01)."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/models/grab3d/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Five static models (gargoyle, drone-bot, sci-fi-turret, mech-walker, low-poly-dragon); textures downscaled to 512 px. low-poly-dragon is AI-assisted (Meshy base mesh, per the Grab3D manifest); the rest are procedural Blender builds.",
+   "verified": "checked",
+   "id": "grab3d-creatures-scifi",
+   "name": "Grab3D creatures and sci-fi models",
+   "source": "grab3d",
+   "author": "Grab3D",
+   "url": "https://grab3d.com/license/",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-01",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/grab3d/**"
+   ],
+   "verified_how": "grab3d.com/license states every model is CC0 1.0; each download's LICENSE.txt and manifest.json say CC0-1.0 (checked 2026-11-01)."
   }
  ]
 }

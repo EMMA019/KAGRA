@@ -759,6 +759,7 @@ impl SurvivorArena {
             let age = self.foes.age[i];
             let pop = (age / 0.25).min(1.0);
             let mk = if slots.glb_foe { FOE_MODEL_K } else { 2.2 };
+            let mk = if slots.glb_foe { mk * POOL_K[m] } else { mk };
             let d = k.radius * k.scale * mk * (0.4 + 0.6 * pop);
             let (phase, tempo) = motion::phase_tempo(self.foes.uid[i]);
             let pose = motion::pose(

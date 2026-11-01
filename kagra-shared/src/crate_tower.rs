@@ -144,7 +144,9 @@ const CHEST_GLB: &str = "assets/models/kenney/mini-dungeon/chest.glb";
 const MODEL_M: f32 = 0.5;
 /// The dock behind the tower.
 const SPACE: &str = "assets/models/kenney/space-kit/";
-const BACKDROP: [(&str, f32, f32, f32); 9] = [
+const BACKDROP: [(&str, f32, f32, f32); 10] = [
+    // Grab3D mech walker (CC0): a 4 m loader standing guard in the dock.
+    ("assets/models/grab3d/mech-walker.glb", -17.0, -22.0, 1.4),
     // KayKit Space Base Bits and Dungeon Remastered (CC0, Kay Lousberg): full paths.
     (
         "assets/models/kaykit/space-base-bits/cargo_A_stacked.glb",

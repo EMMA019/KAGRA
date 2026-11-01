@@ -5,6 +5,8 @@
   "entry": "examples/station_escape_minimal.py",
   "world": "kagra-shared/tests/fixtures/station_escape_world.json",
   "bundle_assets": [
+    "assets/models/grab3d/drone-bot.glb",
+    "assets/models/grab3d/sci-fi-turret.glb",
     "assets/audio/oga-retro-synth-sfx",
     "assets/audio/kenney-interface-sounds",
     "assets/audio/kenney-impact-sounds",

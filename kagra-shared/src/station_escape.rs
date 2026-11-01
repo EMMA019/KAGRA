@@ -361,8 +361,9 @@ impl StationEscapeSpec {
 
 // ---------------------------------------------------------------- look ----
 
-const DRONE_GLB: &str = "assets/models/kenney/space-kit/craft_speederC.glb";
-const TURRET_GLB: &str = "assets/models/kenney/space-kit/turret_single.glb";
+/// Grab3D (CC0): a hover drone (1.46 m tall at scale 1, base at y 0) and a gun turret (1.6 m).
+const DRONE_GLB: &str = "assets/models/grab3d/drone-bot.glb";
+const TURRET_GLB: &str = "assets/models/grab3d/sci-fi-turret.glb";
 const HERO_GLB: &str = "assets/models/kenney/mini-characters/character-female-d.glb";
 const CELL_GLB: &str = "assets/models/kenney/platformer-kit/jewel.glb";
 /// The hero model is 0.78 m tall at scale 1.
@@ -1473,7 +1474,7 @@ impl StationEscape {
                 TURRET_GLB,
                 "turret",
                 [tu.x - tu.dir * 0.3, tu.y - 0.6, 0.0],
-                1.8,
+                0.8,
                 [170, 90, 90],
             );
             // The barrel points along +z at yaw 0: turn it to face along the fire.
@@ -1488,7 +1489,7 @@ impl StationEscape {
                 DRONE_GLB,
                 "drone",
                 [0.0; 3],
-                0.62,
+                0.5,
                 [220, 120, 90],
             );
             p.color = Some([255, 130, 110]);
@@ -1498,7 +1499,7 @@ impl StationEscape {
         }
         if st.boss.is_some() {
             slots.boss = Some(doc.props.len());
-            let mut p = model("warden", DRONE_GLB, "warden", [0.0; 3], 1.5, [200, 90, 90]);
+            let mut p = model("warden", DRONE_GLB, "warden", [0.0; 3], 1.3, [200, 90, 90]);
             p.color = Some([235, 120, 120]);
             p.emissive = Some(0.5);
             p.emissive_color = Some([1.0, 0.3, 0.2]);
@@ -1640,7 +1641,7 @@ impl StationEscape {
         if let (Some(i), Some(w)) = (self.slots.boss, self.warden.as_ref()) {
             let p = &mut props[i];
             p.enabled = !w.dead();
-            p.position = [w.x, w.y - 0.45, 0.0];
+            p.position = [w.x, w.y - 0.95, 0.0];
             let lean = match w.beat {
                 boss::Beat::Swoop => -0.35 * w.dir,
                 boss::Beat::Warn => 0.25 * (self.clock * 30.0).sin(),
@@ -1692,7 +1693,7 @@ impl StationEscape {
             let (x, y, dir) = d.at(t);
             let p = &mut props[self.slots.drones[i]];
             p.enabled = self.foes.alive[i];
-            p.position = [x, y - 0.25, 0.0];
+            p.position = [x, y - 0.37, 0.0];
             p.yaw = dir * std::f32::consts::FRAC_PI_2;
             p.roll = 0.15 * (self.clock * 3.0 + i as f32).sin();
         }

@@ -97,6 +97,18 @@
         "speed": 2.3,
         "weave": 1.4,
         "weight": 0.6
+      },
+      {
+        "from_secs": 55.0,
+        "hp": 5,
+        "id": "gargoyle",
+        "model": "assets/models/grab3d/gargoyle.glb",
+        "motion": "shamble",
+        "scale": 2.0,
+        "score": 60,
+        "speed": 0.9,
+        "weave": 0.0,
+        "weight": 0.35
       }
     ],
     "id": "lantern_watch",
