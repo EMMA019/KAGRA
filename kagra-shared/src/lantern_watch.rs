@@ -789,7 +789,7 @@ impl LanternWatch {
             let (path, scale, glows) = DRESSING[pick];
             let mut p = model(
                 &format!("grave-{i}"),
-                &path,
+                path,
                 "grave",
                 [a.cos() * (fx + 1.6 * w), 0.0, a.sin() * (fz + 1.6 * w)],
                 scale,
