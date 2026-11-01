@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "half": 16.0,
+  "floor_y": 0.0,
+  "gravity": 9.8,
+  "water_y": null,
+  "coins": 0,
+  "player": {
+    "id": "walker:player",
+    "type": "walker",
+    "name": "player",
+    "position": [0.0, 0.0, 0.0],
+    "yaw": 0.0,
+    "face": 0.0,
+    "on_ground": true,
+    "model": "capsule",
+    "anim": "idle"
+  },
+  "props": [
+    {
+      "id": "prop:shore",
+      "type": "prop",
+      "name": "shore",
+      "position": [4.0, 0.0, 0.0],
+      "model": "box",
+      "scale": [1.2, 0.4, 1.2],
+      "enabled": true,
+      "interact": {
+        "kind": "use",
+        "prompt": "cast",
+        "on_use": "cast",
+        "reach": 5.0
+      }
+    }
+  ],
+  "walkers": [
+    {
+      "id": "walker:player",
+      "type": "walker",
+      "name": "player",
+      "position": [0.0, 0.0, 0.0],
+      "yaw": 0.0,
+      "face": 0.0,
+      "on_ground": true,
+      "model": "capsule",
+      "anim": "idle"
+    }
+  ],
+  "lights": [],
+  "cameras": [
+    {
+      "id": "camera:main",
+      "type": "camera",
+      "name": "main",
+      "position": [0.0, 2.4, 6.0],
+      "target": [0.0, 0.9, 0.0],
+      "fov": 54.0
+    }
+  ],
+  "heightfield": null,
+  "timers": [],
+  "events": []
+}

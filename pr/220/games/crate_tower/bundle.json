@@ -1,0 +1,229 @@
+{
+  "slug": "crate_tower",
+  "title": "Crate Tower",
+  "version": "0.1.0",
+  "genre": "crate_tower",
+  "world": "world.json",
+  "files": [
+    {
+      "path": "world.json",
+      "url": "games/crate_tower/world.json",
+      "v": "7708d44d2a"
+    },
+    {
+      "path": "kagra_game.json",
+      "url": "games/crate_tower/kagra_game.json",
+      "v": "5992c2ca33"
+    },
+    {
+      "path": "assets/audio/kenney-impact-sounds/CREDITS.md",
+      "url": "assets/audio/kenney-impact-sounds/CREDITS.md",
+      "v": "128b6be073"
+    },
+    {
+      "path": "assets/audio/kenney-impact-sounds/LICENSE.txt",
+      "url": "assets/audio/kenney-impact-sounds/LICENSE.txt",
+      "v": "b49aa9c56b"
+    },
+    {
+      "path": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+      "url": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+      "v": "3eba73bda8"
+    },
+    {
+      "path": "assets/audio/kenney-interface-sounds/CREDITS.md",
+      "url": "assets/audio/kenney-interface-sounds/CREDITS.md",
+      "v": "9ddac4c23d"
+    },
+    {
+      "path": "assets/audio/kenney-interface-sounds/LICENSE.txt",
+      "url": "assets/audio/kenney-interface-sounds/LICENSE.txt",
+      "v": "f7966c773b"
+    },
+    {
+      "path": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+      "url": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+      "v": "fe58f3600c"
+    },
+    {
+      "path": "assets/audio/oga-junkala-chiptunes/level1.mp3",
+      "url": "assets/audio/oga-junkala-chiptunes/level1.mp3",
+      "v": "b357997136"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/CREDITS.md",
+      "url": "assets/audio/oga-retro-synth-sfx/CREDITS.md",
+      "v": "7f18cd6513"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/LICENSE.txt",
+      "url": "assets/audio/oga-retro-synth-sfx/LICENSE.txt",
+      "v": "f7cb95a5fe"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+      "v": "770685003f"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+      "v": "50b01a7974"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+      "v": "955fbf6c23"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+      "v": "8dde50e1fe"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+      "v": "8ac1eb6e4c"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+      "v": "c41ef1b321"
+    },
+    {
+      "path": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+      "url": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+      "v": "5d7d10947f"
+    },
+    {
+      "path": "assets/audio/oga-rubberduck-100sfx/LICENSE.txt",
+      "url": "assets/audio/oga-rubberduck-100sfx/LICENSE.txt",
+      "v": "fbffd8415b"
+    },
+    {
+      "path": "assets/audio/oga-rubberduck-100sfx/explosion.wav",
+      "url": "assets/audio/oga-rubberduck-100sfx/explosion.wav",
+      "v": "53a3306baa"
+    },
+    {
+      "path": "assets/audio/oga-rubberduck-100sfx/slam_03.wav",
+      "url": "assets/audio/oga-rubberduck-100sfx/slam_03.wav",
+      "v": "51e5d2190e"
+    },
+    {
+      "path": "assets/audio/oga-rubberduck-100sfx/wooded_box_open.wav",
+      "url": "assets/audio/oga-rubberduck-100sfx/wooded_box_open.wav",
+      "v": "037f34c4a2"
+    },
+    {
+      "path": "assets/audio/oga-rubberduck-100sfx/wooden_02.wav",
+      "url": "assets/audio/oga-rubberduck-100sfx/wooden_02.wav",
+      "v": "b40fabd0ae"
+    },
+    {
+      "path": "assets/models/kaykit/dungeon-remastered/LICENSE.txt",
+      "url": "assets/models/kaykit/dungeon-remastered/LICENSE.txt",
+      "v": "c5f17abf61"
+    },
+    {
+      "path": "assets/models/kaykit/dungeon-remastered/barrel_large.glb",
+      "url": "assets/models/kaykit/dungeon-remastered/barrel_large.glb",
+      "v": "9fae6a7905"
+    },
+    {
+      "path": "assets/models/kaykit/dungeon-remastered/crates_stacked.glb",
+      "url": "assets/models/kaykit/dungeon-remastered/crates_stacked.glb",
+      "v": "43182b077e"
+    },
+    {
+      "path": "assets/models/kaykit/space-base-bits/LICENSE.txt",
+      "url": "assets/models/kaykit/space-base-bits/LICENSE.txt",
+      "v": "e1c732edc0"
+    },
+    {
+      "path": "assets/models/kaykit/space-base-bits/cargo_A_stacked.glb",
+      "url": "assets/models/kaykit/space-base-bits/cargo_A_stacked.glb",
+      "v": "8144e0669d"
+    },
+    {
+      "path": "assets/models/kaykit/space-base-bits/lander_A.glb",
+      "url": "assets/models/kaykit/space-base-bits/lander_A.glb",
+      "v": "299fc7693a"
+    },
+    {
+      "path": "assets/models/kaykit/space-base-bits/landingpad_small.glb",
+      "url": "assets/models/kaykit/space-base-bits/landingpad_small.glb",
+      "v": "40f0a0f257"
+    },
+    {
+      "path": "assets/models/kaykit/space-base-bits/rocks_A.glb",
+      "url": "assets/models/kaykit/space-base-bits/rocks_A.glb",
+      "v": "82dcced4c7"
+    },
+    {
+      "path": "assets/models/kaykit/space-base-bits/solarpanel.glb",
+      "url": "assets/models/kaykit/space-base-bits/solarpanel.glb",
+      "v": "149c6fcd4b"
+    },
+    {
+      "path": "assets/models/kaykit/space-base-bits/structure_tall.glb",
+      "url": "assets/models/kaykit/space-base-bits/structure_tall.glb",
+      "v": "a529b0bf83"
+    },
+    {
+      "path": "assets/models/kaykit/space-base-bits/windturbine_tall.glb",
+      "url": "assets/models/kaykit/space-base-bits/windturbine_tall.glb",
+      "v": "29d6358cd3"
+    },
+    {
+      "path": "assets/models/kenney/mini-dungeon/chest.glb",
+      "url": "assets/models/kenney/mini-dungeon/chest.glb",
+      "v": "976dac2cba"
+    },
+    {
+      "path": "assets/models/kenney/platformer-kit/barrel.glb",
+      "url": "assets/models/kenney/platformer-kit/barrel.glb",
+      "v": "3eabddb83e"
+    },
+    {
+      "path": "assets/models/kenney/platformer-kit/crate.glb",
+      "url": "assets/models/kenney/platformer-kit/crate.glb",
+      "v": "bced96b106"
+    },
+    {
+      "path": "assets/models/kenney/space-kit/hangar_smallA.glb",
+      "url": "assets/models/kenney/space-kit/hangar_smallA.glb",
+      "v": "66cc1f91e0"
+    },
+    {
+      "path": "assets/models/kenney/space-kit/machine_generatorLarge.glb",
+      "url": "assets/models/kenney/space-kit/machine_generatorLarge.glb",
+      "v": "bbfa33a2e7"
+    },
+    {
+      "path": "assets/models/kenney/space-kit/satelliteDish.glb",
+      "url": "assets/models/kenney/space-kit/satelliteDish.glb",
+      "v": "4c2413471a"
+    },
+    {
+      "path": "assets/models/kenney/space-kit/structure_closed.glb",
+      "url": "assets/models/kenney/space-kit/structure_closed.glb",
+      "v": "1020c2f86d"
+    },
+    {
+      "path": "assets/models/kenney/space-kit/turret_single.glb",
+      "url": "assets/models/kenney/space-kit/turret_single.glb",
+      "v": "8ab7e3d163"
+    }
+  ],
+  "page": {
+    "best": true,
+    "audio": true,
+    "lang": true,
+    "pause": true,
+    "fixed_step": true,
+    "one_button": true,
+    "blurb": "blurb.crate"
+  },
+  "build": "5ffb255e737b"
+}

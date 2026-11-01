@@ -1,0 +1,7 @@
+{
+  "title": "Crate Tower",
+  "version": "0.1.0",
+  "slug": "crate_tower",
+  "entry": "examples/crate_tower_minimal.py",
+  "world": "kagra-shared/tests/fixtures/crate_tower_world.json"
+}

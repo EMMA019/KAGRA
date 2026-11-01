@@ -1,0 +1,13 @@
+Neon Cat placeholder sounds
+===========================
+
+The WAV files in this directory are original tones synthesized by
+`tools/gen_assets/cat_audio.py` from sine, square and noise maths. They are
+not recordings of anyone else's work and use no samples.
+
+They are dedicated to the public domain under the CC0 1.0 Universal dedication.
+
+https://creativecommons.org/publicdomain/zero/1.0/
+
+No attribution is required. They are placeholders: swap any file for your own
+(free assets or SUNO) and point `audio` in `games/neon_cat_minimal.json` at it.
