@@ -8,7 +8,7 @@
     {
       "path": "world.json",
       "url": "games/lantern_watch/world.json",
-      "v": "d624a0f03a"
+      "v": "0f76e04c80"
     },
     {
       "path": "kagra_game.json",
@@ -109,6 +109,11 @@
       "path": "assets/audio/oga-wet-squish/impactsplat03.wav",
       "url": "assets/audio/oga-wet-squish/impactsplat03.wav",
       "v": "73e236ba1e"
+    },
+    {
+      "path": "assets/models/grab3d/gargoyle.glb",
+      "url": "assets/models/grab3d/gargoyle.glb",
+      "v": "2ee4b94c4b"
     },
     {
       "path": "assets/models/kaykit/halloween-bits/LICENSE.txt",
@@ -229,5 +234,5 @@
     "fixed_step": true,
     "blurb": "blurb.lantern"
   },
-  "build": "b9f446bbaf60"
+  "build": "70eb67ecb056"
 }

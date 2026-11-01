@@ -121,6 +121,11 @@
       "v": "b40fabd0ae"
     },
     {
+      "path": "assets/models/grab3d/mech-walker.glb",
+      "url": "assets/models/grab3d/mech-walker.glb",
+      "v": "fba6f3f496"
+    },
+    {
       "path": "assets/models/kaykit/dungeon-remastered/LICENSE.txt",
       "url": "assets/models/kaykit/dungeon-remastered/LICENSE.txt",
       "v": "c5f17abf61"
@@ -225,5 +230,5 @@
     "one_button": true,
     "blurb": "blurb.crate"
   },
-  "build": "b9f446bbaf60"
+  "build": "70eb67ecb056"
 }

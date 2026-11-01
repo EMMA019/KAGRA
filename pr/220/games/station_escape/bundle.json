@@ -121,6 +121,16 @@
       "v": "b40fabd0ae"
     },
     {
+      "path": "assets/models/grab3d/drone-bot.glb",
+      "url": "assets/models/grab3d/drone-bot.glb",
+      "v": "5f66d180d6"
+    },
+    {
+      "path": "assets/models/grab3d/sci-fi-turret.glb",
+      "url": "assets/models/grab3d/sci-fi-turret.glb",
+      "v": "883ad4c634"
+    },
+    {
       "path": "assets/models/kaykit/space-base-bits/LICENSE.txt",
       "url": "assets/models/kaykit/space-base-bits/LICENSE.txt",
       "v": "e1c732edc0"
@@ -253,5 +263,5 @@
       "stage": "string"
     }
   },
-  "build": "b9f446bbaf60"
+  "build": "70eb67ecb056"
 }
