@@ -351,6 +351,51 @@
       "v": "d0169e703c"
     },
     {
+      "path": "assets/textures/fx/explosion/LICENSE.txt",
+      "url": "assets/textures/fx/explosion/LICENSE.txt",
+      "v": "a5d5562e7d"
+    },
+    {
+      "path": "assets/textures/fx/explosion/boom_0.png",
+      "url": "assets/textures/fx/explosion/boom_0.png",
+      "v": "b27e85e172"
+    },
+    {
+      "path": "assets/textures/fx/explosion/boom_1.png",
+      "url": "assets/textures/fx/explosion/boom_1.png",
+      "v": "ad4a14e76d"
+    },
+    {
+      "path": "assets/textures/fx/explosion/boom_2.png",
+      "url": "assets/textures/fx/explosion/boom_2.png",
+      "v": "c418d22bca"
+    },
+    {
+      "path": "assets/textures/fx/explosion/boom_3.png",
+      "url": "assets/textures/fx/explosion/boom_3.png",
+      "v": "418259a0e3"
+    },
+    {
+      "path": "assets/textures/fx/explosion/boom_4.png",
+      "url": "assets/textures/fx/explosion/boom_4.png",
+      "v": "8783290e45"
+    },
+    {
+      "path": "assets/textures/fx/explosion/boom_5.png",
+      "url": "assets/textures/fx/explosion/boom_5.png",
+      "v": "79b0c728ab"
+    },
+    {
+      "path": "assets/textures/fx/explosion/boom_6.png",
+      "url": "assets/textures/fx/explosion/boom_6.png",
+      "v": "b35d0b8139"
+    },
+    {
+      "path": "assets/textures/fx/explosion/boom_7.png",
+      "url": "assets/textures/fx/explosion/boom_7.png",
+      "v": "6ad9ea143b"
+    },
+    {
       "path": "assets/textures/survivor_arena/CREDITS.md",
       "url": "assets/textures/survivor_arena/CREDITS.md",
       "v": "d018dae3d1"
@@ -683,5 +728,5 @@
       "max": "high"
     }
   },
-  "build": "70eb67ecb056"
+  "build": "148828e774a4"
 }
