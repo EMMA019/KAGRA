@@ -5,18 +5,23 @@
   "entry": "examples/survivor_arena_minimal.py",
   "world": "kagra-shared/tests/fixtures/survivor_arena_world.json",
   "bundle_assets": [
+    "assets/models/grab3d/gargoyle.glb",
+    "assets/textures/fx/explosion",
+    "assets/models/grab3d/low-poly-dragon.glb",
     "assets/audio/oga-retro-synth-sfx",
     "assets/audio/kenney-interface-sounds",
     "assets/audio/kenney-impact-sounds",
     "assets/audio/oga-wet-squish",
-    "assets/audio/oga-flowerbed-fields",
     "assets/models/kenney/mini-characters",
     "assets/models/kenney/graveyard-kit",
     "assets/models/kenney/blaster-kit",
     "assets/models/kenney/mini-arena",
     "assets/models/kenney/mini-dungeon",
     "assets/textures/survivor_arena",
-    "assets/models/kenney/platformer-kit/jewel.glb"
+    "assets/models/kenney/platformer-kit/jewel.glb",
+    "assets/models/kaykit/halloween-bits",
+    "assets/audio/oga-junkala-chiptunes/level1.mp3",
+    "assets/audio/oga-rubberduck-100sfx"
   ],
   "platform": {
     "ads": {

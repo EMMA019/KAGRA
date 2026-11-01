@@ -1,0 +1,12 @@
+Grab3D models - CC0 1.0 Universal (Public Domain Dedication)
+Source: https://grab3d.com/  License page: https://grab3d.com/license/
+Each model's download ships its own CC0 LICENSE.txt and manifest.json (license "CC0-1.0").
+Downloaded 2026-11-01. Textures were downscaled to 512 px for the web build; geometry is unchanged.
+
+gargoyle.glb       https://grab3d.com/models/creatures/gargoyle/        origin: procedural (Blender scripts)
+drone-bot.glb      https://grab3d.com/models/sci-fi/drone-bot/          origin: procedural (Blender scripts)
+sci-fi-turret.glb  https://grab3d.com/models/sci-fi/sci-fi-turret/      origin: procedural (Blender scripts)
+mech-walker.glb    https://grab3d.com/models/sci-fi/mech-walker/        origin: procedural (Blender scripts)
+low-poly-dragon.glb https://grab3d.com/models/creatures/low-poly-dragon/ origin: AI-assisted (Meshy base mesh, reworked in Blender)
+
+https://creativecommons.org/publicdomain/zero/1.0/legalcode

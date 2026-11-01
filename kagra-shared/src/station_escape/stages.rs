@@ -116,6 +116,14 @@ fn deco(model: &str, x: f32, y: f32, z: f32, scale: f32, yaw: f32) -> Deco {
     }
 }
 
+/// A KayKit Space Base Bits model (CC0, Kay Lousberg) in the background.
+fn kdeco(model: &str, x: f32, y: f32, z: f32, scale: f32, yaw: f32) -> Deco {
+    Deco {
+        model: format!("assets/models/kaykit/space-base-bits/{model}.glb"),
+        ..deco(model, x, y, z, scale, yaw)
+    }
+}
+
 /// Stage 1, Docking Bay: the moves, one at a time.
 pub fn docking_bay() -> Stage {
     Stage {
@@ -175,6 +183,13 @@ pub fn docking_bay() -> Stage {
             deco("craft_speederC", 70.0, 0.3, -3.6, 1.6, 0.35),
             deco("rock_crystals", 15.0, -0.2, -3.5, 2.0, 0.0),
             deco("rock_crystals", 47.0, -0.2, -3.0, 2.0, 1.0),
+            kdeco("structure_tall", 10.0, -0.2, -8.0, 3.2, -0.35),
+            kdeco("windturbine_tall", 20.0, -0.2, -8.8, 3.0, 0.00),
+            kdeco("cargo_A_stacked", 30.0, -0.2, -4.6, 2.6, 0.35),
+            kdeco("lander_A", 40.0, -0.2, -6.2, 2.8, -0.35),
+            kdeco("solarpanel", 50.0, -0.2, -5.2, 3.0, 0.00),
+            kdeco("landingpad_small", 60.0, -0.2, -5.6, 2.6, 0.35),
+            kdeco("rocks_A", 70.0, 0.3, -4.2, 2.4, -0.35),
         ],
         drones: vec![drone(22.8, 25.4, 1.0, 1.5, 0.0)],
         ..Stage::default()
@@ -250,6 +265,12 @@ pub fn reactor_ring() -> Stage {
             deco("machine_generatorLarge", 64.0, 11.2, -4.5, 3.0, 1.2),
             deco("hangar_smallA", 82.0, 8.2, -6.5, 5.5, 0.0),
             deco("craft_speederC", 80.0, 8.7, -3.6, 1.6, 0.35),
+            kdeco("structure_tall", 17.2, -3.0, -8.0, 3.2, -0.35),
+            kdeco("windturbine_tall", 29.5, -3.0, -8.8, 3.0, 0.00),
+            kdeco("cargo_A_stacked", 41.8, 8.2, -4.6, 2.6, 0.35),
+            kdeco("lander_A", 54.2, 8.2, -6.2, 2.8, -0.35),
+            kdeco("solarpanel", 66.5, 11.2, -5.2, 3.0, 0.00),
+            kdeco("landingpad_small", 78.8, 8.7, -5.6, 2.6, 0.35),
         ],
         drones: vec![drone(4.5, 7.5, 1.0, 1.6, 0.5)],
         ..Stage::default()
@@ -315,6 +336,11 @@ pub fn cargo_spine() -> Stage {
             deco("satelliteDish", 62.0, -0.2, -9.0, 6.0, -0.4),
             deco("hangar_smallA", 82.0, -0.2, -6.5, 5.5, 0.0),
             deco("rock_crystals", 25.0, -0.2, -3.5, 2.0, 0.4),
+            kdeco("rocks_A", 14.8, -0.2, -4.2, 2.4, -0.35),
+            kdeco("structure_tall", 30.4, -0.2, -8.0, 3.2, 0.00),
+            kdeco("windturbine_tall", 46.0, -0.2, -8.8, 3.0, 0.35),
+            kdeco("cargo_A_stacked", 61.6, -0.2, -4.6, 2.6, -0.35),
+            kdeco("lander_A", 77.2, -0.2, -6.2, 2.8, 0.00),
         ],
         boss: None,
     }
@@ -384,6 +410,11 @@ pub fn escape_pod() -> Stage {
             deco("turret_single", 58.0, 8.4, -4.0, 3.0, 0.4),
             deco("hangar_smallA", 74.0, 8.4, -6.5, 6.0, 0.0),
             deco("craft_speederC", 74.0, 8.9, -3.4, 2.0, 0.35),
+            kdeco("solarpanel", 10.4, -3.0, -5.2, 3.0, -0.35),
+            kdeco("landingpad_small", 25.2, 1.0, -5.6, 2.6, 0.00),
+            kdeco("rocks_A", 40.0, 7.8, -4.2, 2.4, 0.35),
+            kdeco("structure_tall", 54.8, 8.4, -8.0, 3.2, -0.35),
+            kdeco("windturbine_tall", 69.6, 8.4, -8.8, 3.0, 0.00),
         ],
         boss: None,
     }
@@ -417,6 +448,10 @@ pub fn reactor_core() -> Stage {
             deco("structure_closed", 14.0, -0.2, -9.0, 8.0, 0.0),
             deco("hangar_smallA", 27.0, -0.2, -6.5, 5.0, 0.0),
             deco("craft_speederC", 27.5, 0.3, -3.4, 2.0, 0.35),
+            kdeco("cargo_A_stacked", 4.7, -0.2, -4.6, 2.6, -0.35),
+            kdeco("lander_A", 12.1, -0.2, -6.2, 2.8, 0.00),
+            kdeco("solarpanel", 19.4, -0.2, -5.2, 3.0, 0.35),
+            kdeco("landingpad_small", 26.8, -0.2, -5.6, 2.6, -0.35),
         ],
         boss: Some(Boss {
             x0: 3.0,

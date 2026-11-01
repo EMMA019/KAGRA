@@ -3,7 +3,7 @@
     "audio": {
       "bgm": {
         "fade_secs": 0.5,
-        "file": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+        "file": "assets/audio/oga-junkala-chiptunes/level2.mp3",
         "volume": 0.5
       },
       "bgm_volume": 0.5,
@@ -11,8 +11,8 @@
       "master": 0.8,
       "sfx": {
         "boom": {
-          "file": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
-          "rate": 0.8,
+          "file": "assets/audio/oga-rubberduck-100sfx/explosion.wav",
+          "rate": 1.0,
           "volume": 0.7
         },
         "cell": {
@@ -31,9 +31,9 @@
           "volume": 0.8
         },
         "crumble": {
-          "file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
-          "rate": 0.6,
-          "volume": 0.4
+          "file": "assets/audio/oga-rubberduck-100sfx/slam_03.wav",
+          "rate": 1.0,
+          "volume": 0.5
         },
         "dash": {
           "file": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
@@ -370,6 +370,62 @@
             "y": -0.2,
             "yaw": 1.0,
             "z": -4.8
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/structure_tall.glb",
+            "scale": 3.2,
+            "x": 10.0,
+            "y": -0.2,
+            "yaw": -0.35,
+            "z": -12.8
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/windturbine_tall.glb",
+            "scale": 3.0,
+            "x": 20.0,
+            "y": -0.2,
+            "yaw": 0.0,
+            "z": -14.080001
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/cargo_A_stacked.glb",
+            "scale": 2.6,
+            "x": 30.0,
+            "y": -0.2,
+            "yaw": 0.35,
+            "z": -7.36
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/lander_A.glb",
+            "scale": 2.8,
+            "x": 40.0,
+            "y": -0.2,
+            "yaw": -0.35,
+            "z": -9.92
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/solarpanel.glb",
+            "scale": 3.0,
+            "x": 50.0,
+            "y": -0.2,
+            "yaw": 0.0,
+            "z": -8.32
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/landingpad_small.glb",
+            "scale": 2.6,
+            "x": 60.0,
+            "y": -0.2,
+            "yaw": 0.35,
+            "z": -8.96
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/rocks_A.glb",
+            "scale": 2.4,
+            "x": 70.0,
+            "y": 0.3,
+            "yaw": -0.35,
+            "z": -6.72
           }
         ],
         "drones": [
@@ -804,6 +860,54 @@
             "y": 8.7,
             "yaw": 0.35,
             "z": -5.7599998
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/structure_tall.glb",
+            "scale": 3.2,
+            "x": 17.2,
+            "y": -3.0,
+            "yaw": -0.35,
+            "z": -12.8
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/windturbine_tall.glb",
+            "scale": 3.0,
+            "x": 29.5,
+            "y": -3.0,
+            "yaw": 0.0,
+            "z": -14.080001
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/cargo_A_stacked.glb",
+            "scale": 2.6,
+            "x": 41.8,
+            "y": 8.2,
+            "yaw": 0.35,
+            "z": -7.36
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/lander_A.glb",
+            "scale": 2.8,
+            "x": 54.2,
+            "y": 8.2,
+            "yaw": -0.35,
+            "z": -9.92
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/solarpanel.glb",
+            "scale": 3.0,
+            "x": 66.5,
+            "y": 11.2,
+            "yaw": 0.0,
+            "z": -8.32
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/landingpad_small.glb",
+            "scale": 2.6,
+            "x": 78.8,
+            "y": 8.7,
+            "yaw": 0.35,
+            "z": -8.96
           }
         ],
         "drones": [
@@ -1129,6 +1233,46 @@
             "y": -0.2,
             "yaw": 0.4,
             "z": -5.6
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/rocks_A.glb",
+            "scale": 2.4,
+            "x": 14.8,
+            "y": -0.2,
+            "yaw": -0.35,
+            "z": -6.72
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/structure_tall.glb",
+            "scale": 3.2,
+            "x": 30.4,
+            "y": -0.2,
+            "yaw": 0.0,
+            "z": -12.8
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/windturbine_tall.glb",
+            "scale": 3.0,
+            "x": 46.0,
+            "y": -0.2,
+            "yaw": 0.35,
+            "z": -14.080001
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/cargo_A_stacked.glb",
+            "scale": 2.6,
+            "x": 61.6,
+            "y": -0.2,
+            "yaw": -0.35,
+            "z": -7.36
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/lander_A.glb",
+            "scale": 2.8,
+            "x": 77.2,
+            "y": -0.2,
+            "yaw": 0.0,
+            "z": -9.92
           }
         ],
         "drones": [
@@ -1487,6 +1631,46 @@
             "y": 8.9,
             "yaw": 0.35,
             "z": -5.44
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/solarpanel.glb",
+            "scale": 3.0,
+            "x": 10.4,
+            "y": -3.0,
+            "yaw": -0.35,
+            "z": -8.32
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/landingpad_small.glb",
+            "scale": 2.6,
+            "x": 25.2,
+            "y": 1.0,
+            "yaw": 0.0,
+            "z": -8.96
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/rocks_A.glb",
+            "scale": 2.4,
+            "x": 40.0,
+            "y": 7.8,
+            "yaw": 0.35,
+            "z": -6.72
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/structure_tall.glb",
+            "scale": 3.2,
+            "x": 54.8,
+            "y": 8.4,
+            "yaw": -0.35,
+            "z": -12.8
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/windturbine_tall.glb",
+            "scale": 3.0,
+            "x": 69.6,
+            "y": 8.4,
+            "yaw": 0.0,
+            "z": -14.080001
           }
         ],
         "drones": [
@@ -1707,6 +1891,38 @@
             "y": 0.3,
             "yaw": 0.35,
             "z": -5.44
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/cargo_A_stacked.glb",
+            "scale": 2.6,
+            "x": 4.7,
+            "y": -0.2,
+            "yaw": -0.35,
+            "z": -7.36
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/lander_A.glb",
+            "scale": 2.8,
+            "x": 12.1,
+            "y": -0.2,
+            "yaw": 0.0,
+            "z": -9.92
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/solarpanel.glb",
+            "scale": 3.0,
+            "x": 19.4,
+            "y": -0.2,
+            "yaw": 0.35,
+            "z": -8.32
+          },
+          {
+            "model": "assets/models/kaykit/space-base-bits/landingpad_small.glb",
+            "scale": 2.6,
+            "x": 26.8,
+            "y": -0.2,
+            "yaw": -0.35,
+            "z": -8.96
           }
         ],
         "drones": [],

@@ -5,13 +5,17 @@
   "entry": "examples/station_escape_minimal.py",
   "world": "kagra-shared/tests/fixtures/station_escape_world.json",
   "bundle_assets": [
+    "assets/models/grab3d/drone-bot.glb",
+    "assets/models/grab3d/sci-fi-turret.glb",
     "assets/audio/oga-retro-synth-sfx",
     "assets/audio/kenney-interface-sounds",
     "assets/audio/kenney-impact-sounds",
-    "assets/audio/oga-flowerbed-fields",
     "assets/models/kenney/mini-characters/character-female-d.glb",
     "assets/models/kenney/platformer-kit/jewel.glb",
-    "assets/models/kenney/space-kit"
+    "assets/models/kenney/space-kit",
+    "assets/models/kaykit/space-base-bits",
+    "assets/audio/oga-junkala-chiptunes/level2.mp3",
+    "assets/audio/oga-rubberduck-100sfx"
   ],
   "page": {
     "best": true,

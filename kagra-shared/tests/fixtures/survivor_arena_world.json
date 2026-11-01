@@ -17,15 +17,15 @@
     "audio": {
       "bgm": {
         "fade_secs": 0.5,
-        "file": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
-        "volume": 0.6
+        "file": "assets/audio/oga-junkala-chiptunes/level1.mp3",
+        "volume": 0.5
       },
       "bgm_volume": 0.5,
       "enabled": true,
       "master": 0.8,
       "sfx": {
         "boom": {
-          "file": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+          "file": "assets/audio/oga-rubberduck-100sfx/explosion.wav",
           "rate": 1.0,
           "volume": 0.5
         },
@@ -404,7 +404,7 @@
           "id": "tank",
           "jump_air": 0.5,
           "jump_height": 0.0,
-          "look": "keeper",
+          "look": "gargoyle",
           "step_m": 0.0,
           "steps_per_beat": 1,
           "stompable": true,
@@ -432,7 +432,7 @@
           "id": "warden",
           "jump_air": 0.5,
           "jump_height": 0.0,
-          "look": "zombie",
+          "look": "wyvern",
           "step_m": 0.0,
           "steps_per_beat": 1,
           "stompable": true,

@@ -3,7 +3,7 @@
     "audio": {
       "bgm": {
         "fade_secs": 0.5,
-        "file": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+        "file": "assets/audio/oga-junkala-chiptunes/level1.mp3",
         "volume": 0.5
       },
       "bgm_volume": 0.5,
@@ -11,9 +11,9 @@
       "master": 0.8,
       "sfx": {
         "chest": {
-          "file": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
-          "rate": 1.2,
-          "volume": 0.6
+          "file": "assets/audio/oga-rubberduck-100sfx/wooded_box_open.wav",
+          "rate": 1.0,
+          "volume": 0.7
         },
         "gameover": {
           "file": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
@@ -26,9 +26,9 @@
           "volume": 0.7
         },
         "land": {
-          "file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
-          "rate": 0.8,
-          "volume": 0.6
+          "file": "assets/audio/oga-rubberduck-100sfx/wooden_02.wav",
+          "rate": 1.0,
+          "volume": 0.7
         },
         "miss": {
           "file": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",

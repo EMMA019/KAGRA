@@ -152,6 +152,19 @@ fn default_foes() -> Vec<FoeKind> {
             0.6,
             2.0,
         ),
+        // Grab3D gargoyle (CC0): a full-height brute late in the night (1.02 m at scale 1).
+        FoeKind {
+            id: "gargoyle".into(),
+            model: "assets/models/grab3d/gargoyle.glb".into(),
+            motion: "shamble".into(),
+            hp: 5,
+            speed: 0.9,
+            weave: 0.0,
+            score: 60,
+            from_secs: 55.0,
+            weight: 0.35,
+            scale: 2.0,
+        },
     ]
 }
 
@@ -283,12 +296,58 @@ impl LanternWatchSpec {
 
 const LANTERN_GLB: &str = "assets/models/kenney/graveyard-kit/lantern-candle.glb";
 /// The graveyard dressing, in a fixed ring outside the field.
-const DRESSING: [&str; 5] = [
-    "gravestone-round.glb",
-    "gravestone-cross.glb",
-    "gravestone-broken.glb",
-    "cross-wood.glb",
-    "pumpkin-carved.glb",
+/// (path, scale, glows): Kenney Graveyard Kit plus KayKit Halloween Bits (both CC0).
+const DRESSING: [(&str, f32, bool); 10] = [
+    (
+        "assets/models/kenney/graveyard-kit/gravestone-round.glb",
+        2.0,
+        false,
+    ),
+    (
+        "assets/models/kaykit/halloween-bits/gravestone.glb",
+        0.75,
+        false,
+    ),
+    (
+        "assets/models/kenney/graveyard-kit/cross-wood.glb",
+        2.0,
+        false,
+    ),
+    (
+        "assets/models/kaykit/halloween-bits/pumpkin_orange_jackolantern.glb",
+        0.6,
+        true,
+    ),
+    (
+        "assets/models/kaykit/halloween-bits/grave_A.glb",
+        0.6,
+        false,
+    ),
+    (
+        "assets/models/kenney/graveyard-kit/gravestone-broken.glb",
+        2.0,
+        false,
+    ),
+    (
+        "assets/models/kaykit/halloween-bits/skull_candle.glb",
+        0.8,
+        true,
+    ),
+    (
+        "assets/models/kaykit/halloween-bits/tree_dead_medium.glb",
+        0.7,
+        false,
+    ),
+    (
+        "assets/models/kenney/graveyard-kit/pumpkin-carved.glb",
+        2.0,
+        true,
+    ),
+    (
+        "assets/models/kaykit/halloween-bits/fence_broken.glb",
+        0.55,
+        false,
+    ),
 ];
 
 fn default_audio() -> Value {
@@ -300,7 +359,7 @@ fn default_audio() -> Value {
         "master": 0.8,
         "sfx_volume": 1.0,
         "bgm_volume": 0.5,
-        "bgm": {"file": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3", "volume": 0.5, "fade_secs": 0.5},
+        "bgm": {"file": "assets/audio/oga-junkala-chiptunes/level3.mp3", "volume": 0.45, "fade_secs": 0.5},
         "sfx": {
             "hit": {"file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav", "volume": 0.5, "rate": 1.2},
             "kill": {"file": "assets/audio/oga-wet-squish/impactsplat03.wav", "volume": 0.35, "rate": 1.1},
@@ -740,18 +799,18 @@ impl LanternWatch {
             let a = (i as f32 + 0.5) / 18.0 * std::f32::consts::TAU;
             let w = 1.0 + 0.35 * ((i * 7 % 5) as f32 / 4.0);
             let pick = (i * 3 + i / 4) % DRESSING.len();
-            let path = format!("{GRAVE}{}", DRESSING[pick]);
+            let (path, scale, glows) = DRESSING[pick];
             let mut p = model(
                 &format!("grave-{i}"),
-                &path,
+                path,
                 "grave",
                 [a.cos() * (fx + 1.6 * w), 0.0, a.sin() * (fz + 1.6 * w)],
-                2.0,
+                scale,
                 [90, 96, 110],
             );
             p.yaw = (-a.cos()).atan2(-a.sin());
             p.color = Some([120, 124, 140]);
-            if pick == 4 {
+            if glows {
                 p.emissive = Some(0.6);
                 p.emissive_color = Some([1.0, 0.55, 0.15]);
             }

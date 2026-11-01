@@ -143,7 +143,7 @@ const NO_TABLE: u8 = 255;
 /// Pool slots: ghost, zombie, skeleton, vampire, keeper. `MODEL_MIX` is the ghoul crowd that
 /// shows as ghosts and (one in four) zombies.
 const MODEL_MIX: u8 = 255;
-const POOLS: usize = 5;
+const POOLS: usize = 7;
 /// Enemy orbs, blades, zaps and rings alive at once.
 const ORB_CAP: usize = 24;
 const BLADE_CAP: usize = 6;
@@ -151,6 +151,14 @@ const ZAP_CAP: usize = 6;
 const ZAP_PTS: usize = 10;
 const RING_CAP: usize = 8;
 const CHEST_CAP: usize = 3;
+/// Flipbook explosions alive at once, frames per explosion and its life (s).
+const BOOM_CAP: usize = 4;
+const BOOM_FRAMES: usize = 8;
+const BOOM_LIFE: f32 = 0.6;
+/// Ben Hickling's "Explosion" (OpenGameArt, CC0): eight frames, bottom-anchored.
+const BOOM_TEX: &str = "assets/textures/fx/explosion/boom_";
+/// The cards tip back toward the high camera (+pitch lifts the +Z face).
+const BOOM_PITCH: f32 = 1.05;
 const ORB_LIFE: f32 = 4.5;
 const ORB_R: f32 = 0.22;
 const TOAST_LIFE: f32 = 2.4;
@@ -273,6 +281,7 @@ struct Slots {
     glow0: usize,
     chest0: usize,
     glb_chest: bool,
+    boom0: usize,
     glb_foe: bool,
     glb_gem: bool,
     // line list offsets in `doc.lines`
@@ -395,6 +404,8 @@ pub struct SurvivorArena {
     tier: usize,
     /// Camera zoom-in kick, 0..1, decays fast.
     zoom_kick: f32,
+    /// Flipbook explosions: x, z, start (`anim_t`), size; size 0 = free.
+    booms: [[f32; 4]; BOOM_CAP],
     // hero
     hx: f32,
     hz: f32,
@@ -492,6 +503,8 @@ impl SurvivorArena {
                         "skeleton" => 2,
                         "vampire" => 3,
                         "keeper" => 4,
+                        "gargoyle" => 5,
+                        "wyvern" => 6,
                         _ => MODEL_MIX,
                     },
                     hp: s.hp,
@@ -549,6 +562,7 @@ impl SurvivorArena {
             dmg: Vec::new(),
             tier: 1,
             zoom_kick: 0.0,
+            booms: [[0.0; 4]; BOOM_CAP],
             hx: 0.0,
             hz: 0.0,
             vx: 0.0,
@@ -769,6 +783,7 @@ impl SurvivorArena {
         self.pickups.clear();
         self.zaps.clear();
         self.rings.clear();
+        self.booms = [[0.0; 4]; BOOM_CAP];
         self.orbit_phase = 0.0;
         self.shield_t = 0.0;
         self.frenzy_t = 0.0;
@@ -1107,6 +1122,18 @@ impl SurvivorArena {
             sum += st.damage * self.mods.damage * n as f32 / gap;
         }
         sum
+    }
+
+    /// Start a flipbook explosion in a free slot (dropped when all are busy).
+    fn boom(&mut self, x: f32, z: f32, size: f32) {
+        let t = self.anim_t;
+        if let Some(b) = self
+            .booms
+            .iter_mut()
+            .find(|b| b[3] <= 0.0 || t - b[2] >= BOOM_LIFE)
+        {
+            *b = [x, z, t, size];
+        }
     }
 
     /// The timed elite: the first at `director.elite_first`, then every `elite_every`.
@@ -1476,6 +1503,11 @@ impl SurvivorArena {
             self.burst(FX_SPARK, 4, [x, 0.5, z], [0.0, 0.0], 5.0, 1.0, 2.5, 0.35);
             self.core.juice.shake = self.core.juice.shake.max(0.07);
             self.zoom_kick = self.zoom_kick.max(0.12);
+            if k.elite {
+                self.boom(x, z, 6.5);
+            } else if k.model != MODEL_MIX {
+                self.boom(x, z, 2.4 * k.radius.max(0.5));
+            }
             if k.elite {
                 self.burst(FX_BLAST, 12, [x, 0.6, z], [0.0, 0.0], 4.5, 1.0, 2.5, 0.8);
                 self.core.juice.shake = self.core.juice.shake.max(0.4);
@@ -1886,7 +1918,7 @@ fn default_audio() -> Value {
         "master": 0.8,
         "sfx_volume": 1.0,
         "bgm_volume": 0.5,
-        "bgm": {"file": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3", "volume": 0.6, "fade_secs": 0.5},
+        "bgm": {"file": "assets/audio/oga-junkala-chiptunes/level1.mp3", "volume": 0.5, "fade_secs": 0.5},
         "sfx": {
             "shoot": cue("shot_01.wav", 0.16, 1.0),
             "hit": {"file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav", "volume": 0.45, "rate": 1.0},
@@ -1898,7 +1930,7 @@ fn default_audio() -> Value {
             "win": cue("power_up_04.wav", 0.8, 1.0),
             "pickup": cue("retro_coin_01.wav", 0.35, 1.0),
             "chest": cue("power_up_04.wav", 0.6, 1.25),
-            "boom": cue("retro_explosion_02.wav", 0.5, 1.0),
+            "boom": {"file": "assets/audio/oga-rubberduck-100sfx/explosion.wav", "volume": 0.5, "rate": 1.0},
             "elite": cue("retro_explosion_02.wav", 0.6, 0.55),
             "zap": cue("shot_01.wav", 0.2, 2.0),
             "pulse": cue("shot_01.wav", 0.3, 0.55),
@@ -1946,9 +1978,14 @@ const FOE_GLBS: [&str; POOLS] = [
     "assets/models/kenney/graveyard-kit/character-skeleton.glb",
     "assets/models/kenney/graveyard-kit/character-vampire.glb",
     "assets/models/kenney/graveyard-kit/character-keeper.glb",
+    // Grab3D (CC0): a full-height gargoyle and a low-poly dragon for the elite.
+    "assets/models/grab3d/gargoyle.glb",
+    "assets/models/grab3d/low-poly-dragon.glb",
 ];
+/// Per pool: model height multiplier against the 0.8 m Kenney figures.
+const POOL_K: [f32; POOLS] = [1.0, 1.0, 1.0, 1.0, 1.0, 0.75, 0.3];
 /// Share of the foe cap (percent) each pool can draw at once, plus 4.
-const POOL_SHARE: [usize; POOLS] = [85, 40, 25, 30, 15];
+const POOL_SHARE: [usize; POOLS] = [85, 40, 25, 30, 15, 12, 1];
 /// Albedo tints of the models before a foe row's own tint.
 /// (The ghost is white in the kit and burnt out under the moon without one.)
 /// Which motion each foe pool uses (ghost, zombie, skeleton, vampire, keeper).
@@ -1958,6 +1995,8 @@ const POOL_MOTION: [Motion; POOLS] = [
     Motion::Hop,
     Motion::Glide,
     Motion::Stomp,
+    Motion::Stomp,
+    Motion::Glide,
 ];
 const POOL_TINT: [[u32; 3]; POOLS] = [
     [150, 150, 225],
@@ -1965,6 +2004,8 @@ const POOL_TINT: [[u32; 3]; POOLS] = [
     [200, 205, 235],
     [215, 190, 215],
     [215, 200, 175],
+    [225, 225, 235],
+    [255, 235, 235],
 ];
 /// Kenney Mini Dungeon (CC0): the elite's treasure chest and the orbiting blade.
 const CHEST_GLB: &str = "assets/models/kenney/mini-dungeon/chest.glb";
@@ -1988,13 +2029,21 @@ const MUZZLE: f32 = GUN_FWD + 0.37 * GUN_SCALE;
 const AIM_HOLD: f32 = 0.5;
 const GEM_GLB: &str = "assets/models/kenney/platformer-kit/jewel.glb";
 /// Arena dressing from the Graveyard Kit inside the walls: (file, scale, how many).
-const DECOR: [(&str, f32, u32); 6] = [
-    ("gravestone-round", 1.5, 4),
-    ("gravestone-cross", 1.5, 3),
-    ("gravestone-broken", 1.5, 3),
-    ("pumpkin-carved", 1.4, 3),
-    ("lantern-candle", 1.6, 3),
+/// KayKit Halloween Bits (CC0, Kay Lousberg) mixed in for a richer night: full paths.
+const KAYKIT_HALLOWEEN: &str = "assets/models/kaykit/halloween-bits/";
+const DECOR: [(&str, f32, u32); 12] = [
+    ("gravestone-round", 1.5, 3),
+    ("gravestone-cross", 1.5, 2),
+    ("gravestone-broken", 1.5, 2),
+    ("pumpkin-carved", 1.4, 2),
     ("cross-wood", 1.4, 2),
+    ("kaykit:gravestone", 0.55, 3),
+    ("kaykit:grave_A", 0.45, 2),
+    ("kaykit:grave_B", 0.45, 2),
+    ("kaykit:pumpkin_orange_jackolantern", 0.5, 3),
+    ("kaykit:skull_candle", 0.6, 2),
+    ("kaykit:lantern_standing", 1.0, 3),
+    ("kaykit:tree_dead_medium", 0.6, 3),
 ];
 /// Pines ringed outside the wall, so the arena has a dark treeline round it.
 /// Seen from the high camera the pines read as flat pale boxes, so the ring is off.
@@ -2023,7 +2072,10 @@ fn hero_glb(skin: &str) -> &'static str {
 }
 
 fn decor_path(name: &str) -> String {
-    format!("{GRAVEYARD}{name}.glb")
+    match name.strip_prefix("kaykit:") {
+        Some(n) => format!("{KAYKIT_HALLOWEEN}{n}.glb"),
+        None => format!("{GRAVEYARD}{name}.glb"),
+    }
 }
 
 fn props_has_model(p: &crate::WorldProp) -> bool {
