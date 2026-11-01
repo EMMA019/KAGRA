@@ -14,6 +14,9 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 | [PixelMplus10-Regular](http://itouhiro.hatenablog.com/entry/20130602/font) | itouhiro; M+ FONTS PROJECT | custom | required | `kagra-shared/assets/PixelMplus10-Regular.ttf` |
 | [KayKit Adventurers Character Pack 1.0](https://kaylousberg.itch.io/kaykit-adventurers) | Kay Lousberg (www.kaylousberg.com) | CC0-1.0 | not required | `assets/library/kaykit/adventurers/**` |
 | [KayKit City Builder Bits 1.0](https://kaylousberg.itch.io/city-builder-bits) | Kay Lousberg (www.kaylousberg.com) | CC0-1.0 | not required | `assets/library/kaykit/city-builder-bits/**` |
+| [KayKit Dungeon Remastered](https://github.com/KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0) | Kay Lousberg (www.kaylousberg.com) | CC0-1.0 | not required | `assets/models/kaykit/dungeon-remastered/**` |
+| [KayKit Halloween Bits](https://github.com/KayKit-Game-Assets/KayKit-Halloween-Bits-1.0) | Kay Lousberg (www.kaylousberg.com) | CC0-1.0 | not required | `assets/models/kaykit/halloween-bits/**` |
+| [KayKit Space Base Bits](https://github.com/KayKit-Game-Assets/KayKit-Space-Base-Bits-1.0) | Kay Lousberg (www.kaylousberg.com) | CC0-1.0 | not required | `assets/models/kaykit/space-base-bits/**` |
 | [Kenney Blaster Kit (hero blaster)](https://kenney.nl/assets/blaster-kit) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/blaster-kit/*.glb` |
 | [Kenney Cube Pets](https://kenney.nl/assets/cube-pets) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/cube-pets/**` |
 | [Kenney Graveyard Kit (ghost, zombie, graveyard props)](https://kenney.nl/assets/graveyard-kit) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/graveyard-kit/*.glb` |
@@ -36,6 +39,8 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 | [Adobe Mixamo characters and animations (not committed)](https://www.mixamo.com/) | Adobe | custom | not required | `assets-private/mixamo/**` |
 | [OpenGameArt: 50 CC0 retro / synth SFX (7 used)](https://opengameart.org/content/50-cc0-retro-synth-sfx) | rubberduck | CC0-1.0 | not required | `assets/audio/oga-retro-synth-sfx/*.wav` |
 | [OpenGameArt: Flowerbed Fields (loop)](https://opengameart.org/content/flowerbed-fields-loop) | Zane Little Music | CC0-1.0 | not required | `assets/audio/oga-flowerbed-fields/*.mp3` |
+| [Juhani Junkala - 5 Action Chiptunes](https://opengameart.org/content/5-chiptunes-action) | Juhani Junkala | CC0-1.0 | not required | `assets/audio/oga-junkala-chiptunes/**` |
+| [100 CC0 SFX](https://opengameart.org/content/100-cc0-sfx) | rubberduck | CC0-1.0 | not required | `assets/audio/oga-rubberduck-100sfx/**` |
 | [Shibuya demo street map (from OpenStreetMap)](https://www.openstreetmap.org/copyright) | OpenStreetMap contributors | ODbL-1.0 | required | `kagra-shared/assets/maps/shibuya_demo.kagra.json` |
 | [Poly Haven props (31 models)](https://polyhaven.com/models) | Poly Haven contributors (per model, see credits) | CC0-1.0 | not required | `assets/library/polyhaven/props/**` |
 | [KAGRA synthesized tones (jump, fire, card, bgm)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/audio/*.wav` |

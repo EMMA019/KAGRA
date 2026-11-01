@@ -1886,7 +1886,7 @@ fn default_audio() -> Value {
         "master": 0.8,
         "sfx_volume": 1.0,
         "bgm_volume": 0.5,
-        "bgm": {"file": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3", "volume": 0.6, "fade_secs": 0.5},
+        "bgm": {"file": "assets/audio/oga-junkala-chiptunes/level1.mp3", "volume": 0.5, "fade_secs": 0.5},
         "sfx": {
             "shoot": cue("shot_01.wav", 0.16, 1.0),
             "hit": {"file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav", "volume": 0.45, "rate": 1.0},
@@ -1898,7 +1898,7 @@ fn default_audio() -> Value {
             "win": cue("power_up_04.wav", 0.8, 1.0),
             "pickup": cue("retro_coin_01.wav", 0.35, 1.0),
             "chest": cue("power_up_04.wav", 0.6, 1.25),
-            "boom": cue("retro_explosion_02.wav", 0.5, 1.0),
+            "boom": {"file": "assets/audio/oga-rubberduck-100sfx/explosion.wav", "volume": 0.5, "rate": 1.0},
             "elite": cue("retro_explosion_02.wav", 0.6, 0.55),
             "zap": cue("shot_01.wav", 0.2, 2.0),
             "pulse": cue("shot_01.wav", 0.3, 0.55),
@@ -1988,13 +1988,21 @@ const MUZZLE: f32 = GUN_FWD + 0.37 * GUN_SCALE;
 const AIM_HOLD: f32 = 0.5;
 const GEM_GLB: &str = "assets/models/kenney/platformer-kit/jewel.glb";
 /// Arena dressing from the Graveyard Kit inside the walls: (file, scale, how many).
-const DECOR: [(&str, f32, u32); 6] = [
-    ("gravestone-round", 1.5, 4),
-    ("gravestone-cross", 1.5, 3),
-    ("gravestone-broken", 1.5, 3),
-    ("pumpkin-carved", 1.4, 3),
-    ("lantern-candle", 1.6, 3),
+/// KayKit Halloween Bits (CC0, Kay Lousberg) mixed in for a richer night: full paths.
+const KAYKIT_HALLOWEEN: &str = "assets/models/kaykit/halloween-bits/";
+const DECOR: [(&str, f32, u32); 12] = [
+    ("gravestone-round", 1.5, 3),
+    ("gravestone-cross", 1.5, 2),
+    ("gravestone-broken", 1.5, 2),
+    ("pumpkin-carved", 1.4, 2),
     ("cross-wood", 1.4, 2),
+    ("kaykit:gravestone", 0.55, 3),
+    ("kaykit:grave_A", 0.45, 2),
+    ("kaykit:grave_B", 0.45, 2),
+    ("kaykit:pumpkin_orange_jackolantern", 0.5, 3),
+    ("kaykit:skull_candle", 0.6, 2),
+    ("kaykit:lantern_standing", 1.0, 3),
+    ("kaykit:tree_dead_medium", 0.6, 3),
 ];
 /// Pines ringed outside the wall, so the arena has a dark treeline round it.
 /// Seen from the high camera the pines read as flat pale boxes, so the ring is off.
@@ -2023,7 +2031,10 @@ fn hero_glb(skin: &str) -> &'static str {
 }
 
 fn decor_path(name: &str) -> String {
-    format!("{GRAVEYARD}{name}.glb")
+    match name.strip_prefix("kaykit:") {
+        Some(n) => format!("{KAYKIT_HALLOWEEN}{n}.glb"),
+        None => format!("{GRAVEYARD}{name}.glb"),
+    }
 }
 
 fn props_has_model(p: &crate::WorldProp) -> bool {

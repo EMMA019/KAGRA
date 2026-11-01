@@ -3,8 +3,8 @@
     "audio": {
       "bgm": {
         "fade_secs": 0.5,
-        "file": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
-        "volume": 0.5
+        "file": "assets/audio/oga-junkala-chiptunes/level3.mp3",
+        "volume": 0.45
       },
       "bgm_volume": 0.5,
       "enabled": true,

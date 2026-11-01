@@ -8,7 +8,6 @@
     "assets/audio/oga-retro-synth-sfx",
     "assets/audio/kenney-interface-sounds",
     "assets/audio/kenney-impact-sounds",
-    "assets/audio/oga-flowerbed-fields",
     "assets/models/kenney/platformer-kit/crate.glb",
     "assets/models/kenney/platformer-kit/barrel.glb",
     "assets/models/kenney/mini-dungeon/chest.glb",
@@ -16,7 +15,11 @@
     "assets/models/kenney/space-kit/machine_generatorLarge.glb",
     "assets/models/kenney/space-kit/satelliteDish.glb",
     "assets/models/kenney/space-kit/structure_closed.glb",
-    "assets/models/kenney/space-kit/turret_single.glb"
+    "assets/models/kenney/space-kit/turret_single.glb",
+    "assets/models/kaykit/space-base-bits",
+    "assets/models/kaykit/dungeon-remastered",
+    "assets/audio/oga-junkala-chiptunes/level1.mp3",
+    "assets/audio/oga-rubberduck-100sfx"
   ],
   "page": {
     "best": true,

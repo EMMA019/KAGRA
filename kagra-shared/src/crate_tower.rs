@@ -144,7 +144,32 @@ const CHEST_GLB: &str = "assets/models/kenney/mini-dungeon/chest.glb";
 const MODEL_M: f32 = 0.5;
 /// The dock behind the tower.
 const SPACE: &str = "assets/models/kenney/space-kit/";
-const BACKDROP: [(&str, f32, f32, f32); 5] = [
+const BACKDROP: [(&str, f32, f32, f32); 9] = [
+    // KayKit Space Base Bits and Dungeon Remastered (CC0, Kay Lousberg): full paths.
+    (
+        "assets/models/kaykit/space-base-bits/cargo_A_stacked.glb",
+        -7.0,
+        -18.0,
+        2.6,
+    ),
+    (
+        "assets/models/kaykit/space-base-bits/windturbine_tall.glb",
+        20.0,
+        -30.0,
+        3.0,
+    ),
+    (
+        "assets/models/kaykit/dungeon-remastered/crates_stacked.glb",
+        7.5,
+        -16.0,
+        1.1,
+    ),
+    (
+        "assets/models/kaykit/dungeon-remastered/barrel_large.glb",
+        -4.0,
+        -15.0,
+        0.7,
+    ),
     ("hangar_smallA.glb", -12.0, -26.0, 1.6),
     ("machine_generatorLarge.glb", 10.0, -22.0, 2.0),
     ("satelliteDish.glb", -2.0, -32.0, 2.5),
@@ -161,11 +186,11 @@ fn default_audio() -> Value {
         "master": 0.8,
         "sfx_volume": 1.0,
         "bgm_volume": 0.5,
-        "bgm": {"file": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3", "volume": 0.5, "fade_secs": 0.5},
+        "bgm": {"file": "assets/audio/oga-junkala-chiptunes/level1.mp3", "volume": 0.5, "fade_secs": 0.5},
         "sfx": {
-            "land": {"file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav", "volume": 0.6, "rate": 0.8},
+            "land": {"file": "assets/audio/oga-rubberduck-100sfx/wooden_02.wav", "volume": 0.7, "rate": 1.0},
             "perfect": cue("retro_coin_01.wav", 0.5, 1.0),
-            "chest": cue("power_up_04.wav", 0.6, 1.2),
+            "chest": {"file": "assets/audio/oga-rubberduck-100sfx/wooded_box_open.wav", "volume": 0.7, "rate": 1.0},
             "miss": cue("retro_die_01.wav", 0.6, 1.0),
             "gameover": cue("retro_die_03.wav", 0.8, 1.0),
             "go": {"file": "assets/audio/kenney-interface-sounds/confirmation_001.wav", "volume": 0.7, "rate": 1.0}
@@ -593,7 +618,11 @@ impl CrateTower {
         for (i, (file, x, z, s)) in BACKDROP.iter().enumerate() {
             let mut p = model(
                 &format!("dock-{i}"),
-                &format!("{SPACE}{file}"),
+                &if file.starts_with("assets/") {
+                    file.to_string()
+                } else {
+                    format!("{SPACE}{file}")
+                },
                 "dock",
                 [*x, -0.5, *z],
                 *s,

@@ -381,7 +381,7 @@ fn default_audio() -> Value {
         "master": 0.8,
         "sfx_volume": 1.0,
         "bgm_volume": 0.5,
-        "bgm": {"file": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3", "volume": 0.5, "fade_secs": 0.5},
+        "bgm": {"file": "assets/audio/oga-junkala-chiptunes/level2.mp3", "volume": 0.5, "fade_secs": 0.5},
         "sfx": {
             "jump": cue("shot_01.wav", 0.18, 1.9),
             "dash": cue("shot_01.wav", 0.3, 0.7),
@@ -390,9 +390,9 @@ fn default_audio() -> Value {
             "check": cue("power_up_02.wav", 0.5, 1.3),
             "fall": cue("retro_die_01.wav", 0.6, 1.0),
             "stomp": {"file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav", "volume": 0.6, "rate": 1.6},
-            "boom": cue("retro_explosion_02.wav", 0.7, 0.8),
+            "boom": {"file": "assets/audio/oga-rubberduck-100sfx/explosion.wav", "volume": 0.7, "rate": 1.0},
             "shot": cue("shot_01.wav", 0.12, 1.3),
-            "crumble": {"file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav", "volume": 0.4, "rate": 0.6},
+            "crumble": {"file": "assets/audio/oga-rubberduck-100sfx/slam_03.wav", "volume": 0.5, "rate": 1.0},
             "clear": cue("power_up_04.wav", 0.8, 1.0),
             "go": {"file": "assets/audio/kenney-interface-sounds/confirmation_001.wav", "volume": 0.7, "rate": 1.0}
         }

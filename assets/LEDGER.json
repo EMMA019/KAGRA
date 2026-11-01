@@ -1387,6 +1387,161 @@
    ],
    "verified_how": "OFL.txt fetched from google/fonts 2026-10-26: OFL 1.1, no Reserved Font Name. Instanced at wght=700 and subset by tools/subset_fonts.py; the OFL text ships next to it.",
    "notes": "The HUD's display face for numbers (TextFace::Display)."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/models/kaykit/halloween-bits/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Selected models only; .gltf+.bin+atlas packed into self-contained GLB (Halloween/Space atlas downscaled to 256 px).",
+   "verified": "checked",
+   "id": "kaykit-halloween-bits",
+   "name": "KayKit Halloween Bits",
+   "source": "kaykit",
+   "author": "Kay Lousberg (www.kaylousberg.com)",
+   "url": "https://github.com/KayKit-Game-Assets/KayKit-Halloween-Bits-1.0",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-01",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/kaykit/halloween-bits/**"
+   ],
+   "verified_how": "LICENSE.txt in the official KayKit-Game-Assets GitHub repo says CC0 1.0 (checked 2026-11-01); itch.io page lists 'Creative Commons Zero v1.0 Universal'."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/models/kaykit/space-base-bits/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Selected models only; .gltf+.bin+atlas packed into self-contained GLB (Halloween/Space atlas downscaled to 256 px).",
+   "verified": "checked",
+   "id": "kaykit-space-base-bits",
+   "name": "KayKit Space Base Bits",
+   "source": "kaykit",
+   "author": "Kay Lousberg (www.kaylousberg.com)",
+   "url": "https://github.com/KayKit-Game-Assets/KayKit-Space-Base-Bits-1.0",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-01",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/kaykit/space-base-bits/**"
+   ],
+   "verified_how": "LICENSE.txt in the official KayKit-Game-Assets GitHub repo says CC0 1.0 (checked 2026-11-01); itch.io page lists 'Creative Commons Zero v1.0 Universal'."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/models/kaykit/dungeon-remastered/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Selected models only; .gltf+.bin+atlas packed into self-contained GLB (Halloween/Space atlas downscaled to 256 px).",
+   "verified": "checked",
+   "id": "kaykit-dungeon-remastered",
+   "name": "KayKit Dungeon Remastered",
+   "source": "kaykit",
+   "author": "Kay Lousberg (www.kaylousberg.com)",
+   "url": "https://github.com/KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-01",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/kaykit/dungeon-remastered/**"
+   ],
+   "verified_how": "LICENSE.txt in the official KayKit-Game-Assets GitHub repo says CC0 1.0 (checked 2026-11-01); itch.io page lists 'Creative Commons Zero v1.0 Universal'."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/audio/oga-junkala-chiptunes/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Level 1-3 converted to mono 64 kbps MP3.",
+   "verified": "checked",
+   "id": "oga-junkala-chiptunes",
+   "name": "Juhani Junkala - 5 Action Chiptunes",
+   "source": "opengameart",
+   "author": "Juhani Junkala",
+   "url": "https://opengameart.org/content/5-chiptunes-action",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-01",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/audio/oga-junkala-chiptunes/**"
+   ],
+   "verified_how": "OpenGameArt page lists License(s): CC0 and the author's INFO.txt in the zip says CC0 (checked 2026-11-01)."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/audio/oga-rubberduck-100sfx/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Eight sounds converted to mono 22.05 kHz WAV.",
+   "verified": "checked",
+   "id": "oga-rubberduck-100sfx",
+   "name": "100 CC0 SFX",
+   "source": "opengameart",
+   "author": "rubberduck",
+   "url": "https://opengameart.org/content/100-cc0-sfx",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-01",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/audio/oga-rubberduck-100sfx/**"
+   ],
+   "verified_how": "OpenGameArt page lists License(s): CC0 (checked 2026-11-01)."
   }
  ]
 }
