@@ -155,6 +155,23 @@ impl SurvivorArena {
             }
         }
 
+        // Flipbook explosions: one frame card per live slot.
+        for (i, b) in self.booms.iter().enumerate() {
+            let age = t - b[2];
+            let live = b[3] > 0.0 && (0.0..BOOM_LIFE).contains(&age);
+            let fr = ((age / BOOM_LIFE) * BOOM_FRAMES as f32) as usize;
+            for f in 0..BOOM_FRAMES {
+                let p = &mut props[slots.boom0 + i * BOOM_FRAMES + f];
+                let on = live && f == fr;
+                if on {
+                    p.position = [b[0], 0.45 * b[3], b[1]];
+                    p.scale = [b[3]; 3];
+                } else {
+                    p.position = [0.0, -50.0, 0.0];
+                }
+            }
+        }
+
         // Lightning: a jagged line through the hero and each foe it struck, fading fast.
         for k in 0..ZAP_CAP {
             let l = &mut lines[slots.ln_zap + k];

@@ -1573,6 +1573,37 @@
     "assets/models/grab3d/**"
    ],
    "verified_how": "grab3d.com/license states every model is CC0 1.0; each download's LICENSE.txt and manifest.json say CC0-1.0 (checked 2026-11-01)."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/textures/fx/explosion/LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Eight frames sliced from explosion1.png and resized to 128 px PNG flipbook cards.",
+   "verified": "checked",
+   "id": "oga-benhickling-explosion",
+   "name": "Explosion",
+   "source": "opengameart",
+   "author": "Ben Hickling",
+   "url": "https://opengameart.org/content/explosion-7",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-01",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/textures/fx/explosion/**"
+   ],
+   "verified_how": "OpenGameArt page lists License(s): CC0 (checked 2026-11-01)."
   }
  ]
 }

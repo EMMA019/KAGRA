@@ -151,6 +151,14 @@ const ZAP_CAP: usize = 6;
 const ZAP_PTS: usize = 10;
 const RING_CAP: usize = 8;
 const CHEST_CAP: usize = 3;
+/// Flipbook explosions alive at once, frames per explosion and its life (s).
+const BOOM_CAP: usize = 4;
+const BOOM_FRAMES: usize = 8;
+const BOOM_LIFE: f32 = 0.6;
+/// Ben Hickling's "Explosion" (OpenGameArt, CC0): eight frames, bottom-anchored.
+const BOOM_TEX: &str = "assets/textures/fx/explosion/boom_";
+/// The cards tip back toward the high camera (+pitch lifts the +Z face).
+const BOOM_PITCH: f32 = 1.05;
 const ORB_LIFE: f32 = 4.5;
 const ORB_R: f32 = 0.22;
 const TOAST_LIFE: f32 = 2.4;
@@ -273,6 +281,7 @@ struct Slots {
     glow0: usize,
     chest0: usize,
     glb_chest: bool,
+    boom0: usize,
     glb_foe: bool,
     glb_gem: bool,
     // line list offsets in `doc.lines`
@@ -395,6 +404,8 @@ pub struct SurvivorArena {
     tier: usize,
     /// Camera zoom-in kick, 0..1, decays fast.
     zoom_kick: f32,
+    /// Flipbook explosions: x, z, start (`anim_t`), size; size 0 = free.
+    booms: [[f32; 4]; BOOM_CAP],
     // hero
     hx: f32,
     hz: f32,
@@ -551,6 +562,7 @@ impl SurvivorArena {
             dmg: Vec::new(),
             tier: 1,
             zoom_kick: 0.0,
+            booms: [[0.0; 4]; BOOM_CAP],
             hx: 0.0,
             hz: 0.0,
             vx: 0.0,
@@ -771,6 +783,7 @@ impl SurvivorArena {
         self.pickups.clear();
         self.zaps.clear();
         self.rings.clear();
+        self.booms = [[0.0; 4]; BOOM_CAP];
         self.orbit_phase = 0.0;
         self.shield_t = 0.0;
         self.frenzy_t = 0.0;
@@ -1109,6 +1122,18 @@ impl SurvivorArena {
             sum += st.damage * self.mods.damage * n as f32 / gap;
         }
         sum
+    }
+
+    /// Start a flipbook explosion in a free slot (dropped when all are busy).
+    fn boom(&mut self, x: f32, z: f32, size: f32) {
+        let t = self.anim_t;
+        if let Some(b) = self
+            .booms
+            .iter_mut()
+            .find(|b| b[3] <= 0.0 || t - b[2] >= BOOM_LIFE)
+        {
+            *b = [x, z, t, size];
+        }
     }
 
     /// The timed elite: the first at `director.elite_first`, then every `elite_every`.
@@ -1478,6 +1503,11 @@ impl SurvivorArena {
             self.burst(FX_SPARK, 4, [x, 0.5, z], [0.0, 0.0], 5.0, 1.0, 2.5, 0.35);
             self.core.juice.shake = self.core.juice.shake.max(0.07);
             self.zoom_kick = self.zoom_kick.max(0.12);
+            if k.elite {
+                self.boom(x, z, 6.5);
+            } else if k.model != MODEL_MIX {
+                self.boom(x, z, 2.4 * k.radius.max(0.5));
+            }
             if k.elite {
                 self.burst(FX_BLAST, 12, [x, 0.6, z], [0.0, 0.0], 4.5, 1.0, 2.5, 0.8);
                 self.core.juice.shake = self.core.juice.shake.max(0.4);

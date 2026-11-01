@@ -537,6 +537,28 @@ impl SurvivorArena {
             p.enabled = false;
             doc.props.push(p);
         }
+        self.slots.boom0 = doc.props.len();
+        for i in 0..BOOM_CAP {
+            for f in 0..BOOM_FRAMES {
+                let mut p = prop(
+                    &format!("boom-{i}-{f}"),
+                    "sprite",
+                    "boom",
+                    [0.0, -50.0, 0.0],
+                    [1.0; 3],
+                    [255, 255, 255],
+                    2.2,
+                    1.0,
+                    0.0,
+                );
+                p.texture = Some(format!("{BOOM_TEX}{f}.png"));
+                p.emissive_color = Some([1.0, 0.75, 0.45]);
+                p.pitch = BOOM_PITCH;
+                // Textured props stay enabled (toggling one re-keys the GPU meshes):
+                // a parked card waits under the floor.
+                doc.props.push(p);
+            }
+        }
         doc.cameras.push(WorldCamera {
             id: "camera:main".into(),
             kind: "camera".into(),

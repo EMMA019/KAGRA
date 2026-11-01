@@ -39,6 +39,7 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 | [OpenGameArt: 8 wet squish / slurp impacts (impactsplat03)](https://opengameart.org/content/8-wet-squish-slurp-impacts) | Independent.nu | CC0-1.0 | not required | `assets/audio/oga-wet-squish/*.wav` |
 | [Adobe Mixamo characters and animations (not committed)](https://www.mixamo.com/) | Adobe | custom | not required | `assets-private/mixamo/**` |
 | [OpenGameArt: 50 CC0 retro / synth SFX (7 used)](https://opengameart.org/content/50-cc0-retro-synth-sfx) | rubberduck | CC0-1.0 | not required | `assets/audio/oga-retro-synth-sfx/*.wav` |
+| [Explosion](https://opengameart.org/content/explosion-7) | Ben Hickling | CC0-1.0 | not required | `assets/textures/fx/explosion/**` |
 | [OpenGameArt: Flowerbed Fields (loop)](https://opengameart.org/content/flowerbed-fields-loop) | Zane Little Music | CC0-1.0 | not required | `assets/audio/oga-flowerbed-fields/*.mp3` |
 | [Juhani Junkala - 5 Action Chiptunes](https://opengameart.org/content/5-chiptunes-action) | Juhani Junkala | CC0-1.0 | not required | `assets/audio/oga-junkala-chiptunes/**` |
 | [100 CC0 SFX](https://opengameart.org/content/100-cc0-sfx) | rubberduck | CC0-1.0 | not required | `assets/audio/oga-rubberduck-100sfx/**` |

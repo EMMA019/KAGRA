@@ -6,6 +6,7 @@
   "world": "kagra-shared/tests/fixtures/survivor_arena_world.json",
   "bundle_assets": [
     "assets/models/grab3d/gargoyle.glb",
+    "assets/textures/fx/explosion",
     "assets/models/grab3d/low-poly-dragon.glb",
     "assets/audio/oga-retro-synth-sfx",
     "assets/audio/kenney-interface-sounds",
