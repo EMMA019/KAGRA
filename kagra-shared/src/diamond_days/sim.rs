@@ -186,7 +186,11 @@ impl Tactic {
     pub fn possible(self, g: &Game) -> bool {
         let f = 1 - g.batting();
         match self {
-            Tactic::Bunt => g.outs < 2 && (g.bases[0].is_some() || g.bases[1].is_some()),
+            // A sacrifice moves runners up from first and second; with a runner on third,
+            // the squeeze is the bunt.
+            Tactic::Bunt => {
+                g.outs < 2 && (g.bases[0].is_some() || g.bases[1].is_some()) && g.bases[2].is_none()
+            }
             Tactic::Squeeze => g.outs < 2 && g.bases[2].is_some(),
             Tactic::Steal => {
                 (g.bases[0].is_some() && g.bases[1].is_none())
@@ -334,6 +338,10 @@ impl Game {
         {
             self.arm[f] += 1;
             self.thrown[f] = 0;
+            // The change the coach called for has happened: do not bring in another.
+            if self.tactic == Some(Tactic::Relief) {
+                self.tactic = None;
+            }
             let n = self.pitcher_now().name.clone();
             self.say(
                 format!("Pitching change: {n} comes in."),
@@ -859,5 +867,29 @@ mod tests {
         assert!(squeezes > 5 && walks > 5, "{squeezes} {walks}");
         let g = Game::new(side(50.0, 1), side(50.0, 2), true, 1);
         assert!(!Tactic::Squeeze.possible(&g), "nobody on third");
+    }
+
+    #[test]
+    fn a_bunt_is_offered_only_with_third_open_and_relief_never_doubles() {
+        let mut g = Game::new(side(50.0, 1), side(50.0, 2), true, 1);
+        g.bases = [Some(0), None, Some(1)];
+        assert!(
+            !Tactic::Bunt.possible(&g),
+            "first and third: squeeze, not a sacrifice"
+        );
+        assert!(Tactic::Squeeze.possible(&g));
+        g.bases = [Some(0), Some(1), None];
+        assert!(Tactic::Bunt.possible(&g));
+        // A tired pitcher is changed with Relief pending: only one new pitcher comes in.
+        let mut g = Game::new(side(50.0, 3), side(50.0, 4), true, 3);
+        g.top = false; // we field (we bat first = visitors)
+        let f = 1 - g.batting();
+        g.thrown[f] = 10_000;
+        g.tactic = Some(Tactic::Relief);
+        g.step();
+        assert_eq!(g.arm[f], 1);
+        assert_eq!(g.tactic, None);
+        g.step();
+        assert_eq!(g.arm[f], 1, "no second change");
     }
 }
