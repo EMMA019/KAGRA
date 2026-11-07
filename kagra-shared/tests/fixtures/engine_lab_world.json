@@ -310,6 +310,9 @@
           ]
         },
         "hello": {
+          "add": {
+            "visits": 1
+          },
           "choices": [
             {
               "goto": "shop",
@@ -340,10 +343,7 @@
               "text_ja": "また来たね？いい品をとっておいたよ。",
               "who": "merchant"
             }
-          ],
-          "set": {
-            "visits": 1
-          }
+          ]
         },
         "key": {
           "events": [

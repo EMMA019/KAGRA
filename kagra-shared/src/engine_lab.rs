@@ -140,7 +140,7 @@ fn default_talk() -> Value {
                     {"who": "merchant", "text": "Welcome, traveller! Moonlight prices, tonight only.", "text_ja": "いらっしゃい、旅の人！今夜だけの月明かり価格だよ。", "face": "smile"},
                     {"who": "merchant", "text": "Back again? I kept the good stuff for you.", "text_ja": "また来たね？いい品をとっておいたよ。", "if": "visits>=2"}
                 ],
-                "set": {"visits": 1},
+                "add": {"visits": 1},
                 "choices": [
                     {"text": "Show me your wares", "text_ja": "品物を見せて", "goto": "shop"},
                     {"text": "Any news?", "text_ja": "なにか噂は？", "goto": "news"},

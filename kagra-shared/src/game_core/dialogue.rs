@@ -80,6 +80,8 @@ pub struct Choice {
     pub goto: String,
     /// Flags it sets (name -> value).
     pub set: BTreeMap<String, i64>,
+    /// Flags it adds to (name -> amount): counters such as visits.
+    pub add: BTreeMap<String, i64>,
     /// Events it sends the kit.
     pub events: Vec<String>,
     /// Offered only when this condition holds.
@@ -97,6 +99,8 @@ pub struct Node {
     pub next: String,
     /// Flags set on entering.
     pub set: BTreeMap<String, i64>,
+    /// Flags added to on entering (counters: `{"visits": 1}` counts the visits).
+    pub add: BTreeMap<String, i64>,
     /// Events sent on entering.
     pub events: Vec<String>,
 }
@@ -212,10 +216,13 @@ impl Talk {
             self.node.clear();
             return;
         };
-        let (set, events) = (n.set.clone(), n.events.clone());
+        let (set, add, events) = (n.set.clone(), n.add.clone(), n.events.clone());
         self.node = id.into();
         for (k, v) in set {
             self.flags.insert(k, v);
+        }
+        for (k, v) in add {
+            *self.flags.entry(k).or_insert(0) += v;
         }
         self.events.extend(events);
         self.line = 0;
@@ -347,6 +354,9 @@ impl Talk {
         };
         for (k, v) in c.set {
             self.flags.insert(k, v);
+        }
+        for (k, v) in c.add {
+            *self.flags.entry(k).or_insert(0) += v;
         }
         self.events.extend(c.events);
         self.goto(&c.goto);
@@ -803,5 +813,29 @@ mod tests {
             rects[1][1] + rects[1][3] < 844.0 - panel_h(1.0),
             "above the box"
         );
+    }
+
+    #[test]
+    fn add_counts_visits() {
+        let mut t = Talk::new(
+            Script::from_value(&json!({
+                "start": "hi",
+                "nodes": {"hi": {"lines": [
+                    {"text": "Hello."},
+                    {"text": "Back again?", "if": "visits>=2"}
+                ], "add": {"visits": 1}}}
+            }))
+            .unwrap(),
+        );
+        t.begin();
+        assert_eq!(t.flag("visits"), 1);
+        t.tap();
+        t.tap();
+        assert!(!t.active(), "no second line on the first visit");
+        t.begin();
+        assert_eq!(t.flag("visits"), 2);
+        t.tap();
+        t.tap();
+        assert_eq!(t.line().unwrap().text, "Back again?");
     }
 }

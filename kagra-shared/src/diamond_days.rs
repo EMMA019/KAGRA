@@ -204,6 +204,9 @@ struct Save {
     /// Middle-school players found by scouting; they join next April.
     #[serde(default)]
     scouted: Vec<team::Player>,
+    /// The (year, week) whose healing already happened (so a reload does not heal twice).
+    #[serde(default)]
+    healed: (u8, u8),
 }
 
 #[derive(Debug)]
@@ -226,6 +229,9 @@ pub struct DiamondDays {
     roster_scroll: usize,
     /// A saved run to resume (from `world.save`).
     resume: Option<Save>,
+    /// The week as it was before the card was played: what a save while walking keeps, so
+    /// a reload replays the week instead of half of it.
+    pre_walk: Option<Save>,
     /// `?week=13` on the preview link: a fresh run starts at that week (to try a game).
     start_week: Option<u8>,
     clock: f32,
@@ -254,6 +260,7 @@ impl DiamondDays {
             coach: Animator::new(MoveSet::procedural()),
             roster_scroll: 0,
             resume: None,
+            pre_walk: None,
             start_week: None,
             clock: 0.0,
             lang_ja: false,
@@ -325,6 +332,9 @@ impl DiamondDays {
                 }
                 self.notes.clear();
                 self.game = None;
+                self.pre_walk = None;
+                // Calls are asked again in a new run.
+                self.auto_orders = false;
                 self.flow.enter_play();
                 crate::mixer::cue_sfx("go");
                 crate::mixer::play_bgm("bgm", 0.5);
@@ -372,6 +382,15 @@ impl DiamondDays {
 
     /// The start of a week: a game if the calendar has one for us, else the cards.
     fn begin_week(&mut self) {
+        // Injuries heal a week at the start of each week (once), so one taken this week
+        // lasts its full length.
+        let now = (self.s.year, self.s.week);
+        if self.s.healed != now {
+            self.s.healed = now;
+            for p in &mut self.s.team.players {
+                p.hurt = p.hurt.saturating_sub(1);
+            }
+        }
         if let Some(f) = board::fixture(self.s.week) {
             let ours = match f {
                 Fixture::Practice => true,
@@ -553,6 +572,7 @@ impl DiamondDays {
         if self.mode != Mode::Plan || i >= self.s.hand.len() {
             return;
         }
+        self.pre_walk = Some(self.s.clone());
         let card = self.s.hand.remove(i);
         self.s.hand.push(Card::draw(&mut self.rng, &self.s.team));
         crate::mixer::cue_sfx("card");
@@ -565,6 +585,7 @@ impl DiamondDays {
 
     /// The coach stops on a square: it happens.
     fn land(&mut self, card: Card) {
+        self.pre_walk = None;
         let sq = self.spec.ring[self.s.pos];
         let (title, title_ja) = (sq.label(false).to_string(), sq.label(true).to_string());
         let mut lines = Vec::new();
@@ -683,7 +704,6 @@ impl DiamondDays {
     /// The week is done: healing, rest, the next week, the year's turn.
     fn end_week(&mut self) {
         for p in &mut self.s.team.players {
-            p.hurt = p.hurt.saturating_sub(1);
             p.rest(self.spec.weekly_rest);
         }
         self.s.week += 1;
@@ -1009,6 +1029,7 @@ fn fresh_save(seed: u32) -> Save {
         results: Vec::new(),
         seed: rng.next_u32(),
         scouted: Vec::new(),
+        healed: (0, 0),
     }
 }
 
@@ -1104,11 +1125,19 @@ impl crate::kit_host::KitHost for DiamondDays {
     }
     fn walk(&mut self, _lx: f32, _lz: f32, _jump: bool) {}
     fn save_json(&self) -> Option<String> {
-        if self.flow.phase == FlowPhase::Play && self.s.year <= self.spec.years {
-            // Mid-game, keep the week before the game: it replays from its start.
-            serde_json::to_string(&self.s).ok()
-        } else {
-            Some("{}".into())
+        match self.flow.phase {
+            // In a run (paused too). Mid-game the week has not moved yet, so a reload
+            // replays the game; mid-walk, the week as it was before the card.
+            FlowPhase::Play | FlowPhase::Pause if self.s.year <= self.spec.years => {
+                serde_json::to_string(self.pre_walk.as_ref().unwrap_or(&self.s)).ok()
+            }
+            // On the title screen a kept run waits to be resumed: keep it.
+            FlowPhase::Title => self
+                .resume
+                .as_ref()
+                .and_then(|r| serde_json::to_string(r).ok()),
+            // Three years done: the next visit starts a new run.
+            _ => Some("{}".into()),
         }
     }
     fn touch(&mut self, ev: PointerEvent, w: u32, h: u32, _t: f32) {

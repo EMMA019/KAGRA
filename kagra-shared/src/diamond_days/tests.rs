@@ -279,6 +279,61 @@ fn a_link_can_start_at_a_game_week() {
 }
 
 #[test]
+fn an_injury_lasts_its_weeks_and_saves_keep_the_week_whole() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    // Hurt this week for two weeks: still out next week, back the week after.
+    g.s.team.players[0].hurt = 2;
+    g.s.healed = (g.s.year, g.s.week);
+    g.end_week();
+    g.begin_week();
+    assert_eq!(g.s.team.players[0].hurt, 1, "out next week too");
+    g.end_week();
+    g.begin_week();
+    assert_eq!(g.s.team.players[0].hurt, 0);
+    // A save while the coach walks keeps the week as it was before the card.
+    g.mode = Mode::Plan;
+    let (pos, hand) = (g.s.pos, g.s.hand.clone());
+    press(&mut g, hud::Btn::Card(0));
+    g.tick(DT);
+    let saved: Value = serde_json::from_str(&g.save_json().unwrap()).unwrap();
+    assert_eq!(saved["pos"], pos);
+    assert_eq!(saved["hand"], serde_json::to_value(&hand).unwrap());
+    run(&mut g, 2.0);
+    let saved: Value = serde_json::from_str(&g.save_json().unwrap()).unwrap();
+    assert_eq!(saved["pos"], g.s.pos, "after landing the save moves on");
+}
+
+#[test]
+fn the_title_screen_keeps_a_saved_run_and_calls_come_back_in_a_new_run() {
+    let mut g = started();
+    for _ in 0..2 {
+        play_week(&mut g);
+    }
+    let saved = g.save_json().unwrap();
+    let mut world = DiamondDays::new(DiamondDaysSpec::default()).world_value();
+    world["save"] = serde_json::from_str(&saved).unwrap();
+    let h = DiamondDays::from_json(&world.to_string()).unwrap();
+    assert_eq!(h.phase_name(), "title");
+    assert_eq!(
+        h.save_json().unwrap(),
+        saved,
+        "the title keeps the run on the device"
+    );
+    let fresh = DiamondDays::new(DiamondDaysSpec::default());
+    assert_eq!(
+        fresh.save_json(),
+        None,
+        "nothing to keep: the device copy is left alone"
+    );
+    // A new run asks for calls again.
+    g.auto_orders = true;
+    g.flow.finish(0, 0, "x");
+    g.confirm();
+    assert!(!g.auto_orders);
+}
+
+#[test]
 fn the_roster_opens_and_scrolls() {
     let mut g = started();
     tap(&mut g, 195.0, 400.0);
