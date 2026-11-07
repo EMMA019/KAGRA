@@ -253,6 +253,45 @@ struct Save {
     /// The three years are over and the coach has not chosen yet.
     #[serde(default)]
     epilogue: bool,
+    /// Every finished year of the whole career, oldest first (the run never has to end).
+    #[serde(default)]
+    history: Vec<YearLog>,
+    /// Wins and losses when this year began (the year's own record is the difference).
+    #[serde(default)]
+    year_from: (u32, u32),
+}
+
+/// One finished year in the career record.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct YearLog {
+    /// The career year (1, 2, ... across chapters and schools).
+    year: u32,
+    school: String,
+    school_ja: String,
+    best: String,
+    best_ja: String,
+    wins: u32,
+    losses: u32,
+}
+
+impl YearLog {
+    /// 0 a national title, 1 the Summer Stadium, 2 a prefectural title, 3 anything else.
+    fn tier(&self) -> u8 {
+        if self.best_ja.contains("優勝") && self.best.contains("Stadium") {
+            0
+        } else if self.best.contains("Stadium") || self.best.contains("Blossom") {
+            1
+        } else if self.best.contains("champions") {
+            2
+        } else {
+            3
+        }
+    }
+}
+
+/// The career year a save is in (chapters run on; year counts within one chapter).
+fn career_year(s: &Save, years: u8) -> u32 {
+    (s.chapter.max(1) as u32 - 1) * years.max(1) as u32 + s.year as u32
 }
 
 #[derive(Debug)]
@@ -391,6 +430,42 @@ impl DiamondDays {
 
     fn chapter(&self) -> u8 {
         self.s.chapter.max(1)
+    }
+
+    /// The career year: 1, 2, 3, ... for as long as the coach keeps going.
+    fn career_year(&self) -> u32 {
+        career_year(&self.s, self.spec.years)
+    }
+
+    /// Log the finished year in the career record.
+    fn log_year(&mut self) {
+        let y = self.s.year as usize;
+        let (best, best_ja) = self
+            .s
+            .results
+            .get(y.saturating_sub(1))
+            .cloned()
+            .unwrap_or_else(|| ("-".into(), "-".into()));
+        let (w0, l0) = self.s.year_from;
+        let log = YearLog {
+            year: self.career_year(),
+            school: self.school_en().to_string(),
+            school_ja: self.school_ja().to_string(),
+            best,
+            best_ja,
+            wins: self.s.wins.saturating_sub(w0),
+            losses: self.s.losses.saturating_sub(l0),
+        };
+        self.s.history.push(log);
+        self.s.year_from = (self.s.wins, self.s.losses);
+    }
+
+    /// The next chapter: the record carries on, old fixtures go.
+    fn next_chapter(&mut self) {
+        self.s.chapter = self.chapter().saturating_add(1);
+        let chapter = self.s.chapter;
+        self.s.slate.retain(|e| e.chapter >= chapter);
+        self.s.year_from = (0, 0);
     }
 
     fn bump_rep(&mut self, d: f32) {
@@ -579,7 +654,7 @@ impl DiamondDays {
         if let Some(name) = spark {
             g.log.push(sim::Play {
                 en: format!("Spark! {name} lifts the bench."),
-                ja: format!("ムードメーカー！{name}がベンチを明るくする。"),
+                ja: format!("元気印！{name}がベンチを明るくする。"),
                 runs: 0,
                 kind: sim::PlayKind::Note,
                 dir: 0.0,
@@ -853,7 +928,7 @@ impl DiamondDays {
                     if self.s.team.players[k].has(Ability::Durable) {
                         lines.push((
                             format!("Durable! {n} shakes off a twist."),
-                            format!("ケガしにくい！{n}は捻挫をこらえた。"),
+                            format!("鉄の体！{n}は捻挫をこらえた。"),
                         ));
                     } else {
                         self.s.team.players[k].hurt = 2;
@@ -1037,6 +1112,7 @@ impl DiamondDays {
         while self.s.results.len() < y {
             self.s.results.push(("-".into(), "-".into()));
         }
+        self.log_year();
         for school in &mut self.s.rivals {
             school.strength = (school.strength + 0.8).min(90.0);
         }
@@ -1068,11 +1144,11 @@ impl DiamondDays {
             vec![(
                 format!(
                     "{joined} first-years joined the club. Year {} begins.",
-                    self.s.year
+                    self.career_year()
                 ),
                 format!(
                     "新入部員が{joined}人入った。{}年目のはじまり。",
-                    self.s.year
+                    self.career_year()
                 ),
             )],
         );
@@ -1140,7 +1216,7 @@ impl DiamondDays {
         for n in &report.shrugged {
             lines.push((
                 format!("Durable! {n} finishes the camp healthy."),
-                format!("ケガしにくい！{n}は合宿を無事に終えた。"),
+                format!("鉄の体！{n}は合宿を無事に終えた。"),
             ));
         }
         if self.rng.unit() < 0.55 {
@@ -1272,7 +1348,7 @@ impl DiamondDays {
         self.s.wins = 0;
         self.s.losses = 0;
         self.s.results.clear();
-        self.s.chapter = self.chapter() + 1;
+        self.next_chapter();
         self.s.year = 1;
         self.s.week = 1;
         self.s.summer_in = true;
@@ -1291,11 +1367,13 @@ impl DiamondDays {
             "次の世代",
             vec![(
                 format!(
-                    "Chapter {}. {joined} first-years join the club you built.",
+                    "Year {}, chapter {}. {joined} first-years join the club you built.",
+                    self.career_year(),
                     self.chapter()
                 ),
                 format!(
-                    "{}期。育てた部に新入部員が{joined}人入った。",
+                    "{}年目、第{}期。育てた部に新入部員が{joined}人入った。",
+                    self.career_year(),
                     self.chapter()
                 ),
             )],
@@ -1338,7 +1416,7 @@ impl DiamondDays {
         self.s.wins = 0;
         self.s.losses = 0;
         self.s.results.clear();
-        self.s.chapter = self.chapter() + 1;
+        self.next_chapter();
         self.s.year = 1;
         self.s.week = 1;
         self.s.summer_in = true;
@@ -1863,6 +1941,8 @@ fn fresh_save(seed: u32) -> Save {
         career_wins: 0,
         career_losses: 0,
         epilogue: false,
+        history: Vec::new(),
+        year_from: (0, 0),
     }
 }
 

@@ -1,6 +1,7 @@
 //! Illustrated HUD pieces drawn with [`crate::vector`]: soft-shadowed gradient panels, glossy
 //! buttons, ribbons, letter chips, gauges, stars, speech bubbles and portraits, placed on a
-//! [`Stage`] (a fixed design canvas fitted to any screen).
+//! [`Stage`] (a fixed design canvas fitted to any screen). PNG art registered with
+//! [`crate::image2d`] draws in the same order ([`Painter::image`], [`Painter::nine_slice`]).
 //!
 //! A kit lays a screen out once in design units (say 400 wide, phone first). [`Stage`] maps
 //! them onto the real screen: a phone in portrait fills the width, a desktop shows the
@@ -21,6 +22,7 @@
 //! ```
 
 use crate::game_core::portrait::{self, Expr, Face, Outfit};
+use crate::image2d::PicId;
 use crate::scene::{DrawList, Mesh2d, TextAlign, TextFace, TextQuad};
 use crate::vector::{self, mix, shade, Paint, Rgba, P};
 
@@ -147,6 +149,88 @@ impl<'a> Painter<'a> {
     pub fn dot(&mut self, cx: f32, cy: f32, r: f32, c: Rgba) {
         let (p, k) = (self.st.pt([cx, cy]), self.st.k);
         vector::dot(self.mesh(), p, r * k, c);
+    }
+
+    /// A registered picture stretched over the design rectangle.
+    pub fn image(&mut self, pic: PicId, x: f32, y: f32, w: f32, h: f32) {
+        self.image_part(pic, [x, y, w, h], [0.0, 0.0, 1.0, 1.0], [255; 4]);
+    }
+
+    /// Part `uv` (u0, v0, u1, v1) of a picture over the design rectangle `rect`, tinted:
+    /// white keeps it as drawn, a lower alpha fades it.
+    pub fn image_part(&mut self, pic: PicId, rect: [f32; 4], uv: [f32; 4], tint: Rgba) {
+        let r = self.st.rect(rect[0], rect[1], rect[2], rect[3]);
+        self.mesh().sprite(pic, r, uv, tint);
+    }
+
+    /// Fill the rectangle with the picture at its own aspect, cropping what overflows
+    /// (anchored at `focus`, 0..1 on each axis: 0.5 keeps the centre).
+    pub fn image_cover(&mut self, pic: PicId, rect: [f32; 4], focus: [f32; 2], tint: Rgba) {
+        let Some((pw, ph)) = crate::image2d::size(pic) else {
+            return;
+        };
+        let (ra, pa) = (rect[2] / rect[3].max(1e-3), pw as f32 / ph as f32);
+        let uv = if pa > ra {
+            let f = ra / pa;
+            let u0 = (1.0 - f) * focus[0].clamp(0.0, 1.0);
+            [u0, 0.0, u0 + f, 1.0]
+        } else {
+            let f = pa / ra;
+            let v0 = (1.0 - f) * focus[1].clamp(0.0, 1.0);
+            [0.0, v0, 1.0, v0 + f]
+        };
+        self.image_part(pic, rect, uv, tint);
+    }
+
+    /// A framed picture (a paper card, a banner) grown to any size: the corners keep their
+    /// size, `border` design units on screen and `edge` of the picture (0..0.5) per side; the
+    /// edges and the middle stretch, or repeat in `tile` design-unit steps when `tile` > 0.
+    #[allow(clippy::too_many_arguments)]
+    pub fn nine_slice(
+        &mut self,
+        pic: PicId,
+        rect: [f32; 4],
+        border: f32,
+        edge: f32,
+        tile: f32,
+        tint: Rgba,
+    ) {
+        let [x, y, w, h] = rect;
+        let m = border.min(w * 0.5).min(h * 0.5).max(0.0);
+        let e = edge.clamp(0.0, 0.5);
+        // Columns and rows: (design start, design size, uv start, uv end).
+        let spans = |start: f32, size: f32| {
+            [
+                (start, m, 0.0, e),
+                (start + m, size - 2.0 * m, e, 1.0 - e),
+                (start + size - m, m, 1.0 - e, 1.0),
+            ]
+        };
+        for (ri, (py, ph, v0, v1)) in spans(y, h).into_iter().enumerate() {
+            for (ci, (px, pw, u0, u1)) in spans(x, w).into_iter().enumerate() {
+                if pw <= 0.0 || ph <= 0.0 {
+                    continue;
+                }
+                // Repeat the middle parts along their stretched axes.
+                let (step_x, step_y) = (
+                    if ci == 1 && tile > 0.0 { tile } else { pw },
+                    if ri == 1 && tile > 0.0 { tile } else { ph },
+                );
+                let mut ty = py;
+                while ty < py + ph - 1e-3 {
+                    let th = step_y.min(py + ph - ty);
+                    let tv1 = v0 + (v1 - v0) * th / step_y;
+                    let mut tx = px;
+                    while tx < px + pw - 1e-3 {
+                        let tw = step_x.min(px + pw - tx);
+                        let tu1 = u0 + (u1 - u0) * tw / step_x;
+                        self.image_part(pic, [tx, ty, tw, th], [u0, v0, tu1, tv1], tint);
+                        tx += tw;
+                    }
+                    ty += th;
+                }
+            }
+        }
     }
 
     fn paint(&self, paint: Paint) -> Paint {
@@ -522,5 +606,28 @@ mod tests {
         assert_eq!(list.texts.len(), 1);
         assert!(list.layers[0].mesh.triangles() > 40);
         assert!(!list.layers[0].texts.is_empty());
+    }
+
+    #[test]
+    fn pictures_place_crop_and_nine_slice_in_design_units() {
+        let pic = crate::image2d::register_rgba(8, 4, vec![255; 8 * 4 * 4]).unwrap();
+        let mut list = DrawList::default();
+        let st = Stage::fit(800.0, 1400.0, 400.0, 700.0);
+        let mut p = Painter::new(&mut list, st);
+        p.image(pic, 10.0, 20.0, 40.0, 20.0);
+        assert_eq!(list.mesh.sprites[0].rect, [20.0, 40.0, 80.0, 40.0]);
+        let mut p = Painter::new(&mut list, st);
+        // A square box shows the middle half of a 2:1 picture.
+        p.image_cover(pic, [0.0, 0.0, 10.0, 10.0], [0.5, 0.5], [255; 4]);
+        assert_eq!(list.mesh.sprites[1].uv, [0.25, 0.0, 0.75, 1.0]);
+        let mut p = Painter::new(&mut list, st);
+        p.nine_slice(pic, [0.0, 0.0, 100.0, 60.0], 10.0, 0.25, 0.0, [255; 4]);
+        assert_eq!(list.mesh.sprites.len(), 2 + 9);
+        let mut p = Painter::new(&mut list, st);
+        // Tiled: the 80 x 40 middle in 20-unit steps is 4 x 2 tiles; edges tile along.
+        p.nine_slice(pic, [0.0, 0.0, 100.0, 60.0], 10.0, 0.25, 20.0, [255; 4]);
+        assert_eq!(list.mesh.sprites.len(), 11 + 4 + 8 + 4 + 4 + 2 + 2);
+        let last = list.mesh.sprites.last().unwrap();
+        assert_eq!(last.rect, [180.0, 100.0, 20.0, 20.0]);
     }
 }

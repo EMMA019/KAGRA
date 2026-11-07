@@ -8,13 +8,14 @@ struct Screen {
 @group(0) @binding(0) var<uniform> screen: Screen;
 @group(0) @binding(1) var atlas: texture_2d<f32>;
 @group(0) @binding(2) var atlas_samp: sampler;
+@group(0) @binding(3) var pictures: texture_2d<f32>;
 
 struct VsIn {
     @location(0) pos: vec2<f32>,
     @location(1) color: vec4<f32>,
-    // rounded quad: offset from its centre (px); glyph: atlas uv
+    // rounded quad: offset from its centre (px); glyph, picture: atlas uv
     @location(2) local: vec2<f32>,
-    // half width, half height, corner radius, kind (0 flat, 1 rounded, 2 glyph)
+    // half width, half height, corner radius, kind (0 flat, 1 rounded, 2 glyph, 3 picture)
     @location(3) shape: vec4<f32>,
     // rounded quad: outline width, 0 = filled
     @location(4) stroke: f32,
@@ -61,7 +62,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         }
         return vec4<f32>(in.color.rgb, in.color.a * a);
     }
-    // Glyph coverage. Level 0 explicitly: this branch is not uniform control flow.
-    let c = textureSampleLevel(atlas, atlas_samp, in.local, 0.0).r;
-    return vec4<f32>(in.color.rgb, in.color.a * c);
+    if (kind < 2.5) {
+        // Glyph coverage. Level 0 explicitly: this branch is not uniform control flow.
+        let c = textureSampleLevel(atlas, atlas_samp, in.local, 0.0).r;
+        return vec4<f32>(in.color.rgb, in.color.a * c);
+    }
+    // A picture (straight alpha), tinted by the vertex colour.
+    return textureSampleLevel(pictures, atlas_samp, in.local, 0.0) * in.color;
 }

@@ -424,8 +424,8 @@ impl DiamondDays {
         }
         p.text_shadow(
             self.tr(
-                "Three summers. Your calls.",
-                "— 三年間の夏を、きみの采配で —",
+                "Summer after summer. Your calls.",
+                "— 何度でも夏を、きみの采配で —",
             ),
             200.0,
             y + 108.0,
@@ -444,12 +444,14 @@ impl DiamondDays {
                 if ja {
                     format!(
                         "監督、待ってましたよ！ {}年目 {m}月 第{wk}週、{}勝{}敗からです。",
-                        s.year, s.wins, s.losses
+                        super::career_year(s, self.spec.years),
+                        s.wins,
+                        s.losses
                     )
                 } else {
                     format!(
                         "Welcome back, coach! Year {}, {} week {wk}, {}-{}.",
-                        s.year,
+                        super::career_year(s, self.spec.years),
                         month_en(m),
                         s.wins,
                         s.losses
@@ -458,8 +460,8 @@ impl DiamondDays {
             }
             None => self
                 .tr(
-                    "Nice to meet you, coach! Let's go to the Summer Stadium together!",
-                    "はじめまして、監督！ 三年で夏の大舞台を目指しましょう！",
+                    "Nice to meet you, coach! The Summer Stadium, however many years it takes!",
+                    "はじめまして、監督！ 何年かかっても、夏の大舞台へ行きましょう！",
                 )
                 .to_string(),
         };
@@ -532,7 +534,8 @@ impl DiamondDays {
         );
     }
 
-    /// The end of three years: each year's best, the record, and a new start.
+    /// The coach retires: the career year by year (the latest years when it is long), the
+    /// whole record, and a new start.
     fn draw_record(&self, p: &mut Painter) {
         let ja = self.lang_ja;
         let hh = p.st.h;
@@ -541,9 +544,12 @@ impl DiamondDays {
             &[[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]],
             Paint::Solid([12, 16, 34, 120]),
         );
-        let top = (hh * 0.12).max(60.0);
-        let rows = self.s.results.len().max(1) as f32;
-        let tall = 150.0 + rows * 44.0 + 120.0;
+        let top = (hh * 0.1).max(56.0);
+        let hist = &self.s.history;
+        let fit = (((hh - top - 290.0) / 42.0).floor().max(3.0) as usize).min(10);
+        let shown = &hist[hist.len().saturating_sub(fit)..];
+        let rows = shown.len().max(1) as f32;
+        let tall = 116.0 + rows * 42.0 + 132.0;
         p.panel(
             20.0,
             top,
@@ -554,49 +560,72 @@ impl DiamondDays {
             [244, 236, 220, 255],
             18.0,
         );
+        let years = hist.len().max(1);
+        let ribbon = if ja {
+            format!("{years}年間の夏")
+        } else if years == 1 {
+            "One summer".to_string()
+        } else {
+            format!("{years} summers")
+        };
         p.ribbon(
             200.0,
             top - 22.0,
             270.0,
             50.0,
-            self.tr("Three summers", "三年間の夏が終わった"),
+            &ribbon,
             18.0,
             [255, 150, 60, 255],
         );
-        for (i, (en, jp)) in self.s.results.iter().enumerate() {
-            let y = top + 48.0 + i as f32 * 44.0;
-            let yr = if ja {
-                format!("{}年目", i + 1)
+        let mut y = top + 44.0;
+        if hist.len() > shown.len() {
+            let more = hist.len() - shown.len();
+            let line = if ja {
+                format!("…ほか{more}年")
             } else {
-                format!("Year {}", i + 1)
+                format!("... {more} earlier years")
             };
-            p.text(&yr, 44.0, y, 15.0, INK_SOFT, TextAlign::Left);
+            p.text(&line, 360.0, y - 10.0, 12.0, INK_SOFT, TextAlign::Right);
+            y += 8.0;
+        }
+        for log in shown {
+            let yr = if ja {
+                format!("{}年目", log.year)
+            } else {
+                format!("Year {}", log.year)
+            };
+            p.text(&yr, 44.0, y, 14.0, INK_SOFT, TextAlign::Left);
             p.text(
-                if ja { jp } else { en },
+                if ja { &log.best_ja } else { &log.best },
                 120.0,
-                y - 1.0,
-                17.0,
+                y - 2.0,
+                16.0,
                 INK,
                 TextAlign::Left,
             );
-            if jp != "-" {
-                let which = if jp.contains("優勝") {
-                    0
-                } else if en.contains("Stadium") || jp.contains("大舞台") {
-                    1
-                } else {
-                    2
-                };
-                super::sprites::medal(p, 330.0, y - 16.0, which);
+            let sub = if ja {
+                format!("{}  {}勝{}敗", log.school_ja, log.wins, log.losses)
+            } else {
+                format!("{}  {}-{}", log.school, log.wins, log.losses)
+            };
+            p.text(&sub, 120.0, y + 18.0, 12.0, INK_SOFT, TextAlign::Left);
+            if log.tier() < 3 {
+                super::sprites::medal(p, 334.0, y - 8.0, log.tier());
             }
+            y += 42.0;
         }
-        let y = top + 48.0 + rows * 44.0 + 8.0;
-        let rec = if ja {
-            format!("通算 {}勝{}敗", self.s.wins, self.s.losses)
-        } else {
-            format!("{} wins, {} losses", self.s.wins, self.s.losses)
+        let (w_all, l_all) = (
+            self.s.career_wins + self.s.wins,
+            self.s.career_losses + self.s.losses,
+        );
+        let crowns = hist.iter().filter(|l| l.tier() == 0).count();
+        let rec = match (ja, crowns) {
+            (true, 0) => format!("通算 {w_all}勝{l_all}敗"),
+            (true, n) => format!("通算 {w_all}勝{l_all}敗  日本一{n}回"),
+            (false, 0) => format!("{w_all} wins, {l_all} losses"),
+            (false, n) => format!("{w_all}-{l_all}, {n} national titles"),
         };
-        p.text(&rec, 200.0, y, 22.0, ORANGE, TextAlign::Center);
+        p.text(&rec, 200.0, y + 4.0, 20.0, ORANGE, TextAlign::Center);
         let (face, outfit) = art::manager();
         p.portrait(
             28.0,
@@ -607,11 +636,12 @@ impl DiamondDays {
             &outfit,
             1.0,
         );
-        let thanks = self.tr(
-            "Thank you for three years, coach!",
-            "監督、三年間ありがとうございました！",
-        );
-        for (k, line) in wrap(thanks, 14.0, 230.0).iter().take(2).enumerate() {
+        let thanks = if ja {
+            format!("監督、{years}年間ありがとうございました！")
+        } else {
+            format!("Thank you for {years} years, coach!")
+        };
+        for (k, line) in wrap(&thanks, 14.0, 230.0).iter().take(2).enumerate() {
             p.text(
                 line,
                 140.0,
@@ -623,7 +653,7 @@ impl DiamondDays {
         }
         // Always shown: the clock stands still on this card.
         p.text(
-            self.tr("Tap for a new club", "タップで新しい三年間へ"),
+            self.tr("Tap to start a new career", "タップで新しい監督生活へ"),
             200.0,
             top + tall + 18.0,
             15.0,
@@ -693,10 +723,13 @@ impl DiamondDays {
         let m = board::month(self.s.week);
         let wk = (self.s.week - 1) % 4 + 1;
         let (top, date) = if ja {
-            (format!("{}年目", self.s.year), format!("{m}月 第{wk}週"))
+            (
+                format!("{}年目", self.career_year()),
+                format!("{m}月 第{wk}週"),
+            )
         } else {
             (
-                format!("Year {}", self.s.year),
+                format!("Year {}", self.career_year()),
                 format!("{} week {wk}", month_en(m)),
             )
         };
@@ -712,9 +745,10 @@ impl DiamondDays {
             TextAlign::Center,
         );
         p.chip(196.0, 44.0, 26.0, g, grade_color(g));
-        let stars = (self.s.reputation / 20.0).ceil().clamp(1.0, 5.0) as usize;
+        let stars = board::fame_stars(self.s.reputation) as usize;
+        let (rank_en, rank_ja) = board::rank_title(self.s.reputation);
         p.text(
-            self.tr("Fame", "評判"),
+            self.tr(rank_en, rank_ja),
             242.0,
             16.0,
             11.0,
@@ -1097,10 +1131,18 @@ impl DiamondDays {
             &[[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]],
             Paint::Solid([12, 16, 34, 150]),
         );
+        // The first line is drawn at 18: wrap the first paragraph at that size so it fits.
         let lines: Vec<String> = n
             .lines
             .iter()
-            .flat_map(|(en, jp)| wrap(if ja { jp } else { en }, 16.0, 312.0))
+            .enumerate()
+            .flat_map(|(i, (en, jp))| {
+                wrap(
+                    if ja { jp } else { en },
+                    if i == 0 { 18.0 } else { 16.0 },
+                    312.0,
+                )
+            })
             .collect();
         // Faces in rows of four under the lines (who graduates, who joins).
         let face_rows = n.faces.len().min(12).div_ceil(4);
@@ -1616,28 +1658,29 @@ impl DiamondDays {
             art::PAPER_EDGE,
         );
         p.text(
-            self.tr("Three years", "三年間が終わった"),
+            self.tr("A milestone", "ひと区切り"),
             200.0,
             52.0,
             art::TYPE_TITLE,
             INK,
             TextAlign::Center,
         );
+        let (rank_en, rank_ja) = board::rank_title(self.s.reputation);
         let sub = if ja {
             format!(
-                "{}期  {}勝{}敗  評判{}",
+                "{}年目  第{}期  {}勝{}敗  {rank_ja}",
+                self.career_year(),
                 self.chapter(),
                 self.s.wins,
                 self.s.losses,
-                self.s.reputation.round() as i32
             )
         } else {
             format!(
-                "Chapter {}   {}-{}   fame {}",
+                "Year {}  chapter {}  {}-{}  {rank_en}",
+                self.career_year(),
                 self.chapter(),
                 self.s.wins,
                 self.s.losses,
-                self.s.reputation.round() as i32
             )
         };
         p.text(
@@ -1648,9 +1691,15 @@ impl DiamondDays {
             INK_SOFT,
             TextAlign::Center,
         );
-        for (i, (en, jp)) in self.s.results.iter().take(3).enumerate() {
+        let recent = &self.s.history[self.s.history.len().saturating_sub(3)..];
+        for (i, log) in recent.iter().enumerate() {
+            let line = if ja {
+                format!("{}年目  {}", log.year, log.best_ja)
+            } else {
+                format!("Year {}  {}", log.year, log.best)
+            };
             p.text(
-                if ja { jp } else { en },
+                &line,
                 36.0,
                 118.0 + i as f32 * 26.0,
                 art::TYPE_BUTTON,
@@ -1658,20 +1707,49 @@ impl DiamondDays {
                 TextAlign::Left,
             );
         }
+        // The whole career so far, and the question.
+        let (w_all, l_all) = (
+            self.s.career_wins + self.s.wins,
+            self.s.career_losses + self.s.losses,
+        );
+        let crowns = self.s.history.iter().filter(|l| l.tier() == 0).count();
+        let career = match (ja, crowns) {
+            (true, 0) => format!("通算 {w_all}勝{l_all}敗"),
+            (true, n) => format!("通算 {w_all}勝{l_all}敗  日本一{n}回"),
+            (false, 0) => format!("Career {w_all}-{l_all}"),
+            (false, n) => format!("Career {w_all}-{l_all}, {n} national titles"),
+        };
+        let card_bottom = 36.0 + hh * 0.36;
+        p.text(
+            &career,
+            200.0,
+            200.0,
+            art::TYPE_BUTTON,
+            ORANGE,
+            TextAlign::Center,
+        );
+        let ask = self.tr(
+            "Three more years? The club, the town and the next first-years are waiting.",
+            "次の3年はどうしますか？ 部も町も、次の新入生も待っています。",
+        );
+        for (k, line) in wrap(ask, 14.0, 320.0).iter().take(3).enumerate() {
+            let y = 236.0 + k as f32 * 20.0;
+            if y + 20.0 > card_bottom {
+                break;
+            }
+            p.text(line, 40.0, y, 14.0, INK, TextAlign::Left);
+        }
         let (face, outfit) = art::manager();
         p.portrait(280.0, 110.0, 90.0, &face, Expr::Smile, &outfit, 1.0);
         for (b, r) in &l.buttons {
             let [x, y, w, h] = *r;
             let (label, col) = match *b {
-                Btn::Stay => (
-                    self.tr("Next generation, same school", "この学校で次の世代へ"),
-                    ORANGE,
-                ),
+                Btn::Stay => (self.tr("Keep going here", "この学校で続ける"), ORANGE),
                 Btn::MoveSchool => (
-                    self.tr("Take another school", "別の学校へ"),
+                    self.tr("Move to another school", "別の学校へ移る"),
                     [60, 120, 210, 255],
                 ),
-                Btn::EndStory => (self.tr("End the story", "ここで終える"), art::QUIET),
+                Btn::EndStory => (self.tr("Retire here", "ここで引退する"), art::QUIET),
                 Btn::School(k) => {
                     let name = self
                         .move_picks

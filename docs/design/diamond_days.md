@@ -1,9 +1,10 @@
 # 白球デイズ (Diamond Days): design notes
 
 An original high-school baseball manager for phones. You are the new coach of a small
-school's baseball club. Over three years you train the team week by week, play practice
-games and tournaments, and aim for the national championship at the "Summer Stadium".
-Players graduate every March and first-years join in April, so the club keeps changing.
+school's baseball club. Year after year (for as long as you like) you train the team
+week by week, play practice games and tournaments, and aim for the national championship
+at the "Summer Stadium". Players graduate every March and first-years join in April, so
+the club keeps changing while your record grows.
 
 Everything here is original: names, rules, events, pictures. It uses only bundled CC0
 assets (Kenney mini characters, platformer tiles) and the shared engine parts.
@@ -39,7 +40,9 @@ assets (Kenney mini characters, platformer tiles) and the shared engine parts.
 | 45 to 47 | Blossom Invitational, if the autumn invited you |
 | 48 | March: third-years graduate; the year ends |
 
-Three years make a full run. Reputation rises with wins and brings better first-years.
+The years never run out. Reputation rises with wins and brings better first-years, and
+the region names the school by its fame stars: 無名校 (Unknown), 注目校 (Noticed),
+実力校 (Contender), 常連校 (Regular), 伝説校 (Legend). The names are our own.
 
 ## Players
 
@@ -84,23 +87,24 @@ and a louder line.
 ## Special abilities
 
 Each player has zero, one, or two traits. They change the plate appearance they are
-already part of, and the field shouts the name when ours fires (「チャンス○！」).
+already part of, and the field shouts the name when ours fires (「ここ一番！」). All names
+are original (none are taken from another game).
 
 | Trait | When it matters |
 |---|---|
-| チャンス○ / Chance○ | We bat with a runner in scoring position |
-| ピンチ○ / Pinch○ | Our pitcher, and they have a runner in scoring position |
-| 勝負強さ / Clutch | The 7th inning or later, within two runs |
-| 盗塁○ / Steal○ | A stolen base |
-| ケガしにくい / Durable | Training, camp, and random injuries; also shrugs off a red mark |
-| ムードメーカー / Spark | A small lift for the rest of the order, named at first pitch |
-| 選球眼 / Eye | More walks |
-| 重い球 / Heavy | Pitching stuff |
+| ここ一番 / Big Moment | We bat with a runner in scoring position |
+| 火消し / Fireman | Our pitcher, and they have a runner in scoring position |
+| 終盤の粘り / Late Grit | The 7th inning or later, within two runs |
+| 韋駄天 / Burner | A stolen base |
+| 鉄の体 / Iron Body | Training, camp, and random injuries; also shrugs off a red mark |
+| 元気印 / Spark | A small lift for the rest of the order, named at first pitch |
+| 見極め / Good Eye | More walks |
+| 剛球 / Heater | Pitching stuff |
 
 The founding ace throws a heavy ball and the founding captain is the spark; both faces
 are drawn by hand. Everyone else is a restrained random face. Traits are also learned:
 a conversation can grant one, and a stat crossing a threshold can teach one (speed 70
-is 盗塁○, and so on). A player never holds more than two.
+is 韋駄天, and so on). A player never holds more than two.
 
 ## The order
 
@@ -125,19 +129,26 @@ the autumn seeds you: the first opponent is easier. It is not a licensed event n
 ## School life, thinly
 
 - **Exams.** The old exam event, and a fixed week in January. Mood drops. One or two
-  players who are not ケガしにくい get a red mark and cannot play for two weeks — the
+  players who are not 鉄の体 get a red mark and cannot play for two weeks — the
   same gate as an injury, not a study minigame.
 - **Summer camp** (week 12, before the prefectural tournament). Extra practice in every
   drill, a real chance of a knock, and sometimes a conversation on the steps.
 - **Graduation.** The face card is still there. Under each third-year: プロ, 大学, or
   就職, from his numbers, the school's reputation, and his traits. No draft meeting.
 
-## After three years
+## Endless play
 
-The run still ends. The card offers three things: coach the next generation at the
-same school (reputation and the grounds carry; the first-years arrive), take over one
-of the weaker circuit schools (your old school stays on the schedule), or end the
-story. Each chapter is three years. The season counter does not run on forever.
+A career does not end on its own. The year count runs on (1年目, 2年目, ... 30年目) and
+every finished year goes into the career record: the year, the school, the best result,
+and that year's wins and losses. The record is part of the save, so it survives reloads.
+
+Every three years is a milestone (ひと区切り), not an ending. The card shows the last
+three years, the career wins and losses and national titles, and offers: keep going at
+the same school (the default; reputation and the grounds carry, the first-years arrive),
+move to one of the weaker circuit schools (your old school stays on the schedule), or
+retire. Retiring shows the career card (the latest years with medals, the totals) and
+the next visit starts a new career. Old fixtures are dropped at each milestone so a long
+career keeps a small save.
 
 Grounds are a small training bonus (up to three levels) that rises with reputation
 and is kept if you stay.
@@ -168,13 +179,15 @@ and is kept if you stay.
   `KAGRA_SHOTS=dir cargo test -p kagra-shared --lib diamond_days::tests::screens_to_png`.
 - Also in: the editable order, pinch hit / pinch run / a defensive change, the ten
   persistent schools, the Blossom Invitational, exams, camp, graduation paths, and
-  one more three-year chapter if the coach stays or moves.
+  endless play: the career year count, the career record, fame titles, and a milestone
+  every three years where the coach stays, moves, or retires.
 - Free pictures now sit behind that drawing (CC0, in `assets/diamond_days/` and the
-  ledger): Segel's cartoon countryside behind the week and the title, colour-graded
-  Poly Haven sky plates behind a match, looneybits grass stripes on the outfield and
-  the ball icon on the title, Kenney paper and a hanging banner on notices, Kenney
-  green/gold buttons on the roster and the epilogue, Kenney stars for reputation and
-  medals on the three-year card. The pixel stadium is not used; it would sit
+  ledger), drawn as real engine textures (`image2d`, one picture atlas, drawn in order
+  with the vector art): Segel's cartoon countryside behind the week and the title,
+  colour-graded Poly Haven sky plates behind a match, the looneybits ball icon on the
+  title, Kenney paper (nine-slice, tiled grain) and a hanging banner on notices, Kenney
+  green/gold buttons on the roster and the milestone, Kenney stars for reputation and
+  medals on the career card. The pixel stadium is not used; it would sit
   unmodified against the illustrated field. No paid art.
 - Still to come: a balance pass. Hit and UI sounds already use the files the other
   games ship.

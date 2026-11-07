@@ -43,6 +43,7 @@ pub mod hop_beat_measure;
 pub mod hot;
 pub mod hud_art;
 pub mod hud_kit;
+pub mod image2d;
 pub mod input;
 pub mod juice;
 pub mod kit_host;

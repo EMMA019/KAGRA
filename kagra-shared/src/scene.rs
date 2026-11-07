@@ -156,12 +156,36 @@ impl Vert2 {
     }
 }
 
+/// A picture ([`crate::image2d`]) stretched over a screen rectangle, drawn inside a
+/// [`Mesh2d`] at the point it was added: after the triangles before it, under the ones after.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Sprite2d {
+    pub pic: crate::image2d::PicId,
+    /// Drawn before the mesh vertex with this index (`verts.len()` when it was added).
+    pub at: usize,
+    /// Left, top, width, height in screen pixels.
+    pub rect: [f32; 4],
+    /// The part of the picture shown: u0, v0, u1, v1 (0..1, top-left origin).
+    pub uv: [f32; 4],
+    /// Multiplies the picture (same space as [`Quad::color`]); white keeps it as drawn.
+    pub tint: [u8; 4],
+}
+
+/// One step of a mesh in draw order: a run of triangle vertices, or a picture.
+#[derive(Clone, Copy, Debug)]
+pub enum MeshRun<'a> {
+    Tris(&'a [Vert2]),
+    Sprite(&'a Sprite2d),
+}
+
 /// Coloured triangles in screen pixels: three vertices each, drawn in order, alpha blended.
 /// Per-vertex colours make gradients; a vertex with alpha 0 fades an edge, which is how
 /// [`crate::vector`] anti-aliases fills and strokes and draws soft shadows and glows.
+/// `sprites` are pictures drawn in between, at their `at` vertex.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Mesh2d {
     pub verts: Vec<Vert2>,
+    pub sprites: Vec<Sprite2d>,
 }
 
 impl Mesh2d {
@@ -169,39 +193,97 @@ impl Mesh2d {
         self.verts.extend([a, b, c]);
     }
 
+    /// Draw `uv` of picture `pic` over `rect` (x, y, w, h), on top of everything added so far.
+    pub fn sprite(
+        &mut self,
+        pic: crate::image2d::PicId,
+        rect: [f32; 4],
+        uv: [f32; 4],
+        tint: [u8; 4],
+    ) {
+        if rect[2] <= 0.0 || rect[3] <= 0.0 || tint[3] == 0 {
+            return;
+        }
+        // Keep `at` on a triangle boundary so a run never splits a triangle.
+        let at = self.verts.len() - self.verts.len() % 3;
+        self.sprites.push(Sprite2d {
+            pic,
+            at,
+            rect,
+            uv,
+            tint,
+        });
+    }
+
+    /// Triangles, counting each picture as the two it draws.
     pub fn triangles(&self) -> usize {
-        self.verts.len() / 3
+        self.verts.len() / 3 + self.sprites.len() * 2
     }
 
     pub fn is_empty(&self) -> bool {
-        self.verts.is_empty()
+        self.verts.is_empty() && self.sprites.is_empty()
+    }
+
+    /// Triangle runs and pictures in draw order.
+    pub fn runs(&self) -> Vec<MeshRun<'_>> {
+        let mut out = Vec::with_capacity(self.sprites.len() * 2 + 1);
+        let mut from = 0;
+        for s in &self.sprites {
+            let at = s.at.clamp(from, self.verts.len());
+            if at > from {
+                out.push(MeshRun::Tris(&self.verts[from..at]));
+            }
+            out.push(MeshRun::Sprite(s));
+            from = at;
+        }
+        if from < self.verts.len() {
+            out.push(MeshRun::Tris(&self.verts[from..]));
+        }
+        out
     }
 
     /// Append `other` scaled by `scale` and moved by (`dx`, `dy`), its alpha times `alpha`
     /// (0..1). Art built once in unit space (a portrait) is placed this way every frame.
     pub fn append_placed(&mut self, other: &Mesh2d, dx: f32, dy: f32, scale: f32, alpha: f32) {
         let a = alpha.clamp(0.0, 1.0);
+        let base = self.verts.len();
+        let fade = |c: [u8; 4]| [c[0], c[1], c[2], (c[3] as f32 * a).round() as u8];
         self.verts.extend(other.verts.iter().map(|v| Vert2 {
             x: dx + v.x * scale,
             y: dy + v.y * scale,
-            color: [
-                v.color[0],
-                v.color[1],
-                v.color[2],
-                (v.color[3] as f32 * a).round() as u8,
+            color: fade(v.color),
+        }));
+        self.sprites.extend(other.sprites.iter().map(|s| Sprite2d {
+            at: base + s.at,
+            rect: [
+                dx + s.rect[0] * scale,
+                dy + s.rect[1] * scale,
+                s.rect[2] * scale,
+                s.rect[3] * scale,
             ],
+            tint: fade(s.tint),
+            ..*s
         }));
     }
 
     /// Bounding box (min x, min y, max x, max y), or None when empty.
     pub fn bounds(&self) -> Option<[f32; 4]> {
-        let mut it = self.verts.iter();
-        let f = it.next()?;
-        let mut b = [f.x, f.y, f.x, f.y];
-        for v in it {
-            b = [b[0].min(v.x), b[1].min(v.y), b[2].max(v.x), b[3].max(v.y)];
-        }
-        Some(b)
+        let corners = self
+            .verts
+            .iter()
+            .map(|v| [v.x, v.y])
+            .chain(self.sprites.iter().flat_map(|s| {
+                [
+                    [s.rect[0], s.rect[1]],
+                    [s.rect[0] + s.rect[2], s.rect[1] + s.rect[3]],
+                ]
+            }));
+        corners.fold(None, |b, [x, y]| {
+            Some(match b {
+                None => [x, y, x, y],
+                Some(b) => [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)],
+            })
+        })
     }
 }
 

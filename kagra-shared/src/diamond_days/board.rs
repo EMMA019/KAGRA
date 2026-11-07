@@ -700,6 +700,22 @@ pub fn rival_schools() -> Vec<School> {
         .collect()
 }
 
+/// Fame stars, 1 to 5 (the bar shows them).
+pub fn fame_stars(reputation: f32) -> u8 {
+    (reputation / 20.0).ceil().clamp(1.0, 5.0) as u8
+}
+
+/// What the region calls the school, by fame stars. Original names.
+pub fn rank_title(reputation: f32) -> (&'static str, &'static str) {
+    match fame_stars(reputation) {
+        1 => ("Unknown", "無名校"),
+        2 => ("Noticed", "注目校"),
+        3 => ("Contender", "実力校"),
+        4 => ("Regular", "常連校"),
+        _ => ("Legend", "伝説校"),
+    }
+}
+
 /// Grounds level from reputation. It only ever rises, and a move to a new school resets it.
 pub fn grounds_of(reputation: f32) -> u8 {
     if reputation >= 75.0 {

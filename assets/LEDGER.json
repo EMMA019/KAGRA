@@ -1437,10 +1437,10 @@
    "attribution_required": false,
    "attribution_text": null,
    "redistributable_in_public_repo": true,
-   "notes": "Only the ball icon and one grass tile. Title art, drink cans, coins, timers and player graphics from the pack are not in the repo.",
+   "notes": "Only the ball icon. Title art, drink cans, coins, timers and player graphics from the pack are not in the repo.",
    "verified": "checked",
    "id": "looneybits-baseball-pack",
-   "name": "Baseball Pack (ball icon and grass)",
+   "name": "Baseball Pack (ball icon)",
    "source": "opengameart",
    "author": "looneybits",
    "url": "https://opengameart.org/content/baseball-pack",
@@ -1448,7 +1448,7 @@
    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
    "obtained": "2026-11-07",
    "allowed_uses": ["personal", "commercial", "modify", "redistribute-in-game", "redistribute-standalone"],
-   "paths": ["assets/diamond_days/ball.png", "assets/diamond_days/grass.png"],
+   "paths": ["assets/diamond_days/ball.png"],
    "verified_how": "OpenGameArt page states CC0. Downscaled for phones. The composite sheet with BASEBALL CATCHER title art was not copied."
   },
   {

@@ -37,7 +37,7 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 | [Kenney UI Pack (green and gold controls)](https://kenney.nl/assets/ui-pack) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/diamond_days/btn_green.png`, `assets/diamond_days/btn_gold.png` … |
 | [OpenGameArt: 8 wet squish / slurp impacts (impactsplat03)](https://opengameart.org/content/8-wet-squish-slurp-impacts) | Independent.nu | CC0-1.0 | not required | `assets/audio/oga-wet-squish/*.wav` |
 | [Adobe Mixamo characters and animations (not committed)](https://www.mixamo.com/) | Adobe | custom | not required | `assets-private/mixamo/**` |
-| [Baseball Pack (ball icon and grass)](https://opengameart.org/content/baseball-pack) | looneybits | CC0-1.0 | not required | `assets/diamond_days/ball.png`, `assets/diamond_days/grass.png` |
+| [Baseball Pack (ball icon)](https://opengameart.org/content/baseball-pack) | looneybits | CC0-1.0 | not required | `assets/diamond_days/ball.png` |
 | [OpenGameArt: 50 CC0 retro / synth SFX (7 used)](https://opengameart.org/content/50-cc0-retro-synth-sfx) | rubberduck | CC0-1.0 | not required | `assets/audio/oga-retro-synth-sfx/*.wav` |
 | [OpenGameArt: Flowerbed Fields (loop)](https://opengameart.org/content/flowerbed-fields-loop) | Zane Little Music | CC0-1.0 | not required | `assets/audio/oga-flowerbed-fields/*.mp3` |
 | [Cartoon Field Game Background](https://opengameart.org/content/cartoon-field-game-background) | Segel | CC0-1.0 | not required | `assets/diamond_days/country.png` |

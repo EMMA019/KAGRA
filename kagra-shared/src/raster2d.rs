@@ -1,4 +1,4 @@
-//! A CPU picture of a HUD [`DrawList`]: triangles, rounded quads and text, in the same order
+//! A CPU picture of a HUD [`DrawList`]: triangles, pictures, rounded quads and text, in the same order
 //! and with the same shapes as the GPU path (`render/shader.wgsl`). No GPU, no wasm: tests
 //! and agents can look at a kit's screens as PNG files (`examples/hud_shot.rs`).
 //!
@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use crate::font::{self, Coverage};
-use crate::scene::{DrawList, Quad, TextFace, Vert2};
+use crate::scene::{DrawList, MeshRun, Quad, Sprite2d, TextFace, Vert2};
 
 /// An RGBA8 picture, rows top to bottom.
 pub struct Canvas {
@@ -35,8 +35,15 @@ impl Canvas {
     /// Draw a whole list (and its layers) the way the renderer does.
     pub fn draw(&mut self, list: &DrawList) {
         for l in list.flatten() {
-            for t in l.mesh.verts.as_chunks::<3>().0 {
-                self.triangle(t[0], t[1], t[2]);
+            for run in l.mesh.runs() {
+                match run {
+                    MeshRun::Tris(vs) => {
+                        for t in vs.as_chunks::<3>().0 {
+                            self.triangle(t[0], t[1], t[2]);
+                        }
+                    }
+                    MeshRun::Sprite(sp) => self.sprite(sp),
+                }
             }
             for q in &l.quads {
                 self.quad(q);
@@ -84,6 +91,36 @@ impl Canvas {
                 }
                 let c4: [f32; 4] = std::array::from_fn(|k| ca[k] * w0 + cb[k] * w1 + cc[k] * w2);
                 self.blend(x, y, c4);
+            }
+        }
+    }
+
+    /// A picture stretched over its rectangle, bilinear, tinted (like shader kind 3).
+    fn sprite(&mut self, sp: &Sprite2d) {
+        let Some(pic) = crate::image2d::get(sp.pic) else {
+            return;
+        };
+        let [x, y, w, h] = sp.rect;
+        let tint = sp.tint.map(|c| c as f32 / 255.0);
+        let x0 = x.floor().max(0.0) as i32;
+        let x1 = (x + w).ceil().min(self.w as f32) as i32;
+        let y0 = y.floor().max(0.0) as i32;
+        let y1 = (y + h).ceil().min(self.h as f32) as i32;
+        let (pw, ph) = (pic.width as f32, pic.height as f32);
+        for py in y0..y1 {
+            let fy = (py as f32 + 0.5 - y) / h;
+            if !(0.0..1.0).contains(&fy) {
+                continue;
+            }
+            let v = (sp.uv[1] + (sp.uv[3] - sp.uv[1]) * fy) * ph;
+            for px in x0..x1 {
+                let fx = (px as f32 + 0.5 - x) / w;
+                if !(0.0..1.0).contains(&fx) {
+                    continue;
+                }
+                let u = (sp.uv[0] + (sp.uv[2] - sp.uv[0]) * fx) * pw;
+                let c = pic.sample(u, v);
+                self.blend(px, py, std::array::from_fn(|k| c[k] * tint[k]));
             }
         }
     }
@@ -234,6 +271,90 @@ mod tests {
         let (top, bottom) = (c.pixel(5, 1)[2], c.pixel(5, 25)[2]);
         assert!(bottom > top + 80, "{top} {bottom}");
         assert_eq!(c.pixel(0, 0)[3], 255);
+    }
+
+    #[test]
+    fn pictures_draw_in_mesh_order_and_tint() {
+        // 2x1: red | transparent.
+        let pic = crate::image2d::register_rgba(2, 1, vec![255, 0, 0, 255, 0, 0, 0, 0]).unwrap();
+        let mut list = DrawList::default();
+        let mut m = Mesh2d::default();
+        vector::fill(
+            &mut m,
+            &[[0.0, 0.0], [40.0, 0.0], [40.0, 20.0], [0.0, 20.0]],
+            &Paint::Solid([0, 0, 255, 255]),
+        );
+        m.sprite(
+            pic,
+            [0.0, 0.0, 40.0, 20.0],
+            [0.0, 0.0, 1.0, 1.0],
+            [255, 255, 255, 255],
+        );
+        // A green bar added after the picture covers it.
+        vector::fill(
+            &mut m,
+            &[[0.0, 15.0], [40.0, 15.0], [40.0, 20.0], [0.0, 20.0]],
+            &Paint::Solid([0, 255, 0, 255]),
+        );
+        // Left half of the picture only, tinted half dark.
+        m.sprite(
+            pic,
+            [0.0, 0.0, 8.0, 4.0],
+            [0.0, 0.0, 0.5, 1.0],
+            [128, 128, 128, 255],
+        );
+        list.mesh = m;
+        let c = picture(&list, 40, 20);
+        assert_eq!(c.pixel(4, 8), [255, 0, 0, 255], "red picture over blue");
+        assert_eq!(
+            c.pixel(36, 8),
+            [0, 0, 255, 255],
+            "its clear half shows the blue"
+        );
+        assert_eq!(
+            c.pixel(20, 18),
+            [0, 255, 0, 255],
+            "later triangles cover it"
+        );
+        assert_eq!(c.pixel(2, 2), [128, 0, 0, 255], "tinted crop");
+    }
+
+    #[test]
+    fn placed_meshes_carry_their_pictures() {
+        let pic = crate::image2d::register_rgba(1, 1, vec![255, 255, 255, 255]).unwrap();
+        let mut unit = Mesh2d::default();
+        unit.sprite(
+            pic,
+            [0.0, 0.0, 1.0, 1.0],
+            [0.0, 0.0, 1.0, 1.0],
+            [255, 255, 255, 255],
+        );
+        vector::fill(
+            &mut unit,
+            &[[0.0, 0.5], [1.0, 0.5], [1.0, 1.0], [0.0, 1.0]],
+            &Paint::Solid([0, 0, 0, 255]),
+        );
+        let mut m = Mesh2d::default();
+        vector::fill(
+            &mut m,
+            &[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+            &Paint::Solid([9, 9, 9, 255]),
+        );
+        m.append_placed(&unit, 10.0, 10.0, 20.0, 0.5);
+        assert_eq!(m.sprites.len(), 1);
+        assert_eq!(m.sprites[0].rect, [10.0, 10.0, 20.0, 20.0]);
+        assert_eq!(m.sprites[0].tint[3], 128);
+        // Fills carry a soft fringe; the picture's corner reaches (30, 30).
+        let b = m.bounds().unwrap();
+        assert!(
+            b[0] <= 0.0 && b[1] <= 0.0 && b[2] >= 30.0 && b[3] >= 30.0,
+            "{b:?}"
+        );
+        // The picture sits between the first triangles and the placed fill.
+        let runs = m.runs();
+        assert!(matches!(runs[0], MeshRun::Tris(_)));
+        assert!(matches!(runs[1], MeshRun::Sprite(_)));
+        assert!(matches!(runs[2], MeshRun::Tris(_)));
     }
 
     #[test]

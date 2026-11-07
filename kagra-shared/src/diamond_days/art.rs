@@ -523,7 +523,6 @@ pub fn game_field(p: &mut Painter, r: [f32; 4], fit_width: bool) -> (f32, f32, f
     fair.extend(arc(98.0, 45.0));
     let fair = vector::clip_convex(&fair, &rr);
     p.fill(&fair, Paint::vertical(y, hy, GRASS2, GRASS));
-    super::sprites::grass(p, x + w * 0.2, y + h * 0.06, w * 0.6, h * 0.38);
     let mut k = -45.0f32;
     let mut i = 0;
     while k < 45.0 {

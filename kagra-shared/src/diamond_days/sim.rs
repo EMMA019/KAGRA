@@ -1270,7 +1270,7 @@ mod tests {
         g.step();
         assert!(
             g.log.iter().any(|p| p.banner == Some(Ability::Chance)),
-            "チャンス○ is on the play"
+            "ここ一番 is on the play"
         );
         let mut fast = Game::new(side(50.0, 8), side(50.0, 9), true, 8);
         fast.sides[0].bats[1].abil |= BIT_STEAL;

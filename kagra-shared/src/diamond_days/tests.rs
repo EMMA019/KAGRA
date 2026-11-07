@@ -234,7 +234,7 @@ fn scouting_brings_a_middle_schooler_next_april() {
 }
 
 #[test]
-fn a_whole_year_turns_over_and_three_years_end_the_run() {
+fn a_whole_year_turns_over_and_the_coach_may_retire_after_three() {
     let mut g = started();
     let founding = g.s.team.players.len();
     let thirds = g.s.team.players.iter().filter(|p| p.grade == 3).count();
@@ -256,7 +256,9 @@ fn a_whole_year_turns_over_and_three_years_end_the_run() {
         play_week(&mut g);
         guard += 1;
     }
-    assert_eq!(g.phase_name(), "result", "graduation after three years");
+    // `play_week` picks "retire" at the three-year milestone.
+    assert_eq!(g.phase_name(), "result", "retired at the first milestone");
+    assert_eq!(g.s.history.len(), 3, "each year is in the career record");
     assert!(g.flow.score > 0);
 }
 
@@ -527,6 +529,43 @@ fn screens_to_png() {
     ];
     g.s.wins = 41;
     g.s.losses = 12;
+    // A long career: twelve years at two schools.
+    let bests = [
+        ("Summer round 1", "夏 1回戦敗退"),
+        ("Summer round 3", "夏 3回戦敗退"),
+        ("Prefectural champions", "県大会優勝"),
+        ("Summer Stadium round 2", "夏の大舞台 2回戦"),
+        ("Summer Stadium champions", "夏の大舞台 優勝"),
+    ];
+    g.s.history = (1..=12u32)
+        .map(|y| {
+            let (best, best_ja) = bests[(y as usize * 7 + 3) % bests.len()];
+            YearLog {
+                year: y,
+                school: if y <= 6 { "Hinata" } else { "Minamino" }.into(),
+                school_ja: if y <= 6 {
+                    "日向高校"
+                } else {
+                    "南野高校"
+                }
+                .into(),
+                best: best.into(),
+                best_ja: best_ja.into(),
+                wins: 10 + y % 4,
+                losses: 4 - y % 3,
+            }
+        })
+        .collect();
+    g.s.career_wins = 120;
+    g.s.career_losses = 40;
+    g.s.chapter = 5;
+    g.s.reputation = 72.0;
+    // The milestone every three years.
+    g.s.epilogue = true;
+    g.notes.clear();
+    g.mode = Mode::Epilogue { schools: false };
+    shot(&g, "17_milestone");
+    g.s.epilogue = false;
     // A talk on an event square.
     let mut talk = DiamondDays::new(DiamondDaysSpec::default());
     talk.set_lang("ja");
@@ -701,7 +740,7 @@ fn abilities_lineup_rivals_and_the_next_chapter() {
     assert!(g.s.team.players.iter().any(|p| p.study == 2));
     assert!(g.notes.iter().any(|n| n.title == "Exams"));
 
-    // After three years the coach can stay for another chapter, not an endless season.
+    // After three years the coach can stay for another chapter: the career carries on.
     g.notes.clear();
     g.s.epilogue = false;
     g.s.year = g.spec.years;
@@ -722,6 +761,73 @@ fn abilities_lineup_rivals_and_the_next_chapter() {
     assert_eq!(g.s.reputation, rep);
     assert!(g.s.grounds >= grounds);
     assert_eq!(g.spec.years, 3);
+}
+
+/// Like the long-running school managers: the years never run out. Every three years is
+/// a milestone (stay, move, retire); the year count, the record and the fame carry on.
+#[test]
+fn the_career_runs_on_past_every_milestone() {
+    let mut g = started();
+    g.set_lang("ja");
+    let mut milestones = 0;
+    for year in 1..=7u32 {
+        assert_eq!(g.career_year(), year);
+        g.notes.clear();
+        g.game = None;
+        g.mode = Mode::Plan;
+        g.s.week = board::WEEKS;
+        g.s.wins += 2;
+        g.s.losses += 1;
+        g.end_week();
+        while matches!(g.mode, Mode::Notice) {
+            tap(&mut g, 195.0, 400.0);
+        }
+        if matches!(g.mode, Mode::Epilogue { .. }) {
+            milestones += 1;
+            let hud = g.hud(W, H, false);
+            assert!(all_texts(&hud).any(|t| t.text == "ひと区切り"));
+            press(&mut g, hud::Btn::Stay);
+            while matches!(g.mode, Mode::Notice) {
+                tap(&mut g, 195.0, 400.0);
+            }
+        }
+        assert_eq!(g.flow.phase, FlowPhase::Play, "year {year}");
+    }
+    assert_eq!(milestones, 2);
+    assert_eq!(g.career_year(), 8);
+    assert_eq!(g.chapter(), 3);
+    let years: Vec<u32> = g.s.history.iter().map(|l| l.year).collect();
+    assert_eq!(years, (1..=7).collect::<Vec<_>>());
+    assert!(g.s.history.iter().all(|l| (l.wins, l.losses) == (2, 1)));
+    assert!(g.s.slate.iter().all(|e| e.chapter == 3), "old fixtures go");
+    let hud = g.hud(W, H, false);
+    assert!(all_texts(&hud).any(|t| t.text == "8年目"));
+    // The record survives a reload.
+    let saved: Value = serde_json::from_str(&g.save_json().unwrap()).unwrap();
+    let mut world = DiamondDays::new(DiamondDaysSpec::default()).world_value();
+    world["save"] = saved;
+    let mut h = DiamondDays::from_json(&world.to_string()).unwrap();
+    h.confirm();
+    assert_eq!(h.s.history, g.s.history);
+    assert_eq!(h.career_year(), 8);
+    // Fame names the school.
+    assert_eq!(board::rank_title(0.0).1, "無名校");
+    assert_eq!(board::rank_title(100.0).1, "伝説校");
+}
+
+#[test]
+fn an_old_save_without_a_record_still_loads() {
+    let g = started();
+    let mut saved: Value = serde_json::from_str(&g.save_json().unwrap()).unwrap();
+    let obj = saved.as_object_mut().unwrap();
+    obj.remove("history");
+    obj.remove("year_from");
+    let mut world = DiamondDays::new(DiamondDaysSpec::default()).world_value();
+    world["save"] = saved;
+    let mut h = DiamondDays::from_json(&world.to_string()).unwrap();
+    h.confirm();
+    assert!(h.s.history.is_empty());
+    assert_eq!(h.career_year(), 1);
 }
 
 #[test]

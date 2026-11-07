@@ -188,22 +188,22 @@ impl Ability {
     /// What the screen shouts when it fires.
     pub fn label(self, ja: bool) -> &'static str {
         match (self, ja) {
-            (Ability::Chance, false) => "Chance○",
-            (Ability::Pinch, false) => "Pinch○",
-            (Ability::Clutch, false) => "Clutch",
-            (Ability::Steal, false) => "Steal○",
-            (Ability::Durable, false) => "Durable",
+            (Ability::Chance, false) => "Big Moment",
+            (Ability::Pinch, false) => "Fireman",
+            (Ability::Clutch, false) => "Late Grit",
+            (Ability::Steal, false) => "Burner",
+            (Ability::Durable, false) => "Iron Body",
             (Ability::Mood, false) => "Spark",
-            (Ability::Eye, false) => "Eye",
-            (Ability::Heavy, false) => "Heavy",
-            (Ability::Chance, true) => "チャンス○",
-            (Ability::Pinch, true) => "ピンチ○",
-            (Ability::Clutch, true) => "勝負強さ",
-            (Ability::Steal, true) => "盗塁○",
-            (Ability::Durable, true) => "ケガしにくい",
-            (Ability::Mood, true) => "ムードメーカー",
-            (Ability::Eye, true) => "選球眼",
-            (Ability::Heavy, true) => "重い球",
+            (Ability::Eye, false) => "Good Eye",
+            (Ability::Heavy, false) => "Heater",
+            (Ability::Chance, true) => "ここ一番",
+            (Ability::Pinch, true) => "火消し",
+            (Ability::Clutch, true) => "終盤の粘り",
+            (Ability::Steal, true) => "韋駄天",
+            (Ability::Durable, true) => "鉄の体",
+            (Ability::Mood, true) => "元気印",
+            (Ability::Eye, true) => "見極め",
+            (Ability::Heavy, true) => "剛球",
         }
     }
 }

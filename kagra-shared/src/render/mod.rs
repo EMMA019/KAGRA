@@ -230,6 +230,9 @@ pub struct Renderer {
     vbuf_capacity: usize,
     atlas_tex: wgpu::Texture,
     atlas: glyph_atlas::Packer,
+    /// HUD pictures (`image2d`), RGBA8, packed as a frame first draws them.
+    img_tex: wgpu::Texture,
+    img_atlas: crate::image2d::Packer,
 
     pipeline3d: wgpu::RenderPipeline,
     /// Color target of linear eye depth. Drawn only when a post pass samples it.
@@ -533,6 +536,16 @@ impl Renderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -552,6 +565,27 @@ impl Renderer {
             view_formats: &[],
         });
         let atlas_view = atlas_tex.create_view(&wgpu::TextureViewDescriptor::default());
+        // HUD pictures. Stored in the target's colour space: an sRGB target samples linear
+        // texels and encodes them again, a plain target passes the PNG bytes through.
+        let img_tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("kagra-shared picture atlas"),
+            size: wgpu::Extent3d {
+                width: crate::image2d::ATLAS_SIDE,
+                height: crate::image2d::ATLAS_SIDE,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: if format.is_srgb() {
+                wgpu::TextureFormat::Rgba8UnormSrgb
+            } else {
+                wgpu::TextureFormat::Rgba8Unorm
+            },
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let img_view = img_tex.create_view(&wgpu::TextureViewDescriptor::default());
         let atlas_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("kagra-shared glyph sampler"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -574,6 +608,10 @@ impl Renderer {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&atlas_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&img_view),
                 },
             ],
         });
@@ -1400,6 +1438,8 @@ impl Renderer {
             vbuf_capacity,
             atlas_tex,
             atlas: glyph_atlas::Packer::default(),
+            img_tex,
+            img_atlas: crate::image2d::Packer::default(),
             pipeline3d,
             pipeline_depth,
             pipeline_nocull,
@@ -1657,7 +1697,8 @@ impl Renderer {
         let shadow = (crate::scene3d::SHADOW_MAP_SIZE as u64)
             .saturating_mul(crate::scene3d::SHADOW_MAP_SIZE as u64)
             * 4;
-        meshes + shadow + 64 * 64 * 4
+        let pictures = (crate::image2d::ATLAS_SIDE as u64).pow(2) * 4;
+        meshes + shadow + 64 * 64 * 4 + pictures
     }
 
     /// Drop uploaded meshes so the next world draw can upload `compile_meshes`.
@@ -2272,45 +2313,94 @@ impl Renderer {
     fn build_vertices(&mut self, list: &DrawList) -> Vec<Vertex> {
         let (quads, tris, texts) = list.counts();
         let lists = list.flatten();
-        let format = self.format;
-        let shapes = move |out: &mut Vec<Vertex>, l: &DrawList| {
-            out.extend(
-                l.mesh
-                    .verts
-                    .iter()
-                    .map(|v| mesh_vertex(v, format.is_srgb())),
-            );
-            for q in &l.quads {
-                out.extend(quad_vertices(q, format));
-            }
-        };
-        // Each list in order: its triangles, its quads, then its text, so a layer covers the
-        // text of the lists under it. A full atlas starts over once and lays the text out
-        // again; if one frame's text alone overflows it, that frame draws without text rather
-        // than with wrong glyphs.
-        for attempt in 0..2 {
+        // Each list in order: its triangles and pictures, its quads, then its text, so a layer
+        // covers the text of the lists under it. A full atlas (glyphs or pictures) starts over
+        // once and lays the frame out again; if one frame alone overflows it, that frame draws
+        // without text (or without the pictures that did not fit) rather than wrong texels.
+        let (mut text, mut pictures) = (true, true);
+        let (mut glyphs_cleared, mut pictures_cleared) = (false, false);
+        loop {
             let mut out = Vec::with_capacity((quads + texts * 8) * 6 + tris * 3);
-            let mut full = false;
+            let mut overflow = None;
             for l in &lists {
-                shapes(&mut out, l);
-                if self.glyph_vertices(l, &mut out).is_err() {
-                    full = true;
+                if self.shape_vertices(l, pictures, &mut out).is_err() {
+                    overflow = Some(false);
+                    break;
+                }
+                if text && self.glyph_vertices(l, &mut out).is_err() {
+                    overflow = Some(true);
                     break;
                 }
             }
-            if !full {
-                return out;
-            }
-            self.atlas.clear();
-            if attempt == 1 {
-                break;
+            match overflow {
+                None => return out,
+                Some(true) => {
+                    self.atlas.clear();
+                    text = !std::mem::replace(&mut glyphs_cleared, true);
+                }
+                Some(false) => {
+                    self.img_atlas.clear();
+                    pictures = !std::mem::replace(&mut pictures_cleared, true);
+                }
             }
         }
-        let mut out = Vec::with_capacity(quads * 6 + tris * 3);
-        for l in &lists {
-            shapes(&mut out, l);
+    }
+
+    /// A list's triangles and pictures (kind 0 and 3, in mesh order), then its quads.
+    /// `pictures` false: skip pictures (this frame's set does not fit the atlas).
+    fn shape_vertices(
+        &mut self,
+        l: &DrawList,
+        pictures: bool,
+        out: &mut Vec<Vertex>,
+    ) -> Result<(), crate::image2d::Full> {
+        let srgb = self.format.is_srgb();
+        let (queue, tex) = (&self.queue, &self.img_tex);
+        let mut upload = |x: u32, y: u32, w: u32, h: u32, bytes: &[u8]| {
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: tex,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d { x, y, z: 0 },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                bytes,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(w * 4),
+                    rows_per_image: Some(h),
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+            );
+        };
+        for run in l.mesh.runs() {
+            match run {
+                crate::scene::MeshRun::Tris(vs) => {
+                    out.extend(vs.iter().map(|v| mesh_vertex(v, srgb)));
+                }
+                crate::scene::MeshRun::Sprite(sp) => {
+                    if !pictures {
+                        continue;
+                    }
+                    let slot = match self.img_atlas.get(sp.pic, &mut upload) {
+                        Ok(Some(slot)) => slot,
+                        Ok(None) => continue,
+                        // Clear and retry once; a single picture bigger than the atlas
+                        // cannot happen (`image2d::MAX_SIDE`).
+                        Err(e) => return Err(e),
+                    };
+                    out.extend(sprite_vertices(sp, slot.uv, srgb));
+                }
+            }
         }
-        out
+        for q in &l.quads {
+            out.extend(quad_vertices(q, self.format));
+        }
+        Ok(())
     }
 
     /// One textured quad per glyph (atlas sampled in `fs_main`, kind 2).
@@ -4265,6 +4355,32 @@ fn mesh_vertex(v: &crate::scene::Vert2, srgb: bool) -> Vertex {
         shape: [0.0; 4],
         stroke: 0.0,
     }
+}
+
+/// A picture: two triangles sampling the picture atlas (kind 3), tinted.
+fn sprite_vertices(sp: &crate::scene::Sprite2d, slot: [f32; 4], srgb: bool) -> [Vertex; 6] {
+    let color = color_space::display_u8(sp.tint, srgb);
+    let [x, y, w, h] = sp.rect;
+    let (l, t, r, b) = (x, y, x + w, y + h);
+    // The sprite's uv picks a part of the picture; map it into the picture's atlas slot.
+    let u = |f: f32| slot[0] + (slot[2] - slot[0]) * f;
+    let v = |f: f32| slot[1] + (slot[3] - slot[1]) * f;
+    let (u0, v0, u1, v1) = (u(sp.uv[0]), v(sp.uv[1]), u(sp.uv[2]), v(sp.uv[3]));
+    let corners = [
+        ([l, t], [u0, v0]),
+        ([r, t], [u1, v0]),
+        ([r, b], [u1, v1]),
+        ([l, t], [u0, v0]),
+        ([r, b], [u1, v1]),
+        ([l, b], [u0, v1]),
+    ];
+    corners.map(|(pos, uv)| Vertex {
+        pos,
+        color,
+        local: uv,
+        shape: [0.0, 0.0, 0.0, 3.0],
+        stroke: 0.0,
+    })
 }
 
 fn quad_vertices(q: &crate::scene::Quad, format: wgpu::TextureFormat) -> [Vertex; 6] {
