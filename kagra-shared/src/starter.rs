@@ -672,18 +672,11 @@ impl Kit for Starter {
     fn flow_mut(&mut self) -> &mut GameFlow {
         &mut self.flow
     }
-    fn substeps(&self, _dt: f32) -> u32 {
-        1
-    }
     fn step(&mut self, dt: f32) {
         self.step_sim(dt);
     }
     fn attract(&mut self, dt: f32) {
         self.t += dt;
-    }
-    fn follow(&mut self, _dt: f32) {}
-    fn blocks_spark(&self, _x: f32, _y: f32, _z: f32) -> bool {
-        false
     }
     fn rebuild(&mut self) {
         self.build_doc();
@@ -710,11 +703,7 @@ impl crate::kit_host::KitHost for Starter {
         &self.doc
     }
     fn dump_json(&self) -> String {
-        let body = self.doc.to_json().unwrap_or_else(|_| "{}".into());
-        match body.strip_prefix('{') {
-            Some(rest) => format!("{{\n  \"sim\": {},{rest}", self.state_value()),
-            None => body,
-        }
+        crate::kit_host::dump_with_sim(&self.doc, &self.state_value())
     }
     fn state_json(&self) -> String {
         self.state_value().to_string()

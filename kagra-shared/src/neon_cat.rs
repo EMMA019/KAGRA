@@ -3499,12 +3499,7 @@ impl NeonCat {
     /// owns that chrome and passes `false` so a CRASH panel cannot sit
     /// under the HTML card.
     pub fn paint_hud(&self, width: u32, height: u32, menu: bool) -> DrawList {
-        let mut list = DrawList {
-            clear: [0, 0, 0, 0],
-            quads: Vec::new(),
-            texts: Vec::new(),
-            images: Vec::new(),
-        };
+        let mut list = DrawList::default();
         if menu {
             self.flow.paint(&mut list, width, height);
         }

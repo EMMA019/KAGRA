@@ -807,6 +807,30 @@ pub unsafe extern "C" fn kagra_shared_playtest_pointer(
     }
 }
 
+/// The player's language for the game's own texts (`"ja"`, `"en"`): a native shell passes
+/// the device language after loading a game. 0 on success.
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。`lang` は NUL 終端。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_set_lang(
+    ptr: *mut SharedSession,
+    lang: *const c_char,
+) -> c_int {
+    if lang.is_null() {
+        set_err("null lang");
+        return -1;
+    }
+    let lang = CStr::from_ptr(lang).to_string_lossy();
+    match session(ptr) {
+        Some(s) => {
+            s.set_lang(&lang);
+            0
+        }
+        None => -1,
+    }
+}
+
 /// # Safety
 /// `ptr` は生存中のハンドルか NULL。`name` は NUL 終端。
 #[no_mangle]

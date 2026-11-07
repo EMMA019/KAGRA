@@ -170,6 +170,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
         packaged = KagraNative.loadGameFile(world.absolutePath)
         if (packaged) {
+            KagraNative.setLang(Locale.getDefault().language)
             audio = AudioBus(extracted)
         }
         if (!packaged) {

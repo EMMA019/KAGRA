@@ -1,0 +1,30 @@
+{
+  "title": "Moonlit Tactics",
+  "icon": "assets/icons/game_placeholder.png",
+  "version": "0.1.0",
+  "entry": "examples/moonlit_tactics_minimal.py",
+  "world": "kagra-shared/tests/fixtures/moonlit_tactics_world.json",
+  "bundle_assets": [
+    "assets/audio/oga-retro-synth-sfx",
+    "assets/audio/kenney-interface-sounds",
+    "assets/audio/kenney-impact-sounds",
+    "assets/audio/oga-wet-squish",
+    "assets/audio/oga-flowerbed-fields",
+    "assets/models/kenney/mini-characters",
+    "assets/models/kenney/graveyard-kit",
+    "assets/models/kenney/mini-arena/column.glb",
+    "assets/models/tree.glb"
+  ],
+  "page": {
+    "best": true,
+    "audio": true,
+    "lang": true,
+    "pause": true,
+    "fixed_step": true,
+    "blurb": "blurb.tactics",
+    "url_params": {
+      "map": "string"
+    },
+    "save": true
+  }
+}
