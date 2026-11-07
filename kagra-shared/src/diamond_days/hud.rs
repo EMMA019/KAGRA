@@ -200,17 +200,24 @@ impl DiamondDays {
             .collect()
     }
 
-    pub fn hud(&self, w: u32, h: u32, _menu: bool) -> DrawList {
+    pub fn hud(&self, w: u32, h: u32, menu: bool) -> DrawList {
         let (w, h) = (w as f32, h as f32);
         self.size.set((w.max(1.0), h.max(1.0)));
         let mut list = DrawList {
             clear: [40, 60, 100, 255],
             ..Default::default()
         };
+        self.own_menu.set(menu);
         let l = self.layout(w, h);
         let mut p = Painter::new(&mut list, l.st);
         if !matches!(self.flow.phase, FlowPhase::Play | FlowPhase::Pause) {
             art::ballpark(&mut p, self.clock);
+            if menu {
+                match self.flow.phase {
+                    FlowPhase::Result => self.draw_record(&mut p),
+                    _ => self.draw_title(&mut p),
+                }
+            }
             return list;
         }
         let month = board::month(self.s.week);
@@ -241,7 +248,296 @@ impl DiamondDays {
         if let (Mode::Notice, Some(_)) = (&self.mode, self.notes.first()) {
             self.draw_notice(&mut p);
         }
+        if menu && self.flow.phase == FlowPhase::Pause {
+            self.draw_pause(&mut p);
+        }
         list
+    }
+
+    // ---- our own cards, when the host has no HTML ones (Android, desktop)
+
+    fn draw_title(&self, p: &mut Painter) {
+        let ja = self.lang_ja;
+        let hh = p.st.h;
+        let y = hh * 0.16;
+        p.glow(200.0, y + 40.0, 230.0, [255, 232, 180, 150]);
+        if ja {
+            p.text_outlined(
+                "白球デイズ",
+                200.0,
+                y,
+                56.0,
+                WHITE,
+                [30, 40, 90, 255],
+                3.5,
+                TextAlign::Center,
+            );
+            p.text_display(
+                "DIAMOND DAYS",
+                200.0,
+                y + 72.0,
+                22.0,
+                [255, 190, 96, 255],
+                TextAlign::Center,
+            );
+        } else {
+            p.text_outlined(
+                "Diamond Days",
+                200.0,
+                y + 8.0,
+                46.0,
+                WHITE,
+                [30, 40, 90, 255],
+                3.0,
+                TextAlign::Center,
+            );
+        }
+        p.text_shadow(
+            self.tr(
+                "Three summers. Your calls.",
+                "— 三年間の夏を、きみの采配で —",
+            ),
+            200.0,
+            y + 108.0,
+            16.0,
+            WHITE,
+            [20, 24, 50, 200],
+            TextAlign::Center,
+        );
+        // A kept run waits: say where it stopped.
+        let (face, outfit) = art::manager();
+        let by = hh - 282.0;
+        let msg = match &self.resume {
+            Some(s) => {
+                let m = board::month(s.week);
+                let wk = (s.week - 1) % 4 + 1;
+                if ja {
+                    format!(
+                        "監督、待ってましたよ！ {}年目 {m}月 第{wk}週、{}勝{}敗からです。",
+                        s.year, s.wins, s.losses
+                    )
+                } else {
+                    format!(
+                        "Welcome back, coach! Year {}, {} week {wk}, {}-{}.",
+                        s.year,
+                        month_en(m),
+                        s.wins,
+                        s.losses
+                    )
+                }
+            }
+            None => self
+                .tr(
+                    "Nice to meet you, coach! Let's go to the Summer Stadium together!",
+                    "はじめまして、監督！ 三年で夏の大舞台を目指しましょう！",
+                )
+                .to_string(),
+        };
+        p.portrait(8.0, by - 6.0, 110.0, &face, Expr::Smile, &outfit, 1.0);
+        p.bubble(
+            118.0,
+            by + 6.0,
+            272.0,
+            86.0,
+            112.0,
+            by + 50.0,
+            [255, 250, 236, 255],
+            [240, 206, 150, 255],
+        );
+        p.text(
+            self.tr("Kotori", "七瀬ことり"),
+            132.0,
+            by + 12.0,
+            11.0,
+            [214, 100, 120, 255],
+            TextAlign::Left,
+        );
+        for (k, line) in wrap(&msg, 14.0, 246.0).iter().take(3).enumerate() {
+            p.text(
+                line,
+                132.0,
+                by + 29.0 + k as f32 * 19.0,
+                14.0,
+                INK,
+                TextAlign::Left,
+            );
+        }
+        let label = match (&self.resume, ja) {
+            (Some(_), true) => "つづきから",
+            (Some(_), false) => "CONTINUE",
+            (None, true) => "はじめる",
+            (None, false) => "START",
+        };
+        let pulse = 1.0 + (self.clock * 3.0).sin() * 0.03;
+        let (bw, bh) = (220.0 * pulse, 58.0 * pulse);
+        p.button(
+            200.0 - bw * 0.5,
+            hh - 132.0 - bh * 0.5,
+            bw,
+            bh,
+            label,
+            22.0,
+            ORANGE,
+            true,
+        );
+        p.text_shadow(
+            self.tr("Tap anywhere", "どこかをタップ"),
+            200.0,
+            hh - 92.0,
+            12.0,
+            WHITE,
+            [20, 24, 50, 200],
+            TextAlign::Center,
+        );
+        p.text(
+            self.tr(
+                "All names are fictional",
+                "名前・人物・団体はすべて架空のものです",
+            ),
+            200.0,
+            hh - 24.0,
+            10.0,
+            [230, 230, 240, 220],
+            TextAlign::Center,
+        );
+    }
+
+    /// The end of three years: each year's best, the record, and a new start.
+    fn draw_record(&self, p: &mut Painter) {
+        let ja = self.lang_ja;
+        let hh = p.st.h;
+        let [x0, y0, w, h] = p.st.screen;
+        p.fill(
+            &[[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]],
+            Paint::Solid([12, 16, 34, 120]),
+        );
+        let top = (hh * 0.12).max(60.0);
+        let rows = self.s.results.len().max(1) as f32;
+        let tall = 150.0 + rows * 44.0 + 120.0;
+        p.panel(
+            20.0,
+            top,
+            360.0,
+            tall,
+            24.0,
+            [255, 253, 246, 255],
+            [244, 236, 220, 255],
+            18.0,
+        );
+        p.ribbon(
+            200.0,
+            top - 22.0,
+            270.0,
+            50.0,
+            self.tr("Three summers", "三年間の夏が終わった"),
+            18.0,
+            [255, 150, 60, 255],
+        );
+        for (i, (en, jp)) in self.s.results.iter().enumerate() {
+            let y = top + 48.0 + i as f32 * 44.0;
+            let yr = if ja {
+                format!("{}年目", i + 1)
+            } else {
+                format!("Year {}", i + 1)
+            };
+            p.text(&yr, 44.0, y, 15.0, INK_SOFT, TextAlign::Left);
+            p.text(
+                if ja { jp } else { en },
+                120.0,
+                y - 1.0,
+                17.0,
+                INK,
+                TextAlign::Left,
+            );
+            if jp.contains("優勝") {
+                p.star(352.0, y + 10.0, 10.0, art::GOLD);
+            }
+        }
+        let y = top + 48.0 + rows * 44.0 + 8.0;
+        let rec = if ja {
+            format!("通算 {}勝{}敗", self.s.wins, self.s.losses)
+        } else {
+            format!("{} wins, {} losses", self.s.wins, self.s.losses)
+        };
+        p.text(&rec, 200.0, y, 22.0, ORANGE, TextAlign::Center);
+        let (face, outfit) = art::manager();
+        p.portrait(
+            28.0,
+            top + tall - 118.0,
+            104.0,
+            &face,
+            Expr::Smile,
+            &outfit,
+            1.0,
+        );
+        let thanks = self.tr(
+            "Thank you for three years, coach!",
+            "監督、三年間ありがとうございました！",
+        );
+        for (k, line) in wrap(thanks, 14.0, 230.0).iter().take(2).enumerate() {
+            p.text(
+                line,
+                140.0,
+                top + tall - 92.0 + k as f32 * 20.0,
+                14.0,
+                INK,
+                TextAlign::Left,
+            );
+        }
+        if (self.clock * 2.0) as i32 % 2 == 0 {
+            p.text(
+                self.tr("Tap for a new club", "タップで新しい三年間へ"),
+                200.0,
+                top + tall + 18.0,
+                15.0,
+                WHITE,
+                TextAlign::Center,
+            );
+        }
+    }
+
+    fn draw_pause(&self, p: &mut Painter) {
+        p.layer();
+        let [x0, y0, w, h] = p.st.screen;
+        p.fill(
+            &[[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]],
+            Paint::Solid([10, 14, 30, 170]),
+        );
+        let y = p.st.h * 0.5 - 90.0;
+        p.panel(
+            60.0,
+            y,
+            280.0,
+            180.0,
+            24.0,
+            [255, 253, 246, 255],
+            [244, 236, 220, 255],
+            16.0,
+        );
+        p.text(
+            self.tr("Paused", "ひと休み"),
+            200.0,
+            y + 34.0,
+            26.0,
+            INK,
+            TextAlign::Center,
+        );
+        p.text(
+            self.tr("Your run is kept.", "ここまでの記録は保存されています"),
+            200.0,
+            y + 80.0,
+            13.0,
+            INK_SOFT,
+            TextAlign::Center,
+        );
+        p.text(
+            self.tr("Tap to go on", "タップで再開"),
+            200.0,
+            y + 124.0,
+            17.0,
+            ORANGE,
+            TextAlign::Center,
+        );
     }
 
     // ---- the week's screen

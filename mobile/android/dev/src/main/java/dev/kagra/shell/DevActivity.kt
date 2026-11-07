@@ -296,6 +296,7 @@ class DevActivity : AppCompatActivity(), SurfaceHolder.Callback {
             pickerStatus.text = "$gameTitle\nnative load failed: ${KagraNative.lastError()}"
             return
         }
+        KagraNative.setLang(java.util.Locale.getDefault().language)
         audio = AudioBus(root)
         status.text = "$gameTitle  ·  左=移動 右下=ジャンプ 右上=アクション"
     }

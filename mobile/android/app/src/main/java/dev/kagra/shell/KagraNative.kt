@@ -94,6 +94,8 @@ object KagraNative {
     external fun setPlaytestDevice(label: String, lang: String): Boolean
     external fun playtestPointer(id: Int, x: Float, y: Float, phase: Int, pressure: Float): Boolean
     external fun pushKey(name: String, down: Boolean): Boolean
+    /** The device language ("ja", "en") for the game's own texts. */
+    external fun setLang(lang: String): Boolean
     external fun playtestSetNote(note: String): Boolean
     external fun playtestSetShotPath(path: String): Boolean
     external fun playtestAction(action: String): Boolean

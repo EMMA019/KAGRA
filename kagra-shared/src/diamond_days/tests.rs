@@ -427,7 +427,8 @@ fn screens_to_png() {
     let shot = |g: &DiamondDays, name: &str| {
         for (w, h, tag) in [(390u32, 844u32, "phone"), (1280, 720, "desk")] {
             let t0 = std::time::Instant::now();
-            let list = g.hud(w, h, false);
+            // As a native shell draws it: the game's own title, pause and result cards.
+            let list = g.hud(w, h, true);
             let built = t0.elapsed();
             let (q, t, x) = list.counts();
             eprintln!("{name} {tag}: {t} triangles, {q} quads, {x} texts, built in {built:?}");
@@ -506,4 +507,23 @@ fn screens_to_png() {
     }
     press(&mut g, hud::Btn::Skip);
     shot(&g, "09_result");
+    g.pause();
+    shot(&g, "10_pause");
+    g.flow.resume();
+    g.s.results = vec![
+        ("Summer round 3".into(), "夏 3回戦敗退".into()),
+        ("Prefectural champions".into(), "県大会優勝".into()),
+        ("Summer Stadium champions".into(), "夏の大舞台 優勝".into()),
+    ];
+    g.s.wins = 41;
+    g.s.losses = 12;
+    g.finish_run();
+    shot(&g, "11_record");
+    // A kept run on the title.
+    let mut back = DiamondDays::new(DiamondDaysSpec::default());
+    back.set_lang("ja");
+    back.resume = Some(g.s.clone());
+    back.resume.as_mut().unwrap().year = 2;
+    back.resume.as_mut().unwrap().week = 14;
+    shot(&back, "12_title_continue");
 }

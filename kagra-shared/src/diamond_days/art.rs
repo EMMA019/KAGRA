@@ -229,9 +229,15 @@ pub fn ballpark(p: &mut Painter, t: f32) {
         ],
         Paint::Solid(GRASS2),
     );
+    // Foul lines from home plate to the fence.
+    let fence = horizon + 66.0;
     for side in [-1.0f32, 1.0] {
+        let run = ((hy + d * 0.5 - fence) / 0.75).min(w);
         p.line(
-            &[[cx, hy + d * 0.5], [cx + side * w, hy + d * 0.5 - w * 0.75]],
+            &[
+                [cx, hy + d * 0.5],
+                [cx + side * run, hy + d * 0.5 - run * 0.75],
+            ],
             2.0,
             [250, 250, 245, 230],
         );

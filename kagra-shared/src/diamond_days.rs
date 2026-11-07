@@ -232,6 +232,9 @@ pub struct DiamondDays {
     clock: f32,
     lang_ja: bool,
     size: Cell<(f32, f32)>,
+    /// The host asked the game to draw its own title, pause and result cards (a native
+    /// shell; the web page brings HTML cards).
+    own_menu: Cell<bool>,
 }
 
 impl DiamondDays {
@@ -259,6 +262,7 @@ impl DiamondDays {
             clock: 0.0,
             lang_ja: false,
             size: Cell::new((390.0, 844.0)),
+            own_menu: Cell::new(false),
         };
         g.build_doc();
         g
@@ -893,7 +897,15 @@ impl DiamondDays {
     pub fn touch_ev(&mut self, ev: PointerEvent, w: u32, h: u32) {
         let (w, h) = (w.max(1) as f32, h.max(1) as f32);
         self.size.set((w, h));
-        if ev.phase != PointerPhase::Begin || self.flow.phase != FlowPhase::Play {
+        if ev.phase != PointerPhase::Begin {
+            return;
+        }
+        // Our own pause card: a tap goes back to the game.
+        if self.flow.phase == FlowPhase::Pause && self.own_menu.get() {
+            self.flow.resume();
+            return;
+        }
+        if self.flow.phase != FlowPhase::Play {
             return;
         }
         if let Some(b) = crate::hud_kit::hit(&self.hud_buttons(w, h), ev.x, ev.y) {

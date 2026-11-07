@@ -566,6 +566,15 @@ pub fn set_save_root(path: Option<PathBuf>) {
     SAVE_ROOT.with(|slot| *slot.borrow_mut() = path);
 }
 
+/// A native shell asked for saves on the device: it set a save root (Android's files dir)
+/// or `KAGRA_SAVE_DIR`. The web keeps saves in the page instead.
+pub fn native_saves() -> bool {
+    SAVE_ROOT.with(|slot| slot.borrow().is_some())
+        || std::env::var("KAGRA_SAVE_DIR")
+            .ok()
+            .is_some_and(|s| !s.is_empty())
+}
+
 fn persist_enabled() -> bool {
     let rooted = SAVE_ROOT.with(|slot| slot.borrow().is_some());
     if rooted
