@@ -181,10 +181,17 @@ impl DiamondDays {
                     .copied()
                     .filter(|st| p.pitcher() || !st.pitching())
                     .collect();
-                for (k, st) in stats.into_iter().enumerate() {
-                    b.push((Btn::Raise(st), [334.0, 252.0 + k as f32 * 40.0, 48.0, 32.0]));
-                }
+                // The rows fit between the points panel and the practice menu (nine rows
+                // for a pitcher on the shortest 700-unit canvas).
                 let my = hh - 128.0;
+                let n = stats.len().max(1) as f32;
+                let step = ((my - 34.0 - 252.0) / n).clamp(28.0, 40.0);
+                for (k, st) in stats.into_iter().enumerate() {
+                    b.push((
+                        Btn::Raise(st),
+                        [334.0, 252.0 + k as f32 * step, 48.0, step - 6.0],
+                    ));
+                }
                 for (k, d) in Drill::ALL.into_iter().enumerate() {
                     b.push((Btn::Menu(d), [10.0 + k as f32 * 77.0, my, 72.0, 38.0]));
                 }
@@ -501,16 +508,15 @@ impl DiamondDays {
                 TextAlign::Left,
             );
         }
-        if (self.clock * 2.0) as i32 % 2 == 0 {
-            p.text(
-                self.tr("Tap for a new club", "タップで新しい三年間へ"),
-                200.0,
-                top + tall + 18.0,
-                15.0,
-                WHITE,
-                TextAlign::Center,
-            );
-        }
+        // Always shown: the clock stands still on this card.
+        p.text(
+            self.tr("Tap for a new club", "タップで新しい三年間へ"),
+            200.0,
+            top + tall + 18.0,
+            15.0,
+            WHITE,
+            TextAlign::Center,
+        );
     }
 
     fn draw_pause(&self, p: &mut Painter) {
@@ -640,6 +646,16 @@ impl DiamondDays {
             [26, 34, 68, 245],
             8.0,
         );
+        p.button(
+            302.0,
+            72.0,
+            88.0,
+            44.0,
+            self.tr("TEAM", "部員"),
+            16.0,
+            [60, 120, 210, 255],
+            true,
+        );
         let Some((wk, f)) = self.next_fixture() else {
             p.text(
                 self.tr("No more games this year", "今年の試合は終わり"),
@@ -682,17 +698,6 @@ impl DiamondDays {
             17.0,
             [255, 190, 96, 255],
             TextAlign::Right,
-        );
-        let r = [302.0, 72.0, 88.0, 44.0];
-        p.button(
-            r[0],
-            r[1],
-            r[2],
-            r[3],
-            self.tr("TEAM", "部員"),
-            16.0,
-            [60, 120, 210, 255],
-            true,
         );
     }
 
@@ -1492,19 +1497,14 @@ impl DiamondDays {
             let [x, y, w, h] = *r;
             let v = pl.stat(st);
             let g = grade(v);
-            p.text(st.label(ja), 24.0, y + 7.0, 15.0, INK, TextAlign::Left);
+            // Text centred on the row, whatever its height.
+            let ty = y + (h - 15.0) * 0.5 - 1.0;
+            p.text(st.label(ja), 24.0, ty, 15.0, INK, TextAlign::Left);
             if st == Stat::Velo {
-                p.text(
-                    &format!("{v}km/h"),
-                    196.0,
-                    y + 7.0,
-                    15.0,
-                    INK,
-                    TextAlign::Right,
-                );
+                p.text(&format!("{v}km/h"), 196.0, ty, 15.0, INK, TextAlign::Right);
             } else {
-                p.chip(132.0, y + h * 0.5, 24.0, g, grade_color(g));
-                p.text(&v.to_string(), 176.0, y + 7.0, 15.0, INK, TextAlign::Right);
+                p.chip(132.0, y + h * 0.5, (h - 4.0).min(24.0), g, grade_color(g));
+                p.text(&v.to_string(), 176.0, ty, 15.0, INK, TextAlign::Right);
             }
             let frac = if st == Stat::Velo {
                 (v as f32 - 100.0) / 60.0
@@ -1513,7 +1513,7 @@ impl DiamondDays {
             };
             p.gauge(
                 204.0,
-                y + 12.0,
+                y + h * 0.5 - 4.5,
                 60.0,
                 9.0,
                 frac,
@@ -1524,7 +1524,7 @@ impl DiamondDays {
             p.text(
                 &format!("{} {}", pl.cost(st), drill_label(pool, ja)),
                 324.0,
-                y + 9.0,
+                y + (h - 11.0) * 0.5,
                 11.0,
                 art::drill_color(pool),
                 TextAlign::Right,
@@ -1874,6 +1874,13 @@ impl DiamondDays {
             ];
             for (k, (lab, name, col, l1, l2)) in cards.into_iter().enumerate() {
                 let x = 10.0 + k as f32 * 194.0;
+                // Our players wear the same face as on the roster.
+                let side = if k == 0 { 1 - bat_side } else { bat_side };
+                let face = if side == g.us {
+                    self.club_face(name)
+                } else {
+                    art::face_of(name)
+                };
                 p.panel(
                     x,
                     yd,
@@ -1892,7 +1899,7 @@ impl DiamondDays {
                     x + 104.0,
                     yd + 4.0,
                     78.0,
-                    &art::face_of(name),
+                    &face,
                     Expr::Serious,
                     &Outfit::cap(col),
                     1.0,
@@ -2072,6 +2079,17 @@ impl DiamondDays {
                 TextAlign::Left,
             );
         }
+    }
+
+    /// The face of a club member by family name (the game's sides only carry that).
+    fn club_face(&self, family: &str) -> crate::game_core::portrait::Face {
+        self.s
+            .team
+            .players
+            .iter()
+            .find(|q| q.family == family)
+            .map(art::player_face)
+            .unwrap_or_else(|| art::face_of(family))
     }
 
     fn side_color(&self, g: &super::sim::Game, side: usize) -> Rgba {

@@ -598,3 +598,35 @@ fn a_talk_event_waits_for_the_coachs_answer() {
     assert_eq!(g.mode, Mode::Notice);
     assert_eq!(g.notes[0].faces.len(), 1);
 }
+
+#[test]
+fn a_pitchers_page_fits_above_the_practice_menu_on_a_short_screen() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    let i = g.s.team.players.iter().position(|p| p.pitcher()).unwrap();
+    g.mode = Mode::Player(i);
+    // A 720p desktop: the shortest canvas (700 units).
+    let buttons = g.hud_buttons(1280.0, 720.0);
+    let raise_bottom = buttons
+        .iter()
+        .filter(|(b, _)| matches!(b, hud::Btn::Raise(_)))
+        .map(|(_, r)| r[1] + r[3])
+        .fold(0.0, f32::max);
+    let menu_top = buttons
+        .iter()
+        .filter(|(b, _)| matches!(b, hud::Btn::Menu(_)))
+        .map(|(_, r)| r[1])
+        .fold(f32::MAX, f32::min);
+    assert!(raise_bottom < menu_top, "{raise_bottom} vs {menu_top}");
+}
+
+#[test]
+fn the_team_button_is_drawn_when_no_games_are_left() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    g.s.week = board::WEEKS;
+    g.s.summer_in = false;
+    g.s.autumn_in = false;
+    let hud = g.hud(W, H, false);
+    assert!(all_texts(&hud).any(|t| t.text == "TEAM"));
+}
