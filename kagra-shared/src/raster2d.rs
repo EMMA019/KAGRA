@@ -35,7 +35,7 @@ impl Canvas {
     /// Draw a whole list (and its layers) the way the renderer does.
     pub fn draw(&mut self, list: &DrawList) {
         for l in list.flatten() {
-            for t in l.mesh.verts.chunks_exact(3) {
+            for t in l.mesh.verts.as_chunks::<3>().0 {
                 self.triangle(t[0], t[1], t[2]);
             }
             for q in &l.quads {
