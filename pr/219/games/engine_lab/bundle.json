@@ -8,7 +8,7 @@
     {
       "path": "world.json",
       "url": "games/engine_lab/world.json",
-      "v": "9536961f48"
+      "v": "fc1d6f3616"
     },
     {
       "path": "kagra_game.json",
@@ -118,5 +118,5 @@
     "fixed_step": true,
     "blurb": "blurb.lab"
   },
-  "build": "a866bec0c03f"
+  "build": "20136645e895"
 }
