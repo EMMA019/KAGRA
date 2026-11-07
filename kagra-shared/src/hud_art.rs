@@ -89,6 +89,142 @@ impl Stage {
     }
 }
 
+/// How a new screen is revealed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Wipe {
+    /// A colour that fades away.
+    Fade,
+    /// Two curtains that part to the sides.
+    Curtain,
+    /// A circle that opens from the middle.
+    Iris,
+}
+
+/// A screen change that opens on the new screen: the game switches what it draws at once
+/// and starts one of these on top, covered, with an optional title band in the middle.
+/// It reads as a scene change ("Game day!") instead of a cut.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Transition {
+    pub kind: Wipe,
+    pub color: Rgba,
+    pub title: String,
+    t: f32,
+    secs: f32,
+}
+
+impl Transition {
+    /// Start covered; the screen opens over `secs` (the title holds for the first third).
+    pub fn open(kind: Wipe, secs: f32, color: Rgba, title: impl Into<String>) -> Self {
+        Self {
+            kind,
+            color,
+            title: title.into(),
+            t: 0.0,
+            secs: secs.max(0.05),
+        }
+    }
+
+    /// Let time pass. Returns false once the screen is open.
+    pub fn tick(&mut self, dt: f32) -> bool {
+        self.t += dt.max(0.0);
+        !self.done()
+    }
+
+    pub fn done(&self) -> bool {
+        self.t >= self.secs
+    }
+
+    /// How open the screen is, 0 (covered) to 1, eased; it waits a third of the time first.
+    pub fn openness(&self) -> f32 {
+        let k = ((self.t / self.secs - 0.34) / 0.66).clamp(0.0, 1.0);
+        1.0 - (1.0 - k).powi(3)
+    }
+
+    /// Draw over everything on a new layer.
+    pub fn draw(&self, p: &mut Painter) {
+        if self.done() {
+            return;
+        }
+        p.layer();
+        let [x0, y0, w, h] = p.st.screen;
+        let o = self.openness();
+        let c = self.color;
+        match self.kind {
+            Wipe::Fade => {
+                let a = ((1.0 - o) * c[3] as f32) as u8;
+                p.fill(
+                    &[[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]],
+                    Paint::Solid([c[0], c[1], c[2], a]),
+                );
+            }
+            Wipe::Curtain => {
+                let half = w * 0.5 * (1.0 - o);
+                for (l, r) in [(x0, x0 + half), (x0 + w - half, x0 + w)] {
+                    if r - l > 0.5 {
+                        p.fill(
+                            &[[l, y0], [r, y0], [r, y0 + h], [l, y0 + h]],
+                            Paint::vertical(y0, y0 + h, shade(c, 0.12), shade(c, -0.18)),
+                        );
+                    }
+                }
+                // The curtains' inner edges.
+                for xe in [x0 + half, x0 + w - half] {
+                    if half > 1.0 {
+                        p.line(&[[xe, y0], [xe, y0 + h]], 3.0, shade(c, 0.35));
+                    }
+                }
+            }
+            Wipe::Iris => {
+                // A ring of quads around a hole whose radius grows to the screen's corner.
+                let (cx, cy) = (x0 + w * 0.5, y0 + h * 0.5);
+                let reach = (w * w + h * h).sqrt() * 0.5 + 4.0;
+                let r = reach * o;
+                let n = 48;
+                let outer = reach * 1.5;
+                for i in 0..n {
+                    let a0 = i as f32 / n as f32 * std::f32::consts::TAU;
+                    let a1 = (i + 1) as f32 / n as f32 * std::f32::consts::TAU;
+                    let q = [
+                        [cx + a0.cos() * r, cy + a0.sin() * r],
+                        [cx + a0.cos() * outer, cy + a0.sin() * outer],
+                        [cx + a1.cos() * outer, cy + a1.sin() * outer],
+                        [cx + a1.cos() * r, cy + a1.sin() * r],
+                    ];
+                    p.fill(&q, Paint::Solid(c));
+                }
+            }
+        }
+        // The title band, while the screen is still mostly covered.
+        if !self.title.is_empty() && o < 0.35 {
+            let a = (1.0 - o / 0.35).clamp(0.0, 1.0);
+            let band = 84.0;
+            let cy = p.st.h * 0.45;
+            let (top, bot) = (cy - band * 0.5, cy + band * 0.5);
+            p.fill(
+                &[[x0, top], [x0 + w, top], [x0 + w, bot], [x0, bot]],
+                Paint::Solid([255, 255, 255, (236.0 * a) as u8]),
+            );
+            for yy in [top + 5.0, bot - 5.0] {
+                p.line(
+                    &[[x0, yy], [x0 + w, yy]],
+                    3.0,
+                    [232, 184, 60, (255.0 * a) as u8],
+                );
+            }
+            p.text_outlined(
+                &self.title,
+                200.0,
+                cy - 30.0,
+                56.0,
+                [c[0], c[1], c[2], (255.0 * a) as u8],
+                [255, 255, 255, (255.0 * a) as u8],
+                2.5,
+                TextAlign::Center,
+            );
+        }
+    }
+}
+
 /// Words that pop up on the stage and rise as they fade ("UP!", "+1", a new grade), in
 /// design units. The game pushes them where something happened, ticks them, and draws them
 /// last so they sit on top.
@@ -850,6 +986,25 @@ mod tests {
         s.press(50.0);
         s.drag(53.0);
         assert!(s.release());
+    }
+
+    #[test]
+    fn a_transition_opens_and_ends() {
+        let st = Stage::fit(400.0, 700.0, 400.0, 700.0);
+        for kind in [Wipe::Fade, Wipe::Curtain, Wipe::Iris] {
+            let mut t = Transition::open(kind, 1.0, [30, 60, 160, 255], "GAME DAY");
+            assert_eq!(t.openness(), 0.0, "covered at first");
+            let mut list = DrawList::default();
+            t.draw(&mut Painter::new(&mut list, st));
+            assert!(list.layers[0].mesh.triangles() > 0);
+            assert!(list.layers[0].texts.iter().any(|x| x.text == "GAME DAY"));
+            t.tick(0.6);
+            assert!(t.openness() > 0.0 && t.openness() < 1.0);
+            assert!(!t.tick(0.5), "open after its time");
+            let mut list = DrawList::default();
+            t.draw(&mut Painter::new(&mut list, st));
+            assert!(list.layers.is_empty(), "nothing once open");
+        }
     }
 
     #[test]

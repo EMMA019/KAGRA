@@ -144,6 +144,9 @@ is drawn as chibi players at their own practice menus. No stadium on the board.
 
 A fixture is the game part, on its own screens:
 
+Going into a game the screen opens on a red curtain with 試合の日！, Play Ball opens an iris
+on the broadcast, and leaving the result opens a green curtain with 練習に戻ろう.
+
 1. **Game day.** The tournament ribbon, both school crests, team grades, the record between
    the two schools, our starting nine with faces. The coach can change the order, then
    presses Play Ball.

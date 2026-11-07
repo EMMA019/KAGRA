@@ -373,6 +373,8 @@ pub struct DiamondDays {
     pending_rival: Option<Side>,
     /// Words popping up over the screen ("UP!", a new grade).
     pops: crate::hud_art::Pops,
+    /// A scene change opening over the screen (into a game, out of it).
+    transition: Option<crate::hud_art::Transition>,
 }
 
 impl DiamondDays {
@@ -411,6 +413,7 @@ impl DiamondDays {
             want_call: false,
             pending_rival: None,
             pops: crate::hud_art::Pops::default(),
+            transition: None,
         };
         g.build_doc();
         g
@@ -677,6 +680,12 @@ impl DiamondDays {
         self.pending_rival = Some(self.rival_side(f, idx));
         self.fixture = Some(f);
         self.mode = Mode::MatchIntro;
+        self.transition = Some(crate::hud_art::Transition::open(
+            crate::hud_art::Wipe::Curtain,
+            1.2,
+            [176, 40, 52, 255],
+            self.tr("GAME DAY!", "試合の日！"),
+        ));
         crate::mixer::cue_sfx("event");
     }
 
@@ -707,6 +716,12 @@ impl DiamondDays {
         if let Some(f) = self.fixture.take() {
             crate::mixer::cue_sfx("go");
             self.start_game(f);
+            self.transition = Some(crate::hud_art::Transition::open(
+                crate::hud_art::Wipe::Iris,
+                0.9,
+                [12, 16, 32, 255],
+                self.tr("PLAY BALL", "プレイボール"),
+            ));
         }
     }
 
@@ -1125,6 +1140,12 @@ impl DiamondDays {
         }
         self.report = None;
         crate::mixer::cue_sfx("card");
+        self.transition = Some(crate::hud_art::Transition::open(
+            crate::hud_art::Wipe::Curtain,
+            1.0,
+            [70, 140, 84, 255],
+            self.tr("BACK TO PRACTICE", "練習に戻ろう"),
+        ));
         if !self.notes.is_empty() {
             self.mode = Mode::Notice;
         } else if self.s.epilogue {
@@ -1788,6 +1809,11 @@ impl DiamondDays {
     fn step_sim(&mut self, dt: f32) {
         self.clock += dt;
         self.pops.tick(dt);
+        if let Some(t) = self.transition.as_mut() {
+            if !t.tick(dt) {
+                self.transition = None;
+            }
+        }
         let (w, h) = self.size.get();
         let view = hud::list_view(self.stage(w, h).h);
         self.roster.view = view[3];

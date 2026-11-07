@@ -421,6 +421,9 @@ impl DiamondDays {
             p.layer();
             self.pops.draw(&mut p);
         }
+        if let Some(t) = &self.transition {
+            t.draw(&mut p);
+        }
         if menu && self.flow.phase == FlowPhase::Pause {
             self.draw_pause(&mut p);
         }

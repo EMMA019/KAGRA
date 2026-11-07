@@ -563,6 +563,9 @@ fn screens_to_png() {
     press(&mut g, hud::Btn::Close);
     g.s.week = 6;
     g.begin_week();
+    run(&mut g, 0.3);
+    shot(&g, "07_curtain");
+    run(&mut g, 1.2);
     shot(&g, "07a_game_day");
     press(&mut g, hud::Btn::PlayBall);
     let (mut asked, mut pitch, mut field) = (false, false, false);
