@@ -8,6 +8,7 @@
 //! - `sim.rs`: the game, plate appearance by plate appearance.
 //! - `hud.rs`, `doc.rs`: the HUD and the 3D picture.
 
+mod art;
 mod board;
 mod doc;
 mod hud;
@@ -22,7 +23,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::flow::{FlowPhase, GameFlow};
-use crate::game_core::anim::{Animator, MoveSet};
 use crate::game_core::swarm::Rng;
 use crate::game_core::{tick_frame, Core, Kit};
 use crate::input::{PointerEvent, PointerPhase};
@@ -120,10 +120,6 @@ impl DiamondDaysSpec {
         Ok(())
     }
 }
-
-const COACH_GLB: &str = "assets/models/kenney/mini-characters/character-male-e.glb";
-const PLAYER_GLB: &str = "assets/models/kenney/mini-characters/character-male-a.glb";
-const PITCHER_GLB: &str = "assets/models/kenney/mini-characters/character-male-c.glb";
 
 fn default_audio() -> Value {
     let sfx = "assets/audio/oga-retro-synth-sfx/";
@@ -225,7 +221,6 @@ pub struct DiamondDays {
     /// The hop between squares (0..1) and where it started.
     hop: f32,
     hop_from: usize,
-    coach: Animator,
     roster_scroll: usize,
     /// A saved run to resume (from `world.save`).
     resume: Option<Save>,
@@ -257,7 +252,6 @@ impl DiamondDays {
             auto_orders: false,
             hop: 1.0,
             hop_from: 0,
-            coach: Animator::new(MoveSet::procedural()),
             roster_scroll: 0,
             resume: None,
             pre_walk: None,
@@ -443,11 +437,15 @@ impl DiamondDays {
                 g.sides[0].name_ja, g.sides[1].name_ja
             ),
             runs: 0,
+            kind: sim::PlayKind::Note,
+            dir: 0.0,
         });
         g.log.push(sim::Play {
             en: "Top of inning 1.".into(),
             ja: "1回表。".into(),
             runs: 0,
+            kind: sim::PlayKind::Note,
+            dir: 0.0,
         });
         self.game = Some(g);
         self.mode = Mode::Match {
@@ -767,9 +765,6 @@ impl DiamondDays {
 
     fn step_sim(&mut self, dt: f32) {
         self.clock += dt;
-        let speed = self.coach_speed();
-        self.coach.locomote(speed, true, 0.0);
-        self.coach.tick(dt);
         match self.mode.clone() {
             Mode::Walk { left, t, card } => {
                 let t = t + dt;
@@ -805,14 +800,6 @@ impl DiamondDays {
                 self.advance_game(shown);
             }
             _ => {}
-        }
-    }
-
-    fn coach_speed(&self) -> f32 {
-        if matches!(self.mode, Mode::Walk { .. }) {
-            2.0
-        } else {
-            0.0
         }
     }
 
@@ -915,13 +902,8 @@ impl DiamondDays {
         }
         match self.mode {
             Mode::Notice => self.tap_notice(),
-            Mode::Roster => {
-                let menu = self.roster_menu(w, h);
-                match menu.row_at(ev.x, ev.y, self.s.team.players.len(), self.roster_scroll) {
-                    Some(i) => self.mode = Mode::Player(i),
-                    None => self.mode = Mode::Plan,
-                }
-            }
+            // A tap off the list closes it.
+            Mode::Roster => self.mode = Mode::Plan,
             Mode::Player(_) => self.mode = Mode::Roster,
             Mode::Match {
                 asking: None,
@@ -970,6 +952,13 @@ impl DiamondDays {
             hud::Btn::Back => {
                 self.mode = Mode::Roster;
             }
+            hud::Btn::Row(i) => {
+                if i < self.s.team.players.len() {
+                    self.mode = Mode::Player(i);
+                    crate::mixer::cue_sfx("card");
+                }
+            }
+            hud::Btn::Close => self.mode = Mode::Plan,
             hud::Btn::Skip => self.skip_game(),
             hud::Btn::RosterUp => self.roster_scroll = self.roster_scroll.saturating_sub(4),
             hud::Btn::RosterDown => {
@@ -1031,10 +1020,6 @@ fn fresh_save(seed: u32) -> Save {
         scouted: Vec::new(),
         healed: (0, 0),
     }
-}
-
-fn hud_scale(w: f32, h: f32) -> f32 {
-    (w.min(h) / 400.0).clamp(0.9, 2.6)
 }
 
 // ------------------------------------------------------------ the host ----

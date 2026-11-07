@@ -141,13 +141,116 @@ impl ImageQuad {
     }
 }
 
+/// One corner of a 2D triangle: screen pixels (left-top origin) and an RGBA colour (0..255,
+/// the same space as [`Quad::color`]). Colours interpolate across the triangle.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Vert2 {
+    pub x: f32,
+    pub y: f32,
+    pub color: [u8; 4],
+}
+
+impl Vert2 {
+    pub fn new(x: f32, y: f32, color: [u8; 4]) -> Self {
+        Self { x, y, color }
+    }
+}
+
+/// Coloured triangles in screen pixels: three vertices each, drawn in order, alpha blended.
+/// Per-vertex colours make gradients; a vertex with alpha 0 fades an edge, which is how
+/// [`crate::vector`] anti-aliases fills and strokes and draws soft shadows and glows.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Mesh2d {
+    pub verts: Vec<Vert2>,
+}
+
+impl Mesh2d {
+    pub fn tri(&mut self, a: Vert2, b: Vert2, c: Vert2) {
+        self.verts.extend([a, b, c]);
+    }
+
+    pub fn triangles(&self) -> usize {
+        self.verts.len() / 3
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.verts.is_empty()
+    }
+
+    /// Append `other` scaled by `scale` and moved by (`dx`, `dy`), its alpha times `alpha`
+    /// (0..1). Art built once in unit space (a portrait) is placed this way every frame.
+    pub fn append_placed(&mut self, other: &Mesh2d, dx: f32, dy: f32, scale: f32, alpha: f32) {
+        let a = alpha.clamp(0.0, 1.0);
+        self.verts.extend(other.verts.iter().map(|v| Vert2 {
+            x: dx + v.x * scale,
+            y: dy + v.y * scale,
+            color: [
+                v.color[0],
+                v.color[1],
+                v.color[2],
+                (v.color[3] as f32 * a).round() as u8,
+            ],
+        }));
+    }
+
+    /// Bounding box (min x, min y, max x, max y), or None when empty.
+    pub fn bounds(&self) -> Option<[f32; 4]> {
+        let mut it = self.verts.iter();
+        let f = it.next()?;
+        let mut b = [f.x, f.y, f.x, f.y];
+        for v in it {
+            b = [b[0].min(v.x), b[1].min(v.y), b[2].max(v.x), b[3].max(v.y)];
+        }
+        Some(b)
+    }
+}
+
 /// 1 フレームぶんの描画内容。
+///
+/// Draw order: `mesh`, then `quads`, then `texts`, then each of `layers` the same way
+/// (depth first). A layer is a whole `DrawList` on top of everything before it, so a popup
+/// drawn into a layer covers the text under it, and every `hud_kit` helper draws into a
+/// layer as it does into the base list. A layer's `clear` is ignored.
 #[derive(Clone, Debug, Default)]
 pub struct DrawList {
     pub clear: [u8; 4],
+    pub mesh: Mesh2d,
     pub quads: Vec<Quad>,
     pub texts: Vec<TextQuad>,
     pub images: Vec<ImageQuad>,
+    pub layers: Vec<DrawList>,
+}
+
+impl DrawList {
+    /// A new layer on top of everything drawn so far (and of earlier layers).
+    pub fn layer(&mut self) -> &mut DrawList {
+        self.layers.push(DrawList::default());
+        self.layers.last_mut().expect("just pushed")
+    }
+
+    /// The topmost layer: the last layer's topmost layer, or this list when it has none.
+    pub fn top(&mut self) -> &mut DrawList {
+        if self.layers.is_empty() {
+            return self;
+        }
+        self.layers.last_mut().expect("not empty").top()
+    }
+
+    /// Every list in draw order: this one, then its layers depth first.
+    pub fn flatten(&self) -> Vec<&DrawList> {
+        let mut out = vec![self];
+        for l in &self.layers {
+            out.extend(l.flatten());
+        }
+        out
+    }
+
+    /// Quads, triangles and texts in this list and all its layers (for budgets and tests).
+    pub fn counts(&self) -> (usize, usize, usize) {
+        self.flatten().iter().fold((0, 0, 0), |(q, t, x), l| {
+            (q + l.quads.len(), t + l.mesh.triangles(), x + l.texts.len())
+        })
+    }
 }
 
 /// シェルの実フレームレートに関係なく同じ絵を出すため固定ステップで進める。

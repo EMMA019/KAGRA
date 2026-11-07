@@ -209,6 +209,33 @@ pub struct Play {
     pub ja: String,
     /// Runs it scored.
     pub runs: u8,
+    /// What happened on the field (for the picture).
+    #[serde(default)]
+    pub kind: PlayKind,
+    /// Where the ball went: degrees from centre field, negative toward left field.
+    #[serde(default)]
+    pub dir: f32,
+}
+
+/// What a play looks like on the field.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PlayKind {
+    /// Words only: an inning starts, the game ends.
+    #[default]
+    Note,
+    /// A hit for this many bases (4 = a home run).
+    Hit(u8),
+    Strikeout,
+    Walk,
+    GroundOut,
+    FlyOut,
+    DoublePlay,
+    SacFly,
+    Bunt,
+    Steal,
+    CaughtStealing,
+    /// A new pitcher.
+    Change,
 }
 
 #[derive(Clone, Debug)]
@@ -296,7 +323,24 @@ impl Game {
     }
 
     fn say(&mut self, en: String, ja: String, runs: u8) {
-        self.log.push(Play { en, ja, runs });
+        self.say_as(PlayKind::Note, en, ja, runs);
+    }
+
+    /// A play with its picture. The direction comes from a hash of the play, not the dice,
+    /// so adding pictures changes no result.
+    fn say_as(&mut self, kind: PlayKind, en: String, ja: String, runs: u8) {
+        let mut h: u32 = 2_166_136_261;
+        for b in en.bytes().chain([self.log.len() as u8, self.inning]) {
+            h = (h ^ b as u32).wrapping_mul(16_777_619);
+        }
+        let dir = (h % 900) as f32 / 10.0 - 45.0;
+        self.log.push(Play {
+            en,
+            ja,
+            runs,
+            kind,
+            dir,
+        });
     }
 
     /// A moment to ask the coach about, once per plate appearance: a runner on second or
@@ -343,7 +387,8 @@ impl Game {
                 self.tactic = None;
             }
             let n = self.pitcher_now().name.clone();
-            self.say(
+            self.say_as(
+                PlayKind::Change,
                 format!("Pitching change: {n} comes in."),
                 format!("ピッチャー交代、{n}がマウンドへ。"),
                 0,
@@ -356,7 +401,8 @@ impl Game {
                 self.arm[f] += 1;
                 self.thrown[f] = 0;
                 let n = self.pitcher_now().name.clone();
-                self.say(
+                self.say_as(
+                    PlayKind::Change,
                     format!("The coach goes to the bullpen: {n}."),
                     format!("継投、{n}がマウンドへ。"),
                     0,
@@ -396,7 +442,8 @@ impl Game {
         if tactic == Some(Tactic::Walk) {
             let mut runs = 0;
             self.walk(s, bi, &mut runs);
-            self.say(
+            self.say_as(
+                PlayKind::Walk,
                 format!("{name} is walked on purpose."),
                 format!("{name}を敬遠。"),
                 runs,
@@ -415,14 +462,16 @@ impl Game {
                     self.bases[1] = Some(x);
                 }
                 self.add_runs(s, 1);
-                self.say(
+                self.say_as(
+                    PlayKind::Bunt,
                     format!("Squeeze! {name} lays it down and the run scores."),
                     format!("スクイズ成功！{name}のバントで1点。"),
                     1,
                 );
             } else {
                 self.bases[2] = None;
-                self.say(
+                self.say_as(
+                    PlayKind::Bunt,
                     format!("Squeeze foiled: {name} misses and the runner is out at home."),
                     "スクイズ失敗、三塁ランナーが本塁でタッチアウト。".to_string(),
                     0,
@@ -445,14 +494,16 @@ impl Game {
                 if let Some(x) = self.bases[0].take() {
                     self.bases[1] = Some(x);
                 }
-                self.say(
+                self.say_as(
+                    PlayKind::Bunt,
                     format!("{name} bunts. The runner moves up."),
                     format!("{name}、送りバント成功。ランナー進塁。"),
                     runs,
                 );
             } else {
                 self.outs += 1;
-                self.say(
+                self.say_as(
+                    PlayKind::FlyOut,
                     format!("{name} bunts it up. Caught."),
                     format!("{name}、バント失敗。小フライでアウト。"),
                     0,
@@ -473,7 +524,8 @@ impl Game {
             (0.28 + (b.contact - stuff * 0.8) * 0.0035 - (field - 50.0) * 0.0012).clamp(0.12, 0.5);
         if r < k {
             self.outs += 1;
-            self.say(
+            self.say_as(
+                PlayKind::Strikeout,
                 format!("{name} strikes out."),
                 format!("{name}、空振り三振！"),
                 0,
@@ -483,7 +535,8 @@ impl Game {
         if r < k + bb {
             let mut runs = 0;
             self.walk(s, bi, &mut runs);
-            self.say(
+            self.say_as(
+                PlayKind::Walk,
                 format!("{name} walks."),
                 format!("{name}、フォアボール。"),
                 runs,
@@ -530,7 +583,7 @@ impl Game {
             } else {
                 (en, ja)
             };
-            self.say(en, ja, runs);
+            self.say_as(PlayKind::Hit(bases as u8), en, ja, runs);
             // Small ball: a fast runner on first tries to steal.
             if order == Order::Small {
                 self.try_steal(s);
@@ -542,7 +595,8 @@ impl Game {
         if ground && self.bases[0].is_some() && self.outs < 2 && self.rng.unit() < 0.3 {
             self.outs += 2;
             self.bases[0] = None;
-            self.say(
+            self.say_as(
+                PlayKind::DoublePlay,
                 format!("{name} grounds into a double play."),
                 format!("{name}、ゲッツー。"),
                 0,
@@ -554,7 +608,8 @@ impl Game {
         if !ground && self.outs < 3 && self.bases[2].is_some() && self.rng.unit() < 0.6 {
             self.bases[2] = None;
             self.add_runs(s, 1);
-            self.say(
+            self.say_as(
+                PlayKind::SacFly,
                 format!("{name} flies out; the runner tags up and scores."),
                 format!("{name}、犠牲フライ！1点。"),
                 1,
@@ -571,7 +626,12 @@ impl Game {
                     format!("{name}、外野フライ。"),
                 )
             };
-            self.say(en, ja, 0);
+            let kind = if ground {
+                PlayKind::GroundOut
+            } else {
+                PlayKind::FlyOut
+            };
+            self.say_as(kind, en, ja, 0);
         }
         self.after_out(s)
     }
@@ -649,7 +709,8 @@ impl Game {
         };
         if self.rng.unit() < 0.35 + sp * 0.006 {
             self.bases[base + 1] = self.bases[base].take();
-            self.say(
+            self.say_as(
+                PlayKind::Steal,
                 format!("{name} steals {to_en}!"),
                 format!("{name}、{to_ja}成功！"),
                 0,
@@ -657,7 +718,8 @@ impl Game {
         } else {
             self.bases[base] = None;
             self.outs += 1;
-            self.say(
+            self.say_as(
+                PlayKind::CaughtStealing,
                 format!("{name} is thrown out stealing."),
                 format!("{name}、{to_ja}失敗。"),
                 0,
@@ -672,7 +734,8 @@ impl Game {
                 let name = self.sides[s].bats[r].name.clone();
                 if self.rng.unit() < 0.45 + (sp - 55.0) * 0.012 {
                     self.bases[1] = self.bases[0].take();
-                    self.say(
+                    self.say_as(
+                        PlayKind::Steal,
                         format!("{name} steals second!"),
                         format!("{name}、盗塁成功！"),
                         0,
@@ -680,7 +743,8 @@ impl Game {
                 } else {
                     self.bases[0] = None;
                     self.outs += 1;
-                    self.say(
+                    self.say_as(
+                        PlayKind::CaughtStealing,
                         format!("{name} is caught stealing."),
                         format!("{name}、盗塁失敗。"),
                         0,

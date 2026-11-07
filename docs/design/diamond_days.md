@@ -85,4 +85,15 @@ on" lets them play this once; "no more calls" for the rest of the game.
   player, scouting, calls at chances and pinches.
 - Round 3: events with choices (dialogue), the coach's own growth, rival schools with
   names, records and an end-of-three-years card.
-- Round 4: the picture (players on the field during a game, a ball), sound, balance.
+- Round 4 (the picture, done first): every screen is an illustration drawn by the HUD on
+  the engine's 2D parts (`hud_art`, `vector`, `game_core::portrait`), phone first on a
+  400-wide stage. The board: twenty squares round a little ballpark full of people, the
+  club in their places as faces, the coach's token hopping. Under it the manager (an
+  original character, 七瀬ことり / Kotori) says a word for the week; the cards show the
+  starred player's face. A game: a field under the lights with little fielders, runners on
+  their bases, the ball's flight for each play (plays carry a kind and a direction), the
+  scoreboard, the pitcher's and the batter's faces, the play-by-play, the calls in a
+  popup. The roster and a player's page show faces, grades, mood and stamina. The 3D
+  world is only a sky colour. Look at every screen without a GPU:
+  `KAGRA_SHOTS=dir cargo test -p kagra-shared --lib diamond_days::tests::screens_to_png`.
+- Still to come: sound and balance passes, a year-end card, events with choices.

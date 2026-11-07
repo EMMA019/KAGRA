@@ -33,6 +33,8 @@
 //! - [`dialogue`]: JSON conversations with faces drawn from shapes, choices, flags, events.
 //! - [`items`]: item kinds, a bag with coins, equipment that adds up stats, shops, saves.
 //! - [`physics2d`]: side-view rigid boxes and balls (stack, roll, topple, blast).
+//! - [`portrait`]: line-art faces for talk scenes and rosters (expressions, caps, haircuts),
+//!   drawn as cached [`crate::vector`] meshes.
 //! - [`anim`]: a character's moves (locomotion, one-shot attacks with a hit cue, death hold)
 //!   as crossfaded glTF clips or a procedural pose.
 //!
@@ -55,6 +57,7 @@ pub mod missions;
 pub mod motion;
 pub mod physics2d;
 pub mod platform;
+pub mod portrait;
 pub mod progress;
 pub mod result;
 pub mod run;

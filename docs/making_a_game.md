@@ -65,6 +65,11 @@ KAGRA_BAKE=1 cargo test -p kagra-shared --lib <slug>::
 | 敵の JSON 定義（歩く・飛ぶ・跳ぶ・予告） | `game_core::enemies`（`docs/enemy_kit.md`） |
 | ライフ、ミッション、結果、ゲームの手触り | `game_core::{lives, missions, result, juice, feel}` |
 | 角丸パネル、ゲージ、ボタン | `hud_kit::{round_panel, gauge, pill_button}` |
+| 絵で描く HUD（縦持ちスマホ基準の設計キャンバス、影とグラデのパネル、つやボタン、リボン、ランク札、吹き出し、星、ゲージ） | `hud_art::{Stage, Painter}` |
+| ベクター図形（多角形・曲線の塗り、太さの変わる線、グラデ、光、凸形でのクリップ、ふちのアンチエイリアス） | `vector`（`DrawList.mesh` の三角形） |
+| 重ね順（ポップアップが下の文字を隠す、重なるカード） | `DrawList::layer()` |
+| 線画の顔（表情 8 種、帽子・髪型 8 種・ユニフォーム、キャッシュ） | `game_core::portrait::{Face, Expr, Outfit, draw}` |
+| GPU なしで HUD を PNG に（レビュー、CI） | `raster2d::picture(&list, w, h).save_png(path)` |
 | 出すモデルを最初に宣言（途中で出る・消えるモデルでカクつかない） | `game_core::declare_models` |
 | 角丸・円・リング | `Quad::round` / `Quad::circle` / `Quad::ring` |
 | 数字・タイトル用の書体 | `TextQuad::with_face(TextFace::Display)`（Cinzel） |

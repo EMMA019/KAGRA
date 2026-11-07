@@ -787,12 +787,7 @@ mod tests {
     }
 
     fn empty() -> DrawList {
-        DrawList {
-            clear: [0; 4],
-            quads: Vec::new(),
-            texts: Vec::new(),
-            images: Vec::new(),
-        }
+        DrawList::default()
     }
 
     #[test]

@@ -38,6 +38,11 @@ fn press(g: &mut DiamondDays, b: hud::Btn) {
     tap(g, r[0] + r[2] * 0.5, r[1] + r[3] * 0.5);
 }
 
+/// Every text in the HUD, layers included.
+fn all_texts(list: &crate::scene::DrawList) -> impl Iterator<Item = &crate::scene::TextQuad> {
+    list.flatten().into_iter().flat_map(|l| l.texts.iter())
+}
+
 fn run(g: &mut DiamondDays, secs: f32) {
     for _ in 0..(secs / DT) as usize {
         g.tick(DT);
@@ -119,7 +124,7 @@ fn a_card_walks_the_coach_and_the_square_happens() {
         assert!(after > xp_before);
     }
     let hud = g.hud(W, H, false);
-    assert!(!hud.texts.is_empty());
+    assert!(all_texts(&hud).next().is_some());
 }
 
 #[test]
@@ -141,7 +146,7 @@ fn a_game_stops_at_chances_and_pinches_for_the_coachs_call() {
                     Spot::Chance => "chance",
                     Spot::Pinch => "pinch",
                 };
-                assert!(hud.texts.iter().any(|t| t.text.contains(prompt)));
+                assert!(all_texts(&hud).any(|t| t.text.contains(prompt)));
                 // Take the first call on offer.
                 let first = g
                     .hud_buttons(W as f32, H as f32)
@@ -168,8 +173,7 @@ fn the_coach_spends_points_and_sets_each_players_practice() {
     tap(&mut g, 195.0, 400.0);
     g.s.team.players[0].xp = [40; 5];
     press(&mut g, hud::Btn::Roster);
-    let m = g.roster_menu(W as f32, H as f32);
-    tap(&mut g, m.x + 40.0, m.y + 44.0 * m.s + 0.5 * m.row_h);
+    press(&mut g, hud::Btn::Row(0));
     assert_eq!(g.mode, Mode::Player(0));
     let p0 = g.s.team.players[0].clone();
     let st = if p0.pitcher() {
@@ -186,7 +190,7 @@ fn the_coach_spends_points_and_sets_each_players_practice() {
         .iter()
         .all(|&st| !g.s.team.players[0].can_raise(st)));
     let hud = g.hud(W, H, false);
-    assert!(hud.texts.iter().any(|t| t.text.contains(&p0.given)));
+    assert!(all_texts(&hud).any(|t| t.text.contains(&p0.given)));
     press(&mut g, hud::Btn::Back);
     assert_eq!(g.mode, Mode::Roster);
 }
@@ -341,7 +345,7 @@ fn the_roster_opens_and_scrolls() {
     assert_eq!(g.mode, Mode::Roster);
     let hud = g.hud(W, H, false);
     let first = &g.s.team.players[0].family;
-    assert!(hud.texts.iter().any(|t| t.text.contains(first.as_str())));
+    assert!(all_texts(&hud).any(|t| t.text.contains(first.as_str())));
     press(&mut g, hud::Btn::RosterDown);
     assert_eq!(g.roster_scroll, 4);
     // A tap outside the list closes it.
@@ -409,4 +413,97 @@ fn balance_probe() {
             g.s.results.iter().map(|r| r.0.clone()).collect::<Vec<_>>()
         );
     }
+}
+
+/// Pictures of every screen for review (`KAGRA_SHOTS=dir cargo test -p kagra-shared --lib
+/// diamond_days::tests::screens_to_png`), drawn on the CPU at phone and desktop sizes.
+#[test]
+fn screens_to_png() {
+    let Ok(dir) = std::env::var("KAGRA_SHOTS") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let shot = |g: &DiamondDays, name: &str| {
+        for (w, h, tag) in [(390u32, 844u32, "phone"), (1280, 720, "desk")] {
+            let t0 = std::time::Instant::now();
+            let list = g.hud(w, h, false);
+            let built = t0.elapsed();
+            let (q, t, x) = list.counts();
+            eprintln!("{name} {tag}: {t} triangles, {q} quads, {x} texts, built in {built:?}");
+            let pic = crate::raster2d::picture(&list, w, h);
+            pic.save_png(&dir.join(format!("{name}_{tag}.png")))
+                .unwrap();
+        }
+    };
+    let mut g = DiamondDays::new(DiamondDaysSpec::default());
+    g.set_lang("ja");
+    shot(&g, "00_title");
+    g.confirm();
+    run(&mut g, 0.5);
+    shot(&g, "01_notice");
+    tap(&mut g, 195.0, 400.0);
+    // A few weeks in.
+    for _ in 0..3 {
+        play_week(&mut g);
+    }
+    run(&mut g, 0.5);
+    shot(&g, "02_plan");
+    press(&mut g, hud::Btn::Card(0));
+    run(&mut g, 0.3);
+    shot(&g, "03_walk");
+    for _ in 0..600 {
+        if g.mode == Mode::Notice {
+            break;
+        }
+        run(&mut g, 0.1);
+    }
+    shot(&g, "04_week_notice");
+    while g.mode == Mode::Notice {
+        tap(&mut g, 195.0, 400.0);
+    }
+    press(&mut g, hud::Btn::Roster);
+    shot(&g, "05_roster");
+    for p in &mut g.s.team.players {
+        p.xp = [60, 50, 40, 30, 20];
+    }
+    press(&mut g, hud::Btn::Row(0));
+    shot(&g, "06_player");
+    press(&mut g, hud::Btn::Back);
+    press(&mut g, hud::Btn::Close);
+    g.s.week = 6;
+    g.begin_week();
+    let mut asked = false;
+    let mut mid = false;
+    for _ in 0..20000 {
+        match g.mode {
+            Mode::Match {
+                asking: Some(_), ..
+            } => {
+                if !asked {
+                    shot(&g, "08_call");
+                    asked = true;
+                }
+                press(&mut g, hud::Btn::Call(None));
+            }
+            Mode::Match { shown, t, .. } => {
+                let gm = g.game.as_ref().unwrap();
+                if !mid
+                    && gm.inning >= 3
+                    && t > 0.2
+                    && matches!(gm.log[shown.saturating_sub(1)].kind, sim::PlayKind::Hit(_))
+                {
+                    shot(&g, "07_match");
+                    mid = true;
+                }
+                run(&mut g, 0.05);
+            }
+            _ => break,
+        }
+        if asked && mid {
+            break;
+        }
+    }
+    press(&mut g, hud::Btn::Skip);
+    shot(&g, "09_result");
 }

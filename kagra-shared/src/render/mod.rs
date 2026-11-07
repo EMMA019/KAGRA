@@ -2270,22 +2270,45 @@ impl Renderer {
     }
 
     fn build_vertices(&mut self, list: &DrawList) -> Vec<Vertex> {
-        let mut out = Vec::with_capacity((list.quads.len() + list.texts.len() * 8) * 6);
-        for q in &list.quads {
-            out.extend(quad_vertices(q, self.format));
-        }
-        let glyphs_at = out.len();
-        // A full atlas starts over once and lays this frame's text out again.
-        for _ in 0..2 {
-            match self.glyph_vertices(list, &mut out) {
-                Ok(()) => break,
-                // The second try only fails when one frame's text alone overflows the atlas:
-                // that frame draws without text rather than wrong glyphs.
-                Err(glyph_atlas::Full) => {
-                    out.truncate(glyphs_at);
-                    self.atlas.clear();
+        let (quads, tris, texts) = list.counts();
+        let lists = list.flatten();
+        let format = self.format;
+        let shapes = move |out: &mut Vec<Vertex>, l: &DrawList| {
+            out.extend(
+                l.mesh
+                    .verts
+                    .iter()
+                    .map(|v| mesh_vertex(v, format.is_srgb())),
+            );
+            for q in &l.quads {
+                out.extend(quad_vertices(q, format));
+            }
+        };
+        // Each list in order: its triangles, its quads, then its text, so a layer covers the
+        // text of the lists under it. A full atlas starts over once and lays the text out
+        // again; if one frame's text alone overflows it, that frame draws without text rather
+        // than with wrong glyphs.
+        for attempt in 0..2 {
+            let mut out = Vec::with_capacity((quads + texts * 8) * 6 + tris * 3);
+            let mut full = false;
+            for l in &lists {
+                shapes(&mut out, l);
+                if self.glyph_vertices(l, &mut out).is_err() {
+                    full = true;
+                    break;
                 }
             }
+            if !full {
+                return out;
+            }
+            self.atlas.clear();
+            if attempt == 1 {
+                break;
+            }
+        }
+        let mut out = Vec::with_capacity(quads * 6 + tris * 3);
+        for l in &lists {
+            shapes(&mut out, l);
         }
         out
     }
@@ -4233,6 +4256,17 @@ fn create_init_buffer(
 }
 
 /// 1 つの Quad → 三角形 2 つ分の頂点（左上原点、y 下向き）。
+/// A mesh corner: kind 0 (flat), so the colour interpolates across the triangle.
+fn mesh_vertex(v: &crate::scene::Vert2, srgb: bool) -> Vertex {
+    Vertex {
+        pos: [v.x, v.y],
+        color: color_space::display_u8(v.color, srgb),
+        local: [0.0, 0.0],
+        shape: [0.0; 4],
+        stroke: 0.0,
+    }
+}
+
 fn quad_vertices(q: &crate::scene::Quad, format: wgpu::TextureFormat) -> [Vertex; 6] {
     let color = color_space::display_u8(q.color, format.is_srgb());
     let (l, t, r, b) = (q.x, q.y, q.x + q.w, q.y + q.h);
