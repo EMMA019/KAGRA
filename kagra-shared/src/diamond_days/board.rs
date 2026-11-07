@@ -128,6 +128,44 @@ pub struct Happening {
     pub reputation: f32,
     /// How often, relative to the others.
     pub weight: f32,
+    /// A talk: one player (`who`) says `text` (`{name}` is his family name) and the coach
+    /// answers with one of these. Empty: the event just happens to everyone.
+    pub choices: Vec<Choice>,
+    /// Who speaks in a talk.
+    pub who: Who,
+}
+
+/// Who speaks in a talk event.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Who {
+    #[default]
+    Any,
+    Pitcher,
+    /// A third-year.
+    Senior,
+    /// A first-year.
+    Rookie,
+}
+
+/// One answer the coach can give in a talk, and what follows. All original text.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Choice {
+    pub text: String,
+    pub text_ja: String,
+    /// What happens next (`{name}` is the player who spoke).
+    pub reply: String,
+    pub reply_ja: String,
+    /// For the player who spoke.
+    pub stamina: i32,
+    pub mood: i32,
+    pub drill: Option<Drill>,
+    pub points: f32,
+    /// For the whole club.
+    pub team_mood: i32,
+    pub team_stamina: i32,
+    pub reputation: f32,
 }
 
 impl Default for Happening {
@@ -143,6 +181,8 @@ impl Default for Happening {
             hurt: 0,
             reputation: 0.0,
             weight: 1.0,
+            choices: Vec::new(),
+            who: Who::Any,
         }
     }
 }
@@ -235,7 +275,220 @@ pub fn default_happenings() -> Vec<Happening> {
                 "ノック千本。誰も手の感覚がない。",
             )
         },
+        talk(
+            "night_swing",
+            Who::Any,
+            "Long after dark, {name} is still swinging in the yard. \"Coach, just a little longer.\"",
+            "日が暮れても{name}が素振りを続けている。「監督、もう少しだけ振らせてください」",
+            vec![
+                Choice {
+                    drill: Some(Drill::Batting),
+                    points: 14.0,
+                    stamina: -15,
+                    ..answer(
+                        "Stay with him until he is done",
+                        "気の済むまで付き合おう",
+                        "Two hundred more swings. {name} grins: \"I think I've got it.\"",
+                        "さらに二百本。{name}「何かつかめた気がします！」",
+                    )
+                },
+                Choice {
+                    stamina: 15,
+                    mood: 1,
+                    ..answer(
+                        "Send him home to rest",
+                        "今日はもう休め",
+                        "{name} bows and goes home. He looks lighter the next morning.",
+                        "{name}は頭を下げて帰った。翌朝、表情が明るい。",
+                    )
+                },
+            ],
+        ),
+        talk(
+            "slump",
+            Who::Any,
+            "{name} sits alone on the bench. \"Nothing works lately, coach.\"",
+            "{name}がベンチでひとり座っている。「最近、何をやってもダメで……」",
+            vec![
+                Choice {
+                    drill: Some(Drill::Batting),
+                    points: 8.0,
+                    mood: 1,
+                    ..answer(
+                        "Look at his form together",
+                        "一緒にフォームを見直そう",
+                        "You find a hitch in his stride. {name} nods slowly.",
+                        "踏み込みのクセが見つかった。{name}はゆっくりうなずいた。",
+                    )
+                },
+                Choice {
+                    mood: 2,
+                    stamina: 5,
+                    ..answer(
+                        "Tell him everyone has weeks like this",
+                        "誰にでもある、と声をかける",
+                        "{name} laughs for the first time in days.",
+                        "{name}が何日かぶりに笑った。",
+                    )
+                },
+            ],
+        ),
+        talk(
+            "sore_arm",
+            Who::Pitcher,
+            "{name} rubs his shoulder. \"It's a little tight, but I can throw.\"",
+            "{name}が肩をさすっている。「少し張ってますけど、投げられます」",
+            vec![
+                Choice {
+                    stamina: 25,
+                    ..answer(
+                        "No throwing this week",
+                        "今週は投げ込み禁止",
+                        "{name} sulks, then ices his arm every day. It feels fresh.",
+                        "{name}は少しふてくされたが、毎日しっかり冷やした。肩は軽い。",
+                    )
+                },
+                Choice {
+                    drill: Some(Drill::Pitching),
+                    points: 9.0,
+                    stamina: -10,
+                    ..answer(
+                        "Light throwing only",
+                        "軽めに投げておけ",
+                        "Easy throws, good rhythm. {name}'s control is sharper.",
+                        "力を抜いた投球でリズムが良くなった。{name}の制球が冴える。",
+                    )
+                },
+            ],
+        ),
+        talk(
+            "captain_talk",
+            Who::Senior,
+            "{name} stays after practice. \"Coach, the team feels loose. Can we talk?\"",
+            "練習のあと{name}が残っていた。「監督、チームの雰囲気が緩んでいる気がします」",
+            vec![
+                Choice {
+                    team_mood: 1,
+                    team_stamina: -5,
+                    ..answer(
+                        "Call a team meeting",
+                        "全員でミーティングをしよう",
+                        "A long talk in the clubhouse. Everyone leaves with a goal.",
+                        "部室で長い話し合い。みんな目標を口にして帰った。",
+                    )
+                },
+                Choice {
+                    mood: 2,
+                    reputation: 0.5,
+                    ..answer(
+                        "Tell him he is the one to lead",
+                        "お前に任せる",
+                        "{name} straightens up. The next day he is first on the field.",
+                        "{name}の背筋が伸びた。翌日、一番乗りでグラウンドに来ていた。",
+                    )
+                },
+            ],
+        ),
+        talk(
+            "rookie_nerves",
+            Who::Rookie,
+            "First-year {name} looks pale. \"The seniors are so good... can I really play here?\"",
+            "1年生の{name}が青い顔をしている。「先輩たちすごすぎて……僕、やっていけますか」",
+            vec![
+                Choice {
+                    drill: Some(Drill::Fielding),
+                    points: 8.0,
+                    mood: 1,
+                    ..answer(
+                        "Hit him grounders yourself",
+                        "自分でノックを打ってやる",
+                        "Grounder after grounder. {name} dives for the last one and comes up laughing.",
+                        "ノックを何本も。最後の一球に{name}が飛びつき、泥だらけで笑った。",
+                    )
+                },
+                Choice {
+                    mood: 2,
+                    team_mood: 1,
+                    ..answer(
+                        "Ask a senior to look after him",
+                        "先輩に面倒を見てもらう",
+                        "The seniors take him out for noodles. The club feels closer.",
+                        "先輩たちが{name}をラーメンに連れていった。部の空気が温かい。",
+                    )
+                },
+            ],
+        ),
     ]
+}
+
+fn talk(id: &str, who: Who, en: &str, ja: &str, choices: Vec<Choice>) -> Happening {
+    Happening {
+        id: id.into(),
+        text: en.into(),
+        text_ja: ja.into(),
+        weight: 0.9,
+        choices,
+        who,
+        ..Happening::default()
+    }
+}
+
+fn answer(en: &str, ja: &str, reply: &str, reply_ja: &str) -> Choice {
+    Choice {
+        text: en.into(),
+        text_ja: ja.into(),
+        reply: reply.into(),
+        reply_ja: reply_ja.into(),
+        ..Choice::default()
+    }
+}
+
+/// Who speaks in a talk: a healthy player who fits `who` (anyone healthy if none fits).
+pub fn speaker(rng: &mut Rng, who: Who, team: &Team) -> Option<usize> {
+    let fits = |p: &super::team::Player| match who {
+        Who::Any => true,
+        Who::Pitcher => p.pitcher(),
+        Who::Senior => p.grade == 3,
+        Who::Rookie => p.grade == 1,
+    };
+    let mut pool: Vec<usize> = (0..team.players.len())
+        .filter(|&i| team.players[i].hurt == 0 && fits(&team.players[i]))
+        .collect();
+    if pool.is_empty() {
+        pool = (0..team.players.len())
+            .filter(|&i| team.players[i].hurt == 0)
+            .collect();
+    }
+    if pool.is_empty() {
+        return None;
+    }
+    Some(pool[(rng.next_u32() as usize) % pool.len()])
+}
+
+/// The coach's answer takes effect: on the player who spoke, and on the club.
+pub fn apply_choice(c: &Choice, team: &mut Team, who: usize) {
+    let shift = |p: &mut super::team::Player, stamina: i32, mood: i32| {
+        if stamina > 0 {
+            p.rest(stamina as u8);
+        } else if stamina < 0 {
+            p.tire((-stamina) as u8);
+        }
+        for _ in 0..mood.max(0) {
+            p.mood = p.mood.up();
+        }
+        for _ in 0..(-mood).max(0) {
+            p.mood = p.mood.down();
+        }
+    };
+    for p in &mut team.players {
+        shift(p, c.team_stamina, c.team_mood);
+    }
+    if let Some(p) = team.players.get_mut(who) {
+        shift(p, c.stamina, c.mood);
+        if let Some(d) = c.drill {
+            p.train(d, c.points);
+        }
+    }
 }
 
 /// Pick an event by weight.

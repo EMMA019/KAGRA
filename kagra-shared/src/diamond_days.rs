@@ -159,6 +159,8 @@ enum Mode {
     Walk { left: u8, t: f32, card: Card },
     /// A card of text; a tap goes on.
     Notice,
+    /// A player talks to the coach (event `h`, player `who`); the coach picks an answer.
+    Ask { h: usize, who: usize },
     /// A game in progress: lines shown, seconds to the next, waiting for an order.
     Match {
         shown: usize,
@@ -590,8 +592,27 @@ impl DiamondDays {
 
     /// The coach stops on a square: it happens.
     fn land(&mut self, card: Card) {
-        self.pre_walk = None;
         let sq = self.spec.ring[self.s.pos];
+        // A talk waits for the coach's answer (a save meanwhile replays the week).
+        if sq == Square::Event {
+            let list = self.spec.happenings.clone();
+            let pick = board::pick_happening(&mut self.rng, &list)
+                .map(|h| (h.id.clone(), h.who, !h.choices.is_empty()));
+            if let Some((id, who, true)) = pick.clone() {
+                if let (Some(h), Some(w)) = (
+                    list.iter().position(|x| x.id == id),
+                    board::speaker(&mut self.rng, who, &self.s.team),
+                ) {
+                    crate::mixer::cue_sfx("event");
+                    self.mode = Mode::Ask { h, who: w };
+                    return;
+                }
+            }
+            self.pre_walk = None;
+            self.happen(pick.map(|p| p.0));
+            return;
+        }
+        self.pre_walk = None;
         let (title, title_ja) = (sq.label(false).to_string(), sq.label(true).to_string());
         let mut lines = Vec::new();
         match sq {
@@ -686,23 +707,69 @@ impl DiamondDays {
                     self.s.scouted.push(p);
                 }
             }
-            Square::Event => {
-                let list = self.spec.happenings.clone();
-                if let Some(h) = board::pick_happening(&mut self.rng, &list) {
-                    let hurt = board::apply(&mut self.rng, h, &mut self.s.team);
-                    self.s.reputation = (self.s.reputation + h.reputation).clamp(0.0, 100.0);
-                    let mut en = h.text.clone();
-                    let mut ja = h.text_ja.clone();
-                    if let Some(n) = hurt {
-                        en = format!("{en} ({n})");
-                        ja = format!("{ja}（{n}）");
-                    }
-                    lines.push((en, ja));
-                    crate::mixer::cue_sfx("event");
-                }
-            }
+            Square::Event => {}
         }
         self.note(&title, &title_ja, lines);
+        self.end_week();
+    }
+
+    /// An event without a talk happens to everyone (`id`: the one already drawn).
+    fn happen(&mut self, id: Option<String>) {
+        let (title, title_ja) = (
+            Square::Event.label(false).to_string(),
+            Square::Event.label(true).to_string(),
+        );
+        let mut lines = Vec::new();
+        let list = self.spec.happenings.clone();
+        if let Some(h) = id.and_then(|id| list.iter().find(|x| x.id == id)) {
+            let hurt = board::apply(&mut self.rng, h, &mut self.s.team);
+            self.s.reputation = (self.s.reputation + h.reputation).clamp(0.0, 100.0);
+            let mut en = h.text.clone();
+            let mut ja = h.text_ja.clone();
+            if let Some(n) = hurt {
+                en = format!("{en} ({n})");
+                ja = format!("{ja}（{n}）");
+            }
+            lines.push((en, ja));
+            crate::mixer::cue_sfx("event");
+        }
+        self.note(&title, &title_ja, lines);
+        self.end_week();
+    }
+
+    /// The coach answers a talk: it takes effect, the reply is told, the week ends.
+    fn answer(&mut self, k: usize) {
+        let Mode::Ask { h, who } = self.mode else {
+            return;
+        };
+        let Some(c) = self
+            .spec
+            .happenings
+            .get(h)
+            .and_then(|x| x.choices.get(k))
+            .cloned()
+        else {
+            return;
+        };
+        self.pre_walk = None;
+        board::apply_choice(&c, &mut self.s.team, who);
+        self.s.reputation = (self.s.reputation + c.reputation).clamp(0.0, 100.0);
+        let (fam, given) = self
+            .s
+            .team
+            .players
+            .get(who)
+            .map(|p| (p.family.clone(), p.given.clone()))
+            .unwrap_or_default();
+        let lines = vec![(
+            c.reply.replace("{name}", &fam),
+            c.reply_ja.replace("{name}", &fam),
+        )];
+        crate::mixer::cue_sfx("train");
+        self.note(Square::Event.label(false), Square::Event.label(true), lines);
+        if let Some(n) = self.notes.last_mut() {
+            n.faces = vec![(fam, given)];
+        }
         self.end_week();
     }
 
@@ -993,6 +1060,7 @@ impl DiamondDays {
                 }
             }
             hud::Btn::Close => self.mode = Mode::Plan,
+            hud::Btn::Choose(k) => self.answer(k),
             hud::Btn::Skip => self.skip_game(),
             hud::Btn::RosterUp => self.roster_scroll = self.roster_scroll.saturating_sub(4),
             hud::Btn::RosterDown => {
@@ -1009,6 +1077,7 @@ impl DiamondDays {
             Mode::Plan => "plan",
             Mode::Walk { .. } => "walk",
             Mode::Notice => "notice",
+            Mode::Ask { .. } => "ask",
             Mode::Match { .. } => "match",
             Mode::Roster => "roster",
             Mode::Player(_) => "player",
@@ -1126,6 +1195,10 @@ impl crate::kit_host::KitHost for DiamondDays {
                 self.play_card(i);
             }
             ("Enter" | " ", Mode::Notice) => self.tap_notice(),
+            ("1" | "2", Mode::Ask { .. }) => {
+                let k = name.parse::<usize>().unwrap_or(1) - 1;
+                self.answer(k);
+            }
             (
                 "Enter" | " ",
                 Mode::Match {

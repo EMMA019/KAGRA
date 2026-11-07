@@ -25,6 +25,8 @@ pub enum Btn {
     Row(usize),
     /// Close the roster.
     Close,
+    /// An answer in a talk.
+    Choose(usize),
     /// A call at a chance or a pinch; None lets them play.
     Call(Option<Tactic>),
     /// No more calls this game.
@@ -108,6 +110,18 @@ impl DiamondDays {
                     b.push((Btn::Card(i), [10.0 + i as f32 * 77.5, y, 70.0, 98.0]));
                 }
                 b.push((Btn::Roster, [302.0, 72.0, 88.0, 44.0]));
+            }
+            Mode::Ask { h, .. } => {
+                let n = self
+                    .spec
+                    .happenings
+                    .get(h)
+                    .map(|x| x.choices.len())
+                    .unwrap_or(0);
+                for k in 0..n.min(3) {
+                    let y = hh - 70.0 - (n.min(3) - k) as f32 * 64.0;
+                    b.push((Btn::Choose(k), [24.0, y, 352.0, 54.0]));
+                }
             }
             Mode::Roster => {
                 b.push((Btn::RosterUp, [296.0, 78.0, 42.0, 34.0]));
@@ -247,6 +261,9 @@ impl DiamondDays {
         }
         if let (Mode::Notice, Some(_)) = (&self.mode, self.notes.first()) {
             self.draw_notice(&mut p);
+        }
+        if let Mode::Ask { h, who } = self.mode {
+            self.draw_ask(&mut p, h, who, &l);
         }
         if menu && self.flow.phase == FlowPhase::Pause {
             self.draw_pause(&mut p);
@@ -1052,6 +1069,113 @@ impl DiamondDays {
                 14.0,
                 ORANGE,
                 TextAlign::Right,
+            );
+        }
+    }
+
+    /// A player talks to the coach: his face, what he says, the answers.
+    fn draw_ask(&self, p: &mut Painter, h: usize, who: usize, l: &Layout) {
+        let (Some(ev), Some(pl)) = (self.spec.happenings.get(h), self.s.team.players.get(who))
+        else {
+            return;
+        };
+        let ja = self.lang_ja;
+        p.layer();
+        let [x0, y0, w, hgt] = p.st.screen;
+        p.fill(
+            &[[x0, y0], [x0 + w, y0], [x0 + w, y0 + hgt], [x0, y0 + hgt]],
+            Paint::Solid([12, 16, 34, 170]),
+        );
+        let hh = p.st.h;
+        let first_btn = l.buttons.iter().map(|(_, r)| r[1]).fold(hh, f32::min);
+        // The speaker, big, standing behind the speech box.
+        let size = (first_btn - 210.0).clamp(180.0, 300.0);
+        let box_y = first_btn - 150.0;
+        let expr = match ev.who {
+            board::Who::Pitcher => Expr::Serious,
+            board::Who::Rookie => Expr::Surprised,
+            _ if ev.id == "slump" => Expr::Sad,
+            _ => Expr::Fiery,
+        };
+        p.glow(130.0, box_y - size * 0.45, size * 0.8, [255, 236, 190, 90]);
+        p.portrait(
+            130.0 - size * 0.5,
+            box_y - size + 18.0,
+            size,
+            &art::player_face(pl),
+            expr,
+            &Outfit::cap(OURS),
+            1.0,
+        );
+        p.ribbon(
+            200.0,
+            24.0,
+            200.0,
+            44.0,
+            self.tr("A word with the coach", "部員との会話"),
+            16.0,
+            [90, 130, 210, 255],
+        );
+        p.panel_bordered(
+            16.0,
+            box_y,
+            368.0,
+            132.0,
+            22.0,
+            [255, 253, 246, 252],
+            [246, 238, 222, 252],
+            [230, 210, 170, 255],
+            2.5,
+            14.0,
+        );
+        let plate = format!("{} {}", pl.family, pl.given);
+        let pw = crate::font::measure_text(&plate, 15.0) + 34.0;
+        p.panel(
+            32.0,
+            box_y - 16.0,
+            pw,
+            32.0,
+            16.0,
+            shade(OURS, 0.15),
+            shade(OURS, -0.1),
+            6.0,
+        );
+        p.text(
+            &plate,
+            32.0 + pw * 0.5,
+            box_y - 9.0,
+            15.0,
+            WHITE,
+            TextAlign::Center,
+        );
+        let said = if ja { &ev.text_ja } else { &ev.text }.replace("{name}", &pl.family);
+        for (k, line) in wrap(&said, 16.0, 330.0).iter().take(4).enumerate() {
+            p.text(
+                line,
+                34.0,
+                box_y + 26.0 + k as f32 * 25.0,
+                16.0,
+                INK,
+                TextAlign::Left,
+            );
+        }
+        for (b, r) in &l.buttons {
+            let Btn::Choose(k) = *b else { continue };
+            let Some(c) = ev.choices.get(k) else { continue };
+            let col = if k == 0 {
+                [60, 120, 210, 255]
+            } else {
+                [70, 160, 110, 255]
+            };
+            p.button(
+                r[0],
+                r[1],
+                r[2],
+                r[3],
+                if ja { &c.text_ja } else { &c.text },
+                17.0,
+                col,
+                true,
             );
         }
     }

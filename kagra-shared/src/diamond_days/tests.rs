@@ -56,6 +56,7 @@ fn play_week(g: &mut DiamondDays) {
     for _ in 0..4000 {
         match g.mode {
             Mode::Notice => tap(g, 195.0, 400.0),
+            Mode::Ask { .. } => press(g, hud::Btn::Choose(0)),
             Mode::Plan if (g.s.year, g.s.week) != week => return,
             Mode::Plan => {
                 for p in &mut g.s.team.players {
@@ -517,6 +518,26 @@ fn screens_to_png() {
     ];
     g.s.wins = 41;
     g.s.losses = 12;
+    // A talk on an event square.
+    let mut talk = DiamondDays::new(DiamondDaysSpec::default());
+    talk.set_lang("ja");
+    talk.confirm();
+    talk.notes.clear();
+    talk.spec.happenings.retain(|h| h.id == "night_swing");
+    talk.s.pos = talk
+        .spec
+        .ring
+        .iter()
+        .position(|s| *s == board::Square::Event)
+        .unwrap();
+    talk.land(board::Card {
+        steps: 1,
+        focus: None,
+        star: None,
+    });
+    shot(&talk, "15_talk");
+    press(&mut talk, hud::Btn::Choose(0));
+    shot(&talk, "16_talk_reply");
     // The year's turn: graduation and the first-years, with faces.
     let mut spring = DiamondDays::new(DiamondDaysSpec::default());
     spring.set_lang("ja");
@@ -545,4 +566,35 @@ fn screens_to_png() {
     back.resume.as_mut().unwrap().year = 2;
     back.resume.as_mut().unwrap().week = 14;
     shot(&back, "12_title_continue");
+}
+
+#[test]
+fn a_talk_event_waits_for_the_coachs_answer() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    g.spec.happenings.retain(|h| h.id == "night_swing");
+    g.s.pos = g
+        .spec
+        .ring
+        .iter()
+        .position(|s| *s == board::Square::Event)
+        .unwrap();
+    let week = g.s.week;
+    g.land(board::Card {
+        steps: 1,
+        focus: None,
+        star: None,
+    });
+    let Mode::Ask { who, .. } = g.mode else {
+        panic!("a talk, not {:?}", g.mode)
+    };
+    let hud = g.hud(W, H, false);
+    let name = g.s.team.players[who].family.clone();
+    assert!(all_texts(&hud).any(|t| t.text.contains(&name)));
+    let xp: u16 = g.s.team.players[who].xp.iter().sum();
+    press(&mut g, hud::Btn::Choose(0));
+    assert!(g.s.team.players[who].xp.iter().sum::<u16>() > xp);
+    assert_eq!(g.s.week, week + 1);
+    assert_eq!(g.mode, Mode::Notice);
+    assert_eq!(g.notes[0].faces.len(), 1);
 }

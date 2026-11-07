@@ -65,6 +65,7 @@
     },
     "happenings": [
       {
+        "choices": [],
         "drill": null,
         "hurt": 0,
         "id": "drinks",
@@ -74,9 +75,11 @@
         "stamina": 15,
         "text": "The bakery by the station sends a crate of drinks. Everyone gets their breath back.",
         "text_ja": "駅前のパン屋さんから飲み物の差し入れ。みんなひと息ついた。",
-        "weight": 1.0
+        "weight": 1.0,
+        "who": "any"
       },
       {
+        "choices": [],
         "drill": "Batting",
         "hurt": 0,
         "id": "alumnus",
@@ -86,9 +89,11 @@
         "stamina": 0,
         "text": "A former captain drops by and pitches batting practice all afternoon.",
         "text_ja": "昔のキャプテンが顔を出し、午後いっぱいバッティング投手をしてくれた。",
-        "weight": 1.0
+        "weight": 1.0,
+        "who": "any"
       },
       {
+        "choices": [],
         "drill": null,
         "hurt": 0,
         "id": "paper",
@@ -98,9 +103,11 @@
         "stamina": 0,
         "text": "The town paper runs a small piece on the club. The players read it twice.",
         "text_ja": "町の新聞に野球部の小さな記事が載った。部員たちは二回読んだ。",
-        "weight": 1.0
+        "weight": 1.0,
+        "who": "any"
       },
       {
+        "choices": [],
         "drill": null,
         "hurt": 2,
         "id": "ankle",
@@ -110,9 +117,11 @@
         "stamina": 0,
         "text": "Someone twists an ankle on the wet grass. Two weeks off.",
         "text_ja": "濡れた芝で一人が足首をひねった。二週間の休み。",
-        "weight": 0.6
+        "weight": 0.6,
+        "who": "any"
       },
       {
+        "choices": [],
         "drill": null,
         "hurt": 0,
         "id": "rain",
@@ -122,9 +131,11 @@
         "stamina": 5,
         "text": "Rain all week. The team cleans the clubhouse instead.",
         "text_ja": "一週間ずっと雨。代わりに部室を大掃除した。",
-        "weight": 1.0
+        "weight": 1.0,
+        "who": "any"
       },
       {
+        "choices": [],
         "drill": null,
         "hurt": 0,
         "id": "exams",
@@ -134,9 +145,11 @@
         "stamina": 0,
         "text": "Exam week. Nobody is thinking about baseball.",
         "text_ja": "テスト週間。誰も野球のことを考えていない。",
-        "weight": 0.7
+        "weight": 0.7,
+        "who": "any"
       },
       {
+        "choices": [],
         "drill": "Running",
         "hurt": 0,
         "id": "hill",
@@ -146,9 +159,11 @@
         "stamina": -10,
         "text": "The coach finds a long hill behind the shrine. Sprints until sunset.",
         "text_ja": "神社の裏に長い坂を見つけた。日が沈むまでダッシュ。",
-        "weight": 1.0
+        "weight": 1.0,
+        "who": "any"
       },
       {
+        "choices": [],
         "drill": null,
         "hurt": 0,
         "id": "festival",
@@ -158,9 +173,11 @@
         "stamina": 0,
         "text": "The summer festival! The team helps at a stall and laughs all night.",
         "text_ja": "夏祭り！屋台を手伝って、みんな夜まで笑っていた。",
-        "weight": 0.5
+        "weight": 0.5,
+        "who": "any"
       },
       {
+        "choices": [],
         "drill": "Fielding",
         "hurt": 0,
         "id": "knock",
@@ -170,7 +187,213 @@
         "stamina": 0,
         "text": "One thousand ground balls. Nobody can feel their hands.",
         "text_ja": "ノック千本。誰も手の感覚がない。",
-        "weight": 1.0
+        "weight": 1.0,
+        "who": "any"
+      },
+      {
+        "choices": [
+          {
+            "drill": "Batting",
+            "mood": 0,
+            "points": 14.0,
+            "reply": "Two hundred more swings. {name} grins: \"I think I've got it.\"",
+            "reply_ja": "さらに二百本。{name}「何かつかめた気がします！」",
+            "reputation": 0.0,
+            "stamina": -15,
+            "team_mood": 0,
+            "team_stamina": 0,
+            "text": "Stay with him until he is done",
+            "text_ja": "気の済むまで付き合おう"
+          },
+          {
+            "drill": null,
+            "mood": 1,
+            "points": 0.0,
+            "reply": "{name} bows and goes home. He looks lighter the next morning.",
+            "reply_ja": "{name}は頭を下げて帰った。翌朝、表情が明るい。",
+            "reputation": 0.0,
+            "stamina": 15,
+            "team_mood": 0,
+            "team_stamina": 0,
+            "text": "Send him home to rest",
+            "text_ja": "今日はもう休め"
+          }
+        ],
+        "drill": null,
+        "hurt": 0,
+        "id": "night_swing",
+        "mood": 0,
+        "points": 0.0,
+        "reputation": 0.0,
+        "stamina": 0,
+        "text": "Long after dark, {name} is still swinging in the yard. \"Coach, just a little longer.\"",
+        "text_ja": "日が暮れても{name}が素振りを続けている。「監督、もう少しだけ振らせてください」",
+        "weight": 0.9,
+        "who": "any"
+      },
+      {
+        "choices": [
+          {
+            "drill": "Batting",
+            "mood": 1,
+            "points": 8.0,
+            "reply": "You find a hitch in his stride. {name} nods slowly.",
+            "reply_ja": "踏み込みのクセが見つかった。{name}はゆっくりうなずいた。",
+            "reputation": 0.0,
+            "stamina": 0,
+            "team_mood": 0,
+            "team_stamina": 0,
+            "text": "Look at his form together",
+            "text_ja": "一緒にフォームを見直そう"
+          },
+          {
+            "drill": null,
+            "mood": 2,
+            "points": 0.0,
+            "reply": "{name} laughs for the first time in days.",
+            "reply_ja": "{name}が何日かぶりに笑った。",
+            "reputation": 0.0,
+            "stamina": 5,
+            "team_mood": 0,
+            "team_stamina": 0,
+            "text": "Tell him everyone has weeks like this",
+            "text_ja": "誰にでもある、と声をかける"
+          }
+        ],
+        "drill": null,
+        "hurt": 0,
+        "id": "slump",
+        "mood": 0,
+        "points": 0.0,
+        "reputation": 0.0,
+        "stamina": 0,
+        "text": "{name} sits alone on the bench. \"Nothing works lately, coach.\"",
+        "text_ja": "{name}がベンチでひとり座っている。「最近、何をやってもダメで……」",
+        "weight": 0.9,
+        "who": "any"
+      },
+      {
+        "choices": [
+          {
+            "drill": null,
+            "mood": 0,
+            "points": 0.0,
+            "reply": "{name} sulks, then ices his arm every day. It feels fresh.",
+            "reply_ja": "{name}は少しふてくされたが、毎日しっかり冷やした。肩は軽い。",
+            "reputation": 0.0,
+            "stamina": 25,
+            "team_mood": 0,
+            "team_stamina": 0,
+            "text": "No throwing this week",
+            "text_ja": "今週は投げ込み禁止"
+          },
+          {
+            "drill": "Pitching",
+            "mood": 0,
+            "points": 9.0,
+            "reply": "Easy throws, good rhythm. {name}'s control is sharper.",
+            "reply_ja": "力を抜いた投球でリズムが良くなった。{name}の制球が冴える。",
+            "reputation": 0.0,
+            "stamina": -10,
+            "team_mood": 0,
+            "team_stamina": 0,
+            "text": "Light throwing only",
+            "text_ja": "軽めに投げておけ"
+          }
+        ],
+        "drill": null,
+        "hurt": 0,
+        "id": "sore_arm",
+        "mood": 0,
+        "points": 0.0,
+        "reputation": 0.0,
+        "stamina": 0,
+        "text": "{name} rubs his shoulder. \"It's a little tight, but I can throw.\"",
+        "text_ja": "{name}が肩をさすっている。「少し張ってますけど、投げられます」",
+        "weight": 0.9,
+        "who": "pitcher"
+      },
+      {
+        "choices": [
+          {
+            "drill": null,
+            "mood": 0,
+            "points": 0.0,
+            "reply": "A long talk in the clubhouse. Everyone leaves with a goal.",
+            "reply_ja": "部室で長い話し合い。みんな目標を口にして帰った。",
+            "reputation": 0.0,
+            "stamina": 0,
+            "team_mood": 1,
+            "team_stamina": -5,
+            "text": "Call a team meeting",
+            "text_ja": "全員でミーティングをしよう"
+          },
+          {
+            "drill": null,
+            "mood": 2,
+            "points": 0.0,
+            "reply": "{name} straightens up. The next day he is first on the field.",
+            "reply_ja": "{name}の背筋が伸びた。翌日、一番乗りでグラウンドに来ていた。",
+            "reputation": 0.5,
+            "stamina": 0,
+            "team_mood": 0,
+            "team_stamina": 0,
+            "text": "Tell him he is the one to lead",
+            "text_ja": "お前に任せる"
+          }
+        ],
+        "drill": null,
+        "hurt": 0,
+        "id": "captain_talk",
+        "mood": 0,
+        "points": 0.0,
+        "reputation": 0.0,
+        "stamina": 0,
+        "text": "{name} stays after practice. \"Coach, the team feels loose. Can we talk?\"",
+        "text_ja": "練習のあと{name}が残っていた。「監督、チームの雰囲気が緩んでいる気がします」",
+        "weight": 0.9,
+        "who": "senior"
+      },
+      {
+        "choices": [
+          {
+            "drill": "Fielding",
+            "mood": 1,
+            "points": 8.0,
+            "reply": "Grounder after grounder. {name} dives for the last one and comes up laughing.",
+            "reply_ja": "ノックを何本も。最後の一球に{name}が飛びつき、泥だらけで笑った。",
+            "reputation": 0.0,
+            "stamina": 0,
+            "team_mood": 0,
+            "team_stamina": 0,
+            "text": "Hit him grounders yourself",
+            "text_ja": "自分でノックを打ってやる"
+          },
+          {
+            "drill": null,
+            "mood": 2,
+            "points": 0.0,
+            "reply": "The seniors take him out for noodles. The club feels closer.",
+            "reply_ja": "先輩たちが{name}をラーメンに連れていった。部の空気が温かい。",
+            "reputation": 0.0,
+            "stamina": 0,
+            "team_mood": 1,
+            "team_stamina": 0,
+            "text": "Ask a senior to look after him",
+            "text_ja": "先輩に面倒を見てもらう"
+          }
+        ],
+        "drill": null,
+        "hurt": 0,
+        "id": "rookie_nerves",
+        "mood": 0,
+        "points": 0.0,
+        "reputation": 0.0,
+        "stamina": 0,
+        "text": "First-year {name} looks pale. \"The seniors are so good... can I really play here?\"",
+        "text_ja": "1年生の{name}が青い顔をしている。「先輩たちすごすぎて……僕、やっていけますか」",
+        "weight": 0.9,
+        "who": "rookie"
       }
     ],
     "id": "diamond_days",
