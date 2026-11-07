@@ -682,6 +682,14 @@ impl DiamondDays {
             (false, n) => format!("{w_all}-{l_all}, {n} national titles"),
         };
         p.text(&rec, 200.0, y + 4.0, 20.0, ORANGE, TextAlign::Center);
+        if !self.s.pros.is_empty() {
+            let pros = if ja {
+                format!("プロ入りOB {}人", self.s.pros.len())
+            } else {
+                format!("{} former players went pro", self.s.pros.len())
+            };
+            p.text(&pros, 200.0, y + 30.0, 14.0, INK_SOFT, TextAlign::Center);
+        }
         let (face, outfit) = art::manager();
         p.portrait(
             28.0,
@@ -1899,6 +1907,29 @@ impl DiamondDays {
             format!("Year {}  {}", pl.grade, pl.pos.short(false))
         };
         p.text(&sub, 160.0, 60.0, 15.0, INK, TextAlign::Left);
+        // This season's numbers in games.
+        let s = pl.season;
+        let line = if s.games == 0 {
+            self.tr("No games yet this season", "今季はまだ試合なし")
+                .to_string()
+        } else if pl.pitcher() && s.faced > s.ab {
+            if ja {
+                format!("今季 {}試合 {}奪三振 {}失点", s.games, s.k, s.allowed)
+            } else {
+                format!("{} games, {} K, {} runs", s.games, s.k, s.allowed)
+            }
+        } else if ja {
+            format!(
+                "今季 打率{} {}安打 {}本 {}打点",
+                s.avg(),
+                s.hits,
+                s.hr,
+                s.rbi
+            )
+        } else {
+            format!("{} avg, {} H, {} HR, {} RBI", s.avg(), s.hits, s.hr, s.rbi)
+        };
+        p.text(&line, 236.0, 62.0, 11.0, INK_SOFT, TextAlign::Left);
         art::mood_icon(p, [170.0, 96.0], 10.0, pl.mood);
         p.text(pl.mood.label(ja), 186.0, 87.0, 14.0, INK, TextAlign::Left);
         p.text(

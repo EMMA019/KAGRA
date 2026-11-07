@@ -284,6 +284,9 @@ struct Save {
     /// Wins and losses when this year began (the year's own record is the difference).
     #[serde(default)]
     year_from: (u32, u32),
+    /// Graduates who went pro: full name and the career year they left.
+    #[serde(default)]
+    pros: Vec<(String, u32)>,
 }
 
 /// One finished year in the career record.
@@ -967,6 +970,18 @@ impl DiamondDays {
             if !names.contains(&p.family) {
                 continue;
             }
+            let line = team::Stats {
+                games: 1,
+                ab: l.ab as u16,
+                hits: l.hits as u16,
+                hr: l.homers as u16,
+                rbi: l.rbi as u16,
+                faced: l.faced as u16,
+                k: l.k as u16,
+                allowed: l.allowed as u16,
+            };
+            p.season.add(&line);
+            p.career.add(&line);
             let mut add = |d: Drill, n: u32| {
                 p.xp[d.index()] = p.xp[d.index()].saturating_add(n as u16);
                 total += n;
@@ -1051,6 +1066,55 @@ impl DiamondDays {
                 );
             }
             k += 0.12;
+        }
+    }
+
+    /// The best bat and the best arm of the season, on a notice card.
+    fn season_awards(&mut self) {
+        let team = &self.s.team.players;
+        let bat = team
+            .iter()
+            .filter(|p| p.season.ab >= 8)
+            .max_by(|a, b| {
+                let k = |p: &team::Player| p.season.hits as f32 / p.season.ab as f32;
+                k(a).total_cmp(&k(b))
+                    .then(a.season.hits.cmp(&b.season.hits))
+            })
+            .map(|p| (p.family.clone(), p.season));
+        let arm = team
+            .iter()
+            .filter(|p| p.season.faced >= 15)
+            .max_by_key(|p| p.season.k)
+            .map(|p| (p.family.clone(), p.season));
+        let mut lines = Vec::new();
+        if let Some((n, s)) = bat {
+            lines.push((
+                format!(
+                    "Best bat: {n}, {} ({} for {}), {} HR, {} RBI.",
+                    s.avg(),
+                    s.hits,
+                    s.ab,
+                    s.hr,
+                    s.rbi
+                ),
+                format!(
+                    "首位打者：{n}　打率{}（{}打数{}安打）本塁打{} 打点{}",
+                    s.avg(),
+                    s.ab,
+                    s.hits,
+                    s.hr,
+                    s.rbi
+                ),
+            ));
+        }
+        if let Some((n, s)) = arm {
+            lines.push((
+                format!("Best arm: {n}, {} strikeouts.", s.k),
+                format!("奪三振王：{n}　{}奪三振", s.k),
+            ));
+        }
+        if !lines.is_empty() {
+            self.note("Season awards", "今季の表彰", lines);
         }
     }
 
@@ -1362,7 +1426,18 @@ impl DiamondDays {
                 .map(|p| (p.family.clone(), p.given.clone()))
                 .collect()
         };
+        // The season's prizes, then the pros, then the numbers start again.
+        self.season_awards();
+        let year_now = self.career_year();
+        for (fam, given, _, after) in &leaving {
+            if *after == team::After::Pro {
+                self.s.pros.push((format!("{fam} {given}"), year_now));
+            }
+        }
         let left = self.s.team.graduate();
+        for p in &mut self.s.team.players {
+            p.season = team::Stats::default();
+        }
         let y = self.s.year as usize;
         while self.s.results.len() < y {
             self.s.results.push(("-".into(), "-".into()));
@@ -2318,6 +2393,7 @@ fn fresh_save(seed: u32) -> Save {
         epilogue: false,
         history: Vec::new(),
         year_from: (0, 0),
+        pros: Vec::new(),
     }
 }
 

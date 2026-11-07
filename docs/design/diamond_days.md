@@ -171,6 +171,13 @@ The roster and the player picker are lists that follow a finger (drag, fling, sp
 at the ends); a tap that hardly moved opens a player. Raising stats pops "+1" by the row
 and the new grade ("ミート E→D!") over the page.
 
+Every game adds to each player's numbers, this season's and his whole time at the school:
+games, at bats, hits, home runs, runs batted in, and for pitchers batters faced,
+strikeouts and runs. A player's page shows this season's line. At the year's end a notice
+names the season's best bat (average, with at least 8 at bats) and best arm
+(strikeouts); then the season numbers start again. Graduates who go pro are remembered,
+and the career card counts them (プロ入りOB).
+
 ## Endless play
 
 A career does not end on its own. The year count runs on (1年目, 2年目, ... 30年目) and

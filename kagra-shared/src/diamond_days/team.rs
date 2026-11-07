@@ -299,6 +299,52 @@ pub struct Player {
     /// Hand-tuned portrait for the founding ace and captain.
     #[serde(default)]
     pub role: Role,
+    /// Numbers in games: this season (cleared every April) and his whole time here.
+    #[serde(default)]
+    pub season: Stats,
+    #[serde(default)]
+    pub career: Stats,
+}
+
+/// A player's numbers in games.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Stats {
+    pub games: u16,
+    /// At bats, hits, home runs, runs batted in.
+    pub ab: u16,
+    pub hits: u16,
+    pub hr: u16,
+    pub rbi: u16,
+    /// Pitching: batters faced, strikeouts, runs allowed.
+    pub faced: u16,
+    pub k: u16,
+    pub allowed: u16,
+}
+
+impl Stats {
+    pub fn add(&mut self, o: &Stats) {
+        self.games = self.games.saturating_add(o.games);
+        self.ab = self.ab.saturating_add(o.ab);
+        self.hits = self.hits.saturating_add(o.hits);
+        self.hr = self.hr.saturating_add(o.hr);
+        self.rbi = self.rbi.saturating_add(o.rbi);
+        self.faced = self.faced.saturating_add(o.faced);
+        self.k = self.k.saturating_add(o.k);
+        self.allowed = self.allowed.saturating_add(o.allowed);
+    }
+
+    /// Batting average as written on a scoreboard (".312"), or "---" with no at bats.
+    pub fn avg(&self) -> String {
+        if self.ab == 0 {
+            return "---".into();
+        }
+        let v = (self.hits as f32 / self.ab as f32 * 1000.0).round() as u32;
+        if v >= 1000 {
+            "1.000".into()
+        } else {
+            format!(".{v:03}")
+        }
+    }
 }
 
 fn default_menu() -> Drill {
@@ -682,6 +728,8 @@ pub fn rookie(rng: &mut Rng, grade: u8, pos: Pos, level: f32) -> Player {
         abilities: roll_abilities(rng, pitcher),
         study: 0,
         role: Role::Regular,
+        season: Stats::default(),
+        career: Stats::default(),
     }
 }
 

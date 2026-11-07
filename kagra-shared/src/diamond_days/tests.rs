@@ -1123,6 +1123,73 @@ fn a_raise_pops_up_on_the_players_page() {
     assert!(g.pops.is_empty());
 }
 
+/// Every game adds to the players' numbers, and the club's hits are theirs. At the year's
+/// end the best bat and arm are named, the season starts again, and pros are remembered.
+#[test]
+fn players_keep_their_numbers_and_the_year_names_its_best() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    g.s.week = 6;
+    g.begin_week();
+    press(&mut g, hud::Btn::PlayBall);
+    press(&mut g, hud::Btn::Skip);
+    let rep = g.report.clone().unwrap();
+    let ours: u32 = g.s.team.players.iter().map(|p| p.season.hits as u32).sum();
+    assert_eq!(
+        ours, rep.hits[rep.us] as u32,
+        "every hit belongs to somebody"
+    );
+    let played: Vec<_> =
+        g.s.team
+            .players
+            .iter()
+            .filter(|p| p.season.games == 1)
+            .collect();
+    assert!(played.len() >= 9, "the nine (and whoever pitched) played");
+    assert!(g.s.team.players.iter().all(|p| p.career == p.season));
+    // The year's end.
+    press(&mut g, hud::Btn::Continue);
+    for p in &mut g.s.team.players {
+        p.season.ab = p.season.ab.max(10);
+        p.season.faced = p.season.faced.max(20);
+    }
+    if let Some(p) = g.s.team.players.iter_mut().find(|p| p.grade == 3) {
+        p.contact = 99;
+        p.power = 99;
+        p.speed = 99;
+        p.field = 99;
+        p.arm = 99;
+    }
+    g.s.reputation = 100.0;
+    g.notes.clear();
+    g.game = None;
+    g.mode = Mode::Plan;
+    g.s.week = board::WEEKS;
+    g.end_week();
+    assert!(g.notes.iter().any(|n| n.title == "Season awards"));
+    assert!(g
+        .s
+        .team
+        .players
+        .iter()
+        .all(|p| p.season == team::Stats::default()));
+    assert!(
+        g.s.team.players.iter().any(|p| p.career.games >= 1),
+        "careers carry on"
+    );
+    assert!(!g.s.pros.is_empty(), "a star at a famous school goes pro");
+    assert_eq!(
+        team::Stats {
+            ab: 16,
+            hits: 5,
+            ..Default::default()
+        }
+        .avg(),
+        ".313"
+    );
+    assert_eq!(team::Stats::default().avg(), "---");
+}
+
 #[test]
 fn an_old_save_without_a_record_still_loads() {
     let g = started();
