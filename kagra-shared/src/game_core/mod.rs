@@ -46,6 +46,7 @@
 
 pub mod anim;
 pub mod chibi;
+pub mod chibi3d;
 pub mod collide;
 pub mod dialogue;
 pub mod enemies;

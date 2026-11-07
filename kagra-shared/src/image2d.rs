@@ -94,6 +94,12 @@ pub fn get(id: PicId) -> Option<Arc<Picture>> {
     reg.get(id.0 as usize).cloned()
 }
 
+/// The `texture` string that puts a registered picture on a 3D prop
+/// (`WorldProp::texture`): a field drawn with the vector parts, baked once, laid on a plane.
+pub fn texture_spec(id: PicId) -> String {
+    format!("image2d:{}", id.0)
+}
+
 /// Width and height of a registered picture.
 pub fn size(id: PicId) -> Option<(u32, u32)> {
     get(id).map(|p| (p.width, p.height))

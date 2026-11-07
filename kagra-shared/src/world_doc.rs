@@ -227,6 +227,12 @@ pub struct WorldDoc {
     /// so coplanar discs do not z-fight into black streaks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contact_blobs: Option<bool>,
+    /// Outline width of `toon` props in meters. None = 0.018.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub toon_outline: Option<f32>,
+    /// How dark the shadow side of a `toon` prop is (0 black .. 1 no shadow). None = 0.68.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub toon_shade: Option<f32>,
     /// Fog start in meters. None = 48.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fog_start: Option<f32>,
@@ -425,6 +431,11 @@ pub struct WorldProp {
     /// PNG path or `preset:core`. Multiplies the emissive color. Strength is `emissive`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub emissive_map: Option<String>,
+    /// Cel shading with a dark outline (a sphere, box, cylinder or cone without a texture
+    /// or glTF): the anime look of a deformed character built from primitives. The
+    /// outline width and shadow tone are the doc's `toon_outline` / `toon_shade`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub toon: bool,
     /// Interaction metadata (talk / use / examine). None = plain scenery.
     /// `on_use` emits an event when the player presses J/attack in reach.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1265,6 +1276,7 @@ impl WorldDoc {
         }
         let (gltf_ids, walker_gltf_ids) = self.gltf_mesh_ids();
         let tex_ids = self.texture_mesh_ids();
+        let toon_base = self.has_toon().then(|| self.toon_base());
 
         let sky = self.sky.unwrap_or([130, 165, 205, 255]);
         b.push_material(
@@ -1355,7 +1367,9 @@ impl WorldDoc {
                     continue;
                 }
             }
-            let mesh = mesh_for_prop(prop, &gltf_ids, &tex_ids);
+            let toon = toon_base.and_then(|base| toon_mesh(prop).map(|i| MeshId(base + i)));
+            let mesh = toon.unwrap_or_else(|| mesh_for_prop(prop, &gltf_ids, &tex_ids));
+            let mat = if toon.is_some() { Material::Toon } else { mat };
             let has_tex = prop
                 .texture
                 .as_deref()
@@ -1833,7 +1847,61 @@ impl WorldDoc {
                 out.push((MeshId(tex_base + i as u32), mesh));
             }
         }
+        if self.has_toon() {
+            let base = self.toon_base();
+            for (i, mesh) in self.toon_meshes().into_iter().enumerate() {
+                out.push((MeshId(base + i as u32), mesh));
+            }
+        }
         out
+    }
+
+    /// Does any shown prop ask for cel shading?
+    pub fn has_toon(&self) -> bool {
+        self.props.iter().any(|p| p.enabled && p.toon)
+    }
+
+    /// The toon primitives follow the glTF slots and the textured props.
+    fn toon_base(&self) -> u32 {
+        MESH_GLTF_BASE + self.gltf_slots().len() as u32 + self.textured_props().len() as u32
+    }
+
+    /// Outline width (meters) and shadow tone of `toon` props.
+    pub fn toon_style(&self) -> (f32, f32) {
+        (
+            self.toon_outline.unwrap_or(0.018).clamp(0.0, 0.5),
+            self.toon_shade.unwrap_or(0.68).clamp(0.0, 1.0),
+        )
+    }
+
+    /// Sphere, box, cylinder and cone with the MToon step and an outline (in that order:
+    /// see [`toon_mesh`]).
+    fn toon_meshes(&self) -> Vec<MeshData> {
+        let (outline, tone) = self.toon_style();
+        let shade = crate::scene3d::MtoonShade {
+            // A slightly cool shadow reads as light, not dirt.
+            shade_color: [tone * 0.93, tone * 0.93, (tone * 1.06).min(1.0)],
+            shading_toony: 0.9,
+            shading_shift: 0.05,
+            rim_color: [0.10, 0.10, 0.12],
+            rim_power: 4.0,
+            rim_lift: 0.0,
+            outline_color: [0.07, 0.06, 0.09],
+            outline_width: outline,
+            ..Default::default()
+        };
+        [
+            primitives::sphere_mesh(0.5, 24),
+            primitives::box_mesh(Vec3::ONE),
+            primitives::cylinder_mesh(0.5, 1.0, 20),
+            primitives::cone_mesh(0.5, 1.0, 16),
+        ]
+        .into_iter()
+        .map(|mut m| {
+            m.mtoon = Some(shade);
+            m
+        })
+        .collect()
     }
 
     fn heightfield_mesh(&self) -> MeshData {
@@ -1900,6 +1968,10 @@ impl WorldDoc {
                     prop.emissive_map.as_deref().unwrap_or(""),
                 ));
             }
+        }
+        if self.has_toon() {
+            let (w, t) = self.toon_style();
+            parts.push(format!("toon:{w}:{t}"));
         }
         parts.push(format!("lod:{}", self.vegetation_lod_cells()));
         if let Some(l) = &self.mesh_lod {
@@ -2358,11 +2430,25 @@ fn prop_has_maps(prop: &WorldProp) -> bool {
         || map_spec(&prop.emissive_map).is_some()
 }
 
+/// A prop `texture` of `image2d:<id>`: a picture the kit registered or baked at run time
+/// ([`crate::image2d::texture_spec`]), so a field's chalk and grass can be drawn with the 2D
+/// vector parts and laid on the ground.
+fn image2d_texture(spec: &str) -> Option<crate::image2d::PicId> {
+    spec.strip_prefix("image2d:")?
+        .trim()
+        .parse()
+        .ok()
+        .map(crate::image2d::PicId)
+}
+
 /// Does `load_png_albedo(path)` have a file to read? (No decode.)
 pub fn texture_exists(path: &str) -> bool {
     let spec = path.trim();
     if spec.is_empty() {
         return false;
+    }
+    if let Some(id) = image2d_texture(spec) {
+        return crate::image2d::get(id).is_some();
     }
     [
         PathBuf::from(spec),
@@ -2381,6 +2467,14 @@ pub fn load_png_albedo(path: &str) -> Option<crate::scene3d::AlbedoRgba> {
     let spec = path.trim();
     if spec.is_empty() {
         return None;
+    }
+    if let Some(id) = image2d_texture(spec) {
+        let pic = crate::image2d::get(id)?;
+        return Some(crate::scene3d::AlbedoRgba {
+            width: pic.width,
+            height: pic.height,
+            rgba: pic.rgba.as_slice().into(),
+        });
     }
     let candidates = [
         PathBuf::from(spec),
@@ -2754,6 +2848,21 @@ fn mesh_for_prop(
         "torus" | "ring" => MESH_TORUS,
         "cone" => MESH_CONE,
         _ => MESH_BOX,
+    }
+}
+
+/// Which toon primitive a `toon` prop draws with (an offset from the doc's toon base), or
+/// `None` when it is not a plain primitive (a texture or a glTF keeps its own mesh).
+fn toon_mesh(prop: &WorldProp) -> Option<u32> {
+    if !prop.toon || prop_texture_path(prop).is_some() || prop_gltf_spec(prop).is_some() {
+        return None;
+    }
+    match prop.model.to_ascii_lowercase().as_str() {
+        "sphere" => Some(0),
+        "box" | "cube" | "" => Some(1),
+        "cylinder" | "capsule" => Some(2),
+        "cone" => Some(3),
+        _ => None,
     }
 }
 
