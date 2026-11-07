@@ -973,8 +973,11 @@ impl DiamondDays {
             .iter()
             .flat_map(|(en, jp)| wrap(if ja { jp } else { en }, 16.0, 312.0))
             .collect();
+        // Faces in rows of four under the lines (who graduates, who joins).
+        let face_rows = n.faces.len().min(12).div_ceil(4);
+        let faces_h = face_rows as f32 * 92.0;
         // Lines from 46 below the top; the manager and the prompt take the last 104.
-        let tall = (46.0 + lines.len() as f32 * 25.0 + 112.0)
+        let tall = (46.0 + lines.len() as f32 * 25.0 + faces_h + 112.0)
             .max(220.0)
             .min(p.st.h - 80.0);
         let y = (p.st.h - tall) * 0.5;
@@ -998,7 +1001,19 @@ impl DiamondDays {
             19.0,
             [255, 150, 60, 255],
         );
-        let max_lines = ((tall - 46.0 - 104.0) / 25.0).max(1.0) as usize;
+        let max_lines = ((tall - 46.0 - 104.0 - faces_h) / 25.0).max(1.0) as usize;
+        let fy = y + 46.0 + lines.len().min(max_lines) as f32 * 25.0 + 6.0;
+        let fresh = n.title == "New faces";
+        for (k, (fam, given)) in n.faces.iter().take(12).enumerate() {
+            let (col, row) = (k % 4, k / 4);
+            let in_row = (n.faces.len().min(12) - row * 4).min(4);
+            let x = 200.0 - in_row as f32 * 41.0 + col as f32 * 82.0 + 9.0;
+            let yy = fy + row as f32 * 92.0;
+            let face = art::face_of(&format!("{fam}{given}"));
+            let expr = if fresh { Expr::Happy } else { Expr::Smile };
+            p.portrait(x, yy, 64.0, &face, expr, &Outfit::cap(OURS), 1.0);
+            p.text(fam, x + 32.0, yy + 66.0, 12.0, INK, TextAlign::Center);
+        }
         for (k, ln) in lines.iter().take(max_lines).enumerate() {
             // The first line (what happened) a little bigger.
             let (size, col) = if k == 0 {

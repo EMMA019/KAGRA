@@ -177,6 +177,8 @@ struct Note {
     title: String,
     title_ja: String,
     lines: Vec<(String, String)>,
+    /// Players shown with their faces (family, given): who graduates, who joins.
+    faces: Vec<(String, String)>,
 }
 
 /// What the device keeps between visits (`page.save`), and what a new run starts from.
@@ -374,6 +376,7 @@ impl DiamondDays {
             title: title.into(),
             title_ja: title_ja.into(),
             lines,
+            faces: Vec::new(),
         });
         self.mode = Mode::Notice;
     }
@@ -715,6 +718,14 @@ impl DiamondDays {
     }
 
     fn end_year(&mut self) {
+        let names = |t: &Team, grade: u8| -> Vec<(String, String)> {
+            t.players
+                .iter()
+                .filter(|p| p.grade == grade)
+                .map(|p| (p.family.clone(), p.given.clone()))
+                .collect()
+        };
+        let leaving = names(&self.s.team, 3);
         let left = self.s.team.graduate();
         let y = self.s.year as usize;
         while self.s.results.len() < y {
@@ -734,26 +745,37 @@ impl DiamondDays {
             .s
             .team
             .recruit(&mut self.rng, self.s.reputation, scouted);
-        self.note(
-            "Spring",
-            "春",
-            vec![
-                (
+        if left > 0 {
+            self.note(
+                "Graduation",
+                "卒業式",
+                vec![(
                     format!("{left} third-years graduated. Thank you, seniors."),
-                    format!("3年生{left}人が卒業。先輩、ありがとう。"),
+                    format!("3年生{left}人が卒業。先輩、三年間ありがとう。"),
+                )],
+            );
+            if let Some(n) = self.notes.last_mut() {
+                n.faces = leaving;
+            }
+        }
+        self.note(
+            "New faces",
+            "新入部員",
+            vec![(
+                format!(
+                    "{joined} first-years joined the club. Year {} begins.",
+                    self.s.year
                 ),
-                (
-                    format!(
-                        "{joined} first-years joined the club. Year {} begins.",
-                        self.s.year
-                    ),
-                    format!(
-                        "新入部員が{joined}人入った。{}年目のはじまり。",
-                        self.s.year
-                    ),
+                format!(
+                    "新入部員が{joined}人入った。{}年目のはじまり。",
+                    self.s.year
                 ),
-            ],
+            )],
         );
+        let fresh = names(&self.s.team, 1);
+        if let Some(n) = self.notes.last_mut() {
+            n.faces = fresh;
+        }
     }
 
     fn finish_run(&mut self) {

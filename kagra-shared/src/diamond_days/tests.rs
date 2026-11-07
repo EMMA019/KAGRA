@@ -517,6 +517,25 @@ fn screens_to_png() {
     ];
     g.s.wins = 41;
     g.s.losses = 12;
+    // The year's turn: graduation and the first-years, with faces.
+    let mut spring = DiamondDays::new(DiamondDaysSpec::default());
+    spring.set_lang("ja");
+    spring.confirm();
+    spring.notes.clear();
+    spring.s.week = board::WEEKS;
+    spring.end_week();
+    assert!(spring
+        .notes
+        .iter()
+        .any(|n| n.title == "Graduation" && !n.faces.is_empty()));
+    assert!(spring
+        .notes
+        .iter()
+        .any(|n| n.title == "New faces" && !n.faces.is_empty()));
+    spring.mode = Mode::Notice;
+    shot(&spring, "13_graduation");
+    spring.notes.remove(0);
+    shot(&spring, "14_new_faces");
     g.finish_run();
     shot(&g, "11_record");
     // A kept run on the title.
