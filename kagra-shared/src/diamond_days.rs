@@ -335,7 +335,8 @@ pub struct DiamondDays {
     /// The hop between squares (0..1) and where it started.
     hop: f32,
     hop_from: usize,
-    roster_scroll: usize,
+    /// The roster (and the player picker) as a list that follows a finger.
+    roster: crate::hud_art::Scroll,
     /// A saved run to resume (from `world.save`).
     resume: Option<Save>,
     /// The week as it was before the card was played: what a save while walking keeps, so
@@ -363,6 +364,12 @@ pub struct DiamondDays {
     fast: bool,
     /// The order was opened from the pre-game screen (closing it goes back there).
     lineup_from_intro: bool,
+    /// The coach asked to call the next plate appearance (any batter, not only chances).
+    want_call: bool,
+    /// Today's opponent, drawn up on game day so the pre-game screen can show their ace.
+    pending_rival: Option<Side>,
+    /// Words popping up over the screen ("UP!", a new grade).
+    pops: crate::hud_art::Pops,
 }
 
 impl DiamondDays {
@@ -383,7 +390,7 @@ impl DiamondDays {
             auto_orders: false,
             hop: 1.0,
             hop_from: 0,
-            roster_scroll: 0,
+            roster: crate::hud_art::Scroll::default(),
             resume: None,
             pre_walk: None,
             start_week: None,
@@ -398,6 +405,9 @@ impl DiamondDays {
             report: None,
             fast: false,
             lineup_from_intro: false,
+            want_call: false,
+            pending_rival: None,
+            pops: crate::hud_art::Pops::default(),
         };
         g.build_doc();
         g
@@ -661,9 +671,29 @@ impl DiamondDays {
     fn prepare_game(&mut self, f: Fixture) {
         let idx = self.pick_rival(f);
         self.rival_idx = Some(idx);
+        self.pending_rival = Some(self.rival_side(f, idx));
         self.fixture = Some(f);
         self.mode = Mode::MatchIntro;
         crate::mixer::cue_sfx("event");
+    }
+
+    /// The opponent's nine for a fixture against school `idx`.
+    fn rival_side(&mut self, f: Fixture, idx: usize) -> Side {
+        let (en, ja) = self
+            .s
+            .rivals
+            .get(idx)
+            .map(|s| (s.name.clone(), s.name_ja.clone()))
+            .unwrap_or_else(|| board::rival_name(f, self.s.year, self.s.week));
+        let strength = self.s.rivals.get(idx).map(|s| s.strength).unwrap_or(40.0);
+        let ease = if matches!(f, Fixture::Spring(_)) {
+            self.s.autumn_wins as f32 * 2.5
+        } else {
+            0.0
+        };
+        let level =
+            (strength * 0.72 + board::rival_level(f, self.s.year) * 0.28 - ease).clamp(28.0, 92.0);
+        Side::rival(&mut self.rng, &en, &ja, level)
     }
 
     /// Play ball: build both nines (the order as it stands now) and start.
@@ -685,21 +715,10 @@ impl DiamondDays {
             _ => self.pick_rival(f),
         };
         self.rival_idx = Some(idx);
-        let (en, ja) = self
-            .s
-            .rivals
-            .get(idx)
-            .map(|s| (s.name.clone(), s.name_ja.clone()))
-            .unwrap_or_else(|| board::rival_name(f, self.s.year, self.s.week));
-        let rival = &self.s.rivals[idx];
-        let ease = if matches!(f, Fixture::Spring(_)) {
-            self.s.autumn_wins as f32 * 2.5
-        } else {
-            0.0
+        let them = match self.pending_rival.take() {
+            Some(s) => s,
+            None => self.rival_side(f, idx),
         };
-        let level = (rival.strength * 0.72 + board::rival_level(f, self.s.year) * 0.28 - ease)
-            .clamp(28.0, 92.0);
-        let them = Side::rival(&mut self.rng, &en, &ja, level);
         let first = self.rng.unit() < 0.5;
         let seed = self.rng.next_u32();
         let mut g = Game::new(us, them, first, seed);
@@ -994,6 +1013,45 @@ impl DiamondDays {
                 }
             });
         (total, star)
+    }
+
+    /// Words over the player's page for every stat that rose since `before`: "+1" by the
+    /// row, and the new grade when the letter changes.
+    fn pop_growth(&mut self, i: usize, before: &team::Player) {
+        let (w, h) = self.size.get();
+        let ja = self.lang_ja;
+        let rows = self.raise_rows(w, h);
+        let after = self.s.team.players[i].clone();
+        let mut k = 0.0;
+        for st in team::Stat::ALL {
+            let (a, b) = (before.stat(st), after.stat(st));
+            if b <= a {
+                continue;
+            }
+            let Some(r) = rows.iter().find(|(s, _)| *s == st).map(|(_, r)| *r) else {
+                continue;
+            };
+            let at = [r[0] - 40.0, r[1] + r[3] * 0.5];
+            let unit = if st == team::Stat::Velo { "km/h" } else { "" };
+            self.pops.push(
+                at,
+                format!("+{}{unit}", b - a),
+                [255, 214, 80, 255],
+                18.0,
+                k,
+            );
+            let (ga, gb) = (team::grade(a), team::grade(b));
+            if st != team::Stat::Velo && ga != gb {
+                self.pops.push(
+                    [200.0, r[1] - 6.0],
+                    format!("{} {ga}→{gb}!", st.label(ja)),
+                    [255, 150, 60, 255],
+                    26.0,
+                    k + 0.2,
+                );
+            }
+            k += 0.12;
+        }
     }
 
     /// The coach leaves the result screen: the notes the week left, or the next week.
@@ -1654,6 +1712,12 @@ impl DiamondDays {
 
     fn step_sim(&mut self, dt: f32) {
         self.clock += dt;
+        self.pops.tick(dt);
+        let (w, h) = self.size.get();
+        let view = hud::list_view(self.stage(w, h).h);
+        self.roster.view = view[3];
+        self.roster.content = hud::list_content(self.s.team.players.len());
+        self.roster.step(dt);
         match self.mode.clone() {
             Mode::Walk { left, t, card } => {
                 let t = t + dt;
@@ -1759,11 +1823,22 @@ impl DiamondDays {
             self.end_game();
             return;
         }
-        // A chance or a pinch: the coach calls it (unless the team plays on its own).
-        if let Some(spot) = g.spot() {
+        // A chance or a pinch, or any batter the coach asked for: the coach calls it
+        // (unless the team plays on its own).
+        let spot = g.spot().or_else(|| {
+            (self.want_call && !g.over && !g.asked_now()).then(|| {
+                if g.batting() == g.us {
+                    Spot::Chance
+                } else {
+                    Spot::Pinch
+                }
+            })
+        });
+        if let Some(spot) = spot {
             if self.auto_orders {
                 g.call(None);
             } else {
+                self.want_call = false;
                 self.mode = Mode::Match {
                     shown,
                     t: 0.0,
@@ -1855,6 +1930,40 @@ impl DiamondDays {
     pub fn touch_ev(&mut self, ev: PointerEvent, w: u32, h: u32) {
         let (w, h) = (w.max(1) as f32, h.max(1) as f32);
         self.size.set((w, h));
+        // The roster and the player picker follow a finger; a tap that hardly moved picks.
+        if self.flow.phase == FlowPhase::Play
+            && matches!(self.mode, Mode::Roster | Mode::Lineup { pick: Some(_) })
+        {
+            let st = self.stage(w, h);
+            let (_, y) = st.to_design(ev.x, ev.y);
+            let view = hud::list_view(st.h);
+            self.roster.view = view[3];
+            self.roster.content = hud::list_content(self.s.team.players.len());
+            match ev.phase {
+                PointerPhase::Begin if st.hit(ev.x, ev.y, view) => {
+                    self.roster.press(y);
+                    return;
+                }
+                PointerPhase::Move if self.roster.dragging() => {
+                    self.roster.drag(y);
+                    return;
+                }
+                PointerPhase::End | PointerPhase::Cancel if self.roster.dragging() => {
+                    if self.roster.release() && ev.phase == PointerPhase::End {
+                        let rows: Vec<_> = self
+                            .hud_buttons(w, h)
+                            .into_iter()
+                            .filter(|(b, _)| matches!(b, hud::Btn::Row(_) | hud::Btn::Assign(_)))
+                            .collect();
+                        if let Some(b) = crate::hud_kit::hit(&rows, ev.x, ev.y) {
+                            self.press(b);
+                        }
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        }
         if ev.phase != PointerPhase::Begin {
             return;
         }
@@ -2028,21 +2137,25 @@ impl DiamondDays {
         match b {
             hud::Btn::Card(i) => self.play_card(i),
             hud::Btn::Roster => {
-                self.roster_scroll = 0;
+                self.roster = crate::hud_art::Scroll::default();
                 self.mode = Mode::Roster;
             }
             hud::Btn::Call(t) => self.give_call(t),
             hud::Btn::Auto => self.leave_to_team(),
             hud::Btn::Raise(st) => {
                 if let Mode::Player(i) = self.mode {
+                    let before = self.s.team.players[i].clone();
                     if self.s.team.players[i].raise(st) {
                         crate::mixer::cue_sfx("train");
+                        self.pop_growth(i, &before);
                     }
                 }
             }
             hud::Btn::AutoRaise => {
                 if let Mode::Player(i) = self.mode {
+                    let before = self.s.team.players[i].clone();
                     self.s.team.players[i].auto_raise();
+                    self.pop_growth(i, &before);
                 } else {
                     for p in &mut self.s.team.players {
                         p.auto_raise();
@@ -2081,6 +2194,13 @@ impl DiamondDays {
             hud::Btn::PlayBall => self.play_ball(),
             hud::Btn::Continue => self.after_match(),
             hud::Btn::Speed => self.fast = !self.fast,
+            hud::Btn::Orders => {
+                self.want_call = !self.want_call;
+                if self.want_call {
+                    self.auto_orders = false;
+                }
+                crate::mixer::cue_sfx("card");
+            }
             hud::Btn::Choose(k) => {
                 if matches!(self.mode, Mode::CampTalk { .. }) {
                     self.answer_camp(k);
@@ -2121,11 +2241,8 @@ impl DiamondDays {
             hud::Btn::School(i) => self.continue_move(i as usize),
             hud::Btn::EndStory => self.finish_run(),
             hud::Btn::Skip => self.skip_game(),
-            hud::Btn::RosterUp => self.roster_scroll = self.roster_scroll.saturating_sub(4),
-            hud::Btn::RosterDown => {
-                self.roster_scroll =
-                    (self.roster_scroll + 4).min(self.s.team.players.len().saturating_sub(1))
-            }
+            hud::Btn::RosterUp => self.roster.nudge(-(hud::ROW_H + 4.0) * 3.0),
+            hud::Btn::RosterDown => self.roster.nudge((hud::ROW_H + 4.0) * 3.0),
         }
     }
 

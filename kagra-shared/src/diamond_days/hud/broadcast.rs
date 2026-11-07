@@ -901,11 +901,33 @@ impl DiamondDays {
                     _ => {}
                 }
             }
+            for (b, rr) in &l.buttons {
+                if *b == Btn::Orders {
+                    p.button(
+                        rr[0],
+                        rr[1],
+                        rr[2],
+                        rr[3],
+                        if self.want_call {
+                            self.tr("NEXT BATTER", "次の打者で")
+                        } else {
+                            self.tr("CALL", "作戦")
+                        },
+                        15.0,
+                        if self.want_call {
+                            [230, 150, 30, 255]
+                        } else {
+                            [60, 110, 200, 255]
+                        },
+                        true,
+                    );
+                }
+            }
             p.text(
-                self.tr("Tap: next", "タップで先へ"),
+                self.tr("Tap the picture: next", "画面タップで先へ"),
                 200.0,
-                hh - 40.0,
-                12.0,
+                hh - 76.0,
+                11.0,
                 [190, 200, 230, 255],
                 TextAlign::Center,
             );
@@ -1020,7 +1042,15 @@ impl DiamondDays {
             [240, 232, 214, 250],
             16.0,
         );
+        // A call the coach asked for, with nobody in scoring position, is not a chance.
+        let risp = g.bases[1].is_some() || g.bases[2].is_some();
         let (en, jp, c) = match spot {
+            Spot::Chance if !risp => ("Your call, coach?", "作戦は？", [60, 110, 200, 255]),
+            Spot::Pinch if !risp => (
+                "On defense: your call?",
+                "守りの作戦は？",
+                [60, 110, 200, 255],
+            ),
             Spot::Chance => (
                 "A chance! Your call?",
                 "チャンス！ 作戦は？",
@@ -1206,13 +1236,51 @@ impl DiamondDays {
         p.text_outlined(
             "VS",
             200.0,
-            ey - 26.0,
-            40.0,
+            ey - 48.0,
+            36.0,
             art::GOLD,
             [40, 20, 10, 255],
             3.0,
             TextAlign::Center,
         );
+        // Their ace, between the crests.
+        if let Some(arm) = self.pending_rival.as_ref().and_then(|s| s.arms.first()) {
+            p.text(
+                self.tr("THEIR ACE", "相手エース"),
+                200.0,
+                ey - 6.0,
+                10.0,
+                [230, 210, 160, 255],
+                TextAlign::Center,
+            );
+            p.portrait(
+                174.0,
+                ey + 6.0,
+                52.0,
+                &art::face_of(&arm.name),
+                Expr::Fiery,
+                &Outfit::cap(them_col),
+                1.0,
+            );
+            p.text_outlined(
+                &arm.name,
+                200.0,
+                ey + 58.0,
+                13.0,
+                WHITE,
+                [10, 12, 26, 255],
+                1.6,
+                TextAlign::Center,
+            );
+            p.text(
+                &format!("{:.0} km/h", arm.velo),
+                200.0,
+                ey + 75.0,
+                11.0,
+                [220, 226, 240, 255],
+                TextAlign::Center,
+            );
+        }
         // Strength and the record between us.
         let ours = grade(self.s.team.strength().round() as u8);
         let theirs = grade(rival.map(|s| s.strength.round() as u8).unwrap_or(50));

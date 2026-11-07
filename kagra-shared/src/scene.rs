@@ -287,15 +287,35 @@ impl Mesh2d {
     }
 }
 
+/// The overlap of two clip rectangles (x, y, w, h); None means unclipped. Rectangles that
+/// do not meet give an empty one (zero size).
+pub fn clip_within(a: Option<[f32; 4]>, b: Option<[f32; 4]>) -> Option<[f32; 4]> {
+    match (a, b) {
+        (None, r) | (r, None) => r,
+        (Some(a), Some(b)) => {
+            let x0 = a[0].max(b[0]);
+            let y0 = a[1].max(b[1]);
+            let x1 = (a[0] + a[2]).min(b[0] + b[2]);
+            let y1 = (a[1] + a[3]).min(b[1] + b[3]);
+            Some([x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0)])
+        }
+    }
+}
+
 /// 1 フレームぶんの描画内容。
 ///
 /// Draw order: `mesh`, then `quads`, then `texts`, then each of `layers` the same way
 /// (depth first). A layer is a whole `DrawList` on top of everything before it, so a popup
 /// drawn into a layer covers the text under it, and every `hud_kit` helper draws into a
 /// layer as it does into the base list. A layer's `clear` is ignored.
+///
+/// `clip` keeps a list (and its layers) inside a screen rectangle: a scrolling list, a
+/// window onto a bigger picture.
 #[derive(Clone, Debug, Default)]
 pub struct DrawList {
     pub clear: [u8; 4],
+    /// Draw only inside this screen rectangle (x, y, w, h), within any parent's.
+    pub clip: Option<[f32; 4]>,
     pub mesh: Mesh2d,
     pub quads: Vec<Quad>,
     pub texts: Vec<TextQuad>,
@@ -324,6 +344,25 @@ impl DrawList {
         for l in &self.layers {
             out.extend(l.flatten());
         }
+        out
+    }
+
+    /// [`DrawList::flatten`] with the rectangle each list is drawn in: its own `clip` within
+    /// its parents' (None: the whole screen).
+    pub fn flatten_clipped(&self) -> Vec<(&DrawList, Option<[f32; 4]>)> {
+        fn walk<'a>(
+            l: &'a DrawList,
+            outer: Option<[f32; 4]>,
+            out: &mut Vec<(&'a DrawList, Option<[f32; 4]>)>,
+        ) {
+            let clip = clip_within(outer, l.clip);
+            out.push((l, clip));
+            for c in &l.layers {
+                walk(c, clip, out);
+            }
+        }
+        let mut out = Vec::new();
+        walk(self, None, &mut out);
         out
     }
 

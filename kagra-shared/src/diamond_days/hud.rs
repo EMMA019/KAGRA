@@ -64,6 +64,8 @@ pub enum Btn {
     Continue,
     /// Double speed in a game.
     Speed,
+    /// Call the next plate appearance, whoever bats.
+    Orders,
 }
 
 fn push_choices(b: &mut Vec<(Btn, [f32; 4])>, hh: f32, n: usize) {
@@ -95,8 +97,26 @@ struct Layout {
     buttons: Vec<(Btn, [f32; 4])>,
 }
 
-const ROW_H: f32 = 58.0;
-const ROSTER_TOP: f32 = 124.0;
+pub(super) const ROW_H: f32 = 58.0;
+pub(super) const ROSTER_TOP: f32 = 124.0;
+
+/// The window onto the roster (and the player picker): rows scroll inside it.
+pub(super) fn list_view(hh: f32) -> [f32; 4] {
+    [10.0, ROSTER_TOP, 380.0, (hh - ROSTER_TOP - 72.0).max(ROW_H)]
+}
+
+/// Height of `n` rows.
+pub(super) fn list_content(n: usize) -> f32 {
+    (n as f32 * (ROW_H + 4.0) - 4.0).max(0.0)
+}
+
+fn overlap(a: [f32; 4], b: [f32; 4]) -> Option<[f32; 4]> {
+    let x0 = a[0].max(b[0]);
+    let y0 = a[1].max(b[1]);
+    let x1 = (a[0] + a[2]).min(b[0] + b[2]);
+    let y1 = (a[1] + a[3]).min(b[1] + b[3]);
+    (x1 > x0 && y1 > y0).then_some([x0, y0, x1 - x0, y1 - y0])
+}
 
 /// Lines that fit `width` design units at `size` (Japanese breaks anywhere, English at spaces).
 fn wrap(text: &str, size: f32, width: f32) -> Vec<String> {
@@ -130,7 +150,7 @@ fn wrap(text: &str, size: f32, width: f32) -> Vec<String> {
 }
 
 impl DiamondDays {
-    fn stage(&self, w: f32, h: f32) -> Stage {
+    pub(super) fn stage(&self, w: f32, h: f32) -> Stage {
         Stage::fit(w, h, 400.0, 700.0)
     }
 
@@ -161,16 +181,12 @@ impl DiamondDays {
             Mode::Roster => {
                 b.push((Btn::RosterUp, [296.0, 78.0, 42.0, 34.0]));
                 b.push((Btn::RosterDown, [344.0, 78.0, 42.0, 34.0]));
-                let rows = self.roster_rows(hh);
-                for k in 0..rows {
-                    let i = self.roster_scroll + k;
-                    if i >= self.s.team.players.len() {
-                        break;
+                // Rows answer only where they show in the window.
+                let view = list_view(hh);
+                for (i, r) in self.list_rows(hh) {
+                    if let Some(hit) = overlap(r, view) {
+                        b.push((Btn::Row(i), hit));
                     }
-                    b.push((
-                        Btn::Row(i),
-                        [10.0, ROSTER_TOP + k as f32 * (ROW_H + 4.0), 380.0, ROW_H],
-                    ));
                 }
                 b.push((Btn::Lineup, [10.0, hh - 60.0, 88.0, 48.0]));
                 b.push((Btn::AutoRaise, [106.0, hh - 60.0, 156.0, 48.0]));
@@ -178,16 +194,11 @@ impl DiamondDays {
             }
             Mode::Lineup { pick } => {
                 if pick.is_some() {
-                    let rows = self.roster_rows(hh);
-                    for k in 0..rows {
-                        let i = self.roster_scroll + k;
-                        if i >= self.s.team.players.len() {
-                            break;
+                    let view = list_view(hh);
+                    for (i, r) in self.list_rows(hh) {
+                        if let Some(hit) = overlap(r, view) {
+                            b.push((Btn::Assign(i), hit));
                         }
-                        b.push((
-                            Btn::Assign(i),
-                            [10.0, ROSTER_TOP + k as f32 * (ROW_H + 4.0), 380.0, ROW_H],
-                        ));
                     }
                     b.push((Btn::RosterUp, [10.0, hh - 60.0, 70.0, 48.0]));
                     b.push((Btn::RosterDown, [88.0, hh - 60.0, 70.0, 48.0]));
@@ -276,6 +287,7 @@ impl DiamondDays {
                 }
                 None => {
                     b.push((Btn::Speed, [10.0, hh - 62.0, 120.0, 46.0]));
+                    b.push((Btn::Orders, [140.0, hh - 62.0, 120.0, 46.0]));
                     b.push((Btn::Skip, [270.0, hh - 62.0, 120.0, 46.0]));
                 }
             },
@@ -315,8 +327,16 @@ impl DiamondDays {
         Layout { st, buttons: b }
     }
 
-    fn roster_rows(&self, hh: f32) -> usize {
-        (((hh - ROSTER_TOP - 72.0) / (ROW_H + 4.0)) as usize).max(3)
+    /// The roster rows in the window now (player, the row's whole rectangle).
+    fn list_rows(&self, hh: f32) -> Vec<(usize, [f32; 4])> {
+        let view = list_view(hh);
+        (0..self.s.team.players.len())
+            .map(|i| {
+                let y = ROSTER_TOP + i as f32 * (ROW_H + 4.0) - self.roster.offset;
+                (i, [10.0, y, 380.0, ROW_H])
+            })
+            .filter(|(_, r)| overlap(*r, view).is_some())
+            .collect()
     }
 
     fn call_panel(&self, hh: f32) -> [f32; 4] {
@@ -397,10 +417,26 @@ impl DiamondDays {
         if let Mode::CampTalk { who } = self.mode {
             self.draw_camp_talk(&mut p, who, &l);
         }
+        if !self.pops.is_empty() {
+            p.layer();
+            self.pops.draw(&mut p);
+        }
         if menu && self.flow.phase == FlowPhase::Pause {
             self.draw_pause(&mut p);
         }
         list
+    }
+
+    /// The stat rows on a player's page (design units), for the words that pop up there.
+    pub(super) fn raise_rows(&self, w: f32, h: f32) -> Vec<(Stat, [f32; 4])> {
+        self.layout(w, h)
+            .buttons
+            .into_iter()
+            .filter_map(|(b, r)| match b {
+                Btn::Raise(st) => Some((st, r)),
+                _ => None,
+            })
+            .collect()
     }
 
     // ---- our own cards, when the host has no HTML ones (Android, desktop)
@@ -1399,6 +1435,7 @@ impl DiamondDays {
             format!("The club  {}", self.s.team.players.len())
         };
         p.text(&title, 24.0, 84.0, 18.0, WHITE, TextAlign::Left);
+        self.draw_list(p, |me, p, i, r| me.draw_row(p, i, r));
         for (b, r) in &l.buttons {
             let [x, y, w, h] = *r;
             match *b {
@@ -1411,15 +1448,13 @@ impl DiamondDays {
                         "▲",
                         14.0,
                         [80, 100, 160, 255],
-                        self.roster_scroll > 0,
+                        self.roster.offset > 0.5,
                     );
                 }
                 Btn::RosterDown => {
-                    let more =
-                        self.roster_scroll + self.roster_rows(p.st.h) < self.s.team.players.len();
+                    let more = self.roster.offset < self.roster.max() - 0.5;
                     p.button(x, y, w, h, "▼", 14.0, [80, 100, 160, 255], more);
                 }
-                Btn::Row(i) => self.draw_row(p, i, *r),
                 Btn::Lineup => {
                     super::sprites::button(p, [x, y, w, h], self.tr("ORDER", "打順"), 15.0, false);
                 }
@@ -1440,6 +1475,28 @@ impl DiamondDays {
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// The rows in the list window, clipped to it, with a soft edge where they run on.
+    fn draw_list(&self, p: &mut Painter, row: impl Fn(&Self, &mut Painter, usize, [f32; 4])) {
+        let view = list_view(p.st.h);
+        p.clip_layer(view);
+        for (i, r) in self.list_rows(p.st.h) {
+            row(self, p, i, r);
+        }
+        p.layer();
+        // A thin bar shows where in the list the window is.
+        let max = self.roster.max();
+        if max > 1.0 {
+            let frac = view[3] / (view[3] + max);
+            let bar_h = (view[3] * frac).max(24.0);
+            let k = (self.roster.offset / max).clamp(0.0, 1.0);
+            let y = view[1] + (view[3] - bar_h) * k;
+            p.fill(
+                &vector::rounded_rect(view[0] + view[2] - 4.0, y, 4.0, bar_h, 2.0),
+                Paint::Solid([255, 255, 255, 150]),
+            );
         }
     }
 
@@ -1583,12 +1640,12 @@ impl DiamondDays {
             TextAlign::Left,
         );
         if pick.is_some() {
+            self.draw_list(p, |me, p, i, r| me.draw_row(p, i, r));
             for (b, r) in &l.buttons {
                 let [x, y, w, h] = *r;
                 match *b {
-                    Btn::Assign(i) => self.draw_row(p, i, *r),
                     Btn::RosterUp => {
-                        p.button(x, y, w, h, "▲", 14.0, art::NAVY, self.roster_scroll > 0);
+                        p.button(x, y, w, h, "▲", 14.0, art::NAVY, self.roster.offset > 0.5);
                     }
                     Btn::RosterDown => {
                         p.button(x, y, w, h, "▼", 14.0, art::NAVY, true);

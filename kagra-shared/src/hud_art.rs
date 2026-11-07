@@ -89,6 +89,180 @@ impl Stage {
     }
 }
 
+/// Words that pop up on the stage and rise as they fade ("UP!", "+1", a new grade), in
+/// design units. The game pushes them where something happened, ticks them, and draws them
+/// last so they sit on top.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Pops {
+    items: Vec<Pop>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct Pop {
+    at: P,
+    text: String,
+    color: Rgba,
+    size: f32,
+    delay: f32,
+    age: f32,
+}
+
+/// Seconds a pop lives.
+pub const POP_SECS: f32 = 1.2;
+
+impl Pops {
+    /// A word at `at` (its centre), after `delay` seconds.
+    pub fn push(&mut self, at: P, text: impl Into<String>, color: Rgba, size: f32, delay: f32) {
+        self.items.push(Pop {
+            at,
+            text: text.into(),
+            color,
+            size,
+            delay: delay.max(0.0),
+            age: 0.0,
+        });
+    }
+
+    pub fn tick(&mut self, dt: f32) {
+        for p in &mut self.items {
+            if p.delay > 0.0 {
+                p.delay -= dt;
+            } else {
+                p.age += dt;
+            }
+        }
+        self.items.retain(|p| p.age < POP_SECS);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.items.clear();
+    }
+
+    /// Draw on the painter's top layer: a quick overshoot, a rise, a fade at the end.
+    pub fn draw(&self, p: &mut Painter) {
+        for it in self.items.iter().filter(|it| it.delay <= 0.0) {
+            let k = (it.age / POP_SECS).clamp(0.0, 1.0);
+            let grow = (k / 0.18).min(1.0);
+            let scale =
+                0.6 + 0.4 * grow + (1.0 - grow) * 0.0 + (grow * std::f32::consts::PI).sin() * 0.25;
+            let fade = if k > 0.65 {
+                1.0 - (k - 0.65) / 0.35
+            } else {
+                1.0
+            };
+            let a = |c: Rgba| [c[0], c[1], c[2], (c[3] as f32 * fade) as u8];
+            let size = it.size * scale;
+            let y = it.at[1] - 26.0 * (1.0 - (1.0 - k).powi(2)) - size * 0.55;
+            p.text_outlined(
+                &it.text,
+                it.at[0],
+                y,
+                size,
+                a(it.color),
+                a([24, 20, 40, 255]),
+                (size * 0.09).max(1.0),
+                TextAlign::Center,
+            );
+        }
+    }
+}
+
+/// A list that follows a finger, in design units: drag it, fling it, and it settles back
+/// inside its ends. The game feeds pointer positions (`press`, `drag`, `release`) and time
+/// (`step`), draws its rows at `-offset`, and treats a release that did not move as a tap.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Scroll {
+    /// How far the content is scrolled (0: the top row at the top).
+    pub offset: f32,
+    /// Height of everything in the list and of the window onto it.
+    pub content: f32,
+    pub view: f32,
+    vel: f32,
+    /// Where a drag started (y), the offset then, the last y and the distance moved.
+    drag: Option<[f32; 4]>,
+}
+
+/// A drag shorter than this (design units) is a tap.
+pub const TAP_SLOP: f32 = 9.0;
+
+impl Scroll {
+    /// The furthest the list scrolls.
+    pub fn max(&self) -> f32 {
+        (self.content - self.view).max(0.0)
+    }
+
+    pub fn dragging(&self) -> bool {
+        self.drag.is_some()
+    }
+
+    /// A finger comes down at `y`; a fling in progress stops.
+    pub fn press(&mut self, y: f32) {
+        self.vel = 0.0;
+        self.drag = Some([y, self.offset, y, 0.0]);
+    }
+
+    /// The finger moves to `y`. Past either end the list moves at a third of the finger.
+    pub fn drag(&mut self, y: f32) {
+        let Some([y0, off0, last, moved]) = self.drag else {
+            return;
+        };
+        let want = off0 + (y0 - y);
+        let over = if want < 0.0 {
+            want
+        } else if want > self.max() {
+            want - self.max()
+        } else {
+            0.0
+        };
+        self.offset = want - over * (2.0 / 3.0);
+        let step = last - y;
+        // Units per second at 60 Hz pointer rate, smoothed.
+        self.vel = self.vel * 0.4 + step * 60.0 * 0.6;
+        self.drag = Some([y0, off0, y, moved.max((y - y0).abs())]);
+    }
+
+    /// The finger lifts. True if it was a tap (it hardly moved).
+    pub fn release(&mut self) -> bool {
+        match self.drag.take() {
+            Some([.., moved]) if moved < TAP_SLOP => {
+                self.vel = 0.0;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Scroll by `d` (buttons, a wheel): a short glide there.
+    pub fn nudge(&mut self, d: f32) {
+        self.vel = d * 4.0;
+    }
+
+    /// Let time pass: a fling slows down, and a list past an end springs back.
+    pub fn step(&mut self, dt: f32) {
+        if self.drag.is_some() {
+            return;
+        }
+        let dt = dt.clamp(0.0, 0.1);
+        self.offset += self.vel * dt;
+        self.vel *= (-4.5 * dt).exp();
+        let max = self.max();
+        let target = self.offset.clamp(0.0, max);
+        if (self.offset - target).abs() > 0.01 {
+            self.vel *= (-12.0 * dt).exp();
+            self.offset += (target - self.offset) * (1.0 - (-14.0 * dt).exp());
+        } else {
+            self.offset = target;
+        }
+        if self.vel.abs() < 1.0 {
+            self.vel = 0.0;
+        }
+    }
+}
+
 /// Draws in design units on a [`Stage`], always on the list's top layer.
 pub struct Painter<'a> {
     pub list: &'a mut DrawList,
@@ -103,6 +277,13 @@ impl<'a> Painter<'a> {
     /// Start a layer: everything after covers everything before (text included).
     pub fn layer(&mut self) {
         self.list.layer();
+    }
+
+    /// Start a layer that only draws inside the design rectangle `r` (a scrolling list, a
+    /// window). [`Painter::layer`] ends it.
+    pub fn clip_layer(&mut self, r: [f32; 4]) {
+        let s = self.st.rect(r[0], r[1], r[2], r[3]);
+        self.list.layer().clip = Some(s);
     }
 
     pub fn mesh(&mut self) -> &mut Mesh2d {
@@ -606,6 +787,76 @@ mod tests {
         assert_eq!(list.texts.len(), 1);
         assert!(list.layers[0].mesh.triangles() > 40);
         assert!(!list.layers[0].texts.is_empty());
+    }
+
+    #[test]
+    fn a_scroll_follows_the_finger_flings_and_settles_inside() {
+        let mut s = Scroll {
+            content: 1000.0,
+            view: 400.0,
+            ..Default::default()
+        };
+        s.press(300.0);
+        for k in 1..=10 {
+            s.drag(300.0 - k as f32 * 10.0);
+        }
+        assert!((s.offset - 100.0).abs() < 1e-3);
+        assert!(!s.release(), "a drag is not a tap");
+        let before = s.offset;
+        for _ in 0..30 {
+            s.step(1.0 / 60.0);
+        }
+        assert!(
+            s.offset > before + 50.0,
+            "the fling carries on: {}",
+            s.offset
+        );
+        for _ in 0..600 {
+            s.step(1.0 / 60.0);
+        }
+        assert!(s.offset <= s.max() + 0.01 && s.offset >= 0.0);
+        // Pulled past the top it gives at a third, then springs back.
+        s.offset = 0.0;
+        s.press(100.0);
+        s.drag(190.0);
+        assert!((s.offset + 30.0).abs() < 1e-3, "{}", s.offset);
+        s.release();
+        for _ in 0..120 {
+            s.step(1.0 / 60.0);
+        }
+        assert!(s.offset.abs() < 0.05, "{}", s.offset);
+        // A press that does not move is a tap.
+        s.press(50.0);
+        s.drag(53.0);
+        assert!(s.release());
+    }
+
+    #[test]
+    fn pops_wait_rise_and_go() {
+        let mut pops = Pops::default();
+        pops.push([100.0, 200.0], "UP!", [255, 200, 60, 255], 20.0, 0.5);
+        let mut list = DrawList::default();
+        let st = Stage::fit(400.0, 700.0, 400.0, 700.0);
+        Painter::new(&mut list, st).text("", 0.0, 0.0, 1.0, [0; 4], TextAlign::Left);
+        pops.draw(&mut Painter::new(&mut list, st));
+        let before = list.texts.len();
+        assert_eq!(before, 1, "still waiting");
+        pops.tick(0.6);
+        pops.draw(&mut Painter::new(&mut list, st));
+        assert!(list.texts.len() > before);
+        for _ in 0..100 {
+            pops.tick(0.05);
+        }
+        assert!(pops.is_empty());
+    }
+
+    #[test]
+    fn a_clip_layer_is_in_screen_pixels() {
+        let mut list = DrawList::default();
+        let st = Stage::fit(800.0, 1400.0, 400.0, 700.0);
+        let mut p = Painter::new(&mut list, st);
+        p.clip_layer([10.0, 20.0, 100.0, 50.0]);
+        assert_eq!(list.layers[0].clip, Some([20.0, 40.0, 200.0, 100.0]));
     }
 
     #[test]

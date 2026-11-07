@@ -156,11 +156,20 @@ A fixture is the game part, on its own screens:
    switches to the field from above with the ball's flight and the runners. Chances and
    pinches stop for the coach's call as before. A tap skips to the result; double speed
    and "to the end" are buttons.
+   The coach can also call any batter: the 作戦 button asks for the next plate appearance,
+   whoever bats, chance or not.
 3. **The result.** Win or loss, the final line score, the player of the game (a chibi
    cheering, with his line), the game experience the club earned (practice points: batting
    for every one of the nine, more per hit; pitching for whoever pitched, more for
    strikeouts; fielding on a win), what it means for the tournament, a word from Kotori,
    then back to practice.
+
+The game-day screen shows their ace (face, name, speed) between the crests: he is the one
+who starts.
+
+The roster and the player picker are lists that follow a finger (drag, fling, spring back
+at the ends); a tap that hardly moved opens a player. Raising stats pops "+1" by the row
+and the new grade ("ミート E→D!") over the page.
 
 ## Endless play
 

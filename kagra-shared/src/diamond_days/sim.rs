@@ -598,6 +598,12 @@ impl Game {
         })
     }
 
+    /// The coach already made a call for the plate appearance now.
+    pub fn asked_now(&self) -> bool {
+        let s = self.batting();
+        self.asked == Some((s, self.up[s]))
+    }
+
     /// The coach's call for the plate appearance now (None: let them play).
     pub fn call(&mut self, t: Option<Tactic>) {
         let s = self.batting();

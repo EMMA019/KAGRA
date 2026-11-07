@@ -13,19 +13,25 @@ fn started() -> DiamondDays {
     g
 }
 
-fn tap(g: &mut DiamondDays, x: f32, y: f32) {
+fn touch(g: &mut DiamondDays, x: f32, y: f32, phase: PointerPhase) {
     g.touch(
         PointerEvent {
             id: 1,
             x,
             y,
-            phase: PointerPhase::Begin,
+            phase,
             pressure: 1.0,
         },
         W,
         H,
         0.0,
     );
+}
+
+/// A finger down and up on one spot.
+fn tap(g: &mut DiamondDays, x: f32, y: f32) {
+    touch(g, x, y, PointerPhase::Begin);
+    touch(g, x, y, PointerPhase::End);
 }
 
 fn press(g: &mut DiamondDays, b: hud::Btn) {
@@ -147,8 +153,14 @@ fn a_game_stops_at_chances_and_pinches_for_the_coachs_call() {
     g.set_lang("en");
     let hud = g.hud(W, H, true);
     assert!(all_texts(&hud).any(|t| t.text == "PLAY BALL!"));
+    // Their ace is on the card, and he is the one who starts.
+    assert!(all_texts(&hud).any(|t| t.text == "THEIR ACE"));
+    let ace = g.pending_rival.as_ref().unwrap().arms[0].name.clone();
+    assert!(all_texts(&hud).any(|t| t.text == ace));
     press(&mut g, hud::Btn::PlayBall);
     assert!(matches!(g.mode, Mode::Match { .. }));
+    let them = g.game.as_ref().map(|gm| 1 - gm.us).unwrap();
+    assert_eq!(g.game.as_ref().unwrap().sides[them].arms[0].name, ace);
     let mut calls = 0;
     for _ in 0..20000 {
         match g.mode {
@@ -376,7 +388,46 @@ fn the_roster_opens_and_scrolls() {
     let first = &g.s.team.players[0].family;
     assert!(all_texts(&hud).any(|t| t.text.contains(first.as_str())));
     press(&mut g, hud::Btn::RosterDown);
-    assert_eq!(g.roster_scroll, 4);
+    run(&mut g, 0.6);
+    assert!(
+        g.roster.offset > 50.0,
+        "the button glides the list: {}",
+        g.roster.offset
+    );
+    // A finger drags the list; a drag opens nothing.
+    let before = g.roster.offset;
+    touch(&mut g, 195.0, 600.0, PointerPhase::Begin);
+    for k in 1..=10 {
+        touch(&mut g, 195.0, 600.0 + k as f32 * 8.0, PointerPhase::Move);
+    }
+    touch(&mut g, 195.0, 680.0, PointerPhase::End);
+    assert_eq!(g.mode, Mode::Roster);
+    assert!(
+        g.roster.offset < before - 40.0,
+        "{} -> {}",
+        before,
+        g.roster.offset
+    );
+    run(&mut g, 2.0);
+    assert!(g.roster.offset >= 0.0 && g.roster.offset <= g.roster.max() + 0.01);
+    // A row shown in the window opens on a tap; rows scrolled away do not answer.
+    let rows: Vec<_> = g
+        .hud_buttons(W as f32, H as f32)
+        .into_iter()
+        .filter(|(b, _)| matches!(b, hud::Btn::Row(_)))
+        .collect();
+    assert!(!rows.is_empty());
+    let view = hud::list_view(g.stage(W as f32, H as f32).h);
+    let st = g.stage(W as f32, H as f32);
+    let v = st.rect(view[0], view[1], view[2], view[3]);
+    assert!(rows
+        .iter()
+        .all(|(_, r)| r[1] >= v[1] - 0.5 && r[1] + r[3] <= v[1] + v[3] + 0.5));
+    let (b, r) = rows[0];
+    tap(&mut g, r[0] + r[2] * 0.5, r[1] + r[3] * 0.5);
+    let hud::Btn::Row(i) = b else { unreachable!() };
+    assert_eq!(g.mode, Mode::Player(i));
+    press(&mut g, hud::Btn::Back);
     // A tap outside the list closes it.
     tap(&mut g, 4.0, 400.0);
     assert_eq!(g.mode, Mode::Plan);
@@ -494,11 +545,20 @@ fn screens_to_png() {
     }
     press(&mut g, hud::Btn::Roster);
     shot(&g, "05_roster");
+    press(&mut g, hud::Btn::RosterDown);
+    run(&mut g, 0.12);
+    shot(&g, "05b_roster_moving");
+    run(&mut g, 1.0);
+    g.roster.offset = 0.0;
     for p in &mut g.s.team.players {
         p.xp = [60, 50, 40, 30, 20];
     }
     press(&mut g, hud::Btn::Row(0));
     shot(&g, "06_player");
+    press(&mut g, hud::Btn::AutoRaise);
+    run(&mut g, 0.35);
+    shot(&g, "06b_growth");
+    run(&mut g, 3.0);
     press(&mut g, hud::Btn::Back);
     press(&mut g, hud::Btn::Close);
     g.s.week = 6;
@@ -1015,6 +1075,52 @@ fn the_pitches_show_the_game_as_it_was_before_the_play() {
         }
     }
     panic!("no third out and hit found: {checked:?}");
+}
+
+/// The coach can call any batter, not only chances and pinches.
+#[test]
+fn the_coach_calls_the_next_batter_on_request() {
+    let mut g = started();
+    g.set_lang("ja");
+    tap(&mut g, 195.0, 400.0);
+    g.s.week = 6;
+    g.begin_week();
+    press(&mut g, hud::Btn::PlayBall);
+    press(&mut g, hud::Btn::Orders);
+    assert!(g.want_call);
+    for _ in 0..2000 {
+        if let Mode::Match {
+            asking: Some(spot), ..
+        } = g.mode
+        {
+            assert!(matches!(spot, Spot::Chance | Spot::Pinch));
+            assert!(!g.want_call, "the request is used up");
+            let hud = g.hud(W, H, false);
+            assert!(all_texts(&hud).any(|t| t.text.contains("作戦は？")));
+            press(&mut g, hud::Btn::Call(None));
+            return;
+        }
+        run(&mut g, 0.1);
+    }
+    panic!("the call never came");
+}
+
+/// Raising a stat pops the gain over its row, and the new grade when the letter changes.
+#[test]
+fn a_raise_pops_up_on_the_players_page() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    press(&mut g, hud::Btn::Roster);
+    let i = 0;
+    g.s.team.players[i].xp = [900, 900, 900, 900, 900];
+    press(&mut g, hud::Btn::Row(i));
+    press(&mut g, hud::Btn::AutoRaise);
+    assert!(!g.pops.is_empty());
+    run(&mut g, 0.4);
+    let hud = g.hud(W, H, false);
+    assert!(all_texts(&hud).any(|t| t.text.starts_with('+')));
+    run(&mut g, 3.0);
+    assert!(g.pops.is_empty());
 }
 
 #[test]

@@ -16,6 +16,8 @@ pub struct Canvas {
     pub h: u32,
     pub rgba: Vec<u8>,
     glyphs: HashMap<(char, u32, TextFace), Option<Coverage>>,
+    /// The list being drawn keeps inside this (x0, y0, x1, y1), like the GPU scissor.
+    clip: Option<[i32; 4]>,
 }
 
 impl Canvas {
@@ -29,12 +31,21 @@ impl Canvas {
             h,
             rgba,
             glyphs: HashMap::new(),
+            clip: None,
         }
     }
 
     /// Draw a whole list (and its layers) the way the renderer does.
     pub fn draw(&mut self, list: &DrawList) {
-        for l in list.flatten() {
+        for (l, clip) in list.flatten_clipped() {
+            self.clip = clip.map(|[x, y, w, h]| {
+                [
+                    x.floor() as i32,
+                    y.floor() as i32,
+                    (x + w).ceil() as i32,
+                    (y + h).ceil() as i32,
+                ]
+            });
             for run in l.mesh.runs() {
                 match run {
                     MeshRun::Tris(vs) => {
@@ -57,6 +68,11 @@ impl Canvas {
     fn blend(&mut self, x: i32, y: i32, c: [f32; 4]) {
         if x < 0 || y < 0 || x >= self.w as i32 || y >= self.h as i32 || c[3] <= 0.0 {
             return;
+        }
+        if let Some([x0, y0, x1, y1]) = self.clip {
+            if x < x0 || y < y0 || x >= x1 || y >= y1 {
+                return;
+            }
         }
         let i = ((y as u32 * self.w + x as u32) * 4) as usize;
         let a = c[3].clamp(0.0, 1.0);
@@ -355,6 +371,29 @@ mod tests {
         assert!(matches!(runs[0], MeshRun::Tris(_)));
         assert!(matches!(runs[1], MeshRun::Sprite(_)));
         assert!(matches!(runs[2], MeshRun::Tris(_)));
+    }
+
+    #[test]
+    fn a_clipped_layer_stays_inside_its_rectangle() {
+        let mut list = DrawList {
+            clear: [0, 0, 0, 255],
+            ..Default::default()
+        };
+        let l = list.layer();
+        l.clip = Some([10.0, 10.0, 20.0, 20.0]);
+        l.quads
+            .push(Quad::new(0.0, 0.0, 60.0, 60.0, [255, 0, 0, 255]));
+        // A layer inside it keeps to the overlap of both rectangles.
+        let inner = l.layer();
+        inner.clip = Some([20.0, 0.0, 40.0, 60.0]);
+        inner
+            .quads
+            .push(Quad::new(0.0, 0.0, 60.0, 60.0, [0, 255, 0, 255]));
+        let c = picture(&list, 60, 60);
+        assert_eq!(c.pixel(5, 5), [0, 0, 0, 255], "outside the clip");
+        assert_eq!(c.pixel(15, 15), [255, 0, 0, 255]);
+        assert_eq!(c.pixel(25, 25), [0, 255, 0, 255]);
+        assert_eq!(c.pixel(45, 25), [0, 0, 0, 255], "outside the parent's clip");
     }
 
     #[test]

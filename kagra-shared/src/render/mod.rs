@@ -1786,7 +1786,7 @@ impl Renderer {
         // Instant::now can panic on wasm32 before a time source exists.
         #[cfg(not(target_arch = "wasm32"))]
         let cpu_start = std::time::Instant::now();
-        let vertices = self.build_vertices(hud);
+        let (vertices, clips) = self.build_vertices(hud);
         self.ensure_vertex_capacity(vertices.len());
         if !vertices.is_empty() {
             self.queue
@@ -2244,7 +2244,24 @@ impl Renderer {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.screen_bind, &[]);
             pass.set_vertex_buffer(0, self.vbuf.slice(..));
-            pass.draw(0..vertices.len() as u32, 0..1);
+            // One draw per run of lists with the same clip rectangle (a scissor).
+            let (tw, th) = (self.width.max(1), self.height.max(1));
+            for (start, end, clip) in &clips {
+                match clip {
+                    Some([x, y, w, h]) => {
+                        let x0 = (x.floor().max(0.0) as u32).min(tw);
+                        let y0 = (y.floor().max(0.0) as u32).min(th);
+                        let x1 = (((x + w).ceil()).max(0.0) as u32).min(tw);
+                        let y1 = (((y + h).ceil()).max(0.0) as u32).min(th);
+                        if x1 <= x0 || y1 <= y0 {
+                            continue;
+                        }
+                        pass.set_scissor_rect(x0, y0, x1 - x0, y1 - y0);
+                    }
+                    None => pass.set_scissor_rect(0, 0, tw, th),
+                }
+                pass.draw(*start..*end, 0..1);
+            }
         }
         if let Some(ts) = &clock {
             encoder.write_timestamp(&ts.query, 1);
@@ -2310,9 +2327,15 @@ impl Renderer {
         }
     }
 
-    fn build_vertices(&mut self, list: &DrawList) -> Vec<Vertex> {
+    /// The HUD's vertices, and the runs of them that share a clip rectangle
+    /// (start, end, clip).
+    #[allow(clippy::type_complexity)]
+    fn build_vertices(
+        &mut self,
+        list: &DrawList,
+    ) -> (Vec<Vertex>, Vec<(u32, u32, Option<[f32; 4]>)>) {
         let (quads, tris, texts) = list.counts();
-        let lists = list.flatten();
+        let lists = list.flatten_clipped();
         // Each list in order: its triangles and pictures, its quads, then its text, so a layer
         // covers the text of the lists under it. A full atlas (glyphs or pictures) starts over
         // once and lays the frame out again; if one frame alone overflows it, that frame draws
@@ -2321,8 +2344,10 @@ impl Renderer {
         let (mut glyphs_cleared, mut pictures_cleared) = (false, false);
         loop {
             let mut out = Vec::with_capacity((quads + texts * 8) * 6 + tris * 3);
+            let mut runs: Vec<(u32, u32, Option<[f32; 4]>)> = Vec::new();
             let mut overflow = None;
-            for l in &lists {
+            for (l, clip) in &lists {
+                let start = out.len() as u32;
                 if self.shape_vertices(l, pictures, &mut out).is_err() {
                     overflow = Some(false);
                     break;
@@ -2331,9 +2356,15 @@ impl Renderer {
                     overflow = Some(true);
                     break;
                 }
+                let end = out.len() as u32;
+                match runs.last_mut() {
+                    Some(r) if r.2 == *clip && r.1 == start => r.1 = end,
+                    _ if end > start => runs.push((start, end, *clip)),
+                    _ => {}
+                }
             }
             match overflow {
-                None => return out,
+                None => return (out, runs),
                 Some(true) => {
                     self.atlas.clear();
                     text = !std::mem::replace(&mut glyphs_cleared, true);
