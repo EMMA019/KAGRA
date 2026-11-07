@@ -344,6 +344,27 @@ impl<'a> Painter<'a> {
         self.mesh().sprite(pic, r, uv, tint);
     }
 
+    /// Frame `frame` of a sprite sheet of `cols` x `rows` equal cells (left to right, top to
+    /// bottom; the number wraps) over `rect`. Leave a clear pixel between cells so filtering
+    /// does not pick up the neighbour.
+    #[allow(clippy::too_many_arguments)]
+    pub fn image_frame(
+        &mut self,
+        pic: PicId,
+        cols: u32,
+        rows: u32,
+        frame: u32,
+        rect: [f32; 4],
+        tint: Rgba,
+    ) {
+        let (c, r) = (cols.max(1), rows.max(1));
+        let f = frame % (c * r);
+        let (fx, fy) = ((f % c) as f32, (f / c) as f32);
+        let (cw, ch) = (1.0 / c as f32, 1.0 / r as f32);
+        let uv = [fx * cw, fy * ch, (fx + 1.0) * cw, (fy + 1.0) * ch];
+        self.image_part(pic, rect, uv, tint);
+    }
+
     /// Fill the rectangle with the picture at its own aspect, cropping what overflows
     /// (anchored at `focus`, 0..1 on each axis: 0.5 keeps the centre).
     pub fn image_cover(&mut self, pic: PicId, rect: [f32; 4], focus: [f32; 2], tint: Rgba) {
@@ -871,6 +892,14 @@ mod tests {
         // A square box shows the middle half of a 2:1 picture.
         p.image_cover(pic, [0.0, 0.0, 10.0, 10.0], [0.5, 0.5], [255; 4]);
         assert_eq!(list.mesh.sprites[1].uv, [0.25, 0.0, 0.75, 1.0]);
+        // Frame 5 of a 4 x 2 sheet is the second cell of the second row; 9 wraps to 1.
+        let mut p = Painter::new(&mut list, st);
+        p.image_frame(pic, 4, 2, 5, [0.0, 0.0, 10.0, 10.0], [255; 4]);
+        p.image_frame(pic, 4, 2, 9, [0.0, 0.0, 10.0, 10.0], [255; 4]);
+        let n = list.mesh.sprites.len();
+        assert_eq!(list.mesh.sprites[n - 2].uv, [0.25, 0.5, 0.5, 1.0]);
+        assert_eq!(list.mesh.sprites[n - 1].uv, [0.25, 0.0, 0.5, 0.5]);
+        list.mesh.sprites.truncate(2);
         let mut p = Painter::new(&mut list, st);
         p.nine_slice(pic, [0.0, 0.0, 100.0, 60.0], 10.0, 0.25, 0.0, [255; 4]);
         assert_eq!(list.mesh.sprites.len(), 2 + 9);

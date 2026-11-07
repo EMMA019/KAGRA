@@ -8,7 +8,7 @@ use super::team::{Drill, Mood, Player, Role};
 use crate::game_core::chibi::{self, Facing, Kit, Pose};
 use crate::game_core::portrait::{Expr, Face, Outfit};
 use crate::hud_art::Painter;
-use crate::scene::Vert2;
+use crate::scene::{DrawList, Vert2};
 use crate::vector::{self, mix, shade, Paint, Rgba, P};
 
 pub const INK: Rgba = [34, 38, 52, 255];
@@ -338,6 +338,130 @@ fn crowd(p: &mut Painter, x0: f32, y0: f32, w: f32, h: f32, clip: &[P], light: f
     }
 }
 
+/// Design units one crowd frame covers (it repeats across the stands).
+const CROWD_TILE: [f32; 2] = [64.0, 32.0];
+/// Pixels per design unit in the baked crowd.
+const CROWD_PX: f32 = 3.0;
+
+/// The crowd, baked once into a sheet of two frames (seated, and cheering with arms up):
+/// a few dozen little fans in every shirt colour on a clear background, made to repeat.
+fn crowd_sheet() -> Option<crate::image2d::PicId> {
+    static SHEET: std::sync::OnceLock<Option<crate::image2d::PicId>> = std::sync::OnceLock::new();
+    *SHEET.get_or_init(|| {
+        let (fw, fh) = (CROWD_TILE[0] * CROWD_PX, CROWD_TILE[1] * CROWD_PX);
+        let shirts: [Rgba; 8] = [
+            [242, 242, 244, 255],
+            [228, 84, 76, 255],
+            [66, 118, 210, 255],
+            [250, 200, 72, 255],
+            [112, 188, 112, 255],
+            [242, 146, 58, 255],
+            [196, 112, 200, 255],
+            [60, 66, 92, 255],
+        ];
+        let skins: [Rgba; 3] = [
+            [250, 216, 186, 255],
+            [232, 190, 150, 255],
+            [206, 160, 122, 255],
+        ];
+        let hairs: [Rgba; 3] = [[40, 34, 40, 255], [80, 56, 44, 255], [30, 30, 34, 255]];
+        let mut seed: u32 = 2024;
+        let mut rnd = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed
+        };
+        // 12 x 4 fans a frame, every other row half a seat over.
+        let (cols, rows) = (12usize, 4usize);
+        let (cw, ch) = (fw / cols as f32, fh / rows as f32);
+        let mut fans = Vec::new();
+        for r in 0..rows {
+            for c in 0..cols {
+                let jx = (rnd() % 5) as f32 - 2.0;
+                let shirt = shirts[(rnd() % 8) as usize];
+                let skin = skins[(rnd() % 3) as usize];
+                let hair = hairs[(rnd() % 3) as usize];
+                let hop = (rnd() % 3) as f32;
+                let x = c as f32 * cw + cw * 0.5 + jx + if r % 2 == 1 { cw * 0.5 } else { 0.0 };
+                fans.push((x, r as f32 * ch, shirt, skin, hair, hop));
+            }
+        }
+        let mut list = DrawList::default();
+        for frame in 0..2 {
+            let ox = frame as f32 * fw;
+            let cheer = frame == 1;
+            let cell = [[ox, 0.0], [ox + fw, 0.0], [ox + fw, fh], [ox, fh]];
+            let m = &mut list.mesh;
+            for &(x, y, shirt, skin, hair, hop) in &fans {
+                // A fan cut by the frame's edge shows on the other side, so tiles join.
+                for wrap in [0.0, -fw, fw] {
+                    let cx = ox + x + wrap;
+                    if cx < ox - cw || cx > ox + fw + cw {
+                        continue;
+                    }
+                    let lift = if cheer { 2.0 + hop } else { 0.0 };
+                    let top = y + ch * 0.42 - lift;
+                    let body = vector::rounded_rect(cx - cw * 0.34, top, cw * 0.68, ch * 0.5, 3.0);
+                    vector::fill(m, &vector::clip_convex(&body, &cell), &Paint::Solid(shirt));
+                    if cheer {
+                        for s in [-1.0f32, 1.0] {
+                            let a = [cx + s * cw * 0.28, top + 2.0];
+                            let b = [cx + s * cw * 0.42, top - ch * 0.42];
+                            let fits = |q: P| q[0] > ox + 1.0 && q[0] < ox + fw - 1.0 && q[1] > 1.0;
+                            if fits(a) && fits(b) {
+                                vector::stroke(m, &[a, b], 2.4, skin);
+                            }
+                        }
+                    }
+                    let head = [cx, top - ch * 0.12];
+                    let r = ch * 0.17;
+                    let disc = vector::clip_convex(&vector::circle(head[0], head[1], r), &cell);
+                    vector::fill(m, &disc, &Paint::Solid(skin));
+                    let cap = vector::arc(
+                        head[0],
+                        head[1] - 0.5,
+                        r * 1.05,
+                        r,
+                        std::f32::consts::PI,
+                        std::f32::consts::TAU,
+                        8,
+                    );
+                    vector::fill(m, &vector::clip_convex(&cap, &cell), &Paint::Solid(hair));
+                }
+            }
+        }
+        crate::image2d::bake(&list, (fw * 2.0) as u32, fh as u32).ok()
+    })
+}
+
+/// The crowd filling a rectangle of stands, tiled from the baked sheet (a few dozen
+/// triangles instead of thousands), dimmed by `light`. `cheer` swaps in the arms-up frame
+/// row by row.
+pub fn crowd_rect(p: &mut Painter, r: [f32; 4], light: f32, cheer: bool, clock: f32) {
+    let Some(sheet) = crowd_sheet() else {
+        return;
+    };
+    let [x, y, w, h] = r;
+    let v = (110.0 + 145.0 * light.clamp(0.0, 1.0)) as u8;
+    let tint = [v, v, v.saturating_add(8), 255];
+    p.clip_layer(r);
+    let [tw, th] = CROWD_TILE;
+    let mut ty = y;
+    let mut row = 0u32;
+    while ty < y + h {
+        let mut tx = x - (row % 2) as f32 * tw * 0.5;
+        while tx < x + w {
+            let frame = u32::from(cheer && ((clock * 7.0) as u32 + row).is_multiple_of(2));
+            p.image_frame(sheet, 2, 1, frame, [tx, ty, tw, th], tint);
+            tx += tw;
+        }
+        ty += th;
+        row += 1;
+    }
+    p.layer();
+}
+
 fn inside(p: P, poly: &[P]) -> bool {
     let mut c = false;
     let n = poly.len();
@@ -459,14 +583,19 @@ pub fn coach_token(p: &mut Painter, c: P, size: f32, lift: f32) {
 
 /// The field during a game, fitted in `r`: home plate near the bottom middle. Returns the
 /// screen mapping (home x, home y, design units per metre).
-pub fn game_field(p: &mut Painter, r: [f32; 4], fit_width: bool) -> (f32, f32, f32) {
+pub fn game_field(
+    p: &mut Painter,
+    r: [f32; 4],
+    fit_width: bool,
+    cheer: bool,
+    clock: f32,
+) -> (f32, f32, f32) {
     let [x, y, w, h] = r;
-    let rr = vector::rounded_rect(x, y, w, h, 16.0);
-    p.shadow(x, y, w, h, 16.0, 10.0, 80);
+    let rr = vector::rounded_rect(x, y, w, h, 2.0);
+    p.shadow(x, y, w, h, 2.0, 10.0, 80);
     p.fill(&rr, Paint::Solid([30, 36, 62, 255]));
     // People in the stands all round.
-    let st_poly = rr.clone();
-    crowd(p, x, y, w, h, &st_poly, 0.5);
+    crowd_rect(p, r, 0.55, cheer, clock);
     let hx = x + w * 0.5;
     let hy = y + h - 16.0;
     // Design units per metre: the wall (about 110 m) fits the height, or the width too.
@@ -778,6 +907,8 @@ pub struct PitchScene<'a> {
     pub ball: Option<(f32, P)>,
     /// Where earlier pitches of this plate appearance crossed, and whether each was a strike.
     pub marks: &'a [(P, bool)],
+    /// The stands are on their feet.
+    pub cheer: bool,
 }
 
 /// The strike zone in the picture (left, top, width, height) for a broadcast rectangle.
@@ -838,14 +969,12 @@ pub fn pitch_view(p: &mut Painter, r: [f32; 4], sc: &PitchScene) {
     }
     let stand = rect(y + h * 0.1, horizon);
     p.fill(&stand, Paint::Solid([36, 44, 72, 255]));
-    crowd(
+    crowd_rect(
         p,
-        x,
-        y + h * 0.1,
-        w,
-        horizon - y - h * 0.1,
-        &stand,
-        if sc.night { 0.45 } else { 0.6 },
+        [x, y + h * 0.1, w, horizon - y - h * 0.1],
+        if sc.night { 0.45 } else { 0.7 },
+        sc.cheer,
+        sc.clock,
     );
     // The outfield wall.
     p.fill(
@@ -1089,7 +1218,6 @@ pub fn pitch_view(p: &mut Painter, r: [f32; 4], sc: &PitchScene) {
         Pose::Squat,
         &ck,
     );
-    let _ = sc.clock;
 }
 
 // ---- the practice ground ---------------------------------------------------------------------

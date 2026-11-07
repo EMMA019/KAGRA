@@ -373,7 +373,8 @@ impl DiamondDays {
             } else {
                 1.0
             };
-            let home = art::game_field(p, r, false);
+            let cheer = matches!(pl.kind, PlayKind::Hit(_)) || pl.runs > 0;
+            let home = art::game_field(p, r, false, cheer, self.clock);
             for (dist, ang) in art::FIELDERS {
                 let c = art::field_pt(home, dist, ang);
                 art::figure(p, c, colors[fld_side], 9.0, false);
@@ -460,6 +461,11 @@ impl DiamondDays {
                     catcher: &catcher_face,
                     ball,
                     marks: &marks,
+                    cheer: matches!(
+                        (pa, phase),
+                        (Some(pl), Phase::Result { .. })
+                            if pl.runs > 0 || matches!(pl.kind, PlayKind::Hit(_) | PlayKind::Strikeout)
+                    ),
                 },
             );
         }

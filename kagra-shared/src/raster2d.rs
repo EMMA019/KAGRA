@@ -75,13 +75,20 @@ impl Canvas {
             }
         }
         let i = ((y as u32 * self.w + x as u32) * 4) as usize;
+        // "Over", with the canvas's own alpha: an opaque canvas mixes as before, a clear one
+        // (a picture being baked) keeps straight colours with no dark fringe.
         let a = c[3].clamp(0.0, 1.0);
-        for (d, src) in self.rgba[i..i + 3].iter_mut().zip(c) {
-            let v = *d as f32;
-            *d = (v + (src * 255.0 - v) * a).round().clamp(0.0, 255.0) as u8;
-        }
         let da = self.rgba[i + 3] as f32 / 255.0;
-        self.rgba[i + 3] = ((a + da * (1.0 - a)) * 255.0).round() as u8;
+        let out = a + da * (1.0 - a);
+        if out <= 0.0 {
+            return;
+        }
+        for (d, src) in self.rgba[i..i + 3].iter_mut().zip(c) {
+            let v = *d as f32 / 255.0;
+            let mixed = (src * a + v * da * (1.0 - a)) / out;
+            *d = (mixed * 255.0).round().clamp(0.0, 255.0) as u8;
+        }
+        self.rgba[i + 3] = (out * 255.0).round() as u8;
     }
 
     fn triangle(&mut self, a: Vert2, b: Vert2, c: Vert2) {
@@ -394,6 +401,22 @@ mod tests {
         assert_eq!(c.pixel(15, 15), [255, 0, 0, 255]);
         assert_eq!(c.pixel(25, 25), [0, 255, 0, 255]);
         assert_eq!(c.pixel(45, 25), [0, 0, 0, 255], "outside the parent's clip");
+    }
+
+    #[test]
+    fn a_clear_canvas_keeps_straight_colours() {
+        let mut c = Canvas::new(4, 4, [0, 0, 0, 0]);
+        let mut list = DrawList::default();
+        list.quads
+            .push(Quad::new(0.0, 0.0, 4.0, 4.0, [200, 100, 50, 128]));
+        c.draw(&list);
+        let px = c.pixel(1, 1);
+        assert_eq!(
+            &px[..3],
+            &[200, 100, 50],
+            "no darkening toward the clear black"
+        );
+        assert!((px[3] as i32 - 128).abs() <= 1);
     }
 
     #[test]

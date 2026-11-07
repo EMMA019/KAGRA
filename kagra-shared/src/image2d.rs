@@ -79,6 +79,15 @@ pub fn register_rgba(width: u32, height: u32, rgba: Vec<u8>) -> Result<PicId, St
     Ok(PicId(reg.len() as u32 - 1))
 }
 
+/// Draw a list once on the CPU ([`crate::raster2d`], `w` x `h` pixels, clear background)
+/// and keep it as a picture. Vector art that does not change (a crowd, a building, a
+/// sheet of frames) then draws as two triangles a frame instead of thousands.
+pub fn bake(list: &crate::scene::DrawList, w: u32, h: u32) -> Result<PicId, String> {
+    let mut c = crate::raster2d::Canvas::new(w.max(1), h.max(1), [0, 0, 0, 0]);
+    c.draw(list);
+    register_rgba(c.w, c.h, c.rgba)
+}
+
 /// The pixels of a registered picture.
 pub fn get(id: PicId) -> Option<Arc<Picture>> {
     let reg = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
@@ -390,6 +399,20 @@ mod tests {
         p.clear();
         assert!(p.is_empty());
         assert!(p.get(small, &mut up).unwrap().is_some());
+    }
+
+    #[test]
+    fn baked_vector_art_becomes_a_picture() {
+        use crate::scene::{DrawList, Quad};
+        let mut list = DrawList::default();
+        list.quads
+            .push(Quad::new(2.0, 2.0, 4.0, 4.0, [10, 200, 30, 255]));
+        let id = bake(&list, 8, 8).unwrap();
+        let p = get(id).unwrap();
+        assert_eq!(p.pixel(3, 3), [10, 200, 30, 255]);
+        assert_eq!(p.pixel(0, 0)[3], 0, "clear outside");
+        // The clear texels take the art's colour (no dark fringe when filtered).
+        assert_eq!(&p.pixel(1, 3)[..3], &[10, 200, 30]);
     }
 
     #[test]
