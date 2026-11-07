@@ -12,7 +12,7 @@ Android / Windows) runs every game; a game is a **kit** (one Rust file implement
 The owner plays it on a phone and says what feels wrong; agents build, verify and ship.
 
 The shipped games today: HOP-BEAT (rhythm hop), Neon Cat (lane runner), Moonlit Swarm
-(survivor arena), Lantern Watch (tap defense), Crate Tower (one-button stacker), Station Escape (side-on platformer), Moonlit Tactics (tactics, in progress), Engine Lab (a playground for the shared parts). Starter (`kagra-shared/src/starter.rs`) is the template.
+(survivor arena), Lantern Watch (tap defense), Crate Tower (one-button stacker), Station Escape (side-on platformer), Moonlit Tactics (tactics, in progress), Engine Lab (a playground for the shared parts), Diamond Days (baseball manager, in progress). Starter (`kagra-shared/src/starter.rs`) is the template.
 
 ## Rules
 

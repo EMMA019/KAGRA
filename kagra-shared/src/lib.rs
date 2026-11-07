@@ -19,6 +19,7 @@ pub mod collide;
 pub mod constraint;
 pub mod cook;
 pub mod crate_tower;
+pub mod diamond_days;
 pub mod driving;
 pub mod engine_lab;
 pub mod ffi;
