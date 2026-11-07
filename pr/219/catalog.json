@@ -67,6 +67,17 @@
       "icon": "games/crate_tower/icon.png"
     },
     {
+      "slug": "diamond_days",
+      "title": "Diamond Days",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "diamond_days",
+      "entry": "examples/diamond_days_minimal.py",
+      "world": "kagra-shared/tests/fixtures/diamond_days_world.json",
+      "href": "play.html?game=diamond_days",
+      "icon": "games/diamond_days/icon.png"
+    },
+    {
       "slug": "engine_lab",
       "title": "Engine Lab",
       "version": "0.1.0",
