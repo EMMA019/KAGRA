@@ -28,6 +28,16 @@ enum Phase {
 
 const SCORE_H: f32 = 60.0;
 
+/// The scoreboard as of a plate appearance on screen: its half inning, and (while its
+/// pitches play) the runs and the hit it has not shown yet.
+#[derive(Clone, Copy, Debug)]
+struct AsOf {
+    inning: u8,
+    side: usize,
+    runs: u8,
+    hit: bool,
+}
+
 /// The broadcast rectangle for a screen `hh` design units tall.
 pub(in crate::diamond_days) fn broadcast_rect(hh: f32) -> [f32; 4] {
     let ph = (hh - 74.0 - 236.0).clamp(300.0, 500.0);
@@ -116,7 +126,7 @@ impl DiamondDays {
         let Some(play) = g.log.get(i) else {
             return (Phase::Idle, None);
         };
-        if play.batter.is_empty() || play.kind == PlayKind::Change {
+        if !play.is_pa() {
             return (Phase::Idle, Some(i));
         }
         let n = play.pitches().len();
@@ -148,7 +158,7 @@ impl DiamondDays {
 
     /// The score line across the top: both schools, the innings, runs and hits. `hold`
     /// leaves out runs not yet scored on screen (side, runs).
-    fn draw_scoreboard(&self, p: &mut Painter, g: &Game, y: f32, hold: Option<(usize, u8)>) {
+    fn draw_scoreboard(&self, p: &mut Painter, g: &Game, y: f32, as_of: Option<AsOf>) {
         let ja = self.lang_ja;
         let colors = [self.side_color(g, 0), self.side_color(g, 1)];
         p.panel_bordered(
@@ -205,19 +215,28 @@ impl DiamondDays {
             );
             let short: String = name.chars().take(if ja { 4 } else { 9 }).collect();
             p.text(&short, 24.0, yy + 1.0, 12.5, WHITE, TextAlign::Left);
-            let held = hold
-                .filter(|(s, _)| *s == side)
-                .map(|(_, r)| r)
-                .unwrap_or(0);
-            let cells = g.line[side].len();
-            for k in 0..innings {
+            let mine = as_of.filter(|a| a.side == side);
+            let held = mine.map(|a| a.runs).unwrap_or(0);
+            let held_hit = mine.is_some_and(|a| a.hit) as u16;
+            // Innings shown: up to the plate appearance's half, not the half the game has
+            // already moved on to.
+            let cells = match as_of {
+                Some(a) if side == a.side || side == 0 => a.inning as usize,
+                Some(a) => a.inning.saturating_sub(1) as usize,
+                None => g.line[side].len(),
+            }
+            .min(g.line[side].len());
+            for k in 0..innings.min(cells) {
                 if let Some(v) = g.line[side].get(k) {
                     let v = if k + 1 == cells {
                         v.saturating_sub(held)
                     } else {
                         *v
                     };
-                    let live = k + 1 == cells && !g.over && (side == 0) == g.top;
+                    let live = match as_of {
+                        Some(a) => a.side == side && k + 1 == a.inning as usize,
+                        None => k + 1 == cells && !g.over && (side == 0) == g.top,
+                    };
                     p.text(
                         &v.to_string(),
                         10.0 + name_w + (k as f32 + 0.5) * cell,
@@ -237,7 +256,7 @@ impl DiamondDays {
                 TextAlign::Center,
             );
             p.text(
-                &g.hits[side].to_string(),
+                &g.hits[side].saturating_sub(held_hit).to_string(),
                 376.0,
                 yy,
                 13.0,
@@ -267,7 +286,7 @@ impl DiamondDays {
         let colors = [self.side_color(g, 0), self.side_color(g, 1)];
         let (phase, line) = self.phase(g, shown, t, asking);
         let play = line.and_then(|i| g.log.get(i));
-        let pa = play.filter(|pl| !pl.batter.is_empty() && pl.kind != PlayKind::Change);
+        let pa = play.filter(|pl| pl.is_pa());
         let pitches = pa.map(|pl| pl.pitches()).unwrap_or_default();
 
         // Who is up and the situation, from the line (before its result) or the game.
@@ -299,18 +318,36 @@ impl DiamondDays {
         };
         let fld_side = 1 - bat_side;
         let (mut balls, mut strikes) = (0u8, 0u8);
-        let mut hold = None;
+        // The half inning on screen: the plate appearance's, else the game's.
+        let (inning, top) = match (pa, phase) {
+            (Some(pl), Phase::Pitch { .. } | Phase::Result { .. }) if pl.inning > 0 => {
+                (pl.inning, pl.side == 0)
+            }
+            _ => (g.inning, g.top),
+        };
+        let mut as_of = pa.filter(|pl| pl.inning > 0).map(|pl| AsOf {
+            inning: pl.inning,
+            side: pl.side as usize,
+            runs: 0,
+            hit: false,
+        });
         if let (Some(pl), Phase::Pitch { i, k }) = (pa, phase) {
             let done = i + usize::from(k > 0.78);
             (balls, strikes) = count(&pitches, done);
-            hold = Some((pl.side as usize, pl.runs));
+            if let Some(a) = as_of.as_mut() {
+                a.runs = pl.runs;
+                a.hit = matches!(pl.kind, PlayKind::Hit(_));
+            }
+        }
+        if matches!(phase, Phase::Idle) {
+            as_of = None;
         }
         if let (Some(pl), Phase::Result { .. }) = (pa, phase) {
             outs = (outs + outs_from(pl.kind)).min(3);
             // Runners after: the next plate appearance's start, or the game now.
             let next = g.log[line.unwrap_or(0) + 1..]
                 .iter()
-                .find(|q| !q.batter.is_empty() && q.side == pl.side);
+                .find(|q| q.is_pa() && q.side == pl.side);
             bases = match next {
                 Some(q) => q.bases0,
                 None if g.batting() as u8 == pl.side => g
@@ -321,7 +358,7 @@ impl DiamondDays {
                 None => 0,
             };
         }
-        self.draw_scoreboard(p, g, 8.0, hold);
+        self.draw_scoreboard(p, g, 8.0, as_of);
 
         // The broadcast picture.
         let r = broadcast_rect(hh);
@@ -438,7 +475,15 @@ impl DiamondDays {
         );
 
         // The count box, top left of the picture.
-        self.draw_count(p, [r[0] + 8.0, r[1] + 8.0], g, balls, strikes, outs, bases);
+        self.draw_count(
+            p,
+            [r[0] + 8.0, r[1] + 8.0],
+            (inning, top),
+            balls,
+            strikes,
+            outs,
+            bases,
+        );
         if velo > 0.0 {
             if let (Some(_), Phase::Pitch { k, .. }) = (pa, phase) {
                 if k > 0.55 {
@@ -756,8 +801,8 @@ impl DiamondDays {
                 if ja {
                     format!(
                         "{}回{}  {}アウト {}  打者 {}",
-                        g.inning,
-                        if bat_side == 0 { "表" } else { "裏" },
+                        inning,
+                        if top { "表" } else { "裏" },
                         outs.min(2),
                         runners,
                         batter
@@ -765,8 +810,8 @@ impl DiamondDays {
                 } else {
                     format!(
                         "{} {}, {} out, {}. {} up.",
-                        if bat_side == 0 { "Top" } else { "Bot" },
-                        g.inning,
+                        if top { "Top" } else { "Bot" },
+                        inning,
                         outs.min(2),
                         runners,
                         batter
@@ -873,7 +918,7 @@ impl DiamondDays {
         &self,
         p: &mut Painter,
         at: P,
-        g: &Game,
+        (inning, top): (u8, bool),
         balls: u8,
         strikes: u8,
         outs: u8,
@@ -891,9 +936,9 @@ impl DiamondDays {
             0.0,
         );
         let half = if self.lang_ja {
-            format!("{}回{}", g.inning, if g.top { "表" } else { "裏" })
+            format!("{}回{}", inning, if top { "表" } else { "裏" })
         } else {
-            format!("{} {}", if g.top { "Top" } else { "Bot" }, g.inning)
+            format!("{} {}", if top { "Top" } else { "Bot" }, inning)
         };
         p.text(&half, x + 8.0, y + 4.0, 12.0, WHITE, TextAlign::Left);
         let rows: [(&str, u8, u8, Rgba); 3] = [

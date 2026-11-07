@@ -943,6 +943,80 @@ fn no_more_calls_from_the_bench_picker_plays_on() {
     panic!("no chance with a bench in the game");
 }
 
+/// While a plate appearance's pitches play, the screen is as of that plate appearance: its
+/// half inning on the count box and the caption, and no runs or hit it has not shown yet,
+/// even though the sim has already moved on (a third out flips the half).
+#[test]
+fn the_pitches_show_the_game_as_it_was_before_the_play() {
+    let mut g = started();
+    g.set_lang("ja");
+    tap(&mut g, 195.0, 400.0);
+    g.s.week = 6;
+    g.begin_week();
+    press(&mut g, hud::Btn::PlayBall);
+    let label = |inning: u8, top: bool| format!("{}回{}", inning, if top { "表" } else { "裏" });
+    let mut checked = (false, false);
+    for _ in 0..400 {
+        let gm = g.game.as_mut().unwrap();
+        if gm.over {
+            break;
+        }
+        if gm.spot().is_some() {
+            gm.call(None);
+        }
+        gm.step();
+        let gm = g.game.as_ref().unwrap();
+        let Some(i) = gm.log.iter().rposition(|q| q.is_pa()) else {
+            continue;
+        };
+        let pl = gm.log[i].clone();
+        let third_out = pl.outs0 == 2
+            && matches!(
+                pl.kind,
+                sim::PlayKind::Strikeout | sim::PlayKind::GroundOut | sim::PlayKind::FlyOut
+            );
+        let hit = matches!(pl.kind, sim::PlayKind::Hit(_));
+        if !(third_out && !checked.0 || hit && !checked.1) {
+            continue;
+        }
+        let hits_now = gm.hits[pl.side as usize];
+        g.mode = Mode::Match {
+            shown: i + 1,
+            t: PITCH_SECS * 0.5,
+            asking: None,
+        };
+        let hud = g.hud(W, H, false);
+        let texts: Vec<String> = all_texts(&hud).map(|t| t.text.clone()).collect();
+        let here = label(pl.inning, pl.side == 0);
+        assert!(
+            texts.iter().any(|t| t.contains(&here)),
+            "{here} not in {texts:?}"
+        );
+        if third_out {
+            let gm = g.game.as_ref().unwrap();
+            if gm.inning != pl.inning || gm.top != (pl.side == 0) {
+                let next = label(gm.inning, gm.top);
+                assert!(
+                    !texts.iter().any(|t| t.contains(&next)),
+                    "{next} shown early"
+                );
+            }
+            checked.0 = true;
+        }
+        if hit {
+            assert!(
+                texts.iter().any(|t| *t == (hits_now - 1).to_string()),
+                "the hit waits for the ball"
+            );
+            checked.1 = true;
+        }
+        if checked == (true, true) {
+            return;
+        }
+    }
+    panic!("no third out and hit found: {checked:?}");
+}
+
 #[test]
 fn an_old_save_without_a_record_still_loads() {
     let g = started();

@@ -302,6 +302,9 @@ pub struct Play {
     pub pitcher: String,
     #[serde(default)]
     pub velo: f32,
+    /// The inning of the plate appearance (the game may already be in the next half).
+    #[serde(default)]
+    pub inning: u8,
 }
 
 /// One pitch of a plate appearance, as shown (the result comes from the plate appearance).
@@ -334,7 +337,14 @@ impl Play {
             batter: String::new(),
             pitcher: String::new(),
             velo: 0.0,
+            inning: 0,
         }
+    }
+
+    /// A plate appearance (or a steal during one), not a line of words or a pitching change.
+    /// Words spoken mid-game still carry the batter of the moment, so check the kind.
+    pub fn is_pa(&self) -> bool {
+        !self.batter.is_empty() && !matches!(self.kind, PlayKind::Note | PlayKind::Change)
     }
 
     /// The pitches leading to this result, in order, with a count that never goes past
@@ -441,7 +451,7 @@ pub struct Game {
     mark_banner: Option<Ability>,
     mark_clutch: bool,
     /// The plate appearance as it starts (see [`Play::side`]).
-    snap: (u8, u8, u8, String, String, f32),
+    snap: (u8, u8, u8, String, String, f32, u8),
 }
 
 impl Game {
@@ -471,7 +481,7 @@ impl Game {
             rng: Rng::new(seed),
             mark_banner: None,
             mark_clutch: false,
-            snap: (0, 0, 0, String::new(), String::new(), 0.0),
+            snap: (0, 0, 0, String::new(), String::new(), 0.0, 1),
         }
     }
 
@@ -541,6 +551,7 @@ impl Game {
             batter: snap.3,
             pitcher: snap.4,
             velo: snap.5,
+            inning: snap.6,
         });
     }
 
@@ -613,6 +624,7 @@ impl Game {
             self.batter_now().name.clone(),
             self.pitcher_now().name.clone(),
             self.pitcher_now().velo,
+            self.inning,
         );
         let f = 1 - s;
         // A tired pitcher makes way.

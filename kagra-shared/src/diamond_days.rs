@@ -902,7 +902,7 @@ impl DiamondDays {
             by.len() - 1
         }
         for play in &g.log {
-            if play.batter.is_empty() {
+            if !play.is_pa() {
                 continue;
             }
             if play.side == us {
