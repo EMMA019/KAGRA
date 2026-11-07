@@ -42,6 +42,7 @@ export const kagra_shared_save_json: (a: number, b: number, c: number) => number
 export const kagra_shared_set_asset_root: (a: number, b: number) => number;
 export const kagra_shared_set_drive: (a: number, b: number, c: number, d: number) => number;
 export const kagra_shared_set_jump: (a: number, b: number) => number;
+export const kagra_shared_set_lang: (a: number, b: number) => number;
 export const kagra_shared_set_pad: (a: number, b: number, c: number) => number;
 export const kagra_shared_set_play_input: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
 export const kagra_shared_set_playtest_device: (a: number, b: number, c: number) => number;
