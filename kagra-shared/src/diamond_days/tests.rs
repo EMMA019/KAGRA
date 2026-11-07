@@ -76,6 +76,8 @@ fn play_week(g: &mut DiamondDays) {
             Mode::Epilogue { schools: true } => press(g, hud::Btn::Back),
             Mode::Epilogue { .. } => press(g, hud::Btn::EndStory),
             Mode::Walk { .. } => run(g, 0.3),
+            Mode::MatchIntro => press(g, hud::Btn::PlayBall),
+            Mode::MatchEnd => press(g, hud::Btn::Continue),
         }
         if g.flow.phase != FlowPhase::Play {
             return;
@@ -140,6 +142,12 @@ fn a_game_stops_at_chances_and_pinches_for_the_coachs_call() {
     // Jump to the week of the first practice game.
     g.s.week = 6;
     g.begin_week();
+    // Game day is its own screen: the opponent and our order, then the coach starts it.
+    assert_eq!(g.mode, Mode::MatchIntro);
+    g.set_lang("en");
+    let hud = g.hud(W, H, true);
+    assert!(all_texts(&hud).any(|t| t.text == "PLAY BALL!"));
+    press(&mut g, hud::Btn::PlayBall);
     assert!(matches!(g.mode, Mode::Match { .. }));
     let mut calls = 0;
     for _ in 0..20000 {
@@ -172,9 +180,18 @@ fn a_game_stops_at_chances_and_pinches_for_the_coachs_call() {
     }
     assert!(calls >= 1, "at least one chance or pinch in a game");
     assert!(g.game.is_none());
-    assert_eq!(g.mode, Mode::Notice);
+    // The result screen, then back to practice.
+    assert_eq!(g.mode, Mode::MatchEnd);
+    let hud = g.hud(W, H, true);
+    assert!(all_texts(&hud).any(|t| t.text == "VICTORY!" || t.text == "DEFEAT"));
+    assert!(all_texts(&hud).any(|t| t.text.starts_with("Game experience +")));
     assert_eq!(g.s.wins + g.s.losses, 1);
-    assert_eq!(g.s.week, 7);
+    assert_eq!(
+        g.s.week, 7,
+        "the week already moved on (a save here is past the game)"
+    );
+    press(&mut g, hud::Btn::Continue);
+    assert!(matches!(g.mode, Mode::Plan | Mode::Notice), "{:?}", g.mode);
 }
 
 #[test]
@@ -291,7 +308,7 @@ fn a_link_can_start_at_a_game_week() {
     g.confirm();
     assert_eq!(g.s.week, 6);
     tap(&mut g, 195.0, 400.0);
-    assert!(matches!(g.mode, Mode::Match { .. }), "{:?}", g.mode);
+    assert_eq!(g.mode, Mode::MatchIntro);
 }
 
 #[test]
@@ -486,9 +503,10 @@ fn screens_to_png() {
     press(&mut g, hud::Btn::Close);
     g.s.week = 6;
     g.begin_week();
-    let mut asked = false;
-    let mut mid = false;
-    for _ in 0..20000 {
+    shot(&g, "07a_game_day");
+    press(&mut g, hud::Btn::PlayBall);
+    let (mut asked, mut pitch, mut field) = (false, false, false);
+    for _ in 0..40000 {
         match g.mode {
             Mode::Match {
                 asking: Some(_), ..
@@ -501,19 +519,33 @@ fn screens_to_png() {
             }
             Mode::Match { shown, t, .. } => {
                 let gm = g.game.as_ref().unwrap();
-                if !mid
+                let play = &gm.log[shown.saturating_sub(1)];
+                let pre = g.pitch_time(shown);
+                let n = play.pitches().len();
+                // A pitch on its way in, the count already running.
+                if !pitch
+                    && gm.inning >= 2
+                    && n >= 3
+                    && t > PITCH_SECS * 2.6
+                    && t < PITCH_SECS * 2.7
+                {
+                    shot(&g, "07b_pitch");
+                    pitch = true;
+                }
+                // A hit, on the field.
+                if !field
                     && gm.inning >= 3
-                    && t > 0.2
-                    && matches!(gm.log[shown.saturating_sub(1)].kind, sim::PlayKind::Hit(_))
+                    && t > pre + 0.25
+                    && matches!(play.kind, sim::PlayKind::Hit(_))
                 {
                     shot(&g, "07_match");
-                    mid = true;
+                    field = true;
                 }
-                run(&mut g, 0.05);
+                run(&mut g, 0.02);
             }
             _ => break,
         }
-        if asked && mid {
+        if asked && pitch && field {
             break;
         }
     }
@@ -710,8 +742,9 @@ fn abilities_lineup_rivals_and_the_next_chapter() {
     g.game = None;
     g.notes.clear();
     g.begin_week();
-    assert!(matches!(g.mode, Mode::Match { .. }));
+    assert_eq!(g.mode, Mode::MatchIntro);
     let rival = g.s.rivals[g.rival_idx.unwrap()].name.clone();
+    press(&mut g, hud::Btn::PlayBall);
     press(&mut g, hud::Btn::Skip);
     assert!(g.s.spring_in, "the autumn sends them to March");
     g.notes.clear();
@@ -866,6 +899,7 @@ fn no_more_calls_from_the_bench_picker_plays_on() {
     tap(&mut g, 195.0, 400.0);
     g.s.week = 6;
     g.begin_week();
+    press(&mut g, hud::Btn::PlayBall);
     for _ in 0..20000 {
         match g.mode {
             Mode::Match {

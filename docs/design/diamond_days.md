@@ -136,6 +136,32 @@ the autumn seeds you: the first opponent is easier. It is not a licensed event n
 - **Graduation.** The face card is still there. Under each third-year: プロ, 大学, or
   就職, from his numbers, the school's reputation, and his traits. No draft meeting.
 
+## Practice and games are two parts
+
+The week is the practice part: the board of squares round the school's practice ground
+(the school building, the net, a batting cage, a bullpen, the running lane), where the club
+is drawn as chibi players at their own practice menus. No stadium on the board.
+
+A fixture is the game part, on its own screens:
+
+1. **Game day.** The tournament ribbon, both school crests, team grades, the record between
+   the two schools, our starting nine with faces. The coach can change the order, then
+   presses Play Ball.
+2. **The game, from behind the plate.** A broadcast picture: the stands, the outfield, the
+   fielders, the pitcher on the mound (his own face), the batter from behind with his
+   number, the catcher, the strike zone. Every plate appearance is shown pitch by pitch,
+   with balls, strikes and outs on a TV count box and the speed of the pitch. The pitches
+   are drawn from the play (a strikeout ends on a swinging third strike, a walk on ball
+   four), so the picture never changes a result. When the ball is hit, the picture
+   switches to the field from above with the ball's flight and the runners. Chances and
+   pinches stop for the coach's call as before. A tap skips to the result; double speed
+   and "to the end" are buttons.
+3. **The result.** Win or loss, the final line score, the player of the game (a chibi
+   cheering, with his line), the game experience the club earned (practice points: batting
+   for every one of the nine, more per hit; pitching for whoever pitched, more for
+   strikeouts; fielding on a win), what it means for the tournament, a word from Kotori,
+   then back to practice.
+
 ## Endless play
 
 A career does not end on its own. The year count runs on (1年目, 2年目, ... 30年目) and

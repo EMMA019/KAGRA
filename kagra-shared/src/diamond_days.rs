@@ -31,7 +31,7 @@ use crate::scene::DrawList;
 use crate::world_doc::WorldDoc;
 use board::{Card, Fixture, Happening, School, Slate, Square};
 use sim::{Game, Side, Spot, Tactic};
-use team::{Ability, Mood, Role, Team};
+use team::{Ability, Drill, Mood, Role, Team};
 
 /// The `genre` of this kit's world file (and the `game.id` default).
 pub const GAME_ID: &str = "diamond_days";
@@ -178,7 +178,32 @@ enum Mode {
     CampTalk { who: usize },
     /// Three years are over. `schools` lists places that would take the coach.
     Epilogue { schools: bool },
+    /// Game day: the tournament, both schools, our order. The coach starts the game.
+    MatchIntro,
+    /// After the whistle: the score, the player of the game, what the club learned.
+    MatchEnd,
 }
+
+/// What the result screen shows after a game.
+#[derive(Clone, Debug, PartialEq)]
+struct Report {
+    won: bool,
+    title: (String, String),
+    /// [visitors, home] names, both languages, and which one is us.
+    names: [(String, String); 2],
+    us: usize,
+    line: [Vec<u8>; 2],
+    hits: [u16; 2],
+    /// The player of the game (ours): family name and the line under him.
+    star: Option<(String, String, String)>,
+    /// Practice points the game gave the club.
+    exp: u32,
+    /// What it means for the tournament.
+    lines: Vec<(String, String)>,
+}
+
+/// How long one pitch takes on screen (seconds at normal speed).
+pub(crate) const PITCH_SECS: f32 = 0.45;
 
 /// A message on the notice card.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -330,6 +355,14 @@ pub struct DiamondDays {
     camp_lines: Vec<(String, String)>,
     /// Schools offered when the coach decides to move.
     move_picks: Vec<usize>,
+    /// Today's fixture while the pre-game screen is up.
+    fixture: Option<Fixture>,
+    /// The last game's result screen.
+    report: Option<Report>,
+    /// Double speed in a game.
+    fast: bool,
+    /// The order was opened from the pre-game screen (closing it goes back there).
+    lineup_from_intro: bool,
 }
 
 impl DiamondDays {
@@ -361,6 +394,10 @@ impl DiamondDays {
             rival_idx: None,
             camp_lines: Vec::new(),
             move_picks: Vec::new(),
+            fixture: None,
+            report: None,
+            fast: false,
+            lineup_from_intro: false,
         };
         g.build_doc();
         g
@@ -583,7 +620,7 @@ impl DiamondDays {
                 Fixture::Spring(_) => self.s.spring_in,
             };
             if ours && self.game.is_none() {
-                self.start_game(f);
+                self.prepare_game(f);
                 return;
             }
         }
@@ -620,10 +657,33 @@ impl DiamondDays {
         }
     }
 
+    /// Game day: pick today's opponent and show the pre-game screen.
+    fn prepare_game(&mut self, f: Fixture) {
+        let idx = self.pick_rival(f);
+        self.rival_idx = Some(idx);
+        self.fixture = Some(f);
+        self.mode = Mode::MatchIntro;
+        crate::mixer::cue_sfx("event");
+    }
+
+    /// Play ball: build both nines (the order as it stands now) and start.
+    fn play_ball(&mut self) {
+        if self.mode != Mode::MatchIntro {
+            return;
+        }
+        if let Some(f) = self.fixture.take() {
+            crate::mixer::cue_sfx("go");
+            self.start_game(f);
+        }
+    }
+
     fn start_game(&mut self, f: Fixture) {
         let (school, school_ja) = (self.school_en().to_string(), self.school_ja().to_string());
         let us = Side::from_team(&self.s.team, &school, &school_ja);
-        let idx = self.pick_rival(f);
+        let idx = match self.rival_idx {
+            Some(i) if i < self.s.rivals.len() => i,
+            _ => self.pick_rival(f),
+        };
         self.rival_idx = Some(idx);
         let (en, ja) = self
             .s
@@ -645,38 +705,22 @@ impl DiamondDays {
         let mut g = Game::new(us, them, first, seed);
         let (title, title_ja) = Self::fixture_name(f);
         let spark = g.sides[g.us].spark.clone();
-        g.log.push(sim::Play {
-            en: format!("{title}: {} vs {}.", g.sides[0].name, g.sides[1].name),
-            ja: format!(
+        g.log.push(sim::Play::note(
+            format!("{title}: {} vs {}.", g.sides[0].name, g.sides[1].name),
+            format!(
                 "{title_ja}：{} 対 {}。",
                 g.sides[0].name_ja, g.sides[1].name_ja
             ),
-            runs: 0,
-            kind: sim::PlayKind::Note,
-            dir: 0.0,
-            banner: None,
-            clutch: false,
-        });
+        ));
         if let Some(name) = spark {
-            g.log.push(sim::Play {
-                en: format!("Spark! {name} lifts the bench."),
-                ja: format!("元気印！{name}がベンチを明るくする。"),
-                runs: 0,
-                kind: sim::PlayKind::Note,
-                dir: 0.0,
-                banner: Some(Ability::Mood),
-                clutch: false,
-            });
+            let mut shout = sim::Play::note(
+                format!("Spark! {name} lifts the bench."),
+                format!("元気印！{name}がベンチを明るくする。"),
+            );
+            shout.banner = Some(Ability::Mood);
+            g.log.push(shout);
         }
-        g.log.push(sim::Play {
-            en: "Top of inning 1.".into(),
-            ja: "1回表。".into(),
-            runs: 0,
-            kind: sim::PlayKind::Note,
-            dir: 0.0,
-            banner: None,
-            clutch: false,
-        });
+        g.log.push(sim::Play::note("Top of inning 1.", "1回表。"));
         self.game = Some(g);
         self.mode = Mode::Match {
             shown: 0,
@@ -717,6 +761,7 @@ impl DiamondDays {
             p.tire(if p.pitcher() { 25 } else { 12 });
             p.mood = if won { p.mood.up() } else { p.mood.down() };
         }
+        let (exp, star) = self.game_experience(&g, won);
         let mut lines = vec![(
             format!(
                 "{} {us} - {them} {}",
@@ -814,12 +859,158 @@ impl DiamondDays {
                 }
             }
         }
-        self.note(
-            if won { "Win!" } else { "Lost" },
-            if won { "勝利！" } else { "敗戦" },
-            std::iter::once((title, title_ja)).chain(lines).collect(),
-        );
+        self.report = Some(Report {
+            won,
+            title: (title, title_ja),
+            names: [
+                (g.sides[0].name.clone(), g.sides[0].name_ja.clone()),
+                (g.sides[1].name.clone(), g.sides[1].name_ja.clone()),
+            ],
+            us: g.us,
+            line: g.line.clone(),
+            hits: g.hits,
+            star,
+            exp,
+            lines: lines.into_iter().skip(1).collect(),
+        });
+        // The week moves on now (a save here is past the game), then the result shows.
         self.end_week();
+        self.mode = Mode::MatchEnd;
+    }
+
+    /// What the game taught the club: every one of our nine gets batting (more for each
+    /// hit) and a little running; whoever pitched gets pitching (more for strikeouts); a win
+    /// adds fielding. Returns the total and the player of the game.
+    fn game_experience(&mut self, g: &Game, won: bool) -> (u32, Option<(String, String, String)>) {
+        #[derive(Default, Clone)]
+        struct Line {
+            ab: u32,
+            hits: u32,
+            rbi: u32,
+            homers: u32,
+            k: u32,
+            allowed: u32,
+            faced: u32,
+        }
+        let us = g.us as u8;
+        let mut by: Vec<(String, Line)> = Vec::new();
+        fn at(by: &mut Vec<(String, Line)>, name: &str) -> usize {
+            if let Some(i) = by.iter().position(|(n, _)| n == name) {
+                return i;
+            }
+            by.push((name.to_string(), Line::default()));
+            by.len() - 1
+        }
+        for play in &g.log {
+            if play.batter.is_empty() {
+                continue;
+            }
+            if play.side == us {
+                let i = at(&mut by, &play.batter);
+                let l = &mut by[i].1;
+                if !matches!(
+                    play.kind,
+                    sim::PlayKind::Walk
+                        | sim::PlayKind::Steal
+                        | sim::PlayKind::CaughtStealing
+                        | sim::PlayKind::Change
+                ) {
+                    l.ab += 1;
+                }
+                if let sim::PlayKind::Hit(n) = play.kind {
+                    l.hits += 1;
+                    l.homers += (n == 4) as u32;
+                }
+                l.rbi += play.runs as u32;
+            } else {
+                let i = at(&mut by, &play.pitcher);
+                let l = &mut by[i].1;
+                l.faced += 1;
+                l.k += (play.kind == sim::PlayKind::Strikeout) as u32;
+                l.allowed += play.runs as u32;
+            }
+        }
+        let mut total = 0u32;
+        let names: Vec<String> = g.sides[g.us]
+            .bats
+            .iter()
+            .map(|b| b.name.clone())
+            .chain(g.sides[g.us].arms.iter().map(|a| a.name.clone()))
+            .collect();
+        for p in &mut self.s.team.players {
+            let Some(l) = by
+                .iter()
+                .find(|(n, _)| *n == p.family)
+                .map(|(_, l)| l.clone())
+            else {
+                continue;
+            };
+            if !names.contains(&p.family) {
+                continue;
+            }
+            let mut add = |d: Drill, n: u32| {
+                p.xp[d.index()] = p.xp[d.index()].saturating_add(n as u16);
+                total += n;
+            };
+            if l.ab > 0 {
+                add(Drill::Batting, 2 + l.hits);
+                add(Drill::Running, 1);
+            }
+            if l.faced > 0 {
+                add(Drill::Pitching, 2 + l.k / 2);
+            }
+            if won {
+                add(Drill::Fielding, 1);
+            }
+        }
+        // The player of the game: the best bat, or a pitcher who shut them down.
+        let star = by
+            .iter()
+            .filter(|(n, _)| names.contains(n))
+            .map(|(n, l)| {
+                let bat = l.hits as f32 * 2.0 + l.rbi as f32 * 2.5 + l.homers as f32 * 2.0;
+                let arm = if l.faced >= 12 {
+                    l.k as f32 * 0.9 + (6.0 - l.allowed as f32).max(0.0) * 1.2
+                } else {
+                    0.0
+                };
+                (n, l, bat.max(arm), arm > bat)
+            })
+            .max_by(|a, b| a.2.total_cmp(&b.2))
+            .filter(|s| s.2 > 0.0)
+            .map(|(n, l, _, pitched)| {
+                if pitched {
+                    (
+                        n.clone(),
+                        format!("{} strikeouts, {} runs", l.k, l.allowed),
+                        format!("{}奪三振 {}失点", l.k, l.allowed),
+                    )
+                } else {
+                    (
+                        n.clone(),
+                        format!("{} for {}, {} RBI", l.hits, l.ab, l.rbi),
+                        format!("{}打数{}安打 {}打点", l.ab, l.hits, l.rbi),
+                    )
+                }
+            });
+        (total, star)
+    }
+
+    /// The coach leaves the result screen: the notes the week left, or the next week.
+    fn after_match(&mut self) {
+        if self.mode != Mode::MatchEnd {
+            return;
+        }
+        self.report = None;
+        crate::mixer::cue_sfx("card");
+        if !self.notes.is_empty() {
+            self.mode = Mode::Notice;
+        } else if self.s.epilogue {
+            self.mode = Mode::Epilogue { schools: false };
+        } else {
+            self.mode = Mode::Plan;
+            self.begin_week();
+        }
     }
 
     /// Keep the year's best result (the first of a deeper run wins).
@@ -1490,9 +1681,8 @@ impl DiamondDays {
                 if asking.is_some() {
                     return;
                 }
-                let t = t + dt;
-                let pace = self.line_pace(shown);
-                if t < self.spec.line_secs * pace {
+                let t = t + dt * if self.fast { 2.0 } else { 1.0 };
+                if t < self.line_time(shown) {
                     self.mode = Mode::Match { shown, t, asking };
                     return;
                 }
@@ -1502,8 +1692,27 @@ impl DiamondDays {
         }
     }
 
-    /// Clutch plays and ability shouts stay on screen longer. Not a pitch count.
-    fn line_pace(&self, shown: usize) -> f32 {
+    /// The pitches of the latest line (none for words).
+    pub(crate) fn line_pitches(&self, shown: usize) -> Vec<sim::Pitch> {
+        shown
+            .checked_sub(1)
+            .and_then(|i| self.game.as_ref().and_then(|g| g.log.get(i)))
+            .map(|p| p.pitches())
+            .unwrap_or_default()
+    }
+
+    /// Seconds of pitches before the latest line's result shows.
+    pub(crate) fn pitch_time(&self, shown: usize) -> f32 {
+        self.line_pitches(shown).len() as f32 * PITCH_SECS
+    }
+
+    /// The latest line on screen: its pitches, then the result held a while.
+    pub(crate) fn line_time(&self, shown: usize) -> f32 {
+        self.pitch_time(shown) + self.spec.line_secs * self.line_pace(shown)
+    }
+
+    /// Clutch plays and ability shouts stay on screen longer.
+    pub(crate) fn line_pace(&self, shown: usize) -> f32 {
         let Some(play) = shown
             .checked_sub(1)
             .and_then(|i| self.game.as_ref().and_then(|g| g.log.get(i)))
@@ -1564,9 +1773,10 @@ impl DiamondDays {
             }
         }
         g.step();
+        // The line already on screen is done: the next tick shows the new one.
         self.mode = Mode::Match {
             shown,
-            t: self.spec.line_secs,
+            t: f32::MAX,
             asking: None,
         };
     }
@@ -1664,15 +1874,30 @@ impl DiamondDays {
             Mode::Notice => self.tap_notice(),
             // A tap off the list closes it.
             Mode::Roster => self.mode = Mode::Plan,
-            Mode::Lineup { .. } => self.mode = Mode::Roster,
+            Mode::Lineup { .. } => {
+                self.mode = if std::mem::take(&mut self.lineup_from_intro) {
+                    Mode::MatchIntro
+                } else {
+                    Mode::Roster
+                }
+            }
             Mode::Player(_) => self.mode = Mode::Roster,
             Mode::Match {
                 asking: None,
                 shown,
-                ..
+                t,
             } => {
-                // A tap hurries the next line.
-                self.advance_game(shown);
+                // A tap skips the pitches to the result, then hurries the next line.
+                let pre = self.pitch_time(shown);
+                if t < pre {
+                    self.mode = Mode::Match {
+                        shown,
+                        t: pre,
+                        asking: None,
+                    };
+                } else {
+                    self.advance_game(shown);
+                }
             }
             _ => {}
         }
@@ -1846,7 +2071,16 @@ impl DiamondDays {
                     crate::mixer::cue_sfx("card");
                 }
             }
-            hud::Btn::Close => self.mode = Mode::Plan,
+            hud::Btn::Close => {
+                self.mode = if std::mem::take(&mut self.lineup_from_intro) {
+                    Mode::MatchIntro
+                } else {
+                    Mode::Plan
+                }
+            }
+            hud::Btn::PlayBall => self.play_ball(),
+            hud::Btn::Continue => self.after_match(),
+            hud::Btn::Speed => self.fast = !self.fast,
             hud::Btn::Choose(k) => {
                 if matches!(self.mode, Mode::CampTalk { .. }) {
                     self.answer_camp(k);
@@ -1854,7 +2088,10 @@ impl DiamondDays {
                     self.answer(k);
                 }
             }
-            hud::Btn::Lineup => self.open_lineup(),
+            hud::Btn::Lineup => {
+                self.lineup_from_intro = self.mode == Mode::MatchIntro;
+                self.open_lineup();
+            }
             hud::Btn::AutoFill => {
                 self.s.team.clear_lineup();
                 self.open_lineup();
@@ -1901,6 +2138,8 @@ impl DiamondDays {
             Mode::Notice => "notice",
             Mode::Ask { .. } => "ask",
             Mode::Match { .. } => "match",
+            Mode::MatchIntro => "match_intro",
+            Mode::MatchEnd => "match_end",
             Mode::Roster => "roster",
             Mode::Player(_) => "player",
             Mode::Lineup { .. } => "lineup",

@@ -155,6 +155,9 @@ pub struct Outfit {
     pub adult: bool,
     /// A ribbon at the collar (a school blouse) instead of the trimmed V.
     pub ribbon: bool,
+    /// Shoulders, neck and collar under the head. False draws the head alone, to sit on a
+    /// body ([`crate::game_core::chibi`]).
+    pub bust: bool,
 }
 
 impl Outfit {
@@ -167,6 +170,7 @@ impl Outfit {
             long_hair: false,
             adult: false,
             ribbon: false,
+            bust: true,
         }
     }
 
@@ -194,7 +198,7 @@ impl Outfit {
             self.long_hair as u8,
             self.adult as u8,
             self.ribbon as u8,
-            0,
+            self.bust as u8,
             0,
         ]
     }
@@ -823,76 +827,78 @@ pub fn build(size: f32, face: &Face, expr: Expr, outfit: &Outfit) -> Mesh2d {
     if outfit.long_hair {
         pen.inked(&long_back(cx, cy, w, h), hair, hair_ink);
     }
-    // Shoulders: the shirt, clipped to the square, shaded on the right, raglan seams.
-    let body = ell(cx, big * 1.08, big * 0.94, big * 0.56);
-    let shirt = vector::clip_convex(&body, &square);
-    pen.fill(&shirt, outfit.shirt);
-    let dark = if outfit.shirt.iter().take(3).all(|&c| c > 200) {
-        -0.1
-    } else {
-        -0.25
-    };
-    pen.inside(
-        &ell(cx + big * 0.3, big * 1.08, big * 0.5, big * 0.56),
-        &shirt,
-        shade(outfit.shirt, dark),
-    );
-    for side in [-1.0f32, 1.0] {
-        let seam: Vec<P> = bez(
-            [cx + side * w * 0.3, big * 0.83],
-            [cx + side * big * 0.26, big * 0.86],
-            [cx + side * big * 0.36, big * 1.0],
-            8,
+    if outfit.bust {
+        // Shoulders: the shirt, clipped to the square, shaded on the right, raglan seams.
+        let body = ell(cx, big * 1.08, big * 0.94, big * 0.56);
+        let shirt = vector::clip_convex(&body, &square);
+        pen.fill(&shirt, outfit.shirt);
+        let dark = if outfit.shirt.iter().take(3).all(|&c| c > 200) {
+            -0.1
+        } else {
+            -0.25
+        };
+        pen.inside(
+            &ell(cx + big * 0.3, big * 1.08, big * 0.5, big * 0.56),
+            &shirt,
+            shade(outfit.shirt, dark),
         );
-        pen.line(&seam, lw * 1.8, lw * 1.8, outfit.trim);
-    }
-    let rim: Vec<P> = body.iter().copied().filter(|p| p[1] <= big - 0.5).collect();
-    let rim = order_by(rim, 0);
-    pen.line(&rim, lw * 1.8, lw * 1.8, LINE);
-    // The neck with the chin's shadow.
-    let neck = [
-        [cx - w * 0.17, cy + h * 0.3],
-        [cx + w * 0.17, cy + h * 0.3],
-        [cx + w * 0.17, big * 0.86 + h * 0.08],
-        [cx - w * 0.17, big * 0.86 + h * 0.08],
-    ];
-    pen.fill(&neck, skin);
-    pen.inside(
-        &ell(cx, cy + h * 0.36, w * 0.6, h * 0.36),
-        &neck,
-        shade(skin, -0.16),
-    );
-    vector::stroke_closed(pen.m, &neck, lw * 1.8, LINE);
-    // The collar.
-    let (v_top, v_bot) = (big * 0.82, big * 0.93);
-    if outfit.ribbon {
-        let col = [
-            [cx - w * 0.42, v_top - big * 0.01],
-            [cx - w * 0.2, v_top + big * 0.06],
-            [cx, v_bot - big * 0.04],
-            [cx + w * 0.2, v_top + big * 0.06],
-            [cx + w * 0.42, v_top - big * 0.01],
-            [cx, v_bot],
+        for side in [-1.0f32, 1.0] {
+            let seam: Vec<P> = bez(
+                [cx + side * w * 0.3, big * 0.83],
+                [cx + side * big * 0.26, big * 0.86],
+                [cx + side * big * 0.36, big * 1.0],
+                8,
+            );
+            pen.line(&seam, lw * 1.8, lw * 1.8, outfit.trim);
+        }
+        let rim: Vec<P> = body.iter().copied().filter(|p| p[1] <= big - 0.5).collect();
+        let rim = order_by(rim, 0);
+        pen.line(&rim, lw * 1.8, lw * 1.8, LINE);
+        // The neck with the chin's shadow.
+        let neck = [
+            [cx - w * 0.17, cy + h * 0.3],
+            [cx + w * 0.17, cy + h * 0.3],
+            [cx + w * 0.17, big * 0.86 + h * 0.08],
+            [cx - w * 0.17, big * 0.86 + h * 0.08],
         ];
-        pen.inked(&col, [250, 250, 252, 255], LINE);
-        let bow = [
-            [cx - w * 0.1, v_bot - big * 0.035],
-            [cx + w * 0.1, v_bot - big * 0.035],
-            [cx + w * 0.14, v_bot + big * 0.03],
-            [cx, v_bot],
-            [cx - w * 0.14, v_bot + big * 0.03],
-        ];
-        pen.inked(&bow, [220, 60, 76, 255], LINE);
-    } else {
-        let v = [
-            [cx - w * 0.38, v_top],
-            [cx - w * 0.3, v_top - big * 0.01],
-            [cx, v_bot - big * 0.045],
-            [cx + w * 0.3, v_top - big * 0.01],
-            [cx + w * 0.38, v_top],
-            [cx, v_bot],
-        ];
-        pen.inked(&v, outfit.trim, LINE);
+        pen.fill(&neck, skin);
+        pen.inside(
+            &ell(cx, cy + h * 0.36, w * 0.6, h * 0.36),
+            &neck,
+            shade(skin, -0.16),
+        );
+        vector::stroke_closed(pen.m, &neck, lw * 1.8, LINE);
+        // The collar.
+        let (v_top, v_bot) = (big * 0.82, big * 0.93);
+        if outfit.ribbon {
+            let col = [
+                [cx - w * 0.42, v_top - big * 0.01],
+                [cx - w * 0.2, v_top + big * 0.06],
+                [cx, v_bot - big * 0.04],
+                [cx + w * 0.2, v_top + big * 0.06],
+                [cx + w * 0.42, v_top - big * 0.01],
+                [cx, v_bot],
+            ];
+            pen.inked(&col, [250, 250, 252, 255], LINE);
+            let bow = [
+                [cx - w * 0.1, v_bot - big * 0.035],
+                [cx + w * 0.1, v_bot - big * 0.035],
+                [cx + w * 0.14, v_bot + big * 0.03],
+                [cx, v_bot],
+                [cx - w * 0.14, v_bot + big * 0.03],
+            ];
+            pen.inked(&bow, [220, 60, 76, 255], LINE);
+        } else {
+            let v = [
+                [cx - w * 0.38, v_top],
+                [cx - w * 0.3, v_top - big * 0.01],
+                [cx, v_bot - big * 0.045],
+                [cx + w * 0.3, v_top - big * 0.01],
+                [cx + w * 0.38, v_top],
+                [cx, v_bot],
+            ];
+            pen.inked(&v, outfit.trim, LINE);
+        }
     }
     if outfit.cap.is_none() && !outfit.long_hair {
         let back = if matches!(face.hair_style % HAIR_STYLES, 2 | 5) {

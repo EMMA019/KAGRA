@@ -288,6 +288,107 @@ pub struct Play {
     /// A chance, an extra-base hit, or a walk-off: the picture holds longer.
     #[serde(default)]
     pub clutch: bool,
+    /// The plate appearance before its result, for the pitch-by-pitch picture: who bats
+    /// (0 visitors, 1 home), outs and runners (bit 0 first base), batter, pitcher, top speed.
+    #[serde(default)]
+    pub side: u8,
+    #[serde(default)]
+    pub outs0: u8,
+    #[serde(default)]
+    pub bases0: u8,
+    #[serde(default)]
+    pub batter: String,
+    #[serde(default)]
+    pub pitcher: String,
+    #[serde(default)]
+    pub velo: f32,
+}
+
+/// One pitch of a plate appearance, as shown (the result comes from the plate appearance).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pitch {
+    Ball,
+    /// A called strike.
+    Looking,
+    /// A swing and a miss.
+    Swinging,
+    Foul,
+    /// Swung and hit into play: the play happens.
+    InPlay,
+}
+
+impl Play {
+    /// A line of words only (the game's title, an inning, a shout).
+    pub fn note(en: impl Into<String>, ja: impl Into<String>) -> Self {
+        Play {
+            en: en.into(),
+            ja: ja.into(),
+            runs: 0,
+            kind: PlayKind::Note,
+            dir: 0.0,
+            banner: None,
+            clutch: false,
+            side: 0,
+            outs0: 0,
+            bases0: 0,
+            batter: String::new(),
+            pitcher: String::new(),
+            velo: 0.0,
+        }
+    }
+
+    /// The pitches leading to this result, in order, with a count that never goes past
+    /// three balls or two strikes before the last pitch. Drawn from a hash of the play, so
+    /// the same game shows the same pitches and no result changes.
+    pub fn pitches(&self) -> Vec<Pitch> {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for b in self
+            .en
+            .bytes()
+            .chain(self.batter.bytes())
+            .chain((self.dir.to_bits()).to_le_bytes())
+        {
+            h = (h ^ b as u64).wrapping_mul(0x0100_0000_01b3);
+        }
+        let mut next = move |n: u64| -> u64 {
+            h ^= h >> 29;
+            h = h.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+            h ^= h >> 32;
+            h % n.max(1)
+        };
+        let walked_on_purpose = self.kind == PlayKind::Walk && self.en.contains("on purpose");
+        let (balls, strikes, last) = match self.kind {
+            PlayKind::Note | PlayKind::Change => return Vec::new(),
+            PlayKind::Steal | PlayKind::CaughtStealing => return vec![Pitch::Ball],
+            PlayKind::Walk if walked_on_purpose => return vec![Pitch::Ball; 4],
+            PlayKind::Walk => (3, next(3) as usize, Pitch::Ball),
+            PlayKind::Strikeout => (next(4) as usize, 2, Pitch::Swinging),
+            PlayKind::Bunt => (next(2) as usize, next(2) as usize, Pitch::InPlay),
+            _ => (next(4) as usize, next(3) as usize, Pitch::InPlay),
+        };
+        // Strikes before the last pitch: called, missed or fouled off.
+        let mut seq: Vec<Pitch> = (0..strikes)
+            .map(|_| match next(3) {
+                0 => Pitch::Looking,
+                1 => Pitch::Swinging,
+                _ => Pitch::Foul,
+            })
+            .chain(std::iter::repeat_n(Pitch::Ball, balls))
+            .collect();
+        // Shuffle (any order keeps the count legal: at most 3 balls and 2 strikes).
+        for i in (1..seq.len()).rev() {
+            let j = next(i as u64 + 1) as usize;
+            seq.swap(i, j);
+        }
+        // With two strikes a batter may foul a few off.
+        if strikes == 2 && last != Pitch::Ball {
+            for _ in 0..next(3) {
+                seq.push(Pitch::Foul);
+            }
+        }
+        seq.push(last);
+        seq
+    }
 }
 
 /// What a play looks like on the field.
@@ -339,6 +440,8 @@ pub struct Game {
     /// Set just before a line is spoken.
     mark_banner: Option<Ability>,
     mark_clutch: bool,
+    /// The plate appearance as it starts (see [`Play::side`]).
+    snap: (u8, u8, u8, String, String, f32),
 }
 
 impl Game {
@@ -368,6 +471,7 @@ impl Game {
             rng: Rng::new(seed),
             mark_banner: None,
             mark_clutch: false,
+            snap: (0, 0, 0, String::new(), String::new(), 0.0),
         }
     }
 
@@ -422,6 +526,7 @@ impl Game {
             h = (h ^ b as u32).wrapping_mul(16_777_619);
         }
         let dir = (h % 900) as f32 / 10.0 - 45.0;
+        let snap = self.snap.clone();
         self.log.push(Play {
             en,
             ja,
@@ -430,6 +535,12 @@ impl Game {
             dir,
             banner,
             clutch,
+            side: snap.0,
+            outs0: snap.1,
+            bases0: snap.2,
+            batter: snap.3,
+            pitcher: snap.4,
+            velo: snap.5,
         });
     }
 
@@ -490,6 +601,19 @@ impl Game {
             return false;
         }
         let s = self.batting();
+        let bases = self
+            .bases
+            .iter()
+            .enumerate()
+            .fold(0u8, |m, (i, b)| m | ((b.is_some() as u8) << i));
+        self.snap = (
+            s as u8,
+            self.outs,
+            bases,
+            self.batter_now().name.clone(),
+            self.pitcher_now().name.clone(),
+            self.pitcher_now().velo,
+        );
         let f = 1 - s;
         // A tired pitcher makes way.
         let arm_now = self.pitcher_now().clone();

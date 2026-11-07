@@ -5,6 +5,7 @@
 use super::board::Square;
 use super::sim::PlayKind;
 use super::team::{Drill, Mood, Player, Role};
+use crate::game_core::chibi::{self, Facing, Kit, Pose};
 use crate::game_core::portrait::{Expr, Face, Outfit};
 use crate::hud_art::Painter;
 use crate::scene::Vert2;
@@ -431,30 +432,6 @@ pub fn tile(p: &mut Painter, c: P, tw: f32, th: f32, sq: Square, label: &str, he
     );
 }
 
-/// The little ballpark in the middle of the board, the club in their places (`players`:
-/// the fielding position index into [`FIELDERS`], face, expression).
-pub fn mini_field(p: &mut Painter, r: [f32; 4], players: &[(usize, Face, Expr)]) {
-    let home = game_field(p, r, true);
-    let size = (home.2 * 9.0).clamp(22.0, 34.0);
-    for (i, face, expr) in players {
-        let (dist, ang) = FIELDERS[*i % FIELDERS.len()];
-        let c = field_pt(home, dist.max(4.0), ang);
-        p.fill(
-            &vector::ellipse(c[0], c[1] + size * 0.42, size * 0.32, size * 0.1),
-            Paint::Solid([0, 0, 0, 60]),
-        );
-        p.portrait(
-            c[0] - size * 0.5,
-            c[1] - size * 0.6,
-            size,
-            face,
-            *expr,
-            &Outfit::cap(OURS),
-            1.0,
-        );
-    }
-}
-
 /// The coach's token: a cap on a little stand.
 pub fn coach_token(p: &mut Painter, c: P, size: f32, lift: f32) {
     let face = Face::from_seed(9001);
@@ -778,4 +755,638 @@ pub fn mood_icon(p: &mut Painter, c: P, r: f32, m: Mood) {
             WHITE,
         );
     }
+}
+
+// ---- the broadcast: behind the plate ---------------------------------------------------------
+
+/// One frame of a plate appearance seen from behind the catcher.
+pub struct PitchScene<'a> {
+    pub night: bool,
+    pub clock: f32,
+    /// The fielding side's colour and whether it wears the grey road uniform.
+    pub field: (Rgba, bool),
+    pub bat: (Rgba, bool),
+    pub pitcher: &'a Face,
+    /// The pitcher's motion, 0..1 (0: set).
+    pub windup: f32,
+    pub batter: &'a Face,
+    /// The swing, 0..1, or below 0 for no swing.
+    pub swing: f32,
+    pub number: Option<u8>,
+    pub catcher: &'a Face,
+    /// The ball: travel 0..1 and where it crosses the plate (zone units, -1..1 inside).
+    pub ball: Option<(f32, P)>,
+    /// Where earlier pitches of this plate appearance crossed, and whether each was a strike.
+    pub marks: &'a [(P, bool)],
+}
+
+/// The strike zone in the picture (left, top, width, height) for a broadcast rectangle.
+pub fn zone_rect(r: [f32; 4]) -> [f32; 4] {
+    let [x, y, w, h] = r;
+    let (zw, zh) = (w * 0.13, h * 0.15);
+    [x + w * 0.5 - zw * 0.5, y + h * 0.63, zw, zh]
+}
+
+/// A point in the zone (zone units: -1..1 left to right, top to bottom) on screen.
+pub fn zone_pt(r: [f32; 4], q: P) -> P {
+    let z = zone_rect(r);
+    [
+        z[0] + z[2] * (0.5 + q[0] * 0.5),
+        z[1] + z[3] * (0.5 + q[1] * 0.5),
+    ]
+}
+
+fn kit(color: Rgba, road: bool) -> Kit {
+    if road {
+        Kit::road(color)
+    } else {
+        Kit::home(color)
+    }
+}
+
+/// The view from behind home plate: the stands, the outfield, the infield in perspective,
+/// the fielders, the pitcher on the mound, the batter from behind, the catcher and the zone.
+pub fn pitch_view(p: &mut Painter, r: [f32; 4], sc: &PitchScene) {
+    let [x, y, w, h] = r;
+    let cx = x + w * 0.5;
+    let horizon = y + h * 0.3;
+    let rect = |t: f32, b: f32| [[x, t], [x + w, t], [x + w, b], [x, b]];
+    // Sky and the stands.
+    let (sky0, sky1) = if sc.night {
+        ([14, 20, 46, 255], [40, 54, 96, 255])
+    } else {
+        ([92, 150, 226, 255], [188, 220, 246, 255])
+    };
+    p.fill(&rect(y, horizon), Paint::vertical(y, horizon, sky0, sky1));
+    super::sprites::sky(p, sc.night, x, y, w, horizon - y);
+    if sc.night {
+        for lx in [x + w * 0.12, x + w * 0.88] {
+            p.glow(lx, y + h * 0.05, 70.0, [255, 250, 220, 130]);
+            p.fill(
+                &vector::rounded_rect(lx - 22.0, y + h * 0.02, 44.0, 14.0, 3.0),
+                Paint::Solid([60, 64, 90, 255]),
+            );
+            for i in 0..4 {
+                p.dot(
+                    lx - 15.0 + i as f32 * 10.0,
+                    y + h * 0.02 + 7.0,
+                    3.5,
+                    [255, 252, 230, 255],
+                );
+            }
+        }
+    }
+    let stand = rect(y + h * 0.1, horizon);
+    p.fill(&stand, Paint::Solid([36, 44, 72, 255]));
+    crowd(
+        p,
+        x,
+        y + h * 0.1,
+        w,
+        horizon - y - h * 0.1,
+        &stand,
+        if sc.night { 0.45 } else { 0.6 },
+    );
+    // The outfield wall.
+    p.fill(
+        &rect(horizon - 6.0, horizon + 4.0),
+        Paint::Solid([28, 84, 64, 255]),
+    );
+    p.line(
+        &[[x, horizon - 6.0], [x + w, horizon - 6.0]],
+        1.5,
+        [240, 210, 90, 255],
+    );
+    // The grass, mown in stripes that run toward the plate.
+    let grass = rect(horizon + 4.0, y + h);
+    p.fill(
+        &grass,
+        Paint::vertical(horizon, y + h, GRASS2, shade(GRASS, -0.06)),
+    );
+    let vp = [cx, y - h * 0.9];
+    let mut k = -6;
+    while k <= 6 {
+        if k % 2 == 0 {
+            let at = |t: f32| [cx + t * w * 0.22, y + h];
+            let a = at(k as f32);
+            let b = at(k as f32 + 1.0);
+            let s = [vp, a, b];
+            let band = vector::clip_convex(&s, &grass);
+            p.fill(&band, Paint::Solid([255, 255, 255, 16]));
+        }
+        k += 1;
+    }
+    // The infield dirt: an arc behind second base, open toward the plate.
+    let mut dirt = vec![[x - 2.0, y + h * 0.66]];
+    for i in 0..=24 {
+        let a = std::f32::consts::PI * (i as f32 / 24.0);
+        dirt.push([cx - a.cos() * w * 0.64, y + h * 0.66 - a.sin() * h * 0.32]);
+    }
+    dirt.push([x + w + 2.0, y + h * 0.66]);
+    dirt.push([x + w + 2.0, y + h]);
+    dirt.push([x - 2.0, y + h]);
+    let dirt = vector::clip_convex(&dirt, &grass);
+    p.fill(
+        &dirt,
+        Paint::vertical(y + h * 0.34, y + h, shade(DIRT, 0.04), shade(DIRT, -0.08)),
+    );
+    // The infield grass and the circle round the plate.
+    let b2 = [cx, y + h * 0.385];
+    let b1 = [cx + w * 0.42, y + h * 0.6];
+    let b3 = [cx - w * 0.42, y + h * 0.6];
+    let home = [cx, y + h * 0.92];
+    p.fill(
+        &[
+            [cx, y + h * 0.42],
+            [cx + w * 0.35, y + h * 0.6],
+            [cx, y + h * 0.84],
+            [cx - w * 0.35, y + h * 0.6],
+        ],
+        Paint::vertical(y + h * 0.42, y + h * 0.84, GRASS2, GRASS),
+    );
+    p.fill(
+        &vector::ellipse(home[0], home[1], w * 0.3, h * 0.085),
+        Paint::Solid(shade(DIRT, -0.04)),
+    );
+    // Foul lines and bases.
+    for (base, far) in [
+        (b1, [x + w + 40.0, y + h * 0.46]),
+        (b3, [x - 40.0, y + h * 0.46]),
+    ] {
+        let dir = [base[0] - home[0], base[1] - home[1]];
+        let end = [home[0] + dir[0] * 3.0, home[1] + dir[1] * 3.0];
+        let stop = if end[1] < horizon + 4.0 { far } else { end };
+        p.line(
+            &[home, clip_seg(home, stop, [x, horizon + 4.0, w, h * 0.7])],
+            2.0,
+            [250, 250, 245, 230],
+        );
+    }
+    for (b, s) in [(b2, 5.0), (b1, 6.0), (b3, 6.0)] {
+        p.fill(
+            &[
+                [b[0], b[1] - s * 0.5],
+                [b[0] + s, b[1]],
+                [b[0], b[1] + s * 0.5],
+                [b[0] - s, b[1]],
+            ],
+            Paint::Solid(WHITE),
+        );
+    }
+    // The mound.
+    let mound = [cx, y + h * 0.53];
+    p.fill(
+        &vector::ellipse(mound[0], mound[1], w * 0.08, h * 0.024),
+        Paint::Solid(shade(DIRT, 0.08)),
+    );
+    p.fill(
+        &vector::rounded_rect(mound[0] - 6.0, mound[1] - 2.0, 12.0, 3.0, 1.0),
+        Paint::Solid(WHITE),
+    );
+    // Fielders: outfielders by the wall, then the infield.
+    let fk = kit(sc.field.0, sc.field.1);
+    let crew = Face::from_seed(4242);
+    for (fx, fy, s) in [
+        (-0.3, 0.315, 0.05),
+        (0.0, 0.31, 0.05),
+        (0.3, 0.315, 0.05),
+        (-0.14, 0.41, 0.075),
+        (0.14, 0.41, 0.075),
+        (-0.37, 0.56, 0.085),
+        (0.37, 0.56, 0.085),
+    ] {
+        chibi::draw(
+            p,
+            [cx + fx * w, y + fy * h],
+            s * h * 1.2,
+            &crew,
+            Expr::Serious,
+            Facing::Front,
+            Pose::Ready,
+            &fk,
+        );
+    }
+    chibi::draw(
+        p,
+        mound,
+        h * 0.19,
+        sc.pitcher,
+        Expr::Fiery,
+        Facing::Front,
+        Pose::Pitch(sc.windup),
+        &fk,
+    );
+    // The plate and the boxes.
+    p.fill(
+        &[
+            [home[0] - 9.0, home[1] - 3.0],
+            [home[0] + 9.0, home[1] - 3.0],
+            [home[0] + 9.0, home[1] + 1.0],
+            [home[0], home[1] + 4.0],
+            [home[0] - 9.0, home[1] + 1.0],
+        ],
+        Paint::Solid(WHITE),
+    );
+    for s in [-1.0f32, 1.0] {
+        let bx = home[0] + s * w * 0.12;
+        p.outline(
+            &[
+                [bx - w * 0.05, home[1] - h * 0.05],
+                [bx + w * 0.05, home[1] - h * 0.05],
+                [bx + w * 0.06, home[1] + h * 0.05],
+                [bx - w * 0.06, home[1] + h * 0.05],
+            ],
+            1.5,
+            [255, 255, 255, 170],
+        );
+    }
+    // Earlier pitches, then the ball.
+    let z = zone_rect(r);
+    for (q, strike) in sc.marks {
+        let c = zone_pt(r, *q);
+        p.dot(
+            c[0],
+            c[1],
+            4.0,
+            if *strike {
+                [255, 214, 60, 220]
+            } else {
+                [120, 200, 255, 220]
+            },
+        );
+    }
+    p.outline(
+        &[
+            [z[0], z[1]],
+            [z[0] + z[2], z[1]],
+            [z[0] + z[2], z[1] + z[3]],
+            [z[0], z[1] + z[3]],
+        ],
+        1.6,
+        [255, 255, 255, 150],
+    );
+    for i in 1..3 {
+        let fx = z[0] + z[2] * i as f32 / 3.0;
+        let fy = z[1] + z[3] * i as f32 / 3.0;
+        p.line(&[[fx, z[1]], [fx, z[1] + z[3]]], 0.8, [255, 255, 255, 60]);
+        p.line(&[[z[0], fy], [z[0] + z[2], fy]], 0.8, [255, 255, 255, 60]);
+    }
+    // The batter from behind, on the left of the plate.
+    let bk = Kit {
+        helmet: true,
+        number: sc.number,
+        ..kit(sc.bat.0, sc.bat.1)
+    };
+    chibi::draw(
+        p,
+        [cx - w * 0.17, y + h * 0.99],
+        h * 0.47,
+        sc.batter,
+        Expr::Serious,
+        Facing::Back,
+        Pose::Bat(sc.swing.max(0.0)),
+        &bk,
+    );
+    if let Some((k, q)) = sc.ball {
+        let release = [mound[0] - h * 0.04, mound[1] - h * 0.13];
+        let target = zone_pt(r, q);
+        let k = k.clamp(0.0, 1.0);
+        let e = k * k;
+        let c = [
+            release[0] + (target[0] - release[0]) * e,
+            release[1] + (target[1] - release[1]) * e - (k * std::f32::consts::PI).sin() * h * 0.02,
+        ];
+        let rad = 1.5 + 5.5 * e;
+        p.fill(
+            &vector::ellipse(
+                c[0],
+                c[1] + rad * 3.0 + (1.0 - e) * h * 0.1,
+                rad,
+                rad * 0.35,
+            ),
+            Paint::Solid([0, 0, 0, 50]),
+        );
+        p.glow(c[0], c[1], rad * 2.6, [255, 255, 255, 110]);
+        p.fill_ink(
+            &vector::circle(c[0], c[1], rad),
+            WHITE,
+            [200, 60, 60, 255],
+            (rad * 0.18).max(0.6),
+        );
+    }
+    // The catcher in front of the zone's bottom.
+    let ck = Kit {
+        gear: true,
+        ..kit(sc.field.0, sc.field.1)
+    };
+    chibi::draw(
+        p,
+        [cx + w * 0.015, y + h * 1.0],
+        h * 0.3,
+        sc.catcher,
+        Expr::Serious,
+        Facing::Back,
+        Pose::Squat,
+        &ck,
+    );
+    let _ = sc.clock;
+}
+
+// ---- the practice ground ---------------------------------------------------------------------
+
+/// The school's practice ground in the middle of the board: the school building, the net,
+/// a dirt field with chalk lines, a batting cage, a bullpen, the running lane, and the club
+/// at their drills (`crew`: the drill, face, expression).
+pub fn school_ground(p: &mut Painter, r: [f32; 4], crew: &[(Drill, Face, Expr)], t: f32) {
+    let [x, y, w, h] = r;
+    let rr = vector::rounded_rect(x, y, w, h, 14.0);
+    p.shadow(x, y, w, h, 14.0, 8.0, 70);
+    // Sky and the school.
+    let sky_b = y + h * 0.3;
+    p.fill(
+        &rr,
+        Paint::vertical(y, sky_b, [150, 200, 244, 255], [214, 236, 250, 255]),
+    );
+    let bx0 = x + w * 0.16;
+    let bw = w * 0.68;
+    let by = y + h * 0.06;
+    let bh = sky_b - by;
+    p.fill_ink(
+        &vector::rounded_rect(bx0, by, bw, bh, 3.0),
+        [246, 240, 226, 255],
+        [150, 140, 128, 255],
+        1.2,
+    );
+    p.fill(
+        &vector::rounded_rect(bx0 - 3.0, by - 3.0, bw + 6.0, 5.0, 2.0),
+        Paint::Solid([186, 120, 96, 255]),
+    );
+    let (cols, rows) = (9, 3);
+    for j in 0..rows {
+        for i in 0..cols {
+            let wx = bx0 + 8.0 + i as f32 * (bw - 16.0) / cols as f32;
+            let wy = by + 6.0 + j as f32 * (bh - 10.0) / rows as f32;
+            if i == cols / 2 && j == 0 {
+                continue;
+            }
+            p.fill(
+                &vector::rounded_rect(
+                    wx,
+                    wy,
+                    (bw - 16.0) / cols as f32 - 5.0,
+                    (bh - 10.0) / rows as f32 - 5.0,
+                    1.5,
+                ),
+                Paint::vertical(wy, wy + 8.0, [150, 196, 230, 255], [112, 160, 206, 255]),
+            );
+        }
+    }
+    let clock = [bx0 + bw * 0.5, by + 8.0];
+    p.fill_ink(
+        &vector::circle(clock[0], clock[1], 6.0),
+        WHITE,
+        [90, 90, 100, 255],
+        1.0,
+    );
+    p.line(&[clock, [clock[0], clock[1] - 4.0]], 1.0, INK);
+    p.line(&[clock, [clock[0] + 3.0, clock[1]]], 1.0, INK);
+    for (tx, s) in [(x + w * 0.07, 1.0), (x + w * 0.93, 1.1)] {
+        p.fill(
+            &vector::rounded_rect(tx - 3.0, sky_b - 26.0 * s, 6.0, 26.0 * s, 2.0),
+            Paint::Solid([120, 84, 60, 255]),
+        );
+        for (dx, dy, rr2) in [
+            (0.0, -34.0, 16.0),
+            (-11.0, -26.0, 12.0),
+            (11.0, -26.0, 12.0),
+        ] {
+            p.fill_ink(
+                &vector::circle(tx + dx * s, sky_b + dy * s, rr2 * s),
+                [92, 168, 92, 255],
+                [52, 110, 60, 255],
+                1.0,
+            );
+        }
+    }
+    // The ground.
+    let ground = vector::clip_convex(
+        &[[x, sky_b], [x + w, sky_b], [x + w, y + h], [x, y + h]],
+        &rr,
+    );
+    p.fill(
+        &ground,
+        Paint::vertical(sky_b, y + h, [222, 190, 146, 255], [204, 168, 122, 255]),
+    );
+    let mut ly = sky_b + 14.0;
+    while ly < y + h - 6.0 {
+        p.line(
+            &[[x + 8.0, ly], [x + w - 8.0, ly + 2.0]],
+            0.8,
+            [190, 154, 110, 90],
+        );
+        ly += 11.0;
+    }
+    // The back net along the school side.
+    let ny = sky_b - 2.0;
+    p.fill(
+        &[
+            [x, ny - 16.0],
+            [x + w, ny - 16.0],
+            [x + w, ny + 2.0],
+            [x, ny + 2.0],
+        ],
+        Paint::Solid([60, 70, 70, 40]),
+    );
+    let mut nx = x + 4.0;
+    while nx < x + w {
+        p.line(&[[nx, ny - 16.0], [nx, ny + 2.0]], 0.6, [70, 80, 80, 120]);
+        nx += 6.0;
+    }
+    for k in 0..3 {
+        let yy = ny - 16.0 + k as f32 * 6.0;
+        p.line(&[[x, yy], [x + w, yy]], 0.6, [70, 80, 80, 120]);
+    }
+    // Chalk: a small diamond in the middle.
+    let dc = [x + w * 0.5, y + h * 0.66];
+    let (dw, dh) = (w * 0.2, h * 0.13);
+    p.outline(
+        &[
+            [dc[0], dc[1] - dh],
+            [dc[0] + dw, dc[1]],
+            [dc[0], dc[1] + dh],
+            [dc[0] - dw, dc[1]],
+        ],
+        1.6,
+        [255, 255, 255, 200],
+    );
+    // The batting cage (left) and the bullpen (right).
+    let cage = [x + w * 0.04, y + h * 0.36, w * 0.24, h * 0.34];
+    p.fill(
+        &vector::rounded_rect(cage[0], cage[1], cage[2], cage[3], 3.0),
+        Paint::Solid([40, 60, 60, 40]),
+    );
+    let mut gx = cage[0];
+    while gx <= cage[0] + cage[2] + 0.1 {
+        p.line(
+            &[[gx, cage[1]], [gx, cage[1] + cage[3]]],
+            0.6,
+            [60, 70, 70, 150],
+        );
+        gx += 7.0;
+    }
+    let mut gy = cage[1];
+    while gy <= cage[1] + cage[3] + 0.1 {
+        p.line(
+            &[[cage[0], gy], [cage[0] + cage[2], gy]],
+            0.6,
+            [60, 70, 70, 150],
+        );
+        gy += 7.0;
+    }
+    p.outline(
+        &vector::rounded_rect(cage[0], cage[1], cage[2], cage[3], 3.0),
+        1.4,
+        [70, 80, 84, 220],
+    );
+    let pen = [x + w * 0.84, y + h * 0.5];
+    p.fill(
+        &vector::ellipse(pen[0], pen[1], w * 0.08, h * 0.035),
+        Paint::Solid([214, 168, 116, 255]),
+    );
+    p.fill(
+        &vector::rounded_rect(pen[0] - 5.0, pen[1] - 1.5, 10.0, 3.0, 1.0),
+        Paint::Solid(WHITE),
+    );
+    // Cones along the running lane.
+    for i in 0..5 {
+        let c = [x + w * (0.18 + i as f32 * 0.16), y + h * 0.95];
+        p.fill_ink(
+            &[[c[0], c[1] - 7.0], [c[0] + 4.0, c[1]], [c[0] - 4.0, c[1]]],
+            [255, 140, 50, 255],
+            [160, 80, 30, 255],
+            0.8,
+        );
+    }
+    // The club at their drills, back to front. Each drill has a few spots; anyone past
+    // them waits nearby for a turn.
+    let size = (h * 0.22).clamp(28.0, 60.0);
+    let mut slots: Vec<(P, Pose, Facing)> = Vec::new();
+    let mut used = [0usize; 5];
+    let spot = |d: Drill, n: usize| -> Option<(P, Pose)> {
+        let tt = t + n as f32 * 0.37;
+        match (d, n) {
+            (Drill::Batting, 0) => Some((
+                [cage[0] + cage[2] * 0.5, cage[1] + cage[3] * 0.8],
+                Pose::Bat((tt * 0.8 % 1.6).min(1.0)),
+            )),
+            (Drill::Batting, 1) => Some((
+                [cage[0] + cage[2] * 0.62, cage[1] + cage[3] + 30.0],
+                Pose::Bat((tt * 0.7 % 1.8).min(1.0)),
+            )),
+            (Drill::Batting, 2) => Some((
+                [cage[0] + cage[2] * 0.22, cage[1] + cage[3] + 44.0],
+                Pose::Bat((tt * 0.75 % 1.7).min(1.0)),
+            )),
+            (Drill::Pitching, 0) => Some((
+                [pen[0], pen[1] + 4.0],
+                Pose::Pitch((tt * 0.6 % 1.4).min(1.0)),
+            )),
+            (Drill::Pitching, 1) => Some((
+                [pen[0] - 18.0, pen[1] + 40.0],
+                Pose::Pitch((tt * 0.55 % 1.5).min(1.0)),
+            )),
+            (Drill::Fielding, k) if k < 4 => Some((
+                [
+                    dc[0] + [-0.75, 0.75, 0.0, 0.0][k] * dw,
+                    dc[1] + [0.0, 0.0, -0.8, 0.85][k] * dh,
+                ],
+                Pose::Ready,
+            )),
+            (Drill::Running, k) if k < 3 => Some((
+                [
+                    x + w * (0.1 + ((t * 0.07 + k as f32 * 0.27) % 0.8)),
+                    y + h * 0.9,
+                ],
+                Pose::Run(t * 1.6 + k as f32 * 0.3),
+            )),
+            (Drill::Strength, k) if k < 2 => Some((
+                [x + w * (0.4 + k as f32 * 0.22), y + h * 0.44],
+                if ((t * 0.7 + k as f32) as i32) % 2 == 0 {
+                    Pose::Cheer
+                } else {
+                    Pose::Stand
+                },
+            )),
+            _ => None,
+        }
+    };
+    let mut waiting = 0usize;
+    for (d, _, _) in crew {
+        let n = used[d.index()];
+        used[d.index()] += 1;
+        let (at, pose) = spot(*d, n).unwrap_or_else(|| {
+            // In line along the side, bat or glove in hand.
+            let k = waiting;
+            waiting += 1;
+            (
+                [
+                    x + w * (0.36 + (k % 4) as f32 * 0.1),
+                    y + h * (0.47 + (k / 4) as f32 * 0.1),
+                ],
+                Pose::Stand,
+            )
+        });
+        slots.push((at, pose, Facing::Front));
+    }
+    let mut order: Vec<usize> = (0..crew.len()).collect();
+    order.sort_by(|a, b| slots[*a].0[1].total_cmp(&slots[*b].0[1]));
+    let k = Kit::practice(OURS);
+    for i in order {
+        let (at, pose, facing) = slots[i];
+        let (_, face, expr) = &crew[i];
+        chibi::draw(p, at, size, face, *expr, facing, pose, &k);
+    }
+    p.outline(&rr, 2.0, [255, 255, 255, 170]);
+}
+
+/// A school crest: a shield in the school colour with its first letter.
+pub fn emblem(p: &mut Painter, cx: f32, cy: f32, r: f32, color: Rgba, letter: &str) {
+    let shield = vec![
+        [cx - r, cy - r * 0.9],
+        [cx - r * 0.35, cy - r * 1.05],
+        [cx, cy - r * 0.92],
+        [cx + r * 0.35, cy - r * 1.05],
+        [cx + r, cy - r * 0.9],
+        [cx + r * 0.96, cy + r * 0.2],
+        [cx + r * 0.6, cy + r * 0.75],
+        [cx, cy + r * 1.1],
+        [cx - r * 0.6, cy + r * 0.75],
+        [cx - r * 0.96, cy + r * 0.2],
+    ];
+    p.shadow(cx - r, cy - r, r * 2.0, r * 2.1, r * 0.4, r * 0.25, 90);
+    p.fill_ink(&shield, shade(color, 0.08), shade(color, -0.5), r * 0.06);
+    let inner: Vec<P> = shield
+        .iter()
+        .map(|q| [cx + (q[0] - cx) * 0.84, cy + (q[1] - cy) * 0.84 + r * 0.02])
+        .collect();
+    p.outline(&inner, r * 0.05, [255, 255, 255, 220]);
+    p.fill(
+        &[
+            [cx - r * 0.9, cy - r * 0.85],
+            [cx + r * 0.9, cy - r * 0.85],
+            [cx + r * 0.9, cy - r * 0.2],
+            [cx - r * 0.9, cy - r * 0.2],
+        ],
+        Paint::Solid([255, 255, 255, 30]),
+    );
+    p.text_outlined(
+        letter,
+        cx,
+        cy - r * 0.55,
+        r * 1.0,
+        WHITE,
+        shade(color, -0.55),
+        r * 0.06,
+        crate::scene::TextAlign::Center,
+    );
 }

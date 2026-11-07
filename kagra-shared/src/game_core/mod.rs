@@ -35,6 +35,8 @@
 //! - [`physics2d`]: side-view rigid boxes and balls (stack, roll, topple, blast).
 //! - [`portrait`]: line-art faces for talk scenes and rosters (expressions, caps, haircuts),
 //!   drawn as cached [`crate::vector`] meshes.
+//! - [`chibi`]: full-body chibi players (a portrait head on a vector body): stand, crouch, run,
+//!   pitch, swing, a catcher's squat, a cheer; facing the viewer or from behind.
 //! - [`anim`]: a character's moves (locomotion, one-shot attacks with a hit cue, death hold)
 //!   as crossfaded glTF clips or a procedural pose.
 //!
@@ -43,6 +45,7 @@
 //! The runner kit (`neon_cat.rs`), HOP-BEAT and the survivor arena are the kits today.
 
 pub mod anim;
+pub mod chibi;
 pub mod collide;
 pub mod dialogue;
 pub mod enemies;
