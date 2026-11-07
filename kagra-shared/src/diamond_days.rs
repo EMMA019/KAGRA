@@ -13,6 +13,7 @@ mod board;
 mod doc;
 mod hud;
 mod sim;
+mod sprites;
 pub mod team;
 #[cfg(test)]
 mod tests;

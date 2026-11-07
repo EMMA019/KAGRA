@@ -169,5 +169,12 @@ and is kept if you stay.
 - Also in: the editable order, pinch hit / pinch run / a defensive change, the ten
   persistent schools, the Blossom Invitational, exams, camp, graduation paths, and
   one more three-year chapter if the coach stays or moves.
-- Still to come: a balance pass, and a later art pass that may add CC0 pictures.
-  Hit, crowd-adjacent, and UI sounds already use the files the other games ship.
+- Free pictures now sit behind that drawing (CC0, in `assets/diamond_days/` and the
+  ledger): Segel's cartoon countryside behind the week and the title, colour-graded
+  Poly Haven sky plates behind a match, looneybits grass stripes on the outfield and
+  the ball icon on the title, Kenney paper and a hanging banner on notices, Kenney
+  green/gold buttons on the roster and the epilogue, Kenney stars for reputation and
+  medals on the three-year card. The pixel stadium is not used; it would sit
+  unmodified against the illustrated field. No paid art.
+- Still to come: a balance pass. Hit and UI sounds already use the files the other
+  games ship.

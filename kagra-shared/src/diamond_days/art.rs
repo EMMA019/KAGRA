@@ -164,26 +164,13 @@ pub fn sky(month: u8) -> (Rgba, Rgba) {
 }
 
 /// The whole screen: a sky gradient, drifting soft clouds, the ground below.
-pub fn backdrop(p: &mut Painter, month: u8, t: f32) {
+pub fn backdrop(p: &mut Painter, month: u8, _t: f32) {
     let [x0, y0, w, h] = p.st.screen;
     let (top, bottom) = sky(month);
     let rect = [[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]];
     p.fill(&rect, Paint::vertical(y0, y0 + h, top, bottom));
-    for (i, (cy, r, sp)) in [
-        (90.0, 90.0, 5.0),
-        (210.0, 70.0, 8.0),
-        (40.0, 60.0, 3.0),
-        (330.0, 80.0, 6.0),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let span = w + r * 4.0;
-        let cx = x0 - r * 2.0 + (i as f32 * 260.0 + t * sp).rem_euclid(span);
-        for (dx, dy, k) in [(-0.6, 0.1, 0.7), (0.0, -0.1, 1.0), (0.7, 0.12, 0.75)] {
-            p.glow(cx + dx * r, cy + dy * r, r * k, [255, 255, 255, 120]);
-        }
-    }
+    // Painted countryside behind the week. The board and the cards cover the lower part.
+    super::sprites::country(p, x0, y0, w, (h * 0.46).max(160.0));
 }
 
 /// A ballpark at dusk across the whole screen (the title, the year's end).
@@ -195,6 +182,7 @@ pub fn ballpark(p: &mut Painter, t: f32) {
         &rect,
         Paint::vertical(y0, horizon, [72, 128, 214, 255], [255, 200, 150, 255]),
     );
+    super::sprites::country(p, x0, y0, w, h * 0.48);
     let cx = x0 + w * 0.5;
     p.glow(cx + 90.0, horizon - 40.0, 260.0, [255, 226, 170, 210]);
     p.dot(cx + 90.0, horizon - 40.0, 40.0, [255, 240, 210, 255]);
@@ -535,6 +523,7 @@ pub fn game_field(p: &mut Painter, r: [f32; 4], fit_width: bool) -> (f32, f32, f
     fair.extend(arc(98.0, 45.0));
     let fair = vector::clip_convex(&fair, &rr);
     p.fill(&fair, Paint::vertical(y, hy, GRASS2, GRASS));
+    super::sprites::grass(p, x + w * 0.2, y + h * 0.06, w * 0.6, h * 0.38);
     let mut k = -45.0f32;
     let mut i = 0;
     while k < 45.0 {

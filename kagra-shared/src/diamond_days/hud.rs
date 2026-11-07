@@ -390,6 +390,7 @@ impl DiamondDays {
         let hh = p.st.h;
         let y = hh * 0.16;
         p.glow(200.0, y + 40.0, 230.0, [255, 232, 180, 150]);
+        super::sprites::ball(p, 12.0, y + 8.0, 34.0);
         if ja {
             p.text_outlined(
                 "白球デイズ",
@@ -578,8 +579,15 @@ impl DiamondDays {
                 INK,
                 TextAlign::Left,
             );
-            if jp.contains("優勝") {
-                p.star(352.0, y + 10.0, 10.0, art::GOLD);
+            if jp != "-" {
+                let which = if jp.contains("優勝") {
+                    0
+                } else if en.contains("Stadium") || jp.contains("大舞台") {
+                    1
+                } else {
+                    2
+                };
+                super::sprites::medal(p, 330.0, y - 16.0, which);
             }
         }
         let y = top + 48.0 + rows * 44.0 + 8.0;
@@ -714,12 +722,11 @@ impl DiamondDays {
             TextAlign::Left,
         );
         for i in 0..5 {
-            let c = if i < stars {
-                art::GOLD
+            if i < stars {
+                super::sprites::kenney_star(p, 288.0 + i as f32 * 18.0, 22.0, 16.0);
             } else {
-                [206, 204, 214, 255]
-            };
-            p.star(288.0 + i as f32 * 18.0, 22.0, 8.0, c);
+                p.star(288.0 + i as f32 * 18.0, 22.0, 8.0, [206, 204, 214, 255]);
+            }
         }
         let record = if ja {
             format!("{}勝{}敗", self.s.wins, self.s.losses)
@@ -1012,17 +1019,11 @@ impl DiamondDays {
             };
             let [x, y, w, h] = *r;
             let col = c.focus.map(art::drill_color).unwrap_or([96, 112, 170, 255]);
-            p.panel_bordered(
-                x,
-                y,
-                w,
-                h,
-                12.0,
-                [255, 253, 246, 255],
-                [242, 234, 216, 255],
-                [216, 202, 176, 255],
-                2.0,
-                10.0,
+            super::sprites::paper(p, x, y, w, h);
+            p.outline(
+                &vector::rounded_rect(x, y, w, h, 12.0),
+                1.6,
+                art::PAPER_EDGE,
             );
             let band = vector::rounded_rect(x + 5.0, y + 5.0, w - 10.0, 34.0, 9.0);
             p.fill(
@@ -1119,15 +1120,18 @@ impl DiamondDays {
             [244, 236, 220, 255],
             18.0,
         );
+        super::sprites::paper(p, 20.0, y, 360.0, tall);
         let title = if ja { &n.title_ja } else { &n.title };
-        p.ribbon(
-            200.0,
-            y - 20.0,
-            250.0,
-            48.0,
+        super::sprites::banner(p, 70.0, y - 26.0, 260.0, 50.0);
+        p.text_outlined(
             title,
-            19.0,
-            [255, 150, 60, 255],
+            200.0,
+            y - 12.0,
+            18.0,
+            WHITE,
+            [90, 24, 28, 255],
+            2.0,
+            TextAlign::Center,
         );
         let max_lines = ((tall - 46.0 - 104.0 - faces_h) / 25.0).max(1.0) as usize;
         let fy = y + 46.0 + lines.len().min(max_lines) as f32 * 25.0 + 6.0;
@@ -1358,19 +1362,10 @@ impl DiamondDays {
                 }
                 Btn::Row(i) => self.draw_row(p, i, *r),
                 Btn::Lineup => {
-                    p.button(
-                        x,
-                        y,
-                        w,
-                        h,
-                        self.tr("ORDER", "打順"),
-                        15.0,
-                        [60, 120, 210, 255],
-                        true,
-                    );
+                    super::sprites::button(p, [x, y, w, h], self.tr("ORDER", "打順"), 15.0, false);
                 }
                 Btn::AutoRaise => {
-                    p.button(x, y, w, h, self.tr("SPEND", "育成"), 16.0, ORANGE, true);
+                    super::sprites::button(p, [x, y, w, h], self.tr("SPEND", "育成"), 15.0, true);
                 }
                 Btn::Close => {
                     p.button(
@@ -1696,8 +1691,8 @@ impl DiamondDays {
                 Btn::Back => (self.tr("BACK", "もどる"), art::QUIET),
                 _ => continue,
             };
-            let _ = schools;
-            p.button(x, y, w, h, label, art::TYPE_BUTTON, col, true);
+            let _ = (schools, col);
+            super::sprites::button(p, [x, y, w, h], label, 15.0, matches!(*b, Btn::Stay));
         }
     }
 
@@ -1973,6 +1968,9 @@ impl DiamondDays {
             &[[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]],
             Paint::vertical(y0, y0 + h, [34, 44, 80, 255], [16, 20, 38, 255]),
         );
+        let night = matches!(board::month(self.s.week), 1 | 2 | 10..=12);
+        let [sx, sy, sw, sh] = p.st.screen;
+        super::sprites::sky(p, night, sx, sy, sw, sh * 0.55);
         let colors = [self.side_color(g, 0), self.side_color(g, 1)];
         // The header: the teams and the score.
         p.panel_bordered(
