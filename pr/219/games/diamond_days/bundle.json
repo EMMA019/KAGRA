@@ -8,7 +8,7 @@
     {
       "path": "world.json",
       "url": "games/diamond_days/world.json",
-      "v": "d8c7f9a824"
+      "v": "e7783e6bcf"
     },
     {
       "path": "kagra_game.json",
@@ -118,5 +118,5 @@
       "week": "string"
     }
   },
-  "build": "62905049e74d"
+  "build": "ec6315ad54ab"
 }
