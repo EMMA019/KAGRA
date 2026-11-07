@@ -136,6 +136,119 @@ impl Mood {
     }
 }
 
+/// A special trait. A player carries at most two. They change the plate-appearance
+/// sim, and the match names them when they fire.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
+pub enum Ability {
+    /// Batting up with a runner on second or third.
+    Chance = 0,
+    /// Pitching when the opponent has a runner in scoring position.
+    Pinch = 1,
+    /// Late and close.
+    Clutch = 2,
+    /// Base stealing.
+    Steal = 3,
+    /// Less likely to get hurt, and shrugs off a red-mark week.
+    Durable = 4,
+    /// Lifts the rest of the lineup.
+    Mood = 5,
+    /// More walks.
+    Eye = 6,
+    /// A heavy fastball: pitching stuff up.
+    Heavy = 7,
+}
+
+pub const BIT_CHANCE: u8 = 1 << 0;
+pub const BIT_PINCH: u8 = 1 << 1;
+pub const BIT_CLUTCH: u8 = 1 << 2;
+pub const BIT_STEAL: u8 = 1 << 3;
+pub const BIT_DURABLE: u8 = 1 << 4;
+pub const BIT_MOOD: u8 = 1 << 5;
+pub const BIT_EYE: u8 = 1 << 6;
+pub const BIT_HEAVY: u8 = 1 << 7;
+
+impl Ability {
+    pub const ALL: [Ability; 8] = [
+        Ability::Chance,
+        Ability::Pinch,
+        Ability::Clutch,
+        Ability::Steal,
+        Ability::Durable,
+        Ability::Mood,
+        Ability::Eye,
+        Ability::Heavy,
+    ];
+
+    pub fn bit(self) -> u8 {
+        1 << (self as u8)
+    }
+
+    /// What the screen shouts when it fires.
+    pub fn label(self, ja: bool) -> &'static str {
+        match (self, ja) {
+            (Ability::Chance, false) => "Chance○",
+            (Ability::Pinch, false) => "Pinch○",
+            (Ability::Clutch, false) => "Clutch",
+            (Ability::Steal, false) => "Steal○",
+            (Ability::Durable, false) => "Durable",
+            (Ability::Mood, false) => "Spark",
+            (Ability::Eye, false) => "Eye",
+            (Ability::Heavy, false) => "Heavy",
+            (Ability::Chance, true) => "チャンス○",
+            (Ability::Pinch, true) => "ピンチ○",
+            (Ability::Clutch, true) => "勝負強さ",
+            (Ability::Steal, true) => "盗塁○",
+            (Ability::Durable, true) => "ケガしにくい",
+            (Ability::Mood, true) => "ムードメーカー",
+            (Ability::Eye, true) => "選球眼",
+            (Ability::Heavy, true) => "重い球",
+        }
+    }
+}
+
+/// A hand-tuned face: the founding ace and the founding captain.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Role {
+    #[default]
+    Regular,
+    Ace,
+    Captain,
+}
+
+/// The coach's batting order and defensive spots, by family name (unique in the club).
+/// Empty means the automatic order.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LineCard {
+    #[serde(default)]
+    pub order: Vec<String>,
+    #[serde(default)]
+    pub spots: Vec<Pos>,
+}
+
+/// Where a third-year goes in March. Derived, not a minigame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum After {
+    Pro,
+    College,
+    Job,
+}
+
+impl After {
+    pub fn label(self, ja: bool) -> &'static str {
+        match (self, ja) {
+            (After::Pro, false) => "Pro",
+            (After::College, false) => "College",
+            (After::Job, false) => "Work",
+            (After::Pro, true) => "プロ",
+            (After::College, true) => "大学",
+            (After::Job, true) => "就職",
+        }
+    }
+}
+
 /// A stat as a letter: S (90+), A (80+), B, C, D, E, F, G (below 20).
 pub fn grade(v: u8) -> &'static str {
     match v {
@@ -177,6 +290,15 @@ pub struct Player {
     /// The drill this player works on in individual practice every week.
     #[serde(default = "default_menu")]
     pub menu: Drill,
+    /// Zero, one or two special traits.
+    #[serde(default)]
+    pub abilities: Vec<Ability>,
+    /// Weeks he cannot play for a red mark (the same gate as an injury).
+    #[serde(default)]
+    pub study: u8,
+    /// Hand-tuned portrait for the founding ace and captain.
+    #[serde(default)]
+    pub role: Role,
 }
 
 fn default_menu() -> Drill {
@@ -283,7 +405,35 @@ impl Player {
     }
 
     pub fn can_play(&self) -> bool {
-        self.hurt == 0
+        self.hurt == 0 && self.study == 0
+    }
+
+    pub fn has(&self, a: Ability) -> bool {
+        self.abilities.contains(&a)
+    }
+
+    pub fn bits(&self) -> u8 {
+        self.abilities.iter().fold(0, |n, a| n | a.bit())
+    }
+
+    /// Learn `a` if there is room and he does not already have it.
+    pub fn grant(&mut self, a: Ability) -> bool {
+        if self.has(a) || self.abilities.len() >= 2 {
+            return false;
+        }
+        self.abilities.push(a);
+        true
+    }
+
+    /// Make room for a trait the story insists on (the ace's heavy ball, the captain's spark).
+    pub fn grant_force(&mut self, a: Ability) {
+        if self.has(a) {
+            return;
+        }
+        if self.abilities.len() >= 2 {
+            self.abilities.pop();
+        }
+        self.abilities.push(a);
     }
 
     /// Practice points into the drill's pool (spent later on stats, see [`Player::raise`]).
@@ -352,7 +502,26 @@ impl Player {
         let c = self.cost(st);
         self.xp[st.pool().index()] -= c;
         *self.stat_mut(st) += 1;
+        self.maybe_learn(st);
         true
+    }
+
+    /// Crossing a threshold can teach a trait. One step, once.
+    fn maybe_learn(&mut self, st: Stat) {
+        let v = self.stat(st);
+        let learned = match (st, v) {
+            (Stat::Speed, 70) => Some(Ability::Steal),
+            (Stat::Contact, 72) => Some(Ability::Eye),
+            (Stat::Power, 74) => Some(Ability::Chance),
+            (Stat::Power, 82) => Some(Ability::Clutch),
+            (Stat::Velo, 140) if self.pitcher() => Some(Ability::Heavy),
+            (Stat::Control, 66) if self.pitcher() => Some(Ability::Pinch),
+            (Stat::Field, 74) => Some(Ability::Durable),
+            _ => None,
+        };
+        if let Some(a) = learned {
+            self.grant(a);
+        }
     }
 
     /// Spend every point that can be spent, on the lowest stat each pool feeds first (the
@@ -510,12 +679,75 @@ pub fn rookie(rng: &mut Rng, grade: u8, pos: Pos, level: f32) -> Player {
         } else {
             Drill::Batting
         },
+        abilities: roll_abilities(rng, pitcher),
+        study: 0,
+        role: Role::Regular,
+    }
+}
+
+/// Most players have none; a few have one; a handful have two. Pitchers and fielders
+/// draw from different lists so a shortstop is not born with a heavy fastball.
+fn roll_abilities(rng: &mut Rng, pitcher: bool) -> Vec<Ability> {
+    let roll = rng.unit();
+    let n = if roll < 0.46 {
+        0
+    } else if roll < 0.86 {
+        1
+    } else {
+        2
+    };
+    let pool: [Ability; 6] = if pitcher {
+        [
+            Ability::Heavy,
+            Ability::Pinch,
+            Ability::Clutch,
+            Ability::Durable,
+            Ability::Mood,
+            Ability::Eye,
+        ]
+    } else {
+        [
+            Ability::Chance,
+            Ability::Steal,
+            Ability::Eye,
+            Ability::Clutch,
+            Ability::Mood,
+            Ability::Durable,
+        ]
+    };
+    let mut out = Vec::new();
+    for _ in 0..n {
+        let a = pool[(rng.next_u32() as usize) % pool.len()];
+        if !out.contains(&a) {
+            out.push(a);
+        }
+    }
+    out
+}
+
+/// Pro / college / work, from how good he is, the school's name, and his traits.
+pub fn destination(p: &Player, reputation: f32) -> After {
+    let rating = if p.pitcher() {
+        p.pitch_rating()
+    } else {
+        p.bat_rating()
+    };
+    let score = rating + reputation * 0.12 + p.abilities.len() as f32 * 3.5;
+    if score >= 64.0 {
+        After::Pro
+    } else if score >= 46.0 {
+        After::College
+    } else {
+        After::Job
     }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Team {
     pub players: Vec<Player>,
+    /// The coach's order. Empty: [`Team::lineup`] fills it every game.
+    #[serde(default)]
+    pub card: LineCard,
 }
 
 impl Team {
@@ -540,9 +772,64 @@ impl Team {
             let level = 30.0 + grade as f32 * 5.0;
             players.push(rookie(rng, grade, pos, level));
         }
-        let mut t = Self { players };
+        let mut t = Self {
+            players,
+            card: LineCard::default(),
+        };
         t.unique_names();
+        t.crown();
         t
+    }
+
+    /// A club you inherit at another school: the same shape as opening day, around `level`.
+    pub fn takeover(rng: &mut Rng, level: f32) -> Self {
+        let mut players = Vec::new();
+        let plan = [
+            (Pos::P, 3),
+            (Pos::P, 2),
+            (Pos::C, 2),
+            (Pos::B1, 3),
+            (Pos::B2, 2),
+            (Pos::B3, 1),
+            (Pos::SS, 3),
+            (Pos::LF, 1),
+            (Pos::CF, 2),
+            (Pos::RF, 1),
+            (Pos::P, 1),
+            (Pos::B2, 1),
+        ];
+        for (pos, grade) in plan {
+            players.push(rookie(rng, grade, pos, level + grade as f32 * 2.0));
+        }
+        let mut t = Self {
+            players,
+            card: LineCard::default(),
+        };
+        t.unique_names();
+        t.crown();
+        t
+    }
+
+    /// The founding ace throws a heavy ball; the best older fielder is the captain.
+    fn crown(&mut self) {
+        if let Some(i) = self.ace() {
+            self.players[i].role = Role::Ace;
+            self.players[i].grant_force(Ability::Heavy);
+        }
+        let cap = self
+            .players
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| !p.pitcher())
+            .max_by(|a, b| {
+                (a.1.grade, a.1.bat_rating().to_bits())
+                    .cmp(&(b.1.grade, b.1.bat_rating().to_bits()))
+            })
+            .map(|(i, _)| i);
+        if let Some(i) = cap {
+            self.players[i].role = Role::Captain;
+            self.players[i].grant_force(Ability::Mood);
+        }
     }
 
     /// No two players share a family name (the play-by-play uses it).
@@ -637,27 +924,102 @@ impl Team {
         order
     }
 
+    /// Nine who can play, with a position each. The saved card if it is still legal,
+    /// otherwise [`Team::lineup`].
+    pub fn resolved(&self) -> Vec<(usize, Pos)> {
+        if let Some(nine) = self.try_card() {
+            return nine;
+        }
+        let Some(p) = self.ace() else {
+            return Vec::new();
+        };
+        let order = self.lineup(p);
+        let spots = assign_spots(&self.players, &order);
+        order.into_iter().zip(spots).collect()
+    }
+
+    fn try_card(&self) -> Option<Vec<(usize, Pos)>> {
+        if self.card.order.len() != 9 || self.card.spots.len() != 9 {
+            return None;
+        }
+        let mut nine = Vec::with_capacity(9);
+        for (name, pos) in self.card.order.iter().zip(self.card.spots.iter()) {
+            let i = self
+                .players
+                .iter()
+                .position(|p| &p.family == name && p.can_play())?;
+            if nine.iter().any(|(j, _)| *j == i) {
+                return None;
+            }
+            nine.push((i, *pos));
+        }
+        let mound = nine
+            .iter()
+            .any(|(i, pos)| *pos == Pos::P && self.players[*i].pitcher());
+        mound.then_some(nine)
+    }
+
+    /// Store a coach's order. False when it repeats a player, uses someone who cannot
+    /// play, or leaves the mound without a pitcher.
+    pub fn set_lineup(&mut self, order: &[usize], spots: &[Pos]) -> bool {
+        if order.len() != 9 || spots.len() != 9 {
+            return false;
+        }
+        let mut seen = Vec::new();
+        for &i in order {
+            if i >= self.players.len() || seen.contains(&i) || !self.players[i].can_play() {
+                return false;
+            }
+            seen.push(i);
+        }
+        if !order
+            .iter()
+            .zip(spots)
+            .any(|(&i, pos)| *pos == Pos::P && self.players[i].pitcher())
+        {
+            return false;
+        }
+        self.card.order = order
+            .iter()
+            .map(|&i| self.players[i].family.clone())
+            .collect();
+        self.card.spots = spots.to_vec();
+        true
+    }
+
+    /// Back to the automatic order.
+    pub fn clear_lineup(&mut self) {
+        self.card = LineCard::default();
+    }
+
     /// How strong the team is (about 30 for a weak club, 70 for a powerhouse).
     pub fn strength(&self) -> f32 {
-        let Some(p) = self.ace() else {
+        let nine = self.resolved();
+        if nine.is_empty() {
             return 0.0;
-        };
-        let nine = self.lineup(p);
+        }
         let bats: f32 = nine
             .iter()
-            .map(|&i| self.players[i].bat_rating())
+            .map(|(i, _)| self.players[*i].bat_rating())
             .sum::<f32>()
-            / nine.len().max(1) as f32;
+            / nine.len() as f32;
+        let p = nine
+            .iter()
+            .find(|(_, pos)| *pos == Pos::P)
+            .map(|(i, _)| *i)
+            .unwrap_or(nine[0].0);
         bats * 0.6 + self.players[p].pitch_rating() * 0.4
     }
 
-    /// March: third-years leave. Returns how many.
+    /// March: third-years leave. Returns how many. The saved order is cleared; April
+    /// starts on the automatic one.
     pub fn graduate(&mut self) -> usize {
         let before = self.players.len();
         self.players.retain(|p| p.grade < 3);
         for p in &mut self.players {
             p.grade += 1;
         }
+        self.card = LineCard::default();
         before - self.players.len()
     }
 
@@ -701,6 +1063,46 @@ impl Team {
         let gem = if rng.unit() < 0.25 { 10.0 } else { 0.0 };
         rookie(rng, 1, pos, 38.0 + reputation * 0.25 + gem)
     }
+}
+
+/// Defensive spots for an automatic batting order: the pitcher on the mound, everyone
+/// else at his own position when it is free, and the leftovers in the gaps.
+fn assign_spots(players: &[Player], order: &[usize]) -> Vec<Pos> {
+    let mut spots: Vec<Option<Pos>> = vec![None; order.len()];
+    let mut used = [false; 9];
+    let index = |pos: Pos| Pos::FIELD.iter().position(|p| *p == pos).unwrap_or(0);
+    if let Some(k) = order
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(k, &i)| players.get(i).and_then(|p| p.pitcher().then_some(k)))
+    {
+        spots[k] = Some(Pos::P);
+        used[index(Pos::P)] = true;
+    }
+    for (k, &i) in order.iter().enumerate() {
+        if spots[k].is_some() {
+            continue;
+        }
+        let Some(p) = players.get(i) else { continue };
+        let idx = index(p.pos);
+        if p.pos != Pos::P && !used[idx] {
+            spots[k] = Some(p.pos);
+            used[idx] = true;
+        }
+    }
+    for spot in spots.iter_mut() {
+        if spot.is_some() {
+            continue;
+        }
+        let pos = Pos::FIELD
+            .into_iter()
+            .find(|p| !used[index(*p)])
+            .unwrap_or(Pos::LF);
+        *spot = Some(pos);
+        used[index(pos)] = true;
+    }
+    spots.into_iter().map(|s| s.unwrap_or(Pos::LF)).collect()
 }
 
 #[cfg(test)]
@@ -768,5 +1170,76 @@ mod tests {
         let n = t.recruit(&mut rng, 60.0, vec![kid]);
         assert_eq!(n, 6);
         assert!(t.players.iter().filter(|p| p.pitcher()).count() >= 2);
+    }
+
+    #[test]
+    fn players_carry_at_most_two_abilities_and_the_ace_throws_heavy() {
+        let mut rng = Rng::new(3);
+        let t = Team::founding(&mut rng);
+        assert!(t.players.iter().all(|p| p.abilities.len() <= 2));
+        let ace = t.ace().unwrap();
+        assert_eq!(t.players[ace].role, Role::Ace);
+        assert!(t.players[ace].has(Ability::Heavy));
+        assert!(t
+            .players
+            .iter()
+            .any(|p| p.role == Role::Captain && p.has(Ability::Mood)));
+        let mut kid = rookie(&mut rng, 1, Pos::SS, 40.0);
+        kid.abilities.clear();
+        kid.speed = 69;
+        kid.xp[Drill::Running.index()] = 500;
+        assert!(kid.raise(Stat::Speed));
+        assert!(kid.has(Ability::Steal));
+        assert!(!kid.grant(Ability::Steal));
+        kid.grant_force(Ability::Chance);
+        kid.grant_force(Ability::Eye);
+        assert_eq!(kid.abilities.len(), 2);
+    }
+
+    #[test]
+    fn a_saved_order_is_used_until_it_is_illegal_or_cleared() {
+        let mut rng = Rng::new(3);
+        let mut t = Team::founding(&mut rng);
+        let auto = t.resolved();
+        assert_eq!(auto.len(), 9);
+        assert!(auto.iter().any(|(_, p)| *p == Pos::P));
+        let order: Vec<usize> = auto.iter().map(|(i, _)| *i).collect();
+        let mut spots: Vec<Pos> = auto.iter().map(|(_, p)| *p).collect();
+        // Swap the first two batters and keep their positions with them.
+        spots.swap(0, 1);
+        let mut flipped = order.clone();
+        flipped.swap(0, 1);
+        assert!(t.set_lineup(&flipped, &spots));
+        let again = t.resolved();
+        assert_eq!(again[0].0, flipped[0]);
+        assert_eq!(again[0].1, spots[0]);
+        // A red mark knocks the card out: the automatic order comes back.
+        t.players[flipped[0]].study = 2;
+        assert!(!t.players[flipped[0]].can_play());
+        assert_ne!(t.resolved()[0].0, flipped[0]);
+        t.players[flipped[0]].study = 0;
+        assert_eq!(t.resolved()[0].0, flipped[0]);
+        t.clear_lineup();
+        assert!(t.card.order.is_empty());
+        // No pitcher on the mound is rejected.
+        let mut bad = spots.clone();
+        if let Some(p) = bad.iter_mut().find(|p| **p == Pos::P) {
+            *p = Pos::LF;
+        }
+        assert!(!t.set_lineup(&order, &bad));
+        let mut star = rookie(&mut rng, 3, Pos::P, 70.0);
+        star.velo = 155;
+        star.control = 90;
+        star.breaking = 85;
+        star.abilities = vec![Ability::Heavy, Ability::Pinch];
+        assert_eq!(destination(&star, 80.0), After::Pro);
+        let mut weak = rookie(&mut rng, 3, Pos::LF, 18.0);
+        weak.abilities.clear();
+        weak.contact = 22;
+        weak.power = 20;
+        weak.speed = 22;
+        weak.field = 20;
+        weak.arm = 20;
+        assert_eq!(destination(&weak, 0.0), After::Job);
     }
 }

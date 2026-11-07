@@ -70,6 +70,11 @@ fn play_week(g: &mut DiamondDays) {
             Mode::Player(_) => press(g, hud::Btn::Back),
             Mode::Match { .. } => press(g, hud::Btn::Skip),
             Mode::Roster => tap(g, 10.0, 10.0),
+            Mode::Lineup { pick: Some(_) } => press(g, hud::Btn::Back),
+            Mode::Lineup { .. } => press(g, hud::Btn::Close),
+            Mode::CampTalk { .. } => press(g, hud::Btn::Choose(0)),
+            Mode::Epilogue { schools: true } => press(g, hud::Btn::Back),
+            Mode::Epilogue { .. } => press(g, hud::Btn::EndStory),
             Mode::Walk { .. } => run(g, 0.3),
         }
         if g.flow.phase != FlowPhase::Play {
@@ -146,6 +151,10 @@ fn a_game_stops_at_chances_and_pinches_for_the_coachs_call() {
                 let prompt = match spot {
                     Spot::Chance => "chance",
                     Spot::Pinch => "pinch",
+                    Spot::Bench(_) => {
+                        press(&mut g, hud::Btn::Call(None));
+                        continue;
+                    }
                 };
                 assert!(all_texts(&hud).any(|t| t.text.contains(prompt)));
                 // Take the first call on offer.
@@ -618,6 +627,101 @@ fn a_pitchers_page_fits_above_the_practice_menu_on_a_short_screen() {
         .map(|(_, r)| r[1])
         .fold(f32::MAX, f32::min);
     assert!(raise_bottom < menu_top, "{raise_bottom} vs {menu_top}");
+}
+
+#[test]
+fn abilities_lineup_rivals_and_the_next_chapter() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    // The order can be edited, and an old save without the new fields still loads.
+    press(&mut g, hud::Btn::Roster);
+    press(&mut g, hud::Btn::Lineup);
+    assert!(matches!(g.mode, Mode::Lineup { pick: None }));
+    let before = g.s.team.resolved()[0].0;
+    press(&mut g, hud::Btn::Nudge(0, 1));
+    assert!(!g.s.team.card.order.is_empty(), "the coach's order is kept");
+    assert_ne!(g.s.team.resolved()[0].0, before);
+    let saved = g.save_json().unwrap();
+    let mut old: Value = serde_json::from_str(&saved).unwrap();
+    old.as_object_mut().unwrap().remove("rivals");
+    old.as_object_mut().unwrap().remove("slate");
+    old.as_object_mut().unwrap().remove("chapter");
+    old["team"]["players"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("abilities");
+    old["team"]["players"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("study");
+    let mut world = DiamondDays::new(DiamondDaysSpec::default()).world_value();
+    world["save"] = old;
+    let mut resumed = DiamondDays::from_json(&world.to_string()).unwrap();
+    resumed.confirm();
+    assert_eq!(resumed.s.rivals.len(), 10, "a circuit is filled in");
+    assert_eq!(resumed.chapter(), 1);
+    assert!(resumed.s.team.players[0].abilities.is_empty());
+
+    // Autumn champions are invited, and the same school comes back next year.
+    g.s.week = 27;
+    g.s.autumn_in = true;
+    g.s.autumn_wins = 2;
+    g.s.year = 1;
+    g.mode = Mode::Plan;
+    g.game = None;
+    g.notes.clear();
+    g.begin_week();
+    assert!(matches!(g.mode, Mode::Match { .. }));
+    let rival = g.s.rivals[g.rival_idx.unwrap()].name.clone();
+    press(&mut g, hud::Btn::Skip);
+    assert!(g.s.spring_in, "the autumn sends them to March");
+    g.notes.clear();
+    g.mode = Mode::Plan;
+    g.s.year = 2;
+    g.s.week = 27;
+    g.s.autumn_in = true;
+    g.game = None;
+    g.begin_week();
+    let again = g.s.rivals[g.rival_idx.unwrap()].name.clone();
+    assert_eq!(again, rival, "year 2 is a rematch");
+
+    // Exam week benches someone who is not durable.
+    for p in &mut g.s.team.players {
+        p.abilities.retain(|a| *a != team::Ability::Durable);
+        p.study = 0;
+        p.mood = team::Mood::Awful;
+    }
+    g.s.week = board::EXAM_WEEK;
+    g.s.exam_year = 0;
+    g.s.year = 1;
+    g.game = None;
+    g.notes.clear();
+    g.mode = Mode::Plan;
+    g.begin_week();
+    assert!(g.s.team.players.iter().any(|p| p.study == 2));
+    assert!(g.notes.iter().any(|n| n.title == "Exams"));
+
+    // After three years the coach can stay for another chapter, not an endless season.
+    g.notes.clear();
+    g.s.epilogue = false;
+    g.s.year = g.spec.years;
+    g.s.week = board::WEEKS;
+    g.mode = Mode::Plan;
+    let rep = g.s.reputation;
+    let grounds = g.s.grounds;
+    g.end_week();
+    assert!(g.s.epilogue);
+    while matches!(g.mode, Mode::Notice) {
+        tap(&mut g, 195.0, 400.0);
+    }
+    assert!(matches!(g.mode, Mode::Epilogue { schools: false }));
+    press(&mut g, hud::Btn::Stay);
+    assert_eq!(g.s.year, 1);
+    assert_eq!(g.chapter(), 2);
+    assert!(!g.s.epilogue);
+    assert_eq!(g.s.reputation, rep);
+    assert!(g.s.grounds >= grounds);
+    assert_eq!(g.spec.years, 3);
 }
 
 #[test]
