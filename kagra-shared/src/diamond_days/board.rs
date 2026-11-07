@@ -817,7 +817,9 @@ pub fn camp_week(team: &mut Team, rng: &mut Rng, base: f32) -> CampReport {
             if tough[i] {
                 shrugged.push(names[i].clone());
             } else {
-                p.hurt = p.hurt.max(1);
+                // Two: the next week's heal leaves one, so he sits out the summer opener
+                // (week 13), the game the camp risks him for.
+                p.hurt = p.hurt.max(2);
                 hurt.push(names[i].clone());
             }
         }
@@ -937,6 +939,25 @@ mod tests {
         let after: u16 = t.players.iter().map(|p| p.xp.iter().sum::<u16>()).sum();
         assert!(after > before);
         assert!(report.points > 0);
+        // A camp knock outlasts the next week's heal: he misses the summer opener.
+        let mut knocked = None;
+        for seed in 0..200 {
+            let mut rng = Rng::new(seed);
+            let mut t = Team::founding(&mut rng);
+            for p in &mut t.players {
+                p.abilities.retain(|a| *a != Ability::Durable);
+            }
+            let r = camp_week(&mut t, &mut rng, 7.0);
+            if let Some(n) = r.hurt.first() {
+                knocked = t.players.iter().find(|p| &p.family == n).map(|p| p.hurt);
+                break;
+            }
+        }
+        let hurt = knocked.expect("some seed knocks someone");
+        assert!(
+            hurt.saturating_sub(1) > 0,
+            "still out after one heal: {hurt}"
+        );
         let mut t = Team::founding(&mut rng);
         for p in &mut t.players {
             p.abilities.retain(|a| *a != Ability::Durable);

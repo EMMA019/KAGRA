@@ -498,7 +498,13 @@ impl DiamondDays {
                 self.flow.enter_play();
                 crate::mixer::cue_sfx("go");
                 crate::mixer::play_bgm("bgm", 0.5);
-                if self.s.week == 1 && self.s.year == 1 && self.s.wins + self.s.losses == 0 {
+                // Only the very first week of a career (a later chapter also starts at
+                // year 1, week 1, 0-0).
+                if self.s.week == 1
+                    && self.career_year() == 1
+                    && self.s.history.is_empty()
+                    && self.s.wins + self.s.losses == 0
+                {
                     let (school, school_ja) =
                         (self.school_en().to_string(), self.school_ja().to_string());
                     self.note(
@@ -1209,8 +1215,8 @@ impl DiamondDays {
         )];
         for n in &report.hurt {
             lines.push((
-                format!("{n} tweaked something (1 week)."),
-                format!("{n}が少し痛めた（1週間）。"),
+                format!("{n} tweaked something and misses the summer opener."),
+                format!("{n}が少し痛めた。夏の初戦は欠場。"),
             ));
         }
         for n in &report.shrugged {
@@ -1403,6 +1409,10 @@ impl DiamondDays {
         let new_en = self.s.rivals[pick].name.clone();
         let new_ja = self.s.rivals[pick].name_ja.clone();
         let left = self.s.team.strength().clamp(30.0, 80.0);
+        // The old club joins the circuit in its own colours and with its own captain.
+        let c = art::team_color(&old_en);
+        self.s.rivals[pick].color = [c[0], c[1], c[2]];
+        self.s.rivals[pick].face = old_en.clone();
         self.s.rivals[pick].name = old_en;
         self.s.rivals[pick].name_ja = old_ja;
         self.s.rivals[pick].strength = left;
@@ -1590,10 +1600,19 @@ impl DiamondDays {
         }
     }
 
-    /// The team plays the rest of the game on its own (no more calls).
+    /// The team plays the rest of the game on its own (no more calls). From any prompt,
+    /// the bench picker too (where a plain `Call(None)` only goes back).
     fn leave_to_team(&mut self) {
         self.auto_orders = true;
-        self.give_call(None);
+        if let (Some(g), Mode::Match { shown, .. }) = (self.game.as_mut(), self.mode.clone()) {
+            g.call(None);
+            crate::mixer::cue_sfx("card");
+            self.mode = Mode::Match {
+                shown,
+                t: 0.0,
+                asking: None,
+            };
+        }
     }
 
     /// Play the rest of the game at once.

@@ -816,6 +816,100 @@ fn the_career_runs_on_past_every_milestone() {
 }
 
 #[test]
+fn a_later_chapter_reloads_without_the_new_coach_intro() {
+    let mut g = started();
+    g.notes.clear();
+    g.s.year = g.spec.years;
+    g.s.week = board::WEEKS;
+    g.mode = Mode::Plan;
+    g.end_week();
+    while matches!(g.mode, Mode::Notice) {
+        tap(&mut g, 195.0, 400.0);
+    }
+    press(&mut g, hud::Btn::Stay);
+    assert_eq!((g.s.year, g.s.week, g.s.wins, g.s.losses), (1, 1, 0, 0));
+    let saved: Value = serde_json::from_str(&g.save_json().unwrap()).unwrap();
+    let mut world = DiamondDays::new(DiamondDaysSpec::default()).world_value();
+    world["save"] = saved;
+    let mut h = DiamondDays::from_json(&world.to_string()).unwrap();
+    h.confirm();
+    assert!(
+        !h.notes.iter().any(|n| n.title == "A new coach"),
+        "{:?}",
+        h.notes.iter().map(|n| &n.title).collect::<Vec<_>>()
+    );
+    // A brand-new career still gets it.
+    let fresh = started();
+    assert!(fresh.notes.iter().any(|n| n.title == "A new coach"));
+}
+
+#[test]
+fn the_old_school_keeps_its_own_colours_after_a_move() {
+    let mut g = started();
+    let old = g.school_en().to_string();
+    g.move_picks = vec![0];
+    let joined = g.s.rivals[0].name.clone();
+    let joined_color = g.s.rivals[0].color;
+    g.continue_move(0);
+    assert_eq!(g.school_en(), joined);
+    let slot = &g.s.rivals[0];
+    assert_eq!(slot.name, old);
+    assert_eq!(slot.face, old);
+    let c = art::team_color(&old);
+    assert_eq!(slot.color, [c[0], c[1], c[2]]);
+    assert!(slot.color != joined_color || c[..3] == joined_color);
+}
+
+#[test]
+fn no_more_calls_from_the_bench_picker_plays_on() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    g.s.week = 6;
+    g.begin_week();
+    for _ in 0..20000 {
+        match g.mode {
+            Mode::Match {
+                asking: Some(Spot::Chance),
+                ..
+            } if g
+                .game
+                .as_ref()
+                .is_some_and(|gm| !gm.sides[gm.us].bench.is_empty()) =>
+            {
+                press(&mut g, hud::Btn::OpenBench(0));
+                assert!(matches!(
+                    g.mode,
+                    Mode::Match {
+                        asking: Some(Spot::Bench(0)),
+                        ..
+                    }
+                ));
+                press(&mut g, hud::Btn::Auto);
+                assert!(matches!(g.mode, Mode::Match { asking: None, .. }));
+                assert!(g.auto_orders);
+                // And it never asks again this game.
+                for _ in 0..20000 {
+                    match g.mode {
+                        Mode::Match {
+                            asking: Some(_), ..
+                        } => panic!("asked after No more calls"),
+                        Mode::Match { .. } => run(&mut g, 0.3),
+                        _ => return,
+                    }
+                }
+                return;
+            }
+            Mode::Match {
+                asking: Some(_), ..
+            } => press(&mut g, hud::Btn::Call(None)),
+            Mode::Match { .. } => run(&mut g, 0.3),
+            _ => break,
+        }
+    }
+    panic!("no chance with a bench in the game");
+}
+
+#[test]
 fn an_old_save_without_a_record_still_loads() {
     let g = started();
     let mut saved: Value = serde_json::from_str(&g.save_json().unwrap()).unwrap();
