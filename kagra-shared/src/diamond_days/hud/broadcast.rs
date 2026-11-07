@@ -6,7 +6,7 @@
 use super::{grade_color, wrap, Btn, Layout};
 use crate::diamond_days::art::{self, INK, INK_SOFT, ORANGE, OURS, WHITE};
 use crate::diamond_days::board::{self, Fixture};
-use crate::diamond_days::sim::{Game, Pitch, Play, PlayKind, Spot, Tactic};
+use crate::diamond_days::sim::{Game, Pitch, Play, PlayKind, Side, Spot, Tactic};
 use crate::diamond_days::team::{grade, Pos};
 use crate::diamond_days::{DiamondDays, PITCH_SECS};
 use crate::game_core::chibi::{self, Facing, Kit, Pose};
@@ -14,6 +14,32 @@ use crate::game_core::portrait::{Expr, Face, Outfit};
 use crate::hud_art::Painter;
 use crate::scene::TextAlign;
 use crate::vector::{self, shade, Paint, Rgba, P};
+
+/// A nine's shape for the radar, 0..1 on each axis: contact, power, speed, fielding, and
+/// the starting pitcher (speed, control, breaking ball).
+fn team_axes(side: &Side) -> [f32; 5] {
+    let n = side.bats.len().max(1) as f32;
+    let avg =
+        |f: fn(&crate::diamond_days::sim::Batter) -> f32| side.bats.iter().map(f).sum::<f32>() / n;
+    // A square-root scale: a young club (ratings near 30) still shows half a shape, and
+    // 90 reaches the rim, so growth shows from the first year.
+    let scale = |v: f32| ((v - 10.0) / 80.0).clamp(0.0, 1.0).sqrt();
+    let pitch = side
+        .arms
+        .first()
+        .map(|a| {
+            let velo = 10.0 + (a.velo - 105.0) / 45.0 * 70.0;
+            scale(velo * 0.4 + a.control * 0.3 + a.breaking * 0.3)
+        })
+        .unwrap_or(0.3);
+    [
+        scale(avg(|b| b.contact)),
+        scale(avg(|b| b.power)),
+        scale(avg(|b| b.speed)),
+        scale(side.field),
+        pitch,
+    ]
+}
 
 /// Where the latest line of a game is on screen.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1407,6 +1433,25 @@ impl DiamondDays {
                 )
             };
             p.text(&stats, 364.0, yy + 2.0, 11.0, INK_SOFT, TextAlign::Right);
+        }
+        // Both teams on one radar, when there is room above the buttons.
+        let below = oy + card_h + 12.0;
+        let room = hh - 86.0 - below;
+        if let (Some(them), true) = (self.pending_rival.as_ref(), room > 130.0) {
+            let us_side = Side::from_team(&self.s.team, self.school_en(), self.school_ja());
+            let r = ((room - 46.0) * 0.5).min(62.0);
+            let cy = below + 22.0 + r;
+            let labels = if ja {
+                ["ミート", "パワー", "走力", "守備", "投手"]
+            } else {
+                ["Contact", "Power", "Speed", "Field", "Pitch"]
+            };
+            let (a, b) = (team_axes(&us_side), team_axes(them));
+            p.radar(200.0, cy, r, &labels, &[(&b, them_col), (&a, OURS)]);
+            p.dot(40.0, cy - r + 6.0, 5.0, OURS);
+            p.text(us_name, 50.0, cy - r - 1.0, 12.0, WHITE, TextAlign::Left);
+            p.dot(40.0, cy - r + 24.0, 5.0, them_col);
+            p.text(them_name, 50.0, cy - r + 17.0, 12.0, WHITE, TextAlign::Left);
         }
         for (b, r) in &l.buttons {
             match *b {

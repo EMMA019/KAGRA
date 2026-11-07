@@ -167,6 +167,9 @@ on the broadcast, and leaving the result opens a green curtain with 練習に戻
    strikeouts; fielding on a win), what it means for the tournament, a word from Kotori,
    then back to practice.
 
+Below our order, a radar puts both nines on one chart (contact, power, speed, fielding,
+the starting pitcher) on a square-root scale, so a young club still shows its shape.
+
 The game-day screen shows their ace (face, name, speed) between the crests: he is the one
 who starts.
 

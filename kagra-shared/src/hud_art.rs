@@ -821,6 +821,51 @@ impl<'a> Painter<'a> {
         );
     }
 
+    /// A radar chart: one axis per label (the first straight up, then clockwise), rings at
+    /// quarters, and each series as a translucent shape with its outline. Values are 0..1.
+    pub fn radar(&mut self, cx: f32, cy: f32, r: f32, labels: &[&str], series: &[(&[f32], Rgba)]) {
+        let n = labels.len().max(3);
+        let at = |i: usize, v: f32| -> P {
+            let a = -std::f32::consts::FRAC_PI_2 + i as f32 / n as f32 * std::f32::consts::TAU;
+            [cx + a.cos() * r * v, cy + a.sin() * r * v]
+        };
+        let ring = |v: f32| -> Vec<P> { (0..n).map(|i| at(i, v)).collect() };
+        self.fill(&ring(1.0), Paint::Solid([255, 255, 255, 40]));
+        for q in [0.25, 0.5, 0.75, 1.0] {
+            self.outline(
+                &ring(q),
+                if q == 1.0 { 1.4 } else { 0.8 },
+                [255, 255, 255, 90],
+            );
+        }
+        for i in 0..n {
+            self.line(&[[cx, cy], at(i, 1.0)], 0.8, [255, 255, 255, 80]);
+        }
+        for (vals, color) in series {
+            let shape: Vec<P> = (0..n)
+                .map(|i| at(i, vals.get(i).copied().unwrap_or(0.0).clamp(0.02, 1.0)))
+                .collect();
+            self.fill(&shape, Paint::Solid([color[0], color[1], color[2], 90]));
+            self.outline(&shape, 2.0, *color);
+            for q in &shape {
+                self.dot(q[0], q[1], 2.6, *color);
+            }
+        }
+        for (i, label) in labels.iter().enumerate() {
+            let q = at(i, 1.22);
+            self.text_outlined(
+                label,
+                q[0],
+                q[1] - 7.0,
+                12.0,
+                [255, 255, 255, 255],
+                [16, 20, 40, 255],
+                1.4,
+                TextAlign::Center,
+            );
+        }
+    }
+
     /// A pill gauge with a sheen.
     #[allow(clippy::too_many_arguments)]
     pub fn gauge(&mut self, x: f32, y: f32, w: f32, h: f32, frac: f32, color: Rgba, back: Rgba) {
@@ -986,6 +1031,30 @@ mod tests {
         s.press(50.0);
         s.drag(53.0);
         assert!(s.release());
+    }
+
+    #[test]
+    fn a_radar_draws_rings_shapes_and_labels() {
+        let mut list = DrawList::default();
+        let st = Stage::fit(400.0, 700.0, 400.0, 700.0);
+        let mut p = Painter::new(&mut list, st);
+        p.radar(
+            200.0,
+            300.0,
+            60.0,
+            &["A", "B", "C", "D", "E"],
+            &[
+                (&[0.5, 0.6, 0.7, 0.8, 0.9], [40, 80, 200, 255]),
+                (&[1.0, 0.2, 0.3, 0.4, 0.5], [200, 60, 60, 255]),
+            ],
+        );
+        let labels: Vec<_> = list.texts.iter().map(|t| t.text.clone()).collect();
+        for l in ["A", "B", "C", "D", "E"] {
+            assert!(labels.iter().any(|x| x == l));
+        }
+        let b = list.mesh.bounds().unwrap();
+        // The first axis points up: the chart reaches its full radius above the centre.
+        assert!(b[1] <= 300.0 - 60.0 + 1.0, "{b:?}");
     }
 
     #[test]

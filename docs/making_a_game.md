@@ -73,6 +73,7 @@ KAGRA_BAKE=1 cargo test -p kagra-shared --lib <slug>::
 | 画面上でポンと出て上がる文字（「+1」「ミート E→D!」） | `hud_art::Pops` |
 | 動かないベクター絵を一度だけ画像に焼く（観客、建物、コマの並んだシート）。毎フレームは三角形 2 枚 | `image2d::bake(&list, w, h)` |
 | スプライトシートのコマ（左上から順、番号は折り返し） | `Painter::image_frame(pic, cols, rows, frame, rect, tint)` |
+| レーダーチャート（軸ごとのラベル、4 段の目盛り、複数チームを半透明で重ねる） | `Painter::radar(cx, cy, r, &labels, &[(&values, color)])` |
 | 場面転換（フェード、カーテン、アイリス。帯のタイトルつき）。画面はすぐ切り替えて、上から開く | `hud_art::Transition::open(Wipe::Curtain, secs, color, "試合の日！")` |
 | 線画の顔（表情 8 種、帽子・髪型 8 種・ユニフォーム、キャッシュ） | `game_core::portrait::{Face, Expr, Outfit, draw}` |
 | 全身のちびキャラ（顔は portrait、体はベクター。立ち・構え・走り・投球・スイング・捕手・バンザイ、正面と背中、背番号） | `game_core::chibi::{draw, Pose, Facing, Kit}`（見本: `cargo run -p kagra-shared --example chibi_sheet`） |
