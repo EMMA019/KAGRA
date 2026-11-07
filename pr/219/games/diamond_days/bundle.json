@@ -104,21 +104,6 @@
       "path": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
       "url": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
       "v": "5d7d10947f"
-    },
-    {
-      "path": "assets/models/kenney/mini-characters/character-male-a.glb",
-      "url": "assets/models/kenney/mini-characters/character-male-a.glb",
-      "v": "03cbe0ffe4"
-    },
-    {
-      "path": "assets/models/kenney/mini-characters/character-male-c.glb",
-      "url": "assets/models/kenney/mini-characters/character-male-c.glb",
-      "v": "08eaba8235"
-    },
-    {
-      "path": "assets/models/kenney/mini-characters/character-male-e.glb",
-      "url": "assets/models/kenney/mini-characters/character-male-e.glb",
-      "v": "de44b78bcf"
     }
   ],
   "page": {
@@ -133,5 +118,5 @@
       "week": "string"
     }
   },
-  "build": "3bf082a42304"
+  "build": "1a9a1b765ed2"
 }
