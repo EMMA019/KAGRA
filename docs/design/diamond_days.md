@@ -50,11 +50,30 @@ Plus condition (Great, Good, Normal, Poor, Awful), stamina (0 to 100), and weeks
 
 ## Games
 
-A game is simulated plate appearance by plate appearance from the players' stats. Before
-each of your batting innings you pick an order: **Swing away** (more power, more
-strikeouts), **Normal**, or **Small ball** (bunts and steals move runners). The pitcher
-tires; when stamina runs low the next pitcher comes in. You watch the play-by-play line
-by line (tap to hurry) on a scoreboard.
+A game is simulated plate appearance by plate appearance from the players' stats. The
+pitcher tires; when his stamina runs out the next pitcher comes in. You watch the
+play-by-play line by line (tap to hurry) on a scoreboard, and the game stops for your
+call at chances and pinches (below). "Skip" plays the rest at once.
+
+## Growth (round 2)
+
+- Training puts **points** into five pools (batting, pitching, fielding, running,
+  strength). The coach spends them on a player's page: each stat costs more the higher it
+  is, and each pool pays for its own stats (fielding pays for fielding and arm, strength
+  for power and stamina, pitching for velocity, control and the breaking ball). "Auto
+  spend" raises the lowest stats first.
+- Every player has his own **practice menu** (one of the five drills) and earns a third of
+  a square's points in it every training week, whatever square the coach lands on.
+- A **card** can carry a player's name: that week he trains twice as hard.
+- **Scout** squares find a middle-schooler (position, a rating) who joins next April,
+  up to four a year.
+
+## Calls in a game (round 2)
+
+The game stops at a **chance** (we bat with a runner on second or third) or a **pinch**
+(they do). At a chance: swing away, take pitches, bunt, squeeze (runner on third), or
+steal. At a pinch: go after him, walk him on purpose, or bring in the next pitcher. "Play
+on" lets them play this once; "no more calls" for the rest of the game.
 
 ## Rounds
 
@@ -62,6 +81,8 @@ by line (tap to hurry) on a scoreboard.
   injuries), the team (12 to 16 players, generated names), the calendar with practice
   games, the summer tournament and the autumn tournament, the game sim with orders,
   graduation and first-years, reputation, save on the device.
-- Round 2: the national tournament, better events with choices (dialogue), the coach's
-  own growth, rival schools with names, records and an end-of-three-years card.
-- Round 3: the picture (players on the field during a game, a ball), sound, balance.
+- Round 2 (this PR too): points and the coach spending them, practice menus, cards with a
+  player, scouting, calls at chances and pinches.
+- Round 3: events with choices (dialogue), the coach's own growth, rival schools with
+  names, records and an end-of-three-years card.
+- Round 4: the picture (players on the field during a game, a ball), sound, balance.

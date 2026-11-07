@@ -2,8 +2,8 @@
 //! screen (scoreboard, bases, play-by-play, orders).
 
 use super::board::{self, Fixture};
-use super::sim::Order;
-use super::team::{grade, Drill};
+use super::sim::{Spot, Tactic};
+use super::team::{grade, Drill, Stat};
 use super::{hud_scale, DiamondDays, Mode};
 use crate::flow::FlowPhase;
 use crate::hud_kit::{pill_button, round_panel, Card as Panel, CardStyle, Menu, Row};
@@ -19,9 +19,16 @@ pub enum Btn {
     Roster,
     RosterUp,
     RosterDown,
-    /// An order for the inning; None leaves the rest to the team.
-    Order(Option<Order>),
+    /// A call at a chance or a pinch; None lets them play.
+    Call(Option<Tactic>),
+    /// No more calls this game.
+    Auto,
     Skip,
+    /// A player's page: raise a stat, spend everything, change the practice menu, back.
+    Raise(Stat),
+    AutoRaise,
+    Menu(Drill),
+    Back,
 }
 
 fn drill_label(d: Drill, ja: bool) -> &'static str {
@@ -59,6 +66,10 @@ impl DiamondDays {
                 out.push((Btn::Roster, [w - 112.0 * s, 64.0 * s, 100.0 * s, 36.0 * s]));
             }
             Mode::Roster => {
+                out.push((
+                    Btn::AutoRaise,
+                    [w - 70.0 * s, h * 0.2 + 110.0 * s, 56.0 * s, 56.0 * s],
+                ));
                 out.push((Btn::RosterUp, [w - 70.0 * s, h * 0.2, 56.0 * s, 44.0 * s]));
                 out.push((
                     Btn::RosterDown,
@@ -66,25 +77,68 @@ impl DiamondDays {
                 ));
             }
             Mode::Match { asking, .. } => {
-                let bh = 48.0 * s;
-                if asking {
-                    let bw = (w - 40.0 * s) / 4.0;
-                    let y = h - bh - 18.0 * s;
-                    let orders = [
-                        Some(Order::Swing),
-                        Some(Order::Normal),
-                        Some(Order::Small),
-                        None,
-                    ];
-                    for (i, o) in orders.into_iter().enumerate() {
+                let bh = 46.0 * s;
+                match asking {
+                    Some(spot) => {
+                        let g = self.game.as_ref();
+                        let list: Vec<Tactic> = match spot {
+                            Spot::Chance => Tactic::CHANCE.to_vec(),
+                            Spot::Pinch => Tactic::PINCH.to_vec(),
+                        }
+                        .into_iter()
+                        .filter(|t| g.is_some_and(|g| t.possible(g)))
+                        .collect();
+                        let n = list.len() + 1;
+                        let bw = (w - 24.0 * s - (n as f32 - 1.0) * 5.0 * s) / n as f32;
+                        let y = h - bh - 18.0 * s;
+                        for (i, t) in list
+                            .into_iter()
+                            .map(Some)
+                            .chain(std::iter::once(None))
+                            .enumerate()
+                        {
+                            out.push((
+                                Btn::Call(t),
+                                [12.0 * s + i as f32 * (bw + 5.0 * s), y, bw, bh],
+                            ));
+                        }
                         out.push((
-                            Btn::Order(o),
-                            [12.0 * s + i as f32 * (bw + 5.0 * s), y, bw, bh],
+                            Btn::Auto,
+                            [w - 132.0 * s, y - bh - 10.0 * s, 120.0 * s, 36.0 * s],
                         ));
                     }
-                } else {
-                    out.push((Btn::Skip, [w - 120.0 * s, h - bh - 18.0 * s, 106.0 * s, bh]));
+                    None => {
+                        out.push((Btn::Skip, [w - 120.0 * s, h - bh - 18.0 * s, 106.0 * s, bh]));
+                    }
                 }
+            }
+            Mode::Player(i) => {
+                let p = &self.s.team.players[i];
+                let (x0, y0) = (16.0 * s, 150.0 * s);
+                let stats: Vec<Stat> = Stat::ALL
+                    .iter()
+                    .copied()
+                    .filter(|st| p.pitcher() || !st.pitching())
+                    .collect();
+                for (k, st) in stats.into_iter().enumerate() {
+                    out.push((
+                        Btn::Raise(st),
+                        [w - 92.0 * s, y0 + k as f32 * 40.0 * s, 76.0 * s, 34.0 * s],
+                    ));
+                }
+                let bw = (w - 32.0 * s - 4.0 * 6.0 * s) / 5.0;
+                let my = h - 150.0 * s;
+                for (k, d) in Drill::ALL.into_iter().enumerate() {
+                    out.push((
+                        Btn::Menu(d),
+                        [x0 + k as f32 * (bw + 6.0 * s), my, bw, 38.0 * s],
+                    ));
+                }
+                out.push((Btn::AutoRaise, [x0, h - 90.0 * s, 160.0 * s, 44.0 * s]));
+                out.push((
+                    Btn::Back,
+                    [w - 136.0 * s, h - 90.0 * s, 120.0 * s, 44.0 * s],
+                ));
             }
             _ => {}
         }
@@ -164,6 +218,7 @@ impl DiamondDays {
                 self.draw_match(&mut list, w, h, s, *shown, *asking)
             }
             Mode::Roster => self.draw_roster(&mut list, w, h, s),
+            Mode::Player(i) => self.draw_player(&mut list, w, h, s, *i),
             _ => {
                 self.draw_next(&mut list, s);
                 if matches!(self.mode, Mode::Plan) {
@@ -177,10 +232,49 @@ impl DiamondDays {
                 Btn::Roster => (self.tr("TEAM", "部員"), [40, 90, 160, 235]),
                 Btn::RosterUp => ("▲", [40, 60, 110, 230]),
                 Btn::RosterDown => ("▼", [40, 60, 110, 230]),
-                Btn::Order(Some(Order::Swing)) => (self.tr("SWING", "強攻"), [190, 70, 60, 240]),
-                Btn::Order(Some(Order::Normal)) => (self.tr("NORMAL", "普通"), [60, 110, 190, 240]),
-                Btn::Order(Some(Order::Small)) => (self.tr("SMALL", "小技"), [60, 150, 100, 240]),
-                Btn::Order(None) => (self.tr("AUTO", "おまかせ"), [90, 90, 110, 240]),
+                Btn::Call(Some(t)) => (
+                    t.label(self.lang_ja),
+                    match t {
+                        Tactic::Hit | Tactic::Challenge => [190, 70, 60, 240],
+                        Tactic::Bunt | Tactic::Squeeze => [60, 150, 100, 240],
+                        Tactic::Steal => [200, 140, 40, 240],
+                        _ => [60, 110, 190, 240],
+                    },
+                ),
+                Btn::Call(None) => (self.tr("PLAY ON", "おまかせ"), [90, 90, 110, 240]),
+                Btn::Auto => (self.tr("NO MORE CALLS", "以降おまかせ"), [70, 70, 90, 220]),
+                Btn::Raise(st) => {
+                    let ok = matches!(self.mode, Mode::Player(i) if self.s.team.players[i].can_raise(st));
+                    (
+                        "+",
+                        if ok {
+                            [60, 150, 90, 240]
+                        } else {
+                            [120, 120, 130, 160]
+                        },
+                    )
+                }
+                Btn::AutoRaise => (
+                    if matches!(self.mode, Mode::Roster) {
+                        self.tr("ALL", "全員")
+                    } else {
+                        self.tr("AUTO SPEND", "おまかせ育成")
+                    },
+                    [60, 120, 170, 240],
+                ),
+                Btn::Menu(d) => {
+                    let on =
+                        matches!(self.mode, Mode::Player(i) if self.s.team.players[i].menu == d);
+                    (
+                        drill_label(d, self.lang_ja),
+                        if on {
+                            [230, 150, 40, 245]
+                        } else {
+                            [60, 70, 100, 220]
+                        },
+                    )
+                }
+                Btn::Back => (self.tr("BACK", "戻る"), [80, 80, 100, 230]),
                 Btn::Skip => (self.tr("SKIP", "結果まで"), [80, 80, 100, 230]),
             };
             pill_button(
@@ -277,7 +371,7 @@ impl DiamondDays {
             let Btn::Card(i) = b else {
                 continue;
             };
-            let c = self.s.hand[i];
+            let c = &self.s.hand[i];
             round_panel(
                 list,
                 r[0],
@@ -301,6 +395,18 @@ impl DiamondDays {
                 .aligned(TextAlign::Center)
                 .with_face(TextFace::Display),
             );
+            if let Some(star) = &c.star {
+                list.texts.push(
+                    TextQuad::new(
+                        star,
+                        r[0] + r[2] * 0.5,
+                        r[1] + r[3] * 0.62,
+                        12.0 * s,
+                        [90, 70, 40, 255],
+                    )
+                    .aligned(TextAlign::Center),
+                );
+            }
             if let Some(d) = c.focus {
                 let col = super::board::Square::Train(d).color();
                 let mut q = Quad::new(
@@ -326,8 +432,112 @@ impl DiamondDays {
         }
     }
 
+    /// The roster list's layout (shared with its taps).
+    pub(super) fn roster_menu(&self, w: f32, h: f32) -> Menu {
+        let s = hud_scale(w, h);
+        Menu::layout(w - 70.0 * s, 70.0 * s, h - 20.0 * s, 460.0, s)
+    }
+
+    fn draw_player(&self, list: &mut DrawList, w: f32, h: f32, s: f32, i: usize) {
+        let ja = self.lang_ja;
+        let p = &self.s.team.players[i];
+        round_panel(
+            list,
+            8.0 * s,
+            66.0 * s,
+            w - 16.0 * s,
+            h - 76.0 * s,
+            14.0 * s,
+            [12, 16, 34, 240],
+            [140, 175, 255, 120],
+            1.5 * s,
+            (0.0, 4.0 * s, 80),
+        );
+        let head = format!(
+            "{} {}  {}{}  {}",
+            p.family,
+            p.given,
+            p.grade,
+            self.tr("", "年"),
+            p.pos.short(ja)
+        );
+        list.texts.push(TextQuad::new(
+            &head,
+            20.0 * s,
+            78.0 * s,
+            20.0 * s,
+            [255, 236, 200, 255],
+        ));
+        let pools: Vec<String> = Drill::ALL
+            .iter()
+            .map(|d| format!("{} {}", drill_label(*d, ja), p.xp[d.index()]))
+            .collect();
+        list.texts.push(TextQuad::new(
+            &pools.join("  "),
+            20.0 * s,
+            110.0 * s,
+            13.0 * s,
+            [170, 220, 255, 255],
+        ));
+        for (b, r) in self.hud_buttons(w, h) {
+            let Btn::Raise(st) = b else {
+                continue;
+            };
+            let v = p.stat(st);
+            let shown = if st == Stat::Velo {
+                format!("{v} km/h")
+            } else {
+                format!("{} {v}", grade(v))
+            };
+            list.texts.push(TextQuad::new(
+                st.label(ja),
+                20.0 * s,
+                r[1] + 8.0 * s,
+                16.0 * s,
+                WHITE,
+            ));
+            list.texts.push(TextQuad::new(
+                &shown,
+                130.0 * s,
+                r[1] + 8.0 * s,
+                16.0 * s,
+                [255, 230, 150, 255],
+            ));
+            list.texts.push(
+                TextQuad::new(
+                    &format!("{} {}", p.cost(st), drill_label(st.pool(), ja)),
+                    r[0] - 10.0 * s,
+                    r[1] + 10.0 * s,
+                    12.0 * s,
+                    [180, 190, 220, 255],
+                )
+                .aligned(TextAlign::Right),
+            );
+        }
+        list.texts.push(TextQuad::new(
+            self.tr("Own practice every week:", "毎週の個人練習："),
+            20.0 * s,
+            h - 176.0 * s,
+            14.0 * s,
+            [200, 210, 240, 255],
+        ));
+        let state = format!(
+            "{}  {} {}",
+            p.mood.label(ja),
+            self.tr("Stamina", "体力"),
+            p.stamina
+        );
+        list.texts.push(TextQuad::new(
+            &state,
+            20.0 * s,
+            h - 200.0 * s,
+            14.0 * s,
+            [200, 210, 240, 255],
+        ));
+    }
+
     fn draw_roster(&self, list: &mut DrawList, w: f32, h: f32, s: f32) {
-        let menu = Menu::layout(w - 70.0 * s, 70.0 * s, h - 20.0 * s, 460.0, s);
+        let menu = self.roster_menu(w, h);
         let ja = self.lang_ja;
         let rows: Vec<Row> = self
             .s
@@ -383,7 +593,10 @@ impl DiamondDays {
         );
         list.texts.push(
             TextQuad::new(
-                self.tr("Tap to close", "タップで閉じる"),
+                self.tr(
+                    "Tap a player to train him; tap outside to close",
+                    "選手をタップで育成、外をタップで閉じる",
+                ),
                 w * 0.5,
                 h - 16.0 * s,
                 13.0 * s,
@@ -393,7 +606,15 @@ impl DiamondDays {
         );
     }
 
-    fn draw_match(&self, list: &mut DrawList, w: f32, h: f32, s: f32, shown: usize, asking: bool) {
+    fn draw_match(
+        &self,
+        list: &mut DrawList,
+        w: f32,
+        h: f32,
+        s: f32,
+        shown: usize,
+        asking: Option<Spot>,
+    ) {
         let Some(g) = &self.game else {
             return;
         };
@@ -606,16 +827,14 @@ impl DiamondDays {
                 col,
             ));
         }
-        if asking {
+        if let Some(spot) = asking {
+            let (en, ja) = match spot {
+                Spot::Chance => ("A chance! Your call?", "チャンス！作戦は？"),
+                Spot::Pinch => ("In a pinch. Your call?", "ピンチ！どうする？"),
+            };
             list.texts.push(
-                TextQuad::new(
-                    self.tr("Your order for this inning?", "この回の作戦は？"),
-                    w * 0.5,
-                    h - 96.0 * s,
-                    17.0 * s,
-                    WHITE,
-                )
-                .aligned(TextAlign::Center),
+                TextQuad::new(self.tr(en, ja), w * 0.5, h - 96.0 * s, 17.0 * s, WHITE)
+                    .aligned(TextAlign::Center),
             );
         }
     }

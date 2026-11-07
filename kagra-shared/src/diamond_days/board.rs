@@ -14,6 +14,8 @@ pub enum Square {
     Rest,
     Event,
     Spirit,
+    /// Visit a middle school: find a player who joins next April.
+    Scout,
 }
 
 impl Square {
@@ -27,6 +29,7 @@ impl Square {
             (Square::Rest, false) => "Rest",
             (Square::Event, false) => "Event",
             (Square::Spirit, false) => "Spirit",
+            (Square::Scout, false) => "Scout",
             (Square::Train(Drill::Batting), true) => "打撃",
             (Square::Train(Drill::Pitching), true) => "投球",
             (Square::Train(Drill::Fielding), true) => "守備",
@@ -35,6 +38,7 @@ impl Square {
             (Square::Rest, true) => "休養",
             (Square::Event, true) => "出来事",
             (Square::Spirit, true) => "気合",
+            (Square::Scout, true) => "スカウト",
         }
     }
 
@@ -48,6 +52,7 @@ impl Square {
             Square::Rest => [150, 220, 230],
             Square::Event => [245, 245, 245],
             Square::Spirit => [255, 150, 190],
+            Square::Scout => [255, 190, 110],
         }
     }
 }
@@ -70,7 +75,7 @@ pub fn default_ring() -> Vec<Square> {
         Rest,
         Train(Pitching),
         Train(Fielding),
-        Event,
+        Scout,
         Train(Strength),
         Train(Batting),
         Spirit,
@@ -81,17 +86,25 @@ pub fn default_ring() -> Vec<Square> {
 }
 
 /// A card: steps to walk, and maybe a focus that doubles one kind of square this week.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Card {
     pub steps: u8,
     pub focus: Option<Drill>,
+    /// A player on the card (family name): that week he trains double.
+    #[serde(default)]
+    pub star: Option<String>,
 }
 
 impl Card {
-    pub fn draw(rng: &mut Rng) -> Self {
+    pub fn draw(rng: &mut Rng, team: &Team) -> Self {
         let steps = 1 + (rng.next_u32() % 6) as u8;
         let focus = (rng.unit() < 0.25).then(|| Drill::ALL[(rng.next_u32() % 5) as usize]);
-        Self { steps, focus }
+        let star = (!team.players.is_empty() && rng.unit() < 0.6).then(|| {
+            team.players[(rng.next_u32() as usize) % team.players.len()]
+                .family
+                .clone()
+        });
+        Self { steps, focus, star }
     }
 }
 
@@ -303,12 +316,12 @@ pub fn month(w: u8) -> u8 {
 
 /// How good a rival is in a fixture (the team's strength scale).
 pub fn rival_level(f: Fixture, year: u8) -> f32 {
-    let base = 32.0 + year as f32 * 1.5;
+    let base = 36.0 + year as f32 * 2.0;
     match f {
         Fixture::Practice => base + 2.0,
-        Fixture::Summer(r) => base + r as f32 * 4.0,
-        Fixture::National(r) => base + 22.0 + r as f32 * 4.0,
-        Fixture::Autumn(r) => base + r as f32 * 3.5,
+        Fixture::Summer(r) => base + r as f32 * 5.0,
+        Fixture::National(r) => base + 28.0 + r as f32 * 5.0,
+        Fixture::Autumn(r) => base + r as f32 * 4.0,
     }
 }
 
@@ -363,11 +376,12 @@ pub fn rival_name(f: Fixture, year: u8, week: u8) -> (String, String) {
     )
 }
 
-/// A week's training on a square for everyone, with a card's focus. Returns how many stats
-/// went up.
-pub fn train_week(team: &mut Team, d: Drill, focus: Option<Drill>, base: f32) -> usize {
-    let k = if focus == Some(d) { 2.0 } else { 1.0 };
-    let mut ups = 0;
+/// A week's training on a square: the whole team works on `d` (double with the card's
+/// focus), each player also does his own menu, and the card's star trains double. Returns
+/// the points the team gained.
+pub fn train_week(team: &mut Team, d: Drill, card: &Card, base: f32) -> u32 {
+    let k = if card.focus == Some(d) { 2.0 } else { 1.0 };
+    let mut total = 0;
     for p in &mut team.players {
         // Pitchers learn more from pitching, fielders less.
         let fit = match (d, p.pitcher()) {
@@ -376,13 +390,20 @@ pub fn train_week(team: &mut Team, d: Drill, focus: Option<Drill>, base: f32) ->
             (Drill::Batting, true) => 0.6,
             _ => 1.0,
         };
-        ups += p.train(d, base * k * fit).len();
+        let star = if card.star.as_deref() == Some(p.family.as_str()) {
+            2.0
+        } else {
+            1.0
+        };
+        total += p.train(d, base * k * fit * star) as u32;
+        let menu = p.menu;
+        total += p.train(menu, base * 0.35 * star) as u32;
         p.tire(12);
         if p.stamina < 20 && p.mood > Mood::Awful {
             p.mood = p.mood.down();
         }
     }
-    ups
+    total
 }
 
 #[cfg(test)]
@@ -418,21 +439,44 @@ mod tests {
         apply(&mut rng, fest, &mut t);
         assert!(t.players.iter().all(|p| p.mood >= Mood::Good));
         for _ in 0..50 {
-            let c = Card::draw(&mut rng);
+            let c = Card::draw(&mut rng, &t);
             assert!((1..=6).contains(&c.steps));
+            if let Some(s) = &c.star {
+                assert!(t.players.iter().any(|p| &p.family == s));
+            }
         }
         assert!(pick_happening(&mut rng, &list).is_some());
         assert_eq!(default_ring().len(), 20);
     }
 
     #[test]
-    fn focus_doubles_a_week_of_training_and_it_tires() {
+    fn focus_and_the_star_double_a_week_of_training_and_it_tires() {
         let mut rng = Rng::new(2);
-        let mut a = Team::founding(&mut rng);
-        let mut b = a.clone();
-        let plain = train_week(&mut a, Drill::Fielding, None, 6.0);
-        let doubled = train_week(&mut b, Drill::Fielding, Some(Drill::Fielding), 6.0);
-        assert!(doubled > plain, "{doubled} > {plain}");
+        let a0 = Team::founding(&mut rng);
+        let plain = Card {
+            steps: 1,
+            focus: None,
+            star: None,
+        };
+        let focus = Card {
+            focus: Some(Drill::Fielding),
+            ..plain.clone()
+        };
+        let star = Card {
+            star: Some(a0.players[3].family.clone()),
+            ..plain.clone()
+        };
+        let mut a = a0.clone();
+        let p_plain = train_week(&mut a, Drill::Fielding, &plain, 6.0);
+        let mut b = a0.clone();
+        let p_focus = train_week(&mut b, Drill::Fielding, &focus, 6.0);
+        assert!(p_focus > p_plain, "{p_focus} > {p_plain}");
+        let mut c = a0.clone();
+        train_week(&mut c, Drill::Fielding, &star, 6.0);
+        let gain = |t: &Team, i: usize| t.players[i].xp.iter().sum::<u16>();
+        assert!(gain(&c, 3) > gain(&a, 3), "the star trains double");
         assert!(a.players.iter().all(|p| p.stamina == 88));
+        // Everyone also did their own menu.
+        assert!(a.players.iter().all(|p| p.xp[p.menu.index()] > 0));
     }
 }

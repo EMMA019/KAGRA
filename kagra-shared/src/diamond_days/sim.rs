@@ -121,6 +121,83 @@ impl Side {
     }
 }
 
+/// A moment the coach is asked about.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Spot {
+    /// We bat with a runner in scoring position.
+    Chance,
+    /// They bat with a runner in scoring position.
+    Pinch,
+}
+
+/// The coach's call for one plate appearance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tactic {
+    /// Chance: swing away.
+    Hit,
+    /// Chance: make him throw strikes (walks up, hits down).
+    Wait,
+    /// Chance: sacrifice bunt.
+    Bunt,
+    /// Chance: the runner on third breaks for home on the bunt.
+    Squeeze,
+    /// Chance: the lead runner steals.
+    Steal,
+    /// Pinch: go right at him (the pitcher bears down).
+    Challenge,
+    /// Pinch: walk him on purpose.
+    Walk,
+    /// Pinch: bring in the next pitcher.
+    Relief,
+}
+
+impl Tactic {
+    pub const CHANCE: [Tactic; 5] = [
+        Tactic::Hit,
+        Tactic::Wait,
+        Tactic::Bunt,
+        Tactic::Squeeze,
+        Tactic::Steal,
+    ];
+    pub const PINCH: [Tactic; 3] = [Tactic::Challenge, Tactic::Walk, Tactic::Relief];
+
+    pub fn label(self, ja: bool) -> &'static str {
+        match (self, ja) {
+            (Tactic::Hit, false) => "SWING",
+            (Tactic::Wait, false) => "TAKE",
+            (Tactic::Bunt, false) => "BUNT",
+            (Tactic::Squeeze, false) => "SQUEEZE",
+            (Tactic::Steal, false) => "STEAL",
+            (Tactic::Challenge, false) => "ATTACK",
+            (Tactic::Walk, false) => "WALK HIM",
+            (Tactic::Relief, false) => "RELIEF",
+            (Tactic::Hit, true) => "打て",
+            (Tactic::Wait, true) => "待て",
+            (Tactic::Bunt, true) => "バント",
+            (Tactic::Squeeze, true) => "スクイズ",
+            (Tactic::Steal, true) => "盗塁",
+            (Tactic::Challenge, true) => "勝負",
+            (Tactic::Walk, true) => "敬遠",
+            (Tactic::Relief, true) => "継投",
+        }
+    }
+
+    /// Can it be called now?
+    pub fn possible(self, g: &Game) -> bool {
+        let f = 1 - g.batting();
+        match self {
+            Tactic::Bunt => g.outs < 2 && (g.bases[0].is_some() || g.bases[1].is_some()),
+            Tactic::Squeeze => g.outs < 2 && g.bases[2].is_some(),
+            Tactic::Steal => {
+                (g.bases[0].is_some() && g.bases[1].is_none())
+                    || (g.bases[1].is_some() && g.bases[2].is_none())
+            }
+            Tactic::Relief => g.arm[f] + 1 < g.sides[f].arms.len(),
+            _ => true,
+        }
+    }
+}
+
 /// A line of play-by-play.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Play {
@@ -149,6 +226,9 @@ pub struct Game {
     arm: [usize; 2],
     thrown: [u32; 2],
     pub order: Order,
+    /// The call for the next plate appearance, and the plate appearance last asked about.
+    pub tactic: Option<Tactic>,
+    asked: Option<(usize, usize)>,
     pub over: bool,
     pub log: Vec<Play>,
     rng: Rng,
@@ -174,6 +254,8 @@ impl Game {
             arm: [0; 2],
             thrown: [0; 2],
             order: Order::Normal,
+            tactic: None,
+            asked: None,
             over: false,
             log: Vec::new(),
             rng: Rng::new(seed),
@@ -191,11 +273,6 @@ impl Game {
 
     pub fn runs(&self, side: usize) -> u32 {
         self.line[side].iter().map(|&r| r as u32).sum()
-    }
-
-    /// Is it our turn at bat (the coach picks an order)?
-    pub fn we_bat(&self) -> bool {
-        self.batting() == self.us
     }
 
     pub fn won(&self) -> Option<bool> {
@@ -216,6 +293,30 @@ impl Game {
 
     fn say(&mut self, en: String, ja: String, runs: u8) {
         self.log.push(Play { en, ja, runs });
+    }
+
+    /// A moment to ask the coach about, once per plate appearance: a runner on second or
+    /// third, ours at bat (a chance) or theirs (a pinch).
+    pub fn spot(&self) -> Option<Spot> {
+        if self.over || self.outs >= 3 || (self.bases[1].is_none() && self.bases[2].is_none()) {
+            return None;
+        }
+        let s = self.batting();
+        if self.asked == Some((s, self.up[s])) {
+            return None;
+        }
+        Some(if s == self.us {
+            Spot::Chance
+        } else {
+            Spot::Pinch
+        })
+    }
+
+    /// The coach's call for the plate appearance now (None: let them play).
+    pub fn call(&mut self, t: Option<Tactic>) {
+        let s = self.batting();
+        self.asked = Some((s, self.up[s]));
+        self.tactic = t.filter(|t| t.possible(self));
     }
 
     /// Play one plate appearance (or the change of sides). Returns false when the game is
@@ -241,24 +342,90 @@ impl Game {
             );
             return true;
         }
+        let tactic = self.tactic.take();
+        match tactic {
+            Some(Tactic::Relief) if self.arm[f] + 1 < self.sides[f].arms.len() => {
+                self.arm[f] += 1;
+                self.thrown[f] = 0;
+                let n = self.pitcher_now().name.clone();
+                self.say(
+                    format!("The coach goes to the bullpen: {n}."),
+                    format!("継投、{n}がマウンドへ。"),
+                    0,
+                );
+                // The batter still has to face him.
+                let s2 = self.batting();
+                self.asked = Some((s2, self.up[s2]));
+                return true;
+            }
+            Some(Tactic::Steal) => {
+                self.steal_lead(s);
+                return self.after_play(s);
+            }
+            _ => {}
+        }
         let bi = self.up[s] % self.sides[s].bats.len();
         let b = self.sides[s].bats[bi].clone();
         let arm = self.pitcher_now().clone();
-        let stuff = arm.stuff(self.thrown[f]);
+        let stuff = arm.stuff(self.thrown[f])
+            + if tactic == Some(Tactic::Challenge) {
+                5.0
+            } else {
+                0.0
+            };
         let field = self.sides[f].field;
-        let order = if s == self.us {
-            self.order
-        } else {
-            Order::Normal
+        let order = match tactic {
+            Some(Tactic::Hit) => Order::Swing,
+            Some(Tactic::Bunt) => Order::Small,
+            _ if s == self.us => self.order,
+            _ => Order::Normal,
         };
         self.thrown[f] += 3 + (self.rng.unit() * 4.0) as u32;
         self.up[s] += 1;
         let name = b.name.clone();
         let r = self.rng.unit();
+        // An intentional walk.
+        if tactic == Some(Tactic::Walk) {
+            let mut runs = 0;
+            self.walk(s, bi, &mut runs);
+            self.say(
+                format!("{name} is walked on purpose."),
+                format!("{name}を敬遠。"),
+                runs,
+            );
+            return self.after_play(s);
+        }
+        // The squeeze: the runner on third breaks as the batter bunts.
+        if tactic == Some(Tactic::Squeeze) && self.bases[2].is_some() {
+            self.outs += 1;
+            if r < 0.68 {
+                self.bases[2] = None;
+                if let Some(x) = self.bases[1].take() {
+                    self.bases[2] = Some(x);
+                }
+                if let Some(x) = self.bases[0].take() {
+                    self.bases[1] = Some(x);
+                }
+                self.add_runs(s, 1);
+                self.say(
+                    format!("Squeeze! {name} lays it down and the run scores."),
+                    format!("スクイズ成功！{name}のバントで1点。"),
+                    1,
+                );
+            } else {
+                self.bases[2] = None;
+                self.say(
+                    format!("Squeeze foiled: {name} misses and the runner is out at home."),
+                    "スクイズ失敗、三塁ランナーが本塁でタッチアウト。".to_string(),
+                    0,
+                );
+            }
+            return self.after_out(s);
+        }
         // Small ball: a bunt with a runner on and fewer than two out.
         if order == Order::Small
             && self.outs < 2
-            && self.bases[0].is_some()
+            && (self.bases[0].is_some() || self.bases[1].is_some())
             && self.bases[2].is_none()
         {
             if r < 0.78 {
@@ -290,8 +457,10 @@ impl Game {
             Order::Normal => (0.0, 1.0),
             Order::Small => (-0.04, 0.7),
         };
-        let k = (0.13 + (stuff - b.contact) * 0.0035 + k_adj).clamp(0.04, 0.42);
-        let bb = (0.10 - arm.control * 0.0007).clamp(0.02, 0.11);
+        let wait = tactic == Some(Tactic::Wait);
+        let k = (0.13 + (stuff - b.contact) * 0.0035 + k_adj + if wait { 0.03 } else { 0.0 })
+            .clamp(0.04, 0.42);
+        let bb = (0.10 - arm.control * 0.0007).clamp(0.02, 0.11) * if wait { 2.2 } else { 1.0 };
         let hit =
             (0.28 + (b.contact - stuff * 0.8) * 0.0035 - (field - 50.0) * 0.0012).clamp(0.12, 0.5);
         if r < k {
@@ -401,7 +570,7 @@ impl Game {
 
     fn add_runs(&mut self, s: usize, n: u8) {
         if let Some(last) = self.line[s].last_mut() {
-            *last += n;
+            *last = last.saturating_add(n);
         }
     }
 
@@ -451,6 +620,41 @@ impl Game {
         }
         self.bases = next;
         self.add_runs(s, *runs);
+    }
+
+    /// The lead runner with an open base ahead steals (a called steal).
+    fn steal_lead(&mut self, s: usize) {
+        let base = if self.bases[1].is_some() && self.bases[2].is_none() {
+            1
+        } else if self.bases[0].is_some() && self.bases[1].is_none() {
+            0
+        } else {
+            return;
+        };
+        let r = self.bases[base].unwrap_or(0);
+        let sp = self.sides[s].bats[r].speed;
+        let name = self.sides[s].bats[r].name.clone();
+        let (to_en, to_ja) = if base == 1 {
+            ("third", "三盗")
+        } else {
+            ("second", "盗塁")
+        };
+        if self.rng.unit() < 0.35 + sp * 0.006 {
+            self.bases[base + 1] = self.bases[base].take();
+            self.say(
+                format!("{name} steals {to_en}!"),
+                format!("{name}、{to_ja}成功！"),
+                0,
+            );
+        } else {
+            self.bases[base] = None;
+            self.outs += 1;
+            self.say(
+                format!("{name} is thrown out stealing."),
+                format!("{name}、{to_ja}失敗。"),
+                0,
+            );
+        }
     }
 
     fn try_steal(&mut self, s: usize) {
@@ -621,5 +825,39 @@ mod tests {
         assert!(count(Order::Swing, "ホームラン") > count(Order::Small, "ホームラン"));
         assert!(count(Order::Small, "バント") > 20);
         assert_eq!(count(Order::Normal, "バント"), 0);
+    }
+
+    #[test]
+    fn chances_and_pinches_ask_once_and_calls_play_out() {
+        let mut asked = 0;
+        let mut squeezes = 0;
+        let mut walks = 0;
+        for seed in 0..30 {
+            let mut g = Game::new(side(50.0, seed), side(50.0, seed + 3), seed % 2 == 0, seed);
+            let mut guard = 0;
+            while !g.over && guard < 3000 {
+                guard += 1;
+                if let Some(spot) = g.spot() {
+                    asked += 1;
+                    let t = match spot {
+                        Spot::Chance if Tactic::Squeeze.possible(&g) => Tactic::Squeeze,
+                        Spot::Chance => Tactic::Steal,
+                        // Walk him only with first base open (no forced run).
+                        Spot::Pinch if g.bases[0].is_none() => Tactic::Walk,
+                        Spot::Pinch => Tactic::Challenge,
+                    };
+                    g.call(Some(t));
+                    assert!(g.spot().is_none(), "asked once per plate appearance");
+                }
+                g.step();
+            }
+            assert!(g.over);
+            squeezes += g.log.iter().filter(|p| p.ja.contains("スクイズ")).count();
+            walks += g.log.iter().filter(|p| p.ja.contains("敬遠")).count();
+        }
+        assert!(asked > 60, "{asked}");
+        assert!(squeezes > 5 && walks > 5, "{squeezes} {walks}");
+        let g = Game::new(side(50.0, 1), side(50.0, 2), true, 1);
+        assert!(!Tactic::Squeeze.possible(&g), "nobody on third");
     }
 }

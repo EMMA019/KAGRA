@@ -1,5 +1,6 @@
 use super::*;
 use crate::kit_host::KitHost;
+use team::Stat;
 
 const DT: f32 = 1.0 / 60.0;
 const W: u32 = 390;
@@ -51,8 +52,16 @@ fn play_week(g: &mut DiamondDays) {
         match g.mode {
             Mode::Notice => tap(g, 195.0, 400.0),
             Mode::Plan if (g.s.year, g.s.week) != week => return,
-            Mode::Plan => press(g, hud::Btn::Card(0)),
-            Mode::Match { asking: true, .. } => press(g, hud::Btn::Order(None)),
+            Mode::Plan => {
+                for p in &mut g.s.team.players {
+                    p.auto_raise();
+                }
+                press(g, hud::Btn::Card(0))
+            }
+            Mode::Match {
+                asking: Some(_), ..
+            } => press(g, hud::Btn::Call(None)),
+            Mode::Player(_) => press(g, hud::Btn::Back),
             Mode::Match { .. } => press(g, hud::Btn::Skip),
             Mode::Roster => tap(g, 10.0, 10.0),
             Mode::Walk { .. } => run(g, 0.3),
@@ -114,30 +123,100 @@ fn a_card_walks_the_coach_and_the_square_happens() {
 }
 
 #[test]
-fn practice_game_week_plays_a_game_with_orders() {
+fn a_game_stops_at_chances_and_pinches_for_the_coachs_call() {
     let mut g = started();
     tap(&mut g, 195.0, 400.0);
-    // Jump to the week before the first practice game.
+    // Jump to the week of the first practice game.
     g.s.week = 6;
     g.begin_week();
     assert!(matches!(g.mode, Mode::Match { .. }));
-    // Watch until we bat and the coach is asked.
-    for _ in 0..2000 {
-        if matches!(g.mode, Mode::Match { asking: true, .. }) {
-            break;
+    let mut calls = 0;
+    for _ in 0..20000 {
+        match g.mode {
+            Mode::Match {
+                asking: Some(spot), ..
+            } => {
+                let hud = g.hud(W, H, true);
+                let prompt = match spot {
+                    Spot::Chance => "chance",
+                    Spot::Pinch => "pinch",
+                };
+                assert!(hud.texts.iter().any(|t| t.text.contains(prompt)));
+                // Take the first call on offer.
+                let first = g
+                    .hud_buttons(W as f32, H as f32)
+                    .into_iter()
+                    .find_map(|(b, _)| matches!(b, hud::Btn::Call(Some(_))).then_some(b))
+                    .unwrap();
+                press(&mut g, first);
+                calls += 1;
+            }
+            Mode::Match { .. } => run(&mut g, 0.3),
+            _ => break,
         }
-        run(&mut g, 0.2);
     }
-    assert!(matches!(g.mode, Mode::Match { asking: true, .. }));
-    let hud = g.hud(W, H, true);
-    assert!(hud.texts.iter().any(|t| t.text.contains("order")));
-    press(&mut g, hud::Btn::Order(Some(Order::Small)));
-    assert_eq!(g.game.as_ref().unwrap().order, Order::Small);
-    press(&mut g, hud::Btn::Skip);
+    assert!(calls >= 1, "at least one chance or pinch in a game");
     assert!(g.game.is_none());
     assert_eq!(g.mode, Mode::Notice);
     assert_eq!(g.s.wins + g.s.losses, 1);
     assert_eq!(g.s.week, 7);
+}
+
+#[test]
+fn the_coach_spends_points_and_sets_each_players_practice() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    g.s.team.players[0].xp = [40; 5];
+    press(&mut g, hud::Btn::Roster);
+    let m = g.roster_menu(W as f32, H as f32);
+    tap(&mut g, m.x + 40.0, m.y + 44.0 * m.s + 0.5 * m.row_h);
+    assert_eq!(g.mode, Mode::Player(0));
+    let p0 = g.s.team.players[0].clone();
+    let st = if p0.pitcher() {
+        Stat::Control
+    } else {
+        Stat::Contact
+    };
+    press(&mut g, hud::Btn::Raise(st));
+    assert_eq!(g.s.team.players[0].stat(st), p0.stat(st) + 1);
+    press(&mut g, hud::Btn::Menu(team::Drill::Running));
+    assert_eq!(g.s.team.players[0].menu, team::Drill::Running);
+    press(&mut g, hud::Btn::AutoRaise);
+    assert!(Stat::ALL
+        .iter()
+        .all(|&st| !g.s.team.players[0].can_raise(st)));
+    let hud = g.hud(W, H, false);
+    assert!(hud.texts.iter().any(|t| t.text.contains(&p0.given)));
+    press(&mut g, hud::Btn::Back);
+    assert_eq!(g.mode, Mode::Roster);
+}
+
+#[test]
+fn scouting_brings_a_middle_schooler_next_april() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    let scout = g
+        .spec
+        .ring
+        .iter()
+        .position(|s| *s == Square::Scout)
+        .unwrap();
+    g.s.pos = (scout + g.spec.ring.len() - 1) % g.spec.ring.len();
+    g.s.hand[0].steps = 1;
+    press(&mut g, hud::Btn::Card(0));
+    run(&mut g, 1.0);
+    assert_eq!(g.s.scouted.len(), 1);
+    let name = g.s.scouted[0].full_name();
+    g.s.week = board::WEEKS;
+    g.end_week();
+    assert!(g
+        .s
+        .team
+        .players
+        .iter()
+        .any(|p| p.full_name() == name || p.given == g.s.team.players.last().unwrap().given));
+    assert!(g.s.scouted.is_empty());
+    assert_eq!(g.s.year, 2);
 }
 
 #[test]
@@ -210,7 +289,8 @@ fn the_roster_opens_and_scrolls() {
     assert!(hud.texts.iter().any(|t| t.text.contains(first.as_str())));
     press(&mut g, hud::Btn::RosterDown);
     assert_eq!(g.roster_scroll, 4);
-    tap(&mut g, 195.0, 400.0);
+    // A tap outside the list closes it.
+    tap(&mut g, 4.0, 400.0);
     assert_eq!(g.mode, Mode::Plan);
 }
 

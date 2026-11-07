@@ -75,7 +75,7 @@ impl Drill {
         Drill::Strength,
     ];
 
-    fn index(self) -> usize {
+    pub fn index(self) -> usize {
         self as usize
     }
 }
@@ -172,8 +172,85 @@ pub struct Player {
     pub stamina: u8,
     /// Weeks still hurt (cannot train or play).
     pub hurt: u8,
-    /// Practice points per drill (10 raise a stat).
+    /// Practice points per drill, waiting to be spent on stats.
     pub xp: [u16; 5],
+    /// The drill this player works on in individual practice every week.
+    #[serde(default = "default_menu")]
+    pub menu: Drill,
+}
+
+fn default_menu() -> Drill {
+    Drill::Batting
+}
+
+/// A stat the coach can raise with points.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Stat {
+    Contact,
+    Power,
+    Speed,
+    Field,
+    Arm,
+    Velo,
+    Control,
+    Stamina,
+    Breaking,
+}
+
+impl Stat {
+    pub const ALL: [Stat; 9] = [
+        Stat::Contact,
+        Stat::Power,
+        Stat::Speed,
+        Stat::Field,
+        Stat::Arm,
+        Stat::Velo,
+        Stat::Control,
+        Stat::Stamina,
+        Stat::Breaking,
+    ];
+
+    /// The drill whose points pay for it.
+    pub fn pool(self) -> Drill {
+        match self {
+            Stat::Contact => Drill::Batting,
+            Stat::Power | Stat::Stamina => Drill::Strength,
+            Stat::Speed => Drill::Running,
+            Stat::Field | Stat::Arm => Drill::Fielding,
+            Stat::Velo | Stat::Control | Stat::Breaking => Drill::Pitching,
+        }
+    }
+
+    /// Only pitchers raise these.
+    pub fn pitching(self) -> bool {
+        matches!(
+            self,
+            Stat::Velo | Stat::Control | Stat::Stamina | Stat::Breaking
+        )
+    }
+
+    pub fn label(self, ja: bool) -> &'static str {
+        match (self, ja) {
+            (Stat::Contact, false) => "Contact",
+            (Stat::Power, false) => "Power",
+            (Stat::Speed, false) => "Speed",
+            (Stat::Field, false) => "Fielding",
+            (Stat::Arm, false) => "Arm",
+            (Stat::Velo, false) => "Velocity",
+            (Stat::Control, false) => "Control",
+            (Stat::Stamina, false) => "Stamina",
+            (Stat::Breaking, false) => "Breaking",
+            (Stat::Contact, true) => "ミート",
+            (Stat::Power, true) => "パワー",
+            (Stat::Speed, true) => "走力",
+            (Stat::Field, true) => "守備",
+            (Stat::Arm, true) => "肩",
+            (Stat::Velo, true) => "球速",
+            (Stat::Control, true) => "制球",
+            (Stat::Stamina, true) => "スタミナ",
+            (Stat::Breaking, true) => "変化球",
+        }
+    }
 }
 
 impl Player {
@@ -209,68 +286,100 @@ impl Player {
         self.hurt == 0
     }
 
-    /// Practice points for a week's drill. Returns the stats that went up (names).
-    pub fn train(&mut self, d: Drill, points: f32) -> Vec<&'static str> {
+    /// Practice points into the drill's pool (spent later on stats, see [`Player::raise`]).
+    /// Condition and tiredness scale them; the hurt learn nothing. Returns the points.
+    pub fn train(&mut self, d: Drill, points: f32) -> u16 {
         if self.hurt > 0 {
-            return Vec::new();
+            return 0;
         }
         let tired = if self.stamina < 30 { 0.5 } else { 1.0 };
         let gain = (points * self.mood.factor() * tired).round() as u16;
-        let i = d.index();
-        self.xp[i] += gain;
-        let mut ups = Vec::new();
-        while self.xp[i] >= 10 {
-            self.xp[i] -= 10;
-            let up = |v: &mut u8| {
-                let before = *v;
-                *v = (*v + 1).min(99);
-                *v > before
-            };
-            match d {
-                Drill::Batting => {
-                    if self.contact <= self.power && up(&mut self.contact) {
-                        ups.push("contact");
-                    } else if up(&mut self.power) {
-                        ups.push("power");
+        self.xp[d.index()] += gain;
+        gain
+    }
+
+    pub fn stat(&self, st: Stat) -> u8 {
+        match st {
+            Stat::Contact => self.contact,
+            Stat::Power => self.power,
+            Stat::Speed => self.speed,
+            Stat::Field => self.field,
+            Stat::Arm => self.arm,
+            Stat::Velo => self.velo,
+            Stat::Control => self.control,
+            Stat::Stamina => self.stamina_p,
+            Stat::Breaking => self.breaking,
+        }
+    }
+
+    fn stat_mut(&mut self, st: Stat) -> &mut u8 {
+        match st {
+            Stat::Contact => &mut self.contact,
+            Stat::Power => &mut self.power,
+            Stat::Speed => &mut self.speed,
+            Stat::Field => &mut self.field,
+            Stat::Arm => &mut self.arm,
+            Stat::Velo => &mut self.velo,
+            Stat::Control => &mut self.control,
+            Stat::Stamina => &mut self.stamina_p,
+            Stat::Breaking => &mut self.breaking,
+        }
+    }
+
+    /// Points one step of a stat costs now: more the higher it is.
+    pub fn cost(&self, st: Stat) -> u16 {
+        let v = self.stat(st) as u16;
+        match st {
+            // Velocity counts in km/h (110..160): about the same climb.
+            Stat::Velo => 6 + (v.saturating_sub(110)) / 3,
+            _ => 4 + v / 8,
+        }
+    }
+
+    /// Can `st` go up a step now (enough points, below the cap, the right player)?
+    pub fn can_raise(&self, st: Stat) -> bool {
+        let cap = if st == Stat::Velo { 160 } else { 99 };
+        (self.pitcher() || !st.pitching())
+            && self.stat(st) < cap
+            && self.xp[st.pool().index()] >= self.cost(st)
+    }
+
+    /// Spend points: `st` goes up one. False when it cannot.
+    pub fn raise(&mut self, st: Stat) -> bool {
+        if !self.can_raise(st) {
+            return false;
+        }
+        let c = self.cost(st);
+        self.xp[st.pool().index()] -= c;
+        *self.stat_mut(st) += 1;
+        true
+    }
+
+    /// Spend every point that can be spent, on the lowest stat each pool feeds first (the
+    /// "leave it to the coach" button, and the test bots). Returns the steps taken.
+    pub fn auto_raise(&mut self) -> usize {
+        let mut n = 0;
+        loop {
+            let pick = Stat::ALL
+                .iter()
+                .copied()
+                .filter(|&st| self.can_raise(st))
+                .min_by_key(|&st| {
+                    // Velocity on the same 0-99 scale as the rest.
+                    if st == Stat::Velo {
+                        (self.velo as u16).saturating_sub(110) * 2
+                    } else {
+                        self.stat(st) as u16
                     }
+                });
+            match pick {
+                Some(st) => {
+                    self.raise(st);
+                    n += 1;
                 }
-                Drill::Pitching if self.pitcher() => {
-                    // Velocity, control and the breaking ball take turns.
-                    let k = (self.velo as u16 + self.control as u16 + self.breaking as u16) % 3;
-                    if k == 0 && self.velo < 160 {
-                        self.velo += 1;
-                        ups.push("velo");
-                    } else if k == 1 && up(&mut self.control) {
-                        ups.push("control");
-                    } else if up(&mut self.breaking) {
-                        ups.push("breaking");
-                    }
-                }
-                Drill::Pitching => {
-                    if up(&mut self.arm) {
-                        ups.push("arm");
-                    }
-                }
-                Drill::Fielding => {
-                    if up(&mut self.field) {
-                        ups.push("field");
-                    }
-                }
-                Drill::Running => {
-                    if up(&mut self.speed) {
-                        ups.push("speed");
-                    }
-                }
-                Drill::Strength => {
-                    if self.pitcher() && self.stamina_p <= self.power && up(&mut self.stamina_p) {
-                        ups.push("stamina");
-                    } else if up(&mut self.power) {
-                        ups.push("power");
-                    }
-                }
+                None => return n,
             }
         }
-        ups
     }
 
     /// The week's wear: training costs stamina, rest gives it back.
@@ -396,6 +505,11 @@ pub fn rookie(rng: &mut Rng, grade: u8, pos: Pos, level: f32) -> Player {
         stamina: 100,
         hurt: 0,
         xp: [0; 5],
+        menu: if pitcher {
+            Drill::Pitching
+        } else {
+            Drill::Batting
+        },
     }
 }
 
@@ -547,10 +661,15 @@ impl Team {
         before - self.players.len()
     }
 
-    /// April: first-years join, more and better with reputation (0 to 100). At least one
-    /// pitcher and a catcher if the club needs them.
-    pub fn recruit(&mut self, rng: &mut Rng, reputation: f32) -> usize {
-        let n = 4 + (reputation / 25.0) as usize;
+    /// April: the scouted players join, then walk-ins (more and better with reputation, 0 to
+    /// 100). At least one pitcher and a catcher if the club needs them.
+    pub fn recruit(&mut self, rng: &mut Rng, reputation: f32, scouted: Vec<Player>) -> usize {
+        let signed = scouted.len();
+        for mut p in scouted {
+            p.grade = 1;
+            self.players.push(p);
+        }
+        let n = (3 + (reputation / 25.0) as usize).saturating_sub(signed / 2);
         let level = 30.0 + reputation * 0.25;
         let mut need: Vec<Pos> = Vec::new();
         if self.players.iter().filter(|p| p.pitcher()).count() < 3 {
@@ -573,7 +692,14 @@ impl Team {
             self.players.push(rookie(rng, 1, pos, level + gem));
         }
         self.unique_names();
-        n
+        n + signed
+    }
+
+    /// A middle-school player found by scouting: better with reputation, sometimes a gem.
+    pub fn prospect(rng: &mut Rng, reputation: f32) -> Player {
+        let pos = Pos::FIELD[(rng.next_u32() as usize) % 9];
+        let gem = if rng.unit() < 0.25 { 10.0 } else { 0.0 };
+        rookie(rng, 1, pos, 38.0 + reputation * 0.25 + gem)
     }
 }
 
@@ -602,21 +728,30 @@ mod tests {
     }
 
     #[test]
-    fn training_raises_stats_and_tired_or_hurt_players_learn_less() {
+    fn points_pile_up_and_the_coach_spends_them_on_stats() {
         let mut rng = Rng::new(1);
         let mut a = rookie(&mut rng, 1, Pos::SS, 40.0);
+        assert_eq!(a.train(Drill::Running, 25.0), 25);
         let speed = a.speed;
-        let ups = a.train(Drill::Running, 25.0);
-        assert_eq!(ups.len(), 2);
-        assert_eq!(a.speed, speed + 2);
-        let mut b = a.clone();
+        let cost = a.cost(Stat::Speed);
+        assert!(a.raise(Stat::Speed));
+        assert_eq!(a.speed, speed + 1);
+        assert_eq!(a.xp[Drill::Running.index()], 25 - cost);
+        assert!(!a.raise(Stat::Velo), "a shortstop does not pitch");
+        assert!(!a.raise(Stat::Contact), "no batting points yet");
+        let steps = a.auto_raise();
+        assert!(steps >= 1 && !a.can_raise(Stat::Speed));
+        // Tired players learn half, the hurt nothing.
+        let mut b = rookie(&mut rng, 1, Pos::P, 40.0);
         b.stamina = 10;
-        b.xp = [0; 5];
-        b.train(Drill::Running, 10.0);
-        assert_eq!(b.xp[Drill::Running.index()], 5, "half when tired");
+        assert_eq!(b.train(Drill::Pitching, 10.0), 5);
         b.hurt = 2;
-        assert!(b.train(Drill::Running, 50.0).is_empty());
-        b.mood = Mood::Great;
+        assert_eq!(b.train(Drill::Pitching, 50.0), 0);
+        // Higher stats cost more.
+        b.control = 90;
+        let dear = b.cost(Stat::Control);
+        b.control = 30;
+        assert!(dear > b.cost(Stat::Control));
         assert!(Mood::Great.factor() > Mood::Awful.factor());
         assert_eq!(grade(91), "S");
         assert_eq!(grade(15), "G");
@@ -629,7 +764,8 @@ mod tests {
         let thirds = t.players.iter().filter(|p| p.grade == 3).count();
         assert_eq!(t.graduate(), thirds);
         assert!(t.players.iter().all(|p| p.grade >= 2));
-        let n = t.recruit(&mut rng, 60.0);
+        let kid = Team::prospect(&mut rng, 60.0);
+        let n = t.recruit(&mut rng, 60.0, vec![kid]);
         assert_eq!(n, 6);
         assert!(t.players.iter().filter(|p| p.pitcher()).count() >= 2);
     }

@@ -29,7 +29,7 @@ use crate::input::{PointerEvent, PointerPhase};
 use crate::scene::DrawList;
 use crate::world_doc::WorldDoc;
 use board::{Card, Fixture, Happening, Square};
-use sim::{Game, Order, Side};
+use sim::{Game, Side, Spot, Tactic};
 use team::{Mood, Team};
 
 /// The `genre` of this kit's world file (and the `game.id` default).
@@ -164,7 +164,13 @@ enum Mode {
     /// A card of text; a tap goes on.
     Notice,
     /// A game in progress: lines shown, seconds to the next, waiting for an order.
-    Match { shown: usize, t: f32, asking: bool },
+    Match {
+        shown: usize,
+        t: f32,
+        asking: Option<Spot>,
+    },
+    /// One player's page: points, stats to raise, the practice menu.
+    Player(usize),
     /// The roster list.
     Roster,
 }
@@ -195,6 +201,9 @@ struct Save {
     /// The best result each year ("Summer Stadium round 2", ...), both languages.
     results: Vec<(String, String)>,
     seed: u32,
+    /// Middle-school players found by scouting; they join next April.
+    #[serde(default)]
+    scouted: Vec<team::Player>,
 }
 
 #[derive(Debug)]
@@ -425,7 +434,7 @@ impl DiamondDays {
         self.mode = Mode::Match {
             shown: 0,
             t: 0.0,
-            asking: false,
+            asking: None,
         };
     }
 
@@ -463,10 +472,10 @@ impl DiamondDays {
         )];
         let rep = |r: &mut f32, d: f32| *r = (*r + d).clamp(0.0, 100.0);
         match f {
-            Fixture::Practice => rep(&mut self.s.reputation, if won { 1.0 } else { 0.0 }),
+            Fixture::Practice => rep(&mut self.s.reputation, if won { 0.5 } else { 0.0 }),
             Fixture::Summer(r) => {
                 if won {
-                    rep(&mut self.s.reputation, 2.0 + r as f32);
+                    rep(&mut self.s.reputation, 1.0 + r as f32 * 0.5);
                     if r == 5 {
                         self.s.national_in = true;
                         rep(&mut self.s.reputation, 10.0);
@@ -501,7 +510,7 @@ impl DiamondDays {
             }
             Fixture::Autumn(r) => {
                 if won {
-                    rep(&mut self.s.reputation, 1.5 + r as f32);
+                    rep(&mut self.s.reputation, 1.0 + r as f32 * 0.5);
                 } else {
                     self.s.autumn_in = false;
                 }
@@ -545,7 +554,7 @@ impl DiamondDays {
             return;
         }
         let card = self.s.hand.remove(i);
-        self.s.hand.push(Card::draw(&mut self.rng));
+        self.s.hand.push(Card::draw(&mut self.rng, &self.s.team));
         crate::mixer::cue_sfx("card");
         self.mode = Mode::Walk {
             left: card.steps,
@@ -561,22 +570,28 @@ impl DiamondDays {
         let mut lines = Vec::new();
         match sq {
             Square::Train(d) => {
-                let ups =
-                    board::train_week(&mut self.s.team, d, card.focus, self.spec.train_points);
+                let pts = board::train_week(&mut self.s.team, d, &card, self.spec.train_points);
                 crate::mixer::cue_sfx("train");
                 let doubled = card.focus == Some(d);
+                let star = card.star.clone().unwrap_or_default();
                 lines.push((
                     format!(
-                        "{} practice{}. {ups} stats went up.",
+                        "{} practice{}. The team earned {pts} points.",
                         sq.label(false),
                         if doubled { " (focus: double)" } else { "" }
                     ),
                     format!(
-                        "{}練習{}。能力が{ups}つ上がった。",
+                        "{}練習{}。チームで{pts}ポイント獲得。",
                         sq.label(true),
                         if doubled { "（重点：2倍）" } else { "" }
                     ),
                 ));
+                if !star.is_empty() {
+                    lines.push((
+                        format!("{star} trained twice as hard."),
+                        format!("{star}が人一倍がんばった。"),
+                    ));
+                }
                 // A worn-out player can get hurt.
                 let tired: Vec<usize> = (0..self.s.team.players.len())
                     .filter(|&k| {
@@ -614,6 +629,36 @@ impl DiamondDays {
                     "The captain gives a speech. Spirits are high.".into(),
                     "キャプテンの一言で、チームの士気が上がった。".into(),
                 ));
+            }
+            Square::Scout => {
+                if self.s.scouted.len() >= 4 {
+                    lines.push((
+                        "Four middle-schoolers already promised to come. Enough for one year."
+                            .into(),
+                        "中学生4人がもう入部を約束してくれた。今年はこれで十分。".into(),
+                    ));
+                } else {
+                    let p = Team::prospect(&mut self.rng, self.s.reputation);
+                    let rating = if p.pitcher() {
+                        p.pitch_rating()
+                    } else {
+                        p.bat_rating()
+                    };
+                    let g = team::grade(rating.round().clamp(1.0, 99.0) as u8);
+                    lines.push((
+                        format!(
+                            "A middle-schooler, {} ({}, rated {g}), will join next April.",
+                            p.full_name(),
+                            p.pos.short(false)
+                        ),
+                        format!(
+                            "中学生の{}（{}・評価{g}）が来年4月に入部してくれることに。",
+                            p.full_name(),
+                            p.pos.short(true)
+                        ),
+                    ));
+                    self.s.scouted.push(p);
+                }
             }
             Square::Event => {
                 let list = self.spec.happenings.clone();
@@ -662,7 +707,11 @@ impl DiamondDays {
         self.s.summer_in = true;
         self.s.autumn_in = true;
         self.s.national_in = false;
-        let joined = self.s.team.recruit(&mut self.rng, self.s.reputation);
+        let scouted = std::mem::take(&mut self.s.scouted);
+        let joined = self
+            .s
+            .team
+            .recruit(&mut self.rng, self.s.reputation, scouted);
         self.note(
             "Spring",
             "春",
@@ -725,7 +774,7 @@ impl DiamondDays {
                 }
             }
             Mode::Match { shown, t, asking } => {
-                if asking {
+                if asking.is_some() {
                     return;
                 }
                 let t = t + dt;
@@ -760,14 +809,10 @@ impl DiamondDays {
             {
                 crate::mixer::cue_sfx("hit");
             }
-            // A new half at bat for us: the coach gives an order first.
-            let ours_starts = (line.ja.ends_with("回表。") || line.ja.ends_with("回裏。"))
-                && g.we_bat()
-                && !g.over;
             self.mode = Mode::Match {
                 shown: shown + 1,
                 t: 0.0,
-                asking: ours_starts && !self.auto_orders,
+                asking: None,
             };
             return;
         }
@@ -775,30 +820,44 @@ impl DiamondDays {
             self.end_game();
             return;
         }
+        // A chance or a pinch: the coach calls it (unless the team plays on its own).
+        if let Some(spot) = g.spot() {
+            if self.auto_orders {
+                g.call(None);
+            } else {
+                self.mode = Mode::Match {
+                    shown,
+                    t: 0.0,
+                    asking: Some(spot),
+                };
+                return;
+            }
+        }
         g.step();
         self.mode = Mode::Match {
             shown,
             t: self.spec.line_secs,
-            asking: false,
+            asking: None,
         };
     }
 
-    fn give_order(&mut self, o: Option<Order>) {
+    /// The coach's call at a chance or a pinch (None: let them play).
+    fn give_call(&mut self, t: Option<Tactic>) {
         if let (Some(g), Mode::Match { shown, .. }) = (self.game.as_mut(), self.mode.clone()) {
-            match o {
-                Some(o) => g.order = o,
-                None => {
-                    g.order = Order::Normal;
-                    self.auto_orders = true;
-                }
-            }
+            g.call(t);
             crate::mixer::cue_sfx("card");
             self.mode = Mode::Match {
                 shown,
                 t: 0.0,
-                asking: false,
+                asking: None,
             };
         }
+    }
+
+    /// The team plays the rest of the game on its own (no more calls).
+    fn leave_to_team(&mut self) {
+        self.auto_orders = true;
+        self.give_call(None);
     }
 
     /// Play the rest of the game at once.
@@ -836,9 +895,16 @@ impl DiamondDays {
         }
         match self.mode {
             Mode::Notice => self.tap_notice(),
-            Mode::Roster => self.mode = Mode::Plan,
+            Mode::Roster => {
+                let menu = self.roster_menu(w, h);
+                match menu.row_at(ev.x, ev.y, self.s.team.players.len(), self.roster_scroll) {
+                    Some(i) => self.mode = Mode::Player(i),
+                    None => self.mode = Mode::Plan,
+                }
+            }
+            Mode::Player(_) => self.mode = Mode::Roster,
             Mode::Match {
-                asking: false,
+                asking: None,
                 shown,
                 ..
             } => {
@@ -856,7 +922,34 @@ impl DiamondDays {
                 self.roster_scroll = 0;
                 self.mode = Mode::Roster;
             }
-            hud::Btn::Order(o) => self.give_order(o),
+            hud::Btn::Call(t) => self.give_call(t),
+            hud::Btn::Auto => self.leave_to_team(),
+            hud::Btn::Raise(st) => {
+                if let Mode::Player(i) = self.mode {
+                    if self.s.team.players[i].raise(st) {
+                        crate::mixer::cue_sfx("train");
+                    }
+                }
+            }
+            hud::Btn::AutoRaise => {
+                if let Mode::Player(i) = self.mode {
+                    self.s.team.players[i].auto_raise();
+                } else {
+                    for p in &mut self.s.team.players {
+                        p.auto_raise();
+                    }
+                }
+                crate::mixer::cue_sfx("train");
+            }
+            hud::Btn::Menu(d) => {
+                if let Mode::Player(i) = self.mode {
+                    self.s.team.players[i].menu = d;
+                    crate::mixer::cue_sfx("card");
+                }
+            }
+            hud::Btn::Back => {
+                self.mode = Mode::Roster;
+            }
             hud::Btn::Skip => self.skip_game(),
             hud::Btn::RosterUp => self.roster_scroll = self.roster_scroll.saturating_sub(4),
             hud::Btn::RosterDown => {
@@ -875,6 +968,7 @@ impl DiamondDays {
             Mode::Notice => "notice",
             Mode::Match { .. } => "match",
             Mode::Roster => "roster",
+            Mode::Player(_) => "player",
         };
         json!({
             "phase": self.flow.phase.name(),
@@ -899,7 +993,7 @@ impl DiamondDays {
 fn fresh_save(seed: u32) -> Save {
     let mut rng = Rng::new(seed);
     let team = Team::founding(&mut rng);
-    let hand = (0..5).map(|_| Card::draw(&mut rng)).collect();
+    let hand = (0..5).map(|_| Card::draw(&mut rng, &team)).collect();
     Save {
         team,
         year: 1,
@@ -914,6 +1008,7 @@ fn fresh_save(seed: u32) -> Save {
         national_in: false,
         results: Vec::new(),
         seed: rng.next_u32(),
+        scouted: Vec::new(),
     }
 }
 
@@ -991,9 +1086,12 @@ impl crate::kit_host::KitHost for DiamondDays {
                 self.play_card(i);
             }
             ("Enter" | " ", Mode::Notice) => self.tap_notice(),
-            ("Enter" | " ", Mode::Match { asking: true, .. }) => {
-                self.give_order(Some(Order::Normal))
-            }
+            (
+                "Enter" | " ",
+                Mode::Match {
+                    asking: Some(_), ..
+                },
+            ) => self.give_call(None),
             _ => return false,
         }
         true
