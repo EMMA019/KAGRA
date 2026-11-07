@@ -4,7 +4,7 @@
 
 use super::board::Square;
 use super::sim::PlayKind;
-use super::team::{Drill, Mood, Player};
+use super::team::{Drill, Mood, Player, Role};
 use crate::game_core::portrait::{Expr, Face, Outfit};
 use crate::hud_art::Painter;
 use crate::scene::Vert2;
@@ -20,6 +20,17 @@ pub const GRASS2: Rgba = [96, 172, 88, 255];
 pub const DIRT: Rgba = [204, 152, 102, 255];
 /// Our school's colour (caps, trim, our side of the scoreboard).
 pub const OURS: Rgba = [34, 78, 168, 255];
+/// One paper, one ink, one accent. Screens share these instead of one-off greys.
+pub const PAPER: Rgba = [255, 253, 246, 255];
+pub const PAPER_SHADE: Rgba = [244, 236, 220, 255];
+pub const PAPER_EDGE: Rgba = [214, 196, 168, 255];
+pub const NAVY: Rgba = [44, 58, 104, 255];
+pub const QUIET: Rgba = [110, 116, 140, 255];
+pub const RADIUS: f32 = 16.0;
+pub const TYPE_TITLE: f32 = 22.0;
+pub const TYPE_BODY: f32 = 15.0;
+pub const TYPE_CAPTION: f32 = 12.0;
+pub const TYPE_BUTTON: f32 = 16.0;
 
 /// A rival school's colour from its name.
 pub fn team_color(name: &str) -> Rgba {
@@ -44,13 +55,61 @@ pub fn hash(s: &str) -> u64 {
     h
 }
 
-/// A face for a name (players, rivals).
+/// A face for a name, kept inside a small palette so the club does not look random.
 pub fn face_of(name: &str) -> Face {
-    Face::from_seed(hash(name))
+    restrained(hash(name))
 }
 
 pub fn player_face(p: &Player) -> Face {
-    face_of(&format!("{}{}", p.family, p.given))
+    match p.role {
+        Role::Ace => ace_face(),
+        Role::Captain => captain_face(),
+        Role::Regular => restrained(hash(&format!("{}{}", p.family, p.given))),
+    }
+}
+
+/// The founding ace: short black hair, sharp eyes, no glasses.
+pub fn ace_face() -> Face {
+    Face {
+        skin: 1,
+        hair_style: 0,
+        hair_color: 0,
+        eyes: 2,
+        brows: 2,
+        mouth: 0,
+        width: 0.98,
+        blush: false,
+        glasses: false,
+    }
+}
+
+/// The founding captain: a slightly wider face, warm eyes, brown hair.
+pub fn captain_face() -> Face {
+    Face {
+        skin: 0,
+        hair_style: 3,
+        hair_color: 1,
+        eyes: 1,
+        brows: 0,
+        mouth: 1,
+        width: 1.02,
+        blush: false,
+        glasses: false,
+    }
+}
+
+fn restrained(seed: u64) -> Face {
+    let mut f = Face::from_seed(seed);
+    f.skin %= 3;
+    f.hair_style %= 5;
+    f.hair_color = [0, 0, 0, 1, 1, 2][(seed % 6) as usize];
+    f.eyes %= 4;
+    f.brows %= 3;
+    f.mouth %= 3;
+    f.width = 0.97 + (seed % 6) as f32 * 0.01;
+    f.glasses = seed.is_multiple_of(28);
+    f.blush = seed.is_multiple_of(6);
+    f
 }
 
 pub fn mood_expr(m: Mood) -> Expr {
@@ -617,12 +676,33 @@ pub fn figure(p: &mut Painter, c: P, color: Rgba, s: f32, bat: bool) {
         s * 0.1,
         color,
     );
+    // Arms, then a glove or the bat.
+    p.line(
+        &[[x - s * 0.42, y + s * 0.08], [x - s * 0.72, y + s * 0.28]],
+        s * 0.16,
+        [250, 214, 186, 255],
+    );
+    p.line(
+        &[[x + s * 0.42, y + s * 0.08], [x + s * 0.7, y + s * 0.22]],
+        s * 0.16,
+        [250, 214, 186, 255],
+    );
+    if !bat {
+        p.fill_ink(
+            &vector::circle(x - s * 0.78, y + s * 0.32, s * 0.16),
+            [232, 168, 72, 255],
+            ink,
+            s * 0.05,
+        );
+    }
     p.fill_ink(
         &vector::circle(x, y - s * 0.38, s * 0.3),
         [250, 214, 186, 255],
         ink,
         s * 0.08,
     );
+    p.dot(x - s * 0.1, y - s * 0.4, s * 0.045, ink);
+    p.dot(x + s * 0.1, y - s * 0.4, s * 0.045, ink);
     p.fill(
         &vector::arc(
             x,

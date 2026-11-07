@@ -28,9 +28,9 @@ use crate::game_core::{tick_frame, Core, Kit};
 use crate::input::{PointerEvent, PointerPhase};
 use crate::scene::DrawList;
 use crate::world_doc::WorldDoc;
-use board::{Card, Fixture, Happening, Square};
+use board::{Card, Fixture, Happening, School, Slate, Square};
 use sim::{Game, Side, Spot, Tactic};
-use team::{Mood, Team};
+use team::{Ability, Mood, Role, Team};
 
 /// The `genre` of this kit's world file (and the `game.id` default).
 pub const GAME_ID: &str = "diamond_days";
@@ -171,6 +171,12 @@ enum Mode {
     Player(usize),
     /// The roster list.
     Roster,
+    /// Batting order and positions. `pick` is the slot waiting for a player.
+    Lineup { pick: Option<usize> },
+    /// Summer camp, one player still wants a word.
+    CampTalk { who: usize },
+    /// Three years are over. `schools` lists places that would take the coach.
+    Epilogue { schools: bool },
 }
 
 /// A message on the notice card.
@@ -181,6 +187,10 @@ struct Note {
     lines: Vec<(String, String)>,
     /// Players shown with their faces (family, given): who graduates, who joins.
     faces: Vec<(String, String)>,
+    /// A line under each face (a destination, both languages).
+    captions: Vec<(String, String)>,
+    /// Hand-tuned portraits, parallel to `faces`.
+    roles: Vec<Role>,
 }
 
 /// What the device keeps between visits (`page.save`), and what a new run starts from.
@@ -207,6 +217,41 @@ struct Save {
     /// The (year, week) whose healing already happened (so a reload does not heal twice).
     #[serde(default)]
     healed: (u8, u8),
+    /// Named schools that stay for the whole run and grow.
+    #[serde(default)]
+    rivals: Vec<School>,
+    /// Who we play in a given week, so the next year is a rematch.
+    #[serde(default)]
+    slate: Vec<Slate>,
+    /// Invited to the March tournament off the autumn.
+    #[serde(default)]
+    spring_in: bool,
+    /// Autumn wins this year (the seed).
+    #[serde(default)]
+    autumn_wins: u8,
+    /// The year camp and exams already happened (0: not yet).
+    #[serde(default)]
+    camp_year: u8,
+    #[serde(default)]
+    exam_year: u8,
+    /// Which three-year chapter this is. 0 on an old save means the first.
+    #[serde(default)]
+    chapter: u8,
+    /// Grounds, 0 to 3. Rises with reputation and carries into the next chapter.
+    #[serde(default)]
+    grounds: u8,
+    /// Empty: the spec's school. Set when the coach moves.
+    #[serde(default)]
+    school: String,
+    #[serde(default)]
+    school_ja: String,
+    #[serde(default)]
+    career_wins: u32,
+    #[serde(default)]
+    career_losses: u32,
+    /// The three years are over and the coach has not chosen yet.
+    #[serde(default)]
+    epilogue: bool,
 }
 
 #[derive(Debug)]
@@ -239,6 +284,12 @@ pub struct DiamondDays {
     /// The host asked the game to draw its own title, pause and result cards (a native
     /// shell; the web page brings HTML cards).
     own_menu: Cell<bool>,
+    /// The rival of the game in progress (not saved: a reload replays the week).
+    rival_idx: Option<usize>,
+    /// Camp results, told after the optional conversation.
+    camp_lines: Vec<(String, String)>,
+    /// Schools offered when the coach decides to move.
+    move_picks: Vec<usize>,
 }
 
 impl DiamondDays {
@@ -267,6 +318,9 @@ impl DiamondDays {
             lang_ja: false,
             size: Cell::new((390.0, 844.0)),
             own_menu: Cell::new(false),
+            rival_idx: None,
+            camp_lines: Vec::new(),
+            move_picks: Vec::new(),
         };
         g.build_doc();
         g
@@ -295,7 +349,7 @@ impl DiamondDays {
         if let Some(sv) = value.get("save") {
             if let Ok(s) = serde_json::from_value::<Save>(sv.clone()) {
                 if s.year >= 1 && s.year <= g.spec.years && !s.team.players.is_empty() {
-                    g.resume = Some(s);
+                    g.resume = Some(prepare_save(s));
                 }
             }
         }
@@ -315,6 +369,34 @@ impl DiamondDays {
             ja
         } else {
             en
+        }
+    }
+
+    fn school_en(&self) -> &str {
+        if self.s.school.is_empty() {
+            &self.spec.school
+        } else {
+            &self.s.school
+        }
+    }
+
+    fn school_ja(&self) -> &str {
+        if self.s.school_ja.is_empty() {
+            &self.spec.school_ja
+        } else {
+            &self.s.school_ja
+        }
+    }
+
+    fn chapter(&self) -> u8 {
+        self.s.chapter.max(1)
+    }
+
+    fn bump_rep(&mut self, d: f32) {
+        self.s.reputation = (self.s.reputation + d).clamp(0.0, 100.0);
+        let g = board::grounds_of(self.s.reputation);
+        if g > self.s.grounds {
+            self.s.grounds = g;
         }
     }
 
@@ -341,13 +423,15 @@ impl DiamondDays {
                 crate::mixer::cue_sfx("go");
                 crate::mixer::play_bgm("bgm", 0.5);
                 if self.s.week == 1 && self.s.year == 1 && self.s.wins + self.s.losses == 0 {
+                    let (school, school_ja) =
+                        (self.school_en().to_string(), self.school_ja().to_string());
                     self.note(
                         "A new coach",
                         "新しい監督",
                         vec![
                             (
-                                format!("You are the new coach of {}. The club is small and has never won much.", self.spec.school),
-                                format!("あなたは{}野球部の新しい監督。部員は少なく、勝った記憶もあまりない。", self.spec.school_ja),
+                                format!("You are the new coach of {school}. The club is small and has never won much."),
+                                format!("あなたは{school_ja}野球部の新しい監督。部員は少なく、勝った記憶もあまりない。"),
                             ),
                             (
                                 "Pick a card each week and walk the ring. Train, rest, and take them to the Summer Stadium.".into(),
@@ -379,20 +463,34 @@ impl DiamondDays {
             title_ja: title_ja.into(),
             lines,
             faces: Vec::new(),
+            captions: Vec::new(),
+            roles: Vec::new(),
         });
         self.mode = Mode::Notice;
     }
 
     /// The start of a week: a game if the calendar has one for us, else the cards.
     fn begin_week(&mut self) {
-        // Injuries heal a week at the start of each week (once), so one taken this week
-        // lasts its full length.
+        if self.s.epilogue {
+            self.mode = Mode::Epilogue { schools: false };
+            return;
+        }
+        // Injuries and red marks heal a week at the start of each week (once).
         let now = (self.s.year, self.s.week);
         if self.s.healed != now {
             self.s.healed = now;
             for p in &mut self.s.team.players {
                 p.hurt = p.hurt.saturating_sub(1);
+                p.study = p.study.saturating_sub(1);
             }
+        }
+        if self.s.week == board::CAMP_WEEK && self.s.camp_year != self.s.year {
+            self.run_camp();
+            return;
+        }
+        if self.s.week == board::EXAM_WEEK && self.s.exam_year != self.s.year {
+            self.run_exams();
+            return;
         }
         if let Some(f) = board::fixture(self.s.week) {
             let ours = match f {
@@ -400,6 +498,7 @@ impl DiamondDays {
                 Fixture::Summer(_) => self.s.summer_in,
                 Fixture::National(_) => self.s.national_in,
                 Fixture::Autumn(_) => self.s.autumn_in,
+                Fixture::Spring(_) => self.s.spring_in,
             };
             if ours && self.game.is_none() {
                 self.start_game(f);
@@ -428,17 +527,42 @@ impl DiamondDays {
                 format!("Autumn tournament, round {r}"),
                 format!("秋季大会 {r}回戦"),
             ),
+            Fixture::Spring(3) => (
+                "Blossom Invitational final".into(),
+                "春の招待舞台 決勝".into(),
+            ),
+            Fixture::Spring(r) => (
+                format!("Blossom Invitational, round {r}"),
+                format!("春の招待舞台 {r}回戦"),
+            ),
         }
     }
 
     fn start_game(&mut self, f: Fixture) {
-        let us = Side::from_team(&self.s.team, &self.spec.school, &self.spec.school_ja);
-        let (en, ja) = board::rival_name(f, self.s.year, self.s.week);
-        let them = Side::rival(&mut self.rng, &en, &ja, board::rival_level(f, self.s.year));
+        let (school, school_ja) = (self.school_en().to_string(), self.school_ja().to_string());
+        let us = Side::from_team(&self.s.team, &school, &school_ja);
+        let idx = self.pick_rival(f);
+        self.rival_idx = Some(idx);
+        let (en, ja) = self
+            .s
+            .rivals
+            .get(idx)
+            .map(|s| (s.name.clone(), s.name_ja.clone()))
+            .unwrap_or_else(|| board::rival_name(f, self.s.year, self.s.week));
+        let rival = &self.s.rivals[idx];
+        let ease = if matches!(f, Fixture::Spring(_)) {
+            self.s.autumn_wins as f32 * 2.5
+        } else {
+            0.0
+        };
+        let level = (rival.strength * 0.72 + board::rival_level(f, self.s.year) * 0.28 - ease)
+            .clamp(28.0, 92.0);
+        let them = Side::rival(&mut self.rng, &en, &ja, level);
         let first = self.rng.unit() < 0.5;
         let seed = self.rng.next_u32();
         let mut g = Game::new(us, them, first, seed);
         let (title, title_ja) = Self::fixture_name(f);
+        let spark = g.sides[g.us].spark.clone();
         g.log.push(sim::Play {
             en: format!("{title}: {} vs {}.", g.sides[0].name, g.sides[1].name),
             ja: format!(
@@ -448,13 +572,28 @@ impl DiamondDays {
             runs: 0,
             kind: sim::PlayKind::Note,
             dir: 0.0,
+            banner: None,
+            clutch: false,
         });
+        if let Some(name) = spark {
+            g.log.push(sim::Play {
+                en: format!("Spark! {name} lifts the bench."),
+                ja: format!("ムードメーカー！{name}がベンチを明るくする。"),
+                runs: 0,
+                kind: sim::PlayKind::Note,
+                dir: 0.0,
+                banner: Some(Ability::Mood),
+                clutch: false,
+            });
+        }
         g.log.push(sim::Play {
             en: "Top of inning 1.".into(),
             ja: "1回表。".into(),
             runs: 0,
             kind: sim::PlayKind::Note,
             dir: 0.0,
+            banner: None,
+            clutch: false,
         });
         self.game = Some(g);
         self.mode = Mode::Match {
@@ -480,6 +619,18 @@ impl DiamondDays {
             self.s.losses += 1;
             crate::mixer::cue_sfx("lose");
         }
+        if let Some(i) = self.rival_idx.take() {
+            if let Some(school) = self.s.rivals.get_mut(i) {
+                school.met = school.met.saturating_add(1);
+                if won {
+                    school.wins = school.wins.saturating_add(1);
+                    school.strength = (school.strength + 0.35).min(90.0);
+                } else {
+                    school.losses = school.losses.saturating_add(1);
+                    school.strength = (school.strength + 1.15).min(90.0);
+                }
+            }
+        }
         for p in &mut self.s.team.players {
             p.tire(if p.pitcher() { 25 } else { 12 });
             p.mood = if won { p.mood.up() } else { p.mood.down() };
@@ -487,24 +638,23 @@ impl DiamondDays {
         let mut lines = vec![(
             format!(
                 "{} {us} - {them} {}",
-                self.spec.school,
+                self.school_en(),
                 g.sides[1 - g.us].name
             ),
             format!(
                 "{} {us} - {them} {}",
-                self.spec.school_ja,
+                self.school_ja(),
                 g.sides[1 - g.us].name_ja
             ),
         )];
-        let rep = |r: &mut f32, d: f32| *r = (*r + d).clamp(0.0, 100.0);
         match f {
-            Fixture::Practice => rep(&mut self.s.reputation, if won { 0.5 } else { 0.0 }),
+            Fixture::Practice => self.bump_rep(if won { 0.5 } else { 0.0 }),
             Fixture::Summer(r) => {
                 if won {
-                    rep(&mut self.s.reputation, 1.0 + r as f32 * 0.5);
+                    self.bump_rep(1.0 + r as f32 * 0.5);
                     if r == 5 {
                         self.s.national_in = true;
-                        rep(&mut self.s.reputation, 10.0);
+                        self.bump_rep(10.0);
                         lines.push((
                             "Prefectural champions! On to the Summer Stadium.".into(),
                             "県大会優勝！夏の大舞台へ！".into(),
@@ -518,7 +668,7 @@ impl DiamondDays {
             }
             Fixture::National(r) => {
                 if won {
-                    rep(&mut self.s.reputation, 6.0);
+                    self.bump_rep(6.0);
                     if r == 2 {
                         self.record("Summer Stadium champions", "夏の大舞台 優勝");
                         lines.push((
@@ -536,9 +686,49 @@ impl DiamondDays {
             }
             Fixture::Autumn(r) => {
                 if won {
-                    rep(&mut self.s.reputation, 1.0 + r as f32 * 0.5);
+                    self.s.autumn_wins = self.s.autumn_wins.saturating_add(1);
+                    self.bump_rep(1.0 + r as f32 * 0.5);
+                    if r == 3 {
+                        self.record("Autumn champions", "秋季大会優勝");
+                    }
                 } else {
                     self.s.autumn_in = false;
+                }
+                if !self.s.autumn_in || r == 3 {
+                    self.s.spring_in = self.s.autumn_wins > 0;
+                    if self.s.spring_in {
+                        let seeded = self.s.autumn_wins >= 3;
+                        lines.push((
+                            if seeded {
+                                "Seeded for the Blossom Invitational in March.".into()
+                            } else {
+                                "Invited to the Blossom Invitational in March.".into()
+                            },
+                            if seeded {
+                                "3月の春の招待舞台、シードで出場。".into()
+                            } else {
+                                "3月の春の招待舞台に招待された。".into()
+                            },
+                        ));
+                    }
+                }
+            }
+            Fixture::Spring(r) => {
+                if won {
+                    self.bump_rep(2.0 + r as f32);
+                    if r == 3 {
+                        self.record("Blossom Invitational champions", "春の招待舞台 優勝");
+                        lines.push((
+                            "The Blossom Invitational is yours.".into(),
+                            "春の招待舞台を制した！".into(),
+                        ));
+                    }
+                } else {
+                    self.s.spring_in = false;
+                    self.record(
+                        &format!("Blossom Invitational round {r}"),
+                        &format!("春の招待舞台 {r}回戦"),
+                    );
                 }
             }
         }
@@ -558,12 +748,15 @@ impl DiamondDays {
         }
         let rank = |t: &str| {
             if t.contains("Stadium champions") {
+                5
+            } else if t.contains("Blossom") && t.contains("champions") {
                 4
             } else if t.contains("Stadium") {
                 3
-            } else if t.contains("Prefectural champions") {
+            } else if t.contains("Prefectural champions") || t.contains("Autumn champions") {
                 2
-            } else if t.starts_with("Summer") {
+            } else if t.starts_with("Summer") || t.starts_with("Autumn") || t.starts_with("Blossom")
+            {
                 1
             } else {
                 0
@@ -617,7 +810,12 @@ impl DiamondDays {
         let mut lines = Vec::new();
         match sq {
             Square::Train(d) => {
-                let pts = board::train_week(&mut self.s.team, d, &card, self.spec.train_points);
+                let pts = board::train_week(
+                    &mut self.s.team,
+                    d,
+                    &card,
+                    self.spec.train_points * (1.0 + self.s.grounds as f32 * 0.08),
+                );
                 crate::mixer::cue_sfx("train");
                 let doubled = card.focus == Some(d);
                 let star = card.star.clone().unwrap_or_default();
@@ -646,9 +844,18 @@ impl DiamondDays {
                     })
                     .collect();
                 for k in tired {
-                    if self.rng.unit() < 0.15 {
+                    let roll = self.rng.unit();
+                    if roll >= 0.15 {
+                        continue;
+                    }
+                    let n = self.s.team.players[k].family.clone();
+                    if self.s.team.players[k].has(Ability::Durable) {
+                        lines.push((
+                            format!("Durable! {n} shakes off a twist."),
+                            format!("ケガしにくい！{n}は捻挫をこらえた。"),
+                        ));
+                    } else {
                         self.s.team.players[k].hurt = 2;
-                        let n = self.s.team.players[k].family.clone();
                         lines.push((
                             format!("{n} pushed too hard and is hurt (2 weeks)."),
                             format!("{n}が無理をしてケガ（2週間）。"),
@@ -731,6 +938,9 @@ impl DiamondDays {
                 ja = format!("{ja}（{n}）");
             }
             lines.push((en, ja));
+            if h.id == "exams" {
+                self.push_red_marks(&mut lines);
+            }
             crate::mixer::cue_sfx("event");
         }
         self.note(&title, &title_ja, lines);
@@ -761,10 +971,24 @@ impl DiamondDays {
             .get(who)
             .map(|p| (p.family.clone(), p.given.clone()))
             .unwrap_or_default();
-        let lines = vec![(
+        let id = self
+            .spec
+            .happenings
+            .get(h)
+            .map(|x| x.id.clone())
+            .unwrap_or_default();
+        let mut lines = vec![(
             c.reply.replace("{name}", &fam),
             c.reply_ja.replace("{name}", &fam),
         )];
+        if let Some(a) = board::choice_grant(&id, k) {
+            if self.s.team.players.get_mut(who).is_some_and(|p| p.grant(a)) {
+                lines.push((
+                    format!("New ability: {}.", a.label(false)),
+                    format!("新しい特技：{}。", a.label(true)),
+                ));
+            }
+        }
         crate::mixer::cue_sfx("train");
         self.note(Square::Event.label(false), Square::Event.label(true), lines);
         if let Some(n) = self.notes.last_mut() {
@@ -785,6 +1009,21 @@ impl DiamondDays {
     }
 
     fn end_year(&mut self) {
+        let leaving: Vec<(String, String, Role, team::After)> = self
+            .s
+            .team
+            .players
+            .iter()
+            .filter(|p| p.grade == 3)
+            .map(|p| {
+                (
+                    p.family.clone(),
+                    p.given.clone(),
+                    p.role,
+                    team::destination(p, self.s.reputation),
+                )
+            })
+            .collect();
         let names = |t: &Team, grade: u8| -> Vec<(String, String)> {
             t.players
                 .iter()
@@ -792,14 +1031,19 @@ impl DiamondDays {
                 .map(|p| (p.family.clone(), p.given.clone()))
                 .collect()
         };
-        let leaving = names(&self.s.team, 3);
         let left = self.s.team.graduate();
         let y = self.s.year as usize;
         while self.s.results.len() < y {
             self.s.results.push(("-".into(), "-".into()));
         }
+        for school in &mut self.s.rivals {
+            school.strength = (school.strength + 0.8).min(90.0);
+        }
         if self.s.year >= self.spec.years {
-            self.finish_run();
+            if left > 0 {
+                self.push_graduation(left, &leaving);
+            }
+            self.s.epilogue = true;
             return;
         }
         self.s.year += 1;
@@ -807,23 +1051,15 @@ impl DiamondDays {
         self.s.summer_in = true;
         self.s.autumn_in = true;
         self.s.national_in = false;
+        self.s.spring_in = false;
+        self.s.autumn_wins = 0;
         let scouted = std::mem::take(&mut self.s.scouted);
         let joined = self
             .s
             .team
             .recruit(&mut self.rng, self.s.reputation, scouted);
         if left > 0 {
-            self.note(
-                "Graduation",
-                "卒業式",
-                vec![(
-                    format!("{left} third-years graduated. Thank you, seniors."),
-                    format!("3年生{left}人が卒業。先輩、三年間ありがとう。"),
-                )],
-            );
-            if let Some(n) = self.notes.last_mut() {
-                n.faces = leaving;
-            }
+            self.push_graduation(left, &leaving);
         }
         self.note(
             "New faces",
@@ -845,9 +1081,289 @@ impl DiamondDays {
         }
     }
 
+    fn push_graduation(&mut self, left: usize, leaving: &[(String, String, Role, team::After)]) {
+        let mut lines = vec![(
+            format!("{left} third-years graduated. Thank you, seniors."),
+            format!("3年生{left}人が卒業。先輩、三年間ありがとう。"),
+        )];
+        for (fam, _, _, after) in leaving.iter().take(8) {
+            lines.push((
+                format!("{fam} — {}.", after.label(false)),
+                format!("{fam} — {}。", after.label(true)),
+            ));
+        }
+        self.note("Graduation", "卒業式", lines);
+        if let Some(n) = self.notes.last_mut() {
+            n.faces = leaving
+                .iter()
+                .map(|(a, b, _, _)| (a.clone(), b.clone()))
+                .collect();
+            n.captions = leaving
+                .iter()
+                .map(|(_, _, _, after)| (after.label(false).into(), after.label(true).into()))
+                .collect();
+            n.roles = leaving.iter().map(|(_, _, role, _)| *role).collect();
+        }
+    }
+
+    fn push_red_marks(&mut self, lines: &mut Vec<(String, String)>) {
+        let marked = board::red_marks(&mut self.rng, &mut self.s.team);
+        if marked.is_empty() {
+            lines.push((
+                "Everyone scraped through. Nobody is benched.".into(),
+                "全員、なんとか合格。出場停止はなし。".into(),
+            ));
+        } else {
+            let names = marked.join(", ");
+            lines.push((
+                format!("Red marks: {names} cannot play for 2 weeks."),
+                format!("赤点：{names}は2週間、試合に出られない。"),
+            ));
+        }
+    }
+
+    fn run_camp(&mut self) {
+        self.pre_walk = Some(self.s.clone());
+        let report = board::camp_week(&mut self.s.team, &mut self.rng, self.spec.train_points);
+        self.s.camp_year = self.s.year;
+        let mut lines = vec![(
+            format!("Summer camp. The club earned {} points.", report.points),
+            format!("夏合宿。チームで{}ポイント。", report.points),
+        )];
+        for n in &report.hurt {
+            lines.push((
+                format!("{n} tweaked something (1 week)."),
+                format!("{n}が少し痛めた（1週間）。"),
+            ));
+        }
+        for n in &report.shrugged {
+            lines.push((
+                format!("Durable! {n} finishes the camp healthy."),
+                format!("ケガしにくい！{n}は合宿を無事に終えた。"),
+            ));
+        }
+        if self.rng.unit() < 0.55 {
+            if let Some(who) = board::speaker(&mut self.rng, board::Who::Any, &self.s.team) {
+                self.camp_lines = lines;
+                self.mode = Mode::CampTalk { who };
+                return;
+            }
+        }
+        self.pre_walk = None;
+        self.note("Summer camp", "夏合宿", lines);
+        self.end_week();
+    }
+
+    fn run_exams(&mut self) {
+        self.s.exam_year = self.s.year;
+        for p in &mut self.s.team.players {
+            p.mood = p.mood.down();
+        }
+        let mut lines = vec![(
+            "Exam week. The clubhouse is quiet.".into(),
+            "テスト週間。部室は静かだ。".into(),
+        )];
+        self.push_red_marks(&mut lines);
+        crate::mixer::cue_sfx("event");
+        self.note("Exams", "テスト", lines);
+        self.end_week();
+    }
+
+    fn answer_camp(&mut self, k: usize) {
+        let Mode::CampTalk { who } = self.mode else {
+            return;
+        };
+        let h = board::camp_talk();
+        let Some(c) = h.choices.get(k).cloned() else {
+            return;
+        };
+        self.pre_walk = None;
+        board::apply_choice(&c, &mut self.s.team, who);
+        let fam = self
+            .s
+            .team
+            .players
+            .get(who)
+            .map(|p| p.family.clone())
+            .unwrap_or_default();
+        let mut lines = self.camp_lines.clone();
+        self.camp_lines.clear();
+        lines.push((
+            c.reply.replace("{name}", &fam),
+            c.reply_ja.replace("{name}", &fam),
+        ));
+        if let Some(a) = board::choice_grant("camp_night", k) {
+            if self.s.team.players.get_mut(who).is_some_and(|p| p.grant(a)) {
+                lines.push((
+                    format!("New ability: {}.", a.label(false)),
+                    format!("新しい特技：{}。", a.label(true)),
+                ));
+            }
+        }
+        crate::mixer::cue_sfx("train");
+        self.note("Summer camp", "夏合宿", lines);
+        self.end_week();
+    }
+
+    /// The school for this week. The same week next year is a rematch.
+    fn pick_rival(&mut self, f: Fixture) -> usize {
+        if self.s.rivals.is_empty() {
+            self.s.rivals = board::rival_schools();
+        }
+        let chapter = self.chapter();
+        if let Some(e) = self
+            .s
+            .slate
+            .iter()
+            .find(|e| e.chapter == chapter && e.year == self.s.year && e.week == self.s.week)
+        {
+            return (e.rival as usize).min(self.s.rivals.len().saturating_sub(1));
+        }
+        let rematch =
+            self.s.slate.iter().find(|e| {
+                e.chapter == chapter && e.year + 1 == self.s.year && e.week == self.s.week
+            });
+        let i = if let Some(prev) = rematch {
+            prev.rival as usize
+        } else {
+            let target = board::rival_level(f, self.s.year);
+            let used: Vec<u8> = self
+                .s
+                .slate
+                .iter()
+                .filter(|e| e.chapter == chapter && e.year == self.s.year)
+                .map(|e| e.rival)
+                .collect();
+            let mut best = 0usize;
+            let mut best_score = f32::MAX;
+            for (i, school) in self.s.rivals.iter().enumerate() {
+                let mut score = (school.strength - target).abs();
+                if matches!(f, Fixture::National(_)) && school.strength < 60.0 {
+                    score += 20.0;
+                }
+                if matches!(f, Fixture::Practice) && school.strength > 60.0 {
+                    score += 12.0;
+                }
+                if used.contains(&(i as u8)) {
+                    score += 8.0;
+                }
+                if score < best_score {
+                    best_score = score;
+                    best = i;
+                }
+            }
+            best
+        };
+        let i = i.min(self.s.rivals.len().saturating_sub(1));
+        self.s.slate.push(Slate {
+            chapter,
+            year: self.s.year,
+            week: self.s.week,
+            rival: i as u8,
+        });
+        i
+    }
+
+    fn continue_here(&mut self) {
+        self.s.epilogue = false;
+        self.s.career_wins += self.s.wins;
+        self.s.career_losses += self.s.losses;
+        self.s.wins = 0;
+        self.s.losses = 0;
+        self.s.results.clear();
+        self.s.chapter = self.chapter() + 1;
+        self.s.year = 1;
+        self.s.week = 1;
+        self.s.summer_in = true;
+        self.s.autumn_in = true;
+        self.s.national_in = false;
+        self.s.spring_in = false;
+        self.s.autumn_wins = 0;
+        self.s.grounds = self.s.grounds.max(board::grounds_of(self.s.reputation));
+        let scouted = std::mem::take(&mut self.s.scouted);
+        let joined = self
+            .s
+            .team
+            .recruit(&mut self.rng, self.s.reputation, scouted);
+        self.note(
+            "Next generation",
+            "次の世代",
+            vec![(
+                format!(
+                    "Chapter {}. {joined} first-years join the club you built.",
+                    self.chapter()
+                ),
+                format!(
+                    "{}期。育てた部に新入部員が{joined}人入った。",
+                    self.chapter()
+                ),
+            )],
+        );
+        let fresh: Vec<(String, String)> = self
+            .s
+            .team
+            .players
+            .iter()
+            .filter(|p| p.grade == 1)
+            .map(|p| (p.family.clone(), p.given.clone()))
+            .collect();
+        if let Some(n) = self.notes.last_mut() {
+            n.faces = fresh;
+        }
+    }
+
+    fn continue_move(&mut self, shown: usize) {
+        let Some(&pick) = self.move_picks.get(shown) else {
+            return;
+        };
+        if pick >= self.s.rivals.len() {
+            return;
+        }
+        let old_en = self.school_en().to_string();
+        let old_ja = self.school_ja().to_string();
+        let new_en = self.s.rivals[pick].name.clone();
+        let new_ja = self.s.rivals[pick].name_ja.clone();
+        let left = self.s.team.strength().clamp(30.0, 80.0);
+        self.s.rivals[pick].name = old_en;
+        self.s.rivals[pick].name_ja = old_ja;
+        self.s.rivals[pick].strength = left;
+        self.s.rivals[pick].wins = 0;
+        self.s.rivals[pick].losses = 0;
+        self.s.school = new_en.clone();
+        self.s.school_ja = new_ja.clone();
+        self.s.epilogue = false;
+        self.s.career_wins += self.s.wins;
+        self.s.career_losses += self.s.losses;
+        self.s.wins = 0;
+        self.s.losses = 0;
+        self.s.results.clear();
+        self.s.chapter = self.chapter() + 1;
+        self.s.year = 1;
+        self.s.week = 1;
+        self.s.summer_in = true;
+        self.s.autumn_in = true;
+        self.s.national_in = false;
+        self.s.spring_in = false;
+        self.s.autumn_wins = 0;
+        self.s.reputation = (self.s.reputation * 0.6).clamp(0.0, 100.0);
+        self.s.grounds = 0;
+        self.s.scouted.clear();
+        let level = 32.0 + self.s.reputation * 0.12;
+        self.s.team = Team::takeover(&mut self.rng, level);
+        self.note(
+            "A new school",
+            "新しい学校",
+            vec![(
+                format!("You take over {new_en}. The club is small, and they know your name."),
+                format!("{new_ja}の監督になった。小さな部だが、名前は知られている。"),
+            )],
+        );
+    }
+
     fn finish_run(&mut self) {
-        let score = self.s.wins * 100 + self.s.reputation as u32 * 10;
+        let score = (self.s.career_wins + self.s.wins) * 100 + self.s.reputation as u32 * 10;
         crate::mixer::stop_bgm(0.6);
+        self.s.epilogue = false;
         self.flow.finish(score, self.s.wins, "GRADUATION");
         // A new run next time.
         self.resume = None;
@@ -886,7 +1402,8 @@ impl DiamondDays {
                     return;
                 }
                 let t = t + dt;
-                if t < self.spec.line_secs {
+                let pace = self.line_pace(shown);
+                if t < self.spec.line_secs * pace {
                     self.mode = Mode::Match { shown, t, asking };
                     return;
                 }
@@ -896,6 +1413,27 @@ impl DiamondDays {
         }
     }
 
+    /// Clutch plays and ability shouts stay on screen longer. Not a pitch count.
+    fn line_pace(&self, shown: usize) -> f32 {
+        let Some(play) = shown
+            .checked_sub(1)
+            .and_then(|i| self.game.as_ref().and_then(|g| g.log.get(i)))
+        else {
+            return 1.0;
+        };
+        let mut pace = 1.0_f32;
+        if play.clutch {
+            pace = 1.85;
+        }
+        if play.banner.is_some() {
+            pace = pace.max(1.65);
+        }
+        if matches!(play.kind, sim::PlayKind::Hit(n) if n >= 2) {
+            pace = pace.max(1.7);
+        }
+        pace
+    }
+
     /// Show the next line of the game (playing it out as needed), or ask for an order.
     fn advance_game(&mut self, shown: usize) {
         let Some(g) = self.game.as_mut() else {
@@ -903,6 +1441,9 @@ impl DiamondDays {
         };
         if shown < g.log.len() {
             let line = g.log[shown].clone();
+            if line.banner.is_some() {
+                crate::mixer::cue_sfx("event");
+            }
             if line.ja.contains("ホームラン") {
                 crate::mixer::cue_sfx("homer");
             } else if line.runs > 0 || line.ja.contains("ヒット") || line.ja.contains("ベース")
@@ -943,6 +1484,22 @@ impl DiamondDays {
 
     /// The coach's call at a chance or a pinch (None: let them play).
     fn give_call(&mut self, t: Option<Tactic>) {
+        if let Mode::Match {
+            shown,
+            asking: Some(Spot::Bench(_)),
+            ..
+        } = self.mode
+        {
+            if t.is_none() {
+                let spot = self.game.as_ref().and_then(|g| g.spot());
+                self.mode = Mode::Match {
+                    shown,
+                    t: 0.0,
+                    asking: spot,
+                };
+                return;
+            }
+        }
         if let (Some(g), Mode::Match { shown, .. }) = (self.game.as_mut(), self.mode.clone()) {
             g.call(t);
             crate::mixer::cue_sfx("card");
@@ -976,6 +1533,10 @@ impl DiamondDays {
             if self.flow.phase != FlowPhase::Play {
                 return;
             }
+            if self.s.epilogue {
+                self.mode = Mode::Epilogue { schools: false };
+                return;
+            }
             self.mode = Mode::Plan;
             self.begin_week();
         }
@@ -1005,6 +1566,7 @@ impl DiamondDays {
             Mode::Notice => self.tap_notice(),
             // A tap off the list closes it.
             Mode::Roster => self.mode = Mode::Plan,
+            Mode::Lineup { .. } => self.mode = Mode::Roster,
             Mode::Player(_) => self.mode = Mode::Roster,
             Mode::Match {
                 asking: None,
@@ -1015,6 +1577,127 @@ impl DiamondDays {
                 self.advance_game(shown);
             }
             _ => {}
+        }
+    }
+
+    fn open_lineup(&mut self) {
+        self.mode = Mode::Lineup { pick: None };
+    }
+
+    fn nine_now(&self) -> (Vec<usize>, Vec<team::Pos>) {
+        let nine = self.s.team.resolved();
+        (
+            nine.iter().map(|(i, _)| *i).collect(),
+            nine.iter().map(|(_, p)| *p).collect(),
+        )
+    }
+
+    fn write_nine(&mut self, order: Vec<usize>, mut spots: Vec<team::Pos>) -> bool {
+        if self.s.team.set_lineup(&order, &spots) {
+            return true;
+        }
+        if let Some(p) = order
+            .iter()
+            .position(|&i| self.s.team.players.get(i).is_some_and(|pl| pl.pitcher()))
+        {
+            if !spots.contains(&team::Pos::P) {
+                spots[p] = team::Pos::P;
+            } else if spots.get(p).copied() != Some(team::Pos::P) {
+                // The mound must be a pitcher. Move P onto one.
+                if let Some(old) = spots.iter().position(|s| *s == team::Pos::P) {
+                    spots[old] = self.s.team.players[order[p]].pos;
+                    if spots[old] == team::Pos::P {
+                        spots[old] = team::Pos::LF;
+                    }
+                }
+                spots[p] = team::Pos::P;
+            }
+            return self.s.team.set_lineup(&order, &spots);
+        }
+        false
+    }
+
+    fn nudge_line(&mut self, i: usize, dir: i8) {
+        let (mut order, mut spots) = self.nine_now();
+        let j = i as i32 + dir as i32;
+        if order.len() != 9 || j < 0 || j >= order.len() as i32 {
+            return;
+        }
+        let j = j as usize;
+        order.swap(i, j);
+        spots.swap(i, j);
+        let _ = self.write_nine(order, spots);
+    }
+
+    fn cycle_spot(&mut self, i: usize) {
+        let (order, mut spots) = self.nine_now();
+        if order.len() != 9 || i >= spots.len() {
+            return;
+        }
+        let start = team::Pos::FIELD
+            .iter()
+            .position(|p| *p == spots[i])
+            .unwrap_or(0);
+        for step in 1..=9 {
+            spots[i] = team::Pos::FIELD[(start + step) % 9];
+            if self.s.team.set_lineup(&order, &spots) {
+                return;
+            }
+        }
+    }
+
+    fn assign_slot(&mut self, player: usize) {
+        let Mode::Lineup { pick: Some(slot) } = self.mode else {
+            return;
+        };
+        let (mut order, mut spots) = self.nine_now();
+        if order.len() != 9
+            || slot >= order.len()
+            || player >= self.s.team.players.len()
+            || !self.s.team.players[player].can_play()
+        {
+            return;
+        }
+        if let Some(other) = order.iter().position(|&i| i == player) {
+            order.swap(slot, other);
+            spots.swap(slot, other);
+        } else {
+            order[slot] = player;
+        }
+        let _ = self.write_nine(order, spots);
+        self.mode = Mode::Lineup { pick: None };
+    }
+
+    fn open_bench(&mut self, kind: u8) {
+        if let Mode::Match { shown, .. } = self.mode {
+            self.mode = Mode::Match {
+                shown,
+                t: 0.0,
+                asking: Some(Spot::Bench(kind)),
+            };
+        }
+    }
+
+    fn use_bench(&mut self, i: u8) {
+        let Mode::Match {
+            shown,
+            asking: Some(Spot::Bench(kind)),
+            ..
+        } = self.mode
+        else {
+            return;
+        };
+        let ok = self.game.as_mut().is_some_and(|g| match kind {
+            0 => g.pinch_hit(i as usize),
+            1 => g.pinch_run(i as usize),
+            _ => g.defense_sub(i as usize),
+        });
+        if ok {
+            self.mode = Mode::Match {
+                shown,
+                t: self.spec.line_secs,
+                asking: None,
+            };
         }
     }
 
@@ -1050,9 +1733,15 @@ impl DiamondDays {
                     crate::mixer::cue_sfx("card");
                 }
             }
-            hud::Btn::Back => {
-                self.mode = Mode::Roster;
-            }
+            hud::Btn::Back => match self.mode {
+                Mode::Epilogue { schools: true } => {
+                    self.mode = Mode::Epilogue { schools: false };
+                }
+                Mode::Lineup { pick: Some(_) } => {
+                    self.mode = Mode::Lineup { pick: None };
+                }
+                _ => self.mode = Mode::Roster,
+            },
             hud::Btn::Row(i) => {
                 if i < self.s.team.players.len() {
                     self.mode = Mode::Player(i);
@@ -1060,7 +1749,42 @@ impl DiamondDays {
                 }
             }
             hud::Btn::Close => self.mode = Mode::Plan,
-            hud::Btn::Choose(k) => self.answer(k),
+            hud::Btn::Choose(k) => {
+                if matches!(self.mode, Mode::CampTalk { .. }) {
+                    self.answer_camp(k);
+                } else {
+                    self.answer(k);
+                }
+            }
+            hud::Btn::Lineup => self.open_lineup(),
+            hud::Btn::AutoFill => {
+                self.s.team.clear_lineup();
+                self.open_lineup();
+            }
+            hud::Btn::Slot(i) => {
+                if matches!(self.mode, Mode::Lineup { .. }) {
+                    self.mode = Mode::Lineup { pick: Some(i) };
+                }
+            }
+            hud::Btn::Nudge(i, dir) => self.nudge_line(i, dir),
+            hud::Btn::Cycle(i) => self.cycle_spot(i),
+            hud::Btn::Assign(i) => self.assign_slot(i),
+            hud::Btn::OpenBench(k) => self.open_bench(k),
+            hud::Btn::UseBench(i) => self.use_bench(i),
+            hud::Btn::Stay => self.continue_here(),
+            hud::Btn::MoveSchool => {
+                let mut picks: Vec<usize> = (0..self.s.rivals.len()).collect();
+                picks.sort_by(|&a, &b| {
+                    self.s.rivals[a]
+                        .strength
+                        .total_cmp(&self.s.rivals[b].strength)
+                });
+                picks.truncate(3);
+                self.move_picks = picks;
+                self.mode = Mode::Epilogue { schools: true };
+            }
+            hud::Btn::School(i) => self.continue_move(i as usize),
+            hud::Btn::EndStory => self.finish_run(),
             hud::Btn::Skip => self.skip_game(),
             hud::Btn::RosterUp => self.roster_scroll = self.roster_scroll.saturating_sub(4),
             hud::Btn::RosterDown => {
@@ -1081,6 +1805,9 @@ impl DiamondDays {
             Mode::Match { .. } => "match",
             Mode::Roster => "roster",
             Mode::Player(_) => "player",
+            Mode::Lineup { .. } => "lineup",
+            Mode::CampTalk { .. } => "camp",
+            Mode::Epilogue { .. } => "epilogue",
         };
         json!({
             "phase": self.flow.phase.name(),
@@ -1122,7 +1849,32 @@ fn fresh_save(seed: u32) -> Save {
         seed: rng.next_u32(),
         scouted: Vec::new(),
         healed: (0, 0),
+        rivals: board::rival_schools(),
+        slate: Vec::new(),
+        spring_in: false,
+        autumn_wins: 0,
+        camp_year: 0,
+        exam_year: 0,
+        chapter: 1,
+        grounds: 0,
+        school: String::new(),
+        school_ja: String::new(),
+        career_wins: 0,
+        career_losses: 0,
+        epilogue: false,
     }
+}
+
+/// Old saves omit the new fields. Fill the circuit and the chapter so a resumed run
+/// still has schools to play.
+fn prepare_save(mut s: Save) -> Save {
+    if s.rivals.is_empty() {
+        s.rivals = board::rival_schools();
+    }
+    if s.chapter == 0 {
+        s.chapter = 1;
+    }
+    s
 }
 
 // ------------------------------------------------------------ the host ----
@@ -1198,6 +1950,10 @@ impl crate::kit_host::KitHost for DiamondDays {
             ("1" | "2", Mode::Ask { .. }) => {
                 let k = name.parse::<usize>().unwrap_or(1) - 1;
                 self.answer(k);
+            }
+            ("1" | "2", Mode::CampTalk { .. }) => {
+                let k = name.parse::<usize>().unwrap_or(1) - 1;
+                self.answer_camp(k);
             }
             (
                 "Enter" | " ",

@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::team::{Drill, Mood, Team};
+use super::team::{Ability, Drill, Mood, Team};
 use crate::game_core::swarm::Rng;
 
 /// What a square on the ring does.
@@ -523,8 +523,15 @@ pub fn apply(rng: &mut Rng, h: &Happening, team: &mut Team) -> Option<String> {
         }
     }
     if h.hurt > 0 && !team.players.is_empty() {
-        let i = (rng.next_u32() as usize) % team.players.len();
-        team.players[i].hurt = team.players[i].hurt.max(h.hurt);
+        let open: Vec<usize> = (0..team.players.len())
+            .filter(|&i| !team.players[i].has(Ability::Durable))
+            .collect();
+        let (i, weeks) = if open.is_empty() {
+            ((rng.next_u32() as usize) % team.players.len(), 1)
+        } else {
+            (open[(rng.next_u32() as usize) % open.len()], h.hurt)
+        };
+        team.players[i].hurt = team.players[i].hurt.max(weeks);
         return Some(team.players[i].family.clone());
     }
     None
@@ -540,9 +547,15 @@ pub enum Fixture {
     National(u8),
     /// The autumn tournament, round 1 to 3.
     Autumn(u8),
+    /// March invitation, seeded from the autumn. Round 1 to 3.
+    Spring(u8),
 }
 
 pub const WEEKS: u8 = 48;
+/// Late June: a training camp, not a square on the ring.
+pub const CAMP_WEEK: u8 = 12;
+/// January: exam week. A red mark benches a player the way an injury does.
+pub const EXAM_WEEK: u8 = 40;
 
 /// The fixture of week `w`, if any.
 pub fn fixture(w: u8) -> Option<Fixture> {
@@ -553,6 +566,7 @@ pub fn fixture(w: u8) -> Option<Fixture> {
         17 => Some(Fixture::Summer(5)),
         18..=19 => Some(Fixture::National(w - 17)),
         25..=27 => Some(Fixture::Autumn(w - 24)),
+        45..=47 => Some(Fixture::Spring(w - 44)),
         _ => None,
     }
 }
@@ -575,6 +589,7 @@ pub fn rival_level(f: Fixture, year: u8) -> f32 {
         Fixture::Summer(r) => base + r as f32 * 5.0,
         Fixture::National(r) => base + 28.0 + r as f32 * 5.0,
         Fixture::Autumn(r) => base + r as f32 * 4.0,
+        Fixture::Spring(r) => base + 6.0 + r as f32 * 4.0,
     }
 }
 
@@ -610,6 +625,7 @@ pub fn rival_name(f: Fixture, year: u8, week: u8) -> (String, String) {
     ];
     let tier = match f {
         Fixture::National(_) => 6,
+        Fixture::Spring(_) => 3,
         _ => 0,
     };
     let i = ((week as usize) * 7 + (year as usize) * 5 + tier) % EN.len();
@@ -627,6 +643,212 @@ pub fn rival_name(f: Fixture, year: u8, week: u8) -> (String, String) {
         format!("{}{suffix_en}", EN[i]),
         format!("{}{suffix_ja}", JA[i]),
     )
+}
+
+/// A school on the circuit. The same ten stay for the whole run, and grow.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct School {
+    pub name: String,
+    pub name_ja: String,
+    pub color: [u8; 3],
+    /// Seed for the captain's face.
+    pub face: String,
+    pub strength: f32,
+    /// Our record against them.
+    #[serde(default)]
+    pub wins: u16,
+    #[serde(default)]
+    pub losses: u16,
+    #[serde(default)]
+    pub met: u16,
+}
+
+/// Which school is on the schedule for a week, so next year is a rematch.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Slate {
+    pub chapter: u8,
+    pub year: u8,
+    pub week: u8,
+    pub rival: u8,
+}
+
+/// Ten original schools. The last two are academies the nationals tend to send.
+pub fn rival_schools() -> Vec<School> {
+    let rows: [(&str, &str, [u8; 3], f32); 10] = [
+        ("Kitahama High", "北浜高校", [176, 48, 52], 34.0),
+        ("Minamino High", "南野高校", [24, 120, 100], 38.0),
+        ("Sakuragaoka High", "桜ヶ丘高校", [210, 120, 30], 42.0),
+        ("Higashiyama High", "東山高校", [110, 60, 150], 46.0),
+        ("Nishikawa High", "西川高校", [30, 130, 170], 50.0),
+        ("Asahidai High", "旭台高校", [60, 64, 80], 54.0),
+        ("Midorigaoka High", "緑ヶ丘高校", [46, 130, 64], 58.0),
+        ("Kawabe High", "川辺高校", [200, 70, 120], 63.0),
+        ("Shiroishi Academy", "白石学園", [150, 110, 40], 68.0),
+        ("Hoshimi Academy", "星見学園", [40, 70, 140], 74.0),
+    ];
+    rows.into_iter()
+        .map(|(en, ja, color, strength)| School {
+            name: en.into(),
+            name_ja: ja.into(),
+            color,
+            face: ja.into(),
+            strength,
+            wins: 0,
+            losses: 0,
+            met: 0,
+        })
+        .collect()
+}
+
+/// Grounds level from reputation. It only ever rises, and a move to a new school resets it.
+pub fn grounds_of(reputation: f32) -> u8 {
+    if reputation >= 75.0 {
+        3
+    } else if reputation >= 45.0 {
+        2
+    } else if reputation >= 20.0 {
+        1
+    } else {
+        0
+    }
+}
+
+/// A talk answer that can teach a trait. Not stored in the happening JSON.
+pub fn choice_grant(id: &str, k: usize) -> Option<Ability> {
+    match (id, k) {
+        ("night_swing", 0) => Some(Ability::Chance),
+        ("slump", 0) => Some(Ability::Clutch),
+        ("sore_arm", 0) => Some(Ability::Durable),
+        ("captain_talk", 1) => Some(Ability::Mood),
+        ("rookie_nerves", 1) => Some(Ability::Eye),
+        ("camp_night", 0) => Some(Ability::Steal),
+        ("camp_night", 1) => Some(Ability::Eye),
+        _ => None,
+    }
+}
+
+/// The optional conversation at summer camp. Weight 0: the ring never draws it.
+pub fn camp_talk() -> Happening {
+    talk(
+        "camp_night",
+        Who::Any,
+        "Lights out at camp, and {name} is still sitting on the steps. \"Coach, got a minute?\"",
+        "合宿の消灯後、{name}が階段に残っていた。「監督、少しいいですか」",
+        vec![
+            Choice {
+                drill: Some(Drill::Running),
+                points: 12.0,
+                stamina: -8,
+                ..answer(
+                    "Take a lap with him",
+                    "一緒にグラウンドを一周しよう",
+                    "You run in the dark. {name} times the last stretch and grins.",
+                    "暗いグラウンドを走った。{name}は最後の直線を計って笑った。",
+                )
+            },
+            Choice {
+                mood: 2,
+                team_mood: 1,
+                ..answer(
+                    "Sit and talk",
+                    "座って話を聞こう",
+                    "{name} talks about the summer. He sleeps better than he has in weeks.",
+                    "{name}は夏のことを話した。何週間ぶりかにぐっすり眠れたようだ。",
+                )
+            },
+        ],
+    )
+}
+
+/// What a camp week did.
+pub struct CampReport {
+    pub points: u32,
+    pub hurt: Vec<String>,
+    pub shrugged: Vec<String>,
+}
+
+/// Extra work in every drill, one dose of fatigue, and a real chance of a knock.
+pub fn camp_week(team: &mut Team, rng: &mut Rng, base: f32) -> CampReport {
+    let mut points = 0;
+    for p in &mut team.players {
+        if p.hurt > 0 {
+            continue;
+        }
+        for d in Drill::ALL {
+            let fit = match (d, p.pitcher()) {
+                (Drill::Pitching, true) | (Drill::Batting, false) => 1.15,
+                (Drill::Pitching, false) | (Drill::Batting, true) => 0.55,
+                _ => 0.9,
+            };
+            points += p.train(d, base * 0.55 * fit) as u32;
+        }
+        p.tire(18);
+    }
+    let mut hurt = Vec::new();
+    let mut shrugged = Vec::new();
+    let tough: Vec<bool> = team
+        .players
+        .iter()
+        .map(|p| p.has(Ability::Durable))
+        .collect();
+    let names: Vec<String> = team.players.iter().map(|p| p.family.clone()).collect();
+    for (i, p) in team.players.iter_mut().enumerate() {
+        if p.hurt > 0 {
+            continue;
+        }
+        let roll = rng.unit();
+        if roll < 0.09 {
+            if tough[i] {
+                shrugged.push(names[i].clone());
+            } else {
+                p.hurt = p.hurt.max(1);
+                hurt.push(names[i].clone());
+            }
+        }
+    }
+    CampReport {
+        points,
+        hurt,
+        shrugged,
+    }
+}
+
+/// Exam week: the worst-conditioned players who are not durable pick up a red mark.
+/// At least one, when anybody can.
+pub fn red_marks(rng: &mut Rng, team: &mut Team) -> Vec<String> {
+    let mut order: Vec<usize> = (0..team.players.len()).collect();
+    order.sort_by_key(|&i| (team.players[i].mood, i));
+    let mut out = Vec::new();
+    for i in &order {
+        if out.len() >= 2 {
+            break;
+        }
+        let p = &team.players[*i];
+        if p.has(Ability::Durable) || p.study > 0 || p.hurt > 0 {
+            continue;
+        }
+        let chance = match p.mood {
+            Mood::Awful => 0.9,
+            Mood::Poor => 0.7,
+            Mood::Normal => 0.45,
+            Mood::Good => 0.22,
+            Mood::Great => 0.08,
+        };
+        if rng.unit() < chance {
+            team.players[*i].study = 2;
+            out.push(team.players[*i].family.clone());
+        }
+    }
+    if out.is_empty() {
+        if let Some(i) = order.into_iter().find(|&i| {
+            let p = &team.players[i];
+            !p.has(Ability::Durable) && p.study == 0 && p.hurt == 0
+        }) {
+            team.players[i].study = 2;
+            out.push(team.players[i].family.clone());
+        }
+    }
+    out
 }
 
 /// A week's training on a square: the whole team works on `d` (double with the card's
@@ -669,15 +891,50 @@ mod tests {
         assert_eq!(fixture(17), Some(Fixture::Summer(5)));
         assert_eq!(fixture(18), Some(Fixture::National(1)));
         assert_eq!(fixture(26), Some(Fixture::Autumn(2)));
+        assert_eq!(fixture(45), Some(Fixture::Spring(1)));
+        assert_eq!(fixture(47), Some(Fixture::Spring(3)));
         assert_eq!(fixture(7), None);
+        assert_eq!(fixture(CAMP_WEEK), None);
         assert_eq!(month(1), 4);
         assert_eq!(month(13), 7);
+        assert_eq!(month(45), 3);
         assert_eq!(month(48), 3);
         let n = (1..=WEEKS).filter(|w| fixture(*w).is_some()).count();
-        assert_eq!(n, 4 + 5 + 2 + 3);
+        assert_eq!(n, 4 + 5 + 2 + 3 + 3);
         assert!(rival_level(Fixture::National(1), 1) > rival_level(Fixture::Summer(5), 1));
         let (en, ja) = rival_name(Fixture::Summer(1), 1, 13);
         assert!(en.ends_with("High") && ja.ends_with("高校"));
+        let schools = rival_schools();
+        assert_eq!(schools.len(), 10);
+        assert!(schools.iter().any(|s| s.name_ja.ends_with("学園")));
+    }
+
+    #[test]
+    fn camp_trains_harder_and_a_red_mark_benches_someone() {
+        let mut rng = Rng::new(8);
+        let mut t = Team::founding(&mut rng);
+        for p in &mut t.players {
+            p.abilities.retain(|a| *a != Ability::Durable);
+        }
+        let before: u16 = t.players.iter().map(|p| p.xp.iter().sum::<u16>()).sum();
+        let report = camp_week(&mut t, &mut rng, 7.0);
+        let after: u16 = t.players.iter().map(|p| p.xp.iter().sum::<u16>()).sum();
+        assert!(after > before);
+        assert!(report.points > 0);
+        let mut t = Team::founding(&mut rng);
+        for p in &mut t.players {
+            p.abilities.retain(|a| *a != Ability::Durable);
+            p.mood = Mood::Awful;
+        }
+        let marked = red_marks(&mut rng, &mut t);
+        assert!(!marked.is_empty());
+        assert!(t.players.iter().any(|p| p.study == 2 && !p.can_play()));
+        let mut tough = Team::founding(&mut rng);
+        for p in &mut tough.players {
+            p.abilities.clear();
+            p.grant_force(Ability::Durable);
+        }
+        assert!(red_marks(&mut rng, &mut tough).is_empty());
     }
 
     #[test]

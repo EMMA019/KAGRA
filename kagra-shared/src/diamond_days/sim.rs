@@ -3,7 +3,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::team::{Player, Team};
+use super::team::{
+    Ability, Player, Pos, Team, BIT_CHANCE, BIT_CLUTCH, BIT_EYE, BIT_HEAVY, BIT_PINCH, BIT_STEAL,
+};
 use crate::game_core::swarm::Rng;
 
 /// The coach's order for an inning at bat.
@@ -22,6 +24,12 @@ pub struct Batter {
     pub contact: f32,
     pub power: f32,
     pub speed: f32,
+    pub field: f32,
+    /// [`Ability`] bits.
+    #[serde(default)]
+    pub abil: u8,
+    #[serde(default)]
+    pub pitcher: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -32,6 +40,14 @@ pub struct Arm {
     pub breaking: f32,
     /// Pitches before he tires.
     pub endurance: f32,
+    #[serde(default)]
+    pub abil: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Glove {
+    pub name: String,
+    pub field: f32,
 }
 
 impl Arm {
@@ -49,26 +65,65 @@ pub struct Side {
     pub bats: Vec<Batter>,
     pub arms: Vec<Arm>,
     pub field: f32,
+    /// Players who can come off the bench this game.
+    #[serde(default)]
+    pub bench: Vec<Batter>,
+    /// One rating per fielder, so a defensive sub can change the average.
+    #[serde(default)]
+    pub gloves: Vec<Glove>,
+    /// A mood-maker in the order, named once at the first pitch.
+    #[serde(default)]
+    pub spark: Option<String>,
 }
 
 impl Side {
-    /// Our club as it stands this week (condition counts).
+    /// Our club as it stands this week (condition counts). The coach's card is used when
+    /// it is still a legal nine; otherwise the automatic order.
     pub fn from_team(t: &Team, name: &str, name_ja: &str) -> Self {
-        let ace = t.ace().unwrap_or(0);
-        let order = t.lineup(ace);
+        let nine = t.resolved();
+        let mound = nine.iter().find(|(_, pos)| *pos == Pos::P).map(|(i, _)| *i);
         let m = |p: &Player| p.mood.factor().sqrt();
-        let bats = order
-            .iter()
-            .map(|&i| {
-                let p = &t.players[i];
-                Batter {
-                    name: p.family.clone(),
-                    contact: p.contact as f32 * m(p),
-                    power: p.power as f32 * m(p),
-                    speed: p.speed as f32,
+        let lifted = nine.iter().any(|(i, _)| t.players[*i].has(Ability::Mood));
+        let to_batter = |p: &Player, pos: Option<Pos>| {
+            let boost = if lifted && !p.has(Ability::Mood) {
+                3.0
+            } else if lifted {
+                1.0
+            } else {
+                0.0
+            };
+            let field = match pos {
+                Some(spot) if spot != p.pos && !(spot == Pos::P && p.pitcher()) => {
+                    p.field as f32 * 0.9
                 }
+                _ => p.field as f32,
+            };
+            Batter {
+                name: p.family.clone(),
+                contact: p.contact as f32 * m(p) + boost,
+                power: p.power as f32 * m(p),
+                speed: p.speed as f32,
+                field,
+                abil: p.bits(),
+                pitcher: p.pitcher(),
+            }
+        };
+        let bats: Vec<Batter> = nine
+            .iter()
+            .map(|(i, pos)| to_batter(&t.players[*i], Some(*pos)))
+            .collect();
+        let gloves: Vec<Glove> = bats
+            .iter()
+            .map(|b| Glove {
+                name: b.name.clone(),
+                field: b.field,
             })
             .collect();
+        let field = if gloves.is_empty() {
+            40.0
+        } else {
+            gloves.iter().map(|g| g.field).sum::<f32>() / gloves.len() as f32
+        };
         let mut arms: Vec<(usize, &Player)> = t
             .players
             .iter()
@@ -76,7 +131,7 @@ impl Side {
             .filter(|(_, p)| p.pitcher() && p.can_play())
             .collect();
         arms.sort_by(|a, b| {
-            let first = |i: usize| if i == ace { 1.0 } else { 0.0 };
+            let first = |i: usize| if Some(i) == mound { 1.0 } else { 0.0 };
             (first(b.0) * 1000.0 + b.1.pitch_rating())
                 .total_cmp(&(first(a.0) * 1000.0 + a.1.pitch_rating()))
         });
@@ -88,19 +143,29 @@ impl Side {
                 control: p.control as f32 * m(p),
                 breaking: p.breaking as f32 * m(p),
                 endurance: 40.0 + p.stamina_p as f32 * 0.9 * (p.stamina as f32 / 100.0).max(0.4),
+                abil: p.bits(),
             })
             .collect();
-        let field = order
+        let playing: Vec<&str> = bats.iter().map(|b| b.name.as_str()).collect();
+        let bench = t
+            .players
             .iter()
-            .map(|&i| t.players[i].field as f32)
-            .sum::<f32>()
-            / order.len().max(1) as f32;
+            .filter(|p| p.can_play() && !playing.contains(&p.family.as_str()))
+            .map(|p| to_batter(p, None))
+            .collect();
+        let spark = nine.iter().find_map(|(i, _)| {
+            let p = &t.players[*i];
+            p.has(Ability::Mood).then(|| p.family.clone())
+        });
         Self {
             name: name.into(),
             name_ja: name_ja.into(),
             bats,
             arms,
             field,
+            bench,
+            gloves,
+            spark,
         }
     }
 
@@ -128,6 +193,8 @@ pub enum Spot {
     Chance,
     /// They bat with a runner in scoring position.
     Pinch,
+    /// Pick someone off our bench: 0 pinch-hit, 1 pinch-run, 2 defensive sub.
+    Bench(u8),
 }
 
 /// The coach's call for one plate appearance.
@@ -215,6 +282,12 @@ pub struct Play {
     /// Where the ball went: degrees from centre field, negative toward left field.
     #[serde(default)]
     pub dir: f32,
+    /// An ability that fired on this play, drawn big on the field.
+    #[serde(default)]
+    pub banner: Option<Ability>,
+    /// A chance, an extra-base hit, or a walk-off: the picture holds longer.
+    #[serde(default)]
+    pub clutch: bool,
 }
 
 /// What a play looks like on the field.
@@ -263,6 +336,9 @@ pub struct Game {
     pub over: bool,
     pub log: Vec<Play>,
     rng: Rng,
+    /// Set just before a line is spoken.
+    mark_banner: Option<Ability>,
+    mark_clutch: bool,
 }
 
 impl Game {
@@ -290,6 +366,8 @@ impl Game {
             over: false,
             log: Vec::new(),
             rng: Rng::new(seed),
+            mark_banner: None,
+            mark_clutch: false,
         }
     }
 
@@ -329,6 +407,16 @@ impl Game {
     /// A play with its picture. The direction comes from a hash of the play, not the dice,
     /// so adding pictures changes no result.
     fn say_as(&mut self, kind: PlayKind, en: String, ja: String, runs: u8) {
+        let banner = self.mark_banner.take();
+        let clutch = self.mark_clutch || matches!(kind, PlayKind::Hit(n) if n >= 2);
+        self.mark_clutch = false;
+        let (en, ja) = match banner {
+            Some(a) => (
+                format!("{}! {en}", a.label(false)),
+                format!("{}！{ja}", a.label(true)),
+            ),
+            None => (en, ja),
+        };
         let mut h: u32 = 2_166_136_261;
         for b in en.bytes().chain([self.log.len() as u8, self.inning]) {
             h = (h ^ b as u32).wrapping_mul(16_777_619);
@@ -340,7 +428,35 @@ impl Game {
             runs,
             kind,
             dir,
+            banner,
+            clutch,
         });
+    }
+
+    fn risp(&self) -> bool {
+        self.bases[1].is_some() || self.bases[2].is_some()
+    }
+
+    fn late_close(&self) -> bool {
+        self.inning >= 7 && (self.runs(0) as i32 - self.runs(1) as i32).abs() <= 2
+    }
+
+    /// The trait to shout for our side. Rivals' traits still change the numbers.
+    fn our_banner(&self, batting: usize, bat_abil: u8, arm_abil: u8) -> Option<Ability> {
+        let our_bat = batting == self.us;
+        if our_bat && self.risp() && bat_abil & BIT_CHANCE != 0 {
+            return Some(Ability::Chance);
+        }
+        if our_bat && self.late_close() && bat_abil & BIT_CLUTCH != 0 {
+            return Some(Ability::Clutch);
+        }
+        if !our_bat && self.risp() && arm_abil & BIT_PINCH != 0 {
+            return Some(Ability::Pinch);
+        }
+        if !our_bat && self.late_close() && arm_abil & BIT_CLUTCH != 0 {
+            return Some(Ability::Clutch);
+        }
+        None
     }
 
     /// A moment to ask the coach about, once per plate appearance: a runner on second or
@@ -421,12 +537,33 @@ impl Game {
         let bi = self.up[s] % self.sides[s].bats.len();
         let b = self.sides[s].bats[bi].clone();
         let arm = self.pitcher_now().clone();
-        let stuff = arm.stuff(self.thrown[f])
+        let mut stuff = arm.stuff(self.thrown[f])
             + if tactic == Some(Tactic::Challenge) {
                 5.0
             } else {
                 0.0
             };
+        let mut contact = b.contact;
+        let mut power = b.power;
+        if self.risp() && b.abil & BIT_CHANCE != 0 {
+            contact += 8.0;
+            power += 6.0;
+        }
+        if self.late_close() && b.abil & BIT_CLUTCH != 0 {
+            contact += 6.0;
+            power += 4.0;
+        }
+        if self.risp() && arm.abil & BIT_PINCH != 0 {
+            stuff += 8.0;
+        }
+        if self.late_close() && arm.abil & BIT_CLUTCH != 0 {
+            stuff += 6.0;
+        }
+        if arm.abil & BIT_HEAVY != 0 {
+            stuff += 7.0;
+        }
+        let situation = self.our_banner(s, b.abil, arm.abil);
+        let our_bat = s == self.us;
         let field = self.sides[f].field;
         let order = match tactic {
             Some(Tactic::Hit) => Order::Swing,
@@ -454,6 +591,8 @@ impl Game {
         if tactic == Some(Tactic::Squeeze) && self.bases[2].is_some() {
             self.outs += 1;
             if r < 0.68 {
+                self.mark_clutch = true;
+                self.mark_banner = situation;
                 self.bases[2] = None;
                 if let Some(x) = self.bases[1].take() {
                     self.bases[2] = Some(x);
@@ -470,6 +609,7 @@ impl Game {
                 );
             } else {
                 self.bases[2] = None;
+                self.mark_banner = situation;
                 self.say_as(
                     PlayKind::Bunt,
                     format!("Squeeze foiled: {name} misses and the runner is out at home."),
@@ -487,6 +627,7 @@ impl Game {
         {
             if r < 0.78 {
                 self.outs += 1;
+                self.mark_banner = situation;
                 let runs = 0;
                 if let Some(x) = self.bases[1].take() {
                     self.bases[2] = Some(x);
@@ -502,6 +643,7 @@ impl Game {
                 );
             } else {
                 self.outs += 1;
+                self.mark_banner = situation;
                 self.say_as(
                     PlayKind::FlyOut,
                     format!("{name} bunts it up. Caught."),
@@ -517,13 +659,20 @@ impl Game {
             Order::Small => (-0.04, 0.7),
         };
         let wait = tactic == Some(Tactic::Wait);
-        let k = (0.13 + (stuff - b.contact) * 0.0035 + k_adj + if wait { 0.03 } else { 0.0 })
+        let eye = if b.abil & BIT_EYE != 0 { 1.8 } else { 1.0 };
+        let k = (0.13 + (stuff - contact) * 0.0035 + k_adj + if wait { 0.03 } else { 0.0 })
             .clamp(0.04, 0.42);
-        let bb = (0.10 - arm.control * 0.0007).clamp(0.02, 0.11) * if wait { 2.2 } else { 1.0 };
+        let bb =
+            (0.10 - arm.control * 0.0007).clamp(0.02, 0.11) * if wait { 2.2 } else { 1.0 } * eye;
         let hit =
-            (0.28 + (b.contact - stuff * 0.8) * 0.0035 - (field - 50.0) * 0.0012).clamp(0.12, 0.5);
+            (0.28 + (contact - stuff * 0.8) * 0.0035 - (field - 50.0) * 0.0012).clamp(0.12, 0.5);
         if r < k {
             self.outs += 1;
+            self.mark_banner = situation.or(if !our_bat && arm.abil & BIT_HEAVY != 0 {
+                Some(Ability::Heavy)
+            } else {
+                None
+            });
             self.say_as(
                 PlayKind::Strikeout,
                 format!("{name} strikes out."),
@@ -535,6 +684,11 @@ impl Game {
         if r < k + bb {
             let mut runs = 0;
             self.walk(s, bi, &mut runs);
+            self.mark_banner = situation.or(if our_bat && b.abil & BIT_EYE != 0 {
+                Some(Ability::Eye)
+            } else {
+                None
+            });
             self.say_as(
                 PlayKind::Walk,
                 format!("{name} walks."),
@@ -547,9 +701,9 @@ impl Game {
         if in_play < hit {
             self.hits[s] += 1;
             let p = self.rng.unit();
-            let hr = ((b.power * power_adj - 35.0) * 0.004).clamp(0.005, 0.22);
+            let hr = ((power * power_adj - 35.0) * 0.004).clamp(0.005, 0.22);
             let triple = (b.speed - 50.0).max(0.0) * 0.0015 + 0.01;
-            let double = 0.12 + (b.power * power_adj - 40.0).max(0.0) * 0.003;
+            let double = 0.12 + (power * power_adj - 40.0).max(0.0) * 0.003;
             let mut runs = 0;
             let (bases, en, ja) = if p < hr {
                 (
@@ -572,7 +726,11 @@ impl Game {
             } else {
                 (1, format!("{name} singles."), format!("{name}、ヒット。"))
             };
+            if self.risp() {
+                self.mark_clutch = true;
+            }
             self.advance(s, bi, bases, &mut runs);
+            self.mark_banner = situation;
             let (en, ja) = if runs > 0 && bases < 4 {
                 (
                     format!("{en} {runs} run{} in.", if runs > 1 { "s" } else { "" }),
@@ -595,6 +753,7 @@ impl Game {
         if ground && self.bases[0].is_some() && self.outs < 2 && self.rng.unit() < 0.3 {
             self.outs += 2;
             self.bases[0] = None;
+            self.mark_banner = situation;
             self.say_as(
                 PlayKind::DoublePlay,
                 format!("{name} grounds into a double play."),
@@ -608,6 +767,8 @@ impl Game {
         if !ground && self.outs < 3 && self.bases[2].is_some() && self.rng.unit() < 0.6 {
             self.bases[2] = None;
             self.add_runs(s, 1);
+            self.mark_clutch = true;
+            self.mark_banner = situation;
             self.say_as(
                 PlayKind::SacFly,
                 format!("{name} flies out; the runner tags up and scores."),
@@ -631,6 +792,7 @@ impl Game {
             } else {
                 PlayKind::FlyOut
             };
+            self.mark_banner = situation;
             self.say_as(kind, en, ja, 0);
         }
         self.after_out(s)
@@ -700,14 +862,19 @@ impl Game {
             return;
         };
         let r = self.bases[base].unwrap_or(0);
-        let sp = self.sides[s].bats[r].speed;
-        let name = self.sides[s].bats[r].name.clone();
+        let runner = &self.sides[s].bats[r];
+        let sp = runner.speed;
+        let steal_o = runner.abil & BIT_STEAL != 0;
+        let name = runner.name.clone();
         let (to_en, to_ja) = if base == 1 {
             ("third", "三盗")
         } else {
             ("second", "盗塁")
         };
-        if self.rng.unit() < 0.35 + sp * 0.006 {
+        if s == self.us && steal_o {
+            self.mark_banner = Some(Ability::Steal);
+        }
+        if self.rng.unit() < 0.35 + sp * 0.006 + if steal_o { 0.16 } else { 0.0 } {
             self.bases[base + 1] = self.bases[base].take();
             self.say_as(
                 PlayKind::Steal,
@@ -729,10 +896,17 @@ impl Game {
 
     fn try_steal(&mut self, s: usize) {
         if let (Some(r), None) = (self.bases[0], self.bases[1]) {
-            let sp = self.sides[s].bats[r].speed;
-            if sp > 55.0 {
-                let name = self.sides[s].bats[r].name.clone();
-                if self.rng.unit() < 0.45 + (sp - 55.0) * 0.012 {
+            let runner = &self.sides[s].bats[r];
+            let sp = runner.speed;
+            let steal_o = runner.abil & BIT_STEAL != 0;
+            if sp > 55.0 || steal_o {
+                let name = runner.name.clone();
+                if s == self.us && steal_o {
+                    self.mark_banner = Some(Ability::Steal);
+                }
+                if self.rng.unit()
+                    < 0.45 + (sp - 55.0).max(0.0) * 0.012 + if steal_o { 0.16 } else { 0.0 }
+                {
                     self.bases[1] = self.bases[0].take();
                     self.say_as(
                         PlayKind::Steal,
@@ -758,9 +932,10 @@ impl Game {
     fn after_play(&mut self, s: usize) -> bool {
         if s == 1 && self.inning >= 9 && self.runs(1) > self.runs(0) {
             self.over = true;
+            self.mark_clutch = true;
             self.say(
-                "Walk-off! The game is over.".into(),
-                "サヨナラ！試合終了。".into(),
+                "WALK-OFF! The bench empties.".into(),
+                "サヨナラ！ベンチが一斉に飛び出した！".into(),
                 0,
             );
             return false;
@@ -774,9 +949,10 @@ impl Game {
     fn after_out(&mut self, s: usize) -> bool {
         if s == 1 && self.inning >= 9 && self.runs(1) > self.runs(0) {
             self.over = true;
+            self.mark_clutch = true;
             self.say(
-                "Walk-off! The game is over.".into(),
-                "サヨナラ！試合終了。".into(),
+                "WALK-OFF! The bench empties.".into(),
+                "サヨナラ！ベンチが一斉に飛び出した！".into(),
                 0,
             );
             return false;
@@ -830,6 +1006,121 @@ impl Game {
         if let Some(last) = self.line[side].last_mut() {
             *last += 1;
         }
+    }
+
+    /// Swap the batter at the plate for someone on our bench. The plate appearance
+    /// is still to come.
+    pub fn pinch_hit(&mut self, bench_idx: usize) -> bool {
+        if self.batting() != self.us {
+            return false;
+        }
+        self.swap_batter(
+            self.up[self.us] % self.sides[self.us].bats.len(),
+            bench_idx,
+            true,
+        )
+    }
+
+    /// The lead runner leaves for a faster pair of legs. The slot in the order changes
+    /// for the rest of the game.
+    pub fn pinch_run(&mut self, bench_idx: usize) -> bool {
+        if self.batting() != self.us {
+            return false;
+        }
+        let base = [2usize, 1, 0]
+            .into_iter()
+            .find(|&b| self.bases[b].is_some());
+        let Some(base) = base else { return false };
+        let slot = self.bases[base].unwrap_or(0);
+        self.swap_batter(slot, bench_idx, false)
+    }
+
+    /// Replace the weakest glove on our side. Fielding is one number; this changes it.
+    pub fn defense_sub(&mut self, bench_idx: usize) -> bool {
+        let f = 1 - self.batting();
+        if f != self.us {
+            return false;
+        }
+        let Some(new) = self.sides[self.us].bench.get(bench_idx).cloned() else {
+            return false;
+        };
+        if self.sides[self.us].gloves.is_empty() {
+            return false;
+        }
+        let pitcher = self.pitcher_now().name.clone();
+        let slot = self.sides[self.us]
+            .gloves
+            .iter()
+            .enumerate()
+            .filter(|(_, g)| g.name != pitcher)
+            .min_by(|a, b| a.1.field.total_cmp(&b.1.field))
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        let old_name = self.sides[self.us].gloves[slot].name.clone();
+        self.sides[self.us].gloves[slot] = Glove {
+            name: new.name.clone(),
+            field: new.field,
+        };
+        let n = self.sides[self.us].gloves.len().max(1) as f32;
+        self.sides[self.us].field = self.sides[self.us]
+            .gloves
+            .iter()
+            .map(|g| g.field)
+            .sum::<f32>()
+            / n;
+        // The replaced fielder takes the bench spot if he is still in the lineup as a hitter.
+        if let Some(i) = self.sides[self.us]
+            .bats
+            .iter()
+            .position(|b| b.name == old_name)
+        {
+            let old = self.sides[self.us].bats[i].clone();
+            self.sides[self.us].bats[i] = new.clone();
+            self.sides[self.us].bench.remove(bench_idx);
+            self.sides[self.us].bench.push(old);
+        } else {
+            self.sides[self.us].bench.remove(bench_idx);
+            self.sides[self.us].bench.push(new.clone());
+        }
+        let name = new.name;
+        self.say_as(
+            PlayKind::Change,
+            format!("Defensive change: {name}."),
+            format!("守備交代、{name}。"),
+            0,
+        );
+        true
+    }
+
+    fn swap_batter(&mut self, slot: usize, bench_idx: usize, hit: bool) -> bool {
+        let s = self.us;
+        if slot >= self.sides[s].bats.len() {
+            return false;
+        }
+        let Some(new) = self.sides[s].bench.get(bench_idx).cloned() else {
+            return false;
+        };
+        let old = self.sides[s].bats[slot].clone();
+        self.sides[s].bats[slot] = new.clone();
+        self.sides[s].bench.remove(bench_idx);
+        self.sides[s].bench.push(old);
+        let name = new.name;
+        if hit {
+            self.say_as(
+                PlayKind::Change,
+                format!("Pinch hitter: {name}."),
+                format!("代打、{name}。"),
+                0,
+            );
+        } else {
+            self.say_as(
+                PlayKind::Change,
+                format!("Pinch runner: {name}."),
+                format!("代走、{name}。"),
+                0,
+            );
+        }
+        true
     }
 
     /// Play to the end (tests, and the "skip" button).
@@ -917,6 +1208,11 @@ mod tests {
                         // Walk him only with first base open (no forced run).
                         Spot::Pinch if g.bases[0].is_none() => Tactic::Walk,
                         Spot::Pinch => Tactic::Challenge,
+                        Spot::Bench(_) => {
+                            g.call(None);
+                            g.step();
+                            continue;
+                        }
                     };
                     g.call(Some(t));
                     assert!(g.spot().is_none(), "asked once per plate appearance");
@@ -955,5 +1251,32 @@ mod tests {
         assert_eq!(g.tactic, None);
         g.step();
         assert_eq!(g.arm[f], 1, "no second change");
+    }
+
+    #[test]
+    fn abilities_are_named_and_a_pinch_hitter_takes_the_at_bat() {
+        let mut g = Game::new(side(60.0, 4), side(40.0, 5), true, 4);
+        assert!(!g.sides[0].bench.is_empty(), "the extra pitcher sits");
+        let came = g.sides[0].bench[0].name.clone();
+        let was = g.sides[0].bats[0].name.clone();
+        assert!(g.pinch_hit(0));
+        assert_eq!(g.sides[0].bats[0].name, came);
+        assert_ne!(came, was);
+        assert!(g.log.iter().any(|p| p.ja.contains("代打")));
+        g.sides[0].bats[0].abil |= BIT_CHANCE;
+        g.sides[0].bats[0].contact = 99.0;
+        g.sides[0].bats[0].power = 90.0;
+        g.bases = [None, Some(2), None];
+        g.step();
+        assert!(
+            g.log.iter().any(|p| p.banner == Some(Ability::Chance)),
+            "チャンス○ is on the play"
+        );
+        let mut fast = Game::new(side(50.0, 8), side(50.0, 9), true, 8);
+        fast.sides[0].bats[1].abil |= BIT_STEAL;
+        fast.sides[0].bats[1].speed = 80.0;
+        fast.bases = [Some(1), None, None];
+        fast.steal_lead(0);
+        assert!(fast.log.iter().any(|p| p.banner == Some(Ability::Steal)));
     }
 }

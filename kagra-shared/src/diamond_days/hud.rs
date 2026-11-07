@@ -6,7 +6,7 @@
 use super::art::{self, INK, INK_SOFT, ORANGE, OURS, WHITE};
 use super::board::{self, Fixture, Square};
 use super::sim::{PlayKind, Spot, Tactic};
-use super::team::{grade, Drill, Pos, Stat};
+use super::team::{self, grade, Drill, Pos, Stat};
 use super::{DiamondDays, Mode};
 use crate::flow::FlowPhase;
 use crate::game_core::portrait::{Expr, Outfit};
@@ -37,6 +37,33 @@ pub enum Btn {
     AutoRaise,
     Menu(Drill),
     Back,
+    /// Open the batting order from the roster.
+    Lineup,
+    /// Clear a saved order.
+    AutoFill,
+    /// A slot in the order (reorder screen, or the one being filled).
+    Slot(usize),
+    /// Move that slot up (-1) or down (1).
+    Nudge(usize, i8),
+    /// Next defensive position for that slot.
+    Cycle(usize),
+    /// Put this roster index into the selected slot.
+    Assign(usize),
+    /// Open the bench: 0 pinch-hit, 1 pinch-run, 2 defense.
+    OpenBench(u8),
+    UseBench(u8),
+    Stay,
+    MoveSchool,
+    School(u8),
+    EndStory,
+}
+
+fn push_choices(b: &mut Vec<(Btn, [f32; 4])>, hh: f32, n: usize) {
+    let n = n.min(3);
+    for k in 0..n {
+        let y = hh - 70.0 - (n - k) as f32 * 64.0;
+        b.push((Btn::Choose(k), [24.0, y, 352.0, 54.0]));
+    }
 }
 
 fn drill_label(d: Drill, ja: bool) -> &'static str {
@@ -118,10 +145,10 @@ impl DiamondDays {
                     .get(h)
                     .map(|x| x.choices.len())
                     .unwrap_or(0);
-                for k in 0..n.min(3) {
-                    let y = hh - 70.0 - (n.min(3) - k) as f32 * 64.0;
-                    b.push((Btn::Choose(k), [24.0, y, 352.0, 54.0]));
-                }
+                push_choices(&mut b, hh, n);
+            }
+            Mode::CampTalk { .. } => {
+                push_choices(&mut b, hh, board::camp_talk().choices.len());
             }
             Mode::Roster => {
                 b.push((Btn::RosterUp, [296.0, 78.0, 42.0, 34.0]));
@@ -137,35 +164,102 @@ impl DiamondDays {
                         [10.0, ROSTER_TOP + k as f32 * (ROW_H + 4.0), 380.0, ROW_H],
                     ));
                 }
-                b.push((Btn::AutoRaise, [10.0, hh - 60.0, 210.0, 48.0]));
+                b.push((Btn::Lineup, [10.0, hh - 60.0, 88.0, 48.0]));
+                b.push((Btn::AutoRaise, [106.0, hh - 60.0, 156.0, 48.0]));
                 b.push((Btn::Close, [270.0, hh - 60.0, 120.0, 48.0]));
+            }
+            Mode::Lineup { pick } => {
+                if pick.is_some() {
+                    let rows = self.roster_rows(hh);
+                    for k in 0..rows {
+                        let i = self.roster_scroll + k;
+                        if i >= self.s.team.players.len() {
+                            break;
+                        }
+                        b.push((
+                            Btn::Assign(i),
+                            [10.0, ROSTER_TOP + k as f32 * (ROW_H + 4.0), 380.0, ROW_H],
+                        ));
+                    }
+                    b.push((Btn::RosterUp, [10.0, hh - 60.0, 70.0, 48.0]));
+                    b.push((Btn::RosterDown, [88.0, hh - 60.0, 70.0, 48.0]));
+                    b.push((Btn::Back, [270.0, hh - 60.0, 120.0, 48.0]));
+                } else {
+                    let n = self.s.team.resolved().len().min(9);
+                    for i in 0..n {
+                        let y = 78.0 + i as f32 * 52.0;
+                        b.push((Btn::Nudge(i, -1), [8.0, y, 36.0, 46.0]));
+                        b.push((Btn::Slot(i), [48.0, y, 220.0, 46.0]));
+                        b.push((Btn::Cycle(i), [274.0, y, 70.0, 46.0]));
+                        b.push((Btn::Nudge(i, 1), [350.0, y, 40.0, 46.0]));
+                    }
+                    b.push((Btn::AutoFill, [10.0, hh - 60.0, 160.0, 48.0]));
+                    b.push((Btn::Close, [270.0, hh - 60.0, 120.0, 48.0]));
+                }
+            }
+            Mode::Epilogue { schools } => {
+                if schools {
+                    for k in 0..self.move_picks.len().min(3) {
+                        let y = hh * 0.42 + k as f32 * 64.0;
+                        b.push((Btn::School(k as u8), [24.0, y, 352.0, 54.0]));
+                    }
+                    b.push((Btn::Back, [24.0, hh - 80.0, 352.0, 48.0]));
+                } else {
+                    b.push((Btn::Stay, [24.0, hh * 0.48, 352.0, 52.0]));
+                    b.push((Btn::MoveSchool, [24.0, hh * 0.48 + 62.0, 352.0, 52.0]));
+                    b.push((Btn::EndStory, [24.0, hh * 0.48 + 124.0, 352.0, 52.0]));
+                }
             }
             Mode::Match { asking, .. } => match asking {
                 Some(spot) => {
                     let g = self.game.as_ref();
-                    let list: Vec<Option<Tactic>> = match spot {
-                        Spot::Chance => Tactic::CHANCE.to_vec(),
-                        Spot::Pinch => Tactic::PINCH.to_vec(),
-                    }
-                    .into_iter()
-                    .filter(|t| g.is_some_and(|g| t.possible(g)))
-                    .map(Some)
-                    .chain(std::iter::once(None))
-                    .collect();
                     let panel = self.call_panel(hh);
                     let per = 3usize;
                     let bw = (panel[2] - 32.0 - (per as f32 - 1.0) * 8.0) / per as f32;
-                    for (i, t) in list.into_iter().enumerate() {
+                    let place = |i: usize, bw: f32| {
                         let (row, col) = (i / per, i % per);
-                        b.push((
-                            Btn::Call(t),
-                            [
-                                panel[0] + 16.0 + col as f32 * (bw + 8.0),
-                                panel[1] + 78.0 + row as f32 * 56.0,
-                                bw,
-                                48.0,
-                            ],
-                        ));
+                        [
+                            panel[0] + 16.0 + col as f32 * (bw + 8.0),
+                            panel[1] + 78.0 + row as f32 * 56.0,
+                            bw,
+                            48.0,
+                        ]
+                    };
+                    match spot {
+                        Spot::Bench(_) => {
+                            let n = g.map(|g| g.sides[g.us].bench.len()).unwrap_or(0).min(6);
+                            for i in 0..n {
+                                b.push((Btn::UseBench(i as u8), place(i, bw)));
+                            }
+                            b.push((Btn::Call(None), place(n, bw)));
+                        }
+                        Spot::Chance | Spot::Pinch => {
+                            let tactics = match spot {
+                                Spot::Chance => Tactic::CHANCE.as_slice(),
+                                Spot::Pinch => Tactic::PINCH.as_slice(),
+                                Spot::Bench(_) => &[],
+                            };
+                            let mut list: Vec<Btn> = tactics
+                                .iter()
+                                .copied()
+                                .filter(|t| g.is_some_and(|g| t.possible(g)))
+                                .map(|t| Btn::Call(Some(t)))
+                                .collect();
+                            let bench = g.map(|g| g.sides[g.us].bench.len()).unwrap_or(0);
+                            if bench > 0 && matches!(spot, Spot::Chance) {
+                                list.push(Btn::OpenBench(0));
+                                if g.is_some_and(|g| g.bases.iter().any(|b| b.is_some())) {
+                                    list.push(Btn::OpenBench(1));
+                                }
+                            }
+                            if bench > 0 && matches!(spot, Spot::Pinch) {
+                                list.push(Btn::OpenBench(2));
+                            }
+                            list.push(Btn::Call(None));
+                            for (i, btn) in list.into_iter().enumerate() {
+                                b.push((btn, place(i, bw)));
+                            }
+                        }
                     }
                     b.push((
                         Btn::Auto,
@@ -251,6 +345,14 @@ impl DiamondDays {
                 self.draw_bar(&mut p);
                 self.draw_roster(&mut p, &l);
             }
+            Mode::Lineup { pick } => {
+                art::backdrop(&mut p, month, self.clock);
+                self.draw_lineup(&mut p, *pick, &l);
+            }
+            Mode::Epilogue { schools } => {
+                art::backdrop(&mut p, month, self.clock);
+                self.draw_epilogue(&mut p, *schools, &l);
+            }
             Mode::Player(i) => {
                 art::backdrop(&mut p, month, self.clock);
                 self.draw_player(&mut p, *i, &l);
@@ -271,6 +373,9 @@ impl DiamondDays {
         }
         if let Mode::Ask { h, who } = self.mode {
             self.draw_ask(&mut p, h, who, &l);
+        }
+        if let Mode::CampTalk { who } = self.mode {
+            self.draw_camp_talk(&mut p, who, &l);
         }
         if menu && self.flow.phase == FlowPhase::Pause {
             self.draw_pause(&mut p);
@@ -631,6 +736,7 @@ impl DiamondDays {
                 Fixture::Summer(_) => self.s.summer_in,
                 Fixture::National(_) => self.s.national_in,
                 Fixture::Autumn(_) => self.s.autumn_in,
+                Fixture::Spring(_) => self.s.spring_in,
                 Fixture::Practice => true,
             })
     }
@@ -1031,10 +1137,24 @@ impl DiamondDays {
             let in_row = (n.faces.len().min(12) - row * 4).min(4);
             let x = 200.0 - in_row as f32 * 41.0 + col as f32 * 82.0 + 9.0;
             let yy = fy + row as f32 * 92.0;
-            let face = art::face_of(&format!("{fam}{given}"));
+            let face = match n.roles.get(k).copied() {
+                Some(team::Role::Ace) => art::ace_face(),
+                Some(team::Role::Captain) => art::captain_face(),
+                _ => art::face_of(&format!("{fam}{given}")),
+            };
             let expr = if fresh { Expr::Happy } else { Expr::Smile };
             p.portrait(x, yy, 64.0, &face, expr, &Outfit::cap(OURS), 1.0);
-            p.text(fam, x + 32.0, yy + 66.0, 12.0, INK, TextAlign::Center);
+            p.text(fam, x + 32.0, yy + 62.0, 12.0, INK, TextAlign::Center);
+            if let Some((en, jp)) = n.captions.get(k) {
+                p.text(
+                    if ja { jp } else { en },
+                    x + 32.0,
+                    yy + 76.0,
+                    art::TYPE_CAPTION,
+                    ORANGE,
+                    TextAlign::Center,
+                );
+            }
         }
         for (k, ln) in lines.iter().take(max_lines).enumerate() {
             // The first line (what happened) a little bigger.
@@ -1078,10 +1198,21 @@ impl DiamondDays {
         }
     }
 
-    /// A player talks to the coach: his face, what he says, the answers.
     fn draw_ask(&self, p: &mut Painter, h: usize, who: usize, l: &Layout) {
-        let (Some(ev), Some(pl)) = (self.spec.happenings.get(h), self.s.team.players.get(who))
-        else {
+        let Some(ev) = self.spec.happenings.get(h) else {
+            return;
+        };
+        self.draw_talk(p, ev, who, l);
+    }
+
+    fn draw_camp_talk(&self, p: &mut Painter, who: usize, l: &Layout) {
+        let ev = board::camp_talk();
+        self.draw_talk(p, &ev, who, l);
+    }
+
+    /// A player talks to the coach: his face, what he says, the answers.
+    fn draw_talk(&self, p: &mut Painter, ev: &board::Happening, who: usize, l: &Layout) {
+        let Some(pl) = self.s.team.players.get(who) else {
             return;
         };
         let ja = self.lang_ja;
@@ -1226,17 +1357,20 @@ impl DiamondDays {
                     p.button(x, y, w, h, "▼", 14.0, [80, 100, 160, 255], more);
                 }
                 Btn::Row(i) => self.draw_row(p, i, *r),
-                Btn::AutoRaise => {
+                Btn::Lineup => {
                     p.button(
                         x,
                         y,
                         w,
                         h,
-                        self.tr("SPEND FOR ALL", "全員おまかせ育成"),
-                        16.0,
-                        ORANGE,
+                        self.tr("ORDER", "打順"),
+                        15.0,
+                        [60, 120, 210, 255],
                         true,
                     );
+                }
+                Btn::AutoRaise => {
+                    p.button(x, y, w, h, self.tr("SPEND", "育成"), 16.0, ORANGE, true);
                 }
                 Btn::Close => {
                     p.button(
@@ -1259,7 +1393,7 @@ impl DiamondDays {
         let ja = self.lang_ja;
         let pl = &self.s.team.players[i];
         let [x, y, w, h] = r;
-        let hurt = pl.hurt > 0;
+        let hurt = !pl.can_play();
         p.panel(
             x,
             y,
@@ -1315,7 +1449,11 @@ impl DiamondDays {
         }
         if hurt {
             p.text(
-                self.tr("hurt", "ケガ"),
+                if pl.study > 0 {
+                    self.tr("grades", "赤点")
+                } else {
+                    self.tr("hurt", "ケガ")
+                },
                 x + 312.0,
                 y + 10.0,
                 13.0,
@@ -1351,6 +1489,216 @@ impl DiamondDays {
             INK_SOFT,
             TextAlign::Right,
         );
+    }
+
+    fn draw_lineup(&self, p: &mut Painter, pick: Option<usize>, l: &Layout) {
+        let ja = self.lang_ja;
+        let nine = self.s.team.resolved();
+        let custom = !self.s.team.card.order.is_empty();
+        p.panel(
+            10.0,
+            10.0,
+            380.0,
+            60.0,
+            art::RADIUS,
+            art::PAPER,
+            art::PAPER_SHADE,
+            10.0,
+        );
+        p.text(
+            self.tr(
+                if pick.is_some() {
+                    "Who plays here?"
+                } else if custom {
+                    "Your order"
+                } else {
+                    "Auto order"
+                },
+                if pick.is_some() {
+                    "この枠は誰？"
+                } else if custom {
+                    "あなたの打順"
+                } else {
+                    "おまかせ打順"
+                },
+            ),
+            24.0,
+            26.0,
+            art::TYPE_TITLE,
+            INK,
+            TextAlign::Left,
+        );
+        if pick.is_some() {
+            for (b, r) in &l.buttons {
+                let [x, y, w, h] = *r;
+                match *b {
+                    Btn::Assign(i) => self.draw_row(p, i, *r),
+                    Btn::RosterUp => {
+                        p.button(x, y, w, h, "▲", 14.0, art::NAVY, self.roster_scroll > 0);
+                    }
+                    Btn::RosterDown => {
+                        p.button(x, y, w, h, "▼", 14.0, art::NAVY, true);
+                    }
+                    Btn::Back => {
+                        p.button(
+                            x,
+                            y,
+                            w,
+                            h,
+                            self.tr("BACK", "もどる"),
+                            16.0,
+                            art::QUIET,
+                            true,
+                        );
+                    }
+                    _ => {}
+                }
+            }
+            return;
+        }
+        for (b, r) in &l.buttons {
+            let [x, y, w, h] = *r;
+            match *b {
+                Btn::Nudge(_, dir) => {
+                    p.button(
+                        x,
+                        y,
+                        w,
+                        h,
+                        if dir < 0 { "↑" } else { "↓" },
+                        16.0,
+                        art::NAVY,
+                        true,
+                    );
+                }
+                Btn::Slot(i) => {
+                    let (name, pos) = nine
+                        .get(i)
+                        .map(|(pi, pos)| (self.s.team.players[*pi].family.as_str(), pos.short(ja)))
+                        .unwrap_or(("-", "-"));
+                    p.panel(x, y, w, h, 12.0, art::PAPER, art::PAPER_SHADE, 6.0);
+                    p.text(
+                        &format!("{}. {name}", i + 1),
+                        x + 10.0,
+                        y + 12.0,
+                        art::TYPE_BUTTON,
+                        INK,
+                        TextAlign::Left,
+                    );
+                    let _ = pos;
+                }
+                Btn::Cycle(i) => {
+                    let pos = nine.get(i).map(|(_, pos)| pos.short(ja)).unwrap_or("-");
+                    p.button(x, y, w, h, pos, 16.0, OURS, true);
+                }
+                Btn::AutoFill => {
+                    p.button(x, y, w, h, self.tr("AUTO", "おまかせ"), 16.0, ORANGE, true);
+                }
+                Btn::Close => {
+                    p.button(x, y, w, h, self.tr("DONE", "決定"), 16.0, art::QUIET, true);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn draw_epilogue(&self, p: &mut Painter, schools: bool, l: &Layout) {
+        let ja = self.lang_ja;
+        let hh = p.st.h;
+        p.panel(
+            16.0,
+            36.0,
+            368.0,
+            hh * 0.36,
+            art::RADIUS,
+            art::PAPER,
+            art::PAPER_SHADE,
+            12.0,
+        );
+        p.outline(
+            &vector::rounded_rect(16.0, 36.0, 368.0, hh * 0.36, art::RADIUS),
+            1.5,
+            art::PAPER_EDGE,
+        );
+        p.text(
+            self.tr("Three years", "三年間が終わった"),
+            200.0,
+            52.0,
+            art::TYPE_TITLE,
+            INK,
+            TextAlign::Center,
+        );
+        let sub = if ja {
+            format!(
+                "{}期  {}勝{}敗  評判{}",
+                self.chapter(),
+                self.s.wins,
+                self.s.losses,
+                self.s.reputation.round() as i32
+            )
+        } else {
+            format!(
+                "Chapter {}   {}-{}   fame {}",
+                self.chapter(),
+                self.s.wins,
+                self.s.losses,
+                self.s.reputation.round() as i32
+            )
+        };
+        p.text(
+            &sub,
+            200.0,
+            84.0,
+            art::TYPE_BODY,
+            INK_SOFT,
+            TextAlign::Center,
+        );
+        for (i, (en, jp)) in self.s.results.iter().take(3).enumerate() {
+            p.text(
+                if ja { jp } else { en },
+                36.0,
+                118.0 + i as f32 * 26.0,
+                art::TYPE_BUTTON,
+                INK,
+                TextAlign::Left,
+            );
+        }
+        let (face, outfit) = art::manager();
+        p.portrait(280.0, 110.0, 90.0, &face, Expr::Smile, &outfit, 1.0);
+        for (b, r) in &l.buttons {
+            let [x, y, w, h] = *r;
+            let (label, col) = match *b {
+                Btn::Stay => (
+                    self.tr("Next generation, same school", "この学校で次の世代へ"),
+                    ORANGE,
+                ),
+                Btn::MoveSchool => (
+                    self.tr("Take another school", "別の学校へ"),
+                    [60, 120, 210, 255],
+                ),
+                Btn::EndStory => (self.tr("End the story", "ここで終える"), art::QUIET),
+                Btn::School(k) => {
+                    let name = self
+                        .move_picks
+                        .get(k as usize)
+                        .and_then(|&i| self.s.rivals.get(i))
+                        .map(|s| {
+                            if ja {
+                                s.name_ja.as_str()
+                            } else {
+                                s.name.as_str()
+                            }
+                        })
+                        .unwrap_or("-");
+                    p.button(x, y, w, h, name, art::TYPE_BUTTON, OURS, true);
+                    continue;
+                }
+                Btn::Back => (self.tr("BACK", "もどる"), art::QUIET),
+                _ => continue,
+            };
+            let _ = schools;
+            p.button(x, y, w, h, label, art::TYPE_BUTTON, col, true);
+        }
     }
 
     fn draw_player(&self, p: &mut Painter, i: usize, l: &Layout) {
@@ -1423,13 +1771,38 @@ impl DiamondDays {
             stamina_color(pl.stamina),
             [226, 222, 212, 255],
         );
-        if pl.hurt > 0 {
-            let t = if ja {
-                format!("ケガ（あと{}週）", pl.hurt)
+        if pl.hurt > 0 || pl.study > 0 {
+            let t = if pl.hurt > 0 {
+                if ja {
+                    format!("ケガ（あと{}週）", pl.hurt)
+                } else {
+                    format!("Hurt ({} wk)", pl.hurt)
+                }
+            } else if ja {
+                format!("赤点（あと{}週）", pl.study)
             } else {
-                format!("Hurt ({} wk)", pl.hurt)
+                format!("Red mark ({} wk)", pl.study)
             };
             p.text(&t, 160.0, 136.0, 13.0, [220, 70, 60, 255], TextAlign::Left);
+        } else if pl.abilities.is_empty() {
+            p.text(
+                self.tr("No ability", "特技なし"),
+                160.0,
+                136.0,
+                13.0,
+                INK_SOFT,
+                TextAlign::Left,
+            );
+        } else {
+            let tags: Vec<&str> = pl.abilities.iter().map(|a| a.label(ja)).collect();
+            p.text(
+                &tags.join("  "),
+                160.0,
+                136.0,
+                13.0,
+                [176, 96, 24, 255],
+                TextAlign::Left,
+            );
         }
         // Points by drill.
         p.panel(
@@ -1753,9 +2126,30 @@ impl DiamondDays {
                 true,
             );
         }
+        let hot = shown
+            .checked_sub(1)
+            .and_then(|i| g.log.get(i))
+            .is_some_and(|play| {
+                play.clutch
+                    || play.banner.is_some()
+                    || matches!(play.kind, PlayKind::Hit(n) if n >= 2)
+            });
         if let Some(play) = shown.checked_sub(1).and_then(|i| g.log.get(i)) {
-            let k = (t / self.spec.line_secs.max(0.05)).min(1.0);
+            let hold = if hot { 1.55 } else { 1.0 };
+            let k = (t / (self.spec.line_secs.max(0.05) * hold)).min(1.0);
             art::ball_flight(p, home, play.kind, play.dir, k);
+            if let Some(ab) = play.banner {
+                p.text_outlined(
+                    ab.label(ja),
+                    200.0,
+                    136.0 + fh * 0.18,
+                    36.0,
+                    art::GOLD,
+                    [20, 16, 40, 255],
+                    3.0,
+                    TextAlign::Center,
+                );
+            }
             let big = match play.kind {
                 PlayKind::Hit(4) => Some((self.tr("HOME RUN!", "ホームラン！"), art::GOLD)),
                 PlayKind::Strikeout => Some((self.tr("STRIKEOUT", "三振！"), WHITE)),
@@ -1766,12 +2160,13 @@ impl DiamondDays {
                 _ => None,
             };
             if let Some((txt, c)) = big {
-                if k < 0.95 {
+                let size = if hot { 40.0 } else { 34.0 };
+                if k < 0.98 {
                     p.text_outlined(
                         txt,
                         200.0,
-                        136.0 + fh * 0.3,
-                        34.0,
+                        136.0 + fh * 0.42,
+                        size,
                         c,
                         [20, 20, 30, 255],
                         2.5,
@@ -1895,12 +2290,13 @@ impl DiamondDays {
                     &vector::rounded_rect(x + 8.0, yd + 10.0, 4.0, 22.0, 2.0),
                     Paint::Solid(col),
                 );
+                let face_s = if hot { 96.0 } else { 78.0 };
                 p.portrait(
-                    x + 104.0,
-                    yd + 4.0,
-                    78.0,
+                    x + if hot { 96.0 } else { 104.0 },
+                    yd + if hot { -6.0 } else { 4.0 },
+                    face_s,
                     &face,
-                    Expr::Serious,
+                    if hot { Expr::Fiery } else { Expr::Serious },
                     &Outfit::cap(col),
                     1.0,
                 );
@@ -1961,7 +2357,7 @@ impl DiamondDays {
             let rows_n = l
                 .buttons
                 .iter()
-                .filter(|(b, _)| matches!(b, Btn::Call(_)))
+                .filter(|(b, _)| matches!(b, Btn::Call(_) | Btn::OpenBench(_) | Btn::UseBench(_)))
                 .count()
                 .div_ceil(3);
             let ph = 90.0 + rows_n as f32 * 56.0;
@@ -1986,6 +2382,9 @@ impl DiamondDays {
                     "ピンチ！ どうする？",
                     [220, 70, 60, 255],
                 ),
+                Spot::Bench(0) => ("Pinch hitter?", "代打は誰？", [90, 70, 160, 255]),
+                Spot::Bench(1) => ("Pinch runner?", "代走は誰？", [90, 70, 160, 255]),
+                Spot::Bench(_) => ("Who comes in?", "守備は誰？", [90, 70, 160, 255]),
             };
             p.fill(
                 &vector::rounded_rect(panel[0] + 16.0, panel[1] + 18.0, 6.0, 40.0, 3.0),
@@ -2029,16 +2428,41 @@ impl DiamondDays {
                         p.button(x, y, w, h, t.label(ja), 16.0, col, true);
                     }
                     Btn::Call(None) => {
+                        let back = matches!(asking, Some(Spot::Bench(_)));
                         p.button(
                             x,
                             y,
                             w,
                             h,
-                            self.tr("PLAY ON", "おまかせ"),
+                            if back {
+                                self.tr("BACK", "もどる")
+                            } else {
+                                self.tr("PLAY ON", "おまかせ")
+                            },
                             16.0,
-                            [110, 116, 140, 255],
+                            art::QUIET,
                             true,
                         );
+                    }
+                    Btn::OpenBench(k) => {
+                        let label = match (k, ja) {
+                            (0, false) => "PINCH HIT",
+                            (1, false) => "PINCH RUN",
+                            (_, false) => "DEFENSE",
+                            (0, true) => "代打",
+                            (1, true) => "代走",
+                            (_, true) => "守備",
+                        };
+                        p.button(x, y, w, h, label, 14.0, [90, 70, 160, 255], true);
+                    }
+                    Btn::UseBench(i) => {
+                        let name = g
+                            .sides
+                            .get(g.us)
+                            .and_then(|s| s.bench.get(i as usize))
+                            .map(|b| b.name.as_str())
+                            .unwrap_or("-");
+                        p.button(x, y, w, h, name, 14.0, OURS, true);
                     }
                     Btn::Auto => {
                         p.button(
@@ -2096,7 +2520,13 @@ impl DiamondDays {
         if side == g.us {
             OURS
         } else {
-            art::team_color(&g.sides[side].name)
+            let name = &g.sides[side].name;
+            self.s
+                .rivals
+                .iter()
+                .find(|s| s.name == *name || s.name_ja == g.sides[side].name_ja)
+                .map(|s| [s.color[0], s.color[1], s.color[2], 255])
+                .unwrap_or_else(|| art::team_color(name))
         }
     }
 }
