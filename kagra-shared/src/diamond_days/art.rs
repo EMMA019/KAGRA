@@ -342,6 +342,8 @@ fn crowd(p: &mut Painter, x0: f32, y0: f32, w: f32, h: f32, clip: &[P], light: f
 const CROWD_TILE: [f32; 2] = [64.0, 32.0];
 /// Pixels per design unit in the baked crowd.
 const CROWD_PX: f32 = 3.0;
+/// Clear pixels between the two frames, so filtering never borrows the other pose.
+const CROWD_GAP: f32 = 4.0;
 
 /// The crowd, baked once into a sheet of two frames (seated, and cheering with arms up):
 /// a few dozen little fans in every shirt colour on a clear background, made to repeat.
@@ -389,7 +391,7 @@ fn crowd_sheet() -> Option<crate::image2d::PicId> {
         }
         let mut list = DrawList::default();
         for frame in 0..2 {
-            let ox = frame as f32 * fw;
+            let ox = frame as f32 * (fw + CROWD_GAP);
             let cheer = frame == 1;
             let cell = [[ox, 0.0], [ox + fw, 0.0], [ox + fw, fh], [ox, fh]];
             let m = &mut list.mesh;
@@ -431,8 +433,21 @@ fn crowd_sheet() -> Option<crate::image2d::PicId> {
                 }
             }
         }
-        crate::image2d::bake(&list, (fw * 2.0) as u32, fh as u32).ok()
+        crate::image2d::bake(&list, (fw * 2.0 + CROWD_GAP) as u32, fh as u32).ok()
     })
+}
+
+/// The texels of one crowd frame, half a texel in from its edges: filtering stays inside it.
+fn crowd_uv(frame: u32) -> [f32; 4] {
+    let (fw, fh) = (CROWD_TILE[0] * CROWD_PX, CROWD_TILE[1] * CROWD_PX);
+    let sheet_w = fw * 2.0 + CROWD_GAP;
+    let x0 = frame.min(1) as f32 * (fw + CROWD_GAP);
+    [
+        (x0 + 0.5) / sheet_w,
+        0.5 / fh,
+        (x0 + fw - 0.5) / sheet_w,
+        (fh - 0.5) / fh,
+    ]
 }
 
 /// The crowd filling a rectangle of stands, tiled from the baked sheet (a few dozen
@@ -453,7 +468,7 @@ pub fn crowd_rect(p: &mut Painter, r: [f32; 4], light: f32, cheer: bool, clock: 
         let mut tx = x - (row % 2) as f32 * tw * 0.5;
         while tx < x + w {
             let frame = u32::from(cheer && ((clock * 7.0) as u32 + row).is_multiple_of(2));
-            p.image_frame(sheet, 2, 1, frame, [tx, ty, tw, th], tint);
+            p.image_part(sheet, [tx, ty, tw, th], crowd_uv(frame), tint);
             tx += tw;
         }
         ty += th;
@@ -1517,4 +1532,25 @@ pub fn emblem(p: &mut Painter, cx: f32, cy: f32, r: f32, color: Rgba, letter: &s
         r * 0.06,
         crate::scene::TextAlign::Center,
     );
+}
+
+#[cfg(test)]
+mod crowd_tests {
+    use super::*;
+
+    #[test]
+    fn crowd_frames_never_sample_each_other() {
+        let (a, b) = (crowd_uv(0), crowd_uv(1));
+        assert!(a[2] < b[0], "a clear gap between the frames: {a:?} {b:?}");
+        let sheet = crowd_sheet().unwrap();
+        let pic = crate::image2d::get(sheet).unwrap();
+        let fw = (CROWD_TILE[0] * CROWD_PX) as u32;
+        // The middle of the gutter is clear all the way down (its edge texels may hold
+        // the anti-aliased rim of a frame; the half-texel uv never reaches them).
+        for y in 0..pic.height {
+            for x in fw + 1..fw + CROWD_GAP as u32 - 1 {
+                assert_eq!(pic.pixel(x, y)[3], 0, "gutter texel {x},{y}");
+            }
+        }
+    }
 }

@@ -211,11 +211,17 @@ impl Transition {
                     [232, 184, 60, (255.0 * a) as u8],
                 );
             }
+            // As big as fits the screen's width, centred on the screen.
+            let mut size = 56.0;
+            let room = (w - 32.0).max(40.0);
+            while size > 18.0 && crate::font::measure_text(&self.title, size) > room {
+                size -= 2.0;
+            }
             p.text_outlined(
                 &self.title,
-                200.0,
-                cy - 30.0,
-                56.0,
+                x0 + w * 0.5,
+                cy - size * 0.54,
+                size,
                 [c[0], c[1], c[2], (255.0 * a) as u8],
                 [255, 255, 255, (255.0 * a) as u8],
                 2.5,
@@ -497,7 +503,16 @@ impl<'a> Painter<'a> {
         let f = frame % (c * r);
         let (fx, fy) = ((f % c) as f32, (f / c) as f32);
         let (cw, ch) = (1.0 / c as f32, 1.0 / r as f32);
-        let uv = [fx * cw, fy * ch, (fx + 1.0) * cw, (fy + 1.0) * ch];
+        // Half a texel in from the cell's edges, so filtering never reads the neighbour.
+        let (hx, hy) = crate::image2d::size(pic)
+            .map(|(w, h)| (0.5 / w.max(1) as f32, 0.5 / h.max(1) as f32))
+            .unwrap_or((0.0, 0.0));
+        let uv = [
+            fx * cw + hx,
+            fy * ch + hy,
+            (fx + 1.0) * cw - hx,
+            (fy + 1.0) * ch - hy,
+        ];
         self.image_part(pic, rect, uv, tint);
     }
 
@@ -1062,6 +1077,16 @@ mod tests {
         let st = Stage::fit(400.0, 700.0, 400.0, 700.0);
         for kind in [Wipe::Fade, Wipe::Curtain, Wipe::Iris] {
             let mut t = Transition::open(kind, 1.0, [30, 60, 160, 255], "GAME DAY");
+            // A long title shrinks to fit a phone's width.
+            let long = Transition::open(kind, 1.0, [30, 60, 160, 255], "BACK TO PRACTICE AT LAST");
+            let mut l2 = DrawList::default();
+            long.draw(&mut Painter::new(&mut l2, st));
+            let title = l2.layers[0]
+                .texts
+                .iter()
+                .find(|x| x.text.starts_with("BACK"))
+                .unwrap();
+            assert!(crate::font::measure_text(&title.text, title.size) <= 400.0 * st.k);
             assert_eq!(t.openness(), 0.0, "covered at first");
             let mut list = DrawList::default();
             t.draw(&mut Painter::new(&mut list, st));
@@ -1121,8 +1146,16 @@ mod tests {
         p.image_frame(pic, 4, 2, 5, [0.0, 0.0, 10.0, 10.0], [255; 4]);
         p.image_frame(pic, 4, 2, 9, [0.0, 0.0, 10.0, 10.0], [255; 4]);
         let n = list.mesh.sprites.len();
-        assert_eq!(list.mesh.sprites[n - 2].uv, [0.25, 0.5, 0.5, 1.0]);
-        assert_eq!(list.mesh.sprites[n - 1].uv, [0.25, 0.0, 0.5, 0.5]);
+        // The 8 x 4 picture: half a texel is 1/16 across and 1/8 down.
+        let (hx, hy) = (0.5 / 8.0, 0.5 / 4.0);
+        assert_eq!(
+            list.mesh.sprites[n - 2].uv,
+            [0.25 + hx, 0.5 + hy, 0.5 - hx, 1.0 - hy]
+        );
+        assert_eq!(
+            list.mesh.sprites[n - 1].uv,
+            [0.25 + hx, 0.0 + hy, 0.5 - hx, 0.5 - hy]
+        );
         list.mesh.sprites.truncate(2);
         let mut p = Painter::new(&mut list, st);
         p.nine_slice(pic, [0.0, 0.0, 100.0, 60.0], 10.0, 0.25, 0.0, [255; 4]);

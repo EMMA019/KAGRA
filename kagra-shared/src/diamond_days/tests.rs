@@ -28,8 +28,15 @@ fn touch(g: &mut DiamondDays, x: f32, y: f32, phase: PointerPhase) {
     );
 }
 
-/// A finger down and up on one spot.
+/// A finger down and up on one spot. A scene change takes no taps while it covers the
+/// screen, so wait for it first, as a player does.
 fn tap(g: &mut DiamondDays, x: f32, y: f32) {
+    for _ in 0..40 {
+        if g.transition.as_ref().is_none_or(|t| t.openness() >= 0.6) {
+            break;
+        }
+        run(g, 0.05);
+    }
     touch(g, x, y, PointerPhase::Begin);
     touch(g, x, y, PointerPhase::End);
 }
@@ -1191,6 +1198,122 @@ fn players_keep_their_numbers_and_the_year_names_its_best() {
         ".313"
     );
     assert_eq!(team::Stats::default().avg(), "---");
+}
+
+/// A call asked for does not carry into the next game; a scene change takes no taps while
+/// it covers the screen; walks, sacrifices and steals are not at bats, and a steal is not
+/// a batter faced.
+#[test]
+fn calls_wipes_subs_and_the_scorebook() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    g.s.week = 6;
+    g.begin_week();
+    // A raw tap on Play Ball while the curtain is still closed does nothing.
+    let r = g
+        .hud_buttons(W as f32, H as f32)
+        .into_iter()
+        .find(|(b, _)| *b == hud::Btn::PlayBall)
+        .map(|(_, r)| r)
+        .unwrap();
+    touch(
+        &mut g,
+        r[0] + r[2] * 0.5,
+        r[1] + r[3] * 0.5,
+        PointerPhase::Begin,
+    );
+    assert_eq!(g.mode, Mode::MatchIntro, "covered: no tap");
+    press(&mut g, hud::Btn::PlayBall);
+    assert!(matches!(g.mode, Mode::Match { .. }));
+    // The first pitch waits for the iris.
+    let shown = |g: &DiamondDays| match g.mode {
+        Mode::Match { shown, .. } => shown,
+        _ => usize::MAX,
+    };
+    let before = shown(&g);
+    g.tick(DT);
+    assert_eq!(shown(&g), before, "the game waits under the iris");
+    // Ask for a call, then skip the game: the request is gone.
+    press(&mut g, hud::Btn::Orders);
+    assert!(g.want_call);
+    press(&mut g, hud::Btn::Skip);
+    assert!(!g.want_call, "a call asked for does not carry over");
+    // The scorebook.
+    let mk = |kind| sim::Play {
+        batter: "A".into(),
+        kind,
+        ..sim::Play::note("", "")
+    };
+    for k in [
+        sim::PlayKind::Walk,
+        sim::PlayKind::SacFly,
+        sim::PlayKind::Bunt,
+        sim::PlayKind::Steal,
+        sim::PlayKind::CaughtStealing,
+    ] {
+        assert!(!mk(k).is_at_bat(), "{k:?} is not an at bat");
+    }
+    assert!(mk(sim::PlayKind::Hit(1)).is_at_bat() && mk(sim::PlayKind::Strikeout).is_at_bat());
+    assert!(!mk(sim::PlayKind::Steal).faced_batter());
+    assert!(mk(sim::PlayKind::Walk).faced_batter());
+}
+
+/// A starter taken out for a pinch hitter keeps what he did before.
+#[test]
+fn a_starter_taken_out_keeps_his_line() {
+    for seed in 0..12u32 {
+        let mut g = DiamondDays::new(DiamondDaysSpec {
+            seed,
+            ..DiamondDaysSpec::default()
+        });
+        let _ = g.hud(W, H, false);
+        g.confirm();
+        tap(&mut g, 195.0, 400.0);
+        g.s.week = 6;
+        g.begin_week();
+        press(&mut g, hud::Btn::PlayBall);
+        let mut subbed = None;
+        for _ in 0..20000 {
+            match g.mode {
+                Mode::Match {
+                    asking: Some(Spot::Chance),
+                    ..
+                } if subbed.is_none()
+                    && g.game.as_ref().is_some_and(|gm| {
+                        !gm.sides[gm.us].bench.is_empty()
+                            && gm.log.iter().any(|q| {
+                                q.is_pa()
+                                    && q.side as usize == gm.us
+                                    && q.batter == gm.batter_now().name
+                            })
+                    }) =>
+                {
+                    let starter = g.game.as_ref().unwrap().batter_now().name.clone();
+                    press(&mut g, hud::Btn::OpenBench(0));
+                    press(&mut g, hud::Btn::UseBench(0));
+                    subbed = Some(starter);
+                }
+                Mode::Match {
+                    asking: Some(_), ..
+                } => press(&mut g, hud::Btn::Call(None)),
+                Mode::Match { .. } => run(&mut g, 0.3),
+                _ => break,
+            }
+        }
+        let Some(starter) = subbed else { continue };
+        let rep = g.report.clone().unwrap();
+        let ours: u32 = g.s.team.players.iter().map(|p| p.season.hits as u32).sum();
+        assert_eq!(ours, rep.hits[rep.us] as u32, "hits add up with a sub");
+        let p =
+            g.s.team
+                .players
+                .iter()
+                .find(|p| p.family == starter)
+                .unwrap();
+        assert_eq!(p.season.games, 1, "{starter} keeps his game");
+        return;
+    }
+    panic!("no game with a pinch hit for a starter who had batted");
 }
 
 #[test]

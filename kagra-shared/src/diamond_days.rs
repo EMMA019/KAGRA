@@ -540,6 +540,8 @@ impl DiamondDays {
                     _ => fresh_save(self.spec.seed.wrapping_add(self.clock.to_bits())),
                 };
                 self.rng = Rng::new(self.s.seed);
+                self.want_call = false;
+                self.transition = None;
                 if let Some(w) = self.start_week.take() {
                     self.s.week = w;
                 }
@@ -726,6 +728,8 @@ impl DiamondDays {
     }
 
     fn start_game(&mut self, f: Fixture) {
+        // A call asked for in an earlier game does not carry over.
+        self.want_call = false;
         let (school, school_ja) = (self.school_en().to_string(), self.school_ja().to_string());
         let us = Side::from_team(&self.s.team, &school, &school_ja);
         let idx = match self.rival_idx {
@@ -771,6 +775,7 @@ impl DiamondDays {
         let Some(g) = self.game.take() else {
             return;
         };
+        self.want_call = false;
         let won = g.won() == Some(true);
         let f = board::fixture(self.s.week).unwrap_or(Fixture::Practice);
         let (title, title_ja) = Self::fixture_name(f);
@@ -945,13 +950,7 @@ impl DiamondDays {
             if play.side == us {
                 let i = at(&mut by, &play.batter);
                 let l = &mut by[i].1;
-                if !matches!(
-                    play.kind,
-                    sim::PlayKind::Walk
-                        | sim::PlayKind::Steal
-                        | sim::PlayKind::CaughtStealing
-                        | sim::PlayKind::Change
-                ) {
+                if play.is_at_bat() {
                     l.ab += 1;
                 }
                 if let sim::PlayKind::Hit(n) = play.kind {
@@ -962,18 +961,13 @@ impl DiamondDays {
             } else {
                 let i = at(&mut by, &play.pitcher);
                 let l = &mut by[i].1;
-                l.faced += 1;
+                l.faced += play.faced_batter() as u32;
                 l.k += (play.kind == sim::PlayKind::Strikeout) as u32;
                 l.allowed += play.runs as u32;
             }
         }
         let mut total = 0u32;
-        let names: Vec<String> = g.sides[g.us]
-            .bats
-            .iter()
-            .map(|b| b.name.clone())
-            .chain(g.sides[g.us].arms.iter().map(|a| a.name.clone()))
-            .collect();
+        // `by` holds only our players, whoever was subbed in or out on the way.
         for p in &mut self.s.team.players {
             let Some(l) = by
                 .iter()
@@ -982,9 +976,6 @@ impl DiamondDays {
             else {
                 continue;
             };
-            if !names.contains(&p.family) {
-                continue;
-            }
             let line = team::Stats {
                 games: 1,
                 ab: l.ab as u16,
@@ -1015,7 +1006,6 @@ impl DiamondDays {
         // The player of the game: the best bat, or a pitcher who shut them down.
         let star = by
             .iter()
-            .filter(|(n, _)| names.contains(n))
             .map(|(n, l)| {
                 let bat = l.hits as f32 * 2.0 + l.rbi as f32 * 2.5 + l.homers as f32 * 2.0;
                 let arm = if l.faced >= 12 {
@@ -1843,7 +1833,9 @@ impl DiamondDays {
                 }
             }
             Mode::Match { shown, t, asking } => {
-                if asking.is_some() {
+                // The first pitch waits for the iris to open.
+                if asking.is_some() || self.transition.as_ref().is_some_and(|t| t.openness() < 0.8)
+                {
                     return;
                 }
                 let t = t + dt * if self.fast { 2.0 } else { 1.0 };
@@ -2074,6 +2066,10 @@ impl DiamondDays {
             return;
         }
         if self.flow.phase != FlowPhase::Play {
+            return;
+        }
+        // A scene change still mostly covering the screen takes no taps.
+        if self.transition.as_ref().is_some_and(|t| t.openness() < 0.6) {
             return;
         }
         if let Some(b) = crate::hud_kit::hit(&self.hud_buttons(w, h), ev.x, ev.y) {

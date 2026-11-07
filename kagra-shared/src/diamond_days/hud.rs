@@ -1932,7 +1932,11 @@ impl DiamondDays {
         } else {
             format!("{} avg, {} H, {} HR, {} RBI", s.avg(), s.hits, s.hr, s.rbi)
         };
-        p.text(&line, 236.0, 62.0, 11.0, INK_SOFT, TextAlign::Left);
+        let line: String = wrap(&line, 11.0, 216.0)
+            .into_iter()
+            .next()
+            .unwrap_or_default();
+        p.text(&line, 160.0, 150.0, 11.0, INK_SOFT, TextAlign::Left);
         art::mood_icon(p, [170.0, 96.0], 10.0, pl.mood);
         p.text(pl.mood.label(ja), 186.0, 87.0, 14.0, INK, TextAlign::Left);
         p.text(

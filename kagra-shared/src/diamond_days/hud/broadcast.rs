@@ -686,14 +686,7 @@ impl DiamondDays {
                 .take(shown.saturating_sub(usize::from(matches!(phase, Phase::Pitch { .. }))))
                 .filter(|q| q.batter == name && q.side as usize == bat_side)
                 .fold((0, 0), |(ab, hi), q| {
-                    let counts = !matches!(
-                        q.kind,
-                        PlayKind::Walk
-                            | PlayKind::Steal
-                            | PlayKind::CaughtStealing
-                            | PlayKind::Change
-                            | PlayKind::Note
-                    );
+                    let counts = q.is_at_bat();
                     (
                         ab + counts as u32,
                         hi + matches!(q.kind, PlayKind::Hit(_)) as u32,

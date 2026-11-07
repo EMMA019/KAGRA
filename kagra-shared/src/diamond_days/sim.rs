@@ -347,6 +347,24 @@ impl Play {
         !self.batter.is_empty() && !matches!(self.kind, PlayKind::Note | PlayKind::Change)
     }
 
+    /// An official at bat: not a walk, a sacrifice (fly or bunt) or a play on the bases.
+    pub fn is_at_bat(&self) -> bool {
+        self.is_pa()
+            && !matches!(
+                self.kind,
+                PlayKind::Walk
+                    | PlayKind::Steal
+                    | PlayKind::CaughtStealing
+                    | PlayKind::SacFly
+                    | PlayKind::Bunt
+            )
+    }
+
+    /// A batter the pitcher faced (a steal is not one).
+    pub fn faced_batter(&self) -> bool {
+        self.is_pa() && !matches!(self.kind, PlayKind::Steal | PlayKind::CaughtStealing)
+    }
+
     /// The pitches leading to this result, in order, with a count that never goes past
     /// three balls or two strikes before the last pitch. Drawn from a hash of the play, so
     /// the same game shows the same pitches and no result changes.
