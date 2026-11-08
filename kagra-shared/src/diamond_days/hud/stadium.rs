@@ -1053,6 +1053,10 @@ impl DiamondDays {
             [b[0] - 0.5, 0.0, b[2] + 0.5]
         });
         let mut first_glove = None;
+        // Where the out is made, known before anyone is placed: the first baseman (an
+        // earlier slot than most chasers) stretches toward it.
+        let catch_point = (out_play && (k * 1.5) >= 1.0 && !matches!(pl.kind, PlayKind::Hit(4)))
+            .then_some([land[0], 0.0, land[2]]);
         for (i, id) in ids.iter().enumerate() {
             let home_spot = fielder_spot(i);
             let face = self.fielder_face(g, fld_side, i, &pl.pitcher);
@@ -1092,7 +1096,7 @@ impl DiamondDays {
                 f = f.mitt(true);
             }
             if covering.is_some() {
-                f = f.reach(caught_at.map(|c| [c[0], 1.0, c[2]]));
+                f = f.reach(catch_point.map(|c| [c[0], 1.0, c[2]]));
                 first_glove = Some(chibi3d::glove_hand(&f));
             }
             chibi3d::build(&f, out);

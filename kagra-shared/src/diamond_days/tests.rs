@@ -1402,6 +1402,17 @@ fn match_in_3d_to_png() {
             (grounder, kind, find(&g, "ball"), shadow)
         {
             if b[0] > 8.0 && b[1] > 1.5 {
+                // The first baseman is on the bag, stretching toward the throw: the
+                // ball heads for a glove held up off the ground.
+                let bag = [19.4f32, 0.0, -19.4];
+                let near_bag = g
+                    .document()
+                    .props
+                    .iter()
+                    .filter(|p| p.id.starts_with("f2:"))
+                    .map(|p| p.position)
+                    .fold(f32::MAX, |m, q| m.min((q[0] - bag[0]).hypot(q[2] - bag[2])));
+                assert!(near_bag < 2.5, "first baseman at the bag: {near_bag}");
                 shot(&g, "3d_grounder");
                 grounder = true;
             }
@@ -1497,6 +1508,65 @@ fn every_fielder_is_someone_else() {
             assert!(names.contains(&b.name) || b.name == pitcher, "{}", b.name);
         }
     }
+}
+
+/// On a ground ball out the first baseman takes the bag and stretches: the throw arrives
+/// at a glove held up, not at his shins.
+#[test]
+fn the_throw_to_first_meets_a_raised_glove() {
+    let bag = [19.4f32, 0.0, -19.4];
+    for seed in 0..8u32 {
+        let mut g = DiamondDays::new(DiamondDaysSpec {
+            seed,
+            ..DiamondDaysSpec::default()
+        });
+        let _ = g.hud(W, H, false);
+        g.confirm();
+        tap(&mut g, 195.0, 400.0);
+        g.s.week = 6;
+        g.begin_week();
+        press(&mut g, hud::Btn::PlayBall);
+        let mut nearest: Option<(f32, f32)> = None;
+        for _ in 0..60000 {
+            match g.mode {
+                Mode::Match {
+                    asking: Some(_), ..
+                } => press(&mut g, hud::Btn::Call(None)),
+                Mode::Match { .. } => g.tick(DT),
+                _ => break,
+            }
+            let kind = match (&g.mode, g.game.as_ref()) {
+                (Mode::Match { shown, .. }, Some(gm)) if *shown > 0 => {
+                    gm.log.get(shown - 1).map(|p| p.kind)
+                }
+                _ => None,
+            };
+            if kind != Some(sim::PlayKind::GroundOut) {
+                if nearest.is_some() {
+                    break;
+                }
+                continue;
+            }
+            let doc = g.document();
+            if !doc.props.iter().any(|p| p.id == "ball-shadow") {
+                continue;
+            }
+            if let Some(b) = doc.props.iter().find(|p| p.id == "ball") {
+                let d = (b.position[0] - bag[0]).hypot(b.position[2] - bag[2]);
+                if nearest.is_none_or(|(nd, _)| d < nd) {
+                    nearest = Some((d, b.position[1]));
+                }
+            }
+        }
+        let Some((d, y)) = nearest else { continue };
+        if d > 2.5 {
+            // Fielded by the first baseman himself: no throw.
+            continue;
+        }
+        assert!(y > 0.6, "the throw arrives at {y} m");
+        return;
+    }
+    panic!("no ground ball out thrown to first");
 }
 
 #[test]
