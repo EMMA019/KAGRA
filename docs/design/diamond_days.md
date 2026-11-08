@@ -77,12 +77,28 @@ call at chances and pinches (below). "Skip" plays the rest at once.
 ## Calls in a game (round 2)
 
 The game stops at a **chance** (we bat with a runner on second or third) or a **pinch**
-(they do). At a chance: swing away, take pitches, bunt, squeeze (runner on third), steal,
-or bring in a pinch hitter or pinch runner. At a pinch: go after him, walk him on purpose,
-bring in the next pitcher, or make a defensive change. "Play on" lets them play this once;
-"no more calls" for the rest of the game. There is still no ball-strike count: clutch
-moments (a chance, an extra-base hit, a walk-off) just hold longer, with a bigger face
-and a louder line.
+(they do). At a chance: swing away, take pitches, hit and run, bunt, squeeze (runner on
+third), steal, or bring in a pinch hitter or pinch runner. At a pinch: go after him, work
+him inside, stay away, keep it low, bring the infield in (runner on third), walk him on
+purpose, bring in the next pitcher, or make a defensive change. "Play on" lets them play
+this once; "no more calls" for the rest of the game. The 作戦 button asks for any batter.
+
+Every call trades one risk for another (the button says which, under its name), and one
+button is tagged おすすめ from the matchup and the bases:
+
+| Call | Better | Worse |
+|---|---|---|
+| 勝負 (go after him) | more stuff | the arm tires sooner |
+| 内角攻め (inside) | more strikeouts, jammed swings | a slugger turns on a mistake; a pitch can hit him (more with poor control) |
+| 外角中心 (away) | far fewer home runs and doubles; a strikeout is a called third strike | more walks |
+| 低めに集めろ (low) | ground balls, more double plays, fewer home runs | a few more walks and singles |
+| 前進守備 (infield in) | a ground ball never scores the runner from third | more balls get through |
+| エンドラン (hit and run) | no double play; first to third on a single; more contact | a strikeout can hang the runner |
+
+A ground ball out moves runners (the man on third scores about half the time against a
+normal infield). A hit batsman takes first and is not an at bat. The pitches on screen
+follow the call: in on the hands, on the outer corner, or low in the zone, and the one
+that hits him is right at him.
 
 ## Special abilities
 

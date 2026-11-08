@@ -78,6 +78,34 @@ fn hash(s: &str, i: usize) -> u64 {
 pub(super) fn location(play: &Play, i: usize, pitch: Pitch) -> P {
     let h = hash(&play.en, i);
     let f = |s: u32| ((h >> s) & 0xff) as f32 / 255.0;
+    // Zone x toward the batter (a right-hander stands on the left from behind the plate).
+    let inside = if art::bats_left(&play.batter) {
+        1.0
+    } else {
+        -1.0
+    };
+    // The pitch that hits him is the last one, right at him.
+    if play.kind == PlayKind::HitByPitch && i + 1 == play.pitches().len() {
+        return [inside * 2.1, -0.1 + f(4) * 0.4];
+    }
+    let q = base_location(pitch, &f);
+    // The coach's call puts the pitches where he asked: in on the hands, away, or low.
+    let wide = |strike: f32, ball: f32| {
+        if pitch == Pitch::Ball {
+            ball
+        } else {
+            strike
+        }
+    };
+    match play.call {
+        Some(Tactic::Inside) => [inside * wide(0.35 + f(40) * 0.6, 1.2 + f(40) * 0.35), q[1]],
+        Some(Tactic::Outside) => [-inside * wide(0.4 + f(40) * 0.6, 1.2 + f(40) * 0.35), q[1]],
+        Some(Tactic::Low) => [q[0], wide(0.35 + f(48) * 0.6, 1.25 + f(48) * 0.3)],
+        _ => q,
+    }
+}
+
+fn base_location(pitch: Pitch, f: &dyn Fn(u32) -> f32) -> P {
     match pitch {
         Pitch::Ball => {
             let side = if f(0) < 0.5 { -1.0 } else { 1.0 };
@@ -538,6 +566,10 @@ impl DiamondDays {
                         (self.tr("INTENTIONAL WALK", "敬遠"), [130, 210, 255, 255])
                     }
                     PlayKind::Walk => (self.tr("BALL FOUR", "フォアボール"), [130, 210, 255, 255]),
+                    PlayKind::HitByPitch => (
+                        self.tr("HIT BY PITCH", "デッドボール"),
+                        [255, 150, 120, 255],
+                    ),
                     PlayKind::DoublePlay => (self.tr("DOUBLE PLAY", "ゲッツー"), WHITE),
                     PlayKind::SacFly => (self.tr("SAC FLY", "犠牲フライ"), WHITE),
                     PlayKind::GroundOut => (self.tr("GROUND OUT", "ゴロでアウト"), WHITE),
@@ -1065,6 +1097,8 @@ impl DiamondDays {
                 TextAlign::Left,
             );
         }
+        // What a good coach would call here, marked on its button.
+        let advice = Tactic::advice(g, spot);
         for (b, rr) in &l.buttons {
             let [x, y, w, h] = *rr;
             match *b {
@@ -1072,10 +1106,43 @@ impl DiamondDays {
                     let col = match t {
                         Tactic::Hit | Tactic::Challenge => [200, 70, 60, 255],
                         Tactic::Bunt | Tactic::Squeeze => [60, 150, 100, 255],
-                        Tactic::Steal => [220, 150, 40, 255],
+                        Tactic::Steal | Tactic::HitAndRun => [220, 150, 40, 255],
+                        Tactic::Inside | Tactic::Outside | Tactic::Low => [40, 140, 160, 255],
+                        Tactic::InfieldIn => [90, 130, 70, 255],
                         _ => [60, 110, 200, 255],
                     };
-                    p.button(x, y, w, h, t.label(ja), 16.0, col, true);
+                    // The call, and what it trades in small type under it.
+                    p.button(x, y, w, h, "", 15.0, col, true);
+                    let cx = x + w * 0.5;
+                    let label = t.label(ja);
+                    let size = if label.chars().count() > 5 {
+                        13.0
+                    } else {
+                        15.0
+                    };
+                    p.text(label, cx, y + 6.0, size, WHITE, TextAlign::Center);
+                    p.text(
+                        t.hint(ja),
+                        cx,
+                        y + h - 18.0,
+                        10.5,
+                        [255, 255, 255, 215],
+                        TextAlign::Center,
+                    );
+                    if advice == Some(t) {
+                        let tag = self.tr("TIP", "おすすめ");
+                        p.panel(
+                            x + w - 46.0,
+                            y - 8.0,
+                            50.0,
+                            17.0,
+                            8.0,
+                            [255, 220, 90, 255],
+                            [240, 170, 40, 255],
+                            0.0,
+                        );
+                        p.text(tag, x + w - 21.0, y - 6.5, 10.0, INK, TextAlign::Center);
+                    }
                 }
                 Btn::Call(None) => {
                     let back = matches!(spot, Spot::Bench(_));
@@ -1724,5 +1791,54 @@ impl DiamondDays {
             }
         }
         let _ = (shade(OURS, 0.0), board::WEEKS);
+    }
+}
+
+#[cfg(test)]
+mod call_tests {
+    use super::*;
+
+    fn play(batter: &str, kind: PlayKind, call: Option<Tactic>) -> Play {
+        Play {
+            en: format!("{batter} test {kind:?} {call:?}"),
+            batter: batter.into(),
+            kind,
+            call,
+            ..Play::note("", "")
+        }
+    }
+
+    #[test]
+    fn the_pitches_go_where_the_coach_asked() {
+        // Find a right-handed and a left-handed name.
+        let righty = (0..100)
+            .map(|i| format!("R{i}"))
+            .find(|n| !art::bats_left(n))
+            .unwrap();
+        let lefty = (0..100)
+            .map(|i| format!("L{i}"))
+            .find(|n| art::bats_left(n))
+            .unwrap();
+        for (name, inside_sign) in [(&righty, -1.0f32), (&lefty, 1.0)] {
+            for (call, check) in [(Tactic::Inside, 1.0f32), (Tactic::Outside, -1.0)] {
+                let pl = play(name, PlayKind::GroundOut, Some(call));
+                for (i, p) in pl.pitches().iter().enumerate() {
+                    let q = location(&pl, i, *p);
+                    assert!(
+                        q[0] * inside_sign * check > 0.2,
+                        "{name} {call:?} {p:?} {q:?}"
+                    );
+                }
+            }
+            let low = play(name, PlayKind::FlyOut, Some(Tactic::Low));
+            for (i, p) in low.pitches().iter().enumerate() {
+                assert!(location(&low, i, *p)[1] > 0.3, "low is low (+y)");
+            }
+            // The pitch that hits him is on his side, off the plate.
+            let hbp = play(name, PlayKind::HitByPitch, Some(Tactic::Inside));
+            let n = hbp.pitches().len();
+            let q = location(&hbp, n - 1, Pitch::Ball);
+            assert!(q[0] * inside_sign > 1.8, "{q:?}");
+        }
     }
 }

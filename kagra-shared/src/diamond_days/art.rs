@@ -48,6 +48,12 @@ pub fn team_color(name: &str) -> Rgba {
     C[(hash(name) % C.len() as u64) as usize]
 }
 
+/// Looks only: about one player in four throws and bats left (the 3D figures, the side
+/// of the plate, and which corner is inside).
+pub fn bats_left(name: &str) -> bool {
+    hash(name).is_multiple_of(4)
+}
+
 pub fn hash(s: &str) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in s.bytes() {

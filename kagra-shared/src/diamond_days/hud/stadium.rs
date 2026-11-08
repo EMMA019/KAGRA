@@ -81,7 +81,7 @@ fn face_toward(from: [f32; 3], to: [f32; 3]) -> f32 {
 
 /// Looks only: about one player in four throws and bats left.
 fn lefty(name: &str) -> bool {
-    art::hash(name).is_multiple_of(4)
+    art::bats_left(name)
 }
 
 fn rgb(c: Rgba) -> [u32; 3] {
@@ -829,6 +829,10 @@ impl DiamondDays {
                         pitcher_expr = Expr::Happy;
                     }
                     PlayKind::Walk => walk_k = Some(k),
+                    PlayKind::HitByPitch => {
+                        walk_k = Some(k);
+                        batter_expr = Expr::Sad;
+                    }
                     PlayKind::Hit(_) => {
                         batter_expr = Expr::Happy;
                         pitcher_expr = Expr::Surprised;
